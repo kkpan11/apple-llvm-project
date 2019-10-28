@@ -1,0 +1,10 @@
+[
+{
+  "target": "swift/master-next",
+  "upstream": "apple/master"
+},
+{
+  "target": "swift/master",
+  "upstream": "apple/stable/20190619"
+}
+]
