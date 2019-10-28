@@ -1,5 +1,9 @@
 [
 {
+  "target": "apple/master",
+  "upstream": "llvm.org/master"
+},
+{
   "target": "swift/master-next",
   "upstream": "apple/master"
 },
