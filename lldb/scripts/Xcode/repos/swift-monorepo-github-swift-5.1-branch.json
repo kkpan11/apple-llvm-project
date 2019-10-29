@@ -1,0 +1,19 @@
+{
+    "regexs" : [".*github.*apple.*llvm-project.*swift-5.1-branch.*"],
+    "repos" : [
+        {"name": "llvm",
+         "vcs": "git",
+         "url": "https://github.com/apple/llvm-project.git",
+         "ref": "swift/swift-5.1-branch"},
+
+        {"name": "cmark",
+         "vcs": "git",
+         "url": "https://github.com/apple/swift-cmark.git",
+         "ref": "master"},
+
+        {"name": "ninja",
+         "vcs": "git",
+         "url": "https://github.com/ninja-build/ninja.git",
+         "ref": "master"}
+    ]
+}
