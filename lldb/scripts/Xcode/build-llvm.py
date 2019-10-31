@@ -58,6 +58,7 @@ def dirs_exist(names):
     return True
 
 def XCODE_REPOSITORIES():
+    return []
     names = ["llvm", "clang", "swift", "cmark", "ninja"]
     if dirs_exist(names):
         return [fallback_repo(n) for n in names]
