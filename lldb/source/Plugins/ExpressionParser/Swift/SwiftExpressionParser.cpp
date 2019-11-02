@@ -73,6 +73,7 @@
 #include "swift/SIL/SILModule.h"
 #include "swift/SIL/TypeLowering.h"
 #include "swift/SILOptimizer/PassManager/Passes.h"
+#include "swift/Serialization/SerializationOptions.h"
 #include "swift/Serialization/SerializedModuleLoader.h"
 #include "swift/Subsystems.h"
 
@@ -914,8 +915,13 @@ static swift::ASTContext *SetupASTContext(
   if (repl || !playground)
     swift_ast_context->GetLanguageOptions().EnableThrowWithoutTry = true;
 
+  // SWIFT_ENABLE_TENSORFLOW
+  // FIXME: we have come to rely on the optimizations in Jupyter notebooks.  We
+  // will leave them here even though the upstream does not have them turned on.
+  // Perhaps, we should add new "notebook" mode (a la repl mode) to
+  // conditionally turn optimizations on?
   swift_ast_context->GetIRGenOptions().OptMode =
-      swift::OptimizationMode::NoOptimization;
+      swift::OptimizationMode::ForSpeed;
   // Normally we'd like to verify, but unfortunately the verifier's
   // error mode is abort().
   swift_ast_context->GetIRGenOptions().Verify = false;
@@ -1641,9 +1647,13 @@ unsigned SwiftExpressionParser::Parse(DiagnosticManager &diagnostic_manager,
       new swift::Lowering::TypeConverter(
           *parsed_expr->source_file.getParentModule()));
 
+  // SWIFT_ENABLE_TENSORFLOW
+  // Set optimization mode to -O for REPL/Playgrounds.
+  auto &options = swift_ast_ctx->GetSILOptions();
+  options.OptMode = swift::OptimizationMode::ForSpeed;
   std::unique_ptr<swift::SILModule> sil_module(swift::performSILGeneration(
-      parsed_expr->source_file, *sil_types,
-      swift_ast_ctx->GetSILOptions()));
+      parsed_expr->source_file, *sil_types, options));
+  // SWIFT_ENABLE_TENSORFLOW END
 
   if (log) {
     std::string s;
@@ -1672,7 +1682,19 @@ unsigned SwiftExpressionParser::Parse(DiagnosticManager &diagnostic_manager,
     log->PutCString(s.c_str());
   }
 
-  runSILDiagnosticPasses(*sil_module);
+  sil_module->setSerializeSILAction([] {});
+
+  // SWIFT_ENABLE_TENSORFLOW
+  if (!runSILDiagnosticPasses(*sil_module)) {
+    // Diagnostic passes succeeded. Run the optimizations.
+
+    // FIXME: we have come to rely on the optimizations in Jupyter notebooks.  We
+    // will leave them here even though the upstream does not have them turned on.
+    // Perhaps, we should add new "notebook" mode (a la repl mode) to
+    // conditionally turn optimizations on?
+    runSILOptPreparePasses(*sil_module);
+    runSILOptimizationPasses(*sil_module);
+  }
 
   if (log) {
     std::string s;

@@ -34,6 +34,8 @@
 #include "lldb/Symbol/SymbolContext.h"
 #include "lldb/Symbol/TypeSystem.h"
 #include "lldb/Target/ABI.h"
+// SWIFT_ENABLE_TENSORFLOW
+#include "lldb/Target/CompletionResponse.h"
 #include "lldb/Target/ExecutionContextScope.h"
 #include "lldb/Target/PathMappingList.h"
 #include "lldb/Target/SectionLoadHistory.h"
@@ -1178,6 +1180,10 @@ public:
       lldb::ValueObjectSP &result_valobj_sp,
       const EvaluateExpressionOptions &options = EvaluateExpressionOptions(),
       std::string *fixed_expression = nullptr, ValueObject *ctx_obj = nullptr);
+
+  // SWIFT_ENABLE_TENSORFLOW
+  CompletionResponse CompleteCode(lldb::LanguageType language,
+                                  llvm::StringRef current_code);
 
   // Look up a symbol by name and type in both the target's symbols and the
   // persistent symbols from the

@@ -64,4 +64,10 @@ if(NOT LLDB_BUILD_FRAMEWORK)
 
   # Install the LLDB python module
   install(DIRECTORY ${SWIG_PYTHON_DIR} DESTINATION ${SWIG_INSTALL_DIR})
+  
+  # SWIFT_ENABLE_TENSORFLOW
+  # The build might have generated some "python3.x" symlinks. See the comment in
+  # "finishSwigPythonLLDB.py" for more information. Install them, if they exist.
+  install(DIRECTORY "${CMAKE_BINARY_DIR}/lib${LLVM_LIBDIR_SUFFIX}/python3.6" DESTINATION ${SWIG_INSTALL_DIR} OPTIONAL)
+  install(DIRECTORY "${CMAKE_BINARY_DIR}/lib${LLVM_LIBDIR_SUFFIX}/python3.7" DESTINATION ${SWIG_INSTALL_DIR} OPTIONAL)
 endif()

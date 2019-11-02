@@ -2737,6 +2737,12 @@ void SwiftASTContext::InitializeSearchPathOptions(
       search_path_opts.SDKPath = dir.AsCString("");
     }
 
+    // SWIFT_ENABLE_TENSORFLOW
+    // Allow users to specify an extra import search path in the environment.
+    if (auto *import_search_path = getenv("SWIFT_IMPORT_SEARCH_PATH")) {
+      search_path_opts.ImportSearchPaths.emplace_back(import_search_path);
+    }
+
     std::vector<std::string>& lpaths = search_path_opts.LibrarySearchPaths;
     lpaths.insert(lpaths.begin(), "/usr/lib/swift");
   }
@@ -3466,6 +3472,9 @@ swift::ASTContext *SwiftASTContext::GetASTContext() {
   registerIDERequestFunctions(m_ast_context_ap->evaluator);
   registerParseRequestFunctions(m_ast_context_ap->evaluator);
   registerTypeCheckerRequestFunctions(m_ast_context_ap->evaluator);
+
+  // SWIFT_ENABLE_TENSORFLOW
+  registerIDERequestFunctions(m_ast_context_ap->evaluator);
 
   GetASTMap().Insert(m_ast_context_ap.get(), this);
 

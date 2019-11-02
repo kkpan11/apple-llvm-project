@@ -30,6 +30,7 @@
 #include "lldb/Target/SwiftLanguageRuntime.h"
 
 #include "ObjCRuntimeSyntheticProvider.h"
+#include "SwiftCodeCompletion.h"
 #include "SwiftFormatters.h"
 
 #include <functional>
@@ -333,6 +334,32 @@ static void LoadSwiftFormatters(lldb::TypeCategoryImplSP swift_category_sp) {
 
   summary_flags.SetDontShowChildren(true);
   summary_flags.SetSkipPointers(true);
+
+  // SWIFT_ENABLE_TENSORFLOW
+  AddCXXSummary(
+      swift_category_sp,
+      lldb_private::formatters::swift::ObjectDescription_SummaryProvider,
+      "TensorFlow.Tensor summary provider",
+      ConstString("^TensorFlow.Tensor([1-9][0-9]*D)?<.+>$"),
+      summary_flags, true);
+  AddCXXSummary(
+      swift_category_sp,
+      lldb_private::formatters::swift::ObjectDescription_SummaryProvider,
+      "TensorFlow.ShapedArray summary provider",
+      ConstString("^TensorFlow.ShapedArray(Slice)?<.+>$"),
+      summary_flags, true);
+  AddCXXSummary(
+      swift_category_sp,
+      lldb_private::formatters::swift::ObjectDescription_SummaryProvider,
+      "TensorFlow.ArrayXD summary provider",
+      ConstString("^TensorFlow.Array(Slice)?([2-9][0-9]*D)?<.+>$"),
+      summary_flags, true);
+  AddCXXSummary(
+      swift_category_sp,
+      lldb_private::formatters::swift::ObjectDescription_SummaryProvider,
+      "Python.PythonObject summary provider",
+      ConstString("^Python.PythonObject$"),
+      summary_flags, true);
 
   AddCXXSynthetic(
       swift_category_sp,
@@ -1662,6 +1689,22 @@ bool SwiftLanguage::GetFunctionDisplayName(
 void SwiftLanguage::GetExceptionResolverDescription(bool catch_on,
                                                     bool throw_on, Stream &s) {
   s.Printf("Swift Error breakpoint");
+}
+
+CompletionResponse
+SwiftLanguage::CompleteCode(ExecutionContextScope &exe_scope,
+                            const std::string &entered_code) {
+  Target &target = *exe_scope.CalculateTarget();
+  Status error;
+  SwiftASTContext *swift_ast =
+      target.GetScratchSwiftASTContext(error, exe_scope).get();
+  if (!swift_ast)
+    return CompletionResponse::error("could not get Swift ASTContext");
+  auto persistent_expression_state =
+      target.GetSwiftPersistentExpressionState(exe_scope);
+
+  return SwiftCompleteCode(*swift_ast, *persistent_expression_state,
+                           entered_code);
 }
 
 //------------------------------------------------------------------

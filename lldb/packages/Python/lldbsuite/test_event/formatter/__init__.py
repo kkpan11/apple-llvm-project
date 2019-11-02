@@ -50,6 +50,40 @@ def create_results_formatter(config):
     @return an instance of CreatedFormatter.
     """
 
+    def create_socket(port):
+        """Creates a socket to the localhost on the given port.
+
+        @param port the port number of the listening port on
+        the localhost.
+
+        @return (socket object, socket closing function)
+        """
+
+        def socket_closer(open_sock):
+            """Close down an opened socket properly."""
+            open_sock.shutdown(socket.SHUT_RDWR)
+            open_sock.close()
+
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.connect(("localhost", port))
+
+        # Wait for the ack from the listener side.
+        # This is needed to prevent a race condition
+        # in the main dosep.py processing loop: we
+        # can't allow a worker queue thread to die
+        # that has outstanding messages to a listener
+        # socket before the listener socket asyncore
+        # listener socket gets spun up; otherwise,
+        # we lose the test result info.
+        read_bytes = sock.recv(1)
+        if read_bytes is None or (
+                len(read_bytes) < 1) or (
+                read_bytes != b'*'):
+            raise Exception(
+                "listening socket did not respond with ack byte: response={}".format(read_bytes))
+
+        return sock, lambda: socket_closer(sock)
+
     default_formatter_name = None
     results_file_object = None
     cleanup_func = None

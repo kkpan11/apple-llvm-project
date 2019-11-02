@@ -451,12 +451,14 @@ protected:
                  std::unique_ptr<swift::remoteAST::RemoteASTContext>>
       m_remote_ast_contexts;
 
+// [BEGIN GOOGLE] Change const char * -> std::string
   /// Uses ConstStrings as keys to avoid storing the strings twice.
-  llvm::DenseMap<const char *, lldb::SyntheticChildrenSP> m_bridged_synthetics_map;
+  std::map<std::string, lldb::SyntheticChildrenSP> m_bridged_synthetics_map;
 
   /// Cached member variable offsets.
-  using MemberID = std::pair<const swift::TypeBase *, const char *>;
-  llvm::DenseMap<MemberID, uint64_t> m_member_offsets;
+  using MemberID = std::pair<const swift::TypeBase *, std::string>;
+  std::map<MemberID, uint64_t> m_member_offsets;
+// [END GOOGLE]
 
   CompilerType m_box_metadata_type;
 
