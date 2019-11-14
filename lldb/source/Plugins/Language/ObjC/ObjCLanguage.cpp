@@ -744,11 +744,6 @@ static void LoadObjCFormatters(TypeCategoryImplSP objc_category_sp) {
                 "NSNotification summary provider",
                 ConstString("NSConcreteNotification"), appkit_flags);
 
-  // AddStringSummary(objc_category_sp, "domain: ${var._domain} - code:
-  // ${var._code}", ConstString("NSError"), appkit_flags);
-  // AddStringSummary(objc_category_sp,"name:${var.name%S}
-  // reason:${var.reason%S}",ConstString("NSException"),appkit_flags);
-
   AddCXXSummary(
       objc_category_sp, lldb_private::formatters::NSNumberSummaryProvider,
       "NSNumber summary provider", ConstString("NSNumber"), appkit_flags);
@@ -863,7 +858,7 @@ static void LoadCoreMediaFormatters(TypeCategoryImplSP objc_category_sp) {
 }
 
 lldb::TypeCategoryImplSP ObjCLanguage::GetFormatters() {
-  static std::once_flag g_initialize;
+  static llvm::once_flag g_initialize;
   static TypeCategoryImplSP g_category;
 
   llvm::call_once(g_initialize, [this]() -> void {
@@ -888,11 +883,11 @@ ObjCLanguage::GetPossibleFormattersMatches(ValueObject &valobj,
 
   const bool check_cpp = false;
   const bool check_objc = true;
-  const bool check_swift = false;
-  bool canBeObjCDynamic = compiler_type.IsPossibleDynamicType(
-      nullptr, check_cpp, check_objc, check_swift);
+  bool canBeObjCDynamic =
+      compiler_type.IsPossibleDynamicType(nullptr, check_cpp, check_objc);
 
-  if (canBeObjCDynamic) {
+  bool is_clang_type = llvm::isa<ClangASTContext>(compiler_type.GetTypeSystem());
+  if (canBeObjCDynamic && is_clang_type) {
     do {
       lldb::ProcessSP process_sp = valobj.GetProcessSP();
       if (!process_sp)
@@ -977,9 +972,8 @@ std::unique_ptr<Language::TypeScavenger> ObjCLanguage::GetTypeScavenger() {
                    ResultSet &results) override {
       bool result = false;
 
-      Target *target = exe_scope->CalculateTarget().get();
-      if (target) {
-        if (auto clang_modules_decl_vendor =
+      if (auto *target = exe_scope->CalculateTarget().get()) {
+        if (auto *clang_modules_decl_vendor =
                 target->GetClangModulesDeclVendor()) {
           std::vector<clang::NamedDecl *> decls;
           ConstString key_cs(key);

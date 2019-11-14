@@ -1087,8 +1087,7 @@ public:
   // Returns a new-ed object which the caller owns.
 
   UserExpression *
-  GetUserExpressionForLanguage(ExecutionContext &exe_ctx,
-                               llvm::StringRef expr, llvm::StringRef prefix,
+  GetUserExpressionForLanguage(llvm::StringRef expr, llvm::StringRef prefix,
                                lldb::LanguageType language,
                                Expression::ResultType desired_type,
                                const EvaluateExpressionOptions &options,
@@ -1117,19 +1116,7 @@ public:
                                                  const char *name,
                                                  Status &error);
 
-#ifdef __clang_analyzer__
-  // See GetScratchTypeSystemForLanguage()
-  ClangASTContext *GetScratchClangASTContext(bool create_on_demand = true)
-      __attribute__((always_inline)) {
-    ClangASTContext *ret = GetScratchClangASTContextImpl(create_on_demand);
-
-    return ret ? ret : nullptr;
-  }
-
-  ClangASTContext *GetScratchClangASTContextImpl(bool create_on_demand = true);
-#else
   ClangASTContext *GetScratchClangASTContext(bool create_on_demand = true);
-#endif
 
   lldb::ClangASTImporterSP GetClangASTImporter();
 

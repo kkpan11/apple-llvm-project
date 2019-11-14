@@ -193,9 +193,6 @@ public:
     return GetTranslationUnitDecl(getASTContext());
   }
 
-  // Copy "src" into this ClangASTContext.
-  CompilerType CopyType(const CompilerType &src);
-
   static clang::Decl *CopyDecl(clang::ASTContext *dest_context,
                                clang::ASTContext *source_context,
                                clang::Decl *source_decl);
@@ -268,11 +265,6 @@ public:
 
   static uint32_t GetNumBaseClasses(const clang::CXXRecordDecl *cxx_record_decl,
                                     bool omit_empty_base_classes);
-
-  static uint32_t
-  GetIndexForRecordBase(const clang::RecordDecl *record_decl,
-                        const clang::CXXBaseSpecifier *base_spec,
-                        bool omit_empty_base_classes);
 
   CompilerType CreateRecordType(clang::DeclContext *decl_ctx,
                                 lldb::AccessType access_type, const char *name,
@@ -593,8 +585,7 @@ public:
 
   bool IsPossibleDynamicType(lldb::opaque_compiler_type_t type,
                              CompilerType *target_type, // Can pass nullptr
-                             bool check_cplusplus, bool check_objc,
-                             bool check_swift) override;
+                             bool check_cplusplus, bool check_objc) override;
 
   bool IsRuntimeGeneratedType(lldb::opaque_compiler_type_t type) override;
 
@@ -678,14 +669,14 @@ public:
   GetMemberFunctionAtIndex(lldb::opaque_compiler_type_t type,
                            size_t idx) override;
 
-  CompilerType
-  GetLValueReferenceType(lldb::opaque_compiler_type_t type) override;
-
   CompilerType GetNonReferenceType(lldb::opaque_compiler_type_t type) override;
 
   CompilerType GetPointeeType(lldb::opaque_compiler_type_t type) override;
 
   CompilerType GetPointerType(lldb::opaque_compiler_type_t type) override;
+
+  CompilerType
+  GetLValueReferenceType(lldb::opaque_compiler_type_t type) override;
 
   CompilerType
   GetRValueReferenceType(lldb::opaque_compiler_type_t type) override;

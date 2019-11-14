@@ -1685,8 +1685,10 @@ unsigned SwiftExpressionParser::Parse(DiagnosticManager &diagnostic_manager,
   sil_module->setSerializeSILAction([] {});
 
   // SWIFT_ENABLE_TENSORFLOW
-  if (!runSILDiagnosticPasses(*sil_module)) {
-    // Diagnostic passes succeeded. Run the optimizations.
+  if (!runSILDiagnosticPasses(*sil_module) &&
+      !runSILOwnershipEliminatorPass(*sil_module)) {
+    // Diagnostic and ownership elimination passes succeeded. Run the
+    // optimizations.
 
     // FIXME: we have come to rely on the optimizations in Jupyter notebooks.  We
     // will leave them here even though the upstream does not have them turned on.

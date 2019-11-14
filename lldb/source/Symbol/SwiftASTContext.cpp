@@ -99,6 +99,7 @@
 #include "lldb/Host/Host.h"
 #include "lldb/Host/HostInfo.h"
 #include "lldb/Host/StringConvert.h"
+#include "lldb/Host/XML.h"
 #include "lldb/Symbol/ClangASTContext.h"
 #include "lldb/Symbol/ClangUtil.h"
 #include "lldb/Symbol/CompileUnit.h"
@@ -1839,6 +1840,59 @@ lldb::TypeSystemSP SwiftASTContext::CreateInstance(lldb::LanguageType language,
   return swift_ast_sp;
 }
 
+static bool IsUnitTestExecutable(lldb_private::Module &module) {
+  static ConstString s_xctest("xctest");
+  static ConstString s_XCTRunner("XCTRunner");
+  ConstString executable_name = module.GetFileSpec().GetFilename();
+  return (executable_name == s_xctest || executable_name == s_XCTRunner);
+}
+
+static lldb::ModuleSP GetUnitTestModule(lldb_private::ModuleList &modules) {
+  ConstString test_bundle_executable;
+
+  for (size_t mi = 0, num_images = modules.GetSize(); mi != num_images; ++mi) {
+    ModuleSP module_sp = modules.GetModuleAtIndex(mi);
+
+    std::string module_path = module_sp->GetFileSpec().GetPath();
+
+    const char deep_substr[] = ".xctest/Contents/";
+    size_t pos = module_path.rfind(deep_substr);
+    if (pos == std::string::npos) {
+      const char flat_substr[] = ".xctest/";
+      pos = module_path.rfind(flat_substr);
+
+      if (pos == std::string::npos) {
+        continue;
+      } else {
+        module_path.erase(pos + strlen(flat_substr));
+      }
+    } else {
+      module_path.erase(pos + strlen(deep_substr));
+    }
+
+    if (!test_bundle_executable) {
+      module_path.append("Info.plist");
+
+      ApplePropertyList info_plist(module_path.c_str());
+
+      std::string cf_bundle_executable;
+      if (info_plist.GetValueAsString("CFBundleExecutable",
+                                      cf_bundle_executable)) {
+        test_bundle_executable = ConstString(cf_bundle_executable);
+      } else {
+        return ModuleSP();
+      }
+    }
+
+    if (test_bundle_executable &&
+        module_sp->GetFileSpec().GetFilename() == test_bundle_executable) {
+      return module_sp;
+    }
+  }
+
+  return ModuleSP();
+}
+
 lldb::TypeSystemSP SwiftASTContext::CreateInstance(lldb::LanguageType language,
                                                    Target &target,
                                                    const char *extra_options) {
@@ -1894,7 +1948,10 @@ lldb::TypeSystemSP SwiftASTContext::CreateInstance(lldb::LanguageType language,
     // the Clang modules that were imported in this module. This can
     // be a lot of work (potentially ten seconds per module), but it
     // can be performed in parallel.
-    llvm::ThreadPool pool;
+    const unsigned threads = repro::Reproducer::Instance().IsReplaying()
+                                 ? 1
+                                 : llvm::hardware_concurrency();
+    llvm::ThreadPool pool(threads);
     for (size_t mi = 0; mi != num_images; ++mi) {
       auto module_sp = target.GetImages().GetModuleAtIndex(mi);
       pool.async([=] {
@@ -1969,9 +2026,9 @@ lldb::TypeSystemSP SwiftASTContext::CreateInstance(lldb::LanguageType language,
 
   // If we're debugging a testsuite, then treat the main test bundle
   // as the executable.
-  if (exe_module_sp && PlatformDarwin::IsUnitTestExecutable(*exe_module_sp)) {
+  if (exe_module_sp && IsUnitTestExecutable(*exe_module_sp)) {
     ModuleSP unit_test_module =
-        PlatformDarwin::GetUnitTestModule(target.GetImages());
+        GetUnitTestModule(target.GetImages());
 
     if (unit_test_module) {
       exe_module_sp = unit_test_module;
@@ -2089,7 +2146,10 @@ lldb::TypeSystemSP SwiftASTContext::CreateInstance(lldb::LanguageType language,
                 std::string parent_path =
                     module_path.substr(0, framework_offset);
 
-                if (!StringRef(parent_path).equals("/System/Library") &&
+                // Never add framework paths pointing into the
+                // system. These modules must be imported from the
+                // SDK instead.
+                if (!StringRef(parent_path).startswith("/System/Library") &&
                     !IsDeviceSupport(parent_path.c_str()))
                   framework_search_paths.push_back(
                       {std::move(parent_path), /*system*/ false});
@@ -3237,6 +3297,10 @@ public:
   void lookupValue(StringRef name, llvm::Optional<swift::ClangTypeKind> kind,
                    StringRef inModule,
                    llvm::SmallVectorImpl<clang::Decl *> &results) override {
+    // We will not find any Swift types in the Clang compile units.
+    if (SwiftLanguageRuntime::IsSwiftMangledName(name.str().c_str()))
+      return;
+
     auto clang_importer = m_swift_ast_ctx.GetClangImporter();
     if (!clang_importer)
       return;
@@ -5256,10 +5320,10 @@ bool SwiftASTContext::IsPolymorphicClass(void *type) { return false; }
 bool SwiftASTContext::IsPossibleDynamicType(void *type,
                                             CompilerType *dynamic_pointee_type,
                                             bool check_cplusplus,
-                                            bool check_objc, bool check_swift) {
+                                            bool check_objc) {
   VALID_OR_RETURN(false);
 
-  if (type && check_swift) {
+  if (type) {
     auto can_type = GetCanonicalSwiftType(type);
 
     if (can_type->getClassOrBoundGenericClass() ||

@@ -27,6 +27,7 @@
 
 #include "llvm/ADT/Optional.h"
 #include "llvm/Support/Threading.h"
+#include "llvm/Target/TargetOptions.h"
 
 #include <map>
 #include <set>
@@ -450,8 +451,7 @@ public:
 
   bool IsPossibleDynamicType(void *type,
                              CompilerType *target_type, // Can pass NULL
-                             bool check_cplusplus, bool check_objc,
-                             bool check_swift) override;
+                             bool check_cplusplus, bool check_objc) override;
 
   bool IsPointerType(void *type, CompilerType *pointee_type) override;
 

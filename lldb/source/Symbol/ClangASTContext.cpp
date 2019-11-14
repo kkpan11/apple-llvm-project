@@ -3664,7 +3664,7 @@ bool ClangASTContext::IsObjCClassType(const CompilerType &type) {
 }
 
 bool ClangASTContext::IsObjCObjectOrInterfaceType(const CompilerType &type) {
-  if (type && ClangUtil::IsClangType(type))
+  if (ClangUtil::IsClangType(type))
     return ClangUtil::GetCanonicalQualType(type)->isObjCObjectOrInterfaceType();
   return false;
 }
@@ -3714,7 +3714,7 @@ bool ClangASTContext::IsPolymorphicClass(lldb::opaque_compiler_type_t type) {
 bool ClangASTContext::IsPossibleDynamicType(lldb::opaque_compiler_type_t type,
                                             CompilerType *dynamic_pointee_type,
                                             bool check_cplusplus,
-                                            bool check_objc, bool check_swift) {
+                                            bool check_objc) {
   clang::QualType pointee_qual_type;
   if (type) {
     clang::QualType qual_type(GetCanonicalQualType(type));
@@ -3770,26 +3770,26 @@ bool ClangASTContext::IsPossibleDynamicType(lldb::opaque_compiler_type_t type,
                                        ->getUnderlyingType()
                                        .getAsOpaquePtr(),
                                    dynamic_pointee_type, check_cplusplus,
-                                   check_objc, check_swift);
+                                   check_objc);
 
     case clang::Type::Auto:
       return IsPossibleDynamicType(llvm::cast<clang::AutoType>(qual_type)
                                        ->getDeducedType()
                                        .getAsOpaquePtr(),
                                    dynamic_pointee_type, check_cplusplus,
-                                   check_objc, check_swift);
+                                   check_objc);
 
     case clang::Type::Elaborated:
       return IsPossibleDynamicType(llvm::cast<clang::ElaboratedType>(qual_type)
                                        ->getNamedType()
                                        .getAsOpaquePtr(),
                                    dynamic_pointee_type, check_cplusplus,
-                                   check_objc, check_swift);
+                                   check_objc);
 
     case clang::Type::Paren:
       return IsPossibleDynamicType(
           llvm::cast<clang::ParenType>(qual_type)->desugar().getAsOpaquePtr(),
-          dynamic_pointee_type, check_cplusplus, check_objc, check_swift);
+          dynamic_pointee_type, check_cplusplus, check_objc);
     default:
       break;
     }
@@ -7129,10 +7129,9 @@ CompilerType ClangASTContext::GetChildCompilerTypeAtIndex(
   return CompilerType();
 }
 
-uint32_t
-ClangASTContext::GetIndexForRecordBase(const clang::RecordDecl *record_decl,
-                                       const clang::CXXBaseSpecifier *base_spec,
-                                       bool omit_empty_base_classes) {
+static uint32_t GetIndexForRecordBase(const clang::RecordDecl *record_decl,
+                                      const clang::CXXBaseSpecifier *base_spec,
+                                      bool omit_empty_base_classes) {
   uint32_t child_idx = 0;
 
   const clang::CXXRecordDecl *cxx_record_decl =
@@ -7274,10 +7273,10 @@ size_t ClangASTContext::GetIndexOfChildMemberWithName(
 
           clang::CXXBasePaths paths;
           if (cxx_record_decl->lookupInBases(
-                  [&decl_name](const CXXBaseSpecifier *base_specifier,
-                               CXXBasePath &base_path) {
+                  [decl_name](const clang::CXXBaseSpecifier *specifier,
+                              clang::CXXBasePath &path) {
                     return clang::CXXRecordDecl::FindOrdinaryMember(
-                        base_specifier, base_path, decl_name);
+                        specifier, path, decl_name);
                   },
                   paths)) {
             clang::CXXBasePaths::const_paths_iterator path,
