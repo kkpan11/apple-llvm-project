@@ -185,7 +185,7 @@ doCodeCompletion(SourceFile &SF, StringRef EnteredCode,
   performTypeChecking(SF, PersistentState.getTopLevelContext(), None,
                       OriginalDeclCount);
 
-  performDelayedParsing(&SF, PersistentState, CompletionCallbacksFactory);
+  performCodeCompletionSecondPass(PersistentState, *CompletionCallbacksFactory);
 
   SF.Decls.resize(OriginalDeclCount);
 
