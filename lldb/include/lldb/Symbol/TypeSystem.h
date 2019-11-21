@@ -261,8 +261,6 @@ public:
 
   virtual CompilerType GetCanonicalType(lldb::opaque_compiler_type_t type) = 0;
 
-  virtual CompilerType GetInstanceType(lldb::opaque_compiler_type_t type) = 0;
-
   // Returns -1 if this isn't a function of if the function doesn't have a
   // prototype Returns a value >= 0 if there is a prototype.
   virtual int GetFunctionArgumentCount(lldb::opaque_compiler_type_t type) = 0;
@@ -386,9 +384,6 @@ public:
   virtual llvm::Optional<CompilerType::IntegralTemplateArgument>
   GetIntegralTemplateArgument(lldb::opaque_compiler_type_t type, size_t idx);
 
-  virtual lldb::GenericKind GetGenericArgumentKind(void *type, size_t idx);
-  virtual CompilerType GetGenericArgumentType(void *type, size_t idx);
-
   // Dumping types
 
 #ifndef NDEBUG
@@ -462,8 +457,6 @@ public:
 
   // If the current object represents a typedef type, get the underlying type
   virtual CompilerType GetTypedefedType(lldb::opaque_compiler_type_t type) = 0;
-
-  virtual CompilerType GetUnboundType(lldb::opaque_compiler_type_t type) = 0;
 
   virtual bool IsVectorType(lldb::opaque_compiler_type_t type,
                             CompilerType *element_type, uint64_t *size) = 0;

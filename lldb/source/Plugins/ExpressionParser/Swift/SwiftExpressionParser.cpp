@@ -1469,12 +1469,7 @@ unsigned SwiftExpressionParser::Parse(DiagnosticManager &diagnostic_manager,
     return 2;
   }
 
-  // Not persistent because we're building source files one at a time.
-  swift::TopLevelContext top_level_context;
-  swift::OptionSet<swift::TypeCheckingFlags> type_checking_options;
-
-  swift::performTypeChecking(parsed_expr->source_file, top_level_context,
-                             type_checking_options);
+  swift::performTypeChecking(parsed_expr->source_file);
 
   if (swift_ast_ctx->HasErrors()) {
     DiagnoseSwiftASTContextError();
@@ -1504,7 +1499,6 @@ unsigned SwiftExpressionParser::Parse(DiagnosticManager &diagnostic_manager,
     }
   } else {
     swift::performPlaygroundTransform(parsed_expr->source_file, true);
-    swift::typeCheckExternalDefinitions(parsed_expr->source_file);
   }
 
   // FIXME: We now should have to do the name binding and type

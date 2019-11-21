@@ -10,7 +10,6 @@
 
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/StreamFile.h"
-#include "lldb/Symbol/SwiftASTContext.h"
 #include "lldb/Symbol/Type.h"
 #include "lldb/Target/ExecutionContext.h"
 #include "lldb/Target/Process.h"
@@ -24,20 +23,12 @@
 #include <iterator>
 #include <mutex>
 
-#include "swift/AST/Type.h"
-#include "swift/AST/Types.h"
-
 using namespace lldb;
 using namespace lldb_private;
 
 CompilerType::CompilerType(TypeSystem *type_system,
                            lldb::opaque_compiler_type_t type)
     : m_type(type), m_type_system(type_system) {}
-
-CompilerType::CompilerType(swift::Type qual_type)
-    : m_type(qual_type.getPointer()),
-      m_type_system(
-          SwiftASTContext::GetSwiftASTContext(&qual_type->getASTContext())) {}
 
 CompilerType::~CompilerType() {}
 
@@ -374,12 +365,6 @@ CompilerType CompilerType::GetCanonicalType() const {
   return CompilerType();
 }
 
-CompilerType CompilerType::GetInstanceType() const {
-  if (IsValid())
-    return m_type_system->GetInstanceType(m_type);
-  return CompilerType();
-}
-
 CompilerType CompilerType::GetFullyUnqualifiedType() const {
   if (IsValid())
     return m_type_system->GetFullyUnqualifiedType(m_type);
@@ -492,13 +477,6 @@ CompilerType CompilerType::GetTypedefedType() const {
     return CompilerType();
 }
 
-CompilerType CompilerType::GetUnboundType() const {
-  if (IsValid())
-    return m_type_system->GetUnboundType(m_type);
-  return CompilerType();
-}
-
-//----------------------------------------------------------------------
 // Create related types using the current type's AST
 
 CompilerType
@@ -529,8 +507,6 @@ CompilerType::GetByteStride(ExecutionContextScope *exe_scope) const {
     return m_type_system->GetByteStride(m_type, exe_scope);
   return {};
 }
-
-uint64_t CompilerType::GetAlignedBitSize() const { return 0; }
 
 llvm::Optional<size_t> CompilerType::GetTypeBitAlign(ExecutionContextScope *exe_scope) const {
   if (IsValid())
@@ -715,19 +691,6 @@ TemplateArgumentKind CompilerType::GetTemplateArgumentKind(size_t idx) const {
 CompilerType CompilerType::GetTypeTemplateArgument(size_t idx) const {
   if (IsValid()) {
     return m_type_system->GetTypeTemplateArgument(m_type, idx);
-  }
-  return CompilerType();
-}
-
-GenericKind CompilerType::GetGenericArgumentKind(size_t idx) const {
-  if (IsValid())
-    return m_type_system->GetGenericArgumentKind(m_type, idx);
-  return eNullGenericKindType;
-}
-
-CompilerType CompilerType::GetGenericArgumentType(size_t idx) const {
-  if (IsValid()) {
-    return m_type_system->GetGenericArgumentType(m_type, idx);
   }
   return CompilerType();
 }

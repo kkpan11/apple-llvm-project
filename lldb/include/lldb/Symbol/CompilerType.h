@@ -13,7 +13,6 @@
 #include <string>
 #include <vector>
 
-#include "lldb/Core/SwiftForward.h"
 #include "lldb/lldb-private.h"
 #include "llvm/ADT/APSInt.h"
 
@@ -32,7 +31,6 @@ class CompilerType {
 public:
   // Constructors and Destructors
   CompilerType(TypeSystem *type_system, lldb::opaque_compiler_type_t type);
-  CompilerType(swift::Type qual_type);
 
   CompilerType(const CompilerType &rhs)
       : m_type(rhs.m_type), m_type_system(rhs.m_type_system) {}
@@ -181,8 +179,6 @@ public:
 
   CompilerType GetCanonicalType() const;
 
-  CompilerType GetInstanceType() const;
-
   CompilerType GetFullyUnqualifiedType() const;
 
   // Returns -1 if this isn't a function of if the function doesn't have a
@@ -243,8 +239,6 @@ public:
   // If the current object represents a typedef type, get the underlying type
   CompilerType GetTypedefedType() const;
 
-  CompilerType GetUnboundType() const;
-
   // Create related types using the current type's AST
   CompilerType GetBasicTypeFromAST(lldb::BasicType basic_type) const;
 
@@ -263,8 +257,6 @@ public:
   lldb::Encoding GetEncoding(uint64_t &count) const;
 
   lldb::Format GetFormat() const;
-
-  uint64_t GetAlignedBitSize() const;
 
   llvm::Optional<size_t> GetTypeBitAlign(ExecutionContextScope *exe_scope) const;
 
@@ -334,9 +326,6 @@ public:
 
   lldb::TemplateArgumentKind GetTemplateArgumentKind(size_t idx) const;
   CompilerType GetTypeTemplateArgument(size_t idx) const;
-
-  lldb::GenericKind GetGenericArgumentKind(size_t idx) const;
-  CompilerType GetGenericArgumentType(size_t idx) const;
 
   // Returns the value of the template argument and its type.
   llvm::Optional<IntegralTemplateArgument>

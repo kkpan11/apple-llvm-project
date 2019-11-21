@@ -23,7 +23,7 @@
 #include "clang/Basic/OperatorKinds.h"
 #include "clang/Basic/SourceLocation.h"
 #include "llvm/ADT/DenseMapInfo.h"
-#include "llvm/Bitcode/BitCodes.h"
+#include "llvm/Bitstream/BitCodes.h"
 #include <cassert>
 #include <cstdint>
 
@@ -366,7 +366,10 @@ namespace serialization {
     /// inside the control block.
     enum InputFileRecordTypes {
       /// An input file.
-      INPUT_FILE = 1
+      INPUT_FILE = 1,
+
+      /// The input file content hash
+      INPUT_FILE_HASH
     };
 
     /// Record types that occur within the AST block itself.

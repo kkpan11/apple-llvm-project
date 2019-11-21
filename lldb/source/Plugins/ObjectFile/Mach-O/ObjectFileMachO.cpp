@@ -1902,18 +1902,6 @@ protected:
 };
 
 struct TrieEntry {
-  TrieEntry()
-      : name(), address(LLDB_INVALID_ADDRESS), flags(0), other(0),
-        import_name() {}
-
-  void Clear() {
-    name.Clear();
-    address = LLDB_INVALID_ADDRESS;
-    flags = 0;
-    other = 0;
-    import_name.Clear();
-  }
-
   void Dump() const {
     printf("0x%16.16llx 0x%16.16llx 0x%16.16llx \"%s\"",
            static_cast<unsigned long long>(address),
@@ -1925,9 +1913,9 @@ struct TrieEntry {
       printf("\n");
   }
   ConstString name;
-  uint64_t address;
-  uint64_t flags;
-  uint64_t other;
+  uint64_t address = LLDB_INVALID_ADDRESS;
+  uint64_t flags = 0;
+  uint64_t other = 0;
   ConstString import_name;
 };
 
@@ -2677,8 +2665,7 @@ size_t ObjectFileMachO::ParseSymtab() {
 
     // Next we need to determine the correct path for the dyld shared cache.
 
-    ArchSpec header_arch;
-    GetArchitecture(header_arch);
+    ArchSpec header_arch = GetArchitecture();
     char dsc_path[PATH_MAX];
     char dsc_path_development[PATH_MAX];
 
@@ -2876,9 +2863,12 @@ size_t ObjectFileMachO::ParseSymtab() {
                      nlist_index++) {
                   /////////////////////////////
                   {
-                    struct nlist_64 nlist;
-                    if (!ParseNList(dsc_local_symbols_data, nlist_data_offset, nlist_byte_size, nlist)
+                    llvm::Optional<struct nlist_64> nlist_maybe =
+                        ParseNList(dsc_local_symbols_data, nlist_data_offset,
+                                   nlist_byte_size);
+                    if (!nlist_maybe)
                       break;
+                    struct nlist_64 nlist = *nlist_maybe;
 
                     SymbolType type = eSymbolTypeInvalid;
                     const char *symbol_name = dsc_local_symbols_data.PeekCStr(
@@ -4698,7 +4688,7 @@ size_t ObjectFileMachO::ParseSymtab() {
             if (sym_idx >= num_syms)
               sym = symtab->Resize(++num_syms);
             sym[sym_idx].SetID(synthetic_sym_id++);
-            sym[sym_idx].GetMangled() = Mangled(e.entry.name, true);
+            sym[sym_idx].GetMangled() = Mangled(e.entry.name);
             sym[sym_idx].SetType(type);
             sym[sym_idx].SetIsSynthetic(true);
             sym[sym_idx].GetAddressRef().SetSection(symbol_section);

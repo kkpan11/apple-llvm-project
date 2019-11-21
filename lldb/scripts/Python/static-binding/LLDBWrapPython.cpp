@@ -83197,7 +83197,6 @@ static swig_type_info _swigt__p_std__shared_ptrT_lldb_private__StreamFile_t = {"
 static swig_type_info _swigt__p_std__shared_ptrT_lldb_private__Stream_t = {"_p_std__shared_ptrT_lldb_private__Stream_t", "std::shared_ptr< lldb_private::Stream > *|lldb::StreamSP *", 0, 0, (void*)0, 0};
 static swig_type_info _swigt__p_std__shared_ptrT_lldb_private__StringSummaryFormat_t = {"_p_std__shared_ptrT_lldb_private__StringSummaryFormat_t", "lldb::StringTypeSummaryImplSP *|std::shared_ptr< lldb_private::StringSummaryFormat > *", 0, 0, (void*)0, 0};
 static swig_type_info _swigt__p_std__shared_ptrT_lldb_private__StructuredDataPlugin_t = {"_p_std__shared_ptrT_lldb_private__StructuredDataPlugin_t", "lldb::StructuredDataPluginSP *|std::shared_ptr< lldb_private::StructuredDataPlugin > *", 0, 0, (void*)0, 0};
-static swig_type_info _swigt__p_std__shared_ptrT_lldb_private__SwiftASTContext_t = {"_p_std__shared_ptrT_lldb_private__SwiftASTContext_t", "lldb::SwiftASTContextSP *|std::shared_ptr< lldb_private::SwiftASTContext > *", 0, 0, (void*)0, 0};
 static swig_type_info _swigt__p_std__shared_ptrT_lldb_private__SymbolContextSpecifier_t = {"_p_std__shared_ptrT_lldb_private__SymbolContextSpecifier_t", "lldb::SymbolContextSpecifierSP *|std::shared_ptr< lldb_private::SymbolContextSpecifier > *", 0, 0, (void*)0, 0};
 static swig_type_info _swigt__p_std__shared_ptrT_lldb_private__SymbolFileType_t = {"_p_std__shared_ptrT_lldb_private__SymbolFileType_t", "lldb::SymbolFileTypeSP *|std::shared_ptr< lldb_private::SymbolFileType > *", 0, 0, (void*)0, 0};
 static swig_type_info _swigt__p_std__shared_ptrT_lldb_private__SymbolFile_t = {"_p_std__shared_ptrT_lldb_private__SymbolFile_t", "lldb::SymbolFileSP *|std::shared_ptr< lldb_private::SymbolFile > *", 0, 0, (void*)0, 0};
@@ -83457,7 +83456,6 @@ static swig_type_info *swig_type_initial[] = {
   &_swigt__p_std__shared_ptrT_lldb_private__Stream_t,
   &_swigt__p_std__shared_ptrT_lldb_private__StringSummaryFormat_t,
   &_swigt__p_std__shared_ptrT_lldb_private__StructuredDataPlugin_t,
-  &_swigt__p_std__shared_ptrT_lldb_private__SwiftASTContext_t,
   &_swigt__p_std__shared_ptrT_lldb_private__SymbolContextSpecifier_t,
   &_swigt__p_std__shared_ptrT_lldb_private__SymbolFileType_t,
   &_swigt__p_std__shared_ptrT_lldb_private__SymbolFile_t,
@@ -83717,7 +83715,6 @@ static swig_cast_info _swigc__p_std__shared_ptrT_lldb_private__StreamFile_t[] = 
 static swig_cast_info _swigc__p_std__shared_ptrT_lldb_private__Stream_t[] = {  {&_swigt__p_std__shared_ptrT_lldb_private__Stream_t, 0, 0, 0},{0, 0, 0, 0}};
 static swig_cast_info _swigc__p_std__shared_ptrT_lldb_private__StringSummaryFormat_t[] = {  {&_swigt__p_std__shared_ptrT_lldb_private__StringSummaryFormat_t, 0, 0, 0},{0, 0, 0, 0}};
 static swig_cast_info _swigc__p_std__shared_ptrT_lldb_private__StructuredDataPlugin_t[] = {  {&_swigt__p_std__shared_ptrT_lldb_private__StructuredDataPlugin_t, 0, 0, 0},{0, 0, 0, 0}};
-static swig_cast_info _swigc__p_std__shared_ptrT_lldb_private__SwiftASTContext_t[] = {  {&_swigt__p_std__shared_ptrT_lldb_private__SwiftASTContext_t, 0, 0, 0},{0, 0, 0, 0}};
 static swig_cast_info _swigc__p_std__shared_ptrT_lldb_private__SymbolContextSpecifier_t[] = {  {&_swigt__p_std__shared_ptrT_lldb_private__SymbolContextSpecifier_t, 0, 0, 0},{0, 0, 0, 0}};
 static swig_cast_info _swigc__p_std__shared_ptrT_lldb_private__SymbolFileType_t[] = {  {&_swigt__p_std__shared_ptrT_lldb_private__SymbolFileType_t, 0, 0, 0},{0, 0, 0, 0}};
 static swig_cast_info _swigc__p_std__shared_ptrT_lldb_private__SymbolFile_t[] = {  {&_swigt__p_std__shared_ptrT_lldb_private__SymbolFile_t, 0, 0, 0},{0, 0, 0, 0}};
@@ -83977,7 +83974,6 @@ static swig_cast_info *swig_cast_initial[] = {
   _swigc__p_std__shared_ptrT_lldb_private__Stream_t,
   _swigc__p_std__shared_ptrT_lldb_private__StringSummaryFormat_t,
   _swigc__p_std__shared_ptrT_lldb_private__StructuredDataPlugin_t,
-  _swigc__p_std__shared_ptrT_lldb_private__SwiftASTContext_t,
   _swigc__p_std__shared_ptrT_lldb_private__SymbolContextSpecifier_t,
   _swigc__p_std__shared_ptrT_lldb_private__SymbolFileType_t,
   _swigc__p_std__shared_ptrT_lldb_private__SymbolFile_t,
