@@ -648,8 +648,6 @@ public:
 
   CompilerType GetCanonicalType(lldb::opaque_compiler_type_t type) override;
 
-  CompilerType GetInstanceType(lldb::opaque_compiler_type_t type) override;
-
   CompilerType
   GetFullyUnqualifiedType(lldb::opaque_compiler_type_t type) override;
 
@@ -693,10 +691,6 @@ public:
 
   // If the current object represents a typedef type, get the underlying type
   CompilerType GetTypedefedType(lldb::opaque_compiler_type_t type) override;
-
-  CompilerType GetUnboundType(lldb::opaque_compiler_type_t type) override;
-
-  static CompilerType RemoveFastQualifiers(const CompilerType &type);
 
   // Create related types using the current type's AST
   CompilerType GetBasicTypeFromAST(lldb::BasicType basic_type) override;

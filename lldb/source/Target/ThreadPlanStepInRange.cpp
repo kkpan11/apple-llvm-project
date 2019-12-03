@@ -408,18 +408,21 @@ bool ThreadPlanStepInRange::FrameMatchesAvoidCriteria() {
   StackFrame *frame = GetThread().GetStackFrameAtIndex(0).get();
 
   // Check the library list first, as that's cheapest:
+  bool libraries_say_avoid = false;
+
   FileSpecList libraries_to_avoid(GetThread().GetLibrariesToAvoid());
   size_t num_libraries = libraries_to_avoid.GetSize();
-  bool libraries_say_avoid = false;
-  SymbolContext sc(frame->GetSymbolContext(eSymbolContextModule));
-  FileSpec frame_library(sc.module_sp->GetFileSpec());
+  if (num_libraries > 0) {
+    SymbolContext sc(frame->GetSymbolContext(eSymbolContextModule));
+    FileSpec frame_library(sc.module_sp->GetFileSpec());
 
-  if (frame_library) {
-    for (size_t i = 0; i < num_libraries; i++) {
-      const FileSpec &file_spec(libraries_to_avoid.GetFileSpecAtIndex(i));
-      if (FileSpec::Equal(file_spec, frame_library, false)) {
-        libraries_say_avoid = true;
-        break;
+    if (frame_library) {
+      for (size_t i = 0; i < num_libraries; i++) {
+        const FileSpec &file_spec(libraries_to_avoid.GetFileSpecAtIndex(i));
+        if (FileSpec::Equal(file_spec, frame_library, false)) {
+          libraries_say_avoid = true;
+          break;
+        }
       }
     }
   }
@@ -467,7 +470,7 @@ bool ThreadPlanStepInRange::DefaultShouldStopHereCallback(
   should_stop_here = ThreadPlanShouldStopHere::DefaultShouldStopHereCallback(
       current_plan, flags, operation, status, baton);
   if (!should_stop_here)
-    return false;
+    return should_stop_here;
 
   if (should_stop_here && current_plan->GetKind() == eKindStepInRange &&
       operation == eFrameCompareYounger) {

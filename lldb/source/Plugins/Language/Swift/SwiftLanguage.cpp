@@ -1225,9 +1225,8 @@ std::unique_ptr<Language::TypeScavenger> SwiftLanguage::GetTypeScavenger() {
               auto ast_ctx = target->GetScratchSwiftASTContext(
                   error, *exe_scope, create_on_demand);
               if (ast_ctx) {
-                const bool is_mangled = true;
                 ConstString cs_input{input};
-                Mangled mangled(cs_input, is_mangled);
+                Mangled mangled(cs_input);
                 if (mangled.GuessLanguage() == eLanguageTypeSwift) {
                   Status error;
                   auto candidate =
@@ -1264,7 +1263,7 @@ std::unique_ptr<Language::TypeScavenger> SwiftLanguage::GetTypeScavenger() {
                   CompilerType result_type(result_sp->GetCompilerType());
                   if (Flags(result_type.GetTypeInfo())
                           .AllSet(eTypeIsSwift | eTypeIsMetatype))
-                    result_type = result_type.GetInstanceType();
+                    result_type = SwiftASTContext::GetInstanceType(result_type);
                   results.insert(TypeOrDecl(result_type));
                 }
               }
@@ -1342,7 +1341,7 @@ std::unique_ptr<Language::TypeScavenger> SwiftLanguage::GetTypeScavenger() {
                              name_parts.size() == 1 &&
                              name_parts.front() == module->getName().str())
                     results.insert(
-                        CompilerType(swift::ModuleType::get(module)));
+                        ToCompilerType(swift::ModuleType::get(module)));
                 }
               };
 
@@ -1489,7 +1488,7 @@ LazyBool SwiftLanguage::IsLogicalTrue(ValueObject &valobj, Status &error) {
   Scalar scalar_value;
 
   auto swift_ty = GetCanonicalSwiftType(valobj.GetCompilerType());
-  CompilerType valobj_type(swift_ty);
+  CompilerType valobj_type = ToCompilerType(swift_ty);
   Flags type_flags(valobj_type.GetTypeInfo());
   if (llvm::isa<SwiftASTContext>(valobj_type.GetTypeSystem())) {
     if (type_flags.AllSet(eTypeIsStructUnion) &&

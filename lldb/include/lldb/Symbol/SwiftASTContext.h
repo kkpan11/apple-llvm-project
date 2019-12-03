@@ -15,6 +15,7 @@
 
 #include "Plugins/ExpressionParser/Swift/SwiftPersistentExpressionState.h"
 #include "lldb/Core/ClangForward.h"
+#include "lldb/Core/SwiftForward.h"
 #include "lldb/Core/ThreadSafeDenseMap.h"
 #include "lldb/Core/ThreadSafeDenseSet.h"
 #include "lldb/Symbol/CompilerType.h"
@@ -65,6 +66,8 @@ class SwiftEnumDescriptor;
 namespace lldb_private {
 
 struct SourceModule;
+
+CompilerType ToCompilerType(swift::Type qual_type);
 
 class SwiftASTContext : public TypeSystem {
 public:
@@ -125,6 +128,8 @@ public:
 
   ~SwiftASTContext();
 
+  const std::string &GetDescription() const;
+
   // PluginInterface functions
   ConstString GetPluginName() override;
 
@@ -162,6 +167,8 @@ public:
   swift::SourceManager &GetSourceManager();
 
   swift::LangOptions &GetLanguageOptions();
+
+  swift::TypeCheckerOptions &GetTypeCheckerOptions();
 
   swift::DiagnosticEngine &GetDiagnosticEngine();
 
@@ -326,6 +333,7 @@ public:
   CompilerType ImportType(CompilerType &type, Status &error);
 
   swift::ClangImporter *GetClangImporter();
+  swift::DWARFImporterDelegate *GetDWARFImporterDelegate();
 
   struct TupleElement {
     ConstString element_name;
@@ -534,7 +542,8 @@ public:
 
   CompilerType GetCanonicalType(void *type) override;
 
-  CompilerType GetInstanceType(void *type) override;
+  static CompilerType GetInstanceType(CompilerType ct);
+  CompilerType GetInstanceType(void *type);
 
   // Returns -1 if this isn't a function of if the function doesn't have a
   // prototype. Returns a value >override if there is a prototype.
@@ -606,10 +615,11 @@ public:
 
   size_t GetNumTemplateArguments(void *type) override;
 
-  lldb::GenericKind GetGenericArgumentKind(void *type, size_t idx) override;
+  lldb::GenericKind GetGenericArgumentKind(void *type, size_t idx);
   CompilerType GetUnboundGenericType(void *type, size_t idx);
   CompilerType GetBoundGenericType(void *type, size_t idx);
-  CompilerType GetGenericArgumentType(void *type, size_t idx) override;
+  static CompilerType GetGenericArgumentType(CompilerType ct, size_t idx);
+  CompilerType GetGenericArgumentType(void *type, size_t idx);
 
   CompilerType GetTypeForFormatters(void *type) override;
 
@@ -694,7 +704,9 @@ public:
   // If the current object represents a typedef type, get the underlying type
   CompilerType GetTypedefedType(void *type) override;
 
-  CompilerType GetUnboundType(lldb::opaque_compiler_type_t type) override;
+  CompilerType GetUnboundType(lldb::opaque_compiler_type_t type);
+
+  std::string GetSuperclassName(const CompilerType &superclass_type);
 
   CompilerType GetTypeForDecl(void *opaque_decl) override;
 

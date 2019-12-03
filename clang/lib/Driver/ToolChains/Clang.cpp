@@ -2850,6 +2850,10 @@ static void RenderModulesOptions(Compilation &C, const Driver &D,
           std::string("-fprebuilt-module-path=") + A->getValue()));
       A->claim();
     }
+    if (Args.hasFlag(options::OPT_fmodules_validate_input_files_content,
+                     options::OPT_fno_modules_validate_input_files_content,
+                     false))
+      CmdArgs.push_back("-fvalidate-ast-input-files-content");
   }
 
   // -fmodule-name specifies the module that is currently being built (or
@@ -4949,6 +4953,10 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
       Std && (Std->containsValue("c++2a") || Std->containsValue("c++latest"));
   RenderModulesOptions(C, D, Args, Input, Output, CmdArgs, HaveModules);
 
+  if (Args.hasFlag(options::OPT_fpch_validate_input_files_content,
+                   options::OPT_fno_pch_validate_input_files_content, false))
+    CmdArgs.push_back("-fvalidate-ast-input-files-content");
+
   Args.AddLastArg(CmdArgs, options::OPT_fexperimental_new_pass_manager,
                   options::OPT_fno_experimental_new_pass_manager);
 
@@ -5179,6 +5187,9 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     if (A) {
       CmdArgs.push_back(A->getValue());
     } else {
+      bool hasMultipleArchs =
+          Triple.isOSDarwin() && // Only supported on Darwin platforms.
+          Args.getAllArgValues(options::OPT_arch).size() > 1;
       SmallString<128> F;
 
       if (Args.hasArg(options::OPT_c) || Args.hasArg(options::OPT_S)) {
@@ -5201,6 +5212,22 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
           F += "-";
           F += JA.getOffloadingArch();
         }
+      }
+
+      // If we're having more than one "-arch", we should name the files
+      // differently so that every cc1 invocation writes to a different file.
+      // We're doing that by appending "-<arch>" with "<arch>" being the arch
+      // name from the triple.
+      if (hasMultipleArchs) {
+        // First, remember the extension.
+        SmallString<64> OldExtension = llvm::sys::path::extension(F);
+        // then, remove it.
+        llvm::sys::path::replace_extension(F, "");
+        // attach -<arch> to it.
+        F += "-";
+        F += Triple.getArchName();
+        // put back the extension.
+        llvm::sys::path::replace_extension(F, OldExtension);
       }
 
       std::string Extension = "opt.";
