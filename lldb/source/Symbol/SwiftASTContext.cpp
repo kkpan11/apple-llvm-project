@@ -876,7 +876,7 @@ SwiftASTContext::~SwiftASTContext() {
     // to be destroyed before the swift::ASTContext is destroyed.
     if (TargetSP target_sp = m_target_wp.lock())
       if (ProcessSP process_sp = target_sp->GetProcessSP())
-        if (auto *runtime = SwiftLanguageRuntime::Get(*process_sp))
+        if (auto *runtime = SwiftLanguageRuntime::Get(process_sp))
           runtime->ReleaseAssociatedRemoteASTContext(ctx);
 
     GetASTMap().Erase(ctx);
@@ -3324,11 +3324,12 @@ public:
       decl_context.push_back({CompilerContextKind::Module, module_cs});
     // Swift doesn't keep track of submodules.
     decl_context.push_back({CompilerContextKind::AnyModule, ConstString()});
-    decl_context.push_back({GetCompilerContextKind(kind), name_cs});
+    decl_context.push_back({GetCompilerContextKind(kind), ConstString(name)});
+    llvm::DenseSet<SymbolFile *> searched_symbol_files;
     auto search = [&](Module &module) {
-      return module.FindTypes(decl_context,
-                              ClangASTContext::GetSupportedLanguagesForTypes(),
-                              clang_types);
+      module.FindTypes(decl_context,
+                       ClangASTContext::GetSupportedLanguagesForTypes(),
+                       searched_symbol_files, clang_types);
     };
     if (Module *module = m_swift_ast_ctx.GetModule())
       search(*module);
@@ -3920,7 +3921,7 @@ void SwiftASTContext::LoadModule(swift::ModuleDecl *swift_module,
       return;
     }
 
-    SwiftLanguageRuntime *runtime = SwiftLanguageRuntime::Get(process);
+    SwiftLanguageRuntime *runtime = SwiftLanguageRuntime::Get(&process);
     if (runtime && runtime->IsInLibraryNegativeCache(library_name))
       return;
 
@@ -4096,7 +4097,7 @@ bool SwiftASTContext::LoadLibraryUsingPaths(
     StreamString &all_dlopen_errors) {
   VALID_OR_RETURN(false);
 
-  SwiftLanguageRuntime *runtime = SwiftLanguageRuntime::Get(process);
+  SwiftLanguageRuntime *runtime = SwiftLanguageRuntime::Get(&process);
   if (!runtime) {
     all_dlopen_errors.PutCString(
         "Can't load Swift libraries without a language runtime.");
@@ -5430,7 +5431,7 @@ static CompilerType BindAllArchetypes(CompilerType type,
   if (!exe_scope)
     return type;
   auto *frame = exe_scope->CalculateStackFrame().get();
-  auto *runtime = SwiftLanguageRuntime::Get(*exe_scope->CalculateProcess());
+  auto *runtime = SwiftLanguageRuntime::Get(exe_scope->CalculateProcess());
   if (!frame || !runtime)
     return type;
   ExecutionContext exe_ctx;
@@ -6231,7 +6232,7 @@ SwiftASTContext::GetBitSize(lldb::opaque_compiler_type_t type,
   // Ask the dynamic type system.
   if (!exe_scope)
     return {};
-  if (auto *runtime = SwiftLanguageRuntime::Get(*exe_scope->CalculateProcess()))
+  if (auto *runtime = SwiftLanguageRuntime::Get(exe_scope->CalculateProcess()))
     return runtime->GetBitSize({this, type});
   return {};
 }
@@ -6264,7 +6265,7 @@ SwiftASTContext::GetByteStride(lldb::opaque_compiler_type_t type,
   // Ask the dynamic type system.
   if (!exe_scope)
     return {};
-  if (auto *runtime = SwiftLanguageRuntime::Get(*exe_scope->CalculateProcess()))
+  if (auto *runtime = SwiftLanguageRuntime::Get(exe_scope->CalculateProcess()))
     return runtime->GetByteStride({this, type});
   return {};
 }
@@ -6295,7 +6296,7 @@ llvm::Optional<size_t> SwiftASTContext::GetTypeBitAlign(void *type,
   // Ask the dynamic type system.
   if (!exe_scope)
     return {};
-  if (auto *runtime = SwiftLanguageRuntime::Get(*exe_scope->CalculateProcess()))
+  if (auto *runtime = SwiftLanguageRuntime::Get(exe_scope->CalculateProcess()))
     return runtime->GetBitAlignment({this, type});
   return {};
 }
@@ -7088,7 +7089,7 @@ static llvm::Optional<uint64_t> GetInstanceVariableOffset_Metadata(
     return {};
   }
 
-  SwiftLanguageRuntime *runtime = SwiftLanguageRuntime::Get(*process);
+  SwiftLanguageRuntime *runtime = SwiftLanguageRuntime::Get(process);
   if (!runtime) {
     LOG_PRINTF(LIBLLDB_LOG_TYPES, "no runtime");
     return {};
