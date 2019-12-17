@@ -1267,6 +1267,12 @@ def AnalysisOrderChecker : Checker<"AnalysisOrder">,
                   Released,
                   Hide>,
     CmdLineOption<Boolean,
+                  "PointerEscape",
+                  "",
+                  "false",
+                  Released,
+                  Hide>,
+    CmdLineOption<Boolean,
                   "*",
                   "Enables all callbacks.",
                   "false",
@@ -1341,6 +1347,11 @@ def ExplodedGraphViewer : Checker<"ViewExplodedGraph">,
 
 def ReportStmts : Checker<"ReportStmts">,
   HelpText<"Emits a warning for every statement.">,
+  Documentation<NotDocumented>;
+
+def DebugIteratorModeling : Checker<"DebugIteratorModeling">,
+  HelpText<"Check the analyzer's understanding of C++ iterators">,
+  Dependencies<[IteratorModeling]>,
   Documentation<NotDocumented>;
 
 } // end "debug"

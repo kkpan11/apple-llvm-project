@@ -2135,6 +2135,11 @@ CFGBlock *CFGBuilder::Visit(Stmt * S, AddStmtChoice asc,
     default:
       return VisitStmt(S, asc);
 
+    case Stmt::ImplicitValueInitExprClass:
+      if (BuildOpts.OmitImplicitValueInitializers)
+        return Block;
+      return VisitStmt(S, asc);
+
     case Stmt::AddrLabelExprClass:
       return VisitAddrLabelExpr(cast<AddrLabelExpr>(S), asc);
 
@@ -5877,6 +5882,10 @@ const Expr *CFGBlock::getLastCondition() const {
   // Also, if this method was called on a block that doesn't have 2 successors,
   // this block doesn't have retrievable condition.
   if (succ_size() < 2)
+    return nullptr;
+
+  // FIXME: Is there a better condition expression we can return in this case?
+  if (size() == 0)
     return nullptr;
 
   auto StmtElem = rbegin()->getAs<CFGStmt>();
