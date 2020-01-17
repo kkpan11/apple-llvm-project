@@ -175,7 +175,7 @@ doCodeCompletion(SourceFile &SF, StringRef EnteredCode,
 
   Ctx.SourceMgr.setCodeCompletionPoint(BufferID, CodeCompletionOffset);
 
-  const unsigned OriginalDeclCount = SF.Decls.size();
+  const unsigned OriginalDeclCount = SF.getTopLevelDecls().size();
 
   PersistentParserState PersistentState;
   bool Done;
@@ -186,7 +186,7 @@ doCodeCompletion(SourceFile &SF, StringRef EnteredCode,
 
   performCodeCompletionSecondPass(PersistentState, *CompletionCallbacksFactory);
 
-  SF.Decls.resize(OriginalDeclCount);
+  SF.truncateTopLevelDecls(OriginalDeclCount);
 
   Ctx.SourceMgr.clearCodeCompletionPoint();
 
@@ -310,7 +310,7 @@ SwiftCompleteCode(SwiftASTContext &SwiftCtx,
     PersistentExpressionState.GetAllDecls(PersistentDecls);
     PreviousDeclsFile->Decls.clear();
     for (auto *PersistentDecl : PersistentDecls)
-      PreviousDeclsFile->Decls.push_back(PersistentDecl);
+      PreviousDeclsFile->addTopLevelDecl(PersistentDecl);
     PreviousDeclsFile->clearLookupCache();
   }
 
@@ -327,19 +327,19 @@ SwiftCompleteCode(SwiftASTContext &SwiftCtx,
     AugmentedCode += '\0';
     const unsigned BufferID =
         Ctx.SourceMgr.addMemBufferCopy(AugmentedCode, "<REPL Input>");
-    const unsigned OriginalDeclCount = EnteredCodeFile->Decls.size();
+    const unsigned OriginalDeclCount = EnteredCodeFile->getTopLevelDecls().size();
     PersistentParserState PersistentState;
     bool Done;
     do {
       parseIntoSourceFile(*EnteredCodeFile, BufferID, &Done, nullptr,
                           &PersistentState);
     } while (!Done);
-    for (auto it = EnteredCodeFile->Decls.begin() + OriginalDeclCount;
-         it != EnteredCodeFile->Decls.end(); it++)
+    for (auto it = EnteredCodeFile->getTopLevelDecls().begin() + OriginalDeclCount;
+         it != EnteredCodeFile->getTopLevelDecls().end(); it++)
       if (auto *NewValueDecl = dyn_cast<ValueDecl>(*it))
         NewDecls.FindAndConstruct(NewValueDecl->getBaseName().getIdentifier())
             .second.push_back(NewValueDecl);
-    EnteredCodeFile->Decls.resize(OriginalDeclCount);
+    EnteredCodeFile->truncateTopLevelDecls(OriginalDeclCount);
 
     // Reset the error state because it's only relevant to the code that we just
     // processed, which now gets thrown away.
@@ -360,9 +360,9 @@ SwiftCompleteCode(SwiftASTContext &SwiftCtx,
           return true;
       return false;
     };
+
     PreviousDeclsFile->Decls.erase(
-        std::remove_if(PreviousDeclsFile->Decls.begin(),
-                       PreviousDeclsFile->Decls.end(), ContainedInNewDecls),
+        std::remove_if(PreviousDeclsFile->Decls.begin(), PreviousDeclsFile->Decls.end(), ContainedInNewDecls),
         PreviousDeclsFile->Decls.end());
     PreviousDeclsFile->clearLookupCache();
   }
