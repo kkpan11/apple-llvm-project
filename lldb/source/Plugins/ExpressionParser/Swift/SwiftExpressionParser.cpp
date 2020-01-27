@@ -915,6 +915,8 @@ static swift::ASTContext *SetupASTContext(
   if (repl || !playground)
     swift_ast_context->GetLanguageOptions().EnableThrowWithoutTry = true;
 
+  swift_ast_context->GetIRGenOptions().OutputKind =
+      swift::IRGenOutputKind::Module;
   // SWIFT_ENABLE_TENSORFLOW
   // FIXME: we have come to rely on the optimizations in Jupyter notebooks.  We
   // will leave them here even though the upstream does not have them turned on.
