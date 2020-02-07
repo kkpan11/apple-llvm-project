@@ -219,16 +219,15 @@ class TestSwiftCompletions(TestBase):
             }
             Base.""",
             ["ReplacedStruct", "ReplacedStruct", "Type", "init()", "self"])
-        # Asking for a completion again adds another copy of the type.
+        # Asking for a completion again does not add another copy of the type.
         self.assertCompletions(
             """
             extension Base {
               struct ReplacedStruct {}
             }
             Base.""",
-            ["ReplacedStruct", "ReplacedStruct", "ReplacedStruct", "Type",
-             "init()", "self"])
-        # Executing the extension adds another copy of the type.
+            ["ReplacedStruct", "ReplacedStruct", "Type", "init()", "self"])
+        # Executing the extension does not add another copy of the type.
         self.evaluate("""
                       extension Base {
                         struct ReplacedStruct {}
@@ -236,8 +235,7 @@ class TestSwiftCompletions(TestBase):
                       """)
         self.assertCompletions(
             """Base.""",
-            ["ReplacedStruct", "ReplacedStruct", "ReplacedStruct",
-             "ReplacedStruct", "Type", "init()", "self"])
+            ["ReplacedStruct", "ReplacedStruct", "Type", "init()", "self"])
 
         # === TF-249: Crashes when completing a keypath naming a struct with a
         #             private field ===
