@@ -159,260 +159,170 @@ public:
   }
 };
 
-/// Calculates completions at the end of `EnteredCode`.
-static unsigned
-doCodeCompletion(SourceFile &SF, StringRef EnteredCode,
-                 CodeCompletionCallbacksFactory *CompletionCallbacksFactory) {
-  ASTContext &Ctx = SF.getASTContext();
-  DiagnosticSuppression SuppressedDiags(Ctx.Diags);
-
-  std::string AugmentedCode = EnteredCode.str();
-  AugmentedCode += '\0';
-  const unsigned BufferID =
-      Ctx.SourceMgr.addMemBufferCopy(AugmentedCode, "<REPL Input>");
-
-  const unsigned CodeCompletionOffset = AugmentedCode.size() - 1;
-
-  Ctx.SourceMgr.setCodeCompletionPoint(BufferID, CodeCompletionOffset);
-
-  const unsigned OriginalDeclCount = SF.getTopLevelDecls().size();
-
-  PersistentParserState PersistentState;
-  bool Done;
-  do {
-    parseIntoSourceFile(SF, BufferID, &Done, nullptr, &PersistentState);
-  } while (!Done);
-  performTypeChecking(SF, OriginalDeclCount);
-
-  performCodeCompletionSecondPass(PersistentState, *CompletionCallbacksFactory);
-
-  SF.truncateTopLevelDecls(OriginalDeclCount);
-
-  Ctx.SourceMgr.clearCodeCompletionPoint();
-
-  // Reset the error state because it's only relevant to the code that we just
-  // processed, which now gets thrown away.
-  Ctx.Diags.resetHadAnyError();
-
-  return BufferID;
-}
-
-/// Adds an empty `SourceFile` of the specified `Kind` to the given `Module`.
-/// If `BufferIdentifier` is nonempty, creates an empty buffer with that
-/// identifier, and associates it with the `SourceFile`.
-static void AddSourceFile(ASTContext &Ctx, ModuleDecl *Module,
-                          SourceFileKind Kind,
-                          StringRef BufferIdentifier = "") {
-  Optional<unsigned> BufferID;
-  if (!BufferIdentifier.empty())
-    BufferID = Ctx.SourceMgr.addMemBufferCopy("", BufferIdentifier);
-  SourceFile *SF = new (Ctx) SourceFile(
-      *Module, Kind, BufferID, SourceFile::ImplicitModuleImportKind::Stdlib,
-      /*Keep tokens*/ false);
-  SF->ASTStage = SourceFile::TypeChecked;
-  Module->addFile(*SF);
-}
-
-static SourceFile *GetSingleSourceFile(ModuleDecl *Module,
-                                       SourceFileKind Kind) {
-  SourceFile *Result = nullptr;
-  for (auto *File : Module->getFiles()) {
-    auto *SF = dyn_cast<SourceFile>(File);
-    if (!SF)
-      continue;
-    if (SF->Kind != Kind)
-      continue;
-    assert(!Result && "multiple source files of the requested kind");
-    Result = SF;
+/// Returns the offset of the completion prefix.
+///
+/// The Swift compiler completion functions only complete full
+/// identifiers/keyword, so we must strip this prefix off of the entered code
+/// before asking for a completion.
+///
+/// For example:
+///
+///   EnteredCode = "foo.ba"
+///     indices      012345
+///   FindCompletionOffset = 4
+///
+///   EnteredCode = "foo."
+///     indices      0123
+///   FindCompletionOffset = 4
+///
+///   EnteredCode = "foo"
+///     indices      012
+///   FindCompletionOffset = 0
+static unsigned FindCompletionPrefixOffset(StringRef EnteredCode) {
+  for (int i = EnteredCode.size() - 1; i >= 0; --i) {
+    char c = EnteredCode[i];
+    if (c != '_' && !std::isalnum(c))
+      return i + 1;
   }
-  return Result;
+  return 0;
 }
 
 CompletionResponse
 SwiftCompleteCode(SwiftASTContext &SwiftCtx,
                   SwiftPersistentExpressionState &PersistentExpressionState,
                   StringRef EnteredCode) {
-  Status Error;
-  ASTContext &Ctx = *SwiftCtx.GetASTContext();
+  Status error;
+  ASTContext &ctx = *SwiftCtx.GetASTContext();
 
-  // == Prepare a module and source files ==
+  // Remove the completion prefix from the entered code, and allocate a
+  // null-terminated buffer for it.
+  unsigned completionOffset = FindCompletionPrefixOffset(EnteredCode);
+  std::string completionCodeTerminated =
+      EnteredCode.substr(0, completionOffset);
+  completionCodeTerminated += '\0';
+  const unsigned completionCodeBufferID = ctx.SourceMgr.addMemBufferCopy(
+      completionCodeTerminated, "<Completion Input>");
 
-  // Get or create the module that we do completions in.
-  const char *CompletionsModuleName = "completions";
-  ModuleDecl *CompletionsModule = nullptr;
-  auto CompletionsModuleIt =
-      SwiftCtx.GetModuleCache().find(CompletionsModuleName);
-  if (CompletionsModuleIt != SwiftCtx.GetModuleCache().end())
-    CompletionsModule = CompletionsModuleIt->second;
-  if (!CompletionsModule) {
-    static ConstString CompletionsModuleConstString(CompletionsModuleName);
-    SourceModule CompletionsModuleInfo;
-    CompletionsModuleInfo.path.push_back(CompletionsModuleConstString);
-    CompletionsModule = SwiftCtx.CreateModule(CompletionsModuleInfo, Error);
-    if (!CompletionsModule)
-      return CompletionResponse::error("could not make completions module");
+  // Set up the following AST:
+  //
+  //   completionsModule
+  //     completionCodeFile - file containing the code that we're completing
+  //     persistentDeclFile - file containing persistent declarations
+  //
+  // (Persistent declarations are declarations from previous REPL executions).
+  auto *completionsModule =
+      ModuleDecl::create(ctx.getIdentifier("CodeCompletion"), ctx);
+  auto &completionCodeFile = *new (ctx) SourceFile(
+      *completionsModule, SourceFileKind::REPL, completionCodeBufferID,
+      SourceFile::ImplicitModuleImportKind::None);
+  completionsModule->addFile(completionCodeFile);
+  auto &persistentDeclFile = *new (ctx) SourceFile(
+      *completionsModule, SourceFileKind::Library,
+      ctx.SourceMgr.addMemBufferCopy("", "<Persistent Decls>"),
+      SourceFile::ImplicitModuleImportKind::None);
+  completionsModule->addFile(persistentDeclFile);
+  persistentDeclFile.ASTStage = SourceFile::TypeChecked;
 
-    // This file accumulates all of the "hand imports" (imports that the user
-    // made in previous executions). We also put the current entered code in
-    // this file.
-    AddSourceFile(Ctx, CompletionsModule, SourceFileKind::REPL);
-
-    // We reset this file with the persistent decls every completion request.
-    // We give this file a buffer with an identifier to disambiguate it from the
-    // other file, because `SourceFile::getPrivateDiscriminator` relies on
-    // buffer identifiers to disambiguate files.
-    AddSourceFile(Ctx, CompletionsModule, SourceFileKind::Library,
-                  "<Previous Decls>");
+  // Parse `completionCodeFile`. Note that the Swift compiler completion
+  // infrastructure requires that we set the code completion point before
+  // parsing the file, so we set it now.
+  ctx.SourceMgr.setCodeCompletionPoint(completionCodeBufferID,
+                                       completionOffset);
+  PersistentParserState completionCodeFileParserState;
+  {
+    DiagnosticTransaction diagTxn(ctx.Diags);
+    parseIntoSourceFile(completionCodeFile, completionCodeBufferID,
+                        &completionCodeFileParserState);
   }
 
-  // This file accumulates all of the "hand imports" (imports that the user
-  // made in previous executions). We also put the current entered code in
-  // this file.
-  SourceFile *EnteredCodeFile =
-      GetSingleSourceFile(CompletionsModule, SourceFileKind::REPL);
-  assert(EnteredCodeFile);
-
-  // Accumulate new hand imports into the file.
+  // Accumulate hand imports into `completionCodeFile`. (Hand imports are
+  // imports imported in previous REPL executions).
   {
-    // First, construct a set of imports that we already have, so that we can
-    // avoid duplicate imports.
-    std::set<ModuleDecl *> ExistingImportSet;
-    SmallVector<ModuleDecl::ImportedModule, 8> ExistingImports;
-    ModuleDecl::ImportFilter importFilter(ModuleDecl::ImportFilterKind::Private);
-    importFilter |= ModuleDecl::ImportFilterKind::Public;
-    EnteredCodeFile->getImportedModules(ExistingImports, importFilter);
-    for (auto &ExistingImport : ExistingImports)
-      ExistingImportSet.insert(std::get<1>(ExistingImport));
-
-    // Next, add new imports into the file.
-    SmallVector<SourceFile::ImportedModuleDesc, 8> NewImports;
-    for (const ConstString ModuleName : PersistentExpressionState.GetHandLoadedModules()) {
-      SourceModule ModuleInfo;
-      ModuleInfo.path.push_back(ModuleName);
-      ModuleDecl *Module = SwiftCtx.GetModule(ModuleInfo, Error);
-      if (!Module) continue;
-      if (ExistingImportSet.find(Module) != ExistingImportSet.end()) continue;
-      NewImports.push_back(SourceFile::ImportedModuleDesc(
-          std::make_pair(ModuleDecl::AccessPathTy(), Module),
+    SmallVector<SourceFile::ImportedModuleDesc, 8> handImports;
+    for (const ConstString moduleName :
+         PersistentExpressionState.GetHandLoadedModules()) {
+      SourceModule moduleInfo;
+      moduleInfo.path.push_back(moduleName);
+      ModuleDecl *module = SwiftCtx.GetModule(moduleInfo, error);
+      if (!module)
+        continue;
+      handImports.push_back(SourceFile::ImportedModuleDesc(
+          std::make_pair(ModuleDecl::AccessPathTy(), module),
           SourceFile::ImportOptions()));
     }
-    EnteredCodeFile->addImports(NewImports);
+    completionCodeFile.addImports(handImports);
   }
 
-  // We reset this file with the persistent decls every completion request.
-  SourceFile *PreviousDeclsFile =
-      GetSingleSourceFile(CompletionsModule, SourceFileKind::Library);
-  assert(PreviousDeclsFile);
-
-  // Reset the decls to the persistent decls.
+  // Set the decls in `persistentDeclFile` to the persistent declarations.
   {
-    std::vector<Decl *> PersistentDecls;
-    PersistentExpressionState.GetAllDecls(PersistentDecls);
-    PreviousDeclsFile->Decls.clear();
-    for (auto *PersistentDecl : PersistentDecls)
-      PreviousDeclsFile->addTopLevelDecl(PersistentDecl);
-    PreviousDeclsFile->clearLookupCache();
-  }
+    // We exclude persistent decls that are also present in
+    // `completionCodeFile`, so that declarations that have been re-declared in
+    // the user's current code take precedence over persistent declarations.
+    DenseMap<Identifier, SmallVector<ValueDecl *, 1>> newDecls;
+    for (auto it = completionCodeFile.getTopLevelDecls().begin();
+         it != completionCodeFile.getTopLevelDecls().end(); it++)
+      if (auto *newValueDecl = dyn_cast<ValueDecl>(*it))
+        newDecls.FindAndConstruct(newValueDecl->getBaseName().getIdentifier())
+            .second.push_back(newValueDecl);
 
-  // `PreviousDeclsFile` might now contain decls that a re-defined in
-  // `EnteredCode`. We want to remove these so that the completion results only
-  // include results from the new definitions. To do this, we parse the
-  // `EnteredCode` to get a list of decls and then remove these decls from
-  // `PreviousDeclsFile`.
-  {
-    // Parse `EnteredCode` to populate `NewDecls`.
-    DenseMap<Identifier, SmallVector<ValueDecl *, 1>> NewDecls;
-    DiagnosticSuppression SuppressedDiags(Ctx.Diags);
-    std::string AugmentedCode = EnteredCode.str();
-    AugmentedCode += '\0';
-    const unsigned BufferID =
-        Ctx.SourceMgr.addMemBufferCopy(AugmentedCode, "<REPL Input>");
-    const unsigned OriginalDeclCount = EnteredCodeFile->getTopLevelDecls().size();
-    PersistentParserState PersistentState;
-    bool Done;
-    do {
-      parseIntoSourceFile(*EnteredCodeFile, BufferID, &Done, nullptr,
-                          &PersistentState);
-    } while (!Done);
-    for (auto it = EnteredCodeFile->getTopLevelDecls().begin() + OriginalDeclCount;
-         it != EnteredCodeFile->getTopLevelDecls().end(); it++)
-      if (auto *NewValueDecl = dyn_cast<ValueDecl>(*it))
-        NewDecls.FindAndConstruct(NewValueDecl->getBaseName().getIdentifier())
-            .second.push_back(NewValueDecl);
-    EnteredCodeFile->truncateTopLevelDecls(OriginalDeclCount);
-
-    // Reset the error state because it's only relevant to the code that we just
-    // processed, which now gets thrown away.
-    Ctx.Diags.resetHadAnyError();
-
-    // Subtract `NewDecls` from the decls in `PreviousDeclsFile`.
-    auto ContainedInNewDecls = [&](Decl *OldDecl) -> bool {
-      auto *OldValueDecl = dyn_cast<ValueDecl>(OldDecl);
-      if (!OldValueDecl)
+    auto containedInNewDecls = [&](Decl *oldDecl) -> bool {
+      auto *oldValueDecl = dyn_cast<ValueDecl>(oldDecl);
+      if (!oldValueDecl)
         return false;
-      auto NewDeclsLookup =
-          NewDecls.find(OldValueDecl->getBaseName().getIdentifier());
-      if (NewDeclsLookup == NewDecls.end())
+      auto newDeclsLookup =
+          newDecls.find(oldValueDecl->getBaseName().getIdentifier());
+      if (newDeclsLookup == newDecls.end())
         return false;
-      for (auto *NewDecl : NewDeclsLookup->second)
-        if (conflicting(NewDecl->getOverloadSignature(),
-                        OldValueDecl->getOverloadSignature()))
+      for (auto *newDecl : newDeclsLookup->second)
+        if (conflicting(newDecl->getOverloadSignature(),
+                        oldValueDecl->getOverloadSignature()))
           return true;
       return false;
     };
 
-    PreviousDeclsFile->Decls.erase(
-        std::remove_if(PreviousDeclsFile->Decls.begin(), PreviousDeclsFile->Decls.end(), ContainedInNewDecls),
-        PreviousDeclsFile->Decls.end());
-    PreviousDeclsFile->clearLookupCache();
-  }
-
-  // == Compute the completions ==
-
-  // Set up `Response` to collect results, and set up a callback handler that
-  // puts the results into `Response`.
-  CompletionResponse Response;
-  CodeCompletionConsumer Consumer(Response);
-  CodeCompletionCache CompletionCache;
-  CodeCompletionContext CompletionContext(CompletionCache);
-  std::unique_ptr<CodeCompletionCallbacksFactory> CompletionCallbacksFactory(
-      ide::makeCodeCompletionCallbacksFactory(CompletionContext, Consumer));
-
-  // Not sure what this first call to `doCodeCompletion` is for. It seems not to
-  // return any results, but perhaps it prepares the buffer in some useful way
-  // so that the next call works.
-  const unsigned BufferID = doCodeCompletion(*EnteredCodeFile, EnteredCode,
-                                             CompletionCallbacksFactory.get());
-
-  // Now we tokenize it, and we treat the last token as a prefix for the
-  // completion that we are looking for. We request completions for the code
-  // with the last token removed. This gives us a bunch of completions that fit
-  // in the context where the last token is, but these completions are not
-  // filtered to match the prefix. So we filter them.
-  auto Tokens = tokenize(Ctx.LangOpts, Ctx.SourceMgr, BufferID);
-  if (!Tokens.empty() && Tokens.back().is(tok::code_complete))
-    Tokens.pop_back();
-  if (!Tokens.empty()) {
-    Token &LastToken = Tokens.back();
-    if (LastToken.is(tok::identifier) || LastToken.isKeyword()) {
-      Response.Prefix = LastToken.getText();
-      const unsigned Offset =
-          Ctx.SourceMgr.getLocOffsetInBuffer(LastToken.getLoc(), BufferID);
-      doCodeCompletion(*EnteredCodeFile, EnteredCode.substr(0, Offset),
-                       CompletionCallbacksFactory.get());
-
-      std::vector<CompletionMatch> FilteredMatches;
-      for (auto &Match : Response.Matches) {
-        if (!StringRef(Match.Insertable).startswith(Response.Prefix))
-          continue;
-        FilteredMatches.push_back(
-            {Match.Display, Match.Insertable.substr(Response.Prefix.size())});
-      }
-      Response.Matches = FilteredMatches;
+    std::vector<Decl *> persistentDecls;
+    PersistentExpressionState.GetAllDecls(persistentDecls);
+    for (auto *decl : persistentDecls) {
+      if (containedInNewDecls(decl))
+        continue;
+      persistentDeclFile.addTopLevelDecl(decl);
     }
   }
 
-  return Response;
+  // Set up `response` to collect results, and set up a callback handler that
+  // puts the results into `response`.
+  CompletionResponse response;
+  CodeCompletionConsumer consumer(response);
+  CodeCompletionCache completionCache;
+  CodeCompletionContext completionContext(completionCache);
+  std::unique_ptr<CodeCompletionCallbacksFactory> completionCallbacksFactory(
+      ide::makeCodeCompletionCallbacksFactory(completionContext, consumer));
+
+  // The prefix of the identifer/keyword that is being completed.
+  response.Prefix = EnteredCode.substr(completionOffset);
+
+  // Actually ask for completions.
+  {
+    DiagnosticTransaction diagTxn(ctx.Diags);
+    performTypeChecking(completionCodeFile);
+    performCodeCompletionSecondPass(completionCodeFileParserState,
+                                    *completionCallbacksFactory);
+  }
+
+  // Filter the matches for those matching the prefix.
+  std::vector<CompletionMatch> filteredMatches;
+  for (auto &Match : response.Matches) {
+    if (!StringRef(Match.Insertable).startswith(response.Prefix))
+      continue;
+    filteredMatches.push_back(
+        {Match.Display, Match.Insertable.substr(response.Prefix.size())});
+  }
+  response.Matches = filteredMatches;
+
+  // Clean up.
+  ctx.SourceMgr.clearCodeCompletionPoint();
+
+  return response;
 }
 
 } // namespace lldb_private
