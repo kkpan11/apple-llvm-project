@@ -118,7 +118,7 @@ class CompilerInstance : public ModuleLoader {
   std::unique_ptr<llvm::Timer> FrontendTimer;
 
   /// The ASTReader, if one exists.
-  IntrusiveRefCntPtr<ASTReader> ModuleManager;
+  IntrusiveRefCntPtr<ASTReader> TheASTReader;
 
   /// The module dependency collector for crashdumps
   std::shared_ptr<ModuleDependencyCollector> ModuleDepCollector;
@@ -152,6 +152,12 @@ class CompilerInstance : public ModuleLoader {
 
   /// One or more modules failed to build.
   bool ModuleBuildFailed = false;
+
+  /// The stream for verbose output if owned, otherwise nullptr.
+  std::unique_ptr<raw_ostream> OwnedVerboseOutputStream;
+
+  /// The stream for verbose output.
+  raw_ostream *VerboseOutputStream = &llvm::errs();
 
   /// Holds information about the output file.
   ///
@@ -225,9 +231,6 @@ public:
   ///
   /// \param Act - The action to execute.
   /// \return - True on success.
-  //
-  // FIXME: This function should take the stream to write any debugging /
-  // verbose output to as an argument.
   //
   // FIXME: Eliminate the llvm_shutdown requirement, that should either be part
   // of the context or else not CompilerInstance specific.
@@ -363,6 +366,21 @@ public:
     assert(Diagnostics && Diagnostics->getClient() &&
            "Compiler instance has no diagnostic client!");
     return *Diagnostics->getClient();
+  }
+
+  /// }
+  /// @name VerboseOutputStream
+  /// }
+
+  /// Replace the current stream for verbose output.
+  void setVerboseOutputStream(raw_ostream &Value);
+
+  /// Replace the current stream for verbose output.
+  void setVerboseOutputStream(std::unique_ptr<raw_ostream> Value);
+
+  /// Get the current stream for verbose output.
+  raw_ostream &getVerboseOutputStream() {
+    return *VerboseOutputStream;
   }
 
   /// }
@@ -529,7 +547,7 @@ public:
   /// @name Module Management
   /// {
 
-  IntrusiveRefCntPtr<ASTReader> getModuleManager() const;
+  IntrusiveRefCntPtr<ASTReader> getASTReader() const;
   void setModuleManager(IntrusiveRefCntPtr<ASTReader> Reader);
 
   std::shared_ptr<ModuleDependencyCollector> getModuleDepCollector() const;
@@ -797,16 +815,34 @@ public:
   }
 
   // Create module manager.
-  void createModuleManager();
+  void createASTReader();
 
   bool loadModuleFile(StringRef FileName);
 
+private:
+  /// Find a module, potentially compiling it, before reading its AST.  This is
+  /// the guts of loadModule.
+  ///
+  /// For prebuilt modules, the Module is not expected to exist in
+  /// HeaderSearch's ModuleMap.  If a ModuleFile by that name is in the
+  /// ModuleManager, then it will be loaded and looked up.
+  ///
+  /// For implicit modules, the Module is expected to already be in the
+  /// ModuleMap.  First attempt to load it from the given path on disk.  If that
+  /// fails, defer to compileModuleAndReadAST, which will first build and then
+  /// load it.
+  ModuleLoadResult findOrCompileModuleAndReadAST(StringRef ModuleName,
+                                                 SourceLocation ImportLoc,
+                                                 SourceLocation ModuleNameLoc,
+                                                 bool IsInclusionDirective);
+
+public:
   ModuleLoadResult loadModule(SourceLocation ImportLoc, ModuleIdPath Path,
                               Module::NameVisibilityKind Visibility,
                               bool IsInclusionDirective) override;
 
-  void loadModuleFromSource(SourceLocation ImportLoc, StringRef ModuleName,
-                            StringRef Source) override;
+  void createModuleFromSource(SourceLocation ImportLoc, StringRef ModuleName,
+                              StringRef Source) override;
 
   void makeModuleVisible(Module *Mod, Module::NameVisibilityKind Visibility,
                          SourceLocation ImportLoc) override;

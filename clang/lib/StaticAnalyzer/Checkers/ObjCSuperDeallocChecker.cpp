@@ -187,10 +187,10 @@ void ObjCSuperDeallocChecker::reportUseAfterDealloc(SymbolRef Sym,
     Desc = "Use of 'self' after it has been deallocated";
 
   // Generate the report.
-  auto BR = llvm::make_unique<PathSensitiveBugReport>(*DoubleSuperDeallocBugType,
+  auto BR = std::make_unique<PathSensitiveBugReport>(*DoubleSuperDeallocBugType,
                                                      Desc, ErrNode);
   BR->addRange(S->getSourceRange());
-  BR->addVisitor(llvm::make_unique<SuperDeallocBRVisitor>(Sym));
+  BR->addVisitor(std::make_unique<SuperDeallocBRVisitor>(Sym));
   C.emitReport(std::move(BR));
 }
 

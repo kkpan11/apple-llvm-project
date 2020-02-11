@@ -23,7 +23,7 @@ AnalysisManager::AnalysisManager(ASTContext &ASTCtx,
     : AnaCtxMgr(
           ASTCtx, Options.UnoptimizedCFG,
           Options.ShouldIncludeImplicitDtorsInCFG,
-          /*AddInitializers=*/true,
+          /*addInitializers=*/true,
           Options.ShouldIncludeTemporaryDtorsInCFG,
           Options.ShouldIncludeLifetimeInCFG,
           // Adding LoopExit elements to the CFG is a requirement for loop
@@ -43,6 +43,9 @@ AnalysisManager::AnalysisManager(ASTContext &ASTCtx,
       CreateConstraintMgr(constraintmgr), CheckerMgr(checkerMgr),
       options(Options) {
   AnaCtxMgr.getCFGBuildOptions().setAllAlwaysAdd();
+  AnaCtxMgr.getCFGBuildOptions().OmitImplicitValueInitializers = true;
+  AnaCtxMgr.getCFGBuildOptions().AddCXXDefaultInitExprInAggregates =
+      Options.ShouldIncludeDefaultInitForAggregates;
 }
 
 AnalysisManager::~AnalysisManager() {

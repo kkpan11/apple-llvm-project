@@ -15,7 +15,7 @@ std::unique_ptr<llvm::raw_pwrite_stream>
 InMemoryOutputFileSystem::CreateTemporaryBuffer(llvm::StringRef OutputPath,
                                                 std::string *TemporaryPath) {
   assert(TemporaryPath);
-  llvm::MutexGuard locked(Mu);
+  std::lock_guard<std::mutex> locked(Mu);
   llvm::StringMap<llvm::SmallVector<char, 0>>::iterator it;
   bool inserted = false;
   unsigned suffix = 0;
@@ -29,11 +29,11 @@ InMemoryOutputFileSystem::CreateTemporaryBuffer(llvm::StringRef OutputPath,
     inserted = result.second;
     suffix += 1;
   }
-  return llvm::make_unique<llvm::raw_svector_ostream>(it->getValue());
+  return std::make_unique<llvm::raw_svector_ostream>(it->getValue());
 }
 
 void InMemoryOutputFileSystem::DeleteTemporaryBuffer(llvm::StringRef TemporaryPath) {
-  llvm::MutexGuard locked(Mu);
+  std::lock_guard<std::mutex> locked(Mu);
   auto it = TemporaryBuffers.find(TemporaryPath);
   assert(it != TemporaryBuffers.end());
   TemporaryBuffers.erase(it);
@@ -41,7 +41,7 @@ void InMemoryOutputFileSystem::DeleteTemporaryBuffer(llvm::StringRef TemporaryPa
 
 void InMemoryOutputFileSystem::FinalizeTemporaryBuffer(llvm::StringRef OutputPath,
                              llvm::StringRef TemporaryPath) {
-  llvm::MutexGuard locked(Mu);
+  std::lock_guard<std::mutex> locked(Mu);
   auto it = TemporaryBuffers.find(TemporaryPath);
   assert(it != TemporaryBuffers.end());
   auto memoryBuffer = llvm::MemoryBuffer::getMemBufferCopy(

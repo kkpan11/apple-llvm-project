@@ -57,7 +57,8 @@ llvm::Triple::ArchType darwin::getArchTypeForMachOArchName(StringRef Str) {
       .Cases("arm", "armv4t", "armv5", "armv6", "armv6m", llvm::Triple::arm)
       .Cases("armv7", "armv7em", "armv7k", "armv7m", llvm::Triple::arm)
       .Cases("armv7s", "xscale", llvm::Triple::arm)
-      .Case("arm64", llvm::Triple::aarch64)
+      .Cases("arm64", "arm64e", llvm::Triple::aarch64)
+      .Case("arm64_32", llvm::Triple::aarch64_32)
       .Case("r600", llvm::Triple::r600)
       .Case("amdgcn", llvm::Triple::amdgcn)
       .Case("nvptx", llvm::Triple::nvptx)
@@ -72,8 +73,13 @@ void darwin::setTripleTypeForMachOArchName(llvm::Triple &T, StringRef Str) {
   llvm::ARM::ArchKind ArchKind = llvm::ARM::parseArch(Str);
   T.setArch(Arch);
 
-  if (Str == "x86_64h")
+  // Preserve the original string for those -arch options that aren't
+  // reflected in ArchKind but still affect code generation.  It's not
+  // clear why these aren't just reflected in ArchKind, though.
+  if (Str == "x86_64h" || Str == "arm64e")
     T.setArchName(Str);
+
+  // These arches aren't really Darwin even if we're using a Darwin toolchain.
   else if (ArchKind == llvm::ARM::ArchKind::ARMV6M ||
            ArchKind == llvm::ARM::ArchKind::ARMV7M ||
            ArchKind == llvm::ARM::ArchKind::ARMV7EM) {
@@ -123,8 +129,7 @@ void darwin::Assembler::ConstructJob(Compilation &C, const JobAction &JA,
   AddMachOArch(Args, CmdArgs);
 
   // Use -force_cpusubtype_ALL on x86 by default.
-  if (getToolChain().getArch() == llvm::Triple::x86 ||
-      getToolChain().getArch() == llvm::Triple::x86_64 ||
+  if (getToolChain().getTriple().isX86() ||
       Args.hasArg(options::OPT_force__cpusubtype__ALL))
     CmdArgs.push_back("-force_cpusubtype_ALL");
 
@@ -147,7 +152,7 @@ void darwin::Assembler::ConstructJob(Compilation &C, const JobAction &JA,
   // asm_final spec is empty.
 
   const char *Exec = Args.MakeArgString(getToolChain().GetProgramPath("as"));
-  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs, Inputs));
+  C.addCommand(std::make_unique<Command>(JA, *this, Exec, CmdArgs, Inputs));
 }
 
 void darwin::MachOTool::anchor() {}
@@ -459,7 +464,7 @@ void darwin::Linker::ConstructJob(Compilation &C, const JobAction &JA,
     const char *Exec =
         Args.MakeArgString(getToolChain().GetProgramPath("touch"));
     CmdArgs.push_back(Output.getFilename());
-    C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs, None));
+    C.addCommand(std::make_unique<Command>(JA, *this, Exec, CmdArgs, None));
     return;
   }
 
@@ -661,7 +666,7 @@ void darwin::Linker::ConstructJob(Compilation &C, const JobAction &JA,
 
   const char *Exec = Args.MakeArgString(getToolChain().GetLinkerPath());
   std::unique_ptr<Command> Cmd =
-      llvm::make_unique<Command>(JA, *this, Exec, CmdArgs, Inputs);
+      std::make_unique<Command>(JA, *this, Exec, CmdArgs, Inputs);
   Cmd->setInputFileList(std::move(InputFileList));
   C.addCommand(std::move(Cmd));
 }
@@ -685,7 +690,7 @@ void darwin::Lipo::ConstructJob(Compilation &C, const JobAction &JA,
   }
 
   const char *Exec = Args.MakeArgString(getToolChain().GetProgramPath("lipo"));
-  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs, Inputs));
+  C.addCommand(std::make_unique<Command>(JA, *this, Exec, CmdArgs, Inputs));
 }
 
 void darwin::Dsymutil::ConstructJob(Compilation &C, const JobAction &JA,
@@ -705,7 +710,7 @@ void darwin::Dsymutil::ConstructJob(Compilation &C, const JobAction &JA,
 
   const char *Exec =
       Args.MakeArgString(getToolChain().GetProgramPath("dsymutil"));
-  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs, Inputs));
+  C.addCommand(std::make_unique<Command>(JA, *this, Exec, CmdArgs, Inputs));
 }
 
 void darwin::VerifyDebug::ConstructJob(Compilation &C, const JobAction &JA,
@@ -728,7 +733,7 @@ void darwin::VerifyDebug::ConstructJob(Compilation &C, const JobAction &JA,
 
   const char *Exec =
       Args.MakeArgString(getToolChain().GetProgramPath("dwarfdump"));
-  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs, Inputs));
+  C.addCommand(std::make_unique<Command>(JA, *this, Exec, CmdArgs, Inputs));
 }
 
 MachO::MachO(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
@@ -745,7 +750,7 @@ Darwin::Darwin(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
       CudaInstallation(D, Triple, Args) {}
 
 types::ID MachO::LookupTypeForExtension(StringRef Ext) const {
-  types::ID Ty = types::lookupTypeForExtension(Ext);
+  types::ID Ty = ToolChain::LookupTypeForExtension(Ext);
 
   // Darwin always preprocesses assembly files (unless -x is used explicitly).
   if (Ty == types::TY_PP_Asm)
@@ -758,9 +763,9 @@ bool MachO::HasNativeLLVMSupport() const { return true; }
 
 ToolChain::CXXStdlibType Darwin::GetDefaultCXXStdlibType() const {
   // Default to use libc++ on OS X 10.9+ and iOS 7+.
-  if ((isTargetMacOS() && !isMacosxVersionLT(10, 9)) ||
-       (isTargetIOSBased() && !isIPhoneOSVersionLT(7, 0)) ||
-       isTargetWatchOSBased())
+  if ((isTargetMacOSBased() && !isMacosxVersionLT(10, 9)) ||
+      (isTargetIOSBased() && !isIPhoneOSVersionLT(7, 0)) ||
+      isTargetWatchOSBased())
     return ToolChain::CST_Libcxx;
 
   return ToolChain::CST_Libstdcxx;
@@ -784,7 +789,7 @@ bool Darwin::hasBlocksRuntime() const {
   else if (isTargetIOSBased())
     return !isIPhoneOSVersionLT(3, 2);
   else {
-    assert(isTargetMacOS() && "unexpected darwin target");
+    assert(isTargetMacOSBased() && "unexpected darwin target");
     return !isMacosxVersionLT(10, 6);
   }
 }
@@ -839,8 +844,14 @@ StringRef MachO::getMachOArchName(const ArgList &Args) const {
   default:
     return getDefaultUniversalArchName();
 
-  case llvm::Triple::aarch64:
+  case llvm::Triple::aarch64_32:
+    return "arm64_32";
+
+  case llvm::Triple::aarch64: {
+    if (getTriple().getArchName() == "arm64e")
+      return "arm64e";
     return "arm64";
+  }
 
   case llvm::Triple::thumb:
   case llvm::Triple::arm:
@@ -874,13 +885,12 @@ std::string Darwin::ComputeEffectiveClangTriple(const ArgList &Args,
     Str += "watchos";
   else if (isTargetTvOSBased())
     Str += "tvos";
-  else if (isTargetIOSBased())
+  else if (isTargetIOSBased() || isTargetMacABI())
     Str += "ios";
   else
     Str += "macosx";
-  Str += getTargetVersion().getAsString();
+  Str += getOSTargetVersion().getAsString();
   Triple.setOSName(Str);
-
   return Triple.getTriple();
 }
 
@@ -923,8 +933,39 @@ void DarwinClang::addClangWarningOptions(ArgStringList &CC1Args) const {
 
     // For iOS and watchOS, also error about implicit function declarations,
     // as that can impact calling conventions.
-    if (!isTargetMacOS())
+    if (!isTargetMacOSBased())
       CC1Args.push_back("-Werror=implicit-function-declaration");
+  }
+}
+
+void DarwinClang::addClangTargetOptions(
+  const llvm::opt::ArgList &DriverArgs, llvm::opt::ArgStringList &CC1Args,
+  Action::OffloadKind DeviceOffloadKind) const{
+
+  Darwin::addClangTargetOptions(DriverArgs, CC1Args, DeviceOffloadKind);
+
+  // On arm64e, enable pointer authentication (for the return address and
+  // indirect calls), as well as usage of the intrinsics.
+  if (getArchName() == "arm64e") {
+    if (!DriverArgs.hasArg(options::OPT_fptrauth_returns,
+                           options::OPT_fno_ptrauth_returns))
+      CC1Args.push_back("-fptrauth-returns");
+
+    if (!DriverArgs.hasArg(options::OPT_fptrauth_intrinsics,
+                           options::OPT_fno_ptrauth_intrinsics))
+      CC1Args.push_back("-fptrauth-intrinsics");
+
+    if (!DriverArgs.hasArg(options::OPT_fptrauth_calls,
+                           options::OPT_fno_ptrauth_calls))
+      CC1Args.push_back("-fptrauth-calls");
+
+    if (!DriverArgs.hasArg(options::OPT_fptrauth_indirect_gotos,
+                           options::OPT_fno_ptrauth_indirect_gotos))
+      CC1Args.push_back("-fptrauth-indirect-gotos");
+
+    if (!DriverArgs.hasArg(options::OPT_fptrauth_auth_traps,
+                           options::OPT_fno_ptrauth_auth_traps))
+      CC1Args.push_back("-fptrauth-auth-traps");
   }
 }
 
@@ -943,7 +984,7 @@ static StringRef getXcodeDeveloperPath(StringRef PathIntoXcode) {
 void DarwinClang::AddLinkARCArgs(const ArgList &Args,
                                  ArgStringList &CmdArgs) const {
   // Avoid linking compatibility stubs on i386 mac.
-  if (isTargetMacOS() && getArch() == llvm::Triple::x86)
+  if (isTargetMacOSBased() && getArch() == llvm::Triple::x86)
     return;
 
   ObjCRuntime runtime = getDefaultObjCRuntime(/*nonfragile*/ true);
@@ -996,7 +1037,7 @@ void DarwinClang::AddLinkARCArgs(const ArgList &Args,
 
 unsigned DarwinClang::GetDefaultDwarfVersion() const {
   // Default to use DWARF 2 on OS X 10.10 / iOS 8 and lower.
-  if ((isTargetMacOS() && isMacosxVersionLT(10, 11)) ||
+  if ((isTargetMacOSBased() && isMacosxVersionLT(10, 11)) ||
       (isTargetIOSBased() && isIPhoneOSVersionLT(9)))
     return 2;
   return 4;
@@ -1069,7 +1110,6 @@ StringRef Darwin::getPlatformFamily() const {
 
 StringRef Darwin::getSDKName(StringRef isysroot) {
   // Assume SDK has path: SOME_PATH/SDKs/PlatformXX.YY.sdk
-  llvm::sys::path::const_iterator SDKDir;
   auto BeginSDK = llvm::sys::path::begin(isysroot);
   auto EndSDK = llvm::sys::path::end(isysroot);
   for (auto IT = BeginSDK; IT != EndSDK; ++IT) {
@@ -1085,6 +1125,8 @@ StringRef Darwin::getOSLibraryNameSuffix(bool IgnoreSim) const {
   case DarwinPlatformKind::MacOS:
     return "osx";
   case DarwinPlatformKind::IPhoneOS:
+    if (TargetEnvironment == MacABI)
+      return "osx";
     return TargetEnvironment == NativeEnvironment || IgnoreSim ? "ios"
                                                                : "iossim";
   case DarwinPlatformKind::TvOS:
@@ -1309,6 +1351,12 @@ struct DarwinPlatform {
 
   DarwinEnvironmentKind getEnvironment() const { return Environment; }
 
+  VersionTuple getNativeTargetVersion() const {
+    assert(Environment == DarwinEnvironmentKind::MacABI &&
+           "native target version is specified only for macabi");
+    return NativeTargetVersion;
+  }
+
   void setEnvironment(DarwinEnvironmentKind Kind) {
     Environment = Kind;
     InferSimulatorFromArch = false;
@@ -1373,21 +1421,38 @@ struct DarwinPlatform {
     llvm_unreachable("Unsupported Darwin Source Kind");
   }
 
-  static DarwinPlatform createFromTarget(const llvm::Triple &TT,
-                                         StringRef OSVersion, Arg *A) {
+  static DarwinPlatform
+  createFromTarget(const llvm::Triple &TT, StringRef OSVersion, Arg *A,
+                   const Optional<DarwinSDKInfo> &SDKInfo) {
     DarwinPlatform Result(TargetArg, getPlatformFromOS(TT.getOS()), OSVersion,
                           A);
-    switch (TT.getEnvironment()) {
-    case llvm::Triple::Simulator:
-      Result.Environment = DarwinEnvironmentKind::Simulator;
-      break;
-    default:
-      break;
-    }
     unsigned Major, Minor, Micro;
     TT.getOSVersion(Major, Minor, Micro);
     if (Major == 0)
       Result.HasOSVersion = false;
+    switch (TT.getEnvironment()) {
+    case llvm::Triple::Simulator:
+      Result.Environment = DarwinEnvironmentKind::Simulator;
+      break;
+    case llvm::Triple::MacABI: {
+      auto NativeTargetVersion = VersionTuple(10, 15);
+      if (Result.HasOSVersion && SDKInfo) {
+        const auto &VM = SDKInfo->getVersionMap().IosMac2macOSMapping;
+        // FIXME: make it a more robust lookup when upstreaming.
+        VersionTuple VV = Micro ? VersionTuple(Major, Minor, Micro)
+                                : VersionTuple(Major, Minor);
+        std::string VersionString = VV.getAsString();
+        auto It = VM.find(VersionString);
+        if (It != VM.end())
+          NativeTargetVersion = It->getValue();
+      }
+      Result.Environment = DarwinEnvironmentKind::MacABI;
+      Result.NativeTargetVersion = NativeTargetVersion;
+      break;
+    }
+    default:
+      break;
+    }
     return Result;
   }
   static DarwinPlatform createOSVersionArg(DarwinPlatformKind Platform,
@@ -1453,6 +1518,7 @@ private:
   SourceKind Kind;
   DarwinPlatformKind Platform;
   DarwinEnvironmentKind Environment = DarwinEnvironmentKind::NativeEnvironment;
+  VersionTuple NativeTargetVersion;
   std::string OSVersion;
   bool HasOSVersion = true, InferSimulatorFromArch = true;
   Arg *Argument;
@@ -1520,22 +1586,6 @@ getDeploymentTargetFromEnvironmentVariables(const Driver &TheDriver,
       Targets[I.index()] = Env;
   }
 
-  // Do not allow conflicts with the watchOS target.
-  if (!Targets[Darwin::WatchOS].empty() &&
-      (!Targets[Darwin::IPhoneOS].empty() || !Targets[Darwin::TvOS].empty())) {
-    TheDriver.Diag(diag::err_drv_conflicting_deployment_targets)
-        << "WATCHOS_DEPLOYMENT_TARGET"
-        << (!Targets[Darwin::IPhoneOS].empty() ? "IPHONEOS_DEPLOYMENT_TARGET"
-                                               : "TVOS_DEPLOYMENT_TARGET");
-  }
-
-  // Do not allow conflicts with the tvOS target.
-  if (!Targets[Darwin::TvOS].empty() && !Targets[Darwin::IPhoneOS].empty()) {
-    TheDriver.Diag(diag::err_drv_conflicting_deployment_targets)
-        << "TVOS_DEPLOYMENT_TARGET"
-        << "IPHONEOS_DEPLOYMENT_TARGET";
-  }
-
   // Allow conflicts among OSX and iOS for historical reasons, but choose the
   // default platform.
   if (!Targets[Darwin::MacOS].empty() &&
@@ -1548,6 +1598,18 @@ getDeploymentTargetFromEnvironmentVariables(const Driver &TheDriver,
     else
       Targets[Darwin::IPhoneOS] = Targets[Darwin::WatchOS] =
           Targets[Darwin::TvOS] = "";
+  } else {
+    // Don't allow conflicts in any other platform.
+    unsigned FirstTarget = llvm::array_lengthof(Targets);
+    for (unsigned I = 0; I != llvm::array_lengthof(Targets); ++I) {
+      if (Targets[I].empty())
+        continue;
+      if (FirstTarget == llvm::array_lengthof(Targets))
+        FirstTarget = I;
+      else
+        TheDriver.Diag(diag::err_drv_conflicting_deployment_targets)
+            << Targets[FirstTarget] << Targets[I];
+    }
   }
 
   for (const auto &Target : llvm::enumerate(llvm::makeArrayRef(Targets))) {
@@ -1650,9 +1712,9 @@ inferDeploymentTargetFromArch(DerivedArgList &Args, const Darwin &Toolchain,
 
   StringRef MachOArchName = Toolchain.getMachOArchName(Args);
   if (MachOArchName == "armv7" || MachOArchName == "armv7s" ||
-      MachOArchName == "arm64")
+      MachOArchName == "arm64" || MachOArchName == "arm64e")
     OSTy = llvm::Triple::IOS;
-  else if (MachOArchName == "armv7k")
+  else if (MachOArchName == "armv7k" || MachOArchName == "arm64_32")
     OSTy = llvm::Triple::WatchOS;
   else if (MachOArchName != "armv6m" && MachOArchName != "armv7m" &&
            MachOArchName != "armv7em")
@@ -1666,7 +1728,8 @@ inferDeploymentTargetFromArch(DerivedArgList &Args, const Darwin &Toolchain,
 
 /// Returns the deployment target that's specified using the -target option.
 Optional<DarwinPlatform> getDeploymentTargetFromTargetArg(
-    DerivedArgList &Args, const llvm::Triple &Triple, const Driver &TheDriver) {
+    DerivedArgList &Args, const llvm::Triple &Triple, const Driver &TheDriver,
+    const Optional<DarwinSDKInfo> &SDKInfo) {
   if (!Args.hasArg(options::OPT_target))
     return None;
   if (Triple.getOS() == llvm::Triple::Darwin ||
@@ -1674,7 +1737,8 @@ Optional<DarwinPlatform> getDeploymentTargetFromTargetArg(
     return None;
   std::string OSVersion = getOSVersion(Triple.getOS(), Triple, TheDriver);
   return DarwinPlatform::createFromTarget(Triple, OSVersion,
-                                          Args.getLastArg(options::OPT_target));
+                                          Args.getLastArg(options::OPT_target),
+                                          SDKInfo);
 }
 
 Optional<DarwinSDKInfo> parseSDKSettings(llvm::vfs::FileSystem &VFS,
@@ -1723,7 +1787,7 @@ void Darwin::AddDeploymentTarget(DerivedArgList &Args) const {
 
   // The OS and the version can be specified using the -target argument.
   Optional<DarwinPlatform> OSTarget =
-      getDeploymentTargetFromTargetArg(Args, getTriple(), getDriver());
+      getDeploymentTargetFromTargetArg(Args, getTriple(), getDriver(), SDKInfo);
   if (OSTarget) {
     Optional<DarwinPlatform> OSVersionArgTarget =
         getDeploymentTargetFromOSVersionArg(Args, getDriver());
@@ -1814,8 +1878,11 @@ void Darwin::AddDeploymentTarget(DerivedArgList &Args) const {
     if (getTriple().isArch32Bit() && Major >= 11) {
       // If the deployment target is explicitly specified, print a diagnostic.
       if (OSTarget->isExplicitlySpecified()) {
-        getDriver().Diag(diag::warn_invalid_ios_deployment_target)
-            << OSTarget->getAsString(Args, Opts);
+        if (OSTarget->getEnvironment() == MacABI)
+          getDriver().Diag(diag::err_invalid_macos_32bit_deployment_target);
+        else
+          getDriver().Diag(diag::warn_invalid_ios_deployment_target)
+              << OSTarget->getAsString(Args, Opts);
         // Otherwise, set it to 10.99.99.
       } else {
         Major = 10;
@@ -1841,19 +1908,22 @@ void Darwin::AddDeploymentTarget(DerivedArgList &Args) const {
   DarwinEnvironmentKind Environment = OSTarget->getEnvironment();
   // Recognize iOS targets with an x86 architecture as the iOS simulator.
   if (Environment == NativeEnvironment && Platform != MacOS &&
-      OSTarget->canInferSimulatorFromArch() &&
-      (getTriple().getArch() == llvm::Triple::x86 ||
-       getTriple().getArch() == llvm::Triple::x86_64))
+      OSTarget->canInferSimulatorFromArch() && getTriple().isX86())
     Environment = Simulator;
 
-  setTarget(Platform, Environment, Major, Minor, Micro);
+  VersionTuple NativeTargetVersion;
+  if (Environment == MacABI)
+    NativeTargetVersion = OSTarget->getNativeTargetVersion();
+  setTarget(Platform, Environment, Major, Minor, Micro, NativeTargetVersion);
 
   if (const Arg *A = Args.getLastArg(options::OPT_isysroot)) {
     StringRef SDK = getSDKName(A->getValue());
     if (SDK.size() > 0) {
       size_t StartVer = SDK.find_first_of("0123456789");
       StringRef SDKName = SDK.slice(0, StartVer);
-      if (!SDKName.startswith(getPlatformFamily()))
+      // Don't warn about the macabi SDK.
+      // FIXME: Can we warn here?
+      if (!SDKName.startswith(getPlatformFamily()) && Environment != MacABI)
         getDriver().Diag(diag::warn_incompatible_sysroot)
             << SDKName << getPlatformFamily();
     }
@@ -1878,7 +1948,10 @@ void DarwinClang::AddClangSystemIncludeArgs(const llvm::opt::ArgList &DriverArgs
 
   bool NoStdInc = DriverArgs.hasArg(options::OPT_nostdinc);
   bool NoStdlibInc = DriverArgs.hasArg(options::OPT_nostdlibinc);
-  bool NoBuiltinInc = DriverArgs.hasArg(options::OPT_nobuiltininc);
+  bool NoBuiltinInc = DriverArgs.hasFlag(
+      options::OPT_nobuiltininc, options::OPT_ibuiltininc, /*Default=*/false);
+  bool ForceBuiltinInc = DriverArgs.hasFlag(
+      options::OPT_ibuiltininc, options::OPT_nobuiltininc, /*Default=*/false);
 
   // Add <sysroot>/usr/local/include
   if (!NoStdInc && !NoStdlibInc) {
@@ -1888,7 +1961,7 @@ void DarwinClang::AddClangSystemIncludeArgs(const llvm::opt::ArgList &DriverArgs
   }
 
   // Add the Clang builtin headers (<resource>/include)
-  if (!NoStdInc && !NoBuiltinInc) {
+  if (!(NoStdInc && !ForceBuiltinInc) && !NoBuiltinInc) {
     SmallString<128> P(D.ResourceDir);
     llvm::sys::path::append(P, "include");
     addSystemInclude(DriverArgs, CC1Args, P);
@@ -2239,8 +2312,7 @@ DerivedArgList *MachO::TranslateArgs(const DerivedArgList &Args,
     }
   }
 
-  if (getTriple().getArch() == llvm::Triple::x86 ||
-      getTriple().getArch() == llvm::Triple::x86_64)
+  if (getTriple().isX86())
     if (!Args.hasArgNoClaim(options::OPT_mtune_EQ))
       DAL->AddJoinedArg(nullptr, Opts.getOption(options::OPT_mtune_EQ),
                         "core2");
@@ -2342,6 +2414,8 @@ void MachO::AddLinkRuntimeLibArgs(const ArgList &Args,
 bool Darwin::isAlignedAllocationUnavailable() const {
   llvm::Triple::OSType OS;
 
+  if (isTargetMacABI())
+    return TargetVersion < alignedAllocMinVersion(llvm::Triple::MacOSX);
   switch (TargetPlatform) {
   case MacOS: // Earlier than 10.13.
     OS = llvm::Triple::MacOSX;
@@ -2371,11 +2445,26 @@ void Darwin::addClangTargetOptions(const llvm::opt::ArgList &DriverArgs,
     CC1Args.push_back("-faligned-alloc-unavailable");
 
   if (SDKInfo) {
+    VersionTuple TargetVariantSDKVersion;
+    bool UseTVSDKVersionAsPrimary =
+        getTriple().getOS() == llvm::Triple::IOS &&
+        getTriple().getEnvironment() == llvm::Triple::MacABI;
+    if (UseTVSDKVersionAsPrimary) {
+      const auto &VM = SDKInfo->getVersionMap().MacOS2iOSMacMapping;
+      std::string VersionString = SDKInfo->getVersion().getAsString();
+      auto It = VM.find(VersionString);
+      if (It != VM.end())
+        TargetVariantSDKVersion = It->getValue();
+    }
+
     /// Pass the SDK version to the compiler when the SDK information is
     /// available.
     std::string Arg;
     llvm::raw_string_ostream OS(Arg);
-    OS << "-target-sdk-version=" << SDKInfo->getVersion();
+    VersionTuple SDKVersion = SDKInfo->getVersion();
+    if (UseTVSDKVersionAsPrimary)
+      std::swap(SDKVersion, TargetVariantSDKVersion);
+    OS << "-target-sdk-version=" << SDKVersion;
     CC1Args.push_back(DriverArgs.MakeArgString(OS.str()));
   }
 }
@@ -2496,12 +2585,12 @@ bool MachO::isPICDefaultForced() const {
 
 bool MachO::SupportsProfiling() const {
   // Profiling instrumentation is only supported on x86.
-  return getArch() == llvm::Triple::x86 || getArch() == llvm::Triple::x86_64;
+  return getTriple().isX86();
 }
 
 void Darwin::addMinVersionArgs(const ArgList &Args,
                                ArgStringList &CmdArgs) const {
-  VersionTuple TargetVersion = getTargetVersion();
+  VersionTuple TargetVersion = getOSTargetVersion();
 
   if (isTargetWatchOS())
     CmdArgs.push_back("-watchos_version_min");
@@ -2513,10 +2602,12 @@ void Darwin::addMinVersionArgs(const ArgList &Args,
     CmdArgs.push_back("-tvos_simulator_version_min");
   else if (isTargetIOSSimulator())
     CmdArgs.push_back("-ios_simulator_version_min");
+  else if (isTargetMacABI())
+    CmdArgs.push_back("-maccatalyst_version_min");
   else if (isTargetIOSBased())
     CmdArgs.push_back("-iphoneos_version_min");
   else {
-    assert(isTargetMacOS() && "unexpected target");
+    assert(isTargetMacOSBased() && "unexpected target");
     CmdArgs.push_back("-macosx_version_min");
   }
 
@@ -2529,11 +2620,9 @@ static const char *getPlatformName(Darwin::DarwinPlatformKind Platform,
   case Darwin::MacOS:
     return "macos";
   case Darwin::IPhoneOS:
-    if (Environment == Darwin::NativeEnvironment ||
-        Environment == Darwin::Simulator)
-      return "ios";
-    // FIXME: Add macCatalyst support here ("\"mac catalyst\"").
-    llvm_unreachable("macCatalyst isn't yet supported");
+    if (Environment == Darwin::MacABI)
+      return "mac catalyst";
+    return "ios";
   case Darwin::TvOS:
     return "tvos";
   case Darwin::WatchOS:
@@ -2544,22 +2633,41 @@ static const char *getPlatformName(Darwin::DarwinPlatformKind Platform,
 
 void Darwin::addPlatformVersionArgs(const llvm::opt::ArgList &Args,
                                     llvm::opt::ArgStringList &CmdArgs) const {
-  // -platform_version <platform> <target_version> <sdk_version>
-  // Both the target and SDK version support only up to 3 components.
-  CmdArgs.push_back("-platform_version");
-  std::string PlatformName = getPlatformName(TargetPlatform, TargetEnvironment);
-  if (TargetEnvironment == Darwin::Simulator)
-    PlatformName += "-simulator";
-  CmdArgs.push_back(Args.MakeArgString(PlatformName));
-  VersionTuple TargetVersion = getTargetVersion().withoutBuild();
-  CmdArgs.push_back(Args.MakeArgString(TargetVersion.getAsString()));
-  if (SDKInfo) {
-    VersionTuple SDKVersion = SDKInfo->getVersion().withoutBuild();
-    CmdArgs.push_back(Args.MakeArgString(SDKVersion.getAsString()));
-  } else {
-    // Use a blank SDK version if it's not present.
-    CmdArgs.push_back("0.0.0");
-  }
+  auto EmitPlatformVersionArg = [&](const VersionTuple &TV,
+                                    Darwin::DarwinPlatformKind Platform,
+                                    Darwin::DarwinEnvironmentKind Environment) {
+    // -platform_version <platform> <target_version> <sdk_version>
+    // Both the target and SDK version support only up to 3 components.
+    CmdArgs.push_back("-platform_version");
+    std::string PlatformName = getPlatformName(Platform, Environment);
+    if (Environment == Darwin::Simulator)
+      PlatformName += "-simulator";
+    CmdArgs.push_back(Args.MakeArgString(PlatformName));
+    VersionTuple TargetVersion = TV.withoutBuild();
+    // FIXME: This should be an error.
+    if (Platform == Darwin::IPhoneOS && Environment == Darwin::MacABI &&
+        TargetVersion.getMajor() < 13)
+      TargetVersion = VersionTuple(13, 0);
+    CmdArgs.push_back(Args.MakeArgString(TargetVersion.getAsString()));
+    if (SDKInfo) {
+      VersionTuple SDKVersion = SDKInfo->getVersion().withoutBuild();
+      // Use the appropriate SDK version for macCatalyst.
+      if (Platform == Darwin::IPhoneOS && Environment == Darwin::MacABI) {
+        const auto &VM = SDKInfo->getVersionMap().MacOS2iOSMacMapping;
+        auto It = VM.find(SDKVersion.getAsString());
+        if (It != VM.end())
+          SDKVersion = It->getValue();
+        else
+          SDKVersion = VersionTuple(0, 0, 0);
+      }
+      CmdArgs.push_back(Args.MakeArgString(SDKVersion.getAsString()));
+    } else {
+      // Use a blank SDK version if it's not present.
+      CmdArgs.push_back("0.0.0");
+    }
+  };
+  EmitPlatformVersionArg(getOSTargetVersion(), TargetPlatform,
+                         TargetEnvironment);
 }
 
 void Darwin::addStartObjectFileArgs(const ArgList &Args,
@@ -2598,7 +2706,7 @@ void Darwin::addStartObjectFileArgs(const ArgList &Args,
       }
     } else {
       if (Args.hasArg(options::OPT_pg) && SupportsProfiling()) {
-        if (isTargetMacOS() && isMacosxVersionLT(10, 9)) {
+        if (isTargetMacOSBased() && isMacosxVersionLT(10, 9)) {
           if (Args.hasArg(options::OPT_static) ||
               Args.hasArg(options::OPT_object) ||
               Args.hasArg(options::OPT_preload)) {
@@ -2613,11 +2721,11 @@ void Darwin::addStartObjectFileArgs(const ArgList &Args,
           // when compiling with -pg, we need to link with the gcrt1.o file,
           // so pass the -no_new_main option to tell the linker to use the
           // "start" symbol as the entry point.
-          if (isTargetMacOS() && !isMacosxVersionLT(10, 8))
+          if (isTargetMacOSBased() && !isMacosxVersionLT(10, 8))
             CmdArgs.push_back("-no_new_main");
         } else {
           getDriver().Diag(diag::err_drv_clang_unsupported_opt_pg_darwin)
-              << isTargetMacOS();
+              << isTargetMacOSBased();
         }
       } else {
         if (Args.hasArg(options::OPT_static) ||
@@ -2661,7 +2769,7 @@ void Darwin::addStartObjectFileArgs(const ArgList &Args,
 
 void Darwin::CheckObjCARC() const {
   if (isTargetIOSBased() || isTargetWatchOSBased() ||
-      (isTargetMacOS() && !isMacosxVersionLT(10, 6)))
+      (isTargetMacOSBased() && !isMacosxVersionLT(10, 6)))
     return;
   getDriver().Diag(diag::err_arc_unsupported_on_toolchain);
 }
@@ -2683,16 +2791,13 @@ SanitizerMask Darwin::getSupportedSanitizers() const {
   // Prior to 10.9, macOS shipped a version of the C++ standard library without
   // C++11 support. The same is true of iOS prior to version 5. These OS'es are
   // incompatible with -fsanitize=vptr.
-  if (!(isTargetMacOS() && isMacosxVersionLT(10, 9))
+  if (!(isTargetMacOSBased() && isMacosxVersionLT(10, 9))
       && !(isTargetIPhoneOS() && isIPhoneOSVersionLT(5, 0)))
     Res |= SanitizerKind::Vptr;
 
-  if (isTargetMacOS()) {
-    if (IsX86_64)
-      Res |= SanitizerKind::Thread;
-  } else if (isTargetIOSSimulator() || isTargetTvOSSimulator()) {
-    if (IsX86_64)
-      Res |= SanitizerKind::Thread;
+  if (IsX86_64 && (isTargetMacOSBased() || isTargetIOSSimulator() ||
+                   isTargetTvOSSimulator())) {
+    Res |= SanitizerKind::Thread;
   }
   return Res;
 }

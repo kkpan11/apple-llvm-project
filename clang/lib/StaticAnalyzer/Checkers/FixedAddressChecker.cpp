@@ -56,7 +56,7 @@ void FixedAddressChecker::checkPreStmt(const BinaryOperator *B,
                          "address will probably not be valid in all "
                          "environments or platforms."));
     auto R =
-        llvm::make_unique<PathSensitiveBugReport>(*BT, BT->getDescription(), N);
+        std::make_unique<PathSensitiveBugReport>(*BT, BT->getDescription(), N);
     R->addRange(B->getRHS()->getSourceRange());
     C.emitReport(std::move(R));
   }

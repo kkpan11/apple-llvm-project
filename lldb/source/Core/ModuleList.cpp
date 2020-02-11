@@ -25,7 +25,6 @@
 #include "lldb/Utility/Logging.h"
 #include "lldb/Utility/UUID.h"
 #include "lldb/lldb-defines.h"
-#include "lldb/lldb-private-types.h"
 
 #if defined(_WIN32)
 #include "lldb/Host/windows/PosixApi.h"
@@ -62,10 +61,13 @@ class Target;
 using namespace lldb;
 using namespace lldb_private;
 
+// BEGIN SWIFT
 static bool KeepLookingInDylinker(SymbolContextList &sc_list, size_t start_idx);
+// END SWIFT
 
 namespace {
 
+// BEGIN SWIFT
 static constexpr OptionEnumValueElement g_swift_module_loading_mode_enums[] = {
   {eSwiftModuleLoadingModePreferInterface, "prefer-interface",
     "Prefer loading Swift modules via their .swiftinterface file, but fall back "
@@ -79,6 +81,7 @@ static constexpr OptionEnumValueElement g_swift_module_loading_mode_enums[] = {
   {eSwiftModuleLoadingModeOnlySerialized, "only-serialized",
     "Only load Swift modules via their .swiftmodule file - ignore "
     ".swiftinterface files."} };
+// END SWIFT
 
 #define LLDB_PROPERTIES_modulelist
 #include "CoreProperties.inc"
@@ -98,7 +101,9 @@ ModuleListProperties::ModuleListProperties() {
   llvm::SmallString<128> path;
   clang::driver::Driver::getDefaultModuleCachePath(path);
   SetClangModulesCachePath(path);
+  // BEGIN SWIFT
   SetSwiftModuleLoadingMode(eSwiftModuleLoadingModePreferSerialized);
+  // END SWIFT
 }
 
 bool ModuleListProperties::GetEnableExternalLookup() const {
@@ -119,23 +124,27 @@ FileSpec ModuleListProperties::GetClangModulesCachePath() const {
       ->GetCurrentValue();
 }
 
+// BEGIN SWIFT
 bool ModuleListProperties::GetUseDWARFImporter() const {
   const uint32_t idx = ePropertyUseDWARFImporter;
   return m_collection_sp->GetPropertyAtIndexAsBoolean(
       NULL, idx, g_modulelist_properties[idx].default_uint_value != 0);
 }
+// END SWIFT
 
 bool ModuleListProperties::SetClangModulesCachePath(llvm::StringRef path) {
   return m_collection_sp->SetPropertyAtIndexAsString(
       nullptr, ePropertyClangModulesCachePath, path);
 }
 
+// BEGIN SWIFT
 SwiftModuleLoadingMode ModuleListProperties::GetSwiftModuleLoadingMode() const {
   const uint32_t idx = ePropertySwiftModuleLoadingMode;
   return (SwiftModuleLoadingMode)
       m_collection_sp->GetPropertyAtIndexAsEnumeration(
           nullptr, idx, g_modulelist_properties[idx].default_uint_value);
 }
+// END SWIFT
 
 bool ModuleListProperties::SetSwiftModuleLoadingMode(SwiftModuleLoadingMode mode) {
   return m_collection_sp->SetPropertyAtIndexAsEnumeration(
@@ -362,14 +371,10 @@ ModuleSP ModuleList::GetModuleAtIndexUnlocked(size_t idx) const {
   return module_sp;
 }
 
-size_t ModuleList::FindFunctions(ConstString name,
-                                 FunctionNameType name_type_mask,
-                                 bool include_symbols, bool include_inlines,
-                                 bool append,
-                                 SymbolContextList &sc_list) const {
-  if (!append)
-    sc_list.Clear();
-
+void ModuleList::FindFunctions(ConstString name,
+                               FunctionNameType name_type_mask,
+                               bool include_symbols, bool include_inlines,
+                               SymbolContextList &sc_list) const {
   const size_t old_size = sc_list.GetSize();
 
   if (name_type_mask & eFunctionNameTypeAuto) {
@@ -380,7 +385,7 @@ size_t ModuleList::FindFunctions(ConstString name,
     for (pos = m_modules.begin(); pos != end; ++pos) {
       (*pos)->FindFunctions(lookup_info.GetLookupName(), nullptr,
                             lookup_info.GetNameTypeMask(), include_symbols,
-                            include_inlines, true, sc_list);
+                            include_inlines, sc_list);
     }
 
     const size_t new_size = sc_list.GetSize();
@@ -392,15 +397,14 @@ size_t ModuleList::FindFunctions(ConstString name,
     collection::const_iterator pos, end = m_modules.end();
     for (pos = m_modules.begin(); pos != end; ++pos) {
       (*pos)->FindFunctions(name, nullptr, name_type_mask, include_symbols,
-                            include_inlines, true, sc_list);
+                            include_inlines, sc_list);
     }
   }
-  return sc_list.GetSize() - old_size;
 }
 
-size_t ModuleList::FindFunctionSymbols(ConstString name,
-                                       lldb::FunctionNameType name_type_mask,
-                                       SymbolContextList &sc_list) {
+void ModuleList::FindFunctionSymbols(ConstString name,
+                                     lldb::FunctionNameType name_type_mask,
+                                     SymbolContextList &sc_list) {
   const size_t old_size = sc_list.GetSize();
 
   if (name_type_mask & eFunctionNameTypeAuto) {
@@ -424,22 +428,22 @@ size_t ModuleList::FindFunctionSymbols(ConstString name,
       (*pos)->FindFunctionSymbols(name, name_type_mask, sc_list);
     }
   }
-
-  return sc_list.GetSize() - old_size;
 }
 
-size_t ModuleList::FindFunctions(const RegularExpression &name,
-                                 bool include_symbols, bool include_inlines,
-                                 bool append, SymbolContextList &sc_list) {
+void ModuleList::FindFunctions(const RegularExpression &name,
+                               bool include_symbols, bool include_inlines,
+                               SymbolContextList &sc_list) {
+  // BEGIN SWIFT
   const size_t initial_size = sc_list.GetSize();
+  // END SWIFT
 
   std::lock_guard<std::recursive_mutex> guard(m_modules_mutex);
   collection::const_iterator pos, end = m_modules.end();
+  // BEGIN SWIFT
   collection dylinker_modules;
   for (pos = m_modules.begin(); pos != end; ++pos) {
     if (!(*pos)->GetIsDynamicLinkEditor())
-      (*pos)->FindFunctions(name, include_symbols, include_inlines, append,
-                            sc_list);
+      (*pos)->FindFunctions(name, include_symbols, include_inlines, sc_list);
     else
       dylinker_modules.push_back(*pos);
   }
@@ -448,49 +452,40 @@ size_t ModuleList::FindFunctions(const RegularExpression &name,
   if (keep_looking) {
     end = dylinker_modules.end();
     for (pos = dylinker_modules.begin(); pos != end; pos++)
-      (*pos)->FindFunctions(name, include_symbols, include_inlines, append,
-                            sc_list);
+      (*pos)->FindFunctions(name, include_symbols, include_inlines, sc_list);
   }
-  return sc_list.GetSize() - initial_size;
+  // END SWIFT
 }
 
-size_t ModuleList::FindCompileUnits(const FileSpec &path, bool append,
-                                    SymbolContextList &sc_list) const {
-  if (!append)
-    sc_list.Clear();
-
+void ModuleList::FindCompileUnits(const FileSpec &path,
+                                  SymbolContextList &sc_list) const {
   std::lock_guard<std::recursive_mutex> guard(m_modules_mutex);
   collection::const_iterator pos, end = m_modules.end();
   for (pos = m_modules.begin(); pos != end; ++pos) {
-    (*pos)->FindCompileUnits(path, true, sc_list);
+    (*pos)->FindCompileUnits(path, sc_list);
   }
-
-  return sc_list.GetSize();
 }
 
-size_t ModuleList::FindGlobalVariables(ConstString name,
-                                       size_t max_matches,
-                                       VariableList &variable_list) const {
-  size_t initial_size = variable_list.GetSize();
+void ModuleList::FindGlobalVariables(ConstString name, size_t max_matches,
+                                     VariableList &variable_list) const {
   std::lock_guard<std::recursive_mutex> guard(m_modules_mutex);
   collection::const_iterator pos, end = m_modules.end();
   for (pos = m_modules.begin(); pos != end; ++pos) {
     (*pos)->FindGlobalVariables(name, nullptr, max_matches, variable_list);
   }
-  return variable_list.GetSize() - initial_size;
 }
 
-size_t ModuleList::FindGlobalVariables(const RegularExpression &regex,
-                                       size_t max_matches,
-                                       VariableList &variable_list) const {
-  size_t initial_size = variable_list.GetSize();
+void ModuleList::FindGlobalVariables(const RegularExpression &regex,
+                                     size_t max_matches,
+                                     VariableList &variable_list) const {
   std::lock_guard<std::recursive_mutex> guard(m_modules_mutex);
   collection::const_iterator pos, end = m_modules.end();
   for (pos = m_modules.begin(); pos != end; ++pos) {
     (*pos)->FindGlobalVariables(regex, max_matches, variable_list);
   }
-  return variable_list.GetSize() - initial_size;
 }
+
+// BEGIN SWIFT
 
 // We don't want to find symbols in the dylinker file if we've found
 // a viable candidate anywhere else.  This function looks at the symbols
@@ -521,15 +516,14 @@ static bool KeepLookingInDylinker(SymbolContextList &sc_list,
   }
   return keep_looking;
 }
+// END SWIFT
 
-size_t ModuleList::FindSymbolsWithNameAndType(ConstString name,
-                                              SymbolType symbol_type,
-                                              SymbolContextList &sc_list,
-                                              bool append) const {
+void ModuleList::FindSymbolsWithNameAndType(ConstString name,
+                                            SymbolType symbol_type,
+                                            SymbolContextList &sc_list) const {
   std::lock_guard<std::recursive_mutex> guard(m_modules_mutex);
-  if (!append)
-    sc_list.Clear();
-  size_t initial_size = sc_list.GetSize();
+  // BEGIN SWIFT
+  const size_t initial_size = sc_list.GetSize();
 
   collection::const_iterator pos, end = m_modules.end();
   collection dylinker_modules;
@@ -549,17 +543,15 @@ size_t ModuleList::FindSymbolsWithNameAndType(ConstString name,
     for (pos = dylinker_modules.begin(); pos != end; ++pos)
       (*pos)->FindSymbolsWithNameAndType(name, symbol_type, sc_list);
   }
-
-  return sc_list.GetSize() - initial_size;
+  // END SWIFT
 }
 
-size_t ModuleList::FindSymbolsMatchingRegExAndType(
+void ModuleList::FindSymbolsMatchingRegExAndType(
     const RegularExpression &regex, lldb::SymbolType symbol_type,
-    SymbolContextList &sc_list, bool append) const {
+    SymbolContextList &sc_list) const {
   std::lock_guard<std::recursive_mutex> guard(m_modules_mutex);
-  if (!append)
-    sc_list.Clear();
-  size_t initial_size = sc_list.GetSize();
+  // BEGIN SWIFT
+  const size_t initial_size = sc_list.GetSize();
 
   collection::const_iterator pos, end = m_modules.end();
   collection dylinker_modules;
@@ -577,13 +569,11 @@ size_t ModuleList::FindSymbolsMatchingRegExAndType(
     for (pos = dylinker_modules.begin(); pos != end; ++pos)
       (*pos)->FindSymbolsMatchingRegExAndType(regex, symbol_type, sc_list);
   }
-  return sc_list.GetSize() - initial_size;
+  // END SWIFT
 }
 
-size_t ModuleList::FindModules(const ModuleSpec &module_spec,
-                               ModuleList &matching_module_list) const {
-  size_t existing_matches = matching_module_list.GetSize();
-
+void ModuleList::FindModules(const ModuleSpec &module_spec,
+                             ModuleList &matching_module_list) const {
   std::lock_guard<std::recursive_mutex> guard(m_modules_mutex);
   collection::const_iterator pos, end = m_modules.end();
   for (pos = m_modules.begin(); pos != end; ++pos) {
@@ -591,7 +581,6 @@ size_t ModuleList::FindModules(const ModuleSpec &module_spec,
     if (module_sp->MatchesModuleSpec(module_spec))
       matching_module_list.Append(module_sp);
   }
-  return matching_module_list.GetSize() - existing_matches;
 }
 
 ModuleSP ModuleList::FindModule(const Module *module_ptr) const {
@@ -842,9 +831,9 @@ bool ModuleList::ModuleIsInCache(const Module *module_ptr) {
   return false;
 }
 
-size_t ModuleList::FindSharedModules(const ModuleSpec &module_spec,
-                                     ModuleList &matching_module_list) {
-  return GetSharedModuleList().FindModules(module_spec, matching_module_list);
+void ModuleList::FindSharedModules(const ModuleSpec &module_spec,
+                                   ModuleList &matching_module_list) {
+  GetSharedModuleList().FindModules(module_spec, matching_module_list);
 }
 
 size_t ModuleList::RemoveOrphanSharedModules(bool mandatory) {
@@ -879,8 +868,9 @@ Status ModuleList::GetSharedModule(const ModuleSpec &module_spec,
   // mutex list.
   if (!always_create) {
     ModuleList matching_module_list;
-    const size_t num_matching_modules =
-        shared_module_list.FindModules(module_spec, matching_module_list);
+    shared_module_list.FindModules(module_spec, matching_module_list);
+    const size_t num_matching_modules = matching_module_list.GetSize();
+
     if (num_matching_modules > 0) {
       for (size_t module_idx = 0; module_idx < num_matching_modules;
            ++module_idx) {
@@ -1032,8 +1022,8 @@ Status ModuleList::GetSharedModule(const ModuleSpec &module_spec,
     platform_module_spec.GetSymbolFileSpec() =
         located_binary_modulespec.GetSymbolFileSpec();
     ModuleList matching_module_list;
-    if (shared_module_list.FindModules(platform_module_spec,
-                                       matching_module_list) > 0) {
+    shared_module_list.FindModules(platform_module_spec, matching_module_list);
+    if (!matching_module_list.IsEmpty()) {
       module_sp = matching_module_list.GetModuleAtIndex(0);
 
       // If we didn't have a UUID in mind when looking for the object file,
@@ -1144,8 +1134,10 @@ void ModuleList::ForEach(
   }
 }
 
+// BEGIN SWIFT
 void ModuleList::ClearModuleDependentCaches() {
   std::lock_guard<std::recursive_mutex> guard(m_modules_mutex);
   for (const auto &module : m_modules)
     module->ClearModuleDependentCaches();
 }
+// END SWIFT

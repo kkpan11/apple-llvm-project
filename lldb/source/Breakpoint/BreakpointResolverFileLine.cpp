@@ -12,7 +12,6 @@
 #include "lldb/Core/Module.h"
 #include "lldb/Symbol/CompileUnit.h"
 #include "lldb/Symbol/Function.h"
-#include "lldb/Symbol/SymbolFile.h"
 #include "lldb/Utility/Log.h"
 #include "lldb/Utility/StreamString.h"
 
@@ -199,10 +198,8 @@ void BreakpointResolverFileLine::FilterContexts(SymbolContextList &sc_list,
   }
 }
 
-Searcher::CallbackReturn
-BreakpointResolverFileLine::SearchCallback(SearchFilter &filter,
-                                           SymbolContext &context,
-                                           Address *addr, bool containing) {
+Searcher::CallbackReturn BreakpointResolverFileLine::SearchCallback(
+    SearchFilter &filter, SymbolContext &context, Address *addr) {
   SymbolContextList sc_list;
 
   assert(m_breakpoint != nullptr);

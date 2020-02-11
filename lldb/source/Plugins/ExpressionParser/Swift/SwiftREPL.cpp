@@ -31,7 +31,7 @@
 #include "lldb/Target/Target.h"
 #include "lldb/Target/Thread.h"
 #include "lldb/Utility/AnsiTerminal.h"
-#include "lldb/Utility/CleanUp.h"
+#include "llvm/ADT/ScopeExit.h"
 
 #include "llvm/Support/raw_ostream.h"
 #include "swift/Basic/Version.h"
@@ -213,10 +213,10 @@ lldb::REPLSP SwiftREPL::CreateInstanceFromDebugger(Status &err,
   debugger.StartEventHandlerThread();
 
   // Destroy the process and the event handler thread after a fatal error.
-  CleanUp cleanup{[&] {
+  auto cleanup = llvm::make_scope_exit([&]() {
     process_sp->Destroy(/*force_kill=*/false);
     debugger.StopEventHandlerThread();
-  }};
+  });
 
   StateType state = process_sp->GetState();
 
@@ -258,7 +258,7 @@ lldb::REPLSP SwiftREPL::CreateInstanceFromDebugger(Status &err,
   }
 
   // Disable the cleanup, since we have a valid repl session now.
-  cleanup.disable();
+  cleanup.release();
 
   std::string swift_full_version(swift::version::getSwiftFullVersion());
   printf("Welcome to %s.\nType :help for assistance.\n",
@@ -533,8 +533,8 @@ bool SwiftREPL::PrintOneVariable(Debugger &debugger, StreamFileSP &output_sp,
   return handled;
 }
 
-void SwiftREPL::CompleteCode(const std::string &current_code,
-                             CompletionRequest &request) {
+int SwiftREPL::CompleteCode(const std::string &current_code,
+                            lldb_private::StringList &matches) {
   //----------------------------------------------------------------------g
   // If we use the target's SwiftASTContext for completion, it reaaallly
   // slows down subsequent expressions. The compiler team doesn't have time
@@ -546,14 +546,15 @@ void SwiftREPL::CompleteCode(const std::string &current_code,
     auto type_system_or_err = m_target.GetScratchTypeSystemForLanguage(eLanguageTypeSwift);
     if (!type_system_or_err) {
       llvm::consumeError(type_system_or_err.takeError());
-      return;
+      return 0;
     }
 
     auto *target_swift_ast =
-        llvm::dyn_cast_or_null<SwiftASTContext>(&*type_system_or_err);
+        llvm::dyn_cast_or_null<SwiftASTContextForExpressions>(
+            &*type_system_or_err);
     m_swift_ast = target_swift_ast;
   }
-  SwiftASTContext *swift_ast = m_swift_ast;
+  SwiftASTContextForExpressions *swift_ast = m_swift_ast;
 
   if (swift_ast) {
     swift::ASTContext *ast = swift_ast->GetASTContext();
@@ -583,56 +584,54 @@ void SwiftREPL::CompleteCode(const std::string &current_code,
       swift::SourceFile &repl_source_file =
           repl_module->getMainSourceFile(swift::SourceFileKind::REPL);
 
-      // Swift likes to give us strings to append to the current token but
-      // the CompletionRequest requires a replacement for the full current
-      // token. Fix this by getting the current token here and we attach
-      // the suffix we get from Swift.
-      std::string prefix = request.GetCursorArgumentPrefix();
       llvm::StringRef current_code_ref(current_code);
       completions.populate(repl_source_file, current_code_ref);
-
-      // The root is the unique completion we need to use, so let's add it
-      // to the completion list. As the completion is unique we can stop here.
       llvm::StringRef root = completions.getRoot();
       if (!root.empty()) {
-        request.AddCompletion(prefix + root.str(), "", CompletionMode::Partial);
-        return;
+        matches.AppendString(root.data(), root.size());
+        return 1;
       }
-
       // Otherwise, advance through the completion state machine.
       const swift::CompletionState completion_state = completions.getState();
       switch (completion_state) {
       case swift::CompletionState::CompletedRoot: {
-        // Display the completion list.
+        // We completed the root. Next step is to display the completion list.
+        matches.AppendString(""); // Empty string to indicate no completion,
+        // just display other strings that come after it
         llvm::ArrayRef<llvm::StringRef> llvm_matches =
             completions.getCompletionList();
         for (const auto &llvm_match : llvm_matches) {
-          // The completions here aren't really useful for actually completing
-          // the token but are more descriptive hints for the user
-          // (e.g. "isMultiple(of: Int) -> Bool"). They aren't useful for
-          // actually completing anything so let's use the current token as
-          // a placeholder that is always valid.
           if (!llvm_match.empty())
-            request.AddCompletion(prefix, llvm_match);
+            matches.AppendString(llvm_match.data(), llvm_match.size());
         }
+        // Don't include the empty string we appended above or we will display
+        // one
+        // too many we need to return the magical value of one less than our
+        // actual matches.
+        // TODO: modify all IOHandlerDelegate::IOHandlerComplete() to use a
+        // CompletionMatches
+        // class that wraps up the "StringList matches;" along with other smarts
+        // so we don't
+        // have to return magic values and incorrect sizes.
+        return matches.GetSize() - 1;
       } break;
 
       case swift::CompletionState::DisplayedCompletionList: {
         // Complete the next completion stem in the cycle.
-        request.AddCompletion(prefix + completions.getPreviousStem().InsertableString.str());
+        llvm::StringRef stem = completions.getPreviousStem().InsertableString;
+        matches.AppendString(stem.data(), stem.size());
       } break;
 
       case swift::CompletionState::Empty:
-      case swift::CompletionState::Unique: {
-        llvm::StringRef root = completions.getRoot();
-
-        if (!root.empty())
-          request.AddCompletion(prefix + root.str());
-      } break;
+      case swift::CompletionState::Unique:
+        // We already provided a definitive completion--nothing else to do.
+        break;
 
       case swift::CompletionState::Invalid:
         llvm_unreachable("got an invalid completion set?!");
       }
     }
   }
+
+  return matches.GetSize();
 }

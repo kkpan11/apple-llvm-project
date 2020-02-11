@@ -594,9 +594,10 @@ CXErrorCode performIndexedFileRename(
         : Symbols(Symbols), IndexedSymbols(IndexedSymbols), Lock(Lock),
           Options(Options), Result(nullptr), Err(CXError_Success) {}
 
-    clang::FrontendAction *create() override {
-      return new rename::IndexedFileOccurrenceProducer(IndexedSymbols, *this,
-                                                       Lock, Options);
+    std::unique_ptr<FrontendAction> create() override {
+      return std::unique_ptr<FrontendAction>(
+          new rename::IndexedFileOccurrenceProducer(IndexedSymbols, *this, Lock,
+                                                    Options));
     }
 
     void handleOccurrence(const rename::OldSymbolOccurrence &Occurrence,
@@ -620,7 +621,7 @@ CXErrorCode performIndexedFileRename(
 
   rename::IndexedFileRenamerLock Lock(*ClangToolConstructionMutex);
   auto Runner =
-      llvm::make_unique<ToolRunner>(Symbols, IndexedSymbols, Lock, Options);
+      std::make_unique<ToolRunner>(Symbols, IndexedSymbols, Lock, Options);
 
   // Run a clang tool on the input file.
   std::string Name = Filename.str();
@@ -706,9 +707,10 @@ CXErrorCode performIndexedSymbolSearch(
         : IndexedSymbols(IndexedSymbols), Lock(Lock), Options(Options),
           Result(nullptr) {}
 
-    clang::FrontendAction *create() override {
-      return new rename::IndexedFileOccurrenceProducer(IndexedSymbols, *this,
-                                                       Lock, Options);
+    std::unique_ptr<clang::FrontendAction> create() override {
+      return std::unique_ptr<clang::FrontendAction>(
+          new rename::IndexedFileOccurrenceProducer(IndexedSymbols, *this, Lock,
+                                                    Options));
     }
 
     void handleOccurrence(const rename::OldSymbolOccurrence &Occurrence,
@@ -725,7 +727,7 @@ CXErrorCode performIndexedSymbolSearch(
   };
 
   rename::IndexedFileRenamerLock Lock(*ClangToolConstructionMutex);
-  auto Runner = llvm::make_unique<ToolRunner>(IndexedSymbols, Lock, Options);
+  auto Runner = std::make_unique<ToolRunner>(IndexedSymbols, Lock, Options);
 
   // Run a clang tool on the input file.
   std::string Name = Filename.str();
@@ -1422,7 +1424,7 @@ enum CXErrorCode clang_Refactoring_initiateAction(
                                        ActionType, TU);
   else
     *OutAction = new RefactoringAction(
-        llvm::make_unique<RenamingAction>(CXXUnit->getLangOpts(),
+        std::make_unique<RenamingAction>(CXXUnit->getLangOpts(),
                                           std::move(*Operation.SymbolOp)),
         TU);
   return CXError_Success;
@@ -1461,7 +1463,7 @@ enum CXErrorCode clang_Refactoring_initiateActionOnDecl(
                                        ActionType, TU);
   else
     *OutAction = new RefactoringAction(
-        llvm::make_unique<RenamingAction>(CXXUnit->getLangOpts(),
+        std::make_unique<RenamingAction>(CXXUnit->getLangOpts(),
                                           std::move(*Operation.SymbolOp)),
         TU);
   return CXError_Success;

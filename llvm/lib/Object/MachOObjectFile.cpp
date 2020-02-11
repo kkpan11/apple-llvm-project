@@ -128,6 +128,10 @@ static unsigned getCPUType(const MachOObjectFile &O) {
   return O.getHeader().cputype;
 }
 
+static unsigned getCPUSubType(const MachOObjectFile &O) {
+  return O.getHeader().cpusubtype;
+}
+
 static uint32_t
 getPlainRelocationAddress(const MachO::any_relocation_info &RE) {
   return RE.r_word0;
@@ -1945,6 +1949,11 @@ uint64_t MachOObjectFile::getSectionSize(DataRefImpl Sec) const {
   return SectSize;
 }
 
+ArrayRef<uint8_t> MachOObjectFile::getSectionContents(uint32_t Offset,
+                                                      uint64_t Size) const {
+  return arrayRefFromStringRef(getData().substr(Offset, Size));
+}
+
 Expected<ArrayRef<uint8_t>>
 MachOObjectFile::getSectionContents(DataRefImpl Sec) const {
   uint32_t Offset;
@@ -1960,7 +1969,7 @@ MachOObjectFile::getSectionContents(DataRefImpl Sec) const {
     Size = Sect.size;
   }
 
-  return arrayRefFromStringRef(getData().substr(Offset, Size));
+  return getSectionContents(Offset, Size);
 }
 
 uint64_t MachOObjectFile::getSectionAlignment(DataRefImpl Sec) const {
@@ -1986,13 +1995,12 @@ Expected<SectionRef> MachOObjectFile::getSection(unsigned SectionIndex) const {
 }
 
 Expected<SectionRef> MachOObjectFile::getSection(StringRef SectionName) const {
-  StringRef SecName;
   for (const SectionRef &Section : sections()) {
-    if (std::error_code E = Section.getName(SecName))
-      return errorCodeToError(E);
-    if (SecName == SectionName) {
+    auto NameOrErr = Section.getName();
+    if (!NameOrErr)
+      return NameOrErr.takeError();
+    if (*NameOrErr == SectionName)
       return Section;
-    }
   }
   return errorCodeToError(object_error::parse_failed);
 }
@@ -2216,7 +2224,8 @@ void MachOObjectFile::getRelocationTypeName(
         "ARM64_RELOC_PAGEOFF12",          "ARM64_RELOC_GOT_LOAD_PAGE21",
         "ARM64_RELOC_GOT_LOAD_PAGEOFF12", "ARM64_RELOC_POINTER_TO_GOT",
         "ARM64_RELOC_TLVP_LOAD_PAGE21",   "ARM64_RELOC_TLVP_LOAD_PAGEOFF12",
-        "ARM64_RELOC_ADDEND"
+        "ARM64_RELOC_ADDEND",
+        "ARM64_RELOC_AUTHENTICATED_POINTER"
       };
 
       if (RType >= array_lengthof(Table))
@@ -2553,6 +2562,8 @@ StringRef MachOObjectFile::getFileFormatName() const {
   case MachO::CPU_TYPE_X86_64:
     return "Mach-O 64-bit x86-64";
   case MachO::CPU_TYPE_ARM64:
+    if (getHeader().cpusubtype == MachO::CPU_SUBTYPE_ARM64E)
+      return "Mach-O arm64e";
     return "Mach-O arm64";
   case MachO::CPU_TYPE_POWERPC64:
     return "Mach-O 64-bit ppc64";
@@ -2561,7 +2572,7 @@ StringRef MachOObjectFile::getFileFormatName() const {
   }
 }
 
-Triple::ArchType MachOObjectFile::getArch(uint32_t CPUType) {
+Triple::ArchType MachOObjectFile::getArch(uint32_t CPUType, uint32_t CPUSubType) {
   switch (CPUType) {
   case MachO::CPU_TYPE_I386:
     return Triple::x86;
@@ -2676,6 +2687,12 @@ Triple MachOObjectFile::getArchTriple(uint32_t CPUType, uint32_t CPUSubType,
       if (ArchFlag)
         *ArchFlag = "arm64";
       return Triple("arm64-apple-darwin");
+    case MachO::CPU_SUBTYPE_ARM64E:
+      if (McpuDefault)
+        *McpuDefault = "vortex";
+      if (ArchFlag)
+        *ArchFlag = "arm64e";
+      return Triple("arm64e-apple-darwin");
     default:
       return Triple();
     }
@@ -2718,29 +2735,22 @@ Triple MachOObjectFile::getHostArch() {
 }
 
 bool MachOObjectFile::isValidArch(StringRef ArchFlag) {
-  return StringSwitch<bool>(ArchFlag)
-      .Case("i386", true)
-      .Case("x86_64", true)
-      .Case("x86_64h", true)
-      .Case("armv4t", true)
-      .Case("arm", true)
-      .Case("armv5e", true)
-      .Case("armv6", true)
-      .Case("armv6m", true)
-      .Case("armv7", true)
-      .Case("armv7em", true)
-      .Case("armv7k", true)
-      .Case("armv7m", true)
-      .Case("armv7s", true)
-      .Case("arm64", true)
-      .Case("arm64_32", true)
-      .Case("ppc", true)
-      .Case("ppc64", true)
-      .Default(false);
+  auto validArchs = getValidArchs();
+  return llvm::find(validArchs, ArchFlag) != validArchs.end();
+}
+
+ArrayRef<StringRef> MachOObjectFile::getValidArchs() {
+  static const std::array<StringRef, 18> validArchs = {{
+      "i386",   "x86_64", "x86_64h",  "armv4t",  "arm",    "armv5e",
+      "armv6",  "armv6m", "armv7",    "armv7em", "armv7k", "armv7m",
+      "armv7s", "arm64",  "arm64e",   "arm64_32","ppc",    "ppc64",
+  }};
+
+  return validArchs;
 }
 
 Triple::ArchType MachOObjectFile::getArch() const {
-  return getArch(getCPUType(*this));
+  return getArch(getCPUType(*this), getCPUSubType(*this));
 }
 
 Triple MachOObjectFile::getArchTriple(const char **McpuDefault) const {
@@ -3436,7 +3446,7 @@ iterator_range<rebase_iterator>
 MachOObjectFile::rebaseTable(Error &Err, MachOObjectFile *O,
                              ArrayRef<uint8_t> Opcodes, bool is64) {
   if (O->BindRebaseSectionTable == nullptr)
-    O->BindRebaseSectionTable = llvm::make_unique<BindRebaseSegInfo>(O);
+    O->BindRebaseSectionTable = std::make_unique<BindRebaseSegInfo>(O);
   MachORebaseEntry Start(&Err, O, Opcodes, is64);
   Start.moveToFirst();
 
@@ -4002,7 +4012,11 @@ BindRebaseSegInfo::BindRebaseSegInfo(const object::MachOObjectFile *Obj) {
   uint64_t CurSegAddress;
   for (const SectionRef &Section : Obj->sections()) {
     SectionInfo Info;
-    Section.getName(Info.SectionName);
+    Expected<StringRef> NameOrErr = Section.getName();
+    if (!NameOrErr)
+      consumeError(NameOrErr.takeError());
+    else
+      Info.SectionName = *NameOrErr;
     Info.Address = Section.getAddress();
     Info.Size = Section.getSize();
     Info.SegmentName =
@@ -4103,7 +4117,7 @@ MachOObjectFile::bindTable(Error &Err, MachOObjectFile *O,
                            ArrayRef<uint8_t> Opcodes, bool is64,
                            MachOBindEntry::Kind BKind) {
   if (O->BindRebaseSectionTable == nullptr)
-    O->BindRebaseSectionTable = llvm::make_unique<BindRebaseSegInfo>(O);
+    O->BindRebaseSectionTable = std::make_unique<BindRebaseSegInfo>(O);
   MachOBindEntry Start(&Err, O, Opcodes, is64, BKind);
   Start.moveToFirst();
 

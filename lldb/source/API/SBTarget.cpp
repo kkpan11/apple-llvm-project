@@ -27,12 +27,10 @@
 #include "lldb/API/SBStringList.h"
 #include "lldb/API/SBStructuredData.h"
 #include "lldb/API/SBSymbolContextList.h"
-#include "lldb/Breakpoint/Breakpoint.h"
 #include "lldb/Breakpoint/BreakpointID.h"
 #include "lldb/Breakpoint/BreakpointIDList.h"
 #include "lldb/Breakpoint/BreakpointList.h"
 #include "lldb/Breakpoint/BreakpointLocation.h"
-#include "lldb/Breakpoint/BreakpointPrecondition.h"
 #include "lldb/Core/Address.h"
 #include "lldb/Core/AddressResolver.h"
 #include "lldb/Core/AddressResolverName.h"
@@ -40,7 +38,6 @@
 #include "lldb/Core/Disassembler.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/ModuleSpec.h"
-#include "lldb/Core/STLUtils.h"
 #include "lldb/Core/SearchFilter.h"
 #include "lldb/Core/Section.h"
 #include "lldb/Core/StructuredDataImpl.h"
@@ -48,7 +45,7 @@
 #include "lldb/Core/ValueObjectList.h"
 #include "lldb/Core/ValueObjectVariable.h"
 #include "lldb/Host/Host.h"
-#include "lldb/Symbol/ClangASTContext.h"
+#include "lldb/Symbol/TypeSystemClang.h"
 #include "lldb/Symbol/DeclVendor.h"
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Symbol/SymbolFile.h"
@@ -72,6 +69,10 @@
 #include "lldb/Interpreter/CommandReturnObject.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/Regex.h"
+
+// BEGIN SWIFT
+#include "lldb/Breakpoint/BreakpointPrecondition.h"
+// END SWIFT
 
 using namespace lldb;
 using namespace lldb_private;
@@ -1080,11 +1081,14 @@ SBTarget::BreakpointCreateForException(lldb::LanguageType language,
                      (lldb::LanguageType, bool, bool), language, catch_bp,
                      throw_bp);
 
+  // BEGIN SWIFT
   SBStringList no_extra_args;
   return BreakpointCreateForException(language, catch_bp, throw_bp,
                                       no_extra_args);
+  // END SWIFT
 }
 
+// BEGIN SWIFT
 lldb::SBBreakpoint
 SBTarget::BreakpointCreateForException(lldb::LanguageType language,
                                        bool catch_bp, bool throw_bp,
@@ -1120,6 +1124,7 @@ SBTarget::BreakpointCreateForException(lldb::LanguageType language,
 
   return LLDB_RECORD_RESULT(sb_bp);
 }
+// END SWIFT
 
 lldb::SBBreakpoint SBTarget::BreakpointCreateFromScript(
     const char *class_name, SBStructuredData &extra_args,
@@ -1211,12 +1216,15 @@ bool SBTarget::FindBreakpointsByName(const char *name,
   TargetSP target_sp(GetSP());
   if (target_sp) {
     std::lock_guard<std::recursive_mutex> guard(target_sp->GetAPIMutex());
-    BreakpointList bkpt_list(false);
-    bool is_valid =
-        target_sp->GetBreakpointList().FindBreakpointsByName(name, bkpt_list);
-    if (!is_valid)
+    llvm::Expected<std::vector<BreakpointSP>> expected_vector =
+        target_sp->GetBreakpointList().FindBreakpointsByName(name);
+    if (!expected_vector) {
+      LLDB_LOG(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_BREAKPOINTS),
+               "invalid breakpoint name: {}",
+               llvm::toString(expected_vector.takeError()));
       return false;
-    for (BreakpointSP bkpt_sp : bkpt_list.Breakpoints()) {
+    }
+    for (BreakpointSP bkpt_sp : *expected_vector) {
       bkpts.AppendByID(bkpt_sp->GetID());
     }
   }
@@ -1632,7 +1640,7 @@ lldb::SBModule SBTarget::AddModule(const SBModuleSpec &module_spec) {
   lldb::SBModule sb_module;
   TargetSP target_sp(GetSP());
   if (target_sp)
-    sb_module.SetSP(target_sp->GetOrCreateModule(*module_spec.m_opaque_up, 
+    sb_module.SetSP(target_sp->GetOrCreateModule(*module_spec.m_opaque_up,
                                                  true /* notify */));
   return LLDB_RECORD_RESULT(sb_module);
 }
@@ -1687,11 +1695,8 @@ SBSymbolContextList SBTarget::FindCompileUnits(const SBFileSpec &sb_file_spec) {
 
   SBSymbolContextList sb_sc_list;
   const TargetSP target_sp(GetSP());
-  if (target_sp && sb_file_spec.IsValid()) {
-    const bool append = true;
-    target_sp->GetImages().FindCompileUnits(*sb_file_spec,
-                                            append, *sb_sc_list);
-  }
+  if (target_sp && sb_file_spec.IsValid())
+    target_sp->GetImages().FindCompileUnits(*sb_file_spec, *sb_sc_list);
   return LLDB_RECORD_RESULT(sb_sc_list);
 }
 
@@ -1817,10 +1822,9 @@ lldb::SBSymbolContextList SBTarget::FindFunctions(const char *name,
 
   const bool symbols_ok = true;
   const bool inlines_ok = true;
-  const bool append = true;
   FunctionNameType mask = static_cast<FunctionNameType>(name_type_mask);
   target_sp->GetImages().FindFunctions(ConstString(name), mask, symbols_ok,
-                                       inlines_ok, append, *sb_sc_list);
+                                       inlines_ok, *sb_sc_list);
   return LLDB_RECORD_RESULT(sb_sc_list);
 }
 
@@ -1840,17 +1844,16 @@ lldb::SBSymbolContextList SBTarget::FindGlobalFunctions(const char *name,
       switch (matchtype) {
       case eMatchTypeRegex:
         target_sp->GetImages().FindFunctions(RegularExpression(name_ref), true,
-                                             true, true, *sb_sc_list);
+                                             true, *sb_sc_list);
         break;
       case eMatchTypeStartsWith:
         regexstr = llvm::Regex::escape(name) + ".*";
         target_sp->GetImages().FindFunctions(RegularExpression(regexstr), true,
-                                             true, true, *sb_sc_list);
+                                             true, *sb_sc_list);
         break;
       default:
-        target_sp->GetImages().FindFunctions(ConstString(name),
-                                             eFunctionNameTypeAny, true, true,
-                                             true, *sb_sc_list);
+        target_sp->GetImages().FindFunctions(
+            ConstString(name), eFunctionNameTypeAny, true, true, *sb_sc_list);
         break;
       }
     }
@@ -1881,6 +1884,7 @@ lldb::SBType SBTarget::FindFirstType(const char *typename_cstr) {
     }
 
     // Didn't find the type in the symbols; Try the loaded language runtimes
+    // BEGIN SWIFT
     // FIXME: This depends on clang, but should be able to support any
     // TypeSystem/compiler.
     if (auto process_sp = target_sp->GetProcessSP()) {
@@ -1890,7 +1894,7 @@ lldb::SBType SBTarget::FindFirstType(const char *typename_cstr) {
           if (vendor->FindDecls(const_typename, /*append*/ true,
                                 /*max_matches*/ 1, decls) > 0) {
             auto compiler_decl = decls.front();
-            auto *ctx = llvm::dyn_cast<ClangASTContext>(compiler_decl.GetTypeSystem());
+            auto *ctx = llvm::dyn_cast<TypeSystemClang>(compiler_decl.GetTypeSystem());
             if (ctx)
               if (CompilerType type =
                       ctx->GetTypeForDecl(compiler_decl.GetOpaqueDecl()))
@@ -1899,6 +1903,7 @@ lldb::SBType SBTarget::FindFirstType(const char *typename_cstr) {
         }
       }
     }
+    // END SWIFT
 
     // No matches, search for basic typename matches
     for (auto *type_system : target_sp->GetScratchTypeSystems())
@@ -1944,6 +1949,7 @@ lldb::SBTypeList SBTarget::FindTypes(const char *typename_cstr) {
     }
 
     // Try the loaded language runtimes
+    // BEGIN SWIFT
     // FIXME: This depends on clang, but should be able to support any
     // TypeSystem/compiler.
     if (auto process_sp = target_sp->GetProcessSP()) {
@@ -1953,7 +1959,7 @@ lldb::SBTypeList SBTarget::FindTypes(const char *typename_cstr) {
           if (vendor->FindDecls(const_typename, /*append*/ true,
                                 /*max_matches*/ 1, decls) > 0) {
             for (auto decl : decls) {
-              auto *ctx = llvm::dyn_cast<ClangASTContext>(decl.GetTypeSystem());
+              auto *ctx = llvm::dyn_cast<TypeSystemClang>(decl.GetTypeSystem());
               if (ctx)
                 if (CompilerType type =
                         ctx->GetTypeForDecl(decl.GetOpaqueDecl()))
@@ -1963,6 +1969,7 @@ lldb::SBTypeList SBTarget::FindTypes(const char *typename_cstr) {
         }
       }
     }
+    // END SWIFT
 
     if (sb_type_list.GetSize() == 0) {
       // No matches, search for basic typename matches
@@ -1985,16 +1992,15 @@ SBValueList SBTarget::FindGlobalVariables(const char *name,
   TargetSP target_sp(GetSP());
   if (name && target_sp) {
     VariableList variable_list;
-    const uint32_t match_count = target_sp->GetImages().FindGlobalVariables(
-        ConstString(name), max_matches, variable_list);
-
-    if (match_count > 0) {
+    target_sp->GetImages().FindGlobalVariables(ConstString(name), max_matches,
+                                               variable_list);
+    if (!variable_list.Empty()) {
       ExecutionContextScope *exe_scope = target_sp->GetProcessSP().get();
       if (exe_scope == nullptr)
         exe_scope = target_sp.get();
-      for (uint32_t i = 0; i < match_count; ++i) {
-        lldb::ValueObjectSP valobj_sp(ValueObjectVariable::Create(
-            exe_scope, variable_list.GetVariableAtIndex(i)));
+      for (const VariableSP &var_sp : variable_list) {
+        lldb::ValueObjectSP valobj_sp(
+            ValueObjectVariable::Create(exe_scope, var_sp));
         if (valobj_sp)
           sb_value_list.Append(SBValue(valobj_sp));
       }
@@ -2019,30 +2025,28 @@ SBValueList SBTarget::FindGlobalVariables(const char *name,
     VariableList variable_list;
 
     std::string regexstr;
-    uint32_t match_count;
     switch (matchtype) {
     case eMatchTypeNormal:
-      match_count = target_sp->GetImages().FindGlobalVariables(
-          ConstString(name), max_matches, variable_list);
+      target_sp->GetImages().FindGlobalVariables(ConstString(name), max_matches,
+                                                 variable_list);
       break;
     case eMatchTypeRegex:
-      match_count = target_sp->GetImages().FindGlobalVariables(
-          RegularExpression(name_ref), max_matches, variable_list);
+      target_sp->GetImages().FindGlobalVariables(RegularExpression(name_ref),
+                                                 max_matches, variable_list);
       break;
     case eMatchTypeStartsWith:
       regexstr = llvm::Regex::escape(name) + ".*";
-      match_count = target_sp->GetImages().FindGlobalVariables(
-          RegularExpression(regexstr), max_matches, variable_list);
+      target_sp->GetImages().FindGlobalVariables(RegularExpression(regexstr),
+                                                 max_matches, variable_list);
       break;
     }
-
-    if (match_count > 0) {
+    if (!variable_list.Empty()) {
       ExecutionContextScope *exe_scope = target_sp->GetProcessSP().get();
       if (exe_scope == nullptr)
         exe_scope = target_sp.get();
-      for (uint32_t i = 0; i < match_count; ++i) {
-        lldb::ValueObjectSP valobj_sp(ValueObjectVariable::Create(
-            exe_scope, variable_list.GetVariableAtIndex(i)));
+      for (const VariableSP &var_sp : variable_list) {
+        lldb::ValueObjectSP valobj_sp(
+            ValueObjectVariable::Create(exe_scope, var_sp));
         if (valobj_sp)
           sb_value_list.Append(SBValue(valobj_sp));
       }
@@ -2339,11 +2343,9 @@ lldb::SBSymbolContextList SBTarget::FindSymbols(const char *name,
   SBSymbolContextList sb_sc_list;
   if (name && name[0]) {
     TargetSP target_sp(GetSP());
-    if (target_sp) {
-      bool append = true;
+    if (target_sp)
       target_sp->GetImages().FindSymbolsWithNameAndType(
-          ConstString(name), symbol_type, *sb_sc_list, append);
-    }
+          ConstString(name), symbol_type, *sb_sc_list);
   }
   return LLDB_RECORD_RESULT(sb_sc_list);
 }

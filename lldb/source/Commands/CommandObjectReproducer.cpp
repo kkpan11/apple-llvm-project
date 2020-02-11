@@ -15,7 +15,6 @@
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
 #include "lldb/Interpreter/OptionArgParser.h"
-#include "lldb/Interpreter/OptionGroupBoolean.h"
 
 #include <csignal>
 
@@ -70,7 +69,7 @@ static constexpr OptionEnumValues ReproducerProviderType() {
   return OptionEnumValues(g_reproducer_provider_type);
 }
 
-#define LLDB_OPTIONS_reproducer
+#define LLDB_OPTIONS_reproducer_dump
 #include "CommandOptions.inc"
 
 enum ReproducerCrashSignal {
@@ -259,18 +258,6 @@ protected:
       result.GetOutputStream() << "Reproducer is off.\n";
     }
 
-    if (r.IsCapturing() || r.IsReplaying()) {
-      result.GetOutputStream()
-          << "Path: " << r.GetReproducerPath().GetPath() << '\n';
-    }
-
-    // Auto generate is hidden unless enabled because this is mostly for
-    // development and testing.
-    if (Generator *g = r.GetGenerator()) {
-      if (g->IsAutoGenerate())
-        result.GetOutputStream() << "Auto generate: on\n";
-    }
-
     result.SetStatus(eReturnStatusSuccessFinishResult);
     return result.Succeeded();
   }
@@ -331,7 +318,7 @@ public:
     }
 
     ArrayRef<OptionDefinition> GetDefinitions() override {
-      return makeArrayRef(g_reproducer_options);
+      return makeArrayRef(g_reproducer_dump_options);
     }
 
     FileSpec file;

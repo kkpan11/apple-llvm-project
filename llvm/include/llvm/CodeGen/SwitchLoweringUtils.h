@@ -19,6 +19,7 @@ namespace llvm {
 
 class FunctionLoweringInfo;
 class MachineBasicBlock;
+class BlockFrequencyInfo;
 
 namespace SwitchCG {
 
@@ -101,10 +102,19 @@ using CaseBitsVector = std::vector<CaseBits>;
 /// SDISel for the code generation of additional basic blocks needed by
 /// multi-case switch statements.
 struct CaseBlock {
-  // The condition code to use for the case block's setcc node.
-  // Besides the integer condition codes, this can also be SETTRUE, in which
-  // case no comparison gets emitted.
-  ISD::CondCode CC;
+  // For the GISel interface.
+  struct PredInfoPair {
+    CmpInst::Predicate Pred;
+    // Set when no comparison should be emitted.
+    bool NoCmp;
+  };
+  union {
+    // The condition code to use for the case block's setcc node.
+    // Besides the integer condition codes, this can also be SETTRUE, in which
+    // case no comparison gets emitted.
+    ISD::CondCode CC;
+    struct PredInfoPair PredInfo;
+  };
 
   // The LHS/MHS/RHS of the comparison to emit.
   // Emit by default LHS op RHS. MHS is used for range comparisons:
@@ -120,10 +130,12 @@ struct CaseBlock {
   /// The debug location of the instruction this CaseBlock was
   /// produced from.
   SDLoc DL;
+  DebugLoc DbgLoc;
 
   // Branch weights.
   BranchProbability TrueProb, FalseProb;
 
+  // Constructor for SelectionDAG.
   CaseBlock(ISD::CondCode cc, const Value *cmplhs, const Value *cmprhs,
             const Value *cmpmiddle, MachineBasicBlock *truebb,
             MachineBasicBlock *falsebb, MachineBasicBlock *me, SDLoc dl,
@@ -132,6 +144,17 @@ struct CaseBlock {
       : CC(cc), CmpLHS(cmplhs), CmpMHS(cmpmiddle), CmpRHS(cmprhs),
         TrueBB(truebb), FalseBB(falsebb), ThisBB(me), DL(dl),
         TrueProb(trueprob), FalseProb(falseprob) {}
+
+  // Constructor for GISel.
+  CaseBlock(CmpInst::Predicate pred, bool nocmp, const Value *cmplhs,
+            const Value *cmprhs, const Value *cmpmiddle,
+            MachineBasicBlock *truebb, MachineBasicBlock *falsebb,
+            MachineBasicBlock *me, DebugLoc dl,
+            BranchProbability trueprob = BranchProbability::getUnknown(),
+            BranchProbability falseprob = BranchProbability::getUnknown())
+      : PredInfo({pred, nocmp}), CmpLHS(cmplhs), CmpMHS(cmpmiddle),
+        CmpRHS(cmprhs), TrueBB(truebb), FalseBB(falsebb), ThisBB(me),
+        DbgLoc(dl), TrueProb(trueprob), FalseProb(falseprob) {}
 };
 
 struct JumpTable {
@@ -190,20 +213,21 @@ struct BitTestBlock {
   BitTestInfo Cases;
   BranchProbability Prob;
   BranchProbability DefaultProb;
+  bool OmitRangeCheck;
 
   BitTestBlock(APInt F, APInt R, const Value *SV, unsigned Rg, MVT RgVT, bool E,
                bool CR, MachineBasicBlock *P, MachineBasicBlock *D,
                BitTestInfo C, BranchProbability Pr)
       : First(std::move(F)), Range(std::move(R)), SValue(SV), Reg(Rg),
         RegVT(RgVT), Emitted(E), ContiguousRange(CR), Parent(P), Default(D),
-        Cases(std::move(C)), Prob(Pr) {}
+        Cases(std::move(C)), Prob(Pr), OmitRangeCheck(false) {}
 };
 
-/// Return the range of value in [First..Last].
+/// Return the range of values within a range.
 uint64_t getJumpTableRange(const CaseClusterVector &Clusters, unsigned First,
                            unsigned Last);
 
-/// Return the number of cases in [First..Last].
+/// Return the number of cases within a range.
 uint64_t getJumpTableNumCases(const SmallVectorImpl<unsigned> &TotalCases,
                               unsigned First, unsigned Last);
 
@@ -241,7 +265,8 @@ public:
   std::vector<BitTestBlock> BitTestCases;
 
   void findJumpTables(CaseClusterVector &Clusters, const SwitchInst *SI,
-                      MachineBasicBlock *DefaultMBB);
+                      MachineBasicBlock *DefaultMBB,
+                      ProfileSummaryInfo *PSI, BlockFrequencyInfo *BFI);
 
   bool buildJumpTable(const CaseClusterVector &Clusters, unsigned First,
                       unsigned Last, const SwitchInst *SI,
@@ -272,4 +297,3 @@ private:
 } // namespace llvm
 
 #endif // LLVM_CODEGEN_SWITCHLOWERINGUTILS_H
-

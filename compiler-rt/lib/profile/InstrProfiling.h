@@ -13,29 +13,29 @@
 #include <stdio.h>
 
 #define INSTR_PROF_VISIBILITY COMPILER_RT_VISIBILITY
-#include "InstrProfData.inc"
+#include "profile/InstrProfData.inc"
 
 enum ValueKind {
 #define VALUE_PROF_KIND(Enumerator, Value, Descr) Enumerator = Value,
-#include "InstrProfData.inc"
+#include "profile/InstrProfData.inc"
 };
 
 typedef void *IntPtrT;
 typedef struct COMPILER_RT_ALIGNAS(INSTR_PROF_DATA_ALIGNMENT)
     __llvm_profile_data {
 #define INSTR_PROF_DATA(Type, LLVMType, Name, Initializer) Type Name;
-#include "InstrProfData.inc"
+#include "profile/InstrProfData.inc"
 } __llvm_profile_data;
 
 typedef struct __llvm_profile_header {
 #define INSTR_PROF_RAW_HEADER(Type, Name, Initializer) Type Name;
-#include "InstrProfData.inc"
+#include "profile/InstrProfData.inc"
 } __llvm_profile_header;
 
 typedef struct ValueProfNode * PtrToNodeT;
 typedef struct ValueProfNode {
 #define INSTR_PROF_VALUE_NODE(Type, LLVMType, Name, Initializer) Type Name;
-#include "InstrProfData.inc"
+#include "profile/InstrProfData.inc"
 } ValueProfNode;
 
 /*!
@@ -120,7 +120,7 @@ int __llvm_profile_check_compatibility(const char *Profile,
  */
 void INSTR_PROF_VALUE_PROF_FUNC(
 #define VALUE_PROF_FUNC_PARAM(ArgType, ArgName, ArgLLVMType) ArgType ArgName
-#include "InstrProfData.inc"
+#include "profile/InstrProfData.inc"
     );
 
 void __llvm_profile_instrument_target_value(uint64_t TargetValue, void *Data,
@@ -278,7 +278,7 @@ void __llvm_profile_get_padding_sizes_for_counters(
 void __llvm_profile_set_dumped();
 
 /*!
- * This variable is defined in InstrProfilingRuntime.cc as a hidden
+ * This variable is defined in InstrProfilingRuntime.cpp as a hidden
  * symbol. Its main purpose is to enable profile runtime user to
  * bypass runtime initialization code -- if the client code explicitly
  * define this variable, then InstProfileRuntime.o won't be linked in.

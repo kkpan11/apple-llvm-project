@@ -15,7 +15,7 @@
 #include "Plugins/LanguageRuntime/ObjC/ObjCLanguageRuntime.h"
 #include "lldb/Core/ValueObjectConstResult.h"
 #include "lldb/DataFormatters/FormattersHelpers.h"
-#include "lldb/Symbol/ClangASTContext.h"
+#include "lldb/Symbol/TypeSystemClang.h"
 #include "lldb/Symbol/SwiftASTContext.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/SwiftLanguageRuntime.h"
@@ -324,9 +324,11 @@ HashedCollectionConfig::CocoaObjectAtAddress(
   ProcessSP process_sp = exe_ctx.GetProcessSP();
   if (!process_sp)
     return nullptr;
-  CompilerType id = exe_ctx.GetTargetSP()
-    ->GetScratchClangASTContext()
-    ->GetBasicType(lldb::eBasicTypeObjCID);
+  TypeSystemClang *clang_ast_context =
+        TypeSystemClang::GetScratch(process_sp->GetTarget());
+  if (!clang_ast_context)
+    return nullptr;
+  CompilerType id = clang_ast_context->GetBasicType(lldb::eBasicTypeObjCID);
   InferiorSizedWord isw(address, *process_sp);
   return ValueObject::CreateValueObjectFromData(
     "cocoa", isw.GetAsData(process_sp->GetByteOrder()), exe_ctx, id);
@@ -461,10 +463,10 @@ NativeHashedStorageHandler::NativeHashedStorageHandler(
       }
       uint64_t offset = m_key_stride_padded;
       if (llvm::isa<::swift::TupleType>(swift_type)) {
-        auto &remote_ast = runtime->GetRemoteASTContext(*scratch_ctx);
-        ::swift::remote::RemoteAddress optmeta(nullptr);
-        ::swift::remoteAST::Result<uint64_t> result =
-            remote_ast.getOffsetOfMember(swift_type, optmeta, "1");
+        Status error;
+        llvm::Optional<uint64_t> result = runtime->GetMemberVariableOffset(
+            {swift_ast, swift_type}, nativeStorage_sp.get(), ConstString("1"),
+            &error);
         if (result)
           m_key_stride_padded = result.getValue();
       }

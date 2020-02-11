@@ -11,8 +11,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "clang/StaticAnalyzer/Checkers/BuiltinCheckerRegistration.h"
+#include "clang/AST/Attr.h"
 #include "clang/AST/DeclCXX.h"
+#include "clang/StaticAnalyzer/Checkers/BuiltinCheckerRegistration.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugReporter.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
@@ -146,7 +147,7 @@ void VirtualCallChecker::checkPreCall(const CallEvent &Call,
     return;
   }
 
-  auto Report = llvm::make_unique<PathSensitiveBugReport>(*BT, OS.str(), N);
+  auto Report = std::make_unique<PathSensitiveBugReport>(*BT, OS.str(), N);
 
   if (ShowFixIts && !IsPure) {
     // FIXME: These hints are valid only when the virtual call is made
@@ -206,16 +207,16 @@ void ento::registerVirtualCallModeling(CheckerManager &Mgr) {
 
 void ento::registerPureVirtualCallChecker(CheckerManager &Mgr) {
   auto *Chk = Mgr.getChecker<VirtualCallChecker>();
-  Chk->BT_Pure = llvm::make_unique<BugType>(Mgr.getCurrentCheckerName(),
-                                            "Pure virtual method call",
-                                            categories::CXXObjectLifecycle);
+  Chk->BT_Pure = std::make_unique<BugType>(Mgr.getCurrentCheckerName(),
+                                           "Pure virtual method call",
+                                           categories::CXXObjectLifecycle);
 }
 
 void ento::registerVirtualCallChecker(CheckerManager &Mgr) {
   auto *Chk = Mgr.getChecker<VirtualCallChecker>();
   if (!Mgr.getAnalyzerOptions().getCheckerBooleanOption(
           Mgr.getCurrentCheckerName(), "PureOnly")) {
-    Chk->BT_Impure = llvm::make_unique<BugType>(
+    Chk->BT_Impure = std::make_unique<BugType>(
         Mgr.getCurrentCheckerName(), "Unexpected loss of virtual dispatch",
         categories::CXXObjectLifecycle);
     Chk->ShowFixIts = Mgr.getAnalyzerOptions().getCheckerBooleanOption(

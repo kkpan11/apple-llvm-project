@@ -80,10 +80,10 @@ void DynamicTypeChecker::reportTypeError(QualType DynamicType,
   QualType::print(StaticType.getTypePtr(), Qualifiers(), OS, C.getLangOpts(),
                   llvm::Twine());
   OS << "'";
-  auto R = llvm::make_unique<PathSensitiveBugReport>(
+  auto R = std::make_unique<PathSensitiveBugReport>(
       *BT, OS.str(), C.generateNonFatalErrorNode());
   R->markInteresting(Reg);
-  R->addVisitor(llvm::make_unique<DynamicTypeBugVisitor>(Reg));
+  R->addVisitor(std::make_unique<DynamicTypeBugVisitor>(Reg));
   R->addRange(ReportedNode->getSourceRange());
   C.emitReport(std::move(R));
 }

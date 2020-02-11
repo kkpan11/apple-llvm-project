@@ -1,5 +1,8 @@
 include(CMakeParseArguments)
 include(CompilerRTUtils)
+include(BuiltinTests)
+
+set(CMAKE_LIPO "lipo" CACHE PATH "path to the lipo tool")
 
 # On OS X SDKs can be installed anywhere on the base system and xcode-select can
 # set the default Xcode to use. This function finds the SDKs that are present in
@@ -47,7 +50,7 @@ function(find_darwin_sdk_version var sdk_name)
   if(NOT DARWIN_PREFER_PUBLIC_SDK)
     # Let's first try the internal SDK, otherwise use the public SDK.
     execute_process(
-      COMMAND xcodebuild -version -sdk ${sdk_name}.internal SDKVersion
+      COMMAND xcrun --sdk ${sdk_name}.internal --show-sdk-version
       RESULT_VARIABLE result_process
       OUTPUT_VARIABLE var_internal
       OUTPUT_STRIP_TRAILING_WHITESPACE
@@ -56,7 +59,7 @@ function(find_darwin_sdk_version var sdk_name)
   endif()
   if((NOT ${result_process} EQUAL 0) OR "" STREQUAL "${var_internal}")
     execute_process(
-      COMMAND xcodebuild -version -sdk ${sdk_name} SDKVersion
+      COMMAND xcrun --sdk ${sdk_name} --show-sdk-version
       RESULT_VARIABLE result_process
       OUTPUT_VARIABLE var_internal
       OUTPUT_STRIP_TRAILING_WHITESPACE
@@ -242,7 +245,7 @@ macro(darwin_add_builtin_library name suffix)
   cmake_parse_arguments(LIB
     ""
     "PARENT_TARGET;OS;ARCH"
-    "SOURCES;CFLAGS;DEFS"
+    "SOURCES;CFLAGS;DEFS;INCLUDE_DIRS"
     ${ARGN})
   set(libname "${name}.${suffix}_${LIB_ARCH}_${LIB_OS}")
   add_library(${libname} STATIC ${LIB_SOURCES})
@@ -266,6 +269,8 @@ macro(darwin_add_builtin_library name suffix)
     ${sysroot_flag}
     ${DARWIN_${LIB_OS}_BUILTIN_MIN_VER_FLAG}
     ${builtin_cflags})
+  target_include_directories(${libname}
+    PRIVATE ${LIB_INCLUDE_DIRS})
   set_property(TARGET ${libname} APPEND PROPERTY
       COMPILE_DEFINITIONS ${LIB_DEFS})
   set_target_properties(${libname} PROPERTIES
@@ -291,7 +296,7 @@ function(darwin_lipo_libs name)
   if(LIB_DEPENDS AND LIB_LIPO_FLAGS)
     add_custom_command(OUTPUT ${LIB_OUTPUT_DIR}/lib${name}.a
       COMMAND ${CMAKE_COMMAND} -E make_directory ${LIB_OUTPUT_DIR}
-      COMMAND lipo -output
+      COMMAND ${CMAKE_LIPO} -output
               ${LIB_OUTPUT_DIR}/lib${name}.a
               -create ${LIB_LIPO_FLAGS}
       DEPENDS ${LIB_DEPENDS}
@@ -370,6 +375,7 @@ macro(darwin_add_builtin_libraries)
                                 SOURCES ${filtered_sources} ${PROFILE_SOURCES}
                                 CFLAGS ${CFLAGS} -arch ${arch} -mkernel
                                 DEFS KERNEL_USE
+                                INCLUDE_DIRS ../../include
                                 PARENT_TARGET builtins)
       endforeach()
       set(archive_name clang_rt.cc_kext_${os})
@@ -458,8 +464,8 @@ macro(darwin_add_embedded_builtin_libraries)
         INCLUDE ${arch}_FUNCTIONS
         ${${arch}_SOURCES})
       if(NOT ${arch}_filtered_sources)
-        message("${arch}_SOURCES: ${${arch}_SOURCES}")
-        message("${arch}_FUNCTIONS: ${${arch}_FUNCTIONS}")
+        message(WARNING "${arch}_SOURCES: ${${arch}_SOURCES}")
+        message(WARNING "${arch}_FUNCTIONS: ${${arch}_FUNCTIONS}")
         message(FATAL_ERROR "Empty filtered sources!")
       endif()
     endforeach()

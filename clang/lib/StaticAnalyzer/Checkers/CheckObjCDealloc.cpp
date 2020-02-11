@@ -576,7 +576,7 @@ void ObjCDeallocChecker::diagnoseMissingReleases(CheckerContext &C) const {
     OS << " by a synthesized property but not released"
           " before '[super dealloc]'";
 
-    auto BR = llvm::make_unique<PathSensitiveBugReport>(*MissingReleaseBugType,
+    auto BR = std::make_unique<PathSensitiveBugReport>(*MissingReleaseBugType,
                                                        OS.str(), ErrNode);
     C.emitReport(std::move(BR));
   }
@@ -698,7 +698,7 @@ bool ObjCDeallocChecker::diagnoseExtraRelease(SymbolRef ReleasedValue,
     OS <<  " property but was released in 'dealloc'";
   }
 
-  auto BR = llvm::make_unique<PathSensitiveBugReport>(*ExtraReleaseBugType,
+  auto BR = std::make_unique<PathSensitiveBugReport>(*ExtraReleaseBugType,
                                                      OS.str(), ErrNode);
   BR->addRange(M.getOriginExpr()->getSourceRange());
 
@@ -740,7 +740,7 @@ bool ObjCDeallocChecker::diagnoseMistakenDealloc(SymbolRef DeallocedValue,
   OS << "'" << *PropImpl->getPropertyIvarDecl()
      << "' should be released rather than deallocated";
 
-  auto BR = llvm::make_unique<PathSensitiveBugReport>(*MistakenDeallocBugType,
+  auto BR = std::make_unique<PathSensitiveBugReport>(*MistakenDeallocBugType,
                                                      OS.str(), ErrNode);
   BR->addRange(M.getOriginExpr()->getSourceRange());
 

@@ -7,8 +7,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "Annotations.h"
-#include "ClangdUnit.h"
 #include "Diagnostics.h"
+#include "ParsedAST.h"
 #include "Path.h"
 #include "Protocol.h"
 #include "SourceCode.h"
@@ -19,6 +19,7 @@
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/DiagnosticSema.h"
 #include "llvm/Support/ScopedPrinter.h"
+#include "llvm/Support/TargetSelect.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include <algorithm>
@@ -58,6 +59,10 @@ MATCHER_P3(Fix, Range, Replacement, Message,
                ::testing::PrintToString(Replacement) + " = [" + Message + "]") {
   return arg.Message == Message && arg.Edits.size() == 1 &&
          arg.Edits[0].range == Range && arg.Edits[0].newText == Replacement;
+}
+
+MATCHER_P(FixMessage, Message, "") {
+  return arg.Message == Message;
 }
 
 MATCHER_P(EqualToLSPDiag, LSPDiag,
@@ -175,24 +180,60 @@ TEST(DiagnosticsTest, DiagnosticPreamble) {
                   DiagSource(Diag::Clang), DiagName("pp_file_not_found"))));
 }
 
+TEST(DiagnosticsTest, DeduplicatedClangTidyDiagnostics) {
+  Annotations Test(R"cpp(
+    float foo = [[0.1f]];
+  )cpp");
+  auto TU = TestTU::withCode(Test.code());
+  // Enable alias clang-tidy checks, these check emits the same diagnostics
+  // (except the check name).
+  TU.ClangTidyChecks = "-*, readability-uppercase-literal-suffix, "
+                       "hicpp-uppercase-literal-suffix";
+  // Verify that we filter out the duplicated diagnostic message.
+  EXPECT_THAT(
+      TU.build().getDiagnostics(),
+      UnorderedElementsAre(::testing::AllOf(
+          Diag(Test.range(),
+               "floating point literal has suffix 'f', which is not uppercase"),
+          DiagSource(Diag::ClangTidy))));
+
+  Test = Annotations(R"cpp(
+    template<typename T>
+    void func(T) {
+      float f = [[0.3f]];
+    }
+    void k() {
+      func(123);
+      func(2.0);
+    }
+  )cpp");
+  TU.Code = Test.code();
+  // The check doesn't handle template instantiations which ends up emitting
+  // duplicated messages, verify that we deduplicate them.
+  EXPECT_THAT(
+      TU.build().getDiagnostics(),
+      UnorderedElementsAre(::testing::AllOf(
+          Diag(Test.range(),
+               "floating point literal has suffix 'f', which is not uppercase"),
+          DiagSource(Diag::ClangTidy))));
+}
+
 TEST(DiagnosticsTest, ClangTidy) {
   Annotations Test(R"cpp(
     #include $deprecated[["assert.h"]]
 
     #define $macrodef[[SQUARE]](X) (X)*(X)
-    int main() {
-      return $doubled[[sizeof]](sizeof(int));
-    }
-    int square() {
+    int $main[[main]]() {
       int y = 4;
       return SQUARE($macroarg[[++]]y);
+      return $doubled[[sizeof]](sizeof(int));
     }
   )cpp");
   auto TU = TestTU::withCode(Test.code());
   TU.HeaderFilename = "assert.h"; // Suppress "not found" error.
   TU.ClangTidyChecks =
       "-*, bugprone-sizeof-expression, bugprone-macro-repeated-side-effects, "
-      "modernize-deprecated-headers";
+      "modernize-deprecated-headers, modernize-use-trailing-return-type";
   EXPECT_THAT(
       TU.build().getDiagnostics(),
       UnorderedElementsAre(
@@ -214,7 +255,15 @@ TEST(DiagnosticsTest, ClangTidy) {
               WithNote(
                   Diag(Test.range("macrodef"), "macro 'SQUARE' defined here"))),
           Diag(Test.range("macroarg"),
-               "multiple unsequenced modifications to 'y'")));
+               "multiple unsequenced modifications to 'y'"),
+          AllOf(
+            Diag(Test.range("main"),
+                 "use a trailing return type for this function"),
+            DiagSource(Diag::ClangTidy),
+            DiagName("modernize-use-trailing-return-type"),
+            // Verify that we don't have "[check-name]" suffix in the message.
+            WithFix(FixMessage("use a trailing return type for this function")))
+          ));
 }
 
 TEST(DiagnosticTest, ClangTidySuppressionComment) {
@@ -355,6 +404,15 @@ TEST(DiagnosticsTest, NoFixItInMacro) {
   EXPECT_THAT(TU.build().getDiagnostics(),
               ElementsAre(AllOf(Diag(Test.range(), "'main' must return 'int'"),
                                 Not(WithFix(_)))));
+}
+
+TEST(ClangdTest, MSAsm) {
+  // Parsing MS assembly tries to use the target MCAsmInfo, which we don't link.
+  // We used to crash here. Now clang emits a diagnostic, which we filter out.
+  llvm::InitializeAllTargetInfos(); // As in ClangdMain
+  auto TU = TestTU::withCode("void fn() { __asm { cmp cl,64 } }");
+  TU.ExtraArgs = {"-fms-extensions"};
+  EXPECT_THAT(TU.build().getDiagnostics(), IsEmpty());
 }
 
 TEST(DiagnosticsTest, ToLSP) {
@@ -661,7 +719,10 @@ void bar(X *x) {
 
   auto Parsed = TU.build();
   for (const auto &D : Parsed.getDiagnostics()) {
-    EXPECT_EQ(D.Fixes.size(), 1u);
+    if (D.Fixes.size() != 1) {
+      ADD_FAILURE() << "D.Fixes.size() != 1";
+      continue;
+    }
     EXPECT_EQ(D.Fixes[0].Message,
               std::string("Add include \"a.h\" for symbol X"));
   }
@@ -673,7 +734,10 @@ $insert[[]]namespace ns {
 }
 void g() {  ns::$[[scope]]::X_Y();  }
   )cpp");
-  auto TU = TestTU::withCode(Test.code());
+  TestTU TU;
+  TU.Code = Test.code();
+  // FIXME: Figure out why this is needed and remove it, PR43662.
+  TU.ExtraArgs.push_back("-fno-ms-compatibility");
   auto Index = buildIndexWithSymbol(
       SymbolWithHeader{"ns::scope::X_Y", "unittest:///x.h", "\"x.h\""});
   TU.ExternalIndex = Index.get();
@@ -696,7 +760,10 @@ void f() {
 }
 }
   )cpp");
-  auto TU = TestTU::withCode(Test.code());
+  TestTU TU;
+  TU.Code = Test.code();
+  // FIXME: Figure out why this is needed and remove it, PR43662.
+  TU.ExtraArgs.push_back("-fno-ms-compatibility");
   auto Index = buildIndexWithSymbol(
       {SymbolWithHeader{"clang::clangd::X", "unittest:///x.h", "\"x.h\""},
        SymbolWithHeader{"clang::clangd::ns::Y", "unittest:///y.h", "\"y.h\""}});
@@ -747,6 +814,27 @@ namespace c {
                   Diag(Test.range(), "no type named 'X' in namespace 'a'"),
                   WithFix(Fix(Test.range("insert"), "#include \"x.h\"\n",
                               "Add include \"x.h\" for symbol a::X")))));
+}
+
+TEST(IncludeFixerTest, NoCrashOnTemplateInstantiations) {
+  Annotations Test(R"cpp(
+    template <typename T> struct Templ {
+      template <typename U>
+      typename U::type operator=(const U &);
+    };
+
+    struct A {
+      Templ<char> s;
+      A() { [[a]]; } // this caused crashes if we compute scopes lazily.
+    };
+  )cpp");
+
+  auto TU = TestTU::withCode(Test.code());
+  auto Index = buildIndexWithSymbol({});
+  TU.ExternalIndex = Index.get();
+
+  EXPECT_THAT(TU.build().getDiagnostics(),
+              ElementsAre(Diag(Test.range(), "use of undeclared identifier 'a'")));
 }
 
 TEST(DiagsInHeaders, DiagInsideHeader) {
@@ -859,7 +947,6 @@ TEST(DiagsInHeaders, OnlyErrorOrFatal) {
     int x = 5/0;)cpp");
   TestTU TU = TestTU::withCode(Main.code());
   TU.AdditionalFiles = {{"a.h", Header.code()}};
-  auto diags = TU.build().getDiagnostics();
   EXPECT_THAT(TU.build().getDiagnostics(),
               UnorderedElementsAre(AllOf(
                   Diag(Main.range(), "in included file: C++ requires "
@@ -867,7 +954,66 @@ TEST(DiagsInHeaders, OnlyErrorOrFatal) {
                   WithNote(Diag(Header.range(), "error occurred here")))));
 }
 
-} // namespace
+TEST(DiagsInHeaders, FromNonWrittenSources) {
+  Annotations Main(R"cpp(
+    #include [["a.h"]]
+    void foo() {})cpp");
+  Annotations Header(R"cpp(
+    int x = 5/0;
+    int b = [[FOO]];)cpp");
+  TestTU TU = TestTU::withCode(Main.code());
+  TU.AdditionalFiles = {{"a.h", Header.code()}};
+  TU.ExtraArgs = {"-DFOO=NOOO"};
+  EXPECT_THAT(TU.build().getDiagnostics(),
+              UnorderedElementsAre(AllOf(
+                  Diag(Main.range(),
+                       "in included file: use of undeclared identifier 'NOOO'"),
+                  WithNote(Diag(Header.range(), "error occurred here")))));
+}
 
+TEST(DiagsInHeaders, ErrorFromMacroExpansion) {
+  Annotations Main(R"cpp(
+  void bar() {
+    int fo;
+    #include [["a.h"]]
+  })cpp");
+  Annotations Header(R"cpp(
+  #define X foo
+  X;)cpp");
+  TestTU TU = TestTU::withCode(Main.code());
+  TU.AdditionalFiles = {{"a.h", Header.code()}};
+  EXPECT_THAT(TU.build().getDiagnostics(),
+              UnorderedElementsAre(
+                  Diag(Main.range(), "in included file: use of undeclared "
+                                     "identifier 'foo'; did you mean 'fo'?")));
+}
+
+TEST(DiagsInHeaders, ErrorFromMacroArgument) {
+  Annotations Main(R"cpp(
+  void bar() {
+    int fo;
+    #include [["a.h"]]
+  })cpp");
+  Annotations Header(R"cpp(
+  #define X(arg) arg
+  X(foo);)cpp");
+  TestTU TU = TestTU::withCode(Main.code());
+  TU.AdditionalFiles = {{"a.h", Header.code()}};
+  EXPECT_THAT(TU.build().getDiagnostics(),
+              UnorderedElementsAre(
+                  Diag(Main.range(), "in included file: use of undeclared "
+                                     "identifier 'foo'; did you mean 'fo'?")));
+}
+
+TEST(IgnoreDiags, FromNonWrittenInclude) {
+  TestTU TU;
+  TU.ExtraArgs.push_back("--include=a.h");
+  TU.AdditionalFiles = {{"a.h", "void main();"}};
+  // The diagnostic "main must return int" is from the header, we don't attempt
+  // to render it in the main file as there is no written location there.
+  EXPECT_THAT(TU.build().getDiagnostics(), UnorderedElementsAre());
+}
+
+} // namespace
 } // namespace clangd
 } // namespace clang

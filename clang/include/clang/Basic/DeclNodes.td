@@ -68,6 +68,7 @@ def Named : DeclNode<Decl, "named declarations", 1>;
       def TypeAliasTemplate : DeclNode<RedeclarableTemplate>;
     def TemplateTemplateParm : DeclNode<Template>;
     def BuiltinTemplate : DeclNode<Template>;
+    def Concept : DeclNode<Template>;
   def Using : DeclNode<Named>;
   def UsingPack : DeclNode<Named>;
   def UsingShadow : DeclNode<Named>;
@@ -99,4 +100,5 @@ def OMPThreadPrivate : DeclNode<Decl>;
 def OMPAllocate : DeclNode<Decl>;
 def OMPRequires : DeclNode<Decl>;
 def Empty : DeclNode<Decl>;
+def LifetimeExtendedTemporary : DeclNode<Decl>;
 

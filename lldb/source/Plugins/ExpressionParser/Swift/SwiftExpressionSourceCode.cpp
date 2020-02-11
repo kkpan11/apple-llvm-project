@@ -96,11 +96,7 @@ bool SwiftExpressionSourceCode::GetText(
     }
 
     SwiftPersistentExpressionState *persistent_state =
-        llvm::cast<SwiftPersistentExpressionState>(
-            target->GetPersistentExpressionStateForLanguage(
-                lldb::eLanguageTypeSwift));
-    if (!persistent_state)
-      return false;
+      llvm::cast<SwiftPersistentExpressionState>(target->GetPersistentExpressionStateForLanguage(lldb::eLanguageTypeSwift));
     std::vector<swift::ValueDecl *> persistent_results;
     // Check if we have already declared the playground stub debug functions
     persistent_state->GetSwiftPersistentDecls(ConstString("__builtin_log_with_id"), {},

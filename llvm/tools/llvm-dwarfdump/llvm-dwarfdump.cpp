@@ -92,8 +92,6 @@ namespace {
 using namespace cl;
 
 OptionCategory DwarfDumpCategory("Specific Options");
-static opt<bool> Help("h", desc("Alias for -help"), Hidden,
-                      cat(DwarfDumpCategory));
 static list<std::string>
     InputFilenames(Positional, desc("<input object files or .dSYM bundles>"),
                    ZeroOrMore, cat(DwarfDumpCategory));
@@ -222,6 +220,8 @@ static opt<bool> Verbose("verbose",
                          cat(DwarfDumpCategory));
 static alias VerboseAlias("v", desc("Alias for -verbose."), aliasopt(Verbose),
                           cat(DwarfDumpCategory));
+static cl::extrahelp
+    HelpResponse("\nPass @FILE as argument to read options from FILE.\n");
 } // namespace
 /// @}
 //===----------------------------------------------------------------------===//
@@ -575,11 +575,6 @@ int main(int argc, char **argv) {
       "pretty-print DWARF debug information in object files"
       " and debug info archives.\n");
 
-  if (Help) {
-    PrintHelpMessage(/*Hidden =*/false, /*Categorized =*/true);
-    return 0;
-  }
-
   // FIXME: Audit interactions between these two options and make them
   //        compatible.
   if (Diff && Verbose) {
@@ -589,7 +584,7 @@ int main(int argc, char **argv) {
   }
 
   std::error_code EC;
-  ToolOutputFile OutputFile(OutputFilename, EC, sys::fs::OF_None);
+  ToolOutputFile OutputFile(OutputFilename, EC, sys::fs::OF_Text);
   error("Unable to open output file" + OutputFilename, EC);
   // Don't remove output file if we exit with an error.
   OutputFile.keep();

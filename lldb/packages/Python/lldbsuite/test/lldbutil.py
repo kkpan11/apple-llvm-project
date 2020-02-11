@@ -763,7 +763,8 @@ def run_to_breakpoint_make_target(test, exe_name = "a.out", in_cwd = True):
 
     # Set environment variables for the inferior.
     if lldbtest_config.inferior_env:
-        test.runCmd('settings set target.env-vars {}'.format(lldbtest_config.inferior_env))
+        test.runCmd('settings set target.env-vars {}'.format(
+            lldbtest_config.inferior_env))
 
     return target
 
@@ -785,6 +786,8 @@ def run_to_breakpoint_do_run(test, target, bkpt, launch_info = None,
     test.assertTrue(process,
                     "Could not create a valid process for %s: %s"%(target.GetExecutable().GetFilename(),
                     error.GetCString()))
+    test.assertFalse(error.Fail(),
+                     "Process launch failed: %s" % (error.GetCString()))
 
     # Frame #0 should be at our breakpoint.
     threads = get_threads_stopped_at_breakpoint(
@@ -795,7 +798,7 @@ def run_to_breakpoint_do_run(test, target, bkpt, launch_info = None,
         test.assertEqual(num_threads, 1, "Expected 1 thread to stop at breakpoint, %d did."%(num_threads))
     else:
         test.assertGreater(num_threads, 0, "No threads stopped at breakpoint")
-
+        
     thread = threads[0]
     return (target, process, thread, bkpt)
 

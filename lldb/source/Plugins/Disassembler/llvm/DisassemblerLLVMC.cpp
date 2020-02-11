@@ -20,6 +20,7 @@
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCSubtargetInfo.h"
+#include "llvm/MC/MCTargetOptions.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/ScopedPrinter.h"
 #include "llvm/Support/TargetRegistry.h"
@@ -85,76 +86,18 @@ public:
       : Instruction(address, addr_class),
         m_disasm_wp(std::static_pointer_cast<DisassemblerLLVMC>(
             disasm.shared_from_this())),
-        m_does_branch(eLazyBoolCalculate), m_has_delay_slot(eLazyBoolCalculate),
-        m_is_call(eLazyBoolCalculate), m_is_valid(false),
         m_using_file_addr(false) {}
 
   ~InstructionLLVMC() override = default;
 
   bool DoesBranch() override {
-    if (m_does_branch == eLazyBoolCalculate) {
-      DisassemblerScope disasm(*this);
-      if (disasm) {
-        DataExtractor data;
-        if (m_opcode.GetData(data)) {
-          bool is_alternate_isa;
-          lldb::addr_t pc = m_address.GetFileAddress();
-
-          DisassemblerLLVMC::MCDisasmInstance *mc_disasm_ptr =
-              GetDisasmToUse(is_alternate_isa, disasm);
-          const uint8_t *opcode_data = data.GetDataStart();
-          const size_t opcode_data_len = data.GetByteSize();
-          llvm::MCInst inst;
-          const size_t inst_size =
-              mc_disasm_ptr->GetMCInst(opcode_data, opcode_data_len, pc, inst);
-          // Be conservative, if we didn't understand the instruction, say it
-          // might branch...
-          if (inst_size == 0)
-            m_does_branch = eLazyBoolYes;
-          else {
-            const bool can_branch = mc_disasm_ptr->CanBranch(inst);
-            if (can_branch)
-              m_does_branch = eLazyBoolYes;
-            else
-              m_does_branch = eLazyBoolNo;
-          }
-        }
-      }
-    }
-    return m_does_branch == eLazyBoolYes;
+    VisitInstruction();
+    return m_does_branch;
   }
 
   bool HasDelaySlot() override {
-    if (m_has_delay_slot == eLazyBoolCalculate) {
-      DisassemblerScope disasm(*this);
-      if (disasm) {
-        DataExtractor data;
-        if (m_opcode.GetData(data)) {
-          bool is_alternate_isa;
-          lldb::addr_t pc = m_address.GetFileAddress();
-
-          DisassemblerLLVMC::MCDisasmInstance *mc_disasm_ptr =
-              GetDisasmToUse(is_alternate_isa, disasm);
-          const uint8_t *opcode_data = data.GetDataStart();
-          const size_t opcode_data_len = data.GetByteSize();
-          llvm::MCInst inst;
-          const size_t inst_size =
-              mc_disasm_ptr->GetMCInst(opcode_data, opcode_data_len, pc, inst);
-          // if we didn't understand the instruction, say it doesn't have a
-          // delay slot...
-          if (inst_size == 0)
-            m_has_delay_slot = eLazyBoolNo;
-          else {
-            const bool has_delay_slot = mc_disasm_ptr->HasDelaySlot(inst);
-            if (has_delay_slot)
-              m_has_delay_slot = eLazyBoolYes;
-            else
-              m_has_delay_slot = eLazyBoolNo;
-          }
-        }
-      }
-    }
-    return m_has_delay_slot == eLazyBoolYes;
+    VisitInstruction();
+    return m_has_delay_slot;
   }
 
   DisassemblerLLVMC::MCDisasmInstance *GetDisasmToUse(bool &is_alternate_isa) {
@@ -368,14 +311,6 @@ public:
           }
           m_mnemonics = mnemonic_strm.GetString();
           return;
-        } else {
-          if (m_does_branch == eLazyBoolCalculate) {
-            const bool can_branch = mc_disasm_ptr->CanBranch(inst);
-            if (can_branch)
-              m_does_branch = eLazyBoolYes;
-            else
-              m_does_branch = eLazyBoolNo;
-          }
         }
 
         static RegularExpression s_regex(
@@ -865,42 +800,54 @@ public:
   }
 
   bool IsCall() override {
-    if (m_is_call == eLazyBoolCalculate) {
-      DisassemblerScope disasm(*this);
-      if (disasm) {
-        DataExtractor data;
-        if (m_opcode.GetData(data)) {
-          bool is_alternate_isa;
-          lldb::addr_t pc = m_address.GetFileAddress();
-
-          DisassemblerLLVMC::MCDisasmInstance *mc_disasm_ptr =
-              GetDisasmToUse(is_alternate_isa, disasm);
-          const uint8_t *opcode_data = data.GetDataStart();
-          const size_t opcode_data_len = data.GetByteSize();
-          llvm::MCInst inst;
-          const size_t inst_size =
-              mc_disasm_ptr->GetMCInst(opcode_data, opcode_data_len, pc, inst);
-          if (inst_size == 0) {
-            m_is_call = eLazyBoolNo;
-          } else {
-            if (mc_disasm_ptr->IsCall(inst))
-              m_is_call = eLazyBoolYes;
-            else
-              m_is_call = eLazyBoolNo;
-          }
-        }
-      }
-    }
-    return m_is_call == eLazyBoolYes;
+    VisitInstruction();
+    return m_is_call;
   }
 
 protected:
   std::weak_ptr<DisassemblerLLVMC> m_disasm_wp;
-  LazyBool m_does_branch;
-  LazyBool m_has_delay_slot;
-  LazyBool m_is_call;
-  bool m_is_valid;
+
+  bool m_is_valid = false;
   bool m_using_file_addr;
+  bool m_has_visited_instruction = false;
+
+  // Be conservative. If we didn't understand the instruction, say it:
+  //   - Might branch
+  //   - Does not have a delay slot
+  //   - Is not a call
+  bool m_does_branch = true;
+  bool m_has_delay_slot = false;
+  bool m_is_call = false;
+
+  void VisitInstruction() {
+    if (m_has_visited_instruction)
+      return;
+
+    DisassemblerScope disasm(*this);
+    if (!disasm)
+      return;
+
+    DataExtractor data;
+    if (!m_opcode.GetData(data))
+      return;
+
+    bool is_alternate_isa;
+    lldb::addr_t pc = m_address.GetFileAddress();
+    DisassemblerLLVMC::MCDisasmInstance *mc_disasm_ptr =
+        GetDisasmToUse(is_alternate_isa, disasm);
+    const uint8_t *opcode_data = data.GetDataStart();
+    const size_t opcode_data_len = data.GetByteSize();
+    llvm::MCInst inst;
+    const size_t inst_size =
+        mc_disasm_ptr->GetMCInst(opcode_data, opcode_data_len, pc, inst);
+    if (inst_size == 0)
+      return;
+
+    m_has_visited_instruction = true;
+    m_does_branch = mc_disasm_ptr->CanBranch(inst);
+    m_has_delay_slot = mc_disasm_ptr->HasDelaySlot(inst);
+    m_is_call = mc_disasm_ptr->IsCall(inst);
+  }
 
 private:
   DisassemblerLLVMC::MCDisasmInstance *
@@ -949,8 +896,9 @@ DisassemblerLLVMC::MCDisasmInstance::Create(const char *triple, const char *cpu,
   if (!subtarget_info_up)
     return Instance();
 
+  llvm::MCTargetOptions MCOptions;
   std::unique_ptr<llvm::MCAsmInfo> asm_info_up(
-      curr_target->createMCAsmInfo(*reg_info_up, triple));
+      curr_target->createMCAsmInfo(*reg_info_up, triple, MCOptions));
   if (!asm_info_up)
     return Instance();
 
@@ -1032,8 +980,8 @@ void DisassemblerLLVMC::MCDisasmInstance::PrintMCInst(
   llvm::raw_string_ostream comments_stream(comments_string);
 
   m_instr_printer_up->setCommentStream(comments_stream);
-  m_instr_printer_up->printInst(&mc_inst, inst_stream, llvm::StringRef(),
-                                *m_subtarget_info_up);
+  m_instr_printer_up->printInst(&mc_inst, 0, llvm::StringRef(),
+                                *m_subtarget_info_up, inst_stream);
   m_instr_printer_up->setCommentStream(llvm::nulls());
   comments_stream.flush();
 
@@ -1189,10 +1137,12 @@ DisassemblerLLVMC::DisassemblerLLVMC(const ArchSpec &arch,
 
   // If any AArch64 variant, enable the ARMv8.5 ISA with SVE extensions so we
   // can disassemble newer instructions.
-  if (triple.getArch() == llvm::Triple::aarch64)
+  if (triple.getArch() == llvm::Triple::aarch64 || 
+      triple.getArch() == llvm::Triple::aarch64_32)
     features_str += "+v8.5a,+sve2";
 
-  if (triple.getArch() == llvm::Triple::aarch64
+  if ((triple.getArch() == llvm::Triple::aarch64 ||
+       triple.getArch() == llvm::Triple::aarch64_32)
       && triple.getVendor() == llvm::Triple::Apple) {
     cpu = "apple-latest";
   }
@@ -1210,7 +1160,7 @@ DisassemblerLLVMC::DisassemblerLLVMC(const ArchSpec &arch,
   if (llvm_arch == llvm::Triple::arm) {
     std::string thumb_triple(thumb_arch.GetTriple().getTriple());
     m_alternate_disasm_up =
-        MCDisasmInstance::Create(thumb_triple.c_str(), "", features_str.c_str(), 
+        MCDisasmInstance::Create(thumb_triple.c_str(), "", features_str.c_str(),
                                  flavor, *this);
     if (!m_alternate_disasm_up)
       m_disasm_up.reset();

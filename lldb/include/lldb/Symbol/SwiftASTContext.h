@@ -70,8 +70,17 @@ struct SourceModule;
 CompilerType ToCompilerType(swift::Type qual_type);
 
 class SwiftASTContext : public TypeSystem {
+  // LLVM RTTI support
+  static char ID;
+
 public:
   typedef lldb_utility::Either<CompilerType, swift::Decl *> TypeOrDecl;
+
+  /// LLVM RTTI support
+  /// \{
+  bool isA(const void *ClassID) const override { return ClassID == &ID; }
+  static bool classof(const TypeSystem *ts) { return ts->isA(&ID); }
+  /// \}
 
 private:
   struct EitherComparator {
@@ -111,11 +120,6 @@ public:
   private:
     LanguageFlags() = delete;
   };
-
-  // llvm casting support
-  static bool classof(const TypeSystem *ts) {
-    return ts->getKind() == TypeSystem::eKindSwift;
-  }
 
   /// Provide the global LLVMContext.
   static llvm::LLVMContext &GetGlobalLLVMContext();
@@ -263,8 +267,7 @@ public:
   void LoadModule(swift::ModuleDecl *swift_module, Process &process,
                   Status &error);
 
-  /// Collect Swift modules in the .swift_ast section of \p module.
-  void RegisterSectionModules(Module &module,
+  bool RegisterSectionModules(Module &module,
                               std::vector<std::string> &module_names);
 
   void ValidateSectionModules(Module &module, // this is used to print errors
@@ -409,8 +412,6 @@ public:
                             const bool ignore_imported_decls) override {
     return {};
   }
-
-  bool DeclContextIsStructUnionOrClass(void *opaque_decl_ctx) override;
 
   ConstString DeclContextGetName(void *opaque_decl_ctx) override;
 
@@ -565,6 +566,8 @@ public:
 
   // Exploring the type
 
+  const llvm::fltSemantics &GetFloatTypeSemantics(size_t byte_size) override;
+
   llvm::Optional<uint64_t>
   GetBitSize(lldb::opaque_compiler_type_t type,
              ExecutionContextScope *exe_scope) override;
@@ -672,7 +675,7 @@ public:
                    const DataExtractor &data, lldb::offset_t data_offset,
                    size_t data_byte_size) override;
 
-  // TODO: Determine if these methods should move to ClangASTContext.
+  // TODO: Determine if these methods should move to TypeSystemClang.
 
   bool IsPointerOrReferenceType(void *type,
                                 CompilerType *pointee_type) override;
@@ -742,9 +745,6 @@ public:
 
   static bool IsImportedType(const CompilerType &type,
                              CompilerType *original_type);
-
-  static bool IsImportedObjectiveCType(const CompilerType &type,
-                                       CompilerType *original_type);
 
   CompilerType GetReferentType(const CompilerType &compiler_type);
 
@@ -911,7 +911,18 @@ protected:
 };
 
 class SwiftASTContextForExpressions : public SwiftASTContext {
+  // LLVM RTTI support
+  static char ID;
+
 public:
+  /// LLVM RTTI support
+  /// \{
+  bool isA(const void *ClassID) const override {
+    return ClassID == &ID || SwiftASTContext::isA(ClassID);
+  }
+  static bool classof(const TypeSystem *ts) { return ts->isA(&ID); }
+  /// \}
+
   SwiftASTContextForExpressions(std::string description, Target &target);
 
   virtual ~SwiftASTContextForExpressions() {}

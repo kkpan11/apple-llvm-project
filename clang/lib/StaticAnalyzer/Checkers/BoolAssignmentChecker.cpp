@@ -36,7 +36,7 @@ void BoolAssignmentChecker::emitReport(ProgramStateRef state,
       BT.reset(new BuiltinBug(this, "Assignment of a non-Boolean value"));
 
     C.emitReport(
-        llvm::make_unique<PathSensitiveBugReport>(*BT, BT->getDescription(), N));
+        std::make_unique<PathSensitiveBugReport>(*BT, BT->getDescription(), N));
   }
 }
 

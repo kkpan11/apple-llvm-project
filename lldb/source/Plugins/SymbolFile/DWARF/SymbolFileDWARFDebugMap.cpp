@@ -605,7 +605,7 @@ SymbolFileDWARFDebugMap::CompileUnitInfo *
 SymbolFileDWARFDebugMap::GetCompUnitInfo(const CompileUnit &comp_unit) {
   const uint32_t cu_count = GetNumCompileUnits();
   for (uint32_t i = 0; i < cu_count; ++i) {
-    if (comp_unit == m_compile_unit_infos[i].compile_unit_sp.get())
+    if (&comp_unit == m_compile_unit_infos[i].compile_unit_sp.get())
       return &m_compile_unit_infos[i];
   }
   return nullptr;
@@ -813,12 +813,8 @@ uint32_t SymbolFileDWARFDebugMap::ResolveSymbolContext(
 
     if (!resolve) {
       FileSpec so_file_spec;
-      if (GetFileSpecForSO(i, so_file_spec)) {
-        // Match the full path if the incoming file_spec has a directory (not
-        // just a basename)
-        const bool full_match = (bool)file_spec.GetDirectory();
-        resolve = FileSpec::Equal(file_spec, so_file_spec, full_match);
-      }
+      if (GetFileSpecForSO(i, so_file_spec))
+        resolve = FileSpec::Match(file_spec, so_file_spec);
     }
     if (resolve) {
       SymbolFileDWARF *oso_dwarf = GetSymbolFileByOSOIndex(i);
@@ -830,12 +826,11 @@ uint32_t SymbolFileDWARFDebugMap::ResolveSymbolContext(
   return sc_list.GetSize() - initial;
 }
 
-uint32_t SymbolFileDWARFDebugMap::PrivateFindGlobalVariables(
+void SymbolFileDWARFDebugMap::PrivateFindGlobalVariables(
     ConstString name, const CompilerDeclContext *parent_decl_ctx,
     const std::vector<uint32_t>
         &indexes, // Indexes into the symbol table that match "name"
     uint32_t max_matches, VariableList &variables) {
-  const uint32_t original_size = variables.GetSize();
   const size_t match_count = indexes.size();
   for (size_t i = 0; i < match_count; ++i) {
     uint32_t oso_idx;
@@ -844,29 +839,26 @@ uint32_t SymbolFileDWARFDebugMap::PrivateFindGlobalVariables(
     if (comp_unit_info) {
       SymbolFileDWARF *oso_dwarf = GetSymbolFileByOSOIndex(oso_idx);
       if (oso_dwarf) {
-        if (oso_dwarf->FindGlobalVariables(name, parent_decl_ctx, max_matches,
-                                           variables))
-          if (variables.GetSize() > max_matches)
-            break;
+        oso_dwarf->FindGlobalVariables(name, parent_decl_ctx, max_matches,
+                                       variables);
+        if (variables.GetSize() > max_matches)
+          break;
       }
     }
   }
-  return variables.GetSize() - original_size;
 }
 
-uint32_t SymbolFileDWARFDebugMap::FindGlobalVariables(
+void SymbolFileDWARFDebugMap::FindGlobalVariables(
     ConstString name, const CompilerDeclContext *parent_decl_ctx,
     uint32_t max_matches, VariableList &variables) {
   std::lock_guard<std::recursive_mutex> guard(GetModuleMutex());
-
-  // Remember how many variables are in the list before we search.
-  const uint32_t original_size = variables.GetSize();
-
   uint32_t total_matches = 0;
 
   ForEachSymbolFile([&](SymbolFileDWARF *oso_dwarf) -> bool {
-    const uint32_t oso_matches = oso_dwarf->FindGlobalVariables(
-        name, parent_decl_ctx, max_matches, variables);
+    const uint32_t old_size = variables.GetSize();
+    oso_dwarf->FindGlobalVariables(name, parent_decl_ctx, max_matches,
+                                   variables);
+    const uint32_t oso_matches = variables.GetSize() - old_size;
     if (oso_matches > 0) {
       total_matches += oso_matches;
 
@@ -885,23 +877,18 @@ uint32_t SymbolFileDWARFDebugMap::FindGlobalVariables(
 
     return false;
   });
-
-  // Return the number of variable that were appended to the list
-  return variables.GetSize() - original_size;
 }
 
-uint32_t
-SymbolFileDWARFDebugMap::FindGlobalVariables(const RegularExpression &regex,
-                                             uint32_t max_matches,
-                                             VariableList &variables) {
+void SymbolFileDWARFDebugMap::FindGlobalVariables(
+    const RegularExpression &regex, uint32_t max_matches,
+    VariableList &variables) {
   std::lock_guard<std::recursive_mutex> guard(GetModuleMutex());
-  // Remember how many variables are in the list before we search.
-  const uint32_t original_size = variables.GetSize();
-
   uint32_t total_matches = 0;
   ForEachSymbolFile([&](SymbolFileDWARF *oso_dwarf) -> bool {
-    const uint32_t oso_matches =
-        oso_dwarf->FindGlobalVariables(regex, max_matches, variables);
+    const uint32_t old_size = variables.GetSize();
+    oso_dwarf->FindGlobalVariables(regex, max_matches, variables);
+
+    const uint32_t oso_matches = variables.GetSize() - old_size;
     if (oso_matches > 0) {
       total_matches += oso_matches;
 
@@ -920,9 +907,6 @@ SymbolFileDWARFDebugMap::FindGlobalVariables(const RegularExpression &regex,
 
     return false;
   });
-
-  // Return the number of variable that were appended to the list
-  return variables.GetSize() - original_size;
 }
 
 int SymbolFileDWARFDebugMap::SymbolContainsSymbolWithIndex(
@@ -1018,9 +1002,9 @@ static void RemoveFunctionsWithModuleNotEqualTo(const ModuleSP &module_sp,
   }
 }
 
-uint32_t SymbolFileDWARFDebugMap::FindFunctions(
+void SymbolFileDWARFDebugMap::FindFunctions(
     ConstString name, const CompilerDeclContext *parent_decl_ctx,
-    FunctionNameType name_type_mask, bool include_inlines, bool append,
+    FunctionNameType name_type_mask, bool include_inlines,
     SymbolContextList &sc_list) {
   std::lock_guard<std::recursive_mutex> guard(GetModuleMutex());
   static Timer::Category func_cat(LLVM_PRETTY_FUNCTION);
@@ -1028,52 +1012,37 @@ uint32_t SymbolFileDWARFDebugMap::FindFunctions(
                      "SymbolFileDWARFDebugMap::FindFunctions (name = %s)",
                      name.GetCString());
 
-  uint32_t initial_size = 0;
-  if (append)
-    initial_size = sc_list.GetSize();
-  else
-    sc_list.Clear();
-
   ForEachSymbolFile([&](SymbolFileDWARF *oso_dwarf) -> bool {
     uint32_t sc_idx = sc_list.GetSize();
-    if (oso_dwarf->FindFunctions(name, parent_decl_ctx, name_type_mask,
-                                 include_inlines, true, sc_list)) {
+    oso_dwarf->FindFunctions(name, parent_decl_ctx, name_type_mask,
+                             include_inlines, sc_list);
+    if (!sc_list.IsEmpty()) {
       RemoveFunctionsWithModuleNotEqualTo(m_objfile_sp->GetModule(), sc_list,
                                           sc_idx);
     }
     return false;
   });
-
-  return sc_list.GetSize() - initial_size;
 }
 
-uint32_t SymbolFileDWARFDebugMap::FindFunctions(const RegularExpression &regex,
-                                                bool include_inlines,
-                                                bool append,
-                                                SymbolContextList &sc_list) {
+void SymbolFileDWARFDebugMap::FindFunctions(const RegularExpression &regex,
+                                            bool include_inlines,
+                                            SymbolContextList &sc_list) {
   std::lock_guard<std::recursive_mutex> guard(GetModuleMutex());
   static Timer::Category func_cat(LLVM_PRETTY_FUNCTION);
   Timer scoped_timer(func_cat,
                      "SymbolFileDWARFDebugMap::FindFunctions (regex = '%s')",
                      regex.GetText().str().c_str());
 
-  uint32_t initial_size = 0;
-  if (append)
-    initial_size = sc_list.GetSize();
-  else
-    sc_list.Clear();
-
   ForEachSymbolFile([&](SymbolFileDWARF *oso_dwarf) -> bool {
     uint32_t sc_idx = sc_list.GetSize();
 
-    if (oso_dwarf->FindFunctions(regex, include_inlines, true, sc_list)) {
+    oso_dwarf->FindFunctions(regex, include_inlines, sc_list);
+    if (!sc_list.IsEmpty()) {
       RemoveFunctionsWithModuleNotEqualTo(m_objfile_sp->GetModule(), sc_list,
                                           sc_idx);
     }
     return false;
   });
-
-  return sc_list.GetSize() - initial_size;
 }
 
 void SymbolFileDWARFDebugMap::GetTypes(SymbolContextScope *sc_scope,
@@ -1104,7 +1073,7 @@ void SymbolFileDWARFDebugMap::GetTypes(SymbolContextScope *sc_scope,
   }
 }
 
-std::vector<lldb_private::CallEdge>
+std::vector<std::unique_ptr<lldb_private::CallEdge>>
 SymbolFileDWARFDebugMap::ParseCallEdgesInFunction(UserID func_id) {
   uint32_t oso_idx = GetOSOIndexFromUserID(func_id.GetID());
   SymbolFileDWARF *oso_dwarf = GetSymbolFileByOSOIndex(oso_idx);

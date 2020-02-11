@@ -240,7 +240,7 @@ TEST(CodeExtractor, ExtractAndInvalidateAssumptionCache) {
         %b = type { i64 }
         declare void @g(i8*)
 
-        declare void @llvm.assume(i1)
+        declare void @llvm.assume(i1) #0
 
         define void @test() {
         entry:
@@ -263,6 +263,8 @@ TEST(CodeExtractor, ExtractAndInvalidateAssumptionCache) {
           call void @llvm.assume(i1 %4)
           unreachable
         }
+
+        attributes #0 = { nounwind willreturn }
   )ir",
                                                 Err, Ctx));
 
@@ -278,6 +280,6 @@ TEST(CodeExtractor, ExtractAndInvalidateAssumptionCache) {
   EXPECT_TRUE(Outlined);
   EXPECT_FALSE(verifyFunction(*Outlined));
   EXPECT_FALSE(verifyFunction(*Func));
-  EXPECT_FALSE(CE.verifyAssumptionCache(*Func, &AC));
+  EXPECT_FALSE(CE.verifyAssumptionCache(*Func, *Outlined, &AC));
 }
 } // end anonymous namespace

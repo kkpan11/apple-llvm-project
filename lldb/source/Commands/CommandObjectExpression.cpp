@@ -6,32 +6,24 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/IR/Module.h"
-#include "llvm/Support/MemoryBuffer.h"
 
 #include "CommandObjectExpression.h"
 #include "lldb/Core/Debugger.h"
-#include "lldb/Core/Value.h"
-#include "lldb/Core/ValueObjectVariable.h"
-#include "lldb/DataFormatters/ValueObjectPrinter.h"
-#include "lldb/Expression/DWARFExpression.h"
 #include "lldb/Expression/REPL.h"
 #include "lldb/Expression/UserExpression.h"
-#include "lldb/Host/Host.h"
 #include "lldb/Host/OptionParser.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
 #include "lldb/Interpreter/OptionArgParser.h"
-#include "lldb/Symbol/CompileUnit.h"
-#include "lldb/Symbol/ObjectFile.h"
-#include "lldb/Symbol/Variable.h"
 #include "lldb/Target/Language.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/StackFrame.h"
 #include "lldb/Target/Target.h"
-#include "lldb/Target/Thread.h"
+
+// BEGIN SWIFT
+#include "lldb/Symbol/CompileUnit.h"
+// END SWIFT
 
 using namespace lldb;
 using namespace lldb_private;
@@ -205,15 +197,18 @@ CommandObjectExpression::CommandOptions::GetDefinitions() {
 
 CommandObjectExpression::CommandObjectExpression(
     CommandInterpreter &interpreter)
-    : CommandObjectRaw(
-          interpreter, "expression", "Evaluate an expression on the current "
-                                     "thread.  Displays any returned value "
-                                     "with LLDB's default formatting.",
-          "", eCommandProcessMustBePaused | eCommandTryTargetAPILock),
+    : CommandObjectRaw(interpreter, "expression",
+                       "Evaluate an expression on the current "
+                       "thread.  Displays any returned value "
+                       "with LLDB's default formatting.",
+                       "",
+                       eCommandProcessMustBePaused | eCommandTryTargetAPILock),
       IOHandlerDelegate(IOHandlerDelegate::Completion::Expression),
       m_option_group(), m_format_options(eFormatDefault),
+      // BEGIN SWIFT
       m_repl_option(LLDB_OPT_SET_1, false, "repl", 'r', "Drop into Swift REPL",
                     false, true),
+      // END SWIFT
       m_command_options(), m_expr_line_count(0), m_expr_lines() {
   SetHelpLong(
       R"(
@@ -395,11 +390,16 @@ bool CommandObjectExpression::EvaluateExpression(llvm::StringRef expr,
   options.SetTryAllThreads(m_command_options.try_all_threads);
   options.SetDebug(m_command_options.debug);
 
+  // BEGIN SWIFT
   // If the language was not specified in the expression command,
   // set it to the language in the target's properties if
   // specified, else default to the language for the frame.
-  if (m_command_options.language != eLanguageTypeUnknown)
-    options.SetLanguage(m_command_options.language);
+  if (m_command_options.language != eLanguageTypeUnknown) {
+  // END SWIFT   
+  options.SetLanguage(m_command_options.language);
+  // BEGIN SWIFT
+  }
+  // END SWIFT
 
   options.SetExecutionPolicy(
       m_command_options.allow_jit
@@ -479,12 +479,10 @@ bool CommandObjectExpression::EvaluateExpression(llvm::StringRef expr,
         if (result)
           result->SetStatus(eReturnStatusSuccessFinishResult);
       } else {
-        const Status &expr_error = result_valobj_sp->GetError();
-        const char *error_cstr = expr_error.AsCString();
+        const char *error_cstr = result_valobj_sp->GetError().AsCString();
         if (error_cstr && error_cstr[0]) {
           const size_t error_cstr_len = strlen(error_cstr);
-          const bool ends_with_newline =
-              error_cstr[error_cstr_len - 1] == '\n';
+          const bool ends_with_newline = error_cstr[error_cstr_len - 1] == '\n';
           if (strstr(error_cstr, "error:") != error_cstr)
             error_stream->PutCString("error: ");
           error_stream->Write(error_cstr, error_cstr_len);
@@ -509,8 +507,8 @@ void CommandObjectExpression::IOHandlerInputComplete(IOHandler &io_handler,
   //    StreamSP output_stream =
   //    io_handler.GetDebugger().GetAsyncOutputStream();
   //    StreamSP error_stream = io_handler.GetDebugger().GetAsyncErrorStream();
-  StreamFileSP output_sp(io_handler.GetOutputStreamFile());
-  StreamFileSP error_sp(io_handler.GetErrorStreamFile());
+  StreamFileSP output_sp = io_handler.GetOutputStreamFileSP();
+  StreamFileSP error_sp = io_handler.GetErrorStreamFileSP();
 
   EvaluateExpression(line.c_str(), output_sp.get(), error_sp.get());
   if (output_sp)
@@ -536,6 +534,7 @@ void CommandObjectExpression::GetMultilineExpression() {
   m_expr_lines.clear();
   m_expr_line_count = 0;
 
+  // BEGIN SWIFT
   // If we didn't set the language, make sure we get the Swift language right
   // if we are stopped in a swift compile unit. This will help us use the
   // correct input reader name so our C/C++/ObjC expression history will be
@@ -550,25 +549,30 @@ void CommandObjectExpression::GetMultilineExpression() {
         m_command_options.language = lldb::eLanguageTypeSwift;
     }
   }
-
+  // END SWIFT
+  
   Debugger &debugger = GetCommandInterpreter().GetDebugger();
   bool color_prompt = debugger.GetUseColor();
   const bool multiple_lines = true; // Get multiple lines
 
+  // BEGIN SWIFT
   const char *input_reader_name =
       m_command_options.language == lldb::eLanguageTypeSwift ? "lldb-swift"
+  // END SWIFT
                                                              : "lldb-expr";
 
   IOHandlerSP io_handler_sp(
       new IOHandlerEditline(debugger, IOHandler::Type::Expression,
+                            // BEGIN SWIFT
                             input_reader_name, // Name of input reader for history
+                            // END SWIFT
                             llvm::StringRef(), // No prompt
                             llvm::StringRef(), // Continuation prompt
                             multiple_lines, color_prompt,
                             1, // Show line numbers starting at 1
                             *this, nullptr));
 
-  StreamFileSP output_sp(io_handler_sp->GetOutputStreamFile());
+  StreamFileSP output_sp = io_handler_sp->GetOutputStreamFileSP();
   if (output_sp) {
     output_sp->PutCString(
         "Enter expressions, then terminate with an empty line to evaluate:\n");
@@ -619,66 +623,58 @@ bool CommandObjectExpression::DoExecute(llvm::StringRef command,
       return false;
 
     if (m_repl_option.GetOptionValue().GetCurrentValue()) {
-      Target *target = m_interpreter.GetExecutionContext().GetTargetPtr();
+      Target &target = GetSelectedOrDummyTarget();
+      // Drop into REPL
+      m_expr_lines.clear();
+      m_expr_line_count = 0;
 
-      // If we weren't passed in a target, let's see if the dummy target can
-      // make a REPL:
-      if (!target)
-        target = &GetDummyTarget();
+      Debugger &debugger = target.GetDebugger();
 
-      if (target) {
-        // Drop into REPL
-        m_expr_lines.clear();
-        m_expr_line_count = 0;
+      // Check if the LLDB command interpreter is sitting on top of a REPL
+      // that launched it...
+      if (debugger.CheckTopIOHandlerTypes(IOHandler::Type::CommandInterpreter,
+                                          IOHandler::Type::REPL)) {
+        // the LLDB command interpreter is sitting on top of a REPL that
+        // launched it, so just say the command interpreter is done and
+        // fall back to the existing REPL
+        m_interpreter.GetIOHandler(false)->SetIsDone(true);
+      } else {
+        // We are launching the REPL on top of the current LLDB command
+        // interpreter, so just push one
+        bool initialize = false;
+        Status repl_error;
+        REPLSP repl_sp(target.GetREPL(repl_error, m_command_options.language,
+                                       nullptr, false));
 
-        Debugger &debugger = target->GetDebugger();
-
-        // Check if the LLDB command interpreter is sitting on top of a REPL
-        // that launched it...
-        if (debugger.CheckTopIOHandlerTypes(IOHandler::Type::CommandInterpreter,
-                                            IOHandler::Type::REPL)) {
-          // the LLDB command interpreter is sitting on top of a REPL that
-          // launched it, so just say the command interpreter is done and
-          // fall back to the existing REPL
-          m_interpreter.GetIOHandler(false)->SetIsDone(true);
-        } else {
-          // We are launching the REPL on top of the current LLDB command
-          // interpreter, so just push one
-          bool initialize = false;
-          Status repl_error;
-          REPLSP repl_sp(target->GetREPL(
-              repl_error, m_command_options.language, nullptr, false));
-
-          if (!repl_sp) {
-            initialize = true;
-            repl_sp = target->GetREPL(repl_error, m_command_options.language,
-                                      nullptr, true);
-            if (!repl_error.Success()) {
-              result.SetError(repl_error);
-              return result.Succeeded();
-            }
-          }
-
-          if (repl_sp) {
-            if (initialize) {
-              repl_sp->SetEvaluateOptions(
-                  GetExprOptions(exe_ctx, m_command_options));
-              repl_sp->SetFormatOptions(m_format_options);
-              repl_sp->SetValueObjectDisplayOptions(m_varobj_options);
-            }
-
-            IOHandlerSP io_handler_sp(repl_sp->GetIOHandler());
-
-            io_handler_sp->SetIsDone(false);
-
-            debugger.PushIOHandler(io_handler_sp);
-          } else {
-            repl_error.SetErrorStringWithFormat(
-                "Couldn't create a REPL for %s",
-                Language::GetNameForLanguageType(m_command_options.language));
+        if (!repl_sp) {
+          initialize = true;
+          repl_sp = target.GetREPL(repl_error, m_command_options.language,
+                                    nullptr, true);
+          if (!repl_error.Success()) {
             result.SetError(repl_error);
             return result.Succeeded();
           }
+        }
+
+        if (repl_sp) {
+          if (initialize) {
+            repl_sp->SetEvaluateOptions(
+                GetExprOptions(exe_ctx, m_command_options));
+            repl_sp->SetFormatOptions(m_format_options);
+            repl_sp->SetValueObjectDisplayOptions(m_varobj_options);
+          }
+
+          IOHandlerSP io_handler_sp(repl_sp->GetIOHandler());
+
+          io_handler_sp->SetIsDone(false);
+
+          debugger.PushIOHandler(io_handler_sp);
+        } else {
+          repl_error.SetErrorStringWithFormat(
+              "Couldn't create a REPL for %s",
+              Language::GetNameForLanguageType(m_command_options.language));
+          result.SetError(repl_error);
+          return result.Succeeded();
         }
       }
     }

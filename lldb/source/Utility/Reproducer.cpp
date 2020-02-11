@@ -18,15 +18,6 @@ using namespace lldb_private::repro;
 using namespace llvm;
 using namespace llvm::yaml;
 
-static llvm::Optional<bool> GetEnv(const char *var) {
-  std::string val = llvm::StringRef(getenv(var)).lower();
-  if (val == "0" || val == "off")
-    return false;
-  if (val == "1" || val == "on")
-    return true;
-  return {};
-}
-
 Reproducer &Reproducer::Instance() { return *InstanceImpl(); }
 
 llvm::Error Reproducer::Initialize(ReproducerMode mode,
@@ -36,12 +27,12 @@ llvm::Error Reproducer::Initialize(ReproducerMode mode,
 
   // The environment can override the capture mode.
   if (mode != ReproducerMode::Replay) {
-    if (llvm::Optional<bool> override = GetEnv("LLDB_CAPTURE_REPRODUCER")) {
-      if (*override)
-        mode = ReproducerMode::Capture;
-      else
-        mode = ReproducerMode::Off;
-    }
+    std::string env =
+        llvm::StringRef(getenv("LLDB_CAPTURE_REPRODUCER")).lower();
+    if (env == "0" || env == "off")
+      mode = ReproducerMode::Off;
+    else if (env == "1" || env == "on")
+      mode = ReproducerMode::Capture;
   }
 
   switch (mode) {
@@ -167,12 +158,8 @@ Generator::Generator(FileSpec root) : m_root(MakeAbsolute(std::move(root))) {
 }
 
 Generator::~Generator() {
-  if (!m_done) {
-    if (m_auto_generate)
-      Keep();
-    else
-      Discard();
-  }
+  if (!m_done)
+    Discard();
 }
 
 ProviderBase *Generator::Register(std::unique_ptr<ProviderBase> provider) {
@@ -203,10 +190,6 @@ void Generator::Discard() {
   llvm::sys::fs::remove_directories(m_root.GetPath());
 }
 
-void Generator::SetAutoGenerate(bool b) { m_auto_generate = b; }
-
-bool Generator::IsAutoGenerate() const { return m_auto_generate; }
-
 const FileSpec &Generator::GetRoot() const { return m_root; }
 
 void Generator::AddProvidersToIndex() {
@@ -215,7 +198,7 @@ void Generator::AddProvidersToIndex() {
 
   std::error_code EC;
   auto strm = std::make_unique<raw_fd_ostream>(index.GetPath(), EC,
-                                                sys::fs::OpenFlags::OF_None);
+                                               sys::fs::OpenFlags::OF_None);
   yaml::Output yout(*strm);
 
   std::vector<std::string> files;

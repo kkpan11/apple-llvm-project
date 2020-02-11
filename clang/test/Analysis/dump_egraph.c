@@ -13,6 +13,8 @@ int getJ();
 
 int foo() {
   int *x = 0, *y = 0;
+  char c = '\x13';
+
   return *x + *y;
 }
 
@@ -41,7 +43,9 @@ int foo() {
 // CHECK-SAME: \}
 // CHECK-SAME: ]
 
-// CHECK: \"pretty\": \"*x\", \"location\": \{ \"line\": 16, \"column\": 10, \"file\": \"{{(.+)}}dump_egraph.c\" \}
+// CHECK: \"pretty\": \"*x\", \"location\": \{ \"line\": 18, \"column\": 10, \"file\": \"{{(.+)}}dump_egraph.c\" \}
+
+// CHECK: \"pretty\": \"'\\\\x13'\"
 
 // CHECK: \"has_report\": 1
 

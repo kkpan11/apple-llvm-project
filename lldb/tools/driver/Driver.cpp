@@ -11,6 +11,7 @@
 #include "lldb/API/SBCommandInterpreter.h"
 #include "lldb/API/SBCommandReturnObject.h"
 #include "lldb/API/SBDebugger.h"
+#include "lldb/API/SBFile.h"
 #include "lldb/API/SBHostOS.h"
 #include "lldb/API/SBLanguageRuntime.h"
 #include "lldb/API/SBReproducer.h"
@@ -18,8 +19,6 @@
 #include "lldb/API/SBStringList.h"
 
 #include "llvm/ADT/StringRef.h"
-#include "llvm/Support/ConvertUTF.h"
-#include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/Path.h"
@@ -500,16 +499,16 @@ int Driver::MainLoop() {
   SBCommandReturnObject result;
   sb_interpreter.SourceInitFileInHomeDirectory(result);
   if (m_option_data.m_debug_mode) {
-    result.PutError(m_debugger.GetErrorFileHandle());
-    result.PutOutput(m_debugger.GetOutputFileHandle());
+    result.PutError(m_debugger.GetErrorFile());
+    result.PutOutput(m_debugger.GetOutputFile());
   }
 
   // Source the local .lldbinit file if it exists and we're allowed to source.
   // Here we want to always print the return object because it contains the
   // warning and instructions to load local lldbinit files.
   sb_interpreter.SourceInitFileInCurrentWorkingDirectory(result);
-  result.PutError(m_debugger.GetErrorFileHandle());
-  result.PutOutput(m_debugger.GetOutputFileHandle());
+  result.PutError(m_debugger.GetErrorFile());
+  result.PutOutput(m_debugger.GetOutputFile());
 
   // We allow the user to specify an exit code when calling quit which we will
   // return when exiting.
@@ -575,8 +574,8 @@ int Driver::MainLoop() {
   }
 
   if (m_option_data.m_debug_mode) {
-    result.PutError(m_debugger.GetErrorFileHandle());
-    result.PutOutput(m_debugger.GetOutputFileHandle());
+    result.PutError(m_debugger.GetErrorFile());
+    result.PutOutput(m_debugger.GetOutputFile());
   }
 
   const bool handle_events = true;
@@ -756,7 +755,7 @@ void reproducer_handler(void *argv0) {
 }
 
 static void printHelp(LLDBOptTable &table, llvm::StringRef tool_name) {
-  std::string usage_str = tool_name.str() + "options";
+  std::string usage_str = tool_name.str() + " [options]";
   table.PrintHelp(llvm::outs(), usage_str.c_str(), "LLDB", false);
 
   std::string examples = R"___(
@@ -809,13 +808,15 @@ llvm::Optional<int> InitializeReproducer(opt::InputArgList &input_args) {
   // BEGIN SWIFT
   bool capture = true; // input_args.hasArg(OPT_capture);
   // END SWIFT
-  bool auto_generate = input_args.hasArg(OPT_auto_generate);
   auto *capture_path = input_args.getLastArg(OPT_capture_path);
 
-  if (auto_generate && !capture) {
-    WithColor::warning()
-        << "-reproducer-auto-generate specified without -capture\n";
+  // BEGIN SWIFT
+  if (!getenv("LLDB_REPRODUCER_DISABLE_CAPTURE")) {
+    // Always enable capture unless explicitly disabled by the
+    // LLDB_REPRODUCER_DISABLE_CAPTURE environment variable.
+    capture = true;
   }
+  // END SWIFT
 
   if (capture || capture_path) {
     if (capture_path) {
@@ -832,30 +833,12 @@ llvm::Optional<int> InitializeReproducer(opt::InputArgList &input_args) {
         return 1;
       }
     }
-    if (auto_generate)
-      SBReproducer::SetAutoGenerate(true);
   }
 
   return llvm::None;
 }
 
-int
-#ifdef _MSC_VER
-wmain(int argc, wchar_t const *wargv[])
-#else
-main(int argc, char const *argv[])
-#endif
-{
-#ifdef _MSC_VER
-  // Convert wide arguments to UTF-8
-  std::vector<std::string> argvStrings(argc);
-  std::vector<const char *> argvPointers(argc);
-  for (int i = 0; i != argc; ++i) {
-    llvm::convertWideToUTF8(wargv[i], argvStrings[i]);
-    argvPointers[i] = argvStrings[i].c_str();
-  }
-  const char **argv = argvPointers.data();
-#endif
+int main(int argc, char const *argv[]) {
   // Setup LLVM signal handlers and make sure we call llvm_shutdown() on
   // destruction.
   llvm::InitLLVM IL(argc, argv, /*InstallPipeSignalExitHandler=*/false);
@@ -882,7 +865,7 @@ main(int argc, char const *argv[])
   }
 
   // Register the reproducer signal handler.
-  llvm::sys::AddSignalHandler(reproducer_handler, (void *)(argv[0]));
+  llvm::sys::AddSignalHandler(reproducer_handler, const_cast<char *>(argv[0]));
 
   SBError error = SBDebugger::InitializeWithErrorHandling();
   if (error.Fail()) {

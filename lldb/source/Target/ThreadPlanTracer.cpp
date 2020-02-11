@@ -46,7 +46,7 @@ Stream *ThreadPlanTracer::GetLogStream() {
   else {
     TargetSP target_sp(m_thread.CalculateTarget());
     if (target_sp)
-      return target_sp->GetDebugger().GetOutputFile().get();
+      return &(target_sp->GetDebugger().GetOutputStream());
   }
   return nullptr;
 }
@@ -115,10 +115,6 @@ TypeFromUser ThreadPlanAssemblyTracer::GetIntPointerType() {
 ThreadPlanAssemblyTracer::~ThreadPlanAssemblyTracer() = default;
 
 void ThreadPlanAssemblyTracer::TracingStarted() {
-  RegisterContext *reg_ctx = m_thread.GetRegisterContext().get();
-
-  if (m_register_values.empty())
-    m_register_values.resize(reg_ctx->GetRegisterCount());
 }
 
 void ThreadPlanAssemblyTracer::TracingEnded() { m_register_values.clear(); }
@@ -206,6 +202,11 @@ void ThreadPlanAssemblyTracer::Log() {
           stream->PutCString(", ");
       }
     }
+  }
+
+  if (m_register_values.empty()) {
+    RegisterContext *reg_ctx = m_thread.GetRegisterContext().get();
+    m_register_values.resize(reg_ctx->GetRegisterCount());
   }
 
   RegisterValue reg_value;

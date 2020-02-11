@@ -21,7 +21,7 @@
 #include "lldb/DataFormatters/FormattersHelpers.h"
 #include "lldb/DataFormatters/StringPrinter.h"
 
-#include "lldb/Symbol/ClangASTContext.h"
+#include "lldb/Symbol/TypeSystemClang.h"
 #include "lldb/Symbol/CompileUnit.h"
 #include "lldb/Symbol/Function.h"
 #include "lldb/Symbol/Variable.h"
@@ -869,8 +869,8 @@ SwiftLanguage::GetHardcodedSynthetics() {
            FormatManager &format_manager) -> lldb::SyntheticChildrenSP {
           struct IsEligible {
             static bool Check(const CompilerType &type) {
-              if ((ClangASTContext::IsObjCObjectPointerType(type) ||
-                   ClangASTContext::IsObjCObjectOrInterfaceType(type)) &&
+              if ((TypeSystemClang::IsObjCObjectPointerType(type) ||
+                   TypeSystemClang::IsObjCObjectOrInterfaceType(type)) &&
                   SwiftLanguageRuntime::IsSwiftClassName(type.GetTypeName().GetCString()))
                 return true;
 
@@ -957,9 +957,9 @@ SwiftLanguage::GetStringPrinterEscapingHelper(
     return
         [this](uint8_t *buffer, uint8_t *buffer_end,
                uint8_t *&next) -> lldb_private::formatters::StringPrinter::
-            StringPrinterBufferPointer<> {
+            StringPrinterBufferPointer {
               lldb_private::formatters::StringPrinter::
-                  StringPrinterBufferPointer<>
+                  StringPrinterBufferPointer
                       retval{nullptr};
 
               auto isprint32 = [](char32_t codepoint) -> bool {
@@ -1080,9 +1080,9 @@ SwiftLanguage::GetStringPrinterEscapingHelper(
   case lldb_private::formatters::StringPrinter::GetPrintableElementType::ASCII:
     return [](uint8_t *buffer, uint8_t *buffer_end,
               uint8_t *&next) -> lldb_private::formatters::StringPrinter::
-               StringPrinterBufferPointer<> {
+               StringPrinterBufferPointer {
                  lldb_private::formatters::StringPrinter::
-                     StringPrinterBufferPointer<>
+                     StringPrinterBufferPointer
                          retval = {nullptr};
 
                  switch (*buffer) {
@@ -1145,7 +1145,6 @@ static void SplitDottedName(llvm::StringRef name,
 
 std::unique_ptr<Language::TypeScavenger> SwiftLanguage::GetTypeScavenger() {
   class SwiftTypeScavenger : public Language::TypeScavenger {
-    friend std::unique_ptr<Language::TypeScavenger> SwiftLanguage::GetTypeScavenger();
   private:
     typedef SwiftASTContext::TypeOrDecl TypeOrDecl;
     typedef SwiftASTContext::TypesOrDecls TypesOrDecls;

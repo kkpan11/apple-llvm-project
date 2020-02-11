@@ -62,7 +62,7 @@ constexpr GPUInfo R600GPUs[26] = {
 
 // This table should be sorted by the value of GPUKind
 // Don't bother listing the implicitly true features
-constexpr GPUInfo AMDGCNGPUs[36] = {
+constexpr GPUInfo AMDGCNGPUs[37] = {
   // Name         Canonical    Kind        Features
   //              Name
   {{"gfx600"},    {"gfx600"},  GK_GFX600,  FEATURE_FAST_FMA_F32},
@@ -97,6 +97,7 @@ constexpr GPUInfo AMDGCNGPUs[36] = {
   {{"gfx902"},    {"gfx902"},  GK_GFX902,  FEATURE_FAST_FMA_F32|FEATURE_FAST_DENORMAL_F32},
   {{"gfx904"},    {"gfx904"},  GK_GFX904,  FEATURE_FAST_FMA_F32|FEATURE_FAST_DENORMAL_F32},
   {{"gfx906"},    {"gfx906"},  GK_GFX906,  FEATURE_FAST_FMA_F32|FEATURE_FAST_DENORMAL_F32},
+  {{"gfx908"},    {"gfx908"},  GK_GFX908,  FEATURE_FAST_FMA_F32|FEATURE_FAST_DENORMAL_F32},
   {{"gfx909"},    {"gfx909"},  GK_GFX909,  FEATURE_FAST_FMA_F32|FEATURE_FAST_DENORMAL_F32},
   {{"gfx1010"},   {"gfx1010"}, GK_GFX1010, FEATURE_FAST_FMA_F32|FEATURE_FAST_DENORMAL_F32},
   {{"gfx1011"},   {"gfx1011"}, GK_GFX1011, FEATURE_FAST_FMA_F32|FEATURE_FAST_DENORMAL_F32},
@@ -131,7 +132,7 @@ StringRef llvm::AMDGPU::getArchNameR600(GPUKind AK) {
 }
 
 AMDGPU::GPUKind llvm::AMDGPU::parseArchAMDGCN(StringRef CPU) {
-  for (const auto C : AMDGCNGPUs) {
+  for (const auto &C : AMDGCNGPUs) {
     if (CPU == C.Name)
       return C.Kind;
   }
@@ -140,7 +141,7 @@ AMDGPU::GPUKind llvm::AMDGPU::parseArchAMDGCN(StringRef CPU) {
 }
 
 AMDGPU::GPUKind llvm::AMDGPU::parseArchR600(StringRef CPU) {
-  for (const auto C : R600GPUs) {
+  for (const auto &C : R600GPUs) {
     if (CPU == C.Name)
       return C.Kind;
   }
@@ -162,12 +163,12 @@ unsigned AMDGPU::getArchAttrR600(GPUKind AK) {
 
 void AMDGPU::fillValidArchListAMDGCN(SmallVectorImpl<StringRef> &Values) {
   // XXX: Should this only report unique canonical names?
-  for (const auto C : AMDGCNGPUs)
+  for (const auto &C : AMDGCNGPUs)
     Values.push_back(C.Name);
 }
 
 void AMDGPU::fillValidArchListR600(SmallVectorImpl<StringRef> &Values) {
-  for (const auto C : R600GPUs)
+  for (const auto &C : R600GPUs)
     Values.push_back(C.Name);
 }
 
@@ -197,6 +198,7 @@ AMDGPU::IsaVersion AMDGPU::getIsaVersion(StringRef GPU) {
   case GK_GFX902:  return {9, 0, 2};
   case GK_GFX904:  return {9, 0, 4};
   case GK_GFX906:  return {9, 0, 6};
+  case GK_GFX908:  return {9, 0, 8};
   case GK_GFX909:  return {9, 0, 9};
   case GK_GFX1010: return {10, 1, 0};
   case GK_GFX1011: return {10, 1, 1};

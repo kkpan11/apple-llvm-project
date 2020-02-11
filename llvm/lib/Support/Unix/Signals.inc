@@ -43,7 +43,6 @@
 #include "llvm/Support/Mutex.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/SaveAndRestore.h"
-#include "llvm/Support/UniqueLock.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
 #include <string>
@@ -362,15 +361,15 @@ static RETSIGTYPE SignalHandler(int Sig) {
   {
     RemoveFilesToRemove();
 
+    if (Sig == SIGPIPE)
+      if (auto OldOneShotPipeFunction =
+              OneShotPipeSignalFunction.exchange(nullptr))
+        return OldOneShotPipeFunction();
+
     if (std::find(std::begin(IntSigs), std::end(IntSigs), Sig)
         != std::end(IntSigs)) {
       if (auto OldInterruptFunction = InterruptFunction.exchange(nullptr))
         return OldInterruptFunction();
-
-      if (Sig == SIGPIPE)
-        if (auto OldOneShotPipeFunction =
-                OneShotPipeSignalFunction.exchange(nullptr))
-          return OldOneShotPipeFunction();
 
       raise(Sig);   // Execute the default handler.
       return;
@@ -594,11 +593,8 @@ void llvm::sys::PrintStackTrace(raw_ostream &OS) {
       else    OS << d;
       free(d);
 
-      // FIXME: When we move to C++11, use %t length modifier. It's not in
-      // C++03 and causes gcc to issue warnings. Losing the upper 32 bits of
-      // the stack offset for a stack dump isn't likely to cause any problems.
-      OS << format(" + %u",(unsigned)((char*)StackTrace[i]-
-                                      (char*)dlinfo.dli_saddr));
+      OS << format(" + %tu", (static_cast<const char*>(StackTrace[i])-
+                              static_cast<const char*>(dlinfo.dli_saddr)));
     }
     OS << '\n';
   }

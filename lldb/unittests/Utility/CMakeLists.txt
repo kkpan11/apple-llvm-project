@@ -4,7 +4,6 @@ add_lldb_unittest(UtilityTests
   OptionsWithRawTest.cpp
   ArchSpecTest.cpp
   BroadcasterTest.cpp
-  CleanUpTest.cpp
   ConstStringTest.cpp
   CompletionRequestTest.cpp
   DataExtractorTest.cpp
@@ -12,7 +11,6 @@ add_lldb_unittest(UtilityTests
   EventTest.cpp
   FileSpecTest.cpp
   FlagsTest.cpp
-  JSONTest.cpp
   ListenerTest.cpp
   LogTest.cpp
   NameMatchesTest.cpp
@@ -34,6 +32,7 @@ add_lldb_unittest(UtilityTests
   StringLexerTest.cpp
   StringListTest.cpp
   StructuredDataTest.cpp
+  SubsystemRAIITest.cpp
   TildeExpressionResolverTest.cpp
   TimeoutTest.cpp
   TimerTest.cpp

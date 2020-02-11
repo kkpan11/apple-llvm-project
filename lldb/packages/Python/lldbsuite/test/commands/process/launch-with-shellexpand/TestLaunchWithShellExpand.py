@@ -1,7 +1,7 @@
 """
 Test that argdumper is a viable launching strategy.
 """
-from __future__ import print_function
+import os
 
 
 import lldb
@@ -13,6 +13,7 @@ from lldbsuite.test import lldbutil
 class LaunchWithShellExpandTestCase(TestBase):
 
     mydir = TestBase.compute_mydir(__file__)
+    NO_DEBUG_INFO_TESTCASE = True
 
     @expectedFailureAll(
         oslist=[
@@ -35,6 +36,9 @@ class LaunchWithShellExpandTestCase(TestBase):
         breakpoint = target.BreakpointCreateBySourceRegex(
             'break here', lldb.SBFileSpec("main.cpp", False))
         self.assertTrue(breakpoint, VALID_BREAKPOINT)
+
+        # Ensure we do the expansion with /bin/sh on POSIX.
+        os.environ["SHELL"] = '/bin/sh'
 
         self.runCmd(
             "process launch -X true -w %s -- fi*.tx? () > <" %

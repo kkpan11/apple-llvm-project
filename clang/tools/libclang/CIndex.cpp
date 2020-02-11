@@ -22,6 +22,7 @@
 #include "CursorVisitor.h"
 #include "clang-c/FatalErrorHandler.h"
 #include "clang/AST/Attr.h"
+#include "clang/AST/Mangle.h"
 #include "clang/AST/StmtVisitor.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/DiagnosticCategories.h"
@@ -31,7 +32,6 @@
 #include "clang/Basic/Version.h"
 #include "clang/Frontend/ASTUnit.h"
 #include "clang/Frontend/CompilerInstance.h"
-#include "clang/Index/CodegenNameGenerator.h"
 #include "clang/Index/CommentToXML.h"
 #include "clang/Lex/HeaderSearch.h"
 #include "clang/Lex/Lexer.h"
@@ -46,7 +46,6 @@
 #include "llvm/Support/Format.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/MemoryBuffer.h"
-#include "llvm/Support/Mutex.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/SaveAndRestore.h"
 #include "llvm/Support/Signals.h"
@@ -54,6 +53,7 @@
 #include "llvm/Support/Threading.h"
 #include "llvm/Support/Timer.h"
 #include "llvm/Support/raw_ostream.h"
+#include <mutex>
 
 #if LLVM_ENABLE_THREADS != 0 && defined(__APPLE__)
 #define USE_DARWIN_THREADS
@@ -2030,6 +2030,7 @@ public:
   void VisitOMPCriticalDirective(const OMPCriticalDirective *D);
   void VisitOMPParallelForDirective(const OMPParallelForDirective *D);
   void VisitOMPParallelForSimdDirective(const OMPParallelForSimdDirective *D);
+  void VisitOMPParallelMasterDirective(const OMPParallelMasterDirective *D);
   void VisitOMPParallelSectionsDirective(const OMPParallelSectionsDirective *D);
   void VisitOMPTaskDirective(const OMPTaskDirective *D);
   void VisitOMPTaskyieldDirective(const OMPTaskyieldDirective *D);
@@ -2052,6 +2053,13 @@ public:
   void VisitOMPTeamsDirective(const OMPTeamsDirective *D);
   void VisitOMPTaskLoopDirective(const OMPTaskLoopDirective *D);
   void VisitOMPTaskLoopSimdDirective(const OMPTaskLoopSimdDirective *D);
+  void VisitOMPMasterTaskLoopDirective(const OMPMasterTaskLoopDirective *D);
+  void
+  VisitOMPMasterTaskLoopSimdDirective(const OMPMasterTaskLoopSimdDirective *D);
+  void VisitOMPParallelMasterTaskLoopDirective(
+      const OMPParallelMasterTaskLoopDirective *D);
+  void VisitOMPParallelMasterTaskLoopSimdDirective(
+      const OMPParallelMasterTaskLoopSimdDirective *D);
   void VisitOMPDistributeDirective(const OMPDistributeDirective *D);
   void VisitOMPDistributeParallelForDirective(
       const OMPDistributeParallelForDirective *D);
@@ -2447,6 +2455,12 @@ void OMPClauseEnqueue::VisitOMPUseDevicePtrClause(const OMPUseDevicePtrClause *C
 void OMPClauseEnqueue::VisitOMPIsDevicePtrClause(const OMPIsDevicePtrClause *C) {
   VisitOMPClauseList(C);
 }
+void OMPClauseEnqueue::VisitOMPNontemporalClause(
+    const OMPNontemporalClause *C) {
+  VisitOMPClauseList(C);
+  for (const auto *E : C->private_refs())
+    Visitor->AddStmt(E);
+}
 }
 
 void EnqueueVisitor::EnqueueChildren(const OMPClause *S) {
@@ -2804,6 +2818,11 @@ void EnqueueVisitor::VisitOMPParallelForSimdDirective(
   VisitOMPLoopDirective(D);
 }
 
+void EnqueueVisitor::VisitOMPParallelMasterDirective(
+    const OMPParallelMasterDirective *D) {
+  VisitOMPExecutableDirective(D);
+}
+
 void EnqueueVisitor::VisitOMPParallelSectionsDirective(
     const OMPParallelSectionsDirective *D) {
   VisitOMPExecutableDirective(D);
@@ -2893,6 +2912,26 @@ void EnqueueVisitor::VisitOMPTaskLoopDirective(const OMPTaskLoopDirective *D) {
 
 void EnqueueVisitor::VisitOMPTaskLoopSimdDirective(
     const OMPTaskLoopSimdDirective *D) {
+  VisitOMPLoopDirective(D);
+}
+
+void EnqueueVisitor::VisitOMPMasterTaskLoopDirective(
+    const OMPMasterTaskLoopDirective *D) {
+  VisitOMPLoopDirective(D);
+}
+
+void EnqueueVisitor::VisitOMPMasterTaskLoopSimdDirective(
+    const OMPMasterTaskLoopSimdDirective *D) {
+  VisitOMPLoopDirective(D);
+}
+
+void EnqueueVisitor::VisitOMPParallelMasterTaskLoopDirective(
+    const OMPParallelMasterTaskLoopDirective *D) {
+  VisitOMPLoopDirective(D);
+}
+
+void EnqueueVisitor::VisitOMPParallelMasterTaskLoopSimdDirective(
+    const OMPParallelMasterTaskLoopSimdDirective *D) {
   VisitOMPLoopDirective(D);
 }
 
@@ -3415,6 +3454,8 @@ clang_parseTranslationUnit_Impl(CXIndex CIdx, const char *source_filename,
     = options & CXTranslationUnit_IncludeBriefCommentsInCodeCompletion;
   bool SingleFileParse = options & CXTranslationUnit_SingleFileParse;
   bool ForSerialization = options & CXTranslationUnit_ForSerialization;
+  bool RetainExcludedCB = options &
+    CXTranslationUnit_RetainExcludedConditionalBlocks;
   SkipFunctionBodiesScope SkipFunctionBodies = SkipFunctionBodiesScope::None;
   if (options & CXTranslationUnit_SkipFunctionBodies) {
     SkipFunctionBodies =
@@ -3515,7 +3556,7 @@ clang_parseTranslationUnit_Impl(CXIndex CIdx, const char *source_filename,
       /*RemappedFilesKeepOriginalName=*/true, PrecompilePreambleAfterNParses,
       TUKind, CacheCodeCompletionResults, IncludeBriefCommentsInCodeCompletion,
       /*AllowPCHWithCompilerErrors=*/true, SkipFunctionBodies, SingleFileParse,
-      /*UserFilesAreVolatile=*/true, ForSerialization,
+      /*UserFilesAreVolatile=*/true, ForSerialization, RetainExcludedCB,
       CXXIdx->getPCHContainerOperations()->getRawReader().getFormat(),
       &ErrUnit));
 
@@ -3566,6 +3607,7 @@ enum CXErrorCode clang_parseTranslationUnit2(
     const char *const *command_line_args, int num_command_line_args,
     struct CXUnsavedFile *unsaved_files, unsigned num_unsaved_files,
     unsigned options, CXTranslationUnit *out_TU) {
+  noteBottomOfStack();
   SmallVector<const char *, 4> Args;
   Args.push_back("clang");
   Args.append(command_line_args, command_line_args + num_command_line_args);
@@ -3590,6 +3632,7 @@ enum CXErrorCode clang_parseTranslationUnit2FullArgv(
 
   CXErrorCode result = CXError_Failure;
   auto ParseTranslationUnitImpl = [=, &result] {
+    noteBottomOfStack();
     result = clang_parseTranslationUnit_Impl(
         CIdx, source_filename, command_line_args, num_command_line_args,
         llvm::makeArrayRef(unsaved_files, num_unsaved_files), options, out_TU);
@@ -3783,12 +3826,14 @@ static const ExprEvalResult* evaluateExpr(Expr *expr, CXCursor C) {
     return nullptr;
 
   expr = expr->IgnoreParens();
+  if (expr->isValueDependent())
+    return nullptr;
   if (!expr->EvaluateAsRValue(ER, ctx))
     return nullptr;
 
   QualType rettype;
   CallExpr *callExpr;
-  auto result = llvm::make_unique<ExprEvalResult>();
+  auto result = std::make_unique<ExprEvalResult>();
   result->EvalType = CXEval_UnExposed;
   result->IsUnsignedInt = false;
 
@@ -4731,8 +4776,8 @@ CXString clang_Cursor_getMangling(CXCursor C) {
     return cxstring::createEmpty();
 
   ASTContext &Ctx = D->getASTContext();
-  index::CodegenNameGenerator CGNameGen(Ctx);
-  return cxstring::createDup(CGNameGen.getName(D));
+  ASTNameGenerator ASTNameGen(Ctx);
+  return cxstring::createDup(ASTNameGen.getName(D));
 }
 
 CXStringSet *clang_Cursor_getCXXManglings(CXCursor C) {
@@ -4744,8 +4789,8 @@ CXStringSet *clang_Cursor_getCXXManglings(CXCursor C) {
     return nullptr;
 
   ASTContext &Ctx = D->getASTContext();
-  index::CodegenNameGenerator CGNameGen(Ctx);
-  std::vector<std::string> Manglings = CGNameGen.getAllManglings(D);
+  ASTNameGenerator ASTNameGen(Ctx);
+  std::vector<std::string> Manglings = ASTNameGen.getAllManglings(D);
   return cxstring::createSet(Manglings);
 }
 
@@ -4758,8 +4803,8 @@ CXStringSet *clang_Cursor_getObjCManglings(CXCursor C) {
     return nullptr;
 
   ASTContext &Ctx = D->getASTContext();
-  index::CodegenNameGenerator CGNameGen(Ctx);
-  std::vector<std::string> Manglings = CGNameGen.getAllManglings(D);
+  ASTNameGenerator ASTNameGen(Ctx);
+  std::vector<std::string> Manglings = ASTNameGen.getAllManglings(D);
   return cxstring::createSet(Manglings);
 }
 
@@ -5198,6 +5243,8 @@ CXString clang_getCursorKindSpelling(enum CXCursorKind Kind) {
       return cxstring::createRef("CallExpr");
   case CXCursor_ObjCMessageExpr:
       return cxstring::createRef("ObjCMessageExpr");
+  case CXCursor_BuiltinBitCastExpr:
+    return cxstring::createRef("BuiltinBitCastExpr");
   case CXCursor_UnexposedStmt:
       return cxstring::createRef("UnexposedStmt");
   case CXCursor_DeclStmt:
@@ -5420,6 +5467,8 @@ CXString clang_getCursorKindSpelling(enum CXCursorKind Kind) {
     return cxstring::createRef("OMPParallelForDirective");
   case CXCursor_OMPParallelForSimdDirective:
     return cxstring::createRef("OMPParallelForSimdDirective");
+  case CXCursor_OMPParallelMasterDirective:
+    return cxstring::createRef("OMPParallelMasterDirective");
   case CXCursor_OMPParallelSectionsDirective:
     return cxstring::createRef("OMPParallelSectionsDirective");
   case CXCursor_OMPTaskDirective:
@@ -5462,6 +5511,14 @@ CXString clang_getCursorKindSpelling(enum CXCursorKind Kind) {
     return cxstring::createRef("OMPTaskLoopDirective");
   case CXCursor_OMPTaskLoopSimdDirective:
     return cxstring::createRef("OMPTaskLoopSimdDirective");
+  case CXCursor_OMPMasterTaskLoopDirective:
+    return cxstring::createRef("OMPMasterTaskLoopDirective");
+  case CXCursor_OMPMasterTaskLoopSimdDirective:
+    return cxstring::createRef("OMPMasterTaskLoopSimdDirective");
+  case CXCursor_OMPParallelMasterTaskLoopDirective:
+    return cxstring::createRef("OMPParallelMasterTaskLoopDirective");
+  case CXCursor_OMPParallelMasterTaskLoopSimdDirective:
+    return cxstring::createRef("OMPParallelMasterTaskLoopSimdDirective");
   case CXCursor_OMPDistributeDirective:
     return cxstring::createRef("OMPDistributeDirective");
   case CXCursor_OMPDistributeParallelForDirective:
@@ -6271,6 +6328,8 @@ CXCursor clang_getCursorDefinition(CXCursor C) {
   case Decl::PragmaComment:
   case Decl::PragmaDetectMismatch:
   case Decl::UsingPack:
+  case Decl::Concept:
+  case Decl::LifetimeExtendedTemporary:
     return C;
 
   // Declaration kinds that don't make any sense here, but are
@@ -6579,7 +6638,10 @@ void clang_enableStackTraces(void) {
 
 void clang_executeOnThread(void (*fn)(void*), void *user_data,
                            unsigned stack_size) {
-  llvm::llvm_execute_on_thread(fn, user_data, stack_size);
+  llvm::llvm_execute_on_thread(fn, user_data,
+                               stack_size == 0
+                                   ? clang::DesiredStackSize
+                                   : llvm::Optional<unsigned>(stack_size));
 }
 
 //===----------------------------------------------------------------------===//
@@ -8936,10 +8998,10 @@ Logger &cxindex::Logger::operator<<(const llvm::format_object_base &Fmt) {
   return *this;
 }
 
-static llvm::ManagedStatic<llvm::sys::Mutex> LoggingMutex;
+static llvm::ManagedStatic<std::mutex> LoggingMutex;
 
 cxindex::Logger::~Logger() {
-  llvm::sys::ScopedLock L(*LoggingMutex);
+  std::lock_guard<std::mutex> L(*LoggingMutex);
 
   static llvm::TimeRecord sBeginTR = llvm::TimeRecord::getCurrentTime();
 

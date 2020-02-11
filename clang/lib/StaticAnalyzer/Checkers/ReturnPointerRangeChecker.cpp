@@ -80,7 +80,7 @@ void ReturnPointerRangeChecker::checkPreStmt(const ReturnStmt *RS,
 
     // Generate a report for this bug.
     auto report =
-        llvm::make_unique<PathSensitiveBugReport>(*BT, BT->getDescription(), N);
+        std::make_unique<PathSensitiveBugReport>(*BT, BT->getDescription(), N);
 
     report->addRange(RetE->getSourceRange());
     C.emitReport(std::move(report));

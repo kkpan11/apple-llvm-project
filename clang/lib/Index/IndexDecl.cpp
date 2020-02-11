@@ -7,8 +7,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "IndexingContext.h"
-#include "clang/Index/IndexDataConsumer.h"
+#include "clang/AST/Attr.h"
 #include "clang/AST/DeclVisitor.h"
+#include "clang/Index/IndexDataConsumer.h"
 
 using namespace clang;
 using namespace index;
@@ -418,7 +419,7 @@ public:
     if (D->isThisDeclarationADefinition()) {
       TRY_DECL(D, IndexCtx.handleDecl(D));
       TRY_TO(handleReferencedProtocols(D->getReferencedProtocols(), D,
-                                       /*superLoc=*/SourceLocation()));
+                                       /*SuperLoc=*/SourceLocation()));
       TRY_TO(IndexCtx.indexDeclContext(D));
     } else {
       return IndexCtx.handleReference(D, D->getLocation(), nullptr,
@@ -468,7 +469,7 @@ public:
       CategoryLoc = D->getLocation();
     TRY_TO(IndexCtx.handleDecl(D, CategoryLoc));
     TRY_TO(handleReferencedProtocols(D->getReferencedProtocols(), D,
-                                     /*superLoc=*/SourceLocation()));
+                                     /*SuperLoc=*/SourceLocation()));
     TRY_TO(IndexCtx.indexDeclContext(D));
     return true;
   }
@@ -652,10 +653,10 @@ public:
   }
 
   static bool shouldIndexTemplateParameterDefaultValue(const NamedDecl *D) {
-    if (!D)
-      return false;
     // We want to index the template parameters only once when indexing the
     // canonical declaration.
+    if (!D)
+      return false;
     if (const auto *FD = dyn_cast<FunctionDecl>(D))
       return FD->getCanonicalDecl() == FD;
     else if (const auto *TD = dyn_cast<TagDecl>(D))

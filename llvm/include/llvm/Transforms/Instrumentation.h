@@ -181,9 +181,10 @@ struct SanitizerCoverageOptions {
   SanitizerCoverageOptions() = default;
 };
 
-// Insert SanitizerCoverage instrumentation.
-ModulePass *createSanitizerCoverageModulePass(
-    const SanitizerCoverageOptions &Options = SanitizerCoverageOptions());
+// SoftPointerAuth - This pass lowers the llvm.ptrauth intrinsics to use
+// runtime function calls instead of relying on support from the
+// backend, toolchain, loader, or hardware.
+ModulePass *createSoftPointerAuthPass();
 
 /// Calculate what to divide by to scale counts.
 ///

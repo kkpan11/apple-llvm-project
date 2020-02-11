@@ -15,12 +15,13 @@
 #include "llvm/Analysis/ObjCARCInstKind.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/IR/Function.h"
-#include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/User.h"
+#include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/Casting.h"
 
@@ -90,7 +91,7 @@ static bool lowerObjCCall(Function &F, const char *NewFn,
   CallInst::TailCallKind OverridingTCK = getOverridingTailCallKind(F);
 
   for (auto I = F.use_begin(), E = F.use_end(); I != E;) {
-    auto *CI = dyn_cast<CallInst>(I->getUser());
+    auto *CI = cast<CallInst>(I->getUser());
     assert(CI->getCalledFunction() && "Cannot lower an indirect call!");
     ++I;
 

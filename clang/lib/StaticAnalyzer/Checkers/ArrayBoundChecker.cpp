@@ -76,7 +76,7 @@ void ArrayBoundChecker::checkLocation(SVal l, bool isLoad, const Stmt* LoadS,
 
     // Generate a report for this bug.
     auto report =
-        llvm::make_unique<PathSensitiveBugReport>(*BT, BT->getDescription(), N);
+        std::make_unique<PathSensitiveBugReport>(*BT, BT->getDescription(), N);
 
     report->addRange(LoadS->getSourceRange());
     C.emitReport(std::move(report));

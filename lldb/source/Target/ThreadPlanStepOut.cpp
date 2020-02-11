@@ -132,6 +132,25 @@ ThreadPlanStepOut::ThreadPlanStepOut(
     if (m_return_addr == LLDB_INVALID_ADDRESS)
       return;
 
+    // Perform some additional validation on the return address.
+    uint32_t permissions = 0;
+    if (!m_thread.GetProcess()->GetLoadAddressPermissions(m_return_addr,
+                                                          permissions)) {
+      m_constructor_errors.Printf("Return address (0x%" PRIx64
+                                  ") permissions not found.",
+                                  m_return_addr);
+      LLDB_LOGF(log, "ThreadPlanStepOut(%p): %s", static_cast<void *>(this),
+                m_constructor_errors.GetData());
+      return;
+    } else if (!(permissions & ePermissionsExecutable)) {
+      m_constructor_errors.Printf("Return address (0x%" PRIx64
+                                  ") did not point to executable memory.",
+                                  m_return_addr);
+      LLDB_LOGF(log, "ThreadPlanStepOut(%p): %s", static_cast<void *>(this),
+                m_constructor_errors.GetData());
+      return;
+    }
+
     Breakpoint *return_bp = m_thread.CalculateTarget()
                                 ->CreateBreakpoint(m_return_addr, true, false)
                                 .get();
@@ -265,8 +284,13 @@ bool ThreadPlanStepOut::ValidatePlan(Stream *error) {
   }
 
   if (m_return_bp_id == LLDB_INVALID_BREAK_ID) {
-    if (error)
+    if (error) {
       error->PutCString("Could not create return address breakpoint.");
+      if (m_constructor_errors.GetSize() > 0) {
+        error->PutCString(" ");
+        error->PutCString(m_constructor_errors.GetString());
+      }
+    }
     return false;
   }
 
@@ -385,25 +409,16 @@ bool ThreadPlanStepOut::ShouldStop(Event *event_ptr) {
     } else {
       m_step_out_further_plan_sp =
           QueueStepOutFromHerePlan(m_flags, eFrameCompareOlder, m_status);
-      if (!m_step_out_further_plan_sp) {
-        // We didn't want to stop here, but we can't find a plan to get us 
-        // out of here, so we'll stop.
-        Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_STEP));
-        LLDB_LOG(log, "Should stop here was false but we couldn't find a"
-                      "plan to get us out from here.  Stopping.");
-        SetPlanComplete();
-      } else {
-        if (m_step_out_further_plan_sp->GetKind() == eKindStepOut)
-        {
-          // If we are planning to step out further, then the frame we are going
-          // to step out to is about to go away, so we need to reset the frame
-          // we are stepping out to to the one our step out plan is aiming for.
-          ThreadPlanStepOut *as_step_out
-            = static_cast<ThreadPlanStepOut *>(m_step_out_further_plan_sp.get());
-          m_step_out_to_id = as_step_out->m_step_out_to_id;
-        }
-        done = false;
+      if (m_step_out_further_plan_sp->GetKind() == eKindStepOut)
+      {
+        // If we are planning to step out further, then the frame we are going
+        // to step out to is about to go away, so we need to reset the frame
+        // we are stepping out to to the one our step out plan is aiming for.
+        ThreadPlanStepOut *as_step_out
+          = static_cast<ThreadPlanStepOut *>(m_step_out_further_plan_sp.get());
+        m_step_out_to_id = as_step_out->m_step_out_to_id;
       }
+      done = false;
     }
   }
 

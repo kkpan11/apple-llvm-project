@@ -21,6 +21,7 @@
 #ifndef LLVM_CODEGEN_GLOBALISEL_LOCALIZER_H
 #define LLVM_CODEGEN_GLOBALISEL_LOCALIZER_H
 
+#include "llvm/ADT/SetVector.h"
 #include "llvm/CodeGen/GlobalISel/MachineIRBuilder.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 
@@ -41,6 +42,10 @@ public:
   static char ID;
 
 private:
+  /// An input function to decide if the pass should run or not
+  /// on the given MachineFunction.
+  std::function<bool(const MachineFunction &)> DoNotRunPass;
+
   /// MRI contains all the register class/bank information that this
   /// pass uses and updates.
   MachineRegisterInfo *MRI;
@@ -60,15 +65,18 @@ private:
   /// Initialize the field members using \p MF.
   void init(MachineFunction &MF);
 
+  typedef SmallSetVector<MachineInstr *, 32> LocalizedSetVecT;
+
   /// Do inter-block localization from the entry block.
   bool localizeInterBlock(MachineFunction &MF,
-                          SmallPtrSetImpl<MachineInstr *> &LocalizedInstrs);
+                          LocalizedSetVecT &LocalizedInstrs);
 
   /// Do intra-block localization of already localized instructions.
-  bool localizeIntraBlock(SmallPtrSetImpl<MachineInstr *> &LocalizedInstrs);
+  bool localizeIntraBlock(LocalizedSetVecT &LocalizedInstrs);
 
 public:
   Localizer();
+  Localizer(std::function<bool(const MachineFunction &)>);
 
   StringRef getPassName() const override { return "Localizer"; }
 

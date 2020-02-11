@@ -18,6 +18,7 @@
 #include "clang/AST/Decl.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/StmtCXX.h"
+#include "clang/Basic/Builtins.h"
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Sema/Initialization.h"
 #include "clang/Sema/Overload.h"
@@ -83,7 +84,7 @@ static QualType lookupPromiseType(Sema &S, const FunctionDecl *FD,
       //      ref-qualifier or with the & ref-qualifier
       //  -- "rvalue reference to cv X" for functions declared with the &&
       //      ref-qualifier
-      QualType T = MD->getThisType()->getAs<PointerType>()->getPointeeType();
+      QualType T = MD->getThisType()->castAs<PointerType>()->getPointeeType();
       T = FnType->getRefQualifier() == RQ_RValue
               ? S.Context.getRValueReferenceType(T)
               : S.Context.getLValueReferenceType(T, /*SpelledAsLValue*/ true);
@@ -204,8 +205,6 @@ static bool isValidCoroutineContext(Sema &S, SourceLocation Loc,
   enum InvalidFuncDiag {
     DiagCtor = 0,
     DiagDtor,
-    DiagCopyAssign,
-    DiagMoveAssign,
     DiagMain,
     DiagConstexpr,
     DiagAutoRet,
@@ -219,23 +218,15 @@ static bool isValidCoroutineContext(Sema &S, SourceLocation Loc,
     return false;
   };
 
-  // Diagnose when a constructor, destructor, copy/move assignment operator,
+  // Diagnose when a constructor, destructor
   // or the function 'main' are declared as a coroutine.
   auto *MD = dyn_cast<CXXMethodDecl>(FD);
-  // [class.ctor]p6: "A constructor shall not be a coroutine."
+  // [class.ctor]p11: "A constructor shall not be a coroutine."
   if (MD && isa<CXXConstructorDecl>(MD))
     return DiagInvalid(DiagCtor);
   // [class.dtor]p17: "A destructor shall not be a coroutine."
   else if (MD && isa<CXXDestructorDecl>(MD))
     return DiagInvalid(DiagDtor);
-  // N4499 [special]p6: "A special member function shall not be a coroutine."
-  // Per C++ [special]p1, special member functions are the "default constructor,
-  // copy constructor and copy assignment operator, move constructor and move
-  // assignment operator, and destructor."
-  else if (MD && MD->isCopyAssignmentOperator())
-    return DiagInvalid(DiagCopyAssign);
-  else if (MD && MD->isMoveAssignmentOperator())
-    return DiagInvalid(DiagMoveAssign);
   // [basic.start.main]p3: "The function main shall not be a coroutine."
   else if (FD->isMain())
     return DiagInvalid(DiagMain);
@@ -1536,8 +1527,8 @@ bool Sema::buildCoroutineParameterMoves(SourceLocation Loc) {
   auto *FD = cast<FunctionDecl>(CurContext);
 
   auto *ScopeInfo = getCurFunction();
-  assert(ScopeInfo->CoroutineParameterMoves.empty() &&
-         "Should not build parameter moves twice");
+  if (!ScopeInfo->CoroutineParameterMoves.empty())
+    return false;
 
   for (auto *PD : FD->parameters()) {
     if (PD->getType()->isDependentType())

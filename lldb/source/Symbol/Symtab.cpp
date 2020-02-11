@@ -13,7 +13,6 @@
 
 #include "lldb/Core/Module.h"
 #include "lldb/Core/RichManglingContext.h"
-#include "lldb/Core/STLUtils.h"
 #include "lldb/Core/Section.h"
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Symbol/Symbol.h"
@@ -109,10 +108,8 @@ void Symtab::Dump(Stream *s, Target *target, SortOrder sort_order,
       // sorted by name. So we must make the ordered symbol list up ourselves.
       s->PutCString(" (sorted by name):\n");
       DumpSymbolHeader(s);
-      typedef std::multimap<const char *, const Symbol *,
-                            CStringCompareFunctionObject>
-          CStringToSymbol;
-      CStringToSymbol name_map;
+
+      std::multimap<llvm::StringRef, const Symbol *> name_map;
       for (const_iterator pos = m_symbols.begin(), end = m_symbols.end();
            pos != end; ++pos) {
         const char *name = pos->GetName().AsCString();
@@ -120,12 +117,10 @@ void Symtab::Dump(Stream *s, Target *target, SortOrder sort_order,
           name_map.insert(std::make_pair(name, &(*pos)));
       }
 
-      for (CStringToSymbol::const_iterator pos = name_map.begin(),
-                                           end = name_map.end();
-           pos != end; ++pos) {
+      for (const auto &name_to_symbol : name_map) {
+        const Symbol *symbol = name_to_symbol.second;
         s->Indent();
-        pos->second->Dump(s, target, pos->second - &m_symbols[0],
-                          name_preference);
+        symbol->Dump(s, target, symbol - &m_symbols[0], name_preference);
       }
     } break;
 
@@ -304,7 +299,7 @@ void Symtab::InitNameIndexes() {
         if (type == eSymbolTypeCode || type == eSymbolTypeResolver) {
           if (mangled.DemangleWithRichManglingInfo(rmc, lldb_skip_name))
             RegisterMangledNameEntry(value, class_contexts, backlog, rmc);
-	  else if (SwiftLanguageRuntime::IsSwiftMangledName(name.GetCString())) {
+	  else if (SwiftLanguageRuntime::IsSwiftMangledName(name.AsCString())) {
             lldb_private::ConstString basename;
             bool is_method = false;
             ConstString mangled_name = mangled.GetMangledName();
@@ -763,7 +758,7 @@ Symbol *Symtab::FindSymbolWithType(SymbolType symbol_type,
   return nullptr;
 }
 
-size_t
+void
 Symtab::FindAllSymbolsWithNameAndType(ConstString name,
                                       SymbolType symbol_type,
                                       std::vector<uint32_t> &symbol_indexes) {
@@ -781,10 +776,9 @@ Symtab::FindAllSymbolsWithNameAndType(ConstString name,
     // the symbols and match the symbol_type if any was given.
     AppendSymbolIndexesWithNameAndType(name, symbol_type, symbol_indexes);
   }
-  return symbol_indexes.size();
 }
 
-size_t Symtab::FindAllSymbolsWithNameAndType(
+void Symtab::FindAllSymbolsWithNameAndType(
     ConstString name, SymbolType symbol_type, Debug symbol_debug_type,
     Visibility symbol_visibility, std::vector<uint32_t> &symbol_indexes) {
   std::lock_guard<std::recursive_mutex> guard(m_mutex);
@@ -802,10 +796,9 @@ size_t Symtab::FindAllSymbolsWithNameAndType(
     AppendSymbolIndexesWithNameAndType(name, symbol_type, symbol_debug_type,
                                        symbol_visibility, symbol_indexes);
   }
-  return symbol_indexes.size();
 }
 
-size_t Symtab::FindAllSymbolsMatchingRexExAndType(
+void Symtab::FindAllSymbolsMatchingRexExAndType(
     const RegularExpression &regex, SymbolType symbol_type,
     Debug symbol_debug_type, Visibility symbol_visibility,
     std::vector<uint32_t> &symbol_indexes) {
@@ -813,7 +806,6 @@ size_t Symtab::FindAllSymbolsMatchingRexExAndType(
 
   AppendSymbolIndexesMatchingRegExAndType(regex, symbol_type, symbol_debug_type,
                                           symbol_visibility, symbol_indexes);
-  return symbol_indexes.size();
 }
 
 Symbol *Symtab::FindFirstSymbolWithNameAndType(ConstString name,
@@ -921,14 +913,8 @@ void Symtab::InitAddressIndexes() {
       for (size_t i = 0; i < num_entries; i++) {
         FileRangeToIndexMap::Entry *entry =
             m_file_addr_to_index.GetMutableEntryAtIndex(i);
-        if (entry->GetByteSize() > 0)
-          continue;
-        addr_t curr_base_addr = entry->GetRangeBase();
-        // Symbols with non-zero size will show after zero-sized symbols on the
-        // same address. So do not set size of a non-last zero-sized symbol.
-        if (i == num_entries - 1 ||
-            m_file_addr_to_index.GetMutableEntryAtIndex(i + 1)
-                    ->GetRangeBase() != curr_base_addr) {
+        if (entry->GetByteSize() == 0) {
+          addr_t curr_base_addr = entry->GetRangeBase();
           const RangeVector<addr_t, addr_t>::Entry *containing_section =
               section_ranges.FindEntryThatContains(curr_base_addr);
 
@@ -1049,10 +1035,8 @@ void Symtab::SymbolIndicesToSymbolContextList(
   }
 }
 
-size_t Symtab::FindFunctionSymbols(ConstString name,
-                                   uint32_t name_type_mask,
-                                   SymbolContextList &sc_list) {
-  size_t count = 0;
+void Symtab::FindFunctionSymbols(ConstString name, uint32_t name_type_mask,
+                                 SymbolContextList &sc_list) {
   std::vector<uint32_t> symbol_indexes;
 
   // eFunctionNameTypeAuto should be pre-resolved by a call to
@@ -1133,11 +1117,8 @@ size_t Symtab::FindFunctionSymbols(ConstString name,
     symbol_indexes.erase(
         std::unique(symbol_indexes.begin(), symbol_indexes.end()),
         symbol_indexes.end());
-    count = symbol_indexes.size();
     SymbolIndicesToSymbolContextList(symbol_indexes, sc_list);
   }
-
-  return count;
 }
 
 const Symbol *Symtab::GetParent(Symbol *child_symbol) const {

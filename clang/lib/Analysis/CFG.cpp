@@ -70,23 +70,47 @@ static SourceLocation GetEndLoc(Decl *D) {
   return D->getLocation();
 }
 
+/// Returns true on constant values based around a single IntegerLiteral.
+/// Allow for use of parentheses, integer casts, and negative signs.
+static bool IsIntegerLiteralConstantExpr(const Expr *E) {
+  // Allow parentheses
+  E = E->IgnoreParens();
+
+  // Allow conversions to different integer kind.
+  if (const auto *CE = dyn_cast<CastExpr>(E)) {
+    if (CE->getCastKind() != CK_IntegralCast)
+      return false;
+    E = CE->getSubExpr();
+  }
+
+  // Allow negative numbers.
+  if (const auto *UO = dyn_cast<UnaryOperator>(E)) {
+    if (UO->getOpcode() != UO_Minus)
+      return false;
+    E = UO->getSubExpr();
+  }
+
+  return isa<IntegerLiteral>(E);
+}
+
 /// Helper for tryNormalizeBinaryOperator. Attempts to extract an IntegerLiteral
-/// or EnumConstantDecl from the given Expr. If it fails, returns nullptr.
+/// constant expression or EnumConstantDecl from the given Expr. If it fails,
+/// returns nullptr.
 static const Expr *tryTransformToIntOrEnumConstant(const Expr *E) {
   E = E->IgnoreParens();
-  if (isa<IntegerLiteral>(E))
+  if (IsIntegerLiteralConstantExpr(E))
     return E;
   if (auto *DR = dyn_cast<DeclRefExpr>(E->IgnoreParenImpCasts()))
     return isa<EnumConstantDecl>(DR->getDecl()) ? DR : nullptr;
   return nullptr;
 }
 
-/// Tries to interpret a binary operator into `Decl Op Expr` form, if Expr is
-/// an integer literal or an enum constant.
+/// Tries to interpret a binary operator into `Expr Op NumExpr` form, if
+/// NumExpr is an integer literal or an enum constant.
 ///
 /// If this fails, at least one of the returned DeclRefExpr or Expr will be
 /// null.
-static std::tuple<const DeclRefExpr *, BinaryOperatorKind, const Expr *>
+static std::tuple<const Expr *, BinaryOperatorKind, const Expr *>
 tryNormalizeBinaryOperator(const BinaryOperator *B) {
   BinaryOperatorKind Op = B->getOpcode();
 
@@ -108,8 +132,7 @@ tryNormalizeBinaryOperator(const BinaryOperator *B) {
     Constant = tryTransformToIntOrEnumConstant(B->getLHS());
   }
 
-  auto *D = dyn_cast<DeclRefExpr>(MaybeDecl->IgnoreParenImpCasts());
-  return std::make_tuple(D, Op, Constant);
+  return std::make_tuple(MaybeDecl, Op, Constant);
 }
 
 /// For an expression `x == Foo && x == Bar`, this determines whether the
@@ -121,11 +144,11 @@ tryNormalizeBinaryOperator(const BinaryOperator *B) {
 static bool areExprTypesCompatible(const Expr *E1, const Expr *E2) {
   // User intent isn't clear if they're mixing int literals with enum
   // constants.
-  if (isa<IntegerLiteral>(E1) != isa<IntegerLiteral>(E2))
+  if (isa<DeclRefExpr>(E1) != isa<DeclRefExpr>(E2))
     return false;
 
   // Integer literal comparisons, regardless of literal type, are acceptable.
-  if (isa<IntegerLiteral>(E1))
+  if (!isa<DeclRefExpr>(E1))
     return true;
 
   // IntegerLiterals are handled above and only EnumConstantDecls are expected
@@ -519,6 +542,7 @@ public:
 
 private:
   // Visitors to walk an AST and construct the CFG.
+  CFGBlock *VisitInitListExpr(InitListExpr *ILE, AddStmtChoice asc);
   CFGBlock *VisitAddrLabelExpr(AddrLabelExpr *A, AddStmtChoice asc);
   CFGBlock *VisitBinaryOperator(BinaryOperator *B, AddStmtChoice asc);
   CFGBlock *VisitBreakStmt(BreakStmt *B);
@@ -591,6 +615,8 @@ private:
   CFGBlock *VisitStmt(Stmt *S, AddStmtChoice asc);
   CFGBlock *VisitChildren(Stmt *S);
   CFGBlock *VisitNoRecurse(Expr *E, AddStmtChoice asc);
+  CFGBlock *VisitOMPExecutableDirective(OMPExecutableDirective *D,
+                                        AddStmtChoice asc);
 
   void maybeAddScopeBeginForVarDecl(CFGBlock *B, const VarDecl *VD,
                                     const Stmt *S) {
@@ -1019,34 +1045,34 @@ private:
     if (!LHS->isComparisonOp() || !RHS->isComparisonOp())
       return {};
 
-    const DeclRefExpr *Decl1;
-    const Expr *Expr1;
+    const Expr *DeclExpr1;
+    const Expr *NumExpr1;
     BinaryOperatorKind BO1;
-    std::tie(Decl1, BO1, Expr1) = tryNormalizeBinaryOperator(LHS);
+    std::tie(DeclExpr1, BO1, NumExpr1) = tryNormalizeBinaryOperator(LHS);
 
-    if (!Decl1 || !Expr1)
+    if (!DeclExpr1 || !NumExpr1)
       return {};
 
-    const DeclRefExpr *Decl2;
-    const Expr *Expr2;
+    const Expr *DeclExpr2;
+    const Expr *NumExpr2;
     BinaryOperatorKind BO2;
-    std::tie(Decl2, BO2, Expr2) = tryNormalizeBinaryOperator(RHS);
+    std::tie(DeclExpr2, BO2, NumExpr2) = tryNormalizeBinaryOperator(RHS);
 
-    if (!Decl2 || !Expr2)
+    if (!DeclExpr2 || !NumExpr2)
       return {};
 
     // Check that it is the same variable on both sides.
-    if (Decl1->getDecl() != Decl2->getDecl())
+    if (!Expr::isSameComparisonOperand(DeclExpr1, DeclExpr2))
       return {};
 
     // Make sure the user's intent is clear (e.g. they're comparing against two
     // int literals, or two things from the same enum)
-    if (!areExprTypesCompatible(Expr1, Expr2))
+    if (!areExprTypesCompatible(NumExpr1, NumExpr2))
       return {};
 
     Expr::EvalResult L1Result, L2Result;
-    if (!Expr1->EvaluateAsInt(L1Result, *Context) ||
-        !Expr2->EvaluateAsInt(L2Result, *Context))
+    if (!NumExpr1->EvaluateAsInt(L1Result, *Context) ||
+        !NumExpr2->EvaluateAsInt(L2Result, *Context))
       return {};
 
     llvm::APSInt L1 = L1Result.Val.getInt();
@@ -1079,6 +1105,10 @@ private:
     // * Variable x is equal to the largest literal.
     // * Variable x is greater than largest literal.
     bool AlwaysTrue = true, AlwaysFalse = true;
+    // Track value of both subexpressions.  If either side is always
+    // true/false, another warning should have already been emitted.
+    bool LHSAlwaysTrue = true, LHSAlwaysFalse = true;
+    bool RHSAlwaysTrue = true, RHSAlwaysFalse = true;
     for (const llvm::APSInt &Value : Values) {
       TryResult Res1, Res2;
       Res1 = analyzeLogicOperatorCondition(BO1, Value, L1);
@@ -1094,14 +1124,45 @@ private:
         AlwaysTrue &= (Res1.isTrue() || Res2.isTrue());
         AlwaysFalse &= !(Res1.isTrue() || Res2.isTrue());
       }
+
+      LHSAlwaysTrue &= Res1.isTrue();
+      LHSAlwaysFalse &= Res1.isFalse();
+      RHSAlwaysTrue &= Res2.isTrue();
+      RHSAlwaysFalse &= Res2.isFalse();
     }
 
     if (AlwaysTrue || AlwaysFalse) {
-      if (BuildOpts.Observer)
+      if (!LHSAlwaysTrue && !LHSAlwaysFalse && !RHSAlwaysTrue &&
+          !RHSAlwaysFalse && BuildOpts.Observer)
         BuildOpts.Observer->compareAlwaysTrue(B, AlwaysTrue);
       return TryResult(AlwaysTrue);
     }
     return {};
+  }
+
+  /// A bitwise-or with a non-zero constant always evaluates to true.
+  TryResult checkIncorrectBitwiseOrOperator(const BinaryOperator *B) {
+    const Expr *LHSConstant =
+        tryTransformToIntOrEnumConstant(B->getLHS()->IgnoreParenImpCasts());
+    const Expr *RHSConstant =
+        tryTransformToIntOrEnumConstant(B->getRHS()->IgnoreParenImpCasts());
+
+    if ((LHSConstant && RHSConstant) || (!LHSConstant && !RHSConstant))
+      return {};
+
+    const Expr *Constant = LHSConstant ? LHSConstant : RHSConstant;
+
+    Expr::EvalResult Result;
+    if (!Constant->EvaluateAsInt(Result, *Context))
+      return {};
+
+    if (Result.Val.getInt() == 0)
+      return {};
+
+    if (BuildOpts.Observer)
+      BuildOpts.Observer->compareBitwiseOr(B);
+
+    return TryResult(true);
   }
 
   /// Try and evaluate an expression to an integer constant.
@@ -1121,7 +1182,7 @@ private:
       return {};
 
     if (BinaryOperator *Bop = dyn_cast<BinaryOperator>(S)) {
-      if (Bop->isLogicalOp()) {
+      if (Bop->isLogicalOp() || Bop->isEqualityOp()) {
         // Check the cache first.
         CachedBoolEvalsTy::iterator I = CachedBoolEvals.find(S);
         if (I != CachedBoolEvals.end())
@@ -1203,6 +1264,10 @@ private:
             return BopRes.isTrue();
       } else if (Bop->isRelationalOp()) {
         TryResult BopRes = checkIncorrectRelationalOperator(Bop);
+        if (BopRes.isKnown())
+          return BopRes.isTrue();
+      } else if (Bop->getOpcode() == BO_Or) {
+        TryResult BopRes = checkIncorrectBitwiseOrOperator(Bop);
         if (BopRes.isKnown())
           return BopRes.isTrue();
       }
@@ -1364,7 +1429,7 @@ void CFGBuilder::findConstructionContexts(
     if (Layer->getItem().getKind() ==
         ConstructionContextItem::ElidableConstructorKind) {
       auto *MTE = cast<MaterializeTemporaryExpr>(Child);
-      findConstructionContexts(withExtraLayer(MTE), MTE->GetTemporaryExpr());
+      findConstructionContexts(withExtraLayer(MTE), MTE->getSubExpr());
     }
     break;
   }
@@ -1630,7 +1695,7 @@ static QualType getReferenceInitTemporaryType(const Expr *Init,
     // Skip through the temporary-materialization expression.
     if (const MaterializeTemporaryExpr *MTE
           = dyn_cast<MaterializeTemporaryExpr>(Init)) {
-      Init = MTE->GetTemporaryExpr();
+      Init = MTE->getSubExpr();
       if (FoundMTE)
         *FoundMTE = true;
       continue;
@@ -2063,9 +2128,21 @@ CFGBlock *CFGBuilder::Visit(Stmt * S, AddStmtChoice asc,
   if (Expr *E = dyn_cast<Expr>(S))
     S = E->IgnoreParens();
 
+  if (Context->getLangOpts().OpenMP)
+    if (auto *D = dyn_cast<OMPExecutableDirective>(S))
+      return VisitOMPExecutableDirective(D, asc);
+
   switch (S->getStmtClass()) {
     default:
       return VisitStmt(S, asc);
+
+    case Stmt::ImplicitValueInitExprClass:
+      if (BuildOpts.OmitImplicitValueInitializers)
+        return Block;
+      return VisitStmt(S, asc);
+
+    case Stmt::InitListExprClass:
+      return VisitInitListExpr(cast<InitListExpr>(S), asc);
 
     case Stmt::AddrLabelExprClass:
       return VisitAddrLabelExpr(cast<AddrLabelExpr>(S), asc);
@@ -2273,11 +2350,33 @@ CFGBlock *CFGBuilder::VisitChildren(Stmt *S) {
   // Visit the children in their reverse order so that they appear in
   // left-to-right (natural) order in the CFG.
   reverse_children RChildren(S);
-  for (reverse_children::iterator I = RChildren.begin(), E = RChildren.end();
-       I != E; ++I) {
-    if (Stmt *Child = *I)
+  for (Stmt *Child : RChildren) {
+    if (Child)
       if (CFGBlock *R = Visit(Child))
         B = R;
+  }
+  return B;
+}
+
+CFGBlock *CFGBuilder::VisitInitListExpr(InitListExpr *ILE, AddStmtChoice asc) {
+  if (asc.alwaysAdd(*this, ILE)) {
+    autoCreateBlock();
+    appendStmt(Block, ILE);
+  }
+  CFGBlock *B = Block;
+
+  reverse_children RChildren(ILE);
+  for (Stmt *Child : RChildren) {
+    if (!Child)
+      continue;
+    if (CFGBlock *R = Visit(Child))
+      B = R;
+    if (BuildOpts.AddCXXDefaultInitExprInAggregates) {
+      if (auto *DIE = dyn_cast<CXXDefaultInitExpr>(Child))
+        if (Stmt *Child = DIE->getExpr())
+          if (CFGBlock *R = Visit(Child))
+            B = R;
+    }
   }
   return B;
 }
@@ -2300,6 +2399,9 @@ CFGBlock *CFGBuilder::VisitUnaryOperator(UnaryOperator *U,
     autoCreateBlock();
     appendStmt(Block, U);
   }
+
+  if (U->getOpcode() == UO_LNot)
+    tryEvaluateBool(U->getSubExpr()->IgnoreParens());
 
   return Visit(U->getSubExpr(), AddStmtChoice());
 }
@@ -2434,6 +2536,9 @@ CFGBlock *CFGBuilder::VisitBinaryOperator(BinaryOperator *B,
     autoCreateBlock();
     appendStmt(Block, B);
   }
+
+  if (B->isEqualityOp() || B->isRelationalOp())
+    tryEvaluateBool(B);
 
   CFGBlock *RBlock = Visit(B->getRHS());
   CFGBlock *LBlock = Visit(B->getLHS());
@@ -2934,8 +3039,8 @@ CFGBlock *CFGBuilder::VisitIfStmt(IfStmt *I) {
 
     // Add the successors.  If we know that specific branches are
     // unreachable, inform addSuccessor() of that knowledge.
-    addSuccessor(Block, ThenBlock, /* isReachable = */ !KnownVal.isFalse());
-    addSuccessor(Block, ElseBlock, /* isReachable = */ !KnownVal.isTrue());
+    addSuccessor(Block, ThenBlock, /* IsReachable = */ !KnownVal.isFalse());
+    addSuccessor(Block, ElseBlock, /* IsReachable = */ !KnownVal.isTrue());
 
     // Add the condition as the last statement in the new block.  This may
     // create new blocks as the condition may contain control-flow.  Any newly
@@ -3388,7 +3493,7 @@ CFGBuilder::VisitMaterializeTemporaryExpr(MaterializeTemporaryExpr *MTE,
                                           AddStmtChoice asc) {
   findConstructionContexts(
       ConstructionContextLayer::create(cfg->getBumpVectorContext(), MTE),
-      MTE->getTemporary());
+      MTE->getSubExpr());
 
   return VisitStmt(MTE, asc);
 }
@@ -4488,6 +4593,10 @@ CFGBlock *CFGBuilder::VisitImplicitCastExpr(ImplicitCastExpr *E,
     autoCreateBlock();
     appendStmt(Block, E);
   }
+
+  if (E->getCastKind() == CK_IntegralToBoolean)
+    tryEvaluateBool(E->getSubExpr()->IgnoreParens());
+
   return Visit(E->getSubExpr(), AddStmtChoice());
 }
 
@@ -4571,7 +4680,7 @@ tryAgain:
       // Find the expression whose lifetime needs to be extended.
       E = const_cast<Expr *>(
           cast<MaterializeTemporaryExpr>(E)
-              ->GetTemporaryExpr()
+              ->getSubExpr()
               ->skipRValueSubobjectAdjustments(CommaLHSs, Adjustments));
       // Visit the skipped comma operator left-hand sides for other temporaries.
       for (const Expr *CommaLHS : CommaLHSs) {
@@ -4762,6 +4871,38 @@ CFGBlock *CFGBuilder::VisitConditionalOperatorForTemporaryDtors(
     InsertTempDtorDecisionBlock(FalseContext);
   }
   return Block;
+}
+
+CFGBlock *CFGBuilder::VisitOMPExecutableDirective(OMPExecutableDirective *D,
+                                                  AddStmtChoice asc) {
+  if (asc.alwaysAdd(*this, D)) {
+    autoCreateBlock();
+    appendStmt(Block, D);
+  }
+
+  // Iterate over all used expression in clauses.
+  CFGBlock *B = Block;
+
+  // Reverse the elements to process them in natural order. Iterators are not
+  // bidirectional, so we need to create temp vector.
+  SmallVector<Stmt *, 8> Used(
+      OMPExecutableDirective::used_clauses_children(D->clauses()));
+  for (Stmt *S : llvm::reverse(Used)) {
+    assert(S && "Expected non-null used-in-clause child.");
+    if (CFGBlock *R = Visit(S))
+      B = R;
+  }
+  // Visit associated structured block if any.
+  if (!D->isStandaloneDirective())
+    if (CapturedStmt *CS = D->getInnermostCapturedStmt()) {
+      Stmt *S = CS->getCapturedStmt();
+      if (!isa<CompoundStmt>(S))
+        addLocalScopeAndDtors(S);
+      if (CFGBlock *R = addStmt(S))
+        B = R;
+    }
+
+  return B;
 }
 
 /// createBlock - Constructs and adds a new CFGBlock to the CFG.  The block has
@@ -5778,7 +5919,7 @@ const Expr *CFGBlock::getLastCondition() const {
     return nullptr;
 
   const Stmt *Cond = StmtElem->getStmt();
-  if (isa<ObjCForCollectionStmt>(Cond))
+  if (isa<ObjCForCollectionStmt>(Cond) || isa<DeclStmt>(Cond))
     return nullptr;
 
   // Only ObjCForCollectionStmt is known not to be a non-Expr terminator, hence

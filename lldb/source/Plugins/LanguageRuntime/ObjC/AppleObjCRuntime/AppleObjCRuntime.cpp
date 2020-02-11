@@ -22,7 +22,7 @@
 #include "lldb/DataFormatters/FormattersHelpers.h"
 #include "lldb/Expression/DiagnosticManager.h"
 #include "lldb/Expression/FunctionCaller.h"
-#include "lldb/Symbol/ClangASTContext.h"
+#include "lldb/Symbol/TypeSystemClang.h"
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Target/ExecutionContext.h"
 #include "lldb/Target/Process.h"
@@ -105,13 +105,16 @@ bool AppleObjCRuntime::GetObjectDescription(Stream &strm, Value &value,
   Target *target = exe_ctx.GetTargetPtr();
   CompilerType compiler_type = value.GetCompilerType();
   if (compiler_type) {
-    if (!ClangASTContext::IsObjCObjectPointerType(compiler_type)) {
+    if (!TypeSystemClang::IsObjCObjectPointerType(compiler_type)) {
       strm.Printf("Value doesn't point to an ObjC object.\n");
       return false;
     }
   } else {
     // If it is not a pointer, see if we can make it into a pointer.
-    ClangASTContext *ast_context = target->GetScratchClangASTContext();
+    TypeSystemClang *ast_context = TypeSystemClang::GetScratch(*target);
+    if (!ast_context)
+      return false;
+
     CompilerType opaque_type = ast_context->GetBasicType(eBasicTypeObjCID);
     if (!opaque_type)
       opaque_type = ast_context->GetBasicType(eBasicTypeVoid).GetPointerType();
@@ -123,7 +126,9 @@ bool AppleObjCRuntime::GetObjectDescription(Stream &strm, Value &value,
   arg_value_list.PushValue(value);
 
   // This is the return value:
-  ClangASTContext *ast_context = target->GetScratchClangASTContext();
+  TypeSystemClang *ast_context = TypeSystemClang::GetScratch(*target);
+  if (!ast_context)
+    return false;
 
   CompilerType return_compiler_type = ast_context->GetCStringType(true);
   Value ret;
@@ -223,11 +228,14 @@ Address *AppleObjCRuntime::GetPrintForDebuggerAddr() {
     SymbolContextList contexts;
     SymbolContext context;
 
-    if ((!modules.FindSymbolsWithNameAndType(ConstString("_NSPrintForDebugger"),
-                                             eSymbolTypeCode, contexts)) &&
-        (!modules.FindSymbolsWithNameAndType(ConstString("_CFPrintForDebugger"),
-                                             eSymbolTypeCode, contexts)))
-      return nullptr;
+    modules.FindSymbolsWithNameAndType(ConstString("_NSPrintForDebugger"),
+                                        eSymbolTypeCode, contexts);
+    if (contexts.IsEmpty()) {
+      modules.FindSymbolsWithNameAndType(ConstString("_CFPrintForDebugger"),
+                                         eSymbolTypeCode, contexts);
+      if (contexts.IsEmpty())
+        return nullptr;
+    }
 
     contexts.GetContextAtIndex(0, context);
 
@@ -238,16 +246,10 @@ Address *AppleObjCRuntime::GetPrintForDebuggerAddr() {
 }
 
 bool AppleObjCRuntime::CouldHaveDynamicValue(ValueObject &in_value) {
-  return CouldHaveDynamicValue(in_value,
-                               /* allow_swift = */ false);
-}
-
-bool AppleObjCRuntime::CouldHaveDynamicValue(ValueObject &in_value,
-                                             bool allow_swift) {
   return in_value.GetCompilerType().IsPossibleDynamicType(
       nullptr,
       false, // do not check C++
-      true);  // check ObjC
+      true); // check ObjC
 }
 
 bool AppleObjCRuntime::GetDynamicTypeAndAddress(
@@ -450,10 +452,12 @@ bool AppleObjCRuntime::CalculateHasNewLiteralsAndIndexing() {
 
   SymbolContextList sc_list;
 
-  return target.GetImages().FindSymbolsWithNameAndType(
-             s_method_signature, eSymbolTypeCode, sc_list) ||
-         target.GetImages().FindSymbolsWithNameAndType(
-             s_arclite_method_signature, eSymbolTypeCode, sc_list);
+  target.GetImages().FindSymbolsWithNameAndType(s_method_signature,
+                                                eSymbolTypeCode, sc_list);
+  if (sc_list.IsEmpty())
+    target.GetImages().FindSymbolsWithNameAndType(s_arclite_method_signature,
+                                                  eSymbolTypeCode, sc_list);
+  return !sc_list.IsEmpty();
 }
 
 lldb::SearchFilterSP AppleObjCRuntime::CreateExceptionSearchFilter() {
@@ -495,9 +499,12 @@ ThreadSP AppleObjCRuntime::GetBacktraceThreadFromException(
   reserved_dict = reserved_dict->GetSyntheticValue();
   if (!reserved_dict) return ThreadSP();
 
+  TypeSystemClang *clang_ast_context =
+      TypeSystemClang::GetScratch(*exception_sp->GetTargetSP());
+  if (!clang_ast_context)
+    return ThreadSP();
   CompilerType objc_id =
-      exception_sp->GetTargetSP()->GetScratchClangASTContext()->GetBasicType(
-          lldb::eBasicTypeObjCID);
+      clang_ast_context->GetBasicType(lldb::eBasicTypeObjCID);
   ValueObjectSP return_addresses;
 
   auto objc_object_from_address = [&exception_sp, &objc_id](uint64_t addr,

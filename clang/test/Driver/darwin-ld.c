@@ -5,9 +5,9 @@
 
 // Make sure we run dsymutil on source input files.
 // RUN: %clang -target i386-apple-darwin9 -### -g %s -o BAR 2> %t.log
-// RUN: grep '".*dsymutil" "-o" "BAR.dSYM" "BAR"' %t.log
+// RUN: grep -E '".*dsymutil(\.exe)?" "-o" "BAR.dSYM" "BAR"' %t.log
 // RUN: %clang -target i386-apple-darwin9 -### -g -filelist FOO %s -o BAR 2> %t.log
-// RUN: grep '".*dsymutil" "-o" "BAR.dSYM" "BAR"' %t.log
+// RUN: grep -E '".*dsymutil(\.exe)?" "-o" "BAR.dSYM" "BAR"' %t.log
 
 // Check linker changes that came with new linkedit format.
 // RUN: touch %t.o
@@ -140,6 +140,13 @@
 // LINK_VERSION_MIN: {{ld(.exe)?"}}
 // LINK_VERSION_MIN: "-macosx_version_min" "10.7.0"
 
+// RUN: %clang -target x86_64-apple-ios13-macabi -mlinker-version=400 -### %t.o 2>> %t.log
+// RUN: FileCheck -check-prefix=LINK_VERSION_MIN_MACABI %s < %t.log
+// LINK_VERSION_MIN_MACABI: {{ld(.exe)?"}}
+// LINK_VERSION_MIN_MACABI: "-maccatalyst_version_min" "13.0.0"
+// LINK_VERSION_MIN_MACABI-NOT: macosx_version_min
+// LINK_VERSION_MIN_MACABI-NOT: macos_version_min
+
 // RUN: %clang -target x86_64-apple-darwin12 -### %t.o 2> %t.log
 // RUN: FileCheck -check-prefix=LINK_NO_CRT1 %s < %t.log
 // LINK_NO_CRT1-NOT: crt
@@ -157,6 +164,11 @@
 // LINK_IOSSIM_PROFILE: {{ld(.exe)?"}}
 // LINK_IOSSIM_PROFILE: libclang_rt.profile_iossim.a
 // LINK_IOSSIM_PROFILE: libclang_rt.ios.a
+
+// RUN: %clang -target x86_64-apple-ios13-macabi -mlinker-version=400 -fprofile-instr-generate -### %t.o 2> %t.log
+// RUN: FileCheck -check-prefix=LINK_MACABI_PROFILE %s < %t.log
+// LINK_MACABI_PROFILE: {{ld(.exe)?"}}
+// LINK_MACABI_PROFILE: libclang_rt.profile_osx.a
 
 // RUN: %clang -target arm64-apple-tvos8.3 -mlinker-version=400 -mtvos-version-min=8.3 -resource-dir=%S/Inputs/resource_dir -### %t.o 2> %t.log
 // RUN: FileCheck -check-prefix=LINK_TVOS_ARM64 %s < %t.log

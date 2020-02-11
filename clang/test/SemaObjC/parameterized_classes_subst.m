@@ -434,3 +434,4 @@ void test_ternary_operator(NSArray<NSString *> *stringArray,
 // warning about likely protocol/class name typos.
 // --------------------------------------------------------------------------
 typedef NSArray<NSObject> ArrayOfNSObjectWarning; // expected-warning{{parameterized class 'NSArray' already conforms to the protocols listed; did you forget a '*'?}}
+

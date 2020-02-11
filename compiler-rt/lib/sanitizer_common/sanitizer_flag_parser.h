@@ -32,7 +32,7 @@ class FlagHandlerBase {
   }
 
  protected:
-  ~FlagHandlerBase() {};
+  ~FlagHandlerBase() {}
 
   inline bool FormatString(char *buffer, uptr size, const char *str_to_use) {
     uptr num_symbols_should_write =
@@ -193,7 +193,7 @@ class FlagParser {
 template <typename T>
 static void RegisterFlag(FlagParser *parser, const char *name, const char *desc,
                          T *var) {
-  FlagHandler<T> *fh = new (FlagParser::Alloc) FlagHandler<T>(var);  // NOLINT
+  FlagHandler<T> *fh = new (FlagParser::Alloc) FlagHandler<T>(var);
   parser->RegisterHandler(name, fh, desc);
 }
 

@@ -3,6 +3,7 @@
 // RUN:                     -analyzer-checker=core \
 // RUN:                     -analyzer-dump-egraph=%t.dot %s
 // RUN: %exploded_graph_rewriter %t.dot | FileCheck %s
+// REQUIRES: asserts
 
 // FIXME: Substitution doesn't seem to work on Windows.
 // UNSUPPORTED: system-windows
@@ -14,7 +15,7 @@ void escapes() {
   // CHECK: <td align="left"><b>Expressions: </b></td>
   // CHECK-SAME: <td align="left">"foo"</td>
   // CHECK-SAME: <td align="left">&amp;Element\{"foo",0 S64b,char\}</td>
-  const char *const foo = "foo";
+  const char *const foo = "\x66\x6f\x6f";
 
   // CHECK: <font color="cyan4">BinaryOperator</font>
   // CHECK-SAME: <td align="left">1 \| 2</td>

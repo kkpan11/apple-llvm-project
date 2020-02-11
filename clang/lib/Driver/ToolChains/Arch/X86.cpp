@@ -13,6 +13,7 @@
 #include "clang/Driver/Options.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/Option/ArgList.h"
+#include "llvm/Support/Host.h"
 
 using namespace clang::driver;
 using namespace clang::driver::tools;
@@ -62,8 +63,7 @@ const char *x86::getX86TargetCPU(const ArgList &Args,
 
   // Select the default CPU if none was given (or detection failed).
 
-  if (Triple.getArch() != llvm::Triple::x86_64 &&
-      Triple.getArch() != llvm::Triple::x86)
+  if (!Triple.isX86())
     return nullptr; // This routine is only handling x86 targets.
 
   bool Is64Bit = Triple.getArch() == llvm::Triple::x86_64;
@@ -135,6 +135,7 @@ void x86::getX86TargetFeatures(const Driver &D, const llvm::Triple &Triple,
     if (ArchType == llvm::Triple::x86_64) {
       Features.push_back("+sse4.2");
       Features.push_back("+popcnt");
+      Features.push_back("+cx16");
     } else
       Features.push_back("+ssse3");
   }

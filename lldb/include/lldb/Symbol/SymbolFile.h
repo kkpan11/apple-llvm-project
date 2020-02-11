@@ -21,8 +21,8 @@
 #include "lldb/Symbol/TypeList.h"
 #include "lldb/Symbol/TypeSystem.h"
 #include "lldb/lldb-private.h"
-
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/Support/Errc.h"
 
 #include <mutex>
 
@@ -210,21 +210,19 @@ public:
                                         SymbolContextList &sc_list);
 
   virtual void DumpClangAST(Stream &s) {}
-  virtual uint32_t
+  virtual void
   FindGlobalVariables(ConstString name,
                       const CompilerDeclContext *parent_decl_ctx,
                       uint32_t max_matches, VariableList &variables);
-  virtual uint32_t FindGlobalVariables(const RegularExpression &regex,
-                                       uint32_t max_matches,
-                                       VariableList &variables);
-  virtual uint32_t FindFunctions(ConstString name,
-                                 const CompilerDeclContext *parent_decl_ctx,
-                                 lldb::FunctionNameType name_type_mask,
-                                 bool include_inlines, bool append,
-                                 SymbolContextList &sc_list);
-  virtual uint32_t FindFunctions(const RegularExpression &regex,
-                                 bool include_inlines, bool append,
-                                 SymbolContextList &sc_list);
+  virtual void FindGlobalVariables(const RegularExpression &regex,
+                                   uint32_t max_matches,
+                                   VariableList &variables);
+  virtual void FindFunctions(ConstString name,
+                             const CompilerDeclContext *parent_decl_ctx,
+                             lldb::FunctionNameType name_type_mask,
+                             bool include_inlines, SymbolContextList &sc_list);
+  virtual void FindFunctions(const RegularExpression &regex,
+                             bool include_inlines, SymbolContextList &sc_list);
   virtual void
   FindTypes(ConstString name, const CompilerDeclContext *parent_decl_ctx,
             uint32_t max_matches,
@@ -264,7 +262,8 @@ public:
   const ObjectFile *GetObjectFile() const { return m_objfile_sp.get(); }
   ObjectFile *GetMainObjectFile();
 
-  virtual std::vector<CallEdge> ParseCallEdgesInFunction(UserID func_id) {
+  virtual std::vector<std::unique_ptr<CallEdge>>
+  ParseCallEdgesInFunction(UserID func_id) {
     return {};
   }
 
@@ -323,6 +322,13 @@ public:
   virtual lldb::UnwindPlanSP
   GetUnwindPlan(const Address &address, const RegisterInfoResolver &resolver) {
     return nullptr;
+  }
+
+  /// Return the number of stack bytes taken up by the parameters to this
+  /// function.
+  virtual llvm::Expected<lldb::addr_t> GetParameterStackSize(Symbol &symbol) {
+    return llvm::createStringError(make_error_code(llvm::errc::not_supported),
+                                   "Operation not supported.");
   }
 
   virtual void Dump(Stream &s);

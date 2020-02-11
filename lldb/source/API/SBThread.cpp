@@ -16,6 +16,7 @@
 #include "lldb/API/SBFrame.h"
 #include "lldb/API/SBProcess.h"
 #include "lldb/API/SBStream.h"
+#include "lldb/API/SBStructuredData.h"
 #include "lldb/API/SBSymbolContext.h"
 #include "lldb/API/SBThreadCollection.h"
 #include "lldb/API/SBThreadPlan.h"
@@ -23,6 +24,7 @@
 #include "lldb/Breakpoint/BreakpointLocation.h"
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/StreamFile.h"
+#include "lldb/Core/StructuredDataImpl.h"
 #include "lldb/Core/ValueObject.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Symbol/CompileUnit.h"
@@ -323,8 +325,11 @@ size_t SBThread::GetStopDescription(char *dst, size_t dst_len) {
 
       StopInfoSP stop_info_sp = exe_ctx.GetThreadPtr()->GetStopInfo();
       if (stop_info_sp) {
-        const char *stop_desc = stop_info_sp->GetDescription();
-        if (stop_desc) {
+        std::string thread_stop_desc =
+            exe_ctx.GetThreadPtr()->GetStopDescription();
+        const char *stop_desc = thread_stop_desc.c_str();
+
+        if (stop_desc[0] != '\0') {
           if (dst)
             return ::snprintf(dst, dst_len, "%s", stop_desc);
           else {
@@ -410,14 +415,17 @@ size_t SBThread::GetStopDescription(char *dst, size_t dst_len) {
 SBValue SBThread::GetStopReturnValue() {
   LLDB_RECORD_METHOD_NO_ARGS(lldb::SBValue, SBThread, GetStopReturnValue);
 
+  // BEGIN SWIFT
   bool is_swift_error_value = false;
   SBValue return_value = GetStopReturnOrErrorValue(is_swift_error_value);
   if (is_swift_error_value)
     return SBValue();
   else
     return return_value;
+  // END SWIFT
 }
 
+// BEGIN SWIFT
 SBValue SBThread::GetStopErrorValue() {
   bool is_swift_error_value = false;
   SBValue return_value = GetStopReturnOrErrorValue(is_swift_error_value);
@@ -446,6 +454,7 @@ SBValue SBThread::GetStopReturnOrErrorValue(bool &is_swift_error_value) {
 
   return LLDB_RECORD_RESULT(SBValue(return_valobj_sp));
 }
+// END SWIFT
 
 void SBThread::SetThread(const ThreadSP &lldb_object_sp) {
   m_opaque_sp->SetThreadSP(lldb_object_sp);
@@ -932,9 +941,10 @@ SBError SBThread::StepOverUntil(lldb::SBFrame &sb_frame,
     const bool exact = false;
 
     SymbolContextList sc_list;
-    const uint32_t num_matches = frame_sc.comp_unit->ResolveSymbolContext(
-        step_file_spec, line, check_inlines, exact, eSymbolContextLineEntry,
-        sc_list);
+    frame_sc.comp_unit->ResolveSymbolContext(step_file_spec, line,
+                                             check_inlines, exact,
+                                             eSymbolContextLineEntry, sc_list);
+    const uint32_t num_matches = sc_list.GetSize();
     if (num_matches > 0) {
       SymbolContext sc;
       for (uint32_t i = 0; i < num_matches; ++i) {
@@ -985,9 +995,24 @@ SBError SBThread::StepUsingScriptedThreadPlan(const char *script_class_name) {
 }
 
 SBError SBThread::StepUsingScriptedThreadPlan(const char *script_class_name,
+                                            bool resume_immediately) {
+  LLDB_RECORD_METHOD(lldb::SBError, SBThread, StepUsingScriptedThreadPlan,
+                     (const char *, bool), script_class_name, 
+                     resume_immediately);
+
+  lldb::SBStructuredData no_data;
+  return LLDB_RECORD_RESULT(
+      StepUsingScriptedThreadPlan(script_class_name, 
+                                  no_data, 
+                                  resume_immediately));
+}
+
+SBError SBThread::StepUsingScriptedThreadPlan(const char *script_class_name,
+                                              SBStructuredData &args_data,
                                               bool resume_immediately) {
   LLDB_RECORD_METHOD(lldb::SBError, SBThread, StepUsingScriptedThreadPlan,
-                     (const char *, bool), script_class_name,
+                     (const char *, lldb::SBStructuredData &, bool), 
+                     script_class_name, args_data,
                      resume_immediately);
 
   SBError error;
@@ -1002,8 +1027,10 @@ SBError SBThread::StepUsingScriptedThreadPlan(const char *script_class_name,
 
   Thread *thread = exe_ctx.GetThreadPtr();
   Status new_plan_status;
+  StructuredData::ObjectSP obj_sp = args_data.m_impl_up->GetObjectSP();
+
   ThreadPlanSP new_plan_sp = thread->QueueThreadPlanForStepScripted(
-      false, script_class_name, false, new_plan_status);
+      false, script_class_name, obj_sp, false, new_plan_status);
 
   if (new_plan_status.Fail()) {
     error.SetErrorString(new_plan_status.AsCString());
@@ -1037,7 +1064,7 @@ SBError SBThread::JumpToLine(lldb::SBFileSpec &file_spec, uint32_t line) {
 
   Thread *thread = exe_ctx.GetThreadPtr();
 
-  Status err = thread->JumpToLine(file_spec.get(), line, true);
+  Status err = thread->JumpToLine(file_spec.ref(), line, true);
   sb_error.SetError(err);
   return LLDB_RECORD_RESULT(sb_error);
 }
@@ -1480,6 +1507,8 @@ void RegisterMethods<SBThread>(Registry &R) {
                        (const char *));
   LLDB_REGISTER_METHOD(lldb::SBError, SBThread, StepUsingScriptedThreadPlan,
                        (const char *, bool));
+  LLDB_REGISTER_METHOD(lldb::SBError, SBThread, StepUsingScriptedThreadPlan,
+                       (const char *, SBStructuredData &, bool));
   LLDB_REGISTER_METHOD(lldb::SBError, SBThread, JumpToLine,
                        (lldb::SBFileSpec &, uint32_t));
   LLDB_REGISTER_METHOD(lldb::SBError, SBThread, ReturnFromFrame,

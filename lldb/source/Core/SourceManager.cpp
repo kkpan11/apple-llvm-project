@@ -64,7 +64,8 @@ SourceManager::~SourceManager() {}
 
 SourceManager::FileSP SourceManager::GetFile(const FileSpec &file_spec) {
   bool same_as_previous =
-      m_last_file_sp && m_last_file_sp->FileSpecMatches(file_spec);
+      m_last_file_sp &&
+      FileSpec::Match(file_spec, m_last_file_sp->GetFileSpec());
 
   DebuggerSP debugger_sp(m_debugger_wp.lock());
   FileSP file_sp;
@@ -305,15 +306,16 @@ bool SourceManager::SetDefaultFileAndLine(const FileSpec &file_spec,
   }
 }
 
-// this is a vector of pairs that each represent a legitimate interesting
-// entry point to the user program. the bool argument means whether
-// we want to skip the prologue code or not when trying to resolve
-// this name to a line entry
-// FindEntryPoint() will attempt to resolve these to a valid line entry in the
-// order
-// in which they are provided. This could probably be extended with a notion
-// of "main language", i.e. the language in which the main executable module is
-// coded
+// BEGIN SWIFT
+
+// This is a vector of pairs that each represent a legitimate
+// interesting entry point to the user program. the bool argument
+// means whether we want to skip the prologue code or not when trying
+// to resolve this name to a line entry FindEntryPoint() will attempt
+// to resolve these to a valid line entry in the order in which they
+// are provided. This could probably be extended with a notion of
+// "main language", i.e. the language in which the main executable
+// module is coded
 static const std::vector<std::pair<ConstString, bool>> &GetEntryPointNames() {
   static std::vector<std::pair<ConstString, bool>> g_entry_point_names;
   if (g_entry_point_names.size() == 0) {
@@ -334,10 +336,10 @@ static lldb_private::LineEntry FindEntryPoint(Module *exe_module) {
     SymbolContextList sc_list;
     bool symbols_okay = false; // Force it to be a debug symbol.
     bool inlines_okay = true;
-    bool append = false;
-    size_t num_matches = exe_module->FindFunctions(
-        entry_point_name, NULL, lldb::eFunctionNameTypeBase, inlines_okay,
-        symbols_okay, append, sc_list);
+    exe_module->FindFunctions(entry_point_name, NULL,
+                              lldb::eFunctionNameTypeBase, inlines_okay,
+                              symbols_okay, sc_list);
+    size_t num_matches = sc_list.GetSize();
     for (size_t idx = 0; idx < num_matches; idx++) {
       SymbolContext sc;
       sc_list.GetContextAtIndex(idx, sc);
@@ -355,6 +357,7 @@ static lldb_private::LineEntry FindEntryPoint(Module *exe_module) {
   }
   return LineEntry();
 }
+// END SWIFT
 
 bool SourceManager::GetDefaultFileAndLine(FileSpec &file_spec, uint32_t &line) {
   if (m_last_file_sp) {
@@ -371,6 +374,32 @@ bool SourceManager::GetDefaultFileAndLine(FileSpec &file_spec, uint32_t &line) {
       // to set it (for instance when we stop somewhere...)
       Module *executable_ptr = target_sp->GetExecutableModulePointer();
       if (executable_ptr) {
+        // BEGIN SWIFT
+#if 0 // llvm.org
+        SymbolContextList sc_list;
+        ConstString main_name("main");
+        bool symbols_okay = false; // Force it to be a debug symbol.
+        bool inlines_okay = true;
+        executable_ptr->FindFunctions(main_name, nullptr,
+                                      lldb::eFunctionNameTypeBase, inlines_okay,
+                                      symbols_okay, sc_list);
+        size_t num_matches = sc_list.GetSize();
+        for (size_t idx = 0; idx < num_matches; idx++) {
+          SymbolContext sc;
+          sc_list.GetContextAtIndex(idx, sc);
+          if (sc.function) {
+            lldb_private::LineEntry line_entry;
+            if (sc.function->GetAddressRange()
+                    .GetBaseAddress()
+                    .CalculateSymbolContextLineEntry(line_entry)) {
+              SetDefaultFileAndLine(line_entry.file, line_entry.line);
+              file_spec = m_last_file_sp->GetFileSpec();
+              line = m_last_line;
+              return true;
+            }
+          }
+        }
+#else // FIXME: upstream this!
         lldb_private::LineEntry line_entry(FindEntryPoint(executable_ptr));
         if (line_entry.IsValid()) {
           SetDefaultFileAndLine(line_entry.file, line_entry.line);
@@ -378,6 +407,8 @@ bool SourceManager::GetDefaultFileAndLine(FileSpec &file_spec, uint32_t &line) {
           line = m_last_line;
           return true;
         }
+#endif
+        // END SWIFT
       }
     }
   }
@@ -434,24 +465,25 @@ void SourceManager::File::CommonInitializer(const FileSpec &file_spec,
         if (num_matches != 0) {
           if (num_matches > 1) {
             SymbolContext sc;
-            FileSpec *test_cu_spec = nullptr;
+            CompileUnit *test_cu = nullptr;
 
             for (unsigned i = 0; i < num_matches; i++) {
               sc_list.GetContextAtIndex(i, sc);
               if (sc.comp_unit) {
-                if (test_cu_spec) {
-                  if (test_cu_spec != static_cast<FileSpec *>(sc.comp_unit))
+                if (test_cu) {
+                  if (test_cu != sc.comp_unit)
                     got_multiple = true;
                   break;
                 } else
-                  test_cu_spec = sc.comp_unit;
+                  test_cu = sc.comp_unit;
               }
             }
           }
           if (!got_multiple) {
             SymbolContext sc;
             sc_list.GetContextAtIndex(0, sc);
-            m_file_spec = sc.comp_unit;
+            if (sc.comp_unit)
+              m_file_spec = sc.comp_unit->GetPrimaryFile();
             m_mod_time = FileSystem::Instance().GetModificationTime(m_file_spec);
           }
         }
@@ -634,10 +666,6 @@ void SourceManager::File::FindLinesMatchingRegex(
       match_lines.push_back(line_no);
     }
   }
-}
-
-bool SourceManager::File::FileSpecMatches(const FileSpec &file_spec) {
-  return FileSpec::Equal(m_file_spec, file_spec, false);
 }
 
 bool lldb_private::operator==(const SourceManager::File &lhs,

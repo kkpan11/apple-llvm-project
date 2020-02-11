@@ -146,8 +146,6 @@ class TextNodeDumper
 
   const comments::CommandTraits *Traits;
 
-  const ASTContext *Context;
-
   const char *getCommandName(unsigned CommandID);
 
 public:
@@ -347,9 +345,9 @@ public:
   void VisitObjCPropertyDecl(const ObjCPropertyDecl *D);
   void VisitObjCPropertyImplDecl(const ObjCPropertyImplDecl *D);
   void VisitBlockDecl(const BlockDecl *D);
-
-private:
-  void dumpCXXTemporary(const CXXTemporary *Temporary);
+  void VisitConceptDecl(const ConceptDecl *D);
+  void
+  VisitLifetimeExtendedTemporaryDecl(const LifetimeExtendedTemporaryDecl *D);
 };
 
 } // namespace clang

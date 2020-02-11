@@ -164,14 +164,14 @@ indexstore_unit_event_get_kind(indexstore_unit_event_t c_evt) {
   auto *evt = static_cast<IndexDataStore::UnitEvent*>(c_evt);
   indexstore_unit_event_kind_t k;
   switch (evt->Kind) {
-    case IndexDataStore::UnitEventKind::Added:
-      k = INDEXSTORE_UNIT_EVENT_ADDED; break;
     case IndexDataStore::UnitEventKind::Removed:
       k = INDEXSTORE_UNIT_EVENT_REMOVED; break;
     case IndexDataStore::UnitEventKind::Modified:
       k = INDEXSTORE_UNIT_EVENT_MODIFIED; break;
     case IndexDataStore::UnitEventKind::DirectoryDeleted:
       k = INDEXSTORE_UNIT_EVENT_DIRECTORY_DELETED; break;
+    case IndexDataStore::UnitEventKind::Failure:
+      k = INDEXSTORE_UNIT_EVENT_FAILURE; break;
   }
   return k;
 }
@@ -180,12 +180,6 @@ indexstore_string_ref_t
 indexstore_unit_event_get_unit_name(indexstore_unit_event_t c_evt) {
   auto *evt = static_cast<IndexDataStore::UnitEvent*>(c_evt);
   return toIndexStoreString(evt->UnitName);
-}
-
-timespec
-indexstore_unit_event_get_modification_time(indexstore_unit_event_t c_evt) {
-  auto *evt = static_cast<IndexDataStore::UnitEvent*>(c_evt);
-  return toTimeSpec(evt->ModTime);
 }
 
 #if INDEXSTORE_HAS_BLOCKS

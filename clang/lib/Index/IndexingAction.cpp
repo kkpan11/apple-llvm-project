@@ -27,61 +27,9 @@
 using namespace clang;
 using namespace clang::index;
 
-bool IndexDataConsumer::handleDeclOccurence(const Decl *D, SymbolRoleSet Roles,
-                                            ArrayRef<SymbolRelation> Relations,
-                                            SourceLocation Loc,
-                                            ASTNodeInfo ASTNode) {
-  return true;
-}
-
-bool IndexDataConsumer::handleMacroOccurence(const IdentifierInfo *Name,
-                                             const MacroInfo *MI,
-                                             SymbolRoleSet Roles,
-                                             SourceLocation Loc) {
-  return true;
-}
-
-bool IndexDataConsumer::handleModuleOccurence(const ImportDecl *ImportD,
-                                              const Module *Mod,
-                                              SymbolRoleSet Roles,
-                                              SourceLocation Loc) {
-  return true;
-}
-
 namespace {
 
-class IndexASTConsumer : public ASTConsumer {
-  std::shared_ptr<Preprocessor> PP;
-  std::shared_ptr<IndexingContext> IndexCtx;
-
-public:
-  IndexASTConsumer(std::shared_ptr<Preprocessor> PP,
-                   std::shared_ptr<IndexingContext> IndexCtx)
-      : PP(std::move(PP)), IndexCtx(std::move(IndexCtx)) {}
-
-protected:
-  void Initialize(ASTContext &Context) override {
-    IndexCtx->setASTContext(Context);
-    IndexCtx->getDataConsumer().initialize(Context);
-    IndexCtx->getDataConsumer().setPreprocessor(PP);
-  }
-
-  bool HandleTopLevelDecl(DeclGroupRef DG) override {
-    return IndexCtx->indexDeclGroupRef(DG);
-  }
-
-  void HandleInterestingDecl(DeclGroupRef DG) override {
-    // Ignore deserialized decls.
-  }
-
-  void HandleTopLevelDeclInObjCContainer(DeclGroupRef DG) override {
-    IndexCtx->indexDeclGroupRef(DG);
-  }
-
-  void HandleTranslationUnit(ASTContext &Ctx) override {}
-};
-
-class IndexPPCallbacks : public PPCallbacks {
+class IndexPPCallbacks final : public PPCallbacks {
   std::shared_ptr<IndexingContext> IndexCtx;
 
 public:
@@ -111,103 +59,89 @@ public:
   }
 };
 
-class IndexActionBase {
-protected:
+class IndexASTConsumer final : public ASTConsumer {
   std::shared_ptr<IndexDataConsumer> DataConsumer;
   std::shared_ptr<IndexingContext> IndexCtx;
+  std::shared_ptr<Preprocessor> PP;
+  std::function<bool(const Decl *)> ShouldSkipFunctionBody;
 
-  IndexActionBase(std::shared_ptr<IndexDataConsumer> dataConsumer,
-                  IndexingOptions Opts)
-      : DataConsumer(std::move(dataConsumer)),
-        IndexCtx(new IndexingContext(Opts, *DataConsumer)) {}
-
-  std::unique_ptr<IndexASTConsumer>
-  createIndexASTConsumer(CompilerInstance &CI) {
-    IndexCtx->setSysrootPath(CI.getHeaderSearchOpts().Sysroot);
-    return llvm::make_unique<IndexASTConsumer>(CI.getPreprocessorPtr(),
-                                               IndexCtx);
+public:
+  IndexASTConsumer(std::shared_ptr<IndexDataConsumer> DataConsumer,
+                   const IndexingOptions &Opts,
+                   std::shared_ptr<Preprocessor> PP,
+                   std::function<bool(const Decl *)> ShouldSkipFunctionBody)
+      : DataConsumer(std::move(DataConsumer)),
+        IndexCtx(new IndexingContext(Opts, *this->DataConsumer)),
+        PP(std::move(PP)),
+        ShouldSkipFunctionBody(std::move(ShouldSkipFunctionBody)) {
+    assert(this->DataConsumer != nullptr);
+    assert(this->PP != nullptr);
   }
 
-  std::unique_ptr<PPCallbacks> createIndexPPCallbacks() {
-    return llvm::make_unique<IndexPPCallbacks>(IndexCtx);
+protected:
+  void Initialize(ASTContext &Context) override {
+    IndexCtx->setASTContext(Context);
+    IndexCtx->getDataConsumer().initialize(Context);
+    IndexCtx->getDataConsumer().setPreprocessor(PP);
+    PP->addPPCallbacks(std::make_unique<IndexPPCallbacks>(IndexCtx));
   }
 
-  void finish() {
+  bool HandleTopLevelDecl(DeclGroupRef DG) override {
+    return IndexCtx->indexDeclGroupRef(DG);
+  }
+
+  void HandleInterestingDecl(DeclGroupRef DG) override {
+    // Ignore deserialized decls.
+  }
+
+  void HandleTopLevelDeclInObjCContainer(DeclGroupRef DG) override {
+    IndexCtx->indexDeclGroupRef(DG);
+  }
+
+  void HandleTranslationUnit(ASTContext &Ctx) override {
     DataConsumer->finish();
   }
+
+  bool shouldSkipFunctionBody(Decl *D) override {
+    return ShouldSkipFunctionBody(D);
+  }
 };
 
-class IndexAction : public ASTFrontendAction, IndexActionBase {
+class IndexAction final : public ASTFrontendAction {
+  std::shared_ptr<IndexDataConsumer> DataConsumer;
+  IndexingOptions Opts;
+
 public:
   IndexAction(std::shared_ptr<IndexDataConsumer> DataConsumer,
-              IndexingOptions Opts)
-      : IndexActionBase(std::move(DataConsumer), Opts) {}
+              const IndexingOptions &Opts)
+      : DataConsumer(std::move(DataConsumer)), Opts(Opts) {
+    assert(this->DataConsumer != nullptr);
+  }
 
 protected:
   std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI,
                                                  StringRef InFile) override {
-    return createIndexASTConsumer(CI);
-  }
-
-  bool BeginSourceFileAction(clang::CompilerInstance &CI) override {
-    CI.getPreprocessor().addPPCallbacks(createIndexPPCallbacks());
-    return true;
-  }
-
-  void EndSourceFileAction() override {
-    FrontendAction::EndSourceFileAction();
-    finish();
-  }
-};
-
-class WrappingIndexAction : public WrapperFrontendAction, IndexActionBase {
-  bool CreatedASTConsumer = false;
-
-public:
-  WrappingIndexAction(std::unique_ptr<FrontendAction> WrappedAction,
-                      std::shared_ptr<IndexDataConsumer> DataConsumer,
-                      IndexingOptions Opts)
-      : WrapperFrontendAction(std::move(WrappedAction)),
-        IndexActionBase(std::move(DataConsumer), Opts) {}
-
-protected:
-  std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI,
-                                                 StringRef InFile) override {
-    auto OtherConsumer = WrapperFrontendAction::CreateASTConsumer(CI, InFile);
-    if (!OtherConsumer)
-      return nullptr;
-
-    CreatedASTConsumer = true;
-    std::vector<std::unique_ptr<ASTConsumer>> Consumers;
-    Consumers.push_back(std::move(OtherConsumer));
-    Consumers.push_back(createIndexASTConsumer(CI));
-    return llvm::make_unique<MultiplexConsumer>(std::move(Consumers));
-  }
-
-  bool BeginSourceFileAction(clang::CompilerInstance &CI) override {
-    WrapperFrontendAction::BeginSourceFileAction(CI);
-    CI.getPreprocessor().addPPCallbacks(createIndexPPCallbacks());
-    return true;
-  }
-
-  void EndSourceFileAction() override {
-    // Invoke wrapped action's method.
-    WrapperFrontendAction::EndSourceFileAction();
-    if (CreatedASTConsumer)
-      finish();
+    return std::make_unique<IndexASTConsumer>(
+        DataConsumer, Opts, CI.getPreprocessorPtr(),
+        /*ShouldSkipFunctionBody=*/[](const Decl *) { return false; });
   }
 };
 
 } // anonymous namespace
 
+std::unique_ptr<ASTConsumer> index::createIndexingASTConsumer(
+    std::shared_ptr<IndexDataConsumer> DataConsumer,
+    const IndexingOptions &Opts, std::shared_ptr<Preprocessor> PP,
+    std::function<bool(const Decl *)> ShouldSkipFunctionBody) {
+  return std::make_unique<IndexASTConsumer>(DataConsumer, Opts, PP,
+                                            ShouldSkipFunctionBody);
+}
+
 std::unique_ptr<FrontendAction>
 index::createIndexingAction(std::shared_ptr<IndexDataConsumer> DataConsumer,
-                            IndexingOptions Opts,
-                            std::unique_ptr<FrontendAction> WrappedAction) {
-  if (WrappedAction)
-    return llvm::make_unique<WrappingIndexAction>(
-        std::move(WrappedAction), std::move(DataConsumer), Opts);
-  return llvm::make_unique<IndexAction>(std::move(DataConsumer), Opts);
+                            const IndexingOptions &Opts) {
+  assert(DataConsumer != nullptr);
+  return std::make_unique<IndexAction>(std::move(DataConsumer), Opts);
 }
 
 static bool topLevelDeclVisitor(void *context, const Decl *D) {
@@ -223,7 +157,7 @@ static void indexPreprocessorMacros(const Preprocessor &PP,
                                     IndexDataConsumer &DataConsumer) {
   for (const auto &M : PP.macros())
     if (MacroDirective *MD = M.second.getLatest())
-      DataConsumer.handleMacroOccurence(
+      DataConsumer.handleMacroOccurrence(
           M.first, MD->getMacroInfo(),
           static_cast<unsigned>(index::SymbolRole::Definition),
           MD->getLocation());
@@ -261,7 +195,7 @@ void index::indexTopLevelDecls(ASTContext &Ctx, Preprocessor &PP,
 
 std::unique_ptr<PPCallbacks>
 index::indexMacrosCallback(IndexDataConsumer &Consumer, IndexingOptions Opts) {
-  return llvm::make_unique<IndexPPCallbacks>(
+  return std::make_unique<IndexPPCallbacks>(
       std::make_shared<IndexingContext>(Opts, Consumer));
 }
 
@@ -311,9 +245,9 @@ public:
   bool record_empty() const { return RecordByFile.empty(); }
 
 private:
-  bool handleDeclOccurence(const Decl *D, SymbolRoleSet Roles,
-                           ArrayRef<SymbolRelation> Relations,
-                           SourceLocation Loc, ASTNodeInfo ASTNode) override {
+  bool handleDeclOccurrence(const Decl *D, SymbolRoleSet Roles,
+                            ArrayRef<SymbolRelation> Relations,
+                            SourceLocation Loc, ASTNodeInfo ASTNode) override {
     SourceManager &SM = PP->getSourceManager();
     Loc = SM.getFileLoc(Loc);
     if (Loc.isInvalid())
@@ -434,7 +368,7 @@ public:
 
   virtual void attachToPreprocessor(Preprocessor &PP) override {
     DependencyCollector::attachToPreprocessor(PP);
-    PP.addPPCallbacks(llvm::make_unique<IncludePPCallbacks>(
+    PP.addPPCallbacks(std::make_unique<IncludePPCallbacks>(
         IndexCtx, RecordOpts, Includes, PP.getSourceManager()));
   }
 
@@ -467,7 +401,7 @@ public:
           visitor) override {
     HeaderSearch &HS = CI.getPreprocessor().getHeaderSearchInfo();
 
-    if (auto Reader = CI.getModuleManager()) {
+    if (auto Reader = CI.getASTReader()) {
       Reader->getModuleManager().visit(
           [&](serialization::ModuleFile &Mod) -> bool {
             bool isSystemMod = false;
@@ -518,6 +452,38 @@ private:
   }
 };
 
+
+class IndexRecordASTConsumer : public ASTConsumer {
+  std::shared_ptr<Preprocessor> PP;
+  std::shared_ptr<IndexingContext> IndexCtx;
+
+public:
+  IndexRecordASTConsumer(std::shared_ptr<Preprocessor> PP,
+                   std::shared_ptr<IndexingContext> IndexCtx)
+      : PP(std::move(PP)), IndexCtx(std::move(IndexCtx)) {}
+
+protected:
+  void Initialize(ASTContext &Context) override {
+    IndexCtx->setASTContext(Context);
+    IndexCtx->getDataConsumer().initialize(Context);
+    IndexCtx->getDataConsumer().setPreprocessor(PP);
+  }
+
+  bool HandleTopLevelDecl(DeclGroupRef DG) override {
+    return IndexCtx->indexDeclGroupRef(DG);
+  }
+
+  void HandleInterestingDecl(DeclGroupRef DG) override {
+    // Ignore deserialized decls.
+  }
+
+  void HandleTopLevelDeclInObjCContainer(DeclGroupRef DG) override {
+    IndexCtx->indexDeclGroupRef(DG);
+  }
+
+  void HandleTranslationUnit(ASTContext &Ctx) override {}
+};
+
 class IndexRecordActionBase {
 protected:
   RecordingOptions RecordOpts;
@@ -530,7 +496,7 @@ protected:
         IndexCtx(new IndexingContext(IndexOpts, Recorder)),
         DepCollector(*IndexCtx, RecordOpts) {}
 
-  std::unique_ptr<IndexASTConsumer>
+  std::unique_ptr<IndexRecordASTConsumer>
   createIndexASTConsumer(CompilerInstance &CI) {
     IndexCtx->setSysrootPath(CI.getHeaderSearchOpts().Sysroot);
     Recorder.init(IndexCtx.get(), CI);
@@ -540,7 +506,7 @@ protected:
     DepCollector.setSysrootPath(IndexCtx->getSysrootPath());
     DepCollector.attachToPreprocessor(PP);
 
-    return llvm::make_unique<IndexASTConsumer>(CI.getPreprocessorPtr(),
+    return std::make_unique<IndexRecordASTConsumer>(CI.getPreprocessorPtr(),
                                                IndexCtx);
   }
 
@@ -586,7 +552,7 @@ protected:
     std::vector<std::unique_ptr<ASTConsumer>> Consumers;
     Consumers.push_back(std::move(OtherConsumer));
     Consumers.push_back(createIndexASTConsumer(CI));
-    return llvm::make_unique<MultiplexConsumer>(std::move(Consumers));
+    return std::make_unique<MultiplexConsumer>(std::move(Consumers));
   }
 
   void EndSourceFileAction() override {
@@ -783,7 +749,7 @@ public:
       const CompilerInstance &CI,
       llvm::function_ref<void(const FileEntry *FE, bool isSystem)> visitor)
       override {
-    auto Reader = CI.getModuleManager();
+    auto Reader = CI.getASTReader();
     Reader->visitInputFiles(
         ModFile, RecordOpts.RecordSystemDependencies,
         /*Complain=*/false,
@@ -844,7 +810,7 @@ static void indexModule(serialization::ModuleFile &Mod,
   IndexCtx.setSysrootPath(SysrootPath);
   Recorder.init(&IndexCtx, CI);
 
-  for (const Decl *D : CI.getModuleManager()->getModuleFileLevelDecls(Mod)) {
+  for (const Decl *D : CI.getASTReader()->getModuleFileLevelDecls(Mod)) {
     IndexCtx.indexTopLevelDecl(D);
   }
   Recorder.finish();
@@ -886,9 +852,9 @@ createIndexDataRecordingAction(IndexingOptions IndexOpts,
                                RecordingOptions RecordOpts,
                                std::unique_ptr<FrontendAction> WrappedAction) {
   if (WrappedAction)
-    return llvm::make_unique<WrappingIndexRecordAction>(
+    return std::make_unique<WrappingIndexRecordAction>(
         std::move(WrappedAction), std::move(IndexOpts), std::move(RecordOpts));
-  return llvm::make_unique<IndexRecordAction>(std::move(IndexOpts),
+  return std::make_unique<IndexRecordAction>(std::move(IndexOpts),
                                               std::move(RecordOpts));
 }
 
@@ -923,7 +889,7 @@ bool index::emitIndexDataForModuleFile(const Module *Mod,
   std::tie(IndexOpts, RecordOpts) =
       getIndexOptionsFromFrontendOptions(CI.getFrontendOpts());
 
-  auto astReader = CI.getModuleManager();
+  auto astReader = CI.getASTReader();
   serialization::ModuleFile *ModFile =
       astReader->getModuleManager().lookup(Mod->getASTFile());
   assert(ModFile && "no module file loaded for module ?");

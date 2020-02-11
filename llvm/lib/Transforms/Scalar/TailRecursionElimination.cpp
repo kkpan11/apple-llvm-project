@@ -76,6 +76,7 @@
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/ValueHandle.h"
+#include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
@@ -240,7 +241,8 @@ static bool markTails(Function &F, bool &AllCallsAreTailCalls,
       if (!CI || CI->isTailCall() || isa<DbgInfoIntrinsic>(&I))
         continue;
 
-      bool IsNoTail = CI->isNoTailCall() || CI->hasOperandBundles();
+      bool IsNoTail = CI->isNoTailCall() ||
+        CI->hasOperandBundlesOtherThan({LLVMContext::OB_ptrauth});
 
       if (!IsNoTail && CI->doesNotAccessMemory()) {
         // A call to a readnone function whose arguments are all things computed
@@ -340,8 +342,8 @@ static bool canMoveAboveCall(Instruction *I, CallInst *CI, AliasAnalysis *AA) {
       // being loaded from.
       const DataLayout &DL = L->getModule()->getDataLayout();
       if (isModSet(AA->getModRefInfo(CI, MemoryLocation::get(L))) ||
-          !isSafeToLoadUnconditionally(L->getPointerOperand(),
-                                       L->getAlignment(), DL, L))
+          !isSafeToLoadUnconditionally(L->getPointerOperand(), L->getType(),
+                                       MaybeAlign(L->getAlignment()), DL, L))
         return false;
     }
   }

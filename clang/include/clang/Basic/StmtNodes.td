@@ -112,6 +112,7 @@ def GNUNullExpr : StmtNode<Expr>;
 // C++ Expressions.
 def CXXOperatorCallExpr : StmtNode<CallExpr>;
 def CXXMemberCallExpr : StmtNode<CallExpr>;
+def CXXRewrittenBinaryOperator : StmtNode<Expr>;
 def CXXNamedCastExpr : StmtNode<ExplicitCastExpr, 1>;
 def CXXStaticCastExpr : StmtNode<CXXNamedCastExpr>;
 def CXXDynamicCastExpr : StmtNode<CXXNamedCastExpr>;
@@ -161,6 +162,9 @@ def CoawaitExpr : StmtNode<CoroutineSuspendExpr>;
 def DependentCoawaitExpr : StmtNode<Expr>;
 def CoyieldExpr : StmtNode<CoroutineSuspendExpr>;
 
+// C++2a Concepts expressions
+def ConceptSpecializationExpr : StmtNode<Expr>;
+
 // Obj-C Expressions.
 def ObjCStringLiteral : StmtNode<Expr>;
 def ObjCBoxedExpr : StmtNode<Expr>;
@@ -190,6 +194,7 @@ def ConvertVectorExpr : StmtNode<Expr>;
 def BlockExpr : StmtNode<Expr>;
 def OpaqueValueExpr : StmtNode<Expr>;
 def TypoExpr : StmtNode<Expr>;
+def BuiltinBitCastExpr : StmtNode<ExplicitCastExpr>;
 
 // Microsoft Extensions.
 def MSPropertyRefExpr : StmtNode<Expr>;
@@ -218,6 +223,7 @@ def OMPMasterDirective : StmtNode<OMPExecutableDirective>;
 def OMPCriticalDirective : StmtNode<OMPExecutableDirective>;
 def OMPParallelForDirective : StmtNode<OMPLoopDirective>;
 def OMPParallelForSimdDirective : StmtNode<OMPLoopDirective>;
+def OMPParallelMasterDirective : StmtNode<OMPExecutableDirective>;
 def OMPParallelSectionsDirective : StmtNode<OMPExecutableDirective>;
 def OMPTaskDirective : StmtNode<OMPExecutableDirective>;
 def OMPTaskyieldDirective : StmtNode<OMPExecutableDirective>;
@@ -239,6 +245,10 @@ def OMPCancellationPointDirective : StmtNode<OMPExecutableDirective>;
 def OMPCancelDirective : StmtNode<OMPExecutableDirective>;
 def OMPTaskLoopDirective : StmtNode<OMPLoopDirective>;
 def OMPTaskLoopSimdDirective : StmtNode<OMPLoopDirective>;
+def OMPMasterTaskLoopDirective : StmtNode<OMPLoopDirective>;
+def OMPMasterTaskLoopSimdDirective : StmtNode<OMPLoopDirective>;
+def OMPParallelMasterTaskLoopDirective : StmtNode<OMPLoopDirective>;
+def OMPParallelMasterTaskLoopSimdDirective : StmtNode<OMPLoopDirective>;
 def OMPDistributeDirective : StmtNode<OMPLoopDirective>;
 def OMPDistributeParallelForDirective : StmtNode<OMPLoopDirective>;
 def OMPDistributeParallelForSimdDirective : StmtNode<OMPLoopDirective>;

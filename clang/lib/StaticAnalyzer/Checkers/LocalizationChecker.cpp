@@ -753,16 +753,15 @@ void NonLocalizedStringChecker::reportLocalizationError(
   if (isDebuggingContext(C))
     return;
 
-  ExplodedNode *ErrNode = C.getPredecessor();
   static CheckerProgramPointTag Tag("NonLocalizedStringChecker",
                                     "UnlocalizedString");
-  ErrNode = C.addTransition(C.getState(), C.getPredecessor(), &Tag);
+  ExplodedNode *ErrNode = C.addTransition(C.getState(), C.getPredecessor(), &Tag);
 
   if (!ErrNode)
     return;
 
   // Generate the bug report.
-  auto R = llvm::make_unique<PathSensitiveBugReport>(
+  auto R = std::make_unique<PathSensitiveBugReport>(
       *BT, "User-facing text should use localized string macro", ErrNode);
   if (argumentNumber) {
     R->addRange(M.getArgExpr(argumentNumber - 1)->getSourceRange());
@@ -773,7 +772,7 @@ void NonLocalizedStringChecker::reportLocalizationError(
 
   const MemRegion *StringRegion = S.getAsRegion();
   if (StringRegion)
-    R->addVisitor(llvm::make_unique<NonLocalizedStringBRVisitor>(StringRegion));
+    R->addVisitor(std::make_unique<NonLocalizedStringBRVisitor>(StringRegion));
 
   C.emitReport(std::move(R));
 }

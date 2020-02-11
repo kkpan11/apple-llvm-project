@@ -254,7 +254,7 @@ bool StreamChecker::checkNullStream(SVal SV, CheckerContext &C,
       if (!BT_nullfp)
         BT_nullfp.reset(new BuiltinBug(this, "NULL stream pointer",
                                        "Stream pointer might be NULL."));
-      C.emitReport(llvm::make_unique<PathSensitiveBugReport>(
+      C.emitReport(std::make_unique<PathSensitiveBugReport>(
           *BT_nullfp, BT_nullfp->getDescription(), N));
     }
     return false;
@@ -310,7 +310,7 @@ bool StreamChecker::checkDoubleClose(const CallEvent &Call, CheckerContext &C,
         BT_doubleclose.reset(new BuiltinBug(
             this, "Double fclose", "Try to close a file Descriptor already"
                                    " closed. Cause undefined behaviour."));
-      C.emitReport(llvm::make_unique<PathSensitiveBugReport>(
+      C.emitReport(std::make_unique<PathSensitiveBugReport>(
           *BT_doubleclose, BT_doubleclose->getDescription(), N));
     }
     return false;
@@ -342,7 +342,7 @@ void StreamChecker::checkDeadSymbols(SymbolReaper &SymReaper,
       BT_ResourceLeak.reset(
           new BuiltinBug(this, "Resource Leak",
                          "Opened File never closed. Potential Resource leak."));
-    C.emitReport(llvm::make_unique<PathSensitiveBugReport>(
+    C.emitReport(std::make_unique<PathSensitiveBugReport>(
         *BT_ResourceLeak, BT_ResourceLeak->getDescription(), N));
   }
 }

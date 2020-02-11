@@ -19,9 +19,7 @@
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Core/StreamBuffer.h"
 #include "lldb/Core/StreamFile.h"
-#include "lldb/Symbol/ClangASTContext.h"
-#include "lldb/Symbol/ClangASTImporter.h"
-#include "lldb/Symbol/ClangExternalASTSourceCommon.h"
+#include "lldb/Symbol/TypeSystemClang.h"
 #include "lldb/Symbol/ClangUtil.h"
 #include "lldb/Symbol/CompileUnit.h"
 #include "lldb/Symbol/LineTable.h"
@@ -333,7 +331,7 @@ void SymbolFileNativePDB::InitializeObject() {
                    std::move(err), "Failed to initialize");
   } else {
     ts_or_err->SetSymbolFile(this);
-    auto *clang = llvm::cast_or_null<ClangASTContext>(&ts_or_err.get());
+    auto *clang = llvm::cast_or_null<TypeSystemClang>(&ts_or_err.get());
     lldbassert(clang);
     m_ast = std::make_unique<PdbAstBuilder>(*m_objfile_sp, *m_index, *clang);
   }
@@ -1111,9 +1109,7 @@ bool SymbolFileNativePDB::ParseLineTable(CompileUnit &comp_unit) {
       // LLDB wants the index of the file in the list of support files.
       auto fn_iter = llvm::find(cci->m_file_list, *efn);
       lldbassert(fn_iter != cci->m_file_list.end());
-      // LLDB support file indices are 1-based.
-      uint32_t file_index =
-          1 + std::distance(cci->m_file_list.begin(), fn_iter);
+      uint32_t file_index = std::distance(cci->m_file_list.begin(), fn_iter);
 
       std::unique_ptr<LineSequence> sequence(
           line_table->CreateLineSequenceContainer());
@@ -1156,14 +1152,6 @@ bool SymbolFileNativePDB::ParseSupportFiles(CompileUnit &comp_unit,
     FileSpec spec(f, style);
     support_files.Append(spec);
   }
-
-  llvm::SmallString<64> main_source_file =
-      m_index->compilands().GetMainSourceFile(*cci);
-  FileSpec::Style style = main_source_file.startswith("/")
-                              ? FileSpec::Style::posix
-                              : FileSpec::Style::windows;
-  FileSpec spec(main_source_file, style);
-  support_files.Insert(0, spec);
   return true;
 }
 
@@ -1182,7 +1170,7 @@ size_t SymbolFileNativePDB::ParseBlocksRecursive(Function &func) {
 
 void SymbolFileNativePDB::DumpClangAST(Stream &s) { m_ast->Dump(s); }
 
-uint32_t SymbolFileNativePDB::FindGlobalVariables(
+void SymbolFileNativePDB::FindGlobalVariables(
     ConstString name, const CompilerDeclContext *parent_decl_ctx,
     uint32_t max_matches, VariableList &variables) {
   std::lock_guard<std::recursive_mutex> guard(GetModuleMutex());
@@ -1207,17 +1195,16 @@ uint32_t SymbolFileNativePDB::FindGlobalVariables(
       continue;
     }
   }
-  return variables.GetSize();
 }
 
-uint32_t SymbolFileNativePDB::FindFunctions(
+void SymbolFileNativePDB::FindFunctions(
     ConstString name, const CompilerDeclContext *parent_decl_ctx,
-    FunctionNameType name_type_mask, bool include_inlines, bool append,
+    FunctionNameType name_type_mask, bool include_inlines,
     SymbolContextList &sc_list) {
   std::lock_guard<std::recursive_mutex> guard(GetModuleMutex());
   // For now we only support lookup by method name.
   if (!(name_type_mask & eFunctionNameTypeMethod))
-    return 0;
+    return;
 
   using SymbolAndOffset = std::pair<uint32_t, llvm::codeview::CVSymbol>;
 
@@ -1242,15 +1229,11 @@ uint32_t SymbolFileNativePDB::FindFunctions(
 
     sc_list.Append(sc);
   }
-
-  return sc_list.GetSize();
 }
 
-uint32_t SymbolFileNativePDB::FindFunctions(const RegularExpression &regex,
-                                            bool include_inlines, bool append,
-                                            SymbolContextList &sc_list) {
-  return 0;
-}
+void SymbolFileNativePDB::FindFunctions(const RegularExpression &regex,
+                                        bool include_inlines,
+                                        SymbolContextList &sc_list) {}
 
 void SymbolFileNativePDB::FindTypes(
     ConstString name, const CompilerDeclContext *parent_decl_ctx,

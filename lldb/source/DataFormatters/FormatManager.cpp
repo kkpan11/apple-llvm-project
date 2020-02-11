@@ -242,7 +242,8 @@ void FormatManager::GetPossibleMatches(
     }
   }
 
-  for (lldb::LanguageType language_type : GetCandidateLanguages(valobj)) {
+  for (lldb::LanguageType language_type :
+       GetCandidateLanguages(valobj.GetObjectRuntimeLanguage())) {
     if (Language *language = Language::FindPlugin(language_type)) {
       for (ConstString candidate :
            language->GetPossibleFormattersMatches(valobj, use_dynamic)) {
@@ -387,30 +388,6 @@ FormatManager::GetSyntheticForType(lldb::TypeNameSpecifierImplSP type_sp) {
     }
   }
   return synth_chosen_sp;
-}
-
-lldb::TypeValidatorImplSP
-FormatManager::GetValidatorForType(lldb::TypeNameSpecifierImplSP type_sp) {
-  if (!type_sp)
-    return lldb::TypeValidatorImplSP();
-  lldb::TypeValidatorImplSP validator_chosen_sp;
-  uint32_t num_categories = m_categories_map.GetCount();
-  lldb::TypeCategoryImplSP category_sp;
-  uint32_t prio_category = UINT32_MAX;
-  for (uint32_t category_id = 0; category_id < num_categories; category_id++) {
-    category_sp = GetCategoryAtIndex(category_id);
-    if (!category_sp->IsEnabled())
-      continue;
-    lldb::TypeValidatorImplSP validator_current_sp(
-        category_sp->GetValidatorForType(type_sp).get());
-    if (validator_current_sp &&
-        (validator_chosen_sp.get() == nullptr ||
-         (prio_category > category_sp->GetEnabledPosition()))) {
-      prio_category = category_sp->GetEnabledPosition();
-      validator_chosen_sp = validator_current_sp;
-    }
-  }
-  return validator_chosen_sp;
 }
 
 void FormatManager::ForEachCategory(TypeCategoryMap::ForEachCallback callback) {
@@ -583,12 +560,6 @@ ConstString FormatManager::GetTypeForCache(ValueObject &valobj,
 }
 
 std::vector<lldb::LanguageType>
-FormatManager::GetCandidateLanguages(ValueObject &valobj) {
-  lldb::LanguageType lang_type = valobj.GetObjectRuntimeLanguage();
-  return GetCandidateLanguages(lang_type);
-}
-
-std::vector<lldb::LanguageType>
 FormatManager::GetCandidateLanguages(lldb::LanguageType lang_type) {
   switch (lang_type) {
   case lldb::eLanguageTypeSwift:
@@ -607,6 +578,7 @@ FormatManager::GetCandidateLanguages(lldb::LanguageType lang_type) {
   default:
     return {lang_type};
   }
+  llvm_unreachable("Fully covered switch");
 }
 
 LanguageCategory *
@@ -640,6 +612,7 @@ ImplSP FormatManager::Get(ValueObject &valobj,
   FormattersMatchData match_data(valobj, use_dynamic);
   if (ImplSP retval_sp = GetCached<ImplSP>(match_data))
     return retval_sp;
+
   Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_DATAFORMATTERS));
 
   LLDB_LOGF(log, "[%s] Search failed. Giving language a chance.", __FUNCTION__);
@@ -708,12 +681,6 @@ lldb::SyntheticChildrenSP
 FormatManager::GetSyntheticChildren(ValueObject &valobj,
                                     lldb::DynamicValueType use_dynamic) {
   return Get<lldb::SyntheticChildrenSP>(valobj, use_dynamic);
-}
-
-lldb::TypeValidatorImplSP
-FormatManager::GetValidator(ValueObject &valobj,
-                            lldb::DynamicValueType use_dynamic) {
-  return Get<lldb::TypeValidatorImplSP>(valobj, use_dynamic);
 }
 
 FormatManager::FormatManager()

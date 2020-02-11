@@ -80,7 +80,10 @@ public:
   }
 
   void VisitLambdaExpr(LambdaExpr *LE) {
-    if (CXXMethodDecl *MD = LE->getCallOperator())
+    if (FunctionTemplateDecl *FTD = LE->getDependentCallOperator())
+      for (FunctionDecl *FD : FTD->specializations())
+        G->VisitFunctionDecl(FD);
+    else if (CXXMethodDecl *MD = LE->getCallOperator())
       G->VisitFunctionDecl(MD);
   }
 
@@ -201,7 +204,7 @@ CallGraphNode *CallGraph::getOrInsertNode(Decl *F) {
   if (Node)
     return Node.get();
 
-  Node = llvm::make_unique<CallGraphNode>(F);
+  Node = std::make_unique<CallGraphNode>(F);
   // Make Root node a parent of all functions to make sure all are reachable.
   if (F)
     Root->addCallee(Node.get());

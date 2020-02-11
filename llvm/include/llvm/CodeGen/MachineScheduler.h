@@ -100,6 +100,7 @@ namespace llvm {
 
 extern cl::opt<bool> ForceTopDown;
 extern cl::opt<bool> ForceBottomUp;
+extern cl::opt<bool> VerifyScheduling;
 
 class LiveIntervals;
 class MachineDominatorTree;
@@ -756,7 +757,8 @@ public:
 
   unsigned getOtherResourceCount(unsigned &OtherCritIdx);
 
-  void releaseNode(SUnit *SU, unsigned ReadyCycle);
+  template <bool InPQueue>
+  void releaseNode(SUnit *SU, unsigned ReadyCycle, unsigned Idx = 0);
 
   void bumpCycle(unsigned NextCycle);
 
@@ -954,7 +956,7 @@ public:
     if (SU->isScheduled)
       return;
 
-    Top.releaseNode(SU, SU->TopReadyCycle);
+    Top.releaseNode<false>(SU, SU->TopReadyCycle);
     TopCand.SU = nullptr;
   }
 
@@ -962,7 +964,7 @@ public:
     if (SU->isScheduled)
       return;
 
-    Bot.releaseNode(SU, SU->BotReadyCycle);
+    Bot.releaseNode<false>(SU, SU->BotReadyCycle);
     BotCand.SU = nullptr;
   }
 
@@ -1008,7 +1010,7 @@ protected:
 ///   initPolicy -> initialize(DAG) -> registerRoots -> pickNode ...
 class PostGenericScheduler : public GenericSchedulerBase {
 protected:
-  ScheduleDAGMI *DAG;
+  ScheduleDAGMI *DAG = nullptr;
   SchedBoundary Top;
   SmallVector<SUnit*, 8> BotRoots;
 
@@ -1042,7 +1044,7 @@ public:
   void releaseTopNode(SUnit *SU) override {
     if (SU->isScheduled)
       return;
-    Top.releaseNode(SU, SU->TopReadyCycle);
+    Top.releaseNode<false>(SU, SU->TopReadyCycle);
   }
 
   // Only called for roots.

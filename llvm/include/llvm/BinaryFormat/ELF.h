@@ -702,6 +702,7 @@ enum : unsigned {
   EF_AMDGPU_MACH_AMDGCN_GFX902 = 0x02d,
   EF_AMDGPU_MACH_AMDGCN_GFX904 = 0x02e,
   EF_AMDGPU_MACH_AMDGCN_GFX906 = 0x02f,
+  EF_AMDGPU_MACH_AMDGCN_GFX908 = 0x030,
   EF_AMDGPU_MACH_AMDGCN_GFX909 = 0x031,
   // AMDGCN GFX10.
   EF_AMDGPU_MACH_AMDGCN_GFX1010 = 0x033,
@@ -710,8 +711,7 @@ enum : unsigned {
 
   // Reserved for AMDGCN-based processors.
   EF_AMDGPU_MACH_AMDGCN_RESERVED0 = 0x027,
-  EF_AMDGPU_MACH_AMDGCN_RESERVED1 = 0x030,
-  EF_AMDGPU_MACH_AMDGCN_RESERVED2 = 0x032,
+  EF_AMDGPU_MACH_AMDGCN_RESERVED1 = 0x032,
 
   // First/last AMDGCN-based processors.
   EF_AMDGPU_MACH_AMDGCN_FIRST = EF_AMDGPU_MACH_AMDGCN_GFX600,
@@ -1199,8 +1199,9 @@ enum {
   PT_SUNW_EH_FRAME = 0x6474e550,
   PT_SUNW_UNWIND = 0x6464e550,
 
-  PT_GNU_STACK = 0x6474e551, // Indicates stack executability.
-  PT_GNU_RELRO = 0x6474e552, // Read-only after relocation.
+  PT_GNU_STACK = 0x6474e551,    // Indicates stack executability.
+  PT_GNU_RELRO = 0x6474e552,    // Read-only after relocation.
+  PT_GNU_PROPERTY = 0x6474e553, // .note.gnu.property notes sections.
 
   PT_OPENBSD_RANDOMIZE = 0x65a3dbe6, // Fill with random data.
   PT_OPENBSD_WXNEEDED = 0x65a3dbe7,  // Program does W^X violations.
@@ -1416,6 +1417,11 @@ enum : unsigned {
   NT_SIGINFO = 0x53494749,
 };
 
+// LLVM-specific notes.
+enum {
+  NT_LLVM_HWASAN_GLOBALS = 3,
+};
+
 // GNU note types
 enum {
   NT_GNU_ABI_TAG = 1,
@@ -1483,6 +1489,11 @@ enum : unsigned {
   GNU_PROPERTY_X86_FEATURE_2_XSAVE = 1 << 7,
   GNU_PROPERTY_X86_FEATURE_2_XSAVEOPT = 1 << 8,
   GNU_PROPERTY_X86_FEATURE_2_XSAVEC = 1 << 9,
+};
+
+// AMDGPU-specific section indices.
+enum {
+  SHN_AMDGPU_LDS = 0xff00, // Variable in LDS; symbol encoded like SHN_COMMON
 };
 
 // AMD specific notes. (Code Object V2)

@@ -21,6 +21,7 @@ configure_file(
 
 set(LLVM_LINK_COMPONENTS
   Support
+  AllTargetsInfos
   )
 
 if(CLANG_BUILT_STANDALONE)
@@ -38,15 +39,16 @@ add_clang_library(clangDaemon
   Cancellation.cpp
   ClangdLSPServer.cpp
   ClangdServer.cpp
-  ClangdUnit.cpp
   CodeComplete.cpp
   CodeCompletionStrings.cpp
+  CompileCommands.cpp
   Compiler.cpp
   Context.cpp
   Diagnostics.cpp
   DraftStore.cpp
   ExpectedTypes.cpp
   FindSymbols.cpp
+  FindTarget.cpp
   FileDistance.cpp
   Format.cpp
   FS.cpp
@@ -55,14 +57,23 @@ add_clang_library(clangDaemon
   FuzzyMatch.cpp
   GlobalCompilationDatabase.cpp
   Headers.cpp
+  HeaderSourceSwitch.cpp
+  Hover.cpp
   IncludeFixer.cpp
   JSONTransport.cpp
   Logger.cpp
+  PathMapping.cpp
   Protocol.cpp
   Quality.cpp
+  ParsedAST.cpp
+  Preamble.cpp
   RIFF.cpp
   Selection.cpp
+  SemanticHighlighting.cpp
+  SemanticSelection.cpp
+  Shutdown.cpp
   SourceCode.cpp
+  QueryDriverDatabase.cpp
   Threading.cpp
   Trace.cpp
   TUScheduler.cpp
@@ -70,7 +81,10 @@ add_clang_library(clangDaemon
   XRefs.cpp
 
   index/Background.cpp
+  index/BackgroundIndexLoader.cpp
   index/BackgroundIndexStorage.cpp
+  index/BackgroundQueue.cpp
+  index/BackgroundRebuild.cpp
   index/CanonicalIncludes.cpp
   index/FileIndex.cpp
   index/Index.cpp
@@ -107,29 +121,14 @@ add_clang_library(clangDaemon
   clangSema
   clangSerialization
   clangTidy
-  clangTidyAndroidModule
-  clangTidyAbseilModule
-  clangTidyBoostModule
-  clangTidyBugproneModule
-  clangTidyCERTModule
-  clangTidyCppCoreGuidelinesModule
-  clangTidyFuchsiaModule
-  clangTidyGoogleModule
-  clangTidyHICPPModule
-  clangTidyLLVMModule
-  clangTidyMiscModule
-  clangTidyModernizeModule
-  clangTidyObjCModule
-  clangTidyPerformanceModule
-  clangTidyPortabilityModule
-  clangTidyReadabilityModule
-  clangTidyZirconModule
   clangTooling
   clangToolingCore
   clangToolingInclusions
   clangToolingRefactoring
+  clangToolingSyntax
   ${LLVM_PTHREAD_LIB}
   ${CLANGD_ATOMIC_LIB}
+  ${ALL_CLANG_TIDY_CHECKS}
   )
 
 add_subdirectory(refactor/tweaks)

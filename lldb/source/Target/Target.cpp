@@ -37,7 +37,7 @@
 #include "lldb/Interpreter/OptionGroupWatchpoint.h"
 #include "lldb/Interpreter/OptionValues.h"
 #include "lldb/Interpreter/Property.h"
-#include "lldb/Symbol/ClangASTContext.h"
+#include "lldb/Symbol/TypeSystemClang.h"
 #include "lldb/Symbol/ClangASTImporter.h"
 #include "lldb/Symbol/Function.h"
 #include "lldb/Symbol/ObjectFile.h"
@@ -420,8 +420,8 @@ Target::CreateAddressInModuleBreakpoint(lldb::addr_t file_addr, bool internal,
                                         bool request_hardware) {
   SearchFilterSP filter_sp(
       new SearchFilterForUnconstrainedSearches(shared_from_this()));
-  BreakpointResolverSP resolver_sp(
-      new BreakpointResolverAddress(nullptr, file_addr, file_spec));
+  BreakpointResolverSP resolver_sp(new BreakpointResolverAddress(
+      nullptr, file_addr, file_spec ? *file_spec : FileSpec()));
   return CreateBreakpoint(filter_sp, resolver_sp, internal, request_hardware,
                           false);
 }
@@ -625,8 +625,7 @@ lldb::BreakpointSP Target::CreateScriptedBreakpoint(
     extra_args_impl->SetObjectSP(extra_args_sp);
 
   BreakpointResolverSP resolver_sp(new BreakpointResolverScripted(
-      nullptr, class_name, depth, extra_args_impl,
-      *GetDebugger().GetScriptInterpreter()));
+      nullptr, class_name, depth, extra_args_impl));
   return CreateBreakpoint(filter_sp, resolver_sp, internal, false, true);
 }
 
@@ -745,11 +744,17 @@ void Target::ConfigureBreakpointName(
 }
 
 void Target::ApplyNameToBreakpoints(BreakpointName &bp_name) {
-  BreakpointList bkpts_with_name(false);
-  m_breakpoint_list.FindBreakpointsByName(bp_name.GetName().AsCString(),
-                                          bkpts_with_name);
+  llvm::Expected<std::vector<BreakpointSP>> expected_vector =
+      m_breakpoint_list.FindBreakpointsByName(bp_name.GetName().AsCString());
 
-  for (auto bp_sp : bkpts_with_name.Breakpoints())
+  if (!expected_vector) {
+    LLDB_LOG(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_BREAKPOINTS),
+             "invalid breakpoint name: {}",
+             llvm::toString(expected_vector.takeError()));
+    return;
+  }
+
+  for (auto bp_sp : *expected_vector)
     bp_name.ConfigureBreakpoint(bp_sp);
 }
 
@@ -1013,10 +1018,9 @@ Status Target::SerializeBreakpointsToFile(const FileSpec &file,
   }
 
   StreamFile out_file(path.c_str(),
-                      File::OpenOptions::eOpenOptionTruncate |
-                          File::OpenOptions::eOpenOptionWrite |
-                          File::OpenOptions::eOpenOptionCanCreate |
-                          File::OpenOptions::eOpenOptionCloseOnExec,
+                      File::eOpenOptionTruncate | File::eOpenOptionWrite |
+                          File::eOpenOptionCanCreate |
+                          File::eOpenOptionCloseOnExec,
                       lldb::eFilePermissionsFileDefault);
   if (!out_file.GetFile().IsValid()) {
     error.SetErrorStringWithFormat("Unable to open output file: %s.",
@@ -1374,15 +1378,15 @@ static void LoadScriptingResourceForModule(const ModuleSP &module_sp,
   if (module_sp && !module_sp->LoadScriptingResourceInTarget(
                        target, error, &feedback_stream)) {
     if (error.AsCString())
-      target->GetDebugger().GetErrorFile()->Printf(
+      target->GetDebugger().GetErrorStream().Printf(
           "unable to load scripting data for module %s - error reported was "
           "%s\n",
           module_sp->GetFileSpec().GetFileNameStrippingExtension().GetCString(),
           error.AsCString());
   }
   if (feedback_stream.GetSize())
-    target->GetDebugger().GetErrorFile()->Printf("%s\n",
-                                                 feedback_stream.GetData());
+    target->GetDebugger().GetErrorStream().Printf("%s\n",
+                                                  feedback_stream.GetData());
 }
 
 void Target::ClearModules(bool delete_locations) {
@@ -1443,8 +1447,7 @@ void Target::SetExecutableModule(ModuleSP &executable_sp,
       ModuleList added_modules;
       executable_objfile->GetDependentModules(dependent_files);
       for (uint32_t i = 0; i < dependent_files.GetSize(); i++) {
-        FileSpec dependent_file_spec(
-            dependent_files.GetFileSpecPointerAtIndex(i));
+        FileSpec dependent_file_spec(dependent_files.GetFileSpecAtIndex(i));
         FileSpec platform_dependent_file_spec;
         if (m_platform_sp)
           m_platform_sp->GetFileWithUUID(dependent_file_spec, nullptr,
@@ -1686,11 +1689,11 @@ bool Target::ModuleIsExcludedForUnconstrainedSearches(
   if (GetBreakpointsConsultPlatformAvoidList()) {
     ModuleList matchingModules;
     ModuleSpec module_spec(module_file_spec);
-    size_t num_modules = GetImages().FindModules(module_spec, matchingModules);
+    GetImages().FindModules(module_spec, matchingModules);
+    size_t num_modules = matchingModules.GetSize();
 
-    // If there is more than one module for this file spec, only return true if
-    // ALL the modules are on the
-    // black list.
+    // If there is more than one module for this file spec, only
+    // return true if ALL the modules are on the black list.
     if (num_modules > 0) {
       for (size_t i = 0; i < num_modules; i++) {
         if (!ModuleIsExcludedForUnconstrainedSearches(
@@ -2097,11 +2100,9 @@ ModuleSP Target::GetOrCreateModule(const ModuleSpec &module_spec, bool notify,
             module_spec_copy.GetUUID().Clear();
 
             ModuleList found_modules;
-            size_t num_found =
-                m_images.FindModules(module_spec_copy, found_modules);
-            if (num_found == 1) {
+            m_images.FindModules(module_spec_copy, found_modules);
+            if (found_modules.GetSize() == 1)
               old_module_sp = found_modules.GetModuleAtIndex(0);
-            }
           }
         }
 
@@ -2190,7 +2191,8 @@ Target::GetScratchTypeSystemForLanguage(lldb::LanguageType language,
 
   if (language == eLanguageTypeSwift) {
     if (auto *swift_ast_ctx =
-            llvm::dyn_cast_or_null<SwiftASTContext>(&*type_system_or_err)) {
+            llvm::dyn_cast_or_null<SwiftASTContextForExpressions>(
+                &*type_system_or_err)) {
       if (swift_ast_ctx->CheckProcessChanged() ||
           swift_ast_ctx->HasFatalErrors()) {
         // If it is safe to replace the scratch context, do so. If
@@ -2224,8 +2226,9 @@ Target::GetScratchTypeSystemForLanguage(lldb::LanguageType language,
           if (!type_system_or_err)
             return std::move(type_system_or_err.takeError());
 
-          if (SwiftASTContext *new_swift_ast_ctx =
-                  llvm::dyn_cast_or_null<SwiftASTContext>(&*type_system_or_err)) {
+          if (auto *new_swift_ast_ctx =
+                  llvm::dyn_cast_or_null<SwiftASTContextForExpressions>(
+                      &*type_system_or_err)) {
             if (new_swift_ast_ctx->HasFatalErrors()) {
               if (StreamSP error_stream_sp =
                       GetDebugger().GetAsyncErrorStream()) {
@@ -2395,20 +2398,6 @@ Target::GetUtilityFunctionForLanguage(const char *text,
   return utility_fn;
 }
 
-ClangASTContext *Target::GetScratchClangASTContext(bool create_on_demand) {
-  if (!m_valid)
-    return nullptr;
-
-  auto type_system_or_err =
-          GetScratchTypeSystemForLanguage(eLanguageTypeC, create_on_demand);
-  if (auto err = type_system_or_err.takeError()) {
-    LLDB_LOG_ERROR(lldb_private::GetLogIfAnyCategoriesSet(LIBLLDB_LOG_TARGET),
-                   std::move(err), "Couldn't get scratch ClangASTContext");
-    return nullptr;
-  }
-  return llvm::dyn_cast<ClangASTContext>(&type_system_or_err.get());
-}
-
 ClangASTImporterSP Target::GetClangASTImporter() {
   if (m_valid) {
     if (!m_ast_importer_sp) {
@@ -2430,14 +2419,15 @@ SwiftASTContextReader Target::GetScratchSwiftASTContext(
       lldb_module = sc.module_sp.get();
     }
 
-  auto get_or_create_fallback_context = [&]() -> SwiftASTContext * {
+  auto get_or_create_fallback_context = [&]() -> SwiftASTContextForExpressions * {
     if (!lldb_module || !m_use_scratch_typesystem_per_module)
       return nullptr;
 
     ModuleLanguage idx = {lldb_module, lldb::eLanguageTypeSwift};
     auto cached = m_scratch_typesystem_for_module.find(idx);
     if (cached != m_scratch_typesystem_for_module.end()) {
-      auto *cached_ast_ctx = llvm::cast<SwiftASTContext>(cached->second.get());
+      auto *cached_ast_ctx =
+          llvm::cast<SwiftASTContextForExpressions>(cached->second.get());
       if (cached_ast_ctx->HasFatalErrors() &&
           !m_cant_make_scratch_type_system.count(lldb::eLanguageTypeSwift)) {
         DisplayFallbackSwiftContextErrors(cached_ast_ctx);
@@ -2459,13 +2449,16 @@ SwiftASTContextReader Target::GetScratchSwiftASTContext(
       return nullptr;
     }
 
-    if (auto *global_scratch_ctx = llvm::cast_or_null<SwiftASTContext>(&*type_system_or_err))
+    if (auto *global_scratch_ctx =
+            llvm::cast_or_null<SwiftASTContextForExpressions>(
+                &*type_system_or_err))
       DisplayFallbackSwiftContextErrors(global_scratch_ctx);
 
     bool fallback = true;
     auto typesystem_sp = SwiftASTContext::CreateInstance(
         lldb::eLanguageTypeSwift, *lldb_module, this, fallback);
-    auto *swift_ast_ctx = llvm::cast<SwiftASTContext>(typesystem_sp.get());
+    auto *swift_ast_ctx =
+        llvm::cast<SwiftASTContextForExpressions>(typesystem_sp.get());
     m_scratch_typesystem_for_module.insert({idx, typesystem_sp});
     GetSwiftScratchContextLock().unlock();
     if (log)
@@ -2480,7 +2473,8 @@ SwiftASTContextReader Target::GetScratchSwiftASTContext(
     auto type_system_or_err =
         GetScratchTypeSystemForLanguage(eLanguageTypeSwift, create_on_demand);
     if (type_system_or_err)
-      swift_ast_ctx = llvm::cast_or_null<SwiftASTContext>(&*type_system_or_err);
+      swift_ast_ctx = llvm::cast_or_null<SwiftASTContextForExpressions>(
+          &*type_system_or_err);
     else
       llvm::consumeError(type_system_or_err.takeError());
   }
@@ -2520,7 +2514,8 @@ GetSwiftScratchContextMutex(const ExecutionContextRef *exe_ctx_ref) {
 SwiftASTContextLock::SwiftASTContextLock(const ExecutionContextRef *exe_ctx_ref)
     : ScopedSharedMutexReader(GetSwiftScratchContextMutex(exe_ctx_ref)) {}
 
-void Target::DisplayFallbackSwiftContextErrors(SwiftASTContext *swift_ast_ctx) {
+void Target::DisplayFallbackSwiftContextErrors(
+    SwiftASTContextForExpressions *swift_ast_ctx) {
   assert(m_use_scratch_typesystem_per_module);
   StreamSP errs = GetDebugger().GetAsyncErrorStream();
   if (!errs || m_did_display_scratch_fallback_warning ||
@@ -3101,8 +3096,8 @@ lldb::addr_t Target::FindLoadAddrForNameInSymbolsAndPersistentVariables(
   lldb::addr_t symbol_addr = LLDB_INVALID_ADDRESS;
   SymbolContextList sc_list;
 
-  if (GetImages().FindSymbolsWithNameAndType(name_const_str, symbol_type,
-                                             sc_list)) {
+  GetImages().FindSymbolsWithNameAndType(name_const_str, symbol_type, sc_list);
+  if (!sc_list.IsEmpty()) {
     SymbolContext desired_symbol;
 
     if (sc_list.GetSize() == 1 &&
@@ -3494,7 +3489,7 @@ void Target::StopHook::SetThreadSpecifier(ThreadSpec *specifier) {
 
 void Target::StopHook::GetDescription(Stream *s,
                                       lldb::DescriptionLevel level) const {
-  int indent_level = s->GetIndentLevel();
+  unsigned indent_level = s->GetIndentLevel();
 
   s->SetIndentLevel(indent_level + 2);
 
@@ -3870,18 +3865,6 @@ void TargetProperties::SetInjectLocalVariables(ExecutionContext *exe_ctx,
   if (exp_values)
     exp_values->SetPropertyAtIndexAsBoolean(exe_ctx, ePropertyInjectLocalVars,
                                             true);
-}
-
-bool TargetProperties::GetUseModernTypeLookup() const {
-  const Property *exp_property = m_collection_sp->GetPropertyAtIndex(
-      nullptr, false, ePropertyExperimental);
-  OptionValueProperties *exp_values =
-      exp_property->GetValue()->GetAsProperties();
-  if (exp_values)
-    return exp_values->GetPropertyAtIndexAsBoolean(
-        nullptr, ePropertyUseModernTypeLookup, true);
-  else
-    return true;
 }
 
 bool TargetProperties::GetSwiftCreateModuleContextsInParallel() const {
@@ -4368,14 +4351,14 @@ void TargetProperties::SetRequireHardwareBreakpoints(bool b) {
 void TargetProperties::Arg0ValueChangedCallback(void *target_property_ptr,
                                                 OptionValue *) {
   TargetProperties *this_ =
-      reinterpret_cast<TargetProperties *>(target_property_ptr);
+      static_cast<TargetProperties *>(target_property_ptr);
   this_->m_launch_info.SetArg0(this_->GetArg0());
 }
 
 void TargetProperties::RunArgsValueChangedCallback(void *target_property_ptr,
                                                    OptionValue *) {
   TargetProperties *this_ =
-      reinterpret_cast<TargetProperties *>(target_property_ptr);
+      static_cast<TargetProperties *>(target_property_ptr);
   Args args;
   if (this_->GetRunArguments(args))
     this_->m_launch_info.GetArguments() = args;
@@ -4384,14 +4367,14 @@ void TargetProperties::RunArgsValueChangedCallback(void *target_property_ptr,
 void TargetProperties::EnvVarsValueChangedCallback(void *target_property_ptr,
                                                    OptionValue *) {
   TargetProperties *this_ =
-      reinterpret_cast<TargetProperties *>(target_property_ptr);
+      static_cast<TargetProperties *>(target_property_ptr);
   this_->m_launch_info.GetEnvironment() = this_->GetEnvironment();
 }
 
 void TargetProperties::InputPathValueChangedCallback(void *target_property_ptr,
                                                      OptionValue *) {
   TargetProperties *this_ =
-      reinterpret_cast<TargetProperties *>(target_property_ptr);
+      static_cast<TargetProperties *>(target_property_ptr);
   this_->m_launch_info.AppendOpenFileAction(
       STDIN_FILENO, this_->GetStandardInputPath(), true, false);
 }
@@ -4399,7 +4382,7 @@ void TargetProperties::InputPathValueChangedCallback(void *target_property_ptr,
 void TargetProperties::OutputPathValueChangedCallback(void *target_property_ptr,
                                                       OptionValue *) {
   TargetProperties *this_ =
-      reinterpret_cast<TargetProperties *>(target_property_ptr);
+      static_cast<TargetProperties *>(target_property_ptr);
   this_->m_launch_info.AppendOpenFileAction(
       STDOUT_FILENO, this_->GetStandardOutputPath(), false, true);
 }
@@ -4407,7 +4390,7 @@ void TargetProperties::OutputPathValueChangedCallback(void *target_property_ptr,
 void TargetProperties::ErrorPathValueChangedCallback(void *target_property_ptr,
                                                      OptionValue *) {
   TargetProperties *this_ =
-      reinterpret_cast<TargetProperties *>(target_property_ptr);
+      static_cast<TargetProperties *>(target_property_ptr);
   this_->m_launch_info.AppendOpenFileAction(
       STDERR_FILENO, this_->GetStandardErrorPath(), false, true);
 }
@@ -4415,7 +4398,7 @@ void TargetProperties::ErrorPathValueChangedCallback(void *target_property_ptr,
 void TargetProperties::DetachOnErrorValueChangedCallback(
     void *target_property_ptr, OptionValue *) {
   TargetProperties *this_ =
-      reinterpret_cast<TargetProperties *>(target_property_ptr);
+      static_cast<TargetProperties *>(target_property_ptr);
   if (this_->GetDetachOnError())
     this_->m_launch_info.GetFlags().Set(lldb::eLaunchFlagDetachOnError);
   else
@@ -4425,7 +4408,7 @@ void TargetProperties::DetachOnErrorValueChangedCallback(
 void TargetProperties::DisableASLRValueChangedCallback(
     void *target_property_ptr, OptionValue *) {
   TargetProperties *this_ =
-      reinterpret_cast<TargetProperties *>(target_property_ptr);
+      static_cast<TargetProperties *>(target_property_ptr);
   if (this_->GetDisableASLR())
     this_->m_launch_info.GetFlags().Set(lldb::eLaunchFlagDisableASLR);
   else
@@ -4435,7 +4418,7 @@ void TargetProperties::DisableASLRValueChangedCallback(
 void TargetProperties::DisableSTDIOValueChangedCallback(
     void *target_property_ptr, OptionValue *) {
   TargetProperties *this_ =
-      reinterpret_cast<TargetProperties *>(target_property_ptr);
+      static_cast<TargetProperties *>(target_property_ptr);
   if (this_->GetDisableSTDIO())
     this_->m_launch_info.GetFlags().Set(lldb::eLaunchFlagDisableSTDIO);
   else
@@ -4472,7 +4455,7 @@ void Target::TargetEventData::Dump(Stream *s) const {
     if (i != 0)
       *s << ", ";
     m_module_list.GetModuleAtIndex(i)->GetDescription(
-        s, lldb::eDescriptionLevelBrief);
+        s->AsRawOstream(), lldb::eDescriptionLevelBrief);
   }
 }
 
@@ -4502,6 +4485,13 @@ Target::TargetEventData::GetModuleListFromEvent(const Event *event_ptr) {
   if (event_data)
     module_list = event_data->m_module_list;
   return module_list;
+}
+
+std::recursive_mutex &Target::GetAPIMutex() {
+  if (GetProcessSP() && GetProcessSP()->CurrentThreadIsPrivateStateThread())
+    return m_private_mutex;
+  else
+    return m_mutex;
 }
 
 bool Target::RegisterSwiftContextMessageKey(std::string Key) {

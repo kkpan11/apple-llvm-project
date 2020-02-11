@@ -79,6 +79,7 @@ void ODRHash::AddDeclarationNameImpl(DeclarationName Name) {
         AddIdentifierInfo(II);
       }
     }
+    ID.AddString(S.getAsString());
     break;
   }
   case DeclarationName::CXXConstructorName:
@@ -319,6 +320,21 @@ public:
     Inherited::VisitStaticAssertDecl(D);
   }
 
+  void VisitObjCIvarDecl(const ObjCIvarDecl *D) {
+    ID.AddInteger(D->getAccessControl());
+    Hash.AddBoolean(D->getSynthesize());
+    Inherited::VisitFieldDecl(static_cast<const FieldDecl *>(D));
+  }
+
+  void VisitObjCPropertyDecl(const ObjCPropertyDecl *D) {
+    ID.AddInteger(D->getPropertyAttributes());
+    ID.AddInteger(D->getPropertyImplementation());
+    AddQualType(D->getType());
+    AddDecl(D);
+
+    Inherited::VisitObjCPropertyDecl(D);
+  }
+
   void VisitFieldDecl(const FieldDecl *D) {
     const bool IsBitfield = D->isBitField();
     Hash.AddBoolean(IsBitfield);
@@ -344,6 +360,11 @@ public:
     // Handled by the ODRHash for FunctionDecl
 
     Inherited::VisitCXXMethodDecl(D);
+  }
+
+  void VisitObjCMethodDecl(const ObjCMethodDecl *D) {
+    ID.AddInteger(D->getODRHash());
+    Inherited::VisitObjCMethodDecl(D);
   }
 
   void VisitTypedefNameDecl(const TypedefNameDecl *D) {
@@ -454,6 +475,9 @@ bool ODRHash::isWhitelistedDecl(const Decl *D, const DeclContext *Parent) {
     case Decl::TypeAlias:
     case Decl::Typedef:
     case Decl::Var:
+    case Decl::ObjCMethod:
+    case Decl::ObjCIvar:
+    case Decl::ObjCProperty:
       return true;
   }
 }
@@ -462,6 +486,135 @@ void ODRHash::AddSubDecl(const Decl *D) {
   assert(D && "Expecting non-null pointer.");
 
   ODRDeclVisitor(ID, *this).Visit(D);
+}
+
+void ODRHash::AddObjCInterfaceDecl(const ObjCInterfaceDecl *IF) {
+  AddDecl(IF);
+
+  // Trigger ODR computation for methods (if not yet computed)
+  for (auto *M : IF->methods())
+    reinterpret_cast<ObjCMethodDecl *>(M)->getODRHash();
+
+  auto *SuperClass = IF->getSuperClass();
+  AddBoolean(SuperClass);
+  if (SuperClass)
+    ID.AddInteger(SuperClass->getODRHash());
+
+  // Filter out sub-Decls which will not be processed in order to get an
+  // accurate count of Decl's.
+  llvm::SmallVector<const Decl *, 16> Decls;
+  for (Decl *SubDecl : IF->decls())
+    if (isWhitelistedDecl(SubDecl, IF))
+      Decls.push_back(SubDecl);
+
+  ID.AddInteger(Decls.size());
+  for (auto *SubDecl : Decls)
+    AddSubDecl(SubDecl);
+}
+
+void ODRHash::AddObjCProtocolDecl(const ObjCProtocolDecl *P) {
+  AddDecl(P);
+
+  // Trigger ODR computation for methods.
+  for (auto *M : P->methods())
+    reinterpret_cast<ObjCMethodDecl *>(M)->getODRHash();
+
+  // Filter out sub-Decls which will not be processed in order to get an
+  // accurate count of Decl's.
+  llvm::SmallVector<const Decl *, 16> Decls;
+  for (Decl *SubDecl : P->decls())
+    if (isWhitelistedDecl(SubDecl, P))
+      Decls.push_back(SubDecl);
+
+  ID.AddInteger(Decls.size());
+  for (auto *SubDecl : Decls)
+    AddSubDecl(SubDecl);
+}
+
+void ODRHash::AddObjCMethodDecl(const ObjCMethodDecl *Method) {
+  assert(Method && "Expecting non-null pointer.");
+
+  ID.AddInteger(Method->getDeclKind());
+  AddBoolean(Method->isInstanceMethod()); // false if class method
+  AddBoolean(Method->isPropertyAccessor());
+  AddBoolean(Method->isVariadic());
+  AddBoolean(Method->isSynthesizedAccessorStub());
+  AddBoolean(Method->isDefined());
+  AddBoolean(Method->isOverriding());
+  AddBoolean(Method->isDirectMethod());
+  AddBoolean(Method->isThisDeclarationADesignatedInitializer());
+  AddBoolean(Method->hasSkippedBody());
+  AddBoolean(Method->isPropertyAccessor());
+  AddBoolean(Method->isDeprecated());
+
+  ID.AddInteger(Method->getImplementationControl());
+  ID.AddInteger(Method->getMethodFamily());
+  ImplicitParamDecl *Cmd = Method->getCmdDecl();
+  AddBoolean(Cmd);
+  if (Cmd)
+    ID.AddInteger(Cmd->getParameterKind());
+
+  ImplicitParamDecl *Self = Method->getSelfDecl();
+  AddBoolean(Self);
+  if (Self)
+    ID.AddInteger(Self->getParameterKind());
+
+  AddDecl(Method);
+
+  AddQualType(Method->getReturnType());
+  ID.AddInteger(Method->param_size());
+  for (auto Param : Method->parameters())
+    AddSubDecl(Param);
+
+  bool SkipBody = Method->hasBody();
+  if (SkipBody) {
+    AddBoolean(false);
+    return;
+  }
+
+  const bool HasBody = Method->isThisDeclarationADefinition();
+  AddBoolean(HasBody);
+  if (!HasBody) {
+    return;
+  }
+
+  auto *Body = Method->getBody();
+  AddBoolean(Body);
+  if (Body)
+    AddStmt(Body);
+
+  // Filter out sub-Decls which will not be processed in order to get an
+  // accurate count of Decl's.
+  llvm::SmallVector<const Decl *, 16> Decls;
+  for (Decl *SubDecl : Method->decls())
+    if (isWhitelistedDecl(SubDecl, Method))
+      Decls.push_back(SubDecl);
+
+  ID.AddInteger(Decls.size());
+  for (auto SubDecl : Decls)
+    AddSubDecl(SubDecl);
+}
+
+void ODRHash::AddRecordDecl(const RecordDecl *Record) {
+  AddDecl(Record);
+
+  // Filter out sub-Decls which will not be processed in order to get an
+  // accurate count of Decl's.
+  llvm::SmallVector<const Decl *, 16> Decls;
+  for (Decl *SubDecl : Record->decls()) {
+    if (auto *SubRD = dyn_cast<RecordDecl>(SubDecl)) {
+      if (!SubRD->isCompleteDefinition())
+        continue;
+      ID.AddInteger(SubRD->getODRHash());
+      continue;
+    }
+    if (isWhitelistedDecl(SubDecl, Record))
+      Decls.push_back(SubDecl);
+  }
+
+  ID.AddInteger(Decls.size());
+  for (auto SubDecl : Decls)
+    AddSubDecl(SubDecl);
 }
 
 void ODRHash::AddCXXRecordDecl(const CXXRecordDecl *Record) {
@@ -701,7 +854,52 @@ public:
     ID.AddInteger(Quals.getAsOpaqueValue());
   }
 
+  // Return the RecordType if the typedef only strips away a keyword.
+  // Otherwise, return the original type.
+  static const Type *RemoveTypedef(const Type *T) {
+    const auto *TypedefT = dyn_cast<TypedefType>(T);
+    if (!TypedefT) {
+      return T;
+    }
+
+    const TypedefNameDecl *D = TypedefT->getDecl();
+    QualType UnderlyingType = D->getUnderlyingType();
+
+    if (UnderlyingType.hasLocalQualifiers()) {
+      return T;
+    }
+
+    const auto *ElaboratedT = dyn_cast<ElaboratedType>(UnderlyingType);
+    if (!ElaboratedT) {
+      return T;
+    }
+
+    if (ElaboratedT->getQualifier() != nullptr) {
+      return T;
+    }
+
+    QualType NamedType = ElaboratedT->getNamedType();
+    if (NamedType.hasLocalQualifiers()) {
+      return T;
+    }
+
+    const auto *RecordT = dyn_cast<RecordType>(NamedType);
+    if (!RecordT) {
+      return T;
+    }
+
+    const IdentifierInfo *TypedefII = TypedefT->getDecl()->getIdentifier();
+    const IdentifierInfo *RecordII = RecordT->getDecl()->getIdentifier();
+    if (!TypedefII || !RecordII ||
+        TypedefII->getName() != RecordII->getName()) {
+      return T;
+    }
+
+    return RecordT;
+  }
+
   void Visit(const Type *T) {
+    T = RemoveTypedef(T);
     ID.AddInteger(T->getTypeClass());
     Inherited::Visit(T);
   }

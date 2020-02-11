@@ -106,9 +106,12 @@ let Class = ConstantArrayType in {
   def : Property<"sizeValue", APInt> {
     let Read = [{ node->getSize() }];
   }
+  def : Property<"size", ExprRef> {
+    let Read = [{ node->getSizeExpr() }];
+  }
 
   def : Creator<[{
-    return ctx.getConstantArrayType(elementType, sizeValue,
+    return ctx.getConstantArrayType(elementType, sizeValue, size,
                                     sizeModifier,
                                     indexQualifiers.getCVRQualifiers());
   }]>;

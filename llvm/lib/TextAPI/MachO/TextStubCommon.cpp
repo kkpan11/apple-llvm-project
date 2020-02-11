@@ -43,6 +43,17 @@ void ScalarEnumerationTraits<ObjCConstraintType>::enumeration(
 
 void ScalarTraits<PlatformSet>::output(const PlatformSet &Values, void *IO,
                                        raw_ostream &OS) {
+
+  const auto *Ctx = reinterpret_cast<TextAPIContext *>(IO);
+  assert((!Ctx || Ctx->FileKind != FileType::Invalid) &&
+         "File type is not set in context");
+
+  if (Ctx && Ctx->FileKind == TBD_V3 && Values.count(PlatformKind::macOS) &&
+      Values.count(PlatformKind::macCatalyst)) {
+    OS << "zippered";
+    return;
+  }
+
   assert(Values.size() == 1U);
   switch (*Values.begin()) {
   default:
@@ -63,11 +74,27 @@ void ScalarTraits<PlatformSet>::output(const PlatformSet &Values, void *IO,
   case PlatformKind::bridgeOS:
     OS << "bridgeos";
     break;
+  case PlatformKind::macCatalyst:
+    OS << "iosmac";
+    break;
   }
 }
 
 StringRef ScalarTraits<PlatformSet>::input(StringRef Scalar, void *IO,
                                            PlatformSet &Values) {
+  const auto *Ctx = reinterpret_cast<TextAPIContext *>(IO);
+  assert((!Ctx || Ctx->FileKind != FileType::Invalid) &&
+         "File type is not set in context");
+
+  if (Scalar == "zippered") {
+    if (Ctx && Ctx->FileKind == FileType::TBD_V3) {
+      Values.insert(PlatformKind::macOS);
+      Values.insert(PlatformKind::macCatalyst);
+      return {};
+    }
+    return "invalid platform";
+  }
+
   auto Platform = StringSwitch<PlatformKind>(Scalar)
                       .Case("unknown", PlatformKind::unknown)
                       .Case("macosx", PlatformKind::macOS)
@@ -75,7 +102,12 @@ StringRef ScalarTraits<PlatformSet>::input(StringRef Scalar, void *IO,
                       .Case("watchos", PlatformKind::watchOS)
                       .Case("tvos", PlatformKind::tvOS)
                       .Case("bridgeos", PlatformKind::bridgeOS)
+                      .Case("iosmac", PlatformKind::macCatalyst)
                       .Default(PlatformKind::unknown);
+
+  if (Platform == PlatformKind::macCatalyst)
+    if (Ctx && Ctx->FileKind != FileType::TBD_V3)
+      return "invalid platform";
 
   if (Platform == PlatformKind::unknown)
     return "unknown platform";
@@ -143,14 +175,25 @@ void ScalarTraits<SwiftVersion>::output(const SwiftVersion &Value, void *,
     break;
   }
 }
-StringRef ScalarTraits<SwiftVersion>::input(StringRef Scalar, void *,
+StringRef ScalarTraits<SwiftVersion>::input(StringRef Scalar, void *IO,
                                             SwiftVersion &Value) {
-  Value = StringSwitch<SwiftVersion>(Scalar)
-              .Case("1.0", 1)
-              .Case("1.1", 2)
-              .Case("2.0", 3)
-              .Case("3.0", 4)
-              .Default(0);
+  const auto *Ctx = reinterpret_cast<TextAPIContext *>(IO);
+  assert((!Ctx || Ctx->FileKind != FileType::Invalid) &&
+         "File type is not set in context");
+
+  if (Ctx->FileKind == FileType::TBD_V4) {
+    if (Scalar.getAsInteger(10, Value))
+      return "invalid Swift ABI version.";
+    return {};
+  } else {
+    Value = StringSwitch<SwiftVersion>(Scalar)
+                .Case("1.0", 1)
+                .Case("1.1", 2)
+                .Case("2.0", 3)
+                .Case("3.0", 4)
+                .Default(0);
+  }
+
   if (Value != SwiftVersion(0))
     return {};
 

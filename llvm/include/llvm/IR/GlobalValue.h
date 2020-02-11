@@ -38,7 +38,7 @@ class GlobalObject;
 class Module;
 
 namespace Intrinsic {
-  enum ID : unsigned;
+typedef unsigned ID;
 } // end namespace Intrinsic
 
 class GlobalValue : public Constant {
@@ -443,9 +443,7 @@ public:
   bool hasInternalLinkage() const { return isInternalLinkage(getLinkage()); }
   bool hasPrivateLinkage() const { return isPrivateLinkage(getLinkage()); }
   bool hasLocalLinkage() const { return isLocalLinkage(getLinkage()); }
-  bool hasExternalWeakLinkage() const {
-    return isExternalWeakLinkage(getLinkage());
-  }
+  bool hasExternalWeakLinkage() const;
   bool hasCommonLinkage() const { return isCommonLinkage(getLinkage()); }
   bool hasValidDeclarationLinkage() const {
     return isValidDeclarationLinkage(getLinkage());

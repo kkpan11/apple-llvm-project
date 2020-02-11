@@ -40,7 +40,7 @@ inline void stringify_append(llvm::raw_string_ostream &ss, const T *t) {
 template <>
 inline void stringify_append<char>(llvm::raw_string_ostream &ss,
                                    const char *t) {
-  ss << t;
+  ss << '\"' << t << '\"';
 }
 
 template <typename Head>
@@ -105,8 +105,8 @@ template <typename... Ts> inline std::string stringify_args(const Ts &... ts) {
   }
 
 #define LLDB_RECORD_METHOD(Result, Class, Method, Signature, ...)              \
-  lldb_private::repro::Recorder sb_recorder(LLVM_PRETTY_FUNCTION,              \
-                                            stringify_args(__VA_ARGS__));      \
+  lldb_private::repro::Recorder sb_recorder(                                   \
+      LLVM_PRETTY_FUNCTION, stringify_args(*this, __VA_ARGS__));               \
   if (lldb_private::repro::InstrumentationData data =                          \
           LLDB_GET_INSTRUMENTATION_DATA()) {                                   \
     sb_recorder.Record(                                                        \
@@ -117,8 +117,8 @@ template <typename... Ts> inline std::string stringify_args(const Ts &... ts) {
   }
 
 #define LLDB_RECORD_METHOD_CONST(Result, Class, Method, Signature, ...)        \
-  lldb_private::repro::Recorder sb_recorder(LLVM_PRETTY_FUNCTION,              \
-                                            stringify_args(__VA_ARGS__));      \
+  lldb_private::repro::Recorder sb_recorder(                                   \
+      LLVM_PRETTY_FUNCTION, stringify_args(*this, __VA_ARGS__));               \
   if (lldb_private::repro::InstrumentationData data =                          \
           LLDB_GET_INSTRUMENTATION_DATA()) {                                   \
     sb_recorder.Record(                                                        \
@@ -129,7 +129,8 @@ template <typename... Ts> inline std::string stringify_args(const Ts &... ts) {
   }
 
 #define LLDB_RECORD_METHOD_NO_ARGS(Result, Class, Method)                      \
-  lldb_private::repro::Recorder sb_recorder(LLVM_PRETTY_FUNCTION);             \
+  lldb_private::repro::Recorder sb_recorder(LLVM_PRETTY_FUNCTION,              \
+                                            stringify_args(*this));            \
   if (lldb_private::repro::InstrumentationData data =                          \
           LLDB_GET_INSTRUMENTATION_DATA()) {                                   \
     sb_recorder.Record(data.GetSerializer(), data.GetRegistry(),               \
@@ -139,7 +140,8 @@ template <typename... Ts> inline std::string stringify_args(const Ts &... ts) {
   }
 
 #define LLDB_RECORD_METHOD_CONST_NO_ARGS(Result, Class, Method)                \
-  lldb_private::repro::Recorder sb_recorder(LLVM_PRETTY_FUNCTION);             \
+  lldb_private::repro::Recorder sb_recorder(LLVM_PRETTY_FUNCTION,              \
+                                            stringify_args(*this));            \
   if (lldb_private::repro::InstrumentationData data =                          \
           LLDB_GET_INSTRUMENTATION_DATA()) {                                   \
     sb_recorder.Record(                                                        \
@@ -180,11 +182,6 @@ template <typename... Ts> inline std::string stringify_args(const Ts &... ts) {
 
 namespace lldb_private {
 namespace repro {
-
-template <class T>
-struct is_trivially_serializable
-    : std::integral_constant<bool, std::is_fundamental<T>::value ||
-                                       std::is_enum<T>::value> {};
 
 /// Mapping between serialized indices and their corresponding objects.
 ///
@@ -241,9 +238,12 @@ struct ReferenceTag {};
 struct ValueTag {};
 struct FundamentalPointerTag {};
 struct FundamentalReferenceTag {};
+struct NotImplementedTag {};
 
 /// Return the deserialization tag for the given type T.
-template <class T> struct serializer_tag { typedef ValueTag type; };
+template <class T> struct serializer_tag {
+  typedef typename std::conditional<std::is_trivially_copyable<T>::value, ValueTag, NotImplementedTag>::type type;
+};
 template <class T> struct serializer_tag<T *> {
   typedef
       typename std::conditional<std::is_fundamental<T>::value,
@@ -284,7 +284,7 @@ public:
   /// Store the returned value in the index-to-object mapping.
   template <typename T> void HandleReplayResult(const T &t) {
     unsigned result = Deserialize<unsigned>();
-    if (is_trivially_serializable<T>::value)
+    if (std::is_fundamental<T>::value)
       return;
     // We need to make a copy as the original object might go out of scope.
     m_index_to_object.AddObjectForIndex(result, new T(t));
@@ -293,7 +293,7 @@ public:
   /// Store the returned value in the index-to-object mapping.
   template <typename T> void HandleReplayResult(T *t) {
     unsigned result = Deserialize<unsigned>();
-    if (is_trivially_serializable<T>::value)
+    if (std::is_fundamental<T>::value)
       return;
     m_index_to_object.AddObjectForIndex(result, t);
   }
@@ -307,6 +307,11 @@ public:
   }
 
 private:
+  template <typename T> T Read(NotImplementedTag) {
+    m_buffer = m_buffer.drop_front(sizeof(T));
+    return T();
+  }
+
   template <typename T> T Read(ValueTag) {
     assert(HasData(sizeof(T)));
     T t;
@@ -549,9 +554,7 @@ public:
     SerializeAll(tail...);
   }
 
-  void SerializeAll() {
-    m_stream.flush();
-  }
+  void SerializeAll() { m_stream.flush(); }
 
 private:
   /// Serialize pointers. We need to differentiate between pointers to
@@ -570,7 +573,7 @@ private:
   /// fundamental types (in which case we serialize its value) and references
   /// to objects (in which case we serialize their index).
   template <typename T> void Serialize(T &t) {
-    if (is_trivially_serializable<T>::value) {
+    if (std::is_fundamental<T>::value) {
       m_stream.write(reinterpret_cast<const char *>(&t), sizeof(T));
     } else {
       unsigned idx = m_tracker.GetIndexForObject(&t);

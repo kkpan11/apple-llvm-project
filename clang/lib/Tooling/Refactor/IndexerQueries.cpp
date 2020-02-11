@@ -29,20 +29,20 @@ const char *DeclPredicateNotPredicate::NameUIDString = "not.decl.predicate";
 
 std::unique_ptr<DeclPredicateNode>
 DeclPredicateNode::create(const DeclPredicate &Predicate) {
-  return llvm::make_unique<DeclPredicateNodePredicate>(Predicate);
+  return std::make_unique<DeclPredicateNodePredicate>(Predicate);
 }
 
 std::unique_ptr<DeclPredicateNode>
 DeclPredicateNode::create(const BoolDeclPredicate &Predicate) {
   if (Predicate.IsInverted)
-    return llvm::make_unique<DeclPredicateNotPredicate>(
+    return std::make_unique<DeclPredicateNotPredicate>(
         create(Predicate.Predicate));
   return create(Predicate.Predicate);
 }
 
 std::unique_ptr<ASTUnitForImplementationOfDeclarationQuery>
 clang::tooling::indexer::fileThatShouldContainImplementationOf(const Decl *D) {
-  return llvm::make_unique<ASTUnitForImplementationOfDeclarationQuery>(D);
+  return std::make_unique<ASTUnitForImplementationOfDeclarationQuery>(D);
 }
 
 bool ASTUnitForImplementationOfDeclarationQuery::verify(ASTContext &Context) {
@@ -131,7 +131,7 @@ IndexerQuery::loadResultsFromYAML(StringRef Source,
   if (QueryResults.size() != Queries.size())
     return llvm::make_error<llvm::StringError>("Mismatch in query results size",
                                                llvm::errc::invalid_argument);
-  for (const auto &QueryTuple : llvm::zip(Queries, QueryResults)) {
+  for (auto QueryTuple : llvm::zip(Queries, QueryResults)) {
     IndexerQuery *Query = std::get<0>(QueryTuple);
     const QueryYAMLNode &Result = std::get<1>(QueryTuple);
     if ((Query->NameUID && Query->NameUID != Result.Name) &&
@@ -152,7 +152,7 @@ IndexerQuery::loadResultsFromYAML(StringRef Source,
         if (PredicateResult.Name != ActualPredicate.Name)
           continue;
         std::vector<Indexed<PersistentDeclRef<Decl>>> Output;
-        for (const auto &ResultTuple :
+        for (auto ResultTuple :
              zip(DQ->getInputs(), PredicateResult.IntegerValues)) {
           const Decl *D = std::get<0>(ResultTuple);
           int Result = std::get<1>(ResultTuple);

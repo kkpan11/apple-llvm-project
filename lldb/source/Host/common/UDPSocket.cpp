@@ -11,7 +11,7 @@
 #include "lldb/Host/Config.h"
 #include "lldb/Utility/Log.h"
 
-#ifndef LLDB_DISABLE_POSIX
+#if LLDB_ENABLE_POSIX
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #endif
@@ -80,7 +80,7 @@ Status UDPSocket::Connect(llvm::StringRef name, bool child_processes_inherit,
                           &service_info_list);
   if (err != 0) {
     error.SetErrorStringWithFormat(
-#if defined(_MSC_VER) && defined(UNICODE)
+#if defined(_WIN32) && defined(UNICODE)
         "getaddrinfo(%s, %s, &hints, &info) returned error %i (%S)",
 #else
         "getaddrinfo(%s, %s, &hints, &info) returned error %i (%s)",

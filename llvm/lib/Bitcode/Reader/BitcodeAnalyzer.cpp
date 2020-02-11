@@ -286,6 +286,7 @@ static Optional<const char *> GetCodeName(unsigned CodeID, unsigned BlockID,
       STRINGIFY_CODE(FS, PERMODULE_PROFILE)
       STRINGIFY_CODE(FS, PERMODULE_RELBF)
       STRINGIFY_CODE(FS, PERMODULE_GLOBALVAR_INIT_REFS)
+      STRINGIFY_CODE(FS, PERMODULE_VTABLE_GLOBALVAR_INIT_REFS)
       STRINGIFY_CODE(FS, COMBINED)
       STRINGIFY_CODE(FS, COMBINED_PROFILE)
       STRINGIFY_CODE(FS, COMBINED_GLOBALVAR_INIT_REFS)
@@ -303,6 +304,7 @@ static Optional<const char *> GetCodeName(unsigned CodeID, unsigned BlockID,
       STRINGIFY_CODE(FS, CFI_FUNCTION_DEFS)
       STRINGIFY_CODE(FS, CFI_FUNCTION_DECLS)
       STRINGIFY_CODE(FS, TYPE_ID)
+      STRINGIFY_CODE(FS, TYPE_ID_METADATA)
     }
   case bitc::METADATA_ATTACHMENT_ID:
     switch (CodeID) {
@@ -544,8 +546,11 @@ BitcodeAnalyzer::BitcodeAnalyzer(StringRef Buffer,
 
 Error BitcodeAnalyzer::analyze(Optional<BCDumpOptions> O,
                                Optional<StringRef> CheckHash) {
-  if (Expected<CurStreamTypeType> H = analyzeHeader(O, Stream))
-    CurStreamType = *H;
+  Expected<CurStreamTypeType> MaybeType = analyzeHeader(O, Stream);
+  if (!MaybeType)
+    return MaybeType.takeError();
+  else
+    CurStreamType = *MaybeType;
 
   Stream.setBlockInfo(&BlockInfo);
 

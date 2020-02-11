@@ -12,7 +12,6 @@
 #include "CommandObjectHelp.h"
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/IOHandler.h"
-#include "lldb/Host/OptionParser.h"
 #include "lldb/Interpreter/CommandHistory.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Interpreter/CommandObjectRegexCommand.h"
@@ -283,7 +282,7 @@ protected:
       return false;
     }
 
-    FileSpec cmd_file(command[0].ref);
+    FileSpec cmd_file(command[0].ref());
     FileSystem::Instance().Resolve(cmd_file);
     ExecutionContext *exe_ctx = nullptr; // Just use the default context.
 
@@ -546,7 +545,7 @@ protected:
 
     // Get the alias command.
 
-    auto alias_command = args[0].ref;
+    auto alias_command = args[0].ref();
     if (alias_command.startswith("-")) {
       result.AppendError("aliases starting with a dash are not supported");
       if (alias_command == "--help" || alias_command == "--long-help") {
@@ -653,8 +652,8 @@ protected:
     }
 
     // Save these in std::strings since we're going to shift them off.
-    const std::string alias_command(args[0].ref);
-    const std::string actual_command(args[1].ref);
+    const std::string alias_command(args[0].ref());
+    const std::string actual_command(args[1].ref());
 
     args.Shift(); // Shift the alias command word off the argument vector.
     args.Shift(); // Shift the old command word off the argument vector.
@@ -686,7 +685,7 @@ protected:
         OptionArgVectorSP(new OptionArgVector);
 
     while (cmd_obj->IsMultiwordObject() && !args.empty()) {
-      auto sub_command = args[0].ref;
+      auto sub_command = args[0].ref();
       assert(!sub_command.empty());
       subcommand_obj_sp = cmd_obj->GetSubcommandSP(sub_command);
       if (!subcommand_obj_sp) {
@@ -780,7 +779,7 @@ protected:
       return false;
     }
 
-    auto command_name = args[0].ref;
+    auto command_name = args[0].ref();
     cmd_obj = m_interpreter.GetCommandObject(command_name);
     if (!cmd_obj) {
       result.AppendErrorWithFormat(
@@ -862,7 +861,7 @@ protected:
       return false;
     }
 
-    auto command_name = args[0].ref;
+    auto command_name = args[0].ref();
     if (!m_interpreter.CommandExists(command_name)) {
       StreamString error_msg_stream;
       const bool generate_upropos = true;
@@ -900,9 +899,10 @@ class CommandObjectCommandsAddRegex : public CommandObjectParsed,
 public:
   CommandObjectCommandsAddRegex(CommandInterpreter &interpreter)
       : CommandObjectParsed(
-            interpreter, "command regex", "Define a custom command in terms of "
-                                          "existing commands by matching "
-                                          "regular expressions.",
+            interpreter, "command regex",
+            "Define a custom command in terms of "
+            "existing commands by matching "
+            "regular expressions.",
             "command regex <cmd-name> [s/<regex>/<subst>/ ...]"),
         IOHandlerDelegateMultiline("",
                                    IOHandlerDelegate::Completion::LLDBCommand),
@@ -945,7 +945,7 @@ a number follows 'f':"
 
 protected:
   void IOHandlerActivated(IOHandler &io_handler, bool interactive) override {
-    StreamFileSP output_sp(io_handler.GetOutputStreamFile());
+    StreamFileSP output_sp(io_handler.GetOutputStreamFileSP());
     if (output_sp && interactive) {
       output_sp->PutCString("Enter one or more sed substitution commands in "
                             "the form: 's/<regex>/<subst>/'.\nTerminate the "
@@ -988,7 +988,7 @@ protected:
     }
 
     Status error;
-    auto name = command[0].ref;
+    auto name = command[0].ref();
     m_regex_cmd_up = std::make_unique<CommandObjectRegexCommand>(
         m_interpreter, name, m_options.GetHelp(), m_options.GetSyntax(), 10, 0,
         true);
@@ -1013,7 +1013,7 @@ protected:
     } else {
       for (auto &entry : command.entries().drop_front()) {
         bool check_only = false;
-        error = AppendRegexSubstitution(entry.ref, check_only);
+        error = AppendRegexSubstitution(entry.ref(), check_only);
         if (error.Fail())
           break;
       }
@@ -1197,8 +1197,8 @@ public:
   CommandObjectPythonFunction(CommandInterpreter &interpreter, std::string name,
                               std::string funct, std::string help,
                               ScriptedCommandSynchronicity synch)
-      : CommandObjectRaw(interpreter, name),
-        m_function_name(funct), m_synchro(synch), m_fetched_help_long(false) {
+      : CommandObjectRaw(interpreter, name), m_function_name(funct),
+        m_synchro(synch), m_fetched_help_long(false) {
     if (!help.empty())
       SetHelp(help);
     else {
@@ -1241,10 +1241,9 @@ protected:
 
     result.SetStatus(eReturnStatusInvalid);
 
-    if (!scripter ||
-        !scripter->RunScriptBasedCommand(m_function_name.c_str(),
-                                         raw_command_line, m_synchro, result,
-                                         error, m_exe_ctx)) {
+    if (!scripter || !scripter->RunScriptBasedCommand(
+                         m_function_name.c_str(), raw_command_line, m_synchro,
+                         result, error, m_exe_ctx)) {
       result.AppendError(error.AsCString());
       result.SetStatus(eReturnStatusFailed);
     } else {
@@ -1272,8 +1271,8 @@ public:
                                std::string name,
                                StructuredData::GenericSP cmd_obj_sp,
                                ScriptedCommandSynchronicity synch)
-      : CommandObjectRaw(interpreter, name),
-        m_cmd_obj_sp(cmd_obj_sp), m_synchro(synch), m_fetched_help_short(false),
+      : CommandObjectRaw(interpreter, name), m_cmd_obj_sp(cmd_obj_sp),
+        m_synchro(synch), m_fetched_help_short(false),
         m_fetched_help_long(false) {
     StreamString stream;
     stream.Printf("For more information run 'help %s'", name.c_str());
@@ -1404,7 +1403,7 @@ protected:
 
       switch (short_option) {
       case 'r':
-        m_allow_reload = true;
+        // NO-OP
         break;
       default:
         llvm_unreachable("Unimplemented option");
@@ -1414,26 +1413,14 @@ protected:
     }
 
     void OptionParsingStarting(ExecutionContext *execution_context) override {
-      m_allow_reload = true;
     }
 
     llvm::ArrayRef<OptionDefinition> GetDefinitions() override {
       return llvm::makeArrayRef(g_script_import_options);
     }
-
-    // Instance variables to hold the values for command options.
-
-    bool m_allow_reload;
   };
 
   bool DoExecute(Args &command, CommandReturnObject &result) override {
-    if (GetDebugger().GetScriptLanguage() != lldb::eScriptLanguagePython) {
-      result.AppendError("only scripting language supported for module "
-                         "importing is currently Python");
-      result.SetStatus(eReturnStatusFailed);
-      return false;
-    }
-
     if (command.empty()) {
       result.AppendError("command script import needs one or more arguments");
       result.SetStatus(eReturnStatusFailed);
@@ -1454,7 +1441,7 @@ protected:
       // more)
       m_exe_ctx.Clear();
       if (GetDebugger().GetScriptInterpreter()->LoadScriptingModule(
-              entry.c_str(), m_options.m_allow_reload, init_session, error)) {
+              entry.c_str(), init_session, error)) {
         result.SetStatus(eReturnStatusSuccessFinishNoResult);
       } else {
         result.AppendErrorWithFormat("module importing failed: %s",
@@ -1585,7 +1572,7 @@ protected:
   };
 
   void IOHandlerActivated(IOHandler &io_handler, bool interactive) override {
-    StreamFileSP output_sp(io_handler.GetOutputStreamFile());
+    StreamFileSP output_sp(io_handler.GetOutputStreamFileSP());
     if (output_sp && interactive) {
       output_sp->PutCString(g_python_command_instructions);
       output_sp->Flush();
@@ -1594,7 +1581,7 @@ protected:
 
   void IOHandlerInputComplete(IOHandler &io_handler,
                               std::string &data) override {
-    StreamFileSP error_sp = io_handler.GetErrorStreamFile();
+    StreamFileSP error_sp = io_handler.GetErrorStreamFileSP();
 
     ScriptInterpreter *interpreter = GetDebugger().GetScriptInterpreter();
     if (interpreter) {
@@ -1656,7 +1643,7 @@ protected:
     }
 
     // Store the options in case we get multi-line input
-    m_cmd_name = command[0].ref;
+    m_cmd_name = command[0].ref();
     m_short_help.assign(m_options.m_short_help);
     m_synchronicity = m_options.m_synchronicity;
 
@@ -1798,7 +1785,7 @@ protected:
       return false;
     }
 
-    auto cmd_name = command[0].ref;
+    auto cmd_name = command[0].ref();
 
     if (cmd_name.empty() || !m_interpreter.HasUserCommands() ||
         !m_interpreter.UserCommandExists(cmd_name)) {
@@ -1821,9 +1808,10 @@ class CommandObjectMultiwordCommandsScript : public CommandObjectMultiword {
 public:
   CommandObjectMultiwordCommandsScript(CommandInterpreter &interpreter)
       : CommandObjectMultiword(
-            interpreter, "command script", "Commands for managing custom "
-                                           "commands implemented by "
-                                           "interpreter scripts.",
+            interpreter, "command script",
+            "Commands for managing custom "
+            "commands implemented by "
+            "interpreter scripts.",
             "command script <subcommand> [<subcommand-options>]") {
     LoadSubCommand("add", CommandObjectSP(
                               new CommandObjectCommandsScriptAdd(interpreter)));

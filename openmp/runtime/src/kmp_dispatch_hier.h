@@ -941,9 +941,7 @@ void __kmp_dispatch_init_hierarchy(ident_t *loc, int n,
   KMP_DEBUG_ASSERT(new_chunks);
   if (!TCR_4(__kmp_init_parallel))
     __kmp_parallel_initialize();
-#if OMP_50_ENABLED
   __kmp_resume_if_soft_paused();
-#endif
 
   th = __kmp_threads[gtid];
   team = th->th.th_team;
@@ -1073,7 +1071,7 @@ void __kmp_dispatch_init_hierarchy(ident_t *loc, int n,
     my_unit->reset_shared_barrier();
     my_unit->hier_pr.flags.contains_last = FALSE;
     // Last layer, initialize the private buffers with entire loop information
-    // Now the next next_algorithim() call will get the first chunk of
+    // Now the next next_algorithm() call will get the first chunk of
     // iterations properly
     if (i == n - 1) {
       __kmp_dispatch_init_algorithm<T>(

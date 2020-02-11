@@ -16,9 +16,7 @@
 #include "lldb/Breakpoint/Watchpoint.h"
 #include "lldb/Breakpoint/WatchpointList.h"
 #include "lldb/Core/ValueObject.h"
-#include "lldb/Core/ValueObjectVariable.h"
 #include "lldb/Host/OptionParser.h"
-#include "lldb/Interpreter/CommandCompletions.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
 #include "lldb/Symbol/Variable.h"
@@ -89,12 +87,12 @@ bool CommandObjectMultiwordWatchpoint::VerifyWatchpointIDs(
   // Go through the arguments and make a canonical form of arg list containing
   // only numbers with possible "-" in between.
   for (auto &entry : args.entries()) {
-    if ((idx = WithRSAIndex(entry.ref)) == -1) {
-      StrRefArgs.push_back(entry.ref);
+    if ((idx = WithRSAIndex(entry.ref())) == -1) {
+      StrRefArgs.push_back(entry.ref());
       continue;
     }
     // The Arg contains the range specifier, split it, then.
-    std::tie(first, second) = entry.ref.split(RSA[idx]);
+    std::tie(first, second) = entry.ref().split(RSA[idx]);
     if (!first.empty())
       StrRefArgs.push_back(first);
     StrRefArgs.push_back(Minus);
@@ -830,12 +828,12 @@ corresponding to the byte size of the data type.");
 protected:
   static size_t GetVariableCallback(void *baton, const char *name,
                                     VariableList &variable_list) {
+    size_t old_size = variable_list.GetSize();
     Target *target = static_cast<Target *>(baton);
-    if (target) {
-      return target->GetImages().FindGlobalVariables(ConstString(name),
-                                                     UINT32_MAX, variable_list);
-    }
-    return 0;
+    if (target)
+      target->GetImages().FindGlobalVariables(ConstString(name), UINT32_MAX,
+                                              variable_list);
+    return variable_list.GetSize() - old_size;
   }
 
   bool DoExecute(Args &command, CommandReturnObject &result) override {

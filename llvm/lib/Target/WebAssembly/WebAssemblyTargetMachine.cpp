@@ -140,7 +140,7 @@ WebAssemblyTargetMachine::getSubtargetImpl(std::string CPU,
                                            std::string FS) const {
   auto &I = SubtargetMap[CPU + FS];
   if (!I) {
-    I = llvm::make_unique<WebAssemblySubtarget>(TargetTriple, CPU, FS, *this);
+    I = std::make_unique<WebAssemblySubtarget>(TargetTriple, CPU, FS, *this);
   }
   return I.get();
 }
@@ -376,6 +376,9 @@ void WebAssemblyPassConfig::addIRPasses() {
   if (EnableEmException || EnableEmSjLj)
     addPass(createWebAssemblyLowerEmscriptenEHSjLj(EnableEmException,
                                                    EnableEmSjLj));
+
+  // Expand indirectbr instructions to switches.
+  addPass(createIndirectBrExpandPass());
 
   TargetPassConfig::addIRPasses();
 }

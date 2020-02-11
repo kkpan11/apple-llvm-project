@@ -898,8 +898,13 @@ static char getSymbolNMTypeChar(ELFObjectFileBase &Obj,
     return '?';
   }
 
-  if (SymI->getBinding() == ELF::STB_GNU_UNIQUE)
+  uint8_t Binding = SymI->getBinding();
+  if (Binding == ELF::STB_GNU_UNIQUE)
     return 'u';
+
+  assert(Binding != ELF::STB_WEAK && "STB_WEAK not tested in calling function");
+  if (Binding != ELF::STB_GLOBAL && Binding != ELF::STB_LOCAL)
+    return '?';
 
   elf_section_iterator SecI = *SecIOrErr;
   if (SecI != Obj.section_end()) {
@@ -911,22 +916,19 @@ static char getSymbolNMTypeChar(ELFObjectFileBase &Obj,
       return 'b';
     if (Flags & ELF::SHF_ALLOC)
       return Flags & ELF::SHF_WRITE ? 'd' : 'r';
-  }
 
-  if (SymI->getELFType() == ELF::STT_SECTION) {
-    Expected<StringRef> Name = SymI->getName();
-    if (!Name) {
-      consumeError(Name.takeError());
+    auto NameOrErr = SecI->getName();
+    if (!NameOrErr) {
+      consumeError(NameOrErr.takeError());
       return '?';
     }
-    return StringSwitch<char>(*Name)
-        .StartsWith(".debug", 'N')
-        .StartsWith(".note", 'n')
-        .StartsWith(".comment", 'n')
-        .Default('?');
+    if ((*NameOrErr).startswith(".debug"))
+      return 'N';
+    if (!(Flags & ELF::SHF_WRITE))
+      return 'n';
   }
 
-  return 'n';
+  return '?';
 }
 
 static char getSymbolNMTypeChar(COFFObjectFile &Obj, symbol_iterator I) {
@@ -1080,7 +1082,7 @@ static StringRef getNMTypeName(SymbolicFile &Obj, basic_symbol_iterator I) {
 static char getNMSectionTagAndName(SymbolicFile &Obj, basic_symbol_iterator I,
                                    StringRef &SecName) {
   uint32_t Symflags = I->getFlags();
-  if (isa<ELFObjectFileBase>(&Obj)) {
+  if (ELFObjectFileBase *ELFObj = dyn_cast<ELFObjectFileBase>(&Obj)) {
     if (Symflags & object::SymbolRef::SF_Absolute)
       SecName = "*ABS*";
     else if (Symflags & object::SymbolRef::SF_Common)
@@ -1094,8 +1096,16 @@ static char getNMSectionTagAndName(SymbolicFile &Obj, basic_symbol_iterator I,
         consumeError(SecIOrErr.takeError());
         return '?';
       }
-      elf_section_iterator secT = *SecIOrErr;
-      secT->getName(SecName);
+
+      if (*SecIOrErr == ELFObj->section_end())
+        return '?';
+
+      Expected<StringRef> NameOrErr = (*SecIOrErr)->getName();
+      if (!NameOrErr) {
+        consumeError(NameOrErr.takeError());
+        return '?';
+      }
+      SecName = *NameOrErr;
     }
   }
 
@@ -1123,13 +1133,16 @@ static char getNMSectionTagAndName(SymbolicFile &Obj, basic_symbol_iterator I,
     Ret = getSymbolNMTypeChar(*MachO, I);
   else if (WasmObjectFile *Wasm = dyn_cast<WasmObjectFile>(&Obj))
     Ret = getSymbolNMTypeChar(*Wasm, I);
-  else
-    Ret = getSymbolNMTypeChar(cast<ELFObjectFileBase>(Obj), I);
+  else if (ELFObjectFileBase *ELF = dyn_cast<ELFObjectFileBase>(&Obj)) {
+    if (ELFSymbolRef(*I).getELFType() == ELF::STT_GNU_IFUNC)
+      return 'i';
+    Ret = getSymbolNMTypeChar(*ELF, I);
+    if (ELFSymbolRef(*I).getBinding() == ELF::STB_GNU_UNIQUE)
+      return Ret;
+  } else
+    llvm_unreachable("unknown binary format");
 
   if (!(Symflags & object::SymbolRef::SF_Global))
-    return Ret;
-
-  if (Obj.isELF() && ELFSymbolRef(*I).getBinding() == ELF::STB_GNU_UNIQUE)
     return Ret;
 
   return toupper(Ret);
@@ -1351,7 +1364,12 @@ dumpSymbolNamesFromObject(SymbolicFile &Obj, bool printName,
             StringRef SectionName = StringRef();
             for (const SectionRef &Section : MachO->sections()) {
               S.NSect++;
-              Section.getName(SectionName);
+ 
+              if (Expected<StringRef> NameOrErr = Section.getName())
+                SectionName = *NameOrErr;
+              else
+                consumeError(NameOrErr.takeError());
+
               SegmentName = MachO->getSectionFinalSegmentName(
                                                   Section.getRawDataRefImpl());
               if (S.Address >= Section.getAddress() &&
@@ -1671,7 +1689,11 @@ dumpSymbolNamesFromObject(SymbolicFile &Obj, bool printName,
           StringRef SegmentName = StringRef();
           StringRef SectionName = StringRef();
           for (const SectionRef &Section : MachO->sections()) {
-            Section.getName(SectionName);
+            if (Expected<StringRef> NameOrErr = Section.getName())
+              SectionName = *NameOrErr;
+            else
+              consumeError(NameOrErr.takeError());
+
             SegmentName = MachO->getSectionFinalSegmentName(
                                                 Section.getRawDataRefImpl());
             F.NSect++;
