@@ -145,10 +145,6 @@ if (LLDB_ENABLE_PYTHON)
   if ("${CMAKE_SYSTEM_NAME}" STREQUAL "Windows" AND NOT LLDB_RELOCATABLE_PYTHON)
     get_filename_component(PYTHON_HOME "${PYTHON_EXECUTABLE}" DIRECTORY)
     file(TO_CMAKE_PATH "${PYTHON_HOME}" LLDB_PYTHON_HOME)
-  else()
-    # SWIFT_ENABLE_TENSORFLOW
-    # Make it so that LLDB can find Python 3.6 or Python 3.7.
-    set(Python_ADDITIONAL_VERSIONS 3.7 3.6 3.5 3.4 3.3 3.2 3.1 3.0 2.7 2.6 2.5)
   endif()
 endif()
 
