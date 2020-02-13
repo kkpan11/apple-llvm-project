@@ -3,8 +3,6 @@
 // RUN: %clang_tsan %s -o %t
 // RUN: %run %t 2>&1 | FileCheck %s --implicit-check-not='ThreadSanitizer'
 
-// REQUIRES: rdar57844626
-
 #include <mach/mach.h>
 #include <mach/mach_vm.h>
 #include <pthread.h>
@@ -13,13 +11,9 @@
 
 #include "../test.h"
 
-void AnnotateIgnoreReadsBegin(const char *f, int l);
-void AnnotateIgnoreReadsEnd(const char *f, int l);
-void AnnotateIgnoreWritesBegin(const char *f, int l);
-void AnnotateIgnoreWritesEnd(const char *f, int l);
-
-static int *global_ptr;
 const mach_vm_size_t alloc_size = sizeof(int);
+static int *global_ptr;
+static bool realloc_success = false;
 
 static int *alloc() {
   mach_vm_address_t addr;
@@ -31,11 +25,10 @@ static int *alloc() {
 
 static void alloc_fixed(int *ptr) {
   mach_vm_address_t addr = (mach_vm_address_t)ptr;
-  kern_return_t res;
   // Re-allocation via VM_FLAGS_FIXED sporadically fails.
-  do {
-    res = mach_vm_allocate(mach_task_self(), &addr, alloc_size, VM_FLAGS_FIXED);
-  } while (res != KERN_SUCCESS);
+  kern_return_t res =
+      mach_vm_allocate(mach_task_self(), &addr, alloc_size, VM_FLAGS_FIXED);
+  realloc_success = res == KERN_SUCCESS;
 }
 
 static void dealloc(int *ptr) {
@@ -57,10 +50,10 @@ static void *Thread(void *arg) {
   AnnotateIgnoreWritesEnd(__FILE__, __LINE__);
 
   barrier_wait(&barrier);
-  return NULL;;
+  return NULL;
 }
 
-int main(int argc, const char *argv[]) {
+static void try_realloc_on_same_address() {
   barrier_init(&barrier, 2);
   global_ptr = alloc();
   pthread_t t;
@@ -71,6 +64,17 @@ int main(int argc, const char *argv[]) {
 
   pthread_join(t, NULL);
   dealloc(global_ptr);
+}
+
+int main(int argc, const char *argv[]) {
+  for (int i = 0; i < 10; i++) {
+    try_realloc_on_same_address();
+    if (realloc_success) break;
+  }
+
+  if (!realloc_success)
+    fprintf(stderr, "Unable to set up testing condition; silently pass test\n");
+
   printf("Done.\n");
   return 0;
 }

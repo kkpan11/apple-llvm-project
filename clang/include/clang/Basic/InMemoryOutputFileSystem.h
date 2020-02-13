@@ -16,7 +16,6 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Mutex.h"
-#include "llvm/Support/MutexGuard.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/VirtualFileSystem.h"
@@ -62,41 +61,41 @@ class InMemoryOutputFileSystem : public llvm::vfs::FileSystem {
   // MARK: - `llvm::vfs::FileSystem` overrides
 
   llvm::ErrorOr<llvm::vfs::Status> status(const llvm::Twine& relpath) override {
-    llvm::MutexGuard locked(Mu);
+    std::lock_guard<std::mutex> locked(Mu);
     return OutputFiles->status(relpath);
   }
 
   llvm::ErrorOr<std::unique_ptr<llvm::vfs::File>> openFileForRead(
       const llvm::Twine& relpath) override {
-    llvm::MutexGuard locked(Mu);
+    std::lock_guard<std::mutex> locked(Mu);
     return OutputFiles->openFileForRead(relpath);
   }
 
   llvm::vfs::directory_iterator dir_begin(const llvm::Twine& reldir,
                                           std::error_code& err) override {
-    llvm::MutexGuard locked(Mu);
+    std::lock_guard<std::mutex> locked(Mu);
     return OutputFiles->dir_begin(reldir, err);
   }
 
   std::error_code setCurrentWorkingDirectory(const llvm::Twine& path) override {
-    llvm::MutexGuard locked(Mu);
+    std::lock_guard<std::mutex> locked(Mu);
     return OutputFiles->setCurrentWorkingDirectory(path);
   }
 
   llvm::ErrorOr<std::string> getCurrentWorkingDirectory() const override {
-    llvm::MutexGuard locked(Mu);
+    std::lock_guard<std::mutex> locked(Mu);
     return OutputFiles->getCurrentWorkingDirectory();
   }
 
   std::error_code getRealPath(
       const llvm::Twine& path,
       llvm::SmallVectorImpl<char>& output) const override {
-    llvm::MutexGuard locked(Mu);
+    std::lock_guard<std::mutex> locked(Mu);
     return OutputFiles->getRealPath(path, output);
   }
 
  private:
-  mutable llvm::sys::Mutex Mu;
+  mutable std::mutex Mu;
   llvm::StringMap<llvm::SmallVector<char, 0>> TemporaryBuffers;
   llvm::IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> OutputFiles;
 };

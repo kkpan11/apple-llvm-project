@@ -1,3 +1,4 @@
+## BEGIN SWIFT
 set(LLVM_NO_RTTI 1)
 
 include(AddLLVM)
@@ -5,6 +6,7 @@ include(AddLLVM)
 if (LLDB_ENABLE_SWIFT_SUPPORT)
   include(SwiftAddCustomCommandTarget)
 endif()
+## END SWIFT
 
 if ( CMAKE_SYSTEM_NAME MATCHES "Windows" )
   add_definitions( -DEXPORT_LIBLLDB )
@@ -12,16 +14,22 @@ endif()
 
 get_property(LLDB_ALL_PLUGINS GLOBAL PROPERTY LLDB_PLUGINS)
 
-if(NOT LLDB_DISABLE_PYTHON)
-  get_target_property(lldb_scripts_dir swig_wrapper BINARY_DIR)
-  set(lldb_python_wrapper ${lldb_scripts_dir}/LLDBWrapPython.cpp)
+if(LLDB_ENABLE_PYTHON)
+  get_target_property(lldb_bindings_dir swig_wrapper BINARY_DIR)
+  set(lldb_python_wrapper ${lldb_bindings_dir}/LLDBWrapPython.cpp)
+endif()
+
+if(LLDB_ENABLE_LUA)
+  get_target_property(lldb_bindings_dir swig_wrapper_lua BINARY_DIR)
+  set(lldb_lua_wrapper ${lldb_bindings_dir}/LLDBWrapLua.cpp)
 endif()
 
 if(LLDB_BUILD_FRAMEWORK)
   set(option_install_prefix INSTALL_PREFIX ${LLDB_FRAMEWORK_INSTALL_DIR})
+  set(option_framework FRAMEWORK)
 endif()
 
-add_lldb_library(liblldb SHARED FRAMEWORK
+add_lldb_library(liblldb SHARED ${option_framework}
   SBAddress.cpp
   SBAttachInfo.cpp
   SBBlock.cpp
@@ -44,6 +52,7 @@ add_lldb_library(liblldb SHARED FRAMEWORK
   SBExecutionContext.cpp
   SBExpressionOptions.cpp
   SBFileSpec.cpp
+  SBFile.cpp
   SBFileSpecList.cpp
   SBFrame.cpp
   SBFunction.cpp
@@ -93,6 +102,7 @@ add_lldb_library(liblldb SHARED FRAMEWORK
   SBUnixSignals.cpp
   SystemInitializerFull.cpp
   ${lldb_python_wrapper}
+  ${lldb_lua_wrapper}
 
   LINK_LIBS
     lldbBase
@@ -107,12 +117,22 @@ add_lldb_library(liblldb SHARED FRAMEWORK
     lldbTarget
     lldbUtility
     ${LLDB_ALL_PLUGINS}
+## BEGIN SWIFT
     ${SWIFT_ALL_LIBS}
+## END SWIFT
   LINK_COMPONENTS
     Support
 
   ${option_install_prefix}
 )
+
+# lib/pythonX.Y/dist-packages/lldb/_lldb.so is a symlink to lib/liblldb.so,
+# which depends on lib/libLLVM*.so (BUILD_SHARED_LIBS) or lib/libLLVM-10git.so
+# (LLVM_LINK_LLVM_DYLIB). Add an additional rpath $ORIGIN/../../../../lib so
+# that _lldb.so can be loaded from Python.
+if(LLDB_ENABLE_PYTHON AND (BUILD_SHARED_LIBS OR LLVM_LINK_LLVM_DYLIB) AND UNIX AND NOT APPLE)
+  set_property(TARGET liblldb APPEND PROPERTY INSTALL_RPATH "\$ORIGIN/../../../../lib${LLVM_LIBDIR_SUFFIX}")
+endif()
 
 if (MSVC)
   set_source_files_properties(SBReproducer.cpp PROPERTIES COMPILE_FLAGS /bigobj)
@@ -139,6 +159,19 @@ if(lldb_python_wrapper)
   endif ()
 endif()
 
+if(lldb_lua_wrapper)
+  add_dependencies(liblldb swig_wrapper_lua)
+  target_include_directories(liblldb PRIVATE ${LUA_INCLUDE_DIR})
+
+  if (MSVC)
+    set_property(SOURCE ${lldb_lua_wrapper} APPEND_STRING PROPERTY COMPILE_FLAGS " /W0")
+  else()
+    set_property(SOURCE ${lldb_lua_wrapper} APPEND_STRING PROPERTY COMPILE_FLAGS " -w")
+  endif()
+
+  set_source_files_properties(${lldb_lua_wrapper} PROPERTIES GENERATED ON)
+endif()
+
 set_target_properties(liblldb
   PROPERTIES
   VERSION ${LLDB_VERSION}
@@ -162,9 +195,9 @@ endif()
 
 if ( CMAKE_SYSTEM_NAME MATCHES "Windows" )
   # Only MSVC has the ABI compatibility problem and avoids using FindPythonLibs,
-  # so only it needs to explicitly link against ${PYTHON_LIBRARY}
-  if (MSVC AND NOT LLDB_DISABLE_PYTHON)
-    target_link_libraries(liblldb PRIVATE ${PYTHON_LIBRARY})
+  # so only it needs to explicitly link against ${PYTHON_LIBRARIES}
+  if (MSVC AND LLDB_ENABLE_PYTHON)
+    target_link_libraries(liblldb PRIVATE ${PYTHON_LIBRARIES})
   endif()
 else()
   set_target_properties(liblldb
@@ -181,6 +214,7 @@ if(LLDB_BUILD_FRAMEWORK)
   include(LLDBFramework)
 endif()
 
+## BEGIN SWIFT
 set(lib_dir "${CMAKE_BINARY_DIR}/${CMAKE_CFG_INTDIR}/lib${LLVM_LIBDIR_SUFFIX}")
 
 if(EXISTS ${SWIFT_BINARY_DIR}/lib${LLVM_LIBDIR_SUFFIX}/swift/clang)
@@ -242,3 +276,4 @@ if(LLDB_BUILT_STANDALONE)
     DESTINATION lib${LLVM_LIBDIR_SUFFIX}/lldb/)
 endif()
 endif()
+## END SWIFT

@@ -425,16 +425,16 @@ void ThreadPlanCallFunction::SetBreakpoints() {
     if (GetExpressionLanguage() == eLanguageTypeSwift) {
       auto *swift_runtime = SwiftLanguageRuntime::Get(process_sp);
       if (swift_runtime) {
-        ConstString backstop_name = swift_runtime->GetErrorBackstopName();
-        if (!backstop_name.IsEmpty()) {
+        llvm::StringRef backstop_name = swift_runtime->GetErrorBackstopName();
+        if (!backstop_name.empty()) {
           FileSpecList stdlib_module_list;
-          stdlib_module_list.Append(FileSpec(
-              swift_runtime->GetStandardLibraryName().AsCString()));
+          stdlib_module_list.Append(
+              FileSpec(swift_runtime->GetStandardLibraryName().GetStringRef()));
           const LazyBool skip_prologue = eLazyBoolNo;
           const bool is_internal = true;
           const bool is_hardware = false;
           m_error_backstop_bp_sp = process_sp->GetTarget().CreateBreakpoint(
-              &stdlib_module_list, NULL, backstop_name.AsCString(),
+              &stdlib_module_list, NULL, backstop_name.str().c_str(),
               eFunctionNameTypeFull, eLanguageTypeUnknown, 0, skip_prologue,
               is_internal, is_hardware);
         }
@@ -497,8 +497,6 @@ bool ThreadPlanCallFunction::BreakpointsExplainStop() {
         PersistentExpressionState *persistent_state =
             GetTarget().GetPersistentExpressionStateForLanguage(
                 eLanguageTypeSwift);
-        if (!persistent_state)
-          return false;
         const bool is_error = true;
         auto prefix = persistent_state->GetPersistentVariablePrefix(is_error);
         ConstString persistent_variable_name(

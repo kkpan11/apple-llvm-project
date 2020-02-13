@@ -23,13 +23,12 @@
 #include "lldb/DataFormatters/StringPrinter.h"
 #include "lldb/DataFormatters/TypeFormat.h"
 #include "lldb/DataFormatters/TypeSummary.h"
-#include "lldb/DataFormatters/TypeValidator.h"
 #include "lldb/DataFormatters/ValueObjectPrinter.h"
 #include "lldb/Expression/ExpressionVariable.h"
-#include "lldb/Symbol/ClangASTContext.h"
+#include "lldb/Host/Config.h"
+#include "lldb/Symbol/TypeSystemClang.h"
 #include "lldb/Symbol/CompileUnit.h"
 #include "lldb/Symbol/CompilerType.h"
-#include "lldb/Symbol/SwiftASTContext.h"
 #include "lldb/Symbol/Declaration.h"
 #include "lldb/Symbol/SymbolContext.h"
 #include "lldb/Symbol/Type.h"
@@ -52,6 +51,10 @@
 #include "lldb/Utility/Stream.h"
 #include "lldb/Utility/StreamString.h"
 #include "lldb/lldb-private-types.h"
+
+// BEGIN SWIFT
+#include "lldb/Symbol/SwiftASTContext.h"
+// END SWIFT
 
 #include "llvm/Support/Compiler.h"
 
@@ -78,26 +81,26 @@ using namespace lldb_private;
 
 static user_id_t g_value_obj_uid = 0;
 
+// BEGIN SWIFT
 static const ExecutionContextRef *GetSwiftExeCtx(ValueObject &valobj) {
   return (valobj.GetPreferredDisplayLanguage() == eLanguageTypeSwift)
              ? &valobj.GetExecutionContextRef()
              : nullptr;
 }
+// END SWIFT
 
-//----------------------------------------------------------------------
 // ValueObject constructor
 ValueObject::ValueObject(ValueObject &parent)
     : UserID(++g_value_obj_uid), // Unique identifier for every value object
       m_parent(&parent), m_root(nullptr),
       m_update_point(parent.GetUpdatePoint()), m_name(), m_data(), m_value(),
       m_error(), m_value_str(), m_old_value_str(), m_location_str(),
-      m_summary_str(), m_object_desc_str(), m_validation_result(),
-      m_manager(parent.GetManager()), m_children(), m_synthetic_children(),
-      m_dynamic_value(nullptr), m_synthetic_value(nullptr),
-      m_deref_valobj(nullptr), m_format(eFormatDefault),
-      m_last_format(eFormatDefault), m_last_format_mgr_revision(0),
-      m_type_summary_sp(), m_type_format_sp(), m_synthetic_children_sp(),
-      m_type_validator_sp(), m_user_id_of_forced_summary(),
+      m_summary_str(), m_object_desc_str(), m_manager(parent.GetManager()),
+      m_children(), m_synthetic_children(), m_dynamic_value(nullptr),
+      m_synthetic_value(nullptr), m_deref_valobj(nullptr),
+      m_format(eFormatDefault), m_last_format(eFormatDefault),
+      m_last_format_mgr_revision(0), m_type_summary_sp(), m_type_format_sp(),
+      m_synthetic_children_sp(), m_user_id_of_forced_summary(),
       m_address_type_of_ptr_or_ref_children(eAddressTypeInvalid),
       m_value_checksum(),
       m_preferred_display_language(lldb::eLanguageTypeUnknown),
@@ -121,12 +124,12 @@ ValueObject::ValueObject(ExecutionContextScope *exe_scope,
       m_parent(nullptr), m_root(nullptr), m_update_point(exe_scope), m_name(),
       m_data(), m_value(), m_error(), m_value_str(), m_old_value_str(),
       m_location_str(), m_summary_str(), m_object_desc_str(),
-      m_validation_result(), m_manager(), m_children(), m_synthetic_children(),
+      m_manager(), m_children(), m_synthetic_children(),
       m_dynamic_value(nullptr), m_synthetic_value(nullptr),
       m_deref_valobj(nullptr), m_format(eFormatDefault),
       m_last_format(eFormatDefault), m_last_format_mgr_revision(0),
       m_type_summary_sp(), m_type_format_sp(), m_synthetic_children_sp(),
-      m_type_validator_sp(), m_user_id_of_forced_summary(),
+      m_user_id_of_forced_summary(),
       m_address_type_of_ptr_or_ref_children(child_ptr_or_ref_addr_type),
       m_value_checksum(),
       m_preferred_display_language(lldb::eLanguageTypeUnknown),
@@ -156,6 +159,7 @@ bool ValueObject::UpdateValueIfNeeded(bool update_format) {
 
   bool did_change_formats = false;
 
+  // BEGIN SWIFT
   // Swift: Check whether the dynamic type system became stale.
   if (m_dynamic_value) {
     auto *dyn_val = static_cast<ValueObjectDynamicValue *>(m_dynamic_value);
@@ -164,7 +168,8 @@ bool ValueObject::UpdateValueIfNeeded(bool update_format) {
       SetNeedsUpdate();
     }
   }
-  
+  // END SWIFT
+
   if (update_format)
     did_change_formats = UpdateFormatsIfNeeded();
 
@@ -270,11 +275,10 @@ bool ValueObject::UpdateFormatsIfNeeded() {
     SetValueFormat(DataVisualization::GetFormat(*this, eNoDynamicValues));
     SetSummaryFormat(
         DataVisualization::GetSummaryFormat(*this, GetDynamicValueType()));
-#ifndef LLDB_DISABLE_PYTHON
+#if LLDB_ENABLE_PYTHON
     SetSyntheticChildren(
         DataVisualization::GetSyntheticChildren(*this, GetDynamicValueType()));
 #endif
-    SetValidator(DataVisualization::GetValidator(*this, GetDynamicValueType()));
   }
 
   return any_change;
@@ -328,9 +332,9 @@ CompilerType ValueObject::MaybeCalculateCompleteType() {
   std::vector<clang::NamedDecl *> decls;
   CompilerType class_type;
   bool is_pointer_type = false;
-  if (ClangASTContext::IsObjCObjectPointerType(compiler_type, &class_type))
+  if (TypeSystemClang::IsObjCObjectPointerType(compiler_type, &class_type))
     is_pointer_type = true;
-  else if (ClangASTContext::IsObjCObjectOrInterfaceType(compiler_type))
+  else if (TypeSystemClang::IsObjCObjectOrInterfaceType(compiler_type))
     class_type = compiler_type;
   else
     return compiler_type;
@@ -343,11 +347,11 @@ CompilerType ValueObject::MaybeCalculateCompleteType() {
   if (TargetSP target_sp = GetTargetSP()) {
     if (auto clang_modules_decl_vendor =
             target_sp->GetClangModulesDeclVendor()) {
-      if (clang_modules_decl_vendor->FindDecls(class_name, false,
-                                               UINT32_MAX, decls) > 0 &&
-          decls.size() > 0) {
-        CompilerType module_type =
-            ClangASTContext::GetTypeForDecl(decls.front());
+      ConstString key_cs(class_name);
+      auto types = clang_modules_decl_vendor->FindTypes(
+          key_cs, /*max_matches*/ UINT32_MAX);
+      if (!types.empty()) {
+        auto module_type = types.front();
         m_override_type =
             is_pointer_type ? module_type.GetPointerType() : module_type;
       }
@@ -358,25 +362,23 @@ CompilerType ValueObject::MaybeCalculateCompleteType() {
   }
 
   // then try the runtime
-  if (auto *objc_language_runtime = ObjCLanguageRuntime::Get(*process_sp)) {
-    if (auto runtime_vendor = objc_language_runtime->GetDeclVendor()) {
-      std::vector<CompilerDecl> compiler_decls;
-      if (runtime_vendor->FindDecls(class_name, false, UINT32_MAX,
-                                    compiler_decls) > 0 &&
-          compiler_decls.size() > 0) {
-        auto *ctx =
-            llvm::dyn_cast<ClangASTContext>(compiler_decls[0].GetTypeSystem());
-        if (ctx) {
-          CompilerType runtime_type =
-              ctx->GetTypeForDecl(compiler_decls[0].GetOpaqueDecl());
-          m_override_type =
-              is_pointer_type ? runtime_type.GetPointerType() : runtime_type;
-        }
+  std::vector<CompilerDecl> compiler_decls;
+  auto *objc_language_runtime = ObjCLanguageRuntime::Get(*process_sp);
+  if (auto runtime_vendor = objc_language_runtime->GetDeclVendor()) {
+    if (runtime_vendor->FindDecls(class_name, false, UINT32_MAX,
+                                  compiler_decls) > 0 &&
+        compiler_decls.size() > 0) {
+      auto *ctx = llvm::dyn_cast<TypeSystemClang>(compiler_decls[0].GetTypeSystem());
+      if (ctx) {
+        CompilerType runtime_type =
+            ctx->GetTypeForDecl(compiler_decls[0].GetOpaqueDecl());
+        m_override_type =
+          is_pointer_type ? runtime_type.GetPointerType() : runtime_type;
       }
-
-      if (m_override_type.IsValid())
-        return m_override_type;
     }
+
+    if (m_override_type.IsValid())
+      return m_override_type;
   }
   return compiler_type;
 }
@@ -1122,23 +1124,6 @@ ValueObject::ReadPointedString(lldb::DataBufferSP &buffer_sp, Status &error,
   }
   CopyStringDataToBufferSP(s, buffer_sp);
   return {total_bytes_read, was_capped};
-}
-
-std::pair<TypeValidatorResult, std::string> ValueObject::GetValidationStatus() {
-  if (!UpdateValueIfNeeded(true))
-    return {TypeValidatorResult::Success,
-            ""}; // not the validator's job to discuss update problems
-
-  if (m_validation_result.hasValue())
-    return m_validation_result.getValue();
-
-  if (!m_type_validator_sp)
-    return {TypeValidatorResult::Success, ""}; // no validator no failure
-
-  auto outcome = m_type_validator_sp->FormatObject(this);
-
-  return (m_validation_result = {outcome.m_result, outcome.m_message})
-      .getValue();
 }
 
 const char *ValueObject::GetObjectDescription() {
@@ -2073,15 +2058,14 @@ bool ValueObject::GetBaseClassPath(Stream &s) {
     bool parent_had_base_class =
         GetParent() && GetParent()->GetBaseClassPath(s);
     CompilerType compiler_type = GetCompilerType();
-    std::string cxx_class_name;
-    bool this_had_base_class =
-        ClangASTContext::GetCXXClassName(compiler_type, cxx_class_name);
-    if (this_had_base_class) {
+    llvm::Optional<std::string> cxx_class_name =
+        TypeSystemClang::GetCXXClassName(compiler_type);
+    if (cxx_class_name) {
       if (parent_had_base_class)
         s.PutCString("::");
-      s.PutCString(cxx_class_name);
+      s.PutCString(cxx_class_name.getValue());
     }
-    return parent_had_base_class || this_had_base_class;
+    return parent_had_base_class || cxx_class_name;
   }
   return false;
 }
@@ -3167,10 +3151,6 @@ void ValueObject::ClearUserVisibleData(uint32_t clear_mask) {
     if (m_synthetic_value)
       m_synthetic_value = nullptr;
   }
-
-  if ((clear_mask & eClearUserVisibleDataItemsValidator) ==
-      eClearUserVisibleDataItemsValidator)
-    m_validation_result.reset();
 }
 
 SymbolContextScope *ValueObject::GetSymbolContextScope() {

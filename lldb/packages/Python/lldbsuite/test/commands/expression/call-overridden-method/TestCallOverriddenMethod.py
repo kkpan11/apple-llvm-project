@@ -45,6 +45,7 @@ class ExprCommandCallOverriddenMethod(TestBase):
         # Test calling the base class.
         self.expect("expr realbase.foo()", substrs=["= 1"])
 
+    @skipIfLinux # Returns wrong result code on some platforms.
     def test_call_on_derived(self):
         """Test calls to overridden methods in derived classes."""
         self.build()
@@ -62,7 +63,7 @@ class ExprCommandCallOverriddenMethod(TestBase):
         # a vtable entry that does not exist in the compiled program).
         self.expect("expr d.foo()", substrs=["= 2"])
 
-    @skipIfLinux # Calling constructor causes SIGABRT
+    @skipIf(oslist=["linux"], archs=["aarch64"])
     @expectedFailureAll(oslist=["windows"], bugnumber="llvm.org/pr43707")
     def test_call_on_temporary(self):
         """Test calls to overridden methods in derived classes."""

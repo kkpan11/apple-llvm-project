@@ -289,7 +289,7 @@ static Error createPlistFile(StringRef Bin, StringRef BundleRoot,
   SmallString<128> InfoPlist(BundleRoot);
   sys::path::append(InfoPlist, "Contents/Info.plist");
   std::error_code EC;
-  raw_fd_ostream PL(InfoPlist, EC, sys::fs::F_Text);
+  raw_fd_ostream PL(InfoPlist, EC, sys::fs::OF_Text);
   if (EC)
     return make_error<StringError>(
         "cannot create Plist: " + toString(errorCodeToError(EC)), EC);
@@ -597,7 +597,7 @@ int main(int argc, char **argv) {
       } else {
         std::error_code EC;
         OS = std::make_shared<raw_fd_ostream>(
-            Options.LinkOpts.NoOutput ? "-" : OutputFile, EC, sys::fs::F_None);
+            Options.LinkOpts.NoOutput ? "-" : OutputFile, EC, sys::fs::OF_None);
         if (EC) {
           WithColor::error() << OutputFile << ": " << EC.message();
           return 1;

@@ -65,7 +65,7 @@ StringRef RefCountBug::getDescription() const {
 
 RefCountBug::RefCountBug(const CheckerBase *Checker, RefCountBugType BT)
     : BugType(Checker, bugTypeToName(BT), categories::MemoryRefCount,
-              /*SupressOnSink=*/BT == LeakWithinFunction || BT == LeakAtReturn),
+              /*SuppressOnSink=*/BT == LeakWithinFunction || BT == LeakAtReturn),
       BT(BT), Checker(Checker) {}
 
 static bool isNumericLiteralExpression(const Expr *E) {
@@ -813,7 +813,7 @@ RefCountReport::RefCountReport(const RefCountBug &D, const LangOptions &LOpts,
     : PathSensitiveBugReport(D, D.getDescription(), n), Sym(sym),
       isLeak(isLeak) {
   if (!isLeak)
-    addVisitor(llvm::make_unique<RefCountReportVisitor>(sym));
+    addVisitor(std::make_unique<RefCountReportVisitor>(sym));
 }
 
 RefCountReport::RefCountReport(const RefCountBug &D, const LangOptions &LOpts,
@@ -821,7 +821,7 @@ RefCountReport::RefCountReport(const RefCountBug &D, const LangOptions &LOpts,
                                StringRef endText)
     : PathSensitiveBugReport(D, D.getDescription(), endText, n) {
 
-  addVisitor(llvm::make_unique<RefCountReportVisitor>(sym));
+  addVisitor(std::make_unique<RefCountReportVisitor>(sym));
 }
 
 void RefLeakReport::deriveParamLocation(CheckerContext &Ctx, SymbolRef sym) {
@@ -913,5 +913,5 @@ RefLeakReport::RefLeakReport(const RefCountBug &D, const LangOptions &LOpts,
 
   createDescription(Ctx);
 
-  addVisitor(llvm::make_unique<RefLeakReportVisitor>(sym));
+  addVisitor(std::make_unique<RefLeakReportVisitor>(sym));
 }

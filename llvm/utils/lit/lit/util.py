@@ -116,6 +116,8 @@ def to_unicode(s):
     return s
 
 
+# TODO(yln): multiprocessing.cpu_count()
+# TODO(python3): len(os.sched_getaffinity(0)) and os.cpu_count()
 def detectCPUs():
     """Detects the number of CPUs on a system.
 
@@ -149,6 +151,10 @@ def mkdir(path):
             from ctypes import GetLastError, WinError
 
             path = os.path.abspath(path)
+            # Make sure that the path uses backslashes here, in case
+            # python would have happened to use forward slashes, as the
+            # NT path format only supports backslashes.
+            path = path.replace('/', '\\')
             NTPath = to_unicode(r'\\?\%s' % path)
             if not windll.kernel32.CreateDirectoryW(NTPath, None):
                 raise WinError(GetLastError())
@@ -426,7 +432,7 @@ def usePlatformSdkOnDarwin(config, lit_config):
         except OSError:
             res = -1
         if res == 0 and out:
-            sdk_path = out
+            sdk_path = out.decode()
             lit_config.note('using SDKROOT: %r' % sdk_path)
             config.environment['SDKROOT'] = sdk_path
 
@@ -442,7 +448,7 @@ def findPlatformSdkVersionOnMacOS(config, lit_config):
         except OSError:
             res = -1
         if res == 0 and out:
-            return out
+            return out.decode()
     return None
 
 def killProcessAndChildrenIsSupported():

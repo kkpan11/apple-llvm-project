@@ -36,10 +36,10 @@ llvm::remarks::getRemarksSectionContents(const object::ObjectFile &Obj) {
     return SectionName.takeError();
 
   for (const object::SectionRef &Section : Obj.sections()) {
-    StringRef Name;
-    if (std::error_code EC = Section.getName(Name))
-        return errorCodeToError(EC);
-    if (Name != *SectionName)
+    Expected<StringRef> MaybeName = Section.getName();
+    if (!MaybeName)
+      return MaybeName.takeError();
+    if (*MaybeName != *SectionName)
       continue;
 
     if (Expected<StringRef> Contents = Section.getContents())

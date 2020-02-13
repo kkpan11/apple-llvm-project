@@ -654,7 +654,7 @@ template <typename T>
 class TestVisitor : public clang::RecursiveASTVisitor<T> {
 public:
   bool runOver(StringRef Code) {
-    return runToolOnCode(new TestAction(this), Code);
+    return runToolOnCode(std::make_unique<TestAction>(this), Code);
   }
 
 protected:
@@ -684,7 +684,7 @@ private:
       Visitor->SM = &compiler.getSourceManager();
       Visitor->Context = &compiler.getASTContext();
       /// TestConsumer will be deleted by the framework calling us.
-      return llvm::make_unique<FindConsumer>(Visitor);
+      return std::make_unique<FindConsumer>(Visitor);
     }
 
   private:
@@ -1360,7 +1360,7 @@ public:
         ResultHandler(std::move(ResultHandler)) {}
 
   bool runOver(StringRef Code) {
-    return runToolOnCode(new TestAction(this), Code);
+    return runToolOnCode(std::make_unique<TestAction>(this), Code);
   }
 
   bool succeeded() const { return Success; }
@@ -1417,7 +1417,7 @@ private:
                       llvm::StringRef) override {
       Test->PP = &Compiler.getPreprocessor();
       Test->Context = &Compiler.getASTContext();
-      return llvm::make_unique<TestConsumer>(Test);
+      return std::make_unique<TestConsumer>(Test);
     }
 
   private:

@@ -8,11 +8,6 @@ if (CXX_SUPPORTS_NO_NESTED_ANON_TYPES)
   set(EXTRA_CXXFLAGS ${EXTRA_CXXFLAGS} -Wno-nested-anon-types)
 endif ()
 
-set(SWIFT_LIBS lldbPluginSwiftLanguage)
-if(NOT LLDB_ENABLE_SWIFT_SUPPORT)
-  unset(SWIFT_LIBS)
-endif()
-
 add_lldb_library(lldbPluginObjCLanguage PLUGIN
   ObjCLanguage.cpp
   CF.cpp
@@ -27,7 +22,6 @@ add_lldb_library(lldbPluginObjCLanguage PLUGIN
   NSString.cpp
 
   LINK_LIBS
-    clangAST
     lldbCore
     lldbDataFormatters
     lldbExpression
@@ -37,7 +31,9 @@ add_lldb_library(lldbPluginObjCLanguage PLUGIN
     lldbUtility
     lldbPluginAppleObjCRuntime
     lldbPluginClangCommon
-    ${SWIFT_LIBS}
+    lldbPluginSwiftLanguage
+  CLANG_LIBS
+    clangAST
 
   EXTRA_CXXFLAGS ${EXTRA_CXXFLAGS}
 )

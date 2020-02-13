@@ -1,22 +1,18 @@
-set(LLVM_LINK_COMPONENTS
-  Support
-  )
+if(APPLE OR CMAKE_SYSTEM_NAME MATCHES "Linux")
 
-add_clang_unittest(DirectoryWatcherTests
-  DirectoryWatcherTest.cpp
-  )
+  set(LLVM_LINK_COMPONENTS
+    Support
+    )
 
-target_link_libraries(DirectoryWatcherTests
-  PRIVATE
-  clangDirectoryWatcher
-  clangBasic
-  )
+  add_clang_unittest(DirectoryWatcherTests
+    DirectoryWatcherTest.cpp
+    )
 
-if(APPLE)
-  check_include_files("CoreServices/CoreServices.h" HAVE_CORESERVICES_H)
-  if(HAVE_CORESERVICES_H)
-    set(DWT_LINK_FLAGS "${DWT_LINK_FLAGS} -framework CoreServices")
-    set_property(TARGET DirectoryWatcherTests APPEND_STRING PROPERTY
-                 LINK_FLAGS ${DWT_LINK_FLAGS})
-  endif()
+  target_link_libraries(DirectoryWatcherTests
+    PRIVATE
+    LLVMTestingSupport
+    clangDirectoryWatcher
+    clangBasic
+    )
+
 endif()

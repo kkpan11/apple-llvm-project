@@ -29,6 +29,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Triple.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/BinaryFormat/MachO.h"
 #include "llvm/BinaryFormat/COFF.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/CodeGen/AsmPrinter.h"
@@ -42,11 +43,13 @@
 #include "llvm/CodeGen/TargetRegisterInfo.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DebugInfoMetadata.h"
+#include "llvm/IR/GlobalPtrAuthInfo.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCInstBuilder.h"
 #include "llvm/MC/MCSectionELF.h"
+#include "llvm/MC/MCSectionMachO.h"
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/Support/Casting.h"
@@ -61,6 +64,16 @@
 #include <memory>
 
 using namespace llvm;
+
+enum PtrauthCheckMode { Default, Unchecked, Poison, Trap };
+static cl::opt<PtrauthCheckMode>
+PtrauthAuthChecks("aarch64-ptrauth-auth-checks", cl::Hidden,
+                  cl::values(
+                    clEnumValN(Unchecked, "none", "don't test for failure"),
+                    clEnumValN(Poison, "poison", "poison on failure"),
+                    clEnumValN(Trap, "trap", "trap on failure")),
+                  cl::desc("Check pointer authentication auth/resign failures"),
+                  cl::init(Default));
 
 #define DEBUG_TYPE "asm-printer"
 
@@ -84,6 +97,10 @@ public:
     return MCInstLowering.lowerOperand(MO, MCOp);
   }
 
+  const MCExpr *
+  lowerPtrAuthGlobalConstant(const GlobalPtrAuthInfo &PAI) override;
+
+  void EmitStartOfAsmFile(Module &M) override;
   void EmitJumpTableInfo() override;
   void emitJumpTableEntry(const MachineJumpTableInfo *MJTI,
                           const MachineBasicBlock *MBB, unsigned JTI);
@@ -99,7 +116,8 @@ public:
   void LowerPATCHABLE_FUNCTION_EXIT(const MachineInstr &MI);
   void LowerPATCHABLE_TAIL_CALL(const MachineInstr &MI);
 
-  std::map<std::pair<unsigned, uint32_t>, MCSymbol *> HwasanMemaccessSymbols;
+  typedef std::tuple<unsigned, bool, uint32_t> HwasanMemaccessTuple;
+  std::map<HwasanMemaccessTuple, MCSymbol *> HwasanMemaccessSymbols;
   void LowerHWASAN_CHECK_MEMACCESS(const MachineInstr &MI);
   void EmitHwasanMemaccessSymbols(Module &M);
 
@@ -150,7 +168,7 @@ private:
   void printOperand(const MachineInstr *MI, unsigned OpNum, raw_ostream &O);
   bool printAsmMRegister(const MachineOperand &MO, char Mode, raw_ostream &O);
   bool printAsmRegInClass(const MachineOperand &MO,
-                          const TargetRegisterClass *RC, bool isVector,
+                          const TargetRegisterClass *RC, unsigned AltName,
                           raw_ostream &O);
 
   bool PrintAsmOperand(const MachineInstr *MI, unsigned OpNum,
@@ -179,6 +197,65 @@ private:
 };
 
 } // end anonymous namespace
+
+void AArch64AsmPrinter::EmitStartOfAsmFile(Module &M) {
+  if (!TM.getTargetTriple().isOSBinFormatELF())
+    return;
+
+  // Assemble feature flags that may require creation of a note section.
+  unsigned Flags = ELF::GNU_PROPERTY_AARCH64_FEATURE_1_BTI |
+                   ELF::GNU_PROPERTY_AARCH64_FEATURE_1_PAC;
+
+  if (any_of(M, [](const Function &F) {
+        return !F.isDeclaration() &&
+               !F.hasFnAttribute("branch-target-enforcement");
+      })) {
+    Flags &= ~ELF::GNU_PROPERTY_AARCH64_FEATURE_1_BTI;
+  }
+
+  if ((Flags & ELF::GNU_PROPERTY_AARCH64_FEATURE_1_BTI) == 0 &&
+      any_of(M, [](const Function &F) {
+        return F.hasFnAttribute("branch-target-enforcement");
+      })) {
+    errs() << "warning: some functions compiled with BTI and some compiled "
+              "without BTI\n"
+           << "warning: not setting BTI in feature flags\n";
+  }
+
+  if (any_of(M, [](const Function &F) {
+        if (F.isDeclaration())
+          return false;
+        Attribute A = F.getFnAttribute("sign-return-address");
+        return !A.isStringAttribute() || A.getValueAsString() == "none";
+      })) {
+    Flags &= ~ELF::GNU_PROPERTY_AARCH64_FEATURE_1_PAC;
+  }
+
+  if (Flags == 0)
+    return;
+
+  // Emit a .note.gnu.property section with the flags.
+  MCSection *Cur = OutStreamer->getCurrentSectionOnly();
+  MCSection *Nt = MMI->getContext().getELFSection(
+      ".note.gnu.property", ELF::SHT_NOTE, ELF::SHF_ALLOC);
+  OutStreamer->SwitchSection(Nt);
+
+  // Emit the note header.
+  EmitAlignment(Align(8));
+  OutStreamer->EmitIntValue(4, 4);     // data size for "GNU\0"
+  OutStreamer->EmitIntValue(4 * 4, 4); // Elf_Prop size
+  OutStreamer->EmitIntValue(ELF::NT_GNU_PROPERTY_TYPE_0, 4);
+  OutStreamer->EmitBytes(StringRef("GNU", 4)); // note name
+
+  // Emit the PAC/BTI properties.
+  OutStreamer->EmitIntValue(ELF::GNU_PROPERTY_AARCH64_FEATURE_1_AND, 4);
+  OutStreamer->EmitIntValue(4, 4);     // data size
+  OutStreamer->EmitIntValue(Flags, 4); // data
+  OutStreamer->EmitIntValue(0, 4);     // pad
+
+  OutStreamer->endSection(Nt);
+  OutStreamer->SwitchSection(Cur);
+}
 
 void AArch64AsmPrinter::LowerPATCHABLE_FUNCTION_ENTER(const MachineInstr &MI)
 {
@@ -236,9 +313,12 @@ void AArch64AsmPrinter::EmitSled(const MachineInstr &MI, SledKind Kind)
 }
 
 void AArch64AsmPrinter::LowerHWASAN_CHECK_MEMACCESS(const MachineInstr &MI) {
-  unsigned Reg = MI.getOperand(0).getReg();
+  Register Reg = MI.getOperand(0).getReg();
+  bool IsShort =
+      MI.getOpcode() == AArch64::HWASAN_CHECK_MEMACCESS_SHORTGRANULES;
   uint32_t AccessInfo = MI.getOperand(1).getImm();
-  MCSymbol *&Sym = HwasanMemaccessSymbols[{Reg, AccessInfo}];
+  MCSymbol *&Sym =
+      HwasanMemaccessSymbols[HwasanMemaccessTuple(Reg, IsShort, AccessInfo)];
   if (!Sym) {
     // FIXME: Make this work on non-ELF.
     if (!TM.getTargetTriple().isOSBinFormatELF())
@@ -246,6 +326,8 @@ void AArch64AsmPrinter::LowerHWASAN_CHECK_MEMACCESS(const MachineInstr &MI) {
 
     std::string SymName = "__hwasan_check_x" + utostr(Reg - AArch64::X0) + "_" +
                           utostr(AccessInfo);
+    if (IsShort)
+      SymName += "_short";
     Sym = OutContext.getOrCreateSymbol(SymName);
   }
 
@@ -263,15 +345,22 @@ void AArch64AsmPrinter::EmitHwasanMemaccessSymbols(Module &M) {
   std::unique_ptr<MCSubtargetInfo> STI(
       TM.getTarget().createMCSubtargetInfo(TT.str(), "", ""));
 
-  MCSymbol *HwasanTagMismatchSym =
+  MCSymbol *HwasanTagMismatchV1Sym =
       OutContext.getOrCreateSymbol("__hwasan_tag_mismatch");
+  MCSymbol *HwasanTagMismatchV2Sym =
+      OutContext.getOrCreateSymbol("__hwasan_tag_mismatch_v2");
 
-  const MCSymbolRefExpr *HwasanTagMismatchRef =
-      MCSymbolRefExpr::create(HwasanTagMismatchSym, OutContext);
+  const MCSymbolRefExpr *HwasanTagMismatchV1Ref =
+      MCSymbolRefExpr::create(HwasanTagMismatchV1Sym, OutContext);
+  const MCSymbolRefExpr *HwasanTagMismatchV2Ref =
+      MCSymbolRefExpr::create(HwasanTagMismatchV2Sym, OutContext);
 
   for (auto &P : HwasanMemaccessSymbols) {
-    unsigned Reg = P.first.first;
-    uint32_t AccessInfo = P.first.second;
+    unsigned Reg = std::get<0>(P.first);
+    bool IsShort = std::get<1>(P.first);
+    uint32_t AccessInfo = std::get<2>(P.first);
+    const MCSymbolRefExpr *HwasanTagMismatchRef =
+        IsShort ? HwasanTagMismatchV2Ref : HwasanTagMismatchV1Ref;
     MCSymbol *Sym = P.second;
 
     OutStreamer->SwitchSection(OutContext.getELFSection(
@@ -297,28 +386,92 @@ void AArch64AsmPrinter::EmitHwasanMemaccessSymbols(Module &M) {
                                      .addImm(0)
                                      .addImm(0),
                                  *STI);
-    OutStreamer->EmitInstruction(MCInstBuilder(AArch64::UBFMXri)
-                                     .addReg(AArch64::X17)
-                                     .addReg(Reg)
-                                     .addImm(56)
-                                     .addImm(63),
-                                 *STI);
-    OutStreamer->EmitInstruction(MCInstBuilder(AArch64::SUBSWrs)
-                                     .addReg(AArch64::WZR)
-                                     .addReg(AArch64::W16)
-                                     .addReg(AArch64::W17)
-                                     .addImm(0),
-                                 *STI);
-    MCSymbol *HandleMismatchSym = OutContext.createTempSymbol();
+    OutStreamer->EmitInstruction(
+        MCInstBuilder(AArch64::SUBSXrs)
+            .addReg(AArch64::XZR)
+            .addReg(AArch64::X16)
+            .addReg(Reg)
+            .addImm(AArch64_AM::getShifterImm(AArch64_AM::LSR, 56)),
+        *STI);
+    MCSymbol *HandleMismatchOrPartialSym = OutContext.createTempSymbol();
     OutStreamer->EmitInstruction(
         MCInstBuilder(AArch64::Bcc)
             .addImm(AArch64CC::NE)
-            .addExpr(MCSymbolRefExpr::create(HandleMismatchSym, OutContext)),
+            .addExpr(MCSymbolRefExpr::create(HandleMismatchOrPartialSym,
+                                             OutContext)),
         *STI);
+    MCSymbol *ReturnSym = OutContext.createTempSymbol();
+    OutStreamer->EmitLabel(ReturnSym);
     OutStreamer->EmitInstruction(
         MCInstBuilder(AArch64::RET).addReg(AArch64::LR), *STI);
+    OutStreamer->EmitLabel(HandleMismatchOrPartialSym);
 
-    OutStreamer->EmitLabel(HandleMismatchSym);
+    if (IsShort) {
+      OutStreamer->EmitInstruction(MCInstBuilder(AArch64::SUBSWri)
+                                       .addReg(AArch64::WZR)
+                                       .addReg(AArch64::W16)
+                                       .addImm(15)
+                                       .addImm(0),
+                                   *STI);
+      MCSymbol *HandleMismatchSym = OutContext.createTempSymbol();
+      OutStreamer->EmitInstruction(
+          MCInstBuilder(AArch64::Bcc)
+              .addImm(AArch64CC::HI)
+              .addExpr(MCSymbolRefExpr::create(HandleMismatchSym, OutContext)),
+          *STI);
+
+      OutStreamer->EmitInstruction(
+          MCInstBuilder(AArch64::ANDXri)
+              .addReg(AArch64::X17)
+              .addReg(Reg)
+              .addImm(AArch64_AM::encodeLogicalImmediate(0xf, 64)),
+          *STI);
+      unsigned Size = 1 << (AccessInfo & 0xf);
+      if (Size != 1)
+        OutStreamer->EmitInstruction(MCInstBuilder(AArch64::ADDXri)
+                                         .addReg(AArch64::X17)
+                                         .addReg(AArch64::X17)
+                                         .addImm(Size - 1)
+                                         .addImm(0),
+                                     *STI);
+      OutStreamer->EmitInstruction(MCInstBuilder(AArch64::SUBSWrs)
+                                       .addReg(AArch64::WZR)
+                                       .addReg(AArch64::W16)
+                                       .addReg(AArch64::W17)
+                                       .addImm(0),
+                                   *STI);
+      OutStreamer->EmitInstruction(
+          MCInstBuilder(AArch64::Bcc)
+              .addImm(AArch64CC::LS)
+              .addExpr(MCSymbolRefExpr::create(HandleMismatchSym, OutContext)),
+          *STI);
+
+      OutStreamer->EmitInstruction(
+          MCInstBuilder(AArch64::ORRXri)
+              .addReg(AArch64::X16)
+              .addReg(Reg)
+              .addImm(AArch64_AM::encodeLogicalImmediate(0xf, 64)),
+          *STI);
+      OutStreamer->EmitInstruction(MCInstBuilder(AArch64::LDRBBui)
+                                       .addReg(AArch64::W16)
+                                       .addReg(AArch64::X16)
+                                       .addImm(0),
+                                   *STI);
+      OutStreamer->EmitInstruction(
+          MCInstBuilder(AArch64::SUBSXrs)
+              .addReg(AArch64::XZR)
+              .addReg(AArch64::X16)
+              .addReg(Reg)
+              .addImm(AArch64_AM::getShifterImm(AArch64_AM::LSR, 56)),
+          *STI);
+      OutStreamer->EmitInstruction(
+          MCInstBuilder(AArch64::Bcc)
+              .addImm(AArch64CC::EQ)
+              .addExpr(MCSymbolRefExpr::create(ReturnSym, OutContext)),
+          *STI);
+
+      OutStreamer->EmitLabel(HandleMismatchSym);
+    }
 
     OutStreamer->EmitInstruction(MCInstBuilder(AArch64::STPXpre)
                                      .addReg(AArch64::SP)
@@ -354,20 +507,28 @@ void AArch64AsmPrinter::EmitHwasanMemaccessSymbols(Module &M) {
         MCInstBuilder(AArch64::ADRP)
             .addReg(AArch64::X16)
             .addExpr(AArch64MCExpr::create(
-                HwasanTagMismatchRef,
-                AArch64MCExpr::VariantKind::VK_GOT_PAGE, OutContext)),
+                HwasanTagMismatchRef, AArch64MCExpr::VariantKind::VK_GOT_PAGE,
+                OutContext)),
         *STI);
     OutStreamer->EmitInstruction(
         MCInstBuilder(AArch64::LDRXui)
             .addReg(AArch64::X16)
             .addReg(AArch64::X16)
             .addExpr(AArch64MCExpr::create(
-                HwasanTagMismatchRef,
-                AArch64MCExpr::VariantKind::VK_GOT_LO12, OutContext)),
+                HwasanTagMismatchRef, AArch64MCExpr::VariantKind::VK_GOT_LO12,
+                OutContext)),
         *STI);
     OutStreamer->EmitInstruction(
         MCInstBuilder(AArch64::BR).addReg(AArch64::X16), *STI);
   }
+}
+
+static void
+emitAuthenticatedPointer(MCStreamer &OutStreamer, MCSymbol *StubLabel,
+                         const MachineModuleInfoMachO::AuthStubInfo &StubInfo) {
+  // L_foo$addend$auth_ptr$ib$23:
+  OutStreamer.EmitLabel(StubLabel);
+  OutStreamer.EmitValue(StubInfo.Pointer, /*size=*/8);
 }
 
 void AArch64AsmPrinter::EmitEndOfAsmFile(Module &M) {
@@ -375,14 +536,34 @@ void AArch64AsmPrinter::EmitEndOfAsmFile(Module &M) {
 
   const Triple &TT = TM.getTargetTriple();
   if (TT.isOSBinFormatMachO()) {
+
+    // Output authenticated pointers as indirect symbols, if we have any.
+    MachineModuleInfoMachO &MMIMacho =
+        MMI->getObjFileInfo<MachineModuleInfoMachO>();
+
+    auto Stubs = MMIMacho.getAuthGVStubList();
+
+    if (!Stubs.empty()) {
+      // Switch to the "__auth_ptr" section.
+      OutStreamer->SwitchSection(
+          OutContext.getMachOSection("__DATA", "__auth_ptr", MachO::S_REGULAR,
+                                     SectionKind::getMetadata()));
+      EmitAlignment(Align(8));
+
+      for (auto &Stub : Stubs)
+        emitAuthenticatedPointer(*OutStreamer, Stub.first, Stub.second);
+
+      OutStreamer->AddBlankLine();
+    }
+
     // Funny Darwin hack: This flag tells the linker that no global symbols
     // contain code that falls through to other global symbols (e.g. the obvious
     // implementation of multiple entry points).  If this doesn't occur, the
     // linker can safely perform dead code stripping.  Since LLVM never
     // generates code that does this, it is always safe to set.
     OutStreamer->EmitAssemblerFlag(MCAF_SubsectionsViaSymbols);
-    emitStackMaps(SM);
   }
+  emitStackMaps(SM);
 }
 
 void AArch64AsmPrinter::EmitLOHs() {
@@ -425,15 +606,14 @@ void AArch64AsmPrinter::printOperand(const MachineInstr *MI, unsigned OpNum,
   default:
     llvm_unreachable("<unknown operand type>");
   case MachineOperand::MO_Register: {
-    unsigned Reg = MO.getReg();
-    assert(TargetRegisterInfo::isPhysicalRegister(Reg));
+    Register Reg = MO.getReg();
+    assert(Register::isPhysicalRegister(Reg));
     assert(!MO.getSubReg() && "Subregs should be eliminated!");
     O << AArch64InstPrinter::getRegisterName(Reg);
     break;
   }
   case MachineOperand::MO_Immediate: {
-    int64_t Imm = MO.getImm();
-    O << '#' << Imm;
+    O << MO.getImm();
     break;
   }
   case MachineOperand::MO_GlobalAddress: {
@@ -450,7 +630,7 @@ void AArch64AsmPrinter::printOperand(const MachineInstr *MI, unsigned OpNum,
 
 bool AArch64AsmPrinter::printAsmMRegister(const MachineOperand &MO, char Mode,
                                           raw_ostream &O) {
-  unsigned Reg = MO.getReg();
+  Register Reg = MO.getReg();
   switch (Mode) {
   default:
     return true; // Unknown mode.
@@ -471,14 +651,13 @@ bool AArch64AsmPrinter::printAsmMRegister(const MachineOperand &MO, char Mode,
 // printing.
 bool AArch64AsmPrinter::printAsmRegInClass(const MachineOperand &MO,
                                            const TargetRegisterClass *RC,
-                                           bool isVector, raw_ostream &O) {
+                                           unsigned AltName, raw_ostream &O) {
   assert(MO.isReg() && "Should only get here with a register!");
   const TargetRegisterInfo *RI = STI->getRegisterInfo();
-  unsigned Reg = MO.getReg();
+  Register Reg = MO.getReg();
   unsigned RegToPrint = RC->getRegister(RI->getEncodingValue(Reg));
   assert(RI->regsOverlap(RegToPrint, Reg));
-  O << AArch64InstPrinter::getRegisterName(
-           RegToPrint, isVector ? AArch64::vreg : AArch64::NoRegAltName);
+  O << AArch64InstPrinter::getRegisterName(RegToPrint, AltName);
   return false;
 }
 
@@ -514,6 +693,7 @@ bool AArch64AsmPrinter::PrintAsmOperand(const MachineInstr *MI, unsigned OpNum,
     case 's': // Print S register.
     case 'd': // Print D register.
     case 'q': // Print Q register.
+    case 'z': // Print Z register.
       if (MO.isReg()) {
         const TargetRegisterClass *RC;
         switch (ExtraCode[0]) {
@@ -532,10 +712,13 @@ bool AArch64AsmPrinter::PrintAsmOperand(const MachineInstr *MI, unsigned OpNum,
         case 'q':
           RC = &AArch64::FPR128RegClass;
           break;
+        case 'z':
+          RC = &AArch64::ZPRRegClass;
+          break;
         default:
           return true;
         }
-        return printAsmRegInClass(MO, RC, false /* vector */, O);
+        return printAsmRegInClass(MO, RC, AArch64::NoRegAltName, O);
       }
       printOperand(MI, OpNum, O);
       return false;
@@ -545,16 +728,26 @@ bool AArch64AsmPrinter::PrintAsmOperand(const MachineInstr *MI, unsigned OpNum,
   // According to ARM, we should emit x and v registers unless we have a
   // modifier.
   if (MO.isReg()) {
-    unsigned Reg = MO.getReg();
+    Register Reg = MO.getReg();
 
     // If this is a w or x register, print an x register.
     if (AArch64::GPR32allRegClass.contains(Reg) ||
         AArch64::GPR64allRegClass.contains(Reg))
       return printAsmMRegister(MO, 'x', O);
 
+    unsigned AltName = AArch64::NoRegAltName;
+    const TargetRegisterClass *RegClass;
+    if (AArch64::ZPRRegClass.contains(Reg)) {
+      RegClass = &AArch64::ZPRRegClass;
+    } else if (AArch64::PPRRegClass.contains(Reg)) {
+      RegClass = &AArch64::PPRRegClass;
+    } else {
+      RegClass = &AArch64::FPR128RegClass;
+      AltName = AArch64::vreg;
+    }
+
     // If this is a b, h, s, d, or q register, print it as a v register.
-    return printAsmRegInClass(MO, &AArch64::FPR128RegClass, true /* vector */,
-                              O);
+    return printAsmRegInClass(MO, RegClass, AltName, O);
   }
 
   printOperand(MI, OpNum, O);
@@ -622,7 +815,7 @@ void AArch64AsmPrinter::EmitJumpTableInfo() {
     if (JTBBs.empty()) continue;
 
     unsigned Size = AFI->getJumpTableEntrySize(JTI);
-    EmitAlignment(Log2_32(Size));
+    EmitAlignment(Align(Size));
     OutStreamer->EmitLabel(GetJTISymbol(JTI));
 
     for (auto *JTBB : JTBBs)
@@ -665,12 +858,12 @@ void AArch64AsmPrinter::emitJumpTableEntry(const MachineJumpTableInfo *MJTI,
 ///             add xDest, xDest, xScratch, lsl #2
 void AArch64AsmPrinter::LowerJumpTableDestSmall(llvm::MCStreamer &OutStreamer,
                                                 const llvm::MachineInstr &MI) {
-  unsigned DestReg = MI.getOperand(0).getReg();
-  unsigned ScratchReg = MI.getOperand(1).getReg();
-  unsigned ScratchRegW =
+  Register DestReg = MI.getOperand(0).getReg();
+  Register ScratchReg = MI.getOperand(1).getReg();
+  Register ScratchRegW =
       STI->getRegisterInfo()->getSubReg(ScratchReg, AArch64::sub_32);
-  unsigned TableReg = MI.getOperand(2).getReg();
-  unsigned EntryReg = MI.getOperand(3).getReg();
+  Register TableReg = MI.getOperand(2).getReg();
+  Register EntryReg = MI.getOperand(3).getReg();
   int JTIdx = MI.getOperand(4).getIndex();
   bool IsByteEntry = MI.getOpcode() == AArch64::JumpTableDest8;
 
@@ -705,7 +898,11 @@ void AArch64AsmPrinter::LowerSTACKMAP(MCStreamer &OutStreamer, StackMaps &SM,
                                       const MachineInstr &MI) {
   unsigned NumNOPBytes = StackMapOpers(&MI).getNumPatchBytes();
 
-  SM.recordStackMap(MI);
+  auto &Ctx = OutStreamer.getContext();
+  MCSymbol *MILabel = Ctx.createTempSymbol();
+  OutStreamer.EmitLabel(MILabel);
+
+  SM.recordStackMap(*MILabel, MI);
   assert(NumNOPBytes % 4 == 0 && "Invalid number of NOP bytes requested!");
 
   // Scan ahead to trim the shadow.
@@ -731,7 +928,10 @@ void AArch64AsmPrinter::LowerSTACKMAP(MCStreamer &OutStreamer, StackMaps &SM,
 // [<def>], <id>, <numBytes>, <target>, <numArgs>
 void AArch64AsmPrinter::LowerPATCHPOINT(MCStreamer &OutStreamer, StackMaps &SM,
                                         const MachineInstr &MI) {
-  SM.recordPatchPoint(MI);
+  auto &Ctx = OutStreamer.getContext();
+  MCSymbol *MILabel = Ctx.createTempSymbol();
+  OutStreamer.EmitLabel(MILabel);
+  SM.recordPatchPoint(*MILabel, MI);
 
   PatchPointOpers Opers(&MI);
 
@@ -740,7 +940,7 @@ void AArch64AsmPrinter::LowerPATCHPOINT(MCStreamer &OutStreamer, StackMaps &SM,
   if (CallTarget) {
     assert((CallTarget & 0xFFFFFFFFFFFF) == CallTarget &&
            "High 16 bits of call target should be zero.");
-    unsigned ScratchReg = MI.getOperand(Opers.getNextScratchIdx()).getReg();
+    Register ScratchReg = MI.getOperand(Opers.getNextScratchIdx()).getReg();
     EncodedBytes = 16;
     // Materialize the jump address:
     EmitToStreamer(OutStreamer, MCInstBuilder(AArch64::MOVZXi)
@@ -770,7 +970,7 @@ void AArch64AsmPrinter::LowerPATCHPOINT(MCStreamer &OutStreamer, StackMaps &SM,
 }
 
 void AArch64AsmPrinter::EmitFMov0(const MachineInstr &MI) {
-  unsigned DestReg = MI.getOperand(0).getReg();
+  Register DestReg = MI.getOperand(0).getReg();
   if (STI->hasZeroCycleZeroingFP() && !STI->hasZeroCycleZeroingFPWorkaround()) {
     // Convert H/S/D register to corresponding Q register
     if (AArch64::H0 <= DestReg && DestReg <= AArch64::H31)
@@ -810,6 +1010,50 @@ void AArch64AsmPrinter::EmitFMov0(const MachineInstr &MI) {
   }
 }
 
+
+const MCExpr *
+AArch64AsmPrinter::lowerPtrAuthGlobalConstant(const GlobalPtrAuthInfo &PAI) {
+  MCContext &Ctx = OutContext;
+
+  // Figure out the base symbol and the addend, if any.
+  APInt Offset(64, 0);
+  const Value *BaseGV =
+    PAI.getPointer()->stripAndAccumulateInBoundsConstantOffsets(
+      getDataLayout(), Offset);
+
+  auto *BaseGVB = dyn_cast<GlobalValue>(BaseGV);
+
+  // If we can't understand the referenced ConstantExpr, there's nothing
+  // else we can do: emit an error.
+  if (!BaseGVB) {
+    BaseGVB = PAI.getGV();
+    BaseGV->getContext().emitError(
+        "Couldn't resolve target base/addend of llvm.ptrauth global '" +
+        BaseGV->getName() + "'");
+  }
+
+  // If there is an addend, turn that into the appropriate MCExpr.
+  const MCExpr *Sym = MCSymbolRefExpr::create(getSymbol(BaseGVB), Ctx);
+  if (Offset.sgt(0))
+    Sym = MCBinaryExpr::createAdd(
+        Sym, MCConstantExpr::create(Offset.getSExtValue(), Ctx), Ctx);
+  else if (Offset.slt(0))
+    Sym = MCBinaryExpr::createSub(
+        Sym, MCConstantExpr::create((-Offset).getSExtValue(), Ctx), Ctx);
+
+  auto *Disc = PAI.getDiscriminator();
+  uint64_t KeyID = PAI.getKey()->getZExtValue();
+  if (!isUInt<2>(KeyID))
+    BaseGV->getContext().emitError(
+        "Invalid AArch64 PAC Key ID '" + utostr(KeyID) + "' in llvm.ptrauth global '" +
+        BaseGV->getName() + "'");
+
+  // Finally build the complete @AUTH expr.
+  return AArch64AuthMCExpr::create(Sym, Disc->getZExtValue(),
+                                   AArch64PACKey::ID(KeyID),
+                                   PAI.hasAddressDiversity(), Ctx);
+}
+
 // Simple pseudo-instructions have their lowering (with expansion to real
 // instructions) auto-generated.
 #include "AArch64GenMCPseudoLowering.inc"
@@ -834,32 +1078,32 @@ void AArch64AsmPrinter::EmitInstruction(const MachineInstr *MI) {
   default:
     break;
     case AArch64::MOVMCSym: {
-    unsigned DestReg = MI->getOperand(0).getReg();
-    const MachineOperand &MO_Sym = MI->getOperand(1);
-    MachineOperand Hi_MOSym(MO_Sym), Lo_MOSym(MO_Sym);
-    MCOperand Hi_MCSym, Lo_MCSym;
+      Register DestReg = MI->getOperand(0).getReg();
+      const MachineOperand &MO_Sym = MI->getOperand(1);
+      MachineOperand Hi_MOSym(MO_Sym), Lo_MOSym(MO_Sym);
+      MCOperand Hi_MCSym, Lo_MCSym;
 
-    Hi_MOSym.setTargetFlags(AArch64II::MO_G1 | AArch64II::MO_S);
-    Lo_MOSym.setTargetFlags(AArch64II::MO_G0 | AArch64II::MO_NC);
+      Hi_MOSym.setTargetFlags(AArch64II::MO_G1 | AArch64II::MO_S);
+      Lo_MOSym.setTargetFlags(AArch64II::MO_G0 | AArch64II::MO_NC);
 
-    MCInstLowering.lowerOperand(Hi_MOSym, Hi_MCSym);
-    MCInstLowering.lowerOperand(Lo_MOSym, Lo_MCSym);
+      MCInstLowering.lowerOperand(Hi_MOSym, Hi_MCSym);
+      MCInstLowering.lowerOperand(Lo_MOSym, Lo_MCSym);
 
-    MCInst MovZ;
-    MovZ.setOpcode(AArch64::MOVZXi);
-    MovZ.addOperand(MCOperand::createReg(DestReg));
-    MovZ.addOperand(Hi_MCSym);
-    MovZ.addOperand(MCOperand::createImm(16));
-    EmitToStreamer(*OutStreamer, MovZ);
+      MCInst MovZ;
+      MovZ.setOpcode(AArch64::MOVZXi);
+      MovZ.addOperand(MCOperand::createReg(DestReg));
+      MovZ.addOperand(Hi_MCSym);
+      MovZ.addOperand(MCOperand::createImm(16));
+      EmitToStreamer(*OutStreamer, MovZ);
 
-    MCInst MovK;
-    MovK.setOpcode(AArch64::MOVKXi);
-    MovK.addOperand(MCOperand::createReg(DestReg));
-    MovK.addOperand(MCOperand::createReg(DestReg));
-    MovK.addOperand(Lo_MCSym);
-    MovK.addOperand(MCOperand::createImm(0));
-    EmitToStreamer(*OutStreamer, MovK);
-    return;
+      MCInst MovK;
+      MovK.setOpcode(AArch64::MOVKXi);
+      MovK.addOperand(MCOperand::createReg(DestReg));
+      MovK.addOperand(MCOperand::createReg(DestReg));
+      MovK.addOperand(Lo_MCSym);
+      MovK.addOperand(MCOperand::createImm(0));
+      EmitToStreamer(*OutStreamer, MovK);
+      return;
   }
   case AArch64::MOVIv2d_ns:
     // If the target has <rdar://problem/16473581>, lower this
@@ -898,9 +1142,188 @@ void AArch64AsmPrinter::EmitInstruction(const MachineInstr *MI) {
     }
   }
 
+  case AArch64::AUT:
+  case AArch64::AUTPAC: {
+    const bool IsAUTPAC = MI->getOpcode() == AArch64::AUTPAC;
+
+    // We can expand AUT/AUTPAC into 3 possible sequences:
+    // - unchecked:
+    //      autia x16, x0
+    //      pacib x16, x1 ; if AUTPAC
+    //
+    // - checked and clearing:
+    //      mov x17, x16
+    //      autia x16, x0
+    //      xpaci x17
+    //      cmp x16, x17
+    //      pacib x16, x1
+    //      csel x16, x16, x17, eq
+    //   Where we only emit the AUT if we started with an AUT.
+    //
+    // - checked and trapping:
+    //      mov x17, x16
+    //      autia x16, x0
+    //      xpaci x17
+    //      cmp x16, x17
+    //      b.eq Lsuccess
+    //      brk #<0xc470 + aut key>
+    //     Lsuccess:
+    //      pacib x16, x1 ; if AUTPAC
+    //   Where the b.eq skips over the trap if the PAC is valid.
+    //
+    // This sequence is expensive, but we need more information to be able to
+    // do better.
+    //
+    // We can't TBZ the poison bit because EnhancedPAC2 XORs the PAC bits
+    // on failure.
+    // We can't TST the PAC bits because we don't always know how the address
+    // space is setup for the target environment (and the bottom PAC bit is
+    // based on that).
+    // Either way, we also don't always know whether TBI is enabled or not for
+    // the specific target environment.
+    //
+    // FIXME: we could re-use AUTReg as a temporary register, but that would
+    // require splitting the XZR cases into separate opcodes.
+
+    // By default, auth/resign sequences check for auth failures.
+    bool ShouldCheck = true;
+    // In the checked sequence, we only trap if explicitly requested.
+    bool ShouldTrap = MF->getFunction().hasFnAttribute("ptrauth-auth-traps");
+
+    // However, command-line flags can override this, for experimentation.
+    switch (PtrauthAuthChecks) {
+    case PtrauthCheckMode::Default: break;
+    case PtrauthCheckMode::Unchecked:
+      ShouldCheck = ShouldTrap = false;
+      break;
+    case PtrauthCheckMode::Poison:
+      ShouldCheck = true;
+      ShouldTrap = false;
+      break;
+    case PtrauthCheckMode::Trap:
+      ShouldCheck = ShouldTrap = true;
+      break;
+    }
+
+    const auto AUTKey = (AArch64PACKey::ID)MI->getOperand(0).getImm();
+    const unsigned AUTReg = MI->getOperand(1).getReg();
+
+    const unsigned XPACOpc = getXPACOpcodeForKey(AUTKey);
+    const bool AUTZero = AUTReg == AArch64::XZR;
+    const unsigned AUTOpc = getAUTOpcodeForKey(AUTKey, AUTZero);
+
+    // Checked AUTPACs and trapping AUTs need a temporary copy of the input: x17
+    if ((IsAUTPAC && ShouldCheck) || ShouldTrap) {
+      //  mov x17, x16
+      EmitToStreamer(*OutStreamer,
+        MCInstBuilder(AArch64::ORRXrs)
+          .addReg(AArch64::X17)
+          .addReg(AArch64::XZR)
+          .addReg(AArch64::X16)
+          .addImm(0));
+    }
+
+    //  autia x16, x0
+    MCInst AUTInst;
+    AUTInst.setOpcode(AUTOpc);
+    AUTInst.addOperand(MCOperand::createReg(AArch64::X16));
+    AUTInst.addOperand(MCOperand::createReg(AArch64::X16));
+    if (!AUTZero)
+      AUTInst.addOperand(MCOperand::createReg(AUTReg));
+    EmitToStreamer(*OutStreamer, AUTInst);
+
+    // Unchecked or checked-but-non-trapping AUT is just an "AUT": we're done.
+    if (!IsAUTPAC && (!ShouldCheck || !ShouldTrap))
+      return;
+
+    // Checked sequences do an additional strip-and-compare.
+    if (ShouldCheck) {
+      //  xpaci x17
+      EmitToStreamer(*OutStreamer,
+        MCInstBuilder(XPACOpc)
+          .addReg(AArch64::X17)
+          .addReg(AArch64::X17));
+
+      //  cmp x16, x17
+      EmitToStreamer(*OutStreamer,
+        MCInstBuilder(AArch64::SUBSXrs)
+          .addReg(AArch64::XZR)
+          .addReg(AArch64::X16)
+          .addReg(AArch64::X17)
+          .addImm(0));
+
+      // Trapping sequences do a 'brk'.
+      if (ShouldTrap) {
+        //  b.eq Lsuccess
+        //   where Lsuccess is encoded as 2 (the offset from this instruction to
+        //   what's after the brk, divided by 4)
+        EmitToStreamer(*OutStreamer,
+          MCInstBuilder(AArch64::Bcc)
+            .addImm(AArch64CC::EQ)
+            .addImm(2));
+
+        //  brk #<0xc470 + aut key>
+        EmitToStreamer(*OutStreamer,
+          MCInstBuilder(AArch64::BRK)
+            .addImm(0xc470 | AUTKey));
+      }
+    }
+
+    // We already emitted unchecked and checked-but-non-trapping AUTs.
+    // That left us with trapping AUTs, and AUTPACs.
+    // Trapping AUTs don't need PAC: we're done.
+    if (!IsAUTPAC)
+      return;
+
+    const auto PACKey = (AArch64PACKey::ID)MI->getOperand(2).getImm();
+    const unsigned PACReg = MI->getOperand(3).getReg();
+    const bool PACZero = PACReg == AArch64::XZR;
+    const unsigned PACOpc = getPACOpcodeForKey(PACKey, PACZero);
+
+    //  pacib x16, x9
+    MCInst PACInst;
+    PACInst.setOpcode(PACOpc);
+    PACInst.addOperand(MCOperand::createReg(AArch64::X16));
+    PACInst.addOperand(MCOperand::createReg(AArch64::X16));
+    if (!PACZero)
+      PACInst.addOperand(MCOperand::createReg(PACReg));
+    EmitToStreamer(*OutStreamer, PACInst);
+
+    // Non-trapping AUTPAC selects the result based on the xpac check.
+    // Trapping AUTPAC already trapped; unchecked AUTPAC didn't even check.
+    if (ShouldTrap || !ShouldCheck)
+      return;
+
+    //  csel x16, x16, x17, eq
+    EmitToStreamer(*OutStreamer,
+      MCInstBuilder(AArch64::CSELXr)
+        .addReg(AArch64::X16)
+        .addReg(AArch64::X16)
+        .addReg(AArch64::X17)
+        .addImm(0));
+    return;
+  }
+
   // Tail calls use pseudo instructions so they have the proper code-gen
   // attributes (isCall, isReturn, etc.). We lower them to the real
   // instruction here.
+  case AArch64::AUTH_TCRETURNrii:
+  case AArch64::AUTH_TCRETURNriri: {
+    const bool isZero = MI->getOpcode() == AArch64::AUTH_TCRETURNrii;
+    const uint64_t Key = MI->getOperand(2).getImm();
+    assert (Key < 2 && "Unknown key kind for authenticating tail-call return");
+
+    const unsigned Opcodes[2][2] = {{AArch64::BRAA, AArch64::BRAAZ},
+                                    {AArch64::BRAB, AArch64::BRABZ}};
+
+    MCInst TmpInst;
+    TmpInst.setOpcode(Opcodes[Key][isZero]);
+    TmpInst.addOperand(MCOperand::createReg(MI->getOperand(0).getReg()));
+    if (!isZero)
+      TmpInst.addOperand(MCOperand::createReg(MI->getOperand(3).getReg()));
+    EmitToStreamer(*OutStreamer, TmpInst);
+    return;
+  }
   case AArch64::TCRETURNri:
   case AArch64::TCRETURNriBTI:
   case AArch64::TCRETURNriALL: {
@@ -1024,6 +1447,7 @@ void AArch64AsmPrinter::EmitInstruction(const MachineInstr *MI) {
     return;
 
   case AArch64::HWASAN_CHECK_MEMACCESS:
+  case AArch64::HWASAN_CHECK_MEMACCESS_SHORTGRANULES:
     LowerHWASAN_CHECK_MEMACCESS(*MI);
     return;
 
@@ -1133,4 +1557,6 @@ extern "C" void LLVMInitializeAArch64AsmPrinter() {
   RegisterAsmPrinter<AArch64AsmPrinter> X(getTheAArch64leTarget());
   RegisterAsmPrinter<AArch64AsmPrinter> Y(getTheAArch64beTarget());
   RegisterAsmPrinter<AArch64AsmPrinter> Z(getTheARM64Target());
+  RegisterAsmPrinter<AArch64AsmPrinter> W(getTheARM64_32Target());
+  RegisterAsmPrinter<AArch64AsmPrinter> V(getTheAArch64_32Target());
 }

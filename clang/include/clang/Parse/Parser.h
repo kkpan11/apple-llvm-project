@@ -56,6 +56,7 @@ namespace clang {
 ///
 class Parser : public CodeCompletionHandler {
   friend class ColonProtectionRAIIObject;
+  friend class ParsingOpenMPDirectiveRAII;
   friend class InMessageExpressionRAIIObject;
   friend class PoisonSEHIdentifiersRAIIObject;
   friend class ObjCDeclContextSwitch;
@@ -214,6 +215,9 @@ class Parser : public CodeCompletionHandler {
   /// safe in case statements and a few other things.  This is managed by the
   /// ColonProtectionRAIIObject RAII object.
   bool ColonIsSacred;
+
+  /// Parsing OpenMP directive mode.
+  bool OpenMPDirectiveParsing = false;
 
   /// When true, we are directly inside an Objective-C message
   /// send expression.
@@ -766,6 +770,22 @@ private:
     Tok.setAnnotationValue(T.getAsOpaquePtr());
   }
 
+  static NamedDecl *getNonTypeAnnotation(const Token &Tok) {
+    return static_cast<NamedDecl*>(Tok.getAnnotationValue());
+  }
+
+  static void setNonTypeAnnotation(Token &Tok, NamedDecl *ND) {
+    Tok.setAnnotationValue(ND);
+  }
+
+  static IdentifierInfo *getIdentifierAnnotation(const Token &Tok) {
+    return static_cast<IdentifierInfo*>(Tok.getAnnotationValue());
+  }
+
+  static void setIdentifierAnnotation(Token &Tok, IdentifierInfo *ND) {
+    Tok.setAnnotationValue(ND);
+  }
+
   /// Read an already-translated primary expression out of an annotation
   /// token.
   static ExprResult getExprAnnotation(const Token &Tok) {
@@ -799,8 +819,7 @@ private:
     /// Annotation was successful.
     ANK_Success
   };
-  AnnotatedNameKind TryAnnotateName(bool IsAddressOfOperand,
-                                    CorrectionCandidateCallback *CCC = nullptr);
+  AnnotatedNameKind TryAnnotateName(CorrectionCandidateCallback *CCC = nullptr);
 
   /// Push a tok::annot_cxxscope token onto the token stream.
   void AnnotateScopeToken(CXXScopeSpec &SS, bool IsNewAnnotation);
@@ -972,7 +991,7 @@ private:
   };
 
   /// Consume any extra semi-colons until the end of the line.
-  void ConsumeExtraSemi(ExtraSemiKind Kind, unsigned TST = TST_unspecified);
+  void ConsumeExtraSemi(ExtraSemiKind Kind, DeclSpec::TST T = TST_unspecified);
 
   /// Return false if the next token is an identifier. An 'expected identifier'
   /// error is emitted otherwise.
@@ -1107,6 +1126,11 @@ public:
   /// point for skipping past a simple-declaration.
   void SkipMalformedDecl();
 
+  /// The location of the first statement inside an else that might
+  /// have a missleading indentation. If there is no
+  /// MisleadingIndentationChecker on an else active, this location is invalid.
+  SourceLocation MisleadingIndentationElseLoc;
+
 private:
   //===--------------------------------------------------------------------===//
   // Lexing and parsing of C++ inline methods.
@@ -1129,6 +1153,7 @@ private:
     virtual void ParseLexedMemberInitializers();
     virtual void ParseLexedMethodDefs();
     virtual void ParseLexedAttributes();
+    virtual void ParseLexedPragmas();
   };
 
   /// Inner node of the LateParsedDeclaration tree that parses
@@ -1142,6 +1167,7 @@ private:
     void ParseLexedMemberInitializers() override;
     void ParseLexedMethodDefs() override;
     void ParseLexedAttributes() override;
+    void ParseLexedPragmas() override;
 
   private:
     Parser *Self;
@@ -1169,6 +1195,26 @@ private:
     void ParseLexedAttributes() override;
 
     void addDecl(Decl *D) { Decls.push_back(D); }
+  };
+
+  /// Contains the lexed tokens of a pragma with arguments that
+  /// may reference member variables and so need to be parsed at the
+  /// end of the class declaration after parsing all other member
+  /// member declarations.
+  class LateParsedPragma : public LateParsedDeclaration {
+    Parser *Self = nullptr;
+    AccessSpecifier AS = AS_none;
+    CachedTokens Toks;
+
+  public:
+    explicit LateParsedPragma(Parser *P, AccessSpecifier AS)
+        : Self(P), AS(AS) {}
+
+    void takeToks(CachedTokens &Cached) { Toks.swap(Cached); }
+    const CachedTokens &toks() const { return Toks; }
+    AccessSpecifier getAccessSpecifier() const { return AS; }
+
+    void ParseLexedPragmas() override;
   };
 
   // A list of late-parsed attributes.  Used by ParseGNUAttributes.
@@ -1430,6 +1476,8 @@ private:
   void ParseLexedMemberInitializers(ParsingClass &Class);
   void ParseLexedMemberInitializer(LateParsedMemberInitializer &MI);
   void ParseLexedObjCMethodDefs(LexedMethod &LM, bool parseMethod);
+  void ParseLexedPragmas(ParsingClass &Class);
+  void ParseLexedPragma(LateParsedPragma &LP);
   bool ConsumeAndStoreFunctionPrologue(CachedTokens &Toks);
   bool ConsumeAndStoreInitializer(CachedTokens &Toks, CachedInitKind CIK);
   bool ConsumeAndStoreConditional(CachedTokens &Toks);
@@ -1484,10 +1532,9 @@ private:
                  const ParsedTemplateInfo &TemplateInfo = ParsedTemplateInfo(),
                  LateParsedAttrList *LateParsedAttrs = nullptr);
   void ParseKNRParamDeclarations(Declarator &D);
-  // EndLoc, if non-NULL, is filled with the location of the last token of
-  // the simple-asm.
-  ExprResult ParseSimpleAsm(SourceLocation *EndLoc = nullptr);
-  ExprResult ParseAsmStringLiteral();
+  // EndLoc is filled with the location of the last token of the simple-asm.
+  ExprResult ParseSimpleAsm(bool ForAsmLabel, SourceLocation *EndLoc);
+  ExprResult ParseAsmStringLiteral(bool ForAsmLabel);
 
   // Objective-C External Declarations
   void MaybeSkipAttributes(tok::ObjCKeywordKind Kind);
@@ -1743,13 +1790,13 @@ private:
                                   bool EnteringContext, IdentifierInfo &II,
                                   CXXScopeSpec &SS);
 
-  bool ParseOptionalCXXScopeSpecifier(CXXScopeSpec &SS,
-                                      ParsedType ObjectType,
+  bool ParseOptionalCXXScopeSpecifier(CXXScopeSpec &SS, ParsedType ObjectType,
                                       bool EnteringContext,
                                       bool *MayBePseudoDestructor = nullptr,
                                       bool IsTypename = false,
                                       IdentifierInfo **LastII = nullptr,
-                                      bool OnlyNamespace = false);
+                                      bool OnlyNamespace = false,
+                                      bool InUsingDeclaration = false);
 
   //===--------------------------------------------------------------------===//
   // C++11 5.1.2: Lambda expressions
@@ -1779,6 +1826,9 @@ private:
   //===--------------------------------------------------------------------===//
   // C++ 5.2p1: C++ Casts
   ExprResult ParseCXXCasts();
+
+  /// Parse a __builtin_bit_cast(T, E), used to implement C++2a std::bit_cast.
+  ExprResult ParseBuiltinBitCast();
 
   //===--------------------------------------------------------------------===//
   // C++ 5.2p1: C++ Type Identification
@@ -2104,12 +2154,13 @@ private:
 
   DeclGroupPtrTy ParseDeclaration(DeclaratorContext Context,
                                   SourceLocation &DeclEnd,
-                                  ParsedAttributesWithRange &attrs);
-  DeclGroupPtrTy ParseSimpleDeclaration(DeclaratorContext Context,
-                                        SourceLocation &DeclEnd,
-                                        ParsedAttributesWithRange &attrs,
-                                        bool RequireSemi,
-                                        ForRangeInit *FRI = nullptr);
+                                  ParsedAttributesWithRange &attrs,
+                                  SourceLocation *DeclSpecStart = nullptr);
+  DeclGroupPtrTy
+  ParseSimpleDeclaration(DeclaratorContext Context, SourceLocation &DeclEnd,
+                         ParsedAttributesWithRange &attrs, bool RequireSemi,
+                         ForRangeInit *FRI = nullptr,
+                         SourceLocation *DeclSpecStart = nullptr);
   bool MightBeDeclarator(DeclaratorContext Context);
   DeclGroupPtrTy ParseDeclGroup(ParsingDeclSpec &DS, DeclaratorContext Context,
                                 SourceLocation *DeclEnd = nullptr,
@@ -2157,7 +2208,7 @@ private:
                           const ParsedTemplateInfo &TemplateInfo,
                           AccessSpecifier AS, DeclSpecContext DSC);
   void ParseEnumBody(SourceLocation StartLoc, Decl *TagDecl);
-  void ParseStructUnionBody(SourceLocation StartLoc, unsigned TagType,
+  void ParseStructUnionBody(SourceLocation StartLoc, DeclSpec::TST TagType,
                             Decl *TagDecl);
 
   void ParseStructDeclaration(
@@ -2613,6 +2664,8 @@ private:
   void ParseAlignmentSpecifier(ParsedAttributes &Attrs,
                                SourceLocation *endLoc = nullptr);
 
+  void ParsePtrauthQualifier(ParsedAttributes &Attrs);
+
   VirtSpecifiers::Specifier isCXX11VirtSpecifier(const Token &Tok) const;
   VirtSpecifiers::Specifier isCXX11VirtSpecifier() const {
     return isCXX11VirtSpecifier(Tok);
@@ -2838,6 +2891,15 @@ private:
   DeclGroupPtrTy ParseOMPDeclareSimdClauses(DeclGroupPtrTy Ptr,
                                             CachedTokens &Toks,
                                             SourceLocation Loc);
+  /// Parses OpenMP context selectors and calls \p Callback for each
+  /// successfully parsed context selector.
+  bool
+  parseOpenMPContextSelectors(SourceLocation Loc,
+                              SmallVectorImpl<Sema::OMPCtxSelectorData> &Data);
+
+  /// Parse clauses for '#pragma omp declare variant'.
+  void ParseOMPDeclareVariantClauses(DeclGroupPtrTy Ptr, CachedTokens &Toks,
+                                     SourceLocation Loc);
   /// Parse clauses for '#pragma omp declare target'.
   DeclGroupPtrTy ParseOMPDeclareTargetClauses();
   /// Parse '#pragma omp end declare target'.
@@ -2846,7 +2908,7 @@ private:
   /// Parses declarative OpenMP directives.
   DeclGroupPtrTy ParseOpenMPDeclarativeDirectiveWithExtDecl(
       AccessSpecifier &AS, ParsedAttributesWithRange &Attrs,
-      DeclSpec::TST TagType = DeclSpec::TST_unspecified,
+      bool Delayed = false, DeclSpec::TST TagType = DeclSpec::TST_unspecified,
       Decl *TagDecl = nullptr);
   /// Parse 'omp declare reduction' construct.
   DeclGroupPtrTy ParseOpenMPDeclareReductionDirective(AccessSpecifier AS);
@@ -2931,7 +2993,8 @@ public:
   /// Parses simple expression in parens for single-expression clauses of OpenMP
   /// constructs.
   /// \param RLoc Returned location of right paren.
-  ExprResult ParseOpenMPParensExpr(StringRef ClauseName, SourceLocation &RLoc);
+  ExprResult ParseOpenMPParensExpr(StringRef ClauseName, SourceLocation &RLoc,
+                                   bool IsAddressOfOperand = false);
 
   /// Data used for parsing list of variables in OpenMP clauses.
   struct OpenMPVarListDataTy {
@@ -2940,15 +3003,14 @@ public:
     SourceLocation RLoc;
     CXXScopeSpec ReductionOrMapperIdScopeSpec;
     DeclarationNameInfo ReductionOrMapperId;
-    OpenMPDependClauseKind DepKind = OMPC_DEPEND_unknown;
-    OpenMPLinearClauseKind LinKind = OMPC_LINEAR_val;
+    int ExtraModifier = -1; ///< Additional modifier for linear, map, depend or
+                            ///< lastprivate clause.
     SmallVector<OpenMPMapModifierKind, OMPMapClause::NumberOfModifiers>
     MapTypeModifiers;
     SmallVector<SourceLocation, OMPMapClause::NumberOfModifiers>
     MapTypeModifiersLoc;
-    OpenMPMapClauseKind MapType = OMPC_MAP_unknown;
     bool IsMapTypeImplicit = false;
-    SourceLocation DepLinMapLoc;
+    SourceLocation DepLinMapLastLoc;
   };
 
   /// Parses clauses with list.
@@ -3029,6 +3091,10 @@ private:
                                    SourceLocation &DeclEnd,
                                    ParsedAttributes &AccessAttrs,
                                    AccessSpecifier AS = AS_none);
+  // C++2a: Template, concept definition [temp]
+  Decl *
+  ParseConceptDefinition(const ParsedTemplateInfo &TemplateInfo,
+                         SourceLocation &DeclEnd);
 
   //===--------------------------------------------------------------------===//
   // Modules
@@ -3068,6 +3134,8 @@ private:
   // Embarcadero: Arary and Expression Traits
   ExprResult ParseArrayTypeTrait();
   ExprResult ParseExpressionTrait();
+
+  ExprResult ParseBuiltinPtrauthTypeDiscriminator();
 
   //===--------------------------------------------------------------------===//
   // Preprocessor code-completion pass-through

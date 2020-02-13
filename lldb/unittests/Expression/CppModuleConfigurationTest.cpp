@@ -8,6 +8,7 @@
 
 #include "Plugins/ExpressionParser/Clang/CppModuleConfiguration.h"
 #include "Plugins/ExpressionParser/Clang/ClangHost.h"
+#include "TestingSupport/SubsystemRAII.h"
 #include "lldb/Host/FileSystem.h"
 #include "lldb/Host/HostInfo.h"
 
@@ -18,16 +19,7 @@ using namespace lldb_private;
 
 namespace {
 struct CppModuleConfigurationTest : public testing::Test {
-  static void SetUpTestCase() {
-    // Getting the resource directory uses those subsystems, so we should
-    // initialize them.
-    FileSystem::Initialize();
-    HostInfo::Initialize();
-  }
-  static void TearDownTestCase() {
-    HostInfo::Terminate();
-    FileSystem::Terminate();
-  }
+  SubsystemRAII<FileSystem, HostInfo> subsystems;
 };
 } // namespace
 
@@ -43,7 +35,7 @@ static std::string ResourceInc() {
 static FileSpecList makeFiles(llvm::ArrayRef<std::string> paths) {
   FileSpecList result;
   for (const std::string &path : paths)
-    result.Append(FileSpec(path));
+    result.Append(FileSpec(path, FileSpec::Style::posix));
   return result;
 }
 

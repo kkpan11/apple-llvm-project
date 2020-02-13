@@ -39,7 +39,7 @@ public:
   /// This contains information emitted to BLOCKINFO_BLOCK blocks. These
   /// describe abbreviations that all blocks of the specified ID inherit.
   struct BlockInfo {
-    unsigned BlockID;
+    unsigned BlockID = 0;
     std::vector<std::shared_ptr<BitCodeAbbrev>> Abbrevs;
     std::string Name;
     std::vector<std::pair<unsigned, std::string>> RecordNames;
@@ -294,6 +294,9 @@ public:
     BitsInCurWord = 0;
   }
 
+  /// Return the size of the stream in bytes.
+  size_t SizeInBytes() const { return BitcodeBytes.size(); }
+
   /// Skip to the end of the file.
   void skipToEnd() { NextChar = BitcodeBytes.size(); }
 };
@@ -364,17 +367,18 @@ public:
   explicit BitstreamCursor(MemoryBufferRef BitcodeBytes)
       : SimpleBitstreamCursor(BitcodeBytes) {}
 
-  using SimpleBitstreamCursor::canSkipToPos;
   using SimpleBitstreamCursor::AtEndOfStream;
+  using SimpleBitstreamCursor::canSkipToPos;
+  using SimpleBitstreamCursor::fillCurWord;
   using SimpleBitstreamCursor::getBitcodeBytes;
   using SimpleBitstreamCursor::GetCurrentBitNo;
   using SimpleBitstreamCursor::getCurrentByteNo;
   using SimpleBitstreamCursor::getPointerToByte;
   using SimpleBitstreamCursor::JumpToBit;
-  using SimpleBitstreamCursor::fillCurWord;
   using SimpleBitstreamCursor::Read;
   using SimpleBitstreamCursor::ReadVBR;
   using SimpleBitstreamCursor::ReadVBR64;
+  using SimpleBitstreamCursor::SizeInBytes;
   using SimpleBitstreamCursor::skipToEnd;
 
   /// Return the number of bits used to encode an abbrev #.

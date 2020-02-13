@@ -180,7 +180,7 @@ void YAMLRemarkSerializer::emit(const Remark &Remark) {
 std::unique_ptr<MetaSerializer>
 YAMLRemarkSerializer::metaSerializer(raw_ostream &OS,
                                      Optional<StringRef> ExternalFilename) {
-  return llvm::make_unique<YAMLMetaSerializer>(OS, ExternalFilename);
+  return std::make_unique<YAMLMetaSerializer>(OS, ExternalFilename);
 }
 
 void YAMLStrTabRemarkSerializer::emit(const Remark &Remark) {
@@ -200,7 +200,7 @@ void YAMLStrTabRemarkSerializer::emit(const Remark &Remark) {
 std::unique_ptr<MetaSerializer> YAMLStrTabRemarkSerializer::metaSerializer(
     raw_ostream &OS, Optional<StringRef> ExternalFilename) {
   assert(StrTab);
-  return llvm::make_unique<YAMLStrTabMetaSerializer>(OS, ExternalFilename,
+  return std::make_unique<YAMLStrTabMetaSerializer>(OS, ExternalFilename,
                                                     *StrTab);
 }
 

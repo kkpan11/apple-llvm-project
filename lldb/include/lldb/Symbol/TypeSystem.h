@@ -14,6 +14,7 @@
 #include <mutex>
 #include <string>
 
+#include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APSInt.h"
 #include "llvm/ADT/SmallBitVector.h"
 #include "llvm/Support/Casting.h"
@@ -48,51 +49,32 @@ struct LanguageSet {
   bool operator[](unsigned i) const;
 };
 
-/// Interface for representing the Type Systems in different languages.
+/// Interface for representing a type system.
+///
+/// Implemented by language plugins to define the type system for a given
+/// language.
+///
+/// This interface extensively used opaque pointers to prevent that generic
+/// LLDB code has dependencies on language plugins. The type and semantics of
+/// these opaque pointers are defined by the TypeSystem implementation inside
+/// the respective language plugin. Opaque pointers from one TypeSystem
+/// instance should never be passed to a different TypeSystem instance (even
+/// when the language plugin for both TypeSystem instances is the same).
+///
+/// Most of the functions in this class should not be called directly but only
+/// called by their respective counterparts in CompilerType, CompilerDecl and
+/// CompilerDeclContext.
+///
+/// \see lldb_private::CompilerType
+/// \see lldb_private::CompilerDecl
+/// \see lldb_private::CompilerDeclContext
 class TypeSystem : public PluginInterface {
 public:
-  // Intrusive type system that allows us to use llvm casting.
-  //
-  // To add a new type system:
-  //
-  // 1 - Add a new enumeration for llvm casting below for your TypeSystem
-  //     subclass, here we will use eKindFoo
-  //
-  // 2 - Your TypeSystem subclass will inherit from TypeSystem and needs
-  //     to implement a static classof() function that returns your
-  //     enumeration:
-  //
-  //    class Foo : public lldb_private::TypeSystem
-  //    {
-  //        static bool classof(const TypeSystem *ts)
-  //        {
-  //            return ts->getKind() == TypeSystem::eKindFoo;
-  //        }
-  //    };
-  //
-  // 3 - Contruct your TypeSystem subclass with the enumeration from below
-  //
-  //    Foo() :
-  //        TypeSystem(TypeSystem::eKindFoo),
-  //        ...
-  //    {
-  //    }
-  //
-  // Then you can use the llvm casting on any "TypeSystem *" to get an instance
-  // of your subclass.
-  enum LLVMCastKind {
-    eKindClang,
-    eKindSwift,
-    eKindOCaml,
-    kNumKinds
-  };
-
   // Constructors and Destructors
-  TypeSystem(LLVMCastKind kind);
-
   ~TypeSystem() override;
 
-  LLVMCastKind getKind() const { return m_kind; }
+  // LLVM RTTI support
+  virtual bool isA(const void *ClassID) const = 0;
 
   static lldb::TypeSystemSP CreateInstance(lldb::LanguageType language,
                                            Module *module);
@@ -137,8 +119,6 @@ public:
   virtual std::vector<CompilerDecl>
   DeclContextFindDeclByName(void *opaque_decl_ctx, ConstString name,
                             const bool ignore_imported_decls);
-
-  virtual bool DeclContextIsStructUnionOrClass(void *opaque_decl_ctx) = 0;
 
   virtual ConstString DeclContextGetName(void *opaque_decl_ctx) = 0;
 
@@ -287,6 +267,8 @@ public:
   virtual CompilerType
   GetRValueReferenceType(lldb::opaque_compiler_type_t type);
 
+  virtual CompilerType GetAtomicType(lldb::opaque_compiler_type_t type);
+
   virtual CompilerType AddConstModifier(lldb::opaque_compiler_type_t type);
 
   virtual CompilerType AddVolatileModifier(lldb::opaque_compiler_type_t type);
@@ -298,6 +280,8 @@ public:
                                      const CompilerDeclContext &decl_ctx);
 
   // Exploring the type
+
+  virtual const llvm::fltSemantics &GetFloatTypeSemantics(size_t byte_size) = 0;
 
   virtual llvm::Optional<uint64_t>
   GetBitSize(lldb::opaque_compiler_type_t type,
@@ -424,7 +408,7 @@ public:
                            lldb::offset_t data_offset,
                            size_t data_byte_size) = 0;
 
-  // TODO: Determine if these methods should move to ClangASTContext.
+  // TODO: Determine if these methods should move to TypeSystemClang.
 
   virtual bool IsPointerOrReferenceType(lldb::opaque_compiler_type_t type,
                                         CompilerType *pointee_type) = 0;
@@ -524,8 +508,7 @@ public:
   /// process so they can be surfaced to the user.
   virtual void DiagnoseWarnings(Process &process, Module &module) const;
 protected:
-  const LLVMCastKind m_kind; // Support for llvm casting
-  SymbolFile *m_sym_file;
+  SymbolFile *m_sym_file = nullptr;
 };
 
 class TypeSystemMap {

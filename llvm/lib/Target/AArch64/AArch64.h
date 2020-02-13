@@ -48,6 +48,7 @@ FunctionPass *createAArch64A53Fix835769();
 FunctionPass *createFalkorHWPFFixPass();
 FunctionPass *createFalkorMarkStridedAccessesPass();
 FunctionPass *createAArch64BranchTargetsPass();
+FunctionPass *createAArch64ExpandHardenedPseudosPass();
 
 FunctionPass *createAArch64CleanupLocalDynamicTLSPass();
 
@@ -55,7 +56,9 @@ FunctionPass *createAArch64CollectLOHPass();
 InstructionSelector *
 createAArch64InstructionSelector(const AArch64TargetMachine &,
                                  AArch64Subtarget &, AArch64RegisterBankInfo &);
-FunctionPass *createAArch64PreLegalizeCombiner();
+FunctionPass *createAArch64PreLegalizeCombiner(bool IsOptNone);
+FunctionPass *createAArch64StackTaggingPass(bool MergeInit);
+FunctionPass *createAArch64StackTaggingPreRAPass();
 
 void initializeAArch64A53Fix835769Pass(PassRegistry&);
 void initializeAArch64A57FPLoadBalancingPass(PassRegistry&);
@@ -67,6 +70,7 @@ void initializeAArch64CompressJumpTablesPass(PassRegistry&);
 void initializeAArch64ConditionalComparesPass(PassRegistry&);
 void initializeAArch64ConditionOptimizerPass(PassRegistry&);
 void initializeAArch64DeadRegisterDefinitionsPass(PassRegistry&);
+void initializeAArch64ExpandHardenedPseudosPass(PassRegistry&);
 void initializeAArch64ExpandPseudoPass(PassRegistry&);
 void initializeAArch64SpeculationHardeningPass(PassRegistry&);
 void initializeAArch64LoadStoreOptPass(PassRegistry&);
@@ -78,6 +82,8 @@ void initializeAArch64StorePairSuppressPass(PassRegistry&);
 void initializeFalkorHWPFFixPass(PassRegistry&);
 void initializeFalkorMarkStridedAccessesLegacyPass(PassRegistry&);
 void initializeLDTLSCleanupPass(PassRegistry&);
+void initializeAArch64StackTaggingPass(PassRegistry&);
+void initializeAArch64StackTaggingPreRAPass(PassRegistry&);
 } // end namespace llvm
 
 #endif

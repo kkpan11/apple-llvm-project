@@ -17,6 +17,7 @@
 #include "clang/Basic/LLVM.h"
 #include "clang/Tooling/Tooling.h"
 #include "gtest/gtest.h"
+#include "llvm/IR/DataLayout.h"
 
 using namespace clang::ast_matchers;
 using namespace clang::tooling;
@@ -60,51 +61,6 @@ TEST(Decl, CleansUpAPValues) {
       Factory->create(),
       "constexpr _Complex __uint128_t c = 0xffffffffffffffff;",
       Args));
-}
-
-TEST(Decl, AsmLabelAttr) {
-  // Create two method decls: `f` and `g`.
-  StringRef Code = R"(
-    struct S {
-      void f() {}
-      void g() {}
-    };
-  )";
-  auto AST =
-      tooling::buildASTFromCodeWithArgs(Code, {"-target", "i386-apple-darwin"});
-  ASTContext &Ctx = AST->getASTContext();
-  assert(Ctx.getTargetInfo().getDataLayout().getGlobalPrefix() &&
-         "Expected target to have a global prefix");
-  DiagnosticsEngine &Diags = AST->getDiagnostics();
-  SourceManager &SM = AST->getSourceManager();
-  FileID MainFileID = SM.getMainFileID();
-
-  // Find the method decls within the AST.
-  SmallVector<Decl *, 1> Decls;
-  AST->findFileRegionDecls(MainFileID, Code.find('{'), 0, Decls);
-  ASSERT_TRUE(Decls.size() == 1);
-  CXXRecordDecl *DeclS = cast<CXXRecordDecl>(Decls[0]);
-  NamedDecl *DeclF = *DeclS->method_begin();
-  NamedDecl *DeclG = *(++DeclS->method_begin());
-
-  // Attach asm labels to the decls: one literal, and one not.
-  DeclF->addAttr(::new (Ctx) AsmLabelAttr(SourceRange(), Ctx, "foo",
-                                          /*LiteralLabel=*/true, 0));
-  DeclG->addAttr(::new (Ctx) AsmLabelAttr(SourceRange(), Ctx, "goo",
-                                          /*LiteralLabel=*/false, 0));
-
-  // Mangle the decl names.
-  std::string MangleF, MangleG;
-  MangleContext *MC = ItaniumMangleContext::create(Ctx, Diags);
-  {
-    llvm::raw_string_ostream OS_F(MangleF);
-    llvm::raw_string_ostream OS_G(MangleG);
-    MC->mangleName(DeclF, OS_F);
-    MC->mangleName(DeclG, OS_G);
-  }
-
-  ASSERT_TRUE(0 == MangleF.compare("\x01" "foo"));
-  ASSERT_TRUE(0 == MangleG.compare("goo"));
 }
 
 TEST(Decl, Availability) {
@@ -155,4 +111,50 @@ TEST(Decl, Availability) {
 
   AvailabilityVerifier Verifier;
   EXPECT_TRUE(Verifier.match(CodeStr, Matcher, Args, Lang_C));
+}
+
+TEST(Decl, AsmLabelAttr) {
+  // Create two method decls: `f` and `g`.
+  StringRef Code = R"(
+    struct S {
+      void f() {}
+      void g() {}
+    };
+  )";
+  auto AST =
+      tooling::buildASTFromCodeWithArgs(Code, {"-target", "i386-apple-darwin"});
+  ASTContext &Ctx = AST->getASTContext();
+  assert(Ctx.getTargetInfo().getDataLayout().getGlobalPrefix() &&
+         "Expected target to have a global prefix");
+  DiagnosticsEngine &Diags = AST->getDiagnostics();
+  SourceManager &SM = AST->getSourceManager();
+  FileID MainFileID = SM.getMainFileID();
+
+  // Find the method decls within the AST.
+  SmallVector<Decl *, 1> Decls;
+  AST->findFileRegionDecls(MainFileID, Code.find('{'), 0, Decls);
+  ASSERT_TRUE(Decls.size() == 1);
+  CXXRecordDecl *DeclS = cast<CXXRecordDecl>(Decls[0]);
+  NamedDecl *DeclF = *DeclS->method_begin();
+  NamedDecl *DeclG = *(++DeclS->method_begin());
+
+  // Attach asm labels to the decls: one literal, and one not.
+  DeclF->addAttr(::new (Ctx) AsmLabelAttr(Ctx, SourceLocation(), "foo",
+                                          /*LiteralLabel=*/true));
+  DeclG->addAttr(::new (Ctx) AsmLabelAttr(Ctx, SourceLocation(), "goo",
+                                          /*LiteralLabel=*/false));
+
+  // Mangle the decl names.
+  std::string MangleF, MangleG;
+  std::unique_ptr<ItaniumMangleContext> MC(
+      ItaniumMangleContext::create(Ctx, Diags));
+  {
+    llvm::raw_string_ostream OS_F(MangleF);
+    llvm::raw_string_ostream OS_G(MangleG);
+    MC->mangleName(DeclF, OS_F);
+    MC->mangleName(DeclG, OS_G);
+  }
+
+  ASSERT_TRUE(0 == MangleF.compare("\x01" "foo"));
+  ASSERT_TRUE(0 == MangleG.compare("goo"));
 }

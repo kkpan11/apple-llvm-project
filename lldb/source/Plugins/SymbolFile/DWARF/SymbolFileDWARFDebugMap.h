@@ -104,22 +104,22 @@ public:
                        bool check_inlines,
                        lldb::SymbolContextItem resolve_scope,
                        lldb_private::SymbolContextList &sc_list) override;
-  uint32_t
+  void
   FindGlobalVariables(lldb_private::ConstString name,
                       const lldb_private::CompilerDeclContext *parent_decl_ctx,
                       uint32_t max_matches,
                       lldb_private::VariableList &variables) override;
-  uint32_t FindGlobalVariables(const lldb_private::RegularExpression &regex,
-                               uint32_t max_matches,
-                               lldb_private::VariableList &variables) override;
-  uint32_t
-  FindFunctions(lldb_private::ConstString name,
-                const lldb_private::CompilerDeclContext *parent_decl_ctx,
-                lldb::FunctionNameType name_type_mask, bool include_inlines,
-                bool append, lldb_private::SymbolContextList &sc_list) override;
-  uint32_t FindFunctions(const lldb_private::RegularExpression &regex,
-                         bool include_inlines, bool append,
-                         lldb_private::SymbolContextList &sc_list) override;
+  void FindGlobalVariables(const lldb_private::RegularExpression &regex,
+                           uint32_t max_matches,
+                           lldb_private::VariableList &variables) override;
+  void FindFunctions(lldb_private::ConstString name,
+                     const lldb_private::CompilerDeclContext *parent_decl_ctx,
+                     lldb::FunctionNameType name_type_mask,
+                     bool include_inlines,
+                     lldb_private::SymbolContextList &sc_list) override;
+  void FindFunctions(const lldb_private::RegularExpression &regex,
+                     bool include_inlines,
+                     lldb_private::SymbolContextList &sc_list) override;
   void
   FindTypes(lldb_private::ConstString name,
             const lldb_private::CompilerDeclContext *parent_decl_ctx,
@@ -137,13 +137,16 @@ public:
   void GetTypes(lldb_private::SymbolContextScope *sc_scope,
                 lldb::TypeClass type_mask,
                 lldb_private::TypeList &type_list) override;
-  std::vector<lldb_private::CallEdge>
+  std::vector<std::unique_ptr<lldb_private::CallEdge>>
   ParseCallEdgesInFunction(lldb_private::UserID func_id) override;
 
   std::vector<lldb::DataBufferSP>
   GetASTData(lldb::LanguageType language) override;
 
   void DumpClangAST(lldb_private::Stream &s) override;
+
+  bool GetCompileOption(const char *option, std::string &value,
+                        lldb_private::CompileUnit *cu) override;
 
   // PluginInterface protocol
   lldb_private::ConstString GetPluginName() override;
@@ -257,7 +260,7 @@ protected:
   static int SymbolContainsSymbolWithID(lldb::user_id_t *symbol_idx_ptr,
                                         const CompileUnitInfo *comp_unit_info);
 
-  uint32_t PrivateFindGlobalVariables(
+  void PrivateFindGlobalVariables(
       lldb_private::ConstString name,
       const lldb_private::CompilerDeclContext *parent_decl_ctx,
       const std::vector<uint32_t> &name_symbol_indexes, uint32_t max_matches,
@@ -369,8 +372,8 @@ protected:
   /// \param[in] oso_symfile
   ///     The DWARF symbol file that produced the \a line_table
   ///
-  /// \param[in] addr
-  ///     A section offset address from a .o file
+  /// \param[in] line_table
+  ///     A pointer to the line table.
   ///
   /// \return
   ///     Returns a valid line table full of linked addresses, or NULL

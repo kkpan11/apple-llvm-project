@@ -1200,8 +1200,8 @@ void TypePrinter::printTag(TagDecl *D, raw_ostream &OS) {
       if (PLoc.isValid()) {
         OS << " at ";
         StringRef File = PLoc.getFilename();
-        if (Policy.RemapFilePaths)
-          OS << Policy.remapPath(File);
+        if (auto *Callbacks = Policy.Callbacks)
+          OS << Callbacks->remapPath(File);
         else
           OS << File;
         OS << ':' << PLoc.getLine() << ':' << PLoc.getColumn();
@@ -1215,7 +1215,8 @@ void TypePrinter::printTag(TagDecl *D, raw_ostream &OS) {
   // arguments.
   if (const auto *Spec = dyn_cast<ClassTemplateSpecializationDecl>(D)) {
     ArrayRef<TemplateArgument> Args;
-    if (TypeSourceInfo *TAW = Spec->getTypeAsWritten()) {
+    TypeSourceInfo *TAW = Spec->getTypeAsWritten();
+    if (!Policy.PrintCanonicalTypes && TAW) {
       const TemplateSpecializationType *TST =
         cast<TemplateSpecializationType>(TAW->getType());
       Args = TST->template_arguments();
@@ -1523,6 +1524,7 @@ void TypePrinter::printAttributedAfter(const AttributedType *T,
   case attr::Ptr64:
   case attr::SPtr:
   case attr::UPtr:
+  case attr::PointerAuth:
   case attr::AddressSpace:
     llvm_unreachable("This attribute should have been handled already");
 
@@ -1548,7 +1550,7 @@ void TypePrinter::printAttributedAfter(const AttributedType *T,
    QualType t = T->getEquivalentType();
    while (!t->isFunctionType())
      t = t->getPointeeType();
-   OS << (t->getAs<FunctionType>()->getCallConv() == CC_AAPCS ?
+   OS << (t->castAs<FunctionType>()->getCallConv() == CC_AAPCS ?
          "\"aapcs\"" : "\"aapcs-vfp\"");
    OS << ')';
    break;
@@ -1564,6 +1566,9 @@ void TypePrinter::printAttributedAfter(const AttributedType *T,
     break;
   case attr::NoDeref:
     OS << "noderef";
+    break;
+  case attr::AcquireHandle:
+    OS << "acquire_handle";
     break;
   }
   OS << "))";
@@ -1750,6 +1755,30 @@ void clang::printTemplateArgumentList(raw_ostream &OS,
   printTo(OS, Args, Policy, false);
 }
 
+std::string PointerAuthQualifier::getAsString() const {
+  LangOptions LO;
+  return getAsString(PrintingPolicy(LO));
+}
+
+std::string PointerAuthQualifier::getAsString(const PrintingPolicy &P) const {
+  SmallString<64> Buf;
+  llvm::raw_svector_ostream StrOS(Buf);
+  print(StrOS, P);
+  return StrOS.str();
+}
+
+bool PointerAuthQualifier::isEmptyWhenPrinted(const PrintingPolicy &P) const {
+  return !isPresent();
+}
+
+void PointerAuthQualifier::print(raw_ostream &OS,
+                                 const PrintingPolicy &P) const {
+  if (!isPresent()) return;
+  OS << "__ptrauth(" << getKey() << ","
+                     << unsigned(isAddressDiscriminated()) << ","
+                     << getExtraDiscriminator() << ")";
+}
+
 std::string Qualifiers::getAsString() const {
   LangOptions LO;
   return getAsString(PrintingPolicy(LO));
@@ -1779,7 +1808,42 @@ bool Qualifiers::isEmptyWhenPrinted(const PrintingPolicy &Policy) const {
     if (!(lifetime == Qualifiers::OCL_Strong && Policy.SuppressStrongLifetime))
       return false;
 
+  if (auto pointerAuth = getPointerAuth())
+    if (!pointerAuth.isEmptyWhenPrinted(Policy))
+      return false;
+
   return true;
+}
+
+std::string Qualifiers::getAddrSpaceAsString(LangAS AS) {
+  switch (AS) {
+  case LangAS::Default:
+    return "";
+  case LangAS::opencl_global:
+    return "__global";
+  case LangAS::opencl_local:
+    return "__local";
+  case LangAS::opencl_private:
+    return "__private";
+  case LangAS::opencl_constant:
+    return "__constant";
+  case LangAS::opencl_generic:
+    return "__generic";
+  case LangAS::cuda_device:
+    return "__device__";
+  case LangAS::cuda_constant:
+    return "__constant__";
+  case LangAS::cuda_shared:
+    return "__shared__";
+  case LangAS::ptr32_sptr:
+    return "__sptr __ptr32";
+  case LangAS::ptr32_uptr:
+    return "__uptr __ptr32";
+  case LangAS::ptr64:
+    return "__ptr64";
+  default:
+    return std::to_string(toTargetAddressSpace(AS));
+  }
 }
 
 // Appends qualifiers to the given string, separated by spaces.  Will
@@ -1800,43 +1864,18 @@ void Qualifiers::print(raw_ostream &OS, const PrintingPolicy& Policy,
     OS << "__unaligned";
     addSpace = true;
   }
-  LangAS addrspace = getAddressSpace();
-  if (addrspace != LangAS::Default) {
-    if (addrspace != LangAS::opencl_private) {
-      if (addSpace)
-        OS << ' ';
-      addSpace = true;
-      switch (addrspace) {
-      case LangAS::opencl_global:
-        OS << "__global";
-        break;
-      case LangAS::opencl_local:
-        OS << "__local";
-        break;
-      case LangAS::opencl_private:
-        break;
-      case LangAS::opencl_constant:
-        OS << "__constant";
-        break;
-      case LangAS::opencl_generic:
-        OS << "__generic";
-        break;
-      case LangAS::cuda_device:
-        OS << "__device__";
-        break;
-      case LangAS::cuda_constant:
-        OS << "__constant__";
-        break;
-      case LangAS::cuda_shared:
-        OS << "__shared__";
-        break;
-      default:
-        OS << "__attribute__((address_space(";
-        OS << toTargetAddressSpace(addrspace);
-        OS << ")))";
-      }
-    }
+  auto ASStr = getAddrSpaceAsString(getAddressSpace());
+  if (!ASStr.empty()) {
+    if (addSpace)
+      OS << ' ';
+    addSpace = true;
+    // Wrap target address space into an attribute syntax
+    if (isTargetAddressSpace(getAddressSpace()))
+      OS << "__attribute__((address_space(" << ASStr << ")))";
+    else
+      OS << ASStr;
   }
+
   if (Qualifiers::GC gc = getObjCGCAttr()) {
     if (addSpace)
       OS << ' ';
@@ -1864,6 +1903,14 @@ void Qualifiers::print(raw_ostream &OS, const PrintingPolicy& Policy,
     case Qualifiers::OCL_Weak: OS << "__weak"; break;
     case Qualifiers::OCL_Autoreleasing: OS << "__autoreleasing"; break;
     }
+  }
+
+  if (auto pointerAuth = getPointerAuth()) {
+    if (addSpace)
+      OS << ' ';
+    addSpace = true;
+
+    pointerAuth.print(OS, Policy);
   }
 
   if (appendSpaceIfNonEmpty && addSpace)

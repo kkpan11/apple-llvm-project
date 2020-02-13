@@ -13,7 +13,7 @@
 #include "SwiftFormatters.h"
 #include "lldb/DataFormatters/FormattersHelpers.h"
 #include "lldb/DataFormatters/StringPrinter.h"
-#include "lldb/Symbol/ClangASTContext.h"
+#include "lldb/Symbol/TypeSystemClang.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/SwiftLanguageRuntime.h"
 #include "lldb/Utility/DataBufferHeap.h"
@@ -277,12 +277,11 @@ bool lldb_private::formatters::swift::StringGuts_SummaryProvider(
     DataExtractor data(buffer, count, process->GetByteOrder(), ptrSize);
 
     StringPrinter::ReadBufferAndDumpToStreamOptions options(read_options);
-    options.SetData(data)
-        .SetStream(&stream)
-        .SetSourceSize(count)
-        .SetBinaryZeroIsTerminator(false)
-        .SetLanguage(lldb::eLanguageTypeSwift);
-
+    options.SetData(data);
+    options.SetStream(&stream);
+    options.SetSourceSize(count);
+    options.SetBinaryZeroIsTerminator(false);
+    options.SetLanguage(lldb::eLanguageTypeSwift);
     return StringPrinter::ReadBufferAndDumpToStream<
         StringPrinter::StringElementType::UTF8>(options);
 
@@ -317,8 +316,12 @@ bool lldb_private::formatters::swift::StringGuts_SummaryProvider(
     "native/shared strings already handled");
 
   if ((discriminator & 0xE0) == 0x40) { // 010xxxxx: Bridged
-    CompilerType id_type =
-        process->GetTarget().GetScratchClangASTContext()->GetBasicType(
+    TypeSystemClang *clang_ast_context =
+        TypeSystemClang::GetScratch(process->GetTarget());
+    if (!clang_ast_context)
+      return false;
+
+    CompilerType id_type = clang_ast_context->GetBasicType(
             lldb::eBasicTypeObjCID);
 
     // We may have an NSString pointer inline, so try formatting it directly.
@@ -717,12 +720,12 @@ bool lldb_private::formatters::swift::ObjC_Selector_SummaryProvider(
     return false;
 
   StringPrinter::ReadStringAndDumpToStreamOptions read_options;
-  read_options.SetLocation(ptr_value)
-      .SetProcessSP(valobj.GetProcessSP())
-      .SetStream(&stream)
-      .SetQuote('"')
-      .SetNeedsZeroTermination(true)
-      .SetLanguage(lldb::eLanguageTypeSwift);
+  read_options.SetLocation(ptr_value);
+  read_options.SetProcessSP(valobj.GetProcessSP());
+  read_options.SetStream(&stream);
+  read_options.SetQuote('"');
+  read_options.SetNeedsZeroTermination(true);
+  read_options.SetLanguage(lldb::eLanguageTypeSwift);
 
   return StringPrinter::ReadStringAndDumpToStream<
       StringPrinter::StringElementType::ASCII>(read_options);
@@ -987,7 +990,7 @@ ReadVector(Process &process, ValueObject &valobj,
 
   // The layout of the vector is the same as what you'd expect for a C-style
   // array. It's a contiguous bag of bytes with no padding.
-  DataExtractor data;
+  lldb_private::DataExtractor data;
   uint64_t len = value_sp->GetData(data, error);
   unsigned elt_size = formatter.getElementSize();
   if (error.Fail())

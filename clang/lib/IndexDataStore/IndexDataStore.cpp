@@ -115,18 +115,20 @@ bool IndexDataStoreImpl::startEventListening(bool waitInitialSync, std::string &
       IndexDataStore::UnitEventKind K;
       StringRef UnitName = sys::path::filename(evt.Filename);
       switch (evt.Kind) {
-      case DirectoryWatcher::EventKind::Added:
-        K = IndexDataStore::UnitEventKind::Added; break;
-      case DirectoryWatcher::EventKind::Removed:
+      case DirectoryWatcher::Event::EventKind::Removed:
         K = IndexDataStore::UnitEventKind::Removed; break;
-      case DirectoryWatcher::EventKind::Modified:
+      case DirectoryWatcher::Event::EventKind::Modified:
         K = IndexDataStore::UnitEventKind::Modified; break;
-      case DirectoryWatcher::EventKind::DirectoryDeleted:
+      case DirectoryWatcher::Event::EventKind::WatchedDirRemoved:
         K = IndexDataStore::UnitEventKind::DirectoryDeleted;
         UnitName = StringRef();
         break;
+      case DirectoryWatcher::Event::EventKind::WatcherGotInvalidated:
+        K = IndexDataStore::UnitEventKind::Failure;
+        UnitName = StringRef();
+        break;
       }
-      UnitEvents.push_back(IndexDataStore::UnitEvent{K, UnitName, evt.ModTime});
+      UnitEvents.push_back(IndexDataStore::UnitEvent{K, UnitName});
     }
 
     if (auto handler = localUnitEventHandlerData->getHandler()) {
@@ -135,11 +137,21 @@ bool IndexDataStoreImpl::startEventListening(bool waitInitialSync, std::string &
     }
   };
 
-  DirWatcher = DirectoryWatcher::create(UnitPath.str(), OnUnitsChange,
-                                        waitInitialSync, Error);
-  if (!DirWatcher)
+  // Create the unit path if necessary so that the directory watcher can start
+  // even if the data has not been populated yet.
+  if (std::error_code EC = llvm::sys::fs::create_directories(UnitPath)) {
+    Error = EC.message();
     return true;
+  }
 
+  llvm::Expected<std::unique_ptr<DirectoryWatcher>> ExpectedDirWatcher =
+      DirectoryWatcher::create(UnitPath.str(), OnUnitsChange, waitInitialSync);
+  if (!ExpectedDirWatcher) {
+      Error = llvm::toString(ExpectedDirWatcher.takeError());
+      return true;
+  }
+
+  DirWatcher = std::move(ExpectedDirWatcher.get());
   return false;
 }
 

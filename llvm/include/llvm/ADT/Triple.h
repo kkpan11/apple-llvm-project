@@ -124,6 +124,8 @@ public:
     ARMSubArch_v5te,
     ARMSubArch_v4t,
 
+    AArch64SubArch_E,
+
     KalimbaSubArch_v3,
     KalimbaSubArch_v4,
     KalimbaSubArch_v5,
@@ -203,8 +205,6 @@ public:
     CODE16,
     EABI,
     EABIHF,
-    ELFv1,
-    ELFv2,
     Android,
     Musl,
     MuslEABI,
@@ -477,7 +477,7 @@ public:
     return getSubArch() == Triple::ARMSubArch_v7k;
   }
 
-  /// isOSDarwin - Is this a "Darwin" OS (OS X, iOS, or watchOS).
+  /// isOSDarwin - Is this a "Darwin" OS (macOS, iOS, tvOS or watchOS).
   bool isOSDarwin() const {
     return isMacOSX() || isiOS() || isWatchOS();
   }
@@ -723,6 +723,16 @@ public:
   /// Tests whether the target is 64-bit PowerPC (little and big endian).
   bool isPPC64() const {
     return getArch() == Triple::ppc64 || getArch() == Triple::ppc64le;
+  }
+
+  /// Tests whether the target is RISC-V (32- and 64-bit).
+  bool isRISCV() const {
+    return getArch() == Triple::riscv32 || getArch() == Triple::riscv64;
+  }
+
+  /// Tests whether the target is x86 (32- or 64-bit).
+  bool isX86() const {
+    return getArch() == Triple::x86 || getArch() == Triple::x86_64;
   }
 
   /// Tests whether the target supports comdat

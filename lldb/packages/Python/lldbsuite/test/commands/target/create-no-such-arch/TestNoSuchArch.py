@@ -1,7 +1,6 @@
 """
 Test that using a non-existent architecture name does not crash LLDB.
 """
-from __future__ import print_function
 
 
 import lldb
@@ -12,6 +11,7 @@ import lldbsuite.test.lldbutil as lldbutil
 class NoSuchArchTestCase(TestBase):
 
     mydir = TestBase.compute_mydir(__file__)
+    NO_DEBUG_INFO_TESTCASE = True
 
     def test(self):
         self.build()

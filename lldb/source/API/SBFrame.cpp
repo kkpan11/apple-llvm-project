@@ -30,7 +30,6 @@
 #include "lldb/Symbol/Variable.h"
 #include "lldb/Symbol/VariableList.h"
 #include "lldb/Target/ExecutionContext.h"
-#include "lldb/Target/LanguageRuntime.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/RegisterContext.h"
 #include "lldb/Target/StackFrame.h"
@@ -51,6 +50,10 @@
 #include "lldb/API/SBVariablesOptions.h"
 
 #include "llvm/Support/PrettyStackTrace.h"
+
+// BEGIN SWIFT
+#include "lldb/Target/LanguageRuntime.h"
+// END SWIFT
 
 using namespace lldb;
 using namespace lldb_private;
@@ -832,14 +835,12 @@ SBValueList SBFrame::GetVariables(const lldb::SBVariablesOptions &options) {
     if (stop_locker.TryLock(&process->GetRunLock())) {
       frame = exe_ctx.GetFramePtr();
       if (frame) {
-        size_t i;
         VariableList *variable_list = nullptr;
         variable_list = frame->GetVariableList(true);
         if (variable_list) {
           const size_t num_variables = variable_list->GetSize();
           if (num_variables) {
-            for (i = 0; i < num_variables; ++i) {
-              VariableSP variable_sp(variable_list->GetVariableAtIndex(i));
+            for (const VariableSP &variable_sp : *variable_list) {
               if (variable_sp) {
                 bool add_variable = false;
                 switch (variable_sp->GetScope()) {
@@ -1205,6 +1206,7 @@ lldb::LanguageType SBFrame::GuessLanguage() const {
   return eLanguageTypeUnknown;
 }
 
+// BEGIN SWIFT
 bool SBFrame::IsSwiftThunk() const {
   std::unique_lock<std::recursive_mutex> lock;
   ExecutionContext exe_ctx(m_opaque_sp.get(), lock);
@@ -1229,6 +1231,7 @@ bool SBFrame::IsSwiftThunk() const {
     return false;
   return runtime->IsSymbolARuntimeThunk(*sc.symbol);
 }
+// END SWIFT
 
 const char *SBFrame::GetFunctionName() const {
   LLDB_RECORD_METHOD_CONST_NO_ARGS(const char *, SBFrame, GetFunctionName);

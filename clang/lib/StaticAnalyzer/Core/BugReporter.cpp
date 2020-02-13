@@ -1106,10 +1106,11 @@ static const Stmt *getTerminatorCondition(const CFGBlock *B) {
   return S;
 }
 
-llvm::StringLiteral StrEnteringLoop = "Entering loop body";
-llvm::StringLiteral StrLoopBodyZero = "Loop body executed 0 times";
-llvm::StringLiteral StrLoopRangeEmpty = "Loop body skipped when range is empty";
-llvm::StringLiteral StrLoopCollectionEmpty =
+constexpr llvm::StringLiteral StrEnteringLoop = "Entering loop body";
+constexpr llvm::StringLiteral StrLoopBodyZero = "Loop body executed 0 times";
+constexpr llvm::StringLiteral StrLoopRangeEmpty =
+    "Loop body skipped when range is empty";
+constexpr llvm::StringLiteral StrLoopCollectionEmpty =
     "Loop body skipped when collection is empty";
 
 static std::unique_ptr<FilesToLineNumsMap>
@@ -1310,18 +1311,18 @@ void PathDiagnosticBuilder::generatePathDiagnosticsForNode(
 static std::unique_ptr<PathDiagnostic>
 generateDiagnosticForBasicReport(const BasicBugReport *R) {
   const BugType &BT = R->getBugType();
-  return llvm::make_unique<PathDiagnostic>(
+  return std::make_unique<PathDiagnostic>(
       BT.getCheckerName(), R->getDeclWithIssue(), BT.getDescription(),
       R->getDescription(), R->getShortDescription(/*UseFallback=*/false),
       BT.getCategory(), R->getUniqueingLocation(), R->getUniqueingDecl(),
-      llvm::make_unique<FilesToLineNumsMap>());
+      std::make_unique<FilesToLineNumsMap>());
 }
 
 static std::unique_ptr<PathDiagnostic>
 generateEmptyDiagnosticForReport(const PathSensitiveBugReport *R,
                                  const SourceManager &SM) {
   const BugType &BT = R->getBugType();
-  return llvm::make_unique<PathDiagnostic>(
+  return std::make_unique<PathDiagnostic>(
       BT.getCheckerName(), R->getDeclWithIssue(), BT.getDescription(),
       R->getDescription(), R->getShortDescription(/*UseFallback=*/false),
       BT.getCategory(), R->getUniqueingLocation(), R->getUniqueingDecl(),
@@ -2556,7 +2557,7 @@ BugPathInfo *BugPathGetter::getNextBugPath() {
 
   // Create a new graph with a single path. This is the graph that will be
   // returned to the caller.
-  auto GNew = llvm::make_unique<ExplodedGraph>();
+  auto GNew = std::make_unique<ExplodedGraph>();
 
   // Now walk from the error node up the BFS path, always taking the
   // predeccessor with the lowest number.
@@ -2693,7 +2694,8 @@ static std::unique_ptr<VisitorsDiagnosticsTy>
 generateVisitorsDiagnostics(PathSensitiveBugReport *R,
                             const ExplodedNode *ErrorNode,
                             BugReporterContext &BRC) {
-  auto Notes = llvm::make_unique<VisitorsDiagnosticsTy>();
+  std::unique_ptr<VisitorsDiagnosticsTy> Notes =
+      std::make_unique<VisitorsDiagnosticsTy>();
   PathSensitiveBugReport::VisitorList visitors;
 
   // Run visitors on all nodes starting from the node *before* the last one.
@@ -2759,12 +2761,12 @@ Optional<PathDiagnosticBuilder> PathDiagnosticBuilder::findValidReport(
 
     // Register refutation visitors first, if they mark the bug invalid no
     // further analysis is required
-    R->addVisitor(llvm::make_unique<LikelyFalsePositiveSuppressionBRVisitor>());
+    R->addVisitor(std::make_unique<LikelyFalsePositiveSuppressionBRVisitor>());
 
     // Register additional node visitors.
-    R->addVisitor(llvm::make_unique<NilReceiverBRVisitor>());
-    R->addVisitor(llvm::make_unique<ConditionBRVisitor>());
-    R->addVisitor(llvm::make_unique<TagVisitor>());
+    R->addVisitor(std::make_unique<NilReceiverBRVisitor>());
+    R->addVisitor(std::make_unique<ConditionBRVisitor>());
+    R->addVisitor(std::make_unique<TagVisitor>());
 
     BugReporterContext BRC(Reporter);
 
@@ -2777,7 +2779,7 @@ Optional<PathDiagnosticBuilder> PathDiagnosticBuilder::findValidReport(
         // If crosscheck is enabled, remove all visitors, add the refutation
         // visitor and check again
         R->clearVisitors();
-        R->addVisitor(llvm::make_unique<FalsePositiveRefutationBRVisitor>());
+        R->addVisitor(std::make_unique<FalsePositiveRefutationBRVisitor>());
 
         // We don't overrite the notes inserted by other visitors because the
         // refutation manager does not add any new note to the path
@@ -2801,7 +2803,7 @@ PathSensitiveBugReporter::generatePathDiagnostics(
     ArrayRef<PathSensitiveBugReport *> &bugReports) {
   assert(!bugReports.empty());
 
-  auto Out = llvm::make_unique<DiagnosticForConsumerMapTy>();
+  auto Out = std::make_unique<DiagnosticForConsumerMapTy>();
 
   Optional<PathDiagnosticBuilder> PDB =
       PathDiagnosticBuilder::findValidReport(bugReports, *this);
@@ -3001,8 +3003,8 @@ void BugReporter::FlushReport(BugReportEquivClass& EQ) {
     // of the issue.
     if (PD->path.empty()) {
       PathDiagnosticLocation L = report->getLocation();
-      auto piece = llvm::make_unique<PathDiagnosticEventPiece>(
-          L, report->getDescription());
+      auto piece = std::make_unique<PathDiagnosticEventPiece>(
+        L, report->getDescription());
       for (SourceRange Range : report->getRanges())
         piece->addRange(Range);
       PD->setEndOfPath(std::move(piece));
@@ -3079,7 +3081,7 @@ static void populateExecutedLinesWithStmt(
 /// starting from \p N.
 static std::unique_ptr<FilesToLineNumsMap>
 findExecutedLines(const SourceManager &SM, const ExplodedNode *N) {
-  auto ExecutedLines = llvm::make_unique<FilesToLineNumsMap>();
+  auto ExecutedLines = std::make_unique<FilesToLineNumsMap>();
 
   while (N) {
     if (N->getFirstPred() == nullptr) {
@@ -3118,7 +3120,7 @@ BugReporter::generateDiagnosticForConsumerMap(
     BugReport *exampleReport, ArrayRef<PathDiagnosticConsumer *> consumers,
     ArrayRef<BugReport *> bugReports) {
   auto *basicReport = cast<BasicBugReport>(exampleReport);
-  auto Out = llvm::make_unique<DiagnosticForConsumerMapTy>();
+  auto Out = std::make_unique<DiagnosticForConsumerMapTy>();
   for (auto *Consumer : consumers)
     (*Out)[Consumer] = generateDiagnosticForBasicReport(basicReport);
   return Out;
@@ -3246,7 +3248,7 @@ void BugReporter::EmitBasicReport(const Decl *DeclWithIssue,
                                   ArrayRef<FixItHint> Fixits) {
   // 'BT' is owned by BugReporter.
   BugType *BT = getBugTypeForName(CheckName, name, category);
-  auto R = llvm::make_unique<BasicBugReport>(*BT, str, Loc);
+  auto R = std::make_unique<BasicBugReport>(*BT, str, Loc);
   R->setDeclWithIssue(DeclWithIssue);
   for (const auto &SR : Ranges)
     R->addRange(SR);

@@ -80,7 +80,9 @@ public:
     eEncodingIsLValueReferenceUID, ///< This type is L value reference to a type
                                    /// whose UID is m_encoding_uid
     eEncodingIsRValueReferenceUID, ///< This type is R value reference to a type
-                                   /// whose UID is m_encoding_uid
+                                   /// whose UID is m_encoding_uid,
+    eEncodingIsAtomicUID,          ///< This type is the type whose UID is
+                                   /// m_encoding_uid as an atomic type.
     eEncodingIsSyntheticUID
   };
 
@@ -226,7 +228,7 @@ protected:
   CompilerType m_compiler_type;
   ResolveState m_compiler_type_resolve_state;
   bool m_is_complete_objc_class;
-  bool m_is_swift_fixed_value_buffer;
+  bool m_is_swift_fixed_value_buffer = false;
 
   Type *GetEncodingType();
 

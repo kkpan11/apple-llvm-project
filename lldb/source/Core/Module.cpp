@@ -23,7 +23,6 @@
 #include "lldb/Symbol/CompileUnit.h"
 #include "lldb/Symbol/Function.h"
 #include "lldb/Symbol/ObjectFile.h"
-#include "lldb/Symbol/SwiftASTContext.h"
 #include "lldb/Symbol/Symbol.h"
 #include "lldb/Symbol/SymbolContext.h"
 #include "lldb/Symbol/SymbolFile.h"
@@ -36,7 +35,6 @@
 #include "lldb/Target/Language.h"
 #include "lldb/Target/Platform.h"
 #include "lldb/Target/Process.h"
-#include "lldb/Target/SwiftLanguageRuntime.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Utility/DataBufferHeap.h"
 #include "lldb/Utility/LLDBAssert.h"
@@ -54,6 +52,11 @@
 
 #include "Plugins/Language/CPlusPlus/CPlusPlusLanguage.h"
 #include "Plugins/Language/ObjC/ObjCLanguage.h"
+
+// BEGIN SWIFT
+#include "lldb/Symbol/SwiftASTContext.h"
+#include "lldb/Target/SwiftLanguageRuntime.h"
+// END SWIFT
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Compiler.h"
@@ -596,43 +599,32 @@ uint32_t Module::ResolveSymbolContextsForFileSpec(
   return sc_list.GetSize() - initial_count;
 }
 
-size_t Module::FindGlobalVariables(ConstString name,
-                                   const CompilerDeclContext *parent_decl_ctx,
-                                   size_t max_matches,
-                                   VariableList &variables) {
+void Module::FindGlobalVariables(ConstString name,
+                                 const CompilerDeclContext *parent_decl_ctx,
+                                 size_t max_matches, VariableList &variables) {
   if (SymbolFile *symbols = GetSymbolFile())
-    return symbols->FindGlobalVariables(name, parent_decl_ctx, max_matches,
-                                        variables);
-  return 0;
+    symbols->FindGlobalVariables(name, parent_decl_ctx, max_matches, variables);
 }
 
-size_t Module::FindGlobalVariables(const RegularExpression &regex,
-                                   size_t max_matches,
-                                   VariableList &variables) {
+void Module::FindGlobalVariables(const RegularExpression &regex,
+                                 size_t max_matches, VariableList &variables) {
   SymbolFile *symbols = GetSymbolFile();
   if (symbols)
-    return symbols->FindGlobalVariables(regex, max_matches, variables);
-  return 0;
+    symbols->FindGlobalVariables(regex, max_matches, variables);
 }
 
-size_t Module::FindCompileUnits(const FileSpec &path, bool append,
-                                SymbolContextList &sc_list) {
-  if (!append)
-    sc_list.Clear();
-
-  const size_t start_size = sc_list.GetSize();
+void Module::FindCompileUnits(const FileSpec &path,
+                              SymbolContextList &sc_list) {
   const size_t num_compile_units = GetNumCompileUnits();
   SymbolContext sc;
   sc.module_sp = shared_from_this();
-  const bool compare_directory = (bool)path.GetDirectory();
   for (size_t i = 0; i < num_compile_units; ++i) {
     sc.comp_unit = GetCompileUnitAtIndex(i).get();
     if (sc.comp_unit) {
-      if (FileSpec::Equal(*sc.comp_unit, path, compare_directory))
+      if (FileSpec::Match(path, sc.comp_unit->GetPrimaryFile()))
         sc_list.Append(sc);
     }
   }
-  return sc_list.GetSize() - start_size;
 }
 
 Module::LookupInfo::LookupInfo(ConstString name,
@@ -652,8 +644,10 @@ Module::LookupInfo::LookupInfo(ConstString name,
               Language::LanguageIsObjC(language)) &&
              ObjCLanguage::IsPossibleObjCMethodName(name_cstr))
       m_name_type_mask = eFunctionNameTypeFull;
+    // BEGIN SWIFT
     else if (SwiftLanguageRuntime::IsSwiftMangledName(name_cstr))
       m_name_type_mask = eFunctionNameTypeFull;
+    // END SWIFT
     else if (Language::LanguageIsC(language)) {
       m_name_type_mask = eFunctionNameTypeFull;
     } else {
@@ -663,6 +657,8 @@ Module::LookupInfo::LookupInfo(ConstString name,
         m_name_type_mask |= eFunctionNameTypeSelector;
 
       CPlusPlusLanguage::MethodName cpp_method(name);
+
+      // BEGIN SWIFT
       SwiftLanguageRuntime::MethodName swift_method(name, true);
 
       if ((language == eLanguageTypeUnknown ||
@@ -675,6 +671,7 @@ Module::LookupInfo::LookupInfo(ConstString name,
                 language == eLanguageTypeObjC_plus_plus) &&
                cpp_method.IsValid())
         basename = cpp_method.GetBasename();
+      // END SWIFT
 
       if (basename.empty()) {
         if (CPlusPlusLanguage::ExtractContextAndIdentifier(name_cstr, context,
@@ -693,6 +690,8 @@ Module::LookupInfo::LookupInfo(ConstString name,
       // If they've asked for a CPP method or function name and it can't be
       // that, we don't even need to search for CPP methods or names.
       CPlusPlusLanguage::MethodName cpp_method(name);
+
+      // BEGIN SWIFT
       SwiftLanguageRuntime::MethodName swift_method(name, true);
       if (swift_method.IsValid())
         basename = swift_method.GetBasename();
@@ -706,6 +705,7 @@ Module::LookupInfo::LookupInfo(ConstString name,
           if (m_name_type_mask == eFunctionNameTypeNone)
             return;
         }
+        // END SWIFT
       } else {
         // If the CPP method parser didn't manage to chop this up, try to fill
         // in the base name if we can. If a::b::c is passed in, we need to just
@@ -812,14 +812,11 @@ void Module::LookupInfo::Prune(SymbolContextList &sc_list,
   }
 }
 
-size_t Module::FindFunctions(ConstString name,
-                             const CompilerDeclContext *parent_decl_ctx,
-                             FunctionNameType name_type_mask,
-                             bool include_symbols, bool include_inlines,
-                             bool append, SymbolContextList &sc_list) {
-  if (!append)
-    sc_list.Clear();
-
+void Module::FindFunctions(ConstString name,
+                           const CompilerDeclContext *parent_decl_ctx,
+                           FunctionNameType name_type_mask,
+                           bool include_symbols, bool include_inlines,
+                           SymbolContextList &sc_list) {
   const size_t old_size = sc_list.GetSize();
 
   // Find all the functions (not symbols, but debug information functions...
@@ -831,7 +828,7 @@ size_t Module::FindFunctions(ConstString name,
     if (symbols) {
       symbols->FindFunctions(lookup_info.GetLookupName(), parent_decl_ctx,
                              lookup_info.GetNameTypeMask(), include_inlines,
-                             append, sc_list);
+                             sc_list);
 
       // Now check our symbol table for symbols that are code symbols if
       // requested
@@ -850,7 +847,7 @@ size_t Module::FindFunctions(ConstString name,
   } else {
     if (symbols) {
       symbols->FindFunctions(name, parent_decl_ctx, name_type_mask,
-                             include_inlines, append, sc_list);
+                             include_inlines, sc_list);
 
       // Now check our symbol table for symbols that are code symbols if
       // requested
@@ -861,20 +858,15 @@ size_t Module::FindFunctions(ConstString name,
       }
     }
   }
-
-  return sc_list.GetSize() - old_size;
 }
 
-size_t Module::FindFunctions(const RegularExpression &regex,
-                             bool include_symbols, bool include_inlines,
-                             bool append, SymbolContextList &sc_list) {
-  if (!append)
-    sc_list.Clear();
-
+void Module::FindFunctions(const RegularExpression &regex, bool include_symbols,
+                           bool include_inlines,
+                           SymbolContextList &sc_list) {
   const size_t start_size = sc_list.GetSize();
 
   if (SymbolFile *symbols = GetSymbolFile()) {
-    symbols->FindFunctions(regex, include_inlines, append, sc_list);
+    symbols->FindFunctions(regex, include_inlines, sc_list);
 
     // Now check our symbol table for symbols that are code symbols if
     // requested
@@ -936,7 +928,6 @@ size_t Module::FindFunctions(const RegularExpression &regex,
       }
     }
   }
-  return sc_list.GetSize() - start_size;
 }
 
 void Module::FindAddressesForLine(const lldb::TargetSP target_sp,
@@ -1098,34 +1089,35 @@ std::string Module::GetSpecificationDescription() const {
   return spec;
 }
 
-void Module::GetDescription(Stream *s, lldb::DescriptionLevel level) {
+void Module::GetDescription(llvm::raw_ostream &s,
+                            lldb::DescriptionLevel level) {
   std::lock_guard<std::recursive_mutex> guard(m_mutex);
 
   if (level >= eDescriptionLevelFull) {
     if (m_arch.IsValid())
-      s->Printf("(%s) ", m_arch.GetArchitectureName());
+      s << llvm::formatv("({0}) ", m_arch.GetArchitectureName());
   }
 
   if (level == eDescriptionLevelBrief) {
     const char *filename = m_file.GetFilename().GetCString();
     if (filename)
-      s->PutCString(filename);
+      s << filename;
   } else {
     char path[PATH_MAX];
     if (m_file.GetPath(path, sizeof(path)))
-      s->PutCString(path);
+      s << path;
   }
 
   const char *object_name = m_object_name.GetCString();
   if (object_name)
-    s->Printf("(%s)", object_name);
+    s << llvm::formatv("({0})", object_name);
 }
 
 void Module::ReportError(const char *format, ...) {
   if (format && format[0]) {
     StreamString strm;
     strm.PutCString("error: ");
-    GetDescription(&strm, lldb::eDescriptionLevelBrief);
+    GetDescription(strm.AsRawOstream(), lldb::eDescriptionLevelBrief);
     strm.PutChar(' ');
     va_list args;
     va_start(args, format);
@@ -1156,7 +1148,7 @@ void Module::ReportErrorIfModifyDetected(const char *format, ...) {
       if (format) {
         StreamString strm;
         strm.PutCString("error: the object file ");
-        GetDescription(&strm, lldb::eDescriptionLevelFull);
+        GetDescription(strm.AsRawOstream(), lldb::eDescriptionLevelFull);
         strm.PutCString(" has been modified\n");
 
         va_list args;
@@ -1182,7 +1174,7 @@ void Module::ReportWarning(const char *format, ...) {
   if (format && format[0]) {
     StreamString strm;
     strm.PutCString("warning: ");
-    GetDescription(&strm, lldb::eDescriptionLevelFull);
+    GetDescription(strm.AsRawOstream(), lldb::eDescriptionLevelFull);
     strm.PutChar(' ');
 
     va_list args;
@@ -1203,7 +1195,7 @@ void Module::ReportWarning(const char *format, ...) {
 void Module::LogMessage(Log *log, const char *format, ...) {
   if (log != nullptr) {
     StreamString log_message;
-    GetDescription(&log_message, lldb::eDescriptionLevelFull);
+    GetDescription(log_message.AsRawOstream(), lldb::eDescriptionLevelFull);
     log_message.PutCString(": ");
     va_list args;
     va_start(args, format);
@@ -1216,7 +1208,7 @@ void Module::LogMessage(Log *log, const char *format, ...) {
 void Module::LogMessageVerboseBacktrace(Log *log, const char *format, ...) {
   if (log != nullptr) {
     StreamString log_message;
-    GetDescription(&log_message, lldb::eDescriptionLevelFull);
+    GetDescription(log_message.AsRawOstream(), lldb::eDescriptionLevelFull);
     log_message.PutCString(": ");
     va_list args;
     va_start(args, format);
@@ -1347,7 +1339,7 @@ void Module::SymbolIndicesToSymbolContextList(
   }
 }
 
-size_t Module::FindFunctionSymbols(ConstString name,
+void Module::FindFunctionSymbols(ConstString name,
                                    uint32_t name_type_mask,
                                    SymbolContextList &sc_list) {
   static Timer::Category func_cat(LLVM_PRETTY_FUNCTION);
@@ -1355,11 +1347,10 @@ size_t Module::FindFunctionSymbols(ConstString name,
                      "Module::FindSymbolsFunctions (name = %s, mask = 0x%8.8x)",
                      name.AsCString(), name_type_mask);
   if (Symtab *symtab = GetSymtab())
-    return symtab->FindFunctionSymbols(name, name_type_mask, sc_list);
-  return 0;
+    symtab->FindFunctionSymbols(name, name_type_mask, sc_list);
 }
 
-size_t Module::FindSymbolsWithNameAndType(ConstString name,
+void Module::FindSymbolsWithNameAndType(ConstString name,
                                           SymbolType symbol_type,
                                           SymbolContextList &sc_list) {
   // No need to protect this call using m_mutex all other method calls are
@@ -1369,18 +1360,16 @@ size_t Module::FindSymbolsWithNameAndType(ConstString name,
   Timer scoped_timer(
       func_cat, "Module::FindSymbolsWithNameAndType (name = %s, type = %i)",
       name.AsCString(), symbol_type);
-  const size_t initial_size = sc_list.GetSize();
   if (Symtab *symtab = GetSymtab()) {
     std::vector<uint32_t> symbol_indexes;
     symtab->FindAllSymbolsWithNameAndType(name, symbol_type, symbol_indexes);
     SymbolIndicesToSymbolContextList(symtab, symbol_indexes, sc_list);
   }
-  return sc_list.GetSize() - initial_size;
 }
 
-size_t Module::FindSymbolsMatchingRegExAndType(const RegularExpression &regex,
-                                               SymbolType symbol_type,
-                                               SymbolContextList &sc_list) {
+void Module::FindSymbolsMatchingRegExAndType(const RegularExpression &regex,
+                                             SymbolType symbol_type,
+                                             SymbolContextList &sc_list) {
   // No need to protect this call using m_mutex all other method calls are
   // already thread safe.
 
@@ -1389,7 +1378,6 @@ size_t Module::FindSymbolsMatchingRegExAndType(const RegularExpression &regex,
       func_cat,
       "Module::FindSymbolsMatchingRegExAndType (regex = %s, type = %i)",
       regex.GetText().str().c_str(), symbol_type);
-  const size_t initial_size = sc_list.GetSize();
   if (Symtab *symtab = GetSymtab()) {
     std::vector<uint32_t> symbol_indexes;
     symtab->FindAllSymbolsMatchingRexExAndType(
@@ -1397,7 +1385,6 @@ size_t Module::FindSymbolsMatchingRegExAndType(const RegularExpression &regex,
         symbol_indexes);
     SymbolIndicesToSymbolContextList(symtab, symbol_indexes, sc_list);
   }
-  return sc_list.GetSize() - initial_size;
 }
 
 void Module::PreloadSymbols() {
@@ -1554,12 +1541,10 @@ bool Module::LoadScriptingResourceInTarget(Target *target, Status &error,
               return false;
             }
             StreamString scripting_stream;
-            scripting_fspec.Dump(&scripting_stream);
-            const bool can_reload = true;
+            scripting_fspec.Dump(scripting_stream.AsRawOstream());
             const bool init_lldb_globals = false;
             bool did_load = script_interpreter->LoadScriptingModule(
-                scripting_stream.GetData(), can_reload, init_lldb_globals,
-                error);
+                scripting_stream.GetData(), init_lldb_globals, error);
             if (!did_load)
               return false;
           }
@@ -1576,13 +1561,15 @@ bool Module::LoadScriptingResourceInTarget(Target *target, Status &error,
 bool Module::SetArchitecture(const ArchSpec &new_arch) {
   if (!m_arch.IsValid()) {
     m_arch = new_arch;
-    auto type_system_or_err = m_type_system_map.GetTypeSystemForLanguage(eLanguageTypeSwift, this, false);
+    auto type_system_or_err = m_type_system_map.GetTypeSystemForLanguage(
+        eLanguageTypeSwift, this, false);
     if (!type_system_or_err) {
       llvm::consumeError(type_system_or_err.takeError());
       return true;
     }
 
-    if (auto *swift_ast = llvm::dyn_cast_or_null<SwiftASTContext>(&*type_system_or_err))
+    if (auto *swift_ast =
+            llvm::dyn_cast_or_null<SwiftASTContext>(&*type_system_or_err))
       swift_ast->SetTriple(new_arch.GetTriple());
     return true;
   }
@@ -1610,19 +1597,13 @@ bool Module::MatchesModuleSpec(const ModuleSpec &module_ref) {
   }
 
   const FileSpec &file_spec = module_ref.GetFileSpec();
-  if (file_spec) {
-    if (!FileSpec::Equal(file_spec, m_file, (bool)file_spec.GetDirectory()) &&
-        !FileSpec::Equal(file_spec, m_platform_file,
-                         (bool)file_spec.GetDirectory()))
-      return false;
-  }
+  if (!FileSpec::Match(file_spec, m_file) &&
+      !FileSpec::Match(file_spec, m_platform_file))
+    return false;
 
   const FileSpec &platform_file_spec = module_ref.GetPlatformFileSpec();
-  if (platform_file_spec) {
-    if (!FileSpec::Equal(platform_file_spec, GetPlatformFileSpec(),
-                         (bool)platform_file_spec.GetDirectory()))
-      return false;
-  }
+  if (!FileSpec::Match(platform_file_spec, GetPlatformFileSpec()))
+    return false;
 
   const ArchSpec &arch = module_ref.GetArchitecture();
   if (arch.IsValid()) {
@@ -1676,17 +1657,6 @@ llvm::VersionTuple Module::GetVersion() {
   return llvm::VersionTuple();
 }
 
-void Module::ClearModuleDependentCaches() {
-  auto type_system_or_err = m_type_system_map.GetTypeSystemForLanguage(eLanguageTypeSwift, this, false);
-  if (!type_system_or_err) {
-    llvm::consumeError(type_system_or_err.takeError());
-    return;
-  }
-
-  if (auto *swift_ast = llvm::dyn_cast_or_null<SwiftASTContext>(&*type_system_or_err))
-    swift_ast->ClearModuleDependentCaches();
-}
-
 bool Module::GetIsDynamicLinkEditor() {
   ObjectFile *obj_file = GetObjectFile();
 
@@ -1694,6 +1664,19 @@ bool Module::GetIsDynamicLinkEditor() {
     return obj_file->GetIsDynamicLinkEditor();
 
   return false;
+}
+
+// BEGIN SWIFT
+void Module::ClearModuleDependentCaches() {
+  auto type_system_or_err = m_type_system_map.GetTypeSystemForLanguage(
+      eLanguageTypeSwift, this, false);
+  if (!type_system_or_err) {
+    llvm::consumeError(type_system_or_err.takeError());
+    return;
+  }
+
+  if (auto *swift_ast = llvm::dyn_cast_or_null<SwiftASTContext>(&*type_system_or_err))
+    swift_ast->ClearModuleDependentCaches();
 }
 
 void Module::ForEachTypeSystem(
@@ -1734,3 +1717,4 @@ Module::GetASTData(lldb::LanguageType language) {
 
   return ast_datas;
 }
+// END SWIFT

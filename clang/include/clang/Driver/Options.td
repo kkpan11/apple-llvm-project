@@ -211,6 +211,10 @@ def clang_ignored_legacy_options_Group : OptionGroup<"<clang legacy flags>">,
 def : Flag<["-"], "fslp-vectorize-aggressive">, Group<clang_ignored_legacy_options_Group>;
 def : Flag<["-"], "fno-slp-vectorize-aggressive">, Group<clang_ignored_legacy_options_Group>;
 
+// Retired with clang-10.0. Previously controlled X86 MPX ISA.
+def mmpx : Flag<["-"], "mmpx">, Group<clang_ignored_legacy_options_Group>;
+def mno_mpx : Flag<["-"], "mno-mpx">, Group<clang_ignored_legacy_options_Group>;
+
 // Group that ignores all gcc optimizations that won't be implemented
 def clang_ignored_gcc_optimization_f_Group : OptionGroup<
   "<clang_ignored_gcc_optimization_f_Group>">, Group<f_Group>, Flags<[Ignored]>;
@@ -506,8 +510,6 @@ def bind__at__load : Flag<["-"], "bind_at_load">;
 def bundle__loader : Separate<["-"], "bundle_loader">;
 def bundle : Flag<["-"], "bundle">;
 def b : JoinedOrSeparate<["-"], "b">, Flags<[Unsupported]>;
-def cfguard : Flag<["-"], "cfguard">, Flags<[CC1Option]>,
-  HelpText<"Emit tables required for Windows Control Flow Guard.">;
 def cl_opt_disable : Flag<["-"], "cl-opt-disable">, Group<opencl_Group>, Flags<[CC1Option]>,
   HelpText<"OpenCL only. This option disables all optimizations. By default optimizations are enabled.">;
 def cl_strict_aliasing : Flag<["-"], "cl-strict-aliasing">, Group<opencl_Group>, Flags<[CC1Option]>,
@@ -527,7 +529,7 @@ def cl_mad_enable : Flag<["-"], "cl-mad-enable">, Group<opencl_Group>, Flags<[CC
 def cl_no_signed_zeros : Flag<["-"], "cl-no-signed-zeros">, Group<opencl_Group>, Flags<[CC1Option]>,
   HelpText<"OpenCL only. Allow use of less precise no signed zeros computations in the generated binary.">;
 def cl_std_EQ : Joined<["-"], "cl-std=">, Group<opencl_Group>, Flags<[CC1Option]>,
-  HelpText<"OpenCL language standard to compile for.">, Values<"cl,CL,cl1.1,CL1.1,cl1.2,CL1.2,cl2.0,CL2.0,c++">;
+  HelpText<"OpenCL language standard to compile for.">, Values<"cl,CL,cl1.1,CL1.1,cl1.2,CL1.2,cl2.0,CL2.0,clc++,CLC++">;
 def cl_denorms_are_zero : Flag<["-"], "cl-denorms-are-zero">, Group<opencl_Group>, Flags<[CC1Option]>,
   HelpText<"OpenCL only. Allow denormals to be flushed to zero.">;
 def cl_fp32_correctly_rounded_divide_sqrt : Flag<["-"], "cl-fp32-correctly-rounded-divide-sqrt">, Group<opencl_Group>, Flags<[CC1Option]>,
@@ -551,6 +553,9 @@ def cxx_isystem : JoinedOrSeparate<["-"], "cxx-isystem">, Group<clang_i_Group>,
   MetaVarName<"<directory>">;
 def c : Flag<["-"], "c">, Flags<[DriverOption]>, Group<Action_Group>,
   HelpText<"Only run preprocess, compile, and assemble steps">;
+def fconvergent_functions : Joined<["-"], "fconvergent-functions">, Group<f_Group>, Flags<[CC1Option]>,
+  HelpText<"Assume functions may be convergent">;
+
 def cuda_device_only : Flag<["--"], "cuda-device-only">,
   HelpText<"Compile CUDA code for device only">;
 def cuda_host_only : Flag<["--"], "cuda-host-only">,
@@ -602,9 +607,17 @@ def hip_device_lib_EQ : Joined<["--"], "hip-device-lib=">, Group<Link_Group>,
   HelpText<"HIP device library">;
 def fhip_dump_offload_linker_script : Flag<["-"], "fhip-dump-offload-linker-script">,
   Group<f_Group>, Flags<[NoArgumentUnused, HelpHidden]>;
+def fhip_new_launch_api : Flag<["-"], "fhip-new-launch-api">,
+  Flags<[CC1Option]>, HelpText<"Use new kernel launching API for HIP.">;
+def fno_hip_new_launch_api : Flag<["-"], "fno-hip-new-launch-api">;
+def fgpu_allow_device_init : Flag<["-"], "fgpu-allow-device-init">,
+  Flags<[CC1Option]>, HelpText<"Allow device side init function in HIP">;
+def fno_gpu_allow_device_init : Flag<["-"], "fno-gpu-allow-device-init">;
+def gpu_max_threads_per_block_EQ : Joined<["--"], "gpu-max-threads-per-block=">,
+  Flags<[CC1Option]>,
+  HelpText<"Default max threads per block for kernel launch bounds for HIP">;
 def libomptarget_nvptx_path_EQ : Joined<["--"], "libomptarget-nvptx-path=">, Group<i_Group>,
   HelpText<"Path to libomptarget-nvptx libraries">;
-def dA : Flag<["-"], "dA">, Group<d_Group>;
 def dD : Flag<["-"], "dD">, Group<d_Group>, Flags<[CC1Option]>,
   HelpText<"Print macro definitions in -E mode in addition to normal output">;
 def dI : Flag<["-"], "dI">, Group<d_Group>, Flags<[CC1Option]>,
@@ -632,6 +645,12 @@ def emit_ast : Flag<["-"], "emit-ast">,
   HelpText<"Emit Clang AST files for source inputs">;
 def emit_llvm : Flag<["-"], "emit-llvm">, Flags<[CC1Option]>, Group<Action_Group>,
   HelpText<"Use the LLVM representation for assembler and object files">;
+def emit_interface_stubs : Flag<["-"], "emit-interface-stubs">, Flags<[CC1Option]>, Group<Action_Group>,
+  HelpText<"Generate Inteface Stub Files.">;
+def emit_merged_ifs : Flag<["-"], "emit-merged-ifs">,
+  Flags<[CC1Option]>, Group<Action_Group>,
+  HelpText<"Generate Interface Stub Files, emit merged text not binary.">;
+def interface_stub_version_EQ : JoinedOrSeparate<["-"], "interface-stub-version=">, Flags<[CC1Option]>;
 def exported__symbols__list : Separate<["-"], "exported_symbols_list">;
 def e : JoinedOrSeparate<["-"], "e">, Group<Link_Group>;
 def fPIC : Flag<["-"], "fPIC">, Group<f_Group>;
@@ -854,6 +873,8 @@ def fconstant_cfstrings : Flag<["-"], "fconstant-cfstrings">, Group<f_Group>;
 def fconstant_string_class_EQ : Joined<["-"], "fconstant-string-class=">, Group<f_Group>;
 def fconstexpr_depth_EQ : Joined<["-"], "fconstexpr-depth=">, Group<f_Group>;
 def fconstexpr_steps_EQ : Joined<["-"], "fconstexpr-steps=">, Group<f_Group>;
+def fexperimental_new_constant_interpreter : Flag<["-"], "fexperimental-new-constant-interpreter">, Group<f_Group>,
+  HelpText<"Enable the experimental new constant interpreter">, Flags<[CC1Option]>;
 def fconstexpr_backtrace_limit_EQ : Joined<["-"], "fconstexpr-backtrace-limit=">,
                                     Group<f_Group>;
 def fno_crash_diagnostics : Flag<["-"], "fno-crash-diagnostics">, Group<f_clang_Group>, Flags<[NoArgumentUnused, CoreOption]>,
@@ -920,6 +941,8 @@ def fsjlj_exceptions : Flag<["-"], "fsjlj-exceptions">, Group<f_Group>,
   Flags<[CC1Option]>, HelpText<"Use SjLj style exceptions">;
 def fseh_exceptions : Flag<["-"], "fseh-exceptions">, Group<f_Group>,
   Flags<[CC1Option]>, HelpText<"Use SEH style exceptions">;
+def fwasm_exceptions : Flag<["-"], "fwasm-exceptions">, Group<f_Group>,
+  Flags<[CC1Option]>, HelpText<"Use WebAssembly style exceptions">;
 def fexcess_precision_EQ : Joined<["-"], "fexcess-precision=">,
     Group<clang_ignored_gcc_optimization_f_Group>;
 def : Flag<["-"], "fexpensive-optimizations">, Group<clang_ignored_gcc_optimization_f_Group>;
@@ -931,6 +954,10 @@ def : Flag<["-"], "fextended-identifiers">, Group<clang_ignored_f_Group>;
 def : Flag<["-"], "fno-extended-identifiers">, Group<f_Group>, Flags<[Unsupported]>;
 def fhosted : Flag<["-"], "fhosted">, Group<f_Group>;
 def fdenormal_fp_math_EQ : Joined<["-"], "fdenormal-fp-math=">, Group<f_Group>, Flags<[CC1Option]>;
+def ffp_model_EQ : Joined<["-"], "ffp-model=">, Group<f_Group>, Flags<[DriverOption]>,
+  HelpText<"Controls the semantics of floating-point calculations.">;
+def ffp_exception_behavior_EQ : Joined<["-"], "ffp-exception-behavior=">, Group<f_Group>, Flags<[CC1Option]>,
+  HelpText<"Specifies the exception behavior of floating-point operations.">;
 def ffast_math : Flag<["-"], "ffast-math">, Group<f_Group>, Flags<[CC1Option]>,
   HelpText<"Allow aggressive, lossy floating-point optimizations">;
 def fno_fast_math : Flag<["-"], "fno-fast-math">, Group<f_Group>;
@@ -1038,10 +1065,16 @@ def fno_sanitize_address_use_odr_indicator
     : Flag<["-"], "fno-sanitize-address-use-odr-indicator">,
       Group<f_clang_Group>,
       HelpText<"Disable ODR indicator globals">;
+// Note: This flag was introduced when it was necessary to distinguish between
+//       ABI for correct codegen.  This is no longer needed, but the flag is
+//       not removed since targeting either ABI will behave the same.
+//       This way we cause no disturbance to existing scripts & code, and if we
+//       want to use this flag in the future we will cause no disturbance then
+//       either.
 def fsanitize_hwaddress_abi_EQ
     : Joined<["-"], "fsanitize-hwaddress-abi=">,
       Group<f_clang_Group>,
-      HelpText<"Select the HWAddressSanitizer ABI to target (interceptor or platform, default interceptor)">;
+      HelpText<"Select the HWAddressSanitizer ABI to target (interceptor or platform, default interceptor). This option is currently unused.">;
 def fsanitize_recover : Flag<["-"], "fsanitize-recover">, Group<f_clang_Group>;
 def fno_sanitize_recover : Flag<["-"], "fno-sanitize-recover">,
                            Flags<[CoreOption, DriverOption]>,
@@ -1067,8 +1100,14 @@ def fsanitize_minimal_runtime : Flag<["-"], "fsanitize-minimal-runtime">,
                                         Group<f_clang_Group>;
 def fno_sanitize_minimal_runtime : Flag<["-"], "fno-sanitize-minimal-runtime">,
                                         Group<f_clang_Group>;
+def fsanitize_link_runtime : Flag<["-"], "fsanitize-link-runtime">,
+                           Group<f_clang_Group>;
+def fno_sanitize_link_runtime : Flag<["-"], "fno-sanitize-link-runtime">,
+                              Group<f_clang_Group>;
 def fsanitize_link_cxx_runtime : Flag<["-"], "fsanitize-link-c++-runtime">,
                                  Group<f_clang_Group>;
+def fno_sanitize_link_cxx_runtime : Flag<["-"], "fno-sanitize-link-c++-runtime">,
+                                    Group<f_clang_Group>;
 def fsanitize_cfi_cross_dso : Flag<["-"], "fsanitize-cfi-cross-dso">,
                               Group<f_clang_Group>,
                               HelpText<"Enable control flow integrity (CFI) checks for cross-DSO calls.">;
@@ -1079,6 +1118,13 @@ def fno_sanitize_cfi_cross_dso : Flag<["-"], "fno-sanitize-cfi-cross-dso">,
 def fsanitize_cfi_icall_generalize_pointers : Flag<["-"], "fsanitize-cfi-icall-generalize-pointers">,
                                               Group<f_clang_Group>,
                                               HelpText<"Generalize pointers in CFI indirect call type signature checks">;
+def fsanitize_cfi_canonical_jump_tables : Flag<["-"], "fsanitize-cfi-canonical-jump-tables">,
+                                          Group<f_clang_Group>,
+                                          HelpText<"Make the jump table addresses canonical in the symbol table">;
+def fno_sanitize_cfi_canonical_jump_tables : Flag<["-"], "fno-sanitize-cfi-canonical-jump-tables">,
+                                             Group<f_clang_Group>,
+                                             Flags<[CoreOption, DriverOption]>,
+                                             HelpText<"Do not make the jump table addresses canonical in the symbol table">;
 def fsanitize_stats : Flag<["-"], "fsanitize-stats">,
                               Group<f_clang_Group>,
                               HelpText<"Enable sanitizer statistics gathering.">;
@@ -1137,11 +1183,14 @@ def fno_honor_infinities : Flag<["-"], "fno-honor-infinities">, Group<f_Group>;
 // This option was originally misspelt "infinites" [sic].
 def : Flag<["-"], "fhonor-infinites">, Alias<fhonor_infinities>;
 def : Flag<["-"], "fno-honor-infinites">, Alias<fno_honor_infinities>;
+def frounding_math : Flag<["-"], "frounding-math">, Group<f_Group>, Flags<[CC1Option]>;
+def fno_rounding_math : Flag<["-"], "fno-rounding-math">, Group<f_Group>, Flags<[CC1Option]>;
 def ftrapping_math : Flag<["-"], "ftrapping-math">, Group<f_Group>, Flags<[CC1Option]>;
 def fno_trapping_math : Flag<["-"], "fno-trapping-math">, Group<f_Group>, Flags<[CC1Option]>;
 def ffp_contract : Joined<["-"], "ffp-contract=">, Group<f_Group>,
   Flags<[CC1Option]>, HelpText<"Form fused FP ops (e.g. FMAs): fast (everywhere)"
-  " | on (according to FP_CONTRACT pragma, default) | off (never fuse)">, Values<"fast,on,off">;
+  " | on (according to FP_CONTRACT pragma) | off (never fuse). Default"
+  " is 'fast' for CUDA/HIP and 'on' otherwise.">, Values<"fast,on,off">;
 
 def fstrict_float_cast_overflow : Flag<["-"],
   "fstrict-float-cast-overflow">, Group<f_Group>, Flags<[CC1Option]>,
@@ -1181,6 +1230,9 @@ def fno_use_line_directives : Flag<["-"], "fno-use-line-directives">, Group<f_Gr
 
 def ffreestanding : Flag<["-"], "ffreestanding">, Group<f_Group>, Flags<[CC1Option]>,
   HelpText<"Assert that the compilation takes place in a freestanding environment">;
+def fgnuc_version_EQ : Joined<["-"], "fgnuc-version=">, Group<f_Group>,
+  HelpText<"Sets various macros to claim compatibility with the given GCC version (default is 4.2.1)">,
+  Flags<[CC1Option, CoreOption]>;
 def fgnu_keywords : Flag<["-"], "fgnu-keywords">, Group<f_Group>, Flags<[CC1Option]>,
   HelpText<"Allow GNU-extension keywords regardless of language standard">;
 def fgnu89_inline : Flag<["-"], "fgnu89-inline">, Group<f_Group>, Flags<[CC1Option]>,
@@ -1278,7 +1330,10 @@ def fno_fine_grained_bitfield_accesses : Flag<["-"],
   HelpText<"Use large-integer access for consecutive bitfield runs.">;
 
 def flat__namespace : Flag<["-"], "flat_namespace">;
-def flax_vector_conversions : Flag<["-"], "flax-vector-conversions">, Group<f_Group>;
+def flax_vector_conversions_EQ : Joined<["-"], "flax-vector-conversions=">, Group<f_Group>,
+  HelpText<"Enable implicit vector bit-casts">, Values<"none,integer,all">, Flags<[CC1Option]>;
+def flax_vector_conversions : Flag<["-"], "flax-vector-conversions">, Group<f_Group>,
+  Alias<flax_vector_conversions_EQ>, AliasArgs<["integer"]>;
 def flimited_precision_EQ : Joined<["-"], "flimited-precision=">, Group<f_Group>;
 def fapple_link_rtlib : Flag<["-"], "fapple-link-rtlib">, Group<f_Group>,
   HelpText<"Force linking the clang builtins runtime library">;
@@ -1294,8 +1349,11 @@ def flto_jobs_EQ : Joined<["-"], "flto-jobs=">,
            "of 0 means the number of threads will be derived from "
            "the number of CPUs detected)">;
 def fthinlto_index_EQ : Joined<["-"], "fthinlto-index=">,
-  Flags<[CC1Option]>, Group<f_Group>,
+  Flags<[CoreOption, CC1Option]>, Group<f_Group>,
   HelpText<"Perform ThinLTO importing using provided function summary index">;
+def fthin_link_bitcode_EQ : Joined<["-"], "fthin-link-bitcode=">,
+  Flags<[CoreOption, CC1Option]>, Group<f_Group>,
+  HelpText<"Write minimized bitcode to <file> for the ThinLTO thin link only">;
 def fmacro_backtrace_limit_EQ : Joined<["-"], "fmacro-backtrace-limit=">,
                                 Group<f_Group>, Flags<[DriverOption, CoreOption]>;
 def fmerge_all_constants : Flag<["-"], "fmerge-all-constants">, Group<f_Group>,
@@ -1474,7 +1532,7 @@ def fno_experimental_new_pass_manager : Flag<["-"], "fno-experimental-new-pass-m
 def fveclib : Joined<["-"], "fveclib=">, Group<f_Group>, Flags<[CC1Option]>,
     HelpText<"Use the given vector functions library">, Values<"Accelerate,MASSV,SVML,none">;
 def fno_lax_vector_conversions : Flag<["-"], "fno-lax-vector-conversions">, Group<f_Group>,
-  HelpText<"Disallow implicit conversions between vectors with a different number of elements or different element types">, Flags<[CC1Option]>;
+  Alias<flax_vector_conversions_EQ>, AliasArgs<["none"]>;
 def fno_merge_all_constants : Flag<["-"], "fno-merge-all-constants">, Group<f_Group>,
   HelpText<"Disallow merging of constants">;
 def fno_modules : Flag <["-"], "fno-modules">, Group<f_Group>,
@@ -1620,14 +1678,14 @@ def fnoopenmp_use_tls : Flag<["-"], "fnoopenmp-use-tls">, Group<f_Group>,
   Flags<[CC1Option, NoArgumentUnused, HelpHidden]>;
 def fopenmp_targets_EQ : CommaJoined<["-"], "fopenmp-targets=">, Flags<[DriverOption, CC1Option]>,
   HelpText<"Specify comma-separated list of triples OpenMP offloading targets to be supported">;
-def fopenmp_dump_offload_linker_script : Flag<["-"], "fopenmp-dump-offload-linker-script">,
-  Group<f_Group>, Flags<[NoArgumentUnused, HelpHidden]>;
 def fopenmp_relocatable_target : Flag<["-"], "fopenmp-relocatable-target">,
   Group<f_Group>, Flags<[CC1Option, NoArgumentUnused, HelpHidden]>;
 def fnoopenmp_relocatable_target : Flag<["-"], "fnoopenmp-relocatable-target">,
   Group<f_Group>, Flags<[CC1Option, NoArgumentUnused, HelpHidden]>;
 def fopenmp_simd : Flag<["-"], "fopenmp-simd">, Group<f_Group>, Flags<[CC1Option, NoArgumentUnused]>,
   HelpText<"Emit OpenMP code only for SIMD-based constructs.">;
+def fopenmp_enable_irbuilder : Flag<["-"], "fopenmp-enable-irbuilder">, Group<f_Group>, Flags<[CC1Option, NoArgumentUnused, HelpHidden]>,
+  HelpText<"Use the experimental OpenMP-IR-Builder codegen path.">;
 def fno_openmp_simd : Flag<["-"], "fno-openmp-simd">, Group<f_Group>, Flags<[CC1Option, NoArgumentUnused]>;
 def fopenmp_cuda_mode : Flag<["-"], "fopenmp-cuda-mode">, Group<f_Group>,
   Flags<[CC1Option, NoArgumentUnused, HelpHidden]>;
@@ -1647,6 +1705,8 @@ def fopenmp_optimistic_collapse : Flag<["-"], "fopenmp-optimistic-collapse">, Gr
   Flags<[CC1Option, NoArgumentUnused, HelpHidden]>;
 def fno_openmp_optimistic_collapse : Flag<["-"], "fno-openmp-optimistic-collapse">, Group<f_Group>,
   Flags<[NoArgumentUnused, HelpHidden]>;
+def static_openmp: Flag<["-"], "static-openmp">,
+  HelpText<"Use the static host OpenMP runtime while linking.">;
 def fno_optimize_sibling_calls : Flag<["-"], "fno-optimize-sibling-calls">, Group<f_Group>;
 def foptimize_sibling_calls : Flag<["-"], "foptimize-sibling-calls">, Group<f_Group>;
 def fno_escaping_block_tail_calls : Flag<["-"], "fno-escaping-block-tail-calls">, Group<f_Group>, Flags<[CC1Option]>;
@@ -1732,10 +1792,10 @@ def fstack_protector : Flag<["-"], "fstack-protector">, Group<f_Group>,
            "alloca, which are of greater size than ssp-buffer-size (default: 8 bytes). "
            "All variable sized calls to alloca are considered vulnerable">;
 def ftrivial_auto_var_init : Joined<["-"], "ftrivial-auto-var-init=">, Group<f_Group>,
-  Flags<[CC1Option]>, HelpText<"Initialize trivial automatic stack variables: uninitialized (default)"
+  Flags<[CC1Option, CoreOption]>, HelpText<"Initialize trivial automatic stack variables: uninitialized (default)"
   " | pattern">, Values<"uninitialized,pattern">;
-def enable_trivial_var_init_zero : Joined<["-"], "enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang">,
-  Flags<[CC1Option]>,
+def enable_trivial_var_init_zero : Flag<["-"], "enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang">,
+  Flags<[CC1Option, CoreOption]>,
   HelpText<"Trivial automatic variable initialization to zero is only here for benchmarks, it'll eventually be removed, and I'm OK with that because I'm only using it to benchmark">;
 def fstandalone_debug : Flag<["-"], "fstandalone-debug">, Group<f_Group>, Flags<[CoreOption]>,
   HelpText<"Emit full debug info for all types used by the program">;
@@ -1808,7 +1868,16 @@ def Wframe_larger_than_EQ : Joined<["-"], "Wframe-larger-than=">, Group<f_Group>
 def : Flag<["-"], "fterminated-vtables">, Alias<fapple_kext>;
 def fthreadsafe_statics : Flag<["-"], "fthreadsafe-statics">, Group<f_Group>;
 def ftime_report : Flag<["-"], "ftime-report">, Group<f_Group>, Flags<[CC1Option]>;
-def ftime_trace : Flag<["-"], "ftime-trace">, Group<f_Group>, Flags<[CC1Option, CoreOption]>;
+def ftime_trace : Flag<["-"], "ftime-trace">, Group<f_Group>,
+  HelpText<"Turn on time profiler. Generates JSON file based on output filename.">,
+  DocBrief<[{
+Turn on time profiler. Generates JSON file based on output filename. Results
+can be analyzed with chrome://tracing or `Speedscope App
+<https://www.speedscope.app>`_ for flamegraph visualization.}]>,
+  Flags<[CC1Option, CoreOption]>;
+def ftime_trace_granularity_EQ : Joined<["-"], "ftime-trace-granularity=">, Group<f_Group>,
+  HelpText<"Minimum time granularity (in microseconds) traced by time profiler">,
+  Flags<[CC1Option, CoreOption]>;
 def ftlsmodel_EQ : Joined<["-"], "ftls-model=">, Group<f_Group>, Flags<[CC1Option]>;
 def ftrapv : Flag<["-"], "ftrapv">, Group<f_Group>, Flags<[CC1Option]>,
   HelpText<"Trap on integer overflow">;
@@ -1842,6 +1911,7 @@ def fuse_init_array : Flag<["-"], "fuse-init-array">, Group<f_Group>, Flags<[CC1
   HelpText<"Use .init_array instead of .ctors">;
 def fno_var_tracking : Flag<["-"], "fno-var-tracking">, Group<clang_ignored_f_Group>;
 def fverbose_asm : Flag<["-"], "fverbose-asm">, Group<f_Group>;
+def dA : Flag<["-"], "dA">, Alias<fverbose_asm>;
 def fvisibility_EQ : Joined<["-"], "fvisibility=">, Group<f_Group>,
   HelpText<"Set the default symbol visibility for all global declarations">, Values<"hidden,default">;
 def fvisibility_inlines_hidden : Flag<["-"], "fvisibility-inlines-hidden">, Group<f_Group>,
@@ -1899,6 +1969,29 @@ def fstrict_return : Flag<["-"], "fstrict-return">, Group<f_Group>,
 def fno_strict_return : Flag<["-"], "fno-strict-return">, Group<f_Group>,
   Flags<[CC1Option]>;
 
+let Group = f_Group in {
+  let Flags = [CC1Option] in {
+    def fptrauth_intrinsics : Flag<["-"], "fptrauth-intrinsics">,
+      HelpText<"Enable pointer-authentication intrinsics">;
+    def fptrauth_calls : Flag<["-"], "fptrauth-calls">,
+      HelpText<"Enable signing and authentication of all indirect calls">;
+    def fptrauth_returns : Flag<["-"], "fptrauth-returns">,
+      HelpText<"Enable signing and authentication of return addresses">;
+    def fptrauth_indirect_gotos : Flag<["-"], "fptrauth-indirect-gotos">,
+      HelpText<"Enable signing and authentication of indirect goto targets">;
+    def fptrauth_auth_traps : Flag<["-"], "fptrauth-auth-traps">,
+      HelpText<"Enable traps on authentication failures">;
+    def fptrauth_soft : Flag<["-"], "fptrauth-soft">,
+      HelpText<"Enable software lowering of pointer authentication">;
+  }
+  def fno_ptrauth_intrinsics : Flag<["-"], "fno-ptrauth-intrinsics">;
+  def fno_ptrauth_calls : Flag<["-"], "fno-ptrauth-calls">;
+  def fno_ptrauth_returns : Flag<["-"], "fno-ptrauth-returns">;
+  def fno_ptrauth_indirect_gotos : Flag<["-"], "fno-ptrauth-indirect-gotos">;
+  def fno_ptrauth_auth_traps : Flag<["-"], "fno-ptrauth-auth-traps">;
+  def fno_ptrauth_soft : Flag<["-"], "fno-ptrauth-soft">;
+}
+
 def fallow_editor_placeholders : Flag<["-"], "fallow-editor-placeholders">,
   Group<f_Group>, Flags<[CC1Option]>,
   HelpText<"Treat editor placeholders as valid source code">;
@@ -1917,10 +2010,22 @@ def fsplit_dwarf_inlining: Flag <["-"], "fsplit-dwarf-inlining">, Group<f_Group>
   Flags<[CC1Option]>, HelpText<"Provide minimal debug info in the object/executable to facilitate online symbolication/stack traces in the absence of .dwo/.dwp files when using Split DWARF">;
 def fno_split_dwarf_inlining: Flag<["-"], "fno-split-dwarf-inlining">, Group<f_Group>,
   Flags<[CC1Option]>;
+def fdebug_default_version: Joined<["-"], "fdebug-default-version=">, Group<f_Group>,
+  HelpText<"Default DWARF version to use, if a -g option caused DWARF debug info to be produced">;
 def fdebug_prefix_map_EQ
   : Joined<["-"], "fdebug-prefix-map=">, Group<f_Group>,
     Flags<[CC1Option,CC1AsOption]>,
     HelpText<"remap file source paths in debug info">;
+def ffile_prefix_map_EQ
+  : Joined<["-"], "ffile-prefix-map=">, Group<f_Group>, Flags<[CC1Option]>,
+    HelpText<"remap file source paths in debug info and predefined preprocessor macros">;
+def fmacro_prefix_map_EQ
+  : Joined<["-"], "fmacro-prefix-map=">, Group<Preprocessor_Group>, Flags<[CC1Option]>,
+    HelpText<"remap file source paths in predefined preprocessor macros">;
+def fforce_dwarf_frame : Flag<["-"], "fforce-dwarf-frame">, Group<f_Group>, Flags<[CC1Option]>,
+    HelpText<"Always emit a debug frame section">;
+def fno_force_dwarf_frame : Flag<["-"], "fno-force-dwarf-frame">, Group<f_Group>, Flags<[CC1Option]>,
+    HelpText<"Don't always emit a debug frame section">;
 def g_Flag : Flag<["-"], "g">, Group<g_Group>,
   HelpText<"Generate source-level debug information">;
 def gline_tables_only : Flag<["-"], "gline-tables-only">, Group<gN_Group>,
@@ -1939,6 +2044,10 @@ def ggdb2 : Flag<["-"], "ggdb2">, Group<ggdbN_Group>;
 def ggdb3 : Flag<["-"], "ggdb3">, Group<ggdbN_Group>;
 def glldb : Flag<["-"], "glldb">, Group<gTune_Group>;
 def gsce : Flag<["-"], "gsce">, Group<gTune_Group>;
+// Equivalent to our default dwarf version. Forces usual dwarf emission when
+// CodeView is enabled.
+def gdwarf : Flag<["-"], "gdwarf">, Group<g_Group>, Flags<[CoreOption]>,
+  HelpText<"Generate source-level debug information with the default dwarf version">;
 def gdwarf_2 : Flag<["-"], "gdwarf-2">, Group<g_Group>,
   HelpText<"Generate source-level debug information with dwarf version 2">;
 def gdwarf_3 : Flag<["-"], "gdwarf-3">, Group<g_Group>,
@@ -1955,10 +2064,9 @@ def gcodeview_ghash : Flag<["-"], "gcodeview-ghash">,
   HelpText<"Emit type record hashes in a .debug$H section">,
   Flags<[CC1Option, CoreOption]>;
 def gno_codeview_ghash : Flag<["-"], "gno-codeview-ghash">, Flags<[CoreOption]>;
-
-// Equivalent to our default dwarf version. Forces usual dwarf emission when
-// CodeView is enabled.
-def gdwarf : Flag<["-"], "gdwarf">, Alias<gdwarf_4>, Flags<[CoreOption]>;
+def ginline_line_tables : Flag<["-"], "ginline-line-tables">, Flags<[CoreOption]>;
+def gno_inline_line_tables : Flag<["-"], "gno-inline-line-tables">,
+  Flags<[CC1Option, CoreOption]>, HelpText<"Don't emit inline line tables">;
 
 def gfull : Flag<["-"], "gfull">, Group<g_Group>;
 def gused : Flag<["-"], "gused">, Group<g_Group>;
@@ -2001,6 +2109,10 @@ def gno_embed_source : Flag<["-"], "gno-embed-source">, Group<g_flags_Group>,
 def headerpad__max__install__names : Joined<["-"], "headerpad_max_install_names">;
 def help : Flag<["-", "--"], "help">, Flags<[CC1Option,CC1AsOption]>,
   HelpText<"Display available options">;
+def ibuiltininc : Flag<["-"], "ibuiltininc">,
+  HelpText<"Enable builtin #include directories even when -nostdinc is used "
+           "before or after -ibuiltininc. "
+           "Using -nobuiltininc after the option disables it">;
 def index_header_map : Flag<["-"], "index-header-map">, Flags<[CC1Option]>,
   HelpText<"Make the next included directory (-I or -F) an indexer header map">;
 def iapinotes_modules : JoinedOrSeparate<["-"], "iapinotes-modules">, Group<clang_i_Group>, Flags<[CC1Option]>,
@@ -2076,6 +2188,15 @@ def malign_jumps_EQ : Joined<["-"], "malign-jumps=">, Group<clang_ignored_m_Grou
 def mfancy_math_387 : Flag<["-"], "mfancy-math-387">, Group<clang_ignored_m_Group>;
 def mlong_calls : Flag<["-"], "mlong-calls">, Group<m_Group>,
   HelpText<"Generate branches with extended addressability, usually via indirect jumps.">;
+def LongDouble_Group : OptionGroup<"<LongDouble group>">, Group<m_Group>,
+  DocName<"Long double flags">,
+  DocBrief<[{Selects the long double implementation}]>;
+def mlong_double_64 : Flag<["-"], "mlong-double-64">, Group<LongDouble_Group>, Flags<[CC1Option]>,
+  HelpText<"Force long double to be 64 bits">;
+def mlong_double_80 : Flag<["-"], "mlong-double-80">, Group<LongDouble_Group>, Flags<[CC1Option]>,
+  HelpText<"Force long double to be 80 bits, padded to 128 bits for storage">;
+def mlong_double_128 : Flag<["-"], "mlong-double-128">, Group<LongDouble_Group>, Flags<[CC1Option]>,
+  HelpText<"Force long double to be 128 bits">;
 def mno_long_calls : Flag<["-"], "mno-long-calls">, Group<m_Group>,
   HelpText<"Restore the default behaviour of not generating long calls">;
 def mexecute_only : Flag<["-"], "mexecute-only">, Group<m_arm_Features_Group>,
@@ -2183,6 +2304,16 @@ def mrelax : Flag<["-"], "mrelax">, Group<m_riscv_Features_Group>,
   HelpText<"Enable linker relaxation">;
 def mno_relax : Flag<["-"], "mno-relax">, Group<m_riscv_Features_Group>,
   HelpText<"Disable linker relaxation">;
+def msave_restore : Flag<["-"], "msave-restore">, Group<m_riscv_Features_Group>,
+  HelpText<"Enable using library calls for save and restore">;
+def mno_save_restore : Flag<["-"], "mno-save-restore">, Group<m_riscv_Features_Group>,
+  HelpText<"Disable using library calls for save and restore">;
+def mcmodel_EQ_medlow : Flag<["-"], "mcmodel=medlow">, Group<m_riscv_Features_Group>,
+  Flags<[CC1Option]>, Alias<mcmodel_EQ>, AliasArgs<["small"]>,
+  HelpText<"Equivalent to -mcmodel=small, compatible with RISC-V gcc.">;
+def mcmodel_EQ_medany : Flag<["-"], "mcmodel=medany">, Group<m_riscv_Features_Group>,
+  Flags<[CC1Option]>, Alias<mcmodel_EQ>, AliasArgs<["medium"]>,
+  HelpText<"Equivalent to -mcmodel=medium, compatible with RISC-V gcc.">;
 
 def munaligned_access : Flag<["-"], "munaligned-access">, Group<m_arm_Features_Group>,
   HelpText<"Allow memory accesses to be unaligned (AArch32/AArch64 only)">;
@@ -2218,9 +2349,9 @@ def mfix_cortex_a53_835769 : Flag<["-"], "mfix-cortex-a53-835769">,
 def mno_fix_cortex_a53_835769 : Flag<["-"], "mno-fix-cortex-a53-835769">,
   Group<m_aarch64_Features_Group>,
   HelpText<"Don't workaround Cortex-A53 erratum 835769 (AArch64 only)">;
-foreach i = {1-7,9-15,18,20-28} in
-  def ffixed_x#i : Flag<["-"], "ffixed-x"#i>, Group<m_aarch64_Features_Group>,
-    HelpText<"Reserve the "#i#" register (AArch64 only)">;
+foreach i = {1-31} in
+  def ffixed_x#i : Flag<["-"], "ffixed-x"#i>, Group<m_Group>,
+    HelpText<"Reserve the "#i#" register (AArch64/RISC-V only)">;
 
 foreach i = {8-15,18} in
   def fcall_saved_x#i : Flag<["-"], "fcall-saved-x"#i>, Group<m_aarch64_Features_Group>,
@@ -2252,6 +2383,8 @@ def mmultivalue : Flag<["-"], "mmultivalue">, Group<m_wasm_Features_Group>;
 def mno_multivalue : Flag<["-"], "mno-multivalue">, Group<m_wasm_Features_Group>;
 def mtail_call : Flag<["-"], "mtail-call">, Group<m_wasm_Features_Group>;
 def mno_tail_call : Flag<["-"], "mno-tail-call">, Group<m_wasm_Features_Group>;
+def mreference_types : Flag<["-"], "mreference-types">, Group<m_wasm_Features_Group>;
+def mno_reference_types : Flag<["-"], "mno-reference-types">, Group<m_wasm_Features_Group>;
 
 def mamdgpu_debugger_abi : Joined<["-"], "mamdgpu-debugger-abi=">,
   Flags<[HelpHidden]>,
@@ -2286,6 +2419,8 @@ def faltivec : Flag<["-"], "faltivec">, Group<f_Group>, Flags<[DriverOption]>;
 def fno_altivec : Flag<["-"], "fno-altivec">, Group<f_Group>, Flags<[DriverOption]>;
 def maltivec : Flag<["-"], "maltivec">, Group<m_ppc_Features_Group>;
 def mno_altivec : Flag<["-"], "mno-altivec">, Group<m_ppc_Features_Group>;
+def mspe : Flag<["-"], "mspe">, Group<m_ppc_Features_Group>;
+def mno_spe : Flag<["-"], "mno-spe">, Group<m_ppc_Features_Group>;
 def mvsx : Flag<["-"], "mvsx">, Group<m_ppc_Features_Group>;
 def mno_vsx : Flag<["-"], "mno-vsx">, Group<m_ppc_Features_Group>;
 def msecure_plt : Flag<["-"], "msecure-plt">, Group<m_ppc_Features_Group>;
@@ -2385,8 +2520,15 @@ def mpie_copy_relocations : Flag<["-"], "mpie-copy-relocations">, Group<m_Group>
   Flags<[CC1Option]>,
   HelpText<"Use copy relocations support for PIE builds">;
 def mno_pie_copy_relocations : Flag<["-"], "mno-pie-copy-relocations">, Group<m_Group>;
-def mfentry : Flag<["-"], "mfentry">, HelpText<"Insert calls to fentry at function entry (x86 only)">,
+def mfentry : Flag<["-"], "mfentry">, HelpText<"Insert calls to fentry at function entry (x86/SystemZ only)">,
   Flags<[CC1Option]>, Group<m_Group>;
+def mnop_mcount : Flag<["-"], "mnop-mcount">, HelpText<"Generate mcount/__fentry__ calls as nops. To activate they need to be patched in.">,
+  Flags<[CC1Option]>, Group<m_Group>;
+def mrecord_mcount : Flag<["-"], "mrecord-mcount">, HelpText<"Generate a __mcount_loc section entry for each __fentry__ call.">,
+  Flags<[CC1Option]>, Group<m_Group>;
+def mpacked_stack : Flag<["-"], "mpacked-stack">, HelpText<"Use packed stack layout (SystemZ only).">,
+  Flags<[CC1Option]>, Group<m_Group>;
+def mno_packed_stack : Flag<["-"], "mno-packed-stack">, Flags<[CC1Option]>, Group<m_Group>;
 def mips16 : Flag<["-"], "mips16">, Group<m_mips_Features_Group>;
 def mno_mips16 : Flag<["-"], "mno-mips16">, Group<m_mips_Features_Group>;
 def mmicromips : Flag<["-"], "mmicromips">, Group<m_mips_Features_Group>;
@@ -2551,7 +2693,9 @@ def no__dead__strip__inits__and__terms : Flag<["-"], "no_dead_strip_inits_and_te
 def nobuiltininc : Flag<["-"], "nobuiltininc">, Flags<[CC1Option, CoreOption]>,
   HelpText<"Disable builtin #include directories">;
 def nocudainc : Flag<["-"], "nocudainc">;
-def nocudalib : Flag<["-"], "nocudalib">;
+def nogpulib : Flag<["-"], "nogpulib">,
+  HelpText<"Do not link device library for CUDA/HIP device compilation">;
+def : Flag<["-"], "nocudalib">, Alias<nogpulib>;
 def nodefaultlibs : Flag<["-"], "nodefaultlibs">;
 def nofixprebinding : Flag<["-"], "nofixprebinding">;
 def nolibc : Flag<["-"], "nolibc">;
@@ -2559,6 +2703,7 @@ def nomultidefs : Flag<["-"], "nomultidefs">;
 def nopie : Flag<["-"], "nopie">;
 def no_pie : Flag<["-"], "no-pie">, Alias<nopie>;
 def noprebind : Flag<["-"], "noprebind">;
+def noprofilelib : Flag<["-"], "noprofilelib">;
 def noseglinkedit : Flag<["-"], "noseglinkedit">;
 def nostartfiles : Flag<["-"], "nostartfiles">;
 def nostdinc : Flag<["-"], "nostdinc">, Flags<[CoreOption]>;
@@ -2676,6 +2821,10 @@ def std_EQ : Joined<["-", "--"], "std=">, Flags<[CC1Option]>,
   }]>;
 def stdlib_EQ : Joined<["-", "--"], "stdlib=">, Flags<[CC1Option]>,
   HelpText<"C++ standard library to use">, Values<"libc++,libstdc++,platform">;
+def stdlibxx_isystem : JoinedOrSeparate<["-"], "stdlib++-isystem">,
+  Group<clang_i_Group>,
+  HelpText<"Use directory as the C++ standard library include path">,
+  Flags<[DriverOption]>, MetaVarName<"<directory>">;
 def unwindlib_EQ : Joined<["-", "--"], "unwindlib=">, Flags<[CC1Option]>,
   HelpText<"Unwind library to use">, Values<"libgcc,unwindlib,platform">;
 def sub__library : JoinedOrSeparate<["-"], "sub_library">;
@@ -2693,10 +2842,12 @@ def : Separate<["--"], "no-system-header-prefix">, Alias<no_system_header_prefix
 def s : Flag<["-"], "s">, Group<Link_Group>;
 def target : Joined<["--"], "target=">, Flags<[DriverOption, CoreOption]>,
   HelpText<"Generate code for the given target">;
-def _print_supported_cpus : Flag<["-", "--"], "print-supported-cpus">,
+def print_supported_cpus : Flag<["-", "--"], "print-supported-cpus">,
   Group<CompileOnly_Group>, Flags<[CC1Option, CoreOption]>,
   HelpText<"Print supported cpu models for the given target (if target is not specified,"
            " it will print the supported cpus for the default target)">;
+def mcpu_EQ_QUESTION : Flag<["-"], "mcpu=?">, Alias<print_supported_cpus>;
+def mtune_EQ_QUESTION : Flag<["-"], "mtune=?">, Alias<print_supported_cpus>;
 def gcc_toolchain : Joined<["--"], "gcc-toolchain=">, Flags<[DriverOption]>,
   HelpText<"Use the gcc toolchain at the given directory">;
 def time : Flag<["-"], "time">,
@@ -2753,10 +2904,9 @@ def _mhwdiv : Separate<["--"], "mhwdiv">, Alias<mhwdiv_EQ>;
 def _CLASSPATH_EQ : Joined<["--"], "CLASSPATH=">, Alias<fclasspath_EQ>;
 def _CLASSPATH : Separate<["--"], "CLASSPATH">, Alias<fclasspath_EQ>;
 def _all_warnings : Flag<["--"], "all-warnings">, Alias<Wall>;
-def _analyze_auto : Flag<["--"], "analyze-auto">, Flags<[DriverOption]>;
 def _analyzer_no_default_checks : Flag<["--"], "analyzer-no-default-checks">, Flags<[DriverOption]>;
 def _analyzer_output : JoinedOrSeparate<["--"], "analyzer-output">, Flags<[DriverOption]>,
-  HelpText<"Static analyzer report output format (html|plist|plist-multi-file|plist-html|text).">;
+  HelpText<"Static analyzer report output format (html|plist|plist-multi-file|plist-html|sarif|text).">;
 def _analyze : Flag<["--"], "analyze">, Flags<[DriverOption, CoreOption]>,
   HelpText<"Run the static analyzer">;
 def _assemble : Flag<["--"], "assemble">, Alias<S>;
@@ -3014,8 +3164,6 @@ def mmovdiri : Flag<["-"], "mmovdiri">, Group<m_x86_Features_Group>;
 def mno_movdiri : Flag<["-"], "mno-movdiri">, Group<m_x86_Features_Group>;
 def mmovdir64b : Flag<["-"], "mmovdir64b">, Group<m_x86_Features_Group>;
 def mno_movdir64b : Flag<["-"], "mno-movdir64b">, Group<m_x86_Features_Group>;
-def mmpx : Flag<["-"], "mmpx">, Group<m_x86_Features_Group>;
-def mno_mpx : Flag<["-"], "mno-mpx">, Group<m_x86_Features_Group>;
 def mmwaitx : Flag<["-"], "mmwaitx">, Group<m_x86_Features_Group>;
 def mno_mwaitx : Flag<["-"], "mno-mwaitx">, Group<m_x86_Features_Group>;
 def mpku : Flag<["-"], "mpku">, Group<m_x86_Features_Group>;
@@ -3068,6 +3216,8 @@ def mshstk : Flag<["-"], "mshstk">, Group<m_x86_Features_Group>;
 def mno_shstk : Flag<["-"], "mno-shstk">, Group<m_x86_Features_Group>;
 def mretpoline_external_thunk : Flag<["-"], "mretpoline-external-thunk">, Group<m_x86_Features_Group>;
 def mno_retpoline_external_thunk : Flag<["-"], "mno-retpoline-external-thunk">, Group<m_x86_Features_Group>;
+def mvzeroupper : Flag<["-"], "mvzeroupper">, Group<m_x86_Features_Group>;
+def mno_vzeroupper : Flag<["-"], "mno-vzeroupper">, Group<m_x86_Features_Group>;
 
 // These are legacy user-facing driver-level option spellings. They are always
 // aliases for options that are spelled using the more common Unix / GNU flag
@@ -3157,7 +3307,6 @@ defm profile_values : BooleanFFlag<"profile-values">, Group<clang_ignored_gcc_op
 defm regs_graph : BooleanFFlag<"regs-graph">, Group<clang_ignored_f_Group>;
 defm rename_registers : BooleanFFlag<"rename-registers">, Group<clang_ignored_gcc_optimization_f_Group>;
 defm ripa : BooleanFFlag<"ripa">, Group<clang_ignored_f_Group>;
-defm rounding_math : BooleanFFlag<"rounding-math">, Group<clang_ignored_gcc_optimization_f_Group>;
 defm schedule_insns : BooleanFFlag<"schedule-insns">, Group<clang_ignored_gcc_optimization_f_Group>;
 defm schedule_insns2 : BooleanFFlag<"schedule-insns2">, Group<clang_ignored_gcc_optimization_f_Group>;
 defm see : BooleanFFlag<"see">, Group<clang_ignored_f_Group>;

@@ -21,7 +21,7 @@
 #include "lldb/Interpreter/CommandObject.h"
 #include "lldb/Interpreter/CommandObjectMultiword.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
-#include "lldb/Symbol/ClangASTContext.h"
+#include "lldb/Symbol/TypeSystemClang.h"
 #include "lldb/Symbol/Symbol.h"
 #include "lldb/Symbol/SymbolFile.h"
 #include "lldb/Symbol/TypeList.h"
@@ -48,8 +48,8 @@ char ItaniumABILanguageRuntime::ID = 0;
 bool ItaniumABILanguageRuntime::CouldHaveDynamicValue(ValueObject &in_value) {
   const bool check_cxx = true;
   const bool check_objc = false;
-  return in_value.GetCompilerType().IsPossibleDynamicType(
-      nullptr, check_cxx, check_objc);
+  return in_value.GetCompilerType().IsPossibleDynamicType(nullptr, check_cxx,
+                                                          check_objc);
 }
 
 TypeAndOrName ItaniumABILanguageRuntime::GetTypeInfoFromVTableAddress(
@@ -118,7 +118,7 @@ TypeAndOrName ItaniumABILanguageRuntime::GetTypeInfoFromVTableAddress(
             if (class_types.GetSize() == 1) {
               type_sp = class_types.GetTypeAtIndex(0);
               if (type_sp) {
-                if (ClangASTContext::IsCXXClassType(
+                if (TypeSystemClang::IsCXXClassType(
                         type_sp->GetForwardCompilerType())) {
                   LLDB_LOGF(
                       log,
@@ -150,7 +150,7 @@ TypeAndOrName ItaniumABILanguageRuntime::GetTypeInfoFromVTableAddress(
               for (i = 0; i < class_types.GetSize(); i++) {
                 type_sp = class_types.GetTypeAtIndex(i);
                 if (type_sp) {
-                  if (ClangASTContext::IsCXXClassType(
+                  if (TypeSystemClang::IsCXXClassType(
                           type_sp->GetForwardCompilerType())) {
                     LLDB_LOGF(
                         log,
@@ -238,7 +238,7 @@ bool ItaniumABILanguageRuntime::GetDynamicTypeAndAddress(
   if (!type)
     return true;
 
-  if (ClangASTContext::AreTypesSame(in_value.GetCompilerType(), type)) {
+  if (TypeSystemClang::AreTypesSame(in_value.GetCompilerType(), type)) {
     // The dynamic type we found was the same type, so we don't have a
     // dynamic type here...
     return false;
@@ -344,7 +344,7 @@ protected:
     bool demangled_any = false;
     bool error_any = false;
     for (auto &entry : command.entries()) {
-      if (entry.ref.empty())
+      if (entry.ref().empty())
         continue;
 
       // the actual Mangled class should be strict about this, but on the
@@ -352,7 +352,7 @@ protected:
       // they will come out with an extra underscore - be willing to strip this
       // on behalf of the user.   This is the moral equivalent of the -_/-n
       // options to c++filt
-      auto name = entry.ref;
+      auto name = entry.ref();
       if (name.startswith("__Z"))
         name = name.drop_front();
 
@@ -361,12 +361,12 @@ protected:
         ConstString demangled(
             mangled.GetDisplayDemangledName(lldb::eLanguageTypeC_plus_plus));
         demangled_any = true;
-        result.AppendMessageWithFormat("%s ---> %s\n", entry.ref.str().c_str(),
+        result.AppendMessageWithFormat("%s ---> %s\n", entry.c_str(),
                                        demangled.GetCString());
       } else {
         error_any = true;
         result.AppendErrorWithFormat("%s is not a valid C++ mangled name\n",
-                                     entry.ref.str().c_str());
+                                     entry.ref().str().c_str());
       }
     }
 
@@ -536,8 +536,11 @@ ValueObjectSP ItaniumABILanguageRuntime::GetExceptionObjectForThread(
   if (!thread_sp->SafeToCallFunctions())
     return {};
 
-  ClangASTContext *clang_ast_context =
-      m_process->GetTarget().GetScratchClangASTContext();
+  TypeSystemClang *clang_ast_context =
+      TypeSystemClang::GetScratch(m_process->GetTarget());
+  if (!clang_ast_context)
+    return {};
+
   CompilerType voidstar =
       clang_ast_context->GetBasicType(eBasicTypeVoid).GetPointerType();
 

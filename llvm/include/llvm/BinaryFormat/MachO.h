@@ -460,6 +460,8 @@ enum RelocationInfoType {
   ARM64_RELOC_TLVP_LOAD_PAGEOFF12 = 9,
   // Must be followed by ARM64_RELOC_PAGE21 or ARM64_RELOC_PAGEOFF12.
   ARM64_RELOC_ADDEND = 10,
+  // An authenticated pointer.
+  ARM64_RELOC_AUTHENTICATED_POINTER = 11,
 
   // Constant values for the r_type field in an x86_64 architecture
   // llvm::MachO::relocation_info or llvm::MachO::scattered_relocation_info
@@ -580,6 +582,11 @@ struct section_64 {
   uint32_t reserved2;
   uint32_t reserved3;
 };
+
+inline bool isVirtualSection(uint8_t type) {
+  return (type == MachO::S_ZEROFILL || type == MachO::S_GB_ZEROFILL ||
+          type == MachO::S_THREAD_LOCAL_ZEROFILL);
+}
 
 struct fvmlib {
   uint32_t name;

@@ -207,11 +207,14 @@ namespace llvm {
     /// \param AlignInBits       Alignment. (optional)
     /// \param DWARFAddressSpace DWARF address space. (optional)
     /// \param Name              Pointer type name. (optional)
-    DIDerivedType *createPointerType(DIType *PointeeTy, uint64_t SizeInBits,
-                                     uint32_t AlignInBits = 0,
-                                     Optional<unsigned> DWARFAddressSpace =
-                                         None,
-                                     StringRef Name = "");
+    DIDerivedType *createPointerType(
+        DIType *PointeeTy, uint64_t SizeInBits, uint32_t AlignInBits = 0,
+        Optional<unsigned> DWARFAddressSpace = None, StringRef Name = "");
+
+    /// Create a __ptrauth qualifier.
+    DIDerivedType *createPtrAuthQualifiedType(DIType *FromTy, unsigned Key,
+                                              bool IsAddressDiscriminated,
+                                              unsigned ExtraDiscriminator);
 
     /// Create debugging information entry for a pointer to member.
     /// \param PointeeTy Type pointed to by this pointer.
@@ -237,8 +240,10 @@ namespace llvm {
     /// \param File        File where this type is defined.
     /// \param LineNo      Line number.
     /// \param Context     The surrounding context for the typedef.
+    /// \param AlignInBits Alignment. (optional)
     DIDerivedType *createTypedef(DIType *Ty, StringRef Name, DIFile *File,
-                                 unsigned LineNo, DIScope *Context);
+                                 unsigned LineNo, DIScope *Context,
+                                 uint32_t AlignInBits = 0);
 
     /// Create debugging information entry for a 'friend'.
     DIDerivedType *createFriend(DIType *Ty, DIType *FriendTy);
@@ -572,7 +577,7 @@ namespace llvm {
     /// \param File        File where this variable is defined.
     /// \param LineNo      Line number.
     /// \param Ty          Variable Type.
-    /// \param isLocalToUnit Boolean flag indicate whether this variable is
+    /// \param IsLocalToUnit Boolean flag indicate whether this variable is
     ///                      externally visible or not.
     /// \param Expr        The location of the global relative to the attached
     ///                    GlobalVariable.
@@ -581,16 +586,16 @@ namespace llvm {
     ///                    specified)
     DIGlobalVariableExpression *createGlobalVariableExpression(
         DIScope *Context, StringRef Name, StringRef LinkageName, DIFile *File,
-        unsigned LineNo, DIType *Ty, bool isLocalToUnit,
+        unsigned LineNo, DIType *Ty, bool IsLocalToUnit, bool isDefined = true,
         DIExpression *Expr = nullptr, MDNode *Decl = nullptr,
-        MDTuple *templateParams = nullptr, uint32_t AlignInBits = 0);
+        MDTuple *TemplateParams = nullptr, uint32_t AlignInBits = 0);
 
     /// Identical to createGlobalVariable
     /// except that the resulting DbgNode is temporary and meant to be RAUWed.
     DIGlobalVariable *createTempGlobalVariableFwdDecl(
         DIScope *Context, StringRef Name, StringRef LinkageName, DIFile *File,
-        unsigned LineNo, DIType *Ty, bool isLocalToUnit, MDNode *Decl = nullptr,
-        MDTuple *templateParams = nullptr, uint32_t AlignInBits = 0);
+        unsigned LineNo, DIType *Ty, bool IsLocalToUnit, MDNode *Decl = nullptr,
+        MDTuple *TemplateParams= nullptr, uint32_t AlignInBits = 0);
 
     /// Create a new descriptor for an auto variable.  This is a local variable
     /// that is not a subprogram parameter.
@@ -732,11 +737,11 @@ namespace llvm {
     ///                    A space-separated shell-quoted list of -D macro
     ///                    definitions as they would appear on a command line.
     /// \param IncludePath The path to the module map file.
-    /// \param ISysRoot    The clang system root (value of -isysroot).
+    /// \param SysRoot     The clang system root (value of -isysroot).
     DIModule *createModule(DIScope *Scope, StringRef Name,
                            StringRef ConfigurationMacros,
                            StringRef IncludePath,
-                           StringRef ISysRoot);
+                           StringRef SysRoot);
 
     /// This creates a descriptor for a lexical block with a new file
     /// attached. This merely extends the existing

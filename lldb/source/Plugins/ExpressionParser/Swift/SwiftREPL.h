@@ -68,8 +68,8 @@ protected:
                         lldb::ValueObjectSP &valobj_sp,
                         ExpressionVariable *var = nullptr) override;
 
-  void CompleteCode(const std::string &current_code,
-                    CompletionRequest &request) override;
+  int CompleteCode(const std::string &current_code,
+                   StringList &matches) override;
 
 public:
   static bool classof(const REPL *repl) {
@@ -77,7 +77,7 @@ public:
   }
 
 private:
-  SwiftASTContext *m_swift_ast = nullptr;
+  SwiftASTContextForExpressions *m_swift_ast = nullptr;
   bool m_completion_module_initialized = false;
 };
 }

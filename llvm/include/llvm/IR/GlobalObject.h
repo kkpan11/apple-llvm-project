@@ -17,6 +17,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/GlobalValue.h"
 #include "llvm/IR/Value.h"
+#include "llvm/Support/Alignment.h"
 #include <string>
 #include <utility>
 
@@ -58,9 +59,14 @@ public:
   unsigned getAlignment() const {
     unsigned Data = getGlobalValueSubClassData();
     unsigned AlignmentData = Data & AlignmentMask;
-    return (1u << AlignmentData) >> 1;
+    MaybeAlign Align = decodeMaybeAlign(AlignmentData);
+    return Align ? Align->value() : 0;
   }
-  void setAlignment(unsigned Align);
+
+  /// FIXME: Remove this setter once the migration to MaybeAlign is over.
+  LLVM_ATTRIBUTE_DEPRECATED(void setAlignment(unsigned Align),
+                            "Please use `void setAlignment(MaybeAlign Align)`");
+  void setAlignment(MaybeAlign Align);
 
   unsigned getGlobalObjectSubClassData() const {
     unsigned ValueData = getGlobalValueSubClassData();

@@ -18,7 +18,7 @@
 #include "Plugins/LanguageRuntime/ObjC/ObjCLanguageRuntime.h"
 #include "lldb/Core/ValueObject.h"
 #include "lldb/DataFormatters/FormattersHelpers.h"
-#include "lldb/Symbol/ClangASTContext.h"
+#include "lldb/Symbol/TypeSystemClang.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/SwiftLanguageRuntime.h"
 #include "lldb/Target/Target.h"
@@ -159,12 +159,8 @@ bool lldb_private::formatters::swift::Measurement_SummaryProvider(
   if (!process_sp)
     return false;
 
-  ObjCLanguageRuntime *objc_runtime =
-      ObjCLanguageRuntime::Get(*process_sp);
-  if (!objc_runtime)
-    return false;
-
-  auto descriptor_sp(objc_runtime->GetClassDescriptor(*unit_sp));
+  auto descriptor_sp(
+      ObjCLanguageRuntime::Get(*process_sp)->GetClassDescriptor(*unit_sp));
   if (!descriptor_sp)
     return false;
 

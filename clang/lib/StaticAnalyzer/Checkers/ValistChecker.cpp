@@ -255,9 +255,9 @@ void ValistChecker::reportUninitializedAccess(const MemRegion *VAList,
       BT_uninitaccess.reset(new BugType(CheckNames[CK_Uninitialized],
                                         "Uninitialized va_list",
                                         categories::MemoryError));
-    auto R = llvm::make_unique<PathSensitiveBugReport>(*BT_uninitaccess, Msg, N);
+    auto R = std::make_unique<PathSensitiveBugReport>(*BT_uninitaccess, Msg, N);
     R->markInteresting(VAList);
-    R->addVisitor(llvm::make_unique<ValistBugVisitor>(VAList));
+    R->addVisitor(std::make_unique<ValistBugVisitor>(VAList));
     C.emitReport(std::move(R));
   }
 }
@@ -296,11 +296,11 @@ void ValistChecker::reportLeakedVALists(const RegionVector &LeakedVALists,
       OS << " " << VariableName;
     OS << Msg2;
 
-    auto R = llvm::make_unique<PathSensitiveBugReport>(
+    auto R = std::make_unique<PathSensitiveBugReport>(
         *BT_leakedvalist, OS.str(), N, LocUsedForUniqueing,
         StartNode->getLocationContext()->getDecl());
     R->markInteresting(Reg);
-    R->addVisitor(llvm::make_unique<ValistBugVisitor>(Reg, true));
+    R->addVisitor(std::make_unique<ValistBugVisitor>(Reg, true));
     C.emitReport(std::move(R));
   }
 }

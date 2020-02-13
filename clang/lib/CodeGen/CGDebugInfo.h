@@ -83,11 +83,24 @@ class CGDebugInfo {
   /// Cache of previously constructed Types.
   llvm::DenseMap<const void *, llvm::TrackingMDRef> TypeCache;
 
-  llvm::SmallDenseMap<llvm::StringRef, llvm::StringRef> DebugPrefixMap;
+  std::map<llvm::StringRef, llvm::StringRef, std::greater<llvm::StringRef>>
+      DebugPrefixMap;
 
   /// Cache that maps VLA types to size expressions for that type,
   /// represented by instantiated Metadata nodes.
   llvm::SmallDenseMap<QualType, llvm::Metadata *> SizeExprCache;
+
+  /// Callbacks to use when printing names and types.
+  class PrintingCallbacks final : public clang::PrintingCallbacks {
+    const CGDebugInfo &Self;
+
+  public:
+    PrintingCallbacks(const CGDebugInfo &Self) : Self(Self) {}
+    std::string remapPath(StringRef Path) const override {
+      return Self.remapDIPath(Path);
+    }
+  };
+  PrintingCallbacks PrintCB = {*this};
 
   struct ObjCInterfaceCacheEntry {
     const ObjCInterfaceType *Type;
@@ -408,7 +421,15 @@ public:
   void EmitInlineFunctionEnd(CGBuilderTy &Builder);
 
   /// Emit debug info for a function declaration.
-  void EmitFunctionDecl(GlobalDecl GD, SourceLocation Loc, QualType FnType);
+  /// \p Fn is set only when a declaration for a debug call site gets created.
+  void EmitFunctionDecl(GlobalDecl GD, SourceLocation Loc,
+                        QualType FnType, llvm::Function *Fn = nullptr);
+
+  /// Emit debug info for an extern function being called.
+  /// This is needed for call site debug info.
+  void EmitFuncDeclForCallSite(llvm::CallBase *CallOrInvoke,
+                               QualType CalleeType,
+                               const FunctionDecl *CalleeDecl);
 
   /// Constructs the debug code for exiting a function.
   void EmitFunctionEnd(CGBuilderTy &Builder, llvm::Function *Fn);
@@ -425,9 +446,10 @@ public:
   /// declaration.
   /// Returns a pointer to the DILocalVariable associated with the
   /// llvm.dbg.declare, or nullptr otherwise.
-  llvm::DILocalVariable *EmitDeclareOfAutoVariable(const VarDecl *Decl,
-                                                   llvm::Value *AI,
-                                                   CGBuilderTy &Builder);
+  llvm::DILocalVariable *
+  EmitDeclareOfAutoVariable(const VarDecl *Decl, llvm::Value *AI,
+                            CGBuilderTy &Builder,
+                            const bool UsePointerValue = false);
 
   /// Emit call to \c llvm.dbg.label for an label.
   void EmitLabel(const LabelDecl *D, CGBuilderTy &Builder);
@@ -455,6 +477,9 @@ public:
 
   /// Emit a constant global variable's debug info.
   void EmitGlobalVariable(const ValueDecl *VD, const APValue &Init);
+
+  /// Emit information about an external variable.
+  void EmitExternalVariable(llvm::GlobalVariable *GV, const VarDecl *Decl);
 
   /// Emit C++ using directive.
   void EmitUsingDirective(const UsingDirectiveDecl &UD);
@@ -510,7 +535,8 @@ private:
   /// llvm.dbg.declare, or nullptr otherwise.
   llvm::DILocalVariable *EmitDeclare(const VarDecl *decl, llvm::Value *AI,
                                      llvm::Optional<unsigned> ArgNo,
-                                     CGBuilderTy &Builder);
+                                     CGBuilderTy &Builder,
+                                     const bool UsePointerValue = false);
 
   struct BlockByRefType {
     /// The wrapper struct used inside the __block_literal struct.

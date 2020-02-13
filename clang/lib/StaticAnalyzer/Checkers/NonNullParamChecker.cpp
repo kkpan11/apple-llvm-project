@@ -197,7 +197,7 @@ NonNullParamChecker::genReportNullAttrNonNull(const ExplodedNode *ErrorNode,
      << " parameter expecting 'nonnull'";
 
   auto R =
-      llvm::make_unique<PathSensitiveBugReport>(*BTAttrNonNull, SBuf, ErrorNode);
+      std::make_unique<PathSensitiveBugReport>(*BTAttrNonNull, SBuf, ErrorNode);
   if (ArgE)
     bugreporter::trackExpressionValue(ErrorNode, ArgE, *R);
 
@@ -210,7 +210,7 @@ NonNullParamChecker::genReportReferenceToNullPointer(
   if (!BTNullRefArg)
     BTNullRefArg.reset(new BuiltinBug(this, "Dereference of null pointer"));
 
-  auto R = llvm::make_unique<PathSensitiveBugReport>(
+  auto R = std::make_unique<PathSensitiveBugReport>(
       *BTNullRefArg, "Forming reference to null pointer", ErrorNode);
   if (ArgE) {
     const Expr *ArgEDeref = bugreporter::getDerefExpr(ArgE);

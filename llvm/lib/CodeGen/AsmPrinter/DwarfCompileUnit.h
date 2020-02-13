@@ -40,6 +40,8 @@ class MCExpr;
 class MCSymbol;
 class MDNode;
 
+enum class UnitKind { Skeleton, Full };
+
 class DwarfCompileUnit final : public DwarfUnit {
   /// A numeric ID unique among all CUs in the module
   unsigned UniqueID;
@@ -104,7 +106,8 @@ class DwarfCompileUnit final : public DwarfUnit {
 
 public:
   DwarfCompileUnit(unsigned UID, const DICompileUnit *Node, AsmPrinter *A,
-                   DwarfDebug *DW, DwarfFile *DWU);
+                   DwarfDebug *DW, DwarfFile *DWU,
+                   UnitKind Kind = UnitKind::Full);
 
   bool hasRangeLists() const { return HasRangeLists; }
   unsigned getUniqueID() const { return UniqueID; }
@@ -227,12 +230,31 @@ public:
 
   void constructAbstractSubprogramScopeDIE(LexicalScope *Scope);
 
+  /// This takes a DWARF 5 tag and returns it or a GNU analog.
+  dwarf::Tag getDwarf5OrGNUTag(dwarf::Tag Tag) const;
+
+  /// This takes a DWARF 5 attribute and returns it or a GNU analog.
+  dwarf::Attribute getDwarf5OrGNUAttr(dwarf::Attribute Attr) const;
+
+  /// This takes a DWARF 5 location atom and either returns it or a GNU analog.
+  dwarf::LocationAtom getDwarf5OrGNULocationAtom(dwarf::LocationAtom Loc) const;
+
   /// Construct a call site entry DIE describing a call within \p Scope to a
-  /// callee described by \p CalleeSP. \p IsTail specifies whether the call is
-  /// a tail call. \p PCOffset must be non-zero for non-tail calls or be the
-  /// function-local offset to PC value after the call instruction.
-  DIE &constructCallSiteEntryDIE(DIE &ScopeDIE, const DISubprogram &CalleeSP,
-                                 bool IsTail, const MCExpr *PCOffset);
+  /// callee described by \p CalleeDIE.
+  /// \p CalleeDIE is a declaration or definition subprogram DIE for the callee.
+  /// For indirect calls \p CalleeDIE is set to nullptr.
+  /// \p IsTail specifies whether the call is a tail call.
+  /// \p PCAddr points to the PC value after the call instruction.
+  /// \p CallReg is a register location for an indirect call. For direct calls
+  /// the \p CallReg is set to 0.
+  DIE &constructCallSiteEntryDIE(DIE &ScopeDIE, DIE *CalleeDIE, bool IsTail,
+                                 const MCSymbol *PCAddr, unsigned CallReg);
+  /// Construct call site parameter DIEs for the \p CallSiteDIE. The \p Params
+  /// were collected by the \ref collectCallSiteParameters.
+  /// Note: The order of parameters does not matter, since debuggers recognize
+  ///       call site parameters by the DW_AT_location attribute.
+  void constructCallSiteParmEntryDIEs(DIE &CallSiteDIE,
+                                      SmallVector<DbgCallSiteParam, 4> &Params);
 
   /// Construct import_module DIE.
   DIE *constructImportedEntityDIE(const DIImportedEntity *Module);
@@ -313,9 +335,6 @@ public:
 
   /// Add a Dwarf expression attribute data and value.
   void addExpr(DIELoc &Die, dwarf::Form Form, const MCExpr *Expr);
-
-  /// Add an attribute containing an address expression to \p Die.
-  void addAddressExpr(DIE &Die, dwarf::Attribute Attribute, const MCExpr *Expr);
 
   void applySubprogramAttributesToDefinition(const DISubprogram *SP,
                                              DIE &SPDie);

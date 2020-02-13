@@ -696,7 +696,6 @@ PreambleBounds Lexer::ComputePreamble(StringRef Buffer,
       // We only end up here if we didn't recognize the preprocessor
       // directive or it was one that can't occur in the preamble at this
       // point. Roll back the current token to the location of the '#'.
-      InPreprocessorDirective = false;
       TheTok = HashTok;
     }
 
@@ -2686,6 +2685,7 @@ void Lexer::ReadToEndOfLine(SmallVectorImpl<char> *Result) {
   assert(ParsingPreprocessorDirective && ParsingFilename == false &&
          "Must be in a preprocessing directive!");
   Token Tmp;
+  Tmp.startToken();
 
   // CurPtr - Cache BufferPtr in an automatic variable.
   const char *CurPtr = BufferPtr;
@@ -3270,7 +3270,7 @@ LexNextToken:
 
   case '\r':
     if (CurPtr[0] == '\n')
-      Char = getAndAdvanceChar(CurPtr, Result);
+      (void)getAndAdvanceChar(CurPtr, Result);
     LLVM_FALLTHROUGH;
   case '\n':
     // If we are inside a preprocessor directive and we see the end of line,

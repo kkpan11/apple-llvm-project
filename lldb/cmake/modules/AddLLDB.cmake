@@ -58,7 +58,7 @@ function(add_lldb_library name)
   cmake_parse_arguments(PARAM
     "MODULE;SHARED;STATIC;OBJECT;PLUGIN;FRAMEWORK"
     "INSTALL_PREFIX;ENTITLEMENTS"
-    "EXTRA_CXXFLAGS;DEPENDS;LINK_LIBS;LINK_COMPONENTS"
+    "EXTRA_CXXFLAGS;DEPENDS;LINK_LIBS;LINK_COMPONENTS;CLANG_LIBS"
     ${ARGN})
   llvm_process_sources(srcs ${PARAM_UNPARSED_ARGUMENTS})
   list(APPEND LLVM_LINK_COMPONENTS ${PARAM_LINK_COMPONENTS})
@@ -112,13 +112,18 @@ function(add_lldb_library name)
       ${pass_ENTITLEMENTS}
       ${pass_NO_INSTALL_RPATH}
     )
+
+    if(CLANG_LINK_CLANG_DYLIB)
+      target_link_libraries(${name} PRIVATE clang-cpp)
+    else()
+      target_link_libraries(${name} PRIVATE ${PARAM_CLANG_LIBS})
+    endif()
   endif()
 
   # A target cannot be changed to a FRAMEWORK after calling install() because
   # this may result in the wrong install DESTINATION. The FRAMEWORK property
   # must be set earlier.
   if(PARAM_FRAMEWORK)
-    message(WARNING "{name} is now a FRAMEWORK")
     set_target_properties(liblldb PROPERTIES FRAMEWORK ON)
   endif()
 
@@ -176,7 +181,7 @@ function(add_lldb_executable name)
   cmake_parse_arguments(ARG
     "GENERATE_INSTALL"
     "INSTALL_PREFIX;ENTITLEMENTS"
-    "LINK_LIBS;LINK_COMPONENTS;BUILD_RPATH;INSTALL_RPATH"
+    "LINK_LIBS;CLANG_LIBS;LINK_COMPONENTS;BUILD_RPATH;INSTALL_RPATH"
     ${ARGN}
     )
 
@@ -196,6 +201,11 @@ function(add_lldb_executable name)
   )
 
   target_link_libraries(${name} PRIVATE ${ARG_LINK_LIBS})
+  if(CLANG_LINK_CLANG_DYLIB)
+    target_link_libraries(${name} PRIVATE clang-cpp)
+  else()
+    target_link_libraries(${name} PRIVATE ${ARG_CLANG_LIBS})
+  endif()
   set_target_properties(${name} PROPERTIES FOLDER "lldb executables")
 
   if (ARG_BUILD_RPATH)
@@ -260,8 +270,7 @@ endfunction()
 function(lldb_add_to_buildtree_lldb_framework name subdir)
   # Destination for the copy in the build-tree. While the framework target may
   # not exist yet, it will exist when the generator expression gets expanded.
-  get_target_property(framework_build_dir liblldb LIBRARY_OUTPUT_DIRECTORY)
-  set(copy_dest "${framework_build_dir}/${subdir}/$<TARGET_FILE_NAME:${name}>")
+  set(copy_dest "${LLDB_FRAMEWORK_ABSOLUTE_BUILD_DIR}/${subdir}/$<TARGET_FILE_NAME:${name}>")
 
   # Copy into the given subdirectory for testing.
   add_custom_command(TARGET ${name} POST_BUILD

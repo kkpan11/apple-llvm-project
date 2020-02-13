@@ -253,7 +253,7 @@ void atomFromSymbol(DefinedAtom::ContentType atomType, const Section &section,
                               ? DefinedAtom::mergeAsWeak : DefinedAtom::mergeNo;
     bool thumb = (symbolDescFlags & N_ARM_THUMB_DEF);
     if (atomType == DefinedAtom::typeUnknown) {
-      // Mach-O needs a segment and section name.  Concatentate those two
+      // Mach-O needs a segment and section name.  Concatenate those two
       // with a / separator (e.g. "seg/sect") to fit into the lld model
       // of just a section name.
       std::string segSectName = section.segmentName.str()
@@ -316,7 +316,7 @@ llvm::Error processSymboledSection(DefinedAtom::ContentType atomType,
             });
 
   // Debug logging of symbols.
-  //for (const Symbol *sym : symbols)
+  // for (const Symbol *sym : symbols)
   //  llvm::errs() << "  sym: "
   //    << llvm::format("0x%08llx ", (uint64_t)sym->value)
   //    << ", " << sym->name << "\n";
@@ -326,7 +326,7 @@ llvm::Error processSymboledSection(DefinedAtom::ContentType atomType,
     return llvm::Error::success();
 
   if (symbols.empty()) {
-    // Section has no symbols, put all content in one anoymous atom.
+    // Section has no symbols, put all content in one anonymous atom.
     atomFromSymbol(atomType, section, file, section.address, StringRef(),
                   0, Atom::scopeTranslationUnit,
                   section.address + section.content.size(),
@@ -471,7 +471,7 @@ llvm::Error processSection(DefinedAtom::ContentType atomType,
                                               "is not zero terminated.");
       }
       if (customSectionName) {
-        // Mach-O needs a segment and section name.  Concatentate those two
+        // Mach-O needs a segment and section name.  Concatenate those two
         // with a / separator (e.g. "seg/sect") to fit into the lld model
         // of just a section name.
         std::string segSectName = section.segmentName.str()
@@ -717,7 +717,7 @@ llvm::Error parseStabs(MachOFile &file,
   // FIXME: Kill this off when we can move to sane yaml parsing.
   std::unique_ptr<BumpPtrAllocator> allocator;
   if (copyRefs)
-    allocator = llvm::make_unique<BumpPtrAllocator>();
+    allocator = std::make_unique<BumpPtrAllocator>();
 
   enum { start, inBeginEnd } state = start;
 
@@ -812,7 +812,7 @@ llvm::Error parseStabs(MachOFile &file,
     stabsList.push_back(stab);
   }
 
-  file.setDebugInfo(llvm::make_unique<StabsDebugInfo>(std::move(stabsList)));
+  file.setDebugInfo(std::make_unique<StabsDebugInfo>(std::move(stabsList)));
 
   // FIXME: Kill this off when we fix YAML memory ownership.
   file.debugInfo()->setAllocator(std::move(allocator));
@@ -879,11 +879,11 @@ readCompUnit(const NormalizedFile &normalizedFile,
   llvm::dwarf::DwarfFormat Format = llvm::dwarf::DwarfFormat::DWARF32;
   auto infoData = dataExtractorFromSection(normalizedFile, info);
   uint32_t length = infoData.getU32(&offset);
-  if (length == 0xffffffff) {
+  if (length == llvm::dwarf::DW_LENGTH_DWARF64) {
     Format = llvm::dwarf::DwarfFormat::DWARF64;
     infoData.getU64(&offset);
   }
-  else if (length > 0xffffff00)
+  else if (length >= llvm::dwarf::DW_LENGTH_lo_reserved)
     return llvm::make_error<GenericError>("Malformed DWARF in " + path);
 
   uint16_t version = infoData.getU16(&offset);
@@ -974,11 +974,11 @@ llvm::Error parseDebugInfo(MachOFile &file,
     //        memory ownership.
     std::unique_ptr<BumpPtrAllocator> allocator;
     if (copyRefs) {
-      allocator = llvm::make_unique<BumpPtrAllocator>();
+      allocator = std::make_unique<BumpPtrAllocator>();
       tuOrErr->name = copyDebugString(tuOrErr->name, *allocator);
       tuOrErr->path = copyDebugString(tuOrErr->path, *allocator);
     }
-    file.setDebugInfo(llvm::make_unique<DwarfDebugInfo>(std::move(*tuOrErr)));
+    file.setDebugInfo(std::make_unique<DwarfDebugInfo>(std::move(*tuOrErr)));
     if (copyRefs)
       file.debugInfo()->setAllocator(std::move(allocator));
   } else
@@ -1460,7 +1460,7 @@ normalizedObjectToAtoms(MachOFile *file,
   }
   // Create atoms from undefined symbols.
   for (auto &sym : normalizedFile.undefinedSymbols) {
-    // Undefinded symbols with n_value != 0 are actually tentative definitions.
+    // Undefined symbols with n_value != 0 are actually tentative definitions.
     if (sym.value == Hex64(0)) {
       file->addUndefinedAtom(sym.name, copyRefs);
     } else {

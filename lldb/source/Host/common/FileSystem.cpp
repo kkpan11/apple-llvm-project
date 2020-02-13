@@ -279,7 +279,8 @@ void FileSystem::Resolve(FileSpec &file_spec) {
 std::shared_ptr<DataBufferLLVM>
 FileSystem::CreateDataBuffer(const llvm::Twine &path, uint64_t size,
                              uint64_t offset) {
-  AddFile(path);
+  if (m_collector)
+    m_collector->addFile(path);
 
   const bool is_volatile = !IsLocal(path);
   const ErrorOr<std::string> external_path = GetExternalPath(path);
@@ -414,12 +415,11 @@ static mode_t GetOpenMode(uint32_t permissions) {
   return mode;
 }
 
-Status FileSystem::Open(File &File, const FileSpec &file_spec, uint32_t options,
-                        uint32_t permissions, bool should_close_fd) {
-  AddFile(file_spec.GetPath());
-
-  if (File.IsValid())
-    File.Close();
+Expected<FileUP> FileSystem::Open(const FileSpec &file_spec,
+                                  File::OpenOptions options,
+                                  uint32_t permissions, bool should_close_fd) {
+  if (m_collector)
+    m_collector->addFile(file_spec.GetPath());
 
   const int open_flags = GetOpenFlags(options);
   const mode_t open_mode =
@@ -427,20 +427,19 @@ Status FileSystem::Open(File &File, const FileSpec &file_spec, uint32_t options,
 
   auto path = GetExternalPath(file_spec);
   if (!path)
-    return Status(path.getError());
+    return errorCodeToError(path.getError());
 
   int descriptor = llvm::sys::RetryAfterSignal(
       -1, OpenWithFS, *this, path->c_str(), open_flags, open_mode);
 
-  Status error;
-  if (!File::DescriptorIsValid(descriptor)) {
-    File.SetDescriptor(descriptor, false);
-    error.SetErrorToErrno();
-  } else {
-    File.SetDescriptor(descriptor, should_close_fd);
-    File.SetOptions(options);
-  }
-  return error;
+  if (!File::DescriptorIsValid(descriptor))
+    return llvm::errorCodeToError(
+        std::error_code(errno, std::system_category()));
+
+  auto file = std::unique_ptr<File>(
+      new NativeFile(descriptor, options, should_close_fd));
+  assert(file->IsValid());
+  return std::move(file);
 }
 
 ErrorOr<std::string> FileSystem::GetExternalPath(const llvm::Twine &path) {
@@ -466,10 +465,4 @@ ErrorOr<std::string> FileSystem::GetExternalPath(const llvm::Twine &path) {
 
 ErrorOr<std::string> FileSystem::GetExternalPath(const FileSpec &file_spec) {
   return GetExternalPath(file_spec.GetPath());
-}
-
-void FileSystem::AddFile(const llvm::Twine &file) {
-  if (m_collector && !llvm::sys::fs::is_directory(file)) {
-    m_collector->addFile(file);
-  }
 }

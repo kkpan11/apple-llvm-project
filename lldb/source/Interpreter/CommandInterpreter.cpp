@@ -16,7 +16,6 @@
 
 #include "Commands/CommandObjectApropos.h"
 #include "Commands/CommandObjectBreakpoint.h"
-#include "Commands/CommandObjectBugreport.h"
 #include "Commands/CommandObjectCommands.h"
 #include "Commands/CommandObjectDisassemble.h"
 #include "Commands/CommandObjectExpression.h"
@@ -49,7 +48,8 @@
 #include "lldb/Utility/Stream.h"
 #include "lldb/Utility/Timer.h"
 
-#ifndef LLDB_DISABLE_LIBEDIT
+#include "lldb/Host/Config.h"
+#if LLDB_ENABLE_LIBEDIT
 #include "lldb/Host/Editline.h"
 #endif
 #include "lldb/Host/Host.h"
@@ -64,11 +64,14 @@
 #include "lldb/Utility/Args.h"
 
 #include "lldb/Target/Process.h"
+#include "lldb/Target/StopInfo.h"
 #include "lldb/Target/TargetList.h"
 #include "lldb/Target/Thread.h"
+#include "lldb/Target/UnixSignals.h"
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallString.h"
+#include "llvm/Support/FormatAdapters.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/PrettyStackTrace.h"
 
@@ -135,9 +138,9 @@ bool CommandInterpreter::GetPromptOnQuit() const {
       nullptr, idx, g_interpreter_properties[idx].default_uint_value != 0);
 }
 
-void CommandInterpreter::SetPromptOnQuit(bool b) {
+void CommandInterpreter::SetPromptOnQuit(bool enable) {
   const uint32_t idx = ePropertyPromptOnQuit;
-  m_collection_sp->SetPropertyAtIndexAsBoolean(nullptr, idx, b);
+  m_collection_sp->SetPropertyAtIndexAsBoolean(nullptr, idx, enable);
 }
 
 bool CommandInterpreter::GetEchoCommands() const {
@@ -146,9 +149,9 @@ bool CommandInterpreter::GetEchoCommands() const {
       nullptr, idx, g_interpreter_properties[idx].default_uint_value != 0);
 }
 
-void CommandInterpreter::SetEchoCommands(bool b) {
+void CommandInterpreter::SetEchoCommands(bool enable) {
   const uint32_t idx = ePropertyEchoCommands;
-  m_collection_sp->SetPropertyAtIndexAsBoolean(nullptr, idx, b);
+  m_collection_sp->SetPropertyAtIndexAsBoolean(nullptr, idx, enable);
 }
 
 bool CommandInterpreter::GetEchoCommentCommands() const {
@@ -157,9 +160,9 @@ bool CommandInterpreter::GetEchoCommentCommands() const {
       nullptr, idx, g_interpreter_properties[idx].default_uint_value != 0);
 }
 
-void CommandInterpreter::SetEchoCommentCommands(bool b) {
+void CommandInterpreter::SetEchoCommentCommands(bool enable) {
   const uint32_t idx = ePropertyEchoCommentCommands;
-  m_collection_sp->SetPropertyAtIndexAsBoolean(nullptr, idx, b);
+  m_collection_sp->SetPropertyAtIndexAsBoolean(nullptr, idx, enable);
 }
 
 void CommandInterpreter::AllowExitCodeOnQuit(bool allow) {
@@ -363,10 +366,23 @@ void CommandInterpreter::Initialize() {
 
     AddAlias("repl", cmd_obj_sp, "--repl -- ");
 
-    AddAlias("parray", cmd_obj_sp, "--element-count %1 --")->SetHelpLong("");
-    AddAlias("poarray", cmd_obj_sp,
-             "--object-description --element-count %1 --")
-        ->SetHelpLong("");
+    CommandAlias *parray_alias =
+        AddAlias("parray", cmd_obj_sp, "--element-count %1 --");
+    if (parray_alias) {
+        parray_alias->SetHelp
+          ("parray <COUNT> <EXPRESSION> -- lldb will evaluate EXPRESSION "
+           "to get a typed-pointer-to-an-array in memory, and will display "
+           "COUNT elements of that type from the array.");
+        parray_alias->SetHelpLong("");
+    }
+    CommandAlias *poarray_alias = AddAlias("poarray", cmd_obj_sp,
+             "--object-description --element-count %1 --");
+    if (poarray_alias) {
+      poarray_alias->SetHelp("poarray <COUNT> <EXPRESSION> -- lldb will "
+          "evaluate EXPRESSION to get the address of an array of COUNT "
+          "objects in memory, and will call po on them.");
+      poarray_alias->SetHelpLong("");
+    }
   }
 
   cmd_obj_sp = GetCommandSPExact("process kill", false);
@@ -447,8 +463,6 @@ void CommandInterpreter::LoadCommandDictionary() {
   m_command_dict["apropos"] = CommandObjectSP(new CommandObjectApropos(*this));
   m_command_dict["breakpoint"] =
       CommandObjectSP(new CommandObjectMultiwordBreakpoint(*this));
-  m_command_dict["bugreport"] =
-      CommandObjectSP(new CommandObjectMultiwordBugreport(*this));
   m_command_dict["command"] =
       CommandObjectSP(new CommandObjectMultiwordCommands(*this));
   m_command_dict["disassemble"] =
@@ -489,10 +503,7 @@ void CommandInterpreter::LoadCommandDictionary() {
   m_command_dict["language"] =
       CommandObjectSP(new CommandObjectLanguage(*this));
 
-  // clang-format off
   const char *break_regexes[][2] = {
-      {"^(.*[^[:space:]])[[:space:]]*:[[:space:]]*([[:digit:]]+)[[:space:]]*:[[:space:]]*([[:digit:]]+)[[:space:]]*$",
-       "breakpoint set --file '%1' --line %2 --column %3"},
       {"^(.*[^[:space:]])[[:space:]]*:[[:space:]]*([[:digit:]]+)[[:space:]]*$",
        "breakpoint set --file '%1' --line %2"},
       {"^/([^/]+)/$", "breakpoint set --source-pattern-regexp '%1'"},
@@ -507,7 +518,6 @@ void CommandInterpreter::LoadCommandDictionary() {
        "breakpoint set --name '%1' --skip-prologue=0"},
       {"^[\"']?(.*[^[:space:]\"'])[\"']?[[:space:]]*$",
        "breakpoint set --name '%1'"}};
-  // clang-format on
 
   size_t num_regexes = llvm::array_lengthof(break_regexes);
 
@@ -516,9 +526,6 @@ void CommandInterpreter::LoadCommandDictionary() {
           *this, "_regexp-break",
           "Set a breakpoint using one of several shorthand formats.",
           "\n"
-          "_regexp-break <filename>:<linenum>:<colnum>\n"
-          "              main.c:12:21          // Break at line 12 and column "
-          "21 of main.c\n\n"
           "_regexp-break <filename>:<linenum>\n"
           "              main.c:12             // Break at line 12 of "
           "main.c\n\n"
@@ -542,7 +549,7 @@ void CommandInterpreter::LoadCommandDictionary() {
           "current file\n"
           "                                    // containing text 'break "
           "here'.\n",
-          3,
+          2,
           CommandCompletions::eSymbolCompletion |
               CommandCompletions::eSourceFileCompletion,
           false));
@@ -569,9 +576,6 @@ void CommandInterpreter::LoadCommandDictionary() {
           *this, "_regexp-tbreak",
           "Set a one-shot breakpoint using one of several shorthand formats.",
           "\n"
-          "_regexp-break <filename>:<linenum>:<colnum>\n"
-          "              main.c:12:21          // Break at line 12 and column "
-          "21 of main.c\n\n"
           "_regexp-break <filename>:<linenum>\n"
           "              main.c:12             // Break at line 12 of "
           "main.c\n\n"
@@ -1774,7 +1778,7 @@ void CommandInterpreter::HandleCompletionMatches(CompletionRequest &request) {
 
   // For any of the command completions a unique match will be a complete word.
 
-  if (request.GetCursorIndex() == -1) {
+  if (request.GetParsedLine().GetArgumentCount() == 0) {
     // We got nothing on the command line, so return the list of commands
     bool include_aliases = true;
     StringList new_matches, descriptions;
@@ -1797,9 +1801,7 @@ void CommandInterpreter::HandleCompletionMatches(CompletionRequest &request) {
         look_for_subcommand = true;
         new_matches.DeleteStringAtIndex(0);
         new_descriptions.DeleteStringAtIndex(0);
-        request.GetParsedLine().AppendArgument(llvm::StringRef());
-        request.SetCursorIndex(request.GetCursorIndex() + 1);
-        request.SetCursorCharPosition(0);
+        request.AppendEmptyArgument();
       }
     }
     request.AddCompletions(new_matches, new_descriptions);
@@ -1812,8 +1814,7 @@ void CommandInterpreter::HandleCompletionMatches(CompletionRequest &request) {
     CommandObject *command_object =
         GetCommandObject(request.GetParsedLine().GetArgumentAtIndex(0));
     if (command_object) {
-      request.GetParsedLine().Shift();
-      request.SetCursorIndex(request.GetCursorIndex() - 1);
+      request.ShiftArguments();
       command_object->HandleCompletion(request);
     }
   }
@@ -1979,7 +1980,7 @@ void CommandInterpreter::BuildAliasCommandArgs(CommandObject *alias_cmd_obj,
 
     for (auto entry : llvm::enumerate(cmd_args.entries())) {
       if (!used[entry.index()] && !wants_raw_input)
-        new_args.AppendArgument(entry.value().ref);
+        new_args.AppendArgument(entry.value().ref());
     }
 
     cmd_args.Clear();
@@ -2159,6 +2160,45 @@ PlatformSP CommandInterpreter::GetPlatform(bool prefer_target_platform) {
   return platform_sp;
 }
 
+bool CommandInterpreter::DidProcessStopAbnormally() const {
+  TargetSP target_sp = m_debugger.GetTargetList().GetSelectedTarget();
+  if (!target_sp)
+    return false;
+
+  ProcessSP process_sp(target_sp->GetProcessSP());
+  if (!process_sp)
+    return false;
+
+  if (eStateStopped != process_sp->GetState())
+    return false;
+
+  for (const auto &thread_sp : process_sp->GetThreadList().Threads()) {
+    StopInfoSP stop_info = thread_sp->GetStopInfo();
+    if (!stop_info)
+      return false;
+
+    const StopReason reason = stop_info->GetStopReason();
+    if (reason == eStopReasonException || reason == eStopReasonInstrumentation)
+      return true;
+
+    if (reason == eStopReasonSignal) {
+      const auto stop_signal = static_cast<int32_t>(stop_info->GetValue());
+      UnixSignalsSP signals_sp = process_sp->GetUnixSignals();
+      if (!signals_sp || !signals_sp->SignalIsValid(stop_signal))
+        // The signal is unknown, treat it as abnormal.
+        return true;
+
+      const auto sigint_num = signals_sp->GetSignalNumberFromName("SIGINT");
+      const auto sigstop_num = signals_sp->GetSignalNumberFromName("SIGSTOP");
+      if ((stop_signal != sigint_num) && (stop_signal != sigstop_num))
+        // The signal very likely implies a crash.
+        return true;
+    }
+  }
+
+  return false;
+}
+
 void CommandInterpreter::HandleCommands(const StringList &commands,
                                         ExecutionContext *override_context,
                                         CommandInterpreterRunOptions &options,
@@ -2269,38 +2309,22 @@ void CommandInterpreter::HandleCommands(const StringList &commands,
     }
 
     // Also check for "stop on crash here:
-    bool should_stop = false;
-    if (tmp_result.GetDidChangeProcessState() && options.GetStopOnCrash()) {
-      TargetSP target_sp(m_debugger.GetTargetList().GetSelectedTarget());
-      if (target_sp) {
-        ProcessSP process_sp(target_sp->GetProcessSP());
-        if (process_sp) {
-          for (ThreadSP thread_sp : process_sp->GetThreadList().Threads()) {
-            StopReason reason = thread_sp->GetStopReason();
-            if (reason == eStopReasonSignal || reason == eStopReasonException ||
-                reason == eStopReasonInstrumentation) {
-              should_stop = true;
-              break;
-            }
-          }
-        }
-      }
-      if (should_stop) {
-        if (idx != num_lines - 1)
-          result.AppendErrorWithFormat(
-              "Aborting reading of commands after command #%" PRIu64
-              ": '%s' stopped with a signal or exception.\n",
-              (uint64_t)idx + 1, cmd);
-        else
-          result.AppendMessageWithFormat(
-              "Command #%" PRIu64 " '%s' stopped with a signal or exception.\n",
-              (uint64_t)idx + 1, cmd);
+    if (tmp_result.GetDidChangeProcessState() && options.GetStopOnCrash() &&
+        DidProcessStopAbnormally()) {
+      if (idx != num_lines - 1)
+        result.AppendErrorWithFormat(
+            "Aborting reading of commands after command #%" PRIu64
+            ": '%s' stopped with a signal or exception.\n",
+            (uint64_t)idx + 1, cmd);
+      else
+        result.AppendMessageWithFormat(
+            "Command #%" PRIu64 " '%s' stopped with a signal or exception.\n",
+            (uint64_t)idx + 1, cmd);
 
-        result.SetStatus(tmp_result.GetStatus());
-        m_debugger.SetAsyncExecution(old_async_execution);
+      result.SetStatus(tmp_result.GetStatus());
+      m_debugger.SetAsyncExecution(old_async_execution);
 
-        return;
-      }
+      return;
     }
   }
 
@@ -2333,18 +2357,18 @@ void CommandInterpreter::HandleCommandsFromFile(
     return;
   }
 
-  StreamFileSP input_file_sp(new StreamFile());
   std::string cmd_file_path = cmd_file.GetPath();
-  Status error = FileSystem::Instance().Open(input_file_sp->GetFile(), cmd_file,
-                                             File::eOpenOptionRead);
-
-  if (error.Fail()) {
-    result.AppendErrorWithFormat(
-        "error: an error occurred read file '%s': %s\n", cmd_file_path.c_str(),
-        error.AsCString());
+  auto input_file_up =
+      FileSystem::Instance().Open(cmd_file, File::eOpenOptionRead);
+  if (!input_file_up) {
+    std::string error = llvm::toString(input_file_up.takeError());
+    result.AppendErrorWithFormatv(
+        "error: an error occurred read file '{0}': {1}\n", cmd_file_path,
+        llvm::fmt_consume(input_file_up.takeError()));
     result.SetStatus(eReturnStatusFailed);
     return;
   }
+  FileSP input_file_sp = FileSP(std::move(input_file_up.get()));
 
   Debugger &debugger = GetDebugger();
 
@@ -2430,8 +2454,8 @@ void CommandInterpreter::HandleCommandsFromFile(
   }
 
   if (flags & eHandleCommandFlagPrintResult) {
-    debugger.GetOutputFile()->Printf("Executing commands in '%s'.\n",
-                                     cmd_file_path.c_str());
+    debugger.GetOutputFile().Printf("Executing commands in '%s'.\n",
+                                    cmd_file_path.c_str());
   }
 
   // Used for inheriting the right settings when "command source" might
@@ -2731,8 +2755,8 @@ void CommandInterpreter::IOHandlerInputComplete(IOHandler &io_handler,
     // from a file) we need to echo the command out so we don't just see the
     // command output and no command...
     if (EchoCommandNonInteractive(line, io_handler.GetFlags()))
-      io_handler.GetOutputStreamFile()->Printf("%s%s\n", io_handler.GetPrompt(),
-                                               line.c_str());
+      io_handler.GetOutputStreamFileSP()->Printf(
+          "%s%s\n", io_handler.GetPrompt(), line.c_str());
   }
 
   StartHandlingCommand();
@@ -2749,13 +2773,13 @@ void CommandInterpreter::IOHandlerInputComplete(IOHandler &io_handler,
 
     if (!result.GetImmediateOutputStream()) {
       llvm::StringRef output = result.GetOutputData();
-      PrintCommandOutput(*io_handler.GetOutputStreamFile(), output);
+      PrintCommandOutput(*io_handler.GetOutputStreamFileSP(), output);
     }
 
     // Now emit the command error text from the command we just executed
     if (!result.GetImmediateErrorStream()) {
       llvm::StringRef error = result.GetErrorData();
-      PrintCommandOutput(*io_handler.GetErrorStreamFile(), error);
+      PrintCommandOutput(*io_handler.GetErrorStreamFileSP(), error);
     }
   }
 
@@ -2788,27 +2812,10 @@ void CommandInterpreter::IOHandlerInputComplete(IOHandler &io_handler,
 
   // Finally, if we're going to stop on crash, check that here:
   if (!m_quit_requested && result.GetDidChangeProcessState() &&
-      io_handler.GetFlags().Test(eHandleCommandFlagStopOnCrash)) {
-    bool should_stop = false;
-    TargetSP target_sp(m_debugger.GetTargetList().GetSelectedTarget());
-    if (target_sp) {
-      ProcessSP process_sp(target_sp->GetProcessSP());
-      if (process_sp) {
-        for (ThreadSP thread_sp : process_sp->GetThreadList().Threads()) {
-          StopReason reason = thread_sp->GetStopReason();
-          if ((reason == eStopReasonSignal || reason == eStopReasonException ||
-               reason == eStopReasonInstrumentation) &&
-              !result.GetAbnormalStopWasExpected()) {
-            should_stop = true;
-            break;
-          }
-        }
-      }
-    }
-    if (should_stop) {
-      io_handler.SetIsDone(true);
-      m_stopped_for_crash = true;
-    }
+      io_handler.GetFlags().Test(eHandleCommandFlagStopOnCrash) &&
+      DidProcessStopAbnormally()) {
+    io_handler.SetIsDone(true);
+    m_stopped_for_crash = true;
   }
 }
 
@@ -2922,8 +2929,8 @@ CommandInterpreter::GetIOHandler(bool force_create,
 
     m_command_io_handler_sp = std::make_shared<IOHandlerEditline>(
         m_debugger, IOHandler::Type::CommandInterpreter,
-        m_debugger.GetInputFile(), m_debugger.GetOutputFile(),
-        m_debugger.GetErrorFile(), flags, "lldb", m_debugger.GetPrompt(),
+        m_debugger.GetInputFileSP(), m_debugger.GetOutputStreamSP(),
+        m_debugger.GetErrorStreamSP(), flags, "lldb", m_debugger.GetPrompt(),
         llvm::StringRef(), // Continuation prompt
         false, // Don't enable multiple line input, just single line commands
         m_debugger.GetUseColor(),

@@ -206,10 +206,9 @@ DiagnosticsEngine::DiagStateMap::lookup(SourceManager &SrcMgr,
 
 DiagnosticsEngine::DiagState *
 DiagnosticsEngine::DiagStateMap::File::lookup(unsigned Offset) const {
-  auto OnePastIt = std::upper_bound(
-      StateTransitions.begin(), StateTransitions.end(), Offset,
-      [](unsigned Offset, const DiagStatePoint &P) {
-        return Offset < P.Offset;
+  auto OnePastIt =
+      llvm::partition_point(StateTransitions, [=](const DiagStatePoint &P) {
+        return P.Offset <= Offset;
       });
   assert(OnePastIt != StateTransitions.begin() && "missing initial state");
   return OnePastIt[-1].State;
@@ -983,6 +982,7 @@ FormatDiagnostic(const char *DiagStr, const char *DiagEnd,
       llvm::raw_svector_ostream(OutStr) << '\'' << II->getName() << '\'';
       break;
     }
+    case DiagnosticsEngine::ak_addrspace:
     case DiagnosticsEngine::ak_qual:
     case DiagnosticsEngine::ak_qualtype:
     case DiagnosticsEngine::ak_declarationname:

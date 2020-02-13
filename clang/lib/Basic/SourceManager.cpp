@@ -95,8 +95,31 @@ void ContentCache::replaceBuffer(const llvm::MemoryBuffer *B, bool DoNotFree) {
   Buffer.setInt((B && DoNotFree) ? DoNotFreeFlag : 0);
 }
 
+const char *ContentCache::getInvalidBOM(StringRef BufStr) {
+  // If the buffer is valid, check to see if it has a UTF Byte Order Mark
+  // (BOM).  We only support UTF-8 with and without a BOM right now.  See
+  // http://en.wikipedia.org/wiki/Byte_order_mark for more information.
+  const char *InvalidBOM =
+      llvm::StringSwitch<const char *>(BufStr)
+          .StartsWith(llvm::StringLiteral::withInnerNUL("\x00\x00\xFE\xFF"),
+                      "UTF-32 (BE)")
+          .StartsWith(llvm::StringLiteral::withInnerNUL("\xFF\xFE\x00\x00"),
+                      "UTF-32 (LE)")
+          .StartsWith("\xFE\xFF", "UTF-16 (BE)")
+          .StartsWith("\xFF\xFE", "UTF-16 (LE)")
+          .StartsWith("\x2B\x2F\x76", "UTF-7")
+          .StartsWith("\xF7\x64\x4C", "UTF-1")
+          .StartsWith("\xDD\x73\x66\x73", "UTF-EBCDIC")
+          .StartsWith("\x0E\xFE\xFF", "SCSU")
+          .StartsWith("\xFB\xEE\x28", "BOCU-1")
+          .StartsWith("\x84\x31\x95\x33", "GB-18030")
+          .Default(nullptr);
+
+  return InvalidBOM;
+}
+
 const llvm::MemoryBuffer *ContentCache::getBuffer(DiagnosticsEngine &Diag,
-                                                  const SourceManager &SM,
+                                                  FileManager &FM,
                                                   SourceLocation Loc,
                                                   bool *Invalid) const {
   // Lazily create the Buffer for ContentCaches that wrap files.  If we already
@@ -108,9 +131,33 @@ const llvm::MemoryBuffer *ContentCache::getBuffer(DiagnosticsEngine &Diag,
     return Buffer.getPointer();
   }
 
-  bool isVolatile = SM.userFilesAreVolatile() && !IsSystemFile;
-  auto BufferOrError =
-      SM.getFileManager().getBufferForFile(ContentsEntry, isVolatile);
+  // Check that the file's size fits in an 'unsigned' (with room for a
+  // past-the-end value). This is deeply regrettable, but various parts of
+  // Clang (including elsewhere in this file!) use 'unsigned' to represent file
+  // offsets, line numbers, string literal lengths, and so on, and fail
+  // miserably on large source files.
+  if ((uint64_t)ContentsEntry->getSize() >=
+      std::numeric_limits<unsigned>::max()) {
+    // We can't make a memory buffer of the required size, so just make a small
+    // one. We should never hit a situation where we've already parsed to a
+    // later offset of the file, so it shouldn't matter that the buffer is
+    // smaller than the file.
+    Buffer.setPointer(
+        llvm::MemoryBuffer::getMemBuffer("", ContentsEntry->getName())
+            .release());
+    if (Diag.isDiagnosticInFlight())
+      Diag.SetDelayedDiagnostic(diag::err_file_too_large,
+                                ContentsEntry->getName());
+    else
+      Diag.Report(Loc, diag::err_file_too_large)
+        << ContentsEntry->getName();
+
+    Buffer.setInt(Buffer.getInt() | InvalidFlag);
+    if (Invalid) *Invalid = true;
+    return Buffer.getPointer();
+  }
+
+  auto BufferOrError = FM.getBufferForFile(ContentsEntry, IsFileVolatile);
 
   // If we were unable to open the file, then we are in an inconsistent
   // situation where the content cache referenced a file which no longer
@@ -166,20 +213,7 @@ const llvm::MemoryBuffer *ContentCache::getBuffer(DiagnosticsEngine &Diag,
   // (BOM).  We only support UTF-8 with and without a BOM right now.  See
   // http://en.wikipedia.org/wiki/Byte_order_mark for more information.
   StringRef BufStr = Buffer.getPointer()->getBuffer();
-  const char *InvalidBOM = llvm::StringSwitch<const char *>(BufStr)
-    .StartsWith(llvm::StringLiteral::withInnerNUL("\x00\x00\xFE\xFF"),
-                                                  "UTF-32 (BE)")
-    .StartsWith(llvm::StringLiteral::withInnerNUL("\xFF\xFE\x00\x00"),
-                                                  "UTF-32 (LE)")
-    .StartsWith("\xFE\xFF", "UTF-16 (BE)")
-    .StartsWith("\xFF\xFE", "UTF-16 (LE)")
-    .StartsWith("\x2B\x2F\x76", "UTF-7")
-    .StartsWith("\xF7\x64\x4C", "UTF-1")
-    .StartsWith("\xDD\x73\x66\x73", "UTF-EBCDIC")
-    .StartsWith("\x0E\xFE\xFF", "SCSU")
-    .StartsWith("\xFB\xEE\x28", "BOCU-1")
-    .StartsWith("\x84\x31\x95\x33", "GB-18030")
-    .Default(nullptr);
+  const char *InvalidBOM = getInvalidBOM(BufStr);
 
   if (InvalidBOM) {
     Diag.Report(Loc, diag::err_unsupported_bom)
@@ -252,9 +286,9 @@ const LineEntry *LineTableInfo::FindNearestLineEntry(FileID FID,
     return &Entries.back();
 
   // Do a binary search to find the maximal element that is still before Offset.
-  std::vector<LineEntry>::const_iterator I =
-    std::upper_bound(Entries.begin(), Entries.end(), Offset);
-  if (I == Entries.begin()) return nullptr;
+  std::vector<LineEntry>::const_iterator I = llvm::upper_bound(Entries, Offset);
+  if (I == Entries.begin())
+    return nullptr;
   return &*--I;
 }
 
@@ -303,7 +337,7 @@ void SourceManager::AddLineNote(SourceLocation Loc, unsigned LineNo,
 
 LineTableInfo &SourceManager::getLineTable() {
   if (!LineTable)
-    LineTable = new LineTableInfo();
+    LineTable.reset(new LineTableInfo());
   return *LineTable;
 }
 
@@ -319,8 +353,6 @@ SourceManager::SourceManager(DiagnosticsEngine &Diag, FileManager &FileMgr,
 }
 
 SourceManager::~SourceManager() {
-  delete LineTable;
-
   // Delete FileEntry objects corresponding to content caches.  Since the actual
   // content cache objects are bump pointer allocated, we just have to run the
   // dtors, but we call the deallocate method for completeness.
@@ -365,7 +397,7 @@ void SourceManager::initializeForReplay(const SourceManager &Old) {
     Clone->OrigEntry = Cache->OrigEntry;
     Clone->ContentsEntry = Cache->ContentsEntry;
     Clone->BufferOverridden = Cache->BufferOverridden;
-    Clone->IsSystemFile = Cache->IsSystemFile;
+    Clone->IsFileVolatile = Cache->IsFileVolatile;
     Clone->IsTransient = Cache->IsTransient;
     Clone->replaceBuffer(Cache->getRawBuffer(), /*DoNotFree*/true);
     return Clone;
@@ -414,7 +446,7 @@ SourceManager::getOrCreateContentCache(const FileEntry *FileEnt,
     new (Entry) ContentCache(FileEnt);
   }
 
-  Entry->IsSystemFile = isSystemFile;
+  Entry->IsFileVolatile = UserFilesAreVolatile && !isSystemFile;
   Entry->IsTransient = FilesAreTransient;
 
   return Entry;
@@ -480,7 +512,7 @@ llvm::MemoryBuffer *SourceManager::getFakeBufferForRecovery() const {
 const SrcMgr::ContentCache *
 SourceManager::getFakeContentCacheForRecovery() const {
   if (!FakeContentCacheForRecovery) {
-    FakeContentCacheForRecovery = llvm::make_unique<SrcMgr::ContentCache>();
+    FakeContentCacheForRecovery = std::make_unique<SrcMgr::ContentCache>();
     FakeContentCacheForRecovery->replaceBuffer(getFakeBufferForRecovery(),
                                                /*DoNotFree=*/true);
   }
@@ -621,7 +653,7 @@ const llvm::MemoryBuffer *
 SourceManager::getMemoryBufferForFile(const FileEntry *File, bool *Invalid) {
   const SrcMgr::ContentCache *IR = getOrCreateContentCache(File);
   assert(IR && "getOrCreateContentCache() cannot return NULL");
-  return IR->getBuffer(Diag, *this, SourceLocation(), Invalid);
+  return IR->getBuffer(Diag, getFileManager(), SourceLocation(), Invalid);
 }
 
 void SourceManager::overrideFileContents(const FileEntry *SourceFile,
@@ -647,17 +679,19 @@ void SourceManager::overrideFileContents(const FileEntry *SourceFile,
   getOverriddenFilesInfo().OverriddenFiles[SourceFile] = NewFile;
 }
 
-void SourceManager::disableFileContentsOverride(const FileEntry *File) {
-  if (!isFileOverridden(File))
-    return;
+const FileEntry *
+SourceManager::bypassFileContentsOverride(const FileEntry &File) {
+  assert(isFileOverridden(&File));
+  llvm::Optional<FileEntryRef> BypassFile =
+      FileMgr.getBypassFile(FileEntryRef(File.getName(), File));
 
-  const SrcMgr::ContentCache *IR = getOrCreateContentCache(File);
-  const_cast<SrcMgr::ContentCache *>(IR)->replaceBuffer(nullptr);
-  const_cast<SrcMgr::ContentCache *>(IR)->ContentsEntry = IR->OrigEntry;
+  // If the file can't be found in the FS, give up.
+  if (!BypassFile)
+    return nullptr;
 
-  assert(OverriddenFilesInfo);
-  OverriddenFilesInfo->OverriddenFiles.erase(File);
-  OverriddenFilesInfo->OverriddenFilesWithBuffer.erase(File);
+  const FileEntry *FE = &BypassFile->getFileEntry();
+  (void)getOrCreateContentCache(FE);
+  return FE;
 }
 
 void SourceManager::setFileIsTransient(const FileEntry *File) {
@@ -675,7 +709,7 @@ StringRef SourceManager::getBufferData(FileID FID, bool *Invalid) const {
   }
 
   const llvm::MemoryBuffer *Buf = SLoc.getFile().getContentCache()->getBuffer(
-      Diag, *this, SourceLocation(), &MyInvalid);
+      Diag, getFileManager(), SourceLocation(), &MyInvalid);
   if (Invalid)
     *Invalid = MyInvalid;
 
@@ -1106,7 +1140,7 @@ const char *SourceManager::getCharacterData(SourceLocation SL,
   }
   const llvm::MemoryBuffer *Buffer =
       Entry.getFile().getContentCache()->getBuffer(
-          Diag, *this, SourceLocation(), &CharDataInvalid);
+          Diag, getFileManager(), SourceLocation(), &CharDataInvalid);
   if (Invalid)
     *Invalid = CharDataInvalid;
   return Buffer->getBufferStart() + (CharDataInvalid? 0 : LocInfo.second);
@@ -1203,7 +1237,7 @@ static void ComputeLineNumbers(DiagnosticsEngine &Diag, ContentCache *FI,
                                const SourceManager &SM, bool &Invalid) {
   // Note that calling 'getBuffer()' may lazily page in the file.
   const MemoryBuffer *Buffer =
-      FI->getBuffer(Diag, SM, SourceLocation(), &Invalid);
+      FI->getBuffer(Diag, SM.getFileManager(), SourceLocation(), &Invalid);
   if (Invalid)
     return;
 
@@ -1429,7 +1463,7 @@ PresumedLoc SourceManager::getPresumedLoc(SourceLocation Loc,
   if (C->OrigEntry)
     Filename = C->OrigEntry->getName();
   else
-    Filename = C->getBuffer(Diag, *this)->getBufferIdentifier();
+    Filename = C->getBuffer(Diag, getFileManager())->getBufferIdentifier();
 
   unsigned LineNo = getLineNumber(LocInfo.first, LocInfo.second, &Invalid);
   if (Invalid)
@@ -1629,13 +1663,13 @@ SourceLocation SourceManager::translateLineCol(FileID FID,
   }
 
   if (Line > Content->NumLines) {
-    unsigned Size = Content->getBuffer(Diag, *this)->getBufferSize();
+    unsigned Size = Content->getBuffer(Diag, getFileManager())->getBufferSize();
     if (Size > 0)
       --Size;
     return FileLoc.getLocWithOffset(Size);
   }
 
-  const llvm::MemoryBuffer *Buffer = Content->getBuffer(Diag, *this);
+  const llvm::MemoryBuffer *Buffer = Content->getBuffer(Diag, getFileManager());
   unsigned FilePos = Content->SourceLineCache[Line - 1];
   const char *Buf = Buffer->getBufferStart() + FilePos;
   unsigned BufLength = Buffer->getBufferSize() - FilePos;
@@ -1811,7 +1845,7 @@ SourceManager::getMacroArgExpandedLocation(SourceLocation Loc) const {
 
   std::unique_ptr<MacroArgsMap> &MacroArgsCache = MacroArgsCacheMap[FID];
   if (!MacroArgsCache) {
-    MacroArgsCache = llvm::make_unique<MacroArgsMap>();
+    MacroArgsCache = std::make_unique<MacroArgsMap>();
     computeMacroArgsCache(*MacroArgsCache, FID);
   }
 
@@ -2140,13 +2174,13 @@ SourceManagerForFile::SourceManagerForFile(StringRef FileName,
   // This is passed to `SM` as reference, so the pointer has to be referenced
   // in `Environment` so that `FileMgr` can out-live this function scope.
   FileMgr =
-      llvm::make_unique<FileManager>(FileSystemOptions(), InMemoryFileSystem);
+      std::make_unique<FileManager>(FileSystemOptions(), InMemoryFileSystem);
   // This is passed to `SM` as reference, so the pointer has to be referenced
   // by `Environment` due to the same reason above.
-  Diagnostics = llvm::make_unique<DiagnosticsEngine>(
+  Diagnostics = std::make_unique<DiagnosticsEngine>(
       IntrusiveRefCntPtr<DiagnosticIDs>(new DiagnosticIDs),
       new DiagnosticOptions);
-  SourceMgr = llvm::make_unique<SourceManager>(*Diagnostics, *FileMgr);
+  SourceMgr = std::make_unique<SourceManager>(*Diagnostics, *FileMgr);
   FileID ID = SourceMgr->createFileID(*FileMgr->getFile(FileName),
                                       SourceLocation(), clang::SrcMgr::C_User);
   assert(ID.isValid());

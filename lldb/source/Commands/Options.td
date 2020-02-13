@@ -167,17 +167,6 @@ let Command = "breakpoint set" in {
     "match against all source files, pass the \"--all-files\" option.">;
   def breakpoint_set_all_files : Option<"all-files", "A">, Group<9>,
     Desc<"All files are searched for source pattern matches.">;
-  def breakpoint_set_python_class : Option<"python-class", "P">, Group<11>,
-    Arg<"PythonClass">, Required, Desc<"The name of the class that implement "
-    "a scripted breakpoint.">;
-  def breakpoint_set_python_class_key : Option<"python-class-key", "k">,
-    Group<11>, Arg<"None">,
-    Desc<"The key for a key/value pair passed to the class that implements a "
-    "scripted breakpoint.  Can be specified more than once.">;
-  def breakpoint_set_python_class_value : Option<"python-class-value", "v">,
-    Group<11>, Arg<"None">, Desc<"The value for the previous key in the pair "
-    "passed to the class that implements a scripted breakpoint. "
-    "Can be specified more than once.">;
   def breakpoint_set_language_exception : Option<"language-exception", "E">,
     Group<10>, Arg<"Language">, Required,
     Desc<"Set the breakpoint on exceptions thrown by the specified language "
@@ -186,6 +175,8 @@ let Command = "breakpoint set" in {
     Arg<"Boolean">, Desc<"Set the breakpoint on exception throW.">;
   def breakpoint_set_on_catch : Option<"on-catch", "h">, Group<10>,
     Arg<"Boolean">, Desc<"Set the breakpoint on exception catcH.">;
+
+  // BEGIN SWIFT
   def breakpoint_set_exception_typename : Option<"exception-typename", "O">,
     Group<10>,
     Arg<"TypeName">, Desc<"The breakpoint will only stop if an exception "
@@ -194,6 +185,8 @@ let Command = "breakpoint set" in {
     "match against that type in all modules, or you can specify the full type "
     "name including modules. Other submatches are not supported at present."
     "Only supported for Swift at present.">;
+  // END SWIFT
+
   def breakpoint_set_language : Option<"language", "L">, GroupRange<3, 8>,
     Arg<"Language">,
     Desc<"Specifies the Language to use when interpreting the breakpoint's "
@@ -291,10 +284,6 @@ let Command = "breakpoint command add" in {
     EnumArg<"None", "ScriptOptionEnum()">,
     Desc<"Specify the language for the commands - if none is specified, the "
     "lldb command interpreter will be used.">;
-  def breakpoint_add_python_function : Option<"python-function", "F">,
-    Group<2>, Arg<"PythonFunction">,
-    Desc<"Give the name of a Python function to run as command for this "
-    "breakpoint. Be sure to give a module name if appropriate.">;
   def breakpoint_add_dummy_breakpoints : Option<"dummy-breakpoints", "D">,
     Desc<"Sets Dummy breakpoints - i.e. breakpoints set before a file is "
     "provided, which prime new targets.">;
@@ -454,7 +443,7 @@ let Command = "log" in {
     Desc<"Prepend the names of files and function that generate the logs.">;
 }
 
-let Command = "reproducer" in {
+let Command = "reproducer dump" in {
   def reproducer_provider : Option<"provider", "p">, Group<1>,
     EnumArg<"None", "ReproducerProviderType()">,
     Required, Desc<"The reproducer provider to dump.">;
@@ -620,6 +609,9 @@ let Command = "platform process list" in {
   def platform_process_list_show_args : Option<"show-args", "A">,
     GroupRange<1, 6>,
     Desc<"Show process arguments instead of the process executable basename.">;
+  def platform_process_list_all_users: Option<"all-users", "x">,
+    GroupRange<1,6>,
+    Desc<"Show processes matching all user IDs.">;
   def platform_process_list_verbose : Option<"verbose", "v">, GroupRange<1, 6>,
     Desc<"Enable verbose output.">;
 }
@@ -933,9 +925,6 @@ let Command = "thread step scope" in {
   def thread_step_scope_step_in_target : Option<"step-in-target", "t">,
     Group<1>, Arg<"FunctionName">, Desc<"The name of the directly called "
     "function step in should stop at when stepping into.">;
-  def thread_step_scope_python_class : Option<"python-class", "C">, Group<2>,
-    Arg<"PythonClass">, Desc<"The name of the class that will manage this step "
-    "- only supported for Scripted Step.">;
 }
 
 let Command = "thread until" in {

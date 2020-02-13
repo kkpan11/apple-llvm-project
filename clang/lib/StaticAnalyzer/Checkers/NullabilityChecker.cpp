@@ -163,10 +163,10 @@ private:
     if (!BT)
       BT.reset(new BugType(this, "Nullability", categories::MemoryError));
 
-    auto R = llvm::make_unique<PathSensitiveBugReport>(*BT, Msg, N);
+    auto R = std::make_unique<PathSensitiveBugReport>(*BT, Msg, N);
     if (Region) {
       R->markInteresting(Region);
-      R->addVisitor(llvm::make_unique<NullabilityBugVisitor>(Region));
+      R->addVisitor(std::make_unique<NullabilityBugVisitor>(Region));
     }
     if (ValueExpr) {
       R->addRange(ValueExpr->getSourceRange());
@@ -476,7 +476,7 @@ void NullabilityChecker::checkEvent(ImplicitNullDerefEvent Event) const {
     return;
 
   const MemRegion *Region =
-      getTrackRegion(Event.Location, /*CheckSuperregion=*/true);
+      getTrackRegion(Event.Location, /*CheckSuperRegion=*/true);
   if (!Region)
     return;
 

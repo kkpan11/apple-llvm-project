@@ -149,16 +149,17 @@ struct TransferableCommand {
     // We parse each argument individually so that we can retain the exact
     // spelling of each argument; re-rendering is lossy for aliased flags.
     // E.g. in CL mode, /W4 maps to -Wall.
-    auto OptTable = clang::driver::createDriverOptTable();
-    Cmd.CommandLine.emplace_back(OldArgs.front());
+    auto &OptTable = clang::driver::getDriverOptTable();
+    if (!OldArgs.empty())
+      Cmd.CommandLine.emplace_back(OldArgs.front());
     for (unsigned Pos = 1; Pos < OldArgs.size();) {
       using namespace driver::options;
 
       const unsigned OldPos = Pos;
-      std::unique_ptr<llvm::opt::Arg> Arg(OptTable->ParseOneArg(
+      std::unique_ptr<llvm::opt::Arg> Arg(OptTable.ParseOneArg(
           ArgList, Pos,
-          /* Include */ClangCLMode ? CoreOption | CLOption : 0,
-          /* Exclude */ClangCLMode ? 0 : CLOption));
+          /* Include */ ClangCLMode ? CoreOption | CLOption : 0,
+          /* Exclude */ ClangCLMode ? 0 : CLOption));
 
       if (!Arg)
         continue;
@@ -190,7 +191,8 @@ struct TransferableCommand {
                              OldArgs.data() + OldPos, OldArgs.data() + Pos);
     }
 
-    if (Std != LangStandard::lang_unspecified) // -std take precedence over -x
+    // Make use of -std iff -x was missing.
+    if (Type == types::TY_INVALID && Std != LangStandard::lang_unspecified)
       Type = toType(LangStandard::getLangStandardForKind(Std).getLanguage());
     Type = foldType(*Type);
     // The contract is to store None instead of TY_INVALID.
@@ -243,7 +245,8 @@ private:
     }
 
     // Otherwise just check the clang executable file name.
-    return llvm::sys::path::stem(CmdLine.front()).endswith_lower("cl");
+    return !CmdLine.empty() &&
+           llvm::sys::path::stem(CmdLine.front()).endswith_lower("cl");
   }
 
   // Map the language from the --std flag to that of the -x flag.
@@ -469,8 +472,7 @@ private:
                                  ArrayRef<SubstringAndIndex> Idx) const {
     assert(!Idx.empty());
     // Longest substring match will be adjacent to a direct lookup.
-    auto It =
-        std::lower_bound(Idx.begin(), Idx.end(), SubstringAndIndex{Key, 0});
+    auto It = llvm::lower_bound(Idx, SubstringAndIndex{Key, 0});
     if (It == Idx.begin())
       return *It;
     if (It == Idx.end())
@@ -536,7 +538,7 @@ private:
 
 std::unique_ptr<CompilationDatabase>
 inferMissingCompileCommands(std::unique_ptr<CompilationDatabase> Inner) {
-  return llvm::make_unique<InterpolatingCompilationDatabase>(std::move(Inner));
+  return std::make_unique<InterpolatingCompilationDatabase>(std::move(Inner));
 }
 
 } // namespace tooling

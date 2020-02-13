@@ -6,23 +6,9 @@ lldb_tablegen(TargetPropertiesEnum.inc -gen-lldb-property-enum-defs
   SOURCE TargetProperties.td
   TARGET LLDBTargetPropertiesEnumGen)
 
-set(SWIFT_SOURCES SwiftLanguageRuntime.cpp)
-set(SWIFT_LIBS
-    swiftAST
-    swiftBasic
-    swiftReflection
-    swiftRemoteAST
-    lldbPluginExpressionParserSwift
-    lldbPluginSwiftLanguage
-)
-set(LLVM_OPTIONAL_SOURCES ${SWIFT_SOURCES})
-if (NOT LLDB_ENABLE_SWIFT_SUPPORT)
-  unset(SWIFT_SOURCES)
-  unset(SWIFT_LIBS)
-endif()
-
 add_lldb_library(lldbTarget
   ABI.cpp
+  AssertFrameRecognizer.cpp
   ExecutionContext.cpp
   JITLoader.cpp
   JITLoaderList.cpp
@@ -32,6 +18,7 @@ add_lldb_library(lldbTarget
   LanguageRuntime.cpp
   Memory.cpp
   MemoryHistory.cpp
+  MemoryRegionInfo.cpp
   ModuleCache.cpp
   OperatingSystem.cpp
   PathMappingList.cpp
@@ -51,6 +38,9 @@ add_lldb_library(lldbTarget
   StackID.cpp
   StopInfo.cpp
   StructuredDataPlugin.cpp
+  SwiftLanguageRuntime.cpp
+  SwiftLanguageRuntimeDynamicTypeResolution.cpp
+  SwiftLanguageRuntimeNames.cpp
   SystemRuntime.cpp
   Target.cpp
   TargetList.cpp
@@ -79,9 +69,11 @@ add_lldb_library(lldbTarget
   UnixSignals.cpp
   UnwindAssembly.cpp
 
-  ${SWIFT_SOURCES}
-
   LINK_LIBS
+    swiftAST
+    swiftBasic
+    swiftReflection
+    swiftRemoteAST
     lldbBreakpoint
     lldbCore
     lldbExpression
@@ -90,9 +82,9 @@ add_lldb_library(lldbTarget
     lldbSymbol
     lldbUtility
     lldbPluginExpressionParserClang
+    lldbPluginExpressionParserSwift
+    lldbPluginSwiftLanguage
     lldbPluginProcessUtility
-
-    ${SWIFT_LIBS}
 
   LINK_COMPONENTS
     Support

@@ -66,8 +66,21 @@ struct FileRange {
 
   unsigned length() const { return End - Begin; }
 
+  /// Check if \p Offset is inside the range.
+  bool contains(unsigned Offset) const {
+    return Begin <= Offset && Offset < End;
+  }
+  /// Check \p Offset is inside the range or equal to its endpoint.
+  bool touches(unsigned Offset) const {
+    return Begin <= Offset && Offset <= End;
+  }
+
   /// Gets the substring that this FileRange refers to.
   llvm::StringRef text(const SourceManager &SM) const;
+
+  /// Convert to the clang range. The returned range is always a char range,
+  /// never a token range.
+  CharSourceRange toCharRange(const SourceManager &SM) const;
 
   friend bool operator==(const FileRange &L, const FileRange &R) {
     return std::tie(L.File, L.Begin, L.End) == std::tie(R.File, R.Begin, R.End);
@@ -90,8 +103,7 @@ llvm::raw_ostream &operator<<(llvm::raw_ostream &OS, const FileRange &R);
 /// Can represent both expanded and spelled tokens.
 class Token {
 public:
-  Token(SourceLocation Location, unsigned Length, tok::TokenKind Kind)
-      : Location(Location), Length(Length), Kind(Kind) {}
+  Token(SourceLocation Location, unsigned Length, tok::TokenKind Kind);
   /// EXPECTS: clang::Token is not an annotation token.
   explicit Token(const clang::Token &T);
 
@@ -160,18 +172,24 @@ llvm::raw_ostream &operator<<(llvm::raw_ostream &OS, const Token &T);
 /// the spelled tokens of a file using the tokenize() helper.
 ///
 /// FIXME: allow to map from spelled to expanded tokens when use-case shows up.
+/// FIXME: allow mappings into macro arguments.
 class TokenBuffer {
 public:
   TokenBuffer(const SourceManager &SourceMgr) : SourceMgr(&SourceMgr) {}
   /// All tokens produced by the preprocessor after all macro replacements,
   /// directives, etc. Source locations found in the clang AST will always
   /// point to one of these tokens.
+  /// Tokens are in TU order (per SourceManager::isBeforeInTranslationUnit()).
   /// FIXME: figure out how to handle token splitting, e.g. '>>' can be split
   ///        into two '>' tokens by the parser. However, TokenBuffer currently
   ///        keeps it as a single '>>' token.
   llvm::ArrayRef<syntax::Token> expandedTokens() const {
     return ExpandedTokens;
   }
+
+  /// Returns the subrange of expandedTokens() corresponding to the closed
+  /// token range R.
+  llvm::ArrayRef<syntax::Token> expandedTokens(SourceRange R) const;
 
   /// Find the subrange of spelled tokens that produced the corresponding \p
   /// Expanded tokens.
@@ -226,6 +244,18 @@ public:
   /// FIXME: we do not yet store tokens of directives, like #include, #define,
   ///        #pragma, etc.
   llvm::ArrayRef<syntax::Token> spelledTokens(FileID FID) const;
+
+  /// Get all tokens that expand a macro in \p FID. For the following input
+  ///     #define FOO B
+  ///     #define FOO2(X) int X
+  ///     FOO2(XY)
+  ///     int B;
+  ///     FOO;
+  /// macroExpansions() returns {"FOO2", "FOO"} (from line 3 and 5
+  /// respecitvely).
+  std::vector<const syntax::Token *> macroExpansions(FileID FID) const;
+
+  const SourceManager &sourceManager() const { return *SourceMgr; }
 
   std::string dumpForTests() const;
 
@@ -283,6 +313,17 @@ private:
   const SourceManager *SourceMgr;
 };
 
+/// The spelled tokens that overlap or touch a spelling location Loc.
+/// This always returns 0-2 tokens.
+llvm::ArrayRef<syntax::Token>
+spelledTokensTouching(SourceLocation Loc, const syntax::TokenBuffer &Tokens);
+
+/// The identifier token that overlaps or touches a spelling location Loc.
+/// If there is none, returns nullptr.
+const syntax::Token *
+spelledIdentifierTouching(SourceLocation Loc,
+                          const syntax::TokenBuffer &Tokens);
+
 /// Lex the text buffer, corresponding to \p FID, in raw mode and record the
 /// resulting spelled tokens. Does minimal post-processing on raw identifiers,
 /// setting the appropriate token kind (instead of the raw_identifier reported
@@ -310,9 +351,32 @@ public:
   LLVM_NODISCARD TokenBuffer consume() &&;
 
 private:
+  /// Maps from a start to an end spelling location of transformations
+  /// performed by the preprocessor. These include:
+  ///   1. range from '#' to the last token in the line for PP directives,
+  ///   2. macro name and arguments for macro expansions.
+  /// Note that we record only top-level macro expansions, intermediate
+  /// expansions (e.g. inside macro arguments) are ignored.
+  ///
+  /// Used to find correct boundaries of macro calls and directives when
+  /// building mappings from spelled to expanded tokens.
+  ///
+  /// Logically, at each point of the preprocessor execution there is a stack of
+  /// macro expansions being processed and we could use it to recover the
+  /// location information we need. However, the public preprocessor API only
+  /// exposes the points when macro expansions start (when we push a macro onto
+  /// the stack) and not when they end (when we pop a macro from the stack).
+  /// To workaround this limitation, we rely on source location information
+  /// stored in this map.
+  using PPExpansions = llvm::DenseMap</*SourceLocation*/ int, SourceLocation>;
   class Builder;
+  class CollectPPExpansions;
+
   std::vector<syntax::Token> Expanded;
+  // FIXME: we only store macro expansions, also add directives(#pragma, etc.)
+  PPExpansions Expansions;
   Preprocessor &PP;
+  CollectPPExpansions *Collector;
 };
 
 } // namespace syntax

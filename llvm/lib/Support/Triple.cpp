@@ -228,8 +228,6 @@ StringRef Triple::getEnvironmentTypeName(EnvironmentType Kind) {
   case CODE16: return "code16";
   case EABI: return "eabi";
   case EABIHF: return "eabihf";
-  case ELFv1: return "elfv1";
-  case ELFv2: return "elfv2";
   case Android: return "android";
   case Musl: return "musl";
   case MuslEABI: return "musleabi";
@@ -400,6 +398,7 @@ static Triple::ArchType parseArch(StringRef ArchName) {
     .Case("arc", Triple::arc)
     .Case("arm64", Triple::aarch64)
     .Case("arm64_32", Triple::aarch64_32)
+    .Case("arm64e", Triple::aarch64)
     .Case("arm", Triple::arm)
     .Case("armeb", Triple::armeb)
     .Case("thumb", Triple::thumb)
@@ -524,8 +523,6 @@ static Triple::EnvironmentType parseEnvironment(StringRef EnvironmentName) {
   return StringSwitch<Triple::EnvironmentType>(EnvironmentName)
     .StartsWith("eabihf", Triple::EABIHF)
     .StartsWith("eabi", Triple::EABI)
-    .StartsWith("elfv1", Triple::ELFv1)
-    .StartsWith("elfv2", Triple::ELFv2)
     .StartsWith("gnuabin32", Triple::GNUABIN32)
     .StartsWith("gnuabi64", Triple::GNUABI64)
     .StartsWith("gnueabihf", Triple::GNUEABIHF)
@@ -564,6 +561,9 @@ static Triple::SubArchType parseSubArch(StringRef SubArchName) {
     return Triple::MipsSubArch_r6;
 
   StringRef ARMSubArch = ARM::getCanonicalArchName(SubArchName);
+
+  if (SubArchName == "arm64e")
+    return Triple::AArch64SubArch_E;
 
   // For now, this is the small part. Early return.
   if (ARMSubArch.empty())

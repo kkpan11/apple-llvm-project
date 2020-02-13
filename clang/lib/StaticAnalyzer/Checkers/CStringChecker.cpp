@@ -568,7 +568,7 @@ void CStringChecker::emitOverlapBug(CheckerContext &C, ProgramStateRef state,
                                  categories::UnixAPI, "Improper arguments"));
 
   // Generate a report for this bug.
-  auto report = llvm::make_unique<PathSensitiveBugReport>(
+  auto report = std::make_unique<PathSensitiveBugReport>(
       *BT_Overlap, "Arguments must not be overlapping buffers", N);
   report->addRange(First->getSourceRange());
   report->addRange(Second->getSourceRange());
@@ -585,7 +585,7 @@ void CStringChecker::emitNullArgBug(CheckerContext &C, ProgramStateRef State,
           "Null pointer argument in call to byte string function"));
 
     BuiltinBug *BT = static_cast<BuiltinBug *>(BT_Null.get());
-    auto Report = llvm::make_unique<PathSensitiveBugReport>(*BT, WarningMsg, N);
+    auto Report = std::make_unique<PathSensitiveBugReport>(*BT, WarningMsg, N);
     Report->addRange(S->getSourceRange());
     if (const auto *Ex = dyn_cast<Expr>(S))
       bugreporter::trackExpressionValue(N, Ex, *Report);
@@ -609,7 +609,7 @@ void CStringChecker::emitOutOfBoundsBug(CheckerContext &C,
     // FIXME: It would be nice to eventually make this diagnostic more clear,
     // e.g., by referencing the original declaration or by saying *why* this
     // reference is outside the range.
-    auto Report = llvm::make_unique<PathSensitiveBugReport>(*BT, WarningMsg, N);
+    auto Report = std::make_unique<PathSensitiveBugReport>(*BT, WarningMsg, N);
     Report->addRange(S->getSourceRange());
     C.emitReport(std::move(Report));
   }
@@ -625,7 +625,7 @@ void CStringChecker::emitNotCStringBug(CheckerContext &C, ProgramStateRef State,
           "Argument is not a null-terminated string."));
 
     auto Report =
-        llvm::make_unique<PathSensitiveBugReport>(*BT_NotCString, WarningMsg, N);
+        std::make_unique<PathSensitiveBugReport>(*BT_NotCString, WarningMsg, N);
 
     Report->addRange(S->getSourceRange());
     C.emitReport(std::move(Report));
@@ -648,7 +648,7 @@ void CStringChecker::emitAdditionOverflowBug(CheckerContext &C,
         "be represented as a size_t";
 
     auto Report =
-        llvm::make_unique<PathSensitiveBugReport>(*BT_NotCString, WarningMsg, N);
+        std::make_unique<PathSensitiveBugReport>(*BT_NotCString, WarningMsg, N);
     C.emitReport(std::move(Report));
   }
 }
@@ -1706,13 +1706,12 @@ void CStringChecker::evalStrcpyCommon(CheckerContext &C, const CallExpr *CE,
           } else {
             if (appendK == ConcatFnKind::none) {
               // strlcpy returns strlen(src)
-              StateZeroSize = StateZeroSize->BindExpr(CE, LCtx, *strLengthNL);
-            } else if (dstStrLengthNL) {
+              StateZeroSize = StateZeroSize->BindExpr(CE, LCtx, strLength);
+            } else {
               // strlcat returns strlen(src) + strlen(dst)
-              SVal retSize = svalBuilder.evalBinOpNN(
-                  state, BO_Add, *strLengthNL, *dstStrLengthNL, sizeTy);
-              StateZeroSize =
-                  StateZeroSize->BindExpr(CE, LCtx, *(retSize.getAs<NonLoc>()));
+              SVal retSize = svalBuilder.evalBinOp(
+                  state, BO_Add, strLength, dstStrLength, sizeTy);
+              StateZeroSize = StateZeroSize->BindExpr(CE, LCtx, retSize);
             }
           }
           C.addTransition(StateZeroSize);

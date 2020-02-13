@@ -406,9 +406,10 @@ static Error handleSection(
   if (Section.isVirtual())
     return Error::success();
 
-  StringRef Name;
-  if (std::error_code Err = Section.getName(Name))
-    return errorCodeToError(Err);
+  Expected<StringRef> NameOrErr = Section.getName();
+  if (!NameOrErr)
+    return NameOrErr.takeError();
+  StringRef Name = *NameOrErr;
 
   Expected<StringRef> ContentsOrErr = Section.getContents();
   if (!ContentsOrErr)
@@ -675,7 +676,9 @@ int main(int argc, char **argv) {
   if (!MRI)
     return error(Twine("no register info for target ") + TripleName, Context);
 
-  std::unique_ptr<MCAsmInfo> MAI(TheTarget->createMCAsmInfo(*MRI, TripleName));
+  MCTargetOptions MCOptions = InitMCTargetOptionsFromFlags();
+  std::unique_ptr<MCAsmInfo> MAI(
+      TheTarget->createMCAsmInfo(*MRI, TripleName, MCOptions));
   if (!MAI)
     return error("no asm info for target " + TripleName, Context);
 
@@ -703,7 +706,7 @@ int main(int argc, char **argv) {
 
   // Create the output file.
   std::error_code EC;
-  ToolOutputFile OutFile(OutputFilename, EC, sys::fs::F_None);
+  ToolOutputFile OutFile(OutputFilename, EC, sys::fs::OF_None);
   Optional<buffer_ostream> BOS;
   raw_pwrite_stream *OS;
   if (EC)
@@ -715,7 +718,6 @@ int main(int argc, char **argv) {
     OS = BOS.getPointer();
   }
 
-  MCTargetOptions MCOptions = InitMCTargetOptionsFromFlags();
   std::unique_ptr<MCStreamer> MS(TheTarget->createMCObjectStreamer(
       TheTriple, MC, std::unique_ptr<MCAsmBackend>(MAB),
       MAB->createObjectWriter(*OS), std::unique_ptr<MCCodeEmitter>(MCE), *MSTI,

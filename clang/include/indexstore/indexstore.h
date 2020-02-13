@@ -158,10 +158,10 @@ INDEXSTORE_PUBLIC bool
 indexstore_unit_event_notification_is_initial(indexstore_unit_event_notification_t);
 
 typedef enum {
-  INDEXSTORE_UNIT_EVENT_ADDED = 1,
   INDEXSTORE_UNIT_EVENT_REMOVED = 2,
   INDEXSTORE_UNIT_EVENT_MODIFIED = 3,
   INDEXSTORE_UNIT_EVENT_DIRECTORY_DELETED = 4,
+  INDEXSTORE_UNIT_EVENT_FAILURE = 5,
 } indexstore_unit_event_kind_t;
 
 INDEXSTORE_PUBLIC indexstore_unit_event_kind_t
@@ -169,9 +169,6 @@ indexstore_unit_event_get_kind(indexstore_unit_event_t);
 
 INDEXSTORE_PUBLIC indexstore_string_ref_t
 indexstore_unit_event_get_unit_name(indexstore_unit_event_t);
-
-INDEXSTORE_PUBLIC struct timespec
-indexstore_unit_event_get_modification_time(indexstore_unit_event_t);
 
 #if INDEXSTORE_HAS_BLOCKS
 typedef void (^indexstore_unit_event_handler_t)(indexstore_unit_event_notification_t);

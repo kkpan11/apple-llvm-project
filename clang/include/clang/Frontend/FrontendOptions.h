@@ -89,6 +89,9 @@ enum ActionKind {
   /// Generate pre-compiled header.
   GeneratePCH,
 
+  /// Generate Interface Stub Files.
+  GenerateInterfaceIfsExpV1,
+
   /// Only execute frontend initialization.
   InitOnly,
 
@@ -370,7 +373,7 @@ public:
   unsigned IndexRecordCodegenName : 1;
 
   /// The input files and their types.
-  std::vector<FrontendInputFile> Inputs;
+  SmallVector<FrontendInputFile, 0> Inputs;
 
   /// When the input is a module map, the original module map file from which
   /// that map was inferred, if any (for umbrella modules).
@@ -433,6 +436,9 @@ public:
   /// Filename to write statistics to.
   std::string StatsFile;
 
+  /// Minimum time granularity (in microseconds) traced by time profiler.
+  unsigned TimeTraceGranularity;
+
 public:
   FrontendOptions()
       : DisableFree(false), RelocatablePCH(false), ShowHelp(false),
@@ -444,7 +450,8 @@ public:
         ASTDumpDecls(false), ASTDumpLookups(false),
         BuildingImplicitModule(false), ModulesEmbedAllFiles(false),
         IncludeTimestamps(true), UseTemporary(true),
-        IndexIgnoreSystemSymbols(false), IndexRecordCodegenName(false) {}
+        IndexIgnoreSystemSymbols(false), IndexRecordCodegenName(false),
+        TimeTraceGranularity(500) {}
 
   /// getInputKindForExtension - Return the appropriate input kind for a file
   /// extension. For example, "c" would return Language::C.

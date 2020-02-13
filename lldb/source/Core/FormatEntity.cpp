@@ -166,6 +166,7 @@ static FormatEntity::Entry::Definition g_thread_child_entries[] = {
     ENTRY("queue", ThreadQueue),
     ENTRY("name", ThreadName),
     ENTRY("stop-reason", ThreadStopReason),
+    ENTRY("stop-reason-raw", ThreadStopReasonRaw),
     ENTRY("return-value", ThreadReturnValue),
     ENTRY("completed-expression", ThreadCompletedExpression),
 };
@@ -328,6 +329,7 @@ const char *FormatEntity::Entry::TypeToCString(Type t) {
     ENUM_TO_CSTR(ThreadName);
     ENUM_TO_CSTR(ThreadQueue);
     ENUM_TO_CSTR(ThreadStopReason);
+    ENUM_TO_CSTR(ThreadStopReasonRaw);
     ENUM_TO_CSTR(ThreadReturnValue);
     ENUM_TO_CSTR(ThreadCompletedExpression);
     ENUM_TO_CSTR(ScriptThread);
@@ -416,9 +418,10 @@ static bool RunScriptFormatKeyword(Stream &s, const SymbolContext *sc,
   return false;
 }
 
-static bool DumpAddress(Stream &s, const SymbolContext *sc,
-                        const ExecutionContext *exe_ctx, const Address &addr,
-                        bool print_file_addr_or_load_addr) {
+static bool DumpAddressAndContent(Stream &s, const SymbolContext *sc,
+                                  const ExecutionContext *exe_ctx,
+                                  const Address &addr,
+                                  bool print_file_addr_or_load_addr) {
   Target *target = Target::GetTargetFromContexts(exe_ctx, sc);
   addr_t vaddr = LLDB_INVALID_ADDRESS;
   if (exe_ctx && !target->GetSectionLoadList().IsEmpty())
@@ -1147,9 +1150,10 @@ bool FormatEntity::Format(const Entry &entry, Stream &s,
   case Entry::Type::AddressFile:
   case Entry::Type::AddressLoad:
   case Entry::Type::AddressLoadOrFile:
-    return (addr != nullptr && addr->IsValid() &&
-            DumpAddress(s, sc, exe_ctx, *addr,
-                        entry.type == Entry::Type::AddressLoadOrFile));
+    return (
+        addr != nullptr && addr->IsValid() &&
+        DumpAddressAndContent(s, sc, exe_ctx, *addr,
+                              entry.type == Entry::Type::AddressLoadOrFile));
 
   case Entry::Type::ProcessID:
     if (exe_ctx) {
@@ -1271,15 +1275,23 @@ bool FormatEntity::Format(const Entry &entry, Stream &s,
 
   case Entry::Type::ThreadStopReason:
     if (exe_ctx) {
-      Thread *thread = exe_ctx->GetThreadPtr();
-      if (thread) {
-        StopInfoSP stop_info_sp = thread->GetStopInfo();
-        if (stop_info_sp && stop_info_sp->IsValid()) {
-          const char *cstr = stop_info_sp->GetDescription();
-          if (cstr && cstr[0]) {
-            s.PutCString(cstr);
-            return true;
-          }
+      if (Thread *thread = exe_ctx->GetThreadPtr()) {
+        std::string stop_description = thread->GetStopDescription();
+        if (!stop_description.empty()) {
+          s.PutCString(stop_description);
+          return true;
+        }
+      }
+    }
+    return false;
+
+  case Entry::Type::ThreadStopReasonRaw:
+    if (exe_ctx) {
+      if (Thread *thread = exe_ctx->GetThreadPtr()) {
+        std::string stop_description = thread->GetStopDescriptionRaw();
+        if (!stop_description.empty()) {
+          s.PutCString(stop_description);
+          return true;
         }
       }
     }
@@ -1291,6 +1303,7 @@ bool FormatEntity::Format(const Entry &entry, Stream &s,
       if (thread) {
         StopInfoSP stop_info_sp = thread->GetStopInfo();
         if (stop_info_sp && stop_info_sp->IsValid()) {
+          // BEGIN SWIFT
           bool is_swift_error_return = false;
           ValueObjectSP return_valobj_sp = StopInfo::GetReturnValueObject(
               stop_info_sp, is_swift_error_return);
@@ -1301,6 +1314,10 @@ bool FormatEntity::Format(const Entry &entry, Stream &s,
             if (return_valobj_sp->DoesProvideSyntheticValue())
               options.SetUseSyntheticValue(true);
             return_valobj_sp->Dump(s, options);
+            return true;
+          }
+          // END SWIFT
+          if (return_valobj_sp) {
             return true;
           }
         }
@@ -1384,8 +1401,7 @@ bool FormatEntity::Format(const Entry &entry, Stream &s,
     if (sc) {
       CompileUnit *cu = sc->comp_unit;
       if (cu) {
-        // CompileUnit is a FileSpec
-        if (DumpFile(s, *cu, (FileKind)entry.number))
+        if (DumpFile(s, cu->GetPrimaryFile(), (FileKind)entry.number))
           return true;
       }
     }
@@ -1424,7 +1440,7 @@ bool FormatEntity::Format(const Entry &entry, Stream &s,
       if (frame) {
         const Address &pc_addr = frame->GetFrameCodeAddress();
         if (pc_addr.IsValid()) {
-          if (DumpAddress(s, sc, exe_ctx, pc_addr, false))
+          if (DumpAddressAndContent(s, sc, exe_ctx, pc_addr, false))
             return true;
         }
       }
@@ -1767,7 +1783,7 @@ bool FormatEntity::Format(const Entry &entry, Stream &s,
       return false;
     s.PutCString(name);
 
-    if (Block *inline_block = sc->block->GetContainingInlinedBlock()) {
+    if (sc->block->GetContainingInlinedBlock()) {
       if (const InlineFunctionInfo *inline_info =
               sc->block->GetInlinedFunctionInfo()) {
         s.PutCString(" [inlined] ");
@@ -1861,7 +1877,7 @@ bool FormatEntity::Format(const Entry &entry, Stream &s,
 
       if (entry.type == Entry::Type::LineEntryEndAddress)
         addr.Slide(sc->line_entry.range.GetByteSize());
-      if (DumpAddress(s, sc, exe_ctx, addr, false))
+      if (DumpAddressAndContent(s, sc, exe_ctx, addr, false))
         return true;
     }
     return false;
@@ -2342,7 +2358,7 @@ bool FormatEntity::FormatFileSpec(const FileSpec &file_spec, Stream &s,
                                   llvm::StringRef variable_name,
                                   llvm::StringRef variable_format) {
   if (variable_name.empty() || variable_name.equals(".fullpath")) {
-    file_spec.Dump(&s);
+    file_spec.Dump(s.AsRawOstream());
     return true;
   } else if (variable_name.equals(".basename")) {
     s.PutCString(file_spec.GetFilename().AsCString(""));

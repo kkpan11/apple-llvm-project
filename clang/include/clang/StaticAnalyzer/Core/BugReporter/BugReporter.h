@@ -386,7 +386,7 @@ public:
   /// to the user. This method allows to rest the location which should be used
   /// for uniquing reports. For example, memory leaks checker, could set this to
   /// the allocation site, rather then the location where the bug is reported.
-  PathSensitiveBugReport(BugType &bt, StringRef desc,
+  PathSensitiveBugReport(const BugType &bt, StringRef desc,
                          const ExplodedNode *errorNode,
                          PathDiagnosticLocation LocationToUnique,
                          const Decl *DeclToUnique)
@@ -762,7 +762,7 @@ public:
 
   public:
     const NoteTag *makeNoteTag(Callback &&Cb, bool IsPrunable = false) {
-      // We cannot use make_unique because we cannot access the private
+      // We cannot use std::make_unique because we cannot access the private
       // constructor from inside it.
       std::unique_ptr<NoteTag> T(new NoteTag(std::move(Cb), IsPrunable));
       Tags.push_back(std::move(T));

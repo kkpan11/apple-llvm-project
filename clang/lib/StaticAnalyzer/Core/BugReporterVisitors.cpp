@@ -505,7 +505,7 @@ NoStoreFuncVisitor::findRegionOfInterestInRecord(
   // Recursively examine the base classes.
   // Note that following base classes does not increase the recursion depth.
   if (const auto *RDX = dyn_cast<CXXRecordDecl>(RD))
-    for (const auto II : RDX->bases())
+    for (const auto &II : RDX->bases())
       if (const RecordDecl *RRD = II.getType()->getAsRecordDecl())
         if (Optional<RegionVector> Out =
                 findRegionOfInterestInRecord(RRD, State, R, Vec, depth))
@@ -833,7 +833,7 @@ public:
     AnalyzerOptions &Options = N->getState()->getAnalysisManager().options;
     if (EnableNullFPSuppression &&
         Options.ShouldSuppressNullReturnPaths && V.getAs<Loc>())
-      BR.addVisitor(llvm::make_unique<MacroNullReturnSuppressionVisitor>(
+      BR.addVisitor(std::make_unique<MacroNullReturnSuppressionVisitor>(
               R->getAs<SubRegion>(), V));
   }
 
@@ -995,7 +995,7 @@ public:
       if (Optional<Loc> RetLoc = RetVal.getAs<Loc>())
         EnableNullFPSuppression = State->isNull(*RetLoc).isConstrainedTrue();
 
-    BR.addVisitor(llvm::make_unique<ReturnVisitor>(CalleeContext,
+    BR.addVisitor(std::make_unique<ReturnVisitor>(CalleeContext,
                                                    EnableNullFPSuppression,
                                                    Options, TKind));
   }
@@ -1484,7 +1484,7 @@ FindLastStoreBRVisitor::VisitNode(const ExplodedNode *Succ,
               dyn_cast_or_null<BlockDataRegion>(V.getAsRegion())) {
           if (const VarRegion *OriginalR = BDR->getOriginalRegion(VR)) {
             if (auto KV = State->getSVal(OriginalR).getAs<KnownSVal>())
-              BR.addVisitor(llvm::make_unique<FindLastStoreBRVisitor>(
+              BR.addVisitor(std::make_unique<FindLastStoreBRVisitor>(
                   *KV, OriginalR, EnableNullFPSuppression, TKind, OriginSFC));
           }
         }
@@ -1949,7 +1949,7 @@ bool bugreporter::trackExpressionValue(const ExplodedNode *InputNode,
   // TODO: Shouldn't we track control dependencies of every bug location, rather
   // than only tracked expressions?
   if (LVState->getAnalysisManager().getAnalyzerOptions().ShouldTrackConditions)
-    report.addVisitor(llvm::make_unique<TrackControlDependencyCondBRVisitor>(
+    report.addVisitor(std::make_unique<TrackControlDependencyCondBRVisitor>(
           InputNode));
 
   // The message send could be nil due to the receiver being nil.
@@ -1977,7 +1977,7 @@ bool bugreporter::trackExpressionValue(const ExplodedNode *InputNode,
     // got initialized.
     if (RR && !LVIsNull)
       if (auto KV = LVal.getAs<KnownSVal>())
-        report.addVisitor(llvm::make_unique<FindLastStoreBRVisitor>(
+        report.addVisitor(std::make_unique<FindLastStoreBRVisitor>(
             *KV, RR, EnableNullFPSuppression, TKind, SFC));
 
     // In case of C++ references, we want to differentiate between a null
@@ -1992,18 +1992,18 @@ bool bugreporter::trackExpressionValue(const ExplodedNode *InputNode,
       // Mark both the variable region and its contents as interesting.
       SVal V = LVState->getRawSVal(loc::MemRegionVal(R));
       report.addVisitor(
-          llvm::make_unique<NoStoreFuncVisitor>(cast<SubRegion>(R), TKind));
+          std::make_unique<NoStoreFuncVisitor>(cast<SubRegion>(R), TKind));
 
       MacroNullReturnSuppressionVisitor::addMacroVisitorIfNecessary(
           LVNode, R, EnableNullFPSuppression, report, V);
 
       report.markInteresting(V, TKind);
-      report.addVisitor(llvm::make_unique<UndefOrNullArgVisitor>(R));
+      report.addVisitor(std::make_unique<UndefOrNullArgVisitor>(R));
 
       // If the contents are symbolic and null, find out when they became null.
       if (V.getAsLocSymbol(/*IncludeBaseRegions=*/true))
         if (LVState->isNull(V).isConstrainedTrue())
-          report.addVisitor(llvm::make_unique<TrackConstraintBRVisitor>(
+          report.addVisitor(std::make_unique<TrackConstraintBRVisitor>(
               V.castAs<DefinedSVal>(), false));
 
       // Add visitor, which will suppress inline defensive checks.
@@ -2015,12 +2015,12 @@ bool bugreporter::trackExpressionValue(const ExplodedNode *InputNode,
           // the symbol is already dead; this, however, is fine because we can
           // still find the node in which it collapsed to null previously.
           report.addVisitor(
-              llvm::make_unique<SuppressInlineDefensiveChecksVisitor>(
+              std::make_unique<SuppressInlineDefensiveChecksVisitor>(
                   *DV, InputNode));
         }
 
       if (auto KV = V.getAs<KnownSVal>())
-        report.addVisitor(llvm::make_unique<FindLastStoreBRVisitor>(
+        report.addVisitor(std::make_unique<FindLastStoreBRVisitor>(
             *KV, R, EnableNullFPSuppression, TKind, SFC));
       return true;
     }
@@ -2060,15 +2060,15 @@ bool bugreporter::trackExpressionValue(const ExplodedNode *InputNode,
           std::make_unique<UndefOrNullArgVisitor>(L->getRegion()));
 
       if (auto KV = RVal.getAs<KnownSVal>())
-        report.addVisitor(llvm::make_unique<FindLastStoreBRVisitor>(
+        report.addVisitor(std::make_unique<FindLastStoreBRVisitor>(
             *KV, L->getRegion(), EnableNullFPSuppression, TKind, SFC));
     }
 
     const MemRegion *RegionRVal = RVal.getAsRegion();
     if (RegionRVal && isa<SymbolicRegion>(RegionRVal)) {
       report.markInteresting(RegionRVal, TKind);
-      report.addVisitor(llvm::make_unique<TrackConstraintBRVisitor>(
-          loc::MemRegionVal(RegionRVal), /*assumption=*/false));
+      report.addVisitor(std::make_unique<TrackConstraintBRVisitor>(
+            loc::MemRegionVal(RegionRVal), /*assumption=*/false));
     }
   }
   return true;

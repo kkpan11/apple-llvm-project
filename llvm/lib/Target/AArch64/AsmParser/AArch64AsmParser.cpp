@@ -164,6 +164,8 @@ private:
   bool showMatchError(SMLoc Loc, unsigned ErrCode, uint64_t ErrorInfo,
                       OperandVector &Operands);
 
+  bool parseAuthExpr(const MCExpr *&Res, SMLoc &EndLoc);
+
   bool parseDirectiveArch(SMLoc L);
   bool parseDirectiveArchExtension(SMLoc L);
   bool parseDirectiveCPU(SMLoc L);
@@ -263,6 +265,8 @@ public:
   bool ParseDirective(AsmToken DirectiveID) override;
   unsigned validateTargetOperandClass(MCParsedAsmOperand &Op,
                                       unsigned Kind) override;
+
+  bool parsePrimaryExpr(const MCExpr *&Res, SMLoc &EndLoc) override;
 
   static bool classifySymbolRef(const MCExpr *Expr,
                                 AArch64MCExpr::VariantKind &ELFRefKind,
@@ -935,48 +939,34 @@ public:
     return false;
   }
 
-  bool isMovZSymbolG3() const {
-    return isMovWSymbol(AArch64MCExpr::VK_ABS_G3);
+  bool isMovWSymbolG3() const {
+    return isMovWSymbol({AArch64MCExpr::VK_ABS_G3, AArch64MCExpr::VK_PREL_G3});
   }
 
-  bool isMovZSymbolG2() const {
-    return isMovWSymbol({AArch64MCExpr::VK_ABS_G2, AArch64MCExpr::VK_ABS_G2_S,
-                         AArch64MCExpr::VK_TPREL_G2,
-                         AArch64MCExpr::VK_DTPREL_G2});
-  }
-
-  bool isMovZSymbolG1() const {
-    return isMovWSymbol({
-        AArch64MCExpr::VK_ABS_G1, AArch64MCExpr::VK_ABS_G1_S,
-        AArch64MCExpr::VK_GOTTPREL_G1, AArch64MCExpr::VK_TPREL_G1,
-        AArch64MCExpr::VK_DTPREL_G1,
-    });
-  }
-
-  bool isMovZSymbolG0() const {
-    return isMovWSymbol({AArch64MCExpr::VK_ABS_G0, AArch64MCExpr::VK_ABS_G0_S,
-                         AArch64MCExpr::VK_TPREL_G0,
-                         AArch64MCExpr::VK_DTPREL_G0});
-  }
-
-  bool isMovKSymbolG3() const {
-    return isMovWSymbol(AArch64MCExpr::VK_ABS_G3);
-  }
-
-  bool isMovKSymbolG2() const {
-    return isMovWSymbol(AArch64MCExpr::VK_ABS_G2_NC);
-  }
-
-  bool isMovKSymbolG1() const {
-    return isMovWSymbol({AArch64MCExpr::VK_ABS_G1_NC,
-                         AArch64MCExpr::VK_TPREL_G1_NC,
-                         AArch64MCExpr::VK_DTPREL_G1_NC});
-  }
-
-  bool isMovKSymbolG0() const {
+  bool isMovWSymbolG2() const {
     return isMovWSymbol(
-        {AArch64MCExpr::VK_ABS_G0_NC, AArch64MCExpr::VK_GOTTPREL_G0_NC,
-         AArch64MCExpr::VK_TPREL_G0_NC, AArch64MCExpr::VK_DTPREL_G0_NC});
+        {AArch64MCExpr::VK_ABS_G2, AArch64MCExpr::VK_ABS_G2_S,
+         AArch64MCExpr::VK_ABS_G2_NC, AArch64MCExpr::VK_PREL_G2,
+         AArch64MCExpr::VK_PREL_G2_NC, AArch64MCExpr::VK_TPREL_G2,
+         AArch64MCExpr::VK_DTPREL_G2});
+  }
+
+  bool isMovWSymbolG1() const {
+    return isMovWSymbol(
+        {AArch64MCExpr::VK_ABS_G1, AArch64MCExpr::VK_ABS_G1_S,
+         AArch64MCExpr::VK_ABS_G1_NC, AArch64MCExpr::VK_PREL_G1,
+         AArch64MCExpr::VK_PREL_G1_NC, AArch64MCExpr::VK_GOTTPREL_G1,
+         AArch64MCExpr::VK_TPREL_G1, AArch64MCExpr::VK_TPREL_G1_NC,
+         AArch64MCExpr::VK_DTPREL_G1, AArch64MCExpr::VK_DTPREL_G1_NC});
+  }
+
+  bool isMovWSymbolG0() const {
+    return isMovWSymbol(
+        {AArch64MCExpr::VK_ABS_G0, AArch64MCExpr::VK_ABS_G0_S,
+         AArch64MCExpr::VK_ABS_G0_NC, AArch64MCExpr::VK_PREL_G0,
+         AArch64MCExpr::VK_PREL_G0_NC, AArch64MCExpr::VK_GOTTPREL_G0_NC,
+         AArch64MCExpr::VK_TPREL_G0, AArch64MCExpr::VK_TPREL_G0_NC,
+         AArch64MCExpr::VK_DTPREL_G0, AArch64MCExpr::VK_DTPREL_G0_NC});
   }
 
   template<int RegWidth, int Shift>
@@ -1235,8 +1225,9 @@ public:
 
       // Calculate its FP value.
       APFloat RealVal(APFloat::IEEEdouble());
-      if (RealVal.convertFromString(Desc->Repr, APFloat::rmTowardZero) !=
-          APFloat::opOK)
+      auto StatusOrErr =
+          RealVal.convertFromString(Desc->Repr, APFloat::rmTowardZero);
+      if (!StatusOrErr || *StatusOrErr != APFloat::opOK)
         llvm_unreachable("FP immediate is not exact");
 
       if (getFPImm().bitwiseIsEqual(RealVal))
@@ -1814,7 +1805,7 @@ public:
 
   static std::unique_ptr<AArch64Operand>
   CreateToken(StringRef Str, bool IsSuffix, SMLoc S, MCContext &Ctx) {
-    auto Op = make_unique<AArch64Operand>(k_Token, Ctx);
+    auto Op = std::make_unique<AArch64Operand>(k_Token, Ctx);
     Op->Tok.Data = Str.data();
     Op->Tok.Length = Str.size();
     Op->Tok.IsSuffix = IsSuffix;
@@ -1829,7 +1820,7 @@ public:
             AArch64_AM::ShiftExtendType ExtTy = AArch64_AM::LSL,
             unsigned ShiftAmount = 0,
             unsigned HasExplicitAmount = false) {
-    auto Op = make_unique<AArch64Operand>(k_Register, Ctx);
+    auto Op = std::make_unique<AArch64Operand>(k_Register, Ctx);
     Op->Reg.RegNum = RegNum;
     Op->Reg.Kind = Kind;
     Op->Reg.ElementWidth = 0;
@@ -1861,7 +1852,7 @@ public:
   CreateVectorList(unsigned RegNum, unsigned Count, unsigned NumElements,
                    unsigned ElementWidth, RegKind RegisterKind, SMLoc S, SMLoc E,
                    MCContext &Ctx) {
-    auto Op = make_unique<AArch64Operand>(k_VectorList, Ctx);
+    auto Op = std::make_unique<AArch64Operand>(k_VectorList, Ctx);
     Op->VectorList.RegNum = RegNum;
     Op->VectorList.Count = Count;
     Op->VectorList.NumElements = NumElements;
@@ -1874,7 +1865,7 @@ public:
 
   static std::unique_ptr<AArch64Operand>
   CreateVectorIndex(unsigned Idx, SMLoc S, SMLoc E, MCContext &Ctx) {
-    auto Op = make_unique<AArch64Operand>(k_VectorIndex, Ctx);
+    auto Op = std::make_unique<AArch64Operand>(k_VectorIndex, Ctx);
     Op->VectorIndex.Val = Idx;
     Op->StartLoc = S;
     Op->EndLoc = E;
@@ -1883,7 +1874,7 @@ public:
 
   static std::unique_ptr<AArch64Operand> CreateImm(const MCExpr *Val, SMLoc S,
                                                    SMLoc E, MCContext &Ctx) {
-    auto Op = make_unique<AArch64Operand>(k_Immediate, Ctx);
+    auto Op = std::make_unique<AArch64Operand>(k_Immediate, Ctx);
     Op->Imm.Val = Val;
     Op->StartLoc = S;
     Op->EndLoc = E;
@@ -1894,7 +1885,7 @@ public:
                                                           unsigned ShiftAmount,
                                                           SMLoc S, SMLoc E,
                                                           MCContext &Ctx) {
-    auto Op = make_unique<AArch64Operand>(k_ShiftedImm, Ctx);
+    auto Op = std::make_unique<AArch64Operand>(k_ShiftedImm, Ctx);
     Op->ShiftedImm .Val = Val;
     Op->ShiftedImm.ShiftAmount = ShiftAmount;
     Op->StartLoc = S;
@@ -1904,7 +1895,7 @@ public:
 
   static std::unique_ptr<AArch64Operand>
   CreateCondCode(AArch64CC::CondCode Code, SMLoc S, SMLoc E, MCContext &Ctx) {
-    auto Op = make_unique<AArch64Operand>(k_CondCode, Ctx);
+    auto Op = std::make_unique<AArch64Operand>(k_CondCode, Ctx);
     Op->CondCode.Code = Code;
     Op->StartLoc = S;
     Op->EndLoc = E;
@@ -1913,7 +1904,7 @@ public:
 
   static std::unique_ptr<AArch64Operand>
   CreateFPImm(APFloat Val, bool IsExact, SMLoc S, MCContext &Ctx) {
-    auto Op = make_unique<AArch64Operand>(k_FPImm, Ctx);
+    auto Op = std::make_unique<AArch64Operand>(k_FPImm, Ctx);
     Op->FPImm.Val = Val.bitcastToAPInt().getSExtValue();
     Op->FPImm.IsExact = IsExact;
     Op->StartLoc = S;
@@ -1925,7 +1916,7 @@ public:
                                                        StringRef Str,
                                                        SMLoc S,
                                                        MCContext &Ctx) {
-    auto Op = make_unique<AArch64Operand>(k_Barrier, Ctx);
+    auto Op = std::make_unique<AArch64Operand>(k_Barrier, Ctx);
     Op->Barrier.Val = Val;
     Op->Barrier.Data = Str.data();
     Op->Barrier.Length = Str.size();
@@ -1939,7 +1930,7 @@ public:
                                                       uint32_t MSRReg,
                                                       uint32_t PStateField,
                                                       MCContext &Ctx) {
-    auto Op = make_unique<AArch64Operand>(k_SysReg, Ctx);
+    auto Op = std::make_unique<AArch64Operand>(k_SysReg, Ctx);
     Op->SysReg.Data = Str.data();
     Op->SysReg.Length = Str.size();
     Op->SysReg.MRSReg = MRSReg;
@@ -1952,7 +1943,7 @@ public:
 
   static std::unique_ptr<AArch64Operand> CreateSysCR(unsigned Val, SMLoc S,
                                                      SMLoc E, MCContext &Ctx) {
-    auto Op = make_unique<AArch64Operand>(k_SysCR, Ctx);
+    auto Op = std::make_unique<AArch64Operand>(k_SysCR, Ctx);
     Op->SysCRImm.Val = Val;
     Op->StartLoc = S;
     Op->EndLoc = E;
@@ -1963,7 +1954,7 @@ public:
                                                         StringRef Str,
                                                         SMLoc S,
                                                         MCContext &Ctx) {
-    auto Op = make_unique<AArch64Operand>(k_Prefetch, Ctx);
+    auto Op = std::make_unique<AArch64Operand>(k_Prefetch, Ctx);
     Op->Prefetch.Val = Val;
     Op->Barrier.Data = Str.data();
     Op->Barrier.Length = Str.size();
@@ -1976,7 +1967,7 @@ public:
                                                        StringRef Str,
                                                        SMLoc S,
                                                        MCContext &Ctx) {
-    auto Op = make_unique<AArch64Operand>(k_PSBHint, Ctx);
+    auto Op = std::make_unique<AArch64Operand>(k_PSBHint, Ctx);
     Op->PSBHint.Val = Val;
     Op->PSBHint.Data = Str.data();
     Op->PSBHint.Length = Str.size();
@@ -1989,7 +1980,7 @@ public:
                                                        StringRef Str,
                                                        SMLoc S,
                                                        MCContext &Ctx) {
-    auto Op = make_unique<AArch64Operand>(k_BTIHint, Ctx);
+    auto Op = std::make_unique<AArch64Operand>(k_BTIHint, Ctx);
     Op->BTIHint.Val = Val << 1 | 32;
     Op->BTIHint.Data = Str.data();
     Op->BTIHint.Length = Str.size();
@@ -2001,7 +1992,7 @@ public:
   static std::unique_ptr<AArch64Operand>
   CreateShiftExtend(AArch64_AM::ShiftExtendType ShOp, unsigned Val,
                     bool HasExplicitAmount, SMLoc S, SMLoc E, MCContext &Ctx) {
-    auto Op = make_unique<AArch64Operand>(k_ShiftExtend, Ctx);
+    auto Op = std::make_unique<AArch64Operand>(k_ShiftExtend, Ctx);
     Op->ShiftExtend.Type = ShOp;
     Op->ShiftExtend.Amount = Val;
     Op->ShiftExtend.HasExplicitAmount = HasExplicitAmount;
@@ -2502,6 +2493,7 @@ AArch64AsmParser::tryParseAdrpLabel(OperandVector &Operands) {
     } else if (DarwinRefKind != MCSymbolRefExpr::VK_PAGE &&
                DarwinRefKind != MCSymbolRefExpr::VK_GOTPAGE &&
                DarwinRefKind != MCSymbolRefExpr::VK_TLVPPAGE &&
+               ELFRefKind != AArch64MCExpr::VK_ABS_PAGE_NC &&
                ELFRefKind != AArch64MCExpr::VK_GOT_PAGE &&
                ELFRefKind != AArch64MCExpr::VK_GOTTPREL_PAGE &&
                ELFRefKind != AArch64MCExpr::VK_TLSDESC_PAGE) {
@@ -2590,8 +2582,13 @@ AArch64AsmParser::tryParseFPImm(OperandVector &Operands) {
   } else {
     // Parse FP representation.
     APFloat RealVal(APFloat::IEEEdouble());
-    auto Status =
+    auto StatusOrErr =
         RealVal.convertFromString(Tok.getString(), APFloat::rmTowardZero);
+    if (!StatusOrErr) {
+      TokError("invalid floating point representation");
+      return MatchOperand_ParseFail;
+    }
+
     if (isNegative)
       RealVal.changeSign();
 
@@ -2602,7 +2599,7 @@ AArch64AsmParser::tryParseFPImm(OperandVector &Operands) {
           AArch64Operand::CreateToken(".0", false, S, getContext()));
     } else
       Operands.push_back(AArch64Operand::CreateFPImm(
-          RealVal, Status == APFloat::opOK, S, getContext()));
+          RealVal, *StatusOrErr == APFloat::opOK, S, getContext()));
   }
 
   Parser.Lex(); // Eat the token.
@@ -2839,7 +2836,7 @@ static const struct Extension {
     {"sve2-aes", {AArch64::FeatureSVE2AES}},
     {"sve2-sm4", {AArch64::FeatureSVE2SM4}},
     {"sve2-sha3", {AArch64::FeatureSVE2SHA3}},
-    {"bitperm", {AArch64::FeatureSVE2BitPerm}},
+    {"sve2-bitperm", {AArch64::FeatureSVE2BitPerm}},
     // FIXME: Unsupported extensions
     {"pan", {}},
     {"lor", {}},
@@ -3259,6 +3256,13 @@ bool AArch64AsmParser::parseSymbolicImmVal(const MCExpr *&ImmVal) {
                   .Case("abs_g0", AArch64MCExpr::VK_ABS_G0)
                   .Case("abs_g0_s", AArch64MCExpr::VK_ABS_G0_S)
                   .Case("abs_g0_nc", AArch64MCExpr::VK_ABS_G0_NC)
+                  .Case("prel_g3", AArch64MCExpr::VK_PREL_G3)
+                  .Case("prel_g2", AArch64MCExpr::VK_PREL_G2)
+                  .Case("prel_g2_nc", AArch64MCExpr::VK_PREL_G2_NC)
+                  .Case("prel_g1", AArch64MCExpr::VK_PREL_G1)
+                  .Case("prel_g1_nc", AArch64MCExpr::VK_PREL_G1_NC)
+                  .Case("prel_g0", AArch64MCExpr::VK_PREL_G0)
+                  .Case("prel_g0_nc", AArch64MCExpr::VK_PREL_G0_NC)
                   .Case("dtprel_g2", AArch64MCExpr::VK_DTPREL_G2)
                   .Case("dtprel_g1", AArch64MCExpr::VK_DTPREL_G1)
                   .Case("dtprel_g1_nc", AArch64MCExpr::VK_DTPREL_G1_NC)
@@ -3267,6 +3271,7 @@ bool AArch64AsmParser::parseSymbolicImmVal(const MCExpr *&ImmVal) {
                   .Case("dtprel_hi12", AArch64MCExpr::VK_DTPREL_HI12)
                   .Case("dtprel_lo12", AArch64MCExpr::VK_DTPREL_LO12)
                   .Case("dtprel_lo12_nc", AArch64MCExpr::VK_DTPREL_LO12_NC)
+                  .Case("pg_hi21_nc", AArch64MCExpr::VK_ABS_PAGE_NC)
                   .Case("tprel_g2", AArch64MCExpr::VK_TPREL_G2)
                   .Case("tprel_g1", AArch64MCExpr::VK_TPREL_G1)
                   .Case("tprel_g1_nc", AArch64MCExpr::VK_TPREL_G1_NC)
@@ -5281,7 +5286,7 @@ bool AArch64AsmParser::parseDirectiveInst(SMLoc Loc) {
 
   auto parseOp = [&]() -> bool {
     SMLoc L = getLoc();
-    const MCExpr *Expr;
+    const MCExpr *Expr = nullptr;
     if (check(getParser().parseExpression(Expr), L, "expected expression"))
       return true;
     const MCConstantExpr *Value = dyn_cast_or_null<MCConstantExpr>(Expr);
@@ -5471,6 +5476,113 @@ bool AArch64AsmParser::parseDirectiveCFIBKeyFrame() {
   return false;
 }
 
+bool AArch64AsmParser::parsePrimaryExpr(const MCExpr *&Res, SMLoc &EndLoc) {
+  // Try @AUTH expressions: they're more complex than the usual symbol variants.
+  if (!parseAuthExpr(Res, EndLoc))
+    return false;
+  return getParser().parsePrimaryExpr(Res, EndLoc);
+}
+
+///  parseAuthExpr
+///  ::= _sym@AUTH(ib,123[,addr])
+///  ::= (_sym + 5)@AUTH(ib,123[,addr])
+///  ::= (_sym - 5)@AUTH(ib,123[,addr])
+bool AArch64AsmParser::parseAuthExpr(const MCExpr *&Res, SMLoc &EndLoc) {
+  MCAsmParser &Parser = getParser();
+  MCContext &Ctx = getContext();
+
+  AsmToken Tok = Parser.getTok();
+
+  // Look for '_sym@AUTH' ...
+  if (Tok.is(AsmToken::Identifier) && Tok.getIdentifier().endswith("@AUTH")) {
+    StringRef SymName = Tok.getIdentifier().drop_back(strlen("@AUTH"));
+    Res = MCSymbolRefExpr::create(Ctx.getOrCreateSymbol(SymName), Ctx);
+
+    Parser.Lex(); // Eat the identifier.
+  } else {
+    // ... or look for a more complex symbol reference, such as ...
+    SmallVector<AsmToken, 6> Tokens;
+
+    // ... '"_long sym"@AUTH' ...
+    if (Tok.is(AsmToken::String))
+      Tokens.resize(2);
+    // ... or '(_sym + 5)@AUTH'.
+    else if (Tok.is(AsmToken::LParen))
+      Tokens.resize(6);
+    else
+      return true;
+
+    if (Parser.getLexer().peekTokens(Tokens) != Tokens.size())
+      return true;
+
+    // In either case, the expression ends with '@' 'AUTH'.
+    if (Tokens[Tokens.size()-2].isNot(AsmToken::At) ||
+        Tokens[Tokens.size()-1].isNot(AsmToken::Identifier) ||
+        Tokens[Tokens.size()-1].getIdentifier() != "AUTH")
+      return true;
+
+    if (Tok.is(AsmToken::String)) {
+      StringRef SymName;
+      if (Parser.parseIdentifier(SymName))
+        return true;
+      Res = MCSymbolRefExpr::create(Ctx.getOrCreateSymbol(SymName), Ctx);
+    } else {
+      if (Parser.parsePrimaryExpr(Res, EndLoc))
+        return true;
+    }
+
+    Parser.Lex(); // '@'
+    Parser.Lex(); // 'AUTH'
+  }
+
+  // At this point, we encountered "<id>@AUTH". There is no fallback anymore.
+  if (parseToken(AsmToken::LParen, "expected '(' after @AUTH expression"))
+    return true;
+
+  if (Parser.getTok().isNot(AsmToken::Identifier))
+    return TokError("expected key name in @AUTH expression");
+
+  StringRef KeyStr = Parser.getTok().getIdentifier();
+  auto KeyIDOrNone = AArch64StringToPACKeyID(KeyStr);
+  if (!KeyIDOrNone)
+    return TokError("invalid key '" + KeyStr + "' in @AUTH expression");
+  Parser.Lex();
+
+  if (parseToken(AsmToken::Comma, "expected ',' after key in @AUTH expression"))
+    return true;
+
+  if (Parser.getTok().isNot(AsmToken::Integer))
+    return TokError(
+        "expected integer discriminator after key in @AUTH expression");
+  int64_t Discriminator = Parser.getTok().getIntVal();
+
+  if (!isUInt<16>(Discriminator))
+    return TokError("too wide integer discriminator '" + itostr(Discriminator) +
+                    "'in @AUTH expression");
+  Parser.Lex();
+
+  bool UseAddressDiversity = false;
+  if (Parser.getTok().is(AsmToken::Comma)) {
+    Parser.Lex();
+    if (Parser.getTok().isNot(AsmToken::Identifier) ||
+        Parser.getTok().getIdentifier() != "addr")
+      return TokError(
+          "expected 'addr' after discriminator in @AUTH expression");
+    UseAddressDiversity = true;
+    Parser.Lex();
+  }
+
+  EndLoc = Parser.getTok().getEndLoc();
+  if (parseToken(AsmToken::RParen,
+                 "expected ')' at the end of @AUTH expression"))
+    return true;
+
+  Res = AArch64AuthMCExpr::create(Res, Discriminator, *KeyIDOrNone,
+                                  UseAddressDiversity, Ctx);
+
+  return false;
+}
+
 bool
 AArch64AsmParser::classifySymbolRef(const MCExpr *Expr,
                                     AArch64MCExpr::VariantKind &ELFRefKind,
@@ -5540,43 +5652,43 @@ unsigned AArch64AsmParser::validateTargetOperandClass(MCParsedAsmOperand &AsmOp,
   switch (Kind) {
   default:
     return Match_InvalidOperand;
-  case MCK__35_0:
+  case MCK__HASH_0:
     ExpectedVal = 0;
     break;
-  case MCK__35_1:
+  case MCK__HASH_1:
     ExpectedVal = 1;
     break;
-  case MCK__35_12:
+  case MCK__HASH_12:
     ExpectedVal = 12;
     break;
-  case MCK__35_16:
+  case MCK__HASH_16:
     ExpectedVal = 16;
     break;
-  case MCK__35_2:
+  case MCK__HASH_2:
     ExpectedVal = 2;
     break;
-  case MCK__35_24:
+  case MCK__HASH_24:
     ExpectedVal = 24;
     break;
-  case MCK__35_3:
+  case MCK__HASH_3:
     ExpectedVal = 3;
     break;
-  case MCK__35_32:
+  case MCK__HASH_32:
     ExpectedVal = 32;
     break;
-  case MCK__35_4:
+  case MCK__HASH_4:
     ExpectedVal = 4;
     break;
-  case MCK__35_48:
+  case MCK__HASH_48:
     ExpectedVal = 48;
     break;
-  case MCK__35_6:
+  case MCK__HASH_6:
     ExpectedVal = 6;
     break;
-  case MCK__35_64:
+  case MCK__HASH_64:
     ExpectedVal = 64;
     break;
-  case MCK__35_8:
+  case MCK__HASH_8:
     ExpectedVal = 8;
     break;
   }

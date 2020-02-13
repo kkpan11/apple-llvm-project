@@ -17,7 +17,6 @@
 #include "CodeGenTypeCache.h"
 #include "CodeGenTypes.h"
 #include "SanitizerMetadata.h"
-#include "clang/AST/Attr.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/DeclOpenMP.h"
@@ -45,6 +44,7 @@ class GlobalValue;
 class DataLayout;
 class FunctionType;
 class LLVMContext;
+class OpenMPIRBuilder;
 class IndexedInstrProfReader;
 }
 
@@ -66,6 +66,7 @@ class Stmt;
 class InitListExpr;
 class StringLiteral;
 class NamedDecl;
+class PointerAuthSchema;
 class ValueDecl;
 class VarDecl;
 class LangOptions;
@@ -77,6 +78,9 @@ class AnnotateAttr;
 class CXXDestructorDecl;
 class Module;
 class CoverageSourceInfo;
+class TargetAttr;
+class InitSegAttr;
+struct ParsedTargetAttr;
 
 namespace CodeGen {
 
@@ -319,6 +323,7 @@ private:
   std::unique_ptr<CGObjCRuntime> ObjCRuntime;
   std::unique_ptr<CGOpenCLRuntime> OpenCLRuntime;
   std::unique_ptr<CGOpenMPRuntime> OpenMPRuntime;
+  std::unique_ptr<llvm::OpenMPIRBuilder> OMPBuilder;
   std::unique_ptr<CGCUDARuntime> CUDARuntime;
   std::unique_ptr<CGDebugInfo> DebugInfo;
   std::unique_ptr<ObjCEntrypoints> ObjCData;
@@ -404,6 +409,11 @@ private:
 
   /// Global annotations.
   std::vector<llvm::Constant*> Annotations;
+
+  /// Signed constant pointers.
+  void *ConstantSignedPointersByDecl = nullptr;
+  void *SignedThunkPointers = nullptr;
+  void *ConstantSignedPointersByConstant = nullptr;
 
   /// Map used to get unique annotation strings.
   llvm::StringMap<llvm::Constant*> AnnotationStrings;
@@ -523,17 +533,17 @@ private:
     int GlobalUniqueCount;
   } Block;
 
+  GlobalDecl initializedGlobalDecl;
+
+  /// @}
+
   /// void @llvm.lifetime.start(i64 %size, i8* nocapture <ptr>)
   llvm::Function *LifetimeStartFn = nullptr;
 
   /// void @llvm.lifetime.end(i64 %size, i8* nocapture <ptr>)
   llvm::Function *LifetimeEndFn = nullptr;
 
-  GlobalDecl initializedGlobalDecl;
-
   std::unique_ptr<SanitizerMetadata> SanitizerMD;
-
-  /// @}
 
   llvm::MapVector<const Decl *, bool> DeferredEmptyCoverageMappingDecls;
 
@@ -546,6 +556,8 @@ private:
   MetadataTypeMap MetadataIdMap;
   MetadataTypeMap VirtualMetadataIdMap;
   MetadataTypeMap GeneralizedMetadataIdMap;
+
+  llvm::DenseMap<GlobalDecl, uint16_t> PtrAuthDiscriminatorHashes;
 
 public:
   CodeGenModule(ASTContext &C, const HeaderSearchOptions &headersearchopts,
@@ -584,6 +596,9 @@ public:
     assert(OpenMPRuntime != nullptr);
     return *OpenMPRuntime;
   }
+
+  /// Return a pointer to the configured OpenMPIRBuilder, if any.
+  llvm::OpenMPIRBuilder *getOpenMPIRBuilder() { return OMPBuilder.get(); }
 
   /// Return a reference to the configured CUDA runtime.
   CGCUDARuntime &getCUDARuntime() {
@@ -845,6 +860,51 @@ public:
                                     ForDefinition_t IsForDefinition
                                       = NotForDefinition);
 
+  /// Return a function pointer for a reference to the given function.
+  /// This correctly handles weak references, but does not apply a
+  /// pointer signature.
+  llvm::Constant *getRawFunctionPointer(const FunctionDecl *FD,
+                                        llvm::Type *Ty = nullptr);
+
+  /// Return the ABI-correct function pointer value for a reference
+  /// to the given function.  This will apply a pointer signature if
+  /// necessary, caching the result for the given function.
+  llvm::Constant *getFunctionPointer(const FunctionDecl *FD,
+                                     llvm::Type *Ty = nullptr);
+
+  /// Return the ABI-correct function pointer value for a reference
+  /// to the given function.  This will apply a pointer signature if
+  /// necessary, but will only cache the result if \p FD is passed.
+  llvm::Constant *getFunctionPointer(llvm::Constant *pointer,
+                                     QualType functionType,
+                                     const FunctionDecl *FD = nullptr);
+
+  llvm::Constant *getMemberFunctionPointer(const FunctionDecl *FD,
+                                           llvm::Type *Ty = nullptr);
+
+  llvm::Constant *getMemberFunctionPointer(llvm::Constant *pointer,
+                                           QualType functionType,
+                                           const FunctionDecl *FD = nullptr);
+
+  CGPointerAuthInfo getFunctionPointerAuthInfo(QualType functionType);
+
+  CGPointerAuthInfo getMemberFunctionPointerAuthInfo(QualType functionType);
+
+  llvm::Constant *getConstantSignedPointer(llvm::Constant *pointer,
+                                           const PointerAuthSchema &schema,
+                                           llvm::Constant *storageAddress,
+                                           GlobalDecl schemaDecl,
+                                           QualType schemaType);
+  llvm::Constant *getConstantSignedPointer(llvm::Constant *pointer,
+                                           unsigned key,
+                                           llvm::Constant *storageAddress,
+                                           llvm::Constant *extraDiscrim);
+
+  llvm::Constant *
+  getPointerAuthOtherDiscriminator(const PointerAuthSchema &schema,
+                                   GlobalDecl schemaDecl, QualType schemaType);
+  uint16_t getPointerAuthDeclDiscriminator(GlobalDecl GD);
+
   /// Get the address of the RTTI descriptor for the given type.
   llvm::Constant *GetAddrOfRTTIDescriptor(QualType Ty, bool ForEH = false);
 
@@ -1027,11 +1087,22 @@ public:
   }
 
   /// Create or return a runtime function declaration with the specified type
-  /// and name.
+  /// and name. If \p AssumeConvergent is true, the call will have the
+  /// convergent attribute added.
   llvm::FunctionCallee
   CreateRuntimeFunction(llvm::FunctionType *Ty, StringRef Name,
                         llvm::AttributeList ExtraAttrs = llvm::AttributeList(),
-                        bool Local = false);
+                        bool Local = false, bool AssumeConvergent = false);
+
+  /// Create or return a runtime function declaration with the specified type
+  /// and name. This will automatically add the convergent attribute to the
+  /// function declaration.
+  llvm::FunctionCallee CreateConvergentRuntimeFunction(
+      llvm::FunctionType *Ty, StringRef Name,
+      llvm::AttributeList ExtraAttrs = llvm::AttributeList(),
+      bool Local = false) {
+    return CreateRuntimeFunction(Ty, Name, ExtraAttrs, Local, true);
+  }
 
   /// Create a new runtime global variable with the specified type and name.
   llvm::Constant *CreateRuntimeVariable(llvm::Type *Ty,
@@ -1139,18 +1210,12 @@ public:
   /// It's up to you to ensure that this is safe.
   void AddDefaultFnAttrs(llvm::Function &F);
 
-  /// Parses the target attributes passed in, and returns only the ones that are
-  /// valid feature names.
-  TargetAttr::ParsedTargetAttr filterFunctionTargetAttrs(const TargetAttr *TD);
-
-  // Fills in the supplied string map with the set of target features for the
-  // passed in function.
-  void getFunctionFeatureMap(llvm::StringMap<bool> &FeatureMap, GlobalDecl GD);
-
   StringRef getMangledName(GlobalDecl GD);
   StringRef getBlockMangledName(GlobalDecl GD, const BlockDecl *BD);
 
   void EmitTentativeDefinition(const VarDecl *D);
+
+  void EmitExternalDeclaration(const VarDecl *D);
 
   void EmitVTable(CXXRecordDecl *Class);
 
@@ -1270,6 +1335,11 @@ public:
   /// \param D Requires declaration
   void EmitOMPRequiresDecl(const OMPRequiresDecl *D);
 
+  /// Emits the definition of \p OldGD function with body from \p NewGD.
+  /// Required for proper handling of declare variant directive on the GPU.
+  void emitOpenMPDeviceFunctionRedefinition(GlobalDecl OldGD, GlobalDecl NewGD,
+                                            llvm::GlobalValue *GV);
+
   /// Returns whether the given record has hidden LTO visibility and therefore
   /// may participate in (single-module) CFI and whole-program vtable
   /// optimization.
@@ -1374,6 +1444,7 @@ private:
   void EmitMultiVersionFunctionDefinition(GlobalDecl GD, llvm::GlobalValue *GV);
 
   void EmitGlobalVarDefinition(const VarDecl *D, bool IsTentative = false);
+  void EmitExternalVarDeclaration(const VarDecl *D);
   void EmitAliasDefinition(GlobalDecl GD);
   void emitIFuncDefinition(GlobalDecl GD);
   void emitCPUDispatchDefinition(GlobalDecl GD);
@@ -1489,6 +1560,8 @@ private:
   /// Check whether we can use a "simpler", more core exceptions personality
   /// function.
   void SimplifyPersonality();
+
+  void destroyConstantSignedPointerCaches();
 
   /// Helper function for ConstructAttributeList and AddDefaultFnAttrs.
   /// Constructs an AttrList for a function with the given properties.

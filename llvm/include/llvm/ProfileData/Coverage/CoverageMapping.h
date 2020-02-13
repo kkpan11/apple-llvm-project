@@ -311,7 +311,7 @@ struct FunctionRecord {
   /// Regions in the function along with their counts.
   std::vector<CountedRegion> CountedRegions;
   /// The number of times this function was executed.
-  uint64_t ExecutionCount;
+  uint64_t ExecutionCount = 0;
 
   FunctionRecord(StringRef Name, ArrayRef<StringRef> Filenames)
       : Name(Name), Filenames(Filenames.begin(), Filenames.end()) {}
@@ -540,6 +540,7 @@ public:
 
   /// Load the coverage mapping from the given object files and profile. If
   /// \p Arches is non-empty, it must specify an architecture for each object.
+  /// Ignores non-instrumented object files unless all are not instrumented.
   static Expected<std::unique_ptr<CoverageMapping>>
   load(ArrayRef<StringRef> ObjectFilenames, StringRef ProfileFilename,
        ArrayRef<StringRef> Arches = None);

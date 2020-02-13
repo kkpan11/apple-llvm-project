@@ -52,8 +52,7 @@ UndefinedArraySubscriptChecker::checkPreStmt(const ArraySubscriptExpr *A,
     BT.reset(new BuiltinBug(this, "Array subscript is undefined"));
 
   // Generate a report for this bug.
-  auto R =
-      llvm::make_unique<PathSensitiveBugReport>(*BT, BT->getDescription(), N);
+  auto R = std::make_unique<PathSensitiveBugReport>(*BT, BT->getDescription(), N);
   R->addRange(A->getIdx()->getSourceRange());
   bugreporter::trackExpressionValue(N, A->getIdx(), *R);
   C.emitReport(std::move(R));

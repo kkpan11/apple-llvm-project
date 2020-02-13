@@ -198,13 +198,13 @@ bool DependencyCollector::sawDependency(StringRef Filename, bool FromModule,
 
 DependencyCollector::~DependencyCollector() { }
 void DependencyCollector::attachToPreprocessor(Preprocessor &PP) {
-  PP.addPPCallbacks(llvm::make_unique<DepCollectorPPCallbacks>(
+  PP.addPPCallbacks(std::make_unique<DepCollectorPPCallbacks>(
       *this, PP.getSourceManager(), PP.getDiagnostics()));
   PP.getHeaderSearchInfo().getModuleMap().addModuleMapCallbacks(
-      llvm::make_unique<DepCollectorMMCallbacks>(*this));
+      std::make_unique<DepCollectorMMCallbacks>(*this));
 }
 void DependencyCollector::attachToASTReader(ASTReader &R) {
-  R.addListener(llvm::make_unique<DepCollectorASTListener>(*this));
+  R.addListener(std::make_unique<DepCollectorASTListener>(*this));
 }
 
 DependencyFileGenerator::DependencyFileGenerator(
@@ -229,10 +229,10 @@ void DependencyFileGenerator::attachToPreprocessor(Preprocessor &PP) {
 
   // FIXME: Restore the call to DependencyCollector::attachToPreprocessor(PP);
   // once the SkipUnusedModuleMaps is upstreamed.
-  PP.addPPCallbacks(llvm::make_unique<DepCollectorPPCallbacks>(
+  PP.addPPCallbacks(std::make_unique<DepCollectorPPCallbacks>(
       *this, PP.getSourceManager(), PP.getDiagnostics()));
   PP.getHeaderSearchInfo().getModuleMap().addModuleMapCallbacks(
-      llvm::make_unique<DFGMMCallback>(*this, SkipUnusedModuleMaps));
+      std::make_unique<DFGMMCallback>(*this, SkipUnusedModuleMaps));
 }
 
 bool DependencyFileGenerator::sawDependency(StringRef Filename, bool FromModule,
@@ -347,7 +347,7 @@ void DependencyFileGenerator::outputDependencyFile(DiagnosticsEngine &Diags) {
   }
 
   std::error_code EC;
-  llvm::raw_fd_ostream OS(OutputFile, EC, llvm::sys::fs::F_Text);
+  llvm::raw_fd_ostream OS(OutputFile, EC, llvm::sys::fs::OF_Text);
   if (EC) {
     Diags.Report(diag::err_fe_error_opening) << OutputFile << EC.message();
     return;

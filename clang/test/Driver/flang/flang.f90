@@ -1,8 +1,3 @@
-! D63607 made mac and Fedora builders unhappy by failing this test, and it isn't
-! yet obvious why. Mark as unsupported as a temporary measure.
-! UNSUPPORTED: darwin
-! UNSUPPORTED: linux
-
 ! Check that flang -fc1 is invoked when in --driver-mode=flang.
 
 ! This is a copy of flang_ucase.F90 because the driver has logic in it which

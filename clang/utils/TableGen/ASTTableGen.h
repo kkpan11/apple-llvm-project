@@ -141,6 +141,8 @@ public:
 /// Anything in the AST that has properties.
 class HasProperties : public WrappedRecord {
 public:
+  static constexpr llvm::StringRef ClassName = HasPropertiesClassName;
+
   HasProperties(llvm::Record *record = nullptr) : WrappedRecord(record) {}
 
   llvm::StringRef getName() const;

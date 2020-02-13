@@ -95,6 +95,7 @@
 #include "llvm/IR/ValueHandle.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/Casting.h"
+#include "llvm/Support/CommandLine.h"
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
@@ -785,7 +786,7 @@ public:
 
   /// Used in various insertion functions to specify whether we are talking
   /// about the beginning or end of a block.
-  enum InsertionPlace { Beginning, End };
+  enum InsertionPlace { Beginning, End, BeforeTerminator };
 
 protected:
   // Used by Memory SSA annotater, dumpers, and wrapper pass
@@ -793,10 +794,9 @@ protected:
   friend class MemorySSAPrinterLegacyPass;
   friend class MemorySSAUpdater;
 
-  void verifyDefUses(Function &F) const;
-  void verifyDomination(Function &F) const;
-  void verifyOrdering(Function &F) const;
+  void verifyOrderingDominationAndDefUses(Function &F) const;
   void verifyDominationNumbers(const Function &F) const;
+  void verifyPrevDefInPhis(Function &F) const;
 
   // This is used by the use optimizer and updater.
   AccessList *getWritableBlockAccesses(const BasicBlock *BB) const {
@@ -830,7 +830,8 @@ protected:
   void insertIntoListsBefore(MemoryAccess *, const BasicBlock *,
                              AccessList::iterator);
   MemoryUseOrDef *createDefinedAccess(Instruction *, MemoryAccess *,
-                                      const MemoryUseOrDef *Template = nullptr);
+                                      const MemoryUseOrDef *Template = nullptr,
+                                      bool CreationMustSucceed = true);
 
 private:
   template <class AliasAnalysisType> class ClobberWalkerBase;
@@ -1106,15 +1107,15 @@ public:
     assert(Access && "Tried to access past the end of our iterator");
     // Go to the first argument for phis, and the defining access for everything
     // else.
-    if (MemoryPhi *MP = dyn_cast<MemoryPhi>(Access))
+    if (const MemoryPhi *MP = dyn_cast<MemoryPhi>(Access))
       return MP->getIncomingValue(ArgNo);
     return cast<MemoryUseOrDef>(Access)->getDefiningAccess();
   }
 
   using BaseT::operator++;
-  memoryaccess_def_iterator &operator++() {
+  memoryaccess_def_iterator_base &operator++() {
     assert(Access && "Hit end of iterator");
-    if (MemoryPhi *MP = dyn_cast<MemoryPhi>(Access)) {
+    if (const MemoryPhi *MP = dyn_cast<MemoryPhi>(Access)) {
       if (++ArgNo >= MP->getNumIncomingValues()) {
         ArgNo = 0;
         Access = nullptr;

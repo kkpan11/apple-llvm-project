@@ -1,4 +1,4 @@
-//===-- ClangMove.cpp - move defintion to new file --------------*- C++ -*-===//
+//===-- ClangMove.cpp - move definition to new file -------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -30,7 +30,7 @@ namespace {
 std::error_code CreateNewFile(const llvm::Twine &path) {
   int fd = 0;
   if (std::error_code ec = llvm::sys::fs::openFileForWrite(
-          path, fd, llvm::sys::fs::CD_CreateAlways, llvm::sys::fs::F_Text))
+          path, fd, llvm::sys::fs::CD_CreateAlways, llvm::sys::fs::OF_Text))
     return ec;
 
   return llvm::sys::Process::SafelyCloseFileDescriptor(fd);

@@ -22,7 +22,7 @@
 #include "llvm/Support/Error.h"
 #include "llvm/Support/WindowsError.h"
 
-#ifndef LLDB_DISABLE_POSIX
+#if LLDB_ENABLE_POSIX
 #include "lldb/Host/posix/DomainSocket.h"
 
 #include <arpa/inet.h>
@@ -74,9 +74,10 @@ bool IsInterrupted() {
 
 Socket::Socket(SocketProtocol protocol, bool should_close,
                bool child_processes_inherit)
-    : IOObject(eFDTypeSocket, should_close), m_protocol(protocol),
+    : IOObject(eFDTypeSocket), m_protocol(protocol),
       m_socket(kInvalidSocketValue),
-      m_child_processes_inherit(child_processes_inherit) {}
+      m_child_processes_inherit(child_processes_inherit),
+      m_should_close_fd(should_close) {}
 
 Socket::~Socket() { Close(); }
 
@@ -121,7 +122,7 @@ std::unique_ptr<Socket> Socket::Create(const SocketProtocol protocol,
         std::make_unique<UDPSocket>(true, child_processes_inherit);
     break;
   case ProtocolUnixDomain:
-#ifndef LLDB_DISABLE_POSIX
+#if LLDB_ENABLE_POSIX
     socket_up =
         std::make_unique<DomainSocket>(true, child_processes_inherit);
 #else
@@ -476,11 +477,11 @@ NativeSocket Socket::AcceptSocket(NativeSocket sockfd, struct sockaddr *addr,
   if (!child_processes_inherit) {
     flags |= SOCK_CLOEXEC;
   }
-  NativeSocket fd = llvm::sys::RetryAfterSignal(-1, ::accept4,
-      sockfd, addr, addrlen, flags);
+  NativeSocket fd = llvm::sys::RetryAfterSignal(
+      static_cast<NativeSocket>(-1), ::accept4, sockfd, addr, addrlen, flags);
 #else
-  NativeSocket fd = llvm::sys::RetryAfterSignal(-1, ::accept,
-      sockfd, addr, addrlen);
+  NativeSocket fd = llvm::sys::RetryAfterSignal(
+      static_cast<NativeSocket>(-1), ::accept, sockfd, addr, addrlen);
 #endif
   if (fd == kInvalidSocketValue)
     SetLastError(error);

@@ -22,6 +22,9 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/IntrinsicsAArch64.h"
+#include "llvm/IR/IntrinsicsARM.h"
+#include "llvm/IR/IntrinsicsX86.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Verifier.h"
@@ -522,7 +525,7 @@ static bool UpgradeIntrinsicFunction1(Function *F, Function *&NewFn) {
                                         F->arg_begin()->getType());
       return true;
     }
-    Regex vldRegex("^arm\\.neon\\.vld([1234]|[234]lane)\\.v[a-z0-9]*$");
+    static const Regex vldRegex("^arm\\.neon\\.vld([1234]|[234]lane)\\.v[a-z0-9]*$");
     if (vldRegex.match(Name)) {
       auto fArgs = F->getFunctionType()->params();
       SmallVector<Type *, 4> Tys(fArgs.begin(), fArgs.end());
@@ -533,7 +536,7 @@ static bool UpgradeIntrinsicFunction1(Function *F, Function *&NewFn) {
                                "llvm." + Name + ".p0i8", F->getParent());
       return true;
     }
-    Regex vstRegex("^arm\\.neon\\.vst([1234]|[234]lane)\\.v[a-z0-9]*$");
+    static const Regex vstRegex("^arm\\.neon\\.vst([1234]|[234]lane)\\.v[a-z0-9]*$");
     if (vstRegex.match(Name)) {
       static const Intrinsic::ID StoreInts[] = {Intrinsic::arm_neon_vst1,
                                                 Intrinsic::arm_neon_vst2,
@@ -557,6 +560,26 @@ static bool UpgradeIntrinsicFunction1(Function *F, Function *&NewFn) {
     }
     if (Name == "aarch64.thread.pointer" || Name == "arm.thread.pointer") {
       NewFn = Intrinsic::getDeclaration(F->getParent(), Intrinsic::thread_pointer);
+      return true;
+    }
+    if (Name.startswith("arm.neon.vqadds.")) {
+      NewFn = Intrinsic::getDeclaration(F->getParent(), Intrinsic::sadd_sat,
+                                        F->arg_begin()->getType());
+      return true;
+    }
+    if (Name.startswith("arm.neon.vqaddu.")) {
+      NewFn = Intrinsic::getDeclaration(F->getParent(), Intrinsic::uadd_sat,
+                                        F->arg_begin()->getType());
+      return true;
+    }
+    if (Name.startswith("arm.neon.vqsubs.")) {
+      NewFn = Intrinsic::getDeclaration(F->getParent(), Intrinsic::ssub_sat,
+                                        F->arg_begin()->getType());
+      return true;
+    }
+    if (Name.startswith("arm.neon.vqsubu.")) {
+      NewFn = Intrinsic::getDeclaration(F->getParent(), Intrinsic::usub_sat,
+                                        F->arg_begin()->getType());
       return true;
     }
     if (Name.startswith("aarch64.neon.addp")) {
@@ -598,7 +621,7 @@ static bool UpgradeIntrinsicFunction1(Function *F, Function *&NewFn) {
   }
   case 'e': {
     SmallVector<StringRef, 2> Groups;
-    Regex R("^experimental.vector.reduce.([a-z]+)\\.[fi][0-9]+");
+    static const Regex R("^experimental.vector.reduce.([a-z]+)\\.[fi][0-9]+");
     if (R.match(Name, &Groups)) {
       Intrinsic::ID ID = Intrinsic::not_intrinsic;
       if (Groups[1] == "fadd")
@@ -758,6 +781,8 @@ static bool UpgradeIntrinsicFunction1(Function *F, Function *&NewFn) {
                         .Cases("clz.ll", "popc.ll", "h2f", true)
                         .Cases("max.i", "max.ll", "max.ui", "max.ull", true)
                         .Cases("min.i", "min.ll", "min.ui", "min.ull", true)
+                        .StartsWith("atomic.load.add.f32.p", true)
+                        .StartsWith("atomic.load.add.f64.p", true)
                         .Default(false);
       if (Expand) {
         NewFn = nullptr;
@@ -776,6 +801,19 @@ static bool UpgradeIntrinsicFunction1(Function *F, Function *&NewFn) {
         rename(F);
         NewFn = Intrinsic::getDeclaration(F->getParent(), Intrinsic::objectsize,
                                           Tys);
+        return true;
+      }
+    }
+    break;
+
+  case 'p':
+    if (Name == "prefetch") {
+      // Handle address space overloading.
+      Type *Tys[] = {F->arg_begin()->getType()};
+      if (F->getName() != Intrinsic::getName(Intrinsic::prefetch, Tys)) {
+        rename(F);
+        NewFn =
+            Intrinsic::getDeclaration(F->getParent(), Intrinsic::prefetch, Tys);
         return true;
       }
     }
@@ -3412,6 +3450,12 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
       Value *Cmp = Builder.CreateICmpSGE(
           Arg, llvm::Constant::getNullValue(Arg->getType()), "abs.cond");
       Rep = Builder.CreateSelect(Cmp, Arg, Neg, "abs");
+    } else if (IsNVVM && (Name.startswith("atomic.load.add.f32.p") ||
+                          Name.startswith("atomic.load.add.f64.p"))) {
+      Value *Ptr = CI->getArgOperand(0);
+      Value *Val = CI->getArgOperand(1);
+      Rep = Builder.CreateAtomicRMW(AtomicRMWInst::FAdd, Ptr, Val,
+                                    AtomicOrdering::SequentiallyConsistent);
     } else if (IsNVVM && (Name == "max.i" || Name == "max.ll" ||
                           Name == "max.ui" || Name == "max.ull")) {
       Value *Arg0 = CI->getArgOperand(0);
@@ -4112,4 +4156,42 @@ MDNode *llvm::upgradeInstructionLoopAttachment(MDNode &N) {
     Ops.push_back(upgradeLoopArgument(MD));
 
   return MDTuple::get(T->getContext(), Ops);
+}
+
+std::string llvm::UpgradeDataLayoutString(StringRef DL, StringRef TT) {
+  std::string AddrSpaces = "-p270:32:32-p271:32:32-p272:64:64";
+
+  // If X86, and the datalayout matches the expected format, add pointer size
+  // address spaces to the datalayout.
+  if (!Triple(TT).isX86() || DL.contains(AddrSpaces))
+    return DL;
+
+  SmallVector<StringRef, 4> Groups;
+  Regex R("(e-m:[a-z](-p:32:32)?)(-[if]64:.*$)");
+  if (!R.match(DL, &Groups))
+    return DL;
+
+  SmallString<1024> Buf;
+  std::string Res = (Groups[1] + AddrSpaces + Groups[3]).toStringRef(Buf).str();
+  return Res;
+}
+
+void llvm::UpgradeFramePointerAttributes(AttrBuilder &B) {
+  StringRef FramePointer;
+  if (B.contains("no-frame-pointer-elim")) {
+    // The value can be "true" or "false".
+    for (const auto &I : B.td_attrs())
+      if (I.first == "no-frame-pointer-elim")
+        FramePointer = I.second == "true" ? "all" : "none";
+    B.removeAttribute("no-frame-pointer-elim");
+  }
+  if (B.contains("no-frame-pointer-elim-non-leaf")) {
+    // The value is ignored. "no-frame-pointer-elim"="true" takes priority.
+    if (FramePointer != "all")
+      FramePointer = "non-leaf";
+    B.removeAttribute("no-frame-pointer-elim-non-leaf");
+  }
+
+  if (!FramePointer.empty())
+    B.addAttribute("frame-pointer", FramePointer);
 }

@@ -18,6 +18,7 @@
 #include "llvm/MC/MCSectionELF.h"
 #include "llvm/MC/MCSectionMachO.h"
 #include "llvm/MC/MCSectionWasm.h"
+#include "llvm/MC/MCSectionXCOFF.h"
 
 using namespace llvm;
 
@@ -27,7 +28,7 @@ static bool useCompactUnwind(const Triple &T) {
     return false;
 
   // aarch64 always has it.
-  if (T.getArch() == Triple::aarch64)
+  if (T.getArch() == Triple::aarch64 || T.getArch() == Triple::aarch64_32)
     return true;
 
   // armv7k always has it.
@@ -39,8 +40,7 @@ static bool useCompactUnwind(const Triple &T) {
     return true;
 
   // And the iOS simulator.
-  if (T.isiOS() &&
-      (T.getArch() == Triple::x86_64 || T.getArch() == Triple::x86))
+  if (T.isiOS() && T.isX86())
     return true;
 
   return false;
@@ -56,7 +56,8 @@ void MCObjectFileInfo::initMachOMCObjectFileInfo(const Triple &T) {
           MachO::S_ATTR_STRIP_STATIC_SYMS | MachO::S_ATTR_LIVE_SUPPORT,
       SectionKind::getReadOnly());
 
-  if (T.isOSDarwin() && T.getArch() == Triple::aarch64)
+  if (T.isOSDarwin() &&
+      (T.getArch() == Triple::aarch64 || T.getArch() == Triple::aarch64_32))
     SupportsCompactUnwindWithoutEHFrame = true;
 
   if (T.isWatchABI())
@@ -190,9 +191,9 @@ void MCObjectFileInfo::initMachOMCObjectFileInfo(const Triple &T) {
         Ctx->getMachOSection("__LD", "__compact_unwind", MachO::S_ATTR_DEBUG,
                              SectionKind::getReadOnly());
 
-    if (T.getArch() == Triple::x86_64 || T.getArch() == Triple::x86)
+    if (T.isX86())
       CompactUnwindDwarfEHFrameOnly = 0x04000000;  // UNWIND_X86_64_MODE_DWARF
-    else if (T.getArch() == Triple::aarch64)
+    else if (T.getArch() == Triple::aarch64 || T.getArch() == Triple::aarch64_32)
       CompactUnwindDwarfEHFrameOnly = 0x03000000;  // UNWIND_ARM64_MODE_DWARF
     else if (T.getArch() == Triple::arm || T.getArch() == Triple::thumb)
       CompactUnwindDwarfEHFrameOnly = 0x04000000;  // UNWIND_ARM_MODE_DWARF
@@ -461,6 +462,11 @@ void MCObjectFileInfo::initELFMCObjectFileInfo(const Triple &T, bool Large) {
                                              DebugSecType, ELF::SHF_EXCLUDE);
   DwarfRnglistsDWOSection =
       Ctx->getELFSection(".debug_rnglists.dwo", DebugSecType, ELF::SHF_EXCLUDE);
+  DwarfMacinfoDWOSection =
+      Ctx->getELFSection(".debug_macinfo.dwo", DebugSecType, ELF::SHF_EXCLUDE);
+
+  DwarfLoclistsDWOSection =
+      Ctx->getELFSection(".debug_loclists.dwo", DebugSecType, ELF::SHF_EXCLUDE);
 
   // DWP Sections
   DwarfCUIndexSection =
@@ -614,6 +620,11 @@ void MCObjectFileInfo::initCOFFMCObjectFileInfo(const Triple &T) {
       COFF::IMAGE_SCN_MEM_DISCARDABLE | COFF::IMAGE_SCN_CNT_INITIALIZED_DATA |
           COFF::IMAGE_SCN_MEM_READ,
       SectionKind::getMetadata(), "debug_macinfo");
+  DwarfMacinfoDWOSection = Ctx->getCOFFSection(
+      ".debug_macinfo.dwo",
+      COFF::IMAGE_SCN_MEM_DISCARDABLE | COFF::IMAGE_SCN_CNT_INITIALIZED_DATA |
+          COFF::IMAGE_SCN_MEM_READ,
+      SectionKind::getMetadata(), "debug_macinfo.dwo");
   DwarfInfoDWOSection = Ctx->getCOFFSection(
       ".debug_info.dwo",
       COFF::IMAGE_SCN_MEM_DISCARDABLE | COFF::IMAGE_SCN_CNT_INITIALIZED_DATA |
@@ -710,6 +721,11 @@ void MCObjectFileInfo::initCOFFMCObjectFileInfo(const Triple &T) {
                                          COFF::IMAGE_SCN_MEM_READ,
                                      SectionKind::getMetadata());
 
+  GLJMPSection = Ctx->getCOFFSection(".gljmp$y",
+                                     COFF::IMAGE_SCN_CNT_INITIALIZED_DATA |
+                                         COFF::IMAGE_SCN_MEM_READ,
+                                     SectionKind::getMetadata());
+
   TLSDataSection = Ctx->getCOFFSection(
       ".tls$", COFF::IMAGE_SCN_CNT_INITIALIZED_DATA | COFF::IMAGE_SCN_MEM_READ |
                    COFF::IMAGE_SCN_MEM_WRITE,
@@ -756,6 +772,24 @@ void MCObjectFileInfo::initWasmMCObjectFileInfo(const Triple &T) {
                                     SectionKind::getReadOnlyWithRel());
 
   // TODO: Define more sections.
+}
+
+void MCObjectFileInfo::initXCOFFMCObjectFileInfo(const Triple &T) {
+  // The default csect for program code. Functions without a specified section
+  // get placed into this csect. The choice of csect name is not a property of
+  // the ABI or object file format. For example, the XL compiler uses an unnamed
+  // csect for program code.
+  TextSection = Ctx->getXCOFFSection(
+      ".text", XCOFF::StorageMappingClass::XMC_PR, XCOFF::XTY_SD,
+      XCOFF::C_HIDEXT, SectionKind::getText());
+
+  DataSection = Ctx->getXCOFFSection(
+      ".data", XCOFF::StorageMappingClass::XMC_RW, XCOFF::XTY_SD,
+      XCOFF::C_HIDEXT, SectionKind::getData());
+
+  ReadOnlySection = Ctx->getXCOFFSection(
+      ".rodata", XCOFF::StorageMappingClass::XMC_RO, XCOFF::XTY_SD,
+      XCOFF::C_HIDEXT, SectionKind::getReadOnly());
 }
 
 void MCObjectFileInfo::InitMCObjectFileInfo(const Triple &TheTriple, bool PIC,
@@ -806,8 +840,7 @@ void MCObjectFileInfo::InitMCObjectFileInfo(const Triple &TheTriple, bool PIC,
     break;
   case Triple::XCOFF:
     Env = IsXCOFF;
-    // TODO: Initialize MCObjectFileInfo for XCOFF format when
-    // MCSectionXCOFF is ready.
+    initXCOFFMCObjectFileInfo(TT);
     break;
   case Triple::UnknownObjectFormat:
     report_fatal_error("Cannot initialize MC for unknown object file format.");

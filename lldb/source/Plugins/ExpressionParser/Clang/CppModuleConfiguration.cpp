@@ -31,9 +31,9 @@ bool CppModuleConfiguration::SetOncePath::TrySet(llvm::StringRef path) {
 }
 
 bool CppModuleConfiguration::analyzeFile(const FileSpec &f) {
-  llvm::SmallString<256> dir_buffer = f.GetDirectory().GetStringRef();
-  // Convert to posix style so that we can use '/'.
-  llvm::sys::path::native(dir_buffer, llvm::sys::path::Style::posix);
+  using namespace llvm::sys::path;
+  // Convert to slashes to make following operations simpler.
+  std::string dir_buffer = convert_to_slash(f.GetDirectory().GetStringRef());
   llvm::StringRef posix_dir(dir_buffer);
 
   // Check for /c++/vX/ that is used by libc++.
@@ -63,9 +63,9 @@ bool CppModuleConfiguration::hasValidConfig() {
 CppModuleConfiguration::CppModuleConfiguration(
     const FileSpecList &support_files) {
   // Analyze all files we were given to build the configuration.
-  bool error = !std::all_of(support_files.begin(), support_files.end(),
-                            std::bind(&CppModuleConfiguration::analyzeFile,
-                                      this, std::placeholders::_1));
+  bool error = !llvm::all_of(support_files,
+                             std::bind(&CppModuleConfiguration::analyzeFile,
+                                       this, std::placeholders::_1));
   // If we have a valid configuration at this point, set the
   // include directories and module list that should be used.
   if (!error && hasValidConfig()) {

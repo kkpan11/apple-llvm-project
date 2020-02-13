@@ -64,7 +64,7 @@ void PointerSubChecker::checkPreStmt(const BinaryOperator *B,
                          "Subtraction of two pointers that do not point to "
                          "the same memory chunk may cause incorrect result."));
     auto R =
-        llvm::make_unique<PathSensitiveBugReport>(*BT, BT->getDescription(), N);
+        std::make_unique<PathSensitiveBugReport>(*BT, BT->getDescription(), N);
     R->addRange(B->getSourceRange());
     C.emitReport(std::move(R));
   }

@@ -10,20 +10,21 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "CodeGenFunction.h"
 #include "CGCXXABI.h"
 #include "CGObjCRuntime.h"
 #include "CGRecordLayout.h"
+#include "CodeGenFunction.h"
 #include "CodeGenModule.h"
 #include "ConstantEmitter.h"
 #include "TargetInfo.h"
 #include "clang/AST/APValue.h"
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/Attr.h"
 #include "clang/AST/RecordLayout.h"
 #include "clang/AST/StmtVisitor.h"
 #include "clang/Basic/Builtins.h"
-#include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/Sequence.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Function.h"
@@ -187,7 +188,8 @@ bool ConstantAggregateBuilder::addBits(llvm::APInt Bits, uint64_t OffsetInBits,
 
   // We split bit-fields up into individual bytes. Walk over the bytes and
   // update them.
-  for (CharUnits OffsetInChars = Context.toCharUnitsFromBits(OffsetInBits);
+  for (CharUnits OffsetInChars =
+           Context.toCharUnitsFromBits(OffsetInBits - OffsetWithinChar);
        /**/; ++OffsetInChars) {
     // Number of bits we want to fill in this char.
     unsigned WantedBits =
@@ -287,7 +289,7 @@ Optional<size_t> ConstantAggregateBuilder::splitAt(CharUnits Pos) {
     return Offsets.size();
 
   while (true) {
-    auto FirstAfterPos = std::upper_bound(Offsets.begin(), Offsets.end(), Pos);
+    auto FirstAfterPos = llvm::upper_bound(Offsets, Pos);
     if (FirstAfterPos == Offsets.begin())
       return 0;
 
@@ -658,7 +660,7 @@ static bool EmitDesignatedInitUpdater(ConstantEmitter &Emitter,
 }
 
 bool ConstStructBuilder::Build(InitListExpr *ILE, bool AllowOverwrite) {
-  RecordDecl *RD = ILE->getType()->getAs<RecordType>()->getDecl();
+  RecordDecl *RD = ILE->getType()->castAs<RecordType>()->getDecl();
   const ASTRecordLayout &Layout = CGM.getContext().getASTRecordLayout(RD);
 
   unsigned FieldNo = -1;
@@ -675,11 +677,12 @@ bool ConstStructBuilder::Build(InitListExpr *ILE, bool AllowOverwrite) {
     ++FieldNo;
 
     // If this is a union, skip all the fields that aren't being initialized.
-    if (RD->isUnion() && ILE->getInitializedFieldInUnion() != Field)
+    if (RD->isUnion() &&
+        !declaresSameEntity(ILE->getInitializedFieldInUnion(), Field))
       continue;
 
-    // Don't emit anonymous bitfields, they just affect layout.
-    if (Field->isUnnamedBitfield())
+    // Don't emit anonymous bitfields or zero-sized fields.
+    if (Field->isUnnamedBitfield() || Field->isZeroSize(CGM.getContext()))
       continue;
 
     // Get the initializer.  A struct can include fields without initializers,
@@ -720,6 +723,10 @@ bool ConstStructBuilder::Build(InitListExpr *ILE, bool AllowOverwrite) {
       if (!AppendField(Field, Layout.getFieldOffset(FieldNo), EltInit,
                        AllowOverwrite))
         return false;
+      // After emitting a non-empty field with [[no_unique_address]], we may
+      // need to overwrite its tail padding.
+      if (Field->hasAttr<NoUniqueAddressAttr>())
+        AllowOverwrite = true;
     } else {
       // Otherwise we have a bitfield.
       if (auto *CI = dyn_cast<llvm::ConstantInt>(EltInit)) {
@@ -793,14 +800,15 @@ bool ConstStructBuilder::Build(const APValue &Val, const RecordDecl *RD,
   unsigned FieldNo = 0;
   uint64_t OffsetBits = CGM.getContext().toBits(Offset);
 
+  bool AllowOverwrite = false;
   for (RecordDecl::field_iterator Field = RD->field_begin(),
        FieldEnd = RD->field_end(); Field != FieldEnd; ++Field, ++FieldNo) {
     // If this is a union, skip all the fields that aren't being initialized.
     if (RD->isUnion() && !declaresSameEntity(Val.getUnionField(), *Field))
       continue;
 
-    // Don't emit anonymous bitfields, they just affect layout.
-    if (Field->isUnnamedBitfield())
+    // Don't emit anonymous bitfields or zero-sized fields.
+    if (Field->isUnnamedBitfield() || Field->isZeroSize(CGM.getContext()))
       continue;
 
     // Emit the value of the initializer.
@@ -814,12 +822,16 @@ bool ConstStructBuilder::Build(const APValue &Val, const RecordDecl *RD,
     if (!Field->isBitField()) {
       // Handle non-bitfield members.
       if (!AppendField(*Field, Layout.getFieldOffset(FieldNo) + OffsetBits,
-                       EltInit))
+                       EltInit, AllowOverwrite))
         return false;
+      // After emitting a non-empty field with [[no_unique_address]], we may
+      // need to overwrite its tail padding.
+      if (Field->hasAttr<NoUniqueAddressAttr>())
+        AllowOverwrite = true;
     } else {
       // Otherwise we have a bitfield.
       if (!AppendBitField(*Field, Layout.getFieldOffset(FieldNo) + OffsetBits,
-                          cast<llvm::ConstantInt>(EltInit)))
+                          cast<llvm::ConstantInt>(EltInit), AllowOverwrite))
         return false;
     }
   }
@@ -828,7 +840,7 @@ bool ConstStructBuilder::Build(const APValue &Val, const RecordDecl *RD,
 }
 
 llvm::Constant *ConstStructBuilder::Finalize(QualType Type) {
-  RecordDecl *RD = Type->getAs<RecordType>()->getDecl();
+  RecordDecl *RD = Type->castAs<RecordType>()->getDecl();
   llvm::Type *ValTy = CGM.getTypes().ConvertType(Type);
   return Builder.build(ValTy, RD->hasFlexibleArrayMember());
 }
@@ -896,7 +908,7 @@ static ConstantAddress tryEmitGlobalCompoundLiteral(CodeGenModule &CGM,
                                      llvm::GlobalVariable::NotThreadLocal,
                     CGM.getContext().getTargetAddressSpace(addressSpace));
   emitter.finalize(GV);
-  GV->setAlignment(Align.getQuantity());
+  GV->setAlignment(Align.getAsAlign());
   CGM.setAddrOfConstantCompoundLiteral(E, GV);
   return ConstantAddress(GV, Align);
 }
@@ -1104,6 +1116,7 @@ public:
     case CK_ToVoid:
     case CK_Dynamic:
     case CK_LValueBitCast:
+    case CK_LValueToRValueBitCast:
     case CK_NullToMemberPointer:
     case CK_UserDefinedConversion:
     case CK_CPointerToObjCPointerCast:
@@ -1161,7 +1174,7 @@ public:
 
   llvm::Constant *VisitMaterializeTemporaryExpr(MaterializeTemporaryExpr *E,
                                                 QualType T) {
-    return Visit(E->GetTemporaryExpr(), T);
+    return Visit(E->getSubExpr(), T);
   }
 
   llvm::Constant *EmitArrayInitialization(InitListExpr *ILE, QualType T) {
@@ -1257,8 +1270,8 @@ public:
       return nullptr;
 
     // FIXME: We should not have to call getBaseElementType here.
-    const RecordType *RT =
-      CGM.getContext().getBaseElementType(Ty)->getAs<RecordType>();
+    const auto *RT =
+        CGM.getContext().getBaseElementType(Ty)->castAs<RecordType>();
     const CXXRecordDecl *RD = cast<CXXRecordDecl>(RT->getDecl());
 
     // If the class doesn't have a trivial destructor, we can't emit it as a
@@ -1416,8 +1429,37 @@ llvm::GlobalValue *ConstantEmitter::getCurrentAddrPrivate() {
   return global;
 }
 
+static llvm::Constant *getUnfoldableValue(llvm::Constant *C) {
+  // Look through any constant expressions that might get folded
+  while (auto CE = dyn_cast<llvm::ConstantExpr>(C)) {
+    switch (CE->getOpcode()) {
+    // Simple type changes.
+    case llvm::Instruction::BitCast:
+    case llvm::Instruction::IntToPtr:
+    case llvm::Instruction::PtrToInt:
+      break;
+
+    // GEPs, if all the indices are zero.
+    case llvm::Instruction::GetElementPtr:
+      for (unsigned i = 1, e = CE->getNumOperands(); i != e; ++i)
+        if (!CE->getOperand(i)->isNullValue())
+          return C;
+      break;
+
+    default:
+      return C;
+    }
+    C = CE->getOperand(0);
+  }
+  return C;
+}
+
 void ConstantEmitter::registerCurrentAddrPrivate(llvm::Constant *signal,
                                            llvm::GlobalValue *placeholder) {
+  // Strip anything from the signal value that might get folded into other
+  // constant expressions in the final initializer.
+  signal = getUnfoldableValue(signal);
+
   assert(!PlaceholderAddresses.empty());
   assert(PlaceholderAddresses.back().first == nullptr);
   assert(PlaceholderAddresses.back().second == placeholder);
@@ -1475,7 +1517,7 @@ namespace {
       // messing around with llvm::Constant structures, which never itself
       // does anything that should be visible in compiler output.
       for (auto &entry : Locations) {
-        assert(entry.first->getParent() == nullptr && "not a placeholder!");
+        assert(entry.first->getName() == "" && "not a placeholder!");
         entry.first->replaceAllUsesWith(entry.second);
         entry.first->eraseFromParent();
       }
@@ -1713,10 +1755,13 @@ namespace {
 struct ConstantLValue {
   llvm::Constant *Value;
   bool HasOffsetApplied;
+  bool HasDestPointerAuth;
 
   /*implicit*/ ConstantLValue(llvm::Constant *value,
-                              bool hasOffsetApplied = false)
-    : Value(value), HasOffsetApplied(false) {}
+                              bool hasOffsetApplied = false,
+                              bool hasDestPointerAuth = false)
+    : Value(value), HasOffsetApplied(hasOffsetApplied),
+      HasDestPointerAuth(hasDestPointerAuth) {}
 
   /*implicit*/ ConstantLValue(ConstantAddress address)
     : ConstantLValue(address.getPointer()) {}
@@ -1759,6 +1804,14 @@ private:
   ConstantLValue VisitCXXUuidofExpr(const CXXUuidofExpr *E);
   ConstantLValue VisitMaterializeTemporaryExpr(
                                          const MaterializeTemporaryExpr *E);
+
+  ConstantLValue emitPointerAuthSignConstant(const CallExpr *E);
+  llvm::Constant *emitPointerAuthPointer(const Expr *E);
+  unsigned emitPointerAuthKey(const Expr *E);
+  std::pair<llvm::Constant*, llvm::Constant*>
+  emitPointerAuthDiscriminator(const Expr *E);
+  llvm::Constant *tryEmitConstantSignedPointer(llvm::Constant *ptr,
+                                               PointerAuthQualifier auth);
 
   bool hasNonZeroOffset() const {
     return !Value.getLValueOffset().isZero();
@@ -1818,6 +1871,14 @@ llvm::Constant *ConstantLValueEmitter::tryEmit() {
     value = applyOffset(value);
   }
 
+  // Apply pointer-auth signing from the destination type.
+  if (auto pointerAuth = DestType.getPointerAuth()) {
+    if (!result.HasDestPointerAuth) {
+      value = tryEmitConstantSignedPointer(value, pointerAuth);
+      if (!value) return nullptr;
+    }
+  }
+
   // Convert to the appropriate type; this could be an lvalue for
   // an integer.  FIXME: performAddrSpaceCast
   if (isa<llvm::PointerType>(destTy))
@@ -1855,8 +1916,15 @@ ConstantLValueEmitter::tryEmitBase(const APValue::LValueBase &base) {
     if (D->hasAttr<WeakRefAttr>())
       return CGM.GetWeakRefReference(D).getPointer();
 
-    if (auto FD = dyn_cast<FunctionDecl>(D))
-      return CGM.GetAddrOfFunction(FD);
+    if (auto FD = dyn_cast<FunctionDecl>(D)) {
+      if (auto pointerAuth = DestType.getPointerAuth()) {
+        llvm::Constant *C = CGM.getRawFunctionPointer(FD);
+        C = applyOffset(C);
+        C = tryEmitConstantSignedPointer(C, pointerAuth);
+        return ConstantLValue(C, /*applied offset*/ true, /*signed*/ true);
+      }
+      return CGM.getFunctionPointer(FD);
+    }
 
     if (auto VD = dyn_cast<VarDecl>(D)) {
       // We can never refer to a variable with local storage.
@@ -1866,7 +1934,7 @@ ConstantLValueEmitter::tryEmitBase(const APValue::LValueBase &base) {
 
         if (VD->isLocalVarDecl()) {
           return CGM.getOrCreateStaticVarDecl(
-              *VD, CGM.getLLVMLinkageVarDefinition(VD, /*isConstant=*/false));
+              *VD, CGM.getLLVMLinkageVarDefinition(VD, /*IsConstant=*/false));
         }
       }
     }
@@ -1946,6 +2014,9 @@ ConstantLValueEmitter::VisitAddrLabelExpr(const AddrLabelExpr *E) {
 ConstantLValue
 ConstantLValueEmitter::VisitCallExpr(const CallExpr *E) {
   unsigned builtin = E->getBuiltinCallee();
+  if (builtin == Builtin::BI__builtin_ptrauth_sign_constant)
+    return emitPointerAuthSignConstant(E);
+
   if (builtin != Builtin::BI__builtin___CFStringMakeConstantString &&
       builtin != Builtin::BI__builtin___NSStringMakeConstantString)
     return nullptr;
@@ -1957,6 +2028,99 @@ ConstantLValueEmitter::VisitCallExpr(const CallExpr *E) {
     // FIXME: need to deal with UCN conversion issues.
     return CGM.GetAddrOfConstantCFString(literal);
   }
+}
+
+/// Try to emit a constant signed pointer, given a raw pointer and the
+/// destination ptrauth qualifier.
+///
+/// This can fail if the qualifier needs address discrimination and the
+/// emitter is in an abstract mode.
+llvm::Constant *
+ConstantLValueEmitter::tryEmitConstantSignedPointer(
+                                             llvm::Constant *unsignedPointer,
+                                             PointerAuthQualifier schema) {
+  assert(schema && "applying trivial ptrauth schema");
+  auto key = schema.getKey();
+
+  // Create an address placeholder if we're using address discrimination.
+  llvm::GlobalValue *storageAddress = nullptr;
+  if (schema.isAddressDiscriminated()) {
+    // We can't do this if the emitter is in an abstract state.
+    if (Emitter.isAbstract())
+      return nullptr;
+
+    storageAddress = Emitter.getCurrentAddrPrivate();
+  }
+
+  // Fetch the extra discriminator.
+  llvm::Constant *otherDiscriminator =
+    llvm::ConstantInt::get(CGM.IntPtrTy, schema.getExtraDiscriminator());
+
+  auto signedPointer =
+    CGM.getConstantSignedPointer(unsignedPointer, key, storageAddress,
+                                 otherDiscriminator);
+
+  if (schema.isAddressDiscriminated())
+    Emitter.registerCurrentAddrPrivate(signedPointer, storageAddress);
+
+  return signedPointer;
+}
+
+ConstantLValue
+ConstantLValueEmitter::emitPointerAuthSignConstant(const CallExpr *E) {
+  auto unsignedPointer = emitPointerAuthPointer(E->getArg(0));
+  auto key = emitPointerAuthKey(E->getArg(1));
+  llvm::Constant *storageAddress;
+  llvm::Constant *otherDiscriminator;
+  std::tie(storageAddress, otherDiscriminator) =
+    emitPointerAuthDiscriminator(E->getArg(2));
+
+  auto signedPointer =
+    CGM.getConstantSignedPointer(unsignedPointer, key, storageAddress,
+                                 otherDiscriminator);
+  return signedPointer;
+}
+
+llvm::Constant *ConstantLValueEmitter::emitPointerAuthPointer(const Expr *E) {
+  Expr::EvalResult result;
+  bool succeeded = E->EvaluateAsRValue(result, CGM.getContext());
+  assert(succeeded); (void) succeeded;
+
+  // The assertions here are all checked by Sema.
+  assert(result.Val.isLValue());
+  auto base = result.Val.getLValueBase().get<const ValueDecl *>();
+  if (auto decl = dyn_cast_or_null<FunctionDecl>(base)) {
+    assert(result.Val.getLValueOffset().isZero());
+    return CGM.getRawFunctionPointer(decl);
+  }
+  return ConstantEmitter(CGM, Emitter.CGF)
+           .emitAbstract(E->getExprLoc(), result.Val, E->getType());
+}
+
+unsigned ConstantLValueEmitter::emitPointerAuthKey(const Expr *E) {
+  return E->EvaluateKnownConstInt(CGM.getContext()).getZExtValue();
+}
+
+std::pair<llvm::Constant*, llvm::Constant*>
+ConstantLValueEmitter::emitPointerAuthDiscriminator(const Expr *E) {
+  E = E->IgnoreParens();
+
+  if (auto call = dyn_cast<CallExpr>(E)) {
+    if (call->getBuiltinCallee() ==
+          Builtin::BI__builtin_ptrauth_blend_discriminator) {
+      auto pointer = ConstantEmitter(CGM).emitAbstract(call->getArg(0),
+                                            call->getArg(0)->getType());
+      auto extra = ConstantEmitter(CGM).emitAbstract(call->getArg(1),
+                                            call->getArg(1)->getType());
+      return { pointer, extra };
+    }
+  }
+
+  auto result = ConstantEmitter(CGM).emitAbstract(E, E->getType());
+  if (result->getType()->isPointerTy())
+    return { result, nullptr };
+  else
+    return { nullptr, result };
 }
 
 ConstantLValue
@@ -1991,8 +2155,8 @@ ConstantLValueEmitter::VisitMaterializeTemporaryExpr(
   assert(E->getStorageDuration() == SD_Static);
   SmallVector<const Expr *, 2> CommaLHSs;
   SmallVector<SubobjectAdjustment, 2> Adjustments;
-  const Expr *Inner = E->GetTemporaryExpr()
-      ->skipRValueSubobjectAdjustments(CommaLHSs, Adjustments);
+  const Expr *Inner =
+      E->getSubExpr()->skipRValueSubobjectAdjustments(CommaLHSs, Adjustments);
   return CGM.GetAddrOfGlobalTemporary(E, Inner);
 }
 
@@ -2216,7 +2380,7 @@ static llvm::Constant *EmitNullConstant(CodeGenModule &CGM,
   for (const auto *Field : record->fields()) {
     // Fill in non-bitfields. (Bitfields always use a zero pattern, which we
     // will fill in later.)
-    if (!Field->isBitField()) {
+    if (!Field->isBitField() && !Field->isZeroSize(CGM.getContext())) {
       unsigned fieldIndex = layout.getLLVMFieldNo(Field);
       elements[fieldIndex] = CGM.EmitNullConstant(Field->getType());
     }

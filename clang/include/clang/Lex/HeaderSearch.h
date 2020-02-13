@@ -250,12 +250,6 @@ class HeaderSearch {
   /// Entity used to look up stored header file information.
   ExternalHeaderFileInfoSource *ExternalSource = nullptr;
 
-  // Various statistics we track for performance analysis.
-  unsigned NumIncluded = 0;
-  unsigned NumMultiIncludeFileOptzn = 0;
-  unsigned NumFrameworkLookups = 0;
-  unsigned NumSubFrameworkLookups = 0;
-
 public:
   HeaderSearch(std::shared_ptr<HeaderSearchOptions> HSOpts,
                SourceManager &SourceMgr, DiagnosticsEngine &Diags,
@@ -544,8 +538,6 @@ public:
   const FileEntry *lookupModuleMapFile(const DirectoryEntry *Dir,
                                        bool IsFramework);
 
-  void IncrementFrameworkLookupCount() { ++NumFrameworkLookups; }
-
   /// Determine whether there is a module map that may map the header
   /// with the given file name to a (sub)module.
   /// Always returns false if modules are disabled.
@@ -709,21 +701,29 @@ public:
 
   /// Suggest a path by which the specified file could be found, for use in
   /// diagnostics to suggest a #include. Returned path will only contain forward
-  /// slashes as separators.
+  /// slashes as separators. MainFile is the absolute path of the file that we
+  /// are generating the diagnostics for. It will try to shorten the path using
+  /// MainFile location, if none of the include search directories were prefix
+  /// of File.
   ///
   /// \param IsSystem If non-null, filled in to indicate whether the suggested
   ///        path is relative to a system header directory.
   std::string suggestPathToFileForDiagnostics(const FileEntry *File,
+                                              llvm::StringRef MainFile,
                                               bool *IsSystem = nullptr);
 
   /// Suggest a path by which the specified file could be found, for use in
   /// diagnostics to suggest a #include. Returned path will only contain forward
-  /// slashes as separators.
+  /// slashes as separators. MainFile is the absolute path of the file that we
+  /// are generating the diagnostics for. It will try to shorten the path using
+  /// MainFile location, if none of the include search directories were prefix
+  /// of File.
   ///
   /// \param WorkingDir If non-empty, this will be prepended to search directory
   /// paths that are relative.
   std::string suggestPathToFileForDiagnostics(llvm::StringRef File,
                                               llvm::StringRef WorkingDir,
+                                              llvm::StringRef MainFile,
                                               bool *IsSystem = nullptr);
 
   void PrintStats();

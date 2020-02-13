@@ -88,8 +88,9 @@ void ARMInstPrinter::printRegName(raw_ostream &OS, unsigned RegNo) const {
   OS << markup("<reg:") << getRegisterName(RegNo, DefaultAltIdx) << markup(">");
 }
 
-void ARMInstPrinter::printInst(const MCInst *MI, raw_ostream &O,
-                               StringRef Annot, const MCSubtargetInfo &STI) {
+void ARMInstPrinter::printInst(const MCInst *MI, uint64_t Address,
+                               StringRef Annot, const MCSubtargetInfo &STI,
+                               raw_ostream &O) {
   unsigned Opcode = MI->getOpcode();
 
   switch (Opcode) {
@@ -275,7 +276,7 @@ void ARMInstPrinter::printInst(const MCInst *MI, raw_ostream &O,
       // Copy the rest operands into NewMI.
       for (unsigned i = isStore ? 3 : 2; i < MI->getNumOperands(); ++i)
         NewMI.addOperand(MI->getOperand(i));
-      printInstruction(&NewMI, STI, O);
+      printInstruction(&NewMI, Address, STI, O);
       return;
     }
     break;
@@ -288,7 +289,7 @@ void ARMInstPrinter::printInst(const MCInst *MI, raw_ostream &O,
     switch (MI->getOperand(0).getImm()) {
     default:
       if (!printAliasInstr(MI, STI, O))
-        printInstruction(MI, STI, O);
+        printInstruction(MI, Address, STI, O);
       break;
     case 0:
       O << "\tssbb";
@@ -302,7 +303,7 @@ void ARMInstPrinter::printInst(const MCInst *MI, raw_ostream &O,
   }
 
   if (!printAliasInstr(MI, STI, O))
-    printInstruction(MI, STI, O);
+    printInstruction(MI, Address, STI, O);
 
   printAnnotation(O, Annot);
 }
@@ -601,6 +602,40 @@ void ARMInstPrinter::printPostIdxImm8s4Operand(const MCInst *MI, unsigned OpNum,
   unsigned Imm = MO.getImm();
   O << markup("<imm:") << '#' << ((Imm & 256) ? "" : "-") << ((Imm & 0xff) << 2)
     << markup(">");
+}
+
+template<int shift>
+void ARMInstPrinter::printMveAddrModeRQOperand(const MCInst *MI, unsigned OpNum,
+                                               const MCSubtargetInfo &STI,
+                                               raw_ostream &O) {
+  const MCOperand &MO1 = MI->getOperand(OpNum);
+  const MCOperand &MO2 = MI->getOperand(OpNum + 1);
+
+  O << markup("<mem:") << "[";
+  printRegName(O, MO1.getReg());
+  O << ", ";
+  printRegName(O, MO2.getReg());
+
+  if (shift > 0)
+    printRegImmShift(O, ARM_AM::uxtw, shift, UseMarkup);
+
+  O << "]" << markup(">");
+}
+
+void ARMInstPrinter::printMveAddrModeQOperand(const MCInst *MI, unsigned OpNum,
+                                               const MCSubtargetInfo &STI,
+                                               raw_ostream &O) {
+  const MCOperand &MO1 = MI->getOperand(OpNum);
+  const MCOperand &MO2 = MI->getOperand(OpNum + 1);
+
+  O << markup("<mem:") << "[";
+  printRegName(O, MO1.getReg());
+
+  int64_t Imm = MO2.getImm();
+  if (Imm != 0)
+    O << ", " << markup("<imm:") << '#' << Imm << markup(">");
+
+  O << "]" << markup(">");
 }
 
 void ARMInstPrinter::printLdStmModeOperand(const MCInst *MI, unsigned OpNum,
@@ -1300,12 +1335,12 @@ void ARMInstPrinter::printFPImmOperand(const MCInst *MI, unsigned OpNum,
     << markup(">");
 }
 
-void ARMInstPrinter::printNEONModImmOperand(const MCInst *MI, unsigned OpNum,
+void ARMInstPrinter::printVMOVModImmOperand(const MCInst *MI, unsigned OpNum,
                                             const MCSubtargetInfo &STI,
                                             raw_ostream &O) {
   unsigned EncodedImm = MI->getOperand(OpNum).getImm();
   unsigned EltBits;
-  uint64_t Val = ARM_AM::decodeNEONModImm(EncodedImm, EltBits);
+  uint64_t Val = ARM_AM::decodeVMOVModImm(EncodedImm, EltBits);
   O << markup("<imm:") << "#0x";
   O.write_hex(Val);
   O << markup(">");
@@ -1588,6 +1623,20 @@ void ARMInstPrinter::printVectorListFourSpaced(const MCInst *MI, unsigned OpNum,
   O << "}";
 }
 
+template<unsigned NumRegs>
+void ARMInstPrinter::printMVEVectorList(const MCInst *MI, unsigned OpNum,
+                                        const MCSubtargetInfo &STI,
+                                        raw_ostream &O) {
+  unsigned Reg = MI->getOperand(OpNum).getReg();
+  const char *Prefix = "{";
+  for (unsigned i = 0; i < NumRegs; i++) {
+    O << Prefix;
+    printRegName(O, MRI.getSubReg(Reg, ARM::qsub_0 + i));
+    Prefix = ", ";
+  }
+  O << "}";
+}
+
 template<int64_t Angle, int64_t Remainder>
 void ARMInstPrinter::printComplexRotationOp(const MCInst *MI, unsigned OpNo,
                                             const MCSubtargetInfo &STI,
@@ -1620,3 +1669,19 @@ void ARMInstPrinter::printVPTMask(const MCInst *MI, unsigned OpNum,
   }
 }
 
+void ARMInstPrinter::printExpandedImmOperand(const MCInst *MI, unsigned OpNum,
+                                             const MCSubtargetInfo &STI,
+                                             raw_ostream &O) {
+  uint32_t Val = MI->getOperand(OpNum).getImm();
+  O << markup("<imm:") << "#0x";
+  O.write_hex(Val);
+  O << markup(">");
+}
+
+void ARMInstPrinter::printMveSaturateOp(const MCInst *MI, unsigned OpNum,
+                                        const MCSubtargetInfo &STI,
+                                        raw_ostream &O) {
+  uint32_t Val = MI->getOperand(OpNum).getImm();
+  assert(Val <= 1 && "Invalid MVE saturate operand");
+  O << "#" << (Val == 1 ? 48 : 64);
+}

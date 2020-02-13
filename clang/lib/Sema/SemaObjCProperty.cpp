@@ -749,7 +749,7 @@ static void checkARCPropertyImpl(Sema &S, SourceLocation propertyImplLoc,
     return;
 
   // If the ivar is private, and it's implicitly __unsafe_unretained
-  // becaues of its type, then pretend it was actually implicitly
+  // because of its type, then pretend it was actually implicitly
   // __strong.  This is only sound because we're processing the
   // property implementation before parsing any method bodies.
   if (ivarLifetime == Qualifiers::OCL_ExplicitNone &&
@@ -1329,7 +1329,7 @@ Decl *Sema::ActOnPropertyImplDecl(Scope *S,
 
       Ivar = ObjCIvarDecl::Create(Context, ClassImpDecl,
                                   PropertyIvarLoc,PropertyIvarLoc, PropertyIvar,
-                                  PropertyIvarType, /*Dinfo=*/nullptr,
+                                  PropertyIvarType, /*TInfo=*/nullptr,
                                   ObjCIvarDecl::Private,
                                   (Expr *)nullptr, true);
       if (RequireNonAbstractType(PropertyIvarLoc,
@@ -2191,7 +2191,6 @@ Sema::AtomicPropertySetterGetterRules (ObjCImplDecl* IMPDecl,
     const ObjCPropertyDecl *Property = I->second;
     ObjCMethodDecl *GetterMethod = nullptr;
     ObjCMethodDecl *SetterMethod = nullptr;
-    bool LookedUpGetterSetter = false;
 
     unsigned Attributes = Property->getPropertyAttributes();
     unsigned AttributesAsWritten = Property->getPropertyAttributesAsWritten();
@@ -2208,7 +2207,6 @@ Sema::AtomicPropertySetterGetterRules (ObjCImplDecl* IMPDecl,
         GetterMethod = nullptr;
       if (SetterMethod && SetterMethod->isSynthesizedAccessorStub())
         SetterMethod = nullptr;
-      LookedUpGetterSetter = true;
       if (GetterMethod) {
         Diag(GetterMethod->getLocation(),
              diag::warn_default_atomic_custom_getter_setter)
@@ -2490,9 +2488,9 @@ void Sema::ProcessPropertyDecl(ObjCPropertyDecl *property) {
         ObjCReturnsInnerPointerAttr::CreateImplicit(Context, Loc));
 
     if (const SectionAttr *SA = property->getAttr<SectionAttr>())
-      GetterMethod->addAttr(
-          SectionAttr::CreateImplicit(Context, SectionAttr::GNU_section,
-                                      SA->getName(), Loc));
+      GetterMethod->addAttr(SectionAttr::CreateImplicit(
+          Context, SA->getName(), Loc, AttributeCommonInfo::AS_GNU,
+          SectionAttr::GNU_section));
 
     ProcessAPINotes(GetterMethod);
 
@@ -2565,11 +2563,11 @@ void Sema::ProcessPropertyDecl(ObjCPropertyDecl *property) {
 
       CD->addDecl(SetterMethod);
       if (const SectionAttr *SA = property->getAttr<SectionAttr>())
-        SetterMethod->addAttr(
-            SectionAttr::CreateImplicit(Context, SectionAttr::GNU_section,
-                                        SA->getName(), Loc));
+        SetterMethod->addAttr(SectionAttr::CreateImplicit(
+            Context, SA->getName(), Loc, AttributeCommonInfo::AS_GNU,
+            SectionAttr::GNU_section));
 
-    ProcessAPINotes(SetterMethod);
+      ProcessAPINotes(SetterMethod);
 
       // It's possible for the user to have set a very odd custom
       // setter selector that causes it to have a method family.

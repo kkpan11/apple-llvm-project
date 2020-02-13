@@ -59,7 +59,6 @@
 #include "lldb/Host/ProcessLaunchInfo.h"
 #include "lldb/Host/ThreadLauncher.h"
 #include "lldb/Utility/ArchSpec.h"
-#include "lldb/Utility/CleanUp.h"
 #include "lldb/Utility/DataBufferHeap.h"
 #include "lldb/Utility/DataExtractor.h"
 #include "lldb/Utility/Endian.h"
@@ -71,8 +70,9 @@
 #include "lldb/Utility/StructuredData.h"
 #include "lldb/lldb-defines.h"
 
-#include "llvm/Support/FileSystem.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/Errno.h"
+#include "llvm/Support/FileSystem.h"
 
 #include "../cfcpp/CFCBundle.h"
 #include "../cfcpp/CFCMutableArray.h"
@@ -439,6 +439,12 @@ static bool GetMacOSXProcessCPUType(ProcessInstanceInfo &process_info) {
         break;
 #endif
 
+#if defined(CPU_TYPE_ARM64_32) && defined(CPU_SUBTYPE_ARM64_32_ALL)
+      case CPU_TYPE_ARM64_32:
+        sub = CPU_SUBTYPE_ARM64_32_ALL;
+        break;
+#endif
+
       case CPU_TYPE_ARM: {
         // Note that we fetched the cpu type from the PROCESS but we can't get a
         // cpusubtype of the
@@ -645,14 +651,16 @@ uint32_t Host::FindProcesses(const ProcessInstanceInfoMatch &match_info,
       process_info.SetEffectiveGroupID(UINT32_MAX);
 
     // Make sure our info matches before we go fetch the name and cpu type
-    if (match_info.Matches(process_info)) {
-      // Get CPU type first so we can know to look for iOS simulator is we have
-      // x86 or x86_64
-      if (GetMacOSXProcessCPUType(process_info)) {
-        if (GetMacOSXProcessArgs(&match_info, process_info)) {
-          if (match_info.Matches(process_info))
-            process_infos.Append(process_info);
-        }
+    if (!match_info.UserIDsMatch(process_info) ||
+        !match_info.ProcessIDsMatch(process_info))
+      continue;
+
+    // Get CPU type first so we can know to look for iOS simulator is we have
+    // x86 or x86_64
+    if (GetMacOSXProcessCPUType(process_info)) {
+      if (GetMacOSXProcessArgs(&match_info, process_info)) {
+        if (match_info.Matches(process_info))
+          process_infos.Append(process_info);
       }
     }
   }
@@ -973,7 +981,7 @@ static bool AddPosixSpawnFileAction(void *_file_actions, const FileAction *info,
     return false;
 
   posix_spawn_file_actions_t *file_actions =
-      reinterpret_cast<posix_spawn_file_actions_t *>(_file_actions);
+      static_cast<posix_spawn_file_actions_t *>(_file_actions);
 
   switch (info->GetAction()) {
   case FileAction::eFileActionNone:
@@ -1060,7 +1068,8 @@ static Status LaunchProcessPosixSpawn(const char *exe_path,
   }
 
   // Make sure we clean up the posix spawn attributes before exiting this scope.
-  CleanUp cleanup_attr(posix_spawnattr_destroy, &attr);
+  auto cleanup_attr =
+      llvm::make_scope_exit([&]() { posix_spawnattr_destroy(&attr); });
 
   sigset_t no_signals;
   sigset_t all_signals;
@@ -1089,7 +1098,7 @@ static Status LaunchProcessPosixSpawn(const char *exe_path,
   // --arch <ARCH> as part of the shell invocation
   // to do that job on OSX.
 
-  if (launch_info.GetShell() == nullptr) {
+  if (launch_info.GetShell() == FileSpec()) {
     // We don't need to do this for ARM, and we really shouldn't now that we
     // have multiple CPU subtypes and no posix_spawnattr call that allows us
     // to set which CPU subtype to launch...
@@ -1163,7 +1172,8 @@ static Status LaunchProcessPosixSpawn(const char *exe_path,
     }
 
     // Make sure we clean up the posix file actions before exiting this scope.
-    CleanUp cleanup_fileact(posix_spawn_file_actions_destroy, &file_actions);
+    auto cleanup_fileact = llvm::make_scope_exit(
+        [&]() { posix_spawn_file_actions_destroy(&file_actions); });
 
     for (size_t i = 0; i < num_file_actions; ++i) {
       const FileAction *launch_file_action =
@@ -1332,9 +1342,12 @@ Status Host::ShellExpandArguments(ProcessLaunchInfo &launch_info) {
     }
     bool run_in_default_shell = true;
     bool hide_stderr = true;
-    RunShellCommand(expand_command, cwd, &status, nullptr, &output,
-                    std::chrono::seconds(10), run_in_default_shell,
-                    hide_stderr);
+    Status e = RunShellCommand(expand_command, cwd, &status, nullptr, &output,
+                               std::chrono::seconds(10), run_in_default_shell,
+                               hide_stderr);
+
+    if (e.Fail())
+      return e;
 
     if (status != 0) {
       error.SetErrorStringWithFormat("lldb-argdumper exited with error %d",
@@ -1402,7 +1415,7 @@ llvm::Expected<HostThread> Host::StartMonitoringChildProcess(
             "(callback, pid=%i, monitor_signals=%i) "
             "source = %p\n",
             static_cast<int>(pid), monitor_signals,
-            reinterpret_cast<void *>(source));
+            static_cast<void *>(source));
 
   if (source) {
     Host::MonitorChildProcessCallback callback_copy = callback;

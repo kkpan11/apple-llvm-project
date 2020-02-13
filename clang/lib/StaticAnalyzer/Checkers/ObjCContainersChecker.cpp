@@ -144,7 +144,7 @@ void ObjCContainersChecker::checkPreStmt(const CallExpr *CE,
       if (!N)
         return;
       initBugType();
-      auto R = llvm::make_unique<PathSensitiveBugReport>(
+      auto R = std::make_unique<PathSensitiveBugReport>(
           *BT, "Index is out of bounds", N);
       R->addRange(IdxExpr->getSourceRange());
       bugreporter::trackExpressionValue(

@@ -85,7 +85,8 @@ public:
   llvm::Optional<CompilerType>
   GetCompilerTypeFromPersistentDecl(ConstString type_name) override;
 
-  void RegisterPersistentDecl(ConstString name, clang::NamedDecl *decl);
+  void RegisterPersistentDecl(ConstString name, clang::NamedDecl *decl,
+                              TypeSystemClang *ctx);
 
   clang::NamedDecl *GetPersistentDecl(ConstString name);
 
@@ -123,7 +124,14 @@ private:
   SymbolMap
       m_symbol_map; ///< The addresses of the symbols in m_execution_units.
 
-  typedef llvm::DenseMap<const char *, clang::NamedDecl *> PersistentDeclMap;
+  struct PersistentDecl {
+    /// The persistent decl.
+    clang::NamedDecl *m_decl = nullptr;
+    /// The TypeSystemClang for the ASTContext of m_decl.
+    TypeSystemClang *m_context = nullptr;
+  };
+
+  typedef llvm::DenseMap<const char *, PersistentDecl> PersistentDeclMap;
   PersistentDeclMap
       m_persistent_decls; ///< Persistent entities declared by the user.
 

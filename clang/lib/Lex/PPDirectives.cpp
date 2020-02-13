@@ -33,6 +33,7 @@
 #include "clang/Lex/Token.h"
 #include "clang/Lex/VariadicMacroSupport.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/STLExtras.h"
@@ -1055,7 +1056,7 @@ void Preprocessor::HandleDirective(Token &Result) {
   // various pseudo-ops.  Just return the # token and push back the following
   // token to be lexed next time.
   if (getLangOpts().AsmPreprocessor) {
-    auto Toks = llvm::make_unique<Token[]>(2);
+    auto Toks = std::make_unique<Token[]>(2);
     // Return the # and the token after it.
     Toks[0] = SavedHash;
     Toks[1] = Result;
@@ -1452,7 +1453,7 @@ void Preprocessor::HandleMacroPublicDirective(Token &Tok) {
 
   // Note that this macro has now been exported.
   appendMacroDirective(II, AllocateVisibilityMacroDirective(
-                                MacroNameTok.getLocation(), /*IsPublic=*/true));
+                                MacroNameTok.getLocation(), /*isPublic=*/true));
 }
 
 /// Handle a #private directive.
@@ -1479,7 +1480,7 @@ void Preprocessor::HandleMacroPrivateDirective() {
 
   // Note that this macro has now been marked private.
   appendMacroDirective(II, AllocateVisibilityMacroDirective(
-                               MacroNameTok.getLocation(), /*IsPublic=*/false));
+                               MacroNameTok.getLocation(), /*isPublic=*/false));
 }
 
 //===----------------------------------------------------------------------===//
@@ -1545,7 +1546,7 @@ void Preprocessor::EnterAnnotationToken(SourceRange Range,
                                         void *AnnotationVal) {
   // FIXME: Produce this as the current token directly, rather than
   // allocating a new token for it.
-  auto Tok = llvm::make_unique<Token[]>(1);
+  auto Tok = std::make_unique<Token[]>(1);
   Tok[0].startToken();
   Tok[0].setKind(Kind);
   Tok[0].setLocation(Range.getBegin());
@@ -1713,11 +1714,11 @@ Optional<FileEntryRef> Preprocessor::LookupHeaderIncludeOrImport(
     SourceLocation FilenameLoc, CharSourceRange FilenameRange,
     const Token &FilenameTok, bool &IsFrameworkFound, bool IsImportDecl,
     bool &IsMapped, const DirectoryLookup *LookupFrom,
-    const FileEntry *LookupFromFile, SmallString<128> &NormalizedPath,
+    const FileEntry *LookupFromFile, StringRef LookupFilename,
     SmallVectorImpl<char> &RelativePath, SmallVectorImpl<char> &SearchPath,
     ModuleMap::KnownHeader &SuggestedModule, bool isAngled) {
   Optional<FileEntryRef> File = LookupFile(
-      FilenameLoc, LangOpts.MSVCCompat ? NormalizedPath.c_str() : Filename,
+      FilenameLoc, LookupFilename,
       isAngled, LookupFrom, LookupFromFile, CurDir,
       Callbacks ? &SearchPath : nullptr, Callbacks ? &RelativePath : nullptr,
       &SuggestedModule, &IsMapped, &IsFrameworkFound);
@@ -1736,7 +1737,7 @@ Optional<FileEntryRef> Preprocessor::LookupHeaderIncludeOrImport(
         // Try the lookup again, skipping the cache.
         Optional<FileEntryRef> File = LookupFile(
             FilenameLoc,
-            LangOpts.MSVCCompat ? NormalizedPath.c_str() : Filename, isAngled,
+            LookupFilename, isAngled,
             LookupFrom, LookupFromFile, CurDir, nullptr, nullptr,
             &SuggestedModule, &IsMapped, /*IsFrameworkFound=*/nullptr,
             /*SkipCache*/ true);
@@ -1754,7 +1755,7 @@ Optional<FileEntryRef> Preprocessor::LookupHeaderIncludeOrImport(
   // provide the user with a possible fixit.
   if (isAngled) {
     Optional<FileEntryRef> File = LookupFile(
-        FilenameLoc, LangOpts.MSVCCompat ? NormalizedPath.c_str() : Filename,
+        FilenameLoc, LookupFilename,
         false, LookupFrom, LookupFromFile, CurDir,
         Callbacks ? &SearchPath : nullptr, Callbacks ? &RelativePath : nullptr,
         &SuggestedModule, &IsMapped,
@@ -1782,20 +1783,23 @@ Optional<FileEntryRef> Preprocessor::LookupHeaderIncludeOrImport(
       return Filename;
     };
     StringRef TypoCorrectionName = CorrectTypoFilename(Filename);
-    SmallString<128> NormalizedTypoCorrectionPath;
-    if (LangOpts.MSVCCompat) {
-      NormalizedTypoCorrectionPath = TypoCorrectionName.str();
+
 #ifndef _WIN32
+    // Normalize slashes when compiling with -fms-extensions on non-Windows.
+    // This is unnecessary on Windows since the filesystem there handles
+    // backslashes.
+    SmallString<128> NormalizedTypoCorrectionPath;
+    if (LangOpts.MicrosoftExt) {
+      NormalizedTypoCorrectionPath = TypoCorrectionName;
       llvm::sys::path::native(NormalizedTypoCorrectionPath);
-#endif
+      TypoCorrectionName = NormalizedTypoCorrectionPath;
     }
+#endif
+
     Optional<FileEntryRef> File = LookupFile(
-        FilenameLoc,
-        LangOpts.MSVCCompat ? NormalizedTypoCorrectionPath.c_str()
-                            : TypoCorrectionName,
-        isAngled, LookupFrom, LookupFromFile, CurDir,
-        Callbacks ? &SearchPath : nullptr, Callbacks ? &RelativePath : nullptr,
-        &SuggestedModule, &IsMapped,
+        FilenameLoc, TypoCorrectionName, isAngled, LookupFrom, LookupFromFile,
+        CurDir, Callbacks ? &SearchPath : nullptr,
+        Callbacks ? &RelativePath : nullptr, &SuggestedModule, &IsMapped,
         /*IsFrameworkFound=*/nullptr);
     if (File) {
       auto Hint =
@@ -1867,12 +1871,12 @@ Preprocessor::ImportAction Preprocessor::HandleHeaderIncludeOrImport(
   SourceLocation StartLoc = IsImportDecl ? IncludeTok.getLocation() : HashLoc;
 
   // Complain about attempts to #include files in an audit pragma.
-  if (PragmaARCCFCodeAuditedLoc.isValid()) {
+  if (PragmaARCCFCodeAuditedInfo.second.isValid()) {
     Diag(StartLoc, diag::err_pp_include_in_arc_cf_code_audited) << IsImportDecl;
-    Diag(PragmaARCCFCodeAuditedLoc, diag::note_pragma_entered_here);
+    Diag(PragmaARCCFCodeAuditedInfo.second, diag::note_pragma_entered_here);
 
     // Immediately leave the pragma.
-    PragmaARCCFCodeAuditedLoc = SourceLocation();
+    PragmaARCCFCodeAuditedInfo = {nullptr, SourceLocation()};
   }
 
   // Complain about attempts to #include files in an assume-nonnull pragma.
@@ -1903,18 +1907,23 @@ Preprocessor::ImportAction Preprocessor::HandleHeaderIncludeOrImport(
   // the path.
   ModuleMap::KnownHeader SuggestedModule;
   SourceLocation FilenameLoc = FilenameTok.getLocation();
-  SmallString<128> NormalizedPath;
-  if (LangOpts.MSVCCompat) {
-    NormalizedPath = Filename.str();
+  StringRef LookupFilename = Filename;
+
 #ifndef _WIN32
+  // Normalize slashes when compiling with -fms-extensions on non-Windows. This
+  // is unnecessary on Windows since the filesystem there handles backslashes.
+  SmallString<128> NormalizedPath;
+  if (LangOpts.MicrosoftExt) {
+    NormalizedPath = Filename.str();
     llvm::sys::path::native(NormalizedPath);
-#endif
+    LookupFilename = NormalizedPath;
   }
+#endif
 
   Optional<FileEntryRef> File = LookupHeaderIncludeOrImport(
       CurDir, Filename, FilenameLoc, FilenameRange, FilenameTok,
       IsFrameworkFound, IsImportDecl, IsMapped, LookupFrom, LookupFromFile,
-      NormalizedPath, RelativePath, SearchPath, SuggestedModule, isAngled);
+      LookupFilename, RelativePath, SearchPath, SuggestedModule, isAngled);
 
   if (usingPCHWithThroughHeader() && SkippingUntilPCHThroughHeader) {
     if (File && isPCHThroughHeader(&File->getFileEntry()))
@@ -1989,7 +1998,7 @@ Preprocessor::ImportAction Preprocessor::HandleHeaderIncludeOrImport(
     // and making the module loader convert it back again.
     ModuleLoadResult Imported = TheModuleLoader.loadModule(
         IncludeTok.getLocation(), Path, Module::Hidden,
-        /*IsIncludeDirective=*/true);
+        /*IsInclusionDirective=*/true);
     assert((Imported == nullptr || Imported == SuggestedModule.getModule()) &&
            "the imported module is different than the suggested one");
 
@@ -2056,10 +2065,9 @@ Preprocessor::ImportAction Preprocessor::HandleHeaderIncludeOrImport(
     // Notify the callback object that we've seen an inclusion directive.
     // FIXME: Use a different callback for a pp-import?
     Callbacks->InclusionDirective(
-        HashLoc, IncludeTok,
-        LangOpts.MSVCCompat ? NormalizedPath.c_str() : Filename, isAngled,
-        FilenameRange, File ? &File->getFileEntry() : nullptr, SearchPath,
-        RelativePath, Action == Import ? SuggestedModule.getModule() : nullptr,
+        HashLoc, IncludeTok, LookupFilename, isAngled, FilenameRange,
+        File ? &File->getFileEntry() : nullptr, SearchPath, RelativePath,
+        Action == Import ? SuggestedModule.getModule() : nullptr,
         FileCharacter);
     if (Action == Skip && File)
       Callbacks->FileSkipped(*File, FilenameTok, FileCharacter);
@@ -2082,7 +2090,7 @@ Preprocessor::ImportAction Preprocessor::HandleHeaderIncludeOrImport(
       !IsMapped && !File->getFileEntry().tryGetRealPathName().empty();
 
   if (CheckIncludePathPortability) {
-    StringRef Name = LangOpts.MSVCCompat ? NormalizedPath.str() : Filename;
+    StringRef Name = LookupFilename;
     StringRef RealPathName = File->getFileEntry().tryGetRealPathName();
     SmallVector<StringRef, 16> Components(llvm::sys::path::begin(Name),
                                           llvm::sys::path::end(Name));
@@ -2452,6 +2460,13 @@ MacroInfo *Preprocessor::ReadOptionalMacroParameterListAndBody(
   Token Tok;
   LexUnexpandedToken(Tok);
 
+  // Ensure we consume the rest of the macro body if errors occur.
+  auto _ = llvm::make_scope_exit([&]() {
+    // The flag indicates if we are still waiting for 'eod'.
+    if (CurLexer->ParsingPreprocessorDirective)
+      DiscardUntilEndOfDirective();
+  });
+
   // Used to un-poison and then re-poison identifiers of the __VA_ARGS__ ilk
   // within their appropriate context.
   VariadicMacroScopeGuard VariadicMacroScopeGuard(*this);
@@ -2473,12 +2488,8 @@ MacroInfo *Preprocessor::ReadOptionalMacroParameterListAndBody(
   } else if (Tok.is(tok::l_paren)) {
     // This is a function-like macro definition.  Read the argument list.
     MI->setIsFunctionLike();
-    if (ReadMacroParameterList(MI, LastTok)) {
-      // Throw away the rest of the line.
-      if (CurPPLexer->ParsingPreprocessorDirective)
-        DiscardUntilEndOfDirective();
+    if (ReadMacroParameterList(MI, LastTok))
       return nullptr;
-    }
 
     // If this is a definition of an ISO C/C++ variadic function-like macro (not
     // using the GNU named varargs extension) inform our variadic scope guard
@@ -2776,7 +2787,8 @@ void Preprocessor::HandleDefineDirective(
   // If we need warning for not using the macro, add its location in the
   // warn-because-unused-macro set. If it gets used it will be removed from set.
   if (getSourceManager().isInMainFile(MI->getDefinitionLoc()) &&
-      !Diags->isIgnored(diag::pp_macro_not_used, MI->getDefinitionLoc())) {
+      !Diags->isIgnored(diag::pp_macro_not_used, MI->getDefinitionLoc()) &&
+      !MacroExpansionInDirectivesOverride) {
     MI->setIsWarnIfUnused(true);
     WarnUnusedMacroLocs.insert(MI->getDefinitionLoc());
   }
@@ -2885,6 +2897,9 @@ void Preprocessor::HandleIfdefDirective(Token &Result,
       Callbacks->Ifdef(DirectiveTok.getLocation(), MacroNameTok, MD);
   }
 
+  bool RetainExcludedCB = PPOpts->RetainExcludedConditionalBlocks &&
+    getSourceManager().isInMainFile(DirectiveTok.getLocation());
+
   // Should we include the stuff contained by this directive?
   if (PPOpts->SingleFileParseMode && !MI) {
     // In 'single-file-parse mode' undefined identifiers trigger parsing of all
@@ -2892,7 +2907,7 @@ void Preprocessor::HandleIfdefDirective(Token &Result,
     CurPPLexer->pushConditionalLevel(DirectiveTok.getLocation(),
                                      /*wasskip*/false, /*foundnonskip*/false,
                                      /*foundelse*/false);
-  } else if (!MI == isIfndef) {
+  } else if (!MI == isIfndef || RetainExcludedCB) {
     // Yes, remember that we are inside a conditional, then lex the next token.
     CurPPLexer->pushConditionalLevel(DirectiveTok.getLocation(),
                                      /*wasskip*/false, /*foundnonskip*/true,
@@ -2933,13 +2948,16 @@ void Preprocessor::HandleIfDirective(Token &IfToken,
         IfToken.getLocation(), DER.ExprRange,
         (ConditionalTrue ? PPCallbacks::CVK_True : PPCallbacks::CVK_False));
 
+  bool RetainExcludedCB = PPOpts->RetainExcludedConditionalBlocks &&
+    getSourceManager().isInMainFile(IfToken.getLocation());
+
   // Should we include the stuff contained by this directive?
   if (PPOpts->SingleFileParseMode && DER.IncludedUndefinedIds) {
     // In 'single-file-parse mode' undefined identifiers trigger parsing of all
     // the directive blocks.
     CurPPLexer->pushConditionalLevel(IfToken.getLocation(), /*wasskip*/false,
                                      /*foundnonskip*/false, /*foundelse*/false);
-  } else if (ConditionalTrue) {
+  } else if (ConditionalTrue || RetainExcludedCB) {
     // Yes, remember that we are inside a conditional, then lex the next token.
     CurPPLexer->pushConditionalLevel(IfToken.getLocation(), /*wasskip*/false,
                                    /*foundnonskip*/true, /*foundelse*/false);
@@ -3001,7 +3019,10 @@ void Preprocessor::HandleElseDirective(Token &Result, const Token &HashToken) {
   if (Callbacks)
     Callbacks->Else(Result.getLocation(), CI.IfLoc);
 
-  if (PPOpts->SingleFileParseMode && !CI.FoundNonSkip) {
+  bool RetainExcludedCB = PPOpts->RetainExcludedConditionalBlocks &&
+    getSourceManager().isInMainFile(Result.getLocation());
+
+  if ((PPOpts->SingleFileParseMode && !CI.FoundNonSkip) || RetainExcludedCB) {
     // In 'single-file-parse mode' undefined identifiers trigger parsing of all
     // the directive blocks.
     CurPPLexer->pushConditionalLevel(CI.IfLoc, /*wasskip*/false,
@@ -3043,7 +3064,10 @@ void Preprocessor::HandleElifDirective(Token &ElifToken,
     Callbacks->Elif(ElifToken.getLocation(), ConditionRange,
                     PPCallbacks::CVK_NotEvaluated, CI.IfLoc);
 
-  if (PPOpts->SingleFileParseMode && !CI.FoundNonSkip) {
+  bool RetainExcludedCB = PPOpts->RetainExcludedConditionalBlocks &&
+    getSourceManager().isInMainFile(ElifToken.getLocation());
+
+  if ((PPOpts->SingleFileParseMode && !CI.FoundNonSkip) || RetainExcludedCB) {
     // In 'single-file-parse mode' undefined identifiers trigger parsing of all
     // the directive blocks.
     CurPPLexer->pushConditionalLevel(ElifToken.getLocation(), /*wasskip*/false,

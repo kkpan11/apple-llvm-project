@@ -27,7 +27,6 @@
 #include "llvm/ADT/Twine.h"
 #include "llvm/Analysis/CallGraph.h"
 #include "llvm/Analysis/CallGraphSCCPass.h"
-#include "llvm/Transforms/Utils/Local.h"
 #include "llvm/IR/Argument.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/BasicBlock.h"
@@ -52,6 +51,7 @@
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Value.h"
 #include "llvm/IR/Verifier.h"
+#include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Debug.h"
@@ -60,6 +60,7 @@
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Cloning.h"
+#include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
 #include <cassert>
 #include <cstddef>
@@ -141,6 +142,7 @@ private:
     case Kind::SwitchCleanup:
       return true;
     }
+    llvm_unreachable("Unknown CoroCloner::Kind enum");
   }
 
   void createDeclaration();
@@ -156,8 +158,9 @@ private:
 
 } // end anonymous namespace
 
-static void maybeFreeRetconStorage(IRBuilder<> &Builder, coro::Shape &Shape,
-                                   Value *FramePtr, CallGraph *CG) {
+static void maybeFreeRetconStorage(IRBuilder<> &Builder,
+                                   const coro::Shape &Shape, Value *FramePtr,
+                                   CallGraph *CG) {
   assert(Shape.ABI == coro::ABI::Retcon ||
          Shape.ABI == coro::ABI::RetconOnce);
   if (Shape.RetconLowering.IsFrameInlineInStorage)
@@ -167,9 +170,9 @@ static void maybeFreeRetconStorage(IRBuilder<> &Builder, coro::Shape &Shape,
 }
 
 /// Replace a non-unwind call to llvm.coro.end.
-static void replaceFallthroughCoroEnd(CoroEndInst *End, coro::Shape &Shape,
-                                      Value *FramePtr, bool InResume,
-                                      CallGraph *CG) {
+static void replaceFallthroughCoroEnd(CoroEndInst *End,
+                                      const coro::Shape &Shape, Value *FramePtr,
+                                      bool InResume, CallGraph *CG) {
   // Start inserting right before the coro.end.
   IRBuilder<> Builder(End);
 
@@ -217,7 +220,7 @@ static void replaceFallthroughCoroEnd(CoroEndInst *End, coro::Shape &Shape,
 }
 
 /// Replace an unwind call to llvm.coro.end.
-static void replaceUnwindCoroEnd(CoroEndInst *End, coro::Shape &Shape,
+static void replaceUnwindCoroEnd(CoroEndInst *End, const coro::Shape &Shape,
                                  Value *FramePtr, bool InResume, CallGraph *CG){
   IRBuilder<> Builder(End);
 
@@ -244,7 +247,7 @@ static void replaceUnwindCoroEnd(CoroEndInst *End, coro::Shape &Shape,
   }
 }
 
-static void replaceCoroEnd(CoroEndInst *End, coro::Shape &Shape,
+static void replaceCoroEnd(CoroEndInst *End, const coro::Shape &Shape,
                            Value *FramePtr, bool InResume, CallGraph *CG) {
   if (End->isUnwind())
     replaceUnwindCoroEnd(End, Shape, FramePtr, InResume, CG);
@@ -279,8 +282,8 @@ static void createResumeEntryBlock(Function &F, coro::Shape &Shape) {
   IRBuilder<> Builder(NewEntry);
   auto *FramePtr = Shape.FramePtr;
   auto *FrameTy = Shape.FrameTy;
-  auto *GepIndex = Builder.CreateConstInBoundsGEP2_32(
-      FrameTy, FramePtr, 0, coro::Shape::SwitchFieldIndex::Index, "index.addr");
+  auto *GepIndex = Builder.CreateStructGEP(
+      FrameTy, FramePtr, coro::Shape::SwitchFieldIndex::Index, "index.addr");
   auto *Index = Builder.CreateLoad(Shape.getIndexType(), GepIndex, "index");
   auto *Switch =
       Builder.CreateSwitch(Index, UnreachBB, Shape.CoroSuspends.size());
@@ -378,15 +381,12 @@ void CoroCloner::handleFinalSuspend() {
     BasicBlock *OldSwitchBB = Switch->getParent();
     auto *NewSwitchBB = OldSwitchBB->splitBasicBlock(Switch, "Switch");
     Builder.SetInsertPoint(OldSwitchBB->getTerminator());
-    auto *GepIndex = Builder.CreateConstInBoundsGEP2_32(
-        Shape.FrameTy, NewFramePtr, 0, coro::Shape::SwitchFieldIndex::Resume,
-        "ResumeFn.addr");
-    auto *Load = Builder.CreateLoad(
-        Shape.FrameTy->getElementType(coro::Shape::SwitchFieldIndex::Resume),
-        GepIndex);
-    auto *NullPtr =
-        ConstantPointerNull::get(cast<PointerType>(Load->getType()));
-    auto *Cond = Builder.CreateICmpEQ(Load, NullPtr);
+    auto *GepIndex = Builder.CreateStructGEP(Shape.FrameTy, NewFramePtr,
+                                       coro::Shape::SwitchFieldIndex::Resume,
+                                             "ResumeFn.addr");
+    auto *Load = Builder.CreateLoad(Shape.getSwitchResumePointerType(),
+                                    GepIndex);
+    auto *Cond = Builder.CreateIsNull(Load);
     Builder.CreateCondBr(Cond, ResumeBB, NewSwitchBB);
     OldSwitchBB->getTerminator()->eraseFromParent();
   }
@@ -398,12 +398,15 @@ static Function *createCloneDeclaration(Function &OrigF, coro::Shape &Shape,
   Module *M = OrigF.getParent();
   auto *FnTy = Shape.getResumeFunctionType();
 
-  auto *F = Function::Create(FnTy, GlobalValue::LinkageTypes::InternalLinkage,
-                             OrigF.getName() + Suffix);
+  Function *NewF =
+      Function::Create(FnTy, GlobalValue::LinkageTypes::InternalLinkage,
+                       OrigF.getName() + Suffix);
+  NewF->addParamAttr(0, Attribute::NonNull);
+  NewF->addParamAttr(0, Attribute::NoAlias);
 
-  M->getFunctionList().insert(InsertBefore, F);
+  M->getFunctionList().insert(InsertBefore, NewF);
 
-  return F;
+  return NewF;
 }
 
 /// Replace uses of the active llvm.coro.suspend.retcon call with the
@@ -780,7 +783,7 @@ static Function *createClone(Function &F, const Twine &Suffix,
 }
 
 /// Remove calls to llvm.coro.end in the original function.
-static void removeCoroEnds(coro::Shape &Shape, CallGraph *CG) {
+static void removeCoroEnds(const coro::Shape &Shape, CallGraph *CG) {
   for (auto End : Shape.CoroEnds) {
     replaceCoroEnd(End, Shape, Shape.FramePtr, /*in resume*/ false, CG);
   }
@@ -905,17 +908,29 @@ scanPHIsAndUpdateValueMap(Instruction *Prev, BasicBlock *NewBlock,
 // values and select the correct case successor when possible.
 static bool simplifyTerminatorLeadingToRet(Instruction *InitialInst) {
   DenseMap<Value *, Value *> ResolvedValues;
+  BasicBlock *UnconditionalSucc = nullptr;
 
   Instruction *I = InitialInst;
   while (I->isTerminator()) {
     if (isa<ReturnInst>(I)) {
-      if (I != InitialInst)
+      if (I != InitialInst) {
+        // If InitialInst is an unconditional branch,
+        // remove PHI values that come from basic block of InitialInst
+        if (UnconditionalSucc)
+          for (PHINode &PN : UnconditionalSucc->phis()) {
+            int idx = PN.getBasicBlockIndex(InitialInst->getParent());
+            if (idx != -1)
+              PN.removeIncomingValue(idx);
+          }
         ReplaceInstWithInst(InitialInst, I->clone());
+      }
       return true;
     }
     if (auto *BR = dyn_cast<BranchInst>(I)) {
       if (BR->isUnconditional()) {
         BasicBlock *BB = BR->getSuccessor(0);
+        if (I == InitialInst)
+          UnconditionalSucc = BB;
         scanPHIsAndUpdateValueMap(I, BB, ResolvedValues);
         I = BB->getFirstNonPHIOrDbgOrLifetime();
         continue;
@@ -1152,95 +1167,6 @@ static void simplifySuspendPoints(coro::Shape &Shape) {
   S.resize(N);
 }
 
-static SmallPtrSet<BasicBlock *, 4> getCoroBeginPredBlocks(CoroBeginInst *CB) {
-  // Collect all blocks that we need to look for instructions to relocate.
-  SmallPtrSet<BasicBlock *, 4> RelocBlocks;
-  SmallVector<BasicBlock *, 4> Work;
-  Work.push_back(CB->getParent());
-
-  do {
-    BasicBlock *Current = Work.pop_back_val();
-    for (BasicBlock *BB : predecessors(Current))
-      if (RelocBlocks.count(BB) == 0) {
-        RelocBlocks.insert(BB);
-        Work.push_back(BB);
-      }
-  } while (!Work.empty());
-  return RelocBlocks;
-}
-
-static SmallPtrSet<Instruction *, 8>
-getNotRelocatableInstructions(CoroBeginInst *CoroBegin,
-                              SmallPtrSetImpl<BasicBlock *> &RelocBlocks) {
-  SmallPtrSet<Instruction *, 8> DoNotRelocate;
-  // Collect all instructions that we should not relocate
-  SmallVector<Instruction *, 8> Work;
-
-  // Start with CoroBegin and terminators of all preceding blocks.
-  Work.push_back(CoroBegin);
-  BasicBlock *CoroBeginBB = CoroBegin->getParent();
-  for (BasicBlock *BB : RelocBlocks)
-    if (BB != CoroBeginBB)
-      Work.push_back(BB->getTerminator());
-
-  // For every instruction in the Work list, place its operands in DoNotRelocate
-  // set.
-  do {
-    Instruction *Current = Work.pop_back_val();
-    LLVM_DEBUG(dbgs() << "CoroSplit: Will not relocate: " << *Current << "\n");
-    DoNotRelocate.insert(Current);
-    for (Value *U : Current->operands()) {
-      auto *I = dyn_cast<Instruction>(U);
-      if (!I)
-        continue;
-
-      if (auto *A = dyn_cast<AllocaInst>(I)) {
-        // Stores to alloca instructions that occur before the coroutine frame
-        // is allocated should not be moved; the stored values may be used by
-        // the coroutine frame allocator. The operands to those stores must also
-        // remain in place.
-        for (const auto &User : A->users())
-          if (auto *SI = dyn_cast<llvm::StoreInst>(User))
-            if (RelocBlocks.count(SI->getParent()) != 0 &&
-                DoNotRelocate.count(SI) == 0) {
-              Work.push_back(SI);
-              DoNotRelocate.insert(SI);
-            }
-        continue;
-      }
-
-      if (DoNotRelocate.count(I) == 0) {
-        Work.push_back(I);
-        DoNotRelocate.insert(I);
-      }
-    }
-  } while (!Work.empty());
-  return DoNotRelocate;
-}
-
-static void relocateInstructionBefore(CoroBeginInst *CoroBegin, Function &F) {
-  // Analyze which non-alloca instructions are needed for allocation and
-  // relocate the rest to after coro.begin. We need to do it, since some of the
-  // targets of those instructions may be placed into coroutine frame memory
-  // for which becomes available after coro.begin intrinsic.
-
-  auto BlockSet = getCoroBeginPredBlocks(CoroBegin);
-  auto DoNotRelocateSet = getNotRelocatableInstructions(CoroBegin, BlockSet);
-
-  Instruction *InsertPt = CoroBegin->getNextNode();
-  BasicBlock &BB = F.getEntryBlock(); // TODO: Look at other blocks as well.
-  for (auto B = BB.begin(), E = BB.end(); B != E;) {
-    Instruction &I = *B++;
-    if (isa<AllocaInst>(&I))
-      continue;
-    if (&I == CoroBegin)
-      break;
-    if (DoNotRelocateSet.count(&I))
-      continue;
-    I.moveBefore(InsertPt);
-  }
-}
-
 static void splitSwitchCoroutine(Function &F, coro::Shape &Shape,
                                  SmallVectorImpl<Function *> &Clones) {
   assert(Shape.ABI == coro::ABI::Switch);
@@ -1403,18 +1329,6 @@ static void splitRetconCoroutine(Function &F, coro::Shape &Shape,
   }
 }
 
-static void splitCoroutine(Function &F, coro::Shape &Shape,
-                           SmallVectorImpl<Function *> &Clones) {
-  switch (Shape.ABI) {
-  case coro::ABI::Switch:
-    return splitSwitchCoroutine(F, Shape, Clones);
-  case coro::ABI::Retcon:
-  case coro::ABI::RetconOnce:
-    return splitRetconCoroutine(F, Shape, Clones);
-  }
-  llvm_unreachable("bad ABI kind");
-}
-
 namespace {
   class PrettyStackTraceFunction : public PrettyStackTraceEntry {
     Function &F;
@@ -1428,17 +1342,30 @@ namespace {
   };
 }
 
+static void splitCoroutine(Function &F, coro::Shape &Shape,
+                           SmallVectorImpl<Function *> &Clones) {
+  switch (Shape.ABI) {
+  case coro::ABI::Switch:
+    return splitSwitchCoroutine(F, Shape, Clones);
+  case coro::ABI::Retcon:
+  case coro::ABI::RetconOnce:
+    return splitRetconCoroutine(F, Shape, Clones);
+  }
+  llvm_unreachable("bad ABI kind");
+}
+
 static void splitCoroutine(Function &F, CallGraph &CG, CallGraphSCC &SCC) {
   PrettyStackTraceFunction prettyStackTrace(F);
 
-  EliminateUnreachableBlocks(F);
+  // The suspend-crossing algorithm in buildCoroutineFrame get tripped
+  // up by uses in unreachable blocks, so remove them as a first pass.
+  removeUnreachableBlocks(F);
 
   coro::Shape Shape(F);
   if (!Shape.CoroBegin)
     return;
 
   simplifySuspendPoints(Shape);
-  relocateInstructionBefore(Shape.CoroBegin, F);
   buildCoroutineFrame(F, Shape);
   replaceFrameSize(Shape);
 
@@ -1494,9 +1421,10 @@ static void prepareForSplit(Function &F, CallGraph &CG) {
   CG[&F]->addCalledFunction(IndirectCall, CG.getCallsExternalNode());
 }
 
-// Make sure that there is a devirtualization trigger function that CoroSplit
-// pass uses the force restart CGSCC pipeline. If devirt trigger function is not
-// found, we will create one and add it to the current SCC.
+// Make sure that there is a devirtualization trigger function that the
+// coro-split pass uses to force a restart of the CGSCC pipeline. If the devirt
+// trigger function is not found, we will create one and add it to the current
+// SCC.
 static void createDevirtTriggerFunc(CallGraph &CG, CallGraphSCC &SCC) {
   Module &M = CG.getModule();
   if (M.getFunction(CORO_DEVIRT_TRIGGER_FN))
@@ -1504,7 +1432,7 @@ static void createDevirtTriggerFunc(CallGraph &CG, CallGraphSCC &SCC) {
 
   LLVMContext &C = M.getContext();
   auto *FnTy = FunctionType::get(Type::getVoidTy(C), Type::getInt8PtrTy(C),
-                                 /*IsVarArgs=*/false);
+                                 /*isVarArg=*/false);
   Function *DevirtFn =
       Function::Create(FnTy, GlobalValue::LinkageTypes::PrivateLinkage,
                        CORO_DEVIRT_TRIGGER_FN, &M);
@@ -1599,11 +1527,11 @@ static bool replaceAllPrepares(Function *PrepareFn, CallGraph &CG) {
 
 namespace {
 
-struct CoroSplit : public CallGraphSCCPass {
+struct CoroSplitLegacy : public CallGraphSCCPass {
   static char ID; // Pass identification, replacement for typeid
 
-  CoroSplit() : CallGraphSCCPass(ID) {
-    initializeCoroSplitPass(*PassRegistry::getPassRegistry());
+  CoroSplitLegacy() : CallGraphSCCPass(ID) {
+    initializeCoroSplitLegacyPass(*PassRegistry::getPassRegistry());
   }
 
   bool Run = false;
@@ -1673,16 +1601,16 @@ struct CoroSplit : public CallGraphSCCPass {
 
 } // end anonymous namespace
 
-char CoroSplit::ID = 0;
+char CoroSplitLegacy::ID = 0;
 
 INITIALIZE_PASS_BEGIN(
-    CoroSplit, "coro-split",
+    CoroSplitLegacy, "coro-split",
     "Split coroutine into a set of functions driving its state machine", false,
     false)
 INITIALIZE_PASS_DEPENDENCY(CallGraphWrapperPass)
 INITIALIZE_PASS_END(
-    CoroSplit, "coro-split",
+    CoroSplitLegacy, "coro-split",
     "Split coroutine into a set of functions driving its state machine", false,
     false)
 
-Pass *llvm::createCoroSplitPass() { return new CoroSplit(); }
+Pass *llvm::createCoroSplitLegacyPass() { return new CoroSplitLegacy(); }

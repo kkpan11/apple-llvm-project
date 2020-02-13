@@ -66,11 +66,6 @@ INSERT-ARRAY: INSERTVAL: Invalid array index
 INSERT-STRUCT: INSERTVAL: Invalid struct index
 INSERT-IDXS: INSERTVAL: Invalid type
 
-RUN: not llvm-dis -disable-output %p/Inputs/invalid-no-proper-module.bc 2>&1 | \
-RUN:   FileCheck --check-prefix=NO-MODULE %s
-
-NO-MODULE: Expected a single module
-
 RUN: not llvm-dis -disable-output %p/Inputs/invalid-fp-shift.bc 2>&1 | \
 RUN:   FileCheck --check-prefix=FP-SHIFT %s
 
@@ -134,7 +129,7 @@ HUGE-FWDREF: Invalid record
 RUN: not llvm-dis -disable-output %p/Inputs/invalid-load-pointer-type.bc 2>&1 | \
 RUN:   FileCheck --check-prefix=LOAD-BAD-TYPE %s
 
-LOAD-BAD-TYPE: Load/Store operand is not a pointer type
+LOAD-BAD-TYPE: Load operand is not a pointer type
 
 RUN: not llvm-dis -disable-output %p/Inputs/invalid-GCTable-overflow.bc 2>&1 | \
 RUN:   FileCheck --check-prefix=GCTABLE-OFLOW %s
@@ -235,3 +230,8 @@ RUN: not llvm-dis -disable-output %p/Inputs/invalid-nonpointer-atomicrmw.bc 2>&1
 RUN:   FileCheck --check-prefix=NONPOINTER-ATOMICRMW %s
 
 NONPOINTER-ATOMICRMW: Invalid record
+
+RUN: not llvm-dis -disable-output %p/Inputs/invalid-fcmp-opnum.bc 2>&1 | \
+RUN:   FileCheck --check-prefix=INVALID-FCMP-OPNUM %s
+
+INVALID-FCMP-OPNUM: Invalid record: operand number exceeded available operands

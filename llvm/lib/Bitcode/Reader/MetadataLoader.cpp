@@ -130,8 +130,15 @@ class BitcodeReaderMetadataList {
 
   LLVMContext &Context;
 
+  /// Maximum number of valid references. Forward references exceeding the
+  /// maximum must be invalid.
+  unsigned RefsUpperBound;
+
 public:
-  BitcodeReaderMetadataList(LLVMContext &C) : Context(C) {}
+  BitcodeReaderMetadataList(LLVMContext &C, size_t RefsUpperBound)
+      : Context(C),
+        RefsUpperBound(std::min((size_t)std::numeric_limits<unsigned>::max(),
+                                RefsUpperBound)) {}
 
   // vector compatibility methods
   unsigned size() const { return MetadataPtrs.size(); }
@@ -218,6 +225,10 @@ void BitcodeReaderMetadataList::assignValue(Metadata *MD, unsigned Idx) {
 }
 
 Metadata *BitcodeReaderMetadataList::getMetadataFwdRef(unsigned Idx) {
+  // Bail out for a clearly invalid value.
+  if (Idx >= RefsUpperBound)
+    return nullptr;
+
   if (Idx >= size())
     resize(Idx + 1);
 
@@ -400,7 +411,7 @@ void PlaceholderQueue::flush(BitcodeReaderMetadataList &MetadataList) {
   }
 }
 
-} // anonynous namespace
+} // anonymous namespace
 
 static Error error(const Twine &Message) {
   return make_error<StringError>(
@@ -504,7 +515,7 @@ class MetadataLoader::MetadataLoaderImpl {
       GV.getMetadata(LLVMContext::MD_dbg, MDs);
       GV.eraseMetadata(LLVMContext::MD_dbg);
       for (auto *MD : MDs)
-        if (auto *DGV = dyn_cast_or_null<DIGlobalVariable>(MD)) {
+        if (auto *DGV = dyn_cast<DIGlobalVariable>(MD)) {
           auto *DGVE = DIGlobalVariableExpression::getDistinct(
               Context, DGV, DIExpression::get(Context, {}));
           GV.addMetadata(LLVMContext::MD_dbg, *DGVE);
@@ -625,9 +636,10 @@ public:
                      BitcodeReaderValueList &ValueList,
                      std::function<Type *(unsigned)> getTypeByID,
                      bool IsImporting)
-      : MetadataList(TheModule.getContext()), ValueList(ValueList),
-        Stream(Stream), Context(TheModule.getContext()), TheModule(TheModule),
-        getTypeByID(std::move(getTypeByID)), IsImporting(IsImporting) {}
+      : MetadataList(TheModule.getContext(), Stream.SizeInBytes()),
+        ValueList(ValueList), Stream(Stream), Context(TheModule.getContext()),
+        TheModule(TheModule), getTypeByID(std::move(getTypeByID)),
+        IsImporting(IsImporting) {}
 
   Error parseMetadata(bool ModuleLevel);
 
@@ -975,7 +987,7 @@ void MetadataLoader::MetadataLoaderImpl::lazyLoadOneMetadata(
   assert(ID >= MDStringRef.size() && "Unexpected lazy-loading of MDString");
   // Lookup first if the metadata hasn't already been loaded.
   if (auto *MD = MetadataList.lookup(ID)) {
-    auto *N = dyn_cast_or_null<MDNode>(MD);
+    auto *N = cast<MDNode>(MD);
     if (!N->isTemporary())
       return;
   }
@@ -1310,7 +1322,7 @@ Error MetadataLoader::MetadataLoaderImpl::parseOneMetadata(
     break;
   }
   case bitc::METADATA_DERIVED_TYPE: {
-    if (Record.size() < 12 || Record.size() > 13)
+    if (Record.size() < 12 || Record.size() > 14)
       return error("Invalid record");
 
     // DWARF address space is encoded as N->getDWARFAddressSpace() + 1. 0 means
@@ -1318,6 +1330,9 @@ Error MetadataLoader::MetadataLoaderImpl::parseOneMetadata(
     Optional<unsigned> DWARFAddressSpace;
     if (Record.size() > 12 && Record[12])
       DWARFAddressSpace = Record[12] - 1;
+    Optional<DIDerivedType::PtrAuthData> PtrAuthData;
+    if (Record.size() > 13 && Record[13])
+      PtrAuthData = DIDerivedType::PtrAuthData(Record[13]);
 
     IsDistinct = Record[0];
     DINode::DIFlags Flags = static_cast<DINode::DIFlags>(Record[10]);
@@ -1327,7 +1342,7 @@ Error MetadataLoader::MetadataLoaderImpl::parseOneMetadata(
                          getMDOrNull(Record[3]), Record[4],
                          getDITypeRefOrNull(Record[5]),
                          getDITypeRefOrNull(Record[6]), Record[7], Record[8],
-                         Record[9], DWARFAddressSpace, Flags,
+                         Record[9], DWARFAddressSpace, PtrAuthData, Flags,
                          getDITypeRefOrNull(Record[11]))),
         NextMetadataNo);
     NextMetadataNo++;
@@ -2137,7 +2152,7 @@ MetadataLoader::MetadataLoader(BitstreamCursor &Stream, Module &TheModule,
                                BitcodeReaderValueList &ValueList,
                                bool IsImporting,
                                std::function<Type *(unsigned)> getTypeByID)
-    : Pimpl(llvm::make_unique<MetadataLoaderImpl>(
+    : Pimpl(std::make_unique<MetadataLoaderImpl>(
           Stream, TheModule, ValueList, std::move(getTypeByID), IsImporting)) {}
 
 Error MetadataLoader::parseMetadata(bool ModuleLevel) {

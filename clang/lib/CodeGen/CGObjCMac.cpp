@@ -16,8 +16,8 @@
 #include "CGRecordLayout.h"
 #include "CodeGenFunction.h"
 #include "CodeGenModule.h"
-#include "clang/CodeGen/ConstantInitBuilder.h"
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/Attr.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/RecordLayout.h"
@@ -25,6 +25,7 @@
 #include "clang/Basic/CodeGenOptions.h"
 #include "clang/Basic/LangOptions.h"
 #include "clang/CodeGen/CGFunctionInfo.h"
+#include "clang/CodeGen/ConstantInitBuilder.h"
 #include "llvm/ADT/CachedHashString.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SetVector.h"
@@ -1315,7 +1316,7 @@ private:
   /// EmitSelector - Return a Value*, of type ObjCTypes.SelectorPtrTy,
   /// for the given selector.
   llvm::Value *EmitSelector(CodeGenFunction &CGF, Selector Sel);
-  Address EmitSelectorAddr(CodeGenFunction &CGF, Selector Sel);
+  Address EmitSelectorAddr(Selector Sel);
 
 public:
   CGObjCMac(CodeGen::CodeGenModule &cgm);
@@ -1543,7 +1544,7 @@ private:
   /// EmitSelector - Return a Value*, of type ObjCTypes.SelectorPtrTy,
   /// for the given selector.
   llvm::Value *EmitSelector(CodeGenFunction &CGF, Selector Sel);
-  Address EmitSelectorAddr(CodeGenFunction &CGF, Selector Sel);
+  Address EmitSelectorAddr(Selector Sel);
 
   /// GetInterfaceEHType - Get the cached ehtype for the given Objective-C
   /// interface. The return value has type EHTypePtrTy.
@@ -1635,7 +1636,7 @@ public:
   llvm::Value *GetSelector(CodeGenFunction &CGF, Selector Sel) override
     { return EmitSelector(CGF, Sel); }
   Address GetAddrOfSelector(CodeGenFunction &CGF, Selector Sel) override
-    { return EmitSelectorAddr(CGF, Sel); }
+    { return EmitSelectorAddr(Sel); }
 
   /// The NeXT/Apple runtimes do not support typed selectors; just emit an
   /// untyped one.
@@ -1903,7 +1904,7 @@ llvm::Value *CGObjCMac::GetSelector(CodeGenFunction &CGF, Selector Sel) {
   return EmitSelector(CGF, Sel);
 }
 Address CGObjCMac::GetAddrOfSelector(CodeGenFunction &CGF, Selector Sel) {
-  return EmitSelectorAddr(CGF, Sel);
+  return EmitSelectorAddr(Sel);
 }
 llvm::Value *CGObjCMac::GetSelector(CodeGenFunction &CGF, const ObjCMethodDecl
                                     *Method) {
@@ -2034,7 +2035,7 @@ CGObjCCommonMac::GenerateConstantNSString(const StringLiteral *Literal) {
   GV->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
   // Don't enforce the target's minimum global alignment, since the only use
   // of the string is via this class initializer.
-  GV->setAlignment(1);
+  GV->setAlignment(llvm::Align::None());
   Fields.addBitCast(GV, CGM.Int8PtrTy);
 
   // String length.
@@ -2546,14 +2547,12 @@ void CGObjCCommonMac::BuildRCRecordLayout(const llvm::StructLayout *RecLayout,
     }
 
     if (const ArrayType *Array = CGM.getContext().getAsArrayType(FQT)) {
-      const ConstantArrayType *CArray =
-        dyn_cast_or_null<ConstantArrayType>(Array);
+      auto *CArray = cast<ConstantArrayType>(Array);
       uint64_t ElCount = CArray->getSize().getZExtValue();
       assert(CArray && "only array with known element size is supported");
       FQT = CArray->getElementType();
       while (const ArrayType *Array = CGM.getContext().getAsArrayType(FQT)) {
-        const ConstantArrayType *CArray =
-          dyn_cast_or_null<ConstantArrayType>(Array);
+        auto *CArray = cast<ConstantArrayType>(Array);
         ElCount *= CArray->getSize().getZExtValue();
         FQT = CArray->getElementType();
       }
@@ -2992,7 +2991,7 @@ std::string CGObjCCommonMac::getRCBlockLayoutStr(CodeGenModule &CGM,
                                                  const CGBlockInfo &blockInfo) {
   fillRunSkipBlockVars(CGM, blockInfo);
   return getBlockLayoutInfoString(RunSkipBlockVars,
-                                  blockInfo.needsCopyDisposeHelpers());
+                                  blockInfo.needsCopyDisposeHelpers(CGM.getContext()));
 }
 
 llvm::Constant *CGObjCCommonMac::BuildByrefLayout(CodeGen::CodeGenModule &CGM,
@@ -3132,7 +3131,7 @@ llvm::Constant *CGObjCMac::GetOrEmitProtocolRef(const ObjCProtocolDecl *PD) {
                                      nullptr, "OBJC_PROTOCOL_" + PD->getName());
     Entry->setSection("__OBJC,__protocol,regular,no_dead_strip");
     // FIXME: Is this necessary? Why only for protocol?
-    Entry->setAlignment(4);
+    Entry->setAlignment(llvm::Align(4));
   }
 
   return Entry;
@@ -3246,9 +3245,6 @@ PushProtocolProperties(llvm::SmallPtrSet<const IdentifierInfo*,16> &PropertySet,
                        SmallVectorImpl<const ObjCPropertyDecl *> &Properties,
                        const ObjCProtocolDecl *Proto,
                        bool IsClassProperty) {
-  for (const auto *P : Proto->protocols())
-    PushProtocolProperties(PropertySet, Properties, P, IsClassProperty);
-
   for (const auto *PD : Proto->properties()) {
     if (IsClassProperty != PD->isClassProperty())
       continue;
@@ -3256,6 +3252,9 @@ PushProtocolProperties(llvm::SmallPtrSet<const IdentifierInfo*,16> &PropertySet,
       continue;
     Properties.push_back(PD);
   }
+
+  for (const auto *P : Proto->protocols())
+    PushProtocolProperties(PropertySet, Properties, P, IsClassProperty);
 }
 
 /*
@@ -3644,7 +3643,7 @@ void CGObjCMac::GenerateClass(const ObjCImplementationDecl *ID) {
            "Forward metaclass reference has incorrect type.");
     values.finishAndSetAsInitializer(GV);
     GV->setSection(Section);
-    GV->setAlignment(CGM.getPointerAlign().getQuantity());
+    GV->setAlignment(CGM.getPointerAlign().getAsAlign());
     CGM.addCompilerUsedGlobal(GV);
   } else
     GV = CreateMetadataVar(Name, values, Section, CGM.getPointerAlign(), true);
@@ -4032,22 +4031,49 @@ llvm::Function *CGObjCCommonMac::GenerateMethod(const ObjCMethodDecl *OMD,
 llvm::Function *
 CGObjCCommonMac::GenerateDirectMethod(const ObjCMethodDecl *OMD,
                                       const ObjCContainerDecl *CD) {
-  auto I = DirectMethodDefinitions.find(OMD->getCanonicalDecl());
-  if (I != DirectMethodDefinitions.end())
-    return I->second;
+  auto *COMD = OMD->getCanonicalDecl();
+  auto I = DirectMethodDefinitions.find(COMD);
+  llvm::Function *OldFn = nullptr, *Fn = nullptr;
 
-  SmallString<256> Name;
-  GetNameForMethod(OMD, CD, Name, /*ignoreCategoryNamespace*/true);
+  if (I != DirectMethodDefinitions.end()) {
+    // Objective-C allows for the declaration and implementation types
+    // to differ slightly.
+    //
+    // If we're being asked for the Function associated for a method
+    // implementation, a previous value might have been cached
+    // based on the type of the canonical declaration.
+    //
+    // If these do not match, then we'll replace this function with
+    // a new one that has the proper type below.
+    if (!OMD->getBody() || COMD->getReturnType() == OMD->getReturnType())
+      return I->second;
+    OldFn = I->second;
+  }
 
   CodeGenTypes &Types = CGM.getTypes();
   llvm::FunctionType *MethodTy =
     Types.GetFunctionType(Types.arrangeObjCMethodDeclaration(OMD));
-  llvm::Function *Method =
-      llvm::Function::Create(MethodTy, llvm::GlobalValue::ExternalLinkage,
-                             Name.str(), &CGM.getModule());
-  DirectMethodDefinitions.insert(std::make_pair(OMD->getCanonicalDecl(), Method));
 
-  return Method;
+  if (OldFn) {
+    Fn = llvm::Function::Create(MethodTy, llvm::GlobalValue::ExternalLinkage,
+                                "", &CGM.getModule());
+    Fn->takeName(OldFn);
+    OldFn->replaceAllUsesWith(
+        llvm::ConstantExpr::getBitCast(Fn, OldFn->getType()));
+    OldFn->eraseFromParent();
+
+    // Replace the cached function in the map.
+    I->second = Fn;
+  } else {
+    SmallString<256> Name;
+    GetNameForMethod(OMD, CD, Name, /*ignoreCategoryNamespace*/ true);
+
+    Fn = llvm::Function::Create(MethodTy, llvm::GlobalValue::ExternalLinkage,
+                                Name.str(), &CGM.getModule());
+    DirectMethodDefinitions.insert(std::make_pair(COMD, Fn));
+  }
+
+  return Fn;
 }
 
 void CGObjCCommonMac::GenerateDirectMethodPrologue(
@@ -4163,7 +4189,7 @@ llvm::GlobalVariable *CGObjCCommonMac::CreateMetadataVar(Twine Name,
       new llvm::GlobalVariable(CGM.getModule(), Ty, false, LT, Init, Name);
   if (!Section.empty())
     GV->setSection(Section);
-  GV->setAlignment(Align.getQuantity());
+  GV->setAlignment(Align.getAsAlign());
   if (AddToUsed)
     CGM.addCompilerUsedGlobal(GV);
   return GV;
@@ -4211,7 +4237,7 @@ CGObjCCommonMac::CreateCStringLiteral(StringRef Name, ObjCLabelType Type,
   if (CGM.getTriple().isOSBinFormatMachO())
     GV->setSection(Section);
   GV->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
-  GV->setAlignment(CharUnits::One().getQuantity());
+  GV->setAlignment(CharUnits::One().getAsAlign());
   CGM.addCompilerUsedGlobal(GV);
 
   return GV;
@@ -5049,7 +5075,7 @@ LValue CGObjCMac::EmitObjCValueForIvar(CodeGen::CodeGenFunction &CGF,
                                        const ObjCIvarDecl *Ivar,
                                        unsigned CVRQualifiers) {
   const ObjCInterfaceDecl *ID =
-    ObjectTy->getAs<ObjCObjectType>()->getInterface();
+    ObjectTy->castAs<ObjCObjectType>()->getInterface();
   return EmitValueForIvarAtOffset(CGF, ID, BaseValue, Ivar, CVRQualifiers,
                                   EmitIvarOffset(CGF, ID, Ivar));
 }
@@ -5068,7 +5094,7 @@ llvm::Value *CGObjCMac::EmitIvarOffset(CodeGen::CodeGenFunction &CGF,
 std::string CGObjCCommonMac::GetSectionName(StringRef Section,
                                             StringRef MachOAttributes) {
   switch (CGM.getTriple().getObjectFormat()) {
-  default:
+  case llvm::Triple::UnknownObjectFormat:
     llvm_unreachable("unexpected object file format");
   case llvm::Triple::MachO: {
     if (MachOAttributes.empty())
@@ -5083,7 +5109,13 @@ std::string CGObjCCommonMac::GetSectionName(StringRef Section,
     assert(Section.substr(0, 2) == "__" &&
            "expected the name to begin with __");
     return ("." + Section.substr(2) + "$B").str();
+  case llvm::Triple::Wasm:
+  case llvm::Triple::XCOFF:
+    llvm::report_fatal_error(
+        "Objective-C support is unimplemented for object file format.");
   }
+
+  llvm_unreachable("Unhandled llvm::Triple::ObjectFormatType enum");
 }
 
 /// EmitImageInfo - Emit the image info marker used to encode some module
@@ -5261,11 +5293,11 @@ llvm::Value *CGObjCMac::EmitNSAutoreleasePoolClassRef(CodeGenFunction &CGF) {
 }
 
 llvm::Value *CGObjCMac::EmitSelector(CodeGenFunction &CGF, Selector Sel) {
-  return CGF.Builder.CreateLoad(EmitSelectorAddr(CGF, Sel));
+  return CGF.Builder.CreateLoad(EmitSelectorAddr(Sel));
 }
 
-Address CGObjCMac::EmitSelectorAddr(CodeGenFunction &CGF, Selector Sel) {
-  CharUnits Align = CGF.getPointerAlign();
+Address CGObjCMac::EmitSelectorAddr(Selector Sel) {
+  CharUnits Align = CGM.getPointerAlign();
 
   llvm::GlobalVariable *&Entry = SelectorReferences[Sel];
   if (!Entry) {
@@ -6219,7 +6251,8 @@ void CGObjCNonFragileABIMac::AddModuleClassList(
   llvm::GlobalVariable *GV =
     new llvm::GlobalVariable(CGM.getModule(), Init->getType(), false, LT, Init,
                              SymbolName);
-  GV->setAlignment(CGM.getDataLayout().getABITypeAlignment(Init->getType()));
+  GV->setAlignment(
+      llvm::Align(CGM.getDataLayout().getABITypeAlignment(Init->getType())));
   GV->setSection(SectionName);
   CGM.addCompilerUsedGlobal(GV);
 }
@@ -6451,8 +6484,8 @@ CGObjCNonFragileABIMac::BuildClassObject(const ObjCInterfaceDecl *CI,
 
   if (CGM.getTriple().isOSBinFormatMachO())
     GV->setSection("__DATA, __objc_data");
-  GV->setAlignment(
-      CGM.getDataLayout().getABITypeAlignment(ObjCTypes.ClassnfABITy));
+  GV->setAlignment(llvm::Align(
+      CGM.getDataLayout().getABITypeAlignment(ObjCTypes.ClassnfABITy)));
   if (!CGM.getTriple().isOSBinFormatCOFF())
     if (HiddenVisibility)
       GV->setVisibility(llvm::GlobalValue::HiddenVisibility);
@@ -6659,7 +6692,7 @@ llvm::Value *CGObjCNonFragileABIMac::GenerateProtocolRef(CodeGenFunction &CGF,
   PTGV->setSection(GetSectionName("__objc_protorefs",
                                   "coalesced,no_dead_strip"));
   PTGV->setVisibility(llvm::GlobalValue::HiddenVisibility);
-  PTGV->setAlignment(Align.getQuantity());
+  PTGV->setAlignment(Align.getAsAlign());
   if (!CGM.getTriple().isOSBinFormatMachO())
     PTGV->setComdat(CGM.getModule().getOrInsertComdat(ProtocolName));
   CGM.addUsedGlobal(PTGV);
@@ -6774,7 +6807,14 @@ void CGObjCNonFragileABIMac::emitMethodConstant(ConstantArrayBuilder &builder,
   } else {
     llvm::Function *fn = GetMethodDefinition(MD);
     assert(fn && "no definition for method?");
-    method.addBitCast(fn, ObjCTypes.Int8PtrTy);
+
+    if (const auto &schema =
+            CGM.getCodeGenOpts().PointerAuth.ObjCMethodListFunctionPointers) {
+      auto *bitcast = llvm::ConstantExpr::getBitCast(fn, ObjCTypes.Int8PtrTy);
+      method.addSignedPointer(bitcast, schema, GlobalDecl(), QualType());
+    } else {
+      method.addBitCast(fn, ObjCTypes.Int8PtrTy);
+    }
   }
 
   method.finishAndAddTo(builder);
@@ -6892,8 +6932,8 @@ CGObjCNonFragileABIMac::EmitIvarOffsetVar(const ObjCInterfaceDecl *ID,
   llvm::GlobalVariable *IvarOffsetGV = ObjCIvarOffsetVariable(ID, Ivar);
   IvarOffsetGV->setInitializer(
       llvm::ConstantInt::get(ObjCTypes.IvarOffsetVarTy, Offset));
-  IvarOffsetGV->setAlignment(
-      CGM.getDataLayout().getABITypeAlignment(ObjCTypes.IvarOffsetVarTy));
+  IvarOffsetGV->setAlignment(llvm::Align(
+      CGM.getDataLayout().getABITypeAlignment(ObjCTypes.IvarOffsetVarTy)));
 
   if (!CGM.getTriple().isOSBinFormatCOFF()) {
     // FIXME: This matches gcc, but shouldn't the visibility be set on the use
@@ -7118,8 +7158,8 @@ llvm::Constant *CGObjCNonFragileABIMac::GetOrEmitProtocol(
                              ProtocolRef);
   if (!CGM.getTriple().isOSBinFormatMachO())
     PTGV->setComdat(CGM.getModule().getOrInsertComdat(ProtocolRef));
-  PTGV->setAlignment(
-    CGM.getDataLayout().getABITypeAlignment(ObjCTypes.ProtocolnfABIPtrTy));
+  PTGV->setAlignment(llvm::Align(
+      CGM.getDataLayout().getABITypeAlignment(ObjCTypes.ProtocolnfABIPtrTy)));
   PTGV->setSection(GetSectionName("__objc_protolist",
                                   "coalesced,no_dead_strip"));
   PTGV->setVisibility(llvm::GlobalValue::HiddenVisibility);
@@ -7185,7 +7225,7 @@ LValue CGObjCNonFragileABIMac::EmitObjCValueForIvar(
                                                llvm::Value *BaseValue,
                                                const ObjCIvarDecl *Ivar,
                                                unsigned CVRQualifiers) {
-  ObjCInterfaceDecl *ID = ObjectTy->getAs<ObjCObjectType>()->getInterface();
+  ObjCInterfaceDecl *ID = ObjectTy->castAs<ObjCObjectType>()->getInterface();
   llvm::Value *Offset = EmitIvarOffset(CGF, ID, Ivar);
   return EmitValueForIvarAtOffset(CGF, ID, BaseValue, Ivar, CVRQualifiers,
                                   Offset);
@@ -7346,7 +7386,8 @@ CGObjCNonFragileABIMac::EmitVTableMessageSend(CodeGenFunction &CGF,
   llvm::Value *calleePtr = CGF.Builder.CreateLoad(calleeAddr, "msgSend_fn");
 
   calleePtr = CGF.Builder.CreateBitCast(calleePtr, MSI.MessengerType);
-  CGCallee callee(CGCalleeInfo(), calleePtr);
+  CGPointerAuthInfo pointerAuth; // This code path is unsupported.
+  CGCallee callee(CGCalleeInfo(), calleePtr, pointerAuth);
 
   RValue result = CGF.EmitCall(MSI.CallInfo, callee, returnSlot, args);
   return nullReturn.complete(CGF, returnSlot, result, resultType, formalArgs,
@@ -7474,7 +7515,7 @@ CGObjCNonFragileABIMac::EmitClassRefFromId(CodeGenFunction &CGF,
         CGM.getModule(), ClassGV->getType(), false,
         getLinkageTypeForObjCMetadata(CGM, SectionName), ClassGV,
         "OBJC_CLASSLIST_REFERENCES_$_");
-    Entry->setAlignment(CGF.getPointerAlign().getQuantity());
+    Entry->setAlignment(CGF.getPointerAlign().getAsAlign());
     if (!ID || !ID->hasAttr<ObjCClassStubAttr>())
       Entry->setSection(SectionName);
 
@@ -7513,7 +7554,7 @@ CGObjCNonFragileABIMac::EmitSuperClassRef(CodeGenFunction &CGF,
         CGM.getModule(), ClassGV->getType(), false,
         getLinkageTypeForObjCMetadata(CGM, SectionName), ClassGV,
         "OBJC_CLASSLIST_SUP_REFS_$_");
-    Entry->setAlignment(CGF.getPointerAlign().getQuantity());
+    Entry->setAlignment(CGF.getPointerAlign().getAsAlign());
     Entry->setSection(SectionName);
     CGM.addCompilerUsedGlobal(Entry);
   }
@@ -7537,7 +7578,7 @@ llvm::Value *CGObjCNonFragileABIMac::EmitMetaClassRef(CodeGenFunction &CGF,
         CGM.getModule(), ObjCTypes.ClassnfABIPtrTy, false,
         getLinkageTypeForObjCMetadata(CGM, SectionName), MetaClassGV,
         "OBJC_CLASSLIST_SUP_REFS_$_");
-    Entry->setAlignment(Align.getQuantity());
+    Entry->setAlignment(Align.getAsAlign());
     Entry->setSection(SectionName);
     CGM.addCompilerUsedGlobal(Entry);
   }
@@ -7611,7 +7652,7 @@ CGObjCNonFragileABIMac::GenerateMessageSendSuper(CodeGen::CodeGenFunction &CGF,
 
 llvm::Value *CGObjCNonFragileABIMac::EmitSelector(CodeGenFunction &CGF,
                                                   Selector Sel) {
-  Address Addr = EmitSelectorAddr(CGF, Sel);
+  Address Addr = EmitSelectorAddr(Sel);
 
   llvm::LoadInst* LI = CGF.Builder.CreateLoad(Addr);
   LI->setMetadata(CGM.getModule().getMDKindID("invariant.load"),
@@ -7619,11 +7660,9 @@ llvm::Value *CGObjCNonFragileABIMac::EmitSelector(CodeGenFunction &CGF,
   return LI;
 }
 
-Address CGObjCNonFragileABIMac::EmitSelectorAddr(CodeGenFunction &CGF,
-                                                 Selector Sel) {
+Address CGObjCNonFragileABIMac::EmitSelectorAddr(Selector Sel) {
   llvm::GlobalVariable *&Entry = SelectorReferences[Sel];
-
-  CharUnits Align = CGF.getPointerAlign();
+  CharUnits Align = CGM.getPointerAlign();
   if (!Entry) {
     llvm::Constant *Casted =
       llvm::ConstantExpr::getBitCast(GetMethodVarName(Sel),
@@ -7636,7 +7675,7 @@ Address CGObjCNonFragileABIMac::EmitSelectorAddr(CodeGenFunction &CGF,
         "OBJC_SELECTOR_REFERENCES_");
     Entry->setExternallyInitialized(true);
     Entry->setSection(SectionName);
-    Entry->setAlignment(Align.getQuantity());
+    Entry->setAlignment(Align.getAsAlign());
     CGM.addCompilerUsedGlobal(Entry);
   }
 
@@ -7856,11 +7895,17 @@ CGObjCNonFragileABIMac::GetInterfaceEHType(const ObjCInterfaceDecl *ID,
   }
 
   llvm::Value *VTableIdx = llvm::ConstantInt::get(CGM.Int32Ty, 2);
+  llvm::Constant *VTablePtr = llvm::ConstantExpr::getInBoundsGetElementPtr(
+      VTableGV->getValueType(), VTableGV, VTableIdx);
+
   ConstantInitBuilder builder(CGM);
   auto values = builder.beginStruct(ObjCTypes.EHTypeTy);
-  values.add(
-    llvm::ConstantExpr::getInBoundsGetElementPtr(VTableGV->getValueType(),
-                                                 VTableGV, VTableIdx));
+
+  if (auto &Schema = CGM.getCodeGenOpts().PointerAuth.CXXVTablePointers) {
+    values.addSignedPointer(VTablePtr, Schema, GlobalDecl(), QualType());
+  } else {
+    values.add(VTablePtr);
+  }
   values.add(GetClassName(ClassName));
   values.add(GetClassGlobal(ID, /*metaclass*/ false, NotForDefinition));
 
@@ -7869,7 +7914,7 @@ CGObjCNonFragileABIMac::GetInterfaceEHType(const ObjCInterfaceDecl *ID,
                                           : llvm::GlobalValue::WeakAnyLinkage;
   if (Entry) {
     values.finishAndSetAsInitializer(Entry);
-    Entry->setAlignment(CGM.getPointerAlign().getQuantity());
+    Entry->setAlignment(CGM.getPointerAlign().getAsAlign());
   } else {
     Entry = values.finishAndCreateGlobal("OBJC_EHTYPE_$_" + ClassName,
                                          CGM.getPointerAlign(),

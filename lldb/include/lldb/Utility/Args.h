@@ -35,6 +35,7 @@ public:
   private:
     friend class Args;
     std::unique_ptr<char[]> ptr;
+    char quote;
 
     char *data() { return ptr.get(); }
 
@@ -42,12 +43,12 @@ public:
     ArgEntry() = default;
     ArgEntry(llvm::StringRef str, char quote);
 
-    llvm::StringRef ref;
-    char quote;
+    llvm::StringRef ref() const { return c_str(); }
     const char *c_str() const { return ptr.get(); }
 
     /// Returns true if this argument was quoted in any way.
     bool IsQuoted() const { return quote != '\0'; }
+    char GetQuoteChar() const { return quote; }
   };
 
   /// Construct with an option command string.
@@ -121,7 +122,6 @@ public:
   const char *GetArgumentAtIndex(size_t idx) const;
 
   llvm::ArrayRef<ArgEntry> entries() const { return m_entries; }
-  char GetArgumentQuoteCharAtIndex(size_t idx) const;
 
   using const_iterator = std::vector<ArgEntry>::const_iterator;
 
@@ -251,39 +251,6 @@ public:
   //
   // For re-setting or blanking out the list of arguments.
   void Clear();
-
-  static const char *StripSpaces(std::string &s, bool leading = true,
-                                 bool trailing = true,
-                                 bool return_null_if_empty = true);
-
-  static bool UInt64ValueIsValidForByteSize(uint64_t uval64,
-                                            size_t total_byte_size) {
-    if (total_byte_size > 8)
-      return false;
-
-    if (total_byte_size == 8)
-      return true;
-
-    const uint64_t max = (static_cast<uint64_t>(1)
-                          << static_cast<uint64_t>(total_byte_size * 8)) -
-                         1;
-    return uval64 <= max;
-  }
-
-  static bool SInt64ValueIsValidForByteSize(int64_t sval64,
-                                            size_t total_byte_size) {
-    if (total_byte_size > 8)
-      return false;
-
-    if (total_byte_size == 8)
-      return true;
-
-    const int64_t max = (static_cast<int64_t>(1)
-                         << static_cast<uint64_t>(total_byte_size * 8 - 1)) -
-                        1;
-    const int64_t min = ~(max);
-    return min <= sval64 && sval64 <= max;
-  }
 
   static lldb::Encoding
   StringToEncoding(llvm::StringRef s,

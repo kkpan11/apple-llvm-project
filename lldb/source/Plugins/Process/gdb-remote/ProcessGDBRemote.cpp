@@ -10,7 +10,7 @@
 
 #include <errno.h>
 #include <stdlib.h>
-#ifndef LLDB_DISABLE_POSIX
+#if LLDB_ENABLE_POSIX
 #include <netinet/in.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
@@ -63,7 +63,6 @@
 #include "lldb/Target/TargetList.h"
 #include "lldb/Target/ThreadPlanCallFunction.h"
 #include "lldb/Utility/Args.h"
-#include "lldb/Utility/CleanUp.h"
 #include "lldb/Utility/FileSpec.h"
 #include "lldb/Utility/Reproducer.h"
 #include "lldb/Utility/State.h"
@@ -81,12 +80,12 @@
 #include "lldb/Host/Host.h"
 #include "lldb/Utility/StringExtractorGDBRemote.h"
 
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/Threading.h"
 #include "llvm/Support/raw_ostream.h"
 
 #define DEBUGSERVER_BASENAME "debugserver"
-using namespace llvm;
 using namespace lldb;
 using namespace lldb_private;
 using namespace lldb_private::process_gdb_remote;
@@ -99,12 +98,14 @@ namespace lldb {
 // namespace. This allows you to attach with a debugger and call this function
 // and get the packet history dumped to a file.
 void DumpProcessGDBRemotePacketHistory(void *p, const char *path) {
-  StreamFile strm;
-  Status error = FileSystem::Instance().Open(strm.GetFile(), FileSpec(path),
-                                             File::eOpenOptionWrite |
-                                                 File::eOpenOptionCanCreate);
-  if (error.Success())
-    ((ProcessGDBRemote *)p)->GetGDBRemote().DumpHistory(strm);
+  auto file = FileSystem::Instance().Open(
+      FileSpec(path), File::eOpenOptionWrite | File::eOpenOptionCanCreate);
+  if (!file) {
+    llvm::consumeError(file.takeError());
+    return;
+  }
+  StreamFile stream(std::move(file.get()));
+  ((ProcessGDBRemote *)p)->GetGDBRemote().DumpHistory(stream);
 }
 } // namespace lldb
 
@@ -152,6 +153,11 @@ public:
     return m_collection_sp->GetPropertyAtIndexAsBoolean(
         nullptr, idx,
         g_processgdbremote_properties[idx].default_uint_value != 0);
+  }
+
+  bool GetUseGPacketForReading() const {
+    const uint32_t idx = ePropertyUseGPacketForReading;
+    return m_collection_sp->GetPropertyAtIndexAsBoolean(nullptr, idx, true);
   }
 };
 
@@ -305,6 +311,9 @@ ProcessGDBRemote::ProcessGDBRemote(lldb::TargetSP target_sp,
       GetGlobalPluginProperties()->GetPacketTimeout();
   if (timeout_seconds > 0)
     m_gdb_comm.SetPacketTimeout(std::chrono::seconds(timeout_seconds));
+
+  m_use_g_packet_for_reading =
+      GetGlobalPluginProperties()->GetUseGPacketForReading();
 }
 
 // Destructor
@@ -374,36 +383,6 @@ bool ProcessGDBRemote::ParsePythonTargetDefinition(
     }
   }
   return false;
-}
-
-// If the remote stub didn't give us eh_frame or DWARF register numbers for a
-// register, see if the ABI can provide them.
-// DWARF and eh_frame register numbers are defined as a part of the ABI.
-static void AugmentRegisterInfoViaABI(RegisterInfo &reg_info,
-                                      ConstString reg_name, ABISP abi_sp) {
-  if (reg_info.kinds[eRegisterKindEHFrame] == LLDB_INVALID_REGNUM ||
-      reg_info.kinds[eRegisterKindDWARF] == LLDB_INVALID_REGNUM) {
-    if (abi_sp) {
-      RegisterInfo abi_reg_info;
-      if (abi_sp->GetRegisterInfoByName(reg_name, abi_reg_info)) {
-        if (reg_info.kinds[eRegisterKindEHFrame] == LLDB_INVALID_REGNUM &&
-            abi_reg_info.kinds[eRegisterKindEHFrame] != LLDB_INVALID_REGNUM) {
-          reg_info.kinds[eRegisterKindEHFrame] =
-              abi_reg_info.kinds[eRegisterKindEHFrame];
-        }
-        if (reg_info.kinds[eRegisterKindDWARF] == LLDB_INVALID_REGNUM &&
-            abi_reg_info.kinds[eRegisterKindDWARF] != LLDB_INVALID_REGNUM) {
-          reg_info.kinds[eRegisterKindDWARF] =
-              abi_reg_info.kinds[eRegisterKindDWARF];
-        }
-        if (reg_info.kinds[eRegisterKindGeneric] == LLDB_INVALID_REGNUM &&
-            abi_reg_info.kinds[eRegisterKindGeneric] != LLDB_INVALID_REGNUM) {
-          reg_info.kinds[eRegisterKindGeneric] =
-              abi_reg_info.kinds[eRegisterKindGeneric];
-        }
-      }
-    }
-  }
 }
 
 static size_t SplitCommaSeparatedRegisterNumberString(
@@ -603,12 +582,12 @@ void ProcessGDBRemote::BuildDynamicRegisterInfo(bool force) {
           reg_info.invalidate_regs = invalidate_regs.data();
         }
 
+        reg_info.name = reg_name.AsCString();
         // We have to make a temporary ABI here, and not use the GetABI because
         // this code gets called in DidAttach, when the target architecture
         // (and consequently the ABI we'll get from the process) may be wrong.
-        ABISP abi_to_use = ABI::FindPlugin(shared_from_this(), arch_to_use);
-
-        AugmentRegisterInfoViaABI(reg_info, reg_name, abi_to_use);
+        if (ABISP abi_sp = ABI::FindPlugin(shared_from_this(), arch_to_use))
+          abi_sp->AugmentRegisterInfo(reg_info);
 
         m_register_info.AddRegister(reg_info, reg_name, alt_name, set_name);
       } else {
@@ -2370,21 +2349,22 @@ void ProcessGDBRemote::RefreshStateAfterStop() {
 
   m_thread_ids.clear();
   m_thread_pcs.clear();
+
   // Set the thread stop info. It might have a "threads" key whose value is a
   // list of all thread IDs in the current process, so m_thread_ids might get
   // set.
+  // Check to see if SetThreadStopInfo() filled in m_thread_ids?
+  if (m_thread_ids.empty()) {
+      // No, we need to fetch the thread list manually
+      UpdateThreadIDList();
+  }
+
+  // We might set some stop info's so make sure the thread list is up to
+  // date before we do that or we might overwrite what was computed here.
+  UpdateThreadListIfNeeded();
 
   // Scope for the lock
   {
-    // Check to see if SetThreadStopInfo() filled in m_thread_ids?
-    if (m_thread_ids.empty()) {
-        // No, we need to fetch the thread list manually
-        UpdateThreadIDList();
-    }
-    // We might set some stop info's so make sure the thread list is up to
-    // date before we do that or we might overwrite what was computed here.
-    UpdateThreadListIfNeeded();
-
     // Lock the thread stack while we access it
     std::lock_guard<std::recursive_mutex> guard(m_last_stop_packet_mutex);
     // Get the number of stop packets on the stack
@@ -3484,8 +3464,8 @@ Status ProcessGDBRemote::LaunchAndConnectToDebugserver(
 
     int our_socket = sockets[0];
     int gdb_socket = sockets[1];
-    CleanUp cleanup_our(close, our_socket);
-    CleanUp cleanup_gdb(close, gdb_socket);
+    auto cleanup_our = llvm::make_scope_exit([&]() { close(our_socket); });
+    auto cleanup_gdb = llvm::make_scope_exit([&]() { close(gdb_socket); });
 
     // Don't let any child processes inherit our communication socket
     SetCloexecFlag(our_socket);
@@ -3505,7 +3485,7 @@ Status ProcessGDBRemote::LaunchAndConnectToDebugserver(
 #ifdef USE_SOCKETPAIR_FOR_LOCAL_CONNECTION
       // Our process spawned correctly, we can now set our connection to use
       // our end of the socket pair
-      cleanup_our.disable();
+      cleanup_our.release();
       m_gdb_comm.SetConnection(new ConnectionFileDescriptor(our_socket, true));
 #endif
       StartAsyncThread();
@@ -3629,9 +3609,9 @@ bool ProcessGDBRemote::StartAsyncThread() {
     llvm::Expected<HostThread> async_thread = ThreadLauncher::LaunchThread(
         "<lldb.process.gdb-remote.async>", ProcessGDBRemote::AsyncThread, this);
     if (!async_thread) {
-      LLDB_LOG(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_HOST),
-               "failed to launch host thread: {}",
-               llvm::toString(async_thread.takeError()));
+      LLDB_LOG_ERROR(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_HOST),
+                     async_thread.takeError(),
+                     "failed to launch host thread: {}");
       return false;
     }
     m_async_thread = *async_thread;
@@ -4477,7 +4457,9 @@ bool ParseRegisters(XMLNode feature_node, GdbServerTargetInfo &target_info,
         }
 
         ++cur_reg_num;
-        AugmentRegisterInfoViaABI(reg_info, reg_name, abi_sp);
+        reg_info.name = reg_name.AsCString();
+        if (abi_sp)
+          abi_sp->AugmentRegisterInfo(reg_info);
         dyn_reg_info.AddRegister(reg_info, reg_name, alt_name, set_name);
 
         return true; // Keep iterating through all "reg" elements
@@ -5091,7 +5073,7 @@ ParseStructuredDataPacket(llvm::StringRef packet) {
   if (log) {
     if (json_sp) {
       StreamString json_str;
-      json_sp->Dump(json_str);
+      json_sp->Dump(json_str, true);
       json_str.Flush();
       LLDB_LOGF(log,
                 "ProcessGDBRemote::%s() "

@@ -13,7 +13,7 @@
 #include "lldb/Core/Module.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Core/ValueObject.h"
-#include "lldb/Symbol/ClangASTContext.h"
+#include "lldb/Symbol/TypeSystemClang.h"
 #include "lldb/Symbol/SymbolContext.h"
 #include "lldb/Symbol/SymbolFile.h"
 #include "lldb/Symbol/Type.h"
@@ -103,8 +103,8 @@ ObjCLanguageRuntime::LookupInCompleteClassCache(ConstString &name) {
   const ModuleList &modules = m_process->GetTarget().GetImages();
 
   SymbolContextList sc_list;
-  const size_t matching_symbols =
-      modules.FindSymbolsWithNameAndType(name, eSymbolTypeObjCClass, sc_list);
+  modules.FindSymbolsWithNameAndType(name, eSymbolTypeObjCClass, sc_list);
+  const size_t matching_symbols = sc_list.GetSize();
 
   if (matching_symbols) {
     SymbolContext sc;
@@ -127,7 +127,7 @@ ObjCLanguageRuntime::LookupInCompleteClassCache(ConstString &name) {
     for (uint32_t i = 0; i < types.GetSize(); ++i) {
       TypeSP type_sp(types.GetTypeAtIndex(i));
 
-      if (ClangASTContext::IsObjCObjectOrInterfaceType(
+      if (TypeSystemClang::IsObjCObjectOrInterfaceType(
               type_sp->GetForwardCompilerType())) {
         if (type_sp->IsCompleteObjCClass()) {
           m_complete_class_cache[name] = type_sp;
@@ -313,14 +313,6 @@ ObjCLanguageRuntime::EncodingToType::RealizeType(const char *name,
   return CompilerType();
 }
 
-CompilerType ObjCLanguageRuntime::EncodingToType::RealizeType(
-    ClangASTContext &ast_ctx, const char *name, bool for_expression) {
-  clang::ASTContext *clang_ast = ast_ctx.getASTContext();
-  if (!clang_ast)
-    return CompilerType();
-  return RealizeType(*clang_ast, name, for_expression);
-}
-
 ObjCLanguageRuntime::EncodingToType::~EncodingToType() {}
 
 ObjCLanguageRuntime::EncodingToTypeSP ObjCLanguageRuntime::GetEncodingToType() {
@@ -403,9 +395,9 @@ ObjCLanguageRuntime::GetRuntimeType(CompilerType base_type) {
   CompilerType class_type;
   bool is_pointer_type = false;
 
-  if (ClangASTContext::IsObjCObjectPointerType(base_type, &class_type))
+  if (TypeSystemClang::IsObjCObjectPointerType(base_type, &class_type))
     is_pointer_type = true;
-  else if (ClangASTContext::IsObjCObjectOrInterfaceType(base_type))
+  else if (TypeSystemClang::IsObjCObjectOrInterfaceType(base_type))
     class_type = base_type;
   else
     return llvm::None;

@@ -155,7 +155,7 @@ public:
   lldb::VariableSP m_variable_sp;
 };
 
-static CompilerType ImportType(SwiftASTContext &target_context,
+static CompilerType ImportType(SwiftASTContextForExpressions &target_context,
                                CompilerType source_type) {
   SwiftASTContext *swift_ast_ctx =
       llvm::dyn_cast_or_null<SwiftASTContext>(source_type.GetTypeSystem());
@@ -414,7 +414,6 @@ public:
         }
       }
     }
-
     return swift::Identifier();
   }
 };
@@ -490,7 +489,7 @@ public:
 
 static void
 AddRequiredAliases(Block *block, lldb::StackFrameSP &stack_frame_sp,
-                   SwiftASTContext &swift_ast_context,
+                   SwiftASTContextForExpressions &swift_ast_context,
                    SwiftASTManipulator &manipulator) {
   // First emit the typealias for "$__lldb_context".
   if (!block)
@@ -625,7 +624,8 @@ AddRequiredAliases(Block *block, lldb::StackFrameSP &stack_frame_sp,
 /// already shadowing inner declaration in \c processed_variables.
 static void AddVariableInfo(
     lldb::VariableSP variable_sp, lldb::StackFrameSP &stack_frame_sp,
-    SwiftASTContext &ast_context, SwiftLanguageRuntime *language_runtime,
+    SwiftASTContextForExpressions &ast_context,
+    SwiftLanguageRuntime *language_runtime,
     llvm::SmallDenseSet<const char *, 8> &processed_variables,
     llvm::SmallVectorImpl<SwiftASTManipulator::VariableInfo> &local_variables) {
   StringRef name = variable_sp->GetUnqualifiedName().GetStringRef();
@@ -720,7 +720,7 @@ static void AddVariableInfo(
 /// Create a \c VariableInfo record for each visible variable.
 static void RegisterAllVariables(
     SymbolContext &sc, lldb::StackFrameSP &stack_frame_sp,
-    SwiftASTContext &ast_context,
+    SwiftASTContextForExpressions &ast_context,
     llvm::SmallVectorImpl<SwiftASTManipulator::VariableInfo> &local_variables) {
   if (!sc.block && !sc.function)
     return;
@@ -743,50 +743,49 @@ static void RegisterAllVariables(
   // The module scoped variables are stored at the CompUnit level, so
   // after we go through the current context, then we have to take one
   // more pass through the variables in the CompUnit.
-  bool handling_globals = false;
   VariableList variables;
 
   // Proceed from the innermost scope outwards, adding all variables
   // not already shadowed by an inner declaration.
   llvm::SmallDenseSet<const char *, 8> processed_names;
-  while (true) {
-    if (!handling_globals) {
-      constexpr bool can_create = true;
-      constexpr bool get_parent_variables = false;
-      constexpr bool stop_if_block_is_inlined_function = true;
+  bool done = false;
+  do {
+    // Iterate over all parent contexts *including* the top_block.
+    if (block == top_block)
+      done = true;
+    bool can_create = true;
+    bool get_parent_variables = false;
+    bool stop_if_block_is_inlined_function = true;
 
-      block->AppendVariables(
-          can_create, get_parent_variables, stop_if_block_is_inlined_function,
-          [](Variable *) { return true; }, &variables);
-    } else {
-      if (sc.comp_unit) {
-        lldb::VariableListSP globals_sp = sc.comp_unit->GetVariableList(true);
-        if (globals_sp)
-          variables.AddVariables(globals_sp.get());
-      }
-    }
+    block->AppendVariables(
+        can_create, get_parent_variables, stop_if_block_is_inlined_function,
+        [](Variable *) { return true; }, &variables);
 
-    // Process all variables in this scope.
-    for (size_t vi = 0, ve = variables.GetSize(); vi != ve; ++vi)
-      AddVariableInfo({variables.GetVariableAtIndex(vi)}, stack_frame_sp,
-                      ast_context, language_runtime, processed_names,
-                      local_variables);
+    if (!done)
+      block = block->GetParent();
+  } while (block && !done);
 
-    if (!handling_globals) {
-      if (block == top_block)
-        // Now add the containing module block, that's what holds the
-        // module globals:
-        handling_globals = true;
-      else
-        block = block->GetParent();
-    } else
-      break;
+  // Also add local copies of globals. This is in many cases redundant
+  // work because the globals would also be found in the expression
+  // context's Swift module, but it allows a limited form of
+  // expression evaluation to work even if the Swift module failed to
+  // load, as long as the module isn't necessary to resolve the type
+  // or aother symbols in the expression.
+  if (sc.comp_unit) {
+    lldb::VariableListSP globals_sp = sc.comp_unit->GetVariableList(true);
+    if (globals_sp)
+      variables.AddVariables(globals_sp.get());
   }
+
+  for (size_t vi = 0, ve = variables.GetSize(); vi != ve; ++vi)
+    AddVariableInfo({variables.GetVariableAtIndex(vi)}, stack_frame_sp,
+                    ast_context, language_runtime, processed_names,
+                    local_variables);
 }
 
 static void ResolveSpecialNames(
     SymbolContext &sc, ExecutionContextScope &exe_scope,
-    SwiftASTContext &ast_context,
+    SwiftASTContextForExpressions &ast_context,
     llvm::SmallVectorImpl<swift::Identifier> &special_names,
     llvm::SmallVectorImpl<SwiftASTManipulator::VariableInfo> &local_variables) {
   Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));
@@ -849,9 +848,11 @@ static void ResolveSpecialNames(
 
 /// Initialize the SwiftASTContext and return the wrapped
 /// swift::ASTContext when successful.
-static swift::ASTContext *SetupASTContext(
-    SwiftASTContext *swift_ast_context, DiagnosticManager &diagnostic_manager,
-    std::function<bool()> disable_objc_runtime, bool repl, bool playground) {
+static swift::ASTContext *
+SetupASTContext(SwiftASTContextForExpressions *swift_ast_context,
+                DiagnosticManager &diagnostic_manager,
+                std::function<bool()> disable_objc_runtime, bool repl,
+                bool playground) {
   if (!swift_ast_context) {
     diagnostic_manager.PutString(
         eDiagnosticSeverityError,
@@ -935,8 +936,9 @@ static swift::ASTContext *SetupASTContext(
 
 /// Returns the buffer_id for the expression's source code.
 static std::pair<unsigned, std::string>
-CreateMainFile(SwiftASTContext &swift_ast_context, StringRef filename,
-               StringRef text, const EvaluateExpressionOptions &options) {
+CreateMainFile(SwiftASTContextForExpressions &swift_ast_context,
+               StringRef filename, StringRef text,
+               const EvaluateExpressionOptions &options) {
   const bool generate_debug_info = options.GetGenerateDebugInfo();
   swift_ast_context.SetGenerateDebugInfo(generate_debug_info
                                            ? swift::IRGenDebugInfoLevel::Normal
@@ -1182,15 +1184,14 @@ struct ParsedExpression {
 
 /// Attempt to parse an expression and import all the Swift modules
 /// the expression and its context depend on.
-static llvm::Expected<ParsedExpression>
-ParseAndImport(SwiftASTContext *swift_ast_context, Expression &expr,
-               SwiftExpressionParser::SILVariableMap &variable_map,
-               unsigned &buffer_id, DiagnosticManager &diagnostic_manager,
-               SwiftExpressionParser &swift_expr_parser,
-               lldb::StackFrameWP &stack_frame_wp, SymbolContext &sc,
-               ExecutionContextScope &exe_scope,
-               const EvaluateExpressionOptions &options, bool repl,
-               bool playground) {
+static llvm::Expected<ParsedExpression> ParseAndImport(
+    SwiftASTContextForExpressions *swift_ast_context, Expression &expr,
+    SwiftExpressionParser::SILVariableMap &variable_map, unsigned &buffer_id,
+    DiagnosticManager &diagnostic_manager,
+    SwiftExpressionParser &swift_expr_parser,
+    lldb::StackFrameWP &stack_frame_wp, SymbolContext &sc,
+    ExecutionContextScope &exe_scope, const EvaluateExpressionOptions &options,
+    bool repl, bool playground) {
 
   auto should_disable_objc_runtime = [&]() {
     lldb::StackFrameSP this_frame_sp(stack_frame_wp.lock());
@@ -1233,6 +1234,45 @@ ParseAndImport(SwiftASTContext *swift_ast_context, Expression &expr,
   const auto implicit_import_kind =
       swift::SourceFile::ImplicitModuleImportKind::Stdlib;
 
+  swift::SourceFileKind source_file_kind = swift::SourceFileKind::Library;
+
+  if (playground || repl) {
+    source_file_kind = swift::SourceFileKind::Main;
+  }
+
+  swift::SourceFile *source_file = new (*ast_context) swift::SourceFile(
+      module, source_file_kind, buffer_id, implicit_import_kind,
+      /*Keep tokens*/ false);
+  module.addFile(*source_file);
+
+
+  // The Swift stdlib needs to be imported before the
+  // SwiftLanguageRuntime can be used.
+  Status auto_import_error;
+  if (!SwiftASTContext::PerformAutoImport(*swift_ast_context, sc,
+                                          stack_frame_wp, source_file,
+                                          auto_import_error))
+    return make_error<ModuleImportError>(llvm::Twine("in auto-import:\n") +
+                                         auto_import_error.AsCString());
+
+  // Swift Modules that rely on shared libraries (not frameworks)
+  // don't record the link information in the swiftmodule file, so we
+  // can't really make them work without outside information.
+  // However, in the REPL you can added -L & -l options to the initial
+  // compiler startup, and we should dlopen anything that's been
+  // stuffed on there and hope it will be useful later on.
+  if (repl) {
+    lldb::StackFrameSP this_frame_sp(stack_frame_wp.lock());
+
+    if (this_frame_sp) {
+      lldb::ProcessSP process_sp(this_frame_sp->CalculateProcess());
+      if (process_sp) {
+        Status error;
+        swift_ast_context->LoadExtraDylibs(*process_sp.get(), error);
+      }
+    }
+  }
+
   auto &invocation = swift_ast_context->GetCompilerInvocation();
   invocation.getFrontendOptions().ModuleName = expr_name_buf;
   invocation.getIRGenOptions().ModuleName = expr_name_buf;
@@ -1250,17 +1290,6 @@ ParseAndImport(SwiftASTContext *swift_ast_context, Expression &expr,
 
   invocation.getLangOptions().UseDarwinPreStableABIBit =
       should_use_prestable_abi();
-
-  swift::SourceFileKind source_file_kind = swift::SourceFileKind::Library;
-
-  if (playground || repl) {
-    source_file_kind = swift::SourceFileKind::Main;
-  }
-
-  swift::SourceFile *source_file = new (*ast_context) swift::SourceFile(
-      module, source_file_kind, buffer_id, implicit_import_kind,
-      /*Keep tokens*/ false);
-  module.addFile(*source_file);
 
   LLDBNameLookup *external_lookup;
   if (options.GetPlaygroundTransformEnabled() || options.GetREPLEnabled()) {
@@ -1291,31 +1320,6 @@ ParseAndImport(SwiftASTContext *swift_ast_context, Expression &expr,
 
     if (!playground) {
       code_manipulator->RewriteResult();
-    }
-  }
-
-  Status auto_import_error;
-  if (!SwiftASTContext::PerformAutoImport(*swift_ast_context, sc,
-                                          stack_frame_wp, source_file,
-                                          auto_import_error))
-    return make_error<ModuleImportError>(llvm::Twine("in auto-import:\n") +
-                                         auto_import_error.AsCString());
-
-  // Swift Modules that rely on shared libraries (not frameworks)
-  // don't record the link information in the swiftmodule file, so we
-  // can't really make them work without outside information.
-  // However, in the REPL you can added -L & -l options to the initial
-  // compiler startup, and we should dlopen anything that's been
-  // stuffed on there and hope it will be useful later on.
-  if (repl) {
-    lldb::StackFrameSP this_frame_sp(stack_frame_wp.lock());
-
-    if (this_frame_sp) {
-      lldb::ProcessSP process_sp(this_frame_sp->CalculateProcess());
-      if (process_sp) {
-        Status error;
-        swift_ast_context->LoadExtraDylibs(*process_sp.get(), error);
-      }
     }
   }
 
@@ -1508,7 +1512,8 @@ unsigned SwiftExpressionParser::Parse(DiagnosticManager &diagnostic_manager,
   // Allow variables to be re-used from previous REPL statements.
   if (m_sc.target_sp && (repl || !playground)) {
     Status error;
-    SwiftASTContext *scratch_ast_context = m_swift_ast_context->get();
+    SwiftASTContextForExpressions *scratch_ast_context =
+        m_swift_ast_context->get();
 
     if (scratch_ast_context) {
       auto *persistent_state =
@@ -1898,8 +1903,8 @@ bool SwiftExpressionParser::RewriteExpression(
   llvm::StringRef text_ref(m_expr.Text());
   rewrite_buf.Initialize(text_ref);
 
-  for (const Diagnostic *diag : diagnostic_manager.Diagnostics()) {
-    const SwiftDiagnostic *diagnostic = llvm::dyn_cast<SwiftDiagnostic>(diag);
+  for (const auto &diag : diagnostic_manager.Diagnostics()) {
+    const auto *diagnostic = llvm::dyn_cast<SwiftDiagnostic>(diag.get());
     if (!(diagnostic && diagnostic->HasFixIts()))
       continue;
 

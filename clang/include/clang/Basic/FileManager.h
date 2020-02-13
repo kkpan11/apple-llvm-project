@@ -135,6 +135,8 @@ public:
 
   const StringRef getName() const { return Name; }
 
+  bool isValid() const { return Entry->isValid(); }
+
   const FileEntry &getFileEntry() const { return *Entry; }
 
   off_t getSize() const { return Entry->getSize(); }
@@ -146,6 +148,13 @@ public:
   }
 
   time_t getModificationTime() const { return Entry->getModificationTime(); }
+
+  friend bool operator==(const FileEntryRef &LHS, const FileEntryRef &RHS) {
+    return LHS.Entry == RHS.Entry && LHS.Name == RHS.Name;
+  }
+  friend bool operator!=(const FileEntryRef &LHS, const FileEntryRef &RHS) {
+    return !(LHS == RHS);
+  }
 
 private:
   StringRef Name;
@@ -176,6 +185,10 @@ class FileManager : public RefCountedBase<FileManager> {
   SmallVector<std::unique_ptr<DirectoryEntry>, 4> VirtualDirectoryEntries;
   /// The virtual files that we have allocated.
   SmallVector<std::unique_ptr<FileEntry>, 4> VirtualFileEntries;
+
+  /// A set of files that bypass the maps and uniquing.  They can have
+  /// conflicting filenames.
+  SmallVector<std::unique_ptr<FileEntry>, 0> BypassFileEntries;
 
   /// A cache that maps paths to directory entries (either real or
   /// virtual) we have looked up, or an error that occurred when we looked up
@@ -209,8 +222,8 @@ class FileManager : public RefCountedBase<FileManager> {
                   llvm::BumpPtrAllocator>
       SeenFileEntries;
 
-  /// The canonical names of directories.
-  llvm::DenseMap<const DirectoryEntry *, llvm::StringRef> CanonicalDirNames;
+  /// The canonical names of files and directories .
+  llvm::DenseMap<const void *, llvm::StringRef> CanonicalNames;
 
   /// Storage for canonical names that we have computed.
   llvm::BumpPtrAllocator CanonicalNameStorage;
@@ -218,10 +231,6 @@ class FileManager : public RefCountedBase<FileManager> {
   /// Each FileEntry we create is assigned a unique ID #.
   ///
   unsigned NextFileUID;
-
-  // Statistics.
-  unsigned NumDirLookups, NumFileLookups;
-  unsigned NumDirCacheMisses, NumFileCacheMisses;
 
   // Caching.
   std::unique_ptr<FileSystemStatCache> StatCache;
@@ -356,14 +365,30 @@ public:
   const FileEntry *getVirtualFile(StringRef Filename, off_t Size,
                                   time_t ModificationTime);
 
+  /// Retrieve a FileEntry that bypasses VFE, which is expected to be a virtual
+  /// file entry, to access the real file.  The returned FileEntry will have
+  /// the same filename as FE but a different identity and its own stat.
+  ///
+  /// This should be used only for rare error recovery paths because it
+  /// bypasses all mapping and uniquing, blindly creating a new FileEntry.
+  /// There is no attempt to deduplicate these; if you bypass the same file
+  /// twice, you get two new file entries.
+  llvm::Optional<FileEntryRef> getBypassFile(FileEntryRef VFE);
+
   /// Open the specified file as a MemoryBuffer, returning a new
   /// MemoryBuffer if successful, otherwise returning null.
   llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
-  getBufferForFile(const FileEntry *Entry, bool isVolatile = false,
-                   bool ShouldCloseOpenFile = true);
+  getBufferForFile(const FileEntry *Entry, bool isVolatile = false);
   llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
-  getBufferForFile(StringRef Filename, bool isVolatile = false);
+  getBufferForFile(StringRef Filename, bool isVolatile = false) {
+    return getBufferForFileImpl(Filename, /*FileSize=*/-1, isVolatile);
+  }
 
+private:
+  llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
+  getBufferForFileImpl(StringRef Filename, int64_t FileSize, bool isVolatile);
+
+public:
   /// Get the 'stat' information for the given \p Path.
   ///
   /// If the path is relative, it will be resolved against the WorkingDir of the
@@ -372,9 +397,6 @@ public:
   /// \returns a \c std::error_code describing an error, if there was one
   std::error_code getNoncachedStatValue(StringRef Path,
                                         llvm::vfs::Status &Result);
-
-  /// Remove the real file \p Entry from the cache.
-  void invalidateCache(const FileEntry *Entry);
 
   /// If path is not absolute and FileSystemOptions set the working
   /// directory, the path is modified to be relative to the given
@@ -392,17 +414,19 @@ public:
   void GetUniqueIDMapping(
                     SmallVectorImpl<const FileEntry *> &UIDToFiles) const;
 
-  /// Modifies the size and modification time of a previously created
-  /// FileEntry. Use with caution.
-  static void modifyFileEntry(FileEntry *File, off_t Size,
-                              time_t ModificationTime);
-
   /// Retrieve the canonical name for a given directory.
   ///
   /// This is a very expensive operation, despite its results being cached,
   /// and should only be used when the physical layout of the file system is
   /// required, which is (almost) never.
   StringRef getCanonicalName(const DirectoryEntry *Dir);
+
+  /// Retrieve the canonical name for a given file.
+  ///
+  /// This is a very expensive operation, despite its results being cached,
+  /// and should only be used when the physical layout of the file system is
+  /// required, which is (almost) never.
+  StringRef getCanonicalName(const FileEntry *File);
 
   void PrintStats() const;
 };

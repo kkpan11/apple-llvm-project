@@ -12,7 +12,6 @@
 #include "DeclContext.h"
 #include "DwarfStreamer.h"
 #include "MachOUtils.h"
-#include "NonRelocatableStringpool.h"
 #include "dsymutil.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/BitVector.h"
@@ -36,6 +35,7 @@
 #include "llvm/CodeGen/AccelTable.h"
 #include "llvm/CodeGen/AsmPrinter.h"
 #include "llvm/CodeGen/DIE.h"
+#include "llvm/CodeGen/NonRelocatableStringpool.h"
 #include "llvm/Config/config.h"
 #include "llvm/DebugInfo/DIContext.h"
 #include "llvm/DebugInfo/DWARF/DWARFAbbreviationDeclaration.h"
@@ -265,7 +265,7 @@ bool DwarfLinker::createStreamer(const Triple &TheTriple,
   if (Options.NoOutput)
     return true;
 
-  Streamer = llvm::make_unique<DwarfStreamer>(OutFile, Options);
+  Streamer = std::make_unique<DwarfStreamer>(OutFile, Options);
   return Streamer->init(TheTriple);
 }
 
@@ -565,7 +565,11 @@ bool DwarfLinker::RelocationManager::findValidRelocsInDebugInfo(
   // Find the debug_info section.
   for (const object::SectionRef &Section : Obj.sections()) {
     StringRef SectionName;
-    Section.getName(SectionName);
+    if (Expected<StringRef> NameOrErr = Section.getName())
+      SectionName = *NameOrErr;
+    else
+      consumeError(NameOrErr.takeError());
+
     SectionName = SectionName.substr(SectionName.find_first_not_of("._"));
     if (SectionName != "debug_info")
       continue;
@@ -1123,7 +1127,7 @@ void DwarfLinker::AssignAbbrev(DIEAbbrev &Abbrev) {
   } else {
     // Add to abbreviation list.
     Abbreviations.push_back(
-        llvm::make_unique<DIEAbbrev>(Abbrev.getTag(), Abbrev.hasChildren()));
+        std::make_unique<DIEAbbrev>(Abbrev.getTag(), Abbrev.hasChildren()));
     for (const auto &Attr : Abbrev.getData())
       Abbreviations.back()->AddAttribute(Attr.getAttribute(), Attr.getForm());
     AbbreviationsSet.InsertNode(Abbreviations.back().get(), InsertToken);
@@ -1383,6 +1387,10 @@ unsigned DwarfLinker::DIECloner::cloneAddressAttribute(
       // it. Otherwise (when no relocations where applied) just use the
       // one we just decoded.
       Addr = (Info.OrigHighPc ? Info.OrigHighPc : Addr) + Info.PCOffset;
+  } else if (AttrSpec.Attr == dwarf::DW_AT_call_return_pc) {
+    // Relocate a return PC address within a call site entry.
+    if (Die.getTag() == dwarf::DW_TAG_call_site)
+      Addr += Info.PCOffset;
   }
 
   Die.addValue(DIEAlloc, static_cast<dwarf::Attribute>(AttrSpec.Attr),
@@ -1827,7 +1835,7 @@ void DwarfLinker::patchRangesForUnit(const CompileUnit &Unit,
   const auto &FunctionRanges = Unit.getFunctionRanges();
   unsigned AddressSize = Unit.getOrigUnit().getAddressByteSize();
   DWARFDataExtractor RangeExtractor(OrigDwarf.getDWARFObj(),
-                                    OrigDwarf.getDWARFObj().getRangeSection(),
+                                    OrigDwarf.getDWARFObj().getRangesSection(),
                                     OrigDwarf.isLittleEndian(), AddressSize);
   auto InvalidRange = FunctionRanges.end(), CurrRange = InvalidRange;
   DWARFUnit &OrigUnit = Unit.getOrigUnit();
@@ -2132,7 +2140,7 @@ void DwarfLinker::patchFrameInfoForObject(const DebugMapObject &DMO,
                                           RangesTy &Ranges,
                                           DWARFContext &OrigDwarf,
                                           unsigned AddrSize) {
-  StringRef FrameData = OrigDwarf.getDWARFObj().getDebugFrameSection().Data;
+  StringRef FrameData = OrigDwarf.getDWARFObj().getFrameSection().Data;
   if (FrameData.empty())
     return;
 
@@ -2449,7 +2457,7 @@ Error DwarfLinker::loadClangModule(
       }
 
       // Add this module.
-      Unit = llvm::make_unique<CompileUnit>(*CU, UnitID++, !Options.NoODR,
+      Unit = std::make_unique<CompileUnit>(*CU, UnitID++, !Options.NoODR,
                                             ModuleName);
       Unit->setHasInterestingContent();
       analyzeContextInfo(CUDie, 0, *Unit, &ODRContexts.getRoot(),
@@ -2561,7 +2569,7 @@ void DwarfLinker::updateAccelKind(DWARFContext &Dwarf) {
   }
 
   if (!AtLeastOneDwarfAccelTable &&
-      !DwarfObj.getDebugNamesSection().Data.empty()) {
+      !DwarfObj.getNamesSection().Data.empty()) {
     AtLeastOneDwarfAccelTable = true;
   }
 }
@@ -2721,12 +2729,12 @@ bool DwarfLinker::link(const DebugMap &Map) {
 
   // This Dwarf string pool which is only used for uniquing. This one should
   // never be used for offsets as its not thread-safe or predictable.
-  UniquingStringPool UniquingStringPool;
+  UniquingStringPool UniquingStringPool(nullptr, true);
 
   // This Dwarf string pool which is used for emission. It must be used
   // serially as the order of calling getStringOffset matters for
   // reproducibility.
-  OffsetsStringPool OffsetsStringPool(Options.Translator);
+  OffsetsStringPool OffsetsStringPool(Options.Translator, true);
 
   // ODR Contexts for the link.
   DeclContextTree ODRContexts;
@@ -2872,7 +2880,7 @@ bool DwarfLinker::link(const DebugMap &Map) {
                                    LinkContext.Ranges, OffsetsStringPool,
                                    UniquingStringPool, ODRContexts,
                                    ModulesEndOffset, UnitID, Quiet)) {
-        LinkContext.CompileUnits.push_back(llvm::make_unique<CompileUnit>(
+        LinkContext.CompileUnits.push_back(std::make_unique<CompileUnit>(
             *CU, UnitID++, !Options.NoODR && !Options.Update, ""));
       }
     }
@@ -3069,8 +3077,8 @@ bool DwarfLinker::link(const DebugMap &Map) {
 } // namespace dsymutil
 
 bool linkDwarf(raw_fd_ostream &OutFile, BinaryHolder &BinHolder,
-               const DebugMap &DM, const LinkOptions &Options) {
-  DwarfLinker Linker(OutFile, BinHolder, Options);
+               const DebugMap &DM, LinkOptions Options) {
+  DwarfLinker Linker(OutFile, BinHolder, std::move(Options));
   return Linker.link(DM);
 }
 

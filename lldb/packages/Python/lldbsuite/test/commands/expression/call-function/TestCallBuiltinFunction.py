@@ -2,7 +2,6 @@
 Tests calling builtin functions using expression evaluation.
 """
 
-from __future__ import print_function
 
 
 import lldb
@@ -40,14 +39,7 @@ class ExprCommandCallBuiltinFunction(TestBase):
 
         # Test different builtin functions.
 
-        interp.HandleCommand("expr __builtin_isinf(0.0f)", result)
-        self.assertEqual(result.GetOutput(), "(int) $0 = 0\n")
-
-        interp.HandleCommand("expr __builtin_isnormal(0.0f)", result)
-        self.assertEqual(result.GetOutput(), "(int) $1 = 0\n")
-
-        interp.HandleCommand("expr __builtin_constant_p(1)", result)
-        self.assertEqual(result.GetOutput(), "(int) $2 = 1\n")
-
-        interp.HandleCommand("expr __builtin_abs(-14)", result)
-        self.assertEqual(result.GetOutput(), "(int) $3 = 14\n")
+        self.expect_expr("__builtin_isinf(0.0f)", result_type="int", result_value="0")
+        self.expect_expr("__builtin_isnormal(0.0f)", result_type="int", result_value="0")
+        self.expect_expr("__builtin_constant_p(1)", result_type="int", result_value="1")
+        self.expect_expr("__builtin_abs(-14)", result_type="int", result_value="14")

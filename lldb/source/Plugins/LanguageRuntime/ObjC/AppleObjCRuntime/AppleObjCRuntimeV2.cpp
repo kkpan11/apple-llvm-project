@@ -35,7 +35,7 @@
 #include "lldb/Interpreter/CommandReturnObject.h"
 #include "lldb/Interpreter/OptionArgParser.h"
 #include "lldb/Interpreter/OptionValueBoolean.h"
-#include "lldb/Symbol/ClangASTContext.h"
+#include "lldb/Symbol/TypeSystemClang.h"
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Symbol/Symbol.h"
 #include "lldb/Symbol/TypeList.h"
@@ -480,7 +480,7 @@ bool AppleObjCRuntimeV2::GetDynamicTypeAndAddress(
             std::vector<CompilerDecl> decls;
             if (vendor->FindDecls(class_name, false, 1, decls) &&
                 decls.size()) {
-              auto *ctx = llvm::dyn_cast<ClangASTContext>(decls[0].GetTypeSystem());
+              auto *ctx = llvm::dyn_cast<TypeSystemClang>(decls[0].GetTypeSystem());
               if (ctx)
                 if (CompilerType type =
                         ctx->GetTypeForDecl(decls[0].GetOpaqueDecl()))
@@ -1309,7 +1309,7 @@ AppleObjCRuntimeV2::UpdateISAToDescriptorMapDynamic(
     return DescriptorMapUpdateResult::Fail();
 
   thread_sp->CalculateExecutionContext(exe_ctx);
-  ClangASTContext *ast = process->GetTarget().GetScratchClangASTContext();
+  TypeSystemClang *ast = TypeSystemClang::GetScratch(process->GetTarget());
 
   if (!ast)
     return DescriptorMapUpdateResult::Fail();
@@ -1571,7 +1571,7 @@ AppleObjCRuntimeV2::UpdateISAToDescriptorMapSharedCache() {
     return DescriptorMapUpdateResult::Fail();
 
   thread_sp->CalculateExecutionContext(exe_ctx);
-  ClangASTContext *ast = process->GetTarget().GetScratchClangASTContext();
+  TypeSystemClang *ast = TypeSystemClang::GetScratch(process->GetTarget());
 
   if (!ast)
     return DescriptorMapUpdateResult::Fail();
@@ -1633,19 +1633,13 @@ AppleObjCRuntimeV2::UpdateISAToDescriptorMapSharedCache() {
     // Substitute in the correct class_getName / class_getNameRaw function name,
     // concatenate the two parts of our expression text.  The format string
     // has two %s's, so provide the name twice.
-    int prefix_string_size = snprintf (nullptr, 0, 
+    std::string shared_class_expression;
+    llvm::raw_string_ostream(shared_class_expression) << llvm::format(
                                g_shared_cache_class_name_funcptr,
                                class_name_getter_function_name.AsCString(),
                                class_name_getter_function_name.AsCString());
 
-    char *class_name_func_ptr_expr = (char*) malloc (prefix_string_size + 1);
-    snprintf (class_name_func_ptr_expr, prefix_string_size + 1,
-              g_shared_cache_class_name_funcptr,
-              class_name_getter_function_name.AsCString(),
-              class_name_getter_function_name.AsCString());
-    std::string shared_class_expression = class_name_func_ptr_expr;
     shared_class_expression += g_get_shared_cache_class_info_body;
-    free (class_name_func_ptr_expr);
 
     m_get_shared_cache_class_info_code.reset(
         GetTargetRef().GetUtilityFunctionForLanguage(
@@ -2037,8 +2031,8 @@ lldb::addr_t AppleObjCRuntimeV2::LookupRuntimeSymbol(ConstString name) {
   if (name_cstr) {
     llvm::StringRef name_strref(name_cstr);
 
-    static const llvm::StringRef ivar_prefix("OBJC_IVAR_$_");
-    static const llvm::StringRef class_prefix("OBJC_CLASS_$_");
+    llvm::StringRef ivar_prefix("OBJC_IVAR_$_");
+    llvm::StringRef class_prefix("OBJC_CLASS_$_");
 
     if (name_strref.startswith(ivar_prefix)) {
       llvm::StringRef ivar_skipped_prefix =
@@ -2648,8 +2642,9 @@ bool AppleObjCRuntimeV2::GetCFBooleanValuesIfNeeded() {
   std::function<lldb::addr_t(ConstString)> get_symbol =
       [this](ConstString sym) -> lldb::addr_t {
     SymbolContextList sc_list;
-    if (GetProcess()->GetTarget().GetImages().FindSymbolsWithNameAndType(
-            sym, lldb::eSymbolTypeData, sc_list) == 1) {
+    GetProcess()->GetTarget().GetImages().FindSymbolsWithNameAndType(
+        sym, lldb::eSymbolTypeData, sc_list);
+    if (sc_list.GetSize() == 1) {
       SymbolContext sc;
       sc_list.GetContextAtIndex(0, sc);
       if (sc.symbol)
@@ -2685,10 +2680,12 @@ class ObjCExceptionRecognizedStackFrame : public RecognizedStackFrame {
     const lldb::ABISP &abi = process_sp->GetABI();
     if (!abi) return;
 
-    CompilerType voidstar = process_sp->GetTarget()
-                                .GetScratchClangASTContext()
-                                ->GetBasicType(lldb::eBasicTypeVoid)
-                                .GetPointerType();
+    TypeSystemClang *clang_ast_context =
+        TypeSystemClang::GetScratch(process_sp->GetTarget());
+    if (!clang_ast_context)
+      return;
+    CompilerType voidstar =
+        clang_ast_context->GetBasicType(lldb::eBasicTypeVoid).GetPointerType();
 
     ValueList args;
     Value input_value;
@@ -2706,9 +2703,11 @@ class ObjCExceptionRecognizedStackFrame : public RecognizedStackFrame {
     exception = ValueObjectRecognizerSynthesizedValue::Create(
         *exception, eValueTypeVariableArgument);
     exception = exception->GetDynamicValue(eDynamicDontRunTarget);
-      
+
     m_arguments = ValueObjectListSP(new ValueObjectList());
     m_arguments->Append(exception);
+
+    m_stop_desc = "hit Objective-C exception";
   }
 
   ValueObjectSP exception;
@@ -2732,6 +2731,7 @@ static void RegisterObjCExceptionRecognizer() {
     std::tie(module, function) = AppleObjCRuntime::GetExceptionThrowLocation();
     StackFrameRecognizerManager::AddRecognizer(
         StackFrameRecognizerSP(new ObjCExceptionThrowFrameRecognizer()),
-        module.GetFilename(), function, /*first_instruction_only*/ true);
+        module.GetFilename(), function, /*alternate_symbol*/ {},
+        /*first_instruction_only*/ true);
   });
 }

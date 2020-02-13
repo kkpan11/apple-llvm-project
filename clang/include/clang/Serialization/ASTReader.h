@@ -13,6 +13,7 @@
 #ifndef LLVM_CLANG_SERIALIZATION_ASTREADER_H
 #define LLVM_CLANG_SERIALIZATION_ASTREADER_H
 
+#include "clang/AST/DeclObjC.h"
 #include "clang/AST/Type.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/DiagnosticOptions.h"
@@ -27,7 +28,7 @@
 #include "clang/Sema/IdentifierResolver.h"
 #include "clang/Serialization/ASTBitCodes.h"
 #include "clang/Serialization/ContinuousRangeMap.h"
-#include "clang/Serialization/Module.h"
+#include "clang/Serialization/ModuleFile.h"
 #include "clang/Serialization/ModuleFileExtension.h"
 #include "clang/Serialization/ModuleManager.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -535,6 +536,14 @@ private:
   /// within them, and those anonymous declarations.
   llvm::DenseMap<Decl*, llvm::SmallVector<NamedDecl*, 2>>
     AnonymousDeclarationsForMerging;
+
+  /// Key used to identify LifetimeExtendedTemporaryDecl for merging,
+  /// containing the lifetime-extending declaration and the mangling number.
+  using LETemporaryKey = std::pair<Decl *, unsigned>;
+
+  /// Map of already deserialiazed temporaries.
+  llvm::DenseMap<LETemporaryKey, LifetimeExtendedTemporaryDecl *>
+      LETemporaryForMerging;
 
   struct FileDeclsInfo {
     ModuleFile *Mod = nullptr;
@@ -1079,6 +1088,10 @@ private:
 
   using DataPointers =
       std::pair<CXXRecordDecl *, struct CXXRecordDecl::DefinitionData *>;
+  using IDDataPointers = std::pair<ObjCInterfaceDecl *,
+                                   struct ObjCInterfaceDecl::DefinitionData *>;
+  using ProtoDataPointers = std::pair<ObjCProtocolDecl *,
+                                   struct ObjCProtocolDecl::DefinitionData *>;
 
   /// Record definitions in which we found an ODR violation.
   llvm::SmallDenseMap<CXXRecordDecl *, llvm::SmallVector<DataPointers, 2>, 2>
@@ -1091,6 +1104,20 @@ private:
   /// Enum definitions in which we found an ODR violation.
   llvm::SmallDenseMap<EnumDecl *, llvm::SmallVector<EnumDecl *, 2>, 2>
       PendingEnumOdrMergeFailures;
+
+  /// C/ObjC definitions in which the structural equivalence check fails
+  llvm::SmallDenseMap<RecordDecl *, llvm::SmallVector<RecordDecl *, 2>, 2>
+      PendingRecordOdrMergeFailures;
+
+  /// ObjCInterfaceDecl in which we found an ODR violation.
+  llvm::SmallDenseMap<ObjCInterfaceDecl *, llvm::SmallVector<IDDataPointers, 2>,
+                      2>
+      PendingObjCInterfaceOdrMergeFailures;
+
+  /// ObjCProtocolDecl in which we found an ODR violation.
+  llvm::SmallDenseMap<ObjCProtocolDecl *, llvm::SmallVector<ProtoDataPointers, 2>,
+                      2>
+      PendingObjCProtocolOdrMergeFailures;
 
   /// DeclContexts in which we have diagnosed an ODR violation.
   llvm::SmallPtrSet<DeclContext*, 2> DiagnosedOdrMergeFailures;
@@ -1562,7 +1589,7 @@ public:
   /// Takes ownership of \p L.
   void addListener(std::unique_ptr<ASTReaderListener> L) {
     if (Listener)
-      L = llvm::make_unique<ChainedASTReaderListener>(std::move(L),
+      L = std::make_unique<ChainedASTReaderListener>(std::move(L),
                                                       std::move(Listener));
     Listener = std::move(L);
   }
@@ -1578,7 +1605,7 @@ public:
       auto Old = Reader.takeListener();
       if (Old) {
         Chained = true;
-        L = llvm::make_unique<ChainedASTReaderListener>(std::move(L),
+        L = std::make_unique<ChainedASTReaderListener>(std::move(L),
                                                         std::move(Old));
       }
       Reader.setListener(std::move(L));

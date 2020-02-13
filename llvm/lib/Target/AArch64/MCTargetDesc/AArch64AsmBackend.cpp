@@ -150,12 +150,24 @@ static unsigned AdrImmBits(unsigned Value) {
   return (hi19 << 5) | (lo2 << 29);
 }
 
+static bool valueFitsIntoFixupKind(unsigned Kind, uint64_t Value) {
+  unsigned NumBits;
+  switch(Kind) {
+  case FK_Data_1: NumBits = 8; break;
+  case FK_Data_2: NumBits = 16; break;
+  case FK_Data_4: NumBits = 32; break;
+  case FK_Data_8: NumBits = 64; break;
+  default: return true;
+  }
+  return isUIntN(NumBits, Value) ||
+    isIntN(NumBits, static_cast<int64_t>(Value));
+}
+
 static uint64_t adjustFixupValue(const MCFixup &Fixup, const MCValue &Target,
                                  uint64_t Value, MCContext &Ctx,
                                  const Triple &TheTriple, bool IsResolved) {
-  unsigned Kind = Fixup.getKind();
   int64_t SignedValue = static_cast<int64_t>(Value);
-  switch (Kind) {
+  switch (Fixup.getTargetKind()) {
   default:
     llvm_unreachable("Unknown fixup kind!");
   case AArch64::fixup_aarch64_pcrel_adr_imm21:
@@ -310,11 +322,14 @@ static uint64_t adjustFixupValue(const MCFixup &Fixup, const MCValue &Target,
     if (Value & 0x3)
       Ctx.reportError(Fixup.getLoc(), "fixup not sufficiently aligned");
     return (Value >> 2) & 0x3ffffff;
-  case FK_NONE:
   case FK_Data_1:
   case FK_Data_2:
   case FK_Data_4:
   case FK_Data_8:
+    if (!valueFitsIntoFixupKind(Fixup.getTargetKind(), Value))
+      Ctx.reportError(Fixup.getLoc(), "fixup value too large for data type!");
+    LLVM_FALLTHROUGH;
+  case FK_NONE:
   case FK_SecRel_2:
   case FK_SecRel_4:
     return Value;
@@ -530,6 +545,7 @@ enum CompactUnwindEncodings {
 class DarwinAArch64AsmBackend : public AArch64AsmBackend {
   const MCRegisterInfo &MRI;
   bool IsILP32;
+  bool IsARM64E;
 
   /// Encode compact unwind stack adjustment for frameless functions.
   /// See UNWIND_ARM64_FRAMELESS_STACK_SIZE_MASK in compact_unwind_encoding.h.
@@ -540,18 +556,22 @@ class DarwinAArch64AsmBackend : public AArch64AsmBackend {
 
 public:
   DarwinAArch64AsmBackend(const Target &T, const Triple &TT,
-                          const MCRegisterInfo &MRI, bool IsILP32)
+                          const MCRegisterInfo &MRI,
+                          bool IsILP32, bool IsARM64E)
       : AArch64AsmBackend(T, TT, /*IsLittleEndian*/ true), MRI(MRI),
-        IsILP32(IsILP32) {}
+        IsILP32(IsILP32), IsARM64E(IsARM64E) {}
 
   std::unique_ptr<MCObjectTargetWriter>
   createObjectTargetWriter() const override {
     if (IsILP32)
       return createAArch64MachObjectWriter(
           MachO::CPU_TYPE_ARM64_32, MachO::CPU_SUBTYPE_ARM64_32_V8, true);
+    else if (IsARM64E)
+      return createAArch64MachObjectWriter(
+          MachO::CPU_TYPE_ARM64, MachO::CPU_SUBTYPE_ARM64E, false);
     else
-      return createAArch64MachObjectWriter(MachO::CPU_TYPE_ARM64,
-                                           MachO::CPU_SUBTYPE_ARM64_ALL, false);
+      return createAArch64MachObjectWriter(
+          MachO::CPU_TYPE_ARM64, MachO::CPU_SUBTYPE_ARM64_ALL, false);
   }
 
   /// Generate the compact unwind encoding from the CFI directives.
@@ -574,7 +594,7 @@ public:
       case MCCFIInstruction::OpDefCfa: {
         // Defines a frame pointer.
         unsigned XReg =
-            getXRegFromWReg(MRI.getLLVMRegNum(Inst.getRegister(), true));
+            getXRegFromWReg(*MRI.getLLVMRegNum(Inst.getRegister(), true));
 
         // Other CFA registers than FP are not supported by compact unwind.
         // Fallback on DWARF.
@@ -593,8 +613,8 @@ public:
         assert(FPPush.getOperation() == MCCFIInstruction::OpOffset &&
                "Frame pointer not pushed!");
 
-        unsigned LRReg = MRI.getLLVMRegNum(LRPush.getRegister(), true);
-        unsigned FPReg = MRI.getLLVMRegNum(FPPush.getRegister(), true);
+        unsigned LRReg = *MRI.getLLVMRegNum(LRPush.getRegister(), true);
+        unsigned FPReg = *MRI.getLLVMRegNum(FPPush.getRegister(), true);
 
         LRReg = getXRegFromWReg(LRReg);
         FPReg = getXRegFromWReg(FPReg);
@@ -615,14 +635,14 @@ public:
       case MCCFIInstruction::OpOffset: {
         // Registers are saved in pairs. We expect there to be two consecutive
         // `.cfi_offset' instructions with the appropriate registers specified.
-        unsigned Reg1 = MRI.getLLVMRegNum(Inst.getRegister(), true);
+        unsigned Reg1 = *MRI.getLLVMRegNum(Inst.getRegister(), true);
         if (i + 1 == e)
           return CU::UNWIND_ARM64_MODE_DWARF;
 
         const MCCFIInstruction &Inst2 = Instrs[++i];
         if (Inst2.getOperation() != MCCFIInstruction::OpOffset)
           return CU::UNWIND_ARM64_MODE_DWARF;
-        unsigned Reg2 = MRI.getLLVMRegNum(Inst2.getRegister(), true);
+        unsigned Reg2 = *MRI.getLLVMRegNum(Inst2.getRegister(), true);
 
         // N.B. The encodings must be in register number order, and the X
         // registers before the D registers.
@@ -735,7 +755,8 @@ MCAsmBackend *llvm::createAArch64leAsmBackend(const Target &T,
   const Triple &TheTriple = STI.getTargetTriple();
   if (TheTriple.isOSBinFormatMachO()) {
     const bool IsILP32 = TheTriple.isArch32Bit();
-    return new DarwinAArch64AsmBackend(T, TheTriple, MRI, IsILP32);
+    const bool IsARM64E = TheTriple.getArchName() == "arm64e";
+    return new DarwinAArch64AsmBackend(T, TheTriple, MRI, IsILP32, IsARM64E);
   }
 
   if (TheTriple.isOSBinFormatCOFF())

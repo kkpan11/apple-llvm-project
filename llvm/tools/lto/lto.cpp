@@ -113,7 +113,7 @@ static void lto_initialize() {
     static LLVMContext Context;
     LTOContext = &Context;
     LTOContext->setDiagnosticHandler(
-        llvm::make_unique<LTOToolDiagnosticHandler>(), true);
+        std::make_unique<LTOToolDiagnosticHandler>(), true);
     initialized = true;
   }
 }
@@ -278,8 +278,8 @@ lto_module_t lto_module_create_in_local_context(const void *mem, size_t length,
   llvm::TargetOptions Options = InitTargetOptionsFromCodeGenFlags();
 
   // Create a local context. Ownership will be transferred to LTOModule.
-  std::unique_ptr<LLVMContext> Context = llvm::make_unique<LLVMContext>();
-  Context->setDiagnosticHandler(llvm::make_unique<LTOToolDiagnosticHandler>(),
+  std::unique_ptr<LLVMContext> Context = std::make_unique<LLVMContext>();
+  Context->setDiagnosticHandler(std::make_unique<LTOToolDiagnosticHandler>(),
                                 true);
 
   ErrorOr<std::unique_ptr<LTOModule>> M = LTOModule::createInLocalContext(
@@ -339,7 +339,7 @@ static lto_code_gen_t createCodeGen(bool InLocalContext) {
   TargetOptions Options = InitTargetOptionsFromCodeGenFlags();
 
   LibLTOCodeGenerator *CodeGen =
-      InLocalContext ? new LibLTOCodeGenerator(make_unique<LLVMContext>())
+      InLocalContext ? new LibLTOCodeGenerator(std::make_unique<LLVMContext>())
                      : new LibLTOCodeGenerator();
   CodeGen->setTargetOptions(Options);
   return wrap(CodeGen);

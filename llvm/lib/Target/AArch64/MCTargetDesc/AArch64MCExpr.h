@@ -14,6 +14,7 @@
 #ifndef LLVM_LIB_TARGET_AARCH64_MCTARGETDESC_AARCH64MCEXPR_H
 #define LLVM_LIB_TARGET_AARCH64_MCTARGETDESC_AARCH64MCEXPR_H
 
+#include "Utils/AArch64BaseInfo.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/Support/ErrorHandling.h"
 
@@ -27,12 +28,15 @@ public:
     // symbol. E.g. direct, via the GOT, ...
     VK_ABS      = 0x001,
     VK_SABS     = 0x002,
-    VK_GOT      = 0x003,
-    VK_DTPREL   = 0x004,
-    VK_GOTTPREL = 0x005,
-    VK_TPREL    = 0x006,
-    VK_TLSDESC  = 0x007,
-    VK_SECREL   = 0x008,
+    VK_PREL     = 0x003,
+    VK_GOT      = 0x004,
+    VK_DTPREL   = 0x005,
+    VK_GOTTPREL = 0x006,
+    VK_TPREL    = 0x007,
+    VK_TLSDESC  = 0x008,
+    VK_SECREL   = 0x009,
+    VK_AUTH     = 0x00a,
+    VK_AUTHADDR = 0x00b,
     VK_SymLocBits = 0x00f,
 
     // Variants specifying which part of the final address calculation is
@@ -72,6 +76,13 @@ public:
     VK_ABS_G0_S          = VK_SABS     | VK_G0,
     VK_ABS_G0_NC         = VK_ABS      | VK_G0      | VK_NC,
     VK_LO12              = VK_ABS      | VK_PAGEOFF | VK_NC,
+    VK_PREL_G3           = VK_PREL     | VK_G3,
+    VK_PREL_G2           = VK_PREL     | VK_G2,
+    VK_PREL_G2_NC        = VK_PREL     | VK_G2      | VK_NC,
+    VK_PREL_G1           = VK_PREL     | VK_G1,
+    VK_PREL_G1_NC        = VK_PREL     | VK_G1      | VK_NC,
+    VK_PREL_G0           = VK_PREL     | VK_G0,
+    VK_PREL_G0_NC        = VK_PREL     | VK_G0      | VK_NC,
     VK_GOT_LO12          = VK_GOT      | VK_PAGEOFF | VK_NC,
     VK_GOT_PAGE          = VK_GOT      | VK_PAGE,
     VK_DTPREL_G2         = VK_DTPREL   | VK_G2,
@@ -106,6 +117,7 @@ private:
   const MCExpr *Expr;
   const VariantKind Kind;
 
+protected:
   explicit AArch64MCExpr(const MCExpr *Expr, VariantKind Kind)
     : Expr(Expr), Kind(Kind) {}
 
@@ -162,6 +174,53 @@ public:
   }
 
   static bool classof(const AArch64MCExpr *) { return true; }
+};
+
+class AArch64AuthMCExpr : public AArch64MCExpr {
+  uint16_t Discriminator;
+  AArch64PACKey::ID Key;
+
+  explicit AArch64AuthMCExpr(const MCExpr *Expr, uint16_t Discriminator,
+                             AArch64PACKey::ID Key, bool HasAddressDiversity)
+      : AArch64MCExpr(Expr, HasAddressDiversity ? VK_AUTHADDR : VK_AUTH),
+        Discriminator(Discriminator), Key(Key) {}
+
+public:
+  /// @name Construction
+  /// @{
+
+  static const AArch64AuthMCExpr *
+  create(const MCExpr *Expr, uint16_t Discriminator, AArch64PACKey::ID Key,
+         bool HasAddressDiversity, MCContext &Ctx);
+
+  /// @}
+  /// @name Accessors
+  /// @{
+
+  AArch64PACKey::ID getKey() const { return Key; }
+  uint16_t getDiscriminator() const { return Discriminator; }
+  bool hasAddressDiversity() const { return getKind() == VK_AUTHADDR; }
+
+  /// @}
+
+  void printImpl(raw_ostream &OS, const MCAsmInfo *MAI) const override;
+
+  void visitUsedExpr(MCStreamer &Streamer) const override;
+
+  MCFragment *findAssociatedFragment() const override;
+
+  bool evaluateAsRelocatableImpl(MCValue &Res, const MCAsmLayout *Layout,
+                                 const MCFixup *Fixup) const override;
+
+  void fixELFSymbolsInTLSFixups(MCAssembler &Asm) const override;
+
+  static bool classof(const MCExpr *E) {
+    return E->getKind() == MCExpr::Target;
+  }
+
+  static bool classof(const AArch64MCExpr *E) {
+    return E->getKind() == VK_AUTH || E->getKind() == VK_AUTHADDR;
+  }
 };
 } // end namespace llvm
 

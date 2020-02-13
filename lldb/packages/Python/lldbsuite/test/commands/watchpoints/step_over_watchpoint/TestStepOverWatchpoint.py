@@ -1,6 +1,5 @@
 """Test stepping over watchpoints."""
 
-from __future__ import print_function
 
 
 import lldb
@@ -12,6 +11,7 @@ from lldbsuite.test import lldbutil
 class TestStepOverWatchpoint(TestBase):
 
     mydir = TestBase.compute_mydir(__file__)
+    NO_DEBUG_INFO_TESTCASE = True
 
     @expectedFailureAll(
         oslist=["linux"],
@@ -19,6 +19,7 @@ class TestStepOverWatchpoint(TestBase):
             'aarch64',
             'arm'],
         bugnumber="llvm.org/pr26031")
+    @expectedFailureAll(oslist=["linux"], bugnumber="bugs.swift.org/SR-796")
     # Read-write watchpoints not supported on SystemZ
     @expectedFailureAll(archs=['s390x'])
     @expectedFailureAll(oslist=["ios", "watchos", "tvos", "bridgeos"], bugnumber="<rdar://problem/34027183>")  # watchpoint tests aren't working on arm64

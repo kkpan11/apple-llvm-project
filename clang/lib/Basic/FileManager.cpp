@@ -18,9 +18,10 @@
 
 #include "clang/Basic/FileManager.h"
 #include "clang/Basic/FileSystemStatCache.h"
-#include "llvm/ADT/SmallString.h"
-#include "llvm/Config/llvm-config.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/Statistic.h"
+#include "llvm/Config/llvm-config.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
@@ -35,6 +36,14 @@
 
 using namespace clang;
 
+#define DEBUG_TYPE "file-search"
+
+ALWAYS_ENABLED_STATISTIC(NumDirLookups, "Number of directory lookups.");
+ALWAYS_ENABLED_STATISTIC(NumFileLookups, "Number of file lookups.");
+ALWAYS_ENABLED_STATISTIC(NumDirCacheMisses,
+                         "Number of directory cache misses.");
+ALWAYS_ENABLED_STATISTIC(NumFileCacheMisses, "Number of file cache misses.");
+
 //===----------------------------------------------------------------------===//
 // Common logic.
 //===----------------------------------------------------------------------===//
@@ -43,9 +52,6 @@ FileManager::FileManager(const FileSystemOptions &FSO,
                          IntrusiveRefCntPtr<llvm::vfs::FileSystem> FS)
     : FS(std::move(FS)), FileSystemOpts(FSO), SeenDirEntries(64),
       SeenFileEntries(64), NextFileUID(0) {
-  NumDirLookups = NumFileLookups = 0;
-  NumDirCacheMisses = NumFileCacheMisses = 0;
-
   // If the caller doesn't provide a virtual file system, just grab the real
   // file system.
   if (!this->FS)
@@ -98,7 +104,7 @@ void FileManager::addAncestorsAsVirtualDirs(StringRef Path) {
     return;
 
   // Add the virtual directory to the cache.
-  auto UDE = llvm::make_unique<DirectoryEntry>();
+  auto UDE = std::make_unique<DirectoryEntry>();
   UDE->Name = NamedDirEnt.first();
   NamedDirEnt.second = *UDE.get();
   VirtualDirectoryEntries.push_back(std::move(UDE));
@@ -382,7 +388,7 @@ FileManager::getVirtualFile(StringRef Filename, off_t Size,
     UFE->IsNamedPipe = Status.getType() == llvm::sys::fs::file_type::fifo_file;
     fillRealPathName(UFE, Status.getName());
   } else {
-    VirtualFileEntries.push_back(llvm::make_unique<FileEntry>());
+    VirtualFileEntries.push_back(std::make_unique<FileEntry>());
     UFE = VirtualFileEntries.back().get();
     NamedFileEnt.second = UFE;
   }
@@ -395,6 +401,25 @@ FileManager::getVirtualFile(StringRef Filename, off_t Size,
   UFE->IsValid = true;
   UFE->File.reset();
   return UFE;
+}
+
+llvm::Optional<FileEntryRef> FileManager::getBypassFile(FileEntryRef VF) {
+  // Stat of the file and return nullptr if it doesn't exist.
+  llvm::vfs::Status Status;
+  if (getStatValue(VF.getName(), Status, /*isFile=*/true, /*F=*/nullptr))
+    return None;
+
+  // Fill it in from the stat.
+  BypassFileEntries.push_back(std::make_unique<FileEntry>());
+  const FileEntry &VFE = VF.getFileEntry();
+  FileEntry &BFE = *BypassFileEntries.back();
+  BFE.Name = VFE.getName();
+  BFE.Size = Status.getSize();
+  BFE.Dir = VFE.Dir;
+  BFE.ModTime = llvm::sys::toTimeT(Status.getLastModificationTime());
+  BFE.UID = NextFileUID++;
+  BFE.IsValid = true;
+  return FileEntryRef(VF.getName(), BFE);
 }
 
 bool FileManager::FixupRelativePath(SmallVectorImpl<char> &path) const {
@@ -433,8 +458,7 @@ void FileManager::fillRealPathName(FileEntry *UFE, llvm::StringRef FileName) {
 }
 
 llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
-FileManager::getBufferForFile(const FileEntry *Entry, bool isVolatile,
-                              bool ShouldCloseOpenFile) {
+FileManager::getBufferForFile(const FileEntry *Entry, bool isVolatile) {
   uint64_t FileSize = Entry->getSize();
   // If there's a high enough chance that the file have changed since we
   // got its size, force a stat before opening it.
@@ -447,33 +471,25 @@ FileManager::getBufferForFile(const FileEntry *Entry, bool isVolatile,
     auto Result =
         Entry->File->getBuffer(Filename, FileSize,
                                /*RequiresNullTerminator=*/true, isVolatile);
-    // FIXME: we need a set of APIs that can make guarantees about whether a
-    // FileEntry is open or not.
-    if (ShouldCloseOpenFile)
-      Entry->closeFile();
+    Entry->closeFile();
     return Result;
   }
 
   // Otherwise, open the file.
+  return getBufferForFileImpl(Filename, FileSize, isVolatile);
+}
 
+llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
+FileManager::getBufferForFileImpl(StringRef Filename, int64_t FileSize,
+                                  bool isVolatile) {
   if (FileSystemOpts.WorkingDir.empty())
     return FS->getBufferForFile(Filename, FileSize,
                                 /*RequiresNullTerminator=*/true, isVolatile);
 
-  SmallString<128> FilePath(Entry->getName());
+  SmallString<128> FilePath(Filename);
   FixupRelativePath(FilePath);
   return FS->getBufferForFile(FilePath, FileSize,
                               /*RequiresNullTerminator=*/true, isVolatile);
-}
-
-llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
-FileManager::getBufferForFile(StringRef Filename, bool isVolatile) {
-  if (FileSystemOpts.WorkingDir.empty())
-    return FS->getBufferForFile(Filename, -1, true, isVolatile);
-
-  SmallString<128> FilePath(Filename);
-  FixupRelativePath(FilePath);
-  return FS->getBufferForFile(FilePath.c_str(), -1, true, isVolatile);
 }
 
 /// getStatValue - Get the 'stat' information for the specified path,
@@ -510,20 +526,6 @@ FileManager::getNoncachedStatValue(StringRef Path,
   return std::error_code();
 }
 
-void FileManager::invalidateCache(const FileEntry *Entry) {
-  assert(Entry && "Cannot invalidate a NULL FileEntry");
-
-  SeenFileEntries.erase(Entry->getName());
-
-  // FileEntry invalidation should not block future optimizations in the file
-  // caches. Possible alternatives are cache truncation (invalidate last N) or
-  // invalidation of the whole cache.
-  //
-  // FIXME: This is broken. We sometimes have the same FileEntry* shared
-  // betweeen multiple SeenFileEntries, so this can leave dangling pointers.
-  UniqueRealFiles.erase(Entry->getUniqueID());
-}
-
 void FileManager::GetUniqueIDMapping(
                    SmallVectorImpl<const FileEntry *> &UIDToFiles) const {
   UIDToFiles.clear();
@@ -545,17 +547,10 @@ void FileManager::GetUniqueIDMapping(
     UIDToFiles[VFE->getUID()] = VFE.get();
 }
 
-void FileManager::modifyFileEntry(FileEntry *File,
-                                  off_t Size, time_t ModificationTime) {
-  File->Size = Size;
-  File->ModTime = ModificationTime;
-}
-
 StringRef FileManager::getCanonicalName(const DirectoryEntry *Dir) {
-  // FIXME: use llvm::sys::fs::canonical() when it gets implemented
-  llvm::DenseMap<const DirectoryEntry *, llvm::StringRef>::iterator Known
-    = CanonicalDirNames.find(Dir);
-  if (Known != CanonicalDirNames.end())
+  llvm::DenseMap<const void *, llvm::StringRef>::iterator Known
+    = CanonicalNames.find(Dir);
+  if (Known != CanonicalNames.end())
     return Known->second;
 
   StringRef CanonicalName(Dir->getName());
@@ -564,7 +559,23 @@ StringRef FileManager::getCanonicalName(const DirectoryEntry *Dir) {
   if (!FS->getRealPath(Dir->getName(), CanonicalNameBuf))
     CanonicalName = StringRef(CanonicalNameBuf).copy(CanonicalNameStorage);
 
-  CanonicalDirNames.insert({Dir, CanonicalName});
+  CanonicalNames.insert({Dir, CanonicalName});
+  return CanonicalName;
+}
+
+StringRef FileManager::getCanonicalName(const FileEntry *File) {
+  llvm::DenseMap<const void *, llvm::StringRef>::iterator Known
+    = CanonicalNames.find(File);
+  if (Known != CanonicalNames.end())
+    return Known->second;
+
+  StringRef CanonicalName(File->getName());
+
+  SmallString<4096> CanonicalNameBuf;
+  if (!FS->getRealPath(File->getName(), CanonicalNameBuf))
+    CanonicalName = StringRef(CanonicalNameBuf).copy(CanonicalNameStorage);
+
+  CanonicalNames.insert({File, CanonicalName});
   return CanonicalName;
 }
 
