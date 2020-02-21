@@ -3924,6 +3924,13 @@ void SwiftASTContext::LoadModule(swift::ModuleDecl *swift_module,
                                  Process &process, Status &error) {
   VALID_OR_RETURN_VOID();
 
+  // Avoid doing the rest if we already processed this module. There
+  // is a a recursive search for all dependencies and a linear scans
+  // through the list of all images for each dependency that is
+  // costly.
+  if (m_linked_libraries_loaded.Lookup(swift_module))
+    return;
+  
   Status current_error;
   auto addLinkLibrary = [&](swift::LinkLibrary link_lib) {
     Status load_image_error;
@@ -4103,6 +4110,9 @@ void SwiftASTContext::LoadModule(swift::ModuleDecl *swift_module,
     import.second->collectLinkLibraries(addLinkLibrary);
   }
   error = current_error;
+
+  // Mark this module as processed.
+  m_linked_libraries_loaded.Insert(swift_module);
 }
 
 bool SwiftASTContext::LoadLibraryUsingPaths(

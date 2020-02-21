@@ -853,6 +853,9 @@ protected:
   typedef ThreadSafeDenseMap<const char *, lldb::TypeSP> SwiftTypeMap;
   SwiftTypeMap m_swift_type_map;
 
+  /// Keeps track of the Swift modules for whil all dylibs have been loaded.
+  ThreadSafeDenseSet<swift::ModuleDecl *> m_linked_libraries_loaded;
+  
   /// Used in the logs.
   std::string m_description;
   /// @}
