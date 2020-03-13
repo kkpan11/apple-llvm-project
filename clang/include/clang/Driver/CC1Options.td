@@ -572,6 +572,30 @@ def ftest_module_file_extension_EQ :
            "The argument is parsed as blockname:major:minor:hashed:user info">;
 def fconcepts_ts : Flag<["-"], "fconcepts-ts">,
   HelpText<"Enable C++ Extensions for Concepts.">;
+def fodr_hash_attributes:
+  Flag<["-"], "fodr-hash-attributes">,
+  HelpText<"Enable ODR hash checking for attributes ">;
+def fno_odr_hash_categories:
+  Flag<["-"], "fno-odr-hash-categories">,
+  HelpText<"Disable ODR hash checking for categories">;
+def fno_odr_hash_interfaces:
+  Flag<["-"], "fno-odr-hash-interfaces">,
+  HelpText<"Disable ODR hash checking for interfaces">;
+def fno_odr_hash_protocols:
+  Flag<["-"], "fno-odr-hash-protocols">,
+  HelpText<"Disable ODR hash checking for protocols">;
+def fno_odr_hash_records:
+  Flag<["-"], "fno-odr-hash-records">,
+  HelpText<"Disable ODR hash checking for records">;
+def fno_odr_hash_properties:
+  Flag<["-"], "fno-odr-hash-properties">,
+  HelpText<"Disable ODR hash checking for properties">;
+def fno_odr_hash_ivars:
+  Flag<["-"], "fno-odr-hash-ivars">,
+  HelpText<"Disable ODR hash checking for ivars">;
+def fno_odr_hash_methods:
+  Flag<["-"], "fno-odr-hash-methods">,
+  HelpText<"Disable ODR hash checking for methods">;
 
 let Group = Action_Group in {
 

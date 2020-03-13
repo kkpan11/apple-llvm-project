@@ -1240,9 +1240,12 @@ static llvm::Expected<ParsedExpression> ParseAndImport(
     source_file_kind = swift::SourceFileKind::Main;
   }
 
+  // Create the source file. Note, we disable delayed parsing for the
+  // swift expression parser.
   swift::SourceFile *source_file = new (*ast_context) swift::SourceFile(
       module, source_file_kind, buffer_id, implicit_import_kind,
-      /*Keep tokens*/ false);
+      /*Keep tokens*/ false, /*KeepSyntaxTree*/ false,
+      swift::SourceFile::ParsingFlags::DisableDelayedBodies);
   module.addFile(*source_file);
 
 
@@ -1304,11 +1307,6 @@ static llvm::Expected<ParsedExpression> ParseAndImport(
   //        DebuggerClients alive as long as the Module we are not
   //        inserting them in.
   swift_ast_context->AddDebuggerClient(external_lookup);
-
-  // Note, we disable delayed parsing for the swift expression parser.
-  swift::parseIntoSourceFile(*source_file, buffer_id,
-                             /*PersistentState=*/nullptr,
-                             /*DelayBodyParsing=*/false);
 
   if (swift_ast_context->HasErrors())
     return make_error<SwiftASTContextError>();

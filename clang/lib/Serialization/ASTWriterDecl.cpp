@@ -832,12 +832,14 @@ void ASTDeclWriter::VisitObjCAtDefsFieldDecl(ObjCAtDefsFieldDecl *D) {
 }
 
 void ASTDeclWriter::VisitObjCCategoryDecl(ObjCCategoryDecl *D) {
+  VisitRedeclarable(D);
   VisitObjCContainerDecl(D);
   Record.AddSourceLocation(D->getCategoryNameLoc());
   Record.AddSourceLocation(D->getIvarLBraceLoc());
   Record.AddSourceLocation(D->getIvarRBraceLoc());
   Record.AddDeclRef(D->getClassInterface());
   AddObjCTypeParamList(D->TypeParamList);
+  Record.push_back(D->getODRHash());
   Record.push_back(D->protocol_size());
   for (const auto *I : D->protocols())
     Record.AddDeclRef(I);
@@ -2056,7 +2058,7 @@ void ASTWriter::WriteDeclAbbrevs() {
   // getArgPassingRestrictions
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 2));
   // ODRHash
-  Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 32));
+  Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 28));
 
   // DC
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6));   // LexicalOffset

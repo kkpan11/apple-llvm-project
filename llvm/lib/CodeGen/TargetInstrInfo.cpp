@@ -142,7 +142,7 @@ TargetInstrInfo::ReplaceTailWithBranchTo(MachineBasicBlock::iterator Tail,
   // from the end of MBB.
   while (Tail != MBB->end()) {
     auto MI = Tail++;
-    if (MI->isCandidateForCallSiteEntry())
+    if (MI->shouldUpdateCallSiteInfo())
       MBB->getParent()->eraseCallSiteInfo(&*MI);
     MBB->erase(MI);
   }
@@ -1136,14 +1136,25 @@ TargetInstrInfo::describeLoadedValue(const MachineInstr &MI,
   if (auto DestSrc = isCopyInstr(MI)) {
     Register DestReg = DestSrc->Destination->getReg();
 
+    // If the copy destination is the forwarding reg, describe the forwarding
+    // reg using the copy source as the backup location. Example:
+    //
+    //   x0 = MOV x7
+    //   call callee(x0)      ; x0 described as x7
     if (Reg == DestReg)
       return ParamLoadedValue(*DestSrc->Source, Expr);
 
+    // This assert was hit in rdar://59772698 because the ARM backend failed
+    // to recognize a sequence of two VMOVS instructions which initialized a
+    // 64-bit register. That issue was fixed in D75273 and the fix was cherry
+    // picked, but we don't want the assert to fire on the stable branch in M3.
+#if 0
     // Cases where super- or sub-registers needs to be described should
     // be handled by the target's hook implementation.
     assert(!TRI->isSuperOrSubRegisterEq(Reg, DestReg) &&
            "TargetInstrInfo::describeLoadedValue can't describe super- or "
            "sub-regs for copy instructions");
+#endif
     return None;
   } else if (auto RegImm = isAddImmediate(MI, Reg)) {
     Register SrcReg = RegImm->Reg;
