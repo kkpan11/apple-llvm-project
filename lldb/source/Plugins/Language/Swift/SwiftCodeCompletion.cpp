@@ -228,12 +228,6 @@ SwiftCompleteCode(SwiftASTContext &SwiftCtx,
   // parsing the file, so we set it now.
   ctx.SourceMgr.setCodeCompletionPoint(completionCodeBufferID,
                                        completionOffset);
-  PersistentParserState completionCodeFileParserState;
-  {
-    DiagnosticTransaction diagTxn(ctx.Diags);
-    parseIntoSourceFile(completionCodeFile, completionCodeBufferID,
-                        &completionCodeFileParserState);
-  }
 
   // Accumulate hand imports into `completionCodeFile`. (Hand imports are
   // imports imported in previous REPL executions).
@@ -305,7 +299,7 @@ SwiftCompleteCode(SwiftASTContext &SwiftCtx,
   {
     DiagnosticTransaction diagTxn(ctx.Diags);
     performTypeChecking(completionCodeFile);
-    performCodeCompletionSecondPass(completionCodeFileParserState,
+    performCodeCompletionSecondPass(completionCodeFile,
                                     *completionCallbacksFactory);
   }
 
