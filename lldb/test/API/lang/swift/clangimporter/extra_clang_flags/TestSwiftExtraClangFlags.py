@@ -13,6 +13,8 @@ class TestSwiftExtraClangFlags(TestBase):
 
     # TODO(TF-659): Remove "@skipIfDarwin"
     @skipIfDarwin
+    # Don't run ClangImporter tests if Clangimporter is disabled.
+    @skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
     @skipUnlessDarwin
     @swiftTest
     def test_sanity(self):
@@ -24,6 +26,8 @@ class TestSwiftExtraClangFlags(TestBase):
 
     # TODO(TF-659): Remove "@skipIfDarwin"
     @skipIfDarwin
+    # Don't run ClangImporter tests if Clangimporter is disabled.
+    @skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
     @skipUnlessDarwin
     @swiftTest
     def test_extra_clang_flags(self):
