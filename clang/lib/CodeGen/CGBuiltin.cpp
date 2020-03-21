@@ -3642,8 +3642,32 @@ RValue CodeGenFunction::EmitBuiltinExpr(const GlobalDecl GD, unsigned BuiltinID,
   case Builtin::BI__builtin_ptrauth_strip: {
     // Emit the arguments.
     SmallVector<llvm::Value*, 5> args;
-    for (auto argExpr : E->arguments())
-      args.push_back(EmitScalarExpr(argExpr));
+    CallExpr::const_arg_iterator arg = E->arg_begin(), argEnd = E->arg_end();
+
+    // Don't authenticate a ptrauth-qualified pointer before it's passed to
+    // ptrauth_strip, ptrauth_auth, or ptrauth_resign.
+    switch (BuiltinID) {
+    default:
+      break;
+    case Builtin::BI__builtin_ptrauth_auth:
+    case Builtin::BI__builtin_ptrauth_auth_and_resign:
+    case Builtin::BI__builtin_ptrauth_strip:
+      if (auto *cast = dyn_cast<CastExpr>(*arg))
+        if (cast->getCastKind() == CK_LValueToRValue) {
+          const Expr *subExpr = cast->getSubExpr();
+          if (subExpr->getType().getPointerAuth()) {
+            LValue lv = EmitLValue(subExpr);
+            lv.getQuals().removePtrAuth();
+            args.push_back(
+                EmitLoadOfLValue(lv, subExpr->getExprLoc()).getScalarVal());
+            ++arg;
+          }
+        }
+      break;
+    }
+
+    for (; arg != argEnd; ++arg)
+      args.push_back(EmitScalarExpr(*arg));
 
     // Cast the value to intptr_t, saving its original type.
     llvm::Type *origValueType = args[0]->getType();
