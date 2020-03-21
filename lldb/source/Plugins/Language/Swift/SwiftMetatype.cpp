@@ -30,7 +30,7 @@ bool lldb_private::formatters::swift::SwiftMetatype_SummaryProvider(
   if (metadata_ptr == LLDB_INVALID_ADDRESS || metadata_ptr == 0) {
     CompilerType compiler_metatype_type(valobj.GetCompilerType());
     CompilerType instancetype =
-      SwiftASTContext::GetInstanceType(compiler_metatype_type);
+      TypeSystemSwift::GetInstanceType(compiler_metatype_type);
 
     const char *ptr = instancetype.GetDisplayTypeName().AsCString(nullptr);
     if (ptr && *ptr) {
@@ -43,6 +43,8 @@ bool lldb_private::formatters::swift::SwiftMetatype_SummaryProvider(
       return false;
     SwiftLanguageRuntime::MetadataPromiseSP metadata_promise_sp =
       swift_runtime->GetMetadataPromise(metadata_ptr, valobj);
+    if (!metadata_promise_sp)
+      return false;
     if (CompilerType resolved_type =
             metadata_promise_sp->FulfillTypePromise()) {
       stream.Printf("%s", resolved_type.GetDisplayTypeName().AsCString());

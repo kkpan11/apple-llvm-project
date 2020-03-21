@@ -1919,7 +1919,7 @@ HeaderFileInfoTrait::ReadData(internal_key_ref key, const unsigned char *d,
     // FIXME: This is not always the right filename-as-written, but we're not
     // going to use this information to rebuild the module, so it doesn't make
     // a lot of difference.
-    Module::Header H = { key.Filename, *FileMgr.getFile(Filename) };
+    Module::Header H = {std::string(key.Filename), "", *FileMgr.getFile(Filename)};
     ModMap.addHeader(Mod, H, HeaderRole, /*Imported*/true);
     HFI.isModuleHeader |= !(HeaderRole & ModuleMap::TextualHeader);
   }
@@ -5549,7 +5549,8 @@ ASTReader::ReadSubmoduleBlock(ModuleFile &F, unsigned ClientLoadCapabilities) {
       ResolveImportedPath(F, Filename);
       if (auto Umbrella = PP.getFileManager().getFile(Filename)) {
         if (!CurrentModule->getUmbrellaHeader())
-          ModMap.setUmbrellaHeader(CurrentModule, *Umbrella, Blob);
+          // FIXME: NameAsWritten
+          ModMap.setUmbrellaHeader(CurrentModule, *Umbrella, Blob, "");
         else if (CurrentModule->getUmbrellaHeader().Entry != *Umbrella) {
           if ((ClientLoadCapabilities & ARR_OutOfDate) == 0)
             Error("mismatched umbrella headers in submodule");
@@ -5582,7 +5583,8 @@ ASTReader::ReadSubmoduleBlock(ModuleFile &F, unsigned ClientLoadCapabilities) {
       ResolveImportedPath(F, Dirname);
       if (auto Umbrella = PP.getFileManager().getDirectory(Dirname)) {
         if (!CurrentModule->getUmbrellaDir())
-          ModMap.setUmbrellaDir(CurrentModule, *Umbrella, Blob);
+          // FIXME: NameAsWritten
+          ModMap.setUmbrellaDir(CurrentModule, *Umbrella, Blob, "");
         else if (CurrentModule->getUmbrellaDir().Entry != *Umbrella) {
           if ((ClientLoadCapabilities & ARR_OutOfDate) == 0)
             Error("mismatched umbrella directories in submodule");
@@ -9272,7 +9274,8 @@ void ASTReader::diagnoseOdrViolations() {
       PendingEnumOdrMergeFailures.empty() &&
       PendingRecordOdrMergeFailures.empty() &&
       PendingObjCInterfaceOdrMergeFailures.empty() &&
-      PendingObjCProtocolOdrMergeFailures.empty())
+      PendingObjCProtocolOdrMergeFailures.empty() &&
+      PendingObjCCategoryOdrMergeFailures.empty())
     return;
 
   // Trigger the import of the full definition of each class that had any
@@ -9321,6 +9324,15 @@ void ASTReader::diagnoseOdrViolations() {
       ProtocolPair.first->decls_begin();
   }
 
+  auto ObjCCategoryOdrMergeFailures =
+      std::move(PendingObjCCategoryOdrMergeFailures);
+  PendingObjCCategoryOdrMergeFailures.clear();
+  for (auto &Merge : ObjCCategoryOdrMergeFailures) {
+    Merge.first->decls_begin();
+    for (auto &CategoryPair : Merge.second)
+      CategoryPair.first->decls_begin();
+  }
+
   // Trigger the import of functions.
   auto FunctionOdrMergeFailures = std::move(PendingFunctionOdrMergeFailures);
   PendingFunctionOdrMergeFailures.clear();
@@ -9362,12 +9374,6 @@ void ASTReader::diagnoseOdrViolations() {
       continue;
 
     DeclContext *CanonDef = D->getDeclContext();
-
-    // Skip ODR checking for structs without a definition for C/ObjC mode.
-    if (!PP.getLangOpts().CPlusPlus)
-      if (RecordDecl *RD = dyn_cast<RecordDecl>(CanonDef))
-        if (!RD->isCompleteDefinition())
-          continue;
 
     bool Found = false;
     const Decl *DCanon = D->getCanonicalDecl();
@@ -9436,6 +9442,7 @@ void ASTReader::diagnoseOdrViolations() {
   if (OdrMergeFailures.empty() && FunctionOdrMergeFailures.empty() &&
       EnumOdrMergeFailures.empty() && RecordOdrMergeFailures.empty() &&
       ObjCInterfaceOdrMergeFailures.empty() &&
+      ObjCCategoryOdrMergeFailures.empty() &&
       ObjCProtocolOdrMergeFailures.empty())
     return;
 
@@ -9478,6 +9485,12 @@ void ASTReader::diagnoseOdrViolations() {
         Hash.AddTemplateParameterList(TPL);
         return Hash.CalculateHash();
       };
+
+  auto ComputeAttrODRHash = [&Hash](const Attr *A) {
+    Hash.clear();
+    Hash.AddAttr(A);
+    return Hash.CalculateHash();
+  };
 
   // Used with err_module_odr_violation_mismatch_decl and
   // note_module_odr_violation_mismatch_decl
@@ -9559,17 +9572,27 @@ void ASTReader::diagnoseOdrViolations() {
     ObjCPropertyType,
     ObjCPropertyAttributes,
     ObjCImplementationControl,
-    ObjCReferencedProtocolName
+    ObjCReferencedProtocolName,
+    AttributeKind
   };
 
   // These lambdas have the common portions of the ODR diagnostics.  This
   // has the same return as Diag(), so addition parameters can be passed
   // in with operator<<
-  auto ODRDiagDeclError = [this](const NamedDecl *FirstRecord, StringRef FirstModule,
-                                 SourceLocation Loc, SourceRange Range,
+  auto ODRDiagDeclError = [this](const NamedDecl *FirstRecord,
+                                 StringRef FirstModule, SourceLocation Loc,
+                                 SourceRange Range,
                                  ODRMismatchDeclDifference DiffType) {
+    std::string Name;
+    llvm::raw_string_ostream OS(Name);
+    if (auto *C = dyn_cast<ObjCCategoryDecl>(FirstRecord))
+      OS << "category '" << C->getName() << "' on interface '"
+         << C->getClassInterface()->getName() << "'";
+    else
+      OS << "'" << FirstRecord->getQualifiedNameAsString() << "'";
+
     return Diag(Loc, diag::err_module_odr_violation_mismatch_decl_diff)
-           << FirstRecord << FirstModule.empty() << FirstModule << Range
+           << OS.str() << FirstModule.empty() << FirstModule << Range
            << DiffType;
   };
   auto ODRDiagDeclNote = [this](StringRef SecondModule, SourceLocation Loc,
@@ -9904,6 +9927,55 @@ void ASTReader::diagnoseOdrViolations() {
       ODRDiagDeclNote(SecondModule, SecondVD->getLocation(),
                       SecondVD->getSourceRange(), VarConstexpr)
           << SecondName << SecondIsConstexpr;
+      return true;
+    }
+    return false;
+  };
+
+  auto ODRDiagAttrs = [&ODRDiagDeclError, &ODRDiagDeclNote,
+                       &ComputeAttrODRHash, this](
+                          NamedDecl *FirstContainer, NamedDecl *SecondContainer,
+                          StringRef FirstModule, StringRef SecondModule,
+                          llvm::SmallVectorImpl<const Attr *> &FirstAttrs,
+                          llvm::SmallVectorImpl<const Attr *> &SecondAttrs) {
+    unsigned NumFirstAttrs = FirstAttrs.size();
+    unsigned NumSecondAttrs = SecondAttrs.size();
+    if (!NumFirstAttrs && !NumSecondAttrs)
+      return false;
+
+    const Attr *LHS = nullptr;
+    const Attr *RHS = nullptr;
+    auto MaxNumAttrs = std::max(NumFirstAttrs, NumSecondAttrs);
+    for (unsigned I = 0; I < MaxNumAttrs; ++I) {
+      if (I < NumFirstAttrs)
+        LHS = FirstAttrs[I];
+      if (I < NumSecondAttrs)
+        RHS = SecondAttrs[I];
+      if (LHS && RHS && ComputeAttrODRHash(LHS) == ComputeAttrODRHash(RHS))
+        continue;
+
+      std::string LHSName, RHSName;
+      llvm::raw_string_ostream OSL(LHSName), OSR(RHSName);
+      if (LHS)
+        LHS->printPretty(OSL, this->getContext().getPrintingPolicy());
+      if (RHS)
+        RHS->printPretty(OSR, this->getContext().getPrintingPolicy());
+
+      SourceLocation LHSLoc =
+          LHS ? LHS->getLocation() : FirstContainer->getLocation();
+      SourceLocation RHSLoc =
+          RHS ? RHS->getLocation() : SecondContainer->getLocation();
+      SourceRange LHSRange =
+          LHS ? LHS->getRange() : FirstContainer->getSourceRange();
+      SourceRange RHSRange =
+          RHS ? RHS->getRange() : SecondContainer->getSourceRange();
+
+      ODRDiagDeclError(FirstContainer, FirstModule, LHSLoc,
+                       LHSRange, AttributeKind)
+          << (LHS != nullptr) << OSL.str();
+      ODRDiagDeclNote(SecondModule, RHSLoc, RHSRange,
+                      AttributeKind)
+          << (RHS != nullptr) << OSR.str();
       return true;
     }
     return false;
@@ -11168,8 +11240,7 @@ void ASTReader::diagnoseOdrViolations() {
         Hashes.emplace_back(P.first, ComputeSubDeclODRHash(P.first));
         continue;
       }
-
-      if (!SubRec->isCompleteDefinition())
+      if (!SubRec->isAnonymousStructOrUnion())
         continue;
       for (auto *SubD : SubRec->decls())
         WorkList.push_front(std::make_pair(SubD, SubRec));
@@ -11187,16 +11258,12 @@ void ASTReader::diagnoseOdrViolations() {
 
     bool Diagnosed = false;
     RecordDecl *FirstRecord = Merge.first;
-    if (!FirstRecord->isCompleteDefinition())
-      continue;
 
     std::string FirstModule = getOwningModuleNameForDiagnostic(FirstRecord);
     for (auto *SecondRecord : Merge.second) {
       // Multiple different declarations got merged together; tell the user
       // where they came from.
       if (FirstRecord == SecondRecord)
-        continue;
-      if (!SecondRecord->isCompleteDefinition())
         continue;
 
       std::string SecondModule = getOwningModuleNameForDiagnostic(SecondRecord);
@@ -11213,7 +11280,32 @@ void ASTReader::diagnoseOdrViolations() {
       Decl *FirstDecl = DR.FirstDecl;
       Decl *SecondDecl = DR.SecondDecl;
 
+      auto GetAttrList = [](llvm::SmallVectorImpl<const Attr *> &Attrs,
+                            NamedDecl *D) {
+        if (!D->hasAttrs())
+          return;
+        for (const Attr *A : D->getAttrs()) {
+          if (ODRHash::isWhitelistedAttr(A))
+            Attrs.push_back(A);
+        }
+        llvm::sort(Attrs, [](const Attr *A, const Attr *B) {
+          return Attr::compare(A, B);
+        });
+      };
+
       if (FirstDiffType == Other || SecondDiffType == Other) {
+        // The difference might be in the attributes, check for that.
+        if (FirstRecord->hasAttrs() || SecondRecord->hasAttrs()) {
+          llvm::SmallVector<const Attr *, 2> FirstAttrs;
+          llvm::SmallVector<const Attr *, 2> SecondAttrs;
+          GetAttrList(FirstAttrs, FirstRecord);
+          GetAttrList(SecondAttrs, SecondRecord);
+          Diagnosed = ODRDiagAttrs(FirstRecord, SecondRecord, FirstModule,
+                                   SecondModule, FirstAttrs, SecondAttrs);
+          if (Diagnosed)
+            break;
+        }
+
         DiagnoseODRUnexpected(DR, FirstRecord, FirstModule, SecondRecord,
                               SecondModule);
         Diagnosed = true;
@@ -11851,6 +11943,121 @@ void ASTReader::diagnoseOdrViolations() {
       Diag(FirstDecl->getLocation(),
            diag::err_module_odr_violation_mismatch_decl_unknown)
           << FirstProto << FirstModule.empty() << FirstModule << FirstDiffType
+          << FirstDecl->getSourceRange();
+      Diag(SecondDecl->getLocation(),
+           diag::note_module_odr_violation_mismatch_decl_unknown)
+          << SecondModule << FirstDiffType << SecondDecl->getSourceRange();
+      Diagnosed = true;
+    }
+  }
+
+  for (auto &Merge : ObjCCategoryOdrMergeFailures) {
+    // If we've already pointed out a specific problem with this protocol,
+    // don't bother issuing a general "something's different" diagnostic.
+    if (!DiagnosedOdrMergeFailures.insert(Merge.first).second)
+      continue;
+
+    bool Diagnosed = false;
+    ObjCCategoryDecl *FirstCat = Merge.first;
+    std::string FirstModule = getOwningModuleNameForDiagnostic(FirstCat);
+    for (auto &CategoryPair : Merge.second) {
+      ObjCCategoryDecl *SecondCat = CategoryPair.first;
+      // Multiple different declarations got merged together; tell the user
+      // where they came from.
+      if (FirstCat == SecondCat)
+        continue;
+
+      std::string SecondModule = getOwningModuleNameForDiagnostic(SecondCat);
+
+      auto *FirstDD = &FirstCat->data();
+      auto *SecondDD = CategoryPair.second;
+      assert(FirstDD && SecondDD && "Definitions without DefinitionData");
+      // Diagnostics from ObjCCategory DefinitionData are emitted here.
+      if (FirstDD != SecondDD) {
+        // Check both protocols reference the same protocols.
+        auto &FirstCats = FirstCat->getReferencedProtocols();
+        auto &SecondCats = SecondDD->ReferencedProtocols;
+        Diagnosed =
+            ODRDiagObjCProtocolList(FirstCats, FirstCat, FirstModule,
+                                    SecondCats, SecondCat, SecondModule);
+        if (Diagnosed)
+          break;
+      }
+
+      auto PopulateHashes = [&ComputeSubDeclODRHash](DeclHashes &Hashes,
+                                                     ObjCCategoryDecl *ID,
+                                                     const DeclContext *DC) {
+        for (auto *D : ID->decls()) {
+          if (!ODRHash::isWhitelistedDecl(D, DC))
+            continue;
+          Hashes.emplace_back(D, ComputeSubDeclODRHash(D));
+        }
+      };
+
+      DeclHashes FirstHashes;
+      DeclHashes SecondHashes;
+      PopulateHashes(FirstHashes, FirstCat, FirstCat);
+      PopulateHashes(SecondHashes, SecondCat, SecondCat);
+
+      auto DR = FindTypeDiffs(FirstHashes, SecondHashes);
+      ODRMismatchDecl FirstDiffType = DR.FirstDiffType;
+      ODRMismatchDecl SecondDiffType = DR.SecondDiffType;
+      Decl *FirstDecl = DR.FirstDecl;
+      Decl *SecondDecl = DR.SecondDecl;
+
+      if (FirstDiffType == Other || SecondDiffType == Other) {
+        DiagnoseODRUnexpected(DR, FirstCat, FirstModule, SecondCat,
+                              SecondModule);
+        Diagnosed = true;
+        break;
+      }
+
+      if (FirstDiffType != SecondDiffType) {
+        SourceLocation Loc;
+        DiagnoseODRMismatchObjC(DR, FirstCat, FirstModule, SecondCat,
+                                SecondModule, Loc, Loc);
+        Diagnosed = true;
+        break;
+      }
+
+      assert(FirstDiffType == SecondDiffType);
+      switch (FirstDiffType) {
+      case EndOfClass:
+      case Other:
+      case Field:
+      case TypeDef:
+      case Var:
+      // C++ only, invalid in this context.
+      case PublicSpecifer:
+      case PrivateSpecifer:
+      case ProtectedSpecifer:
+      case StaticAssert:
+      case CXXMethod:
+      case TypeAlias:
+      case Friend:
+      case FunctionTemplate:
+      case ObjCIvar:
+        llvm_unreachable("Invalid diff type");
+      case ObjCProperty: {
+        Diagnosed = ODRDiagObjCProperty(FirstCat, FirstModule, SecondModule,
+                                        cast<ObjCPropertyDecl>(FirstDecl),
+                                        cast<ObjCPropertyDecl>(SecondDecl));
+        break;
+      }
+      case ObjCMethod: {
+        Diagnosed = ODRDiagObjCMethod(FirstCat, FirstModule, SecondModule,
+                                      cast<ObjCMethodDecl>(FirstDecl),
+                                      cast<ObjCMethodDecl>(SecondDecl));
+        break;
+      }
+      }
+
+      if (Diagnosed)
+        continue;
+
+      Diag(FirstDecl->getLocation(),
+           diag::err_module_odr_violation_mismatch_decl_unknown)
+          << FirstCat << FirstModule.empty() << FirstModule << FirstDiffType
           << FirstDecl->getSourceRange();
       Diag(SecondDecl->getLocation(),
            diag::note_module_odr_violation_mismatch_decl_unknown)

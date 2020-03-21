@@ -212,6 +212,37 @@ static Error remarksErrorHandler(const DebugMapObject &DMO, DwarfLinker &Linker,
   return createFileError(FE->getFileName(), std::move(NewE));
 }
 
+static Optional<StringRef> StripTemplateParameters(StringRef Name) {
+  // We are looking for template parameters to strip from Name. e.g.
+  //
+  //  operator<<B>
+  //
+  // We look for > at the end but if it does not contain any < then we
+  // have something like operator>>. We check for the operator<=> case.
+  if (!Name.endswith(">") || Name.count("<") == 0 || Name.endswith("<=>"))
+    return {};
+
+  // How many < until we have the start of the template parameters.
+  size_t NumLeftAnglesToSkip = 1;
+
+  // If we have operator<=> then we need to skip its < as well.
+  NumLeftAnglesToSkip += Name.count("<=>");
+
+  size_t RightAngleCount = Name.count('>');
+  size_t LeftAngleCount = Name.count('<');
+
+  // If we have more < than > we have operator< or operator<<
+  // we to account for their < as well.
+  if (LeftAngleCount > RightAngleCount)
+    NumLeftAnglesToSkip += LeftAngleCount - RightAngleCount;
+
+  size_t StartOfTemplate = 0;
+  while (NumLeftAnglesToSkip--)
+    StartOfTemplate = Name.find('<', StartOfTemplate) + 1;
+
+  return Name.substr(0, StartOfTemplate - 1);
+}
+
 bool DwarfLinker::DIECloner::getDIENames(const DWARFDie &Die,
                                          AttributesInfo &Info,
                                          OffsetsStringPool &StringPool,
@@ -233,10 +264,9 @@ bool DwarfLinker::DIECloner::getDIENames(const DWARFDie &Die,
       Info.Name = StringPool.getEntry(Name);
 
   if (StripTemplate && Info.Name && Info.MangledName != Info.Name) {
-    // FIXME: dsymutil compatibility. This is wrong for operator<
-    auto Split = Info.Name.getString().split('<');
-    if (!Split.second.empty())
-      Info.NameWithoutTemplate = StringPool.getEntry(Split.first);
+    StringRef Name = Info.Name.getString();
+    if (Optional<StringRef> StrippedName = StripTemplateParameters(Name))
+      Info.NameWithoutTemplate = StringPool.getEntry(*StrippedName);
   }
 
   return Info.Name || Info.MangledName;
@@ -286,6 +316,12 @@ static void analyzeImportedModule(
 
   StringRef Path = dwarf::toStringRef(DIE.find(dwarf::DW_AT_LLVM_include_path));
   if (!Path.endswith(".swiftinterface"))
+    return;
+  // Don't track interfaces that are part of the SDK.
+  StringRef SysRoot = dwarf::toStringRef(DIE.find(dwarf::DW_AT_LLVM_sysroot));
+  if (SysRoot.empty())
+    SysRoot = CU.getSysRoot();
+  if (!SysRoot.empty() && Path.startswith(SysRoot))
     return;
   if (Optional<DWARFFormValue> Val = DIE.find(dwarf::DW_AT_name))
     if (Optional<const char *> Name = Val->getAsCString()) {
@@ -1390,7 +1426,8 @@ unsigned DwarfLinker::DIECloner::cloneAddressAttribute(
   } else if (AttrSpec.Attr == dwarf::DW_AT_call_return_pc) {
     // Relocate a return PC address within a call site entry.
     if (Die.getTag() == dwarf::DW_TAG_call_site)
-      Addr += Info.PCOffset;
+      Addr = (Info.OrigCallReturnPc ? Info.OrigCallReturnPc : Addr) +
+             Info.PCOffset;
   }
 
   Die.addValue(DIEAlloc, static_cast<dwarf::Attribute>(AttrSpec.Attr),
@@ -1694,6 +1731,8 @@ DIE *DwarfLinker::DIECloner::cloneDIE(
     // inlining function.
     AttrInfo.OrigLowPc = dwarf::toAddress(InputDIE.find(dwarf::DW_AT_low_pc),
                                           std::numeric_limits<uint64_t>::max());
+    AttrInfo.OrigCallReturnPc =
+        dwarf::toAddress(InputDIE.find(dwarf::DW_AT_call_return_pc), 0);
   }
 
   // Reset the Offset to 0 as we will be working on the local copy of

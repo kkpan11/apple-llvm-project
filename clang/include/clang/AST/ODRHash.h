@@ -15,6 +15,7 @@
 #ifndef LLVM_CLANG_AST_ODRHASH_H
 #define LLVM_CLANG_AST_ODRHASH_H
 
+#include "clang/AST/Attr.h"
 #include "clang/AST/DeclarationName.h"
 #include "clang/AST/Type.h"
 #include "clang/AST/TemplateBase.h"
@@ -72,6 +73,10 @@ public:
   // method compares more information than the AddDecl class.
   void AddObjCMethodDecl(const ObjCMethodDecl *Method);
 
+  // Use this for ODR checking ObjC interfaces. This
+  // method compares more information than the AddDecl class.
+  void AddObjCCategoryDecl(const ObjCCategoryDecl *Cat);
+
   // Use this for ODR checking functions between modules.  This method compares
   // more information than the AddDecl class.  SkipBody will process the
   // hash as if the function has no body.
@@ -84,6 +89,10 @@ public:
   // Process SubDecls of the main Decl.  This method calls the DeclVisitor
   // while AddDecl does not.
   void AddSubDecl(const Decl *D);
+
+  // Process attributes attached to a type that is being hashed.
+  void AddAttrs(const NamedDecl *D);
+  void AddAttr(const Attr *A);
 
   // Reset the object for reuse.
   void clear();
@@ -107,6 +116,7 @@ public:
   void AddBoolean(bool value);
 
   static bool isWhitelistedDecl(const Decl* D, const DeclContext *Parent);
+  static bool isWhitelistedAttr(const Attr *A);
 
 private:
   void AddDeclarationNameImpl(DeclarationName Name);

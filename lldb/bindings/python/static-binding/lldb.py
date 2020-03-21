@@ -9086,6 +9086,14 @@ class SBProcess(_object):
         return _lldb.SBProcess_GetDescription(self, description)
 
 
+    def GetExtendedCrashInformation(self):
+        """
+
+        Returns the process' extended crash information.
+        """
+        return _lldb.SBProcess_GetExtendedCrashInformation(self)
+
+
     def GetNumSupportedHardwareWatchpoints(self, error):
         """GetNumSupportedHardwareWatchpoints(SBProcess self, SBError error) -> uint32_t"""
         return _lldb.SBProcess_GetNumSupportedHardwareWatchpoints(self, error)

@@ -846,6 +846,7 @@ protected:
   friend class SBFunction;
   friend class SBInstruction;
   friend class SBModule;
+  friend class SBPlatform;
   friend class SBProcess;
   friend class SBSection;
   friend class SBSourceManager;

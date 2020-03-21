@@ -327,9 +327,25 @@ public:
   }
 
   void VisitObjCPropertyDecl(const ObjCPropertyDecl *D) {
-    ID.AddInteger(D->getPropertyAttributes());
+    unsigned AttrsAsWritten = D->getPropertyAttributesAsWritten();
+    unsigned Attrs = D->getPropertyAttributes();
+
+    // If null_resettable is present but was not written, it came from
+    // APINotes. This workaround is for not allowing ODR mismatches between
+    // non-modular content annotated in a module by APINotes versus the
+    // same non-modular content found elsewhere. Long term we need to get
+    // rid of this kind of annotations.
+    if (Attrs & ObjCPropertyDecl::OBJC_PR_null_resettable &&
+        !(AttrsAsWritten & ObjCPropertyDecl::OBJC_PR_null_resettable))
+      Attrs &= ~ObjCPropertyDecl::OBJC_PR_null_resettable;
+
+    QualType T = D->getType();
+    if (D->getType()->canHaveNullability())
+      AttributedType::stripOuterNullability(T);
+    AddQualType(T);
+
+    ID.AddInteger(Attrs);
     ID.AddInteger(D->getPropertyImplementation());
-    AddQualType(D->getType());
     AddDecl(D);
 
     Inherited::VisitObjCPropertyDecl(D);
@@ -459,6 +475,9 @@ public:
 bool ODRHash::isWhitelistedDecl(const Decl *D, const DeclContext *Parent) {
   if (D->isImplicit()) return false;
   if (D->getDeclContext() != Parent) return false;
+  bool ShouldHashIvar = D->getASTContext().getLangOpts().ODRCheckIvars;
+  bool ShouldHashProperties = D->getASTContext().getLangOpts().ODRCheckProperties;
+  bool ShouldHashMethods = D->getASTContext().getLangOpts().ODRCheckMethods;
 
   switch (D->getKind()) {
     default:
@@ -475,10 +494,73 @@ bool ODRHash::isWhitelistedDecl(const Decl *D, const DeclContext *Parent) {
     case Decl::TypeAlias:
     case Decl::Typedef:
     case Decl::Var:
-    case Decl::ObjCMethod:
-    case Decl::ObjCIvar:
-    case Decl::ObjCProperty:
       return true;
+    case Decl::ObjCMethod:
+      return ShouldHashMethods;
+    case Decl::ObjCIvar:
+      return ShouldHashIvar;
+    case Decl::ObjCProperty:
+      return ShouldHashProperties;
+  }
+}
+
+// Only a small portion of Attr's are considered right now.
+bool ODRHash::isWhitelistedAttr(const Attr *A) {
+  // FIXME: This should be auto-generated as part of Attr.td
+  switch (A->getKind()) {
+  default:
+    return false;
+  case attr::ObjCBridge:
+  case attr::ObjCBridgeMutable:
+    return true;
+  }
+}
+
+void ODRHash::AddAttrs(const NamedDecl *D) {
+  if (!D->hasAttrs())
+    return;
+
+  // Go over attributes
+  llvm::SmallVector<const Attr *, 2> Attrs;
+  for (const Attr *A : D->getAttrs()) {
+    if (isWhitelistedAttr(A))
+      Attrs.push_back(A);
+  }
+
+  // Sort attributes by name + other per subject kind. This allows
+  // for extra flexibility when redeclarations use different order.
+  // FIXME: In case the order matters for a group of attributes we
+  // decide to hash, then we might need to change this.
+  // FIXME: This should be auto-generated as part of Attr.td
+  llvm::sort(Attrs,
+             [](const Attr *A, const Attr *B) { return Attr::compare(A, B); });
+
+  for (const Attr *A : Attrs)
+    AddAttr(A);
+}
+
+void ODRHash::AddAttr(const Attr *A) {
+  assert(A && "Expecting non-null pointer.");
+  ID.AddInteger(A->getKind());
+
+  // FIXME: This should be auto-generated as part of Attr.td
+  switch (A->getKind()) {
+  case attr::ObjCBridge: {
+    auto *M = cast<ObjCBridgeAttr>(A);
+    AddBoolean(M->getBridgedType());
+    if (M->getBridgedType())
+      ID.AddString(M->getBridgedType()->getName());
+    break;
+  }
+  case attr::ObjCBridgeMutable: {
+    auto *M = cast<ObjCBridgeMutableAttr>(A);
+    AddBoolean(M->getBridgedType());
+    if (M->getBridgedType())
+      ID.AddString(M->getBridgedType()->getName());
+    break;
+  }
+  default:
+    llvm_unreachable("Not expecting other attribute kinds");
   }
 }
 
@@ -486,6 +568,30 @@ void ODRHash::AddSubDecl(const Decl *D) {
   assert(D && "Expecting non-null pointer.");
 
   ODRDeclVisitor(ID, *this).Visit(D);
+}
+
+void ODRHash::AddObjCCategoryDecl(const ObjCCategoryDecl *Cat) {
+  // Nothing to compute for extensions, there can be as many as
+  // wanted and ODR checking doesn't apply.
+  if (Cat->IsClassExtension())
+    return;
+
+  AddDecl(Cat);
+
+  // Trigger ODR computation for methods (if not yet computed)
+  for (auto *M : Cat->methods())
+    reinterpret_cast<ObjCMethodDecl *>(M)->getODRHash();
+
+  // Filter out sub-Decls which will not be processed in order to get an
+  // accurate count of Decl's.
+  llvm::SmallVector<const Decl *, 16> Decls;
+  for (Decl *SubDecl : Cat->decls())
+    if (isWhitelistedDecl(SubDecl, Cat))
+      Decls.push_back(SubDecl);
+
+  ID.AddInteger(Decls.size());
+  for (auto *SubDecl : Decls)
+    AddSubDecl(SubDecl);
 }
 
 void ODRHash::AddObjCInterfaceDecl(const ObjCInterfaceDecl *IF) {
@@ -603,7 +709,7 @@ void ODRHash::AddRecordDecl(const RecordDecl *Record) {
   llvm::SmallVector<const Decl *, 16> Decls;
   for (Decl *SubDecl : Record->decls()) {
     if (auto *SubRD = dyn_cast<RecordDecl>(SubDecl)) {
-      if (!SubRD->isCompleteDefinition())
+      if (!SubRD->isAnonymousStructOrUnion())
         continue;
       ID.AddInteger(SubRD->getODRHash());
       continue;
@@ -615,6 +721,9 @@ void ODRHash::AddRecordDecl(const RecordDecl *Record) {
   ID.AddInteger(Decls.size());
   for (auto SubDecl : Decls)
     AddSubDecl(SubDecl);
+
+  if (Record->getASTContext().getLangOpts().ODRCheckAttributes)
+    AddAttrs(Record);
 }
 
 void ODRHash::AddCXXRecordDecl(const CXXRecordDecl *Record) {

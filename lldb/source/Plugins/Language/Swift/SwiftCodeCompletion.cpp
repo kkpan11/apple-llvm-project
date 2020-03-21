@@ -228,12 +228,6 @@ SwiftCompleteCode(SwiftASTContext &SwiftCtx,
   // parsing the file, so we set it now.
   ctx.SourceMgr.setCodeCompletionPoint(completionCodeBufferID,
                                        completionOffset);
-  PersistentParserState completionCodeFileParserState;
-  {
-    DiagnosticTransaction diagTxn(ctx.Diags);
-    parseIntoSourceFile(completionCodeFile, completionCodeBufferID,
-                        &completionCodeFileParserState);
-  }
 
   // Accumulate hand imports into `completionCodeFile`. (Hand imports are
   // imports imported in previous REPL executions).
@@ -259,9 +253,8 @@ SwiftCompleteCode(SwiftASTContext &SwiftCtx,
     // `completionCodeFile`, so that declarations that have been re-declared in
     // the user's current code take precedence over persistent declarations.
     DenseMap<Identifier, SmallVector<ValueDecl *, 1>> newDecls;
-    for (auto it = completionCodeFile.getTopLevelDecls().begin();
-         it != completionCodeFile.getTopLevelDecls().end(); it++)
-      if (auto *newValueDecl = dyn_cast<ValueDecl>(*it))
+    for (auto *decl : completionCodeFile.getTopLevelDecls())
+      if (auto *newValueDecl = dyn_cast<ValueDecl>(decl))
         newDecls.FindAndConstruct(newValueDecl->getBaseName().getIdentifier())
             .second.push_back(newValueDecl);
 
@@ -305,7 +298,7 @@ SwiftCompleteCode(SwiftASTContext &SwiftCtx,
   {
     DiagnosticTransaction diagTxn(ctx.Diags);
     performTypeChecking(completionCodeFile);
-    performCodeCompletionSecondPass(completionCodeFileParserState,
+    performCodeCompletionSecondPass(completionCodeFile,
                                     *completionCallbacksFactory);
   }
 

@@ -13,6 +13,18 @@
 let Flags = [CC1Option, NoDriverOption] in {
 
 //===----------------------------------------------------------------------===//
+// Option Options
+//===----------------------------------------------------------------------===//
+
+def remove_preceeding_explicit_module_build_incompatible_options :
+  Flag<["-"], "remove-preceeding-explicit-module-build-incompatible-options">,
+  HelpText<"Removes any arguments before this one that would be incompatible "
+           "with explicitly building a module. This includes things like -o "
+           "and input files. This option can be used to append arguments to "
+           "convert a build of a translation unit with implicit modules "
+           "into an explicit build of a specific module.">;
+
+//===----------------------------------------------------------------------===//
 // Target Options
 //===----------------------------------------------------------------------===//
 
@@ -391,8 +403,6 @@ def flto_visibility_public_std:
 def flto_unit: Flag<["-"], "flto-unit">,
     HelpText<"Emit IR to support LTO unit features (CFI, whole program vtable opt)">;
 def fno_lto_unit: Flag<["-"], "fno-lto-unit">;
-def femit_debug_entry_values : Flag<["-"], "femit-debug-entry-values">,
-    HelpText<"Enables debug info about call site parameter's entry values">;
 def fdebug_pass_manager : Flag<["-"], "fdebug-pass-manager">,
     HelpText<"Prints debug information for the new pass manager">;
 def fno_debug_pass_manager : Flag<["-"], "fno-debug-pass-manager">,
@@ -562,6 +572,30 @@ def ftest_module_file_extension_EQ :
            "The argument is parsed as blockname:major:minor:hashed:user info">;
 def fconcepts_ts : Flag<["-"], "fconcepts-ts">,
   HelpText<"Enable C++ Extensions for Concepts.">;
+def fodr_hash_attributes:
+  Flag<["-"], "fodr-hash-attributes">,
+  HelpText<"Enable ODR hash checking for attributes ">;
+def fno_odr_hash_categories:
+  Flag<["-"], "fno-odr-hash-categories">,
+  HelpText<"Disable ODR hash checking for categories">;
+def fno_odr_hash_interfaces:
+  Flag<["-"], "fno-odr-hash-interfaces">,
+  HelpText<"Disable ODR hash checking for interfaces">;
+def fno_odr_hash_protocols:
+  Flag<["-"], "fno-odr-hash-protocols">,
+  HelpText<"Disable ODR hash checking for protocols">;
+def fno_odr_hash_records:
+  Flag<["-"], "fno-odr-hash-records">,
+  HelpText<"Disable ODR hash checking for records">;
+def fno_odr_hash_properties:
+  Flag<["-"], "fno-odr-hash-properties">,
+  HelpText<"Disable ODR hash checking for properties">;
+def fno_odr_hash_ivars:
+  Flag<["-"], "fno-odr-hash-ivars">,
+  HelpText<"Disable ODR hash checking for ivars">;
+def fno_odr_hash_methods:
+  Flag<["-"], "fno-odr-hash-methods">,
+  HelpText<"Disable ODR hash checking for methods">;
 
 let Group = Action_Group in {
 

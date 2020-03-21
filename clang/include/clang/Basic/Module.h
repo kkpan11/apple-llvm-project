@@ -109,10 +109,16 @@ public:
   /// The name of the umbrella entry, as written in the module map.
   std::string UmbrellaAsWritten;
 
+  // The path to the umbrella entry relative to the root module's \c Directory.
+  std::string UmbrellaRelativeToRootModuleDirectory;
+
   /// The module through which entities defined in this module will
   /// eventually be exposed, for use in "private" modules.
   std::string ExportAsModule;
 
+  /// For the debug info, the path to this module's .apinotes file, if any.
+  std::string APINotesFile;
+  
   /// Does this Module scope describe part of the purview of a named C++ module?
   bool isModulePurview() const {
     return Kind == ModuleInterfaceUnit || Kind == PrivateModuleFragment;
@@ -156,6 +162,7 @@ public:
   /// file.
   struct Header {
     std::string NameAsWritten;
+    std::string PathRelativeToRootModuleDirectory;
     const FileEntry *Entry;
 
     explicit operator bool() { return Entry; }
@@ -165,6 +172,7 @@ public:
   /// file.
   struct DirectoryName {
     std::string NameAsWritten;
+    std::string PathRelativeToRootModuleDirectory;
     const DirectoryEntry *Entry;
 
     explicit operator bool() { return Entry; }
@@ -491,7 +499,8 @@ public:
   /// module.
   Header getUmbrellaHeader() const {
     if (auto *E = Umbrella.dyn_cast<const FileEntry *>())
-      return Header{UmbrellaAsWritten, E};
+      return Header{UmbrellaAsWritten, UmbrellaRelativeToRootModuleDirectory,
+                    E};
     return Header{};
   }
 

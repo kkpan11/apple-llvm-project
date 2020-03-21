@@ -398,7 +398,8 @@ class TypePromotionTransaction;
     bool simplifyOffsetableRelocate(Instruction &I);
 
     bool tryToSinkFreeOperands(Instruction *I);
-    bool replaceMathCmpWithIntrinsic(BinaryOperator *BO, CmpInst *Cmp,
+    bool replaceMathCmpWithIntrinsic(BinaryOperator *BO, Value *Arg0,
+                                     Value *Arg1, CmpInst *Cmp,
                                      Intrinsic::ID IID);
     bool optimizeCmp(CmpInst *Cmp, bool &ModifiedDT);
     bool combineToUSubWithOverflow(CmpInst *Cmp, bool &ModifiedDT);
@@ -1187,6 +1188,7 @@ static bool OptimizeNoopCopyExpression(CastInst *CI, const TargetLowering &TLI,
 }
 
 bool CodeGenPrepare::replaceMathCmpWithIntrinsic(BinaryOperator *BO,
+                                                 Value *Arg0, Value *Arg1,
                                                  CmpInst *Cmp,
                                                  Intrinsic::ID IID) {
   if (BO->getParent() != Cmp->getParent()) {
@@ -1204,8 +1206,6 @@ bool CodeGenPrepare::replaceMathCmpWithIntrinsic(BinaryOperator *BO,
   }
 
   // We allow matching the canonical IR (add X, C) back to (usubo X, -C).
-  Value *Arg0 = BO->getOperand(0);
-  Value *Arg1 = BO->getOperand(1);
   if (BO->getOpcode() == Instruction::Add &&
       IID == Intrinsic::usub_with_overflow) {
     assert(isa<Constant>(Arg1) && "Unexpected input for usubo");
@@ -1215,7 +1215,9 @@ bool CodeGenPrepare::replaceMathCmpWithIntrinsic(BinaryOperator *BO,
   // Insert at the first instruction of the pair.
   Instruction *InsertPt = nullptr;
   for (Instruction &Iter : *Cmp->getParent()) {
-    if (&Iter == BO || &Iter == Cmp) {
+    // If BO is an XOR, it is not guaranteed that it comes after both inputs to
+    // the overflow intrinsic are defined.
+    if ((BO->getOpcode() != Instruction::Xor && &Iter == BO) || &Iter == Cmp) {
       InsertPt = &Iter;
       break;
     }
@@ -1224,12 +1226,16 @@ bool CodeGenPrepare::replaceMathCmpWithIntrinsic(BinaryOperator *BO,
 
   IRBuilder<> Builder(InsertPt);
   Value *MathOV = Builder.CreateBinaryIntrinsic(IID, Arg0, Arg1);
-  Value *Math = Builder.CreateExtractValue(MathOV, 0, "math");
+  if (BO->getOpcode() != Instruction::Xor) {
+    Value *Math = Builder.CreateExtractValue(MathOV, 0, "math");
+    BO->replaceAllUsesWith(Math);
+  } else
+    assert(BO->hasOneUse() &&
+           "Patterns with XOr should use the BO only in the compare");
   Value *OV = Builder.CreateExtractValue(MathOV, 1, "ov");
-  BO->replaceAllUsesWith(Math);
   Cmp->replaceAllUsesWith(OV);
-  BO->eraseFromParent();
   Cmp->eraseFromParent();
+  BO->eraseFromParent();
   return true;
 }
 
@@ -1269,12 +1275,17 @@ bool CodeGenPrepare::combineToUAddWithOverflow(CmpInst *Cmp,
                                                bool &ModifiedDT) {
   Value *A, *B;
   BinaryOperator *Add;
-  if (!match(Cmp, m_UAddWithOverflow(m_Value(A), m_Value(B), m_BinOp(Add))))
+  if (!match(Cmp, m_UAddWithOverflow(m_Value(A), m_Value(B), m_BinOp(Add)))) {
     if (!matchUAddWithOverflowConstantEdgeCases(Cmp, Add))
       return false;
+    // Set A and B in case we match matchUAddWithOverflowConstantEdgeCases.
+    A = Add->getOperand(0);
+    B = Add->getOperand(1);
+  }
 
   if (!TLI->shouldFormOverflowOp(ISD::UADDO,
-                                 TLI->getValueType(*DL, Add->getType())))
+                                 TLI->getValueType(*DL, Add->getType()),
+                                 Add->hasNUsesOrMore(2)))
     return false;
 
   // We don't want to move around uses of condition values this late, so we
@@ -1283,7 +1294,8 @@ bool CodeGenPrepare::combineToUAddWithOverflow(CmpInst *Cmp,
   if (Add->getParent() != Cmp->getParent() && !Add->hasOneUse())
     return false;
 
-  if (!replaceMathCmpWithIntrinsic(Add, Cmp, Intrinsic::uadd_with_overflow))
+  if (!replaceMathCmpWithIntrinsic(Add, A, B, Cmp,
+                                   Intrinsic::uadd_with_overflow))
     return false;
 
   // Reset callers - do not crash by iterating over a dead instruction.
@@ -1341,10 +1353,12 @@ bool CodeGenPrepare::combineToUSubWithOverflow(CmpInst *Cmp,
     return false;
 
   if (!TLI->shouldFormOverflowOp(ISD::USUBO,
-                                 TLI->getValueType(*DL, Sub->getType())))
+                                 TLI->getValueType(*DL, Sub->getType()),
+                                 Sub->hasNUsesOrMore(2)))
     return false;
 
-  if (!replaceMathCmpWithIntrinsic(Sub, Cmp, Intrinsic::usub_with_overflow))
+  if (!replaceMathCmpWithIntrinsic(Sub, Sub->getOperand(0), Sub->getOperand(1),
+                                   Cmp, Intrinsic::usub_with_overflow))
     return false;
 
   // Reset callers - do not crash by iterating over a dead instruction.
@@ -7259,11 +7273,18 @@ bool CodeGenPrepare::fixupDbgValue(Instruction *I) {
 // to re-order dbg.value intrinsics.
 bool CodeGenPrepare::placeDbgValues(Function &F) {
   bool MadeChange = false;
-  DominatorTree DT(F);
+  DominatorTree &DT = getDT(F);
 
   for (BasicBlock &BB : F) {
+    // Maintain an ersatz OrderedBasicBlock here, as it dramatically speeds up
+    // dominance queries. For a file in WebKit, this reduces time spent in CGP
+    // from 10 minutes to 50 milliseconds. We can't just use OrderedBasicBlock
+    // because moving around dbg.values causes invalidation.
+    SmallPtrSet<const Instruction *, 32> VisitedInsts;
     for (BasicBlock::iterator BI = BB.begin(), BE = BB.end(); BI != BE;) {
       Instruction *Insn = &*BI++;
+      VisitedInsts.insert(Insn);
+
       DbgValueInst *DVI = dyn_cast<DbgValueInst>(Insn);
       if (!DVI)
         continue;
@@ -7275,19 +7296,27 @@ bool CodeGenPrepare::placeDbgValues(Function &F) {
 
       // If VI is a phi in a block with an EHPad terminator, we can't insert
       // after it.
-      if (isa<PHINode>(VI) && VI->getParent()->getTerminator()->isEHPad())
+      BasicBlock *VIParent = VI->getParent();
+      if (isa<PHINode>(VI) && VIParent->getTerminator()->isEHPad())
         continue;
 
       // If the defining instruction dominates the dbg.value, we do not need
-      // to move the dbg.value.
-      if (DT.dominates(VI, DVI))
+      // to move the dbg.value. Query the visited instruction set first as it's
+      // much cheaper than the domtree query: if we've seen VI, we must have
+      // have either seen it before DVI or moved DVI, so `VI dom DVI`.
+      bool UseAfterDef =
+          (VIParent == &BB) ? VisitedInsts.count(VI) : DT.dominates(VI, DVI);
+      if (UseAfterDef)
         continue;
 
       LLVM_DEBUG(dbgs() << "Moving Debug Value before :\n"
                         << *DVI << ' ' << *VI);
       DVI->removeFromParent();
+      // We will either move DVI out of this basic block, or move it to a later
+      // position within the block. In the latter case, we would visit VI before
+      // visiting DVI a second time. There's no need to update the visited set.
       if (isa<PHINode>(VI))
-        DVI->insertBefore(&*VI->getParent()->getFirstInsertionPt());
+        DVI->insertBefore(&*VIParent->getFirstInsertionPt());
       else
         DVI->insertAfter(VI);
       MadeChange = true;

@@ -52,6 +52,10 @@ swiftLibrary = None
 # The overriden dwarf verison.
 dwarf_version = 0
 
+# Any overridden settings.
+# Always disable default dynamic types for testing purposes.
+settings = [('target.prefer-dynamic-value', 'no-dynamic-values')]
+
 # Path to the FileCheck testing tool. Not optional.
 filecheck = None
 
@@ -97,7 +101,7 @@ verbose = 0
 # By default, search from the script directory.
 # We can't use sys.path[0] to determine the script directory
 # because it doesn't work under a debugger
-testdirs = [os.path.dirname(os.path.realpath(__file__))]
+testdirs = [lldbsuite.lldb_test_root]
 
 # Separator string.
 separator = '-' * 70

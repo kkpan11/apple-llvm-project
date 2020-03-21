@@ -865,17 +865,6 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
 
   Opts.DisableLLVMPasses = Args.hasArg(OPT_disable_llvm_passes);
   Opts.DisableLifetimeMarkers = Args.hasArg(OPT_disable_lifetimemarkers);
-
-  const llvm::Triple::ArchType DebugEntryValueArchs[] = {
-      llvm::Triple::x86, llvm::Triple::x86_64, llvm::Triple::aarch64,
-      llvm::Triple::arm, llvm::Triple::armeb};
-
-  llvm::Triple T(TargetOpts.Triple);
-  if (Opts.OptimizationLevel > 0 &&
-      Opts.getDebugInfo() >= codegenoptions::LimitedDebugInfo &&
-      llvm::is_contained(DebugEntryValueArchs, T.getArch()))
-    Opts.EnableDebugEntryValues = Args.hasArg(OPT_femit_debug_entry_values);
-
   Opts.DisableO0ImplyOptNone = Args.hasArg(OPT_disable_O0_optnone);
   Opts.DisableRedZone = Args.hasArg(OPT_disable_red_zone);
   Opts.IndirectTlsSegRefs = Args.hasArg(OPT_mno_tls_direct_seg_refs);
@@ -2193,7 +2182,8 @@ static void ParseHeaderSearchArgs(HeaderSearchOptions &Opts, ArgList &Args,
   Opts.ModulesStrictContextHash = Args.hasArg(OPT_fmodules_strict_context_hash);
   Opts.ModulesValidateDiagnosticOptions =
       !Args.hasArg(OPT_fmodules_disable_diagnostic_validation);
-  Opts.ImplicitModuleMaps = Args.hasArg(OPT_fimplicit_module_maps);
+  Opts.ImplicitModuleMaps = Args.hasFlag(OPT_fimplicit_module_maps,
+                                         OPT_fno_implicit_module_maps, false);
   Opts.ModuleMapFileHomeIsCwd = Args.hasArg(OPT_fmodule_map_file_home_is_cwd);
   Opts.ModuleCachePruneInterval =
       getLastArgIntValue(Args, OPT_fmodules_prune_interval, 7 * 24 * 60 * 60);
@@ -2927,6 +2917,14 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   Opts.ModulesLocalVisibility =
       Args.hasArg(OPT_fmodules_local_submodule_visibility) || Opts.ModulesTS ||
       Opts.CPlusPlusModules;
+  Opts.ODRCheckAttributes = Args.hasArg(OPT_fodr_hash_attributes);
+  Opts.ODRCheckCategories = !Args.hasArg(OPT_fno_odr_hash_categories);
+  Opts.ODRCheckInterfaces = !Args.hasArg(OPT_fno_odr_hash_interfaces);
+  Opts.ODRCheckProtocols = !Args.hasArg(OPT_fno_odr_hash_protocols);
+  Opts.ODRCheckRecords = !Args.hasArg(OPT_fno_odr_hash_records);
+  Opts.ODRCheckProperties = !Args.hasArg(OPT_fno_odr_hash_properties);
+  Opts.ODRCheckIvars = !Args.hasArg(OPT_fno_odr_hash_ivars);
+  Opts.ODRCheckMethods = !Args.hasArg(OPT_fno_odr_hash_methods);
   Opts.ModulesCodegen = Args.hasArg(OPT_fmodules_codegen);
   Opts.ModulesDebugInfo = Args.hasArg(OPT_fmodules_debuginfo);
   Opts.ModulesHashErrorDiags = Args.hasArg(OPT_fmodules_hash_error_diagnostics);
@@ -3616,6 +3614,28 @@ static void ParseTargetArgs(TargetOptions &Opts, ArgList &Args,
   }
 }
 
+static void removeExplicitModuleBuildIncompatibleOptions(InputArgList &Args) {
+  auto REMBIO = llvm::find_if(Args, [](const Arg *A){
+    return A->getOption().getID() ==
+        OPT_remove_preceeding_explicit_module_build_incompatible_options;
+  });
+  if (REMBIO == Args.end())
+    return;
+  
+  llvm::SmallPtrSet<const Arg *, 32> BeforeREMBIO;
+  for (auto I = Args.begin(); I != REMBIO; ++I)
+    BeforeREMBIO.insert(*I);
+
+  Args.eraseArgIf([&](const Arg *A) {
+    if (!BeforeREMBIO.count(A))
+      return false;
+    const Option &O = A->getOption();
+    return O.matches(OPT_INPUT) ||
+           O.matches(OPT_Action_Group) ||
+           O.matches(OPT__output);
+  });
+}
+
 bool CompilerInvocation::CreateFromArgs(CompilerInvocation &Res,
                                         ArrayRef<const char *> CommandLineArgs,
                                         DiagnosticsEngine &Diags) {
@@ -3627,6 +3647,9 @@ bool CompilerInvocation::CreateFromArgs(CompilerInvocation &Res,
   unsigned MissingArgIndex, MissingArgCount;
   InputArgList Args = Opts.ParseArgs(CommandLineArgs, MissingArgIndex,
                                      MissingArgCount, IncludedFlagsBitmask);
+  
+  removeExplicitModuleBuildIncompatibleOptions(Args);
+  
   LangOptions &LangOpts = *Res.getLangOpts();
 
   // Check for missing argument error.
