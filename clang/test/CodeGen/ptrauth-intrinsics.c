@@ -4,6 +4,8 @@ void (*fnptr)(void);
 long int_discriminator;
 void *ptr_discriminator;
 long signature;
+int g0;
+int *__ptrauth(1, 0, 100) g1 = &g0;
 
 // CHECK-LABEL: define void @test_auth()
 void test_auth() {
@@ -18,19 +20,13 @@ void test_auth() {
 }
 
 // CHECK-LABEL: define void @test_auth_ptrauth_qual(
-void test_auth_ptrauth_qual(int *a) {
-  // CHECK: alloca i32*, align 8
-  // CHECK: %[[VALUE:.*]] = alloca i32*, align 8
-
-  // CHECK: %[[V5:.*]] = phi i32* [ null, %{{.*}} ], [ {{.*}} ]
-  // CHECK: store i32* %[[V5]], i32** %[[VALUE]], align 8
-  // CHECK: %[[V6:.*]] = load i32*, i32** %[[VALUE]], align 8
-  // CHECK: %[[V7:.*]] = ptrtoint i32* %[[V6]] to i64
-  // CHECK: %[[V8:.*]] = call i64 @llvm.ptrauth.auth.i64(i64 %[[V7]], i32 1, i64 100)
-  // CHECK: %[[V9:.*]] = inttoptr i64 %[[V8]] to i32*
-  // CHECK: store i32* %[[V9]], i32** %{{.*}}, align 8
-  int *__ptrauth(1, 0, 100) value = a;
-  int *p = __builtin_ptrauth_auth(value, 1, 100);
+void test_auth_ptrauth_qual() {
+  // CHECK: %[[V0:.*]] = load i32*, i32** @g1, align 8
+  // CHECK: %[[V1:.*]] = ptrtoint i32* %[[V0]] to i64
+  // CHECK: %[[V2:.*]] = call i64 @llvm.ptrauth.auth.i64(i64 %[[V1]], i32 1, i64 100)
+  // CHECK: %[[V3:.*]] = inttoptr i64 %[[V2]] to i32*
+  // CHECK: store i32* %[[V3]], i32** %{{.*}}, align 8
+  int *p = __builtin_ptrauth_auth(g1, 1, 100);
 }
 
 // CHECK-LABEL: define void @test_auth_peephole()
@@ -54,35 +50,23 @@ void test_strip() {
 }
 
 // CHECK-LABEL: define void @test_strip_ptrauth_qual0(
-void test_strip_ptrauth_qual0(int *a) {
-  // CHECK: alloca i32*, align 8
-  // CHECK: %[[VALUE:.*]] = alloca i32*, align 8
-
-  // CHECK: %[[V5:.*]] = phi i32* [ null, %{{.*}} ], [ {{.*}} ]
-  // CHECK: store i32* %[[V5]], i32** %[[VALUE]], align 8
-  // CHECK: %[[V6:.*]] = load i32*, i32** %[[VALUE]], align 8
-  // CHECK: %[[V7:.*]] = ptrtoint i32* %[[V6]] to i64
-  // CHECK: %[[V8:.*]] = call i64 @llvm.ptrauth.strip.i64(i64 %[[V7]], i32 1)
-  // CHECK: %[[V9:.*]] = inttoptr i64 %[[V8]] to i32*
-  // CHECK: store i32* %[[V9]], i32** %{{.*}}, align 8
-  int *__ptrauth(1, 0, 100) value = a;
-  int *p = __builtin_ptrauth_strip(value, 1);
+void test_strip_ptrauth_qual0() {
+  // CHECK: %[[V0:.*]] = load i32*, i32** @g1, align 8
+  // CHECK: %[[V1:.*]] = ptrtoint i32* %[[V0]] to i64
+  // CHECK: %[[V2:.*]] = call i64 @llvm.ptrauth.strip.i64(i64 %[[V1]], i32 1)
+  // CHECK: %[[V3:.*]] = inttoptr i64 %[[V2]] to i32*
+  // CHECK: store i32* %[[V3]], i32** %{{.*}}, align 8
+  int *p = __builtin_ptrauth_strip(g1, 1);
 }
 
 // CHECK-LABEL: define void @test_strip_ptrauth_qual1(
-void test_strip_ptrauth_qual1(int *a) {
-  // CHECK: alloca i32*, align 8
-  // CHECK: %[[VALUE:.*]] = alloca i32*, align 8
-
-  // CHECK: %[[V5:.*]] = phi i32* [ null, %{{.*}} ], [ {{.*}} ]
-  // CHECK: store i32* %[[V5]], i32** %[[VALUE]], align 8
-  // CHECK: %[[V6:.*]] = load i32*, i32** %[[VALUE]], align 8
-  // CHECK: %[[V7:.*]] = ptrtoint i32* %[[V6]] to i64
-  // CHECK: %[[V8:.*]] = call i64 @llvm.ptrauth.strip.i64(i64 %[[V7]], i32 1)
-  // CHECK: %[[V9:.*]] = inttoptr i64 %[[V8]] to i32*
-  // CHECK: store i32* %[[V9]], i32** %{{.*}}, align 8
-  int *__ptrauth(1, 0, 100) value = a;
-  int *p = __builtin_ptrauth_strip(*((int **)&value), 1);
+void test_strip_ptrauth_qual1() {
+  // CHECK: %[[V0:.*]] = load i32*, i32** @g1, align 8
+  // CHECK: %[[V1:.*]] = ptrtoint i32* %[[V0]] to i64
+  // CHECK: %[[V2:.*]] = call i64 @llvm.ptrauth.strip.i64(i64 %[[V1]], i32 1)
+  // CHECK: %[[V3:.*]] = inttoptr i64 %[[V2]] to i32*
+  // CHECK: store i32* %[[V3]], i32** %{{.*}}, align 8
+  int *p = __builtin_ptrauth_strip(*((int **)&g1), 1);
 }
 
 // CHECK-LABEL: define void @test_sign_unauthenticated()
@@ -110,19 +94,13 @@ void test_auth_and_resign() {
 }
 
 // CHECK-LABEL:define void @test_auth_and_resign_ptrauth_qual(
-void test_auth_and_resign_ptrauth_qual(int *a) {
-  // CHECK: alloca i32*, align 8
-  // CHECK: %[[VALUE:.*]] = alloca i32*, align 8
-
-  // CHECK: %[[V5:.*]] = phi i32* [ null, %{{.*}} ], [ {{.*}} ]
-  // CHECK: store i32* %[[V5]], i32** %[[VALUE]], align 8
-  // CHECK: %[[V6:.*]] = load i32*, i32** %[[VALUE]], align 8
-  // CHECK: %[[V7:.*]] = ptrtoint i32* %[[V6]] to i64
-  // CHECK: %[[V8:.*]] = call i64 @llvm.ptrauth.resign.i64(i64 %[[V7]], i32 1, i64 100, i32 1, i64 200)
-  // CHECK: %[[V9:.*]] = inttoptr i64 %[[V8]] to i32*
-  // CHECK: store i32* %[[V9]], i32** %{{.*}}, align 8
-  int *__ptrauth(1, 0, 100) value = a;
-  int *p = __builtin_ptrauth_auth_and_resign(value, 1, 100, 1, 200);
+void test_auth_and_resign_ptrauth_qual() {
+  // CHECK: %[[V0:.*]] = load i32*, i32** @g1, align 8
+  // CHECK: %[[V1:.*]] = ptrtoint i32* %[[V0]] to i64
+  // CHECK: %[[V2:.*]] = call i64 @llvm.ptrauth.resign.i64(i64 %[[V1]], i32 1, i64 100, i32 1, i64 200)
+  // CHECK: %[[V3:.*]] = inttoptr i64 %[[V2]] to i32*
+  // CHECK: store i32* %[[V3]], i32** %{{.*}}, align 8
+  int *p = __builtin_ptrauth_auth_and_resign(g1, 1, 100, 1, 200);
 }
 
 // CHECK-LABEL: define void @test_blend_discriminator()
