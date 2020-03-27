@@ -1486,40 +1486,6 @@ static SDKTypeMinVersion GetSDKType(const llvm::Triple &target,
   }
 }
 
-static std::string GetCurrentToolchainPath() {
-  const char substr[] = ".xctoolchain/";
-
-  {
-    if (FileSpec fspec = HostInfo::GetShlibDir()) {
-      std::string path_to_shlib = fspec.GetPath();
-      size_t pos = path_to_shlib.rfind(substr);
-      if (pos != std::string::npos) {
-        path_to_shlib.erase(pos + strlen(substr));
-        return path_to_shlib;
-      }
-    }
-  }
-
-  return {};
-}
-
-static std::string GetCurrentCLToolsPath() {
-  const char substr[] = "/CommandLineTools/";
-
-  {
-    if (FileSpec fspec = HostInfo::GetShlibDir()) {
-      std::string path_to_shlib = fspec.GetPath();
-      size_t pos = path_to_shlib.rfind(substr);
-      if (pos != std::string::npos) {
-        path_to_shlib.erase(pos + strlen(substr));
-        return path_to_shlib;
-      }
-    }
-  }
-
-  return {};
-}
-
 /// Return the name of the OS-specific subdirectory containing the
 /// Swift stdlib needed for \p target.
 StringRef SwiftASTContext::GetSwiftStdlibOSDir(const llvm::Triple &target,
@@ -1549,7 +1515,8 @@ StringRef SwiftASTContext::GetResourceDir(const llvm::Triple &triple) {
   auto value = GetResourceDir(
       platform_sdk_path, swift_stdlib_os_dir, GetSwiftResourceDir().GetPath(),
       PlatformDarwin::GetXcodeContentsDirectory().GetPath(),
-      GetCurrentToolchainPath(), GetCurrentCLToolsPath());
+      PlatformDarwin::GetCurrentToolchainDirectory().GetPath(),
+      PlatformDarwin::GetCurrentCommandLineToolsDirectory().GetPath());
   g_resource_dir_cache.insert({key, value});
   return g_resource_dir_cache[key];
 }
@@ -4077,7 +4044,6 @@ swift::ASTContext *SwiftASTContext::GetASTContext() {
   }
 
   // Set up the required state for the evaluator in the TypeChecker.
-  m_ast_context_ap->setLegacySemanticQueriesEnabled();
   registerIDERequestFunctions(m_ast_context_ap->evaluator);
   registerParseRequestFunctions(m_ast_context_ap->evaluator);
   registerTypeCheckerRequestFunctions(m_ast_context_ap->evaluator);
