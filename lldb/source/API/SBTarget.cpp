@@ -11,6 +11,7 @@
 
 #include "lldb/lldb-public.h"
 
+#include "Plugins/TypeSystem/Clang/TypeSystemClang.h"
 #include "lldb/API/SBBreakpoint.h"
 #include "lldb/API/SBDebugger.h"
 // SWIFT_ENABLE_TENSORFLOW
@@ -45,7 +46,6 @@
 #include "lldb/Core/ValueObjectList.h"
 #include "lldb/Core/ValueObjectVariable.h"
 #include "lldb/Host/Host.h"
-#include "lldb/Symbol/TypeSystemClang.h"
 #include "lldb/Symbol/DeclVendor.h"
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Symbol/SymbolFile.h"
