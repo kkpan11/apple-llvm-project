@@ -187,6 +187,12 @@ public:
   }
   bool IsPolymorphicClass(void *type) override { return false; }
   bool IsBeingDefined(void *type) override { return false; }
+  bool CanPassInRegisters(const CompilerType &type) override {
+    // FIXME: Implement this. There was an abort() here to figure out which
+    // tests where hitting this code. At least TestSwiftReturns and
+    // TestSwiftStepping were failing because of this Darwin.
+    return false;
+  }
   unsigned GetTypeQualifiers(void *type) override { return 0; }
   CompilerType GetTypeForDecl(void *opaque_decl) override {
     llvm_unreachable("GetTypeForDecl not implemented");
@@ -285,7 +291,6 @@ public:
   bool IsPointerType(void *type, CompilerType *pointee_type) override;
   bool IsScalarType(void *type) override;
   bool IsVoidType(void *type) override;
-  bool CanPassInRegisters(const CompilerType &type) override;
   // Type Completion
   bool GetCompleteType(void *type) override;
   // AST related queries
@@ -421,6 +426,12 @@ private:
   CompilerType RemangleAsType(swift::Demangle::Demangler &Dem,
                               swift::Demangle::NodePointer node);
 
+  /// Demangle the mangled name of the canonical type of \p type and
+  /// drill into the Global(TypeMangling(Type())).
+  ///
+  /// \return the child of Type or a nullptr.
+  swift::Demangle::NodePointer
+  DemangleCanonicalType(swift::Demangle::Demangler &Dem, void *opaque_type);
   /// The sibling SwiftASTContext.
   SwiftASTContext *m_swift_ast_context = nullptr;
 };
@@ -819,8 +830,6 @@ public:
   bool IsScalarType(void *type) override;
 
   bool IsVoidType(void *type) override;
-
-  bool CanPassInRegisters(const CompilerType &type) override;
 
   static bool IsGenericType(const CompilerType &compiler_type);
 
