@@ -5,7 +5,8 @@
 },
 {
   "target": "swift/master-next",
-  "upstream": "apple/master"
+  "upstream": "apple/master",
+  "test-command": "true"
 },
 {
   "target": "swift/swift-5.2-branch",
