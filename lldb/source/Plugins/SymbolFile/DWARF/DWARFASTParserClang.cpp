@@ -17,13 +17,13 @@
 #include "SymbolFileDWARFDebugMap.h"
 #include "UniqueDWARFASTType.h"
 
+#include "Plugins/ExpressionParser/Clang/ClangASTImporter.h"
+#include "Plugins/ExpressionParser/Clang/ClangASTMetadata.h"
+#include "Plugins/ExpressionParser/Clang/ClangUtil.h"
 #include "Plugins/Language/ObjC/ObjCLanguage.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/Value.h"
 #include "lldb/Host/Host.h"
-#include "lldb/Symbol/ClangASTImporter.h"
-#include "lldb/Symbol/ClangASTMetadata.h"
-#include "lldb/Symbol/ClangUtil.h"
 #include "lldb/Symbol/CompileUnit.h"
 #include "lldb/Symbol/Function.h"
 #include "lldb/Symbol/ObjectFile.h"
@@ -1637,12 +1637,11 @@ DWARFASTParserClang::ParseStructureLikeDIE(const SymbolContext &sc,
   // parameters in any class methods need it for the clang types for
   // function prototypes.
   LinkDeclContextToDIE(m_ast.GetDeclContextForType(clang_type), die);
-  type_sp = std::make_shared<Type>(die.GetID(), dwarf, attrs.name,
-                                   attrs.byte_size, nullptr, LLDB_INVALID_UID,
-                                   Type::eEncodingIsUID, &attrs.decl,
-                                   clang_type, Type::ResolveState::Forward);
-
-  type_sp->SetIsCompleteObjCClass(attrs.is_complete_objc_class);
+  type_sp = std::make_shared<Type>(
+      die.GetID(), dwarf, attrs.name, attrs.byte_size, nullptr,
+      LLDB_INVALID_UID, Type::eEncodingIsUID, &attrs.decl, clang_type,
+      Type::ResolveState::Forward,
+      TypePayloadClang(attrs.is_complete_objc_class));
 
   // Add our type to the unique type map so we don't end up creating many
   // copies of the same type over and over in the ASTContext for our

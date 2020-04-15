@@ -19,12 +19,13 @@
 #include "lldb/Core/Section.h"
 #include "lldb/Core/ValueObjectConstResult.h"
 #include "lldb/DataFormatters/StringPrinter.h"
+#include "lldb/Expression/ExpressionVariable.h"
 #include "lldb/Host/OptionParser.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Interpreter/CommandObject.h"
 #include "lldb/Interpreter/CommandObjectMultiword.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
-#include "lldb/Symbol/TypeSystemClang.h"
+#include "Plugins/TypeSystem/Clang/TypeSystemClang.h"
 #include "lldb/Symbol/Function.h"
 #include "lldb/Symbol/VariableList.h"
 #include "lldb/Target/RegisterContext.h"
@@ -46,6 +47,7 @@
 // FIXME: we should not need this
 #include "Plugins/Language/Swift/SwiftFormatters.h"
 #include "Plugins/Language/Swift/SwiftRuntimeFailureRecognizer.h"
+#include "Plugins/ExpressionParser/Clang/ClangExpressionVariable.h"
 
 using namespace lldb;
 using namespace lldb_private;

@@ -321,26 +321,50 @@ bool TypeSystemSwiftTypeRef::Verify(lldb::opaque_compiler_type_t type) {
     return result;                                                             \
   } while (0)
 
+CompilerType
+TypeSystemSwiftTypeRef::RemangleAsType(swift::Demangle::Demangler &Dem,
+                                       swift::Demangle::NodePointer node) {
+  if (!node)
+    return {};
+  assert(node->getKind() == Node::Kind::Type && "expected type node");
+
+  using namespace swift::Demangle;
+  auto global = Dem.createNode(Node::Kind::Global);
+  auto type_mangling = Dem.createNode(Node::Kind::TypeMangling);
+  global->addChild(type_mangling, Dem);
+  type_mangling->addChild(node, Dem);
+  ConstString mangled_element(mangleNode(global));
+  return GetTypeFromMangledTypename(mangled_element);
+}
+
+swift::Demangle::NodePointer
+TypeSystemSwiftTypeRef::DemangleCanonicalType(swift::Demangle::Demangler &Dem,
+                                              void *opaque_type) {
+  using namespace swift::Demangle;
+  NodePointer node =
+      GetCanonicalDemangleTree(GetModule(), Dem, AsMangledName(opaque_type));
+
+  if (!node || node->getNumChildren() != 1 ||
+      node->getKind() != Node::Kind::Global)
+    return nullptr;
+  node = node->getFirstChild();
+  if (node->getNumChildren() != 1 ||
+      node->getKind() != Node::Kind::TypeMangling)
+    return nullptr;
+  node = node->getFirstChild();
+  if (node->getNumChildren() != 1 || node->getKind() != Node::Kind::Type)
+    return nullptr;
+  node = node->getFirstChild();
+  return node;
+}
+
 bool TypeSystemSwiftTypeRef::IsArrayType(void *type, CompilerType *element_type,
                                          uint64_t *size, bool *is_incomplete) {
   auto impl = [&]() {
     using namespace swift::Demangle;
     Demangler Dem;
-    NodePointer node =
-        GetCanonicalDemangleTree(GetModule(), Dem, AsMangledName(type));
-
-    if (!node || node->getNumChildren() != 1 ||
-        node->getKind() != Node::Kind::Global)
-      return false;
-    node = node->getFirstChild();
-    if (node->getNumChildren() != 1 ||
-        node->getKind() != Node::Kind::TypeMangling)
-      return false;
-    node = node->getFirstChild();
-    if (node->getNumChildren() != 1 || node->getKind() != Node::Kind::Type)
-      return false;
-    node = node->getFirstChild();
-    if (node->getNumChildren() != 2 ||
+    NodePointer node = DemangleCanonicalType(Dem, type);
+    if (!node || node->getNumChildren() != 2 ||
         node->getKind() != Node::Kind::BoundGenericStructure)
       return false;
     auto elem_node = node->getChild(1);
@@ -363,15 +387,9 @@ bool TypeSystemSwiftTypeRef::IsArrayType(void *type, CompilerType *element_type,
       return false;
     elem_node = elem_node->getFirstChild();
 
-    if (element_type) {
-      // Remangle the element type.
-      auto global = Dem.createNode(Node::Kind::Global);
-      auto type_mangling = Dem.createNode(Node::Kind::TypeMangling);
-      global->addChild(type_mangling, Dem);
-      type_mangling->addChild(elem_node, Dem);
-      ConstString mangled_element(mangleNode(global));
-      *element_type = GetTypeFromMangledTypename(mangled_element);
-    }
+    if (element_type)
+      *element_type = RemangleAsType(Dem, elem_node);
+
     if (is_incomplete)
       *is_incomplete = true;
     if (size)
@@ -394,35 +412,93 @@ bool TypeSystemSwiftTypeRef::IsFloatingPointType(void *type, uint32_t &count,
   return m_swift_ast_context->IsFloatingPointType(ReconstructType(type), count,
                                                   is_complex);
 }
+
 bool TypeSystemSwiftTypeRef::IsFunctionType(void *type, bool *is_variadic_ptr) {
-  auto impl = [&]() {
+  auto impl = [&]() -> bool {
     using namespace swift::Demangle;
     Demangler Dem;
-    NodePointer node =
-        GetCanonicalDemangleTree(GetModule(), Dem, AsMangledName(type));
-    if (!node || node->getNumChildren() != 1 ||
-        node->getKind() != Node::Kind::Global)
-      return false;
-    node = node->getFirstChild();
-    if (node->getNumChildren() != 1 || node->getKind() != Node::Kind::Function)
-      return false;
-    return true;
+    NodePointer node = DemangleCanonicalType(Dem, type);
+    return node && (node->getKind() == Node::Kind::FunctionType ||
+                    node->getKind() == Node::Kind::ImplFunctionType);
   };
   VALIDATE_AND_RETURN(impl, m_swift_ast_context->IsFunctionType(
                                 ReconstructType(type), nullptr));
 }
 size_t TypeSystemSwiftTypeRef::GetNumberOfFunctionArguments(void *type) {
-  return m_swift_ast_context->GetNumberOfFunctionArguments(
-      ReconstructType(type));
+  auto impl = [&]() -> size_t {
+    using namespace swift::Demangle;
+    Demangler Dem;
+    NodePointer node = DemangleCanonicalType(Dem, type);
+    if (!node || (node->getKind() != Node::Kind::FunctionType &&
+                  node->getKind() != Node::Kind::ImplFunctionType))
+      return 0;
+    unsigned num_args = 0;
+    for (NodePointer child : *node) {
+      if (child->getKind() == Node::Kind::ImplParameter)
+        ++num_args;
+      if (child->getKind() == Node::Kind::ArgumentTuple &&
+          child->getNumChildren() == 1) {
+        NodePointer node = child->getFirstChild();
+        if (node->getNumChildren() != 1 ||
+            node->getKind() != Node::Kind::Type)
+          break;
+        node = node->getFirstChild();
+        if (node->getKind() == Node::Kind::Tuple)
+          return node->getNumChildren();
+      }
+    }
+    return num_args;
+  };
+  VALIDATE_AND_RETURN(impl, m_swift_ast_context->GetNumberOfFunctionArguments(
+                                ReconstructType(type)));
 }
 CompilerType
 TypeSystemSwiftTypeRef::GetFunctionArgumentAtIndex(void *type,
                                                    const size_t index) {
-  return m_swift_ast_context->GetFunctionArgumentAtIndex(ReconstructType(type),
-                                                         index);
+  auto impl = [&]() -> CompilerType {
+    using namespace swift::Demangle;
+    Demangler Dem;
+    NodePointer node = DemangleCanonicalType(Dem, type);
+    if (!node || (node->getKind() != Node::Kind::FunctionType &&
+                  node->getKind() != Node::Kind::ImplFunctionType))
+      return {};
+    unsigned num_args = 0;
+    for (NodePointer child : *node) {
+      if (child->getKind() == Node::Kind::ImplParameter) {
+        if (num_args == index)
+          for (NodePointer type : *child)
+            if (type->getKind() == Node::Kind::Type)
+              return RemangleAsType(Dem, type);
+        ++num_args;
+      }
+      if (child->getKind() == Node::Kind::ArgumentTuple &&
+          child->getNumChildren() == 1) {
+        NodePointer node = child->getFirstChild();
+        if (node->getNumChildren() != 1 ||
+            node->getKind() != Node::Kind::Type)
+          break;
+        node = node->getFirstChild();
+        if (node->getKind() == Node::Kind::Tuple)
+          for (NodePointer child : *node) {
+            if (child->getNumChildren() == 1 &&
+                child->getKind() == Node::Kind::TupleElement) {
+              NodePointer type = child->getFirstChild();
+              if (num_args == index && type->getKind() == Node::Kind::Type)
+                return RemangleAsType(Dem, type);
+              ++num_args;
+            }
+          }
+      }
+    }
+    return {};
+  };
+  VALIDATE_AND_RETURN(impl, m_swift_ast_context->GetFunctionArgumentAtIndex(
+                                ReconstructType(type), index));
 }
 bool TypeSystemSwiftTypeRef::IsFunctionPointerType(void *type) {
-  return m_swift_ast_context->IsFunctionPointerType(ReconstructType(type));
+  auto impl = [&]() -> bool { return IsFunctionType(type, nullptr); };
+  VALIDATE_AND_RETURN(
+      impl, m_swift_ast_context->IsFunctionPointerType(ReconstructType(type)));
 }
 bool TypeSystemSwiftTypeRef::IsIntegerType(void *type, bool &is_signed) {
   return m_swift_ast_context->IsIntegerType(ReconstructType(type), is_signed);
@@ -436,18 +512,34 @@ bool TypeSystemSwiftTypeRef::IsPossibleDynamicType(void *type,
 }
 bool TypeSystemSwiftTypeRef::IsPointerType(void *type,
                                            CompilerType *pointee_type) {
-  return m_swift_ast_context->IsPointerType(ReconstructType(type),
-                                            pointee_type);
+  auto impl = [&]() {
+    using namespace swift::Demangle;
+    Demangler Dem;
+    NodePointer node = DemangleCanonicalType(Dem, type);
+    if (!node || node->getKind() != Node::Kind::BuiltinTypeName ||
+        !node->hasText())
+      return false;
+    return ((node->getText() == swift::BUILTIN_TYPE_NAME_RAWPOINTER) ||
+            (node->getText() == swift::BUILTIN_TYPE_NAME_UNSAFEVALUEBUFFER) ||
+            (node->getText() == swift::BUILTIN_TYPE_NAME_NATIVEOBJECT) ||
+            (node->getText() == swift::BUILTIN_TYPE_NAME_BRIDGEOBJECT));
+  };
+  VALIDATE_AND_RETURN(impl, m_swift_ast_context->IsPointerType(ReconstructType(type),
+                                                               pointee_type));
 }
 bool TypeSystemSwiftTypeRef::IsScalarType(void *type) {
   return m_swift_ast_context->IsScalarType(ReconstructType(type));
 }
 bool TypeSystemSwiftTypeRef::IsVoidType(void *type) {
-  return m_swift_ast_context->IsVoidType(ReconstructType(type));
-}
-bool TypeSystemSwiftTypeRef::CanPassInRegisters(const CompilerType &type) {
-  return m_swift_ast_context->CanPassInRegisters(
-      {m_swift_ast_context, ReconstructType(type.GetOpaqueQualType())});
+  auto impl = [&]() {
+    using namespace swift::Demangle;
+    Demangler Dem;
+    NodePointer node = DemangleCanonicalType(Dem, type);
+    return node && node->getNumChildren() == 0 &&
+           node->getKind() == Node::Kind::Tuple;
+  };
+  VALIDATE_AND_RETURN(impl,
+                      m_swift_ast_context->IsVoidType(ReconstructType(type)));
 }
 // Type Completion
 bool TypeSystemSwiftTypeRef::GetCompleteType(void *type) {
@@ -488,15 +580,46 @@ CompilerType TypeSystemSwiftTypeRef::GetCanonicalType(void *type) {
   return m_swift_ast_context->GetCanonicalType(ReconstructType(type));
 }
 int TypeSystemSwiftTypeRef::GetFunctionArgumentCount(void *type) {
-  return m_swift_ast_context->GetFunctionArgumentCount(ReconstructType(type));
+  auto impl = [&]() { return GetNumberOfFunctionArguments(type); };
+  VALIDATE_AND_RETURN(impl, m_swift_ast_context->GetFunctionArgumentCount(
+                                ReconstructType(type)));
 }
 CompilerType
 TypeSystemSwiftTypeRef::GetFunctionArgumentTypeAtIndex(void *type, size_t idx) {
-  return m_swift_ast_context->GetFunctionArgumentTypeAtIndex(
-      ReconstructType(type), idx);
+  auto impl = [&] { return GetFunctionArgumentAtIndex(type, idx); };
+  VALIDATE_AND_RETURN(impl, m_swift_ast_context->GetFunctionArgumentTypeAtIndex(
+                                ReconstructType(type), idx));
 }
 CompilerType TypeSystemSwiftTypeRef::GetFunctionReturnType(void *type) {
-  return m_swift_ast_context->GetFunctionReturnType(ReconstructType(type));
+  auto impl = [&]() -> CompilerType {
+    using namespace swift::Demangle;
+    Demangler Dem;
+    NodePointer node = DemangleCanonicalType(Dem, type);
+    if (!node || (node->getKind() != Node::Kind::FunctionType &&
+                  node->getKind() != Node::Kind::ImplFunctionType))
+      return {};
+    unsigned num_args = 0;
+    for (NodePointer child : *node) {
+      if (child->getKind() == Node::Kind::ImplResult) {
+        for (NodePointer type : *child)
+          if (type->getKind() == Node::Kind::Type)
+            return RemangleAsType(Dem, type);
+      }
+      if (child->getKind() == Node::Kind::ReturnType &&
+          child->getNumChildren() == 1) {
+        NodePointer type = child->getFirstChild();
+        if (type->getKind() == Node::Kind::Type)
+          return RemangleAsType(Dem, type);
+      }
+    }
+    // Else this is a void / "()" type.
+    NodePointer type = Dem.createNode(Node::Kind::Type);
+    NodePointer tuple = Dem.createNode(Node::Kind::Tuple);
+    type->addChild(tuple, Dem);
+    return RemangleAsType(Dem, type);
+  };
+  VALIDATE_AND_RETURN(
+      impl, m_swift_ast_context->GetFunctionReturnType(ReconstructType(type)));
 }
 size_t TypeSystemSwiftTypeRef::GetNumMemberFunctions(void *type) {
   return m_swift_ast_context->GetNumMemberFunctions(ReconstructType(type));
@@ -720,8 +843,30 @@ TypeSystemSwiftTypeRef::GetDirectBaseClassAtIndex(void *type, size_t idx,
 bool TypeSystemSwiftTypeRef::IsReferenceType(void *type,
                                              CompilerType *pointee_type,
                                              bool *is_rvalue) {
-  return m_swift_ast_context->IsReferenceType(ReconstructType(type),
-                                              pointee_type, is_rvalue);
+  auto impl = [&]() {
+    using namespace swift::Demangle;
+    Demangler Dem;
+    NodePointer node = DemangleCanonicalType(Dem, type);
+    if (!node || node->getNumChildren() != 1 ||
+        node->getKind() != Node::Kind::InOut)
+      return false;
+
+    if (pointee_type) {
+      NodePointer referenced = node->getFirstChild();
+      auto type = Dem.createNode(Node::Kind::Type);
+      type->addChild(referenced, Dem);
+      *pointee_type = RemangleAsType(Dem, type);
+    }
+
+    if (is_rvalue)
+      *is_rvalue = false;
+
+    return true;
+  };
+
+  VALIDATE_AND_RETURN(
+      impl, m_swift_ast_context->IsReferenceType(ReconstructType(type),
+                                                 pointee_type, is_rvalue));
 }
 bool TypeSystemSwiftTypeRef::ShouldTreatScalarValueAsAddress(
     lldb::opaque_compiler_type_t type) {

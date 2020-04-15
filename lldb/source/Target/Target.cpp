@@ -8,6 +8,8 @@
 
 #include "lldb/Target/Target.h"
 #include "Plugins/ExpressionParser/Clang/ClangModulesDeclVendor.h"
+#include "Plugins/ExpressionParser/Clang/ClangModulesDeclVendor.h"
+#include "Plugins/ExpressionParser/Clang/ClangPersistentVariables.h"
 #include "lldb/Breakpoint/BreakpointIDList.h"
 #include "lldb/Breakpoint/BreakpointPrecondition.h"
 #include "lldb/Breakpoint/BreakpointResolver.h"
@@ -37,10 +39,11 @@
 #include "lldb/Interpreter/OptionGroupWatchpoint.h"
 #include "lldb/Interpreter/OptionValues.h"
 #include "lldb/Interpreter/Property.h"
-#include "lldb/Symbol/TypeSystemClang.h"
-#include "lldb/Symbol/ClangASTImporter.h"
+#include "Plugins/TypeSystem/Clang/TypeSystemClang.h"
+#include "Plugins/ExpressionParser/Clang/ClangASTImporter.h"
 #include "lldb/Symbol/Function.h"
 #include "lldb/Symbol/ObjectFile.h"
+#include "lldb/Symbol/SwiftASTContext.h"
 #include "lldb/Symbol/Symbol.h"
 #include "lldb/Symbol/SymbolFile.h"
 #include "lldb/Symbol/SymbolVendor.h"
@@ -3849,6 +3852,32 @@ bool TargetProperties::GetSwiftCreateModuleContextsInParallel() const {
         nullptr, ePropertySwiftCreateModuleContextsInParallel, true);
   else
     return true;
+}
+
+bool TargetProperties::GetOSPluginReportsAllThreads() const {
+  const bool fail_value = true;
+  const Property *exp_property =
+      m_collection_sp->GetPropertyAtIndex(nullptr, true, ePropertyExperimental);
+  OptionValueProperties *exp_values =
+      exp_property->GetValue()->GetAsProperties();
+  if (!exp_values)
+    return fail_value;
+    
+  return 
+      exp_values->GetPropertyAtIndexAsBoolean(nullptr, 
+                                              ePropertyOSPluginReportsAllThreads,
+                                              fail_value);
+}
+
+void TargetProperties::SetOSPluginReportsAllThreads(bool does_report) {
+  const Property *exp_property =
+      m_collection_sp->GetPropertyAtIndex(nullptr, true, ePropertyExperimental);
+  OptionValueProperties *exp_values =
+      exp_property->GetValue()->GetAsProperties();
+  if (exp_values)
+    exp_values->SetPropertyAtIndexAsBoolean(nullptr, 
+                                            ePropertyOSPluginReportsAllThreads,
+                                            does_report);
 }
 
 ArchSpec TargetProperties::GetDefaultArchitecture() const {

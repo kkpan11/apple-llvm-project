@@ -48,6 +48,11 @@ class ModuleDecl;
 class SourceFile;
 struct PrintOptions;
 class MemoryBufferSerializedModuleLoader;
+namespace Demangle {
+class Demangler;
+class Node;
+using NodePointer = Node *;
+} // namespace Demangle
 namespace irgen {
 class FixedTypeInfo;
 class TypeInfo;
@@ -70,6 +75,30 @@ struct SourceModule;
 class SwiftASTContext;
 CompilerType ToCompilerType(swift::Type qual_type);
 
+/// The implementation of lldb::Type's m_payload field for TypeSystemSwift.
+class TypePayloadSwift {
+  /// Layout: bit 1 ... IsFixedValueBuffer.
+  Type::Payload m_payload = 0;
+
+  static constexpr unsigned FixedValueBufferBit = 1;
+public:
+  TypePayloadSwift() = default;
+  explicit TypePayloadSwift(bool is_fixed_value_buffer);
+  explicit TypePayloadSwift(Type::Payload opaque_payload)
+      : m_payload(opaque_payload) {}
+  operator Type::Payload() { return m_payload; }
+
+  /// \return whether this is a Swift fixed-size buffer. Resilient variables in
+  /// fixed-size buffers may be indirect depending on the runtime size of the
+  /// type. This is more a property of the value than of its type.
+  bool IsFixedValueBuffer() { return Flags(m_payload).Test(FixedValueBufferBit); }
+  void SetIsFixedValueBuffer(bool is_fixed_value_buffer) {
+    m_payload = is_fixed_value_buffer
+                    ? Flags(m_payload).Set(FixedValueBufferBit)
+                    : Flags(m_payload).Clear(FixedValueBufferBit);
+  }
+};
+  
 /// Abstract base class for all Swift TypeSystems.
 ///
 /// Swift CompilerTypes are either a mangled name or a Swift AST
@@ -158,6 +187,12 @@ public:
   }
   bool IsPolymorphicClass(void *type) override { return false; }
   bool IsBeingDefined(void *type) override { return false; }
+  bool CanPassInRegisters(const CompilerType &type) override {
+    // FIXME: Implement this. There was an abort() here to figure out which
+    // tests where hitting this code. At least TestSwiftReturns and
+    // TestSwiftStepping were failing because of this Darwin.
+    return false;
+  }
   unsigned GetTypeQualifiers(void *type) override { return 0; }
   CompilerType GetTypeForDecl(void *opaque_decl) override {
     llvm_unreachable("GetTypeForDecl not implemented");
@@ -256,7 +291,6 @@ public:
   bool IsPointerType(void *type, CompilerType *pointee_type) override;
   bool IsScalarType(void *type) override;
   bool IsVoidType(void *type) override;
-  bool CanPassInRegisters(const CompilerType &type) override;
   // Type Completion
   bool GetCompleteType(void *type) override;
   // AST related queries
@@ -382,9 +416,23 @@ public:
                            bool print_extensions_if_available) override;
 
 private:
+  /// Helper that creates an AST type from \p type.
   void *ReconstructType(void *type);
+  /// Cast \p opaque_type as a mangled name.
   const char *AsMangledName(void *opaque_type);
 
+  /// Wrap \p node as \p Global(TypeMangling(node)), remangle the type
+  /// and create a CompilerType from it.
+  CompilerType RemangleAsType(swift::Demangle::Demangler &Dem,
+                              swift::Demangle::NodePointer node);
+
+  /// Demangle the mangled name of the canonical type of \p type and
+  /// drill into the Global(TypeMangling(Type())).
+  ///
+  /// \return the child of Type or a nullptr.
+  swift::Demangle::NodePointer
+  DemangleCanonicalType(swift::Demangle::Demangler &Dem, void *opaque_type);
+  /// The sibling SwiftASTContext.
   SwiftASTContext *m_swift_ast_context = nullptr;
 };
 
@@ -782,8 +830,6 @@ public:
   bool IsScalarType(void *type) override;
 
   bool IsVoidType(void *type) override;
-
-  bool CanPassInRegisters(const CompilerType &type) override;
 
   static bool IsGenericType(const CompilerType &compiler_type);
 
