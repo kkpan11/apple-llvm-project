@@ -213,13 +213,11 @@ SwiftCompleteCode(SwiftASTContext &SwiftCtx,
   auto *completionsModule =
       ModuleDecl::create(ctx.getIdentifier("CodeCompletion"), ctx);
   auto &completionCodeFile = *new (ctx) SourceFile(
-      *completionsModule, SourceFileKind::REPL, completionCodeBufferID,
-      SourceFile::ImplicitModuleImportKind::None);
+      *completionsModule, SourceFileKind::REPL, completionCodeBufferID);
   completionsModule->addFile(completionCodeFile);
   auto &persistentDeclFile = *new (ctx) SourceFile(
       *completionsModule, SourceFileKind::Library,
-      ctx.SourceMgr.addMemBufferCopy("", "<Persistent Decls>"),
-      SourceFile::ImplicitModuleImportKind::None);
+      ctx.SourceMgr.addMemBufferCopy("", "<Persistent Decls>"));
   completionsModule->addFile(persistentDeclFile);
   persistentDeclFile.ASTStage = SourceFile::TypeChecked;
 
@@ -244,7 +242,7 @@ SwiftCompleteCode(SwiftASTContext &SwiftCtx,
           std::make_pair(ModuleDecl::AccessPathTy(), module),
           SourceFile::ImportOptions()));
     }
-    completionCodeFile.addImports(handImports);
+    completionCodeFile.setImports(handImports);
   }
 
   // Set the decls in `persistentDeclFile` to the persistent declarations.
