@@ -21,6 +21,7 @@
 {
   "target": "swift/master",
   "upstream": "swift/release/5.3",
-  "test_commits_in_bundle": true
+  "test_commits_in_bundle": true,
+  "test-command": "true"
 }
 ]
