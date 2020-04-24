@@ -1665,7 +1665,6 @@ unsigned SwiftExpressionParser::Parse(DiagnosticManager &diagnostic_manager,
     // will leave them here even though the upstream does not have them turned on.
     // Perhaps, we should add new "notebook" mode (a la repl mode) to
     // conditionally turn optimizations on?
-    runSILOptPreparePasses(*sil_module);
     runSILOptimizationPasses(*sil_module);
   }
 
