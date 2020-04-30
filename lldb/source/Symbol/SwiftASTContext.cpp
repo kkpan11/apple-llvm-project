@@ -8022,21 +8022,24 @@ void SwiftASTContext::DumpSummary(void *type, ExecutionContext *exe_ctx,
                                   lldb::offset_t data_byte_offset,
                                   size_t data_byte_size) {}
 
-void SwiftASTContext::DumpTypeDescription(void *type) {
+void SwiftASTContext::DumpTypeDescription(void *type,
+                                          lldb::DescriptionLevel level) {
   StreamFile s(stdout, false);
-  DumpTypeDescription(type, &s);
+  DumpTypeDescription(type, &s, level);
 }
 
-void SwiftASTContext::DumpTypeDescription(void *type, Stream *s) {
-  DumpTypeDescription(type, s, false, true);
+void SwiftASTContext::DumpTypeDescription(void *type, Stream *s,
+                                          lldb::DescriptionLevel level) {
+  DumpTypeDescription(type, s, false, true, level);
 }
 
 void SwiftASTContext::DumpTypeDescription(void *type,
                                           bool print_help_if_available,
-                                          bool print_extensions_if_available) {
+                                          bool print_extensions_if_available,
+                                          lldb::DescriptionLevel level) {
   StreamFile s(stdout, false);
   DumpTypeDescription(type, &s, print_help_if_available,
-                      print_extensions_if_available);
+                      print_extensions_if_available, level);
 }
 
 static void PrintSwiftNominalType(swift::NominalTypeDecl *nominal_type_decl,
@@ -8069,7 +8072,8 @@ static void PrintSwiftNominalType(swift::NominalTypeDecl *nominal_type_decl,
 
 void SwiftASTContext::DumpTypeDescription(void *type, Stream *s,
                                           bool print_help_if_available,
-                                          bool print_extensions_if_available) {
+                                          bool print_extensions_if_available,
+                                          lldb::DescriptionLevel level) {
   llvm::SmallVector<char, 1024> buf;
   llvm::raw_svector_ostream llvm_ostrm(buf);
 
@@ -8095,7 +8099,7 @@ void SwiftASTContext::DumpTypeDescription(void *type, Stream *s,
               Flags clang_type_flags(clang_type.GetTypeInfo());
               DumpTypeDescription(clang_type.GetOpaqueQualType(), s,
                                   print_help_if_available,
-                                  print_extensions_if_available);
+                                  print_extensions_if_available, level);
             }
           }
         } else if (kind == swift::DeclKind::Func ||
@@ -8129,7 +8133,7 @@ void SwiftASTContext::DumpTypeDescription(void *type, Stream *s,
                           imported_value_decl->getInterfaceType()
                               .getPointer()) {
                     DumpTypeDescription(decl_type, s, print_help_if_available,
-                                        print_extensions_if_available);
+                                        print_extensions_if_available, level);
                   }
                 }
               }
@@ -8146,7 +8150,7 @@ void SwiftASTContext::DumpTypeDescription(void *type, Stream *s,
           swift_can_type->castTo<swift::MetatypeType>();
       DumpTypeDescription(metatype_type->getInstanceType().getPointer(),
                           print_help_if_available,
-                          print_extensions_if_available);
+                          print_extensions_if_available, level);
     } break;
     case swift::TypeKind::UnboundGeneric: {
       swift::UnboundGenericType *unbound_generic_type =
