@@ -995,10 +995,12 @@ static SDKTypeMinVersion GetSDKType(const llvm::Triple &target,
 
 /// Return the name of the OS-specific subdirectory containing the
 /// Swift stdlib needed for \p target.
-StringRef SwiftASTContext::GetSwiftStdlibOSDir(const llvm::Triple &target,
-                                               const llvm::Triple &host) {
+std::string SwiftASTContext::GetSwiftStdlibOSDir(const llvm::Triple &target,
+                                                 const llvm::Triple &host) {
   auto sdk = GetSDKType(target, host);
-  llvm::StringRef sdk_name = XcodeSDK::GetSDKNameForType(sdk.sdk_type);
+  XcodeSDK::Info sdk_info;
+  sdk_info.type = sdk.sdk_type;
+  std::string sdk_name = XcodeSDK::GetCanonicalName(sdk_info);
   if (!sdk_name.empty())
     return sdk_name;
   return target.getOSName();
@@ -1008,7 +1010,7 @@ StringRef SwiftASTContext::GetResourceDir(const llvm::Triple &triple) {
   static std::mutex g_mutex;
   std::lock_guard<std::mutex> locker(g_mutex);
   StringRef platform_sdk_path = GetPlatformSDKPath();
-  auto swift_stdlib_os_dir =
+  std::string swift_stdlib_os_dir =
       GetSwiftStdlibOSDir(triple, HostInfo::GetArchitecture().GetTriple());
 
   // The resource dir depends on the SDK path and the expected os name.
@@ -1668,17 +1670,21 @@ lldb::TypeSystemSP SwiftASTContext::CreateInstance(lldb::LanguageType language,
       set_triple = true;
     }
 
+    // SDK path setup.
     llvm::StringRef serialized_sdk_path =
         swift_ast_sp->GetCompilerInvocation().getSDKPath();
-    if (serialized_sdk_path.empty()) {
+    if (serialized_sdk_path.empty())
       LOG_PRINTF(LIBLLDB_LOG_TYPES, "No serialized SDK path.");
-    } else {
-      LOG_PRINTF(LIBLLDB_LOG_TYPES, "Got serialized SDK path %s.",
+    else
+      LOG_PRINTF(LIBLLDB_LOG_TYPES, "Serialized SDK path is %s.",
                  serialized_sdk_path.str().c_str());
-      FileSpec sdk_spec(serialized_sdk_path.str().c_str());
-      if (FileSystem::Instance().Exists(sdk_spec)) {
-        swift_ast_sp->SetPlatformSDKPath(serialized_sdk_path);
-      }
+    XcodeSDK sdk = module.GetXcodeSDK();
+    PlatformSP platform =
+      Platform::GetPlatformForArchitecture(module.GetArchitecture(), nullptr);
+    std::string sdk_path = platform->GetSDKPath(sdk);
+    LOG_PRINTF(LIBLLDB_LOG_TYPES, "Host SDK path is %s.", sdk_path.c_str());
+    if (FileSystem::Instance().Exists(sdk_path)) {
+      swift_ast_sp->SetPlatformSDKPath(sdk_path);
     }
   }
 
@@ -2670,14 +2676,6 @@ void SwiftASTContext::InitializeSearchPathOptions(
 
       set_sdk = true;
     }
-  } else if (!m_platform_sdk_path.empty()) {
-    FileSpec platform_sdk(m_platform_sdk_path.c_str());
-
-    if (FileSystem::Instance().Exists(platform_sdk) &&
-        SDKSupportsSwift(platform_sdk, XcodeSDK::Type::unknown)) {
-      invocation.setSDKPath(m_platform_sdk_path.c_str());
-      set_sdk = true;
-    }
   }
 
   llvm::Triple triple(GetTriple());
@@ -2694,13 +2692,19 @@ void SwiftASTContext::InitializeSearchPathOptions(
     auto sdk = GetSDKType(triple, HostInfo::GetArchitecture().GetTriple());
     // Explicitly leave the SDKPath blank on other platforms.
     if (sdk.sdk_type != XcodeSDK::Type::unknown) {
-      auto dir = GetSDKDirectory(sdk.sdk_type, sdk.min_version_major,
-                                 sdk.min_version_minor);
+      std::string sdk_path = m_platform_sdk_path;
+      if (sdk_path.empty() || !FileSystem::Instance().Exists(sdk_path) ||
+          !SDKSupportsSwift(FileSpec(sdk_path), sdk.sdk_type)) {
+        sdk_path = GetSDKDirectory(sdk.sdk_type, sdk.min_version_major,
+                                   sdk.min_version_minor)
+                       .GetStringRef()
+                       .str();
+      }
       // Note that calling setSDKPath() also recomputes all paths that
       // depend on the SDK path including the
       // RuntimeLibraryImportPaths, which are *only* initialized
       // through this mechanism.
-      invocation.setSDKPath(dir.AsCString(""));
+      invocation.setSDKPath(sdk_path);
     }
 
     // SWIFT_ENABLE_TENSORFLOW
@@ -3617,8 +3621,9 @@ SwiftASTContext::GetCachedModule(const SourceModule &module) {
   return nullptr;
 }
 
-swift::ModuleDecl *SwiftASTContext::CreateModule(const SourceModule &module,
-                                                 Status &error) {
+swift::ModuleDecl *
+SwiftASTContext::CreateModule(const SourceModule &module, Status &error,
+                              swift::ImplicitImportInfo importInfo) {
   VALID_OR_RETURN(nullptr);
   if (!module.path.size()) {
     error.SetErrorStringWithFormat("invalid module name (empty)");
@@ -3639,7 +3644,7 @@ swift::ModuleDecl *SwiftASTContext::CreateModule(const SourceModule &module,
 
   swift::Identifier module_id(
       ast->getIdentifier(module.path.front().GetCString()));
-  auto *module_decl = swift::ModuleDecl::create(module_id, *ast);
+  auto *module_decl = swift::ModuleDecl::create(module_id, *ast, importInfo);
   if (!module_decl) {
     error.SetErrorStringWithFormat("failed to create module for \"%s\"",
                                    module.path.front().GetCString());
@@ -4891,7 +4896,7 @@ swift::irgen::IRGenModule &SwiftASTContext::GetIRGenModule() {
             IRExecutionUnit::GetLLVMGlobalContextMutex());
         m_ir_gen_module_ap.reset(new swift::irgen::IRGenModule(
             ir_generator, ir_generator.createTargetMachine(), nullptr,
-            GetGlobalLLVMContext(), ir_gen_opts.ModuleName, PSPs.OutputFilename,
+            ir_gen_opts.ModuleName, PSPs.OutputFilename,
             PSPs.MainInputFilenameForDebugInfo, ""));
         llvm::Module *llvm_module = m_ir_gen_module_ap->getModule();
         llvm_module->setDataLayout(data_layout.getStringRepresentation());
@@ -5181,7 +5186,9 @@ bool SwiftASTContext::IsArrayType(void *type, CompilerType *element_type_ptr,
       swift_can_type->getAs<swift::BoundGenericStructType>();
   if (struct_type) {
     swift::StructDecl *struct_decl = struct_type->getDecl();
-    if (strcmp(struct_decl->getName().get(), "Array") != 0)
+    llvm::StringRef name = struct_decl->getName().get();
+    // This is sketchy, but it matches the behavior of GetArrayElementType().
+    if (name != "Array" && name != "NativeArray" && name != "ArraySlice")
       return false;
     if (!struct_decl->getModuleContext()->isStdlibModule())
       return false;
@@ -8015,21 +8022,24 @@ void SwiftASTContext::DumpSummary(void *type, ExecutionContext *exe_ctx,
                                   lldb::offset_t data_byte_offset,
                                   size_t data_byte_size) {}
 
-void SwiftASTContext::DumpTypeDescription(void *type) {
+void SwiftASTContext::DumpTypeDescription(void *type,
+                                          lldb::DescriptionLevel level) {
   StreamFile s(stdout, false);
-  DumpTypeDescription(type, &s);
+  DumpTypeDescription(type, &s, level);
 }
 
-void SwiftASTContext::DumpTypeDescription(void *type, Stream *s) {
-  DumpTypeDescription(type, s, false, true);
+void SwiftASTContext::DumpTypeDescription(void *type, Stream *s,
+                                          lldb::DescriptionLevel level) {
+  DumpTypeDescription(type, s, false, true, level);
 }
 
 void SwiftASTContext::DumpTypeDescription(void *type,
                                           bool print_help_if_available,
-                                          bool print_extensions_if_available) {
+                                          bool print_extensions_if_available,
+                                          lldb::DescriptionLevel level) {
   StreamFile s(stdout, false);
   DumpTypeDescription(type, &s, print_help_if_available,
-                      print_extensions_if_available);
+                      print_extensions_if_available, level);
 }
 
 static void PrintSwiftNominalType(swift::NominalTypeDecl *nominal_type_decl,
@@ -8062,7 +8072,8 @@ static void PrintSwiftNominalType(swift::NominalTypeDecl *nominal_type_decl,
 
 void SwiftASTContext::DumpTypeDescription(void *type, Stream *s,
                                           bool print_help_if_available,
-                                          bool print_extensions_if_available) {
+                                          bool print_extensions_if_available,
+                                          lldb::DescriptionLevel level) {
   llvm::SmallVector<char, 1024> buf;
   llvm::raw_svector_ostream llvm_ostrm(buf);
 
@@ -8088,7 +8099,7 @@ void SwiftASTContext::DumpTypeDescription(void *type, Stream *s,
               Flags clang_type_flags(clang_type.GetTypeInfo());
               DumpTypeDescription(clang_type.GetOpaqueQualType(), s,
                                   print_help_if_available,
-                                  print_extensions_if_available);
+                                  print_extensions_if_available, level);
             }
           }
         } else if (kind == swift::DeclKind::Func ||
@@ -8122,7 +8133,7 @@ void SwiftASTContext::DumpTypeDescription(void *type, Stream *s,
                           imported_value_decl->getInterfaceType()
                               .getPointer()) {
                     DumpTypeDescription(decl_type, s, print_help_if_available,
-                                        print_extensions_if_available);
+                                        print_extensions_if_available, level);
                   }
                 }
               }
@@ -8139,7 +8150,7 @@ void SwiftASTContext::DumpTypeDescription(void *type, Stream *s,
           swift_can_type->castTo<swift::MetatypeType>();
       DumpTypeDescription(metatype_type->getInstanceType().getPointer(),
                           print_help_if_available,
-                          print_extensions_if_available);
+                          print_extensions_if_available, level);
     } break;
     case swift::TypeKind::UnboundGeneric: {
       swift::UnboundGenericType *unbound_generic_type =
@@ -8359,14 +8370,12 @@ static void GetNameFromModule(swift::ModuleDecl *module, std::string &result) {
   }
 }
 
-static bool
-LoadOneModule(const SourceModule &module, SwiftASTContext &swift_ast_context,
-              lldb::StackFrameWP &stack_frame_wp,
-              llvm::SmallVectorImpl<swift::SourceFile::ImportedModuleDesc>
-                  &additional_imports,
-              Status &error) {
+static swift::ModuleDecl *LoadOneModule(const SourceModule &module,
+                                        SwiftASTContext &swift_ast_context,
+                                        lldb::StackFrameWP &stack_frame_wp,
+                                        Status &error) {
   if (!module.path.size())
-    return false;
+    return nullptr;
 
   error.Clear();
   ConstString toplevel = module.path.front();
@@ -8405,7 +8414,7 @@ LoadOneModule(const SourceModule &module, SwiftASTContext &swift_ast_context,
                toplevel.AsCString(), error.AsCString());
 
     if (!swift_module || swift_ast_context.HasFatalErrors()) {
-      return false;
+      return nullptr;
     }
   }
 
@@ -8416,23 +8425,42 @@ LoadOneModule(const SourceModule &module, SwiftASTContext &swift_ast_context,
     LOG_PRINTF(LIBLLDB_LOG_EXPRESSIONS, "Imported module %s from {%s}",
                module.path.front().AsCString(), ss.GetData());
   }
+  return swift_module;
+}
 
-  additional_imports.push_back(swift::SourceFile::ImportedModuleDesc(
-      std::make_pair(swift::ModuleDecl::AccessPathTy(), swift_module),
-      swift::SourceFile::ImportOptions()));
+bool SwiftASTContext::GetImplicitImports(
+    SwiftASTContext &swift_ast_context, SymbolContext &sc,
+    ExecutionContextScope &exe_scope, lldb::StackFrameWP &stack_frame_wp,
+    llvm::SmallVectorImpl<swift::ModuleDecl *> &modules, Status &error) {
+  if (!GetCompileUnitImports(swift_ast_context, sc, stack_frame_wp, modules,
+                             error)) {
+    return false;
+  }
+
+  auto *persistent_expression_state =
+      sc.target_sp->GetSwiftPersistentExpressionState(exe_scope);
+
+  // Get the hand-loaded modules from the SwiftPersistentExpressionState.
+  for (ConstString name : persistent_expression_state->GetHandLoadedModules()) {
+    SourceModule module_info;
+    module_info.path.push_back(name);
+    auto *module = LoadOneModule(module_info, swift_ast_context, stack_frame_wp,
+                                 error);
+    if (!module)
+      return false;
+
+    modules.push_back(module);
+  }
   return true;
 }
 
-bool SwiftASTContext::PerformUserImport(SwiftASTContext &swift_ast_context,
-                                        SymbolContext &sc,
-                                        ExecutionContextScope &exe_scope,
-                                        lldb::StackFrameWP &stack_frame_wp,
-                                        swift::SourceFile &source_file,
-                                        Status &error) {
+bool SwiftASTContext::CacheUserImports(SwiftASTContext &swift_ast_context,
+                                       SymbolContext &sc,
+                                       ExecutionContextScope &exe_scope,
+                                       lldb::StackFrameWP &stack_frame_wp,
+                                       swift::SourceFile &source_file,
+                                       Status &error) {
   llvm::SmallString<1> m_description;
-  llvm::SmallVector<swift::SourceFile::ImportedModuleDesc, 2>
-      additional_imports;
-
   llvm::SmallVector<swift::ModuleDecl::ImportedModule, 2> parsed_imports;
 
   swift::ModuleDecl::ImportFilter import_filter;
@@ -8456,7 +8484,7 @@ bool SwiftASTContext::PerformUserImport(SwiftASTContext &swift_ast_context,
                    "Performing auto import on found module: %s.\n",
                    module_name.c_str());
         if (!LoadOneModule(module_info, swift_ast_context, stack_frame_wp,
-                           additional_imports, error))
+                           error))
           return false;
 
         // How do we tell we are in REPL or playground mode?
@@ -8464,54 +8492,43 @@ bool SwiftASTContext::PerformUserImport(SwiftASTContext &swift_ast_context,
       }
     }
   }
-  // Finally get the hand-loaded modules from the
-  // SwiftPersistentExpressionState and load them into this context:
-  for (ConstString name : persistent_expression_state->GetHandLoadedModules()) {
-    SourceModule module_info;
-    module_info.path.push_back(name);
-    if (!LoadOneModule(module_info, swift_ast_context, stack_frame_wp,
-                       additional_imports, error))
-      return false;
-  }
-
-  source_file.addImports(additional_imports);
   return true;
 }
 
-bool SwiftASTContext::PerformAutoImport(SwiftASTContext &swift_ast_context,
-                                        SymbolContext &sc,
-                                        lldb::StackFrameWP &stack_frame_wp,
-                                        swift::SourceFile *source_file,
-                                        Status &error) {
-  llvm::SmallVector<swift::SourceFile::ImportedModuleDesc, 2>
-      additional_imports;
-
-  // Import the Swift standard library and its dependecies.
+bool SwiftASTContext::GetCompileUnitImports(
+    SwiftASTContext &swift_ast_context, SymbolContext &sc,
+    lldb::StackFrameWP &stack_frame_wp,
+    llvm::SmallVectorImpl<swift::ModuleDecl *> &modules, Status &error) {
+  // Import the Swift standard library and its dependencies.
   SourceModule swift_module;
   swift_module.path.push_back(ConstString("Swift"));
-  if (!LoadOneModule(swift_module, swift_ast_context, stack_frame_wp,
-                     additional_imports, error))
+  auto *stdlib =
+      LoadOneModule(swift_module, swift_ast_context, stack_frame_wp, error);
+  if (!stdlib)
     return false;
 
-  CompileUnit *compile_unit = sc.comp_unit;
-  if (compile_unit && compile_unit->GetLanguage() == lldb::eLanguageTypeSwift)
-    for (const SourceModule &module : compile_unit->GetImportedModules()) {
-      // When building the Swift stdlib with debug info these will
-      // show up in "Swift.o", but we already imported them and
-      // manually importing them will fail.
-      if (module.path.size() &&
-          llvm::StringSwitch<bool>(module.path.front().GetStringRef())
-              .Cases("Swift", "SwiftShims", "Builtin", true)
-              .Default(false))
-        continue;
+  modules.push_back(stdlib);
 
-      if (!LoadOneModule(module, swift_ast_context, stack_frame_wp,
-                         additional_imports, error))
-        return false;
-    }
-  // source_file might be NULL outside of the expression parser, where
-  // we don't need to notify the source file of additional imports.
-  if (source_file)
-    source_file->addImports(additional_imports);
+  CompileUnit *compile_unit = sc.comp_unit;
+  if (!compile_unit || compile_unit->GetLanguage() != lldb::eLanguageTypeSwift)
+    return true;
+
+  for (const SourceModule &module : compile_unit->GetImportedModules()) {
+    // When building the Swift stdlib with debug info these will
+    // show up in "Swift.o", but we already imported them and
+    // manually importing them will fail.
+    if (module.path.size() &&
+        llvm::StringSwitch<bool>(module.path.front().GetStringRef())
+            .Cases("Swift", "SwiftShims", "Builtin", true)
+            .Default(false))
+      continue;
+
+    auto *loaded_module =
+        LoadOneModule(module, swift_ast_context, stack_frame_wp, error);
+    if (!loaded_module)
+      return false;
+
+    modules.push_back(loaded_module);
+  }
   return true;
 }

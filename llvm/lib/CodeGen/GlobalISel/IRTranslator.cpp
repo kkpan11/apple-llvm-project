@@ -1101,7 +1101,7 @@ bool IRTranslator::translateGetElementPtr(const User &U,
         auto ElementSizeMIB = MIRBuilder.buildConstant(
             getLLTForType(*OffsetIRTy, *DL), ElementSize);
         GepOffsetReg =
-            MIRBuilder.buildMul(OffsetTy, ElementSizeMIB, IdxReg).getReg(0);
+            MIRBuilder.buildMul(OffsetTy, IdxReg, ElementSizeMIB).getReg(0);
       } else
         GepOffsetReg = IdxReg;
 
@@ -2342,6 +2342,7 @@ bool IRTranslator::runOnMachineFunction(MachineFunction &CurMF) {
     WrapperObserver.addObserver(&Verifier);
 #endif // ifndef NDEBUG
     RAIIDelegateInstaller DelInstall(*MF, &WrapperObserver);
+    RAIIMFObserverInstaller ObsInstall(*MF, WrapperObserver);
     for (const BasicBlock *BB : RPOT) {
       MachineBasicBlock &MBB = getMBB(*BB);
       // Set the insertion point of all the following translations to
