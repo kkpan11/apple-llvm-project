@@ -293,7 +293,7 @@ SwiftCompleteCode(SwiftASTContext &SwiftCtx,
   {
     DiagnosticTransaction diagTxn(ctx.Diags);
     swift::performImportResolution(completionCodeFile);
-    swift::bindExtensions(completionCodeFile);
+    swift::bindExtensions(*completionsModule);
     performCodeCompletionSecondPass(completionCodeFile,
                                     *completionCallbacksFactory);
   }
