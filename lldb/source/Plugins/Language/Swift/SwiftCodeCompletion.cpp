@@ -227,7 +227,7 @@ SwiftCompleteCode(SwiftASTContext &SwiftCtx,
   auto *completionsModule =
       ModuleDecl::create(ctx.getIdentifier("CodeCompletion"), ctx, importInfo);
   auto &completionCodeFile = *new (ctx) SourceFile(
-      *completionsModule, SourceFileKind::REPL, completionCodeBufferID);
+      *completionsModule, SourceFileKind::Main, completionCodeBufferID);
   completionsModule->addFile(completionCodeFile);
   auto &persistentDeclFile = *new (ctx) SourceFile(
       *completionsModule, SourceFileKind::Library,
