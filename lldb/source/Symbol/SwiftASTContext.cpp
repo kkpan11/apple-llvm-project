@@ -1329,7 +1329,8 @@ static bool DeserializeAllCompilerFlags(SwiftASTContext &swift_ast,
                                         Module &module,
                                         const std::string &m_description,
                                         llvm::raw_ostream &error,
-                                        bool &got_serialized_options) {
+                                        bool &got_serialized_options,
+                                        bool &found_swift_modules) {
   Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_TYPES));
   bool found_validation_errors = false;
   std::string last_sdk_path;
@@ -1367,6 +1368,7 @@ static bool DeserializeAllCompilerFlags(SwiftASTContext &swift_ast,
         continue;
       }
 
+      found_swift_modules = true;
       StringRef moduleData = buf.substr(0, info.bytes);
       got_serialized_options |=
           DeserializeCompilerFlags(invocation, moduleData, info.name, error);
@@ -1642,6 +1644,7 @@ lldb::TypeSystemSP SwiftASTContext::CreateInstance(lldb::LanguageType language,
   swift_ast_sp->SetTriple(triple, &module);
 
   bool set_triple = false;
+  bool found_swift_modules = false;
 
   SymbolFile *sym_file = module.GetSymbolFile();
 
@@ -1652,7 +1655,7 @@ lldb::TypeSystemSP SwiftASTContext::CreateInstance(lldb::LanguageType language,
     llvm::SmallString<0> error;
     llvm::raw_svector_ostream errs(error);
     if (DeserializeAllCompilerFlags(*swift_ast_sp, module, m_description, errs,
-                                    got_serialized_options)) {
+                                    got_serialized_options, found_swift_modules)) {
       // Validation errors are not fatal for the context.
       swift_ast_sp->m_module_import_warnings.push_back(error.str());
     }
@@ -1671,20 +1674,34 @@ lldb::TypeSystemSP SwiftASTContext::CreateInstance(lldb::LanguageType language,
     }
 
     // SDK path setup.
-    llvm::StringRef serialized_sdk_path =
-        swift_ast_sp->GetCompilerInvocation().getSDKPath();
-    if (serialized_sdk_path.empty())
-      LOG_PRINTF(LIBLLDB_LOG_TYPES, "No serialized SDK path.");
-    else
-      LOG_PRINTF(LIBLLDB_LOG_TYPES, "Serialized SDK path is %s.",
-                 serialized_sdk_path.str().c_str());
-    XcodeSDK sdk = module.GetXcodeSDK();
-    PlatformSP platform =
-      Platform::GetPlatformForArchitecture(module.GetArchitecture(), nullptr);
-    std::string sdk_path = platform->GetSDKPath(sdk);
-    LOG_PRINTF(LIBLLDB_LOG_TYPES, "Host SDK path is %s.", sdk_path.c_str());
-    if (FileSystem::Instance().Exists(sdk_path)) {
-      swift_ast_sp->SetPlatformSDKPath(sdk_path);
+    //
+    // This step is skipped for modules that don't have any Swift
+    // debug info. (We assume that a module without a .swift_ast
+    // section has not debuggable Swift code). This skips looking
+    // through all the shared cache dylibs when they don't have debug
+    // info.
+    if (found_swift_modules) {
+      llvm::StringRef serialized_sdk_path =
+          swift_ast_sp->GetCompilerInvocation().getSDKPath();
+      if (serialized_sdk_path.empty())
+        LOG_PRINTF(LIBLLDB_LOG_TYPES, "No serialized SDK path.");
+      else
+        LOG_PRINTF(LIBLLDB_LOG_TYPES, "Serialized SDK path is %s.",
+                   serialized_sdk_path.str().c_str());
+
+      // Force parsing of the CUs to extract the SDK info.
+      XcodeSDK sdk;
+      if (SymbolFile *sym_file = module.GetSymbolFile())
+        for (unsigned i = 0; i < sym_file->GetNumCompileUnits(); ++i)
+          sdk.Merge(
+              sym_file->ParseXcodeSDK(*sym_file->GetCompileUnitAtIndex(i)));
+
+      std::string sdk_path = HostInfo::GetXcodeSDKPath(sdk);
+      LOG_PRINTF(LIBLLDB_LOG_TYPES, "Host SDK path is %s.", sdk_path.c_str());
+      if (FileSystem::Instance().Exists(sdk_path)) {
+        swift_ast_sp->SetPlatformSDKPath(sdk_path);
+        swift_ast_sp->GetCompilerInvocation().setSDKPath(sdk_path);
+      }
     }
   }
 
@@ -2345,236 +2362,6 @@ bool SwiftASTContext::SetTriple(const llvm::Triple triple, Module *module) {
   return true;
 }
 
-namespace {
-
-struct SDKEnumeratorInfo {
-  FileSpec found_path;
-  XcodeSDK::Type sdk_type;
-  uint32_t least_major;
-  uint32_t least_minor;
-};
-
-} // anonymous namespace
-
-static bool SDKSupportsSwift(const FileSpec &sdk_path,
-                             XcodeSDK::Type desired_type) {
-  ConstString last_path_component = sdk_path.GetLastPathComponent();
-
-  if (last_path_component) {
-    const llvm::StringRef sdk_name_raw = last_path_component.GetStringRef();
-    XcodeSDK sdk(sdk_name_raw);
-    XcodeSDK::Type sdk_type = sdk.GetType();
-
-    // For non-Darwin SDKs assume Swift is supported.
-    if (desired_type == XcodeSDK::Type::unknown &&
-        sdk_type == XcodeSDK::Type::unknown)
-      return true;
-
-    if (sdk_type != desired_type)
-      return false;
-
-    llvm::VersionTuple sdk_version = sdk.GetVersion();
-    unsigned major = sdk_version.getMajor();
-    unsigned minor = sdk_version.getMinor().getValueOr(0);
-    switch (sdk_type) {
-    case XcodeSDK::Type::MacOSX:
-      if (major > 10 || (major == 10 && minor >= 10))
-        return true;
-      break;
-    case XcodeSDK::Type::iPhoneOS:
-    case XcodeSDK::Type::iPhoneSimulator:
-      if (major >= 8)
-        return true;
-      break;
-    case XcodeSDK::Type::AppleTVSimulator:
-    case XcodeSDK::Type::AppleTVOS:
-      if (major >= 9)
-        return true;
-      break;
-    case XcodeSDK::Type::WatchSimulator:
-    case XcodeSDK::Type::watchOS:
-      if (major >= 2)
-        return true;
-      break;
-    case XcodeSDK::Type::Linux:
-      return true;
-    default:
-      return false;
-    }
-  }
-
-  return false;
-}
-
-FileSystem::EnumerateDirectoryResult
-DirectoryEnumerator(void *baton, llvm::sys::fs::file_type file_type,
-                    StringRef path) {
-  SDKEnumeratorInfo *enumerator_info = static_cast<SDKEnumeratorInfo *>(baton);
-  const FileSpec spec(path);
-  if (SDKSupportsSwift(spec, enumerator_info->sdk_type)) {
-    enumerator_info->found_path = spec;
-    return FileSystem::EnumerateDirectoryResult::eEnumerateDirectoryResultNext;
-  }
-
-  return FileSystem::EnumerateDirectoryResult::eEnumerateDirectoryResultNext;
-};
-
-static ConstString EnumerateSDKsForVersion(FileSpec sdks_spec,
-                                           XcodeSDK::Type sdk_type,
-                                           uint32_t least_major,
-                                           uint32_t least_minor) {
-  if (!IsDirectory(sdks_spec))
-    return ConstString();
-
-  const bool find_directories = true;
-  const bool find_files = false;
-  const bool find_other = true; ///< Include symlinks.
-
-  SDKEnumeratorInfo enumerator_info;
-
-  enumerator_info.sdk_type = sdk_type;
-  enumerator_info.least_major = least_major;
-  enumerator_info.least_minor = least_minor;
-
-  FileSystem::Instance().EnumerateDirectory(
-      sdks_spec.GetPath().c_str(), find_directories, find_files, find_other,
-      DirectoryEnumerator, &enumerator_info);
-
-  if (IsDirectory(enumerator_info.found_path))
-    return ConstString(enumerator_info.found_path.GetPath());
-  else
-    return ConstString();
-}
-
-static ConstString GetSDKDirectory(XcodeSDK::Type sdk_type,
-                                   uint32_t least_major, uint32_t least_minor) {
-  using namespace llvm::sys;
-  if (sdk_type != XcodeSDK::Type::MacOSX) {
-    // Look inside Xcode for the required installed iOS SDK version.
-    llvm::SmallString<256> sdks_path(
-        PlatformDarwin::GetXcodeContentsDirectory().GetPath());
-    path::append(sdks_path, "Developer", "Platforms");
-
-    if (sdk_type == XcodeSDK::Type::iPhoneSimulator) {
-      path::append(sdks_path, "iPhoneSimulator.platform");
-    } else if (sdk_type == XcodeSDK::Type::AppleTVSimulator) {
-      path::append(sdks_path, "AppleTVSimulator.platform");
-    } else if (sdk_type == XcodeSDK::Type::AppleTVOS) {
-      path::append(sdks_path, "AppleTVOS.platform");
-    } else if (sdk_type == XcodeSDK::Type::WatchSimulator) {
-      path::append(sdks_path, "WatchSimulator.platform");
-    } else if (sdk_type == XcodeSDK::Type::watchOS) {
-      // For now, we need to be prepared to handle either capitalization of
-      // this path.
-      llvm::SmallString<256> candidate_path = sdks_path;
-      path::append(candidate_path, "WatchOS.platform");
-      if (FileSystem::Instance().Exists(candidate_path)) {
-        sdks_path = candidate_path;
-      } else {
-        // Reset the candidate path.
-        candidate_path = sdks_path;
-        path::append(candidate_path, "watchOS.platform");
-        if (FileSystem::Instance().Exists(candidate_path)) {
-          sdks_path = candidate_path;
-        } else {
-          return ConstString();
-        }
-      }
-    } else {
-      path::append(sdks_path, "iPhoneOS.platform");
-    }
-    path::append(sdks_path, "Developer", "SDKs");
-    FileSpec sdks_spec(sdks_path.str());
-
-    return EnumerateSDKsForVersion(sdks_spec, sdk_type, least_major,
-                                   least_major);
-  }
-
-  // The SDK type is macOS.
-  llvm::VersionTuple version = HostInfo::GetOSVersion();
-
-  if (!version)
-    return ConstString();
-
-  uint32_t major = version.getMajor();
-  uint32_t minor = version.getMinor().getValueOr(0);
-
-  // If there are minimum requirements that exceed the current OS,
-  // apply those.
-  if (least_major > major) {
-    major = least_major;
-    minor = least_minor;
-  } else if (least_major == major) {
-    if (least_minor > minor)
-      minor = least_minor;
-  }
-
-  typedef std::map<uint64_t, ConstString> SDKDirectoryCache;
-  static std::mutex g_mutex;
-  static SDKDirectoryCache g_sdk_cache;
-  std::lock_guard<std::mutex> locker(g_mutex);
-  const uint64_t major_minor = (uint64_t)major << 32 | (uint64_t)minor;
-  SDKDirectoryCache::iterator pos = g_sdk_cache.find(major_minor);
-  if (pos != g_sdk_cache.end())
-    return pos->second;
-
-  FileSpec fspec;
-  std::string xcode_contents_path =
-      PlatformDarwin::GetXcodeContentsDirectory().GetPath();
-  ;
-
-  if (!xcode_contents_path.empty()) {
-    llvm::SmallString<256> sdks_dir(
-        PlatformDarwin::GetXcodeContentsDirectory().GetPath());
-    llvm::sys::path::append(sdks_dir, "Developer", "Platforms",
-                            "MacOSX.platform");
-    llvm::sys::path::append(sdks_dir, "Developer", "SDKs");
-
-    // Try an exact match first.
-    {
-      std::string sdk_name = llvm::formatv("MacOSX{0}.{1}.sdk", major, minor);
-      llvm::SmallString<256> sdk_path = sdks_dir;
-      llvm::sys::path::append(sdk_path, sdk_name);
-      fspec.SetFile(sdk_path.str(), FileSpec::Style::native);
-      if (FileSystem::Instance().Exists(fspec)) {
-        ConstString path(sdk_path.str());
-        // Cache results.
-        g_sdk_cache[major_minor] = path;
-        return path;
-      }
-    }
-
-    // Try the minimum required SDK, if it's different from the actual version.
-    if ((least_major != major) || (least_minor != minor)) {
-      std::string sdk_name =
-          llvm::formatv("MacOSX{0}.{1}.sdk", least_major, least_minor);
-      llvm::SmallString<256> sdk_path = sdks_dir;
-      llvm::sys::path::append(sdk_path, sdk_name);
-      fspec.SetFile(sdk_path.str(), FileSpec::Style::native);
-      if (FileSystem::Instance().Exists(fspec)) {
-        ConstString path(sdk_path.str());
-        // Cache results.
-        g_sdk_cache[major_minor] = path;
-        return path;
-      }
-    }
-
-    // Okay, if we haven't found anything yet, we're going to do an exhaustive
-    // search for *any* SDK that has an adequate version.
-    ConstString sdk_path = EnumerateSDKsForVersion(
-        FileSpec(sdks_dir.str()), sdk_type, least_major, least_major);
-    if (sdk_path) {
-      // Cache results.
-      g_sdk_cache[major_minor] = sdk_path;
-      return sdk_path;
-    }
-  }
-
-  // Cache results.
-  g_sdk_cache[major_minor] = ConstString();
-  return ConstString();
-}
-
 swift::CompilerInvocation &SwiftASTContext::GetCompilerInvocation() {
   return *m_compiler_invocation_ap;
 }
@@ -2683,23 +2470,31 @@ void SwiftASTContext::InitializeSearchPathOptions(
   ConfigureResourceDirs(GetCompilerInvocation(), FileSpec(resource_dir),
                         triple);
 
-  auto is_simulator = [&]() -> bool {
-    return triple.getEnvironment() == llvm::Triple::Simulator ||
-           !triple.getArchName().startswith("arm");
-  };
+  std::string sdk_path = GetPlatformSDKPath();
+  if (TargetSP target_sp = m_target_wp.lock())
+    if (FileSpec &manual_override_sdk = target_sp->GetSDKPath()) {
+      set_sdk = false;
+      sdk_path = manual_override_sdk.GetPath();
+      LOG_PRINTF(LIBLLDB_LOG_TYPES, "Override target.sdk-path \"%s\"",
+                 sdk_path.c_str());
+    }
 
   if (!set_sdk) {
-    auto sdk = GetSDKType(triple, HostInfo::GetArchitecture().GetTriple());
-    // Explicitly leave the SDKPath blank on other platforms.
-    if (sdk.sdk_type != XcodeSDK::Type::unknown) {
-      std::string sdk_path = m_platform_sdk_path;
-      if (sdk_path.empty() || !FileSystem::Instance().Exists(sdk_path) ||
-          !SDKSupportsSwift(FileSpec(sdk_path), sdk.sdk_type)) {
-        sdk_path = GetSDKDirectory(sdk.sdk_type, sdk.min_version_major,
-                                   sdk.min_version_minor)
-                       .GetStringRef()
-                       .str();
-      }
+    if (sdk_path.empty()) {
+      XcodeSDK::Info info;
+      info.type = XcodeSDK::GetSDKTypeForTriple(triple);
+      XcodeSDK sdk(info);
+      StringRef sdk_path = HostInfo::GetXcodeSDKPath(sdk);
+    }
+    if (sdk_path.empty()) {
+      // This fallback is questionable. Perhaps it should be removed.
+      XcodeSDK::Info info;
+      info.type = XcodeSDK::GetSDKTypeForTriple(
+          HostInfo::GetArchitecture().GetTriple());
+      XcodeSDK sdk(info);
+      sdk_path = HostInfo::GetXcodeSDKPath(sdk);
+    }
+    if (!sdk_path.empty()) {
       // Note that calling setSDKPath() also recomputes all paths that
       // depend on the SDK path including the
       // RuntimeLibraryImportPaths, which are *only* initialized
@@ -5357,6 +5152,11 @@ bool SwiftASTContext::IsPossibleDynamicType(void *type,
         can_type->isAnyExistentialType())
       return true;
 
+    // Dynamic Self types are resolved inside DoArchetypeBindingForType(),
+    // right before the actual archetype binding.
+    if (can_type->hasDynamicSelfType())
+      return true;
+
     if (can_type->hasArchetype() || can_type->hasOpaqueArchetype() ||
         can_type->hasTypeParameter())
       return true;
@@ -5718,6 +5518,8 @@ SwiftASTContext::GetTypeInfo(void *type,
     swift_flags |= eTypeHasChildren | eTypeIsReference | eTypeHasValue;
     break;
   case swift::TypeKind::DynamicSelf:
+    swift_flags |= eTypeIsGeneric | eTypeIsBound | eTypeHasValue;
+    break;
   case swift::TypeKind::SILBox:
   case swift::TypeKind::SILFunction:
   case swift::TypeKind::SILBlockStorage:
@@ -8316,8 +8118,6 @@ static void DescribeFileUnit(Stream &s, swift::FileUnit *file_unit) {
         s.PutCString("Library");
       case swift::SourceFileKind::Main:
         s.PutCString("Main");
-      case swift::SourceFileKind::REPL:
-        s.PutCString("REPL");
       case swift::SourceFileKind::SIL:
         s.PutCString("SIL");
       }
