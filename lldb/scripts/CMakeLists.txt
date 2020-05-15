@@ -51,17 +51,3 @@ add_custom_target(swig_wrapper ALL DEPENDS
   ${CMAKE_CURRENT_BINARY_DIR}/LLDBWrapPython.cpp
   ${CMAKE_CURRENT_BINARY_DIR}/lldb.py
 )
-
-if(NOT LLDB_BUILD_FRAMEWORK)
-  if(CMAKE_SYSTEM_NAME MATCHES "Windows")
-    set(swig_python_subdir site-packages)
-  else()
-    set(swig_python_subdir python${PYTHON_VERSION_MAJOR}.${PYTHON_VERSION_MINOR})
-  endif()
-
-  set(SWIG_PYTHON_DIR ${LLVM_LIBRARY_OUTPUT_INTDIR}/${swig_python_subdir})
-  set(SWIG_INSTALL_DIR lib${LLVM_LIBDIR_SUFFIX})
-
-  # Install the LLDB python module
-  install(DIRECTORY ${SWIG_PYTHON_DIR} DESTINATION ${SWIG_INSTALL_DIR})
-endif()
