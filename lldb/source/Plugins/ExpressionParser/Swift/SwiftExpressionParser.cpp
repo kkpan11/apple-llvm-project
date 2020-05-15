@@ -532,7 +532,7 @@ AddRequiredAliases(Block *block, lldb::StackFrameSP &stack_frame_sp,
   // extend the referent:
   imported_self_type =
       llvm::cast<TypeSystemSwift>(imported_self_type.GetTypeSystem())
-          ->GetReferentType(imported_self_type);
+          ->GetReferentType(imported_self_type.GetOpaqueQualType());
 
   // If we are extending a generic class it's going to be a metatype,
   // and we have to grab the instance type:
@@ -554,7 +554,6 @@ AddRequiredAliases(Block *block, lldb::StackFrameSP &stack_frame_sp,
   if (swift::WeakStorageType *weak_storage_type =
           GetSwiftType(imported_self_type)->getAs<swift::WeakStorageType>()) {
     swift::Type referent_type = weak_storage_type->getReferentType();
-
     swift::BoundGenericEnumType *optional_type =
         referent_type->getAs<swift::BoundGenericEnumType>();
 
