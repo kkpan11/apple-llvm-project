@@ -31,6 +31,7 @@
 #include "swift/AST/ImportCache.h"
 #include "swift/AST/ModuleLoader.h"
 #include "swift/AST/NameLookup.h"
+#include "swift/AST/OperatorNameLookup.h"
 #include "swift/AST/SearchPathOptions.h"
 #include "swift/AST/SubstitutionMap.h"
 #include "swift/AST/Type.h"
@@ -2647,7 +2648,7 @@ public:
     if (source_loc.isValid()) {
       bufferID = source_mgr.findBufferContainingLoc(source_loc);
       bufferName = source_mgr.getDisplayNameForLoc(source_loc);
-      line_col = source_mgr.getLineAndColumn(source_loc);
+      line_col = source_mgr.getPresumedLineAndColumnForLoc(source_loc);
     }
 
     if (line_col.first != 0) {
@@ -4501,18 +4502,17 @@ size_t SwiftASTContext::FindTypesOrDecls(const char *name,
       swift_module->lookupValue(identifier, swift::NLKind::UnqualifiedLookup,
                                 value_decls);
     if (identifier.isOperator()) {
-      swift::OperatorDecl *op_decl =
-          swift_module->lookupPrefixOperator(identifier);
-      if (op_decl)
-        results.emplace(DeclToTypeOrDecl(GetASTContext(), op_decl));
-      if ((op_decl = swift_module->lookupInfixOperator(identifier)))
-        results.emplace(DeclToTypeOrDecl(GetASTContext(), op_decl));
-      if ((op_decl = swift_module->lookupPostfixOperator(identifier)))
-        results.emplace(DeclToTypeOrDecl(GetASTContext(), op_decl));
+      if (auto *op = swift_module->lookupPrefixOperator(identifier))
+        results.emplace(DeclToTypeOrDecl(GetASTContext(), op));
+
+      if (auto *op = swift_module->lookupInfixOperator(identifier).getSingle())
+        results.emplace(DeclToTypeOrDecl(GetASTContext(), op));
+
+      if (auto *op = swift_module->lookupPostfixOperator(identifier))
+        results.emplace(DeclToTypeOrDecl(GetASTContext(), op));
     }
-    if (swift::PrecedenceGroupDecl *pg_decl =
-            swift_module->lookupPrecedenceGroup(identifier))
-      results.emplace(DeclToTypeOrDecl(GetASTContext(), pg_decl));
+    if (auto *pg = swift_module->lookupPrecedenceGroup(identifier).getSingle())
+      results.emplace(DeclToTypeOrDecl(GetASTContext(), pg));
 
     for (auto decl : value_decls)
       results.emplace(DeclToTypeOrDecl(GetASTContext(), decl));
