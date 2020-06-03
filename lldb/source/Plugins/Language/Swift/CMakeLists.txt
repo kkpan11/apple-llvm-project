@@ -16,6 +16,7 @@ add_lldb_library(lldbPluginSwiftLanguage PLUGIN
   SwiftOptional.cpp
   SwiftRuntimeFailureRecognizer.cpp
   SwiftSet.cpp
+  SwiftUnsafeTypes.cpp
 
   LINK_LIBS
     lldbCore
