@@ -801,35 +801,18 @@ template <> bool Equivalent<ConstString>(ConstString l, ConstString r) {
   return l == r;
 }
 
-/// A list of testcases for which the validation is disabled.
-bool Whitelisted(SwiftASTContext &swift_ast_context) {
-  auto *sym_file = swift_ast_context.GetSymbolFile();
-  if (!sym_file)
-    return false;
-  auto *obj_file = sym_file->GetObjectFile();
-  if (!obj_file)
-    return false;
-  auto &file_spec = obj_file->GetFileSpec();
-  std::string path = file_spec.GetPath(false);
-  llvm::StringRef p(path);
-  return p.contains("lang/swift/clangimporter/include_conflict/"
-                    "TestSwiftIncludeConflict") ||
-         p.contains("lang/swift/clangimporter/headermap_conflict/"
-                    "TestSwiftHeadermapConflict") ||
-         p.contains("lang/swift/clangimporter/extra_clang_flags/"
-                    "TestSwiftExtraClangFlags");
-}
 }
 #endif
 
 // This can be removed once the transition is complete.
-#define VALIDATE_AND_RETURN(IMPL, EXPECTED)                                    \
+#define VALIDATE_AND_RETURN(IMPL, REFERENCE, TYPE, ARGS)                       \
   do {                                                                         \
     auto result = IMPL();                                                      \
     if (m_swift_ast_context)                                                   \
-      assert((Equivalent(result, (EXPECTED)) ||                                \
-              Whitelisted(*m_swift_ast_context)) &&                            \
-             "TypeSystemSwiftTypeRef diverges from SwiftASTContext");          \
+      assert(                                                                  \
+          !ReconstructType(TYPE) /* missing .swiftmodule */ ||                 \
+          (Equivalent(result, m_swift_ast_context->REFERENCE ARGS)) &&         \
+              "TypeSystemSwiftTypeRef diverges from SwiftASTContext");         \
     return result;                                                             \
   } while (0)
 
@@ -912,13 +895,41 @@ bool TypeSystemSwiftTypeRef::IsArrayType(opaque_compiler_type_t type,
 
     return true;
   };
-  VALIDATE_AND_RETURN(
-      impl, m_swift_ast_context->IsArrayType(ReconstructType(type), nullptr,
-                                             nullptr, nullptr));
+  VALIDATE_AND_RETURN(impl, IsArrayType, type,
+                      (ReconstructType(type), nullptr, nullptr, nullptr));
 }
+
 bool TypeSystemSwiftTypeRef::IsAggregateType(opaque_compiler_type_t type) {
-  return m_swift_ast_context->IsAggregateType(ReconstructType(type));
+  auto impl = [&]() -> bool {
+    using namespace swift::Demangle;
+    Demangler Dem;
+    NodePointer node = DemangleCanonicalType(Dem, type);
+ 
+    if (!node)
+      return false;
+    switch (node->getKind()) {
+    case Node::Kind::Structure:
+    case Node::Kind::Class:
+    case Node::Kind::Enum:
+    case Node::Kind::Tuple:
+    case Node::Kind::Protocol:
+    case Node::Kind::ProtocolList:
+    case Node::Kind::ProtocolListWithClass:
+    case Node::Kind::ProtocolListWithAnyObject:
+    case Node::Kind::BoundGenericClass:
+    case Node::Kind::BoundGenericEnum:
+    case Node::Kind::BoundGenericStructure:
+    case Node::Kind::BoundGenericProtocol:
+    case Node::Kind::BoundGenericOtherNominalType:
+    case Node::Kind::BoundGenericTypeAlias:
+      return true;
+    default:
+      return false;
+    }
+  };
+  VALIDATE_AND_RETURN(impl, IsAggregateType, type, (ReconstructType(type)));
 }
+
 bool TypeSystemSwiftTypeRef::IsDefined(opaque_compiler_type_t type) {
   return m_swift_ast_context->IsDefined(ReconstructType(type));
 }
@@ -938,8 +949,8 @@ bool TypeSystemSwiftTypeRef::IsFunctionType(opaque_compiler_type_t type,
     return node && (node->getKind() == Node::Kind::FunctionType ||
                     node->getKind() == Node::Kind::ImplFunctionType);
   };
-  VALIDATE_AND_RETURN(impl, m_swift_ast_context->IsFunctionType(
-                                ReconstructType(type), nullptr));
+  VALIDATE_AND_RETURN(impl, IsFunctionType, type,
+                      (ReconstructType(type), nullptr));
 }
 size_t TypeSystemSwiftTypeRef::GetNumberOfFunctionArguments(
     opaque_compiler_type_t type) {
@@ -966,8 +977,8 @@ size_t TypeSystemSwiftTypeRef::GetNumberOfFunctionArguments(
     }
     return num_args;
   };
-  VALIDATE_AND_RETURN(impl, m_swift_ast_context->GetNumberOfFunctionArguments(
-                                ReconstructType(type)));
+  VALIDATE_AND_RETURN(impl, GetNumberOfFunctionArguments, type,
+                      (ReconstructType(type)));
 }
 CompilerType
 TypeSystemSwiftTypeRef::GetFunctionArgumentAtIndex(opaque_compiler_type_t type,
@@ -1008,14 +1019,14 @@ TypeSystemSwiftTypeRef::GetFunctionArgumentAtIndex(opaque_compiler_type_t type,
     }
     return {};
   };
-  VALIDATE_AND_RETURN(impl, m_swift_ast_context->GetFunctionArgumentAtIndex(
-                                ReconstructType(type), index));
+  VALIDATE_AND_RETURN(impl, GetFunctionArgumentAtIndex, type,
+                      (ReconstructType(type), index));
 }
 bool TypeSystemSwiftTypeRef::IsFunctionPointerType(
     opaque_compiler_type_t type) {
   auto impl = [&]() -> bool { return IsFunctionType(type, nullptr); };
-  VALIDATE_AND_RETURN(
-      impl, m_swift_ast_context->IsFunctionPointerType(ReconstructType(type)));
+  VALIDATE_AND_RETURN(impl, IsFunctionPointerType, type,
+                      (ReconstructType(type)));
 }
 bool TypeSystemSwiftTypeRef::IsIntegerType(opaque_compiler_type_t type,
                                            bool &is_signed) {
@@ -1042,8 +1053,8 @@ bool TypeSystemSwiftTypeRef::IsPointerType(opaque_compiler_type_t type,
             (node->getText() == swift::BUILTIN_TYPE_NAME_NATIVEOBJECT) ||
             (node->getText() == swift::BUILTIN_TYPE_NAME_BRIDGEOBJECT));
   };
-  VALIDATE_AND_RETURN(impl, m_swift_ast_context->IsPointerType(
-                                ReconstructType(type), pointee_type));
+  VALIDATE_AND_RETURN(impl, IsPointerType, type,
+                      (ReconstructType(type), pointee_type));
 }
 bool TypeSystemSwiftTypeRef::IsScalarType(opaque_compiler_type_t type) {
   return m_swift_ast_context->IsScalarType(ReconstructType(type));
@@ -1056,8 +1067,7 @@ bool TypeSystemSwiftTypeRef::IsVoidType(opaque_compiler_type_t type) {
     return node && node->getNumChildren() == 0 &&
            node->getKind() == Node::Kind::Tuple;
   };
-  VALIDATE_AND_RETURN(impl,
-                      m_swift_ast_context->IsVoidType(ReconstructType(type)));
+  VALIDATE_AND_RETURN(impl, IsVoidType, type, (ReconstructType(type)));
 }
 // Type Completion
 bool TypeSystemSwiftTypeRef::GetCompleteType(opaque_compiler_type_t type) {
@@ -1083,8 +1093,7 @@ ConstString TypeSystemSwiftTypeRef::GetTypeName(opaque_compiler_type_t type) {
     return ConstString(SwiftLanguageRuntime::DemangleSymbolAsString(
         remangled, SwiftLanguageRuntime::eTypeName));
   };
-  VALIDATE_AND_RETURN(impl,
-                      m_swift_ast_context->GetTypeName(ReconstructType(type)));
+  VALIDATE_AND_RETURN(impl, GetTypeName, type, (ReconstructType(type)));
 }
 ConstString
 TypeSystemSwiftTypeRef::GetDisplayTypeName(opaque_compiler_type_t type,
@@ -1103,8 +1112,8 @@ TypeSystemSwiftTypeRef::GetDisplayTypeName(opaque_compiler_type_t type,
     return ConstString(SwiftLanguageRuntime::DemangleSymbolAsString(
         remangled, SwiftLanguageRuntime::eDisplayTypeName, sc));
   };
-  VALIDATE_AND_RETURN(
-      impl, m_swift_ast_context->GetDisplayTypeName(ReconstructType(type), sc));
+  VALIDATE_AND_RETURN(impl, GetDisplayTypeName, type,
+                      (ReconstructType(type), sc));
 }
 uint32_t TypeSystemSwiftTypeRef::GetTypeInfo(
     opaque_compiler_type_t type, CompilerType *pointee_or_element_clang_type) {
@@ -1129,8 +1138,8 @@ TypeSystemSwiftTypeRef::GetArrayElementType(opaque_compiler_type_t type,
     IsArrayType(type, &element_type, nullptr, nullptr);
     return element_type;
   };
-  VALIDATE_AND_RETURN(impl, m_swift_ast_context->GetArrayElementType(
-                                ReconstructType(type), nullptr));
+  VALIDATE_AND_RETURN(impl, GetArrayElementType, type,
+                      (ReconstructType(type), nullptr));
 }
 CompilerType
 TypeSystemSwiftTypeRef::GetCanonicalType(opaque_compiler_type_t type) {
@@ -1139,14 +1148,14 @@ TypeSystemSwiftTypeRef::GetCanonicalType(opaque_compiler_type_t type) {
 int TypeSystemSwiftTypeRef::GetFunctionArgumentCount(
     opaque_compiler_type_t type) {
   auto impl = [&]() -> int { return GetNumberOfFunctionArguments(type); };
-  VALIDATE_AND_RETURN(impl, m_swift_ast_context->GetFunctionArgumentCount(
-                                ReconstructType(type)));
+  VALIDATE_AND_RETURN(impl, GetFunctionArgumentCount, type,
+                      (ReconstructType(type)));
 }
 CompilerType TypeSystemSwiftTypeRef::GetFunctionArgumentTypeAtIndex(
     opaque_compiler_type_t type, size_t idx) {
   auto impl = [&] { return GetFunctionArgumentAtIndex(type, idx); };
-  VALIDATE_AND_RETURN(impl, m_swift_ast_context->GetFunctionArgumentTypeAtIndex(
-                                ReconstructType(type), idx));
+  VALIDATE_AND_RETURN(impl, GetFunctionArgumentTypeAtIndex, type,
+                      (ReconstructType(type), idx));
 }
 CompilerType
 TypeSystemSwiftTypeRef::GetFunctionReturnType(opaque_compiler_type_t type) {
@@ -1177,8 +1186,8 @@ TypeSystemSwiftTypeRef::GetFunctionReturnType(opaque_compiler_type_t type) {
     type->addChild(tuple, Dem);
     return RemangleAsType(Dem, type);
   };
-  VALIDATE_AND_RETURN(
-      impl, m_swift_ast_context->GetFunctionReturnType(ReconstructType(type)));
+  VALIDATE_AND_RETURN(impl, GetFunctionReturnType, type,
+                      (ReconstructType(type)));
 }
 size_t
 TypeSystemSwiftTypeRef::GetNumMemberFunctions(opaque_compiler_type_t type) {
@@ -1438,9 +1447,8 @@ bool TypeSystemSwiftTypeRef::IsReferenceType(opaque_compiler_type_t type,
     return true;
   };
 
-  VALIDATE_AND_RETURN(
-      impl, m_swift_ast_context->IsReferenceType(ReconstructType(type),
-                                                 pointee_type, is_rvalue));
+  VALIDATE_AND_RETURN(impl, IsReferenceType, type,
+                      (ReconstructType(type), pointee_type, is_rvalue));
 }
 bool TypeSystemSwiftTypeRef::ShouldTreatScalarValueAsAddress(
     opaque_compiler_type_t type) {
