@@ -909,8 +909,9 @@ SwiftASTContext::SwiftASTContext(std::string description, llvm::Triple triple,
   // Set the dependency tracker.
   if (auto g = repro::Reproducer::Instance().GetGenerator()) {
     repro::FileProvider &fp = g->GetOrCreate<repro::FileProvider>();
-    m_dependency_tracker =
-        std::make_unique<swift::DependencyTracker>(true, fp.GetFileCollector());
+    m_dependency_tracker = std::make_unique<swift::DependencyTracker>(
+        swift::IntermoduleDepTrackingMode::IncludeSystem,
+        fp.GetFileCollector());
   }
   // rdar://53971116
   m_compiler_invocation_ap->disableASTScopeLookup();
@@ -1556,13 +1557,21 @@ static llvm::Optional<StringRef> GetDSYMBundle(Module &module) {
   return dsym;
 }
 
+/// Detect whether a Swift module was "imported" by DWARFImporter.
+/// All this *really* means is that it couldn't be loaded through any
+/// other mechanism.
+static bool IsDWARFImported(swift::ModuleDecl &module) {
+  return std::any_of(module.getFiles().begin(), module.getFiles().end(),
+                     [](swift::FileUnit *file_unit) {
+                       return (file_unit->getKind() ==
+                               swift::FileUnitKind::DWARFModule);
+                     });
+}
+
 lldb::TypeSystemSP SwiftASTContext::CreateInstance(lldb::LanguageType language,
                                                    Module &module,
                                                    Target *target,
                                                    bool fallback) {
-  std::vector<std::string> module_search_paths;
-  std::vector<std::pair<std::string, bool>> framework_search_paths;
-
   if (!SwiftASTContextSupportsLanguage(language))
     return lldb::TypeSystemSP();
 
@@ -1576,16 +1585,33 @@ lldb::TypeSystemSP SwiftASTContext::CreateInstance(lldb::LanguageType language,
     module.GetDescription(ss, eDescriptionLevelBrief);
     ss << '"' << ')';
   }
+  std::vector<std::string> module_search_paths;
+  std::vector<std::pair<std::string, bool>> framework_search_paths;
+
+  LOG_PRINTF(LIBLLDB_LOG_TYPES, "(Module)");
+
+  auto logError = [&](const char *message) {
+    LOG_PRINTF(LIBLLDB_LOG_TYPES, "Failed to create module context - %s",
+               message);
+  };
 
   ArchSpec arch = module.GetArchitecture();
+  if (!arch.IsValid()) {
+    logError("invalid module architecture");
+    return TypeSystemSP();
+  }
 
   ObjectFile *objfile = module.GetObjectFile();
-  if (!objfile)
-    return {};
+  if (!objfile) {
+    logError("no object file for module");
+    return TypeSystemSP();
+  }
 
   ArchSpec object_arch = objfile->GetArchitecture();
-  if (!object_arch.IsValid())
-    return {};
+  if (!object_arch.IsValid()) {
+    logError("invalid objfile architecture");
+    return TypeSystemSP();
+  }
 
   lldb::CompUnitSP main_compile_unit_sp = module.GetCompileUnitAtIndex(0);
 
@@ -1641,9 +1667,6 @@ lldb::TypeSystemSP SwiftASTContext::CreateInstance(lldb::LanguageType language,
   swift_ast_sp->GetLanguageOptions().EnableAccessControl = false;
   swift_ast_sp->GetLanguageOptions().EnableTargetOSChecking = false;
 
-  if (!arch.IsValid())
-    return TypeSystemSP();
-
   swift_ast_sp->SetTriple(triple, &module);
 
   bool set_triple = false;
@@ -1654,7 +1677,7 @@ lldb::TypeSystemSP SwiftASTContext::CreateInstance(lldb::LanguageType language,
   std::string target_triple;
 
   if (sym_file) {
-    bool got_serialized_options;
+    bool got_serialized_options = false;
     llvm::SmallString<0> error;
     llvm::raw_svector_ostream errs(error);
     if (DeserializeAllCompilerFlags(*swift_ast_sp, module, m_description, errs,
@@ -1681,7 +1704,7 @@ lldb::TypeSystemSP SwiftASTContext::CreateInstance(lldb::LanguageType language,
     //
     // This step is skipped for modules that don't have any Swift
     // debug info. (We assume that a module without a .swift_ast
-    // section has not debuggable Swift code). This skips looking
+    // section has no debuggable Swift code). This skips looking
     // through all the shared cache dylibs when they don't have debug
     // info.
     if (found_swift_modules) {
@@ -1784,6 +1807,20 @@ lldb::TypeSystemSP SwiftASTContext::CreateInstance(lldb::LanguageType language,
       swift_ast_sp->LogConfiguration();
     }
   }
+
+  if (swift_ast_sp->HasFatalErrors()) {
+    logError(swift_ast_sp->GetFatalErrors().AsCString());
+    return {};
+  }
+
+  const bool can_create = true;
+  swift::ModuleDecl *stdlib =
+      swift_ast_sp->m_ast_context_ap->getStdlibModule(can_create);
+  if (!stdlib || IsDWARFImported(*stdlib)) {
+    logError("couldn't load the Swift stdlib");
+    return {};
+  }
+
   return swift_ast_sp;
 }
 
@@ -1838,17 +1875,6 @@ static lldb::ModuleSP GetUnitTestModule(lldb_private::ModuleList &modules) {
   }
 
   return ModuleSP();
-}
-
-/// Detect whether a Swift module was "imported" by DWARFImporter.
-/// All this *really* means is that it couldn't be loaded through any
-/// other mechanism.
-static bool IsDWARFImported(swift::ModuleDecl &module) {
-  return std::any_of(module.getFiles().begin(), module.getFiles().end(),
-                     [](swift::FileUnit *file_unit) {
-                       return (file_unit->getKind() ==
-                               swift::FileUnitKind::DWARFModule);
-                     });
 }
 
 lldb::TypeSystemSP SwiftASTContext::CreateInstance(lldb::LanguageType language,
@@ -2894,9 +2920,6 @@ private:
 class SwiftDWARFImporterDelegate : public swift::DWARFImporterDelegate {
   SwiftASTContext &m_swift_ast_ctx;
   using ModuleAndName = std::pair<const char *, const char *>;
-  /// Caches successful lookups for the scratch context.
-  llvm::DenseMap<ModuleAndName, llvm::SmallVector<clang::QualType, 1>>
-      m_decl_cache;
   std::string m_description;
 
   /// Used to filter out types with mismatching kinds.
@@ -3106,11 +3129,12 @@ public:
         auto *swift_ast_ctx = static_cast<SwiftASTContext *>(&*ts);
         auto *dwarf_imp = static_cast<SwiftDWARFImporterDelegate *>(
             swift_ast_ctx->GetDWARFImporterDelegate());
-        if (!dwarf_imp)
+        if (!dwarf_imp || dwarf_imp == this)
           continue;
-        auto it = dwarf_imp->m_decl_cache.find(
-            {module_cs.GetCString(), name_cs.GetCString()});
-        if (it == dwarf_imp->m_decl_cache.end())
+
+        llvm::SmallVector<clang::Decl *, 2> module_results;
+        dwarf_imp->lookupValue(name, kind, inModule, module_results);
+        if (!module_results.size())
           continue;
 
         auto *from_clang_importer = swift_ast_ctx->GetClangImporter();
@@ -3118,15 +3142,19 @@ public:
           continue;
         auto &from_ctx = from_clang_importer->getClangASTContext();
         auto &to_ctx = clang_importer->getClangASTContext();
-        for (clang::QualType qual_type : it->second)
+        for (clang::Decl *decl : module_results) {
+          clang::QualType qual_type;
+          if (auto *interface = llvm::dyn_cast<clang::ObjCInterfaceDecl>(decl))
+            qual_type = {interface->getTypeForDecl(), 0};
+          if (auto *type = llvm::dyn_cast<clang::TypeDecl>(decl))
+            qual_type = {type->getTypeForDecl(), 0};
           importType(qual_type, from_ctx, to_ctx, kind, results);
+        }
+        // Cut the search short after we found the first result.
+        if (results.size())
+          break;
       }
-      LOG_PRINTF(LIBLLDB_LOG_TYPES, "%d types found in cache.", results.size());
-
-      // TODO: Otherwise, the correct thing to do is to invoke
-      //       search() on all modules. In practice, however, this is
-      //       prohibitively expensive, so we need to do something
-      //       more targeted.
+      LOG_PRINTF(LIBLLDB_LOG_TYPES, "%d types collected.", results.size());
       return;
     }
 
@@ -3153,11 +3181,6 @@ public:
 
       clang::QualType qual_type = ClangUtil::GetQualType(compiler_type);
       importType(qual_type, from_ctx, to_ctx, kind, results);
-
-      // If this is a module context, cache the result for the scratch context.
-      if (m_swift_ast_ctx.GetModule())
-        m_decl_cache[{module_cs.GetCString(), name_cs.GetCString()}].push_back(
-            qual_type);
 
       return true;
     });
