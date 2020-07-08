@@ -29,9 +29,9 @@ class TestSwiftExpressionObjCContext(TestBase):
     def test(self):
         self.build()
 
-        # Register shlib so it can run on-device.
         target,  _, _, _ = lldbutil.run_to_source_breakpoint(
             self, "break here", lldb.SBFileSpec('main.m'))
+        # Register shlib so it can run on-device.
         self.registerSharedLibrariesWithTarget(target, ['Foo'])
 
         # This is expected to fail because we can't yet import ObjC
@@ -39,7 +39,7 @@ class TestSwiftExpressionObjCContext(TestBase):
         self.expect("expr -lang Swift -- Bar()", "failure",
                     substrs=["cannot find 'Bar' in scope"],
                     error=True)
-        self.expect("expr -lang Swift -- [1, 2, 3]",
+        self.expect("expr -lang Swift -- (1, 2, 3)",
                     "context-less swift expression works",
-                    substrs=["([Int])"])
+                    substrs=["(Int, Int, Int)"])
 
