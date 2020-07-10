@@ -1515,14 +1515,15 @@ SwiftLanguage::CompleteCode(ExecutionContextScope &exe_scope,
                             const std::string &entered_code) {
   Target &target = *exe_scope.CalculateTarget();
   Status error;
-  SwiftASTContext *swift_ast =
-      target.GetScratchSwiftASTContext(error, exe_scope).get();
-  if (!swift_ast)
+  llvm::Optional<SwiftASTContextReader> maybe_swift_ast_ctx =
+      target.GetScratchSwiftASTContext(error, exe_scope);
+  if (!maybe_swift_ast_ctx)
     return CompletionResponse::error("could not get Swift ASTContext");
+  SwiftASTContext *swift_ast_ctx = maybe_swift_ast_ctx->get();
   auto persistent_expression_state =
       target.GetSwiftPersistentExpressionState(exe_scope);
 
-  return SwiftCompleteCode(*swift_ast, *persistent_expression_state,
+  return SwiftCompleteCode(*swift_ast_ctx, *persistent_expression_state,
                            entered_code);
 }
 
