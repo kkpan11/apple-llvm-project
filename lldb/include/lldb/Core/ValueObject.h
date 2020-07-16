@@ -584,7 +584,7 @@ public:
 
   virtual bool HasSyntheticValue();
 
-  SwiftASTContextReader GetScratchSwiftASTContext();
+  llvm::Optional<SwiftASTContextReader> GetScratchSwiftASTContext();
 
   virtual bool IsSynthetic() { return false; }
 
@@ -970,6 +970,13 @@ protected:
   bool IsChecksumEmpty();
 
   void SetPreferredDisplayLanguageIfNeeded(lldb::LanguageType);
+
+  void UpdateChildrenAddressType() {
+    GetRoot()->DoUpdateChildrenAddressType(*this);
+  }
+
+protected:
+  virtual void DoUpdateChildrenAddressType(ValueObject &valobj) { return; };
 
 private:
   virtual CompilerType MaybeCalculateCompleteType();
