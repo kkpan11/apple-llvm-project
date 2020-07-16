@@ -13,7 +13,7 @@
 #ifndef SwiftCodeCompletion_h_
 #define SwiftCodeCompletion_h_
 
-#include "lldb/Symbol/SwiftASTContext.h"
+#include "Plugins/TypeSystem/Swift/SwiftASTContext.h"
 #include "lldb/Target/CompletionResponse.h"
 #include "lldb/Target/Target.h"
 
