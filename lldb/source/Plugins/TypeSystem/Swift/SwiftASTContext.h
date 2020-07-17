@@ -215,10 +215,6 @@ public:
 
   bool AddModuleSearchPath(llvm::StringRef path);
 
-  bool AddClangArgument(std::string arg, bool unique = true);
-
-  bool AddClangArgumentPair(llvm::StringRef arg1, llvm::StringRef arg2);
-
   /// Add a list of Clang arguments to the ClangImporter options and
   /// apply the working directory to any relative paths.
   void AddExtraClangArgs(std::vector<std::string> ExtraArgs);
@@ -468,9 +464,6 @@ public:
 
   bool IsDefined(lldb::opaque_compiler_type_t type) override;
 
-  bool IsFloatingPointType(lldb::opaque_compiler_type_t type, uint32_t &count,
-                           bool &is_complex) override;
-
   bool IsFunctionType(lldb::opaque_compiler_type_t type,
                       bool *is_variadic_ptr) override;
 
@@ -482,17 +475,12 @@ public:
 
   bool IsFunctionPointerType(lldb::opaque_compiler_type_t type) override;
 
-  bool IsIntegerType(lldb::opaque_compiler_type_t type,
-                     bool &is_signed) override;
-
   bool IsPossibleDynamicType(lldb::opaque_compiler_type_t type,
                              CompilerType *target_type, // Can pass NULL
                              bool check_cplusplus, bool check_objc) override;
 
   bool IsPointerType(lldb::opaque_compiler_type_t type,
                      CompilerType *pointee_type) override;
-
-  bool IsScalarType(lldb::opaque_compiler_type_t type) override;
 
   bool IsVoidType(lldb::opaque_compiler_type_t type) override;
 

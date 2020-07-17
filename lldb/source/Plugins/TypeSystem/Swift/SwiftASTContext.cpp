@@ -1448,24 +1448,43 @@ void ApplyWorkingDir(SmallString &clang_argument, StringRef cur_working_dir) {
   llvm::sys::path::append(clang_argument, cur_working_dir, rel_path);
   llvm::sys::path::remove_dots(clang_argument);
 }
+
+std::array<StringRef, 2> macro_flags = { "-D", "-U" };
+
+bool IsMultiArgClangFlag(StringRef arg) {
+  for (auto &flag : macro_flags)
+    if (flag == arg)
+      return true;
+  return arg == "-working-directory";
+}
+
+bool IsMacroDefinition(StringRef arg) {
+  for (auto &flag : macro_flags)
+    if (arg.startswith(flag))
+      return true;
+  return false;
+}
+
+bool ShouldUnique(StringRef arg) {
+  return IsMacroDefinition(arg);
+}
 } // namespace
 
 void SwiftASTContext::AddExtraClangArgs(std::vector<std::string> ExtraArgs) {
+  swift::ClangImporterOptions &importer_options = GetClangImporterOptions();
+  llvm::DenseSet<StringRef> unique_flags;
+  for (auto &arg : importer_options.ExtraArgs)
+    unique_flags.insert(arg);
+
   llvm::SmallString<128> cur_working_dir;
   llvm::SmallString<128> clang_argument;
   for (const std::string &arg : ExtraArgs) {
-    // Join multi-arg -D and -U options for uniquing.
+    // Join multi-arg options for uniquing.
     clang_argument += arg;
-    if (clang_argument == "-D" || clang_argument == "-U" ||
-        clang_argument == "-working-directory")
+    if (IsMultiArgClangFlag(clang_argument))
       continue;
 
     auto clear_arg = llvm::make_scope_exit([&] { clang_argument.clear(); });
-
-    // Enable uniquing for -D and -U options.
-    bool is_macro = (clang_argument.size() >= 2 && clang_argument[0] == '-' &&
-                     (clang_argument[1] == 'D' || clang_argument[1] == 'U'));
-    bool unique = is_macro;
 
     // Consume any -working-directory arguments.
     StringRef cwd(clang_argument);
@@ -1474,13 +1493,21 @@ void SwiftASTContext::AddExtraClangArgs(std::vector<std::string> ExtraArgs) {
       continue;
     }
     // Drop -Werror; it would only cause trouble in the debugger.
-    if (clang_argument.startswith("-Werror")) {
+    if (clang_argument.startswith("-Werror"))
       continue;
-    }
+
+    if (clang_argument.empty())
+      continue;
+
     // Otherwise add the argument to the list.
-    if (!is_macro)
+    if (!IsMacroDefinition(clang_argument))
       ApplyWorkingDir(clang_argument, cur_working_dir);
-    AddClangArgument(clang_argument.str(), unique);
+
+    auto clang_arg_str = clang_argument.str();
+    if (!ShouldUnique(clang_argument) || !unique_flags.count(clang_arg_str)) {
+      importer_options.ExtraArgs.push_back(clang_arg_str);
+      unique_flags.insert(clang_arg_str);
+    }
   }
 }
 
@@ -3393,41 +3420,6 @@ swift::DWARFImporterDelegate *SwiftASTContext::GetDWARFImporterDelegate() {
   return m_dwarf_importer_delegate_up.get();
 }
 
-bool SwiftASTContext::AddClangArgument(std::string clang_arg, bool unique) {
-  if (clang_arg.empty())
-    return false;
-
-  swift::ClangImporterOptions &importer_options = GetClangImporterOptions();
-  // Avoid inserting the same option twice.
-  if (unique)
-    for (std::string &arg : importer_options.ExtraArgs)
-      if (arg == clang_arg)
-        return false;
-
-  importer_options.ExtraArgs.push_back(clang_arg);
-  return true;
-}
-
-bool SwiftASTContext::AddClangArgumentPair(StringRef clang_arg_1,
-                                           StringRef clang_arg_2) {
-  if (clang_arg_1.empty() || clang_arg_2.empty())
-    return false;
-
-  swift::ClangImporterOptions &importer_options = GetClangImporterOptions();
-  bool add_hmap = true;
-  for (ssize_t ai = 0, ae = importer_options.ExtraArgs.size() -
-                            1; // -1 because we look at the next one too
-       ai < ae; ++ai) {
-    if (clang_arg_1.equals(importer_options.ExtraArgs[ai]) &&
-        clang_arg_2.equals(importer_options.ExtraArgs[ai + 1]))
-      return false;
-  }
-
-  importer_options.ExtraArgs.push_back(clang_arg_1);
-  importer_options.ExtraArgs.push_back(clang_arg_2);
-  return true;
-}
-
 const swift::SearchPathOptions *SwiftASTContext::GetSearchPathOptions() const {
   VALID_OR_RETURN(0);
 
@@ -5107,11 +5099,6 @@ bool SwiftASTContext::IsFunctionPointerType(opaque_compiler_type_t type) {
   return IsFunctionType(type, nullptr); // FIXME: think about this
 }
 
-bool SwiftASTContext::IsIntegerType(opaque_compiler_type_t type,
-                                    bool &is_signed) {
-  return (GetTypeInfo(type, nullptr) & eTypeIsInteger);
-}
-
 bool SwiftASTContext::IsPointerType(opaque_compiler_type_t type,
                                     CompilerType *pointee_type) {
   VALID_OR_RETURN(false);
@@ -5162,20 +5149,6 @@ bool SwiftASTContext::IsReferenceType(opaque_compiler_type_t type,
   return false;
 }
 
-bool SwiftASTContext::IsFloatingPointType(opaque_compiler_type_t type,
-                                          uint32_t &count, bool &is_complex) {
-  if (type) {
-    if (GetTypeInfo(type, nullptr) & eTypeIsFloat) {
-      count = 1;
-      is_complex = false;
-      return true;
-    }
-  }
-  count = 0;
-  is_complex = false;
-  return false;
-}
-
 bool SwiftASTContext::IsDefined(opaque_compiler_type_t type) {
   if (!type)
     return false;
@@ -5218,13 +5191,6 @@ bool SwiftASTContext::IsPossibleDynamicType(opaque_compiler_type_t type,
   if (dynamic_pointee_type)
     dynamic_pointee_type->Clear();
   return false;
-}
-
-bool SwiftASTContext::IsScalarType(opaque_compiler_type_t type) {
-  if (!type)
-    return false;
-
-  return (GetTypeInfo(type, nullptr) & eTypeIsScalar) != 0;
 }
 
 bool SwiftASTContext::IsTypedefType(opaque_compiler_type_t type) {
