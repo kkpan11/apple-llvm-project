@@ -12,9 +12,9 @@
 
 #include "gtest/gtest.h"
 
+#include "Plugins/TypeSystem/Swift/SwiftASTContext.h"
 #include "lldb/Host/FileSystem.h"
 #include "lldb/Host/HostInfo.h"
-#include "lldb/Symbol/SwiftASTContext.h"
 
 using namespace lldb;
 using namespace lldb_private;
@@ -61,7 +61,9 @@ struct TestSwiftASTContext : public testing::Test {
 };
 
 struct SwiftASTContextTester : public SwiftASTContext {
-  SwiftASTContextTester() : SwiftASTContext() {}
+  #ifndef NDEBUG
+    SwiftASTContextTester() : SwiftASTContext() {}
+  #endif
 
   static std::string GetResourceDir(llvm::StringRef platform_sdk_path,
                                     std::string swift_dir,

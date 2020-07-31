@@ -2,7 +2,7 @@
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2020 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See https://swift.org/LICENSE.txt for license information
@@ -10,7 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "lldb/Symbol/SwiftASTContext.h"
+#include "Plugins/TypeSystem/Swift/SwiftASTContext.h"
 
 // C++ Includes
 #include <mutex> // std::once
@@ -61,6 +61,7 @@
 #include "clang/Driver/Driver.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/LLVMContext.h"
@@ -218,7 +219,7 @@ swift::Type SwiftASTContext::GetSwiftType(opaque_compiler_type_t opaque_type) {
 
 swift::CanType
 SwiftASTContext::GetCanonicalSwiftType(opaque_compiler_type_t opaque_type) {
-  assert(opaque_type && *reinterpret_cast<const char *>(opaque_type) != '$' &&
+  assert(!opaque_type || *reinterpret_cast<const char *>(opaque_type) != '$' &&
          "wrong type system");
   return lldb_private::GetCanonicalSwiftType(CompilerType(this, opaque_type));
 }
@@ -1448,24 +1449,43 @@ void ApplyWorkingDir(SmallString &clang_argument, StringRef cur_working_dir) {
   llvm::sys::path::append(clang_argument, cur_working_dir, rel_path);
   llvm::sys::path::remove_dots(clang_argument);
 }
+
+std::array<StringRef, 2> macro_flags = { "-D", "-U" };
+
+bool IsMultiArgClangFlag(StringRef arg) {
+  for (auto &flag : macro_flags)
+    if (flag == arg)
+      return true;
+  return arg == "-working-directory";
+}
+
+bool IsMacroDefinition(StringRef arg) {
+  for (auto &flag : macro_flags)
+    if (arg.startswith(flag))
+      return true;
+  return false;
+}
+
+bool ShouldUnique(StringRef arg) {
+  return IsMacroDefinition(arg);
+}
 } // namespace
 
 void SwiftASTContext::AddExtraClangArgs(std::vector<std::string> ExtraArgs) {
+  swift::ClangImporterOptions &importer_options = GetClangImporterOptions();
+  llvm::StringSet<> unique_flags;
+  for (auto &arg : importer_options.ExtraArgs)
+    unique_flags.insert(arg);
+
   llvm::SmallString<128> cur_working_dir;
   llvm::SmallString<128> clang_argument;
   for (const std::string &arg : ExtraArgs) {
-    // Join multi-arg -D and -U options for uniquing.
+    // Join multi-arg options for uniquing.
     clang_argument += arg;
-    if (clang_argument == "-D" || clang_argument == "-U" ||
-        clang_argument == "-working-directory")
+    if (IsMultiArgClangFlag(clang_argument))
       continue;
 
     auto clear_arg = llvm::make_scope_exit([&] { clang_argument.clear(); });
-
-    // Enable uniquing for -D and -U options.
-    bool is_macro = (clang_argument.size() >= 2 && clang_argument[0] == '-' &&
-                     (clang_argument[1] == 'D' || clang_argument[1] == 'U'));
-    bool unique = is_macro;
 
     // Consume any -working-directory arguments.
     StringRef cwd(clang_argument);
@@ -1474,13 +1494,21 @@ void SwiftASTContext::AddExtraClangArgs(std::vector<std::string> ExtraArgs) {
       continue;
     }
     // Drop -Werror; it would only cause trouble in the debugger.
-    if (clang_argument.startswith("-Werror")) {
+    if (clang_argument.startswith("-Werror"))
       continue;
-    }
+
+    if (clang_argument.empty())
+      continue;
+
     // Otherwise add the argument to the list.
-    if (!is_macro)
+    if (!IsMacroDefinition(clang_argument))
       ApplyWorkingDir(clang_argument, cur_working_dir);
-    AddClangArgument(clang_argument.str(), unique);
+
+    auto clang_arg_str = clang_argument.str();
+    if (!ShouldUnique(clang_argument) || !unique_flags.count(clang_arg_str)) {
+      importer_options.ExtraArgs.push_back(clang_arg_str);
+      unique_flags.insert(clang_arg_str);
+    }
   }
 }
 
@@ -2238,7 +2266,7 @@ lldb::TypeSystemSP SwiftASTContext::CreateInstance(lldb::LanguageType language,
     logError("couldn't load the Swift stdlib");
     return {};
   }
-  
+
   return swift_ast_sp;
 }
 
@@ -2308,6 +2336,10 @@ Status SwiftASTContext::GetFatalErrors() {
 
 swift::IRGenOptions &SwiftASTContext::GetIRGenOptions() {
   return m_compiler_invocation_ap->getIRGenOptions();
+}
+
+swift::TBDGenOptions &SwiftASTContext::GetTBDGenOptions() {
+  return m_compiler_invocation_ap->getTBDGenOptions();
 }
 
 llvm::Triple SwiftASTContext::GetTriple() const {
@@ -3339,7 +3371,7 @@ swift::ASTContext *SwiftASTContext::GetASTContext() {
 
   // 3. Create and install the serialized module loader.
   std::unique_ptr<swift::ModuleLoader> serialized_module_loader_ap(
-      swift::SerializedModuleLoader::create(
+      swift::ImplicitSerializedModuleLoader::create(
           *m_ast_context_ap, m_dependency_tracker.get(), loading_mode));
   if (serialized_module_loader_ap)
     m_ast_context_ap->addModuleLoader(std::move(serialized_module_loader_ap));
@@ -3387,41 +3419,6 @@ swift::DWARFImporterDelegate *SwiftASTContext::GetDWARFImporterDelegate() {
   VALID_OR_RETURN(nullptr);
 
   return m_dwarf_importer_delegate_up.get();
-}
-
-bool SwiftASTContext::AddClangArgument(std::string clang_arg, bool unique) {
-  if (clang_arg.empty())
-    return false;
-
-  swift::ClangImporterOptions &importer_options = GetClangImporterOptions();
-  // Avoid inserting the same option twice.
-  if (unique)
-    for (std::string &arg : importer_options.ExtraArgs)
-      if (arg == clang_arg)
-        return false;
-
-  importer_options.ExtraArgs.push_back(clang_arg);
-  return true;
-}
-
-bool SwiftASTContext::AddClangArgumentPair(StringRef clang_arg_1,
-                                           StringRef clang_arg_2) {
-  if (clang_arg_1.empty() || clang_arg_2.empty())
-    return false;
-
-  swift::ClangImporterOptions &importer_options = GetClangImporterOptions();
-  bool add_hmap = true;
-  for (ssize_t ai = 0, ae = importer_options.ExtraArgs.size() -
-                            1; // -1 because we look at the next one too
-       ai < ae; ++ai) {
-    if (clang_arg_1.equals(importer_options.ExtraArgs[ai]) &&
-        clang_arg_2.equals(importer_options.ExtraArgs[ai + 1]))
-      return false;
-  }
-
-  importer_options.ExtraArgs.push_back(clang_arg_1);
-  importer_options.ExtraArgs.push_back(clang_arg_2);
-  return true;
 }
 
 const swift::SearchPathOptions *SwiftASTContext::GetSearchPathOptions() const {
@@ -5103,11 +5100,6 @@ bool SwiftASTContext::IsFunctionPointerType(opaque_compiler_type_t type) {
   return IsFunctionType(type, nullptr); // FIXME: think about this
 }
 
-bool SwiftASTContext::IsIntegerType(opaque_compiler_type_t type,
-                                    bool &is_signed) {
-  return (GetTypeInfo(type, nullptr) & eTypeIsInteger);
-}
-
 bool SwiftASTContext::IsPointerType(opaque_compiler_type_t type,
                                     CompilerType *pointee_type) {
   VALID_OR_RETURN(false);
@@ -5132,12 +5124,6 @@ bool SwiftASTContext::IsPointerOrReferenceType(opaque_compiler_type_t type,
          IsReferenceType(type, pointee_type, nullptr);
 }
 
-bool SwiftASTContext::ShouldTreatScalarValueAsAddress(
-    opaque_compiler_type_t type) {
-  return Flags(GetTypeInfo(type, nullptr))
-      .AnySet(eTypeInstanceIsPointer | eTypeIsReference);
-}
-
 bool SwiftASTContext::IsReferenceType(opaque_compiler_type_t type,
                                       CompilerType *pointee_type,
                                       bool *is_rvalue) {
@@ -5155,20 +5141,6 @@ bool SwiftASTContext::IsReferenceType(opaque_compiler_type_t type,
   }
   if (pointee_type)
     pointee_type->Clear();
-  return false;
-}
-
-bool SwiftASTContext::IsFloatingPointType(opaque_compiler_type_t type,
-                                          uint32_t &count, bool &is_complex) {
-  if (type) {
-    if (GetTypeInfo(type, nullptr) & eTypeIsFloat) {
-      count = 1;
-      is_complex = false;
-      return true;
-    }
-  }
-  count = 0;
-  is_complex = false;
   return false;
 }
 
@@ -5214,13 +5186,6 @@ bool SwiftASTContext::IsPossibleDynamicType(opaque_compiler_type_t type,
   if (dynamic_pointee_type)
     dynamic_pointee_type->Clear();
   return false;
-}
-
-bool SwiftASTContext::IsScalarType(opaque_compiler_type_t type) {
-  if (!type)
-    return false;
-
-  return (GetTypeInfo(type, nullptr) & eTypeIsScalar) != 0;
 }
 
 bool SwiftASTContext::IsTypedefType(opaque_compiler_type_t type) {
@@ -5363,10 +5328,6 @@ SwiftASTContext::GetAllocationStrategy(opaque_compiler_type_t type) {
 //----------------------------------------------------------------------
 // Type Completion
 //----------------------------------------------------------------------
-
-bool SwiftASTContext::GetCompleteType(opaque_compiler_type_t type) {
-  return true;
-}
 
 ConstString SwiftASTContext::GetTypeName(opaque_compiler_type_t type) {
   std::string type_name;
@@ -5513,12 +5474,9 @@ SwiftASTContext::GetTypeInfo(opaque_compiler_type_t type,
     LLVM_FALLTHROUGH;
   case swift::TypeKind::Enum: {
     SwiftEnumDescriptor *cached_enum_info = GetCachedEnumInfo(type);
-    if (cached_enum_info) {
-      if (cached_enum_info->GetNumElementsWithPayload() == 0)
-        swift_flags |= eTypeHasValue | eTypeIsEnumeration;
-      else
-        swift_flags |= eTypeHasValue | eTypeIsEnumeration | eTypeHasChildren;
-    } else
+    if (cached_enum_info)
+      swift_flags |= eTypeHasValue | eTypeIsEnumeration | eTypeHasChildren;
+    else
       swift_flags |= eTypeIsEnumeration;
   } break;
 
@@ -5526,6 +5484,12 @@ SwiftASTContext::GetTypeInfo(opaque_compiler_type_t type,
     swift_flags |= eTypeIsGeneric | eTypeIsBound;
     LLVM_FALLTHROUGH;
   case swift::TypeKind::Struct:
+    if (auto *ndecl = swift_can_type.getAnyNominal())
+      if (llvm::dyn_cast_or_null<clang::EnumDecl>(ndecl->getClangDecl())) {
+        swift_flags |= eTypeHasChildren | eTypeIsEnumeration | eTypeHasValue;
+        break;
+      }
+
     swift_flags |= eTypeHasChildren | eTypeIsStructUnion;
     break;
 
@@ -5580,14 +5544,6 @@ SwiftASTContext::GetTypeInfo(opaque_compiler_type_t type,
   return swift_flags;
 }
 
-lldb::LanguageType
-SwiftASTContext::GetMinimumLanguage(opaque_compiler_type_t type) {
-  if (!type)
-    return lldb::eLanguageTypeC;
-
-  return lldb::eLanguageTypeSwift;
-}
-
 lldb::TypeClass SwiftASTContext::GetTypeClass(opaque_compiler_type_t type) {
   VALID_OR_RETURN(lldb::eTypeClassInvalid);
 
@@ -5597,18 +5553,11 @@ lldb::TypeClass SwiftASTContext::GetTypeClass(opaque_compiler_type_t type) {
   swift::CanType swift_can_type(GetCanonicalSwiftType(type));
   const swift::TypeKind type_kind = swift_can_type->getKind();
   switch (type_kind) {
-  case swift::TypeKind::Error:
-    return lldb::eTypeClassOther;
   case swift::TypeKind::BuiltinInteger:
-    return lldb::eTypeClassBuiltin;
   case swift::TypeKind::BuiltinFloat:
-    return lldb::eTypeClassBuiltin;
   case swift::TypeKind::BuiltinRawPointer:
-    return lldb::eTypeClassBuiltin;
   case swift::TypeKind::BuiltinNativeObject:
-    return lldb::eTypeClassBuiltin;
   case swift::TypeKind::BuiltinUnsafeValueBuffer:
-    return lldb::eTypeClassBuiltin;
   case swift::TypeKind::BuiltinBridgeObject:
     return lldb::eTypeClassBuiltin;
   case swift::TypeKind::BuiltinVector:
@@ -5620,56 +5569,39 @@ lldb::TypeClass SwiftASTContext::GetTypeClass(opaque_compiler_type_t type) {
   case swift::TypeKind::WeakStorage:
     return ToCompilerType(swift_can_type->getReferenceStorageReferent())
         .GetTypeClass();
-  case swift::TypeKind::GenericTypeParam:
-    return lldb::eTypeClassOther;
-  case swift::TypeKind::DependentMember:
-    return lldb::eTypeClassOther;
   case swift::TypeKind::Enum:
+  case swift::TypeKind::BoundGenericEnum:
     return lldb::eTypeClassUnion;
   case swift::TypeKind::Struct:
+  case swift::TypeKind::BoundGenericStruct:
     return lldb::eTypeClassStruct;
   case swift::TypeKind::Class:
+  case swift::TypeKind::BoundGenericClass:
     return lldb::eTypeClassClass;
+  case swift::TypeKind::GenericTypeParam:
+  case swift::TypeKind::DependentMember:
   case swift::TypeKind::Protocol:
-    return lldb::eTypeClassOther;
+  case swift::TypeKind::ProtocolComposition:
   case swift::TypeKind::Metatype:
-    return lldb::eTypeClassOther;
   case swift::TypeKind::Module:
-    return lldb::eTypeClassOther;
   case swift::TypeKind::PrimaryArchetype:
   case swift::TypeKind::OpenedArchetype:
   case swift::TypeKind::NestedArchetype:
+  case swift::TypeKind::UnboundGeneric:
+  case swift::TypeKind::TypeVariable:
+  case swift::TypeKind::ExistentialMetatype:
+  case swift::TypeKind::SILBox:
+  case swift::TypeKind::DynamicSelf:
+  case swift::TypeKind::SILBlockStorage:
+  case swift::TypeKind::Unresolved:
+  case swift::TypeKind::Error:
     return lldb::eTypeClassOther;
   case swift::TypeKind::Function:
-    return lldb::eTypeClassFunction;
   case swift::TypeKind::GenericFunction:
-    return lldb::eTypeClassFunction;
-  case swift::TypeKind::ProtocolComposition:
-    return lldb::eTypeClassOther;
-  case swift::TypeKind::LValue:
-    return lldb::eTypeClassReference;
-  case swift::TypeKind::UnboundGeneric:
-    return lldb::eTypeClassOther;
-  case swift::TypeKind::BoundGenericClass:
-    return lldb::eTypeClassClass;
-  case swift::TypeKind::BoundGenericEnum:
-    return lldb::eTypeClassUnion;
-  case swift::TypeKind::BoundGenericStruct:
-    return lldb::eTypeClassStruct;
-  case swift::TypeKind::TypeVariable:
-    return lldb::eTypeClassOther;
-  case swift::TypeKind::ExistentialMetatype:
-    return lldb::eTypeClassOther;
-  case swift::TypeKind::DynamicSelf:
-    return lldb::eTypeClassOther;
-  case swift::TypeKind::SILBox:
-    return lldb::eTypeClassOther;
   case swift::TypeKind::SILFunction:
     return lldb::eTypeClassFunction;
-  case swift::TypeKind::SILBlockStorage:
-    return lldb::eTypeClassOther;
-  case swift::TypeKind::Unresolved:
-    return lldb::eTypeClassOther;
+  case swift::TypeKind::LValue:
+    return lldb::eTypeClassReference;
 
   case swift::TypeKind::Optional:
   case swift::TypeKind::TypeAlias:
@@ -8307,8 +8239,8 @@ bool SwiftASTContext::GetImplicitImports(
   for (ConstString name : persistent_expression_state->GetHandLoadedModules()) {
     SourceModule module_info;
     module_info.path.push_back(name);
-    auto *module = LoadOneModule(module_info, swift_ast_context, stack_frame_wp,
-                                 error);
+    auto *module =
+        LoadOneModule(module_info, swift_ast_context, stack_frame_wp, error);
     if (!module)
       return false;
 

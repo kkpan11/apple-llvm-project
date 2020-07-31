@@ -12,7 +12,6 @@
 #include "lldb/Core/ValueObjectVariable.h"
 #include "lldb/Expression/ExpressionVariable.h"
 #include "lldb/Symbol/Symbol.h"
-#include "lldb/Symbol/SwiftASTContext.h"
 #include "lldb/Symbol/Type.h"
 #include "lldb/Symbol/Variable.h"
 #include "lldb/Target/ExecutionContext.h"
@@ -23,6 +22,8 @@
 #include "lldb/Target/Thread.h"
 #include "lldb/Utility/Log.h"
 #include "lldb/Utility/RegisterValue.h"
+
+#include "Plugins/TypeSystem/Swift/SwiftASTContext.h"
 
 #include <memory>
 
@@ -489,19 +490,9 @@ public:
       }
     } else {
       AddressType address_type = eAddressTypeInvalid;
-      const bool is_dynamic_class_type =
-          m_is_generic &&
-          (valobj_type.GetTypeClass() == lldb::eTypeClassClass);
-      const bool scalar_is_load_address = m_is_generic; // this is the only
-                                                          // time we're dealing
-                                                          // with dynamic values
-
-      // if the dynamic type is a class, bypass the GetAddressOf() optimization
-      // as it doesn't do the right thing
+      const bool scalar_is_load_address = false;
       lldb::addr_t addr_of_valobj =
-          is_dynamic_class_type
-              ? LLDB_INVALID_ADDRESS
-              : valobj_sp->GetAddressOf(scalar_is_load_address, &address_type);
+          valobj_sp->GetAddressOf(scalar_is_load_address, &address_type);
 
       // BEGIN Swift.
       if (lldb::ProcessSP process_sp =

@@ -10,7 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "lldb/Symbol/SwiftASTContext.h"
+#include "Plugins/TypeSystem/Swift/TypeSystemSwiftTypeRef.h"
 
 #include "lldb/Symbol/CompileUnit.h"
 #include "lldb/Symbol/TypeList.h"
@@ -28,10 +28,10 @@
 #include "swift/Demangling/Demangler.h"
 #include "swift/Strings.h"
 
-#include "clang/AST/Decl.h"
-#include "clang/AST/DeclObjC.h"
 #include "clang/APINotes/APINotesManager.h"
 #include "clang/APINotes/APINotesReader.h"
+#include "clang/AST/Decl.h"
+#include "clang/AST/DeclObjC.h"
 
 using namespace lldb;
 using namespace lldb_private;
@@ -87,6 +87,74 @@ GetClangTypeNode(CompilerType clang_type, swift::Demangle::Demangler &Dem) {
       Node::Kind::Module, clang_type.GetTypeName().GetStringRef());
   structure->addChild(identifier, Dem);
   return structure;
+}
+
+/// Resolve a type alias node and return a demangle tree for the
+/// resolved type. If the type alias resolves to a Clang type, return
+/// a Clang CompilerType.
+static std::pair<swift::Demangle::NodePointer, CompilerType>
+ResolveTypeAlias(lldb_private::Module *M, swift::Demangle::Demangler &Dem,
+                 swift::Demangle::NodePointer node) {
+  // Try to look this up as a Swift type alias. For each *Swift*
+  // type alias there is a debug info entry that has the mangled
+  // name as name and the aliased type as a type.
+  ConstString mangled = GetTypeAlias(Dem, node);
+  if (!M) {
+    LLDB_LOGF(GetLogIfAllCategoriesSet(LIBLLDB_LOG_TYPES),
+              "No module. Couldn't resolve type alias %s", mangled.AsCString());
+    return {{}, {}};
+  }
+  llvm::DenseSet<lldb_private::SymbolFile *> searched_symbol_files;
+  TypeList types;
+  M->FindTypes({mangled}, false, 1, searched_symbol_files, types);
+  if (types.Empty()) {
+    // No Swift type found -- this could be a Clang typdef.  This
+    // check is not done earlier because a Clang typedef that points
+    // to a builtin type, e.g., "typedef unsigned uint32_t", could
+    // end up pointing to a *Swift* type!
+    if (node->getNumChildren() == 2 && node->getChild(0)->hasText() &&
+        node->getChild(0)->getText() == swift::MANGLING_MODULE_OBJC &&
+        node->getChild(1)->hasText()) {
+      // Resolve the typedef within the Clang debug info.
+      auto clang_type =
+          LookupClangForwardType(*M, node->getChild(1)->getText());
+      if (!clang_type)
+        return {{}, {}};
+      return {{}, clang_type};
+    }
+
+    LLDB_LOGF(GetLogIfAllCategoriesSet(LIBLLDB_LOG_TYPES),
+              "Couldn't resolve type alias %s", mangled.AsCString());
+    return {{}, {}};
+  }
+  auto type = types.GetTypeAtIndex(0);
+  if (!type) {
+    LLDB_LOGF(GetLogIfAllCategoriesSet(LIBLLDB_LOG_TYPES),
+              "Found empty type alias %s", mangled.AsCString());
+    return {{}, {}};
+  }
+
+  // DWARFASTParserSwift stashes the desugared mangled name of a
+  // type alias into the Type's name field.
+  ConstString desugared_name = type->GetName();
+  if (!isMangledName(desugared_name.GetStringRef())) {
+    LLDB_LOGF(GetLogIfAllCategoriesSet(LIBLLDB_LOG_TYPES),
+              "Found non-Swift type alias %s", mangled.AsCString());
+    return {{}, {}};
+  }
+  NodePointer n = Dem.demangleSymbol(desugared_name.GetStringRef());
+  if (n && n->getKind() == Node::Kind::Global && n->hasChildren())
+    n = n->getFirstChild();
+  if (n && n->getKind() == Node::Kind::TypeMangling && n->hasChildren())
+    n = n->getFirstChild();
+  if (n && n->getKind() == Node::Kind::Type && n->hasChildren())
+    n = n->getFirstChild();
+  if (!n) {
+    LLDB_LOG(GetLogIfAllCategoriesSet(LIBLLDB_LOG_TYPES),
+             "Unrecognized demangling %s", desugared_name.AsCString());
+    return {{}, {}};
+  }
+  return {n, {}};
 }
 
 /// Iteratively resolve all type aliases in \p node by looking up their
@@ -200,67 +268,13 @@ GetCanonicalNode(lldb_private::Module *M, swift::Demangle::Demangler &Dem,
 
   case Node::Kind::BoundGenericTypeAlias:
   case Node::Kind::TypeAlias: {
-    // Try to look this up as a Swift type alias. For each *Swift*
-    // type alias there is a debug info entry that has the mangled
-    // name as name and the aliased type as a type.
-    ConstString mangled = GetTypeAlias(Dem, node);
-    if (!M) {
-      LLDB_LOGF(GetLogIfAllCategoriesSet(LIBLLDB_LOG_TYPES),
-                "No module. Couldn't resolve type alias %s",
-                mangled.AsCString());
-      return node;
-    }
-    llvm::DenseSet<lldb_private::SymbolFile *> searched_symbol_files;
-    TypeList types;
-    M->FindTypes({mangled}, false, 1, searched_symbol_files, types);
-    if (types.Empty()) {
-      // No Swift type found -- this could be a Clang typdef.  This
-      // check is not done earlier because a Clang typedef that points
-      // to a builtin type, e.g., "typedef unsigned uint32_t", could
-      // end up pointing to a *Swift* type!
-      if (node->getNumChildren() == 2 && node->getChild(0)->hasText() &&
-          node->getChild(0)->getText() == swift::MANGLING_MODULE_OBJC &&
-          node->getChild(1)->hasText()) {
-        // Resolve the typedef within the Clang debug info.
-        auto clang_type = LookupClangForwardType(*M, node->getChild(1)->getText());
-        if (!clang_type)
-          return node;
-        clang_type = clang_type.GetCanonicalType();
-        return GetClangTypeNode(clang_type, Dem);
-      }
-
-      LLDB_LOGF(GetLogIfAllCategoriesSet(LIBLLDB_LOG_TYPES),
-                "Couldn't resolve type alias %s", mangled.AsCString());
-      return node;
-    }
-    auto type = types.GetTypeAtIndex(0);
-    if (!type) {
-      LLDB_LOGF(GetLogIfAllCategoriesSet(LIBLLDB_LOG_TYPES),
-                "Found empty type alias %s", mangled.AsCString());
-      return node;
-    }
-
-    // DWARFASTParserSwift stashes the desugared mangled name of a
-    // type alias into the Type's name field.
-    ConstString desugared_name = type->GetName();
-    if (!isMangledName(desugared_name.GetStringRef())) {
-      LLDB_LOGF(GetLogIfAllCategoriesSet(LIBLLDB_LOG_TYPES),
-                "Found non-Swift type alias %s", mangled.AsCString());
-      return node;
-    }
-    NodePointer n = Dem.demangleSymbol(desugared_name.GetStringRef());
-    if (n && n->getKind() == Node::Kind::Global && n->hasChildren())
-      n = n->getFirstChild();
-    if (n && n->getKind() == Node::Kind::TypeMangling && n->hasChildren())
-      n = n->getFirstChild();
-    if (n && n->getKind() == Node::Kind::Type && n->hasChildren())
-      n = n->getFirstChild();
-    if (!n) {
-      LLDB_LOG(GetLogIfAllCategoriesSet(LIBLLDB_LOG_TYPES),
-               "Unrecognized demangling %s", desugared_name.AsCString());
-      return node;
-    }
-    return getCanonicalNode(n);
+    auto node_clangtype = ResolveTypeAlias(M, Dem, node);
+    if (CompilerType clang_type = node_clangtype.second)
+      return getCanonicalNode(
+          GetClangTypeNode(clang_type.GetCanonicalType(), Dem));
+    if (node_clangtype.first)
+      return getCanonicalNode(node_clangtype.first);
+    return node;
   }
   default:
     break;
@@ -347,10 +361,9 @@ clang::api_notes::APINotesManager *TypeSystemSwiftTypeRef::GetAPINotesManager(
 }
 
 /// Desugar a sugared type.
-static swift::Demangle::NodePointer Desugar(swift::Demangle::Demangler &Dem,
-                                            swift::Demangle::NodePointer node,
-                                            Node::Kind bound_kind,
-                                            Node::Kind kind, llvm::StringRef name) {
+static swift::Demangle::NodePointer
+Desugar(swift::Demangle::Demangler &Dem, swift::Demangle::NodePointer node,
+        Node::Kind bound_kind, Node::Kind kind, llvm::StringRef name) {
   using namespace swift::Demangle;
   NodePointer desugared = Dem.createNode(bound_kind);
   NodePointer type = Dem.createNode(Node::Kind::Type);
@@ -385,8 +398,7 @@ GetNodeForPrinting(const std::string &m_description, lldb_private::Module &M,
                    GetAPINotesManagerFn get_apinotes_manager,
                    GetClangImporterFn get_clangimporter,
                    swift::Demangle::Demangler &Dem,
-                   swift::Demangle::NodePointer node,
-                   bool resolve_objc_module,
+                   swift::Demangle::NodePointer node, bool resolve_objc_module,
                    bool desugar = true) {
   if (!node)
     return node;
@@ -432,8 +444,7 @@ GetNodeForPrinting(const std::string &m_description, lldb_private::Module &M,
 
     // Create a new node with the Clang module instead of "__C".
     NodePointer renamed = Dem.createNode(kind);
-    NodePointer module =
-        Dem.createNode(Node::Kind::Module, toplevel_module);
+    NodePointer module = Dem.createNode(Node::Kind::Module, toplevel_module);
     renamed->addChild(module, Dem);
 
     // This is unfortunate performance-wise, but only ClangImporter
@@ -512,12 +523,12 @@ GetNodeForPrinting(const std::string &m_description, lldb_private::Module &M,
         }
       }
     }
-      
+
     auto clang_importer = get_clangimporter();
     if (!clang_importer)
       break;
-    //swift::DeclName imported_name = clang_importer->importName(clang_decl, {});
-    //imported_name.getBaseName().userFacingName()
+    // swift::DeclName imported_name = clang_importer->importName(clang_decl,
+    // {}); imported_name.getBaseName().userFacingName()
     NodePointer identifier = Dem.createNode(Node::Kind::Identifier, swift_name);
     renamed->addChild(identifier, Dem);
     return renamed;
@@ -550,10 +561,10 @@ GetNodeForPrinting(const std::string &m_description, lldb_private::Module &M,
           if (type->getKind() == Node::Kind::Type &&
               type->getNumChildren() == 1)
             rett->addChild(type->getChild(0), Dem);
-      else if (child->getKind() == Node::Kind::ImplResult)
-        for (NodePointer type : *node)
-          if (type->getKind() == Node::Kind::Type)
-            rett->addChild(type, Dem);
+          else if (child->getKind() == Node::Kind::ImplResult)
+            for (NodePointer type : *node)
+              if (type->getKind() == Node::Kind::Type)
+                rett->addChild(type, Dem);
     }
     args_ty->addChild(args_tuple, Dem);
     args->addChild(args_ty, Dem);
@@ -593,7 +604,7 @@ GetNodeForPrinting(const std::string &m_description, lldb_private::Module &M,
     if (node->getNumChildren() == 2 &&
         node->getChild(0)->getKind() == Node::Kind::Identifier)
       return node->getChild(0);
-    break;    
+    break;
   default:
     break;
   }
@@ -619,7 +630,7 @@ GetNodeForPrinting(const std::string &m_description, lldb_private::Module &M,
             module = node->getChild(0)->getChild(0);
           if (module->getKind() != Node::Kind::Module)
             break;
-            
+
           canonical->addChild(module, Dem);
           canonical->addChild(identifier, Dem);
           return canonical;
@@ -645,6 +656,232 @@ static swift::Demangle::NodePointer GetDemangleTreeForPrinting(
       GetNodeForPrinting(m_description, *Module, get_apinotes_manager,
                          get_clangimporter, Dem, node, resolve_objc_module);
   return canonical;
+}
+
+/// Collect TypeInfo flags from a demangle tree. For most attributes
+/// this can stop scanning at the outmost type, however in order to
+/// determine whether a node is generic or not, it needs to visit all
+/// nodes. The \p generic_walk argument specifies that the primary
+/// attributes have been collected and that we only look for generics.
+static uint32_t collectTypeInfo(Module *M, swift::Demangle::Demangler &Dem,
+                                swift::Demangle::NodePointer node,
+                                bool generic_walk = false) {
+  if (!node)
+    return 0;
+  uint32_t swift_flags = eTypeIsSwift;
+
+  /// Collect type info from a clang-imported type.
+  auto collect_clang_type = [&](CompilerType clang_type) {
+    auto type_class = clang_type.GetTypeClass();
+    // Classes.
+    if ((type_class & eTypeClassClass) ||
+        (type_class & eTypeClassObjCObjectPointer)) {
+      swift_flags &= ~eTypeIsStructUnion;
+      swift_flags |= eTypeIsClass | eTypeHasChildren | eTypeHasValue |
+                     eTypeInstanceIsPointer;
+      return;
+    }
+    // Structs.
+    if ((type_class & eTypeClassStruct)) {
+      swift_flags |= eTypeIsStructUnion | eTypeHasChildren;
+      return;
+    }
+    // Enums.
+    if ((type_class & eTypeClassEnumeration)) {
+      swift_flags &= ~eTypeIsStructUnion;
+      swift_flags |= eTypeIsEnumeration | eTypeHasChildren | eTypeHasValue;
+      return;
+    }
+  };
+
+  using namespace swift::Demangle;
+  if (generic_walk)
+    switch (node->getKind()) {
+    // Bug-for-bug-compatibility.
+    // FIXME: There should be more cases here.
+    case Node::Kind::DynamicSelf:
+      swift_flags |= eTypeIsGeneric;
+      break;
+    default:
+      break;
+    }
+  else
+    switch (node->getKind()) {
+    case Node::Kind::SugaredOptional:
+      swift_flags |= eTypeIsGeneric | eTypeIsBound | eTypeHasChildren |
+                     eTypeHasValue | eTypeIsEnumeration;
+      break;
+    case Node::Kind::SugaredArray:
+    case Node::Kind::SugaredDictionary:
+      swift_flags |=
+          eTypeIsGeneric | eTypeIsBound | eTypeHasChildren | eTypeIsStructUnion;
+      break;
+
+    case Node::Kind::DependentGenericParamType:
+      swift_flags |= eTypeHasValue | eTypeIsPointer | eTypeIsScalar |
+                     eTypeIsGenericTypeParam;
+      break;
+    case Node::Kind::DependentGenericType:
+    case Node::Kind::DependentMemberType:
+      swift_flags |= eTypeHasValue | eTypeIsPointer | eTypeIsScalar |
+                     eTypeIsGenericTypeParam;
+      break;
+
+    case Node::Kind::DynamicSelf:
+      swift_flags |= eTypeHasValue | eTypeIsGeneric | eTypeIsBound;
+      break;
+
+    case Node::Kind::ImplFunctionType:
+      // Bug-for-bug-compatibility. Not sure if this is correct.
+      swift_flags |= eTypeIsPointer | eTypeHasValue;
+      return swift_flags;
+      LLVM_FALLTHROUGH;
+    case Node::Kind::BoundGenericFunction:
+      swift_flags |= eTypeIsGeneric | eTypeIsBound;
+      LLVM_FALLTHROUGH;
+    case Node::Kind::FunctionType:
+      swift_flags |= eTypeIsPointer | eTypeHasValue;
+      break;
+    case Node::Kind::BuiltinTypeName:
+      swift_flags |= eTypeIsBuiltIn | eTypeHasValue;
+      if (node->hasText()) {
+        // TODO (performance): It may be safe to switch over the pointers here.
+        if (node->getText() == swift::BUILTIN_TYPE_NAME_RAWPOINTER)
+          swift_flags |= eTypeHasChildren | eTypeIsPointer | eTypeIsScalar;
+        else if (node->getText() == swift::BUILTIN_TYPE_NAME_UNSAFEVALUEBUFFER)
+          swift_flags |= eTypeIsPointer | eTypeIsScalar;
+        else if (node->getText() == swift::BUILTIN_TYPE_NAME_NATIVEOBJECT)
+          swift_flags |= eTypeHasChildren | eTypeIsPointer | eTypeIsScalar;
+        else if (node->getText() == swift::BUILTIN_TYPE_NAME_BRIDGEOBJECT)
+          swift_flags |=
+              eTypeHasChildren | eTypeIsPointer | eTypeIsScalar | eTypeIsObjC;
+        else if (node->getText().startswith(swift::BUILTIN_TYPE_NAME_VEC))
+          swift_flags |= eTypeHasChildren | eTypeIsVector;
+      }
+      break;
+    case Node::Kind::Tuple:
+      swift_flags |= eTypeHasChildren | eTypeIsTuple;
+      break;
+    case Node::Kind::BoundGenericEnum:
+      swift_flags |= eTypeIsGeneric | eTypeIsBound;
+      LLVM_FALLTHROUGH;
+    case Node::Kind::Enum: {
+      // FIXME: do C-style enums have children?
+      // The AST implementation is getting eTypeHasChildren out of the Decl.
+      swift_flags |= eTypeIsEnumeration;
+      if (node->getNumChildren() != 2)
+        break;
+      // Bug-for-bug compatibility.
+      if (!(collectTypeInfo(M, Dem, node->getChild(1)) &
+            eTypeIsGenericTypeParam))
+        swift_flags |= eTypeHasValue | eTypeHasChildren;
+      auto module = node->getChild(0);
+      auto ident = node->getChild(1);
+      if (module->hasText() &&
+          module->getText() == swift::MANGLING_MODULE_OBJC) {
+        swift_flags |= eTypeHasValue /*| eTypeIsObjC*/;
+      }
+      break;
+    }
+    case Node::Kind::BoundGenericStructure:
+      swift_flags |= eTypeIsGeneric | eTypeIsBound;
+      LLVM_FALLTHROUGH;
+    case Node::Kind::Structure: {
+      swift_flags |= eTypeHasChildren | eTypeIsStructUnion;
+      if (node->getNumChildren() != 2)
+        break;
+      auto module = node->getChild(0);
+      auto ident = node->getChild(1);
+      // Builtin types.
+      if (module->hasText() && module->getText() == swift::STDLIB_NAME) {
+        if (ident->hasText() &&
+            ident->getText().startswith(swift::BUILTIN_TYPE_NAME_INT))
+          swift_flags |= eTypeIsScalar | eTypeIsInteger;
+        else if (ident->hasText() &&
+                 ident->getText().startswith(swift::BUILTIN_TYPE_NAME_FLOAT))
+          swift_flags |= eTypeIsScalar | eTypeIsFloat;
+      }
+
+      // Clang-imported types.
+      if (module->hasText() &&
+          module->getText() == swift::MANGLING_MODULE_OBJC) {
+        if (ident->getKind() != Node::Kind::Identifier || !ident->hasText())
+          break;
+
+        if (!M)
+          break;
+        // Look up the Clang type in DWARF.
+        CompilerType clang_type = LookupClangForwardType(*M, ident->getText());
+        collect_clang_type(clang_type.GetCanonicalType());
+        return swift_flags;
+      }
+      break;
+    }
+    case Node::Kind::BoundGenericClass:
+      swift_flags |= eTypeIsGeneric | eTypeIsBound;
+      LLVM_FALLTHROUGH;
+    case Node::Kind::Class:
+      swift_flags |= eTypeHasChildren | eTypeIsClass | eTypeHasValue |
+                     eTypeInstanceIsPointer;
+      break;
+
+    case Node::Kind::BoundGenericOtherNominalType:
+      swift_flags |= eTypeIsGeneric | eTypeIsBound;
+      swift_flags |= eTypeHasValue;
+      break;
+
+    case Node::Kind::BoundGenericProtocol:
+      swift_flags |= eTypeIsGeneric | eTypeIsBound;
+      LLVM_FALLTHROUGH;
+    case Node::Kind::Protocol:
+      swift_flags |= eTypeHasChildren | eTypeIsStructUnion | eTypeIsProtocol;
+      break;
+    case Node::Kind::ProtocolList:
+    case Node::Kind::ProtocolListWithClass:
+    case Node::Kind::ProtocolListWithAnyObject:
+      swift_flags |= eTypeIsProtocol;
+      // Bug-for-bug-compatibility.
+      swift_flags |= eTypeHasChildren | eTypeIsStructUnion;
+      break;
+
+    case Node::Kind::ExistentialMetatype:
+    case Node::Kind::Metatype:
+      swift_flags |= eTypeIsMetatype | eTypeHasValue;
+      break;
+
+    case Node::Kind::InOut:
+      swift_flags |= eTypeHasChildren | eTypeIsReference | eTypeHasValue;
+      break;
+
+    case Node::Kind::BoundGenericTypeAlias:
+      // Bug-for-bug compatibility.
+      // swift_flags |= eTypeIsGeneric | eTypeIsBound;
+      LLVM_FALLTHROUGH;
+    case Node::Kind::TypeAlias: {
+      // Bug-for-bug compatibility.
+      // swift_flags |= eTypeIsTypedef;
+      auto node_clangtype = ResolveTypeAlias(M, Dem, node);
+      if (CompilerType clang_type = node_clangtype.second) {
+        collect_clang_type(clang_type.GetCanonicalType());
+        return swift_flags;
+      }
+      swift_flags |=
+          collectTypeInfo(M, Dem, node_clangtype.first, generic_walk);
+      return swift_flags;
+    }
+    default:
+      break;
+    }
+
+  // If swift_flags were collected we're done here except for
+  // determining whether the type is generic.
+  generic_walk |= (swift_flags != eTypeIsSwift);
+
+  // Visit the child nodes.
+  for (unsigned i = 0; i < node->getNumChildren(); ++i)
+    swift_flags |= collectTypeInfo(M, Dem, node->getChild(i), generic_walk);
+
+  return swift_flags;
 }
 
 CompilerType TypeSystemSwift::GetInstanceType(CompilerType compiler_type) {
@@ -744,6 +981,84 @@ bool TypeSystemSwiftTypeRef::Verify(opaque_compiler_type_t type) {
 #include <regex>
 namespace {
 template <typename T> bool Equivalent(T l, T r) { return l == r; }
+
+/// Specialization for GetTypeInfo().
+template <> bool Equivalent<uint32_t>(uint32_t l, uint32_t r) {
+  if (l != r) {
+    // Failure. Dump it for easier debugging.
+    llvm::dbgs() << "TypeSystemSwiftTypeRef diverges from SwiftASTContext:\n";
+#define HANDLE_ENUM_CASE(VAL, CASE)                                            \
+  if (VAL & CASE)                                                              \
+  llvm::dbgs() << " | " << #CASE
+
+    llvm::dbgs() << "l = " << l;
+    HANDLE_ENUM_CASE(l, eTypeHasChildren);
+    HANDLE_ENUM_CASE(l, eTypeHasValue);
+    HANDLE_ENUM_CASE(l, eTypeIsArray);
+    HANDLE_ENUM_CASE(l, eTypeIsBlock);
+    HANDLE_ENUM_CASE(l, eTypeIsBuiltIn);
+    HANDLE_ENUM_CASE(l, eTypeIsClass);
+    HANDLE_ENUM_CASE(l, eTypeIsCPlusPlus);
+    HANDLE_ENUM_CASE(l, eTypeIsEnumeration);
+    HANDLE_ENUM_CASE(l, eTypeIsFuncPrototype);
+    HANDLE_ENUM_CASE(l, eTypeIsMember);
+    HANDLE_ENUM_CASE(l, eTypeIsObjC);
+    HANDLE_ENUM_CASE(l, eTypeIsPointer);
+    HANDLE_ENUM_CASE(l, eTypeIsReference);
+    HANDLE_ENUM_CASE(l, eTypeIsStructUnion);
+    HANDLE_ENUM_CASE(l, eTypeIsTemplate);
+    HANDLE_ENUM_CASE(l, eTypeIsTypedef);
+    HANDLE_ENUM_CASE(l, eTypeIsVector);
+    HANDLE_ENUM_CASE(l, eTypeIsScalar);
+    HANDLE_ENUM_CASE(l, eTypeIsInteger);
+    HANDLE_ENUM_CASE(l, eTypeIsFloat);
+    HANDLE_ENUM_CASE(l, eTypeIsComplex);
+    HANDLE_ENUM_CASE(l, eTypeIsSigned);
+    HANDLE_ENUM_CASE(l, eTypeInstanceIsPointer);
+    HANDLE_ENUM_CASE(l, eTypeIsSwift);
+    HANDLE_ENUM_CASE(l, eTypeIsGenericTypeParam);
+    HANDLE_ENUM_CASE(l, eTypeIsProtocol);
+    HANDLE_ENUM_CASE(l, eTypeIsTuple);
+    HANDLE_ENUM_CASE(l, eTypeIsMetatype);
+    HANDLE_ENUM_CASE(l, eTypeIsGeneric);
+    HANDLE_ENUM_CASE(l, eTypeIsBound);
+    llvm::dbgs() << "\nr = " << r;
+
+    HANDLE_ENUM_CASE(r, eTypeHasChildren);
+    HANDLE_ENUM_CASE(r, eTypeHasValue);
+    HANDLE_ENUM_CASE(r, eTypeIsArray);
+    HANDLE_ENUM_CASE(r, eTypeIsBlock);
+    HANDLE_ENUM_CASE(r, eTypeIsBuiltIn);
+    HANDLE_ENUM_CASE(r, eTypeIsClass);
+    HANDLE_ENUM_CASE(r, eTypeIsCPlusPlus);
+    HANDLE_ENUM_CASE(r, eTypeIsEnumeration);
+    HANDLE_ENUM_CASE(r, eTypeIsFuncPrototype);
+    HANDLE_ENUM_CASE(r, eTypeIsMember);
+    HANDLE_ENUM_CASE(r, eTypeIsObjC);
+    HANDLE_ENUM_CASE(r, eTypeIsPointer);
+    HANDLE_ENUM_CASE(r, eTypeIsReference);
+    HANDLE_ENUM_CASE(r, eTypeIsStructUnion);
+    HANDLE_ENUM_CASE(r, eTypeIsTemplate);
+    HANDLE_ENUM_CASE(r, eTypeIsTypedef);
+    HANDLE_ENUM_CASE(r, eTypeIsVector);
+    HANDLE_ENUM_CASE(r, eTypeIsScalar);
+    HANDLE_ENUM_CASE(r, eTypeIsInteger);
+    HANDLE_ENUM_CASE(r, eTypeIsFloat);
+    HANDLE_ENUM_CASE(r, eTypeIsComplex);
+    HANDLE_ENUM_CASE(r, eTypeIsSigned);
+    HANDLE_ENUM_CASE(r, eTypeInstanceIsPointer);
+    HANDLE_ENUM_CASE(r, eTypeIsSwift);
+    HANDLE_ENUM_CASE(r, eTypeIsGenericTypeParam);
+    HANDLE_ENUM_CASE(r, eTypeIsProtocol);
+    HANDLE_ENUM_CASE(r, eTypeIsTuple);
+    HANDLE_ENUM_CASE(r, eTypeIsMetatype);
+    HANDLE_ENUM_CASE(r, eTypeIsGeneric);
+    HANDLE_ENUM_CASE(r, eTypeIsBound);
+    llvm::dbgs() << "\n";
+  }
+  return l == r;
+}
+
 /// Compare two swift types from different type systems by comparing their
 /// (canonicalized) mangled name.
 template <> bool Equivalent<CompilerType>(CompilerType l, CompilerType r) {
@@ -771,7 +1086,8 @@ template <> bool Equivalent<ConstString>(ConstString l, ConstString r) {
 
     // If the new variant supports something the old one didn't, accept it.
     if (r.IsEmpty() || r.GetStringRef().equals("<invalid>") ||
-        r.GetStringRef().contains("__ObjC.") || r.GetStringRef().contains(" -> ()"))
+        r.GetStringRef().contains("__ObjC.") ||
+        r.GetStringRef().contains(" -> ()"))
       return true;
 
     std::string r_prime =
@@ -789,8 +1105,9 @@ template <> bool Equivalent<ConstString>(ConstString l, ConstString r) {
     // isn't worth the effort and we accept over-qualified types
     // instead. It would be best to just always qualify types not from
     // the current module.
-    l_prime = std::regex_replace(
-        l.GetStringRef().str(), std::regex("(CoreGraphics|Foundation|)\\."), "");
+    l_prime =
+        std::regex_replace(l.GetStringRef().str(),
+                           std::regex("(CoreGraphics|Foundation|)\\."), "");
     if (llvm::StringRef(l_prime) == r.GetStringRef())
       return true;
 
@@ -800,21 +1117,39 @@ template <> bool Equivalent<ConstString>(ConstString l, ConstString r) {
   }
   return l == r;
 }
-
-}
+} // namespace
 #endif
 
 // This can be removed once the transition is complete.
+#ifndef NDEBUG
+#define VALIDATE_AND_RETURN_STATIC(IMPL, REFERENCE)                     \
+  do {                                                                         \
+    auto result = IMPL();                                                      \
+    if (!m_swift_ast_context)                                                  \
+      return result;                                                           \
+    assert((result == m_swift_ast_context->REFERENCE()) &&                     \
+           "TypeSystemSwiftTypeRef diverges from SwiftASTContext");            \
+    return result;                                                             \
+  } while (0)
+
 #define VALIDATE_AND_RETURN(IMPL, REFERENCE, TYPE, ARGS)                       \
   do {                                                                         \
     auto result = IMPL();                                                      \
-    if (m_swift_ast_context)                                                   \
-      assert(                                                                  \
-          !ReconstructType(TYPE) /* missing .swiftmodule */ ||                 \
-          (Equivalent(result, m_swift_ast_context->REFERENCE ARGS)) &&         \
-              "TypeSystemSwiftTypeRef diverges from SwiftASTContext");         \
+    if (!m_swift_ast_context)                                                  \
+      return result;                                                           \
+    bool equivalent =                                                          \
+        !ReconstructType(TYPE) /* missing .swiftmodule */ ||                   \
+        (Equivalent(result, m_swift_ast_context->REFERENCE ARGS));             \
+    if (!equivalent)                                                           \
+      llvm::dbgs() << "failing type was " << (const char *)TYPE << "\n";       \
+    assert(equivalent &&                                                       \
+           "TypeSystemSwiftTypeRef diverges from SwiftASTContext");            \
     return result;                                                             \
   } while (0)
+#else
+#define VALIDATE_AND_RETURN_STATIC(IMPL, REFERENCE) return IMPL()
+#define VALIDATE_AND_RETURN(IMPL, REFERENCE, TYPE, ARGS) return IMPL()
+#endif
 
 CompilerType
 TypeSystemSwiftTypeRef::RemangleAsType(swift::Demangle::Demangler &Dem,
@@ -904,7 +1239,7 @@ bool TypeSystemSwiftTypeRef::IsAggregateType(opaque_compiler_type_t type) {
     using namespace swift::Demangle;
     Demangler Dem;
     NodePointer node = DemangleCanonicalType(Dem, type);
- 
+
     if (!node)
       return false;
     switch (node->getKind()) {
@@ -931,13 +1266,8 @@ bool TypeSystemSwiftTypeRef::IsAggregateType(opaque_compiler_type_t type) {
 }
 
 bool TypeSystemSwiftTypeRef::IsDefined(opaque_compiler_type_t type) {
-  return m_swift_ast_context->IsDefined(ReconstructType(type));
-}
-bool TypeSystemSwiftTypeRef::IsFloatingPointType(opaque_compiler_type_t type,
-                                                 uint32_t &count,
-                                                 bool &is_complex) {
-  return m_swift_ast_context->IsFloatingPointType(ReconstructType(type), count,
-                                                  is_complex);
+  auto impl = [&]() -> bool { return type; };
+  VALIDATE_AND_RETURN(impl, IsDefined, type, (ReconstructType(type)));
 }
 
 bool TypeSystemSwiftTypeRef::IsFunctionType(opaque_compiler_type_t type,
@@ -1028,10 +1358,6 @@ bool TypeSystemSwiftTypeRef::IsFunctionPointerType(
   VALIDATE_AND_RETURN(impl, IsFunctionPointerType, type,
                       (ReconstructType(type)));
 }
-bool TypeSystemSwiftTypeRef::IsIntegerType(opaque_compiler_type_t type,
-                                           bool &is_signed) {
-  return m_swift_ast_context->IsIntegerType(ReconstructType(type), is_signed);
-}
 bool TypeSystemSwiftTypeRef::IsPossibleDynamicType(opaque_compiler_type_t type,
                                                    CompilerType *target_type,
                                                    bool check_cplusplus,
@@ -1056,9 +1382,6 @@ bool TypeSystemSwiftTypeRef::IsPointerType(opaque_compiler_type_t type,
   VALIDATE_AND_RETURN(impl, IsPointerType, type,
                       (ReconstructType(type), pointee_type));
 }
-bool TypeSystemSwiftTypeRef::IsScalarType(opaque_compiler_type_t type) {
-  return m_swift_ast_context->IsScalarType(ReconstructType(type));
-}
 bool TypeSystemSwiftTypeRef::IsVoidType(opaque_compiler_type_t type) {
   auto impl = [&]() {
     using namespace swift::Demangle;
@@ -1069,13 +1392,23 @@ bool TypeSystemSwiftTypeRef::IsVoidType(opaque_compiler_type_t type) {
   };
   VALIDATE_AND_RETURN(impl, IsVoidType, type, (ReconstructType(type)));
 }
-// Type Completion
-bool TypeSystemSwiftTypeRef::GetCompleteType(opaque_compiler_type_t type) {
-  return m_swift_ast_context->GetCompleteType(ReconstructType(type));
-}
 // AST related queries
 uint32_t TypeSystemSwiftTypeRef::GetPointerByteSize() {
-  return m_swift_ast_context->GetPointerByteSize();
+  auto impl = [&]() -> uint32_t {
+    if (auto *module = GetModule()) {
+      auto &triple = module->GetArchitecture().GetTriple();
+      if (triple.isArch64Bit())
+        return 8;
+      if (triple.isArch32Bit())
+        return 4;
+      if (triple.isArch16Bit())
+        return 2;
+    }
+    // An expression context has no module. Since it's for expression
+    // evaluation we might as well defer to the SwiftASTContext.
+    return m_swift_ast_context->GetPointerByteSize();
+  };
+  VALIDATE_AND_RETURN_STATIC(impl, GetPointerByteSize);
 }
 // Accessors
 ConstString TypeSystemSwiftTypeRef::GetTypeName(opaque_compiler_type_t type) {
@@ -1117,16 +1450,42 @@ TypeSystemSwiftTypeRef::GetDisplayTypeName(opaque_compiler_type_t type,
 }
 uint32_t TypeSystemSwiftTypeRef::GetTypeInfo(
     opaque_compiler_type_t type, CompilerType *pointee_or_element_clang_type) {
-  return m_swift_ast_context->GetTypeInfo(ReconstructType(type),
-                                          pointee_or_element_clang_type);
-}
-lldb::LanguageType
-TypeSystemSwiftTypeRef::GetMinimumLanguage(opaque_compiler_type_t type) {
-  return m_swift_ast_context->GetMinimumLanguage(ReconstructType(type));
+  auto impl = [&]() {
+    using namespace swift::Demangle;
+    Demangler Dem;
+    NodePointer node = Dem.demangleSymbol(AsMangledName(type));
+    return collectTypeInfo(GetModule(), Dem, node);
+  };
+  VALIDATE_AND_RETURN(impl, GetTypeInfo, type,
+                      (ReconstructType(type), nullptr));
 }
 lldb::TypeClass
 TypeSystemSwiftTypeRef::GetTypeClass(opaque_compiler_type_t type) {
-  return m_swift_ast_context->GetTypeClass(ReconstructType(type));
+  auto impl = [&]() {
+    uint32_t flags = GetTypeInfo(type, nullptr);
+    // The ordering is significant since GetTypeInfo() returns many flags.
+    if ((flags & eTypeIsScalar))
+      return eTypeClassBuiltin;
+    if ((flags & eTypeIsVector))
+      return eTypeClassVector;
+    if ((flags & eTypeIsTuple))
+      return eTypeClassArray;
+    if ((flags & eTypeIsEnumeration))
+      return eTypeClassUnion;
+    if ((flags & eTypeIsProtocol))
+      return eTypeClassOther;
+    if ((flags & eTypeIsStructUnion))
+      return eTypeClassStruct;
+    if ((flags & eTypeIsClass))
+      return eTypeClassClass;
+    if ((flags & eTypeIsReference))
+      return eTypeClassReference;
+    // This only works because we excluded all other options.
+    if ((flags & eTypeIsPointer))
+      return eTypeClassFunction;
+    return eTypeClassOther;
+  };
+  VALIDATE_AND_RETURN(impl, GetTypeClass, type, (ReconstructType(type)));
 }
 
 // Creating related types
@@ -1143,7 +1502,15 @@ TypeSystemSwiftTypeRef::GetArrayElementType(opaque_compiler_type_t type,
 }
 CompilerType
 TypeSystemSwiftTypeRef::GetCanonicalType(opaque_compiler_type_t type) {
-  return m_swift_ast_context->GetCanonicalType(ReconstructType(type));
+  auto impl = [&]() {
+    using namespace swift::Demangle;
+    Demangler Dem;
+    NodePointer canonical =
+        GetCanonicalDemangleTree(GetModule(), Dem, AsMangledName(type));
+    ConstString mangled(mangleNode(canonical));
+    return GetTypeFromMangledTypename(mangled);
+  };
+  VALIDATE_AND_RETURN(impl, GetCanonicalType, type, (ReconstructType(type)));
 }
 int TypeSystemSwiftTypeRef::GetFunctionArgumentCount(
     opaque_compiler_type_t type) {
@@ -1449,9 +1816,4 @@ bool TypeSystemSwiftTypeRef::IsReferenceType(opaque_compiler_type_t type,
 
   VALIDATE_AND_RETURN(impl, IsReferenceType, type,
                       (ReconstructType(type), pointee_type, is_rvalue));
-}
-bool TypeSystemSwiftTypeRef::ShouldTreatScalarValueAsAddress(
-    opaque_compiler_type_t type) {
-  return m_swift_ast_context->ShouldTreatScalarValueAsAddress(
-      ReconstructType(type));
 }
