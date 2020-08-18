@@ -15,7 +15,7 @@ class TestSwiftExtraClangFlags(TestBase):
     @skipIfDarwin
     # Don't run ClangImporter tests if Clangimporter is disabled.
     @skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
-    @skipUnlessDarwin
+    @skipIf(oslist=['windows'])
     @swiftTest
     def test_sanity(self):
         self.build()
@@ -28,7 +28,7 @@ class TestSwiftExtraClangFlags(TestBase):
     @skipIfDarwin
     # Don't run ClangImporter tests if Clangimporter is disabled.
     @skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
-    @skipUnlessDarwin
+    @skipIf(oslist=['windows'])
     @swiftTest
     def test_extra_clang_flags(self):
         """
