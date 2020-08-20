@@ -930,6 +930,10 @@ SwiftASTContext::SwiftASTContext(std::string description, llvm::Triple triple,
   ir_gen_opts.OutputKind = swift::IRGenOutputKind::Module;
   ir_gen_opts.UseJIT = true;
   ir_gen_opts.DWARFVersion = swift::DWARFVersion;
+  // Allow deserializing @_implementationOnly dependencies
+  // to avoid crashing due to module recovery issues.
+  swift::LangOptions &lang_opts = m_compiler_invocation_ap->getLangOptions();
+  lang_opts.AllowDeserializingImplementationOnly = true;
 }
 
 SwiftASTContext::~SwiftASTContext() {
@@ -1451,12 +1455,16 @@ void ApplyWorkingDir(SmallString &clang_argument, StringRef cur_working_dir) {
 }
 
 std::array<StringRef, 2> macro_flags = { "-D", "-U" };
+std::array<StringRef, 5> multi_arg_flags =
+    { "-D", "-U", "-I", "-F", "-working-directory" };
+std::array<StringRef, 5> args_to_unique =
+    { "-D", "-U", "-I", "-F", "-fmodule-map-file=" };
 
 bool IsMultiArgClangFlag(StringRef arg) {
-  for (auto &flag : macro_flags)
+  for (auto &flag : multi_arg_flags)
     if (flag == arg)
       return true;
-  return arg == "-working-directory";
+  return false;
 }
 
 bool IsMacroDefinition(StringRef arg) {
@@ -1467,19 +1475,23 @@ bool IsMacroDefinition(StringRef arg) {
 }
 
 bool ShouldUnique(StringRef arg) {
-  return IsMacroDefinition(arg);
+  for (auto &flag : args_to_unique)
+    if (arg.startswith(flag))
+      return true;
+  return false;
 }
 } // namespace
 
-void SwiftASTContext::AddExtraClangArgs(std::vector<std::string> ExtraArgs) {
-  swift::ClangImporterOptions &importer_options = GetClangImporterOptions();
+// static
+void SwiftASTContext::AddExtraClangArgs(const std::vector<std::string>& source,
+                                        std::vector<std::string>& dest) {
   llvm::StringSet<> unique_flags;
-  for (auto &arg : importer_options.ExtraArgs)
+  for (auto &arg : dest)
     unique_flags.insert(arg);
 
   llvm::SmallString<128> cur_working_dir;
   llvm::SmallString<128> clang_argument;
-  for (const std::string &arg : ExtraArgs) {
+  for (const std::string &arg : source) {
     // Join multi-arg options for uniquing.
     clang_argument += arg;
     if (IsMultiArgClangFlag(clang_argument))
@@ -1506,10 +1518,15 @@ void SwiftASTContext::AddExtraClangArgs(std::vector<std::string> ExtraArgs) {
 
     auto clang_arg_str = clang_argument.str();
     if (!ShouldUnique(clang_argument) || !unique_flags.count(clang_arg_str)) {
-      importer_options.ExtraArgs.push_back(clang_arg_str);
+      dest.push_back(clang_arg_str);
       unique_flags.insert(clang_arg_str);
     }
   }
+}
+
+void SwiftASTContext::AddExtraClangArgs(std::vector<std::string> ExtraArgs) {
+  swift::ClangImporterOptions &importer_options = GetClangImporterOptions();
+  AddExtraClangArgs(ExtraArgs, importer_options.ExtraArgs);
 }
 
 void SwiftASTContext::AddUserClangArgs(TargetProperties &props) {
@@ -2347,23 +2364,27 @@ llvm::Triple SwiftASTContext::GetTriple() const {
   return llvm::Triple(m_compiler_invocation_ap->getTargetTriple());
 }
 
-/// Conditions a triple string to be safe for use with Swift.
-///
-/// This strips the Haswell marker off the CPU name (for Apple targets).
-///
-/// It also add the GNU environment for Linux.  Although this is technically
-/// incorrect, as the `*-unknown-linux` environment represents the bare-metal
-/// environment, because Swift is currently hosted only, we can get away with
-/// it.
-///
-/// TODO: Make Swift more robust.
-static std::string GetSwiftFriendlyTriple(llvm::Triple triple) {
-  if (triple.getArchName() == "x86_64h")
-    triple.setArch(llvm::Triple::x86_64);
-  if (triple.isOSLinux() &&
-      triple.getEnvironment() == llvm::Triple::UnknownEnvironment)
-    triple.setEnvironment(llvm::Triple::GNU);
-  return triple.normalize();
+llvm::Triple SwiftASTContext::GetSwiftFriendlyTriple(llvm::Triple triple) {
+  if (triple.getVendor() != llvm::Triple::Apple) {
+    // Add the GNU environment for Linux.  Although this is
+    // technically incorrect, as the `*-unknown-linux` environment
+    // represents the bare-metal environment, because Swift is
+    // currently hosted only, we can get away with it.
+    if (triple.isOSLinux() &&
+        triple.getEnvironment() == llvm::Triple::UnknownEnvironment)
+      triple.setEnvironment(llvm::Triple::GNU);
+    triple.normalize();
+    return triple;
+  }
+
+  StringRef arch_name = triple.getArchName();
+  if (arch_name == "x86_64h")
+    triple.setArchName("x86_64");
+  else if (arch_name == "aarch64")
+    triple.setArchName("arm64");
+  else if (arch_name == "aarch64_32")
+    triple.setArchName("arm64_32");
+  return triple;
 }
 
 bool SwiftASTContext::SetTriple(const llvm::Triple triple, Module *module) {
@@ -2381,18 +2402,15 @@ bool SwiftASTContext::SetTriple(const llvm::Triple triple, Module *module) {
   }
 
   const unsigned unspecified = 0;
-  std::string adjusted_triple = GetSwiftFriendlyTriple(triple);
+  llvm::Triple adjusted_triple = GetSwiftFriendlyTriple(triple);
   // If the OS version is unspecified, do fancy things.
   if (triple.getOSMajorVersion() == unspecified) {
     // If a triple is "<arch>-apple-darwin" change it to be
     // "<arch>-apple-macosx" otherwise the major and minor OS
     // version we append below would be wrong.
     if (triple.getVendor() == llvm::Triple::VendorType::Apple &&
-        triple.getOS() == llvm::Triple::OSType::Darwin) {
-      llvm::Triple mac_triple(adjusted_triple);
-      mac_triple.setOS(llvm::Triple::OSType::MacOSX);
-      adjusted_triple = mac_triple.str();
-    }
+        triple.getOS() == llvm::Triple::OSType::Darwin)
+      adjusted_triple.setOS(llvm::Triple::OSType::MacOSX);
 
     // Append the min OS to the triple if we have a target
     ModuleSP module_sp;
@@ -2407,12 +2425,9 @@ bool SwiftASTContext::SetTriple(const llvm::Triple triple, Module *module) {
 
     if (module) {
       if (ObjectFile *objfile = module->GetObjectFile())
-        if (llvm::VersionTuple version = objfile->GetMinimumOSVersion()) {
-          llvm::Triple vers_triple(adjusted_triple);
-          vers_triple.setOSName(vers_triple.getOSName().str() +
-                                version.getAsString());
-          adjusted_triple = vers_triple.str();
-        }
+        if (llvm::VersionTuple version = objfile->GetMinimumOSVersion())
+          adjusted_triple.setOSName(adjusted_triple.getOSName().str() +
+                                    version.getAsString());
     }
   }
   if (llvm::Triple(triple).getOS() == llvm::Triple::UnknownOS) {
@@ -2421,15 +2436,14 @@ bool SwiftASTContext::SetTriple(const llvm::Triple triple, Module *module) {
     return false;
   }
   LOG_PRINTF(LIBLLDB_LOG_TYPES, "(\"%s\") setting to \"%s\"",
-             triple.str().c_str(), adjusted_triple.c_str());
+             triple.str().c_str(), adjusted_triple.str().c_str());
 
-  llvm::Triple adjusted_llvm_triple(adjusted_triple);
-  m_compiler_invocation_ap->setTargetTriple(adjusted_llvm_triple);
+  m_compiler_invocation_ap->setTargetTriple(adjusted_triple);
 
-  assert(GetTriple() == adjusted_llvm_triple);
+  assert(GetTriple() == adjusted_triple);
   assert(!m_ast_context_ap ||
          (llvm::Triple(m_ast_context_ap->LangOpts.Target.getTriple()) ==
-          adjusted_llvm_triple));
+          adjusted_triple));
 
   // Every time the triple is changed the LangOpts must be updated
   // too, because Swift default-initializes the EnableObjCInterop

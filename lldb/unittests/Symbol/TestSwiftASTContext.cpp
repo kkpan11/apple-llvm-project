@@ -199,3 +199,47 @@ TEST_F(TestSwiftASTContext, IsNonTriviallyManagedReferenceType) {
                                                                    nullptr));
 #endif
 }
+
+TEST_F(TestSwiftASTContext, SwiftFriendlyTriple) {
+  EXPECT_EQ(SwiftASTContext::GetSwiftFriendlyTriple(
+                llvm::Triple("x86_64-apple-macosx")),
+            llvm::Triple("x86_64-apple-macosx"));
+  EXPECT_EQ(SwiftASTContext::GetSwiftFriendlyTriple(
+                llvm::Triple("x86_64h-apple-macosx")),
+            llvm::Triple("x86_64-apple-macosx"));
+  EXPECT_EQ(SwiftASTContext::GetSwiftFriendlyTriple(
+                llvm::Triple("aarch64-apple-macosx")),
+            llvm::Triple("arm64-apple-macosx"));
+  EXPECT_EQ(SwiftASTContext::GetSwiftFriendlyTriple(
+                llvm::Triple("aarch64_32-apple-watchos")),
+            llvm::Triple("arm64_32-apple-watchos"));
+}
+
+namespace {
+  const std::vector<std::string> duplicated_flags = {
+    "-DMACRO1", "-D", "MACRO1", "-UMACRO2", "-U", "MACRO2",
+    "-I/path1", "-I", "/path1", "-F/path2", "-F", "/path2",
+    "-fmodule-map-file=/path3", "-fmodule-map-file=/path3",
+    "-F/path2", "-F", "/path2", "-I/path1", "-I", "/path1",
+    "-UMACRO2", "-U", "MACRO2", "-DMACRO1", "-D", "MACRO1",
+  };
+  const std::vector<std::string> uniqued_flags = {
+    "-DMACRO1", "-UMACRO2", "-I/path1", "-F/path2", "-fmodule-map-file=/path3"
+  };
+} // namespace
+
+TEST(ClangArgs, UniquingCollisionWithExistingFlags) {
+  const std::vector<std::string> source = duplicated_flags;
+  std::vector<std::string> dest = uniqued_flags;
+  SwiftASTContext::AddExtraClangArgs(source, dest);
+
+  EXPECT_EQ(dest, uniqued_flags);
+}
+
+TEST(ClangArgs, UniquingCollisionWithAddedFlags) {
+  const std::vector<std::string> source = duplicated_flags;
+  std::vector<std::string> dest;
+  SwiftASTContext::AddExtraClangArgs(source, dest);
+
+  EXPECT_EQ(dest, uniqued_flags);
+}

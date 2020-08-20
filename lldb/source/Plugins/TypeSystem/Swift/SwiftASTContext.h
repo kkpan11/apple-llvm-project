@@ -218,6 +218,8 @@ public:
   /// Add a list of Clang arguments to the ClangImporter options and
   /// apply the working directory to any relative paths.
   void AddExtraClangArgs(std::vector<std::string> ExtraArgs);
+  static void AddExtraClangArgs(const std::vector<std::string>& source,
+                                std::vector<std::string>& dest);
 
   /// Add the target's swift-extra-clang-flags to the ClangImporter options.
   void AddUserClangArgs(TargetProperties &props);
@@ -347,6 +349,11 @@ public:
 
   bool SetTriple(const llvm::Triple triple,
                  lldb_private::Module *module = nullptr);
+
+  /// Condition a triple to be safe for use with Swift.  Swift is
+  /// really peculiar about what CPU types it thinks it has standard
+  /// libraries for.
+  static llvm::Triple GetSwiftFriendlyTriple(llvm::Triple triple);
 
   CompilerType GetCompilerType(swift::TypeBase *swift_type);
   CompilerType GetCompilerType(ConstString mangled_name);
