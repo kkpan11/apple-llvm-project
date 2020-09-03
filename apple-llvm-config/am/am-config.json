@@ -13,11 +13,6 @@
   "test-command": "true"
 },
 {
-  "target": "swift/master-rebranch",
-  "upstream": "apple/stable/20200714",
-  "test_commits_in_bundle": true
-},
-{
   "target": "swift/swift-5.2-branch",
   "upstream": "apple/stable/20190619",
   "test_commits_in_bundle": true
@@ -29,8 +24,7 @@
 },
 {
   "target": "swift/master",
-  "upstream": "swift/release/5.3",
-  "test_commits_in_bundle": true,
-  "test-command": "true"
+  "upstream": "apple/stable/20200714",
+  "test_commits_in_bundle": true
 }
 ]
