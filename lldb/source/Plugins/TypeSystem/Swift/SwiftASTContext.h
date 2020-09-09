@@ -16,7 +16,6 @@
 #include "Plugins/ExpressionParser/Swift/SwiftPersistentExpressionState.h"
 #include "Plugins/TypeSystem/Swift/TypeSystemSwift.h"
 #include "Plugins/TypeSystem/Swift/TypeSystemSwiftTypeRef.h"
-#include "lldb/Core/ClangForward.h"
 #include "lldb/Core/SwiftForward.h"
 #include "lldb/Core/ThreadSafeDenseMap.h"
 #include "lldb/Core/ThreadSafeDenseSet.h"
@@ -62,7 +61,12 @@ namespace clang {
 namespace api_notes {
 class APINotesManager;
 }
+class NamedDecl;
 } // namespace clang
+
+namespace llvm {
+class LLVMContext;
+}
 
 class DWARFASTParser;
 class SwiftEnumDescriptor;
@@ -150,13 +154,6 @@ public:
 
   const std::string &GetDescription() const;
 
-  // PluginInterface functions
-  ConstString GetPluginName() override;
-
-  uint32_t GetPluginVersion() override;
-
-  static ConstString GetPluginNameStatic();
-
   /// Create a SwiftASTContext from a Module.  This context is used
   /// for frame variable and uses ClangImporter options specific to
   /// this lldb::Module.  The optional target is necessary when
@@ -175,10 +172,6 @@ public:
   static void EnumerateSupportedLanguages(
       std::set<lldb::LanguageType> &languages_for_types,
       std::set<lldb::LanguageType> &languages_for_expressions);
-
-  static void Initialize();
-
-  static void Terminate();
 
   bool SupportsLanguage(lldb::LanguageType language) override;
 
@@ -230,7 +223,9 @@ public:
     m_platform_sdk_path = sdk_path;
   }
 
-  void SetPlatformSDKPath(llvm::StringRef path) { m_platform_sdk_path = path; }
+  void SetPlatformSDKPath(llvm::StringRef path) {
+    m_platform_sdk_path = path.str();
+  }
 
   const char *GetResourceDir() const {
     if (m_resource_dir.empty())
@@ -268,7 +263,7 @@ public:
 
   void CacheModule(swift::ModuleDecl *module);
 
-  Module *GetModule() const { return m_module; }
+  Module *GetModule() const override { return m_module; }
 
   // Call this after the search paths are set up, it will find the module given
   // by module, load the module into the AST context, and also load any
@@ -335,6 +330,13 @@ public:
   /// Import and Swiftify a Clang type.
   /// \return Returns an invalid type if unsuccessful.
   CompilerType ImportClangType(CompilerType clang_type);
+
+  /// Use ClangImporter to determine the swiftified name of \p
+  /// clang_decl.
+  std::string GetSwiftName(const clang::Decl *clang_decl,
+                           TypeSystemClang &clang_typesystem) override;
+  /// Use \p ClangImporter to swiftify the decl's name.
+  std::string ImportName(const clang::NamedDecl *clang_decl);
 
   static SwiftASTContext *GetSwiftASTContext(swift::ASTContext *ast);
 
@@ -556,7 +558,8 @@ public:
   // Creating related types
 
   CompilerType GetArrayElementType(lldb::opaque_compiler_type_t type,
-                                   uint64_t *stride) override;
+                                   uint64_t *stride,
+                                   ExecutionContextScope *exe_scope) override;
 
   CompilerType GetCanonicalType(lldb::opaque_compiler_type_t type) override;
 
@@ -644,7 +647,7 @@ public:
                                    size_t idx);
   static CompilerType GetGenericArgumentType(CompilerType ct, size_t idx);
   CompilerType GetGenericArgumentType(lldb::opaque_compiler_type_t type,
-                                      size_t idx);
+                                      size_t idx) override;
 
   CompilerType GetTypeForFormatters(lldb::opaque_compiler_type_t type) override;
 
@@ -907,7 +910,7 @@ protected:
   void RemapClangImporterOptions(const PathMappingList &path_map);
 
   /// Infer the appropriate Swift resource directory for a target triple.
-  llvm::StringRef GetResourceDir(const llvm::Triple &target);
+  std::string GetResourceDir(const llvm::Triple &target);
 
   /// Implementation of \c GetResourceDir.
   static std::string GetResourceDir(llvm::StringRef platform_sdk_path,

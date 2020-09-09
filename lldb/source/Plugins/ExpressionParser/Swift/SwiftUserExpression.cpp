@@ -83,17 +83,6 @@ void SwiftUserExpression::DidFinishExecuting() {
   }
 }
 
-static CompilerType GetConcreteType(ExecutionContext &exe_ctx,
-                                    StackFrame *frame, CompilerType type) {
-  auto swift_type = GetSwiftType(type);
-  StreamString type_name;
-  if (SwiftLanguageRuntime::GetAbstractTypeName(type_name, swift_type)) {
-    auto *runtime = SwiftLanguageRuntime::Get(exe_ctx.GetProcessPtr());
-    return runtime->GetConcreteType(frame, ConstString(type_name.GetString()));
-  }
-  return type;
-}
-
 /// Determine whether we have a Swift language symbol context. This handles
 /// some special cases, such as when the expression language is unknown, or
 /// when we have to guess from a mangled name.
@@ -545,9 +534,7 @@ SwiftUserExpression::ResultDelegate::ResultDelegate(
     : m_target_sp(target), m_is_error(is_error) {}
 
 ConstString SwiftUserExpression::ResultDelegate::GetName() {
-  auto prefix = m_persistent_state->GetPersistentVariablePrefix(m_is_error);
-  return m_persistent_state->GetNextPersistentVariableName(*m_target_sp,
-                                                           prefix);
+  return m_persistent_state->GetNextPersistentVariableName(m_is_error);
 }
 
 void SwiftUserExpression::ResultDelegate::DidDematerialize(

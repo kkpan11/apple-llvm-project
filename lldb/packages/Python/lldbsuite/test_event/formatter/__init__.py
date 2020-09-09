@@ -19,17 +19,6 @@ import sys
 
 # Ignore method count on DTOs.
 # pylint: disable=too-few-public-methods
-class FormatterConfig(object):
-    """Provides formatter configuration info to create_results_formatter()."""
-
-    def __init__(self):
-        self.filename = None
-        self.formatter_name = None
-        self.formatter_options = None
-
-
-# Ignore method count on DTOs.
-# pylint: disable=too-few-public-methods
 class CreatedFormatter(object):
     """Provides transfer object for returns from create_results_formatter()."""
 
@@ -38,10 +27,7 @@ class CreatedFormatter(object):
         self.cleanup_func = cleanup_func
 
 
-SOCKET_ACK_BYTE_VALUE = b'*'  # ASCII for chr(42)
-
-
-def create_results_formatter(config):
+def create_results_formatter(formatter_name):
     """Sets up a test results formatter.
 
     @param config an instance of FormatterConfig
@@ -151,8 +137,6 @@ def create_results_formatter(config):
             if cleanup_func is not None:
                 cleanup_func()
 
-        return CreatedFormatter(
-            results_formatter_object,
-            shutdown_formatter)
+        return CreatedFormatter(sys.stdout, shutdown_formatter)
     else:
         return None
