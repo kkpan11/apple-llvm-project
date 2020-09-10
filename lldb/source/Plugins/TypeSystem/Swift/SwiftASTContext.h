@@ -227,6 +227,19 @@ public:
     m_platform_sdk_path = path.str();
   }
 
+  const char *GetResourceDir() const {
+    if (m_resource_dir.empty())
+      return NULL;
+    return m_resource_dir.c_str();
+  }
+
+  void SetResourceDir(const char *path) {
+    if (path)
+      m_resource_dir = path;
+    else
+      m_resource_dir.clear();
+  }
+
   const swift::SearchPathOptions *GetSearchPathOptions() const;
 
   /// \return the ExtraArgs of the ClangImporterOptions.
@@ -846,6 +859,8 @@ protected:
   lldb_private::Process *m_process = nullptr;
   Module *m_module = nullptr;
   std::string m_platform_sdk_path;
+  std::string m_resource_dir;
+
 
   typedef std::map<Module *, std::vector<lldb::DataBufferSP>> ASTFileDataMap;
   ASTFileDataMap m_ast_file_data_map;

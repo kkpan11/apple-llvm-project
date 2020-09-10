@@ -56,6 +56,10 @@ public:
     void CopyDeclsTo(SwiftDeclMap &target_map);
     static bool DeclsAreEquivalent(swift::Decl *lhs, swift::Decl *rhs);
 
+    // SWIFT_ENABLE_TENSORFLOW
+    /// Pushes all of this map's decls into `decls`.
+    void GetAllDecls(std::vector<swift::Decl *> &decls);
+
   private:
     typedef std::unordered_multimap<std::string, swift::ValueDecl *>
         SwiftDeclMapTy;
@@ -120,6 +124,10 @@ public:
 
   /// This returns the list of hand-loaded modules.
   HandLoadedModuleSet GetHandLoadedModules() { return m_hand_loaded_modules; }
+
+  // SWIFT_ENABLE_TENSORFLOW
+  /// Pushes all the persistent decls into `decls`.
+  void GetAllDecls(std::vector<swift::Decl *> &decls);
 
 private:
   uint32_t m_next_persistent_variable_id; ///< The counter used by

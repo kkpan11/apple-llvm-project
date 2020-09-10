@@ -128,6 +128,13 @@ bool SwiftPersistentExpressionState::SwiftDeclMap::DeclsAreEquivalent(
   }
 }
 
+// SWIFT_ENABLE_TENSORFLOW
+void SwiftPersistentExpressionState::SwiftDeclMap::GetAllDecls(
+    std::vector<swift::Decl *> &decls) {
+  for (auto &pair : m_swift_decls)
+    decls.push_back(std::get<1>(pair));
+}
+
 void SwiftPersistentExpressionState::SwiftDeclMap::AddDecl(
     swift::ValueDecl *value_decl, bool check_existing, ConstString alias) {
   std::string name_str;
@@ -234,4 +241,10 @@ SwiftPersistentExpressionState::GetNextPersistentVariableName(bool is_error) {
     os << GetPersistentVariablePrefix(is_error) << variable_num;
   }
   return ConstString(name);
+}
+
+// SWIFT_ENABLE_TENSORFLOW
+void SwiftPersistentExpressionState::GetAllDecls(
+    std::vector<swift::Decl *> &decls) {
+  m_swift_persistent_decls.GetAllDecls(decls);
 }

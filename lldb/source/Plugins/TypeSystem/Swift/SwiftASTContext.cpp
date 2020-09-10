@@ -2573,6 +2573,12 @@ void SwiftASTContext::InitializeSearchPathOptions(
       invocation.setSDKPath(sdk_path);
     }
 
+    // SWIFT_ENABLE_TENSORFLOW
+    // Allow users to specify an extra import search path in the environment.
+    if (auto *import_search_path = getenv("SWIFT_IMPORT_SEARCH_PATH")) {
+      invocation.getSearchPathOptions().ImportSearchPaths.emplace_back(import_search_path);
+    }
+
     std::vector<std::string> &lpaths =
         invocation.getSearchPathOptions().LibrarySearchPaths;
     lpaths.insert(lpaths.begin(), "/usr/lib/swift");

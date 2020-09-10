@@ -97,6 +97,9 @@ bool SIMDVector_SummaryProvider(ValueObject &valobj, Stream &stream,
 bool LegacySIMD_SummaryProvider(ValueObject &valobj, Stream &stream,
                                 const TypeSummaryOptions &options);
 
+// SWIFT_ENABLE_TENSORFLOW
+bool ObjectDescription_SummaryProvider(ValueObject &valobj, Stream &stream,
+                                       const TypeSummaryOptions &options);
 bool GLKit_SummaryProvider(ValueObject &valobj, Stream &stream,
                            const TypeSummaryOptions &options);
 

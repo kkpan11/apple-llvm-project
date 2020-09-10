@@ -304,6 +304,15 @@ public:
                                   bool debug_only = true,
                                   bool resolve_thunks = true) override;
 
+// [BEGIN GOOGLE] Change const char * -> std::string
+  /// Uses ConstStrings as keys to avoid storing the strings twice.
+  std::map<std::string, lldb::SyntheticChildrenSP> m_bridged_synthetics_map;
+
+  /// Cached member variable offsets.
+  using MemberID = std::pair<const swift::TypeBase *, std::string>;
+  std::map<MemberID, uint64_t> m_member_offsets;
+// [END GOOGLE]
+
   /// Error value handling.
   /// \{
   static lldb::ValueObjectSP CalculateErrorValue(lldb::StackFrameSP frame_sp,

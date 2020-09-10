@@ -2667,6 +2667,15 @@ ExpressionResults Target::EvaluateExpression(
   return execution_results;
 }
 
+// SWIFT_ENABLE_TENSORFLOW
+CompletionResponse Target::CompleteCode(lldb::LanguageType language,
+                                        llvm::StringRef current_code) {
+  auto *plugin = Language::FindPlugin(language);
+  if (!plugin)
+    return CompletionResponse::error("language plugin not found");
+  return plugin->CompleteCode(*this, current_code);
+}
+
 lldb::ExpressionVariableSP Target::GetPersistentVariable(ConstString name) {
   lldb::ExpressionVariableSP variable_sp;
   m_scratch_type_system_map.ForEach(

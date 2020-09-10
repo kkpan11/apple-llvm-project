@@ -447,6 +447,13 @@ void Language::GetDefaultExceptionResolverDescription(bool catch_on,
   s.Printf("Exception breakpoint (catch: %s throw: %s)",
            catch_on ? "on" : "off", throw_on ? "on" : "off");
 }
+
+CompletionResponse Language::CompleteCode(ExecutionContextScope &exe_scope,
+                                          const std::string &entered_code) {
+  return CompletionResponse::error("completion unsupported for this language");
+}
+
+//----------------------------------------------------------------------
 // Constructor
 Language::Language() {}
 

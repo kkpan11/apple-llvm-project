@@ -26,6 +26,9 @@
 %include "./interface/SBCommandReturnObject.i"
 %include "./interface/SBCommunication.i"
 %include "./interface/SBCompileUnit.i"
+/* SWIFT_ENABLE_TENSORFLOW */
+%include "./interface/SBCompletionMatch.i"
+%include "./interface/SBCompletionResponse.i"
 %include "./interface/SBData.i"
 %include "./interface/SBDebugger.i"
 %include "./interface/SBDeclaration.i"

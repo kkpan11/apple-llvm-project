@@ -6,4 +6,6 @@ set(LLVM_DISTRIBUTION_COMPONENTS
   lldb-argdumper
   lldb-server
   repl_swift
+  # SWIFT_ENABLE_TENSORFLOW
+  lldb-python-scripts
   CACHE STRING "")

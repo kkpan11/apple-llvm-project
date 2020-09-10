@@ -3348,6 +3348,122 @@ class SBCompileUnit(_object):
 SBCompileUnit_swigregister = _lldb.SBCompileUnit_swigregister
 SBCompileUnit_swigregister(SBCompileUnit)
 
+class SBCompletionMatch(_object):
+    """
+
+    Represents a single possible completion.
+
+    """
+
+    __swig_setmethods__ = {}
+    __setattr__ = lambda self, name, value: _swig_setattr(self, SBCompletionMatch, name, value)
+    __swig_getmethods__ = {}
+    __getattr__ = lambda self, name: _swig_getattr(self, SBCompletionMatch, name)
+    __repr__ = _swig_repr
+
+    def GetDisplay(self):
+        """
+        GetDisplay(SBCompletionMatch self) -> char const *
+
+
+        Returns a detailed string describing this completion that is suitable for
+        displaying to a user in a list of completion possibilities. This string
+        is not suitable for inserting into the code because it may contain
+        information about the match (like type information) that doesn't go in
+        code.
+
+        """
+        return _lldb.SBCompletionMatch_GetDisplay(self)
+
+
+    def GetInsertable(self):
+        """
+        GetInsertable(SBCompletionMatch self) -> char const *
+
+
+        Returns a string that can be inserted into the code.
+
+        """
+        return _lldb.SBCompletionMatch_GetInsertable(self)
+
+
+    def __init__(self):
+        """__init__(lldb::SBCompletionMatch self) -> SBCompletionMatch"""
+        this = _lldb.new_SBCompletionMatch()
+        try:
+            self.this.append(this)
+        except __builtin__.Exception:
+            self.this = this
+    __swig_destroy__ = _lldb.delete_SBCompletionMatch
+    __del__ = lambda self: None
+SBCompletionMatch_swigregister = _lldb.SBCompletionMatch_swigregister
+SBCompletionMatch_swigregister(SBCompletionMatch)
+
+class SBCompletionResponse(_object):
+    """
+
+    Represents a set of completions, or an error describing why completions could
+    not be calculated.
+    """
+
+    __swig_setmethods__ = {}
+    __setattr__ = lambda self, name, value: _swig_setattr(self, SBCompletionResponse, name, value)
+    __swig_getmethods__ = {}
+    __getattr__ = lambda self, name: _swig_getattr(self, SBCompletionResponse, name)
+    __repr__ = _swig_repr
+
+    def GetErrorMessage(self):
+        """
+        GetErrorMessage(SBCompletionResponse self) -> char const *
+
+
+        Return the error message, if any. The length is 0 if and only if the
+        completion calculation was a success.
+
+        """
+        return _lldb.SBCompletionResponse_GetErrorMessage(self)
+
+
+    def GetPrefix(self):
+        """
+        GetPrefix(SBCompletionResponse self) -> char const *
+
+
+        Returns a common prefix of all the matches. This prefix is present in the
+        code for which the completion was requested.
+
+        """
+        return _lldb.SBCompletionResponse_GetPrefix(self)
+
+
+    def GetNumMatches(self):
+        """
+        GetNumMatches(SBCompletionResponse self) -> uint32_t
+
+
+        Returns the number of matches that this response contains.
+
+        """
+        return _lldb.SBCompletionResponse_GetNumMatches(self)
+
+
+    def GetMatchAtIndex(self, idx):
+        """GetMatchAtIndex(SBCompletionResponse self, size_t idx) -> SBCompletionMatch"""
+        return _lldb.SBCompletionResponse_GetMatchAtIndex(self, idx)
+
+
+    def __init__(self):
+        """__init__(lldb::SBCompletionResponse self) -> SBCompletionResponse"""
+        this = _lldb.new_SBCompletionResponse()
+        try:
+            self.this.append(this)
+        except __builtin__.Exception:
+            self.this = this
+    __swig_destroy__ = _lldb.delete_SBCompletionResponse
+    __del__ = lambda self: None
+SBCompletionResponse_swigregister = _lldb.SBCompletionResponse_swigregister
+SBCompletionResponse_swigregister(SBCompletionResponse)
+
 class SBData(_object):
     """Proxy of C++ lldb::SBData class."""
 
@@ -11820,6 +11936,23 @@ class SBTarget(_object):
     def __str__(self):
         """__str__(SBTarget self) -> std::string"""
         return _lldb.SBTarget___str__(self)
+
+
+    def CompleteCode(self, language, symbol_context, current_code):
+        """
+        CompleteCode(SBTarget self, lldb::LanguageType language, SBSymbolContext symbol_context, char const * current_code) -> SBCompletionResponse
+
+
+        Complete code.
+        Parameters:
+          language          -- the language to use
+          symbol_context    -- the context in which to do the completion
+          current_code      -- the code to complete
+        Returns an SBCompletionResponse with completions that fit immediately after
+        the last character of `current_code`.
+
+        """
+        return _lldb.SBTarget_CompleteCode(self, language, symbol_context, current_code)
 
 
     class modules_access(object):

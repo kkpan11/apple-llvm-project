@@ -11,6 +11,8 @@ class TestSwiftExtraClangFlags(TestBase):
     def setUp(self):
         TestBase.setUp(self)
 
+    # TODO(TF-659): Remove "@skipIfDarwin"
+    @skipIfDarwin
     # Don't run ClangImporter tests if Clangimporter is disabled.
     @skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
     @skipIf(oslist=['windows'])
@@ -22,6 +24,8 @@ class TestSwiftExtraClangFlags(TestBase):
         self.expect("frame var foo", "sanity check", substrs=['(Foo)'])
         self.expect("expr FromOverlay(i: 23)", error=True)
 
+    # TODO(TF-659): Remove "@skipIfDarwin"
+    @skipIfDarwin
     # Don't run ClangImporter tests if Clangimporter is disabled.
     @skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
     @skipIf(oslist=['windows'])

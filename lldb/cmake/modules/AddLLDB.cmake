@@ -1,3 +1,24 @@
+# SWIFT_ENABLE_TENSORFLOW
+function(add_tensorflow_compiler_flags target)
+  # TODO: Handle Mac. Not urgent because lldb is built with Xcode by default on Mac.
+  if("${CMAKE_SYSTEM_NAME}" STREQUAL "Linux")
+    # If INSTALL_PATH is already defined, append a path separater ":".
+    get_property(old_rpath TARGET "${target}" PROPERTY INSTALL_RPATH)
+    if(old_rpath)
+      set_property(TARGET "${target}" APPEND_STRING PROPERTY INSTALL_RPATH ":")
+    endif()
+    # FIXME: This is a hack: adding rpaths with many `..` that jump across
+    # frameworks is bad practice. It would be cleaner/more robust to copy
+    # the TensorFlow libraries to the lldb build subdirectory.
+    set(swift_lib_dir "../../swift-${HOST_VARIANT}-${HOST_VARIANT_ARCH}")
+    set(rpath_lldb_binary "${swift_lib_dir}/lib/swift/${HOST_VARIANT}")
+    set(rpath_toolchain_lldb_binary "../lib/swift/${HOST_VARIANT}")
+    set(rpath_lldb_python_lib "../../../${rpath_lldb_binary}")
+    set(rpath_toolchain_lldb_python_lib "../../../${rpath_lldb_binary}")
+    set_property(TARGET "${target}" APPEND_STRING PROPERTY
+      INSTALL_RPATH "$ORIGIN/${rpath_lldb_binary}:$ORIGIN/${rpath_toolchain_lldb_binary}:$ORIGIN/${rpath_lldb_python_lib}:$ORIGIN/${rpath_toolchain_lldb_python_lib}")
+  endif()
+endfunction()
 function(lldb_tablegen)
   # Syntax:
   # lldb_tablegen output-file [tablegen-arg ...] SOURCE source-file
@@ -149,6 +170,11 @@ function(add_lldb_library name)
   else()
     set_target_properties(${name} PROPERTIES FOLDER "lldb libraries")
   endif()
+
+  # SWIFT_ENABLE_TENSORFLOW
+  if(SWIFT_ENABLE_TENSORFLOW)
+    add_tensorflow_compiler_flags(${name})
+  endif()
 endfunction(add_lldb_library)
 
 function(add_lldb_executable name)
@@ -210,6 +236,10 @@ function(add_lldb_executable name)
     if(APPLE AND ARG_INSTALL_PREFIX)
       lldb_add_post_install_steps_darwin(${name} ${ARG_INSTALL_PREFIX})
     endif()
+  endif()
+  # SWIFT_ENABLE_TENSORFLOW
+  if(SWIFT_ENABLE_TENSORFLOW)
+    add_tensorflow_compiler_flags(${name})
   endif()
 endfunction()
 

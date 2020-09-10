@@ -50,6 +50,7 @@ add_clang_library(clangBasic
   FileSystemStatCache.cpp
   FixedPoint.cpp
   IdentifierTable.cpp
+  InMemoryOutputFileSystem.cpp
   LangOptions.cpp
   LangStandards.cpp
   Module.cpp
