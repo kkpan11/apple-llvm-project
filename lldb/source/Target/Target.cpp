@@ -2673,7 +2673,7 @@ CompletionResponse Target::CompleteCode(lldb::LanguageType language,
   auto *plugin = Language::FindPlugin(language);
   if (!plugin)
     return CompletionResponse::error("language plugin not found");
-  return plugin->CompleteCode(*this, current_code);
+  return plugin->CompleteCode(*this, std::string(current_code));
 }
 
 lldb::ExpressionVariableSP Target::GetPersistentVariable(ConstString name) {

@@ -197,8 +197,8 @@ SwiftCompleteCode(SwiftASTContext &SwiftCtx,
   // Remove the completion prefix from the entered code, and allocate a
   // null-terminated buffer for it.
   unsigned completionOffset = FindCompletionPrefixOffset(EnteredCode);
-  std::string completionCodeTerminated =
-      EnteredCode.substr(0, completionOffset);
+  auto completionCodeTerminated =
+      std::string(EnteredCode.substr(0, completionOffset));
   completionCodeTerminated += '\0';
   const unsigned completionCodeBufferID = ctx.SourceMgr.addMemBufferCopy(
       completionCodeTerminated, "<Completion Input>");
@@ -287,7 +287,7 @@ SwiftCompleteCode(SwiftASTContext &SwiftCtx,
       ide::makeCodeCompletionCallbacksFactory(completionContext, consumer));
 
   // The prefix of the identifer/keyword that is being completed.
-  response.Prefix = EnteredCode.substr(completionOffset);
+  response.Prefix = std::string(EnteredCode.substr(completionOffset));
 
   // Actually ask for completions.
   {
