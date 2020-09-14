@@ -122,9 +122,7 @@ def create_results_formatter(formatter_name):
             command_line_options)
 
         # Create the TestResultsFormatter given the processed options.
-        results_formatter_object = cls(
-            results_file_object,
-            formatter_options)
+        results_formatter_object = cls(sys.stdout, formatter_options)
 
         def shutdown_formatter():
             """Shuts down the formatter when it is no longer needed."""
@@ -137,6 +135,8 @@ def create_results_formatter(formatter_name):
             if cleanup_func is not None:
                 cleanup_func()
 
-        return CreatedFormatter(sys.stdout, shutdown_formatter)
+        return CreatedFormatter(
+            results_formatter_object,
+            shutdown_formatter)
     else:
         return None

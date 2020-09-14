@@ -2211,7 +2211,7 @@ Target::GetScratchTypeSystemForLanguage(lldb::LanguageType language,
   auto type_system_or_err = m_scratch_type_system_map.GetTypeSystemForLanguage(
       language, this, create_on_demand, compiler_options);
   if (!type_system_or_err)
-    return std::move(type_system_or_err.takeError());
+    return type_system_or_err.takeError();
 
 #ifdef LLDB_ENABLE_SWIFT
   if (language == eLanguageTypeSwift) {
@@ -2249,7 +2249,7 @@ Target::GetScratchTypeSystemForLanguage(lldb::LanguageType language,
           type_system_or_err = m_scratch_type_system_map.GetTypeSystemForLanguage(
               language, this, create_on_demand, compiler_options);
           if (!type_system_or_err)
-            return std::move(type_system_or_err.takeError());
+            return type_system_or_err.takeError();
 
           if (auto *new_swift_ast_ctx =
                   llvm::dyn_cast_or_null<SwiftASTContextForExpressions>(
@@ -2673,7 +2673,7 @@ CompletionResponse Target::CompleteCode(lldb::LanguageType language,
   auto *plugin = Language::FindPlugin(language);
   if (!plugin)
     return CompletionResponse::error("language plugin not found");
-  return plugin->CompleteCode(*this, current_code);
+  return plugin->CompleteCode(*this, std::string(current_code));
 }
 
 lldb::ExpressionVariableSP Target::GetPersistentVariable(ConstString name) {

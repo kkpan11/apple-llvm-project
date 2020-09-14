@@ -231,12 +231,6 @@ bool SwiftPersistentExpressionState::GetSwiftPersistentDecls(
                                                     matches);
 }
 
-// SWIFT_ENABLE_TENSORFLOW
-void SwiftPersistentExpressionState::GetAllDecls(
-    std::vector<swift::Decl *> &decls) {
-  m_swift_persistent_decls.GetAllDecls(decls);
-}
-
 ConstString
 SwiftPersistentExpressionState::GetNextPersistentVariableName(bool is_error) {
   llvm::SmallString<64> name;
@@ -247,4 +241,10 @@ SwiftPersistentExpressionState::GetNextPersistentVariableName(bool is_error) {
     os << GetPersistentVariablePrefix(is_error) << variable_num;
   }
   return ConstString(name);
+}
+
+// SWIFT_ENABLE_TENSORFLOW
+void SwiftPersistentExpressionState::GetAllDecls(
+    std::vector<swift::Decl *> &decls) {
+  m_swift_persistent_decls.GetAllDecls(decls);
 }

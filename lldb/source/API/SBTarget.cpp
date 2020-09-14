@@ -14,9 +14,9 @@
 #include "Plugins/TypeSystem/Clang/TypeSystemClang.h"
 #include "lldb/API/SBBreakpoint.h"
 #include "lldb/API/SBDebugger.h"
+#include "lldb/API/SBEnvironment.h"
 // SWIFT_ENABLE_TENSORFLOW
 #include "lldb/API/SBCompletionResponse.h"
-#include "lldb/API/SBEnvironment.h"
 #include "lldb/API/SBEvent.h"
 #include "lldb/API/SBExpressionOptions.h"
 #include "lldb/API/SBFileSpec.h"

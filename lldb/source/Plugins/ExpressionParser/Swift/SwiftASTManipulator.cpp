@@ -1210,7 +1210,8 @@ bool SwiftASTManipulator::AddExternalVariables(
         m_wrapper_decl->setBody(swift::BraceStmt::create(
             ast_context, wrapper_body->getLBraceLoc(),
             ast_context.AllocateCopy(wrapper_elements_copy),
-            wrapper_body->getRBraceLoc()));
+            wrapper_body->getRBraceLoc()),
+           swift::AbstractFunctionDecl::BodyKind::TypeChecked);
       } else {
         element_iterator =
             elements.insert(element_iterator, swift::ASTNode(pattern_binding));
@@ -1236,7 +1237,8 @@ bool SwiftASTManipulator::AddExternalVariables(
 
     m_function_decl->setBody(swift::BraceStmt::create(
         ast_context, body->getLBraceLoc(), ast_context.AllocateCopy(elements),
-        body->getRBraceLoc()));
+        body->getRBraceLoc()),
+        swift::AbstractFunctionDecl::BodyKind::TypeChecked);
   }
 
   return true;
