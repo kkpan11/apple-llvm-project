@@ -87,9 +87,7 @@ SwiftExpressionParser::SwiftExpressionParser(
     ExecutionContextScope *exe_scope, Expression &expr,
     const EvaluateExpressionOptions &options)
     : ExpressionParser(exe_scope, expr, options.GetGenerateDebugInfo()),
-      m_expr(expr), m_triple(), m_llvm_context(), m_module(),
-      m_execution_unit_sp(), m_sc(), m_exe_scope(exe_scope), m_stack_frame_wp(),
-      m_options(options) {
+      m_expr(expr), m_exe_scope(exe_scope), m_options(options) {
   assert(expr.Language() == lldb::eLanguageTypeSwift);
 
   // TODO: This code is copied from ClangExpressionParser.cpp.
@@ -107,24 +105,6 @@ SwiftExpressionParser::SwiftExpressionParser(
     } else {
       m_sc.target_sp = target_sp;
     }
-  }
-
-  if (target_sp && target_sp->GetArchitecture().IsValid()) {
-    std::string triple = target_sp->GetArchitecture().GetTriple().str();
-
-    int dash_count = 0;
-    for (size_t i = 0; i < triple.size(); ++i) {
-      if (triple[i] == '-')
-        dash_count++;
-      if (dash_count == 3) {
-        triple.resize(i);
-        break;
-      }
-    }
-
-    m_triple = triple;
-  } else {
-    m_triple = llvm::sys::getDefaultTargetTriple();
   }
 
   if (target_sp) {
@@ -255,7 +235,7 @@ public:
       // must be moved to the source-file level to be legal.  But we
       // don't want to register them with lldb unless they are of the
       // kind lldb explicitly wants to globalize.
-      if (shouldGlobalize(value_decl->getBaseIdentifier(),
+      if (shouldGlobalize(value_decl->getBaseName().getIdentifier(),
                           value_decl->getKind()))
         m_staged_decls.AddDecl(value_decl, false, ConstString());
     }
@@ -280,7 +260,7 @@ public:
                                ResultVector &RV) {
     static unsigned counter = 0;
     unsigned count = counter++;
-    
+
     StringRef NameStr = Name.getIdentifier().str();
 
     if (m_log) {
@@ -527,9 +507,8 @@ AddRequiredAliases(Block *block, lldb::StackFrameSP &stack_frame_sp,
   auto *swift_runtime =
       SwiftLanguageRuntime::Get(stack_frame_sp->GetThread()->GetProcess());
   auto *stack_frame = stack_frame_sp.get();
-  imported_self_type =
-      swift_runtime->DoArchetypeBindingForType(*stack_frame,
-                                               imported_self_type);
+  imported_self_type = swift_runtime->BindGenericTypeParameters(
+      *stack_frame, imported_self_type);
 
   // This might be a referenced type, in which case we really want to
   // extend the referent:
@@ -657,7 +636,7 @@ static void AddVariableInfo(
   // Resolve all archetypes in the variable type.
   if (stack_frame_sp)
     if (language_runtime)
-      target_type = language_runtime->DoArchetypeBindingForType(*stack_frame_sp,
+      target_type = language_runtime->BindGenericTypeParameters(*stack_frame_sp,
                                                                 target_type);
 
   // If we couldn't fully realize the type, then we aren't going
@@ -934,7 +913,7 @@ CreateMainFile(SwiftASTContextForExpressions &swift_ast_context,
 
         llvm::SmallString<256> source_dir(temp_source_path);
         llvm::sys::path::remove_filename(source_dir);
-        ir_gen_options.DebugCompilationDir = source_dir.str();
+        ir_gen_options.DebugCompilationDir = std::string(source_dir);
 
         return {buffer_id, temp_source_path};
       }
@@ -945,7 +924,7 @@ CreateMainFile(SwiftASTContextForExpressions &swift_ast_context,
       llvm::MemoryBuffer::getMemBufferCopy(text, filename));
   unsigned buffer_id = swift_ast_context.GetSourceManager().addNewSourceBuffer(
       std::move(expr_buffer));
-  return {buffer_id, filename};
+  return {buffer_id, filename.str()};
 }
 
 /// Attempt to materialize one variable.
@@ -996,7 +975,7 @@ MaterializeVariable(SwiftASTManipulatorBase::VariableInfo &variable,
           auto *swift_runtime = SwiftLanguageRuntime::Get(
               stack_frame_sp->GetThread()->GetProcess());
           if (swift_runtime) {
-            actual_type = swift_runtime->DoArchetypeBindingForType(
+            actual_type = swift_runtime->BindGenericTypeParameters(
                 *stack_frame_sp, actual_type);
           }
         }
@@ -1140,7 +1119,7 @@ struct ModuleImportError : public llvm::ErrorInfo<ModuleImportError> {
     return inconvertibleErrorCode();
   }
 };
-  
+
 char PropagatedError::ID = 0;
 char SwiftASTContextError::ID = 0;
 char ModuleImportError::ID = 0;
@@ -1634,9 +1613,7 @@ unsigned SwiftExpressionParser::Parse(DiagnosticManager &diagnostic_manager,
   if (log) {
     std::string s;
     llvm::raw_string_ostream ss(s);
-    swift::SILOptions silOpts;
-    silOpts.EmitVerboseSIL = false;
-    sil_module->print(ss, &parsed_expr->module, silOpts);
+    sil_module->print(ss, &parsed_expr->module);
     ss.flush();
 
     log->Printf("SIL module before linking:");
@@ -1651,9 +1628,7 @@ unsigned SwiftExpressionParser::Parse(DiagnosticManager &diagnostic_manager,
   if (log) {
     std::string s;
     llvm::raw_string_ostream ss(s);
-    swift::SILOptions silOpts;
-    silOpts.EmitVerboseSIL = false;
-    sil_module->print(ss, &parsed_expr->module, silOpts);
+    sil_module->print(ss, &parsed_expr->module);
     ss.flush();
 
     log->Printf("Generated SIL module:");
@@ -1682,9 +1657,7 @@ unsigned SwiftExpressionParser::Parse(DiagnosticManager &diagnostic_manager,
   if (log) {
     std::string s;
     llvm::raw_string_ostream ss(s);
-    swift::SILOptions silOpts;
-    silOpts.EmitVerboseSIL = false;
-    sil_module->print(ss, &parsed_expr->module, silOpts);
+    sil_module->print(ss, &parsed_expr->module);
     ss.flush();
 
     log->Printf("SIL module after diagnostic passes:");

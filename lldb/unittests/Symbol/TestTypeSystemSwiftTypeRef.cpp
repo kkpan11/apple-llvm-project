@@ -13,10 +13,10 @@
 #include "gtest/gtest.h"
 
 #include "Plugins/TypeSystem/Swift/TypeSystemSwiftTypeRef.h"
+#include "llvm/ADT/StringRef.h"
 #include "swift/Demangling/Demangle.h"
 #include "swift/Demangling/Demangler.h"
 #include "swift/Strings.h"
-#include "llvm/ADT/StringRef.h"
 
 using namespace lldb;
 using namespace lldb_private;
@@ -205,6 +205,7 @@ TEST_F(TestTypeSystemSwiftTypeRef, Pointer) {
                                         swift::BUILTIN_TYPE_NAME_RAWPOINTER));
     CompilerType p = GetCompilerType(b.Mangle(n));
     ASSERT_TRUE(p.IsPointerType(nullptr));
+    ASSERT_TRUE(p.IsPointerOrReferenceType(nullptr));
   }
   {
     NodePointer n =
@@ -212,18 +213,21 @@ TEST_F(TestTypeSystemSwiftTypeRef, Pointer) {
                             swift::BUILTIN_TYPE_NAME_UNSAFEVALUEBUFFER));
     CompilerType p = GetCompilerType(b.Mangle(n));
     ASSERT_TRUE(p.IsPointerType(nullptr));
+    ASSERT_TRUE(p.IsPointerOrReferenceType(nullptr));
   }
   {
     NodePointer n = b.GlobalType(b.Node(Node::Kind::BuiltinTypeName,
                                         swift::BUILTIN_TYPE_NAME_NATIVEOBJECT));
     CompilerType p = GetCompilerType(b.Mangle(n));
     ASSERT_TRUE(p.IsPointerType(nullptr));
+    ASSERT_TRUE(p.IsPointerOrReferenceType(nullptr));
   }
   {
     NodePointer n = b.GlobalType(b.Node(Node::Kind::BuiltinTypeName,
                                         swift::BUILTIN_TYPE_NAME_BRIDGEOBJECT));
     CompilerType p = GetCompilerType(b.Mangle(n));
     ASSERT_TRUE(p.IsPointerType(nullptr));
+    ASSERT_TRUE(p.IsPointerOrReferenceType(nullptr));
   }
 }
 
@@ -246,9 +250,11 @@ TEST_F(TestTypeSystemSwiftTypeRef, Reference) {
     NodePointer n = b.GlobalType(b.Node(Node::Kind::InOut, b.IntType()));
     CompilerType ref = GetCompilerType(b.Mangle(n));
     ASSERT_TRUE(ref.IsReferenceType(nullptr, nullptr));
+    ASSERT_TRUE(ref.IsPointerOrReferenceType(nullptr));
     CompilerType pointee;
     bool is_rvalue = true;
     ASSERT_TRUE(ref.IsReferenceType(&pointee, &is_rvalue));
+    ASSERT_TRUE(ref.IsPointerOrReferenceType(&pointee));
     NodePointer int_node = b.GlobalTypeMangling(b.IntType());
     CompilerType int_type = GetCompilerType(b.Mangle(int_node));
     ASSERT_EQ(int_type, pointee);
@@ -429,5 +435,24 @@ TEST_F(TestTypeSystemSwiftTypeRef, TypeClass) {
                              b.Node(Node::Kind::Identifier, "Error"))))));
     CompilerType t = GetCompilerType(b.Mangle(n));
     ASSERT_EQ(t.GetTypeClass(), lldb::eTypeClassOther);
+  }
+}
+
+TEST_F(TestTypeSystemSwiftTypeRef, ImportedType) {
+  using namespace swift::Demangle;
+  Demangler dem;
+  NodeBuilder b(dem);
+  {
+    NodePointer node = b.GlobalTypeMangling(b.IntType());
+    CompilerType type = GetCompilerType(b.Mangle(node));
+    ASSERT_FALSE(m_swift_ts.IsImportedType(type.GetOpaqueQualType(), nullptr));
+  }
+  {
+    NodePointer node = b.GlobalType(
+        b.Node(Node::Kind::Structure,
+               b.Node(Node::Kind::Module, swift::MANGLING_MODULE_OBJC),
+               b.Node(Node::Kind::Identifier, "NSDecimal")));
+    CompilerType type = GetCompilerType(b.Mangle(node));
+    ASSERT_TRUE(m_swift_ts.IsImportedType(type.GetOpaqueQualType(), nullptr));
   }
 }

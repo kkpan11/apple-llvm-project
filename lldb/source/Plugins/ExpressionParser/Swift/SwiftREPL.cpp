@@ -267,7 +267,10 @@ lldb::REPLSP SwiftREPL::CreateInstanceFromDebugger(Status &err,
   return repl_sp;
 }
 
+LLDB_PLUGIN_DEFINE_ADV(SwiftREPL, ExpressionParserSwift)
+
 void SwiftREPL::Initialize() {
+  SwiftASTContext::Initialize();
   LanguageSet swift;
   swift.Insert(lldb::eLanguageTypeSwift);
   PluginManager::RegisterPlugin(ConstString("swift"), "The Swift REPL",
@@ -276,6 +279,7 @@ void SwiftREPL::Initialize() {
 
 void SwiftREPL::Terminate() {
   PluginManager::UnregisterPlugin(&CreateInstance);
+  SwiftASTContext::Terminate();
 }
 
 SwiftREPL::SwiftREPL(Target &target)
@@ -579,13 +583,13 @@ void SwiftREPL::CompleteCode(const std::string &current_code,
     }
     if (repl_module) {
       swift::SourceFile &repl_source_file =
-          repl_module->getMainSourceFile(swift::SourceFileKind::Main);
+          repl_module->getMainSourceFile();
 
       // Swift likes to give us strings to append to the current token but
       // the CompletionRequest requires a replacement for the full current
       // token. Fix this by getting the current token here and we attach
       // the suffix we get from Swift.
-      std::string prefix = request.GetCursorArgumentPrefix();
+      std::string prefix = request.GetCursorArgumentPrefix().str();
       llvm::StringRef current_code_ref(current_code);
       completions.populate(repl_source_file, current_code_ref);
 
