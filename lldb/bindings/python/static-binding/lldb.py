@@ -8545,6 +8545,7 @@ class SBPlatformShellCommand(_object):
 
     def __init__(self, *args):
         """
+        __init__(lldb::SBPlatformShellCommand self, char const * shell, char const * shell_command) -> SBPlatformShellCommand
         __init__(lldb::SBPlatformShellCommand self, char const * shell_command) -> SBPlatformShellCommand
         __init__(lldb::SBPlatformShellCommand self, SBPlatformShellCommand rhs) -> SBPlatformShellCommand
         """
@@ -8559,6 +8560,16 @@ class SBPlatformShellCommand(_object):
     def Clear(self):
         """Clear(SBPlatformShellCommand self)"""
         return _lldb.SBPlatformShellCommand_Clear(self)
+
+
+    def GetShell(self):
+        """GetShell(SBPlatformShellCommand self) -> char const *"""
+        return _lldb.SBPlatformShellCommand_GetShell(self)
+
+
+    def SetShell(self, shell_interpreter):
+        """SetShell(SBPlatformShellCommand self, char const * shell_interpreter)"""
+        return _lldb.SBPlatformShellCommand_SetShell(self, shell_interpreter)
 
 
     def GetCommand(self):
