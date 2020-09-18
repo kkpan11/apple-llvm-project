@@ -82,8 +82,8 @@ else()
       # Make it so that LLDB can find Python 3.6+
       set(Python_ADDITIONAL_VERSIONS 3.8 3.7 3.6 3.5 3.4 3.3 3.2 3.1 3.0 2.7 2.6 2.5)
 
-      find_package(PythonInterp QUIET)
-      find_package(PythonLibs QUIET)
+      find_package(PythonInterp)
+      find_package(PythonLibs)
       if(PYTHONINTERP_FOUND AND PYTHONLIBS_FOUND AND SWIG_FOUND)
         if (NOT CMAKE_CROSSCOMPILING)
           string(REPLACE "." ";" pythonlibs_version_list ${PYTHONLIBS_VERSION_STRING})

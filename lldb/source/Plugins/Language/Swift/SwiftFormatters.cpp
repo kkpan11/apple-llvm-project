@@ -997,7 +997,6 @@ ReadVector(Process &process, ValueObject &valobj,
   // array. It's a contiguous bag of bytes with no padding.
   lldb_private::DataExtractor data;
   uint64_t len = value_sp->GetData(data, error);
-  unsigned elt_size = formatter.getElementSize();
   if (error.Fail())
     return llvm::None;
 
@@ -1020,10 +1019,10 @@ void PrintMatrix(Stream &stream,
                  int num_columns, int num_rows) {
   // Print each row.
   stream.Printf("\n[ ");
-  for (unsigned J = 0; J < num_rows; ++J) {
+  for (int J = 0; J < num_rows; ++J) {
     // Join the J-th row's elements with commas.
     std::vector<std::string> row;
-    for (unsigned I = 0; I < num_columns; ++I)
+    for (int I = 0; I < num_columns; ++I)
       row.emplace_back(std::move(matrix[I][J]));
     std::string joined = llvm::join(row, ", ");
 
@@ -1043,19 +1042,15 @@ void PrintMatrix(Stream &stream,
 
 bool lldb_private::formatters::swift::SIMDVector_SummaryProvider(
     ValueObject &valobj, Stream &stream, const TypeSummaryOptions &options) {
-  Status error;
-  ProcessSP process_sp(valobj.GetProcessSP());
-  if (!process_sp)
-    return false;
-  Process &process = *process_sp.get();
-
   // SIMD vector contains an inner member `_storage` which is an opaque
   // container. Given SIMD is always in the form SIMDX<Type> where X is a
   // positive integer, we can calculate the number of elements and the
   // dynamic archetype (and hence its size). Everything follows naturally
   // as the elements are laid out in a contigous buffer without padding.
   CompilerType simd_type = valobj.GetCompilerType().GetCanonicalType();
-  llvm::Optional<uint64_t> opt_type_size = simd_type.GetByteSize(nullptr);
+  ExecutionContext exe_ctx = valobj.GetExecutionContextRef().Lock(true);
+  llvm::Optional<uint64_t> opt_type_size =
+    simd_type.GetByteSize(exe_ctx.GetBestExecutionContextScope());
   if (!opt_type_size)
     return false;
   uint64_t type_size = *opt_type_size;
@@ -1071,12 +1066,14 @@ bool lldb_private::formatters::swift::SIMDVector_SummaryProvider(
   auto swift_arg_type = generic_args[0];
   CompilerType arg_type = ToCompilerType(swift_arg_type);
 
-  llvm::Optional<uint64_t> opt_arg_size = arg_type.GetByteSize(nullptr);
+  llvm::Optional<uint64_t> opt_arg_size =
+      arg_type.GetByteSize(exe_ctx.GetBestExecutionContextScope());
   if (!opt_arg_size)
     return false;
   uint64_t arg_size = *opt_arg_size;
 
   DataExtractor storage_buf;
+  Status error;
   uint64_t len = valobj.GetData(storage_buf, error);
   lldbassert(len == type_size && "extracted less bytes than requested");
   if (len < type_size)
@@ -1090,14 +1087,14 @@ bool lldb_private::formatters::swift::SIMDVector_SummaryProvider(
   ConstString full_type_name = simd_type.GetTypeName();
   llvm::StringRef type_name = full_type_name.GetStringRef();
   uint64_t num_elements = type_size / arg_size;
-  int generic_pos = type_name.find("<");
+  auto generic_pos = type_name.find("<");
   if (generic_pos != llvm::StringRef::npos)
     type_name = type_name.slice(0, generic_pos);
   if (type_name == "Swift.SIMD3")
     num_elements = 3;
 
   std::vector<std::string> elem_vector;
-  for (int i = 0; i < num_elements; ++i) {
+  for (uint64_t i = 0; i < num_elements; ++i) {
     DataExtractor elem_extractor(storage_buf, i * arg_size, arg_size);
     auto simd_elem = ValueObject::CreateValueObjectFromData(
         "simd_elem", elem_extractor, valobj.GetExecutionContextRef(), arg_type);
@@ -1198,14 +1195,6 @@ bool lldb_private::formatters::swift::LegacySIMD_SummaryProvider(
 
 bool lldb_private::formatters::swift::GLKit_SummaryProvider(
     ValueObject &valobj, Stream &stream, const TypeSummaryOptions &options) {
-  Status error;
-
-  ProcessSP process_sp(valobj.GetProcessSP());
-  if (!process_sp)
-    return false;
-
-  Process &process = *process_sp.get();
-
   // Get the type name without the "GLKit." prefix.
   ConstString full_type_name = valobj.GetTypeName();
   llvm::StringRef type_name = full_type_name.GetStringRef();
@@ -1225,6 +1214,7 @@ bool lldb_private::formatters::swift::GLKit_SummaryProvider(
   unsigned num_elements =
       is_quaternion ? 4 : llvm::hexDigitValue(type_name.back());
   DataExtractor data;
+  Status error;
   uint64_t len = valobj.GetData(data, error);
   const uint8_t *buffer = data.GetDataStart();
   if (!is_matrix) {

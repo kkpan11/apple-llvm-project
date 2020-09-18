@@ -254,7 +254,6 @@ void SwiftASTManipulatorBase::DoInitialization() {
   if (m_repl)
     return;
 
-  static llvm::StringRef s_wrapped_func_prefix_str("$__lldb_wrapped_expr");
   static llvm::StringRef s_func_prefix_str("$__lldb_expr");
 
   // First pass: find whether we're dealing with a wrapped function or not
@@ -295,8 +294,8 @@ void SwiftASTManipulatorBase::DoInitialization() {
             break;
           }
         }
-      } else if (FD->hasName() && FD->getBaseIdentifier().str()
-                                    .startswith(m_wrapper_func_prefix)) {
+      } else if (FD->hasName() && FD->getBaseIdentifier().str().startswith(
+                                      m_wrapper_func_prefix)) {
         m_wrapper_decl = FD;
       }
 
@@ -681,13 +680,6 @@ void SwiftASTManipulator::MakeDeclarationsPublic() {
   m_source_file.walk(p);
 }
 
-static bool hasInit(swift::PatternBindingDecl *pattern_binding) {
-  for (unsigned i = 0, e = pattern_binding->getNumPatternEntries(); i != e; ++i)
-    if (pattern_binding->getInit(i))
-      return true;
-  return false;
-}
-
 static swift::Expr *getFirstInit(swift::PatternBindingDecl *pattern_binding) {
   for (unsigned i = 0, e = pattern_binding->getNumPatternEntries(); i != e; ++i)
     if (pattern_binding->getInit(i))
@@ -777,8 +769,6 @@ void SwiftASTManipulator::InsertResult(
     SwiftASTManipulator::ResultLocationInfo &result_info) {
   swift::ASTContext &ast_context = m_source_file.getASTContext();
 
-  CompilerType return_ast_type = ToCompilerType(result_type.getPointer());
-
   result_var->overwriteAccess(swift::AccessLevel::Public);
   result_var->overwriteSetterAccess(swift::AccessLevel::Public);
 
@@ -817,8 +807,6 @@ void SwiftASTManipulator::InsertError(swift::VarDecl *error_var,
     return;
 
   swift::ASTContext &ast_context = m_source_file.getASTContext();
-
-  CompilerType error_ast_type = ToCompilerType(error_type.getPointer());
 
   error_var->overwriteAccess(swift::AccessLevel::Public);
   error_var->overwriteSetterAccess(swift::AccessLevel::Public);
@@ -1222,7 +1210,8 @@ bool SwiftASTManipulator::AddExternalVariables(
         m_wrapper_decl->setBody(swift::BraceStmt::create(
             ast_context, wrapper_body->getLBraceLoc(),
             ast_context.AllocateCopy(wrapper_elements_copy),
-            wrapper_body->getRBraceLoc()));
+            wrapper_body->getRBraceLoc()),
+           swift::AbstractFunctionDecl::BodyKind::TypeChecked);
       } else {
         element_iterator =
             elements.insert(element_iterator, swift::ASTNode(pattern_binding));
@@ -1248,7 +1237,8 @@ bool SwiftASTManipulator::AddExternalVariables(
 
     m_function_decl->setBody(swift::BraceStmt::create(
         ast_context, body->getLBraceLoc(), ast_context.AllocateCopy(elements),
-        body->getRBraceLoc()));
+        body->getRBraceLoc()),
+        swift::AbstractFunctionDecl::BodyKind::TypeChecked);
   }
 
   return true;

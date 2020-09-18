@@ -27,8 +27,8 @@ class TestSwiftMixAnyObjectType(TestBase):
     def setUp(self):
         TestBase.setUp(self)
 
-    @expectedFailureAll(bugnumber="rdar://60396797",
-                        setting=('symbols.use-swift-clangimporter', 'false'))
+    @skipIf(bugnumber="rdar://60396797", # inconsistently fails/passes.
+            setting=('symbols.use-swift-clangimporter', 'false'))
     @skipUnlessDarwin
     @swiftTest
     def test_any_object_type(self):
@@ -60,6 +60,7 @@ class TestSwiftMixAnyObjectType(TestBase):
 
         self.expect(
             'frame variable -d run -- dict',
+            ordered=False,
             substrs=[
                 'key = "One"',
                 'text = "Instance One"',
@@ -69,6 +70,7 @@ class TestSwiftMixAnyObjectType(TestBase):
                 'text = "Instance Two"'])
         self.expect(
             'expr -d run -- dict',
+            ordered=False,
             substrs=[
                 'key = "One"',
                 'text = "Instance One"',
