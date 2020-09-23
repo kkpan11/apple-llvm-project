@@ -1,6 +1,6 @@
 [
 {
-  "target": "apple/master",
+  "target": "apple/main",
   "upstream": "llvm.org/master"
 },
 {
@@ -8,8 +8,8 @@
   "upstream": "llvm.org/release/11.x"
 },
 {
-  "target": "swift/master-next",
-  "upstream": "apple/master",
+  "target": "swift/next",
+  "upstream": "apple/main",
   "test-command": "true"
 },
 {
@@ -23,7 +23,7 @@
   "test_commits_in_bundle": true
 },
 {
-  "target": "swift/master",
+  "target": "swift/main",
   "upstream": "apple/stable/20200714",
   "test_commits_in_bundle": true
 }
