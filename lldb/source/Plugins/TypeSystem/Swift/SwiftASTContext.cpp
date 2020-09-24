@@ -8314,11 +8314,11 @@ bool SwiftASTContext::CacheUserImports(SwiftASTContext &swift_ast_context,
   llvm::SmallVector<swift::ModuleDecl::ImportedModule, 2> parsed_imports;
 
   swift::ModuleDecl::ImportFilter import_filter {
-      swift::ModuleDecl::ImportFilterKind::Exported,
-      swift::ModuleDecl::ImportFilterKind::Default,
+      swift::ModuleDecl::ImportFilterKind::Private,
+      swift::ModuleDecl::ImportFilterKind::Public,
       swift::ModuleDecl::ImportFilterKind::ImplementationOnly,
       swift::ModuleDecl::ImportFilterKind::SPIAccessControl,
-      swift::ModuleDecl::ImportFilterKind::ShadowedByCrossImportOverlay
+      swift::ModuleDecl::ImportFilterKind::ShadowedBySeparateOverlay
   };
 
   source_file.getImportedModules(parsed_imports, import_filter);
