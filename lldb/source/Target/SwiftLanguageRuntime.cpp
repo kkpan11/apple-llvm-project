@@ -228,7 +228,7 @@ public:
 
   llvm::Optional<uint64_t> GetMemberVariableOffset(CompilerType instance_type,
                                                    ValueObject *instance,
-                                                   ConstString member_name,
+                                                   llvm::StringRef member_name,
                                                    Status *error) {
     STUB_LOG();
     return {};
@@ -1240,11 +1240,10 @@ void SwiftLanguageRuntime::RegisterGlobalError(Target &target, ConstString name,
     if (module_creation_error.Success() && module_decl) {
       const bool is_static = false;
       const auto introducer = swift::VarDecl::Introducer::Let;
-      const bool is_capture_list = false;
 
       swift::VarDecl *var_decl =
           new (*ast_context->GetASTContext()) swift::VarDecl(
-              is_static, introducer, is_capture_list, swift::SourceLoc(),
+              is_static, introducer, swift::SourceLoc(),
               ast_context->GetIdentifier(name.GetCString()), module_decl);
       var_decl->setInterfaceType(GetSwiftType(ast_context->GetErrorType()));
       var_decl->setDebuggerVar(true);
@@ -2083,8 +2082,8 @@ bool SwiftLanguageRuntime::IsStoredInlineInBuffer(CompilerType type) {
 }
 
 llvm::Optional<uint64_t> SwiftLanguageRuntime::GetMemberVariableOffset(
-    CompilerType instance_type, ValueObject *instance, ConstString member_name,
-    Status *error) {
+    CompilerType instance_type, ValueObject *instance,
+    llvm::StringRef member_name, Status *error) {
   FORWARD(GetMemberVariableOffset, instance_type, instance, member_name, error);
 }
 

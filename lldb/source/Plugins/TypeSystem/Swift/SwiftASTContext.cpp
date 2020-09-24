@@ -119,6 +119,7 @@
 #include "lldb/Utility/Log.h"
 #include "lldb/Utility/Status.h"
 #include "lldb/Utility/XcodeSDK.h"
+#include "lldb/Utility/ReproducerProvider.h"
 #include "llvm/ADT/ScopeExit.h"
 
 #include "Plugins/Platform/MacOSX/PlatformDarwin.h"
@@ -1657,8 +1658,7 @@ lldb::TypeSystemSP SwiftASTContext::CreateInstance(lldb::LanguageType language,
                main_compile_unit_sp->GetPrimaryFile().GetCString());
   }
 
-  llvm::Triple triple = arch.GetTriple();
-
+  llvm::Triple triple = GetSwiftFriendlyTriple(arch.GetTriple());
   if (triple.getOS() == llvm::Triple::UnknownOS) {
     // cl_kernels are the only binaries that don't have an
     // LC_MIN_VERSION_xxx load command. This avoids a Swift assertion.
@@ -2351,9 +2351,24 @@ llvm::Triple SwiftASTContext::GetSwiftFriendlyTriple(llvm::Triple triple) {
     // technically incorrect, as the `*-unknown-linux` environment
     // represents the bare-metal environment, because Swift is
     // currently hosted only, we can get away with it.
-    if (triple.isOSLinux() &&
-        triple.getEnvironment() == llvm::Triple::UnknownEnvironment)
-      triple.setEnvironment(llvm::Triple::GNU);
+    if (triple.isOSLinux()) {
+      if (triple.getEnvironment() == llvm::Triple::UnknownEnvironment)
+        triple.setEnvironment(llvm::Triple::GNU);
+      // Contrary to what it appears, this is not a no-op.  This spells the
+      // `unknown` vendor as `unknown` rather than the empty (``) string.  This
+      // is required to ensure that the module triple matches exactly for Swift.
+      if (triple.getVendor() == llvm::Triple::UnknownVendor)
+        triple.setVendor(llvm::Triple::UnknownVendor);
+    }
+
+    // Set the vendor to `unknown` on Windows as the Swift standard library is
+    // overly aggressive in matching the triple.  The vendor field is
+    // initialized to `pc` by LLDB though there is no official vendor associated
+    // with the open source toolchain, and so this field is rightly
+    // canonicalized to `unknown`.  This allows loading of the Swift standard
+    // library for the REPL.
+    if (triple.isOSWindows() && triple.isWindowsMSVCEnvironment())
+      triple.setVendor(llvm::Triple::UnknownVendor);
     triple.normalize();
     return triple;
   }
@@ -5327,6 +5342,12 @@ SwiftASTContext::GetAllocationStrategy(opaque_compiler_type_t type) {
   return TypeAllocationStrategy::eUnknown;
 }
 
+CompilerType
+SwiftASTContext::GetTypeRefType(lldb::opaque_compiler_type_t type) {
+  return m_typeref_typesystem.GetTypeFromMangledTypename(
+      GetMangledTypeName(type));
+}
+
 //----------------------------------------------------------------------
 // Type Completion
 //----------------------------------------------------------------------
@@ -6837,8 +6858,8 @@ static llvm::Optional<uint64_t> GetInstanceVariableOffset_Metadata(
   }
 
   Status error;
-  llvm::Optional<uint64_t> offset = runtime->GetMemberVariableOffset(
-      type, valobj, ConstString(ivar_name), &error);
+  llvm::Optional<uint64_t> offset =
+      runtime->GetMemberVariableOffset(type, valobj, ivar_name, &error);
   if (offset)
     LOG_PRINTF(LIBLLDB_LOG_TYPES, "for %s: %llu", ivar_name.str().c_str(),
                *offset);
@@ -8293,9 +8314,14 @@ bool SwiftASTContext::CacheUserImports(SwiftASTContext &swift_ast_context,
   llvm::SmallString<1> m_description;
   llvm::SmallVector<swift::ModuleDecl::ImportedModule, 2> parsed_imports;
 
-  swift::ModuleDecl::ImportFilter import_filter;
-  import_filter |= swift::ModuleDecl::ImportFilterKind::Public;
-  import_filter |= swift::ModuleDecl::ImportFilterKind::Private;
+  swift::ModuleDecl::ImportFilter import_filter {
+      swift::ModuleDecl::ImportFilterKind::Exported,
+      swift::ModuleDecl::ImportFilterKind::Default,
+      swift::ModuleDecl::ImportFilterKind::ImplementationOnly,
+      swift::ModuleDecl::ImportFilterKind::SPIAccessControl,
+      swift::ModuleDecl::ImportFilterKind::ShadowedByCrossImportOverlay
+  };
+
   source_file.getImportedModules(parsed_imports, import_filter);
 
   auto *persistent_expression_state =

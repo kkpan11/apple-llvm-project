@@ -431,9 +431,8 @@ swift::Stmt *SwiftASTManipulator::ConvertExpressionToTmpReturnVarAccess(
   llvm::SmallVector<swift::Expr *, 3> false_body;
   const bool is_static = false;
   const auto introducer = swift::VarDecl::Introducer::Let;
-  const bool is_capture_list = false;
   result_loc_info.tmp_var_decl = new (ast_context) swift::VarDecl(
-      is_static, introducer, is_capture_list, source_loc, name,
+      is_static, introducer, source_loc, name,
       new_decl_context);
   result_loc_info.tmp_var_decl->setImplicit();
   const auto internal_access = swift::AccessLevel::Internal;
@@ -1049,7 +1048,6 @@ bool SwiftASTManipulator::AddExternalVariables(
 
     const bool is_static = false;
     auto introducer = variable.GetVarIntroducer();
-    bool is_capture_list = variable.GetIsCaptureList();
     swift::SourceLoc loc;
     swift::Identifier name = variable.m_name;
     swift::Type var_type = GetSwiftType(variable.m_type);
@@ -1058,7 +1056,7 @@ bool SwiftASTManipulator::AddExternalVariables(
     // strip that part off:
 
     swift::VarDecl *redirected_var_decl = new (ast_context)
-        swift::VarDecl(is_static, introducer, is_capture_list, loc, name,
+        swift::VarDecl(is_static, introducer, loc, name,
                        &m_source_file);
     redirected_var_decl->setInterfaceType(var_type);
     redirected_var_decl->setTopLevelGlobal(true);
@@ -1115,7 +1113,6 @@ bool SwiftASTManipulator::AddExternalVariables(
       swift::FuncDecl *containing_function = m_function_decl;
       swift::Identifier name = variable.m_name;
       auto introducer = variable.GetVarIntroducer();
-      bool is_capture_list = variable.GetIsCaptureList();
 
       bool is_self = !variable.m_name.str().compare("$__lldb_injected_self");
 
@@ -1169,7 +1166,7 @@ bool SwiftASTManipulator::AddExternalVariables(
       }
 
       swift::VarDecl *redirected_var_decl = new (ast_context) swift::VarDecl(
-          is_static, introducer, is_capture_list, loc, name,
+          is_static, introducer, loc, name,
           containing_function);
       auto interface_type = var_type;
       if (interface_type->hasArchetype())
@@ -1207,11 +1204,12 @@ bool SwiftASTManipulator::AddExternalVariables(
         wrapper_element_iterator = wrapper_elements_copy.insert(
             wrapper_element_iterator, swift::ASTNode(redirected_var_decl));
 
-        m_wrapper_decl->setBody(swift::BraceStmt::create(
+        auto *new_wrapper_body = swift::BraceStmt::create(
             ast_context, wrapper_body->getLBraceLoc(),
             ast_context.AllocateCopy(wrapper_elements_copy),
-            wrapper_body->getRBraceLoc()),
-           swift::AbstractFunctionDecl::BodyKind::TypeChecked);
+            wrapper_body->getRBraceLoc());
+        m_wrapper_decl->setBody(new_wrapper_body,
+                                m_wrapper_decl->getBodyKind());
       } else {
         element_iterator =
             elements.insert(element_iterator, swift::ASTNode(pattern_binding));
@@ -1235,10 +1233,10 @@ bool SwiftASTManipulator::AddExternalVariables(
       m_variables.push_back(variable);
     }
 
-    m_function_decl->setBody(swift::BraceStmt::create(
+    auto *new_function_body = swift::BraceStmt::create(
         ast_context, body->getLBraceLoc(), ast_context.AllocateCopy(elements),
-        body->getRBraceLoc()),
-        swift::AbstractFunctionDecl::BodyKind::TypeChecked);
+        body->getRBraceLoc());
+    m_function_decl->setBody(new_function_body, m_function_decl->getBodyKind());
   }
 
   return true;
