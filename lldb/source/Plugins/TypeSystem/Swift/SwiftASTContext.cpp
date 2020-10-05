@@ -6069,6 +6069,8 @@ SwiftASTContext::GetTypeBitAlign(opaque_compiler_type_t type,
     exe_scope->CalculateExecutionContext(exe_ctx);
     auto swift_scratch_ctx_lock = SwiftASTContextLock(&exe_ctx);
     CompilerType bound_type = BindGenericTypeParameters({this, type}, exe_scope);
+    if (bound_type.GetOpaqueQualType() == type)
+      return {};
     // Note thay the bound type may be in a different AST context.
     return bound_type.GetTypeBitAlign(exe_scope);
   }
@@ -6076,13 +6078,13 @@ SwiftASTContext::GetTypeBitAlign(opaque_compiler_type_t type,
   const swift::irgen::FixedTypeInfo *fixed_type_info =
       GetSwiftFixedTypeInfo(type);
   if (fixed_type_info)
-    return fixed_type_info->getFixedAlignment().getValue();
+    return fixed_type_info->getFixedAlignment().getValue() * 8;
 
   // Ask the dynamic type system.
   if (!exe_scope)
     return {};
   if (auto *runtime = SwiftLanguageRuntime::Get(exe_scope->CalculateProcess()))
-    return runtime->GetBitAlignment({this, type});
+    return runtime->GetBitAlignment({this, type}, exe_scope);
   return {};
 }
 
@@ -7930,8 +7932,7 @@ void SwiftASTContext::DumpTypeDescription(opaque_compiler_type_t type,
                                           bool print_help_if_available,
                                           bool print_extensions_if_available,
                                           lldb::DescriptionLevel level) {
-  llvm::SmallVector<char, 1024> buf;
-  llvm::raw_svector_ostream llvm_ostrm(buf);
+  const auto initial_written_bytes = s->GetWrittenBytes();
 
   if (type) {
     swift::CanType swift_can_type(GetCanonicalSwiftType(type));
@@ -8095,12 +8096,10 @@ void SwiftASTContext::DumpTypeDescription(opaque_compiler_type_t type,
       }
     } break;
     }
-
-    if (buf.size() > 0) {
-      s->Write(buf.data(), buf.size());
-    }
   }
-  s->Printf("<could not resolve type>");
+
+  if (s->GetWrittenBytes() == initial_written_bytes)
+    s->Printf("<could not resolve type>");
 }
 
 TypeSP SwiftASTContext::GetCachedType(ConstString mangled) {
