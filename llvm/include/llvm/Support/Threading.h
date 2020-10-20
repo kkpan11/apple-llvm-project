@@ -19,7 +19,11 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Config/llvm-config.h" // for LLVM_ON_UNIX
 #include "llvm/Support/Compiler.h"
+// SWIFT_ENABLE_TENSORFLOW
+#if 0
 #include <ciso646> // So we can check the C++ standard lib macros.
+#endif
+// SWIFT_ENABLE_TENSORFLOW END
 #include <functional>
 
 #if defined(_MSC_VER)
