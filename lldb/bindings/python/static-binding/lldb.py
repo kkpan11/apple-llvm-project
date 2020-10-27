@@ -180,6 +180,9 @@ LLDB_INVALID_FRAME_ID = _lldb.LLDB_INVALID_FRAME_ID
 LLDB_INVALID_SIGNAL_NUMBER = _lldb.LLDB_INVALID_SIGNAL_NUMBER
 LLDB_INVALID_OFFSET = _lldb.LLDB_INVALID_OFFSET
 LLDB_INVALID_LINE_NUMBER = _lldb.LLDB_INVALID_LINE_NUMBER
+LLDB_INVALID_COLUMN_NUMBER = _lldb.LLDB_INVALID_COLUMN_NUMBER
+
+
 LLDB_INVALID_QUEUE_ID = _lldb.LLDB_INVALID_QUEUE_ID
 LLDB_ARCH_DEFAULT = _lldb.LLDB_ARCH_DEFAULT
 LLDB_ARCH_DEFAULT_32BIT = _lldb.LLDB_ARCH_DEFAULT_32BIT
@@ -198,6 +201,9 @@ LLDB_OPT_SET_8 = _lldb.LLDB_OPT_SET_8
 LLDB_OPT_SET_9 = _lldb.LLDB_OPT_SET_9
 LLDB_OPT_SET_10 = _lldb.LLDB_OPT_SET_10
 LLDB_OPT_SET_11 = _lldb.LLDB_OPT_SET_11
+LLDB_OPT_SET_12 = _lldb.LLDB_OPT_SET_12
+
+
 eStateInvalid = _lldb.eStateInvalid
 eStateUnloaded = _lldb.eStateUnloaded
 eStateConnected = _lldb.eStateConnected
@@ -480,6 +486,9 @@ eArgTypeEndAddress = _lldb.eArgTypeEndAddress
 eArgTypeExpression = _lldb.eArgTypeExpression
 eArgTypeExpressionPath = _lldb.eArgTypeExpressionPath
 eArgTypeExprFormat = _lldb.eArgTypeExprFormat
+
+eArgTypeFileLineColumn = _lldb.eArgTypeFileLineColumn
+
 eArgTypeFilename = _lldb.eArgTypeFilename
 eArgTypeFormat = _lldb.eArgTypeFormat
 eArgTypeFrameIndex = _lldb.eArgTypeFrameIndex
@@ -1586,6 +1595,9 @@ class SBBreakpoint(_object):
         """ClearAllBreakpointSites(SBBreakpoint self)"""
         return _lldb.SBBreakpoint_ClearAllBreakpointSites(self)
 
+    def GetTarget(self):
+        r"""GetTarget(SBBreakpoint self) -> SBTarget"""
+        return _lldb.SBBreakpoint_GetTarget(self)
 
     def FindLocationByAddress(self, vm_addr):
         """FindLocationByAddress(SBBreakpoint self, lldb::addr_t vm_addr) -> SBBreakpointLocation"""
@@ -8026,6 +8038,22 @@ class SBModule(_object):
 
     GetNumberAllocatedModules = staticmethod(GetNumberAllocatedModules)
 
+    @staticmethod
+    def GarbageCollectAllocatedModules():
+        r"""
+        GarbageCollectAllocatedModules()
+
+            Removes all modules which are no longer needed by any part of LLDB from
+            the module cache.
+
+            This is an implementation detail exposed for testing and should not be
+            relied upon. Use SBDebugger::MemoryPressureDetected instead to reduce
+            LLDB's memory consumption during execution.
+
+        """
+        return _lldb.SBModule_GarbageCollectAllocatedModules()
+
+
     def __str__(self):
         """__str__(SBModule self) -> std::string"""
         return _lldb.SBModule___str__(self)
@@ -8258,6 +8286,20 @@ def SBModule_GetNumberAllocatedModules():
         The number of modules in the module cache.
     """
     return _lldb.SBModule_GetNumberAllocatedModules()
+
+def SBModule_GarbageCollectAllocatedModules():
+    r"""
+    SBModule_GarbageCollectAllocatedModules()
+
+        Removes all modules which are no longer needed by any part of LLDB from
+        the module cache.
+
+        This is an implementation detail exposed for testing and should not be
+        relied upon. Use SBDebugger::MemoryPressureDetected instead to reduce
+        LLDB's memory consumption during execution.
+
+    """
+    return _lldb.SBModule_GarbageCollectAllocatedModules()
 
 class SBModuleSpec(_object):
     """Proxy of C++ lldb::SBModuleSpec class."""
@@ -12860,6 +12902,16 @@ class SBThreadPlan(_object):
         """IsPlanStale(SBThreadPlan self) -> bool"""
         return _lldb.SBThreadPlan_IsPlanStale(self)
 
+    def GetStopOthers(self):
+        r"""
+        GetStopOthers(SBThreadPlan self) -> bool
+        Return whether this plan will ask to stop other threads when it runs.
+        """
+        return _lldb.SBThreadPlan_GetStopOthers(self)
+
+    def SetStopOthers(self, stop_others):
+        r"""SetStopOthers(SBThreadPlan self, bool stop_others)"""
+        return _lldb.SBThreadPlan_SetStopOthers(self, stop_others)
 
     def QueueThreadPlanForStepOverRange(self, start_address, range_size):
         """QueueThreadPlanForStepOverRange(SBThreadPlan self, SBAddress start_address, lldb::addr_t range_size) -> SBThreadPlan"""
@@ -14055,7 +14107,19 @@ SBTypeEnumMember_swigregister = _lldb.SBTypeEnumMember_swigregister
 SBTypeEnumMember_swigregister(SBTypeEnumMember)
 
 class SBTypeEnumMemberList(_object):
-    """Represents a list of SBTypeEnumMembers."""
+    r"""
+    Represents a list of SBTypeEnumMembers.
+    SBTypeEnumMemberList supports SBTypeEnumMember iteration.
+    It also supports [] access either by index, or by enum
+    element name by doing:
+
+      myType = target.FindFirstType('MyEnumWithElementA')
+      members = myType.GetEnumMembers()
+      first_elem = members[0]
+      elem_A = members['A']
+
+
+    """
 
     __swig_setmethods__ = {}
     __setattr__ = lambda self, name, value: _swig_setattr(self, SBTypeEnumMemberList, name, value)
@@ -14100,6 +14164,26 @@ class SBTypeEnumMemberList(_object):
     def GetSize(self):
         """GetSize(SBTypeEnumMemberList self) -> uint32_t"""
         return _lldb.SBTypeEnumMemberList_GetSize(self)
+
+    def __iter__(self):
+        '''Iterate over all members in a lldb.SBTypeEnumMemberList object.'''
+        return lldb_iter(self, 'GetSize', 'GetTypeEnumMemberAtIndex')
+
+    def __len__(self):
+        '''Return the number of members in a lldb.SBTypeEnumMemberList object.'''
+        return self.GetSize()
+
+    def __getitem__(self, key):
+      num_elements = self.GetSize()
+      if type(key) is int:
+          if key < num_elements:
+              return self.GetTypeEnumMemberAtIndex(key)
+      elif type(key) is str:
+          for idx in range(num_elements):
+              item = self.GetTypeEnumMemberAtIndex(idx)
+              if item.name == key:
+                  return item
+      return None
 
 SBTypeEnumMemberList_swigregister = _lldb.SBTypeEnumMemberList_swigregister
 SBTypeEnumMemberList_swigregister(SBTypeEnumMemberList)

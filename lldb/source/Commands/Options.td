@@ -214,8 +214,8 @@ let Command = "breakpoint set" in {
     Desc<"Move breakpoints to nearest code. If not set the "
     "target.move-to-nearest-codesetting is used.">;
   def breakpoint_set_file_colon_line : Option<"joint-specifier", "y">, Group<12>, Arg<"FileLineColumn">,
-    Required, Completion<"SourceFile">, 
-    Desc<"A specifier in the form filename:line[:column] for setting file & line breakpoints.">;  
+    Required, Completion<"SourceFile">,
+    Desc<"A specifier in the form filename:line[:column] for setting file & line breakpoints.">;
   /* Don't add this option till it actually does something useful...
   def breakpoint_set_exception_typename : Option<"exception-typename", "O">,
     Arg<"TypeName">, Desc<"The breakpoint will only stop if an "
@@ -339,7 +339,7 @@ let Command = "disassemble" in {
   def disassemble_options_pc : Option<"pc", "p">, Group<5>,
     Desc<"Disassemble around the current pc.">;
   def disassemble_options_line : Option<"line", "l">, Group<6>,
-    Desc<"Disassemble the current frame's current source line instructions if"
+    Desc<"Disassemble the current frame's current source line instructions if "
     "there is debug line table information, else disassemble around the pc.">;
   def disassemble_options_address : Option<"address", "a">, Group<7>,
     Arg<"AddressOrExpression">,
@@ -774,7 +774,7 @@ let Command = "source list" in {
   def source_list_reverse : Option<"reverse", "r">, Group<4>, Desc<"Reverse the"
     " listing to look backwards from the last displayed block of source.">;
   def source_list_file_colon_line : Option<"joint-specifier", "y">, Group<5>,
-    Arg<"FileLineColumn">, Completion<"SourceFile">, 
+    Arg<"FileLineColumn">, Completion<"SourceFile">,
     Desc<"A specifier in the form filename:line[:column] from which to display"
          " source.">;
 }
@@ -885,7 +885,7 @@ let Command = "target modules lookup" in {
 }
 
 let Command = "target stop hook add" in {
-  def target_stop_hook_add_one_liner : Option<"one-liner", "o">,
+  def target_stop_hook_add_one_liner : Option<"one-liner", "o">, GroupRange<1,3>,
     Arg<"OneLiner">, Desc<"Add a command for the stop hook.  Can be specified "
     "more than once, and commands will be run in the order they appear.">;
   def target_stop_hook_add_shlib : Option<"shlib", "s">, Arg<"ShlibName">,
@@ -903,19 +903,19 @@ let Command = "target stop hook add" in {
   def target_stop_hook_add_queue_name : Option<"queue-name", "q">,
     Arg<"QueueName">, Desc<"The stop hook is run only for threads in the queue "
     "whose name is given by this argument.">;
-  def target_stop_hook_add_file : Option<"file", "f">, Group<1>,
+  def target_stop_hook_add_file : Option<"file", "f">, Groups<[1,4]>,
     Arg<"Filename">, Desc<"Specify the source file within which the stop-hook "
     "is to be run.">, Completion<"SourceFile">;
-  def target_stop_hook_add_start_line : Option<"start-line", "l">, Group<1>,
+  def target_stop_hook_add_start_line : Option<"start-line", "l">, Groups<[1,4]>,
     Arg<"LineNum">, Desc<"Set the start of the line range for which the "
     "stop-hook is to be run.">;
-  def target_stop_hook_add_end_line : Option<"end-line", "e">, Group<1>,
+  def target_stop_hook_add_end_line : Option<"end-line", "e">, Groups<[1,4]>,
     Arg<"LineNum">, Desc<"Set the end of the line range for which the stop-hook"
     " is to be run.">;
-  def target_stop_hook_add_classname : Option<"classname", "c">, Group<2>,
+  def target_stop_hook_add_classname : Option<"classname", "c">, Groups<[2,5]>,
     Arg<"ClassName">,
     Desc<"Specify the class within which the stop-hook is to be run.">;
-  def target_stop_hook_add_name : Option<"name", "n">, Group<3>,
+  def target_stop_hook_add_name : Option<"name", "n">, Groups<[3,6]>,
     Arg<"FunctionName">, Desc<"Set the function name within which the stop hook"
     " will be run.">, Completion<"Symbol">;
   def target_stop_hook_add_auto_continue : Option<"auto-continue", "G">,

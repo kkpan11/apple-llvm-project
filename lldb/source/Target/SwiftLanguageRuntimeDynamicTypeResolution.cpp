@@ -965,7 +965,7 @@ llvm::Optional<uint64_t> SwiftLanguageRuntimeImpl::GetMemberVariableOffset(
   }
   if (offset) {
     LLDB_LOGF(GetLogIfAllCategoriesSet(LIBLLDB_LOG_TYPES),
-              "[GetMemberVariableOffset] offset of %s is %d",
+              "[GetMemberVariableOffset] offset of %s is %lld",
               member_name.str().c_str(), *offset);
   } else {
     LLDB_LOGF(GetLogIfAllCategoriesSet(LIBLLDB_LOG_TYPES),
@@ -1325,9 +1325,20 @@ SwiftLanguageRuntimeImpl::BindGenericTypeParameters(StackFrame &stack_frame,
   }
 
   swift::Demangle::Demangler dem;
-  swift::Demangle::NodePointer canonical =
-      TypeSystemSwiftTypeRef::GetCanonicalDemangleTree(
-          ts.GetModule(), dem, mangled_name.GetStringRef());
+  swift::Demangle::NodePointer canonical = TypeSystemSwiftTypeRef::Transform(
+      dem, dem.demangleSymbol(mangled_name.GetStringRef()),
+      [](swift::Demangle::NodePointer node) {
+        if (node->getKind() != Node::Kind::DynamicSelf)
+          return node;
+        // Substitute the static type for dynamic self.
+        assert(node->getNumChildren() == 1);
+        if (node->getNumChildren() != 1)
+          return node;
+        NodePointer type = node->getChild(0);
+        if (type->getKind() != Node::Kind::Type || type->getNumChildren() != 1)
+          return node;
+        return type->getChild(0);
+      });
 
   // Build the list of type substitutions.
   swift::reflection::GenericArgumentMap substitutions;
@@ -2022,7 +2033,7 @@ bool SwiftLanguageRuntime::IsTaggedPointer(lldb::addr_t addr,
       // Check whether this is a reference to an Objective-C object.
       if ((addr & 1) == 1)
         return true;
-  }
+  } break;
   default:
     break;
   }
@@ -2087,7 +2098,7 @@ lldb::addr_t SwiftLanguageRuntime::FixupAddress(lldb::addr_t addr,
       if (extra_deref)
         return refd_addr;
     }
-  }
+  } break;
   default:
     break;
   }
@@ -2095,7 +2106,8 @@ lldb::addr_t SwiftLanguageRuntime::FixupAddress(lldb::addr_t addr,
 }
 
 const swift::reflection::TypeRef *
-SwiftLanguageRuntimeImpl::GetTypeRef(CompilerType type, Module *module) {
+SwiftLanguageRuntimeImpl::GetTypeRef(CompilerType type,
+                                     SwiftASTContext *module_holder) {
   // Demangle the mangled name.
   swift::Demangle::Demangler dem;
   ConstString mangled_name = type.GetMangledTypeName();
@@ -2104,7 +2116,8 @@ SwiftLanguageRuntimeImpl::GetTypeRef(CompilerType type, Module *module) {
     return nullptr;
   swift::Demangle::NodePointer node =
       TypeSystemSwiftTypeRef::GetCanonicalDemangleTree(
-          module ? module : ts->GetModule(), dem, mangled_name.GetStringRef());
+          module_holder ? module_holder : ts->GetSwiftASTContext(), dem,
+          mangled_name.GetStringRef());
   if (!node)
     return nullptr;
 
@@ -2128,6 +2141,9 @@ SwiftLanguageRuntimeImpl::GetTypeInfo(CompilerType type,
   if (!ts)
     return nullptr;
 
+  // Resolve all type aliases.
+  type = type.GetCanonicalType();
+  
   // Resolve all generic type parameters in the type for the current
   // frame.  Archetype binding has to happen in the scratch context,
   // so we lock it while we are in this function.
@@ -2147,7 +2163,7 @@ SwiftLanguageRuntimeImpl::GetTypeInfo(CompilerType type,
   // context, but we need to resolve (any DWARF links in) the typeref
   // in the original module.
   const swift::reflection::TypeRef *type_ref =
-      GetTypeRef(type, ts->GetModule());
+      GetTypeRef(type, ts->GetSwiftASTContext());
   if (!type_ref)
     return nullptr;
 

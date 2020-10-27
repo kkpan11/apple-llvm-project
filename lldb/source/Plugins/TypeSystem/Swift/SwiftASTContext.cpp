@@ -1266,6 +1266,7 @@ static const char *getImportFailureString(swift::serialization::Status status) {
     return "The module file was built for a target newer than the current "
            "target.";
   }
+  llvm_unreachable("covered switch");
 }
 
 /// Initialize the compiler invocation with it the search paths from a
@@ -2998,6 +2999,7 @@ class SwiftDWARFImporterDelegate : public swift::DWARFImporterDelegate {
       // described in DWARF.
       return true;
     }
+    llvm_unreachable("covered switch");
   }
 
   clang::Decl *GetDeclForTypeAndKind(clang::QualType qual_type,
@@ -4432,6 +4434,9 @@ static SwiftASTContext::TypeOrDecl DeclToTypeOrDecl(swift::ASTContext *ast,
     case swift::DeclKind::Accessor:
     case swift::DeclKind::PoundDiagnostic:
       break;
+
+    default:
+      break;
     }
   }
   return CompilerType();
@@ -5568,6 +5573,9 @@ SwiftASTContext::GetTypeInfo(opaque_compiler_type_t type,
 
   case swift::TypeKind::SILToken:
     break;
+
+  default:
+    break;
   }
   return swift_flags;
 }
@@ -5581,18 +5589,11 @@ lldb::TypeClass SwiftASTContext::GetTypeClass(opaque_compiler_type_t type) {
   swift::CanType swift_can_type(GetCanonicalSwiftType(type));
   const swift::TypeKind type_kind = swift_can_type->getKind();
   switch (type_kind) {
-  case swift::TypeKind::Error:
-    return lldb::eTypeClassOther;
   case swift::TypeKind::BuiltinInteger:
-    return lldb::eTypeClassBuiltin;
   case swift::TypeKind::BuiltinFloat:
-    return lldb::eTypeClassBuiltin;
   case swift::TypeKind::BuiltinRawPointer:
-    return lldb::eTypeClassBuiltin;
   case swift::TypeKind::BuiltinNativeObject:
-    return lldb::eTypeClassBuiltin;
   case swift::TypeKind::BuiltinUnsafeValueBuffer:
-    return lldb::eTypeClassBuiltin;
   case swift::TypeKind::BuiltinBridgeObject:
     return lldb::eTypeClassBuiltin;
   case swift::TypeKind::BuiltinVector:
@@ -5604,56 +5605,39 @@ lldb::TypeClass SwiftASTContext::GetTypeClass(opaque_compiler_type_t type) {
   case swift::TypeKind::WeakStorage:
     return ToCompilerType(swift_can_type->getReferenceStorageReferent())
         .GetTypeClass();
-  case swift::TypeKind::GenericTypeParam:
-    return lldb::eTypeClassOther;
-  case swift::TypeKind::DependentMember:
-    return lldb::eTypeClassOther;
   case swift::TypeKind::Enum:
+  case swift::TypeKind::BoundGenericEnum:
     return lldb::eTypeClassUnion;
   case swift::TypeKind::Struct:
+  case swift::TypeKind::BoundGenericStruct:
     return lldb::eTypeClassStruct;
   case swift::TypeKind::Class:
+  case swift::TypeKind::BoundGenericClass:
     return lldb::eTypeClassClass;
+  case swift::TypeKind::GenericTypeParam:
+  case swift::TypeKind::DependentMember:
   case swift::TypeKind::Protocol:
-    return lldb::eTypeClassOther;
+  case swift::TypeKind::ProtocolComposition:
   case swift::TypeKind::Metatype:
-    return lldb::eTypeClassOther;
   case swift::TypeKind::Module:
-    return lldb::eTypeClassOther;
   case swift::TypeKind::PrimaryArchetype:
   case swift::TypeKind::OpenedArchetype:
   case swift::TypeKind::NestedArchetype:
+  case swift::TypeKind::UnboundGeneric:
+  case swift::TypeKind::TypeVariable:
+  case swift::TypeKind::ExistentialMetatype:
+  case swift::TypeKind::SILBox:
+  case swift::TypeKind::DynamicSelf:
+  case swift::TypeKind::SILBlockStorage:
+  case swift::TypeKind::Unresolved:
+  case swift::TypeKind::Error:
     return lldb::eTypeClassOther;
   case swift::TypeKind::Function:
-    return lldb::eTypeClassFunction;
   case swift::TypeKind::GenericFunction:
-    return lldb::eTypeClassFunction;
-  case swift::TypeKind::ProtocolComposition:
-    return lldb::eTypeClassOther;
-  case swift::TypeKind::LValue:
-    return lldb::eTypeClassReference;
-  case swift::TypeKind::UnboundGeneric:
-    return lldb::eTypeClassOther;
-  case swift::TypeKind::BoundGenericClass:
-    return lldb::eTypeClassClass;
-  case swift::TypeKind::BoundGenericEnum:
-    return lldb::eTypeClassUnion;
-  case swift::TypeKind::BoundGenericStruct:
-    return lldb::eTypeClassStruct;
-  case swift::TypeKind::TypeVariable:
-    return lldb::eTypeClassOther;
-  case swift::TypeKind::ExistentialMetatype:
-    return lldb::eTypeClassOther;
-  case swift::TypeKind::DynamicSelf:
-    return lldb::eTypeClassOther;
-  case swift::TypeKind::SILBox:
-    return lldb::eTypeClassOther;
   case swift::TypeKind::SILFunction:
     return lldb::eTypeClassFunction;
-  case swift::TypeKind::SILBlockStorage:
-    return lldb::eTypeClassOther;
-  case swift::TypeKind::Unresolved:
-    return lldb::eTypeClassOther;
+  case swift::TypeKind::LValue:
+    return lldb::eTypeClassReference;
 
   case swift::TypeKind::Optional:
   case swift::TypeKind::TypeAlias:
@@ -5664,6 +5648,9 @@ lldb::TypeClass SwiftASTContext::GetTypeClass(opaque_compiler_type_t type) {
     break;
 
   case swift::TypeKind::SILToken:
+    break;
+
+  default:
     break;
   }
 
@@ -6171,6 +6158,9 @@ lldb::Encoding SwiftASTContext::GetEncoding(opaque_compiler_type_t type,
 
   case swift::TypeKind::SILToken:
     break;
+
+  default:
+    break;
   }
   count = 0;
   return lldb::eEncodingInvalid;
@@ -6256,6 +6246,9 @@ lldb::Format SwiftASTContext::GetFormat(opaque_compiler_type_t type) {
     break;
 
   case swift::TypeKind::SILToken:
+    break;
+
+  default:
     break;
   }
   // We don't know hot to display this type.
@@ -6368,6 +6361,9 @@ uint32_t SwiftASTContext::GetNumChildren(opaque_compiler_type_t type,
     break;
 
   case swift::TypeKind::SILToken:
+    break;
+
+  default:
     break;
   }
 
@@ -6483,6 +6479,9 @@ uint32_t SwiftASTContext::GetNumFields(opaque_compiler_type_t type) {
     break;
 
   case swift::TypeKind::SILToken:
+    break;
+
+  default:
     break;
   }
 
@@ -6769,6 +6768,9 @@ CompilerType SwiftASTContext::GetFieldAtIndex(opaque_compiler_type_t type,
 
   case swift::TypeKind::SILToken:
     break;
+
+  default:
+    break;
   }
 
   return CompilerType();
@@ -6844,6 +6846,9 @@ uint32_t SwiftASTContext::GetNumPointeeChildren(opaque_compiler_type_t type) {
     break;
 
   case swift::TypeKind::SILToken:
+    break;
+
+  default:
     break;
   }
 
@@ -7208,6 +7213,9 @@ CompilerType SwiftASTContext::GetChildCompilerTypeAtIndex(
 
   case swift::TypeKind::SILToken:
     break;
+
+  default:
+    break;
   }
   return CompilerType();
 }
@@ -7423,6 +7431,9 @@ size_t SwiftASTContext::GetIndexOfChildMemberWithName(
       break;
 
     case swift::TypeKind::SILToken:
+      break;
+
+    default:
       break;
     }
   }
@@ -7807,6 +7818,9 @@ bool SwiftASTContext::DumpTypeValue(
     break;
 
   case swift::TypeKind::SILToken:
+    break;
+
+  default:
     break;
   }
 
@@ -8291,7 +8305,9 @@ static swift::ModuleDecl *LoadOneModule(const SourceModule &module,
 bool SwiftASTContext::GetImplicitImports(
     SwiftASTContext &swift_ast_context, SymbolContext &sc,
     ExecutionContextScope &exe_scope, lldb::StackFrameWP &stack_frame_wp,
-    llvm::SmallVectorImpl<swift::ModuleDecl *> &modules, Status &error) {
+    llvm::SmallVectorImpl<swift::AttributedImport<swift::ImportedModule>>
+        &modules,
+    Status &error) {
   if (!GetCompileUnitImports(swift_ast_context, sc, stack_frame_wp, modules,
                              error)) {
     return false;
@@ -8301,15 +8317,28 @@ bool SwiftASTContext::GetImplicitImports(
       sc.target_sp->GetSwiftPersistentExpressionState(exe_scope);
 
   // Get the hand-loaded modules from the SwiftPersistentExpressionState.
-  for (ConstString name : persistent_expression_state->GetHandLoadedModules()) {
+  for (auto &module_pair :
+       persistent_expression_state->GetHandLoadedModules()) {
+
+    auto &attributed_import = module_pair.second;
+
+    // If the ImportedModule in the SwiftPersistentExpressionState has a
+    // non-null ModuleDecl, add it to the ImplicitImports list.
+    if (attributed_import.module.importedModule) {
+      modules.emplace_back(attributed_import);
+      continue;
+    }
+
+    // Otherwise, try reloading the ModuleDecl using the module name.
     SourceModule module_info;
-    module_info.path.push_back(name);
-    auto *module = LoadOneModule(module_info, swift_ast_context, stack_frame_wp,
-                                 error);
+    module_info.path.emplace_back(module_pair.first());
+    auto *module =
+        LoadOneModule(module_info, swift_ast_context, stack_frame_wp, error);
     if (!module)
       return false;
 
-    modules.push_back(module);
+    attributed_import.module = swift::ImportedModule(module);
+    modules.emplace_back(attributed_import);
   }
   return true;
 }
@@ -8321,23 +8350,13 @@ bool SwiftASTContext::CacheUserImports(SwiftASTContext &swift_ast_context,
                                        swift::SourceFile &source_file,
                                        Status &error) {
   llvm::SmallString<1> m_description;
-  llvm::SmallVector<swift::ModuleDecl::ImportedModule, 2> parsed_imports;
-
-  swift::ModuleDecl::ImportFilter import_filter {
-      swift::ModuleDecl::ImportFilterKind::Exported,
-      swift::ModuleDecl::ImportFilterKind::Default,
-      swift::ModuleDecl::ImportFilterKind::ImplementationOnly,
-      swift::ModuleDecl::ImportFilterKind::SPIAccessControl,
-      swift::ModuleDecl::ImportFilterKind::ShadowedByCrossImportOverlay
-  };
-
-  source_file.getImportedModules(parsed_imports, import_filter);
 
   auto *persistent_expression_state =
       sc.target_sp->GetSwiftPersistentExpressionState(exe_scope);
 
-  for (auto module_pair : parsed_imports) {
-    swift::ModuleDecl *module = module_pair.importedModule;
+  for (const auto &attributed_import : source_file.getImports()) {
+    swift::ModuleDecl *module = attributed_import.module.importedModule;
+
     if (module) {
       std::string module_name;
       GetNameFromModule(module, module_name);
@@ -8353,7 +8372,8 @@ bool SwiftASTContext::CacheUserImports(SwiftASTContext &swift_ast_context,
           return false;
 
         // How do we tell we are in REPL or playground mode?
-        persistent_expression_state->AddHandLoadedModule(module_const_str);
+        persistent_expression_state->AddHandLoadedModule(module_const_str,
+                                                         attributed_import);
       }
     }
   }
@@ -8363,16 +8383,18 @@ bool SwiftASTContext::CacheUserImports(SwiftASTContext &swift_ast_context,
 bool SwiftASTContext::GetCompileUnitImports(
     SwiftASTContext &swift_ast_context, SymbolContext &sc,
     lldb::StackFrameWP &stack_frame_wp,
-    llvm::SmallVectorImpl<swift::ModuleDecl *> &modules, Status &error) {
+    llvm::SmallVectorImpl<swift::AttributedImport<swift::ImportedModule>>
+        &modules,
+    Status &error) {
   // Import the Swift standard library and its dependencies.
   SourceModule swift_module;
-  swift_module.path.push_back(ConstString("Swift"));
+  swift_module.path.emplace_back("Swift");
   auto *stdlib =
       LoadOneModule(swift_module, swift_ast_context, stack_frame_wp, error);
   if (!stdlib)
     return false;
 
-  modules.push_back(stdlib);
+  modules.emplace_back(swift::ImportedModule(stdlib));
 
   CompileUnit *compile_unit = sc.comp_unit;
   if (!compile_unit || compile_unit->GetLanguage() != lldb::eLanguageTypeSwift)
@@ -8393,7 +8415,7 @@ bool SwiftASTContext::GetCompileUnitImports(
     if (!loaded_module)
       return false;
 
-    modules.push_back(loaded_module);
+    modules.emplace_back(swift::ImportedModule(loaded_module));
   }
   return true;
 }
