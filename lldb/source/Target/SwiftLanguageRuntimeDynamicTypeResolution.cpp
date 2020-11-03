@@ -280,6 +280,20 @@ public:
   bool queryDataLayout(DataLayoutQueryType type, void *inBuffer,
                        void *outBuffer) override {
     switch (type) {
+    // FIXME: add support for case DLQ_GetPtrAuthMask:
+    case DLQ_GetObjCReservedLowBits: {
+      auto *result = static_cast<uint8_t *>(outBuffer);
+      auto &triple = m_process.GetTarget().GetArchitecture().GetTriple();
+      if (triple.isMacOSX() && triple.getArch() == llvm::Triple::x86_64) {
+        // Obj-C reserves low bit on 64-bit Intel macOS only.
+        // Other Apple platforms don't reserve this bit (even when
+        // running on x86_64-based simulators).
+        *result = 1;
+      } else {
+        *result = 0;
+      }
+      break;
+    }
     case DLQ_GetPointerSize: {
       auto result = static_cast<uint8_t *>(outBuffer);
       *result = m_process.GetAddressByteSize();
@@ -965,7 +979,7 @@ llvm::Optional<uint64_t> SwiftLanguageRuntimeImpl::GetMemberVariableOffset(
   }
   if (offset) {
     LLDB_LOGF(GetLogIfAllCategoriesSet(LIBLLDB_LOG_TYPES),
-              "[GetMemberVariableOffset] offset of %s is %d",
+              "[GetMemberVariableOffset] offset of %s is %lld",
               member_name.str().c_str(), *offset);
   } else {
     LLDB_LOGF(GetLogIfAllCategoriesSet(LIBLLDB_LOG_TYPES),
@@ -1325,9 +1339,20 @@ SwiftLanguageRuntimeImpl::BindGenericTypeParameters(StackFrame &stack_frame,
   }
 
   swift::Demangle::Demangler dem;
-  swift::Demangle::NodePointer canonical =
-      TypeSystemSwiftTypeRef::GetCanonicalDemangleTree(
-          ts.GetModule(), dem, mangled_name.GetStringRef());
+  swift::Demangle::NodePointer canonical = TypeSystemSwiftTypeRef::Transform(
+      dem, dem.demangleSymbol(mangled_name.GetStringRef()),
+      [](swift::Demangle::NodePointer node) {
+        if (node->getKind() != Node::Kind::DynamicSelf)
+          return node;
+        // Substitute the static type for dynamic self.
+        assert(node->getNumChildren() == 1);
+        if (node->getNumChildren() != 1)
+          return node;
+        NodePointer type = node->getChild(0);
+        if (type->getKind() != Node::Kind::Type || type->getNumChildren() != 1)
+          return node;
+        return type->getChild(0);
+      });
 
   // Build the list of type substitutions.
   swift::reflection::GenericArgumentMap substitutions;
@@ -1431,6 +1456,21 @@ SwiftLanguageRuntimeImpl::BindGenericTypeParameters(StackFrame &stack_frame,
           if (auto *dynamic_self =
                   llvm::dyn_cast<swift::DynamicSelfType>(type.getPointer()))
             return dynamic_self->getSelfType();
+          return type;
+        });
+
+    // Thicken generic metatypes. Once substituted, they should always
+    // be thick. TypeRef::subst() does the same transformation.
+    target_swift_type =
+        target_swift_type.transform([](swift::Type type) -> swift::Type {
+          using namespace swift;
+          const auto thin = MetatypeRepresentation::Thin;
+          const auto thick = MetatypeRepresentation::Thick;
+          if (auto *metatype = dyn_cast<AnyMetatypeType>(type.getPointer()))
+            if (metatype->hasRepresentation() &&
+                metatype->getRepresentation() == thin &&
+                metatype->getInstanceType()->hasTypeParameter())
+              return MetatypeType::get(metatype->getInstanceType(), thick);
           return type;
         });
 
@@ -2007,7 +2047,7 @@ bool SwiftLanguageRuntime::IsTaggedPointer(lldb::addr_t addr,
       // Check whether this is a reference to an Objective-C object.
       if ((addr & 1) == 1)
         return true;
-  }
+  } break;
   default:
     break;
   }
@@ -2072,7 +2112,7 @@ lldb::addr_t SwiftLanguageRuntime::FixupAddress(lldb::addr_t addr,
       if (extra_deref)
         return refd_addr;
     }
-  }
+  } break;
   default:
     break;
   }
@@ -2080,7 +2120,8 @@ lldb::addr_t SwiftLanguageRuntime::FixupAddress(lldb::addr_t addr,
 }
 
 const swift::reflection::TypeRef *
-SwiftLanguageRuntimeImpl::GetTypeRef(CompilerType type, Module *module) {
+SwiftLanguageRuntimeImpl::GetTypeRef(CompilerType type,
+                                     SwiftASTContext *module_holder) {
   // Demangle the mangled name.
   swift::Demangle::Demangler dem;
   ConstString mangled_name = type.GetMangledTypeName();
@@ -2089,7 +2130,8 @@ SwiftLanguageRuntimeImpl::GetTypeRef(CompilerType type, Module *module) {
     return nullptr;
   swift::Demangle::NodePointer node =
       TypeSystemSwiftTypeRef::GetCanonicalDemangleTree(
-          module ? module : ts->GetModule(), dem, mangled_name.GetStringRef());
+          module_holder ? module_holder : ts->GetSwiftASTContext(), dem,
+          mangled_name.GetStringRef());
   if (!node)
     return nullptr;
 
@@ -2113,6 +2155,9 @@ SwiftLanguageRuntimeImpl::GetTypeInfo(CompilerType type,
   if (!ts)
     return nullptr;
 
+  // Resolve all type aliases.
+  type = type.GetCanonicalType();
+  
   // Resolve all generic type parameters in the type for the current
   // frame.  Archetype binding has to happen in the scratch context,
   // so we lock it while we are in this function.
@@ -2132,7 +2177,7 @@ SwiftLanguageRuntimeImpl::GetTypeInfo(CompilerType type,
   // context, but we need to resolve (any DWARF links in) the typeref
   // in the original module.
   const swift::reflection::TypeRef *type_ref =
-      GetTypeRef(type, ts->GetModule());
+      GetTypeRef(type, ts->GetSwiftASTContext());
   if (!type_ref)
     return nullptr;
 
@@ -2166,9 +2211,10 @@ SwiftLanguageRuntimeImpl::GetByteStride(CompilerType type) {
 }
 
 llvm::Optional<size_t>
-SwiftLanguageRuntimeImpl::GetBitAlignment(CompilerType type) {
-  if (auto *type_info = GetTypeInfo(type, nullptr))
-    return type_info->getAlignment();
+SwiftLanguageRuntimeImpl::GetBitAlignment(CompilerType type,
+                                          ExecutionContextScope *exe_scope) {
+  if (auto *type_info = GetTypeInfo(type, exe_scope))
+    return type_info->getAlignment() * 8;
   return {};
 }
 

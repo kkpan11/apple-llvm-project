@@ -55,17 +55,18 @@
 #include "clang/Rewrite/Core/RewriteBuffer.h"
 
 #include "swift/AST/ASTContext.h"
-#include "swift/AST/DiagnosticEngine.h"
 #include "swift/AST/DiagnosticConsumer.h"
+#include "swift/AST/DiagnosticEngine.h"
 #include "swift/AST/IRGenOptions.h"
 #include "swift/AST/IRGenRequests.h"
+#include "swift/AST/Import.h"
 #include "swift/AST/Module.h"
 #include "swift/AST/ModuleLoader.h"
-#include "swift/Demangling/Demangle.h"
+#include "swift/Basic/OptimizationMode.h"
 #include "swift/Basic/PrimarySpecificPaths.h"
 #include "swift/Basic/SourceManager.h"
-#include "swift/Basic/OptimizationMode.h"
 #include "swift/ClangImporter/ClangImporter.h"
+#include "swift/Demangling/Demangle.h"
 #include "swift/Frontend/Frontend.h"
 #include "swift/Parse/LocalContext.h"
 #include "swift/Parse/PersistentParserState.h"
@@ -447,10 +448,10 @@ public:
 };
 }; // END Anonymous namespace
 
-static void
-AddRequiredAliases(Block *block, lldb::StackFrameSP &stack_frame_sp,
-                   SwiftASTContextForExpressions &swift_ast_context,
-                   SwiftASTManipulator &manipulator) {
+static void AddRequiredAliases(Block *block, lldb::StackFrameSP &stack_frame_sp,
+                               SwiftASTContextForExpressions &swift_ast_context,
+                               SwiftASTManipulator &manipulator,
+                               lldb::DynamicValueType use_dynamic) {
   // First emit the typealias for "$__lldb_context".
   if (!block)
     return;
@@ -480,7 +481,7 @@ AddRequiredAliases(Block *block, lldb::StackFrameSP &stack_frame_sp,
   if (stack_frame_sp) {
     lldb::ValueObjectSP valobj_sp =
         stack_frame_sp->GetValueObjectForFrameVariable(self_var_sp,
-                                                       lldb::eNoDynamicValues);
+                                                       use_dynamic);
 
     if (valobj_sp)
       self_type = valobj_sp->GetCompilerType();
@@ -576,19 +577,36 @@ AddRequiredAliases(Block *block, lldb::StackFrameSP &stack_frame_sp,
   }
 }
 
+/// Returns the Swift type for a ValueObject representing a variable.
+/// An invalid CompilerType is returned on error.
+static CompilerType GetSwiftTypeForVariableValueObject(
+    lldb::ValueObjectSP valobj_sp, lldb::StackFrameSP &stack_frame_sp,
+    SwiftLanguageRuntime *runtime, bool use_dynamic_value) {
+  // Check that the passed ValueObject is valid.
+  if (!valobj_sp || valobj_sp->GetError().Fail())
+    return CompilerType();
+  CompilerType result = valobj_sp->GetCompilerType();
+  if (use_dynamic_value)
+    result = runtime->BindGenericTypeParameters(*stack_frame_sp, result);
+  if (!result.GetTypeSystem()->SupportsLanguage(lldb::eLanguageTypeSwift))
+    return CompilerType();
+  return result;
+}
+
 /// Create a \c VariableInfo record for \c variable if there isn't
 /// already shadowing inner declaration in \c processed_variables.
-static void AddVariableInfo(
+static llvm::Optional<llvm::Error> AddVariableInfo(
     lldb::VariableSP variable_sp, lldb::StackFrameSP &stack_frame_sp,
     SwiftASTContextForExpressions &ast_context,
-    SwiftLanguageRuntime *language_runtime,
+    SwiftLanguageRuntime *runtime,
     llvm::SmallDenseSet<const char *, 8> &processed_variables,
-    llvm::SmallVectorImpl<SwiftASTManipulator::VariableInfo> &local_variables) {
+    llvm::SmallVectorImpl<SwiftASTManipulator::VariableInfo> &local_variables,
+    lldb::DynamicValueType use_dynamic) {
   StringRef name = variable_sp->GetUnqualifiedName().GetStringRef();
   const char *name_cstr = name.data();
   assert(StringRef(name_cstr) == name && "missing null terminator");
   if (name.empty())
-    return;
+    return {};
 
   // To support "guard let self = self" the function argument "self"
   // is processed (as the special self argument) even if it is
@@ -599,45 +617,39 @@ static void AddVariableInfo(
     overridden_name = "$__lldb_injected_self";
 
   if (processed_variables.count(overridden_name))
-    return;
+    return {};
 
-  CompilerType var_type;
-  if (stack_frame_sp) {
-    lldb::ValueObjectSP valobj_sp =
-        stack_frame_sp->GetValueObjectForFrameVariable(variable_sp,
-                                                       lldb::eNoDynamicValues);
+  if (!stack_frame_sp)
+    return llvm::None;
 
-    if (!valobj_sp || valobj_sp->GetError().Fail()) {
-      // Ignore the variable if we couldn't find its corresponding
-      // value object.  TODO if the expression tries to use an
-      // ignored variable, produce a sensible error.
-      return;
-    }
-    var_type = valobj_sp->GetCompilerType();
+  lldb::ValueObjectSP valobj_sp =
+      stack_frame_sp->GetValueObjectForFrameVariable(variable_sp,
+                                                     lldb::eNoDynamicValues);
+
+  const bool use_dynamic_value = use_dynamic > lldb::eNoDynamicValues;
+
+  CompilerType var_type = GetSwiftTypeForVariableValueObject(
+      valobj_sp, stack_frame_sp, runtime, use_dynamic_value);
+
+  if (!var_type.IsValid())
+    return {};
+
+  // If the type can't be realized and dynamic types are allowed, fall back to
+  // the dynamic type.
+  if (!SwiftASTContext::IsFullyRealized(var_type) && use_dynamic_value) {
+    var_type = GetSwiftTypeForVariableValueObject(
+        valobj_sp->GetDynamicValue(use_dynamic), stack_frame_sp, runtime,
+        use_dynamic_value);
+    if (!var_type.IsValid())
+      return {};
   }
-
-  if (!var_type.IsValid())
-    if (Type *var_lldb_type = variable_sp->GetType())
-      var_type = var_lldb_type->GetFullCompilerType();
-
-  if (!var_type.IsValid())
-    return;
-
-  if (!var_type.GetTypeSystem()->SupportsLanguage(lldb::eLanguageTypeSwift))
-    return;
 
   Status error;
   CompilerType target_type = ast_context.ImportType(var_type, error);
 
   // If the import failed, give up.
   if (!target_type.IsValid())
-    return;
-
-  // Resolve all archetypes in the variable type.
-  if (stack_frame_sp)
-    if (language_runtime)
-      target_type = language_runtime->BindGenericTypeParameters(*stack_frame_sp,
-                                                                target_type);
+    return {};
 
   // If we couldn't fully realize the type, then we aren't going
   // to get very far making a local out of it, so discard it here.
@@ -647,8 +659,17 @@ static void AddVariableInfo(
     if (log)
       log->Printf("Discarding local %s because we couldn't fully realize it, "
                   "our best attempt was: %s.",
-                  name_cstr, target_type.GetTypeName().AsCString("<unknown>"));
-    return;
+                  name_cstr, target_type.GetDisplayTypeName().AsCString("<unknown>"));
+    // Not realizing self is a fatal error for an expression and the
+    // Swift compiler error alone is not particularly useful.
+    if (is_self)
+      return make_error<StringError>(
+          inconvertibleErrorCode(),
+          llvm::Twine("Couldn't realize type of self.") +
+              (use_dynamic
+                   ? ""
+                   : " Try evaluating the expression with -d run-target"));
+    return {};
   }
 
   if (log && is_self)
@@ -661,8 +682,27 @@ static void AddVariableInfo(
                   static_cast<void *>(swift_type.getPointer()),
                   static_cast<void *>(ast_context.GetASTContext()), s.c_str());
     }
+  // A one-off clone of variable_sp with the type replaced by target_type.
+  auto patched_variable_sp = std::make_shared<lldb_private::Variable>(
+      0, variable_sp->GetName().GetCString(), "",
+      std::make_shared<lldb_private::SymbolFileType>(
+          *variable_sp->GetType()->GetSymbolFile(),
+          std::make_shared<lldb_private::Type>(
+              0, variable_sp->GetType()->GetSymbolFile(),
+              variable_sp->GetType()->GetName(), llvm::None,
+              variable_sp->GetType()->GetSymbolContextScope(), LLDB_INVALID_UID,
+              Type::eEncodingIsUID, variable_sp->GetType()->GetDeclaration(),
+              target_type, lldb_private::Type::ResolveState::Full,
+              variable_sp->GetType()->GetPayload())),
+      variable_sp->GetScope(), variable_sp->GetSymbolContextScope(),
+      variable_sp->GetScopeRange(),
+      const_cast<lldb_private::Declaration *>(&variable_sp->GetDeclaration()),
+      variable_sp->LocationExpression(), variable_sp->IsExternal(),
+      variable_sp->IsArtificial(),
+      variable_sp->GetLocationIsConstantValueData(),
+      variable_sp->IsStaticMember(), variable_sp->IsConstant());
   SwiftASTManipulatorBase::VariableMetadataSP metadata_sp(
-      new VariableMetadataVariable(variable_sp));
+      new VariableMetadataVariable(patched_variable_sp));
   SwiftASTManipulator::VariableInfo variable_info(
       target_type, ast_context.GetASTContext()->getIdentifier(overridden_name),
       metadata_sp,
@@ -671,15 +711,17 @@ static void AddVariableInfo(
 
   local_variables.push_back(variable_info);
   processed_variables.insert(overridden_name);
+  return {};
 }
 
 /// Create a \c VariableInfo record for each visible variable.
-static void RegisterAllVariables(
+static llvm::Optional<llvm::Error> RegisterAllVariables(
     SymbolContext &sc, lldb::StackFrameSP &stack_frame_sp,
     SwiftASTContextForExpressions &ast_context,
-    llvm::SmallVectorImpl<SwiftASTManipulator::VariableInfo> &local_variables) {
+    llvm::SmallVectorImpl<SwiftASTManipulator::VariableInfo> &local_variables,
+    lldb::DynamicValueType use_dynamic) {
   if (!sc.block && !sc.function)
-    return;
+    return {};
 
   Block *block = sc.block;
   Block *top_block = block->GetContainingInlinedBlock();
@@ -734,9 +776,11 @@ static void RegisterAllVariables(
   }
 
   for (size_t vi = 0, ve = variables.GetSize(); vi != ve; ++vi)
-    AddVariableInfo({variables.GetVariableAtIndex(vi)}, stack_frame_sp,
-                    ast_context, language_runtime, processed_names,
-                    local_variables);
+    if (auto error = AddVariableInfo(
+            {variables.GetVariableAtIndex(vi)}, stack_frame_sp, ast_context,
+            language_runtime, processed_names, local_variables, use_dynamic))
+      return error;
+  return {};
 }
 
 static void ResolveSpecialNames(
@@ -927,6 +971,23 @@ CreateMainFile(SwiftASTContextForExpressions &swift_ast_context,
   return {buffer_id, filename.str()};
 }
 
+/// Determine whether this type was defined inside an LLDB expression.
+template <typename TypeType> bool FromLLDBModuleImpl(TypeType *type) {
+  if (auto *decl = type->getDecl())
+    if (auto *module = decl->getModuleContext())
+      return module->getName().str().startswith("__lldb_expr_");
+  return false;
+};
+
+/// Determine whether this type was defined inside an LLDB expression.
+static bool FromLLDBModule(swift::TypeBase *type) {
+  if (auto *type_alias = llvm::dyn_cast<swift::TypeAliasType>(type))
+    return FromLLDBModuleImpl(type_alias);
+  if (auto *nominal = llvm::dyn_cast<swift::NominalType>(type))
+    return FromLLDBModuleImpl(nominal);
+  return false;
+}
+
 /// Attempt to materialize one variable.
 static llvm::Optional<SwiftExpressionParser::SILVariableInfo>
 MaterializeVariable(SwiftASTManipulatorBase::VariableInfo &variable,
@@ -964,23 +1025,7 @@ MaterializeVariable(SwiftASTManipulatorBase::VariableInfo &variable,
         }
       }
     } else {
-      CompilerType actual_type(variable.GetType());
-      auto orig_swift_type = GetSwiftType(actual_type);
-      auto *swift_type = orig_swift_type->mapTypeOutOfContext().getPointer();
-      actual_type = ToCompilerType(swift_type);
-      lldb::StackFrameSP stack_frame_sp = stack_frame_wp.lock();
-      if (swift_type->hasTypeParameter()) {
-        if (stack_frame_sp && stack_frame_sp->GetThread() &&
-            stack_frame_sp->GetThread()->GetProcess()) {
-          auto *swift_runtime = SwiftLanguageRuntime::Get(
-              stack_frame_sp->GetThread()->GetProcess());
-          if (swift_runtime) {
-            actual_type = swift_runtime->BindGenericTypeParameters(
-                *stack_frame_sp, actual_type);
-          }
-        }
-      }
-
+      CompilerType actual_type = variable.GetType();
       // Desugar '$lldb_context', etc.
       auto transformed_type = GetSwiftType(actual_type).transform(
         [](swift::Type t) -> swift::Type {
@@ -991,7 +1036,19 @@ MaterializeVariable(SwiftASTManipulatorBase::VariableInfo &variable,
           }
           return t;
       });
-      actual_type = ToCompilerType(transformed_type.getPointer());
+      actual_type =
+          ToCompilerType(transformed_type->mapTypeOutOfContext().getPointer());
+      auto *swift_ast_ctx =
+          llvm::cast<SwiftASTContext>(actual_type.GetTypeSystem());
+
+      // Currently the Swift runtime cannot resolve types that were
+      // defined in the expression evaluator. That's because we don't
+      // tell it about type metadata sections that were JIT-compiled
+      // by the expression evaluator. Until that is implemented, fall
+      // back to SwiftASTContext.
+      if (!FromLLDBModule(transformed_type.getPointer()))
+        actual_type =
+            swift_ast_ctx->GetTypeRefType(actual_type.GetOpaqueQualType());
 
       if (is_result)
         offset = materializer.AddResultVariable(
@@ -1019,9 +1076,6 @@ MaterializeVariable(SwiftASTManipulatorBase::VariableInfo &variable,
     VariableMetadataVariable *variable_metadata =
         static_cast<VariableMetadataVariable *>(variable.m_metadata.get());
 
-    // FIXME: It would be nice if we could do something like
-    //        variable_metadata->m_variable_sp->SetType(variable.GetType())
-    //        here.
     offset = materializer.AddVariable(variable_metadata->m_variable_sp, error);
 
     if (!error.Success()) {
@@ -1147,6 +1201,7 @@ static llvm::Expected<ParsedExpression> ParseAndImport(
     lldb::StackFrameWP &stack_frame_wp, SymbolContext &sc,
     ExecutionContextScope &exe_scope, const EvaluateExpressionOptions &options,
     bool repl, bool playground) {
+  Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));
 
   auto should_disable_objc_runtime = [&]() {
     lldb::StackFrameSP this_frame_sp(stack_frame_wp.lock());
@@ -1172,7 +1227,20 @@ static llvm::Expected<ParsedExpression> ParseAndImport(
   if (playground) {
     auto *persistent_state =
         sc.target_sp->GetSwiftPersistentExpressionState(exe_scope);
-    persistent_state->AddHandLoadedModule(ConstString("Swift"));
+
+    Status error;
+    SourceModule module_info;
+    module_info.path.emplace_back("Swift");
+    swift::ModuleDecl *module =
+        swift_ast_context->GetModule(module_info, error);
+
+    if (error.Fail() || !module) {
+      LLDB_LOG(log, "couldn't load Swift Standard Library\n");
+      return error.ToError();
+    }
+
+    persistent_state->AddHandLoadedModule(ConstString("Swift"),
+                                          swift::ImportedModule(module));
   }
 
   std::string main_filename;
@@ -1188,7 +1256,8 @@ static llvm::Expected<ParsedExpression> ParseAndImport(
   // The Swift stdlib needs to be imported before the SwiftLanguageRuntime can
   // be used.
   Status implicit_import_error;
-  llvm::SmallVector<swift::ModuleDecl *, 16> additional_imports;
+  llvm::SmallVector<swift::AttributedImport<swift::ImportedModule>, 16>
+      additional_imports;
   if (!SwiftASTContext::GetImplicitImports(*swift_ast_context, sc, exe_scope,
                                            stack_frame_wp, additional_imports,
                                            implicit_import_error)) {
@@ -1198,8 +1267,8 @@ static llvm::Expected<ParsedExpression> ParseAndImport(
 
   swift::ImplicitImportInfo importInfo;
   importInfo.StdlibKind = swift::ImplicitStdlibKind::Stdlib;
-  for (auto *module : additional_imports)
-    importInfo.AdditionalModules.emplace_back(module, /*exported*/ false);
+  for (auto &attributed_import : additional_imports)
+    importInfo.AdditionalImports.emplace_back(attributed_import);
 
   auto module_id = ast_context->getIdentifier(expr_name_buf);
   auto &module = *swift::ModuleDecl::create(module_id, *ast_context,
@@ -1302,11 +1371,12 @@ static llvm::Expected<ParsedExpression> ParseAndImport(
 
     if (local_context_is_swift) {
       AddRequiredAliases(sc.block, stack_frame_sp, *swift_ast_context,
-                         *code_manipulator);
+                         *code_manipulator, options.GetUseDynamic());
 
       // Register all local variables so that lookups to them resolve.
-      RegisterAllVariables(sc, stack_frame_sp, *swift_ast_context,
-                           local_variables);
+      if (auto error = RegisterAllVariables(sc, stack_frame_sp, *swift_ast_context,
+                                            local_variables, options.GetUseDynamic()))
+        return std::move(*error);
     }
 
     // Register all magic variables.

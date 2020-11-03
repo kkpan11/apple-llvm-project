@@ -49,6 +49,7 @@ public:
   /// \}
 
   TypeSystemSwiftTypeRef(SwiftASTContext *swift_ast_context);
+  SwiftASTContext *GetSwiftASTContext() override { return m_swift_ast_context; }
 
   Module *GetModule() const override;
   swift::CanType GetCanonicalSwiftType(CompilerType compiler_type);
@@ -257,9 +258,22 @@ public:
       bool print_help_if_available, bool print_extensions_if_available,
       lldb::DescriptionLevel level = lldb::eDescriptionLevelFull) override;
 
+  /// Return the nth tuple element's name, if it has one.
+  std::string GetTupleElementName(lldb::opaque_compiler_type_t type,
+                                  size_t idx);
+
+  /// Recursively transform the demangle tree starting a \p node by
+  /// doing a post-order traversal and replacing each node with
+  /// fn(node).
+  /// The NodePointer passed to \p fn is guaranteed to be non-null.
+  static swift::Demangle::NodePointer Transform(
+      swift::Demangle::Demangler &dem, swift::Demangle::NodePointer node,
+      std::function<swift::Demangle::NodePointer(swift::Demangle::NodePointer)>
+          fn);
+
   /// Return the canonicalized Demangle tree for a Swift mangled type name.
   static swift::Demangle::NodePointer
-  GetCanonicalDemangleTree(lldb_private::Module *Module,
+  GetCanonicalDemangleTree(SwiftASTContext *module_holder,
                            swift::Demangle::Demangler &dem,
                            llvm::StringRef mangled_name);
 
@@ -277,6 +291,9 @@ private:
   void *ReconstructType(lldb::opaque_compiler_type_t type);
   /// Cast \p opaque_type as a mangled name.
   const char *AsMangledName(lldb::opaque_compiler_type_t type);
+
+  /// Lookup a type in the debug info.
+  lldb::TypeSP LookupTypeInModule(lldb::opaque_compiler_type_t type);
 
   /// Demangle the mangled name of the canonical type of \p type and
   /// drill into the Global(TypeMangling(Type())).

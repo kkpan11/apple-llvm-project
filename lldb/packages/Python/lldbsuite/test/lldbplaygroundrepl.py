@@ -24,8 +24,6 @@ else:
 
 class PlaygroundREPLTest(TestBase):
 
-    mydir = TestBase.compute_mydir(__file__)
-
     @decorators.skipUnlessDarwin
     @decorators.swiftTest
     @decorators.skipIf(
@@ -129,6 +127,7 @@ class PlaygroundREPLTest(TestBase):
         error = self.get_stream_data(result)
         print("Crash Error: {}".format(error))
 
+    @swiftTest
     def test_playgrounds(self):
         # Build
         self.build_all()

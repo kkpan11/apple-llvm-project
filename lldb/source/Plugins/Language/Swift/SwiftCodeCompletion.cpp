@@ -207,14 +207,15 @@ SwiftCompleteCode(SwiftASTContext &SwiftCtx,
   // in previous REPL executions.
   swift::ImplicitImportInfo importInfo;
   importInfo.StdlibKind = swift::ImplicitStdlibKind::Stdlib;
-  for (const ConstString moduleName :
+  for (const auto& entry:
        PersistentExpressionState.GetHandLoadedModules()) {
     SourceModule moduleInfo;
-    moduleInfo.path.push_back(moduleName);
+    moduleInfo.path.push_back(ConstString(entry.getKey()));
     ModuleDecl *module = SwiftCtx.GetModule(moduleInfo, error);
     if (!module)
       continue;
-    importInfo.AdditionalModules.emplace_back(module, /*exported*/ false);
+    importInfo.AdditionalImports.emplace_back(swift::ImportedModule(module),
+                                              swift::ImportOptions());
   }
 
   // Set up the following AST:

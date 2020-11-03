@@ -174,6 +174,12 @@ llvm_canonicalize_cmake_booleans(
   LLVM_ENABLE_SHARED_LIBS
   LLDB_IS_64_BITS)
 
+# BEGIN SWIFT
+llvm_canonicalize_cmake_booleans(
+  LLDB_ENABLE_SWIFT_SUPPORT
+)
+# END SWIFT
+
 # Configure the individual test suites.
 add_subdirectory(API)
 add_subdirectory(Shell)
@@ -234,7 +240,7 @@ if(LLDB_BUILT_STANDALONE)
   if (EXISTS ${LLVM_MAIN_SRC_DIR}/utils/llvm-lit)
     # LLVM's make_paths_relative uses Python3_EXECUTABLE which isn't set in a
     # standalone LLDB build.
-    set(Python3_EXECUTABLE ${PYTHON_EXECUTABLE})
+    set(Python3_EXECUTABLE ${Python3_EXECUTABLE})
     add_subdirectory(${LLVM_MAIN_SRC_DIR}/utils/llvm-lit ${CMAKE_CURRENT_BINARY_DIR}/llvm-lit)
   endif()
 endif()

@@ -56,6 +56,7 @@ public:
   Type *operator->() { return GetType(); }
 
   Type *GetType();
+  SymbolFile &GetSymbolFile() const { return m_symbol_file; }
 
 protected:
   SymbolFile &m_symbol_file;
@@ -220,7 +221,6 @@ protected:
   Declaration m_decl;
   CompilerType m_compiler_type;
   ResolveState m_compiler_type_resolve_state;
-  bool m_is_swift_fixed_value_buffer = false;
   /// Language-specific flags.
   Payload m_payload;
 

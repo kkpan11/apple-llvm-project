@@ -527,10 +527,9 @@ def skipIfNoSBHeaders(func):
         if lldb.remote_platform:
             return "skip because SBHeaders tests make no sense remotely"
 
-        if lldbplatformutil.getHostPlatform() == 'darwin':
+        if lldbplatformutil.getHostPlatform() == 'darwin' and configuration.lldb_framework_path:
             header = os.path.join(
-                os.environ["LLDB_LIB_DIR"],
-                'LLDB.framework',
+                configuration.lldb_framework_path,
                 'Versions',
                 'Current',
                 'Headers',
@@ -627,6 +626,8 @@ def skipUnlessTargetAndroid(func):
 def swiftTest(func):
     """Decorate the item as a Swift test (Darwin/Linux only, no i386)."""
     def is_not_swift_compatible(self):
+        if not _get_bool_config("swift"):
+           return "Swift plugin not enabled"
         if self.getDebugInfo() == "gmodules":
             return "skipping (gmodules only makes sense for clang tests)"
 
@@ -884,11 +885,14 @@ def skipIfAsan(func):
     """Skip this test if the environment is set up to run LLDB *itself* under ASAN."""
     return skipTestIfFn(is_running_under_asan)(func)
 
-def _get_bool_config_skip_if_decorator(key):
+def _get_bool_config(key):
     config = lldb.SBDebugger.GetBuildConfiguration()
     value_node = config.GetValueForKey(key)
     fail_value = True # More likely to notice if something goes wrong
-    have = value_node.GetValueForKey("value").GetBooleanValue(fail_value)
+    return value_node.GetValueForKey("value").GetBooleanValue(fail_value)
+
+def _get_bool_config_skip_if_decorator(key):
+    have = _get_bool_config(key)
     return unittest2.skipIf(not have, "requires " + key)
 
 def skipIfCursesSupportMissing(func):
