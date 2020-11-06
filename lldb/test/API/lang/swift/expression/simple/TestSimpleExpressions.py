@@ -160,8 +160,12 @@ class TestSimpleSwiftExpressions(TestBase):
             '"Five: \(is_five) " + "Six: \(is_six)"',
             '"Five: 5 Six: 6"')
 
-        # Next let's try some simple array accesses:
-        self.check_expression("an_int_array[0]", "5", use_summary=False)
+        # SWIFT_ENABLE_TENSORFLOW
+        # TODO(TF-1348): Resolve the SwiftShims incompatibility when
+        #   clangimporter is disabled.
+        # # Next let's try some simple array accesses:
+        # self.check_expression("an_int_array[0]", "5", use_summary=False)
+        # SWIFT_ENABLE_TENSORFLOW END
 
         # Test expression with read-only variables:
         self.check_expression("b_struct.b_read_only == 5", "true")
