@@ -105,8 +105,12 @@ func main () -> Void
     var eleven_by_dict = str_int_dict["five"]! + str_int_dict["six"]! // Dict breakpoint
     var eleven_str = int_str_dict[11]
 
-    var an_int_array : Array<Int64> = [is_five, is_six, is_eleven]
-    an_int_array.append(13)
+    // SWIFT_ENABLE_TENSORFLOW
+    // TODO(TF-1348): Resolve the SwiftShims incompatibility when
+    //   clangimporter is disabled.
+    // var an_int_array : Array<Int64> = [is_five, is_six, is_eleven]
+    // an_int_array.append(13)
+    // SWIFT_ENABLE_TENSORFLOW END
 
     var b_struct = B(b_int:5)
     b_struct.b_int = b_struct.b_read_only
