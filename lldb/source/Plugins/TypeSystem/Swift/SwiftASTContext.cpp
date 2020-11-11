@@ -5047,7 +5047,7 @@ bool SwiftASTContext::IsArrayType(opaque_compiler_type_t type,
     swift::StructDecl *struct_decl = struct_type->getDecl();
     llvm::StringRef name = struct_decl->getName().get();
     // This is sketchy, but it matches the behavior of GetArrayElementType().
-    if (name != "Array" && name != "NativeArray" && name != "ArraySlice")
+    if (name != "Array" && name != "ContiguousArray" && name != "ArraySlice")
       return false;
     if (!struct_decl->getModuleContext()->isStdlibModule())
       return false;
@@ -5672,7 +5672,7 @@ SwiftASTContext::GetArrayElementType(opaque_compiler_type_t type,
     swift::CanType swift_type(GetCanonicalSwiftType(type));
     // There are a couple of structs that mean "Array" in Swift:
     // Array<T>
-    // NativeArray<T>
+    // ContiguousArray<T>
     // Slice<T>
     // Treat them as arrays for convenience sake.
     swift::BoundGenericStructType *boundGenericStructType(
@@ -5682,7 +5682,7 @@ SwiftASTContext::GetArrayElementType(opaque_compiler_type_t type,
       swift::StructDecl *decl = boundGenericStructType->getDecl();
       if (args.size() == 1 && decl->getModuleContext()->isStdlibModule()) {
         const char *declname = decl->getName().get();
-        if (0 == strcmp(declname, "NativeArray") ||
+        if (0 == strcmp(declname, "ContiguousArray") ||
             0 == strcmp(declname, "Array") ||
             0 == strcmp(declname, "ArraySlice")) {
           assert(GetASTContext() == &args[0].getPointer()->getASTContext());
@@ -6566,7 +6566,7 @@ GetExistentialTypeChild(swift::ASTContext *swift_ast_ctx, CompilerType type,
   // The instance for an error existential.
   if (idx == 0 && protocol_info.m_is_errortype) {
     auto raw_pointer = swift_ast_ctx->TheRawPointerType;
-    return {ToCompilerType(raw_pointer.getPointer()), "error_instance"};
+    return {ToCompilerType(raw_pointer.getPointer()), "error"};
   }
 
   // The metatype for a non-class, non-error existential.
@@ -7064,7 +7064,6 @@ CompilerType SwiftASTContext::GetChildCompilerTypeAtIndex(
         child_bitfield_bit_size = 0;
         child_bitfield_bit_offset = 0;
 
-        language_flags |= LanguageFlags::eIgnoreInstancePointerness;
         return superclass_type;
       }
 
@@ -7831,6 +7830,8 @@ bool SwiftASTContext::IsImportedType(opaque_compiler_type_t type,
                                      CompilerType *original_type) {
   bool success = false;
 
+  if (!type)
+    return false;
   if (swift::CanType swift_can_type = GetCanonicalSwiftType(type)) {
     do {
       swift::NominalType *nominal_type =

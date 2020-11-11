@@ -291,8 +291,8 @@ static void LoadSwiftFormatters(lldb::TypeCategoryImplSP swift_category_sp) {
                 ConstString("Swift._NSSwiftArray"), summary_flags, false);
   AddCXXSummary(swift_category_sp,
                 lldb_private::formatters::swift::Array_SummaryProvider,
-                "Swift.Array summary provider",
-                ConstString("^Swift.NativeArray<.+>$"), summary_flags, true);
+                "Swift.ContiguousArray summary provider",
+                ConstString("^Swift.ContiguousArray<.+>$"), summary_flags, true);
   AddCXXSummary(swift_category_sp,
                 lldb_private::formatters::swift::Array_SummaryProvider,
                 "Swift.ArraySlice summary provider",
@@ -373,8 +373,8 @@ static void LoadSwiftFormatters(lldb::TypeCategoryImplSP swift_category_sp) {
   AddCXXSynthetic(
       swift_category_sp,
       lldb_private::formatters::swift::ArraySyntheticFrontEndCreator,
-      "Swift.Array synthetic children", ConstString("^Swift.NativeArray<.+>$"),
-      synth_flags, true);
+      "Swift.ContiguousArray synthetic children",
+      ConstString("^Swift.ContiguousArray<.+>$"), synth_flags, true);
   AddCXXSynthetic(
       swift_category_sp,
       lldb_private::formatters::swift::ArraySyntheticFrontEndCreator,
@@ -548,27 +548,21 @@ static void LoadSwiftFormatters(lldb::TypeCategoryImplSP swift_category_sp) {
 
   AddCXXSummary(swift_category_sp,
                 lldb_private::formatters::swift::Range_SummaryProvider,
-                "Swift.Range summary provider", ConstString("Swift.Range<.+>$"),
+                "Swift.Range summary provider", ConstString("^Swift.Range<.+>$"),
                 summary_flags, true);
   AddCXXSummary(swift_category_sp,
                 lldb_private::formatters::swift::CountableRange_SummaryProvider,
                 "Swift.CountableRange summary provider",
-                ConstString("Swift.CountableRange<.+>$"), summary_flags, true);
+                ConstString("^Swift.CountableRange<.+>$"), summary_flags, true);
   AddCXXSummary(swift_category_sp,
                 lldb_private::formatters::swift::ClosedRange_SummaryProvider,
                 "Swift.ClosedRange summary provider",
-                ConstString("Swift.ClosedRange<.+>$"), summary_flags, true);
+                ConstString("^Swift.ClosedRange<.+>$"), summary_flags, true);
   AddCXXSummary(
       swift_category_sp,
       lldb_private::formatters::swift::CountableClosedRange_SummaryProvider,
       "Swift.CountableClosedRange summary provider",
-      ConstString("Swift.CountableClosedRange<.+>$"), summary_flags, true);
-
-  AddCXXSummary(
-      swift_category_sp,
-      lldb_private::formatters::swift::StridedRangeGenerator_SummaryProvider,
-      "Swift.StridedRangeGenerator summary provider",
-      ConstString("Swift.StridedRangeGenerator<.+>$"), summary_flags, true);
+      ConstString("^Swift.CountableClosedRange<.+>$"), summary_flags, true);
 
   TypeSummaryImpl::Flags simd_summary_flags;
   simd_summary_flags.SetCascades(true)
@@ -1204,7 +1198,7 @@ std::unique_ptr<Language::TypeScavenger> SwiftLanguage::GetTypeScavenger() {
 const char *SwiftLanguage::GetLanguageSpecificTypeLookupHelp() {
   return "\nFor Swift, in addition to a simple type name (such as String, Int, "
          "NSObject, ..), one can also provide:\n"
-         "- a mangled type name (e.g. _TtSi)\n"
+         "- a mangled type name (e.g. $sSiD)\n"
          "- the name of a function, even if multiple overloads of it exist\n"
          "- the name of an operator\n"
          "- the name of a module available in the current target, which will "

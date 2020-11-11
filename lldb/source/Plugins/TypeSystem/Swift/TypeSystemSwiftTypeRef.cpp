@@ -25,6 +25,7 @@
 
 #include "swift/AST/ClangModuleLoader.h"
 #include "swift/Basic/Version.h"
+#include "swift/../../lib/ClangImporter/ClangAdapter.h"
 #include "swift/Demangling/Demangle.h"
 #include "swift/Demangling/Demangler.h"
 #include "swift/Strings.h"
@@ -90,20 +91,85 @@ static CompilerType LookupClangForwardType(SwiftASTContext *module_holder,
   return {};
 }
 
+/// Return a demangle tree for an UnsafePointer<Pointee>.
+static swift::Demangle::NodePointer
+GetPointerTo(swift::Demangle::Demangler &dem,
+             swift::Demangle::NodePointer pointee) {
+  using namespace swift::Demangle;
+  auto *bgs = dem.createNode(Node::Kind::BoundGenericStructure);
+  // Construct the first branch of BoundGenericStructure.
+  {
+    auto *type = dem.createNode(Node::Kind::Type);
+    auto *structure = dem.createNode(Node::Kind::Structure);
+    structure->addChild(
+        dem.createNodeWithAllocatedText(Node::Kind::Module, swift::STDLIB_NAME),
+        dem);
+    structure->addChild(dem.createNode(Node::Kind::Identifier, "UnsafePointer"),
+                        dem);
+    type->addChild(structure, dem);
+    bgs->addChild(type, dem);
+  }
+
+  // Construct the second branch of BoundGenericStructure.
+  {
+    auto *typelist = dem.createNode(Node::Kind::TypeList);
+    auto *type = dem.createNode(Node::Kind::Type);
+    typelist->addChild(type, dem);
+    type->addChild(pointee, dem);
+    bgs->addChild(typelist, dem);
+  }
+  return bgs;
+}
+
 /// Return a demangle tree leaf node representing \p clang_type.
 static swift::Demangle::NodePointer
 GetClangTypeNode(CompilerType clang_type, swift::Demangle::Demangler &dem) {
   using namespace swift::Demangle;
-  clang::QualType qual_type = ClangUtil::GetQualType(clang_type);
-  NodePointer structure = dem.createNode(
-      qual_type->isClassType() ? Node::Kind::Class : Node::Kind::Structure);
-  NodePointer module = dem.createNodeWithAllocatedText(
-      Node::Kind::Module, swift::MANGLING_MODULE_OBJC);
+  Node::Kind kind;
+  llvm::StringRef swift_name;
+  llvm::StringRef module_name = swift::MANGLING_MODULE_OBJC;
+  CompilerType pointee;
+  if (clang_type.IsPointerType(&pointee))
+    clang_type = pointee;
+    
+  switch (clang_type.GetTypeClass()) {
+  case eTypeClassClass:
+  case eTypeClassObjCObjectPointer:
+    // Objective-C objects are first-class entities, not pointers.
+    kind = Node::Kind::Class;
+    pointee = {};
+    break;
+  case eTypeClassBuiltin: 
+    kind = Node::Kind::Structure;
+    // Ask ClangImporter about the builtin type's Swift name.
+    if (auto *ts = llvm::cast<TypeSystemClang>(clang_type.GetTypeSystem())) {
+      if (clang_type == ts->GetPointerSizedIntType(true)) {
+        swift_name = "Int";
+        break;
+      }
+      if (clang_type == ts->GetPointerSizedIntType(false)) {
+        swift_name = "UInt";
+        break;
+      }
+      swift_name = swift::importer::getClangTypeNameForOmission(
+                       ts->getASTContext(), ClangUtil::GetQualType(clang_type))
+                       .Name;
+      module_name = swift::STDLIB_NAME;
+    }
+    break;
+  default:
+    kind = Node::Kind::Structure;
+  }
+  NodePointer structure = dem.createNode(kind);
+  NodePointer module =
+      dem.createNodeWithAllocatedText(Node::Kind::Module, module_name);
   structure->addChild(module, dem);
   NodePointer identifier = dem.createNodeWithAllocatedText(
-      Node::Kind::Module, clang_type.GetTypeName().GetStringRef());
+      Node::Kind::Identifier, swift_name.empty()
+                                  ? clang_type.GetTypeName().GetStringRef()
+                                  : swift_name);
   structure->addChild(identifier, dem);
-  return structure;
+  return pointee ? GetPointerTo(dem, structure) : structure;
 }
 
 /// \return the child of the \p Type node.
@@ -720,6 +786,21 @@ swift::Demangle::NodePointer TypeSystemSwiftTypeRef::GetDemangleTreeForPrinting(
   return canonical;
 }
 
+/// Determine wether this demangle tree contains an unresolved type alias.
+static bool ContainsGenericTypeParameter(swift::Demangle::NodePointer node) {
+  if (!node)
+    return false;
+
+  if (node->getKind() == swift::Demangle::Node::Kind::DependentGenericParamType)
+    return true;
+
+  for (swift::Demangle::NodePointer child : *node)
+    if (ContainsGenericTypeParameter(child))
+      return true;
+
+  return false;
+}
+
 /// Collect TypeInfo flags from a demangle tree. For most attributes
 /// this can stop scanning at the outmost type, however in order to
 /// determine whether a node is generic or not, it needs to visit all
@@ -770,7 +851,6 @@ static uint32_t collectTypeInfo(SwiftASTContext *module_holder,
     }
   else
     switch (node->getKind()) {
-
     case Node::Kind::SugaredOptional:
       swift_flags |= eTypeIsGeneric | eTypeIsBound | eTypeHasChildren |
                      eTypeHasValue | eTypeIsEnumeration;
@@ -818,8 +898,8 @@ static uint32_t collectTypeInfo(SwiftASTContext *module_holder,
                  node->getText() == swift::BUILTIN_TYPE_NAME_UNKNOWNOBJECT)
           swift_flags |=
               eTypeHasChildren | eTypeIsPointer | eTypeIsScalar | eTypeIsObjC;
-        else if (node->getText() == swift::BUILTIN_TYPE_NAME_FLOAT ||
-                 node->getText() == swift::BUILTIN_TYPE_NAME_FLOAT_PPC)
+        else if (node->getText().startswith(swift::BUILTIN_TYPE_NAME_FLOAT) ||
+                 node->getText().startswith(swift::BUILTIN_TYPE_NAME_FLOAT_PPC))
           swift_flags |= eTypeIsFloat | eTypeIsScalar;
         else if (node->getText().startswith(swift::BUILTIN_TYPE_NAME_VEC))
           swift_flags |= eTypeHasChildren | eTypeIsVector;
@@ -841,8 +921,7 @@ static uint32_t collectTypeInfo(SwiftASTContext *module_holder,
       if (node->getNumChildren() != 2)
         break;
       // Bug-for-bug compatibility.
-      if (!(collectTypeInfo(module_holder, dem, node->getChild(1)) &
-            eTypeIsGenericTypeParam))
+      if (!ContainsGenericTypeParameter(node->getChild(1)))
         swift_flags |= eTypeHasValue | eTypeHasChildren;
       auto module = node->getChild(0);
       if (module->hasText() &&
@@ -1354,7 +1433,7 @@ bool TypeSystemSwiftTypeRef::IsArrayType(opaque_compiler_type_t type,
         node->getChild(1)->getKind() != Node::Kind::Identifier ||
         !node->getChild(1)->hasText() ||
         (node->getChild(1)->getText() != "Array" &&
-         node->getChild(1)->getText() != "NativeArray" &&
+         node->getChild(1)->getText() != "ContiguousArray" &&
          node->getChild(1)->getText() != "ArraySlice"))
       return false;
 
@@ -1728,7 +1807,6 @@ CompilerType
 TypeSystemSwiftTypeRef::GetPointeeType(opaque_compiler_type_t type) {
   return m_swift_ast_context->GetPointeeType(ReconstructType(type));
 }
-
 CompilerType
 TypeSystemSwiftTypeRef::GetPointerType(opaque_compiler_type_t type) {
   auto impl = [&]() -> CompilerType {
@@ -1740,31 +1818,8 @@ TypeSystemSwiftTypeRef::GetPointerType(opaque_compiler_type_t type) {
     // The UnsafePointer type.
     auto *pointer_type = dem.createNode(Node::Kind::Type);
 
-    auto *bgs = dem.createNode(Node::Kind::BoundGenericStructure);
+    auto *bgs = GetPointerTo(dem, pointee_type);
     pointer_type->addChild(bgs, dem);
-
-    // Construct the first branch of BoundGenericStructure.
-    {
-      auto *type = dem.createNode(Node::Kind::Type);
-      bgs->addChild(type, dem);
-      auto *structure = dem.createNode(Node::Kind::Structure);
-      type->addChild(structure, dem);
-      structure->addChild(dem.createNodeWithAllocatedText(Node::Kind::Module,
-                                                          swift::STDLIB_NAME),
-                          dem);
-      structure->addChild(
-          dem.createNode(Node::Kind::Identifier, "UnsafePointer"), dem);
-    }
-
-    // Construct the second branch of BoundGenericStructure.
-    {
-      auto *typelist = dem.createNode(Node::Kind::TypeList);
-      bgs->addChild(typelist, dem);
-      auto *type = dem.createNode(Node::Kind::Type);
-      typelist->addChild(type, dem);
-      type->addChild(pointee_type, dem);
-    }
-
     return RemangleAsType(dem, pointer_type);
   };
   VALIDATE_AND_RETURN(impl, GetPointerType, type, (ReconstructType(type)));
