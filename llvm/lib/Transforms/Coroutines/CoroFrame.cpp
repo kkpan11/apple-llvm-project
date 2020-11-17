@@ -620,8 +620,11 @@ static StructType *buildFrameType(Function &F, coro::Shape &Shape,
   case coro::ABI::Async: {
     Shape.AsyncLowering.FrameOffset =
         alignTo(Shape.AsyncLowering.ContextHeaderSize, Shape.FrameAlign);
+    // Also make the final context size a multiple of the context alignment to
+    // make allocation easier for allocators.
     Shape.AsyncLowering.ContextSize =
-        Shape.AsyncLowering.FrameOffset + Shape.FrameSize;
+        alignTo(Shape.AsyncLowering.FrameOffset + Shape.FrameSize,
+                Shape.AsyncLowering.getContextAlignment());
     if (Shape.AsyncLowering.getContextAlignment() < Shape.FrameAlign) {
       report_fatal_error(
           "The alignment requirment of frame variables cannot be higher than "
@@ -1527,8 +1530,7 @@ static void sinkSpillUsesAfterCoroBegin(Function &F, const SpillInfo &Spills,
     for (User *U : SpillDef->users()) {
       auto Inst = cast<Instruction>(U);
       if (Inst->getParent() != CoroBegin->getParent() ||
-          Dom.dominates(CoroBegin, Inst) ||
-          isa<CoroIdAsyncInst>(Inst) /*'fake' use of async context argument*/)
+          Dom.dominates(CoroBegin, Inst))
         continue;
       if (ToMove.insert(Inst))
         Worklist.push_back(Inst);
