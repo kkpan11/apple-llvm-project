@@ -679,10 +679,12 @@ public:
 #endif
     ConstString mangled(wrapped);
     CompilerType swift_type = m_typesystem.GetTypeFromMangledTypename(mangled);
-
+    auto *ts = llvm::dyn_cast_or_null<TypeSystemSwift>(swift_type.GetTypeSystem());
+    if (!ts)
+      return nullptr;
     CompilerType clang_type;
-    bool is_imported = m_typesystem.IsImportedType(swift_type.GetOpaqueQualType(),
-                                                   &clang_type);
+    bool is_imported =
+        ts->IsImportedType(swift_type.GetOpaqueQualType(), &clang_type);
     if (!is_imported || !clang_type) {
       if (log)
         log->Printf("[LLDBTypeInfoProvider] Could not find clang debug type info for %s",
@@ -1087,7 +1089,6 @@ GetTypeFromTypeRef(TypeSystemSwiftTypeRef &ts,
   swift::Demangle::Demangler dem;
   swift::Demangle::NodePointer node = type_ref->getDemangling(dem);
   return ts.RemangleAsType(dem, node);
-  return ts.RemangleAsSwiftifiedType(dem, node);
 }
 
 CompilerType SwiftLanguageRuntimeImpl::GetChildCompilerTypeAtIndex(
@@ -1721,6 +1722,8 @@ SwiftLanguageRuntimeImpl::BindGenericTypeParameters(StackFrame &stack_frame,
 
     const swift::reflection::TypeRef *type_ref =
         reflection_ctx->readTypeFromMetadata(*metadata_location);
+    if (!type_ref)
+      return;
     substitutions.insert({{depth, index}, type_ref});
   });
 
