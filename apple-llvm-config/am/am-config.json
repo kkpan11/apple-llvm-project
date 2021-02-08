@@ -4,10 +4,6 @@
   "upstream": "llvm.org/main"
 },
 {
-  "target": "apple/stable/20200714",
-  "upstream": "llvm.org/release/11.x"
-},
-{
   "target": "swift/next",
   "upstream": "apple/main",
   "test-command": "true"
