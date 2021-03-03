@@ -377,6 +377,18 @@ void ThreadPlanStack::WillResume() {
   m_discarded_plans.clear();
 }
 
+bool ThreadPlanStack::IsTID(lldb::tid_t tid) {
+  return GetCurrentPlan()->IsTID(tid);
+}
+
+lldb::tid_t ThreadPlanStack::GetTID() { return GetCurrentPlan()->GetTID(); }
+
+void ThreadPlanStack::SetTID(lldb::tid_t tid) {
+  for (auto plan_sp : m_plans) {
+    plan_sp->SetTID(tid);
+  }
+}
+
 const ThreadPlanStack::PlanStack &
 ThreadPlanStack::GetStackOfKind(ThreadPlanStack::StackKind kind) const {
   switch (kind) {
