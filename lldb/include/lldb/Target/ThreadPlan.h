@@ -513,7 +513,7 @@ public:
   void SetTID(lldb::tid_t tid) { m_tid = tid; }
 
   friend lldb::ThreadPlanSP
-  Process::FindDetachedPlanExplainingStop(Event *event_ptr);
+  Process::FindDetachedPlanExplainingStop(Thread &thread, Event *event_ptr);
 
 protected:
   // Classes that inherit from ThreadPlan can see and modify these
