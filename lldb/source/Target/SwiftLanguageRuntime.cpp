@@ -2129,7 +2129,6 @@ GetAsyncUnwindRegisterNumbers(llvm::Triple::ArchType triple) {
         .dummy_regnum = arm64_dwarf::x23,
     };
   default:
-    assert(false && "swift async supports only x86_64 and arm64");
     return {};
   }
 }
@@ -2145,6 +2144,7 @@ lldb::addr_t SwiftLanguageRuntime::GetAsyncContext(RegisterContext *regctx) {
     return regctx->ReadRegisterAsUnsigned(reg, LLDB_INVALID_ADDRESS);
   }
 
+  assert(false && "swift async supports only x86_64 and arm64");
   return LLDB_INVALID_ADDRESS;
 }
 
