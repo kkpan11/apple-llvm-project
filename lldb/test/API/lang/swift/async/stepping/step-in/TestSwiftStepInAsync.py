@@ -2,7 +2,7 @@ import lldb
 from lldbsuite.test.decorators import *
 import lldbsuite.test.lldbtest as lldbtest
 import lldbsuite.test.lldbutil as lldbutil
-
+import re
 
 class TestCase(lldbtest.TestBase):
 
