@@ -2197,7 +2197,7 @@ lldb::TypeSystemSP SwiftASTContext::CreateInstance(lldb::LanguageType language,
                 // system. These modules must be imported from the
                 // SDK instead.
                 if (!StringRef(parent_path).startswith("/System/Library") &&
-                    !IsDeviceSupport(parent_path.c_str()))
+                    !IsDeviceSupport(parent_path.c_str())) {
                   LOG_PRINTF(LIBLLDB_LOG_TYPES,
                              "process_one_module(\"%s\") adding framework path "
                              "\"%s\".",
@@ -2205,6 +2205,7 @@ lldb::TypeSystemSP SwiftASTContext::CreateInstance(lldb::LanguageType language,
                              framework_path.c_str());
                   framework_search_paths.push_back(
                       {std::move(parent_path), /*system*/ false});
+                }
               }
             }
           }
