@@ -386,7 +386,7 @@ TEST_F(GDBRemoteCommunicationClientTest, SendTraceSupportedTypePacket) {
   std::string error_message;
   auto callback = [&] {
     if (llvm::Expected<TraceTypeInfo> trace_type_or_err =
-        client.SendGetSupportedTraceType(std::chrono::seconds(10))) {
+            client.SendGetSupportedTraceType()) {
       trace_type = *trace_type_or_err;
       error_message = "";
       return true;
@@ -458,7 +458,7 @@ TEST_F(GDBRemoteCommunicationClientTest, SendStartTracePacket) {
   options.setTraceParams(custom_params);
 
   std::future<lldb::user_id_t> result = std::async(std::launch::async, [&] {
-    return client.SendStartTracePacket(options, std::chrono::seconds(10), error);
+    return client.SendStartTracePacket(options, error);
   });
 
   // Since the line is exceeding 80 characters.
@@ -472,9 +472,7 @@ TEST_F(GDBRemoteCommunicationClientTest, SendStartTracePacket) {
 
   error.Clear();
   result = std::async(std::launch::async, [&] {
-    return client.SendStartTracePacket(options,
-                                       std::chrono::seconds(10),
-                                       error);
+    return client.SendStartTracePacket(options, error);
   });
 
   HandlePacket(server, (expected_packet1 + expected_packet2), "E23");
@@ -487,8 +485,7 @@ TEST_F(GDBRemoteCommunicationClientTest, SendStopTracePacket) {
   lldb::user_id_t trace_id = 3;
 
   std::future<Status> result = std::async(std::launch::async, [&] {
-    return client.SendStopTracePacket(trace_id, thread_id,
-                                      std::chrono::seconds(10));
+    return client.SendStopTracePacket(trace_id, thread_id);
   });
 
   const char *expected_packet = R"(jTraceStop:{"threadid":35,"traceid":3})";
@@ -496,7 +493,7 @@ TEST_F(GDBRemoteCommunicationClientTest, SendStopTracePacket) {
   ASSERT_TRUE(result.get().Success());
 
   result = std::async(std::launch::async, [&] {
-    return client.SendStopTracePacket(trace_id, thread_id, std::chrono::seconds(10));
+    return client.SendStopTracePacket(trace_id, thread_id);
   });
 
   HandlePacket(server, expected_packet, "E23");
@@ -512,8 +509,7 @@ TEST_F(GDBRemoteCommunicationClientTest, SendGetDataPacket) {
   size_t offset = 0;
 
   std::future<Status> result = std::async(std::launch::async, [&] {
-    return client.SendGetDataPacket(trace_id, thread_id, buffer,
-                                    std::chrono::seconds(10), offset);
+    return client.SendGetDataPacket(trace_id, thread_id, buffer, offset);
   });
 
   std::string expected_packet1 =
@@ -528,8 +524,7 @@ TEST_F(GDBRemoteCommunicationClientTest, SendGetDataPacket) {
 
   llvm::MutableArrayRef<uint8_t> buffer2(buf, 32);
   result = std::async(std::launch::async, [&] {
-    return client.SendGetDataPacket(trace_id, thread_id, buffer2,
-                                    std::chrono::seconds(10), offset);
+    return client.SendGetDataPacket(trace_id, thread_id, buffer2, offset);
   });
 
   HandlePacket(server, expected_packet1+expected_packet2, "E23");
@@ -546,8 +541,7 @@ TEST_F(GDBRemoteCommunicationClientTest, SendGetMetaDataPacket) {
   size_t offset = 0;
 
   std::future<Status> result = std::async(std::launch::async, [&] {
-    return client.SendGetMetaDataPacket(trace_id, thread_id, buffer,
-                                        std::chrono::seconds(10), offset);
+    return client.SendGetMetaDataPacket(trace_id, thread_id, buffer, offset);
   });
 
   std::string expected_packet1 =
@@ -562,9 +556,7 @@ TEST_F(GDBRemoteCommunicationClientTest, SendGetMetaDataPacket) {
 
   llvm::MutableArrayRef<uint8_t> buffer2(buf, 32);
   result = std::async(std::launch::async, [&] {
-    return client.SendGetMetaDataPacket(trace_id, thread_id, buffer2,
-                                        std::chrono::seconds(10),
-                                        offset);
+    return client.SendGetMetaDataPacket(trace_id, thread_id, buffer2, offset);
   });
 
   HandlePacket(server, expected_packet1+expected_packet2, "E23");
@@ -579,8 +571,7 @@ TEST_F(GDBRemoteCommunicationClientTest, SendGetTraceConfigPacket) {
   options.setThreadID(thread_id);
 
   std::future<Status> result = std::async(std::launch::async, [&] {
-    return client.SendGetTraceConfigPacket(trace_id, options,
-                                           std::chrono::seconds(10));
+    return client.SendGetTraceConfigPacket(trace_id, options);
   });
 
   const char *expected_packet =
@@ -609,8 +600,7 @@ TEST_F(GDBRemoteCommunicationClientTest, SendGetTraceConfigPacket) {
 
   // Checking error response.
   std::future<Status> result2 = std::async(std::launch::async, [&] {
-    return client.SendGetTraceConfigPacket(trace_id, options,
-                                           std::chrono::seconds(10));
+    return client.SendGetTraceConfigPacket(trace_id, options);
   });
 
   HandlePacket(server, expected_packet, "E23");
@@ -618,8 +608,7 @@ TEST_F(GDBRemoteCommunicationClientTest, SendGetTraceConfigPacket) {
 
   // Wrong JSON as response.
   std::future<Status> result3 = std::async(std::launch::async, [&] {
-    return client.SendGetTraceConfigPacket(trace_id, options,
-                                           std::chrono::seconds(10));
+    return client.SendGetTraceConfigPacket(trace_id, options);
   });
 
   std::string incorrect_json1 =
@@ -631,8 +620,7 @@ TEST_F(GDBRemoteCommunicationClientTest, SendGetTraceConfigPacket) {
 
   // Wrong JSON as custom_params.
   std::future<Status> result4 = std::async(std::launch::async, [&] {
-    return client.SendGetTraceConfigPacket(trace_id, options,
-                                           std::chrono::seconds(10));
+    return client.SendGetTraceConfigPacket(trace_id, options);
   });
 
   std::string incorrect_custom_params1 =
