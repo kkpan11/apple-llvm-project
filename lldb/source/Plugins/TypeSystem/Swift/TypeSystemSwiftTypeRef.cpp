@@ -3154,7 +3154,8 @@ bool TypeSystemSwiftTypeRef::IsTypedefType(opaque_compiler_type_t type) {
     using namespace swift::Demangle;
     Demangler dem;
     NodePointer node = GetDemangledType(dem, AsMangledName(type));
-    return node && node->getKind() == Node::Kind::TypeAlias;
+    return node && (node->getKind() == Node::Kind::TypeAlias ||
+                    node->getKind() == Node::Kind::BoundGenericTypeAlias);
   };
 
 #ifndef NDEBUG
@@ -3179,7 +3180,8 @@ TypeSystemSwiftTypeRef::GetTypedefedType(opaque_compiler_type_t type) {
     using namespace swift::Demangle;
     Demangler dem;
     NodePointer node = GetDemangledType(dem, AsMangledName(type));
-    if (!node || node->getKind() != Node::Kind::TypeAlias)
+    if (!node || (node->getKind() != Node::Kind::TypeAlias &&
+                  node->getKind() != Node::Kind::BoundGenericTypeAlias))
       return {};
     auto pair = ResolveTypeAlias(m_swift_ast_context, dem, node);
     if (NodePointer resolved = std::get<swift::Demangle::NodePointer>(pair)) {
