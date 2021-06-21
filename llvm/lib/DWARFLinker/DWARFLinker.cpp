@@ -1782,6 +1782,8 @@ void DWARFLinker::patchLineTableForUnit(CompileUnit &Unit,
 
 void DWARFLinker::emitAcceleratorEntriesForUnit(CompileUnit &Unit) {
   switch (Options.TheAccelTableKind) {
+  case AccelTableKind::None:
+    break;
   case AccelTableKind::Apple:
     emitAppleAcceleratorEntriesForUnit(Unit);
     break;
@@ -2516,6 +2518,8 @@ bool DWARFLinker::link() {
       TheDwarfEmitter->emitAbbrevs(Abbreviations, MaxDwarfVersion);
       TheDwarfEmitter->emitStrings(OffsetsStringPool);
       switch (Options.TheAccelTableKind) {
+      case AccelTableKind::None:
+        break;
       case AccelTableKind::Apple:
         TheDwarfEmitter->emitAppleNames(AppleNames);
         TheDwarfEmitter->emitAppleNamespaces(AppleNamespaces);
