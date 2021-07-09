@@ -54,7 +54,8 @@ public:
 /// using the regular processing run.
 class DependencyScanningWorker {
 public:
-  DependencyScanningWorker(DependencyScanningService &Service);
+  DependencyScanningWorker(DependencyScanningService &Service,
+                           const char *LookedUpModuleName = nullptr);
 
   /// Run the dependency scanning tool for a given clang driver invocation (as
   /// specified for the given Input in the CDB), and report the discovered
@@ -90,6 +91,8 @@ private:
   /// worker. If null, the file manager will not be reused.
   llvm::IntrusiveRefCntPtr<FileManager> Files;
   ScanningOutputFormat Format;
+
+  const char *LookedUpModuleName = nullptr;
 };
 
 } // end namespace dependencies
