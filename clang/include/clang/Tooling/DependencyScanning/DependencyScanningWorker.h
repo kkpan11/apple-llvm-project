@@ -54,8 +54,7 @@ public:
 /// using the regular processing run.
 class DependencyScanningWorker {
 public:
-  DependencyScanningWorker(DependencyScanningService &Service,
-                           const char *LookedUpModuleName = nullptr);
+  DependencyScanningWorker(DependencyScanningService &Service);
 
   /// Run the dependency scanning tool for a given clang driver invocation (as
   /// specified for the given Input in the CDB), and report the discovered
@@ -74,6 +73,8 @@ public:
                                         DependencyConsumer &Consumer);
 
   ScanningOutputFormat getFormat() const { return Format; }
+
+  void setLookedUpModuleName(const char *Name) { LookedUpModuleName = Name; }
 
   llvm::StringSet<> AlreadySeen;
 
