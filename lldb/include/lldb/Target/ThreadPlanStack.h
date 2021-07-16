@@ -180,15 +180,6 @@ public:
       return result->second;
   }
 
-  /// Clear the Thread* cache that each ThreadPlan contains.
-  ///
-  /// This is useful in situations like when a new Thread list is being
-  /// generated.
-  void ClearThreadCache() {
-    for (auto &plan_list : m_plans_list)
-      plan_list.second->ClearThreadCache();
-  }
-
   // rename to Reactivate?
   void Activate(ThreadPlanStack &stack) {
     // Remove this from the detached plan list:
