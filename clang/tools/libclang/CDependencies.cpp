@@ -19,7 +19,6 @@
 #include "clang/Tooling/DependencyScanning/DependencyScanningService.h"
 #include "clang/Tooling/DependencyScanning/DependencyScanningTool.h"
 #include "clang/Tooling/DependencyScanning/DependencyScanningWorker.h"
-#include "llvm/Support/FileUtilities.h"
 
 using namespace clang;
 using namespace clang::tooling::dependencies;
@@ -221,14 +220,25 @@ getFileDependencies(CXDependencyScannerWorker W, int argc,
     *error = cxstring::createEmpty();
 
   DependencyScanningWorker *Worker = unwrap(W);
+  SmallString<128> FullPath;
+
+  auto GetFakeSrcFile = [&]() {
+    FullPath = Worker->getModuleName();
+    llvm::sys::fs::make_absolute(WorkingDirectory, FullPath);
+    return FullPath.c_str();
+  };
 
   std::vector<std::string> Compilation;
-  if (StringRef(argv[1]) == "-cc1")
+  if (StringRef(argv[1]) == "-cc1") {
     for (int i = 2; i < argc; ++i)
       Compilation.push_back(argv[i]);
-  else {
+    if (Worker->getModuleName())
+      Compilation.push_back(GetFakeSrcFile());
+  } else {
     // Run the driver to get -cc1 args.
-    ArrayRef<const char *> CArgs = llvm::makeArrayRef(argv, argv+argc);
+    std::vector<const char *> CArgs = llvm::makeArrayRef(argv, argv + argc);
+    if (Worker->getModuleName())
+      CArgs.push_back(GetFakeSrcFile());
     IntrusiveRefCntPtr<DiagnosticsEngine>
     Diags(CompilerInstance::createDiagnostics(new DiagnosticOptions));
     auto CI = createInvocationFromCommandLine(CArgs, Diags, /*VFS=*/nullptr,
@@ -272,10 +282,10 @@ clang_experimental_DependencyScannerWorker_getFileDependencies_v1(
 CXFileDependencies *
 clang_experimental_DependencyScannerWorkerByModName_getFileDependencies_v0(
     CXDependencyScannerWorker W, int argc, const char *const *argv,
-    const char *WorkingDirectory, CXModuleDiscoveredCallback *MDC,
-    void *Context, CXString *error, const char *LookedUpModuleName) {
+    const char *ModuleName, const char *WorkingDirectory,
+    CXModuleDiscoveredCallback *MDC, void *Context, CXString *error) {
   DependencyScanningWorker *Worker = unwrap(W);
-  Worker->setLookedUpModuleName(LookedUpModuleName);
+  Worker->setModuleName(ModuleName);
 
   return getFileDependencies(
       W, argc, argv, WorkingDirectory, MDC, Context, error,
