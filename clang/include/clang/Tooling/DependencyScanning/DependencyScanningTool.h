@@ -14,6 +14,7 @@
 #include "clang/Tooling/DependencyScanning/ModuleDepCollector.h"
 #include "clang/Tooling/JSONCompilationDatabase.h"
 #include "llvm/ADT/StringSet.h"
+#include "llvm/CAS/CASDB.h"
 #include <string>
 
 namespace clang{
@@ -84,6 +85,20 @@ public:
   llvm::Expected<std::string>
   getDependencyFile(const tooling::CompilationDatabase &Compilations,
                     StringRef CWD);
+
+  /// Collect dependency tree.
+  llvm::Expected<llvm::cas::TreeRef>
+  getDependencyTree(const tooling::CompilationDatabase &Compilations,
+                    StringRef CWD);
+
+  llvm::Expected<llvm::cas::TreeRef> getDependencyTreeFromCompilerInvocation(
+      std::shared_ptr<CompilerInvocation> Invocation, StringRef CWD,
+      DiagnosticConsumer &DiagsConsumer,
+      llvm::function_ref<StringRef(StringRef)> RemapPath = nullptr);
+
+  llvm::Expected<llvm::cas::TreeRef>
+  getDependencyTreeFromCC1CommandLine(ArrayRef<const char *> Args,
+                                      StringRef CWD);
 
   /// Collect the full module dependency graph for the input, ignoring any
   /// modules which have already been seen.
