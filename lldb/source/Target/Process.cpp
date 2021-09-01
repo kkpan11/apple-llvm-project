@@ -1460,9 +1460,7 @@ ThreadPlanSP Process::FindDetachedPlanExplainingStop(Thread &thread,
                                                      Event *event_ptr) {
   std::vector<ThreadPlanStack *> &detached_plans 
       = m_thread_plans.GetDetachedPlanStacks();
-  size_t num_detached_plans = detached_plans.size();
-  for (size_t idx = 0; idx < num_detached_plans; idx++) {
-    ThreadPlanStack *cur_stack = detached_plans[idx];
+  for (ThreadPlanStack *cur_stack : detached_plans) {
     ThreadPlanSP plan_sp = cur_stack->GetCurrentPlan();
     plan_sp->SetTID(thread.GetID());
     if (!plan_sp->DoPlanExplainsStop(event_ptr)) {
