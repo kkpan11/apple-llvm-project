@@ -4,11 +4,6 @@
   "upstream": "llvm.org/main"
 },
 {
-  "target": "swift/rebranch",
-  "upstream": "apple/stable/20210628",
-  "test_commits_in_bundle": true
-},
-{
   "target": "swift/swift-5.2-branch",
   "upstream": "apple/stable/20190619",
   "test_commits_in_bundle": true
