@@ -1191,7 +1191,7 @@ def fswift_async_fp_EQ : Joined<["-"], "fswift-async-fp=">,
     Values<"auto,always,never">,
     NormalizedValuesScope<"CodeGenOptions::SwiftAsyncFramePointerKind">,
     NormalizedValues<["Auto", "Always", "Never"]>,
-    MarshallingInfoFlag<"CodeGenOpts.SwiftAsyncFramePointer", "Auto">,
+    MarshallingInfoFlag<"CodeGenOpts.SwiftAsyncFramePointer", "Always">,
     AutoNormalizeEnum;
 
 def fapinotes : Flag<["-"], "fapinotes">, Group<f_clang_Group>,
