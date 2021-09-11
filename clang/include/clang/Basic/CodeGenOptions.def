@@ -419,7 +419,7 @@ CODEGENOPT(AAPCSBitfieldWidth, 1, 1)
 // Whether to emit Swift Async function extended frame information: auto,
 // never, always.
 ENUM_CODEGENOPT(SwiftAsyncFramePointer, SwiftAsyncFramePointerKind, 2,
-                SwiftAsyncFramePointerKind::Auto)
+                SwiftAsyncFramePointerKind::Always)
 
 #undef CODEGENOPT
 #undef ENUM_CODEGENOPT
