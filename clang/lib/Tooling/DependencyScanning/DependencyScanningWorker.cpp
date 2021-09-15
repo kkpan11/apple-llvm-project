@@ -287,7 +287,7 @@ DependencyScanningWorker::DependencyScanningWorker(
     : Format(Service.getFormat()),
       OverrideCASTokenCache(Service.overrideCASTokenCache()) {
   DiagOpts = new DiagnosticOptions();
-
+  PCHContainerOps = std::make_shared<PCHContainerOperations>();
   PCHContainerOps->registerReader(
       std::make_unique<ObjectFilePCHContainerReader>());
   // We don't need to write object files, but the current PCH implementation
