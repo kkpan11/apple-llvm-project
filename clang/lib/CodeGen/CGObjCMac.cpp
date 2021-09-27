@@ -7847,8 +7847,17 @@ CGObjCNonFragileABIMac::GetInterfaceEHType(const ObjCInterfaceDecl *ID,
   ConstantInitBuilder builder(CGM);
   auto values = builder.beginStruct(ObjCTypes.EHTypeTy);
 
-  if (auto &Schema = CGM.getCodeGenOpts().PointerAuth.CXXVTablePointers) {
-    values.addSignedPointer(VTablePtr, Schema, GlobalDecl(), QualType());
+  if (auto &Schema =
+          CGM.getCodeGenOpts().PointerAuth.CXXTypeInfoVTablePointer) {
+    uint32_t discrimination = 0;
+    if (Schema.hasOtherDiscrimination()) {
+      assert(Schema.getOtherDiscrimination() ==
+             PointerAuthSchema::Discrimination::Constant);
+      discrimination = Schema.getConstantDiscrimination();
+    }
+    values.addSignedPointer(
+        VTablePtr, Schema.getKey(), Schema.isAddressDiscriminated(),
+        llvm::ConstantInt::get(CGM.IntPtrTy, discrimination));
   } else {
     values.add(VTablePtr);
   }
