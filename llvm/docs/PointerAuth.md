@@ -453,7 +453,7 @@ as follows:
 
 ### arm64e
 
-Darwin supports ARMv8.3 Pointer Authentication Codes via the arm64e MachO
+Darwin supports Armv8.3-A Pointer Authentication Codes via the arm64e MachO
 architecture slice.
 
 #### CPU Subtype
