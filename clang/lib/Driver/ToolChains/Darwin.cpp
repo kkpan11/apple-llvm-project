@@ -1289,9 +1289,8 @@ void DarwinClang::addClangTargetOptions(
 
   Darwin::addClangTargetOptions(DriverArgs, CC1Args, DeviceOffloadKind);
 
-  // On arm64e, enable pointer authentication (for the return address and
-  // indirect calls), as well as usage of the intrinsics.
-  if (getArchName() == "arm64e") {
+  // On arm64e, enable pointer authentication intrinsics.
+  if (getTriple().isArm64e()) {
     // The ptrauth ABI version is 0 by default, but can be overridden.
     static const constexpr unsigned DefaultPtrauthABIVersion = 0;
 

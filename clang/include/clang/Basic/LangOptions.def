@@ -172,6 +172,7 @@ LANGOPT(PointerAuthVTPtrTypeDiscrimination, 1, 0, "incorporate type discriminati
 LANGOPT(PointerAuthInitFini, 1, 0, "sign function pointers in init/fini arrays")
 LANGOPT(PointerAuthIndirectGotos, 1, 0, "indirect gotos pointer authentication")
 LANGOPT(SoftPointerAuth   , 1, 0, "software emulation of pointer authentication")
+
 VALUE_LANGOPT(PointerAuthABIVersion, 32, 0, "pointer authentication ABI version")
 LANGOPT(PointerAuthKernelABIVersion, 1, 0, "controls whether the pointer auth abi version represents a kernel ABI")
 LANGOPT(PointerAuthABIVersionEncoded, 1, 0, "controls whether the pointer auth abi version should be encoded in the IR")
