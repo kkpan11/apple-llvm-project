@@ -1790,7 +1790,8 @@ void AArch64AsmPrinter::authLRBeforeTailCall(const MachineFunction &MF,
 
   // If there's no stack frame then there's no AUTIBSP, and so no reason to
   // check for the particular form of invalid LR that produces.
-  if (!MF.getInfo<AArch64FunctionInfo>()->hasStackFrame())
+  if (!MF.getInfo<AArch64FunctionInfo>()->hasStackFrame() &&
+      !Fn.hasFnAttribute("outlined-function"))
     return;
 
   // We know TBI is disabled for instruction keys on Darwin, so bits 62 and 61
@@ -2656,10 +2657,13 @@ void AArch64AsmPrinter::emitInstruction(const MachineInstr *MI) {
     return;
   }
   case AArch64::TCRETURNdi: {
-    authLRBeforeTailCall(*MI->getParent()->getParent(), AArch64::X16);
+    auto &DestOp = MI->getOperand(0);
+    if (!DestOp.isGlobal() ||
+        !DestOp.getGlobal()->getName().starts_with("OUTLINED_FUNCTION"))
+      authLRBeforeTailCall(*MI->getParent()->getParent(), AArch64::X16);
 
     MCOperand Dest;
-    MCInstLowering.lowerOperand(MI->getOperand(0), Dest);
+    MCInstLowering.lowerOperand(DestOp, Dest);
     MCInst TmpInst;
     TmpInst.setOpcode(AArch64::B);
     TmpInst.addOperand(Dest);

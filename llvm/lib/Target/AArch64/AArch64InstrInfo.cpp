@@ -9087,9 +9087,9 @@ void AArch64InstrInfo::buildOutlinedFrame(
 
   AArch64FunctionInfo *FI = MF.getInfo<AArch64FunctionInfo>();
 
-  if (OF.FrameConstructionID == MachineOutlinerTailCall)
+  if (OF.FrameConstructionID == MachineOutlinerTailCall) {
     FI->setOutliningStyle("Tail Call");
-  else if (OF.FrameConstructionID == MachineOutlinerThunk) {
+  } else if (OF.FrameConstructionID == MachineOutlinerThunk) {
     // For thunk outlining, rewrite the last instruction from a call to a
     // tail-call.
     MachineInstr *Call = &*--MBB.instr_end();
@@ -9108,6 +9108,24 @@ void AArch64InstrInfo::buildOutlinedFrame(
     Call->eraseFromParent();
 
     FI->setOutliningStyle("Thunk");
+  }
+
+  if (!InsertsReturn) {
+    // It ends with a tail call, so the outlined function might need to be told
+    // to authenticate LR first.
+    if (std::any_of(OF.Candidates.begin(), OF.Candidates.end(),
+                    [](auto &Candidate) {
+                      auto MF = Candidate.getMF();
+                      auto &Fn = MF->getFunction();
+                      return Fn.hasFnAttribute("ptrauth-auth-traps") &&
+                             Fn.hasFnAttribute("ptrauth-returns") &&
+                             MF->template getInfo<AArch64FunctionInfo>()
+                                 ->hasStackFrame();
+                    })) {
+      MF.getFunction().addFnAttr("ptrauth-auth-traps");
+      MF.getFunction().addFnAttr("ptrauth-returns");
+      MF.getFunction().addFnAttr("outlined-function");
+    }
   }
 
   bool IsLeafFunction = true;
