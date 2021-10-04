@@ -32,6 +32,10 @@ public:
 
   ObjectFileSchema &getSchema() const { return *Schema; }
 
+  bool operator==(const ObjectFormatNodeRef &RHS) const {
+    return Schema == RHS.Schema && cas::CASID(*this) == cas::CASID(RHS);
+  }
+
   ObjectFormatNodeRef() = delete;
 
 protected:
@@ -89,38 +93,6 @@ protected:
   }
 
   SpecificRef(ObjectFormatNodeRef Ref) : ObjectFormatNodeRef(Ref) {}
-};
-
-/// A type-checked reference to a node of a specific kind that is known to be a
-/// leaf.
-template <class DerivedT>
-class LeafRef : public SpecificRef<LeafRef<DerivedT>, DerivedT> {
-  using SpecificRefT = SpecificRef<LeafRef<DerivedT>, DerivedT>;
-  friend class SpecificRef<LeafRef<DerivedT>, DerivedT>;
-
-  // Hide non-leaf APIs.
-  size_t getNumReferences() const;
-  cas::CASID getReference(size_t I) const;
-  Error forEachReference(function_ref<Error(cas::CASID)> Callback) const;
-
-protected:
-  static Expected<DerivedT> get(Expected<ObjectFormatNodeRef> Ref) {
-    if (auto Leaf = getLeaf(std::move(Ref)))
-      return DerivedT(*Leaf);
-    else
-      return Leaf.takeError();
-  }
-
-  static Expected<LeafRef> getLeaf(Expected<ObjectFormatNodeRef> Ref) {
-    auto SpecificRef = SpecificRefT::getSpecific(std::move(Ref));
-    if (!SpecificRef)
-      return SpecificRef.takeError();
-    if (SpecificRef->getNumReferences() != 1)
-      return createStringError(inconvertibleErrorCode(), "corrupt leaf object");
-    return LeafRef(*SpecificRef);
-  }
-
-  LeafRef(ObjectFormatNodeRef Ref) : SpecificRefT(Ref) {}
 };
 
 /// A section.
@@ -235,103 +207,131 @@ private:
                                            uint64_t AlignmentOffset);
 };
 
-/// An array of fixup offsets and kinds.
-///
-/// FIXME: Consider embedding in \a BlockRef when this can be encoded into
-/// something small (e.g., smaller than the cost of a reference), rather than
-/// splitting out a separate object.
-///
-/// Note that random access to fixups is not important; consumers can decode as
-/// they iterate through. As such, a tight encoding could be:
-///
-///     ( Kind RelativeOffset )*
-///
-/// where Kind is 1B, and RelativeOffset is 1+B in vbr8 format, storing the
-/// offset from the previous fixup instead of from the start of the data. The
-/// number of fixups would be determined by iterating through.
-///
-/// In a small function with only one fixup, this would cost 2B total.
-class FixupListRef : public LeafRef<FixupListRef> {
-  using LeafRefT = LeafRef<FixupListRef>;
-  friend class LeafRef<FixupListRef>;
+/// The kind and offset of a fixup (e.g., for a relocation).
+struct Fixup {
+  jitlink::Edge::Kind Kind;
+  jitlink::Edge::OffsetT Offset;
 
-  // FIXME: Is this ABI-stable, or should we use something bigger in case we
-  // need more space in the future?
-  //
-  // Lang: Might as well use 16 bits or 32 bits, for expansion purposes. E.g.,
-  // X86 generic edges: only difference is whether linker can consider it a
-  // candidate for optimization.
-  // Duncan: should that be a property of the fixup or the target?
-  // Lang: came up in jitlink plugins for indirection, when synthesizing a jump
-  // stub for PLT. Do the same thing with a permanent ability to indirect. Need
-  // to think more.
-  //
-  // FIXME: Formalize CAS types separately from what jitlink has.
-  using SerializedKindT = jitlink::Edge::Kind;
-  using SerializedOffsetT = jitlink::Edge::OffsetT;
-  static constexpr size_t SerializedFixupSize =
-      sizeof(SerializedKindT) + sizeof(SerializedOffsetT);
-
-public:
-  static constexpr StringLiteral KindString = "cas.o:fixup-list";
-
-  static Expected<FixupListRef> get(Expected<ObjectFormatNodeRef> Ref);
-  static Expected<FixupListRef> get(ObjectFileSchema &Schema, cas::CASID ID) {
-    return get(Schema.getNode(ID));
+  bool operator==(const Fixup &RHS) const {
+    return Kind == RHS.Kind && Offset == RHS.Offset;
   }
-  size_t getNumEdges() const { return getData().size() / SerializedFixupSize; }
-  jitlink::Edge::OffsetT getFixupOffset(size_t I) const;
-  jitlink::Edge::Kind getFixupKind(size_t I) const;
-
-  static Expected<FixupListRef> create(ObjectFileSchema &Schema,
-                                       ArrayRef<const jitlink::Edge *> Edges);
-
-private:
-  explicit FixupListRef(LeafRefT Ref) : LeafRefT(Ref) {}
+  bool operator!=(const Fixup &RHS) const { return !operator==(RHS); }
 };
 
-/// An array of target indices and addends, parallel to \a FixupListRef. The
-/// target indexes point into an associated \a TargetListRef.
+/// An encoded list of \a Fixup.
 ///
-/// FIXME: Consider embedding in \a BlockRef when this can be encoded into
-/// something small (e.g., smaller than the cost of a reference), rather than
-/// splitting out a separate object.
-///
-/// The encoding itself can also be optimized.
-/// - The addend is often 0, as many fixups don't use the field.
-/// - The size of a target index is bounded by the number of fixups.
-///
-/// A tight encoding could be:
-///
-///     NumIndexBits ( HasAddend Addend? Index )*
-///
-/// where NumIndexBits is 1B, HasAddend is 1-bit, Addend (when present) is
-/// signed-vbr8, and Index is NumIndexBits-bits.
-///
-/// A target info list with one target would usually be 1B (no addend needs
-/// 2 bits) or 2B (addend between -63 and 64 needs 10 bits).
-class TargetInfoListRef : public LeafRef<TargetInfoListRef> {
-  using LeafRefT = LeafRef<TargetInfoListRef>;
-  friend class LeafRef<TargetInfoListRef>;
-
+/// FIXME: Encode kinds separately from what jitlink has, since they're not
+/// stable.
+class FixupList {
 public:
-  static constexpr StringLiteral KindString = "cas.o:target-info-list";
+  class iterator
+      : public iterator_facade_base<iterator, std::forward_iterator_tag,
+                                    const Fixup> {
+    friend class FixupList;
 
-  size_t getNumEdges() const;
-  size_t getTargetIndex(size_t I) const;
-  jitlink::Edge::AddendT getAddend(size_t I) const;
+  public:
+    const Fixup &operator*() const { return *F; }
+    iterator &operator++() {
+      decode();
+      return *this;
+    }
 
-  static Expected<TargetInfoListRef> get(Expected<ObjectFormatNodeRef> Ref);
-  static Expected<TargetInfoListRef> get(ObjectFileSchema &Schema,
-                                         cas::CASID ID) {
-    return get(Schema.getNode(ID));
-  }
-  static Expected<TargetInfoListRef>
-  create(ObjectFileSchema &Schema, ArrayRef<size_t> TargetIndices,
-         ArrayRef<jitlink::Edge::AddendT> Addends);
+    bool operator==(const iterator &RHS) const {
+      return F == RHS.F && Data.begin() == RHS.Data.begin() &&
+             Data.end() == RHS.Data.end();
+    }
+
+  private:
+    void decode(bool IsInit = false);
+
+    struct EndTag {};
+    iterator(EndTag, StringRef Data) : Data(Data.end(), 0) {}
+    explicit iterator(StringRef Data) : Data(Data) { decode(/*IsInit=*/true); }
+
+    StringRef Data;
+    Optional<Fixup> F;
+  };
+
+  iterator begin() const { return iterator(Data); }
+  iterator end() const { return iterator(iterator::EndTag{}, Data); }
+
+  static void encode(ArrayRef<const jitlink::Edge *> Edges,
+                     SmallVectorImpl<char> &Data);
+
+  static void encode(ArrayRef<Fixup> Fixups, SmallVectorImpl<char> &Data);
+
+  FixupList() = default;
+  explicit FixupList(StringRef Data) : Data(Data) {}
 
 private:
-  explicit TargetInfoListRef(LeafRefT Ref) : LeafRefT(Ref) {}
+  StringRef Data;
+};
+
+/// Information about how to apply a \a Fixup to a target, including the addend
+/// and an index into the \a TargetList.
+struct TargetInfo {
+  /// Addend to apply to the target address.
+  jitlink::Edge::AddendT Addend;
+
+  /// Index into the list of targets.
+  size_t Index;
+
+  bool operator==(const TargetInfo &RHS) const {
+    return Addend == RHS.Addend && Index == RHS.Index;
+  }
+  bool operator!=(const TargetInfo &RHS) const { return !operator==(RHS); }
+};
+
+/// An encoded list of \a TargetInfo, parallel with \a FixupList.
+///
+/// FIXME: Optimize the encoding further. Currently the index is stored as VBR8,
+/// but we know that the indexes are all smaller than the TargetList. For lists
+/// with 128 or fewer targets, we could get smaller.
+///
+/// There are very few instances of \a TargetInfoListRef (they dedup
+/// surprisingly well), so no benefit there, but the ones embedded in \a
+/// BlockRef can't be deduped. The statistics for "cas.o:block"'s inline data
+/// should show the headroom available there.
+class TargetInfoList {
+public:
+  class iterator
+      : public iterator_facade_base<iterator, std::forward_iterator_tag,
+                                    const TargetInfo> {
+    friend class TargetInfoList;
+
+  public:
+    const TargetInfo &operator*() const { return *TI; }
+    iterator &operator++() {
+      decode();
+      return *this;
+    }
+
+    bool operator==(const iterator &RHS) const {
+      return TI == RHS.TI && Data.begin() == RHS.Data.begin() &&
+             Data.end() == RHS.Data.end();
+    }
+
+  private:
+    void decode(bool IsInit = false);
+
+    struct EndTag {};
+    iterator(EndTag, StringRef Data) : Data(Data.end(), 0) {}
+    explicit iterator(StringRef Data) : Data(Data) { decode(/*IsInit=*/true); }
+
+    StringRef Data;
+    Optional<TargetInfo> TI;
+  };
+
+  iterator begin() const { return iterator(Data); }
+  iterator end() const { return iterator(iterator::EndTag{}, Data); }
+
+  static void encode(ArrayRef<TargetInfo> TIs, SmallVectorImpl<char> &Data);
+
+  TargetInfoList() = default;
+  explicit TargetInfoList(StringRef Data) : Data(Data) {}
+
+private:
+  StringRef Data;
 };
 
 /// A variant of SymbolRef and IndirectSymbolRef. The kind is cached.
@@ -346,6 +346,7 @@ public:
   };
 
   Kind getKind() const { return K; }
+  bool isAbstractBackedge() const;
 
   static StringRef getKindString(Kind K);
   StringRef getKindString() const { return getKindString(K); }
@@ -365,6 +366,39 @@ private:
 };
 
 /// An array of targets.
+class TargetList {
+public:
+  bool empty() const { return !size(); }
+  size_t size() const { return Last ? Last - First : Node ? 1 : 0; }
+
+  Expected<TargetRef> operator[](size_t I) const { return get(I); }
+  Expected<TargetRef> get(size_t I) const {
+    assert(I < size() && "past the end");
+    if (!I && !Last)
+      return TargetRef::get(*Node);
+    return TargetRef::get(Node->getSchema(), Node->getReference(I + 1));
+  }
+
+  bool hasAbstractBackedge() const { return HasAbstractBackedge; }
+
+  TargetList() = default;
+  explicit TargetList(TargetRef Target)
+      : Node(Target), HasAbstractBackedge(Target.isAbstractBackedge()) {}
+  explicit TargetList(ObjectFormatNodeRef Node, bool HasAbstractBackedge,
+                      size_t First, size_t Last)
+      : Node(Node), First(First), Last(Last),
+        HasAbstractBackedge(HasAbstractBackedge) {
+    assert(Last == this->Last && "Unexpected overflow");
+  }
+
+private:
+  Optional<ObjectFormatNodeRef> Node;
+  uint32_t First = 0;
+  uint32_t Last = 0;
+  bool HasAbstractBackedge = false;
+};
+
+/// An array of targets.
 ///
 /// FIXME: Consider appending to \a BlockRef's references when there is only
 /// one target, only using a separate object when there are at least two.
@@ -379,10 +413,9 @@ public:
 
   size_t getNumTargets() const { return getNumReferences() - 1; }
 
-  Expected<TargetRef> getTarget(size_t I) const {
-    return TargetRef::get(getSchema(), getTargetID(I));
+  TargetList getTargets() const {
+    return TargetList(*this, hasAbstractBackedge(), 1, getNumTargets() + 1);
   }
-  cas::CASID getTargetID(size_t I) const { return getReference(I + 1); }
 
   /// Create the given target list. Does not sort the targets, since it's
   /// assumed the order is already relevant.
@@ -435,6 +468,8 @@ public:
                                             cas::BlobRef Name, bool IsExternal);
   static Expected<IndirectSymbolRef> create(ObjectFileSchema &Schema,
                                             StringRef Name, bool IsExternal);
+  static Expected<IndirectSymbolRef>
+  createAbstractBackedge(ObjectFileSchema &Schema);
   static Expected<IndirectSymbolRef> create(ObjectFileSchema &Schema,
                                             const jitlink::Symbol &S);
 
@@ -542,41 +577,26 @@ public:
 
   bool hasEdges() const { return getNumReferences() > 3; }
 
-  bool hasAbstractBackedge() const;
+  bool hasAbstractBackedge() const { return Flags.HasAbstractBackedge; }
 
   cas::CASID getSectionID() const { return getReference(1); }
   cas::CASID getDataID() const { return getReference(2); }
-  Optional<cas::CASID> getFixupsID() const {
-    return hasEdges() ? getReference(3) : Optional<cas::CASID>();
-  }
-  Optional<cas::CASID> getTargetInfoID() const {
-    return hasEdges() ? getReference(4) : Optional<cas::CASID>();
-  }
-  Optional<cas::CASID> getTargetsID() const {
-    return hasEdges() ? getReference(5) : Optional<cas::CASID>();
-  }
 
+private:
+  Optional<cas::CASID> getTargetsID() const;
+  Optional<cas::CASID> getFixupsID() const;
+  Optional<cas::CASID> getTargetInfoID() const;
+
+public:
   Expected<SectionRef> getSection() const {
     return SectionRef::get(getSchema(), getSectionID());
   }
   Expected<BlockDataRef> getData() const {
     return BlockDataRef::get(getSchema(), getDataID());
   }
-  Expected<Optional<FixupListRef>> getFixups() const {
-    if (Optional<cas::CASID> Fixups = getFixupsID())
-      return FixupListRef::get(getSchema(), *Fixups);
-    return None;
-  }
-  Expected<Optional<TargetInfoListRef>> getTargetInfo() const {
-    if (Optional<cas::CASID> TargetInfo = getTargetInfoID())
-      return TargetInfoListRef::get(getSchema(), *TargetInfo);
-    return None;
-  }
-  Expected<Optional<TargetListRef>> getTargets() const {
-    if (Optional<cas::CASID> Targets = getTargetsID())
-      return TargetListRef::get(getSchema(), *Targets);
-    return None;
-  }
+  Expected<FixupList> getFixups() const;
+  Expected<TargetInfoList> getTargetInfo() const;
+  Expected<TargetList> getTargets() const;
 
   static Expected<BlockRef>
   create(ObjectFileSchema &Schema, const jitlink::Block &Block,
@@ -590,9 +610,9 @@ public:
     return createImpl(Schema, Section, Data, None, None, None);
   }
   static Expected<BlockRef> create(ObjectFileSchema &Schema, SectionRef Section,
-                                   BlockDataRef Data, FixupListRef Fixups,
-                                   TargetInfoListRef TargetInfo,
-                                   TargetListRef Targets) {
+                                   BlockDataRef Data, ArrayRef<Fixup> Fixups,
+                                   ArrayRef<TargetInfo> TargetInfo,
+                                   ArrayRef<TargetRef> Targets) {
     return createImpl(Schema, Section, Data, Fixups, TargetInfo, Targets);
   }
 
@@ -606,13 +626,20 @@ public:
   }
 
 private:
+  struct BlockFlags {
+    bool HasAbstractBackedge = false;
+    bool HasInlinedTargets = false;
+    bool HasEmbeddedEdges = false;
+  };
+  BlockFlags Flags;
+
   explicit BlockRef(SpecificRefT Ref) : SpecificRefT(Ref) {}
 
   static Expected<BlockRef> createImpl(ObjectFileSchema &Schema,
                                        SectionRef Section, BlockDataRef Data,
-                                       Optional<FixupListRef> Fixups,
-                                       Optional<TargetInfoListRef> TargetInfo,
-                                       Optional<TargetListRef> Targets);
+                                       ArrayRef<Fixup> Fixups,
+                                       ArrayRef<TargetInfo> TargetInfo,
+                                       ArrayRef<TargetRef> Targets);
 };
 
 /// A symbol.
@@ -690,15 +717,21 @@ public:
   /// definition has an abstract backedge.
   bool isSymbolTemplate() const;
 
-  uint64_t getOffset() const;
+  uint64_t getOffset() const { return Offset; }
 
   Flags getFlags() const {
     return Flags(getDeadStrip(), getScope(), getMerge());
   }
 
-  DeadStripKind getDeadStrip() const { return (DeadStripKind)getData()[8]; }
-  ScopeKind getScope() const { return (ScopeKind)getData()[9]; }
-  MergeKind getMerge() const { return (MergeKind)getData()[10]; }
+  DeadStripKind getDeadStrip() const {
+    return (DeadStripKind)(((unsigned char)getData()[0] >> 6) & 0x3);
+  }
+  ScopeKind getScope() const {
+    return (ScopeKind)(((unsigned char)getData()[0] >> 4) & 0x3);
+  }
+  MergeKind getMerge() const {
+    return (MergeKind)(((unsigned char)getData()[0] >> 2) & 0x3);
+  }
 
   cas::CASID getDefinitionID() const { return getReference(1); }
   Optional<cas::CASID> getNameID() const {
@@ -734,7 +767,9 @@ public:
              GetDefinitionRef);
 
 private:
-  explicit SymbolRef(SpecificRefT Ref) : SpecificRefT(Ref) {}
+  uint64_t Offset;
+  explicit SymbolRef(SpecificRefT Ref, uint64_t Offset)
+      : SpecificRefT(Ref), Offset(Offset) {}
 };
 
 /// A symbol table.
@@ -775,6 +810,139 @@ private:
 ///
 /// Note: This wrapper eagerly parses target triple, pointer size, and
 /// endianness.
+///
+/// FIXME: There isn't much dedup going on with target lists and
+/// `--inline-unary-target-lists` has almost no effect. Target lists are
+/// bloated by the KeepAlive edges to `__eh_frame` blocks. This prevents
+/// sharing target-lists (even if two functions have the same callees) and
+/// means that almost no block can inline its target-list. Supporting
+/// `__compact_unwind` properly will make this even worse since it'll add more
+/// KeepAlive edges.
+///
+/// We should probably do a more direct translation of the object format,
+/// which isn't trying to do implicit dead-stripping. If we want to support
+/// bit-for-bit round-trip back to Mach-O, something like could be needed
+/// anyway.
+///
+/// Currently we have:
+///
+///     compile-unit
+///       3x symbol table (skipping many dead-strippable symbols)
+///         symbol
+///           block
+///             block-data
+///             section
+///             target-list (including KeepAlive)
+///
+/// Instead we could have:
+///
+///     compile-unit
+///       section (referencing all defined symbols)
+///         symbol
+///           block
+///             block-data
+///               target-list (skipping KeepAlive)
+///
+/// ... but this relayering makes it hard to point at data symbols
+/// anonymously. The data could be listed explicitly by their section, but
+/// then referring to them either requires identifying somehow (e.g.,
+/// generating a name) or a combination of section+symbol.
+///
+/// ... and this relayering defeats a major optimization for `__ehframe` that
+/// dedups individual blocks by using a "template", which we also want to apply
+/// to `__compact_unwind`.
+///
+/// Here's another option, where:
+///
+/// - Sections sometimes point at symbols
+/// - Symbols sometimes point at sections
+///
+/// Split into three for clarity, starting with compile-unit:
+///
+///     compile-unit
+///       section
+///         section-header: identifier for section (e.g., `__text`)
+///         symbol-runs: list of symbols, organized as a flat list of
+///             references, interspersing a "real" symbol with a run of
+///             blocks kept alive with it (possibly from other sections).
+///           keep-alive-info: list of sections for the run of keep-alive
+///               blocks (e.g., `__compact_unwind`, `__eh_frame`), along
+///               with any metadata for building symbols from the blocks.
+///             section-header: indirect reference to the section for the
+///                 block contained in the list of symbols
+///           symbol: "real" symbol, followed by a run of blocks (depending
+///               on keep-alive info)
+///           block: anonymous symbol kept alive by the preceding symbol,
+///               stored in the section implied by context
+///
+/// Blocks reference symbols as before:
+///
+///     block
+///       block-data
+///       fixup-list
+///       target-info-list
+///       target-list: list of targets, which are a variant of one of
+///         indirect-symbol (name-based reference)
+///         symbol          (alias with direct reference)
+///
+/// Anonymous symbols/data can still be directly referenced to avoid
+/// requiring an "identity" for them. In that case they need a section
+/// header.
+///
+/// Symbols look like:
+///
+///     symbol
+///       section-header: (optional) for anonymous symbols, to identify
+///           the section it needs to go in / how to create it
+///       symbol-definition: which is a variant of
+///         block           (usual case)
+///         indirect-symbol (alias)
+///         symbol          (alias with direct reference)
+///
+/// In summary:
+///
+/// - The existing 'section' was renamed to 'section-header'.
+/// - The new section has explicit symbols. It can also have implicit
+///   symbols referenced/created elsewhere.
+/// - KeepAlive edges are stored outside of symbols, in
+///   symbol-runs+keep-alive-info. The kept-alive blocks can still be
+///   templated (as before) so their contents are independent of the
+///   associated symbol.
+/// - Blocks no longer reference their section explicitly. That must by
+///   determined by context of refernece.
+/// - Symbols that are referenced directly need to point at their section.
+///   Other symbols do not.
+///     - Exported symbols should be referenced by name to increase
+///       deduplication of callers and to avoid unnecessarily pointing at
+///       their section.
+///     - Anonymous symbols should be referenced directly unless they need
+///       "identity" (e.g., their address is taken or they are involved in a
+///       reference cycle).
+///     - Local symbols that aren't anonymous could be referenced either
+///       way. For symbols with (meaningless) generated names, it seems best
+///       to drop the name and reference by content. For names coming from
+///       an entity in a source file (e.g., `static void f1() {}`) it's best
+///       to reference indirectly to get dedup between builds.
+/// - Target lists no longer include keep-alive edges. This should:
+///     - Make more target lists match exactly (more dedup).
+///     - Reduce the size of them (fewer references overall).
+///     - Allow (many?) more to be inlined into their referencing block.
+/// - Overall, this should reduce the number of references significantly.
+///     - Every "function" drops a reference from its target list, target
+///       lists get deduped better, and many functions start inlining target
+///       lists.
+///     - Anonymous symbols still get deduped and don't need to be pointed
+///       at explicitly.
+///     - Templated symbols (e.g., `__eh_frame`) are no longer explicitly
+///       stored, avoiding a number of references to those blocks.
+/// - This also demonstrates a path forward for `__debug*`, once it gets
+///   split up between functions.
+///     - Debug info is anonymous, and should be kept alive along with the
+///       data it references.
+///     - The debug info block(s) for a specific function could be added
+///       to the symbol-runs.
+///     - "Templating" the debug info block(s) also seems potentially
+///        useful if it allows dedup. But that's less clear.
 class CompileUnitRef : public SpecificRef<CompileUnitRef> {
   using SpecificRefT = SpecificRef<CompileUnitRef>;
   friend class SpecificRef<CompileUnitRef>;

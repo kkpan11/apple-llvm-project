@@ -10,10 +10,20 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/Memory.h"
+#include "llvm/Testing/Support/Error.h"
 #include "gtest/gtest.h"
 
 using namespace llvm;
 using namespace llvm::casobjectformat;
+
+template <typename T>
+static Error unwrapExpected(Expected<T> &&E, Optional<T> &O) {
+  O.reset();
+  if (!E)
+    return E.takeError();
+  O = std::move(*E);
+  return Error::success();
+}
 
 namespace {
 
@@ -140,9 +150,6 @@ TEST(CASObjectFormatTests, LeafBlock) {
     EXPECT_EQ(Block->getDataID(), *BlockData);
     EXPECT_EQ(Block->getSectionID(), *Section);
     EXPECT_FALSE(Block->hasEdges());
-    EXPECT_FALSE(Block->getFixupsID());
-    EXPECT_FALSE(Block->getTargetInfoID());
-    EXPECT_FALSE(Block->getTargetsID());
   }
 }
 
@@ -416,32 +423,35 @@ TEST(CASObjectFormatTests, BlockWithEdges) {
   };
 
   // This is the API being tested, which should build an edge list.
-  Optional<BlockRef> Block =
-      expectedToOptional(BlockRef::create(Schema, B, createTarget));
-  ASSERT_TRUE(Block);
+  Optional<BlockRef> Block;
+  ASSERT_THAT_ERROR(
+      unwrapExpected(BlockRef::create(Schema, B, createTarget), Block),
+      Succeeded());
   EXPECT_TRUE(Block->hasEdges());
-  Optional<TargetInfoListRef> TargetInfoList = cantFail(Block->getTargetInfo());
-  Optional<FixupListRef> FixupList = cantFail(Block->getFixups());
-  Optional<TargetListRef> TargetList = cantFail(Block->getTargets());
-  ASSERT_EQ(std::extent<decltype(AddOrder)>::value, FixupList->getNumEdges());
+  TargetInfoList TIs = cantFail(Block->getTargetInfo());
+  FixupList Fixups = cantFail(Block->getFixups());
+  TargetList BlockTargets = cantFail(Block->getTargets());
   ASSERT_EQ(std::extent<decltype(AddOrder)>::value,
-            TargetInfoList->getNumEdges());
-  ASSERT_EQ(3u, TargetList->getNumTargets());
+            size_t(std::distance(Fixups.begin(), Fixups.end())));
+  ASSERT_EQ(std::extent<decltype(AddOrder)>::value,
+            size_t(std::distance(TIs.begin(), TIs.end())));
+  ASSERT_EQ(3u, BlockTargets.size());
 
   // Check the fixups and targets, in sorted order.
-  for (size_t I = 0, E = std::extent<decltype(AddOrder)>::value; I != E; ++I) {
-    size_t TargetIndex = TargetInfoList->getTargetIndex(I);
-    ASSERT_LT(TargetIndex, TargetList->getNumTargets());
-    Optional<TargetRef> Target =
-        expectedToOptional(TargetList->getTarget(TargetIndex));
+  FixupList::iterator F = Fixups.begin();
+  TargetInfoList::iterator TI = TIs.begin();
+  for (size_t I = 0, E = std::extent<decltype(AddOrder)>::value; I != E;
+       ++I, ++F, ++TI) {
+    ASSERT_LT(TI->Index, BlockTargets.size());
+    Optional<TargetRef> Target = expectedToOptional(BlockTargets[TI->Index]);
     ASSERT_TRUE(Target);
     TargetRef ExpectedTarget = *CreatedSymbols.lookup(Targets[I]);
 
     // These are easy to test.
-    EXPECT_EQ(Kinds[I], FixupList->getFixupKind(I));
-    EXPECT_EQ(Offsets[I], FixupList->getFixupOffset(I));
+    EXPECT_EQ(Kinds[I], F->Kind);
+    EXPECT_EQ(Offsets[I], F->Offset);
     EXPECT_EQ(ExpectedTarget.getID(), Target->getID());
-    EXPECT_EQ(Addends[I], TargetInfoList->getAddend(I));
+    EXPECT_EQ(Addends[I], TI->Addend);
   }
 }
 

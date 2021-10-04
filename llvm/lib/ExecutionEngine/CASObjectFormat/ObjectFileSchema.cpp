@@ -9,6 +9,7 @@
 #include "llvm/ExecutionEngine/CASObjectFormat/ObjectFileSchema.h"
 #include "llvm/ADT/PointerUnion.h"
 #include "llvm/ADT/PostOrderIterator.h"
+#include "llvm/ExecutionEngine/CASObjectFormat/Encoding.h"
 #include "llvm/Support/EndianStream.h"
 
 // FIXME: For jitlink::x86_64::writeOperand(). Should use a generic version.
@@ -22,8 +23,6 @@ using namespace llvm::casobjectformat;
 
 const StringLiteral IndirectSymbolRef::KindString;
 const StringLiteral BlockDataRef::KindString;
-const StringLiteral FixupListRef::KindString;
-const StringLiteral TargetInfoListRef::KindString;
 const StringLiteral TargetListRef::KindString;
 const StringLiteral SectionRef::KindString;
 const StringLiteral BlockRef::KindString;
@@ -43,7 +42,6 @@ Error ObjectFileSchema::fillCache() {
 
   StringRef AllKindStrings[] = {
       IndirectSymbolRef::KindString, BlockDataRef::KindString,
-      FixupListRef::KindString,      TargetInfoListRef::KindString,
       TargetListRef::KindString,     SectionRef::KindString,
       BlockRef::KindString,          SymbolRef::KindString,
       SymbolTableRef::KindString,    CompileUnitRef::KindString,
@@ -165,6 +163,11 @@ Expected<IndirectSymbolRef> IndirectSymbolRef::create(ObjectFileSchema &Schema,
   if (!Blob)
     return Blob.takeError();
   return create(Schema, *Blob, IsExternal);
+}
+
+Expected<IndirectSymbolRef>
+IndirectSymbolRef::createAbstractBackedge(ObjectFileSchema &Schema) {
+  return create(Schema, AbstractBackedgeSymbolName, /*IsExternal=*/false);
 }
 
 Expected<IndirectSymbolRef>
@@ -358,112 +361,64 @@ Expected<BlockDataRef> BlockDataRef::createContent(ObjectFileSchema &Schema,
   return createImpl(Schema, *Blob, Content.size(), Alignment, AlignmentOffset);
 }
 
-Expected<FixupListRef> FixupListRef::get(Expected<ObjectFormatNodeRef> Ref) {
-  auto Leaf = LeafRefT::getLeaf(std::move(Ref));
-  if (!Leaf)
-    return Leaf.takeError();
-
-  FixupListRef List(*Leaf);
-  if (List.getNumEdges() * SerializedFixupSize != List.getData().size())
-    return createStringError(inconvertibleErrorCode(), "corrupt fixup list");
-  return List;
-}
-
-Expected<FixupListRef>
-FixupListRef::create(ObjectFileSchema &Schema,
-                     ArrayRef<const jitlink::Edge *> Edges) {
-  SmallString<1024> Data;
-  Data.reserve(Edges.size() * sizeof(SerializedKindT));
-
-  raw_svector_ostream OS(Data);
-  support::endian::Writer EW(OS, support::endianness::little);
-  for (const jitlink::Edge *Edge : Edges)
-    EW.write(SerializedOffsetT(Edge->getOffset()));
-
+void FixupList::encode(ArrayRef<Fixup> Fixups, SmallVectorImpl<char> &Data) {
   // FIXME: Kinds should be numbered in a stable way, not just rely on
   // Edge::Kind.
-  for (const jitlink::Edge *Edge : Edges)
-    EW.write(SerializedKindT(Edge->getKind()));
-
-  Optional<cas::CASID> KindID = Schema.getKindStringID(KindString);
-  assert(KindID && "Expected valid KindID");
-  return get(Schema.createNode(*KindID, Data));
+  for (auto &F : Fixups) {
+    Data.push_back(static_cast<unsigned char>(F.Kind));
+    encoding::writeVBR8(uint64_t(F.Offset), Data);
+  }
 }
 
-jitlink::Edge::OffsetT FixupListRef::getFixupOffset(size_t I) const {
-  assert(I < getNumEdges());
-  using namespace llvm::support;
-  return endian::read<SerializedOffsetT, endianness::little, aligned>(
-      getData().begin() + I * sizeof(SerializedOffsetT));
-}
-
-jitlink::Edge::Kind FixupListRef::getFixupKind(size_t I) const {
-  assert(I < getNumEdges());
-  using namespace llvm::support;
-  return endian::read<SerializedKindT, endianness::little, aligned>(
-      getData().begin() + getNumEdges() * sizeof(SerializedOffsetT) +
-      I * sizeof(SerializedKindT));
-}
-
-Expected<TargetInfoListRef>
-TargetInfoListRef::get(Expected<ObjectFormatNodeRef> Ref) {
-  auto Leaf = LeafRefT::getLeaf(std::move(Ref));
-  if (!Leaf)
-    return Leaf.takeError();
-
-  TargetInfoListRef List(*Leaf);
-  if (List.getNumEdges() * (sizeof(uint64_t) + sizeof(uint32_t)) !=
-      List.getData().size())
-    return createStringError(inconvertibleErrorCode(),
-                             "corrupt target info list");
-  return List;
-}
-
-Expected<TargetInfoListRef>
-TargetInfoListRef::create(ObjectFileSchema &Schema,
-                          ArrayRef<size_t> TargetIndices,
-                          ArrayRef<jitlink::Edge::AddendT> Addends) {
-  assert(TargetIndices.size() == Addends.size());
-
-  // FIXME: This can be packed much smaller. Indices count from 0 and addends
-  // are often close to 0 as well.
-  SmallString<1024> Data;
-  Data.reserve(Addends.size() * sizeof(uint64_t) +
-               TargetIndices.size() * sizeof(uint32_t));
-
-  raw_svector_ostream OS(Data);
-  support::endian::Writer EW(OS, support::endianness::little);
-  for (jitlink::Edge::AddendT Addend : Addends)
-    EW.write(uint64_t(Addend));
-
-  for (size_t Index : TargetIndices) {
-    assert(Index < Addends.size() && "More targets than edges?");
-    EW.write(uint32_t(Index));
+void FixupList::iterator::decode(bool IsInit) {
+  if (Data.empty()) {
+    assert((IsInit || F) && "past the end");
+    F.reset();
+    return;
   }
 
-  Optional<cas::CASID> KindID = Schema.getKindStringID(KindString);
-  assert(KindID && "Expected valid KindID");
-  return get(Schema.createNode(*KindID, Data));
+  unsigned char Kind = Data[0];
+  Data = Data.drop_front();
+
+  uint64_t Offset = 0;
+  bool ConsumeFailed = errorToBool(encoding::consumeVBR8(Data, Offset));
+  assert(!ConsumeFailed && "Cannot decode vbr8");
+  (void)ConsumeFailed;
+
+  F.emplace();
+  F->Kind = Kind;
+  F->Offset = Offset;
 }
 
-size_t TargetInfoListRef::getNumEdges() const {
-  using namespace llvm::support;
-  return getData().size() / (sizeof(uint64_t) + sizeof(uint32_t));
+void TargetInfoList::encode(ArrayRef<TargetInfo> TIs,
+                            SmallVectorImpl<char> &Data) {
+  for (const TargetInfo &TI : TIs) {
+    assert(TI.Index < TIs.size() && "More targets than edges?");
+    encoding::writeVBR8(int64_t(TI.Addend), Data);
+    encoding::writeVBR8(uint32_t(TI.Index), Data);
+  }
 }
 
-jitlink::Edge::AddendT TargetInfoListRef::getAddend(size_t I) const {
-  assert(I < getNumEdges());
-  using namespace llvm::support;
-  return endian::read<uint64_t, endianness::little, aligned>(
-      getData().begin() + I * sizeof(uint64_t));
-}
+void TargetInfoList::iterator::decode(bool IsInit) {
+  if (Data.empty()) {
+    assert((IsInit || TI) && "past the end");
+    TI.reset();
+    return;
+  }
 
-size_t TargetInfoListRef::getTargetIndex(size_t I) const {
-  assert(I < getNumEdges());
-  using namespace llvm::support;
-  return endian::read<uint32_t, endianness::little, aligned>(
-      getData().begin() + getNumEdges() * sizeof(uint64_t) +
-      I * sizeof(uint32_t));
+  int64_t Addend = 0;
+  bool ConsumeFailed = errorToBool(encoding::consumeVBR8(Data, Addend));
+  assert(!ConsumeFailed && "Cannot decode vbr8");
+  (void)ConsumeFailed;
+
+  uint32_t Index = 0;
+  ConsumeFailed = errorToBool(encoding::consumeVBR8(Data, Index));
+  assert(!ConsumeFailed && "Cannot decode vbr8");
+  (void)ConsumeFailed;
+
+  TI.emplace();
+  TI->Addend = Addend;
+  TI->Index = Index;
 }
 
 StringRef TargetRef::getKindString(Kind K) {
@@ -473,6 +428,11 @@ StringRef TargetRef::getKindString(Kind K) {
   case IndirectSymbol:
     return IndirectSymbolRef::KindString;
   }
+}
+
+bool TargetRef::isAbstractBackedge() const {
+  return getKind() == TargetRef::IndirectSymbol &&
+         cantFail(IndirectSymbolRef::get(*this)).isAbstractBackedge();
 }
 
 Expected<TargetRef> TargetRef::get(Expected<ObjectFormatNodeRef> Ref,
@@ -557,10 +517,7 @@ Expected<TargetListRef> TargetListRef::create(ObjectFileSchema &Schema,
   bool HasAbstractBackedge = false;
   for (TargetRef Target : Targets) {
     IDs.push_back(Target);
-
-    HasAbstractBackedge |=
-        Target.getKind() == TargetRef::IndirectSymbol &&
-        cantFail(IndirectSymbolRef::get(Target)).isAbstractBackedge();
+    HasAbstractBackedge |= Target.isAbstractBackedge();
   }
   return get(Schema.createNode(IDs, HasAbstractBackedge ? "\x01" : ""));
 }
@@ -615,6 +572,86 @@ Expected<SectionRef> SectionRef::get(Expected<ObjectFormatNodeRef> Ref) {
     return createStringError(inconvertibleErrorCode(), "corrupt section");
 
   return SectionRef(*Specific);
+}
+
+Optional<cas::CASID> BlockRef::getTargetsID() const {
+  return hasEdges() ? getReference(3) : Optional<cas::CASID>();
+}
+
+Optional<cas::CASID> BlockRef::getFixupsID() const {
+  assert(hasEdges() && "Expected edges");
+  assert(!Flags.HasEmbeddedEdges && "Expected explicit edges");
+  return getReference(4);
+}
+
+Optional<cas::CASID> BlockRef::getTargetInfoID() const {
+  assert(hasEdges() && "Expected edges");
+  assert(!Flags.HasEmbeddedEdges && "Expected explicit edges");
+  return getReference(5);
+}
+
+Expected<FixupList> BlockRef::getFixups() const {
+  if (!hasEdges())
+    return FixupList("");
+
+  if (Flags.HasEmbeddedEdges) {
+    uint64_t FixupsSize;
+    Expected<StringRef> FixupsAndInfo =
+        encoding::readVBR8(cas::NodeRef::getData().drop_front(), FixupsSize);
+    if (!FixupsAndInfo)
+      return FixupsAndInfo.takeError();
+    return FixupList(FixupsAndInfo->take_front(FixupsSize));
+  }
+
+  Optional<cas::CASID> FixupsID = getFixupsID();
+  if (!FixupsID)
+    return FixupList("");
+
+  if (Expected<cas::BlobRef> Fixups = getCAS().getBlob(*FixupsID))
+    return FixupList(Fixups->getData());
+  else
+    return Fixups.takeError();
+}
+
+Expected<TargetInfoList> BlockRef::getTargetInfo() const {
+  if (!hasEdges())
+    return TargetInfoList("");
+
+  if (Flags.HasEmbeddedEdges) {
+    uint64_t FixupsSize;
+    Expected<StringRef> FixupsAndInfo =
+        encoding::readVBR8(cas::NodeRef::getData().drop_front(), FixupsSize);
+    if (!FixupsAndInfo)
+      return FixupsAndInfo.takeError();
+    return TargetInfoList(FixupsAndInfo->drop_front(FixupsSize));
+  }
+
+  Optional<cas::CASID> TargetInfoID = getTargetInfoID();
+  if (!TargetInfoID)
+    return TargetInfoList("");
+
+  if (Expected<cas::BlobRef> TIs = getCAS().getBlob(*TargetInfoID))
+    return TargetInfoList(TIs->getData());
+  else
+    return TIs.takeError();
+}
+
+Expected<TargetList> BlockRef::getTargets() const {
+  Optional<cas::CASID> TargetsID = getTargetsID();
+  if (!TargetsID)
+    return TargetList();
+  if (Flags.HasInlinedTargets) {
+    if (Expected<TargetRef> InlinedTarget =
+            TargetRef::get(getSchema(), *TargetsID))
+      return TargetList(*InlinedTarget);
+    else
+      return InlinedTarget.takeError();
+  }
+  if (Expected<TargetListRef> Targets =
+          TargetListRef::get(getSchema(), *TargetsID))
+    return Targets->getTargets();
+  else
+    return Targets.takeError();
 }
 
 Expected<SectionRef> SectionRef::create(ObjectFileSchema &Schema,
@@ -744,19 +781,16 @@ static bool compareSymbolsByAddress(const jitlink::Symbol *LHS,
 }
 
 static Error decomposeAndSortEdges(
-    const jitlink::Block &Block, SmallVectorImpl<const jitlink::Edge *> &Edges,
-    SmallVectorImpl<size_t> &TargetIndices,
-    SmallVectorImpl<jitlink::Edge::AddendT> &Addends,
-    SmallVectorImpl<TargetRef> &Targets,
+    const jitlink::Block &Block, SmallVectorImpl<Fixup> &Fixups,
+    SmallVectorImpl<TargetInfo> &TIs, SmallVectorImpl<TargetRef> &Targets,
     function_ref<Expected<TargetRef>(
         const jitlink::Symbol &, jitlink::Edge::Kind, bool IsFromData,
         jitlink::Edge::AddendT &Addend, Optional<StringRef> &SplitContent)>
         GetTargetRef) {
   assert(Block.edges_size() &&
          "Expected to only be called when there's work to do");
-  assert(Edges.empty());
-  assert(TargetIndices.empty());
-  assert(Addends.empty());
+  assert(Fixups.empty());
+  assert(TIs.empty());
   assert(Targets.empty());
 
   // Guess whether the edges are coming from data or code.
@@ -767,6 +801,7 @@ static Error decomposeAndSortEdges(
       !(Block.getSection().getProtectionFlags() & sys::Memory::MF_EXEC);
 
   // Collect edges and targets, filtering out duplicate symbols.
+  SmallVector<const jitlink::Edge *, 16> Edges;
   Edges.reserve(Block.edges_size());
   struct TargetAndSymbol {
     TargetRef Target;
@@ -866,13 +901,17 @@ static Error decomposeAndSortEdges(
          "No symbols should have been added by lookup!");
 
   // Fill in the addends and target indices.
-  Addends.reserve(Edges.size());
-  TargetIndices.reserve(Edges.size());
+  Fixups.reserve(Edges.size());
+  TIs.reserve(Edges.size());
   for (const jitlink::Edge *E : Edges) {
+    Fixups.emplace_back();
+    Fixups.back().Kind = E->getKind();
+    Fixups.back().Offset = E->getOffset();
+
     EdgeTarget &ET = EdgeTargets.find(E)->second;
-    size_t I = SymbolIndex.lookup(ET.Target);
-    TargetIndices.push_back(I);
-    Addends.push_back(ET.Addend);
+    TIs.emplace_back();
+    TIs.back().Index = SymbolIndex.lookup(ET.Target);
+    TIs.back().Addend = ET.Addend;
   }
   assert(TargetData.size() == SymbolIndex.size() &&
          "No symbols should have been added by lookup!");
@@ -903,60 +942,95 @@ Expected<BlockRef> BlockRef::create(
     return createImpl(Schema, *Section, *Data, None, None, None);
 
   // Break down the edges.
-  SmallVector<const jitlink::Edge *, 16> Edges;
-  SmallVector<size_t, 16> TargetIndices;
-  SmallVector<jitlink::Edge::AddendT, 16> Addends;
+  SmallVector<Fixup, 16> Fixups;
+  SmallVector<TargetInfo, 16> TIs;
   SmallVector<TargetRef, 16> Targets;
-  if (Error E = decomposeAndSortEdges(Block, Edges, TargetIndices, Addends,
-                                      Targets, GetTargetRef))
+  if (Error E =
+          decomposeAndSortEdges(Block, Fixups, TIs, Targets, GetTargetRef))
     return std::move(E);
-  assert(!Edges.empty());
-  assert(Edges.size() == TargetIndices.size());
-  assert(Edges.size() == Addends.size());
+  assert(!Fixups.empty());
+  assert(Fixups.size() == TIs.size());
   assert(!Targets.empty());
-  assert(Targets.size() <= Edges.size());
+  assert(Targets.size() <= Fixups.size());
 
-  // Create everything.
-  Expected<FixupListRef> Fixups = FixupListRef::create(Schema, Edges);
-  if (!Fixups)
-    return Fixups.takeError();
-  Expected<TargetInfoListRef> TargetInfo =
-      TargetInfoListRef::create(Schema, TargetIndices, Addends);
-  if (!TargetInfo)
-    return TargetInfo.takeError();
-  Expected<TargetListRef> TargetList = TargetListRef::create(Schema, Targets);
-  if (!TargetList)
-    return TargetList.takeError();
-  return createImpl(Schema, *Section, *Data, *Fixups, *TargetInfo, *TargetList);
+  return createImpl(Schema, *Section, *Data, Fixups, TIs, Targets);
 }
+
+cl::opt<size_t> MaxEdgesToEmbedInBlock(
+    "max-edges-to-embed-in-block",
+    cl::desc("Maximum number of edges to embed in a block."), cl::init(8));
+
+cl::opt<bool>
+    InlineUnaryTargetLists("inline-unary-target-lists",
+                           cl::desc("Whether to inline unary target lists."),
+                           cl::init(true));
 
 Expected<BlockRef> BlockRef::createImpl(ObjectFileSchema &Schema,
                                         SectionRef Section, BlockDataRef Data,
-                                        Optional<FixupListRef> Fixups,
-                                        Optional<TargetInfoListRef> TargetInfo,
-                                        Optional<TargetListRef> Targets) {
-  bool HasAbstractBackedge = false;
+                                        ArrayRef<Fixup> Fixups,
+                                        ArrayRef<TargetInfo> TargetInfo,
+                                        ArrayRef<TargetRef> Targets) {
   Optional<cas::CASID> KindID = Schema.getKindStringID(KindString);
   assert(KindID && "Expected valid KindID");
   SmallVector<cas::CASID, 6> IDs = {*KindID, Section, Data};
-  if (Fixups) {
-    assert(TargetInfo && "Fixups without target info?");
-    assert(Targets && "Fixups without targets?");
-    IDs.push_back(*Fixups);
-    IDs.push_back(*TargetInfo);
-    IDs.push_back(*Targets);
-    HasAbstractBackedge = Targets->hasAbstractBackedge();
+  if (Fixups.empty()) {
+    assert(TargetInfo.empty() && "Target info without fixups?");
+    assert(Targets.empty() && "Targets without fixups?");
   } else {
-    assert(!TargetInfo && "Target info without fixups?");
-    assert(!Targets && "Targets without fixups?");
+    assert(TargetInfo.size() == Fixups.size() && "Fixups without target info?");
+    assert(!Targets.empty() && "Fixups without targets?");
   }
 
-  return get(Schema.createNode(IDs, HasAbstractBackedge ? "\x01" : ""));
-}
+  bool HasAbstractBackedge = false;
+  const bool EmbedEdges =
+      !Fixups.empty() && Fixups.size() <= MaxEdgesToEmbedInBlock;
+  const bool InlineTargets = InlineUnaryTargetLists && Targets.size() == 1;
+  if (InlineTargets) {
+    IDs.push_back(Targets[0].getID());
+    HasAbstractBackedge = Targets[0].isAbstractBackedge();
+  } else if (!Targets.empty()) {
+    auto TargetsRef = TargetListRef::create(Schema, Targets);
+    if (!TargetsRef)
+      return TargetsRef.takeError();
+    IDs.push_back(*TargetsRef);
+    HasAbstractBackedge = TargetsRef->hasAbstractBackedge();
+  }
 
-bool BlockRef::hasAbstractBackedge() const {
-  assert(SpecificRefT::getData().empty() || SpecificRefT::getData() == "\x01");
-  return SpecificRefT::getData() == "\x01";
+  SmallString<512> InlineData;
+  unsigned Bits = 0;
+  Bits |= unsigned(HasAbstractBackedge);
+  Bits |= unsigned(InlineTargets) << 1;
+  Bits |= unsigned(EmbedEdges) << 2;
+  InlineData.push_back(static_cast<unsigned char>(Bits));
+
+  if (EmbedEdges) {
+    SmallString<128> FixupData;
+    FixupList::encode(Fixups, FixupData);
+
+    // Store size of fixups in bytes, then fixups, then target-info.
+    //
+    // FIXME: Splitting up fixups (sinking to BlockData) would allow the size
+    // to be skipped.
+    encoding::writeVBR8(uint64_t(FixupData.size()), InlineData);
+    InlineData.append(FixupData);
+    TargetInfoList::encode(TargetInfo, InlineData);
+  } else if (!Fixups.empty()) {
+    SmallString<128> FixupsData;
+    FixupList::encode(Fixups, FixupsData);
+    auto FixupsRef = Schema.CAS.createBlob(FixupsData);
+    if (!FixupsRef)
+      return FixupsRef.takeError();
+    IDs.push_back(*FixupsRef);
+
+    SmallString<128> TargetInfoData;
+    TargetInfoList::encode(TargetInfo, TargetInfoData);
+    auto TargetInfoRef = Schema.CAS.createBlob(TargetInfoData);
+    if (!TargetInfoRef)
+      return TargetInfoRef.takeError();
+    IDs.push_back(*TargetInfoRef);
+  }
+
+  return get(Schema.createNode(IDs, InlineData));
 }
 
 Expected<BlockRef> BlockRef::get(Expected<ObjectFormatNodeRef> Ref) {
@@ -964,12 +1038,16 @@ Expected<BlockRef> BlockRef::get(Expected<ObjectFormatNodeRef> Ref) {
   if (!Specific)
     return Specific.takeError();
 
-  if ((Specific->getNumReferences() != 3 &&
-       Specific->getNumReferences() != 6) ||
-      (!Specific->getData().empty() && Specific->getData() != "\x01"))
+  if (Specific->getNumReferences() < 3 || Specific->getNumReferences() > 6 ||
+      Specific->getData().size() < 1)
     return createStringError(inconvertibleErrorCode(), "corrupt block");
 
-  return BlockRef(*Specific);
+  BlockRef B(*Specific);
+  unsigned char Bits = Specific->getData()[0];
+  B.Flags.HasAbstractBackedge = Bits & 1U;
+  B.Flags.HasInlinedTargets = Bits & (1U << 1);
+  B.Flags.HasEmbeddedEdges = Bits & (1U << 2);
+  return B;
 }
 
 Expected<IndirectSymbolRef> SymbolRef::createIndirectSymbol() const {
@@ -994,17 +1072,28 @@ Expected<SymbolRef> SymbolRef::get(Expected<ObjectFormatNodeRef> Ref) {
     return createStringError(inconvertibleErrorCode(), "corrupt symbol");
 
   // Check that the linkage is valid.
-  using namespace llvm::support;
-  if (Specific->getData().size() != sizeof(uint64_t) + sizeof(uint8_t) * 4 ||
-      (uint8_t)Specific->getData()[8] > (uint8_t)DS_Max ||
-      (uint8_t)Specific->getData()[9] > (uint8_t)S_Max ||
-      (uint8_t)Specific->getData()[10] > (uint8_t)M_Max ||
-      (uint8_t)Specific->getData()[11] > 1)
+  if (Specific->getData().empty())
     return createStringError(inconvertibleErrorCode(),
                              "corrupt symbol linkage");
 
+  uint64_t Offset = 0;
+  if (Specific->getData().size() > 1) {
+    StringRef Remaining = Specific->getData().drop_front();
+    Error E = encoding::consumeVBR8(Remaining, Offset);
+    if (E || !Remaining.empty()) {
+      consumeError(std::move(E));
+      return createStringError(inconvertibleErrorCode(),
+                               "corrupt symbol offset");
+    }
+  }
+
   // Anonymous symbols cannot be exported or merged by name.
-  SymbolRef Symbol(*Specific);
+  SymbolRef Symbol(*Specific, Offset);
+  if ((uint8_t)Symbol.getDeadStrip() > (uint8_t)DS_Max ||
+      (uint8_t)Symbol.getScope() > (uint8_t)S_Max ||
+      (uint8_t)Symbol.getMerge() > (uint8_t)M_Max)
+    return createStringError(inconvertibleErrorCode(),
+                             "corrupt symbol linkage");
   if ((!Symbol.hasName()) &&
       (Symbol.getScope() != S_Local || (Symbol.getMerge() & M_ByName)))
     return createStringError(inconvertibleErrorCode(),
@@ -1014,13 +1103,7 @@ Expected<SymbolRef> SymbolRef::get(Expected<ObjectFormatNodeRef> Ref) {
 }
 
 bool SymbolRef::isSymbolTemplate() const {
-  assert(getData().size() >= 12);
-  return getData()[11] == 1;
-}
-
-uint64_t SymbolRef::getOffset() const {
-  using namespace llvm::support;
-  return endian::read<uint64_t, endianness::little, aligned>(getData().begin());
+  return (unsigned char)getData()[0] & 0x1U;
 }
 
 cl::opt<bool> UseAutoHideDuringIngestion(
@@ -1122,16 +1205,14 @@ Expected<SymbolRef> SymbolRef::create(ObjectFileSchema &Schema,
     IsSymbolTemplate =
         cantFail(BlockRef::get(Definition)).hasAbstractBackedge();
 
-  // Note: the CAS likely needs to align data that follows. Make no effort to
-  // pack these into a combined bit-field.
-  SmallString<sizeof(uint64_t) + sizeof(uint8_t) * 4> Data;
-  raw_svector_ostream OS(Data);
-  support::endian::Writer EW(OS, support::endianness::little);
-  EW.write(Offset);
-  Data.push_back((uint8_t)F.DeadStrip);
-  Data.push_back((uint8_t)F.Scope);
-  Data.push_back((uint8_t)F.Merge);
-  Data.push_back((uint8_t)IsSymbolTemplate);
+  SmallString<16> Data;
+  static_assert(((uint8_t)DS_Max >> 2) == 0, "Not enough bits for dead-strip");
+  static_assert(((uint8_t)S_Max >> 2) == 0, "Not enough bits for scope");
+  static_assert(((uint8_t)M_Max >> 2) == 0, "Not enough bits for merge");
+  Data.push_back((uint8_t)F.DeadStrip << 6 | (uint8_t)F.Scope << 4 |
+                 (uint8_t)F.Merge << 2 | (uint8_t)IsSymbolTemplate);
+  if (Offset)
+    encoding::writeVBR8(Offset, Data);
 
   Optional<cas::CASID> KindID = Schema.getKindStringID(KindString);
   assert(KindID && "Expected valid KindID");
@@ -1821,7 +1902,6 @@ public:
   using BlockID = TypedID<BlockRef>;
   using BlockDataID = TypedID<BlockDataRef>;
   using TargetListID = TypedID<TargetListRef>;
-  using FixupListID = TypedID<FixupListRef>;
 
   /// Used for de-duping block instantiations.
   ///
@@ -1836,7 +1916,9 @@ public:
     // in the block structure.
     SectionID Section;
     BlockDataID Data;
-    FixupListID FixupList;
+    // FIXME: Fixups should be here somehow. Sinking them to BlockData would
+    // address that. But this data structure is not being used at all right now
+    // so it's okay that there's a bug for now.
 
     /// Realized targets. Pointing at the same array as \a TargetLists
     /// (allocated in \a TargetListAlloc).
@@ -1845,7 +1927,6 @@ public:
     friend bool operator==(const MergeableBlock &LHS,
                            const MergeableBlock &RHS) {
       return LHS.Section.ID == RHS.Section.ID && LHS.Data.ID == RHS.Data.ID &&
-             LHS.FixupList.ID == RHS.FixupList.ID &&
              LHS.TargetList == RHS.TargetList;
     }
   };
@@ -1866,7 +1947,7 @@ public:
     static unsigned getHashValue(const MergeableBlock &MB) {
       return hash_combine(
           hash_value(MB.Section.ID.getHash()), hash_value(MB.Data.ID.getHash()),
-          hash_value(MB.FixupList.ID.getHash()), hash_value(MB.TargetList));
+          hash_value(MB.TargetList));
     }
 
     static unsigned getHashValue(const MergeableBlock *MB) {
@@ -2186,53 +2267,49 @@ Error LinkGraphBuilder::addEdges(jitlink::Symbol &ForSymbol, jitlink::Block &B,
   if (!Block.hasEdges())
     return Error::success();
 
-  Expected<Optional<FixupListRef>> ExpectedFixups = Block.getFixups();
-  if (!ExpectedFixups)
-    return ExpectedFixups.takeError();
-  Expected<Optional<TargetInfoListRef>> ExpectedTargetInfo =
-      Block.getTargetInfo();
-  if (!ExpectedTargetInfo)
-    return ExpectedTargetInfo.takeError();
-  Expected<Optional<TargetListRef>> ExpectedTargets = Block.getTargets();
-  if (!ExpectedTargets)
-    return ExpectedTargets.takeError();
+  Expected<FixupList> Fixups = Block.getFixups();
+  if (!Fixups)
+    return Fixups.takeError();
+  Expected<TargetInfoList> TIs = Block.getTargetInfo();
+  if (!TIs)
+    return TIs.takeError();
+  Expected<TargetList> Targets = Block.getTargets();
+  if (!Targets)
+    return Targets.takeError();
 
-  FixupListRef Fixups = **ExpectedFixups;
-  TargetInfoListRef TargetInfo = **ExpectedTargetInfo;
-  TargetListRef Targets = **ExpectedTargets;
-
-  if (Fixups.getNumEdges() != TargetInfo.getNumEdges())
+  auto createMismatchError = []() {
     return createStringError(
         inconvertibleErrorCode(),
         "invalid edge-list with mismatched fixups and targets");
+  };
 
-  for (size_t I = 0, E = Fixups.getNumEdges(); I != E; ++I) {
-    size_t TargetIndex = TargetInfo.getTargetIndex(I);
-    if (TargetIndex >= Targets.getNumTargets())
+  FixupList::iterator F = Fixups->begin(), FE = Fixups->end();
+  TargetInfoList::iterator TI = TIs->begin(), TIE = TIs->end();
+  for (; F != FE && TI != TIE; ++F, ++TI) {
+    if (TI->Index >= Targets->size())
       return createStringError(inconvertibleErrorCode(),
                                "target index too big for target-list");
 
     // Pass this block down for KeepAlive edges.
     bool IsAbstractBackedge = false;
     Expected<jitlink::Symbol *> Target = getOrCreateSymbol(
-        Targets.getTarget(TargetIndex), &IsAbstractBackedge,
-        Fixups.getFixupKind(I) == jitlink::Edge::KeepAlive ? &ForSymbol
-                                                           : nullptr);
+        Targets->get(TI->Index), &IsAbstractBackedge,
+        F->Kind == jitlink::Edge::KeepAlive ? &ForSymbol : nullptr);
     if (!Target)
       return Target.takeError();
 
     if (IsAbstractBackedge) {
       assert(AddAbstractBackedge);
-      AddAbstractBackedge(Fixups.getFixupKind(I), Fixups.getFixupOffset(I),
-                          TargetInfo.getAddend(I));
+      AddAbstractBackedge(F->Kind, F->Offset, TI->Addend);
       continue;
     }
 
     // Pass in this block's KeptAliveByBlock for edges.
     assert(*Target && "Expected non-null symbol for target");
-    B.addEdge(Fixups.getFixupKind(I), Fixups.getFixupOffset(I), **Target,
-              TargetInfo.getAddend(I));
+    B.addEdge(F->Kind, F->Offset, **Target, TI->Addend);
   }
+  if (F != FE || TI != TIE)
+    return createMismatchError();
 
   return Error::success();
 }
