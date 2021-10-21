@@ -5789,6 +5789,13 @@ static void print_block(raw_ostream &OS, const CFG* cfg,
       else
         OS << "...";
       OS << ")";
+    } else if (ObjCAtCatchStmt *CS = dyn_cast<ObjCAtCatchStmt>(Label)) {
+      OS << "@catch (";
+      if (const VarDecl *PD = CS->getCatchParamDecl())
+        PD->print(OS, PrintingPolicy(Helper.getLangOpts()), 0);
+      else
+        OS << "...";
+      OS << ")";
     } else if (SEHExceptStmt *ES = dyn_cast<SEHExceptStmt>(Label)) {
       OS << "__except (";
       ES->getFilterExpr()->printPretty(OS, &Helper,
