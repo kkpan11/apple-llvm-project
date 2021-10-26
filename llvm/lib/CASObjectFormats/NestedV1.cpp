@@ -1,4 +1,4 @@
-//===- ObjectFileSchema.cpp -----------------------------------------------===//
+//===- CASObjectFormats/NestedV1.cpp --------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,20 +6,19 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/ExecutionEngine/CASObjectFormat/ObjectFileSchema.h"
+#include "llvm/CASObjectFormats/NestedV1.h"
 #include "llvm/ADT/PointerUnion.h"
 #include "llvm/ADT/PostOrderIterator.h"
-#include "llvm/ExecutionEngine/CASObjectFormat/Encoding.h"
+#include "llvm/CASObjectFormats/Encoding.h"
+#include "llvm/CASObjectFormats/ObjectFormatHelpers.h"
 #include "llvm/Support/EndianStream.h"
-
-// FIXME: For jitlink::x86_64::writeOperand(). Should use a generic version.
-#include "llvm/ExecutionEngine/JITLink/x86_64.h"
 
 // FIXME: For cl::opt. Should thread through or delete.
 #include "llvm/Support/CommandLine.h"
 
 using namespace llvm;
-using namespace llvm::casobjectformat;
+using namespace llvm::casobjectformats;
+using namespace llvm::casobjectformats::nestedv1;
 
 const StringLiteral NameRef::KindString;
 const StringLiteral ContentRef::KindString;
@@ -43,10 +42,11 @@ public:
   StringRef getEncodedList() const { return getData(); }
 
   static Expected<EncodedDataRef>
-  create(ObjectFileSchema &Schema,
+  create(const ObjectFileSchema &Schema,
          function_ref<void(SmallVectorImpl<char> &)> Encode);
   static Expected<EncodedDataRef> get(Expected<ObjectFormatNodeRef> Ref);
-  static Expected<EncodedDataRef> get(ObjectFileSchema &Schema, cas::CASID ID) {
+  static Expected<EncodedDataRef> get(const ObjectFileSchema &Schema,
+                                      cas::CASID ID) {
     return get(Schema.getNode(ID));
   }
 
@@ -57,14 +57,38 @@ private:
 
 const StringLiteral EncodedDataRef::KindString;
 
-Error ObjectFileSchema::fillCache() {
-  if (RootNodeTypeID)
-    return Error::success();
+void ObjectFileSchema::anchor() {}
 
+Expected<cas::NodeRef>
+ObjectFileSchema::createFromLinkGraphImpl(const jitlink::LinkGraph &G,
+                                          raw_ostream *DebugOS) const {
+  return CompileUnitRef::create(*this, G, DebugOS);
+}
+
+Expected<std::unique_ptr<jitlink::LinkGraph>>
+ObjectFileSchema::createLinkGraphImpl(
+    cas::NodeRef RootNode, StringRef Name,
+    jitlink::LinkGraph::GetEdgeKindNameFunction GetEdgeKindName,
+    raw_ostream *) const {
+  if (!isRootNode(RootNode))
+    return createStringError(inconvertibleErrorCode(), "invalid root node");
+  auto CU = CompileUnitRef::get(*this, RootNode);
+  if (!CU)
+    return CU.takeError();
+  return CU->createLinkGraph(Name, GetEdgeKindName);
+}
+
+ObjectFileSchema::ObjectFileSchema(cas::CASDB &CAS) : SchemaBase(CAS) {
+  // Fill the cache immediately to preserve thread-safety.
+  if (Error E = fillCache())
+    report_fatal_error(std::move(E));
+}
+
+Error ObjectFileSchema::fillCache() {
   Optional<cas::CASID> RootKindID;
-  const unsigned Version = 0;
+  const unsigned Version = 0; // Bump this to error on old object files.
   if (Expected<cas::NodeRef> ExpectedRootKind =
-          CAS.createNode(None, "cas.o:schema:" + Twine(Version).str()))
+          CAS.createNode(None, "cas.o:nestedv1:schema:" + Twine(Version).str()))
     RootKindID = *ExpectedRootKind;
   else
     return ExpectedRootKind.takeError();
@@ -89,14 +113,15 @@ Error ObjectFileSchema::fillCache() {
            "Ran out of bits for kind strings");
   }
 
-  auto ExpectedTypeID = CAS.createNode(IDs, "cas.o:root");
+  auto ExpectedTypeID = CAS.createNode(IDs, "cas.o:nestedv1:root");
   if (!ExpectedTypeID)
     return ExpectedTypeID.takeError();
   RootNodeTypeID = *ExpectedTypeID;
   return Error::success();
 }
 
-Optional<StringRef> ObjectFileSchema::getKindString(const cas::NodeRef &Node) {
+Optional<StringRef>
+ObjectFileSchema::getKindString(const cas::NodeRef &Node) const {
   assert(&Node.getCAS() == &CAS);
   StringRef Data = Node.getData();
   if (Data.empty())
@@ -109,32 +134,22 @@ Optional<StringRef> ObjectFileSchema::getKindString(const cas::NodeRef &Node) {
   return None;
 }
 
-bool ObjectFileSchema::isRootNode(const cas::NodeRef &Node) {
-  if (Error E = fillCache())
-    report_fatal_error(std::move(E));
-  assert(RootNodeTypeID);
-
+bool ObjectFileSchema::isRootNode(const cas::NodeRef &Node) const {
   if (Node.getNumReferences() < 1)
     return false;
   return Node.getReference(0) == *RootNodeTypeID;
 }
 
-bool ObjectFileSchema::isNode(const cas::NodeRef &Node) {
-  if (Error E = fillCache())
-    report_fatal_error(std::move(E));
-
+bool ObjectFileSchema::isNode(const cas::NodeRef &Node) const {
   // This is a very weak check!
   return bool(getKindString(Node));
 }
 
 Expected<ObjectFormatNodeRef::Builder>
-ObjectFormatNodeRef::Builder::startRootNode(ObjectFileSchema &Schema,
+ObjectFormatNodeRef::Builder::startRootNode(const ObjectFileSchema &Schema,
                                             StringRef KindString) {
   Builder B(Schema);
-  Expected<cas::CASID> Root = Schema.getRootNodeTypeID();
-  if (!Root)
-    return Root.takeError();
-  B.IDs.push_back(*Root);
+  B.IDs.push_back(Schema.getRootNodeTypeID());
 
   if (Error E = B.startNodeImpl(KindString))
     return std::move(E);
@@ -152,7 +167,7 @@ Error ObjectFormatNodeRef::Builder::startNodeImpl(StringRef KindString) {
 }
 
 Expected<ObjectFormatNodeRef::Builder>
-ObjectFormatNodeRef::Builder::startNode(ObjectFileSchema &Schema,
+ObjectFormatNodeRef::Builder::startNode(const ObjectFileSchema &Schema,
                                         StringRef KindString) {
   Builder B(Schema);
   if (Error E = B.startNodeImpl(KindString))
@@ -169,29 +184,18 @@ StringRef ObjectFormatNodeRef::getKindString() const {
   assert(KS && "Expected valid kind string");
   return *KS;
 }
+
 Optional<unsigned char>
-ObjectFileSchema::getKindStringID(StringRef KindString) {
-  if (!RootNodeTypeID) {
-    if (Error E = fillCache()) {
-      consumeError(std::move(E));
-      return None;
-    }
-  }
+ObjectFileSchema::getKindStringID(StringRef KindString) const {
   for (auto &I : KindStrings)
     if (I.second == KindString)
       return I.first;
   return None;
 }
 
-Expected<cas::CASID> ObjectFileSchema::getRootNodeTypeID() {
-  if (!RootNodeTypeID)
-    if (Error E = fillCache())
-      return std::move(E);
-  return *RootNodeTypeID;
-}
-
 Expected<ObjectFormatNodeRef>
-ObjectFormatNodeRef::get(ObjectFileSchema &Schema, Expected<cas::NodeRef> Ref) {
+ObjectFormatNodeRef::get(const ObjectFileSchema &Schema,
+                         Expected<cas::NodeRef> Ref) {
   if (!Ref)
     return Ref.takeError();
   if (!Schema.isNode(*Ref))
@@ -214,7 +218,7 @@ EncodedDataRef::get(Expected<ObjectFormatNodeRef> Ref) {
 }
 
 Expected<EncodedDataRef>
-EncodedDataRef::create(ObjectFileSchema &Schema,
+EncodedDataRef::create(const ObjectFileSchema &Schema,
                        function_ref<void(SmallVectorImpl<char> &)> Encode) {
   Expected<Builder> B = Builder::startNode(Schema, KindString);
   if (!B)
@@ -235,7 +239,8 @@ Expected<NameRef> NameRef::get(Expected<ObjectFormatNodeRef> Ref) {
   return NameRef(*Specific);
 }
 
-Expected<NameRef> NameRef::create(ObjectFileSchema &Schema, StringRef Name) {
+Expected<NameRef> NameRef::create(const ObjectFileSchema &Schema,
+                                  StringRef Name) {
   Expected<Builder> B = Builder::startNode(Schema, KindString);
   if (!B)
     return B.takeError();
@@ -255,7 +260,7 @@ Expected<ContentRef> ContentRef::get(Expected<ObjectFormatNodeRef> Ref) {
   return ContentRef(*Specific);
 }
 
-Expected<ContentRef> ContentRef::create(ObjectFileSchema &Schema,
+Expected<ContentRef> ContentRef::create(const ObjectFileSchema &Schema,
                                         StringRef Content) {
   Expected<Builder> B = Builder::startNode(Schema, KindString);
   if (!B)
@@ -324,10 +329,9 @@ cl::opt<size_t> MaxEdgesToEmbedInBlock(
     "max-edges-to-embed-in-block",
     cl::desc("Maximum number of edges to embed in a block."), cl::init(8));
 
-Expected<BlockDataRef>
-BlockDataRef::createImpl(ObjectFileSchema &Schema, Optional<ContentRef> Content,
-                         uint64_t Size, uint64_t Alignment,
-                         uint64_t AlignmentOffset, ArrayRef<Fixup> Fixups) {
+Expected<BlockDataRef> BlockDataRef::createImpl(
+    const ObjectFileSchema &Schema, Optional<ContentRef> Content, uint64_t Size,
+    uint64_t Alignment, uint64_t AlignmentOffset, ArrayRef<Fixup> Fixups) {
   Expected<Builder> B = Builder::startNode(Schema, KindString);
   if (!B)
     return B.takeError();
@@ -370,48 +374,7 @@ cl::opt<bool> AppendTrailingNopPaddingDuringBlockIngestion__text(
              "__TEXT,__text during block ingestion."),
     cl::init(true));
 
-// FIXME: Copy/pasted from X86AsmBackend::writeNopData.
-static void writeX86NopData(raw_ostream &OS, uint64_t Count) {
-  static const char Nops[10][11] = {
-      // nop
-      "\x90",
-      // xchg %ax,%ax
-      "\x66\x90",
-      // nopl (%[re]ax)
-      "\x0f\x1f\x00",
-      // nopl 0(%[re]ax)
-      "\x0f\x1f\x40\x00",
-      // nopl 0(%[re]ax,%[re]ax,1)
-      "\x0f\x1f\x44\x00\x00",
-      // nopw 0(%[re]ax,%[re]ax,1)
-      "\x66\x0f\x1f\x44\x00\x00",
-      // nopl 0L(%[re]ax)
-      "\x0f\x1f\x80\x00\x00\x00\x00",
-      // nopl 0L(%[re]ax,%[re]ax,1)
-      "\x0f\x1f\x84\x00\x00\x00\x00\x00",
-      // nopw 0L(%[re]ax,%[re]ax,1)
-      "\x66\x0f\x1f\x84\x00\x00\x00\x00\x00",
-      // nopw %cs:0L(%[re]ax,%[re]ax,1)
-      "\x66\x2e\x0f\x1f\x84\x00\x00\x00\x00\x00",
-  };
-
-  const uint64_t MaxNopLength = 16;
-
-  // Emit as many MaxNopLength NOPs as needed, then emit a NOP of the remaining
-  // length.
-  do {
-    const uint8_t ThisNopLength = (uint8_t)std::min(Count, MaxNopLength);
-    const uint8_t Prefixes = ThisNopLength <= 10 ? 0 : ThisNopLength - 10;
-    for (uint8_t i = 0; i < Prefixes; i++)
-      OS << '\x66';
-    const uint8_t Rest = ThisNopLength - Prefixes;
-    if (Rest != 0)
-      OS.write(Nops[Rest - 1], Rest);
-    Count -= ThisNopLength;
-  } while (Count != 0);
-}
-
-Expected<BlockDataRef> BlockDataRef::create(ObjectFileSchema &Schema,
+Expected<BlockDataRef> BlockDataRef::create(const ObjectFileSchema &Schema,
                                             const jitlink::Block &Block,
                                             ArrayRef<Fixup> Fixups) {
   if (Block.isZeroFill())
@@ -421,26 +384,9 @@ Expected<BlockDataRef> BlockDataRef::create(ObjectFileSchema &Schema,
   assert(Block.getContent().size() == Block.getSize());
   StringRef Content(Block.getContent().begin(), Block.getSize());
 
-  Optional<SmallString<1024>> BlockData;
-  auto initializeBlockData = [&BlockData, Content]() {
-    if (BlockData)
-      return;
-    BlockData.emplace();
-    BlockData->append(Content.begin(), Content.end());
-  };
-  auto getFixupPtr = [&](const Fixup &F) -> char * {
-    initializeBlockData();
-    return &(*BlockData)[F.Offset];
-  };
-
-  if (ZeroFixupsDuringBlockIngestion) {
-    // FIXME: Directly accessing jitlink::x86_64::writeOperand() isn't correct.
-    // See also the FIXME in CompileUnitRef::create().
-    for (Fixup F : Fixups)
-      if (F.Kind >= jitlink::Edge::FirstRelocation)
-        if (Error E = jitlink::x86_64::writeOperand(F.Kind, 0, getFixupPtr(F)))
-          return std::move(E);
-  }
+  ArrayRef<Fixup> FixupsToZero;
+  if (ZeroFixupsDuringBlockIngestion)
+    FixupsToZero = Fixups;
 
   // Append trailing noops to the last block in __TEXT,__text to canonicalize
   // its shape, to avoid noise when a block happens to be last. This is because
@@ -450,111 +396,51 @@ Expected<BlockDataRef> BlockDataRef::create(ObjectFileSchema &Schema,
   // FIXME: Only do this when reading blocks parsed from Mach-O.
   //
   // FIXME: Probably we want this elsewhere (not just __TEXT,__text).
+  Optional<Align> TrailingNopsAlignment;
   if (AppendTrailingNopPaddingDuringBlockIngestion__text &&
-      Block.getSection().getName() == "__TEXT,__text" &&
-      !isAligned(Align(16), Block.getSize())) {
-    initializeBlockData();
+      Block.getSection().getName() == "__TEXT,__text")
+    TrailingNopsAlignment = Align(16);
 
-    raw_svector_ostream OS(*BlockData);
-    writeX86NopData(OS, offsetToAlignment(Block.getSize(), Align(16)));
-  }
-
-  // Use the modified content if something was tweaked.
-  if (BlockData)
-    Content = *BlockData;
+  // Canoncalize (and update) Content.
+  //
+  // FIXME: Hardcoded to x86_64 right now! But that's all that
+  // CompileUnitRef::create() will send over anyway.
+  SmallString<1024> MutableContentStorage;
+  if (Error E = helpers::canonicalizeContent(
+                    Triple::x86_64, Content, MutableContentStorage,
+                    FixupsToZero, TrailingNopsAlignment)
+                    .moveInto(Content))
+    return std::move(E);
 
   return createContent(Schema, Content, Block.getAlignment(),
                        Block.getAlignmentOffset(), Fixups);
 }
 
-Expected<BlockDataRef> BlockDataRef::createZeroFill(ObjectFileSchema &Schema,
-                                                    uint64_t Size,
-                                                    uint64_t Alignment,
-                                                    uint64_t AlignmentOffset,
-                                                    ArrayRef<Fixup> Fixups) {
+Expected<BlockDataRef>
+BlockDataRef::createZeroFill(const ObjectFileSchema &Schema, uint64_t Size,
+                             uint64_t Alignment, uint64_t AlignmentOffset,
+                             ArrayRef<Fixup> Fixups) {
   return createImpl(Schema, None, Size, Alignment, AlignmentOffset, Fixups);
 }
 
-Expected<BlockDataRef> BlockDataRef::createContent(ObjectFileSchema &Schema,
-                                                   ContentRef Content,
-                                                   uint64_t Alignment,
-                                                   uint64_t AlignmentOffset,
-                                                   ArrayRef<Fixup> Fixups) {
+Expected<BlockDataRef>
+BlockDataRef::createContent(const ObjectFileSchema &Schema, ContentRef Content,
+                            uint64_t Alignment, uint64_t AlignmentOffset,
+                            ArrayRef<Fixup> Fixups) {
   return createImpl(Schema, Content, Content.getData().size(), Alignment,
                     AlignmentOffset, Fixups);
 }
 
-Expected<BlockDataRef> BlockDataRef::createContent(ObjectFileSchema &Schema,
-                                                   StringRef Content,
-                                                   uint64_t Alignment,
-                                                   uint64_t AlignmentOffset,
-                                                   ArrayRef<Fixup> Fixups) {
+Expected<BlockDataRef>
+BlockDataRef::createContent(const ObjectFileSchema &Schema, StringRef Content,
+                            uint64_t Alignment, uint64_t AlignmentOffset,
+                            ArrayRef<Fixup> Fixups) {
   Expected<ContentRef> Ref = ContentRef::create(Schema, Content);
   if (!Ref)
     return Ref.takeError();
 
   return createImpl(Schema, *Ref, Content.size(), Alignment, AlignmentOffset,
                     Fixups);
-}
-
-void FixupList::encode(ArrayRef<Fixup> Fixups, SmallVectorImpl<char> &Data) {
-  // FIXME: Kinds should be numbered in a stable way, not just rely on
-  // Edge::Kind.
-  for (auto &F : Fixups) {
-    Data.push_back(static_cast<unsigned char>(F.Kind));
-    encoding::writeVBR8(uint64_t(F.Offset), Data);
-  }
-}
-
-void FixupList::iterator::decode(bool IsInit) {
-  if (Data.empty()) {
-    assert((IsInit || F) && "past the end");
-    F.reset();
-    return;
-  }
-
-  unsigned char Kind = Data[0];
-  Data = Data.drop_front();
-
-  uint64_t Offset = 0;
-  bool ConsumeFailed = errorToBool(encoding::consumeVBR8(Data, Offset));
-  assert(!ConsumeFailed && "Cannot decode vbr8");
-  (void)ConsumeFailed;
-
-  F.emplace();
-  F->Kind = Kind;
-  F->Offset = Offset;
-}
-
-void TargetInfoList::encode(ArrayRef<TargetInfo> TIs,
-                            SmallVectorImpl<char> &Data) {
-  for (const TargetInfo &TI : TIs) {
-    assert(TI.Index < TIs.size() && "More targets than edges?");
-    encoding::writeVBR8(int64_t(TI.Addend), Data);
-    encoding::writeVBR8(uint32_t(TI.Index), Data);
-  }
-}
-
-void TargetInfoList::iterator::decode(bool IsInit) {
-  if (Data.empty()) {
-    assert((IsInit || TI) && "past the end");
-    TI.reset();
-    return;
-  }
-
-  int64_t Addend = 0;
-  bool ConsumeFailed = errorToBool(encoding::consumeVBR8(Data, Addend));
-  assert(!ConsumeFailed && "Cannot decode addend");
-  (void)ConsumeFailed;
-
-  uint32_t Index = 0;
-  ConsumeFailed = errorToBool(encoding::consumeVBR8(Data, Index));
-  assert(!ConsumeFailed && "Cannot decode index");
-  (void)ConsumeFailed;
-
-  TI.emplace();
-  TI->Addend = Addend;
-  TI->Index = Index;
 }
 
 Expected<Optional<NameRef>> TargetRef::getName() const {
@@ -566,8 +452,8 @@ Expected<Optional<NameRef>> TargetRef::getName() const {
   return Symbol->getName();
 }
 
-Expected<TargetRef> TargetRef::get(ObjectFileSchema &Schema, cas::CASID ID,
-                                   Optional<Kind> ExpectedKind) {
+Expected<TargetRef> TargetRef::get(const ObjectFileSchema &Schema,
+                                   cas::CASID ID, Optional<Kind> ExpectedKind) {
   auto checkExpectedKind = [&](Kind K, StringRef Name) -> Expected<TargetRef> {
     if (ExpectedKind && *ExpectedKind != K)
       return createStringError(inconvertibleErrorCode(),
@@ -634,7 +520,7 @@ Expected<TargetListRef> TargetListRef::get(Expected<ObjectFormatNodeRef> Ref) {
   return TargetListRef(*Specific);
 }
 
-Expected<TargetListRef> TargetListRef::create(ObjectFileSchema &Schema,
+Expected<TargetListRef> TargetListRef::create(const ObjectFileSchema &Schema,
                                               ArrayRef<TargetRef> Targets) {
   Expected<Builder> B = Builder::startNode(Schema, KindString);
   if (!B)
@@ -668,7 +554,7 @@ encodeProtectionFlags(sys::Memory::ProtectionFlags Perms) {
 }
 
 Expected<SectionRef>
-SectionRef::create(ObjectFileSchema &Schema, NameRef SectionName,
+SectionRef::create(const ObjectFileSchema &Schema, NameRef SectionName,
                    sys::Memory::ProtectionFlags Protections) {
   Expected<Builder> B = Builder::startNode(Schema, KindString);
   if (!B)
@@ -748,7 +634,7 @@ Expected<TargetList> BlockRef::getTargets() const {
     return Targets.takeError();
 }
 
-Expected<SectionRef> SectionRef::create(ObjectFileSchema &Schema,
+Expected<SectionRef> SectionRef::create(const ObjectFileSchema &Schema,
                                         const jitlink::Section &S) {
   Expected<NameRef> Name = NameRef::create(Schema, S.getName());
   if (!Name)
@@ -942,30 +828,30 @@ static Error decomposeAndSortEdges(
   assert(TargetData.size() == SymbolIndex.size());
 
   // Make the order of targets stable and fill in the index map.
-  std::stable_sort(TargetData.begin(), TargetData.end(),
-                   [](const TargetAndSymbol &LHS, const TargetAndSymbol &RHS) {
-                     if (LHS.Symbol != RHS.Symbol)
-                       return compareSymbolsBySemanticsAnd(
-                           LHS.Symbol, RHS.Symbol, compareSymbolsByAddress);
+  std::stable_sort(
+      TargetData.begin(), TargetData.end(),
+      [](const TargetAndSymbol &LHS, const TargetAndSymbol &RHS) {
+        if (LHS.Symbol != RHS.Symbol)
+          return compareSymbolsBySemanticsAnd(LHS.Symbol, RHS.Symbol,
+                                              compareSymbolsByAddress);
 
-                     // Same symbol but different target means that either it's
-                     // a different kind of reference, or a block got broken up.
-                     if (LHS.Target.getKind() != RHS.Target.getKind())
-                       return LHS.Target.getKind() < RHS.Target.getKind();
+        // Same symbol but different target means that either it's
+        // a different kind of reference, or a block got broken up.
+        if (LHS.Target.getKind() != RHS.Target.getKind())
+          return LHS.Target.getKind() < RHS.Target.getKind();
 
-                     // Check the contents that were split out.
-                     if (LHS.SplitContent && !RHS.SplitContent)
-                       return true;
-                     if (!LHS.SplitContent && RHS.SplitContent)
-                       return false;
-                     if (LHS.SplitContent)
-                       if (int Diff =
-                               LHS.SplitContent->compare(*RHS.SplitContent))
-                         return Diff < 0;
+        // Check the contents that were split out.
+        if (LHS.SplitContent && !RHS.SplitContent)
+          return true;
+        if (!LHS.SplitContent && RHS.SplitContent)
+          return false;
+        if (LHS.SplitContent)
+          if (int Diff = LHS.SplitContent->compare(*RHS.SplitContent))
+            return Diff < 0;
 
-                     // Give up.
-                     return false;
-                   });
+        // Give up.
+        return false;
+      });
 
   for (size_t I = 0, E = TargetData.size(); I != E; ++I)
     SymbolIndex[TargetData[I].Target] = I;
@@ -1043,7 +929,7 @@ static Error decomposeAndSortEdges(
 }
 
 Expected<BlockRef> BlockRef::create(
-    ObjectFileSchema &Schema, const jitlink::Block &Block,
+    const ObjectFileSchema &Schema, const jitlink::Block &Block,
     function_ref<Expected<Optional<TargetRef>>(
         const jitlink::Symbol &, jitlink::Edge::Kind, bool IsFromData,
         jitlink::Edge::AddendT &Addend, Optional<StringRef> &SplitContent)>
@@ -1075,7 +961,7 @@ cl::opt<bool>
                            cl::desc("Whether to inline unary target lists."),
                            cl::init(true));
 
-Expected<BlockRef> BlockRef::createImpl(ObjectFileSchema &Schema,
+Expected<BlockRef> BlockRef::createImpl(const ObjectFileSchema &Schema,
                                         SectionRef Section, BlockDataRef Data,
                                         ArrayRef<TargetInfo> TargetInfo,
                                         ArrayRef<TargetRef> Targets) {
@@ -1271,7 +1157,7 @@ SymbolRef::Flags SymbolRef::getFlags(const jitlink::Symbol &S) {
 }
 
 Expected<SymbolRef> SymbolRef::create(
-    ObjectFileSchema &Schema, const jitlink::Symbol &S,
+    const ObjectFileSchema &Schema, const jitlink::Symbol &S,
     function_ref<Expected<SymbolDefinitionRef>(const jitlink::Block &)>
         GetDefinitionRef) {
   assert(!S.isExternal() && "Expected defined symbol");
@@ -1292,7 +1178,7 @@ Expected<SymbolRef> SymbolRef::create(
   return create(Schema, Name, *Definition, S.getOffset(), getFlags(S));
 }
 
-Expected<SymbolRef> SymbolRef::create(ObjectFileSchema &Schema,
+Expected<SymbolRef> SymbolRef::create(const ObjectFileSchema &Schema,
                                       Optional<NameRef> SymbolName,
                                       SymbolDefinitionRef Definition,
                                       uint64_t Offset, Flags F) {
@@ -1363,7 +1249,7 @@ CompileUnitRef::get(Expected<ObjectFormatNodeRef> Ref) {
 }
 
 Expected<CompileUnitRef> CompileUnitRef::create(
-    ObjectFileSchema &Schema, const Triple &TT, unsigned PointerSize,
+    const ObjectFileSchema &Schema, const Triple &TT, unsigned PointerSize,
     support::endianness Endianness, SymbolTableRef DeadStripNever,
     SymbolTableRef DeadStripLink, SymbolTableRef IndirectDeadStripCompile,
     SymbolTableRef IndirectAnonymous, NameListRef StrongSymbols,
@@ -1384,7 +1270,7 @@ Expected<CompileUnitRef> CompileUnitRef::create(
   return get(B->build());
 }
 
-Expected<NameListRef> NameListRef::create(ObjectFileSchema &Schema,
+Expected<NameListRef> NameListRef::create(const ObjectFileSchema &Schema,
                                           MutableArrayRef<NameRef> Names) {
   if (Names.size() >= (1ull << 32))
     return createStringError(inconvertibleErrorCode(), "too many names");
@@ -1415,7 +1301,7 @@ Expected<NameListRef> NameListRef::get(Expected<ObjectFormatNodeRef> Ref) {
   return NameListRef(*Specific);
 }
 
-Expected<SymbolTableRef> SymbolTableRef::create(ObjectFileSchema &Schema,
+Expected<SymbolTableRef> SymbolTableRef::create(const ObjectFileSchema &Schema,
                                                 ArrayRef<SymbolRef> Symbols) {
   if (Symbols.size() >= (1ull << 32))
     return createStringError(inconvertibleErrorCode(), "too many symbols");
@@ -1550,7 +1436,7 @@ struct SymbolGraph {
   const jitlink::Symbol &S;
   SymbolGraph(const jitlink::Symbol &S) : S(S) {}
 };
-}
+} // namespace
 
 namespace llvm {
 template <> struct GraphTraits<SymbolGraph> {
@@ -1588,10 +1474,10 @@ namespace {
 class CompileUnitBuilder {
 public:
   cas::CASDB &CAS;
-  ObjectFileSchema &Schema;
+  const ObjectFileSchema &Schema;
   raw_ostream *DebugOS;
 
-  CompileUnitBuilder(ObjectFileSchema &Schema, raw_ostream *DebugOS)
+  CompileUnitBuilder(const ObjectFileSchema &Schema, raw_ostream *DebugOS)
       : CAS(Schema.CAS), Schema(Schema), DebugOS(DebugOS) {}
 
   struct SymbolInfo {
@@ -1893,15 +1779,11 @@ Expected<Optional<TargetRef>> CompileUnitBuilder::getOrCreateTarget(
   return createIndirectTarget(*Name);
 }
 
-Expected<CompileUnitRef> CompileUnitRef::create(ObjectFileSchema &Schema,
+Expected<CompileUnitRef> CompileUnitRef::create(const ObjectFileSchema &Schema,
                                                 const jitlink::LinkGraph &G,
                                                 raw_ostream *DebugOS) {
-  if (!G.getTargetTriple().isX86()) {
-    assert(G.getTargetTriple().isX86() &&
-           "FIXME: Requires x86_64 for access to writeOperand()");
-    return createStringError(inconvertibleErrorCode(),
-                             "target triple must be x86_64 for now");
-  }
+  if (Error E = helpers::checkArch(G.getTargetTriple()))
+    return std::move(E);
 
   CompileUnitBuilder Builder(Schema, DebugOS);
   if (Error E = Builder.makeSymbols(G))
@@ -1980,7 +1862,7 @@ public:
 
   Error makeExternalSymbols(Expected<NameListRef> ExternalSymbols,
                             jitlink::Linkage Linkage);
-  Error makeExternalSymbol(ObjectFileSchema &Schema,
+  Error makeExternalSymbol(const ObjectFileSchema &Schema,
                            Expected<NameRef> SymbolName,
                            jitlink::Linkage Linkage);
   Error makeSymbols(Expected<SymbolTableRef> Table);
@@ -2067,9 +1949,9 @@ public:
       return LHS == *RHS;
     }
     static unsigned getHashValue(const MergeableBlock &MB) {
-      return hash_combine(
-          hash_value(MB.Section.ID.getHash()), hash_value(MB.Data.ID.getHash()),
-          hash_value(MB.TargetList));
+      return hash_combine(hash_value(MB.Section.ID.getHash()),
+                          hash_value(MB.Data.ID.getHash()),
+                          hash_value(MB.TargetList));
     }
 
     static unsigned getHashValue(const MergeableBlock *MB) {
@@ -2229,7 +2111,7 @@ Error LinkGraphBuilder::makeSymbols(Expected<SymbolTableRef> Table) {
   return Error::success();
 }
 
-Error LinkGraphBuilder::makeExternalSymbol(ObjectFileSchema &Schema,
+Error LinkGraphBuilder::makeExternalSymbol(const ObjectFileSchema &Schema,
                                            Expected<NameRef> SymbolName,
                                            jitlink::Linkage Linkage) {
   if (!SymbolName)
