@@ -24,7 +24,7 @@ class CASFileSystem : public CASFileSystemBase {
     FileSystemCache::DirectoryEntry *Entry;
 
     /// Mimics shell behaviour on directory changes. Not necessarily the same
-    /// as \c Entry->getRealPath().
+    /// as \c Entry->getTreePath().
     std::string Path;
   };
 
@@ -48,6 +48,10 @@ public:
 
   ErrorOr<vfs::Status> status(const Twine &Path) final;
   ErrorOr<std::unique_ptr<vfs::File>> openFileForRead(const Twine &Path) final;
+
+  Expected<const vfs::CachedDirectoryEntry *>
+  getDirectoryEntry(const Twine &Path, bool FollowSymlinks) const final;
+
   vfs::directory_iterator dir_begin(const Twine &Dir,
                                     std::error_code &EC) final {
     auto IterOr = getDirectoryIterator(Dir);
@@ -126,7 +130,7 @@ Error CASFileSystem::initialize(CASID RootID) {
 
   // Initial working directory is the root.
   WorkingDirectory.Entry = &Cache->getRoot();
-  WorkingDirectory.Path = WorkingDirectory.Entry->getRealPath().str();
+  WorkingDirectory.Path = WorkingDirectory.Entry->getTreePath().str();
 
   // Load the root to confirm it's really a tree.
   return loadDirectory(*WorkingDirectory.Entry);
@@ -153,7 +157,7 @@ Error CASFileSystem::loadDirectory(DirectoryEntry &Parent) {
   if (D.isComplete())
     return Error::success();
 
-  SmallString<128> Path = Parent.getRealPath();
+  SmallString<128> Path = Parent.getTreePath();
   size_t ParentPathSize = Path.size();
   auto makeCachedEntry =
       [&](const NamedTreeEntry &NewEntry) -> DirectoryEntry & {
@@ -260,6 +264,15 @@ Optional<CASID> CASFileSystem::getFileCASID(const Twine &Path) {
   return Entry->getID();
 }
 
+Expected<const vfs::CachedDirectoryEntry *>
+CASFileSystem::getDirectoryEntry(const Twine &Path, bool FollowSymlinks) const {
+  SmallString<128> Storage;
+  StringRef PathRef = Path.toStringRef(Storage);
+
+  // It's not a const operation, but it's thread-safe.
+  return const_cast<CASFileSystem *>(this)->lookupPath(PathRef, FollowSymlinks);
+}
+
 ErrorOr<std::unique_ptr<vfs::File>>
 CASFileSystem::openFileForRead(const Twine &Path) {
   SmallString<128> Storage;
@@ -327,7 +340,7 @@ CASFileSystem::lookupPath(StringRef Path, bool FollowSymlinks) {
   // FIXME: Need to handle lazy symlinks somehow.
   return Cache->lookupPath(Path, *WorkingDirectory.Entry, RequestDirectoryEntry,
                            RequestSymlinkTarget,
-                           /*PreloadRealPath=*/nullptr, FollowSymlinks,
+                           /*PreloadTreePath=*/nullptr, FollowSymlinks,
                            /*TrackNonRealPathEntries=*/nullptr);
 }
 

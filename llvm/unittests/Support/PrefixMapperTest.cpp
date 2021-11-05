@@ -104,20 +104,16 @@ TEST(MappedPrefixTest, transformJoinedIfValid) {
 }
 
 TEST(PrefixMapperTest, construct) {
-  BumpPtrAllocator Alloc;
-  StringSaver Saver(Alloc);
   for (auto PathStyle : {
            sys::path::Style::posix,
            sys::path::Style::windows,
            sys::path::Style::native,
        })
-    EXPECT_EQ(PathStyle, PrefixMapper(Saver, PathStyle).getPathStyle());
+    EXPECT_EQ(PathStyle, PrefixMapper(PathStyle).getPathStyle());
 }
 
 TEST(PrefixMapperTest, add) {
-  BumpPtrAllocator Alloc;
-  StringSaver Saver(Alloc);
-  PrefixMapper PM(Saver, sys::path::Style::posix);
+  PrefixMapper PM(sys::path::Style::posix);
   PM.add(MappedPrefix{"a", "b"});
   PM.add(MappedPrefix{"b", "a"});
   ASSERT_EQ(2u, PM.getMappings().size());
@@ -126,9 +122,7 @@ TEST(PrefixMapperTest, add) {
 }
 
 TEST(PrefixMapperTest, addRange) {
-  BumpPtrAllocator Alloc;
-  StringSaver Saver(Alloc);
-  PrefixMapper PM(Saver, sys::path::Style::posix);
+  PrefixMapper PM(sys::path::Style::posix);
 
   PM.add(MappedPrefix{"/old/before", "/new/before"});
   MappedPrefix Range[] = {
@@ -149,9 +143,7 @@ TEST(PrefixMapperTest, addRange) {
 }
 
 static void checkPosix(sys::path::Style PathStyle) {
-  BumpPtrAllocator Alloc;
-  StringSaver Saver(Alloc);
-  PrefixMapper PM(Saver, PathStyle);
+  PrefixMapper PM(PathStyle);
   MappedPrefix Mappings[] = {
       // Simple mappings.
       {"/old", "/new"},
@@ -198,9 +190,7 @@ static void checkPosix(sys::path::Style PathStyle) {
 TEST(PrefixMapperTest, mapPosix) { checkPosix(sys::path::Style::posix); }
 
 static void checkWindows(sys::path::Style PathStyle) {
-  BumpPtrAllocator Alloc;
-  StringSaver Saver(Alloc);
-  PrefixMapper PM(Saver, PathStyle);
+  PrefixMapper PM(PathStyle);
   MappedPrefix Mappings[] = {
       // Simple mappings.
       {"c:\\old", "c:\\new"},
@@ -259,10 +249,48 @@ TEST(PrefixMapperTest, mapNative) {
     checkWindows(sys::path::Style::native);
 }
 
-TEST(PrefixMapperTest, mapTwoArgs) {
+TEST(PrefixMapperTest, mapLifetime) {
+  MappedPrefix Mappings[] = {
+      {"/old", "/new"},
+  };
+
+  StringRef Input[] = {
+      "/old/short",
+      "/old/0123456789012345678901234567890123456789-long",
+  };
+
+  StringRef Expected[] = {
+      "/new/short",
+      "/new/0123456789012345678901234567890123456789-long",
+  };
+
+  SmallVector<StringRef> Default;
+  SmallVector<StringRef> WithAlloc;
+
+  PrefixMapper PMDefault(sys::path::Style::posix);
   BumpPtrAllocator Alloc;
-  StringSaver Saver(Alloc);
-  PrefixMapper PM(Saver, sys::path::Style::posix);
+  {
+    // Shorter lifetime to confirm StringRefs live with Alloc.
+    PrefixMapper PMWithAlloc(Alloc, sys::path::Style::posix);
+
+    PMDefault.addRange(makeArrayRef(Mappings));
+    PMWithAlloc.addRange(makeArrayRef(Mappings));
+    for (StringRef Path : Input) {
+      Default.push_back(PMDefault.map(Path));
+      WithAlloc.push_back(PMWithAlloc.map(Path));
+    }
+    ASSERT_EQ(makeArrayRef(Expected), makeArrayRef(Default));
+    ASSERT_EQ(makeArrayRef(Expected), makeArrayRef(WithAlloc));
+  }
+
+  // Check lifetime of returned StringRef. Sanitizers should crash with
+  // use-after-free if there's a problem.
+  ASSERT_EQ(makeArrayRef(Expected), makeArrayRef(Default));
+  ASSERT_EQ(makeArrayRef(Expected), makeArrayRef(WithAlloc));
+}
+
+TEST(PrefixMapperTest, mapTwoArgs) {
+  PrefixMapper PM(sys::path::Style::posix);
   MappedPrefix Mappings[] = {{"/old", "/new"}};
   PM.addRange(makeArrayRef(Mappings));
 
@@ -283,9 +311,7 @@ TEST(PrefixMapperTest, mapTwoArgs) {
 }
 
 TEST(PrefixMapperTest, mapToString) {
-  BumpPtrAllocator Alloc;
-  StringSaver Saver(Alloc);
-  PrefixMapper PM(Saver, sys::path::Style::posix);
+  PrefixMapper PM(sys::path::Style::posix);
   MappedPrefix Mappings[] = {{"/old", "/new"}};
   PM.addRange(makeArrayRef(Mappings));
 
@@ -303,9 +329,7 @@ TEST(PrefixMapperTest, mapToString) {
 }
 
 TEST(PrefixMapperTest, mapInPlace) {
-  BumpPtrAllocator Alloc;
-  StringSaver Saver(Alloc);
-  PrefixMapper PM(Saver, sys::path::Style::posix);
+  PrefixMapper PM(sys::path::Style::posix);
   MappedPrefix Mappings[] = {{"/old", "/new"}};
   PM.addRange(makeArrayRef(Mappings));
 
@@ -327,7 +351,7 @@ TEST(PrefixMapperTest, mapInPlace) {
   }
 }
 
-class GetRealPathFileSystem : public vfs::FileSystem {
+class GetDirectoryEntryFileSystem : public vfs::FileSystem {
 public:
   ErrorOr<vfs::Status> status(const Twine &) override {
     return make_error_code(std::errc::operation_not_permitted);
@@ -347,53 +371,53 @@ public:
     return make_error_code(std::errc::operation_not_permitted);
   }
 
-  std::error_code getRealPath(const Twine &Path,
-                              SmallVectorImpl<char> &Output) const override {
-    auto I = RealPaths.find(Path.str());
-    if (I == RealPaths.end())
-      return make_error_code(std::errc::no_such_file_or_directory);
-    Output.assign(I->second.begin(), I->second.end());
-    return std::error_code{};
+  Expected<const vfs::CachedDirectoryEntry *>
+  getDirectoryEntry(const Twine &Path, bool) const override {
+    auto I = Entries.find(Path.str());
+    if (I == Entries.end())
+      return createFileError(
+          Path, make_error_code(std::errc::no_such_file_or_directory));
+    return &I->second;
   }
 
-  StringMap<std::string> RealPaths = {
-      {"relative", "/real/path/1"},
-      {"relative/", "/real/path/1"},
-      {"symlink/to/relative", "/real/path/1"},
-      {"relative/nested", "/real/path/1/nested"},
-      {"symlink/to/relative/nested", "/real/path/1/nested"},
-      {"/real/path/1", "/real/path/1"},
-      {"/real/path/1/", "/real/path/1"},
-      {"/real/path/1/nested", "/real/path/1/nested"},
-      {"/absolute", "/real/path/2"},
-      {"/absolute/", "/real/path/2"},
-      {"/absolute/nested", "/real/path/2/nested"},
-      {"/real/path/2", "/real/path/2"},
-      {"/real/path/2/", "/real/path/2"},
-      {"/real/path/2/nested", "/real/path/2/nested"},
+  using CachedDirectoryEntry = vfs::CachedDirectoryEntry;
+  StringMap<CachedDirectoryEntry> Entries = {
+      {"relative", CachedDirectoryEntry("/real/path/1")},
+      {"relative/", CachedDirectoryEntry("/real/path/1")},
+      {"symlink/to/relative", CachedDirectoryEntry("/real/path/1")},
+      {"relative/nested", CachedDirectoryEntry("/real/path/1/nested")},
+      {"symlink/to/relative/nested",
+       CachedDirectoryEntry("/real/path/1/nested")},
+      {"/real/path/1", CachedDirectoryEntry("/real/path/1")},
+      {"/real/path/1/", CachedDirectoryEntry("/real/path/1")},
+      {"/real/path/1/nested", CachedDirectoryEntry("/real/path/1/nested")},
+      {"/absolute", CachedDirectoryEntry("/real/path/2")},
+      {"/absolute/", CachedDirectoryEntry("/real/path/2")},
+      {"/absolute/nested", CachedDirectoryEntry("/real/path/2/nested")},
+      {"/real/path/2", CachedDirectoryEntry("/real/path/2")},
+      {"/real/path/2/", CachedDirectoryEntry("/real/path/2")},
+      {"/real/path/2/nested", CachedDirectoryEntry("/real/path/2/nested")},
+      {"/unmapped/symlink", CachedDirectoryEntry("/unmapped/symlink")},
+      {"/unmapped/symlink/", CachedDirectoryEntry("/real/path/1")},
+      {"/unmapped/symlink/nested", CachedDirectoryEntry("/real/path/1/nested")},
   };
 };
 
-TEST(RealPathPrefixMapperTest, construct) {
-  BumpPtrAllocator Alloc;
-  StringSaver Saver(Alloc);
-  auto FS = makeIntrusiveRefCnt<GetRealPathFileSystem>();
+TEST(TreePathPrefixMapperTest, construct) {
+  auto FS = makeIntrusiveRefCnt<GetDirectoryEntryFileSystem>();
 
   for (auto PathStyle : {
            sys::path::Style::posix,
            sys::path::Style::windows,
            sys::path::Style::native,
        }) {
-    EXPECT_EQ(PathStyle,
-              RealPathPrefixMapper(FS, Saver, PathStyle).getPathStyle());
+    EXPECT_EQ(PathStyle, TreePathPrefixMapper(FS, PathStyle).getPathStyle());
   }
 }
 
-TEST(RealPathPrefixMapperTest, add) {
-  BumpPtrAllocator Alloc;
-  StringSaver Saver(Alloc);
-  auto FS = makeIntrusiveRefCnt<GetRealPathFileSystem>();
-  RealPathPrefixMapper PM(FS, Saver);
+TEST(TreePathPrefixMapperTest, add) {
+  auto FS = makeIntrusiveRefCnt<GetDirectoryEntryFileSystem>();
+  TreePathPrefixMapper PM(FS);
 
   EXPECT_THAT_ERROR(PM.add(MappedPrefix{"relative", "/new1"}), Succeeded());
   EXPECT_THAT_ERROR(PM.add(MappedPrefix{"/absolute", "/new2"}), Succeeded());
@@ -405,11 +429,9 @@ TEST(RealPathPrefixMapperTest, add) {
   EXPECT_EQ(2u, PM.getMappings().size());
 }
 
-TEST(RealPathPrefixMapperTest, addRange) {
-  BumpPtrAllocator Alloc;
-  StringSaver Saver(Alloc);
-  auto FS = makeIntrusiveRefCnt<GetRealPathFileSystem>();
-  RealPathPrefixMapper PM(FS, Saver);
+TEST(TreePathPrefixMapperTest, addRange) {
+  auto FS = makeIntrusiveRefCnt<GetDirectoryEntryFileSystem>();
+  TreePathPrefixMapper PM(FS);
 
   MappedPrefix BadMapping[] = {
       {"missing", "/new"},
@@ -427,11 +449,9 @@ TEST(RealPathPrefixMapperTest, addRange) {
   EXPECT_EQ(2u, PM.getMappings().size());
 }
 
-TEST(RealPathPrefixMapperTest, addRangeIfValid) {
-  BumpPtrAllocator Alloc;
-  StringSaver Saver(Alloc);
-  auto FS = makeIntrusiveRefCnt<GetRealPathFileSystem>();
-  RealPathPrefixMapper PM(FS, Saver);
+TEST(TreePathPrefixMapperTest, addRangeIfValid) {
+  auto FS = makeIntrusiveRefCnt<GetDirectoryEntryFileSystem>();
+  TreePathPrefixMapper PM(FS);
 
   MappedPrefix Mappings[] = {
       {"missing-before", "/new"}, {"relative", "/new1"},
@@ -444,11 +464,9 @@ TEST(RealPathPrefixMapperTest, addRangeIfValid) {
   EXPECT_EQ((MappedPrefix{"/real/path/2", "/new2"}), PM.getMappings().back());
 }
 
-TEST(RealPathPrefixMapperTest, addInverseRange) {
-  BumpPtrAllocator Alloc;
-  StringSaver Saver(Alloc);
-  auto FS = makeIntrusiveRefCnt<GetRealPathFileSystem>();
-  RealPathPrefixMapper PM(FS, Saver);
+TEST(TreePathPrefixMapperTest, addInverseRange) {
+  auto FS = makeIntrusiveRefCnt<GetDirectoryEntryFileSystem>();
+  TreePathPrefixMapper PM(FS);
 
   MappedPrefix BadMapping[] = {
       {"/new", "missing"},
@@ -466,11 +484,9 @@ TEST(RealPathPrefixMapperTest, addInverseRange) {
   EXPECT_EQ(2u, PM.getMappings().size());
 }
 
-TEST(RealPathPrefixMapperTest, addInverseRangeIfValid) {
-  BumpPtrAllocator Alloc;
-  StringSaver Saver(Alloc);
-  auto FS = makeIntrusiveRefCnt<GetRealPathFileSystem>();
-  RealPathPrefixMapper PM(FS, Saver);
+TEST(TreePathPrefixMapperTest, addInverseRangeIfValid) {
+  auto FS = makeIntrusiveRefCnt<GetDirectoryEntryFileSystem>();
+  TreePathPrefixMapper PM(FS);
 
   MappedPrefix Mappings[] = {
       {"/new", "missing-before"}, {"/new1", "relative"},
@@ -485,10 +501,9 @@ TEST(RealPathPrefixMapperTest, addInverseRangeIfValid) {
 
 struct MapState {
   BumpPtrAllocator Alloc;
-  StringSaver Saver;
-  IntrusiveRefCntPtr<GetRealPathFileSystem> FS =
-      makeIntrusiveRefCnt<GetRealPathFileSystem>();
-  RealPathPrefixMapper PM;
+  IntrusiveRefCntPtr<GetDirectoryEntryFileSystem> FS =
+      makeIntrusiveRefCnt<GetDirectoryEntryFileSystem>();
+  TreePathPrefixMapper PM;
 
   SmallVector<MappedPrefix> Tests = {
       {"", ""},
@@ -504,13 +519,13 @@ struct MapState {
       {"/real/path/2/nested", "/new2/nested"},
   };
   SmallVector<StringRef> FailedTests = {"missing", "/missing", "/relative"};
-  MapState() : Saver(Alloc), PM(FS, Saver) {
+  MapState() : PM(FS, Alloc) {
     EXPECT_THAT_ERROR(PM.add(MappedPrefix{"relative", "/new1"}), Succeeded());
     EXPECT_THAT_ERROR(PM.add(MappedPrefix{"/absolute", "/new2"}), Succeeded());
   }
 };
 
-TEST(RealPathPrefixMapperTest, map) {
+TEST(TreePathPrefixMapperTest, map) {
   MapState State;
   ASSERT_EQ(2u, State.PM.getMappings().size());
 
@@ -557,7 +572,7 @@ TEST(RealPathPrefixMapperTest, map) {
   }
 }
 
-TEST(RealPathPrefixMapperTest, mapInPlace) {
+TEST(TreePathPrefixMapperTest, mapInPlace) {
   MapState State;
   ASSERT_EQ(2u, State.PM.getMappings().size());
 

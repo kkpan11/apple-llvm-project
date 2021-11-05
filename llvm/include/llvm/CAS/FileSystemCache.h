@@ -19,12 +19,17 @@
 #include "llvm/Support/AlignOf.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/VirtualCachedDirectoryEntry.h"
 #include "llvm/Support/VirtualFileSystem.h"
 #include <mutex>
 
 namespace llvm {
 namespace cas {
 
+/// Caching for lazily discovering a CAS-based filesystem.
+///
+/// FIXME: Extract most of this into llvm::vfs::FileSystemCache, so that it can
+/// be reused by \a InMemoryFileSystem and \a RedirectingFileSystem.
 class FileSystemCache : public ThreadSafeRefCountedBase<FileSystemCache> {
 public:
   static constexpr unsigned MaxSymlinkDepth = 16;
@@ -46,24 +51,34 @@ public:
         : Entry(&Entry), Remaining(Remaining) {
       size_t Slash = Remaining.find('/');
       Name = Remaining.substr(0, Slash);
-      AfterName =
-          Slash == StringRef::npos ? "" : Remaining.drop_front(Slash + 1);
+      AfterName = Slash == StringRef::npos ? "" : Remaining.drop_front(Slash);
     }
 
     void advance(DirectoryEntry &NewEntry) {
-      *this = LookupPathState(NewEntry, AfterName);
+      // If all that's left is the path separator, need to ensure a preceding
+      // symlink is followed. Return a "." to do that.
+      //
+      // FIXME: This logic is awkward. Probably Remaining should be an
+      // Optional, this should crash if advancing to far, and users of
+      // LookupPathState should be updated.
+      if (AfterName.empty())
+        *this = LookupPathState(NewEntry, AfterName);
+      else if (AfterName == "/")
+        *this = LookupPathState(NewEntry, ".");
+      else
+        *this = LookupPathState(NewEntry, AfterName.drop_front());
     }
     void skip() { advance(*Entry); }
   };
 
 public:
-  /// Create a directory entry and a directory at \a RealPath when \p Parent's
+  /// Create a directory entry and a directory at \a TreePath when \p Parent's
   /// mutex is already locked.
   ///
   /// Not thread-safe. Assumes there is a lock in place already on \p Parent's
   /// mutex.
   DirectoryEntry &makeDirectoryAlreadyLocked(DirectoryEntry &Parent,
-                                             StringRef RealPath,
+                                             StringRef TreePath,
                                              Optional<CASID> ID);
 
   /// Create a directory entry for a \a Symlink without allocating it.
@@ -71,32 +86,32 @@ public:
   /// Not thread-safe. Assumes there is a lock in place already on \p Parent's
   /// mutex.
   DirectoryEntry &makeLazySymlinkAlreadyLocked(DirectoryEntry &Parent,
-                                               StringRef RealPath, CASID ID);
+                                               StringRef TreePath, CASID ID);
 
   /// Create a directory entry for a \a File without allocating it.
   ///
   /// Not thread-safe. Assumes there is a lock in place already on \p Parent's
   /// mutex.
   DirectoryEntry &makeLazyFileAlreadyLocked(DirectoryEntry &Parent,
-                                            StringRef RealPath, CASID ID,
+                                            StringRef TreePath, CASID ID,
                                             bool IsExecutable);
 
   /// Create a directory entry and a directory (with no contents).
   ///
   /// Thread-safe; takes a lock on \p Parent's mutex.
-  DirectoryEntry &makeDirectory(DirectoryEntry &Parent, StringRef RealPath,
+  DirectoryEntry &makeDirectory(DirectoryEntry &Parent, StringRef TreePath,
                                 Optional<CASID> ID = None);
 
   /// Create a directory entry and a symlink.
   ///
   /// Thread-safe; takes a lock on \p Parent's mutex.
-  DirectoryEntry &makeSymlink(DirectoryEntry &Parent, StringRef RealPath,
+  DirectoryEntry &makeSymlink(DirectoryEntry &Parent, StringRef TreePath,
                               CASID ID, StringRef Target);
 
   /// Create a directory entry and a file.
   ///
   /// Thread-safe; takes a lock on \p Parent's mutex.
-  DirectoryEntry &makeFile(DirectoryEntry &Parent, StringRef RealPath, CASID ID,
+  DirectoryEntry &makeFile(DirectoryEntry &Parent, StringRef TreePath, CASID ID,
                            size_t Size, bool IsExecutable);
 
   /// Fill in a lazy symlink, setting its target to \p Target.
@@ -111,7 +126,7 @@ public:
 
   /// Request a directory entry. The first parameter is the parent to look
   /// under, the second is the name of the entry, and the third is true if the
-  /// name came from a call to \a PreloadRealPathType.
+  /// name came from a call to \a PreloadTreePathType.
   using RequestDirectoryEntryType =
       function_ref<Expected<DirectoryEntry *>(DirectoryEntry &, StringRef)>;
 
@@ -119,7 +134,7 @@ public:
   using RequestSymlinkTargetType = function_ref<Error(DirectoryEntry &)>;
 
   /// Request a real path.
-  using PreloadRealPathType = function_ref<Error(DirectoryEntry &, StringRef)>;
+  using PreloadTreePathType = function_ref<Error(DirectoryEntry &, StringRef)>;
 
   /// Look up a directory entry in the CAS, navigating trees and resolving
   /// symlinks in the parent path. If \p FollowSymlinks is true, also follows
@@ -132,7 +147,7 @@ public:
   lookupPath(StringRef Path, DirectoryEntry &WorkingDirectory,
              RequestDirectoryEntryType RequestDirectoryEntry,
              RequestSymlinkTargetType RequestSymlinkTarget,
-             PreloadRealPathType PreloadRealPath, bool FollowSymlinks,
+             PreloadTreePathType PreloadTreePath, bool FollowSymlinks,
              function_ref<void(DirectoryEntry &)> TrackNonRealPathEntries);
 
   /// Look up a directory entry in the CAS, navigating through real paths but
@@ -145,7 +160,7 @@ public:
   /// returning early on a symlink.
   Expected<LookupPathState> lookupRealPathPrefixFrom(
       LookupPathState State, RequestDirectoryEntryType RequestDirectoryEntry,
-      PreloadRealPathType &PreloadRealPath,
+      PreloadTreePathType &PreloadTreePath,
       function_ref<void(DirectoryEntry &)> TrackNonRealPathEntries);
 
   /// Lookup \p Path, knowing that \a sys::fs::real_path() was called and
@@ -185,19 +200,19 @@ private:
   ThreadSafeAllocator<SpecificBumpPtrAllocator<Symlink>> SymlinkAlloc;
   ThreadSafeAllocator<SpecificBumpPtrAllocator<Directory>> DirectoryAlloc;
   ThreadSafeAllocator<SpecificBumpPtrAllocator<DirectoryEntry>> EntryAlloc;
-  ThreadSafeAllocator<SpecificBumpPtrAllocator<char>> RealPathAlloc;
+  ThreadSafeAllocator<SpecificBumpPtrAllocator<char>> TreePathAlloc;
 
   DirectoryEntry *Root = nullptr;
   struct {
     DirectoryEntry *Entry = nullptr;
 
     /// Mimics shell behaviour on directory changes. Not necessarily the same
-    /// as \c Entry->getRealPath().
+    /// as \c Entry->getTreePath().
     std::string Path;
   } WorkingDirectory;
 };
 
-class FileSystemCache::DirectoryEntry {
+class FileSystemCache::DirectoryEntry : public vfs::CachedDirectoryEntry {
 public:
   enum EntryKind {
     Regular,
@@ -213,8 +228,6 @@ public:
   bool isSymlink() const { return Kind == Symlink; }
   bool isDirectory() const { return Kind == Directory; }
   EntryKind getKind() const { return Kind; }
-  StringRef getName() const { return Name; }
-  StringRef getRealPath() const { return RealPath; }
   DirectoryEntry *getParent() const { return Parent; }
   Optional<CASID> getID() const { return ID; }
 
@@ -262,22 +275,14 @@ public:
 
   DirectoryEntry() = delete;
 
-  DirectoryEntry(DirectoryEntry *Parent, StringRef RealPath, EntryKind Kind,
+  DirectoryEntry(DirectoryEntry *Parent, StringRef TreePath, EntryKind Kind,
                  Optional<CASID> ID)
-      : Parent(Parent), Kind(Kind), Node(nullptr), ID(ID) {
-    setRealPath(RealPath);
-  }
+      : CachedDirectoryEntry(TreePath), Parent(Parent), Kind(Kind),
+        Node(nullptr), ID(ID) {}
 
 private:
-  void setRealPath(StringRef RealPath) {
-    this->RealPath = RealPath;
-    this->Name = sys::path::filename(RealPath);
-  }
-
   DirectoryEntry *Parent;
   EntryKind Kind;
-  StringRef RealPath;
-  StringRef Name;
   Optional<sys::fs::UniqueID> UniqueID;
   std::atomic<void *> Node;
   Optional<CASID> ID; /// If this is a fixed tree.
