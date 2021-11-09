@@ -926,8 +926,7 @@ protected:
   virtual void CalculateTrapHandlerSymbolNames() = 0;
 
   Status GetCachedExecutable(ModuleSpec &module_spec, lldb::ModuleSP &module_sp,
-                             const FileSpecList *module_search_paths_ptr,
-                             Platform &remote_platform);
+                             const FileSpecList *module_search_paths_ptr);
 
   virtual Status DownloadModuleSlice(const FileSpec &src_file_spec,
                                      const uint64_t src_offset,
@@ -938,6 +937,11 @@ protected:
                                     const FileSpec &dst_file_spec);
 
   virtual const char *GetCacheHostname();
+
+  virtual Status
+  ResolveRemoteExecutable(const ModuleSpec &module_spec,
+                          lldb::ModuleSP &exe_module_sp,
+                          const FileSpecList *module_search_paths_ptr);
 
 private:
   typedef std::function<Status(const ModuleSpec &)> ModuleResolver;
@@ -952,8 +956,7 @@ private:
 
   Status LoadCachedExecutable(const ModuleSpec &module_spec,
                               lldb::ModuleSP &module_sp,
-                              const FileSpecList *module_search_paths_ptr,
-                              Platform &remote_platform);
+                              const FileSpecList *module_search_paths_ptr);
 
   FileSpec GetModuleCacheRoot();
 };
