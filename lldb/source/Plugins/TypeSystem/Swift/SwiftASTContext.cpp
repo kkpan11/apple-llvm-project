@@ -2089,9 +2089,9 @@ ProcessModule(ModuleSP module_sp, std::string m_description,
 
   const auto &opts = invocation.getSearchPathOptions();
   module_search_paths.insert(module_search_paths.end(),
-                             opts.ImportSearchPaths.begin(),
-                             opts.ImportSearchPaths.end());
-  for (const auto &fwsp : opts.FrameworkSearchPaths)
+                             opts.getImportSearchPaths().begin(),
+                             opts.getImportSearchPaths().end());
+  for (const auto &fwsp : opts.getFrameworkSearchPaths())
     framework_search_paths.push_back({fwsp.Path, fwsp.IsSystem});
   auto &clang_opts = invocation.getClangImporterOptions().ExtraArgs;
   for (const std::string &arg : clang_opts) {
@@ -2672,8 +2672,8 @@ void SwiftASTContext::InitializeSearchPathOptions(
   }
 
   llvm::StringMap<bool> processed;
-  std::vector<std::string> &invocation_import_paths =
-      invocation.getSearchPathOptions().ImportSearchPaths;
+  std::vector<std::string> invocation_import_paths(
+      invocation.getSearchPathOptions().getImportSearchPaths());
   // Add all deserialized paths to the map.
   for (const auto &path : invocation_import_paths)
     processed.insert({path, false});
@@ -2684,11 +2684,14 @@ void SwiftASTContext::InitializeSearchPathOptions(
     if (it_notseen.second)
       invocation_import_paths.push_back(path);
   }
+  invocation.getSearchPathOptions().setImportSearchPaths(
+      invocation_import_paths);
 
   // This preserves the IsSystem bit, but deduplicates entries ignoring it.
   processed.clear();
-  auto &invocation_framework_paths =
-      invocation.getSearchPathOptions().FrameworkSearchPaths;
+  std::vector<swift::SearchPathOptions::FrameworkSearchPath>
+      invocation_framework_paths(
+          invocation.getSearchPathOptions().getFrameworkSearchPaths());
   // Add all deserialized paths to the map.
   for (const auto &path : invocation_framework_paths)
     processed.insert({path.Path, path.IsSystem});
@@ -2699,6 +2702,8 @@ void SwiftASTContext::InitializeSearchPathOptions(
     if (it_notseen.second)
       invocation_framework_paths.push_back({path.first, path.second});
   }
+  invocation.getSearchPathOptions().setFrameworkSearchPaths(
+      invocation_framework_paths);
 }
 
 namespace lldb_private {
@@ -3358,7 +3363,8 @@ swift::ASTContext *SwiftASTContext::GetASTContext() {
   std::string moduleCachePath = "";
   std::unique_ptr<swift::ClangImporter> clang_importer_ap;
   auto &clang_importer_options = GetClangImporterOptions();
-  if (!m_ast_context_ap->SearchPathOpts.SDKPath.empty() || TargetHasNoSDK()) {
+  if (!m_ast_context_ap->SearchPathOpts.getSDKPath().empty() ||
+      TargetHasNoSDK()) {
     if (!clang_importer_options.OverrideResourceDir.empty()) {
       // Create the DWARFImporterDelegate.
       const auto &props = ModuleList::GetGlobalModuleListProperties();
@@ -3416,7 +3422,7 @@ swift::ASTContext *SwiftASTContext::GetASTContext() {
   if (!sdk_version) {
     auto SDKInfoOrErr = clang::parseDarwinSDKInfo(
         *llvm::vfs::getRealFileSystem(),
-        m_ast_context_ap->SearchPathOpts.SDKPath);
+        m_ast_context_ap->SearchPathOpts.getSDKPath());
     if (SDKInfoOrErr) {
       if (auto SDKInfo = *SDKInfoOrErr)
         sdk_version = swift::getTargetSDKVersion(*SDKInfo, triple);
@@ -3717,16 +3723,17 @@ swift::ModuleDecl *SwiftASTContext::GetModule(const FileSpec &module_spec,
 
       std::string module_directory(module_spec.GetDirectory().GetCString());
       bool add_search_path = true;
-      for (auto path : ast->SearchPathOpts.ImportSearchPaths) {
+      for (auto path : ast->SearchPathOpts.getImportSearchPaths()) {
         if (path == module_directory) {
           add_search_path = false;
           break;
         }
       }
       // Add the search path if needed so we can find the module by basename.
-      if (add_search_path)
-        ast->SearchPathOpts.ImportSearchPaths.push_back(
-            std::move(module_directory));
+      if (add_search_path) {
+        ast->addSearchPath(module_directory, /*isFramework=*/false,
+                           /*isSystem=*/false);
+      }
 
       typedef swift::Located<swift::Identifier> ModuleNameSpec;
       llvm::StringRef module_basename_sref(module_basename.GetCString());
@@ -3925,7 +3932,8 @@ void SwiftASTContext::LoadModule(swift::ModuleDecl *swift_module,
       std::vector<std::string> uniqued_paths;
 
       for (const auto &framework_search_dir :
-           swift_module->getASTContext().SearchPathOpts.FrameworkSearchPaths) {
+           swift_module->getASTContext()
+               .SearchPathOpts.getFrameworkSearchPaths()) {
         // The framework search dir as it comes from the AST context
         // often has duplicate entries, don't try to load along the
         // same path twice.
@@ -5123,8 +5131,9 @@ void SwiftASTContext::LogConfiguration() {
 
   HEALTH_LOG_PRINTF("  Architecture                 : %s",
                     m_ast_context_ap->LangOpts.Target.getTriple().c_str());
-  HEALTH_LOG_PRINTF("  SDK path                     : %s",
-                    m_ast_context_ap->SearchPathOpts.SDKPath.c_str());
+  HEALTH_LOG_PRINTF(
+      "  SDK path                     : %s",
+      m_ast_context_ap->SearchPathOpts.getSDKPath().str().c_str());
   HEALTH_LOG_PRINTF(
       "  Runtime resource path        : %s",
       m_ast_context_ap->SearchPathOpts.RuntimeResourcePath.c_str());
@@ -5139,26 +5148,29 @@ void SwiftASTContext::LogConfiguration() {
 
   HEALTH_LOG_PRINTF("  Runtime library import paths : (%llu items)",
                     (unsigned long long)m_ast_context_ap->SearchPathOpts
-                        .RuntimeLibraryImportPaths.size());
+                        .getRuntimeLibraryImportPaths()
+                        .size());
 
   for (const auto &runtime_import_path :
-       m_ast_context_ap->SearchPathOpts.RuntimeLibraryImportPaths) {
+       m_ast_context_ap->SearchPathOpts.getRuntimeLibraryImportPaths()) {
     HEALTH_LOG_PRINTF("    %s", runtime_import_path.c_str());
   }
 
   HEALTH_LOG_PRINTF("  Framework search paths       : (%llu items)",
                     (unsigned long long)m_ast_context_ap->SearchPathOpts
-                        .FrameworkSearchPaths.size());
+                        .getFrameworkSearchPaths()
+                        .size());
   for (const auto &framework_search_path :
-       m_ast_context_ap->SearchPathOpts.FrameworkSearchPaths) {
+       m_ast_context_ap->SearchPathOpts.getFrameworkSearchPaths()) {
     HEALTH_LOG_PRINTF("    %s", framework_search_path.Path.c_str());
   }
 
   HEALTH_LOG_PRINTF("  Import search paths          : (%llu items)",
                     (unsigned long long)m_ast_context_ap->SearchPathOpts
-                        .ImportSearchPaths.size());
-  for (std::string &import_search_path :
-       m_ast_context_ap->SearchPathOpts.ImportSearchPaths) {
+                        .getImportSearchPaths()
+                        .size());
+  for (const std::string &import_search_path :
+       m_ast_context_ap->SearchPathOpts.getImportSearchPaths()) {
     HEALTH_LOG_PRINTF("    %s", import_search_path.c_str());
   }
 
