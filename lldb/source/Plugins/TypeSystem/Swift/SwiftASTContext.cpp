@@ -68,10 +68,10 @@
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
+#include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Process.h"
-#include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/ThreadPool.h"
 #include "llvm/Support/raw_ostream.h"
@@ -1268,6 +1268,13 @@ static const char *getImportFailureString(swift::serialization::Status status) {
   case swift::serialization::Status::TargetTooNew:
     return "The module file was built for a target newer than the current "
            "target.";
+  case swift::serialization::Status::RevisionIncompatible:
+    return "The module file was built for a different version of the compiler.";
+  case swift::serialization::Status::NotInOSSA:
+    return "The module file was not compiled with -enable-ossa-modules when it "
+           "was required to do so.";
+  case swift::serialization::Status::SDKMismatch:
+    return "The module file was built with a different SDK version.";
   }
 }
 
@@ -1355,7 +1362,7 @@ static bool DeserializeAllCompilerFlags(swift::CompilerInvocation &invocation,
     for (; !buf.empty(); buf = buf.substr(info.bytes)) {
       swift::serialization::ExtendedValidationInfo extended_validation_info;
       info = swift::serialization::validateSerializedAST(
-          buf, &extended_validation_info);
+          buf, /*requiresOSSAModules=*/false, &extended_validation_info);
       bool invalid_ast = info.status != swift::serialization::Status::Valid;
       bool invalid_size = (info.bytes == 0) || (info.bytes > buf.size());
       bool invalid_name = info.name.empty();
@@ -1811,8 +1818,8 @@ SwiftASTContext::CreateInstance(lldb::LanguageType language, Module &module,
   swift_ast_sp->AddExtraClangArgs(DeserializedArgs);
   if (target)
     swift_ast_sp->AddUserClangArgs(*target);
-  else if (auto &global_target_properties = Target::GetGlobalProperties())
-    swift_ast_sp->AddUserClangArgs(*global_target_properties);
+  else
+    swift_ast_sp->AddUserClangArgs(Target::GetGlobalProperties());
 
   // Apply source path remappings found in the module's dSYM.
   swift_ast_sp->RemapClangImporterOptions(module.GetSourceMappingList());
@@ -3347,9 +3354,9 @@ swift::ASTContext *SwiftASTContext::GetASTContext() {
 
   LLDB_SCOPED_TIMER();
   m_ast_context_ap.reset(swift::ASTContext::get(
-      GetLanguageOptions(), GetTypeCheckerOptions(), GetSearchPathOptions(),
-      GetClangImporterOptions(), GetSymbolGraphOptions(),
-      GetSourceManager(), GetDiagnosticEngine()));
+      GetLanguageOptions(), GetTypeCheckerOptions(), GetSILOptions(),
+      GetSearchPathOptions(), GetClangImporterOptions(),
+      GetSymbolGraphOptions(), GetSourceManager(), GetDiagnosticEngine()));
   m_diagnostic_consumer_ap.reset(new StoringDiagnosticConsumer(*this));
 
   if (getenv("LLDB_SWIFT_DUMP_DIAGS")) {
