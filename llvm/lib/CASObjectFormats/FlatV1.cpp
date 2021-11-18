@@ -30,17 +30,10 @@ const StringLiteral NameRef::KindString;
 const StringLiteral SectionRef::KindString;
 const StringLiteral BlockRef::KindString;
 const StringLiteral SymbolRef::KindString;
-const StringLiteral EdgeListRef::KindString;
 const StringLiteral BlockContentRef::KindString;
 
 void ObjectFileSchema::anchor() {}
 
-cl::opt<bool> UseEdgeList("use-edge-list",
-                          cl::desc("Put edges in a separate cas node"),
-                          cl::init(false));
-cl::opt<bool> DirectIndexEncode("direct-index-encode",
-                                cl::desc("Encode all indexes directly"),
-                                cl::init(false));
 cl::opt<bool>
     UseIndirectSymbolName("indirect-symbol-name",
                           cl::desc("Encode symbol name into its own node"),
@@ -89,8 +82,7 @@ Error ObjectFileSchema::fillCache() {
   StringRef AllKindStrings[] = {
       BlockRef::KindString,  CompileUnitRef::KindString,
       NameRef::KindString,   SectionRef::KindString,
-      SymbolRef::KindString, EdgeListRef::KindString,
-      BlockContentRef::KindString,
+      SymbolRef::KindString, BlockContentRef::KindString,
   };
   cas::CASID Refs[] = {*RootKindID};
   SmallVector<cas::CASID> IDs = {*RootKindID};
@@ -300,26 +292,15 @@ Expected<SectionRef> SectionRef::get(Expected<ObjectFormatNodeRef> Ref) {
   return SectionRef(*Specific);
 }
 
-Expected<EdgeListRef> EdgeListRef::get(Expected<ObjectFormatNodeRef> Ref) {
-  auto Specific = SpecificRefT::getSpecific(std::move(Ref));
-  if (!Specific)
-    return Specific.takeError();
-
-  return EdgeListRef(*Specific);
-}
-
 static Error encodeEdge(CompileUnitBuilder &CUB, SmallVectorImpl<char> &Data,
-                        const jitlink::Edge *E, bool ForceDirectIndex = false) {
+                        const jitlink::Edge *E) {
 
   auto SymbolIndex = CUB.getSymbolIndex(E->getTarget());
   if (!SymbolIndex)
     return SymbolIndex.takeError();
 
   unsigned IdxAndHasAddend = *SymbolIndex << 1 | (E->getAddend() != 0);
-  if (!DirectIndexEncode && !ForceDirectIndex)
-    CUB.encodeIndex(IdxAndHasAddend);
-  else
-    encoding::writeVBR8(IdxAndHasAddend, Data);
+  CUB.encodeIndex(IdxAndHasAddend);
 
   if (E->getAddend() != 0)
     encoding::writeVBR8(E->getAddend(), Data);
@@ -328,12 +309,8 @@ static Error encodeEdge(CompileUnitBuilder &CUB, SmallVectorImpl<char> &Data,
 
 static Error decodeEdge(LinkGraphBuilder &LGB, StringRef &Data,
                         jitlink::Block &Parent, unsigned BlockIdx,
-                        bool ForceDirectIndex = false) {
-  unsigned SymbolIdx;
-  if (!DirectIndexEncode && !ForceDirectIndex)
-    SymbolIdx = LGB.nextIdxForBlock(BlockIdx);
-  else if (auto E = encoding::consumeVBR8(Data, SymbolIdx))
-    return E;
+                        const data::Fixup &Fixup) {
+  unsigned SymbolIdx = LGB.nextIdxForBlock(BlockIdx);
 
   bool HasAddend = SymbolIdx & 1U;
   auto Symbol = LGB.getSymbol(SymbolIdx >> 1);
@@ -349,46 +326,8 @@ static Error decodeEdge(LinkGraphBuilder &LGB, StringRef &Data,
   if (!BlockInfo)
     return BlockInfo.takeError();
 
-  auto Fixup = **BlockInfo->CurrentFixup;
-  if (*BlockInfo->CurrentFixup != BlockInfo->Data->getFixups().end())
-    ++*BlockInfo->CurrentFixup;
-
   Parent.addEdge(Fixup.Kind, Fixup.Offset, **Symbol, Addend);
 
-  return Error::success();
-}
-
-Expected<EdgeListRef>
-EdgeListRef::create(CompileUnitBuilder &CUB,
-                    ArrayRef<const jitlink::Edge *> Edges) {
-  auto B = Builder::startNode(CUB.Schema, KindString);
-  if (!B)
-    return B.takeError();
-
-  encoding::writeVBR8(Edges.size(), B->Data);
-  for (const auto *E : Edges) {
-    // EdgeList is too "nested" to encode index in CU.
-    if (auto Err = encodeEdge(CUB, B->Data, E, true))
-      return std::move(Err);
-  }
-
-  return get(B->build());
-}
-
-Error EdgeListRef::materialize(LinkGraphBuilder &LGB, jitlink::Block &Parent,
-                               unsigned BlockIdx) const {
-  auto Remaining = getData();
-
-  unsigned EdgeSize;
-  auto E = encoding::consumeVBR8(Remaining, EdgeSize);
-  if (E)
-    return E;
-
-  for (unsigned I = 0; I < EdgeSize; ++I) {
-    // EdgeList is too "nested" to encode index in CU.
-    if (auto Err = decodeEdge(LGB, Remaining, Parent, BlockIdx, true))
-      return Err;
-  }
   return Error::success();
 }
 
@@ -402,10 +341,7 @@ Expected<BlockRef> BlockRef::create(CompileUnitBuilder &CUB,
   auto SectionIndex = CUB.getSectionIndex(Block.getSection());
   if (!SectionIndex)
     return SectionIndex.takeError();
-  if (!DirectIndexEncode)
-    CUB.encodeIndex(*SectionIndex);
-  else
-    encoding::writeVBR8(*SectionIndex, B->Data);
+  CUB.encodeIndex(*SectionIndex);
 
   // Do a simple sorting based on offset so it has stable ordering for the same
   // block.
@@ -457,14 +393,6 @@ Expected<BlockRef> BlockRef::create(CompileUnitBuilder &CUB,
     B->Data.append(BlockData);
   }
 
-  // Encode edges.
-  if (UseEdgeList) {
-    if (auto E = CUB.createAndReferenceEdges(Edges))
-      return std::move(E);
-    return get(B->build());
-  }
-
-  encoding::writeVBR8(Block.edges_size(), B->Data);
   for (const auto *E : Edges) {
     // Nest the Edge in block.
     if (auto Err = encodeEdge(CUB, B->Data, E))
@@ -478,10 +406,7 @@ Error BlockRef::materializeBlock(LinkGraphBuilder &LGB,
                                  unsigned BlockIdx) const {
   uint64_t SectionIdx;
   auto Remaining = getData();
-  if (!DirectIndexEncode)
-    SectionIdx = LGB.nextIdxForBlock(BlockIdx);
-  else if (auto E = encoding::consumeVBR8(Remaining, SectionIdx))
-    return E;
+  SectionIdx = LGB.nextIdxForBlock(BlockIdx);
 
   auto SectionInfo = LGB.getSectionInfo(SectionIdx);
   if (!SectionInfo)
@@ -509,8 +434,6 @@ Error BlockRef::materializeBlock(LinkGraphBuilder &LGB,
 
   BlockInfo->Data.emplace(ContentData);
   auto &Block = *BlockInfo->Data;
-  BlockInfo->CurrentFixup.emplace(BlockInfo->Data->getFixups().begin());
-
   auto Address =
       getAlignedAddress(*SectionInfo, Block.getSize(), Block.getAlignment(),
                         Block.getAlignmentOffset());
@@ -523,9 +446,7 @@ Error BlockRef::materializeBlock(LinkGraphBuilder &LGB,
                       Block.getAlignment(), Block.getAlignmentOffset());
 
   BlockInfo->Block = &B;
-  // When not embedding, use Remaining to indicate if there is an EdgeList to
-  // decode.
-  BlockInfo->Remaining = !UseEdgeList ? Remaining.size() : 1;
+  BlockInfo->Remaining = Remaining.size();
   return Error::success();
 }
 
@@ -539,25 +460,10 @@ Error BlockRef::materializeEdges(LinkGraphBuilder &LGB,
   if (!BlockInfo->Remaining)
     return Error::success();
 
-  if (UseEdgeList) {
-    auto Edge = LGB.getNode<EdgeListRef>(BlockIdx);
-    if (!Edge)
-      return Edge.takeError();
-
-    if (auto Err = Edge->materialize(LGB, *BlockInfo->Block, BlockIdx))
-      return Err;
-
-    return Error::success();
-  }
-
   auto Remaining = getData().take_back(BlockInfo->Remaining);
-  unsigned EdgeSize;
-  auto E = encoding::consumeVBR8(Remaining, EdgeSize);
-  if (E)
-    return E;
-
-  for (unsigned I = 0; I < EdgeSize; ++I) {
-    if (auto Err = decodeEdge(LGB, Remaining, *BlockInfo->Block, BlockIdx))
+  for (const data::Fixup &Fixup : BlockInfo->Data->getFixups()) {
+    if (Error Err =
+            decodeEdge(LGB, Remaining, *BlockInfo->Block, BlockIdx, Fixup))
       return Err;
   }
 
@@ -615,10 +521,7 @@ static Error encodeSymbol(CompileUnitBuilder &CUB, SmallVectorImpl<char> &Data,
     auto BlockIndex = CUB.getBlockIndex(S.getBlock());
     if (!BlockIndex)
       return BlockIndex.takeError();
-    if (!DirectIndexEncode)
-      CUB.encodeIndex(*BlockIndex);
-    else
-      encoding::writeVBR8(*BlockIndex, Data);
+    CUB.encodeIndex(*BlockIndex);
   }
   return Error::success();
 }
@@ -666,12 +569,7 @@ static Error decodeSymbol(LinkGraphBuilder &LGB, StringRef &Data,
   bool IsCallable = Bits & (1U << 5);
 
   unsigned BlockIdx;
-  if (!DirectIndexEncode) {
-    auto Idx = LGB.nextIdx();
-    if (!Idx)
-      return Idx.takeError();
-    BlockIdx = *Idx;
-  } else if (auto E = encoding::consumeVBR8(Data, BlockIdx))
+  if (Error E = LGB.nextIdx().moveInto(BlockIdx))
     return E;
 
   auto BlockInfo = LGB.getBlockInfo(BlockIdx);
@@ -787,16 +685,6 @@ Error CompileUnitBuilder::createAndReferenceName(StringRef Name) {
   if (!Ref)
     return Ref.takeError();
   // NameRef is not top level record, always record here.
-  recordNode(*Ref);
-  return Error::success();
-}
-
-Error CompileUnitBuilder::createAndReferenceEdges(
-    ArrayRef<const jitlink::Edge *> Edges) {
-  auto Ref = EdgeListRef::create(*this, Edges);
-  if (!Ref)
-    return Ref.takeError();
-  // EdgeListRef is not top level record, always record here.
   recordNode(*Ref);
   return Error::success();
 }
