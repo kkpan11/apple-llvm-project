@@ -74,6 +74,10 @@ public:
   ConstString GetFullNameForDylib(ConstString basename) override;
 
 private:
+  std::unique_ptr<lldb_private::UtilityFunction>
+  MakeLoadImageUtilityFunction(lldb_private::ExecutionContext &context,
+                               lldb_private::Status &status);
+
   lldb_private::Status EvaluateLoaderExpression(lldb_private::Process *process,
                                                 const char *expression,
                                                 lldb::ValueObjectSP &value);
