@@ -575,6 +575,16 @@ void DeadArgumentEliminationPass::SurveyFunction(const Function &F) {
     if (NumLiveRetVals == RetCount)
       continue;
 
+    // clang.arc.attachedcall operand bundles use the (pointer) return value of
+    // the call.
+    for (unsigned i = 0, e = CB->getNumOperandBundles(); i < e; ++i) {
+      OperandBundleUse BU = CB->getOperandBundleAt(i);
+      if (BU.getTagID() == LLVMContext::OB_clang_arc_attachedcall) {
+        NumLiveRetVals = RetCount;
+        RetValLiveness.assign(RetCount, Live);
+      }
+    }
+
     // Check all uses of the return value.
     for (const Use &U : CB->uses()) {
       if (ExtractValueInst *Ext = dyn_cast<ExtractValueInst>(U.getUser())) {
