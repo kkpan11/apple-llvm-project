@@ -159,6 +159,16 @@ static cl::opt<unsigned> MemorySSAPathCheckLimit(
     cl::desc("The maximum number of blocks to check when trying to prove that "
              "all paths to an exit go through a killing block (default = 50)"));
 
+// This flags allows or disallows DSE to optimize MemorySSA during its
+// traversal. Note that DSE optimizing MemorySSA may impact other passes
+// downstream of the DSE invocation and can lead to issues not being
+// reproducible in isolation (i.e. when MemorySSA is built from scratch). In
+// those cases, the flag can be used to check if DSE's MemorySSA optimizations
+// impact follow-up passes.
+static cl::opt<bool>
+    OptimizeMemorySSA("dse-optimize-memoryssa", cl::init(true), cl::Hidden,
+                      cl::desc("Allow DSE to optimize memory accesses."));
+
 //===----------------------------------------------------------------------===//
 // Helper functions
 //===----------------------------------------------------------------------===//
@@ -329,6 +339,7 @@ enum OverwriteResult {
   OW_End,
   OW_PartialEarlierWithFullLater,
   OW_MaybePartial,
+  OW_None,
   OW_Unknown
 };
 
@@ -944,6 +955,7 @@ struct DSEState {
   /// Return OW_MaybePartial if \p KillingI does not completely overwrite
   /// \p DeadI, but they both write to the same underlying object. In that
   /// case, use isPartialOverwrite to check if \p KillingI partially overwrites
+  /// \p DeadI. Returns 'OR_None' if \p KillingI is known to not overwrite the
   /// \p DeadI. Returns 'OW_Unknown' if nothing can be determined.
   OverwriteResult isOverwrite(const Instruction *KillingI,
                               const Instruction *DeadI,
@@ -1006,8 +1018,16 @@ struct DSEState {
 
     // If we can't resolve the same pointers to the same object, then we can't
     // analyze them at all.
-    if (DeadUndObj != KillingUndObj)
+    if (DeadUndObj != KillingUndObj) {
+      // Non aliasing stores to different objects don't overlap. Note that
+      // if the killing store is known to overwrite whole object (out of
+      // bounds access overwrites whole object as well) then it is assumed to
+      // completely overwrite any store to the same object even if they don't
+      // actually alias (see next check).
+      if (AAR == AliasResult::NoAlias)
+        return OW_None;
       return OW_Unknown;
+    }
 
     // If the KillingI store is to a recognizable object, get its size.
     uint64_t KillingUndObjSize = getPointerSize(KillingUndObj, DL, TLI, &F);
@@ -1061,9 +1081,8 @@ struct DSEState {
       return OW_MaybePartial;
     }
 
-    // Can reach here only if accesses are known not to overlap. There is no
-    // dedicated code to indicate no overlap so signal "unknown".
-    return OW_Unknown;
+    // Can reach here only if accesses are known not to overlap.
+    return OW_None;
   }
 
   bool isInvisibleToCallerAfterRet(const Value *V) {
@@ -1354,6 +1373,15 @@ struct DSEState {
     Instruction *KillingI = KillingDef->getMemoryInst();
     LLVM_DEBUG(dbgs() << "  trying to get dominating access\n");
 
+    // Only optimize defining access of KillingDef when directly starting at its
+    // defining access. The defining access also must only access KillingLoc. At
+    // the moment we only support instructions with a single write location, so
+    // it should be sufficient to disable optimizations for instructions that
+    // also read from memory.
+    bool CanOptimize = OptimizeMemorySSA &&
+                       KillingDef->getDefiningAccess() == StartAccess &&
+                       !KillingI->mayReadFromMemory();
+
     // Find the next clobbering Mod access for DefLoc, starting at StartAccess.
     Optional<MemoryLocation> CurrentLoc;
     for (;; Current = cast<MemoryDef>(Current)->getDefiningAccess()) {
@@ -1395,8 +1423,10 @@ struct DSEState {
       Instruction *CurrentI = CurrentDef->getMemoryInst();
 
       if (canSkipDef(CurrentDef, !isInvisibleToCallerBeforeRet(KillingUndObj),
-                     TLI))
+                     TLI)) {
+        CanOptimize = false;
         continue;
+      }
 
       // Before we try to remove anything, check for any extra throwing
       // instructions that block us from DSEing
@@ -1437,8 +1467,10 @@ struct DSEState {
 
       // If Current does not have an analyzable write location, skip it
       CurrentLoc = getLocForWriteEx(CurrentI);
-      if (!CurrentLoc)
+      if (!CurrentLoc) {
+        CanOptimize = false;
         continue;
+      }
 
       // AliasAnalysis does not account for loops. Limit elimination to
       // candidates for which we can guarantee they always store to the same
@@ -1446,6 +1478,7 @@ struct DSEState {
       if (!isGuaranteedLoopIndependent(CurrentI, KillingI, *CurrentLoc)) {
         LLVM_DEBUG(dbgs() << "  ... not guaranteed loop independent\n");
         WalkerStepLimit -= 1;
+        CanOptimize = false;
         continue;
       }
 
@@ -1453,16 +1486,32 @@ struct DSEState {
         // If the killing def is a memory terminator (e.g. lifetime.end), check
         // the next candidate if the current Current does not write the same
         // underlying object as the terminator.
-        if (!isMemTerminator(*CurrentLoc, CurrentI, KillingI))
+        if (!isMemTerminator(*CurrentLoc, CurrentI, KillingI)) {
+          CanOptimize = false;
           continue;
+        }
       } else {
         int64_t KillingOffset = 0;
         int64_t DeadOffset = 0;
         auto OR = isOverwrite(KillingI, CurrentI, KillingLoc, *CurrentLoc,
                               KillingOffset, DeadOffset);
+        if (CanOptimize) {
+          // CurrentDef is the earliest write clobber of KillingDef. Use it as
+          // optimized access. Do not optimize if CurrentDef is already the
+          // defining access of KillingDef.
+          if (CurrentDef != KillingDef->getDefiningAccess() &&
+              (OR == OW_Complete || OR == OW_MaybePartial))
+            KillingDef->setOptimized(CurrentDef);
+
+          // Once a may-aliasing def is encountered do not set an optimized
+          // access.
+          if (OR != OW_None)
+            CanOptimize = false;
+        }
+
         // If Current does not write to the same object as KillingDef, check
         // the next candidate.
-        if (OR == OW_Unknown)
+        if (OR == OW_Unknown || OR == OW_None)
           continue;
         else if (OR == OW_MaybePartial) {
           // If KillingDef only partially overwrites Current, check the next
@@ -1471,6 +1520,7 @@ struct DSEState {
           // which are less likely to be removable in the end.
           if (PartialLimit <= 1) {
             WalkerStepLimit -= 1;
+            LLVM_DEBUG(dbgs() << "   ... reached partial limit ... continue with next access\n");
             continue;
           }
           PartialLimit -= 1;
@@ -1941,6 +1991,63 @@ struct DSEState {
 
     return false;
   }
+
+  /// Eliminates writes to locations where the value that is being written
+  /// is already stored at the same location.
+  bool eliminateRedundantStoresOfExistingValues() {
+    bool MadeChange = false;
+    LLVM_DEBUG(dbgs() << "Trying to eliminate MemoryDefs that write the "
+                         "already existing value\n");
+    for (auto *Def : MemDefs) {
+      if (SkipStores.contains(Def) || MSSA.isLiveOnEntryDef(Def) ||
+          !isRemovable(Def->getMemoryInst()))
+        continue;
+      MemoryDef *UpperDef;
+      // To conserve compile-time, we avoid walking to the next clobbering def.
+      // Instead, we just try to get the optimized access, if it exists. DSE
+      // will try to optimize defs during the earlier traversal.
+      if (Def->isOptimized())
+        UpperDef = dyn_cast<MemoryDef>(Def->getOptimized());
+      else
+        UpperDef = dyn_cast<MemoryDef>(Def->getDefiningAccess());
+      if (!UpperDef || MSSA.isLiveOnEntryDef(UpperDef))
+        continue;
+
+      Instruction *DefInst = Def->getMemoryInst();
+      Instruction *UpperInst = UpperDef->getMemoryInst();
+      auto IsRedundantStore = [this, DefInst,
+                               UpperInst](MemoryLocation UpperLoc) {
+        if (DefInst->isIdenticalTo(UpperInst))
+          return true;
+        if (auto *MemSetI = dyn_cast<MemSetInst>(UpperInst)) {
+          if (auto *SI = dyn_cast<StoreInst>(DefInst)) {
+            auto MaybeDefLoc = getLocForWriteEx(DefInst);
+            if (!MaybeDefLoc)
+              return false;
+            int64_t InstWriteOffset = 0;
+            int64_t DepWriteOffset = 0;
+            auto OR = isOverwrite(UpperInst, DefInst, UpperLoc, *MaybeDefLoc,
+                                  InstWriteOffset, DepWriteOffset);
+            Value *StoredByte = isBytewiseValue(SI->getValueOperand(), DL);
+            return StoredByte && StoredByte == MemSetI->getOperand(1) &&
+                   OR == OW_Complete;
+          }
+        }
+        return false;
+      };
+
+      auto MaybeUpperLoc = getLocForWriteEx(UpperInst);
+      if (!MaybeUpperLoc || !IsRedundantStore(*MaybeUpperLoc) ||
+          isReadClobber(*MaybeUpperLoc, DefInst))
+        continue;
+      LLVM_DEBUG(dbgs() << "DSE: Remove No-Op Store:\n  DEAD: " << *DefInst
+                        << '\n');
+      deleteDeadInstruction(DefInst);
+      NumRedundantStores++;
+      MadeChange = true;
+    }
+    return MadeChange;
+  }
 };
 
 static bool eliminateDeadStores(Function &F, AliasAnalysis &AA, MemorySSA &MSSA,
@@ -2106,6 +2213,7 @@ static bool eliminateDeadStores(Function &F, AliasAnalysis &AA, MemorySSA &MSSA,
     for (auto &KV : State.IOLs)
       MadeChange |= removePartiallyOverlappedStores(State.DL, KV.second, TLI);
 
+  MadeChange |= State.eliminateRedundantStoresOfExistingValues();
   MadeChange |= State.eliminateDeadWritesAtEndOfFunction();
   return MadeChange;
 }
