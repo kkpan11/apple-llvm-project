@@ -166,6 +166,8 @@ public:
                  bool show_types, bool show_summary, bool verbose,
                  uint32_t depth) override;
 
+  lldb::Format GetFormat(lldb::opaque_compiler_type_t type) override;
+
   /// Unavailable hardcoded functions that don't make sense for Swift.
   /// \{
   ConstString DeclContextGetName(void *opaque_decl_ctx) override { return {}; }
