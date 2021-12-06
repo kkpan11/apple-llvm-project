@@ -977,7 +977,6 @@ static uint32_t collectTypeInfo(TypeSystemSwiftTypeRef *module_holder,
                                 swift::Demangle::NodePointer node,
                                 bool &unresolved_typealias,
                                 bool generic_walk = false) {
-  LLDB_SCOPED_TIMER();
   if (!node)
     return 0;
   uint32_t swift_flags = eTypeIsSwift;
