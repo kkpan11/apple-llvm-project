@@ -38,6 +38,7 @@
 #include "swift/AST/Type.h"
 #include "swift/AST/Types.h"
 #include "swift/ASTSectionImporter/ASTSectionImporter.h"
+#include "swift/Basic/DiagnosticOptions.h"
 #include "swift/Basic/Dwarf.h"
 #include "swift/Basic/LangOptions.h"
 #include "swift/Basic/Located.h"
@@ -167,12 +168,14 @@ std::recursive_mutex g_log_mutex;
 
 /// Similar to LLDB_LOG, but with richer contextual information.
 #define LOG_PRINTF(CHANNEL, FMT, ...)                                          \
-  LOG_PRINTF_IMPL(CHANNEL, false, FMT, ##__VA_ARGS__)
+  LOG_PRINTF_IMPL(lldb_private::GetLogIfAllCategoriesSet(CHANNEL), false, FMT, \
+                  ##__VA_ARGS__)
 #define LOG_VERBOSE_PRINTF(CHANNEL, FMT, ...)                                  \
-  LOG_PRINTF_IMPL(CHANNEL, true, FMT, ##__VA_ARGS__)
+  LOG_PRINTF_IMPL(lldb_private::GetLogIfAllCategoriesSet(CHANNEL), true, FMT,  \
+                  ##__VA_ARGS__)
 #define LOG_PRINTF_IMPL(CHANNEL, VERBOSE, FMT, ...)                            \
   do {                                                                         \
-    if (Log *log = lldb_private::GetLogIfAllCategoriesSet(CHANNEL))            \
+    if (Log *log = CHANNEL)                                                    \
       if (!(VERBOSE) || log->GetVerbose()) {                                   \
         std::lock_guard<std::recursive_mutex> locker(g_log_mutex);             \
         /* The format string is optimized for code size, not speed. */         \
@@ -181,6 +184,10 @@ std::recursive_mutex g_log_mutex;
                     (FMT && FMT[0] == '(') ? "" : "() -- ", ##__VA_ARGS__);    \
       }                                                                        \
   } while (0)
+
+#define HEALTH_LOG_PRINTF(FMT, ...)                                            \
+  LOG_PRINTF(LIBLLDB_LOG_TYPES, FMT, ##__VA_ARGS__);                           \
+  LOG_PRINTF_IMPL(lldb_private::GetSwiftHealthLog(), false, FMT, ##__VA_ARGS__)
 
 using namespace lldb;
 using namespace lldb_private;
@@ -956,23 +963,14 @@ const std::string &SwiftASTContext::GetDescription() const {
   return m_description;
 }
 
-namespace {
-struct SDKTypeMinVersion {
-  XcodeSDK::Type sdk_type;
-  unsigned min_version_major;
-  unsigned min_version_minor;
-};
-} // namespace
-
-/// Return the SDKType (+minimum version needed for Swift support) for
-/// the target triple, if that makes sense. Otherwise, return the
-/// unknown sdk type.
-static SDKTypeMinVersion GetSDKType(const llvm::Triple &target,
-                                    const llvm::Triple &host) {
+/// Return the Xcode sdk type for the target triple, if that makes sense.
+/// Otherwise, return the unknown sdk type.
+static XcodeSDK::Type GetSDKType(const llvm::Triple &target,
+                                 const llvm::Triple &host) {
   // Only Darwin platforms know the concept of an SDK.
   auto host_os = host.getOS();
   if (host_os != llvm::Triple::OSType::MacOSX)
-    return {XcodeSDK::Type::unknown, 0, 0};
+    return XcodeSDK::Type::unknown;
 
   auto is_simulator = [&]() -> bool {
     return target.getEnvironment() == llvm::Triple::Simulator ||
@@ -982,21 +980,21 @@ static SDKTypeMinVersion GetSDKType(const llvm::Triple &target,
   switch (target.getOS()) {
   case llvm::Triple::OSType::MacOSX:
   case llvm::Triple::OSType::Darwin:
-    return {XcodeSDK::Type::MacOSX, 10, 10};
+    return XcodeSDK::Type::MacOSX;
   case llvm::Triple::OSType::IOS:
     if (is_simulator())
-      return {XcodeSDK::Type::iPhoneSimulator, 8, 0};
-    return {XcodeSDK::Type::iPhoneOS, 8, 0};
+      return XcodeSDK::Type::iPhoneSimulator;
+    return XcodeSDK::Type::iPhoneOS;
   case llvm::Triple::OSType::TvOS:
     if (is_simulator())
-      return {XcodeSDK::Type::AppleTVSimulator, 9, 0};
-    return {XcodeSDK::Type::AppleTVOS, 9, 0};
+      return XcodeSDK::Type::AppleTVSimulator;
+    return XcodeSDK::Type::AppleTVOS;
   case llvm::Triple::OSType::WatchOS:
     if (is_simulator())
-      return {XcodeSDK::Type::WatchSimulator, 2, 0};
-    return {XcodeSDK::Type::watchOS, 2, 0};
+      return XcodeSDK::Type::WatchSimulator;
+    return XcodeSDK::Type::watchOS;
   default:
-    return {XcodeSDK::Type::unknown, 0, 0};
+    return XcodeSDK::Type::unknown;
   }
 }
 
@@ -1004,9 +1002,8 @@ static SDKTypeMinVersion GetSDKType(const llvm::Triple &target,
 /// Swift stdlib needed for \p target.
 std::string SwiftASTContext::GetSwiftStdlibOSDir(const llvm::Triple &target,
                                                  const llvm::Triple &host) {
-  auto sdk = GetSDKType(target, host);
   XcodeSDK::Info sdk_info;
-  sdk_info.type = sdk.sdk_type;
+  sdk_info.type = GetSDKType(target, host);
   std::string sdk_name = XcodeSDK::GetCanonicalName(sdk_info);
   if (!sdk_name.empty())
     return sdk_name;
@@ -1503,7 +1500,7 @@ void SwiftASTContext::AddExtraClangArgs(const std::vector<std::string>& source,
   }
 }
 
-void SwiftASTContext::AddExtraClangArgs(std::vector<std::string> ExtraArgs) {
+void SwiftASTContext::AddExtraClangArgs(const std::vector<std::string> &ExtraArgs) {
   swift::ClangImporterOptions &importer_options = GetClangImporterOptions();
   AddExtraClangArgs(ExtraArgs, importer_options.ExtraArgs);
 }
@@ -1539,6 +1536,20 @@ void SwiftASTContext::ApplyWorkingDir(
   llvm::sys::path::remove_dots(joined_path);
   clang_argument.resize(prefix.size());
   clang_argument.append(joined_path.begin(), joined_path.end());
+}
+
+void SwiftASTContext::ApplyDiagnosticOptions() {
+  const auto &opts = GetCompilerInvocation().getDiagnosticOptions();
+  if (opts.PrintDiagnosticNames)
+    GetDiagnosticEngine().setPrintDiagnosticNames(true);
+
+  if (!opts.DiagnosticDocumentationPath.empty())
+    GetDiagnosticEngine().setDiagnosticDocumentationPath(
+        opts.DiagnosticDocumentationPath);
+
+  if (!opts.LocalizationCode.empty() && !opts.LocalizationPath.empty())
+    GetDiagnosticEngine().setLocalization(opts.LocalizationCode,
+                                          opts.LocalizationPath);
 }
 
 void SwiftASTContext::RemapClangImporterOptions(
@@ -1649,8 +1660,7 @@ SwiftASTContext::CreateInstance(lldb::LanguageType language, Module &module,
   LOG_PRINTF(LIBLLDB_LOG_TYPES, "(Module)");
 
   auto logError = [&](const char *message) {
-    LOG_PRINTF(LIBLLDB_LOG_TYPES, "Failed to create module context - %s",
-               message);
+    HEALTH_LOG_PRINTF("Failed to create module context - %s", message);
   };
 
   ArchSpec arch = module.GetArchitecture();
@@ -2323,6 +2333,8 @@ lldb::TypeSystemSP SwiftASTContext::CreateInstance(lldb::LanguageType language,
     compiler_invocation.parseArgs(extra_args_ref,
                                   swift_ast_sp->GetDiagnosticEngine());
   }
+
+  swift_ast_sp->ApplyDiagnosticOptions();
 
   // Apply source path remappings found in the target settings.
   swift_ast_sp->RemapClangImporterOptions(target.GetSourcePathMap());
@@ -3522,6 +3534,7 @@ swift::ASTContext *SwiftASTContext::GetASTContext() {
   registerIDERequestFunctions(m_ast_context_ap->evaluator);
   registerParseRequestFunctions(m_ast_context_ap->evaluator);
   registerTypeCheckerRequestFunctions(m_ast_context_ap->evaluator);
+  registerClangImporterRequestFunctions(m_ast_context_ap->evaluator);
   registerSILGenRequestFunctions(m_ast_context_ap->evaluator);
   registerSILOptimizerRequestFunctions(m_ast_context_ap->evaluator);
   registerTBDGenRequestFunctions(m_ast_context_ap->evaluator);
@@ -5121,65 +5134,62 @@ void SwiftASTContext::ClearModuleDependentCaches() {
 void SwiftASTContext::LogConfiguration() {
   // It makes no sense to call VALID_OR_RETURN here. We specifically
   // want the logs in the error case!
-  Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_TYPES));
-  if (!log)
-    return;
-
-  LOG_PRINTF(LIBLLDB_LOG_TYPES,
-             "(SwiftASTContext*)%p:", static_cast<void *>(this));
+  HEALTH_LOG_PRINTF("(SwiftASTContext*)%p:", static_cast<void *>(this));
 
   if (!m_ast_context_ap) {
-    log->Printf("  (no AST context)");
+    HEALTH_LOG_PRINTF("  (no AST context)");
     return;
   }
 
-  log->Printf("  Architecture                 : %s",
-              m_ast_context_ap->LangOpts.Target.getTriple().c_str());
-  log->Printf("  SDK path                     : %s",
-              m_ast_context_ap->SearchPathOpts.SDKPath.c_str());
-  log->Printf("  Runtime resource path        : %s",
-              m_ast_context_ap->SearchPathOpts.RuntimeResourcePath.c_str());
-  log->Printf("  Runtime library paths        : (%llu items)",
-              (unsigned long long)
-                  m_ast_context_ap->SearchPathOpts.RuntimeLibraryPaths.size());
+  HEALTH_LOG_PRINTF("  Architecture                 : %s",
+                    m_ast_context_ap->LangOpts.Target.getTriple().c_str());
+  HEALTH_LOG_PRINTF("  SDK path                     : %s",
+                    m_ast_context_ap->SearchPathOpts.SDKPath.c_str());
+  HEALTH_LOG_PRINTF(
+      "  Runtime resource path        : %s",
+      m_ast_context_ap->SearchPathOpts.RuntimeResourcePath.c_str());
+  HEALTH_LOG_PRINTF("  Runtime library paths        : (%llu items)",
+                    (unsigned long long)m_ast_context_ap->SearchPathOpts
+                        .RuntimeLibraryPaths.size());
 
   for (const auto &runtime_library_path :
        m_ast_context_ap->SearchPathOpts.RuntimeLibraryPaths) {
-    log->Printf("    %s", runtime_library_path.c_str());
+    HEALTH_LOG_PRINTF("    %s", runtime_library_path.c_str());
   }
 
-  log->Printf("  Runtime library import paths : (%llu items)",
-              (unsigned long long)m_ast_context_ap->SearchPathOpts
-                  .RuntimeLibraryImportPaths.size());
+  HEALTH_LOG_PRINTF("  Runtime library import paths : (%llu items)",
+                    (unsigned long long)m_ast_context_ap->SearchPathOpts
+                        .RuntimeLibraryImportPaths.size());
 
   for (const auto &runtime_import_path :
        m_ast_context_ap->SearchPathOpts.RuntimeLibraryImportPaths) {
-    log->Printf("    %s", runtime_import_path.c_str());
+    HEALTH_LOG_PRINTF("    %s", runtime_import_path.c_str());
   }
 
-  log->Printf("  Framework search paths       : (%llu items)",
-              (unsigned long long)
-                  m_ast_context_ap->SearchPathOpts.FrameworkSearchPaths.size());
+  HEALTH_LOG_PRINTF("  Framework search paths       : (%llu items)",
+                    (unsigned long long)m_ast_context_ap->SearchPathOpts
+                        .FrameworkSearchPaths.size());
   for (const auto &framework_search_path :
        m_ast_context_ap->SearchPathOpts.FrameworkSearchPaths) {
-    log->Printf("    %s", framework_search_path.Path.c_str());
+    HEALTH_LOG_PRINTF("    %s", framework_search_path.Path.c_str());
   }
 
-  log->Printf("  Import search paths          : (%llu items)",
-              (unsigned long long)
-                  m_ast_context_ap->SearchPathOpts.ImportSearchPaths.size());
+  HEALTH_LOG_PRINTF("  Import search paths          : (%llu items)",
+                    (unsigned long long)m_ast_context_ap->SearchPathOpts
+                        .ImportSearchPaths.size());
   for (std::string &import_search_path :
        m_ast_context_ap->SearchPathOpts.ImportSearchPaths) {
-    log->Printf("    %s", import_search_path.c_str());
+    HEALTH_LOG_PRINTF("    %s", import_search_path.c_str());
   }
 
   swift::ClangImporterOptions &clang_importer_options =
       GetClangImporterOptions();
 
-  log->Printf("  Extra clang arguments        : (%llu items)",
-              (unsigned long long)clang_importer_options.ExtraArgs.size());
+  HEALTH_LOG_PRINTF(
+      "  Extra clang arguments        : (%llu items)",
+      (unsigned long long)clang_importer_options.ExtraArgs.size());
   for (std::string &extra_arg : clang_importer_options.ExtraArgs) {
-    log->Printf("    %s", extra_arg.c_str());
+    HEALTH_LOG_PRINTF("    %s", extra_arg.c_str());
   }
 }
 
@@ -5398,6 +5408,15 @@ bool SwiftASTContext::IsPossibleDynamicType(opaque_compiler_type_t type,
   if (can_type == GetASTContext()->TheBridgeObjectType)
     return true;
 
+  if (auto *bound_type =
+          llvm::dyn_cast<swift::BoundGenericType>(can_type.getPointer())) {
+    for (auto generic_arg : bound_type->getGenericArgs()) {
+      if (IsPossibleDynamicType(generic_arg.getPointer(), dynamic_pointee_type,
+                                check_cplusplus, check_objc))
+        return true;
+    }
+  }
+
   if (dynamic_pointee_type)
     dynamic_pointee_type->Clear();
   return false;
@@ -5517,28 +5536,6 @@ bool SwiftASTContext::GetProtocolTypeInfo(const CompilerType &type,
   return false;
 }
 
-TypeSystemSwift::TypeAllocationStrategy
-SwiftASTContext::GetAllocationStrategy(opaque_compiler_type_t type) {
-  VALID_OR_RETURN_CHECK_TYPE(type, TypeAllocationStrategy::eUnknown);
-
-  swift::Type swift_type = GetSwiftType(type);
-  if (!swift_type)
-    return TypeAllocationStrategy::eUnknown;
-  const swift::irgen::TypeInfo *type_info =
-      GetSwiftTypeInfo(swift_type.getPointer());
-  if (!type_info)
-    return TypeAllocationStrategy::eUnknown;
-  switch (type_info->getFixedPacking(GetIRGenModule())) {
-  case swift::irgen::FixedPacking::OffsetZero:
-    return TypeAllocationStrategy::eInline;
-  case swift::irgen::FixedPacking::Allocate:
-    return TypeAllocationStrategy::ePointer;
-  case swift::irgen::FixedPacking::Dynamic:
-    return TypeAllocationStrategy::eDynamic;
-  }
-  return TypeAllocationStrategy::eUnknown;
-}
-
 CompilerType
 SwiftASTContext::GetTypeRefType(lldb::opaque_compiler_type_t type) {
   return GetTypeSystemSwiftTypeRef().GetTypeFromMangledTypename(
@@ -5557,7 +5554,7 @@ ConstString SwiftASTContext::GetTypeName(opaque_compiler_type_t type) {
   swift::Type swift_type(GetSwiftType(type));
 
   swift::Type normalized_type =
-      swift_type.transform([](swift::Type type) -> swift::Type {
+      swift_type.transformRec([](swift::Type type) -> swift::Type {
         if (swift::SyntaxSugarType *syntax_sugar_type =
                 swift::dyn_cast<swift::SyntaxSugarType>(type.getPointer())) {
           return syntax_sugar_type->getSinglyDesugaredType();
@@ -6035,27 +6032,6 @@ SwiftASTContext::GetMemberFunctionAtIndex(opaque_compiler_type_t type,
   return TypeMemberFunctionImpl();
 }
 
-CompilerType
-SwiftASTContext::GetLValueReferenceType(opaque_compiler_type_t type) {
-  return {};
-}
-
-CompilerType
-SwiftASTContext::GetRValueReferenceType(opaque_compiler_type_t type) {
-  return {};
-}
-
-CompilerType SwiftASTContext::GetNonReferenceType(opaque_compiler_type_t type) {
-  VALID_OR_RETURN_CHECK_TYPE(type, CompilerType());
-
-  swift::CanType swift_can_type(GetCanonicalSwiftType(type));
-
-  swift::LValueType *lvalue = swift_can_type->getAs<swift::LValueType>();
-  if (lvalue)
-    return ToCompilerType({lvalue->getObjectType().getPointer()});
-  return {};
-}
-
 CompilerType SwiftASTContext::GetPointeeType(opaque_compiler_type_t type) {
   return {};
 }
@@ -6359,96 +6335,6 @@ lldb::Encoding SwiftASTContext::GetEncoding(opaque_compiler_type_t type,
   }
   count = 0;
   return lldb::eEncodingInvalid;
-}
-
-lldb::Format SwiftASTContext::GetFormat(opaque_compiler_type_t type) {
-  VALID_OR_RETURN_CHECK_TYPE(type, lldb::eFormatInvalid);
-
-  swift::CanType swift_can_type(GetCanonicalSwiftType(type));
-
-  const swift::TypeKind type_kind = swift_can_type->getKind();
-  switch (type_kind) {
-  case swift::TypeKind::BuiltinDefaultActorStorage:
-  case swift::TypeKind::BuiltinExecutor:
-  case swift::TypeKind::BuiltinJob:
-  case swift::TypeKind::BuiltinRawUnsafeContinuation:
-  case swift::TypeKind::Error:
-  case swift::TypeKind::Module:
-  case swift::TypeKind::InOut:
-  case swift::TypeKind::VariadicSequence:
-  case swift::TypeKind::Placeholder:
-  case swift::TypeKind::SILBlockStorage:
-  case swift::TypeKind::SILBox:
-  case swift::TypeKind::SILFunction:
-  case swift::TypeKind::SILToken:
-  case swift::TypeKind::TypeVariable:
-  case swift::TypeKind::Unresolved:
-    break;
-  case swift::TypeKind::BuiltinIntegerLiteral:
-  case swift::TypeKind::BuiltinInteger:
-    return eFormatDecimal; // TODO: detect if an integer is unsigned
-  case swift::TypeKind::BuiltinFloat:
-    return eFormatFloat; // TODO: detect if an integer is unsigned
-
-  case swift::TypeKind::BuiltinRawPointer:
-  case swift::TypeKind::BuiltinNativeObject:
-  case swift::TypeKind::BuiltinUnsafeValueBuffer:
-  case swift::TypeKind::BuiltinBridgeObject:
-  case swift::TypeKind::PrimaryArchetype:
-  case swift::TypeKind::OpenedArchetype:
-  case swift::TypeKind::OpaqueTypeArchetype:
-  case swift::TypeKind::NestedArchetype:
-  case swift::TypeKind::GenericTypeParam:
-  case swift::TypeKind::DependentMember:
-    return eFormatAddressInfo;
-
-  // Classes are always pointers in swift.
-  case swift::TypeKind::Class:
-  case swift::TypeKind::BoundGenericClass:
-    return eFormatHex;
-
-  case swift::TypeKind::BuiltinVector:
-    break;
-  case swift::TypeKind::Tuple:
-    break;
-  case swift::TypeKind::UnmanagedStorage:
-  case swift::TypeKind::UnownedStorage:
-  case swift::TypeKind::WeakStorage:
-    return ToCompilerType(swift_can_type->getReferenceStorageReferent())
-        .GetFormat();
-    break;
-
-  case swift::TypeKind::Enum:
-  case swift::TypeKind::BoundGenericEnum:
-    return eFormatUnsigned;
-
-  case swift::TypeKind::GenericFunction:
-  case swift::TypeKind::Function:
-    return lldb::eFormatAddressInfo;
-
-  case swift::TypeKind::Struct:
-  case swift::TypeKind::Protocol:
-  case swift::TypeKind::Metatype:
-  case swift::TypeKind::ProtocolComposition:
-    break;
-  case swift::TypeKind::LValue:
-    return lldb::eFormatHex;
-  case swift::TypeKind::UnboundGeneric:
-  case swift::TypeKind::BoundGenericStruct:
-  case swift::TypeKind::ExistentialMetatype:
-  case swift::TypeKind::DynamicSelf:
-    break;
-
-  case swift::TypeKind::Optional:
-  case swift::TypeKind::TypeAlias:
-  case swift::TypeKind::Paren:
-  case swift::TypeKind::Dictionary:
-  case swift::TypeKind::ArraySlice:
-    assert(false && "Not a canonical type");
-    break;
-  }
-  // We don't know hot to display this type.
-  return lldb::eFormatBytes;
 }
 
 uint32_t SwiftASTContext::GetNumChildren(opaque_compiler_type_t type,
@@ -8072,12 +7958,6 @@ std::string SwiftASTContext::ImportName(const clang::NamedDecl *clang_decl) {
   }
   return clang_decl->getName().str();
 }
-
-void SwiftASTContext::DumpSummary(opaque_compiler_type_t type,
-                                  ExecutionContext *exe_ctx, Stream *s,
-                                  const lldb_private::DataExtractor &data,
-                                  lldb::offset_t data_byte_offset,
-                                  size_t data_byte_size) {}
 
 void SwiftASTContext::DumpTypeDescription(opaque_compiler_type_t type,
                                           lldb::DescriptionLevel level) {

@@ -250,6 +250,142 @@ lldb::addr_t SwiftLanguageRuntime::MaybeMaskNonTrivialReferencePointer(
   return addr;
 }
 
+namespace {
+
+/// An implementation of the generic ReflectionContextInterface that
+/// is templatized on target pointer width and specialized to either
+/// 32-bit or 64-bit pointers.
+template <unsigned PointerSize>
+class TargetReflectionContext
+    : public SwiftLanguageRuntimeImpl::ReflectionContextInterface {
+  using ReflectionContext = swift::reflection::ReflectionContext<
+      swift::External<swift::RuntimeTarget<PointerSize>>>;
+  ReflectionContext m_reflection_ctx;
+
+public:
+  TargetReflectionContext(
+      std::shared_ptr<swift::reflection::MemoryReader> reader)
+      : m_reflection_ctx(reader) {}
+
+  bool addImage(
+      llvm::function_ref<std::pair<swift::remote::RemoteRef<void>, uint64_t>(
+          swift::ReflectionSectionKind)>
+          find_section) override {
+    return m_reflection_ctx.addImage(find_section);
+  }
+
+  bool addImage(swift::remote::RemoteAddress image_start) override {
+    return m_reflection_ctx.addImage(image_start);
+  }
+
+  bool readELF(swift::remote::RemoteAddress ImageStart,
+               llvm::Optional<llvm::sys::MemoryBlock> FileBuffer) override {
+    return m_reflection_ctx.readELF(ImageStart, FileBuffer);
+  }
+
+  const swift::reflection::TypeInfo *
+  getTypeInfo(const swift::reflection::TypeRef *type_ref,
+              swift::remote::TypeInfoProvider *provider) override {
+    return m_reflection_ctx.getTypeInfo(type_ref, provider);
+  }
+
+  swift::reflection::MemoryReader &getReader() override {
+    return m_reflection_ctx.getReader();
+  }
+
+  bool ForEachSuperClassType(
+      LLDBTypeInfoProvider *tip, lldb::addr_t pointer,
+      std::function<bool(SwiftLanguageRuntimeImpl::SuperClassType)> fn)
+      override {
+    auto md_ptr = m_reflection_ctx.readMetadataFromInstance(pointer);
+    if (!md_ptr)
+      return false;
+
+    // Class object.
+    LLDB_LOGF(GetLogIfAllCategoriesSet(LIBLLDB_LOG_TYPES),
+              "found RecordTypeInfo for instance");
+    while (md_ptr && *md_ptr) {
+      // Reading metadata is potentially expensive since (in a remote
+      // debugging scenario it may even incur network traffic) so we
+      // just return closures that the caller can use to query details
+      // if they need them.'
+      auto metadata = *md_ptr;
+      if (fn({[=]() -> const swift::reflection::RecordTypeInfo * {
+                auto *ti = m_reflection_ctx.getMetadataTypeInfo(metadata, tip);
+                return llvm::dyn_cast_or_null<
+                    swift::reflection::RecordTypeInfo>(ti);
+              },
+              [=]() -> const swift::reflection::TypeRef * {
+                return m_reflection_ctx.readTypeFromMetadata(metadata);
+              }}))
+        return true;
+
+      // Continue with the base class.
+      md_ptr = m_reflection_ctx.readSuperClassFromClassMetadata(metadata);
+    }
+    return false;
+  }
+
+  llvm::Optional<std::pair<const swift::reflection::TypeRef *,
+                           swift::reflection::RemoteAddress>>
+  projectExistentialAndUnwrapClass(
+      swift::reflection::RemoteAddress existential_address,
+      const swift::reflection::TypeRef &existential_tr) override {
+    return m_reflection_ctx.projectExistentialAndUnwrapClass(
+        existential_address, existential_tr);
+  }
+
+  const swift::reflection::TypeRef *
+  readTypeFromMetadata(lldb::addr_t metadata_address,
+                       bool skip_artificial_subclasses) override {
+    return m_reflection_ctx.readTypeFromMetadata(metadata_address,
+                                                 skip_artificial_subclasses);
+  }
+
+  const swift::reflection::TypeRef *
+  readTypeFromInstance(lldb::addr_t instance_address,
+                       bool skip_artificial_subclasses) override {
+    auto metadata_address =
+        m_reflection_ctx.readMetadataFromInstance(instance_address);
+    if (!metadata_address) {
+      LLDB_LOGF(GetLogIfAllCategoriesSet(LIBLLDB_LOG_TYPES),
+                "could not read heap metadata for object at %llu\n",
+                instance_address);
+      return nullptr;
+    }
+
+    return m_reflection_ctx.readTypeFromMetadata(*metadata_address,
+                                                 skip_artificial_subclasses);
+  }
+
+  swift::reflection::TypeRefBuilder &getBuilder() override {
+    return m_reflection_ctx.getBuilder();
+  }
+
+  llvm::Optional<bool> isValueInlinedInExistentialContainer(
+      swift::remote::RemoteAddress existential_address) override {
+    return m_reflection_ctx.isValueInlinedInExistentialContainer(
+        existential_address);
+  }
+};
+
+} // namespace
+
+std::unique_ptr<SwiftLanguageRuntimeImpl::ReflectionContextInterface>
+SwiftLanguageRuntimeImpl::ReflectionContextInterface::CreateReflectionContext32(
+    std::shared_ptr<swift::remote::MemoryReader> reader) {
+  return std::make_unique<TargetReflectionContext<4>>(reader);
+}
+
+std::unique_ptr<SwiftLanguageRuntimeImpl::ReflectionContextInterface>
+SwiftLanguageRuntimeImpl::ReflectionContextInterface::CreateReflectionContext64(
+    std::shared_ptr<swift::remote::MemoryReader> reader) {
+  return std::make_unique<TargetReflectionContext<8>>(reader);
+}
+
+SwiftLanguageRuntimeImpl::ReflectionContextInterface::
+    ~ReflectionContextInterface() {}
+
 const CompilerType &SwiftLanguageRuntimeImpl::GetBoxMetadataType() {
   if (m_box_metadata_type.IsValid())
     return m_box_metadata_type;
@@ -634,6 +770,8 @@ public:
   }
 };
 
+} // namespace
+
 class LLDBTypeInfoProvider : public swift::remote::TypeInfoProvider {
   SwiftLanguageRuntimeImpl &m_runtime;
   TypeSystemSwift &m_typesystem;
@@ -712,7 +850,8 @@ public:
         if (is_bitfield_ptr) {
           Log *log(GetLogIfAllCategoriesSet(LIBLLDB_LOG_TYPES));
           if (log)
-            log->Printf("[LLDBTypeInfoProvider] bitfield support is not yet implemented");
+            log->Printf("[LLDBTypeInfoProvider] bitfield support is not yet "
+                        "implemented");
           continue;
         }
         swift::reflection::FieldInfo field_info = {
@@ -724,8 +863,6 @@ public:
     return m_runtime.emplaceClangTypeInfo(clang_type, size, bit_align, fields);
   }
 };
-
-} // namespace
 
 llvm::Optional<const swift::reflection::TypeInfo *>
 SwiftLanguageRuntimeImpl::lookupClangTypeInfo(CompilerType clang_type) {
@@ -1574,35 +1711,9 @@ bool SwiftLanguageRuntimeImpl::ForEachSuperClassType(
   if (!ts)
     return false;
 
+  LLDBTypeInfoProvider tip(*this, *ts);
   lldb::addr_t pointer = instance.GetPointerValue();
-  auto md_ptr = reflection_ctx->readMetadataFromInstance(pointer);
-  if (!md_ptr)
-    return false;
-
-  // Class object.
-  LLDB_LOGF(GetLogIfAllCategoriesSet(LIBLLDB_LOG_TYPES),
-            "found RecordTypeInfo for instance");
-  while (md_ptr && *md_ptr) {
-    // Reading metadata is potentially expensive since (in a remote
-    // debugging scenario it may even incur network traffic) so we
-    // just return closures that the caller can use to query details
-    // if they need them.
-    auto metadata = *md_ptr;
-    if (fn({[=]() -> const swift::reflection::RecordTypeInfo * {
-              LLDBTypeInfoProvider tip(*this, *ts);
-              auto *ti = reflection_ctx->getMetadataTypeInfo(metadata, &tip);
-              return llvm::dyn_cast_or_null<swift::reflection::RecordTypeInfo>(
-                  ti);
-            },
-            [=]() -> const swift::reflection::TypeRef * {
-              return reflection_ctx->readTypeFromMetadata(metadata);
-            }}))
-      return true;
-
-    // Continue with the base class.
-    md_ptr = reflection_ctx->readSuperClassFromClassMetadata(metadata);
-  }
-  return false;
+  return reflection_ctx->ForEachSuperClassType(&tip, pointer, fn);
 }
 
 bool SwiftLanguageRuntime::IsSelf(Variable &variable) {
@@ -1673,8 +1784,8 @@ bool SwiftLanguageRuntimeImpl::GetDynamicTypeAndAddress_Class(
     lldb::DynamicValueType use_dynamic, TypeAndOrName &class_type_or_name,
     Address &address) {
   AddressType address_type;
-  lldb::addr_t class_metadata_ptr = in_value.GetPointerValue(&address_type);
-  if (class_metadata_ptr == LLDB_INVALID_ADDRESS || class_metadata_ptr == 0)
+  lldb::addr_t instance_ptr = in_value.GetPointerValue(&address_type);
+  if (instance_ptr == LLDB_INVALID_ADDRESS || instance_ptr == 0)
     return false;
 
   CompilerType static_type = in_value.GetCompilerType();
@@ -1682,7 +1793,7 @@ bool SwiftLanguageRuntimeImpl::GetDynamicTypeAndAddress_Class(
       llvm::dyn_cast_or_null<TypeSystemSwift>(static_type.GetTypeSystem());
   if (!tss)
     return false;
-  address.SetRawAddress(class_metadata_ptr);
+  address.SetRawAddress(instance_ptr);
   auto &ts = tss->GetTypeSystemSwiftTypeRef();
   // Ask the Objective-C runtime about Objective-C types.
   if (tss->IsImportedType(static_type.GetOpaqueQualType(), nullptr))
@@ -1712,19 +1823,7 @@ bool SwiftLanguageRuntimeImpl::GetDynamicTypeAndAddress_Class(
     }
   Log *log(GetLogIfAllCategoriesSet(LIBLLDB_LOG_TYPES));
   auto *reflection_ctx = GetReflectionContext();
-  swift::remote::RemoteAddress instance_address(class_metadata_ptr);
-  auto metadata_address =
-      reflection_ctx->readMetadataFromInstance(class_metadata_ptr);
-  if (!metadata_address) {
-    if (log)
-      log->Printf("could not read heap metadata for object at %llu\n",
-                  class_metadata_ptr);
-    return false;
-  }
-
-  const auto *typeref =
-      reflection_ctx->readTypeFromMetadata(*metadata_address,
-                                           /*skipArtificial=*/false);
+  const auto *typeref = reflection_ctx->readTypeFromInstance(instance_ptr);
   if (!typeref)
     return false;
   swift::Demangle::Demangler dem;
@@ -1733,8 +1832,8 @@ bool SwiftLanguageRuntimeImpl::GetDynamicTypeAndAddress_Class(
 
 #ifndef NDEBUG
   auto &remote_ast = GetRemoteASTContext(scratch_ctx);
-  auto remote_ast_metadata_address =
-      remote_ast.getHeapMetadataForObject(instance_address);
+  auto remote_ast_metadata_address = remote_ast.getHeapMetadataForObject(
+      swift::remote::RemoteAddress(instance_ptr));
   if (remote_ast_metadata_address) {
     auto instance_type = remote_ast.getTypeForRemoteTypeMetadata(
         remote_ast_metadata_address.getValue(),
@@ -1748,9 +1847,8 @@ bool SwiftLanguageRuntimeImpl::GetDynamicTypeAndAddress_Class(
                      << "\n";
     } else {
       if (log) {
-        log->Printf(
-            "could not get type metadata from address %" PRIu64 " : %s\n",
-            *metadata_address, instance_type.getFailure().render().c_str());
+        log->Printf("could not get type metadata: %s\n",
+                    instance_type.getFailure().render().c_str());
       }
     }
   }
@@ -2433,9 +2531,12 @@ bool SwiftLanguageRuntimeImpl::GetDynamicTypeAndAddress_IndirectEnumCase(
 //  because we aren't pointing to the LOCATION that stores the pointer to us,
 //  we're pointing to us..."
 // See inlined comments for exceptions to this general rule.
-Value::ValueType SwiftLanguageRuntimeImpl::GetValueType(
-    Value::ValueType static_value_type, CompilerType static_type,
-    CompilerType dynamic_type, bool is_indirect_enum_case) {
+Value::ValueType
+SwiftLanguageRuntimeImpl::GetValueType(ValueObject &in_value,
+                                       CompilerType dynamic_type,
+                                       bool is_indirect_enum_case) {
+  Value::ValueType static_value_type = in_value.GetValue().GetValueType();
+  CompilerType static_type = in_value.GetCompilerType();
   Flags static_type_flags(static_type.GetTypeInfo());
   Flags dynamic_type_flags(dynamic_type.GetTypeInfo());
 
@@ -2456,21 +2557,50 @@ Value::ValueType SwiftLanguageRuntimeImpl::GetValueType(
         return Value::ValueType::LoadAddress;
       }
 
-      if (auto *ts = llvm::dyn_cast_or_null<TypeSystemSwift>(
-              dynamic_type.GetTypeSystem()))
-        switch (ts->GetAllocationStrategy(dynamic_type.GetOpaqueQualType())) {
-        case SwiftASTContext::TypeAllocationStrategy::eDynamic:
-        case SwiftASTContext::TypeAllocationStrategy::eUnknown:
-          break;
-        case SwiftASTContext::TypeAllocationStrategy::eInline: // inline data;
-                                                               // same as the
-                                                               // static data
-          return static_value_type;
-        case SwiftASTContext::TypeAllocationStrategy::ePointer: // pointed-to;
-                                                                // in the target
-          return Value::ValueType::LoadAddress;
-        }
+      lldb::addr_t existential_address;
+      bool use_local_buffer = false;
+
+      if (in_value.GetValueType() == eValueTypeConstResult &&
+          // We have a locally materialized value that is a host address;
+          // register it with MemoryReader so it does not treat it as a load
+          // address.  Note that this assumes that any address at that host
+          // address is also a load address. If this assumption breaks there
+          // will be a crash in readBytes().
+          static_value_type == lldb_private::Value::ValueType::HostAddress) {
+        existential_address = in_value.GetValue().GetScalar().ULongLong();
+        use_local_buffer = true;
+      } else {
+        existential_address = in_value.GetAddressOf();
+      }
+
+      if (use_local_buffer)
+        PushLocalBuffer(existential_address,
+                        in_value.GetByteSize().getValueOr(0));
+
+      // Read the value witness table and check if the data is inlined in
+      // the existential container or not.
+      swift::remote::RemoteAddress remote_existential(existential_address);
+      auto *reflection_ctx = GetReflectionContext();
+      llvm::Optional<bool> is_inlined =
+          reflection_ctx->isValueInlinedInExistentialContainer(
+              remote_existential);
+
+      if (use_local_buffer)
+        PopLocalBuffer();
+
+      // An error has occurred when trying to read value witness table,
+      // default to treating it as pointer.
+      if (!is_inlined.hasValue())
+        return Value::ValueType::LoadAddress;
+
+      // Inlined data, same as static data.
+      if (*is_inlined)
+        return static_value_type;
+
+      // If the data is not inlined, we have a pointer.
+      return Value::ValueType::LoadAddress;
     }
+
     if (static_type_flags.AllSet(eTypeIsSwift | eTypeIsGenericTypeParam)) {
       // if I am handling a non-pointer Swift type obtained from an archetype,
       // then the runtime vends the location
@@ -2497,8 +2627,7 @@ Value::ValueType SwiftLanguageRuntimeImpl::GetValueType(
       dynamic_type_flags.AllSet(eTypeIsSwift) &&
       dynamic_type_flags.AllClear(eTypeIsPointer | eTypeInstanceIsPointer))
     return static_value_type;
-  else
-    return Value::ValueType::Scalar;
+  return Value::ValueType::Scalar;
 }
 
 bool SwiftLanguageRuntimeImpl::GetDynamicTypeAndAddress_ClangType(
@@ -2575,9 +2704,7 @@ bool SwiftLanguageRuntimeImpl::GetDynamicTypeAndAddress_ClangType(
     return false;
   class_type_or_name = dyn_class_type_or_name;
   class_type_or_name.SetCompilerType(swift_type);
-  value_type = GetValueType(in_value.GetValue().GetValueType(),
-                            in_value.GetCompilerType(),
-                            class_type_or_name.GetCompilerType(), false);
+  value_type = Value::ValueType::Scalar;
   return true;
 }
 
@@ -2611,7 +2738,7 @@ bool SwiftLanguageRuntimeImpl::GetDynamicTypeAndAddress(
     return false;
 
   LLDB_SCOPED_TIMER();
-   
+
   // Try to import a Clang type into Swift.
   if (in_value.GetObjectRuntimeLanguage() == eLanguageTypeObjC)
     return GetDynamicTypeAndAddress_ClangType(
@@ -2696,9 +2823,8 @@ bool SwiftLanguageRuntimeImpl::GetDynamicTypeAndAddress(
   }
 
   if (success)
-    value_type = GetValueType(
-        in_value.GetValue().GetValueType(), in_value.GetCompilerType(),
-        class_type_or_name.GetCompilerType(), is_indirect_enum_case);
+    value_type = GetValueType(in_value, class_type_or_name.GetCompilerType(),
+                              is_indirect_enum_case);
   else if (scratch_ctx->HasFatalErrors())
     return retry_once();
   return success;

@@ -241,7 +241,7 @@ public:
 
   /// Add a list of Clang arguments to the ClangImporter options and
   /// apply the working directory to any relative paths.
-  void AddExtraClangArgs(std::vector<std::string> ExtraArgs);
+  void AddExtraClangArgs(const std::vector<std::string> &ExtraArgs);
   static void AddExtraClangArgs(const std::vector<std::string>& source,
                                 std::vector<std::string>& dest);
 
@@ -538,9 +538,6 @@ public:
   static bool GetProtocolTypeInfo(const CompilerType &type,
                                   ProtocolInfo &protocol_info);
 
-  TypeAllocationStrategy
-  GetAllocationStrategy(lldb::opaque_compiler_type_t type) override;
-
   enum class NonTriviallyManagedReferenceStrategy {
     eWeak,
     eUnowned,
@@ -616,8 +613,6 @@ public:
 
   lldb::Encoding GetEncoding(lldb::opaque_compiler_type_t type,
                              uint64_t &count) override;
-
-  lldb::Format GetFormat(lldb::opaque_compiler_type_t type) override;
 
   uint32_t GetNumChildren(lldb::opaque_compiler_type_t type,
                           bool omit_empty_base_classes,
@@ -709,12 +704,6 @@ public:
       bool print_help_if_available, bool print_extensions_if_available,
       lldb::DescriptionLevel level = lldb::eDescriptionLevelFull) override;
 
-  // TODO: These methods appear unused. Should they be removed?
-
-  void DumpSummary(lldb::opaque_compiler_type_t type, ExecutionContext *exe_ctx,
-                   Stream *s, const DataExtractor &data,
-                   lldb::offset_t data_offset, size_t data_byte_size) override;
-
   // TODO: Determine if these methods should move to TypeSystemClang.
 
   bool IsPointerOrReferenceType(lldb::opaque_compiler_type_t type,
@@ -737,11 +726,7 @@ public:
   std::string GetSuperclassName(const CompilerType &superclass_type);
   CompilerType
   GetFullyUnqualifiedType(lldb::opaque_compiler_type_t type) override;
-  CompilerType GetNonReferenceType(lldb::opaque_compiler_type_t type) override;
-  CompilerType
-  GetLValueReferenceType(lldb::opaque_compiler_type_t type) override;
-  CompilerType
-  GetRValueReferenceType(lldb::opaque_compiler_type_t type) override;
+  
   uint32_t GetNumDirectBaseClasses(lldb::opaque_compiler_type_t type) override;
   CompilerType GetDirectBaseClassAtIndex(lldb::opaque_compiler_type_t type,
                                          size_t idx,
@@ -920,6 +905,8 @@ protected:
   SwiftEnumDescriptor *GetCachedEnumInfo(lldb::opaque_compiler_type_t type);
 
   friend class CompilerType;
+
+  void ApplyDiagnosticOptions();
 
   /// Apply a PathMappingList dictionary on all search paths in the
   /// ClangImporterOptions.

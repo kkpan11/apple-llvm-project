@@ -163,7 +163,6 @@ public:
                 ExecutionContextScope *exe_scope) override;
   lldb::Encoding GetEncoding(lldb::opaque_compiler_type_t type,
                              uint64_t &count) override;
-  lldb::Format GetFormat(lldb::opaque_compiler_type_t type) override;
   uint32_t GetNumChildren(lldb::opaque_compiler_type_t type,
                           bool omit_empty_base_classes,
                           const ExecutionContext *exe_ctx) override;
@@ -213,9 +212,7 @@ public:
   void DumpTypeDescription(
       lldb::opaque_compiler_type_t type, Stream *s,
       lldb::DescriptionLevel level = lldb::eDescriptionLevelFull) override;
-  void DumpSummary(lldb::opaque_compiler_type_t type, ExecutionContext *exe_ctx,
-                   Stream *s, const DataExtractor &data,
-                   lldb::offset_t data_offset, size_t data_byte_size) override;
+
   bool IsPointerOrReferenceType(lldb::opaque_compiler_type_t type,
                                 CompilerType *pointee_type) override;
   llvm::Optional<size_t>
@@ -229,11 +226,6 @@ public:
   CompilerType GetTypedefedType(lldb::opaque_compiler_type_t type) override;
   CompilerType
   GetFullyUnqualifiedType(lldb::opaque_compiler_type_t type) override;
-  CompilerType GetNonReferenceType(lldb::opaque_compiler_type_t type) override;
-  CompilerType
-  GetLValueReferenceType(lldb::opaque_compiler_type_t type) override;
-  CompilerType
-  GetRValueReferenceType(lldb::opaque_compiler_type_t type) override;
   uint32_t GetNumDirectBaseClasses(lldb::opaque_compiler_type_t type) override;
   CompilerType GetDirectBaseClassAtIndex(lldb::opaque_compiler_type_t type,
                                          size_t idx,
@@ -252,8 +244,6 @@ public:
   CompilerType GetErrorType() override;
   CompilerType GetReferentType(lldb::opaque_compiler_type_t type) override;
   CompilerType GetInstanceType(lldb::opaque_compiler_type_t type) override;
-  TypeAllocationStrategy
-  GetAllocationStrategy(lldb::opaque_compiler_type_t type) override;
   CompilerType
   CreateTupleType(const std::vector<TupleElement> &elements) override;
   bool IsTupleType(lldb::opaque_compiler_type_t type) override;
@@ -337,7 +327,7 @@ private:
   swift::Demangle::NodePointer
   GetNodeForPrintingImpl(swift::Demangle::Demangler &dem,
                          swift::Demangle::NodePointer node,
-                         bool resolve_objc_module, bool desugar = true);
+                         bool resolve_objc_module);
 
   /// Return the demangle tree representation with all "__C" module
   /// names with their actual Clang module names.
