@@ -267,11 +267,29 @@ Some other use flags to use:
 * `--debug`, `--debug-ingest`, `--dump`: Useful debug options (some only work
   with assertion build)
 
-## lld: Linking CAS.o
+## lld/machO
 
-`lld` can connect to the builtin CAS and read & link `CAS.o` objects:
+### Using a CAS filesystem
+
+```
+% llvm-cas -cas "$TMPDIR/casfs.default" --merge /path/to/dir > casid
+% ld64.lld -arch x86_64 -platform_version macos 12 12 --fcas-builtin-path "$TMPDIR/casfs.default" --fcas-fs @casid /path/to/dir/main.o -o a.out
+```
+
+### Caching linker invocations
+
+`ld64.lld` can connect to the builtin CAS and cache its linker work:
+```
+% ld64.lld -arch x86_64 -platform_version macos 12 12 --fcas-builtin-path "$TMPDIR/casfs.default" --fcas-cache-results t.o -o a.out --verbose
+```
+With `--verbose` (or `LLD_VERBOSE=1` as environment variable) it will output to `stderr`
+to indicate whether there was a cache 'hit' or 'miss'.
+
+### Linking CAS.o
+
+`ld64.lld` can read & link `CAS.o` objects:
 
 ```
 % llvm-cas-object-format --cas "$TMPDIR/casfs.default" t1.o t2.o -silent > casid
-% ld64.lld -cas_path "$TMPDIR/casfs.default" @casid -o a.out
+% ld64.lld -arch x86_64 -platform_version macos 12 12 --fcas-builtin-path "$TMPDIR/casfs.default" @casid -o a.out
 ```

@@ -46,6 +46,7 @@
 #include "Driver.h"
 #include "Dwarf.h"
 #include "ExportTrie.h"
+#include "FileSystem.h"
 #include "InputSection.h"
 #include "MachOStructs.h"
 #include "ObjC.h"
@@ -69,6 +70,7 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/TarWriter.h"
+#include "llvm/Support/VirtualFileSystem.h"
 #include "llvm/TextAPI/Architecture.h"
 #include "llvm/TextAPI/InterfaceFile.h"
 
@@ -179,7 +181,8 @@ static bool checkCompatibility(const InputFile *input) {
 
 // Open a given file path and return it as a memory-mapped file.
 Optional<MemoryBufferRef> macho::readFile(StringRef path) {
-  ErrorOr<std::unique_ptr<MemoryBuffer>> mbOrErr = MemoryBuffer::getFile(path);
+  ErrorOr<std::unique_ptr<MemoryBuffer>> mbOrErr =
+      config->fs->getBufferForFile(path);
   if (std::error_code ec = mbOrErr.getError()) {
     error("cannot open " + path + ": " + ec.message());
     return None;
@@ -749,8 +752,34 @@ OpaqueFile::OpaqueFile(MemoryBufferRef mb, StringRef segName,
   subsections.push_back({{0, isec}});
 }
 
+template <class LP> static void parseLCLinkerOptionsImpl(MemoryBufferRef mb) {
+  using Header = typename LP::mach_header;
+  auto *hdr = reinterpret_cast<const Header *>(mb.getBufferStart());
+  for (auto *cmd : findCommands<linker_option_command>(hdr, LC_LINKER_OPTION)) {
+    StringRef data{reinterpret_cast<const char *>(cmd + 1),
+                   cmd->cmdsize - sizeof(linker_option_command)};
+    parseLCLinkerOption(mb.getBufferIdentifier(), cmd->count, data);
+  }
+}
+
+void ObjFile::parseLCLinkerOptions(MemoryBufferRef mb) {
+  if (target->wordSize == 8)
+    parseLCLinkerOptionsImpl<LP64>(std::move(mb));
+  else
+    parseLCLinkerOptionsImpl<ILP32>(std::move(mb));
+}
+
 ObjFile::ObjFile(MemoryBufferRef mb, uint32_t modTime, StringRef archiveName)
     : InputFile(ObjKind, mb), modTime(modTime) {
+  init(archiveName);
+}
+
+ObjFile::ObjFile(MemoryBufferRef mb, llvm::cas::CASID ID, StringRef archiveName)
+    : InputFile(ObjKind, mb), modTime(0), casID(std::move(ID)) {
+  init(archiveName);
+}
+
+void ObjFile::init(StringRef archiveName) {
   this->archiveName = std::string(archiveName);
   if (target->wordSize == 8)
     parse<LP64>();
@@ -781,7 +810,7 @@ template <class LP> void ObjFile::parse() {
   for (auto *cmd : findCommands<linker_option_command>(hdr, LC_LINKER_OPTION)) {
     StringRef data{reinterpret_cast<const char *>(cmd + 1),
                    cmd->cmdsize - sizeof(linker_option_command)};
-    parseLCLinkerOption(this, cmd->count, data);
+    parseLCLinkerOption(toString(this), cmd->count, data);
   }
 
   ArrayRef<Section> sectionHeaders;
@@ -912,7 +941,7 @@ static DylibFile *findDylib(StringRef path, DylibFile *umbrella,
     path::append(newPath, path::parent_path(config->outputFile), path);
     path = newPath;
   } else if (path.consume_front("@loader_path/")) {
-    fs::real_path(umbrella->getName(), newPath);
+    macho::fs::real_path(umbrella->getName(), newPath);
     path::remove_filename(newPath);
     path::append(newPath, path);
     path = newPath;
@@ -920,7 +949,7 @@ static DylibFile *findDylib(StringRef path, DylibFile *umbrella,
     for (StringRef rpath : umbrella->rpaths) {
       newPath.clear();
       if (rpath.consume_front("@loader_path/")) {
-        fs::real_path(umbrella->getName(), newPath);
+        macho::fs::real_path(umbrella->getName(), newPath);
         path::remove_filename(newPath);
       }
       path::append(newPath, rpath, path.drop_front(strlen("@rpath/")));
@@ -1001,9 +1030,11 @@ DylibFile::DylibFile(MemoryBufferRef mb, DylibFile *umbrella,
     return;
   }
 
-  if (config->printEachFile)
-    message(toString(this));
-  inputFiles.insert(this);
+  if (!config->depScanning) {
+    if (config->printEachFile)
+      message(toString(this));
+    inputFiles.insert(this);
+  }
 
   deadStrippable = hdr->flags & MH_DEAD_STRIPPABLE_DYLIB;
 
@@ -1019,6 +1050,8 @@ DylibFile::DylibFile(MemoryBufferRef mb, DylibFile *umbrella,
 
   // Initialize symbols.
   exportingFile = isImplicitlyLinked(installName) ? this : this->umbrella;
+  if (config->depScanning)
+    return;
   if (const load_command *cmd = findCommand(hdr, LC_DYLD_INFO_ONLY)) {
     auto *c = reinterpret_cast<const dyld_info_command *>(cmd);
     parseTrie(buf + c->export_off, c->export_size,
@@ -1090,9 +1123,11 @@ DylibFile::DylibFile(const InterfaceFile &interface, DylibFile *umbrella,
   compatibilityVersion = interface.getCompatibilityVersion().rawValue();
   currentVersion = interface.getCurrentVersion().rawValue();
 
-  if (config->printEachFile)
-    message(toString(this));
-  inputFiles.insert(this);
+  if (!config->depScanning) {
+    if (config->printEachFile)
+      message(toString(this));
+    inputFiles.insert(this);
+  }
 
   if (!is_contained(skipPlatformChecks, installName) &&
       !is_contained(interface.targets(), config->platformInfo.target)) {
@@ -1104,6 +1139,8 @@ DylibFile::DylibFile(const InterfaceFile &interface, DylibFile *umbrella,
   checkAppExtensionSafety(interface.isApplicationExtensionSafe());
 
   exportingFile = isImplicitlyLinked(installName) ? this : umbrella;
+  if (config->depScanning)
+    return;
   auto addSymbol = [&](const Twine &name) -> void {
     symbols.push_back(symtab->addDylib(saver.save(name), exportingFile,
                                        /*isWeakDef=*/false,

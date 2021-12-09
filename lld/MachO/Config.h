@@ -12,6 +12,7 @@
 #include "llvm/ADT/CachedHashString.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/BinaryFormat/MachO.h"
@@ -30,6 +31,9 @@ class CASDB;
 }
 namespace casobjectformats {
 class SchemaPool;
+}
+namespace vfs {
+class FileSystem;
 }
 } // namespace llvm
 
@@ -174,8 +178,10 @@ struct Configuration {
   std::vector<SectionAlign> sectionAlignments;
   std::vector<SegmentProtection> segmentProtections;
 
+  llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> fs;
   std::unique_ptr<llvm::cas::CASDB> CAS;
   std::unique_ptr<llvm::casobjectformats::SchemaPool> CASSchemas;
+  bool depScanning = false;
 
   llvm::DenseMap<llvm::StringRef, SymbolPriorityEntry> priorities;
   SectionRenameMap sectionRenameMap;
