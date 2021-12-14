@@ -22,5 +22,9 @@
   "target": "swift/release/5.5",
   "upstream": "apple/stable/20210107",
   "test_commits_in_bundle": true
+},
+{
+  "target": "stable/20210726",
+  "upstream": "swift/release/5.6"
 }
 ]
