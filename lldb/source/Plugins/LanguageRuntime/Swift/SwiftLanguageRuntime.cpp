@@ -257,7 +257,7 @@ public:
   }
 
   void DumpTyperef(CompilerType type, TypeSystemSwiftTypeRef *module_holder,
-                    SwiftASTContext *swift_ast_context, Stream *s) {
+                   Stream *s) {
     STUB_LOG();
   }
 
@@ -2047,10 +2047,9 @@ bool SwiftLanguageRuntime::GetDynamicTypeAndAddress(
 }
 
 void SwiftLanguageRuntime::DumpTyperef(CompilerType type,
-                                        TypeSystemSwiftTypeRef *module_holder,
-                                        SwiftASTContext *swift_ast_context,
-                                        Stream *s) {
-  FORWARD(DumpTyperef, type, module_holder, swift_ast_context, s);
+                                       TypeSystemSwiftTypeRef *module_holder,
+                                       Stream *s) {
+  FORWARD(DumpTyperef, type, module_holder, s);
 }
 
 TypeAndOrName
