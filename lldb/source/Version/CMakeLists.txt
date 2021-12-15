@@ -4,7 +4,7 @@ endif()
 
 # Configure the VCSVersion.inc file.
 set(vcs_version_inc "${CMAKE_CURRENT_BINARY_DIR}/VCSVersion.inc")
-set(generate_vcs_version_script "${LLVM_CMAKE_DIR}/GenerateVersionFromVCS.cmake")
+set(generate_vcs_version_script "${LLVM_CMAKE_PATH}/GenerateVersionFromVCS.cmake")
 
 find_first_existing_vc_file("${LLDB_SOURCE_DIR}" lldb_vc)
 
