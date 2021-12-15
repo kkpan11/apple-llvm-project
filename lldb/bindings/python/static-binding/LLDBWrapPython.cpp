@@ -19059,6 +19059,81 @@ fail:
 }
 
 
+SWIGINTERN PyObject *_wrap_SBData_SetDataWithOwnership(PyObject *SWIGUNUSEDPARM(self), PyObject *args) {
+  PyObject *resultobj = 0;
+  lldb::SBData *arg1 = (lldb::SBData *) 0 ;
+  lldb::SBError *arg2 = 0 ;
+  void *arg3 = (void *) 0 ;
+  size_t arg4 ;
+  lldb::ByteOrder arg5 ;
+  uint8_t arg6 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  void *argp2 = 0 ;
+  int res2 = 0 ;
+  int val5 ;
+  int ecode5 = 0 ;
+  unsigned char val6 ;
+  int ecode6 = 0 ;
+  PyObject *swig_obj[5] ;
+  
+  if (!SWIG_Python_UnpackTuple(args, "SBData_SetDataWithOwnership", 5, 5, swig_obj)) SWIG_fail;
+  res1 = SWIG_ConvertPtr(swig_obj[0], &argp1,SWIGTYPE_p_lldb__SBData, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "SBData_SetDataWithOwnership" "', argument " "1"" of type '" "lldb::SBData *""'"); 
+  }
+  arg1 = reinterpret_cast< lldb::SBData * >(argp1);
+  res2 = SWIG_ConvertPtr(swig_obj[1], &argp2, SWIGTYPE_p_lldb__SBError,  0 );
+  if (!SWIG_IsOK(res2)) {
+    SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "SBData_SetDataWithOwnership" "', argument " "2"" of type '" "lldb::SBError &""'"); 
+  }
+  if (!argp2) {
+    SWIG_exception_fail(SWIG_ValueError, "invalid null reference " "in method '" "SBData_SetDataWithOwnership" "', argument " "2"" of type '" "lldb::SBError &""'"); 
+  }
+  arg2 = reinterpret_cast< lldb::SBError * >(argp2);
+  {
+    if (PythonString::Check(swig_obj[2])) {
+      PythonString str(PyRefType::Borrowed, swig_obj[2]);
+      arg3 = (void*)str.GetString().data();
+      arg4 = str.GetSize();
+    }
+    else if(PythonByteArray::Check(swig_obj[2])) {
+      PythonByteArray bytearray(PyRefType::Borrowed, swig_obj[2]);
+      arg3 = (void*)bytearray.GetBytes().data();
+      arg4 = bytearray.GetSize();
+    }
+    else if (PythonBytes::Check(swig_obj[2])) {
+      PythonBytes bytes(PyRefType::Borrowed, swig_obj[2]);
+      arg3 = (void*)bytes.GetBytes().data();
+      arg4 = bytes.GetSize();
+    }
+    else {
+      PyErr_SetString(PyExc_ValueError, "Expecting a buffer");
+      return NULL;
+    }
+  }
+  ecode5 = SWIG_AsVal_int(swig_obj[3], &val5);
+  if (!SWIG_IsOK(ecode5)) {
+    SWIG_exception_fail(SWIG_ArgError(ecode5), "in method '" "SBData_SetDataWithOwnership" "', argument " "5"" of type '" "lldb::ByteOrder""'");
+  } 
+  arg5 = static_cast< lldb::ByteOrder >(val5);
+  ecode6 = SWIG_AsVal_unsigned_SS_char(swig_obj[4], &val6);
+  if (!SWIG_IsOK(ecode6)) {
+    SWIG_exception_fail(SWIG_ArgError(ecode6), "in method '" "SBData_SetDataWithOwnership" "', argument " "6"" of type '" "uint8_t""'");
+  } 
+  arg6 = static_cast< uint8_t >(val6);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    (arg1)->SetDataWithOwnership(*arg2,(void const *)arg3,arg4,arg5,arg6);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
+  resultobj = SWIG_Py_Void();
+  return resultobj;
+fail:
+  return NULL;
+}
+
+
 SWIGINTERN PyObject *_wrap_SBData_Append(PyObject *SWIGUNUSEDPARM(self), PyObject *args) {
   PyObject *resultobj = 0;
   lldb::SBData *arg1 = (lldb::SBData *) 0 ;
@@ -82236,6 +82311,7 @@ static PyMethodDef SwigMethods[] = {
 	 { "SBData_GetDescription", _wrap_SBData_GetDescription, METH_VARARGS, "SBData_GetDescription(SBData self, SBStream description, lldb::addr_t base_addr) -> bool"},
 	 { "SBData_ReadRawData", _wrap_SBData_ReadRawData, METH_VARARGS, "SBData_ReadRawData(SBData self, SBError error, lldb::offset_t offset, void * buf) -> size_t"},
 	 { "SBData_SetData", _wrap_SBData_SetData, METH_VARARGS, "SBData_SetData(SBData self, SBError error, void const * buf, lldb::ByteOrder endian, uint8_t addr_size)"},
+	 { "SBData_SetDataWithOwnership", _wrap_SBData_SetDataWithOwnership, METH_VARARGS, "SBData_SetDataWithOwnership(SBData self, SBError error, void const * buf, lldb::ByteOrder endian, uint8_t addr_size)"},
 	 { "SBData_Append", _wrap_SBData_Append, METH_VARARGS, "SBData_Append(SBData self, SBData rhs) -> bool"},
 	 { "SBData_CreateDataFromCString", _wrap_SBData_CreateDataFromCString, METH_VARARGS, "SBData_CreateDataFromCString(lldb::ByteOrder endian, uint32_t addr_byte_size, char const * data) -> SBData"},
 	 { "SBData_CreateDataFromUInt64Array", _wrap_SBData_CreateDataFromUInt64Array, METH_VARARGS, "SBData_CreateDataFromUInt64Array(lldb::ByteOrder endian, uint32_t addr_byte_size, uint64_t * array) -> SBData"},

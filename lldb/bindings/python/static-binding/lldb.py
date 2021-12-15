@@ -3798,6 +3798,10 @@ class SBData(object):
         r"""SetData(SBData self, SBError error, void const * buf, lldb::ByteOrder endian, uint8_t addr_size)"""
         return _lldb.SBData_SetData(self, error, buf, endian, addr_size)
 
+    def SetDataWithOwnership(self, error, buf, endian, addr_size):
+        r"""SetDataWithOwnership(SBData self, SBError error, void const * buf, lldb::ByteOrder endian, uint8_t addr_size)"""
+        return _lldb.SBData_SetDataWithOwnership(self, error, buf, endian, addr_size)
+
     def Append(self, rhs):
         r"""Append(SBData self, SBData rhs) -> bool"""
         return _lldb.SBData_Append(self, rhs)
