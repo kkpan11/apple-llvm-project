@@ -716,7 +716,7 @@ void NativeProcessLinux::MonitorSIGTRAP(const siginfo_t &info,
   default:
     LLDB_LOG(log, "received unknown SIGTRAP stop event ({0}, pid {1} tid {2}",
              info.si_code, GetID(), thread.GetID());
-    MonitorSignal(info, thread, false);
+    MonitorSignal(info, thread);
     break;
   }
 }
@@ -762,7 +762,7 @@ void NativeProcessLinux::MonitorWatchpoint(NativeThreadLinux &thread,
 }
 
 void NativeProcessLinux::MonitorSignal(const siginfo_t &info,
-                                       NativeThreadLinux &thread, bool exited) {
+                                       NativeThreadLinux &thread) {
   const int signo = info.si_signo;
   const bool is_from_llgs = info.si_pid == getpid();
 
@@ -1901,9 +1901,6 @@ void NativeProcessLinux::SigchldHandler() {
     assert(wait_pid == static_cast<::pid_t>(thread_up->GetID()));
 
     WaitStatus wait_status = WaitStatus::Decode(status);
-    bool exited = wait_status.type == WaitStatus::Exit ||
-                  (wait_status.type == WaitStatus::Signal &&
-                   wait_pid == static_cast<::pid_t>(GetID()));
 
     LLDB_LOG(log, "waitpid({0})  got status = {1}", thread_up->GetID(),
              wait_status);
