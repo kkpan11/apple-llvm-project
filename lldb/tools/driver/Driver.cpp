@@ -301,6 +301,7 @@ SBError Driver::ProcessArgs(const opt::InputArgList &args, bool &exiting) {
                                      arg_value);
       return error;
     }
+    m_debugger.SetREPLLanguage(m_option_data.m_repl_lang);
   }
 
   if (args.hasArg(OPT_repl)) {
@@ -313,6 +314,7 @@ SBError Driver::ProcessArgs(const opt::InputArgList &args, bool &exiting) {
   if (m_option_data.m_repl &&
       m_option_data.m_repl_lang == eLanguageTypeUnknown) {
     m_option_data.m_repl_lang = eLanguageTypeSwift;
+    m_debugger.SetREPLLanguage(eLanguageTypeSwift);
   }
 #endif // LLDB_ENABLE_SWIFT
 
