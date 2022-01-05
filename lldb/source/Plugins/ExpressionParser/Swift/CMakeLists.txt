@@ -2,7 +2,7 @@ if(NOT LLDB_BUILT_STANDALONE)
   set(tablegen_deps intrinsics_gen)
 endif()
 
-if (NOT BOOTSTRAPPING_MODE)
+if (NOT BOOTSTRAPPING_MODE AND LLDB_BUILT_STANDALONE)
   add_library(swiftCompilerModules ALIAS swiftCompilerStub)
 endif()
 
