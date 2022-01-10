@@ -115,7 +115,7 @@ size_t SBCommandReturnObject::GetErrorSize() {
 }
 
 size_t SBCommandReturnObject::PutOutput(FILE *fh) {
-  LLDB_RECORD_DUMMY(size_t, SBCommandReturnObject, PutOutput, (FILE *), fh);
+  LLDB_RECORD_METHOD(size_t, SBCommandReturnObject, PutOutput, (FILE *), fh);
   if (fh) {
     size_t num_bytes = GetOutputSize();
     if (num_bytes)
@@ -140,7 +140,7 @@ size_t SBCommandReturnObject::PutOutput(SBFile file) {
 }
 
 size_t SBCommandReturnObject::PutError(FILE *fh) {
-  LLDB_RECORD_DUMMY(size_t, SBCommandReturnObject, PutError, (FILE *), fh);
+  LLDB_RECORD_METHOD(size_t, SBCommandReturnObject, PutError, (FILE *), fh);
   if (fh) {
     size_t num_bytes = GetErrorSize();
     if (num_bytes)
@@ -253,31 +253,31 @@ bool SBCommandReturnObject::GetDescription(SBStream &description) {
 }
 
 void SBCommandReturnObject::SetImmediateOutputFile(FILE *fh) {
-  LLDB_RECORD_DUMMY(void, SBCommandReturnObject, SetImmediateOutputFile,
-                    (FILE *), fh);
+  LLDB_RECORD_METHOD(void, SBCommandReturnObject, SetImmediateOutputFile,
+                     (FILE *), fh);
 
   SetImmediateOutputFile(fh, false);
 }
 
 void SBCommandReturnObject::SetImmediateErrorFile(FILE *fh) {
-  LLDB_RECORD_DUMMY(void, SBCommandReturnObject, SetImmediateErrorFile,
-                    (FILE *), fh);
+  LLDB_RECORD_METHOD(void, SBCommandReturnObject, SetImmediateErrorFile,
+                     (FILE *), fh);
 
   SetImmediateErrorFile(fh, false);
 }
 
 void SBCommandReturnObject::SetImmediateOutputFile(FILE *fh,
                                                    bool transfer_ownership) {
-  LLDB_RECORD_DUMMY(void, SBCommandReturnObject, SetImmediateOutputFile,
-                    (FILE *, bool), fh, transfer_ownership);
+  LLDB_RECORD_METHOD(void, SBCommandReturnObject, SetImmediateOutputFile,
+                     (FILE *, bool), fh, transfer_ownership);
   FileSP file = std::make_shared<NativeFile>(fh, transfer_ownership);
   ref().SetImmediateOutputFile(file);
 }
 
 void SBCommandReturnObject::SetImmediateErrorFile(FILE *fh,
                                                   bool transfer_ownership) {
-  LLDB_RECORD_DUMMY(void, SBCommandReturnObject, SetImmediateErrorFile,
-                    (FILE *, bool), fh, transfer_ownership);
+  LLDB_RECORD_METHOD(void, SBCommandReturnObject, SetImmediateErrorFile,
+                     (FILE *, bool), fh, transfer_ownership);
   FileSP file = std::make_shared<NativeFile>(fh, transfer_ownership);
   ref().SetImmediateErrorFile(file);
 }
