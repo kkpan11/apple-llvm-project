@@ -38,7 +38,7 @@ operator=(const SBSymbolContextList &rhs) {
 
   if (this != &rhs)
     m_opaque_up = clone(rhs.m_opaque_up);
-  return LLDB_RECORD_RESULT(*this);
+  return *this;
 }
 
 uint32_t SBSymbolContextList::GetSize() const {
@@ -59,7 +59,7 @@ SBSymbolContext SBSymbolContextList::GetContextAtIndex(uint32_t idx) {
     if (m_opaque_up->GetContextAtIndex(idx, sc))
       sb_sc = sc;
   }
-  return LLDB_RECORD_RESULT(sb_sc);
+  return sb_sc;
 }
 
 void SBSymbolContextList::Clear() {

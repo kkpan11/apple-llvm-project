@@ -82,7 +82,7 @@ SBAddress SBQueueItem::GetAddress() const {
   if (m_queue_item_sp) {
     result.SetAddress(m_queue_item_sp->GetAddress());
   }
-  return LLDB_RECORD_RESULT(result);
+  return result;
 }
 
 void SBQueueItem::SetAddress(SBAddress addr) {
@@ -113,5 +113,5 @@ SBThread SBQueueItem::GetExtendedBacktraceThread(const char *type) {
       }
     }
   }
-  return LLDB_RECORD_RESULT(result);
+  return result;
 }

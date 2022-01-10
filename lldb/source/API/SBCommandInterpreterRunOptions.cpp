@@ -42,9 +42,9 @@ SBCommandInterpreterRunOptions &SBCommandInterpreterRunOptions::operator=(
                      (const lldb::SBCommandInterpreterRunOptions &), rhs);
 
   if (this == &rhs)
-    return LLDB_RECORD_RESULT(*this);
+    return *this;
   *m_opaque_up = *rhs.m_opaque_up;
-  return LLDB_RECORD_RESULT(*this);
+  return *this;
 }
 
 bool SBCommandInterpreterRunOptions::GetStopOnContinue() const {
@@ -229,9 +229,9 @@ SBCommandInterpreterRunResult &SBCommandInterpreterRunResult::operator=(
                      (const lldb::SBCommandInterpreterRunResult &), rhs);
 
   if (this == &rhs)
-    return LLDB_RECORD_RESULT(*this);
+    return *this;
   *m_opaque_up = *rhs.m_opaque_up;
-  return LLDB_RECORD_RESULT(*this);
+  return *this;
 }
 
 int SBCommandInterpreterRunResult::GetNumberOfErrors() const {

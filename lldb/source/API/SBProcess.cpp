@@ -70,7 +70,7 @@ const SBProcess &SBProcess::operator=(const SBProcess &rhs) {
 
   if (this != &rhs)
     m_opaque_wp = rhs.m_opaque_wp;
-  return LLDB_RECORD_RESULT(*this);
+  return *this;
 }
 
 // Destructor
@@ -220,7 +220,7 @@ SBThread SBProcess::GetSelectedThread() const {
     sb_thread.SetThread(thread_sp);
   }
 
-  return LLDB_RECORD_RESULT(sb_thread);
+  return sb_thread;
 }
 
 SBThread SBProcess::CreateOSPluginThread(lldb::tid_t tid,
@@ -238,7 +238,7 @@ SBThread SBProcess::CreateOSPluginThread(lldb::tid_t tid,
     sb_thread.SetThread(thread_sp);
   }
 
-  return LLDB_RECORD_RESULT(sb_thread);
+  return sb_thread;
 }
 
 SBTarget SBProcess::GetTarget() const {
@@ -252,7 +252,7 @@ SBTarget SBProcess::GetTarget() const {
     sb_target.SetSP(target_sp);
   }
 
-  return LLDB_RECORD_RESULT(sb_target);
+  return sb_target;
 }
 
 size_t SBProcess::PutSTDIN(const char *src, size_t src_len) {
@@ -421,7 +421,7 @@ SBThread SBProcess::GetThreadAtIndex(size_t index) {
     sb_thread.SetThread(thread_sp);
   }
 
-  return LLDB_RECORD_RESULT(sb_thread);
+  return sb_thread;
 }
 
 uint32_t SBProcess::GetNumQueues() {
@@ -458,7 +458,7 @@ SBQueue SBProcess::GetQueueAtIndex(size_t index) {
     }
   }
 
-  return LLDB_RECORD_RESULT(sb_queue);
+  return sb_queue;
 }
 
 uint32_t SBProcess::GetStopID(bool include_expression_stops) {
@@ -491,7 +491,7 @@ SBEvent SBProcess::GetStopEventForStopID(uint32_t stop_id) {
     sb_event.reset(event_sp);
   }
 
-  return LLDB_RECORD_RESULT(sb_event);
+  return sb_event;
 }
 
 StateType SBProcess::GetState() {
@@ -597,7 +597,7 @@ SBError SBProcess::Continue() {
   } else
     sb_error.SetErrorString("SBProcess is invalid");
 
-  return LLDB_RECORD_RESULT(sb_error);
+  return sb_error;
 }
 
 SBError SBProcess::Destroy() {
@@ -612,7 +612,7 @@ SBError SBProcess::Destroy() {
   } else
     sb_error.SetErrorString("SBProcess is invalid");
 
-  return LLDB_RECORD_RESULT(sb_error);
+  return sb_error;
 }
 
 SBError SBProcess::Stop() {
@@ -627,7 +627,7 @@ SBError SBProcess::Stop() {
   } else
     sb_error.SetErrorString("SBProcess is invalid");
 
-  return LLDB_RECORD_RESULT(sb_error);
+  return sb_error;
 }
 
 SBError SBProcess::Kill() {
@@ -642,7 +642,7 @@ SBError SBProcess::Kill() {
   } else
     sb_error.SetErrorString("SBProcess is invalid");
 
-  return LLDB_RECORD_RESULT(sb_error);
+  return sb_error;
 }
 
 SBError SBProcess::Detach() {
@@ -650,7 +650,7 @@ SBError SBProcess::Detach() {
 
   // FIXME: This should come from a process default.
   bool keep_stopped = false;
-  return LLDB_RECORD_RESULT(Detach(keep_stopped));
+  return Detach(keep_stopped);
 }
 
 SBError SBProcess::Detach(bool keep_stopped) {
@@ -665,7 +665,7 @@ SBError SBProcess::Detach(bool keep_stopped) {
   } else
     sb_error.SetErrorString("SBProcess is invalid");
 
-  return LLDB_RECORD_RESULT(sb_error);
+  return sb_error;
 }
 
 SBError SBProcess::Signal(int signo) {
@@ -680,16 +680,16 @@ SBError SBProcess::Signal(int signo) {
   } else
     sb_error.SetErrorString("SBProcess is invalid");
 
-  return LLDB_RECORD_RESULT(sb_error);
+  return sb_error;
 }
 
 SBUnixSignals SBProcess::GetUnixSignals() {
   LLDB_RECORD_METHOD_NO_ARGS(lldb::SBUnixSignals, SBProcess, GetUnixSignals);
 
   if (auto process_sp = GetSP())
-    return LLDB_RECORD_RESULT(SBUnixSignals{process_sp});
+    return SBUnixSignals{process_sp};
 
-  return LLDB_RECORD_RESULT(SBUnixSignals{});
+  return SBUnixSignals{};
 }
 
 void SBProcess::SendAsyncInterrupt() {
@@ -717,7 +717,7 @@ SBThread SBProcess::GetThreadByID(tid_t tid) {
     sb_thread.SetThread(thread_sp);
   }
 
-  return LLDB_RECORD_RESULT(sb_thread);
+  return sb_thread;
 }
 
 SBThread SBProcess::GetThreadByIndexID(uint32_t index_id) {
@@ -737,7 +737,7 @@ SBThread SBProcess::GetThreadByIndexID(uint32_t index_id) {
     sb_thread.SetThread(thread_sp);
   }
 
-  return LLDB_RECORD_RESULT(sb_thread);
+  return sb_thread;
 }
 
 StateType SBProcess::GetStateFromEvent(const SBEvent &event) {
@@ -786,7 +786,7 @@ SBProcess SBProcess::GetProcessFromEvent(const SBEvent &event) {
     process_sp = EventDataStructuredData::GetProcessFromEvent(event.get());
   }
 
-  return LLDB_RECORD_RESULT(SBProcess(process_sp));
+  return SBProcess(process_sp);
 }
 
 bool SBProcess::GetInterruptedFromEvent(const SBEvent &event) {
@@ -802,7 +802,7 @@ SBProcess::GetStructuredDataFromEvent(const lldb::SBEvent &event) {
                             GetStructuredDataFromEvent, (const lldb::SBEvent &),
                             event);
 
-  return LLDB_RECORD_RESULT(SBStructuredData(event.GetSP()));
+  return SBStructuredData(event.GetSP());
 }
 
 bool SBProcess::EventIsProcessEvent(const SBEvent &event) {
@@ -832,8 +832,7 @@ SBBroadcaster SBProcess::GetBroadcaster() const {
 
   SBBroadcaster broadcaster(process_sp.get(), false);
 
-
-  return LLDB_RECORD_RESULT(broadcaster);
+  return broadcaster;
 }
 
 const char *SBProcess::GetBroadcasterClass() {
@@ -996,22 +995,22 @@ SBStructuredData SBProcess::GetExtendedCrashInformation() {
   SBStructuredData data;
   ProcessSP process_sp(GetSP());
   if (!process_sp)
-    return LLDB_RECORD_RESULT(data);
+    return data;
 
   PlatformSP platform_sp = process_sp->GetTarget().GetPlatform();
 
   if (!platform_sp)
-    return LLDB_RECORD_RESULT(data);
+    return data;
 
   auto expected_data =
       platform_sp->FetchExtendedCrashInformation(*process_sp.get());
 
   if (!expected_data)
-    return LLDB_RECORD_RESULT(data);
+    return data;
 
   StructuredData::ObjectSP fetched_data = *expected_data;
   data.m_impl_up->SetObjectSP(fetched_data);
-  return LLDB_RECORD_RESULT(data);
+  return data;
 }
 
 uint32_t
@@ -1124,7 +1123,7 @@ lldb::SBError SBProcess::UnloadImage(uint32_t image_token) {
     }
   } else
     sb_error.SetErrorString("invalid process");
-  return LLDB_RECORD_RESULT(sb_error);
+  return sb_error;
 }
 
 lldb::SBError SBProcess::SendEventData(const char *event_data) {
@@ -1144,7 +1143,7 @@ lldb::SBError SBProcess::SendEventData(const char *event_data) {
     }
   } else
     sb_error.SetErrorString("invalid process");
-  return LLDB_RECORD_RESULT(sb_error);
+  return sb_error;
 }
 
 uint32_t SBProcess::GetNumExtendedBacktraceTypes() {
@@ -1183,7 +1182,7 @@ SBThreadCollection SBProcess::GetHistoryThreads(addr_t addr) {
   if (process_sp) {
     threads = SBThreadCollection(process_sp->GetHistoryThreads(addr));
   }
-  return LLDB_RECORD_RESULT(threads);
+  return threads;
 }
 
 bool SBProcess::IsInstrumentationRuntimePresent(
@@ -1215,7 +1214,7 @@ lldb::SBError SBProcess::SaveCore(const char *file_name) {
   ProcessSP process_sp(GetSP());
   if (!process_sp) {
     error.SetErrorString("SBProcess is invalid");
-    return LLDB_RECORD_RESULT(error);
+    return error;
   }
 
   std::lock_guard<std::recursive_mutex> guard(
@@ -1223,13 +1222,13 @@ lldb::SBError SBProcess::SaveCore(const char *file_name) {
 
   if (process_sp->GetState() != eStateStopped) {
     error.SetErrorString("the process is not stopped");
-    return LLDB_RECORD_RESULT(error);
+    return error;
   }
 
   FileSpec core_file(file_name);
   SaveCoreStyle core_style = SaveCoreStyle::eSaveCoreFull;
   error.ref() = PluginManager::SaveCore(process_sp, core_file, core_style, "");
-  return LLDB_RECORD_RESULT(error);
+  return error;
 }
 
 lldb::SBError
@@ -1255,7 +1254,7 @@ SBProcess::GetMemoryRegionInfo(lldb::addr_t load_addr,
   } else {
     sb_error.SetErrorString("SBProcess is invalid");
   }
-  return LLDB_RECORD_RESULT(sb_error);
+  return sb_error;
 }
 
 lldb::SBMemoryRegionInfoList SBProcess::GetMemoryRegions() {
@@ -1273,7 +1272,7 @@ lldb::SBMemoryRegionInfoList SBProcess::GetMemoryRegions() {
     process_sp->GetMemoryRegions(sb_region_list.ref());
   }
 
-  return LLDB_RECORD_RESULT(sb_region_list);
+  return sb_region_list;
 }
 
 lldb::SBProcessInfo SBProcess::GetProcessInfo() {
@@ -1285,7 +1284,7 @@ lldb::SBProcessInfo SBProcess::GetProcessInfo() {
   if (process_sp && process_sp->GetProcessInfo(proc_info)) {
     sb_proc_info.SetProcessInfo(proc_info);
   }
-  return LLDB_RECORD_RESULT(sb_proc_info);
+  return sb_proc_info;
 }
 
 lldb::addr_t SBProcess::AllocateMemory(size_t size, uint32_t permissions,
