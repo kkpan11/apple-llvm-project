@@ -2929,10 +2929,8 @@ public:
     case swift::DiagnosticKind::Warning:
       return eDiagnosticSeverityWarning;
     case swift::DiagnosticKind::Note:
-      return eDiagnosticSeverityRemark;
     case swift::DiagnosticKind::Remark:
       return eDiagnosticSeverityRemark;
-      break;
     }
 
     llvm_unreachable("Unhandled DiagnosticKind in switch.");
