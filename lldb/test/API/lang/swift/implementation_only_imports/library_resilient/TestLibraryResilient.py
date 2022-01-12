@@ -65,7 +65,6 @@ class TestLibraryResilient(TestBase):
 
     @swiftTest
     @expectedFailureAll(oslist=["windows"]) # Requires Remote Mirrors support
-    @skipIfLinux # The "e container" command crashes in a non-reproducible way on the Linux bots.
     def test_implementation_only_import_library_no_library_module(self):
         """Test `@_implementationOnly import` in a resilient library used by the main executable, after removing the implementation-only library's swiftmodule
 
