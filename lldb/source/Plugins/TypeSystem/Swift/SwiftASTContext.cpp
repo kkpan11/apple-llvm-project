@@ -132,25 +132,6 @@
 #include "Plugins/SymbolFile/DWARF/DWARFASTParserClang.h"
 #include "Plugins/TypeSystem/Clang/TypeSystemClang.h"
 
-#define VALID_OR_RETURN(value)                                                 \
-  do {                                                                         \
-    if (HasFatalErrors()) {                                                    \
-      return (value);                                                          \
-    }                                                                          \
-  } while (0)
-#define VALID_OR_RETURN_VOID()                                                 \
-  do {                                                                         \
-    if (HasFatalErrors()) {                                                    \
-      return;                                                                  \
-    }                                                                          \
-  } while (0);
-#define VALID_OR_RETURN_CHECK_TYPE(type, value)                                \
-  do {                                                                         \
-    if (HasFatalErrors() || !type) {                                           \
-      return (value);                                                          \
-    }                                                                          \
-  } while (0)
-
 namespace {
 /// This silly constexpr allows us to filter out the useless __FUNCTION__ name
 /// of lambdas in the LOG_PRINTF macro.
@@ -169,10 +150,10 @@ std::recursive_mutex g_log_mutex;
 
 /// Similar to LLDB_LOG, but with richer contextual information.
 #define LOG_PRINTF(CHANNEL, FMT, ...)                                          \
-  LOG_PRINTF_IMPL(lldb_private::GetLogIfAllCategoriesSet(CHANNEL), false, FMT, \
+  LOG_PRINTF_IMPL(lldb_private::GetLogIfAnyCategoriesSet(CHANNEL), false, FMT, \
                   ##__VA_ARGS__)
 #define LOG_VERBOSE_PRINTF(CHANNEL, FMT, ...)                                  \
-  LOG_PRINTF_IMPL(lldb_private::GetLogIfAllCategoriesSet(CHANNEL), true, FMT,  \
+  LOG_PRINTF_IMPL(lldb_private::GetLogIfAnyCategoriesSet(CHANNEL), true, FMT,  \
                   ##__VA_ARGS__)
 #define LOG_PRINTF_IMPL(CHANNEL, VERBOSE, FMT, ...)                            \
   do {                                                                         \
@@ -189,6 +170,27 @@ std::recursive_mutex g_log_mutex;
 #define HEALTH_LOG_PRINTF(FMT, ...)                                            \
   LOG_PRINTF(LIBLLDB_LOG_TYPES, FMT, ##__VA_ARGS__);                           \
   LOG_PRINTF_IMPL(lldb_private::GetSwiftHealthLog(), false, FMT, ##__VA_ARGS__)
+
+#define VALID_OR_RETURN(value)                                                 \
+  do {                                                                         \
+    if (HasFatalErrors()) {                                                    \
+      LOG_PRINTF(LIBLLDB_LOG_TYPES,                                            \
+                 "SwiftASTContext is in fatal error state, bailing out.");     \
+      return value;                                                            \
+    }                                                                          \
+  } while (0)
+#define VALID_OR_RETURN_CHECK_TYPE(type, value)                                \
+  do {                                                                         \
+    if (HasFatalErrors()) {                                                    \
+      LOG_PRINTF(LIBLLDB_LOG_TYPES,                                            \
+                 "SwiftASTContext is in fatal error state, bailing out.");     \
+      return (value);                                                          \
+    }                                                                          \
+    if (!type) {                                                               \
+      LOG_PRINTF(LIBLLDB_LOG_TYPES, "Input type is nullptr, bailing out.");    \
+      return (value);                                                          \
+    }                                                                          \
+  } while (0)
 
 using namespace lldb;
 using namespace lldb_private;
@@ -914,8 +916,7 @@ SwiftASTContext::SwiftASTContext() {
 }
 #endif
 
-SwiftASTContext::SwiftASTContext(std::string description, llvm::Triple triple,
-                                 Target *target)
+SwiftASTContext::SwiftASTContext(std::string description, Target *target)
     : TypeSystemSwift(),
       m_compiler_invocation_ap(new swift::CompilerInvocation()) {
   m_description = description;
@@ -935,7 +936,6 @@ SwiftASTContext::SwiftASTContext(std::string description, llvm::Triple triple,
   if (target)
     m_target_wp = target->shared_from_this();
 
-  SetTriple(triple);
   swift::IRGenOptions &ir_gen_opts =
       m_compiler_invocation_ap->getIRGenOptions();
   ir_gen_opts.OutputKind = swift::IRGenOutputKind::Module;
@@ -1715,9 +1715,7 @@ SwiftASTContext::CreateInstance(lldb::LanguageType language, Module &module,
       fallback ? static_cast<SwiftASTContext *>(
                      new SwiftASTContextForExpressions(m_description, *target))
                : static_cast<SwiftASTContext *>(new SwiftASTContextForModule(
-                     *typeref_typesystem, m_description,
-                     target ? target->GetArchitecture().GetTriple() : triple,
-                     target)));
+                     *typeref_typesystem, m_description, target)));
   bool suppress_config_log = false;
   auto defer_log = llvm::make_scope_exit([swift_ast_sp, &suppress_config_log] {
     // To avoid spamming the log with useless info, we don't log the
@@ -1734,12 +1732,8 @@ SwiftASTContext::CreateInstance(lldb::LanguageType language, Module &module,
   swift_ast_sp->GetLanguageOptions().EnableAccessControl = false;
   swift_ast_sp->GetLanguageOptions().EnableTargetOSChecking = false;
 
-  swift_ast_sp->SetTriple(triple, &module);
-
-  bool set_triple = false;
   bool found_swift_modules = false;
   SymbolFile *sym_file = module.GetSymbolFile();
-  std::string target_triple;
 
   if (sym_file) {
     bool got_serialized_options = false;
@@ -1752,17 +1746,11 @@ SwiftASTContext::CreateInstance(lldb::LanguageType language, Module &module,
       swift_ast_sp->m_module_import_warnings.push_back(std::string(error));
     }
 
-    // Some of the bits in the compiler options we keep separately, so
-    // we need to populate them from the serialized options:
     llvm::StringRef serialized_triple =
         swift_ast_sp->GetCompilerInvocation().getTargetTriple();
-    if (serialized_triple.empty()) {
-      LOG_PRINTF(LIBLLDB_LOG_TYPES, "Serialized triple was empty.");
-    } else {
-      LOG_PRINTF(LIBLLDB_LOG_TYPES, "Found serialized triple %s.",
+    if (!serialized_triple.empty()) {
+      LOG_PRINTF(LIBLLDB_LOG_TYPES, "Serialized/default triple would have been %s.",
                  serialized_triple.str().c_str());
-      swift_ast_sp->SetTriple(llvm::Triple(serialized_triple), &module);
-      set_triple = true;
     }
 
     // SDK path setup.
@@ -1802,24 +1790,12 @@ SwiftASTContext::CreateInstance(lldb::LanguageType language, Module &module,
     }
   }
 
-  if (!set_triple) {
-    llvm::Triple llvm_triple = swift_ast_sp->GetTriple();
+  // The serialized triple is the triple of the last binary
+  // __swiftast section that was processed. Instead of relying on
+  // the section contents order, we overwrite the triple in the
+  // CompilerInvocation with the triple recovered from the binary.
+  swift_ast_sp->SetTriple(triple, &module);
 
-    // LLVM wants this to be set to iOS or MacOSX; if we're working on
-    // a bare-boards type image, change the triple for LLVM's benefit.
-    if (llvm_triple.getVendor() == llvm::Triple::Apple &&
-        llvm_triple.getOS() == llvm::Triple::UnknownOS) {
-      if (llvm_triple.getArch() == llvm::Triple::arm ||
-          llvm_triple.getArch() == llvm::Triple::thumb) {
-        llvm_triple.setOS(llvm::Triple::IOS);
-      } else {
-        llvm_triple.setOS(llvm::Triple::MacOSX);
-      }
-      swift_ast_sp->SetTriple(llvm_triple, &module);
-    }
-  }
-
-  triple = swift_ast_sp->GetTriple();
   std::string resource_dir = swift_ast_sp->GetResourceDir(triple);
   ConfigureResourceDirs(swift_ast_sp->GetCompilerInvocation(),
                         FileSpec(resource_dir), triple);
@@ -3632,7 +3608,7 @@ SwiftASTContext::CreateModule(const SourceModule &module, Status &error,
 }
 
 void SwiftASTContext::CacheModule(swift::ModuleDecl *module) {
-  VALID_OR_RETURN_VOID();
+  VALID_OR_RETURN();
 
   if (!module)
     return;
@@ -3849,7 +3825,7 @@ GetLibrarySearchPaths(const swift::SearchPathOptions &search_path_opts) {
 
 void SwiftASTContext::LoadModule(swift::ModuleDecl *swift_module,
                                  Process &process, Status &error) {
-  VALID_OR_RETURN_VOID();
+  VALID_OR_RETURN();
   LLDB_SCOPED_TIMER();
 
   Status current_error;
@@ -3868,13 +3844,14 @@ void SwiftASTContext::LoadModule(swift::ModuleDecl *swift_module,
       return;
 
     swift::LibraryKind library_kind = link_lib.getKind();
-
-    LOG_PRINTF(LIBLLDB_LOG_TYPES, "Loading link library \"%s\" of kind: %d.",
-               library_name.c_str(), library_kind);
+    LOG_PRINTF(LIBLLDB_LOG_TYPES | LIBLLDB_LOG_EXPRESSIONS,
+               "Loading linked %s \"%s\".",
+               library_kind == swift::LibraryKind::Framework ? "framework"
+                                                             : "library",
+               library_name.c_str());
 
     switch (library_kind) {
     case swift::LibraryKind::Framework: {
-
       // First make sure the library isn't already loaded. Since this
       // is a framework, we make sure the file name and the framework
       // name are the same, and that we are contained in
@@ -4150,7 +4127,7 @@ bool SwiftASTContext::LoadLibraryUsingPaths(
 }
 
 void SwiftASTContext::LoadExtraDylibs(Process &process, Status &error) {
-  VALID_OR_RETURN_VOID();
+  VALID_OR_RETURN();
 
   error.Clear();
   swift::IRGenOptions &irgen_options = GetIRGenOptions();
@@ -4184,7 +4161,7 @@ static std::string GetBriefModuleName(Module &module) {
 
 void SwiftASTContext::RegisterSectionModules(
     Module &module, std::vector<std::string> &module_names) {
-  VALID_OR_RETURN_VOID();
+  VALID_OR_RETURN();
   LLDB_SCOPED_TIMER();
 
   swift::MemoryBufferSerializedModuleLoader *loader =
@@ -4258,7 +4235,7 @@ void SwiftASTContext::RegisterSectionModules(
 
 void SwiftASTContext::ValidateSectionModules(
     Module &module, const std::vector<std::string> &module_names) {
-  VALID_OR_RETURN_VOID();
+  VALID_OR_RETURN();
   LLDB_SCOPED_TIMER();
 
   Status error;
@@ -4303,14 +4280,14 @@ ConstString SwiftASTContext::GetMangledTypeName(swift::TypeBase *type_base) {
 
 void SwiftASTContext::CacheDemangledType(ConstString name,
                                          swift::TypeBase *found_type) {
-  VALID_OR_RETURN_VOID();
+  VALID_OR_RETURN();
 
   m_type_to_mangled_name_map.insert({found_type, name.AsCString()});
   m_mangled_name_to_type_map.insert({name.AsCString(), found_type});
 }
 
 void SwiftASTContext::CacheDemangledTypeFailure(ConstString name) {
-  VALID_OR_RETURN_VOID();
+  VALID_OR_RETURN();
 
   m_negative_type_cache.Insert(name.AsCString());
 }
@@ -5047,7 +5024,7 @@ void SwiftASTContext::PrintDiagnostics(DiagnosticManager &diagnostic_manager,
   // fatal error field, and then put it to the stream, otherwise just
   // dump the diagnostics to the stream.
 
-  // N.B. you cannot use VALID_OR_RETURN_VOID here since that exits if
+  // N.B. you cannot use VALID_OR_RETURN here since that exits if
   // you have fatal errors, which are what we are trying to print
   // here.
   if (!m_ast_context_ap.get()) {
@@ -5119,7 +5096,10 @@ void SwiftASTContextForExpressions::ModulesDidLoad(ModuleList &module_list) {
       // We cannot reconfigure ClangImporter after its creation.
       // Instead poison the SwiftASTContext so it gets recreated.
       m_fatal_errors.SetErrorStringWithFormat(
-          "New Swift image added: %s",
+          "New Swift image added: %s. ClangImporter needs to be reinitialized.",
+          module_sp->GetFileSpec().GetPath().c_str());
+      HEALTH_LOG_PRINTF(
+          "New Swift image added: %s. ClangImporter needs to be reinitialized.",
           module_sp->GetFileSpec().GetPath().c_str());
     }
 
@@ -8197,8 +8177,7 @@ SwiftASTContext::GetASTVectorForModule(const Module *module) {
 
 SwiftASTContextForExpressions::SwiftASTContextForExpressions(
     std::string description, Target &target)
-    : SwiftASTContext(std::move(description),
-                      target.GetArchitecture().GetTriple(), &target),
+    : SwiftASTContext(std::move(description), &target),
       m_typeref_typesystem(*this),
       m_persistent_state_up(new SwiftPersistentExpressionState) {}
 
@@ -8310,7 +8289,7 @@ static swift::ModuleDecl *LoadOneModule(const SourceModule &module,
   error.Clear();
   ConstString toplevel = module.path.front();
   const std::string &m_description = swift_ast_context.GetDescription();
-  LOG_PRINTF(LIBLLDB_LOG_EXPRESSIONS, "Importing module %s",
+  LOG_PRINTF(LIBLLDB_LOG_TYPES | LIBLLDB_LOG_EXPRESSIONS, "Importing module %s",
              toplevel.AsCString());
   swift::ModuleDecl *swift_module = nullptr;
   lldb::StackFrameSP this_frame_sp(stack_frame_wp.lock());
@@ -8335,7 +8314,7 @@ static swift::ModuleDecl *LoadOneModule(const SourceModule &module,
     // checked that DWARF debug info for this module actually exists
     // and there is no good mechanism to do so ahead of time.
     // We do know that we never load the stdlib from DWARF though.
-    LOG_PRINTF(LIBLLDB_LOG_EXPRESSIONS,
+    LOG_PRINTF(LIBLLDB_LOG_TYPES | LIBLLDB_LOG_EXPRESSIONS,
                "\"Imported\" module %s via SwiftDWARFImporterDelegate "
                "(no Swift AST or Clang module found)",
                toplevel.AsCString());
@@ -8345,20 +8324,23 @@ static swift::ModuleDecl *LoadOneModule(const SourceModule &module,
   }
 
   if (!swift_module || !error.Success() || swift_ast_context.HasFatalErrors()) {
-    LOG_PRINTF(LIBLLDB_LOG_EXPRESSIONS, "Couldn't import module %s: %s",
-               toplevel.AsCString(), error.AsCString());
+    LOG_PRINTF(LIBLLDB_LOG_TYPES | LIBLLDB_LOG_EXPRESSIONS,
+               "Couldn't import module %s: %s", toplevel.AsCString(),
+               error.AsCString());
 
     if (!swift_module || swift_ast_context.HasFatalErrors()) {
       return nullptr;
     }
   }
 
-  if (lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS)) {
+  if (lldb_private::GetLogIfAnyCategoriesSet(LIBLLDB_LOG_TYPES |
+                                             LIBLLDB_LOG_EXPRESSIONS)) {
     StreamString ss;
     for (swift::FileUnit *file_unit : swift_module->getFiles())
       DescribeFileUnit(ss, file_unit);
-    LOG_PRINTF(LIBLLDB_LOG_EXPRESSIONS, "Imported module %s from {%s}",
-               module.path.front().AsCString(), ss.GetData());
+    LOG_PRINTF(LIBLLDB_LOG_TYPES | LIBLLDB_LOG_EXPRESSIONS,
+               "Imported module %s from {%s}", module.path.front().AsCString(),
+               ss.GetData());
   }
   return swift_module;
 }
@@ -8426,7 +8408,7 @@ bool SwiftASTContext::CacheUserImports(SwiftASTContext &swift_ast_context,
         SourceModule module_info;
         ConstString module_const_str(module_name);
         module_info.path.push_back(module_const_str);
-        LOG_PRINTF(LIBLLDB_LOG_EXPRESSIONS,
+        LOG_PRINTF(LIBLLDB_LOG_TYPES | LIBLLDB_LOG_EXPRESSIONS,
                    "Performing auto import on found module: %s.\n",
                    module_name.c_str());
         if (!LoadOneModule(module_info, swift_ast_context, stack_frame_wp,
