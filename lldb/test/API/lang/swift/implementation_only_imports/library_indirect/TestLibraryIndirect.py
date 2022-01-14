@@ -78,7 +78,6 @@ class TestLibraryIndirect(TestBase):
         self.expect("e container.wrapped.value", substrs=["(SomeLibraryCore.TwoInts)", "(first = 2, second = 3)"])
 
     @swiftTest
-    @skipIfLinux # The "e container" command crashes in a non-reproducible way on the Linux bots.
     def test_implementation_only_import_library_no_library_module(self):
         """Test `@_implementationOnly import` behind some indirection in a library used by the main executable, after removing the implementation-only library's swiftmodule
 
