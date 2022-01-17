@@ -4198,8 +4198,8 @@ LanguageType SymbolFileDWARF::GetLanguageFamily(DWARFUnit &unit) {
   return LanguageTypeFromDWARF(lang);
 }
 
-StatsDuration SymbolFileDWARF::GetDebugInfoIndexTime() {
+StatsDuration::Duration SymbolFileDWARF::GetDebugInfoIndexTime() {
   if (m_index)
     return m_index->GetIndexTime();
-  return StatsDuration(0.0);
+  return {};
 }
