@@ -1084,7 +1084,7 @@ void GDBRemoteCommunicationServerLLGS::NewSubprocess(
 }
 
 void GDBRemoteCommunicationServerLLGS::DataAvailableCallback() {
-  Log *log(GetLogIfAnyCategoriesSet(GDBR_LOG_COMM));
+  Log *log = GetLog(GDBRLog::Comm);
 
   if (!m_handshake_completed) {
     if (!HandshakeWithClient()) {
