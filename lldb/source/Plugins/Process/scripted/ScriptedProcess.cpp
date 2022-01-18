@@ -227,8 +227,8 @@ bool ScriptedProcess::IsAlive() {
 size_t ScriptedProcess::DoReadMemory(lldb::addr_t addr, void *buf, size_t size,
                                      Status &error) {
   if (!m_interpreter)
-    return GetInterface().ErrorWithMessage<size_t>(LLVM_PRETTY_FUNCTION,
-                                                   "No interpreter.", error);
+    return ScriptedInterface::ErrorWithMessage<size_t>(
+        LLVM_PRETTY_FUNCTION, "No interpreter.", error);
 
   lldb::DataExtractorSP data_extractor_sp =
       GetInterface().ReadMemoryAtAddress(addr, size, error);
@@ -240,7 +240,7 @@ size_t ScriptedProcess::DoReadMemory(lldb::addr_t addr, void *buf, size_t size,
       0, data_extractor_sp->GetByteSize(), buf, size, GetByteOrder());
 
   if (!bytes_copied || bytes_copied == LLDB_INVALID_OFFSET)
-    return GetInterface().ErrorWithMessage<size_t>(
+    return ScriptedInterface::ErrorWithMessage<size_t>(
         LLVM_PRETTY_FUNCTION, "Failed to copy read memory to buffer.", error);
 
   return size;
@@ -298,7 +298,7 @@ bool ScriptedProcess::DoUpdateThreadList(ThreadList &old_thread_list,
   ScriptLanguage language = m_interpreter->GetLanguage();
 
   if (language != eScriptLanguagePython)
-    return GetInterface().ErrorWithMessage<bool>(
+    return ScriptedInterface::ErrorWithMessage<bool>(
         LLVM_PRETTY_FUNCTION,
         llvm::Twine("ScriptInterpreter language (" +
                     llvm::Twine(m_interpreter->LanguageToString(language)) +
@@ -309,7 +309,7 @@ bool ScriptedProcess::DoUpdateThreadList(ThreadList &old_thread_list,
   StructuredData::DictionarySP thread_info_sp = GetInterface().GetThreadsInfo();
 
   if (!thread_info_sp)
-    return GetInterface().ErrorWithMessage<bool>(
+    return ScriptedInterface::ErrorWithMessage<bool>(
         LLVM_PRETTY_FUNCTION,
         "Couldn't fetch thread list from Scripted Process.", error);
 
@@ -317,13 +317,13 @@ bool ScriptedProcess::DoUpdateThreadList(ThreadList &old_thread_list,
       [this, &old_thread_list, &error,
        &new_thread_list](ConstString key, StructuredData::Object *val) -> bool {
     if (!val)
-      return GetInterface().ErrorWithMessage<bool>(
+      return ScriptedInterface::ErrorWithMessage<bool>(
           LLVM_PRETTY_FUNCTION, "Invalid thread info object", error);
 
     lldb::tid_t tid = LLDB_INVALID_THREAD_ID;
     if (!llvm::to_integer(key.AsCString(), tid))
-      return GetInterface().ErrorWithMessage<bool>(LLVM_PRETTY_FUNCTION,
-                                                   "Invalid thread id", error);
+      return ScriptedInterface::ErrorWithMessage<bool>(
+          LLVM_PRETTY_FUNCTION, "Invalid thread id", error);
 
     if (ThreadSP thread_sp =
             old_thread_list.FindThreadByID(tid, false /*=can_update*/)) {
@@ -336,7 +336,7 @@ bool ScriptedProcess::DoUpdateThreadList(ThreadList &old_thread_list,
     auto thread_or_error = ScriptedThread::Create(*this, val->GetAsGeneric());
 
     if (!thread_or_error)
-      return GetInterface().ErrorWithMessage<bool>(
+      return ScriptedInterface::ErrorWithMessage<bool>(
           LLVM_PRETTY_FUNCTION, toString(thread_or_error.takeError()), error);
 
     ThreadSP thread_sp = thread_or_error.get();
@@ -344,7 +344,7 @@ bool ScriptedProcess::DoUpdateThreadList(ThreadList &old_thread_list,
 
     RegisterContextSP reg_ctx_sp = thread_sp->GetRegisterContext();
     if (!reg_ctx_sp)
-      return GetInterface().ErrorWithMessage<bool>(
+      return ScriptedInterface::ErrorWithMessage<bool>(
           LLVM_PRETTY_FUNCTION,
           llvm::Twine("Invalid Register Context for thread " +
                       llvm::Twine(key.AsCString()))
