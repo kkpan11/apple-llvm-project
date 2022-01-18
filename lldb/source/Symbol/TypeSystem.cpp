@@ -328,8 +328,8 @@ TypeSystemMap::GetTypeSystemForLanguage(lldb::LanguageType language,
                                         const char *compiler_options) {
   if (can_create) {
     return GetTypeSystemForLanguage(
-        language, llvm::Optional<CreateCallback>([language, target,
-                                                  compiler_options]() {
+        language,
+        llvm::Optional<CreateCallback>([language, target, compiler_options]() {
           return TypeSystem::CreateInstance(language, target, compiler_options);
         }));
   }

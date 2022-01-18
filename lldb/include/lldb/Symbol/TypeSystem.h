@@ -82,11 +82,11 @@ public:
   static lldb::TypeSystemSP CreateInstance(lldb::LanguageType language,
                                            Target *target);
 
-  // BEGIN APPLE
+  // BEGIN SWIFT
   static lldb::TypeSystemSP CreateInstance(lldb::LanguageType language,
                                            Target *target,
                                            const char *compiler_options);
-  // END APPLE
+  // END SWIFT
 
   // Free up any resources associated with this TypeSystem.  Done before
   // removing all the TypeSystems from the TypeSystemMap.
