@@ -34,7 +34,7 @@ class MemoryReader;
 class RemoteAddress;
 } // namespace remote
 
-template <typename Runtime> struct External;
+template <typename T> struct External;
 template <unsigned PointerSize> struct RuntimeTarget;
 
 namespace reflection {
