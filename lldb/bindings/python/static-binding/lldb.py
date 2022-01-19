@@ -4601,6 +4601,10 @@ class SBDebugger(object):
         r"""GetSyntheticForType(SBDebugger self, SBTypeNameSpecifier arg2) -> SBTypeSynthetic"""
         return _lldb.SBDebugger_GetSyntheticForType(self, arg2)
 
+    def GetScriptInterpreterInfo(self, arg2):
+        r"""GetScriptInterpreterInfo(SBDebugger self, lldb::ScriptLanguage arg2) -> SBStructuredData"""
+        return _lldb.SBDebugger_GetScriptInterpreterInfo(self, arg2)
+
     def __str__(self):
         r"""__str__(SBDebugger self) -> std::string"""
         return _lldb.SBDebugger___str__(self)
