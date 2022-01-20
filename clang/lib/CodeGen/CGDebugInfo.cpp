@@ -593,6 +593,9 @@ void CGDebugInfo::CreateCompileUnit() {
   case codegenoptions::UnusedTypeInfo:
     EmissionKind = llvm::DICompileUnit::FullDebug;
     break;
+  case codegenoptions::CasFriendlyDebugInfo:
+    EmissionKind = llvm::DICompileUnit::CasFriendly;
+    break;
   }
 
   uint64_t DwoId = 0;

@@ -56,6 +56,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetLoweringObjectFile.h"
 #include "llvm/Target/TargetMachine.h"
+#include "llvm/IR/DIBuilder.h"
 #include <algorithm>
 #include <cstddef>
 #include <iterator>
@@ -2152,10 +2153,24 @@ void DwarfDebug::beginFunctionImpl(const MachineFunction *MF) {
   if (SP->getUnit()->getEmissionKind() == DICompileUnit::NoDebug)
     return;
 
-  DwarfCompileUnit &CU = getOrCreateDwarfCompileUnit(SP->getUnit());
-
-  Asm->OutStreamer->getContext().setDwarfCompileUnitID(
-      getDwarfCompileUnitIDForLineTable(CU));
+  if(SP->getUnit()->getEmissionKind() == llvm::DICompileUnit::CasFriendly) {
+    const Module *M = MF->getFunction().getParent();
+    DIBuilder DIB(*const_cast<Module *>(M));
+    DICompileUnit *DCU = SP->getUnit();
+    DICompileUnit *NewDCU = DIB.createCompileUnit(
+        DCU->getSourceLanguage(), DCU->getFile(), DCU->getProducer(),
+        DCU->isOptimized(), DCU->getFlags(), DCU->getRuntimeVersion());
+    
+    this->SingleCU = false;
+    DwarfCompileUnit &CU = getOrCreateDwarfCompileUnit(NewDCU);
+    Asm->OutStreamer->getContext().setDwarfCompileUnitID(
+        getDwarfCompileUnitIDForLineTable(CU));
+    SP->replaceUnit(NewDCU);
+  } else {
+    DwarfCompileUnit &CU = getOrCreateDwarfCompileUnit(SP->getUnit());
+    Asm->OutStreamer->getContext().setDwarfCompileUnitID(
+        getDwarfCompileUnitIDForLineTable(CU));
+  }
 
   // Record beginning of function.
   PrologEndLoc = emitInitialLocDirective(

@@ -1356,7 +1356,8 @@ public:
     FullDebug,
     LineTablesOnly,
     DebugDirectivesOnly,
-    LastEmissionKind = DebugDirectivesOnly
+    CasFriendly,
+    LastEmissionKind = CasFriendly
   };
 
   enum class DebugNameTableKind : unsigned {
