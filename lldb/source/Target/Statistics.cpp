@@ -59,6 +59,14 @@ json::Value ModuleStats::ToJSON() const {
   return module;
 }
 
+llvm::json::Value ConstStringStats::ToJSON() const {
+  json::Object obj;
+  obj.try_emplace<int64_t>("bytesTotal", stats.GetBytesTotal());
+  obj.try_emplace<int64_t>("bytesUsed", stats.GetBytesUsed());
+  obj.try_emplace<int64_t>("bytesUnused", stats.GetBytesUnused());
+  return obj;
+}
+
 json::Value TargetStats::ToJSON(Target &target) {
   CollectStats(target);
 
@@ -185,9 +193,15 @@ llvm::json::Value DebuggerStats::ReportStatistics(Debugger &debugger,
     json_modules.emplace_back(module_stat.ToJSON());
   }
 
+  ConstStringStats const_string_stats;
+  json::Object json_memory{
+      {"strings", const_string_stats.ToJSON()},
+  };
+
   json::Object global_stats{
       {"targets", std::move(json_targets)},
       {"modules", std::move(json_modules)},
+      {"memory", std::move(json_memory)},
       {"totalSymbolTableParseTime", symtab_parse_time},
       {"totalSymbolTableIndexTime", symtab_index_time},
       {"totalDebugInfoParseTime", debug_parse_time},
