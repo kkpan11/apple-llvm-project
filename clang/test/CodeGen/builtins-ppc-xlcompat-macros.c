@@ -1,7 +1,7 @@
 // REQUIRES: powerpc-registered-target
-// RUN: %clang_cc1 -triple powerpc64-unknown-unknown \
+// RUN: %clang_cc1 -triple powerpc64-unknown-linux-gnu \
 // RUN:   -emit-llvm %s -o - -target-cpu pwr7 | FileCheck %s --check-prefixes=64BIT --check-prefix=BOTH
-// RUN: %clang_cc1 -triple powerpc64le-unknown-unknown \
+// RUN: %clang_cc1 -triple powerpc64le-unknown-linux-gnu \
 // RUN:   -emit-llvm %s -o - -target-cpu pwr8 | FileCheck %s --check-prefixes=64BIT --check-prefix=BOTH
 // RUN: %clang_cc1 -triple powerpc-unknown-aix \
 // RUN:   -emit-llvm %s -o - -target-cpu pwr7 | FileCheck %s --check-prefixes=32BIT --check-prefix=BOTH
@@ -154,11 +154,11 @@ void testalignx(const void *pointer) {
 }
 
 // 64BIT-LABEL: @testbcopy(
-// 64BIT:         call void @bcopy(i8* {{%.*}}, i8* {{%.*}}, i64 {{%.*}})
+// 64BIT:         call void @bcopy(i8* noundef {{%.*}}, i8* noundef {{%.*}}, i64 noundef {{%.*}})
 // 64BIT-NEXT:    ret void
 //
 // 32BIT-LABEL: @testbcopy(
-// 32BIT:         call void @bcopy(i8* {{%.*}}, i8* {{%.*}}, i32 {{%.*}})
+// 32BIT:         call void @bcopy(i8* noundef {{%.*}}, i8* noundef {{%.*}}, i32 noundef {{%.*}})
 // 32BIT-NEXT:    ret void
 //
 void testbcopy(const void *src, void *dest, size_t n) {

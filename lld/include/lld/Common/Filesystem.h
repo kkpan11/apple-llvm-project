@@ -10,6 +10,7 @@
 #define LLD_FILESYSTEM_H
 
 #include "lld/Common/LLVM.h"
+#include "llvm/ADT/Optional.h"
 #include <system_error>
 
 namespace llvm {

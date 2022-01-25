@@ -18,13 +18,11 @@
 #include "llvm/Support/Format.h"
 #include "llvm/Support/LineIterator.h"
 #include "llvm/Support/MemoryBuffer.h"
-#include "llvm/Support/Unicode.h"
 #include "llvm/Support/YAMLParser.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
-#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -527,8 +525,9 @@ std::vector<StringRef> Output::keys() {
 }
 
 bool Output::preflightKey(const char *Key, bool Required, bool SameAsDefault,
-                          bool &UseDefault, void *&) {
+                          bool &UseDefault, void *&SaveInfo) {
   UseDefault = false;
+  SaveInfo = nullptr;
   if (Required || !SameAsDefault || WriteDefaultValues) {
     auto State = StateStack.back();
     if (State == inFlowMapFirstKey || State == inFlowMapOtherKey) {
@@ -599,7 +598,8 @@ void Output::endSequence() {
   StateStack.pop_back();
 }
 
-bool Output::preflightElement(unsigned, void *&) {
+bool Output::preflightElement(unsigned, void *&SaveInfo) {
+  SaveInfo = nullptr;
   return true;
 }
 
@@ -627,7 +627,7 @@ void Output::endFlowSequence() {
   outputUpToEndOfLine(" ]");
 }
 
-bool Output::preflightFlowElement(unsigned, void *&) {
+bool Output::preflightFlowElement(unsigned, void *&SaveInfo) {
   if (NeedFlowSequenceComma)
     output(", ");
   if (WrapColumn && Column > WrapColumn) {
@@ -637,6 +637,7 @@ bool Output::preflightFlowElement(unsigned, void *&) {
     Column = ColumnAtFlowStart;
     output("  ");
   }
+  SaveInfo = nullptr;
   return true;
 }
 

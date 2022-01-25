@@ -371,7 +371,14 @@ public:
   }
 
   const llvm::omp::GV &getGridValue() const override {
-    return llvm::omp::AMDGPUGridValues;
+    switch (WavefrontSize) {
+    case 32:
+      return llvm::omp::getAMDGPUGridValues<32>();
+    case 64:
+      return llvm::omp::getAMDGPUGridValues<64>();
+    default:
+      llvm_unreachable("getGridValue not implemented for this wavesize");
+    }
   }
 
   /// \returns Target specific vtbl ptr address space.
@@ -419,7 +426,7 @@ public:
 
   void setAuxTarget(const TargetInfo *Aux) override;
 
-  bool hasExtIntType() const override { return true; }
+  bool hasBitIntType() const override { return true; }
 
   // Record offload arch features since they are needed for defining the
   // pre-defined macros.
@@ -433,7 +440,7 @@ public:
         WavefrontSize = 64;
       bool IsOn = F.front() == '+';
       StringRef Name = StringRef(F).drop_front();
-      if (llvm::find(TargetIDFeatures, Name) == TargetIDFeatures.end())
+      if (!llvm::is_contained(TargetIDFeatures, Name))
         return;
       assert(OffloadArchFeatures.find(Name) == OffloadArchFeatures.end());
       OffloadArchFeatures[Name] = IsOn;

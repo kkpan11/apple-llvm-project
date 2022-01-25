@@ -65,19 +65,21 @@ class Module;
 /// such that it could levarage polymorphism to extract common code for
 /// DbgVariable and DbgLabel.
 class DbgEntity {
-  const DINode *Entity;
-  const DILocation *InlinedAt;
-  DIE *TheDIE = nullptr;
-  unsigned SubclassID;
-
 public:
   enum DbgEntityKind {
     DbgVariableKind,
     DbgLabelKind
   };
 
-  DbgEntity(const DINode *N, const DILocation *IA, unsigned ID)
-    : Entity(N), InlinedAt(IA), SubclassID(ID) {}
+private:
+  const DINode *Entity;
+  const DILocation *InlinedAt;
+  DIE *TheDIE = nullptr;
+  const DbgEntityKind SubclassID;
+
+public:
+  DbgEntity(const DINode *N, const DILocation *IA, DbgEntityKind ID)
+      : Entity(N), InlinedAt(IA), SubclassID(ID) {}
   virtual ~DbgEntity() {}
 
   /// Accessors.
@@ -85,19 +87,18 @@ public:
   const DINode *getEntity() const { return Entity; }
   const DILocation *getInlinedAt() const { return InlinedAt; }
   DIE *getDIE() const { return TheDIE; }
-  unsigned getDbgEntityID() const { return SubclassID; }
+  DbgEntityKind getDbgEntityID() const { return SubclassID; }
   /// @}
 
   void setDIE(DIE &D) { TheDIE = &D; }
 
   static bool classof(const DbgEntity *N) {
     switch (N->getDbgEntityID()) {
-    default:
-      return false;
     case DbgVariableKind:
     case DbgLabelKind:
       return true;
     }
+    llvm_unreachable("Invalid DbgEntityKind");
   }
 };
 
@@ -432,6 +433,7 @@ private:
   DenseMap<const DIStringType *, unsigned> StringTypeLocMap;
 
   AddressPool AddrPool;
+  bool SeenLocalType = false;
 
   /// Accelerator tables.
   AccelTable<DWARF5AccelTableData> AccelDebugNames;
@@ -670,6 +672,7 @@ public:
     DwarfDebug *DD;
     decltype(DwarfDebug::TypeUnitsUnderConstruction) TypeUnitsUnderConstruction;
     bool AddrPoolUsed;
+    bool SeenLocalType;
     friend class DwarfDebug;
     NonTypeUnitContext(DwarfDebug *DD);
   public:
@@ -678,6 +681,7 @@ public:
   };
 
   NonTypeUnitContext enterNonTypeUnitContext();
+  void seenLocalType() { SeenLocalType = true; }
 
   /// Add a label so that arange data can be generated for it.
   void addArangeLabel(SymbolCU SCU) { ArangeLabels.push_back(SCU); }
@@ -780,6 +784,9 @@ public:
   /// Returns the previous CU that was being updated
   const DwarfCompileUnit *getPrevCU() const { return PrevCU; }
   void setPrevCU(const DwarfCompileUnit *PrevCU) { this->PrevCU = PrevCU; }
+
+  /// Terminate the line table by adding the last range label.
+  void terminateLineTable(const DwarfCompileUnit *CU);
 
   /// Returns the entries for the .debug_loc section.
   const DebugLocStream &getDebugLocs() const { return DebugLocs; }

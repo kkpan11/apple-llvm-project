@@ -566,6 +566,7 @@ void destroyMachOTLVMgr(void *MachOTLVMgr) {
   delete static_cast<MachOPlatformRuntimeTLVManager *>(MachOTLVMgr);
 }
 
+<<<<<<< HEAD
 Error runWrapperFunctionCalls(std::vector<WrapperFunctionCall> WFCs) {
   for (auto &WFC : WFCs)
     if (auto Err = WFC.runWithSPSRet())
@@ -573,6 +574,16 @@ Error runWrapperFunctionCalls(std::vector<WrapperFunctionCall> WFCs) {
   return Error::success();
 }
 
+||||||| 11b7ee974a69
+=======
+Error runWrapperFunctionCalls(std::vector<WrapperFunctionCall> WFCs) {
+  for (auto &WFC : WFCs)
+    if (auto Err = WFC.runWithSPSRet<void>())
+      return Err;
+  return Error::success();
+}
+
+>>>>>>> llvm.org/main
 } // end anonymous namespace
 
 //------------------------------------------------------------------------------
@@ -592,6 +603,7 @@ __orc_rt_macho_platform_shutdown(char *ArgData, size_t ArgSize) {
 }
 
 ORC_RT_INTERFACE __orc_rt_CWrapperFunctionResult
+<<<<<<< HEAD
 __orc_rt_macho_register_thread_data_section(char *ArgData, size_t ArgSize) {
   // NOTE: Does not use SPS to deserialize arg buffer, instead the arg buffer
   // is taken to be the range of the thread data section.
@@ -601,11 +613,27 @@ __orc_rt_macho_register_thread_data_section(char *ArgData, size_t ArgSize) {
                return MachOPlatformRuntimeState::get()
                    .registerThreadDataSection(
                        span<const char>(ArgData, ArgSize));
+||||||| 11b7ee974a69
+__orc_rt_macho_register_object_sections(char *ArgData, size_t ArgSize) {
+  return WrapperFunction<SPSError(SPSMachOPerObjectSectionsToRegister)>::handle(
+             ArgData, ArgSize,
+             [](MachOPerObjectSectionsToRegister &POSR) {
+               return MachOPlatformRuntimeState::get().registerObjectSections(
+                   std::move(POSR));
+=======
+__orc_rt_macho_register_thread_data_section(char *ArgData, size_t ArgSize) {
+  return WrapperFunction<SPSError(SPSExecutorAddrRange)>::handle(
+             ArgData, ArgSize,
+             [](ExecutorAddrRange R) {
+               return MachOPlatformRuntimeState::get()
+                   .registerThreadDataSection(R.toSpan<const char>());
+>>>>>>> llvm.org/main
              })
       .release();
 }
 
 ORC_RT_INTERFACE __orc_rt_CWrapperFunctionResult
+<<<<<<< HEAD
 __orc_rt_macho_deregister_thread_data_section(char *ArgData, size_t ArgSize) {
   // NOTE: Does not use SPS to deserialize arg buffer, instead the arg buffer
   // is taken to be the range of the thread data section.
@@ -615,6 +643,21 @@ __orc_rt_macho_deregister_thread_data_section(char *ArgData, size_t ArgSize) {
                return MachOPlatformRuntimeState::get()
                    .deregisterThreadDataSection(
                        span<const char>(ArgData, ArgSize));
+||||||| 11b7ee974a69
+__orc_rt_macho_deregister_object_sections(char *ArgData, size_t ArgSize) {
+  return WrapperFunction<SPSError(SPSMachOPerObjectSectionsToRegister)>::handle(
+             ArgData, ArgSize,
+             [](MachOPerObjectSectionsToRegister &POSR) {
+               return MachOPlatformRuntimeState::get().deregisterObjectSections(
+                   std::move(POSR));
+=======
+__orc_rt_macho_deregister_thread_data_section(char *ArgData, size_t ArgSize) {
+  return WrapperFunction<SPSError(SPSExecutorAddrRange)>::handle(
+             ArgData, ArgSize,
+             [](ExecutorAddrRange R) {
+               return MachOPlatformRuntimeState::get()
+                   .deregisterThreadDataSection(R.toSpan<const char>());
+>>>>>>> llvm.org/main
              })
       .release();
 }

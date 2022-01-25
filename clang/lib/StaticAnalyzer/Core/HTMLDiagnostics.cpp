@@ -245,6 +245,18 @@ void HTMLDiagnostics::FlushDiagnosticsImpl(
     ReportDiag(*Diag, filesMade);
 }
 
+static llvm::SmallString<32> getIssueHash(const PathDiagnostic &D,
+                                          const Preprocessor &PP) {
+  SourceManager &SMgr = PP.getSourceManager();
+  PathDiagnosticLocation UPDLoc = D.getUniqueingLoc();
+  FullSourceLoc L(SMgr.getExpansionLoc(UPDLoc.isValid()
+                                           ? UPDLoc.asLocation()
+                                           : D.getLocation().asLocation()),
+                  SMgr);
+  return getIssueHash(L, D.getCheckerName(), D.getBugType(),
+                      D.getDeclWithIssue(), PP.getLangOpts());
+}
+
 void HTMLDiagnostics::ReportDiag(const PathDiagnostic& D,
                                  FilesMade *filesMade) {
   // Create the HTML directory if it is missing.
@@ -270,11 +282,6 @@ void HTMLDiagnostics::ReportDiag(const PathDiagnostic& D,
 
   // Create a new rewriter to generate HTML.
   Rewriter R(const_cast<SourceManager&>(SMgr), PP.getLangOpts());
-
-  // The file for the first path element is considered the main report file, it
-  // will usually be equivalent to SMgr.getMainFileID(); however, it might be a
-  // header when -analyzer-opt-analyze-headers is used.
-  FileID ReportFile = path.front()->getLocation().asLocation().getExpansionLoc().getFileID();
 
   // Get the function/method name
   SmallString<128> declName("unknown");
@@ -302,46 +309,52 @@ void HTMLDiagnostics::ReportDiag(const PathDiagnostic& D,
 
   // Create a path for the target HTML file.
   int FD;
-  SmallString<128> Model, ResultPath;
 
-  if (!DiagOpts.ShouldWriteStableReportFilename) {
-      llvm::sys::path::append(Model, Directory, "report-%%%%%%.html");
-      if (std::error_code EC =
-          llvm::sys::fs::make_absolute(Model)) {
-          llvm::errs() << "warning: could not make '" << Model
-                       << "' absolute: " << EC.message() << '\n';
-        return;
-      }
-      if (std::error_code EC = llvm::sys::fs::createUniqueFile(
-              Model, FD, ResultPath, llvm::sys::fs::OF_Text)) {
-        llvm::errs() << "warning: could not create file in '" << Directory
-                     << "': " << EC.message() << '\n';
-        return;
-      }
-  } else {
-      int i = 1;
-      std::error_code EC;
-      do {
-          // Find a filename which is not already used
-          const FileEntry* Entry = SMgr.getFileEntryForID(ReportFile);
-          std::stringstream filename;
-          Model = "";
-          filename << "report-"
-                   << llvm::sys::path::filename(Entry->getName()).str()
-                   << "-" << declName.c_str()
-                   << "-" << offsetDecl
-                   << "-" << i << ".html";
-          llvm::sys::path::append(Model, Directory,
-                                  filename.str());
-          EC = llvm::sys::fs::openFileForReadWrite(
-              Model, FD, llvm::sys::fs::CD_CreateNew, llvm::sys::fs::OF_None);
-          if (EC && EC != llvm::errc::file_exists) {
-              llvm::errs() << "warning: could not create file '" << Model
-                           << "': " << EC.message() << '\n';
-              return;
-          }
-          i++;
-      } while (EC);
+  SmallString<128> FileNameStr;
+  llvm::raw_svector_ostream FileName(FileNameStr);
+  FileName << "report-";
+
+  // Historically, neither the stable report filename nor the unstable report
+  // filename were actually stable. That said, the stable report filename
+  // was more stable because it was mostly composed of information
+  // about the bug report instead of being completely random.
+  // Now both stable and unstable report filenames are in fact stable
+  // but the stable report filename is still more verbose.
+  if (DiagOpts.ShouldWriteVerboseReportFilename) {
+    // FIXME: This code relies on knowing what constitutes the issue hash.
+    // Otherwise deduplication won't work correctly.
+    FileID ReportFile =
+        path.back()->getLocation().asLocation().getExpansionLoc().getFileID();
+
+    const FileEntry *Entry = SMgr.getFileEntryForID(ReportFile);
+
+    FileName << llvm::sys::path::filename(Entry->getName()).str() << "-"
+             << declName.c_str() << "-" << offsetDecl << "-";
+  }
+
+  FileName << StringRef(getIssueHash(D, PP)).substr(0, 6).str() << ".html";
+
+  SmallString<128> ResultPath;
+  llvm::sys::path::append(ResultPath, Directory, FileName.str());
+  if (std::error_code EC = llvm::sys::fs::make_absolute(ResultPath)) {
+    llvm::errs() << "warning: could not make '" << ResultPath
+                 << "' absolute: " << EC.message() << '\n';
+    return;
+  }
+
+  if (std::error_code EC = llvm::sys::fs::openFileForReadWrite(
+          ResultPath, FD, llvm::sys::fs::CD_CreateNew,
+          llvm::sys::fs::OF_Text)) {
+    // Existence of the file corresponds to the situation where a different
+    // Clang instance has emitted a bug report with the same issue hash.
+    // This is an entirely normal situation that does not deserve a warning,
+    // as apart from hash collisions this can happen because the reports
+    // are in fact similar enough to be considered duplicates of each other.
+    if (EC != llvm::errc::file_exists) {
+      llvm::errs() << "warning: could not create file in '" << Directory
+                   << "': " << EC.message() << '\n';
+    }
+    return;
   }
 
   llvm::raw_fd_ostream os(FD, true);
@@ -397,7 +410,7 @@ std::string HTMLDiagnostics::GenerateHTML(const PathDiagnostic& D, Rewriter &R,
     }
 
     // Append files to the main report file in the order they appear in the path
-    for (auto I : llvm::make_range(FileIDs.begin() + 1, FileIDs.end())) {
+    for (auto I : llvm::drop_begin(FileIDs)) {
       std::string s;
       llvm::raw_string_ostream os(s);
 
@@ -424,7 +437,7 @@ std::string HTMLDiagnostics::GenerateHTML(const PathDiagnostic& D, Rewriter &R,
   for (auto BI : *Buf)
     os << BI;
 
-  return os.str();
+  return file;
 }
 
 void HTMLDiagnostics::dumpCoverageData(
@@ -521,7 +534,7 @@ document.addEventListener("DOMContentLoaded", function() {
 </form>
 )<<<";
 
-  return os.str();
+  return s;
 }
 
 void HTMLDiagnostics::FinalizeHTML(const PathDiagnostic& D, Rewriter &R,
@@ -638,7 +651,6 @@ void HTMLDiagnostics::FinalizeHTML(const PathDiagnostic& D, Rewriter &R,
                                              ? UPDLoc.asLocation()
                                              : D.getLocation().asLocation()),
                     SMgr);
-    const Decl *DeclWithIssue = D.getDeclWithIssue();
 
     StringRef BugCategory = D.getCategory();
     if (!BugCategory.empty())
@@ -650,9 +662,7 @@ void HTMLDiagnostics::FinalizeHTML(const PathDiagnostic& D, Rewriter &R,
 
     os  << "\n<!-- FUNCTIONNAME " <<  declName << " -->\n";
 
-    os << "\n<!-- ISSUEHASHCONTENTOFLINEINCONTEXT "
-       << getIssueHash(L, D.getCheckerName(), D.getBugType(), DeclWithIssue,
-                       PP.getLangOpts())
+    os << "\n<!-- ISSUEHASHCONTENTOFLINEINCONTEXT " << getIssueHash(D, PP)
        << " -->\n";
 
     os << "\n<!-- BUGLINE "
@@ -742,8 +752,7 @@ static void HandlePopUpPieceEndTag(Rewriter &R,
   Out << "</div></td><td>" << Piece.getString() << "</td></tr>";
 
   // If no report made at this range mark the variable and add the end tags.
-  if (std::find(PopUpRanges.begin(), PopUpRanges.end(), Range) ==
-      PopUpRanges.end()) {
+  if (!llvm::is_contained(PopUpRanges, Range)) {
     // Store that we create a report at this range.
     PopUpRanges.push_back(Range);
 
@@ -783,8 +792,8 @@ void HTMLDiagnostics::RewriteFile(Rewriter &R, const PathPieces &path,
 
   // Stores the different ranges where we have reported something.
   std::vector<SourceRange> PopUpRanges;
-  for (auto I = path.rbegin(), E = path.rend(); I != E; ++I) {
-    const auto &Piece = *I->get();
+  for (const PathDiagnosticPieceRef &I : llvm::reverse(path)) {
+    const auto &Piece = *I.get();
 
     if (isa<PathDiagnosticPopUpPiece>(Piece)) {
       ++IndexMap[NumRegularPieces];
@@ -826,8 +835,8 @@ void HTMLDiagnostics::RewriteFile(Rewriter &R, const PathPieces &path,
   // Secondary indexing if we are having multiple pop-ups between two notes.
   // (e.g. [(13) 'a' is 'true'];  [(13.1) 'b' is 'false'];  [(13.2) 'c' is...)
   NumRegularPieces = TotalRegularPieces;
-  for (auto I = path.rbegin(), E = path.rend(); I != E; ++I) {
-    const auto &Piece = *I->get();
+  for (const PathDiagnosticPieceRef &I : llvm::reverse(path)) {
+    const auto &Piece = *I.get();
 
     if (const auto *PopUpP = dyn_cast<PathDiagnosticPopUpPiece>(&Piece)) {
       int PopUpPieceIndex = IndexMap[NumRegularPieces];
@@ -1081,8 +1090,7 @@ void HTMLDiagnostics::HandlePiece(Rewriter &R, FileID BugFileID,
   ArrayRef<SourceRange> Ranges = P.getRanges();
   for (const auto &Range : Ranges) {
     // If we have already highlighted the range as a pop-up there is no work.
-    if (std::find(PopUpRanges.begin(), PopUpRanges.end(), Range) !=
-        PopUpRanges.end())
+    if (llvm::is_contained(PopUpRanges, Range))
       continue;
 
     HighlightRange(R, LPosInfo.first, Range);
@@ -1194,7 +1202,7 @@ std::string getSpanBeginForControl(const char *ClassName, unsigned Index) {
   std::string Result;
   llvm::raw_string_ostream OS(Result);
   OS << "<span id=\"" << ClassName << Index << "\">";
-  return OS.str();
+  return Result;
 }
 
 std::string getSpanBeginForControlStart(unsigned Index) {

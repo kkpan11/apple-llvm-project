@@ -124,6 +124,7 @@ public:
     MSVC2017_5 = 1912,
     MSVC2017_7 = 1914,
     MSVC2019 = 1920,
+    MSVC2019_5 = 1925,
     MSVC2019_8 = 1928,
   };
 
@@ -232,19 +233,6 @@ public:
 
   /// Possible exception handling behavior.
   enum class ExceptionHandlingKind { None, SjLj, WinEH, DwarfCFI, Wasm };
-
-  /// Possible float expression evaluation method choices.
-  enum FPEvalMethodKind {
-    /// Use the declared type for fp arithmetic.
-    FEM_Source,
-    /// Use the type double for fp arithmetic.
-    FEM_Double,
-    /// Use extended type for fp arithmetic.
-    FEM_Extended,
-    /// Use the default float eval method specified by Target:
-    //  most targets are defined with evaluation method FEM_Source.
-    FEM_TargetDefault
-  };
 
   enum class LaxVectorConversionKind {
     /// Permit no implicit vector bitcasts.
@@ -444,6 +432,9 @@ public:
   /// Return the OpenCL C or C++ version as a VersionTuple.
   VersionTuple getOpenCLVersionTuple() const;
 
+  /// Return the OpenCL version that kernel language is compatible with
+  unsigned getOpenCLCompatibleVersion() const;
+
   /// Return the OpenCL C or C++ for OpenCL language name and version
   /// as a string.
   std::string getOpenCLVersionString() const;
@@ -547,7 +538,6 @@ public:
       setAllowFEnvAccess(true);
     else
       setAllowFEnvAccess(LangOptions::FPM_Off);
-    setFPEvalMethod(LO.getFPEvalMethod());
   }
 
   bool allowFPContractWithinStatement() const {

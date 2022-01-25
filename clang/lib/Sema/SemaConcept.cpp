@@ -234,7 +234,7 @@ static bool calculateConstraintSatisfaction(
             //   ...If substitution results in an invalid type or expression, the
             //   constraint is not satisfied.
             if (!Trap.hasErrorOccurred())
-              // A non-SFINAE error has occured as a result of this
+              // A non-SFINAE error has occurred as a result of this
               // substitution.
               return ExprError();
 
@@ -980,8 +980,8 @@ bool Sema::MaybeEmitAmbiguousAtomicConstraintsDiagnostic(NamedDecl *D1,
         // Not the same source level expression - are the expressions
         // identical?
         llvm::FoldingSetNodeID IDA, IDB;
-        EA->Profile(IDA, Context, /*Cannonical=*/true);
-        EB->Profile(IDB, Context, /*Cannonical=*/true);
+        EA->Profile(IDA, Context, /*Canonical=*/true);
+        EB->Profile(IDB, Context, /*Canonical=*/true);
         if (IDA != IDB)
           return false;
 
@@ -1058,17 +1058,19 @@ concepts::ExprRequirement::ExprRequirement(
 
 concepts::ExprRequirement::ReturnTypeRequirement::
 ReturnTypeRequirement(TemplateParameterList *TPL) :
-    TypeConstraintInfo(TPL, 0) {
+    TypeConstraintInfo(TPL, false) {
   assert(TPL->size() == 1);
   const TypeConstraint *TC =
       cast<TemplateTypeParmDecl>(TPL->getParam(0))->getTypeConstraint();
+  assert(TC &&
+         "TPL must have a template type parameter with a type constraint");
   auto *Constraint =
       cast<ConceptSpecializationExpr>(TC->getImmediatelyDeclaredConstraint());
   bool Dependent =
       Constraint->getTemplateArgsAsWritten() &&
       TemplateSpecializationType::anyInstantiationDependentTemplateArguments(
           Constraint->getTemplateArgsAsWritten()->arguments().drop_front(1));
-  TypeConstraintInfo.setInt(Dependent ? 1 : 0);
+  TypeConstraintInfo.setInt(Dependent ? true : false);
 }
 
 concepts::TypeRequirement::TypeRequirement(TypeSourceInfo *T) :

@@ -205,6 +205,10 @@ public:
   ///         from the parent process will be used.
   virtual void setEnvironment(llvm::ArrayRef<const char *> NewEnvironment);
 
+  void replaceArguments(llvm::opt::ArgStringList List) {
+    Arguments = std::move(List);
+  }
+
   /// Sets the environment to display in `-###`.
   virtual void setEnvironmentDisplay(llvm::ArrayRef<const char *> Display);
 
