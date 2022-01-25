@@ -2,6 +2,7 @@
 //
 // TODO: Test should be updated to not depend on a working cache at default
 // location, which is out of test/build directory.
+// REQUIRES: system-darwin
 
 // RUN: %clang -target x86_64-apple-macos11 -I %S/Inputs -fdepscan=daemon -fsyntax-only -x c %s
 // RUN: %clang -target x86_64-apple-macos11 -I %S/Inputs -fdepscan=inline -fsyntax-only -x c %s
