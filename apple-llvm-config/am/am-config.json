@@ -26,5 +26,10 @@
 {
   "target": "stable/20210726",
   "upstream": "swift/release/5.6"
+},
+{
+  "target": "experimental/cas/main",
+  "upstream": "llvm.org/main",
+  "test_commits_in_bundle": true
 }
 ]
