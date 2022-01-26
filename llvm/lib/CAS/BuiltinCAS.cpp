@@ -1054,7 +1054,7 @@ Error BuiltinCAS::putCachedResult(CASID InputID, CASID OutputID) {
 Optional<BuiltinCAS::MappedContentReference>
 BuiltinCAS::openOnDisk(OnDiskHashMappedTrie &Trie, HashRef Hash) {
   if (auto Lookup = Trie.lookup(Hash))
-    return std::move(Lookup.get());
+    return Lookup.take();
   return None;
 }
 
