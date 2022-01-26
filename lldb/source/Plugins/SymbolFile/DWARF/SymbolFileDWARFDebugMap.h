@@ -153,6 +153,10 @@ public:
     return GetPluginNameStatic().GetStringRef();
   }
 
+  uint64_t GetDebugInfoSize() override;
+  lldb_private::StatsDuration::Duration GetDebugInfoParseTime() override;
+  lldb_private::StatsDuration::Duration GetDebugInfoIndexTime() override;
+
 protected:
   enum { kHaveInitializedOSOs = (1 << 0), kNumFlags };
 
