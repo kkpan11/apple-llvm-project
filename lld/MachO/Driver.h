@@ -20,13 +20,6 @@
 #include <set>
 #include <type_traits>
 
-namespace llvm {
-namespace MachO {
-class InterfaceFile;
-enum class PlatformKind : unsigned;
-} // namespace MachO
-} // namespace llvm
-
 namespace lld {
 namespace macho {
 
@@ -56,10 +49,11 @@ std::string createResponseFile(const llvm::opt::InputArgList &args,
 llvm::MachO::HeaderFileType getOutputType(const llvm::opt::InputArgList &args);
 
 // Check for both libfoo.dylib and libfoo.tbd (in that order).
-llvm::Optional<std::string> resolveDylibPath(llvm::StringRef path);
+llvm::Optional<StringRef> resolveDylibPath(llvm::StringRef path);
 
 DylibFile *loadDylib(llvm::MemoryBufferRef mbref, DylibFile *umbrella = nullptr,
                      bool isBundleLoader = false);
+void resetLoadedDylibs();
 
 /// Called after dependency scanning pass is finished, to reset to initial state for performing a normal link.
 void resetLoadedDylibs();
@@ -75,17 +69,12 @@ findPathCombination(const llvm::Twine &name,
 // rerooted.
 llvm::StringRef rerootPath(llvm::StringRef path);
 
-llvm::Optional<InputFile *> loadArchiveMember(MemoryBufferRef, uint32_t modTime,
-                                              StringRef archiveName,
-                                              bool objCOnly,
-                                              uint64_t offsetInArchive);
-
 uint32_t getModTime(llvm::StringRef path);
 
 void printArchiveMemberLoad(StringRef reason, const InputFile *);
 
 // Map simulator platforms to their underlying device platform.
-llvm::MachO::PlatformKind removeSimulator(llvm::MachO::PlatformKind platform);
+llvm::MachO::PlatformType removeSimulator(llvm::MachO::PlatformType platform);
 
 // Helper class to export dependency info.
 class DependencyTracker {
@@ -126,7 +115,7 @@ private:
   std::set<std::string> notFounds;
 };
 
-extern DependencyTracker *depTracker;
+extern std::unique_ptr<DependencyTracker> depTracker;
 
 } // namespace macho
 } // namespace lld

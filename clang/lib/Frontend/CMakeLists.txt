@@ -25,7 +25,6 @@ add_clang_library(clangFrontend
   FrontendActions.cpp
   FrontendOptions.cpp
   HeaderIncludeGen.cpp
-  InitHeaderSearch.cpp
   InitPreprocessor.cpp
   LayoutOverrideSource.cpp
   LogDiagnosticPrinter.cpp

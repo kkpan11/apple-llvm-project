@@ -92,6 +92,8 @@ TEST(EPCGenericMemoryAccessTest, MemWrites) {
       MemAccess->writeBuffers({{ExecutorAddr::fromPtr(&Test_Buffer), TestMsg}});
   EXPECT_THAT_ERROR(std::move(Err5), Succeeded());
   EXPECT_EQ(StringRef(Test_Buffer, TestMsg.size()), TestMsg);
+
+  cantFail(SelfEPC->disconnect());
 }
 
 } // namespace

@@ -14,12 +14,10 @@
 #include "Target.h"
 
 #include "lld/Common/Args.h"
-#include "lld/Common/ErrorHandler.h"
-#include "lld/Common/Memory.h"
+#include "lld/Common/CommonLinkerContext.h"
 #include "lld/Common/Reproduce.h"
 #include "llvm/ADT/CachedHashString.h"
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/CAS/CASDB.h"
 #include "llvm/CAS/Utils.h"
 #include "llvm/LTO/LTO.h"
@@ -87,7 +85,7 @@ InputArgList MachOOptTable::parse(ArrayRef<const char *> argv) {
 
   // Expand response files (arguments in the form of @<filename>)
   // and then parse the argument again.
-  cl::ExpandResponseFiles(saver, cl::TokenizeGNUCommandLine, vec);
+  cl::ExpandResponseFiles(saver(), cl::TokenizeGNUCommandLine, vec);
   InputArgList args = ParseArgs(vec, missingIndex, missingCount);
 
   // Handle -fatal_warnings early since it converts missing argument warnings
@@ -207,30 +205,26 @@ static void searchedDylib(const Twine &path, bool found) {
     depTracker->logFileNotFound(path);
 }
 
-Optional<std::string> macho::resolveDylibPath(StringRef dylibPath) {
+Optional<StringRef> macho::resolveDylibPath(StringRef dylibPath) {
   // TODO: if a tbd and dylib are both present, we should check to make sure
   // they are consistent.
-  bool dylibExists = macho::fs::exists(dylibPath);
-  searchedDylib(dylibPath, dylibExists);
-  if (dylibExists)
-    return std::string(dylibPath);
-
   SmallString<261> tbdPath = dylibPath;
   path::replace_extension(tbdPath, ".tbd");
   bool tbdExists = macho::fs::exists(tbdPath);
   searchedDylib(tbdPath, tbdExists);
   if (tbdExists)
-    return std::string(tbdPath);
+    return saver().save(tbdPath.str());
+
+  bool dylibExists = macho::fs::exists(dylibPath);
+  searchedDylib(dylibPath, dylibExists);
+  if (dylibExists)
+    return saver().save(dylibPath);
   return {};
 }
 
 // It's not uncommon to have multiple attempts to load a single dylib,
 // especially if it's a commonly re-exported core library.
 static DenseMap<CachedHashStringRef, DylibFile *> loadedDylibs;
-
-void macho::resetLoadedDylibs() {
-  loadedDylibs.clear();
-}
 
 DylibFile *macho::loadDylib(MemoryBufferRef mbref, DylibFile *umbrella,
                             bool isBundleLoader) {
@@ -274,6 +268,8 @@ DylibFile *macho::loadDylib(MemoryBufferRef mbref, DylibFile *umbrella,
   return newFile;
 }
 
+void macho::resetLoadedDylibs() { loadedDylibs.clear(); }
+
 Optional<StringRef>
 macho::findPathCombination(const Twine &name,
                            const std::vector<StringRef> &roots,
@@ -287,7 +283,7 @@ macho::findPathCombination(const Twine &name,
       bool exists = macho::fs::exists(location);
       searchedDylib(location, exists);
       if (exists)
-        return saver.save(location.str());
+        return saver().save(location.str());
     }
   }
   return {};
@@ -302,56 +298,6 @@ StringRef macho::rerootPath(StringRef path) {
     return *rerootedPath;
 
   return path;
-}
-
-Optional<InputFile *> macho::loadArchiveMember(MemoryBufferRef mb,
-                                               uint32_t modTime,
-                                               StringRef archiveName,
-                                               bool objCOnly,
-                                               uint64_t offsetInArchive) {
-  if (config->zeroModTime)
-    modTime = 0;
-
-  StringRef memberName = mb.getBufferIdentifier();
-  switch (identify_magic(mb.getBuffer())) {
-  case file_magic::macho_object:
-    if (!objCOnly || hasObjCSection(mb))
-      return make<ObjFile>(mb, modTime, archiveName);
-    return None;
-  case file_magic::cas_id: {
-    if (!config->CAS) {
-      error(archiveName + ": archive member " + memberName +
-            " embedding a CAS-ID but CAS is not enabled");
-      return None;
-    }
-    CASDB &CAS = *config->CAS;
-    auto ID = readCASIDBuffer(CAS, mb);
-    if (!ID) {
-      error(archiveName + ": archive member " + memberName +
-            " failed reading CAS-ID: " + toString(ID.takeError()));
-      return None;
-    }
-    auto blobRef = CAS.getBlob(*ID);
-    if (!blobRef) {
-      consumeError(blobRef.takeError());
-      error(archiveName + ": archive member " + memberName +
-            " embedding a non-blob CAS-ID");
-      return None;
-    }
-    MemoryBufferRef objectMB(blobRef->getData(), memberName);
-    if (!objCOnly || hasObjCSection(objectMB))
-      return make<ObjFile>(objectMB, *blobRef, archiveName);
-    return None;
-  }
-  case file_magic::bitcode:
-    if (!objCOnly || check(isBitcodeContainingObjCCategory(mb)))
-      return make<BitcodeFile>(mb, archiveName, offsetInArchive);
-    return None;
-  default:
-    error(archiveName + ": archive member " + memberName +
-          " has unhandled file type");
-    return None;
-  }
 }
 
 uint32_t macho::getModTime(StringRef path) {

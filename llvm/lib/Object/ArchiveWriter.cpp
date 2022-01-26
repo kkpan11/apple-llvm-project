@@ -139,6 +139,7 @@ static bool isBSDLike(object::Archive::Kind Kind) {
   case object::Archive::K_DARWIN:
   case object::Archive::K_DARWIN64:
     return true;
+  case object::Archive::K_AIXBIG:
   case object::Archive::K_COFF:
     break;
   }
@@ -201,6 +202,7 @@ static bool is64BitKind(object::Archive::Kind Kind) {
   case object::Archive::K_BSD:
   case object::Archive::K_DARWIN:
   case object::Archive::K_COFF:
+  case object::Archive::K_AIXBIG:
     return false;
   case object::Archive::K_DARWIN64:
   case object::Archive::K_GNU64:
@@ -698,7 +700,7 @@ writeArchiveToBuffer(ArrayRef<NewArchiveMember> NewMembers, bool WriteSymtab,
     return std::move(E);
 
   return std::make_unique<SmallVectorMemoryBuffer>(
-      std::move(ArchiveBufferVector));
+      std::move(ArchiveBufferVector), /*RequiresNullTerminator=*/false);
 }
 
 } // namespace llvm

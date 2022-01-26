@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_TOOLING_DEPENDENCY_SCANNING_FILESYSTEM_H
-#define LLVM_CLANG_TOOLING_DEPENDENCY_SCANNING_FILESYSTEM_H
+#ifndef LLVM_CLANG_TOOLING_DEPENDENCYSCANNING_DEPENDENCYSCANNINGFILESYSTEM_H
+#define LLVM_CLANG_TOOLING_DEPENDENCYSCANNING_DEPENDENCYSCANNINGFILESYSTEM_H
 
 #include "clang/Basic/LLVM.h"
 #include "clang/Lex/PreprocessorExcludedConditionalDirectiveSkipMapping.h"
@@ -76,11 +76,14 @@ public:
   llvm::ErrorOr<std::unique_ptr<llvm::vfs::File>>
   openFileForRead(const Twine &Path) override;
 
-  void clearIgnoredFiles() { IgnoredFiles.clear(); }
-  void ignoreFile(StringRef Filename);
+  /// Disable minimization of the given file.
+  void disableMinimization(StringRef Filename);
+  /// Enable minimization of all files.
+  void enableMinimizationOfAllFiles() { NotToBeMinimized.clear(); }
 
 private:
-  bool shouldIgnoreFile(StringRef Filename);
+  /// Check whether the file should be minimized.
+  bool shouldMinimize(StringRef Filename);
 
   IntrusiveRefCntPtr<llvm::cas::CASFileSystemBase> FS;
 
@@ -123,11 +126,11 @@ private:
   /// currently active preprocessor.
   ExcludedPreprocessorDirectiveSkipMapping *PPSkipMappings;
   /// The set of files that should not be minimized.
-  llvm::StringSet<> IgnoredFiles;
+  llvm::StringSet<> NotToBeMinimized;
 };
 
 } // end namespace dependencies
 } // end namespace tooling
 } // end namespace clang
 
-#endif // LLVM_CLANG_TOOLING_DEPENDENCY_SCANNING_FILESYSTEM_H
+#endif // LLVM_CLANG_TOOLING_DEPENDENCYSCANNING_DEPENDENCYSCANNINGFILESYSTEM_H

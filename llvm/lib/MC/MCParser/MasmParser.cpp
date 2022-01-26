@@ -13,6 +13,7 @@
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/None.h"
 #include "llvm/ADT/Optional.h"
@@ -379,7 +380,7 @@ private:
   /// time of assembly
   struct tm TM;
 
-  std::vector<bool> EndStatementAtEOFStack;
+  BitVector EndStatementAtEOFStack;
 
   AsmCond TheCondState;
   std::vector<AsmCond> TheCondStack;
@@ -424,7 +425,7 @@ private:
     int64_t LineNumber;
     SMLoc Loc;
     unsigned Buf;
-    CppHashInfoTy() : Filename(), LineNumber(0), Loc(), Buf(0) {}
+    CppHashInfoTy() : LineNumber(0), Buf(0) {}
   };
   CppHashInfoTy CppHashInfo;
 
@@ -1319,7 +1320,7 @@ bool MasmParser::enabledGenDwarfForAssembly() {
 bool MasmParser::Run(bool NoInitialTextSection, bool NoFinalize) {
   // Create the initial section, if requested.
   if (!NoInitialTextSection)
-    Out.InitSections(false);
+    Out.initSections(false, getTargetParser().getSTI());
 
   // Prime the lexer.
   Lex();
@@ -1437,7 +1438,7 @@ bool MasmParser::Run(bool NoInitialTextSection, bool NoFinalize) {
 
 bool MasmParser::checkForValidSection() {
   if (!ParsingMSInlineAsm && !getStreamer().getCurrentSectionOnly()) {
-    Out.InitSections(false);
+    Out.initSections(false, getTargetParser().getSTI());
     return Error(getTok().getLoc(),
                  "expected section directive before assembly directive");
   }
@@ -4772,7 +4773,8 @@ bool MasmParser::emitAlignTo(int64_t Alignment) {
     const MCSection *Section = getStreamer().getCurrentSectionOnly();
     assert(Section && "must have section to emit alignment");
     if (Section->UseCodeAlign()) {
-      getStreamer().emitCodeAlignment(Alignment, /*MaxBytesToEmit=*/0);
+      getStreamer().emitCodeAlignment(Alignment, &getTargetParser().getSTI(),
+                                      /*MaxBytesToEmit=*/0);
     } else {
       // FIXME: Target specific behavior about how the "extra" bytes are filled.
       getStreamer().emitValueToAlignment(Alignment, /*Value=*/0,

@@ -72,6 +72,10 @@ static cl::list<std::string>
 static cl::opt<bool>
 TimePhases("time-phases", cl::desc("Time phases of parser and backend"));
 
+static cl::opt<bool> NoWarnOnUnusedTemplateArgs(
+    "no-warn-on-unused-template-args",
+    cl::desc("Disable unused template argument warnings."));
+
 static int reportError(const char *ProgName, Error E) {
   if (!E)
     return 0;
@@ -202,7 +206,7 @@ TableGenMainImpl(TableGenMainFn *MainFn,
   // it later.
   SrcMgr.setIncludeDirs(IncludeDirs);
 
-  TGParser Parser(SrcMgr, MacroNames, Records);
+  TGParser Parser(SrcMgr, MacroNames, Records, NoWarnOnUnusedTemplateArgs);
 
   if (Parser.ParseFile())
     return make_error<AlreadyReportedError>();

@@ -10,7 +10,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/Dialect/SCF/SCF.h"
+#include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/LoopUtils.h"
@@ -31,7 +33,7 @@ static unsigned getNestingDepth(Operation *op) {
 }
 
 class TestLoopUnrollingPass
-    : public PassWrapper<TestLoopUnrollingPass, FunctionPass> {
+    : public PassWrapper<TestLoopUnrollingPass, OperationPass<FuncOp>> {
 public:
   StringRef getArgument() const final { return "test-loop-unrolling"; }
   StringRef getDescription() const final {
@@ -47,8 +49,12 @@ public:
     annotateLoop = annotateLoopParam;
   }
 
-  void runOnFunction() override {
-    FuncOp func = getFunction();
+  void getDependentDialects(DialectRegistry &registry) const override {
+    registry.insert<arith::ArithmeticDialect, StandardOpsDialect>();
+  }
+
+  void runOnOperation() override {
+    FuncOp func = getOperation();
     SmallVector<scf::ForOp, 4> loops;
     func.walk([&](scf::ForOp forOp) {
       if (getNestingDepth(forOp) == loopDepth)

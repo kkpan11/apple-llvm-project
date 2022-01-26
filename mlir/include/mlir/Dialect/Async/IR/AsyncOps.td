@@ -29,8 +29,7 @@ class Async_Op<string mnemonic, list<OpTrait> traits = []> :
 def Async_ExecuteOp :
   Async_Op<"execute", [SingleBlockImplicitTerminator<"YieldOp">,
                        DeclareOpInterfaceMethods<RegionBranchOpInterface,
-                                                 ["getSuccessorEntryOperands",
-                                                  "getNumRegionInvocations"]>,
+                                                 ["getSuccessorEntryOperands"]>,
                        AttrSizedOperandSegments]> {
   let summary = "Asynchronous execute operation";
   let description = [{
@@ -508,7 +507,7 @@ def Async_RuntimeAddRefOp : Async_Op<"runtime.add_ref"> {
   }];
 
   let arguments = (ins Async_AnyAsyncType:$operand,
-                       Confined<I32Attr, [IntPositive]>:$count);
+                       Confined<I64Attr, [IntPositive]>:$count);
 
   let assemblyFormat = [{
     $operand attr-dict `:` type($operand)
@@ -523,7 +522,7 @@ def Async_RuntimeDropRefOp : Async_Op<"runtime.drop_ref"> {
   }];
 
   let arguments = (ins Async_AnyAsyncType:$operand,
-                       Confined<I32Attr, [IntPositive]>:$count);
+                       Confined<I64Attr, [IntPositive]>:$count);
 
   let assemblyFormat = [{
     $operand attr-dict `:` type($operand)

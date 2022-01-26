@@ -35,6 +35,7 @@
 #include "llvm/MC/MCTargetOptions.h"
 #include "llvm/Support/CodeGen.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/ARMTargetParser.h"
 #include "llvm/Support/TargetParser.h"
 #include "llvm/Target/TargetOptions.h"
 
@@ -295,6 +296,7 @@ void ARMSubtarget::initSubtargetFeatures(StringRef CPU, StringRef FS) {
   case CortexA77:
   case CortexA78:
   case CortexA78C:
+  case CortexA710:
   case CortexR4:
   case CortexR4F:
   case CortexR5:

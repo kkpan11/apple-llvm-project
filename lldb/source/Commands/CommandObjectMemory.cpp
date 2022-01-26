@@ -23,6 +23,7 @@
 #include "lldb/Interpreter/Options.h"
 #include "lldb/Symbol/SymbolFile.h"
 #include "lldb/Symbol/TypeList.h"
+#include "lldb/Target/ABI.h"
 #include "lldb/Target/Language.h"
 #include "lldb/Target/MemoryHistory.h"
 #include "lldb/Target/MemoryRegionInfo.h"
@@ -47,7 +48,7 @@ using namespace lldb_private;
 class OptionGroupReadMemory : public OptionGroup {
 public:
   OptionGroupReadMemory()
-      : m_num_per_line(1, 1), m_view_as_type(), m_offset(0, 0),
+      : m_num_per_line(1, 1), m_offset(0, 0),
         m_language_for_type(eLanguageTypeUnknown) {}
 
   ~OptionGroupReadMemory() override = default;
@@ -286,12 +287,10 @@ public:
             interpreter, "memory read",
             "Read from the memory of the current target process.", nullptr,
             eCommandRequiresTarget | eCommandProcessMustBePaused),
-        m_option_group(), m_format_options(eFormatBytesWithASCII, 1, 8),
-        m_memory_options(), m_outfile_options(), m_varobj_options(),
+        m_format_options(eFormatBytesWithASCII, 1, 8),
+
         m_next_addr(LLDB_INVALID_ADDRESS), m_prev_byte_size(0),
-        m_prev_format_options(eFormatBytesWithASCII, 1, 8),
-        m_prev_memory_options(), m_prev_outfile_options(),
-        m_prev_varobj_options() {
+        m_prev_format_options(eFormatBytesWithASCII, 1, 8) {
     CommandArgumentEntry arg1;
     CommandArgumentEntry arg2;
     CommandArgumentData start_addr_arg;
@@ -590,9 +589,16 @@ protected:
       return false;
     }
 
+    ABISP abi = m_exe_ctx.GetProcessPtr()->GetABI();
+    if (abi)
+      addr = abi->FixDataAddress(addr);
+
     if (argc == 2) {
       lldb::addr_t end_addr = OptionArgParser::ToAddress(
           &m_exe_ctx, command[1].ref(), LLDB_INVALID_ADDRESS, nullptr);
+      if (end_addr != LLDB_INVALID_ADDRESS && abi)
+        end_addr = abi->FixDataAddress(end_addr);
+
       if (end_addr == LLDB_INVALID_ADDRESS) {
         result.AppendError("invalid end address expression.");
         result.AppendError(error.AsCString());
@@ -716,7 +722,7 @@ protected:
         if (item_byte_size == read) {
           result.AppendWarningWithFormat(
               "unable to find a NULL terminated string at 0x%" PRIx64
-              ".Consider increasing the maximum read length.\n",
+              ". Consider increasing the maximum read length.\n",
               data_addr);
           --read;
           break_on_no_NULL = true;
@@ -882,7 +888,7 @@ class CommandObjectMemoryFind : public CommandObjectParsed {
 public:
   class OptionGroupFindMemory : public OptionGroup {
   public:
-    OptionGroupFindMemory() : OptionGroup(), m_count(1), m_offset(0) {}
+    OptionGroupFindMemory() : m_count(1), m_offset(0) {}
 
     ~OptionGroupFindMemory() override = default;
 
@@ -936,8 +942,7 @@ public:
       : CommandObjectParsed(
             interpreter, "memory find",
             "Find a value in the memory of the current target process.",
-            nullptr, eCommandRequiresProcess | eCommandProcessMustBeLaunched),
-        m_option_group(), m_memory_options() {
+            nullptr, eCommandRequiresProcess | eCommandProcessMustBeLaunched) {
     CommandArgumentEntry arg1;
     CommandArgumentEntry arg2;
     CommandArgumentData addr_arg;
@@ -1025,6 +1030,12 @@ protected:
     if (high_addr == LLDB_INVALID_ADDRESS || error.Fail()) {
       result.AppendError("invalid high address");
       return false;
+    }
+
+    ABISP abi = m_exe_ctx.GetProcessPtr()->GetABI();
+    if (abi) {
+      low_addr = abi->FixDataAddress(low_addr);
+      high_addr = abi->FixDataAddress(high_addr);
     }
 
     if (high_addr <= low_addr) {
@@ -1170,7 +1181,7 @@ class CommandObjectMemoryWrite : public CommandObjectParsed {
 public:
   class OptionGroupWriteMemory : public OptionGroup {
   public:
-    OptionGroupWriteMemory() : OptionGroup() {}
+    OptionGroupWriteMemory() {}
 
     ~OptionGroupWriteMemory() override = default;
 
@@ -1222,8 +1233,14 @@ public:
             interpreter, "memory write",
             "Write to the memory of the current target process.", nullptr,
             eCommandRequiresProcess | eCommandProcessMustBeLaunched),
-        m_option_group(), m_format_options(eFormatBytes, 1, UINT64_MAX),
-        m_memory_options() {
+        m_format_options(
+            eFormatBytes, 1, UINT64_MAX,
+            {std::make_tuple(
+                 eArgTypeFormat,
+                 "The format to use for each of the value to be written."),
+             std::make_tuple(eArgTypeByteSize,
+                             "The size in bytes to write from input file or "
+                             "each value.")}) {
     CommandArgumentEntry arg1;
     CommandArgumentEntry arg2;
     CommandArgumentData addr_arg;
@@ -1240,6 +1257,7 @@ public:
     // Define the first (and only) variant of this arg.
     value_arg.arg_type = eArgTypeValue;
     value_arg.arg_repetition = eArgRepeatPlus;
+    value_arg.arg_opt_set_association = LLDB_OPT_SET_1;
 
     // There is only one variant this argument could be; put it into the
     // argument entry.
@@ -1275,6 +1293,12 @@ protected:
       if (argc < 1) {
         result.AppendErrorWithFormat(
             "%s takes a destination address when writing file contents.\n",
+            m_cmd_name.c_str());
+        return false;
+      }
+      if (argc > 1) {
+        result.AppendErrorWithFormat(
+            "%s takes only a destination address when writing file contents.\n",
             m_cmd_name.c_str());
         return false;
       }

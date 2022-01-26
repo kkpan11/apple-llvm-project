@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_TOOLING_DEPENDENCY_SCANNING_SERVICE_H
-#define LLVM_CLANG_TOOLING_DEPENDENCY_SCANNING_SERVICE_H
+#ifndef LLVM_CLANG_TOOLING_DEPENDENCYSCANNING_DEPENDENCYSCANNINGSERVICE_H
+#define LLVM_CLANG_TOOLING_DEPENDENCYSCANNING_DEPENDENCYSCANNINGSERVICE_H
 
 #include "clang/Tooling/DependencyScanning/DependencyScanningFilesystem.h"
 
@@ -53,7 +53,7 @@ public:
       ScanningMode Mode, ScanningOutputFormat Format,
       IntrusiveRefCntPtr<llvm::cas::CachingOnDiskFileSystem> SharedFS,
       bool ReuseFileManager = true, bool SkipExcludedPPRanges = true,
-      bool OverrideCASTokenCache = false);
+      bool OptimizeArgs = false, bool OverrideCASTokenCache = false);
 
   ~DependencyScanningService();
 
@@ -64,6 +64,8 @@ public:
   bool canReuseFileManager() const { return ReuseFileManager; }
 
   bool canSkipExcludedPPRanges() const { return SkipExcludedPPRanges; }
+
+  bool canOptimizeArgs() const { return OptimizeArgs; }
 
   bool overrideCASTokenCache() const { return OverrideCASTokenCache; }
 
@@ -77,8 +79,10 @@ private:
   /// ranges by bumping the buffer pointer in the lexer instead of lexing the
   /// tokens in the range until reaching the corresponding directive.
   const bool SkipExcludedPPRanges;
+  /// Whether to optimize the modules' command-line arguments.
+  const bool OptimizeArgs;
+  /// CAS options.
   const bool OverrideCASTokenCache;
-  /// The global file system cache.
   IntrusiveRefCntPtr<llvm::cas::CachingOnDiskFileSystem> SharedFS;
 };
 
@@ -86,4 +90,4 @@ private:
 } // end namespace tooling
 } // end namespace clang
 
-#endif // LLVM_CLANG_TOOLING_DEPENDENCY_SCANNING_SERVICE_H
+#endif // LLVM_CLANG_TOOLING_DEPENDENCYSCANNING_DEPENDENCYSCANNINGSERVICE_H

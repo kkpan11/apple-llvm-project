@@ -264,11 +264,11 @@ static SomeExpr SaveNumericPointerTarget(
     object.set_shape(arraySpec);
     object.set_init(evaluate::AsGenericExpr(evaluate::Constant<T>{
         std::move(x), evaluate::ConstantSubscripts{elements}}));
-    const Symbol &symbol{
-        *scope
-             .try_emplace(
-                 name, Attrs{Attr::TARGET, Attr::SAVE}, std::move(object))
-             .first->second};
+    Symbol &symbol{*scope
+                        .try_emplace(name, Attrs{Attr::TARGET, Attr::SAVE},
+                            std::move(object))
+                        .first->second};
+    symbol.set(Symbol::Flag::CompilerCreated);
     return evaluate::AsGenericExpr(
         evaluate::Expr<T>{evaluate::Designator<T>{symbol}});
   }
@@ -301,11 +301,11 @@ static SomeExpr SaveDerivedPointerTarget(Scope &scope, SourceName name,
     object.set_init(
         evaluate::AsGenericExpr(evaluate::Constant<evaluate::SomeDerived>{
             derivedType, std::move(x), std::move(shape)}));
-    const Symbol &symbol{
-        *scope
-             .try_emplace(
-                 name, Attrs{Attr::TARGET, Attr::SAVE}, std::move(object))
-             .first->second};
+    Symbol &symbol{*scope
+                        .try_emplace(name, Attrs{Attr::TARGET, Attr::SAVE},
+                            std::move(object))
+                        .first->second};
+    symbol.set(Symbol::Flag::CompilerCreated);
     return evaluate::AsGenericExpr(
         evaluate::Designator<evaluate::SomeDerived>{symbol});
   }
@@ -313,11 +313,12 @@ static SomeExpr SaveDerivedPointerTarget(Scope &scope, SourceName name,
 
 static SomeExpr SaveObjectInit(
     Scope &scope, SourceName name, const ObjectEntityDetails &object) {
-  const Symbol &symbol{*scope
-                            .try_emplace(name, Attrs{Attr::TARGET, Attr::SAVE},
-                                ObjectEntityDetails{object})
-                            .first->second};
+  Symbol &symbol{*scope
+                      .try_emplace(name, Attrs{Attr::TARGET, Attr::SAVE},
+                          ObjectEntityDetails{object})
+                      .first->second};
   CHECK(symbol.get<ObjectEntityDetails>().init().has_value());
+  symbol.set(Symbol::Flag::CompilerCreated);
   return evaluate::AsGenericExpr(
       evaluate::Designator<evaluate::SomeDerived>{symbol});
 }
@@ -353,7 +354,8 @@ const Symbol *RuntimeTableBuilder::DescribeType(Scope &dtScope) {
   auto locationRestorer{common::ScopedSet(location_, dtSymbol->name())};
   // Check for an existing description that can be imported from a USE'd module
   std::string typeName{dtSymbol->name().ToString()};
-  if (typeName.empty() || typeName[0] == '.') {
+  if (typeName.empty() ||
+      (typeName.front() == '.' && !context_.IsTempName(typeName))) {
     return nullptr;
   }
   std::string distinctName{typeName};
@@ -615,6 +617,7 @@ Symbol &RuntimeTableBuilder::CreateObject(
       Attrs{Attr::TARGET, Attr::SAVE}, std::move(object))};
   CHECK(pair.second);
   Symbol &result{*pair.first->second};
+  result.set(Symbol::Flag::CompilerCreated);
   return result;
 }
 
@@ -625,7 +628,7 @@ SourceName RuntimeTableBuilder::SaveObjectName(const std::string &name) {
 SomeExpr RuntimeTableBuilder::SaveNameAsPointerTarget(
     Scope &scope, const std::string &name) {
   CHECK(!name.empty());
-  CHECK(name.front() != '.');
+  CHECK(name.front() != '.' || context_.IsTempName(name));
   ObjectEntityDetails object;
   auto len{static_cast<common::ConstantSubscript>(name.size())};
   if (const auto *spec{scope.FindType(DeclTypeSpec{CharacterTypeSpec{
@@ -635,14 +638,14 @@ SomeExpr RuntimeTableBuilder::SaveNameAsPointerTarget(
     object.set_type(scope.MakeCharacterType(
         ParamValue{len, common::TypeParamAttr::Len}, KindExpr{1}));
   }
-  using Ascii = evaluate::Type<TypeCategory::Character, 1>;
+  using evaluate::Ascii;
   using AsciiExpr = evaluate::Expr<Ascii>;
   object.set_init(evaluate::AsGenericExpr(AsciiExpr{name}));
-  const Symbol &symbol{
-      *scope
-           .try_emplace(SaveObjectName(".n."s + name),
-               Attrs{Attr::TARGET, Attr::SAVE}, std::move(object))
-           .first->second};
+  Symbol &symbol{*scope
+                      .try_emplace(SaveObjectName(".n."s + name),
+                          Attrs{Attr::TARGET, Attr::SAVE}, std::move(object))
+                      .first->second};
+  symbol.set(Symbol::Flag::CompilerCreated);
   return evaluate::AsGenericExpr(
       AsciiExpr{evaluate::Designator<Ascii>{symbol}});
 }
@@ -677,6 +680,14 @@ evaluate::StructureConstructor RuntimeTableBuilder::DescribeComponent(
     len = Fold(foldingContext, std::move(len));
   }
   if (dyType.category() == TypeCategory::Character && len) {
+    // Ignore IDIM(x) (represented as MAX(0, x))
+    if (const auto *clamped{evaluate::UnwrapExpr<
+            evaluate::Extremum<evaluate::SubscriptInteger>>(*len)}) {
+      if (clamped->ordering == evaluate::Ordering::Greater &&
+          clamped->left() == evaluate::Expr<evaluate::SubscriptInteger>{0}) {
+        len = clamped->right();
+      }
+    }
     AddValue(values, componentSchema_, "characterlen"s,
         evaluate::AsGenericExpr(GetValue(len, parameters)));
   } else {
@@ -757,7 +768,7 @@ evaluate::StructureConstructor RuntimeTableBuilder::DescribeComponent(
     AddValue(values, componentSchema_, "genre"s, GetEnumValue("pointer"));
     hasDataInit = InitializeDataPointer(
         values, symbol, object, scope, dtScope, distinctName);
-  } else if (IsAutomaticObject(symbol)) {
+  } else if (IsAutomatic(symbol)) {
     AddValue(values, componentSchema_, "genre"s, GetEnumValue("automatic"));
   } else {
     AddValue(values, componentSchema_, "genre"s, GetEnumValue("data"));
@@ -819,6 +830,7 @@ bool RuntimeTableBuilder::InitializeDataPointer(
         ".dp."s + distinctName + "."s + symbol.name().ToString())};
     Symbol &ptrDtSym{
         *scope.try_emplace(ptrDtName, Attrs{}, UnknownDetails{}).first->second};
+    ptrDtSym.set(Symbol::Flag::CompilerCreated);
     Scope &ptrDtScope{scope.MakeScope(Scope::Kind::DerivedType, &ptrDtSym)};
     ignoreScopes_.insert(&ptrDtScope);
     ObjectEntityDetails ptrDtObj;
@@ -1053,7 +1065,7 @@ void RuntimeTableBuilder::IncorporateDefinedIoGenericInterfaces(
     GenericKind::DefinedIo definedIo, const Scope *scope) {
   for (; !scope->IsGlobal(); scope = &scope->parent()) {
     if (auto asst{scope->find(name)}; asst != scope->end()) {
-      const Symbol &generic{*asst->second};
+      const Symbol &generic{asst->second->GetUltimate()};
       const auto &genericDetails{generic.get<GenericDetails>()};
       CHECK(std::holds_alternative<GenericKind::DefinedIo>(
           genericDetails.kind().u));
@@ -1068,11 +1080,8 @@ void RuntimeTableBuilder::IncorporateDefinedIoGenericInterfaces(
 
 RuntimeDerivedTypeTables BuildRuntimeDerivedTypeTables(
     SemanticsContext &context) {
-  ModFileReader reader{context};
   RuntimeDerivedTypeTables result;
-  static const char schemataName[]{"__fortran_type_info"};
-  SourceName schemataModule{schemataName, std::strlen(schemataName)};
-  result.schemata = reader.Read(schemataModule);
+  result.schemata = context.GetBuiltinModule("__fortran_type_info");
   if (result.schemata) {
     RuntimeTableBuilder builder{context, result};
     builder.DescribeTypes(context.globalScope(), false);

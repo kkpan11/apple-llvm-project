@@ -18,7 +18,6 @@
 #include "llvm/Support/AlignOf.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/Endian.h"
-#include "llvm/Support/Regex.h"
 #include "llvm/Support/SMLoc.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/VersionTuple.h"
@@ -26,9 +25,6 @@
 #include "llvm/Support/raw_ostream.h"
 #include <cassert>
 #include <cctype>
-#include <cstddef>
-#include <cstdint>
-#include <iterator>
 #include <map>
 #include <memory>
 #include <new>
@@ -1641,7 +1637,7 @@ void IO::processKeyWithDefault(const char *Key, Optional<T> &Val,
     // usually None.
     bool IsNone = false;
     if (!outputting())
-      if (auto *Node = dyn_cast<ScalarNode>(((Input *)this)->getCurrentNode()))
+      if (const auto *Node = dyn_cast<ScalarNode>(((Input *)this)->getCurrentNode()))
         // We use rtrim to ignore possible white spaces that might exist when a
         // comment is present on the same line.
         IsNone = Node->getRawValue().rtrim(' ') == "<none>";

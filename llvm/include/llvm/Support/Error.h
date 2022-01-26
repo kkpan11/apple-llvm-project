@@ -14,7 +14,6 @@
 #define LLVM_SUPPORT_ERROR_H
 
 #include "llvm-c/Error.h"
-#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/Twine.h"
@@ -313,7 +312,7 @@ private:
   }
 
   friend raw_ostream &operator<<(raw_ostream &OS, const Error &E) {
-    if (auto P = E.getPtr())
+    if (auto *P = E.getPtr())
       P->log(OS);
     else
       OS << "success";
@@ -373,7 +372,7 @@ class ErrorList final : public ErrorInfo<ErrorList> {
 public:
   void log(raw_ostream &OS) const override {
     OS << "Multiple errors:\n";
-    for (auto &ErrPayload : Payloads) {
+    for (const auto &ErrPayload : Payloads) {
       ErrPayload->log(OS);
       OS << "\n";
     }
@@ -579,9 +578,9 @@ public:
 
   /// Returns \a takeError() after moving the held T (if any) into \p V.
   template <class OtherT>
-  Error moveInto(
-      OtherT &Value,
-      std::enable_if_t<std::is_assignable<OtherT &, T &&>::value> * = nullptr) {
+  Error moveInto(OtherT &Value,
+                 std::enable_if_t<std::is_assignable<OtherT &, T &&>::value> * =
+                     nullptr) && {
     if (*this)
       Value = std::move(get());
     return takeError();
@@ -1165,7 +1164,7 @@ protected:
 /// It should only be used in this situation, and should never be used where a
 /// sensible conversion to std::error_code is available, as attempts to convert
 /// to/from this error will result in a fatal error. (i.e. it is a programmatic
-///error to try to convert such a value).
+/// error to try to convert such a value).
 std::error_code inconvertibleErrorCode();
 
 /// Helper for converting an std::error_code to a Error.
@@ -1269,11 +1268,18 @@ class FileError final : public ErrorInfo<FileError> {
 
 public:
   void log(raw_ostream &OS) const override {
-    assert(Err && !FileName.empty() && "Trying to log after takeError().");
+    assert(Err && "Trying to log after takeError().");
     OS << "'" << FileName << "': ";
     if (Line.hasValue())
       OS << "line " << Line.getValue() << ": ";
     Err->log(OS);
+  }
+
+  std::string messageWithoutFileInfo() const {
+    std::string Msg;
+    raw_string_ostream OS(Msg);
+    Err->log(OS);
+    return OS.str();
   }
 
   StringRef getFileName() { return FileName; }
@@ -1289,8 +1295,6 @@ private:
   FileError(const Twine &F, Optional<size_t> LineNum,
             std::unique_ptr<ErrorInfoBase> E) {
     assert(E && "Cannot create FileError from Error success value.");
-    assert(!F.isTriviallyEmpty() &&
-           "The file name provided to FileError must not be empty.");
     FileName = F.str();
     Err = std::move(E);
     Line = std::move(LineNum);
