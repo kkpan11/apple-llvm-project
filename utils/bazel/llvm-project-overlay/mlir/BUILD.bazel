@@ -1919,13 +1919,9 @@ cc_library(
     hdrs = ["include/mlir/Dialect/SparseTensor/IR/SparseTensor.h"],
     includes = ["include"],
     deps = [
-        ":ArithmeticDialect",
         ":IR",
-        ":InferTypeOpInterface",
-        ":SideEffectInterfaces",
         ":SparseTensorAttrDefsIncGen",
         ":SparseTensorOpsIncGen",
-        ":StandardOps",
         "//llvm:Support",
     ],
 )
@@ -2186,7 +2182,11 @@ cc_library(
             "lib/Dialect/Affine/Utils/*.h",
         ],
     ),
-    hdrs = ["include/mlir/Dialect/Affine/Utils.h"],
+    hdrs = [
+        "include/mlir/Dialect/Affine/LoopFusionUtils.h",
+        "include/mlir/Dialect/Affine/LoopUtils.h",
+        "include/mlir/Dialect/Affine/Utils.h",
+    ],
     includes = ["include"],
     deps = [
         ":Affine",
@@ -2194,7 +2194,10 @@ cc_library(
         ":Analysis",
         ":IR",
         ":MemRefDialect",
+        ":SCFDialect",
+        ":Support",
         ":TransformUtils",
+        "//llvm:Support",
     ],
 )
 
@@ -2415,13 +2418,11 @@ cc_library(
         ":ControlFlowInterfaces",
         ":IR",
         ":LoopLikeInterface",
-        ":MemRefDialect",
         ":Pass",
         ":SCFIncGen",
         ":SCFPassIncGen",
         ":StandardOps",
         ":Support",
-        ":TensorDialect",
         "//llvm:Support",
     ],
 )
@@ -2466,6 +2467,7 @@ cc_library(
     deps = [
         ":IR",
         ":LoopLikeInterfaceIncGen",
+        "//llvm:Support",
     ],
 )
 
@@ -2568,8 +2570,6 @@ cc_library(
     includes = ["include"],
     deps = [
         ":ArithmeticDialect",
-        ":CallOpInterfaces",
-        ":CommonFolders",
         ":ControlFlowInterfaces",
         ":Dialect",
         ":IR",
@@ -2577,8 +2577,6 @@ cc_library(
         ":MLIRShapeCanonicalizationIncGen",
         ":ShapeOpsIncGen",
         ":SideEffectInterfaces",
-        ":StandardOps",
-        ":Support",
         ":TensorDialect",
         "//llvm:Support",
     ],
@@ -3095,8 +3093,6 @@ cc_library(
         ":LLVMDialect",
         ":MemRefDialect",
         ":SideEffectInterfaces",
-        ":StandardOps",
-        ":Support",
         "//llvm:Support",
     ],
 )
@@ -3152,6 +3148,7 @@ cc_library(
         ":ArithmeticDialect",
         ":Async",
         ":DLTIDialect",
+        ":AffineUtils",
         ":GPUDialect",
         ":GPUPassIncGen",
         ":MemRefDialect",
@@ -6098,10 +6095,8 @@ cc_library(
     ]),
     includes = ["include"],
     deps = [
-        ":ArithmeticDialect",
         ":IR",
         ":OpenACCOpsIncGen",
-        ":StandardOps",
         ":Transforms",
         "//llvm:Support",
     ],
@@ -6246,8 +6241,6 @@ cc_library(
         ":LLVMDialect",
         ":OpenMPInterfacesIncGen",
         ":OpenMPOpsIncGen",
-        ":SideEffectInterfaces",
-        ":StandardOps",
         "//llvm:Support",
     ],
 )
@@ -6416,7 +6409,6 @@ cc_library(
         ":QuantOpsIncGen",
         ":QuantPassIncGen",
         ":SideEffectInterfaces",
-        ":StandardOps",
         ":TransformUtils",
         "//llvm:Support",
     ],
@@ -6599,6 +6591,7 @@ cc_library(
     deps = [
         ":ArithmeticDialect",
         ":BufferizationDialect",
+        ":BufferizationTransforms",
         ":IR",
         ":MemRefDialect",
         ":Support",
@@ -7836,6 +7829,7 @@ cc_library(
     includes = ["include"],
     deps = [
         ":Affine",
+        ":AffineUtils",
         ":ArithmeticDialect",
         ":IR",
         ":InferTypeOpInterface",
@@ -8007,12 +8001,14 @@ cc_library(
     deps = [
         ":AllocationOpInterface",
         ":Analysis",
+        ":ArithmeticDialect",
         ":BufferizationDialect",
         ":BufferizationPassIncGen",
         ":ControlFlowInterfaces",
         ":DialectUtils",
         ":IR",
         ":InferTypeOpInterface",
+        ":LoopLikeInterface",
         ":MemRefDialect",
         ":Pass",
         ":StandardOps",
@@ -8171,8 +8167,8 @@ cc_library(
     hdrs = glob(["include/mlir/Tools/PDLL/AST/*.h"]),
     includes = ["include"],
     deps = [
+        ":Support",
         "//llvm:Support",
-        "//mlir:Support",
     ],
 )
 

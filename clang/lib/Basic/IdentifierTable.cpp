@@ -310,6 +310,15 @@ IdentifierInfo::isReserved(const LangOptions &LangOpts) const {
 }
 
 namespace clang {
+
+StringRef IdentifierInfo::deuglifiedName() const {
+  StringRef Name = getName();
+  if (Name.size() >= 2 && Name.front() == '_' &&
+      (Name[1] == '_' || (Name[1] >= 'A' && Name[1] <= 'Z')))
+    return Name.ltrim('_');
+  return Name;
+}
+
 // FIXME: Expose a class-static version of this, instead of hacking a secret
 // global function into the source file. When exposing, should handle "#if"
 // that isn't null-terminated.
