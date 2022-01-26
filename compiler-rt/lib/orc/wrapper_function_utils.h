@@ -352,109 +352,6 @@ public:
   using WrapperFunction<SPSEmpty(SPSTagTs...)>::handle;
 };
 
-<<<<<<< HEAD
-/// A function object that takes an ExecutorAddr as its first argument,
-/// casts that address to a ClassT*, then calls the given method on that
-/// pointer passing in the remaining function arguments. This utility
-/// removes some of the boilerplate from writing wrappers for method calls.
-///
-///   @code{.cpp}
-///   class MyClass {
-///   public:
-///     void myMethod(uint32_t, bool) { ... }
-///   };
-///
-///   // SPS Method signature -- note MyClass object address as first argument.
-///   using SPSMyMethodWrapperSignature =
-///     SPSTuple<SPSExecutorAddr, uint32_t, bool>;
-///
-///   WrapperFunctionResult
-///   myMethodCallWrapper(const char *ArgData, size_t ArgSize) {
-///     return WrapperFunction<SPSMyMethodWrapperSignature>::handle(
-///        ArgData, ArgSize, makeMethodWrapperHandler(&MyClass::myMethod));
-///   }
-///   @endcode
-///
-template <typename RetT, typename ClassT, typename... ArgTs>
-class MethodWrapperHandler {
-public:
-  using MethodT = RetT (ClassT::*)(ArgTs...);
-  MethodWrapperHandler(MethodT M) : M(M) {}
-  RetT operator()(ExecutorAddr ObjAddr, ArgTs &...Args) {
-    return (ObjAddr.toPtr<ClassT *>()->*M)(std::forward<ArgTs>(Args)...);
-  }
-
-private:
-  MethodT M;
-};
-
-/// Create a MethodWrapperHandler object from the given method pointer.
-template <typename RetT, typename ClassT, typename... ArgTs>
-MethodWrapperHandler<RetT, ClassT, ArgTs...>
-makeMethodWrapperHandler(RetT (ClassT::*Method)(ArgTs...)) {
-  return MethodWrapperHandler<RetT, ClassT, ArgTs...>(Method);
-}
-
-/// Represents a call to a wrapper function.
-struct WrapperFunctionCall {
-  ExecutorAddr Func;
-  ExecutorAddrRange ArgData;
-
-  WrapperFunctionCall() = default;
-  WrapperFunctionCall(ExecutorAddr Func, ExecutorAddrRange ArgData)
-      : Func(Func), ArgData(ArgData) {}
-
-  /// Run and return result as WrapperFunctionResult.
-  WrapperFunctionResult run() {
-    WrapperFunctionResult WFR(
-        Func.toPtr<__orc_rt_CWrapperFunctionResult (*)(const char *, size_t)>()(
-            ArgData.Start.toPtr<const char *>(),
-            static_cast<size_t>(ArgData.size().getValue())));
-    return WFR;
-  }
-
-  /// Run call and deserialize result using SPS.
-  template <typename SPSRetT, typename RetT> Error runWithSPSRet(RetT &RetVal) {
-    auto WFR = run();
-    if (const char *ErrMsg = WFR.getOutOfBandError())
-      return make_error<StringError>(ErrMsg);
-    SPSInputBuffer IB(WFR.data(), WFR.size());
-    if (!SPSSerializationTraits<SPSRetT, RetT>::deserialize(IB, RetVal))
-      return make_error<StringError>("Could not deserialize result from "
-                                     "serialized wrapper function call");
-    return Error::success();
-  }
-
-  /// Overload for SPS functions returning void.
-  Error runWithSPSRet() {
-    SPSEmpty E;
-    return runWithSPSRet<SPSEmpty>(E);
-  }
-};
-
-class SPSWrapperFunctionCall {};
-
-template <>
-class SPSSerializationTraits<SPSWrapperFunctionCall, WrapperFunctionCall> {
-public:
-  static size_t size(const WrapperFunctionCall &WFC) {
-    return SPSArgList<SPSExecutorAddr, SPSExecutorAddrRange>::size(WFC.Func,
-                                                                   WFC.ArgData);
-  }
-
-  static bool serialize(SPSOutputBuffer &OB, const WrapperFunctionCall &WFC) {
-    return SPSArgList<SPSExecutorAddr, SPSExecutorAddrRange>::serialize(
-        OB, WFC.Func, WFC.ArgData);
-  }
-
-  static bool deserialize(SPSInputBuffer &IB, WrapperFunctionCall &WFC) {
-    return SPSArgList<SPSExecutorAddr, SPSExecutorAddrRange>::deserialize(
-        IB, WFC.Func, WFC.ArgData);
-  }
-};
-
-||||||| 11b7ee974a69
-=======
 /// A function object that takes an ExecutorAddr as its first argument,
 /// casts that address to a ClassT*, then calls the given method on that
 /// pointer passing in the remaining function arguments. This utility
@@ -602,7 +499,6 @@ public:
   }
 };
 
->>>>>>> llvm.org/main
 } // end namespace __orc_rt
 
 #endif // ORC_RT_WRAPPER_FUNCTION_UTILS_H

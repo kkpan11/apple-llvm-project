@@ -488,15 +488,10 @@ if(APPLE)
           list(APPEND PROFILE_SUPPORTED_OS ${platform}sim)
           list(APPEND TSAN_SUPPORTED_OS ${platform}sim)
           list(APPEND FUZZER_SUPPORTED_OS ${platform}sim)
-<<<<<<< HEAD
-          list(APPEND ORC_SUPPORTED_OS ${platform}sim)
-||||||| 11b7ee974a69
-=======
           list(APPEND ORC_SUPPORTED_OS ${platform}sim)
           list(APPEND UBSAN_SUPPORTED_OS ${platform}sim)
           list(APPEND LSAN_SUPPORTED_OS ${platform}sim)
           list(APPEND STATS_SUPPORTED_OS ${platform}sim)
->>>>>>> llvm.org/main
         endif()
         foreach(arch ${DARWIN_${platform}sim_ARCHS})
           list(APPEND COMPILER_RT_SUPPORTED_ARCH ${arch})
@@ -527,15 +522,10 @@ if(APPLE)
             list(APPEND TSAN_SUPPORTED_OS ${platform})
           endif()
           list(APPEND FUZZER_SUPPORTED_OS ${platform})
-<<<<<<< HEAD
-          list(APPEND ORC_SUPPORTED_OS ${platform})
-||||||| 11b7ee974a69
-=======
           list(APPEND ORC_SUPPORTED_OS ${platform})
           list(APPEND UBSAN_SUPPORTED_OS ${platform})
           list(APPEND LSAN_SUPPORTED_OS ${platform})
           list(APPEND STATS_SUPPORTED_OS ${platform})
->>>>>>> llvm.org/main
         endif()
         foreach(arch ${DARWIN_${platform}_ARCHS})
           list(APPEND COMPILER_RT_SUPPORTED_ARCH ${arch})
