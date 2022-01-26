@@ -263,12 +263,8 @@ class TestCase(TestBase):
             'targets',
             'totalSymbolTableParseTime',
             'totalSymbolTableIndexTime',
-            'totalSymbolTablesLoadedFromCache',
-            'totalSymbolTablesSavedToCache',
             'totalDebugInfoParseTime',
             'totalDebugInfoIndexTime',
-            'totalDebugInfoIndexLoadedFromCache',
-            'totalDebugInfoIndexSavedToCache',
             'totalDebugInfoByteSize'
         ]
         self.verify_keys(debug_stats, '"debug_stats"', debug_stat_keys, None)
