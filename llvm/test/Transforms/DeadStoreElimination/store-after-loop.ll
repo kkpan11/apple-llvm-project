@@ -7,6 +7,7 @@ target datalayout = "E-m:e-p:32:32-i64:32-f64:32:64-a:0:32-n32-S32"
 
 ; There is no dead store in this test. Make sure no store is deleted by DSE.
 ; Test case related to bug report PR52774.
+; NOTE: Showing actual (broken) DSE behavior.
 
 define %struct.ilist* @test() {
 ; CHECK-LABEL: @test(
