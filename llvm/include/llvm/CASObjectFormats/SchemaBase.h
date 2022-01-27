@@ -16,6 +16,10 @@
 namespace llvm {
 namespace casobjectformats {
 
+namespace reader {
+class CASObjectReader;
+}
+
 /// Schema base class for object files.
 ///
 /// All calls are expected to be thread-safe.
@@ -48,6 +52,9 @@ public:
   /// character. The caller should ensure that the parent node is in the schema
   /// before calling this.
   virtual bool isNode(const cas::NodeRef &Node) const = 0;
+
+  virtual Expected<std::unique_ptr<reader::CASObjectReader>>
+  createObjectReader(cas::NodeRef RootNode) const = 0;
 
   Expected<cas::NodeRef>
   createFromLinkGraph(const jitlink::LinkGraph &G,
@@ -95,6 +102,9 @@ public:
   ///
   /// Thread-safe.
   SchemaBase *getSchemaForRoot(cas::NodeRef Node) const;
+
+  Expected<std::unique_ptr<reader::CASObjectReader>>
+  createObjectReader(cas::CASID ID) const;
 
   cas::CASDB &getCAS() const { return Schemas.front()->CAS; }
 

@@ -483,8 +483,8 @@ static Expected<InputFile *> addCASObject(SchemaPool &CASSchemas, CASID ID,
   }
   InputFile *newFile = nullptr;
 
-  newFile = make<CASSchemaFile>(CASSchemas, ID, path);
-  if (Error E = cast<CASSchemaFile>(newFile)->parse())
+  newFile = make<CASSchemaFile>(path);
+  if (Error E = cast<CASSchemaFile>(newFile)->parse(CASSchemas, ID))
     return std::move(E);
 
   if (newFile) {

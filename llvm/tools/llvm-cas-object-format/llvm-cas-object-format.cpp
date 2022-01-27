@@ -8,10 +8,12 @@
 
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/ScopeExit.h"
-#include "llvm/CAS/Utils.h"
 #include "llvm/CAS/HierarchicalTreeBuilder.h"
+#include "llvm/CAS/Utils.h"
+#include "llvm/CASObjectFormats/CASObjectReader.h"
 #include "llvm/CASObjectFormats/FlatV1.h"
 #include "llvm/CASObjectFormats/NestedV1.h"
+#include "llvm/CASObjectFormats/Utils.h"
 #include "llvm/ExecutionEngine/JITLink/ELF_x86_64.h"
 #include "llvm/ExecutionEngine/JITLink/JITLink.h"
 #include "llvm/ExecutionEngine/JITLink/MachO_x86_64.h"
@@ -72,6 +74,7 @@ enum InputKind {
   IngestFromFS,
   IngestFromCASTree,
   AnalysisCASTree,
+  PrintCASObject,
 };
 
 cl::opt<InputKind> InputFileKind(
@@ -81,7 +84,9 @@ cl::opt<InputKind> InputFileKind(
                clEnumValN(IngestFromCASTree, "ingest-cas",
                           "ingest object files from cas tree"),
                clEnumValN(AnalysisCASTree, "analysis-only",
-                          "analyze converted objects from cas tree")),
+                          "analyze converted objects from cas tree"),
+               clEnumValN(PrintCASObject, "print-cas-object",
+                          "print cas object from cas ID")),
     cl::init(InputKind::IngestFromFS));
 
 namespace {
@@ -115,6 +120,7 @@ createSchema(CASDB &CAS, StringRef SchemaName) {
 static CASID ingestFile(SchemaBase &Schema, StringRef InputFile,
                         MemoryBufferRef FileContent, SharedStream &OS);
 static void computeStats(CASDB &CAS, ArrayRef<CASID> IDs);
+static Error printCASObjectOrTree(SchemaPool &Pool, CASID ID);
 
 int main(int argc, char *argv[]) {
   ExitOnError ExitOnErr;
@@ -139,6 +145,7 @@ int main(int argc, char *argv[]) {
     PoolStrategy.ThreadsRequested = NumThreads;
   ThreadPool Pool(PoolStrategy);
 
+  SchemaPool SchemaPool(*CAS);
   StringMap<CASID> Files;
   SmallVector<CASID> SummaryIDs;
   SharedStream OS(outs());
@@ -156,6 +163,12 @@ int main(int argc, char *argv[]) {
     case AnalysisCASTree: {
       auto ID = ExitOnErr(CAS->parseCASID(IF));
       SummaryIDs.emplace_back(ID);
+      break;
+    }
+
+    case PrintCASObject: {
+      auto ID = ExitOnErr(CAS->parseCASID(IF));
+      ExitOnErr(printCASObjectOrTree(SchemaPool, ID));
       break;
     }
 
@@ -672,6 +685,34 @@ void StatCollector::printToOuts(ArrayRef<CASID> TopLevels) {
   printIfNotZero("num-zero-fill-blocks", NumZeroFillBlocks);
   printIfNotZero("num-1-target-blocks", Num2TargetBlocks);
   printIfNotZero("num-2-target-blocks", Num1TargetBlocks);
+}
+
+static Error printCASObject(SchemaPool &Pool, CASID ID) {
+  auto Reader = Pool.createObjectReader(ID);
+  if (Error E = Reader.takeError())
+    return E;
+  return printCASObject(**Reader, outs());
+}
+
+static Error printCASObjectOrTree(SchemaPool &Pool, CASID ID) {
+  Expected<TreeRef> ExpTree = Pool.getCAS().getTree(ID);
+  if (Error E = ExpTree.takeError()) {
+    // Not a tree.
+    return printCASObject(Pool, ID);
+  }
+
+  return walkFileTreeRecursively(
+      Pool.getCAS(), ID,
+      [&](const NamedTreeEntry &entry, Optional<TreeRef>) -> Error {
+        if (entry.getKind() == TreeEntry::Tree)
+          return Error::success();
+        if (entry.getKind() != TreeEntry::Regular) {
+          return createStringError(inconvertibleErrorCode(),
+                                   "found non-regular entry: " +
+                                       entry.getName());
+        }
+        return printCASObject(Pool, entry.getID());
+      });
 }
 
 static void dumpGraph(jitlink::LinkGraph &G, SharedStream &OS, StringRef Desc) {

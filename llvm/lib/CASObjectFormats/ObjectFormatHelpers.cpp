@@ -209,6 +209,10 @@ bool helpers::compareSymbolsByLinkageAndSemantics(const jitlink::Symbol *LHS,
   if (LHS == RHS)
     return false;
 
+  // Put defined symbols ahead.
+  if (LHS->isDefined() != RHS->isDefined())
+    return LHS->isDefined();
+
   // Put locals last.
   if (LHS->getScope() != RHS->getScope())
     return LHS->getScope() < RHS->getScope();

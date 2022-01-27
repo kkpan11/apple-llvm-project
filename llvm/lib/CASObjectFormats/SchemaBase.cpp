@@ -27,3 +27,15 @@ SchemaBase *SchemaPool::getSchemaForRoot(cas::NodeRef Node) const {
   }
   return nullptr;
 }
+
+Expected<std::unique_ptr<reader::CASObjectReader>>
+SchemaPool::createObjectReader(cas::CASID ID) const {
+  Expected<cas::NodeRef> Ref = getCAS().getNode(ID);
+  if (auto E = Ref.takeError())
+    return std::move(E);
+  SchemaBase *Schema = getSchemaForRoot(*Ref);
+  if (!Schema)
+    return createStringError(inconvertibleErrorCode(),
+                             "CAS object is not a recognized object file");
+  return Schema->createObjectReader(*Ref);
+}

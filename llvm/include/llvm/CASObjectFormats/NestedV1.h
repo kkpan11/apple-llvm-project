@@ -107,6 +107,9 @@ public:
   /// before calling this.
   bool isNode(const cas::NodeRef &Node) const override;
 
+  Expected<std::unique_ptr<reader::CASObjectReader>>
+  createObjectReader(cas::NodeRef RootNode) const override;
+
   Expected<cas::NodeRef>
   createFromLinkGraphImpl(const jitlink::LinkGraph &G,
                           raw_ostream *DebugOS) const override;
@@ -491,6 +494,7 @@ public:
 
   bool hasEdges() const { return Flags.HasEdges; }
   bool hasAbstractBackedge() const { return Flags.HasAbstractBackedge; }
+  bool hasKeepAliveEdge() const { return Flags.HasKeepAliveEdge; }
 
   cas::CASID getSectionID() const { return getReference(0); }
   cas::CASID getDataID() const { return getReference(1); }
@@ -517,13 +521,14 @@ public:
 
   static Expected<BlockRef> create(const ObjectFileSchema &Schema,
                                    SectionRef Section, BlockDataRef Data) {
-    return createImpl(Schema, Section, Data, None, None);
+    return createImpl(Schema, Section, Data, None, None, None);
   }
   static Expected<BlockRef> create(const ObjectFileSchema &Schema,
                                    SectionRef Section, BlockDataRef Data,
                                    ArrayRef<TargetInfo> TargetInfo,
-                                   ArrayRef<TargetRef> Targets) {
-    return createImpl(Schema, Section, Data, TargetInfo, Targets);
+                                   ArrayRef<TargetRef> Targets,
+                                   ArrayRef<Fixup> Fixups) {
+    return createImpl(Schema, Section, Data, TargetInfo, Targets, Fixups);
   }
 
   static Expected<BlockRef> get(Expected<ObjectFormatNodeRef> Ref);
@@ -542,6 +547,7 @@ private:
     bool HasTargetInline = false;
     bool HasAbstractBackedge = false;
     bool HasEmbeddedTargetInfo = false;
+    bool HasKeepAliveEdge = false;
   };
   BlockFlags Flags;
 
@@ -550,7 +556,8 @@ private:
   static Expected<BlockRef> createImpl(const ObjectFileSchema &Schema,
                                        SectionRef Section, BlockDataRef Data,
                                        ArrayRef<TargetInfo> TargetInfo,
-                                       ArrayRef<TargetRef> Targets);
+                                       ArrayRef<TargetRef> Targets,
+                                       ArrayRef<Fixup> Fixups);
 };
 
 /// A symbol.
@@ -937,6 +944,8 @@ public:
   Expected<NameListRef> getWeakExternals() const {
     return NameListRef::get(getSchema().getNode(getWeakExternalsID()));
   }
+
+  Expected<std::unique_ptr<reader::CASObjectReader>> createObjectReader();
 
   /// Eagerly parse the full compile unit to create a LinkGraph.
   ///

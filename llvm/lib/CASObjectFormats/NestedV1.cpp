@@ -9,11 +9,13 @@
 #include "llvm/CASObjectFormats/NestedV1.h"
 #include "llvm/ADT/PointerUnion.h"
 #include "llvm/ADT/PostOrderIterator.h"
+#include "llvm/CASObjectFormats/CASObjectReader.h"
 #include "llvm/CASObjectFormats/Encoding.h"
 #include "llvm/CASObjectFormats/ObjectFormatHelpers.h"
 #include "llvm/ExecutionEngine/JITLink/MemoryFlags.h"
 #include "llvm/ExecutionEngine/Orc/Shared/ExecutorAddress.h"
 #include "llvm/Support/EndianStream.h"
+#include "llvm/Support/Mutex.h"
 
 // FIXME: For cl::opt. Should thread through or delete.
 #include "llvm/Support/CommandLine.h"
@@ -21,6 +23,7 @@
 using namespace llvm;
 using namespace llvm::casobjectformats;
 using namespace llvm::casobjectformats::nestedv1;
+using namespace llvm::casobjectformats::reader;
 
 constexpr StringLiteral NameRef::KindString;
 constexpr StringLiteral BlockDataRef::KindString;
@@ -60,10 +63,169 @@ constexpr StringLiteral EncodedDataRef::KindString;
 
 void ObjectFileSchema::anchor() {}
 
+namespace {
+
+class NestedV1ObjectReader;
+
+class SymbolNodeRefBase {
+public:
+  virtual Expected<CASSymbol>
+  materialize(const NestedV1ObjectReader &Reader) const = 0;
+
+  virtual ~SymbolNodeRefBase() = default;
+};
+
+class ExternalSymbolNodeRef : public SymbolNodeRefBase {
+public:
+  NameRef SymbolName;
+  jitlink::Linkage Linkage;
+
+  ExternalSymbolNodeRef(NameRef SymbolName, jitlink::Linkage Linkage)
+      : SymbolName(std::move(SymbolName)), Linkage(Linkage) {}
+
+  Expected<CASSymbol>
+  materialize(const NestedV1ObjectReader &Reader) const override;
+};
+
+class DefinedSymbolNodeRef : public SymbolNodeRefBase {
+public:
+  SymbolRef Symbol;
+  Optional<CASSymbolRef> KeptAliveBySymbol;
+
+  DefinedSymbolNodeRef(SymbolRef Symbol,
+                       Optional<CASSymbolRef> KeptAliveBySymbol)
+      : Symbol(std::move(Symbol)),
+        KeptAliveBySymbol(std::move(KeptAliveBySymbol)) {}
+
+  Expected<CASSymbol>
+  materialize(const NestedV1ObjectReader &Reader) const override;
+};
+
+class BlockNodeRef {
+public:
+  Optional<CASSymbolRef> ForSymbol;
+  BlockRef Block;
+  Optional<CASSymbolRef> KeptAliveBySymbol;
+
+  BlockNodeRef(Optional<CASSymbolRef> ForSymbol, BlockRef Block,
+               Optional<CASSymbolRef> KeptAliveBySymbol)
+      : ForSymbol(std::move(ForSymbol)), Block(std::move(Block)),
+        KeptAliveBySymbol(std::move(KeptAliveBySymbol)) {}
+
+  Expected<CASBlock> materialize(const NestedV1ObjectReader &Reader) const;
+  Error
+  materializeFixups(const NestedV1ObjectReader &Reader,
+                    function_ref<Error(const CASBlockFixup &)> Callback) const;
+};
+
+class SectionNodeRef {
+public:
+  SectionRef Section;
+
+  SectionNodeRef(SectionRef Section) : Section(std::move(Section)) {}
+
+  Expected<CASSection> materialize() const;
+};
+
+class NestedV1ObjectReader final : public CASObjectReader {
+public:
+  explicit NestedV1ObjectReader(CompileUnitRef CURef)
+      : CURef(std::move(CURef)) {}
+
+  Triple getTargetTriple() const override { return CURef.getTargetTriple(); }
+
+  Error forEachSymbol(
+      function_ref<Error(CASSymbolRef, CASSymbol)> Callback) const override;
+
+  Expected<CASSection> materialize(CASSectionRef Ref) const override {
+    auto NodeRef = static_cast<SectionNodeRef *>((void *)Ref.Idx);
+    return NodeRef->materialize();
+  }
+
+  Expected<CASBlock> materialize(CASBlockRef Ref) const override {
+    auto NodeRef = static_cast<BlockNodeRef *>((void *)Ref.Idx);
+    return NodeRef->materialize(*this);
+  }
+
+  Expected<CASSymbol> materialize(CASSymbolRef Ref) const override {
+    auto NodeRef = static_cast<SymbolNodeRefBase *>((void *)Ref.Idx);
+    return NodeRef->materialize(*this);
+  }
+
+  Error materializeFixups(
+      CASBlockRef Ref,
+      function_ref<Error(const CASBlockFixup &)> Callback) const override {
+    auto NodeRef = static_cast<BlockNodeRef *>((void *)Ref.Idx);
+    return NodeRef->materializeFixups(*this, std::move(Callback));
+  }
+
+  template <class RefT> struct TypedID {
+    cas::CASID ID;
+    operator cas::CASID() const { return ID; }
+    TypedID(RefT Ref) : ID(Ref.getID()) {}
+
+  private:
+    friend struct DenseMapInfo<TypedID>;
+    explicit TypedID(cas::CASID ID) : ID(ID) {}
+  };
+
+  using TargetID = TypedID<TargetRef>;
+  using SectionID = TypedID<SectionRef>;
+
+  Expected<CASSymbolRef>
+  getOrCreateCASSymbolRef(Expected<SymbolRef> Symbol,
+                          Optional<CASSymbolRef> KeptAliveBySymbol) const;
+  Expected<CASBlockRef> getOrCreateCASBlockRef(
+      const DefinedSymbolNodeRef &ForSymbol, Expected<BlockRef> Block,
+      Optional<CASSymbolRef> KeptAliveBySymbol, bool MergeByContent) const;
+  Expected<CASSectionRef>
+  getOrCreateCASSectionRef(Expected<SectionRef> Section) const;
+
+  Optional<CASSymbolRef> getCASSymbolRefByName(StringRef Name) const;
+
+private:
+  Error forEachExternalSymbol(
+      Expected<NameListRef> ExternalSymbols, jitlink::Linkage Linkage,
+      function_ref<Error(CASSymbolRef, CASSymbol)> Callback) const;
+
+  Expected<CASSymbolRef>
+  getOrCreateExternalCASSymbolRef(const ObjectFileSchema &Schema,
+                                  Expected<NameRef> SymbolName,
+                                  jitlink::Linkage Linkage) const;
+
+  Error
+  forEachSymbol(Expected<SymbolTableRef> Table,
+                function_ref<Error(CASSymbolRef, CASSymbol)> Callback) const;
+
+  CompileUnitRef CURef;
+
+  mutable sys::Mutex SymbolsLock;
+  mutable DenseMap<TargetID, std::unique_ptr<SymbolNodeRefBase>> Symbols;
+  mutable DenseMap<StringRef, CASSymbolRef> SymbolsByName;
+
+  mutable sys::Mutex BlocksLock;
+  mutable DenseMap<cas::CASID, std::unique_ptr<BlockNodeRef>> Blocks;
+
+  mutable sys::Mutex SectionsLock;
+  mutable DenseMap<SectionID, std::unique_ptr<SectionNodeRef>> Sections;
+};
+
+} // anonymous namespace
+
 Expected<cas::NodeRef>
 ObjectFileSchema::createFromLinkGraphImpl(const jitlink::LinkGraph &G,
                                           raw_ostream *DebugOS) const {
   return CompileUnitRef::create(*this, G, DebugOS);
+}
+
+Expected<std::unique_ptr<CASObjectReader>>
+ObjectFileSchema::createObjectReader(cas::NodeRef RootNode) const {
+  if (!isRootNode(RootNode))
+    return createStringError(inconvertibleErrorCode(), "invalid root node");
+  auto CU = CompileUnitRef::get(*this, RootNode);
+  if (!CU)
+    return CU.takeError();
+  return CU->createObjectReader();
 }
 
 Expected<std::unique_ptr<jitlink::LinkGraph>>
@@ -667,7 +829,7 @@ Expected<BlockRef> BlockRef::create(
   Expected<BlockDataRef> Data = BlockDataRef::create(Schema, Block, Fixups);
   if (!Data)
     return Data.takeError();
-  return createImpl(Schema, *Section, *Data, TIs, Targets);
+  return createImpl(Schema, *Section, *Data, TIs, Targets, Fixups);
 }
 
 cl::opt<bool>
@@ -678,7 +840,8 @@ cl::opt<bool>
 Expected<BlockRef> BlockRef::createImpl(const ObjectFileSchema &Schema,
                                         SectionRef Section, BlockDataRef Data,
                                         ArrayRef<TargetInfo> TargetInfo,
-                                        ArrayRef<TargetRef> Targets) {
+                                        ArrayRef<TargetRef> Targets,
+                                        ArrayRef<Fixup> Fixups) {
   Expected<Builder> B = Builder::startNode(Schema, KindString);
   if (!B)
     return B.takeError();
@@ -689,6 +852,11 @@ Expected<BlockRef> BlockRef::createImpl(const ObjectFileSchema &Schema,
   for (const auto &TI : TargetInfo) {
     assert(TI.Index <= Targets.size() && "Target index out of range");
     HasAbstractBackedge |= TI.Index == Targets.size();
+  }
+
+  bool HasKeepAliveEdge = false;
+  for (const auto &F : Fixups) {
+    HasKeepAliveEdge |= (F.Kind == jitlink::Edge::KeepAlive);
   }
 
   if (TargetInfo.empty()) {
@@ -716,6 +884,7 @@ Expected<BlockRef> BlockRef::createImpl(const ObjectFileSchema &Schema,
   Bits |= unsigned(HasTargetInline) << 2;
   Bits |= unsigned(HasAbstractBackedge) << 3;
   Bits |= unsigned(HasEmbeddedTargetInfo) << 4;
+  Bits |= unsigned(HasKeepAliveEdge) << 5;
   B->Data.push_back(static_cast<unsigned char>(Bits));
 
   if (HasEmbeddedTargetInfo) {
@@ -749,6 +918,7 @@ Expected<BlockRef> BlockRef::get(Expected<ObjectFormatNodeRef> Ref) {
   B.Flags.HasTargetInline = Bits & (1U << 2);
   B.Flags.HasAbstractBackedge = Bits & (1U << 3);
   B.Flags.HasEmbeddedTargetInfo = Bits & (1U << 4);
+  B.Flags.HasKeepAliveEdge = Bits & (1U << 5);
   return B;
 }
 
@@ -1735,7 +1905,44 @@ struct DenseMapInfo<LinkGraphBuilder::TypedID<RefT>>
         DenseMapInfo<cas::CASID>::getTombstoneKey()};
   }
 };
+template <class RefT>
+struct DenseMapInfo<NestedV1ObjectReader::TypedID<RefT>>
+    : public DenseMapInfo<cas::CASID> {
+  static NestedV1ObjectReader::TypedID<RefT> getEmptyKey() {
+    return NestedV1ObjectReader::TypedID<RefT>{
+        DenseMapInfo<cas::CASID>::getEmptyKey()};
+  }
+
+  static NestedV1ObjectReader::TypedID<RefT> getTombstoneKey() {
+    return NestedV1ObjectReader::TypedID<RefT>{
+        DenseMapInfo<cas::CASID>::getTombstoneKey()};
+  }
+};
 } // namespace llvm
+
+Expected<std::unique_ptr<CASObjectReader>>
+CompileUnitRef::createObjectReader() {
+  return std::make_unique<NestedV1ObjectReader>(*this);
+}
+
+Error NestedV1ObjectReader::forEachSymbol(
+    function_ref<Error(CASSymbolRef, CASSymbol)> Callback) const {
+  if (Error E = forEachExternalSymbol(CURef.getStrongExternals(),
+                                      jitlink::Linkage::Strong, Callback))
+    return E;
+  if (Error E = forEachExternalSymbol(CURef.getWeakExternals(),
+                                      jitlink::Linkage::Weak, Callback))
+    return E;
+  if (Error E = forEachSymbol(CURef.getIndirectAnonymous(), Callback))
+    return E;
+  if (Error E = forEachSymbol(CURef.getIndirectDeadStripCompile(), Callback))
+    return E;
+  if (Error E = forEachSymbol(CURef.getDeadStripLink(), Callback))
+    return E;
+  if (Error E = forEachSymbol(CURef.getDeadStripNever(), Callback))
+    return E;
+  return Error::success();
+}
 
 Expected<std::unique_ptr<jitlink::LinkGraph>> CompileUnitRef::createLinkGraph(
     StringRef Name,
@@ -1800,6 +2007,25 @@ Expected<std::unique_ptr<jitlink::LinkGraph>> CompileUnitRef::createLinkGraph(
   return std::move(G);
 }
 
+Error NestedV1ObjectReader::forEachExternalSymbol(
+    Expected<NameListRef> ExternalSymbols, jitlink::Linkage Linkage,
+    function_ref<Error(CASSymbolRef, CASSymbol)> Callback) const {
+  if (!ExternalSymbols)
+    return ExternalSymbols.takeError();
+  for (size_t I = 0, E = ExternalSymbols->getNumNames(); I != E; ++I) {
+    auto CASSymRef = getOrCreateExternalCASSymbolRef(
+        ExternalSymbols->getSchema(), ExternalSymbols->getName(I), Linkage);
+    if (!CASSymRef)
+      return CASSymRef.takeError();
+    auto CASSym = materialize(*CASSymRef);
+    if (!CASSym)
+      return CASSym.takeError();
+    if (Error Err = Callback(*CASSymRef, *CASSym))
+      return Err;
+  }
+  return Error::success();
+}
+
 Error LinkGraphBuilder::makeExternalSymbols(
     Expected<NameListRef> ExternalSymbols, jitlink::Linkage Linkage) {
   assert(!ForwardDeclaredBlock &&
@@ -1813,6 +2039,24 @@ Error LinkGraphBuilder::makeExternalSymbols(
   return Error::success();
 }
 
+Error NestedV1ObjectReader::forEachSymbol(
+    Expected<SymbolTableRef> Table,
+    function_ref<Error(CASSymbolRef, CASSymbol)> Callback) const {
+  if (!Table)
+    return Table.takeError();
+  for (size_t I = 0, E = Table->getNumSymbols(); I != E; ++I) {
+    auto CASSymRef = getOrCreateCASSymbolRef(Table->getSymbol(I), None);
+    if (!CASSymRef)
+      return CASSymRef.takeError();
+    auto CASSym = materialize(*CASSymRef);
+    if (!CASSym)
+      return CASSym.takeError();
+    if (Error Err = Callback(*CASSymRef, *CASSym))
+      return Err;
+  }
+  return Error::success();
+}
+
 Error LinkGraphBuilder::makeSymbols(Expected<SymbolTableRef> Table) {
   if (!Table)
     return Table.takeError();
@@ -1820,6 +2064,60 @@ Error LinkGraphBuilder::makeSymbols(Expected<SymbolTableRef> Table) {
     if (Error E = makeSymbol(Table->getSymbol(I)))
       return E;
   return Error::success();
+}
+
+Expected<CASSymbolRef> NestedV1ObjectReader::getOrCreateExternalCASSymbolRef(
+    const ObjectFileSchema &Schema, Expected<NameRef> SymbolName,
+    jitlink::Linkage Linkage) const {
+  if (!SymbolName)
+    return SymbolName.takeError();
+
+  TargetRef Target = TargetRef::getIndirectSymbol(Schema, *SymbolName);
+  std::lock_guard<sys::Mutex> Guard(SymbolsLock);
+  auto &SymRef = Symbols[Target];
+  if (!SymRef) {
+    SymRef = std::make_unique<ExternalSymbolNodeRef>(*SymbolName, Linkage);
+    SymbolsByName[SymbolName->getName()] = CASSymbolRef{uint64_t(SymRef.get())};
+  }
+  return CASSymbolRef{uint64_t(SymRef.get())};
+}
+
+Expected<CASSymbolRef> NestedV1ObjectReader::getOrCreateCASSymbolRef(
+    Expected<SymbolRef> Symbol,
+    Optional<CASSymbolRef> KeptAliveBySymbol) const {
+  if (!Symbol)
+    return Symbol.takeError();
+
+  TargetRef Target = Symbol->getAsTarget();
+  std::lock_guard<sys::Mutex> Guard(SymbolsLock);
+  auto &Ref = Symbols[Target];
+  if (!Ref) {
+    Ref = std::make_unique<DefinedSymbolNodeRef>(std::move(*Symbol),
+                                                 std::move(KeptAliveBySymbol));
+    Expected<Optional<NameRef>> NameRef = Symbol->getName();
+    if (!NameRef)
+      return NameRef.takeError();
+    if (NameRef->hasValue())
+      SymbolsByName[(*NameRef)->getName()] = CASSymbolRef{uint64_t(Ref.get())};
+  }
+  return CASSymbolRef{uint64_t(Ref.get())};
+}
+
+Optional<CASSymbolRef>
+NestedV1ObjectReader::getCASSymbolRefByName(StringRef Name) const {
+  std::lock_guard<sys::Mutex> Guard(SymbolsLock);
+  auto SymI = SymbolsByName.find(Name);
+  if (SymI == SymbolsByName.end())
+    return None;
+  return SymI->second;
+}
+
+Expected<CASSymbol>
+ExternalSymbolNodeRef::materialize(const NestedV1ObjectReader &) const {
+  StringRef Name = SymbolName.getName();
+  CASSymbol Info{Name,  /*Offset=*/0, Linkage, jitlink::Scope::Default,
+                 false, false,        false,   None};
+  return Info;
 }
 
 Error LinkGraphBuilder::makeExternalSymbol(const ObjectFileSchema &Schema,
@@ -1834,6 +2132,48 @@ Error LinkGraphBuilder::makeExternalSymbol(const ObjectFileSchema &Schema,
   Symbols[Target] = &S;
   SymbolsByName[Name] = &S;
   return Error::success();
+}
+
+Expected<CASBlockRef> NestedV1ObjectReader::getOrCreateCASBlockRef(
+    const DefinedSymbolNodeRef &ForSymbol, Expected<BlockRef> Block,
+    Optional<CASSymbolRef> KeptAliveBySymbol, bool MergeByContent) const {
+  if (!Block)
+    return Block.takeError();
+
+  /// Whether the produced CASBlockRef can be shared across multiple symbols.
+  bool CanShareBlockRef = MergeByContent && !Block->hasAbstractBackedge() &&
+                          !Block->hasKeepAliveEdge();
+
+  cas::CASID IDKey =
+      CanShareBlockRef ? Block->getID() : ForSymbol.Symbol.getID();
+
+  std::lock_guard<sys::Mutex> Guard(BlocksLock);
+  auto &Ref = Blocks[IDKey];
+  if (!Ref) {
+    Optional<CASSymbolRef> ForSymbolInBlock;
+    Optional<CASSymbolRef> KeptAliveBySymbolInBlock;
+    if (!CanShareBlockRef) {
+      ForSymbolInBlock = CASSymbolRef{uint64_t(&ForSymbol)};
+      KeptAliveBySymbolInBlock = KeptAliveBySymbol;
+    }
+    Ref = std::make_unique<BlockNodeRef>(std::move(ForSymbolInBlock),
+                                         std::move(*Block),
+                                         std::move(KeptAliveBySymbolInBlock));
+  }
+  return CASBlockRef{uint64_t(Ref.get())};
+}
+
+Expected<CASSectionRef> NestedV1ObjectReader::getOrCreateCASSectionRef(
+    Expected<SectionRef> Section) const {
+  if (!Section)
+    return Section.takeError();
+
+  std::lock_guard<sys::Mutex> Guard(SectionsLock);
+  auto &Ref = Sections[*Section];
+  if (!Ref) {
+    Ref = std::make_unique<SectionNodeRef>(std::move(*Section));
+  }
+  return CASSectionRef{uint64_t(Ref.get())};
 }
 
 Error LinkGraphBuilder::makeSymbol(Expected<SymbolRef> Symbol) {
@@ -1862,6 +2202,78 @@ Error LinkGraphBuilder::makeSymbol(Expected<SymbolRef> Symbol) {
     std::reverse(Worklist.begin() + OldSize, Worklist.end());
   }
   return Error::success();
+}
+
+Expected<CASSymbol>
+DefinedSymbolNodeRef::materialize(const NestedV1ObjectReader &Reader) const {
+  Expected<Optional<NameRef>> ExpectedName = Symbol.getName();
+  if (!ExpectedName)
+    return ExpectedName.takeError();
+
+  StringRef Name;
+  if (*ExpectedName)
+    Name = (**ExpectedName).getName();
+
+  if (Symbol.isSymbolTemplate()) {
+    assert(Name.empty() && "Symbol templates cannot have names");
+  }
+
+  Expected<SymbolDefinitionRef> Definition = Symbol.getDefinition();
+  if (!Definition)
+    return Definition.takeError();
+
+  switch (Definition->getKind()) {
+  case SymbolDefinitionRef::Alias:
+  case SymbolDefinitionRef::IndirectAlias:
+    return createStringError(inconvertibleErrorCode(),
+                             "LinkGraph does not support aliases yet");
+
+  case SymbolDefinitionRef::Block:
+    break;
+  }
+
+  // Check whether this symbol can share existing copies of the block.
+  SymbolRef::Flags Flags = Symbol.getFlags();
+  bool MergeByContent = Flags.Merge & SymbolRef::M_ByContent;
+
+  // FIXME: Maybe go further here and use MergeableBlocks. Or maybe it's not
+  // worth it (not ever going to succeed) when we're within a single compile
+  // unit.
+  // FIXME: With \p MergeByContent == true multiple symbols may share the same
+  // \p Block reference but it is not sufficiently communicated via the
+  // CASObjectReader interface whether it is a *requirement* that symbols share
+  // the same block (as is the case with aliases) or whether the linker *can*
+  // use the same block contents if it desires so (e.g. the linker may share the
+  // block for a release build but not for a debug build).
+  Expected<CASBlockRef> Block = Reader.getOrCreateCASBlockRef(
+      *this, BlockRef::get(*Definition), KeptAliveBySymbol, MergeByContent);
+  if (!Block)
+    return Block.takeError();
+
+  jitlink::Linkage Linkage = (Flags.Merge & SymbolRef::M_ByName)
+                                 ? jitlink::Linkage::Weak
+                                 : jitlink::Linkage::Strong;
+  jitlink::Scope Scope;
+  switch (Flags.Scope) {
+  case SymbolRef::S_Global:
+    Scope = jitlink::Scope::Default;
+    break;
+  case SymbolRef::S_Hidden:
+    Scope = jitlink::Scope::Hidden;
+    break;
+  case SymbolRef::S_Local:
+    Scope = jitlink::Scope::Local;
+    break;
+  }
+  bool IsLive = Flags.DeadStrip == SymbolRef::DS_Never;
+  // FIXME: Should we record an `IsCallable` property for the symbol?
+  // Maybe not necessary since it could be a property of the section the symbol
+  // belongs to.
+  bool IsCallable = false;
+
+  return CASSymbol{
+      Name,       unsigned(Symbol.getOffset()), Linkage, Scope, IsLive,
+      IsCallable, Symbol.isAutoHide(),          *Block};
 }
 
 Expected<jitlink::Symbol *>
@@ -1935,6 +2347,37 @@ getAlignedAddress(LinkGraphBuilder::SectionInfo &Section, uint64_t Size,
   return orc::ExecutorAddr(Address);
 }
 
+Expected<CASBlock>
+BlockNodeRef::materialize(const NestedV1ObjectReader &Reader) const {
+  Expected<CASSectionRef> Section =
+      Reader.getOrCreateCASSectionRef(Block.getSection());
+  if (!Section)
+    return Section.takeError();
+
+  // Get the data.
+  Expected<BlockDataRef> BlockData = Block.getBlockData();
+  if (!BlockData)
+    return BlockData.takeError();
+  uint64_t Size = BlockData->getSize();
+  uint64_t Alignment = BlockData->getAlignment();
+  uint64_t AlignmentOffset = BlockData->getAlignmentOffset();
+  Optional<StringRef> Content;
+  if (!BlockData->isZeroFill()) {
+    Content = BlockData->getContent();
+    assert(Content && "Block is not zero-fill so it should have data");
+    assert(Size == Content->size());
+  }
+
+  return CASBlock{Size, Alignment, AlignmentOffset, Content, *Section};
+}
+
+Expected<CASSection> SectionNodeRef::materialize() const {
+  Expected<NameRef> Name = Section.getName();
+  if (!Name)
+    return Name.takeError();
+  return CASSection{Name->getName(), Section.getMemProt()};
+}
+
 Expected<jitlink::Block *>
 LinkGraphBuilder::getOrCreateBlock(jitlink::Symbol &ForSymbol, BlockRef Block,
                                    jitlink::Symbol *KeptAliveBySymbol) {
@@ -1990,6 +2433,82 @@ LinkGraphBuilder::getOrCreateBlock(jitlink::Symbol &ForSymbol, BlockRef Block,
   if (!HasAbstractBackedge)
     Blocks[Block] = &B;
   return &B;
+}
+
+Error BlockNodeRef::materializeFixups(
+    const NestedV1ObjectReader &Reader,
+    function_ref<Error(const CASBlockFixup &)> Callback) const {
+  if (!Block.hasEdges())
+    return Error::success();
+
+  Expected<FixupList> Fixups = Block.getFixups();
+  if (!Fixups)
+    return Fixups.takeError();
+  Expected<TargetInfoList> TIs = Block.getTargetInfo();
+  if (!TIs)
+    return TIs.takeError();
+  Expected<TargetList> Targets = Block.getTargets();
+  if (!Targets)
+    return Targets.takeError();
+
+  auto createMismatchError = [&]() {
+    size_t NumFixups = std::distance(Fixups->begin(), Fixups->end());
+    size_t NumTIs = std::distance(TIs->begin(), TIs->end());
+    return createStringError(inconvertibleErrorCode(),
+                             "invalid edge-list with mismatched fixups (" +
+                                 Twine(NumFixups) + ") and targets (" +
+                                 Twine(NumTIs) + ")");
+  };
+
+  FixupList::iterator F = Fixups->begin(), FE = Fixups->end();
+  TargetInfoList::iterator TI = TIs->begin(), TIE = TIs->end();
+  for (; F != FE && TI != TIE; ++F, ++TI) {
+    if (TI->Index > Targets->size())
+      return createStringError(inconvertibleErrorCode(),
+                               "target index too big for target-list");
+
+    // Check for an abstract backedge.
+    if (TI->Index == Targets->size()) {
+      assert(KeptAliveBySymbol.hasValue());
+      CASBlockFixup CASFixup{F->Offset, F->Kind, TI->Addend,
+                             *KeptAliveBySymbol};
+      if (Error E = Callback(CASFixup))
+        return E;
+      continue;
+    }
+
+    // Pass this block down for KeepAlive edges.
+    Expected<TargetRef> Target = Targets->get(TI->Index);
+    if (!Target)
+      return Target.takeError();
+
+    CASSymbolRef TargetRef;
+    if (Target->getKind() == TargetRef::Symbol) {
+      Expected<CASSymbolRef> ExpTarget = Reader.getOrCreateCASSymbolRef(
+          SymbolRef::get(Target->getSchema(), *Target),
+          F->Kind == jitlink::Edge::KeepAlive ? ForSymbol : None);
+      if (!ExpTarget)
+        return ExpTarget.takeError();
+      TargetRef = *ExpTarget;
+    } else {
+      assert(Target->getKind() == TargetRef::IndirectSymbol);
+      Expected<StringRef> ExpectedName = Target->getNameString();
+      if (!ExpectedName)
+        return ExpectedName.takeError();
+      StringRef Name = *ExpectedName;
+      TargetRef = Reader.getCASSymbolRefByName(Name).getValue();
+    }
+
+    // Pass in this block's KeptAliveByBlock for edges.
+    CASBlockFixup CASFixup{F->Offset, F->Kind, TI->Addend,
+                           std::move(TargetRef)};
+    if (Error E = Callback(CASFixup))
+      return E;
+  }
+  if (F != FE || TI != TIE)
+    return createMismatchError();
+
+  return Error::success();
 }
 
 Error LinkGraphBuilder::addEdges(jitlink::Symbol &ForSymbol, jitlink::Block &B,

@@ -37,9 +37,6 @@ class TarWriter;
 namespace casobjectformats {
 class SchemaPool;
 } // namespace casobjectformats
-namespace jitlink {
-class LinkGraph;
-} // namespace jitlink
 } // namespace llvm
 
 namespace lld {
@@ -172,17 +169,12 @@ private:
 // CAS-schema .o file
 class CASSchemaFile final : public InputFile {
 public:
-  CASSchemaFile(llvm::casobjectformats::SchemaPool &CASSchemas,
-                llvm::cas::CASID ID, StringRef filename);
+  explicit CASSchemaFile(StringRef filename);
   ~CASSchemaFile();
   static bool classof(const InputFile *f) { return f->kind() == CASSchemaKind; }
 
-  Error parse();
-
-private:
-  llvm::casobjectformats::SchemaPool &CASSchemas;
-  llvm::cas::CASID ID;
-  std::unique_ptr<llvm::jitlink::LinkGraph> linkGraph;
+  Error parse(llvm::casobjectformats::SchemaPool &CASSchemas,
+              llvm::cas::CASID ID);
 };
 
 // command-line -sectcreate file
