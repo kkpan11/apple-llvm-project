@@ -4258,6 +4258,10 @@ class SBDebugger(object):
         r"""GetErrorFileHandle(SBDebugger self) -> lldb::FileSP"""
         return _lldb.SBDebugger_GetErrorFileHandle(self)
 
+    def SetInputString(self, data):
+        r"""SetInputString(SBDebugger self, char const * data) -> SBError"""
+        return _lldb.SBDebugger_SetInputString(self, data)
+
     def SetInputFile(self, *args):
         r"""
         SetInputFile(SBDebugger self, SBFile file) -> SBError
@@ -15520,15 +15524,8 @@ def is_numeric_type(basic_type):
 
 
 
-_initialize = True
-try:
-   import lldbconfig
-   _initialize = lldbconfig.INITIALIZE
-except ImportError:
-   pass
 debugger_unique_id = 0
-if _initialize:
-   SBDebugger.Initialize()
+SBDebugger.Initialize()
 debugger = None
 target = None
 process = None
