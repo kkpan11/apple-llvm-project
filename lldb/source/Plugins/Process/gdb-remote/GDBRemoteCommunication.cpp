@@ -98,7 +98,7 @@ char GDBRemoteCommunication::CalculcateChecksum(llvm::StringRef payload) {
 }
 
 size_t GDBRemoteCommunication::SendAck() {
-  Log *log(ProcessGDBRemoteLog::GetLogIfAllCategoriesSet(GDBR_LOG_PACKETS));
+  Log *log = GetLog(GDBRLog::Packets);
   ConnectionStatus status = eConnectionStatusSuccess;
   char ch = '+';
   const size_t bytes_written = Write(&ch, 1, status, nullptr);
@@ -108,7 +108,7 @@ size_t GDBRemoteCommunication::SendAck() {
 }
 
 size_t GDBRemoteCommunication::SendNack() {
-  Log *log(ProcessGDBRemoteLog::GetLogIfAllCategoriesSet(GDBR_LOG_PACKETS));
+  Log *log = GetLog(GDBRLog::Packets);
   ConnectionStatus status = eConnectionStatusSuccess;
   char ch = '-';
   const size_t bytes_written = Write(&ch, 1, status, nullptr);
@@ -133,7 +133,7 @@ GDBRemoteCommunication::PacketResult
 GDBRemoteCommunication::SendRawPacketNoLock(llvm::StringRef packet,
                                             bool skip_ack) {
   if (IsConnected()) {
-    Log *log(ProcessGDBRemoteLog::GetLogIfAllCategoriesSet(GDBR_LOG_PACKETS));
+    Log *log = GetLog(GDBRLog::Packets);
     ConnectionStatus status = eConnectionStatusSuccess;
     const char *packet_data = packet.data();
     const size_t packet_length = packet.size();
@@ -268,7 +268,7 @@ GDBRemoteCommunication::WaitForPacketNoLock(StringExtractorGDBRemote &packet,
   uint8_t buffer[8192];
   Status error;
 
-  Log *log(ProcessGDBRemoteLog::GetLogIfAllCategoriesSet(GDBR_LOG_PACKETS));
+  Log *log = GetLog(GDBRLog::Packets);
 
   // Check for a packet from our cache first without trying any reading...
   if (CheckForPacket(nullptr, 0, packet) != PacketType::Invalid)
@@ -409,7 +409,7 @@ GDBRemoteCommunication::WaitForPacketNoLock(StringExtractorGDBRemote &packet,
 }
 
 bool GDBRemoteCommunication::DecompressPacket() {
-  Log *log(ProcessGDBRemoteLog::GetLogIfAllCategoriesSet(GDBR_LOG_PACKETS));
+  Log *log = GetLog(GDBRLog::Packets);
 
   if (!CompressionIsEnabled())
     return true;
@@ -643,7 +643,7 @@ GDBRemoteCommunication::CheckForPacket(const uint8_t *src, size_t src_len,
   // Put the packet data into the buffer in a thread safe fashion
   std::lock_guard<std::recursive_mutex> guard(m_bytes_mutex);
 
-  Log *log(ProcessGDBRemoteLog::GetLogIfAllCategoriesSet(GDBR_LOG_PACKETS));
+  Log *log = GetLog(GDBRLog::Packets);
 
   if (src && src_len > 0) {
     if (log && log->GetVerbose()) {
@@ -903,7 +903,7 @@ GDBRemoteCommunication::ListenThread(lldb::thread_arg_t arg) {
 Status GDBRemoteCommunication::StartDebugserverProcess(
     const char *url, Platform *platform, ProcessLaunchInfo &launch_info,
     uint16_t *port, const Args *inferior_args, int pass_comm_fd) {
-  Log *log(ProcessGDBRemoteLog::GetLogIfAllCategoriesSet(GDBR_LOG_PROCESS));
+  Log *log = GetLog(GDBRLog::Process);
   LLDB_LOGF(log, "GDBRemoteCommunication::%s(url=%s, port=%" PRIu16 ")",
             __FUNCTION__, url ? url : "<empty>", port ? *port : uint16_t(0));
 

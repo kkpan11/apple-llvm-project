@@ -1458,7 +1458,7 @@ SymbolFileDWARFDebugMap::AddOSOARanges(SymbolFileDWARF *dwarf2Data,
 
 std::vector<DataBufferSP>
 SymbolFileDWARFDebugMap::GetASTData(lldb::LanguageType language) {
-  Log *log(LogChannelDWARF::GetLogIfAll(DWARF_LOG_DEBUG_MAP));
+  Log *log = GetLog(DWARFLog::DebugMap);
 
   std::vector<DataBufferSP> ast_datas;
   if (language != eLanguageTypeSwift) {
