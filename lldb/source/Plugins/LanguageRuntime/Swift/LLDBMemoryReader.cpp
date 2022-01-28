@@ -122,6 +122,18 @@ LLDBMemoryReader::getSymbolAddress(const std::string &name) {
 swift::remote::RemoteAbsolutePointer
 LLDBMemoryReader::resolvePointer(swift::remote::RemoteAddress address,
                                  uint64_t readValue) {
+  auto isEffectivelyReadOnly = [](SectionSP section) {
+    if ((section->GetPermissions() & ePermissionsWritable) ==
+        ePermissionsWritable)
+      return true;
+    if (section->GetName() == "__const")
+      return true;
+    if (auto segment = section->GetParent())
+      if (segment->GetName() == "__DATA_CONST")
+        return true;
+    return false;
+  };
+
   // If an address has a symbol, that symbol provides additional useful data to
   // MetadataReader. Without the symbol, MetadataReader can derive the symbol
   // by loading other parts of reflection metadata, but that work has a cost.
@@ -130,13 +142,14 @@ LLDBMemoryReader::resolvePointer(swift::remote::RemoteAddress address,
   Address addr;
   auto &target = m_process.GetTarget();
   if (target.ResolveLoadAddress(address.getAddressData(), addr))
-    if (auto *symbol = addr.CalculateSymbolContextSymbol()) {
-      auto mangledName = symbol->GetMangled().GetMangledName().GetStringRef();
-      // MemoryReader requires any this to be a Swift symbol. LLDB can also be
-      // aware of local symbols, so avoid returning those.
-      if (swift::Demangle::isSwiftSymbol(mangledName))
-        return {mangledName, 0};
-    }
+    if (isEffectivelyReadOnly(addr.GetSection()))
+      if (auto *symbol = addr.CalculateSymbolContextSymbol()) {
+        auto mangledName = symbol->GetMangled().GetMangledName().GetStringRef();
+        // MemoryReader requires any this to be a Swift symbol. LLDB can also be
+        // aware of local symbols, so avoid returning those.
+        if (swift::Demangle::isSwiftSymbol(mangledName))
+          return {mangledName, 0};
+      }
 
   // Return the read value as is.
   return {"", (int64_t)readValue};
