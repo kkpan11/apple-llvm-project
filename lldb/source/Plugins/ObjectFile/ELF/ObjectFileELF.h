@@ -395,6 +395,9 @@ private:
 
   llvm::StringRef
   GetReflectionSectionIdentifier(swift::ReflectionSectionKind section) override;
+
+  bool
+  CanContainSwiftReflectionData(const lldb_private::Section &section) override;
 };
 
 #endif // LLDB_SOURCE_PLUGINS_OBJECTFILE_ELF_OBJECTFILEELF_H

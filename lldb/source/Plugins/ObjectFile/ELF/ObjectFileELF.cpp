@@ -3429,3 +3429,13 @@ llvm::StringRef ObjectFileELF::GetReflectionSectionIdentifier(
   llvm_unreachable("Swift support disabled");
 #endif //LLDB_ENABLE_SWIFT
 }
+
+bool ObjectFileELF::CanContainSwiftReflectionData(const Section &section) {
+#ifdef LLDB_ENABLE_SWIFT
+  swift::SwiftObjectFileFormatCOFF file_format;
+  return file_format.sectionContainsReflectionData(
+      section.GetName().GetStringRef());
+#else
+  llvm_unreachable("Swift support disabled");
+#endif // LLDB_ENABLE_SWIFT
+}

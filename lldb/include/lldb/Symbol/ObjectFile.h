@@ -19,6 +19,7 @@
 #include "lldb/Utility/FileSpec.h"
 #include "lldb/Utility/UUID.h"
 #include "lldb/lldb-private.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/Support/VersionTuple.h"
 
 namespace swift {
@@ -688,6 +689,8 @@ public:
 
   virtual llvm::StringRef
   GetReflectionSectionIdentifier(swift::ReflectionSectionKind section);
+
+  virtual bool CanContainSwiftReflectionData(const Section &section);
 
   /// Load binaries listed in a corefile
   ///
