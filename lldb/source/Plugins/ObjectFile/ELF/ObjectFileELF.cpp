@@ -3432,7 +3432,7 @@ llvm::StringRef ObjectFileELF::GetReflectionSectionIdentifier(
 
 bool ObjectFileELF::CanContainSwiftReflectionData(const Section &section) {
 #ifdef LLDB_ENABLE_SWIFT
-  swift::SwiftObjectFileFormatCOFF file_format;
+  swift::SwiftObjectFileFormatELF file_format;
   return file_format.sectionContainsReflectionData(
       section.GetName().GetStringRef());
 #else
