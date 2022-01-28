@@ -123,7 +123,7 @@ swift::remote::RemoteAbsolutePointer
 LLDBMemoryReader::resolvePointer(swift::remote::RemoteAddress address,
                                  uint64_t readValue) {
   auto isEffectivelyReadOnly = [](SectionSP section) {
-    if ((section->GetPermissions() & ePermissionsWritable) != 0)
+    if ((section->GetPermissions() & ePermissionsWritable) == 0)
       return true;
     if (section->GetName() == "__const")
       return true;
