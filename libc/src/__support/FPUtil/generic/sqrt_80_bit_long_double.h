@@ -11,6 +11,7 @@
 
 #include "src/__support/FPUtil/FEnvImpl.h"
 #include "src/__support/FPUtil/FPBits.h"
+#include "src/__support/FPUtil/PlatformDefs.h"
 
 namespace __llvm_libc {
 namespace fputil {
@@ -34,8 +35,13 @@ inline void normalize(int &exponent, __uint128_t &mantissa) {
   }
 }
 
+// if constexpr statement in sqrt.h still requires x86::sqrt to be declared
+// even when it's not used.
+static inline long double sqrt(long double x);
+
 // Correctly rounded SQRT for all rounding modes.
 // Shift-and-add algorithm.
+#if defined(SPECIAL_X86_LONG_DOUBLE)
 static inline long double sqrt(long double x) {
   using UIntType = typename FPBits<long double>::UIntType;
   constexpr UIntType ONE = UIntType(1)
@@ -136,6 +142,7 @@ static inline long double sqrt(long double x) {
     return out;
   }
 }
+#endif // SPECIAL_X86_LONG_DOUBLE
 
 } // namespace x86
 } // namespace fputil

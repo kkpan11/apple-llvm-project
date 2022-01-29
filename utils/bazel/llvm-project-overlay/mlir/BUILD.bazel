@@ -1799,6 +1799,7 @@ cc_library(
         ":Pass",
         ":SCFDialect",
         ":SCFPassIncGen",
+        ":SCFUtils",
         ":StandardOps",
         ":Support",
         ":TensorDialect",
@@ -1962,6 +1963,8 @@ cc_library(
         ":MemRefDialect",
         ":Pass",
         ":SCFDialect",
+        ":SCFTransforms",
+        ":SCFUtils",
         ":SparseTensor",
         ":SparseTensorPassIncGen",
         ":SparseTensorUtils",
@@ -1971,6 +1974,23 @@ cc_library(
         ":Transforms",
         ":VectorOps",
         "//llvm:Support",
+    ],
+)
+
+cc_library(
+    name = "SparseTensorPipelines",
+    srcs = glob(["lib/Dialect/SparseTensor/Pipelines/*.cpp"]),
+    hdrs = ["include/mlir/Dialect/SparseTensor/Pipelines/Passes.h"],
+    includes = ["include"],
+    deps = [
+        ":BufferizationTransforms",
+        ":ConversionPasses",
+        ":LinalgTransforms",
+        ":Pass",
+        ":SparseTensor",
+        ":SparseTensorTransforms",
+        ":StandardOpsTransforms",
+        ":TensorTransforms",
     ],
 )
 
@@ -2237,6 +2257,7 @@ cc_library(
         ":MemRefDialect",
         ":Pass",
         ":SCFDialect",
+        ":SCFUtils",
         ":StandardOps",
         ":Support",
         ":Transforms",
@@ -2408,9 +2429,14 @@ cc_library(
             "lib/Dialect/SCF/*.h",
         ],
     ),
-    hdrs = glob([
-        "include/mlir/Dialect/SCF/*.h",
-    ]),
+    hdrs = glob(
+        [
+            "include/mlir/Dialect/SCF/*.h",
+        ],
+        exclude = [
+            "include/mlir/Dialect/SCF/Transforms.h",
+        ],
+    ),
     includes = ["include"],
     deps = [
         ":ArithmeticDialect",
@@ -2423,6 +2449,34 @@ cc_library(
         ":SCFPassIncGen",
         ":StandardOps",
         ":Support",
+        "//llvm:Support",
+    ],
+)
+
+cc_library(
+    name = "SCFUtils",
+    srcs = glob(
+        [
+            "lib/Dialect/SCF/Utils/*.cpp",
+        ],
+    ),
+    hdrs = glob(
+        [
+            "include/mlir/Dialect/SCF/Utils/*.h",
+        ],
+    ),
+    includes = ["include"],
+    deps = [
+        ":Affine",
+        ":AffineAnalysis",
+        ":Analysis",
+        ":ArithmeticDialect",
+        ":DialectUtils",
+        ":IR",
+        ":SCFDialect",
+        ":StandardOps",
+        ":Support",
+        ":Transforms",
         "//llvm:Support",
     ],
 )
@@ -4325,6 +4379,7 @@ cc_library(
     deps = [
         ":ArithmeticDialect",
         ":CastOpInterfaces",
+        ":ComplexDialect",
         ":ControlFlowInterfaces",
         ":DialectUtils",
         ":IR",
@@ -5659,6 +5714,7 @@ cc_library(
         ":ShapeTransforms",
         ":ShapeTransformsPassIncGen",
         ":SparseTensor",
+        ":SparseTensorPipelines",
         ":SparseTensorTransforms",
         ":StandardOps",
         ":StandardOpsTransforms",
@@ -6874,6 +6930,7 @@ cc_library(
         ":SCFBufferizableOpInterfaceImpl",
         ":SCFDialect",
         ":SCFTransforms",
+        ":SCFUtils",
         ":StandardOps",
         ":StandardOpsTransforms",
         ":StdBufferizableOpInterfaceImpl",

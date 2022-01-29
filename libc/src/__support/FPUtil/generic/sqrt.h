@@ -20,13 +20,13 @@ namespace fputil {
 
 namespace internal {
 
-#if defined(SPECIAL_X86_LONG_DOUBLE)
-struct SpecialLongDouble {
-  static constexpr bool VALUE = true;
-};
-#else
-struct SpecialLongDouble {
+template <typename T> struct SpecialLongDouble {
   static constexpr bool VALUE = false;
+};
+
+#if defined(SPECIAL_X86_LONG_DOUBLE)
+template <> struct SpecialLongDouble<long double> {
+  static constexpr bool VALUE = true;
 };
 #endif // SPECIAL_X86_LONG_DOUBLE
 
@@ -108,8 +108,7 @@ template <typename T>
 static inline cpp::EnableIfType<cpp::IsFloatingPointType<T>::Value, T>
 sqrt(T x) {
 
-  if constexpr (cpp::IsSameV<T, long double> &&
-                internal::SpecialLongDouble::VALUE) {
+  if constexpr (internal::SpecialLongDouble<T>::VALUE) {
     // Special 80-bit long double.
     return x86::sqrt(x);
   } else {

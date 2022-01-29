@@ -461,15 +461,7 @@ RISCVISAInfo::parseFeatures(unsigned XLen,
       ISAInfo->Exts.erase(ExtName.str());
   }
 
-  ISAInfo->updateImplication();
-  ISAInfo->updateFLen();
-  ISAInfo->updateMinVLen();
-  ISAInfo->updateMaxELen();
-
-  if (Error Result = ISAInfo->checkDependency())
-    return std::move(Result);
-
-  return std::move(ISAInfo);
+  return RISCVISAInfo::postProcessAndChecking(std::move(ISAInfo));
 }
 
 llvm::Expected<std::unique_ptr<RISCVISAInfo>>
@@ -686,26 +678,18 @@ RISCVISAInfo::parseArchString(StringRef Arch, bool EnableExperimentalExtension,
     }
   }
 
-  ISAInfo->updateImplication();
-  ISAInfo->updateFLen();
-  ISAInfo->updateMinVLen();
-  ISAInfo->updateMaxELen();
-
-  if (Error Result = ISAInfo->checkDependency())
-    return std::move(Result);
-
-  return std::move(ISAInfo);
+  return RISCVISAInfo::postProcessAndChecking(std::move(ISAInfo));
 }
 
 Error RISCVISAInfo::checkDependency() {
   bool IsRv32 = XLen == 32;
-  bool HasE = Exts.count("e") == 1;
-  bool HasD = Exts.count("d") == 1;
-  bool HasF = Exts.count("f") == 1;
-  bool HasZve32x = Exts.count("zve32x") == 1;
-  bool HasZve32f = Exts.count("zve32f") == 1;
-  bool HasZve64d = Exts.count("zve64d") == 1;
-  bool HasV = Exts.count("v") == 1;
+  bool HasE = Exts.count("e") != 0;
+  bool HasD = Exts.count("d") != 0;
+  bool HasF = Exts.count("f") != 0;
+  bool HasZve32x = Exts.count("zve32x") != 0;
+  bool HasZve32f = Exts.count("zve32f") != 0;
+  bool HasZve64d = Exts.count("zve64d") != 0;
+  bool HasV = Exts.count("v") != 0;
   bool HasVector = HasZve32x || HasV;
   bool HasZvl = MinVLen != 0;
 
@@ -810,8 +794,8 @@ static constexpr ImpliedExtsEntry ImpliedExts[] = {
 };
 
 void RISCVISAInfo::updateImplication() {
-  bool HasE = Exts.count("e") == 1;
-  bool HasI = Exts.count("i") == 1;
+  bool HasE = Exts.count("e") != 0;
+  bool HasI = Exts.count("i") != 0;
 
   // If not in e extension and i extension does not exist, i extension is
   // implied
@@ -918,4 +902,16 @@ std::vector<std::string> RISCVISAInfo::toFeatureVector() const {
     FeatureVector.push_back(Feature);
   }
   return FeatureVector;
+}
+
+llvm::Expected<std::unique_ptr<RISCVISAInfo>>
+RISCVISAInfo::postProcessAndChecking(std::unique_ptr<RISCVISAInfo> &&ISAInfo) {
+  ISAInfo->updateImplication();
+  ISAInfo->updateFLen();
+  ISAInfo->updateMinVLen();
+  ISAInfo->updateMaxELen();
+
+  if (Error Result = ISAInfo->checkDependency())
+    return std::move(Result);
+  return std::move(ISAInfo);
 }
