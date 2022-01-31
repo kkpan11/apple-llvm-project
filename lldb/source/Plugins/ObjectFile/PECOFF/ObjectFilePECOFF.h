@@ -288,8 +288,10 @@ protected:
   llvm::StringRef
   GetReflectionSectionIdentifier(swift::ReflectionSectionKind section) override;
 
+#ifdef LLDB_ENABLE_SWIFT
   bool
   CanContainSwiftReflectionData(const lldb_private::Section &section) override;
+#endif // LLDB_ENABLE_SWIFT
 
   typedef std::vector<section_header_t> SectionHeaderColl;
   typedef SectionHeaderColl::iterator SectionHeaderCollIter;

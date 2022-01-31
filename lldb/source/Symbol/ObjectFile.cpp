@@ -725,9 +725,3 @@ llvm::StringRef ObjectFile::GetReflectionSectionIdentifier(
          "Base class's GetReflectionSectionIdentifier should not be called");
   return "";
 }
-
-bool ObjectFile::CanContainSwiftReflectionData(const Section &section) {
-  assert(false &&
-         "Base class's CanContainSwiftReflectionData should not be called");
-  return false;
-}

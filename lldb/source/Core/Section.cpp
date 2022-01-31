@@ -391,7 +391,11 @@ void Section::SetPermissions(uint32_t permissions) {
 }
 
 bool Section::CanContainSwiftReflectionData() const {
+#ifdef LLDB_ENABLE_SWIFT
   return m_obj_file->CanContainSwiftReflectionData(*this);
+#else
+  return false;
+#endif // LLDB_ENABLE_SWIFT
 }
 
 lldb::offset_t Section::GetSectionData(void *dst, lldb::offset_t dst_len,

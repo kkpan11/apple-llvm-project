@@ -7019,8 +7019,8 @@ llvm::StringRef ObjectFileMachO::GetReflectionSectionIdentifier(
 #endif //LLDB_ENABLE_SWIFT
 }
 
-bool ObjectFileMachO::CanContainSwiftReflectionData(const Section &section) {
 #ifdef LLDB_ENABLE_SWIFT
+bool ObjectFileMachO::CanContainSwiftReflectionData(const Section &section) {
   swift::SwiftObjectFileFormatMachO file_format;
   if (file_format.sectionContainsReflectionData(
           section.GetName().GetStringRef()))
@@ -7033,10 +7033,8 @@ bool ObjectFileMachO::CanContainSwiftReflectionData(const Section &section) {
     return file_format.sectionContainsReflectionData(segmentSectionName);
   }
   return false;
-#else
-  llvm_unreachable("Swift support disabled");
-#endif // LLDB_ENABLE_SWIFT
 }
+#endif // LLDB_ENABLE_SWIFT
 
 ObjectFileMachO::MachOCorefileAllImageInfos
 ObjectFileMachO::GetCorefileAllImageInfos() {
