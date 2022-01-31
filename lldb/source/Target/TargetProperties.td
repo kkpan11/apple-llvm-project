@@ -10,6 +10,9 @@ let Definition = "target_experimental" in {
   def SwiftReadMetadataFromFileCache: Property<"swift-read-metadata-from-file-cache", "Boolean">,
     DefaultTrue,
     Desc<"Read Swift reflection metadata from the file cache instead of the process when possible">;
+  def SwiftUseReflectionSymbols : Property<"swift-use-reflection-symbols", "Boolean">,
+    Global, DefaultTrue,
+    Desc<"if true, optimize the loading of Swift reflection metadata by making use of available symbols.">;
 }
 
 let Definition = "target" in {

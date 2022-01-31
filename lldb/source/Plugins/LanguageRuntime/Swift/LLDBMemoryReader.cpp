@@ -127,20 +127,28 @@ LLDBMemoryReader::resolvePointer(swift::remote::RemoteAddress address,
   // by loading other parts of reflection metadata, but that work has a cost.
   // For lldb, that data loading can be a significant performance hit. Providing
   // a symbol greatly reduces memory read traffic to the process.
-  Address addr;
-  auto &target = m_process.GetTarget();
-  if (target.ResolveLoadAddress(address.getAddressData(), addr))
-    if (addr.GetSection()->CanContainSwiftReflectionData())
-      if (auto *symbol = addr.CalculateSymbolContextSymbol()) {
-        auto mangledName = symbol->GetMangled().GetMangledName().GetStringRef();
-        // MemoryReader requires this to be a Swift symbol. LLDB can also be
-        // aware of local symbols, so avoid returning those.
-        if (swift::Demangle::isSwiftSymbol(mangledName))
-          return {mangledName, 0};
-      }
+  auto pointer = swift::remote::RemoteAbsolutePointer("", readValue);
 
-  // Return the read value as is.
-  return {"", (int64_t)readValue};
+  auto &target = m_process.GetTarget();
+  if (!target.GetSwiftUseReflectionSymbols())
+    return pointer;
+
+  Address addr;
+  if (!target.ResolveLoadAddress(address.getAddressData(), addr))
+    return pointer;
+
+  if (!addr.GetSection()->CanContainSwiftReflectionData())
+    return pointer;
+
+  if (auto *symbol = addr.CalculateSymbolContextSymbol()) {
+    auto mangledName = symbol->GetMangled().GetMangledName().GetStringRef();
+    // MemoryReader requires this to be a Swift symbol. LLDB can also be
+    // aware of local symbols, so avoid returning those.
+    if (swift::Demangle::isSwiftSymbol(mangledName))
+      return {mangledName, 0};
+  }
+
+  return pointer;
 }
 
 bool LLDBMemoryReader::readBytes(swift::remote::RemoteAddress address,
