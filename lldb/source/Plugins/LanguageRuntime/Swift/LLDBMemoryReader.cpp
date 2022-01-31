@@ -133,7 +133,7 @@ LLDBMemoryReader::resolvePointer(swift::remote::RemoteAddress address,
     if (addr.GetSection()->CanContainSwiftReflectionData())
       if (auto *symbol = addr.CalculateSymbolContextSymbol()) {
         auto mangledName = symbol->GetMangled().GetMangledName().GetStringRef();
-        // MemoryReader requires any this to be a Swift symbol. LLDB can also be
+        // MemoryReader requires this to be a Swift symbol. LLDB can also be
         // aware of local symbols, so avoid returning those.
         if (swift::Demangle::isSwiftSymbol(mangledName))
           return {mangledName, 0};
