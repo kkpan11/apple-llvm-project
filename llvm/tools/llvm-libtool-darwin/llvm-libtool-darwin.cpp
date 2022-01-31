@@ -398,7 +398,8 @@ private:
     }
 
     Error verifyAndAddMachOObject(NewArchiveMember Member) {
-      auto MBRef = Member.Buf->getMemBufferRef();
+      auto MBRef = Member.Contents.empty() ? Member.Buf->getMemBufferRef()
+                                           : Member.getContentsBufferRef();
       Expected<std::unique_ptr<object::ObjectFile>> ObjOrErr =
           object::ObjectFile::createObjectFile(MBRef);
 
