@@ -528,8 +528,8 @@ OnDiskSubtrie::try_replace(size_t I, OnDiskOffset Expected, OnDiskOffset New) {
 OnDiskHashMappedTrie::LookupResult
 OnDiskHashMappedTrie::lookup(ArrayRef<uint8_t> Hash) const {
   assert(!Hash.empty() && "Uninitialized hash");
-  auto *IndexHeader = reinterpret_cast<OnDiskIndexHeader *>(Index->Map.data());
-  auto *DataHeader = reinterpret_cast<OnDiskDataHeader *>(Data->Map.data());
+  auto *IndexHeader = reinterpret_cast<OnDiskIndexHeader *>(Index->data());
+  auto *DataHeader = reinterpret_cast<OnDiskDataHeader *>(Data->data());
   assert(IndexHeader->NumHashBits == Hash.size() * sizeof(uint8_t));
 
   OnDiskSubtrie *S = &IndexHeader->Root;
@@ -544,9 +544,10 @@ OnDiskHashMappedTrie::lookup(ArrayRef<uint8_t> Hash) const {
 
     // Check for an exact match.
     if (Existing.isData()) {
+      // FIXME: Stop calling Data->getPath() here; pass in parent directory.
       OnDiskData *ExistingData = DataHeader->getData(Existing);
       return ExistingData->getHash() == Hash
-                 ? LookupResult(ExistingData->getContent(Data->Path))
+                 ? LookupResult(ExistingData->getContent(Data->getPath()))
                  : LookupResult(S, Index, *IndexGen.StartBit);
     }
 
@@ -565,57 +566,12 @@ void OnDiskSubtrie::reinitialize(uint32_t StartBit, uint32_t NumBits) {
   this->NumBits = NumBits;
 }
 
-Error OnDiskHashMappedTrie::MappedFileInfo::requestFileSize(uint64_t Size) {
-  // Common case.
-  if (Size <= OnDiskSize.load())
-    return Error::success();
-
-  // Synchronize with other threads.
-  std::lock_guard<std::mutex> Lock(Mutex);
-  uint64_t OldSize = OnDiskSize.load();
-  if (Size <= OldSize)
-    return Error::success();
-
-  // Increase sizes by doubling up to 8MB, and then limit the over-allocation
-  // to 4MB.
-  static constexpr uint64_t MaxIncrement = 4ull * 1024ull * 1024ull;
-  uint64_t NewSize;
-  if (Size < MaxIncrement)
-    NewSize = NextPowerOf2(Size);
-  else
-    NewSize = alignTo(Size, MaxIncrement);
-
-  if (NewSize > Map.size())
-    NewSize = Map.size();
-  if (NewSize < Size)
-    return errorCodeToError(std::make_error_code(std::errc::not_enough_memory));
-
-  // Synchronize with other processes.
-  if (std::error_code EC = sys::fs::lockFile(FD))
-    return errorCodeToError(EC);
-  auto Unlock = make_scope_exit([&]() { sys::fs::unlockFile(FD); });
-
-  sys::fs::file_status Status;
-  if (std::error_code EC = sys::fs::status(FD, Status))
-    return errorCodeToError(EC);
-  if (Status.getSize() >= Size) {
-    // If there's enough space just go for it.
-    OnDiskSize = Size;
-    return Error::success();
-  }
-
-  if (std::error_code EC = sys::fs::resize_file(FD, NewSize))
-    return errorCodeToError(EC);
-  OnDiskSize = Size;
-  return Error::success();
-}
-
 OnDiskHashMappedTrie::MappedContentReference
 OnDiskHashMappedTrie::insert(LookupResult Hint, ArrayRef<uint8_t> Hash,
                              StringRef Metadata, StringRef Content) {
   assert(!Hash.empty() && "Uninitialized hash");
-  auto *IndexHeader = reinterpret_cast<OnDiskIndexHeader *>(Index->Map.data());
-  auto *DataHeader = reinterpret_cast<OnDiskDataHeader *>(Data->Map.data());
+  auto *IndexHeader = reinterpret_cast<OnDiskIndexHeader *>(Index->data());
+  auto *DataHeader = reinterpret_cast<OnDiskDataHeader *>(Data->data());
   assert(IndexHeader->NumHashBits == Hash.size() * sizeof(uint8_t));
 
   OnDiskSubtrie *S = &IndexHeader->Root;
@@ -640,13 +596,15 @@ OnDiskHashMappedTrie::insert(LookupResult Hint, ArrayRef<uint8_t> Hash,
     if (!Existing) {
       if (!NewData)
         NewData = DataHeader->createData(
-            Data->Path,
-            [this](uint64_t Size) { return Data->requestFileSize(Size); }, Hash,
+            Data->getPath(),
+            [this](uint64_t Size) { return Data->extendSize(Size); }, Hash,
             Metadata, Content);
       assert(NewData->asData() < DataHeader->EndOffset.load());
+
+      // FIXME: Stop calling Data->getPath() here; pass in parent directory.
       Optional<OnDiskOffset> Race = S->try_set(Index, *NewData);
       if (!Race) // Success!
-        return DataHeader->getData(*NewData)->getContent(Data->Path);
+        return DataHeader->getData(*NewData)->getContent(Data->getPath());
       assert(*Race && "Expected non-empty, or else why the race?");
       Existing = *Race;
     }
@@ -658,9 +616,11 @@ OnDiskHashMappedTrie::insert(LookupResult Hint, ArrayRef<uint8_t> Hash,
     }
 
     // Check for an exact match.
+    //
+    // FIXME: Stop calling Data->getPath() here; pass in parent directory.
     OnDiskData *ExistingData = DataHeader->getData(Existing);
     if (ExistingData->getHash() == Hash)
-      return ExistingData->getContent(Data->Path); // Already there!
+      return ExistingData->getContent(Data->getPath()); // Already there!
 
     // Sink the existing content as long as the indexes match.
     for (;;) {
@@ -672,9 +632,7 @@ OnDiskHashMappedTrie::insert(LookupResult Hint, ArrayRef<uint8_t> Hash,
       if (!NewSubtrie) {
         // Allocate a new, empty subtrie.
         NewSubtrie = IndexHeader->createSubtrie(
-            [this](uint64_t Size) {
-              return this->Index->requestFileSize(Size);
-            },
+            [this](uint64_t Size) { return this->Index->extendSize(Size); },
             S->StartBit + S->NumBits, IndexGen.getNumBits());
         NewS = IndexHeader->getSubtrie(*NewSubtrie);
       } else {
@@ -713,13 +671,6 @@ OnDiskHashMappedTrie::insert(LookupResult Hint, ArrayRef<uint8_t> Hash,
   }
 }
 
-OnDiskHashMappedTrie::MappedFileInfo::MappedFileInfo(StringRef Path,
-                                                     sys::fs::file_t FD,
-                                                     size_t MapSize,
-                                                     std::error_code &EC)
-    : Path(Path.str()), FD(FD),
-      Map(FD, sys::fs::mapped_file_region::readwrite, MapSize, 0, EC) {}
-
 OnDiskIndexHeader::OnDiskIndexHeader(uint64_t NumRootBits,
                                      uint64_t NumSubtrieBits,
                                      uint64_t NumHashBits)
@@ -731,71 +682,6 @@ OnDiskIndexHeader::OnDiskIndexHeader(uint64_t NumRootBits,
 
 OnDiskDataHeader::OnDiskDataHeader()
     : OnDiskHeaderBase(87654321ull, sizeof(OnDiskDataHeader)) {}
-
-/// Open / resize / map in a file on-disk.
-///
-/// FIXME: This isn't portable. Windows will resize the file to match the map
-/// size, which means immediately creating a very large file. Instead, maybe
-/// we can increase the mapped region size on windows after creation, or
-/// default to a more reasonable size.
-///
-/// The effect we want is:
-///
-/// 1. Reserve virtual memory large enough for the max file size (1GB).
-/// 2. If it doesn't exist, give the file an initial smaller size (1MB).
-/// 3. Map the file into memory.
-/// 4. Assign the file to the reserved virtual memory.
-/// 5. Increase the file size and update the mapping when necessary.
-///
-/// Here's the current implementation for Unix:
-///
-/// 1. [Automatic as part of 3.]
-/// 2. Call ::ftruncate to 1MB (sys::fs::resize_file).
-/// 3. Call ::mmap with 1GB (sys::fs::mapped_file_region).
-/// 4. [Automatic as part of 3.]
-/// 5. Call ::ftruncate with the new size.
-///
-/// On Windows, I *think* this can be implemented with:
-///
-/// 1. Call VirtualAlloc2 to reserve 1GB of virtual memory.
-/// 2. [Automatic as part of 3.]
-/// 3. Call CreateFileMapping to with 1MB, or existing size.
-/// 4. Call MapViewOfFileN to place it in the reserved memory.
-/// 5. Repeat step (3) with the new size and step (4).
-Error OnDiskHashMappedTrie::MappedFileInfo::open(
-    Optional<MappedFileInfo> &MFI, StringRef Path, size_t InitialSize,
-    size_t MaxSize, function_ref<void(char *)> NewFileConstructor) {
-  Expected<sys::fs::file_t> FD = sys::fs::openNativeFileForReadWrite(
-      Path, sys::fs::CD_OpenAlways, sys::fs::OF_None);
-  if (!FD)
-    return FD.takeError();
-
-  {
-    std::error_code EC;
-    MFI.emplace(Path, *FD, MaxSize, EC);
-    if (EC)
-      return createFileError(Path, EC);
-  }
-
-  // Lock the file so we can initialize it.
-  if (std::error_code EC = sys::fs::lockFile(*FD))
-    return createFileError(Path, EC);
-  auto Unlock = make_scope_exit([&]() { sys::fs::unlockFile(*FD); });
-
-  sys::fs::file_status Status;
-  if (std::error_code EC = sys::fs::status(*FD, Status))
-    return errorCodeToError(EC);
-  if (Status.getSize() >= InitialSize) {
-    MFI->OnDiskSize = Status.getSize();
-    return Error::success();
-  }
-
-  if (std::error_code EC = sys::fs::resize_file(*FD, InitialSize))
-    return errorCodeToError(EC);
-  MFI->OnDiskSize = InitialSize;
-  NewFileConstructor(MFI->Map.data());
-  return Error::success();
-}
 
 Expected<std::shared_ptr<OnDiskHashMappedTrie>>
 OnDiskHashMappedTrie::create(const Twine &PathTwine, size_t NumHashBits,
@@ -839,15 +725,6 @@ OnDiskHashMappedTrie::create(const Twine &PathTwine, size_t NumHashBits,
   if (std::error_code EC = sys::fs::create_directory(Path))
     return errorCodeToError(EC);
 
-  Expected<sys::fs::file_t> DataFD = sys::fs::openNativeFileForReadWrite(
-      DataPath, sys::fs::CD_OpenAlways, sys::fs::OF_None);
-  if (!DataFD)
-    return DataFD.takeError();
-  Expected<sys::fs::file_t> IndexFD = sys::fs::openNativeFileForReadWrite(
-      IndexPath, sys::fs::CD_OpenAlways, sys::fs::OF_None);
-  if (!IndexFD)
-    return IndexFD.takeError();
-
   static_assert(sizeof(size_t) == sizeof(uint64_t), "64-bit only");
 
   static constexpr uint64_t GB = 1024ull * 1024ull * 1024ull;
@@ -861,17 +738,23 @@ OnDiskHashMappedTrie::create(const Twine &PathTwine, size_t NumHashBits,
       new OnDiskHashMappedTrie(), [](OnDiskHashMappedTrie *T) { delete T; });
 
   // Open / create / initialize files on disk.
-  if (Error E = MappedFileInfo::open(
-          Trie->Index, IndexPath,
-          /*InitialSize=*/MB, MaxIndexSize, [&](char *FileData) {
-            new (FileData) OnDiskIndexHeader(
-                *InitialNumRootBits, *InitialNumSubtrieBits, NumHashBits);
-          }))
+  if (Error E = LazyMappedFileRegion::create(
+                    IndexPath, MaxIndexSize, /*NewFileSize=*/MB,
+                    [&](char *FileData) {
+                      new (FileData) OnDiskIndexHeader(*InitialNumRootBits,
+                                                       *InitialNumSubtrieBits,
+                                                       NumHashBits);
+                      return Error::success();
+                    })
+                    .moveInto(Trie->Index))
     return std::move(E);
-  if (Error E = MappedFileInfo::open(
-          Trie->Data, DataPath,
-          /*InitialSize=*/MB, MaxDataSize,
-          [&](char *FileData) { new (FileData) OnDiskDataHeader(); }))
+  if (Error E = LazyMappedFileRegion::create(
+                    DataPath, MaxDataSize, /*NewFileSize=*/MB,
+                    [&](char *FileData) {
+                      new (FileData) OnDiskDataHeader();
+                      return Error::success();
+                    })
+                    .moveInto(Trie->Data))
     return std::move(E);
 
   // Success.
@@ -880,8 +763,3 @@ OnDiskHashMappedTrie::create(const Twine &PathTwine, size_t NumHashBits,
 }
 
 OnDiskHashMappedTrie::~OnDiskHashMappedTrie() = default;
-
-OnDiskHashMappedTrie::MappedFileInfo::~MappedFileInfo() {
-  if (FD)
-    sys::fs::closeFile(FD);
-}

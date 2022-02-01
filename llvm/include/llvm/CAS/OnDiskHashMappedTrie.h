@@ -12,6 +12,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/CAS/LazyMappedFileRegion.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/SHA1.h"
@@ -137,26 +138,8 @@ public:
 
 private:
   ~OnDiskHashMappedTrie();
-  struct MappedFileInfo {
-    std::string Path;
-    sys::fs::file_t FD;
-    sys::fs::mapped_file_region Map;
-    std::atomic<uint64_t> OnDiskSize;
-    std::mutex Mutex;
-
-    static Error open(Optional<MappedFileInfo> &MFI, StringRef Path,
-                      size_t InitialSize, size_t MaxSize,
-                      function_ref<void(char *)> NewFileConstructor);
-
-    MappedFileInfo(MappedFileInfo &&) = delete;
-    MappedFileInfo(const MappedFileInfo &) = delete;
-    MappedFileInfo(StringRef Path, sys::fs::file_t FD, size_t MapSize,
-                   std::error_code &EC);
-    ~MappedFileInfo();
-    Error requestFileSize(uint64_t Size);
-  };
-  Optional<MappedFileInfo> Index;
-  Optional<MappedFileInfo> Data;
+  Optional<LazyMappedFileRegion> Index;
+  Optional<LazyMappedFileRegion> Data;
 };
 
 } // namespace cas
