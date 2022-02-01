@@ -2309,8 +2309,10 @@ Target::GetScratchTypeSystemForLanguage(lldb::LanguageType language,
           m_scratch_type_system_map.RemoveTypeSystemsForLanguage(language);
           type_system_or_err = m_scratch_type_system_map.GetTypeSystemForLanguage(
               language, this, create_on_demand, compiler_options);
-          if (!type_system_or_err)
+          if (!type_system_or_err) {
+            GetSwiftScratchContextLock().unlock();
             return type_system_or_err.takeError();
+          }
 
           if (auto *new_swift_ast_ctx =
                   llvm::dyn_cast_or_null<SwiftASTContextForExpressions>(
