@@ -148,6 +148,7 @@ public:
   }
 
   bool isInMemoryOnly() const { return !RootPath; }
+  bool isOnDisk() const { return !isInMemoryOnly(); }
 
   void print(raw_ostream &OS) const final;
 
@@ -994,15 +995,18 @@ static Error createResultCacheCorruptError(CASID InputID) {
 }
 
 Expected<CASID> BuiltinCAS::getCachedResult(CASID InputID) {
-  auto Lookup = ResultCache.find(InputID.getHash());
-  if (Lookup)
-    return CASID(Lookup->Data);
+  if (!isOnDisk()) {
+    // Look up the result in-memory (only if it's not on-disk).
+    auto Lookup = ResultCache.find(InputID.getHash());
+    if (Lookup)
+      return CASID(Lookup->Data);
 
-  // FIXME: Odd to have an error for a cache miss. Maybe this function should
-  // just return Optional.
-  if (isInMemoryOnly())
+    // FIXME: Odd to have an error for a cache miss. This function should
+    // have a different API.
     return createResultCacheMissError(InputID);
+  }
 
+  // Look up the result on-disk.
   Optional<MappedContentReference> File =
       openOnDisk(*OnDiskResults, InputID.getHash());
   if (!File)
@@ -1010,19 +1014,16 @@ Expected<CASID> BuiltinCAS::getCachedResult(CASID InputID) {
   if (File->Metadata != "results") // FIXME: Should cache this object.
     return createCorruptObjectError(InputID);
 
-  // Drop File.Map on the floor since we're storing a std::string.
+  // Expect all cached CASIDs to be directly available, without needing an
+  // additional mapped file.
+  assert(!File->Map && "Unexpected mapped_file_region in result cache");
   if (File->Data.size() != NumHashBytes)
     reportAsFatalIfError(createResultCacheCorruptError(InputID));
-  HashRef OutputHash = bufferAsRawHash(File->Data);
-  return CASID(ResultCache
-                   .insert(Lookup, ResultCacheType::value_type(
-                                       makeHash(InputID), makeHash(OutputHash)))
-                   ->Data);
+  return CASID(bufferAsRawHash(File->Data));
 }
 
 Error BuiltinCAS::putCachedResult(CASID InputID, CASID OutputID) {
-  auto Lookup = ResultCache.find(InputID.getHash());
-
+  // Helper for confirming cached results are consistent.
   auto checkOutput = [&](HashRef ExistingOutput) -> Error {
     if (ExistingOutput == OutputID.getHash())
       return Error::success();
@@ -1031,24 +1032,23 @@ Error BuiltinCAS::putCachedResult(CASID InputID, CASID OutputID) {
                                                         CASID(ExistingOutput)));
     return Error::success();
   };
-  if (Lookup)
-    return checkOutput(Lookup->Data);
 
-  if (!isInMemoryOnly()) {
-    // Store on-disk and check any existing data matches.
-    HashRef OutputHash = OutputID.getHash();
-    MappedContentReference File = OnDiskResults->insert(
-        InputID.getHash(), "results", rawHashAsBuffer(OutputHash));
-    if (Error E = checkOutput(bufferAsRawHash(File.Data)))
-      return E;
+  ArrayRef<uint8_t> InputHash = InputID.getHash();
+  if (!isOnDisk()) {
+    // Store in-memory and check against existing results.
+    return checkOutput(
+        ResultCache
+            .insert(ResultCacheType::pointer{},
+                    ResultCacheType::value_type(InputHash, makeHash(OutputID)))
+            ->Data);
   }
 
-  // Store in-memory.
-  return checkOutput(
-      ResultCache
-          .insert(Lookup, ResultCacheType::value_type(makeHash(InputID),
-                                                      makeHash(OutputID)))
-          ->Data);
+  // Store on-disk and check against existing results.
+  HashRef OutputHash = OutputID.getHash();
+  MappedContentReference File =
+      OnDiskResults->insert(InputHash, "results", rawHashAsBuffer(OutputHash));
+  assert(!File.Map && "Unexpected mapped_file_region in result cache");
+  return checkOutput(bufferAsRawHash(File.Data));
 }
 
 Optional<BuiltinCAS::MappedContentReference>
