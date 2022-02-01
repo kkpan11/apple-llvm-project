@@ -683,18 +683,11 @@ OnDiskIndexHeader::OnDiskIndexHeader(uint64_t NumRootBits,
 OnDiskDataHeader::OnDiskDataHeader()
     : OnDiskHeaderBase(87654321ull, sizeof(OnDiskDataHeader)) {}
 
-Expected<std::shared_ptr<OnDiskHashMappedTrie>>
+Expected<OnDiskHashMappedTrie>
 OnDiskHashMappedTrie::create(const Twine &PathTwine, size_t NumHashBits,
                              uint64_t MaxMapSize,
                              Optional<size_t> InitialNumRootBits,
                              Optional<size_t> InitialNumSubtrieBits) {
-  struct TrieMapNode {
-    std::mutex Mutex;
-    std::weak_ptr<OnDiskHashMappedTrie> Trie;
-  };
-  static std::mutex Mutex;
-  static StringMap<TrieMapNode> Tries;
-
   static constexpr size_t DefaultNumRootBits = 10;
   static constexpr size_t DefaultNumSubtrieBits = 6;
 
@@ -710,18 +703,6 @@ OnDiskHashMappedTrie::create(const Twine &PathTwine, size_t NumHashBits,
   sys::path::append(DataPath, "data");
   sys::path::append(IndexPath, "index");
 
-  TrieMapNode *MapNode;
-  {
-    std::lock_guard<std::mutex> Lock(Mutex);
-    MapNode = &Tries[Path];
-  }
-
-  if (std::shared_ptr<OnDiskHashMappedTrie> Trie = MapNode->Trie.lock())
-    return Trie;
-
-  // Construct a new trie.
-  std::lock_guard<std::mutex> Lock(MapNode->Mutex);
-
   if (std::error_code EC = sys::fs::create_directory(Path))
     return errorCodeToError(EC);
 
@@ -734,11 +715,9 @@ OnDiskHashMappedTrie::create(const Twine &PathTwine, size_t NumHashBits,
   const uint64_t MaxIndexSize = std::min(4 * GB, MaxMapSize);
   const uint64_t MaxDataSize = MaxMapSize;
 
-  std::shared_ptr<OnDiskHashMappedTrie> Trie(
-      new OnDiskHashMappedTrie(), [](OnDiskHashMappedTrie *T) { delete T; });
-
   // Open / create / initialize files on disk.
-  if (Error E = LazyMappedFileRegion::create(
+  OnDiskHashMappedTrie Trie;
+  if (Error E = LazyMappedFileRegion::createShared(
                     IndexPath, MaxIndexSize, /*NewFileSize=*/MB,
                     [&](char *FileData) {
                       new (FileData) OnDiskIndexHeader(*InitialNumRootBits,
@@ -746,20 +725,19 @@ OnDiskHashMappedTrie::create(const Twine &PathTwine, size_t NumHashBits,
                                                        NumHashBits);
                       return Error::success();
                     })
-                    .moveInto(Trie->Index))
+                    .moveInto(Trie.Index))
     return std::move(E);
-  if (Error E = LazyMappedFileRegion::create(
+  if (Error E = LazyMappedFileRegion::createShared(
                     DataPath, MaxDataSize, /*NewFileSize=*/MB,
                     [&](char *FileData) {
                       new (FileData) OnDiskDataHeader();
                       return Error::success();
                     })
-                    .moveInto(Trie->Data))
+                    .moveInto(Trie.Data))
     return std::move(E);
 
   // Success.
-  MapNode->Trie = Trie;
-  return Trie;
+  return std::move(Trie);
 }
 
 OnDiskHashMappedTrie::~OnDiskHashMappedTrie() = default;

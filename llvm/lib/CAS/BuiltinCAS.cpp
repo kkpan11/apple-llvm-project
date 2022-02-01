@@ -158,12 +158,10 @@ public:
   struct InMemoryOnlyTag {};
   BuiltinCAS() = delete;
   explicit BuiltinCAS(InMemoryOnlyTag) { AlignedInMemoryStrings.emplace(); }
-  explicit BuiltinCAS(StringRef RootPath,
-                      std::shared_ptr<OnDiskHashMappedTrie> OnDiskObjects,
-                      std::shared_ptr<OnDiskHashMappedTrie> OnDiskResults)
+  explicit BuiltinCAS(StringRef RootPath, OnDiskHashMappedTrie OnDiskObjects,
+                      OnDiskHashMappedTrie OnDiskResults)
       : OnDiskObjects(std::move(OnDiskObjects)),
-        OnDiskResults(std::move(OnDiskResults)),
-        RootPath(RootPath.str()) {
+        OnDiskResults(std::move(OnDiskResults)), RootPath(RootPath.str()) {
     SmallString<128> Temp = RootPath;
     sys::path::append(Temp, "tmp.");
     TempPrefix = Temp.str().str();
@@ -231,8 +229,8 @@ private:
   Optional<MappedContentReference> openOnDisk(OnDiskHashMappedTrie &Trie,
                                               HashRef Hash);
 
-  std::shared_ptr<OnDiskHashMappedTrie> OnDiskObjects;
-  std::shared_ptr<OnDiskHashMappedTrie> OnDiskResults;
+  Optional<OnDiskHashMappedTrie> OnDiskObjects;
+  Optional<OnDiskHashMappedTrie> OnDiskResults;
 
   using ObjectCacheType =
       ThreadSafeHashMappedTrie<ObjectContentReference, sizeof(HashType)>;
@@ -929,7 +927,7 @@ Expected<BlobRef> BuiltinCAS::createBlobImpl(
 ContentReference BuiltinCAS::getOrCreatePersistentContent(
     HashRef Hash, StringRef Metadata, StringRef Data,
     Optional<sys::fs::mapped_file_region> NullTerminatedDataMap) {
-  assert(isInMemoryOnly() == (OnDiskObjects == nullptr));
+  assert(isInMemoryOnly() == !OnDiskObjects);
   if (OnDiskObjects)
     return persistMappedContentInMemory(
         OnDiskObjects->insert(Hash, Metadata, Data));
@@ -1107,23 +1105,22 @@ Expected<std::unique_ptr<CASDB>> cas::createOnDiskCAS(const Twine &Path) {
     return createFileError(AbsPath, EC);
   }
 
-  std::shared_ptr<OnDiskHashMappedTrie> OnDiskObjects;
-  std::shared_ptr<OnDiskHashMappedTrie> OnDiskResults;
+  Optional<OnDiskHashMappedTrie> OnDiskObjects;
+  Optional<OnDiskHashMappedTrie> OnDiskResults;
 
   uint64_t GB = 1024ull * 1024ull * 1024ull;
-  if (auto Expected = OnDiskHashMappedTrie::create(
-          AbsPath.str() + "/objects", NumHashBytes * sizeof(uint8_t), 16 * GB))
-    OnDiskObjects = std::move(*Expected);
-  else
-    return Expected.takeError();
-  if (auto Expected = OnDiskHashMappedTrie::create(
-          AbsPath.str() + "/results", NumHashBytes * sizeof(uint8_t), GB))
-    OnDiskResults = std::move(*Expected);
-  else
-    return Expected.takeError();
+  if (Error E =
+          OnDiskHashMappedTrie::create(AbsPath.str() + "/objects",
+                                       NumHashBytes * sizeof(uint8_t), 16 * GB)
+              .moveInto(OnDiskObjects))
+    return std::move(E);
+  if (Error E = OnDiskHashMappedTrie::create(AbsPath.str() + "/results",
+                                             NumHashBytes * sizeof(uint8_t), GB)
+                    .moveInto(OnDiskResults))
+    return std::move(E);
 
-  return std::make_unique<BuiltinCAS>(AbsPath, std::move(OnDiskObjects),
-                                      std::move(OnDiskResults));
+  return std::make_unique<BuiltinCAS>(AbsPath, std::move(*OnDiskObjects),
+                                      std::move(*OnDiskResults));
 }
 
 std::unique_ptr<CASDB> cas::createInMemoryCAS() {
