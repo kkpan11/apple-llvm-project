@@ -133,9 +133,11 @@ LLDBMemoryReader::resolvePointer(swift::remote::RemoteAddress address,
   if (!target.GetSwiftUseReflectionSymbols())
     return pointer;
 
-  Address addr;
-  if (!target.ResolveLoadAddress(address.getAddressData(), addr))
+  llvm::Optional<Address> maybeAddr =
+      resolveRemoteAddress(address.getAddressData());
+  if (!maybeAddr)
     return pointer;
+  auto addr = *maybeAddr;
 
   if (!addr.GetSection()->CanContainSwiftReflectionData())
     return pointer;
