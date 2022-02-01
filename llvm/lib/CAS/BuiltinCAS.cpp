@@ -234,10 +234,10 @@ private:
   std::shared_ptr<OnDiskHashMappedTrie> OnDiskResults;
 
   using ObjectCacheType =
-      ThreadSafeHashMappedTrie<ObjectContentReference, HashType>;
+      ThreadSafeHashMappedTrie<ObjectContentReference, sizeof(HashType)>;
   ObjectCacheType ObjectCache;
 
-  using ResultCacheType = ThreadSafeHashMappedTrie<HashType, HashType>;
+  using ResultCacheType = ThreadSafeHashMappedTrie<HashType, sizeof(HashType)>;
   ResultCacheType ResultCache;
 
   Optional<std::string> RootPath;
@@ -698,7 +698,7 @@ Optional<ObjectKind> BuiltinCAS::getObjectKind(CASID ID) {
 
 Expected<ObjectAndID> BuiltinCAS::getObject(CASID ID) {
   HashRef Hash = ID.getHash();
-  auto Lookup = ObjectCache.lookup(Hash);
+  auto Lookup = ObjectCache.find(Hash);
   if (Lookup)
     return ObjectAndID{Lookup->Data, CASID(Lookup->Hash)};
 
@@ -715,9 +715,9 @@ Expected<ObjectAndID> BuiltinCAS::getObject(CASID ID) {
   if (!Object)
     return createCorruptObjectError(ID);
 
-  auto &Insertion = ObjectCache.insert(
-      Lookup, ObjectCacheType::HashedDataType(makeHash(Hash), *Object));
-  return ObjectAndID{Insertion.Data, CASID(Insertion.Hash)};
+  auto Insertion = ObjectCache.insert(
+      Lookup, ObjectCacheType::value_type(makeHash(Hash), *Object));
+  return ObjectAndID{Insertion->Data, CASID(Insertion->Hash)};
 }
 
 Expected<BlobRef> BuiltinCAS::getBlobFromObject(Expected<ObjectAndID> Object) {
@@ -891,7 +891,7 @@ Expected<ObjectAndID> BuiltinCAS::createObject(
     AbstractObjectReference Object,
     Optional<sys::fs::mapped_file_region> NullTerminatedMap) {
   HashType Hash = Object.computeHash();
-  auto Lookup = ObjectCache.lookup(Hash);
+  auto Lookup = ObjectCache.find(Hash);
   if (Lookup) {
     assert(Object.Data == Lookup->Data.Data);
     return ObjectAndID{Lookup->Data, CASID(Lookup->Hash)};
@@ -913,9 +913,9 @@ Expected<ObjectAndID> BuiltinCAS::createObject(
       ObjectContentReference::getFromContent(Content);
   assert(PersistentObject && "Expected persistant object to be valid");
 
-  auto &Insertion = ObjectCache.insert(
-      Lookup, ObjectCacheType::HashedDataType(Hash, *PersistentObject));
-  return ObjectAndID{Insertion.Data, CASID(Insertion.Hash)};
+  auto Insertion = ObjectCache.insert(
+      Lookup, ObjectCacheType::value_type(Hash, *PersistentObject));
+  return ObjectAndID{Insertion->Data, CASID(Insertion->Hash)};
 }
 
 Expected<BlobRef> BuiltinCAS::createBlobImpl(
@@ -994,7 +994,7 @@ static Error createResultCacheCorruptError(CASID InputID) {
 }
 
 Expected<CASID> BuiltinCAS::getCachedResult(CASID InputID) {
-  auto Lookup = ResultCache.lookup(InputID.getHash());
+  auto Lookup = ResultCache.find(InputID.getHash());
   if (Lookup)
     return CASID(Lookup->Data);
 
@@ -1015,13 +1015,13 @@ Expected<CASID> BuiltinCAS::getCachedResult(CASID InputID) {
     reportAsFatalIfError(createResultCacheCorruptError(InputID));
   HashRef OutputHash = bufferAsRawHash(File->Data);
   return CASID(ResultCache
-                   .insert(Lookup, ResultCacheType::HashedDataType(
+                   .insert(Lookup, ResultCacheType::value_type(
                                        makeHash(InputID), makeHash(OutputHash)))
-                   .Data);
+                   ->Data);
 }
 
 Error BuiltinCAS::putCachedResult(CASID InputID, CASID OutputID) {
-  auto Lookup = ResultCache.lookup(InputID.getHash());
+  auto Lookup = ResultCache.find(InputID.getHash());
 
   auto checkOutput = [&](HashRef ExistingOutput) -> Error {
     if (ExistingOutput == OutputID.getHash())
@@ -1046,9 +1046,9 @@ Error BuiltinCAS::putCachedResult(CASID InputID, CASID OutputID) {
   // Store in-memory.
   return checkOutput(
       ResultCache
-          .insert(Lookup, ResultCacheType::HashedDataType(makeHash(InputID),
-                                                          makeHash(OutputID)))
-          .Data);
+          .insert(Lookup, ResultCacheType::value_type(makeHash(InputID),
+                                                      makeHash(OutputID)))
+          ->Data);
 }
 
 Optional<BuiltinCAS::MappedContentReference>

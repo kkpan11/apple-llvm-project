@@ -10,6 +10,7 @@
 #define LLVM_CAS_HASHMAPPEDTRIE_H
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/AtomicUniquePointer.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"
@@ -22,77 +23,28 @@ class MemoryBuffer;
 
 namespace cas {
 
-struct alignas(2) TrieNode {
-  const bool IsSubtrie = false;
-
-  TrieNode(bool IsSubtrie) : IsSubtrie(IsSubtrie) {}
-
-  static void *operator new(size_t Size) { return ::malloc(Size); }
-  void operator delete(void *Ptr) { ::free(Ptr); }
-};
-
-struct TrieContentBase : public TrieNode {
-  ArrayRef<uint8_t> Bytes;
-
-protected:
-  TrieContentBase() : TrieNode(false) {}
-  void initialize(ArrayRef<uint8_t> Bytes) { this->Bytes = Bytes; }
-};
-
-} // namespace cas
-
-template <> struct isa_impl<cas::TrieContentBase, cas::TrieNode> {
-  static inline bool doit(const cas::TrieNode &TN) { return !TN.IsSubtrie; }
-};
-
-namespace cas {
-
-template <class DataT, class HashT>
-struct TrieContent : public TrieContentBase {
-  struct HashedDataType {
-    HashT Hash;
-    DataT Data;
-
-    struct EmplaceDataTag {};
-    HashedDataType(HashedDataType &&) = default;
-    HashedDataType(const HashedDataType &) = default;
-    HashedDataType(const HashT &Hash, const DataT &Data)
-        : Hash(Hash), Data(Data) {}
-    HashedDataType(const HashT &Hash, DataT &&Data)
-        : Hash(Hash), Data(std::move(Data)) {}
-    template <class... ArgsT>
-    HashedDataType(EmplaceDataTag, ArgsT &&... Args)
-        : Data(std::forward<ArgsT>(Args)...) {}
-    template <class... ArgsT>
-    HashedDataType(const HashT &Hash, EmplaceDataTag, ArgsT &&... Args)
-        : Hash(Hash), Data(std::forward<ArgsT>(Args)...) {}
-  };
-
-  HashedDataType HashedData;
-
-  TrieContent() = delete;
-
-  TrieContent(HashedDataType &&HashedData) : HashedData(std::move(HashedData)) {
-    initialize();
-  }
-
-  TrieContent(const HashedDataType &HashedData) : HashedData(HashedData) {
-    initialize();
-  }
-
-  template <class... ArgsT>
-  TrieContent(const HashT &Hash, ArgsT &&... Args)
-      : HashedData(Hash, typename HashedDataType::EmplaceDataTag(),
-                   std::forward<ArgsT>(Args)...) {
-    initialize();
-  }
-
-protected:
-  void initialize() { TrieContentBase::initialize(HashedData.Hash); }
-}; // namespace cas
-
 /// Base class for a lock-free thread-safe hash-mapped trie.
 class ThreadSafeHashMappedTrieBase {
+public:
+  enum : size_t { TrieContentBaseSize = 4 };
+
+private:
+  template <class T> struct AllocValueType {
+    char Base[TrieContentBaseSize];
+    std::aligned_union_t<sizeof(T), T> Content;
+  };
+
+protected:
+  template <class T> static constexpr size_t getContentAllocSize() {
+    return sizeof(AllocValueType<T>);
+  }
+  template <class T> static constexpr size_t getContentAllocAlign() {
+    return alignof(AllocValueType<T>);
+  }
+  template <class T> static constexpr size_t getContentOffset() {
+    return offsetof(AllocValueType<T>, Content);
+  }
+
 public:
   void operator delete(void *Ptr) { ::free(Ptr); }
 
@@ -107,23 +59,21 @@ protected:
   /// expanded into an iterator of sorts, but likely not useful (visiting
   /// everything in the trie should probably be done some way other than
   /// through an iterator pattern).
-  class LookupResultBase {
+  class PointerBase {
   protected:
-    const TrieContentBase *get() const {
-      return I == -2u ? static_cast<TrieContentBase *>(P) : nullptr;
-    }
+    void *get() const { return I == -2u ? P : nullptr; }
 
   public:
-    LookupResultBase() noexcept = default;
-    LookupResultBase(LookupResultBase &&) = default;
-    LookupResultBase(const LookupResultBase &) = default;
-    LookupResultBase &operator=(LookupResultBase &&) = default;
-    LookupResultBase &operator=(const LookupResultBase &) = default;
+    PointerBase() noexcept = default;
+    PointerBase(PointerBase &&) = default;
+    PointerBase(const PointerBase &) = default;
+    PointerBase &operator=(PointerBase &&) = default;
+    PointerBase &operator=(const PointerBase &) = default;
 
   private:
     friend class ThreadSafeHashMappedTrieBase;
-    LookupResultBase(TrieContentBase &Content) : P(&Content), I(-2u) {}
-    LookupResultBase(void *P, unsigned I, unsigned B) : P(P), I(I), B(B) {}
+    explicit PointerBase(void *Content) : P(Content), I(-2u) {}
+    PointerBase(void *P, unsigned I, unsigned B) : P(P), I(I), B(B) {}
 
     bool isHint() const { return I != -1u && I != -2u; }
 
@@ -132,7 +82,7 @@ protected:
     unsigned B = 0;
   };
 
-  LookupResultBase lookup(ArrayRef<uint8_t> Hash) const;
+  PointerBase find(ArrayRef<uint8_t> Hash) const;
 
   /// Returns the actual content in the map, potentially a different node.
   ///
@@ -148,24 +98,24 @@ protected:
   /// right slot has been found, an allocation race is likely rare enough
   /// that'd be acceptable to leak the losing allocation on the bump-ptr; or,
   /// could recycle the allocation somehow.
-  TrieContentBase &insert(LookupResultBase Hint,
-                          std::unique_ptr<TrieContentBase> Content);
+  PointerBase
+  insert(PointerBase Hint, ArrayRef<uint8_t> Hash,
+         function_ref<const uint8_t *(void *Mem, ArrayRef<uint8_t> Hash)>
+             Constructor);
 
   ThreadSafeHashMappedTrieBase() = delete;
 
-  ThreadSafeHashMappedTrieBase(Optional<size_t> NumRootBits = None,
-                               Optional<size_t> NumSubtrieBits = None)
-      : NumRootBits(NumRootBits ? *NumRootBits : DefaultNumRootBits),
-        NumSubtrieBits(NumSubtrieBits ? *NumSubtrieBits
-                                      : DefaultNumSubtrieBits),
-        Root(nullptr) {
-    assert((!NumRootBits || *NumRootBits < 20) &&
-           "Root should have fewer than ~1M slots");
-    assert((!NumSubtrieBits || *NumSubtrieBits < 10) &&
-           "Subtries should have fewer than ~1K slots");
-  }
+  ThreadSafeHashMappedTrieBase(size_t ContentAllocSize,
+                               size_t ContentAllocAlign, size_t ContentOffset,
+                               Optional<size_t> NumRootBits = None,
+                               Optional<size_t> NumSubtrieBits = None);
 
+  /// Destructor, which asserts if there's anything to do. Subclasses should
+  /// call \a destroyImpl().
+  ///
+  /// \pre \a destroyImpl() was already called.
   ~ThreadSafeHashMappedTrieBase();
+  void destroyImpl(function_ref<void (void *ValueMem)> Destructor);
 
   ThreadSafeHashMappedTrieBase(ThreadSafeHashMappedTrieBase &&RHS);
 
@@ -180,79 +130,215 @@ protected:
   operator=(const ThreadSafeHashMappedTrieBase &) = delete;
 
 private:
-  unsigned NumRootBits;
-  unsigned NumSubtrieBits;
-  std::atomic<TrieNode *> Root;
+  const unsigned short ContentAllocSize;
+  const unsigned short ContentAllocAlign;
+  const unsigned short ContentOffset;
+  unsigned short NumRootBits;
+  unsigned short NumSubtrieBits;
+  struct ImplType;
+  AtomicUniquePointer<ImplType> ImplPtr;
+  ImplType &getOrCreateImpl();
+  ImplType *getImpl() const;
 };
 
 /// Lock-free thread-safe hash-mapped trie.
-template <class T, class HashT>
+template <class T, size_t NumHashBytes>
 class ThreadSafeHashMappedTrie : ThreadSafeHashMappedTrieBase {
-  using TrieContentType = TrieContent<T, HashT>;
-
 public:
+  using HashT = std::array<uint8_t, NumHashBytes>;
+
+  class LazyValueConstructor;
+  struct value_type {
+    const HashT Hash;
+    T Data;
+
+    value_type(value_type &&) = default;
+    value_type(const value_type &) = default;
+
+    value_type(ArrayRef<uint8_t> Hash, const T &Data)
+        : Hash(makeHash(Hash)), Data(Data) {}
+    value_type(ArrayRef<uint8_t> Hash, T &&Data)
+        : Hash(makeHash(Hash)), Data(std::move(Data)) {}
+
+  private:
+    friend class LazyValueConstructor;
+
+    struct EmplaceTag {};
+    template <class... ArgsT>
+    value_type(ArrayRef<uint8_t> Hash, EmplaceTag, ArgsT &&... Args)
+        : Hash(makeHash(Hash)), Data(std::forward<ArgsT>(Args)...) {}
+
+    static HashT makeHash(ArrayRef<uint8_t> HashRef) {
+      HashT Hash;
+      std::copy(HashRef.begin(), HashRef.end(), Hash.data());
+      return Hash;
+    }
+  };
+
   using ThreadSafeHashMappedTrieBase::operator delete;
   using HashType = HashT;
-  using HashedDataType = typename TrieContentType::HashedDataType;
 
   using ThreadSafeHashMappedTrieBase::dump;
   using ThreadSafeHashMappedTrieBase::print;
 
-  class LookupResult : LookupResultBase {
-  public:
-    const HashedDataType *get() const {
-      if (const TrieContentBase *B = LookupResultBase::get())
-        return &static_cast<const TrieContentType *>(B)->HashedData;
+private:
+  template <class ValueT> class PointerImpl : PointerBase {
+    friend class ThreadSafeHashMappedTrie;
+
+    ValueT *get() const {
+      if (void *B = PointerBase::get())
+        return reinterpret_cast<ValueT *>(B);
       return nullptr;
     }
-    const HashedDataType &operator*() const {
+
+  public:
+    ValueT &operator*() const {
       assert(get());
       return *get();
     }
-    const HashedDataType *operator->() const {
+    ValueT *operator->() const {
       assert(get());
       return get();
     }
     explicit operator bool() const { return get(); }
 
-    LookupResult() = default;
-    LookupResult(LookupResult &&) = default;
-    LookupResult(const LookupResult &) = default;
-    LookupResult &operator=(LookupResult &&) = default;
-    LookupResult &operator=(const LookupResult &) = default;
+    PointerImpl() = default;
+    PointerImpl(PointerImpl &&) = default;
+    PointerImpl(const PointerImpl &) = default;
+    PointerImpl &operator=(PointerImpl &&) = default;
+    PointerImpl &operator=(const PointerImpl &) = default;
+
+  protected:
+    PointerImpl(PointerBase Result) : PointerBase(Result) {}
+  };
+
+public:
+  class pointer;
+  class const_pointer;
+  class pointer : public PointerImpl<value_type> {
+    friend class ThreadSafeHashMappedTrie;
+    friend class const_pointer;
+
+  public:
+    pointer() = default;
+    pointer(pointer &&) = default;
+    pointer(const pointer &) = default;
+    pointer &operator=(pointer &&) = default;
+    pointer &operator=(const pointer &) = default;
 
   private:
-    LookupResult(LookupResultBase Result) : LookupResultBase(Result) {}
+    pointer(PointerBase Result) : pointer::PointerImpl(Result) {}
+  };
+
+  class const_pointer : public PointerImpl<const value_type> {
     friend class ThreadSafeHashMappedTrie;
+
+  public:
+    const_pointer() = default;
+    const_pointer(const_pointer &&) = default;
+    const_pointer(const const_pointer &) = default;
+    const_pointer &operator=(const_pointer &&) = default;
+    const_pointer &operator=(const const_pointer &) = default;
+
+    const_pointer(const pointer &P) : const_pointer::PointerImpl(P) {}
+
+  private:
+    const_pointer(PointerBase Result) : const_pointer::PointerImpl(Result) {}
+  };
+
+  class LazyValueConstructor {
+  public:
+    value_type &operator()(T &&RHS) {
+      assert(Mem && "Constructor already called, or moved away");
+      return assign(::new (Mem) value_type(Hash, std::move(RHS)));
+    }
+    value_type &operator()(const T &RHS) {
+      assert(Mem && "Constructor already called, or moved away");
+      return assign(::new (Mem) value_type(Hash, RHS));
+    }
+    template <class... ArgsT> value_type &emplace(ArgsT &&... Args) {
+      assert(Mem && "Constructor already called, or moved away");
+      return assign(::new (Mem)
+                        value_type(Hash, typename value_type::EmplaceTag{},
+                                   std::forward<ArgsT>(Args)...));
+    }
+
+    LazyValueConstructor(LazyValueConstructor &&RHS)
+        : Mem(RHS.Mem), Result(RHS.Result), Hash(RHS.Hash) {
+      RHS.Mem = nullptr; // Moved away, cannot call.
+    }
+    ~LazyValueConstructor() {
+      assert(!Mem && "Constructor never called!");
+    }
+
+  private:
+    value_type &assign(value_type *V) {
+      Mem = nullptr;
+      Result = V;
+      return *V;
+    }
+    friend class ThreadSafeHashMappedTrie;
+    LazyValueConstructor() = delete;
+    LazyValueConstructor(void *Mem, value_type *&Result, ArrayRef<uint8_t> Hash)
+        : Mem( Mem), Result( Result), Hash( Hash) {
+      assert(Hash.size() == sizeof(HashT) && "Invalid hash");
+      assert(Mem && "Invalid memory for construction");
+    }
+    void *Mem;
+    value_type *&Result;
+    ArrayRef<uint8_t> Hash;
   };
 
   /// Insert with a hint. Default-constructed hint will work, but it's
   /// recommended to start with a lookup to avoid overhead in object creation
   /// if it already exists.
-  const HashedDataType &insert(LookupResult Hint, HashedDataType &&HashedData) {
-    return static_cast<TrieContentType &>(
-               ThreadSafeHashMappedTrieBase::insert(
-                   Hint,
-                   std::make_unique<TrieContentType>(std::move(HashedData))))
-        .HashedData;
+  pointer insertLazy(const_pointer Hint, ArrayRef<uint8_t> Hash,
+                     function_ref<void(LazyValueConstructor)> OnConstruct) {
+    return pointer(ThreadSafeHashMappedTrieBase::insert(
+        Hint, Hash, [&](void *Mem, ArrayRef<uint8_t> Hash) {
+          value_type *Result = nullptr;
+          OnConstruct(LazyValueConstructor(Mem, Result, Hash));
+          return Result->Hash.data();
+        }));
   }
 
-  const HashedDataType &insert(LookupResult Hint,
-                               const HashedDataType &HashedData) {
-    return static_cast<TrieContentType &>(
-               ThreadSafeHashMappedTrieBase::insert(
-                   Hint, std::make_unique<TrieContentType>(HashedData)))
-        .HashedData;
+  pointer insert(const_pointer Hint, value_type &&HashedData) {
+    return insertLazy(Hint, HashedData.Hash,
+                                   [&](LazyValueConstructor C) {
+                                     C(std::move(HashedData.Data));
+                                   });
   }
 
-  LookupResult lookup(ArrayRef<uint8_t> Hash) const {
+  pointer insert(const_pointer Hint, const value_type &HashedData) {
+    return insertLazy(Hint, HashedData.Hash,
+                      [&](LazyValueConstructor C) {
+                        C(HashedData.Data);
+                      });
+  }
+
+  pointer find(ArrayRef<uint8_t> Hash) {
     assert(Hash.size() == std::tuple_size<HashT>::value);
-    return ThreadSafeHashMappedTrieBase::lookup(Hash);
+    return ThreadSafeHashMappedTrieBase::find(Hash);
+  }
+
+  const_pointer find(ArrayRef<uint8_t> Hash) const {
+    assert(Hash.size() == std::tuple_size<HashT>::value);
+    return ThreadSafeHashMappedTrieBase::find(Hash);
   }
 
   ThreadSafeHashMappedTrie(Optional<size_t> NumRootBits = None,
                            Optional<size_t> NumSubtrieBits = None)
-      : ThreadSafeHashMappedTrieBase(NumRootBits, NumSubtrieBits) {}
+      : ThreadSafeHashMappedTrieBase(getContentAllocSize<value_type>(),
+                                     getContentAllocAlign<value_type>(),
+                                     getContentOffset<value_type>(),
+                                     NumRootBits, NumSubtrieBits) {}
+
+  ~ThreadSafeHashMappedTrie() {
+    if (std::is_trivially_destructible<value_type>::value)
+      this->destroyImpl(nullptr);
+    else
+      this->destroyImpl([](void *P) { delete static_cast<value_type *>(P); });
+  }
 
   // Move constructor okay.
   ThreadSafeHashMappedTrie(ThreadSafeHashMappedTrie &&) = default;
@@ -262,98 +348,6 @@ public:
   ThreadSafeHashMappedTrie(const ThreadSafeHashMappedTrie &) = delete;
   ThreadSafeHashMappedTrie &
   operator=(const ThreadSafeHashMappedTrie &) = delete;
-};
-
-template <class T> struct HashMappedTrieInfo;
-
-template <> struct HashMappedTrieInfo<ArrayRef<uint8_t>> {
-  template <class HasherT> static auto hash(ArrayRef<uint8_t> Data) {
-    return HasherT::template hash(Data);
-  }
-};
-
-template <> struct HashMappedTrieInfo<StringRef> {
-  template <class HasherT> static auto hash(StringRef Data) {
-    return HasherT::hash(
-        makeArrayRef(reinterpret_cast<const uint8_t *>(Data.begin()),
-                     reinterpret_cast<const uint8_t *>(Data.end())));
-  }
-};
-
-template <class HasherT>
-using HashTypeForHasher =
-    decltype(HasherT::hash(std::declval<ArrayRef<uint8_t>>()));
-
-template <>
-struct HashMappedTrieInfo<std::string> : HashMappedTrieInfo<StringRef> {};
-
-template <class T, class HasherT = SHA1,
-          class HashInfoT = HashMappedTrieInfo<T>>
-class ThreadSafeHashMappedTrieSet
-    : ThreadSafeHashMappedTrie<T, HashTypeForHasher<HasherT>> {
-  using HashType = HashTypeForHasher<HasherT>;
-  using TrieType = ThreadSafeHashMappedTrie<T, HashType>;
-  using HashedDataType = typename TrieType::HashedDataType;
-
-public:
-  using TrieType::dump;
-  using TrieType::print;
-
-  class LookupResult : TrieType::LookupResult {
-    using BaseType = typename TrieType::LookupResult;
-
-  public:
-    const T *get() const {
-      if (const auto *V = BaseType::get())
-        return &static_cast<const HashedDataType *>(V)->Data;
-      return nullptr;
-    }
-    const T &operator*() const {
-      assert(get());
-      return *get();
-    }
-    const T *operator->() const {
-      assert(get());
-      return get();
-    }
-    explicit operator bool() const { return get(); }
-
-    LookupResult() = default;
-    LookupResult(LookupResult &&) = default;
-    LookupResult(const LookupResult &) = default;
-    LookupResult &operator=(LookupResult &&) = default;
-    LookupResult &operator=(const LookupResult &) = default;
-
-  private:
-    LookupResult(BaseType Result) : BaseType(Result) {}
-    friend class ThreadSafeHashMappedTrieSet;
-  };
-
-  ThreadSafeHashMappedTrieSet(Optional<size_t> NumRootBits = None,
-                              Optional<size_t> NumSubtrieBits = None)
-      : TrieType(NumRootBits, NumSubtrieBits) {}
-  LookupResult lookup(const T &Value) const {
-    return LookupResult(
-        TrieType::lookup(HashInfoT::template hash<HasherT>(Value)));
-  }
-  template <class OtherT> LookupResult lookupAs(const OtherT &Value) const {
-    return LookupResult(
-        TrieType::lookup(HashInfoT::template hash<HasherT>(Value)));
-  }
-  const T &insert(LookupResult Hint, T &&Value) {
-    HashType Hash = HashInfoT::template hash<HasherT>(Value);
-    return TrieType::insert(typename LookupResult::BaseType(Hint),
-                            HashedDataType(Hash, std::move(Value)))
-        .Data;
-  }
-  const T &insert(LookupResult Hint, const T &Value) {
-    HashType Hash = HashInfoT::template hash<HasherT>(Value);
-    return TrieType::insert(typename LookupResult::BaseType(Hint),
-                            HashedDataType(Hash, Value))
-        .Data;
-  }
-  const T &insert(T &&Value) { return insert(LookupResult(), Value); }
-  const T &insert(const T &Value) { return insert(LookupResult(), Value); }
 };
 
 } // namespace cas

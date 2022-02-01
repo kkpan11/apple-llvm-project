@@ -26,7 +26,7 @@ namespace {
 TEST(HashMappedTrieTest, TrieStructure) {
   using NumType = uint64_t;
   using HashType = std::array<uint8_t, sizeof(NumType)>;
-  using TrieType = ThreadSafeHashMappedTrie<NumType, HashType>;
+  using TrieType = ThreadSafeHashMappedTrie<NumType, sizeof(HashType)>;
   NumType Numbers[] = {
       // Three numbers that will nest deeply to test (1) sinking subtries and
       // (2) deep, non-trivial hints.
@@ -49,13 +49,13 @@ TEST(HashMappedTrieTest, TrieStructure) {
   TrieType Trie(1, 1);
   for (NumType N : Numbers) {
     // Lookup first to exercise hint code for deep tries.
-    TrieType::LookupResult Lookup = Trie.lookup(hash(N));
+    TrieType::pointer Lookup = Trie.find(hash(N));
     EXPECT_FALSE(Lookup);
 
-    Trie.insert(Lookup, TrieType::HashedDataType(hash(N), N));
+    Trie.insert(Lookup, TrieType::value_type(hash(N), N));
   }
   for (NumType N : Numbers) {
-    TrieType::LookupResult Lookup = Trie.lookup(hash(N));
+    TrieType::pointer Lookup = Trie.find(hash(N));
     EXPECT_TRUE(Lookup);
     if (!Lookup)
       continue;
@@ -64,8 +64,8 @@ TEST(HashMappedTrieTest, TrieStructure) {
 
     // Confirm a subsequent insertion fails to overwrite by trying to insert a
     // bad value.
-    EXPECT_EQ(
-        N, Trie.insert(Lookup, TrieType::HashedDataType(hash(N), N - 1)).Data);
+    EXPECT_EQ(N,
+              Trie.insert(Lookup, TrieType::value_type(hash(N), N - 1))->Data);
   }
 
   // Dump out the trie so we can confirm the structure is correct. Each subtrie
@@ -108,7 +108,7 @@ TEST(HashMappedTrieTest, TrieStructure) {
 TEST(HashMappedTrieTest, TrieStructureSmallFinalSubtrie) {
   using NumType = uint64_t;
   using HashType = std::array<uint8_t, sizeof(NumType)>;
-  using TrieType = ThreadSafeHashMappedTrie<NumType, HashType>;
+  using TrieType = ThreadSafeHashMappedTrie<NumType, sizeof(HashType)>;
   NumType Numbers[] = {
       // Three numbers that will nest deeply to test (1) sinking subtries and
       // (2) deep, non-trivial hints.
@@ -132,13 +132,13 @@ TEST(HashMappedTrieTest, TrieStructureSmallFinalSubtrie) {
   TrieType Trie(8, 5);
   for (NumType N : Numbers) {
     // Lookup first to exercise hint code for deep tries.
-    TrieType::LookupResult Lookup = Trie.lookup(hash(N));
+    TrieType::pointer Lookup = Trie.find(hash(N));
     EXPECT_FALSE(Lookup);
 
-    Trie.insert(Lookup, TrieType::HashedDataType(hash(N), N));
+    Trie.insert(Lookup, TrieType::value_type(hash(N), N));
   }
   for (NumType N : Numbers) {
-    TrieType::LookupResult Lookup = Trie.lookup(hash(N));
+    TrieType::pointer Lookup = Trie.find(hash(N));
     EXPECT_TRUE(Lookup);
     if (!Lookup)
       continue;
@@ -147,8 +147,8 @@ TEST(HashMappedTrieTest, TrieStructureSmallFinalSubtrie) {
 
     // Confirm a subsequent insertion fails to overwrite by trying to insert a
     // bad value.
-    EXPECT_EQ(
-        N, Trie.insert(Lookup, TrieType::HashedDataType(hash(N), N - 1)).Data);
+    EXPECT_EQ(N,
+              Trie.insert(Lookup, TrieType::value_type(hash(N), N - 1))->Data);
   }
 
   // Dump out the trie so we can confirm the structure is correct. The root
@@ -189,43 +189,6 @@ TEST(HashMappedTrieTest, TrieStructureSmallFinalSubtrie) {
   ASSERT_EQ("- index=0 content=fffffffffffffff[1100]", takeNextLine(DumpRef));
   ASSERT_EQ("- index=1 content=fffffffffffffff[1101]", takeNextLine(DumpRef));
   ASSERT_TRUE(DumpRef.empty());
-}
-
-TEST(HashMappedTrieTest, Strings) {
-  for (unsigned RootBits : {2, 3, 6, 10}) {
-    for (unsigned SubtrieBits : {2, 3, 4}) {
-      ThreadSafeHashMappedTrieSet<std::string> Strings(RootBits, SubtrieBits);
-      const std::string &A1 = Strings.insert("A");
-      EXPECT_EQ(&A1, &Strings.insert("A"));
-      std::string A2 = A1;
-      EXPECT_EQ(&A1, &Strings.insert(A2));
-
-      const std::string &B1 = Strings.insert("B");
-      EXPECT_EQ(&B1, &Strings.insert(B1));
-      std::string B2 = B1;
-      EXPECT_EQ(&B1, &Strings.insert(B2));
-
-      for (int I = 0, E = 1000; I != E; ++I) {
-        ThreadSafeHashMappedTrieSet<std::string>::LookupResult Lookup;
-        std::string S = Twine(I).str();
-        if (I & 1)
-          Lookup = Strings.lookup(S);
-        const std::string &S1 = Strings.insert(Lookup, S);
-        EXPECT_EQ(&S1, &Strings.insert(S1));
-        std::string S2 = S1;
-        EXPECT_EQ(&S1, &Strings.insert(S2));
-      }
-      for (int I = 0, E = 1000; I != E; ++I) {
-        std::string S = Twine(I).str();
-        ThreadSafeHashMappedTrieSet<std::string>::LookupResult Lookup =
-            Strings.lookup(S);
-        EXPECT_TRUE(Lookup);
-        if (!Lookup)
-          continue;
-        EXPECT_EQ(S, *Lookup);
-      }
-    }
-  }
 }
 
 } // namespace
