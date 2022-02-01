@@ -80,7 +80,7 @@ list(APPEND CLANG_TEST_DEPS
   diagtool
   hmaptool
   )
-  
+
 if(CLANG_ENABLE_STATIC_ANALYZER)
   list(APPEND CLANG_TEST_DEPS
     clang-check
@@ -117,6 +117,7 @@ if( NOT CLANG_BUILT_STANDALONE )
     llvm-ar
     llvm-as
     llvm-bcanalyzer
+    llvm-cas
     llvm-cat
     llvm-cxxfilt
     llvm-dis
