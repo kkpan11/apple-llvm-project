@@ -10,21 +10,44 @@
 #define LLVM_CAS_THREADSAFEALLOCATOR_H
 
 #include "llvm/Support/Allocator.h"
-#include <mutex>
+#include <atomic>
 
 namespace llvm {
 namespace cas {
 
+/// Thread-safe allocator adaptor. Uses an unfair lock on the assumption that
+/// contention here is extremely rare.
+///
+/// FIXME: This is mainly used for BumpPtrAllocator and
+/// SpecificBumpPtrAllocator; it'd be better to have a template parameter that
+/// added thread-safety to the allocator itself. Probably best/reasonable to use
+/// a fair lock (std::mutex) when allocating a new slab, but otherwise use
+/// atomics to make Allocate() lock-free.
 template <class AllocatorType> class ThreadSafeAllocator {
+  struct LockGuard {
+    LockGuard(std::atomic_flag &Flag) : Flag(Flag) {
+      if (LLVM_UNLIKELY(Flag.test_and_set(std::memory_order_acquire)))
+        while (Flag.test_and_set(std::memory_order_acquire)) {
+        }
+    }
+    ~LockGuard() { Flag.clear(std::memory_order_release); }
+    std::atomic_flag &Flag;
+  };
+
 public:
   auto Allocate(size_t N = 1) {
-    std::lock_guard<std::mutex> Lock(Mutex);
+    LockGuard Lock(Flag);
     return Alloc.Allocate(N);
+  }
+
+  auto Allocate(size_t Size, size_t Align) {
+    LockGuard Lock(Flag);
+    return Alloc.Allocate(Size, Align);
   }
 
 private:
   AllocatorType Alloc;
-  std::mutex Mutex;
+  std::atomic_flag Flag = ATOMIC_FLAG_INIT;
 };
 
 } // namespace cas
