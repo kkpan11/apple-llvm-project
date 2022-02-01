@@ -12,7 +12,6 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/CAS/LazyMappedFileRegion.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/SHA1.h"
@@ -124,8 +123,8 @@ public:
          Optional<size_t> InitialNumRootBits = None,
          Optional<size_t> InitialNumSubtrieBits = None);
 
-  OnDiskHashMappedTrie(OnDiskHashMappedTrie &&RHS) = default;
-  OnDiskHashMappedTrie &operator=(OnDiskHashMappedTrie &&RHS) = default;
+  OnDiskHashMappedTrie(OnDiskHashMappedTrie &&RHS);
+  OnDiskHashMappedTrie &operator=(OnDiskHashMappedTrie &&RHS);
 
   // No copy. Just call \a create() again.
   OnDiskHashMappedTrie(const OnDiskHashMappedTrie &) = delete;
@@ -134,9 +133,9 @@ public:
   ~OnDiskHashMappedTrie();
 
 private:
-  OnDiskHashMappedTrie() = default;
-  std::shared_ptr<LazyMappedFileRegion> Index;
-  std::shared_ptr<LazyMappedFileRegion> Data;
+  struct ImplType;
+  explicit OnDiskHashMappedTrie(std::unique_ptr<ImplType> Impl);
+  std::unique_ptr<ImplType> Impl;
 };
 
 } // namespace cas

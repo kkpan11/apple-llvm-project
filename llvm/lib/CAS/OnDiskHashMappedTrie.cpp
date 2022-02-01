@@ -10,6 +10,7 @@
 #include "HashMappedTrieIndexGenerator.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringMap.h"
+#include "llvm/CAS/LazyMappedFileRegion.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -248,6 +249,11 @@ struct OnDiskDataHeader final : OnDiskHeaderBase {
   OnDiskDataHeader();
 };
 } // namespace
+
+struct OnDiskHashMappedTrie::ImplType {
+  std::shared_ptr<LazyMappedFileRegion> Index;
+  std::shared_ptr<LazyMappedFileRegion> Data;
+};
 
 static void appendHash(ArrayRef<uint8_t> RawHash, SmallVectorImpl<char> &Dest) {
   assert(Dest.empty());
@@ -528,8 +534,9 @@ OnDiskSubtrie::try_replace(size_t I, OnDiskOffset Expected, OnDiskOffset New) {
 OnDiskHashMappedTrie::LookupResult
 OnDiskHashMappedTrie::lookup(ArrayRef<uint8_t> Hash) const {
   assert(!Hash.empty() && "Uninitialized hash");
-  auto *IndexHeader = reinterpret_cast<OnDiskIndexHeader *>(Index->data());
-  auto *DataHeader = reinterpret_cast<OnDiskDataHeader *>(Data->data());
+  auto *IndexHeader =
+      reinterpret_cast<OnDiskIndexHeader *>(Impl->Index->data());
+  auto *DataHeader = reinterpret_cast<OnDiskDataHeader *>(Impl->Data->data());
   assert(IndexHeader->NumHashBits == Hash.size() * sizeof(uint8_t));
 
   OnDiskSubtrie *S = &IndexHeader->Root;
@@ -547,7 +554,7 @@ OnDiskHashMappedTrie::lookup(ArrayRef<uint8_t> Hash) const {
       // FIXME: Stop calling Data->getPath() here; pass in parent directory.
       OnDiskData *ExistingData = DataHeader->getData(Existing);
       return ExistingData->getHash() == Hash
-                 ? LookupResult(ExistingData->getContent(Data->getPath()))
+                 ? LookupResult(ExistingData->getContent(Impl->Data->getPath()))
                  : LookupResult(S, Index, *IndexGen.StartBit);
     }
 
@@ -570,8 +577,9 @@ OnDiskHashMappedTrie::MappedContentReference
 OnDiskHashMappedTrie::insert(LookupResult Hint, ArrayRef<uint8_t> Hash,
                              StringRef Metadata, StringRef Content) {
   assert(!Hash.empty() && "Uninitialized hash");
-  auto *IndexHeader = reinterpret_cast<OnDiskIndexHeader *>(Index->data());
-  auto *DataHeader = reinterpret_cast<OnDiskDataHeader *>(Data->data());
+  auto *IndexHeader =
+      reinterpret_cast<OnDiskIndexHeader *>(Impl->Index->data());
+  auto *DataHeader = reinterpret_cast<OnDiskDataHeader *>(Impl->Data->data());
   assert(IndexHeader->NumHashBits == Hash.size() * sizeof(uint8_t));
 
   OnDiskSubtrie *S = &IndexHeader->Root;
@@ -596,15 +604,15 @@ OnDiskHashMappedTrie::insert(LookupResult Hint, ArrayRef<uint8_t> Hash,
     if (!Existing) {
       if (!NewData)
         NewData = DataHeader->createData(
-            Data->getPath(),
-            [this](uint64_t Size) { return Data->extendSize(Size); }, Hash,
-            Metadata, Content);
+            Impl->Data->getPath(),
+            [this](uint64_t Size) { return Impl->Data->extendSize(Size); },
+            Hash, Metadata, Content);
       assert(NewData->asData() < DataHeader->EndOffset.load());
 
       // FIXME: Stop calling Data->getPath() here; pass in parent directory.
       Optional<OnDiskOffset> Race = S->try_set(Index, *NewData);
       if (!Race) // Success!
-        return DataHeader->getData(*NewData)->getContent(Data->getPath());
+        return DataHeader->getData(*NewData)->getContent(Impl->Data->getPath());
       assert(*Race && "Expected non-empty, or else why the race?");
       Existing = *Race;
     }
@@ -620,7 +628,7 @@ OnDiskHashMappedTrie::insert(LookupResult Hint, ArrayRef<uint8_t> Hash,
     // FIXME: Stop calling Data->getPath() here; pass in parent directory.
     OnDiskData *ExistingData = DataHeader->getData(Existing);
     if (ExistingData->getHash() == Hash)
-      return ExistingData->getContent(Data->getPath()); // Already there!
+      return ExistingData->getContent(Impl->Data->getPath()); // Already there!
 
     // Sink the existing content as long as the indexes match.
     for (;;) {
@@ -632,7 +640,7 @@ OnDiskHashMappedTrie::insert(LookupResult Hint, ArrayRef<uint8_t> Hash,
       if (!NewSubtrie) {
         // Allocate a new, empty subtrie.
         NewSubtrie = IndexHeader->createSubtrie(
-            [this](uint64_t Size) { return this->Index->extendSize(Size); },
+            [this](uint64_t Size) { return Impl->Index->extendSize(Size); },
             S->StartBit + S->NumBits, IndexGen.getNumBits());
         NewS = IndexHeader->getSubtrie(*NewSubtrie);
       } else {
@@ -716,7 +724,7 @@ OnDiskHashMappedTrie::create(const Twine &PathTwine, size_t NumHashBits,
   const uint64_t MaxDataSize = MaxMapSize;
 
   // Open / create / initialize files on disk.
-  OnDiskHashMappedTrie Trie;
+  OnDiskHashMappedTrie::ImplType Impl;
   if (Error E = LazyMappedFileRegion::createShared(
                     IndexPath, MaxIndexSize, /*NewFileSize=*/MB,
                     [&](char *FileData) {
@@ -725,7 +733,7 @@ OnDiskHashMappedTrie::create(const Twine &PathTwine, size_t NumHashBits,
                                                        NumHashBits);
                       return Error::success();
                     })
-                    .moveInto(Trie.Index))
+                    .moveInto(Impl.Index))
     return std::move(E);
   if (Error E = LazyMappedFileRegion::createShared(
                     DataPath, MaxDataSize, /*NewFileSize=*/MB,
@@ -733,11 +741,18 @@ OnDiskHashMappedTrie::create(const Twine &PathTwine, size_t NumHashBits,
                       new (FileData) OnDiskDataHeader();
                       return Error::success();
                     })
-                    .moveInto(Trie.Data))
+                    .moveInto(Impl.Data))
     return std::move(E);
 
   // Success.
+  OnDiskHashMappedTrie Trie(std::make_unique<ImplType>(std::move(Impl)));
   return std::move(Trie);
 }
 
+OnDiskHashMappedTrie::OnDiskHashMappedTrie(std::unique_ptr<ImplType> Impl)
+    : Impl(std::move(Impl)) {}
+OnDiskHashMappedTrie::OnDiskHashMappedTrie(OnDiskHashMappedTrie &&RHS) =
+    default;
+OnDiskHashMappedTrie &
+OnDiskHashMappedTrie::operator=(OnDiskHashMappedTrie &&RHS) = default;
 OnDiskHashMappedTrie::~OnDiskHashMappedTrie() = default;
