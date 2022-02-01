@@ -212,6 +212,8 @@ public:
   /// Sets the environment to display in `-###`.
   virtual void setEnvironmentDisplay(llvm::ArrayRef<const char *> Display);
 
+  void replaceExecutable(const char *Exe) { Executable = Exe; }
+
   const char *getExecutable() const { return Executable; }
 
   const llvm::opt::ArgStringList &getArguments() const { return Arguments; }

@@ -1672,7 +1672,7 @@ using AsyncLookupResult = DenseMap<StringRef, JITEvaluatedSymbol>;
 /// or an error if resolution failed.
 class JITLinkAsyncLookupContinuation {
 public:
-  virtual ~JITLinkAsyncLookupContinuation() {}
+  virtual ~JITLinkAsyncLookupContinuation() = default;
   virtual void run(Expected<AsyncLookupResult> LR) = 0;
 
 private:
