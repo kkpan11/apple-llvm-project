@@ -37,10 +37,24 @@ namespace cas {
 /// FIXME: Probably should move to Support.
 class LazyMappedFileRegion {
 public:
+  /// Create a region.
+  ///
+  /// If there could be multiple instances pointing at the same underlying
+  /// file this is not safe. Use \a createShared() instead.
   static Expected<LazyMappedFileRegion>
   create(const Twine &Path, uint64_t Capacity, uint64_t NewFileSize = 1024ULL,
          function_ref<Error(char *)> NewFileConstructor = nullptr,
          uint64_t MaxSizeIncrement = 4ULL * 1024ULL * 1024ULL);
+
+  /// Create a region, shared across the process via a singleton map.
+  ///
+  /// FIXME: Singleton map should be based on sys::fs::UniqueID, but currently
+  /// it is just based on \p Path.
+  static Expected<std::shared_ptr<LazyMappedFileRegion>>
+  createShared(const Twine &Path, uint64_t Capacity,
+               uint64_t NewFileSize = 1024ULL,
+               function_ref<Error(char *)> NewFileConstructor = nullptr,
+               uint64_t MaxSizeIncrement = 4ULL * 1024ULL * 1024ULL);
 
   /// Get the path this was opened with.
   ///

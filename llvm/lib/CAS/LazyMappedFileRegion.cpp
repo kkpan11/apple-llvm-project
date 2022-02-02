@@ -136,3 +136,53 @@ Error LazyMappedFileRegion::extendSizeImpl(uint64_t MinSize) {
   CachedSize = NewSize;
   return Error::success();
 }
+
+Expected<std::shared_ptr<LazyMappedFileRegion>>
+LazyMappedFileRegion::createShared(
+    const Twine &PathTwine, uint64_t Capacity, uint64_t NewFileSize,
+    function_ref<Error(char *)> NewFileConstructor, uint64_t MaxSizeIncrement) {
+  struct MapNode {
+    std::mutex Mutex;
+    std::weak_ptr<LazyMappedFileRegion> LMFR;
+  };
+  static std::mutex Mutex;
+
+  // FIXME: Map should be by sys::fs::UniqueID instead of by path. Here's how
+  // it should work:
+  //
+  // 1. Open the file.
+  // 2. Stat the file descriptor to get the UniqueID.
+  // 3. Check the map.
+  // 4. If new, pass the open file descriptor to a helper extracted from
+  //    LazyMappedFileRegion::create().
+  static StringMap<MapNode> Regions;
+
+  SmallString<128> PathStorage;
+  const StringRef Path = PathTwine.toStringRef(PathStorage);
+
+  MapNode *Node;
+  {
+    std::lock_guard<std::mutex> Lock(Mutex);
+    Node = &Regions[Path];
+  }
+
+  if (std::shared_ptr<LazyMappedFileRegion> LMFR = Node->LMFR.lock())
+    return LMFR;
+
+  // Construct a new region. Use a fine-grained lock to allow other regions to
+  // be opened concurrently.
+  std::lock_guard<std::mutex> Lock(Node->Mutex);
+
+  // Open / create / initialize files on disk.
+  Expected<LazyMappedFileRegion> ExpectedLMFR = LazyMappedFileRegion::create(
+      Path, Capacity, NewFileSize, NewFileConstructor, MaxSizeIncrement);
+  if (!ExpectedLMFR)
+    return ExpectedLMFR.takeError();
+
+  auto SharedLMFR =
+      std::make_shared<LazyMappedFileRegion>(std::move(*ExpectedLMFR));
+
+  // Success.
+  Node->LMFR = SharedLMFR;
+  return std::move(SharedLMFR);
+}

@@ -12,7 +12,6 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/CAS/LazyMappedFileRegion.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/SHA1.h"
@@ -119,27 +118,24 @@ public:
     return insert(LookupResult(), Hash, Metadata, Data);
   }
 
-  static Expected<std::shared_ptr<OnDiskHashMappedTrie>>
+  static Expected<OnDiskHashMappedTrie>
   create(const Twine &Path, size_t NumHashBits, uint64_t MaxMapSize,
          Optional<size_t> InitialNumRootBits = None,
          Optional<size_t> InitialNumSubtrieBits = None);
 
-  // Move can be implemented if we add support to mapped_file_region. No need
-  // to move the mutexes.
-  OnDiskHashMappedTrie(OnDiskHashMappedTrie &&RHS) = delete;
-  OnDiskHashMappedTrie &operator=(OnDiskHashMappedTrie &&RHS) = delete;
+  OnDiskHashMappedTrie(OnDiskHashMappedTrie &&RHS);
+  OnDiskHashMappedTrie &operator=(OnDiskHashMappedTrie &&RHS);
 
   // No copy. Just call \a create() again.
   OnDiskHashMappedTrie(const OnDiskHashMappedTrie &) = delete;
   OnDiskHashMappedTrie &operator=(const OnDiskHashMappedTrie &) = delete;
 
-  /// Should be private, but std::make_shared needs access.
-  OnDiskHashMappedTrie() = default;
+  ~OnDiskHashMappedTrie();
 
 private:
-  ~OnDiskHashMappedTrie();
-  Optional<LazyMappedFileRegion> Index;
-  Optional<LazyMappedFileRegion> Data;
+  struct ImplType;
+  explicit OnDiskHashMappedTrie(std::unique_ptr<ImplType> Impl);
+  std::unique_ptr<ImplType> Impl;
 };
 
 } // namespace cas
