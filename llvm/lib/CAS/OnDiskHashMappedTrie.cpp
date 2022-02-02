@@ -23,7 +23,7 @@ using namespace llvm::cas;
 
 namespace {
 class SubtrieHandle;
-class OnDiskOffset {
+class SubtrieSlotValue {
 public:
   explicit operator bool() const { return !isEmpty(); }
   bool isEmpty() const { return !Offset; }
@@ -40,23 +40,23 @@ public:
 
   int64_t getRawOffset() const { return Offset; }
 
-  static OnDiskOffset getDataOffset(int64_t Offset) {
-    return OnDiskOffset(Offset);
+  static SubtrieSlotValue getDataOffset(int64_t Offset) {
+    return SubtrieSlotValue(Offset);
   }
 
-  static OnDiskOffset getSubtrieOffset(int64_t Offset) {
-    return OnDiskOffset(-Offset);
+  static SubtrieSlotValue getSubtrieOffset(int64_t Offset) {
+    return SubtrieSlotValue(-Offset);
   }
 
-  static OnDiskOffset getFromSlot(std::atomic<int64_t> &Slot) {
-    return OnDiskOffset(Slot.load());
+  static SubtrieSlotValue getFromSlot(std::atomic<int64_t> &Slot) {
+    return SubtrieSlotValue(Slot.load());
   }
 
-  OnDiskOffset() = default;
+  SubtrieSlotValue() = default;
 
 private:
   friend class SubtrieHandle;
-  explicit OnDiskOffset(int64_t Offset) : Offset(Offset) {}
+  explicit SubtrieSlotValue(int64_t Offset) : Offset(Offset) {}
   int64_t Offset = 0;
 };
 
@@ -78,21 +78,23 @@ public:
 
   int64_t getSize() const { return getSize(H->NumBits); }
 
-  OnDiskOffset get(size_t I) { return OnDiskOffset(getSlots()[I].load()); }
+  SubtrieSlotValue get(size_t I) {
+    return SubtrieSlotValue(getSlots()[I].load());
+  }
 
   /// Return None on success, or the existing offset on failure.
-  Optional<OnDiskOffset> try_set(size_t I, OnDiskOffset New);
+  Optional<SubtrieSlotValue> try_set(size_t I, SubtrieSlotValue New);
 
   /// Return None on success, or the existing offset on failure.
-  Optional<OnDiskOffset> try_replace(size_t I, OnDiskOffset Expected,
-                                     OnDiskOffset New);
+  Optional<SubtrieSlotValue> try_replace(size_t I, SubtrieSlotValue Expected,
+                                         SubtrieSlotValue New);
 
   /// Only safe if the subtrie is empty.
   void reinitialize(uint32_t StartBit, uint32_t NumBits);
 
-  OnDiskOffset getOffset() const {
-    return OnDiskOffset::getSubtrieOffset(reinterpret_cast<const char *>(H) -
-                                          LMFR->data());
+  SubtrieSlotValue getOffset() const {
+    return SubtrieSlotValue::getSubtrieOffset(
+        reinterpret_cast<const char *>(H) - LMFR->data());
   }
 
   explicit operator bool() const { return H; }
@@ -108,7 +110,7 @@ public:
   SubtrieHandle() = default;
   SubtrieHandle(LazyMappedFileRegion &LMFR, Header &H)
       : LMFR(&LMFR), H(&H), Slots(getSlots(H)) {}
-  SubtrieHandle(LazyMappedFileRegion &LMFR, OnDiskOffset Offset)
+  SubtrieHandle(LazyMappedFileRegion &LMFR, SubtrieSlotValue Offset)
       : SubtrieHandle(LMFR, *reinterpret_cast<Header *>(LMFR.data() +
                                                         Offset.asSubtrie())) {}
 
@@ -252,15 +254,16 @@ struct OnDiskIndexHeader {
 };
 
 struct OnDiskDataHeader {
-  OnDiskData *getData(OnDiskOffset Slot) {
+  OnDiskData *getData(SubtrieSlotValue Slot) {
     assert(Slot.isData());
     assert(Slot.asData() >= int64_t(HeaderSize));
     return reinterpret_cast<OnDiskData *>(reinterpret_cast<char *>(this) +
                                           Slot.asData() - HeaderSize);
   }
-  OnDiskOffset createData(StringRef DirPath, LazyMappedFileRegionBumpPtr &Alloc,
-                          ArrayRef<uint8_t> Hash, StringRef Metadata,
-                          StringRef Data);
+  SubtrieSlotValue createData(StringRef DirPath,
+                              LazyMappedFileRegionBumpPtr &Alloc,
+                              ArrayRef<uint8_t> Hash, StringRef Metadata,
+                              StringRef Data);
 };
 } // namespace
 
@@ -505,10 +508,9 @@ void OnDiskData::createExternalContent(StringRef DirPath,
     report_fatal_error(std::move(E));
 }
 
-OnDiskOffset OnDiskDataHeader::createData(StringRef DirPath,
-                                          LazyMappedFileRegionBumpPtr &Alloc,
-                                          ArrayRef<uint8_t> Hash,
-                                          StringRef Metadata, StringRef Data) {
+SubtrieSlotValue OnDiskDataHeader::createData(
+    StringRef DirPath, LazyMappedFileRegionBumpPtr &Alloc,
+    ArrayRef<uint8_t> Hash, StringRef Metadata, StringRef Data) {
   int64_t Size = OnDiskData::getSizeIfEmbedded(Hash, Metadata, Data);
 
   // FIXME: This logic isn't right. References should be stored externally if
@@ -517,30 +519,32 @@ OnDiskOffset OnDiskDataHeader::createData(StringRef DirPath,
   // the main mmap if there are lots of references.
   if (Size <= OnDiskData::MaxEmbeddedDataSize ||
       Data.size() < OnDiskData::MinExternalDataSize) {
-    auto Offset = OnDiskOffset::getDataOffset(Alloc.allocateOffset(Size));
+    auto Offset = SubtrieSlotValue::getDataOffset(Alloc.allocateOffset(Size));
     new (getData(Offset)) OnDiskData(Hash, Metadata, Data);
     return Offset;
   }
 
   OnDiskData::createExternalContent(DirPath, Hash, Metadata, Data);
   Size = OnDiskData::getSizeIfExternal(Hash.size(), Metadata.size());
-  auto Offset = OnDiskOffset::getDataOffset(Alloc.allocateOffset(Size));
+  auto Offset = SubtrieSlotValue::getDataOffset(Alloc.allocateOffset(Size));
   new (getData(Offset))
       OnDiskData(OnDiskData::ExternalTag(), Hash, Metadata, Data.size());
   return Offset;
 }
 
-Optional<OnDiskOffset> SubtrieHandle::try_set(size_t I, OnDiskOffset New) {
-  return try_replace(I, OnDiskOffset(), New);
+Optional<SubtrieSlotValue> SubtrieHandle::try_set(size_t I,
+                                                  SubtrieSlotValue New) {
+  return try_replace(I, SubtrieSlotValue(), New);
 }
 
-Optional<OnDiskOffset>
-SubtrieHandle::try_replace(size_t I, OnDiskOffset Expected, OnDiskOffset New) {
+Optional<SubtrieSlotValue> SubtrieHandle::try_replace(size_t I,
+                                                      SubtrieSlotValue Expected,
+                                                      SubtrieSlotValue New) {
   assert(New);
   int64_t Old = Expected.Offset;
   if (!Slots[I].compare_exchange_strong(Old, New.Offset)) {
     assert(Old != Expected.Offset);
-    return OnDiskOffset(Old);
+    return SubtrieSlotValue(Old);
   }
   // Success.
   return None;
@@ -559,7 +563,7 @@ OnDiskHashMappedTrie::lookup(ArrayRef<uint8_t> Hash) const {
   size_t Index = IndexGen.next();
   for (;;) {
     // Try to set the content.
-    OnDiskOffset Existing = S.get(Index);
+    SubtrieSlotValue Existing = S.get(Index);
     if (!Existing)
       return LookupResult(&S.getHeader(), Index, *IndexGen.StartBit);
 
@@ -612,12 +616,12 @@ OnDiskHashMappedTrie::insert(LookupResult Hint, ArrayRef<uint8_t> Hash,
     Index = IndexGen.next();
   }
 
-  Optional<OnDiskOffset> NewData;
+  Optional<SubtrieSlotValue> NewData;
   SubtrieHandle NewSubtrie;
   for (;;) {
     // To minimize leaks, first check the data, only allocating an on-disk
     // record if it's not already in the map.
-    OnDiskOffset Existing = S.get(Index);
+    SubtrieSlotValue Existing = S.get(Index);
 
     // Try to set it, if it's empty.
     if (!Existing) {
@@ -627,7 +631,7 @@ OnDiskHashMappedTrie::insert(LookupResult Hint, ArrayRef<uint8_t> Hash,
       assert(NewData->asData() < int64_t(Impl->Data.Alloc.size()));
 
       // FIXME: Stop calling Data->getPath() here; pass in parent directory.
-      Optional<OnDiskOffset> Race = S.try_set(Index, *NewData);
+      Optional<SubtrieSlotValue> Race = S.try_set(Index, *NewData);
       if (!Race) // Success!
         return DataHeader->getData(*NewData)->getContent(Impl->DirPath);
       assert(*Race && "Expected non-empty, or else why the race?");
@@ -667,7 +671,7 @@ OnDiskHashMappedTrie::insert(LookupResult Hint, ArrayRef<uint8_t> Hash,
       auto &NewSlot = NewSubtrie.getSlots()[NewIndexForExistingContent];
       NewSlot.store(Existing.getRawOffset());
 
-      Optional<OnDiskOffset> Race =
+      Optional<SubtrieSlotValue> Race =
           S.try_replace(Index, Existing, NewSubtrie.getOffset());
       if (Race) {
         assert(Race->isSubtrie());
@@ -675,7 +679,7 @@ OnDiskHashMappedTrie::insert(LookupResult Hint, ArrayRef<uint8_t> Hash,
         // out the new slot so this subtrie can potentially be reused if we
         // need to make another.
         S = SubtrieHandle(Impl->Index.getRegion(), *Race);
-        NewSlot.store(OnDiskOffset().getRawOffset());
+        NewSlot.store(SubtrieSlotValue().getRawOffset());
       } else {
         // Success!
         S = NewSubtrie;
