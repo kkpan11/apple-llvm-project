@@ -6,8 +6,11 @@ define i32 @_foo() #0 {
 }
 
 define i32 @main() #0 {
+  call void @foo_ext()
   %1 = call i32 @_foo()
   ret i32 %1
 }
+
+declare void @foo_ext()
 
 attributes #0 = { noinline nounwind optnone uwtable }

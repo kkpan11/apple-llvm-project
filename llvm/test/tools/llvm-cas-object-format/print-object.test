@@ -1,0 +1,11 @@
+RUN: rm -rf %t && mkdir -p %t
+RUN: llc %S/Inputs/main.ll --filetype=obj -o %t/main.o
+
+RUN: llvm-cas-object-format --cas %t/cas %t/main.o --ingest-schema=flatv1 -silent > %t/flat.id
+RUN: llvm-cas-object-format --cas %t/cas %t/main.o --ingest-schema=nestedv1 -silent > %t/nested.id
+RUN: llvm-cas-object-format --cas %t/cas --print-cas-object @%t/flat.id > %t/flat-out.txt
+RUN: llvm-cas-object-format --cas %t/cas --print-cas-object @%t/nested.id > %t/nested-out.txt
+
+// FIXME: Match the outputs between the schemas?
+RUN: diff -u %S/Inputs/print-out-flatv1.txt %t/flat-out.txt
+RUN: diff -u %S/Inputs/print-out-nestedv1.txt %t/nested-out.txt

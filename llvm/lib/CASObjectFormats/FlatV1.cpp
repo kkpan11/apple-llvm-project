@@ -25,6 +25,7 @@
 using namespace llvm;
 using namespace llvm::casobjectformats;
 using namespace llvm::casobjectformats::flatv1;
+using namespace llvm::casobjectformats::reader;
 
 constexpr StringLiteral CompileUnitRef::KindString;
 constexpr StringLiteral NameRef::KindString;
@@ -45,6 +46,19 @@ cl::opt<bool> UseBlockContentNode("use-block-content",
 cl::opt<bool> InlineSymbols("inline-symbols",
                             cl::desc("Inline symbols in CU"),
                             cl::init(false));
+
+Expected<std::unique_ptr<CASObjectReader>>
+ObjectFileSchema::createObjectReader(cas::NodeRef RootNode) const {
+  if (!isRootNode(RootNode))
+    return createStringError(inconvertibleErrorCode(), "invalid root node");
+  auto CU = CompileUnitRef::get(*this, RootNode);
+  if (!CU)
+    return CU.takeError();
+  auto Reader = std::make_unique<FlatV1ObjectReader>(*CU);
+  if (auto E = Reader->materializeCompileUnit())
+    return std::move(E);
+  return std::move(Reader);
+}
 
 Expected<cas::NodeRef>
 ObjectFileSchema::createFromLinkGraphImpl(const jitlink::LinkGraph &G,
@@ -274,6 +288,13 @@ Expected<SectionRef> SectionRef::create(CompileUnitBuilder &CUB,
   return get(B->build());
 }
 
+Expected<CASSection> SectionRef::materialize() const {
+  CASSection Info;
+  Info.Prot = decodeProtectionFlags((data::SectionProtectionFlags)getData()[0]);
+  Info.Name = getData().drop_front(1);
+  return Info;
+}
+
 Error SectionRef::materialize(LinkGraphBuilder &LGB, unsigned Idx) const {
   auto Flags =
       decodeProtectionFlags((data::SectionProtectionFlags)getData()[0]);
@@ -305,6 +326,29 @@ static Error encodeEdge(CompileUnitBuilder &CUB, SmallVectorImpl<char> &Data,
   if (E->getAddend() != 0)
     encoding::writeVBR8(E->getAddend(), Data);
   return Error::success();
+}
+
+static Error decodeFixup(const FlatV1ObjectReader &Reader, StringRef &Data,
+                         unsigned BlockIdx, unsigned &NextOffset,
+                         const data::Fixup &Fixup,
+                         function_ref<Error(const CASBlockFixup &)> Callback) {
+  auto ExpSymbolIdx = Reader.getBlockDataIndex(BlockIdx, NextOffset++);
+  if (!ExpSymbolIdx)
+    return ExpSymbolIdx.takeError();
+  unsigned SymbolIdx = *ExpSymbolIdx;
+
+  bool HasAddend = SymbolIdx & 1U;
+  SymbolIdx = SymbolIdx >> 1;
+
+  int64_t Addend = 0;
+  if (HasAddend) {
+    if (auto E = encoding::consumeVBR8(Data, Addend))
+      return E;
+  }
+
+  auto Target = CASSymbolRef{SymbolIdx};
+  CASBlockFixup CASFixup{Fixup.Offset, Fixup.Kind, Addend, std::move(Target)};
+  return Callback(CASFixup);
 }
 
 static Error decodeEdge(LinkGraphBuilder &LGB, StringRef &Data,
@@ -400,6 +444,74 @@ Expected<BlockRef> BlockRef::create(CompileUnitBuilder &CUB,
   }
 
   return get(B->build());
+}
+
+template <typename Fn>
+static Error decodeBlock(const FlatV1ObjectReader &Reader, unsigned BlockIdx,
+                         StringRef BlockData, Fn Callback) {
+  unsigned NextOffs = 1;
+
+  auto Remaining = BlockData;
+  auto SectionIdx = Reader.getBlockDataIndex(BlockIdx, NextOffs++);
+  if (!SectionIdx)
+    return SectionIdx.takeError();
+
+  StringRef ContentData;
+  if (Reader.hasBlockContentNodes()) {
+    auto ContentRef =
+        Reader.getBlockNode<BlockContentRef>(BlockIdx, NextOffs++);
+    if (!ContentRef)
+      return ContentRef.takeError();
+    ContentData = ContentRef->getData();
+  } else {
+    unsigned ContentSize;
+    if (auto E = encoding::consumeVBR8(Remaining, ContentSize))
+      return E;
+    auto Data = consumeDataOfSize(Remaining, ContentSize);
+    if (!Data)
+      return Data.takeError();
+    ContentData = *Data;
+  }
+
+  return Callback(*SectionIdx, NextOffs, ContentData, Remaining);
+}
+
+Expected<CASBlock> BlockRef::materializeBlock(const FlatV1ObjectReader &Reader,
+                                              unsigned BlockIdx) const {
+  CASBlock Info;
+  Error E =
+      decodeBlock(Reader, BlockIdx, getData(),
+                  [&](unsigned SectionIdx, unsigned NextOffset,
+                      StringRef ContentData, StringRef Remaining) -> Error {
+                    data::BlockData Block(ContentData);
+
+                    auto SectionRef = CASSectionRef{SectionIdx};
+                    Info = CASBlock{Block.getSize(), Block.getAlignment(),
+                                    Block.getAlignmentOffset(),
+                                    Block.getContent(), std::move(SectionRef)};
+                    return Error::success();
+                  });
+  if (E)
+    return std::move(E);
+  return Info;
+}
+
+Error BlockRef::materializeFixups(
+    const FlatV1ObjectReader &Reader, unsigned BlockIdx,
+    function_ref<Error(const CASBlockFixup &)> Callback) const {
+  return decodeBlock(
+      Reader, BlockIdx, getData(),
+      [&](unsigned SectionIdx, unsigned NextOffset, StringRef ContentData,
+          StringRef Remaining) -> Error {
+        data::BlockData Block(ContentData);
+
+        for (const data::Fixup &Fixup : Block.getFixups()) {
+          if (Error Err = decodeFixup(Reader, Remaining, BlockIdx, NextOffset,
+                                      Fixup, std::move(Callback)))
+            return Err;
+        }
+        return Error::success();
+      });
 }
 
 Error BlockRef::materializeBlock(LinkGraphBuilder &LGB,
@@ -524,6 +636,59 @@ static Error encodeSymbol(CompileUnitBuilder &CUB, SmallVectorImpl<char> &Data,
   return Error::success();
 }
 
+static Expected<CASSymbol> decodeSymbol(const FlatV1ObjectReader &Reader,
+                                        StringRef &Data, unsigned Idx) {
+  unsigned NextOffs = 1;
+
+  unsigned Size, Offset, Bits;
+  StringRef Name;
+
+  if (!Reader.hasIndirectSymbolNames()) {
+    unsigned NameSize;
+    auto E = encoding::consumeVBR8(Data, NameSize);
+    if (E)
+      return std::move(E);
+    auto NameStr = consumeDataOfSize(Data, NameSize);
+    if (!NameStr)
+      return NameStr.takeError();
+    Name = *NameStr;
+  } else {
+    auto NameStr = Reader.getSymbolNode<NameRef>(Idx, NextOffs++);
+    if (!NameStr)
+      return NameStr.takeError();
+    Name = NameStr->getName();
+  }
+
+  auto E = encoding::consumeVBR8(Data, Size);
+  if (!E)
+    E = encoding::consumeVBR8(Data, Offset);
+  if (!E)
+    E = encoding::consumeVBR8(Data, Bits);
+  if (E)
+    return std::move(E);
+
+  jitlink::Linkage Linkage = (jitlink::Linkage)((Bits & (1U << 2)) >> 2);
+  bool IsDefined = Bits & (1U << 3);
+  if (!IsDefined) {
+    CASSymbol Info{Name,  Offset, Linkage, jitlink::Scope::Default,
+                   false, false,  false,   None};
+    return Info;
+  }
+
+  jitlink::Scope Scope = (jitlink::Scope)(Bits & 3U);
+  bool IsLive = Bits & (1U << 4);
+  bool IsCallable = Bits & (1U << 5);
+  bool IsAutoHide = Bits & (1U << 6);
+
+  auto BlockIdx = Reader.getSymbolDataIndex(Idx, NextOffs++);
+  if (!BlockIdx)
+    return BlockIdx.takeError();
+  auto BlockRef = CASBlockRef{*BlockIdx};
+  CASSymbol Info{Name,   Offset,     Linkage,    Scope,
+                 IsLive, IsCallable, IsAutoHide, std::move(BlockRef)};
+  return Info;
+}
+
 static Error decodeSymbol(LinkGraphBuilder &LGB, StringRef &Data,
                           unsigned Idx) {
   unsigned Size, Offset, Bits;
@@ -599,6 +764,12 @@ Expected<SymbolRef> SymbolRef::create(CompileUnitBuilder &CUB,
     return std::move(E);
 
   return get(B->build());
+}
+
+Expected<CASSymbol> SymbolRef::materialize(const FlatV1ObjectReader &Reader,
+                                           unsigned Idx) const {
+  auto Data = getData();
+  return decodeSymbol(Reader, Data, Idx);
 }
 
 Error SymbolRef::materialize(LinkGraphBuilder &LGB, unsigned Idx) const {
@@ -791,10 +962,11 @@ Expected<CompileUnitRef> CompileUnitRef::create(const ObjectFileSchema &Schema,
   };
   for (const jitlink::Section &Section : G.sections())
     appendSymbols(Section.symbols());
+  unsigned DefinedSymbolsSize = Symbols.size();
   appendSymbols(G.absolute_symbols());
   appendSymbols(G.external_symbols());
 
-  std::stable_sort(Symbols.begin(), Symbols.end(),
+  std::stable_sort(Symbols.begin() + DefinedSymbolsSize, Symbols.end(),
                    helpers::compareSymbolsByLinkageAndSemantics);
 
   // Visit blocks. Create a ordered list of blocks so it can be index.
@@ -806,6 +978,13 @@ Expected<CompileUnitRef> CompileUnitRef::create(const ObjectFileSchema &Schema,
   };
   for (const jitlink::Section &Section : G.sections())
     appendBlocks(Section.blocks());
+
+#ifndef NDEBUG
+  for (auto *S : makeArrayRef(Symbols).slice(0, DefinedSymbolsSize))
+    assert(S->isDefined());
+  for (auto *S : makeArrayRef(Symbols).slice(DefinedSymbolsSize))
+    assert(!S->isDefined());
+#endif
 
   // Create sections.
   for (auto *S : Symbols) {
@@ -832,10 +1011,16 @@ Expected<CompileUnitRef> CompileUnitRef::create(const ObjectFileSchema &Schema,
   encoding::writeVBR8(uint8_t(G.getEndianness()), B->Data);
   B->Data.append(NormalizedTriple);
 
+  // Write the options that are used for serialization.
+  encoding::writeVBR8(bool(UseIndirectSymbolName), B->Data);
+  encoding::writeVBR8(bool(UseBlockContentNode), B->Data);
+  encoding::writeVBR8(bool(InlineSymbols), B->Data);
+
   // Write size of different entities.
   encoding::writeVBR8(G.sections_size(), B->Data);
   encoding::writeVBR8(Symbols.size(), B->Data);
   encoding::writeVBR8(Builder.Blocks.size(), B->Data);
+  encoding::writeVBR8(DefinedSymbolsSize, B->Data);
   // Write a list of all the CASID references.
   encoding::writeVBR8(Builder.Indexes.size(), B->Data);
   for (auto Idx : Builder.Indexes)
@@ -848,6 +1033,87 @@ Expected<CompileUnitRef> CompileUnitRef::create(const ObjectFileSchema &Schema,
     B->Data.append(Builder.InlineBuffer);
 
   return get(B->build());
+}
+
+Error CompileUnitRef::materialize(FlatV1ObjectReader &Reader) const {
+  if (auto E = forEachReference([&](cas::CASID ID) {
+        Reader.IDs.emplace_back(ID);
+        return Error::success();
+      }))
+    return E;
+
+  // Parse the fields stored in the data.
+  StringRef Remaining = getData();
+  uint32_t PointerSize;
+  uint32_t NormalizedTripleSize;
+  uint8_t Endianness;
+  Error E = encoding::consumeVBR8(Remaining, PointerSize);
+  if (!E)
+    E = encoding::consumeVBR8(Remaining, NormalizedTripleSize);
+  if (!E)
+    E = encoding::consumeVBR8(Remaining, Endianness);
+  if (E) {
+    consumeError(std::move(E));
+    return createStringError(inconvertibleErrorCode(),
+                             "corrupt compile unit data");
+  }
+  if (Endianness != uint8_t(support::endianness::little) &&
+      Endianness != uint8_t(support::endianness::big))
+    return createStringError(inconvertibleErrorCode(),
+                             "corrupt compile unit endianness");
+
+  auto TripleStr = consumeDataOfSize(Remaining, NormalizedTripleSize);
+  if (!TripleStr)
+    return TripleStr.takeError();
+
+  Reader.TT = Triple(*TripleStr);
+
+  E = encoding::consumeVBR8(Remaining, Reader.HasIndirectSymbolNames);
+  if (!E)
+    E = encoding::consumeVBR8(Remaining, Reader.HasBlockContentNodes);
+  if (!E)
+    E = encoding::consumeVBR8(Remaining, Reader.HasInlinedSymbols);
+  if (E)
+    return E;
+
+  unsigned IndexesSize;
+
+  E = encoding::consumeVBR8(Remaining, Reader.SectionsSize);
+  if (!E)
+    E = encoding::consumeVBR8(Remaining, Reader.SymbolsSize);
+  if (!E)
+    E = encoding::consumeVBR8(Remaining, Reader.BlocksSize);
+  if (!E)
+    E = encoding::consumeVBR8(Remaining, Reader.DefinedSymbolsSize);
+  if (!E)
+    E = encoding::consumeVBR8(Remaining, IndexesSize);
+  if (E)
+    return E;
+
+  Reader.Indexes.reserve(IndexesSize);
+  for (unsigned I = 0; I < IndexesSize; ++I) {
+    unsigned Idx = 0;
+    auto Err = encoding::consumeVBR8(Remaining, Idx);
+    if (Err)
+      return Err;
+    Reader.Indexes.emplace_back(Idx);
+  }
+  Reader.BlockIdxs.resize(Reader.BlocksSize);
+  for (unsigned I = 0; I < Reader.BlocksSize; ++I) {
+    unsigned Idx = 0;
+    auto Err = encoding::consumeVBR8(Remaining, Idx);
+    if (Err)
+      return Err;
+    Reader.BlockIdxs[I] = Idx;
+  }
+
+  if (Reader.HasInlinedSymbols)
+    Reader.InlineBuffer = Remaining;
+  else if (!Remaining.empty())
+    return createStringError(inconvertibleErrorCode(),
+                             "corrupt ending of compile unit");
+
+  return Error::success();
 }
 
 Error CompileUnitRef::materialize(LinkGraphBuilder &LGB) const {
@@ -882,6 +1148,16 @@ Error CompileUnitRef::materialize(LinkGraphBuilder &LGB) const {
     return TripleStr.takeError();
 
   Triple TT(*TripleStr);
+
+  bool HasIndirectSymbolNames, HasBlockContentNodes, HasInlinedSymbols;
+  E = encoding::consumeVBR8(Remaining, HasIndirectSymbolNames);
+  if (!E)
+    E = encoding::consumeVBR8(Remaining, HasBlockContentNodes);
+  if (!E)
+    E = encoding::consumeVBR8(Remaining, HasInlinedSymbols);
+  if (E)
+    return E;
+
   unsigned IndexesSize;
 
   E = encoding::consumeVBR8(Remaining, LGB.SectionsSize);
@@ -889,6 +1165,9 @@ Error CompileUnitRef::materialize(LinkGraphBuilder &LGB) const {
     E = encoding::consumeVBR8(Remaining, LGB.SymbolsSize);
   if (!E)
     E = encoding::consumeVBR8(Remaining, LGB.BlocksSize);
+  unsigned DefinedSymbolsSize;
+  if (!E)
+    E = encoding::consumeVBR8(Remaining, DefinedSymbolsSize);
   if (!E)
     E = encoding::consumeVBR8(Remaining, IndexesSize);
   if (E)
@@ -948,10 +1227,37 @@ Expected<std::unique_ptr<jitlink::LinkGraph>> CompileUnitRef::createLinkGraph(
   return Builder.takeLinkGraph();
 }
 
+Error FlatV1ObjectReader::materializeCompileUnit() {
+  if (auto E = Root.materialize(*this))
+    return E;
+  return Error::success();
+}
+
 Error LinkGraphBuilder::materializeCompileUnit() {
   if (auto E = Root.materialize(*this))
     return E;
   return Error::success();
+}
+
+Error FlatV1ObjectReader::forEachSymbol(
+    function_ref<Error(CASSymbolRef, CASSymbol)> Callback) const {
+  for (unsigned I = 0; I < SymbolsSize; ++I) {
+    auto SymbolRef = CASSymbolRef{I};
+    auto Symbol = materialize(SymbolRef);
+    if (!Symbol)
+      return Symbol.takeError();
+    if (Error E = Callback(std::move(SymbolRef), *Symbol))
+      return E;
+  }
+
+  return Error::success();
+}
+
+Expected<CASSection> FlatV1ObjectReader::materialize(CASSectionRef Ref) const {
+  auto Node = this->getSectionNode(Ref.Idx);
+  if (!Node)
+    return Node.takeError();
+  return Node->materialize();
 }
 
 Error LinkGraphBuilder::materializeSections() {
@@ -967,6 +1273,13 @@ Error LinkGraphBuilder::materializeSections() {
   return Error::success();
 }
 
+Expected<CASBlock> FlatV1ObjectReader::materialize(CASBlockRef Ref) const {
+  auto Node = this->getBlockNode<BlockRef>(Ref.Idx, 0);
+  if (!Node)
+    return Node.takeError();
+  return Node->materializeBlock(*this, Ref.Idx);
+}
+
 Error LinkGraphBuilder::materializeBlockContents() {
   for (unsigned I = 0; I < BlocksSize; ++I) {
     auto Block = getNode<BlockRef>(I);
@@ -979,6 +1292,18 @@ Error LinkGraphBuilder::materializeBlockContents() {
   }
 
   return Error::success();
+}
+
+Expected<CASSymbol> FlatV1ObjectReader::materialize(CASSymbolRef Ref) const {
+  if (this->hasInlinedSymbols()) {
+    // FIXME: Need efficient random index visitation for \p InlineSymbols.
+    return createStringError(inconvertibleErrorCode(),
+                             "'InlineSymbols' not supported");
+  }
+  auto Node = this->getSymbolNode<SymbolRef>(Ref.Idx, 0);
+  if (!Node)
+    return Node.takeError();
+  return Node->materialize(*this, Ref.Idx);
 }
 
 Error LinkGraphBuilder::materializeSymbols() {
@@ -999,6 +1324,15 @@ Error LinkGraphBuilder::materializeSymbols() {
   }
 
   return Error::success();
+}
+
+Error FlatV1ObjectReader::materializeFixups(
+    CASBlockRef Ref,
+    function_ref<Error(const CASBlockFixup &)> Callback) const {
+  auto Node = this->getBlockNode<BlockRef>(Ref.Idx, 0);
+  if (!Node)
+    return Node.takeError();
+  return Node->materializeFixups(*this, Ref.Idx, std::move(Callback));
 }
 
 Error LinkGraphBuilder::materializeEdges() {

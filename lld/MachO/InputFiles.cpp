@@ -63,6 +63,7 @@
 #include "llvm/ADT/iterator.h"
 #include "llvm/BinaryFormat/MachO.h"
 #include "llvm/CAS/Utils.h"
+#include "llvm/CASObjectFormats/CASObjectReader.h"
 #include "llvm/CASObjectFormats/SchemaBase.h"
 #include "llvm/ExecutionEngine/JITLink/x86_64.h"
 #include "llvm/LTO/LTO.h"
@@ -81,6 +82,7 @@
 using namespace llvm;
 using namespace llvm::cas;
 using namespace llvm::casobjectformats;
+using namespace llvm::casobjectformats::reader;
 using namespace llvm::MachO;
 using namespace llvm::support::endian;
 using namespace llvm::sys;
@@ -1703,10 +1705,8 @@ void macho::extract(InputFile &file, StringRef reason) {
 
 template void ObjFile::parse<LP64>();
 
-CASSchemaFile::CASSchemaFile(llvm::casobjectformats::SchemaPool &CASSchemas,
-                             CASID ID, StringRef filename)
-    : InputFile(CASSchemaKind, saver().save(filename)), CASSchemas(CASSchemas),
-      ID(std::move(ID)) {}
+CASSchemaFile::CASSchemaFile(StringRef filename)
+    : InputFile(CASSchemaKind, saver().save(filename)) {}
 
 CASSchemaFile::~CASSchemaFile() = default;
 
@@ -1756,7 +1756,7 @@ static void applyArchRelocationProperties(jitlink::Edge::Kind kind,
   }
 }
 
-Error CASSchemaFile::parse() {
+Error CASSchemaFile::parse(SchemaPool &CASSchemas, CASID ID) {
   Expected<cas::NodeRef> Ref = CASSchemas.getCAS().getNode(ID);
   if (auto E = Ref.takeError())
     return E;
@@ -1765,37 +1765,70 @@ Error CASSchemaFile::parse() {
     return createStringError(inconvertibleErrorCode(),
                              "CAS object is not a recognized object file");
 
-  // FIXME: We shouldn't need to create this here, it should be handled by
-  // the underlying schema at LinkGraph creation.
-  // For now use the triple of the running process.
-  Triple TT(getProcessTriple());
-  auto EdgeKindName = jitlink::getGetEdgeKindNameFunction(TT);
-  if (auto E = EdgeKindName.takeError())
-    return E;
+  auto expReader = Schema->createObjectReader(*Ref);
+  if (!expReader)
+    return expReader.takeError();
+  CASObjectReader &reader = **expReader;
 
-  {
-    TimeTraceScope timeScope("CAS: Create LinkGraph");
-    auto expLG = Schema->createLinkGraph(*Ref, getName(), *EdgeKindName);
-    if (auto E = expLG.takeError())
-      return E;
-    linkGraph = std::move(*expLG);
-  }
+  struct SectionInfo {
+    StringRef segname, subname;
+    unsigned index;
+    bool containsPureInstructions;
+    bool isCommonSection;
 
-  auto createSectionFromBlock =
-      [](const jitlink::Block &block, StringRef segname, StringRef subname,
-         bool containsPureInstructions, InputFile *file) -> InputSection * {
-    uint32_t align = block.getAlignment();
+    SectionInfo() = default;
+
+    SectionInfo(const CASSection &section, unsigned index) : index(index) {
+      StringRef secName = section.Name;
+      size_t commaIdx = secName.find(',');
+      if (commaIdx != StringRef::npos) {
+        segname = secName.substr(0, commaIdx);
+        subname = secName.substr(commaIdx + 1);
+      } else {
+        segname = secName;
+      }
+      containsPureInstructions =
+          bool(section.Prot & jitlink::MemProt::Exec) &&
+          !(unsigned(section.Prot) & unsigned(jitlink::MemProt::Write));
+      isCommonSection = secName == "__common";
+    }
+  };
+
+  SmallDenseMap<CASSectionRef, SectionInfo, 8> sectionMap;
+
+  auto getOrCreateSectionInfo =
+      [&](CASSectionRef secRef) -> Expected<SectionInfo> {
+    auto secI = sectionMap.find(secRef);
+    if (secI != sectionMap.end())
+      return secI->second;
+
+    Expected<CASSection> section = reader.materialize(secRef);
+    if (!section)
+      return section.takeError();
+    unsigned index = this->sections.size();
+    this->sections.push_back(0);
+    SectionInfo secInfo = SectionInfo(*section, index);
+    sectionMap[secRef] = secInfo;
+    return secInfo;
+  };
+
+  auto createSectionFromBlock = [](const CASBlock &block,
+                                   const SectionInfo &sectionInfo,
+                                   InputFile *file) -> InputSection * {
+    uint32_t align = block.Alignment;
     uint32_t flags = 0;
     ArrayRef<uint8_t> data;
     if (block.isZeroFill()) {
       flags = S_ZEROFILL;
-      data = makeArrayRef((const uint8_t *)nullptr, block.getSize());
+      data = makeArrayRef((const uint8_t *)nullptr, block.Size);
     } else {
-      ArrayRef<char> content = block.getContent();
+      StringRef content = *block.Content;
       data = makeArrayRef((const uint8_t *)content.data(), content.size());
-      assert(block.getSize() == content.size());
+      assert(block.Size == content.size());
     }
 
+    StringRef segname = sectionInfo.segname;
+    StringRef subname = sectionInfo.subname;
     if (segname == segment_names::data) {
       if (subname == section_names::threadVars) {
         flags = S_THREAD_LOCAL_VARIABLES;
@@ -1809,7 +1842,7 @@ Error CASSchemaFile::parse() {
       }
     }
 
-    if (containsPureInstructions) {
+    if (sectionInfo.containsPureInstructions) {
       flags |= S_ATTR_PURE_INSTRUCTIONS;
     }
 
@@ -1827,23 +1860,24 @@ Error CASSchemaFile::parse() {
       isec =
           make<ConcatInputSection>(segname, subname, file, data, align, flags);
     }
+    file->sections[sectionInfo.index].subsections.push_back({0, isec});
     return isec;
   };
 
-  auto createDefinedSym = [](const jitlink::Symbol *sym, uint64_t size,
+  auto createDefinedSym = [](const CASSymbol &sym, uint64_t size,
                              InputSection *isec,
                              InputFile *file) -> macho::Symbol * {
-    StringRef name = sym->getName();
+    StringRef name = sym.Name;
     uint64_t symbolOffset = 0;
-    bool isWeakDef = sym->getLinkage() == jitlink::Linkage::Weak;
+    bool isWeakDef = sym.Linkage == jitlink::Linkage::Weak;
     // Follow the lld semantics about setting 'isPrivateExtern'. See comments
     // in \p createDefined() function of this file.
     bool isPrivateExtern =
-        sym->getScope() == jitlink::Scope::Hidden || sym->isAutoHide();
+        sym.Scope == jitlink::Scope::Hidden || sym.IsAutoHide;
     bool isThumb = false;
     bool isReferencedDynamically = false;
     bool noDeadStrip = false;
-    if (sym->getScope() != jitlink::Scope::Local) {
+    if (sym.Scope != jitlink::Scope::Local) {
       return symtab->addDefined(name, file, isec, symbolOffset, size, isWeakDef,
                                 isPrivateExtern, isThumb,
                                 isReferencedDynamically, noDeadStrip,
@@ -1855,162 +1889,118 @@ Error CASSchemaFile::parse() {
     }
   };
 
-  auto createCommonSym = [](const jitlink::Symbol *sym, uint64_t size,
-                            uint32_t align,
+  auto createCommonSym = [](const CASSymbol &sym, uint64_t size, uint32_t align,
                             InputFile *file) -> macho::Symbol * {
-    bool isPrivateExtern = sym->getScope() == jitlink::Scope::Hidden;
-    return symtab->addCommon(sym->getName(), file, size, align,
-                             isPrivateExtern);
+    StringRef name = sym.Name;
+    bool isPrivateExtern = sym.Scope == jitlink::Scope::Hidden;
+    return symtab->addCommon(name, file, size, align, isPrivateExtern);
   };
 
-  auto createExternalSym = [](const jitlink::Symbol *sym,
+  auto createExternalSym = [](const CASSymbol &sym,
                               InputFile *file) -> macho::Symbol * {
-    bool isWeakRef = sym->getLinkage() == jitlink::Linkage::Weak;
-    return symtab->addUndefined(sym->getName(), file, isWeakRef);
+    StringRef name = sym.Name;
+    bool isWeakRef = sym.Linkage == jitlink::Linkage::Weak;
+    return symtab->addUndefined(name, file, isWeakRef);
   };
 
-  auto decomposeSectionName =
-      [](const jitlink::Section &section) -> std::pair<StringRef, StringRef> {
-    StringRef secName = section.getName();
-    StringRef segname, subname;
-    size_t commaIdx = secName.find(',');
-    if (commaIdx != StringRef::npos) {
-      segname = secName.substr(0, commaIdx);
-      subname = secName.substr(commaIdx + 1);
+  struct BlockData {
+    CASBlockRef ref;
+    InputSection *isec;
+    SectionInfo secInfo;
+  };
+  SmallVector<BlockData> blocksForFixups;
+
+  auto createSymbol =
+      [&](const CASSymbol &symbol) -> Expected<macho::Symbol *> {
+    if (!symbol.isDefined()) {
+      return createExternalSym(symbol, this);
+    }
+
+    Expected<CASBlock> block = reader.materialize(*symbol.BlockRef);
+    if (!block)
+      return block.takeError();
+
+    auto secInfo = getOrCreateSectionInfo(block->SectionRef);
+    if (!secInfo)
+      return secInfo.takeError();
+    if (secInfo->isCommonSection) {
+      return createCommonSym(symbol, block->Size, block->Alignment, this);
     } else {
-      segname = secName;
+      InputSection *isec = createSectionFromBlock(*block, *secInfo, this);
+      blocksForFixups.push_back(BlockData{*symbol.BlockRef, isec, *secInfo});
+      return createDefinedSym(symbol, block->Size, isec, this);
     }
-    return std::make_pair(segname, subname);
   };
 
-  // There's code copied from \p LinkGraph::dump() for deterministic visitation
-  // of the graph.
-  // FIXME: Once we have a \p CASObjectReader interface to use, this should go
-  // away.
+  DenseMap<CASSymbolRef, macho::Symbol *> symbolMap;
 
-  DenseMap<jitlink::Block *, std::vector<jitlink::Symbol *>> blockSymbols;
+  Error E = reader.forEachSymbol(
+      [&](CASSymbolRef symbolRef, CASSymbol symbol) -> Error {
+        auto machoSym = createSymbol(symbol);
+        if (!machoSym)
+          return machoSym.takeError();
+        this->symbols.push_back(*machoSym);
+        symbolMap[symbolRef] = *machoSym;
+        return Error::success();
+      });
+  if (E)
+    return E;
 
-  // Map from blocks to the symbols pointing at them.
-  for (auto *sym : linkGraph->defined_symbols())
-    blockSymbols[&sym->getBlock()].push_back(sym);
+  auto getOrCreateSymbol =
+      [&](CASSymbolRef symbolRef) -> Expected<macho::Symbol *> {
+    macho::Symbol *&machoSym = symbolMap[symbolRef];
+    if (machoSym)
+      return machoSym;
+    Expected<CASSymbol> symbol = reader.materialize(symbolRef);
+    if (!symbol)
+      return symbol.takeError();
+    Expected<macho::Symbol *> expMachoSym = createSymbol(*symbol);
+    if (!expMachoSym)
+      return expMachoSym.takeError();
+    machoSym = *expMachoSym;
+    this->symbols.push_back(machoSym);
+    return machoSym;
+  };
 
-  // For each block, sort its symbols by something approximating
-  // relevance.
-  for (auto &KV : blockSymbols)
-    llvm::sort(KV.second,
-               [](const jitlink::Symbol *LHS, const jitlink::Symbol *RHS) {
-                 if (LHS->getOffset() != RHS->getOffset())
-                   return LHS->getOffset() < RHS->getOffset();
-                 if (LHS->getLinkage() != RHS->getLinkage())
-                   return LHS->getLinkage() < RHS->getLinkage();
-                 if (LHS->getScope() != RHS->getScope())
-                   return LHS->getScope() < RHS->getScope();
-                 if (LHS->hasName()) {
-                   if (!RHS->hasName())
-                     return true;
-                   return LHS->getName() < RHS->getName();
-                 }
-                 return false;
-               });
-
-  DenseMap<const jitlink::Block *, macho::InputSection *> sectionsMap;
-  DenseMap<const jitlink::Symbol *, macho::Symbol *> symbolsMap;
-
-  for (const auto &section : linkGraph->sections()) {
-    if (section.getName().startswith("cas.o:"))
-      continue;
-    StringRef segname, subname;
-    std::tie(segname, subname) = decomposeSectionName(section);
-
-    if ((segname == segment_names::text && subname == section_names::ehFrame) ||
-        (segname == segment_names::ld &&
-         subname == section_names::compactUnwind)) {
-      // FIXME: Handle EH frames.
-      continue;
-    }
-
-    bool containsPureInstructions =
-        bool(section.getMemProt() & jitlink::MemProt::Exec) &&
-        !(unsigned(section.getMemProt()) & unsigned(jitlink::MemProt::Write));
-    bool isCommonSection = section.getName() == "__common";
-    sections.push_back(0);
-
-    std::vector<jitlink::Block *> sortedBlocks;
-    llvm::copy(section.blocks(), std::back_inserter(sortedBlocks));
-    llvm::sort(sortedBlocks,
-               [](const jitlink::Block *LHS, const jitlink::Block *RHS) {
-                 return LHS->getAddress() < RHS->getAddress();
-               });
-
-    for (const auto *block : sortedBlocks) {
-      InputSection *isec = createSectionFromBlock(
-          *block, segname, subname, containsPureInstructions, this);
-      sectionsMap[block] = isec;
-      // FIXME: Group the sections into subsections?
-      sections.back().subsections.push_back({0, isec});
-
-      auto blockSymsI = blockSymbols.find(block);
-      if (blockSymsI != blockSymbols.end()) {
-        for (const auto &symbol : blockSymsI->second) {
-          macho::Symbol *sym;
-          if (isCommonSection) {
-            sym = createCommonSym(symbol, block->getSize(),
-                                  block->getAlignment(), this);
-          } else {
-            sym = createDefinedSym(symbol, block->getSize(), isec, this);
+  // Check for \p size() at each iteration because new blocks can be added
+  // while reading the fixups, due to new symbols getting discovered when using
+  // nestedv1 format.
+  // FIXME: Get nestedv1 to provide all the symbols that can be referenced from
+  // the translation unit, via \p forEachSymbol(). If that is the case then
+  // \p getOrCreateSymbol() can be removed.
+  for (unsigned I = 0; I < blocksForFixups.size(); ++I) {
+    const BlockData &block = blocksForFixups[I];
+    Error E = reader.materializeFixups(
+        block.ref, [&](const CASBlockFixup &fixup) -> Error {
+          bool isRelocation = fixup.Kind >= jitlink::Edge::FirstRelocation;
+          if (!isRelocation) {
+            // FIXME: Handle EH frames.
+            return Error::success();
           }
-          symbols.push_back(sym);
-          symbolsMap[symbol] = sym;
-        }
-      }
-    }
-  }
 
-  for (const auto &symbol : linkGraph->external_symbols()) {
-    macho::Symbol *sym = createExternalSym(symbol, this);
-    symbols.push_back(sym);
-    symbolsMap[symbol] = sym;
-  }
+          StringRef segname = block.secInfo.segname,
+                    subname = block.secInfo.subname;
+          bool isTextSection = segname == segment_names::text;
+          if ((isTextSection && subname == section_names::ehFrame) ||
+              (segname == segment_names::ld &&
+               subname == section_names::compactUnwind)) {
+            // FIXME: Handle EH frames.
+            return Error::success();
+          }
 
-  for (const auto &block : linkGraph->blocks()) {
-    std::vector<jitlink::Edge> relocations;
-    for (const auto &edge : block->edges()) {
-      if (!edge.isRelocation()) {
-        // FIXME: Handle EH frames.
-        continue;
-      }
-      relocations.push_back(edge);
-    }
-    if (relocations.empty())
-      continue;
-
-    StringRef segname, subname;
-    std::tie(segname, subname) = decomposeSectionName(block->getSection());
-    bool isTextSection = segname == segment_names::text;
-    if ((isTextSection && subname == section_names::ehFrame) ||
-        (segname == segment_names::ld &&
-         subname == section_names::compactUnwind)) {
-      // FIXME: Handle EH frames.
-      continue;
-    }
-
-    auto foundSec = sectionsMap.find(block);
-    assert(foundSec != sectionsMap.end());
-    InputSection *isec = foundSec->second;
-
-    for (const auto &edge : relocations) {
-      assert(edge.isRelocation());
-      const jitlink::Symbol &targetSym = edge.getTarget();
-      Reloc r;
-      r.offset = edge.getOffset();
-      r.addend = edge.getAddend();
-      applyArchRelocationProperties(edge.getKind(), isTextSection, r);
-      auto foundSym = symbolsMap.find(&targetSym);
-      assert(foundSym != symbolsMap.end());
-      macho::Symbol *sym = foundSym->second;
-      r.referent = sym;
-      isec->relocs.push_back(r);
-    }
+          Reloc r;
+          r.offset = fixup.Offset;
+          r.addend = fixup.Addend;
+          applyArchRelocationProperties(fixup.Kind, isTextSection, r);
+          Expected<macho::Symbol *> sym = getOrCreateSymbol(fixup.TargetRef);
+          if (!sym)
+            return sym.takeError();
+          r.referent = *sym;
+          block.isec->relocs.push_back(r);
+          return Error::success();
+        });
+    if (E)
+      return E;
   }
 
   return Error::success();

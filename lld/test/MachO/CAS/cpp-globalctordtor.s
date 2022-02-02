@@ -36,20 +36,15 @@
 
 // FLAT: l     F __TEXT,__text ___cxx_global_var_init
 // FLAT: l     F __TEXT,__text __GLOBAL__sub_I_test.cpp
-// FLAT: l     O __DATA,__data __dyld_private
-// FLAT: l     F __TEXT,__text __ZN3MySC1Ev
-// FLAT: l     F __TEXT,__text __ZN3MySD1Ev
-// FLAT: l     F __TEXT,__text __ZN3MySC2Ev
-// FLAT: l     F __TEXT,__text __ZN3MySD2Ev
 
 // NESTED: l     F __TEXT,__text __GLOBAL__sub_I_test.cpp
 // NESTED: l     F __TEXT,__text ___cxx_global_var_init
-// NESTED: l     O __DATA,__data __dyld_private
-// NESTED: l     F __TEXT,__text __ZN3MySC1Ev
-// NESTED: l     F __TEXT,__text __ZN3MySC2Ev
-// NESTED: l     F __TEXT,__text __ZN3MySD2Ev
-// NESTED: l     F __TEXT,__text __ZN3MySD1Ev
 
+// CHECK: l     O __DATA,__data __dyld_private
+// CHECK: l     F __TEXT,__text __ZN3MySC1Ev
+// CHECK: l     F __TEXT,__text __ZN3MySD1Ev
+// CHECK: l     F __TEXT,__text __ZN3MySC2Ev
+// CHECK: l     F __TEXT,__text __ZN3MySD2Ev
 // CHECK: g     F __TEXT,__text _main
 // CHECK: g     O __DATA,__common _mys1
 // CHECK: g     F __TEXT,__text __mh_execute_header

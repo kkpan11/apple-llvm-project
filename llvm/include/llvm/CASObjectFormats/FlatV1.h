@@ -10,6 +10,7 @@
 #define LLVM_CASOBJECTFORMATS_FLATV1_H
 
 #include "llvm/CAS/CASID.h"
+#include "llvm/CASObjectFormats/CASObjectReader.h"
 #include "llvm/CASObjectFormats/Data.h"
 #include "llvm/CASObjectFormats/SchemaBase.h"
 #include "llvm/ExecutionEngine/JITLink/JITLink.h"
@@ -22,6 +23,7 @@ using data::Fixup;
 
 class ObjectFileSchema;
 class CompileUnitBuilder;
+class FlatV1ObjectReader;
 class LinkGraphBuilder;
 
 /// FIXME: This is a copy from NestedV1 implementation. We should unify that.
@@ -99,6 +101,9 @@ public:
   /// character. The caller should ensure that the parent node is in the schema
   /// before calling this.
   bool isNode(const cas::NodeRef &Node) const override;
+
+  Expected<std::unique_ptr<reader::CASObjectReader>>
+  createObjectReader(cas::NodeRef RootNode) const override;
 
   Expected<cas::NodeRef>
   createFromLinkGraphImpl(const jitlink::LinkGraph &G,
@@ -190,6 +195,7 @@ public:
     return get(Schema.getNode(ID));
   }
 
+  Expected<reader::CASSection> materialize() const;
   Error materialize(LinkGraphBuilder &LGB, unsigned SectionIdx) const;
 
 private:
@@ -211,6 +217,11 @@ public:
     return get(Schema.getNode(ID));
   }
 
+  Expected<reader::CASBlock> materializeBlock(const FlatV1ObjectReader &Reader,
+                                              unsigned BlockIdx) const;
+  Error materializeFixups(
+      const FlatV1ObjectReader &Reader, unsigned BlockIdx,
+      function_ref<Error(const reader::CASBlockFixup &)> Callback) const;
   Error materializeBlock(LinkGraphBuilder &LGB, unsigned BlockIdx) const;
   Error materializeEdges(LinkGraphBuilder &LGB, unsigned BlockIdx) const;
 
@@ -256,6 +267,8 @@ public:
     return get(Schema.getNode(ID));
   }
 
+  Expected<reader::CASSymbol> materialize(const FlatV1ObjectReader &Reader,
+                                          unsigned SymbolIdx) const;
   Error materialize(LinkGraphBuilder &LGB, unsigned SymbolIdx) const;
 
 private:
@@ -296,6 +309,7 @@ public:
                                          const jitlink::LinkGraph &G,
                                          raw_ostream *DebugOS = nullptr);
 
+  Error materialize(FlatV1ObjectReader &OR) const;
   Error materialize(LinkGraphBuilder &LGB) const;
 
 private:
@@ -351,6 +365,140 @@ private:
 
   // Temp storage.
   SmallString<256> InlineBuffer;
+};
+
+class FlatV1ObjectReader final : public reader::CASObjectReader {
+public:
+  FlatV1ObjectReader(CompileUnitRef Root) : Root(std::move(Root)) {}
+
+  Triple getTargetTriple() const override { return TT; }
+
+  Error forEachSymbol(
+      function_ref<Error(reader::CASSymbolRef, reader::CASSymbol)> Callback)
+      const override;
+
+  Expected<reader::CASSection>
+  materialize(reader::CASSectionRef Ref) const override;
+  Expected<reader::CASBlock>
+  materialize(reader::CASBlockRef Ref) const override;
+  Expected<reader::CASSymbol>
+  materialize(reader::CASSymbolRef Ref) const override;
+
+  Error materializeFixups(reader::CASBlockRef Ref,
+                          function_ref<Error(const reader::CASBlockFixup &)>
+                              Callback) const override;
+
+  Error materializeCompileUnit();
+
+  Expected<SectionRef> getSectionNode(unsigned SectionI) const {
+    unsigned IdxI = getSectionDataIndexOffset(SectionI);
+    auto IDI = getIdx(IdxI);
+    if (!IDI)
+      return IDI.takeError();
+    return getNode<SectionRef>(*IDI);
+  }
+
+  Expected<unsigned> getBlockDataIndex(unsigned BlockI,
+                                       unsigned OffsetI) const {
+    unsigned IdxI = getBlockDataIndexOffset(BlockI, OffsetI);
+    return getIdx(IdxI);
+  }
+
+  template <typename RefT>
+  Expected<RefT> getBlockNode(unsigned BlockI, unsigned OffsetI) const {
+    auto IDI = getBlockDataIndex(BlockI, OffsetI);
+    if (!IDI)
+      return IDI.takeError();
+    return getNode<RefT>(*IDI);
+  }
+
+  Expected<unsigned> getSymbolDataIndex(unsigned SymbolI,
+                                        unsigned OffsetI) const {
+    unsigned IdxI = getSymbolDataIndexOffset(SymbolI, OffsetI);
+    return getIdx(IdxI);
+  }
+
+  template <typename RefT>
+  Expected<RefT> getSymbolNode(unsigned SymbolI, unsigned OffsetI) const {
+    auto IDI = getSymbolDataIndex(SymbolI, OffsetI);
+    if (!IDI)
+      return IDI.takeError();
+    return getNode<RefT>(*IDI);
+  }
+
+  bool hasIndirectSymbolNames() const { return HasIndirectSymbolNames; }
+  bool hasBlockContentNodes() const { return HasBlockContentNodes; }
+  bool hasInlinedSymbols() const { return HasInlinedSymbols; }
+
+  unsigned getSectionsSize() const { return SectionsSize; };
+  unsigned getSymbolsSize() const { return SymbolsSize; };
+  unsigned getBlocksSize() const { return BlocksSize; };
+
+private:
+  friend class CompileUnitRef;
+
+  unsigned getSectionDataIndexOffset(unsigned SectionI) const {
+    return SectionI;
+  }
+
+  unsigned getBlockDataIndexOffset(unsigned BlockI, unsigned OffsetI) const {
+    return BlockIdxs[BlockI] + OffsetI;
+  }
+
+  unsigned getSymbolDataIndexOffset(unsigned SymbolI, unsigned OffsetI) const {
+    unsigned DefinedSymbolSize = HasIndirectSymbolNames ? 3 : 2;
+    if (SymbolI < DefinedSymbolsSize) {
+      return SectionsSize + (SymbolI * DefinedSymbolSize) + OffsetI;
+    } else {
+      return SectionsSize + (DefinedSymbolsSize * DefinedSymbolSize) +
+             ((SymbolI - DefinedSymbolsSize) * (DefinedSymbolSize - 1)) +
+             OffsetI;
+    }
+  }
+
+  Expected<unsigned> getIdx(unsigned I) const {
+    if (I >= Indexes.size())
+      return createStringError(inconvertibleErrorCode(), "Index out of bound");
+
+    return Indexes[I];
+  }
+
+  Expected<cas::CASID> getID(unsigned I) const {
+    // First ID is the RootTypeID
+    auto IDIndex = I + 1;
+    if (IDIndex >= IDs.size())
+      return createStringError(inconvertibleErrorCode(),
+                               "ID Index out of bound");
+
+    return IDs[IDIndex];
+  }
+
+  template <typename RefT> Expected<RefT> getNode(unsigned I) const {
+    auto ID = getID(I);
+    if (!ID)
+      return ID.takeError();
+    return RefT::get(Root.getSchema(), *ID);
+  }
+
+  CompileUnitRef Root;
+
+  Triple TT;
+
+  bool HasIndirectSymbolNames;
+  bool HasBlockContentNodes;
+  bool HasInlinedSymbols;
+
+  std::vector<cas::CASID> IDs;
+  std::vector<unsigned> Indexes;
+
+  unsigned SectionsSize;
+  unsigned SymbolsSize;
+  unsigned BlocksSize;
+  unsigned DefinedSymbolsSize;
+
+  SmallVector<unsigned, 16> BlockIdxs;
+
+  StringRef InlineBuffer;
 };
 
 class LinkGraphBuilder {
