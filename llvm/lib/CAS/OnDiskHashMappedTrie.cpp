@@ -60,7 +60,7 @@ private:
   int64_t Offset = 0;
 };
 
-struct OnDiskIndexHeader;
+class TrieHandle;
 class SubtrieHandle {
 public:
   struct Header {
@@ -136,9 +136,14 @@ private:
     return makeMutableArrayRef(reinterpret_cast<std::atomic<int64_t> *>(&H + 1),
                                1u << H.NumBits);
   }
+
+  /// FIXME: Remove these and inline construct() into create() once the file
+  /// format allows it.
+  friend class TrieHandle;
+  static Header &construct(char *Mem, uint32_t StartBit, uint32_t NumBits);
 };
 
-struct OnDiskData final {
+struct OnDiskData {
   unsigned HashSize : 16;
   unsigned HashPaddingSize : 8;
   unsigned MetadataPaddingSize : 8;
@@ -254,16 +259,70 @@ enum CommonSizes : uint64_t {
 static_assert(HeaderSize == MagicSize + sizeof(std::atomic<int64_t>),
               "Math not working out...");
 
-struct OnDiskIndexHeader {
-  uint64_t NumRootBits;
-  uint64_t NumSubtrieBits;
-  uint64_t NumHashBits;
-  SubtrieHandle::Header Root;
+enum CommonOffsets : int64_t {
+  BumpPtrOffset = MagicSize,
+};
+static_assert((int64_t)HeaderSize ==
+                  BumpPtrOffset + sizeof(std::atomic<int64_t>),
+              "Math not working out...");
 
-  OnDiskIndexHeader(uint64_t NumRootBits, uint64_t NumSubtrieBits,
-                    uint64_t NumHashBits)
-      : NumRootBits(NumRootBits), NumSubtrieBits(NumSubtrieBits),
-        NumHashBits(NumHashBits), Root{0, (uint32_t)NumRootBits} {}
+struct IndexFile;
+
+/// In principle, this handle could live anywhere in the file. In practice,
+/// it's in a fixed location.
+class TrieHandle {
+public:
+  struct Header {
+    uint64_t NumRootBits;
+    uint64_t NumSubtrieBits;
+    uint64_t NumHashBits;
+    Header(uint64_t NumRootBits, uint64_t NumSubtrieBits, uint64_t NumHashBits)
+        : NumRootBits(NumRootBits), NumSubtrieBits(NumSubtrieBits),
+          NumHashBits(NumHashBits) {}
+  };
+
+  explicit operator bool() const { return H; }
+  const Header &getHeader() const { return *H; }
+  SubtrieHandle getRoot() const {
+    return SubtrieHandle(getRegion(), *getRootPointer());
+  }
+  LazyMappedFileRegion &getRegion() const { return *LMFR; }
+
+  uint64_t getNumRootBits() const { return H->NumRootBits; }
+  uint64_t getNumSubtrieBits() const { return H->NumSubtrieBits; }
+  uint64_t getNumHashBits() const { return H->NumHashBits; }
+
+  IndexGenerator getIndexGen(ArrayRef<uint8_t> Hash) {
+    assert(getNumHashBits() == Hash.size() * sizeof(uint8_t));
+    return IndexGenerator{getNumRootBits(), getNumSubtrieBits(), Hash};
+  }
+
+  /// Get the allocation size.
+  static size_t getSize(uint64_t NumRootBits) {
+    return sizeof(Header) + SubtrieHandle::getSize(NumRootBits);
+  }
+
+  TrieHandle(LazyMappedFileRegion &LMFR, Header &H) : LMFR(&LMFR), H(&H) {}
+  TrieHandle(LazyMappedFileRegion &LMFR, intptr_t HeaderOffset)
+      : TrieHandle(LMFR,
+                   *reinterpret_cast<Header *>(LMFR.data() + HeaderOffset)) {}
+
+private:
+  SubtrieHandle::Header *getRootPointer() const {
+    return reinterpret_cast<SubtrieHandle::Header *>(H + 1);
+  }
+
+  friend struct IndexFile;
+  /// Construct a pre-allocated header.
+  ///
+  /// FIXME: This *should* be called create() and take a
+  /// LazyMappedFileRegionBumpPtr to allocate itself instead of \p Data.
+  /// However, this inconvenient in the current file format.
+  static void construct(char *Mem, uint64_t NumRootBits,
+                        uint64_t NumSubtrieBits, uint64_t NumHashBits);
+
+  LazyMappedFileRegion *LMFR;
+  Header *H = nullptr;
 };
 
 struct OnDiskDataHeader {
@@ -278,6 +337,23 @@ struct OnDiskDataHeader {
                               ArrayRef<uint8_t> Hash, StringRef Metadata,
                               StringRef Data);
 };
+
+/// Handle for the entire index file.
+///
+/// FIXME: This should be the ImplType for a trie.
+struct IndexFile {
+  TrieHandle Trie;
+  LazyMappedFileRegionBumpPtr Alloc;
+  LazyMappedFileRegion &getRegion() { return Alloc.getRegion(); }
+
+  static void construct(char *FileData, uint64_t NumRootBits,
+                        uint64_t NumSubtrieBits, uint64_t NumHashBits);
+
+  // FIXME: Doesn't check file magic.
+  IndexFile(std::shared_ptr<LazyMappedFileRegion> LMFR)
+      : Trie(*LMFR, HeaderSize), Alloc(std::move(LMFR), BumpPtrOffset) {}
+};
+
 } // namespace
 
 struct OnDiskHashMappedTrie::ImplType {
@@ -287,12 +363,7 @@ struct OnDiskHashMappedTrie::ImplType {
   std::string DirPath;
 
   // The index is where the trie actually lives.
-  struct {
-    OnDiskIndexHeader *Header = nullptr;
-    LazyMappedFileRegionBumpPtr Alloc;
-
-    LazyMappedFileRegion &getRegion() { return Alloc.getRegion(); }
-  } Index;
+  IndexFile Index;
 
   // This is storage for data; not really part of the trie.
   //
@@ -357,11 +428,33 @@ SubtrieHandle SubtrieHandle::create(LazyMappedFileRegionBumpPtr &Alloc,
                                     uint32_t StartBit, uint32_t NumBits) {
   int64_t Offset = Alloc.allocateOffset(getSize(NumBits));
   char *Mem = Alloc.data() + Offset;
+  return SubtrieHandle(Alloc.getRegion(), construct(Mem, StartBit, NumBits));
+}
+
+SubtrieHandle::Header &SubtrieHandle::construct(char *Mem, uint32_t StartBit,
+                                                uint32_t NumBits) {
   auto *H = new (Mem) SubtrieHandle::Header{StartBit, NumBits};
-  SubtrieHandle S(Alloc.getRegion(), *H);
-  for (auto I = S.Slots.begin(), E = S.Slots.end(); I != E; ++I)
+  MutableArrayRef<std::atomic<int64_t>> Slots = getSlots(*H);
+  for (auto I = Slots.begin(), E = Slots.end(); I != E; ++I)
     new (I) std::atomic<int64_t>(0);
-  return S;
+  return *H;
+}
+
+void TrieHandle::construct(char *Mem, uint64_t NumRootBits,
+                           uint64_t NumSubtrieBits, uint64_t NumHashBits) {
+  auto *H =
+      new (Mem) TrieHandle::Header(NumRootBits, NumSubtrieBits, NumHashBits);
+  SubtrieHandle::construct(reinterpret_cast<char *>(H + 1), 0, NumRootBits);
+}
+
+void IndexFile::construct(char *FileData, uint64_t NumRootBits,
+                          uint64_t NumSubtrieBits, uint64_t NumHashBits) {
+  const int64_t IndexEndOffset = HeaderSize + TrieHandle::getSize(NumRootBits);
+  new (FileData) uint64_t(IndexMagic);
+  new (FileData + BumpPtrOffset) std::atomic<int64_t>(IndexEndOffset);
+
+  TrieHandle::construct(FileData + HeaderSize, NumRootBits, NumSubtrieBits,
+                        NumHashBits);
 }
 
 namespace {
@@ -577,13 +670,11 @@ SubtrieHandle SubtrieHandle::sink(size_t I, SubtrieSlotValue V,
 OnDiskHashMappedTrie::LookupResult
 OnDiskHashMappedTrie::lookup(ArrayRef<uint8_t> Hash) const {
   assert(!Hash.empty() && "Uninitialized hash");
-  auto *IndexHeader = Impl->Index.Header;
+  TrieHandle Trie = Impl->Index.Trie;
   auto *DataHeader = Impl->Data.Header;
-  assert(IndexHeader->NumHashBits == Hash.size() * sizeof(uint8_t));
 
-  SubtrieHandle S(Impl->Index.getRegion(), IndexHeader->Root);
-  IndexGenerator IndexGen{IndexHeader->NumRootBits, IndexHeader->NumSubtrieBits,
-                          Hash};
+  SubtrieHandle S = Trie.getRoot();
+  IndexGenerator IndexGen = Trie.getIndexGen(Hash);
   size_t Index = IndexGen.next();
   for (;;) {
     // Try to set the content.
@@ -600,7 +691,7 @@ OnDiskHashMappedTrie::lookup(ArrayRef<uint8_t> Hash) const {
     }
 
     Index = IndexGen.next();
-    S = SubtrieHandle(Impl->Index.getRegion(), Existing);
+    S = SubtrieHandle(Trie.getRegion(), Existing);
   }
 }
 
@@ -624,16 +715,15 @@ OnDiskHashMappedTrie::MappedContentReference
 OnDiskHashMappedTrie::insert(LookupResult Hint, ArrayRef<uint8_t> Hash,
                              StringRef Metadata, StringRef Content) {
   assert(!Hash.empty() && "Uninitialized hash");
-  auto *IndexHeader = Impl->Index.Header;
+  TrieHandle Trie = Impl->Index.Trie;
   auto *DataHeader = Impl->Data.Header;
-  assert(IndexHeader->NumHashBits == Hash.size() * sizeof(uint8_t));
 
-  SubtrieHandle S(Impl->Index.getRegion(), IndexHeader->Root);
-  IndexGenerator IndexGen{IndexHeader->NumRootBits, IndexHeader->NumSubtrieBits,
-                          Hash};
+  SubtrieHandle S = Trie.getRoot();
+  IndexGenerator IndexGen = Trie.getIndexGen(Hash);
+
   size_t Index;
   if (Hint.isHint()) {
-    S = getSubtrieFromHint(Impl->Index.getRegion(), Hint.S);
+    S = getSubtrieFromHint(Trie.getRegion(), Hint.S);
     Index = IndexGen.hint(Hint.I, Hint.B);
   } else {
     Index = IndexGen.next();
@@ -660,7 +750,7 @@ OnDiskHashMappedTrie::insert(LookupResult Hint, ArrayRef<uint8_t> Hash,
     }
 
     if (Existing.isSubtrie()) {
-      S = SubtrieHandle(Impl->Index.getRegion(), Existing);
+      S = SubtrieHandle(Trie.getRegion(), Existing);
       Index = IndexGen.next();
       continue;
     }
@@ -721,27 +811,18 @@ OnDiskHashMappedTrie::create(const Twine &PathTwine, size_t NumHashBits,
   const uint64_t MaxIndexSize = std::min(4 * GB, MaxMapSize);
   const uint64_t MaxDataSize = MaxMapSize;
 
-  constexpr uint64_t BumpPtrOffset = MagicSize;
-  assert(HeaderSize == BumpPtrOffset + sizeof(std::atomic<int64_t>));
-
   constexpr int64_t DataEndOffset = HeaderSize;
-  const int64_t IndexEndOffset =
-      HeaderSize + sizeof(OnDiskIndexHeader) +
-      SubtrieHandle::getSlotsSize(*InitialNumRootBits);
 
   // Open / create / initialize files on disk.
   std::shared_ptr<LazyMappedFileRegion> IndexRegion, DataRegion;
-  if (Error E =
-          LazyMappedFileRegion::createShared(
-              IndexPath, MaxIndexSize, /*NewFileSize=*/MB,
-              [&](char *FileData) {
-                new (FileData) uint64_t(IndexMagic);
-                new (FileData + BumpPtrOffset) std::atomic<int64_t>(IndexEndOffset);
-                new (FileData + HeaderSize) OnDiskIndexHeader(
-                    *InitialNumRootBits, *InitialNumSubtrieBits, NumHashBits);
-                return Error::success();
-              })
-              .moveInto(IndexRegion))
+  if (Error E = LazyMappedFileRegion::createShared(
+                    IndexPath, MaxIndexSize, /*NewFileSize=*/MB,
+                    [&](char *FileData) {
+                      IndexFile::construct(FileData, *InitialNumRootBits,
+                                           *InitialNumSubtrieBits, NumHashBits);
+                      return Error::success();
+                    })
+                    .moveInto(IndexRegion))
     return std::move(E);
   if (Error E = LazyMappedFileRegion::createShared(
                     DataPath, MaxDataSize, /*NewFileSize=*/MB,
@@ -757,12 +838,10 @@ OnDiskHashMappedTrie::create(const Twine &PathTwine, size_t NumHashBits,
   // FIXME: The magic should be checked...
 
   // Success.
-  auto *Index = reinterpret_cast<OnDiskIndexHeader *>(IndexRegion->data() + HeaderSize);
   auto *Data = reinterpret_cast<OnDiskDataHeader *>(DataRegion->data() + HeaderSize);
   OnDiskHashMappedTrie::ImplType Impl = {
       Path.str().str(),
-      {Index,
-       LazyMappedFileRegionBumpPtr(std::move(IndexRegion), BumpPtrOffset)},
+      IndexFile(std::move(IndexRegion)),
       {Data,
        LazyMappedFileRegionBumpPtr(std::move(DataRegion), BumpPtrOffset)}};
   return OnDiskHashMappedTrie(std::make_unique<ImplType>(std::move(Impl)));
