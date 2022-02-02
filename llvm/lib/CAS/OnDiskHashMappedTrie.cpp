@@ -90,6 +90,20 @@ public:
   Optional<SubtrieSlotValue> try_replace(size_t I, SubtrieSlotValue Expected,
                                          SubtrieSlotValue New);
 
+  /// Sink \p V from \p I in this subtrie down to \p NewI in a new subtrie with
+  /// \p NumSubtrieBits.
+  ///
+  /// \p UnusedSubtrie maintains a 1-item "free" list of unused subtries. If a
+  /// new subtrie is created that isn't used because of a lost race, then it If
+  /// it's already valid, it should be used instead of allocating a new one.
+  /// should be returned as an out parameter to be passed back in the future.
+  /// If it's already valid, it should be used instead of allocating a new one.
+  ///
+  /// Returns the subtrie that now lives at \p I.
+  SubtrieHandle sink(size_t I, SubtrieSlotValue V,
+                     LazyMappedFileRegionBumpPtr &Alloc, size_t NumSubtrieBits,
+                     SubtrieHandle &UnusedSubtrie, size_t NewI);
+
   /// Only safe if the subtrie is empty.
   void reinitialize(uint32_t StartBit, uint32_t NumBits);
 
@@ -550,6 +564,34 @@ Optional<SubtrieSlotValue> SubtrieHandle::try_replace(size_t I,
   return None;
 }
 
+SubtrieHandle SubtrieHandle::sink(size_t I, SubtrieSlotValue V,
+                                  LazyMappedFileRegionBumpPtr &Alloc,
+                                  size_t NumSubtrieBits,
+                                  SubtrieHandle &UnusedSubtrie, size_t NewI) {
+  SubtrieHandle NewS;
+  if (UnusedSubtrie) {
+    // Steal UnusedSubtrie and initialize it.
+    std::swap(NewS, UnusedSubtrie);
+    NewS.reinitialize(getStartBit() + getNumBits(), NumSubtrieBits);
+  } else {
+    // Allocate a new, empty subtrie.
+    NewS = SubtrieHandle::create(Alloc, getStartBit() + getNumBits(), NumSubtrieBits);
+  }
+
+  NewS.store(NewI, V);
+  Optional<SubtrieSlotValue> Race = try_replace(I, V, NewS.getOffset());
+  if (!Race)
+    return NewS; // Success!
+  assert(Race->isSubtrie());
+
+  // Wipe out the new slot so NewS can be reused and set the out parameter.
+  NewS.store(NewI, SubtrieSlotValue());
+  UnusedSubtrie = NewS;
+
+  // Return the subtrie added by the concurrent sink() call.
+  return SubtrieHandle(Alloc.getRegion(), *Race);
+}
+
 OnDiskHashMappedTrie::LookupResult
 OnDiskHashMappedTrie::lookup(ArrayRef<uint8_t> Hash) const {
   assert(!Hash.empty() && "Uninitialized hash");
@@ -617,7 +659,7 @@ OnDiskHashMappedTrie::insert(LookupResult Hint, ArrayRef<uint8_t> Hash,
   }
 
   Optional<SubtrieSlotValue> NewData;
-  SubtrieHandle NewSubtrie;
+  SubtrieHandle UnusedSubtrie;
   for (;;) {
     // To minimize leaks, first check the data, only allocating an on-disk
     // record if it's not already in the map.
@@ -657,33 +699,8 @@ OnDiskHashMappedTrie::insert(LookupResult Hint, ArrayRef<uint8_t> Hash,
       size_t NewIndexForExistingContent =
           IndexGen.getCollidingBits(ExistingData->getHash());
 
-      if (!NewSubtrie) {
-        // Allocate a new, empty subtrie.
-        NewSubtrie = SubtrieHandle::create(Impl->Index.Alloc,
-                                           S.getStartBit() + S.getNumBits(),
-                                           IndexGen.getNumBits());
-      } else {
-        // Reinitialize the subtrie that's still around from an earlier race.
-        NewSubtrie.reinitialize(S.getStartBit() + S.getNumBits(),
-                                IndexGen.getNumBits());
-      }
-
-      NewSubtrie.store(NewIndexForExistingContent, Existing);
-      Optional<SubtrieSlotValue> Race =
-          S.try_replace(Index, Existing, NewSubtrie.getOffset());
-      if (Race) {
-        assert(Race->isSubtrie());
-        // Use the other subtrie from the competing thread or process, and wipe
-        // out the new slot so this subtrie can potentially be reused if we
-        // need to make another.
-        S = SubtrieHandle(Impl->Index.getRegion(), *Race);
-        NewSubtrie.store(NewIndexForExistingContent, SubtrieSlotValue());
-      } else {
-        // Success!
-        S = NewSubtrie;
-        NewSubtrie = SubtrieHandle();
-      }
-
+      S = S.sink(Index, Existing, Impl->Index.Alloc, IndexGen.getNumBits(),
+                 UnusedSubtrie, NewIndexForExistingContent);
       Index = NextIndex;
 
       // Found the difference.
