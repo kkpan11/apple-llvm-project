@@ -144,13 +144,15 @@ private:
                                  uint32_t StartBit, uint32_t NumBits);
 };
 
-struct OnDiskData {
-  unsigned HashSize : 16;
-  unsigned HashPaddingSize : 8;
-  unsigned MetadataPaddingSize : 8;
-  unsigned MetadataSize : 31;
-  unsigned IsEmbedded : 1;
-  uint64_t DataSize;
+struct DataHandle {
+  struct Header {
+    unsigned HashSize : 16;
+    unsigned HashPaddingSize : 8;
+    unsigned MetadataPaddingSize : 8;
+    unsigned MetadataSize : 31;
+    unsigned IsEmbedded : 1;
+    uint64_t DataSize;
+  };
 
   // Files 64KB and bigger can just be saved separately.
   //
@@ -163,7 +165,7 @@ struct OnDiskData {
   // sometimes (always?) make references external too.
   static constexpr int64_t MinExternalDataSize = 4ull * 1024ull - 1ull;
 
-  static uint64_t getHashOffset() { return sizeof(OnDiskData); }
+  static uint64_t getHashOffset() { return sizeof(DataHandle::Header); }
 
   static uint64_t getPadding(uint64_t Size) {
     if (uint64_t Remainder = Size % 8)
@@ -172,11 +174,11 @@ struct OnDiskData {
   }
 
   static uint64_t getHashPaddingStart(uint64_t HashSize) {
-    return sizeof(OnDiskData) + HashSize;
+    return sizeof(Header) + HashSize;
   }
 
   static uint64_t getSizeIfExternal(uint64_t HashSize, uint64_t MetadataSize) {
-    return sizeof(OnDiskData) + HashSize + getPadding(HashSize) + MetadataSize +
+    return sizeof(Header) + HashSize + getPadding(HashSize) + MetadataSize +
            getPadding(MetadataSize);
   }
 
@@ -196,52 +198,80 @@ struct OnDiskData {
   }
 
   ArrayRef<uint8_t> getHash() const {
-    return makeArrayRef(
-        reinterpret_cast<const uint8_t *>(this) + getHashOffset(), HashSize);
+    return makeArrayRef(reinterpret_cast<const uint8_t *>(getHashStart()),
+                        H->HashSize);
   }
 
-  bool isEmbedded() const { return IsEmbedded; }
+  bool isEmbedded() const { return H->IsEmbedded; }
   bool isExternal() const { return !isEmbedded(); }
 
   const char *getHashStart() const {
-    return reinterpret_cast<const char *>(this) + sizeof(OnDiskData);
+    return reinterpret_cast<const char *>(H) + sizeof(Header);
   }
-  const char *getHashPaddingStart() const { return getHashStart() + HashSize; }
+  const char *getHashPaddingStart() const {
+    return getHashStart() + H->HashSize;
+  }
   const char *getMetadataStart() const {
-    return getHashPaddingStart() + HashPaddingSize;
+    return getHashPaddingStart() + H->HashPaddingSize;
   }
   const char *getMetadataPaddingStart() const {
-    return getMetadataStart() + MetadataSize;
+    return getMetadataStart() + H->MetadataSize;
   }
   const char *getDataStart() const {
-    return getMetadataPaddingStart() + MetadataPaddingSize;
+    return getMetadataPaddingStart() + H->MetadataPaddingSize;
   }
-  const char *getDataPaddingStart() const { return getDataStart() + DataSize; }
+  const char *getDataPaddingStart() const {
+    return getDataStart() + H->DataSize;
+  }
   StringRef getMetadata() const {
-    return StringRef(getMetadataStart(), MetadataSize);
+    return StringRef(getMetadataStart(), H->MetadataSize);
   }
 
   Optional<StringRef> getData() const {
     if (isExternal())
       return None;
-    return StringRef(getDataStart(), DataSize);
+    return StringRef(getDataStart(), H->DataSize);
   }
 
-  using MappedContentReference = OnDiskHashMappedTrie::MappedContentReference;
-  MappedContentReference getContent(StringRef DirPath) const;
+  uint64_t getDataSizeWithPadding() const {
+    return getDataSizeWithPadding(H->DataSize);
+  }
+
+  explicit operator bool() const { return H; }
+  const Header &getHeader() const { return *H; }
+
+  SubtrieSlotValue getOffset() const {
+    return SubtrieSlotValue::getDataOffset(reinterpret_cast<const char *>(H) -
+                                           LMFR->data());
+  }
+
+  static DataHandle create(LazyMappedFileRegionBumpPtr &Alloc,
+                           StringRef DirPath, ArrayRef<uint8_t> Hash,
+                           StringRef Metadata, StringRef Data);
+
+  DataHandle() = default;
+  DataHandle(LazyMappedFileRegion &LMFR, Header &H) : LMFR(&LMFR), H(&H) {}
+  DataHandle(LazyMappedFileRegion &LMFR, SubtrieSlotValue Offset)
+      : DataHandle(LMFR,
+                   *reinterpret_cast<Header *>(LMFR.data() + Offset.asData())) {
+  }
+
+private:
+  LazyMappedFileRegion *LMFR = nullptr;
+  Header *H = nullptr;
+
+  static DataHandle construct(LazyMappedFileRegion &LMFR, intptr_t Offset,
+                              bool IsEmbedded, ArrayRef<uint8_t> Hash,
+                              StringRef Metadata, uint64_t DataSize);
+  static DataHandle createExternal(LazyMappedFileRegionBumpPtr &Alloc,
+                                   ArrayRef<uint8_t> Hash, StringRef Metadata,
+                                   uint64_t DataSize);
+  static DataHandle createEmbedded(LazyMappedFileRegionBumpPtr &Alloc,
+                                   ArrayRef<uint8_t> Hash, StringRef Metadata,
+                                   StringRef Data);
 
   static void createExternalContent(StringRef DirPath, ArrayRef<uint8_t> Hash,
                                     StringRef Metadata, StringRef Data);
-
-private:
-  friend struct OnDiskDataHeader;
-  struct ImplTag {};
-  struct ExternalTag {};
-  OnDiskData(ImplTag, bool IsEmbedded, ArrayRef<uint8_t> Hash,
-             StringRef Metadata, uint64_t DataSize);
-  OnDiskData(ExternalTag, ArrayRef<uint8_t> Hash, StringRef Metadata,
-             uint64_t DataSize);
-  OnDiskData(ArrayRef<uint8_t> Hash, StringRef Metadata, StringRef Data);
 };
 
 /// Some magic numbers.
@@ -320,19 +350,6 @@ private:
   Header *H = nullptr;
 };
 
-struct OnDiskDataHeader {
-  OnDiskData *getData(SubtrieSlotValue Slot) {
-    assert(Slot.isData());
-    assert(Slot.asData() >= int64_t(HeaderSize));
-    return reinterpret_cast<OnDiskData *>(reinterpret_cast<char *>(this) +
-                                          Slot.asData() - HeaderSize);
-  }
-  SubtrieSlotValue createData(StringRef DirPath,
-                              LazyMappedFileRegionBumpPtr &Alloc,
-                              ArrayRef<uint8_t> Hash, StringRef Metadata,
-                              StringRef Data);
-};
-
 /// Handle for the entire index file.
 ///
 /// FIXME: This should be the ImplType for a trie.
@@ -341,34 +358,68 @@ struct IndexFile {
   LazyMappedFileRegionBumpPtr Alloc;
   LazyMappedFileRegion &getRegion() { return Alloc.getRegion(); }
 
-  static void construct(LazyMappedFileRegion &LMFR, uint64_t NumRootBits,
-                        uint64_t NumSubtrieBits, uint64_t NumHashBits);
+  static Error construct(LazyMappedFileRegion &LMFR, uint64_t NumRootBits,
+                         uint64_t NumSubtrieBits, uint64_t NumHashBits,
+                         Optional<uint64_t> MinFileSize);
+
+  static auto getConstructor(uint64_t NumRootBits, uint64_t NumSubtrieBits,
+                             uint64_t NumHashBits,
+                             Optional<uint64_t> MinFileSize = None) {
+    return [=](LazyMappedFileRegion &LMFR) {
+      return construct(LMFR, NumRootBits, NumSubtrieBits, NumHashBits,
+                       MinFileSize);
+    };
+  }
 
   // FIXME: Doesn't check file magic.
   IndexFile(std::shared_ptr<LazyMappedFileRegion> LMFR)
       : Trie(*LMFR, HeaderSize), Alloc(std::move(LMFR), BumpPtrOffset) {}
 };
 
-} // namespace
+struct DataFile {
+  LazyMappedFileRegionBumpPtr Alloc;
+  LazyMappedFileRegion &getRegion() { return Alloc.getRegion(); }
 
-struct OnDiskHashMappedTrie::ImplType {
   // Path to the directory.
   //
   // FIXME: Replace with a file descriptor, and use openat APIs.
   std::string DirPath;
 
+  DataHandle createData(ArrayRef<uint8_t> Hash, StringRef Metadata,
+                        StringRef Data) {
+    return DataHandle::create(Alloc, DirPath, Hash, Metadata, Data);
+  }
+
+  DataHandle getData(SubtrieSlotValue V) const {
+    return DataHandle(Alloc.getRegion(), V);
+  }
+
+  OnDiskHashMappedTrie::MappedContentReference getContent(DataHandle D) const;
+
+  static Error construct(LazyMappedFileRegion &LMFR,
+                         Optional<uint64_t> MinFileSize = None);
+
+  static auto getConstructor(Optional<uint64_t> MinFileSize = None) {
+    return [=](LazyMappedFileRegion &LMFR) {
+      return construct(LMFR, MinFileSize);
+    };
+  }
+
+  // FIXME: Doesn't check file magic.
+  DataFile(std::shared_ptr<LazyMappedFileRegion> LMFR, std::string &&DirPath)
+      : Alloc(std::move(LMFR), BumpPtrOffset), DirPath(std::move(DirPath)) {}
+};
+
+} // namespace
+
+struct OnDiskHashMappedTrie::ImplType {
   // The index is where the trie actually lives.
   IndexFile Index;
 
-  // This is storage for data; not really part of the trie.
+  // This is the file where most (not huge) data are stored.
   //
   // FIXME: Separate this out of the on-disk trie data structure.
-  struct {
-    OnDiskDataHeader *Header = nullptr;
-    LazyMappedFileRegionBumpPtr Alloc;
-
-    LazyMappedFileRegion &getRegion() { return Alloc.getRegion(); }
-  } Data;
+  DataFile Data;
 };
 
 static void appendHash(ArrayRef<uint8_t> RawHash, SmallVectorImpl<char> &Dest) {
@@ -386,37 +437,57 @@ static void appendHash(ArrayRef<uint8_t> RawHash, SmallVectorImpl<char> &Dest) {
   }
 }
 
-OnDiskData::OnDiskData(ImplTag, bool IsEmbedded, ArrayRef<uint8_t> Hash,
-                       StringRef Metadata, uint64_t DataSize)
-    : HashSize(Hash.size()), HashPaddingSize(getPadding(Hash.size())),
-      MetadataPaddingSize(getPadding(Metadata.size())),
-      MetadataSize(Metadata.size()), IsEmbedded(IsEmbedded),
-      DataSize(DataSize) {
+DataHandle DataHandle::construct(LazyMappedFileRegion &LMFR, intptr_t Offset,
+                                 bool IsEmbedded, ArrayRef<uint8_t> Hash,
+                                 StringRef Metadata, uint64_t DataSize) {
+  Header *H = new (LMFR.data() + Offset) Header{
+      (unsigned)Hash.size(),
+      (unsigned)getPadding(Hash.size()),
+      (unsigned)getPadding(Metadata.size()),
+      (unsigned)Metadata.size(),
+      (unsigned)IsEmbedded,
+      DataSize,
+  };
+
   assert(Metadata.size() < (1u << 31) && "Too much metadata");
-  ::memcpy(const_cast<char *>(getHashStart()), Hash.begin(), HashSize);
-  ::memcpy(const_cast<char *>(getMetadataStart()), Metadata.begin(),
-           MetadataSize);
+  DataHandle D(LMFR, *H);
+  ::memcpy(const_cast<char *>(D.getHashStart()), Hash.begin(), Hash.size());
+  ::memcpy(const_cast<char *>(D.getMetadataStart()), Metadata.begin(),
+           Metadata.size());
 
   // Fill padding with 0s in case the filesystem doesn't guarantee it
   // (Windows).
-  ::memset(const_cast<char *>(getHashPaddingStart()), 0, HashPaddingSize);
-  ::memset(const_cast<char *>(getMetadataPaddingStart()), 0,
-           MetadataPaddingSize);
+  ::memset(const_cast<char *>(D.getHashPaddingStart()), 0,
+           D.getHeader().HashPaddingSize);
+  ::memset(const_cast<char *>(D.getMetadataPaddingStart()), 0,
+           D.getHeader().MetadataPaddingSize);
+  return D;
 }
 
-OnDiskData::OnDiskData(ExternalTag, ArrayRef<uint8_t> Hash, StringRef Metadata,
-                       uint64_t DataSize)
-    : OnDiskData(ImplTag(), /*IsEmbedded=*/false, Hash, Metadata, DataSize) {}
+DataHandle DataHandle::createExternal(LazyMappedFileRegionBumpPtr &Alloc,
+                                      ArrayRef<uint8_t> Hash,
+                                      StringRef Metadata, uint64_t DataSize) {
+  intptr_t Size = getSizeIfExternal(Hash.size(), Metadata.size());
+  intptr_t Offset = Alloc.allocateOffset(Size);
+  return construct(Alloc.getRegion(), Offset, /*IsEmbedded=*/false, Hash,
+                   Metadata, DataSize);
+}
 
-OnDiskData::OnDiskData(ArrayRef<uint8_t> Hash, StringRef Metadata,
-                       StringRef Data)
-    : OnDiskData(ImplTag(), /*IsEmbedded=*/true, Hash, Metadata, Data.size()) {
-  ::memcpy(const_cast<char *>(getDataStart()), Data.begin(), DataSize);
+DataHandle DataHandle::createEmbedded(LazyMappedFileRegionBumpPtr &Alloc,
+                                      ArrayRef<uint8_t> Hash,
+                                      StringRef Metadata, StringRef Data) {
+  intptr_t Size = getSizeIfEmbedded(Hash, Metadata, Data);
+  intptr_t Offset = Alloc.allocateOffset(Size);
+  DataHandle D = construct(Alloc.getRegion(), Offset, /*IsEmbedded=*/true, Hash,
+                           Metadata, Data.size());
+  ::memcpy(const_cast<char *>(D.getDataStart()), Data.begin(), Data.size());
 
   // Fill padding with 0s in case the filesystem doesn't guarantee it
   // (Windows).
-  ::memset(const_cast<char *>(getDataPaddingStart()), 0,
-           getDataPadding(DataSize));
+  ::memset(const_cast<char *>(D.getDataPaddingStart()), 0,
+           DataHandle::getDataPadding(Data.size()));
+
+  return D;
 }
 
 SubtrieHandle SubtrieHandle::create(LazyMappedFileRegionBumpPtr &Alloc,
@@ -448,16 +519,49 @@ TrieHandle TrieHandle::create(LazyMappedFileRegionBumpPtr &Alloc,
   return TrieHandle(Alloc.getRegion(), *H);
 }
 
-void IndexFile::construct(LazyMappedFileRegion &LMFR, uint64_t NumRootBits,
-                          uint64_t NumSubtrieBits, uint64_t NumHashBits) {
-  new (LMFR.data()) uint64_t(IndexMagic);
+static Expected<LazyMappedFileRegionBumpPtr>
+getAllocForNewFile(LazyMappedFileRegion &LMFR, uint64_t Magic,
+                   Optional<uint64_t> MinFileSize,
+                   uint64_t ExpectedAllocation) {
+  // Resize the underlying file to the minimum requested, or the size we expect
+  // here if no minimum. Must be at least big enough for the header.
+  uint64_t SizeToRequest = HeaderSize + ExpectedAllocation;
+  if (MinFileSize && *MinFileSize > SizeToRequest)
+    SizeToRequest = *MinFileSize;
+  if (Error E = LMFR.extendSize(SizeToRequest))
+    return std::move(E);
+
+  // Initialize the header and the allocator.
+  new (LMFR.data()) uint64_t(Magic);
   new (LMFR.data() + BumpPtrOffset) std::atomic<int64_t>(0);
-  LazyMappedFileRegionBumpPtr Alloc(LMFR, BumpPtrOffset);
+  return LazyMappedFileRegionBumpPtr(LMFR, BumpPtrOffset);
+}
+
+Error IndexFile::construct(LazyMappedFileRegion &LMFR, uint64_t NumRootBits,
+                           uint64_t NumSubtrieBits, uint64_t NumHashBits,
+                           Optional<uint64_t> MinFileSize) {
+  Expected<LazyMappedFileRegionBumpPtr> Alloc = getAllocForNewFile(
+      LMFR, IndexMagic, MinFileSize,
+      /*ExpectedAllocation=*/TrieHandle::getSize(NumRootBits));
+  if (!Alloc)
+    return Alloc.takeError();
 
   TrieHandle Trie =
-      TrieHandle::create(Alloc, NumRootBits, NumSubtrieBits, NumHashBits);
+      TrieHandle::create(*Alloc, NumRootBits, NumSubtrieBits, NumHashBits);
   assert(reinterpret_cast<const void *>(&Trie.getHeader()) ==
          LMFR.data() + HeaderSize);
+  return Error::success();
+}
+
+Error DataFile::construct(LazyMappedFileRegion &LMFR,
+                          Optional<uint64_t> MinFileSize) {
+  Expected<LazyMappedFileRegionBumpPtr> Alloc = getAllocForNewFile(
+      LMFR, DataMagic, MinFileSize, /*ExpectedAllocation=*/0);
+  if (!Alloc)
+    return Alloc.takeError();
+
+  assert(Alloc->size() == HeaderSize);
+  return Error::success();
 }
 
 namespace {
@@ -544,13 +648,14 @@ Expected<TempFile> TempFile::create(const Twine &Model) {
 }
 
 OnDiskHashMappedTrie::MappedContentReference
-OnDiskData::getContent(StringRef DirPath) const {
-  if (isEmbedded())
-    return MappedContentReference(getMetadata(), *getData());
+DataFile::getContent(DataHandle D) const {
+  if (D.isEmbedded())
+    return OnDiskHashMappedTrie::MappedContentReference(D.getMetadata(),
+                                                        *D.getData());
 
   SmallString<128> HashString;
-  appendHash(getHash(), HashString);
-  SmallString<256> ContentPath = DirPath;
+  appendHash(D.getHash(), HashString);
+  SmallString<256> ContentPath = StringRef(DirPath);
   sys::path::append(ContentPath, HashString);
 
   Expected<sys::fs::file_t> ContentFD =
@@ -561,7 +666,7 @@ OnDiskData::getContent(StringRef DirPath) const {
       llvm::make_scope_exit([&ContentFD]() { sys::fs::closeFile(*ContentFD); });
 
   // Load with the padding to guarantee null termination.
-  int64_t ExternalSize = getDataSizeWithPadding(DataSize);
+  int64_t ExternalSize = D.getDataSizeWithPadding();
   sys::fs::mapped_file_region Map;
   {
     std::error_code EC;
@@ -572,11 +677,12 @@ OnDiskData::getContent(StringRef DirPath) const {
       report_fatal_error(createFileError(ContentPath, EC));
   }
 
-  StringRef Data(Map.data(), DataSize);
-  return MappedContentReference(getMetadata(), Data, std::move(Map));
+  StringRef Content(Map.data(), D.getHeader().DataSize);
+  return OnDiskHashMappedTrie::MappedContentReference(D.getMetadata(), Content,
+                                                      std::move(Map));
 }
 
-void OnDiskData::createExternalContent(StringRef DirPath,
+void DataHandle::createExternalContent(StringRef DirPath,
                                        ArrayRef<uint8_t> Hash,
                                        StringRef Metadata, StringRef Data) {
   assert(Data.size() >= MinExternalDataSize &&
@@ -587,7 +693,7 @@ void OnDiskData::createExternalContent(StringRef DirPath,
   appendHash(Hash, HashString);
   sys::path::append(ContentPath, HashString);
 
-  int64_t FileSize = OnDiskData::getDataSizeWithPadding(Data.size());
+  int64_t FileSize = getDataSizeWithPadding(Data.size());
 
   if (sys::fs::exists(ContentPath))
     return;
@@ -609,36 +715,27 @@ void OnDiskData::createExternalContent(StringRef DirPath,
       report_fatal_error(createFileError(File->TmpName, EC));
 
     ::memcpy(MappedFile.data(), Data.begin(), Data.size());
-    ::memset(MappedFile.data() + Data.size(), 0,
-             OnDiskData::getDataPadding(Data.size()));
+    ::memset(MappedFile.data() + Data.size(), 0, getDataPadding(Data.size()));
   }
 
   if (Error E = File->keep(ContentPath))
     report_fatal_error(std::move(E));
 }
 
-SubtrieSlotValue OnDiskDataHeader::createData(
-    StringRef DirPath, LazyMappedFileRegionBumpPtr &Alloc,
-    ArrayRef<uint8_t> Hash, StringRef Metadata, StringRef Data) {
-  int64_t Size = OnDiskData::getSizeIfEmbedded(Hash, Metadata, Data);
+DataHandle DataHandle::create(LazyMappedFileRegionBumpPtr &Alloc,
+                              StringRef DirPath, ArrayRef<uint8_t> Hash,
+                              StringRef Metadata, StringRef Data) {
+  int64_t Size = getSizeIfEmbedded(Hash, Metadata, Data);
 
   // FIXME: This logic isn't right. References should be stored externally if
   // there are enough that we'll go over the max embedded data size limit.
   // Right now only the data is ever made external.... but we could blow out
   // the main mmap if there are lots of references.
-  if (Size <= OnDiskData::MaxEmbeddedDataSize ||
-      Data.size() < OnDiskData::MinExternalDataSize) {
-    auto Offset = SubtrieSlotValue::getDataOffset(Alloc.allocateOffset(Size));
-    new (getData(Offset)) OnDiskData(Hash, Metadata, Data);
-    return Offset;
-  }
+  if (Size <= MaxEmbeddedDataSize || Data.size() < MinExternalDataSize)
+    return createEmbedded(Alloc, Hash, Metadata, Data);
 
-  OnDiskData::createExternalContent(DirPath, Hash, Metadata, Data);
-  Size = OnDiskData::getSizeIfExternal(Hash.size(), Metadata.size());
-  auto Offset = SubtrieSlotValue::getDataOffset(Alloc.allocateOffset(Size));
-  new (getData(Offset))
-      OnDiskData(OnDiskData::ExternalTag(), Hash, Metadata, Data.size());
-  return Offset;
+  createExternalContent(DirPath, Hash, Metadata, Data);
+  return createExternal(Alloc, Hash, Metadata, Data.size());
 }
 
 SubtrieHandle SubtrieHandle::sink(size_t I, SubtrieSlotValue V,
@@ -674,27 +771,27 @@ OnDiskHashMappedTrie::LookupResult
 OnDiskHashMappedTrie::lookup(ArrayRef<uint8_t> Hash) const {
   assert(!Hash.empty() && "Uninitialized hash");
   TrieHandle Trie = Impl->Index.Trie;
-  auto *DataHeader = Impl->Data.Header;
+  DataFile &DataF = Impl->Data;
 
   SubtrieHandle S = Trie.getRoot();
   IndexGenerator IndexGen = Trie.getIndexGen(Hash);
   size_t Index = IndexGen.next();
   for (;;) {
     // Try to set the content.
-    SubtrieSlotValue Existing = S.load(Index);
-    if (!Existing)
+    SubtrieSlotValue V = S.load(Index);
+    if (!V)
       return LookupResult(&S.getHeader(), Index, *IndexGen.StartBit);
 
     // Check for an exact match.
-    if (Existing.isData()) {
-      OnDiskData *ExistingData = DataHeader->getData(Existing);
-      return ExistingData->getHash() == Hash
-                 ? LookupResult(ExistingData->getContent(Impl->DirPath))
+    if (V.isData()) {
+      DataHandle D = DataF.getData(V);
+      return D.getHash() == Hash
+                 ? LookupResult(DataF.getContent(D))
                  : LookupResult(&S.getHeader(), Index, *IndexGen.StartBit);
     }
 
     Index = IndexGen.next();
-    S = SubtrieHandle(Trie.getRegion(), Existing);
+    S = SubtrieHandle(Trie.getRegion(), V);
   }
 }
 
@@ -719,7 +816,7 @@ OnDiskHashMappedTrie::insert(LookupResult Hint, ArrayRef<uint8_t> Hash,
                              StringRef Metadata, StringRef Content) {
   assert(!Hash.empty() && "Uninitialized hash");
   TrieHandle Trie = Impl->Index.Trie;
-  auto *DataHeader = Impl->Data.Header;
+  DataFile &DataF = Impl->Data;
 
   SubtrieHandle S = Trie.getRoot();
   IndexGenerator IndexGen = Trie.getIndexGen(Hash);
@@ -732,7 +829,7 @@ OnDiskHashMappedTrie::insert(LookupResult Hint, ArrayRef<uint8_t> Hash,
     Index = IndexGen.next();
   }
 
-  Optional<SubtrieSlotValue> NewData;
+  DataHandle NewData;
   SubtrieHandle UnusedSubtrie;
   for (;;) {
     // To minimize leaks, first check the data, only allocating an on-disk
@@ -742,12 +839,10 @@ OnDiskHashMappedTrie::insert(LookupResult Hint, ArrayRef<uint8_t> Hash,
     // Try to set it, if it's empty.
     if (!Existing) {
       if (!NewData)
-        NewData = DataHeader->createData(Impl->DirPath, Impl->Data.Alloc, Hash,
-                                         Metadata, Content);
-      assert(NewData->asData() < int64_t(Impl->Data.Alloc.size()));
+        NewData = DataF.createData(Hash, Metadata, Content);
 
-      if (S.compare_exchange_strong(Index, Existing, *NewData))
-        return DataHeader->getData(*NewData)->getContent(Impl->DirPath);
+      if (S.compare_exchange_strong(Index, Existing, NewData.getOffset()))
+        return DataF.getContent(NewData);
 
       // Existing is no longer 0; fall through...
     }
@@ -759,15 +854,15 @@ OnDiskHashMappedTrie::insert(LookupResult Hint, ArrayRef<uint8_t> Hash,
     }
 
     // Check for an exact match.
-    OnDiskData *ExistingData = DataHeader->getData(Existing);
-    if (ExistingData->getHash() == Hash)
-      return ExistingData->getContent(Impl->DirPath); // Already there!
+    DataHandle ExistingData = DataF.getData(Existing);
+    if (ExistingData.getHash() == Hash)
+      return DataF.getContent(ExistingData); // Already there!
 
     // Sink the existing content as long as the indexes match.
     for (;;) {
       size_t NextIndex = IndexGen.next();
       size_t NewIndexForExistingContent =
-          IndexGen.getCollidingBits(ExistingData->getHash());
+          IndexGen.getCollidingBits(ExistingData.getHash());
 
       S = S.sink(Index, Existing, Impl->Index.Alloc, IndexGen.getNumBits(),
                  UnusedSubtrie, NewIndexForExistingContent);
@@ -793,10 +888,9 @@ OnDiskHashMappedTrie::create(const Twine &PathTwine, size_t NumHashBits,
   if (!InitialNumSubtrieBits)
     InitialNumSubtrieBits = DefaultNumSubtrieBits;
 
-  SmallString<128> Path, DataPath, IndexPath;
-  PathTwine.toVector(Path);
-  DataPath = Path;
-  IndexPath = Path;
+  std::string Path = PathTwine.str();
+  SmallString<128> DataPath = StringRef(Path);
+  SmallString<128> IndexPath = StringRef(Path);
   sys::path::append(DataPath, "data");
   sys::path::append(IndexPath, "index");
 
@@ -814,45 +908,28 @@ OnDiskHashMappedTrie::create(const Twine &PathTwine, size_t NumHashBits,
   const uint64_t MaxIndexSize = std::min(4 * GB, MaxMapSize);
   const uint64_t MaxDataSize = MaxMapSize;
 
-  constexpr int64_t DataEndOffset = HeaderSize;
-
   // Open / create / initialize files on disk.
   std::shared_ptr<LazyMappedFileRegion> IndexRegion, DataRegion;
   if (Error E = LazyMappedFileRegion::createShared(
                     IndexPath, MaxIndexSize,
-                    [&](LazyMappedFileRegion &LMFR) -> Error {
-                      // Start with at least 1MB.
-                      if (Error E = LMFR.extendSize(MB))
-                        return E;
-                      IndexFile::construct(LMFR, *InitialNumRootBits,
-                                           *InitialNumSubtrieBits, NumHashBits);
-                      return Error::success();
-                    })
+                    IndexFile::getConstructor(*InitialNumRootBits,
+                                              *InitialNumSubtrieBits,
+                                              NumHashBits, /*MinFileSize=*/MB))
                     .moveInto(IndexRegion))
     return std::move(E);
   if (Error E = LazyMappedFileRegion::createShared(
                     DataPath, MaxDataSize,
-                    [&](LazyMappedFileRegion &LMFR) -> Error {
-                      // Start with at least 1MB.
-                      if (Error E = LMFR.extendSize(MB))
-                        return E;
-                      new (LMFR.data()) uint64_t(DataMagic);
-                      new (LMFR.data() + BumpPtrOffset)
-                          std::atomic<int64_t>(DataEndOffset);
-                      return Error::success();
-                    })
+                    DataFile::getConstructor(/*MinFileSize=*/MB))
                     .moveInto(DataRegion))
     return std::move(E);
 
   // FIXME: The magic should be checked...
 
   // Success.
-  auto *Data = reinterpret_cast<OnDiskDataHeader *>(DataRegion->data() + HeaderSize);
   OnDiskHashMappedTrie::ImplType Impl = {
-      Path.str().str(),
       IndexFile(std::move(IndexRegion)),
-      {Data,
-       LazyMappedFileRegionBumpPtr(std::move(DataRegion), BumpPtrOffset)}};
+      DataFile(std::move(DataRegion), std::move(Path)),
+  };
   return OnDiskHashMappedTrie(std::make_unique<ImplType>(std::move(Impl)));
 }
 
