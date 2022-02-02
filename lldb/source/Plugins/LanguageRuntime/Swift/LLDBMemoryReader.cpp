@@ -330,7 +330,7 @@ LLDBMemoryReader::resolveRemoteAddress(uint64_t address) const {
   if (!resolved.IsValid()) {
     LLDB_LOG(log,
              "[MemoryReader] Could not make a real address out of file address "
-             "{0:x} and object file {}",
+             "{0:x} and object file {1}",
              file_address, object_file->GetFileSpec().GetFilename());
     return {};
   }
