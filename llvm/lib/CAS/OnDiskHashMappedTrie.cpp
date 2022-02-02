@@ -84,11 +84,10 @@ public:
   }
 
   /// Return None on success, or the existing offset on failure.
-  Optional<SubtrieSlotValue> try_set(size_t I, SubtrieSlotValue New);
-
-  /// Return None on success, or the existing offset on failure.
-  Optional<SubtrieSlotValue> try_replace(size_t I, SubtrieSlotValue Expected,
-                                         SubtrieSlotValue New);
+  bool compare_exchange_strong(size_t I, SubtrieSlotValue &Expected,
+                               SubtrieSlotValue New) {
+    return Slots[I].compare_exchange_strong(Expected.Offset, New.Offset);
+  }
 
   /// Sink \p V from \p I in this subtrie down to \p NewI in a new subtrie with
   /// \p NumSubtrieBits.
@@ -546,24 +545,6 @@ SubtrieSlotValue OnDiskDataHeader::createData(
   return Offset;
 }
 
-Optional<SubtrieSlotValue> SubtrieHandle::try_set(size_t I,
-                                                  SubtrieSlotValue New) {
-  return try_replace(I, SubtrieSlotValue(), New);
-}
-
-Optional<SubtrieSlotValue> SubtrieHandle::try_replace(size_t I,
-                                                      SubtrieSlotValue Expected,
-                                                      SubtrieSlotValue New) {
-  assert(New);
-  int64_t Old = Expected.Offset;
-  if (!Slots[I].compare_exchange_strong(Old, New.Offset)) {
-    assert(Old != Expected.Offset);
-    return SubtrieSlotValue(Old);
-  }
-  // Success.
-  return None;
-}
-
 SubtrieHandle SubtrieHandle::sink(size_t I, SubtrieSlotValue V,
                                   LazyMappedFileRegionBumpPtr &Alloc,
                                   size_t NumSubtrieBits,
@@ -579,17 +560,18 @@ SubtrieHandle SubtrieHandle::sink(size_t I, SubtrieSlotValue V,
   }
 
   NewS.store(NewI, V);
-  Optional<SubtrieSlotValue> Race = try_replace(I, V, NewS.getOffset());
-  if (!Race)
+  if (compare_exchange_strong(I, V, NewS.getOffset()))
     return NewS; // Success!
-  assert(Race->isSubtrie());
+
+  // Raced.
+  assert(V.isSubtrie() && "Expected racing sink() to add a subtrie");
 
   // Wipe out the new slot so NewS can be reused and set the out parameter.
   NewS.store(NewI, SubtrieSlotValue());
   UnusedSubtrie = NewS;
 
   // Return the subtrie added by the concurrent sink() call.
-  return SubtrieHandle(Alloc.getRegion(), *Race);
+  return SubtrieHandle(Alloc.getRegion(), V);
 }
 
 OnDiskHashMappedTrie::LookupResult
@@ -673,11 +655,10 @@ OnDiskHashMappedTrie::insert(LookupResult Hint, ArrayRef<uint8_t> Hash,
       assert(NewData->asData() < int64_t(Impl->Data.Alloc.size()));
 
       // FIXME: Stop calling Data->getPath() here; pass in parent directory.
-      Optional<SubtrieSlotValue> Race = S.try_set(Index, *NewData);
-      if (!Race) // Success!
+      if (S.compare_exchange_strong(Index, Existing, *NewData))
         return DataHeader->getData(*NewData)->getContent(Impl->DirPath);
-      assert(*Race && "Expected non-empty, or else why the race?");
-      Existing = *Race;
+
+      // Existing is no longer 0; fall through...
     }
 
     if (Existing.isSubtrie()) {
