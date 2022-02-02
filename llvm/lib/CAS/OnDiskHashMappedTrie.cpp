@@ -22,6 +22,7 @@ using namespace llvm;
 using namespace llvm::cas;
 
 namespace {
+class SubtrieHandle;
 class OnDiskOffset {
 public:
   explicit operator bool() const { return !isEmpty(); }
@@ -54,32 +55,30 @@ public:
   OnDiskOffset() = default;
 
 private:
-  friend struct OnDiskSubtrie;
+  friend class SubtrieHandle;
   explicit OnDiskOffset(int64_t Offset) : Offset(Offset) {}
   int64_t Offset = 0;
 };
 
 struct OnDiskIndexHeader;
-struct OnDiskSubtrie final {
-  uint32_t StartBit;
-  uint32_t NumBits;
+class SubtrieHandle {
+public:
+  struct Header {
+    uint32_t StartBit;
+    uint32_t NumBits;
+  };
 
   static int64_t getSlotsSize(uint32_t NumBits) {
     return sizeof(int64_t) * (1u << NumBits);
   }
 
   static int64_t getSize(uint32_t NumBits) {
-    return sizeof(OnDiskSubtrie) + getSlotsSize(NumBits);
+    return sizeof(SubtrieHandle::Header) + getSlotsSize(NumBits);
   }
 
-  int64_t getSize() const { return getSize(NumBits); }
+  int64_t getSize() const { return getSize(H->NumBits); }
 
-  MutableArrayRef<std::atomic<int64_t>> getSlots() {
-    return makeMutableArrayRef(
-        reinterpret_cast<std::atomic<int64_t> *>(this + 1), 1u << NumBits);
-  }
-
-  OnDiskOffset get(size_t I);
+  OnDiskOffset get(size_t I) { return OnDiskOffset(getSlots()[I].load()); }
 
   /// Return None on success, or the existing offset on failure.
   Optional<OnDiskOffset> try_set(size_t I, OnDiskOffset New);
@@ -91,13 +90,36 @@ struct OnDiskSubtrie final {
   /// Only safe if the subtrie is empty.
   void reinitialize(uint32_t StartBit, uint32_t NumBits);
 
+  OnDiskOffset getOffset() const {
+    return OnDiskOffset::getSubtrieOffset(reinterpret_cast<const char *>(H) -
+                                          LMFR->data());
+  }
+
+  explicit operator bool() const { return H; }
+
+  Header &getHeader() const { return *H; }
+  uint32_t getStartBit() const { return H->StartBit; }
+  uint32_t getNumBits() const { return H->NumBits; }
+  MutableArrayRef<std::atomic<int64_t>> getSlots() const { return Slots; }
+
+  static SubtrieHandle create(LazyMappedFileRegionBumpPtr &Alloc,
+                              uint32_t StartBit, uint32_t NumBits);
+
+  SubtrieHandle() = default;
+  SubtrieHandle(LazyMappedFileRegion &LMFR, Header &H)
+      : LMFR(&LMFR), H(&H), Slots(getSlots(H)) {}
+  SubtrieHandle(LazyMappedFileRegion &LMFR, OnDiskOffset Offset)
+      : SubtrieHandle(LMFR, *reinterpret_cast<Header *>(LMFR.data() +
+                                                        Offset.asSubtrie())) {}
+
 private:
-  friend struct OnDiskIndexHeader;
-  OnDiskSubtrie(uint32_t StartBit, uint32_t NumBits)
-      : StartBit(StartBit), NumBits(NumBits) {
-    auto Slots = getSlots();
-    for (auto I = Slots.begin(), E = Slots.end(); I != E; ++I)
-      new (I) std::atomic<int64_t>(0);
+  LazyMappedFileRegion *LMFR = nullptr;
+  Header *H = nullptr;
+  MutableArrayRef<std::atomic<int64_t>> Slots;
+
+  static MutableArrayRef<std::atomic<int64_t>> getSlots(Header &H) {
+    return makeMutableArrayRef(reinterpret_cast<std::atomic<int64_t> *>(&H + 1),
+                               1u << H.NumBits);
   }
 };
 
@@ -221,21 +243,12 @@ struct OnDiskIndexHeader {
   uint64_t NumRootBits;
   uint64_t NumSubtrieBits;
   uint64_t NumHashBits;
-  OnDiskSubtrie Root;
-
-  OnDiskSubtrie *getSubtrie(OnDiskOffset Slot) {
-    assert(Slot.isSubtrie());
-    assert(Slot.asSubtrie() >= int64_t(HeaderSize + sizeof(OnDiskIndexHeader)));
-    return reinterpret_cast<OnDiskSubtrie *>(reinterpret_cast<char *>(this) +
-                                             Slot.asSubtrie() - HeaderSize);
-  }
-  OnDiskOffset createSubtrie(LazyMappedFileRegionBumpPtr &Alloc,
-                             uint32_t StartBit, uint32_t NumBits);
+  SubtrieHandle::Header Root;
 
   OnDiskIndexHeader(uint64_t NumRootBits, uint64_t NumSubtrieBits,
                     uint64_t NumHashBits)
       : NumRootBits(NumRootBits), NumSubtrieBits(NumSubtrieBits),
-        NumHashBits(NumHashBits), Root(0, NumRootBits) {}
+        NumHashBits(NumHashBits), Root{0, (uint32_t)NumRootBits} {}
 };
 
 struct OnDiskDataHeader {
@@ -261,6 +274,8 @@ struct OnDiskHashMappedTrie::ImplType {
   struct {
     OnDiskIndexHeader *Header = nullptr;
     LazyMappedFileRegionBumpPtr Alloc;
+
+    LazyMappedFileRegion &getRegion() { return Alloc.getRegion(); }
   } Index;
 
   // This is storage for data; not really part of the trie.
@@ -269,6 +284,8 @@ struct OnDiskHashMappedTrie::ImplType {
   struct {
     OnDiskDataHeader *Header = nullptr;
     LazyMappedFileRegionBumpPtr Alloc;
+
+    LazyMappedFileRegion &getRegion() { return Alloc.getRegion(); }
   } Data;
 };
 
@@ -320,13 +337,15 @@ OnDiskData::OnDiskData(ArrayRef<uint8_t> Hash, StringRef Metadata,
            getDataPadding(DataSize));
 }
 
-OnDiskOffset
-OnDiskIndexHeader::createSubtrie(LazyMappedFileRegionBumpPtr &Alloc,
-                                 uint32_t StartBit, uint32_t NumBits) {
-  int64_t Size = OnDiskSubtrie::getSize(NumBits);
-  auto Offset = OnDiskOffset::getSubtrieOffset(Alloc.allocateOffset(Size));
-  new (getSubtrie(Offset)) OnDiskSubtrie(StartBit, NumBits);
-  return Offset;
+SubtrieHandle SubtrieHandle::create(LazyMappedFileRegionBumpPtr &Alloc,
+                                    uint32_t StartBit, uint32_t NumBits) {
+  int64_t Offset = Alloc.allocateOffset(getSize(NumBits));
+  char *Mem = Alloc.data() + Offset;
+  auto *H = new (Mem) SubtrieHandle::Header{StartBit, NumBits};
+  SubtrieHandle S(Alloc.getRegion(), *H);
+  for (auto I = S.Slots.begin(), E = S.Slots.end(); I != E; ++I)
+    new (I) std::atomic<int64_t>(0);
+  return S;
 }
 
 namespace {
@@ -511,19 +530,15 @@ OnDiskOffset OnDiskDataHeader::createData(StringRef DirPath,
   return Offset;
 }
 
-OnDiskOffset OnDiskSubtrie::get(size_t I) {
-  return OnDiskOffset(getSlots()[I].load());
-}
-
-Optional<OnDiskOffset> OnDiskSubtrie::try_set(size_t I, OnDiskOffset New) {
+Optional<OnDiskOffset> SubtrieHandle::try_set(size_t I, OnDiskOffset New) {
   return try_replace(I, OnDiskOffset(), New);
 }
 
 Optional<OnDiskOffset>
-OnDiskSubtrie::try_replace(size_t I, OnDiskOffset Expected, OnDiskOffset New) {
+SubtrieHandle::try_replace(size_t I, OnDiskOffset Expected, OnDiskOffset New) {
   assert(New);
   int64_t Old = Expected.Offset;
-  if (!getSlots()[I].compare_exchange_strong(Old, New.Offset)) {
+  if (!Slots[I].compare_exchange_strong(Old, New.Offset)) {
     assert(Old != Expected.Offset);
     return OnDiskOffset(Old);
   }
@@ -538,15 +553,15 @@ OnDiskHashMappedTrie::lookup(ArrayRef<uint8_t> Hash) const {
   auto *DataHeader = Impl->Data.Header;
   assert(IndexHeader->NumHashBits == Hash.size() * sizeof(uint8_t));
 
-  OnDiskSubtrie *S = &IndexHeader->Root;
+  SubtrieHandle S(Impl->Index.getRegion(), IndexHeader->Root);
   IndexGenerator IndexGen{IndexHeader->NumRootBits, IndexHeader->NumSubtrieBits,
                           Hash};
   size_t Index = IndexGen.next();
   for (;;) {
     // Try to set the content.
-    OnDiskOffset Existing = S->get(Index);
+    OnDiskOffset Existing = S.get(Index);
     if (!Existing)
-      return LookupResult(S, Index, *IndexGen.StartBit);
+      return LookupResult(&S.getHeader(), Index, *IndexGen.StartBit);
 
     // Check for an exact match.
     if (Existing.isData()) {
@@ -554,22 +569,28 @@ OnDiskHashMappedTrie::lookup(ArrayRef<uint8_t> Hash) const {
       OnDiskData *ExistingData = DataHeader->getData(Existing);
       return ExistingData->getHash() == Hash
                  ? LookupResult(ExistingData->getContent(Impl->DirPath))
-                 : LookupResult(S, Index, *IndexGen.StartBit);
+                 : LookupResult(&S.getHeader(), Index, *IndexGen.StartBit);
     }
 
     Index = IndexGen.next();
-    S = IndexHeader->getSubtrie(Existing);
+    S = SubtrieHandle(Impl->Index.getRegion(), Existing);
   }
 }
 
 /// Only safe if the subtrie is empty.
-void OnDiskSubtrie::reinitialize(uint32_t StartBit, uint32_t NumBits) {
-  assert(StartBit > this->StartBit);
-  assert(NumBits <= this->NumBits);
+void SubtrieHandle::reinitialize(uint32_t StartBit, uint32_t NumBits) {
+  assert(StartBit > H->StartBit);
+  assert(NumBits <= H->NumBits);
   // Ideally would also assert that all slots are empty, but that's expensive.
 
-  this->StartBit = StartBit;
-  this->NumBits = NumBits;
+  H->StartBit = StartBit;
+  H->NumBits = NumBits;
+}
+
+static SubtrieHandle getSubtrieFromHint(LazyMappedFileRegion &LMFR,
+                                        const void *Hint) {
+  auto *H = reinterpret_cast<SubtrieHandle::Header *>(const_cast<void *>(Hint));
+  return SubtrieHandle(LMFR, *H);
 }
 
 OnDiskHashMappedTrie::MappedContentReference
@@ -580,23 +601,23 @@ OnDiskHashMappedTrie::insert(LookupResult Hint, ArrayRef<uint8_t> Hash,
   auto *DataHeader = Impl->Data.Header;
   assert(IndexHeader->NumHashBits == Hash.size() * sizeof(uint8_t));
 
-  OnDiskSubtrie *S = &IndexHeader->Root;
+  SubtrieHandle S(Impl->Index.getRegion(), IndexHeader->Root);
   IndexGenerator IndexGen{IndexHeader->NumRootBits, IndexHeader->NumSubtrieBits,
                           Hash};
   size_t Index;
   if (Hint.isHint()) {
-    S = static_cast<OnDiskSubtrie *>(const_cast<void *>(Hint.S));
+    S = getSubtrieFromHint(Impl->Index.getRegion(), Hint.S);
     Index = IndexGen.hint(Hint.I, Hint.B);
   } else {
     Index = IndexGen.next();
   }
 
   Optional<OnDiskOffset> NewData;
-  Optional<OnDiskOffset> NewSubtrie;
+  SubtrieHandle NewSubtrie;
   for (;;) {
     // To minimize leaks, first check the data, only allocating an on-disk
     // record if it's not already in the map.
-    OnDiskOffset Existing = S->get(Index);
+    OnDiskOffset Existing = S.get(Index);
 
     // Try to set it, if it's empty.
     if (!Existing) {
@@ -606,7 +627,7 @@ OnDiskHashMappedTrie::insert(LookupResult Hint, ArrayRef<uint8_t> Hash,
       assert(NewData->asData() < int64_t(Impl->Data.Alloc.size()));
 
       // FIXME: Stop calling Data->getPath() here; pass in parent directory.
-      Optional<OnDiskOffset> Race = S->try_set(Index, *NewData);
+      Optional<OnDiskOffset> Race = S.try_set(Index, *NewData);
       if (!Race) // Success!
         return DataHeader->getData(*NewData)->getContent(Impl->DirPath);
       assert(*Race && "Expected non-empty, or else why the race?");
@@ -614,7 +635,7 @@ OnDiskHashMappedTrie::insert(LookupResult Hint, ArrayRef<uint8_t> Hash,
     }
 
     if (Existing.isSubtrie()) {
-      S = IndexHeader->getSubtrie(Existing);
+      S = SubtrieHandle(Impl->Index.getRegion(), Existing);
       Index = IndexGen.next();
       continue;
     }
@@ -632,37 +653,33 @@ OnDiskHashMappedTrie::insert(LookupResult Hint, ArrayRef<uint8_t> Hash,
       size_t NewIndexForExistingContent =
           IndexGen.getCollidingBits(ExistingData->getHash());
 
-      OnDiskSubtrie *NewS;
       if (!NewSubtrie) {
         // Allocate a new, empty subtrie.
-        NewSubtrie = IndexHeader->createSubtrie(
-            Impl->Index.Alloc, S->StartBit + S->NumBits, IndexGen.getNumBits());
-        NewS = IndexHeader->getSubtrie(*NewSubtrie);
+        NewSubtrie = SubtrieHandle::create(Impl->Index.Alloc,
+                                           S.getStartBit() + S.getNumBits(),
+                                           IndexGen.getNumBits());
       } else {
         // Reinitialize the subtrie that's still around from an earlier race.
-        NewS = IndexHeader->getSubtrie(*NewSubtrie);
-        NewS->reinitialize(S->StartBit + S->NumBits, IndexGen.getNumBits());
+        NewSubtrie.reinitialize(S.getStartBit() + S.getNumBits(),
+                                IndexGen.getNumBits());
       }
 
-      auto &NewSlot = NewS->getSlots()[NewIndexForExistingContent];
+      auto &NewSlot = NewSubtrie.getSlots()[NewIndexForExistingContent];
       NewSlot.store(Existing.getRawOffset());
 
-      assert(NewSubtrie->asSubtrie() < int64_t(Impl->Index.Alloc.size()));
       Optional<OnDiskOffset> Race =
-          S->try_replace(Index, Existing, *NewSubtrie);
+          S.try_replace(Index, Existing, NewSubtrie.getOffset());
       if (Race) {
-        if (Race->isData())
-          assert(Race->asData() == Existing.asData());
         assert(Race->isSubtrie());
         // Use the other subtrie from the competing thread or process, and wipe
         // out the new slot so this subtrie can potentially be reused if we
         // need to make another.
-        S = IndexHeader->getSubtrie(*Race);
-        NewSlot.store(OnDiskOffset().getRawOffset(), std::memory_order_relaxed);
+        S = SubtrieHandle(Impl->Index.getRegion(), *Race);
+        NewSlot.store(OnDiskOffset().getRawOffset());
       } else {
         // Success!
-        S = NewS;
-        NewSubtrie = None;
+        S = NewSubtrie;
+        NewSubtrie = SubtrieHandle();
       }
 
       Index = NextIndex;
@@ -714,7 +731,7 @@ OnDiskHashMappedTrie::create(const Twine &PathTwine, size_t NumHashBits,
   constexpr int64_t DataEndOffset = HeaderSize;
   const int64_t IndexEndOffset =
       HeaderSize + sizeof(OnDiskIndexHeader) +
-      OnDiskSubtrie::getSlotsSize(*InitialNumRootBits);
+      SubtrieHandle::getSlotsSize(*InitialNumRootBits);
 
   // Open / create / initialize files on disk.
   std::shared_ptr<LazyMappedFileRegion> IndexRegion, DataRegion;
