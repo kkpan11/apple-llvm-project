@@ -78,8 +78,9 @@ public:
 
   int64_t getSize() const { return getSize(H->NumBits); }
 
-  SubtrieSlotValue get(size_t I) {
-    return SubtrieSlotValue(getSlots()[I].load());
+  SubtrieSlotValue load(size_t I) { return SubtrieSlotValue(Slots[I].load()); }
+  void store(size_t I, SubtrieSlotValue V) {
+    return Slots[I].store(V.getRawOffset());
   }
 
   /// Return None on success, or the existing offset on failure.
@@ -102,7 +103,6 @@ public:
   Header &getHeader() const { return *H; }
   uint32_t getStartBit() const { return H->StartBit; }
   uint32_t getNumBits() const { return H->NumBits; }
-  MutableArrayRef<std::atomic<int64_t>> getSlots() const { return Slots; }
 
   static SubtrieHandle create(LazyMappedFileRegionBumpPtr &Alloc,
                               uint32_t StartBit, uint32_t NumBits);
@@ -563,7 +563,7 @@ OnDiskHashMappedTrie::lookup(ArrayRef<uint8_t> Hash) const {
   size_t Index = IndexGen.next();
   for (;;) {
     // Try to set the content.
-    SubtrieSlotValue Existing = S.get(Index);
+    SubtrieSlotValue Existing = S.load(Index);
     if (!Existing)
       return LookupResult(&S.getHeader(), Index, *IndexGen.StartBit);
 
@@ -621,7 +621,7 @@ OnDiskHashMappedTrie::insert(LookupResult Hint, ArrayRef<uint8_t> Hash,
   for (;;) {
     // To minimize leaks, first check the data, only allocating an on-disk
     // record if it's not already in the map.
-    SubtrieSlotValue Existing = S.get(Index);
+    SubtrieSlotValue Existing = S.load(Index);
 
     // Try to set it, if it's empty.
     if (!Existing) {
@@ -668,9 +668,7 @@ OnDiskHashMappedTrie::insert(LookupResult Hint, ArrayRef<uint8_t> Hash,
                                 IndexGen.getNumBits());
       }
 
-      auto &NewSlot = NewSubtrie.getSlots()[NewIndexForExistingContent];
-      NewSlot.store(Existing.getRawOffset());
-
+      NewSubtrie.store(NewIndexForExistingContent, Existing);
       Optional<SubtrieSlotValue> Race =
           S.try_replace(Index, Existing, NewSubtrie.getOffset());
       if (Race) {
@@ -679,7 +677,7 @@ OnDiskHashMappedTrie::insert(LookupResult Hint, ArrayRef<uint8_t> Hash,
         // out the new slot so this subtrie can potentially be reused if we
         // need to make another.
         S = SubtrieHandle(Impl->Index.getRegion(), *Race);
-        NewSlot.store(SubtrieSlotValue().getRawOffset());
+        NewSubtrie.store(NewIndexForExistingContent, SubtrieSlotValue());
       } else {
         // Success!
         S = NewSubtrie;
