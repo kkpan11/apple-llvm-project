@@ -21,7 +21,7 @@ void LazyMappedFileRegionBumpPtr::initialize(int64_t BumpPtrOffset) {
   BumpPtr = reinterpret_cast<decltype(BumpPtr)>(data() + BumpPtrOffset);
 
   int64_t ExistingValue = 0;
-  if (!BumpPtr->compare_exchange_strong(ExistingValue, BumpPtrOffset))
+  if (!BumpPtr->compare_exchange_strong(ExistingValue, BumpPtrEndOffset))
     assert(ExistingValue >= BumpPtrEndOffset &&
            "Expected 0, or past the end of the BumpPtr itself");
 }

@@ -137,10 +137,11 @@ private:
                                1u << H.NumBits);
   }
 
-  /// FIXME: Remove these and inline construct() into create() once the file
-  /// format allows it.
   friend class TrieHandle;
-  static Header &construct(char *Mem, uint32_t StartBit, uint32_t NumBits);
+
+  /// Allow TrieHandle to coallocate the root trie.
+  static SubtrieHandle construct(LazyMappedFileRegion &LMFR, intptr_t Offset,
+                                 uint32_t StartBit, uint32_t NumBits);
 };
 
 struct OnDiskData {
@@ -302,6 +303,9 @@ public:
     return sizeof(Header) + SubtrieHandle::getSize(NumRootBits);
   }
 
+  static TrieHandle create(LazyMappedFileRegionBumpPtr &Alloc,
+                           uint64_t NumRootBits, uint64_t NumSubtrieBits,
+                           uint64_t NumHashBits);
   TrieHandle(LazyMappedFileRegion &LMFR, Header &H) : LMFR(&LMFR), H(&H) {}
   TrieHandle(LazyMappedFileRegion &LMFR, intptr_t HeaderOffset)
       : TrieHandle(LMFR,
@@ -311,15 +315,6 @@ private:
   SubtrieHandle::Header *getRootPointer() const {
     return reinterpret_cast<SubtrieHandle::Header *>(H + 1);
   }
-
-  friend struct IndexFile;
-  /// Construct a pre-allocated header.
-  ///
-  /// FIXME: This *should* be called create() and take a
-  /// LazyMappedFileRegionBumpPtr to allocate itself instead of \p Data.
-  /// However, this inconvenient in the current file format.
-  static void construct(char *Mem, uint64_t NumRootBits,
-                        uint64_t NumSubtrieBits, uint64_t NumHashBits);
 
   LazyMappedFileRegion *LMFR;
   Header *H = nullptr;
@@ -346,7 +341,7 @@ struct IndexFile {
   LazyMappedFileRegionBumpPtr Alloc;
   LazyMappedFileRegion &getRegion() { return Alloc.getRegion(); }
 
-  static void construct(char *FileData, uint64_t NumRootBits,
+  static void construct(LazyMappedFileRegion &LMFR, uint64_t NumRootBits,
                         uint64_t NumSubtrieBits, uint64_t NumHashBits);
 
   // FIXME: Doesn't check file magic.
@@ -427,34 +422,42 @@ OnDiskData::OnDiskData(ArrayRef<uint8_t> Hash, StringRef Metadata,
 SubtrieHandle SubtrieHandle::create(LazyMappedFileRegionBumpPtr &Alloc,
                                     uint32_t StartBit, uint32_t NumBits) {
   int64_t Offset = Alloc.allocateOffset(getSize(NumBits));
-  char *Mem = Alloc.data() + Offset;
-  return SubtrieHandle(Alloc.getRegion(), construct(Mem, StartBit, NumBits));
+  return construct(Alloc.getRegion(), Offset, StartBit, NumBits);
 }
 
-SubtrieHandle::Header &SubtrieHandle::construct(char *Mem, uint32_t StartBit,
-                                                uint32_t NumBits) {
-  auto *H = new (Mem) SubtrieHandle::Header{StartBit, NumBits};
-  MutableArrayRef<std::atomic<int64_t>> Slots = getSlots(*H);
-  for (auto I = Slots.begin(), E = Slots.end(); I != E; ++I)
+SubtrieHandle SubtrieHandle::construct(LazyMappedFileRegion &LMFR,
+                                       intptr_t Offset, uint32_t StartBit,
+                                       uint32_t NumBits) {
+  auto *H = new (LMFR.data() + Offset) SubtrieHandle::Header{StartBit, NumBits};
+  SubtrieHandle S(LMFR, *H);
+  for (auto I = S.Slots.begin(), E = S.Slots.end(); I != E; ++I)
     new (I) std::atomic<int64_t>(0);
-  return *H;
+  return S;
 }
 
-void TrieHandle::construct(char *Mem, uint64_t NumRootBits,
-                           uint64_t NumSubtrieBits, uint64_t NumHashBits) {
-  auto *H =
-      new (Mem) TrieHandle::Header(NumRootBits, NumSubtrieBits, NumHashBits);
-  SubtrieHandle::construct(reinterpret_cast<char *>(H + 1), 0, NumRootBits);
+TrieHandle TrieHandle::create(LazyMappedFileRegionBumpPtr &Alloc,
+                              uint64_t NumRootBits, uint64_t NumSubtrieBits,
+                              uint64_t NumHashBits) {
+  // Co-allocate the trie metadata and the root subtrie.
+  intptr_t Offset = Alloc.allocateOffset(TrieHandle::getSize(NumRootBits));
+  LazyMappedFileRegion &LMFR = Alloc.getRegion();
+  auto *H = new (LMFR.data() + Offset)
+      TrieHandle::Header(NumRootBits, NumSubtrieBits, NumHashBits);
+  SubtrieHandle::construct(Alloc.getRegion(),
+                           Offset + sizeof(TrieHandle::Header), 0, NumRootBits);
+  return TrieHandle(Alloc.getRegion(), *H);
 }
 
-void IndexFile::construct(char *FileData, uint64_t NumRootBits,
+void IndexFile::construct(LazyMappedFileRegion &LMFR, uint64_t NumRootBits,
                           uint64_t NumSubtrieBits, uint64_t NumHashBits) {
-  const int64_t IndexEndOffset = HeaderSize + TrieHandle::getSize(NumRootBits);
-  new (FileData) uint64_t(IndexMagic);
-  new (FileData + BumpPtrOffset) std::atomic<int64_t>(IndexEndOffset);
+  new (LMFR.data()) uint64_t(IndexMagic);
+  new (LMFR.data() + BumpPtrOffset) std::atomic<int64_t>(0);
+  LazyMappedFileRegionBumpPtr Alloc(LMFR, BumpPtrOffset);
 
-  TrieHandle::construct(FileData + HeaderSize, NumRootBits, NumSubtrieBits,
-                        NumHashBits);
+  TrieHandle Trie =
+      TrieHandle::create(Alloc, NumRootBits, NumSubtrieBits, NumHashBits);
+  assert(reinterpret_cast<const void *>(&Trie.getHeader()) ==
+         LMFR.data() + HeaderSize);
 }
 
 namespace {
@@ -816,19 +819,25 @@ OnDiskHashMappedTrie::create(const Twine &PathTwine, size_t NumHashBits,
   // Open / create / initialize files on disk.
   std::shared_ptr<LazyMappedFileRegion> IndexRegion, DataRegion;
   if (Error E = LazyMappedFileRegion::createShared(
-                    IndexPath, MaxIndexSize, /*NewFileSize=*/MB,
-                    [&](char *FileData) {
-                      IndexFile::construct(FileData, *InitialNumRootBits,
+                    IndexPath, MaxIndexSize,
+                    [&](LazyMappedFileRegion &LMFR) -> Error {
+                      // Start with at least 1MB.
+                      if (Error E = LMFR.extendSize(MB))
+                        return E;
+                      IndexFile::construct(LMFR, *InitialNumRootBits,
                                            *InitialNumSubtrieBits, NumHashBits);
                       return Error::success();
                     })
                     .moveInto(IndexRegion))
     return std::move(E);
   if (Error E = LazyMappedFileRegion::createShared(
-                    DataPath, MaxDataSize, /*NewFileSize=*/MB,
-                    [&](char *FileData) {
-                      new (FileData) uint64_t(DataMagic);
-                      new (FileData + BumpPtrOffset)
+                    DataPath, MaxDataSize,
+                    [&](LazyMappedFileRegion &LMFR) -> Error {
+                      // Start with at least 1MB.
+                      if (Error E = LMFR.extendSize(MB))
+                        return E;
+                      new (LMFR.data()) uint64_t(DataMagic);
+                      new (LMFR.data() + BumpPtrOffset)
                           std::atomic<int64_t>(DataEndOffset);
                       return Error::success();
                     })
