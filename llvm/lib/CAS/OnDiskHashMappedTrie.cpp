@@ -593,7 +593,6 @@ OnDiskHashMappedTrie::lookup(ArrayRef<uint8_t> Hash) const {
 
     // Check for an exact match.
     if (Existing.isData()) {
-      // FIXME: Stop calling Data->getPath() here; pass in parent directory.
       OnDiskData *ExistingData = DataHeader->getData(Existing);
       return ExistingData->getHash() == Hash
                  ? LookupResult(ExistingData->getContent(Impl->DirPath))
@@ -654,7 +653,6 @@ OnDiskHashMappedTrie::insert(LookupResult Hint, ArrayRef<uint8_t> Hash,
                                          Metadata, Content);
       assert(NewData->asData() < int64_t(Impl->Data.Alloc.size()));
 
-      // FIXME: Stop calling Data->getPath() here; pass in parent directory.
       if (S.compare_exchange_strong(Index, Existing, *NewData))
         return DataHeader->getData(*NewData)->getContent(Impl->DirPath);
 
@@ -668,8 +666,6 @@ OnDiskHashMappedTrie::insert(LookupResult Hint, ArrayRef<uint8_t> Hash,
     }
 
     // Check for an exact match.
-    //
-    // FIXME: Stop calling Data->getPath() here; pass in parent directory.
     OnDiskData *ExistingData = DataHeader->getData(Existing);
     if (ExistingData->getHash() == Hash)
       return ExistingData->getContent(Impl->DirPath); // Already there!
