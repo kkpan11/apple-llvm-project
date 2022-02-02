@@ -139,7 +139,7 @@ bool LLDBMemoryReader::readBytes(swift::remote::RemoteAddress address,
   llvm::Optional<Address> maybeAddr =
       resolveRemoteAddress(address.getAddressData());
   if (!maybeAddr) {
-    LLDB_LOGV(log, "[MemoryReader] could not resolve address {1:x}",
+    LLDB_LOGV(log, "[MemoryReader] could not resolve address {0:x}",
               address.getAddressData());
     return false;
   }
@@ -184,13 +184,13 @@ bool LLDBMemoryReader::readString(swift::remote::RemoteAddress address,
                                   std::string &dest) {
   Log *log(GetLogIfAllCategoriesSet(LIBLLDB_LOG_TYPES));
 
-  LLDB_LOGV(log, "[MemoryReader] asked to read string data at address {0x}",
+  LLDB_LOGV(log, "[MemoryReader] asked to read string data at address {0:x}",
             address.getAddressData());
 
   llvm::Optional<Address> maybeAddr =
       resolveRemoteAddress(address.getAddressData());
   if (!maybeAddr) {
-    LLDB_LOGV(log, "[MemoryReader] could not resolve address {1:x}",
+    LLDB_LOGV(log, "[MemoryReader] could not resolve address {0:x}",
               address.getAddressData());
     return false;
   }
@@ -302,7 +302,7 @@ LLDBMemoryReader::resolveRemoteAddress(uint64_t address) const {
   // If the address is larger than anything we have mapped the address is out
   if (pair_iterator == m_range_module_map.end()) {
     LLDB_LOG(log,
-             "[MemoryReader] Address {:x} is larger than the upper bound "
+             "[MemoryReader] Address {0:x} is larger than the upper bound "
              "address of the mapped in modules",
              address);
     return {};
@@ -319,8 +319,8 @@ LLDBMemoryReader::resolveRemoteAddress(uint64_t address) const {
     file_address = address - std::prev(pair_iterator)->first;
 
   LLDB_LOGV(log,
-            "[MemoryReader] Successfully resolved mapped address {:x} into "
-            "file address {:x}",
+            "[MemoryReader] Successfully resolved mapped address {0:x} into "
+            "file address {1:x}",
             address, file_address);
   auto *object_file = module->GetObjectFile();
   if (!object_file)
@@ -330,14 +330,14 @@ LLDBMemoryReader::resolveRemoteAddress(uint64_t address) const {
   if (!resolved.IsValid()) {
     LLDB_LOG(log,
              "[MemoryReader] Could not make a real address out of file address "
-             "{:x} and object file {}",
+             "{0:x} and object file {}",
              file_address, object_file->GetFileSpec().GetFilename());
     return {};
   }
 
   LLDB_LOGV(log,
-            "[MemoryReader] Successfully resolved mapped address {:x} into "
-            "file address {:x}",
+            "[MemoryReader] Successfully resolved mapped address {0:x} into "
+            "file address {1:x}",
             address, resolved.GetFileAddress());
   return resolved;
 }
