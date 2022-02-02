@@ -11,6 +11,7 @@
 
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h"
+#include <atomic>
 #include <mutex>
 
 namespace llvm {
