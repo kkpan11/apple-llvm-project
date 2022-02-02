@@ -7,6 +7,7 @@ add_llvm_component_library(LLVMCAS
   FileSystemCache.cpp
   HashMappedTrie.cpp
   HierarchicalTreeBuilder.cpp
+  LazyMappedFileRegion.cpp
   OnDiskHashMappedTrie.cpp
   PluginCAS.cpp
   Utils.cpp
