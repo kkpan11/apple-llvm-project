@@ -1217,3 +1217,10 @@ llvm::StringRef ObjectFilePECOFF::GetReflectionSectionIdentifier(
 #endif //LLDB_ENABLE_SWIFT
 }
 
+#ifdef LLDB_ENABLE_SWIFT
+bool ObjectFilePECOFF::CanContainSwiftReflectionData(const Section &section) {
+  swift::SwiftObjectFileFormatCOFF file_format;
+  return file_format.sectionContainsReflectionData(
+      section.GetName().GetStringRef());
+}
+#endif // LLDB_ENABLE_SWIFT
