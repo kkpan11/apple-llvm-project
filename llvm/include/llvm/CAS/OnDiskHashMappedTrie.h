@@ -51,8 +51,6 @@ namespace cas {
 /// OnDiskHashMappedTrie::MappedFileInfo::open().
 class OnDiskHashMappedTrie {
 public:
-  void operator delete(void *Ptr) { ::free(Ptr); }
-
   LLVM_DUMP_METHOD void dump() const;
   void print(raw_ostream &OS) const;
 
