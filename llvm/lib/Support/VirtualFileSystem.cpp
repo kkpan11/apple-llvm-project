@@ -1343,6 +1343,14 @@ StringRef RedirectingFileSystem::getExternalContentsPrefixDir() const {
   return ExternalContentsPrefixDir;
 }
 
+void RedirectingFileSystem::setFallthrough(bool Fallthrough) {
+  if (Fallthrough) {
+    Redirection = RedirectingFileSystem::RedirectKind::Fallthrough;
+  } else {
+    Redirection = RedirectingFileSystem::RedirectKind::RedirectOnly;
+  }
+}
+
 void RedirectingFileSystem::setRedirection(
     RedirectingFileSystem::RedirectKind Kind) {
   Redirection = Kind;
