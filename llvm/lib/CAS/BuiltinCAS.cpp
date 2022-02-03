@@ -36,6 +36,67 @@ struct HashInfo {
   template <class HasherT> using HashType = decltype(hash<HasherT>(HashType()));
 };
 
+/// On-disk or in-memory.
+///
+/// On-disk version uses the database currently described in
+/// OnDiskHashMappedTrie.h.
+///
+/// Here's a top-level description of the current layout (could expose or make
+/// this configurable in the future).
+///
+/// Files:
+/// - db/v1.index: HashMappedTrie(name="cas.hashes[sha1]")
+/// - db/v1.data: DataStore(name="cas.objects[64K]") for objects <64KB
+/// - db/v1.<TrieRecordOffset>: Objects >=64KB
+///
+/// In theory, these could all be in one file (using a root record that points
+/// at the two types of stores), but splitting the files enables setting
+/// different max settings.
+///
+/// Trie record data: 8B, atomic<uint64_t>
+/// - 1-byte: StorageKind
+///         0: <empty>                      (unknown object)
+///         1: v1.mainpool                  (main pool)
+///         2: v1.<TrieRecordOffset>.data   (standalone, DataStore record)
+///         3: v1.<TrieRecordOffset>.blob   (standalone, blob)
+///         4: v1.<TrieRecordOffset>.blob+0 (standalone, blob, extra '\0')
+///     5-255: <reserved>
+/// - 1-byte: ObjectKind
+///         0: Node   (refs, data)
+///         1: Blob   (data (aligned))
+///         2: Tree   (refs=objrefs|namerefs, data=kinds)
+///         3: String (data (unaligned))
+///     4-255: Reserved
+/// - 6-bytes: DataStoreOffset (offset into v1.data)
+///
+/// DataStore record data: 8B + size? + refs? + data + 0
+/// - 1-byte: Layout / bitfield
+///      0x3: 0[NumRefs =0]  1[NumRefs =Tiny] 2[NumRefs =1B] 3[NumRefs =4B]
+///      0xC: 0[DataSize=8B] 1[DataSize=Tiny] 2[DataSize=1B] 3[DataSize=4B]
+///                          1+1 => illegal   2+2 => illegal
+///     0XF0: TinySize
+/// - 1-byte: SmallSize
+/// - 6-bytes: TrieRecordOffset
+/// - {0,4,8}-bytes: DataSize
+/// - {0,4,8}-bytes: RefsSize
+/// - {0-...}-bytes: Refs[]
+/// - <data>
+/// - 1-byte: 0-term
+///
+/// Ref8B:
+/// - bits  0-47: Offset
+/// - bits 48-63: 0
+/// - bit     64: 1=DataStore, 0=TrieStore
+///
+/// Ref4B:
+/// - bits  0-30: Offset
+/// - bit     31: 1=DataStore, 0=TrieStore
+///
+/// Later: UniqueID:
+/// - 8B ID:            pointer to [DataStore record | Trie record]
+/// - is-canonical-bit: true iff is-DataStore-record-pointer
+///
+/// Later: Create StringPool for strings, using prefix tree
 class BuiltinCAS : public CASDB {
 public:
   class TempFile;
