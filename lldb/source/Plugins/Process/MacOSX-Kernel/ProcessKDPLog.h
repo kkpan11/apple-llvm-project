@@ -28,6 +28,7 @@ enum class KDPLog : Log::MaskType {
   Watchpoints = Log::ChannelFlag<10>,
   LLVM_MARK_AS_BITMASK_ENUM(Watchpoints)
 };
+LLVM_ENABLE_BITMASK_ENUMS_IN_NAMESPACE();
 
 class ProcessKDPLog {
 public:
