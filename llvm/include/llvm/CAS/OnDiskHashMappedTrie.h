@@ -94,79 +94,98 @@ public:
   void print(raw_ostream &OS) const;
 
 public:
-  struct MappedContentReference {
-    StringRef Metadata;              // Not null-terminated.
-    StringRef Data;                  // Always used, always null-terminated.
-    sys::fs::mapped_file_region Map; // Needed for large blobs.
+  struct ConstValueProxy {
+    ConstValueProxy(ArrayRef<uint8_t> Hash, ArrayRef<char> Data)
+        : Hash(Hash), Data(Data) {}
+    ConstValueProxy(ArrayRef<uint8_t> Hash, StringRef Data)
+        : Hash(Hash), Data(Data.begin(), Data.size()) {}
 
-    MappedContentReference() = delete;
-
-    explicit MappedContentReference(
-        StringRef Metadata, StringRef Data,
-        sys::fs::mapped_file_region Map = sys::fs::mapped_file_region())
-        : Metadata(Metadata), Data(Data), Map(std::move(Map)) {}
-    MappedContentReference(MappedContentReference &&) = default;
-    MappedContentReference &operator=(MappedContentReference &&) = default;
+    ArrayRef<uint8_t> Hash;
+    ArrayRef<char> Data;
   };
 
-  /// Result of a lookup. Suitable for an insertion hint. Maybe could be
-  /// expanded into an iterator of sorts, but likely not useful (visiting
-  /// everything in the trie should probably be done some way other than
-  /// through an iterator pattern).
-  class LookupResult {
+  struct ValueProxy {
+    operator ConstValueProxy() const { return ConstValueProxy(Hash, Data); }
+
+    ValueProxy(ArrayRef<uint8_t> Hash, MutableArrayRef<char> Data)
+        : Hash(Hash), Data(Data) {}
+
+    ArrayRef<uint8_t> Hash;
+    MutableArrayRef<char> Data;
+  };
+
+  template <class ProxyT> class PointerImpl {
   public:
-    MappedContentReference &&take() {
-      assert(Content && "Expected valid content");
-      return std::move(*Content);
-    }
+    explicit operator bool() const { return Value; }
+    const ProxyT &operator*() const { return *Value; }
+    const ProxyT *operator->() const { return &*Value; }
 
-    /// Returns true if \a get() is not \c None.
-    explicit operator bool() const { return I == -2u; }
+    PointerImpl() = default;
 
-    LookupResult() = default;
-    LookupResult(LookupResult &&) = default;
-    LookupResult &operator=(LookupResult &&) = default;
-
-    LookupResult(const LookupResult &) = delete;
-    LookupResult &operator=(const LookupResult &) = delete;
-
-  private:
-    friend class OnDiskHashMappedTrie;
-    LookupResult(MappedContentReference Content)
-        : Content(std::move(Content)), I(-2u) {}
-    LookupResult(void *S, unsigned I, unsigned B) : S(S), I(I), B(B) {}
+  protected:
+    PointerImpl(ProxyT Value) : Value(Value), I(-2U) {}
+    PointerImpl(void *S, unsigned I, unsigned B) : S(S), I(I), B(B) {}
 
     bool isHint() const { return I != -1u && I != -2u; }
 
-    Optional<MappedContentReference> Content;
+    Optional<ProxyT> Value;
     const void *S = nullptr;
     unsigned I = -1u;
     unsigned B = 0;
   };
 
-  LookupResult lookup(ArrayRef<uint8_t> Hash) const;
+  class pointer;
+  class const_pointer : public PointerImpl<ValueProxy> {
+  public:
+    const_pointer() = default;
 
-  /// Returns the content in the map.
-  MappedContentReference insert(LookupResult Hint, ArrayRef<uint8_t> Hash,
-                                StringRef Metadata, StringRef Data);
+  private:
+    friend class pointer;
+    friend class OnDiskHashMappedTrie;
+    using const_pointer::PointerImpl::PointerImpl;
+  };
 
-  MappedContentReference insert(ArrayRef<uint8_t> Hash, StringRef Metadata,
-                                StringRef Data) {
-    return insert(LookupResult(), Hash, Metadata, Data);
+  class pointer : public PointerImpl<ConstValueProxy> {
+  public:
+    operator const_pointer() const { return const_pointer(Value); }
+    pointer() = default;
+
+  private:
+    friend class OnDiskHashMappedTrie;
+    using pointer::PointerImpl::PointerImpl;
+  };
+
+  pointer lookup(ArrayRef<uint8_t> Hash);
+  const_pointer lookup(ArrayRef<uint8_t> Hash) const;
+
+  pointer insertLazy(const_pointer Hint, ArrayRef<uint8_t> Hash,
+                     function_ref<void(const ValueProxy &)> OnConstruct);
+  pointer insertLazy(ArrayRef<uint8_t> Hash,
+                     function_ref<void(const ValueProxy &)> OnConstruct) {
+    return insertLazy(const_pointer(), Hash, OnConstruct);
   }
 
+  pointer insert(const_pointer Hint, const ConstValueProxy &Value) {
+    return insertLazy(Hint, Value.Hash, [&](const ValueProxy &Allocated) {
+      assert(Allocated.Hash == Value.Hash);
+      assert(Allocated.Data.size() == Value.Data.size());
+      llvm::copy(Value.Data, Allocated.Data.begin());
+    });
+  }
+  pointer insert(const ConstValueProxy &Value) {
+    return insert(const_pointer(), Value);
+  }
+
+  FileOffset getFileOffset(const_pointer P) const;
+
   static Expected<OnDiskHashMappedTrie>
-  create(const Twine &Path, size_t NumHashBits, uint64_t MaxMapSize,
+  create(const Twine &Path, StringRef Name, size_t NumHashBits,
+         uint64_t DataSize, uint64_t MaxMapSize,
          Optional<size_t> InitialNumRootBits = None,
          Optional<size_t> InitialNumSubtrieBits = None);
 
   OnDiskHashMappedTrie(OnDiskHashMappedTrie &&RHS);
   OnDiskHashMappedTrie &operator=(OnDiskHashMappedTrie &&RHS);
-
-  // No copy. Just call \a create() again.
-  OnDiskHashMappedTrie(const OnDiskHashMappedTrie &) = delete;
-  OnDiskHashMappedTrie &operator=(const OnDiskHashMappedTrie &) = delete;
-
   ~OnDiskHashMappedTrie();
 
 private:
@@ -187,83 +206,74 @@ private:
 /// - {0..7}-bytes: 0-pad to 8B
 class OnDiskDataStore {
 public:
-  struct MappedContentReference {
-    StringRef Data;                  // Always used, always null-terminated.
-    sys::fs::mapped_file_region Map; // Needed for large blobs.
+  using ConstValueProxy = ArrayRef<char>;
+  using ValueProxy = MutableArrayRef<char>;
 
-    MappedContentReference() = delete;
+  template <class ProxyT> class PointerImpl {
+  public:
+    explicit operator bool() const { return Value; }
+    const ProxyT &operator*() const { return *Value; }
+    const ProxyT *operator->() const { return &*Value; }
 
-    explicit MappedContentReference(
-        StringRef Metadata, StringRef Data,
-        sys::fs::mapped_file_region Map = sys::fs::mapped_file_region())
-        : Metadata(Metadata), Data(Data), Map(std::move(Map)) {}
-    MappedContentReference(MappedContentReference &&) = default;
-    MappedContentReference &operator=(MappedContentReference &&) = default;
+    PointerImpl() = default;
+
+  protected:
+    PointerImpl(ProxyT Value) : Value(Value) {}
+
+    Optional<ProxyT> Value;
   };
 
-  /// Result of a lookup. Suitable for an insertion hint. Maybe could be
-  /// expanded into an iterator of sorts, but likely not useful (visiting
-  /// everything in the trie should probably be done some way other than
-  /// through an iterator pattern).
-  class LookupResult {
+  class pointer;
+  class const_pointer : public PointerImpl<ValueProxy> {
   public:
-    MappedContentReference &&take() {
-      assert(Content && "Expected valid content");
-      return std::move(*Content);
-    }
-
-    /// Returns true if \a get() is not \c None.
-    explicit operator bool() const { return I == -2u; }
-
-    LookupResult() = default;
-    LookupResult(LookupResult &&) = default;
-    LookupResult &operator=(LookupResult &&) = default;
-
-    LookupResult(const LookupResult &) = delete;
-    LookupResult &operator=(const LookupResult &) = delete;
+    const_pointer() = default;
 
   private:
-    friend class OnDiskHashMappedTrie;
-    LookupResult(MappedContentReference Content)
-        : Content(std::move(Content)), I(-2u) {}
-    LookupResult(void *S, unsigned I, unsigned B) : S(S), I(I), B(B) {}
-
-    bool isHint() const { return I != -1u && I != -2u; }
-
-    Optional<MappedContentReference> Content;
-    const void *S = nullptr;
-    unsigned I = -1u;
-    unsigned B = 0;
+    friend class pointer;
+    friend class OnDiskDataStore;
+    using const_pointer::PointerImpl::PointerImpl;
   };
 
-  LookupResult lookup(ArrayRef<uint8_t> Hash) const;
+  class pointer : public PointerImpl<ConstValueProxy> {
+  public:
+    operator const_pointer() const { return const_pointer(Value, Offset); }
+    pointer() = default;
 
-  /// Returns the content in the map.
-  MappedContentReference insert(LookupResult Hint, ArrayRef<uint8_t> Hash,
-                                StringRef Metadata, StringRef Data);
+  private:
+    friend class OnDiskDataStore;
+    using pointer::PointerImpl::PointerImpl;
+  };
 
-  MappedContentReference insert(ArrayRef<uint8_t> Hash, StringRef Metadata,
-                                StringRef Data) {
-    return insert(LookupResult(), Hash, Metadata, Data);
+  FileOffset getFileOffset(const_pointer P) const;
+
+  pointer lookup(FileOffset Offset);
+  const_pointer lookup(FileOffset Offset) const;
+
+  pointer allocate(size_t Size);
+  pointer save(ArrayRef<char> Data) {
+    pointer P = allocate(Data.size());
+    llvm::copy(Data, P->begin());
+    return P;
+  }
+  pointer save(StringRef Data) {
+    return save(ArrayRef<char>(Data.begin(), Data.size()));
   }
 
-  static Expected<OnDiskHashMappedTrie>
-  create(const Twine &Path, size_t NumHashBits, uint64_t MaxMapSize,
-         Optional<size_t> InitialNumRootBits = None,
-         Optional<size_t> InitialNumSubtrieBits = None);
+  static Expected<OnDiskDataStore> create(const Twine &Path, StringRef Name,
+                                          uint64_t MaxMapSize);
 
-  OnDiskHashMappedTrie(OnDiskHashMappedTrie &&RHS);
-  OnDiskHashMappedTrie &operator=(OnDiskHashMappedTrie &&RHS);
+  OnDiskDataStore(OnDiskDataStore &&RHS);
+  OnDiskDataStore &operator=(OnDiskDataStore &&RHS);
 
   // No copy. Just call \a create() again.
-  OnDiskHashMappedTrie(const OnDiskHashMappedTrie &) = delete;
-  OnDiskHashMappedTrie &operator=(const OnDiskHashMappedTrie &) = delete;
+  OnDiskDataStore(const OnDiskDataStore &) = delete;
+  OnDiskDataStore &operator=(const OnDiskDataStore &) = delete;
 
-  ~OnDiskHashMappedTrie();
+  ~OnDiskDataStore();
 
 private:
   struct ImplType;
-  explicit OnDiskHashMappedTrie(std::unique_ptr<ImplType> Impl);
+  explicit OnDiskDataStore(std::unique_ptr<ImplType> Impl);
   std::unique_ptr<ImplType> Impl;
 };
 
@@ -299,7 +309,6 @@ private:
   explicit OnDiskDatabase(std::unique_ptr<ImplType> Impl);
   std::unique_ptr<ImplType> Impl;
 };
-
 
 } // namespace cas
 } // namespace llvm
