@@ -66,7 +66,7 @@ private:
 /// OnDiskHashMappedTrie::MappedFileInfo::open().
 ///
 /// HashMappedTrie table layout:
-/// - 16-bytes: Generic table header
+/// - [16-bytes: Generic table header]
 /// - 8-bytes: HashMappedTrieVersion
 /// - 2-bytes: NumRootBits
 /// - 2-bytes: NumSubtrieBits
@@ -78,8 +78,10 @@ private:
 /// - 2-bytes: TableKind
 /// - 2-bytes: HashMappedTrieVersion & 0xffff
 /// - 2-bytes: StartBit
-/// - 2-bytes: NumBits
-/// - <slots>: +ve: RecordOffset
+/// - 2-bytes: NumBits=lg(num-slots)
+/// - <slots>
+///
+/// <slot> 8B: +ve: RecordOffset
 ///            -ve: SubtrieOffset
 ///            0:   Empty
 ///

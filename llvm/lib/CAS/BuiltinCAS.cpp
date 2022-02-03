@@ -26,15 +26,344 @@ using namespace llvm::cas;
 
 namespace {
 
-static constexpr size_t NumHashBytes = 20;
-using HashType = std::array<uint8_t, NumHashBytes>;
-using HashRef = ArrayRef<uint8_t>;
+/// Trie record data: 8B, atomic<uint64_t>
+/// - 1-byte: StorageKind
+/// - 1-byte: ObjectKind
+/// - 6-bytes: DataStoreOffset (offset into referenced file)
+struct TrieRecord {
+  enum class StorageKind : uint8_t {
+    /// Unknown object.
+    Unknown = 0,
 
-struct HashInfo {
-  template <class HasherT> static auto hash(HashType Data) { return Data; }
+    /// v1.data: in the main pool, with a full DataStore record.
+    Default = 1,
 
-  template <class HasherT> using HashType = decltype(hash<HasherT>(HashType()));
+    /// v1.<TrieRecordOffset>.data: standalone, with a full DataStore record.
+    Standalone = 2,
+
+    /// v1.<TrieRecordOffset>.blob: standalone, just the data. File contents
+    /// exactly the data content and file size matches the data size. No refs.
+    StandaloneBlob = 3,
+
+    /// v1.<TrieRecordOffset>.blob+0: standalone, just the data plus an
+    /// extra null character ('\0'). File size is 1 bigger than the data size.
+    /// No refs.
+    StandaloneBlobNull = 4,
+  };
+
+  enum class ObjectKind : uint8_t {
+    /// Node: refs and data.
+    Node = 0,
+
+    /// Blob: data, 8-byte alignment guaranteed, null-terminated.
+    Blob = 1,
+
+    /// Tree: custom node. Pairs of refs pointing at target (arbitrary object)
+    /// and names (String), and some data to describe the kind of the entry.
+    Tree = 2,
+
+    /// String: data, no alignment guarantee, null-terminated.
+    String = 3,
+  };
+
+  struct Data {
+    StorageKind SK = StorageKind::SK;
+    ObjectKind OK = ObjectKind::Node;
+    uint64_t Offset = 0;
+  };
+
+  static uint64_t pack(Data D) {
+    assert(D.Offset < (1ULL << 48));
+    uint64_t Packed = uint64_t(D.SK) << 56 | uint64_t(D.OK) << 48 | D.Offset;
+    assert(D.SK != StorageKind::Unknown || Packed == 0);
+    return Packed;
+  }
+
+  static Data unpack(uint64_t Packed) {
+    Data D;
+    if (!Packed)
+      return D;
+    D.SK = (StorageKind)(Packed >> 56);
+    D.OK = (ObjectKind)((Packed >> 48) & 0xFF);
+    D.Offset = Packed & (-1ULL >> 48);
+    return D;
+  }
+
+  TrieRecord() : PackedOffset(0) {}
+
+  std::atomic<uint64_t> PackedOffset;
 };
+
+/// DataStore record data: 8B + size? + refs? + data + 0
+/// - 8-bytes: Header
+/// - {0,4,8}-bytes: DataSize     (may be packed in Header)
+/// - {0,4,8}-bytes: NumRefs      (may be packed in Header)
+/// - NumRefs*{4,8}-bytes: Refs[] (end-ptr is 8-byte aligned)
+/// - <data>
+/// - 1-byte: 0-term
+struct DataRecord {
+  enum class LayoutFlags : uint8_t {
+    Init = 0x0,
+
+    /// NumRefs storage: 4B, 2B, 1B, or 0B (no refs). Or, 8B, for alignment
+    /// convenience to avoid computing padding later.
+    NumRefsMask = 0x03U << 0,
+    NumRefs0B = 0U << 0,
+    NumRefs1B = 1U << 0,
+    NumRefs2B = 2U << 0,
+    NumRefs4B = 3U << 0,
+    NumRefs8B = 4U << 0,
+
+    /// DataSize storage: 8B, 4B, 2B, or 1B.
+    DataSizeMask = 0x03U << 3,
+    DataSize1B = 0U << 2,
+    DataSize2B = 1U << 2,
+    DataSize4B = 2U << 2,
+    DataSize8B = 3U << 2,
+
+    /// TrieRecord storage: 6B or 4B.
+    TrieOffsetMask = 0x01U << 5,
+    TrieOffset6B = 0U << 4,
+    TrieOffset4B = 1U << 4,
+
+    /// Refs[] storage: 8B or 4B.
+    RefSizeMask = 0x01U << 6,
+    RefSize8B = 0U << 0,
+    RefSize4B = 1U << 0,
+
+    friend LayoutFlags operator|(LayoutFlags, LayoutFlags) = default;
+    friend LayoutFlags operator&(LayoutFlags, LayoutFlags) = default;
+  };
+
+  /// Header layout:
+  /// - 1-byte:      LayoutFlags
+  /// - 1-byte:      1B size field
+  /// - {0,2}-bytes: 2B size field
+  /// - {4,6}-bytes: TrieRecordOffset
+  struct Header {
+    uint64_t Packed;
+  };
+
+  struct LayoutInput {
+    uint64_t TrieRecordOffset;
+    ArrayRef<char> Data;
+    ArrayRef<uint64_t> Refs;
+  };
+
+  static uint64_t getTrieRecordOffset(const Header &H);
+  static uint64_t getDataSize(const Header &H);
+  static void skipDataSize(LayoutFlags LF, int64_t &RelOffset);
+  static uint32_t getNumRefs(const Header &H);
+  static void skipNumRefs(LayoutFlags LF, int64_t &RelOffset);
+  static int64_t getRefsRelOffset(const Header &H);
+  static int64_t getDataRelOffset(const Header &H);
+
+  static uint64_t getTotalSize(uint64_t DataRelOffset, uint64_t DataSize) {
+    return DataRelOffset + DataSize + 1;
+  }
+
+  struct Layout {
+    Layout(const LayoutInput &Input);
+    Layout(const Header &H)
+        : Flags(H.Packed >> 56),
+          TrieRecordOffset(DataRecord::getTrieRecordOffset(H)),
+          DataSize(DataRecord::getDataSize(H)),
+          NumRefs(DataRecord::getNumRefs(H)),
+          RefsRelOffset(DataRecord::getRefsRelOffset(H)),
+          DataRelOffset(DataRecord::getDataRelOffset(H)) {}
+
+    LayoutFlags Flags = LayoutFlags::Init;
+    uint64_t TrieRecordOffset = 0;
+    uint64_t DataSize = 0;
+    uint32_t NumRefs = 0;
+    int64_t RefsRelOffset = 0;
+    int64_t DataRelOffset = 0;
+    uint64_t getTotalSize() const { return getTotalSize(DataRelOffset, DataSize); }
+  };
+
+  static LayoutFlags getRefSize(uint32_t Ref);
+
+  static uint64_t constructHeader(char *, const HeaderData &HD);
+  static HeaderData extractHeaderData(Header &H);
+};
+
+DataRecord::Layout::Layout(const LayoutInput &Input) const {
+  Layout L;
+
+  // Start initial relative offsets right after the Header.
+  uint64_t RelOffset = sizeof(uint64_t);
+
+  // Initialize the easy stuff.
+  L.DataSize = Input.Data.size();
+  L.NumRefs = Input.Refs.size();
+
+  // Check refs size.
+  LayoutFlags RefSizeBits = LayoutFlags::RefSize4B;
+  if (L.NumRefs) {
+    for (uint64_t Ref : L.Refs) {
+      if (Ref > UINT32_MAX) {
+        RefSizeBits = LayoutFlags::RefSize8B;
+        break;
+      }
+    }
+  }
+
+  // Set the trie offset.
+  assert(TrieRecordOffset <= (UINT64_MAX >> 16));
+  L.TrieRecordOffset = TrieRecordOffset;
+  LayoutFlags TrieOffsetBits = TrieRecordOffset <= UINT32_MAX
+      ? LayoutFlags::TrieOffset4B
+      : LayoutFlags::TrieOffset6B;
+
+  bool Has1B = true;
+  bool Has2B = TrieOffsetBits == LayoutFlags::TrieOffset4B;
+  LayoutFlags DataSizeBits;
+  if (L.DataSize <= UINT8_MAX && Has1B) {
+    DataSizeBits = LayoutFlags::DataSize1B;
+    Has1B = false;
+  } else if (L.DataSize <= UINT16_MAX && Has2B) {
+    DataSizeBits = LayoutFlags::DataSize2B;
+    Has2B = false;
+  } else if (L.DataSize <= UINT32_MAX) {
+    DataSizeBits = LayoutFlags::DataSize4B;
+    RelOffset += 4;
+  } else {
+    DataSizeBits = LayoutFlags::DataSize8B;
+    RelOffset += 8;
+  }
+
+  LayoutFlags NumRefsBits;
+  if (!L.NumRefs) {
+    NumRefsBits = LayoutFlags::NumRefs0B;
+  } else if (L.NumRefs <= UINT8_MAX && Has1B) {
+    NumRefsBits = LayoutFlags::NumRefs1B;
+    Has1B = false;
+  } else if (L.NumRefs <= UINT16_MAX && Has2B) {
+    NumRefsBits = LayoutFlags::NumRefs2B;
+    Has2B = false;
+  } else {
+    NumRefsBits = LayoutFlags::NumRefs4B;
+    RelOffset += 4;
+  }
+
+  auto GrowSizeForAlignment = [&]() {
+    assert(isAligned(Align(4), RelOffset));
+    RelOffset += 4;
+
+    if (DataSizeBits == LayoutFlags::DataSize8B) {
+      NumRefsBits = LayoutFlags::NumRefs8B;
+      return;
+    }
+    if (DataSizeBits == LayoutFlags::DataSize4B) {
+      NumRefsBits = LayoutFlags::NumRefs4B;
+      return;
+    }
+    assert(NumRefsBits == LayoutFlags::NumRefs4B);
+    DataSizeBits = LayoutFlags::DataSize4B;
+  };
+
+  assert(isAligned(Align(4), RelOffset));
+  if (RefSizeBits == LayoutFlags::RefSize8B) {
+    // List of 8B refs should be 8B-aligned. Grow one of the sizes to avoid
+    // needing padding.
+    if (!isAligned(Align(8), RelOffset))
+      GrowSizeForAlignment();
+
+    assert(isAligned(Align(8), RelOffset));
+    L.RefsRelOffset = RelOffset;
+    RelOffset += 8 * L.NumRefs;
+  } else {
+    // List of 4B refs can be 4B-aligned, but the data should be 8B-aligned.
+    // Grow one of the sizes to avoid needing padding before the data.
+    uint64_t RefListSize = 4 * L.NumRefs;
+    if (!isAligned(Align(8), RelOffset + RefListSize))
+      GrowSizeForAlignment();
+    L.RefsRelOffset = RelOffset;
+    RelOffset += RefListSize;
+    RelOffset += 4 * L.NumRefs;
+  }
+
+  assert(isAligned(Align(8), RelOffset));
+  L.DataRelOffset = RelOffset;
+  L.Flags = NumRefsBits | RefSizeBits | DataSizeBits | TrieOffsetBits;
+  return L;
+}
+
+uint64_t DataRecord::getTrieRecordOffset(const Header &H) {
+  LayoutFlags LF = H.Packed >> 56;
+  if ((LF & LayoutFlags::TrieOffsetMask) == LayoutFlags::TrieOffset4B)
+    return H.Packed & UINT32_MAX;
+  return H.Packed & (UINT64_MAX >> 16);
+}
+
+uint64_t DataRecord::getDataSize(const Header &H) {
+  LayoutFlags LF = H.Packed >> 56;
+  int64_t RelOffset = sizeof(Header);
+  auto *DataSizePtr = reinterpret_cast<const char *>(&H) + RelOffset;
+  switch (L.Flags & LayoutFlags::DataSizeMask) {
+  case LayoutFlags::DataSize1B:
+    return (H.Packed >> 48) & UINT8_MAX;
+  case LayoutFlags::DataSize2B:
+    return (H.Packed >> 32) & UINT16_MAX;
+  case LayoutFlags::DataSize4B:
+    return reinterpret_cast<const uint32_t *>(DataSizePtr);
+  case LayoutFlags::DataSize8B:
+    return reinterpret_cast<const uint64_t *>(DataSizePtr);
+  }
+}
+
+void DataRecord::skipDataSize(LayoutFlags LF, int64_t &RelOffset) {
+  LayoutFlags DataSizeBits = L.Flags & LayoutFlags::DataSizeMask;
+  if (DataSizeBits >= LayoutFlags::DataSize4B)
+    RelOffset += 4;
+  if (DataSizeBits >= LayoutFlags::DataSize8B)
+    RelOffset += 4;
+}
+
+uint32_t DataRecord::getNumRefs(const Header &H) {
+  LayoutFlags LF = H.Packed >> 56;
+  int64_t RelOffset = sizeof(Header);
+  skipDataSize(LF, RelOffset);
+  auto *NumRefsPtr = reinterpret_cast<const char *>(&H) + RelOffset;
+  switch (L.Flags & LayoutFlags::NumRefsMask) {
+  case LayoutFlags::NumRefs0B:
+    return 0;
+  case LayoutFlags::NumRefs1B:
+    return (H.Packed >> 48) & UINT8_MAX;
+  case LayoutFlags::NumRefs2B:
+    return (H.Packed >> 32) & UINT16_MAX;
+  case LayoutFlags::NumRefs4B:
+    return reinterpret_cast<const uint32_t *>(NumRefsPtr);
+  case LayoutFlags::NumRefs8B:
+    return reinterpret_cast<const uint64_t *>(NumRefsPtr);
+  }
+}
+
+void DataRecord::skipNumRefs(LayoutFlags LF, int64_t &RelOffset) {
+  LayoutFlags NumRefsBits = L.Flags & LayoutFlags::NumRefsMask;
+  if (NumRefsBits >= LayoutFlags::NumRefs4B)
+    RelOffset += 4;
+  if (NumRefsBits >= LayoutFlags::NumRefs8B)
+    RelOffset += 4;
+}
+
+int64_t DataRecord::getRefsRelOffset(const Header &H) {
+  LayoutFlags LF = H.Packed >> 56;
+  int64_t RelOffset = sizeof(Header);
+  skipDataSize(LF, RelOffset);
+  skipNumRefs(LF, RelOffset);
+  return RelOffset;
+}
+
+int64_t DataRecord::getDataRelOffset(const Header &H) {
+  LayoutFlags LF = H.Packed >> 56;
+  int64_t RelOffset = sizeof(Header);
+  skipDataSize(LF, RelOffset);
+  skipNumRefs(LF, RelOffset);
+  uint32_t RefSize = LF & LayoutFlags::RefSize4B ? 4 : 8;
+  RelOffset += RefSize * getNumRefs(H);
+  return RelOffset;
+}
 
 /// On-disk or in-memory.
 ///
@@ -53,50 +382,28 @@ struct HashInfo {
 /// at the two types of stores), but splitting the files enables setting
 /// different max settings.
 ///
-/// Trie record data: 8B, atomic<uint64_t>
-/// - 1-byte: StorageKind
-///         0: <empty>                      (unknown object)
-///         1: v1.mainpool                  (main pool)
-///         2: v1.<TrieRecordOffset>.data   (standalone, DataStore record)
-///         3: v1.<TrieRecordOffset>.blob   (standalone, blob)
-///         4: v1.<TrieRecordOffset>.blob+0 (standalone, blob, extra '\0')
-///     5-255: <reserved>
-/// - 1-byte: ObjectKind
-///         0: Node   (refs, data)
-///         1: Blob   (data (aligned))
-///         2: Tree   (refs=objrefs|namerefs, data=kinds)
-///         3: String (data (unaligned))
-///     4-255: Reserved
-/// - 6-bytes: DataStoreOffset (offset into v1.data)
-///
-/// DataStore record data: 8B + size? + refs? + data + 0
-/// - 1-byte: Layout / bitfield
-///      0x3: 0[NumRefs =0]  1[NumRefs =Tiny] 2[NumRefs =1B] 3[NumRefs =4B]
-///      0xC: 0[DataSize=8B] 1[DataSize=Tiny] 2[DataSize=1B] 3[DataSize=4B]
-///                          1+1 => illegal   2+2 => illegal
-///     0XF0: TinySize
-/// - 1-byte: SmallSize
-/// - 6-bytes: TrieRecordOffset
-/// - {0,4,8}-bytes: DataSize
-/// - {0,4,8}-bytes: RefsSize
-/// - {0-...}-bytes: Refs[]
-/// - <data>
-/// - 1-byte: 0-term
-///
 /// Ref8B:
-/// - bits  0-47: Offset
-/// - bits 48-63: 0
-/// - bit     64: 1=DataStore, 0=TrieStore
+/// - bits  0-47: TrieOffset
+/// - bits 48-63: Reserved=0
 ///
 /// Ref4B:
 /// - bits  0-30: Offset
-/// - bit     31: 1=DataStore, 0=TrieStore
+/// - bit     31: Reserved=0
 ///
-/// Later: UniqueID:
-/// - 8B ID:            pointer to [DataStore record | Trie record]
-/// - is-canonical-bit: true iff is-DataStore-record-pointer
+/// Later:
 ///
-/// Later: Create StringPool for strings, using prefix tree
+/// Eventually: update UniqueID/CASID to store:
+/// - uint64_t: for BuiltinCAS, this is a pointer to Trie record
+/// - CASDB*: for knowing how to compare, and for getHash()
+///
+/// Eventually: add ObjectHandle (update ObjectRef):
+/// - uint64_t: for BuiltinCAS, this is a pointer to Data record
+/// - CASDB*: for implementing APIs
+///
+/// Eventually: consider creating a StringPool for strings instead of using
+/// RecordDataStore table.
+/// - Lookup by prefix tree
+/// - Store by suffix tree
 class BuiltinCAS : public CASDB {
 public:
   class TempFile;
