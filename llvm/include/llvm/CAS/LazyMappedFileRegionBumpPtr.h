@@ -53,6 +53,8 @@ public:
   uint64_t size() const { return *BumpPtr; }
   uint64_t capacity() const { return LMFR.capacity(); }
 
+  LazyMappedFileRegion &getRegion() const { return LMFR; }
+
 private:
   void initialize(int64_t BumpPtrOffset);
 

@@ -49,8 +49,9 @@ using namespace llvm::cas;
 /// 4. Call MapViewOfFileN to place it in the reserved memory.
 /// 5. Repeat step (3) with the new size and step (4).
 Expected<LazyMappedFileRegion> LazyMappedFileRegion::create(
-    const Twine &Path, uint64_t Capacity, uint64_t NewFileSize,
-    function_ref<Error(char *)> NewFileConstructor, uint64_t MaxSizeIncrement) {
+    const Twine &Path, uint64_t Capacity,
+    function_ref<Error(LazyMappedFileRegion &)> NewFileConstructor,
+    uint64_t MaxSizeIncrement) {
   LazyMappedFileRegion LMFR;
   LMFR.Path = Path.str();
   LMFR.MaxSizeIncrement = MaxSizeIncrement;
@@ -77,18 +78,18 @@ Expected<LazyMappedFileRegion> LazyMappedFileRegion::create(
   sys::fs::file_status Status;
   if (std::error_code EC = sys::fs::status(*LMFR.FD, Status))
     return errorCodeToError(EC);
-  if (Status.getSize() >= NewFileSize) {
+  if (Status.getSize() > 0) {
     // The file was already constructed.
     LMFR.CachedSize = Status.getSize();
     return std::move(LMFR);
   }
 
   // This is a new file. Resize to NewFileSize and run the constructor.
-  if (std::error_code EC = sys::fs::resize_file(*LMFR.FD, NewFileSize))
-    return errorCodeToError(EC);
-  LMFR.CachedSize = NewFileSize;
-  if (Error E = NewFileConstructor(LMFR.data()))
+  LMFR.IsConstructingNewFile = true;
+  if (Error E = NewFileConstructor(LMFR))
     return std::move(E);
+  assert(LMFR.size() > 0 && "Constructor must set a non-zero size");
+  LMFR.IsConstructingNewFile = false;
   return std::move(LMFR);
 }
 
@@ -96,8 +97,12 @@ Error LazyMappedFileRegion::extendSizeImpl(uint64_t MinSize) {
   assert(Map && "Expected a valid map");
   assert(FD && "Expected a valid file descriptor");
 
-  // Synchronize with other threads.
-  std::lock_guard<std::mutex> Lock(Mutex);
+  // Synchronize with other threads. Skip if constructing a new file since
+  // exclusive access is already guaranteed.
+  Optional<std::lock_guard<std::mutex>> Lock;
+  if (!IsConstructingNewFile)
+    Lock.emplace(Mutex);
+
   uint64_t OldSize = CachedSize;
   if (MinSize <= OldSize)
     return Error::success();
@@ -115,10 +120,15 @@ Error LazyMappedFileRegion::extendSizeImpl(uint64_t MinSize) {
   if (NewSize < MinSize)
     return errorCodeToError(std::make_error_code(std::errc::not_enough_memory));
 
-  // Synchronize with other processes.
-  if (std::error_code EC = sys::fs::lockFile(*FD))
-    return errorCodeToError(EC);
-  auto Unlock = make_scope_exit([&]() { sys::fs::unlockFile(*FD); });
+  // Synchronize with other processes. Skip if constructing a new file since
+  // file locks are already in place.
+  if (!IsConstructingNewFile)
+    if (std::error_code EC = sys::fs::lockFile(*FD))
+      return errorCodeToError(EC);
+  auto Unlock = make_scope_exit([&]() {
+    if (!IsConstructingNewFile)
+      sys::fs::unlockFile(*FD);
+  });
 
   sys::fs::file_status Status;
   if (std::error_code EC = sys::fs::status(*FD, Status))
@@ -139,8 +149,9 @@ Error LazyMappedFileRegion::extendSizeImpl(uint64_t MinSize) {
 
 Expected<std::shared_ptr<LazyMappedFileRegion>>
 LazyMappedFileRegion::createShared(
-    const Twine &PathTwine, uint64_t Capacity, uint64_t NewFileSize,
-    function_ref<Error(char *)> NewFileConstructor, uint64_t MaxSizeIncrement) {
+    const Twine &PathTwine, uint64_t Capacity,
+    function_ref<Error(LazyMappedFileRegion &)> NewFileConstructor,
+    uint64_t MaxSizeIncrement) {
   struct MapNode {
     std::mutex Mutex;
     std::weak_ptr<LazyMappedFileRegion> LMFR;
@@ -175,7 +186,7 @@ LazyMappedFileRegion::createShared(
 
   // Open / create / initialize files on disk.
   Expected<LazyMappedFileRegion> ExpectedLMFR = LazyMappedFileRegion::create(
-      Path, Capacity, NewFileSize, NewFileConstructor, MaxSizeIncrement);
+      Path, Capacity, NewFileConstructor, MaxSizeIncrement);
   if (!ExpectedLMFR)
     return ExpectedLMFR.takeError();
 

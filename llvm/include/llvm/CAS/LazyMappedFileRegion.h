@@ -41,19 +41,24 @@ public:
   ///
   /// If there could be multiple instances pointing at the same underlying
   /// file this is not safe. Use \a createShared() instead.
+  ///
+  /// \p NewFileConstructor is for constructing new files. It has exclusive
+  /// access to the file, and must extend the size before returning.
   static Expected<LazyMappedFileRegion>
-  create(const Twine &Path, uint64_t Capacity, uint64_t NewFileSize = 1024ULL,
-         function_ref<Error(char *)> NewFileConstructor = nullptr,
+  create(const Twine &Path, uint64_t Capacity,
+         function_ref<Error(LazyMappedFileRegion &)> NewFileConstructor,
          uint64_t MaxSizeIncrement = 4ULL * 1024ULL * 1024ULL);
 
   /// Create a region, shared across the process via a singleton map.
   ///
   /// FIXME: Singleton map should be based on sys::fs::UniqueID, but currently
   /// it is just based on \p Path.
+  ///
+  /// \p NewFileConstructor is for constructing new files. It has exclusive
+  /// access to the file, and must extend the size before returning.
   static Expected<std::shared_ptr<LazyMappedFileRegion>>
   createShared(const Twine &Path, uint64_t Capacity,
-               uint64_t NewFileSize = 1024ULL,
-               function_ref<Error(char *)> NewFileConstructor = nullptr,
+               function_ref<Error(LazyMappedFileRegion &)> NewFileConstructor,
                uint64_t MaxSizeIncrement = 4ULL * 1024ULL * 1024ULL);
 
   /// Get the path this was opened with.
@@ -122,6 +127,13 @@ private:
   std::atomic<uint64_t> CachedSize;
   std::mutex Mutex;
   uint64_t MaxSizeIncrement = 0;
+
+  /// Set to \c true only for the duration of calls to \c NewFileConstructor in
+  /// \a create() and \a createShared(). This allows \a extendSize() to be used
+  /// without locking \a Mutex and without (erroneous) new file locks.
+  ///
+  /// FIXME: Steal a bit from MaxSizeIncrement for this.
+  bool IsConstructingNewFile = false;
 };
 
 } // namespace cas
