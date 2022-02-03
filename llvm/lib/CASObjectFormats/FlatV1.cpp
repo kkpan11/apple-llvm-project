@@ -66,19 +66,6 @@ ObjectFileSchema::createFromLinkGraphImpl(const jitlink::LinkGraph &G,
   return CompileUnitRef::create(*this, G, DebugOS);
 }
 
-Expected<std::unique_ptr<jitlink::LinkGraph>>
-ObjectFileSchema::createLinkGraphImpl(
-    cas::NodeRef RootNode, StringRef Name,
-    jitlink::LinkGraph::GetEdgeKindNameFunction GetEdgeKindName,
-    raw_ostream *) const {
-  if (!isRootNode(RootNode))
-    return createStringError(inconvertibleErrorCode(), "invalid root node");
-  auto CU = CompileUnitRef::get(*this, RootNode);
-  if (!CU)
-    return CU.takeError();
-  return CU->createLinkGraph(Name, GetEdgeKindName);
-}
-
 ObjectFileSchema::ObjectFileSchema(cas::CASDB &CAS) : SchemaBase(CAS) {
   // Fill the cache immediately to preserve thread-safety.
   if (Error E = fillCache())
@@ -232,17 +219,6 @@ static bool compareEdges(const jitlink::Edge *LHS, const jitlink::Edge *RHS) {
       &LHS->getTarget(), &RHS->getTarget(), helpers::compareSymbolsByAddress);
 }
 
-static orc::ExecutorAddr
-getAlignedAddress(LinkGraphBuilder::SectionInfo &Section, uint64_t Size,
-                  uint64_t Alignment, uint64_t AlignmentOffset) {
-  uint64_t Address = alignTo(Section.Size + AlignmentOffset, Align(Alignment)) -
-                     AlignmentOffset;
-  Section.Size = Address + Size;
-  if (Alignment > Section.Alignment)
-    Section.Alignment = Alignment;
-  return orc::ExecutorAddr(Address);
-}
-
 Expected<ObjectFormatNodeRef>
 ObjectFormatNodeRef::get(const ObjectFileSchema &Schema,
                          Expected<cas::NodeRef> Ref) {
@@ -295,16 +271,6 @@ Expected<CASSection> SectionRef::materialize() const {
   return Info;
 }
 
-Error SectionRef::materialize(LinkGraphBuilder &LGB, unsigned Idx) const {
-  auto Flags =
-      decodeProtectionFlags((data::SectionProtectionFlags)getData()[0]);
-
-  StringRef Name(getData().drop_front(1));
-
-  auto &Section = LGB.getLinkGraph()->createSection(Name, Flags);
-  return LGB.addSection(Idx, &Section);
-}
-
 Expected<SectionRef> SectionRef::get(Expected<ObjectFormatNodeRef> Ref) {
   auto Specific = SpecificRefT::getSpecific(std::move(Ref));
   if (!Specific)
@@ -349,30 +315,6 @@ static Error decodeFixup(const FlatV1ObjectReader &Reader, StringRef &Data,
   auto Target = CASSymbolRef{SymbolIdx};
   CASBlockFixup CASFixup{Fixup.Offset, Fixup.Kind, Addend, std::move(Target)};
   return Callback(CASFixup);
-}
-
-static Error decodeEdge(LinkGraphBuilder &LGB, StringRef &Data,
-                        jitlink::Block &Parent, unsigned BlockIdx,
-                        const data::Fixup &Fixup) {
-  unsigned SymbolIdx = LGB.nextIdxForBlock(BlockIdx);
-
-  bool HasAddend = SymbolIdx & 1U;
-  auto Symbol = LGB.getSymbol(SymbolIdx >> 1);
-  if (!Symbol)
-    return Symbol.takeError();
-
-  jitlink::Edge::AddendT Addend = 0;
-  if (HasAddend) {
-    if (auto E = encoding::consumeVBR8(Data, Addend))
-      return E;
-  }
-  auto BlockInfo = LGB.getBlockInfo(BlockIdx);
-  if (!BlockInfo)
-    return BlockInfo.takeError();
-
-  Parent.addEdge(Fixup.Kind, Fixup.Offset, **Symbol, Addend);
-
-  return Error::success();
 }
 
 Expected<BlockRef> BlockRef::create(CompileUnitBuilder &CUB,
@@ -514,72 +456,6 @@ Error BlockRef::materializeFixups(
       });
 }
 
-Error BlockRef::materializeBlock(LinkGraphBuilder &LGB,
-                                 unsigned BlockIdx) const {
-  uint64_t SectionIdx;
-  auto Remaining = getData();
-  SectionIdx = LGB.nextIdxForBlock(BlockIdx);
-
-  auto SectionInfo = LGB.getSectionInfo(SectionIdx);
-  if (!SectionInfo)
-    return SectionInfo.takeError();
-
-  StringRef ContentData;
-  if (UseBlockContentNode) {
-    auto ContentRef = LGB.getNode<BlockContentRef>(BlockIdx);
-    if (!ContentRef)
-      return ContentRef.takeError();
-    ContentData = ContentRef->getData();
-  } else {
-    unsigned ContentSize;
-    if (auto E = encoding::consumeVBR8(Remaining, ContentSize))
-      return E;
-    auto Data = consumeDataOfSize(Remaining, ContentSize);
-    if (!Data)
-      return Data.takeError();
-    ContentData = *Data;
-  }
-
-  auto BlockInfo = LGB.getBlockInfo(BlockIdx);
-  if (!BlockInfo)
-    return BlockInfo.takeError();
-
-  BlockInfo->Data.emplace(ContentData);
-  auto &Block = *BlockInfo->Data;
-  auto Address =
-      getAlignedAddress(*SectionInfo, Block.getSize(), Block.getAlignment(),
-                        Block.getAlignmentOffset());
-  auto &B = Block.isZeroFill()
-                ? LGB.getLinkGraph()->createZeroFillBlock(
-                      *SectionInfo->Section, Block.getSize(), Address,
-                      Block.getAlignment(), Block.getAlignmentOffset())
-                : LGB.getLinkGraph()->createContentBlock(
-                      *SectionInfo->Section, *Block.getContentArray(), Address,
-                      Block.getAlignment(), Block.getAlignmentOffset());
-
-  BlockInfo->Block = &B;
-  BlockInfo->Remaining = Remaining.size();
-  return Error::success();
-}
-
-Error BlockRef::materializeEdges(LinkGraphBuilder &LGB,
-                                 unsigned BlockIdx) const {
-  auto BlockInfo = LGB.getBlockInfo(BlockIdx);
-  if (!BlockInfo)
-    return BlockInfo.takeError();
-
-  // There may be edges even if `BlockInfo->Remaining` is zero, if the `addend`s
-  // are zero.
-  auto Remaining = getData().take_back(BlockInfo->Remaining);
-  for (const data::Fixup &Fixup : BlockInfo->Data->getFixups()) {
-    if (Error Err =
-            decodeEdge(LGB, Remaining, *BlockInfo->Block, BlockIdx, Fixup))
-      return Err;
-  }
-
-  return Error::success();
-}
-
 Expected<BlockRef> BlockRef::get(Expected<ObjectFormatNodeRef> Ref) {
   auto Specific = SpecificRefT::getSpecific(std::move(Ref));
   if (!Specific)
@@ -689,71 +565,6 @@ static Expected<CASSymbol> decodeSymbol(const FlatV1ObjectReader &Reader,
   return Info;
 }
 
-static Error decodeSymbol(LinkGraphBuilder &LGB, StringRef &Data,
-                          unsigned Idx) {
-  unsigned Size, Offset, Bits;
-  StringRef Name;
-
-  if (!UseIndirectSymbolName) {
-    unsigned NameSize;
-    auto E = encoding::consumeVBR8(Data, NameSize);
-    if (E)
-      return E;
-    auto NameStr = consumeDataOfSize(Data, NameSize);
-    if (!NameStr)
-      return NameStr.takeError();
-    Name = *NameStr;
-  } else {
-    auto NameStr = LGB.nextNode<NameRef>();
-    if (!NameStr)
-      return NameStr.takeError();
-    Name = NameStr->getName();
-  }
-
-  auto E = encoding::consumeVBR8(Data, Size);
-  if (!E)
-    E = encoding::consumeVBR8(Data, Offset);
-  if (!E)
-    E = encoding::consumeVBR8(Data, Bits);
-  if (E)
-    return E;
-
-  jitlink::Linkage Linkage = (jitlink::Linkage)((Bits & (1U << 2)) >> 2);
-  bool IsDefined = Bits & (1U << 3);
-  if (!IsDefined) {
-    auto &Symbol = LGB.getLinkGraph()->addExternalSymbol(Name, Size, Linkage);
-    if (auto E = LGB.addSymbol(Idx, &Symbol))
-      return E;
-    return Error::success();
-  }
-
-  jitlink::Scope Scope = (jitlink::Scope)(Bits & 3U);
-  bool IsLive = Bits & (1U << 4);
-  bool IsCallable = Bits & (1U << 5);
-  bool IsAutoHide = Bits & (1U << 6);
-
-  unsigned BlockIdx;
-  if (Error E = LGB.nextIdx().moveInto(BlockIdx))
-    return E;
-
-  auto BlockInfo = LGB.getBlockInfo(BlockIdx);
-  if (!BlockInfo)
-    return BlockInfo.takeError();
-
-  auto &Symbol =
-      Name.empty()
-          ? LGB.getLinkGraph()->addAnonymousSymbol(*BlockInfo->Block, Offset,
-                                                   Size, IsCallable, IsLive)
-          : LGB.getLinkGraph()->addDefinedSymbol(*BlockInfo->Block, Offset,
-                                                 Name, Size, Linkage, Scope,
-                                                 IsCallable, IsLive);
-  Symbol.setAutoHide(IsAutoHide);
-  if (auto E = LGB.addSymbol(Idx, &Symbol))
-    return E;
-
-  return Error::success();
-}
-
 Expected<SymbolRef> SymbolRef::create(CompileUnitBuilder &CUB,
                                       const jitlink::Symbol &S) {
   Expected<Builder> B = Builder::startNode(CUB.Schema, KindString);
@@ -770,11 +581,6 @@ Expected<CASSymbol> SymbolRef::materialize(const FlatV1ObjectReader &Reader,
                                            unsigned Idx) const {
   auto Data = getData();
   return decodeSymbol(Reader, Data, Idx);
-}
-
-Error SymbolRef::materialize(LinkGraphBuilder &LGB, unsigned Idx) const {
-  auto Data = getData();
-  return decodeSymbol(LGB, Data, Idx);
 }
 
 Expected<SymbolRef> SymbolRef::get(Expected<ObjectFormatNodeRef> Ref) {
@@ -1116,124 +922,7 @@ Error CompileUnitRef::materialize(FlatV1ObjectReader &Reader) const {
   return Error::success();
 }
 
-Error CompileUnitRef::materialize(LinkGraphBuilder &LGB) const {
-  if (auto E = forEachReference([&](cas::CASID ID) {
-        LGB.IDs.emplace_back(ID);
-        return Error::success();
-      }))
-    return E;
-
-  // Parse the fields stored in the data.
-  StringRef Remaining = getData();
-  uint32_t PointerSize;
-  uint32_t NormalizedTripleSize;
-  uint8_t Endianness;
-  Error E = encoding::consumeVBR8(Remaining, PointerSize);
-  if (!E)
-    E = encoding::consumeVBR8(Remaining, NormalizedTripleSize);
-  if (!E)
-    E = encoding::consumeVBR8(Remaining, Endianness);
-  if (E) {
-    consumeError(std::move(E));
-    return createStringError(inconvertibleErrorCode(),
-                             "corrupt compile unit data");
-  }
-  if (Endianness != uint8_t(support::endianness::little) &&
-      Endianness != uint8_t(support::endianness::big))
-    return createStringError(inconvertibleErrorCode(),
-                             "corrupt compile unit endianness");
-
-  auto TripleStr = consumeDataOfSize(Remaining, NormalizedTripleSize);
-  if (!TripleStr)
-    return TripleStr.takeError();
-
-  Triple TT(*TripleStr);
-
-  bool HasIndirectSymbolNames, HasBlockContentNodes, HasInlinedSymbols;
-  E = encoding::consumeVBR8(Remaining, HasIndirectSymbolNames);
-  if (!E)
-    E = encoding::consumeVBR8(Remaining, HasBlockContentNodes);
-  if (!E)
-    E = encoding::consumeVBR8(Remaining, HasInlinedSymbols);
-  if (E)
-    return E;
-
-  unsigned IndexesSize;
-
-  E = encoding::consumeVBR8(Remaining, LGB.SectionsSize);
-  if (!E)
-    E = encoding::consumeVBR8(Remaining, LGB.SymbolsSize);
-  if (!E)
-    E = encoding::consumeVBR8(Remaining, LGB.BlocksSize);
-  unsigned DefinedSymbolsSize;
-  if (!E)
-    E = encoding::consumeVBR8(Remaining, DefinedSymbolsSize);
-  if (!E)
-    E = encoding::consumeVBR8(Remaining, IndexesSize);
-  if (E)
-    return E;
-
-  LGB.Indexes.reserve(IndexesSize);
-  for (unsigned I = 0; I < IndexesSize; ++I) {
-    unsigned Idx = 0;
-    auto Err = encoding::consumeVBR8(Remaining, Idx);
-    if (Err)
-      return Err;
-    LGB.Indexes.emplace_back(Idx);
-  }
-  LGB.Sections.resize(LGB.SectionsSize);
-  LGB.Symbols.resize(LGB.SymbolsSize);
-  LGB.Blocks.resize(LGB.BlocksSize);
-  for (unsigned I = 0; I < LGB.BlocksSize; ++I) {
-    unsigned Idx = 0;
-    auto Err = encoding::consumeVBR8(Remaining, Idx);
-    if (Err)
-      return Err;
-    LGB.Blocks[I].BlockIdx = Idx;
-  }
-
-  if (InlineSymbols)
-    LGB.InlineBuffer = Remaining;
-  else if (!Remaining.empty())
-    return createStringError(inconvertibleErrorCode(),
-                             "corrupt ending of compile unit");
-
-  LGB.LG.reset(new jitlink::LinkGraph(LGB.Name, TT, PointerSize,
-                                      support::endianness(Endianness),
-                                      LGB.GetEdgeKindName));
-
-  return Error::success();
-}
-
-Expected<std::unique_ptr<jitlink::LinkGraph>> CompileUnitRef::createLinkGraph(
-    StringRef Name,
-    jitlink::LinkGraph::GetEdgeKindNameFunction GetEdgeKindName) {
-  LinkGraphBuilder Builder(Name, GetEdgeKindName, *this);
-  if (auto E = Builder.materializeCompileUnit())
-    return std::move(E);
-
-  if (auto E = Builder.materializeSections())
-    return std::move(E);
-
-  if (auto E = Builder.materializeBlockContents())
-    return std::move(E);
-
-  if (auto E = Builder.materializeSymbols())
-    return std::move(E);
-
-  if (auto E = Builder.materializeEdges())
-    return std::move(E);
-
-  return Builder.takeLinkGraph();
-}
-
 Error FlatV1ObjectReader::materializeCompileUnit() {
-  if (auto E = Root.materialize(*this))
-    return E;
-  return Error::success();
-}
-
-Error LinkGraphBuilder::materializeCompileUnit() {
   if (auto E = Root.materialize(*this))
     return E;
   return Error::success();
@@ -1260,38 +949,11 @@ Expected<CASSection> FlatV1ObjectReader::materialize(CASSectionRef Ref) const {
   return Node->materialize();
 }
 
-Error LinkGraphBuilder::materializeSections() {
-  for (unsigned I = 0; I < SectionsSize; ++I) {
-    auto Section = nextNode<SectionRef>();
-    if (!Section)
-      return Section.takeError();
-
-    if (auto E = Section->materialize(*this, I))
-      return E;
-  }
-
-  return Error::success();
-}
-
 Expected<CASBlock> FlatV1ObjectReader::materialize(CASBlockRef Ref) const {
   auto Node = this->getBlockNode<BlockRef>(Ref.Idx, 0);
   if (!Node)
     return Node.takeError();
   return Node->materializeBlock(*this, Ref.Idx);
-}
-
-Error LinkGraphBuilder::materializeBlockContents() {
-  for (unsigned I = 0; I < BlocksSize; ++I) {
-    auto Block = getNode<BlockRef>(I);
-    if (!Block)
-      return Block.takeError();
-
-    Blocks[I].Ref.emplace(*Block);
-    if (auto E = Block->materializeBlock(*this, I))
-      return E;
-  }
-
-  return Error::success();
 }
 
 Expected<CASSymbol> FlatV1ObjectReader::materialize(CASSymbolRef Ref) const {
@@ -1306,26 +968,6 @@ Expected<CASSymbol> FlatV1ObjectReader::materialize(CASSymbolRef Ref) const {
   return Node->materialize(*this, Ref.Idx);
 }
 
-Error LinkGraphBuilder::materializeSymbols() {
-  if (InlineSymbols) {
-    for (unsigned I = 0; I < SymbolsSize; ++I) {
-      if (auto E = decodeSymbol(*this, InlineBuffer, I))
-        return E;
-    }
-    return Error::success();
-  }
-  for (unsigned I = 0; I < SymbolsSize; ++I) {
-    auto Symbol = nextNode<SymbolRef>();
-    if (!Symbol)
-      return Symbol.takeError();
-
-    if (auto E = Symbol->materialize(*this, I))
-      return E;
-  }
-
-  return Error::success();
-}
-
 Error FlatV1ObjectReader::materializeFixups(
     CASBlockRef Ref,
     function_ref<Error(const CASBlockFixup &)> Callback) const {
@@ -1333,49 +975,4 @@ Error FlatV1ObjectReader::materializeFixups(
   if (!Node)
     return Node.takeError();
   return Node->materializeFixups(*this, Ref.Idx, std::move(Callback));
-}
-
-Error LinkGraphBuilder::materializeEdges() {
-  for (unsigned I = 0; I < BlocksSize; ++I) {
-    if (auto E = Blocks[I].Ref->materializeEdges(*this, I))
-      return E;
-  }
-
-  return Error::success();
-}
-
-Error LinkGraphBuilder::addSection(unsigned SectionIdx, jitlink::Section *S) {
-  if (SectionIdx >= Sections.size())
-    return createStringError(inconvertibleErrorCode(),
-                             "Section is at the wrong index");
-  Sections[SectionIdx].Section = S;
-  return Error::success();
-}
-
-Expected<LinkGraphBuilder::BlockInfo &>
-LinkGraphBuilder::getBlockInfo(unsigned BlockIdx) {
-  if (BlockIdx >= Blocks.size())
-    return createStringError(inconvertibleErrorCode(), "Block out of bound");
-  return Blocks[BlockIdx];
-}
-
-Error LinkGraphBuilder::addSymbol(unsigned SymbolIdx, jitlink::Symbol *S) {
-  if (SymbolIdx >= Symbols.size())
-    return createStringError(inconvertibleErrorCode(),
-                             "Symbol is at the wrong index");
-  Symbols[SymbolIdx] = S;
-  return Error::success();
-}
-
-Expected<jitlink::Symbol *> LinkGraphBuilder::getSymbol(unsigned SymbolIdx) {
-  if (SymbolIdx >= Symbols.size())
-    return createStringError(inconvertibleErrorCode(), "Symbol out of bound");
-  return Symbols[SymbolIdx];
-}
-
-Expected<LinkGraphBuilder::SectionInfo &>
-LinkGraphBuilder::getSectionInfo(unsigned SectionIdx) {
-  if (SectionIdx >= Sections.size())
-    return createStringError(inconvertibleErrorCode(), "Section out of bound");
-  return Sections[SectionIdx];
 }

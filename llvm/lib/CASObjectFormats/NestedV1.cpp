@@ -127,6 +127,8 @@ public:
   Expected<CASSection> materialize() const;
 };
 
+/// FIXME: \p forEachSymbol() visits only top-level symbols, it doesn't visit
+/// all the symbols that have been encoded.
 class NestedV1ObjectReader final : public CASObjectReader {
 public:
   explicit NestedV1ObjectReader(CompileUnitRef CURef)
@@ -226,19 +228,6 @@ ObjectFileSchema::createObjectReader(cas::NodeRef RootNode) const {
   if (!CU)
     return CU.takeError();
   return CU->createObjectReader();
-}
-
-Expected<std::unique_ptr<jitlink::LinkGraph>>
-ObjectFileSchema::createLinkGraphImpl(
-    cas::NodeRef RootNode, StringRef Name,
-    jitlink::LinkGraph::GetEdgeKindNameFunction GetEdgeKindName,
-    raw_ostream *) const {
-  if (!isRootNode(RootNode))
-    return createStringError(inconvertibleErrorCode(), "invalid root node");
-  auto CU = CompileUnitRef::get(*this, RootNode);
-  if (!CU)
-    return CU.takeError();
-  return CU->createLinkGraph(Name, GetEdgeKindName);
 }
 
 ObjectFileSchema::ObjectFileSchema(cas::CASDB &CAS) : SchemaBase(CAS) {
@@ -1701,210 +1690,7 @@ Expected<CompileUnitRef> CompileUnitRef::create(const ObjectFileSchema &Schema,
                                 *StrongExternals, *WeakExternals);
 }
 
-namespace {
-/// Builder for eagerly building a LinkGraph, visiting each top-level symbol
-/// in turn.
-///
-/// - worklist: symbols that have been created without a definition.
-/// - getOrCreateSymbol:
-///    - If the symbol exists, return it.
-///    - Else, create it with no definition and push onto the worklist.
-/// - getOrCreateBlock:
-///    - if such a block exists, returns it
-///    - call getOrCreateSymbol for each target
-///    - create and return the block
-/// - createOrDuplicateBlock:
-///    - call getOrCreateBlock, then duplicate it
-/// - defineSymbol:
-///    - generates a definition:
-///       - getOrCreateBlock for `Merge & ByContent`
-///       - createOrDuplicateBlock for `!(Merge & ByContent)`
-///       - getOrCreateSymbol for an alias
-///    - calls LinkGraph::makeDefined
-///
-/// General algorithm: walk through top-level symbol tables, calling
-/// getOrCreateSymbol on each symbol, then running through the worklist until
-/// empty.
-class LinkGraphBuilder {
-public:
-  struct SymbolToDefine {
-    jitlink::Symbol *S;
-    SymbolRef Ref;
-    jitlink::Symbol *KeptAliveBySymbol;
-  };
-
-  struct DelayedEdge {
-    jitlink::Block *FromBlock;
-    jitlink::Edge::Kind K;
-    jitlink::Edge::OffsetT Offset;
-    jitlink::Block *KeptAliveBySymbol;
-    jitlink::Edge::AddendT Addend;
-  };
-
-  Error makeExternalSymbols(Expected<NameListRef> ExternalSymbols,
-                            jitlink::Linkage Linkage);
-  Error makeExternalSymbol(const ObjectFileSchema &Schema,
-                           Expected<NameRef> SymbolName,
-                           jitlink::Linkage Linkage);
-  Error makeSymbols(Expected<SymbolTableRef> Table);
-  Error makeSymbol(Expected<SymbolRef> Symbol);
-
-  /// Create a symbol for \p Target.
-  ///
-  /// - If \p AddAbstractEdge is set, it should be used for adding abstract
-  /// backedges.
-  /// - If \p KeptAliveByBlock is set, this is a keep-alive edge.
-  Expected<jitlink::Symbol *>
-  getOrCreateSymbol(Expected<TargetRef> Target,
-                    jitlink::Symbol *KeptAliveBySymbol);
-  Expected<jitlink::Block *>
-  getOrCreateBlock(jitlink::Symbol &ForSymbol, BlockRef Block,
-                   jitlink::Symbol *KeptAliveBySymbol);
-  Expected<jitlink::Block *>
-  createOrDuplicateBlock(jitlink::Symbol &ForSymbol, BlockRef Block,
-                         jitlink::Symbol *KeptAliveBySymbol);
-  Error defineSymbol(SymbolToDefine Symbol);
-
-  using AddAbstractBackedgeT = llvm::function_ref<void(
-      jitlink::Edge::Kind, jitlink::Edge::OffsetT, jitlink::Edge::AddendT)>;
-
-  /// Returns true if the KeptAliveByBlock is used, indicating the block must
-  /// be cached based on the block. Otherwise returns false (or error).
-  Error addEdges(jitlink::Symbol &ForSymbol, jitlink::Block &B, BlockRef Block,
-                 AddAbstractBackedgeT AddAbstractBackedge);
-
-  LinkGraphBuilder(jitlink::LinkGraph &G) : G(G) {}
-
-  jitlink::LinkGraph &G;
-
-  template <class RefT> struct TypedID {
-    cas::CASID ID;
-    operator cas::CASID() const { return ID; }
-    TypedID(RefT Ref) : ID(Ref.getID()) {}
-
-  private:
-    friend struct DenseMapInfo<TypedID>;
-    explicit TypedID(cas::CASID ID) : ID(ID) {}
-  };
-
-  using SymbolID = TypedID<SymbolRef>;
-  using TargetID = TypedID<TargetRef>;
-  using SectionID = TypedID<SectionRef>;
-  using BlockID = TypedID<BlockRef>;
-  using BlockDataID = TypedID<BlockDataRef>;
-  using TargetListID = TypedID<TargetListRef>;
-
-  /// Used for de-duping block instantiations.
-  ///
-  /// FIXME: This isn't useful here, except as a sketch. A single compile unit
-  /// is unlikely to have many hits. Instead, this should be used by a
-  /// lazy-loading linker algorithm that wants to de-dup blocks by content.
-  struct MergeableBlock {
-    // FIXME: Since the section and data can be used directly for merging,
-    // maybe the format should split them out.
-    SectionID Section;
-    BlockDataID Data;
-
-    /// Realized targets. Pointing at the same array as \a TargetLists
-    /// (allocated in \a TargetListAlloc).
-    ArrayRef<jitlink::Symbol *> TargetList;
-
-    friend bool operator==(const MergeableBlock &LHS,
-                           const MergeableBlock &RHS) {
-      return LHS.Section.ID == RHS.Section.ID && LHS.Data.ID == RHS.Data.ID &&
-             LHS.TargetList == RHS.TargetList;
-    }
-  };
-
-  struct MergeableBlockInfo {
-    static bool isEqual(const MergeableBlock *LHS, const MergeableBlock *RHS) {
-      assert(LHS != getTombstoneKey());
-      assert(LHS != getEmptyKey());
-      assert(LHS != nullptr);
-      return isEqual(*LHS, RHS);
-    }
-    static bool isEqual(const MergeableBlock &LHS, const MergeableBlock *RHS) {
-      assert(RHS != getTombstoneKey());
-      assert(RHS != getEmptyKey());
-      assert(RHS != nullptr);
-      return LHS == *RHS;
-    }
-    static unsigned getHashValue(const MergeableBlock &MB) {
-      return hash_combine(hash_value(MB.Section.ID.getHash()),
-                          hash_value(MB.Data.ID.getHash()),
-                          hash_value(MB.TargetList));
-    }
-
-    static unsigned getHashValue(const MergeableBlock *MB) {
-      assert(MB != getTombstoneKey());
-      assert(MB != getEmptyKey());
-      assert(MB != nullptr);
-      return getHashValue(*MB);
-    }
-    static MergeableBlock *getTombstoneKey() {
-      return DenseMapInfo<MergeableBlock *>::getTombstoneKey();
-    }
-    static MergeableBlock *getEmptyKey() {
-      return DenseMapInfo<MergeableBlock *>::getEmptyKey();
-    }
-  };
-
-  // Allocators.
-  SpecificBumpPtrAllocator<jitlink::Symbol *> TargetListAlloc;
-  SpecificBumpPtrAllocator<MergeableBlock> MergeableBlockAlloc;
-
-  /// Work list of symbols to define.
-  SmallVector<SymbolToDefine> Worklist;
-
-  /// Declared sections.
-  struct SectionInfo {
-    jitlink::Section *Section;
-    uint64_t Size = 0;
-    uint64_t Alignment = 1;
-  };
-  DenseMap<SectionID, SectionInfo> Sections;
-
-  /// Declared symbols.
-  DenseMap<TargetID, jitlink::Symbol *> Symbols;
-
-  /// Symbols indexed by name.
-  DenseMap<StringRef, jitlink::Symbol *> SymbolsByName;
-
-  /// Resolved target lists.
-  DenseMap<TargetListID, ArrayRef<jitlink::Symbol *>> TargetLists;
-
-  /// A block. For now, assume its existing symbols do not have
-  /// Merge=ByContent, in which case only symbols that can be merged are added.
-  /// This is asymmetric in the case that a mergeable reference to a block is
-  /// found first.
-  DenseMap<BlockID, jitlink::Block *> Blocks;
-
-  /// Merging blocks by content.
-  ///
-  /// FIXME: This is more of a sketch. Probably not useful for building a
-  /// LinkGraph from a single object file, but can be used as a de-duping
-  /// algorithm for merging blocks during a link.
-  DenseSet<MergeableBlock *> MergeableBlocks;
-
-  /// Track the block used for forward-declaring symbols.
-  jitlink::Block *ForwardDeclaredBlock = nullptr;
-};
-} // namespace
-
 namespace llvm {
-template <class RefT>
-struct DenseMapInfo<LinkGraphBuilder::TypedID<RefT>>
-    : public DenseMapInfo<cas::CASID> {
-  static LinkGraphBuilder::TypedID<RefT> getEmptyKey() {
-    return LinkGraphBuilder::TypedID<RefT>{
-        DenseMapInfo<cas::CASID>::getEmptyKey()};
-  }
-
-  static LinkGraphBuilder::TypedID<RefT> getTombstoneKey() {
-    return LinkGraphBuilder::TypedID<RefT>{
-        DenseMapInfo<cas::CASID>::getTombstoneKey()};
-  }
-};
 template <class RefT>
 struct DenseMapInfo<NestedV1ObjectReader::TypedID<RefT>>
     : public DenseMapInfo<cas::CASID> {
@@ -1944,69 +1730,6 @@ Error NestedV1ObjectReader::forEachSymbol(
   return Error::success();
 }
 
-Expected<std::unique_ptr<jitlink::LinkGraph>> CompileUnitRef::createLinkGraph(
-    StringRef Name,
-    jitlink::LinkGraph::GetEdgeKindNameFunction GetEdgeKindName) {
-  auto G = std::make_unique<jitlink::LinkGraph>(Name.str(), TT, PointerSize,
-                                                Endianness, GetEdgeKindName);
-
-  LinkGraphBuilder Builder(*G);
-  if (Error E = Builder.makeExternalSymbols(getStrongExternals(),
-                                            jitlink::Linkage::Strong))
-    return std::move(E);
-  if (Error E = Builder.makeExternalSymbols(getWeakExternals(),
-                                            jitlink::Linkage::Weak))
-    return std::move(E);
-  if (Error E = Builder.makeSymbols(getIndirectAnonymous()))
-    return std::move(E);
-  if (Error E = Builder.makeSymbols(getIndirectDeadStripCompile()))
-    return std::move(E);
-  if (Error E = Builder.makeSymbols(getDeadStripLink()))
-    return std::move(E);
-  if (Error E = Builder.makeSymbols(getDeadStripNever()))
-    return std::move(E);
-
-  // Return early if there were no forward declarations.
-  if (!Builder.ForwardDeclaredBlock)
-    return std::move(G);
-
-  // Clean up the block used for forward declarations.
-  //
-  // FIXME: It'd be good to remove the now-empty section as well.
-  jitlink::Section &ForwardDeclaredSection =
-      Builder.ForwardDeclaredBlock->getSection();
-  if (ForwardDeclaredSection.symbols_size()) {
-    assert(Builder.Worklist.empty());
-    return createStringError(
-        inconvertibleErrorCode(),
-        "Definition not found for forward declared symbol");
-  }
-  G->removeBlock(*Builder.ForwardDeclaredBlock);
-  assert(!ForwardDeclaredSection.blocks_size() &&
-         "Expected only the now-deleted forward-declaration block");
-
-  // Fix up addresses.
-  uint64_t SectionAddress = 0;
-  DenseMap<jitlink::Section *, LinkGraphBuilder::SectionInfo *> AddressInfo;
-  for (auto &I : Builder.Sections)
-    AddressInfo[I.second.Section] = &I.second;
-  for (jitlink::Section &Section : G->sections()) {
-    LinkGraphBuilder::SectionInfo *Info = AddressInfo.lookup(&Section);
-    if (!Info) {
-      assert(&Section == &ForwardDeclaredSection);
-      continue;
-    }
-    SectionAddress = alignTo(SectionAddress, Info->Alignment);
-
-    for (jitlink::Block *B : Section.blocks())
-      B->setAddress(B->getAddress() + SectionAddress);
-
-    SectionAddress += Info->Size;
-  }
-
-  return std::move(G);
-}
-
 Error NestedV1ObjectReader::forEachExternalSymbol(
     Expected<NameListRef> ExternalSymbols, jitlink::Linkage Linkage,
     function_ref<Error(CASSymbolRef, CASSymbol)> Callback) const {
@@ -2026,19 +1749,6 @@ Error NestedV1ObjectReader::forEachExternalSymbol(
   return Error::success();
 }
 
-Error LinkGraphBuilder::makeExternalSymbols(
-    Expected<NameListRef> ExternalSymbols, jitlink::Linkage Linkage) {
-  assert(!ForwardDeclaredBlock &&
-         "Expected no forward-declared symbols when creating externals");
-  if (!ExternalSymbols)
-    return ExternalSymbols.takeError();
-  for (size_t I = 0, E = ExternalSymbols->getNumNames(); I != E; ++I)
-    if (Error E = makeExternalSymbol(ExternalSymbols->getSchema(),
-                                     ExternalSymbols->getName(I), Linkage))
-      return E;
-  return Error::success();
-}
-
 Error NestedV1ObjectReader::forEachSymbol(
     Expected<SymbolTableRef> Table,
     function_ref<Error(CASSymbolRef, CASSymbol)> Callback) const {
@@ -2054,15 +1764,6 @@ Error NestedV1ObjectReader::forEachSymbol(
     if (Error Err = Callback(*CASSymRef, *CASSym))
       return Err;
   }
-  return Error::success();
-}
-
-Error LinkGraphBuilder::makeSymbols(Expected<SymbolTableRef> Table) {
-  if (!Table)
-    return Table.takeError();
-  for (size_t I = 0, E = Table->getNumSymbols(); I != E; ++I)
-    if (Error E = makeSymbol(Table->getSymbol(I)))
-      return E;
   return Error::success();
 }
 
@@ -2120,20 +1821,6 @@ ExternalSymbolNodeRef::materialize(const NestedV1ObjectReader &) const {
   return Info;
 }
 
-Error LinkGraphBuilder::makeExternalSymbol(const ObjectFileSchema &Schema,
-                                           Expected<NameRef> SymbolName,
-                                           jitlink::Linkage Linkage) {
-  if (!SymbolName)
-    return SymbolName.takeError();
-  TargetRef Target = TargetRef::getIndirectSymbol(Schema, *SymbolName);
-  StringRef Name = SymbolName->getName();
-
-  jitlink::Symbol &S = G.addExternalSymbol(Name, /*Size=*/0, Linkage);
-  Symbols[Target] = &S;
-  SymbolsByName[Name] = &S;
-  return Error::success();
-}
-
 Expected<CASBlockRef> NestedV1ObjectReader::getOrCreateCASBlockRef(
     const DefinedSymbolNodeRef &ForSymbol, Expected<BlockRef> Block,
     Optional<CASSymbolRef> KeptAliveBySymbol, bool MergeByContent) const {
@@ -2174,34 +1861,6 @@ Expected<CASSectionRef> NestedV1ObjectReader::getOrCreateCASSectionRef(
     Ref = std::make_unique<SectionNodeRef>(std::move(*Section));
   }
   return CASSectionRef{uint64_t(Ref.get())};
-}
-
-Error LinkGraphBuilder::makeSymbol(Expected<SymbolRef> Symbol) {
-  if (!Symbol)
-    return Symbol.takeError();
-  jitlink::Symbol *S = Symbols.lookup(Symbol->getAsTarget());
-  if (!S) {
-    if (Expected<jitlink::Symbol *> ExpectedS =
-            getOrCreateSymbol(Symbol->getAsTarget(), nullptr))
-      S = *ExpectedS;
-    else
-      return ExpectedS.takeError();
-  }
-  // FIXME: The visitation order is pre-order (with children in order), but the
-  // order of CIE/FDE in EH frames requires post-order. CIEs are like
-  // abbreviations, and must come before any FDE that references it (every FDE
-  // references exactly one CIE).
-  // FIXME: Handle abstract backedges somehow more directly (likely as part of
-  // the above).
-  while (!Worklist.empty()) {
-    size_t OldSize = Worklist.size() - 1;
-    if (Error E = defineSymbol(Worklist.pop_back_val()))
-      return E;
-    // Reverse so that we visit children in order. This is helpful for getting
-    // edge symbol/blocks in order.
-    std::reverse(Worklist.begin() + OldSize, Worklist.end());
-  }
-  return Error::success();
 }
 
 Expected<CASSymbol>
@@ -2276,77 +1935,6 @@ DefinedSymbolNodeRef::materialize(const NestedV1ObjectReader &Reader) const {
       IsCallable, Symbol.isAutoHide(),          *Block};
 }
 
-Expected<jitlink::Symbol *>
-LinkGraphBuilder::getOrCreateSymbol(Expected<TargetRef> Target,
-                                    jitlink::Symbol *KeptAliveBySymbol) {
-  if (!Target)
-    return Target.takeError();
-  if (jitlink::Symbol *S = Symbols.lookup(*Target))
-    return S;
-
-  Optional<StringRef> Name;
-  Optional<SymbolRef> Symbol;
-  if (Target->getKind() == TargetRef::Symbol) {
-    Expected<SymbolRef> ExpectedSymbol =
-        SymbolRef::get(Target->getSchema(), *Target);
-    if (!ExpectedSymbol)
-      return ExpectedSymbol.takeError();
-    Symbol = *ExpectedSymbol;
-    Expected<Optional<NameRef>> ExpectedName = Symbol->getName();
-    if (!ExpectedName)
-      return ExpectedName.takeError();
-
-    if (*ExpectedName)
-      Name = (**ExpectedName).getName();
-
-    if (Symbol->isSymbolTemplate()) {
-      assert(!Name && "Symbol templates cannot have names");
-    }
-  } else {
-    assert(Target->getKind() == TargetRef::IndirectSymbol);
-    Expected<StringRef> ExpectedName = Target->getNameString();
-    if (!ExpectedName)
-      return ExpectedName.takeError();
-    Name = *ExpectedName;
-  }
-
-  // Check the name table if the symbol could have been referenced by a
-  // different type of target.
-  jitlink::Symbol *S = Name ? SymbolsByName.lookup(*Name) : nullptr;
-  if (!S) {
-    // Forward declare and fix it up later.
-    if (!ForwardDeclaredBlock) {
-      jitlink::Section &Section = G.createSection(
-          "cas.o: forward-declared", jitlink::MemProt::None);
-      ForwardDeclaredBlock =
-          &G.createZeroFillBlock(Section, 1, orc::ExecutorAddr(1), 1, 0);
-    }
-    S = Name ? &G.addDefinedSymbol(*ForwardDeclaredBlock, 0, *Name, 0,
-                                   jitlink::Linkage::Strong,
-                                   jitlink::Scope::Local, false, false)
-             : &G.addAnonymousSymbol(*ForwardDeclaredBlock, 0, 0, false, false);
-  }
-
-  if (Symbol)
-    Worklist.push_back(SymbolToDefine{S, *Symbol, KeptAliveBySymbol});
-  if (!Symbol || !Symbol->isSymbolTemplate())
-    Symbols[*Target] = S;
-  if (Name)
-    SymbolsByName[*Name] = S;
-  return S;
-}
-
-static orc::ExecutorAddr
-getAlignedAddress(LinkGraphBuilder::SectionInfo &Section, uint64_t Size,
-                  uint64_t Alignment, uint64_t AlignmentOffset) {
-  uint64_t Address = alignTo(Section.Size + AlignmentOffset, Align(Alignment)) -
-                     AlignmentOffset;
-  Section.Size = Address + Size;
-  if (Alignment > Section.Alignment)
-    Section.Alignment = Alignment;
-  return orc::ExecutorAddr(Address);
-}
-
 Expected<CASBlock>
 BlockNodeRef::materialize(const NestedV1ObjectReader &Reader) const {
   Expected<CASSectionRef> Section =
@@ -2376,63 +1964,6 @@ Expected<CASSection> SectionNodeRef::materialize() const {
   if (!Name)
     return Name.takeError();
   return CASSection{Name->getName(), Section.getMemProt()};
-}
-
-Expected<jitlink::Block *>
-LinkGraphBuilder::getOrCreateBlock(jitlink::Symbol &ForSymbol, BlockRef Block,
-                                   jitlink::Symbol *KeptAliveBySymbol) {
-  if (jitlink::Block *B = Blocks.lookup(Block))
-    return B;
-
-  // Get the section.
-  Expected<SectionRef> Section = Block.getSection();
-  if (!Section)
-    return Section.takeError();
-  SectionInfo &S = Sections[*Section];
-  if (!S.Section) {
-    Expected<NameRef> Name = Section->getName();
-    if (!Name)
-      return Name.takeError();
-    S.Section = &G.createSection(Name->getName(), Section->getMemProt());
-  }
-
-  // Get the data.
-  Expected<BlockDataRef> BlockData = Block.getBlockData();
-  if (!BlockData)
-    return BlockData.takeError();
-  uint64_t Size = BlockData->getSize();
-  uint64_t Alignment = BlockData->getAlignment();
-  uint64_t AlignmentOffset = BlockData->getAlignmentOffset();
-  Optional<ArrayRef<char>> Content;
-  if (!BlockData->isZeroFill()) {
-    Content = BlockData->getContentArray();
-    assert(Content && "Block is not zero-fill so it should have data");
-    assert(Size == Content->size());
-  }
-
-  auto Address = getAlignedAddress(S, Size, Alignment, AlignmentOffset);
-  jitlink::Block &B = Content
-                          ? G.createContentBlock(*S.Section, *Content, Address,
-                                                 Alignment, AlignmentOffset)
-                          : G.createZeroFillBlock(*S.Section, Size, Address,
-                                                  Alignment, AlignmentOffset);
-
-  // Set the edges.
-  bool HasAbstractBackedge = false;
-  if (Error E =
-          addEdges(ForSymbol, B, Block,
-                   [&](jitlink::Edge::Kind K, jitlink::Edge::OffsetT Offset,
-                       jitlink::Edge::AddendT Addend) {
-                     HasAbstractBackedge = true;
-                     assert(KeptAliveBySymbol);
-                     B.addEdge(K, Offset, *KeptAliveBySymbol, Addend);
-                   }))
-    return std::move(E);
-
-  // Cannot / should not cache this if it has an abstract backedge.
-  if (!HasAbstractBackedge)
-    Blocks[Block] = &B;
-  return &B;
 }
 
 Error BlockNodeRef::materializeFixups(
@@ -2508,154 +2039,5 @@ Error BlockNodeRef::materializeFixups(
   if (F != FE || TI != TIE)
     return createMismatchError();
 
-  return Error::success();
-}
-
-Error LinkGraphBuilder::addEdges(jitlink::Symbol &ForSymbol, jitlink::Block &B,
-                                 BlockRef Block,
-                                 AddAbstractBackedgeT AddAbstractBackedge) {
-  if (!Block.hasEdges())
-    return Error::success();
-
-  Expected<FixupList> Fixups = Block.getFixups();
-  if (!Fixups)
-    return Fixups.takeError();
-  Expected<TargetInfoList> TIs = Block.getTargetInfo();
-  if (!TIs)
-    return TIs.takeError();
-  Expected<TargetList> Targets = Block.getTargets();
-  if (!Targets)
-    return Targets.takeError();
-
-  auto createMismatchError = [&]() {
-    size_t NumFixups = std::distance(Fixups->begin(), Fixups->end());
-    size_t NumTIs = std::distance(TIs->begin(), TIs->end());
-    return createStringError(inconvertibleErrorCode(),
-                             "invalid edge-list with mismatched fixups (" +
-                                 Twine(NumFixups) + ") and targets (" +
-                                 Twine(NumTIs) + ")");
-  };
-
-  FixupList::iterator F = Fixups->begin(), FE = Fixups->end();
-  TargetInfoList::iterator TI = TIs->begin(), TIE = TIs->end();
-  for (; F != FE && TI != TIE; ++F, ++TI) {
-    if (TI->Index > Targets->size())
-      return createStringError(inconvertibleErrorCode(),
-                               "target index too big for target-list");
-
-    // Check for an abstract backedge.
-    if (TI->Index == Targets->size()) {
-      assert(AddAbstractBackedge);
-      AddAbstractBackedge(F->Kind, F->Offset, TI->Addend);
-      continue;
-    }
-
-    // Pass this block down for KeepAlive edges.
-    Expected<jitlink::Symbol *> Target = getOrCreateSymbol(
-        Targets->get(TI->Index),
-        F->Kind == jitlink::Edge::KeepAlive ? &ForSymbol : nullptr);
-    if (!Target)
-      return Target.takeError();
-
-    // Pass in this block's KeptAliveByBlock for edges.
-    assert(*Target && "Expected non-null symbol for target");
-    B.addEdge(F->Kind, F->Offset, **Target, TI->Addend);
-  }
-  if (F != FE || TI != TIE)
-    return createMismatchError();
-
-  return Error::success();
-}
-
-Expected<jitlink::Block *>
-LinkGraphBuilder::createOrDuplicateBlock(jitlink::Symbol &ForSymbol,
-                                         BlockRef Block,
-                                         jitlink::Symbol *KeptAliveBySymbol) {
-  jitlink::Block *B = Blocks.lookup(Block);
-  if (!B)
-    return getOrCreateBlock(ForSymbol, Block, KeptAliveBySymbol);
-
-  SectionInfo &S = Sections[cantFail(Block.getSection())];
-  assert(S.Section == &B->getSection());
-  auto Address = getAlignedAddress(S, B->getSize(), B->getAlignment(),
-                                   B->getAlignmentOffset());
-  jitlink::Block &DupBlock =
-      B->isZeroFill()
-          ? G.createZeroFillBlock(B->getSection(), B->getSize(), Address,
-                                  B->getAlignment(), B->getAlignmentOffset())
-          : G.createContentBlock(B->getSection(), B->getContent(), Address,
-                                 B->getAlignment(), B->getAlignmentOffset());
-  if (Error E =
-          addEdges(ForSymbol, DupBlock, Block,
-                   [&](jitlink::Edge::Kind K, jitlink::Edge::OffsetT Offset,
-                       jitlink::Edge::AddendT Addend) {
-                     DupBlock.addEdge(K, Offset, *KeptAliveBySymbol, Addend);
-                   }))
-    return std::move(E);
-  return &DupBlock;
-}
-
-Error LinkGraphBuilder::defineSymbol(SymbolToDefine Symbol) {
-  assert(&Symbol.S->getBlock() == ForwardDeclaredBlock);
-
-  Expected<SymbolDefinitionRef> Definition = Symbol.Ref.getDefinition();
-  if (!Definition)
-    return Definition.takeError();
-
-  switch (Definition->getKind()) {
-  case SymbolDefinitionRef::Alias:
-  case SymbolDefinitionRef::IndirectAlias:
-    return createStringError(inconvertibleErrorCode(),
-                             "LinkGraph does not support aliases yet");
-
-  case SymbolDefinitionRef::Block:
-    break;
-  }
-
-  Expected<BlockRef> DefinitionBlock = BlockRef::get(*Definition);
-  if (!DefinitionBlock)
-    return DefinitionBlock.takeError();
-
-  // Check whether this symbol can share existing copies of the block.
-  SymbolRef::Flags Flags = Symbol.Ref.getFlags();
-  bool MergeByContent = Flags.Merge & SymbolRef::M_ByContent;
-
-  // FIXME: Maybe go further here and use MergeableBlocks. Or maybe it's not
-  // worth it (not ever going to succeed) when we're within a single compile
-  // unit.
-  // FIXME: With \p MergeByContent == true multiple symbols may share the same
-  // \p jitlink::Block pointer but it is not sufficiently communicated via the
-  // LinkGraph interface whether it is a *requirement* that symbols share the
-  // same block (as is the case with aliases) or whether the linker *can* use
-  // the same block contents if it desires so (e.g. the linker may share the
-  // block for a release build but not for a debug build).
-  Expected<jitlink::Block *> Block =
-      MergeByContent ? getOrCreateBlock(*Symbol.S, *DefinitionBlock,
-                                        Symbol.KeptAliveBySymbol)
-                     : createOrDuplicateBlock(*Symbol.S, *DefinitionBlock,
-                                              Symbol.KeptAliveBySymbol);
-  if (!Block)
-    return Block.takeError();
-
-  jitlink::Linkage Linkage = (Flags.Merge & SymbolRef::M_ByName)
-                                 ? jitlink::Linkage::Weak
-                                 : jitlink::Linkage::Strong;
-  jitlink::Scope Scope;
-  switch (Flags.Scope) {
-  case SymbolRef::S_Global:
-    Scope = jitlink::Scope::Default;
-    break;
-  case SymbolRef::S_Hidden:
-    Scope = jitlink::Scope::Hidden;
-    break;
-  case SymbolRef::S_Local:
-    Scope = jitlink::Scope::Local;
-    break;
-  }
-  bool IsLive = Flags.DeadStrip == SymbolRef::DS_Never;
-
-  G.redefineSymbol(*Symbol.S, **Block, Symbol.Ref.getOffset(),
-                   /*Size=*/0, Linkage, Scope, IsLive);
-  Symbol.S->setAutoHide(Symbol.Ref.isAutoHide());
   return Error::success();
 }

@@ -62,24 +62,12 @@ public:
     return createFromLinkGraphImpl(G, DebugOS);
   }
 
-  Expected<std::unique_ptr<jitlink::LinkGraph>>
-  createLinkGraph(cas::NodeRef RootNode, StringRef Name,
-                  jitlink::LinkGraph::GetEdgeKindNameFunction GetEdgeKindName,
-                  raw_ostream *DebugOS = nullptr) const {
-    return createLinkGraphImpl(RootNode, Name, GetEdgeKindName, DebugOS);
-  }
-
   cas::CASDB &CAS;
 
 protected:
   virtual Expected<cas::NodeRef>
   createFromLinkGraphImpl(const jitlink::LinkGraph &G,
                           raw_ostream *DebugOS) const = 0;
-
-  virtual Expected<std::unique_ptr<jitlink::LinkGraph>> createLinkGraphImpl(
-      cas::NodeRef RootNode, StringRef Name,
-      jitlink::LinkGraph::GetEdgeKindNameFunction GetEdgeKindName,
-      raw_ostream *DebugOS) const = 0;
 
   SchemaBase(cas::CASDB &CAS) : CAS(CAS) {}
 
