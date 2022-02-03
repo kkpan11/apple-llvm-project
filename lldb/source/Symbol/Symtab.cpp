@@ -330,10 +330,13 @@ void Symtab::InitNameIndexes() {
 
         const SymbolType type = symbol->GetType();
         if (type == eSymbolTypeCode || type == eSymbolTypeResolver) {
-          if (mangled.DemangleWithRichManglingInfo(rmc, lldb_skip_name))
+          if (mangled.DemangleWithRichManglingInfo(rmc, lldb_skip_name)) {
             RegisterMangledNameEntry(value, class_contexts, backlog, rmc);
+            continue;
+          }
 #ifdef LLDB_ENABLE_SWIFT
-	  else if (SwiftLanguageRuntime::IsSwiftMangledName(name.GetStringRef())) {
+          else if (SwiftLanguageRuntime::IsSwiftMangledName(
+                       name.GetStringRef())) {
             lldb_private::ConstString basename;
             bool is_method = false;
             ConstString mangled_name = mangled.GetMangledName();
@@ -346,6 +349,7 @@ void Symtab::InitNameIndexes() {
                 else
                   basename_to_index.Append(basename, value);
               }
+              continue;
             }
           }
 #endif // LLDB_ENABLE_SWIFT
