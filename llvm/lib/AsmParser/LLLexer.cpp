@@ -970,7 +970,7 @@ lltok::Kind LLLexer::LexIdentifier() {
   }
 
   if (Keyword == "NoDebug" || Keyword == "FullDebug" ||
-      Keyword == "LineTablesOnly" || Keyword == "DebugDirectivesOnly") {
+      Keyword == "LineTablesOnly" || Keyword == "DebugDirectivesOnly" || Keyword == "CasFriendly") {
     StrVal.assign(Keyword.begin(), Keyword.end());
     return lltok::EmissionKind;
   }
