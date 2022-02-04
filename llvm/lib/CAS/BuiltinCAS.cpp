@@ -94,6 +94,161 @@ struct TrieRecord {
   std::atomic<uint64_t> PackedOffset;
 };
 
+class InternalRef;
+
+/// 4B reference:
+/// - bits  0-29: Offset
+/// - bits 30-31: Reserved for other metadata.
+class InternalRef4B {
+  enum : size_t {
+    NumMetadataBits = 2,
+    NumOffsetBits = 32 - NumMetadataBits,
+  };
+
+public:
+  uint32_t getRawData() const { return Data; }
+  uint64_t getOffset() const { return Data & (UINT32_MAX >> NumMetadataBits); }
+
+private:
+  friend class InternalRef;
+  InternalRef4B(uint32_t Data) : Data(Data);
+  uint32_t Data;
+};
+
+/// 8B reference:
+/// - bits  0-47: Offset
+/// - bits 48-63: Reserved for other metadata.
+class InternalRef {
+  enum : size_t {
+    NumMetadataBits = 16,
+    NumOffsetBits = 64 - NumMetadataBits,
+  };
+
+public:
+  bool canShrinkTo4B() const {
+    return getOffset() <= (UINT32_MAX >> InternalRef4B::NumMetadataBits);
+  }
+
+  /// Shrink to 4B reference.
+  Optional<InternalRef4B> shrinkTo4B() const {
+    if (!canShrinkTo4B())
+      return None;
+    uint32_t Data = getOffset();
+    return InternalRef4B(Data);
+  }
+
+  uint64_t getRawData() const { return Data; }
+  uint64_t getOffset() const { return Data & (UINT64_MAX >> 16); }
+
+  InternalRef getFromRawData(uint64_t Data) {
+    return InternalRef(NumMetadataBits);
+  }
+  InternalRef getFromOffset(uint64_t Offset) {
+    assert(Offset <= (UINT64_MAX >> NumMetadataBits) && "Offset must fit in 6B");
+    return InternalRef(Offset);
+  }
+
+  InternalRef(InternalRef4B SmallRef) : Data(SmallRef.Data) {}
+  InternalRef &operator=(InternalRef4B SmallRef) {
+    return *this = InternalRef(SmallRef);
+  }
+
+private:
+  InternalRef(uint64_t Data) : Data(Data) {}
+  uint64_t Data;
+};
+
+class InternalRefArrayRef {
+public:
+  size_t size() const { return Size; }
+  bool empty() const { return !Size; }
+
+  class iterator : public iterator_facade_base<iterator, std::random_access_iterator_tag,
+                                               const InternalRef> {
+  public:
+    bool operator==(const iterator &RHS) const {
+      if (ShiftedP != RHS.ShiftedP)
+        return false;
+      assert(Is4B == RHS.Is4B);
+      return true;
+    }
+    const InternalRef &operator*() const {
+      assert(ShiftedP != 0 && "Dereferencing nullptr");
+      if (!Is4B)
+        return *reinterpret_cast<const InternalRef *>(ShiftedP << 1);
+      Ref = *reinterpret_cast<const InternalRef4B *>(ShiftedP << 1);
+      return Ref;
+    }
+    bool operator<(const iterator &RHS) const { return ShiftedP < RHS.ShiftedP; }
+    ptrdiff_t operator-(const iterator &RHS) const {
+      return (ShiftedP - RHS.ShiftedP) / getSizeFactor();
+    }
+    iterator &operator+=(ptrdiff_t N) {
+      ShiftedP += N * getSizeFactor();
+      return *this;
+    }
+    iterator &operator-=(ptrdiff_t N) {
+      ShiftedP -= N * getSizeFactor();
+      return *this;
+    }
+
+    iterator(nullptr_t = nullptr) : ShiftedP(0), Is4B(false) {}
+
+  private:
+    friend class InternalRefArrayRef;
+    explicit iterator(const InternalRef *Ref)
+        : ShiftedP(reinterpret_cast<uintptr_t>(Ref) >> 1), Is4B(false) {}
+    explicit iterator(const InternalRef4B *Ref)
+        : ShiftedP(reinterpret_cast<uintptr_t>(Ref) >> 1), Is4B(true) {}
+
+    size_t getSizeFactor() const { return Is4B ? 2 : 4; }
+    uintptr_t ShiftedP : (sizeof(uintptr_t) * 8) - 1;
+    uintptr_t Is4B : 1;
+    InternalRef Ref;
+  };
+
+  iterator begin() const {
+    if (auto *Ref = Begin.dyn_cast<const InternalRef4B *>())
+      return iterator(Ref);
+    if (auto *Ref = Begin.dyn_cast<const InternalRef *>())
+      return iterator(ref);
+    return iterator(nullptr);
+  }
+  iterator end() const { return begin() + Size; }
+
+  /// Array accessor.
+  ///
+  /// Returns a reference proxy to avoid lifetime issues, since a reference
+  /// derived from a InternalRef4B lives inside the iterator.
+  iterator::ReferenceProxy operator[](ptrdiff_t N) const { return begin()[N]; }
+
+  Optional<ArrayRef<InternalRef>> getAs8B() const {
+    if (Is4B)
+      return None;
+    return ArrayRef<InternalRef>(reinterpret_cast<const InternalRef *>(Ref),
+                                 Size);
+  }
+
+  Optional<ArrayRef<InternalRef4B>> getAs4B() const {
+    if (!Is4B)
+      return None;
+    return ArrayRef<InternalRef>(reinterpret_cast<const InternalRef4B *>(Ref),
+                                 Size);
+  }
+
+  InternalRefArrayRef() = default;
+
+  InternalRefArrayRef(ArrayRef<InternalRef> Refs)
+      : Begin(Refs.begin()), Size(Refs.size()), RefSize(sizeof(*Refs.begin())) {}
+
+  InternalRefArrayRef(ArrayRef<InternalRef4B> Refs)
+      : Begin(Refs.begin()), Size(Refs.size()), RefSize(sizeof(*Refs.begin())) {}
+
+private:
+  PointerUnion<const InternalRef *, const InternalRef4B *> Begin;
+  size_t Size = 0;
+};
+
 /// DataStore record data: 8B + size? + refs? + data + 0
 /// - 8-bytes: Header
 /// - {0,4,8}-bytes: DataSize     (may be packed in Header)
@@ -101,7 +256,7 @@ struct TrieRecord {
 /// - NumRefs*{4,8}-bytes: Refs[] (end-ptr is 8-byte aligned)
 /// - <data>
 /// - 1-byte: 0-term
-struct DataRecord {
+struct DataRecordHandle {
   enum class LayoutFlags : uint8_t {
     Init = 0x0,
 
@@ -144,33 +299,36 @@ struct DataRecord {
     uint64_t Packed;
   };
 
-  struct LayoutInput {
+  struct Input {
     uint64_t TrieRecordOffset;
     ArrayRef<char> Data;
-    ArrayRef<uint64_t> Refs;
+    ArrayRef<InternalRef> Refs;
   };
 
-  static uint64_t getTrieRecordOffset(const Header &H);
-  static uint64_t getDataSize(const Header &H);
-  static void skipDataSize(LayoutFlags LF, int64_t &RelOffset);
-  static uint32_t getNumRefs(const Header &H);
-  static void skipNumRefs(LayoutFlags LF, int64_t &RelOffset);
-  static int64_t getRefsRelOffset(const Header &H);
-  static int64_t getDataRelOffset(const Header &H);
+  uint64_t getLayoutFlags() const { return (LayoutFlags)(H.Packed >> 56); }
+  uint64_t getTrieRecordOffset() const {
+    LayoutFlags TrieOffsetBits = getLayoutFlags() & LayoutFlags::TrieOffsetMask;
+    if (TrieOffsetBits == LayoutFlags::TrieOffset4B)
+      return H->Packed & UINT32_MAX;
+    return H->Packed & (UINT64_MAX >> 16);
+  }
+
+  uint64_t getDataSize() const;
+  void skipDataSize(int64_t &RelOffset) const;
+  uint32_t getNumRefs() const;
+  void skipNumRefs(int64_t &RelOffset) const;
+  int64_t getRefsRelOffset() const;
+  int64_t getDataRelOffset() const;
 
   static uint64_t getTotalSize(uint64_t DataRelOffset, uint64_t DataSize) {
     return DataRelOffset + DataSize + 1;
   }
+  uint64_t getTotalSize() const {
+    return getDataRelOffset() + getDataSize() + 1;
+  }
 
   struct Layout {
-    Layout(const LayoutInput &Input);
-    Layout(const Header &H)
-        : Flags(H.Packed >> 56),
-          TrieRecordOffset(DataRecord::getTrieRecordOffset(H)),
-          DataSize(DataRecord::getDataSize(H)),
-          NumRefs(DataRecord::getNumRefs(H)),
-          RefsRelOffset(DataRecord::getRefsRelOffset(H)),
-          DataRelOffset(DataRecord::getDataRelOffset(H)) {}
+    Layout(const Input &I);
 
     LayoutFlags Flags = LayoutFlags::Init;
     uint64_t TrieRecordOffset = 0;
@@ -178,191 +336,49 @@ struct DataRecord {
     uint32_t NumRefs = 0;
     int64_t RefsRelOffset = 0;
     int64_t DataRelOffset = 0;
-    uint64_t getTotalSize() const { return getTotalSize(DataRelOffset, DataSize); }
+    uint64_t getTotalSize() const {
+      return DataRecordHandle::getTotalSize(DataRelOffset, DataSize);
+    }
   };
 
-  static LayoutFlags getRefSize(uint32_t Ref);
+  InternalRefArrayRef getRefs() const {
+    assert(H && "Expected valid handle");
+    auto *BeginByte = reinterpret_cast<const char *>(H) + getRefsRelOffset();
+    size_t Size = getNumRefs();
+    if (!Size)
+      return InternalRefArrayRef();
+    LayoutFlags RefSizeBits = getLayoutFlags() & LayoutFlags::RefSizeMask;
+    if (RefSizeBits == LayoutFlags::RefSize4B)
+      return makeArrayRef(reinterpret_cast<const InternalRef4B *>(BeginByte),
+                          Size);
+    return makeArrayRef(reinterpret_cast<const InternalRef *>(BeginByte), Size);
+  }
 
-  static uint64_t constructHeader(char *, const HeaderData &HD);
-  static HeaderData extractHeaderData(Header &H);
+  ArrayRef<char> getData() const {
+    assert(H && "Expected valid handle");
+    return makeArrayRef(reinterpret_cast<const char *>(H) + getDataRelOffset(),
+                        getDataSize());
+  }
+
+  static DataRecordHandle create(LazyMappedFileRegionBumpPtr &Alloc,
+                                 const Input &I);
+  static DataRecordHandle construct(char *Mem, const Input &I);
+
+  explicit operator bool() const { return H; }
+  const Header &getHeader() const { return *H; }
+
+  DataRecordHandle() = default;
+
+private:
+  static DataRecordHandle constructImpl(char *Mem, const Input &I, const Layout &L);
+  DataRecordHandle(const Header &H) : H(&H) {}
+  const Header *H = nullptr;
 };
 
-DataRecord::Layout::Layout(const LayoutInput &Input) const {
-  Layout L;
-
-  // Start initial relative offsets right after the Header.
-  uint64_t RelOffset = sizeof(uint64_t);
-
-  // Initialize the easy stuff.
-  L.DataSize = Input.Data.size();
-  L.NumRefs = Input.Refs.size();
-
-  // Check refs size.
-  LayoutFlags RefSizeBits = LayoutFlags::RefSize4B;
-  if (L.NumRefs) {
-    for (uint64_t Ref : L.Refs) {
-      if (Ref > UINT32_MAX) {
-        RefSizeBits = LayoutFlags::RefSize8B;
-        break;
-      }
-    }
-  }
-
-  // Set the trie offset.
-  assert(TrieRecordOffset <= (UINT64_MAX >> 16));
-  L.TrieRecordOffset = TrieRecordOffset;
-  LayoutFlags TrieOffsetBits = TrieRecordOffset <= UINT32_MAX
-      ? LayoutFlags::TrieOffset4B
-      : LayoutFlags::TrieOffset6B;
-
-  bool Has1B = true;
-  bool Has2B = TrieOffsetBits == LayoutFlags::TrieOffset4B;
-  LayoutFlags DataSizeBits;
-  if (L.DataSize <= UINT8_MAX && Has1B) {
-    DataSizeBits = LayoutFlags::DataSize1B;
-    Has1B = false;
-  } else if (L.DataSize <= UINT16_MAX && Has2B) {
-    DataSizeBits = LayoutFlags::DataSize2B;
-    Has2B = false;
-  } else if (L.DataSize <= UINT32_MAX) {
-    DataSizeBits = LayoutFlags::DataSize4B;
-    RelOffset += 4;
-  } else {
-    DataSizeBits = LayoutFlags::DataSize8B;
-    RelOffset += 8;
-  }
-
-  LayoutFlags NumRefsBits;
-  if (!L.NumRefs) {
-    NumRefsBits = LayoutFlags::NumRefs0B;
-  } else if (L.NumRefs <= UINT8_MAX && Has1B) {
-    NumRefsBits = LayoutFlags::NumRefs1B;
-    Has1B = false;
-  } else if (L.NumRefs <= UINT16_MAX && Has2B) {
-    NumRefsBits = LayoutFlags::NumRefs2B;
-    Has2B = false;
-  } else {
-    NumRefsBits = LayoutFlags::NumRefs4B;
-    RelOffset += 4;
-  }
-
-  auto GrowSizeForAlignment = [&]() {
-    assert(isAligned(Align(4), RelOffset));
-    RelOffset += 4;
-
-    if (DataSizeBits == LayoutFlags::DataSize8B) {
-      NumRefsBits = LayoutFlags::NumRefs8B;
-      return;
-    }
-    if (DataSizeBits == LayoutFlags::DataSize4B) {
-      NumRefsBits = LayoutFlags::NumRefs4B;
-      return;
-    }
-    assert(NumRefsBits == LayoutFlags::NumRefs4B);
-    DataSizeBits = LayoutFlags::DataSize4B;
-  };
-
-  assert(isAligned(Align(4), RelOffset));
-  if (RefSizeBits == LayoutFlags::RefSize8B) {
-    // List of 8B refs should be 8B-aligned. Grow one of the sizes to avoid
-    // needing padding.
-    if (!isAligned(Align(8), RelOffset))
-      GrowSizeForAlignment();
-
-    assert(isAligned(Align(8), RelOffset));
-    L.RefsRelOffset = RelOffset;
-    RelOffset += 8 * L.NumRefs;
-  } else {
-    // List of 4B refs can be 4B-aligned, but the data should be 8B-aligned.
-    // Grow one of the sizes to avoid needing padding before the data.
-    uint64_t RefListSize = 4 * L.NumRefs;
-    if (!isAligned(Align(8), RelOffset + RefListSize))
-      GrowSizeForAlignment();
-    L.RefsRelOffset = RelOffset;
-    RelOffset += RefListSize;
-    RelOffset += 4 * L.NumRefs;
-  }
-
-  assert(isAligned(Align(8), RelOffset));
-  L.DataRelOffset = RelOffset;
-  L.Flags = NumRefsBits | RefSizeBits | DataSizeBits | TrieOffsetBits;
-  return L;
-}
-
-uint64_t DataRecord::getTrieRecordOffset(const Header &H) {
-  LayoutFlags LF = H.Packed >> 56;
-  if ((LF & LayoutFlags::TrieOffsetMask) == LayoutFlags::TrieOffset4B)
-    return H.Packed & UINT32_MAX;
-  return H.Packed & (UINT64_MAX >> 16);
-}
-
-uint64_t DataRecord::getDataSize(const Header &H) {
-  LayoutFlags LF = H.Packed >> 56;
-  int64_t RelOffset = sizeof(Header);
-  auto *DataSizePtr = reinterpret_cast<const char *>(&H) + RelOffset;
-  switch (L.Flags & LayoutFlags::DataSizeMask) {
-  case LayoutFlags::DataSize1B:
-    return (H.Packed >> 48) & UINT8_MAX;
-  case LayoutFlags::DataSize2B:
-    return (H.Packed >> 32) & UINT16_MAX;
-  case LayoutFlags::DataSize4B:
-    return reinterpret_cast<const uint32_t *>(DataSizePtr);
-  case LayoutFlags::DataSize8B:
-    return reinterpret_cast<const uint64_t *>(DataSizePtr);
-  }
-}
-
-void DataRecord::skipDataSize(LayoutFlags LF, int64_t &RelOffset) {
-  LayoutFlags DataSizeBits = L.Flags & LayoutFlags::DataSizeMask;
-  if (DataSizeBits >= LayoutFlags::DataSize4B)
-    RelOffset += 4;
-  if (DataSizeBits >= LayoutFlags::DataSize8B)
-    RelOffset += 4;
-}
-
-uint32_t DataRecord::getNumRefs(const Header &H) {
-  LayoutFlags LF = H.Packed >> 56;
-  int64_t RelOffset = sizeof(Header);
-  skipDataSize(LF, RelOffset);
-  auto *NumRefsPtr = reinterpret_cast<const char *>(&H) + RelOffset;
-  switch (L.Flags & LayoutFlags::NumRefsMask) {
-  case LayoutFlags::NumRefs0B:
-    return 0;
-  case LayoutFlags::NumRefs1B:
-    return (H.Packed >> 48) & UINT8_MAX;
-  case LayoutFlags::NumRefs2B:
-    return (H.Packed >> 32) & UINT16_MAX;
-  case LayoutFlags::NumRefs4B:
-    return reinterpret_cast<const uint32_t *>(NumRefsPtr);
-  case LayoutFlags::NumRefs8B:
-    return reinterpret_cast<const uint64_t *>(NumRefsPtr);
-  }
-}
-
-void DataRecord::skipNumRefs(LayoutFlags LF, int64_t &RelOffset) {
-  LayoutFlags NumRefsBits = L.Flags & LayoutFlags::NumRefsMask;
-  if (NumRefsBits >= LayoutFlags::NumRefs4B)
-    RelOffset += 4;
-  if (NumRefsBits >= LayoutFlags::NumRefs8B)
-    RelOffset += 4;
-}
-
-int64_t DataRecord::getRefsRelOffset(const Header &H) {
-  LayoutFlags LF = H.Packed >> 56;
-  int64_t RelOffset = sizeof(Header);
-  skipDataSize(LF, RelOffset);
-  skipNumRefs(LF, RelOffset);
-  return RelOffset;
-}
-
-int64_t DataRecord::getDataRelOffset(const Header &H) {
-  LayoutFlags LF = H.Packed >> 56;
-  int64_t RelOffset = sizeof(Header);
-  skipDataSize(LF, RelOffset);
-  skipNumRefs(LF, RelOffset);
-  uint32_t RefSize = LF & LayoutFlags::RefSize4B ? 4 : 8;
-  RelOffset += RefSize * getNumRefs(H);
-  return RelOffset;
+DataRecordHandle DataRecordHandle::create(LazyMappedFileRegionBumpPtr &Alloc,
+                                          const Input &I) {
+  Layout L(I);
+  return construct(Alloc.allocate(L.getTotalSize()), I, L);
 }
 
 /// On-disk or in-memory.
@@ -381,14 +397,6 @@ int64_t DataRecord::getDataRelOffset(const Header &H) {
 /// In theory, these could all be in one file (using a root record that points
 /// at the two types of stores), but splitting the files enables setting
 /// different max settings.
-///
-/// Ref8B:
-/// - bits  0-47: TrieOffset
-/// - bits 48-63: Reserved=0
-///
-/// Ref4B:
-/// - bits  0-30: Offset
-/// - bit     31: Reserved=0
 ///
 /// Later:
 ///
@@ -618,6 +626,274 @@ private:
 };
 
 } // namespace
+
+DataRecordHandle DataRecordHandle::construct(char *Mem, const Input &I) {
+  return construct(Mem, I, Layout(I));
+}
+
+DataRecordHandle DataRecordHandle::constructImpl(char *Mem, const Input &I,
+                                                 const Layout &L) {
+  uint64_t Packed = 0;
+  Packed |= (L.Flags << 56);
+
+  // Fill in Packed and set other data, then come back to construct the header.
+  char *Next = Mem + sizeof(Header);
+  switch (L.Flags & LayoutFlags::DataSizeMask) {
+  case LayoutFlags::DataSize1B:
+    H->Packed |= (uint64_t)I.Data.size() << 48;
+    break;
+  case LayoutFlags::DataSize2B:
+    H->Packed |= (uint64_t)I.Data.size() << 32;
+    break;
+  case LayoutFlags::DataSize4B:
+    assert(isAligned(Align(4), Next - Mem));
+    new (Next) uint32_t(I.Data.size());
+    Next += 4;
+    break;
+  case LayoutFlags::DataSize8B:
+    assert(isAligned(Align(8), Next - Mem));
+    new (Next) uint64_t(I.Data.size());
+    Next += 8;
+    break;
+  }
+
+  // NOTE: May need to write NumRefs even if there are none as a trick to get
+  // alignment later.
+  char *Next = Mem + sizeof(Header);
+  switch (L.Flags & LayoutFlags::NumRefsMask) {
+  case LayoutFlags::NumRefs0B:
+    break;
+  case LayoutFlags::NumRefs1B:
+    H->Packed |= (uint64_t)I.Refs.size() << 48;
+    break;
+  case LayoutFlags::NumRefs2B:
+    H->Packed |= (uint64_t)I.Refs.size() << 32;
+    break;
+  case LayoutFlags::NumRefs4B:
+    assert(isAligned(Align(4), Next - Mem));
+    new (Next) uint32_t(I.Refs.size());
+    Next += 4;
+    break;
+  case LayoutFlags::NumRefs8B:
+    assert(isAligned(Align(8), Next - Mem));
+    new (Next) uint64_t(I.Refs.size());
+    Next += 8;
+    break;
+  }
+
+  if (!I.Refs.empty()) {
+    if ((L.Flags & LayoutFlags::RefSizeMask) == LayoutFlags::RefSize4B) {
+      assert(isAligned(Align(4), Next - Mem));
+      auto *Ref = new (Next) InternalRef4B[I.Refs.size()];
+      for (auto RI = I.Refs.begin(), RE = I.Refs.end(); RI != RE; ++RI)
+        *Ref = *RI->shrinkTo4B();
+      Next += 4 * I.Refs.size();
+    } else {
+      assert(isAligned(Align(8), Next - Mem));
+      auto *Ref = new (Next) InternalRef[I.Refs.size()];
+      llvm::copy(I.Refs, Ref);
+      Next += 8 * I.Refs.size();
+    }
+  }
+
+  // Write the data and trailing null.
+  assert(isAligned(Align(8), Next - Mem));
+  llvm::copy(I.Data, Next);
+  Next[I.Data.size()] = 0;
+
+  // Construct the header and return.
+  Header *H = new (Mem) Header{Packed};
+  return DataRecordHandle(*H);
+}
+
+DataRecordHandle::Layout::Layout(const Input &I) const {
+  Layout L;
+
+  // Start initial relative offsets right after the Header.
+  uint64_t RelOffset = sizeof(uint64_t);
+
+  // Initialize the easy stuff.
+  L.DataSize = I.Data.size();
+  L.NumRefs = I.Refs.size();
+
+  // Check refs size.
+  LayoutFlags RefSizeBits = LayoutFlags::RefSize4B;
+  if (L.NumRefs) {
+    for (uint64_t Ref : L.Refs) {
+      if (Ref > UINT32_MAX) {
+        RefSizeBits = LayoutFlags::RefSize8B;
+        break;
+      }
+    }
+  }
+
+  // Set the trie offset.
+  assert(TrieRecordOffset <= (UINT64_MAX >> 16));
+  L.TrieRecordOffset = TrieRecordOffset;
+  LayoutFlags TrieOffsetBits = TrieRecordOffset <= UINT32_MAX
+      ? LayoutFlags::TrieOffset4B
+      : LayoutFlags::TrieOffset6B;
+
+  // Find the smallest slot available for DataSize.
+  bool Has1B = true;
+  bool Has2B = TrieOffsetBits == LayoutFlags::TrieOffset4B;
+  LayoutFlags DataSizeBits;
+  if (L.DataSize <= UINT8_MAX && Has1B) {
+    DataSizeBits = LayoutFlags::DataSize1B;
+    Has1B = false;
+  } else if (L.DataSize <= UINT16_MAX && Has2B) {
+    DataSizeBits = LayoutFlags::DataSize2B;
+    Has2B = false;
+  } else if (L.DataSize <= UINT32_MAX) {
+    DataSizeBits = LayoutFlags::DataSize4B;
+    RelOffset += 4;
+  } else {
+    DataSizeBits = LayoutFlags::DataSize8B;
+    RelOffset += 8;
+  }
+
+  // Find the smallest slot available for NumRefs. Never sets NumRefs8B here.
+  LayoutFlags NumRefsBits;
+  if (!L.NumRefs) {
+    NumRefsBits = LayoutFlags::NumRefs0B;
+  } else if (L.NumRefs <= UINT8_MAX && Has1B) {
+    NumRefsBits = LayoutFlags::NumRefs1B;
+    Has1B = false;
+  } else if (L.NumRefs <= UINT16_MAX && Has2B) {
+    NumRefsBits = LayoutFlags::NumRefs2B;
+    Has2B = false;
+  } else {
+    NumRefsBits = LayoutFlags::NumRefs4B;
+    RelOffset += 4;
+  }
+
+  // Helper to "upgrade" either DataSize or NumRefs by 4B to avoid complicated
+  // padding rules when reading and writing. This also bumps RelOffset.
+  //
+  // The value for NumRefs is strictly limited to UINT32_MAX, but it can be
+  // stored as 8B. This means we can *always* find a size to grow.
+  //
+  // NOTE: Only call this once.
+  auto GrowSizeFieldsBy4B = [&]() {
+    assert(isAligned(Align(4), RelOffset));
+    RelOffset += 4;
+
+    assert(NumRefsBits != LayoutFlags::NumRefs8B &&
+           "Expected to be able to grow NumRefs8B");
+
+    // First try to grow DataSize. NumRefs will not (yet) be 8B, and if
+    // DataSize is upgraded to 8B it'll already be aligned.
+    //
+    // Failing that, grow NumRefs.
+    if (DataSizeBits < LayoutFlags::DataSize4B)
+      DataSizeBits = LayoutFlags::DataSize4B; // DataSize: Packed => 4B.
+    else if (DataSizeBits < LayoutFlags::DataSize8B)
+      DataSizeBits = LayoutFlags::DataSize8B; // DataSize: 4B => 8B.
+    else if (NumRefsBits < LayoutFlags::NumRefs4B)
+      NumRefsBits = LayoutFlags::NumRefs4B; // NumRefs: Packed => 4B.
+    else
+      NumRefsBits = LayoutFlags::NumRefs8B; // NumRefs: 4B => 8B.
+  };
+
+  assert(isAligned(Align(4), RelOffset));
+  if (RefSizeBits == LayoutFlags::RefSize8B) {
+    // List of 8B refs should be 8B-aligned. Grow one of the sizes to get this
+    // without padding.
+    if (!isAligned(Align(8), RelOffset))
+      GrowSizeFieldsBy4B();
+
+    assert(isAligned(Align(8), RelOffset));
+    L.RefsRelOffset = RelOffset;
+    RelOffset += 8 * L.NumRefs;
+  } else {
+    // The array of 4B refs doesn't need 8B alignment, but the data will need
+    // to be 8B-aligned. Detect this now, and, if necessary, shift everything
+    // by 4B by growing one of the sizes.
+    uint64_t RefListSize = 4 * L.NumRefs;
+    if (!isAligned(Align(8), RelOffset + RefListSize))
+      GrowSizeFieldsBy4B();
+    L.RefsRelOffset = RelOffset;
+    RelOffset += RefListSize;
+    RelOffset += 4 * L.NumRefs;
+  }
+
+  assert(isAligned(Align(8), RelOffset));
+  L.DataRelOffset = RelOffset;
+  L.Flags = NumRefsBits | RefSizeBits | DataSizeBits | TrieOffsetBits;
+  return L;
+}
+
+uint64_t DataRecordHandle::getDataSize() const {
+  LayoutFlags LF = getLayoutFlags();
+  int64_t RelOffset = sizeof(Header);
+  auto *DataSizePtr = reinterpret_cast<const char *>(H) + RelOffset;
+  switch (L.Flags & LayoutFlags::DataSizeMask) {
+  case LayoutFlags::DataSize1B:
+    return (H->Packed >> 48) & UINT8_MAX;
+  case LayoutFlags::DataSize2B:
+    return (H->Packed >> 32) & UINT16_MAX;
+  case LayoutFlags::DataSize4B:
+    return reinterpret_cast<const uint32_t *>(DataSizePtr);
+  case LayoutFlags::DataSize8B:
+    return reinterpret_cast<const uint64_t *>(DataSizePtr);
+  }
+}
+
+void DataRecordHandle::skipDataSize(int64_t &RelOffset) const {
+  LayoutFlags LF = getLayoutFlags();
+  LayoutFlags DataSizeBits = LF.Flags & LayoutFlags::DataSizeMask;
+  if (DataSizeBits >= LayoutFlags::DataSize4B)
+    RelOffset += 4;
+  if (DataSizeBits >= LayoutFlags::DataSize8B)
+    RelOffset += 4;
+}
+
+uint32_t DataRecordHandle::getNumRefs() const {
+  LayoutFlags LF = getLayoutFlags();
+  int64_t RelOffset = sizeof(Header);
+  skipDataSize(LF, RelOffset);
+  auto *NumRefsPtr = reinterpret_cast<const char *>(H) + RelOffset;
+  switch (L.Flags & LayoutFlags::NumRefsMask) {
+  case LayoutFlags::NumRefs0B:
+    return 0;
+  case LayoutFlags::NumRefs1B:
+    return (H->Packed >> 48) & UINT8_MAX;
+  case LayoutFlags::NumRefs2B:
+    return (H->Packed >> 32) & UINT16_MAX;
+  case LayoutFlags::NumRefs4B:
+    return reinterpret_cast<const uint32_t *>(NumRefsPtr);
+  case LayoutFlags::NumRefs8B:
+    return reinterpret_cast<const uint64_t *>(NumRefsPtr);
+  }
+}
+
+void DataRecordHandle::skipNumRefs(int64_t &RelOffset) const {
+  LayoutFlags LF = getLayoutFlags();
+  LayoutFlags NumRefsBits = LF.Flags & LayoutFlags::NumRefsMask;
+  if (NumRefsBits >= LayoutFlags::NumRefs4B)
+    RelOffset += 4;
+  if (NumRefsBits >= LayoutFlags::NumRefs8B)
+    RelOffset += 4;
+}
+
+int64_t DataRecordHandle::getRefsRelOffset() const {
+  LayoutFlags LF = getLayoutFlags();
+  int64_t RelOffset = sizeof(Header);
+  skipDataSize(LF, RelOffset);
+  skipNumRefs(LF, RelOffset);
+  return RelOffset;
+}
+
+int64_t DataRecordHandle::getDataRelOffset() const {
+  LayoutFlags LF = getLayoutFlags();
+  int64_t RelOffset = sizeof(Header);
+  skipDataSize(LF, RelOffset);
+  skipNumRefs(LF, RelOffset);
+  uint32_t RefSize = LF & LayoutFlags::RefSize4B ? 4 : 8;
+  RelOffset += RefSize * getNumRefs();
+  return RelOffset;
+}
+
 
 using TreeObjectData = BuiltinCAS::TreeObjectData;
 using ObjectContentReference = BuiltinCAS::ObjectContentReference;
