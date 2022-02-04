@@ -2463,6 +2463,21 @@ private:
       Lane = -1;
     }
 
+    /// Verify basic self consistency properties
+    void verify() {
+      if (hasValidDependencies()) {
+        assert(UnscheduledDeps <= Dependencies && "invariant");
+        assert(UnscheduledDeps <= FirstInBundle->UnscheduledDepsInBundle &&
+               "bundle must have at least as many dependencies as member");
+      }
+
+      if (IsScheduled) {
+        assert(isSchedulingEntity() && hasValidDependencies() &&
+               UnscheduledDeps == 0 &&
+               "unexpected scheduled state");
+      }
+    }
+
     /// Returns true if the dependency information has been calculated.
     bool hasValidDependencies() const { return Dependencies != InvalidDeps; }
 
@@ -2709,6 +2724,24 @@ private:
                        << "SLP:    gets ready (mem): " << *DepBundle << "\n");
           }
         }
+      }
+    }
+
+    /// Verify basic self consistency properties of the data structure.
+    void verify() {
+      if (!ScheduleStart)
+        return;
+
+      assert(ScheduleStart->getParent() == ScheduleEnd->getParent() &&
+             ScheduleStart->comesBefore(ScheduleEnd) &&
+             "Not a valid scheduling region?");
+
+      for (auto *I = ScheduleStart; I != ScheduleEnd; I = I->getNextNode()) {
+        auto *SD = getScheduleData(I);
+        assert(SD && "primary scheduledata must exist in window");
+        assert(isInSchedulingRegion(SD) &&
+               "primary schedule data not in window?");
+        doForAllOpcodes(I, [](ScheduleData *SD) { SD->verify(); });
       }
     }
 
@@ -3862,6 +3895,10 @@ void BoUpSLP::buildTree_rec(ArrayRef<Value *> VL, unsigned Depth,
   BlockScheduling &BS = *BSRef.get();
 
   Optional<ScheduleData *> Bundle = BS.tryScheduleBundle(VL, this, S);
+#ifdef EXPENSIVE_CHECKS
+  // Make sure we didn't break any internal invariants
+  BS.verify();
+#endif
   if (!Bundle) {
     LLVM_DEBUG(dbgs() << "SLP: We are not able to schedule this bundle!\n");
     assert((!BS.getScheduleData(VL0) ||
@@ -7903,6 +7940,11 @@ void BoUpSLP::scheduleBlock(BlockScheduling *BS) {
     NumToSchedule--;
   }
   assert(NumToSchedule == 0 && "could not schedule all instructions");
+
+  // Check that we didn't break any of our invariants.
+#ifdef EXPENSIVE_CHECKS
+  BS->verify();
+#endif
 
   // Avoid duplicate scheduling of the block.
   BS->ScheduleStart = nullptr;
