@@ -1794,9 +1794,10 @@ Error CASSchemaFile::parse(SchemaPool &CASSchemas, CASID ID) {
     if (!section)
       return section.takeError();
     unsigned index = this->sections.size();
-    this->sections.push_back(0);
     SectionInfo secInfo = SectionInfo(*section, index);
     sectionMap[secRef] = secInfo;
+    this->sections.push_back(
+        make<Section>(this, secInfo.segname, secInfo.subname, 0, 0));
     return secInfo;
   };
 
@@ -1834,21 +1835,25 @@ Error CASSchemaFile::parse(SchemaPool &CASSchemas, CASID ID) {
       flags |= S_ATTR_PURE_INSTRUCTIONS;
     }
 
+    auto *section = file->sections[sectionInfo.index];
     InputSection *isec;
     if (segname == segment_names::text && subname == section_names::cString) {
       assert(!data.empty());
       flags = S_CSTRING_LITERALS;
-      isec =
-          make<CStringInputSection>(segname, subname, file, data, align, flags);
+      isec = make<CStringInputSection>(*section, data, align);
       // FIXME: Splitting should be redundant since CAS schema treats each
       // string as separate block, but this needs to be called to set the
       // initial piece at least.
       cast<CStringInputSection>(isec)->splitIntoPieces();
     } else {
-      isec =
-          make<ConcatInputSection>(segname, subname, file, data, align, flags);
+      isec = make<ConcatInputSection>(*section, data, align);
     }
-    file->sections[sectionInfo.index].subsections.push_back({0, isec});
+    // ZeroFill information is not available from CASSection. Do late update
+    // on section flags but assert on conflicts.
+    assert(section->flags == 0 ||
+           section->flags == flags && "Conflicting section flags");
+    section->flags = flags;
+    section->subsections.push_back({0, isec});
     return isec;
   };
 
