@@ -154,11 +154,29 @@ public:
 
   FileOffset getFileOffset(const_pointer P) const;
 
+  /// Gets or creates a file at \p Path with a hash-mapped trie named \p
+  /// TrieName. The hash size is \p NumHashBits (in bits) and the records store
+  /// data of size \p DataSize (in bytes).
+  ///
+  /// \p MaxFileSize controls the maximum file size to support, limiting the
+  /// size of the \a mapped_file_region. \p NewFileInitialSize is the starting
+  /// size if a new file is created.
+  ///
+  /// \p NewTableNumRootBits and \p NewTableNumSubtrieBits are hints to
+  /// configure the trie, if it doesn't already exist.
+  ///
+  /// \pre NumHashBits is a multiple of 8 (byte-aligned).
+  ///
+  /// TODO: Expose the internal DatabaseFile abstraction and add support for
+  /// adding more tables to a single file.
+  ///
+  /// FIXME: Rename to getOrCreate().
   static Expected<OnDiskHashMappedTrie>
-  create(const Twine &Path, StringRef Name, size_t NumHashBits,
-         uint64_t DataSize, uint64_t MaxMapSize,
-         Optional<size_t> InitialNumRootBits = None,
-         Optional<size_t> InitialNumSubtrieBits = None);
+  create(const Twine &Path, const Twine &TrieName, size_t NumHashBits,
+         uint64_t DataSize, uint64_t MaxFileSize,
+         Optional<uint64_t> NewFileInitialSize,
+         Optional<size_t> NewTableNumRootBits = None,
+         Optional<size_t> NewTableNumSubtrieBits = None);
 
   OnDiskHashMappedTrie(OnDiskHashMappedTrie &&RHS);
   OnDiskHashMappedTrie &operator=(OnDiskHashMappedTrie &&RHS);
@@ -170,60 +188,41 @@ private:
   std::unique_ptr<ImplType> Impl;
 };
 
-/// Storage for data.
-///
-/// DataStore table layout:
-/// - [8-bytes: Generic table header]
-/// - 8-bytes: DataStoreVersion
-/// - 8-bytes: AllocatorOffset (reserved for implementing free lists)
-///
-/// Record layout:
-/// - <data>
-/// - {0..7}-bytes: 0-pad to 8B
-class OnDiskDataStore {
+/// Sink for data. Stores variable length data with 8-byte alignment. Does not
+/// track size of data, which is assumed to known from context, or embedded.
+/// Uses 0-padding but does not guarantee 0-termination.
+class OnDiskDataSink {
 public:
-  using ConstValueProxy = ArrayRef<char>;
-  using ValueProxy = MutableArrayRef<char>;
-
-  template <class ProxyT> class PointerImpl {
-  public:
-    explicit operator bool() const { return Value; }
-    const ProxyT &operator*() const { return *Value; }
-    const ProxyT *operator->() const { return &*Value; }
-
-    PointerImpl() = default;
-
-  protected:
-    PointerImpl(ProxyT Value) : Value(Value) {}
-
-    Optional<ProxyT> Value;
+  struct ValueProxy {
+    MutableArrayRef<char> Data;
+    FileOffset Offset;
   };
 
-  class pointer;
-  class const_pointer : public PointerImpl<ValueProxy> {
+  /// An iterator-like return value for data insertion. Maybe it should be
+  /// called \c iterator, but it has no increment.
+  class pointer {
   public:
-    const_pointer() = default;
+    explicit operator bool() const { return Value.Offset; }
+    const ProxyT &operator*() const {
+      assert(Value.Offset && "Null dereference");
+      return Value;
+    }
+    const ProxyT *operator->() const {
+      assert(Value.Offset && "Null dereference");
+      return &Value;
+    }
 
-  private:
-    friend class pointer;
-    friend class OnDiskDataStore;
-    using const_pointer::PointerImpl::PointerImpl;
-  };
-
-  class pointer : public PointerImpl<ConstValueProxy> {
-  public:
-    operator const_pointer() const { return const_pointer(Value, Offset); }
     pointer() = default;
 
   private:
-    friend class OnDiskDataStore;
-    using pointer::PointerImpl::PointerImpl;
+    friend class OnDiskDataSink;
+    pointer(ValueProxy) : Value(Value) {}
+    ValueProxy Value;
   };
 
-  FileOffset getFileOffset(const_pointer P) const;
-
-  pointer lookup(FileOffset Offset);
-  const_pointer lookup(FileOffset Offset) const;
+  // Look up the data stored at the given offset.
+  char *beginData(FileOffset Offset);
+  const char *beginData(FileOffset Offset) const;
 
   pointer allocate(size_t Size);
   pointer save(ArrayRef<char> Data) {
@@ -235,21 +234,21 @@ public:
     return save(ArrayRef<char>(Data.begin(), Data.size()));
   }
 
-  static Expected<OnDiskDataStore> create(const Twine &Path, StringRef Name,
+  static Expected<OnDiskDataSink> create(const Twine &Path, StringRef Name,
                                           uint64_t MaxMapSize);
 
-  OnDiskDataStore(OnDiskDataStore &&RHS);
-  OnDiskDataStore &operator=(OnDiskDataStore &&RHS);
+  OnDiskDataSink(OnDiskDataSink &&RHS);
+  OnDiskDataSink &operator=(OnDiskDataSink &&RHS);
 
   // No copy. Just call \a create() again.
-  OnDiskDataStore(const OnDiskDataStore &) = delete;
-  OnDiskDataStore &operator=(const OnDiskDataStore &) = delete;
+  OnDiskDataSink(const OnDiskDataSink &) = delete;
+  OnDiskDataSink &operator=(const OnDiskDataSink &) = delete;
 
-  ~OnDiskDataStore();
+  ~OnDiskDataSink();
 
 private:
   struct ImplType;
-  explicit OnDiskDataStore(std::unique_ptr<ImplType> Impl);
+  explicit OnDiskDataSink(std::unique_ptr<ImplType> Impl);
   std::unique_ptr<ImplType> Impl;
 };
 

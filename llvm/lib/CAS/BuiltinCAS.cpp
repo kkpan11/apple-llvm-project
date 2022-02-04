@@ -1755,16 +1755,63 @@ Expected<std::unique_ptr<CASDB>> cas::createOnDiskCAS(const Twine &Path) {
   uint64_t GB = 1024ull * 1024ull * 1024ull;
   if (Error E =
           OnDiskHashMappedTrie::create(AbsPath.str() + "/objects",
-                                       NumHashBytes * sizeof(uint8_t), 16 * GB)
+                                       NumHashBytes * 8, 16 * GB)
               .moveInto(OnDiskObjects))
     return std::move(E);
   if (Error E = OnDiskHashMappedTrie::create(AbsPath.str() + "/results",
-                                             NumHashBytes * sizeof(uint8_t), GB)
+                                             NumHashBytes * 8, GB)
                     .moveInto(OnDiskResults))
     return std::move(E);
 
+
+
   return std::make_unique<BuiltinCAS>(AbsPath, std::move(*OnDiskObjects),
                                       std::move(*OnDiskResults));
+
+  // FIXME: This is a code dump from OnDiskHashMappedTrie::create(). Need to
+  // fix and incorporate above.
+  SmallString<128> DataPath = StringRef(Path);
+  SmallString<128> IndexPath = StringRef(Path);
+  sys::path::append(DataPath, "data");
+  sys::path::append(IndexPath, "index");
+
+  if (std::error_code EC = sys::fs::create_directory(Path))
+    return errorCodeToError(EC);
+
+  static_assert(sizeof(size_t) == sizeof(uint64_t), "64-bit only");
+  static_assert(sizeof(std::atomic<int64_t>) == sizeof(uint64_t),
+                "Requires lock-free 64-bit atomics");
+
+  static constexpr uint64_t GB = 1024ull * 1024ull * 1024ull;
+  static constexpr uint64_t MB = 1024ull * 1024ull;
+
+  // Max out the index at 4GB. Take the limit directly for data.
+  const uint64_t MaxIndexSize = std::min(4 * GB, MaxMapSize);
+  const uint64_t MaxDataSize = MaxMapSize;
+
+  // Open / create / initialize files on disk.
+  std::shared_ptr<LazyMappedFileRegion> IndexRegion, DataRegion;
+  if (Error E = LazyMappedFileRegion::createShared(
+                    IndexPath, MaxIndexSize,
+                    IndexFile::getConstructor(*InitialNumRootBits,
+                                              *InitialNumSubtrieBits,
+                                              NumHashBits, /*MinFileSize=*/MB))
+                    .moveInto(IndexRegion))
+    return std::move(E);
+  if (Error E = LazyMappedFileRegion::createShared(
+                    DataPath, MaxDataSize,
+                    DataFile::getConstructor(/*MinFileSize=*/MB))
+                    .moveInto(DataRegion))
+    return std::move(E);
+
+  // FIXME: The magic should be checked...
+
+  // Success.
+  OnDiskHashMappedTrie::ImplType Impl = {
+      IndexFile(std::move(IndexRegion)),
+      DataFile(std::move(DataRegion), std::move(Path)),
+  };
+  return OnDiskHashMappedTrie(std::make_unique<ImplType>(std::move(Impl)));
 }
 
 std::unique_ptr<CASDB> cas::createInMemoryCAS() {
