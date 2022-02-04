@@ -52,7 +52,7 @@ enum DebugInfoKind {
   /// Generate debug info for types that may be unused in the source
   /// (-fno-eliminate-unused-debug-types).
   UnusedTypeInfo,
-  
+
   /// Generate CAS friendly debug info to go along with the work being done for
   /// llvm-cas. this involves, amongst other things, splitting line tables per
   /// function.

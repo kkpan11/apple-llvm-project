@@ -508,7 +508,7 @@ static codegenoptions::DebugInfoKind DebugLevelToInfoKind(const Arg &A) {
     return codegenoptions::DebugLineTablesOnly;
   if (A.getOption().matches(options::OPT_gline_directives_only))
     return codegenoptions::DebugDirectivesOnly;
-  if(A.getOption().matches(options::OPT_gcas_friendly_debug_info))
+  if (A.getOption().matches(options::OPT_gcas_friendly_debug_info))
     return codegenoptions::CasFriendlyDebugInfo;
   return codegenoptions::DebugInfoConstructor;
 }

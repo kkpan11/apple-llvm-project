@@ -1373,7 +1373,7 @@ void CompilerInvocation::GenerateCodeGenArgs(
     DebugInfoVal = None;
     break;
   case codegenoptions::CasFriendlyDebugInfo:
-      DebugInfoVal = "cas-friendly";
+    DebugInfoVal = "cas-friendly";
     break;
   }
   if (DebugInfoVal)
