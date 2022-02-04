@@ -64,32 +64,6 @@ private:
 ///
 /// FIXME: Implement for Windows. See comment next to implementation of \a
 /// OnDiskHashMappedTrie::MappedFileInfo::open().
-///
-/// HashMappedTrie table layout:
-/// - [16-bytes: Generic table header]
-/// - 8-bytes: HashMappedTrieVersion
-/// - 2-bytes: NumRootBits
-/// - 2-bytes: NumSubtrieBits
-/// - 2-bytes: NumHashBits
-/// - 2-bytes: RecordDataSize (in bytes)
-/// - 8-bytes: AllocatorOffset (reserved for implementing free lists)
-///
-/// Subtrie layout:
-/// - 2-bytes: TableKind
-/// - 2-bytes: HashMappedTrieVersion & 0xffff
-/// - 2-bytes: StartBit
-/// - 2-bytes: NumBits=lg(num-slots)
-/// - <slots>
-///
-/// <slot> 8B: +ve: RecordOffset
-///            -ve: SubtrieOffset
-///            0:   Empty
-///
-/// Record layout:
-/// - <hash>
-/// - {0-7}-bytes: 0-pad to 8B
-/// - <data>
-/// - {0-7}-bytes: 0-pad to 8B
 class OnDiskHashMappedTrie {
 public:
   LLVM_DUMP_METHOD void dump() const;
@@ -199,7 +173,7 @@ private:
 /// Storage for data.
 ///
 /// DataStore table layout:
-/// - [16-bytes: Generic table header]
+/// - [8-bytes: Generic table header]
 /// - 8-bytes: DataStoreVersion
 /// - 8-bytes: AllocatorOffset (reserved for implementing free lists)
 ///
@@ -276,39 +250,6 @@ public:
 private:
   struct ImplType;
   explicit OnDiskDataStore(std::unique_ptr<ImplType> Impl);
-  std::unique_ptr<ImplType> Impl;
-};
-
-/// On-disk database.
-///
-/// Top-level layout:
-/// - 8-bytes: Magic
-/// - 8-bytes: Version
-/// - 8-bytes: RootTable (16-bits: Kind; 48-bits: Offset)
-/// - 8-bytes: BumpPtr
-///
-/// Generic table header:
-/// - 2-bytes: TableKind
-/// - 2-bytes: TableNameSize
-/// - 4-bytes: TableNameRelOffset (relative to header)
-/// - 8-bytes: Next
-class OnDiskDatabase {
-public:
-  enum TableKind : uint16_t {
-    /// OnDiskHashMappedTrie.
-    HashMappedTrie = 1,
-    /// OnDiskDataStore.
-    DataStore = 2,
-  };
-
-  FileOffset getRootOffset();
-  TableKind getTableKind(FileOffset Offset);
-  TableKind getTableKind(FileOffset Offset);
-
-  Expected<OnDiskHashMappedTrie> createRootTrie();
-
-private:
-  explicit OnDiskDatabase(std::unique_ptr<ImplType> Impl);
   std::unique_ptr<ImplType> Impl;
 };
 

@@ -22,6 +22,142 @@ using namespace llvm;
 using namespace llvm::cas;
 
 namespace {
+/// Generic handle for a table.
+///
+/// Probably we want some table kinds for pointing at multiple tables.
+/// - Probably a tree or trie type makes sense.
+/// - Or a deque. Linear search is okay as long as there aren't many tables in
+///   a file.
+///
+/// Generic table header layout:
+/// - 2-bytes: TableKind
+/// - 2-bytes: TableNameSize
+/// - 4-bytes: TableNameRelOffset (relative to header)
+class TableHandle {
+public:
+  enum class TableKind : uint16_t {
+    HashMappedTrie = 1,
+    DataStore = 2,
+
+  };
+  struct Header {
+    TableKind Kind;
+    uint16_t NameSize;
+    int32_t NameRelOffset; // Relative to Header.
+  };
+
+  explicit operator bool() const { return H; }
+  const Header &getHeader() const { return *H; }
+  LazyMappedFileRegion &getRegion() const { return *LMFR; }
+
+  StringRef getName() const {
+    auto *Begin = reinterpret_cast<const char *>(H) + H->NameRelOffset;
+    return StringRef(Begin, Begin + H->NameSize);
+  }
+
+  TableHandle(LazyMappedFileRegion &LMFR, Header &H) : LMFR(&LMFR), H(&H) {}
+  TableHandle(LazyMappedFileRegion &LMFR, intptr_t HeaderOffset)
+      : TrieHandle(LMFR,
+                   *reinterpret_cast<Header *>(LMFR.data() + HeaderOffset)) {}
+
+private:
+  LazyMappedFileRegion *LMFR;
+  Header *H = nullptr;
+};
+
+/// Encapsulate a database file, which:
+/// - Sets/checks magic.
+/// - Sets/checks version.
+/// - Points at an arbitrary root table (can be changed later using a lock-free
+///   algorithm).
+/// - Sets up a BumpPtr for allocation.
+///
+/// Top-level layout:
+/// - 8-bytes: Magic
+/// - 8-bytes: Version
+/// - 8-bytes: RootTable (16-bits: Kind; 48-bits: Offset)
+/// - 8-bytes: BumpPtr
+class DatabaseFile {
+  static constexpr uint64_t getMagic() { return 0x00FFDA7ABA53FF00ULL; }
+  static constexpr uint64_t getVersion() { return 1ULL; }
+  struct Header {
+    uint64_t Magic;
+    uint64_t Version;
+    std::atomic<int64_t> RootTableOffset;
+    std::atomic<int64_t> BumpPtr;
+  };
+
+  const Header &getHeader() { return *H; }
+  LazyMappedFileRegionBumpPtr &getAlloc() { return Alloc; }
+  LazyMappedFileRegion &getRegion() { return Alloc.getRegion(); }
+
+  static Expected<DatabaseFile> create(LazyMappedFileRegion &LMFR,
+                                       Optional<uint64_t> MinFileSize);
+
+  static Expected<DatabaseFile> get(LazyMappedFileRegion &LMFR) {
+    if (Error E = check(LMFR))
+      return E;
+    return DatabaseFile(LMFR);
+  }
+  static Expected<DatabaseFile> get(std::shared_ptr<LazyMappedFileRegion> LMFR) {
+    if (Error E = check(*LMFR))
+      return E;
+    return DatabaseFile(std::move(LMFR));
+  }
+
+private:
+  static Error validate(LazyMappedFileRegion &LMFR);
+
+  DatabaseFile(LazyMappedFileRegion &LMFR)
+      : H(reinterpret_cast<const Header *>(LMFR.data())),
+        LMFR->Alloc(LMFR, offsetof(Header, BumpPtr)) {}
+  DatabaseFile(std::shared_ptr<LazyMappedFileRegion> LMFR)
+      : H(reinterpret_cast<const Header *>(LMFR->data())),
+        LMFR->Alloc(std::move(LMFR), offsetof(Header, BumpPtr)) {}
+
+  const Header *H = nullptr;
+  LazyMappedFileRegionBumpPtr Alloc;
+};
+
+} // end anonymous namespace
+
+Expected<DatabaseFile> DatabaseFile::create(LazyMappedFileRegion &LMFR,
+                                            Optional<uint64_t> MinFileSize) {
+  // Resize the underlying file to the minimum requested. Must be at least big
+  // enough for the header.
+  uint64_t SizeToRequest = sizeof(Header);
+  if (MinFileSize && *MinFileSize > SizeToRequest)
+    SizeToRequest = *MinFileSize;
+  if (Error E = LMFR.extendSize(SizeToRequest))
+    return std::move(E);
+
+  // Initialize the header and the allocator.
+  new (LMFR.data()) Header{getMagic(), getVersion(), 0, 0};
+  return create(LMFR);
+}
+
+Error DatabaseFile::validate(LazyMappedFileRegion &LMFR) {
+  if (LMFR->size() < sizeof(Header))
+    return createStringError(std::errc::invalid_argument, "database: missing header");
+
+  // Check the magic and version.
+  auto *H = reinterpret_cast<const Header *>(LMFR->data());
+  if (H->Magic != getMagic())
+    return createStringError(std::errc::invalid_argument, "database: bad magic");
+  if (H->Version != getVersion())
+    return createStringError(std::errc::invalid_argument, "database: wrong version");
+
+  // Check the bump-ptr, which should be 0 or point past the header.
+  if (int64_t Bump = H->BumpPtr.load())
+    if (Bump < sizeof(Header))
+      return createStringError(std::errc::invalid_argument, "database: corrupt bump-ptr");
+
+  return Error::success();
+}
+
+namespace {
+
+class TrieHandle;
 class SubtrieHandle;
 class SubtrieSlotValue {
 public:
@@ -60,12 +196,32 @@ private:
   int64_t Offset = 0;
 };
 
-class TrieHandle;
+
+/// Subtrie layout:
+/// - 2-bytes: StartBit
+/// - 1-bytes: NumBits=lg(num-slots)
+/// - 1-bytes: NumUnusedBits=lg(num-slots-unused)
+/// - 4-bytes: 0-pad
+/// - <slots>
+///
+/// <slot> 8B: +ve: RecordOffset
+///            -ve: SubtrieOffset
+///            0:   Empty
 class SubtrieHandle {
 public:
   struct Header {
-    uint32_t StartBit;
-    uint32_t NumBits;
+    /// The bit this subtrie starts on.
+    uint16_t StartBit;
+
+    /// The number of bits this subtrie handles. It has 2^NumBits slots.
+    uint8_t NumBits;
+
+    /// The number of extra bits this subtrie's allocation *could* handle, due
+    /// to over-allocation. It has 2^NumUnusedBits unused slots.
+    uint8_t NumUnusedBits;
+
+    /// 0-pad to 8B.
+    uint32_t Zeros4;
   };
 
   static int64_t getSlotsSize(uint32_t NumBits) {
@@ -299,18 +455,52 @@ static_assert((int64_t)HeaderSize ==
 
 struct IndexFile;
 
-/// In principle, this handle could live anywhere in the file. In practice,
-/// it's in a fixed location.
-class TrieHandle {
+/// Handle for a HashMappedTrie table.
+///
+/// HashMappedTrie table layout:
+/// - [8-bytes: Generic table header]
+/// - 1-byte: NumRootBits
+/// - 1-byte: NumSubtrieBits
+/// - 2-bytes: NumHashBits
+/// - 4-bytes: RecordDataSize (in bytes)
+/// - 8-bytes: AllocatorOffset (reserved for implementing free lists)
+/// - <name> '\0'
+///
+/// Record layout:
+/// - <data>
+/// - <hash>
+/// - {0-7}-bytes: 0-pad to 8B
+class HashMappedTrieHandle {
 public:
-  struct Header {
-    uint64_t NumRootBits;
-    uint64_t NumSubtrieBits;
-    uint64_t NumHashBits;
-    Header(uint64_t NumRootBits, uint64_t NumSubtrieBits, uint64_t NumHashBits)
-        : NumRootBits(NumRootBits), NumSubtrieBits(NumSubtrieBits),
-          NumHashBits(NumHashBits) {}
+  struct Header : TableHandle::Header {
+    uint8_t NumRootBits;
+    uint8_t NumSubtrieBits;
+    uint16_t NumHashBits;
+    uint32_t RecordDataSize;
+    std::atomic<int64_t> AllocatorOffset;
   };
+
+  static constexpr size_t getNumHashBytes(size_t NumHashBits) {
+    assert(NumHashBits % 8 == 0);
+    return NumHashBits / 8;
+  }
+  static constexpr size_t getRecordSize(size_t RecordDataSize, size_t NumHashBits) {
+    return alignTo(Align(8), RecordDataSize + getNumHashBytes(NumHashBits));
+  }
+  size_t getNumHashBytes() const { return getNumHashBytes(H->NumHashBits); }
+  size_t getRecordSize() const {
+    return getRecordSize(H->RecordDataSize, H->NumHashBits);
+  }
+
+  OnDiskHashMappedTrie::ValueProxy getRecord(SubtrieSlotValue V) {
+    char *Begin = LMFR->data() + V.asData();
+    OnDiskHashMappedTrie::ValueProxy Record;
+    Record.Data = makeMutableArrayRef(Begin, H->RecordDataSize);
+    Record.Hash = makeArrayRef(
+        reinterpret_cast<const uint8_t *>(Begin + H->RecordDataSize),
+        getNumHashBytes());
+    return Record;
+  }
 
   explicit operator bool() const { return H; }
   const Header &getHeader() const { return *H; }
@@ -333,11 +523,13 @@ public:
     return sizeof(Header) + SubtrieHandle::getSize(NumRootBits);
   }
 
-  static TrieHandle create(LazyMappedFileRegionBumpPtr &Alloc,
-                           uint64_t NumRootBits, uint64_t NumSubtrieBits,
-                           uint64_t NumHashBits);
-  TrieHandle(LazyMappedFileRegion &LMFR, Header &H) : LMFR(&LMFR), H(&H) {}
-  TrieHandle(LazyMappedFileRegion &LMFR, intptr_t HeaderOffset)
+  static HashMappedTrieHandle create(LazyMappedFileRegionBumpPtr &Alloc,
+                                     StringRef Name, uint64_t NumRootBits,
+                                     uint64_t NumSubtrieBits, uint64_t NumHashBits,
+                                     uint64_t RecordDataSize);
+
+  HashMappedTrieHandle(LazyMappedFileRegion &LMFR, Header &H) : LMFR(&LMFR), H(&H) {}
+  HashMappedTrieHandle(LazyMappedFileRegion &LMFR, intptr_t HeaderOffset)
       : TrieHandle(LMFR,
                    *reinterpret_cast<Header *>(LMFR.data() + HeaderOffset)) {}
 
