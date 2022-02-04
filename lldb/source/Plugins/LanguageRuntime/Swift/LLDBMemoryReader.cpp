@@ -131,21 +131,9 @@ LLDBMemoryReader::resolvePointer(swift::remote::RemoteAddress address,
   if (!target.GetSwiftUseReflectionSymbols())
     return pointer;
 
-  llvm::Optional<Address> maybeAddr =
-      resolveRemoteAddress(address.getAddressData());
-  // This is not an assert, but should never happen.
-  if (!maybeAddr)
-    return pointer;
-
   Address addr;
-  if (maybeAddr->IsSectionOffset()) {
-    // `address` was tagged, and then successfully mapped (resolved).
-    addr = *maybeAddr;
-  } else {
-    // `address` is a real load address.
-    if (!target.ResolveLoadAddress(address.getAddressData(), addr))
-      return pointer;
-  }
+  if (!target.ResolveLoadAddress(address.getAddressData(), addr))
+    return pointer;
 
   if (!addr.GetSection()->CanContainSwiftReflectionData())
     return pointer;
