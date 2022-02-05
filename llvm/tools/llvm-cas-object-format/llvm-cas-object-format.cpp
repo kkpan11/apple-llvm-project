@@ -12,6 +12,7 @@
 #include "llvm/CAS/Utils.h"
 #include "llvm/CASObjectFormats/CASObjectReader.h"
 #include "llvm/CASObjectFormats/FlatV1.h"
+#include "llvm/CASObjectFormats/LinkGraph.h"
 #include "llvm/CASObjectFormats/NestedV1.h"
 #include "llvm/CASObjectFormats/Utils.h"
 #include "llvm/ExecutionEngine/JITLink/ELF_x86_64.h"
@@ -886,9 +887,9 @@ static CASID ingestFile(SchemaBase &Schema, StringRef InputFile,
   if (DebugIngest)
     OS.applyLocked([&](raw_ostream &OS) { OS << DebugIngestOutput; });
 
-  auto RoundTripG = ExitOnErr(Schema.createLinkGraph(
-      CompileUnit, FileContent.getBufferIdentifier(),
-      ExitOnErr(jitlink::getGetEdgeKindNameFunction(G->getTargetTriple()))));
+  auto Reader = ExitOnErr(Schema.createObjectReader(CompileUnit));
+  auto RoundTripG = ExitOnErr(casobjectformats::createLinkGraph(
+      *Reader, FileContent.getBufferIdentifier()));
 
   if (Dump)
     dumpGraph(*RoundTripG, OS, "after round-trip");

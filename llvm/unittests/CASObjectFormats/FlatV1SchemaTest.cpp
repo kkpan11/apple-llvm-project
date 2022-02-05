@@ -9,6 +9,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/CASObjectFormats/FlatV1.h"
+#include "llvm/CASObjectFormats/LinkGraph.h"
 #include "llvm/ExecutionEngine/JITLink/JITLink.h"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/Memory.h"
@@ -113,8 +114,10 @@ TEST(FlatV1SchemaTest, RoundTrip) {
     EXPECT_THAT_EXPECTED(CU, Succeeded());
     
     // Convert back to LinkGraph.
+    auto Reader = Schema.createObjectReader(std::move(*CU));
+    EXPECT_THAT_EXPECTED(Reader, Succeeded());
     auto RoundTripGOrError =
-        CU->createLinkGraph("round-tripped", jitlink::getGenericEdgeKindName);
+        casobjectformats::createLinkGraph(**Reader, "round-tripped");
     EXPECT_THAT_EXPECTED(RoundTripGOrError, Succeeded());
     RoundTripG = std::move(*RoundTripGOrError);
   }

@@ -8,6 +8,8 @@
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringMap.h"
+#include "llvm/CASObjectFormats/CASObjectReader.h"
+#include "llvm/CASObjectFormats/LinkGraph.h"
 #include "llvm/CASObjectFormats/NestedV1.h"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/Memory.h"
@@ -536,11 +538,14 @@ TEST(NestedV1SchemaTest, RoundTrip) {
                       Succeeded());
 
     // Convert back to LinkGraph.
+    Optional<std::unique_ptr<reader::CASObjectReader>> Reader;
     ASSERT_THAT_ERROR(
-        unwrapExpected(CU->createLinkGraph("round-tripped",
-                                           jitlink::getGenericEdgeKindName),
-                       RoundTripG),
+        unwrapExpected(Schema.createObjectReader(std::move(*CU)), Reader),
         Succeeded());
+    ASSERT_THAT_ERROR(unwrapExpected(casobjectformats::createLinkGraph(
+                                         **Reader, "round-tripped"),
+                                     RoundTripG),
+                      Succeeded());
   }
 
   // Check linkage for named symbols.
@@ -661,11 +666,14 @@ TEST(NestedV1SchemaTest, RoundTripBlockOrder) {
                       Succeeded());
 
     // Convert back to LinkGraph.
+    Optional<std::unique_ptr<reader::CASObjectReader>> Reader;
     ASSERT_THAT_ERROR(
-        unwrapExpected(CU->createLinkGraph("round-tripped",
-                                           jitlink::getGenericEdgeKindName),
-                       RoundTripG),
+        unwrapExpected(Schema.createObjectReader(std::move(*CU)), Reader),
         Succeeded());
+    ASSERT_THAT_ERROR(unwrapExpected(casobjectformats::createLinkGraph(
+                                         **Reader, "round-tripped"),
+                                     RoundTripG),
+                      Succeeded());
   }
 
   DenseMap<jitlink::Block *, std::vector<jitlink::Symbol *>> RTBlockSymbols;

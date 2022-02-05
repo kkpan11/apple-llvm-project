@@ -24,7 +24,6 @@ using data::Fixup;
 class ObjectFileSchema;
 class CompileUnitBuilder;
 class FlatV1ObjectReader;
-class LinkGraphBuilder;
 
 /// FIXME: This is a copy from NestedV1 implementation. We should unify that.
 class ObjectFormatNodeRef : public cas::NodeRef {
@@ -109,11 +108,6 @@ public:
   createFromLinkGraphImpl(const jitlink::LinkGraph &G,
                           raw_ostream *DebugOS) const override;
 
-  Expected<std::unique_ptr<jitlink::LinkGraph>> createLinkGraphImpl(
-      cas::NodeRef RootNode, StringRef Name,
-      jitlink::LinkGraph::GetEdgeKindNameFunction GetEdgeKindName,
-      raw_ostream *DebugOS) const override;
-
   ObjectFileSchema(cas::CASDB &CAS);
 
   Expected<ObjectFormatNodeRef> createNode(ArrayRef<cas::CASID> IDs,
@@ -196,7 +190,6 @@ public:
   }
 
   Expected<reader::CASSection> materialize() const;
-  Error materialize(LinkGraphBuilder &LGB, unsigned SectionIdx) const;
 
 private:
   explicit SectionRef(SpecificRefT Ref) : SpecificRefT(Ref) {}
@@ -222,8 +215,6 @@ public:
   Error materializeFixups(
       const FlatV1ObjectReader &Reader, unsigned BlockIdx,
       function_ref<Error(const reader::CASBlockFixup &)> Callback) const;
-  Error materializeBlock(LinkGraphBuilder &LGB, unsigned BlockIdx) const;
-  Error materializeEdges(LinkGraphBuilder &LGB, unsigned BlockIdx) const;
 
 private:
   explicit BlockRef(SpecificRefT Ref) : SpecificRefT(Ref) {}
@@ -244,8 +235,6 @@ public:
                                        cas::CASID ID) {
     return get(Schema.getNode(ID));
   }
-
-  Error materialize(LinkGraphBuilder &LGB, unsigned BlockIdx) const;
 
 private:
   explicit BlockContentRef(SpecificRefT Ref) : SpecificRefT(Ref) {}
@@ -269,7 +258,6 @@ public:
 
   Expected<reader::CASSymbol> materialize(const FlatV1ObjectReader &Reader,
                                           unsigned SymbolIdx) const;
-  Error materialize(LinkGraphBuilder &LGB, unsigned SymbolIdx) const;
 
 private:
   explicit SymbolRef(SpecificRefT Ref) : SpecificRefT(Ref) {}
@@ -287,18 +275,6 @@ class CompileUnitRef : public SpecificRef<CompileUnitRef> {
 public:
   static constexpr StringLiteral KindString = "cas.o:compile-unit";
 
-  /// Eagerly parse the full compile unit to create a LinkGraph.
-  ///
-  /// Maybe \a LinkGraph isn't really the right interface. Building one forces
-  /// us to eagerly parse the full object file, defeating some of the point of
-  /// this format.
-  ///
-  /// Ideally we'd have some sort of LazyLinkGraph that can answer questions
-  /// and/or build itself up on demand.
-  Expected<std::unique_ptr<jitlink::LinkGraph>>
-  createLinkGraph(StringRef Name,
-                  jitlink::LinkGraph::GetEdgeKindNameFunction GetEdgeKindName);
-
   static Expected<CompileUnitRef> get(Expected<ObjectFormatNodeRef> Ref);
   static Expected<CompileUnitRef> get(const ObjectFileSchema &Schema,
                                       cas::CASID ID) {
@@ -310,7 +286,6 @@ public:
                                          raw_ostream *DebugOS = nullptr);
 
   Error materialize(FlatV1ObjectReader &OR) const;
-  Error materialize(LinkGraphBuilder &LGB) const;
 
 private:
   CompileUnitRef(SpecificRefT Ref) : SpecificRefT(Ref) {}
@@ -497,108 +472,6 @@ private:
   unsigned DefinedSymbolsSize;
 
   SmallVector<unsigned, 16> BlockIdxs;
-
-  StringRef InlineBuffer;
-};
-
-class LinkGraphBuilder {
-public:
-  LinkGraphBuilder(StringRef Name,
-                   jitlink::LinkGraph::GetEdgeKindNameFunction GetEdgeKindName,
-                   CompileUnitRef Root)
-      : Name(Name.str()), GetEdgeKindName(GetEdgeKindName), Root(Root) {}
-
-  std::unique_ptr<jitlink::LinkGraph> takeLinkGraph() { return std::move(LG); }
-
-  Error materializeCompileUnit();
-  Error materializeSections();
-  Error materializeBlockContents();
-  Error materializeSymbols();
-  Error materializeEdges();
-
-  Expected<unsigned> nextIdx() {
-    if (CurrentIdx >= Indexes.size())
-      return createStringError(inconvertibleErrorCode(), "Index out of bound");
-
-    return Indexes[CurrentIdx++];
-  }
-
-  unsigned nextIdxForBlock(unsigned BlockIndex) {
-    return Indexes[Blocks[BlockIndex].BlockIdx++];
-  }
-
-  Expected<cas::CASID> nextID() {
-    auto Idx = nextIdx();
-    if (!Idx)
-      return Idx.takeError();
-
-    // First ID is the RootTypeID
-    auto IDIndex = *Idx + 1;
-    if (IDIndex >= IDs.size())
-      return createStringError(inconvertibleErrorCode(),
-                               "ID Index out of bound");
-
-    return IDs[IDIndex];
-  }
-
-  template <typename RefT> Expected<RefT> nextNode() {
-    auto ID = nextID();
-    if (!ID)
-      return ID.takeError();
-    return RefT::get(Root.getSchema(), *ID);
-  }
-
-  template <typename RefT> Expected<RefT> getNode(unsigned Idx) {
-    auto IDIndex = nextIdxForBlock(Idx) + 1;
-    if (IDIndex >= IDs.size())
-      return createStringError(inconvertibleErrorCode(),
-                               "ID Index out of bound");
-    return RefT::get(Root.getSchema(), IDs[IDIndex]);
-  }
-
-  jitlink::LinkGraph *getLinkGraph() const { return LG.get(); }
-
-  struct SectionInfo {
-    jitlink::Section *Section;
-    uint64_t Size = 0;
-    uint64_t Alignment = 1;
-  };
-
-  Error addSection(unsigned SectionIdx, jitlink::Section *S);
-  Expected<SectionInfo &> getSectionInfo(unsigned SectionIdx);
-
-  struct BlockInfo {
-    jitlink::Block *Block;
-    Optional<BlockRef> Ref;
-    Optional<data::BlockData> Data;
-    unsigned BlockIdx = 0;
-    unsigned Remaining = 0;
-  };
-
-  Expected<BlockInfo &> getBlockInfo(unsigned BlockIdx);
-
-  Error addSymbol(unsigned SymbolIdx, jitlink::Symbol *S);
-  Expected<jitlink::Symbol *> getSymbol(unsigned SymbolIdx);
-
-private:
-  friend class CompileUnitRef;
-  std::string Name;
-  jitlink::LinkGraph::GetEdgeKindNameFunction GetEdgeKindName;
-  CompileUnitRef Root;
-
-  std::unique_ptr<jitlink::LinkGraph> LG;
-  unsigned CurrentIdx = 0;
-  std::vector<cas::CASID> IDs;
-  std::vector<unsigned> Indexes;
-
-  unsigned SectionsSize;
-  unsigned SymbolsSize;
-  unsigned BlocksSize;
-
-  // Lookup Cache.
-  SmallVector<SectionInfo, 16> Sections;
-  SmallVector<BlockInfo, 16> Blocks;
-  SmallVector<jitlink::Symbol *> Symbols;
 
   StringRef InlineBuffer;
 };

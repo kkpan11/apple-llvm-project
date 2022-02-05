@@ -114,11 +114,6 @@ public:
   createFromLinkGraphImpl(const jitlink::LinkGraph &G,
                           raw_ostream *DebugOS) const override;
 
-  Expected<std::unique_ptr<jitlink::LinkGraph>> createLinkGraphImpl(
-      cas::NodeRef RootNode, StringRef Name,
-      jitlink::LinkGraph::GetEdgeKindNameFunction GetEdgeKindName,
-      raw_ostream *DebugOS) const override;
-
   ObjectFileSchema(cas::CASDB &CAS);
 
   Expected<ObjectFormatNodeRef> createNode(ArrayRef<cas::CASID> IDs,
@@ -946,18 +941,6 @@ public:
   }
 
   Expected<std::unique_ptr<reader::CASObjectReader>> createObjectReader();
-
-  /// Eagerly parse the full compile unit to create a LinkGraph.
-  ///
-  /// Maybe \a LinkGraph isn't really the right interface. Building one forces
-  /// us to eagerly parse the full object file, defeating some of the point of
-  /// this format.
-  ///
-  /// Ideally we'd have some sort of LazyLinkGraph that can answer questions
-  /// and/or build itself up on demand.
-  Expected<std::unique_ptr<jitlink::LinkGraph>>
-  createLinkGraph(StringRef Name,
-                  jitlink::LinkGraph::GetEdgeKindNameFunction GetEdgeKindName);
 
   static Expected<CompileUnitRef> get(Expected<ObjectFormatNodeRef> Ref);
   static Expected<CompileUnitRef> get(const ObjectFileSchema &Schema,
