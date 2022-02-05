@@ -66,6 +66,11 @@ struct TrieRecord {
     String = 3,
   };
 
+  enum Limits : int64_t {
+    // Saves files bigger than 64KB standalone.
+    MaxEmbeddedSize = 64LL * 1024LL - 1,
+  };
+
   struct Data {
     StorageKind SK = StorageKind::SK;
     ObjectKind OK = ObjectKind::Node;

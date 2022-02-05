@@ -227,7 +227,6 @@ Error DatabaseFile::validate(LazyMappedFileRegion &LMFR) {
 
 namespace {
 
-class TrieHandle;
 class SubtrieHandle;
 class SubtrieSlotValue {
 public:
@@ -244,6 +243,12 @@ public:
     return -Offset;
   }
 
+  FileOffset asSubtrieFileOffset() const {
+    return FileOffset(asSubtrie());
+  }
+
+  FileOffset asDataFileOffset() const { return FileOffset(asData()); }
+
   int64_t getRawOffset() const { return Offset; }
 
   static SubtrieSlotValue getDataOffset(int64_t Offset) {
@@ -252,6 +257,14 @@ public:
 
   static SubtrieSlotValue getSubtrieOffset(int64_t Offset) {
     return SubtrieSlotValue(-Offset);
+  }
+
+  static SubtrieSlotValue getDataOffset(FileOffset Offset) {
+    return getDataOffset(Offset.get());
+  }
+
+  static SubtrieSlotValue getSubtrieOffset(FileOffset Offset) {
+    return getDataOffset(Offset.get());
   }
 
   static SubtrieSlotValue getFromSlot(std::atomic<int64_t> &Slot) {
@@ -338,6 +351,10 @@ public:
         reinterpret_cast<const char *>(H) - LMFR->data());
   }
 
+  FileOffset getFileOffset() const {
+    return getOffset().asSubtrieFileOffset();
+  }
+
   explicit operator bool() const { return H; }
 
   Header &getHeader() const { return *H; }
@@ -348,6 +365,10 @@ public:
   static SubtrieHandle create(LazyMappedFileRegionBumpPtr &Alloc,
                               uint32_t StartBit, uint32_t NumBits,
                               uint32_t NumUnusedBits = 0);
+
+  static SubtrieHandle getFromFileOffset(LazyMappedFileRegion &LMFR, FileOffset Offset) {
+    return SubtrileHandle(LMFR, SubtrieSlotValue::getSubtrieFileOffset(Offset));
+  }
 
   SubtrieHandle() = default;
   SubtrieHandle(LazyMappedFileRegion &LMFR, Header &H)
@@ -365,136 +386,6 @@ private:
     return makeMutableArrayRef(reinterpret_cast<SlotT *>(&H + 1),
                                1u << H.NumBits);
   }
-};
-
-struct DataHandle {
-  struct Header {
-    unsigned HashSize : 16;
-    unsigned HashPaddingSize : 8;
-    unsigned MetadataPaddingSize : 8;
-    unsigned MetadataSize : 31;
-    unsigned IsEmbedded : 1;
-    uint64_t DataSize;
-  };
-
-  // Files 64KB and bigger can just be saved separately.
-  //
-  // FIXME: Should be configurable.
-  static constexpr int64_t MaxEmbeddedDataSize = 64ull * 1024ull - 1ull;
-
-  // FIXME: This is being used as a hack to disable an assertion. The problem
-  // is that if there are LOTS of references it the number above can exceed
-  // MaxEmbeddedDataSize, even if the data itself is tiny. The right fix is to
-  // sometimes (always?) make references external too.
-  static constexpr int64_t MinExternalDataSize = 4ull * 1024ull - 1ull;
-
-  static uint64_t getHashOffset() { return sizeof(DataHandle::Header); }
-
-  static uint64_t getPadding(uint64_t Size) {
-    if (uint64_t Remainder = Size % 8)
-      return 8 - Remainder;
-    return 0;
-  }
-
-  static uint64_t getHashPaddingStart(uint64_t HashSize) {
-    return sizeof(Header) + HashSize;
-  }
-
-  static uint64_t getSizeIfExternal(uint64_t HashSize, uint64_t MetadataSize) {
-    return sizeof(Header) + HashSize + getPadding(HashSize) + MetadataSize +
-           getPadding(MetadataSize);
-  }
-
-  static uint64_t getDataPadding(uint64_t DataSize) {
-    // Always at least one zero for guaranteed null termination.
-    return getPadding(DataSize + 1) + 1;
-  }
-
-  static uint64_t getDataSizeWithPadding(uint64_t DataSize) {
-    return DataSize + getDataPadding(DataSize);
-  }
-
-  static uint64_t getSizeIfEmbedded(ArrayRef<uint8_t> Hash, StringRef Metadata,
-                                    StringRef Data) {
-    return getSizeIfExternal(Hash.size(), Metadata.size()) +
-           getDataSizeWithPadding(Data.size());
-  }
-
-  ArrayRef<uint8_t> getHash() const {
-    return makeArrayRef(reinterpret_cast<const uint8_t *>(getHashStart()),
-                        H->HashSize);
-  }
-
-  bool isEmbedded() const { return H->IsEmbedded; }
-  bool isExternal() const { return !isEmbedded(); }
-
-  const char *getHashStart() const {
-    return reinterpret_cast<const char *>(H) + sizeof(Header);
-  }
-  const char *getHashPaddingStart() const {
-    return getHashStart() + H->HashSize;
-  }
-  const char *getMetadataStart() const {
-    return getHashPaddingStart() + H->HashPaddingSize;
-  }
-  const char *getMetadataPaddingStart() const {
-    return getMetadataStart() + H->MetadataSize;
-  }
-  const char *getDataStart() const {
-    return getMetadataPaddingStart() + H->MetadataPaddingSize;
-  }
-  const char *getDataPaddingStart() const {
-    return getDataStart() + H->DataSize;
-  }
-  StringRef getMetadata() const {
-    return StringRef(getMetadataStart(), H->MetadataSize);
-  }
-
-  Optional<StringRef> getData() const {
-    if (isExternal())
-      return None;
-    return StringRef(getDataStart(), H->DataSize);
-  }
-
-  uint64_t getDataSizeWithPadding() const {
-    return getDataSizeWithPadding(H->DataSize);
-  }
-
-  explicit operator bool() const { return H; }
-  const Header &getHeader() const { return *H; }
-
-  SubtrieSlotValue getOffset() const {
-    return SubtrieSlotValue::getDataOffset(reinterpret_cast<const char *>(H) -
-                                           LMFR->data());
-  }
-
-  static DataHandle create(LazyMappedFileRegionBumpPtr &Alloc,
-                           StringRef DirPath, ArrayRef<uint8_t> Hash,
-                           StringRef Metadata, StringRef Data);
-
-  DataHandle() = default;
-  DataHandle(LazyMappedFileRegion &LMFR, Header &H) : LMFR(&LMFR), H(&H) {}
-  DataHandle(LazyMappedFileRegion &LMFR, SubtrieSlotValue Offset)
-      : DataHandle(LMFR,
-                   *reinterpret_cast<Header *>(LMFR.data() + Offset.asData())) {
-  }
-
-private:
-  LazyMappedFileRegion *LMFR = nullptr;
-  Header *H = nullptr;
-
-  static DataHandle construct(LazyMappedFileRegion &LMFR, intptr_t Offset,
-                              bool IsEmbedded, ArrayRef<uint8_t> Hash,
-                              StringRef Metadata, uint64_t DataSize);
-  static DataHandle createExternal(LazyMappedFileRegionBumpPtr &Alloc,
-                                   ArrayRef<uint8_t> Hash, StringRef Metadata,
-                                   uint64_t DataSize);
-  static DataHandle createEmbedded(LazyMappedFileRegionBumpPtr &Alloc,
-                                   ArrayRef<uint8_t> Hash, StringRef Metadata,
-                                   StringRef Data);
-
-  static void createExternalContent(StringRef DirPath, ArrayRef<uint8_t> Hash,
-                                    StringRef Metadata, StringRef Data);
 };
 
 /// Handle for a HashMappedTrie table.
@@ -534,6 +425,7 @@ public:
   struct RecordData {
     OnDiskHashMappedTrie::ValueProxy Proxy;
     SubtrieSlotValue Offset;
+    FileOffset getFileOffset() const { return Offset.getDataFileOffset(); }
   };
 
   enum Limits : size_t {
@@ -541,12 +433,12 @@ public:
     MaxNumHashBytes = UINT16_MAX >> 3,
     MaxNumHashBits = MaxNumHashBytes << 3,
 
-    /// 2^15 bits in a trie is 32768 slots. This many slots is suspicious even
-    /// for the root trie.
-    MaxNumRootBits = 15,
+    /// 2^16 bits in a trie is 65536 slots. This restricts us to a 16-bit
+    /// index. This many slots is suspicously large anyway.
+    MaxNumRootBits = 16,
 
-    /// 2^10 bits in a trie is 1024 slots. This many slots is suspicious
-    /// for subtries.
+    /// 2^10 bits in a trie is 1024 slots. This many slots seems suspiciously
+    /// large for subtries.
     MaxNumSubtrieBits = 10,
   };
 
@@ -565,27 +457,8 @@ public:
     return getRecordSize(H->RecordDataSize, H->NumHashBits);
   }
 
-  RecordData getRecord(SubtrieSlotValue Offset) {
-    char *Begin = LMFR->data() + Offset.asData();
-    OnDiskHashMappedTrie::ValueProxy Proxy;
-    Proxy.Data = makeMutableArrayRef(Begin, getRecordDataSize());
-    Proxy.Hash = makeArrayRef(reinterpret_cast<const uint8_t *>(
-        Data.end(), getNumHashBytes()));
-    return RecordData{Proxy, Offset};
-  }
-
-  RecordData createRecord(LazyMappedFileRegionBumpPtr &Alloc, ArrayRef<uint8_t> Hash) {
-    assert(Alloc.getRegion() == LMFR);
-    assert(Hash.size() == getNumHashBytes());
-    RecordData Record = getRecord(SubtrieSlotValue::getDataOffset(
-        Alloc.allocateOffset(getRecordSize())));
-
-    // Write out the hash and 0-padding.
-    auto MutableHash = makeMutableArrayRef(const_cast<uint8_t *>(Record.Proxy.Hash.begin()),
-                                           getNumHashBytes());
-    llvm::copy(MutableHash, Hash.begin());
-    return Record;
-  }
+  RecordData getRecord(SubtrieSlotValue Offset);
+  RecordData createRecord(LazyMappedFileRegionBumpPtr &Alloc, ArrayRef<uint8_t> Hash);
 
   explicit operator bool() const { return H; }
   const Header &getHeader() const { return *H; }
@@ -787,7 +660,8 @@ HashMappedTrieHandle HashMappedTrieHandle::create(
   return Trie;
 }
 
-HashMappedTrieHandle::RecordData HashMappedTrieHandle::getRecord(SubtrieSlotValue Offset) {
+HashMappedTrieHandle::RecordData
+HashMappedTrieHandle::getRecord(SubtrieSlotValue Offset) {
   char *Begin = LMFR->data() + Offset.asData();
   OnDiskHashMappedTrie::ValueProxy Proxy;
   Proxy.Data = makeMutableArrayRef(Begin, getRecordDataSize());
@@ -796,17 +670,14 @@ HashMappedTrieHandle::RecordData HashMappedTrieHandle::getRecord(SubtrieSlotValu
   return RecordData{Proxy, Offset};
 }
 
-HashMappedTrieHandle::RecordData HashMappedTrieHandle::createRecord(LazyMappedFileRegionBumpPtr &Alloc, ArrayRef<uint8_t> Hash) {
-  assert(Alloc.getRegion() == LMFR);
+HashMappedTrieHandle::RecordData
+HashMappedTrieHandle::createRecord(LazyMappedFileRegionBumpPtr &Alloc,
+                                   ArrayRef<uint8_t> Hash) {
+  assert(&Alloc.getRegion() == LMFR);
   assert(Hash.size() == getNumHashBytes());
   RecordData Record = getRecord(SubtrieSlotValue::getDataOffset(
       Alloc.allocateOffset(getRecordSize())));
-
-  // Write out the hash and 0-padding.
-  auto MutableHash = makeMutableArrayRef(const_cast<uint8_t *>(Record.Proxy.Hash.begin()),
-                                         getNumHashBytes());
-  llvm::copy(MutableHash, Hash.begin());
-  ::memset(MutableHash.end(), 0, getPaddingSize());
+  llvm::copy(Hash, const_cast<uint8_t *>(Record.Proxy.Hash.begin()));
   return Record;
 }
 
@@ -1043,12 +914,17 @@ SubtrieHandle SubtrieHandle::sink(size_t I, SubtrieSlotValue V,
 }
 
 OnDiskHashMappedTrie::pointer
+OnDiskHashMappedTrie::lookup(ArrayRef<uint8_t> Hash) {
+  return mutable_pointer(const_cast<const OnDiskHashMappedTrie *>(this)->lookup(Hash));
+}
+
+OnDiskHashMappedTrie::const_pointer
 OnDiskHashMappedTrie::lookup(ArrayRef<uint8_t> Hash) const {
   assert(!Hash.empty() && "Uninitialized hash");
   HashMappedTrieHandle Trie = Impl->Trie;
   SubtrieHandle S = Trie.getRoot();
   if (!S)
-    return pointer();
+    return const_pointer();
 
   IndexGenerator IndexGen = Trie.getIndexGen(S, Hash);
   size_t Index = IndexGen.next();
@@ -1056,14 +932,14 @@ OnDiskHashMappedTrie::lookup(ArrayRef<uint8_t> Hash) const {
     // Try to set the content.
     SubtrieSlotValue V = S.load(Index);
     if (!V)
-      return LookupResult(&S.getHeader(), Index, *IndexGen.StartBit);
+      return const_pointer(S.getFileOffset(), HintT{this, Index, *IndexGen.StartBit});
 
     // Check for an exact match.
     if (V.isData()) {
       RecordData D = Trie.getRecord(V);
       return D.getHash() == Hash
-                 ? LookupResult(DataF.getContent(D))
-                 : LookupResult(&S.getHeader(), Index, *IndexGen.StartBit);
+                 ? const_pointer(D.getFileOffset(), D.Proxy)
+                 : const_pointer(S.getFileOffset(), HintT{this, Index, *IndexGen.StartBit});
     }
 
     Index = IndexGen.next();
@@ -1087,40 +963,56 @@ static SubtrieHandle getSubtrieFromHint(LazyMappedFileRegion &LMFR,
   return SubtrieHandle(LMFR, *H);
 }
 
-OnDiskHashMappedTrie::MappedContentReference
-OnDiskHashMappedTrie::insert(LookupResult Hint, ArrayRef<uint8_t> Hash,
-                             StringRef Metadata, StringRef Content) {
-  assert(!Hash.empty() && "Uninitialized hash");
+OnDiskHashMappedTrie::pointer
+OnDiskHashMappedTrie::insertLazy(const_pointer Hint, ArrayRef<uint8_t> Hash,
+                                 LazyInsertConstructCB OnConstruct,
+                                 LazyInsertLeakCB OnLeak) {
   TrieHandle Trie = Impl->Index.Trie;
-  DataFile &DataF = Impl->Data;
+  assert(Hash.size() == Trie.getNumHashBits() && "Invalid hash");
+
+  LazyMappedFileRegionBumpPtr &Alloc = Impl->DB.getAlloc();
+
 
   SubtrieHandle S = Trie.getOrCreateRoot();
   IndexGenerator IndexGen = Trie.getIndexGen(S, Hash);
 
   size_t Index;
-  if (Hint.isHint()) {
-    S = getSubtrieFromHint(Trie.getRegion(), Hint.S);
-    Index = IndexGen.hint(Hint.I, Hint.B);
+  if (Optional<HintT> H = Hint.getHint(*this)) {
+    S = SubtrieHandle::getFromFileOffset(Hint.getOffset());
+    Index = IndexGen.hint(H->I, H->B);
   } else {
     Index = IndexGen.next();
   }
 
-  DataHandle NewData;
+  // FIXME: Add non-assertion based checks for data corruption that would
+  // otherwise cause infinite loops in release builds, instead calling
+  // report_fatal_error().
+  //
+  // Two loops are possible:
+  // - All bits used up in the IndexGenerator because subtries are somehow
+  //   linked in a cycle. Could confirm that each subtrie's start-bit
+  //   follows from the start-bit and num-bits of its parent. Could also check
+  //   that the generator doesn't run out of bits.
+  // - Existing data matches tail of Hash but not the head (stored in an
+  //   invalid spot). Probably a cheap way to check this too, but needs
+  //   thought.
+  Optional<RecordData> NewRecord;
   SubtrieHandle UnusedSubtrie;
   for (;;) {
-    // To minimize leaks, first check the data, only allocating an on-disk
-    // record if it's not already in the map.
     SubtrieSlotValue Existing = S.load(Index);
 
     // Try to set it, if it's empty.
     if (!Existing) {
-      if (!NewData)
-        NewData = DataF.createData(Hash, Metadata, Content);
+      if (!NewRecord) {
+        NewRecord = Trie.createRecord(Alloc, Hash);
+        if (OnConstruct)
+          OnConstruct(NewRecord->Offset.asDataFileOffset(), NewRecord->Proxy);
+      }
 
-      if (S.compare_exchange_strong(Index, Existing, NewData.getOffset()))
-        return DataF.getContent(NewData);
+      if (S.compare_exchange_strong(Index, Existing, NewRecord->Offset))
+        return DataF.getContent(NewRecord);
 
-      // Existing is no longer 0; fall through...
+      // Race means that Existing is no longer empty; fall through...
     }
 
     if (Existing.isSubtrie()) {
@@ -1130,17 +1022,22 @@ OnDiskHashMappedTrie::insert(LookupResult Hint, ArrayRef<uint8_t> Hash,
     }
 
     // Check for an exact match.
-    DataHandle ExistingData = DataF.getData(Existing);
-    if (ExistingData.getHash() == Hash)
-      return DataF.getContent(ExistingData); // Already there!
+    RecordData ExistingRecord = Trie.getRecord(Existing);
+    if (ExistingRecord.Proxy.Hash == Hash) {
+      if (OnLeak && NewRecord)
+        OnLeak(NewRecord->Offset.asDataFileOffset(), NewRecord->Proxy,
+               ExistingRecord.Offset.asDataFileOffset(), ExistingRecord.Proxy);
+      return pointer(NewRecord->Offset.asDataFileOffset(),
+                     NewRecord->Proxy);
+    }
 
     // Sink the existing content as long as the indexes match.
     for (;;) {
       size_t NextIndex = IndexGen.next();
       size_t NewIndexForExistingContent =
-          IndexGen.getCollidingBits(ExistingData.getHash());
+          IndexGen.getCollidingBits(ExistingRecord.Hash);
 
-      S = S.sink(Index, Existing, Impl->Index.Alloc, IndexGen.getNumBits(),
+      S = S.sink(Index, Existing, Alloc, IndexGen.getNumBits(),
                  UnusedSubtrie, NewIndexForExistingContent);
       Index = NextIndex;
 
@@ -1370,14 +1267,144 @@ FileOffset OnDiskDataSink::getFileOffset(const_pointer P) const {
   return FileOffset((intptr_t)(Data - Begin));
 }
 
-// Look up the data stored at the given offset.
 char *OnDiskDataSink::beginData(FileOffset Offset) {
+}
+
+const char *OnDiskDataSink::beginData(FileOffset Offset) const {
   assert(Offset);
   assert(Impl);
   assert(Offset.get() < Impl->File.getAlloc().size());
   return Impl->File.getRegion().data() + Offset.get();
 }
 
-const char *OnDiskDataSink::beginData(FileOffset Offset) const {
-  return const_cast<OnDiskDataSink *>(this)->beginData();
-}
+/// TODO: Incorporate into BuiltinCAS.
+struct DataHandle {
+  struct Header {
+    unsigned HashSize : 16;
+    unsigned HashPaddingSize : 8;
+    unsigned MetadataPaddingSize : 8;
+    unsigned MetadataSize : 31;
+    unsigned IsEmbedded : 1;
+    uint64_t DataSize;
+  };
+
+  // Files 64KB and bigger can just be saved separately.
+  //
+  // FIXME: Should be configurable.
+  static constexpr int64_t MaxEmbeddedDataSize = 64ull * 1024ull - 1ull;
+
+  // FIXME: This is being used as a hack to disable an assertion. The problem
+  // is that if there are LOTS of references it the number above can exceed
+  // MaxEmbeddedDataSize, even if the data itself is tiny. The right fix is to
+  // sometimes (always?) make references external too.
+  static constexpr int64_t MinExternalDataSize = 4ull * 1024ull - 1ull;
+
+  static uint64_t getHashOffset() { return sizeof(DataHandle::Header); }
+
+  static uint64_t getPadding(uint64_t Size) {
+    if (uint64_t Remainder = Size % 8)
+      return 8 - Remainder;
+    return 0;
+  }
+
+  static uint64_t getHashPaddingStart(uint64_t HashSize) {
+    return sizeof(Header) + HashSize;
+  }
+
+  static uint64_t getSizeIfExternal(uint64_t HashSize, uint64_t MetadataSize) {
+    return sizeof(Header) + HashSize + getPadding(HashSize) + MetadataSize +
+           getPadding(MetadataSize);
+  }
+
+  static uint64_t getDataPadding(uint64_t DataSize) {
+    // Always at least one zero for guaranteed null termination.
+    return getPadding(DataSize + 1) + 1;
+  }
+
+  static uint64_t getDataSizeWithPadding(uint64_t DataSize) {
+    return DataSize + getDataPadding(DataSize);
+  }
+
+  static uint64_t getSizeIfEmbedded(ArrayRef<uint8_t> Hash, StringRef Metadata,
+                                    StringRef Data) {
+    return getSizeIfExternal(Hash.size(), Metadata.size()) +
+           getDataSizeWithPadding(Data.size());
+  }
+
+  ArrayRef<uint8_t> getHash() const {
+    return makeArrayRef(reinterpret_cast<const uint8_t *>(getHashStart()),
+                        H->HashSize);
+  }
+
+  bool isEmbedded() const { return H->IsEmbedded; }
+  bool isExternal() const { return !isEmbedded(); }
+
+  const char *getHashStart() const {
+    return reinterpret_cast<const char *>(H) + sizeof(Header);
+  }
+  const char *getHashPaddingStart() const {
+    return getHashStart() + H->HashSize;
+  }
+  const char *getMetadataStart() const {
+    return getHashPaddingStart() + H->HashPaddingSize;
+  }
+  const char *getMetadataPaddingStart() const {
+    return getMetadataStart() + H->MetadataSize;
+  }
+  const char *getDataStart() const {
+    return getMetadataPaddingStart() + H->MetadataPaddingSize;
+  }
+  const char *getDataPaddingStart() const {
+    return getDataStart() + H->DataSize;
+  }
+  StringRef getMetadata() const {
+    return StringRef(getMetadataStart(), H->MetadataSize);
+  }
+
+  Optional<StringRef> getData() const {
+    if (isExternal())
+      return None;
+    return StringRef(getDataStart(), H->DataSize);
+  }
+
+  uint64_t getDataSizeWithPadding() const {
+    return getDataSizeWithPadding(H->DataSize);
+  }
+
+  explicit operator bool() const { return H; }
+  const Header &getHeader() const { return *H; }
+
+  SubtrieSlotValue getOffset() const {
+    return SubtrieSlotValue::getDataOffset(reinterpret_cast<const char *>(H) -
+                                           LMFR->data());
+  }
+
+  static DataHandle create(LazyMappedFileRegionBumpPtr &Alloc,
+                           StringRef DirPath, ArrayRef<uint8_t> Hash,
+                           StringRef Metadata, StringRef Data);
+
+  DataHandle() = default;
+  DataHandle(LazyMappedFileRegion &LMFR, Header &H) : LMFR(&LMFR), H(&H) {}
+  DataHandle(LazyMappedFileRegion &LMFR, SubtrieSlotValue Offset)
+      : DataHandle(LMFR,
+                   *reinterpret_cast<Header *>(LMFR.data() + Offset.asData())) {
+  }
+
+private:
+  LazyMappedFileRegion *LMFR = nullptr;
+  Header *H = nullptr;
+
+  static DataHandle construct(LazyMappedFileRegion &LMFR, intptr_t Offset,
+                              bool IsEmbedded, ArrayRef<uint8_t> Hash,
+                              StringRef Metadata, uint64_t DataSize);
+  static DataHandle createExternal(LazyMappedFileRegionBumpPtr &Alloc,
+                                   ArrayRef<uint8_t> Hash, StringRef Metadata,
+                                   uint64_t DataSize);
+  static DataHandle createEmbedded(LazyMappedFileRegionBumpPtr &Alloc,
+                                   ArrayRef<uint8_t> Hash, StringRef Metadata,
+                                   StringRef Data);
+
+  static void createExternalContent(StringRef DirPath, ArrayRef<uint8_t> Hash,
+                                    StringRef Metadata, StringRef Data);
+};
+

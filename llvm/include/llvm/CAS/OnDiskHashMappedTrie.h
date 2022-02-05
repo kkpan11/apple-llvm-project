@@ -90,24 +90,81 @@ public:
     MutableArrayRef<char> Data;
   };
 
+private:
+  struct HintT {
+    explicit operator ValueProxy() const {
+      ValueProxy Value;
+      Value.Data = MutableArrayRef<char>(
+          const_cast<const char *>(reinterpret_cast<char *>(P)), I);
+      Value.Hash = ArrayRef<uint8_t>(nullptr, B);
+      return Value;
+    }
+
+    explicit HintT(ConstValueProxy Value) :
+        P(Value.Data.data()), I(Value.Data.size()),
+        B(Value.Hash.size()) {
+      // Spot-check that this really was a hint.
+      assert(Value.Data.size() <= UINT16_MAX);
+      assert(Value.Hash.size() <= UINT16_MAX);
+      assert(Value.Hash.data() == nullptr);
+    }
+
+    const void *P = nullptr;
+    uint16_t I = 0;
+    uint16_t B = 0;
+  };
+
+public:
   template <class ProxyT> class PointerImpl {
   public:
-    explicit operator bool() const { return Value; }
-    const ProxyT &operator*() const { return *Value; }
-    const ProxyT *operator->() const { return &*Value; }
+    FileOffset getOffset() const {
+      return FileOffset(OffsetLow32 | (uint64_t)OffsetHigh16 << 32);
+    }
+
+    explicit operator bool() const { return IsValue; }
+
+    const ProxyT &operator*() const {
+      assert(IsValue);
+      return Value;
+    }
+    const ProxyT *operator->() const {
+      assert(IsValue);
+      return &Value;
+    }
 
     PointerImpl() = default;
 
   protected:
-    PointerImpl(ProxyT Value) : Value(Value), I(-2U) {}
-    PointerImpl(void *S, unsigned I, unsigned B) : S(S), I(I), B(B) {}
+    PointerImpl(FileOffset Offset, ProxyT Value)
+        : Value(Value), Offset((uint64_t)Offset.get()), IsValue(true) {
+      checkOffset(Offset);
+    }
 
-    bool isHint() const { return I != -1u && I != -2u; }
+    explicit PointerImpl(FileOffset Offset, HintT H)
+        : Value(H), Offset((uint64_t)Offset.get()), IsHint(true) {
+      checkOffset(Offset);
+    }
 
-    Optional<ProxyT> Value;
-    const void *S = nullptr;
-    unsigned I = -1u;
-    unsigned B = 0;
+    static void checkOffset(FileOffset Offset) {
+      assert(Offset.get() > 0);
+      assert((uint64_t)Offset.get() < (1LL << 48));
+    }
+
+    Optional<HintT> getHint(const OnDiskHashMappedTrie &This) const {
+      if (!IsHint)
+        return None;
+      HintT H(Value);
+      assert(H.P == &This && "Expected hint to be for This");
+      if (H.P != &This)
+        return None;
+      return H;
+    }
+
+    ProxyT Value;
+    uint32_t OffsetLow32 = 0;
+    uint16_t OffsetHigh16 = 0;
+    bool IsHint = false;
+    bool IsValue = false;
   };
 
   class pointer;
@@ -129,16 +186,53 @@ public:
   private:
     friend class OnDiskHashMappedTrie;
     using pointer::PointerImpl::PointerImpl;
+
+    explicit pointer(const_pointer P) :
   };
 
-  pointer lookup(ArrayRef<uint8_t> Hash);
-  const_pointer lookup(ArrayRef<uint8_t> Hash) const;
+  pointer getMutablePointer(const_pointer) {
+    if (Optional<HintT> H = CP.getHint())
+      return pointer(CP.getOffset(), *H);
+    if (CP)
+      return pointer(CP.getOffset(), *CP);
+    return pointer();
+  }
 
+  const_pointer lookup(ArrayRef<uint8_t> Hash) const;
+  pointer lookup(ArrayRef<uint8_t> Hash) {
+    return getMutablePointer(
+        const_cast<const OnDiskHashMappedTrie *>(this)->lookup(Hash));
+  }
+
+  using LazyInsertOnConstructCB =
+      function_ref<void(FileOffset TentativeOffset,
+                        ValueProxy TentativeValue)>;
+  using LazyInsertOnLeakCB =
+      function_ref<void(FileOffset TentativeOffset,
+                        ValueProxy TentativeValue,
+                        FileOffset FinalOffset, ValueProxy FinalValue)>;
+
+  /// Insert lazily.
+  ///
+  /// \p OnConstruct is called when ready to insert a value, after allocating
+  /// space for the data. It is called at most once.
+  ///
+  /// \p OnLeak is called only if \p OnConstruct has been called and a race
+  /// occurred before insertion, causing the tentative offset and data to be
+  /// abandoned. This allows clients to clean up other results or update any
+  /// references.
+  ///
+  /// NOTE: Does *not* guarantee that \p OnConstruct is only called on success.
+  /// The in-memory \a HashMappedTrie uses LazyAtomicPointer to synchronize
+  /// simultaneous writes, but that seems dangerous to use in a memory-mapped
+  /// file in case a process crashes in the busy state.
   pointer insertLazy(const_pointer Hint, ArrayRef<uint8_t> Hash,
-                     function_ref<void(const ValueProxy &)> OnConstruct);
+                     LazyInsertOnConstructCB OnConstruct = nullptr,
+                     LazyInsertOnLeakCB OnLeak = nullptr);
   pointer insertLazy(ArrayRef<uint8_t> Hash,
-                     function_ref<void(const ValueProxy &)> OnConstruct) {
-    return insertLazy(const_pointer(), Hash, OnConstruct);
+                     LazyInsertOnConstructCB OnConstruct = nullptr,
+                     LazyInsertOnLeakCB OnLeak = nullptr);
+    return insertLazy(const_pointer(), Hash, OnConstruct, OnLeak);
   }
 
   pointer insert(const_pointer Hint, const ConstValueProxy &Value) {
@@ -151,8 +245,6 @@ public:
   pointer insert(const ConstValueProxy &Value) {
     return insert(const_pointer(), Value);
   }
-
-  FileOffset getFileOffset(const_pointer P) const;
 
   /// Gets or creates a file at \p Path with a hash-mapped trie named \p
   /// TrieName. The hash size is \p NumHashBits (in bits) and the records store
@@ -193,22 +285,20 @@ private:
 /// Uses 0-padding but does not guarantee 0-termination.
 class OnDiskDataSink {
 public:
-  struct ValueProxy {
-    MutableArrayRef<char> Data;
-    FileOffset Offset;
-  };
+  using ValueProxy = MutableArrayRef<char>;
 
   /// An iterator-like return value for data insertion. Maybe it should be
   /// called \c iterator, but it has no increment.
   class pointer {
   public:
-    explicit operator bool() const { return Value.Offset; }
+    FileOffset getOffset() const { return Offset; }
+    explicit operator bool() const { return Offset; }
     const ProxyT &operator*() const {
-      assert(Value.Offset && "Null dereference");
+      assert(Offset && "Null dereference");
       return Value;
     }
     const ProxyT *operator->() const {
-      assert(Value.Offset && "Null dereference");
+      assert(Offset && "Null dereference");
       return &Value;
     }
 
@@ -216,13 +306,17 @@ public:
 
   private:
     friend class OnDiskDataSink;
-    pointer(ValueProxy) : Value(Value) {}
+    pointer(ValueProxy Value, FileOffset Offset) : Value(Value), Offset(Offset) {}
     ValueProxy Value;
+    FileOffset Offset;
   };
 
   // Look up the data stored at the given offset.
-  char *beginData(FileOffset Offset);
   const char *beginData(FileOffset Offset) const;
+  char *beginData(FileOffset Offset) {
+    return const_cast<char *>(
+        const_cast<const OnDiskDataSink *>(this)->beginData());
+  }
 
   pointer allocate(size_t Size);
   pointer save(ArrayRef<char> Data) {
