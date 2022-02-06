@@ -71,6 +71,7 @@ public:
 
 public:
   struct ConstValueProxy {
+    ConstValueProxy() = default;
     ConstValueProxy(ArrayRef<uint8_t> Hash, ArrayRef<char> Data)
         : Hash(Hash), Data(Data) {}
     ConstValueProxy(ArrayRef<uint8_t> Hash, StringRef Data)
@@ -83,6 +84,7 @@ public:
   struct ValueProxy {
     operator ConstValueProxy() const { return ConstValueProxy(Hash, Data); }
 
+    ValueProxy() = default;
     ValueProxy(ArrayRef<uint8_t> Hash, MutableArrayRef<char> Data)
         : Hash(Hash), Data(Data) {}
 
@@ -95,7 +97,7 @@ private:
     explicit operator ValueProxy() const {
       ValueProxy Value;
       Value.Data = MutableArrayRef<char>(
-          const_cast<const char *>(reinterpret_cast<char *>(P)), I);
+          const_cast<char *>(reinterpret_cast<const char *>(P)), I);
       Value.Hash = ArrayRef<uint8_t>(nullptr, B);
       return Value;
     }
@@ -108,6 +110,8 @@ private:
       assert(Value.Hash.size() <= UINT16_MAX);
       assert(Value.Hash.data() == nullptr);
     }
+
+    HintT(const void *P, uint16_t I, uint16_t B) : P(P), I(I), B(B) {}
 
     const void *P = nullptr;
     uint16_t I = 0;
@@ -125,23 +129,25 @@ public:
 
     const ProxyT &operator*() const {
       assert(IsValue);
-      return Value;
+      return ValueOrHint;
     }
     const ProxyT *operator->() const {
       assert(IsValue);
-      return &Value;
+      return &ValueOrHint;
     }
 
     PointerImpl() = default;
 
   protected:
     PointerImpl(FileOffset Offset, ProxyT Value)
-        : Value(Value), Offset((uint64_t)Offset.get()), IsValue(true) {
-      checkOffset(Offset);
-    }
+        : PointerImpl(Value, Offset, /*IsHint=*/false, /*IsValue=*/true) {}
 
     explicit PointerImpl(FileOffset Offset, HintT H)
-        : Value(H), Offset((uint64_t)Offset.get()), IsHint(true) {
+        : PointerImpl(ValueProxy(H), Offset, /*IsHint=*/true, /*IsValue=*/false) {}
+
+    PointerImpl(ProxyT ValueOrHint, FileOffset Offset, bool IsHint, bool IsValue)
+        : ValueOrHint(ValueOrHint), OffsetLow32((uint64_t)Offset.get()),
+          OffsetHigh16((uint64_t)Offset.get() >> 32), IsHint(IsHint), IsValue(IsValue) {
       checkOffset(Offset);
     }
 
@@ -153,14 +159,14 @@ public:
     Optional<HintT> getHint(const OnDiskHashMappedTrie &This) const {
       if (!IsHint)
         return None;
-      HintT H(Value);
+      HintT H(ValueOrHint);
       assert(H.P == &This && "Expected hint to be for This");
       if (H.P != &This)
         return None;
       return H;
     }
 
-    ProxyT Value;
+    ProxyT ValueOrHint;
     uint32_t OffsetLow32 = 0;
     uint16_t OffsetHigh16 = 0;
     bool IsHint = false;
@@ -168,7 +174,7 @@ public:
   };
 
   class pointer;
-  class const_pointer : public PointerImpl<ValueProxy> {
+  class const_pointer : public PointerImpl<ConstValueProxy> {
   public:
     const_pointer() = default;
 
@@ -178,24 +184,27 @@ public:
     using const_pointer::PointerImpl::PointerImpl;
   };
 
-  class pointer : public PointerImpl<ConstValueProxy> {
+  class pointer : public PointerImpl<ValueProxy> {
   public:
-    operator const_pointer() const { return const_pointer(Value); }
+    operator const_pointer() const {
+      return const_pointer(ValueOrHint, getOffset(), IsHint, IsValue);
+    }
+
     pointer() = default;
 
   private:
     friend class OnDiskHashMappedTrie;
     using pointer::PointerImpl::PointerImpl;
-
-    explicit pointer(const_pointer P) :
   };
 
-  pointer getMutablePointer(const_pointer) {
-    if (Optional<HintT> H = CP.getHint())
+  pointer getMutablePointer(const_pointer CP) {
+    if (Optional<HintT> H = CP.getHint(*this))
       return pointer(CP.getOffset(), *H);
-    if (CP)
-      return pointer(CP.getOffset(), *CP);
-    return pointer();
+    if (!CP)
+      return pointer();
+    ValueProxy V{CP->Hash, makeMutableArrayRef(
+        const_cast<char *>(CP->Data.data()), CP->Data.size())};
+    return pointer(CP.getOffset(), V);
   }
 
   const_pointer lookup(ArrayRef<uint8_t> Hash) const;
@@ -231,12 +240,12 @@ public:
                      LazyInsertOnLeakCB OnLeak = nullptr);
   pointer insertLazy(ArrayRef<uint8_t> Hash,
                      LazyInsertOnConstructCB OnConstruct = nullptr,
-                     LazyInsertOnLeakCB OnLeak = nullptr);
+                     LazyInsertOnLeakCB OnLeak = nullptr) {
     return insertLazy(const_pointer(), Hash, OnConstruct, OnLeak);
   }
 
   pointer insert(const_pointer Hint, const ConstValueProxy &Value) {
-    return insertLazy(Hint, Value.Hash, [&](const ValueProxy &Allocated) {
+    return insertLazy(Hint, Value.Hash, [&](FileOffset, ValueProxy Allocated) {
       assert(Allocated.Hash == Value.Hash);
       assert(Allocated.Data.size() == Value.Data.size());
       llvm::copy(Value.Data, Allocated.Data.begin());
@@ -283,7 +292,7 @@ private:
 /// Sink for data. Stores variable length data with 8-byte alignment. Does not
 /// track size of data, which is assumed to known from context, or embedded.
 /// Uses 0-padding but does not guarantee 0-termination.
-class OnDiskDataSink {
+class OnDiskDataAllocator {
 public:
   using ValueProxy = MutableArrayRef<char>;
 
@@ -292,12 +301,12 @@ public:
   class pointer {
   public:
     FileOffset getOffset() const { return Offset; }
-    explicit operator bool() const { return Offset; }
-    const ProxyT &operator*() const {
+    explicit operator bool() const { return bool(getOffset()); }
+    const ValueProxy &operator*() const {
       assert(Offset && "Null dereference");
       return Value;
     }
-    const ProxyT *operator->() const {
+    const ValueProxy *operator->() const {
       assert(Offset && "Null dereference");
       return &Value;
     }
@@ -305,17 +314,17 @@ public:
     pointer() = default;
 
   private:
-    friend class OnDiskDataSink;
-    pointer(ValueProxy Value, FileOffset Offset) : Value(Value), Offset(Offset) {}
-    ValueProxy Value;
+    friend class OnDiskDataAllocator;
+    pointer(FileOffset Offset, ValueProxy Value) : Offset(Offset), Value(Value) {}
     FileOffset Offset;
+    ValueProxy Value;
   };
 
   // Look up the data stored at the given offset.
   const char *beginData(FileOffset Offset) const;
   char *beginData(FileOffset Offset) {
     return const_cast<char *>(
-        const_cast<const OnDiskDataSink *>(this)->beginData());
+        const_cast<const OnDiskDataAllocator *>(this)->beginData(Offset));
   }
 
   pointer allocate(size_t Size);
@@ -328,21 +337,22 @@ public:
     return save(ArrayRef<char>(Data.begin(), Data.size()));
   }
 
-  static Expected<OnDiskDataSink> create(const Twine &Path, StringRef Name,
-                                          uint64_t MaxMapSize);
+  static Expected<OnDiskDataAllocator> create(const Twine &Path, const Twine &TableName,
+                                              uint64_t MaxMapSize,
+                                              Optional<uint64_t> NewFileInitialSize);
 
-  OnDiskDataSink(OnDiskDataSink &&RHS);
-  OnDiskDataSink &operator=(OnDiskDataSink &&RHS);
+  OnDiskDataAllocator(OnDiskDataAllocator &&RHS);
+  OnDiskDataAllocator &operator=(OnDiskDataAllocator &&RHS);
 
   // No copy. Just call \a create() again.
-  OnDiskDataSink(const OnDiskDataSink &) = delete;
-  OnDiskDataSink &operator=(const OnDiskDataSink &) = delete;
+  OnDiskDataAllocator(const OnDiskDataAllocator &) = delete;
+  OnDiskDataAllocator &operator=(const OnDiskDataAllocator &) = delete;
 
-  ~OnDiskDataSink();
+  ~OnDiskDataAllocator();
 
 private:
   struct ImplType;
-  explicit OnDiskDataSink(std::unique_ptr<ImplType> Impl);
+  explicit OnDiskDataAllocator(std::unique_ptr<ImplType> Impl);
   std::unique_ptr<ImplType> Impl;
 };
 

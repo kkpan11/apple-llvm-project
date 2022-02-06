@@ -302,6 +302,11 @@ public:
         }));
   }
 
+  pointer insertLazy(ArrayRef<uint8_t> Hash,
+                     function_ref<void(LazyValueConstructor)> OnConstruct) {
+    return insertLazy(const_pointer(), Hash, OnConstruct);
+  }
+
   pointer insert(const_pointer Hint, value_type &&HashedData) {
     return insertLazy(Hint, HashedData.Hash,
                                    [&](LazyValueConstructor C) {
