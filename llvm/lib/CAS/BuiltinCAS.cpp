@@ -2338,6 +2338,55 @@ int64_t DataRecordHandle::getDataRelOffset() const {
 
 void OnDiskCAS::print(raw_ostream &OS) const {
   OS << "on-disk-root-path: " << RootPath << "\n";
+
+  OS << "\n";
+  OS << "index:\n";
+  Index.print(OS, [&](ArrayRef<char> Data) {
+    assert(Data.size() == sizeof(TrieRecord));
+    assert(isAligned(Align::Of<TrieRecord>(), Data.size()));
+    auto *R = reinterpret_cast<const TrieRecord *>(Data.data());
+    TrieRecord::Data D = R->load();
+    OS << "OK=";
+    switch (D.OK) {
+    case TrieRecord::ObjectKind::Invalid:
+      OS << "invalid";
+      break;
+    case TrieRecord::ObjectKind::Node:
+      OS << "node   ";
+      break;
+    case TrieRecord::ObjectKind::Blob:
+      OS << "blob   ";
+      break;
+    case TrieRecord::ObjectKind::Tree:
+      OS << "tree   ";
+      break;
+    case TrieRecord::ObjectKind::String:
+      OS << "string ";
+      break;
+    }
+    OS << " SK=";
+    switch (D.SK) {
+    case TrieRecord::StorageKind::Unknown:
+      OS << "unknown          ";
+      break;
+    case TrieRecord::StorageKind::DataPool:
+      OS << "datapool         ";
+      break;
+    case TrieRecord::StorageKind::DataPoolString2B:
+      OS << "datapool-string2B";
+      break;
+    case TrieRecord::StorageKind::Standalone:
+      OS << "standalone-data  ";
+      break;
+    case TrieRecord::StorageKind::StandaloneBlob:
+      OS << "standalone-blob  ";
+      break;
+    case TrieRecord::StorageKind::StandaloneBlob0:
+      OS << "standalone-blob0 ";
+      break;
+    }
+    OS << " Offset=" << (void *)D.Offset.get();
+  });
 }
 
 OnDiskCAS::IndexProxy OnDiskCAS::indexHash(ArrayRef<uint8_t> Hash) {
@@ -2595,12 +2644,14 @@ OnDiskCAS::getObjectProxy(IndexProxy I) const {
   case TrieRecord::StorageKind::DataPool: {
     DataRecordHandle Handle =
         DataRecordHandle::get(DataPool.beginData(Object.Offset));
+    assert(Handle.getData().end()[0] == 0 && "Null termination");
     return ObjectProxy{Object, I.Hash, Handle, None};
   }
 
   case TrieRecord::StorageKind::DataPoolString2B: {
     String2BHandle Handle =
         String2BHandle::get(DataPool.beginData(Object.Offset));
+    assert(Handle.getString().end()[0] == 0 && "Null termination");
     return ObjectProxy{Object, I.Hash, None, toArrayRef(Handle.getString())};
   }
 
@@ -2618,6 +2669,8 @@ OnDiskCAS::getObjectProxy(IndexProxy I) const {
 
   // Helper for creating the return.
   auto createProxy = [&](MemoryBufferRef Buffer) -> ObjectProxy {
+    assert(Buffer.getBuffer().drop_back(Blob0).end()[0] == 0 &&
+           "Null termination");
     if (Blob)
       return ObjectProxy{Object, I.Hash, None,
                          toArrayRef(Buffer.getBuffer().drop_back(Blob0))};
@@ -2678,9 +2731,11 @@ OnDiskCAS::createStandaloneBlob(IndexProxy &I, ArrayRef<char> Data) {
   Expected<MappedTempFile> File = createTempFile(Path, FileSize);
   if (!File)
     return File.takeError();
+  assert(File->size() == (uint64_t)FileSize);
   llvm::copy(Data, File->data());
   if (Blob0)
     File->data()[Data.size()] = 0;
+  assert(File->data()[Data.size()] == 0);
   if (Error E = File->keep(Path))
     return std::move(E);
 
@@ -2809,6 +2864,8 @@ OnDiskCAS::getOrCreateDataRecord(IndexProxy &I, TrieRecord::ObjectKind OK,
   if (Error E =
           DataRecordHandle::createWithError(Alloc, Input).moveInto(Record))
     return std::move(E);
+  assert(Record.getData().end()[0] == 0 && "Expected null-termination");
+  assert(Record.getData() == Input.Data && "Expected initialization");
   assert(SK != TrieRecord::StorageKind::Unknown);
   assert(bool(File) != bool(PoolOffset) &&
          "Expected either a mapped file or a pooled offset");

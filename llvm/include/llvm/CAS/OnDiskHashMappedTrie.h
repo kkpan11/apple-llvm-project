@@ -11,6 +11,7 @@
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/FileSystem.h"
@@ -65,7 +66,9 @@ private:
 class OnDiskHashMappedTrie {
 public:
   LLVM_DUMP_METHOD void dump() const;
-  void print(raw_ostream &OS) const;
+  void
+  print(raw_ostream &OS,
+        function_ref<void(ArrayRef<char>)> PrintRecordData = nullptr) const;
 
 public:
   struct ConstValueProxy {
