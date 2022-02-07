@@ -14,7 +14,6 @@
 #include "llvm/CAS/BuiltinObjectHasher.h"
 #include "llvm/CAS/CASDB.h"
 #include "llvm/CAS/HashMappedTrie.h"
-#include "llvm/CAS/LazyMappedFileRegionBumpPtr.h"
 #include "llvm/CAS/OnDiskHashMappedTrie.h"
 #include "llvm/CAS/ThreadSafeAllocator.h"
 #include "llvm/Support/Allocator.h"
@@ -1510,12 +1509,6 @@ struct DataRecordHandle {
     FileOffset TrieRecordOffset;
     InternalRefArrayRef Refs;
     ArrayRef<char> Data;
-
-    size_t getSizeUpperBound() const {
-      return sizeof(Header) + sizeof(uint64_t) * 2 +
-             +sizeof(InternalRef) * Refs.size() +
-             alignTo(Data.size(), Align(8));
-    }
   };
 
   LayoutFlags getLayoutFlags() const {
@@ -2339,6 +2332,12 @@ int64_t DataRecordHandle::getDataRelOffset() const {
 void OnDiskCAS::print(raw_ostream &OS) const {
   OS << "on-disk-root-path: " << RootPath << "\n";
 
+  struct PoolInfo {
+    bool IsString2B;
+    int64_t Offset;
+  };
+  SmallVector<PoolInfo> Pool;
+
   OS << "\n";
   OS << "index:\n";
   Index.print(OS, [&](ArrayRef<char> Data) {
@@ -2371,9 +2370,11 @@ void OnDiskCAS::print(raw_ostream &OS) const {
       break;
     case TrieRecord::StorageKind::DataPool:
       OS << "datapool         ";
+      Pool.push_back({/*IsString2B=*/false, D.Offset.get()});
       break;
     case TrieRecord::StorageKind::DataPoolString2B:
       OS << "datapool-string2B";
+      Pool.push_back({/*IsString2B=*/true, D.Offset.get()});
       break;
     case TrieRecord::StorageKind::Standalone:
       OS << "standalone-data  ";
@@ -2387,6 +2388,30 @@ void OnDiskCAS::print(raw_ostream &OS) const {
     }
     OS << " Offset=" << (void *)D.Offset.get();
   });
+  if (Pool.empty())
+    return;
+
+  OS << "\n";
+  OS << "pool:\n";
+  llvm::sort(
+      Pool, [](PoolInfo LHS, PoolInfo RHS) { return LHS.Offset < RHS.Offset; });
+  for (PoolInfo PI : Pool) {
+    OS << "- addr=" << (void *)PI.Offset << " ";
+    if (PI.IsString2B) {
+      auto S = String2BHandle::get(DataPool.beginData(FileOffset(PI.Offset)));
+      OS << "string length=" << S.getLength();
+      OS << " end="
+         << (void *)(PI.Offset + sizeof(String2BHandle::Header) +
+                     S.getLength() + 1)
+         << "\n";
+      continue;
+    }
+    DataRecordHandle D =
+        DataRecordHandle::get(DataPool.beginData(FileOffset(PI.Offset)));
+    OS << "record refs=" << D.getNumRefs() << " data=" << D.getDataSize()
+       << " size=" << D.getTotalSize()
+       << " end=" << (void *)(PI.Offset + D.getTotalSize()) << "\n";
+  }
 }
 
 OnDiskCAS::IndexProxy OnDiskCAS::indexHash(ArrayRef<uint8_t> Hash) {
