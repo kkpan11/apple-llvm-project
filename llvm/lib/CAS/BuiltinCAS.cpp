@@ -100,56 +100,17 @@ moveValueInto(Expected<Optional<T>> ExpectedOptional, SinkT &Sink) {
   return None;
 }
 
-/// Simple thread-safe access.
-template <class MapT, size_t NumShards> class ThreadSafeMap {
-  static_assert(isPowerOf2_64(NumShards), "Expected power of 2");
-
-public:
-  using MapType = MapT;
-  template <class ReturnT>
-  auto withLock(size_t Shard, function_ref<ReturnT(MapT &)> CB) {
-    auto &S = getShard(Shard);
-    std::lock_guard<std::mutex> Lock(S.Mutex);
-    return CB(S.Map);
-  }
-  template <class ReturnT>
-  auto withLock(size_t Shard, function_ref<ReturnT(const MapT &)> CB) const {
-    auto &S = getShard(Shard);
-    std::lock_guard<std::mutex> Lock(S.Mutex);
-    return CB(S.Map);
-  }
-
-private:
-  struct Shard {
-    MapT Map;
-    mutable std::mutex Mutex;
-  };
-  Shard &getShard(size_t S) {
-    return const_cast<Shard &>(
-        const_cast<const ThreadSafeMap *>(this)->getShard(S));
-  }
-  const Shard &getShard(size_t S) const {
-    static_assert(NumShards <= 256, "Expected only 8 bits of shard");
-    return Shards[S % NumShards];
-  }
-
-  Shard Shards[NumShards];
-};
-
 } // end anonymous namespace
 
 namespace {
 
-template <typename T> static T reportAsFatalIfError(Expected<T> ValOrErr) {
-  if (!ValOrErr)
-    report_fatal_error(ValOrErr.takeError());
-  return std::move(*ValOrErr);
+static StringRef toStringRef(ArrayRef<char> Data) {
+  return StringRef(Data.data(), Data.size());
 }
 
-// static void reportAsFatalIfError(Error E) {
-//   if (E)
-//     report_fatal_error(std::move(E));
-// }
+static ArrayRef<char> toArrayRef(StringRef Data) {
+  return ArrayRef<char>(Data.data(), Data.size());
+}
 
 class BuiltinCAS : public CASDB {
 public:
@@ -173,7 +134,10 @@ public:
                  ArrayRef<NamedTreeEntry> SortedEntries) = 0;
 
   Expected<NodeRef> createNode(ArrayRef<CASID> References,
-                               ArrayRef<char> Data) final;
+                               StringRef Data) final {
+    return createNode(References, toArrayRef(Data));
+  }
+  Expected<NodeRef> createNode(ArrayRef<CASID> References, ArrayRef<char> Data);
   virtual Expected<NodeRef> createNodeImpl(ArrayRef<uint8_t> ComputedHash,
                                            ArrayRef<CASID> References,
                                            ArrayRef<char> Data) = 0;
@@ -249,14 +213,6 @@ using HasherT = SHA1;
 using HashType = decltype(HasherT::hash(std::declval<ArrayRef<uint8_t> &>()));
 
 } // end anonymous namespace
-
-static StringRef toStringRef(ArrayRef<char> Data) {
-  return StringRef(Data.data(), Data.size());
-}
-
-static ArrayRef<char> toArrayRef(StringRef Data) {
-  return ArrayRef<char>(Data.data(), Data.size());
-}
 
 static StringRef getCASIDPrefix() { return "~{CASFS}:"; }
 
@@ -3191,12 +3147,13 @@ Expected<std::unique_ptr<OnDiskCAS>> OnDiskCAS::open(StringRef AbsPath) {
   if (std::error_code EC = sys::fs::create_directories(AbsPath))
     return createFileError(AbsPath, EC);
 
+  const StringRef Slash = sys::path::get_separator();
   constexpr uint64_t MB = 1024ull * 1024ull;
   constexpr uint64_t GB = 1024ull * 1024ull * 1024ull;
   Optional<OnDiskHashMappedTrie> Index;
   if (Error E = OnDiskHashMappedTrie::create(
-                    AbsPath.str() + "/" + FilePrefix + IndexFile,
-                    IndexTableName, sizeof(HashType) * 8,
+                    AbsPath + Slash + FilePrefix + IndexFile, IndexTableName,
+                    sizeof(HashType) * 8,
                     /*DataSize=*/sizeof(TrieRecord), /*MaxFileSize=*/GB,
                     /*MinFileSize=*/MB)
                     .moveInto(Index))
@@ -3205,14 +3162,14 @@ Expected<std::unique_ptr<OnDiskCAS>> OnDiskCAS::open(StringRef AbsPath) {
   Optional<OnDiskDataAllocator> DataPool;
   if (Error E =
           OnDiskDataAllocator::create(
-              AbsPath.str() + "/" + FilePrefix + DataPoolFile,
-              DataPoolTableName, /*MaxFileSize=*/16 * GB, /*MinFileSize=*/MB)
+              AbsPath + Slash + FilePrefix + DataPoolFile, DataPoolTableName,
+              /*MaxFileSize=*/16 * GB, /*MinFileSize=*/MB)
               .moveInto(DataPool))
     return std::move(E);
 
   Optional<OnDiskHashMappedTrie> ActionCache;
   if (Error E = OnDiskHashMappedTrie::create(
-                    AbsPath.str() + "/" + FilePrefix + ActionCacheFile,
+                    AbsPath + Slash + FilePrefix + ActionCacheFile,
                     ActionCacheTableName, sizeof(HashType) * 8,
                     /*DataSize=*/sizeof(ActionCacheResultT), /*MaxFileSize=*/GB,
                     /*MinFileSize=*/MB)

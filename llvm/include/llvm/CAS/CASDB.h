@@ -154,15 +154,8 @@ public:
   virtual Expected<TreeRef>
   createTree(ArrayRef<NamedTreeEntry> Entries = None) = 0;
 
-  Expected<NodeRef> createNode(ArrayRef<CASID> References, StringRef Data) {
-    return createNode(References, makeArrayRef(Data.data(), Data.size()));
-  }
-  Expected<NodeRef> createNode(ArrayRef<CASID> References,
-                               const SmallVectorImpl<char> &Data) {
-    return createNode(References, makeArrayRef(Data));
-  }
   virtual Expected<NodeRef> createNode(ArrayRef<CASID> References,
-                                       ArrayRef<char> Data) = 0;
+                                       StringRef Data) = 0;
 
   /// Default implementation reads \p FD and calls \a createBlob(). Does not
   /// take ownership of \p FD; the caller is responsible for closing it.
