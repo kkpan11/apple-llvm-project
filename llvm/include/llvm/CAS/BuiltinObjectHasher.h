@@ -10,6 +10,8 @@
 #define LLVM_CAS_BUILTINOBJECTHASHER_H
 
 #include "llvm/ADT/StringRef.h"
+#include "llvm/CAS/CASDB.h"
+#include "llvm/CAS/TreeEntry.h"
 #include "llvm/Support/Endian.h"
 
 namespace llvm {
