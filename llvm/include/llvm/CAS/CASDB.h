@@ -149,13 +149,7 @@ public:
 
   Error getPrintedCASID(CASID ID, SmallVectorImpl<char> &Reference) const;
 
-  Expected<BlobRef> createBlob(StringRef Data) {
-    return createBlob(makeArrayRef(Data.data(), Data.size()));
-  }
-  Expected<BlobRef> createBlob(const SmallVectorImpl<char> &Data) {
-    return createBlob(makeArrayRef(Data));
-  }
-  virtual Expected<BlobRef> createBlob(ArrayRef<char> Data) = 0;
+  virtual Expected<BlobRef> createBlob(StringRef Data) = 0;
 
   virtual Expected<TreeRef>
   createTree(ArrayRef<NamedTreeEntry> Entries = None) = 0;

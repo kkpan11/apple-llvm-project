@@ -186,7 +186,10 @@ public:
     return createBlobImpl(ComputedHash, makeArrayRef(Map.data(), Map.size()));
   }
 
-  Expected<BlobRef> createBlob(ArrayRef<char> Data) final;
+  Expected<BlobRef> createBlob(StringRef Data) final {
+    return createBlob(makeArrayRef(Data.data(), Data.size()));
+  }
+  Expected<BlobRef> createBlob(ArrayRef<char> Data);
   virtual Expected<BlobRef> createBlobImpl(ArrayRef<uint8_t> ComputedHash,
                                            ArrayRef<char> Data) = 0;
 
@@ -581,6 +584,7 @@ private:
   InMemoryRefNode(const InMemoryIndexValueT &I,
                   ArrayRef<const InMemoryObject *> Refs, ArrayRef<char> Data)
       : InMemoryNode(KindValue, I), Refs(Refs), Data(Data) {
+    assert(isAddrAligned(Align(8), this) && "Expected 8-byte alignment");
     assert(isAddrAligned(Align(8), Data.data()) && "Expected 8-byte alignment");
     assert(*Data.end() == 0 && "Expected null-termination");
   }
@@ -966,7 +970,7 @@ Expected<NodeRef> InMemoryCAS::createNodeImpl(ArrayRef<uint8_t> ComputedHash,
     return Objects.Allocate(Size, alignof(InMemoryObject));
   };
   auto Generator = [&]() -> const InMemoryObject * {
-    return &InMemoryRefNode::create(Allocator, I, InternalRefs, Data);
+    return &InMemoryInlineNode::create(Allocator, I, InternalRefs, Data);
   };
   return getNodeRef(I.Data.loadOrGenerate(Generator));
 }
@@ -1206,6 +1210,10 @@ public:
     return InternalRef((uint64_t)Kind << NumOffsetBits | Offset.get());
   }
 
+  friend bool operator==(const InternalRef &LHS, const InternalRef &RHS) {
+    return LHS.Data == RHS.Data;
+  }
+
 private:
   InternalRef(OffsetKind Kind, FileOffset Offset)
       : Data((uint64_t)Kind << NumOffsetBits | Offset.get()) {
@@ -1314,6 +1322,10 @@ public:
     uintptr_t Is4B : 1;
     mutable Optional<InternalRef> Ref;
   };
+
+  bool operator==(const InternalRefArrayRef &RHS) const {
+    return size() == RHS.size() && std::equal(begin(), end(), RHS.begin());
+  }
 
   iterator begin() const {
     if (auto *Ref = Begin.dyn_cast<const InternalRef4B *>())
@@ -2073,18 +2085,20 @@ DataRecordHandle DataRecordHandle::constructImpl(char *Mem, const Input &I,
   // Construct DataSize.
   switch (L.Flags.DataSize) {
   case DataSizeFlags::Uses1B:
+    assert(I.Data.size() <= UINT8_MAX);
     Packed |= (uint64_t)I.Data.size() << 48;
     break;
   case DataSizeFlags::Uses2B:
+    assert(I.Data.size() <= UINT16_MAX);
     Packed |= (uint64_t)I.Data.size() << 32;
     break;
   case DataSizeFlags::Uses4B:
-    assert(isAligned(Align(4), Next - Mem));
+    assert(isAddrAligned(Align(4), Next));
     new (Next) uint32_t(I.Data.size());
     Next += 4;
     break;
   case DataSizeFlags::Uses8B:
-    assert(isAligned(Align(8), Next - Mem));
+    assert(isAddrAligned(Align(8), Next));
     new (Next) uint64_t(I.Data.size());
     Next += 8;
     break;
@@ -2098,18 +2112,20 @@ DataRecordHandle DataRecordHandle::constructImpl(char *Mem, const Input &I,
   case NumRefsFlags::Uses0B:
     break;
   case NumRefsFlags::Uses1B:
+    assert(I.Refs.size() <= UINT8_MAX);
     Packed |= (uint64_t)I.Refs.size() << 48;
     break;
   case NumRefsFlags::Uses2B:
+    assert(I.Refs.size() <= UINT16_MAX);
     Packed |= (uint64_t)I.Refs.size() << 32;
     break;
   case NumRefsFlags::Uses4B:
-    assert(isAligned(Align(4), Next - Mem));
+    assert(isAddrAligned(Align(4), Next));
     new (Next) uint32_t(I.Refs.size());
     Next += 4;
     break;
   case NumRefsFlags::Uses8B:
-    assert(isAligned(Align(8), Next - Mem));
+    assert(isAddrAligned(Align(8), Next));
     new (Next) uint64_t(I.Refs.size());
     Next += 8;
     break;
@@ -2119,14 +2135,14 @@ DataRecordHandle DataRecordHandle::constructImpl(char *Mem, const Input &I,
   if (!I.Refs.empty()) {
     if (L.Flags.RefKind == RefKindFlags::InternalRef4B) {
       assert(I.Refs.is4B());
-      assert(isAligned(Align::Of<InternalRef4B>(), Next - Mem));
+      assert(isAddrAligned(Align::Of<InternalRef4B>(), Next));
       for (InternalRef4B Ref : *I.Refs.getAs4B()) {
         new (Next) InternalRef4B(Ref);
         Next += sizeof(InternalRef4B);
       }
     } else {
       assert(I.Refs.is8B());
-      assert(isAligned(Align::Of<InternalRef>(), Next - Mem));
+      assert(isAddrAligned(Align::Of<InternalRef>(), Next));
       for (InternalRef Ref : *I.Refs.getAs8B()) {
         new (Next) InternalRef(Ref);
         Next += sizeof(InternalRef);
@@ -2135,18 +2151,26 @@ DataRecordHandle DataRecordHandle::constructImpl(char *Mem, const Input &I,
   }
 
   // Construct Data and the trailing null.
-  assert(isAligned(Align(8), Next - Mem));
+  assert(isAddrAligned(Align(8), Next));
   llvm::copy(I.Data, Next);
   Next[I.Data.size()] = 0;
 
   // Construct the header itself and return.
   Header *H = new (Mem) Header{Packed};
-  return DataRecordHandle(*H);
+  DataRecordHandle Record(*H);
+  assert(Record.getData() == I.Data);
+  assert(Record.getNumRefs() == I.Refs.size());
+  assert(Record.getRefs() == I.Refs);
+  assert(Record.getLayoutFlags().DataSize == L.Flags.DataSize);
+  assert(Record.getLayoutFlags().NumRefs == L.Flags.NumRefs);
+  assert(Record.getLayoutFlags().RefKind == L.Flags.RefKind);
+  assert(Record.getLayoutFlags().TrieOffset == L.Flags.TrieOffset);
+  return Record;
 }
 
 DataRecordHandle::Layout::Layout(const Input &I) {
   // Start initial relative offsets right after the Header.
-  uint64_t RelOffset = sizeof(uint64_t);
+  uint64_t RelOffset = sizeof(Header);
 
   // Initialize the easy stuff.
   DataSize = I.Data.size();
@@ -2240,7 +2264,6 @@ DataRecordHandle::Layout::Layout(const Input &I) {
       GrowSizeFieldsBy4B();
     RefsRelOffset = RelOffset;
     RelOffset += RefListSize;
-    RelOffset += 4 * NumRefs;
   }
 
   assert(isAligned(Align(8), RelOffset));
@@ -2517,6 +2540,7 @@ OnDiskCAS::getString(IndexProxy I) const {
   Optional<OnDiskCAS::ObjectProxy> OP;
   if (Optional<Expected<NoneType>> E = moveValueInto(getObjectProxy(I), OP))
     return std::move(*E);
+  assert(OP);
 
   assert(bool(OP->Record) != bool(OP->Bytes));
   if (OP->Bytes)
@@ -2533,6 +2557,7 @@ OnDiskCAS::getBlob(IndexProxy I) const {
   Optional<OnDiskCAS::ObjectProxy> OP;
   if (Optional<Expected<NoneType>> E = moveValueInto(getObjectProxy(I), OP))
     return std::move(*E);
+  assert(OP);
 
   assert(bool(OP->Record) != bool(OP->Bytes));
   if (OP->Bytes)
@@ -2589,7 +2614,7 @@ OnDiskCAS::getObjectProxy(IndexProxy I) const {
     break;
   }
 
-  assert(!I.Offset && "Unexpected offset for standalone objects");
+  assert(!Object.Offset && "Unexpected offset for standalone objects");
 
   // Helper for creating the return.
   auto createProxy = [&](MemoryBufferRef Buffer) -> ObjectProxy {
@@ -2651,6 +2676,8 @@ OnDiskCAS::createStandaloneBlob(IndexProxy &I, ArrayRef<char> Data) {
 
   // write the file.
   Expected<MappedTempFile> File = createTempFile(Path, FileSize);
+  if (!File)
+    return File.takeError();
   llvm::copy(Data, File->data());
   if (Blob0)
     File->data()[Data.size()] = 0;
