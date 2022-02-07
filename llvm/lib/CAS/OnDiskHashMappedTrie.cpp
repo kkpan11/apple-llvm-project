@@ -594,7 +594,43 @@ HashMappedTrieHandle::createRecord(LazyMappedFileRegionBumpPtr &Alloc,
 }
 
 OnDiskHashMappedTrie::const_pointer
-OnDiskHashMappedTrie::lookup(ArrayRef<uint8_t> Hash) const {
+OnDiskHashMappedTrie::recoverFromHashPointer(const uint8_t *HashBeginPtr) const {
+  // Record hashes occur immediately after data. Compute the beginning of the
+  // record and check for overflow.
+  const uintptr_t HashBegin = reinterpret_cast<uintptr_t>(HashBeginPtr);
+  const uintptr_t RecordBegin = HashBegin - Impl->Trie.getRecordSize();
+  if (HashBegin < RecordBegin)
+    return const_pointer();
+
+  // Check that it'll be a positive offset.
+  const uintptr_t FileBegin = reinterpret_cast<uintptr_t>(Impl->File.getRegion().data());
+  if (RecordBegin < FileBegin)
+    return const_pointer();
+
+  // Good enough to form an offset. Continue checking there.
+  return recoverFromFileOffset(FileOffset(RecordBegin - FileBegin));
+}
+
+OnDiskHashMappedTrie::const_pointer
+OnDiskHashMappedTrie::recoverFromFileOffset(FileOffset Offset) const {
+  // Check alignment.
+  if (!isAligned(LazyMappedFileRegionBumpPtr::getAlign(), Offset.get()))
+    return const_pointer();
+
+  // Check bounds.
+  const uint64_t CurrentFileSize = Impl->File.getAlloc().size();
+  if (Offset.get() > CurrentFileSize ||
+      Offset.get() + Impl->Trie.getRecordSize() >= CurrentFileSize)
+    return const_pointer();
+
+  // Looks okay...
+  HashMappedTrieHandle::RecordData D =
+      Impl->Trie.getRecord(SubtrieSlotValue::getDataOffset(Offset));
+  return const_pointer(D.getFileOffset(), D.Proxy);
+}
+
+OnDiskHashMappedTrie::const_pointer
+OnDiskHashMappedTrie::find(ArrayRef<uint8_t> Hash) const {
   HashMappedTrieHandle Trie = Impl->Trie;
   assert(Hash.size() == Trie.getNumHashBits() && "Invalid hash");
 

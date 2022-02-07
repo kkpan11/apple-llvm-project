@@ -29,9 +29,6 @@ enum class StableTreeEntryKind : uint8_t {
   Symlink = 4,
 };
 
-static StableTreeEntryKind getStableKind(StableTreeEntryKind Kind) {
-  return Kind;
-}
 static StableTreeEntryKind getStableKind(TreeEntry::EntryKind Kind) {
   switch (Kind) {
   case TreeEntry::Tree:
@@ -42,6 +39,19 @@ static StableTreeEntryKind getStableKind(TreeEntry::EntryKind Kind) {
     return StableTreeEntryKind::Executable;
   case TreeEntry::Symlink:
     return StableTreeEntryKind::Symlink;
+  }
+}
+
+static TreeEntry::EntryKind getUnstableKind(StableTreeEntryKind Kind) {
+  switch (Kind) {
+  case StableTreeEntryKind::Tree:
+    return TreeEntry::Tree;
+  case StableTreeEntryKind::Regular:
+    return TreeEntry::Regular;
+  case StableTreeEntryKind::Executable:
+    return TreeEntry::Executable;
+  case   StableTreeEntryKind::Symlink:
+    return TreeEntry::Symlink;
   }
 }
 
@@ -75,8 +85,8 @@ public:
 protected:
   ~BuiltinObjectHasher() { assert(!Hasher); }
 
-  HashT start(ObjectKind Kind) { return start(getStableKind(Kind)); }
-  HashT start(StableObjectKind Kind) {
+  void start(ObjectKind Kind) { start(getStableKind(Kind)); }
+  void start(StableObjectKind Kind) {
     assert(!Hasher);
     Hasher.emplace();
     updateKind(Kind);
@@ -84,7 +94,7 @@ protected:
 
   HashT finish() {
     assert(Hasher);
-    StringRef Final = Hasher.final();
+    StringRef Final = Hasher->final();
     auto *Begin = reinterpret_cast<const uint8_t *>(Final.begin());
     HashT Hash;
     std::copy(Begin, Begin + Final.size(), Hash.data());
@@ -93,33 +103,32 @@ protected:
   }
 
   template <class KindT> void updateKind(KindT Kind) {
-    Hasher.update(serializeKind(Kind));
+    Hasher->update(serializeKind(Kind));
   }
 
   void updateString(StringRef String) {
-    updateSize(String.size());
-    Hasher.update(String);
+    updateArray(makeArrayRef(String.data(), String.size()));
   }
 
   void updateHash(ArrayRef<uint8_t> Hash) {
     assert(Hash.size() == sizeof(HashT));
-    Hasher.update(Hash);
+    Hasher->update(Hash);
   }
 
   void updateArray(ArrayRef<uint8_t> Bytes) {
     updateSize(Bytes.size());
-    Hasher.update(Bytes);
+    Hasher->update(Bytes);
   }
 
   void updateArray(ArrayRef<char> Bytes) {
-    updateSize(Bytes.size());
-    Hasher.update(Bytes);
+    updateArray(makeArrayRef(reinterpret_cast<const uint8_t *>(Bytes.data()),
+                             Bytes.size()));
   }
 
   void updateSize(uint64_t Size) {
     std::array<uint8_t, sizeof(uint64_t)> Bytes;
     llvm::support::endian::write(Bytes.data(), Size, support::endianness::little);
-    Hasher.update(Bytes);
+    Hasher->update(Bytes);
   }
 
 private:
@@ -150,7 +159,7 @@ public:
 template <class HasherT> class BuiltinNodeHasher : public BuiltinObjectHasher<HasherT> {
 public:
   void start(size_t NumRefs) {
-    this->start(ObjectKind::Node);
+    BuiltinNodeHasher::BuiltinObjectHasher::start(ObjectKind::Node);
     this->updateSize(NumRefs);
     RemainingRefs = NumRefs;
   }
@@ -175,7 +184,7 @@ template <class HasherT> class BuiltinTreeHasher
     : public BuiltinObjectHasher<HasherT> {
 public:
   void start(size_t Size) {
-    this->start(ObjectKind::Tree);
+    BuiltinTreeHasher::BuiltinObjectHasher::start(ObjectKind::Tree);
     this->updateSize(Size);
     RemainingEntries = Size;
   }

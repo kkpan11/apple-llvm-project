@@ -207,10 +207,22 @@ public:
     return pointer(CP.getOffset(), V);
   }
 
-  const_pointer lookup(ArrayRef<uint8_t> Hash) const;
-  pointer lookup(ArrayRef<uint8_t> Hash) {
+  const_pointer find(ArrayRef<uint8_t> Hash) const;
+  pointer find(ArrayRef<uint8_t> Hash) {
     return getMutablePointer(
-        const_cast<const OnDiskHashMappedTrie *>(this)->lookup(Hash));
+        const_cast<const OnDiskHashMappedTrie *>(this)->find(Hash));
+  }
+
+  const_pointer recoverFromHashPointer(const uint8_t *HashBegin) const;
+  pointer recoverFromHashPointer(const uint8_t *HashBegin) {
+    return getMutablePointer(
+        const_cast<const OnDiskHashMappedTrie *>(this)->recoverFromHashPointer(HashBegin));
+  }
+
+  const_pointer recoverFromFileOffset(FileOffset Offset) const;
+  pointer recoverFromFileOffset(FileOffset Offset) {
+    return getMutablePointer(
+        const_cast<const OnDiskHashMappedTrie *>(this)->recoverFromFileOffset(Offset));
   }
 
   using LazyInsertOnConstructCB =
@@ -338,7 +350,7 @@ public:
   }
 
   static Expected<OnDiskDataAllocator> create(const Twine &Path, const Twine &TableName,
-                                              uint64_t MaxMapSize,
+                                              uint64_t MaxFileSize,
                                               Optional<uint64_t> NewFileInitialSize);
 
   OnDiskDataAllocator(OnDiskDataAllocator &&RHS);

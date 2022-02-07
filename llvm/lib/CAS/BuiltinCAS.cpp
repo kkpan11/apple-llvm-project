@@ -47,9 +47,9 @@ namespace {
 template <class T> static Optional<Expected<T>>
 dereferenceValue(Expected<Optional<T>> E) {
   if (!E)
-    return E.takeError();
+    return Expected<T>(E.takeError());
   if (*E)
-    return std::move(**E);
+    return Expected<T>(std::move(**E));
   return None;
 }
 
@@ -90,8 +90,8 @@ dereferenceValue(Expected<Optional<T>> E, function_ref<Error ()> OnNone) {
 template <class T, class SinkT> static Optional<Expected<NoneType>>
 moveValueInto(Expected<Optional<T>> E, SinkT &Sink) {
   if (Optional<Expected<T>> MaybeExpected = dereferenceValue(std::move(E)))
-    return MaybeExpected->moveInto(Sink);
-  return None;
+    return Expected<NoneType>(std::move(*MaybeExpected).moveInto(Sink));
+  return Expected<NoneType>(None);
 }
 
 /// Simple thread-safe access.
@@ -139,15 +139,17 @@ template <typename T> static T reportAsFatalIfError(Expected<T> ValOrErr) {
   return std::move(*ValOrErr);
 }
 
-static void reportAsFatalIfError(Error E) {
-  if (E)
-    report_fatal_error(std::move(E));
-}
+// static void reportAsFatalIfError(Error E) {
+//   if (E)
+//     report_fatal_error(std::move(E));
+// }
 
 class BuiltinCAS : public CASDB {
 public:
   Expected<CASID> parseCASID(StringRef Reference) final;
   Error printCASID(raw_ostream &OS, CASID ID) const final;
+
+  bool isKnownObject(CASID ID) final { return bool(getObjectKind(ID)); }
 
   virtual Expected<CASID> parseCASIDImpl(ArrayRef<uint8_t> Hash) = 0;
 
@@ -159,7 +161,8 @@ public:
   }
 
   Expected<TreeRef> createTree(ArrayRef<NamedTreeEntry> Entries) final;
-  virtual Expected<TreeRef> createTreeImpl(ArrayRef<uint8_t> ComputedHash, ArrayRef<NamedTreeEntry> SortedEntries) = 0;
+  virtual Expected<TreeRef> createTreeImpl(ArrayRef<uint8_t> ComputedHash,
+                                           ArrayRef<NamedTreeEntry> SortedEntries) = 0;
 
   Expected<NodeRef> createNode(ArrayRef<CASID> References,
                                ArrayRef<char> Data) final;
@@ -229,17 +232,6 @@ using HashType = decltype(HasherT::hash(std::declval<ArrayRef<uint8_t>&>()));
 
 } // end anonymous namespace
 
-static ArrayRef<uint8_t> bufferAsRawHash(StringRef Bytes) {
-  assert(Bytes.size() == sizeof(HashType));
-  return ArrayRef<uint8_t>(reinterpret_cast<const uint8_t *>(Bytes.begin()),
-                 Bytes.size());
-}
-
-static StringRef rawHashAsBuffer(ArrayRef<uint8_t> Hash) {
-  assert(Hash.size() == sizeof(HashType));
-  return StringRef(reinterpret_cast<const char *>(Hash.begin()), Hash.size());
-}
-
 static StringRef toStringRef(ArrayRef<char> Data) {
   return StringRef(Data.data(), Data.size());
 }
@@ -247,15 +239,6 @@ static StringRef toStringRef(ArrayRef<char> Data) {
 static ArrayRef<char> toArrayRef(StringRef Data) {
   return ArrayRef<char>(Data.data(), Data.size());
 }
-
-static HashType makeHash(ArrayRef<uint8_t> Bytes) {
-  assert(Bytes.size() == sizeof(HashType));
-  HashType Hash;
-  ::memcpy(Hash.begin(), Bytes.begin(), Bytes.size());
-  return Hash;
-}
-
-static HashType makeHash(CASID ID) { return makeHash(ID.getHash()); }
 
 static StringRef getCASIDPrefix() { return "~{CASFS}:"; }
 
@@ -381,13 +364,11 @@ BuiltinCAS::createBlobFromOpenFileImpl(sys::fs::file_t FD,
 }
 
 Expected<TreeRef> BuiltinCAS::createTree(ArrayRef<NamedTreeEntry> Entries) {
-  SmallVector<NamedTreeEntry> Sorted(Entries.begin(), Entries.end());
-
   // Ensure a stable order for tree entries and ignore name collisions.
+  SmallVector<NamedTreeEntry> Sorted(Entries.begin(), Entries.end());
   std::stable_sort(Sorted.begin(), Sorted.end());
   Sorted.erase(std::unique(Sorted.begin(), Sorted.end()), Sorted.end());
 
-  // Look up the hash in the index, initializing to nullptr if it's new.
   BuiltinTreeHasher<HasherT> Hasher;
   Hasher.start(Sorted.size());
   for (const NamedTreeEntry &E : Sorted)
@@ -395,16 +376,18 @@ Expected<TreeRef> BuiltinCAS::createTree(ArrayRef<NamedTreeEntry> Entries) {
   return createTreeImpl(Hasher.finish(), Sorted);
 }
 
+Expected<NodeRef> BuiltinCAS::createNode(ArrayRef<CASID> References,
+                               ArrayRef<char> Data) {
+  BuiltinNodeHasher<HasherT> Hasher;
+  Hasher.start(References.size());
+  for (const CASID &ID : References)
+    Hasher.updateRef(ID.getHash());
+  return createNodeImpl(Hasher.finish(Data), References, Data);
+}
+
 namespace {
 
 class InMemoryObject;
-class InMemoryBlob;
-class InMemoryNode;
-class InMemoryTree;
-class InMemorySmallBlob;
-class InMemorySmallNode;
-class InMemoryRefBlob;
-class InMemoryRefNode;
 class InMemoryString;
 
 /// Index of referenced IDs (map: Hash -> InMemoryObject*). Uses
@@ -483,6 +466,12 @@ public:
 
 class InMemoryBlob : public InMemoryObject, public GetDataString<InMemoryBlob> {
 public:
+  static bool classof(const InMemoryObject *O) {
+    return
+      O->getKind() == Kind::RefBlob ||
+      O->getKind() == Kind::InlineBlob 
+      ;
+  }
   inline ArrayRef<char> getData() const;
 
 private:
@@ -492,6 +481,7 @@ private:
 class InMemoryRefBlob : public InMemoryBlob {
 public:
   static constexpr Kind KindValue = Kind::RefBlob;
+  static bool classof(const InMemoryObject *O) { return O->getKind() == KindValue; }
 
   ArrayRef<char> getDataImpl() const { return Data; }
   ArrayRef<char> getData() const { return Data; }
@@ -515,6 +505,7 @@ private:
 class InMemoryInlineBlob : public InMemoryBlob {
 public:
   static constexpr Kind KindValue = Kind::InlineBlob;
+  static bool classof(const InMemoryObject *O) { return O->getKind() == KindValue; }
 
   ArrayRef<char> getDataImpl() const {
     return makeArrayRef(reinterpret_cast<const char *>(this + 1), Size);
@@ -540,6 +531,12 @@ private:
 
 class InMemoryNode : public InMemoryObject, public GetDataString<InMemoryNode> {
 public:
+  static bool classof(const InMemoryObject *O) {
+    return
+      O->getKind() == Kind::RefNode ||
+      O->getKind() == Kind::InlineNode 
+      ;
+  }
   inline ArrayRef<char> getData() const;
   inline ArrayRef<const InMemoryObject *> getRefs() const;
 
@@ -550,6 +547,7 @@ private:
 class InMemoryRefNode : public InMemoryNode {
 public:
   static constexpr Kind KindValue = Kind::RefNode;
+  static bool classof(const InMemoryObject *O) { return O->getKind() == KindValue; }
 
   ArrayRef<const InMemoryObject *> getRefsImpl() const { return Refs; }
   ArrayRef<const InMemoryObject *> getRefs() const { return Refs; }
@@ -579,6 +577,7 @@ private:
 class InMemoryInlineNode : public InMemoryNode {
 public:
   static constexpr Kind KindValue = Kind::InlineNode;
+  static bool classof(const InMemoryObject *O) { return O->getKind() == KindValue; }
 
   ArrayRef<const InMemoryObject *> getRefs() const { return getRefsImpl(); }
   ArrayRef<const InMemoryObject *> getRefsImpl() const {
@@ -619,6 +618,7 @@ private:
 class InMemoryTree : public InMemoryObject {
 public:
   static constexpr Kind KindValue = Kind::Tree;
+  static bool classof(const InMemoryObject *O) { return O->getKind() == KindValue; }
 
   struct NamedRef {
     const InMemoryObject *Ref;
@@ -662,34 +662,6 @@ private:
   size_t Size;
 };
 
-} // end anonymous namespace
-
-namespace llvm {
-
-template <typename T>
-struct isa_impl<T, InMemoryObject,
-                std::enable_if_t<std::is_base_of<InMemoryObject, T>::value>> {
-  static inline bool doit(const InMemoryObject &O) {
-    return T::KindValue == O.getKind();
-  }
-};
-
-template <> struct isa_impl<InMemoryBlob, InMemoryObject> {
-  static inline bool doit(const InMemoryObject &O) {
-    return isa<InMemoryRefBlob>(O) || isa<InMemorySmallBlob>(O);
-  }
-};
-
-template <> struct isa_impl<InMemoryNode, InMemoryObject> {
-  static inline bool doit(const InMemoryObject &O) {
-    return isa<InMemoryRefNode>(O) || isa<InMemorySmallNode>(O);
-  }
-};
-
-} // end namespace llvm
-
-namespace {
-
 /// Internal string type.
 class InMemoryString {
 public:
@@ -716,16 +688,17 @@ private:
 /// In-memory CAS database and action cache (the latter should be separated).
 class InMemoryCAS : public BuiltinCAS {
 public:
-  Expected<CASID> parseCASIDImpl(ArrayRef<uint8_t> Hash) final;
+  Expected<CASID> parseCASIDImpl(ArrayRef<uint8_t> Hash) final {
+    return CASID(indexHash(Hash).Hash);
+  }
 
   Expected<BlobRef> createBlobImpl(ArrayRef<uint8_t> ComputedHash,
                                    ArrayRef<char> Data) final;
   Expected<TreeRef> createTreeImpl(ArrayRef<uint8_t> ComputedHash,
-                                   ArrayRef<NamedTreeEntry> Entries) final;
+                                   ArrayRef<NamedTreeEntry> SortedEntries) final;
   Expected<NodeRef> createNodeImpl(ArrayRef<uint8_t> ComputedHash,
                                    ArrayRef<CASID> References,
                                    ArrayRef<char> Data) final;
-  bool isKnownObject(CASID ID) final;
   Optional<ObjectKind> getObjectKind(CASID ID) final;
 
   Expected<BlobRef> createBlobFromNullTerminatedRegion(
@@ -828,6 +801,23 @@ private:
 
 } // end anonymous namespace
 
+Optional<ObjectKind> InMemoryCAS::getObjectKind(CASID ID) {
+  const InMemoryObject *Object = getObject(ID);
+  if (!Object)
+    return None;
+  switch (Object->getKind()) {
+  case InMemoryObject::Kind::RefNode:
+  case InMemoryObject::Kind::InlineNode:
+    return ObjectKind::Node;
+
+  case InMemoryObject::Kind::RefBlob:
+  case InMemoryObject::Kind::InlineBlob:
+    return ObjectKind::Blob;
+
+  case InMemoryObject::Kind::Tree:
+    return ObjectKind::Tree;
+  }
+}
 
 ArrayRef<char> InMemoryBlob::getData() const {
   if (auto *Derived = dyn_cast<InMemoryRefBlob>(this))
@@ -889,7 +879,7 @@ Optional<InMemoryTree::NamedEntry> InMemoryTree::find(StringRef Name) const {
   };
 
   ArrayRef<NamedRef> Refs = getNamedRefs();
-  const NamedRef *I = std::lower_bound(Refs.begin(), Refs.end(), Compare);
+  const NamedRef *I = std::lower_bound(Refs.begin(), Refs.end(), Name, Compare);
   if (I == Refs.end() || I->Name->get() != Name)
     return None;
   return operator[](I - Refs.begin());
@@ -1081,35 +1071,38 @@ public:
     /// Unknown object.
     Unknown = 0,
 
-    /// v1.data: in the main pool, with a full DataStore record.
-    Pooled = 1,
+    /// v1.data: main pool, full DataStore record.
+    DataPool = 1,
+
+    /// v1.data: main pool, string with 2B size field.
+    DataPoolString2B = 2,
 
     /// v1.<TrieRecordOffset>.data: standalone, with a full DataStore record.
-    Standalone = 2,
+    Standalone = 10,
 
     /// v1.<TrieRecordOffset>.blob: standalone, just the data. File contents
     /// exactly the data content and file size matches the data size. No refs.
-    StandaloneBlob = 3,
+    StandaloneBlob = 11,
 
     /// v1.<TrieRecordOffset>.blob+0: standalone, just the data plus an
     /// extra null character ('\0'). File size is 1 bigger than the data size.
     /// No refs.
-    StandaloneBlob0 = 4,
+    StandaloneBlob0 = 12,
   };
 
   enum class ObjectKind : uint8_t {
     /// Node: refs and data.
-    Node = 0,
+    Node = 1,
 
     /// Blob: data, 8-byte alignment guaranteed, null-terminated.
-    Blob = 1,
+    Blob = 2,
 
     /// Tree: custom node. Pairs of refs pointing at target (arbitrary object)
     /// and names (String), and some data to describe the kind of the entry.
-    Tree = 2,
+    Tree = 3,
 
     /// String: data, no alignment guarantee, null-terminated.
-    String = 3,
+    String = 4,
   };
 
   enum Limits : int64_t {
@@ -1149,68 +1142,97 @@ private:
   std::atomic<uint64_t> Storage;
 };
 
-class InternalRef;
-
-/// 4B reference:
-/// - bits  0-29: Offset
-/// - bits 30-31: Reserved for other metadata.
-class InternalRef4B {
-  enum : size_t {
-    NumMetadataBits = 2,
-    NumOffsetBits = 32 - NumMetadataBits,
-  };
-
-public:
-  uint32_t getRawData() const { return Data; }
-  uint64_t getOffset() const { return Data & (UINT32_MAX >> NumMetadataBits); }
-
-private:
-  friend class InternalRef;
-  InternalRef4B(uint32_t Data) : Data(Data) {}
-  uint32_t Data;
-};
+class InternalRef4B;
 
 /// 8B reference:
 /// - bits  0-47: Offset
 /// - bits 48-63: Reserved for other metadata.
 class InternalRef {
-  enum : size_t {
+  enum Counts : size_t {
     NumMetadataBits = 16,
     NumOffsetBits = 64 - NumMetadataBits,
   };
 
 public:
-  bool canShrinkTo4B() const {
-    return getOffset() <= (UINT32_MAX >> InternalRef4B::NumMetadataBits);
+  enum class OffsetKind {
+    IndexRecord = 0,
+    DataRecord = 1,
+    String2B = 2,
+  };
+
+  OffsetKind getOffsetKind() const {
+    return (OffsetKind)((Data >> NumOffsetBits) & UINT8_MAX);
   }
 
-  /// Shrink to 4B reference.
-  Optional<InternalRef4B> shrinkTo4B() const {
-    if (!canShrinkTo4B())
-      return None;
-    uint32_t Data = getOffset();
-    return InternalRef4B(Data);
-  }
+  FileOffset getFileOffset() const { return FileOffset(getRawOffset()); }
 
   uint64_t getRawData() const { return Data; }
-  uint64_t getOffset() const { return Data & (UINT64_MAX >> 16); }
+  uint64_t getRawOffset() const { return Data & (UINT64_MAX >> 16); }
 
-  InternalRef getFromRawData(uint64_t Data) {
-    return InternalRef(NumMetadataBits);
-  }
-  InternalRef getFromOffset(uint64_t Offset) {
-    assert(Offset <= (UINT64_MAX >> NumMetadataBits) && "Offset must fit in 6B");
-    return InternalRef(Offset);
+  static InternalRef getFromRawData(uint64_t Data) {
+    return InternalRef(Data);
   }
 
-  InternalRef(InternalRef4B SmallRef) : Data(SmallRef.Data) {}
-  InternalRef &operator=(InternalRef4B SmallRef) {
-    return *this = InternalRef(SmallRef);
+  static InternalRef getFromOffset(OffsetKind Kind, FileOffset Offset) {
+    assert((uint64_t)Offset.get() <= (UINT64_MAX >> NumMetadataBits) && "Offset must fit in 6B");
+    return InternalRef((uint64_t)Kind << NumOffsetBits | Offset.get());
   }
 
 private:
+  InternalRef(OffsetKind Kind, FileOffset Offset)
+      : Data((uint64_t)Kind << NumOffsetBits | Offset.get()) {
+    assert(Offset.get() == getFileOffset().get());
+    assert(Kind == getOffsetKind());
+  }
   InternalRef(uint64_t Data) : Data(Data) {}
   uint64_t Data;
+};
+
+/// 4B reference:
+/// - bits  0-29: Offset
+/// - bits 30-31: Reserved for other metadata.
+class InternalRef4B {
+  enum Counts : size_t {
+    NumMetadataBits = 4,
+    NumOffsetBits = 32 - NumMetadataBits,
+  };
+
+public:
+  using OffsetKind = InternalRef::OffsetKind;
+
+  OffsetKind getOffsetKind() const {
+    return (OffsetKind)(Data >> NumOffsetBits);
+  }
+
+  FileOffset getFileOffset() const {
+    uint64_t RawOffset = Data & (UINT32_MAX >> NumMetadataBits);
+    return FileOffset(RawOffset << 3);
+  }
+
+  /// Shrink to 4B reference.
+  static Optional<InternalRef4B> tryToShrink(InternalRef Ref) {
+    OffsetKind Kind = Ref.getOffsetKind();
+    uint64_t ShiftedKind = (uint64_t)Kind << NumOffsetBits;
+    if (ShiftedKind > UINT32_MAX)
+      return None;
+
+    uint64_t ShiftedOffset = Ref.getRawOffset();
+    assert(isAligned(Align(8), ShiftedOffset));
+    ShiftedOffset >>= 3;
+    if (ShiftedOffset > (UINT32_MAX >> NumMetadataBits))
+      return None;
+
+    return InternalRef4B(ShiftedKind | ShiftedOffset);
+  }
+
+  operator InternalRef() const {
+    return InternalRef::getFromOffset(getOffsetKind(), getFileOffset());
+  }
+
+private:
+  friend class InternalRef;
+  InternalRef4B(uint32_t Data) : Data(Data) {}
+  uint32_t Data;
 };
 
 class InternalRefArrayRef {
@@ -1277,6 +1299,9 @@ public:
   /// derived from a InternalRef4B lives inside the iterator.
   iterator::ReferenceProxy operator[](ptrdiff_t N) const { return begin()[N]; }
 
+  bool is4B() const { return Begin.is<const InternalRef4B *>(); }
+  bool is8B() const { return Begin.is<const InternalRef *>(); }
+
   Optional<ArrayRef<InternalRef>> getAs8B() const {
     if (auto *B = Begin.dyn_cast<const InternalRef *>())
       return makeArrayRef(B, Size);
@@ -1289,7 +1314,7 @@ public:
     return None;
   }
 
-  InternalRefArrayRef() = default;
+  InternalRefArrayRef(NoneType = None) {}
 
   InternalRefArrayRef(ArrayRef<InternalRef> Refs)
       : Begin(Refs.begin()), Size(Refs.size()) {}
@@ -1300,6 +1325,32 @@ public:
 private:
   PointerUnion<const InternalRef *, const InternalRef4B *> Begin;
   size_t Size = 0;
+};
+
+class InternalRefVector {
+public:
+  void push_back(InternalRef Ref) {
+    if (NeedsFull)
+      return FullRefs.push_back(Ref);
+    if (Optional<InternalRef4B> Small = InternalRef4B::tryToShrink(Ref))
+      return SmallRefs.push_back(*Small);
+    NeedsFull = true;
+    assert(FullRefs.empty());
+    FullRefs.reserve(SmallRefs.size() + 1);
+    for (InternalRef4B Small : SmallRefs)
+      FullRefs.push_back(Small);
+    SmallRefs.clear();
+  }
+
+  operator InternalRefArrayRef() const {
+    assert(SmallRefs.empty() || FullRefs.empty());
+    return NeedsFull ? InternalRefArrayRef(FullRefs) : InternalRefArrayRef(SmallRefs);
+  }
+
+private:
+  bool NeedsFull = false;
+  SmallVector<InternalRef4B> SmallRefs;
+  SmallVector<InternalRef> FullRefs;
 };
 
 /// DataStore record data: 8B + size? + refs? + data + 0
@@ -1405,8 +1456,8 @@ struct DataRecordHandle {
 
   struct Input {
     FileOffset TrieRecordOffset;
+    InternalRefArrayRef Refs;
     ArrayRef<char> Data;
-    ArrayRef<InternalRef> Refs;
 
     size_t getSizeUpperBound() const {
       return sizeof(Header) + sizeof(uint64_t) * 2 +
@@ -1416,10 +1467,10 @@ struct DataRecordHandle {
   };
 
   LayoutFlags getLayoutFlags() const { return LayoutFlags::unpack(H->Packed >> 56); }
-  uint64_t getTrieRecordOffset() const {
+  FileOffset getTrieRecordOffset() const {
     if (getLayoutFlags().TrieOffset == TrieOffsetFlags::Uses4B)
-      return H->Packed & UINT32_MAX;
-    return H->Packed & (UINT64_MAX >> 16);
+      return FileOffset(H->Packed & UINT32_MAX);
+    return FileOffset(H->Packed & (UINT64_MAX >> 16));
   }
 
   uint64_t getDataSize() const;
@@ -1437,7 +1488,7 @@ struct DataRecordHandle {
   }
 
   struct Layout {
-    Layout(const Input &I);
+    explicit Layout(const Input &I);
 
     LayoutFlags Flags{};
     uint64_t TrieRecordOffset = 0;
@@ -1503,6 +1554,43 @@ DataRecordHandle DataRecordHandle::create(function_ref<char *(size_t Size)> Allo
   return constructImpl(Alloc(L.getTotalSize()), I, L);
 }
 
+struct String2BHandle {
+  /// Header layout:
+  /// - 2-bytes: Length
+  struct Header {
+    uint16_t Length;
+  };
+
+  uint64_t getLength() const { return H->Length; }
+
+  StringRef getString() const {
+    assert(H && "Expected valid handle");
+    return StringRef(reinterpret_cast<const char *>(H + 1), getLength());
+  }
+
+  static String2BHandle create(function_ref<char *(size_t Size)> Alloc, StringRef String) {
+    assert(String.size() <= UINT16_MAX);
+    char *Mem = Alloc(sizeof(Header) + String.size() + 1);
+    Header *H = new (Mem) Header{(uint16_t)String.size()};
+    llvm::copy(String, Mem + sizeof(Header));
+    Mem[sizeof(Header) + String.size()] = 0;
+    return String2BHandle(*H);
+  }
+
+  static String2BHandle get(const char *Mem) {
+    return String2BHandle(*reinterpret_cast<const String2BHandle::Header *>(Mem));
+  }
+
+  explicit operator bool() const { return H; }
+  const Header &getHeader() const { return *H; }
+
+  String2BHandle() = default;
+  explicit String2BHandle(const Header &H) : H(&H) {}
+
+private:
+  const Header *H = nullptr;
+};
+
 /// On-disk CAS database and action cache (the latter should be separated).
 ///
 /// Here's a top-level description of the current layout (could expose or make
@@ -1532,17 +1620,20 @@ DataRecordHandle DataRecordHandle::create(function_ref<char *(size_t Size)> Allo
 class OnDiskCAS : public BuiltinCAS {
 public:
   static constexpr StringLiteral IndexTableName = "llvm.cas.index[sha1]";
-  static constexpr StringLiteral DataSinkTableName = "llvm.cas.data[sha1]";
+  static constexpr StringLiteral DataPoolTableName = "llvm.cas.data[sha1]";
   static constexpr StringLiteral ActionCacheTableName = "llvm.cas.actions[sha1->sha1]";
 
+  static constexpr StringLiteral IndexFile = "index";
+  static constexpr StringLiteral DataPoolFile = "data";
+  static constexpr StringLiteral ActionCacheFile = "actions";
+
   static constexpr StringLiteral FilePrefix = "v1.";
+  static constexpr StringLiteral FileSuffixData = ".data";
   static constexpr StringLiteral FileSuffixBlob = ".blob";
   static constexpr StringLiteral FileSuffixBlob0 = ".blob0";
 
   class TempFile;
   class MappedTempFile;
-
-  struct TreeObjectData;
 
   struct IndexProxy {
     FileOffset Offset;
@@ -1554,19 +1645,30 @@ public:
   Expected<CASID> parseCASIDImpl(ArrayRef<uint8_t> Hash) final {
     return CASID(indexHash(Hash).Hash);
   }
+
   Expected<BlobRef> createBlobImpl(ArrayRef<uint8_t> ComputedHash,
-                               ArrayRef<char> Data) final;
-  Expected<TreeRef> createTreeImpl(ArrayRef<uint8_t> ComputedHash, ArrayRef<NamedTreeEntry> Entries) final;
+                               ArrayRef<char> Data) final {
+    return getBlobFromProxy(getOrCreateBlob(indexHash(ComputedHash), Data));
+  }
+  Expected<TreeRef> createTreeImpl(ArrayRef<uint8_t> ComputedHash, ArrayRef<NamedTreeEntry> SortedEntries) final {
+    return getTreeFromProxy(getOrCreateTree(indexHash(ComputedHash), SortedEntries));
+  }
   Expected<NodeRef> createNodeImpl(ArrayRef<uint8_t> ComputedHash,
                                ArrayRef<CASID> References,
-                               ArrayRef<char> Data) final;
+                               ArrayRef<char> Data) final {
+    return getNodeFromProxy(getOrCreateNode(indexHash(ComputedHash), References, Data));
+  }
 
+  struct StringProxy {
+    TrieRecord::Data Object;
+    StringRef String;
+  };
   struct BlobProxy {
     TrieRecord::Data Object;
     ArrayRef<uint8_t> Hash;
     ArrayRef<char> Data;
   };
-  Expected<BlobProxy> getOrCreateBlob(IndexProxy &I, ArrayRef<char> Data);
+  Expected<BlobProxy> getOrCreateBlob(IndexProxy I, ArrayRef<char> Data);
   Expected<BlobProxy> createStandaloneBlob(IndexProxy &I, ArrayRef<char> Data);
 
   struct DataRecordProxy {
@@ -1579,7 +1681,9 @@ public:
     TrieRecord::Data Object;
     ArrayRef<uint8_t> Hash;
     Optional<DataRecordHandle> Record;
-    Optional<ArrayRef<char>> BlobData;
+
+    /// Blobs and strings that don't have a data record are stored here.
+    Optional<ArrayRef<char>> Bytes;
 
     static ObjectProxy get(BlobProxy Blob) {
       return ObjectProxy{Blob.Object, Blob.Hash, None, Blob.Data};
@@ -1588,14 +1692,22 @@ public:
   Expected<DataRecordProxy>
   getOrCreateDataRecord(IndexProxy &I, TrieRecord::ObjectKind OK,
                         DataRecordHandle::Input Input);
-  Expected<Optional<DataRecordProxy>> getDataRecord(IndexProxy &I);
+  Expected<DataRecordProxy>
+  getOrCreateTree(IndexProxy I, ArrayRef<NamedTreeEntry> SortedEntries);
+  Expected<DataRecordProxy>
+  getOrCreateNode(IndexProxy I, ArrayRef<CASID> References, ArrayRef<char> Data);
+  Expected<Optional<DataRecordProxy>> getDataRecord(IndexProxy I) const;
 
   Expected<MappedTempFile> createTempFile(StringRef FinalPath, uint64_t Size);
-  Expected<Optional<BlobProxy>> getBlob(IndexProxy &I);
-  Expected<Optional<ObjectProxy>> getObjectProxy(IndexProxy &I);
+  Expected<Optional<BlobProxy>> getBlob(IndexProxy I) const;
+  Expected<Optional<StringProxy>> getString(IndexProxy I) const;
+  Optional<StringRef> getString(InternalRef I) const;
+  Expected<Optional<ObjectProxy>> getObjectProxy(IndexProxy I) const;
   DataRecordHandle getPooledDataRecord(FileOffset Offset) const {
-    return DataRecordHandle::get(PooledData.beginData(Offset));
+    return DataRecordHandle::get(DataPool.beginData(Offset));
   }
+
+  Optional<CASID> getCASID(InternalRef Ref) const;
 
   struct PooledDataRecord {
     FileOffset Offset;
@@ -1605,26 +1717,37 @@ public:
   void getStandalonePath(TrieRecord::StorageKind SK, const IndexProxy &I,
                          SmallVectorImpl<char> &Path) const;
 
-  bool isKnownObject(CASID ID) final;
+  OnDiskHashMappedTrie::const_pointer getInternalIndexPointer(CASID ID) const;
+  Optional<InternalRef> getInternalRef(CASID ID) const;
+  Optional<InternalRef> getInternalRefFromIndexProxy(IndexProxy I) const;
+  Optional<InternalRef> getInternalRef(IndexProxy I, TrieRecord::Data Object) const;
+
+  IndexProxy getIndexProxyFromPointer(OnDiskHashMappedTrie::const_pointer P) const;
+
+  Expected<StringProxy> getOrCreateString(IndexProxy I, StringRef String);
+  Expected<InternalRef> getOrCreateStringRef(StringRef String);
   Optional<ObjectKind> getObjectKind(CASID ID) final;
 
   Expected<BlobRef> getBlob(CASID ID) final;
   Expected<NodeRef> getNode(CASID ID) final;
   Expected<TreeRef> getTree(CASID ID) final;
+  Expected<BlobRef> getBlobFromProxy(Expected<BlobProxy> Blob);
+  Expected<NodeRef> getNodeFromProxy(Expected<DataRecordProxy> Object);
+  Expected<TreeRef> getTreeFromProxy(Expected<DataRecordProxy> Object);
 
   void print(raw_ostream &OS) const final;
 
   Expected<CASID> getCachedResult(CASID InputID) final;
   Error putCachedResult(CASID InputID, CASID OutputID) final;
 
-  OnDiskCAS() = delete;
-  explicit OnDiskCAS(StringRef RootPath, OnDiskHashMappedTrie OnDiskObjects,
-                      OnDiskHashMappedTrie OnDiskResults);
+  static Expected<std::unique_ptr<OnDiskCAS>> open(StringRef Path);
 
 private:
   // TreeAPI.
   Optional<NamedTreeEntry> lookupInTree(const TreeRef &Tree,
                                         StringRef Name) const final;
+  NamedTreeEntry makeTreeEntry(DataRecordHandle Record, size_t I,
+                               ArrayRef<StringRef> NameCache = None) const;
   NamedTreeEntry getInTree(const TreeRef &Tree, size_t I) const final;
   Error forEachEntryInTree(
       const TreeRef &Tree,
@@ -1643,6 +1766,9 @@ private:
   Expected<std::unique_ptr<MemoryBuffer>> openFileWithID(StringRef BaseDir,
                                                          CASID ID);
 
+  OnDiskCAS(StringRef RootPath, OnDiskHashMappedTrie Index,
+            OnDiskDataAllocator DataPool, OnDiskHashMappedTrie ActionCache);
+
   /// Mapping from hash to object reference.
   ///
   /// Data type is TrieRecord.
@@ -1651,7 +1777,7 @@ private:
   /// Storage for most objects.
   ///
   /// Data type is DataRecordHandle.
-  OnDiskDataAllocator PooledData;
+  OnDiskDataAllocator DataPool;
 
   /// Container for "big" objects mapped in separately.
   template <size_t NumShards> class StandaloneDataMap {
@@ -1669,7 +1795,7 @@ private:
     };
     Shard &getShard(ArrayRef<uint8_t> Hash) {
       return const_cast<Shard &>(
-          const_cast<const StandaloneDataMap *>(this)->getShard());
+          const_cast<const StandaloneDataMap *>(this)->getShard(Hash));
     }
     const Shard &getShard(ArrayRef<uint8_t> Hash) const {
       static_assert(NumShards <= 256, "Expected only 8 bits of shard");
@@ -1679,7 +1805,7 @@ private:
     Shard Shards[NumShards];
   };
 
-  /// Lifetime for "big" objects not in PooledData.
+  /// Lifetime for "big" objects not in DataPool.
   ///
   /// NOTE: Could use ThreadSafeHashMappedTrie here. For now, doing something
   /// simpler on the assumption there won't be much contention since most data
@@ -1688,19 +1814,73 @@ private:
   /// to use better use of them rather than optimizing this map.
   ///
   /// FIXME: Figure out the right number of shards, if any.
-  StandaloneDataMap<16> StandaloneData;
+  mutable StandaloneDataMap<16> StandaloneData;
 
   /// Action cache.
   ///
   /// FIXME: Separate out. Likely change key to be independent from CASID and
   /// stored separately.
-  OnDiskHashMappedTrie Actions;
+  OnDiskHashMappedTrie ActionCache;
+  using ActionCacheResultT = std::atomic<uint64_t>;
 
   std::string RootPath;
   std::string TempPrefix;
 };
 
 } // end anonymous namespace
+
+  constexpr StringLiteral OnDiskCAS::IndexTableName;
+  constexpr StringLiteral OnDiskCAS::DataPoolTableName;
+  constexpr StringLiteral OnDiskCAS::ActionCacheTableName;
+  constexpr StringLiteral OnDiskCAS::IndexFile;
+  constexpr StringLiteral OnDiskCAS::DataPoolFile;
+  constexpr StringLiteral OnDiskCAS::ActionCacheFile;
+  constexpr StringLiteral OnDiskCAS::FilePrefix;
+  constexpr StringLiteral OnDiskCAS::FileSuffixData;
+  constexpr StringLiteral OnDiskCAS::FileSuffixBlob;
+  constexpr StringLiteral OnDiskCAS::FileSuffixBlob0;
+
+Optional<ObjectKind> OnDiskCAS::getObjectKind(CASID ID) {
+  OnDiskHashMappedTrie::const_pointer P = getInternalIndexPointer(ID);
+  if (!P)
+    return None;
+  IndexProxy I = getIndexProxyFromPointer(P);
+  TrieRecord::Data D = I.ObjectRef.load();
+  if (D.SK == TrieRecord::StorageKind::Unknown)
+    return None;
+  switch (D.OK) {
+case TrieRecord::ObjectKind::Node:  return ObjectKind::Node;
+case TrieRecord::ObjectKind::Blob:  return ObjectKind::Blob;
+case TrieRecord::ObjectKind::Tree:  return ObjectKind::Tree;
+case TrieRecord::ObjectKind::String:
+    // FIXME: Change this once it's exposed.
+    return None;
+  }
+}
+
+
+template <size_t N>
+MemoryBufferRef
+OnDiskCAS::StandaloneDataMap<N>::insert(ArrayRef<uint8_t> Hash,
+                          std::unique_ptr<MemoryBuffer> Buffer) {
+  auto &S = getShard(Hash);
+  std::lock_guard<std::mutex> Lock(S.Mutex);
+  auto &V = S.Map[Hash.data()];
+  if (!V)
+    V = std::move(Buffer);
+  return *V;
+}
+
+template <size_t N>
+Optional<MemoryBufferRef>
+OnDiskCAS::StandaloneDataMap<N>::lookup(ArrayRef<uint8_t> Hash) const {
+  auto &S = getShard(Hash);
+  std::lock_guard<std::mutex> Lock(S.Mutex);
+  auto I = S.Map.find(Hash.data());
+  if (I == S.Map.end())
+    return None;
+  return MemoryBufferRef(*I->second);
+}
 
 /// Copy of \a sys::fs::TempFile that skips RemoveOnSignal, which is too
 /// expensive to register/unregister at this rate.
@@ -1874,15 +2054,17 @@ DataRecordHandle DataRecordHandle::constructImpl(char *Mem, const Input &I,
   // Construct Refs[].
   if (!I.Refs.empty()) {
     if (L.Flags.RefKind == RefKindFlags::InternalRef4B) {
+      assert(I.Refs.is4B());
       assert(isAligned(Align::Of<InternalRef4B>(), Next - Mem));
-      for (auto RI = I.Refs.begin(), RE = I.Refs.end(); RI != RE; ++RI) {
-        new (Next) InternalRef4B(*RI->shrinkTo4B());
+      for (InternalRef4B Ref : *I.Refs.getAs4B()) {
+        new (Next) InternalRef4B(Ref);
         Next += sizeof(InternalRef4B);
       }
     } else {
+      assert(I.Refs.is8B());
       assert(isAligned(Align::Of<InternalRef>(), Next - Mem));
-      for (auto RI = I.Refs.begin(), RE = I.Refs.end(); RI != RE; ++RI) {
-        new (Next) InternalRef(*RI);
+      for (InternalRef Ref : *I.Refs.getAs8B()) {
+        new (Next) InternalRef(Ref);
         Next += sizeof(InternalRef);
       }
     }
@@ -1907,15 +2089,7 @@ DataRecordHandle::Layout::Layout(const Input &I) {
   NumRefs = I.Refs.size();
 
   // Check refs size.
-  Flags.RefKind = RefKindFlags::InternalRef4B;
-  if (NumRefs) {
-    for (InternalRef Ref : I.Refs) {
-      if (!Ref.canShrinkTo4B()) {
-        Flags.RefKind = RefKindFlags::InternalRef;
-        break;
-      }
-    }
-  }
+  Flags.RefKind = I.Refs.is4B() ?  RefKindFlags::InternalRef4B : RefKindFlags::InternalRef;
 
   // Set the trie offset.
   TrieRecordOffset = (uint64_t)I.TrieRecordOffset.get();
@@ -2080,7 +2254,7 @@ void OnDiskCAS::print(raw_ostream &OS) const {
 }
 
 OnDiskCAS::IndexProxy OnDiskCAS::indexHash(ArrayRef<uint8_t> Hash) {
-  auto P = Index.insertLazy(
+  OnDiskHashMappedTrie::pointer P = Index.insertLazy(
     Hash, [](FileOffset TentativeOffset,
              OnDiskHashMappedTrie::ValueProxy TentativeValue) {
     assert(TentativeValue.Data.size() == sizeof(TrieRecord));
@@ -2088,8 +2262,158 @@ OnDiskCAS::IndexProxy OnDiskCAS::indexHash(ArrayRef<uint8_t> Hash) {
     new (TentativeValue.Data.data()) TrieRecord();
     });
   assert(P && "Expected insertion");
+  return getIndexProxyFromPointer(P);
+}
+
+OnDiskCAS::IndexProxy OnDiskCAS::getIndexProxyFromPointer(
+    OnDiskHashMappedTrie::const_pointer P) const {
+  assert(P);
+  assert(P.getOffset());
   return IndexProxy{P.getOffset(), P->Hash,
-    * reinterpret_cast<TrieRecord *>(P->Data.data())};
+      *const_cast<TrieRecord *>(reinterpret_cast<const TrieRecord *>(P->Data.data()))};
+}
+
+OnDiskHashMappedTrie::const_pointer OnDiskCAS::getInternalIndexPointer(CASID ID) const {
+  // Lookup the hash by pointer value.
+  //
+  // FIXME: Can make this more robust by changing CASID to a CASDB and an
+  // integer, where the integer is an offset into the trie.
+  if (OnDiskHashMappedTrie::const_pointer P = Index.recoverFromHashPointer(ID.getHash().data()))
+    return P;
+
+  // Fallback to a normal lookup.
+  return Index.find(ID.getHash());
+}
+
+Optional<InternalRef> OnDiskCAS::getInternalRef(CASID ID) const {
+  if (OnDiskHashMappedTrie::const_pointer P = getInternalIndexPointer(ID))
+    return getInternalRefFromIndexProxy(getIndexProxyFromPointer(P));
+
+  return None;
+}
+
+Optional<InternalRef> OnDiskCAS::getInternalRefFromIndexProxy(IndexProxy I) const {
+  return getInternalRef(I, I.ObjectRef.load());
+}
+
+Optional<StringRef> OnDiskCAS::getString(InternalRef Ref) const {
+  switch (Ref.getOffsetKind()) {
+  case InternalRef::OffsetKind::String2B:
+    return String2BHandle::get(
+        DataPool.beginData(Ref.getFileOffset())).getString();
+
+  case InternalRef::OffsetKind::DataRecord:
+    return toStringRef(DataRecordHandle::get(
+        DataPool.beginData(Ref.getFileOffset())).getData());
+
+  case InternalRef::OffsetKind::IndexRecord:
+    break;
+  }
+  if (OnDiskHashMappedTrie::const_pointer P = Index.recoverFromFileOffset(Ref.getFileOffset()))
+    if (Optional<Expected<StringProxy>> Proxy = dereferenceValue(
+          getString(getIndexProxyFromPointer(P))))
+      if (Optional<StringProxy> Proxy2 = expectedToOptional(std::move(*Proxy)))
+        return Proxy2->String;
+  return None;
+}
+
+Optional<CASID> OnDiskCAS::getCASID(InternalRef Ref) const {
+  FileOffset IndexOffset;
+  switch (Ref.getOffsetKind()) {
+  case InternalRef::OffsetKind::String2B:
+    return None;
+
+  case InternalRef::OffsetKind::DataRecord: {
+    DataRecordHandle Handle = DataRecordHandle::get(
+        DataPool.beginData(Ref.getFileOffset()));
+    IndexOffset = Handle.getTrieRecordOffset();
+    break;
+  }
+
+  case InternalRef::OffsetKind::IndexRecord:
+    IndexOffset = Ref.getFileOffset();
+    break;
+  }
+  if (OnDiskHashMappedTrie::const_pointer P = Index.recoverFromFileOffset(IndexOffset))
+    return CASID(P->Hash);
+  return None;
+}
+
+Optional<InternalRef> OnDiskCAS::getInternalRef(IndexProxy I,
+                                                TrieRecord::Data Object) const {
+  switch (Object.SK) {
+  case TrieRecord::StorageKind::Unknown:
+    return None;
+
+  case TrieRecord::StorageKind::DataPool:
+    return InternalRef::getFromOffset(InternalRef::OffsetKind::DataRecord,
+                                      Object.Offset);
+
+  case TrieRecord::StorageKind::DataPoolString2B:
+    return InternalRef::getFromOffset(InternalRef::OffsetKind::String2B,
+                                      Object.Offset);
+
+  case TrieRecord::StorageKind::Standalone:
+  case TrieRecord::StorageKind::StandaloneBlob:
+  case TrieRecord::StorageKind::StandaloneBlob0:
+    return InternalRef::getFromOffset(InternalRef::OffsetKind::IndexRecord,
+                                      I.Offset);
+  }
+}
+
+Expected<OnDiskCAS::StringProxy> OnDiskCAS::getOrCreateString(
+    IndexProxy I, StringRef String) {
+  assert(String.size() <= UINT16_MAX &&
+         "Expected caller to check string fits in 2B size");
+
+  // See if it already exists.
+  if (Optional<Expected<StringProxy>> S = dereferenceValue(getString(I)))
+    return std::move(*S);
+
+  FileOffset Offset;
+  auto Alloc = [&](size_t Size) -> char* {
+    OnDiskDataAllocator::pointer P = DataPool.allocate(Size);
+    Offset = P.getOffset();
+    return P->data();
+  };
+  String2BHandle S = String2BHandle::create(Alloc, String);
+
+  TrieRecord::Data StringData;
+  StringData.OK = TrieRecord::ObjectKind::Blob;
+  StringData.SK = TrieRecord::StorageKind::DataPool;
+  StringData.Offset = Offset;
+
+  // Try to store the value and confirm that the new value has valid storage.
+  //
+  // TODO: Find a way to reuse the storage from the new-but-abandoned record
+  // handle.
+  TrieRecord::Data Existing;
+  if (I.ObjectRef.compare_exchange_strong(Existing, StringData))
+    return StringProxy{StringData, S.getString()};
+
+  if (Existing.SK == TrieRecord::StorageKind::Unknown)
+    return createCorruptObjectError(CASID(I.Hash));
+
+  return dereferenceValue(getString(I),
+                    [&]() { return createCorruptObjectError(CASID(I.Hash)); });
+}
+
+Expected<InternalRef> OnDiskCAS::getOrCreateStringRef(StringRef String) {
+  // Make a blob if String is bigger than 64K.
+  if (String.size() > UINT16_MAX) {
+    BlobProxy Blob;
+    IndexProxy I = indexHash(BuiltinBlobHasher<HasherT>().hash(toArrayRef(String)));
+    if (Error E = getOrCreateBlob(I, toArrayRef(String)).moveInto(Blob))
+      return std::move(E);
+    return *getInternalRef(I, Blob.Object);
+  }
+
+  // Make a string.
+  StringProxy S;
+  IndexProxy I = indexHash(BuiltinStringHasher<HasherT>().hash(String));
+  if (Error E = getOrCreateString(I, String).moveInto(S))
+    return std::move(E);
+  return *getInternalRef(I, S.Object);
 }
 
 void OnDiskCAS::getStandalonePath(TrieRecord::StorageKind SK,
@@ -2101,13 +2425,13 @@ void OnDiskCAS::getStandalonePath(TrieRecord::StorageKind SK,
     assert(false && "Expected standalone storage kind");
 
   case TrieRecord::StorageKind::Standalone:
-    Suffix = ".data";
+    Suffix = FileSuffixData;
     break;
   case TrieRecord::StorageKind::StandaloneBlob0:
-    Suffix = ".blob0";
+    Suffix = FileSuffixBlob0;
     break;
   case TrieRecord::StorageKind::StandaloneBlob:
-    Suffix = ".blob";
+    Suffix = FileSuffixBlob;
     break;
   }
 
@@ -2115,14 +2439,29 @@ void OnDiskCAS::getStandalonePath(TrieRecord::StorageKind SK,
   sys::path::append(Path, FilePrefix + Twine(I.Offset.get()) + Suffix);
 }
 
-Expected<Optional<OnDiskCAS::BlobProxy>> OnDiskCAS::getBlob(IndexProxy &I) {
+Expected<Optional<OnDiskCAS::StringProxy>> OnDiskCAS::getString(IndexProxy I) const {
   Optional<OnDiskCAS::ObjectProxy> OP;
   if (Optional<Expected<NoneType>> E = moveValueInto(getObjectProxy(I), OP))
     return std::move(*E);
 
-  assert(bool(OP->Record) != bool(OP->BlobData));
-  if (OP->BlobData)
-    return BlobProxy{OP->Object, OP->Hash, *OP->BlobData};
+  assert(bool(OP->Record) != bool(OP->Bytes));
+  if (OP->Bytes)
+    return StringProxy{OP->Object, toStringRef(*OP->Bytes)};
+
+  // Blobs should not have references.
+  if (!OP->Record->getRefs().empty())
+    return createCorruptObjectError(CASID(I.Hash));
+  return StringProxy{OP->Object, toStringRef(OP->Record->getData())};
+}
+
+Expected<Optional<OnDiskCAS::BlobProxy>> OnDiskCAS::getBlob(IndexProxy I) const {
+  Optional<OnDiskCAS::ObjectProxy> OP;
+  if (Optional<Expected<NoneType>> E = moveValueInto(getObjectProxy(I), OP))
+    return std::move(*E);
+
+  assert(bool(OP->Record) != bool(OP->Bytes));
+  if (OP->Bytes)
+    return BlobProxy{OP->Object, OP->Hash, *OP->Bytes};
 
   // Blobs should not have references.
   if (!OP->Record->getRefs().empty())
@@ -2130,17 +2469,17 @@ Expected<Optional<OnDiskCAS::BlobProxy>> OnDiskCAS::getBlob(IndexProxy &I) {
   return BlobProxy{OP->Object, OP->Hash, OP->Record->getData()};
 }
 
-Expected<Optional<OnDiskCAS::DataRecordProxy>> OnDiskCAS::getDataRecord(IndexProxy &I) {
+Expected<Optional<OnDiskCAS::DataRecordProxy>> OnDiskCAS::getDataRecord(IndexProxy I) const {
   Optional<OnDiskCAS::ObjectProxy> OP;
   if (Optional<Expected<NoneType>> E = moveValueInto(getObjectProxy(I), OP))
     return std::move(*E);
 
   assert(OP->Record && "Expected record");
-  assert(!OP->BlobData && "Unexpected blob");
+  assert(!OP->Bytes && "Unexpected blob");
   return DataRecordProxy{OP->Object, OP->Hash, *OP->Record};
 }
 
-Expected<Optional<OnDiskCAS::ObjectProxy>> OnDiskCAS::getObjectProxy(IndexProxy &I) {
+Expected<Optional<OnDiskCAS::ObjectProxy>> OnDiskCAS::getObjectProxy(IndexProxy I) const {
   TrieRecord::Data Object = I.ObjectRef.load();
   if (Object.SK == TrieRecord::StorageKind::Unknown)
     return None;
@@ -2151,9 +2490,14 @@ Expected<Optional<OnDiskCAS::ObjectProxy>> OnDiskCAS::getObjectProxy(IndexProxy 
   default:
     return createCorruptObjectError(CASID(I.Hash));
 
-  case TrieRecord::StorageKind::Pooled: {
-    DataRecordHandle Handle = DataRecordHandle::get(PooledData.beginData(Object.Offset));
+  case TrieRecord::StorageKind::DataPool: {
+    DataRecordHandle Handle = DataRecordHandle::get(DataPool.beginData(Object.Offset));
     return ObjectProxy{Object, I.Hash, Handle, None};
+  }
+
+  case TrieRecord::StorageKind::DataPoolString2B: {
+    String2BHandle Handle = String2BHandle::get(DataPool.beginData(Object.Offset));
+    return ObjectProxy{Object, I.Hash, None, toArrayRef(Handle.getString())};
   }
 
   case TrieRecord::StorageKind::Standalone:
@@ -2250,6 +2594,77 @@ Expected<OnDiskCAS::BlobProxy> OnDiskCAS::createStandaloneBlob(IndexProxy &I,
                     [&]() { return createCorruptObjectError(CASID(I.Hash)); });
 }
 
+Expected<OnDiskCAS::BlobProxy> OnDiskCAS::getOrCreateBlob(IndexProxy I, ArrayRef<char> Data) {
+  // See if it already exists.
+  if (Optional<Expected<BlobProxy>> Blob = dereferenceValue(getBlob(I)))
+    return std::move(*Blob);
+
+  if (Data.size() > TrieRecord::MaxEmbeddedSize)
+    return createStandaloneBlob(I, Data);
+
+  PooledDataRecord PDR = createPooledDataRecord(
+      DataRecordHandle::Input{I.Offset, None, Data});
+
+  TrieRecord::Data Blob;
+  Blob.OK = TrieRecord::ObjectKind::Blob;
+  Blob.SK = TrieRecord::StorageKind::DataPool;
+  Blob.Offset = PDR.Offset;
+
+  // Try to store the value and confirm that the new value has valid storage.
+  //
+  // TODO: Find a way to reuse the storage from the new-but-abandoned record
+  // handle.
+  TrieRecord::Data Existing;
+  if (!I.ObjectRef.compare_exchange_strong(Existing, Blob))
+    if (Existing.SK == TrieRecord::StorageKind::Unknown)
+      return createCorruptObjectError(CASID(I.Hash));
+
+  return dereferenceValue(getBlob(I),
+                    [&]() { return createCorruptObjectError(CASID(I.Hash)); });
+}
+
+Expected<OnDiskCAS::DataRecordProxy>
+OnDiskCAS::getOrCreateTree(IndexProxy I, ArrayRef<NamedTreeEntry> SortedEntries) {
+  InternalRefVector Refs;
+  SmallVector<char> Data;
+  // Names up front.
+  for (const NamedTreeEntry &E : SortedEntries) {
+    if (Expected<InternalRef> Ref = getOrCreateStringRef(E.getName()))
+      Refs.push_back(*Ref);
+    else
+      return Ref.takeError();
+    Data.push_back((uint8_t)getStableKind(E.getKind()));
+  }
+
+  // Then target refs.
+  for (const NamedTreeEntry &E : SortedEntries) {
+    if (Optional<InternalRef> Ref = getInternalRef(E.getID()))
+      Refs.push_back(*Ref);
+    else
+      return createUnknownObjectError(E.getID());
+  }
+
+  // Create the object.
+  return getOrCreateDataRecord(I, TrieRecord::ObjectKind::Tree,
+                               DataRecordHandle::Input{I.Offset, Refs, Data});
+}
+
+Expected<OnDiskCAS::DataRecordProxy>
+OnDiskCAS::getOrCreateNode(IndexProxy I, ArrayRef<CASID> References,
+                           ArrayRef<char> Data) {
+  InternalRefVector Refs;
+  for (const CASID &ID : References) {
+    if (Optional<InternalRef> Ref = getInternalRef(ID))
+      Refs.push_back(*Ref);
+    else
+      return createUnknownObjectError(ID);
+  }
+
+  // Create the object.
+  return getOrCreateDataRecord(I, TrieRecord::ObjectKind::Node,
+                               DataRecordHandle::Input{I.Offset, Refs, Data});
+}
+
 Expected<OnDiskCAS::DataRecordProxy>
 OnDiskCAS::getOrCreateDataRecord(IndexProxy &I, TrieRecord::ObjectKind OK,
                                  DataRecordHandle::Input Input) {
@@ -2268,8 +2683,8 @@ OnDiskCAS::getOrCreateDataRecord(IndexProxy &I, TrieRecord::ObjectKind OK,
   Optional<MappedTempFile> File;
   auto Alloc = [&](size_t Size) -> Expected<char *> {
     if (Size <= TrieRecord::MaxEmbeddedSize) {
-      SK = TrieRecord::StorageKind::Pooled;
-      OnDiskDataAllocator::pointer P = PooledData.allocate(Size);
+      SK = TrieRecord::StorageKind::DataPool;
+      OnDiskDataAllocator::pointer P = DataPool.allocate(Size);
       PoolOffset = P.getOffset();
       return P->data();
     }
@@ -2287,12 +2702,12 @@ OnDiskCAS::getOrCreateDataRecord(IndexProxy &I, TrieRecord::ObjectKind OK,
   assert(bool(File) != bool(PoolOffset) &&
          "Expected either a mapped file or a pooled offset");
 
-  // Check for someone else writing in the meantime.
+  // Check for a race before calling MappedTempFile::keep().
+  //
+  // Then decide what to do with the file. Better to discard than overwrite if
+  // another thread/process has already added this.
   TrieRecord::Data NewObject{SK, OK, PoolOffset};
   TrieRecord::Data Existing = I.ObjectRef.load();
-
-  // Decide what to do with the file. Better to discard than overwrite if
-  // another thread/process has already added this.
   if (File) {
     if (Existing.SK == TrieRecord::StorageKind::Unknown) {
       // Keep the file!
@@ -2320,28 +2735,10 @@ OnDiskCAS::getOrCreateDataRecord(IndexProxy &I, TrieRecord::ObjectKind OK,
                     [&]() { return createCorruptObjectError(CASID(I.Hash)); });
 }
 
-Expected<OnDiskCAS::BlobProxy> OnDiskCAS::getOrCreateBlob(IndexProxy &I, ArrayRef<char> Data) {
-  // See if it already exists.
-  if (Optional<Expected<BlobProxy>> Blob = dereferenceValue(getBlob(I)))
-    return std::move(*Blob);
-
-  if (Data.size() > TrieRecord::MaxEmbeddedSize)
-    return createStandaloneBlob(I, Data);
-
-  PooledDataRecord PDR = createPooledDataRecord(
-      DataRecordHandle::Input{I.Offset, Data, None});
-
-  TrieRecord::Data Blob;
-  Blob.OK = TrieRecord::ObjectKind::Blob;
-  Blob.SK = TrieRecord::StorageKind::Pooled;
-  Blob.Offset = PDR.Offset;
-  return BlobProxy{Blob, I.Hash, PDR.Record.getData()};
-}
-
 OnDiskCAS::PooledDataRecord OnDiskCAS::createPooledDataRecord(DataRecordHandle::Input Input) {
   FileOffset Offset;
   auto Alloc = [&](size_t Size) -> char* {
-    OnDiskDataAllocator::pointer P = PooledData.allocate(Size);
+    OnDiskDataAllocator::pointer P = DataPool.allocate(Size);
     Offset = P.getOffset();
     return P->data();
   };
@@ -2350,456 +2747,113 @@ OnDiskCAS::PooledDataRecord OnDiskCAS::createPooledDataRecord(DataRecordHandle::
   return PooledDataRecord{Offset, Record};
 }
 
-Expected<BlobRef> OnDiskCAS::createBlobImpl(ArrayRef<uint8_t> ComputedHash,
-                                            ArrayRef<char> Data) {
-  // Look up the hash in the index, initializing to nullptr if it's new.
-  IndexProxy I = indexHash(ComputedHash);
-
-  BlobProxy Blob;
-  if (Error E = getOrCreateBlob(I, Data).moveInto(Blob))
-    return std::move(E);
-
-  return makeBlobRef(CASID(Blob.Hash), Blob.Data);
+Expected<BlobRef> OnDiskCAS::getBlobFromProxy(Expected<BlobProxy> Blob) {
+  if (Blob)
+    return makeBlobRef(CASID(Blob->Hash), Blob->Data);
+  return Blob.takeError();
 }
 
-Expected<TreeRef> OnDiskCAS::createTreeImpl(ArrayRef<uint8_t> ComputedHash,
-                                            ArrayRef<NamedTreeEntry> Entries) {
-  // Look up the hash in the index, initializing to nullptr if it's new.
-  IndexProxy I = indexHash(ComputedHash);
+Expected<NodeRef> OnDiskCAS::getNodeFromProxy(Expected<DataRecordProxy> Node) {
+  if (Node)
+    return makeNodeRef(CASID(Node->Hash), &Node->Record.getHeader(), Node->Record.getNumRefs(),
+                       toStringRef(Node->Record.getData()));
+  return Node.takeError();
+}
 
-  DataRecordProxy;
-  if (const InMemoryObject *Tree = I.Data.load())
-    return getTreeRef(*Tree);
+Expected<TreeRef> OnDiskCAS::getTreeFromProxy(Expected<DataRecordProxy> Tree) {
+  if (Tree)
+    return makeTreeRef(CASID(Tree->Hash), &Tree->Record.getHeader(),
+                       Tree->Record.getNumRefs() / 2);
+  return Tree.takeError();
+}
 
-  SmallVector<InternalRef> Refs;
-  SmallVector<char> Data;
-  for (const NamedTreeEntry &E : SortedEntries) {
-    Optional<InternalRef> Ref = getObjectRef(E.getID());
-    if (!Ref)
-      return createUnknownObjectError(E.getID());
+Expected<BlobRef> OnDiskCAS::getBlob(CASID ID) {
+  if (OnDiskHashMappedTrie::const_pointer P = getInternalIndexPointer(ID))
+    if (Optional<Expected<BlobProxy>> Blob = dereferenceValue(
+          getBlob(getIndexProxyFromPointer(P))))
+      return getBlobFromProxy(std::move(*Blob));
+  // FIXME: This should not be an error.
+  return createUnknownObjectError(ID);
+}
 
-    Refs.push_back(Ref);
-    Refs.push_back(getOrCreateStringRef(E.getName()));
-    Data.push_back((uint8_t)getStableKind(E.getKind()));
+Expected<NodeRef> OnDiskCAS::getNode(CASID ID) {
+  if (OnDiskHashMappedTrie::const_pointer P = getInternalIndexPointer(ID))
+    if (Optional<Expected<DataRecordProxy>> Node = dereferenceValue(getDataRecord(
+          getIndexProxyFromPointer(P))))
+      return getNodeFromProxy(std::move(*Node));
+  // FIXME: This should not be an error.
+  return createUnknownObjectError(ID);
+}
+
+Expected<TreeRef> OnDiskCAS::getTree(CASID ID) {
+  if (OnDiskHashMappedTrie::const_pointer P = getInternalIndexPointer(ID))
+    if (Optional<Expected<DataRecordProxy>> Tree = dereferenceValue(getDataRecord(
+          getIndexProxyFromPointer(P))))
+      return getTreeFromProxy(std::move(*Tree));
+  // FIXME: This should not be an error.
+  return createUnknownObjectError(ID);
+}
+
+NamedTreeEntry OnDiskCAS::makeTreeEntry(DataRecordHandle Record, size_t I,
+                                        ArrayRef<StringRef> NameCache) const {
+  size_t NumNames = Record.getNumRefs() / 2;
+  assert(I < NumNames);
+  assert(Record.getNumRefs() % 2 == 0);
+  StringRef Name;
+  if (NameCache.empty()) {
+    Optional<StringRef> S = getString(Record.getRefs()[I]);
+    // FIXME: Probably should be less fragile...
+    if (!S)
+      report_fatal_error("corrupt name in tree entry");
+    Name = *S;
+  } else {
+    Name = NameCache[I];
   }
 
-  // Create the object.
-  DataRecordProxy Tree;
-  if (Error E = getOrCreateDataRecord(
-      I, TrieRecord::ObjectKind::Tree,
-      TrieRecord::Input{I.Offset, Refs, Data}).moveInto(Tree))
-    return std::move(E);
-  return makeTreeRef(CASID(Tree.Hash), &Tree.Record.getHeader(), Refs.size());
+  Optional<CASID> ID = getCASID(Record.getRefs()[I + NumNames]);
+  TreeEntry::EntryKind Kind = getUnstableKind((StableTreeEntryKind)Record.getData()[I]);
+  return NamedTreeEntry(*ID, Kind, Name);
 }
 
-Expected<NodeRef> OnDiskCAS::createNodeImpl(ArrayRef<uint8_t> ComputedHash,
-                                            ArrayRef<CASID> References,
-                                            ArrayRef<char> Data) {
-  // Look up the hash in the index, initializing to nullptr if it's new.
-  IndexProxy I = indexHash(ComputedHash);
+Optional<NamedTreeEntry> OnDiskCAS::lookupInTree(const TreeRef &Tree,
+                                                 StringRef Name) const {
+  DataRecordHandle Record = DataRecordHandle::get(reinterpret_cast<char *>(
+      const_cast<void *>(getTreePtr(Tree))));
 
-  DataRecordProxy;
-  if (const InMemoryObject *Node = I.Data.load())
-    return getNodeRef(*Node);
-
-  SmallVector<InternalRef> Refs;
-  for (const CASID &ID : SortedEntries) {
-    Optional<InternalRef> Ref = getObjectRef(ID.getID());
-    if (!Ref)
-      return createUnknownObjectError(ID.getID());
-
-    Refs.push_back(Ref);
-  }
-
-  // Create the object.
-  DataRecordProxy Node;
-  if (Error E = getOrCreateDataRecord(
-      I, TrieRecord::ObjectKind::Node,
-      TrieRecord::Input{I.Offset, Refs, Data}).moveInto(Node))
-    return std::move(E);
-  return makeNodeRef(CASID(Node.Hash), &Node.Record.getHeader(), Refs.size(),
-                     Node.Record.getData());
-}
-
-
-using TreeObjectData = BuiltinCAS::TreeObjectData;
-using ObjectContentReference = BuiltinCAS::ObjectContentReference;
-using ObjectAndID = BuiltinCAS::ObjectAndID;
-using ContentReference = BuiltinCAS::ContentReference;
-using AbstractReferenceList = BuiltinCAS::AbstractReferenceList;
-using AbstractObjectReference = BuiltinCAS::AbstractObjectReference;
-
-// Stable numbers for serializing trees.
-constexpr static uint32_t EntryKindIDForTree = 1;
-constexpr static uint32_t EntryKindIDForRegular = 2;
-constexpr static uint32_t EntryKindIDForExecutable = 3;
-constexpr static uint32_t EntryKindIDForSymlink = 4;
-
-constexpr static StringLiteral CASTreeMagic = "\xcas-tree\001";
-static_assert(CASTreeMagic.size() % alignof(uint64_t) == 0,
-              "Magic not 8-byte aligned");
-
-static void printTree(raw_ostream &OS, ArrayRef<NamedTreeEntry> SortedEntries,
-                      SmallVectorImpl<CASID> &References) {
-  // Hash input has format:
-  //
-  //  input := header unnamed-entry* name*
-  //  header := 'cas-tree' num-entries
-  //  unnamed-entry := kind name-offset
-  //  name := name-string NULL
-  OS << CASTreeMagic;
-  support::endian::Writer EW(OS, support::endianness::little);
-  uint64_t StringsOffset = 0;
-  for (const NamedTreeEntry &Entry : SortedEntries) {
-    assert(Entry.getID().getHash().size() == sizeof(HashType));
-    References.push_back(Entry.getID());
-
-    uint64_t Kind = 0;
-    switch (Entry.getKind()) {
-    case TreeEntry::Regular:
-      Kind = EntryKindIDForRegular;
-      break;
-    case TreeEntry::Tree:
-      Kind = EntryKindIDForTree;
-      break;
-    case TreeEntry::Executable:
-      Kind = EntryKindIDForExecutable;
-      break;
-    case TreeEntry::Symlink:
-      Kind = EntryKindIDForSymlink;
-      break;
-    }
-    assert(Kind < (1u << 8) && "Kind needs to be 8 bits");
-
-    assert(StringsOffset < (1ull << 56) && "Absurdly large string?");
-    EW.write(StringsOffset | (Kind << 56));
-    StringsOffset +=
-        alignTo(Entry.getName().size() + 1, Align(4)) + sizeof(uint32_t);
-  }
-  for (const NamedTreeEntry &Entry : SortedEntries) {
-    EW.write(uint32_t(Entry.getName().size()));
-    OS << Entry.getName();
-    for (int I = 0, E = alignTo(Entry.getName().size() + 1, Align(4)) -
-                        Entry.getName().size();
-         I != E; ++I)
-      OS.write(0);
-  }
-}
-
-CASID BuiltinCAS::ObjectContentReference::getReference(size_t I) const {
-  assert(I < getNumReferences() && "Reference out of range");
-  return CASID(
-      bufferAsRawHash(ReferenceBlock.substr(I * sizeof(HashType), sizeof(HashType))));
-}
-
-struct BuiltinCAS::TreeObjectData {
-  Optional<ArrayRef<CASID>> References;
-  Optional<StringRef> Data;
-
-  Optional<SmallVector<CASID, 16>> ReferenceStorage;
-  Optional<SmallString<1024>> DataStorage;
-};
-
-BuiltinCAS::AbstractObjectReference::AbstractObjectReference(
-    const TreeObjectData &Object)
-    : References(*Object.References), Data(*Object.Data) {}
-
-static bool isValidTree(ObjectContentReference Object) {
-  // Check for magic.
-  StringRef Data = Object.Data;
-  if (!Data.consume_front(CASTreeMagic))
-    return false;
-
-  // Check for an empty tree.
-  uint64_t NumEntries = Object.getNumReferences();
-  if (!NumEntries)
-    return Data.empty();
-
-  // Check that there's space for the strings table.
-  //
-  // TODO: Sanity check a couple of tree entries.
-  const size_t EntrySize = sizeof(uint64_t);
-  return NumEntries * EntrySize < Data.size();
-}
-
-static Optional<NamedTreeEntry> getTreeEntryImpl(ObjectContentReference Object,
-                                                 size_t I) {
-  uint64_t NumEntries = Object.getNumReferences();
-  assert(I < NumEntries);
-  CASID ID = Object.getReference(I);
-
-  assert(Object.Data.size() >= CASTreeMagic.size() && "Expected valid tree");
-  const char *Start = Object.Data.begin() + CASTreeMagic.size();
-
-  const size_t EntrySize = sizeof(uint64_t);
-  size_t StringsTableOffset = NumEntries * EntrySize;
-  assert(ptrdiff_t(StringsTableOffset) < Object.Data.end() - Start &&
-         "Expected valid tree");
-  const char *StringsTable = Start + StringsTableOffset;
-
-  using namespace llvm::support;
-  uint64_t EntryData = endian::read<uint64_t, endianness::little, aligned>(
-      Start + I * EntrySize);
-  uint64_t KindID = EntryData >> 56;
-  uint64_t StringOffset = EntryData & ((1ull << 56) - 1ull);
-
-  // Get the kind.
-  Optional<TreeEntry::EntryKind> Kind;
-  switch (KindID) {
-  default:
-    return None;
-  case EntryKindIDForRegular:
-    Kind = TreeEntry::Regular;
-    break;
-  case EntryKindIDForTree:
-    Kind = TreeEntry::Tree;
-    break;
-  case EntryKindIDForExecutable:
-    Kind = TreeEntry::Executable;
-    break;
-  case EntryKindIDForSymlink:
-    Kind = TreeEntry::Symlink;
-    break;
-  }
-
-  // Get the name.
-  if (ptrdiff_t(StringOffset + sizeof(uint32_t)) >
-      Object.Data.end() - StringsTable)
-    return None;
-  const char *String = StringsTable + StringOffset;
-  uint32_t StringSize =
-      endian::readNext<uint32_t, endianness::little, aligned>(String);
-  if (ptrdiff_t(StringSize) + 1 > Object.Data.end() - String)
-    return None;
-  if (String[StringSize] != 0)
-    return None;
-  StringRef Name(String, StringSize);
-
-  return NamedTreeEntry(ID, *Kind, Name);
-}
-
-static NamedTreeEntry getTreeEntry(ObjectContentReference Object, size_t I) {
-  Optional<NamedTreeEntry> MaybeEntry = getTreeEntryImpl(Object, I);
-
-  // FIXME: probably want to a report a corrupt object?
-  assert(MaybeEntry && "Parse error");
-  return *MaybeEntry;
-}
-
-static TreeObjectData makeTree(ArrayRef<NamedTreeEntry> SortedEntries) {
-  TreeObjectData Tree;
-  {
-    // Reserve enough references.
-    Tree.ReferenceStorage.emplace();
-    Tree.ReferenceStorage->reserve(SortedEntries.size());
-
-    // Reserve enough chars.
-    size_t NumChars = CASTreeMagic.size();
-    for (auto &E : SortedEntries)
-      NumChars += sizeof(uint64_t) + sizeof(uint32_t) +
-                  alignTo(E.getName().size() + sizeof(char), Align(4));
-    Tree.DataStorage.emplace();
-    Tree.DataStorage->reserve(NumChars);
-
-    // Print the tree.
-    raw_svector_ostream OS(*Tree.DataStorage);
-    printTree(OS, SortedEntries, *Tree.ReferenceStorage);
-    assert(Tree.DataStorage->size() == NumChars && "Reservation doesn't match");
-  }
-  assert(Tree.ReferenceStorage->size() == SortedEntries.size() && "Reservation doesn't match");
-
-  Tree.Data = *Tree.DataStorage;
-  Tree.References = *Tree.ReferenceStorage;
-  return Tree;
-}
-
-HashType AbstractObjectReference::computeHash() const {
-  SmallString<sizeof(uint64_t) * 3> Sizes;
-  {
-    raw_svector_ostream OS(Sizes);
-    llvm::support::endian::Writer EW(OS, support::endianness::little);
-    EW.write(uint64_t(References.getNumBytes()));
-    EW.write(uint64_t(Data.size()));
-  }
-
-  SHA1 Hasher;
-  Hasher.update(Sizes);
-  References.updateHash(Hasher);
-  Hasher.update(Data);
-  return makeHash(bufferAsRawHash(Hasher.final()));
-}
-
-size_t BuiltinCAS::AbstractReferenceList::getNumBytes() const {
-  return ReferenceBlock ? ReferenceBlock->size()
-                        : ReferenceList->size() * sizeof(HashType);
-}
-
-size_t BuiltinCAS::AbstractReferenceList::getNumReferences() const {
-  return ReferenceBlock ? ReferenceBlock->size() / sizeof(HashType)
-                        : ReferenceList->size();
-}
-
-void BuiltinCAS::AbstractReferenceList::appendTo(
-    SmallVectorImpl<char> &Sink) const {
-  if (ReferenceBlock) {
-    Sink.append(ReferenceBlock->begin(), ReferenceBlock->end());
-    return;
-  }
-  for (CASID ID : *ReferenceList) {
-    auto Hash = rawHashAsBuffer(ID.getHash());
-    assert(Hash.size() == sizeof(HashType));
-    Sink.append(Hash.begin(), Hash.end());
-  }
-}
-
-void BuiltinCAS::AbstractReferenceList::updateHash(SHA1 &Hasher) const {
-  if (ReferenceBlock) {
-    Hasher.update(*ReferenceBlock);
-    return;
-  }
-  for (CASID ID : *ReferenceList) {
-    assert(ID.getHash().size() == sizeof(HashType));
-    Hasher.update(ID.getHash());
-  }
-}
-
-StringRef BuiltinCAS::AbstractObjectReference::build(
-    SmallVectorImpl<char> &Metadata, SmallVectorImpl<char> &DataStorage) const {
-  assert(Metadata.empty());
-  assert(DataStorage.empty());
-
-  Metadata.reserve(sizeof(uint64_t) * 2);
-  raw_svector_ostream OS(Metadata);
-  support::endian::Writer EW(OS, support::endianness::little);
-  EW.write(uint64_t(References.getNumReferences()));
-  EW.write(uint64_t(Data.size()));
-
-  // No references. No need to copy out data.
-  if (!References.getNumReferences())
-    return Data;
-
-  // Reserve enough space for the reference block, padding for 8 byte
-  // alignment, and the data.
-  uint64_t ReferenceBlockSize = References.getNumBytes();
-  uint64_t StoragePadding =
-      alignTo(ReferenceBlockSize, Align(8)) - ReferenceBlockSize;
-  assert(StoragePadding < 8);
-  uint64_t ExpectedStorageSize =
-      ReferenceBlockSize + StoragePadding + Data.size();
-  DataStorage.reserve(ExpectedStorageSize);
-
-  // Build the references and data.
-  References.appendTo(DataStorage);
-  assert(DataStorage.size() == ReferenceBlockSize);
-  if (StoragePadding)
-    DataStorage.resize(DataStorage.size() + StoragePadding, 0);
-  DataStorage.append(Data.begin(), Data.end());
-  assert(ExpectedStorageSize == DataStorage.size());
-  return StringRef(DataStorage.begin(), DataStorage.size());
-}
-
-Optional<ObjectContentReference>
-ObjectContentReference::getFromContent(ContentReference Content) {
-  if (Content.Metadata.size() < sizeof(uint64_t) * 2)
+  if (!Record.getNumRefs())
     return None;
 
-  using namespace llvm::support;
+  // Names are at the front.
+  InternalRefArrayRef Refs = Record.getRefs();
+  size_t NumNames = Record.getNumRefs() / 2;
+  SmallVector<StringRef> Names(NumNames);
 
-  // Read the metadata.
-  const char *Current = Content.Metadata.begin();
-  size_t NumReferences =
-      endian::readNext<uint64_t, endianness::little, aligned>(Current);
-  size_t DataSize =
-      endian::readNext<uint64_t, endianness::little, aligned>(Current);
-  ObjectContentReference Object;
-
-  // Read the reference block and data.
-  uint64_t ReferenceBlockSize = NumReferences * sizeof(HashType);
-  uint64_t StoragePadding =
-      alignTo(ReferenceBlockSize, Align(8)) - ReferenceBlockSize;
-  if (Content.Data.size() != ReferenceBlockSize + StoragePadding + DataSize)
-    return None; // Error.
-  Object.ReferenceBlock = Content.Data.take_front(ReferenceBlockSize);
-  Object.Data = Content.Data.take_back(DataSize);
-  return Object;
-}
-
-bool BuiltinCAS::isKnownObject(CASID ID) {
-  return !errorToBool(getObject(ID).takeError());
-}
-
-Optional<ObjectKind> BuiltinCAS::getObjectKind(CASID ID) {
-  Expected<ObjectAndID> ExpectedObject = getObject(ID);
-  if (!ExpectedObject) {
-    consumeError(ExpectedObject.takeError());
-    return None;
-  }
-  if (!errorToBool(getTreeFromObject(*ExpectedObject).takeError()))
-    return ObjectKind::Tree;
-  if (!errorToBool(getBlobFromObject(*ExpectedObject).takeError()))
-    return ObjectKind::Blob;
-  return ObjectKind::Node;
-}
-
-Expected<ObjectAndID> BuiltinCAS::getObject(CASID ID) {
-  ArrayRef<uint8_t> Hash = ID.getHash();
-  auto Lookup = ObjectCache.find(Hash);
-  if (Lookup)
-    return ObjectAndID{Lookup->Data, CASID(Lookup->Hash)};
-
-  if (isInMemoryOnly())
-    return createUnknownObjectError(ID);
-
-  Optional<MappedContentReference> File = openOnDisk(*OnDiskObjects, Hash);
-  if (!File)
-    return createUnknownObjectError(ID);
-
-  ContentReference Content = persistMappedContentInMemory(std::move(*File));
-  Optional<ObjectContentReference> Object =
-      ObjectContentReference::getFromContent(Content);
-  if (!Object)
-    return createCorruptObjectError(ID);
-
-  auto Insertion = ObjectCache.insert(
-      Lookup, ObjectCacheType::value_type(makeHash(Hash), *Object));
-  return ObjectAndID{Insertion->Data, CASID(Insertion->Hash)};
-}
-
-Expected<BlobRef> BuiltinCAS::getBlobFromObject(Expected<ObjectAndID> Object) {
-  if (!Object)
-    return Object.takeError();
-
-  if (Object->Object.getNumReferences())
-    return createInvalidObjectError(Object->ID, "blob");
-
-  return makeBlobRef(Object->ID, Object->Object.Data);
-}
-
-Expected<TreeRef> BuiltinCAS::getTreeFromObject(Expected<ObjectAndID> Object) {
-  if (!Object)
-    return Object.takeError();
-
-  if (!isValidTree(Object->Object))
-    return createInvalidObjectError(Object->ID, "tree");
-
-  return makeTreeRef(Object->ID, &Object->Object,
-                     Object->Object.getNumReferences());
-}
-
-Optional<NamedTreeEntry> BuiltinCAS::lookupInTree(const TreeRef &Tree,
-                                                  StringRef Name) const {
-  // FIXME: Consider adding an on-disk hash table for large trees.
-  auto &Object = *static_cast<const ObjectContentReference *>(getTreePtr(Tree));
+  auto GetName = [&](InternalRefArrayRef::iterator I) {
+    auto &NameI = Names[I - Refs.begin()];
+    if (!NameI.empty())
+      return NameI;
+    Optional<StringRef> S = getString(*I);
+    // FIXME: Probably should be less fragile...
+    if (!S)
+      report_fatal_error("corrupt name in tree entry");
+    NameI = *S;
+    return *S;
+  };
 
   // Start with a binary search, if there are enough entries.
-  const size_t MaxLinearSearchSize = 4;
-  size_t First = 0, Last = Object.getNumReferences();
+  //
+  // FIXME: Should just use std::lower_bound, but we need the actual iterators
+  // to know the index in the NameCache...
+  const intptr_t MaxLinearSearchSize = 4;
+  auto LastName = Refs.begin() + NumNames;
+  auto Last = LastName;
+  auto First = Refs.begin();
   while (Last - First > MaxLinearSearchSize) {
-    size_t I = (First + Last) / 2;
-    NamedTreeEntry Entry = getTreeEntry(Object, I);
-    switch (Name.compare(Entry.getName())) {
+    auto I = First + (Last - First) / 2;
+    StringRef NameI = GetName(I);
+    switch (Name.compare(NameI)) {
     case 0:
-      return Entry;
+      return makeTreeEntry(Record, I - Refs.begin(), Names);
     case -1:
       Last = I;
       break;
@@ -2810,328 +2864,166 @@ Optional<NamedTreeEntry> BuiltinCAS::lookupInTree(const TreeRef &Tree,
   }
 
   // Use a linear search for small trees.
-  for (; First != Last; ++First) {
-    NamedTreeEntry Entry = getTreeEntry(Object, First);
-    if (Name == Entry.getName())
-      return Entry;
-  }
+  for (; First != Last; ++First)
+    if (Name == GetName(First))
+      return makeTreeEntry(Record, First - Refs.begin(), Names);
 
   return None;
 }
 
-NamedTreeEntry BuiltinCAS::getInTree(const TreeRef &Tree, size_t I) const {
-  auto &Object = *static_cast<const ObjectContentReference *>(getTreePtr(Tree));
-  return getTreeEntry(Object, I);
+NamedTreeEntry OnDiskCAS::getInTree(const TreeRef &Tree, size_t I) const {
+  DataRecordHandle Record = DataRecordHandle::get(reinterpret_cast<char *>(
+      const_cast<void *>(getTreePtr(Tree))));
+
+  return makeTreeEntry(Record, I);
 }
 
-Error BuiltinCAS::forEachEntryInTree(
-    const TreeRef &Tree,
-    function_ref<Error(const NamedTreeEntry &)> Callback) const {
-  auto &Object = *static_cast<const ObjectContentReference *>(getTreePtr(Tree));
-  for (size_t I = 0, E = Object.getNumReferences(); I != E; ++I)
-    if (Error E = Callback(getTreeEntry(Object, I)))
+Error OnDiskCAS::forEachEntryInTree(
+  const TreeRef &Tree,
+  function_ref<Error(const NamedTreeEntry &)> Callback) const {
+  DataRecordHandle Record = DataRecordHandle::get(reinterpret_cast<char *>(
+      const_cast<void *>(getTreePtr(Tree))));
+
+  size_t NumNames = Record.getNumRefs() / 2;
+  assert(Record.getNumRefs() % 2 == 0);
+  for (size_t I = 0; I != NumNames; ++I)
+    if (Error E = Callback(makeTreeEntry(Record, I)))
       return E;
   return Error::success();
 }
 
-Expected<TreeRef> BuiltinCAS::createTree(ArrayRef<NamedTreeEntry> Entries) {
-  SmallVector<NamedTreeEntry> Sorted(Entries.begin(), Entries.end());
+CASID OnDiskCAS::getReferenceInNode(const NodeRef &Node, size_t I) const {
+  DataRecordHandle Record = DataRecordHandle::get(reinterpret_cast<char *>(
+      const_cast<void *>(getNodePtr(Node))));
 
-  // Ensure a stable order for tree entries and ignore name collisions.
-  std::stable_sort(Sorted.begin(), Sorted.end());
-  Sorted.erase(std::unique(Sorted.begin(), Sorted.end()), Sorted.end());
+  Optional<CASID> ID = getCASID(Record.getRefs()[I]);
+  assert(ID);
+  return *ID;
+}
 
-  // Check each name is valid.
+Error OnDiskCAS::forEachReferenceInNode(const NodeRef &Node,
+                                        function_ref<Error(CASID)> Callback) const {
+  DataRecordHandle Record = DataRecordHandle::get(reinterpret_cast<char *>(
+      const_cast<void *>(getNodePtr(Node))));
+
+  for (InternalRef Ref : Record.getRefs())
+    if (Error E = Callback(*getCASID(Ref)))
+      return E;
+  return Error::success();
+}
+
+Expected<CASID> OnDiskCAS::getCachedResult(CASID InputID) {
+  // Check that InputID is valid.
+  Optional<InternalRef> InputRef = getInternalRef(InputID);
+  if (!InputRef)
+    return createUnknownObjectError(InputID);
+
+  // Check the result cache.
   //
-  // FIXME: Is this too expensive? Maybe we don't really care...
-  for (const NamedTreeEntry &Entry : Sorted)
-    if (Entry.getName().find_first_of("/\0\n") != StringRef::npos)
-      return errorCodeToError(
-          std::make_error_code(std::errc::invalid_argument));
-
-  return getTreeFromObject(createObject(makeTree(Sorted)));
-}
-
-Expected<NodeRef> BuiltinCAS::getNodeFromObject(Expected<ObjectAndID> Object) {
-  if (!Object)
-    return Object.takeError();
-
-  return makeNodeRef(Object->ID, &Object->Object,
-                     Object->Object.getNumReferences(), Object->Object.Data);
-}
-
-CASID BuiltinCAS::getReferenceInNode(const NodeRef &Ref, size_t I) const {
-  auto &Object = *static_cast<const ObjectContentReference *>(getNodePtr(Ref));
-  return Object.getReference(I);
-}
-
-Error BuiltinCAS::forEachReferenceInNode(
-    const NodeRef &Ref, function_ref<Error(CASID)> Callback) const {
-  auto &Object = *static_cast<const ObjectContentReference *>(getNodePtr(Ref));
-  for (size_t I = 0, E = Object.getNumReferences(); I != E; ++I)
-    if (Error E = Callback(Object.getReference(I)))
-      return E;
-  return Error::success();
-}
-
-Expected<ObjectAndID> BuiltinCAS::createObject(
-    AbstractObjectReference Object,
-    Optional<sys::fs::mapped_file_region> NullTerminatedMap) {
-  HashType Hash = Object.computeHash();
-  auto Lookup = ObjectCache.find(Hash);
-  if (Lookup) {
-    assert(Object.Data == Lookup->Data.Data);
-    return ObjectAndID{Lookup->Data, CASID(Lookup->Hash)};
-  }
-
-  SmallString<256> Metadata;
-  SmallString<1024> DataStorage;
-
-  // Build the metadata and data. We can reuse the null-terminated map only if
-  // the data wasn't moved to DataStorage.
-  StringRef ReferenceBlockAndData = Object.build(Metadata, DataStorage);
-  Optional<sys::fs::mapped_file_region> DataMapToPersist;
-  if (DataStorage.empty())
-    DataMapToPersist = std::move(NullTerminatedMap);
-
-  ContentReference Content = getOrCreatePersistentContent(
-      Hash, Metadata, ReferenceBlockAndData, std::move(DataMapToPersist));
-  Optional<ObjectContentReference> PersistentObject =
-      ObjectContentReference::getFromContent(Content);
-  assert(PersistentObject && "Expected persistant object to be valid");
-
-  auto Insertion = ObjectCache.insert(
-      Lookup, ObjectCacheType::value_type(Hash, *PersistentObject));
-  return ObjectAndID{Insertion->Data, CASID(Insertion->Hash)};
-}
-
-Expected<BlobRef> BuiltinCAS::createBlobImpl(
-    StringRef Data, Optional<sys::fs::mapped_file_region> NullTerminatedMap) {
-  return getBlobFromObject(
-      createObject(AbstractObjectReference(None, Data),
-                   std::move(NullTerminatedMap)));
-}
-
-StringRef BuiltinCAS::persistBufferInMemory(
-    StringRef Buffer, bool ShouldNullTerminate,
-    Optional<sys::fs::mapped_file_region> NullTerminatedMap) {
-  if (NullTerminatedMap) {
-    assert(NullTerminatedMap->data() == Buffer.begin());
-    assert(Buffer.end()[0] == 0);
-    new (PersistentMaps.Allocate())
-        sys::fs::mapped_file_region(std::move(*NullTerminatedMap));
-    return Buffer;
-  }
-
-  auto GetPadding = [](uint64_t Size) -> uint64_t {
-    if (uint64_t Remainder = Size % 8)
-      return 8 - Remainder;
-    return 0;
-  };
-  const uint64_t PaddingSize = ShouldNullTerminate
-                                   ? (GetPadding(Buffer.size() + 1) + 1)
-                                   : GetPadding(Buffer.size());
-
-  // Use the in-memory allocator for content. This is only expected when we
-  // don't have on-disk objects.
-  assert(isInMemoryOnly());
-  char *InMemoryBuffer =
-      AlignedInMemoryStrings->Allocate(Buffer.size() + PaddingSize);
-  ::memcpy(InMemoryBuffer, Buffer.begin(), Buffer.size());
-  ::memset(InMemoryBuffer + Buffer.size(), 0, PaddingSize);
-  return StringRef(InMemoryBuffer, Buffer.size());
-}
-
-Expected<CASID> BuiltinCAS::getCachedResult(CASID InputID) {
-  if (!isOnDisk()) {
-    // Look up the result in-memory (only if it's not on-disk).
-    auto Lookup = ResultCache.find(InputID.getHash());
-    if (Lookup)
-      return CASID(Lookup->Data);
-
-    // FIXME: Odd to have an error for a cache miss. This function should
-    // have a different API.
+  // FIXME: Failure here should not be an error.
+  OnDiskHashMappedTrie::pointer ActionP = ActionCache.find(InputID.getHash());
+  if (!ActionP)
     return createResultCacheMissError(InputID);
-  }
+  const uint64_t Output = reinterpret_cast<const ActionCacheResultT *>(
+      ActionP->Data.data())->load();
 
-  // Look up the result on-disk.
-  Optional<MappedContentReference> File =
-      openOnDisk(*OnDiskResults, InputID.getHash());
-  if (!File)
-    return createResultCacheMissError(InputID);
-  if (File->Metadata != "results") // FIXME: Should cache this object.
-    return createCorruptObjectError(InputID);
-
-  // Expect all cached CASIDs to be directly available, without needing an
-  // additional mapped file.
-  assert(!File->Map && "Unexpected mapped_file_region in result cache");
-  if (File->Data.size() != sizeof(HashType))
-    reportAsFatalIfError(createResultCacheCorruptError(InputID));
-  return CASID(bufferAsRawHash(File->Data));
+  // Return the result.
+  Optional<CASID> OutputID = getCASID(InternalRef::getFromRawData(Output));
+  if (!OutputID)
+    return createResultCacheCorruptError(InputID);
+  return *OutputID;
 }
 
-Error BuiltinCAS::putCachedResult(CASID InputID, CASID OutputID) {
-  // Helper for confirming cached results are consistent.
-  auto checkOutput = [&](ArrayRef<uint8_t> ExistingOutput) -> Error {
-    if (ExistingOutput == OutputID.getHash())
-      return Error::success();
-    // FIXME: probably...
-    reportAsFatalIfError(createResultCachePoisonedError(InputID, OutputID,
-                                                        CASID(ExistingOutput)));
+Error OnDiskCAS::putCachedResult(CASID InputID, CASID OutputID) {
+  // Check that both IDs are valid.
+  Optional<InternalRef> InputRef = getInternalRef(InputID);
+  if (!InputRef)
+    return createUnknownObjectError(InputID);
+
+  Optional<InternalRef> OutputRef = getInternalRef(OutputID);
+  if (!OutputRef)
+    return createUnknownObjectError(OutputID);
+
+  // Insert Input the result cache.
+  //
+  // FIXME: Consider templating OnDiskHashMappedTrie (really, renaming it to
+  // OnDiskHashMappedTrieBase and adding a type-safe layer on top).
+  const uint64_t Expected = OutputRef->getRawData();
+  OnDiskHashMappedTrie::pointer ActionP = ActionCache.insertLazy(
+    InputID.getHash(), [&](FileOffset TentativeOffset,
+             OnDiskHashMappedTrie::ValueProxy TentativeValue) {
+    assert(TentativeValue.Data.size() == sizeof(ActionCacheResultT));
+    assert(isAddrAligned(Align::Of<ActionCacheResultT>(), TentativeValue.Data.data()));
+    new (TentativeValue.Data.data()) ActionCacheResultT(Expected);
+    });
+  const uint64_t Observed = reinterpret_cast<const ActionCacheResultT *>(
+      ActionP->Data.data())->load();
+
+  if (Expected == Observed)
     return Error::success();
-  };
 
-  ArrayRef<uint8_t> InputHash = InputID.getHash();
-  if (!isOnDisk()) {
-    // Store in-memory and check against existing results.
-    return checkOutput(
-        ResultCache
-            .insert(ResultCacheType::pointer{},
-                    ResultCacheType::value_type(InputHash, makeHash(OutputID)))
-            ->Data);
-  }
-
-  // Store on-disk and check against existing results.
-  ArrayRef<uint8_t> OutputHash = OutputID.getHash();
-  MappedContentReference File =
-      OnDiskResults->insert(InputHash, "results", rawHashAsBuffer(OutputHash));
-  assert(!File.Map && "Unexpected mapped_file_region in result cache");
-  return checkOutput(bufferAsRawHash(File.Data));
+  Optional<CASID> ObservedID = getCASID(InternalRef::getFromRawData(Observed));
+  if (!ObservedID)
+    return createResultCacheCorruptError(InputID);
+  return createResultCachePoisonedError(InputID, OutputID, *ObservedID);
 }
 
-Optional<BuiltinCAS::MappedContentReference>
-BuiltinCAS::openOnDisk(OnDiskHashMappedTrie &Trie, ArrayRef<uint8_t> Hash) {
-  if (auto Lookup = Trie.lookup(Hash))
-    return Lookup.take();
-  return None;
-}
-
-Expected<std::unique_ptr<MemoryBuffer>> BuiltinCAS::openFile(StringRef Path) {
-  assert(!isInMemoryOnly());
-  return errorOrToExpected(llvm::MemoryBuffer::getFile(Path));
-}
-
-Expected<std::unique_ptr<MemoryBuffer>>
-BuiltinCAS::openFileWithID(StringRef BaseDir, CASID ID) {
-  assert(!isInMemoryOnly());
-  SmallString<256> Path = StringRef(*RootPath);
-  sys::path::append(Path, BaseDir);
-
-  SmallString<64> PrintableHash;
-  extractPrintableHash(ID, PrintableHash);
-  sys::path::append(Path, PrintableHash);
-
-  Expected<std::unique_ptr<MemoryBuffer>> Buffer = openFile(Path);
-  if (Buffer)
-    return Buffer;
-
-  // FIXME: Should we sometimes return the error directly?
-  consumeError(Buffer.takeError());
-  return createStringError(std::make_error_code(std::errc::invalid_argument),
-                           "unknown blob '" + PrintableHash + "'");
-}
-
-StringRef BuiltinCAS::getPathForID(StringRef BaseDir, CASID ID,
-                                   SmallVectorImpl<char> &Storage) {
-  Storage.assign(RootPath->begin(), RootPath->end());
-  sys::path::append(Storage, BaseDir);
-
-  SmallString<64> PrintableHash;
-  extractPrintableHash(ID, PrintableHash);
-  sys::path::append(Storage, PrintableHash);
-
-  return StringRef(Storage.begin(), Storage.size());
-}
-
-OnDiskCAS::OnDiskCAS(StringRef RootPath, OnDiskHashMappedTrie OnDiskObjects,
-                     OnDiskHashMappedTrie OnDiskResults)
-  : OnDiskObjects(std::move(OnDiskObjects)),
-  OnDiskResults(std::move(OnDiskResults)), RootPath(RootPath.str()) {
-    SmallString<128> Temp = RootPath;
-    sys::path::append(Temp, "tmp.");
-    TempPrefix = Temp.str().str();
-  }
-
-Expected<std::unique_ptr<CASDB>> cas::createOnDiskCAS(const Twine &Path) {
-  SmallString<256> AbsPath;
-  Path.toVector(AbsPath);
-  sys::fs::make_absolute(AbsPath);
-
-  if (AbsPath == getDefaultOnDiskCASStableID())
-    AbsPath = StringRef(getDefaultOnDiskCASPath());
-
-  if (std::error_code EC = sys::fs::create_directories(AbsPath)) {
+Expected<std::unique_ptr<OnDiskCAS>> OnDiskCAS::open(StringRef AbsPath) {
+  if (std::error_code EC = sys::fs::create_directories(AbsPath))
     return createFileError(AbsPath, EC);
-  }
 
-  Optional<OnDiskHashMappedTrie> OnDiskObjects;
-  Optional<OnDiskHashMappedTrie> OnDiskResults;
-
-  uint64_t GB = 1024ull * 1024ull * 1024ull;
+  constexpr uint64_t MB = 1024ull * 1024ull;
+  constexpr uint64_t GB = 1024ull * 1024ull * 1024ull;
+  Optional<OnDiskHashMappedTrie> Index;
   if (Error E =
-          OnDiskHashMappedTrie::create(AbsPath.str() + "/objects",
-                                       sizeof(HashType) * 8, 16 * GB)
-              .moveInto(OnDiskObjects))
-    return std::move(E);
-  if (Error E = OnDiskHashMappedTrie::create(AbsPath.str() + "/results",
-                                             sizeof(HashType) * 8, GB)
-                    .moveInto(OnDiskResults))
-    return std::move(E);
-
-
-
-  return std::make_unique<BuiltinCAS>(AbsPath, std::move(*OnDiskObjects),
-                                      std::move(*OnDiskResults));
-
-  // FIXME: This is a code dump from OnDiskHashMappedTrie::create(). Need to
-  // fix and incorporate above.
-  SmallString<128> DataPath = StringRef(Path);
-  SmallString<128> IndexPath = StringRef(Path);
-  sys::path::append(DataPath, "data");
-  sys::path::append(IndexPath, "index");
-
-  if (std::error_code EC = sys::fs::create_directory(Path))
-    return errorCodeToError(EC);
-
-  static_assert(sizeof(size_t) == sizeof(uint64_t), "64-bit only");
-  static_assert(sizeof(std::atomic<int64_t>) == sizeof(uint64_t),
-                "Requires lock-free 64-bit atomics");
-
-  static constexpr uint64_t GB = 1024ull * 1024ull * 1024ull;
-  static constexpr uint64_t MB = 1024ull * 1024ull;
-
-  // Max out the index at 4GB. Take the limit directly for data.
-  const uint64_t MaxIndexSize = std::min(4 * GB, MaxMapSize);
-  const uint64_t MaxDataSize = MaxMapSize;
-
-  // Open / create / initialize files on disk.
-  std::shared_ptr<LazyMappedFileRegion> IndexRegion, DataRegion;
-  if (Error E = LazyMappedFileRegion::createShared(
-                    IndexPath, MaxIndexSize,
-                    IndexFile::getConstructor(*InitialNumRootBits,
-                                              *InitialNumSubtrieBits,
-                                              NumHashBits, /*MinFileSize=*/MB))
-                    .moveInto(IndexRegion))
-    return std::move(E);
-  if (Error E = LazyMappedFileRegion::createShared(
-                    DataPath, MaxDataSize,
-                    DataFile::getConstructor(/*MinFileSize=*/MB))
-                    .moveInto(DataRegion))
+          OnDiskHashMappedTrie::create(
+              AbsPath.str() + "/" + FilePrefix + IndexFile,
+              IndexTableName, sizeof(HashType) * 8,
+              /*DataSize=*/sizeof(TrieRecord), /*MaxFileSize=*/GB,
+              /*MinFileSize=*/MB)
+              .moveInto(Index))
     return std::move(E);
 
-  // FIXME: The magic should be checked...
+  Optional<OnDiskDataAllocator> DataPool;
+  if (Error E = OnDiskDataAllocator::create(AbsPath.str() + "/" + FilePrefix + DataPoolFile,
+              DataPoolTableName, /*MaxFileSize=*/16 * GB, /*MinFileSize=*/MB).moveInto(DataPool))
+    return std::move(E);
 
-  // Success.
-  OnDiskHashMappedTrie::ImplType Impl = {
-      IndexFile(std::move(IndexRegion)),
-      DataFile(std::move(DataRegion), std::move(Path)),
-  };
-  return OnDiskHashMappedTrie(std::make_unique<ImplType>(std::move(Impl)));
+  Optional<OnDiskHashMappedTrie> ActionCache;
+  if (Error E = OnDiskHashMappedTrie::create(AbsPath.str() + "/" + FilePrefix + ActionCacheFile,
+              ActionCacheTableName, sizeof(HashType) * 8,
+              /*DataSize=*/sizeof(ActionCacheResultT), /*MaxFileSize=*/GB,
+              /*MinFileSize=*/MB).moveInto(ActionCache))
+    return std::move(E);
+
+  return std::unique_ptr<OnDiskCAS>(new OnDiskCAS(AbsPath, std::move(*Index),
+                                     std::move(*DataPool), std::move(*ActionCache)));
+}
+
+OnDiskCAS::OnDiskCAS(StringRef RootPath, OnDiskHashMappedTrie Index,
+                     OnDiskDataAllocator DataPool,
+                     OnDiskHashMappedTrie ActionCache)
+    : Index(std::move(Index)), DataPool(std::move(DataPool)),
+      ActionCache(std::move(ActionCache)), RootPath(RootPath.str()) {
+  SmallString<128> Temp = RootPath;
+  sys::path::append(Temp, "tmp.");
+  TempPrefix = Temp.str().str();
 }
 
 // FIXME: Proxy not portable. Maybe also error-prone?
 constexpr StringLiteral DefaultDirProxy = "/^llvm::cas::builtin::default";
 constexpr StringLiteral DefaultName = "llvm.cas.builtin.default";
+
+void cas::getDefaultOnDiskCASStableID(SmallVectorImpl<char> &Path) {
+  Path.assign(DefaultDirProxy.begin(), DefaultDirProxy.end());
+  llvm::sys::path::append(Path, DefaultName);
+}
+
+std::string cas::getDefaultOnDiskCASStableID() {
+  SmallString<128> Path;
+  getDefaultOnDiskCASStableID(Path);
+  return Path.str().str();
+}
 
 void cas::getDefaultOnDiskCASPath(SmallVectorImpl<char> &Path) {
   if (!llvm::sys::path::cache_directory(Path))
@@ -3145,265 +3037,15 @@ std::string cas::getDefaultOnDiskCASPath() {
   return Path.str().str();
 }
 
-void cas::getDefaultOnDiskCASStableID(SmallVectorImpl<char> &Path) {
-  Path.assign(DefaultDirProxy.begin(), DefaultDirProxy.end());
-  llvm::sys::path::append(Path, DefaultName);
+Expected<std::unique_ptr<CASDB>> cas::createOnDiskCAS(const Twine &Path) {
+  // FIXME: An absolute path isn't really good enough. Should open a directory
+  // and use openat() for files underneath.
+  SmallString<256> AbsPath;
+  Path.toVector(AbsPath);
+  sys::fs::make_absolute(AbsPath);
+
+  if (AbsPath == getDefaultOnDiskCASStableID())
+    AbsPath = StringRef(getDefaultOnDiskCASPath());
+
+  return OnDiskCAS::open(AbsPath);
 }
-
-std::string cas::getDefaultOnDiskCASStableID() {
-  SmallString<128> Path;
-  getDefaultOnDiskCASStableID(Path);
-  return Path.str().str();
-}
-
-//===----------------------------------------------------------------------===//
-// old data handle stuff
-/// TODO: Incorporate into BuiltinCAS.
-//===----------------------------------------------------------------------===//
-struct DataHandle {
-  struct Header {
-    unsigned HashSize : 16;
-    unsigned HashPaddingSize : 8;
-    unsigned MetadataPaddingSize : 8;
-    unsigned MetadataSize : 31;
-    unsigned IsEmbedded : 1;
-    uint64_t DataSize;
-  };
-
-  // Files 64KB and bigger can just be saved separately.
-  //
-  // FIXME: Should be configurable.
-  static constexpr int64_t MaxEmbeddedDataSize = 64ull * 1024ull - 1ull;
-
-  // FIXME: This is being used as a hack to disable an assertion. The problem
-  // is that if there are LOTS of references it the number above can exceed
-  // MaxEmbeddedDataSize, even if the data itself is tiny. The right fix is to
-  // sometimes (always?) make references external too.
-  static constexpr int64_t MinExternalDataSize = 4ull * 1024ull - 1ull;
-
-  static uint64_t getHashOffset() { return sizeof(DataHandle::Header); }
-
-  static uint64_t getPadding(uint64_t Size) {
-    if (uint64_t Remainder = Size % 8)
-      return 8 - Remainder;
-    return 0;
-  }
-
-  static uint64_t getHashPaddingStart(uint64_t HashSize) {
-    return sizeof(Header) + HashSize;
-  }
-
-  static uint64_t getSizeIfExternal(uint64_t HashSize, uint64_t MetadataSize) {
-    return sizeof(Header) + HashSize + getPadding(HashSize) + MetadataSize +
-           getPadding(MetadataSize);
-  }
-
-  static uint64_t getDataPadding(uint64_t DataSize) {
-    // Always at least one zero for guaranteed null termination.
-    return getPadding(DataSize + 1) + 1;
-  }
-
-  static uint64_t getDataSizeWithPadding(uint64_t DataSize) {
-    return DataSize + getDataPadding(DataSize);
-  }
-
-  static uint64_t getSizeIfEmbedded(ArrayRef<uint8_t> Hash, StringRef Metadata,
-                                    StringRef Data) {
-    return getSizeIfExternal(Hash.size(), Metadata.size()) +
-           getDataSizeWithPadding(Data.size());
-  }
-
-  ArrayRef<uint8_t> getHash() const {
-    return makeArrayRef(reinterpret_cast<const uint8_t *>(getHashStart()),
-                        H->HashSize);
-  }
-
-  bool isEmbedded() const { return H->IsEmbedded; }
-  bool isExternal() const { return !isEmbedded(); }
-
-  const char *getHashStart() const {
-    return reinterpret_cast<const char *>(H) + sizeof(Header);
-  }
-  const char *getHashPaddingStart() const {
-    return getHashStart() + H->HashSize;
-  }
-  const char *getMetadataStart() const {
-    return getHashPaddingStart() + H->HashPaddingSize;
-  }
-  const char *getMetadataPaddingStart() const {
-    return getMetadataStart() + H->MetadataSize;
-  }
-  const char *getDataStart() const {
-    return getMetadataPaddingStart() + H->MetadataPaddingSize;
-  }
-  const char *getDataPaddingStart() const {
-    return getDataStart() + H->DataSize;
-  }
-  StringRef getMetadata() const {
-    return StringRef(getMetadataStart(), H->MetadataSize);
-  }
-
-  Optional<StringRef> getData() const {
-    if (isExternal())
-      return None;
-    return StringRef(getDataStart(), H->DataSize);
-  }
-
-  uint64_t getDataSizeWithPadding() const {
-    return getDataSizeWithPadding(H->DataSize);
-  }
-
-  explicit operator bool() const { return H; }
-  const Header &getHeader() const { return *H; }
-
-  SubtrieSlotValue getOffset() const {
-    return SubtrieSlotValue::getDataOffset(reinterpret_cast<const char *>(H) -
-                                           LMFR->data());
-  }
-
-  static DataHandle create(LazyMappedFileRegionBumpPtr &Alloc,
-                           StringRef DirPath, ArrayRef<uint8_t> Hash,
-                           StringRef Metadata, StringRef Data);
-
-  DataHandle() = default;
-  DataHandle(LazyMappedFileRegion &LMFR, Header &H) : LMFR(&LMFR), H(&H) {}
-  DataHandle(LazyMappedFileRegion &LMFR, SubtrieSlotValue Offset)
-      : DataHandle(LMFR,
-                   *reinterpret_cast<Header *>(LMFR.data() + Offset.asData())) {
-  }
-
-private:
-  LazyMappedFileRegion *LMFR = nullptr;
-  Header *H = nullptr;
-
-  static DataHandle construct(LazyMappedFileRegion &LMFR, intptr_t Offset,
-                              bool IsEmbedded, ArrayRef<uint8_t> Hash,
-                              StringRef Metadata, uint64_t DataSize);
-  static DataHandle createExternal(LazyMappedFileRegionBumpPtr &Alloc,
-                                   ArrayRef<uint8_t> Hash, StringRef Metadata,
-                                   uint64_t DataSize);
-  static DataHandle createEmbedded(LazyMappedFileRegionBumpPtr &Alloc,
-                                   ArrayRef<uint8_t> Hash, StringRef Metadata,
-                                   StringRef Data);
-};
-
-DataHandle DataHandle::construct(LazyMappedFileRegion &LMFR, intptr_t Offset,
-                                 bool IsEmbedded, ArrayRef<uint8_t> Hash,
-                                 StringRef Metadata, uint64_t DataSize) {
-  Header *H = new (LMFR.data() + Offset) Header{
-      (unsigned)Hash.size(),
-      (unsigned)getPadding(Hash.size()),
-      (unsigned)getPadding(Metadata.size()),
-      (unsigned)Metadata.size(),
-      (unsigned)IsEmbedded,
-      DataSize,
-  };
-
-  assert(Metadata.size() < (1u << 31) && "Too much metadata");
-  DataHandle D(LMFR, *H);
-  ::memcpy(const_cast<char *>(D.getHashStart()), Hash.begin(), Hash.size());
-  ::memcpy(const_cast<char *>(D.getMetadataStart()), Metadata.begin(),
-           Metadata.size());
-
-  // Fill padding with 0s in case the filesystem doesn't guarantee it
-  // (Windows).
-  ::memset(const_cast<char *>(D.getHashPaddingStart()), 0,
-           D.getHeader().HashPaddingSize);
-  ::memset(const_cast<char *>(D.getMetadataPaddingStart()), 0,
-           D.getHeader().MetadataPaddingSize);
-  return D;
-}
-
-DataHandle DataHandle::createExternal(LazyMappedFileRegionBumpPtr &Alloc,
-                                      ArrayRef<uint8_t> Hash,
-                                      StringRef Metadata, uint64_t DataSize) {
-  intptr_t Size = getSizeIfExternal(Hash.size(), Metadata.size());
-  intptr_t Offset = Alloc.allocateOffset(Size);
-  return construct(Alloc.getRegion(), Offset, /*IsEmbedded=*/false, Hash,
-                   Metadata, DataSize);
-}
-
-DataHandle DataHandle::createEmbedded(LazyMappedFileRegionBumpPtr &Alloc,
-                                      ArrayRef<uint8_t> Hash,
-                                      StringRef Metadata, StringRef Data) {
-  intptr_t Size = getSizeIfEmbedded(Hash, Metadata, Data);
-  intptr_t Offset = Alloc.allocateOffset(Size);
-  DataHandle D = construct(Alloc.getRegion(), Offset, /*IsEmbedded=*/true, Hash,
-                           Metadata, Data.size());
-  ::memcpy(const_cast<char *>(D.getDataStart()), Data.begin(), Data.size());
-
-  // Fill padding with 0s in case the filesystem doesn't guarantee it
-  // (Windows).
-  ::memset(const_cast<char *>(D.getDataPaddingStart()), 0,
-           DataHandle::getDataPadding(Data.size()));
-
-  return D;
-}
-
-namespace {
-OnDiskHashMappedTrie::MappedContentReference
-DataFile::getContent(DataHandle D) const {
-  if (D.isEmbedded())
-    return OnDiskHashMappedTrie::MappedContentReference(D.getMetadata(),
-                                                        *D.getData());
-
-  SmallString<128> HashString;
-  appendHash(D.getHash(), HashString);
-  SmallString<256> ContentPath = StringRef(DirPath);
-  sys::path::append(ContentPath, HashString);
-
-  Expected<sys::fs::file_t> ContentFD =
-      sys::fs::openNativeFileForRead(ContentPath, sys::fs::OF_None);
-  if (!ContentFD)
-    report_fatal_error(ContentFD.takeError());
-  auto CloseOnReturn =
-      llvm::make_scope_exit([&ContentFD]() { sys::fs::closeFile(*ContentFD); });
-
-  // Load with the padding to guarantee null termination.
-  int64_t ExternalSize = D.getDataSizeWithPadding();
-  sys::fs::mapped_file_region Map;
-  {
-    std::error_code EC;
-    Map = sys::fs::mapped_file_region(
-        sys::fs::convertFDToNativeFile(*ContentFD),
-        sys::fs::mapped_file_region::readonly, ExternalSize, 0, EC);
-    if (EC)
-      report_fatal_error(createFileError(ContentPath, EC));
-  }
-
-  StringRef Content(Map.data(), D.getHeader().DataSize);
-  return OnDiskHashMappedTrie::MappedContentReference(D.getMetadata(), Content,
-                                                      std::move(Map));
-}
-
-DataHandle DataHandle::create(LazyMappedFileRegionBumpPtr &Alloc,
-                              StringRef DirPath, ArrayRef<uint8_t> Hash,
-                              StringRef Metadata, StringRef Data) {
-  int64_t Size = getSizeIfEmbedded(Hash, Metadata, Data);
-
-  // FIXME: This logic isn't right. References should be stored externally if
-  // there are enough that we'll go over the max embedded data size limit.
-  // Right now only the data is ever made external.... but we could blow out
-  // the main mmap if there are lots of references.
-  if (Size <= MaxEmbeddedDataSize || Data.size() < MinExternalDataSize)
-    return createEmbedded(Alloc, Hash, Metadata, Data);
-
-  createExternalContent(DirPath, Hash, Metadata, Data);
-  return createExternal(Alloc, Hash, Metadata, Data.size());
-}
-
-static void appendHash(ArrayRef<uint8_t> RawHash, SmallVectorImpl<char> &Dest) {
-  assert(Dest.empty());
-  auto ToChar = [](uint8_t Bit) {
-    if (Bit < 10)
-      return '0' + Bit;
-    return Bit - 10 + 'a';
-  };
-  for (uint8_t Bit : RawHash) {
-    uint8_t High = Bit >> 4;
-    uint8_t Low = Bit & 0xf;
-    Dest.push_back(ToChar(High));
-    Dest.push_back(ToChar(Low));
-  }
-}
-
