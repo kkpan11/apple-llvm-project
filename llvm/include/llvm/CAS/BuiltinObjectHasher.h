@@ -15,45 +15,50 @@
 namespace llvm {
 namespace cas {
 
+enum class StableObjectKind : uint8_t {
+  Node = 1,
+  Blob = 2,
+  Tree = 3,
+  String = 4,
+};
+
+enum class StableTreeEntryKind : uint8_t {
+  Tree = 1,
+  Regular = 2,
+  Executable = 3,
+  Symlink = 4,
+};
+
+static StableTreeEntryKind getStableKind(StableTreeEntryKind Kind) {
+  return Kind;
+}
+static StableTreeEntryKind getStableKind(TreeEntry::EntryKind Kind) {
+  switch (Kind) {
+  case TreeEntry::Tree:
+    return StableTreeEntryKind::Tree;
+  case TreeEntry::Regular:
+    return StableTreeEntryKind::Regular;
+  case TreeEntry::Executable:
+    return StableTreeEntryKind::Executable;
+  case TreeEntry::Symlink:
+    return StableTreeEntryKind::Symlink;
+  }
+}
+
+static StableObjectKind getStableKind(StableObjectKind Kind) { return Kind; }
+static StableObjectKind getStableKind(ObjectKind Kind) {
+  switch (Kind) {
+  case ObjectKind::Blob:
+    return StableObjectKind::Blob;
+  case ObjectKind::Node:
+    return StableObjectKind::Node;
+  case ObjectKind::Tree:
+    return StableObjectKind::Tree;
+  }
+}
+
 class BuiltinObjectHasherBase {
 public:
-  enum class StableObjectKind : uint8_t {
-    Node = 1,
-    Blob = 2,
-    Tree = 3,
-  };
-
-  enum class StableTreeEntryKind : uint8_t {
-    Tree = 1,
-    Regular = 2,
-    Executable = 3,
-    Symlink = 4,
-  };
-
-  static StableTreeEntryKind getStableKind(TreeEntry::EntryKind Kind) {
-    switch (Kind) {
-    case TreeEntry::Tree:
-      return StableTreeEntryKind::Tree;
-    case TreeEntry::Regular:
-      return StableTreeEntryKind::Regular;
-    case TreeEntry::Executable:
-      return StableTreeEntryKind::Executable;
-    case TreeEntry::Symlink:
-      return StableTreeEntryKind::Symlink;
-    }
-  }
-
-  static StableObjectKind getStableKind(ObjectKind Kind) {
-    switch (Kind) {
-    case ObjectKind::Blob:
-      return StableObjectKind::Blob;
-    case ObjectKind::Node:
-      return StableObjectKind::Node;
-    case ObjectKind::Tree:
-      return StableObjectKind::Tree;
-    }
-  }
-
   template <class KindT>
   static std::array<uint8_t, sizeof(KindT)> serializeKind(KindT Kind) {
     auto StableKind = getStableKind(Kind);
@@ -70,7 +75,8 @@ public:
 protected:
   ~BuiltinObjectHasher() { assert(!Hasher); }
 
-  HashT start(ObjectKind Kind) {
+  HashT start(ObjectKind Kind) { return start(getStableKind(Kind)); }
+  HashT start(StableObjectKind Kind) {
     assert(!Hasher);
     Hasher.emplace();
     updateKind(Kind);
@@ -129,6 +135,15 @@ public:
   }
   auto hash(StringRef Data) {
     return hash(makeArrayRef(Data.data(), Data.size()));
+  }
+};
+
+template <class HasherT> class BuiltinStringHasher : public BuiltinObjectHasher<HasherT> {
+public:
+  auto hash(StringRef Data) {
+    this->start(StableObjectKind::String);
+    this->updateString(Data);
+    return this->finish();
   }
 };
 

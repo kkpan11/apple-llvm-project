@@ -223,6 +223,10 @@ protected:
     return BlobRef(ID, Data);
   }
 
+  static BlobRef makeBlobRef(CASID ID, ArrayRef<char> Data) {
+    return BlobRef(ID, StringRef(Data.data(), Data.size()));
+  }
+
   /// Extract the tree pointer from \p Ref. For use by derived classes to
   /// access the private pointer member. Ensures \p Ref comes from this
   /// instance.
