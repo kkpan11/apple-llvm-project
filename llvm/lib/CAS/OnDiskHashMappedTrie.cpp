@@ -131,13 +131,13 @@ public:
 
   static Expected<DatabaseFile> get(LazyMappedFileRegion &LMFR) {
     if (Error E = validate(LMFR))
-      return E;
+      return std::move(E);
     return DatabaseFile(LMFR);
   }
   static Expected<DatabaseFile>
   get(std::shared_ptr<LazyMappedFileRegion> LMFR) {
     if (Error E = validate(*LMFR))
-      return E;
+      return std::move(E);
     return DatabaseFile(std::move(LMFR));
   }
 

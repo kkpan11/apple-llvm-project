@@ -1174,7 +1174,7 @@ public:
     return InternalRef((uint64_t)Kind << NumOffsetBits | Offset.get());
   }
 
-  friend bool operator==(const InternalRef &LHS, const InternalRef &RHS) {
+  friend bool operator==(InternalRef LHS, InternalRef RHS) {
     return LHS.Data == RHS.Data;
   }
 
@@ -1309,16 +1309,15 @@ public:
   bool is4B() const { return Begin.is<const InternalRef4B *>(); }
   bool is8B() const { return Begin.is<const InternalRef *>(); }
 
-  Optional<ArrayRef<InternalRef>> getAs8B() const {
-    if (auto *B = Begin.dyn_cast<const InternalRef *>())
-      return makeArrayRef(B, Size);
-    return None;
+  ArrayRef<InternalRef> as8B() const {
+    assert(is8B());
+    auto *B = Begin.get<const InternalRef *>();
+    return makeArrayRef(B, Size);
   }
 
-  Optional<ArrayRef<InternalRef4B>> getAs4B() const {
-    if (auto *B = Begin.dyn_cast<const InternalRef4B *>())
-      return makeArrayRef(B, Size);
-    return None;
+  ArrayRef<InternalRef4B> as4B() const {
+    auto *B = Begin.get<const InternalRef4B *>();
+    return makeArrayRef(B, Size);
   }
 
   InternalRefArrayRef(NoneType = None) {}
@@ -2094,14 +2093,14 @@ DataRecordHandle DataRecordHandle::constructImpl(char *Mem, const Input &I,
     if (L.Flags.RefKind == RefKindFlags::InternalRef4B) {
       assert(I.Refs.is4B());
       assert(isAddrAligned(Align::Of<InternalRef4B>(), Next));
-      for (InternalRef4B Ref : *I.Refs.getAs4B()) {
+      for (InternalRef4B Ref : I.Refs.as4B()) {
         new (Next) InternalRef4B(Ref);
         Next += sizeof(InternalRef4B);
       }
     } else {
       assert(I.Refs.is8B());
       assert(isAddrAligned(Align::Of<InternalRef>(), Next));
-      for (InternalRef Ref : *I.Refs.getAs8B()) {
+      for (InternalRef Ref : I.Refs.as8B()) {
         new (Next) InternalRef(Ref);
         Next += sizeof(InternalRef);
       }
@@ -2408,8 +2407,10 @@ OnDiskCAS::getInternalIndexPointer(CASID ID) const {
   // FIXME: Can make this more robust by changing CASID to a CASDB and an
   // integer, where the integer is an offset into the trie.
   if (OnDiskHashMappedTrie::const_pointer P =
-          Index.recoverFromHashPointer(ID.getHash().data()))
+          Index.recoverFromHashPointer(ID.getHash().data())) {
+    assert(P->Hash == ID.getHash());
     return P;
+  }
 
   // Fallback to a normal lookup.
   return Index.find(ID.getHash());
