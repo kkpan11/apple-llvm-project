@@ -139,7 +139,7 @@ TEST_P(CASDBTest, Trees) {
 
     size_t NumCalls = 0;
     EXPECT_FALSE(
-        errorToBool(Tree->forEachEntry([&NumCalls](ArrayRef<NamedTreeEntry>) {
+        errorToBool(Tree->forEachEntry([&NumCalls](const NamedTreeEntry &E) {
           ++NumCalls;
           return Error::success();
         })));

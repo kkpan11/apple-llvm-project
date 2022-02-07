@@ -887,7 +887,7 @@ InMemoryTree::InMemoryTree(const InMemoryIndexValueT &I,
     assert((!LastName || LastName->get() < E.Name->get()) &&
            "Expected names to be unique and sorted");
   }
-  auto *Entry = reinterpret_cast<NamedEntry *>(Ref);
+  auto *Entry = reinterpret_cast<TreeEntry::EntryKind *>(Ref);
   for (const NamedEntry &E : Entries)
     new (Entry++) TreeEntry::EntryKind(E.Kind);
 }
@@ -971,12 +971,12 @@ Expected<NodeRef> InMemoryCAS::createNodeImpl(ArrayRef<uint8_t> ComputedHash,
 const InMemoryString &InMemoryCAS::getOrCreateString(StringRef String) {
   BuiltinStringHasher<HasherT> Hasher;
   InMemoryStringPoolT::value_type S =
-      *StringPool.insertLazy(Hasher.hash(String), [](auto ValueConstructor) {
+      *StringPool.insertLazy(Hasher.hash(String), [&](auto ValueConstructor) {
         ValueConstructor.emplace(nullptr);
       });
 
   auto Allocator = [&](size_t Size) -> void * {
-    return Strings.Allocate(String.size(), 1);
+    return Strings.Allocate(Size, alignof(InMemoryString));
   };
   auto Generator = [&]() -> const InMemoryString * {
     return &InMemoryString::create(Allocator, String);
