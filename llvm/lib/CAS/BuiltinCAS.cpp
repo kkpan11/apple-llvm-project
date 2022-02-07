@@ -1244,60 +1244,62 @@ public:
       : public iterator_facade_base<iterator, std::random_access_iterator_tag,
                                     const InternalRef> {
   public:
-    bool operator==(const iterator &RHS) const {
-      if (ShiftedP != RHS.ShiftedP)
-        return false;
-      assert(Is4B == RHS.Is4B);
-      return true;
-    }
+    bool operator==(const iterator &RHS) const { return I == RHS.I; }
     const InternalRef &operator*() const {
-      assert(ShiftedP != 0 && "Dereferencing nullptr");
-      if (!Is4B)
-        return *reinterpret_cast<const InternalRef *>(ShiftedP << 1);
-      Ref = *reinterpret_cast<const InternalRef4B *>(ShiftedP << 1);
-      return *Ref;
+      if (auto *Ref = I.dyn_cast<const InternalRef *>())
+        return *Ref;
+      LocalProxyFor4B = InternalRef(*I.get<const InternalRef4B *>());
+      return *LocalProxyFor4B;
     }
     bool operator<(const iterator &RHS) const {
-      return ShiftedP < RHS.ShiftedP;
+      if (I == RHS.I)
+        return false;
+      assert(I.is<const InternalRef *>() == RHS.I.is<const InternalRef *>());
+      if (auto *Ref = I.dyn_cast<const InternalRef *>())
+        return Ref < RHS.I.get<const InternalRef *>();
+      return I.get<const InternalRef4B *>() - RHS.I.get<const InternalRef4B *>();
     }
     ptrdiff_t operator-(const iterator &RHS) const {
-      return (ShiftedP - RHS.ShiftedP) / getSizeFactor();
+      if (I == RHS.I)
+        return 0;
+      assert(I.is<const InternalRef *>() == RHS.I.is<const InternalRef *>());
+      if (auto *Ref = I.dyn_cast<const InternalRef *>())
+        return Ref - RHS.I.get<const InternalRef *>();
+      return I.get<const InternalRef4B *>() - RHS.I.get<const InternalRef4B *>();
     }
     iterator &operator+=(ptrdiff_t N) {
-      ShiftedP += N * getSizeFactor();
+      if (!N)
+        return *this;
+      if (auto *Ref = I.dyn_cast<const InternalRef *>())
+        I = Ref + N;
+      else
+        I = I.get<const InternalRef4B *>() + N;
       return *this;
     }
     iterator &operator-=(ptrdiff_t N) {
-      ShiftedP -= N * getSizeFactor();
+      if (!N)
+        return *this;
+      if (auto *Ref = I.dyn_cast<const InternalRef *>())
+        I = Ref - N;
+      else
+        I = I.get<const InternalRef4B *>() - N;
       return *this;
     }
 
-    iterator(nullptr_t = nullptr) : ShiftedP(0), Is4B(false) {}
+    iterator() = default;
 
   private:
     friend class InternalRefArrayRef;
-    explicit iterator(const InternalRef *Ref)
-        : ShiftedP(reinterpret_cast<uintptr_t>(Ref) >> 1), Is4B(false) {}
-    explicit iterator(const InternalRef4B *Ref)
-        : ShiftedP(reinterpret_cast<uintptr_t>(Ref) >> 1), Is4B(true) {}
-
-    size_t getSizeFactor() const { return Is4B ? 2 : 4; }
-    uintptr_t ShiftedP : (sizeof(uintptr_t) * 8) - 1;
-    uintptr_t Is4B : 1;
-    mutable Optional<InternalRef> Ref;
+    explicit iterator(PointerUnion<const InternalRef *, const InternalRef4B *> I) : I(I) {}
+    PointerUnion<const InternalRef *, const InternalRef4B *> I;
+    mutable Optional<InternalRef> LocalProxyFor4B;
   };
 
   bool operator==(const InternalRefArrayRef &RHS) const {
     return size() == RHS.size() && std::equal(begin(), end(), RHS.begin());
   }
 
-  iterator begin() const {
-    if (auto *Ref = Begin.dyn_cast<const InternalRef4B *>())
-      return iterator(Ref);
-    if (auto *Ref = Begin.dyn_cast<const InternalRef *>())
-      return iterator(Ref);
-    return iterator(nullptr);
-  }
+  iterator begin() const { return iterator(Begin); }
   iterator end() const { return begin() + Size; }
 
   /// Array accessor.
