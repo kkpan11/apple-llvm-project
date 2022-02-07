@@ -848,6 +848,7 @@ InMemoryTree::InMemoryTree(const InMemoryIndexValueT &I,
     assert(E.Name);
     new (Ref++) NamedRef{E.Ref, E.Name};
 
+    (void)(LastName);
     assert((!LastName || LastName->get() < E.Name->get()) &&
            "Expected names to be unique and sorted");
   }
@@ -2560,7 +2561,7 @@ void OnDiskCAS::getStandalonePath(TrieRecord::StorageKind SK,
   StringRef Suffix;
   switch (SK) {
   default:
-    assert(false && "Expected standalone storage kind");
+    llvm_unreachable("Expected standalone storage kind");
 
   case TrieRecord::StorageKind::Standalone:
     Suffix = FileSuffixData;
