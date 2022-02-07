@@ -89,11 +89,14 @@ static Expected<T> dereferenceValue(Expected<Optional<T>> E,
 /// }
 /// \endcode
 template <class T, class SinkT>
-static Optional<Expected<NoneType>> moveValueInto(Expected<Optional<T>> E,
-                                                  SinkT &Sink) {
-  if (Optional<Expected<T>> MaybeExpected = dereferenceValue(std::move(E)))
-    return Expected<NoneType>(std::move(*MaybeExpected).moveInto(Sink));
-  return Expected<NoneType>(None);
+static Optional<Expected<NoneType>>
+moveValueInto(Expected<Optional<T>> ExpectedOptional, SinkT &Sink) {
+  if (!ExpectedOptional)
+    return Expected<NoneType>(ExpectedOptional.takeError());
+  if (!*ExpectedOptional)
+    return Expected<NoneType>(None);
+  Sink = std::move(*ExpectedOptional);
+  return None;
 }
 
 /// Simple thread-safe access.
@@ -1114,6 +1117,9 @@ public:
 
   enum class ObjectKind : uint8_t {
     /// Node: refs and data.
+    Invalid = 0,
+
+    /// Node: refs and data.
     Node = 1,
 
     /// Blob: data, 8-byte alignment guaranteed, null-terminated.
@@ -1134,7 +1140,7 @@ public:
 
   struct Data {
     StorageKind SK = StorageKind::Unknown;
-    ObjectKind OK = ObjectKind::Node;
+    ObjectKind OK = ObjectKind::Invalid;
     FileOffset Offset;
   };
 
@@ -1900,6 +1906,8 @@ Optional<ObjectKind> OnDiskCAS::getObjectKind(CASID ID) {
   if (D.SK == TrieRecord::StorageKind::Unknown)
     return None;
   switch (D.OK) {
+  case TrieRecord::ObjectKind::Invalid:
+    report_fatal_error("invalid object kind detected");
   case TrieRecord::ObjectKind::Node:
     return ObjectKind::Node;
   case TrieRecord::ObjectKind::Blob:
@@ -2511,7 +2519,7 @@ OnDiskCAS::getString(IndexProxy I) const {
   if (OP->Bytes)
     return StringProxy{OP->Object, toStringRef(*OP->Bytes)};
 
-  // Blobs should not have references.
+  // Blobs and strings should not have references.
   if (!OP->Record->getRefs().empty())
     return createCorruptObjectError(CASID(I.Hash));
   return StringProxy{OP->Object, toStringRef(OP->Record->getData())};
@@ -2791,16 +2799,15 @@ OnDiskCAS::getOrCreateDataRecord(IndexProxy &I, TrieRecord::ObjectKind OK,
     }
   }
 
-  // If there wasn't a race (yet), try storing our object.
-  if (Existing.SK == TrieRecord::StorageKind::Unknown)
-    (void)I.ObjectRef.compare_exchange_strong(Existing, NewObject);
-
-  // If there was a race, confirm that the new value has valid storage.
+  // If we didn't already see a racing/existing write, then try storing the new
+  // object. If that races, confirm that the new value has valid storage.
   //
   // TODO: Find a way to reuse the storage from the new-but-abandoned record
   // handle.
   if (Existing.SK == TrieRecord::StorageKind::Unknown)
-    return createCorruptObjectError(CASID(I.Hash));
+    if (!I.ObjectRef.compare_exchange_strong(Existing, NewObject))
+      if (Existing.SK == TrieRecord::StorageKind::Unknown)
+        return createCorruptObjectError(CASID(I.Hash));
 
   // Get and return the record.
   return dereferenceValue(getDataRecord(I), [&]() {

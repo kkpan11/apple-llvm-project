@@ -40,24 +40,6 @@ protected:
   }
 };
 
-template <class T>
-static std::unique_ptr<T>
-expectedToPointer(Expected<std::unique_ptr<T>> ExpectedPointer) {
-  if (ExpectedPointer)
-    return std::move(*ExpectedPointer);
-  consumeError(ExpectedPointer.takeError());
-  return nullptr;
-}
-
-static CASID createBlobUnchecked(CASDB &CAS, StringRef Content) {
-  return *expectedToOptional(CAS.createBlob(Content));
-}
-
-static CASID createTreeUnchecked(CASDB &CAS,
-                                 ArrayRef<NamedTreeEntry> Entries = None) {
-  return *expectedToOptional(CAS.createTree(Entries));
-}
-
 TEST_P(CASDBTest, Blobs) {
   std::unique_ptr<CASDB> CAS1 = createCAS();
   StringRef ContentStrings[] = {
@@ -71,23 +53,25 @@ multiline text multiline text multiline text multiline text multiline text
 multiline text multiline text multiline text multiline text multiline text)",
   };
 
+  ExitOnError ExitOnErr("Blobs");
+
   SmallVector<CASID> IDs;
   for (StringRef Content : ContentStrings) {
     // Use StringRef::str() to create a temporary std::string. This could cause
     // problems if the CAS is storing references to the input string instead of
     // copying it.
-    IDs.push_back(createBlobUnchecked(*CAS1, Content.str()));
+    IDs.push_back(ExitOnErr(CAS1->createBlob(Content)));
   }
 
   // Check that the blobs give the same IDs later.
   for (int I = 0, E = IDs.size(); I != E; ++I)
-    EXPECT_EQ(IDs[I], createBlobUnchecked(*CAS1, ContentStrings[I]));
+    EXPECT_EQ(IDs[I], ExitOnErr(CAS1->createBlob(ContentStrings[I])));
 
   // Check that the blobs can be retrieved multiple times.
   for (int I = 0, E = IDs.size(); I != E; ++I) {
     for (int J = 0, JE = 3; J != JE; ++J) {
-      Optional<BlobRef> Buffer = expectedToOptional(CAS1->getBlob(IDs[I]));
-      ASSERT_TRUE(Buffer);
+      Optional<BlobRef> Buffer;
+      ASSERT_THAT_ERROR(CAS1->getBlob(IDs[I]).moveInto(Buffer), Succeeded());
       EXPECT_EQ(ContentStrings[I], **Buffer);
     }
   }
@@ -102,10 +86,10 @@ multiline text multiline text multiline text multiline text multiline text)",
   for (int I = IDs.size(), E = 0; I != E; --I) {
     auto &ID = IDs[I - 1];
     auto &Content = ContentStrings[I - 1];
-    EXPECT_EQ(ID, createBlobUnchecked(*CAS2, Content));
+    EXPECT_EQ(ID, ExitOnErr(CAS2->createBlob(Content)));
 
-    Optional<BlobRef> Buffer = expectedToOptional(CAS2->getBlob(ID));
-    ASSERT_TRUE(Buffer);
+    Optional<BlobRef> Buffer;
+    ASSERT_THAT_ERROR(CAS2->getBlob(ID).moveInto(Buffer), Succeeded());
     EXPECT_EQ(Content, **Buffer);
   }
 }
@@ -114,10 +98,14 @@ TEST_P(CASDBTest, Trees) {
   std::unique_ptr<CASDB> CAS1 = createCAS();
   std::unique_ptr<CASDB> CAS2 = createCAS();
 
+  ExitOnError ExitOnErr("Trees: ");
+
   auto createBlobInBoth = [&](StringRef Content) {
-    CASID ID = createBlobUnchecked(*CAS1, Content);
-    EXPECT_EQ(ID, createBlobUnchecked(*CAS2, Content));
-    return ID;
+    Optional<CASID> ID1, ID2;
+    EXPECT_THAT_ERROR(CAS1->createBlob(Content).moveInto(ID1), Succeeded());
+    EXPECT_THAT_ERROR(CAS2->createBlob(Content).moveInto(ID2), Succeeded());
+    EXPECT_EQ(ID1, ID2);
+    return *ID1;
   };
 
   CASID Blob1 = createBlobInBoth("blob1");
@@ -143,15 +131,21 @@ TEST_P(CASDBTest, Trees) {
   };
 
   SmallVector<CASID> FlatIDs;
-  for (ArrayRef<NamedTreeEntry> Entries : FlatTreeEntries)
-    FlatIDs.push_back(createTreeUnchecked(*CAS1, Entries));
+  for (ArrayRef<NamedTreeEntry> Entries : FlatTreeEntries) {
+    Optional<CASID> ID;
+    ASSERT_THAT_ERROR(CAS1->createTree(Entries).moveInto(ID), Succeeded());
+    FlatIDs.push_back(*ID);
+  }
 
   // Confirm we get the same IDs the second time and that the trees can be
   // visited (the entries themselves will be checked later).
   for (int I = 0, E = FlatIDs.size(); I != E; ++I) {
-    EXPECT_EQ(FlatIDs[I], createTreeUnchecked(*CAS1, FlatTreeEntries[I]));
-    Optional<TreeRef> Tree = expectedToOptional(CAS1->getTree(FlatIDs[I]));
-    EXPECT_TRUE(Tree);
+    Optional<CASID> ID;
+    ASSERT_THAT_ERROR(CAS1->createTree(FlatTreeEntries[I]).moveInto(ID),
+                      Succeeded());
+    EXPECT_EQ(FlatIDs[I], ID);
+    Optional<TreeRef> Tree;
+    ASSERT_THAT_ERROR(CAS1->getTree(FlatIDs[I]).moveInto(Tree), Succeeded());
     EXPECT_EQ(FlatTreeEntries[I].size(), Tree->size());
 
     size_t NumCalls = 0;
@@ -166,7 +160,7 @@ TEST_P(CASDBTest, Trees) {
   // Confirm these trees don't exist in a fresh CAS instance. Skip the first
   // tree, which is empty and could be implicitly in some CAS.
   for (int I = 1, E = FlatIDs.size(); I != E; ++I)
-    EXPECT_FALSE(expectedToOptional(CAS2->getTree(FlatIDs[I])));
+    ASSERT_THAT_EXPECTED(CAS2->getTree(FlatIDs[I]), Failed());
 
   // Insert into the other CAS and confirm the IDs are stable.
   for (int I = FlatIDs.size(), E = 0; I != E; --I) {
@@ -176,7 +170,7 @@ TEST_P(CASDBTest, Trees) {
     llvm::sort(SortedEntries);
 
     // Confirm we get the same tree out of CAS2.
-    EXPECT_EQ(ID, createTreeUnchecked(*CAS2, SortedEntries));
+    EXPECT_EQ(ID, ExitOnErr(CAS2->createTree(SortedEntries)));
 
     // Check that the correct entries come back.
     for (CASDB *CAS : {&*CAS1, &*CAS2}) {
@@ -214,14 +208,14 @@ TEST_P(CASDBTest, Trees) {
       Entries.emplace_back(NestedTrees[(I * 3 + 2) % NestedTrees.size()],
                            TreeEntry::Tree, *Name2);
     }
-    CASID ID = createTreeUnchecked(*CAS1, Entries);
+    CASID ID = ExitOnErr(CAS1->createTree(Entries));
     llvm::sort(Entries);
-    EXPECT_EQ(ID, createTreeUnchecked(*CAS1, Entries));
-    EXPECT_EQ(ID, createTreeUnchecked(*CAS2, Entries));
+    EXPECT_EQ(ID, ExitOnErr(CAS1->createTree(Entries)));
+    EXPECT_EQ(ID, ExitOnErr(CAS2->createTree(Entries)));
 
     for (CASDB *CAS : {&*CAS1, &*CAS2}) {
-      Optional<TreeRef> Tree = expectedToOptional(CAS->getTree(ID));
-      EXPECT_TRUE(Tree);
+      Optional<TreeRef> Tree;
+      ASSERT_THAT_ERROR(CAS->getTree(ID).moveInto(Tree), Succeeded());
       for (int I = 0, E = Entries.size(); I != E; ++I)
         EXPECT_EQ(Entries[I], Tree->get(I));
     }
@@ -232,7 +226,7 @@ INSTANTIATE_TEST_SUITE_P(InMemoryCAS, CASDBTest, ::testing::Values([](int) {
                            return TestingAndDir{createInMemoryCAS(), None};
                          }));
 static TestingAndDir createOnDisk(int I) {
-  unittest::TempDir Temp("on-disk-cas");
+  unittest::TempDir Temp("on-disk-cas", /*Unique=*/true);
   std::unique_ptr<CASDB> CAS;
   EXPECT_THAT_ERROR(createOnDiskCAS(Temp.path()).moveInto(CAS), Succeeded());
   return TestingAndDir{std::move(CAS), std::move(Temp)};

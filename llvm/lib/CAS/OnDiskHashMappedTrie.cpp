@@ -492,7 +492,8 @@ public:
 
   IndexGenerator getIndexGen(SubtrieHandle Root, ArrayRef<uint8_t> Hash) {
     assert(Root.getStartBit() == 0);
-    assert(getNumHashBits() == Hash.size() * sizeof(uint8_t));
+    assert(getNumHashBytes() == Hash.size());
+    assert(getNumHashBits() == Hash.size() * 8);
     return IndexGenerator{Root.getNumBits(), getNumSubtrieBits(), Hash};
   }
 
@@ -645,7 +646,7 @@ OnDiskHashMappedTrie::recoverFromFileOffset(FileOffset Offset) const {
 
   // Check bounds.
   const uint64_t CurrentFileSize = Impl->File.getAlloc().size();
-  if (Offset.get() > CurrentFileSize ||
+  if (Offset.get() > (int64_t)CurrentFileSize ||
       Offset.get() + Impl->Trie.getRecordSize() >= CurrentFileSize)
     return const_pointer();
 
@@ -658,7 +659,7 @@ OnDiskHashMappedTrie::recoverFromFileOffset(FileOffset Offset) const {
 OnDiskHashMappedTrie::const_pointer
 OnDiskHashMappedTrie::find(ArrayRef<uint8_t> Hash) const {
   HashMappedTrieHandle Trie = Impl->Trie;
-  assert(Hash.size() == Trie.getNumHashBits() && "Invalid hash");
+  assert(Hash.size() == Trie.getNumHashBytes() && "Invalid hash");
 
   SubtrieHandle S = Trie.getRoot();
   if (!S)
@@ -702,7 +703,7 @@ OnDiskHashMappedTrie::insertLazy(const_pointer Hint, ArrayRef<uint8_t> Hash,
                                  LazyInsertOnConstructCB OnConstruct,
                                  LazyInsertOnLeakCB OnLeak) {
   HashMappedTrieHandle Trie = Impl->Trie;
-  assert(Hash.size() == Trie.getNumHashBits() && "Invalid hash");
+  assert(Hash.size() == Trie.getNumHashBytes() && "Invalid hash");
 
   LazyMappedFileRegionBumpPtr &Alloc = Impl->File.getAlloc();
   SubtrieHandle S = Trie.getOrCreateRoot(Alloc);
@@ -1015,7 +1016,7 @@ DataAllocatorHandle::create(LazyMappedFileRegionBumpPtr &Alloc,
   // Construct the header and the name.
   assert(Name.size() <= UINT16_MAX && "Expected smaller table name");
   auto *H = new (Alloc.getRegion().data() + Offset)
-      Header{{TableHandle::TableKind::HashMappedTrie, (uint16_t)Name.size(),
+      Header{{TableHandle::TableKind::DataAllocator, (uint16_t)Name.size(),
               (uint32_t)sizeof(Header)},
              /*AllocatorOffset=*/{0}};
   char *NameStorage = reinterpret_cast<char *>(H + 1);
