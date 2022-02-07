@@ -2061,11 +2061,14 @@ DataRecordHandle DataRecordHandle::construct(char *Mem, const Input &I) {
 
 DataRecordHandle DataRecordHandle::constructImpl(char *Mem, const Input &I,
                                                  const Layout &L) {
+  assert(I.TrieRecordOffset && "Expected an offset into index");
+  assert(L.TrieRecordOffset == (uint64_t)I.TrieRecordOffset.get() &&
+         "Offset has drifted?");
   char *Next = Mem + sizeof(Header);
 
   // Fill in Packed and set other data, then come back to construct the header.
   uint64_t Packed = 0;
-  Packed |= LayoutFlags::pack(L.Flags) << 56;
+  Packed |= LayoutFlags::pack(L.Flags) << 56 | L.TrieRecordOffset;
 
   // Construct DataSize.
   switch (L.Flags.DataSize) {
@@ -2448,8 +2451,8 @@ OnDiskCAS::getOrCreateString(IndexProxy I, StringRef String) {
   String2BHandle S = String2BHandle::create(Alloc, String);
 
   TrieRecord::Data StringData;
-  StringData.OK = TrieRecord::ObjectKind::Blob;
-  StringData.SK = TrieRecord::StorageKind::DataPool;
+  StringData.OK = TrieRecord::ObjectKind::String;
+  StringData.SK = TrieRecord::StorageKind::DataPoolString2B;
   StringData.Offset = Offset;
 
   // Try to store the value and confirm that the new value has valid storage.
