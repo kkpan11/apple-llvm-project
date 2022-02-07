@@ -25,6 +25,8 @@
 #include "llvm/Support/SmallVectorMemoryBuffer.h"
 #include "llvm/Support/StringSaver.h"
 
+#define DEBUG_TYPE "builtin-cas"
+
 using namespace llvm;
 using namespace llvm::cas;
 
@@ -1152,6 +1154,12 @@ public:
     uint64_t Packed =
         uint64_t(D.SK) << 56 | uint64_t(D.OK) << 48 | D.Offset.get();
     assert(D.SK != StorageKind::Unknown || Packed == 0);
+#ifndef NDEBUG
+    Data RoundTrip = unpack(Packed);
+    assert(D.SK == RoundTrip.SK);
+    assert(D.OK == RoundTrip.OK);
+    assert(D.Offset.get() == RoundTrip.Offset.get());
+#endif
     return Packed;
   }
 
@@ -1161,7 +1169,7 @@ public:
       return D;
     D.SK = (StorageKind)(Packed >> 56);
     D.OK = (ObjectKind)((Packed >> 48) & 0xFF);
-    D.Offset = FileOffset(Packed & (-1ULL >> 48));
+    D.Offset = FileOffset(Packed & (UINT64_MAX >> 16));
     return D;
   }
 
@@ -2543,6 +2551,10 @@ OnDiskCAS::getOrCreateString(IndexProxy I, StringRef String) {
   auto Alloc = [&](size_t Size) -> char * {
     OnDiskDataAllocator::pointer P = DataPool.allocate(Size);
     Offset = P.getOffset();
+    LLVM_DEBUG({
+      dbgs() << "pool-alloc addr=" << (void *)Offset.get() << " size=" << Size
+             << " end=" << (void *)(Offset.get() + Size) << "\n";
+    });
     return P->data();
   };
   String2BHandle S = String2BHandle::create(Alloc, String);
@@ -2876,6 +2888,11 @@ OnDiskCAS::getOrCreateDataRecord(IndexProxy &I, TrieRecord::ObjectKind OK,
       SK = TrieRecord::StorageKind::DataPool;
       OnDiskDataAllocator::pointer P = DataPool.allocate(Size);
       PoolOffset = P.getOffset();
+      LLVM_DEBUG({
+        dbgs() << "pool-alloc addr=" << (void *)PoolOffset.get()
+               << " size=" << Size
+               << " end=" << (void *)(PoolOffset.get() + Size) << "\n";
+      });
       return P->data();
     }
 
@@ -2933,6 +2950,10 @@ OnDiskCAS::createPooledDataRecord(DataRecordHandle::Input Input) {
   auto Alloc = [&](size_t Size) -> char * {
     OnDiskDataAllocator::pointer P = DataPool.allocate(Size);
     Offset = P.getOffset();
+    LLVM_DEBUG({
+      dbgs() << "pool-alloc addr=" << (void *)Offset.get() << " size=" << Size
+             << " end=" << (void *)(Offset.get() + Size) << "\n";
+    });
     return P->data();
   };
   DataRecordHandle Record = DataRecordHandle::create(Alloc, Input);
