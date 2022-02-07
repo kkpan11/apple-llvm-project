@@ -342,7 +342,8 @@ public:
     if (std::is_trivially_destructible<value_type>::value)
       this->destroyImpl(nullptr);
     else
-      this->destroyImpl([](void *P) { delete static_cast<value_type *>(P); });
+      this->destroyImpl(
+          [](void *P) { static_cast<value_type *>(P)->~value_type(); });
   }
 
   // Move constructor okay.
