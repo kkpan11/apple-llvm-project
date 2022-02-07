@@ -29,6 +29,7 @@ using namespace llvm::cas;
 static cl::opt<bool> AllTrees("all-trees",
                               cl::desc("Print all trees, not just empty ones, for ls-tree-recursive"));
 
+static int dump(CASDB &CAS);
 static int listTree(CASDB &CAS, CASID ID);
 static int listTreeRecursively(CASDB &CAS, CASID ID);
 static int listObjectReferences(CASDB &CAS, CASID ID);
@@ -53,6 +54,7 @@ int main(int Argc, char **Argv) {
 
   enum CommandKind {
     Invalid,
+    Dump,
     PrintKind,
     CatBlob,
     CatNodeData,
@@ -70,6 +72,7 @@ int main(int Argc, char **Argv) {
   cl::opt<CommandKind> Command(
       cl::desc("choose command action:"),
       cl::values(
+          clEnumValN(Dump, "dump", "dump internal contents"),
           clEnumValN(PrintKind, "print-kind", "print kind"),
           clEnumValN(CatBlob, "cat-blob", "cat blob"),
           clEnumValN(CatNodeData, "cat-node-data", "cat node data"),
@@ -97,6 +100,9 @@ int main(int Argc, char **Argv) {
     ExitOnErr(createStringError(inconvertibleErrorCode(), "missing --path"));
   std::unique_ptr<CASDB> CAS = ExitOnErr(llvm::cas::createOnDiskCAS(CASPath));
   assert(CAS);
+
+  if (Command == Dump)
+    return dump(*CAS);
 
   if (Command == MakeBlob)
     return makeBlob(*CAS, DataPath);
@@ -234,6 +240,12 @@ openBuffer(StringRef DataPath) {
   return errorOrToExpected(
       DataPath == "-" ? llvm::MemoryBuffer::getSTDIN()
                       : llvm::MemoryBuffer::getFile(DataPath));
+}
+
+int dump(CASDB &CAS) {
+  ExitOnError ExitOnErr("llvm-cas: dump: ");
+  CAS.print(llvm::outs());
+  return 0;
 }
 
 int makeBlob(CASDB &CAS, StringRef DataPath) {
