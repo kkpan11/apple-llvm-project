@@ -8,19 +8,36 @@
 
 #include "llvm/CAS/CASDB.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Testing/Support/Error.h"
+#include "llvm/Testing/Support/SupportHelpers.h"
 #include "gtest/gtest.h"
 
 using namespace llvm;
 using namespace llvm::cas;
 
-class CASDBTest : public testing::TestWithParam<
-                      std::function<std::unique_ptr<CASDB>(int)>> {
+struct TestingAndDir {
+  std::unique_ptr<CASDB> DB;
+  Optional<unittest::TempDir> Temp;
+};
+
+class CASDBTest
+    : public testing::TestWithParam<std::function<TestingAndDir(int)>> {
 protected:
   Optional<int> NextCASIndex;
 
-  std::unique_ptr<CASDB> createCAS() { return GetParam()((*NextCASIndex)++); }
+  SmallVector<unittest::TempDir> Dirs;
+
+  std::unique_ptr<CASDB> createCAS() {
+    auto TD = GetParam()((*NextCASIndex)++);
+    if (TD.Temp)
+      Dirs.push_back(std::move(*TD.Temp));
+    return std::move(TD.DB);
+  }
   void SetUp() { NextCASIndex = 0; }
-  void TearDown() { NextCASIndex = None; }
+  void TearDown() {
+    NextCASIndex = None;
+    Dirs.clear();
+  }
 };
 
 template <class T>
@@ -212,15 +229,12 @@ TEST_P(CASDBTest, Trees) {
 }
 
 INSTANTIATE_TEST_SUITE_P(InMemoryCAS, CASDBTest, ::testing::Values([](int) {
-                           return createInMemoryCAS();
+                           return TestingAndDir{createInMemoryCAS(), None};
                          }));
-INSTANTIATE_TEST_SUITE_P(OnDiskCAS, CASDBTest, ::testing::Values([](int) {
-                           // FIXME: Delete the directory in cleanup.
-                           SmallString<128> Path;
-                           std::error_code EC = sys::fs::createUniqueDirectory(
-                               "on-disk-cas", Path);
-                           (void)EC;
-                           assert(!EC);
-                           return std::move(
-                               *expectedToOptional(createOnDiskCAS(Path)));
-                         }));
+static TestingAndDir createOnDisk(int I) {
+  unittest::TempDir Temp("on-disk-cas");
+  std::unique_ptr<CASDB> CAS;
+  EXPECT_THAT_ERROR(createOnDiskCAS(Temp.path()).moveInto(CAS), Succeeded());
+  return TestingAndDir{std::move(CAS), std::move(Temp)};
+}
+INSTANTIATE_TEST_SUITE_P(OnDiskCAS, CASDBTest, ::testing::Values(createOnDisk));
