@@ -94,6 +94,25 @@ multiline text multiline text multiline text multiline text multiline text)",
   }
 }
 
+TEST_P(CASDBTest, BlobsBig) {
+  // A little bit of validation that bigger blobs are okay. Climb up to 1MB.
+  std::unique_ptr<CASDB> CAS = createCAS();
+  SmallString<256> String1 = StringRef("a few words");
+  SmallString<256> String2 = StringRef("others");
+  while (String1.size() < 1024U * 1024U) {
+    Optional<CASID> ID1;
+    Optional<CASID> ID2;
+    ASSERT_THAT_ERROR(CAS->createBlob(String1).moveInto(ID1), Succeeded());
+    ASSERT_THAT_ERROR(CAS->createBlob(String1).moveInto(ID2), Succeeded());
+    ASSERT_EQ(ID1, ID2);
+    String1.append(String2);
+    ASSERT_THAT_ERROR(CAS->createBlob(String2).moveInto(ID1), Succeeded());
+    ASSERT_THAT_ERROR(CAS->createBlob(String2).moveInto(ID2), Succeeded());
+    ASSERT_EQ(ID1, ID2);
+    String2.append(String1);
+  }
+}
+
 TEST_P(CASDBTest, Trees) {
   std::unique_ptr<CASDB> CAS1 = createCAS();
   std::unique_ptr<CASDB> CAS2 = createCAS();
