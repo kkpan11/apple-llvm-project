@@ -6,14 +6,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/ADT/ScopeExit.h"
-#include "llvm/ADT/PointerUnion.h"
 #include "llvm/ADT/BitmaskEnum.h"
-#include "llvm/ADT/StringMap.h"
-#include "llvm/CAS/CASDB.h"
-#include "llvm/CAS/BuiltinObjectHasher.h"
-#include "llvm/CAS/HashMappedTrie.h"
 #include "llvm/ADT/LazyAtomicPointer.h"
+#include "llvm/ADT/PointerUnion.h"
+#include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/StringMap.h"
+#include "llvm/CAS/BuiltinObjectHasher.h"
+#include "llvm/CAS/CASDB.h"
+#include "llvm/CAS/HashMappedTrie.h"
 #include "llvm/CAS/LazyMappedFileRegionBumpPtr.h"
 #include "llvm/CAS/OnDiskHashMappedTrie.h"
 #include "llvm/CAS/ThreadSafeAllocator.h"
@@ -44,8 +44,8 @@ namespace {
 ///   // Deal with None...
 /// }
 /// \endcode
-template <class T> static Optional<Expected<T>>
-dereferenceValue(Expected<Optional<T>> E) {
+template <class T>
+static Optional<Expected<T>> dereferenceValue(Expected<Optional<T>> E) {
   if (!E)
     return Expected<T>(E.takeError());
   if (*E)
@@ -65,8 +65,9 @@ dereferenceValue(Expected<Optional<T>> E) {
 ///   // Deal with None...
 /// }
 /// \endcode
-template <class T> static Expected<T>
-dereferenceValue(Expected<Optional<T>> E, function_ref<Error ()> OnNone) {
+template <class T>
+static Expected<T> dereferenceValue(Expected<Optional<T>> E,
+                                    function_ref<Error()> OnNone) {
   if (Optional<Expected<T>> MaybeExpected = dereferenceValue(std::move(E)))
     return std::move(*MaybeExpected);
   return OnNone();
@@ -87,8 +88,9 @@ dereferenceValue(Expected<Optional<T>> E, function_ref<Error ()> OnNone) {
 ///   // Deal with value...
 /// }
 /// \endcode
-template <class T, class SinkT> static Optional<Expected<NoneType>>
-moveValueInto(Expected<Optional<T>> E, SinkT &Sink) {
+template <class T, class SinkT>
+static Optional<Expected<NoneType>> moveValueInto(Expected<Optional<T>> E,
+                                                  SinkT &Sink) {
   if (Optional<Expected<T>> MaybeExpected = dereferenceValue(std::move(E)))
     return Expected<NoneType>(std::move(*MaybeExpected).moveInto(Sink));
   return Expected<NoneType>(None);
@@ -97,16 +99,17 @@ moveValueInto(Expected<Optional<T>> E, SinkT &Sink) {
 /// Simple thread-safe access.
 template <class MapT, size_t NumShards> class ThreadSafeMap {
   static_assert(isPowerOf2_64(NumShards), "Expected power of 2");
+
 public:
   using MapType = MapT;
   template <class ReturnT>
-  auto withLock(size_t Shard, function_ref<ReturnT (MapT &)> CB) {
+  auto withLock(size_t Shard, function_ref<ReturnT(MapT &)> CB) {
     auto &S = getShard(Shard);
     std::lock_guard<std::mutex> Lock(S.Mutex);
     return CB(S.Map);
   }
   template <class ReturnT>
-  auto withLock(size_t Shard, function_ref<ReturnT (const MapT &)> CB) const {
+  auto withLock(size_t Shard, function_ref<ReturnT(const MapT &)> CB) const {
     auto &S = getShard(Shard);
     std::lock_guard<std::mutex> Lock(S.Mutex);
     return CB(S.Map);
@@ -161,19 +164,22 @@ public:
   }
 
   Expected<TreeRef> createTree(ArrayRef<NamedTreeEntry> Entries) final;
-  virtual Expected<TreeRef> createTreeImpl(ArrayRef<uint8_t> ComputedHash,
-                                           ArrayRef<NamedTreeEntry> SortedEntries) = 0;
+  virtual Expected<TreeRef>
+  createTreeImpl(ArrayRef<uint8_t> ComputedHash,
+                 ArrayRef<NamedTreeEntry> SortedEntries) = 0;
 
   Expected<NodeRef> createNode(ArrayRef<CASID> References,
                                ArrayRef<char> Data) final;
   virtual Expected<NodeRef> createNodeImpl(ArrayRef<uint8_t> ComputedHash,
-                               ArrayRef<CASID> References, ArrayRef<char> Data) = 0;
+                                           ArrayRef<CASID> References,
+                                           ArrayRef<char> Data) = 0;
 
-  Expected<BlobRef> createBlobFromOpenFileImpl(
-      sys::fs::file_t FD, Optional<sys::fs::file_status> Status) override;
-  virtual Expected<BlobRef> createBlobFromNullTerminatedRegion(
-      ArrayRef<uint8_t> ComputedHash,
-      sys::fs::mapped_file_region Map) {
+  Expected<BlobRef>
+  createBlobFromOpenFileImpl(sys::fs::file_t FD,
+                             Optional<sys::fs::file_status> Status) override;
+  virtual Expected<BlobRef>
+  createBlobFromNullTerminatedRegion(ArrayRef<uint8_t> ComputedHash,
+                                     sys::fs::mapped_file_region Map) {
     return createBlobImpl(ComputedHash, makeArrayRef(Map.data(), Map.size()));
   }
 
@@ -183,9 +189,12 @@ public:
 
   static StringRef getKindName(ObjectKind Kind) {
     switch (Kind) {
-    case ObjectKind::Blob: return "blob";
-    case ObjectKind::Node: return "node";
-    case ObjectKind::Tree: return "tree";
+    case ObjectKind::Blob:
+      return "blob";
+    case ObjectKind::Node:
+      return "node";
+    case ObjectKind::Tree:
+      return "tree";
     }
   }
 
@@ -195,40 +204,42 @@ public:
   }
 
   Error createCorruptObjectError(CASID ID) const {
-     return createStringError(std::make_error_code(std::errc::invalid_argument),
+    return createStringError(std::make_error_code(std::errc::invalid_argument),
                              "corrupt object '" + getPrintedIDOrHash(ID) + "'");
-   }
+  }
 
   Error createInvalidObjectError(CASID ID, ObjectKind Kind) const {
-     return createStringError(std::make_error_code(std::errc::invalid_argument),
+    return createStringError(std::make_error_code(std::errc::invalid_argument),
                              "invalid object '" + getPrintedIDOrHash(ID) +
-                             "' for kind '" + getKindName(Kind) + "'");
+                                 "' for kind '" + getKindName(Kind) + "'");
   }
 
   /// FIXME: This should not use Error.
   Error createResultCacheMissError(CASID Input) const {
     return createStringError(std::make_error_code(std::errc::invalid_argument),
-                             "no result for '" + getPrintedIDOrHash(Input) + "'");
+                             "no result for '" + getPrintedIDOrHash(Input) +
+                                 "'");
   }
 
   Error createResultCachePoisonedError(CASID Input, CASID Output,
-                                       CASID ExistingOutput)  const{
-    return createStringError(std::make_error_code(std::errc::invalid_argument),
-                             "cache poisoned for '" + getPrintedIDOrHash(Input) + "' (new='" +
-                             getPrintedIDOrHash(Output) + "' vs. existing '" +
-                             getPrintedIDOrHash(ExistingOutput) + "')");
+                                       CASID ExistingOutput) const {
+    return createStringError(
+        std::make_error_code(std::errc::invalid_argument),
+        "cache poisoned for '" + getPrintedIDOrHash(Input) + "' (new='" +
+            getPrintedIDOrHash(Output) + "' vs. existing '" +
+            getPrintedIDOrHash(ExistingOutput) + "')");
   }
 
   Error createResultCacheCorruptError(CASID Input) const {
     return createStringError(std::make_error_code(std::errc::invalid_argument),
                              "result cache corrupt for '" +
-                             getPrintedIDOrHash(Input) + "'");
+                                 getPrintedIDOrHash(Input) + "'");
   }
 };
 
 /// Current hash type for the internal CAS.
 using HasherT = SHA1;
-using HashType = decltype(HasherT::hash(std::declval<ArrayRef<uint8_t>&>()));
+using HashType = decltype(HasherT::hash(std::declval<ArrayRef<uint8_t> &>()));
 
 } // end anonymous namespace
 
@@ -346,9 +357,9 @@ BuiltinCAS::createBlobFromOpenFileImpl(sys::fs::file_t FD,
     return readWithStream();
 
   std::error_code EC;
-  sys::fs::mapped_file_region Map(
-      FD, sys::fs::mapped_file_region::readonly, Status->getSize(),
-      /*offset=*/0, EC);
+  sys::fs::mapped_file_region Map(FD, sys::fs::mapped_file_region::readonly,
+                                  Status->getSize(),
+                                  /*offset=*/0, EC);
   if (EC)
     return errorCodeToError(EC);
 
@@ -377,7 +388,7 @@ Expected<TreeRef> BuiltinCAS::createTree(ArrayRef<NamedTreeEntry> Entries) {
 }
 
 Expected<NodeRef> BuiltinCAS::createNode(ArrayRef<CASID> References,
-                               ArrayRef<char> Data) {
+                                         ArrayRef<char> Data) {
   BuiltinNodeHasher<HasherT> Hasher;
   Hasher.start(References.size());
   for (const CASID &ID : References)
@@ -392,20 +403,23 @@ class InMemoryString;
 
 /// Index of referenced IDs (map: Hash -> InMemoryObject*). Uses
 /// LazyAtomicPointer to coordinate creation of objects.
-using InMemoryIndexT = ThreadSafeHashMappedTrie<
-    LazyAtomicPointer<const InMemoryObject>, sizeof(HashType)>;
+using InMemoryIndexT =
+    ThreadSafeHashMappedTrie<LazyAtomicPointer<const InMemoryObject>,
+                             sizeof(HashType)>;
 
 /// Values in \a InMemoryIndexT. \a InMemoryObject's point at this to access
 /// their hash.
 using InMemoryIndexValueT = InMemoryIndexT::value_type;
 
 /// String pool.
-using InMemoryStringPoolT = ThreadSafeHashMappedTrie<
-    LazyAtomicPointer<const InMemoryString>, sizeof(HashType)>;
+using InMemoryStringPoolT =
+    ThreadSafeHashMappedTrie<LazyAtomicPointer<const InMemoryString>,
+                             sizeof(HashType)>;
 
 /// Action cache type (map: Hash -> InMemoryObject*). Always refers to existing
 /// objects.
-using InMemoryCacheT = ThreadSafeHashMappedTrie<const InMemoryIndexValueT *, sizeof(HashType)>;
+using InMemoryCacheT =
+    ThreadSafeHashMappedTrie<const InMemoryIndexValueT *, sizeof(HashType)>;
 
 class InMemoryObject {
 public:
@@ -442,15 +456,13 @@ public:
   InMemoryObject(const InMemoryObject &) = delete;
 
 protected:
-  InMemoryObject(Kind K, const InMemoryIndexValueT &I)
-      : IndexAndKind(&I, K) {}
+  InMemoryObject(Kind K, const InMemoryIndexValueT &I) : IndexAndKind(&I, K) {}
 
 private:
   enum Counts : int {
     NumKindBits = 3,
   };
-  PointerIntPair<const InMemoryIndexValueT *, NumKindBits, Kind>
-      IndexAndKind;
+  PointerIntPair<const InMemoryIndexValueT *, NumKindBits, Kind> IndexAndKind;
   static_assert((1U << NumKindBits) <= alignof(InMemoryIndexValueT),
                 "Kind will clobber pointer");
   static_assert(((int)Kind::Max >> NumKindBits) == 0, "Kind will be truncated");
@@ -467,10 +479,7 @@ public:
 class InMemoryBlob : public InMemoryObject, public GetDataString<InMemoryBlob> {
 public:
   static bool classof(const InMemoryObject *O) {
-    return
-      O->getKind() == Kind::RefBlob ||
-      O->getKind() == Kind::InlineBlob 
-      ;
+    return O->getKind() == Kind::RefBlob || O->getKind() == Kind::InlineBlob;
   }
   inline ArrayRef<char> getData() const;
 
@@ -481,14 +490,16 @@ private:
 class InMemoryRefBlob : public InMemoryBlob {
 public:
   static constexpr Kind KindValue = Kind::RefBlob;
-  static bool classof(const InMemoryObject *O) { return O->getKind() == KindValue; }
+  static bool classof(const InMemoryObject *O) {
+    return O->getKind() == KindValue;
+  }
 
   ArrayRef<char> getDataImpl() const { return Data; }
   ArrayRef<char> getData() const { return Data; }
 
-  static InMemoryRefBlob &create(
-      function_ref<void *(size_t Size)> Allocate,
-      const InMemoryIndexValueT &I, ArrayRef<char> Data) {
+  static InMemoryRefBlob &create(function_ref<void *(size_t Size)> Allocate,
+                                 const InMemoryIndexValueT &I,
+                                 ArrayRef<char> Data) {
     void *Mem = Allocate(sizeof(InMemoryRefBlob));
     return *new (Mem) InMemoryRefBlob(I, Data);
   }
@@ -505,16 +516,18 @@ private:
 class InMemoryInlineBlob : public InMemoryBlob {
 public:
   static constexpr Kind KindValue = Kind::InlineBlob;
-  static bool classof(const InMemoryObject *O) { return O->getKind() == KindValue; }
+  static bool classof(const InMemoryObject *O) {
+    return O->getKind() == KindValue;
+  }
 
   ArrayRef<char> getDataImpl() const {
     return makeArrayRef(reinterpret_cast<const char *>(this + 1), Size);
   }
   ArrayRef<char> getData() const { return getDataImpl(); }
 
-  static InMemoryInlineBlob &create(
-      function_ref<void *(size_t Size)> Allocate,
-      const InMemoryIndexValueT &I, ArrayRef<char> Data) {
+  static InMemoryInlineBlob &create(function_ref<void *(size_t Size)> Allocate,
+                                    const InMemoryIndexValueT &I,
+                                    ArrayRef<char> Data) {
     void *Mem = Allocate(sizeof(InMemoryInlineBlob) + Data.size() + 1);
     return *new (Mem) InMemoryInlineBlob(I, Data);
   }
@@ -532,10 +545,7 @@ private:
 class InMemoryNode : public InMemoryObject, public GetDataString<InMemoryNode> {
 public:
   static bool classof(const InMemoryObject *O) {
-    return
-      O->getKind() == Kind::RefNode ||
-      O->getKind() == Kind::InlineNode 
-      ;
+    return O->getKind() == Kind::RefNode || O->getKind() == Kind::InlineNode;
   }
   inline ArrayRef<char> getData() const;
   inline ArrayRef<const InMemoryObject *> getRefs() const;
@@ -547,24 +557,26 @@ private:
 class InMemoryRefNode : public InMemoryNode {
 public:
   static constexpr Kind KindValue = Kind::RefNode;
-  static bool classof(const InMemoryObject *O) { return O->getKind() == KindValue; }
+  static bool classof(const InMemoryObject *O) {
+    return O->getKind() == KindValue;
+  }
 
   ArrayRef<const InMemoryObject *> getRefsImpl() const { return Refs; }
   ArrayRef<const InMemoryObject *> getRefs() const { return Refs; }
   ArrayRef<char> getDataImpl() const { return Data; }
   ArrayRef<char> getData() const { return Data; }
 
-  static InMemoryRefNode &create(
-      function_ref<void *(size_t Size)> Allocate,
-      const InMemoryIndexValueT &I,
-      ArrayRef<const InMemoryObject *> Refs, ArrayRef<char> Data) {
+  static InMemoryRefNode &create(function_ref<void *(size_t Size)> Allocate,
+                                 const InMemoryIndexValueT &I,
+                                 ArrayRef<const InMemoryObject *> Refs,
+                                 ArrayRef<char> Data) {
     void *Mem = Allocate(sizeof(InMemoryRefNode));
     return *new (Mem) InMemoryRefNode(I, Refs, Data);
   }
 
 private:
   InMemoryRefNode(const InMemoryIndexValueT &I,
-               ArrayRef<const InMemoryObject *> Refs, ArrayRef<char> Data)
+                  ArrayRef<const InMemoryObject *> Refs, ArrayRef<char> Data)
       : InMemoryNode(KindValue, I), Refs(Refs), Data(Data) {
     assert(isAddrAligned(Align(8), Data.data()) && "Expected 8-byte alignment");
     assert(*Data.end() == 0 && "Expected null-termination");
@@ -577,34 +589,37 @@ private:
 class InMemoryInlineNode : public InMemoryNode {
 public:
   static constexpr Kind KindValue = Kind::InlineNode;
-  static bool classof(const InMemoryObject *O) { return O->getKind() == KindValue; }
+  static bool classof(const InMemoryObject *O) {
+    return O->getKind() == KindValue;
+  }
 
   ArrayRef<const InMemoryObject *> getRefs() const { return getRefsImpl(); }
   ArrayRef<const InMemoryObject *> getRefsImpl() const {
-    return makeArrayRef(reinterpret_cast<const InMemoryObject *const *>(this + 1), NumRefs);
+    return makeArrayRef(
+        reinterpret_cast<const InMemoryObject *const *>(this + 1), NumRefs);
   }
 
   ArrayRef<char> getData() const { return getDataImpl(); }
   ArrayRef<char> getDataImpl() const {
     ArrayRef<const InMemoryObject *> Refs = getRefs();
-    return makeArrayRef(reinterpret_cast<const char *>(Refs.data() + Refs.size()),
-                        DataSize);
+    return makeArrayRef(
+        reinterpret_cast<const char *>(Refs.data() + Refs.size()), DataSize);
   }
 
-  static InMemoryInlineNode &create(
-      function_ref<void *(size_t Size)> Allocate,
-      const InMemoryIndexValueT &I,
-      ArrayRef<const InMemoryObject *> Refs, ArrayRef<char> Data) {
+  static InMemoryInlineNode &create(function_ref<void *(size_t Size)> Allocate,
+                                    const InMemoryIndexValueT &I,
+                                    ArrayRef<const InMemoryObject *> Refs,
+                                    ArrayRef<char> Data) {
     void *Mem = Allocate(sizeof(InMemoryInlineNode) +
-                         sizeof(uintptr_t) * Refs.size() +
-                         Data.size() + 1);
+                         sizeof(uintptr_t) * Refs.size() + Data.size() + 1);
     return *new (Mem) InMemoryInlineNode(I, Refs, Data);
   }
 
 private:
   InMemoryInlineNode(const InMemoryIndexValueT &I,
-                    ArrayRef<const InMemoryObject *> Refs, ArrayRef<char> Data)
-      : InMemoryNode(KindValue, I), NumRefs(Refs.size()), DataSize(Data.size()) {
+                     ArrayRef<const InMemoryObject *> Refs, ArrayRef<char> Data)
+      : InMemoryNode(KindValue, I), NumRefs(Refs.size()),
+        DataSize(Data.size()) {
     auto *BeginRefs = reinterpret_cast<const InMemoryObject **>(this + 1);
     llvm::copy(Refs, BeginRefs);
     auto *BeginData = reinterpret_cast<char *>(BeginRefs + NumRefs);
@@ -618,7 +633,9 @@ private:
 class InMemoryTree : public InMemoryObject {
 public:
   static constexpr Kind KindValue = Kind::Tree;
-  static bool classof(const InMemoryObject *O) { return O->getKind() == KindValue; }
+  static bool classof(const InMemoryObject *O) {
+    return O->getKind() == KindValue;
+  }
 
   struct NamedRef {
     const InMemoryObject *Ref;
@@ -638,7 +655,8 @@ public:
   ArrayRef<TreeEntry::EntryKind> getKinds() const {
     ArrayRef<NamedRef> Refs = getNamedRefs();
     return makeArrayRef(reinterpret_cast<const TreeEntry::EntryKind *>(
-          Refs.data() + Refs.size()), Size);
+                            Refs.data() + Refs.size()),
+                        Size);
   }
 
   Optional<NamedEntry> find(StringRef Name) const;
@@ -652,13 +670,12 @@ public:
     return NamedEntry{NR.Ref, NR.Name, getKinds()[I]};
   }
 
-  static InMemoryTree &create(
-      function_ref<void *(size_t Size)> Allocate,
-      const InMemoryIndexValueT &I, ArrayRef<NamedEntry> Entries);
+  static InMemoryTree &create(function_ref<void *(size_t Size)> Allocate,
+                              const InMemoryIndexValueT &I,
+                              ArrayRef<NamedEntry> Entries);
 
 private:
-  InMemoryTree(const InMemoryIndexValueT &I,
-               ArrayRef<NamedEntry> Entries);
+  InMemoryTree(const InMemoryIndexValueT &I, ArrayRef<NamedEntry> Entries);
   size_t Size;
 };
 
@@ -669,8 +686,8 @@ public:
     return StringRef(reinterpret_cast<const char *>(this + 1), Size);
   }
 
-  static InMemoryString &create(
-      function_ref<void *(size_t Size)> Allocate, StringRef String) {
+  static InMemoryString &create(function_ref<void *(size_t Size)> Allocate,
+                                StringRef String) {
     assert(String.size() <= UINT32_MAX && "Expected strings smaller than 4GB");
     void *Mem = Allocate(sizeof(InMemoryString) + String.size() + 1);
     return *new (Mem) InMemoryString(String);
@@ -694,16 +711,17 @@ public:
 
   Expected<BlobRef> createBlobImpl(ArrayRef<uint8_t> ComputedHash,
                                    ArrayRef<char> Data) final;
-  Expected<TreeRef> createTreeImpl(ArrayRef<uint8_t> ComputedHash,
-                                   ArrayRef<NamedTreeEntry> SortedEntries) final;
+  Expected<TreeRef>
+  createTreeImpl(ArrayRef<uint8_t> ComputedHash,
+                 ArrayRef<NamedTreeEntry> SortedEntries) final;
   Expected<NodeRef> createNodeImpl(ArrayRef<uint8_t> ComputedHash,
                                    ArrayRef<CASID> References,
                                    ArrayRef<char> Data) final;
   Optional<ObjectKind> getObjectKind(CASID ID) final;
 
-  Expected<BlobRef> createBlobFromNullTerminatedRegion(
-      ArrayRef<uint8_t> ComputedHash,
-      sys::fs::mapped_file_region Map) override;
+  Expected<BlobRef>
+  createBlobFromNullTerminatedRegion(ArrayRef<uint8_t> ComputedHash,
+                                     sys::fs::mapped_file_region Map) override;
 
   static CASID getID(const InMemoryIndexValueT &I) { return CASID(I.Hash); }
   static CASID getID(const InMemoryObject &O) { return CASID(O.getHash()); }
@@ -729,7 +747,7 @@ public:
 
   InMemoryIndexValueT &indexHash(ArrayRef<uint8_t> Hash) {
     return *Index.insertLazy(
-      Hash, [](auto ValueConstructor) { ValueConstructor.emplace(nullptr); });
+        Hash, [](auto ValueConstructor) { ValueConstructor.emplace(nullptr); });
   }
 
   /// TODO: Consider callers to actually do an insert and to return a handle to
@@ -766,7 +784,8 @@ public:
 private:
   // TreeAPI.
   static NamedTreeEntry makeTreeEntry(const InMemoryTree::NamedEntry &Entry) {
-    return NamedTreeEntry(CASID(Entry.Ref->getHash()), Entry.Kind, Entry.Name->get());
+    return NamedTreeEntry(CASID(Entry.Ref->getHash()), Entry.Kind,
+                          Entry.Name->get());
   }
   Optional<NamedTreeEntry> lookupInTree(const TreeRef &Handle,
                                         StringRef Name) const final;
@@ -846,12 +865,12 @@ void InMemoryCAS::print(raw_ostream &OS) const {
   ActionCache.print(OS);
 }
 
-InMemoryTree &InMemoryTree::create(
-    function_ref<void *(size_t Size)> Allocate,
-    const InMemoryIndexValueT &I, ArrayRef<NamedEntry> Entries) {
-  void *Mem = Allocate(sizeof(InMemoryTree) +
-                       sizeof(NamedRef) * Entries.size() +
-                       sizeof(TreeEntry::EntryKind) * Entries.size());
+InMemoryTree &InMemoryTree::create(function_ref<void *(size_t Size)> Allocate,
+                                   const InMemoryIndexValueT &I,
+                                   ArrayRef<NamedEntry> Entries) {
+  void *Mem =
+      Allocate(sizeof(InMemoryTree) + sizeof(NamedRef) * Entries.size() +
+               sizeof(TreeEntry::EntryKind) * Entries.size());
   return *new (Mem) InMemoryTree(I, Entries);
 }
 
@@ -902,8 +921,7 @@ Expected<BlobRef> InMemoryCAS::createBlobImpl(ArrayRef<uint8_t> ComputedHash,
 }
 
 Expected<BlobRef> InMemoryCAS::createBlobFromNullTerminatedRegion(
-    ArrayRef<uint8_t> ComputedHash,
-    sys::fs::mapped_file_region Map) {
+    ArrayRef<uint8_t> ComputedHash, sys::fs::mapped_file_region Map) {
   // Look up the hash in the index, initializing to nullptr if it's new.
   ArrayRef<char> Data(Map.data(), Map.size());
   auto &I = indexHash(ComputedHash);
@@ -926,8 +944,8 @@ Expected<BlobRef> InMemoryCAS::createBlobFromNullTerminatedRegion(
 }
 
 Expected<NodeRef> InMemoryCAS::createNodeImpl(ArrayRef<uint8_t> ComputedHash,
-                                          ArrayRef<CASID> Refs,
-                                          ArrayRef<char> Data) {
+                                              ArrayRef<CASID> Refs,
+                                              ArrayRef<char> Data) {
   // Look up the hash in the index, initializing to nullptr if it's new.
   auto &I = indexHash(ComputedHash);
   if (const InMemoryObject *Node = I.Data.load())
@@ -952,8 +970,10 @@ Expected<NodeRef> InMemoryCAS::createNodeImpl(ArrayRef<uint8_t> ComputedHash,
 
 const InMemoryString &InMemoryCAS::getOrCreateString(StringRef String) {
   BuiltinStringHasher<HasherT> Hasher;
-  InMemoryStringPoolT::value_type S = *StringPool.insertLazy(
-      Hasher.hash(String), [](auto ValueConstructor) { ValueConstructor.emplace(nullptr); });
+  InMemoryStringPoolT::value_type S =
+      *StringPool.insertLazy(Hasher.hash(String), [](auto ValueConstructor) {
+        ValueConstructor.emplace(nullptr);
+      });
 
   auto Allocator = [&](size_t Size) -> void * {
     return Strings.Allocate(String.size(), 1);
@@ -964,8 +984,9 @@ const InMemoryString &InMemoryCAS::getOrCreateString(StringRef String) {
   return S.Data.loadOrGenerate(Generator);
 }
 
-Expected<TreeRef> InMemoryCAS::createTreeImpl(
-    ArrayRef<uint8_t> ComputedHash, ArrayRef<NamedTreeEntry> SortedEntries) {
+Expected<TreeRef>
+InMemoryCAS::createTreeImpl(ArrayRef<uint8_t> ComputedHash,
+                            ArrayRef<NamedTreeEntry> SortedEntries) {
   // Look up the hash in the index, initializing to nullptr if it's new.
   auto &I = indexHash(ComputedHash);
   if (const InMemoryObject *Tree = I.Data.load())
@@ -974,9 +995,8 @@ Expected<TreeRef> InMemoryCAS::createTreeImpl(
   // Create the tree.
   SmallVector<InMemoryTree::NamedEntry> InternalEntries;
   for (const NamedTreeEntry &E : SortedEntries) {
-    InternalEntries.push_back({getObject(E.getID()),
-                               &getOrCreateString(E.getName()),
-                               E.getKind()});
+    InternalEntries.push_back(
+        {getObject(E.getID()), &getOrCreateString(E.getName()), E.getKind()});
     if (!InternalEntries.back().Ref)
       return createUnknownObjectError(E.getID());
   }
@@ -1002,18 +1022,20 @@ Expected<CASID> InMemoryCAS::getCachedResult(CASID InputID) {
 
 Error InMemoryCAS::putCachedResult(CASID InputID, CASID OutputID) {
   const InMemoryIndexT::value_type &Expected = indexHash(OutputID.getHash());
-  const InMemoryCacheT::value_type &Cached = *ActionCache.insertLazy(
-      InputID.getHash(),
-      [&](auto ValueConstructor) { ValueConstructor.emplace(&Expected); });
+  const InMemoryCacheT::value_type &Cached =
+      *ActionCache.insertLazy(InputID.getHash(), [&](auto ValueConstructor) {
+        ValueConstructor.emplace(&Expected);
+      });
 
-  /// TODO: Although, consider changing \a getCachedResult() to insert nullptr and
-  /// returning a handle on cache misses!
+  /// TODO: Although, consider changing \a getCachedResult() to insert nullptr
+  /// and returning a handle on cache misses!
   assert(Cached.Data && "Unexpected null in result cache");
   const InMemoryIndexT::value_type &Observed = *Cached.Data;
   if (&Expected == &Observed)
     return Error::success();
 
-  return createResultCachePoisonedError(InputID, OutputID, CASID(Observed.Hash));
+  return createResultCachePoisonedError(InputID, OutputID,
+                                        CASID(Observed.Hash));
 }
 
 Optional<NamedTreeEntry> InMemoryCAS::lookupInTree(const TreeRef &Handle,
@@ -1032,7 +1054,7 @@ NamedTreeEntry InMemoryCAS::getInTree(const TreeRef &Handle, size_t I) const {
 
 Error InMemoryCAS::forEachEntryInTree(
     const TreeRef &Handle,
-    function_ref<Error(const NamedTreeEntry &)> Callback) const  {
+    function_ref<Error(const NamedTreeEntry &)> Callback) const {
   auto &Tree = *reinterpret_cast<const InMemoryTree *>(getTreePtr(Handle));
   for (size_t I = 0, E = Tree.size(); I != E; ++I)
     if (Error E = Callback(makeTreeEntry(Tree[I])))
@@ -1046,8 +1068,8 @@ CASID InMemoryCAS::getReferenceInNode(const NodeRef &Handle, size_t I) const {
   return CASID(Node.getRefs()[I]->getHash());
 }
 
-Error InMemoryCAS::forEachReferenceInNode(const NodeRef &Handle,
-                                          function_ref<Error(CASID)> Callback) const {
+Error InMemoryCAS::forEachReferenceInNode(
+    const NodeRef &Handle, function_ref<Error(CASID)> Callback) const {
   auto &Node = *reinterpret_cast<const InMemoryNode *>(getNodePtr(Handle));
   for (const InMemoryObject *Object : Node.getRefs())
     if (Error E = Callback(CASID(Object->getHash())))
@@ -1118,7 +1140,8 @@ public:
 
   static uint64_t pack(Data D) {
     assert(D.Offset.get() < (int64_t)(1ULL << 48));
-    uint64_t Packed = uint64_t(D.SK) << 56 | uint64_t(D.OK) << 48 | D.Offset.get();
+    uint64_t Packed =
+        uint64_t(D.SK) << 56 | uint64_t(D.OK) << 48 | D.Offset.get();
     assert(D.SK != StorageKind::Unknown || Packed == 0);
     return Packed;
   }
@@ -1169,12 +1192,11 @@ public:
   uint64_t getRawData() const { return Data; }
   uint64_t getRawOffset() const { return Data & (UINT64_MAX >> 16); }
 
-  static InternalRef getFromRawData(uint64_t Data) {
-    return InternalRef(Data);
-  }
+  static InternalRef getFromRawData(uint64_t Data) { return InternalRef(Data); }
 
   static InternalRef getFromOffset(OffsetKind Kind, FileOffset Offset) {
-    assert((uint64_t)Offset.get() <= (UINT64_MAX >> NumMetadataBits) && "Offset must fit in 6B");
+    assert((uint64_t)Offset.get() <= (UINT64_MAX >> NumMetadataBits) &&
+           "Offset must fit in 6B");
     return InternalRef((uint64_t)Kind << NumOffsetBits | Offset.get());
   }
 
@@ -1240,8 +1262,9 @@ public:
   size_t size() const { return Size; }
   bool empty() const { return !Size; }
 
-  class iterator : public iterator_facade_base<iterator, std::random_access_iterator_tag,
-                                               const InternalRef> {
+  class iterator
+      : public iterator_facade_base<iterator, std::random_access_iterator_tag,
+                                    const InternalRef> {
   public:
     bool operator==(const iterator &RHS) const {
       if (ShiftedP != RHS.ShiftedP)
@@ -1256,7 +1279,9 @@ public:
       Ref = *reinterpret_cast<const InternalRef4B *>(ShiftedP << 1);
       return *Ref;
     }
-    bool operator<(const iterator &RHS) const { return ShiftedP < RHS.ShiftedP; }
+    bool operator<(const iterator &RHS) const {
+      return ShiftedP < RHS.ShiftedP;
+    }
     ptrdiff_t operator-(const iterator &RHS) const {
       return (ShiftedP - RHS.ShiftedP) / getSizeFactor();
     }
@@ -1344,7 +1369,8 @@ public:
 
   operator InternalRefArrayRef() const {
     assert(SmallRefs.empty() || FullRefs.empty());
-    return NeedsFull ? InternalRefArrayRef(FullRefs) : InternalRefArrayRef(SmallRefs);
+    return NeedsFull ? InternalRefArrayRef(FullRefs)
+                     : InternalRefArrayRef(SmallRefs);
   }
 
 private:
@@ -1372,7 +1398,7 @@ struct DataRecordHandle {
     Max = Uses8B,
   };
 
-    /// DataSize storage: 8B, 4B, 2B, or 1B.
+  /// DataSize storage: 8B, 4B, 2B, or 1B.
   enum class DataSizeFlags {
     Uses1B = 0U,
     Uses2B = 1U,
@@ -1405,13 +1431,17 @@ struct DataRecordHandle {
     RefKindShift = TrieOffsetShift + TrieOffsetBits,
     RefKindBits = 1,
   };
-  static_assert(((UINT32_MAX << NumRefsBits) & (uint32_t)NumRefsFlags::Max) == 0,
+  static_assert(((UINT32_MAX << NumRefsBits) & (uint32_t)NumRefsFlags::Max) ==
+                    0,
                 "Not enough bits");
-  static_assert(((UINT32_MAX << DataSizeBits) & (uint32_t)DataSizeFlags::Max) == 0,
+  static_assert(((UINT32_MAX << DataSizeBits) & (uint32_t)DataSizeFlags::Max) ==
+                    0,
                 "Not enough bits");
-  static_assert(((UINT32_MAX << TrieOffsetBits) & (uint32_t)TrieOffsetFlags::Max) == 0,
+  static_assert(((UINT32_MAX << TrieOffsetBits) &
+                 (uint32_t)TrieOffsetFlags::Max) == 0,
                 "Not enough bits");
-  static_assert(((UINT32_MAX << RefKindBits) & (uint32_t)RefKindFlags::Max) == 0,
+  static_assert(((UINT32_MAX << RefKindBits) & (uint32_t)RefKindFlags::Max) ==
+                    0,
                 "Not enough bits");
 
   struct LayoutFlags {
@@ -1422,9 +1452,9 @@ struct DataRecordHandle {
 
     static uint64_t pack(LayoutFlags LF) {
       unsigned Packed = ((unsigned)LF.NumRefs << NumRefsShift) |
-             ((unsigned)LF.DataSize << DataSizeShift) |
-             ((unsigned)LF.TrieOffset << TrieOffsetShift) |
-             ((unsigned)LF.RefKind << RefKindShift);
+                        ((unsigned)LF.DataSize << DataSizeShift) |
+                        ((unsigned)LF.TrieOffset << TrieOffsetShift) |
+                        ((unsigned)LF.RefKind << RefKindShift);
 #ifndef NDEBUG
       LayoutFlags RoundTrip = unpack(Packed);
       assert(LF.NumRefs == RoundTrip.NumRefs);
@@ -1437,10 +1467,14 @@ struct DataRecordHandle {
     static LayoutFlags unpack(uint64_t Storage) {
       assert(Storage <= UINT8_MAX && "Expect storage to fit in a byte");
       LayoutFlags LF;
-      LF.NumRefs = (NumRefsFlags)((Storage >> NumRefsShift) & ((1U << NumRefsBits) - 1));
-      LF.DataSize = (DataSizeFlags)((Storage >> DataSizeShift) & ((1U << DataSizeBits) - 1));
-      LF.TrieOffset = (TrieOffsetFlags)((Storage >> TrieOffsetShift) & ((1U << TrieOffsetBits) - 1));
-      LF.RefKind = (RefKindFlags)((Storage >> RefKindShift) & ((1U << RefKindBits) - 1));
+      LF.NumRefs =
+          (NumRefsFlags)((Storage >> NumRefsShift) & ((1U << NumRefsBits) - 1));
+      LF.DataSize = (DataSizeFlags)((Storage >> DataSizeShift) &
+                                    ((1U << DataSizeBits) - 1));
+      LF.TrieOffset = (TrieOffsetFlags)((Storage >> TrieOffsetShift) &
+                                        ((1U << TrieOffsetBits) - 1));
+      LF.RefKind =
+          (RefKindFlags)((Storage >> RefKindShift) & ((1U << RefKindBits) - 1));
       return LF;
     }
   };
@@ -1461,12 +1495,14 @@ struct DataRecordHandle {
 
     size_t getSizeUpperBound() const {
       return sizeof(Header) + sizeof(uint64_t) * 2 +
-        + sizeof(InternalRef) * Refs.size() +
-        alignTo( Data.size(),Align(8));
+             +sizeof(InternalRef) * Refs.size() +
+             alignTo(Data.size(), Align(8));
     }
   };
 
-  LayoutFlags getLayoutFlags() const { return LayoutFlags::unpack(H->Packed >> 56); }
+  LayoutFlags getLayoutFlags() const {
+    return LayoutFlags::unpack(H->Packed >> 56);
+  }
   FileOffset getTrieRecordOffset() const {
     if (getLayoutFlags().TrieOffset == TrieOffsetFlags::Uses4B)
       return FileOffset(H->Packed & UINT32_MAX);
@@ -1519,13 +1555,16 @@ struct DataRecordHandle {
                         getDataSize());
   }
 
-  static DataRecordHandle create(function_ref<char *(size_t Size)> Alloc, const Input &I);
-  static Expected<DataRecordHandle> createWithError(function_ref<Expected<char *>(size_t Size)> Alloc,
-                                           const Input &I);
+  static DataRecordHandle create(function_ref<char *(size_t Size)> Alloc,
+                                 const Input &I);
+  static Expected<DataRecordHandle>
+  createWithError(function_ref<Expected<char *>(size_t Size)> Alloc,
+                  const Input &I);
   static DataRecordHandle construct(char *Mem, const Input &I);
 
   static DataRecordHandle get(const char *Mem) {
-    return DataRecordHandle(*reinterpret_cast<const DataRecordHandle::Header *>(Mem));
+    return DataRecordHandle(
+        *reinterpret_cast<const DataRecordHandle::Header *>(Mem));
   }
 
   explicit operator bool() const { return H; }
@@ -1535,12 +1574,13 @@ struct DataRecordHandle {
   explicit DataRecordHandle(const Header &H) : H(&H) {}
 
 private:
-  static DataRecordHandle constructImpl(char *Mem, const Input &I, const Layout &L);
+  static DataRecordHandle constructImpl(char *Mem, const Input &I,
+                                        const Layout &L);
   const Header *H = nullptr;
 };
 
-Expected<DataRecordHandle> DataRecordHandle::createWithError(function_ref<Expected<char *>(size_t Size)> Alloc,
-                                          const Input &I) {
+Expected<DataRecordHandle> DataRecordHandle::createWithError(
+    function_ref<Expected<char *>(size_t Size)> Alloc, const Input &I) {
   Layout L(I);
   if (Expected<char *> Mem = Alloc(L.getTotalSize()))
     return constructImpl(*Mem, I, L);
@@ -1548,8 +1588,9 @@ Expected<DataRecordHandle> DataRecordHandle::createWithError(function_ref<Expect
     return Mem.takeError();
 }
 
-DataRecordHandle DataRecordHandle::create(function_ref<char *(size_t Size)> Alloc,
-                                          const Input &I) {
+DataRecordHandle
+DataRecordHandle::create(function_ref<char *(size_t Size)> Alloc,
+                         const Input &I) {
   Layout L(I);
   return constructImpl(Alloc(L.getTotalSize()), I, L);
 }
@@ -1568,7 +1609,8 @@ struct String2BHandle {
     return StringRef(reinterpret_cast<const char *>(H + 1), getLength());
   }
 
-  static String2BHandle create(function_ref<char *(size_t Size)> Alloc, StringRef String) {
+  static String2BHandle create(function_ref<char *(size_t Size)> Alloc,
+                               StringRef String) {
     assert(String.size() <= UINT16_MAX);
     char *Mem = Alloc(sizeof(Header) + String.size() + 1);
     Header *H = new (Mem) Header{(uint16_t)String.size()};
@@ -1578,7 +1620,8 @@ struct String2BHandle {
   }
 
   static String2BHandle get(const char *Mem) {
-    return String2BHandle(*reinterpret_cast<const String2BHandle::Header *>(Mem));
+    return String2BHandle(
+        *reinterpret_cast<const String2BHandle::Header *>(Mem));
   }
 
   explicit operator bool() const { return H; }
@@ -1621,7 +1664,8 @@ class OnDiskCAS : public BuiltinCAS {
 public:
   static constexpr StringLiteral IndexTableName = "llvm.cas.index[sha1]";
   static constexpr StringLiteral DataPoolTableName = "llvm.cas.data[sha1]";
-  static constexpr StringLiteral ActionCacheTableName = "llvm.cas.actions[sha1->sha1]";
+  static constexpr StringLiteral ActionCacheTableName =
+      "llvm.cas.actions[sha1->sha1]";
 
   static constexpr StringLiteral IndexFile = "index";
   static constexpr StringLiteral DataPoolFile = "data";
@@ -1647,16 +1691,20 @@ public:
   }
 
   Expected<BlobRef> createBlobImpl(ArrayRef<uint8_t> ComputedHash,
-                               ArrayRef<char> Data) final {
+                                   ArrayRef<char> Data) final {
     return getBlobFromProxy(getOrCreateBlob(indexHash(ComputedHash), Data));
   }
-  Expected<TreeRef> createTreeImpl(ArrayRef<uint8_t> ComputedHash, ArrayRef<NamedTreeEntry> SortedEntries) final {
-    return getTreeFromProxy(getOrCreateTree(indexHash(ComputedHash), SortedEntries));
+  Expected<TreeRef>
+  createTreeImpl(ArrayRef<uint8_t> ComputedHash,
+                 ArrayRef<NamedTreeEntry> SortedEntries) final {
+    return getTreeFromProxy(
+        getOrCreateTree(indexHash(ComputedHash), SortedEntries));
   }
   Expected<NodeRef> createNodeImpl(ArrayRef<uint8_t> ComputedHash,
-                               ArrayRef<CASID> References,
-                               ArrayRef<char> Data) final {
-    return getNodeFromProxy(getOrCreateNode(indexHash(ComputedHash), References, Data));
+                                   ArrayRef<CASID> References,
+                                   ArrayRef<char> Data) final {
+    return getNodeFromProxy(
+        getOrCreateNode(indexHash(ComputedHash), References, Data));
   }
 
   struct StringProxy {
@@ -1694,8 +1742,9 @@ public:
                         DataRecordHandle::Input Input);
   Expected<DataRecordProxy>
   getOrCreateTree(IndexProxy I, ArrayRef<NamedTreeEntry> SortedEntries);
-  Expected<DataRecordProxy>
-  getOrCreateNode(IndexProxy I, ArrayRef<CASID> References, ArrayRef<char> Data);
+  Expected<DataRecordProxy> getOrCreateNode(IndexProxy I,
+                                            ArrayRef<CASID> References,
+                                            ArrayRef<char> Data);
   Expected<Optional<DataRecordProxy>> getDataRecord(IndexProxy I) const;
 
   Expected<MappedTempFile> createTempFile(StringRef FinalPath, uint64_t Size);
@@ -1720,9 +1769,11 @@ public:
   OnDiskHashMappedTrie::const_pointer getInternalIndexPointer(CASID ID) const;
   Optional<InternalRef> getInternalRef(CASID ID) const;
   Optional<InternalRef> getInternalRefFromIndexProxy(IndexProxy I) const;
-  Optional<InternalRef> getInternalRef(IndexProxy I, TrieRecord::Data Object) const;
+  Optional<InternalRef> getInternalRef(IndexProxy I,
+                                       TrieRecord::Data Object) const;
 
-  IndexProxy getIndexProxyFromPointer(OnDiskHashMappedTrie::const_pointer P) const;
+  IndexProxy
+  getIndexProxyFromPointer(OnDiskHashMappedTrie::const_pointer P) const;
 
   Expected<StringProxy> getOrCreateString(IndexProxy I, StringRef String);
   Expected<InternalRef> getOrCreateStringRef(StringRef String);
@@ -1758,7 +1809,6 @@ private:
   Error forEachReferenceInNode(const NodeRef &Ref,
                                function_ref<Error(CASID)> Callback) const final;
 
-
   StringRef getPathForID(StringRef BaseDir, CASID ID,
                          SmallVectorImpl<char> &Storage);
 
@@ -1782,6 +1832,7 @@ private:
   /// Container for "big" objects mapped in separately.
   template <size_t NumShards> class StandaloneDataMap {
     static_assert(isPowerOf2_64(NumShards), "Expected power of 2");
+
   public:
     MemoryBufferRef insert(ArrayRef<uint8_t> Hash,
                            std::unique_ptr<MemoryBuffer> Buffer);
@@ -1829,16 +1880,16 @@ private:
 
 } // end anonymous namespace
 
-  constexpr StringLiteral OnDiskCAS::IndexTableName;
-  constexpr StringLiteral OnDiskCAS::DataPoolTableName;
-  constexpr StringLiteral OnDiskCAS::ActionCacheTableName;
-  constexpr StringLiteral OnDiskCAS::IndexFile;
-  constexpr StringLiteral OnDiskCAS::DataPoolFile;
-  constexpr StringLiteral OnDiskCAS::ActionCacheFile;
-  constexpr StringLiteral OnDiskCAS::FilePrefix;
-  constexpr StringLiteral OnDiskCAS::FileSuffixData;
-  constexpr StringLiteral OnDiskCAS::FileSuffixBlob;
-  constexpr StringLiteral OnDiskCAS::FileSuffixBlob0;
+constexpr StringLiteral OnDiskCAS::IndexTableName;
+constexpr StringLiteral OnDiskCAS::DataPoolTableName;
+constexpr StringLiteral OnDiskCAS::ActionCacheTableName;
+constexpr StringLiteral OnDiskCAS::IndexFile;
+constexpr StringLiteral OnDiskCAS::DataPoolFile;
+constexpr StringLiteral OnDiskCAS::ActionCacheFile;
+constexpr StringLiteral OnDiskCAS::FilePrefix;
+constexpr StringLiteral OnDiskCAS::FileSuffixData;
+constexpr StringLiteral OnDiskCAS::FileSuffixBlob;
+constexpr StringLiteral OnDiskCAS::FileSuffixBlob0;
 
 Optional<ObjectKind> OnDiskCAS::getObjectKind(CASID ID) {
   OnDiskHashMappedTrie::const_pointer P = getInternalIndexPointer(ID);
@@ -1849,20 +1900,22 @@ Optional<ObjectKind> OnDiskCAS::getObjectKind(CASID ID) {
   if (D.SK == TrieRecord::StorageKind::Unknown)
     return None;
   switch (D.OK) {
-case TrieRecord::ObjectKind::Node:  return ObjectKind::Node;
-case TrieRecord::ObjectKind::Blob:  return ObjectKind::Blob;
-case TrieRecord::ObjectKind::Tree:  return ObjectKind::Tree;
-case TrieRecord::ObjectKind::String:
+  case TrieRecord::ObjectKind::Node:
+    return ObjectKind::Node;
+  case TrieRecord::ObjectKind::Blob:
+    return ObjectKind::Blob;
+  case TrieRecord::ObjectKind::Tree:
+    return ObjectKind::Tree;
+  case TrieRecord::ObjectKind::String:
     // FIXME: Change this once it's exposed.
     return None;
   }
 }
 
-
 template <size_t N>
 MemoryBufferRef
 OnDiskCAS::StandaloneDataMap<N>::insert(ArrayRef<uint8_t> Hash,
-                          std::unique_ptr<MemoryBuffer> Buffer) {
+                                        std::unique_ptr<MemoryBuffer> Buffer) {
   auto &S = getShard(Hash);
   std::lock_guard<std::mutex> Lock(S.Mutex);
   auto &V = S.Map[Hash.data()];
@@ -2089,14 +2142,14 @@ DataRecordHandle::Layout::Layout(const Input &I) {
   NumRefs = I.Refs.size();
 
   // Check refs size.
-  Flags.RefKind = I.Refs.is4B() ?  RefKindFlags::InternalRef4B : RefKindFlags::InternalRef;
+  Flags.RefKind =
+      I.Refs.is4B() ? RefKindFlags::InternalRef4B : RefKindFlags::InternalRef;
 
   // Set the trie offset.
   TrieRecordOffset = (uint64_t)I.TrieRecordOffset.get();
   assert(TrieRecordOffset <= (UINT64_MAX >> 16));
-  Flags.TrieOffset = TrieRecordOffset <= UINT32_MAX
-      ? TrieOffsetFlags::Uses4B
-      : TrieOffsetFlags::Uses6B;
+  Flags.TrieOffset = TrieRecordOffset <= UINT32_MAX ? TrieOffsetFlags::Uses4B
+                                                    : TrieOffsetFlags::Uses6B;
 
   // Find the smallest slot available for DataSize.
   bool Has1B = true;
@@ -2255,12 +2308,13 @@ void OnDiskCAS::print(raw_ostream &OS) const {
 
 OnDiskCAS::IndexProxy OnDiskCAS::indexHash(ArrayRef<uint8_t> Hash) {
   OnDiskHashMappedTrie::pointer P = Index.insertLazy(
-    Hash, [](FileOffset TentativeOffset,
-             OnDiskHashMappedTrie::ValueProxy TentativeValue) {
-    assert(TentativeValue.Data.size() == sizeof(TrieRecord));
-    assert(isAddrAligned(Align::Of<TrieRecord>(), TentativeValue.Data.data()));
-    new (TentativeValue.Data.data()) TrieRecord();
-    });
+      Hash, [](FileOffset TentativeOffset,
+               OnDiskHashMappedTrie::ValueProxy TentativeValue) {
+        assert(TentativeValue.Data.size() == sizeof(TrieRecord));
+        assert(
+            isAddrAligned(Align::Of<TrieRecord>(), TentativeValue.Data.data()));
+        new (TentativeValue.Data.data()) TrieRecord();
+      });
   assert(P && "Expected insertion");
   return getIndexProxyFromPointer(P);
 }
@@ -2270,15 +2324,18 @@ OnDiskCAS::IndexProxy OnDiskCAS::getIndexProxyFromPointer(
   assert(P);
   assert(P.getOffset());
   return IndexProxy{P.getOffset(), P->Hash,
-      *const_cast<TrieRecord *>(reinterpret_cast<const TrieRecord *>(P->Data.data()))};
+                    *const_cast<TrieRecord *>(
+                        reinterpret_cast<const TrieRecord *>(P->Data.data()))};
 }
 
-OnDiskHashMappedTrie::const_pointer OnDiskCAS::getInternalIndexPointer(CASID ID) const {
+OnDiskHashMappedTrie::const_pointer
+OnDiskCAS::getInternalIndexPointer(CASID ID) const {
   // Lookup the hash by pointer value.
   //
   // FIXME: Can make this more robust by changing CASID to a CASDB and an
   // integer, where the integer is an offset into the trie.
-  if (OnDiskHashMappedTrie::const_pointer P = Index.recoverFromHashPointer(ID.getHash().data()))
+  if (OnDiskHashMappedTrie::const_pointer P =
+          Index.recoverFromHashPointer(ID.getHash().data()))
     return P;
 
   // Fallback to a normal lookup.
@@ -2292,26 +2349,29 @@ Optional<InternalRef> OnDiskCAS::getInternalRef(CASID ID) const {
   return None;
 }
 
-Optional<InternalRef> OnDiskCAS::getInternalRefFromIndexProxy(IndexProxy I) const {
+Optional<InternalRef>
+OnDiskCAS::getInternalRefFromIndexProxy(IndexProxy I) const {
   return getInternalRef(I, I.ObjectRef.load());
 }
 
 Optional<StringRef> OnDiskCAS::getString(InternalRef Ref) const {
   switch (Ref.getOffsetKind()) {
   case InternalRef::OffsetKind::String2B:
-    return String2BHandle::get(
-        DataPool.beginData(Ref.getFileOffset())).getString();
+    return String2BHandle::get(DataPool.beginData(Ref.getFileOffset()))
+        .getString();
 
   case InternalRef::OffsetKind::DataRecord:
-    return toStringRef(DataRecordHandle::get(
-        DataPool.beginData(Ref.getFileOffset())).getData());
+    return toStringRef(
+        DataRecordHandle::get(DataPool.beginData(Ref.getFileOffset()))
+            .getData());
 
   case InternalRef::OffsetKind::IndexRecord:
     break;
   }
-  if (OnDiskHashMappedTrie::const_pointer P = Index.recoverFromFileOffset(Ref.getFileOffset()))
-    if (Optional<Expected<StringProxy>> Proxy = dereferenceValue(
-          getString(getIndexProxyFromPointer(P))))
+  if (OnDiskHashMappedTrie::const_pointer P =
+          Index.recoverFromFileOffset(Ref.getFileOffset()))
+    if (Optional<Expected<StringProxy>> Proxy =
+            dereferenceValue(getString(getIndexProxyFromPointer(P))))
       if (Optional<StringProxy> Proxy2 = expectedToOptional(std::move(*Proxy)))
         return Proxy2->String;
   return None;
@@ -2324,8 +2384,8 @@ Optional<CASID> OnDiskCAS::getCASID(InternalRef Ref) const {
     return None;
 
   case InternalRef::OffsetKind::DataRecord: {
-    DataRecordHandle Handle = DataRecordHandle::get(
-        DataPool.beginData(Ref.getFileOffset()));
+    DataRecordHandle Handle =
+        DataRecordHandle::get(DataPool.beginData(Ref.getFileOffset()));
     IndexOffset = Handle.getTrieRecordOffset();
     break;
   }
@@ -2334,7 +2394,8 @@ Optional<CASID> OnDiskCAS::getCASID(InternalRef Ref) const {
     IndexOffset = Ref.getFileOffset();
     break;
   }
-  if (OnDiskHashMappedTrie::const_pointer P = Index.recoverFromFileOffset(IndexOffset))
+  if (OnDiskHashMappedTrie::const_pointer P =
+          Index.recoverFromFileOffset(IndexOffset))
     return CASID(P->Hash);
   return None;
 }
@@ -2361,8 +2422,8 @@ Optional<InternalRef> OnDiskCAS::getInternalRef(IndexProxy I,
   }
 }
 
-Expected<OnDiskCAS::StringProxy> OnDiskCAS::getOrCreateString(
-    IndexProxy I, StringRef String) {
+Expected<OnDiskCAS::StringProxy>
+OnDiskCAS::getOrCreateString(IndexProxy I, StringRef String) {
   assert(String.size() <= UINT16_MAX &&
          "Expected caller to check string fits in 2B size");
 
@@ -2371,7 +2432,7 @@ Expected<OnDiskCAS::StringProxy> OnDiskCAS::getOrCreateString(
     return std::move(*S);
 
   FileOffset Offset;
-  auto Alloc = [&](size_t Size) -> char* {
+  auto Alloc = [&](size_t Size) -> char * {
     OnDiskDataAllocator::pointer P = DataPool.allocate(Size);
     Offset = P.getOffset();
     return P->data();
@@ -2394,15 +2455,16 @@ Expected<OnDiskCAS::StringProxy> OnDiskCAS::getOrCreateString(
   if (Existing.SK == TrieRecord::StorageKind::Unknown)
     return createCorruptObjectError(CASID(I.Hash));
 
-  return dereferenceValue(getString(I),
-                    [&]() { return createCorruptObjectError(CASID(I.Hash)); });
+  return dereferenceValue(
+      getString(I), [&]() { return createCorruptObjectError(CASID(I.Hash)); });
 }
 
 Expected<InternalRef> OnDiskCAS::getOrCreateStringRef(StringRef String) {
   // Make a blob if String is bigger than 64K.
   if (String.size() > UINT16_MAX) {
     BlobProxy Blob;
-    IndexProxy I = indexHash(BuiltinBlobHasher<HasherT>().hash(toArrayRef(String)));
+    IndexProxy I =
+        indexHash(BuiltinBlobHasher<HasherT>().hash(toArrayRef(String)));
     if (Error E = getOrCreateBlob(I, toArrayRef(String)).moveInto(Blob))
       return std::move(E);
     return *getInternalRef(I, Blob.Object);
@@ -2439,7 +2501,8 @@ void OnDiskCAS::getStandalonePath(TrieRecord::StorageKind SK,
   sys::path::append(Path, FilePrefix + Twine(I.Offset.get()) + Suffix);
 }
 
-Expected<Optional<OnDiskCAS::StringProxy>> OnDiskCAS::getString(IndexProxy I) const {
+Expected<Optional<OnDiskCAS::StringProxy>>
+OnDiskCAS::getString(IndexProxy I) const {
   Optional<OnDiskCAS::ObjectProxy> OP;
   if (Optional<Expected<NoneType>> E = moveValueInto(getObjectProxy(I), OP))
     return std::move(*E);
@@ -2454,7 +2517,8 @@ Expected<Optional<OnDiskCAS::StringProxy>> OnDiskCAS::getString(IndexProxy I) co
   return StringProxy{OP->Object, toStringRef(OP->Record->getData())};
 }
 
-Expected<Optional<OnDiskCAS::BlobProxy>> OnDiskCAS::getBlob(IndexProxy I) const {
+Expected<Optional<OnDiskCAS::BlobProxy>>
+OnDiskCAS::getBlob(IndexProxy I) const {
   Optional<OnDiskCAS::ObjectProxy> OP;
   if (Optional<Expected<NoneType>> E = moveValueInto(getObjectProxy(I), OP))
     return std::move(*E);
@@ -2469,7 +2533,8 @@ Expected<Optional<OnDiskCAS::BlobProxy>> OnDiskCAS::getBlob(IndexProxy I) const 
   return BlobProxy{OP->Object, OP->Hash, OP->Record->getData()};
 }
 
-Expected<Optional<OnDiskCAS::DataRecordProxy>> OnDiskCAS::getDataRecord(IndexProxy I) const {
+Expected<Optional<OnDiskCAS::DataRecordProxy>>
+OnDiskCAS::getDataRecord(IndexProxy I) const {
   Optional<OnDiskCAS::ObjectProxy> OP;
   if (Optional<Expected<NoneType>> E = moveValueInto(getObjectProxy(I), OP))
     return std::move(*E);
@@ -2479,7 +2544,8 @@ Expected<Optional<OnDiskCAS::DataRecordProxy>> OnDiskCAS::getDataRecord(IndexPro
   return DataRecordProxy{OP->Object, OP->Hash, *OP->Record};
 }
 
-Expected<Optional<OnDiskCAS::ObjectProxy>> OnDiskCAS::getObjectProxy(IndexProxy I) const {
+Expected<Optional<OnDiskCAS::ObjectProxy>>
+OnDiskCAS::getObjectProxy(IndexProxy I) const {
   TrieRecord::Data Object = I.ObjectRef.load();
   if (Object.SK == TrieRecord::StorageKind::Unknown)
     return None;
@@ -2491,12 +2557,14 @@ Expected<Optional<OnDiskCAS::ObjectProxy>> OnDiskCAS::getObjectProxy(IndexProxy 
     return createCorruptObjectError(CASID(I.Hash));
 
   case TrieRecord::StorageKind::DataPool: {
-    DataRecordHandle Handle = DataRecordHandle::get(DataPool.beginData(Object.Offset));
+    DataRecordHandle Handle =
+        DataRecordHandle::get(DataPool.beginData(Object.Offset));
     return ObjectProxy{Object, I.Hash, Handle, None};
   }
 
   case TrieRecord::StorageKind::DataPoolString2B: {
-    String2BHandle Handle = String2BHandle::get(DataPool.beginData(Object.Offset));
+    String2BHandle Handle =
+        String2BHandle::get(DataPool.beginData(Object.Offset));
     return ObjectProxy{Object, I.Hash, None, toArrayRef(Handle.getString())};
   }
 
@@ -2515,8 +2583,10 @@ Expected<Optional<OnDiskCAS::ObjectProxy>> OnDiskCAS::getObjectProxy(IndexProxy 
   // Helper for creating the return.
   auto createProxy = [&](MemoryBufferRef Buffer) -> ObjectProxy {
     if (Blob)
-      return ObjectProxy{Object, I.Hash, None, toArrayRef(Buffer.getBuffer().drop_back(Blob0))};
-    return ObjectProxy{Object, I.Hash, DataRecordHandle::get(Buffer.getBuffer().data()), None};
+      return ObjectProxy{Object, I.Hash, None,
+                         toArrayRef(Buffer.getBuffer().drop_back(Blob0))};
+    return ObjectProxy{Object, I.Hash,
+                       DataRecordHandle::get(Buffer.getBuffer().data()), None};
   };
 
   // Check if we've loaded it already.
@@ -2526,12 +2596,13 @@ Expected<Optional<OnDiskCAS::ObjectProxy>> OnDiskCAS::getObjectProxy(IndexProxy 
   // Load it from disk.
   SmallString<256> Path;
   getStandalonePath(Object.SK, I, Path);
-  ErrorOr<std::unique_ptr<MemoryBuffer>> OwnedBuffer =
-      MemoryBuffer::getFile(Path, /*IsText=*/false, /*RequiresNullTerminator=*/false);
+  ErrorOr<std::unique_ptr<MemoryBuffer>> OwnedBuffer = MemoryBuffer::getFile(
+      Path, /*IsText=*/false, /*RequiresNullTerminator=*/false);
   if (!OwnedBuffer)
     return createCorruptObjectError(CASID(I.Hash));
 
-  MemoryBufferRef Buffer = StandaloneData.insert(I.Hash, std::move(*OwnedBuffer));
+  MemoryBufferRef Buffer =
+      StandaloneData.insert(I.Hash, std::move(*OwnedBuffer));
   return createProxy(Buffer);
 }
 
@@ -2542,28 +2613,26 @@ OnDiskCAS::createTempFile(StringRef FinalPath, uint64_t Size) {
   if (!File)
     return File.takeError();
 
-  if (auto EC =
-          sys::fs::resize_file_before_mapping_readwrite(File->FD, Size))
+  if (auto EC = sys::fs::resize_file_before_mapping_readwrite(File->FD, Size))
     return createFileError(File->TmpName, EC);
 
   std::error_code EC;
-  sys::fs::mapped_file_region Map(
-      sys::fs::convertFDToNativeFile(File->FD),
-      sys::fs::mapped_file_region::readwrite, Size, 0, EC);
+  sys::fs::mapped_file_region Map(sys::fs::convertFDToNativeFile(File->FD),
+                                  sys::fs::mapped_file_region::readwrite, Size,
+                                  0, EC);
   if (EC)
     return createFileError(File->TmpName, EC);
   return MappedTempFile(std::move(*File), std::move(Map));
 }
 
-Expected<OnDiskCAS::BlobProxy> OnDiskCAS::createStandaloneBlob(IndexProxy &I,
-                                                               ArrayRef<char> Data) {
+Expected<OnDiskCAS::BlobProxy>
+OnDiskCAS::createStandaloneBlob(IndexProxy &I, ArrayRef<char> Data) {
   assert(Data.size() > TrieRecord::MaxEmbeddedSize &&
          "Expected a bigger file for external content...");
 
   bool Blob0 = isAligned(Align(getPageSize()), Data.size());
-  TrieRecord::StorageKind SK =
-      Blob0 ? TrieRecord::StorageKind::StandaloneBlob0
-              : TrieRecord::StorageKind::StandaloneBlob;
+  TrieRecord::StorageKind SK = Blob0 ? TrieRecord::StorageKind::StandaloneBlob0
+                                     : TrieRecord::StorageKind::StandaloneBlob;
 
   SmallString<256> Path;
   int64_t FileSize = Data.size() + Blob0;
@@ -2581,7 +2650,8 @@ Expected<OnDiskCAS::BlobProxy> OnDiskCAS::createStandaloneBlob(IndexProxy &I,
   // new value.
   TrieRecord::Data Existing;
   if (!I.ObjectRef.compare_exchange_strong(
-          Existing, TrieRecord::Data{SK, TrieRecord::ObjectKind::Blob, FileOffset()})) {
+          Existing,
+          TrieRecord::Data{SK, TrieRecord::ObjectKind::Blob, FileOffset()})) {
     // If there was a race, confirm that the new value has valid storage.
     if (Existing.SK == TrieRecord::StorageKind::Unknown)
       return createCorruptObjectError(CASID(I.Hash));
@@ -2590,11 +2660,12 @@ Expected<OnDiskCAS::BlobProxy> OnDiskCAS::createStandaloneBlob(IndexProxy &I,
   }
 
   // Get and return the inserted blob.
-  return dereferenceValue(getBlob(I),
-                    [&]() { return createCorruptObjectError(CASID(I.Hash)); });
+  return dereferenceValue(
+      getBlob(I), [&]() { return createCorruptObjectError(CASID(I.Hash)); });
 }
 
-Expected<OnDiskCAS::BlobProxy> OnDiskCAS::getOrCreateBlob(IndexProxy I, ArrayRef<char> Data) {
+Expected<OnDiskCAS::BlobProxy> OnDiskCAS::getOrCreateBlob(IndexProxy I,
+                                                          ArrayRef<char> Data) {
   // See if it already exists.
   if (Optional<Expected<BlobProxy>> Blob = dereferenceValue(getBlob(I)))
     return std::move(*Blob);
@@ -2602,8 +2673,8 @@ Expected<OnDiskCAS::BlobProxy> OnDiskCAS::getOrCreateBlob(IndexProxy I, ArrayRef
   if (Data.size() > TrieRecord::MaxEmbeddedSize)
     return createStandaloneBlob(I, Data);
 
-  PooledDataRecord PDR = createPooledDataRecord(
-      DataRecordHandle::Input{I.Offset, None, Data});
+  PooledDataRecord PDR =
+      createPooledDataRecord(DataRecordHandle::Input{I.Offset, None, Data});
 
   TrieRecord::Data Blob;
   Blob.OK = TrieRecord::ObjectKind::Blob;
@@ -2619,12 +2690,13 @@ Expected<OnDiskCAS::BlobProxy> OnDiskCAS::getOrCreateBlob(IndexProxy I, ArrayRef
     if (Existing.SK == TrieRecord::StorageKind::Unknown)
       return createCorruptObjectError(CASID(I.Hash));
 
-  return dereferenceValue(getBlob(I),
-                    [&]() { return createCorruptObjectError(CASID(I.Hash)); });
+  return dereferenceValue(
+      getBlob(I), [&]() { return createCorruptObjectError(CASID(I.Hash)); });
 }
 
 Expected<OnDiskCAS::DataRecordProxy>
-OnDiskCAS::getOrCreateTree(IndexProxy I, ArrayRef<NamedTreeEntry> SortedEntries) {
+OnDiskCAS::getOrCreateTree(IndexProxy I,
+                           ArrayRef<NamedTreeEntry> SortedEntries) {
   InternalRefVector Refs;
   SmallVector<char> Data;
   // Names up front.
@@ -2673,7 +2745,7 @@ OnDiskCAS::getOrCreateDataRecord(IndexProxy &I, TrieRecord::ObjectKind OK,
 
   // See if it already exists.
   if (Optional<Expected<DataRecordProxy>> Record =
-         dereferenceValue(getDataRecord(I)))
+          dereferenceValue(getDataRecord(I)))
     return std::move(*Record);
 
   // Compute the storage kind, allocate it, and create the record.
@@ -2696,7 +2768,8 @@ OnDiskCAS::getOrCreateDataRecord(IndexProxy &I, TrieRecord::ObjectKind OK,
     return File->data();
   };
   DataRecordHandle Record;
-  if (Error E = DataRecordHandle::createWithError(Alloc, Input).moveInto(Record))
+  if (Error E =
+          DataRecordHandle::createWithError(Alloc, Input).moveInto(Record))
     return std::move(E);
   assert(SK != TrieRecord::StorageKind::Unknown);
   assert(bool(File) != bool(PoolOffset) &&
@@ -2720,8 +2793,7 @@ OnDiskCAS::getOrCreateDataRecord(IndexProxy &I, TrieRecord::ObjectKind OK,
 
   // If there wasn't a race (yet), try storing our object.
   if (Existing.SK == TrieRecord::StorageKind::Unknown)
-    (void)I.ObjectRef.compare_exchange_strong(
-           Existing, NewObject);
+    (void)I.ObjectRef.compare_exchange_strong(Existing, NewObject);
 
   // If there was a race, confirm that the new value has valid storage.
   //
@@ -2731,13 +2803,15 @@ OnDiskCAS::getOrCreateDataRecord(IndexProxy &I, TrieRecord::ObjectKind OK,
     return createCorruptObjectError(CASID(I.Hash));
 
   // Get and return the record.
-  return dereferenceValue(getDataRecord(I),
-                    [&]() { return createCorruptObjectError(CASID(I.Hash)); });
+  return dereferenceValue(getDataRecord(I), [&]() {
+    return createCorruptObjectError(CASID(I.Hash));
+  });
 }
 
-OnDiskCAS::PooledDataRecord OnDiskCAS::createPooledDataRecord(DataRecordHandle::Input Input) {
+OnDiskCAS::PooledDataRecord
+OnDiskCAS::createPooledDataRecord(DataRecordHandle::Input Input) {
   FileOffset Offset;
-  auto Alloc = [&](size_t Size) -> char* {
+  auto Alloc = [&](size_t Size) -> char * {
     OnDiskDataAllocator::pointer P = DataPool.allocate(Size);
     Offset = P.getOffset();
     return P->data();
@@ -2755,7 +2829,8 @@ Expected<BlobRef> OnDiskCAS::getBlobFromProxy(Expected<BlobProxy> Blob) {
 
 Expected<NodeRef> OnDiskCAS::getNodeFromProxy(Expected<DataRecordProxy> Node) {
   if (Node)
-    return makeNodeRef(CASID(Node->Hash), &Node->Record.getHeader(), Node->Record.getNumRefs(),
+    return makeNodeRef(CASID(Node->Hash), &Node->Record.getHeader(),
+                       Node->Record.getNumRefs(),
                        toStringRef(Node->Record.getData()));
   return Node.takeError();
 }
@@ -2769,8 +2844,8 @@ Expected<TreeRef> OnDiskCAS::getTreeFromProxy(Expected<DataRecordProxy> Tree) {
 
 Expected<BlobRef> OnDiskCAS::getBlob(CASID ID) {
   if (OnDiskHashMappedTrie::const_pointer P = getInternalIndexPointer(ID))
-    if (Optional<Expected<BlobProxy>> Blob = dereferenceValue(
-          getBlob(getIndexProxyFromPointer(P))))
+    if (Optional<Expected<BlobProxy>> Blob =
+            dereferenceValue(getBlob(getIndexProxyFromPointer(P))))
       return getBlobFromProxy(std::move(*Blob));
   // FIXME: This should not be an error.
   return createUnknownObjectError(ID);
@@ -2778,8 +2853,8 @@ Expected<BlobRef> OnDiskCAS::getBlob(CASID ID) {
 
 Expected<NodeRef> OnDiskCAS::getNode(CASID ID) {
   if (OnDiskHashMappedTrie::const_pointer P = getInternalIndexPointer(ID))
-    if (Optional<Expected<DataRecordProxy>> Node = dereferenceValue(getDataRecord(
-          getIndexProxyFromPointer(P))))
+    if (Optional<Expected<DataRecordProxy>> Node =
+            dereferenceValue(getDataRecord(getIndexProxyFromPointer(P))))
       return getNodeFromProxy(std::move(*Node));
   // FIXME: This should not be an error.
   return createUnknownObjectError(ID);
@@ -2787,8 +2862,8 @@ Expected<NodeRef> OnDiskCAS::getNode(CASID ID) {
 
 Expected<TreeRef> OnDiskCAS::getTree(CASID ID) {
   if (OnDiskHashMappedTrie::const_pointer P = getInternalIndexPointer(ID))
-    if (Optional<Expected<DataRecordProxy>> Tree = dereferenceValue(getDataRecord(
-          getIndexProxyFromPointer(P))))
+    if (Optional<Expected<DataRecordProxy>> Tree =
+            dereferenceValue(getDataRecord(getIndexProxyFromPointer(P))))
       return getTreeFromProxy(std::move(*Tree));
   // FIXME: This should not be an error.
   return createUnknownObjectError(ID);
@@ -2811,14 +2886,15 @@ NamedTreeEntry OnDiskCAS::makeTreeEntry(DataRecordHandle Record, size_t I,
   }
 
   Optional<CASID> ID = getCASID(Record.getRefs()[I + NumNames]);
-  TreeEntry::EntryKind Kind = getUnstableKind((StableTreeEntryKind)Record.getData()[I]);
+  TreeEntry::EntryKind Kind =
+      getUnstableKind((StableTreeEntryKind)Record.getData()[I]);
   return NamedTreeEntry(*ID, Kind, Name);
 }
 
 Optional<NamedTreeEntry> OnDiskCAS::lookupInTree(const TreeRef &Tree,
                                                  StringRef Name) const {
-  DataRecordHandle Record = DataRecordHandle::get(reinterpret_cast<char *>(
-      const_cast<void *>(getTreePtr(Tree))));
+  DataRecordHandle Record = DataRecordHandle::get(
+      reinterpret_cast<char *>(const_cast<void *>(getTreePtr(Tree))));
 
   if (!Record.getNumRefs())
     return None;
@@ -2872,17 +2948,17 @@ Optional<NamedTreeEntry> OnDiskCAS::lookupInTree(const TreeRef &Tree,
 }
 
 NamedTreeEntry OnDiskCAS::getInTree(const TreeRef &Tree, size_t I) const {
-  DataRecordHandle Record = DataRecordHandle::get(reinterpret_cast<char *>(
-      const_cast<void *>(getTreePtr(Tree))));
+  DataRecordHandle Record = DataRecordHandle::get(
+      reinterpret_cast<char *>(const_cast<void *>(getTreePtr(Tree))));
 
   return makeTreeEntry(Record, I);
 }
 
 Error OnDiskCAS::forEachEntryInTree(
-  const TreeRef &Tree,
-  function_ref<Error(const NamedTreeEntry &)> Callback) const {
-  DataRecordHandle Record = DataRecordHandle::get(reinterpret_cast<char *>(
-      const_cast<void *>(getTreePtr(Tree))));
+    const TreeRef &Tree,
+    function_ref<Error(const NamedTreeEntry &)> Callback) const {
+  DataRecordHandle Record = DataRecordHandle::get(
+      reinterpret_cast<char *>(const_cast<void *>(getTreePtr(Tree))));
 
   size_t NumNames = Record.getNumRefs() / 2;
   assert(Record.getNumRefs() % 2 == 0);
@@ -2893,18 +2969,18 @@ Error OnDiskCAS::forEachEntryInTree(
 }
 
 CASID OnDiskCAS::getReferenceInNode(const NodeRef &Node, size_t I) const {
-  DataRecordHandle Record = DataRecordHandle::get(reinterpret_cast<char *>(
-      const_cast<void *>(getNodePtr(Node))));
+  DataRecordHandle Record = DataRecordHandle::get(
+      reinterpret_cast<char *>(const_cast<void *>(getNodePtr(Node))));
 
   Optional<CASID> ID = getCASID(Record.getRefs()[I]);
   assert(ID);
   return *ID;
 }
 
-Error OnDiskCAS::forEachReferenceInNode(const NodeRef &Node,
-                                        function_ref<Error(CASID)> Callback) const {
-  DataRecordHandle Record = DataRecordHandle::get(reinterpret_cast<char *>(
-      const_cast<void *>(getNodePtr(Node))));
+Error OnDiskCAS::forEachReferenceInNode(
+    const NodeRef &Node, function_ref<Error(CASID)> Callback) const {
+  DataRecordHandle Record = DataRecordHandle::get(
+      reinterpret_cast<char *>(const_cast<void *>(getNodePtr(Node))));
 
   for (InternalRef Ref : Record.getRefs())
     if (Error E = Callback(*getCASID(Ref)))
@@ -2924,8 +3000,9 @@ Expected<CASID> OnDiskCAS::getCachedResult(CASID InputID) {
   OnDiskHashMappedTrie::pointer ActionP = ActionCache.find(InputID.getHash());
   if (!ActionP)
     return createResultCacheMissError(InputID);
-  const uint64_t Output = reinterpret_cast<const ActionCacheResultT *>(
-      ActionP->Data.data())->load();
+  const uint64_t Output =
+      reinterpret_cast<const ActionCacheResultT *>(ActionP->Data.data())
+          ->load();
 
   // Return the result.
   Optional<CASID> OutputID = getCASID(InternalRef::getFromRawData(Output));
@@ -2950,14 +3027,16 @@ Error OnDiskCAS::putCachedResult(CASID InputID, CASID OutputID) {
   // OnDiskHashMappedTrieBase and adding a type-safe layer on top).
   const uint64_t Expected = OutputRef->getRawData();
   OnDiskHashMappedTrie::pointer ActionP = ActionCache.insertLazy(
-    InputID.getHash(), [&](FileOffset TentativeOffset,
-             OnDiskHashMappedTrie::ValueProxy TentativeValue) {
-    assert(TentativeValue.Data.size() == sizeof(ActionCacheResultT));
-    assert(isAddrAligned(Align::Of<ActionCacheResultT>(), TentativeValue.Data.data()));
-    new (TentativeValue.Data.data()) ActionCacheResultT(Expected);
-    });
-  const uint64_t Observed = reinterpret_cast<const ActionCacheResultT *>(
-      ActionP->Data.data())->load();
+      InputID.getHash(), [&](FileOffset TentativeOffset,
+                             OnDiskHashMappedTrie::ValueProxy TentativeValue) {
+        assert(TentativeValue.Data.size() == sizeof(ActionCacheResultT));
+        assert(isAddrAligned(Align::Of<ActionCacheResultT>(),
+                             TentativeValue.Data.data()));
+        new (TentativeValue.Data.data()) ActionCacheResultT(Expected);
+      });
+  const uint64_t Observed =
+      reinterpret_cast<const ActionCacheResultT *>(ActionP->Data.data())
+          ->load();
 
   if (Expected == Observed)
     return Error::success();
@@ -2975,29 +3054,34 @@ Expected<std::unique_ptr<OnDiskCAS>> OnDiskCAS::open(StringRef AbsPath) {
   constexpr uint64_t MB = 1024ull * 1024ull;
   constexpr uint64_t GB = 1024ull * 1024ull * 1024ull;
   Optional<OnDiskHashMappedTrie> Index;
-  if (Error E =
-          OnDiskHashMappedTrie::create(
-              AbsPath.str() + "/" + FilePrefix + IndexFile,
-              IndexTableName, sizeof(HashType) * 8,
-              /*DataSize=*/sizeof(TrieRecord), /*MaxFileSize=*/GB,
-              /*MinFileSize=*/MB)
-              .moveInto(Index))
+  if (Error E = OnDiskHashMappedTrie::create(
+                    AbsPath.str() + "/" + FilePrefix + IndexFile,
+                    IndexTableName, sizeof(HashType) * 8,
+                    /*DataSize=*/sizeof(TrieRecord), /*MaxFileSize=*/GB,
+                    /*MinFileSize=*/MB)
+                    .moveInto(Index))
     return std::move(E);
 
   Optional<OnDiskDataAllocator> DataPool;
-  if (Error E = OnDiskDataAllocator::create(AbsPath.str() + "/" + FilePrefix + DataPoolFile,
-              DataPoolTableName, /*MaxFileSize=*/16 * GB, /*MinFileSize=*/MB).moveInto(DataPool))
+  if (Error E =
+          OnDiskDataAllocator::create(
+              AbsPath.str() + "/" + FilePrefix + DataPoolFile,
+              DataPoolTableName, /*MaxFileSize=*/16 * GB, /*MinFileSize=*/MB)
+              .moveInto(DataPool))
     return std::move(E);
 
   Optional<OnDiskHashMappedTrie> ActionCache;
-  if (Error E = OnDiskHashMappedTrie::create(AbsPath.str() + "/" + FilePrefix + ActionCacheFile,
-              ActionCacheTableName, sizeof(HashType) * 8,
-              /*DataSize=*/sizeof(ActionCacheResultT), /*MaxFileSize=*/GB,
-              /*MinFileSize=*/MB).moveInto(ActionCache))
+  if (Error E = OnDiskHashMappedTrie::create(
+                    AbsPath.str() + "/" + FilePrefix + ActionCacheFile,
+                    ActionCacheTableName, sizeof(HashType) * 8,
+                    /*DataSize=*/sizeof(ActionCacheResultT), /*MaxFileSize=*/GB,
+                    /*MinFileSize=*/MB)
+                    .moveInto(ActionCache))
     return std::move(E);
 
   return std::unique_ptr<OnDiskCAS>(new OnDiskCAS(AbsPath, std::move(*Index),
-                                     std::move(*DataPool), std::move(*ActionCache)));
+                                                  std::move(*DataPool),
+                                                  std::move(*ActionCache)));
 }
 
 OnDiskCAS::OnDiskCAS(StringRef RootPath, OnDiskHashMappedTrie Index,

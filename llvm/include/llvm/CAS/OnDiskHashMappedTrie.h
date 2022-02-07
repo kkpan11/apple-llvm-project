@@ -31,9 +31,7 @@ public:
   explicit operator bool() const { return Offset; }
 
   FileOffset() = default;
-  explicit FileOffset(int64_t Offset) : Offset(Offset) {
-    assert(Offset >= 0);
-  }
+  explicit FileOffset(int64_t Offset) : Offset(Offset) { assert(Offset >= 0); }
 
 private:
   int64_t Offset = 0;
@@ -102,9 +100,8 @@ private:
       return Value;
     }
 
-    explicit HintT(ConstValueProxy Value) :
-        P(Value.Data.data()), I(Value.Data.size()),
-        B(Value.Hash.size()) {
+    explicit HintT(ConstValueProxy Value)
+        : P(Value.Data.data()), I(Value.Data.size()), B(Value.Hash.size()) {
       // Spot-check that this really was a hint.
       assert(Value.Data.size() <= UINT16_MAX);
       assert(Value.Hash.size() <= UINT16_MAX);
@@ -143,11 +140,14 @@ public:
         : PointerImpl(Value, Offset, /*IsHint=*/false, /*IsValue=*/true) {}
 
     explicit PointerImpl(FileOffset Offset, HintT H)
-        : PointerImpl(ValueProxy(H), Offset, /*IsHint=*/true, /*IsValue=*/false) {}
+        : PointerImpl(ValueProxy(H), Offset, /*IsHint=*/true,
+                      /*IsValue=*/false) {}
 
-    PointerImpl(ProxyT ValueOrHint, FileOffset Offset, bool IsHint, bool IsValue)
+    PointerImpl(ProxyT ValueOrHint, FileOffset Offset, bool IsHint,
+                bool IsValue)
         : ValueOrHint(ValueOrHint), OffsetLow32((uint64_t)Offset.get()),
-          OffsetHigh16((uint64_t)Offset.get() >> 32), IsHint(IsHint), IsValue(IsValue) {
+          OffsetHigh16((uint64_t)Offset.get() >> 32), IsHint(IsHint),
+          IsValue(IsValue) {
       checkOffset(Offset);
     }
 
@@ -202,8 +202,9 @@ public:
       return pointer(CP.getOffset(), *H);
     if (!CP)
       return pointer();
-    ValueProxy V{CP->Hash, makeMutableArrayRef(
-        const_cast<char *>(CP->Data.data()), CP->Data.size())};
+    ValueProxy V{CP->Hash,
+                 makeMutableArrayRef(const_cast<char *>(CP->Data.data()),
+                                     CP->Data.size())};
     return pointer(CP.getOffset(), V);
   }
 
@@ -216,21 +217,21 @@ public:
   const_pointer recoverFromHashPointer(const uint8_t *HashBegin) const;
   pointer recoverFromHashPointer(const uint8_t *HashBegin) {
     return getMutablePointer(
-        const_cast<const OnDiskHashMappedTrie *>(this)->recoverFromHashPointer(HashBegin));
+        const_cast<const OnDiskHashMappedTrie *>(this)->recoverFromHashPointer(
+            HashBegin));
   }
 
   const_pointer recoverFromFileOffset(FileOffset Offset) const;
   pointer recoverFromFileOffset(FileOffset Offset) {
     return getMutablePointer(
-        const_cast<const OnDiskHashMappedTrie *>(this)->recoverFromFileOffset(Offset));
+        const_cast<const OnDiskHashMappedTrie *>(this)->recoverFromFileOffset(
+            Offset));
   }
 
   using LazyInsertOnConstructCB =
-      function_ref<void(FileOffset TentativeOffset,
-                        ValueProxy TentativeValue)>;
+      function_ref<void(FileOffset TentativeOffset, ValueProxy TentativeValue)>;
   using LazyInsertOnLeakCB =
-      function_ref<void(FileOffset TentativeOffset,
-                        ValueProxy TentativeValue,
+      function_ref<void(FileOffset TentativeOffset, ValueProxy TentativeValue,
                         FileOffset FinalOffset, ValueProxy FinalValue)>;
 
   /// Insert lazily.
@@ -327,7 +328,8 @@ public:
 
   private:
     friend class OnDiskDataAllocator;
-    pointer(FileOffset Offset, ValueProxy Value) : Offset(Offset), Value(Value) {}
+    pointer(FileOffset Offset, ValueProxy Value)
+        : Offset(Offset), Value(Value) {}
     FileOffset Offset;
     ValueProxy Value;
   };
@@ -349,9 +351,9 @@ public:
     return save(ArrayRef<char>(Data.begin(), Data.size()));
   }
 
-  static Expected<OnDiskDataAllocator> create(const Twine &Path, const Twine &TableName,
-                                              uint64_t MaxFileSize,
-                                              Optional<uint64_t> NewFileInitialSize);
+  static Expected<OnDiskDataAllocator>
+  create(const Twine &Path, const Twine &TableName, uint64_t MaxFileSize,
+         Optional<uint64_t> NewFileInitialSize);
 
   OnDiskDataAllocator(OnDiskDataAllocator &&RHS);
   OnDiskDataAllocator &operator=(OnDiskDataAllocator &&RHS);

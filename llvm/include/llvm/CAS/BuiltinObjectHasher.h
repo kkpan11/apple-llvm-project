@@ -50,7 +50,7 @@ static TreeEntry::EntryKind getUnstableKind(StableTreeEntryKind Kind) {
     return TreeEntry::Regular;
   case StableTreeEntryKind::Executable:
     return TreeEntry::Executable;
-  case   StableTreeEntryKind::Symlink:
+  case StableTreeEntryKind::Symlink:
     return TreeEntry::Symlink;
   }
 }
@@ -73,14 +73,16 @@ public:
   static std::array<uint8_t, sizeof(KindT)> serializeKind(KindT Kind) {
     auto StableKind = getStableKind(Kind);
     std::array<uint8_t, sizeof(KindT)> Bytes;
-    llvm::support::endian::write(Bytes.data(), StableKind, support::endianness::little);
+    llvm::support::endian::write(Bytes.data(), StableKind,
+                                 support::endianness::little);
     return Bytes;
   }
 };
 
-template <class HasherT> class BuiltinObjectHasher : public BuiltinObjectHasherBase {
+template <class HasherT>
+class BuiltinObjectHasher : public BuiltinObjectHasherBase {
 public:
-  using HashT = decltype(HasherT::hash(std::declval<ArrayRef<uint8_t>&>()));
+  using HashT = decltype(HasherT::hash(std::declval<ArrayRef<uint8_t> &>()));
 
 protected:
   ~BuiltinObjectHasher() { assert(!Hasher); }
@@ -127,7 +129,8 @@ protected:
 
   void updateSize(uint64_t Size) {
     std::array<uint8_t, sizeof(uint64_t)> Bytes;
-    llvm::support::endian::write(Bytes.data(), Size, support::endianness::little);
+    llvm::support::endian::write(Bytes.data(), Size,
+                                 support::endianness::little);
     Hasher->update(Bytes);
   }
 
@@ -135,7 +138,8 @@ private:
   Optional<HasherT> Hasher;
 };
 
-template <class HasherT> class BuiltinBlobHasher : public BuiltinObjectHasher<HasherT> {
+template <class HasherT>
+class BuiltinBlobHasher : public BuiltinObjectHasher<HasherT> {
 public:
   auto hash(ArrayRef<char> Data) {
     this->start(ObjectKind::Blob);
@@ -147,7 +151,8 @@ public:
   }
 };
 
-template <class HasherT> class BuiltinStringHasher : public BuiltinObjectHasher<HasherT> {
+template <class HasherT>
+class BuiltinStringHasher : public BuiltinObjectHasher<HasherT> {
 public:
   auto hash(StringRef Data) {
     this->start(StableObjectKind::String);
@@ -156,7 +161,8 @@ public:
   }
 };
 
-template <class HasherT> class BuiltinNodeHasher : public BuiltinObjectHasher<HasherT> {
+template <class HasherT>
+class BuiltinNodeHasher : public BuiltinObjectHasher<HasherT> {
 public:
   void start(size_t NumRefs) {
     BuiltinNodeHasher::BuiltinObjectHasher::start(ObjectKind::Node);
@@ -180,8 +186,8 @@ private:
   size_t RemainingRefs = 0;
 };
 
-template <class HasherT> class BuiltinTreeHasher
-    : public BuiltinObjectHasher<HasherT> {
+template <class HasherT>
+class BuiltinTreeHasher : public BuiltinObjectHasher<HasherT> {
 public:
   void start(size_t Size) {
     BuiltinTreeHasher::BuiltinObjectHasher::start(ObjectKind::Tree);
