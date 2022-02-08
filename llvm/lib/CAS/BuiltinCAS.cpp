@@ -1745,7 +1745,6 @@ public:
 
   OnDiskHashMappedTrie::const_pointer getInternalIndexPointer(CASID ID) const;
   Optional<InternalRef> getInternalRef(CASID ID) const;
-  Optional<InternalRef> getInternalRefFromIndexProxy(IndexProxy I) const;
   Optional<InternalRef> getInternalRef(IndexProxy I,
                                        TrieRecord::Data Object) const;
 
@@ -2419,14 +2418,10 @@ OnDiskCAS::getInternalIndexPointer(CASID ID) const {
 }
 
 Optional<InternalRef> OnDiskCAS::getInternalRef(CASID ID) const {
-  if (OnDiskHashMappedTrie::const_pointer P = getInternalIndexPointer(ID))
-    return getInternalRefFromIndexProxy(getIndexProxyFromPointer(P));
-
-  return None;
-}
-
-Optional<InternalRef>
-OnDiskCAS::getInternalRefFromIndexProxy(IndexProxy I) const {
+  OnDiskHashMappedTrie::const_pointer P = getInternalIndexPointer(ID);
+  if (!P)
+    return None;
+  IndexProxy I = getIndexProxyFromPointer(P);
   return getInternalRef(I, I.ObjectRef.load());
 }
 
