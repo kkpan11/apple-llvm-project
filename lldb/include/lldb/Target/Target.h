@@ -169,6 +169,8 @@ public:
 
   bool GetSwiftCreateModuleContextsInParallel() const;
 
+  bool GetSwiftUseReflectionSymbols() const;
+
   bool GetEnableAutoImportClangModules() const;
 
   bool GetUseAllCompilerFlags() const;

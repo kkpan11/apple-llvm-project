@@ -7,6 +7,9 @@ let Definition = "target_experimental" in {
   def SwiftCreateModuleContextsInParallel : Property<"swift-create-module-contexts-in-parallel", "Boolean">,
     DefaultTrue,
     Desc<"Create the per-module Swift AST contexts in parallel.">;
+  def SwiftUseReflectionSymbols : Property<"swift-use-reflection-symbols", "Boolean">,
+    Global, DefaultFalse,
+    Desc<"if true, optimize the loading of Swift reflection metadata by making use of available symbols.">;
 }
 
 let Definition = "target" in {
