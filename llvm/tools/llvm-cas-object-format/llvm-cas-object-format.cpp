@@ -296,7 +296,7 @@ struct ObjectKindInfo {
   size_t DataSize = 0;
 
   size_t getTotalSize(size_t NumHashBytes) const {
-    return NumChildren * NumHashBytes + DataSize;
+    return Count * NumHashBytes + NumChildren * sizeof(void*) + DataSize;
   }
 };
 
@@ -636,8 +636,9 @@ void StatCollector::printToOuts(ArrayRef<CASID> TopLevels) {
   size_t NumHashBytes = TopLevels.front().getHash().size();
   outs() << "  => Note: 'Parents' counts incoming edges\n"
          << "  => Note: 'Children' counts outgoing edges (to sub-objects)\n"
-         << "  => Note: number of bytes per Ref = " << NumHashBytes << "\n"
-         << "  => Note: Cost = sizeof(Ref)*Children + Data\n";
+         << "  => Note: HashSize = " << NumHashBytes << "B\n"
+         << "  => Note: PtrSize  = " << sizeof(void *) << "B\n"
+         << "  => Note: Cost     = Count*HashSize + PtrSize*Children + Data\n";
   StringLiteral HeaderFormat = "{0,-22} {1,+10} {2,+7} {3,+10} {4,+7} {5,+10} "
                                "{6,+7} {7,+10} {8,+7} {9,+10} {10,+7}\n";
   StringLiteral Format = "{0,-22} {1,+10} {2,+7:P} {3,+10} {4,+7:P} {5,+10} "
