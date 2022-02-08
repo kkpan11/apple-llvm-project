@@ -302,6 +302,11 @@ public:
         }));
   }
 
+  pointer insertLazy(ArrayRef<uint8_t> Hash,
+                     function_ref<void(LazyValueConstructor)> OnConstruct) {
+    return insertLazy(const_pointer(), Hash, OnConstruct);
+  }
+
   pointer insert(const_pointer Hint, value_type &&HashedData) {
     return insertLazy(Hint, HashedData.Hash,
                                    [&](LazyValueConstructor C) {
@@ -337,7 +342,8 @@ public:
     if (std::is_trivially_destructible<value_type>::value)
       this->destroyImpl(nullptr);
     else
-      this->destroyImpl([](void *P) { delete static_cast<value_type *>(P); });
+      this->destroyImpl(
+          [](void *P) { static_cast<value_type *>(P)->~value_type(); });
   }
 
   // Move constructor okay.

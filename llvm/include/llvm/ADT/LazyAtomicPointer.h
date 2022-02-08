@@ -9,6 +9,7 @@
 #ifndef LLVM_ADT_LAZYATOMICPOINTER_H
 #define LLVM_ADT_LAZYATOMICPOINTER_H
 
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include <atomic>
 
 namespace llvm {

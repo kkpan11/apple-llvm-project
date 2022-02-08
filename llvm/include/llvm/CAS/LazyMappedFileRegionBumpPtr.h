@@ -21,9 +21,11 @@ class MemoryBuffer;
 namespace cas {
 
 /// Allocator for a lazy mapped file region.
+///
+/// Provides 8-byte alignment for all allocations.
 class LazyMappedFileRegionBumpPtr {
 public:
-  /// Minimum alignment for allocations.
+  /// Minimum alignment for allocations, currently hardcoded to 8B.
   static constexpr Align getAlign() {
     // Trick Align into giving us '8' as a constexpr.
     struct alignas(8) T {};
@@ -42,7 +44,7 @@ public:
     initialize(BumpPtrOffset);
   }
 
-  /// Allocate at least \p AllocSize. Rounds up to \a getAlignment().
+  /// Allocate at least \p AllocSize. Rounds up to \a getAlign().
   char *allocate(uint64_t AllocSize) {
     return data() + allocateOffset(AllocSize);
   }

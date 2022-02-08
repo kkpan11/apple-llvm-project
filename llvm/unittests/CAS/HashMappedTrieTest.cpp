@@ -191,4 +191,99 @@ TEST(HashMappedTrieTest, TrieStructureSmallFinalSubtrie) {
   ASSERT_TRUE(DumpRef.empty());
 }
 
+namespace {
+using HasherT = SHA1;
+using HashType = decltype(HasherT::hash(std::declval<ArrayRef<uint8_t> &>()));
+template <class T>
+class ThreadSafeHashMappedTrieSet
+    : ThreadSafeHashMappedTrie<T, sizeof(HashType)> {
+public:
+  using TrieType =
+      typename ThreadSafeHashMappedTrieSet::ThreadSafeHashMappedTrie;
+  using LazyValueConstructor = typename ThreadSafeHashMappedTrieSet::
+      ThreadSafeHashMappedTrie::LazyValueConstructor;
+
+  class pointer : public TrieType::const_pointer {
+    using BaseType = typename TrieType::const_pointer;
+
+  public:
+    const T &operator*() const {
+      return TrieType::const_pointer::operator*().Data;
+    }
+    const T *operator->() const { return &operator*(); }
+
+    pointer() = default;
+    pointer(pointer &&) = default;
+    pointer(const pointer &) = default;
+    pointer &operator=(pointer &&) = default;
+    pointer &operator=(const pointer &) = default;
+
+  private:
+    pointer(BaseType Result) : BaseType(Result) {}
+    friend class ThreadSafeHashMappedTrieSet;
+  };
+
+  ThreadSafeHashMappedTrieSet(Optional<size_t> NumRootBits = None,
+                              Optional<size_t> NumSubtrieBits = None)
+      : TrieType(NumRootBits, NumSubtrieBits) {}
+
+  static HashType hash(const T &V) {
+    return HasherT::hash(ArrayRef<uint8_t>(
+        reinterpret_cast<const uint8_t *>(V.data()), V.size()));
+  }
+  pointer find(const T &Value) const {
+    return pointer(TrieType::find(hash(Value)));
+  }
+  pointer insert(pointer Hint, T &&Value) {
+    return pointer(TrieType::insertLazy(
+        typename pointer::BaseType(Hint),
+        [&](LazyValueConstructor C) { C(std::move(Value)); }));
+  }
+  pointer insert(pointer Hint, const T &Value) {
+    return pointer(
+        TrieType::insertLazy(typename pointer::BaseType(Hint), hash(Value),
+                             [&](LazyValueConstructor C) { C(Value); }));
+  }
+  pointer insert(T &&Value) { return insert(pointer(), Value); }
+  pointer insert(const T &Value) { return insert(pointer(), Value); }
+};
+} // end anonymous namespace
+
+TEST(HashMappedTrieTest, Strings) {
+  for (unsigned RootBits : {2, 3, 6, 10}) {
+    for (unsigned SubtrieBits : {2, 3, 4}) {
+      ThreadSafeHashMappedTrieSet<std::string> Strings(RootBits, SubtrieBits);
+      const std::string &A1 = *Strings.insert("A");
+      EXPECT_EQ(&A1, &*Strings.insert("A"));
+      std::string A2 = A1;
+      EXPECT_EQ(&A1, &*Strings.insert(A2));
+
+      const std::string &B1 = *Strings.insert("B");
+      EXPECT_EQ(&B1, &*Strings.insert(B1));
+      std::string B2 = B1;
+      EXPECT_EQ(&B1, &*Strings.insert(B2));
+
+      for (int I = 0, E = 1000; I != E; ++I) {
+        ThreadSafeHashMappedTrieSet<std::string>::pointer Lookup;
+        std::string S = Twine(I).str();
+        if (I & 1)
+          Lookup = Strings.find(S);
+        const std::string &S1 = *Strings.insert(Lookup, S);
+        EXPECT_EQ(&S1, &*Strings.insert(S1));
+        std::string S2 = S1;
+        EXPECT_EQ(&S1, &*Strings.insert(S2));
+      }
+      for (int I = 0, E = 1000; I != E; ++I) {
+        std::string S = Twine(I).str();
+        ThreadSafeHashMappedTrieSet<std::string>::pointer Lookup =
+            Strings.find(S);
+        EXPECT_TRUE(Lookup);
+        if (!Lookup)
+          continue;
+        EXPECT_EQ(S, *Lookup);
+      }
+    }
+  }
+}
+
 } // namespace

@@ -15,7 +15,7 @@ using namespace llvm::cas;
 
 LLVM_DUMP_METHOD void CASDB::dump() const { print(dbgs()); }
 
-Expected<std::string> CASDB::convertCASIDToString(CASID ID) {
+Expected<std::string> CASDB::convertCASIDToString(CASID ID) const {
   std::string Reference;
   {
     raw_string_ostream OS(Reference);
@@ -25,7 +25,7 @@ Expected<std::string> CASDB::convertCASIDToString(CASID ID) {
   return std::move(Reference);
 }
 
-Error CASDB::getPrintedCASID(CASID ID, SmallVectorImpl<char> &Reference) {
+Error CASDB::getPrintedCASID(CASID ID, SmallVectorImpl<char> &Reference) const {
   raw_svector_ostream OS(Reference);
   if (Error E = printCASID(OS, ID))
     return E;

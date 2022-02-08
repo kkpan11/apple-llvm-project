@@ -16,6 +16,21 @@ namespace llvm {
 namespace cas {
 
 /// Wrapper around a raw hash-based identifier for a CAS object.
+///
+/// TODO: Change this to wrap a \c uint64_t (or, perhaps, \c uintptr_t), with a
+/// \a CASDB*. The integer should be uniquely-identifying for that \a CASDB* in
+/// the current "view" / lifetime context.
+///
+/// Getting the hash may be slightly more expensive, but that's fine; no one
+/// outside the CAS needs it. Comparing equality will be cheaper, and
+/// subsequent lookups will be cheaper too. Burying the lede: this will allow
+/// optimized CAS implementations to map an in-memory pointer to this ID.
+///
+/// TODO: Note that CASID/replacement can be created by parsing a string; it
+/// just indicates the hash or reference is well-formed. It may also be useful
+/// to have another handle type for an object that is known to exist. (This
+/// bleeds into improvements for BlobRef/NodeRef/TreeRef, which are currently
+/// way too fat to store anywhere... and otherwise fairly unwieldy.)
 class CASID {
 public:
   ArrayRef<uint8_t> getHash() const { return Hash; }
