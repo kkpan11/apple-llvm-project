@@ -44,7 +44,6 @@ public:
 
   CASID() = delete;
   explicit CASID(ArrayRef<uint8_t> Hash) : Hash(Hash) {}
-  explicit operator ArrayRef<uint8_t>() const { return Hash; }
 
   friend hash_code hash_value(CASID ID) { return hash_value(ID.getHash()); }
 
