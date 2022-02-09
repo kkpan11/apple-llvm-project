@@ -4366,8 +4366,10 @@ public:
   /// such as checking whether a parameter was properly specified, or the
   /// correct number of arguments were passed, etc. Returns true if the
   /// attribute has been diagnosed.
-  bool checkCommonAttributeFeatures(const Decl *D, const ParsedAttr &A);
-  bool checkCommonAttributeFeatures(const Stmt *S, const ParsedAttr &A);
+  bool checkCommonAttributeFeatures(const Decl *D, const ParsedAttr &A,
+                                    bool SkipArgCountCheck = false);
+  bool checkCommonAttributeFeatures(const Stmt *S, const ParsedAttr &A,
+                                    bool SkipArgCountCheck = false);
 
   /// Determine if type T is a valid subject for a nonnull and similar
   /// attributes. By default, we look through references (the behavior used by
@@ -4380,6 +4382,9 @@ public:
                             const FunctionDecl *FD = nullptr);
   bool CheckAttrTarget(const ParsedAttr &CurrAttr);
   bool CheckAttrNoArgs(const ParsedAttr &CurrAttr);
+  bool checkStringLiteralArgumentAttr(const AttributeCommonInfo &CI,
+                                      const Expr *E, StringRef &Str,
+                                      SourceLocation *ArgLocation = nullptr);
   bool checkStringLiteralArgumentAttr(const ParsedAttr &Attr, unsigned ArgNum,
                                       StringRef &Str,
                                       SourceLocation *ArgLocation = nullptr);
@@ -6955,7 +6960,7 @@ public:
   /// \brief Check whether the given non-dependent constraint expression is
   /// satisfied. Returns false and updates Satisfaction with the satisfaction
   /// verdict if successful, emits a diagnostic and returns true if an error
-  /// occured and satisfaction could not be determined.
+  /// occurred and satisfaction could not be determined.
   ///
   /// \returns true if an error occurred, false otherwise.
   bool CheckConstraintSatisfaction(const Expr *ConstraintExpr,
@@ -6964,7 +6969,7 @@ public:
   /// Check whether the given function decl's trailing requires clause is
   /// satisfied, if any. Returns false and updates Satisfaction with the
   /// satisfaction verdict if successful, emits a diagnostic and returns true if
-  /// an error occured and satisfaction could not be determined.
+  /// an error occurred and satisfaction could not be determined.
   ///
   /// \returns true if an error occurred, false otherwise.
   bool CheckFunctionConstraints(const FunctionDecl *FD,
@@ -7910,7 +7915,7 @@ public:
   /// contain the converted forms of the template arguments as written.
   /// Otherwise, \p TemplateArgs will not be modified.
   ///
-  /// \param ConstraintsNotSatisfied If provided, and an error occured, will
+  /// \param ConstraintsNotSatisfied If provided, and an error occurred, will
   /// receive true if the cause for the error is the associated constraints of
   /// the template not being satisfied by the template arguments.
   ///
