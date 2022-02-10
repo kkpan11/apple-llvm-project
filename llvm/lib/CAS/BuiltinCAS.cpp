@@ -114,6 +114,10 @@ static ArrayRef<char> toArrayRef(StringRef Data) {
 
 class BuiltinCAS : public CASDB {
 public:
+  StringRef getHashSchemaIdentifier() const final {
+    return "llvm.cas.builtin.v1[SHA1]";
+  }
+
   Expected<CASID> parseCASID(StringRef Reference) final;
   Error printCASID(raw_ostream &OS, CASID ID) const final;
 
@@ -662,7 +666,7 @@ private:
 class InMemoryCAS : public BuiltinCAS {
 public:
   Expected<CASID> parseCASIDImpl(ArrayRef<uint8_t> Hash) final {
-    return CASID(indexHash(Hash).Hash);
+    return getID(indexHash(Hash));
   }
 
   Expected<BlobRef> createBlobImpl(ArrayRef<uint8_t> ComputedHash,
@@ -679,8 +683,23 @@ public:
   createBlobFromNullTerminatedRegion(ArrayRef<uint8_t> ComputedHash,
                                      sys::fs::mapped_file_region Map) override;
 
-  static CASID getID(const InMemoryIndexValueT &I) { return CASID(I.Hash); }
-  static CASID getID(const InMemoryObject &O) { return CASID(O.getHash()); }
+  CASID getID(const InMemoryIndexValueT &I) const {
+    return CASID::getFromInternalID(*this, reinterpret_cast<uintptr_t>(&I));
+  }
+  CASID getID(const InMemoryObject &O) const { return getID(O.getIndex()); }
+  const InMemoryIndexValueT &extractIndexFromID(CASID ID) const {
+    assert(&ID.getContext() == this);
+    return *reinterpret_cast<const InMemoryIndexValueT *>(
+        (uintptr_t)ID.getInternalID(*this));
+  }
+  InMemoryIndexValueT &extractIndexFromID(CASID ID) {
+    return const_cast<InMemoryIndexValueT &>(
+        const_cast<const InMemoryCAS *>(this)->extractIndexFromID(ID));
+  }
+
+  ArrayRef<uint8_t> getHashImpl(const CASID &ID) const final {
+    return extractIndexFromID(ID).Hash;
+  }
 
   Expected<BlobRef> getBlobRef(const InMemoryObject &Object) {
     if (auto *Blob = dyn_cast<InMemoryBlob>(&Object))
@@ -709,6 +728,11 @@ public:
   /// TODO: Consider callers to actually do an insert and to return a handle to
   /// the slot in the trie.
   const InMemoryObject *getObject(CASID ID) const {
+    if (&ID.getContext() == this)
+      return extractIndexFromID(ID).Data;
+    assert(ID.getContext().getHashSchemaIdentifier() ==
+               getHashSchemaIdentifier() &&
+           "Expected ID from same hash schema");
     if (InMemoryIndexT::const_pointer P = Index.find(ID.getHash()))
       return P->Data;
     return nullptr;
@@ -739,9 +763,8 @@ public:
 
 private:
   // TreeAPI.
-  static NamedTreeEntry makeTreeEntry(const InMemoryTree::NamedEntry &Entry) {
-    return NamedTreeEntry(CASID(Entry.Ref->getHash()), Entry.Kind,
-                          Entry.Name->get());
+  NamedTreeEntry makeTreeEntry(const InMemoryTree::NamedEntry &Entry) const {
+    return NamedTreeEntry(getID(*Entry.Ref), Entry.Kind, Entry.Name->get());
   }
   Optional<NamedTreeEntry> lookupInTree(const TreeRef &Handle,
                                         StringRef Name) const final;
@@ -975,7 +998,7 @@ Expected<CASID> InMemoryCAS::getCachedResult(CASID InputID) {
   /// TODO: Although, consider inserting null on cache misses and returning a
   /// handle to avoid a second lookup!
   assert(P->Data && "Unexpected null in result cache");
-  return CASID(P->Data->Hash);
+  return getID(*P->Data);
 }
 
 Error InMemoryCAS::putCachedResult(CASID InputID, CASID OutputID) {
@@ -992,8 +1015,7 @@ Error InMemoryCAS::putCachedResult(CASID InputID, CASID OutputID) {
   if (&Expected == &Observed)
     return Error::success();
 
-  return createResultCachePoisonedError(InputID, OutputID,
-                                        CASID(Observed.Hash));
+  return createResultCachePoisonedError(InputID, OutputID, getID(Observed));
 }
 
 Optional<NamedTreeEntry> InMemoryCAS::lookupInTree(const TreeRef &Handle,
@@ -1023,14 +1045,14 @@ Error InMemoryCAS::forEachEntryInTree(
 CASID InMemoryCAS::getReferenceInNode(const NodeRef &Handle, size_t I) const {
   auto &Node = *reinterpret_cast<const InMemoryNode *>(getNodePtr(Handle));
   assert(I < Node.getRefs().size() && "Invalid index");
-  return CASID(Node.getRefs()[I]->getHash());
+  return getID(*Node.getRefs()[I]);
 }
 
 Error InMemoryCAS::forEachReferenceInNode(
     const NodeRef &Handle, function_ref<Error(CASID)> Callback) const {
   auto &Node = *reinterpret_cast<const InMemoryNode *>(getNodePtr(Handle));
   for (const InMemoryObject *Object : Node.getRefs())
-    if (Error E = Callback(CASID(Object->getHash())))
+    if (Error E = Callback(getID(*Object)))
       return E;
   return Error::success();
 }
@@ -1657,7 +1679,7 @@ public:
 
   IndexProxy indexHash(ArrayRef<uint8_t> Hash);
   Expected<CASID> parseCASIDImpl(ArrayRef<uint8_t> Hash) final {
-    return CASID(indexHash(Hash).Hash);
+    return getID(indexHash(Hash));
   }
 
   Expected<BlobRef> createBlobImpl(ArrayRef<uint8_t> ComputedHash,
@@ -1678,10 +1700,12 @@ public:
   }
 
   struct StringProxy {
+    FileOffset IndexOffset;
     TrieRecord::Data Object;
     StringRef String;
   };
   struct BlobProxy {
+    FileOffset IndexOffset;
     TrieRecord::Data Object;
     ArrayRef<uint8_t> Hash;
     ArrayRef<char> Data;
@@ -1690,12 +1714,14 @@ public:
   Expected<BlobProxy> createStandaloneBlob(IndexProxy &I, ArrayRef<char> Data);
 
   struct DataRecordProxy {
+    FileOffset IndexOffset;
     TrieRecord::Data Object;
     ArrayRef<uint8_t> Hash;
     DataRecordHandle Record;
   };
 
   struct ObjectProxy {
+    FileOffset IndexOffset;
     TrieRecord::Data Object;
     ArrayRef<uint8_t> Hash;
     Optional<DataRecordHandle> Record;
@@ -1704,7 +1730,8 @@ public:
     Optional<ArrayRef<char>> Bytes;
 
     static ObjectProxy get(BlobProxy Blob) {
-      return ObjectProxy{Blob.Object, Blob.Hash, None, Blob.Data};
+      return ObjectProxy{Blob.IndexOffset, Blob.Object, Blob.Hash, None,
+                         Blob.Data};
     }
   };
   Expected<DataRecordProxy>
@@ -1735,6 +1762,19 @@ public:
   PooledDataRecord createPooledDataRecord(DataRecordHandle::Input Input);
   void getStandalonePath(TrieRecord::StorageKind SK, const IndexProxy &I,
                          SmallVectorImpl<char> &Path) const;
+
+  CASID getID(const IndexProxy &I) const {
+    return getIDFromIndexOffset(I.Offset);
+  }
+  ArrayRef<uint8_t> getHashImpl(const CASID &ID) const final {
+    assert(&ID.getContext() == this && "Expected ID from this CASIDContext");
+    OnDiskHashMappedTrie::const_pointer P = getInternalIndexPointer(ID);
+    assert(P && "Expected to recover pointer from CASID");
+    return P->Hash;
+  }
+  CASID getIDFromIndexOffset(FileOffset Offset) const {
+    return CASID::getFromInternalID(*this, Offset.get());
+  }
 
   OnDiskHashMappedTrie::const_pointer getInternalIndexPointer(CASID ID) const;
   Optional<InternalRef> getInternalRef(CASID ID) const;
@@ -2396,13 +2436,11 @@ OnDiskCAS::IndexProxy OnDiskCAS::getIndexProxyFromPointer(
 
 OnDiskHashMappedTrie::const_pointer
 OnDiskCAS::getInternalIndexPointer(CASID ID) const {
-  // Lookup the hash by pointer value.
-  //
-  // FIXME: Can make this more robust by changing CASID to a CASDB and an
-  // integer, where the integer is an offset into the trie.
-  if (OnDiskHashMappedTrie::const_pointer P =
-          Index.recoverFromHashPointer(ID.getHash().data())) {
-    assert(P->Hash == ID.getHash());
+  // Recover the pointer from the FileOffset if ID comes from this CAS.
+  if (&ID.getContext() == this) {
+    OnDiskHashMappedTrie::const_pointer P =
+        Index.recoverFromFileOffset(FileOffset(ID.getInternalID(*this)));
+    assert(P && "Expected valid index pointer from direct lookup");
     return P;
   }
 
@@ -2442,26 +2480,20 @@ Optional<StringRef> OnDiskCAS::getString(InternalRef Ref) const {
 }
 
 Optional<CASID> OnDiskCAS::getCASID(InternalRef Ref) const {
-  FileOffset IndexOffset;
   switch (Ref.getOffsetKind()) {
   case InternalRef::OffsetKind::String2B:
+    /// Strings are not exposed.
     return None;
 
   case InternalRef::OffsetKind::DataRecord: {
     DataRecordHandle Handle =
         DataRecordHandle::get(DataPool.beginData(Ref.getFileOffset()));
-    IndexOffset = Handle.getTrieRecordOffset();
-    break;
+    return getIDFromIndexOffset(Handle.getTrieRecordOffset());
   }
 
   case InternalRef::OffsetKind::IndexRecord:
-    IndexOffset = Ref.getFileOffset();
-    break;
+    return getIDFromIndexOffset(Ref.getFileOffset());
   }
-  if (OnDiskHashMappedTrie::const_pointer P =
-          Index.recoverFromFileOffset(IndexOffset))
-    return CASID(P->Hash);
-  return None;
 }
 
 Optional<InternalRef> OnDiskCAS::getInternalRef(IndexProxy I,
@@ -2518,13 +2550,13 @@ OnDiskCAS::getOrCreateString(IndexProxy I, StringRef String) {
   // handle.
   TrieRecord::Data Existing;
   if (I.ObjectRef.compare_exchange_strong(Existing, StringData))
-    return StringProxy{StringData, S.getString()};
+    return StringProxy{I.Offset, StringData, S.getString()};
 
   if (Existing.SK == TrieRecord::StorageKind::Unknown)
-    return createCorruptObjectError(CASID(I.Hash));
+    return createCorruptObjectError(getID(I));
 
-  return dereferenceValue(
-      getString(I), [&]() { return createCorruptObjectError(CASID(I.Hash)); });
+  return dereferenceValue(getString(I),
+                          [&]() { return createCorruptObjectError(getID(I)); });
 }
 
 Expected<InternalRef> OnDiskCAS::getOrCreateStringRef(StringRef String) {
@@ -2578,12 +2610,12 @@ OnDiskCAS::getString(IndexProxy I) const {
 
   assert(bool(OP->Record) != bool(OP->Bytes));
   if (OP->Bytes)
-    return StringProxy{OP->Object, toStringRef(*OP->Bytes)};
+    return StringProxy{I.Offset, OP->Object, toStringRef(*OP->Bytes)};
 
   // Blobs and strings should not have references.
   if (!OP->Record->getRefs().empty())
-    return createCorruptObjectError(CASID(I.Hash));
-  return StringProxy{OP->Object, toStringRef(OP->Record->getData())};
+    return createCorruptObjectError(getID(I));
+  return StringProxy{I.Offset, OP->Object, toStringRef(OP->Record->getData())};
 }
 
 Expected<Optional<OnDiskCAS::BlobProxy>>
@@ -2595,12 +2627,12 @@ OnDiskCAS::getBlob(IndexProxy I) const {
 
   assert(bool(OP->Record) != bool(OP->Bytes));
   if (OP->Bytes)
-    return BlobProxy{OP->Object, OP->Hash, *OP->Bytes};
+    return BlobProxy{I.Offset, OP->Object, OP->Hash, *OP->Bytes};
 
   // Blobs should not have references.
   if (!OP->Record->getRefs().empty())
-    return createCorruptObjectError(CASID(I.Hash));
-  return BlobProxy{OP->Object, OP->Hash, OP->Record->getData()};
+    return createCorruptObjectError(getID(I));
+  return BlobProxy{I.Offset, OP->Object, OP->Hash, OP->Record->getData()};
 }
 
 Expected<Optional<OnDiskCAS::DataRecordProxy>>
@@ -2611,7 +2643,7 @@ OnDiskCAS::getDataRecord(IndexProxy I) const {
 
   assert(OP->Record && "Expected record");
   assert(!OP->Bytes && "Unexpected blob");
-  return DataRecordProxy{OP->Object, OP->Hash, *OP->Record};
+  return DataRecordProxy{I.Offset, OP->Object, OP->Hash, *OP->Record};
 }
 
 Expected<Optional<OnDiskCAS::ObjectProxy>>
@@ -2624,20 +2656,21 @@ OnDiskCAS::getObjectProxy(IndexProxy I) const {
   bool Blob = false;
   switch (Object.SK) {
   default:
-    return createCorruptObjectError(CASID(I.Hash));
+    return createCorruptObjectError(getID(I));
 
   case TrieRecord::StorageKind::DataPool: {
     DataRecordHandle Handle =
         DataRecordHandle::get(DataPool.beginData(Object.Offset));
     assert(Handle.getData().end()[0] == 0 && "Null termination");
-    return ObjectProxy{Object, I.Hash, Handle, None};
+    return ObjectProxy{I.Offset, Object, I.Hash, Handle, None};
   }
 
   case TrieRecord::StorageKind::DataPoolString2B: {
     String2BHandle Handle =
         String2BHandle::get(DataPool.beginData(Object.Offset));
     assert(Handle.getString().end()[0] == 0 && "Null termination");
-    return ObjectProxy{Object, I.Hash, None, toArrayRef(Handle.getString())};
+    return ObjectProxy{I.Offset, Object, I.Hash, None,
+                       toArrayRef(Handle.getString())};
   }
 
   case TrieRecord::StorageKind::Standalone:
@@ -2657,9 +2690,9 @@ OnDiskCAS::getObjectProxy(IndexProxy I) const {
     assert(Buffer.getBuffer().drop_back(Blob0).end()[0] == 0 &&
            "Null termination");
     if (Blob)
-      return ObjectProxy{Object, I.Hash, None,
+      return ObjectProxy{I.Offset, Object, I.Hash, None,
                          toArrayRef(Buffer.getBuffer().drop_back(Blob0))};
-    return ObjectProxy{Object, I.Hash,
+    return ObjectProxy{I.Offset, Object, I.Hash,
                        DataRecordHandle::get(Buffer.getBuffer().data()), None};
   };
 
@@ -2673,7 +2706,7 @@ OnDiskCAS::getObjectProxy(IndexProxy I) const {
   ErrorOr<std::unique_ptr<MemoryBuffer>> OwnedBuffer = MemoryBuffer::getFile(
       Path, /*IsText=*/false, /*RequiresNullTerminator=*/false);
   if (!OwnedBuffer)
-    return createCorruptObjectError(CASID(I.Hash));
+    return createCorruptObjectError(getID(I));
 
   MemoryBufferRef Buffer =
       StandaloneData.insert(I.Hash, std::move(*OwnedBuffer));
@@ -2732,14 +2765,14 @@ OnDiskCAS::createStandaloneBlob(IndexProxy &I, ArrayRef<char> Data) {
           TrieRecord::Data{SK, TrieRecord::ObjectKind::Blob, FileOffset()})) {
     // If there was a race, confirm that the new value has valid storage.
     if (Existing.SK == TrieRecord::StorageKind::Unknown)
-      return createCorruptObjectError(CASID(I.Hash));
+      return createCorruptObjectError(getID(I));
 
     // Fall through...
   }
 
   // Get and return the inserted blob.
-  return dereferenceValue(
-      getBlob(I), [&]() { return createCorruptObjectError(CASID(I.Hash)); });
+  return dereferenceValue(getBlob(I),
+                          [&]() { return createCorruptObjectError(getID(I)); });
 }
 
 Expected<OnDiskCAS::BlobProxy> OnDiskCAS::getOrCreateBlob(IndexProxy I,
@@ -2766,10 +2799,10 @@ Expected<OnDiskCAS::BlobProxy> OnDiskCAS::getOrCreateBlob(IndexProxy I,
   TrieRecord::Data Existing;
   if (!I.ObjectRef.compare_exchange_strong(Existing, Blob))
     if (Existing.SK == TrieRecord::StorageKind::Unknown)
-      return createCorruptObjectError(CASID(I.Hash));
+      return createCorruptObjectError(getID(I));
 
-  return dereferenceValue(
-      getBlob(I), [&]() { return createCorruptObjectError(CASID(I.Hash)); });
+  return dereferenceValue(getBlob(I),
+                          [&]() { return createCorruptObjectError(getID(I)); });
 }
 
 Expected<OnDiskCAS::DataRecordProxy>
@@ -2884,12 +2917,11 @@ OnDiskCAS::getOrCreateDataRecord(IndexProxy &I, TrieRecord::ObjectKind OK,
   if (Existing.SK == TrieRecord::StorageKind::Unknown)
     if (!I.ObjectRef.compare_exchange_strong(Existing, NewObject))
       if (Existing.SK == TrieRecord::StorageKind::Unknown)
-        return createCorruptObjectError(CASID(I.Hash));
+        return createCorruptObjectError(getID(I));
 
   // Get and return the record.
-  return dereferenceValue(getDataRecord(I), [&]() {
-    return createCorruptObjectError(CASID(I.Hash));
-  });
+  return dereferenceValue(getDataRecord(I),
+                          [&]() { return createCorruptObjectError(getID(I)); });
 }
 
 OnDiskCAS::PooledDataRecord
@@ -2911,21 +2943,22 @@ OnDiskCAS::createPooledDataRecord(DataRecordHandle::Input Input) {
 
 Expected<BlobRef> OnDiskCAS::getBlobFromProxy(Expected<BlobProxy> Blob) {
   if (Blob)
-    return makeBlobRef(CASID(Blob->Hash), Blob->Data);
+    return makeBlobRef(getIDFromIndexOffset(Blob->IndexOffset), Blob->Data);
   return Blob.takeError();
 }
 
 Expected<NodeRef> OnDiskCAS::getNodeFromProxy(Expected<DataRecordProxy> Node) {
   if (Node)
-    return makeNodeRef(CASID(Node->Hash), &Node->Record.getHeader(),
-                       Node->Record.getNumRefs(),
+    return makeNodeRef(getIDFromIndexOffset(Node->IndexOffset),
+                       &Node->Record.getHeader(), Node->Record.getNumRefs(),
                        toStringRef(Node->Record.getData()));
   return Node.takeError();
 }
 
 Expected<TreeRef> OnDiskCAS::getTreeFromProxy(Expected<DataRecordProxy> Tree) {
   if (Tree)
-    return makeTreeRef(CASID(Tree->Hash), &Tree->Record.getHeader(),
+    return makeTreeRef(getIDFromIndexOffset(Tree->IndexOffset),
+                       &Tree->Record.getHeader(),
                        Tree->Record.getNumRefs() / 2);
   return Tree.takeError();
 }

@@ -13,6 +13,9 @@
 using namespace llvm;
 using namespace llvm::cas;
 
+void CASIDContext::anchor() {}
+void CASDB::anchor() {}
+
 LLVM_DUMP_METHOD void CASDB::dump() const { print(dbgs()); }
 
 Expected<std::string> CASDB::convertCASIDToString(CASID ID) const {
