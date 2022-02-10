@@ -1517,9 +1517,6 @@ Error CompileUnitBuilder::createSymbol(const jitlink::Symbol &S) {
     //
     // - If there are any IndirectSymbol (by-name) references to it, it needs
     //   to be find-able by name.
-    //
-    // FIXME: This will currently have ALL linkonce_odr+autohide functions in
-    // it, because they're all referenced indirectly by their __eh_frame.
     if (HasIndirectReference)
       IndirectDeadStripCompileSymbols.push_back(*Symbol);
     break;
