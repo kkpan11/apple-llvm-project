@@ -288,8 +288,7 @@ Error BuiltinCAS::printCASID(raw_ostream &OS, CASID ID) const {
 }
 
 Expected<BlobRef> BuiltinCAS::createBlob(ArrayRef<char> Data) {
-  BuiltinBlobHasher<HasherT> Hasher;
-  return createBlobImpl(Hasher.hash(Data), Data);
+  return createBlobImpl(BuiltinObjectHasher<HasherT>::hashBlob(Data), Data);
 }
 
 Expected<BlobRef>
@@ -330,8 +329,7 @@ BuiltinCAS::createBlobFromOpenFileImpl(sys::fs::file_t FD,
   // that the file size may have changed from ::stat if this file is volatile,
   // so we need to check for an actual null character at the end.
   ArrayRef<char> Data(Map.data(), Map.size());
-  BuiltinBlobHasher<HasherT> Hasher;
-  HashType ComputedHash = Hasher.hash(Data);
+  HashType ComputedHash = BuiltinObjectHasher<HasherT>::hashBlob(Data);
   if (!isAligned(Align(PageSize), Data.size()) && Data.end()[0] == 0)
     return createBlobFromNullTerminatedRegion(ComputedHash, std::move(Map));
   return createBlobImpl(ComputedHash, Data);
@@ -343,20 +341,14 @@ Expected<TreeRef> BuiltinCAS::createTree(ArrayRef<NamedTreeEntry> Entries) {
   std::stable_sort(Sorted.begin(), Sorted.end());
   Sorted.erase(std::unique(Sorted.begin(), Sorted.end()), Sorted.end());
 
-  BuiltinTreeHasher<HasherT> Hasher;
-  Hasher.start(Sorted.size());
-  for (const NamedTreeEntry &E : Sorted)
-    Hasher.updateEntry(E.getID().getHash(), E.getName(), E.getKind());
-  return createTreeImpl(Hasher.finish(), Sorted);
+  return createTreeImpl(
+      BuiltinObjectHasher<HasherT>::hashTree(Sorted), Sorted);
 }
 
 Expected<NodeRef> BuiltinCAS::createNode(ArrayRef<CASID> References,
                                          ArrayRef<char> Data) {
-  BuiltinNodeHasher<HasherT> Hasher;
-  Hasher.start(References.size());
-  for (const CASID &ID : References)
-    Hasher.updateRef(ID.getHash());
-  return createNodeImpl(Hasher.finish(Data), References, Data);
+  return createNodeImpl(BuiltinObjectHasher<HasherT>::hashNode(References, Data),
+                        References, Data);
 }
 
 namespace {
@@ -934,9 +926,10 @@ Expected<NodeRef> InMemoryCAS::createNodeImpl(ArrayRef<uint8_t> ComputedHash,
 }
 
 const InMemoryString &InMemoryCAS::getOrCreateString(StringRef String) {
-  BuiltinStringHasher<HasherT> Hasher;
   InMemoryStringPoolT::value_type S =
-      *StringPool.insertLazy(Hasher.hash(String), [&](auto ValueConstructor) {
+      *StringPool.insertLazy(
+          BuiltinObjectHasher<HasherT>::hashString(String),
+          [&](auto ValueConstructor) {
         ValueConstructor.emplace(nullptr);
       });
 
@@ -2539,7 +2532,7 @@ Expected<InternalRef> OnDiskCAS::getOrCreateStringRef(StringRef String) {
   if (String.size() > UINT16_MAX) {
     BlobProxy Blob;
     IndexProxy I =
-        indexHash(BuiltinBlobHasher<HasherT>().hash(toArrayRef(String)));
+        indexHash(BuiltinObjectHasher<HasherT>::hashBlob(toArrayRef(String)));
     if (Error E = getOrCreateBlob(I, toArrayRef(String)).moveInto(Blob))
       return std::move(E);
     return *getInternalRef(I, Blob.Object);
@@ -2547,7 +2540,7 @@ Expected<InternalRef> OnDiskCAS::getOrCreateStringRef(StringRef String) {
 
   // Make a string.
   StringProxy S;
-  IndexProxy I = indexHash(BuiltinStringHasher<HasherT>().hash(String));
+  IndexProxy I = indexHash(BuiltinObjectHasher<HasherT>::hashString(String));
   if (Error E = getOrCreateString(I, String).moveInto(S))
     return std::move(E);
   return *getInternalRef(I, S.Object);
