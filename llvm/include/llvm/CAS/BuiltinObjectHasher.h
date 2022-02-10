@@ -31,7 +31,7 @@ enum class StableTreeEntryKind : uint8_t {
   Symlink = 4,
 };
 
-static StableTreeEntryKind getStableKind(TreeEntry::EntryKind Kind) {
+inline StableTreeEntryKind getStableKind(TreeEntry::EntryKind Kind) {
   switch (Kind) {
   case TreeEntry::Tree:
     return StableTreeEntryKind::Tree;
@@ -44,7 +44,7 @@ static StableTreeEntryKind getStableKind(TreeEntry::EntryKind Kind) {
   }
 }
 
-static TreeEntry::EntryKind getUnstableKind(StableTreeEntryKind Kind) {
+inline TreeEntry::EntryKind getUnstableKind(StableTreeEntryKind Kind) {
   switch (Kind) {
   case StableTreeEntryKind::Tree:
     return TreeEntry::Tree;
@@ -57,8 +57,7 @@ static TreeEntry::EntryKind getUnstableKind(StableTreeEntryKind Kind) {
   }
 }
 
-static StableObjectKind getStableKind(StableObjectKind Kind) { return Kind; }
-static StableObjectKind getStableKind(ObjectKind Kind) {
+inline StableObjectKind getStableKind(ObjectKind Kind) {
   switch (Kind) {
   case ObjectKind::Blob:
     return StableObjectKind::Blob;
@@ -69,57 +68,85 @@ static StableObjectKind getStableKind(ObjectKind Kind) {
   }
 }
 
-class BuiltinObjectHasherBase {
-public:
-  template <class KindT>
-  static auto serializeKind(KindT Kind) {
-    auto StableKind = getStableKind(Kind);
-    static_assert(sizeof(StableKind) == 1, "Expected kind to be 1-byte");
-    return (uint8_t)StableKind;
-  }
-};
-
-template <class HasherT>
-class BuiltinObjectHasher : public BuiltinObjectHasherBase {
+template <class HasherT> class BuiltinObjectHasher {
 public:
   using HashT = decltype(HasherT::hash(std::declval<ArrayRef<uint8_t> &>()));
 
-protected:
-  ~BuiltinObjectHasher() { assert(!Hasher); }
+  static HashT hashBlob(ArrayRef<char> Data) {
+    BuiltinObjectHasher H;
+    H.start(StableObjectKind::Blob);
+    H.updateArray(Data);
+    return H.finish();
+  }
 
-  void start(ObjectKind Kind) { start(getStableKind(Kind)); }
+  static HashT hashString(StringRef String) {
+    BuiltinObjectHasher H;
+    H.start(StableObjectKind::String);
+    H.updateString(String);
+    return H.finish();
+  }
+
+  static HashT hashTree(ArrayRef<NamedTreeEntry> Entries) {
+    BuiltinObjectHasher H;
+    H.start(StableObjectKind::Tree);
+    H.updateSize(Entries.size());
+    for (const NamedTreeEntry &Entry : Entries) {
+      H.updateObjectRef(Entry.getID());
+      H.updateString(Entry.getName());
+      H.updateKind(getStableKind(Entry.getKind()));
+    }
+    return H.finish();
+  }
+
+  static HashT hashNode(ArrayRef<CASID> Refs, ArrayRef<char> Data) {
+    BuiltinObjectHasher H;
+    H.start(StableObjectKind::Node);
+    H.updateSize(Refs.size());
+    for (const CASID &ID : Refs)
+      H.updateObjectRef(ID);
+    H.updateArray(Data);
+    return H.finish();
+  }
+
+private:
   void start(StableObjectKind Kind) {
-    assert(!Hasher);
-    Hasher.emplace();
     updateKind(Kind);
   }
 
   HashT finish() {
-    assert(Hasher);
-    StringRef Final = Hasher->final();
+    StringRef Final = Hasher.final();
     auto *Begin = reinterpret_cast<const uint8_t *>(Final.begin());
     HashT Hash;
     std::copy(Begin, Begin + Final.size(), Hash.data());
-    Hasher.reset();
     return Hash;
   }
 
-  template <class KindT> void updateKind(KindT Kind) {
-    Hasher->update(serializeKind(Kind));
+  void updateKind(StableObjectKind Kind) {
+    static_assert(sizeof(Kind) == 1, "Expected kind to be 1-byte");
+    Hasher.update((uint8_t)Kind);
+  }
+
+  void updateKind(StableTreeEntryKind Kind) {
+    static_assert(sizeof(Kind) == 1, "Expected kind to be 1-byte");
+    Hasher.update((uint8_t)Kind);
   }
 
   void updateString(StringRef String) {
     updateArray(makeArrayRef(String.data(), String.size()));
   }
 
-  void updateHash(ArrayRef<uint8_t> Hash) {
-    assert(Hash.size() == sizeof(HashT));
-    Hasher->update(Hash);
+  void updateObjectRef(CASID ObjectRef) {
+    // NOTE: Does not hash the size of the hash. That's a CAS implementation
+    // detail that shouldn't leak into the UUID for an object.
+    ArrayRef<uint8_t> Hash = ObjectRef.getHash();
+    assert(Hash.size() == sizeof(HashT) &&
+           "Expected object ref to match the hash size");
+    Hasher.update(Hash);
   }
 
   void updateArray(ArrayRef<uint8_t> Bytes) {
     updateSize(Bytes.size());
-    Hasher->update(Bytes);
+    Hasher.update(Bytes);
   }
 
   void updateArray(ArrayRef<char> Bytes) {
@@ -128,90 +155,14 @@ protected:
   }
 
   void updateSize(uint64_t Size) {
-    std::array<uint8_t, sizeof(uint64_t)> Bytes;
-    llvm::support::endian::write(Bytes.data(), Size,
-                                 support::endianness::little);
-    Hasher->update(Bytes);
+    Size = support::endian::byte_swap(Size, support::endianness::little);
+    Hasher.update(makeArrayRef(reinterpret_cast<const uint8_t *>(&Size),
+                                sizeof(Size)));
   }
 
-private:
-  Optional<HasherT> Hasher;
-};
-
-template <class HasherT>
-class BuiltinBlobHasher : public BuiltinObjectHasher<HasherT> {
-public:
-  auto hash(ArrayRef<char> Data) {
-    this->start(ObjectKind::Blob);
-    this->updateArray(Data);
-    return this->finish();
-  }
-  auto hash(StringRef Data) {
-    return hash(makeArrayRef(Data.data(), Data.size()));
-  }
-};
-
-template <class HasherT>
-class BuiltinStringHasher : public BuiltinObjectHasher<HasherT> {
-public:
-  auto hash(StringRef Data) {
-    this->start(StableObjectKind::String);
-    this->updateString(Data);
-    return this->finish();
-  }
-};
-
-template <class HasherT>
-class BuiltinNodeHasher : public BuiltinObjectHasher<HasherT> {
-public:
-  void start(size_t NumRefs) {
-    BuiltinNodeHasher::BuiltinObjectHasher::start(ObjectKind::Node);
-    this->updateSize(NumRefs);
-    RemainingRefs = NumRefs;
-  }
-
-  void updateRef(ArrayRef<uint8_t> Hash) {
-    assert(RemainingRefs && "Expected fewer refs");
-    --RemainingRefs;
-    this->updateHash(Hash);
-  }
-
-  auto finish(ArrayRef<char> Data) {
-    assert(!RemainingRefs && "Expected more refs");
-    this->updateArray(Data);
-    return BuiltinNodeHasher::BuiltinObjectHasher::finish();
-  }
-
-private:
-  size_t RemainingRefs = 0;
-};
-
-template <class HasherT>
-class BuiltinTreeHasher : public BuiltinObjectHasher<HasherT> {
-public:
-  void start(size_t Size) {
-    BuiltinTreeHasher::BuiltinObjectHasher::start(ObjectKind::Tree);
-    this->updateSize(Size);
-    RemainingEntries = Size;
-  }
-
-  void updateEntry(ArrayRef<uint8_t> RefHash, StringRef Name,
-                   TreeEntry::EntryKind Kind) {
-    assert(RemainingEntries && "Expected fewer refs");
-    --RemainingEntries;
-
-    this->updateHash(RefHash);
-    this->updateString(Name);
-    this->updateKind(Kind);
-  }
-
-  auto finish() {
-    assert(RemainingEntries == 0 && "Expected more refs");
-    return BuiltinTreeHasher::BuiltinObjectHasher::finish();
-  }
-
-private:
-  size_t RemainingEntries = 0;
+  BuiltinObjectHasher() = default;
+  ~BuiltinObjectHasher() = default;
+  HasherT Hasher;
 };
 
 } // namespace cas
