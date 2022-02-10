@@ -72,12 +72,10 @@ static StableObjectKind getStableKind(ObjectKind Kind) {
 class BuiltinObjectHasherBase {
 public:
   template <class KindT>
-  static std::array<uint8_t, sizeof(KindT)> serializeKind(KindT Kind) {
+  static auto serializeKind(KindT Kind) {
     auto StableKind = getStableKind(Kind);
-    std::array<uint8_t, sizeof(KindT)> Bytes;
-    llvm::support::endian::write(Bytes.data(), StableKind,
-                                 support::endianness::little);
-    return Bytes;
+    static_assert(sizeof(StableKind) == 1, "Expected kind to be 1-byte");
+    return (uint8_t)StableKind;
   }
 };
 
