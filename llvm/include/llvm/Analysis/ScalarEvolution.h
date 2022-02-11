@@ -437,7 +437,7 @@ public:
 
   /// Returns a reference to a vector containing all predicates which apply to
   /// \p Expr.
-  ArrayRef<const SCEVPredicate *> getPredicatesForExpr(const SCEV *Expr);
+  ArrayRef<const SCEVPredicate *> getPredicatesForExpr(const SCEV *Expr) const;
 
   /// Implementation of the SCEVPredicate interface
   bool isAlwaysTrue() const override;
@@ -1176,7 +1176,7 @@ public:
 
   /// Re-writes the SCEV according to the Predicates in \p A.
   const SCEV *rewriteUsingPredicate(const SCEV *S, const Loop *L,
-                                    SCEVUnionPredicate &A);
+                                    const SCEVPredicate &A);
   /// Tries to convert the \p S expression to an AddRec expression,
   /// adding additional predicates to \p Preds as required.
   const SCEVAddRecExpr *convertSCEVToAddRecWithPredicates(
@@ -2199,7 +2199,7 @@ class PredicatedScalarEvolution {
 public:
   PredicatedScalarEvolution(ScalarEvolution &SE, Loop &L);
 
-  const SCEVUnionPredicate &getUnionPredicate() const;
+  const SCEVPredicate &getPredicate() const;
 
   /// Returns the SCEV expression of V, in the context of the current SCEV
   /// predicate.  The order of transformations applied on the expression of V
