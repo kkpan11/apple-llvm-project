@@ -1671,7 +1671,7 @@ static Instruction *insertSpills(const FrameDataInfo &FrameData,
       // Salvage debug info on any dbg.addr that we see. We do not insert them
       // into each block where we have a use though.
       if (auto *DI = dyn_cast<DbgAddrIntrinsic>(U)) {
-        coro::salvageDebugInfo(DbgPtrAllocaCache, DI, Shape.OptimizeFrame);
+        coro::salvageDebugInfo(DbgPtrAllocaCache, DI, Shape.ReuseFrameSlot);
       }
 
       // If we have a single edge PHINode, remove it and replace it with a
