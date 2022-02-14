@@ -983,16 +983,14 @@ cl::opt<bool> DeadStripByDefault(
              "--dead-strip-section to just dead strip named sections."),
     cl::init(false));
 
-cl::opt<std::vector<std::string>>
-    DeadStripSections(
-        "dead-strip-section",
-        cl::desc("Dead-strip unreferenced symbols in the named sections."));
+cl::list<std::string> DeadStripSections(
+    "dead-strip-section",
+    cl::desc("Dead-strip unreferenced symbols in the named sections."));
 
-cl::opt<std::vector<std::string>>
-    KeepAliveSections(
-        "keep-alive-section",
-        cl::desc("Keep all unreferenced symbols in the named sections. "
-                 "Stronger than --dead-strip or --dead-strip-section."));
+cl::list<std::string> KeepAliveSections(
+    "keep-alive-section",
+    cl::desc("Keep all unreferenced symbols in the named sections. "
+             "Stronger than --dead-strip or --dead-strip-section."));
 
 cl::opt<bool>
     KeepStaticInitializersAlive("keep-static-initializers-alive",
@@ -1800,6 +1798,8 @@ Error NestedV1ObjectReader::forEachSymbol(
   if (Error E = forEachSymbol(CURef.getDeadStripLink(), Callback))
     return E;
   if (Error E = forEachSymbol(CURef.getDeadStripNever(), Callback))
+    return E;
+  if (Error E = forEachSymbol(CURef.getUnreferenced(), Callback))
     return E;
   return Error::success();
 }
