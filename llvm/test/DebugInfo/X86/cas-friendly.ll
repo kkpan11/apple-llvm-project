@@ -1,165 +1,35 @@
 ; RUN: llc -mtriple=x86_64-apple-macosx12.0.0 -filetype=obj %s -o %t 
-; RUN: llvm-dwarfdump -debug-line -v %t | FileCheck %s
+; RUN: llvm-dwarfdump -debug-line --debug-info %t | FileCheck %s
 
-; CHECK: debug_line[0x00000000]
-; CHECK-NEXT: Line table prologue:
-; CHECK-NEXT:     total_length: 0x00000042
-; CHECK-NEXT:           format: DWARF32
-; CHECK-NEXT:          version: 4
-; CHECK-NEXT:  prologue_length: 0x00000020
-; CHECK-NEXT:  min_inst_length: 1
-; CHECK-NEXT: max_ops_per_inst: 1
-; CHECK-NEXT:  default_is_stmt: 1
-; CHECK-NEXT:        line_base: -5
-; CHECK-NEXT:       line_range: 14
-; CHECK-NEXT:      opcode_base: 13
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_copy] = 0
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_advance_pc] = 1
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_advance_line] = 1
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_set_file] = 1
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_set_column] = 1
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_negate_stmt] = 0
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_set_basic_block] = 0
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_const_add_pc] = 0
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_fixed_advance_pc] = 1
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_set_prologue_end] = 0
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_set_epilogue_begin] = 0
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_set_isa] = 1
-; CHECK-NEXT: include_directories[  1] = "."
-; CHECK-NEXT: file_names[  1]:
-; CHECK-NEXT:            name: "test.c"
-; CHECK-NEXT:       dir_index: 1
-; CHECK-NEXT:        mod_time: 0x00000000
-; CHECK-NEXT:          length: 0x00000000
-; CHECK:             Address            Line   Column File   ISA Discriminator Flags
-; CHECK-NEXT:             ------------------ ------ ------ ------ --- ------------- -------------
-; CHECK-NEXT: 0x0000002a: 00 DW_LNE_set_address (0x0000000000000000)
-; CHECK-NEXT: 0x00000035: 01 DW_LNS_copy
-; CHECK-NEXT:             0x0000000000000000      1      0      1   0             0  is_stmt
-; CHECK-NEXT: 0x00000036: 05 DW_LNS_set_column (9)
-; CHECK-NEXT: 0x00000038: 0a DW_LNS_set_prologue_end
-; CHECK-NEXT: 0x00000039: 75 address += 7,  line += 1
-; CHECK-NEXT:             0x0000000000000007      2      9      1   0             0  is_stmt prologue_end
-; CHECK-NEXT: 0x0000003a: 05 DW_LNS_set_column (10)
-; CHECK-NEXT: 0x0000003c: 06 DW_LNS_negate_stmt
-; CHECK-NEXT: 0x0000003d: 3c address += 3,  line += 0
-; CHECK-NEXT:             0x000000000000000a      2     10      1   0             0 
-; CHECK-NEXT: 0x0000003e: 05 DW_LNS_set_column (2)
-; CHECK-NEXT: 0x00000040: 4a address += 4,  line += 0
-; CHECK-NEXT:             0x000000000000000e      2      2      1   0             0 
-; CHECK-NEXT: 0x00000041: 02 DW_LNS_advance_pc (2)
-; CHECK-NEXT: 0x00000043: 00 DW_LNE_end_sequence
-; CHECK-NEXT:             0x0000000000000010      2      2      1   0             0  end_sequence
+; CHECK: 0x{{[0-9a-z]+}}:   DW_TAG_subprogram
+; CHECK-NEXT:                DW_AT_low_pc ([[LOC1:0x[0-9a-z]+]])
 
-; CHECK: debug_line[0x00000046]
-; CHECK-NEXT: Line table prologue:
-; CHECK-NEXT:     total_length: 0x00000042
-; CHECK-NEXT:           format: DWARF32
-; CHECK-NEXT:          version: 4
-; CHECK-NEXT:  prologue_length: 0x00000020
-; CHECK-NEXT:  min_inst_length: 1
-; CHECK-NEXT: max_ops_per_inst: 1
-; CHECK-NEXT:  default_is_stmt: 1
-; CHECK-NEXT:        line_base: -5
-; CHECK-NEXT:       line_range: 14
-; CHECK-NEXT:      opcode_base: 13
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_copy] = 0
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_advance_pc] = 1
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_advance_line] = 1
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_set_file] = 1
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_set_column] = 1
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_negate_stmt] = 0
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_set_basic_block] = 0
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_const_add_pc] = 0
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_fixed_advance_pc] = 1
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_set_prologue_end] = 0
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_set_epilogue_begin] = 0
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_set_isa] = 1
-; CHECK-NEXT: include_directories[  1] = "."
-; CHECK-NEXT: file_names[  1]:
-; CHECK-NEXT:            name: "test.c"
-; CHECK-NEXT:       dir_index: 1
-; CHECK-NEXT:        mod_time: 0x00000000
-; CHECK-NEXT:          length: 0x00000000
-; CHECK:             Address            Line   Column File   ISA Discriminator Flags
-; CHECK-NEXT:             ------------------ ------ ------ ------ --- ------------- -------------
-; CHECK-NEXT: 0x00000070: 00 DW_LNE_set_address (0x0000000000000010)
-; CHECK-NEXT: 0x0000007b: 16 address += 0,  line += 4
-; CHECK-NEXT:             0x0000000000000010      5      0      1   0             0  is_stmt
-; CHECK-NEXT: 0x0000007c: 05 DW_LNS_set_column (11)
-; CHECK-NEXT: 0x0000007e: 0a DW_LNS_set_prologue_end
-; CHECK-NEXT: 0x0000007f: 75 address += 7,  line += 1
-; CHECK-NEXT:             0x0000000000000017      6     11      1   0             0  is_stmt prologue_end
-; CHECK-NEXT: 0x00000080: 05 DW_LNS_set_column (10)
-; CHECK-NEXT: 0x00000082: 06 DW_LNS_negate_stmt
-; CHECK-NEXT: 0x00000083: 3c address += 3,  line += 0
-; CHECK-NEXT:             0x000000000000001a      6     10      1   0             0 
-; CHECK-NEXT: 0x00000084: 05 DW_LNS_set_column (2)
-; CHECK-NEXT: 0x00000086: 3c address += 3,  line += 0
-; CHECK-NEXT:             0x000000000000001d      6      2      1   0             0 
-; CHECK-NEXT: 0x00000087: 02 DW_LNS_advance_pc (2)
-; CHECK-NEXT: 0x00000089: 00 DW_LNE_end_sequence
-; CHECK-NEXT:             0x000000000000001f      6      2      1   0             0  end_sequence
+; CHECK: 0x{{[0-9a-z]+}}:   DW_TAG_subprogram
+; CHECK-NEXT:                DW_AT_low_pc ([[LOC2:0x[0-9a-z]+]])
 
-; CHECK: debug_line[0x0000008c]
+; CHECK: 0x{{[0-9a-z]+}}:   DW_TAG_subprogram
+; CHECK-NEXT:                DW_AT_low_pc ([[LOC3:0x[0-9a-z]+]])
+
+; CHECK: debug_line[0x{{[0-9a-z]+}}]
 ; CHECK-NEXT: Line table prologue:
-; CHECK-NEXT:     total_length: 0x0000004c
-; CHECK-NEXT:           format: DWARF32
-; CHECK-NEXT:          version: 4
-; CHECK-NEXT:  prologue_length: 0x00000020
-; CHECK-NEXT:  min_inst_length: 1
-; CHECK-NEXT: max_ops_per_inst: 1
-; CHECK-NEXT:  default_is_stmt: 1
-; CHECK-NEXT:        line_base: -5
-; CHECK-NEXT:       line_range: 14
-; CHECK-NEXT:      opcode_base: 13
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_copy] = 0
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_advance_pc] = 1
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_advance_line] = 1
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_set_file] = 1
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_set_column] = 1
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_negate_stmt] = 0
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_set_basic_block] = 0
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_const_add_pc] = 0
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_fixed_advance_pc] = 1
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_set_prologue_end] = 0
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_set_epilogue_begin] = 0
-; CHECK-NEXT: standard_opcode_lengths[DW_LNS_set_isa] = 1
-; CHECK-NEXT: include_directories[  1] = "."
-; CHECK-NEXT: file_names[  1]:
-; CHECK-NEXT:            name: "test.c"
-; CHECK-NEXT:       dir_index: 1
-; CHECK-NEXT:        mod_time: 0x00000000
-; CHECK-NEXT:          length: 0x00000000
-; CHECK:             Address            Line   Column File   ISA Discriminator Flags
-; CHECK-NEXT:             ------------------ ------ ------ ------ --- ------------- -------------
-; CHECK-NEXT: 0x000000b6: 00 DW_LNE_set_address (0x0000000000000020)
-; CHECK-NEXT: 0x000000c1: 1a address += 0,  line += 8
-; CHECK-NEXT:             0x0000000000000020      9      0      1   0             0  is_stmt
-; CHECK-NEXT: 0x000000c2: 05 DW_LNS_set_column (13)
-; CHECK-NEXT: 0x000000c4: 0a DW_LNS_set_prologue_end
-; CHECK-NEXT: 0x000000c5: 08 DW_LNS_const_add_pc (0x0000000000000011)
-; CHECK-NEXT: 0x000000c6: 67 address += 6,  line += 1
-; CHECK-NEXT:             0x0000000000000037     10     13      1   0             0  is_stmt prologue_end
-; CHECK-NEXT: 0x000000c7: 05 DW_LNS_set_column (9)
-; CHECK-NEXT: 0x000000c9: 06 DW_LNS_negate_stmt
-; CHECK-NEXT: 0x000000ca: 3c address += 3,  line += 0
-; CHECK-NEXT:             0x000000000000003a     10      9      1   0             0 
-; CHECK-NEXT: 0x000000cb: 05 DW_LNS_set_column (25)
-; CHECK-NEXT: 0x000000cd: 74 address += 7,  line += 0
-; CHECK-NEXT:             0x0000000000000041     10     25      1   0             0 
-; CHECK-NEXT: 0x000000ce: 05 DW_LNS_set_column (21)
-; CHECK-NEXT: 0x000000d0: 3c address += 3,  line += 0
-; CHECK-NEXT:             0x0000000000000044     10     21      1   0             0 
-; CHECK-NEXT: 0x000000d1: 05 DW_LNS_set_column (19)
-; CHECK-NEXT: 0x000000d3: 58 address += 5,  line += 0
-; CHECK-NEXT:             0x0000000000000049     10     19      1   0             0 
-; CHECK-NEXT: 0x000000d4: 05 DW_LNS_set_column (2)
-; CHECK-NEXT: 0x000000d6: 2e address += 2,  line += 0
-; CHECK-NEXT:             0x000000000000004b     10      2      1   0             0 
-; CHECK-NEXT: 0x000000d7: 02 DW_LNS_advance_pc (9)
-; CHECK-NEXT: 0x000000d9: 00 DW_LNE_end_sequence
-; CHECK-NEXT:             0x0000000000000054     10      2      1   0             0  end_sequence
+
+; CHECK: Address            Line   Column File   ISA Discriminator Flags
+; CHECK-NEXT: ------------------ ------ ------ ------ --- ------------- -------------
+; CHECK-NEXT: [[LOC1]]      1      0      1   0             0  is_stmt
+
+; CHECK: debug_line[0x{{[0-9a-z]+}}]
+; CHECK-NEXT: Line table prologue:
+
+; CHECK: Address            Line   Column File   ISA Discriminator Flags
+; CHECK-NEXT: ------------------ ------ ------ ------ --- ------------- -------------
+; CHECK-NEXT: [[LOC2]]      5      0      1   0             0  is_stmt
+
+; CHECK: debug_line[0x{{[0-9a-z]+}}]
+; CHECK-NEXT: Line table prologue:
+
+; CHECK Address            Line   Column File   ISA Discriminator Flags
+; CHECK-NEXT ------------------ ------ ------ ------ --- ------------- -------------
+; CHECK-NEXT [[LOC3]]      9      0      1   0             0  is_stmt
 
 ; ModuleID = './test.c'
 source_filename = "./test.c"
