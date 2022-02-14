@@ -182,6 +182,7 @@ let Definition = "target" in {
     DefaultStringValue<"">,
     Desc<"List of directories to be searched when locating modules for Swift.">;
   def SwiftExtraClangFlags: Property<"swift-extra-clang-flags", "String">,
+    Global,
     DefaultStringValue<"">,
     Desc<"Additional -Xcc flags to be passed to the Swift ClangImporter.">;
   def UseAllCompilerFlags: Property<"use-all-compiler-flags", "Boolean">,
