@@ -9,6 +9,7 @@
 #include "llvm/CASObjectFormats/Utils.h"
 #include "llvm/CASObjectFormats/CASObjectReader.h"
 #include "llvm/ExecutionEngine/JITLink/JITLink.h"
+#include "llvm/Support/CommandLine.h"
 
 using namespace llvm;
 using namespace llvm::casobjectformats;
@@ -74,6 +75,10 @@ static std::string getDescription(StringRef Name, const CASSymbol &Info) {
   return Description;
   return Info.Name.str();
 }
+
+static cl::opt<bool> SortSections("print-cas-object-sort-sections",
+                                  cl::desc("Sort sections before printing"),
+                                  cl::init(false));
 
 Error casobjectformats::printCASObject(const reader::CASObjectReader &Reader,
                                        raw_ostream &OS) {
@@ -234,15 +239,19 @@ Error casobjectformats::printCASObject(const reader::CASObjectReader &Reader,
       return E;
   }
 
+  if (SortSections) {
+    llvm::sort(Sections, [](const auto &LHS, const auto &RHS) {
+      return LHS->Description < RHS->Description;
+    });
+  }
   for (const auto &Section : Sections) {
     OS << "SECTION: " << Section->Description << '\n';
     OS << "{\n";
     for (const auto *Block : Section->Blocks) {
       OS.indent(2) << "BLOCK: " << Block->Description << '\n';
       OS.indent(2) << "{\n";
-      OS.indent(4) << "Symbols:\n";
       for (const auto *Symbol : Block->Symbols) {
-        OS.indent(6) << Symbol->Description;
+        OS.indent(4) << "SYMBOL: " << Symbol->Description;
         if (Section->Name == "__TEXT,__cstring") {
           OS << " | \"";
           OS.write_escaped(&Block->Content[Symbol->Offset]);
@@ -250,11 +259,8 @@ Error casobjectformats::printCASObject(const reader::CASObjectReader &Reader,
         }
         OS << '\n';
       }
-      if (!Block->Fixups.empty()) {
-        OS.indent(4) << "Fixups:\n";
-        for (const auto &Fixup : Block->Fixups) {
-          OS.indent(6) << Fixup.Description << '\n';
-        }
+      for (const auto &Fixup : Block->Fixups) {
+        OS.indent(4) << "FIXUP: " << Fixup.Description << '\n';
       }
       OS.indent(2) << "}\n";
     }

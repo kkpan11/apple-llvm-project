@@ -920,6 +920,7 @@ public:
   cas::CASID getIndirectAnonymousID() const { return getReference(4); }
   cas::CASID getStrongExternalsID() const { return getReference(5); }
   cas::CASID getWeakExternalsID() const { return getReference(6); }
+  cas::CASID getUnreferencedID() const { return getReference(7); }
   Expected<SymbolTableRef> getDeadStripNever() const {
     return SymbolTableRef::get(getSchema().getNode(getDeadStripNeverID()));
   }
@@ -939,6 +940,9 @@ public:
   Expected<NameListRef> getWeakExternals() const {
     return NameListRef::get(getSchema().getNode(getWeakExternalsID()));
   }
+  Expected<SymbolTableRef> getUnreferenced() const {
+    return SymbolTableRef::get(getSchema().getNode(getUnreferencedID()));
+  }
 
   Expected<std::unique_ptr<reader::CASObjectReader>> createObjectReader();
 
@@ -952,7 +956,7 @@ public:
          support::endianness Endianness, SymbolTableRef DeadStripNever,
          SymbolTableRef DeadStripLink, SymbolTableRef IndirectDeadStripCompile,
          SymbolTableRef IndirectAnonymous, NameListRef StrongExternals,
-         NameListRef WeakExternals);
+         NameListRef WeakExternals, SymbolTableRef Unreferenced);
 
   /// Create a compile unit out of \p G.
   ///

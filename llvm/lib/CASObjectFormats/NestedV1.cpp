@@ -7,8 +7,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/CASObjectFormats/NestedV1.h"
+#include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/PointerUnion.h"
 #include "llvm/ADT/PostOrderIterator.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/CASObjectFormats/CASObjectReader.h"
 #include "llvm/CASObjectFormats/Encoding.h"
 #include "llvm/CASObjectFormats/ObjectFormatHelpers.h"
@@ -16,6 +18,7 @@
 #include "llvm/ExecutionEngine/Orc/Shared/ExecutorAddress.h"
 #include "llvm/Support/EndianStream.h"
 #include "llvm/Support/Mutex.h"
+#include "llvm/Support/Threading.h"
 
 // FIXME: For cl::opt. Should thread through or delete.
 #include "llvm/Support/CommandLine.h"
@@ -974,6 +977,21 @@ cl::opt<bool> UseDeadStripCompileForLocals(
     "use-dead-strip-compile-for-locals",
     cl::desc("Use DeadStrip=CompileUnit for local symbols."), cl::init(true));
 
+cl::opt<bool> DeadStripByDefault(
+    "dead-strip",
+    cl::desc("Dead-strip unreferenced symbols in any section. Use "
+             "--dead-strip-section to just dead strip named sections."),
+    cl::init(false));
+
+cl::list<std::string> DeadStripSections(
+    "dead-strip-section",
+    cl::desc("Dead-strip unreferenced symbols in the named sections."));
+
+cl::list<std::string> KeepAliveSections(
+    "keep-alive-section",
+    cl::desc("Keep all unreferenced symbols in the named sections. "
+             "Stronger than --dead-strip or --dead-strip-section."));
+
 cl::opt<bool>
     KeepStaticInitializersAlive("keep-static-initializers-alive",
                                 cl::desc("Keep '__TEXT,__constructor' alive."),
@@ -985,6 +1003,46 @@ cl::opt<bool>
     KeepCompactUnwindAlive("keep-compact-unwind-alive",
                            cl::desc("Keep '__LD,__compact_unwind' alive."),
                            cl::init(true));
+
+static bool shouldKeepAliveInSection(StringRef SectionName) {
+  static StringSet<> KeepAlive;
+  static once_flag Once;
+  llvm::call_once(Once, [&]() {
+    for (StringRef S : KeepAliveSections)
+      KeepAlive.insert(S);
+
+    // FIXME: Stop using hardcoded section names.
+    if (KeepStaticInitializersAlive) {
+      KeepAlive.insert("__DATA,__mod_init_func");
+      KeepAlive.insert("__TEXT,__constructor");
+    }
+    if (KeepCompactUnwindAlive)
+      KeepAlive.insert("__LD,__compact_unwind");
+  });
+  return KeepAlive.count(SectionName);
+}
+
+static bool shouldDeadStripInSection(StringRef SectionName) {
+  static StringSet<> DeadStrip;
+  static once_flag Once;
+  llvm::call_once(Once, [&]() {
+    for (StringRef S : DeadStripSections)
+      DeadStrip.insert(S);
+  });
+  return DeadStrip.count(SectionName);
+}
+
+static bool shouldKeepAlive(const jitlink::Symbol &S) {
+  return S.isDefined() &&
+         shouldKeepAliveInSection(S.getBlock().getSection().getName());
+}
+
+static bool shouldDeadStrip(const jitlink::Symbol &S) {
+  if (DeadStripByDefault)
+    return true;
+  return !S.isDefined() ||
+         shouldDeadStripInSection(S.getBlock().getSection().getName());
+}
 
 SymbolRef::Flags SymbolRef::getFlags(const jitlink::Symbol &S) {
   Flags F;
@@ -1007,21 +1065,8 @@ SymbolRef::Flags SymbolRef::getFlags(const jitlink::Symbol &S) {
       (S.getLinkage() == jitlink::Linkage::Strong ? M_Never : M_ByName) |
       (IsAutoHide ? M_ByContent : M_Never));
 
-  bool IsLiveSection = false;
-  if (S.isDefined()) {
-    StringRef Name = S.getBlock().getSection().getName();
-
-    // FIXME: Stop using hardcoded section names.
-    if (KeepStaticInitializersAlive) {
-      IsLiveSection |=
-          Name == "__DATA,__mod_init_func" || Name == "__TEXT,__constructor";
-    }
-    if (KeepCompactUnwindAlive)
-      IsLiveSection |= Name == "__LD,__compact_unwind";
-  }
-
   // FIXME: Can we detect DS_CompileUnit in more cases?
-  F.DeadStrip = (S.isLive() || IsLiveSection)
+  F.DeadStrip = (S.isLive() || shouldKeepAlive(S))
                     ? DS_Never
                     : (IsAutoHide || (UseDeadStripCompileForLocals &&
                                       S.getScope() == jitlink::Scope::Local))
@@ -1092,7 +1137,7 @@ CompileUnitRef::get(Expected<ObjectFormatNodeRef> Ref) {
   if (!Specific)
     return Specific.takeError();
 
-  if (Specific->getNumReferences() != 7)
+  if (Specific->getNumReferences() != 8)
     return createStringError(inconvertibleErrorCode(),
                              "corrupt compile unit refs");
 
@@ -1128,7 +1173,7 @@ Expected<CompileUnitRef> CompileUnitRef::create(
     support::endianness Endianness, SymbolTableRef DeadStripNever,
     SymbolTableRef DeadStripLink, SymbolTableRef IndirectDeadStripCompile,
     SymbolTableRef IndirectAnonymous, NameListRef StrongSymbols,
-    NameListRef WeakSymbols) {
+    NameListRef WeakSymbols, SymbolTableRef Unreferenced) {
   Expected<Builder> B = Builder::startRootNode(Schema, KindString);
   if (!B)
     return B.takeError();
@@ -1141,7 +1186,7 @@ Expected<CompileUnitRef> CompileUnitRef::create(
 
   assert(B->IDs.size() == 1 && "Expected the root type-id?");
   B->IDs.append({DeadStripNever, DeadStripLink, IndirectDeadStripCompile,
-                 IndirectAnonymous, StrongSymbols, WeakSymbols});
+                 IndirectAnonymous, StrongSymbols, WeakSymbols, Unreferenced});
   return get(B->build());
 }
 
@@ -1366,6 +1411,8 @@ public:
   SmallVector<SymbolRef> DeadStripLinkSymbols;
   SmallVector<SymbolRef> IndirectDeadStripCompileSymbols;
   SmallVector<SymbolRef> IndirectAnonymousSymbols;
+  SmallVector<SymbolRef> UnreferencedSymbols;
+  MapVector<const jitlink::Symbol *, bool> UnreferencedSymbolsMap;
   SmallVector<NameRef> StrongExternals;
   SmallVector<NameRef> WeakExternals;
 
@@ -1450,6 +1497,11 @@ Error CompileUnitBuilder::makeSymbols(const jitlink::LinkGraph &G) {
           return E;
   }
 
+  // Fill the UnreferencedSymbols table.
+  for (const auto &I : UnreferencedSymbolsMap)
+    if (!I.second)
+      UnreferencedSymbols.push_back(*this->Symbols.lookup(I.first).Symbol);
+
   return Error::success();
 }
 
@@ -1498,12 +1550,22 @@ Error CompileUnitBuilder::createSymbol(const jitlink::Symbol &S) {
   // Check if the symbol should be indexed at the top level.
   switch (Symbol->getDeadStrip()) {
   case SymbolRef::DS_Never:
+    // All KeepAlive symbols end up here. That'll include attribute((used)).
     DeadStripNeverSymbols.push_back(*Symbol);
     break;
   case SymbolRef::DS_LinkUnit:
+    // All symbols that the compiler was not allowed to dead-strip end up here.
+    // For C++, that typically excludes inlines, templates, and local symbols,
+    // which end up in the next case.
     DeadStripLinkSymbols.push_back(*Symbol);
     break;
   case SymbolRef::DS_CompileUnit:
+    // Collect dead-strippable symbols that are referenced indirectly (i.e., by
+    // name) in IndirectDeadStripCompileSymbols.
+    //
+    // Remaining symbols are added to UnreferencedSymbolsMap. If a reference is
+    // added later, the value will be set to true.
+    //
     // FIXME: Fine-tune what goes here. The "named" table needs anything that
     // might be found by symbol name, so that's anything that gets referenced
     // indirectly (not by a direct CAS link).
@@ -1519,6 +1581,8 @@ Error CompileUnitBuilder::createSymbol(const jitlink::Symbol &S) {
     //   to be find-able by name.
     if (HasIndirectReference)
       IndirectDeadStripCompileSymbols.push_back(*Symbol);
+    else if (!shouldDeadStrip(S))
+      UnreferencedSymbolsMap.insert({&S, false});
     break;
   }
 
@@ -1588,6 +1652,13 @@ CompileUnitBuilder::getOrCreateTarget(const jitlink::Symbol &S,
   if (UseAbstractBackedgeForPCBeginInFDEDuringBlockIngestion &&
       isPCBeginFromFDE(S, SourceBlock))
     return None;
+
+  // Mark this symbol as NOT being unreferenced.
+  {
+    auto I = UnreferencedSymbolsMap.find(&S);
+    if (I != UnreferencedSymbolsMap.end())
+      I->second = true;
+  }
 
   // Check if the target exists already.
   auto &Info = Symbols[&S];
@@ -1680,11 +1751,15 @@ Expected<CompileUnitRef> CompileUnitRef::create(const ObjectFileSchema &Schema,
       NameListRef::create(Schema, Builder.WeakExternals);
   if (!WeakExternals)
     return WeakExternals.takeError();
+  Expected<SymbolTableRef> Unreferenced =
+      SymbolTableRef::create(Schema, Builder.UnreferencedSymbols);
+  if (!Unreferenced)
+    return Unreferenced.takeError();
 
   return CompileUnitRef::create(Schema, G.getTargetTriple(), G.getPointerSize(),
                                 G.getEndianness(), *NeverTable, *LinkTable,
                                 *CompileTable, *AnonymousTable,
-                                *StrongExternals, *WeakExternals);
+                                *StrongExternals, *WeakExternals, *Unreferenced);
 }
 
 namespace llvm {
@@ -1723,6 +1798,8 @@ Error NestedV1ObjectReader::forEachSymbol(
   if (Error E = forEachSymbol(CURef.getDeadStripLink(), Callback))
     return E;
   if (Error E = forEachSymbol(CURef.getDeadStripNever(), Callback))
+    return E;
+  if (Error E = forEachSymbol(CURef.getUnreferenced(), Callback))
     return E;
   return Error::success();
 }
