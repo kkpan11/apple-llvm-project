@@ -3179,7 +3179,7 @@ Expected<std::unique_ptr<OnDiskCAS>> OnDiskCAS::open(StringRef AbsPath) {
   if (Error E = OnDiskHashMappedTrie::create(
                     AbsPath + Slash + FilePrefix + IndexFile, IndexTableName,
                     sizeof(HashType) * 8,
-                    /*DataSize=*/sizeof(TrieRecord), /*MaxFileSize=*/GB,
+                    /*DataSize=*/sizeof(TrieRecord), /*MaxFileSize=*/8 * GB,
                     /*MinFileSize=*/MB)
                     .moveInto(Index))
     return std::move(E);
