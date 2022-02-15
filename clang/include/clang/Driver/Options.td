@@ -2957,6 +2957,8 @@ def g_Flag : Flag<["-"], "g">, Group<g_Group>,
   HelpText<"Generate source-level debug information">;
 def gline_tables_only : Flag<["-"], "gline-tables-only">, Group<gN_Group>,
   Flags<[CoreOption]>, HelpText<"Emit debug line number tables only">;
+def gcas_friendly_debug_info : Flag<["-"], "gcas-friendly-debug-info">, Group<gN_Group>,
+  Flags<[CoreOption]>, HelpText<"Emit debug information that is cas friendly">;
 def gline_directives_only : Flag<["-"], "gline-directives-only">, Group<gN_Group>,
   Flags<[CoreOption]>, HelpText<"Emit debug line info directives only">;
 def gmlt : Flag<["-"], "gmlt">, Alias<gline_tables_only>;

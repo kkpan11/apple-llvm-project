@@ -1372,6 +1372,9 @@ void CompilerInvocation::GenerateCodeGenArgs(
   case codegenoptions::LocTrackingOnly: // implied value
     DebugInfoVal = None;
     break;
+  case codegenoptions::CasFriendlyDebugInfo:
+    DebugInfoVal = "cas-friendly";
+    break;
   }
   if (DebugInfoVal)
     GenerateArg(Args, OPT_debug_info_kind_EQ, *DebugInfoVal, SA);
@@ -1629,6 +1632,7 @@ bool CompilerInvocation::ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args,
             .Case("limited", codegenoptions::LimitedDebugInfo)
             .Case("standalone", codegenoptions::FullDebugInfo)
             .Case("unused-types", codegenoptions::UnusedTypeInfo)
+            .Case("cas-friendly", codegenoptions::CasFriendlyDebugInfo)
             .Default(~0U);
     if (Val == ~0U)
       Diags.Report(diag::err_drv_invalid_value) << A->getAsString(Args)

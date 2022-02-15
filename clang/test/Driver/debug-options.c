@@ -280,6 +280,15 @@
 // RUN: %clang -### -target %itanium_abi_triple -gmodules -gline-directives-only %s 2>&1 \
 // RUN:        | FileCheck -check-prefix=GLIO_ONLY %s
 //
+// RUN: %clang -### -c -gcas-friendly-debug-info %s -target x86_64-apple-darwin14 2>&1 \
+// RUN:             | FileCheck -check-prefix=G_CASFRIENDLY \
+// RUN:                         -check-prefix=G_DWARF2 \
+// RUN:                         -check-prefix=G_LLDB %s
+// RUN: %clang -### -c -gcas-friendly-debug-info %s -target x86_64-apple-darwin16 2>&1 \
+// RUN:             | FileCheck -check-prefix=G_CASFRIENDLY \
+// RUN:                         -check-prefix=G_DWARF4 \
+// RUN:                         -check-prefix=G_LLDB %s
+//
 // NOG_PS4: "-cc1"
 // NOG_PS4-NOT: "-dwarf-version=
 // NOG_PS4: "-generate-arange-section"
@@ -324,6 +333,8 @@
 //
 // G_STANDALONE: "-cc1"
 // G_STANDALONE: "-debug-info-kind=standalone"
+// G_CASFRIENDLY: "-cc1"
+// G_CASFRIENDLY: "-debug-info-kind=cas-friendly"
 // G_LIMITED: "-cc1"
 // G_LIMITED: "-debug-info-kind=constructor"
 // G_DWARF2: "-dwarf-version=2"
