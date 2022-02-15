@@ -273,6 +273,9 @@ public:
   /// Print statistics to standard output.
   void setStatistics(bool Statistics) { Options.Statistics = Statistics; }
 
+  /// Verify the input DWARF.
+  void setVerifyInputDWARF(bool Verify) { Options.VerifyInputDWARF = Verify; }
+
   /// Do not emit linked dwarf info.
   void setNoOutput(bool NoOut) { Options.NoOutput = NoOut; }
 
@@ -389,6 +392,9 @@ private:
         : Type(WorklistItemType::LookForParentDIEsToKeep), CU(CU), Flags(Flags),
           AncestorIdx(AncestorIdx) {}
   };
+
+  /// Verify the given DWARF file.
+  bool verify(const DWARFFile &File);
 
   /// returns true if we need to translate strings.
   bool needToTranslateStrings() { return StringsTranslator != nullptr; }
@@ -778,6 +784,9 @@ private:
 
     /// Print statistics.
     bool Statistics = false;
+
+    /// Verify the input DWARF.
+    bool VerifyInputDWARF = false;
 
     /// Skip emitting output
     bool NoOutput = false;
