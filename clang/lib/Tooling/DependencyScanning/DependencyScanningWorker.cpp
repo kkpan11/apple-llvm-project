@@ -159,7 +159,7 @@ public:
       llvm::IntrusiveRefCntPtr<DependencyScanningCASFilesystem> DepCASFS,
       ExcludedPreprocessorDirectiveSkipMapping *PPSkipMappings,
       bool OverrideCASTokenCache, ScanningOutputFormat Format,
-      bool OptimizeArgs, bool EmitDependencyFile = false,
+      bool OptimizeArgs, bool EmitDependencyFile,
       llvm::Optional<StringRef> ModuleName = None)
       : WorkingDirectory(WorkingDirectory), Consumer(Consumer),
         DepFS(std::move(DepFS)), DepCASFS(std::move(DepCASFS)),
@@ -482,9 +482,10 @@ void DependencyScanningWorker::computeDependenciesFromCompilerInvocation(
 
   // FIXME: EmitDependencyFile should only be set when it's for a real
   // compilation.
-  DependencyScanningAction Action(WorkingDirectory, DepsConsumer, DepFS, DepCASFS,
-                                  PPSkipMappings.get(), OverrideCASTokenCache,
-                                  Format, /*EmitDependencyFile=*/true);
+  DependencyScanningAction Action(
+      WorkingDirectory, DepsConsumer, DepFS, DepCASFS, PPSkipMappings.get(),
+      OverrideCASTokenCache, Format, /*OptimizeArgs=*/false,
+      /*EmitDependencyFile=*/true);
 
   // Ignore result; we're just collecting dependencies.
   //
