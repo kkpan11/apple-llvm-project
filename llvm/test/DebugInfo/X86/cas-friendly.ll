@@ -10,6 +10,8 @@
 ; CHECK: 0x{{[0-9a-z]+}}:   DW_TAG_subprogram
 ; CHECK-NEXT:                DW_AT_low_pc ([[LOC3:0x[0-9a-z]+]])
 
+; This test is checking if the cas-friendly debug info splits the line table into multiple parts per function, that is why the checks below are checking for three seperate line tables for three distinct functions in this test
+
 ; CHECK: debug_line[0x{{[0-9a-z]+}}]
 ; CHECK-NEXT: Line table prologue:
 
@@ -81,7 +83,7 @@ entry:
   ret i32 %add, !dbg !42
 }
 
-attributes #0 = { noinline nounwind optnone ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
+attributes #0 = { noinline nounwind optnone ssp uwtable }
 attributes #1 = { nofree nosync nounwind readnone speculatable willreturn }
 
 !llvm.dbg.cu = !{!0}
