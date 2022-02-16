@@ -84,5 +84,8 @@ class TestLibraryResilient(TestBase):
         self.expect("fr var", substrs=[
             "(SomeLibrary.ContainsTwoInts) container = {", "other = 10",
             "(Int) simple = 1"])
-        self.expect("e container", substrs=["(SomeLibrary.ContainsTwoInts)", "other = 10"])
+        self.expect("e container", substrs=["(SomeLibrary.ContainsTwoInts)"
+                                            # FIXME: rdar:// , "other = 10"
+                                            ]
+        )
         self.expect("e container.wrapped", error=True, substrs=["value of type 'ContainsTwoInts' has no member 'wrapped'"])
