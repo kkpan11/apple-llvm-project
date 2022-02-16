@@ -188,6 +188,9 @@ public:
     ScanInstance.getPreprocessorOpts().AllowPCHWithDifferentModulesCachePath =
         true;
 
+    ScanInstance.getFrontendOpts().GenerateGlobalModuleIndex = false;
+    ScanInstance.getFrontendOpts().UseGlobalModuleIndex = false;
+
     FileMgr->getFileSystemOpts().WorkingDir = std::string(WorkingDirectory);
     ScanInstance.setFileManager(FileMgr);
     ScanInstance.createSourceManager(*FileMgr);
