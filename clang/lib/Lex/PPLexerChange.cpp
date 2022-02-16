@@ -134,7 +134,7 @@ void Preprocessor::EnterSourceFileWithLexer(Lexer *TheLexer,
 /// EnterSourceFileWithPTH - Add a source file to the top of the include stack
 /// and start getting tokens from it using the PTH cache.
 void Preprocessor::EnterSourceFileWithPTH(std::unique_ptr<PTHLexer> PL,
-                                          const DirectoryLookup *CurDir) {
+                                          ConstSearchDirIterator CurDir) {
 
   if (CurPPLexer || CurTokenLexer)
     PushIncludeMacroStack();

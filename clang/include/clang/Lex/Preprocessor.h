@@ -2281,7 +2281,7 @@ private:
   /// Add a lexer to the top of the include stack and
   /// start getting tokens from it using the PTH cache.
   void EnterSourceFileWithPTH(std::unique_ptr<PTHLexer> PL,
-                              const DirectoryLookup *Dir);
+                              ConstSearchDirIterator Dir);
 
   /// Set the FileID for the preprocessor predefines.
   void setPredefinesFileID(FileID FID) {
