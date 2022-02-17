@@ -10,7 +10,7 @@
 #define LLDB_SOURCE_PLUGINS_PROCESS_MACOSX_KERNEL_PROCESSKDPLOG_H
 
 #include "lldb/Utility/Log.h"
-
+#include "llvm/ADT/BitmaskEnum.h"
 
 namespace lldb_private {
 
