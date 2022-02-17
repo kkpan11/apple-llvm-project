@@ -315,7 +315,7 @@ void SymbolFileBreakpad::FindTypes(
     llvm::DenseSet<SymbolFile *> &searched_symbol_files, TypeMap &types) {}
 
 void SymbolFileBreakpad::AddSymbols(Symtab &symtab) {
-  Log *log = GetLogIfAllCategoriesSet(LIBLLDB_LOG_SYMBOLS);
+  Log *log = GetLog(LLDBLog::Symbols);
   Module &module = *m_objfile_sp->GetModule();
   addr_t base = GetBaseFileAddress();
   if (base == LLDB_INVALID_ADDRESS) {
@@ -446,7 +446,7 @@ llvm::ArrayRef<uint8_t> SymbolFileBreakpad::SaveAsDWARF(postfix::Node &node) {
 bool SymbolFileBreakpad::ParseCFIUnwindRow(llvm::StringRef unwind_rules,
                                         const RegisterInfoResolver &resolver,
                                         UnwindPlan::Row &row) {
-  Log *log = GetLogIfAllCategoriesSet(LIBLLDB_LOG_SYMBOLS);
+  Log *log = GetLog(LLDBLog::Symbols);
 
   llvm::BumpPtrAllocator node_alloc;
   llvm::Triple triple = m_objfile_sp->GetArchitecture().GetTriple();
@@ -555,7 +555,7 @@ SymbolFileBreakpad::ParseCFIUnwindPlan(const Bookmark &bookmark,
 UnwindPlanSP
 SymbolFileBreakpad::ParseWinUnwindPlan(const Bookmark &bookmark,
                                        const RegisterInfoResolver &resolver) {
-  Log *log = GetLogIfAllCategoriesSet(LIBLLDB_LOG_SYMBOLS);
+  Log *log = GetLog(LLDBLog::Symbols);
   addr_t base = GetBaseFileAddress();
   if (base == LLDB_INVALID_ADDRESS)
     return nullptr;
@@ -659,7 +659,7 @@ void SymbolFileBreakpad::ParseFileRecords() {
     return;
   m_files.emplace();
 
-  Log *log = GetLogIfAllCategoriesSet(LIBLLDB_LOG_SYMBOLS);
+  Log *log = GetLog(LLDBLog::Symbols);
   for (llvm::StringRef line : lines(Record::File)) {
     auto record = FileRecord::parse(line);
     if (!record) {
@@ -680,7 +680,7 @@ void SymbolFileBreakpad::ParseCUData() {
     return;
 
   m_cu_data.emplace();
-  Log *log = GetLogIfAllCategoriesSet(LIBLLDB_LOG_SYMBOLS);
+  Log *log = GetLog(LLDBLog::Symbols);
   addr_t base = GetBaseFileAddress();
   if (base == LLDB_INVALID_ADDRESS) {
     LLDB_LOG(log, "SymbolFile parsing failed: Unable to fetch the base address "
@@ -755,7 +755,7 @@ void SymbolFileBreakpad::ParseUnwindData() {
     return;
   m_unwind_data.emplace();
 
-  Log *log = GetLogIfAllCategoriesSet(LIBLLDB_LOG_SYMBOLS);
+  Log *log = GetLog(LLDBLog::Symbols);
   addr_t base = GetBaseFileAddress();
   if (base == LLDB_INVALID_ADDRESS) {
     LLDB_LOG(log, "SymbolFile parsing failed: Unable to fetch the base address "
