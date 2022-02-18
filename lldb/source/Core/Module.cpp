@@ -38,8 +38,8 @@
 #include "lldb/Target/Target.h"
 #include "lldb/Utility/DataBufferHeap.h"
 #include "lldb/Utility/LLDBAssert.h"
+#include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
-#include "lldb/Utility/Logging.h"
 #include "lldb/Utility/RegularExpression.h"
 #include "lldb/Utility/Status.h"
 #include "lldb/Utility/Stream.h"
@@ -139,8 +139,7 @@ Module::Module(const ModuleSpec &module_spec)
     GetModuleCollection().push_back(this);
   }
 
-  Log *log(lldb_private::GetLogIfAnyCategoriesSet(LIBLLDB_LOG_OBJECT |
-                                                  LIBLLDB_LOG_MODULES));
+  Log *log(GetLog(LLDBLog::Object | LLDBLog::Modules));
   if (log != nullptr)
     LLDB_LOGF(log, "%p Module::Module((%s) '%s%s%s%s')",
               static_cast<void *>(this),
@@ -252,8 +251,7 @@ Module::Module(const FileSpec &file_spec, const ArchSpec &arch,
   if (object_name)
     m_object_name = *object_name;
 
-  Log *log(lldb_private::GetLogIfAnyCategoriesSet(LIBLLDB_LOG_OBJECT |
-                                                  LIBLLDB_LOG_MODULES));
+  Log *log(GetLog(LLDBLog::Object | LLDBLog::Modules));
   if (log != nullptr)
     LLDB_LOGF(log, "%p Module::Module((%s) '%s%s%s%s')",
               static_cast<void *>(this), m_arch.GetArchitectureName(),
@@ -282,8 +280,7 @@ Module::~Module() {
     assert(pos != end);
     modules.erase(pos);
   }
-  Log *log(lldb_private::GetLogIfAnyCategoriesSet(LIBLLDB_LOG_OBJECT |
-                                                  LIBLLDB_LOG_MODULES));
+  Log *log(GetLog(LLDBLog::Object | LLDBLog::Modules));
   if (log != nullptr)
     LLDB_LOGF(log, "%p Module::~Module((%s) '%s%s%s%s')",
               static_cast<void *>(this), m_arch.GetArchitectureName(),
@@ -1664,10 +1661,10 @@ void Module::RegisterXcodeSDK(llvm::StringRef sdk_name, llvm::StringRef sysroot)
 bool Module::MergeArchitecture(const ArchSpec &arch_spec) {
   if (!arch_spec.IsValid())
     return false;
-  LLDB_LOG(GetLogIfAllCategoriesSet(LIBLLDB_LOG_OBJECT | LIBLLDB_LOG_MODULES),
-           "module has arch %s, merging/replacing with arch %s",
-           m_arch.GetTriple().getTriple().c_str(),
-           arch_spec.GetTriple().getTriple().c_str());
+  LLDB_LOGF(GetLog(LLDBLog::Object | LLDBLog::Modules),
+            "module has arch %s, merging/replacing with arch %s",
+            m_arch.GetTriple().getTriple().c_str(),
+            arch_spec.GetTriple().getTriple().c_str());
   if (!m_arch.IsCompatibleMatch(arch_spec)) {
     // The new architecture is different, we just need to replace it.
     return SetArchitecture(arch_spec);
