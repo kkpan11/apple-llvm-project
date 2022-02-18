@@ -11,8 +11,8 @@
 #include "lldb/Core/RichManglingContext.h"
 #include "lldb/Target/Language.h"
 #include "lldb/Utility/ConstString.h"
+#include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
-#include "lldb/Utility/Logging.h"
 #include "lldb/Utility/RegularExpression.h"
 #include "lldb/Utility/Stream.h"
 #include "lldb/lldb-enumerations.h"
@@ -169,7 +169,7 @@ static char *GetMSVCDemangledStr(const char *M) {
           llvm::MSDF_NoAccessSpecifier | llvm::MSDF_NoCallingConvention |
           llvm::MSDF_NoMemberType | llvm::MSDF_NoVariableType));
 
-  if (Log *log = lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_DEMANGLE)) {
+  if (Log *log = GetLog(LLDBLog::Demangle)) {
     if (demangled_cstr && demangled_cstr[0])
       LLDB_LOGF(log, "demangled msvc: %s -> \"%s\"", M, demangled_cstr);
     else
@@ -196,7 +196,7 @@ static char *GetItaniumDemangledStr(const char *M) {
            "Expected demangled_size to return length including trailing null");
   }
 
-  if (Log *log = lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_DEMANGLE)) {
+  if (Log *log = GetLog(LLDBLog::Demangle)) {
     if (demangled_cstr)
       LLDB_LOGF(log, "demangled itanium: %s -> \"%s\"", M, demangled_cstr);
     else
@@ -209,7 +209,7 @@ static char *GetItaniumDemangledStr(const char *M) {
 static char *GetRustV0DemangledStr(const char *M) {
   char *demangled_cstr = llvm::rustDemangle(M, nullptr, nullptr, nullptr);
 
-  if (Log *log = lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_DEMANGLE)) {
+  if (Log *log = GetLog(LLDBLog::Demangle)) {
     if (demangled_cstr && demangled_cstr[0])
       LLDB_LOG(log, "demangled rustv0: {0} -> \"{1}\"", M, demangled_cstr);
     else
@@ -319,7 +319,7 @@ ConstString Mangled::GetDemangledName(// BEGIN SWIFT
     else if (mangling_scheme == eManglingSchemeNone &&
                !m_mangled.GetMangledCounterpart(m_demangled) &&
                SwiftLanguageRuntime::IsSwiftMangledName(m_mangled.GetStringRef())) {
-      Log *log = lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_DEMANGLE);
+      Log *log = GetLog(LLDBLog::Demangle);
       if (log)
         log->Printf("demangle swift: %s", mangled_name);
       std::string demangled(SwiftLanguageRuntime::DemangleSymbolAsString(

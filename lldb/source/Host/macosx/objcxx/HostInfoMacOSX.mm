@@ -6,14 +6,15 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/Host/macosx/HostInfoMacOSX.h"
+#include "Utility/UuidCompatibility.h"
 #include "lldb/Host/FileSystem.h"
 #include "lldb/Host/Host.h"
 #include "lldb/Host/HostInfo.h"
-#include "lldb/Host/macosx/HostInfoMacOSX.h"
 #include "lldb/Utility/Args.h"
+#include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
 #include "lldb/Utility/Timer.h"
-#include "Utility/UuidCompatibility.h"
 
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringMap.h"
@@ -156,7 +157,7 @@ bool HostInfoMacOSX::ComputeSupportExeDirectory(FileSpec &file_spec) {
     FileSpec support_dir_spec(raw_path);
     FileSystem::Instance().Resolve(support_dir_spec);
     if (!FileSystem::Instance().IsDirectory(support_dir_spec)) {
-      Log *log = lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_HOST);
+      Log *log = GetLog(LLDBLog::Host);
       LLDB_LOGF(log, "HostInfoMacOSX::%s(): failed to find support directory",
                 __FUNCTION__);
       return false;
@@ -455,7 +456,7 @@ static std::string GetXcodeSDK(XcodeSDK sdk) {
       if (!path.empty())
         break;
     }
-    Log *log = lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_HOST);
+    Log *log = GetLog(LLDBLog::Host);
     LLDB_LOGF(log, "Couldn't find SDK %s on host", sdk_name.c_str());
 
     // Try without the version.

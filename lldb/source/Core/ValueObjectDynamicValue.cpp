@@ -16,8 +16,8 @@
 #include "lldb/Target/Process.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Utility/DataExtractor.h"
+#include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
-#include "lldb/Utility/Logging.h"
 #include "lldb/Utility/Scalar.h"
 #include "lldb/Utility/Status.h"
 #include "lldb/lldb-types.h"
@@ -125,7 +125,7 @@ lldb::ValueType ValueObjectDynamicValue::GetValueType() const {
 }
 
 bool ValueObjectDynamicValue::UpdateValue() {
-  Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_TYPES));
+  Log *log = GetLog(LLDBLog::Types);
 
   SetValueIsValid(false);
   m_error.Clear();

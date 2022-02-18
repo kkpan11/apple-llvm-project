@@ -62,7 +62,7 @@ SymbolFileDWARFDebugMap::CompileUnitInfo::GetFileRangeMap(
   if (!oso_objfile)
     return file_range_map;
 
-  Log *log(LogChannelDWARF::GetLogIfAll(DWARF_LOG_DEBUG_MAP));
+  Log *log = GetLog(DWARFLog::DebugMap);
   LLDB_LOGF(
       log,
       "%p: SymbolFileDWARFDebugMap::CompileUnitInfo::GetFileRangeMap ('%s')",
@@ -287,7 +287,7 @@ void SymbolFileDWARFDebugMap::InitOSO() {
 
   Symtab *symtab = m_objfile_sp->GetSymtab();
   if (symtab) {
-    Log *log(LogChannelDWARF::GetLogIfAll(DWARF_LOG_DEBUG_MAP));
+    Log *log = GetLog(DWARFLog::DebugMap);
 
     std::vector<uint32_t> oso_indexes;
     // When a mach-o symbol is encoded, the n_type field is encoded in bits
@@ -1458,7 +1458,7 @@ SymbolFileDWARFDebugMap::AddOSOARanges(SymbolFileDWARF *dwarf2Data,
 
 std::vector<DataBufferSP>
 SymbolFileDWARFDebugMap::GetASTData(lldb::LanguageType language) {
-  Log *log(LogChannelDWARF::GetLogIfAll(DWARF_LOG_DEBUG_MAP));
+  Log *log = GetLog(DWARFLog::DebugMap);
 
   std::vector<DataBufferSP> ast_datas;
   if (language != eLanguageTypeSwift) {

@@ -23,6 +23,7 @@
 #include "lldb/Target/Target.h"
 #include "lldb/Target/ThreadPlanStepOverRange.h"
 #include "lldb/Target/ThreadPlanStepThrough.h"
+#include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
 
 #include <memory>
@@ -52,7 +53,7 @@ ThreadPlanStepOut::ThreadPlanStepOut(
       m_stop_others(stop_others), m_immediate_step_from_function(nullptr),
       m_is_swift_error_value(false),
       m_calculate_return_value(gather_return_value) {
-  Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_STEP));
+  Log *log = GetLog(LLDBLog::Step);
   SetFlagsToDefault();
   SetupAvoidNoDebug(step_out_avoids_code_without_debug_info);
 
@@ -413,7 +414,7 @@ bool ThreadPlanStepOut::ShouldStop(Event *event_ptr) {
       if (!m_step_out_further_plan_sp) {
         // We didn't want to stop here, but we can't find a plan to get us 
         // out of here, so we'll stop.
-        Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_STEP));
+        Log *log = GetLog(LLDBLog::Step);
         LLDB_LOG(log, "Should stop here was false but we couldn't find a"
                       "plan to get us out from here.  Stopping.");
         SetPlanComplete();
@@ -474,7 +475,7 @@ bool ThreadPlanStepOut::MischiefManaged() {
     // reason and we're now stopping for some other reason altogether, then
     // we're done with this step out operation.
 
-    Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_STEP));
+    Log *log = GetLog(LLDBLog::Step);
     if (log)
       LLDB_LOGF(log, "Completed step out plan.");
     if (m_return_bp_id != LLDB_INVALID_BREAK_ID) {
@@ -498,7 +499,7 @@ bool ThreadPlanStepOut::QueueInlinedStepPlan(bool queue_now) {
   if (!immediate_return_from_sp)
     return false;
 
-  Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_STEP));
+  Log *log = GetLog(LLDBLog::Step);
   if (log) {
     StreamString s;
     immediate_return_from_sp->Dump(&s, true, false);
