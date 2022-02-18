@@ -2555,8 +2555,24 @@ static bool HaveNonOverlappingStorage(const Value *V1, const Value *V2) {
   //
   // So, we'll assume that two non-empty allocas have different addresses
   // for now.
-  return isa<AllocaInst>(V1) &&
-    (isa<AllocaInst>(V2) || isa<GlobalVariable>(V2));
+
+  auto isByValArgOrGlobalVarOrAlloca = [](const Value *V) {
+    if (const Argument *A = dyn_cast<Argument>(V))
+      return A->hasByValAttr();
+    return isa<AllocaInst>(V) || isa<GlobalVariable>(V);
+  };
+
+  if (!isByValArgOrGlobalVarOrAlloca(V1) ||
+      !isByValArgOrGlobalVarOrAlloca(V2))
+    return false;
+
+  // Both sides being globals shouldn't reach here - as the resulting compare
+  // is a constantexpr - but we want to guard against it to be safe.  The
+  // semantics of globals are complicated by e.g. unnamed_addr.  The assumption
+  // in this code is that while two globals could end up overlapping, they'll
+  // never overlap with any alloca or byval, and thus we can still reason about
+  // *one* global and one *non* global as disjoint storage.
+  return !isa<GlobalVariable>(V1) || !isa<GlobalVariable>(V2);
 }
 
 // A significant optimization not implemented here is assuming that alloca
@@ -2659,8 +2675,12 @@ computePointerICmp(CmpInst::Predicate Pred, Value *LHS, Value *RHS,
       uint64_t LHSSize, RHSSize;
       ObjectSizeOpts Opts;
       Opts.EvalMode = ObjectSizeOpts::Mode::Min;
-      Opts.NullIsUnknownSize =
-          NullPointerIsDefined(cast<AllocaInst>(LHS)->getFunction());
+      auto *F = [](Value *V) {
+        if (auto *I = dyn_cast<Instruction>(V))
+          return I->getFunction();
+        return cast<Argument>(V)->getParent();
+      }(LHS);
+      Opts.NullIsUnknownSize = NullPointerIsDefined(F);
       if (getObjectSize(LHS, LHSSize, DL, TLI, Opts) &&
           getObjectSize(RHS, RHSSize, DL, TLI, Opts) &&
           !LHSOffset.isNegative() && !RHSOffset.isNegative() &&
