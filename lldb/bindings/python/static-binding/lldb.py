@@ -3138,6 +3138,10 @@ class SBCommandInterpreter(object):
         r"""HasAliasOptions(SBCommandInterpreter self) -> bool"""
         return _lldb.SBCommandInterpreter_HasAliasOptions(self)
 
+    def IsInteractive(self):
+        r"""IsInteractive(SBCommandInterpreter self) -> bool"""
+        return _lldb.SBCommandInterpreter_IsInteractive(self)
+
     def GetProcess(self):
         r"""GetProcess(SBCommandInterpreter self) -> SBProcess"""
         return _lldb.SBCommandInterpreter_GetProcess(self)
@@ -7348,6 +7352,16 @@ class SBModule(object):
     def Clear(self):
         r"""Clear(SBModule self)"""
         return _lldb.SBModule_Clear(self)
+
+    def IsFileBacked(self):
+        r"""
+        IsFileBacked(SBModule self) -> bool
+        Check if the module is file backed.
+            @return
+                True, if the module is backed by an object file on disk.
+                False, if the module is backed by an object file in memory.
+        """
+        return _lldb.SBModule_IsFileBacked(self)
 
     def GetFileSpec(self):
         r"""
