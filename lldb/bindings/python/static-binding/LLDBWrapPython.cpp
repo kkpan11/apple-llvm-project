@@ -14595,6 +14595,33 @@ fail:
 }
 
 
+SWIGINTERN PyObject *_wrap_SBCommandInterpreter_IsInteractive(PyObject *SWIGUNUSEDPARM(self), PyObject *args) {
+  PyObject *resultobj = 0;
+  lldb::SBCommandInterpreter *arg1 = (lldb::SBCommandInterpreter *) 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  PyObject *swig_obj[1] ;
+  bool result;
+  
+  if (!args) SWIG_fail;
+  swig_obj[0] = args;
+  res1 = SWIG_ConvertPtr(swig_obj[0], &argp1,SWIGTYPE_p_lldb__SBCommandInterpreter, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "SBCommandInterpreter_IsInteractive" "', argument " "1"" of type '" "lldb::SBCommandInterpreter *""'"); 
+  }
+  arg1 = reinterpret_cast< lldb::SBCommandInterpreter * >(argp1);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (bool)(arg1)->IsInteractive();
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
+  resultobj = SWIG_From_bool(static_cast< bool >(result));
+  return resultobj;
+fail:
+  return NULL;
+}
+
+
 SWIGINTERN PyObject *_wrap_SBCommandInterpreter_GetProcess(PyObject *SWIGUNUSEDPARM(self), PyObject *args) {
   PyObject *resultobj = 0;
   lldb::SBCommandInterpreter *arg1 = (lldb::SBCommandInterpreter *) 0 ;
@@ -40621,6 +40648,33 @@ SWIGINTERN PyObject *_wrap_SBModule_Clear(PyObject *SWIGUNUSEDPARM(self), PyObje
     SWIG_PYTHON_THREAD_END_ALLOW;
   }
   resultobj = SWIG_Py_Void();
+  return resultobj;
+fail:
+  return NULL;
+}
+
+
+SWIGINTERN PyObject *_wrap_SBModule_IsFileBacked(PyObject *SWIGUNUSEDPARM(self), PyObject *args) {
+  PyObject *resultobj = 0;
+  lldb::SBModule *arg1 = (lldb::SBModule *) 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  PyObject *swig_obj[1] ;
+  bool result;
+  
+  if (!args) SWIG_fail;
+  swig_obj[0] = args;
+  res1 = SWIG_ConvertPtr(swig_obj[0], &argp1,SWIGTYPE_p_lldb__SBModule, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "SBModule_IsFileBacked" "', argument " "1"" of type '" "lldb::SBModule const *""'"); 
+  }
+  arg1 = reinterpret_cast< lldb::SBModule * >(argp1);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (bool)((lldb::SBModule const *)arg1)->IsFileBacked();
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
+  resultobj = SWIG_From_bool(static_cast< bool >(result));
   return resultobj;
 fail:
   return NULL;
@@ -81864,6 +81918,7 @@ static PyMethodDef SwigMethods[] = {
 	 { "SBCommandInterpreter_HasCommands", _wrap_SBCommandInterpreter_HasCommands, METH_O, "SBCommandInterpreter_HasCommands(SBCommandInterpreter self) -> bool"},
 	 { "SBCommandInterpreter_HasAliases", _wrap_SBCommandInterpreter_HasAliases, METH_O, "SBCommandInterpreter_HasAliases(SBCommandInterpreter self) -> bool"},
 	 { "SBCommandInterpreter_HasAliasOptions", _wrap_SBCommandInterpreter_HasAliasOptions, METH_O, "SBCommandInterpreter_HasAliasOptions(SBCommandInterpreter self) -> bool"},
+	 { "SBCommandInterpreter_IsInteractive", _wrap_SBCommandInterpreter_IsInteractive, METH_O, "SBCommandInterpreter_IsInteractive(SBCommandInterpreter self) -> bool"},
 	 { "SBCommandInterpreter_GetProcess", _wrap_SBCommandInterpreter_GetProcess, METH_O, "SBCommandInterpreter_GetProcess(SBCommandInterpreter self) -> SBProcess"},
 	 { "SBCommandInterpreter_GetDebugger", _wrap_SBCommandInterpreter_GetDebugger, METH_O, "SBCommandInterpreter_GetDebugger(SBCommandInterpreter self) -> SBDebugger"},
 	 { "SBCommandInterpreter_SourceInitFileInHomeDirectory", _wrap_SBCommandInterpreter_SourceInitFileInHomeDirectory, METH_VARARGS, "SBCommandInterpreter_SourceInitFileInHomeDirectory(SBCommandInterpreter self, SBCommandReturnObject result)"},
@@ -82967,6 +83022,13 @@ static PyMethodDef SwigMethods[] = {
 	 { "SBModule_IsValid", _wrap_SBModule_IsValid, METH_O, "SBModule_IsValid(SBModule self) -> bool"},
 	 { "SBModule___nonzero__", _wrap_SBModule___nonzero__, METH_O, "SBModule___nonzero__(SBModule self) -> bool"},
 	 { "SBModule_Clear", _wrap_SBModule_Clear, METH_O, "SBModule_Clear(SBModule self)"},
+	 { "SBModule_IsFileBacked", _wrap_SBModule_IsFileBacked, METH_O, "\n"
+		"SBModule_IsFileBacked(SBModule self) -> bool\n"
+		"Check if the module is file backed.\n"
+		"    @return\n"
+		"        True, if the module is backed by an object file on disk.\n"
+		"        False, if the module is backed by an object file in memory.\n"
+		""},
 	 { "SBModule_GetFileSpec", _wrap_SBModule_GetFileSpec, METH_O, "\n"
 		"SBModule_GetFileSpec(SBModule self) -> SBFileSpec\n"
 		"\n"
