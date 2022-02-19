@@ -40,7 +40,7 @@ namespace lldb_private {
 /// type by name, synthesize a Clang AST from it. DWARFImporter then hands this
 /// Clang AST to ClangImporter to import the type into Swift.
 class SwiftDWARFImporterDelegate : public swift::DWARFImporterDelegate {
-  SwiftASTContext &m_swift_ast_ctx;
+  TypeSystemSwiftTypeRef &m_swift_typesystem;
   using ModuleAndName = std::pair<const char *, const char *>;
   std::string m_description;
 
@@ -138,10 +138,9 @@ class SwiftDWARFImporterDelegate : public swift::DWARFImporterDelegate {
   }
 
 public:
-  SwiftDWARFImporterDelegate(SwiftASTContext &swift_ast_ctx)
-      : m_swift_ast_ctx(swift_ast_ctx),
-        m_description(swift_ast_ctx.GetDescription() +
-                      "::SwiftDWARFImporterDelegate") {}
+  SwiftDWARFImporterDelegate(TypeSystemSwiftTypeRef &ts)
+      : m_swift_typesystem(ts),
+        m_description(ts.GetDescription() + "::SwiftDWARFImporterDelegate") {}
 
   /// Look up a clang::Decl by name.
   ///
@@ -202,15 +201,18 @@ public:
                    llvm::SmallVectorImpl<clang::Decl *> &results) override {
     LLDB_SCOPED_TIMER();
 
-    LLDB_LOG(GetLog(LLDBLog::Types), "%s(\"%s\")", m_description.c_str(),
-             name.str().c_str());
+    LLDB_LOG(GetLog(LLDBLog::Types), "{0}::lookupValue(\"{1}\")", m_description,
+             name.str());
 
     // We will not find any Swift types in the Clang compile units.
     ConstString name_cs(name);
     if (SwiftLanguageRuntime::IsSwiftMangledName(name_cs.GetStringRef()))
       return;
 
-    auto clang_importer = m_swift_ast_ctx.GetClangImporter();
+    auto *swift_ast_ctx = m_swift_typesystem.GetSwiftASTContext();
+    if (!swift_ast_ctx)
+      return;
+    auto clang_importer = swift_ast_ctx->GetClangImporter();
     if (!clang_importer)
       return;
 
@@ -232,9 +234,9 @@ public:
                        searched_symbol_files, clang_types);
     };
     if (Module *module =
-            m_swift_ast_ctx.GetTypeSystemSwiftTypeRef().GetModule())
+            m_swift_typesystem.GetModule())
       search(*module);
-    else if (TargetSP target_sp = m_swift_ast_ctx.GetTargetWP().lock()) {
+    else if (TargetSP target_sp = m_swift_typesystem.GetTargetWP().lock()) {
       // In a scratch context, check the module's DWARFImporterDelegates
       // first.
       //
@@ -244,39 +246,12 @@ public:
       auto images = target_sp->GetImages();
       for (size_t i = 0; i != images.GetSize(); ++i) {
         auto module_sp = images.GetModuleAtIndex(i);
-        auto *swift_ast_ctx = GetModuleSwiftASTContext(*module_sp);
-        if (!swift_ast_ctx)
+        if (!module_sp)
           continue;
-        auto *dwarf_imp = static_cast<SwiftDWARFImporterDelegate *>(
-            swift_ast_ctx->GetDWARFImporterDelegate());
-        if (!dwarf_imp || dwarf_imp == this)
-          continue;
-
-        llvm::SmallVector<clang::Decl *, 2> module_results;
-        dwarf_imp->lookupValue(name, kind, inModule, module_results);
-        if (!module_results.size())
-          continue;
-
-        auto *from_clang_importer = swift_ast_ctx->GetClangImporter();
-        if (!from_clang_importer)
-          continue;
-        auto &from_ctx = from_clang_importer->getClangASTContext();
-        auto &to_ctx = clang_importer->getClangASTContext();
-        for (clang::Decl *decl : module_results) {
-          clang::QualType qual_type;
-          if (auto *interface = llvm::dyn_cast<clang::ObjCInterfaceDecl>(decl))
-            qual_type = {interface->getTypeForDecl(), 0};
-          if (auto *type = llvm::dyn_cast<clang::TypeDecl>(decl))
-            qual_type = {type->getTypeForDecl(), 0};
-          importType(qual_type, from_ctx, to_ctx, kind, results);
-        }
-        // Cut the search short after we found the first result.
-        if (results.size())
+        search(*module_sp);
+        if (!clang_types.Empty())
           break;
       }
-      LLDB_LOG(GetLog(LLDBLog::Types), "%s() -- %zu types collected.",
-               m_description.c_str(), results.size());
-      return;
     }
 
     clang_types.ForEach([&](lldb::TypeSP &clang_type_sp) {
@@ -306,14 +281,15 @@ public:
       return true;
     });
 
-    LLDB_LOG(GetLog(LLDBLog::Types), "%s() -- %zu types from debug info.",
+    LLDB_LOG(GetLog(LLDBLog::Types),
+             "{0}::lookupValue() -- imported {1} types from debug info.",
              m_description.c_str(), results.size());
   }
 };
 
 swift::DWARFImporterDelegate *
-CreateSwiftDWARFImporterDelegate(SwiftASTContext &swift_ast_context) {
-  return new SwiftDWARFImporterDelegate(swift_ast_context);
+CreateSwiftDWARFImporterDelegate(TypeSystemSwiftTypeRef &ts) {
+  return new SwiftDWARFImporterDelegate(ts);
 }
 
 } // namespace lldb_private
