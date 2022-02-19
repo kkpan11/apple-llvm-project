@@ -172,6 +172,8 @@ public:
   bool GetSwiftReadMetadataFromFileCache() const;
 
   bool GetSwiftUseReflectionSymbols() const;
+  
+  bool GetSwiftReadMetadataFromDSYM() const;
 
   bool GetEnableAutoImportClangModules() const;
 
