@@ -482,8 +482,7 @@ class CombiningDirIterImpl : public llvm::vfs::detail::DirIterImpl {
     }
 
     if (IsFirstTime && CurrentDirIter == directory_iterator())
-      return std::error_code(static_cast<int>(errc::no_such_file_or_directory),
-                             std::system_category());
+      return errc::no_such_file_or_directory;
     return {};
   }
 
@@ -1265,8 +1264,7 @@ directory_iterator RedirectingFileSystem::dir_begin(const Twine &Dir,
   }
 
   if (!S->isDirectory()) {
-    EC = std::error_code(static_cast<int>(errc::not_a_directory),
-                         std::system_category());
+    EC = errc::not_a_directory;
     return {};
   }
 
