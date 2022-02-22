@@ -615,6 +615,7 @@ Expected<TreeRef> CachingOnDiskFileSystemImpl::createTreeFromNewAccesses(
   {
     std::lock_guard<std::mutex> Lock(TrackedAccessesMutex);
     MaybeTrackedAccesses = std::move(TrackedAccesses);
+    TrackedAccesses = None;
   }
 
   if (!MaybeTrackedAccesses || MaybeTrackedAccesses->empty())
