@@ -91,6 +91,51 @@ public func copyableValueCCFFalseTest() {
     // Set breakpoint copyableValueCCFFalseTest here 3
 }
 
+public func copyableVarTestCCFlowTrueReinitOutOfBlockTest() {
+    var k = Klass() // Set breakpoint copyableVarTestCCFlowTrueReinitOutOfBlockTest here 1
+    k.doSomething()
+    if trueBoolValue {
+        let m = _move(k) // Set breakpoint copyableVarTestCCFlowTrueReinitOutOfBlockTest here 2
+        m.doSomething() // Set breakpoint copyableVarTestCCFlowTrueReinitOutOfBlockTest here 3
+    }
+    k = Klass() // Set breakpoint copyableVarTestCCFlowTrueReinitOutOfBlockTest here 4
+    k.doSomething() // Set breakpoint copyableVarTestCCFlowTrueReinitOutOfBlockTest here 5
+}
+
+public func copyableVarTestCCFlowTrueReinitInBlockTest() {
+    var k = Klass() // Set breakpoint copyableVarTestCCFlowTrueReinitInBlockTest here 1
+    k.doSomething()
+    if trueBoolValue {
+        let m = _move(k) // Set breakpoint copyableVarTestCCFlowTrueReinitInBlockTest here 2
+        m.doSomething()
+        k = Klass() // Set breakpoint copyableVarTestCCFlowTrueReinitInBlockTest here 3
+        k.doSomething() // Set breakpoint copyableVarTestCCFlowTrueReinitInBlockTest here 4
+    }
+    k.doSomething() // Set breakpoint copyableVarTestCCFlowTrueReinitInBlockTest here 5
+}
+
+public func copyableVarTestCCFlowFalseReinitOutOfBlockTest() {
+    var k = Klass() // Set breakpoint copyableVarTestCCFlowFalseReinitOutOfBlockTest here 1
+    k.doSomething() // Set breakpoint copyableVarTestCCFlowFalseReinitOutOfBlockTest here 2
+    if falseBoolValue {
+        let m = _move(k)
+        m.doSomething()
+    }
+    k = Klass() // Set breakpoint copyableVarTestCCFlowFalseReinitOutOfBlockTest here 3
+    k.doSomething() // Set breakpoint copyableVarTestCCFlowFalseReinitOutOfBlockTest here 4
+}
+
+public func copyableVarTestCCFlowFalseReinitInBlockTest() {
+    var k = Klass() // Set breakpoint copyableVarTestCCFlowFalseReinitInBlockTest here 1
+    k.doSomething()  // Set breakpoint copyableVarTestCCFlowFalseReinitInBlockTest here 2
+    if falseBoolValue {
+        let m = _move(k)
+        m.doSomething()
+        k = Klass()
+    }
+    k.doSomething() // Set breakpoint copyableVarTestCCFlowFalseReinitInBlockTest here 3
+}
+
 //////////////////////////
 // Top Level Entrypoint //
 //////////////////////////
@@ -102,6 +147,10 @@ func main() {
     addressOnlyVarTest(Klass())
     copyableValueCCFTrueTest()
     copyableValueCCFFalseTest()
+    copyableVarTestCCFlowTrueReinitOutOfBlockTest()
+    copyableVarTestCCFlowTrueReinitInBlockTest()
+    copyableVarTestCCFlowFalseReinitOutOfBlockTest()
+    copyableVarTestCCFlowFalseReinitInBlockTest()
 }
 
 main()
