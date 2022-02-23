@@ -14,6 +14,7 @@
 
 #include "clang/StaticAnalyzer/Checkers/BuiltinCheckerRegistration.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/CallDescription.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
 
@@ -36,7 +37,7 @@ public:
 
 bool StringChecker::isCharToStringCtor(const CallEvent &Call,
                                        const ASTContext &ACtx) const {
-  if (!Call.isCalled(TwoParamStdStringCtor))
+  if (!TwoParamStdStringCtor.matches(Call))
     return false;
   const auto *FD = dyn_cast<FunctionDecl>(Call.getDecl());
   assert(FD);
@@ -67,15 +68,18 @@ void StringChecker::checkPreCall(const CallEvent &Call,
                                  CheckerContext &C) const {
   if (!isCharToStringCtor(Call, C.getASTContext()))
     return;
-  const Loc Param = Call.getArgSVal(0).castAs<Loc>();
+  const auto Param = Call.getArgSVal(0).getAs<Loc>();
+  if (!Param.hasValue())
+    return;
 
   // We managed to constrain the parameter to non-null.
   ProgramStateRef NotNull, Null;
-  std::tie(NotNull, Null) = C.getState()->assume(Param);
+  std::tie(NotNull, Null) = C.getState()->assume(*Param);
 
   if (NotNull) {
     const auto Callback = [Param](PathSensitiveBugReport &BR) -> std::string {
-      return BR.isInteresting(Param) ? "Assuming the pointer is not null." : "";
+      return BR.isInteresting(*Param) ? "Assuming the pointer is not null."
+                                      : "";
     };
 
     // Emit note only if this operation constrained the pointer to be null.
