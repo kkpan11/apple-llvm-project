@@ -1541,19 +1541,16 @@ public:
   /// statements.
   class FPFeaturesStateRAII {
   public:
-    FPFeaturesStateRAII(Sema &S) : S(S), OldFPFeaturesState(S.CurFPFeatures) {
-      OldOverrides = S.FpPragmaStack.CurrentValue;
-    }
-    ~FPFeaturesStateRAII() {
-      S.CurFPFeatures = OldFPFeaturesState;
-      S.FpPragmaStack.CurrentValue = OldOverrides;
-    }
+    FPFeaturesStateRAII(Sema &S);
+    ~FPFeaturesStateRAII();
     FPOptionsOverride getOverrides() { return OldOverrides; }
 
   private:
     Sema& S;
     FPOptions OldFPFeaturesState;
     FPOptionsOverride OldOverrides;
+    LangOptions::FPEvalMethodKind OldEvalMethod;
+    SourceLocation OldFPPragmaLocation;
   };
 
   void addImplicitTypedef(StringRef Name, QualType T);
@@ -10144,6 +10141,9 @@ public:
            !CurFPFeatures.getAllowApproxFunc();
   }
 
+  void ActOnPragmaFPEvalMethod(SourceLocation Loc,
+                               LangOptions::FPEvalMethodKind Value);
+
   /// ActOnPragmaFloatControl - Call on well-formed \#pragma float_control
   void ActOnPragmaFloatControl(SourceLocation Loc, PragmaMsStackAction Action,
                                PragmaFloatControlKind Value);
@@ -10688,6 +10688,10 @@ public:
   void finalizeOpenMPDelayedAnalysis(const FunctionDecl *Caller,
                                      const FunctionDecl *Callee,
                                      SourceLocation Loc);
+
+  /// Return true if currently in OpenMP task with untied clause context.
+  bool isInOpenMPTaskUntiedContext() const;
+
   /// Return true inside OpenMP declare target region.
   bool isInOpenMPDeclareTargetContext() const {
     return !DeclareTargetNesting.empty();

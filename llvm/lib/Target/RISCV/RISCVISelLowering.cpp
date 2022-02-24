@@ -1287,6 +1287,7 @@ bool RISCVTargetLowering::shouldSinkOperands(
       if (auto *II = dyn_cast<IntrinsicInst>(I)) {
         switch (II->getIntrinsicID()) {
         case Intrinsic::fma:
+        case Intrinsic::vp_fma:
           return Operand == 0 || Operand == 1;
         // FIXME: Our patterns can only match vx/vf instructions when the splat
         // it on the RHS, because TableGen doesn't recognize our VP operations
@@ -4756,6 +4757,8 @@ SDValue RISCVTargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op,
     SDValue VL = getVLOperand(Op);
 
     SDValue SplattedVal = splatSplitI64WithVL(DL, VT, SDValue(), Scalar, VL, DAG);
+    if (Op.getOperand(1).isUndef())
+      return SplattedVal;
     SDValue SplattedIdx =
         DAG.getNode(RISCVISD::VMV_V_X_VL, DL, VT, DAG.getUNDEF(VT),
                     DAG.getConstant(0, DL, MVT::i32), VL);
@@ -7473,6 +7476,11 @@ static SDValue transformAddImmMulImm(SDNode *N, SelectionDAG &DAG,
   auto *N0C = dyn_cast<ConstantSDNode>(N0->getOperand(1));
   auto *N1C = dyn_cast<ConstantSDNode>(N->getOperand(1));
   if (!N0C || !N1C)
+    return SDValue();
+  // If N0C has multiple uses it's possible one of the cases in
+  // DAGCombiner::isMulAddWithConstProfitable will be true, which would result
+  // in an infinite loop.
+  if (!N0C->hasOneUse())
     return SDValue();
   int64_t C0 = N0C->getSExtValue();
   int64_t C1 = N1C->getSExtValue();
@@ -11254,8 +11262,8 @@ bool RISCVTargetLowering::decomposeMulByConstant(LLVMContext &Context, EVT VT,
   return false;
 }
 
-bool RISCVTargetLowering::isMulAddWithConstProfitable(
-    const SDValue &AddNode, const SDValue &ConstNode) const {
+bool RISCVTargetLowering::isMulAddWithConstProfitable(SDValue AddNode,
+                                                      SDValue ConstNode) const {
   // Let the DAGCombiner decide for vectors.
   EVT VT = AddNode.getValueType();
   if (VT.isVector())
