@@ -4330,10 +4330,10 @@ CFGBlock *CFGBuilder::VisitCXXTryStmt(CXXTryStmt *Terminator) {
   NewTryTerminatedBlock->setTerminator(Terminator);
 
   bool HasCatchAll = false;
-  for (unsigned I = 0, E = Terminator->getNumHandlers(); I != E; ++I) {
+  for (unsigned h = 0; h <Terminator->getNumHandlers(); ++h) {
     // The code after the try is the implicit successor.
     Succ = TrySuccessor;
-    CXXCatchStmt *CS = Terminator->getHandler(I);
+    CXXCatchStmt *CS = Terminator->getHandler(h);
     if (CS->getExceptionDecl() == nullptr) {
       HasCatchAll = true;
     }
