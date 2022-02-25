@@ -324,9 +324,9 @@ void Thread::FrameSelectedCallback(StackFrame *frame) {
       (GetProcess()->GetWarningsOptimization() ||
        GetProcess()->GetWarningsUnsupportedLanguage()
 #ifdef LLDB_ENABLE_SWIFT
-       || GetProcess()->GetWarningsToolchainMismatch())
+       || GetProcess()->GetWarningsToolchainMismatch()
 #endif
-      ) {
+           )) {
     SymbolContext sc =
         frame->GetSymbolContext(eSymbolContextFunction | eSymbolContextModule);
     GetProcess()->PrintWarningOptimization(sc);
