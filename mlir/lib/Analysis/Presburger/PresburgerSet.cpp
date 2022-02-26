@@ -444,6 +444,8 @@ LogicalResult coalescePair(unsigned i, unsigned j,
 
   IntegerPolyhedron &a = polyhedrons[i];
   IntegerPolyhedron &b = polyhedrons[j];
+  assert(a.getNumLocalIds() == 0 && b.getNumLocalIds() == 0 &&
+         "Locals are not yet supported!");
   Simplex &simpA = simplices[i];
   Simplex &simpB = simplices[j];
 
@@ -521,7 +523,7 @@ PresburgerSet PresburgerSet::coalesce() const {
   // When coalescing is successful, the contained IntegerPolyhedron is swapped
   // with the last element of `polyhedrons` and subsequently erased and
   // similarly for simplices.
-  for (unsigned i = 0; i < polyhedrons.size(); ++i) {
+  for (unsigned i = 0; i < polyhedrons.size();) {
 
     // TODO: This does some comparisons two times (index 0 with 1 and index 1
     // with 0).
