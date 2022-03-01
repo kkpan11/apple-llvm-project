@@ -1314,7 +1314,6 @@ static bool linkWithResultCaching(InputArgList &args, bool canExitEarly,
             toString(cacheFS.takeError()));
       return ::link(args, canExitEarly, stdoutOS, stderrOS);
     }
-    (*cacheFS)->trackNewAccesses();
     auto originalFS = std::move(config->fs);
     config->fs = *cacheFS;
 
