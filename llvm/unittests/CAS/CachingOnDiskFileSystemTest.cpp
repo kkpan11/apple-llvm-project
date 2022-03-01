@@ -368,4 +368,19 @@ TEST(CachingOnDiskFileSystemTest, TrackNewAccesses) {
   }
 }
 
+TEST(CachingOnDiskFileSystemTest, getRealPath) {
+  TempDir D("caching-on-disk-file-system-test", /*Unique=*/true);
+  IntrusiveRefCntPtr<cas::CachingOnDiskFileSystem> FS =
+      cantFail(cas::createCachingOnDiskFileSystem(cas::createInMemoryCAS()));
+  ASSERT_FALSE(FS->setCurrentWorkingDirectory(D.path()));
+
+  TempFile File(D.path("file"), "", "content");
+  TempLink Link(File.path(), D.path("link"));
+
+  SmallString<128> FilePath, LinkPath;
+  EXPECT_FALSE(FS->getRealPath(File.path(), FilePath));
+  EXPECT_FALSE(FS->getRealPath(Link.path(), LinkPath));
+  EXPECT_EQ(FilePath, LinkPath);
+}
+
 } // namespace
