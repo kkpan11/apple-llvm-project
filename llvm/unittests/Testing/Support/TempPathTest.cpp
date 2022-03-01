@@ -72,7 +72,7 @@ TEST(TempPathTest, TempLink) {
   TempFile File(D.path("file"), "suffix", "content");
 
   Optional<TempLink> Link1, Link2;
-  Link1.emplace(File.path(), "link");
+  Link1.emplace(File.path(), D.path("link"));
   EXPECT_EQ("link", sys::path::filename(Link1->path()));
   {
     ErrorOr<std::unique_ptr<MemoryBuffer>> Buffer = MemoryBuffer::getFile(Link1->path());
