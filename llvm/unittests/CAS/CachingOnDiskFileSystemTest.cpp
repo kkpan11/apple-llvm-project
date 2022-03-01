@@ -12,7 +12,9 @@
 #include "llvm/Support/Host.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/PrefixMapper.h"
 #include "llvm/Support/SourceMgr.h"
+#include "llvm/Testing/Support/Error.h"
 #include "llvm/Testing/Support/SupportHelpers.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -322,6 +324,48 @@ TEST(CachingOnDiskFileSystemTest, BrokenSymlinkRealFSRecursiveIteration) {
               testing::UnorderedElementsAre(_b.path().str(), _bb.path().str(),
                                             _d.path().str(), _dd.path().str(),
                                             _ddd.path().str()));
+}
+
+TEST(CachingOnDiskFileSystemTest, TrackNewAccesses) {
+  TempDir TestDirectory("virtual-file-system-test", /*Unique*/ true);
+  IntrusiveRefCntPtr<cas::CachingOnDiskFileSystem> FS =
+      cantFail(cas::createCachingOnDiskFileSystem(cas::createInMemoryCAS()));
+  ASSERT_FALSE(FS->setCurrentWorkingDirectory(TestDirectory.path()));
+
+  TreePathPrefixMapper Remapper(FS);
+  ASSERT_THAT_ERROR(Remapper.add(MappedPrefix{TestDirectory.path(), "/"}),
+                    Succeeded());
+
+  TempFile Extra(TestDirectory.path("Extra"), "", "content");
+  SmallVector<TempFile> Temps;
+  for (size_t I = 0, E = 5; I != E; ++I)
+    Temps.emplace_back(TestDirectory.path(Twine(I).str()), "", "content");
+
+  SmallString<256> Path;
+  for (size_t I = 0, E = Temps.size(); I != E; ++I) {
+    // Access an unrelated path before tracking.
+    EXPECT_FALSE(FS->getRealPath(Extra.path(), Path));
+
+    // Track accesses and access files from I to the end (different subset in
+    // each iteration).
+    auto Files = makeArrayRef(Temps.begin() + I, Temps.end());
+    FS->trackNewAccesses();
+    for (const auto &F : Files)
+      EXPECT_FALSE(FS->getRealPath(F.path(), Path));
+
+    Optional<cas::TreeRef> Tree;
+    ASSERT_THAT_ERROR(FS->createTreeFromNewAccesses(
+                            [&](const vfs::CachedDirectoryEntry &Entry) {
+                              return Remapper.map(Entry);
+                            })
+                          .moveInto(Tree),
+                      Succeeded());
+
+    // Check that all the files are found.
+    EXPECT_EQ(Files.size(), Tree->size());
+    for (const auto &F : Files)
+      EXPECT_TRUE(Tree->lookup(sys::path::filename(F.path())));
+  }
 }
 
 } // namespace
