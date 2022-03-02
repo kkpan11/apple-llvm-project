@@ -13,12 +13,15 @@
 #include "llvm/ExecutionEngine/JITLink/MachO.h"
 
 #include "llvm/BinaryFormat/MachO.h"
+#include "llvm/ExecutionEngine/JITLink/DWARFRecordSectionSplitter.h"
 #include "llvm/ExecutionEngine/JITLink/MachO_arm64.h"
 #include "llvm/ExecutionEngine/JITLink/MachO_x86_64.h"
 #include "llvm/ExecutionEngine/JITLink/x86_64.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SwapByteOrder.h"
+
+#include "EHFrameSupportImpl.h"
 
 using namespace llvm;
 
@@ -96,6 +99,10 @@ void link_MachO(std::unique_ptr<LinkGraph> G,
     Ctx->notifyFailed(make_error<JITLinkError>("MachO-64 CPU type not valid"));
     return;
   }
+}
+
+LinkGraphPassFunction createDebugLineSplitterPass_MachO() {
+  return DWARFRecordSectionSplitter("__DWARF,__debug_line");
 }
 
 } // end namespace jitlink
