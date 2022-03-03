@@ -4547,7 +4547,7 @@ llvm::DILocalVariable *CGDebugInfo::EmitDeclare(const BindingDecl *BD,
   auto Align = getDeclAlignIfRequired(BD, CGM.getContext());
   unsigned AddressSpace = CGM.getContext().getTargetAddressSpace(BD->getType());
 
-  SmallVector<uint64_t, 3> Expr;
+  SmallVector<int64_t, 3> Expr;
   AppendAddressSpaceXDeref(AddressSpace, Expr);
 
   // Clang stores the sret pointer provided by the caller in a static alloca.
