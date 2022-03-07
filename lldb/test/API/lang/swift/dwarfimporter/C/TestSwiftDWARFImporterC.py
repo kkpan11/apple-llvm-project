@@ -103,7 +103,6 @@ class TestSwiftDWARFImporterC(lldbtest.TestBase):
     @swiftTest
     def test_negative(self):
         lldb.SBDebugger.MemoryPressureDetected()
-        self.runCmd("log enable lldb types")
         self.runCmd("settings set symbols.use-swift-dwarfimporter false")
         self.build()
         log = self.getBuildArtifact("types.log")
@@ -114,9 +113,8 @@ class TestSwiftDWARFImporterC(lldbtest.TestBase):
         #                        target.FindFirstGlobalVariable("point"),
         #                        typename="Point", num_children=2)
         # This can't be resolved.
-        lldbutil.check_variable(self,
-                                target.FindFirstGlobalVariable("swiftStructCMember"),
-                                num_children=0)
+        self.expect("expr swiftStructCMember", error=True)
+
 
         found = False
         logfile = open(log, "r")
