@@ -1212,9 +1212,7 @@ CompilerType TypeSystemSwift::GetInstanceType(CompilerType compiler_type) {
   return {};
 }
 
-#ifndef NDEBUG
 TypeSystemSwiftTypeRef::TypeSystemSwiftTypeRef() {}
-#endif
 
 TypeSystemSwiftTypeRef::~TypeSystemSwiftTypeRef() {}
 

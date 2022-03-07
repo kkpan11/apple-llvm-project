@@ -50,10 +50,8 @@ public:
   static bool classof(const TypeSystem *ts) { return ts->isA(&ID); }
   /// \}
 
-#ifndef NDEBUG
   /// Provided only for unit tests.
   TypeSystemSwiftTypeRef();
-#endif
   ~TypeSystemSwiftTypeRef();
   TypeSystemSwiftTypeRef(Module &module);
   TypeSystemSwiftTypeRef(SwiftASTContextForExpressions &swift_ast_context);
