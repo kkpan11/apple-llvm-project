@@ -198,12 +198,3 @@ ObjectFile::createObjectFile(StringRef ObjectPath) {
 
   return OwningBinary<ObjectFile>(std::move(Obj), std::move(Buffer));
 }
-
-bool ObjectFile::isReflectionSectionStrippable(
-    llvm::binaryformat::Swift5ReflectionSectionKind ReflectionSectionKind)
-    const {
-  using llvm::binaryformat::Swift5ReflectionSectionKind;
-  return ReflectionSectionKind == Swift5ReflectionSectionKind::fieldmd ||
-         ReflectionSectionKind == Swift5ReflectionSectionKind::reflstr ||
-         ReflectionSectionKind == Swift5ReflectionSectionKind::assocty;
-}
