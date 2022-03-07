@@ -54,10 +54,20 @@ void SourceMgr::setFileSystem(IntrusiveRefCntPtr<vfs::FileSystem> FS) {
 unsigned SourceMgr::AddIncludeFile(const std::string &Filename,
                                    SMLoc IncludeLoc,
                                    std::string &IncludedFile) {
+  ErrorOr<std::unique_ptr<MemoryBuffer>> NewBufOrErr =
+      OpenIncludeFile(Filename, IncludedFile);
+  if (!NewBufOrErr)
+    return 0;
+
+  return AddNewSourceBuffer(std::move(*NewBufOrErr), IncludeLoc);
+}
+
+ErrorOr<std::unique_ptr<MemoryBuffer>>
+SourceMgr::OpenIncludeFile(const std::string &Filename,
+                           std::string &IncludedFile) {
   auto getFile = [this](StringRef Path) {
     return FS ? FS->getBufferForFile(Path) : MemoryBuffer::getFile(Path);
   };
-
   IncludedFile = Filename;
   ErrorOr<std::unique_ptr<MemoryBuffer>> NewBufOrErr = getFile(IncludedFile);
 
@@ -69,10 +79,7 @@ unsigned SourceMgr::AddIncludeFile(const std::string &Filename,
     NewBufOrErr = getFile(IncludedFile);
   }
 
-  if (!NewBufOrErr)
-    return 0;
-
-  return AddNewSourceBuffer(std::move(*NewBufOrErr), IncludeLoc);
+  return NewBufOrErr;
 }
 
 unsigned SourceMgr::FindBufferContainingLoc(SMLoc Loc) const {
