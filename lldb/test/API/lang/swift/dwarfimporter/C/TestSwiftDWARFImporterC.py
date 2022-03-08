@@ -113,9 +113,8 @@ class TestSwiftDWARFImporterC(lldbtest.TestBase):
         #                        target.FindFirstGlobalVariable("point"),
         #                        typename="Point", num_children=2)
         # This can't be resolved.
-        lldbutil.check_variable(self,
-                                target.FindFirstGlobalVariable("swiftStructCMember"),
-                                num_children=0)
+        self.expect("expr swiftStructCMember", error=True)
+
 
         found = False
         logfile = open(log, "r")
