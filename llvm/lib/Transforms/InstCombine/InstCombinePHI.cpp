@@ -411,6 +411,10 @@ static bool isSafeAndProfitableToSinkLoad(LoadInst *L) {
 Instruction *InstCombinerImpl::foldPHIArgLoadIntoPHI(PHINode &PN) {
   LoadInst *FirstLI = cast<LoadInst>(PN.getIncomingValue(0));
 
+  // Can't forward swifterror through a phi.
+  if (FirstLI->getOperand(0)->isSwiftError())
+    return nullptr;
+
   // FIXME: This is overconservative; this transform is allowed in some cases
   // for atomic operations.
   if (FirstLI->isAtomic())
@@ -442,6 +446,10 @@ Instruction *InstCombinerImpl::foldPHIArgLoadIntoPHI(PHINode &PN) {
   for (unsigned i = 1, e = PN.getNumIncomingValues(); i != e; ++i) {
     LoadInst *LI = dyn_cast<LoadInst>(PN.getIncomingValue(i));
     if (!LI || !LI->hasOneUser())
+      return nullptr;
+
+    // Can't forward swifterror through a phi.
+    if (LI->getOperand(0)->isSwiftError())
       return nullptr;
 
     // We can't sink the load if the loaded value could be modified between
