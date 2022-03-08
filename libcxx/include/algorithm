@@ -692,8 +692,9 @@ template <class BidirectionalIterator, class Compare>
 #include <iterator>
 #include <memory>
 #include <type_traits>
-#include <utility>
 #include <version>
+
+#include <utility> // TODO: Remove this
 
 #include <__algorithm/adjacent_find.h>
 #include <__algorithm/all_of.h>
@@ -762,6 +763,7 @@ template <class BidirectionalIterator, class Compare>
 #include <__algorithm/pop_heap.h>
 #include <__algorithm/prev_permutation.h>
 #include <__algorithm/push_heap.h>
+#include <__algorithm/ranges_max_element.h>
 #include <__algorithm/ranges_min_element.h>
 #include <__algorithm/ranges_swap_ranges.h>
 #include <__algorithm/remove.h>

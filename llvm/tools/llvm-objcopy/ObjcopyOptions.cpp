@@ -12,7 +12,9 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/BinaryFormat/COFF.h"
+#include "llvm/ObjCopy/CommonConfig.h"
 #include "llvm/ObjCopy/ConfigManager.h"
+#include "llvm/ObjCopy/MachO/MachOConfig.h"
 #include "llvm/Option/Arg.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Support/CRC.h"
@@ -1183,10 +1185,12 @@ objcopy::parseInstallNameToolOptions(ArrayRef<const char *> ArgsArr) {
 }
 
 Expected<DriverConfig>
-objcopy::parseBitcodeStripOptions(ArrayRef<const char *> ArgsArr) {
+objcopy::parseBitcodeStripOptions(ArrayRef<const char *> ArgsArr,
+                                  function_ref<Error(Error)> ErrorCallback) {
   DriverConfig DC;
   ConfigManager ConfigMgr;
   CommonConfig &Config = ConfigMgr.Common;
+  MachOConfig &MachOConfig = ConfigMgr.MachO;
   BitcodeStripOptTable T;
   unsigned MissingArgumentIndex, MissingArgumentCount;
   opt::InputArgList InputArgs =
@@ -1221,7 +1225,21 @@ objcopy::parseBitcodeStripOptions(ArrayRef<const char *> ArgsArr) {
                              "llvm-bitcode-strip expects a single input file");
   assert(!Positional.empty());
   Config.InputFilename = Positional[0];
-  Config.OutputFilename = Positional[0];
+
+  if (!InputArgs.hasArg(BITCODE_STRIP_output)) {
+    return createStringError(errc::invalid_argument,
+                             "-o is a required argument");
+  }
+  Config.OutputFilename = InputArgs.getLastArgValue(BITCODE_STRIP_output);
+
+  if (!InputArgs.hasArg(BITCODE_STRIP_remove))
+    return createStringError(errc::invalid_argument, "no action specified");
+
+  // We only support -r for now, which removes all bitcode sections and
+  // the __LLVM segment if it's now empty.
+  cantFail(Config.ToRemove.addMatcher(NameOrPattern::create(
+      "__LLVM,__bundle", MatchStyle::Literal, ErrorCallback)));
+  MachOConfig.EmptySegmentsToRemove.insert("__LLVM");
 
   DC.CopyConfigs.push_back(std::move(ConfigMgr));
   return std::move(DC);

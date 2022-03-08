@@ -32,7 +32,6 @@
 #include "llvm/Support/Mutex.h"
 #include "llvm/Support/SourceMgr.h"
 
-#include <iostream>
 #include <numeric>
 
 using namespace mlir;
@@ -1341,6 +1340,7 @@ ParseResult ExtractValueOp::parse(OpAsmParser &parser, OperationState &result) {
 
 OpFoldResult LLVM::ExtractValueOp::fold(ArrayRef<Attribute> operands) {
   auto insertValueOp = getContainer().getDefiningOp<InsertValueOp>();
+  OpFoldResult result = {};
   while (insertValueOp) {
     if (getPosition() == insertValueOp.getPosition())
       return insertValueOp.getValue();
@@ -1358,10 +1358,16 @@ OpFoldResult LLVM::ExtractValueOp::fold(ArrayRef<Attribute> operands) {
     // ```
     if (getPosition().getValue().take_front(min) ==
         insertValueOp.getPosition().getValue().take_front(min))
-      return {};
+      return result;
+
+    // If neither a prefix, nor the exact position, we can extract out of the
+    // value being inserted into. Moreover, we can try again if that operand
+    // is itself an insertvalue expression.
+    getContainerMutable().assign(insertValueOp.getContainer());
+    result = getResult();
     insertValueOp = insertValueOp.getContainer().getDefiningOp<InsertValueOp>();
   }
-  return {};
+  return result;
 }
 
 LogicalResult ExtractValueOp::verify() {
