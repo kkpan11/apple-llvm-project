@@ -3248,9 +3248,10 @@ Expected<std::unique_ptr<CASDB>> cas::createOnDiskCAS(const Twine &Path) {
   // and use openat() for files underneath.
   SmallString<256> AbsPath;
   Path.toVector(AbsPath);
-  sys::fs::make_absolute(AbsPath);
+  if (AbsPath != "-")
+    sys::fs::make_absolute(AbsPath);
 
-  if (AbsPath == getDefaultOnDiskCASStableID())
+  if (AbsPath == "-" || AbsPath == getDefaultOnDiskCASStableID())
     AbsPath = StringRef(getDefaultOnDiskCASPath());
 
   return OnDiskCAS::open(AbsPath);

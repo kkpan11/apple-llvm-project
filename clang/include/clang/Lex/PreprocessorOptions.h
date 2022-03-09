@@ -213,6 +213,10 @@ public:
   /// Prevents intended crashes when using #pragma clang __debug. For testing.
   bool DisablePragmaDebugCrash = false;
 
+  /// Cache raw tokenization. Currently ignored unless the filesystem has is
+  /// CAS-friendly.
+  bool CacheLexRaw = false;
+
 public:
   PreprocessorOptions() : PrecompiledPreambleBytes(0, false) {}
 

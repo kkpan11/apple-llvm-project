@@ -343,9 +343,14 @@ SourceLocation PTHLexer::getSourceLocation() {
 // PTHManager methods.
 //===----------------------------------------------------------------------===//
 
-PTHManager::PTHManager(IntrusiveRefCntPtr<llvm::cas::CASFileSystemBase> FS,
+PTHManager::PTHManager(llvm::cas::CASDB &CAS,
+                       IntrusiveRefCntPtr<llvm::cas::CASFileSystemBase> FS,
                        Preprocessor &PP)
-    : CAS(FS->getCAS()), FS(std::move(FS)), PP(&PP) {
+    : CAS(CAS), FS(std::move(FS)), PP(&PP) {
+  // TODO: Allow the filesystem NOT to have a CAS instance, or (maybe?) to have
+  // a different CAS instance. This requires ingesting files from FS into CAS.
+  assert(&CAS == &this->FS->getCAS() && "Expected the same CAS instance");
+
   {
     const LangOptions &OriginalLangOpts = PP.getLangOpts();
     // Copy over most options.

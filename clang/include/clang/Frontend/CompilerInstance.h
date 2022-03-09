@@ -83,6 +83,9 @@ class CompilerInstance : public ModuleLoader {
   /// Auxiliary Target info.
   IntrusiveRefCntPtr<TargetInfo> AuxTarget;
 
+  /// The CAS, if any.
+  std::shared_ptr<llvm::cas::CASDB> CAS;
+
   /// The file manager.
   IntrusiveRefCntPtr<FileManager> FileMgr;
 
@@ -413,6 +416,11 @@ public:
 
   llvm::vfs::OutputBackend &getOutputBackend();
   llvm::vfs::OutputBackend &getOrCreateOutputBackend();
+
+  /// Get the CAS, or create it using the configuration in CompilerInvocation.
+  ///
+  /// FIXME: Requires the filemanager to be set up already, but shouldn't.
+  llvm::cas::CASDB &getOrCreateCAS();
 
   /// }
   /// @name Source Manager

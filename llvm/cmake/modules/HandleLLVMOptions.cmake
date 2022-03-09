@@ -1238,7 +1238,7 @@ set(LLVM_ENABLE_EXPERIMENTAL_DEPSCAN OFF CACHE BOOL
 set(LLVM_DEPSCAN_MODE "" CACHE STRING "Mode for -fdepscan if used")
 set(LLVM_DEPSCAN_DAEMON "" CACHE STRING "Path to existing DepScan daemon to use")
 set(LLVM_CAS_BUILTIN_PATH "" CACHE STRING "Path to pass for -fcas-builtin-path")
-set(LLVM_CAS_BUILTIN_PATH_Default "/^llvm::cas::builtin::default/llvm.cas.builtin.default")
+set(LLVM_CAS_BUILTIN_PATH_Default "-")
 if (LLVM_CAS_BUILTIN_PATH)
   set(LLVM_CAS_BUILTIN_PATH_Default "${LLVM_CAS_BUILTIN_PATH}")
 endif()
@@ -1302,8 +1302,10 @@ if(LLVM_ENABLE_EXPERIMENTAL_DEPSCAN)
 endif()
 
 set(LLVM_ENABLE_EXPERIMENTAL_CAS_TOKEN_CACHE OFF CACHE BOOL
-    "Cache tokens using -Xclang -fcas-cache-tokens")
+    "Cache tokens using -Xclang -fexperimental-cache-lex-raw")
 if(LLVM_ENABLE_EXPERIMENTAL_CAS_TOKEN_CACHE)
+  # FIXME: Update this to check -fexperimental-cache-lex-raw before dropping
+  # the -fcas-token-cache alias.
   check_c_compiler_flag("-Xclang -fcas-token-cache" SUPPORTS_CAS_TOKEN_CACHE)
   if(SUPPORTS_CAS_TOKEN_CACHE)
     append("-Xclang" CMAKE_C_FLAGS CMAKE_CXX_FLAGS)

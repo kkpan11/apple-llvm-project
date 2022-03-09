@@ -160,7 +160,40 @@ llvm::vfs::FileSystem &CompilerInstance::getVirtualFileSystem() const {
   return getFileManager().getVirtualFileSystem();
 }
 
+static llvm::cas::CASDB *extractCASFromFS(const llvm::vfs::FileSystem &FS) {
+  if (!FS.isCASFS())
+    return nullptr;
+  return &static_cast<const llvm::cas::CASFileSystemBase &>(FS).getCAS();
+}
+
 void CompilerInstance::setFileManager(FileManager *Value) {
+  /// FIXME: Stop checking this here; instead, trust anyone that overrides the
+  /// file manager to also override the CAS when appropriate. Needs some
+  /// layering fixes in clang-scan-deps though.
+  auto HasMatchingCAS = [&]() {
+    if (!CAS && !FileMgr)
+      return true;
+    if (!Value)
+      return true;
+
+    // Don't allow the CAS to be changed.
+    const llvm::cas::CASDB *NewCAS =
+        extractCASFromFS(Value->getVirtualFileSystem());
+    if (!NewCAS)
+      return true;
+
+    if (CAS)
+      return &*CAS == NewCAS;
+
+    assert(FileMgr && "Expected to return already if no FileMgr?");
+    if (const llvm::cas::CASDB *OldCAS =
+            extractCASFromFS(FileMgr->getVirtualFileSystem()))
+      return OldCAS == NewCAS;
+    return true;
+  };
+  assert(HasMatchingCAS() && "Expected matching CAS");
+  (void)HasMatchingCAS;
+
   FileMgr = Value;
 }
 
@@ -375,7 +408,7 @@ FileManager *CompilerInstance::createFileManager(
   if (!VFS)
     VFS = FileMgr ? &FileMgr->getVirtualFileSystem()
                   : createVFSFromCompilerInvocation(getInvocation(),
-                                                    getDiagnostics());
+                                                    getDiagnostics(), CAS);
   assert(VFS && "FileManager has no VFS?");
   FileMgr = new FileManager(getFileSystemOpts(), std::move(VFS));
   return FileMgr.get();
@@ -447,7 +480,6 @@ static void InitializeFileRemapping(DiagnosticsEngine &Diags,
 
 void CompilerInstance::createPreprocessor(TranslationUnitKind TUKind) {
   const PreprocessorOptions &PPOpts = getPreprocessorOpts();
-  const CASOptions &CASOpts = getInvocation().getCASOpts();
 
   // The AST reader holds a reference to the old preprocessor (if any).
   TheASTReader.reset();
@@ -465,13 +497,14 @@ void CompilerInstance::createPreprocessor(TranslationUnitKind TUKind) {
   PP->Initialize(getTarget(), getAuxTarget());
 
   // Create a PTH manager if we are using some form of a token cache.
-  if (CASOpts.CASTokenCache) {
+  if (PPOpts.CacheLexRaw) {
+    // FIXME: Should not require the filesystem to do CAS ingestion. Instead,
+    // token-caching can fall back to ingesting into an in-memory CAS itself.
     llvm::vfs::FileSystem &FS = getFileManager().getVirtualFileSystem();
-
-    // FIXME: use dyn_cast here.
     if (FS.isCASFS())
       PP->setPTHManager(std::make_unique<PTHManager>(
-          &static_cast<llvm::cas::CASFileSystemBase &>(FS), *PP));
+          getOrCreateCAS(), &static_cast<llvm::cas::CASFileSystemBase &>(FS),
+          *PP));
   }
 
   if (PPOpts.DetailedRecord)
@@ -842,6 +875,27 @@ llvm::vfs::OutputBackend &CompilerInstance::getOrCreateOutputBackend() {
   if (!hasOutputBackend())
     createOutputBackend();
   return getOutputBackend();
+}
+
+llvm::cas::CASDB &CompilerInstance::getOrCreateCAS() {
+  if (CAS)
+    return *CAS;
+
+  // Return the CAS from the VFS, if any.
+  //
+  // FIXME: This layering is hard to follow; instead, change clients to set the
+  // CAS when building a VFS with a CAS not available from CompilerInvocation.
+  if (FileMgr)
+    if (llvm::cas::CASDB *FSCAS =
+            extractCASFromFS(FileMgr->getVirtualFileSystem()))
+      return *FSCAS;
+
+  // Create a new CAS instance from the CompilerInvocation. Future calls to
+  // createFileManager() will use the same CAS.
+  CAS = getInvocation().getCASOpts().getOrCreateCAS(
+      getDiagnostics(),
+      /*CreateEmptyCASOnFailure=*/true);
+  return *CAS;
 }
 
 std::unique_ptr<raw_pwrite_stream>

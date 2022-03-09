@@ -307,6 +307,15 @@ public:
   /// When using -emit-module, treat the modulemap as a system module.
   unsigned IsSystemModule : 1;
 
+  /// Cache -cc1 compilations when possible. Ignored unless CASFileSystemRootID
+  /// is specified.
+  unsigned CacheCompile : 1;
+
+  /// When using CacheCompile, write a CASID for the output file.
+  ///
+  /// FIXME: Add clang tests for this functionality.
+  unsigned WriteOutputAsCASID : 1;
+
   /// Output (and read) PCM files regardless of compiler errors.
   unsigned AllowPCMWithCompilerErrors : 1;
 
@@ -469,6 +478,7 @@ public:
         ASTDumpLookups(false), BuildingImplicitModule(false),
         BuildingImplicitModuleUsesLock(true), ModulesEmbedAllFiles(false),
         IncludeTimestamps(true), UseTemporary(true),
+        CacheCompile(false), WriteOutputAsCASID(false),
         AllowPCMWithCompilerErrors(false), TimeTraceGranularity(500) {}
 
   /// getInputKindForExtension - Return the appropriate input kind for a file

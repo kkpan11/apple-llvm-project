@@ -15,8 +15,7 @@
 // RUN:              -working-directory %t.d                              \
 // RUN: | FileCheck %s
 //
-// CHECK:      "-fcas" "builtin"
-// CHECK-SAME: "-fcas-builtin-path" "/^llvm::cas::builtin::default/llvm.cas.builtin.default"
+// CHECK:      "-fcas-builtin-path" "-"
 // CHECK-SAME: "-working-directory" "/^testdir"
 // CHECK-SAME: "-x" "c" "/^source/depscan-prefix-map.c"
 // CHECK-SAME: "-isysroot" "/^sdk"
@@ -24,6 +23,9 @@
 // RUN: llvm-cas                                                          \
 // RUN:    --cas /^llvm::cas::builtin::default/llvm.cas.builtin.default   \
 // RUN:    --ls-tree-recursive @%t.root                                   \
+// RUN: | FileCheck %s -check-prefix=CHECK-ROOT
+//
+// RUN: llvm-cas --cas - --ls-tree-recursive @%t.root                     \
 // RUN: | FileCheck %s -check-prefix=CHECK-ROOT
 //
 // CHECK-ROOT:      tree

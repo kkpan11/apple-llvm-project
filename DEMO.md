@@ -6,11 +6,11 @@ Play with `llvm-cas`. E.g., print a tree:
 
 ```
 % ninja llvm-cas
-% llvm-cas --cas $TMPDIR/casfs.default --ls-tree <tree-id>
+% llvm-cas --cas - --ls-tree <tree-id>
 ```
 Merge directories:
 ```
-% llvm-cas --cas $TMPDIR/casfs.default --merge <tree-id> /path/to/dir
+% llvm-cas --cas - --merge <tree-id> /path/to/dir
 ```
 
 TODO: add demos for plugins once there are some.
@@ -26,17 +26,14 @@ need to be "fixed". Some are driver-only (and should remain so).
     - Avoids writing out Clang's Git revision (maybe it should avoid the
       version altogether).
     - Tells the linker not to write object file timestamps in the debug map.
-- `-fcas=builtin`: use the builtin CAS (defaults to in-memory).
-    - `-fcas-builtin-path=<path>`: path to on-disk storage for CAS.
-    - `-fcas-builtin-path='/^$TMPDIR/<path>'`: "hack" for referencing temp
-      directory without the path to the temp directory showing up on the
-      command-line. Probably want something better than this...
+- `-fcas-builtin-path=<path>`: Use on-disk CAS, instead of in-memory.
+    - `-fcas-builtin-path='-'`: Use the default on-disk CAS.
 - `-fcas-fs=<tree>`: use `<tree>` as the root filesystem. This *should* work in
   the driver (causing the driver to read from the same tree), but currently
   only works in `-cc1`.
-- `-fcas-token-cache`: perform a raw lex (no preprocessor) for each input file
-  as a separate task from the full lex, and cache the result in the CAS. This
-  *should* work always, but currently depends on `-fcas-fs`.
+- `-fexperimental-cache-lex-raw`: perform a raw lex (no preprocessor) for each
+  input file as a separate task from the full lex, and cache the result in the
+  CAS. This *should* work always, but currently depends on `-fcas-fs`.
 - `-fdepscan`: Driver-only. Before running `-cc1`, use the clang dependency
   scanner to find and the dependencies and create a pruned tree in the CAS,
   then run `-cc1` using `-fcas-fs`. This *should* respect `-fcas` if it was
@@ -308,7 +305,7 @@ directory.
   "$BUILDDIR"/unittests/CASObjectFormats/CASObjectFormatsTests &&
   find "$OBJECTSDIR"/lib/Support -name "*.o" |
   sort >objects-to-ingest &&
-  time "$BUILDDIR"/llvm-cas-object-format --cas "$TMPDIR/casfs.default" \
+  time "$BUILDDIR"/llvm-cas-object-format --cas "-" \
     @objects-to-ingest --object-stats \
     --keep-compact-unwind-alive=false \
     --prefer-indirect-symbol-refs=true
@@ -320,7 +317,7 @@ serialization of LinkGraph and works for both MachO and ELF. You can try use
 `flatv1` schema with following options:
 
 ```
-  time "$BUILDDIR"/llvm-cas-object-format --cas "$TMPDIR/casfs.default" \
+  time "$BUILDDIR"/llvm-cas-object-format --cas "-" \
     --ingest-schema=flatv1 --object-stats @objects-to-ingest
 ```
 
@@ -336,15 +333,15 @@ Some other use flags to use:
 ### Using a CAS filesystem
 
 ```
-% llvm-cas -cas "$TMPDIR/casfs.default" --merge /path/to/dir > casid
-% ld64.lld -arch x86_64 -platform_version macos 12 12 --fcas-builtin-path "$TMPDIR/casfs.default" --fcas-fs @casid /path/to/dir/main.o -o a.out
+% llvm-cas -cas "-" --merge /path/to/dir > casid
+% ld64.lld -arch x86_64 -platform_version macos 12 12 --fcas-builtin-path "-" --fcas-fs @casid /path/to/dir/main.o -o a.out
 ```
 
 ### Caching linker invocations
 
 `ld64.lld` can connect to the builtin CAS and cache its linker work:
 ```
-% ld64.lld -arch x86_64 -platform_version macos 12 12 --fcas-builtin-path "$TMPDIR/casfs.default" --fcas-cache-results t.o -o a.out --verbose
+% ld64.lld -arch x86_64 -platform_version macos 12 12 --fcas-builtin-path "-" --fcas-cache-results t.o -o a.out --verbose
 ```
 With `--verbose` (or `LLD_VERBOSE=1` as environment variable) it will output to `stderr`
 to indicate whether there was a cache 'hit' or 'miss'.
@@ -354,6 +351,6 @@ to indicate whether there was a cache 'hit' or 'miss'.
 `ld64.lld` can read & link `CAS.o` objects:
 
 ```
-% llvm-cas-object-format --cas "$TMPDIR/casfs.default" t1.o t2.o -silent > casid
-% ld64.lld -arch x86_64 -platform_version macos 12 12 --fcas-builtin-path "$TMPDIR/casfs.default" @casid -o a.out
+% llvm-cas-object-format --cas "-" t1.o t2.o -silent > casid
+% ld64.lld -arch x86_64 -platform_version macos 12 12 --fcas-builtin-path "-" @casid -o a.out
 ```

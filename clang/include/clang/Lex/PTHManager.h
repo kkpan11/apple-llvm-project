@@ -118,7 +118,8 @@ public:
   ~PTHManager();
   PTHManager() = delete;
 
-  PTHManager(IntrusiveRefCntPtr<llvm::cas::CASFileSystemBase> FS,
+  PTHManager(llvm::cas::CASDB &CAS,
+             IntrusiveRefCntPtr<llvm::cas::CASFileSystemBase> FS,
              Preprocessor &PP);
 
   void setPreprocessor(Preprocessor *pp) { PP = pp; }
