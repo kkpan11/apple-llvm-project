@@ -23,6 +23,9 @@ let Command = "settings set" in {
     Desc<"Apply the new value to the global default value.">;
   def setset_force : Option<"force", "f">,
     Desc<"Force an empty value to be accepted as the default.">;
+  def setset_exists : Option<"exists", "e">,
+    Desc<"Set the setting if it exists, but do not cause the command to raise "
+    "an error if it does not exist.">;
 }
 
 let Command = "settings write" in {
