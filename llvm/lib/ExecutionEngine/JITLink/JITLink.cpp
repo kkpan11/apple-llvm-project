@@ -402,6 +402,15 @@ getGetEdgeKindNameFunction(const Triple &TT) {
   return make_error<JITLinkError>("Unsupported triple");
 }
 
+Error makeAlignmentError(llvm::orc::ExecutorAddr Loc, uint64_t Value, int N,
+                         const Edge &E) {
+  return make_error<JITLinkError>("0x" + llvm::utohexstr(Loc.getValue()) +
+                                  " improper alignment for relocation " +
+                                  formatv("{0:d}", E.getKind()) + ": 0x" +
+                                  llvm::utohexstr(Value) +
+                                  " is not aligned to " + Twine(N) + " bytes");
+}
+
 Expected<std::unique_ptr<LinkGraph>>
 createLinkGraphFromObject(MemoryBufferRef ObjectBuffer) {
   auto Magic = identify_magic(ObjectBuffer.getBuffer());
