@@ -1,0 +1,66 @@
+RUN: rm -rf %t && mkdir -p %t
+RUN: llc %S/Inputs/csvtest.ll --filetype=obj -o %t/csvtest.o
+
+RUN: llvm-cas-object-format --cas %t/cas --object-stats %t/stats.csv --object-stats-format=csv --ingest-schema=nestedv1 %t/csvtest.o
+RUN: cat %t/stats.csv | FileCheck %s -check-prefix=CSV
+
+RUN: llvm-cas-object-format --cas %t/cas --object-stats - --object-stats-format=csv --ingest-schema=nestedv1 %t/csvtest.o | FileCheck %s -check-prefix=CSV
+
+RUN: llvm-cas-object-format --cas %t/cas --object-stats - --object-stats-format=pretty --ingest-schema=nestedv1 %t/csvtest.o | FileCheck %s -check-prefix=PRETTY
+
+RUN: llvm-cas-object-format --cas %t/cas --object-stats %t/statspretty.txt --object-stats-format=pretty --ingest-schema=nestedv1 %t/csvtest.o
+RUN: cat %t/statspretty.txt | FileCheck %s -check-prefix=PRETTY
+
+RUN: llvm-cas-object-format --cas %t/cas --object-stats %t/statscsv.txt --ingest-schema=nestedv1 %t/csvtest.o
+RUN: cat %t/statscsv.txt | FileCheck %s -check-prefix=PRETTY
+
+RUN: llvm-cas-object-format --cas %t/cas --object-stats - --ingest-schema=nestedv1 %t/csvtest.o | FileCheck %s -check-prefix=PRETTY
+
+CSV: Kind, Count, Parents, Children, Data (B), Cost (B)
+CSV-NEXT: builtin:node, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}
+CSV-NEXT: builtin:tree, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}
+CSV-NEXT: cas.o:block, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}
+CSV-NEXT: cas.o:block-data, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}
+CSV-NEXT: cas.o:compile-unit, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}
+CSV-NEXT: cas.o:name, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}
+CSV-NEXT: cas.o:name-list, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}
+CSV-NEXT: cas.o:section, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}
+CSV-NEXT: cas.o:symbol, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}
+CSV-NEXT: cas.o:symbol-table, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}
+CSV-NEXT: cas.o:target-list, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}
+CSV-NEXT: TOTAL, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}, {{[0-9]+}}
+
+CSV: num-section-names, {{[0-9]+}}
+CSV-NEXT: num-symbol-names, {{[0-9]+}}
+CSV-NEXT: num-anonymous-symbols, {{[0-9]+}}
+CSV-NEXT: num-template-symbols, {{[0-9]+}}
+CSV-NEXT: num-template-targets, {{[0-9]+}}
+CSV-NEXT: num-2-target-blocks, {{[0-9]+}}
+
+
+PRETTY:   => Note: 'Parents' counts incoming edges
+PRETTY-NEXT:   => Note: 'Children' counts outgoing edges (to sub-objects)
+PRETTY-NEXT:   => Note: HashSize = {{[0-9]+}}B
+PRETTY-NEXT:   => Note: PtrSize  = {{[0-9]+}}B
+PRETTY-NEXT:   => Note: Cost     = Count*HashSize + PtrSize*Children + Data
+PRETTY-NEXT: Kind                        Count            Parents           Children           Data (B)           Cost (B)
+PRETTY-NEXT: ====                        =====            =======           ========           ========           ========
+PRETTY: builtin:node                   {{[0-9]+}}  {{[0-9]+\.[0-9]+}}%         {{[0-9]+}}  {{[0-9]+\.[0-9]+}}%         {{[0-9]+}}  {{[0-9]+\.[0-9]+}}%        {{[0-9]+}}   {{[0-9]+\.[0-9]+}}%        {{[0-9]+}}  {{[0-9]+\.[0-9]+}}%
+PRETTY-NEXT: builtin:tree                    {{[0-9]+}}   {{[0-9]+\.[0-9]+}}%          {{[0-9]+}}   {{[0-9]+\.[0-9]+}}%          {{[0-9]+}}   {{[0-9]+\.[0-9]+}}%        {{[0-9]+}}   {{[0-9]+\.[0-9]+}}%        {{[0-9]+}}  {{[0-9]+\.[0-9]+}}%
+PRETTY-NEXT: cas.o:block                    {{[0-9]+}}  {{[0-9]+\.[0-9]+}}%         {{[0-9]+}}  {{[0-9]+\.[0-9]+}}%         {{[0-9]+}}  {{[0-9]+\.[0-9]+}}%         {{[0-9]+}}   {{[0-9]+\.[0-9]+}}%        {{[0-9]+}}  {{[0-9]+\.[0-9]+}}%
+PRETTY-NEXT: cas.o:block-data               {{[0-9]+}}  {{[0-9]+\.[0-9]+}}%         {{[0-9]+}}  {{[0-9]+\.[0-9]+}}%          {{[0-9]+}}   {{[0-9]+\.[0-9]+}}%       {{[0-9]+}}  {{[0-9]+\.[0-9]+}}%       {{[0-9]+}}  {{[0-9]+\.[0-9]+}}%
+PRETTY-NEXT: cas.o:compile-unit              {{[0-9]+}}   {{[0-9]+\.[0-9]+}}%          {{[0-9]+}}   {{[0-9]+\.[0-9]+}}%          {{[0-9]+}}   {{[0-9]+\.[0-9]+}}%         {{[0-9]+}}   {{[0-9]+\.[0-9]+}}%        {{[0-9]+}}  {{[0-9]+\.[0-9]+}}%
+PRETTY-NEXT: cas.o:name                     {{[0-9]+}}  {{[0-9]+\.[0-9]+}}%         {{[0-9]+}}  {{[0-9]+\.[0-9]+}}%          {{[0-9]+}}   {{[0-9]+\.[0-9]+}}%        {{[0-9]+}}  {{[0-9]+\.[0-9]+}}%        {{[0-9]+}}  {{[0-9]+\.[0-9]+}}%
+PRETTY-NEXT: cas.o:name-list                 {{[0-9]+}}   {{[0-9]+\.[0-9]+}}%          {{[0-9]+}}   {{[0-9]+\.[0-9]+}}%          {{[0-9]+}}   {{[0-9]+\.[0-9]+}}%          {{[0-9]+}}   {{[0-9]+\.[0-9]+}}%         {{[0-9]+}}  {{[0-9]+\.[0-9]+}}%
+PRETTY-NEXT: cas.o:section                  {{[0-9]+}}  {{[0-9]+\.[0-9]+}}%         {{[0-9]+}}  {{[0-9]+\.[0-9]+}}%         {{[0-9]+}}   {{[0-9]+\.[0-9]+}}%         {{[0-9]+}}   {{[0-9]+\.[0-9]+}}%        {{[0-9]+}}  {{[0-9]+\.[0-9]+}}%
+PRETTY-NEXT: cas.o:symbol                   {{[0-9]+}}  {{[0-9]+\.[0-9]+}}%         {{[0-9]+}}  {{[0-9]+\.[0-9]+}}%         {{[0-9]+}}  {{[0-9]+\.[0-9]+}}%         {{[0-9]+}}   {{[0-9]+\.[0-9]+}}%        {{[0-9]+}}  {{[0-9]+\.[0-9]+}}%
+PRETTY-NEXT: cas.o:symbol-table              {{[0-9]+}}   {{[0-9]+\.[0-9]+}}%          {{[0-9]+}}   {{[0-9]+\.[0-9]+}}%         {{[0-9]+}}   {{[0-9]+\.[0-9]+}}%          {{[0-9]+}}   {{[0-9]+\.[0-9]+}}%        {{[0-9]+}}  {{[0-9]+\.[0-9]+}}%
+PRETTY-NEXT: cas.o:target-list               {{[0-9]+}}   {{[0-9]+\.[0-9]+}}%          {{[0-9]+}}   {{[0-9]+\.[0-9]+}}%          {{[0-9]+}}   {{[0-9]+\.[0-9]+}}%          {{[0-9]+}}   {{[0-9]+\.[0-9]+}}%         {{[0-9]+}}  {{[0-9]+\.[0-9]+}}%
+PRETTY-NEXT: TOTAL                          {{[0-9]+}} {{[0-9]+\.[0-9]+}}%        {{[0-9]+}} {{[0-9]+\.[0-9]+}}%        {{[0-9]+}} {{[0-9]+\.[0-9]+}}%       {{[0-9]+}} {{[0-9]+\.[0-9]+}}%       {{[0-9]+}}  {{[0-9]+\.[0-9]+}}%
+
+PRETTY: num-section-names              {{[0-9]+}}
+PRETTY-NEXT: num-symbol-names                {{[0-9]+}}
+PRETTY-NEXT: num-anonymous-symbols          {{[0-9]+}}
+PRETTY-NEXT: num-template-symbols            {{[0-9]+}}
+PRETTY-NEXT: num-template-targets            {{[0-9]+}}
+PRETTY-NEXT: num-2-target-blocks             {{[0-9]+}}
