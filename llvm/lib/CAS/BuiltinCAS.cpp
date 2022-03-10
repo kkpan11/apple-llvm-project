@@ -218,7 +218,7 @@ using HashType = decltype(HasherT::hash(std::declval<ArrayRef<uint8_t> &>()));
 
 } // end anonymous namespace
 
-static StringRef getCASIDPrefix() { return "~{CASFS}:"; }
+static StringRef getCASIDPrefix() { return "llvmcas://"; }
 
 static void extractPrintableHash(CASID ID, SmallVectorImpl<char> &Dest) {
   ArrayRef<uint8_t> RawHash = ID.getHash();
