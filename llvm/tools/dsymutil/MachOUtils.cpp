@@ -302,7 +302,7 @@ static void transferSegmentAndSections(
 }
 
 // Write the __DWARF segment load command to the output file.
-static void createDwarfSegment(uint64_t VMAddr, uint64_t FileOffset,
+static bool createDwarfSegment(uint64_t VMAddr, uint64_t FileOffset,
                                uint64_t FileSize, unsigned NumSections,
                                MCAsmLayout &Layout, MachObjectWriter &Writer) {
   Writer.writeSegmentLoadCommand("__DWARF", NumSections, VMAddr,
@@ -319,12 +319,16 @@ static void createDwarfSegment(uint64_t VMAddr, uint64_t FileOffset,
     if (Align > 1) {
       VMAddr = alignTo(VMAddr, Align);
       FileOffset = alignTo(FileOffset, Align);
+      if (FileOffset > UINT32_MAX)
+        return error("section " + Sec->getName() + "'s file offset exceeds 4GB."
+            " Refusing to produce an invalid Mach-O file.");
     }
     Writer.writeSection(Layout, *Sec, VMAddr, FileOffset, 0, 0, 0);
 
     FileOffset += Layout.getSectionAddressSize(Sec);
     VMAddr += Layout.getSectionAddressSize(Sec);
   }
+  return true;
 }
 
 static bool isExecutable(const object::MachOObjectFile &Obj) {
@@ -562,8 +566,9 @@ bool generateDsymCompanion(llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> VFS,
   }
 
   // Write the load command for the __DWARF segment.
-  createDwarfSegment(DwarfVMAddr, DwarfSegmentStart, DwarfSegmentSize,
-                     NumDwarfSections, Layout, Writer);
+  if (!createDwarfSegment(DwarfVMAddr, DwarfSegmentStart, DwarfSegmentSize,
+                          NumDwarfSections, Layout, Writer))
+    return false;
 
   assert(OutFile.tell() == LoadCommandSize + HeaderSize);
   OutFile.write_zeros(SymtabStart - (LoadCommandSize + HeaderSize));
