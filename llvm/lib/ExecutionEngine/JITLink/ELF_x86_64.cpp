@@ -438,7 +438,7 @@ const char *getELFX86RelocationKindName(Edge::Kind R) {
 }
 
 LinkGraphPassFunction createEHFrameSplitterPass_ELF_x86_64() {
-  return EHFrameSplitter(".eh_frame");
+  return DWARFRecordSectionSplitter(".eh_frame");
 }
 
 LinkGraphPassFunction createEHFrameEdgeFixerPass_ELF_x86_64() {
