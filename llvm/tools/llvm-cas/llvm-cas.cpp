@@ -485,6 +485,7 @@ int ingestFileSystem(CASDB &CAS, StringRef Path) {
         createStringError(inconvertibleErrorCode(), "missing --data=<path>"));
   auto Ref = ExitOnErr(ingestFileSystemImpl(CAS, Path));
   ExitOnErr(CAS.printCASID(outs(), Ref));
+  outs() << "\n";
   return 0;
 }
 
