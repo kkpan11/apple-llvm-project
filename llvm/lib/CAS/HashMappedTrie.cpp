@@ -68,22 +68,24 @@ public:
   explicit TrieSubtrie(size_t StartBit, size_t NumBits);
 
 private:
-  // FIXME: Consider adding the following:
+  // FIXME: Use a bitset to speed up access:
   //
-  // std::atomic<std::bitset<20>> IsSet;
+  //     std::array<std::atomic<uint64_t>, NumSlots/64> IsSet;
   //
-  // Which could be used to micro-optimize get() to return nullptr without
-  // reading from Slots. This would be the algorithm for updating IsSet (after
-  // updating Slots):
+  // This will avoid needing to visit sparsely filled slots in
+  // \a ThreadSafeHashMappedTrieBase::destroyImpl() when there's a non-trivial
+  // destructor.
   //
-  //     std::bitset<20> Old = ...;
-  //     std::bitset<20> New = Old;
-  //     New.set(I);
-  //     while (!IsSet.compare_exchange_weak(Old, New, ...))
-  //       New |= Old;
+  // It would also greatly speed up iteration, if we add that some day, and
+  // allow get() to return one level sooner.
   //
-  // However, if we expect most accesses to be successful (which we probably
-  // do if reading more than writing) than this may not be profitable.
+  // This would be the algorithm for updating IsSet (after updating Slots):
+  //
+  //     std::atomic<uint64_t> &Bits = IsSet[I.High];
+  //     const uint64_t NewBit = 1ULL << I.Low;
+  //     uint64_t Old = 0;
+  //     while (!Bits.compare_exchange_weak(Old, Old | NewBit))
+  //       ;
 
   // For debugging.
   unsigned StartBit = 0;
