@@ -37,6 +37,10 @@ getGetEdgeKindNameFunctionForMachO(const Triple &TT);
 void link_MachO(std::unique_ptr<LinkGraph> G,
                 std::unique_ptr<JITLinkContext> Ctx);
 
+/// Returns a pass suitable for splitting __debug_line sections in MachO
+/// objects.
+LinkGraphPassFunction createDebugLineSplitterPass_MachO();
+
 } // end namespace jitlink
 } // end namespace llvm
 
