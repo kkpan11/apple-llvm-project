@@ -2689,14 +2689,14 @@ OnDiskCAS::getObjectProxy(IndexProxy I) const {
   auto createProxy = [&](MemoryBufferRef Buffer) -> ObjectProxy {
     if (Blob) {
       assert(Buffer.getBuffer().drop_back(Blob0).end()[0] == 0 &&
-             "Null termination should be guaranteed by creation logic");
+             "Standalone blob missing null termination");
       return ObjectProxy{I.Offset, Object, I.Hash, None,
                          toArrayRef(Buffer.getBuffer().drop_back(Blob0))};
     }
 
     DataRecordHandle Record = DataRecordHandle::get(Buffer.getBuffer().data());
     assert(Record.getData().end()[0] == 0 &&
-           "Null termination should be guaranteed by creation logic");
+           "Standalone object record missing null termination for data");
     return ObjectProxy{I.Offset, Object, I.Hash, Record, None};
   };
 
