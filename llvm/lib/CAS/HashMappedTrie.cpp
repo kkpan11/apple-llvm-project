@@ -450,24 +450,21 @@ void ThreadSafeHashMappedTrieBase::destroyImpl(function_ref<void (void *)> Destr
   if (!Impl)
     return;
 
-  // Content is trivially destructed. Impl and the tries it owns will be
-  // destroyed on return.
-  if (!Destructor)
-    return;
+  // Destroy content nodes throughout trie. Avoid destroying any subtries since
+  // we need TrieNode::classof() to find the content nodes.
+  //
+  // FIXME: Once we have bitsets (see FIXME in TrieSubtrie class), use them
+  // facilitate sparse iteration here.
+  if (Destructor)
+    for (TrieSubtrie *Trie = &Impl->Root; Trie; Trie = Trie->Next.load())
+      for (auto &Slot : Trie->Slots)
+        if (auto *Content = dyn_cast_or_null<TrieContent>(Slot.load()))
+          Destructor(Content->getValuePointer());
 
-  // Destroy the content.
-  SmallVector<TrieSubtrie *> Worklist = {&Impl->Root};
-  while (!Worklist.empty()) {
-    TrieSubtrie *Trie = Worklist.pop_back_val();
-    for (auto &Slot : Trie->Slots) {
-      TrieNode *Node = Slot.load();
-      if (!Node)
-        continue;
-
-      if (auto *S = dyn_cast<TrieSubtrie>(Node))
-        Worklist.push_back(S);
-      else
-        Destructor(cast<TrieContent>(Node)->getValuePointer());
-    }
-  }
+  // Destroy the subtries using explicit iteration here to avoid recursive
+  // destructor calls. Incidentally, this destroys them in reverse order of
+  // creation (breadth-first, deepest first).
+  std::unique_ptr<TrieSubtrie> Trie = Impl->Root.Next.take();
+  while (Trie)
+    Trie = Trie->Next.take();
 }
