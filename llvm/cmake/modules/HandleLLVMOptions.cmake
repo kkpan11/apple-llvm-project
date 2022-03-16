@@ -1304,10 +1304,11 @@ if(LLVM_ENABLE_EXPERIMENTAL_DEPSCAN)
 endif()
 
 set(LLVM_ENABLE_EXPERIMENTAL_CAS_TOKEN_CACHE OFF CACHE BOOL
-    "Cache tokens using -Xclang -fexperimental-cache-lex-raw")
+    "Cache tokens using -fexperimental-cache=raw-lex")
 if(LLVM_ENABLE_EXPERIMENTAL_CAS_TOKEN_CACHE)
-  # FIXME: Update this to check -fexperimental-cache-lex-raw before dropping
-  # the -fcas-token-cache alias.
+  # FIXME: Update this to check -fexperimental-cache=raw-lex once (1) it exists
+  # and (2) it's available in the toolchains we care about. After that we can
+  # drop the -fcas-token-cache alias.
   check_c_compiler_flag("-Xclang -fcas-token-cache" SUPPORTS_CAS_TOKEN_CACHE)
   if(SUPPORTS_CAS_TOKEN_CACHE)
     append("-Xclang" CMAKE_C_FLAGS CMAKE_CXX_FLAGS)

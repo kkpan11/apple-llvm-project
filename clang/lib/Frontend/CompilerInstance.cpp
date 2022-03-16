@@ -497,7 +497,7 @@ void CompilerInstance::createPreprocessor(TranslationUnitKind TUKind) {
   PP->Initialize(getTarget(), getAuxTarget());
 
   // Create a PTH manager if we are using some form of a token cache.
-  if (PPOpts.CacheLexRaw) {
+  if (PPOpts.CacheRawLex) {
     // FIXME: Should not require the filesystem to do CAS ingestion. Instead,
     // token-caching can fall back to ingesting into an in-memory CAS itself.
     llvm::vfs::FileSystem &FS = getFileManager().getVirtualFileSystem();

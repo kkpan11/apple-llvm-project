@@ -803,8 +803,8 @@ static void updateCompilerInvocation(CompilerInvocation &Invocation,
   FileSystemOpts.CASFileSystemRootID = RootID;
   FileSystemOpts.CASFileSystemWorkingDirectory = CASWorkingDirectory.str();
   auto &FrontendOpts = Invocation.getFrontendOpts();
-  FrontendOpts.CacheCompile = true;          // FIXME: Don't set.
-  Invocation.getCASOpts().BuiltinPath = "-"; // FIXME: Don't override.
+  FrontendOpts.CacheCompileJob = true;      // FIXME: Don't set.
+  Invocation.getCASOpts().CASPath = "auto"; // FIXME: Don't override.
 
   // If there are no mappings, we're done. Otherwise, continue and remap
   // everything.

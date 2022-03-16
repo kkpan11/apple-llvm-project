@@ -215,7 +215,7 @@ public:
 
   /// Cache raw tokenization. Currently ignored unless the filesystem has is
   /// CAS-friendly.
-  bool CacheLexRaw = false;
+  bool CacheRawLex = false;
 
 public:
   PreprocessorOptions() : PrecompiledPreambleBytes(0, false) {}

@@ -309,9 +309,9 @@ public:
 
   /// Cache -cc1 compilations when possible. Ignored unless CASFileSystemRootID
   /// is specified.
-  unsigned CacheCompile : 1;
+  unsigned CacheCompileJob : 1;
 
-  /// When using CacheCompile, write a CASID for the output file.
+  /// When using CacheCompileJob, write a CASID for the output file.
   ///
   /// FIXME: Add clang tests for this functionality.
   unsigned WriteOutputAsCASID : 1;
@@ -478,7 +478,7 @@ public:
         ASTDumpLookups(false), BuildingImplicitModule(false),
         BuildingImplicitModuleUsesLock(true), ModulesEmbedAllFiles(false),
         IncludeTimestamps(true), UseTemporary(true),
-        CacheCompile(false), WriteOutputAsCASID(false),
+        CacheCompileJob(false), WriteOutputAsCASID(false),
         AllowPCMWithCompilerErrors(false), TimeTraceGranularity(500) {}
 
   /// getInputKindForExtension - Return the appropriate input kind for a file

@@ -17,15 +17,22 @@ using namespace llvm::cas;
 static std::shared_ptr<llvm::cas::CASDB>
 createCAS(const CASConfiguration &Config, DiagnosticsEngine &Diags,
           bool CreateEmptyCASOnFailure) {
-  if (Config.BuiltinPath.empty())
+  if (Config.CASPath.empty())
     return llvm::cas::createInMemoryCAS();
 
+  // Compute the path.
+  SmallString<128> Storage;
+  StringRef Path = Config.CASPath;
+  if (Path == "auto") {
+    llvm::cas::getDefaultOnDiskCASPath(Storage);
+    Path = Storage;
+  }
+
   // FIXME: Pass on the actual error from the CAS.
-  if (auto MaybeCAS = llvm::expectedToOptional(
-          llvm::cas::createOnDiskCAS(Config.BuiltinPath)))
+  if (auto MaybeCAS =
+          llvm::expectedToOptional(llvm::cas::createOnDiskCAS(Path)))
     return std::move(*MaybeCAS);
-  Diags.Report(diag::err_builtin_cas_cannot_be_initialized)
-      << Config.BuiltinPath;
+  Diags.Report(diag::err_builtin_cas_cannot_be_initialized) << Path;
   return llvm::cas::createInMemoryCAS();
 }
 

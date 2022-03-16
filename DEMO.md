@@ -6,11 +6,11 @@ Play with `llvm-cas`. E.g., print a tree:
 
 ```
 % ninja llvm-cas
-% llvm-cas --cas - --ls-tree <tree-id>
+% llvm-cas --cas auto --ls-tree <tree-id>
 ```
 Merge directories:
 ```
-% llvm-cas --cas - --merge <tree-id> /path/to/dir
+% llvm-cas --cas auto --merge <tree-id> /path/to/dir
 ```
 
 TODO: add demos for plugins once there are some.
@@ -26,14 +26,17 @@ need to be "fixed". Some are driver-only (and should remain so).
     - Avoids writing out Clang's Git revision (maybe it should avoid the
       version altogether).
     - Tells the linker not to write object file timestamps in the debug map.
-- `-fcas-builtin-path=<path>`: Use on-disk CAS, instead of in-memory.
-    - `-fcas-builtin-path='-'`: Use the default on-disk CAS.
+- `-fcas-path=<path>`: Use on-disk CAS, instead of in-memory.
+    - `-fcas-path='auto'`: Use an on-disk CAS at an automatically determined
+      location (in the user's cache).
 - `-fcas-fs=<tree>`: use `<tree>` as the root filesystem. This *should* work in
   the driver (causing the driver to read from the same tree), but currently
   only works in `-cc1`.
-- `-fexperimental-cache-lex-raw`: perform a raw lex (no preprocessor) for each
+- `-fcache-raw-lex`: perform a raw lex (no preprocessor) for each
   input file as a separate task from the full lex, and cache the result in the
-  CAS. This *should* work always, but currently depends on `-fcas-fs`.
+  CAS. This *should* work always, but currently depends on `-fcas-fs`. Currently
+  a `-cc1` option. In the driver, it'll be exposed as
+  `-fexperimental-cache=raw-lex`.
 - `-fdepscan`: Driver-only. Before running `-cc1`, use the clang dependency
   scanner to find and the dependencies and create a pruned tree in the CAS,
   then run `-cc1` using `-fcas-fs`. This *should* respect `-fcas` if it was
@@ -334,14 +337,14 @@ Some other use flags to use:
 
 ```
 % llvm-cas -cas "-" --merge /path/to/dir > casid
-% ld64.lld -arch x86_64 -platform_version macos 12 12 --fcas-builtin-path "-" --fcas-fs @casid /path/to/dir/main.o -o a.out
+% ld64.lld -arch x86_64 -platform_version macos 12 12 --fcas-path "auto" --fcas-fs @casid /path/to/dir/main.o -o a.out
 ```
 
 ### Caching linker invocations
 
 `ld64.lld` can connect to the builtin CAS and cache its linker work:
 ```
-% ld64.lld -arch x86_64 -platform_version macos 12 12 --fcas-builtin-path "-" --fcas-cache-results t.o -o a.out --verbose
+% ld64.lld -arch x86_64 -platform_version macos 12 12 --fcas-path "auto" --fcas-cache-results t.o -o a.out --verbose
 ```
 With `--verbose` (or `LLD_VERBOSE=1` as environment variable) it will output to `stderr`
 to indicate whether there was a cache 'hit' or 'miss'.
@@ -352,5 +355,5 @@ to indicate whether there was a cache 'hit' or 'miss'.
 
 ```
 % llvm-cas-object-format --cas "-" t1.o t2.o -silent > casid
-% ld64.lld -arch x86_64 -platform_version macos 12 12 --fcas-builtin-path "-" @casid -o a.out
+% ld64.lld -arch x86_64 -platform_version macos 12 12 --fcas-path "auto" @casid -o a.out
 ```

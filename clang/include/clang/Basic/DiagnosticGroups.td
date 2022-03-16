@@ -1345,10 +1345,10 @@ def RTTI : DiagGroup<"rtti">;
 def OpenCLCoreFeaturesDiagGroup : DiagGroup<"pedantic-core-features">;
 
 // Remarks for cached -cc1.
-def CacheCompileMiss : DiagGroup<"cache-compile-miss">;
-def CacheCompileHit : DiagGroup<"cache-compile-hit">;
-def CacheCompile : DiagGroup<"cache-compile", [CacheCompileMiss,
-                                               CacheCompileHit]>;
+def CompileJobCacheMiss : DiagGroup<"compile-job-cache-miss">;
+def CompileJobCacheHit : DiagGroup<"compile-job-cache-hit">;
+def CompileJobCache : DiagGroup<"compile-job-cache", [CompileJobCacheMiss,
+                                                      CompileJobCacheHit]>;
 
 // Warnings and extensions to make preprocessor macro usage pedantic.
 def PedanticMacros : DiagGroup<"pedantic-macros",

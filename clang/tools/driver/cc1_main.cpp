@@ -374,7 +374,7 @@ int cc1_main(ArrayRef<const char *> Argv, const char *Argv0, void *MainAddr) {
   IntrusiveRefCntPtr<llvm::cas::CASOutputBackend> CASOutputs;
   SmallString<256> ResultDiags;
   std::unique_ptr<llvm::raw_ostream> ResultDiagsOS;
-  if (Clang->getInvocation().getFrontendOpts().CacheCompile) {
+  if (Clang->getInvocation().getFrontendOpts().CacheCompileJob) {
     CAS = Clang->getInvocation().getCASOpts().getOrCreateCAS(
         Clang->getDiagnostics());
     if (!CAS)
@@ -388,14 +388,14 @@ int cc1_main(ArrayRef<const char *> Argv, const char *Argv0, void *MainAddr) {
       return 1; // Error already emitted.
     Expected<llvm::cas::CASID> Result = CAS->getCachedResult(*ResultCacheKey);
     if (Result) {
-      Clang->getDiagnostics().Report(diag::remark_compile_cache_hit)
+      Clang->getDiagnostics().Report(diag::remark_compile_job_cache_hit)
           << llvm::cantFail(CAS->convertCASIDToString(*ResultCacheKey))
           << llvm::cantFail(CAS->convertCASIDToString(*Result));
       int Failed = replayResult(*CAS, std::move(*Result));
       llvm::remove_fatal_error_handler();
       return Failed;
     }
-    Clang->getDiagnostics().Report(diag::remark_compile_cache_miss)
+    Clang->getDiagnostics().Report(diag::remark_compile_job_cache_miss)
         << llvm::cantFail(CAS->convertCASIDToString(*ResultCacheKey));
     llvm::consumeError(Result.takeError());
 

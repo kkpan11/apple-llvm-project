@@ -40,19 +40,19 @@ public:
   };
 
   /// Kind of CAS to use.
-  CASKind getKind() const {
-    return BuiltinPath.empty() ? InMemoryCAS : OnDiskCAS;
-  }
+  CASKind getKind() const { return CASPath.empty() ? InMemoryCAS : OnDiskCAS; }
 
-  /// For \a OnDiskCAS, a path on-disk for a persistent backing store. This is
-  /// optional, although \a CASFileSystemRootID is unlikely to work.
+  /// Path to a persistent backing store on-disk. This is optional, although \a
+  /// CASFileSystemRootID is unlikely to work without it.
   ///
-  /// "-" indicates the compiler's default location.
-  std::string BuiltinPath;
+  /// - "" means there is none; falls back to in-memory.
+  /// - "auto" is an alias for an automatically chosen location in the user's
+  ///   system cache.
+  std::string CASPath;
 
   friend bool operator==(const CASConfiguration &LHS,
                          const CASConfiguration &RHS) {
-    return LHS.BuiltinPath == RHS.BuiltinPath;
+    return LHS.CASPath == RHS.CASPath;
   }
   friend bool operator!=(const CASConfiguration &LHS,
                          const CASConfiguration &RHS) {

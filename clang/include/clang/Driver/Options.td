@@ -6063,17 +6063,17 @@ def fsycl_is_host : Flag<["-"], "fsycl-is-host">,
 // Example command-lines we expect:
 //
 // For building against some pre-ingested, CAS-based filesystem in the builtin
-// CAS:
+// on-disk CAS:
 // ```
-// % clang -fcas-builtin-path=path/to/the/cas \
-//         -fcas-fs=cas://1af12fa2afa1af2a1fa
+// % clang -fcas=on-disk -fcas-fs=llvmcas://1af12fa2afa1af2a1fa
+// % clang -fcas-path=path/to/cas -fcas-fs=llvmcas://1af12fa2afa1af2a1fa
 // ```
 //
 // For building against some pre-ingested, CAS-based filesystem using a plugin:
 // ```
 // % clang -fcas-plugin=path/to/some/cas-plugind \
 //         -fcas-plugin-args=-X,-Y,-Z            \
-//         -fcas-fs=cas://1af12fa2afa1af2a1fa
+//         -fcas-fs=llvmcas://1af12fa2afa1af2a1fa
 // ```
 //
 // For automatically ingesting from the live filesystem into a CAS,
@@ -6088,7 +6088,7 @@ def fsycl_is_host : Flag<["-"], "fsycl-is-host">,
 // CAS-based filesystem:
 // ```
 // % clang -fcas-builtin-path=path/to/the/cas     \
-//         -fcas-fs=cas://1af12fa2afa1af2a1fa     \
+//         -fcas-fs=llvmcas://1af12fa2afa1af2a1fa     \
 //         -fdepscan                              \
 //         -fdepscan-prefix-map=/my/sources=/^src \
 //         -fdepscan-prefix-map=/my/build/dir=/^build
@@ -6176,38 +6176,52 @@ def dump_depscan_tree_EQ : Option<["-"], "dump-depscan-tree=", KIND_JOINED>,
 // override -fcas / etc., it should just add those if not already specified.
 let Flags = [CC1Option, NoDriverOption] in {
 
-def fcas_builtin_path : Separate<["-"], "fcas-builtin-path">,
-    Group<f_Group>, MetaVarName<"<dir>">,
+// FIXME: Add to driver once it's supported by (not clobbered by) -fdepscan.
+def fcas_path : Separate<["-"], "fcas-path">,
+    Group<f_Group>, MetaVarName<"<dir>|auto">,
     HelpText<"Path to a persistent on-disk backing store for the builtin CAS."
-             " Use '-' to have the compiler use a default location.">,
-    MarshallingInfoString<CASOpts<"BuiltinPath">>;
+             " '-fcas-path=auto' chooses a path in the user's system cache.">,
+    MarshallingInfoString<CASOpts<"CASPath">>;
+def : Joined<["-"], "fcas-path=">, Flags<[CC1Option]>, Group<f_Group>,
+      HelpText<"Alias for -fcas-path">, Alias<fcas_path>;
+def : Flag<["-"], "fno-cas-path">, Flags<[CC1Option]>, Group<f_Group>,
+    HelpText<"Turn off the on-disk CAS, reverting to in-memory."
+             " This is the default behaviour.">,
+    Alias<fcas_path>, AliasArgs<[""]>;
 
+// FIXME: Add to driver once it's supported by -fdepscan.
 def fcas_fs : Separate<["-"], "fcas-fs">,
     Group<f_Group>, MetaVarName<"<tree>">,
     HelpText<"Configure the filesystem to read from the provided CAS tree."
              " See also -fcas-builtin-path for loading a tree.">,
     MarshallingInfoString<FileSystemOpts<"CASFileSystemRootID">>;
 
+// FIXME: Remove / merge with -fworking-directory?
 def fcas_fs_working_directory : Separate<["-"], "fcas-fs-working-directory">,
     Group<f_Group>, MetaVarName<"<dir>">,
     HelpText<"Working directory for -fcas-fs (if not the root).">,
     ShouldParseIf<!strconcat("!", fcas_fs.KeyPath, ".empty()")>,
     MarshallingInfoString<FileSystemOpts<"CASFileSystemWorkingDirectory">>;
 
-defm experimental_cache_compile : BoolFOption<"experimental-cache-compile",
-    FrontendOpts<"CacheCompile">, DefaultFalse,
-    PosFlag<SetTrue, [], "Try to cache full compilation (-cc1). Only works with"
-                         " -fcas-fs.">,
+// FIXME: Add to driver under -fexperimental-cache=compile-job.
+defm cache_compile_job : BoolFOption<"cache-compile-job",
+    FrontendOpts<"CacheCompileJob">, DefaultFalse,
+    PosFlag<SetTrue, [], "Try to cache full compilation job (-cc1). Ignored"
+                         " (for now) without -fcas-fs.">,
     NegFlag<SetFalse>>;
 
-defm experimental_cache_lex_raw : BoolFOption<"experimental-cache-lex-raw",
-    PreprocessorOpts<"CacheLexRaw">, DefaultFalse,
+// FIXME: Add to driver under -fexperimental-cache=raw-lex.
+defm cache_raw_lex : BoolFOption<"cache-raw-lex",
+    PreprocessorOpts<"CacheRawLex">, DefaultFalse,
     PosFlag<SetTrue, [], "When reading from a CAS, cache raw lexing.">,
     NegFlag<SetFalse>>;
 
+// FIXME: Remove once -fexperimental-cache is in the driver and we don't
+// care about keeping raw-lex caching working with older builds of clang
+// anymore.
 def fcas_token_cache : Flag<["-"], "fcas-token-cache">,
-    Group<f_Group>, HelpText<"Alias for -fexperimental-cache-lex-raw.">,
-    Alias<fexperimental_cache_lex_raw>;
+    Group<f_Group>, HelpText<"Alias for -cache-raw-lex.">,
+    Alias<fcache_raw_lex>;
 
 defm casid_output : BoolFOption<"casid-output",
     FrontendOpts<"WriteOutputAsCASID">, DefaultFalse,
