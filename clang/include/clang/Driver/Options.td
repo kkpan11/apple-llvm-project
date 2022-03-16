@@ -6065,7 +6065,7 @@ def fsycl_is_host : Flag<["-"], "fsycl-is-host">,
 // For building against some pre-ingested, CAS-based filesystem in the builtin
 // on-disk CAS:
 // ```
-// % clang -fcas=on-disk -fcas-fs=llvmcas://1af12fa2afa1af2a1fa
+// % clang -fcas-path=auto -fcas-fs=llvmcas://1af12fa2afa1af2a1fa
 // % clang -fcas-path=path/to/cas -fcas-fs=llvmcas://1af12fa2afa1af2a1fa
 // ```
 //
