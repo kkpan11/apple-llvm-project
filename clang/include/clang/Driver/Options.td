@@ -6177,17 +6177,15 @@ def dump_depscan_tree_EQ : Option<["-"], "dump-depscan-tree=", KIND_JOINED>,
 let Flags = [CC1Option, NoDriverOption] in {
 
 // FIXME: Add to driver once it's supported by (not clobbered by) -fdepscan.
+//
+// The driver should also have:
+// - '-fcas-path=<dir>|auto' ('='-joined alias).
+// - '-fno-cas-path' (same as '-fcas-path ""', the default).
 def fcas_path : Separate<["-"], "fcas-path">,
     Group<f_Group>, MetaVarName<"<dir>|auto">,
     HelpText<"Path to a persistent on-disk backing store for the builtin CAS."
              " '-fcas-path=auto' chooses a path in the user's system cache.">,
     MarshallingInfoString<CASOpts<"CASPath">>;
-def : Joined<["-"], "fcas-path=">, Flags<[CC1Option]>, Group<f_Group>,
-      HelpText<"Alias for -fcas-path">, Alias<fcas_path>;
-def : Flag<["-"], "fno-cas-path">, Flags<[CC1Option]>, Group<f_Group>,
-    HelpText<"Turn off the on-disk CAS, reverting to in-memory."
-             " This is the default behaviour.">,
-    Alias<fcas_path>, AliasArgs<[""]>;
 
 // FIXME: Add to driver once it's supported by -fdepscan.
 def fcas_fs : Separate<["-"], "fcas-fs">,
