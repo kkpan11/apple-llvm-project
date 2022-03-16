@@ -9,6 +9,7 @@
 #include "lldb/Core/Debugger.h"
 
 #include "lldb/Breakpoint/Breakpoint.h"
+#include "lldb/Core/DebuggerEvents.h"
 #include "lldb/Core/FormatEntity.h"
 #include "lldb/Core/Mangled.h"
 #include "lldb/Core/ModuleList.h"
@@ -1323,36 +1324,6 @@ void Debugger::SetLoggingCallback(lldb::LogOutputCallback log_callback,
       std::make_shared<StreamCallback>(log_callback, baton);
 }
 
-ConstString Debugger::ProgressEventData::GetFlavorString() {
-  static ConstString g_flavor("Debugger::ProgressEventData");
-  return g_flavor;
-}
-
-ConstString Debugger::ProgressEventData::GetFlavor() const {
-  return Debugger::ProgressEventData::GetFlavorString();
-}
-
-void Debugger::ProgressEventData::Dump(Stream *s) const {
-  s->Printf(" id = %" PRIu64 ", message = \"%s\"", m_id, m_message.c_str());
-  if (m_completed == 0 || m_completed == m_total)
-    s->Printf(", type = %s", m_completed == 0 ? "start" : "end");
-  else
-    s->PutCString(", type = update");
-  // If m_total is UINT64_MAX, there is no progress to report, just "start"
-  // and "end". If it isn't we will show the completed and total amounts.
-  if (m_total != UINT64_MAX)
-    s->Printf(", progress = %" PRIu64 " of %" PRIu64, m_completed, m_total);
-}
-
-const Debugger::ProgressEventData *
-Debugger::ProgressEventData::GetEventDataFromEvent(const Event *event_ptr) {
-  if (event_ptr)
-    if (const EventData *event_data = event_ptr->GetData())
-      if (event_data->GetFlavor() == ProgressEventData::GetFlavorString())
-        return static_cast<const ProgressEventData *>(event_ptr->GetData());
-  return nullptr;
-}
-
 static void PrivateReportProgress(Debugger &debugger, uint64_t progress_id,
                                   const std::string &message,
                                   uint64_t completed, uint64_t total,
@@ -1361,9 +1332,9 @@ static void PrivateReportProgress(Debugger &debugger, uint64_t progress_id,
   const uint32_t event_type = Debugger::eBroadcastBitProgress;
   if (!debugger.GetBroadcaster().EventTypeHasListeners(event_type))
     return;
-  EventSP event_sp(new Event(event_type, new Debugger::ProgressEventData(
-                                             progress_id, message, completed,
-                                             total, is_debugger_specific)));
+  EventSP event_sp(new Event(
+      event_type, new ProgressEventData(progress_id, message, completed, total,
+                                        is_debugger_specific)));
   debugger.GetBroadcaster().BroadcastEvent(event_sp);
 }
 
@@ -1389,6 +1360,79 @@ void Debugger::ReportProgress(uint64_t progress_id, const std::string &message,
       PrivateReportProgress(*(*pos), progress_id, message, completed, total,
                             /*is_debugger_specific*/ false);
   }
+}
+
+static void PrivateReportDiagnostic(Debugger &debugger,
+                                    DiagnosticEventData::Type type,
+                                    std::string message,
+                                    bool debugger_specific) {
+  uint32_t event_type = 0;
+  switch (type) {
+  case DiagnosticEventData::Type::Warning:
+    event_type = Debugger::eBroadcastBitWarning;
+    break;
+  case DiagnosticEventData::Type::Error:
+    event_type = Debugger::eBroadcastBitError;
+    break;
+  }
+
+  Broadcaster &broadcaster = debugger.GetBroadcaster();
+  if (!broadcaster.EventTypeHasListeners(event_type)) {
+    // Diagnostics are too important to drop. If nobody is listening, print the
+    // diagnostic directly to the debugger's error stream.
+    DiagnosticEventData event_data(type, std::move(message), debugger_specific);
+    StreamSP stream = debugger.GetAsyncErrorStream();
+    event_data.Dump(stream.get());
+    return;
+  }
+  EventSP event_sp = std::make_shared<Event>(
+      event_type,
+      new DiagnosticEventData(type, std::move(message), debugger_specific));
+  broadcaster.BroadcastEvent(event_sp);
+}
+
+void Debugger::ReportDiagnosticImpl(DiagnosticEventData::Type type,
+                                    std::string message,
+                                    llvm::Optional<lldb::user_id_t> debugger_id,
+                                    std::once_flag *once) {
+  auto ReportDiagnosticLambda = [&]() {
+    // Check if this progress is for a specific debugger.
+    if (debugger_id) {
+      // It is debugger specific, grab it and deliver the event if the debugger
+      // still exists.
+      DebuggerSP debugger_sp = FindDebuggerWithID(*debugger_id);
+      if (debugger_sp)
+        PrivateReportDiagnostic(*debugger_sp, type, std::move(message), true);
+      return;
+    }
+    // The progress event is not debugger specific, iterate over all debuggers
+    // and deliver a progress event to each one.
+    if (g_debugger_list_ptr && g_debugger_list_mutex_ptr) {
+      std::lock_guard<std::recursive_mutex> guard(*g_debugger_list_mutex_ptr);
+      for (const auto &debugger : *g_debugger_list_ptr)
+        PrivateReportDiagnostic(*debugger, type, message, false);
+    }
+  };
+
+  if (once)
+    std::call_once(*once, ReportDiagnosticLambda);
+  else
+    ReportDiagnosticLambda();
+}
+
+void Debugger::ReportWarning(std::string message,
+                             llvm::Optional<lldb::user_id_t> debugger_id,
+                             std::once_flag *once) {
+  ReportDiagnosticImpl(DiagnosticEventData::Type::Warning, std::move(message),
+                       debugger_id, once);
+}
+
+void Debugger::ReportError(std::string message,
+                           llvm::Optional<lldb::user_id_t> debugger_id,
+                           std::once_flag *once) {
+
+  ReportDiagnosticImpl(DiagnosticEventData::Type::Error, std::move(message),
+                       debugger_id, once);
 }
 
 bool Debugger::EnableLog(llvm::StringRef channel,
@@ -1683,8 +1727,9 @@ void Debugger::DefaultEventHandler() {
           CommandInterpreter::eBroadcastBitAsynchronousOutputData |
           CommandInterpreter::eBroadcastBitAsynchronousErrorData);
 
-  listener_sp->StartListeningForEvents(&m_broadcaster,
-                                       Debugger::eBroadcastBitProgress);
+  listener_sp->StartListeningForEvents(
+      &m_broadcaster,
+      eBroadcastBitProgress | eBroadcastBitWarning | eBroadcastBitError);
 
   // Let the thread that spawned us know that we have started up and that we
   // are now listening to all required events so no events get missed
@@ -1738,6 +1783,10 @@ void Debugger::DefaultEventHandler() {
           } else if (broadcaster == &m_broadcaster) {
             if (event_type & Debugger::eBroadcastBitProgress)
               HandleProgressEvent(event_sp);
+            else if (event_type & Debugger::eBroadcastBitWarning)
+              HandleDiagnosticEvent(event_sp);
+            else if (event_type & Debugger::eBroadcastBitError)
+              HandleDiagnosticEvent(event_sp);
           }
         }
 
@@ -1808,8 +1857,7 @@ lldb::thread_result_t Debugger::IOHandlerThread(lldb::thread_arg_t arg) {
 }
 
 void Debugger::HandleProgressEvent(const lldb::EventSP &event_sp) {
-  auto *data =
-      Debugger::ProgressEventData::GetEventDataFromEvent(event_sp.get());
+  auto *data = ProgressEventData::GetEventDataFromEvent(event_sp.get());
   if (!data)
     return;
 
@@ -1872,6 +1920,15 @@ void Debugger::HandleProgressEvent(const lldb::EventSP &event_sp) {
 
   // Flush the output.
   output.Flush();
+}
+
+void Debugger::HandleDiagnosticEvent(const lldb::EventSP &event_sp) {
+  auto *data = DiagnosticEventData::GetEventDataFromEvent(event_sp.get());
+  if (!data)
+    return;
+
+  StreamSP stream = GetAsyncErrorStream();
+  data->Dump(stream.get());
 }
 
 bool Debugger::HasIOHandlerThread() { return m_io_handler_thread.IsJoinable(); }

@@ -21,6 +21,7 @@
 
 #include "Plugins/TypeSystem/Clang/TypeSystemClang.h"
 #include "lldb/Core/Debugger.h"
+#include "lldb/Core/DebuggerEvents.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Core/Section.h"
@@ -665,14 +666,14 @@ AppleObjCRuntimeV2::AppleObjCRuntimeV2(Process *process,
       m_loaded_objc_opt(false), m_non_pointer_isa_cache_up(),
       m_tagged_pointer_vendor_up(
           TaggedPointerVendorV2::CreateInstance(*this, objc_module_sp)),
-      m_encoding_to_type_sp(), m_noclasses_warning_emitted(false),
-      m_CFBoolean_values(), m_realized_class_generation_count(0) {
+      m_encoding_to_type_sp(), m_CFBoolean_values(),
+      m_realized_class_generation_count(0) {
   static const ConstString g_gdb_object_getClass("gdb_object_getClass");
   m_has_object_getClass = HasSymbol(g_gdb_object_getClass);
   static const ConstString g_objc_copyRealizedClassList(
       "_ZL33objc_copyRealizedClassList_nolockPj");
   m_has_objc_copyRealizedClassList = HasSymbol(g_objc_copyRealizedClassList);
-
+  WarnIfNoExpandedSharedCache();
   RegisterObjCExceptionRecognizer(process);
 }
 
@@ -2343,33 +2344,62 @@ static bool DoesProcessHaveSharedCache(Process &process) {
 
 void AppleObjCRuntimeV2::WarnIfNoClassesCached(
     SharedCacheWarningReason reason) {
-  if (m_noclasses_warning_emitted)
-    return;
-
   if (GetProcess() && !DoesProcessHaveSharedCache(*GetProcess())) {
     // Simulators do not have the objc_opt_ro class table so don't actually
     // complain to the user
-    m_noclasses_warning_emitted = true;
     return;
   }
 
   Debugger &debugger(GetProcess()->GetTarget().GetDebugger());
-  if (auto stream = debugger.GetAsyncOutputStream()) {
-    switch (reason) {
-    case SharedCacheWarningReason::eNotEnoughClassesRead:
-      stream->PutCString("warning: could not find Objective-C class data in "
-                         "the process. This may reduce the quality of type "
-                         "information available.\n");
-      m_noclasses_warning_emitted = true;
-      break;
-    case SharedCacheWarningReason::eExpressionExecutionFailure:
-      stream->PutCString("warning: could not execute support code to read "
-                         "Objective-C class data in the process. This may "
-                         "reduce the quality of type information available.\n");
-      m_noclasses_warning_emitted = true;
-      break;
-    }
+  switch (reason) {
+  case SharedCacheWarningReason::eNotEnoughClassesRead:
+    Debugger::ReportWarning("warning: could not find Objective-C class data in "
+                            "the process. This may reduce the quality of type "
+                            "information available.\n",
+                            debugger.GetID(), &m_no_classes_cached_warning);
+    break;
+  case SharedCacheWarningReason::eExpressionExecutionFailure:
+    Debugger::ReportWarning(
+        "warning: could not execute support code to read "
+        "Objective-C class data in the process. This may "
+        "reduce the quality of type information available.\n",
+        debugger.GetID(), &m_no_classes_cached_warning);
+    break;
   }
+}
+
+void AppleObjCRuntimeV2::WarnIfNoExpandedSharedCache() {
+  if (!m_objc_module_sp)
+    return;
+
+  ObjectFile *object_file = m_objc_module_sp->GetObjectFile();
+  if (!object_file)
+    return;
+
+  if (!object_file->IsInMemory())
+    return;
+
+  Target &target = GetProcess()->GetTarget();
+  Debugger &debugger = target.GetDebugger();
+
+  std::string buffer;
+  llvm::raw_string_ostream os(buffer);
+
+  os << "warning: libobjc.A.dylib is being read from process memory. This "
+        "indicates that LLDB could not ";
+  if (PlatformSP platform_sp = target.GetPlatform()) {
+    if (platform_sp->IsHost()) {
+      os << "read from the host's in-memory shared cache";
+    } else {
+      os << "find the on-disk shared cache for this device";
+    }
+  } else {
+    os << "read from the shared cache";
+  }
+  os << ". This will likely reduce debugging performance.\n";
+
+  Debugger::ReportWarning(os.str(), debugger.GetID(),
+                          &m_no_expanded_cache_warning);
 }
 
 DeclVendor *AppleObjCRuntimeV2::GetDeclVendor() {
