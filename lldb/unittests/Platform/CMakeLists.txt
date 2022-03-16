@@ -1,6 +1,7 @@
 add_lldb_unittest(LLDBPlatformTests
   PlatformAppleSimulatorTest.cpp
   PlatformDarwinTest.cpp
+  PlatformMacOSXTest.cpp
 
   LINK_LIBS
     lldbPluginPlatformMacOSX
