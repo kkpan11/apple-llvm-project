@@ -115,7 +115,7 @@ TEST_P(CASDBTest, BlobsBig) {
   // Specifically check near 1MB for objects large enough they're likely to be
   // stored externally in an on-disk CAS and will be near a page boundary.
   SmallString<0> Storage;
-  const size_t InterestingSize = 1024U * 1204ULL;
+  const size_t InterestingSize = 1024U * 1024ULL;
   const size_t SizeE = InterestingSize + 2;
   if (Storage.size() < SizeE)
     Storage.resize(SizeE, '\01');
