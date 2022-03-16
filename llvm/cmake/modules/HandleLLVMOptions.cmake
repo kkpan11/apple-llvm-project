@@ -1240,7 +1240,7 @@ set(LLVM_ENABLE_EXPERIMENTAL_DEPSCAN OFF CACHE BOOL
 set(LLVM_DEPSCAN_MODE "" CACHE STRING "Mode for -fdepscan if used")
 set(LLVM_DEPSCAN_DAEMON "" CACHE STRING "Path to existing DepScan daemon to use")
 set(LLVM_CAS_BUILTIN_PATH "" CACHE STRING "Path to pass for -fcas-builtin-path")
-set(LLVM_CAS_BUILTIN_PATH_Default "-")
+set(LLVM_CAS_BUILTIN_PATH_Default "/^llvm::cas::builtin::default/llvm.cas.builtin.default")
 if (LLVM_CAS_BUILTIN_PATH)
   set(LLVM_CAS_BUILTIN_PATH_Default "${LLVM_CAS_BUILTIN_PATH}")
 endif()
