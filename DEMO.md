@@ -308,7 +308,7 @@ directory.
   "$BUILDDIR"/unittests/CASObjectFormats/CASObjectFormatsTests &&
   find "$OBJECTSDIR"/lib/Support -name "*.o" |
   sort >objects-to-ingest &&
-  time "$BUILDDIR"/llvm-cas-object-format --cas "-" \
+  time "$BUILDDIR"/llvm-cas-object-format --cas auto \
     @objects-to-ingest --object-stats \
     --keep-compact-unwind-alive=false \
     --prefer-indirect-symbol-refs=true
@@ -320,7 +320,7 @@ serialization of LinkGraph and works for both MachO and ELF. You can try use
 `flatv1` schema with following options:
 
 ```
-  time "$BUILDDIR"/llvm-cas-object-format --cas "-" \
+  time "$BUILDDIR"/llvm-cas-object-format --cas auto \
     --ingest-schema=flatv1 --object-stats @objects-to-ingest
 ```
 
