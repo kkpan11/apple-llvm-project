@@ -4046,6 +4046,20 @@ bool AMDGPUAsmParser::validateOpSel(const MCInst &Inst) {
     if (OpSel & ~3)
       return false;
   }
+
+  if (isGFX940() && (MII.get(Opc).TSFlags & SIInstrFlags::IsDOT)) {
+    int OpSelIdx = AMDGPU::getNamedOperandIdx(Opc, AMDGPU::OpName::op_sel);
+    if (OpSelIdx != -1) {
+      if (Inst.getOperand(OpSelIdx).getImm() != 0)
+        return false;
+    }
+    int OpSelHiIdx = AMDGPU::getNamedOperandIdx(Opc, AMDGPU::OpName::op_sel_hi);
+    if (OpSelHiIdx != -1) {
+      if (Inst.getOperand(OpSelHiIdx).getImm() != -1)
+        return false;
+    }
+  }
+
   return true;
 }
 
@@ -6243,7 +6257,7 @@ AMDGPUAsmParser::parseHwregBody(OperandInfoTy &HwReg,
   // The register may be specified by name or using a numeric code
   HwReg.Loc = getLoc();
   if (isToken(AsmToken::Identifier) &&
-      (HwReg.Id = getHwregId(getTokenStr(), getSTI())) >= 0) {
+      (HwReg.Id = getHwregId(getTokenStr(), getSTI())) != OPR_ID_UNKNOWN) {
     HwReg.IsSymbolic = true;
     lex(); // skip register name
   } else if (!parseExpr(HwReg.Id, "a register name")) {
@@ -6276,15 +6290,18 @@ AMDGPUAsmParser::validateHwreg(const OperandInfoTy &HwReg,
 
   using namespace llvm::AMDGPU::Hwreg;
 
-  if (HwReg.IsSymbolic && !isValidHwreg(HwReg.Id, getSTI())) {
-    Error(HwReg.Loc,
-          "specified hardware register is not supported on this GPU");
-    return false;
-  }
-  if (!isValidHwreg(HwReg.Id)) {
-    Error(HwReg.Loc,
-          "invalid code of hardware register: only 6-bit values are legal");
-    return false;
+  if (HwReg.IsSymbolic) {
+    if (HwReg.Id == OPR_ID_UNSUPPORTED) {
+      Error(HwReg.Loc,
+            "specified hardware register is not supported on this GPU");
+      return false;
+    }
+  } else {
+    if (!isValidHwreg(HwReg.Id)) {
+      Error(HwReg.Loc,
+            "invalid code of hardware register: only 6-bit values are legal");
+      return false;
+    }
   }
   if (!isValidHwregOffset(Offset.Id)) {
     Error(Offset.Loc, "invalid bit offset: only 5-bit values are legal");
@@ -6306,7 +6323,7 @@ AMDGPUAsmParser::parseHwreg(OperandVector &Operands) {
   SMLoc Loc = getLoc();
 
   if (trySkipId("hwreg", AsmToken::LParen)) {
-    OperandInfoTy HwReg(ID_UNKNOWN_);
+    OperandInfoTy HwReg(OPR_ID_UNKNOWN);
     OperandInfoTy Offset(OFFSET_DEFAULT_);
     OperandInfoTy Width(WIDTH_DEFAULT_);
     if (parseHwregBody(HwReg, Offset, Width) &&

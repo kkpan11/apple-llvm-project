@@ -111,6 +111,21 @@ TEST_P(CASDBTest, BlobsBig) {
     ASSERT_EQ(ID1, ID2);
     String2.append(String1);
   }
+
+  // Specifically check near 1MB for objects large enough they're likely to be
+  // stored externally in an on-disk CAS and will be near a page boundary.
+  SmallString<0> Storage;
+  const size_t InterestingSize = 1024U * 1024ULL;
+  const size_t SizeE = InterestingSize + 2;
+  if (Storage.size() < SizeE)
+    Storage.resize(SizeE, '\01');
+  for (size_t Size = InterestingSize - 2; Size != SizeE; ++Size) {
+    StringRef Data(Storage.data(), Size);
+    Optional<BlobRef> Blob;
+    ASSERT_THAT_ERROR(CAS->createBlob(Data).moveInto(Blob), Succeeded());
+    ASSERT_EQ(Data, Blob->getData());
+    ASSERT_EQ(0, Blob->getData().end()[0]);
+  }
 }
 
 TEST_P(CASDBTest, Trees) {
@@ -237,6 +252,35 @@ TEST_P(CASDBTest, Trees) {
       ASSERT_THAT_ERROR(CAS->getTree(ID).moveInto(Tree), Succeeded());
       for (int I = 0, E = Entries.size(); I != E; ++I)
         EXPECT_EQ(Entries[I], Tree->get(I));
+    }
+  }
+}
+
+TEST_P(CASDBTest, NodesBig) {
+  std::unique_ptr<CASDB> CAS = createCAS();
+
+  // Specifically check near 1MB for objects large enough they're likely to be
+  // stored externally in an on-disk CAS, and such that one of them will be
+  // near a page boundary.
+  SmallString<0> Storage;
+  constexpr size_t InterestingSize = 1024U * 1024ULL;
+  constexpr size_t WordSize = sizeof(void *);
+
+  // Start much smaller to account for headers.
+  constexpr size_t SizeB = InterestingSize - 8 * WordSize;
+  constexpr size_t SizeE = InterestingSize + 1;
+  if (Storage.size() < SizeE)
+    Storage.resize(SizeE, '\01');
+
+  // Avoid checking every size because this is an expensive test. Just check
+  // for data that is 8B-word-aligned, and one less.
+  for (size_t Size = SizeB; Size < SizeE; Size += WordSize) {
+    for (bool IsAligned : {false, true}) {
+      StringRef Data(Storage.data(), Size - (IsAligned ? 0 : 1));
+      Optional<NodeRef> Node;
+      ASSERT_THAT_ERROR(CAS->createNode(None, Data).moveInto(Node), Succeeded());
+      ASSERT_EQ(Data, Node->getData());
+      ASSERT_EQ(0, Node->getData().end()[0]);
     }
   }
 }

@@ -424,16 +424,16 @@ CGDebugInfo::createFile(StringRef FileName,
   SmallString<128> DirBuf;
   SmallString<128> FileBuf;
   if (llvm::sys::path::is_absolute(RemappedFile)) {
-    // Strip the common prefix (if it is more than just "/") from current
-    // directory and FileName for a more space-efficient encoding.
+    // Strip the common prefix (if it is more than just "/" or "C:\") from
+    // current directory and FileName for a more space-efficient encoding.
     auto FileIt = llvm::sys::path::begin(RemappedFile);
     auto FileE = llvm::sys::path::end(RemappedFile);
     auto CurDirIt = llvm::sys::path::begin(CurDir);
     auto CurDirE = llvm::sys::path::end(CurDir);
     for (; CurDirIt != CurDirE && *CurDirIt == *FileIt; ++CurDirIt, ++FileIt)
       llvm::sys::path::append(DirBuf, *CurDirIt);
-    if (std::distance(llvm::sys::path::begin(CurDir), CurDirIt) == 1) {
-      // Don't strip the common prefix if it is only the root "/"
+    if (llvm::sys::path::root_path(DirBuf) == DirBuf) {
+      // Don't strip the common prefix if it is only the root ("/" or "C:\")
       // since that would make LLVM diagnostic locations confusing.
       Dir = {};
       File = RemappedFile;
@@ -444,7 +444,8 @@ CGDebugInfo::createFile(StringRef FileName,
       File = FileBuf;
     }
   } else {
-    Dir = CurDir;
+    if (!llvm::sys::path::is_absolute(FileName))
+      Dir = CurDir;
     File = RemappedFile;
   }
   llvm::DIFile *F = DBuilder.createFile(File, Dir, CSInfo, Source);
@@ -3042,6 +3043,23 @@ llvm::DIType *CGDebugInfo::CreateTypeDefinition(const ObjCInterfaceType *Ty,
 
 llvm::DIType *CGDebugInfo::CreateType(const VectorType *Ty,
                                       llvm::DIFile *Unit) {
+  if (Ty->isExtVectorBoolType()) {
+    // Boolean ext_vector_type(N) are special because their real element type
+    // (bits of bit size) is not their Clang element type (_Bool of size byte).
+    // For now, we pretend the boolean vector were actually a vector of bytes
+    // (where each byte represents 8 bits of the actual vector).
+    // FIXME Debug info should actually represent this proper as a vector mask
+    // type.
+    auto &Ctx = CGM.getContext();
+    uint64_t Size = CGM.getContext().getTypeSize(Ty);
+    uint64_t NumVectorBytes = Size / Ctx.getCharWidth();
+
+    // Construct the vector of 'char' type.
+    QualType CharVecTy = Ctx.getVectorType(Ctx.CharTy, NumVectorBytes,
+                                           VectorType::GenericVector);
+    return CreateType(CharVecTy->getAs<VectorType>(), Unit);
+  }
+
   llvm::DIType *ElementTy = getOrCreateType(Ty->getElementType(), Unit);
   int64_t Count = Ty->getNumElements();
 

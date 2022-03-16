@@ -68,22 +68,24 @@ public:
   explicit TrieSubtrie(size_t StartBit, size_t NumBits);
 
 private:
-  // FIXME: Consider adding the following:
+  // FIXME: Use a bitset to speed up access:
   //
-  // std::atomic<std::bitset<20>> IsSet;
+  //     std::array<std::atomic<uint64_t>, NumSlots/64> IsSet;
   //
-  // Which could be used to micro-optimize get() to return nullptr without
-  // reading from Slots. This would be the algorithm for updating IsSet (after
-  // updating Slots):
+  // This will avoid needing to visit sparsely filled slots in
+  // \a ThreadSafeHashMappedTrieBase::destroyImpl() when there's a non-trivial
+  // destructor.
   //
-  //     std::bitset<20> Old = ...;
-  //     std::bitset<20> New = Old;
-  //     New.set(I);
-  //     while (!IsSet.compare_exchange_weak(Old, New, ...))
-  //       New |= Old;
+  // It would also greatly speed up iteration, if we add that some day, and
+  // allow get() to return one level sooner.
   //
-  // However, if we expect most accesses to be successful (which we probably
-  // do if reading more than writing) than this may not be profitable.
+  // This would be the algorithm for updating IsSet (after updating Slots):
+  //
+  //     std::atomic<uint64_t> &Bits = IsSet[I.High];
+  //     const uint64_t NewBit = 1ULL << I.Low;
+  //     uint64_t Old = 0;
+  //     while (!Bits.compare_exchange_weak(Old, Old | NewBit))
+  //       ;
 
   // For debugging.
   unsigned StartBit = 0;
@@ -448,24 +450,21 @@ void ThreadSafeHashMappedTrieBase::destroyImpl(function_ref<void (void *)> Destr
   if (!Impl)
     return;
 
-  // Content is trivially destructed. Impl and the tries it owns will be
-  // destroyed on return.
-  if (!Destructor)
-    return;
+  // Destroy content nodes throughout trie. Avoid destroying any subtries since
+  // we need TrieNode::classof() to find the content nodes.
+  //
+  // FIXME: Once we have bitsets (see FIXME in TrieSubtrie class), use them
+  // facilitate sparse iteration here.
+  if (Destructor)
+    for (TrieSubtrie *Trie = &Impl->Root; Trie; Trie = Trie->Next.load())
+      for (auto &Slot : Trie->Slots)
+        if (auto *Content = dyn_cast_or_null<TrieContent>(Slot.load()))
+          Destructor(Content->getValuePointer());
 
-  // Destroy the content.
-  SmallVector<TrieSubtrie *> Worklist = {&Impl->Root};
-  while (!Worklist.empty()) {
-    TrieSubtrie *Trie = Worklist.pop_back_val();
-    for (auto &Slot : Trie->Slots) {
-      TrieNode *Node = Slot.load();
-      if (!Node)
-        continue;
-
-      if (auto *S = dyn_cast<TrieSubtrie>(Node))
-        Worklist.push_back(S);
-      else
-        Destructor(cast<TrieContent>(Node)->getValuePointer());
-    }
-  }
+  // Destroy the subtries using explicit iteration here to avoid recursive
+  // destructor calls. Incidentally, this destroys them in reverse order of
+  // creation (breadth-first, deepest first).
+  std::unique_ptr<TrieSubtrie> Trie = Impl->Root.Next.take();
+  while (Trie)
+    Trie = Trie->Next.take();
 }

@@ -26,6 +26,7 @@
 #include "llvm/CodeGen/FunctionLoweringInfo.h"
 #include "llvm/CodeGen/GlobalISel/GISelKnownBits.h"
 #include "llvm/CodeGen/GlobalISel/MIPatternMatch.h"
+#include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineLoopInfo.h"
 #include "llvm/IR/DiagnosticInfo.h"
@@ -2115,7 +2116,7 @@ void SITargetLowering::allocateSpecialInputSGPRs(
   if (Info.hasDispatchPtr())
     allocateSGPR64Input(CCInfo, ArgInfo.DispatchPtr);
 
-  if (Info.hasQueuePtr())
+  if (Info.hasQueuePtr() && AMDGPU::getAmdhsaCodeObjectVersion() < 5)
     allocateSGPR64Input(CCInfo, ArgInfo.QueuePtr);
 
   // Implicit arg ptr takes the place of the kernarg segment pointer. This is a
@@ -2162,7 +2163,7 @@ void SITargetLowering::allocateHSAUserSGPRs(CCState &CCInfo,
     CCInfo.AllocateReg(DispatchPtrReg);
   }
 
-  if (Info.hasQueuePtr()) {
+  if (Info.hasQueuePtr() && AMDGPU::getAmdhsaCodeObjectVersion() < 5) {
     Register QueuePtrReg = Info.addQueuePtr(TRI);
     MF.addLiveIn(QueuePtrReg, &AMDGPU::SGPR_64RegClass);
     CCInfo.AllocateReg(QueuePtrReg);
@@ -2666,24 +2667,6 @@ SITargetLowering::LowerReturn(SDValue Chain, CallingConv::ID CallConv,
   SmallVector<SDValue, 48> RetOps;
   RetOps.push_back(Chain); // Operand #0 = Chain (updated below)
 
-  // Add return address for callable functions.
-  if (!Info->isEntryFunction()) {
-    const SIRegisterInfo *TRI = getSubtarget()->getRegisterInfo();
-    SDValue ReturnAddrReg = CreateLiveInRegister(
-      DAG, &AMDGPU::SReg_64RegClass, TRI->getReturnAddressReg(MF), MVT::i64);
-
-    SDValue ReturnAddrVirtualReg =
-        DAG.getRegister(MF.getRegInfo().createVirtualRegister(
-                            CallConv != CallingConv::AMDGPU_Gfx
-                                ? &AMDGPU::CCR_SGPR_64RegClass
-                                : &AMDGPU::Gfx_CCR_SGPR_64RegClass),
-                        MVT::i64);
-    Chain =
-        DAG.getCopyToReg(Chain, DL, ReturnAddrVirtualReg, ReturnAddrReg, Flag);
-    Flag = Chain.getValue(1);
-    RetOps.push_back(ReturnAddrVirtualReg);
-  }
-
   // Copy the result values into the output registers.
   for (unsigned I = 0, RealRVLocIdx = 0, E = RVLocs.size(); I != E;
        ++I, ++RealRVLocIdx) {
@@ -2740,15 +2723,8 @@ SITargetLowering::LowerReturn(SDValue Chain, CallingConv::ID CallConv,
     RetOps.push_back(Flag);
 
   unsigned Opc = AMDGPUISD::ENDPGM;
-  if (!IsWaveEnd) {
-    if (IsShader)
-      Opc = AMDGPUISD::RETURN_TO_EPILOG;
-    else if (CallConv == CallingConv::AMDGPU_Gfx)
-      Opc = AMDGPUISD::RET_GFX_FLAG;
-    else
-      Opc = AMDGPUISD::RET_FLAG;
-  }
-
+  if (!IsWaveEnd)
+    Opc = IsShader ? AMDGPUISD::RETURN_TO_EPILOG : AMDGPUISD::RET_FLAG;
   return DAG.getNode(Opc, DL, MVT::Other, RetOps);
 }
 
@@ -3330,21 +3306,6 @@ SDValue SITargetLowering::LowerCall(CallLoweringInfo &CLI,
   }
 
 
-  SDValue PhysReturnAddrReg;
-  if (IsTailCall) {
-    // Since the return is being combined with the call, we need to pass on the
-    // return address.
-
-    const SIRegisterInfo *TRI = getSubtarget()->getRegisterInfo();
-    SDValue ReturnAddrReg = CreateLiveInRegister(
-      DAG, &AMDGPU::SReg_64RegClass, TRI->getReturnAddressReg(MF), MVT::i64);
-
-    PhysReturnAddrReg = DAG.getRegister(TRI->getReturnAddressReg(MF),
-                                        MVT::i64);
-    Chain = DAG.getCopyToReg(Chain, DL, PhysReturnAddrReg, ReturnAddrReg, InFlag);
-    InFlag = Chain.getValue(1);
-  }
-
   // We don't usually want to end the call-sequence here because we would tidy
   // the frame up *after* the call, however in the ABI-changing tail-call case
   // we've carefully laid out the parameters so that when sp is reset they'll be
@@ -3374,8 +3335,6 @@ SDValue SITargetLowering::LowerCall(CallLoweringInfo &CLI,
     // this information must travel along with the operation for eventual
     // consumption by emitEpilogue.
     Ops.push_back(DAG.getTargetConstant(FPDiff, DL, MVT::i32));
-
-    Ops.push_back(PhysReturnAddrReg);
   }
 
   // Add argument registers to the end of the list so that they are known live
@@ -4113,6 +4072,21 @@ MachineBasicBlock *SITargetLowering::EmitInstrWithCustomInserter(
 
     bool IsAdd = (MI.getOpcode() == AMDGPU::V_ADD_U64_PSEUDO);
 
+    MachineOperand &Dest = MI.getOperand(0);
+    MachineOperand &Src0 = MI.getOperand(1);
+    MachineOperand &Src1 = MI.getOperand(2);
+
+    if (IsAdd && ST.hasLshlAddB64()) {
+      auto Add = BuildMI(*BB, MI, DL, TII->get(AMDGPU::V_LSHL_ADD_U64_e64),
+                         Dest.getReg())
+                     .add(Src0)
+                     .addImm(0)
+                     .add(Src1);
+      TII->legalizeOperands(*Add);
+      MI.eraseFromParent();
+      return BB;
+    }
+
     const auto *CarryRC = TRI->getRegClass(AMDGPU::SReg_1_XEXECRegClassID);
 
     Register DestSub0 = MRI.createVirtualRegister(&AMDGPU::VGPR_32RegClass);
@@ -4120,10 +4094,6 @@ MachineBasicBlock *SITargetLowering::EmitInstrWithCustomInserter(
 
     Register CarryReg = MRI.createVirtualRegister(CarryRC);
     Register DeadCarryReg = MRI.createVirtualRegister(CarryRC);
-
-    MachineOperand &Dest = MI.getOperand(0);
-    MachineOperand &Src0 = MI.getOperand(1);
-    MachineOperand &Src1 = MI.getOperand(2);
 
     const TargetRegisterClass *Src0RC = Src0.isReg()
                                             ? MRI.getRegClass(Src0.getReg())
@@ -11675,7 +11645,7 @@ void SITargetLowering::AdjustInstrPostInstrSelection(MachineInstr &MI,
         MachineOperand &CPol = MI.getOperand(CPolIdx);
         CPol.setImm(CPol.getImm() & ~AMDGPU::CPol::GLC);
       }
-      MI.RemoveOperand(0);
+      MI.removeOperand(0);
       MI.setDesc(TII->get(NoRetAtomicOp));
       return;
     }
@@ -11694,7 +11664,7 @@ void SITargetLowering::AdjustInstrPostInstrSelection(MachineInstr &MI,
 
       // Change this into a noret atomic.
       MI.setDesc(TII->get(NoRetAtomicOp));
-      MI.RemoveOperand(0);
+      MI.removeOperand(0);
 
       // If we only remove the def operand from the atomic instruction, the
       // extract_subreg will be left with a use of a vreg without a def.

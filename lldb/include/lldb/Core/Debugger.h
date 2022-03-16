@@ -57,6 +57,7 @@ class Process;
 class Stream;
 class SymbolContext;
 class Target;
+class ProgressEventData;
 
 namespace repro {
 class DataRecorder;
@@ -83,39 +84,6 @@ public:
   /// Get the public broadcaster for this debugger.
   Broadcaster &GetBroadcaster() { return m_broadcaster; }
   const Broadcaster &GetBroadcaster() const { return m_broadcaster; }
-
-  class ProgressEventData : public EventData {
-
-  public:
-    ProgressEventData(uint64_t progress_id, const std::string &message,
-                      uint64_t completed, uint64_t total,
-                      bool debugger_specific)
-        : m_message(message), m_id(progress_id), m_completed(completed),
-          m_total(total), m_debugger_specific(debugger_specific) {}
-
-    static ConstString GetFlavorString();
-
-    ConstString GetFlavor() const override;
-
-    void Dump(Stream *s) const override;
-
-    static const ProgressEventData *
-    GetEventDataFromEvent(const Event *event_ptr);
-    uint64_t GetID() const { return m_id; }
-    uint64_t GetCompleted() const { return m_completed; }
-    uint64_t GetTotal() const { return m_total; }
-    const std::string &GetMessage() const { return m_message; }
-    bool IsDebuggerSpecific() const { return m_debugger_specific; }
-
-  private:
-    std::string m_message;
-    const uint64_t m_id;
-    uint64_t m_completed;
-    const uint64_t m_total;
-    const bool m_debugger_specific;
-    ProgressEventData(const ProgressEventData &) = delete;
-    const ProgressEventData &operator=(const ProgressEventData &) = delete;
-  };
 
   ~Debugger() override;
 
@@ -329,6 +297,12 @@ public:
 
   bool SetUseColor(bool use_color);
 
+  bool GetShowProgress() const;
+
+  llvm::StringRef GetShowProgressAnsiPrefix() const;
+
+  llvm::StringRef GetShowProgressAnsiSuffix() const;
+
   bool GetUseAutosuggestion() const;
 
   llvm::StringRef GetAutosuggestionAnsiPrefix() const;
@@ -439,6 +413,8 @@ protected:
                              uint64_t completed, uint64_t total,
                              llvm::Optional<lldb::user_id_t> debugger_id);
 
+  void PrintProgress(const ProgressEventData &data);
+
   bool StartEventHandlerThread();
 
   void StopEventHandlerThread();
@@ -465,6 +441,8 @@ protected:
   void HandleProcessEvent(const lldb::EventSP &event_sp);
 
   void HandleThreadEvent(const lldb::EventSP &event_sp);
+
+  void HandleProgressEvent(const lldb::EventSP &event_sp);
 
   // Ensures two threads don't attempt to flush process output in parallel.
   std::mutex m_output_flush_mutex;
@@ -513,6 +491,8 @@ protected:
 
   IOHandlerStack m_io_handler_stack;
   std::recursive_mutex m_io_handler_synchronous_mutex;
+
+  llvm::Optional<uint64_t> m_current_event_id;
 
   llvm::StringMap<std::weak_ptr<llvm::raw_ostream>> m_log_streams;
   std::shared_ptr<llvm::raw_ostream> m_log_callback_stream_sp;

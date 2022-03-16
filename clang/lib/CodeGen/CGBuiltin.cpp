@@ -45,6 +45,7 @@
 #include "llvm/IR/IntrinsicsR600.h"
 #include "llvm/IR/IntrinsicsRISCV.h"
 #include "llvm/IR/IntrinsicsS390.h"
+#include "llvm/IR/IntrinsicsVE.h"
 #include "llvm/IR/IntrinsicsWebAssembly.h"
 #include "llvm/IR/IntrinsicsX86.h"
 #include "llvm/IR/MDBuilder.h"
@@ -1778,8 +1779,9 @@ llvm::Function *CodeGenFunction::generateBuiltinOSLogHelperFunction(
   auto AL = ApplyDebugLocation::CreateArtificial(*this);
 
   CharUnits Offset;
-  Address BufAddr = Address::deprecated(
-      Builder.CreateLoad(GetAddrOfLocalVar(Args[0]), "buf"), BufferAlignment);
+  Address BufAddr =
+      Address(Builder.CreateLoad(GetAddrOfLocalVar(Args[0]), "buf"), Int8Ty,
+              BufferAlignment);
   Builder.CreateStore(Builder.getInt8(Layout.getSummaryByte()),
                       Builder.CreateConstByteGEP(BufAddr, Offset++, "summary"));
   Builder.CreateStore(Builder.getInt8(Layout.getNumArgsByte()),
@@ -2108,7 +2110,8 @@ static llvm::Value *dumpRecord(CodeGenFunction &CGF, QualType RType,
                              ? Types[Context.VoidPtrTy]
                              : Types[CanonicalType];
 
-    Address FieldAddress = Address::deprecated(FieldPtr, Align);
+    Address FieldAddress =
+        Address(FieldPtr, CGF.ConvertTypeForMem(FD->getType()), Align);
     FieldPtr = CGF.Builder.CreateLoad(FieldAddress);
 
     // FIXME Need to handle bitfield here
@@ -9598,7 +9601,7 @@ Value *CodeGenFunction::EmitAArch64BuiltinExpr(unsigned BuiltinID,
         llvm::Value *ValOffsetPtr =
             Builder.CreateGEP(Int64Ty, ValPtr, Builder.getInt32(i));
         Address Addr =
-            Address::deprecated(ValOffsetPtr, CharUnits::fromQuantity(8));
+            Address(ValOffsetPtr, Int64Ty, CharUnits::fromQuantity(8));
         ToRet = Builder.CreateStore(Builder.CreateExtractValue(Val, i), Addr);
       }
       return ToRet;
@@ -9611,7 +9614,7 @@ Value *CodeGenFunction::EmitAArch64BuiltinExpr(unsigned BuiltinID,
         llvm::Value *ValOffsetPtr =
             Builder.CreateGEP(Int64Ty, ValPtr, Builder.getInt32(i));
         Address Addr =
-            Address::deprecated(ValOffsetPtr, CharUnits::fromQuantity(8));
+            Address(ValOffsetPtr, Int64Ty, CharUnits::fromQuantity(8));
         Args.push_back(Builder.CreateLoad(Addr));
       }
 
@@ -9681,23 +9684,26 @@ Value *CodeGenFunction::EmitAArch64BuiltinExpr(unsigned BuiltinID,
 
     QualType Ty = E->getType();
     llvm::Type *RealResTy = ConvertType(Ty);
-    llvm::Type *PtrTy = llvm::IntegerType::get(
-        getLLVMContext(), getContext().getTypeSize(Ty))->getPointerTo();
+    llvm::Type *IntTy =
+        llvm::IntegerType::get(getLLVMContext(), getContext().getTypeSize(Ty));
+    llvm::Type *PtrTy = IntTy->getPointerTo();
     LoadAddr = Builder.CreateBitCast(LoadAddr, PtrTy);
 
     Function *F = CGM.getIntrinsic(BuiltinID == AArch64::BI__builtin_arm_ldaex
                                        ? Intrinsic::aarch64_ldaxr
                                        : Intrinsic::aarch64_ldxr,
                                    PtrTy);
-    Value *Val = Builder.CreateCall(F, LoadAddr, "ldxr");
+    CallInst *Val = Builder.CreateCall(F, LoadAddr, "ldxr");
+    Val->addParamAttr(
+        0, Attribute::get(getLLVMContext(), Attribute::ElementType, IntTy));
 
     if (RealResTy->isPointerTy())
       return Builder.CreateIntToPtr(Val, RealResTy);
 
     llvm::Type *IntResTy = llvm::IntegerType::get(
         getLLVMContext(), CGM.getDataLayout().getTypeSizeInBits(RealResTy));
-    Val = Builder.CreateTruncOrBitCast(Val, IntResTy);
-    return Builder.CreateBitCast(Val, RealResTy);
+    return Builder.CreateBitCast(Builder.CreateTruncOrBitCast(Val, IntResTy),
+                                 RealResTy);
   }
 
   if ((BuiltinID == AArch64::BI__builtin_arm_strex ||
@@ -9745,7 +9751,10 @@ Value *CodeGenFunction::EmitAArch64BuiltinExpr(unsigned BuiltinID,
                                        ? Intrinsic::aarch64_stlxr
                                        : Intrinsic::aarch64_stxr,
                                    StoreAddr->getType());
-    return Builder.CreateCall(F, {StoreVal, StoreAddr}, "stxr");
+    CallInst *CI = Builder.CreateCall(F, {StoreVal, StoreAddr}, "stxr");
+    CI->addParamAttr(
+        1, Attribute::get(getLLVMContext(), Attribute::ElementType, StoreTy));
+    return CI;
   }
 
   if (BuiltinID == AArch64::BI__getReg) {

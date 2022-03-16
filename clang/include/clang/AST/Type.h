@@ -2048,6 +2048,7 @@ public:
   bool isComplexIntegerType() const;            // GCC _Complex integer type.
   bool isVectorType() const;                    // GCC vector type.
   bool isExtVectorType() const;                 // Extended vector type.
+  bool isExtVectorBoolType() const;             // Extended vector type with bool element.
   bool isMatrixType() const;                    // Matrix type.
   bool isConstantMatrixType() const;            // Constant matrix type.
   bool isDependentAddressSpaceType() const;     // value-dependent address space qualifier
@@ -2556,6 +2557,8 @@ public:
   bool isFloatingPoint() const {
     return getKind() >= Half && getKind() <= Ibm128;
   }
+
+  bool isSVEBool() const { return getKind() == Kind::SveBool; }
 
   /// Determines whether the given kind corresponds to a placeholder type.
   static bool isPlaceholderTypeKind(Kind K) {
@@ -6805,6 +6808,12 @@ inline bool Type::isVectorType() const {
 
 inline bool Type::isExtVectorType() const {
   return isa<ExtVectorType>(CanonicalType);
+}
+
+inline bool Type::isExtVectorBoolType() const {
+  if (!isExtVectorType())
+    return false;
+  return cast<ExtVectorType>(CanonicalType)->getElementType()->isBooleanType();
 }
 
 inline bool Type::isMatrixType() const {

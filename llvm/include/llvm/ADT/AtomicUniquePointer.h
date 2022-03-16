@@ -10,6 +10,7 @@
 #define LLVM_ADT_ATOMICUNIQUEPOINTER_H
 
 #include <atomic>
+#include <memory>
 
 namespace llvm {
 
