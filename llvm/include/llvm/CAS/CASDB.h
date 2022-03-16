@@ -281,12 +281,28 @@ Error NodeRef::forEachReference(function_ref<Error(CASID)> Callback) const {
 Expected<std::unique_ptr<CASDB>>
 createPluginCAS(StringRef PluginPath, ArrayRef<std::string> PluginArgs = None);
 std::unique_ptr<CASDB> createInMemoryCAS();
+
+/// Gets or creates a persistent on-disk path at \p Path.
+///
+/// Deprecated: if \p Path resolves to \a getDefaultOnDiskCASStableID(),
+/// automatically opens \a getDefaultOnDiskCASPath() instead.
+///
+/// FIXME: Remove the special behaviour for getDefaultOnDiskCASStableID(). The
+/// client should handle this logic, if/when desired.
 Expected<std::unique_ptr<CASDB>> createOnDiskCAS(const Twine &Path);
 
+/// Set \p Path to a reasonable default on-disk path for a persistent CAS for
+/// the current user.
 void getDefaultOnDiskCASPath(SmallVectorImpl<char> &Path);
+
+/// Get a reasonable default on-disk path for a persistent CAS for the current
+/// user.
+std::string getDefaultOnDiskCASPath();
+
+/// FIXME: Remove.
 void getDefaultOnDiskCASStableID(SmallVectorImpl<char> &Path);
 
-std::string getDefaultOnDiskCASPath();
+/// FIXME: Remove.
 std::string getDefaultOnDiskCASStableID();
 
 } // namespace cas

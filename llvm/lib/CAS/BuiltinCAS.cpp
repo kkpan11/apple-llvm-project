@@ -3258,5 +3258,10 @@ Expected<std::unique_ptr<CASDB>> cas::createOnDiskCAS(const Twine &Path) {
   SmallString<256> AbsPath;
   Path.toVector(AbsPath);
   sys::fs::make_absolute(AbsPath);
+
+  // FIXME: Remove this and update clients to do this logic.
+  if (AbsPath == getDefaultOnDiskCASStableID())
+    AbsPath = StringRef(getDefaultOnDiskCASPath());
+
   return OnDiskCAS::open(AbsPath);
 }
