@@ -2687,13 +2687,17 @@ OnDiskCAS::getObjectProxy(IndexProxy I) const {
 
   // Helper for creating the return.
   auto createProxy = [&](MemoryBufferRef Buffer) -> ObjectProxy {
-    assert(Buffer.getBuffer().drop_back(Blob0).end()[0] == 0 &&
-           "Null termination");
-    if (Blob)
+    if (Blob) {
+      assert(Buffer.getBuffer().drop_back(Blob0).end()[0] == 0 &&
+             "Standalone blob missing null termination");
       return ObjectProxy{I.Offset, Object, I.Hash, None,
                          toArrayRef(Buffer.getBuffer().drop_back(Blob0))};
-    return ObjectProxy{I.Offset, Object, I.Hash,
-                       DataRecordHandle::get(Buffer.getBuffer().data()), None};
+    }
+
+    DataRecordHandle Record = DataRecordHandle::get(Buffer.getBuffer().data());
+    assert(Record.getData().end()[0] == 0 &&
+           "Standalone object record missing null termination for data");
+    return ObjectProxy{I.Offset, Object, I.Hash, Record, None};
   };
 
   // Check if we've loaded it already.
@@ -2701,6 +2705,10 @@ OnDiskCAS::getObjectProxy(IndexProxy I) const {
     return createProxy(*Buffer);
 
   // Load it from disk.
+  //
+  // Note: Creation logic guarantees that data that needs null-termination is
+  // suitably 0-padded. Requiring null-termination here would be too expensive
+  // for extremely large objects that happen to be page-aligned.
   SmallString<256> Path;
   getStandalonePath(Object.SK, I, Path);
   ErrorOr<std::unique_ptr<MemoryBuffer>> OwnedBuffer = MemoryBuffer::getFile(
