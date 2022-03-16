@@ -6087,8 +6087,8 @@ def fsycl_is_host : Flag<["-"], "fsycl-is-host">,
 // For pruning and canonicalizing even when starting from a pre-ingested,
 // CAS-based filesystem:
 // ```
-// % clang -fcas-builtin-path=path/to/the/cas     \
-//         -fcas-fs=llvmcas://1af12fa2afa1af2a1fa     \
+// % clang -fcas-path=path/to/the/cas             \
+//         -fcas-fs=llvmcas://1af12fa2afa1af2a1fa \
 //         -fdepscan                              \
 //         -fdepscan-prefix-map=/my/sources=/^src \
 //         -fdepscan-prefix-map=/my/build/dir=/^build
