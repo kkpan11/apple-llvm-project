@@ -966,7 +966,7 @@ def SymbolicateCrashLog(crash_log, options):
         for error in crash_log.errors:
             print(error)
 
-def load_crashlog_in_scripted_process(debugger, crash_log_file):
+def load_crashlog_in_scripted_process(debugger, crash_log_file, options):
     result = lldb.SBCommandReturnObject()
 
     crashlog_path = os.path.expanduser(crash_log_file)
@@ -999,7 +999,8 @@ def load_crashlog_in_scripted_process(debugger, crash_log_file):
         return
 
     structured_data = lldb.SBStructuredData()
-    structured_data.SetFromJSON(json.dumps({ "crashlog_path" : crashlog_path }))
+    structured_data.SetFromJSON(json.dumps({ "crashlog_path" : crashlog_path,
+                                             "load_all_images": options.load_all_images }))
     launch_info = lldb.SBLaunchInfo(None)
     launch_info.SetProcessPluginName("ScriptedProcess")
     launch_info.SetScriptedProcessClassName("crashlog_scripted_process.CrashLogScriptedProcess")
@@ -1058,7 +1059,9 @@ def CreateSymbolicateCrashLogOptions(
         '-a',
         action='store_true',
         dest='load_all_images',
-        help='load all executable images, not just the images found in the crashed stack frames',
+        help='load all executable images, not just the images found in the '
+        'crashed stack frames, loads stackframes for all the threads in '
+        'interactive mode.',
         default=False)
     option_parser.add_option(
         '--images',
@@ -1186,7 +1189,8 @@ be disassembled and lookups can be performed using the addresses found in the cr
     if args:
         for crash_log_file in args:
             if should_run_in_interactive_mode(options, ci):
-                load_crashlog_in_scripted_process(debugger, crash_log_file)
+                load_crashlog_in_scripted_process(debugger, crash_log_file,
+                                                  options)
             else:
                 crash_log = CrashLogParser().parse(debugger, crash_log_file, options.verbose)
                 SymbolicateCrashLog(crash_log, options)
