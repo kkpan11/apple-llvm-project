@@ -67,9 +67,22 @@ public:
   /// Get a CAS defined by the options above. Future calls will return the same
   /// CAS instance... unless the configuration has changed, in which case a new
   /// one will be created.
+  ///
+  /// If \p CreateEmptyCASOnFailure, returns an empty in-memory CAS on failure.
+  /// Else, returns \c nullptr on failure.
   std::shared_ptr<llvm::cas::CASDB>
   getOrCreateCAS(DiagnosticsEngine &Diags,
                  bool CreateEmptyCASOnFailure = false) const;
+
+  /// Get a CAS defined by the options above. Future calls will return the same
+  /// CAS instance, even if the configuration changes again later.
+  ///
+  /// The configuration will be wiped out to prevent it being observable or
+  /// affecting the output of something that takes \a CASOptions as an input.
+  /// This also "locks in" the return value of \a getOrCreateCAS(): future
+  /// calls will not check if the configuration has changed.
+  std::shared_ptr<llvm::cas::CASDB>
+  getOrCreateCASAndHideConfig(DiagnosticsEngine &Diags);
 
 private:
   struct CachedCAS {
@@ -78,6 +91,9 @@ private:
 
     /// Remember how the CAS was created.
     CASConfiguration Config;
+
+    /// Check if the configuration has been frozen.
+    bool IsFrozen = false;
   };
   mutable CachedCAS Cache;
 };

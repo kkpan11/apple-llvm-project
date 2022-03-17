@@ -191,9 +191,17 @@ static int PrintSupportedCPUs(std::string TargetStr) {
 
 static Optional<llvm::cas::CASID>
 createResultCacheKey(llvm::cas::CASDB &CAS, DiagnosticsEngine &Diags,
-                     StringRef RootIDString, ArrayRef<const char *> Argv) {
+                     const CompilerInvocation &Invocation) {
+  // Generate a new command-line in case Invocation has been canonicalized.
+  llvm::BumpPtrAllocator Alloc;
+  llvm::StringSaver Saver(Alloc);
+  llvm::SmallVector<const char *> Argv;
+  Invocation.generateCC1CommandLine(
+      Argv, [&Saver](const llvm::Twine &T) { return Saver.save(T).data(); });
+
   // FIXME: currently correct since the main executable is always in the root
   // from scanning, but we should probably make it explicit here...
+  StringRef RootIDString = Invocation.getFileSystemOpts().CASFileSystemRootID;
   Expected<llvm::cas::CASID> RootID = CAS.parseCASID(RootIDString);
   if (!RootID) {
     llvm::consumeError(RootID.takeError());
@@ -375,15 +383,15 @@ int cc1_main(ArrayRef<const char *> Argv, const char *Argv0, void *MainAddr) {
   SmallString<256> ResultDiags;
   std::unique_ptr<llvm::raw_ostream> ResultDiagsOS;
   if (Clang->getInvocation().getFrontendOpts().CacheCompileJob) {
-    CAS = Clang->getInvocation().getCASOpts().getOrCreateCAS(
+    CAS = Clang->getInvocation().getCASOpts().getOrCreateCASAndHideConfig(
         Clang->getDiagnostics());
     if (!CAS)
       return 1; // Error already emitted.
 
     // Check the result cache.
-    ResultCacheKey = createResultCacheKey(
-        *CAS, Clang->getDiagnostics(),
-        Clang->getInvocation().getFileSystemOpts().CASFileSystemRootID, Argv);
+    ResultCacheKey = createResultCacheKey(*CAS, Clang->getDiagnostics(),
+                                          Clang->getInvocation());
+
     if (!ResultCacheKey)
       return 1; // Error already emitted.
     Expected<llvm::cas::CASID> Result = CAS->getCachedResult(*ResultCacheKey);

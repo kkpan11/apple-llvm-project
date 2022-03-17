@@ -33,16 +33,45 @@ createCAS(const CASConfiguration &Config, DiagnosticsEngine &Diags,
           llvm::expectedToOptional(llvm::cas::createOnDiskCAS(Path)))
     return std::move(*MaybeCAS);
   Diags.Report(diag::err_builtin_cas_cannot_be_initialized) << Path;
-  return llvm::cas::createInMemoryCAS();
+  return CreateEmptyCASOnFailure ? llvm::cas::createInMemoryCAS() : nullptr;
 }
 
 std::shared_ptr<llvm::cas::CASDB>
 CASOptions::getOrCreateCAS(DiagnosticsEngine &Diags,
                            bool CreateEmptyCASOnFailure) const {
-  if (!Cache.CAS || *this != Cache.Config) {
-    Cache.Config = *this;
+  if (Cache.IsFrozen)
+    return Cache.CAS;
+
+  auto &CurrentConfig = static_cast<const CASConfiguration &>(*this);
+  if (!Cache.CAS || CurrentConfig != Cache.Config) {
+    Cache.Config = CurrentConfig;
     Cache.CAS = createCAS(Cache.Config, Diags, CreateEmptyCASOnFailure);
   }
 
   return Cache.CAS;
+}
+
+std::shared_ptr<llvm::cas::CASDB>
+CASOptions::getOrCreateCASAndHideConfig(DiagnosticsEngine &Diags) {
+  if (Cache.IsFrozen)
+    return Cache.CAS;
+
+  std::shared_ptr<llvm::cas::CASDB> CAS = getOrCreateCAS(Diags);
+  assert(CAS == Cache.CAS && "Expected CAS to be cached");
+
+  // Freeze the CAS and wipe out the visible config to hide it from future
+  // accesses. For example, future diagnostics cannot see this. Something that
+  // needs direct access to the CAS configuration will need to be
+  // scheduled/executed at a level that has access to the configuration.
+  auto &CurrentConfig = static_cast<CASConfiguration &>(*this);
+  Cache.IsFrozen = true;
+  CurrentConfig = CASConfiguration();
+
+  if (CAS) {
+    // Set the CASPath to the hash schema, since that leaks through CASContext's
+    // API and is observable.
+    CurrentConfig.CASPath = CAS->getHashSchemaIdentifier().str();
+  }
+
+  return CAS;
 }
