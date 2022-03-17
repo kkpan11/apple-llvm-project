@@ -6,11 +6,11 @@ Play with `llvm-cas`. E.g., print a tree:
 
 ```
 % ninja llvm-cas
-% llvm-cas --cas $TMPDIR/casfs.default --ls-tree <tree-id>
+% llvm-cas --cas auto --ls-tree <tree-id>
 ```
 Merge directories:
 ```
-% llvm-cas --cas $TMPDIR/casfs.default --merge <tree-id> /path/to/dir
+% llvm-cas --cas auto --merge <tree-id> /path/to/dir
 ```
 
 TODO: add demos for plugins once there are some.
@@ -26,17 +26,17 @@ need to be "fixed". Some are driver-only (and should remain so).
     - Avoids writing out Clang's Git revision (maybe it should avoid the
       version altogether).
     - Tells the linker not to write object file timestamps in the debug map.
-- `-fcas=builtin`: use the builtin CAS (defaults to in-memory).
-    - `-fcas-builtin-path=<path>`: path to on-disk storage for CAS.
-    - `-fcas-builtin-path='/^$TMPDIR/<path>'`: "hack" for referencing temp
-      directory without the path to the temp directory showing up on the
-      command-line. Probably want something better than this...
+- `-fcas-path=<path>`: Use on-disk CAS, instead of in-memory.
+    - `-fcas-path='auto'`: Use an on-disk CAS at an automatically determined
+      location (in the user's cache).
 - `-fcas-fs=<tree>`: use `<tree>` as the root filesystem. This *should* work in
   the driver (causing the driver to read from the same tree), but currently
   only works in `-cc1`.
-- `-fcas-token-cache`: perform a raw lex (no preprocessor) for each input file
-  as a separate task from the full lex, and cache the result in the CAS. This
-  *should* work always, but currently depends on `-fcas-fs`.
+- `-fcache-raw-lex`: perform a raw lex (no preprocessor) for each
+  input file as a separate task from the full lex, and cache the result in the
+  CAS. This *should* work always, but currently depends on `-fcas-fs`. Currently
+  a `-cc1` option. In the driver, it'll be exposed as
+  `-fexperimental-cache=raw-lex`.
 - `-fdepscan`: Driver-only. Before running `-cc1`, use the clang dependency
   scanner to find and the dependencies and create a pruned tree in the CAS,
   then run `-cc1` using `-fcas-fs`. This *should* respect `-fcas` if it was
@@ -308,7 +308,7 @@ directory.
   "$BUILDDIR"/unittests/CASObjectFormats/CASObjectFormatsTests &&
   find "$OBJECTSDIR"/lib/Support -name "*.o" |
   sort >objects-to-ingest &&
-  time "$BUILDDIR"/llvm-cas-object-format --cas "$TMPDIR/casfs.default" \
+  time "$BUILDDIR"/llvm-cas-object-format --cas auto \
     @objects-to-ingest --object-stats \
     --keep-compact-unwind-alive=false \
     --prefer-indirect-symbol-refs=true
@@ -320,7 +320,7 @@ serialization of LinkGraph and works for both MachO and ELF. You can try use
 `flatv1` schema with following options:
 
 ```
-  time "$BUILDDIR"/llvm-cas-object-format --cas "$TMPDIR/casfs.default" \
+  time "$BUILDDIR"/llvm-cas-object-format --cas auto \
     --ingest-schema=flatv1 --object-stats @objects-to-ingest
 ```
 

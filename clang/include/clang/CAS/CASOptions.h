@@ -1,0 +1,87 @@
+//===- CASOptions.h - Options for configuring the CAS -----------*- C++ -*-===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+///
+/// \file
+/// Defines the clang::CASOptions interface.
+///
+//===----------------------------------------------------------------------===//
+
+#ifndef LLVM_CLANG_CAS_CASOPTIONS_H
+#define LLVM_CLANG_CAS_CASOPTIONS_H
+
+#include <memory>
+#include <string>
+#include <vector>
+
+namespace llvm {
+namespace cas {
+class CASDB;
+} // end namespace cas
+} // end namespace llvm
+
+namespace clang {
+
+class DiagnosticsEngine;
+
+/// Base class for options configuring which CAS to use. Separated for the
+/// fields where we don't need special move/copy logic.
+///
+/// TODO: Add appropriate options once we support plugins.
+class CASConfiguration {
+public:
+  enum CASKind {
+    InMemoryCAS,
+    OnDiskCAS,
+  };
+
+  /// Kind of CAS to use.
+  CASKind getKind() const { return CASPath.empty() ? InMemoryCAS : OnDiskCAS; }
+
+  /// Path to a persistent backing store on-disk. This is optional, although \a
+  /// CASFileSystemRootID is unlikely to work without it.
+  ///
+  /// - "" means there is none; falls back to in-memory.
+  /// - "auto" is an alias for an automatically chosen location in the user's
+  ///   system cache.
+  std::string CASPath;
+
+  friend bool operator==(const CASConfiguration &LHS,
+                         const CASConfiguration &RHS) {
+    return LHS.CASPath == RHS.CASPath;
+  }
+  friend bool operator!=(const CASConfiguration &LHS,
+                         const CASConfiguration &RHS) {
+    return !(LHS == RHS);
+  }
+};
+
+/// Options configuring which CAS to use. User-accessible fields should be
+/// defined in CASConfiguration to enable caching a CAS instance.
+class CASOptions : public CASConfiguration {
+public:
+  /// Get a CAS defined by the options above. Future calls will return the same
+  /// CAS instance... unless the configuration has changed, in which case a new
+  /// one will be created.
+  std::shared_ptr<llvm::cas::CASDB>
+  getOrCreateCAS(DiagnosticsEngine &Diags,
+                 bool CreateEmptyCASOnFailure = false) const;
+
+private:
+  struct CachedCAS {
+    /// A cached CAS instance.
+    std::shared_ptr<llvm::cas::CASDB> CAS;
+
+    /// Remember how the CAS was created.
+    CASConfiguration Config;
+  };
+  mutable CachedCAS Cache;
+};
+
+} // end namespace clang
+
+#endif // LLVM_CLANG_CAS_CASOPTIONS_H

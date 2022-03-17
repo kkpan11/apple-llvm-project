@@ -798,14 +798,13 @@ static void updateCompilerInvocation(CompilerInvocation &Invocation,
                                      std::string RootID,
                                      StringRef CASWorkingDirectory,
                                      llvm::TreePathPrefixMapper &Mapper) {
-  // Fix the CAS options.
-  auto &CASOpts = Invocation.getCASOpts();
-  CASOpts.Kind = CASOptions::BuiltinCAS; // FIXME: Don't override.
-  CASOpts.CASFileSystemRootID = RootID;
-  CASOpts.CASFileSystemWorkingDirectory = CASWorkingDirectory.str();
-  CASOpts.CASFileSystemResultCache = true; // FIXME: Don't always set.
-  CASOpts.BuiltinPath =
-      llvm::cas::getDefaultOnDiskCASStableID(); // FIXME: Don't override.
+  // "Fix" the CAS options.
+  auto &FileSystemOpts = Invocation.getFileSystemOpts();
+  FileSystemOpts.CASFileSystemRootID = RootID;
+  FileSystemOpts.CASFileSystemWorkingDirectory = CASWorkingDirectory.str();
+  auto &FrontendOpts = Invocation.getFrontendOpts();
+  FrontendOpts.CacheCompileJob = true;      // FIXME: Don't set.
+  Invocation.getCASOpts().CASPath = "auto"; // FIXME: Don't override.
 
   // If there are no mappings, we're done. Otherwise, continue and remap
   // everything.
@@ -828,9 +827,9 @@ static void updateCompilerInvocation(CompilerInvocation &Invocation,
     remapInPlaceOrFilterOutWith(Vector, remapInPlace);
   };
 
-  // Fix the CAS options first.
-  if (remapInPlace(CASOpts.CASFileSystemWorkingDirectory))
-    return; // If we can't remap the working directory, skip everything else.
+  // If we can't remap the working directory, skip everything else.
+  if (remapInPlace(FileSystemOpts.CASFileSystemWorkingDirectory))
+    return;
 
   // Remap header search.
   auto &HeaderSearchOpts = Invocation.getHeaderSearchOpts();
@@ -860,7 +859,6 @@ static void updateCompilerInvocation(CompilerInvocation &Invocation,
   remapInPlaceOrFilterOut(HeaderSearchOpts.VFSOverlayFiles);
 
   // Frontend options.
-  auto &FrontendOpts = Invocation.getFrontendOpts();
   remapInPlaceOrFilterOutWith(
       FrontendOpts.Inputs, [&](FrontendInputFile &Input) {
         if (Input.isBuffer())
@@ -894,7 +892,6 @@ static void updateCompilerInvocation(CompilerInvocation &Invocation,
   Mapper.mapInPlaceOrClear(FrontendOpts.StatsFile);
 
   // Filesystem options.
-  auto &FileSystemOpts = Invocation.getFileSystemOpts();
   Mapper.mapInPlaceOrClear(FileSystemOpts.WorkingDir);
 
   // Code generation options.

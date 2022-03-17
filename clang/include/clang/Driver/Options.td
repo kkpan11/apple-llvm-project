@@ -6060,19 +6060,26 @@ def fsycl_is_host : Flag<["-"], "fsycl-is-host">,
 // CAS Options
 //===----------------------------------------------------------------------===//
 
-// Example command-lines we expect (not all supported yet):
+// Example command-lines we expect:
+//
+// For building against some pre-ingested, CAS-based filesystem in the builtin
+// on-disk CAS:
+// ```
+// % clang -fcas-path=auto -fcas-fs=llvmcas://1af12fa2afa1af2a1fa
+// % clang -fcas-path=path/to/cas -fcas-fs=llvmcas://1af12fa2afa1af2a1fa
+// ```
 //
 // For building against some pre-ingested, CAS-based filesystem using a plugin:
 // ```
-// % clang -fcas=libcas-plugin.dylib \
-//         -fcas-fs=cas://1af12fa2afa1af2a1fa
+// % clang -fcas-plugin=path/to/some/cas-plugind \
+//         -fcas-plugin-args=-X,-Y,-Z            \
+//         -fcas-fs=llvmcas://1af12fa2afa1af2a1fa
 // ```
 //
 // For automatically ingesting from the live filesystem into a CAS,
 // canonicalizing the paths, and running the `-cc1` against the CAS tree:
 // ```
-// % clang -fcas=libcas-plugin.dylib \
-//         -fdepscan \
+// % clang -fdepscan                              \
 //         -fdepscan-prefix-map=/my/sources=/^src \
 //         -fdepscan-prefix-map=/my/build/dir=/^build
 // ```
@@ -6080,9 +6087,9 @@ def fsycl_is_host : Flag<["-"], "fsycl-is-host">,
 // For pruning and canonicalizing even when starting from a pre-ingested,
 // CAS-based filesystem:
 // ```
-// % clang -fcas=libcas-plugin.dylib \
-//         -fcas-fs=cas://1af12fa2afa1af2a1fa \
-//         -fdepscan \
+// % clang -fcas-path=path/to/the/cas             \
+//         -fcas-fs=llvmcas://1af12fa2afa1af2a1fa \
+//         -fdepscan                              \
 //         -fdepscan-prefix-map=/my/sources=/^src \
 //         -fdepscan-prefix-map=/my/build/dir=/^build
 // ```
@@ -6169,56 +6176,55 @@ def dump_depscan_tree_EQ : Option<["-"], "dump-depscan-tree=", KIND_JOINED>,
 // override -fcas / etc., it should just add those if not already specified.
 let Flags = [CC1Option, NoDriverOption] in {
 
-def fcas : Separate<["-"], "fcas">,
-    Group<f_Group>, MetaVarName<"<none|builtin|plugin>">,
-    HelpText<"Kind of CAS to use during compilation.">,
-    Values<"none,builtin,plugin">, NormalizedValuesScope<"CASOptions">,
-    NormalizedValues<["NoCAS", "BuiltinCAS", "PluginCAS"]>,
-    MarshallingInfoEnum<CASOpts<"Kind">, "NoCAS">;
+// FIXME: Add to driver once it's supported by (not clobbered by) -fdepscan.
+//
+// The driver should also have:
+// - '-fcas-path=<dir>|auto' ('='-joined alias).
+// - '-fno-cas-path' (same as '-fcas-path ""', the default).
+def fcas_path : Separate<["-"], "fcas-path">,
+    Group<f_Group>, MetaVarName<"<dir>|auto">,
+    HelpText<"Path to a persistent on-disk backing store for the builtin CAS."
+             " '-fcas-path=auto' chooses a path in the user's system cache.">,
+    MarshallingInfoString<CASOpts<"CASPath">>;
 
-def fcas_builtin_path : Separate<["-"], "fcas-builtin-path">,
-    Group<f_Group>, MetaVarName<"<dir>">,
-    HelpText<"Path to a persistent on-disk backing store for the builtin CAS.">,
-    ShouldParseIf<!strconcat(fcas.KeyPath," == CASOptions::BuiltinCAS")>,
-    MarshallingInfoString<CASOpts<"BuiltinPath">>;
-
-def fcas_plugin_path : Separate<["-"], "fcas-plugin-path">,
-    Group<f_Group>, MetaVarName<"<dsopath>">,
-    HelpText<"Path to the CAS plugin to load.">,
-    ShouldParseIf<!strconcat(fcas.KeyPath," == CASOptions::PluginCAS")>,
-    MarshallingInfoString<CASOpts<"PluginPath">>;
-
-def fcas_plugin_arg : Joined<["-"], "fcas-plugin-arg">,
-    Group<f_Group>, MetaVarName<"<option>">,
-    HelpText<"Arguments for initializing the CAS plugin.">,
-    ShouldParseIf<!strconcat(fcas.KeyPath," == CASOptions::PluginCAS")>,
-    MarshallingInfoStringVector<CASOpts<"PluginArgs">>;
-
+// FIXME: Add to driver once it's supported by -fdepscan.
 def fcas_fs : Separate<["-"], "fcas-fs">,
     Group<f_Group>, MetaVarName<"<tree>">,
-    HelpText<"Configure the filesystem to read from the provided CAS tree.">,
-    ShouldParseIf<!strconcat(fcas.KeyPath, " != CASOptions::NoCAS")>,
-    MarshallingInfoString<CASOpts<"CASFileSystemRootID">>;
+    HelpText<"Configure the filesystem to read from the provided CAS tree."
+             " See also -fcas-builtin-path for loading a tree.">,
+    MarshallingInfoString<FileSystemOpts<"CASFileSystemRootID">>;
 
+// FIXME: Remove / merge with -fworking-directory?
 def fcas_fs_working_directory : Separate<["-"], "fcas-fs-working-directory">,
     Group<f_Group>, MetaVarName<"<dir>">,
     HelpText<"Working directory for -fcas-fs (if not the root).">,
     ShouldParseIf<!strconcat("!", fcas_fs.KeyPath, ".empty()")>,
-    MarshallingInfoString<CASOpts<"CASFileSystemWorkingDirectory">>;
+    MarshallingInfoString<FileSystemOpts<"CASFileSystemWorkingDirectory">>;
 
-defm fcas_fs_cache_results : BoolFOption<"cas-fs-result-cache",
-    CASOpts<"CASFileSystemResultCache">, DefaultFalse,
-    PosFlag<SetTrue, [], "When using -fcas-fs, use a result cache.">,
+// FIXME: Add to driver under -fexperimental-cache=compile-job.
+defm cache_compile_job : BoolFOption<"cache-compile-job",
+    FrontendOpts<"CacheCompileJob">, DefaultFalse,
+    PosFlag<SetTrue, [], "Try to cache full compilation job (-cc1). Ignored"
+                         " (for now) without -fcas-fs.">,
     NegFlag<SetFalse>>;
 
-defm fcas_token_cache : BoolFOption<"cas-token-cache",
-    CASOpts<"CASTokenCache">, DefaultFalse,
-    PosFlag<SetTrue, [], "When reading from a CAS, cache tokens.">,
+// FIXME: Add to driver under -fexperimental-cache=raw-lex.
+defm cache_raw_lex : BoolFOption<"cache-raw-lex",
+    PreprocessorOpts<"CacheRawLex">, DefaultFalse,
+    PosFlag<SetTrue, [], "When reading from a CAS, cache raw lexing.">,
     NegFlag<SetFalse>>;
 
-defm fcasid_output : BoolFOption<"casid-output",
-    CASOpts<"WriteOutputAsCASID">, DefaultFalse,
-    PosFlag<SetTrue, [], "When using -fcas-fs-result-cache, write a CASID for the output file.">,
+// FIXME: Remove once -fexperimental-cache is in the driver and we don't
+// care about keeping raw-lex caching working with older builds of clang
+// anymore.
+def fcas_token_cache : Flag<["-"], "fcas-token-cache">,
+    Group<f_Group>, HelpText<"Alias for -cache-raw-lex.">,
+    Alias<fcache_raw_lex>;
+
+defm casid_output : BoolFOption<"casid-output",
+    FrontendOpts<"WriteOutputAsCASID">, DefaultFalse,
+    PosFlag<SetTrue, [], "When using -fexperimental-cache-compile,"
+                         " write a CASID for the output file.">,
     NegFlag<SetFalse>>;
 
 } // let Flags = [CC1Option, NoDriverOption]

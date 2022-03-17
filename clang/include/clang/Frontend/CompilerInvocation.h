@@ -9,13 +9,13 @@
 #ifndef LLVM_CLANG_FRONTEND_COMPILERINVOCATION_H
 #define LLVM_CLANG_FRONTEND_COMPILERINVOCATION_H
 
-#include "clang/Basic/CASOptions.h"
 #include "clang/Basic/CodeGenOptions.h"
 #include "clang/Basic/DiagnosticOptions.h"
 #include "clang/Basic/FileSystemOptions.h"
 #include "clang/Basic/LLVM.h"
 #include "clang/Basic/LangOptions.h"
 #include "clang/Basic/LangStandard.h"
+#include "clang/CAS/CASOptions.h"
 #include "clang/Frontend/DependencyOutputOptions.h"
 #include "clang/Frontend/FrontendOptions.h"
 #include "clang/Frontend/MigratorOptions.h"
@@ -339,17 +339,13 @@ private:
                                   const LangOptions *LangOpts);
 };
 
-IntrusiveRefCntPtr<llvm::vfs::FileSystem>
-createVFSFromCompilerInvocation(const CompilerInvocation &CI,
-                                DiagnosticsEngine &Diags);
+IntrusiveRefCntPtr<llvm::vfs::FileSystem> createVFSFromCompilerInvocation(
+    const CompilerInvocation &CI, DiagnosticsEngine &Diags,
+    std::shared_ptr<llvm::cas::CASDB> OverrideCAS = nullptr);
 
 IntrusiveRefCntPtr<llvm::vfs::FileSystem> createVFSFromCompilerInvocation(
     const CompilerInvocation &CI, DiagnosticsEngine &Diags,
     IntrusiveRefCntPtr<llvm::vfs::FileSystem> BaseFS);
-
-std::shared_ptr<llvm::cas::CASDB>
-createCASFromCompilerInvocation(const CompilerInvocation &CI,
-                                DiagnosticsEngine &Diags);
 
 } // namespace clang
 

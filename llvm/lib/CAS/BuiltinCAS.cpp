@@ -3240,6 +3240,7 @@ std::string cas::getDefaultOnDiskCASStableID() {
 }
 
 void cas::getDefaultOnDiskCASPath(SmallVectorImpl<char> &Path) {
+  // FIXME: Should this return 'Error' instead of hard-failing?
   if (!llvm::sys::path::cache_directory(Path))
     report_fatal_error("cannot get default cache directory");
   llvm::sys::path::append(Path, DefaultName);
@@ -3258,6 +3259,7 @@ Expected<std::unique_ptr<CASDB>> cas::createOnDiskCAS(const Twine &Path) {
   Path.toVector(AbsPath);
   sys::fs::make_absolute(AbsPath);
 
+  // FIXME: Remove this and update clients to do this logic.
   if (AbsPath == getDefaultOnDiskCASStableID())
     AbsPath = StringRef(getDefaultOnDiskCASPath());
 

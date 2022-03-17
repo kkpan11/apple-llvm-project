@@ -282,7 +282,7 @@ public:
     }
 
     // Always use the CAS token cache, regardless of the original command-line.
-    ScanInstance.getInvocation().getCASOpts().CASTokenCache |=
+    ScanInstance.getInvocation().getPreprocessorOpts().CacheRawLex |=
         OverrideCASTokenCache;
 
     // Consider different header search and diagnostic options to create

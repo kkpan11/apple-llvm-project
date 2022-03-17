@@ -102,10 +102,16 @@ int main(int Argc, char **Argv) {
     ExitOnErr(createStringError(inconvertibleErrorCode(),
                                 "no command action is specified"));
 
+  // FIXME: Consider creating an in-memory CAS.
   if (CASPath.empty())
     ExitOnErr(
         createStringError(inconvertibleErrorCode(), "missing --cas=<path>"));
-  std::unique_ptr<CASDB> CAS = ExitOnErr(llvm::cas::createOnDiskCAS(CASPath));
+  std::unique_ptr<CASDB> CAS;
+  if (CASPath == "auto")
+    CAS = ExitOnErr(
+        llvm::cas::createOnDiskCAS(llvm::cas::getDefaultOnDiskCASPath()));
+  else
+    CAS = ExitOnErr(llvm::cas::createOnDiskCAS(CASPath));
   assert(CAS);
 
   if (Command == Dump)

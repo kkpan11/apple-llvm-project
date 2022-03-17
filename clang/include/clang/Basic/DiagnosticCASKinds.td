@@ -8,15 +8,9 @@
 
 let Component = "CAS" in {
 
-def err_cas_plugin_cannot_be_loaded : Error<
-  "CAS plugin '%0' cannot be loaded (check -fcas-plugin-path and"
-  " -fcas-plugin-args)">, DefaultFatal;
 def err_builtin_cas_cannot_be_initialized : Error<
-  "Builtin CAS cannot be initialized from '%0' on disk"
-  " (check -fcas-builtin-path)">, DefaultFatal;
-def err_cas_builtin_path : Error<
-  "Builtin CAS cannot be initialized from '%0' on disk"
-  " (check -fcas-builtin-path)">, DefaultFatal;
+  "CAS cannot be initialized from '%0' on disk (check -fcas-path)">,
+  DefaultFatal;
 def err_cas_cannot_parse_root_id : Error<
   "CAS cannot parse root-id '%0' specified by -fcas-fs">, DefaultFatal;
 def err_cas_filesystem_cannot_be_initialized : Error<
@@ -28,9 +22,9 @@ def err_cas_filesystem_cannot_set_working_directory : Error<
 def err_cas_depscan_daemon_connection: Error<
   "Failed to establish connection with depscan daemon: %0">, DefaultFatal;
 
-def remark_cas_fs_result_cache_hit : Remark<
-  "result cache hit for '%0' => '%1'">, InGroup<CASFSResultCacheHit>;
-def remark_cas_fs_result_cache_miss : Remark<
-  "result cache miss for '%0'">, InGroup<CASFSResultCacheMiss>;
+def remark_compile_job_cache_hit : Remark<
+  "compile job cache hit for '%0' => '%1'">, InGroup<CompileJobCacheHit>;
+def remark_compile_job_cache_miss : Remark<
+  "compile job cache miss for '%0'">, InGroup<CompileJobCacheMiss>;
 
 } // let Component = "CAS" in
