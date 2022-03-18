@@ -35,12 +35,15 @@ class DiagnosticsEngine;
 class CASConfiguration {
 public:
   enum CASKind {
+    UnknownCAS,
     InMemoryCAS,
     OnDiskCAS,
   };
 
   /// Kind of CAS to use.
-  CASKind getKind() const { return CASPath.empty() ? InMemoryCAS : OnDiskCAS; }
+  CASKind getKind() const {
+    return IsFrozen ? UnknownCAS : CASPath.empty() ? InMemoryCAS : OnDiskCAS;
+  }
 
   /// Path to a persistent backing store on-disk. This is optional, although \a
   /// CASFileSystemRootID is unlikely to work without it.
@@ -58,18 +61,46 @@ public:
                          const CASConfiguration &RHS) {
     return !(LHS == RHS);
   }
+
+private:
+  /// Whether the configuration has been "frozen", in order to hide the kind of
+  /// CAS that's in use.
+  bool IsFrozen = false;
+  friend class CASOptions;
 };
 
 /// Options configuring which CAS to use. User-accessible fields should be
 /// defined in CASConfiguration to enable caching a CAS instance.
+///
+/// CASOptions includes \a getOrCreateCAS() and \a
+/// getOrCreateCASAndHideConfig() for creating a CAS and caching it.
+///
+/// FIXME: The the caching is done here, instead of as a field in \a
+/// CompilerInstance, in order to ensure that \a
+/// clang::createVFSFromCompilerInvocation() uses the same CAS instance that
+/// the rest of the compiler job does, without updating all callers. Probably
+/// it would be better to update all callers and remove it from here.
 class CASOptions : public CASConfiguration {
 public:
   /// Get a CAS defined by the options above. Future calls will return the same
   /// CAS instance... unless the configuration has changed, in which case a new
   /// one will be created.
+  ///
+  /// If \p CreateEmptyCASOnFailure, returns an empty in-memory CAS on failure.
+  /// Else, returns \c nullptr on failure.
   std::shared_ptr<llvm::cas::CASDB>
   getOrCreateCAS(DiagnosticsEngine &Diags,
                  bool CreateEmptyCASOnFailure = false) const;
+
+  /// Get a CAS defined by the options above. Future calls will return the same
+  /// CAS instance, even if the configuration changes again later.
+  ///
+  /// The configuration will be wiped out to prevent it being observable or
+  /// affecting the output of something that takes \a CASOptions as an input.
+  /// This also "locks in" the return value of \a getOrCreateCAS(): future
+  /// calls will not check if the configuration has changed.
+  std::shared_ptr<llvm::cas::CASDB>
+  getOrCreateCASAndHideConfig(DiagnosticsEngine &Diags);
 
 private:
   struct CachedCAS {
