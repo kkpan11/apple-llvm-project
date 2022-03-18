@@ -39,7 +39,7 @@ createCAS(const CASConfiguration &Config, DiagnosticsEngine &Diags,
 std::shared_ptr<llvm::cas::CASDB>
 CASOptions::getOrCreateCAS(DiagnosticsEngine &Diags,
                            bool CreateEmptyCASOnFailure) const {
-  if (Cache.IsFrozen)
+  if (Cache.Config.IsFrozen)
     return Cache.CAS;
 
   auto &CurrentConfig = static_cast<const CASConfiguration &>(*this);
@@ -53,7 +53,7 @@ CASOptions::getOrCreateCAS(DiagnosticsEngine &Diags,
 
 std::shared_ptr<llvm::cas::CASDB>
 CASOptions::getOrCreateCASAndHideConfig(DiagnosticsEngine &Diags) {
-  if (Cache.IsFrozen)
+  if (Cache.Config.IsFrozen)
     return Cache.CAS;
 
   std::shared_ptr<llvm::cas::CASDB> CAS = getOrCreateCAS(Diags);
@@ -64,8 +64,8 @@ CASOptions::getOrCreateCASAndHideConfig(DiagnosticsEngine &Diags) {
   // needs direct access to the CAS configuration will need to be
   // scheduled/executed at a level that has access to the configuration.
   auto &CurrentConfig = static_cast<CASConfiguration &>(*this);
-  Cache.IsFrozen = true;
   CurrentConfig = CASConfiguration();
+  CurrentConfig.IsFrozen = Cache.Config.IsFrozen = true;
 
   if (CAS) {
     // Set the CASPath to the hash schema, since that leaks through CASContext's

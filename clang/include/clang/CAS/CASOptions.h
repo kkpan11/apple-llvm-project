@@ -35,12 +35,15 @@ class DiagnosticsEngine;
 class CASConfiguration {
 public:
   enum CASKind {
+    UnknownCAS,
     InMemoryCAS,
     OnDiskCAS,
   };
 
   /// Kind of CAS to use.
-  CASKind getKind() const { return CASPath.empty() ? InMemoryCAS : OnDiskCAS; }
+  CASKind getKind() const {
+    return IsFrozen ? UnknownCAS : CASPath.empty() ? InMemoryCAS : OnDiskCAS;
+  }
 
   /// Path to a persistent backing store on-disk. This is optional, although \a
   /// CASFileSystemRootID is unlikely to work without it.
@@ -58,10 +61,25 @@ public:
                          const CASConfiguration &RHS) {
     return !(LHS == RHS);
   }
+
+private:
+  /// Whether the configuration has been "frozen", in order to hide the kind of
+  /// CAS that's in use.
+  bool IsFrozen = false;
+  friend class CASOptions;
 };
 
 /// Options configuring which CAS to use. User-accessible fields should be
 /// defined in CASConfiguration to enable caching a CAS instance.
+///
+/// CASOptions includes \a getOrCreateCAS() and \a
+/// getOrCreateCASAndHideConfig() for creating a CAS and caching it.
+///
+/// FIXME: The the caching is done here, instead of as a field in \a
+/// CompilerInstance, in order to ensure that \a
+/// clang::createVFSFromCompilerInvocation() uses the same CAS instance that
+/// the rest of the compiler job does, without updating all callers. Probably
+/// it would be better to update all callers and remove it from here.
 class CASOptions : public CASConfiguration {
 public:
   /// Get a CAS defined by the options above. Future calls will return the same
@@ -91,9 +109,6 @@ private:
 
     /// Remember how the CAS was created.
     CASConfiguration Config;
-
-    /// Check if the configuration has been frozen.
-    bool IsFrozen = false;
   };
   mutable CachedCAS Cache;
 };

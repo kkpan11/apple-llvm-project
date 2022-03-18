@@ -376,13 +376,51 @@ int cc1_main(ArrayRef<const char *> Argv, const char *Argv0, void *MainAddr) {
   if (!Success)
     return 1;
 
-  // Handle result caching in the CAS.
+  // Cache the compile job, if enabled.
+  //
+  // The high-level model is:
+  //
+  //  1. Extract options from the CompilerInvocation:
+  //       - that can be simulated and
+  //       - that don't affect the compile job's result.
+  //  2. Canonicalize the options extracted in (1).
+  //  3. Compute the result of the compile job using the canonicalized
+  //     CompilerInvocation, with hooks installed to redirect outputs and
+  //     enable live-streaming of a running compile job to stdout or stderr.
+  //       - Compute a cache key.
+  //       - Check the cache, and run the compile job if there's a cache miss.
+  //       - Store the result of the compile job in the cache.
+  //  4. Replay the compile job, using the options extracted in (1).
+  //
+  // An example (albeit not yet implemented) is handling options controlling
+  // output of diagnostics. The CompilerInvocation can be canonicalized to
+  // serialize the diagnostics to a virtual path (<output>.diag or something).
+  //
+  //   - On a cache miss, the compile job runs, and the diagnostics are
+  //     serialized and stored in the cache per the canonicalized options
+  //     from (2).
+  //   - Either way, the diagnostics are replayed according to the options
+  //     extracted from (1) during (4).
+  //
+  // The above will produce the correct output for diagnostics, but the experience
+  // will be degraded in the common command-line case (emitting to stderr)
+  // because the diagnostics will not be streamed live. This can be improved:
+  //
+  //   - Change (3) to accept a hook: a DiagnosticsConsumer that diagnostics
+  //     are mirrored to (in addition to canonicalized options from (2)).
+  //   - If diagnostics would be live-streamed, send in a diagnostics consumer
+  //     that matches (1). Otherwise, send in an IgnoringDiagnosticsConsumer.
+  //   - In step (4), only skip replaying the diagnostics if they were already
+  //     handled.
   Optional<llvm::cas::CASID> ResultCacheKey;
   std::shared_ptr<llvm::cas::CASDB> CAS;
   IntrusiveRefCntPtr<llvm::cas::CASOutputBackend> CASOutputs;
   SmallString<256> ResultDiags;
   std::unique_ptr<llvm::raw_ostream> ResultDiagsOS;
   if (Clang->getInvocation().getFrontendOpts().CacheCompileJob) {
+    // Hide the CAS configuration, canonicalizing it to keep the path to the
+    // CAS from leaking to the compile job, where it might affecting its
+    // output (e.g., in a diagnostic).
     CAS = Clang->getInvocation().getCASOpts().getOrCreateCASAndHideConfig(
         Clang->getDiagnostics());
     if (!CAS)

@@ -43,6 +43,7 @@ TEST(CASOptionsTest, getOrCreateCAS) {
   std::shared_ptr<cas::CASDB> InMemory = Opts.getOrCreateCAS(Diags);
   ASSERT_TRUE(InMemory);
   EXPECT_EQ(InMemory, Opts.getOrCreateCAS(Diags));
+  EXPECT_EQ(CASOptions::InMemoryCAS, Opts.getKind());
 
   // Create an on-disk CAS.
   unittest::TempDir Dir("cas-options", /*Unique=*/true);
@@ -50,6 +51,7 @@ TEST(CASOptionsTest, getOrCreateCAS) {
   std::shared_ptr<cas::CASDB> OnDisk = Opts.getOrCreateCAS(Diags);
   EXPECT_NE(InMemory, OnDisk);
   EXPECT_EQ(OnDisk, Opts.getOrCreateCAS(Diags));
+  EXPECT_EQ(CASOptions::OnDiskCAS, Opts.getKind());
 
   // Create an on-disk CAS at an automatic location.
   Opts.CASPath = "auto";
@@ -57,6 +59,7 @@ TEST(CASOptionsTest, getOrCreateCAS) {
   EXPECT_NE(InMemory, OnDiskAuto);
   EXPECT_NE(OnDisk, OnDiskAuto);
   EXPECT_EQ(OnDiskAuto, Opts.getOrCreateCAS(Diags));
+  EXPECT_EQ(CASOptions::OnDiskCAS, Opts.getKind());
 
   // Create another in-memory CAS. It won't be the same one.
   Opts.CASPath = "";
@@ -65,6 +68,7 @@ TEST(CASOptionsTest, getOrCreateCAS) {
   EXPECT_NE(OnDisk, InMemory2);
   EXPECT_NE(OnDiskAuto, InMemory2);
   EXPECT_EQ(InMemory2, Opts.getOrCreateCAS(Diags));
+  EXPECT_EQ(CASOptions::InMemoryCAS, Opts.getKind());
 }
 
 TEST(CASOptionsTest, getOrCreateCASInvalid) {
@@ -103,6 +107,7 @@ TEST(CASOptionsTest, getOrCreateCASAndHideConfig) {
   Opts.CASPath = Dir.path("cas").str().str();
   std::shared_ptr<cas::CASDB> CAS = Opts.getOrCreateCASAndHideConfig(Diags);
   ASSERT_TRUE(CAS);
+  EXPECT_EQ(CASOptions::UnknownCAS, Opts.getKind());
 
   // Check that the configuration is hidden, but calls to getOrCreateCAS()
   // still return the original CAS.
@@ -111,10 +116,15 @@ TEST(CASOptionsTest, getOrCreateCASAndHideConfig) {
   // Check that new paths are ignored.
   Opts.CASPath = "";
   EXPECT_EQ(CAS, Opts.getOrCreateCAS(Diags));
+  EXPECT_EQ(CASOptions::UnknownCAS, Opts.getKind());
   EXPECT_EQ(CAS, Opts.getOrCreateCASAndHideConfig(Diags));
+  EXPECT_EQ(CASOptions::UnknownCAS, Opts.getKind());
+
   Opts.CASPath = Dir.path("ignored-cas").str().str();
   EXPECT_EQ(CAS, Opts.getOrCreateCAS(Diags));
+  EXPECT_EQ(CASOptions::UnknownCAS, Opts.getKind());
   EXPECT_EQ(CAS, Opts.getOrCreateCASAndHideConfig(Diags));
+  EXPECT_EQ(CASOptions::UnknownCAS, Opts.getKind());
 }
 
 } // end namespace
