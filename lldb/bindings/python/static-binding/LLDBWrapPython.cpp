@@ -20974,6 +20974,133 @@ SWIGINTERN PyObject *SBData_swiginit(PyObject *SWIGUNUSEDPARM(self), PyObject *a
   return SWIG_Python_InitShadowInstance(args);
 }
 
+SWIGINTERN PyObject *_wrap_SBDebugger_GetProgressFromEvent(PyObject *SWIGUNUSEDPARM(self), PyObject *args) {
+  PyObject *resultobj = 0;
+  lldb::SBEvent *arg1 = 0 ;
+  uint64_t *arg2 = 0 ;
+  uint64_t *arg3 = 0 ;
+  uint64_t *arg4 = 0 ;
+  bool *arg5 = 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  uint64_t temp2 ;
+  int res2 = SWIG_TMPOBJ ;
+  uint64_t temp3 ;
+  int res3 = SWIG_TMPOBJ ;
+  uint64_t temp4 ;
+  int res4 = SWIG_TMPOBJ ;
+  bool temp5 ;
+  int res5 = SWIG_TMPOBJ ;
+  PyObject *swig_obj[1] ;
+  char *result = 0 ;
+  
+  arg2 = &temp2;
+  arg3 = &temp3;
+  arg4 = &temp4;
+  arg5 = &temp5;
+  if (!args) SWIG_fail;
+  swig_obj[0] = args;
+  res1 = SWIG_ConvertPtr(swig_obj[0], &argp1, SWIGTYPE_p_lldb__SBEvent,  0  | 0);
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "SBDebugger_GetProgressFromEvent" "', argument " "1"" of type '" "lldb::SBEvent const &""'"); 
+  }
+  if (!argp1) {
+    SWIG_exception_fail(SWIG_ValueError, "invalid null reference " "in method '" "SBDebugger_GetProgressFromEvent" "', argument " "1"" of type '" "lldb::SBEvent const &""'"); 
+  }
+  arg1 = reinterpret_cast< lldb::SBEvent * >(argp1);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (char *)lldb::SBDebugger::GetProgressFromEvent((lldb::SBEvent const &)*arg1,*arg2,*arg3,*arg4,*arg5);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
+  resultobj = SWIG_FromCharPtr((const char *)result);
+  if (SWIG_IsTmpObj(res2)) {
+    resultobj = SWIG_Python_AppendOutput(resultobj, SWIG_From_unsigned_SS_long_SS_long((*arg2)));
+  } else {
+    int new_flags = SWIG_IsNewObj(res2) ? (SWIG_POINTER_OWN |  0 ) :  0 ;
+    resultobj = SWIG_Python_AppendOutput(resultobj, SWIG_NewPointerObj((void*)(arg2), SWIGTYPE_p_unsigned_long_long, new_flags));
+  }
+  if (SWIG_IsTmpObj(res3)) {
+    resultobj = SWIG_Python_AppendOutput(resultobj, SWIG_From_unsigned_SS_long_SS_long((*arg3)));
+  } else {
+    int new_flags = SWIG_IsNewObj(res3) ? (SWIG_POINTER_OWN |  0 ) :  0 ;
+    resultobj = SWIG_Python_AppendOutput(resultobj, SWIG_NewPointerObj((void*)(arg3), SWIGTYPE_p_unsigned_long_long, new_flags));
+  }
+  if (SWIG_IsTmpObj(res4)) {
+    resultobj = SWIG_Python_AppendOutput(resultobj, SWIG_From_unsigned_SS_long_SS_long((*arg4)));
+  } else {
+    int new_flags = SWIG_IsNewObj(res4) ? (SWIG_POINTER_OWN |  0 ) :  0 ;
+    resultobj = SWIG_Python_AppendOutput(resultobj, SWIG_NewPointerObj((void*)(arg4), SWIGTYPE_p_unsigned_long_long, new_flags));
+  }
+  if (SWIG_IsTmpObj(res5)) {
+    resultobj = SWIG_Python_AppendOutput(resultobj, SWIG_From_bool((*arg5)));
+  } else {
+    int new_flags = SWIG_IsNewObj(res5) ? (SWIG_POINTER_OWN |  0 ) :  0 ;
+    resultobj = SWIG_Python_AppendOutput(resultobj, SWIG_NewPointerObj((void*)(arg5), SWIGTYPE_p_bool, new_flags));
+  }
+  return resultobj;
+fail:
+  return NULL;
+}
+
+
+SWIGINTERN PyObject *_wrap_SBDebugger_GetDiagnosticFromEvent(PyObject *SWIGUNUSEDPARM(self), PyObject *args) {
+  PyObject *resultobj = 0;
+  lldb::SBEvent *arg1 = 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  PyObject *swig_obj[1] ;
+  lldb::SBStructuredData result;
+  
+  if (!args) SWIG_fail;
+  swig_obj[0] = args;
+  res1 = SWIG_ConvertPtr(swig_obj[0], &argp1, SWIGTYPE_p_lldb__SBEvent,  0  | 0);
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "SBDebugger_GetDiagnosticFromEvent" "', argument " "1"" of type '" "lldb::SBEvent const &""'"); 
+  }
+  if (!argp1) {
+    SWIG_exception_fail(SWIG_ValueError, "invalid null reference " "in method '" "SBDebugger_GetDiagnosticFromEvent" "', argument " "1"" of type '" "lldb::SBEvent const &""'"); 
+  }
+  arg1 = reinterpret_cast< lldb::SBEvent * >(argp1);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = lldb::SBDebugger::GetDiagnosticFromEvent((lldb::SBEvent const &)*arg1);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
+  resultobj = SWIG_NewPointerObj((new lldb::SBStructuredData(static_cast< const lldb::SBStructuredData& >(result))), SWIGTYPE_p_lldb__SBStructuredData, SWIG_POINTER_OWN |  0 );
+  return resultobj;
+fail:
+  return NULL;
+}
+
+
+SWIGINTERN PyObject *_wrap_SBDebugger_GetBroadcaster(PyObject *SWIGUNUSEDPARM(self), PyObject *args) {
+  PyObject *resultobj = 0;
+  lldb::SBDebugger *arg1 = (lldb::SBDebugger *) 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  PyObject *swig_obj[1] ;
+  lldb::SBBroadcaster result;
+  
+  if (!args) SWIG_fail;
+  swig_obj[0] = args;
+  res1 = SWIG_ConvertPtr(swig_obj[0], &argp1,SWIGTYPE_p_lldb__SBDebugger, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "SBDebugger_GetBroadcaster" "', argument " "1"" of type '" "lldb::SBDebugger *""'"); 
+  }
+  arg1 = reinterpret_cast< lldb::SBDebugger * >(argp1);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (arg1)->GetBroadcaster();
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
+  resultobj = SWIG_NewPointerObj((new lldb::SBBroadcaster(static_cast< const lldb::SBBroadcaster& >(result))), SWIGTYPE_p_lldb__SBBroadcaster, SWIG_POINTER_OWN |  0 );
+  return resultobj;
+fail:
+  return NULL;
+}
+
+
 SWIGINTERN PyObject *_wrap_SBDebugger_Initialize(PyObject *SWIGUNUSEDPARM(self), PyObject *args) {
   PyObject *resultobj = 0;
   
@@ -68306,6 +68433,33 @@ fail:
 }
 
 
+SWIGINTERN PyObject *_wrap_SBType_IsAggregateType(PyObject *SWIGUNUSEDPARM(self), PyObject *args) {
+  PyObject *resultobj = 0;
+  lldb::SBType *arg1 = (lldb::SBType *) 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  PyObject *swig_obj[1] ;
+  bool result;
+  
+  if (!args) SWIG_fail;
+  swig_obj[0] = args;
+  res1 = SWIG_ConvertPtr(swig_obj[0], &argp1,SWIGTYPE_p_lldb__SBType, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "SBType_IsAggregateType" "', argument " "1"" of type '" "lldb::SBType *""'"); 
+  }
+  arg1 = reinterpret_cast< lldb::SBType * >(argp1);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (bool)(arg1)->IsAggregateType();
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
+  resultobj = SWIG_From_bool(static_cast< bool >(result));
+  return resultobj;
+fail:
+  return NULL;
+}
+
+
 SWIGINTERN PyObject *_wrap_SBType_GetPointerType(PyObject *SWIGUNUSEDPARM(self), PyObject *args) {
   PyObject *resultobj = 0;
   lldb::SBType *arg1 = (lldb::SBType *) 0 ;
@@ -82116,6 +82270,9 @@ static PyMethodDef SwigMethods[] = {
 	 { "SBData___str__", _wrap_SBData___str__, METH_O, "SBData___str__(SBData self) -> std::string"},
 	 { "SBData_swigregister", SBData_swigregister, METH_O, NULL},
 	 { "SBData_swiginit", SBData_swiginit, METH_VARARGS, NULL},
+	 { "SBDebugger_GetProgressFromEvent", _wrap_SBDebugger_GetProgressFromEvent, METH_O, "SBDebugger_GetProgressFromEvent(SBEvent event) -> char const *"},
+	 { "SBDebugger_GetDiagnosticFromEvent", _wrap_SBDebugger_GetDiagnosticFromEvent, METH_O, "SBDebugger_GetDiagnosticFromEvent(SBEvent event) -> SBStructuredData"},
+	 { "SBDebugger_GetBroadcaster", _wrap_SBDebugger_GetBroadcaster, METH_O, "SBDebugger_GetBroadcaster(SBDebugger self) -> SBBroadcaster"},
 	 { "SBDebugger_Initialize", _wrap_SBDebugger_Initialize, METH_NOARGS, "SBDebugger_Initialize()"},
 	 { "SBDebugger_InitializeWithErrorHandling", _wrap_SBDebugger_InitializeWithErrorHandling, METH_NOARGS, "SBDebugger_InitializeWithErrorHandling() -> SBError"},
 	 { "SBDebugger_Terminate", _wrap_SBDebugger_Terminate, METH_NOARGS, "SBDebugger_Terminate()"},
@@ -84934,6 +85091,17 @@ static PyMethodDef SwigMethods[] = {
 		"    * C: Returns false for all types.\n"
 		"    * C++: Return true only for C++11 scoped enums.\n"
 		"    * Objective-C: Returns false for all types.\n"
+		"\n"
+		""},
+	 { "SBType_IsAggregateType", _wrap_SBType_IsAggregateType, METH_O, "\n"
+		"SBType_IsAggregateType(SBType self) -> bool\n"
+		"Returns true if this type is an aggregate type.\n"
+		"\n"
+		"    Language-specific behaviour:\n"
+		"\n"
+		"    * C: Returns true for struct values, arrays, and vectors.\n"
+		"    * C++: Same a C. Also includes class instances.\n"
+		"    * Objective-C: Same as C. Also includes class instances.\n"
 		"\n"
 		""},
 	 { "SBType_GetPointerType", _wrap_SBType_GetPointerType, METH_O, "\n"
@@ -88390,6 +88558,9 @@ SWIG_init(void) {
   SWIG_Python_SetConstant(d, "SBCommunication_eBroadcastBitReadThreadShouldExit",SWIG_From_int(static_cast< int >(lldb::SBCommunication::eBroadcastBitReadThreadShouldExit)));
   SWIG_Python_SetConstant(d, "SBCommunication_eBroadcastBitPacketAvailable",SWIG_From_int(static_cast< int >(lldb::SBCommunication::eBroadcastBitPacketAvailable)));
   SWIG_Python_SetConstant(d, "SBCommunication_eAllEventBits",SWIG_From_int(static_cast< int >(lldb::SBCommunication::eAllEventBits)));
+  SWIG_Python_SetConstant(d, "SBDebugger_eBroadcastBitProgress",SWIG_From_int(static_cast< int >(lldb::SBDebugger::eBroadcastBitProgress)));
+  SWIG_Python_SetConstant(d, "SBDebugger_eBroadcastBitWarning",SWIG_From_int(static_cast< int >(lldb::SBDebugger::eBroadcastBitWarning)));
+  SWIG_Python_SetConstant(d, "SBDebugger_eBroadcastBitError",SWIG_From_int(static_cast< int >(lldb::SBDebugger::eBroadcastBitError)));
   SWIG_Python_SetConstant(d, "SBProcess_eBroadcastBitStateChanged",SWIG_From_int(static_cast< int >(lldb::SBProcess::eBroadcastBitStateChanged)));
   SWIG_Python_SetConstant(d, "SBProcess_eBroadcastBitInterrupt",SWIG_From_int(static_cast< int >(lldb::SBProcess::eBroadcastBitInterrupt)));
   SWIG_Python_SetConstant(d, "SBProcess_eBroadcastBitSTDOUT",SWIG_From_int(static_cast< int >(lldb::SBProcess::eBroadcastBitSTDOUT)));
