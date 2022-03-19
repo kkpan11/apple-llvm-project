@@ -4159,6 +4159,26 @@ class SBDebugger(object):
 
     thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
     __repr__ = _swig_repr
+    eBroadcastBitProgress = _lldb.SBDebugger_eBroadcastBitProgress
+    
+    eBroadcastBitWarning = _lldb.SBDebugger_eBroadcastBitWarning
+    
+    eBroadcastBitError = _lldb.SBDebugger_eBroadcastBitError
+    
+
+    @staticmethod
+    def GetProgressFromEvent(event):
+        r"""GetProgressFromEvent(SBEvent event) -> char const *"""
+        return _lldb.SBDebugger_GetProgressFromEvent(event)
+
+    @staticmethod
+    def GetDiagnosticFromEvent(event):
+        r"""GetDiagnosticFromEvent(SBEvent event) -> SBStructuredData"""
+        return _lldb.SBDebugger_GetDiagnosticFromEvent(event)
+
+    def GetBroadcaster(self):
+        r"""GetBroadcaster(SBDebugger self) -> SBBroadcaster"""
+        return _lldb.SBDebugger_GetBroadcaster(self)
 
     @staticmethod
     def Initialize():
@@ -4660,6 +4680,14 @@ class SBDebugger(object):
 
 # Register SBDebugger in _lldb:
 _lldb.SBDebugger_swigregister(SBDebugger)
+
+def SBDebugger_GetProgressFromEvent(event):
+    r"""SBDebugger_GetProgressFromEvent(SBEvent event) -> char const *"""
+    return _lldb.SBDebugger_GetProgressFromEvent(event)
+
+def SBDebugger_GetDiagnosticFromEvent(event):
+    r"""SBDebugger_GetDiagnosticFromEvent(SBEvent event) -> SBStructuredData"""
+    return _lldb.SBDebugger_GetDiagnosticFromEvent(event)
 
 def SBDebugger_Initialize():
     r"""SBDebugger_Initialize()"""
@@ -12336,6 +12364,20 @@ class SBType(object):
 
         """
         return _lldb.SBType_IsScopedEnumerationType(self)
+
+    def IsAggregateType(self):
+        r"""
+        IsAggregateType(SBType self) -> bool
+        Returns true if this type is an aggregate type.
+
+            Language-specific behaviour:
+
+            * C: Returns true for struct values, arrays, and vectors.
+            * C++: Same a C. Also includes class instances.
+            * Objective-C: Same as C. Also includes class instances.
+
+        """
+        return _lldb.SBType_IsAggregateType(self)
 
     def GetPointerType(self):
         r"""
