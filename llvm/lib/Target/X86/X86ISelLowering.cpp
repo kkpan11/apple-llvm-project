@@ -170,7 +170,7 @@ X86TargetLowering::X86TargetLowering(const X86TargetMachine &TM,
   // 32 bits so the AtomicExpandPass will expand it so we don't need cmpxchg8b.
   // FIXME: Should we be limiting the atomic size on other configs? Default is
   // 1024.
-  if (!Subtarget.hasCMPXCHG8B())
+  if (!Subtarget.canUseCMPXCHG8B())
     setMaxAtomicSizeInBitsSupported(32);
 
   // Set up the register classes.
@@ -516,9 +516,8 @@ X86TargetLowering::X86TargetLowering(const X86TargetMachine &TM,
   if (!Subtarget.is64Bit())
     setOperationAction(ISD::ATOMIC_LOAD, MVT::i64, Custom);
 
-  if (Subtarget.hasCMPXCHG16B()) {
+  if (Subtarget.canUseCMPXCHG16B())
     setOperationAction(ISD::ATOMIC_CMP_SWAP_WITH_SUCCESS, MVT::i128, Custom);
-  }
 
   // FIXME - use subtarget debug flags
   if (!Subtarget.isTargetDarwin() && !Subtarget.isTargetELF() &&
@@ -30362,9 +30361,9 @@ bool X86TargetLowering::needsCmpXchgNb(Type *MemType) const {
   unsigned OpWidth = MemType->getPrimitiveSizeInBits();
 
   if (OpWidth == 64)
-    return Subtarget.hasCMPXCHG8B() && !Subtarget.is64Bit();
+    return Subtarget.canUseCMPXCHG8B() && !Subtarget.is64Bit();
   if (OpWidth == 128)
-    return Subtarget.hasCMPXCHG16B();
+    return Subtarget.canUseCMPXCHG16B();
 
   return false;
 }
@@ -32607,7 +32606,7 @@ void X86TargetLowering::ReplaceNodeResults(SDNode *N,
     EVT T = N->getValueType(0);
     assert((T == MVT::i64 || T == MVT::i128) && "can only expand cmpxchg pair");
     bool Regs64bit = T == MVT::i128;
-    assert((!Regs64bit || Subtarget.hasCMPXCHG16B()) &&
+    assert((!Regs64bit || Subtarget.canUseCMPXCHG16B()) &&
            "64-bit ATOMIC_CMP_SWAP_WITH_SUCCESS requires CMPXCHG16B");
     MVT HalfT = Regs64bit ? MVT::i64 : MVT::i32;
     SDValue cpInL, cpInH;
@@ -52315,6 +52314,7 @@ static SDValue combineAddOrSubToADCOrSBB(SDNode *N, SelectionDAG &DAG) {
   SDLoc DL(N);
   EVT VT = N->getValueType(0);
   X86::CondCode CC = (X86::CondCode)Y.getConstantOperandVal(0);
+  SDValue EFLAGS = Y.getOperand(1);
 
   // If X is -1 or 0, then we have an opportunity to avoid constants required in
   // the general case below.
@@ -52327,12 +52327,11 @@ static SDValue combineAddOrSubToADCOrSBB(SDNode *N, SelectionDAG &DAG) {
       //  0 - SETB  -->  0 -  (CF) --> CF ? -1 : 0 --> SBB %eax, %eax
       return DAG.getNode(X86ISD::SETCC_CARRY, DL, VT,
                          DAG.getTargetConstant(X86::COND_B, DL, MVT::i8),
-                         Y.getOperand(1));
+                         EFLAGS);
     }
 
     if ((!IsSub && CC == X86::COND_BE && ConstantX->isAllOnes()) ||
         (IsSub && CC == X86::COND_A && ConstantX->isZero())) {
-      SDValue EFLAGS = Y->getOperand(1);
       if (EFLAGS.getOpcode() == X86ISD::SUB && EFLAGS.hasOneUse() &&
           EFLAGS.getValueType().isInteger() &&
           !isa<ConstantSDNode>(EFLAGS.getOperand(1))) {
@@ -52355,11 +52354,10 @@ static SDValue combineAddOrSubToADCOrSBB(SDNode *N, SelectionDAG &DAG) {
     // X - SETB Z --> sbb X, 0
     return DAG.getNode(IsSub ? X86ISD::SBB : X86ISD::ADC, DL,
                        DAG.getVTList(VT, MVT::i32), X,
-                       DAG.getConstant(0, DL, VT), Y.getOperand(1));
+                       DAG.getConstant(0, DL, VT), EFLAGS);
   }
 
   if (CC == X86::COND_A) {
-    SDValue EFLAGS = Y.getOperand(1);
     // Try to convert COND_A into COND_B in an attempt to facilitate
     // materializing "setb reg".
     //
@@ -52384,13 +52382,12 @@ static SDValue combineAddOrSubToADCOrSBB(SDNode *N, SelectionDAG &DAG) {
     // X - SETAE --> adc X, -1
     return DAG.getNode(IsSub ? X86ISD::ADC : X86ISD::SBB, DL,
                        DAG.getVTList(VT, MVT::i32), X,
-                       DAG.getConstant(-1, DL, VT), Y.getOperand(1));
+                       DAG.getConstant(-1, DL, VT), EFLAGS);
   }
 
   if (CC == X86::COND_BE) {
     // X + SETBE --> sbb X, -1
     // X - SETBE --> adc X, -1
-    SDValue EFLAGS = Y.getOperand(1);
     // Try to convert COND_BE into COND_AE in an attempt to facilitate
     // materializing "setae reg".
     //
@@ -52413,13 +52410,12 @@ static SDValue combineAddOrSubToADCOrSBB(SDNode *N, SelectionDAG &DAG) {
   if (CC != X86::COND_E && CC != X86::COND_NE)
     return SDValue();
 
-  SDValue Cmp = Y.getOperand(1);
-  if (Cmp.getOpcode() != X86ISD::CMP || !Cmp.hasOneUse() ||
-      !X86::isZeroNode(Cmp.getOperand(1)) ||
-      !Cmp.getOperand(0).getValueType().isInteger())
+  if (EFLAGS.getOpcode() != X86ISD::CMP || !EFLAGS.hasOneUse() ||
+      !X86::isZeroNode(EFLAGS.getOperand(1)) ||
+      !EFLAGS.getOperand(0).getValueType().isInteger())
     return SDValue();
 
-  SDValue Z = Cmp.getOperand(0);
+  SDValue Z = EFLAGS.getOperand(0);
   EVT ZVT = Z.getValueType();
 
   // If X is -1 or 0, then we have an opportunity to avoid constants required in
