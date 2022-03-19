@@ -2037,7 +2037,7 @@ SwiftLanguageRuntimeImpl::BindGenericTypeParameters(StackFrame &stack_frame,
     return ts.GetTypeFromMangledTypename(mangled_name);
   }
   CompilerType bound_type =  scratch_ctx->RemangleAsType(dem, node);
-  LLDB_LOG(GetLog(LLDBLog::Expressions | LLDBLog::Types), "Bound {0} -> {1}.",
+  LLDB_LOG(GetLog(LLDBLog::Expressions | LLDBLog::Types), "Bound {0} -> {1}",
            mangled_name, bound_type.GetMangledTypeName());
   return bound_type;
 }
