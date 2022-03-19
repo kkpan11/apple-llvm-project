@@ -11678,9 +11678,9 @@ static bool isTargetShuffleEquivalent(MVT VT, ArrayRef<int> Mask,
   return true;
 }
 
-// Attempt to create a shuffle mask from a VSELECT condition mask.
+// Attempt to create a shuffle mask from a VSELECT/BLENDV condition mask.
 static bool createShuffleMaskFromVSELECT(SmallVectorImpl<int> &Mask,
-                                         SDValue Cond) {
+                                         SDValue Cond, bool IsBLENDV = false) {
   EVT CondVT = Cond.getValueType();
   unsigned EltSizeInBits = CondVT.getScalarSizeInBits();
   unsigned NumElts = CondVT.getVectorNumElements();
@@ -11698,7 +11698,8 @@ static bool createShuffleMaskFromVSELECT(SmallVectorImpl<int> &Mask,
     // Arbitrarily choose from the 2nd operand if the select condition element
     // is undef.
     // TODO: Can we do better by matching patterns such as even/odd?
-    if (UndefElts[i] || EltBits[i].isZero())
+    if (UndefElts[i] || (!IsBLENDV && EltBits[i].isZero()) ||
+        (IsBLENDV && EltBits[i].isNonNegative()))
       Mask[i] += NumElts;
   }
 
@@ -43904,9 +43905,11 @@ static SDValue combineSelect(SDNode *N, SelectionDAG &DAG,
       return V;
 
   // Convert vselects with constant condition into shuffles.
-  if (CondConstantVector && DCI.isBeforeLegalizeOps()) {
+  if (CondConstantVector && DCI.isBeforeLegalizeOps() &&
+      (N->getOpcode() == ISD::VSELECT || N->getOpcode() == X86ISD::BLENDV)) {
     SmallVector<int, 64> Mask;
-    if (createShuffleMaskFromVSELECT(Mask, Cond))
+    if (createShuffleMaskFromVSELECT(Mask, Cond,
+                                     N->getOpcode() == X86ISD::BLENDV))
       return DAG.getVectorShuffle(VT, DL, LHS, RHS, Mask);
   }
 
