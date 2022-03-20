@@ -479,9 +479,6 @@ class X86Subtarget final : public X86GenSubtargetInfo {
   /// Use software floating point for code generation.
   bool UseSoftFloat = false;
 
-  /// Use alias analysis during code generation.
-  bool UseAA = false;
-
   /// The minimum alignment known to hold of the stack frame on
   /// entry to the function and which must be maintained by every function.
   Align stackAlignment = Align(4);
@@ -640,9 +637,10 @@ public:
     return hasCX16() && is64Bit();
   }
   bool hasNOPL() const { return HasNOPL; }
+  bool hasCMOV() const { return HasCMOV; }
   // SSE codegen depends on cmovs, and all SSE1+ processors support them.
   // All 64-bit processors support cmov.
-  bool hasCMOV() const { return HasCMOV || X86SSELevel >= SSE1 || is64Bit(); }
+  bool canUseCMOV() const { return hasCMOV() || hasSSE1() || is64Bit(); }
   bool hasSSE1() const { return X86SSELevel >= SSE1; }
   bool hasSSE2() const { return X86SSELevel >= SSE2; }
   bool hasSSE3() const { return X86SSELevel >= SSE3; }
@@ -705,7 +703,8 @@ public:
     return hasSSE1() || (hasPRFCHW() && !hasThreeDNow()) || hasPREFETCHWT1();
   }
   bool hasRDSEED() const { return HasRDSEED; }
-  bool hasLAHFSAHF() const { return HasLAHFSAHF64 || !is64Bit(); }
+  bool hasLAHFSAHF() const { return HasLAHFSAHF64; }
+  bool canUseLAHFSAHF() const { return hasLAHFSAHF() || !is64Bit(); }
   bool hasMWAITX() const { return HasMWAITX; }
   bool hasCLZERO() const { return HasCLZERO; }
   bool hasCLDEMOTE() const { return HasCLDEMOTE; }
@@ -840,7 +839,6 @@ public:
   /// TODO: to be removed later and replaced with suitable properties
   bool isAtom() const { return IsAtom; }
   bool useSoftFloat() const { return UseSoftFloat; }
-  bool useAA() const override { return UseAA; }
 
   /// Use mfence if we have SSE2 or we're on x86-64 (even if we asked for
   /// no-sse2). There isn't any reason to disable it if the target processor
