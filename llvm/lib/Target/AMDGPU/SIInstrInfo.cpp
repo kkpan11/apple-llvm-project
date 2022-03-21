@@ -3856,19 +3856,18 @@ static void copyFlagsToImplicitVCC(MachineInstr &MI,
 
 MachineInstr *SIInstrInfo::buildShrunkInst(MachineInstr &MI,
                                            unsigned Op32) const {
-  MachineBasicBlock *MBB = MI.getParent();
+  MachineBasicBlock *MBB = MI.getParent();;
   MachineInstrBuilder Inst32 =
     BuildMI(*MBB, MI, MI.getDebugLoc(), get(Op32))
     .setMIFlags(MI.getFlags());
 
   // Add the dst operand if the 32-bit encoding also has an explicit $vdst.
   // For VOPC instructions, this is replaced by an implicit def of vcc.
-  if (AMDGPU::getNamedOperandIdx(Op32, AMDGPU::OpName::vdst) != -1) {
+  int Op32DstIdx = AMDGPU::getNamedOperandIdx(Op32, AMDGPU::OpName::vdst);
+  if (Op32DstIdx != -1) {
     // dst
     Inst32.add(MI.getOperand(0));
-  } else if (AMDGPU::getNamedOperandIdx(Op32, AMDGPU::OpName::sdst) != -1) {
-    // VOPCX instructions won't be writing to an explicit dst, so this should
-    // not fail for these instructions.
+  } else {
     assert(((MI.getOperand(0).getReg() == AMDGPU::VCC) ||
             (MI.getOperand(0).getReg() == AMDGPU::VCC_LO)) &&
            "Unexpected case");
@@ -4135,9 +4134,7 @@ bool SIInstrInfo::verifyInstruction(const MachineInstr &MI,
 
     int DstIdx = AMDGPU::getNamedOperandIdx(Opcode, AMDGPU::OpName::vdst);
 
-    const int OpIndices[] = {DstIdx, Src0Idx, Src1Idx, Src2Idx};
-
-    for (int OpIdx : OpIndices) {
+    for (int OpIdx : {DstIdx, Src0Idx, Src1Idx, Src2Idx}) {
       if (OpIdx == -1)
         continue;
       const MachineOperand &MO = MI.getOperand(OpIdx);
@@ -4254,13 +4251,7 @@ bool SIInstrInfo::verifyInstruction(const MachineInstr &MI,
   }
 
   // Verify VOP*. Ignore multiple sgpr operands on writelane.
-  if (Desc.getOpcode() != AMDGPU::V_WRITELANE_B32
-      && (isVOP1(MI) || isVOP2(MI) || isVOP3(MI) || isVOPC(MI) || isSDWA(MI))) {
-    // Only look at the true operands. Only a real operand can use the constant
-    // bus, and we don't want to check pseudo-operands like the source modifier
-    // flags.
-    const int OpIndices[] = { Src0Idx, Src1Idx, Src2Idx };
-
+  if (isVALU(MI) && Desc.getOpcode() != AMDGPU::V_WRITELANE_B32) {
     unsigned ConstantBusCount = 0;
     bool UsesLiteral = false;
     const MachineOperand *LiteralVal = nullptr;
@@ -4271,7 +4262,10 @@ bool SIInstrInfo::verifyInstruction(const MachineInstr &MI,
     SmallVector<Register, 2> SGPRsUsed;
     Register SGPRUsed;
 
-    for (int OpIdx : OpIndices) {
+    // Only look at the true operands. Only a real operand can use the constant
+    // bus, and we don't want to check pseudo-operands like the source modifier
+    // flags.
+    for (int OpIdx : {Src0Idx, Src1Idx, Src2Idx}) {
       if (OpIdx == -1)
         break;
       const MachineOperand &MO = MI.getOperand(OpIdx);
@@ -4329,7 +4323,7 @@ bool SIInstrInfo::verifyInstruction(const MachineInstr &MI,
     unsigned SGPRCount = 0;
     Register SGPRUsed = AMDGPU::NoRegister;
 
-    for (int OpIdx : {Src0Idx, Src1Idx, Src2Idx}) {
+    for (int OpIdx : {Src0Idx, Src1Idx}) {
       if (OpIdx == -1)
         break;
 
@@ -4581,7 +4575,6 @@ bool SIInstrInfo::verifyInstruction(const MachineInstr &MI,
     }
 
     int DstIdx = AMDGPU::getNamedOperandIdx(Opcode, AMDGPU::OpName::vdst);
-    int Src0Idx = AMDGPU::getNamedOperandIdx(Opcode, AMDGPU::OpName::src0);
 
     if (Opcode != AMDGPU::V_MOV_B64_DPP_PSEUDO &&
         ((DstIdx >= 0 &&
