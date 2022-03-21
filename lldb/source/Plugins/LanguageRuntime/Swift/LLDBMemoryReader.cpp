@@ -196,9 +196,9 @@ LLDBMemoryReader::resolvePointer(swift::remote::RemoteAddress address,
   // We haven't registered the image that contains the pointer.
   if (pair_iterator == m_range_module_map.end()) {
     LLDB_LOG(log,
-              "[MemoryReader] Could not resolve find module containing pointer "
-              "{0:x} read from {1:x}.",
-              readValue, address.getAddressData());
+             "[MemoryReader] Could not resolve find module containing pointer "
+             "{0:x} read from {1:x}.",
+             readValue, address.getAddressData());
     return process_pointer;
   }
 
@@ -230,10 +230,18 @@ LLDBMemoryReader::resolvePointer(swift::remote::RemoteAddress address,
 
 bool LLDBMemoryReader::readBytes(swift::remote::RemoteAddress address,
                                  uint8_t *dest, uint64_t size) {
+  Log *log = GetLog(LLDBLog::Types);
   if (m_local_buffer) {
+    bool overflow = false;
     auto addr = address.getAddressData();
+    auto end = llvm::SaturatingAdd(addr, size, &overflow);
+    if (overflow) {
+      LLDB_LOGV(log, "[MemoryReader] address {0:x} + size {1} overflows", addr,
+                size);
+      return false;
+    }
     if (addr >= *m_local_buffer &&
-        addr + size <= *m_local_buffer + m_local_buffer_size) {
+        end <= *m_local_buffer + m_local_buffer_size) {
       // If this crashes, the assumptions stated in
       // GetDynamicTypeAndAddress_Protocol() most likely no longer
       // hold.
@@ -242,16 +250,13 @@ bool LLDBMemoryReader::readBytes(swift::remote::RemoteAddress address,
     }
   }
 
-  Log *log = GetLog(LLDBLog::Types);
-
   LLDB_LOGV(log, "[MemoryReader] asked to read {0} bytes at address {1:x}",
             size, address.getAddressData());
   llvm::Optional<Address> maybeAddr =
       resolveRemoteAddressFromSymbolObjectFile(address.getAddressData());
 
-  if (!maybeAddr) 
-   maybeAddr =
-      resolveRemoteAddress(address.getAddressData());
+  if (!maybeAddr)
+    maybeAddr = resolveRemoteAddress(address.getAddressData());
 
   if (!maybeAddr) {
     LLDB_LOGV(log, "[MemoryReader] could not resolve address {0:x}",
@@ -276,7 +281,7 @@ bool LLDBMemoryReader::readBytes(swift::remote::RemoteAddress address,
   }
   Target &target(m_process.GetTarget());
   Status error;
-  // We only want to allow the file-cache optimization if we resolved the 
+  // We only want to allow the file-cache optimization if we resolved the
   // address to section + offset.
   const bool force_live_memory =
       !readMetadataFromFileCacheEnabled() || !addr.IsSectionOffset();
@@ -309,27 +314,26 @@ bool LLDBMemoryReader::readString(swift::remote::RemoteAddress address,
                                   std::string &dest) {
   Log *log = GetLog(LLDBLog::Types);
 
-    auto format_string = [](const std::string &dest) {
-      StreamString stream;
-      for (auto c : dest) {
-        if (c >= 32 && c <= 127) {
-          stream << c;
-        } else {
-          stream << "\\0";
-          stream.PutHex8(c);
-        }
+  auto format_string = [](const std::string &dest) {
+    StreamString stream;
+    for (auto c : dest) {
+      if (c >= 32 && c <= 127) {
+        stream << c;
+      } else {
+        stream << "\\0";
+        stream.PutHex8(c);
       }
-      return std::string(stream.GetData());
-    };
+    }
+    return std::string(stream.GetData());
+  };
   LLDB_LOGV(log, "[MemoryReader] asked to read string data at address {0:x}",
             address.getAddressData());
 
   llvm::Optional<Address> maybeAddr =
       resolveRemoteAddressFromSymbolObjectFile(address.getAddressData());
 
-  if (!maybeAddr) 
-   maybeAddr =
-      resolveRemoteAddress(address.getAddressData());
+  if (!maybeAddr)
+    maybeAddr = resolveRemoteAddress(address.getAddressData());
 
   if (!maybeAddr) {
     LLDB_LOGV(log, "[MemoryReader] could not resolve address {0:x}",
@@ -344,15 +348,15 @@ bool LLDBMemoryReader::readString(swift::remote::RemoteAddress address,
       LLDB_LOGV(log, "[MemoryReader] Reading memory from symbol rich binary");
 
       dest = object_file->GetCStrFromSection(section.get(), addr.GetOffset());
-    LLDB_LOGV(log, "[MemoryReader] memory read returned string: \"{0}\"",
-              format_string(dest));
+      LLDB_LOGV(log, "[MemoryReader] memory read returned string: \"{0}\"",
+                format_string(dest));
       return true;
     }
   }
 
   Target &target(m_process.GetTarget());
   Status error;
-  // We only want to allow the file-cache optimization if we resolved the 
+  // We only want to allow the file-cache optimization if we resolved the
   // address to section + offset.
   const bool force_live_memory =
       !readMetadataFromFileCacheEnabled() || !addr.IsSectionOffset();
@@ -381,7 +385,8 @@ void LLDBMemoryReader::popLocalBuffer() {
 }
 
 llvm::Optional<std::pair<uint64_t, uint64_t>>
-LLDBMemoryReader::addModuleToAddressMap(ModuleSP module, bool register_symbol_obj_file) {
+LLDBMemoryReader::addModuleToAddressMap(ModuleSP module,
+                                        bool register_symbol_obj_file) {
   if (!readMetadataFromFileCacheEnabled())
     return {};
 
@@ -402,11 +407,10 @@ LLDBMemoryReader::addModuleToAddressMap(ModuleSP module, bool register_symbol_ob
 
 #ifndef NDEBUG
   static std::initializer_list<uint64_t> objc_bits = {
-      SWIFT_ABI_ARM_IS_OBJC_BIT,
-      SWIFT_ABI_X86_64_IS_OBJC_BIT,
+      SWIFT_ABI_ARM_IS_OBJC_BIT, SWIFT_ABI_X86_64_IS_OBJC_BIT,
       SWIFT_ABI_ARM64_IS_OBJC_BIT};
 
-  for (auto objc_bit : objc_bits) 
+  for (auto objc_bit : objc_bits)
     assert((module_start_address & objc_bit) != objc_bit &&
            "LLDB file address bit clashes with an obj-c bit!");
 #endif
@@ -523,7 +527,9 @@ LLDBMemoryReader::resolveRemoteAddress(uint64_t address) const {
   return resolved;
 }
 
-llvm::Optional<Address> LLDBMemoryReader::resolveRemoteAddressFromSymbolObjectFile(uint64_t address) const {
+llvm::Optional<Address>
+LLDBMemoryReader::resolveRemoteAddressFromSymbolObjectFile(
+    uint64_t address) const {
   Log *log(GetLog(LLDBLog::Types));
 
   if (!m_process.GetTarget().GetSwiftReadMetadataFromDSYM())
@@ -555,8 +561,12 @@ llvm::Optional<Address> LLDBMemoryReader::resolveRemoteAddressFromSymbolObjectFi
              file_address, object_file->GetFileSpec().GetFilename());
     return {};
   }
-  
-  if (!resolved.GetSection()->GetParent()->GetName().GetStringRef().contains_insensitive("DWARF")) {
+
+  if (!resolved.GetSection()
+           ->GetParent()
+           ->GetName()
+           .GetStringRef()
+           .contains_insensitive("DWARF")) {
     auto *main_object_file = module->GetObjectFile();
     resolved = Address(file_address, main_object_file->GetSectionList());
   }
