@@ -35,8 +35,6 @@ using namespace llvm;
 using namespace llvm::cas;
 using namespace llvm::object;
 
-static LLVMContext LLVMCtx;
-
 class NewArchiveMemberList;
 typedef std::map<uint64_t, NewArchiveMemberList> MembersPerArchitectureMap;
 
@@ -288,7 +286,8 @@ public:
 // the user.
 class MembersBuilder {
 public:
-  MembersBuilder(const Config &C) : C(C) {}
+  MembersBuilder(LLVMContext &LLVMCtx, const Config &C)
+      : LLVMCtx(LLVMCtx), C(C) {}
 
   Expected<MembersData> build() {
     for (StringRef FileName : InputFiles)
@@ -451,7 +450,7 @@ private:
     Error verifyAndAddIRObject(NewArchiveMember Member) {
       auto MBRef = Member.Buf->getMemBufferRef();
       Expected<std::unique_ptr<object::IRObjectFile>> IROrErr =
-          object::IRObjectFile::create(MBRef, LLVMCtx);
+          object::IRObjectFile::create(MBRef, Builder.LLVMCtx);
 
       // Throw error if not a valid IR object file.
       if (!IROrErr)
@@ -547,7 +546,7 @@ private:
         }
 
         Expected<std::unique_ptr<IRObjectFile>> IRObjectOrError =
-            O.getAsIRObject(LLVMCtx);
+            O.getAsIRObject(Builder.LLVMCtx);
         if (IRObjectOrError) {
           // A universal file member can be a MachOObjectFile, an IRObject or an
           // Archive. In case we can successfully cast the member as an
@@ -593,11 +592,13 @@ private:
   };
 
   MembersData Data;
+  LLVMContext &LLVMCtx;
   const Config &C;
 };
 
 static Expected<SmallVector<Slice, 2>>
-buildSlices(ArrayRef<OwningBinary<Archive>> OutputBinaries) {
+buildSlices(LLVMContext &LLVMCtx,
+            ArrayRef<OwningBinary<Archive>> OutputBinaries) {
   SmallVector<Slice, 2> Slices;
 
   for (const auto &OB : OutputBinaries) {
@@ -683,8 +684,8 @@ checkForDuplicates(const MembersPerArchitectureMap &MembersPerArch) {
   return Error::success();
 }
 
-static Error createStaticLibrary(const Config &C) {
-  MembersBuilder Builder(C);
+static Error createStaticLibrary(LLVMContext &LLVMCtx, const Config &C) {
+  MembersBuilder Builder(LLVMCtx, C);
   auto DataOrError = Builder.build();
   if (auto Error = DataOrError.takeError())
     return Error;
@@ -732,7 +733,7 @@ static Error createStaticLibrary(const Config &C) {
         OwningBinary<Archive>(std::move(A), std::move(OutputBuffer)));
   }
 
-  Expected<SmallVector<Slice, 2>> Slices = buildSlices(OutputBinaries);
+  Expected<SmallVector<Slice, 2>> Slices = buildSlices(LLVMCtx, OutputBinaries);
   if (!Slices)
     return Slices.takeError();
 
@@ -821,12 +822,13 @@ int main(int Argc, char **Argv) {
   llvm::InitializeAllTargetMCs();
   llvm::InitializeAllAsmParsers();
 
+  LLVMContext LLVMCtx;
   Config C = std::move(*ConfigOrErr);
   switch (LibraryOperation) {
   case Operation::None:
     break;
   case Operation::Static:
-    if (Error E = createStaticLibrary(C)) {
+    if (Error E = createStaticLibrary(LLVMCtx, C)) {
       WithColor::defaultErrorHandler(std::move(E));
       return EXIT_FAILURE;
     }
