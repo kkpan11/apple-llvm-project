@@ -238,6 +238,10 @@ llvm::cl::opt<bool> OverrideCASTokenCache(
     llvm::cl::desc("Override the CAS-based token cache, using it always."),
     llvm::cl::init(false), llvm::cl::cat(DependencyScannerCategory));
 
+llvm::cl::opt<std::string>
+    OnDiskCASPath("cas-path", llvm::cl::desc("Path for on-disk CAS."),
+                  llvm::cl::cat(DependencyScannerCategory));
+
 llvm::cl::opt<bool> InMemoryCAS(
     "in-memory-cas",
     llvm::cl::desc("Use an in-memory CAS instead of on-disk."),
@@ -571,7 +575,10 @@ int main(int argc, const char **argv) {
       CAS = llvm::cas::createInMemoryCAS();
     } else {
       SmallString<128> CASPath;
-      llvm::cas::getDefaultOnDiskCASPath(CASPath);
+      if (OnDiskCASPath.empty())
+        llvm::cas::getDefaultOnDiskCASPath(CASPath);
+      else
+        CASPath += OnDiskCASPath;
       llvm::errs() << "cas-path = '" << CASPath << "'\n";
       CAS = cantFail(llvm::cas::createOnDiskCAS(CASPath));
     }
@@ -593,13 +600,20 @@ int main(int argc, const char **argv) {
   std::mutex Lock;
   size_t Index = 0;
 
+  struct DepTreeResult {
+    size_t Index;
+    std::string Filename;
+    Expected<llvm::cas::TreeRef> MaybeTree;
+  };
+  std::vector<DepTreeResult> TreeResults;
+
   if (Verbose) {
     llvm::outs() << "Running clang-scan-deps on " << Inputs.size()
                  << " files using " << Pool.getThreadCount() << " workers\n";
   }
   for (unsigned I = 0; I < Pool.getThreadCount(); ++I) {
-    Pool.async([I, &Lock, &Index, &Inputs, &HadErrors, &FD, &WorkerTools,
-                &DependencyOS, &Errs, &CAS]() {
+    Pool.async([I, &Lock, &Index, &Inputs, &TreeResults, &HadErrors, &FD,
+                &WorkerTools, &DependencyOS, &Errs]() {
       llvm::StringSet<> AlreadySeenModules;
       while (true) {
         const tooling::CompileCommand *Input;
@@ -629,9 +643,9 @@ int main(int argc, const char **argv) {
         } else if (Format == ScanningOutputFormat::Tree) {
           auto MaybeTree =
               WorkerTools[I]->getDependencyTree(Input->CommandLine, CWD);
-          if (handleTreeDependencyToolResult(*CAS, Filename, MaybeTree, DependencyOS,
-                                             Errs))
-            HadErrors = true;
+          std::unique_lock<std::mutex> LockGuard(Lock);
+          TreeResults.push_back(
+              {LocalIndex, std::move(Filename), std::move(MaybeTree)});
         } else {
           auto MaybeFullDeps = WorkerTools[I]->getFullDependencies(
               Input->CommandLine, CWD, AlreadySeenModules, MaybeModuleName);
@@ -644,8 +658,20 @@ int main(int argc, const char **argv) {
   }
   Pool.wait();
 
-  if (Format == ScanningOutputFormat::Full)
+  if (Format == ScanningOutputFormat::Tree) {
+    std::sort(TreeResults.begin(), TreeResults.end(),
+              [](const DepTreeResult &LHS, const DepTreeResult &RHS) -> bool {
+                return LHS.Index < RHS.Index;
+              });
+    for (auto &TreeResult : TreeResults) {
+      if (handleTreeDependencyToolResult(*CAS, TreeResult.Filename,
+                                         TreeResult.MaybeTree, DependencyOS,
+                                         Errs))
+        HadErrors = true;
+    }
+  } else if (Format == ScanningOutputFormat::Full) {
     FD.printFullOutput(llvm::outs());
+  }
 
   return HadErrors;
 }
