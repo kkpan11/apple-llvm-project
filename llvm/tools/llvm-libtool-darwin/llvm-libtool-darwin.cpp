@@ -631,7 +631,7 @@ writeCASIDArchive(cas::CASDB &CAS, StringRef ArcName,
   if (!Temp)
     return Temp.takeError();
   raw_fd_ostream Out(Temp->FD, false);
-  writeCASIDBuffer(CAS, *Blob, Out);
+  writeCASIDBuffer(*Blob, Out);
   Out.flush();
 
   // At this point, we no longer need whatever backing memory

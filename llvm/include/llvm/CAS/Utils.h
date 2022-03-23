@@ -23,7 +23,7 @@ class TreeRef;
 
 Expected<CASID> readCASIDBuffer(cas::CASDB &CAS, llvm::MemoryBufferRef Buffer);
 
-void writeCASIDBuffer(cas::CASDB &CAS, const CASID &ID, llvm::raw_ostream &OS);
+void writeCASIDBuffer(const CASID &ID, llvm::raw_ostream &OS);
 
 /// Visit each file entry in order, returning an error from \p Callback to stop
 /// early.

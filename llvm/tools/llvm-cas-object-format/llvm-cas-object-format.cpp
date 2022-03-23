@@ -246,7 +246,7 @@ int main(int argc, char *argv[]) {
     SmallVector<char, 50> Contents;
     {
       raw_svector_ostream OS(Contents);
-      writeCASIDBuffer(*CAS, File->second, OS);
+      writeCASIDBuffer(File->second, OS);
     }
     std::unique_ptr<FileOutputBuffer> outBuf =
         ExitOnErr(FileOutputBuffer::create(CASIDOutput, Contents.size()));
@@ -268,8 +268,7 @@ int main(int argc, char *argv[]) {
     CASID SummaryID = ExitOnErr(Builder.create(*CAS));
     SummaryIDs.emplace_back(SummaryID);
     MSG("summary tree: ");
-    ExitOnErr(CAS->printCASID(outs(), SummaryID));
-    MSG("\n");
+    outs() << SummaryID << "\n";
   }
 
   if (ComputeStats)
@@ -899,10 +898,9 @@ static CASID ingestFile(SchemaBase &Schema, StringRef InputFile,
     auto newG = createLinkGraph(FileContent);
     auto NewCompileUnit = ExitOnErr(Schema.createFromLinkGraph(*newG));
     if (NewCompileUnit.getID() != CompileUnit.getID()) {
-      errs() << "error: got different CASID while repeating ingestion, ";
-      ExitOnErr(CAS.printCASID(errs(), CompileUnit));
-      errs() << " and ";
-      ExitOnErr(CAS.printCASID(errs(), NewCompileUnit));
+      errs() << "error: got different CASID while repeating ingestion, "
+             << CompileUnit.getID() << " and " << NewCompileUnit.getID()
+             << "\n";
       exit(1);
     }
   }

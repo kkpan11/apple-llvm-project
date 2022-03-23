@@ -314,7 +314,7 @@ int cc1depscan_main(ArrayRef<const char *> Argv, const char *Argv0,
     if (EC)
       Diags.Report(diag::err_fe_unable_to_open_output)
           << DumpDepscanTree << EC.message();
-    RootOS << llvm::cantFail(CAS->convertCASIDToString(*RootID)) << "\n";
+    RootOS << RootID->toString() << "\n";
   }
   writeResponseFile(*(*OutputFile)->getOS(), NewArgs);
 
@@ -935,9 +935,8 @@ clang::updateCC1Args(tooling::dependencies::DependencyScanningTool &Tool,
                         })
                     .moveInto(Root))
     return std::move(E);
-  std::string RootID = llvm::cantFail(CAS.convertCASIDToString(*Root));
-  updateCompilerInvocation(*Invocation, Saver, FS, RootID, WorkingDirectory,
-                           Mapper);
+  updateCompilerInvocation(*Invocation, Saver, FS, Root->toString(),
+                           WorkingDirectory, Mapper);
 
   OutputArgs.resize(1);
   OutputArgs[0] = "-cc1";

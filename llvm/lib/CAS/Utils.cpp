@@ -35,14 +35,11 @@ Expected<CASID> cas::readCASIDBuffer(cas::CASDB &CAS, MemoryBufferRef Buffer) {
   return CAS.parseCASID(CASIDStr);
 }
 
-void cas::writeCASIDBuffer(cas::CASDB &CAS, const CASID &ID,
-                           llvm::raw_ostream &OS) {
+void cas::writeCASIDBuffer(const CASID &ID, llvm::raw_ostream &OS) {
   OS << casidObjectMagicPrefix;
   SmallString<256> CASIDStr;
-  {
-    raw_svector_ostream Buf(CASIDStr);
-    cantFail(CAS.printCASID(Buf, ID));
-  }
+  raw_svector_ostream(CASIDStr) << ID;
+
   // Write out the size of the CASID so that we can read it back properly even
   // if the buffer has additional padding (e.g. after getting added in an
   // archive).

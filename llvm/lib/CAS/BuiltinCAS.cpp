@@ -113,19 +113,18 @@ static ArrayRef<char> toArrayRef(StringRef Data) {
 }
 
 class BuiltinCAS : public CASDB {
+  void printIDImpl(raw_ostream &OS, const CASID &ID) const final;
+
 public:
   StringRef getHashSchemaIdentifier() const final {
     return "llvm.cas.builtin.v1[SHA1]";
   }
 
   Expected<CASID> parseCASID(StringRef Reference) final;
-  Error printCASID(raw_ostream &OS, CASID ID) const final;
 
   bool isKnownObject(CASID ID) final { return bool(getObjectKind(ID)); }
 
   virtual Expected<CASID> parseCASIDImpl(ArrayRef<uint8_t> Hash) = 0;
-
-  SmallString<64> getPrintedIDOrHash(CASID ID) const;
 
   static size_t getPageSize() {
     static int PageSize = sys::Process::getPageSizeEstimate();
@@ -175,40 +174,39 @@ public:
 
   Error createUnknownObjectError(CASID ID) const {
     return createStringError(std::make_error_code(std::errc::invalid_argument),
-                             "unknown object '" + getPrintedIDOrHash(ID) + "'");
+                             "unknown object '" + ID.toString() + "'");
   }
 
   Error createCorruptObjectError(CASID ID) const {
     return createStringError(std::make_error_code(std::errc::invalid_argument),
-                             "corrupt object '" + getPrintedIDOrHash(ID) + "'");
+                             "corrupt object '" + ID.toString() + "'");
   }
 
   Error createInvalidObjectError(CASID ID, ObjectKind Kind) const {
     return createStringError(std::make_error_code(std::errc::invalid_argument),
-                             "invalid object '" + getPrintedIDOrHash(ID) +
+                             "invalid object '" + ID.toString() +
                                  "' for kind '" + getKindName(Kind) + "'");
   }
 
   /// FIXME: This should not use Error.
   Error createResultCacheMissError(CASID Input) const {
     return createStringError(std::make_error_code(std::errc::invalid_argument),
-                             "no result for '" + getPrintedIDOrHash(Input) +
-                                 "'");
+                             "no result for '" + Input.toString() + "'");
   }
 
   Error createResultCachePoisonedError(CASID Input, CASID Output,
                                        CASID ExistingOutput) const {
-    return createStringError(
-        std::make_error_code(std::errc::invalid_argument),
-        "cache poisoned for '" + getPrintedIDOrHash(Input) + "' (new='" +
-            getPrintedIDOrHash(Output) + "' vs. existing '" +
-            getPrintedIDOrHash(ExistingOutput) + "')");
+    return createStringError(std::make_error_code(std::errc::invalid_argument),
+                             "cache poisoned for '" + Input.toString() +
+                                 "' (new='" + Output.toString() +
+                                 "' vs. existing '" +
+                                 ExistingOutput.toString() + "')");
   }
 
   Error createResultCacheCorruptError(CASID Input) const {
     return createStringError(std::make_error_code(std::errc::invalid_argument),
-                             "result cache corrupt for '" +
-                                 getPrintedIDOrHash(Input) + "'");
+                             "result cache corrupt for '" + Input.toString() +
+                                 "'");
   }
 };
 
@@ -236,15 +234,6 @@ static void extractPrintableHash(CASID ID, SmallVectorImpl<char> &Dest) {
     Dest.push_back(ToChar(High));
     Dest.push_back(ToChar(Low));
   }
-}
-
-SmallString<64> BuiltinCAS::getPrintedIDOrHash(CASID ID) const {
-  SmallString<64> Printed;
-  if (Error E = getPrintedCASID(ID, Printed)) {
-    consumeError(std::move(E));
-    extractPrintableHash(ID, Printed);
-  }
-  return Printed;
 }
 
 static HashType stringToHash(StringRef Chars) {
@@ -281,14 +270,13 @@ Expected<CASID> BuiltinCAS::parseCASID(StringRef Reference) {
   return parseCASIDImpl(stringToHash(Reference));
 }
 
-Error BuiltinCAS::printCASID(raw_ostream &OS, CASID ID) const {
-  if (ID.getHash().size() != sizeof(HashType))
-    return errorCodeToError(std::make_error_code(std::errc::invalid_argument));
+void BuiltinCAS::printIDImpl(raw_ostream &OS, const CASID &ID) const {
+  assert(&ID.getContext() == this);
+  assert(ID.getHash().size() == sizeof(HashType));
 
   SmallString<64> Hash;
   extractPrintableHash(ID, Hash);
   OS << getCASIDPrefix() << Hash;
-  return Error::success();
 }
 
 Expected<BlobRef> BuiltinCAS::createBlob(ArrayRef<char> Data) {

@@ -70,12 +70,12 @@ static Error writeOutputAsCASID(CASDB &CAS, CASID &ID, StringRef ResolvedPath,
   if (CASOutputFile::isNull(*OutFile))
     return Error::success();
 
-  writeCASIDBuffer(CAS, ID, *OutFile->getOS());
+  writeCASIDBuffer(ID, *OutFile->getOS());
 
   SmallString<50> Contents;
   {
     raw_svector_ostream OS(Contents);
-    writeCASIDBuffer(CAS, ID, OS);
+    writeCASIDBuffer(ID, OS);
   }
   Expected<BlobRef> Blob = CAS.createBlob(Contents);
   if (!Blob)
