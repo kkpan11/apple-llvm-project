@@ -1887,7 +1887,7 @@ static bool link(InputArgList &args, bool canExitEarly, raw_ostream &stdoutOS,
 
     StringRef orderFile = args.getLastArgValue(OPT_order_file);
     if (!orderFile.empty())
-      parseOrderFile(orderFile);
+      priorityBuilder.parseOrderFile(orderFile);
 
     referenceStubBinder();
 
@@ -1944,7 +1944,7 @@ static bool link(InputArgList &args, bool canExitEarly, raw_ostream &stdoutOS,
 
     gatherInputSections();
     if (config->callGraphProfileSort)
-      extractCallGraphProfile();
+      priorityBuilder.extractCallGraphProfile();
 
     if (config->deadStrip)
       markLive();
