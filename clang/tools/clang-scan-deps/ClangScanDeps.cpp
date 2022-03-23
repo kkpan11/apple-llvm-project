@@ -292,7 +292,7 @@ handleTreeDependencyToolResult(llvm::cas::CASDB &CAS, const std::string &Input,
     return true;
   }
   OS.applyLocked([&](llvm::raw_ostream &OS) {
-    OS << "tree " << *MaybeTree << " for '" << Input << "'\n";
+    OS << "tree " << MaybeTree->getID() << " for '" << Input << "'\n";
   });
   return false;
 }

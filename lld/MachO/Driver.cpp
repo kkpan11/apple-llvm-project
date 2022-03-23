@@ -1349,7 +1349,7 @@ static bool linkWithResultCaching(InputArgList &args, bool canExitEarly,
   Expected<CASID> result = config->CAS->getCachedResult(cacheKey);
   if (result) {
     log("Caching: cache hit, result: " + result->toString() +
-        ", key: " + cacheKey.toString();
+        ", key: " + cacheKey.toString());
     if (Error E = replayResult(CAS, std::move(*result))) {
       error("error replaying cached result: " + toString(std::move(E)));
       return false;
@@ -1423,7 +1423,7 @@ static bool linkWithResultCaching(InputArgList &args, bool canExitEarly,
       return false;
     }
 
-    log("Caching: cached result: " + resultID->toString());
+    log("Caching: cached result: " + resultID->getID().toString());
   }
 
   return true;
