@@ -4765,7 +4765,7 @@ createBaseFS(const CompilerInvocation &Invocation, DiagnosticsEngine &Diags,
     return makeEmptyCASFS();
 
   StringRef RootIDString = FSOpts.CASFileSystemRootID;
-  Expected<llvm::cas::CASID> RootID = CAS->parseCASID(RootIDString);
+  Expected<llvm::cas::CASID> RootID = CAS->parseID(RootIDString);
   if (!RootID) {
     llvm::consumeError(RootID.takeError());
     Diags.Report(diag::err_cas_cannot_parse_root_id) << RootIDString;

@@ -32,7 +32,7 @@ Expected<CASID> cas::readCASIDBuffer(cas::CASDB &CAS, MemoryBufferRef Buffer) {
     return std::move(E);
 
   StringRef CASIDStr = Remaining.substr(0, Size);
-  return CAS.parseCASID(CASIDStr);
+  return CAS.parseID(CASIDStr);
 }
 
 void cas::writeCASIDBuffer(const CASID &ID, llvm::raw_ostream &OS) {

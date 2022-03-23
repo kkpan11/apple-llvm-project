@@ -202,7 +202,7 @@ createResultCacheKey(llvm::cas::CASDB &CAS, DiagnosticsEngine &Diags,
   // FIXME: currently correct since the main executable is always in the root
   // from scanning, but we should probably make it explicit here...
   StringRef RootIDString = Invocation.getFileSystemOpts().CASFileSystemRootID;
-  Expected<llvm::cas::CASID> RootID = CAS.parseCASID(RootIDString);
+  Expected<llvm::cas::CASID> RootID = CAS.parseID(RootIDString);
   if (!RootID) {
     llvm::consumeError(RootID.takeError());
     Diags.Report(diag::err_cas_cannot_parse_root_id) << RootIDString;

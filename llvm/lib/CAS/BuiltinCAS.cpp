@@ -120,11 +120,11 @@ public:
     return "llvm.cas.builtin.v1[SHA1]";
   }
 
-  Expected<CASID> parseCASID(StringRef Reference) final;
+  Expected<CASID> parseID(StringRef Reference) final;
 
   bool isKnownObject(CASID ID) final { return bool(getObjectKind(ID)); }
 
-  virtual Expected<CASID> parseCASIDImpl(ArrayRef<uint8_t> Hash) = 0;
+  virtual Expected<CASID> parseIDImpl(ArrayRef<uint8_t> Hash) = 0;
 
   static size_t getPageSize() {
     static int PageSize = sys::Process::getPageSizeEstimate();
@@ -255,7 +255,7 @@ static HashType stringToHash(StringRef Chars) {
   return Hash;
 }
 
-Expected<CASID> BuiltinCAS::parseCASID(StringRef Reference) {
+Expected<CASID> BuiltinCAS::parseID(StringRef Reference) {
   if (!Reference.consume_front(getCASIDPrefix()))
     return createStringError(std::make_error_code(std::errc::invalid_argument),
                              "invalid cas-id '" + Reference + "'");
@@ -267,7 +267,7 @@ Expected<CASID> BuiltinCAS::parseCASID(StringRef Reference) {
 
   // FIXME: Take parsing as a hint that the ID will be loaded and do a look up
   // of blobs and trees, rather than always allocating space for a hash.
-  return parseCASIDImpl(stringToHash(Reference));
+  return parseIDImpl(stringToHash(Reference));
 }
 
 void BuiltinCAS::printIDImpl(raw_ostream &OS, const CASID &ID) const {
@@ -653,7 +653,7 @@ private:
 /// In-memory CAS database and action cache (the latter should be separated).
 class InMemoryCAS : public BuiltinCAS {
 public:
-  Expected<CASID> parseCASIDImpl(ArrayRef<uint8_t> Hash) final {
+  Expected<CASID> parseIDImpl(ArrayRef<uint8_t> Hash) final {
     return getID(indexHash(Hash));
   }
 
@@ -1666,7 +1666,7 @@ public:
   };
 
   IndexProxy indexHash(ArrayRef<uint8_t> Hash);
-  Expected<CASID> parseCASIDImpl(ArrayRef<uint8_t> Hash) final {
+  Expected<CASID> parseIDImpl(ArrayRef<uint8_t> Hash) final {
     return getID(indexHash(Hash));
   }
 

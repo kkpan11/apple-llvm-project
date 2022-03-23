@@ -1087,8 +1087,7 @@ static void createFiles(const InputArgList &args) {
     case OPT_INPUT: {
       if (config->CAS) {
         StringRef casid = arg->getValue();
-        if (auto optCASID =
-                expectedToOptional(config->CAS->parseCASID(casid))) {
+        if (auto optCASID = expectedToOptional(config->CAS->parseID(casid))) {
           if (config->depScanning)
             continue; // we'll record the casid as part of the options.
           if (auto E = addCASTree(*config->CASSchemas, *optCASID)) {

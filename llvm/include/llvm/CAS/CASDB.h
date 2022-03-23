@@ -139,7 +139,7 @@ public:
   /// \a CASID::print(). This succeeds as long as \p Reference is valid
   /// (correctly formatted); it does not refer to an object that exists, just
   /// be a reference that has been constructed correctly.
-  virtual Expected<CASID> parseCASID(StringRef Reference) = 0;
+  virtual Expected<CASID> parseID(StringRef Reference) = 0;
 
   virtual Expected<BlobRef> createBlob(StringRef Data) = 0;
 
