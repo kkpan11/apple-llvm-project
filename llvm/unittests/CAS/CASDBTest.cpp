@@ -61,6 +61,11 @@ multiline text multiline text multiline text multiline text multiline text)",
     // problems if the CAS is storing references to the input string instead of
     // copying it.
     IDs.push_back(ExitOnErr(CAS1->createBlob(Content)));
+
+    // Check basic printing of IDs.
+    EXPECT_EQ(IDs.back().toString(), IDs.back().toString());
+    if (IDs.size() > 2)
+      EXPECT_NE(IDs.front().toString(), IDs.back().toString());
   }
 
   // Check that the blobs give the same IDs later.

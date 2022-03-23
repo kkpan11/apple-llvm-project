@@ -14,6 +14,9 @@
 #include "llvm/ADT/StringRef.h"
 
 namespace llvm {
+
+class raw_ostream;
+
 namespace cas {
 
 class CASID;
@@ -34,6 +37,10 @@ public:
 protected:
   /// Get the hash for \p ID. Implementation for \a CASID::getHash().
   virtual ArrayRef<uint8_t> getHashImpl(const CASID &ID) const = 0;
+
+  /// Print \p ID to \p OS.
+  virtual void printIDImpl(raw_ostream &OS, const CASID &ID) const = 0;
+
   friend class CASID;
 };
 
@@ -50,6 +57,16 @@ protected:
 /// compared by hash, in which case the result of \a getHash() is compared.
 class CASID {
 public:
+  void dump() const;
+  void print(raw_ostream &OS) const {
+    return getContext().printIDImpl(OS, *this);
+  }
+  friend raw_ostream &operator<<(raw_ostream &OS, const CASID &ID) {
+    ID.print(OS);
+    return OS;
+  }
+  std::string toString() const;
+
   ArrayRef<uint8_t> getHash() const { return getContext().getHashImpl(*this); }
 
   friend bool operator==(CASID LHS, CASID RHS) {

@@ -435,14 +435,13 @@ int cc1_main(ArrayRef<const char *> Argv, const char *Argv0, void *MainAddr) {
     Expected<llvm::cas::CASID> Result = CAS->getCachedResult(*ResultCacheKey);
     if (Result) {
       Clang->getDiagnostics().Report(diag::remark_compile_job_cache_hit)
-          << llvm::cantFail(CAS->convertCASIDToString(*ResultCacheKey))
-          << llvm::cantFail(CAS->convertCASIDToString(*Result));
+          << ResultCacheKey->toString() << Result->toString();
       int Failed = replayResult(*CAS, std::move(*Result));
       llvm::remove_fatal_error_handler();
       return Failed;
     }
     Clang->getDiagnostics().Report(diag::remark_compile_job_cache_miss)
-        << llvm::cantFail(CAS->convertCASIDToString(*ResultCacheKey));
+        << ResultCacheKey->toString();
     llvm::consumeError(Result.takeError());
 
     IntrusiveRefCntPtr<llvm::vfs::OutputBackend> OnDiskOutBackend =

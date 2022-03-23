@@ -1348,9 +1348,8 @@ static bool linkWithResultCaching(InputArgList &args, bool canExitEarly,
   CASID cacheKey = *optCacheKey;
   Expected<CASID> result = config->CAS->getCachedResult(cacheKey);
   if (result) {
-    log("Caching: cache hit, result: " +
-        cantFail(CAS.convertCASIDToString(*result)) +
-        ", key: " + cantFail(CAS.convertCASIDToString(cacheKey)));
+    log("Caching: cache hit, result: " + result->toString() +
+        ", key: " + cacheKey.toString();
     if (Error E = replayResult(CAS, std::move(*result))) {
       error("error replaying cached result: " + toString(std::move(E)));
       return false;
@@ -1361,8 +1360,7 @@ static bool linkWithResultCaching(InputArgList &args, bool canExitEarly,
   {
     TimeTraceScope timeScope("Caching: link after cache miss");
 
-    log("Caching: cache miss, key: " +
-        cantFail(CAS.convertCASIDToString(cacheKey)));
+    log("Caching: cache miss, key: " + cacheKey.toString());
     consumeError(result.takeError());
 
     SmallString<128> workingDirectory;
@@ -1425,8 +1423,7 @@ static bool linkWithResultCaching(InputArgList &args, bool canExitEarly,
       return false;
     }
 
-    log("Caching: cached result: " +
-        cantFail(CAS.convertCASIDToString(*resultID)));
+    log("Caching: cached result: " + resultID->toString());
   }
 
   return true;

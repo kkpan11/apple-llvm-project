@@ -16,23 +16,13 @@ using namespace llvm::cas;
 void CASIDContext::anchor() {}
 void CASDB::anchor() {}
 
+LLVM_DUMP_METHOD void CASID::dump() const { print(dbgs()); }
 LLVM_DUMP_METHOD void CASDB::dump() const { print(dbgs()); }
 
-Expected<std::string> CASDB::convertCASIDToString(CASID ID) const {
-  std::string Reference;
-  {
-    raw_string_ostream OS(Reference);
-    if (Error E = printCASID(OS, ID))
-      return std::move(E);
-  }
-  return std::move(Reference);
-}
-
-Error CASDB::getPrintedCASID(CASID ID, SmallVectorImpl<char> &Reference) const {
-  raw_svector_ostream OS(Reference);
-  if (Error E = printCASID(OS, ID))
-    return E;
-  return Error::success();
+std::string CASID::toString() const {
+  std::string S;
+  raw_string_ostream(S) << *this;
+  return S;
 }
 
 /// Default implementation opens the file and calls \a createBlob().
