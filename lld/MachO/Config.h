@@ -188,10 +188,6 @@ struct Configuration {
   std::unique_ptr<llvm::casobjectformats::SchemaPool> CASSchemas;
   bool depScanning = false;
 
-  llvm::DenseMap<llvm::StringRef, SymbolPriorityEntry> priorities;
-  llvm::MapVector<std::pair<const InputSection *, const InputSection *>,
-                  uint64_t>
-      callGraphProfile;
   bool callGraphProfileSort = false;
   llvm::StringRef printSymbolOrder;
 
