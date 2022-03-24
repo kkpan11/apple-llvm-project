@@ -64,7 +64,7 @@ void HierarchicalTreeBuilder::pushTreeContent(CASID ID, const Twine &Path) {
   TreeContents.emplace_back(ID, Kind, canonicalize(CanonicalPath, Kind));
 }
 
-Expected<TreeRef> HierarchicalTreeBuilder::create(CASDB &CAS) {
+Expected<TreeProxy> HierarchicalTreeBuilder::create(CASDB &CAS) {
   // FIXME: It is inefficient expanding the whole tree recursively like this,
   // use a more efficient algorithm to merge contents.
   for (const auto &TreeContent : TreeContents) {
@@ -72,7 +72,7 @@ Expected<TreeRef> HierarchicalTreeBuilder::create(CASDB &CAS) {
     StringRef Path = TreeContent.getPath();
     Error E = walkFileTreeRecursively(
         CAS, ID,
-        [&](const NamedTreeEntry &Entry, Optional<TreeRef> Tree) -> Error {
+        [&](const NamedTreeEntry &Entry, Optional<TreeProxy> Tree) -> Error {
           if (Entry.getKind() != TreeEntry::Tree) {
             pushImpl(Entry.getID(), Entry.getKind(), Path + Entry.getName());
             return Error::success();
@@ -247,7 +247,7 @@ Expected<TreeRef> HierarchicalTreeBuilder::create(CASDB &CAS) {
     Worklist.pop_back();
     for (Node *N = T->First; N; N = N->Next)
       Entries.emplace_back(*N->ID, N->Kind, N->Name);
-    Expected<TreeRef> ExpectedTree = CAS.createTree(Entries);
+    Expected<TreeProxy> ExpectedTree = CAS.createTree(Entries);
     Entries.clear();
     if (!ExpectedTree)
       return ExpectedTree.takeError();
@@ -256,4 +256,3 @@ Expected<TreeRef> HierarchicalTreeBuilder::create(CASDB &CAS) {
 
   return CAS.getTree(*Root.ID);
 }
-

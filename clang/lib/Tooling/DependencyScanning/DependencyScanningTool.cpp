@@ -148,7 +148,7 @@ public:
 
   void handleContextHash(std::string) override {}
 
-  Expected<llvm::cas::TreeRef> makeTree() {
+  Expected<llvm::cas::TreeProxy> makeTree() {
     if (E)
       return std::move(E);
     return Builder->create();
@@ -168,7 +168,7 @@ private:
 };
 }
 
-llvm::Expected<llvm::cas::TreeRef> DependencyScanningTool::getDependencyTree(
+llvm::Expected<llvm::cas::TreeProxy> DependencyScanningTool::getDependencyTree(
     const std::vector<std::string> &CommandLine, StringRef CWD) {
   llvm::cas::CachingOnDiskFileSystem &FS = Worker.getCASFS();
   FS.trackNewAccesses();
@@ -189,7 +189,7 @@ llvm::Expected<llvm::cas::TreeRef> DependencyScanningTool::getDependencyTree(
   return FS.createTreeFromNewAccesses();
 }
 
-llvm::Expected<llvm::cas::TreeRef>
+llvm::Expected<llvm::cas::TreeProxy>
 DependencyScanningTool::getDependencyTreeFromCompilerInvocation(
     std::shared_ptr<CompilerInvocation> Invocation, StringRef CWD,
     DiagnosticConsumer &DiagsConsumer,
@@ -207,7 +207,7 @@ DependencyScanningTool::getDependencyTreeFromCompilerInvocation(
   return FS.createTreeFromNewAccesses(RemapPath);
 }
 
-llvm::Expected<llvm::cas::TreeRef>
+llvm::Expected<llvm::cas::TreeProxy>
 DependencyScanningTool::getDependencyTreeFromCC1CommandLine(
     ArrayRef<const char *> Args, StringRef CWD) {
   llvm::cas::CachingOnDiskFileSystem &FS = Worker.getCASFS();

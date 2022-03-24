@@ -114,35 +114,36 @@ public:
 
   virtual Expected<CASID> parseIDImpl(ArrayRef<uint8_t> Hash) = 0;
 
-  Expected<TreeRef> createTree(ArrayRef<NamedTreeEntry> Entries) final;
-  virtual Expected<TreeRef>
+  Expected<TreeProxy> createTree(ArrayRef<NamedTreeEntry> Entries) final;
+  virtual Expected<TreeProxy>
   createTreeImpl(ArrayRef<uint8_t> ComputedHash,
                  ArrayRef<NamedTreeEntry> SortedEntries) = 0;
 
-  Expected<NodeRef> createNode(ArrayRef<CASID> References,
-                               StringRef Data) final {
+  Expected<NodeProxy> createNode(ArrayRef<CASID> References,
+                                 StringRef Data) final {
     return createNode(References, toArrayRef(Data));
   }
-  Expected<NodeRef> createNode(ArrayRef<CASID> References, ArrayRef<char> Data);
-  virtual Expected<NodeRef> createNodeImpl(ArrayRef<uint8_t> ComputedHash,
-                                           ArrayRef<CASID> References,
-                                           ArrayRef<char> Data) = 0;
+  Expected<NodeProxy> createNode(ArrayRef<CASID> References,
+                                 ArrayRef<char> Data);
+  virtual Expected<NodeProxy> createNodeImpl(ArrayRef<uint8_t> ComputedHash,
+                                             ArrayRef<CASID> References,
+                                             ArrayRef<char> Data) = 0;
 
-  Expected<BlobRef>
+  Expected<BlobProxy>
   createBlobFromOpenFileImpl(sys::fs::file_t FD,
                              Optional<sys::fs::file_status> Status) override;
-  virtual Expected<BlobRef>
+  virtual Expected<BlobProxy>
   createBlobFromNullTerminatedRegion(ArrayRef<uint8_t> ComputedHash,
                                      sys::fs::mapped_file_region Map) {
     return createBlobImpl(ComputedHash, makeArrayRef(Map.data(), Map.size()));
   }
 
-  Expected<BlobRef> createBlob(StringRef Data) final {
+  Expected<BlobProxy> createBlob(StringRef Data) final {
     return createBlob(makeArrayRef(Data.data(), Data.size()));
   }
-  Expected<BlobRef> createBlob(ArrayRef<char> Data);
-  virtual Expected<BlobRef> createBlobImpl(ArrayRef<uint8_t> ComputedHash,
-                                           ArrayRef<char> Data) = 0;
+  Expected<BlobProxy> createBlob(ArrayRef<char> Data);
+  virtual Expected<BlobProxy> createBlobImpl(ArrayRef<uint8_t> ComputedHash,
+                                             ArrayRef<char> Data) = 0;
 
   static StringRef getKindName(ObjectKind Kind) {
     switch (Kind) {

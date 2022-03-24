@@ -102,7 +102,7 @@ public:
   ErrorOr<std::unique_ptr<MemoryBuffer>> getBuffer(const Twine &Name, int64_t,
                                                    bool, bool) final {
     SmallString<256> Storage;
-    if (Expected<BlobRef> ExpectedBlob = DB.getBlob(*Entry->getID()))
+    if (Expected<BlobProxy> ExpectedBlob = DB.getBlob(*Entry->getID()))
       return MemoryBuffer::getMemBuffer(**ExpectedBlob,
                                         Name.toStringRef(Storage));
     else
@@ -177,7 +177,7 @@ Error CASFileSystem::loadDirectory(DirectoryEntry &Parent) {
     }
     llvm_unreachable("invalid tree type");
   };
-  Expected<TreeRef> Tree = DB.getTree(*Parent.getID());
+  Expected<TreeProxy> Tree = DB.getTree(*Parent.getID());
   if (!Tree)
     return Tree.takeError();
 
@@ -200,7 +200,7 @@ Error CASFileSystem::loadFile(DirectoryEntry &Entry) {
 
   // FIXME: Add a feature in the CAS to just get the size to avoid malloc
   // traffic for the memory buffer reference?
-  Expected<BlobRef> ExpectedFile = DB.getBlob(*Entry.getID());
+  Expected<BlobProxy> ExpectedFile = DB.getBlob(*Entry.getID());
   if (!ExpectedFile)
     return ExpectedFile.takeError();
 
@@ -211,7 +211,7 @@ Error CASFileSystem::loadFile(DirectoryEntry &Entry) {
 Error CASFileSystem::loadSymlink(DirectoryEntry &Entry) {
   assert(Entry.isSymlink());
 
-  Expected<BlobRef> ExpectedTarget = DB.getBlob(*Entry.getID());
+  Expected<BlobProxy> ExpectedTarget = DB.getBlob(*Entry.getID());
   if (!ExpectedTarget)
     return ExpectedTarget.takeError();
 

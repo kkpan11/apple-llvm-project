@@ -54,7 +54,7 @@ TEST(CASOutputBackendTest, createFiles) {
 
   // FIXME: Add test of duplicate paths. Should probably error at createFile()
   // instead of createTree() when possible?
-  Optional<TreeRef> Root = expectedToOptional(Outputs->createTree());
+  Optional<TreeProxy> Root = expectedToOptional(Outputs->createTree());
   ASSERT_TRUE(Root);
 
   // FIXME: Test directly instead of using CASFS.

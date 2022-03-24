@@ -332,17 +332,17 @@ public:
     return getID(indexHash(Hash));
   }
 
-  Expected<BlobRef> createBlobImpl(ArrayRef<uint8_t> ComputedHash,
-                                   ArrayRef<char> Data) final;
-  Expected<TreeRef>
+  Expected<BlobProxy> createBlobImpl(ArrayRef<uint8_t> ComputedHash,
+                                     ArrayRef<char> Data) final;
+  Expected<TreeProxy>
   createTreeImpl(ArrayRef<uint8_t> ComputedHash,
                  ArrayRef<NamedTreeEntry> SortedEntries) final;
-  Expected<NodeRef> createNodeImpl(ArrayRef<uint8_t> ComputedHash,
-                                   ArrayRef<CASID> References,
-                                   ArrayRef<char> Data) final;
+  Expected<NodeProxy> createNodeImpl(ArrayRef<uint8_t> ComputedHash,
+                                     ArrayRef<CASID> References,
+                                     ArrayRef<char> Data) final;
   Optional<ObjectKind> getObjectKind(CASID ID) final;
 
-  Expected<BlobRef>
+  Expected<BlobProxy>
   createBlobFromNullTerminatedRegion(ArrayRef<uint8_t> ComputedHash,
                                      sys::fs::mapped_file_region Map) override;
 
@@ -364,22 +364,22 @@ public:
     return extractIndexFromID(ID).Hash;
   }
 
-  Expected<BlobRef> getBlobRef(const InMemoryObject &Object) {
+  Expected<BlobProxy> getBlobProxy(const InMemoryObject &Object) {
     if (auto *Blob = dyn_cast<InMemoryBlob>(&Object))
-      return makeBlobRef(getID(Object), Blob->getDataString());
+      return makeBlobProxy(getID(Object), Blob->getDataString());
     return createInvalidObjectError(getID(Object), ObjectKind::Blob);
   }
 
-  Expected<NodeRef> getNodeRef(const InMemoryObject &Object) {
+  Expected<NodeProxy> getNodeProxy(const InMemoryObject &Object) {
     if (auto *Node = dyn_cast<InMemoryNode>(&Object))
-      return makeNodeRef(getID(Object), Node, Node->getRefs().size(),
-                         Node->getDataString());
+      return makeNodeProxy(getID(Object), Node, Node->getRefs().size(),
+                           Node->getDataString());
     return createInvalidObjectError(getID(Object), ObjectKind::Node);
   }
 
-  Expected<TreeRef> getTreeRef(const InMemoryObject &Object) {
+  Expected<TreeProxy> getTreeProxy(const InMemoryObject &Object) {
     if (auto *Tree = dyn_cast<InMemoryTree>(&Object))
-      return makeTreeRef(getID(Object), Tree, Tree->size());
+      return makeTreeProxy(getID(Object), Tree, Tree->size());
     return createInvalidObjectError(getID(Object), ObjectKind::Tree);
   }
 
@@ -402,19 +402,19 @@ public:
   }
 
   const InMemoryString &getOrCreateString(StringRef String);
-  Expected<BlobRef> getBlob(CASID ID) final {
+  Expected<BlobProxy> getBlob(CASID ID) final {
     if (const InMemoryObject *Object = getObject(ID))
-      return getBlobRef(*Object);
+      return getBlobProxy(*Object);
     return createInvalidObjectError(ID, ObjectKind::Blob);
   }
-  Expected<NodeRef> getNode(CASID ID) final {
+  Expected<NodeProxy> getNode(CASID ID) final {
     if (const InMemoryObject *Object = getObject(ID))
-      return getNodeRef(*Object);
+      return getNodeProxy(*Object);
     return createInvalidObjectError(ID, ObjectKind::Node);
   }
-  Expected<TreeRef> getTree(CASID ID) final {
+  Expected<TreeProxy> getTree(CASID ID) final {
     if (const InMemoryObject *Object = getObject(ID))
-      return getTreeRef(*Object);
+      return getTreeProxy(*Object);
     return createInvalidObjectError(ID, ObjectKind::Tree);
   }
   void print(raw_ostream &OS) const final;
@@ -429,16 +429,16 @@ private:
   NamedTreeEntry makeTreeEntry(const InMemoryTree::NamedEntry &Entry) const {
     return NamedTreeEntry(getID(*Entry.Ref), Entry.Kind, Entry.Name->get());
   }
-  Optional<NamedTreeEntry> lookupInTree(const TreeRef &Handle,
+  Optional<NamedTreeEntry> lookupInTree(const TreeProxy &Handle,
                                         StringRef Name) const final;
-  NamedTreeEntry getInTree(const TreeRef &Handle, size_t I) const final;
+  NamedTreeEntry getInTree(const TreeProxy &Handle, size_t I) const final;
   Error forEachEntryInTree(
-      const TreeRef &Tree,
+      const TreeProxy &Tree,
       function_ref<Error(const NamedTreeEntry &)> Callback) const final;
 
   // NodeAPI.
-  CASID getReferenceInNode(const NodeRef &Handle, size_t I) const final;
-  Error forEachReferenceInNode(const NodeRef &Handle,
+  CASID getReferenceInNode(const NodeProxy &Handle, size_t I) const final;
+  Error forEachReferenceInNode(const NodeProxy &Handle,
                                function_ref<Error(CASID)> Callback) const final;
 
   /// Index of referenced IDs (map: Hash -> InMemoryObject*). Mapped to nullptr
@@ -547,8 +547,8 @@ Optional<InMemoryTree::NamedEntry> InMemoryTree::find(StringRef Name) const {
   return operator[](I - Refs.begin());
 }
 
-Expected<BlobRef> InMemoryCAS::createBlobImpl(ArrayRef<uint8_t> ComputedHash,
-                                              ArrayRef<char> Data) {
+Expected<BlobProxy> InMemoryCAS::createBlobImpl(ArrayRef<uint8_t> ComputedHash,
+                                                ArrayRef<char> Data) {
   // Look up the hash in the index, initializing to nullptr if it's new.
   auto &I = indexHash(ComputedHash);
 
@@ -560,10 +560,10 @@ Expected<BlobRef> InMemoryCAS::createBlobImpl(ArrayRef<uint8_t> ComputedHash,
     return &InMemoryInlineBlob::create(Allocator, I, Data);
   };
 
-  return getBlobRef(I.Data.loadOrGenerate(Generator));
+  return getBlobProxy(I.Data.loadOrGenerate(Generator));
 }
 
-Expected<BlobRef> InMemoryCAS::createBlobFromNullTerminatedRegion(
+Expected<BlobProxy> InMemoryCAS::createBlobFromNullTerminatedRegion(
     ArrayRef<uint8_t> ComputedHash, sys::fs::mapped_file_region Map) {
   // Look up the hash in the index, initializing to nullptr if it's new.
   ArrayRef<char> Data(Map.data(), Map.size());
@@ -583,16 +583,16 @@ Expected<BlobRef> InMemoryCAS::createBlobFromNullTerminatedRegion(
     if (Blob->getData().data() == Map.data())
       new (MemoryMaps.Allocate()) sys::fs::mapped_file_region(std::move(Map));
 
-  return getBlobRef(Object);
+  return getBlobProxy(Object);
 }
 
-Expected<NodeRef> InMemoryCAS::createNodeImpl(ArrayRef<uint8_t> ComputedHash,
-                                              ArrayRef<CASID> Refs,
-                                              ArrayRef<char> Data) {
+Expected<NodeProxy> InMemoryCAS::createNodeImpl(ArrayRef<uint8_t> ComputedHash,
+                                                ArrayRef<CASID> Refs,
+                                                ArrayRef<char> Data) {
   // Look up the hash in the index, initializing to nullptr if it's new.
   auto &I = indexHash(ComputedHash);
   if (const InMemoryObject *Node = I.Data.load())
-    return getNodeRef(*Node);
+    return getNodeProxy(*Node);
 
   // Create the node.
   SmallVector<const InMemoryObject *> InternalRefs;
@@ -608,7 +608,7 @@ Expected<NodeRef> InMemoryCAS::createNodeImpl(ArrayRef<uint8_t> ComputedHash,
   auto Generator = [&]() -> const InMemoryObject * {
     return &InMemoryInlineNode::create(Allocator, I, InternalRefs, Data);
   };
-  return getNodeRef(I.Data.loadOrGenerate(Generator));
+  return getNodeProxy(I.Data.loadOrGenerate(Generator));
 }
 
 const InMemoryString &InMemoryCAS::getOrCreateString(StringRef String) {
@@ -625,13 +625,13 @@ const InMemoryString &InMemoryCAS::getOrCreateString(StringRef String) {
   return S.Data.loadOrGenerate(Generator);
 }
 
-Expected<TreeRef>
+Expected<TreeProxy>
 InMemoryCAS::createTreeImpl(ArrayRef<uint8_t> ComputedHash,
                             ArrayRef<NamedTreeEntry> SortedEntries) {
   // Look up the hash in the index, initializing to nullptr if it's new.
   auto &I = indexHash(ComputedHash);
   if (const InMemoryObject *Tree = I.Data.load())
-    return getTreeRef(*Tree);
+    return getTreeProxy(*Tree);
 
   // Create the tree.
   SmallVector<InMemoryTree::NamedEntry> InternalEntries;
@@ -647,7 +647,7 @@ InMemoryCAS::createTreeImpl(ArrayRef<uint8_t> ComputedHash,
   auto Generator = [&]() -> const InMemoryObject * {
     return &InMemoryTree::create(Allocator, I, InternalEntries);
   };
-  return getTreeRef(I.Data.loadOrGenerate(Generator));
+  return getTreeProxy(I.Data.loadOrGenerate(Generator));
 }
 
 Expected<CASID> InMemoryCAS::getCachedResult(CASID InputID) {
@@ -678,7 +678,7 @@ Error InMemoryCAS::putCachedResult(CASID InputID, CASID OutputID) {
   return createResultCachePoisonedError(InputID, OutputID, getID(Observed));
 }
 
-Optional<NamedTreeEntry> InMemoryCAS::lookupInTree(const TreeRef &Handle,
+Optional<NamedTreeEntry> InMemoryCAS::lookupInTree(const TreeProxy &Handle,
                                                    StringRef Name) const {
   auto &Tree = *reinterpret_cast<const InMemoryTree *>(getTreePtr(Handle));
   if (Optional<InMemoryTree::NamedEntry> E = Tree.find(Name))
@@ -686,14 +686,14 @@ Optional<NamedTreeEntry> InMemoryCAS::lookupInTree(const TreeRef &Handle,
   return None;
 }
 
-NamedTreeEntry InMemoryCAS::getInTree(const TreeRef &Handle, size_t I) const {
+NamedTreeEntry InMemoryCAS::getInTree(const TreeProxy &Handle, size_t I) const {
   auto &Tree = *reinterpret_cast<const InMemoryTree *>(getTreePtr(Handle));
   assert(I < Tree.size() && "Invalid index");
   return makeTreeEntry(Tree[I]);
 }
 
 Error InMemoryCAS::forEachEntryInTree(
-    const TreeRef &Handle,
+    const TreeProxy &Handle,
     function_ref<Error(const NamedTreeEntry &)> Callback) const {
   auto &Tree = *reinterpret_cast<const InMemoryTree *>(getTreePtr(Handle));
   for (size_t I = 0, E = Tree.size(); I != E; ++I)
@@ -702,14 +702,14 @@ Error InMemoryCAS::forEachEntryInTree(
   return Error::success();
 }
 
-CASID InMemoryCAS::getReferenceInNode(const NodeRef &Handle, size_t I) const {
+CASID InMemoryCAS::getReferenceInNode(const NodeProxy &Handle, size_t I) const {
   auto &Node = *reinterpret_cast<const InMemoryNode *>(getNodePtr(Handle));
   assert(I < Node.getRefs().size() && "Invalid index");
   return getID(*Node.getRefs()[I]);
 }
 
 Error InMemoryCAS::forEachReferenceInNode(
-    const NodeRef &Handle, function_ref<Error(CASID)> Callback) const {
+    const NodeProxy &Handle, function_ref<Error(CASID)> Callback) const {
   auto &Node = *reinterpret_cast<const InMemoryNode *>(getNodePtr(Handle));
   for (const InMemoryObject *Object : Node.getRefs())
     if (Error E = Callback(getID(*Object)))

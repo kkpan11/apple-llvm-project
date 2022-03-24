@@ -20,7 +20,7 @@ SchemaPool::SchemaPool(cas::CASDB &CAS) {
   Schemas.push_back(std::make_unique<nestedv1::ObjectFileSchema>(CAS));
 }
 
-SchemaBase *SchemaPool::getSchemaForRoot(cas::NodeRef Node) const {
+SchemaBase *SchemaPool::getSchemaForRoot(cas::NodeProxy Node) const {
   for (auto &Schema : Schemas) {
     if (Schema->isRootNode(Node))
       return Schema.get();
@@ -30,7 +30,7 @@ SchemaBase *SchemaPool::getSchemaForRoot(cas::NodeRef Node) const {
 
 Expected<std::unique_ptr<reader::CASObjectReader>>
 SchemaPool::createObjectReader(cas::CASID ID) const {
-  Expected<cas::NodeRef> Ref = getCAS().getNode(ID);
+  Expected<cas::NodeProxy> Ref = getCAS().getNode(ID);
   if (auto E = Ref.takeError())
     return std::move(E);
   SchemaBase *Schema = getSchemaForRoot(*Ref);

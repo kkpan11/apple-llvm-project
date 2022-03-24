@@ -216,7 +216,7 @@ void printTreeEntry(CASDB &CAS, raw_ostream &OS, const NamedTreeEntry &Entry) {
 int listTree(CASDB &CAS, CASID ID) {
   ExitOnError ExitOnErr("llvm-cas: ls-tree: ");
 
-  TreeRef Tree = ExitOnErr(CAS.getTree(ID));
+  TreeProxy Tree = ExitOnErr(CAS.getTree(ID));
   ExitOnErr(Tree.forEachEntry([&](const NamedTreeEntry &Entry) {
     printTreeEntry(CAS, llvm::outs(), Entry);
     return Error::success();
@@ -229,7 +229,7 @@ int listTreeRecursively(CASDB &CAS, CASID ID) {
   ExitOnError ExitOnErr("llvm-cas: ls-tree-recursively: ");
   ExitOnErr(walkFileTreeRecursively(
       CAS, ID,
-      [&](const NamedTreeEntry &Entry, Optional<TreeRef> Tree) -> Error {
+      [&](const NamedTreeEntry &Entry, Optional<TreeProxy> Tree) -> Error {
         if (Entry.getKind() != TreeEntry::Tree) {
           printTreeEntry(CAS, llvm::outs(), Entry);
           return Error::success();
@@ -268,7 +268,7 @@ int makeBlob(CASDB &CAS, StringRef DataPath) {
   std::unique_ptr<MemoryBuffer> Buffer =
       ExitOnErr(openBuffer(DataPath));
 
-  BlobRef Blob = ExitOnErr(CAS.createBlob(Buffer->getBuffer()));
+  BlobProxy Blob = ExitOnErr(CAS.createBlob(Buffer->getBuffer()));
   llvm::outs() << Blob.getID() << "\n";
   return 0;
 }
@@ -303,7 +303,7 @@ int printKind(CASDB &CAS, CASID ID) {
 int listObjectReferences(CASDB &CAS, CASID ID) {
   ExitOnError ExitOnErr("llvm-cas: ls-node-refs: ");
 
-  NodeRef Object = ExitOnErr(CAS.getNode(ID));
+  NodeProxy Object = ExitOnErr(CAS.getNode(ID));
   ExitOnErr(Object.forEachReference([&](CASID ID) -> Error {
     llvm::outs() << ID << "\n";
     return Error::success();
@@ -327,7 +327,7 @@ static int makeNode(CASDB &CAS, ArrayRef<std::string> Objects, StringRef DataPat
   }
 
   ExitOnError ExitOnErr("llvm-cas: make-node: ");
-  NodeRef Object = ExitOnErr(CAS.createNode(IDs, Data->getBuffer()));
+  NodeProxy Object = ExitOnErr(CAS.createNode(IDs, Data->getBuffer()));
   llvm::outs() << Object.getID() << "\n";
   return 0;
 }
@@ -363,7 +363,7 @@ static GraphInfo traverseObjectGraph(CASDB &CAS, CASID TopLevel) {
       continue;
 
     if (*Kind == ObjectKind::Tree) {
-      TreeRef Tree = ExitOnErr(CAS.getTree(ID));
+      TreeProxy Tree = ExitOnErr(CAS.getTree(ID));
       ExitOnErr(Tree.forEachEntry([&](const NamedTreeEntry &Entry) {
         push(Entry.getID());
         return Error::success();
@@ -372,7 +372,7 @@ static GraphInfo traverseObjectGraph(CASDB &CAS, CASID TopLevel) {
     }
 
     assert(*Kind == ObjectKind::Node);
-    NodeRef Object = ExitOnErr(CAS.getNode(ID));
+    NodeProxy Object = ExitOnErr(CAS.getNode(ID));
     ExitOnErr(Object.forEachReference([&](CASID ID) {
       push(ID);
       return Error::success();
@@ -447,7 +447,7 @@ static Error recursiveAccess(CachingOnDiskFileSystem &FS, StringRef Path) {
   return Error::success();
 }
 
-static Expected<TreeRef> ingestFileSystemImpl(CASDB &CAS, StringRef Path) {
+static Expected<TreeProxy> ingestFileSystemImpl(CASDB &CAS, StringRef Path) {
   auto FS = createCachingOnDiskFileSystem(CAS);
   if (!FS)
     return FS.takeError();

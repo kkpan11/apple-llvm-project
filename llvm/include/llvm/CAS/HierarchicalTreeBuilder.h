@@ -22,7 +22,7 @@ namespace llvm {
 namespace cas {
 
 class CASDB;
-class TreeRef;
+class TreeProxy;
 
 /// Structure to facilitating building full tree hierarchies.
 class HierarchicalTreeBuilder {
@@ -80,7 +80,7 @@ public:
 
   /// Recursively create the trees implied by calls to \a push(), return the
   /// top-level \a CASID.
-  Expected<TreeRef> create(CASDB &CAS);
+  Expected<TreeProxy> create(CASDB &CAS);
 };
 
 } // namespace cas

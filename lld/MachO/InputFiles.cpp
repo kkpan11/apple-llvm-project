@@ -1748,7 +1748,7 @@ static void applyArchRelocationProperties(jitlink::Edge::Kind kind,
 }
 
 Error CASSchemaFile::parse(SchemaPool &CASSchemas, CASID ID) {
-  Expected<cas::NodeRef> Ref = CASSchemas.getCAS().getNode(ID);
+  Expected<cas::NodeProxy> Ref = CASSchemas.getCAS().getNode(ID);
   if (auto E = Ref.takeError())
     return E;
   SchemaBase *Schema = CASSchemas.getSchemaForRoot(*Ref);

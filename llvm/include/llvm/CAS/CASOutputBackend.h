@@ -16,13 +16,13 @@ namespace llvm {
 namespace cas {
 class CASDB;
 class CASID;
-class TreeRef;
+class TreeProxy;
 
 /// Handle the cas
 class CASOutputBackend final : public vfs::StableUniqueEntityAdaptor<> {
 public:
   /// Create a top-level tree for all created files. This will contain all files
-  Expected<TreeRef> createTree();
+  Expected<TreeProxy> createTree();
 
   Expected<std::unique_ptr<vfs::OutputFile>>
   createFileImpl(StringRef ResolvedPath, vfs::OutputConfig Config) override;

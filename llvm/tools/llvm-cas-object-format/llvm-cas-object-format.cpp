@@ -220,7 +220,7 @@ int main(int argc, char *argv[]) {
           ExitOnErr(createStringError(inconvertibleErrorCode(),
                                       "unexpected CAS kind in the tree"));
 
-        TreeRef Tree = ExitOnErr(CAS->getTree(Node.getID()));
+        TreeProxy Tree = ExitOnErr(CAS->getTree(Node.getID()));
         ExitOnErr(Tree.forEachEntry([&](const NamedTreeEntry &Entry) {
           SmallString<128> PathStorage = Node.getName();
           sys::path::append(PathStorage, sys::path::Style::posix,
@@ -305,7 +305,7 @@ struct StatCollector {
   CASDB &CAS;
 
   using POTItemHandler = unique_function<void(
-      ExitOnError &, function_ref<void(ObjectKindInfo &)>, cas::NodeRef)>;
+      ExitOnError &, function_ref<void(ObjectKindInfo &)>, cas::NodeProxy)>;
 
   // FIXME: Utilize \p SchemaPool.
   nestedv1::ObjectFileSchema NestedV1Schema;
@@ -318,14 +318,14 @@ struct StatCollector {
         &NestedV1Schema,
         [&](ExitOnError &ExitOnErr,
             function_ref<void(ObjectKindInfo & Info)> addNodeStats,
-            cas::NodeRef Node) {
+            cas::NodeProxy Node) {
           visitPOTItemNestedV1(ExitOnErr, NestedV1Schema, addNodeStats, Node);
         }));
     Schemas.push_back(std::make_pair(
         &FlatV1Schema,
         [&](ExitOnError &ExitOnErr,
             function_ref<void(ObjectKindInfo & Info)> addNodeStats,
-            cas::NodeRef Node) {
+            cas::NodeProxy Node) {
           visitPOTItemFlatV1(ExitOnErr, FlatV1Schema, addNodeStats, Node);
         }));
   }
@@ -349,12 +349,15 @@ struct StatCollector {
   void visitPOT(ExitOnError &ExitOnErr, ArrayRef<CASID> TopLevels,
                 ArrayRef<POTItem> POT);
   void visitPOTItem(ExitOnError &ExitOnErr, const POTItem &Item);
-  void visitPOTItemNestedV1(
-      ExitOnError &ExitOnErr, nestedv1::ObjectFileSchema &Schema,
-      function_ref<void(ObjectKindInfo &Info)> addNodeStats, cas::NodeRef Node);
-  void visitPOTItemFlatV1(
-      ExitOnError &ExitOnErr, flatv1::ObjectFileSchema &Schema,
-      function_ref<void(ObjectKindInfo &Info)> addNodeStats, cas::NodeRef Node);
+  void
+  visitPOTItemNestedV1(ExitOnError &ExitOnErr,
+                       nestedv1::ObjectFileSchema &Schema,
+                       function_ref<void(ObjectKindInfo &Info)> addNodeStats,
+                       cas::NodeProxy Node);
+  void visitPOTItemFlatV1(ExitOnError &ExitOnErr,
+                          flatv1::ObjectFileSchema &Schema,
+                          function_ref<void(ObjectKindInfo &Info)> addNodeStats,
+                          cas::NodeProxy Node);
   void printToOuts(ArrayRef<CASID> TopLevels);
 };
 } // end namespace
@@ -398,7 +401,7 @@ void StatCollector::visitPOTItem(ExitOnError &ExitOnErr, const POTItem &Item) {
   if (*Kind == ObjectKind::Tree) {
     auto &Info = Stats["builtin:tree"];
     ++Info.Count;
-    TreeRef Tree = ExitOnErr(CAS.getTree(ID));
+    TreeProxy Tree = ExitOnErr(CAS.getTree(ID));
     Info.NumChildren += Tree.size();
     Info.NumParents += NumParents;
     Info.NumPaths += NumPaths;
@@ -416,7 +419,7 @@ void StatCollector::visitPOTItem(ExitOnError &ExitOnErr, const POTItem &Item) {
   }
 
   assert(*Kind == ObjectKind::Node);
-  cas::NodeRef Node = ExitOnErr(CAS.getNode(ID));
+  cas::NodeProxy Node = ExitOnErr(CAS.getNode(ID));
   auto addNodeStats = [&](ObjectKindInfo &Info) {
     ++Info.Count;
     Info.NumChildren += Node.getNumReferences();
@@ -449,9 +452,10 @@ void StatCollector::visitPOTItem(ExitOnError &ExitOnErr, const POTItem &Item) {
 
 void StatCollector::visitPOTItemNestedV1(
     ExitOnError &ExitOnErr, nestedv1::ObjectFileSchema &Schema,
-    function_ref<void(ObjectKindInfo &Info)> addNodeStats, cas::NodeRef Node) {
+    function_ref<void(ObjectKindInfo &Info)> addNodeStats,
+    cas::NodeProxy Node) {
   using namespace llvm::casobjectformats::nestedv1;
-  ObjectFormatNodeRef Object = ExitOnErr(Schema.getNode(Node));
+  ObjectFormatNodeProxy Object = ExitOnErr(Schema.getNode(Node));
   addNodeStats(Stats[Object.getKindString()]);
 
   // Check specific stats.
@@ -517,9 +521,10 @@ void StatCollector::visitPOTItemNestedV1(
 
 void StatCollector::visitPOTItemFlatV1(
     ExitOnError &ExitOnErr, flatv1::ObjectFileSchema &Schema,
-    function_ref<void(ObjectKindInfo &Info)> addNodeStats, cas::NodeRef Node) {
+    function_ref<void(ObjectKindInfo &Info)> addNodeStats,
+    cas::NodeProxy Node) {
   using namespace llvm::casobjectformats::flatv1;
-  ObjectFormatNodeRef Object = ExitOnErr(Schema.getNode(Node));
+  ObjectFormatNodeProxy Object = ExitOnErr(Schema.getNode(Node));
   addNodeStats(Stats[Object.getKindString()]);
 }
 
@@ -582,7 +587,7 @@ static void computeStats(CASDB &CAS, ArrayRef<CASID> TopLevels) {
       continue;
 
     if (*Kind == ObjectKind::Tree) {
-      TreeRef Tree = ExitOnErr(CAS.getTree(ID));
+      TreeProxy Tree = ExitOnErr(CAS.getTree(ID));
       ExitOnErr(Tree.forEachEntry([&](const NamedTreeEntry &Entry) {
         SmallString<128> PathStorage = Name;
         sys::path::append(PathStorage, sys::path::Style::posix,
@@ -598,7 +603,7 @@ static void computeStats(CASDB &CAS, ArrayRef<CASID> TopLevels) {
     }
 
     assert(*Kind == ObjectKind::Node);
-    NodeRef Node = ExitOnErr(CAS.getNode(ID));
+    NodeProxy Node = ExitOnErr(CAS.getNode(ID));
     const SchemaBase *&Schema = Worklist.back().Schema;
 
     // Update the schema.
@@ -698,7 +703,7 @@ static Error printCASObject(SchemaPool &Pool, CASID ID) {
 }
 
 static Error printCASObjectOrTree(SchemaPool &Pool, CASID ID) {
-  Expected<TreeRef> ExpTree = Pool.getCAS().getTree(ID);
+  Expected<TreeProxy> ExpTree = Pool.getCAS().getTree(ID);
   if (Error E = ExpTree.takeError()) {
     // Not a tree.
     return printCASObject(Pool, ID);
@@ -706,7 +711,7 @@ static Error printCASObjectOrTree(SchemaPool &Pool, CASID ID) {
 
   return walkFileTreeRecursively(
       Pool.getCAS(), ID,
-      [&](const NamedTreeEntry &entry, Optional<TreeRef>) -> Error {
+      [&](const NamedTreeEntry &entry, Optional<TreeProxy>) -> Error {
         if (entry.getKind() == TreeEntry::Tree)
           return Error::success();
         if (entry.getKind() != TreeEntry::Regular) {

@@ -50,7 +50,7 @@ void cas::writeCASIDBuffer(const CASID &ID, llvm::raw_ostream &OS) {
 
 Error cas::walkFileTreeRecursively(
     CASDB &CAS, CASID ID,
-    function_ref<Error(const NamedTreeEntry &, Optional<TreeRef>)> Callback) {
+    function_ref<Error(const NamedTreeEntry &, Optional<TreeProxy>)> Callback) {
   BumpPtrAllocator Alloc;
   StringSaver Saver(Alloc);
   SmallString<128> PathStorage;
@@ -65,10 +65,10 @@ Error cas::walkFileTreeRecursively(
     }
 
     NamedTreeEntry Parent = Stack.pop_back_val();
-    Expected<TreeRef> ExpTree = CAS.getTree(Parent.getID());
+    Expected<TreeProxy> ExpTree = CAS.getTree(Parent.getID());
     if (Error E = ExpTree.takeError())
       return E;
-    TreeRef Tree = *ExpTree;
+    TreeProxy Tree = *ExpTree;
     if (Error E = Callback(Parent, Tree))
       return E;
     for (int I = Tree.size(), E = 0; I != E; --I) {

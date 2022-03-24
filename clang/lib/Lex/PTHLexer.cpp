@@ -621,7 +621,7 @@ Expected<llvm::cas::CASID> PTHManager::computePTH(llvm::cas::CASID InputFile) {
     Writer.generatePTH(OS, llvm::cantFail(CAS.getBlob(InputFile)).getData(),
                        CanonicalLangOpts);
   }
-  llvm::cas::BlobRef PTH = llvm::cantFail(CAS.createBlob(PTHString));
+  llvm::cas::BlobProxy PTH = llvm::cantFail(CAS.createBlob(PTHString));
   llvm::cantFail(CAS.putCachedResult(CacheKey, PTH));
   return PTH;
 }

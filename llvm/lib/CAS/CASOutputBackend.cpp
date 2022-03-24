@@ -77,7 +77,7 @@ static Error writeOutputAsCASID(CASDB &CAS, CASID &ID, StringRef ResolvedPath,
     raw_svector_ostream OS(Contents);
     writeCASIDBuffer(ID, OS);
   }
-  Expected<BlobRef> Blob = CAS.createBlob(Contents);
+  Expected<BlobProxy> Blob = CAS.createBlob(Contents);
   if (!Blob)
     return Blob.takeError();
   ID = *Blob;
@@ -93,7 +93,7 @@ CASOutputBackend::createFileImpl(StringRef ResolvedPath,
 
   return std::make_unique<CASOutputFile>(
       ResolvedPath, [&](StringRef Path, StringRef Bytes) -> Error {
-        Expected<BlobRef> Blob = CAS.createBlob(Bytes);
+        Expected<BlobProxy> Blob = CAS.createBlob(Bytes);
         if (!Blob)
           return Blob.takeError();
         CASID ID = *Blob;
@@ -108,11 +108,11 @@ CASOutputBackend::createFileImpl(StringRef ResolvedPath,
       });
 }
 
-Expected<TreeRef> CASOutputBackend::createTree() {
+Expected<TreeProxy> CASOutputBackend::createTree() {
   if (!Impl)
     return CAS.createTree();
 
-  Expected<TreeRef> ExpectedTree = Impl->Builder.create(CAS);
+  Expected<TreeProxy> ExpectedTree = Impl->Builder.create(CAS);
   Impl->Builder.clear();
   return ExpectedTree;
 }
