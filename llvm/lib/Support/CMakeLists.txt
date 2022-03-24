@@ -101,11 +101,7 @@ if(LLVM_INTEGRATED_CRT_ALLOC)
   endif()
 endif()
 
-# Sets up the LLVM_BLAKE3_FILES variable with the files to compile.
 add_subdirectory(BLAKE3)
-if (MSVC)
-  enable_language(ASM_MASM)
-endif()
 
 add_llvm_component_library(LLVMSupport
   AArch64TargetParser.cpp
@@ -238,7 +234,7 @@ add_llvm_component_library(LLVMSupport
   Z3Solver.cpp
 
   ${ALLOCATOR_FILES}
-  ${LLVM_BLAKE3_FILES}
+  $<TARGET_OBJECTS:LLVMSupportBlake3>
 
 # System
   Atomic.cpp
