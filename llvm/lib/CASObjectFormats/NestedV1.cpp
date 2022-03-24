@@ -51,7 +51,7 @@ public:
   static Expected<EncodedDataRef>
   create(const ObjectFileSchema &Schema,
          function_ref<void(SmallVectorImpl<char> &)> Encode);
-  static Expected<EncodedDataRef> get(Expected<ObjectFormatNodeRef> Ref);
+  static Expected<EncodedDataRef> get(Expected<ObjectFormatNodeProxy> Ref);
   static Expected<EncodedDataRef> get(const ObjectFileSchema &Schema,
                                       cas::CASID ID) {
     return get(Schema.getNode(ID));
@@ -299,9 +299,9 @@ bool ObjectFileSchema::isNode(const cas::NodeProxy &Node) const {
   return bool(getKindString(Node));
 }
 
-Expected<ObjectFormatNodeRef::Builder>
-ObjectFormatNodeRef::Builder::startRootNode(const ObjectFileSchema &Schema,
-                                            StringRef KindString) {
+Expected<ObjectFormatNodeProxy::Builder>
+ObjectFormatNodeProxy::Builder::startRootNode(const ObjectFileSchema &Schema,
+                                              StringRef KindString) {
   Builder B(Schema);
   B.IDs.push_back(Schema.getRootNodeTypeID());
 
@@ -310,7 +310,7 @@ ObjectFormatNodeRef::Builder::startRootNode(const ObjectFileSchema &Schema,
   return std::move(B);
 }
 
-Error ObjectFormatNodeRef::Builder::startNodeImpl(StringRef KindString) {
+Error ObjectFormatNodeProxy::Builder::startNodeImpl(StringRef KindString) {
   Optional<unsigned char> TypeID = Schema->getKindStringID(KindString);
   if (!TypeID)
     return createStringError(inconvertibleErrorCode(),
@@ -320,20 +320,20 @@ Error ObjectFormatNodeRef::Builder::startNodeImpl(StringRef KindString) {
   return Error::success();
 }
 
-Expected<ObjectFormatNodeRef::Builder>
-ObjectFormatNodeRef::Builder::startNode(const ObjectFileSchema &Schema,
-                                        StringRef KindString) {
+Expected<ObjectFormatNodeProxy::Builder>
+ObjectFormatNodeProxy::Builder::startNode(const ObjectFileSchema &Schema,
+                                          StringRef KindString) {
   Builder B(Schema);
   if (Error E = B.startNodeImpl(KindString))
     return std::move(E);
   return std::move(B);
 }
 
-Expected<ObjectFormatNodeRef> ObjectFormatNodeRef::Builder::build() {
-  return ObjectFormatNodeRef::get(*Schema, Schema->CAS.createNode(IDs, Data));
+Expected<ObjectFormatNodeProxy> ObjectFormatNodeProxy::Builder::build() {
+  return ObjectFormatNodeProxy::get(*Schema, Schema->CAS.createNode(IDs, Data));
 }
 
-StringRef ObjectFormatNodeRef::getKindString() const {
+StringRef ObjectFormatNodeProxy::getKindString() const {
   Optional<StringRef> KS = getSchema().getKindString(*this);
   assert(KS && "Expected valid kind string");
   return *KS;
@@ -347,20 +347,20 @@ ObjectFileSchema::getKindStringID(StringRef KindString) const {
   return None;
 }
 
-Expected<ObjectFormatNodeRef>
-ObjectFormatNodeRef::get(const ObjectFileSchema &Schema,
-                         Expected<cas::NodeProxy> Ref) {
+Expected<ObjectFormatNodeProxy>
+ObjectFormatNodeProxy::get(const ObjectFileSchema &Schema,
+                           Expected<cas::NodeProxy> Ref) {
   if (!Ref)
     return Ref.takeError();
   if (!Schema.isNode(*Ref))
     return createStringError(
         inconvertibleErrorCode(),
         "invalid kind-string for node in object-file-schema");
-  return ObjectFormatNodeRef(Schema, *Ref);
+  return ObjectFormatNodeProxy(Schema, *Ref);
 }
 
 Expected<EncodedDataRef>
-EncodedDataRef::get(Expected<ObjectFormatNodeRef> Ref) {
+EncodedDataRef::get(Expected<ObjectFormatNodeProxy> Ref) {
   auto Specific = SpecificRefT::getSpecific(std::move(Ref));
   if (!Specific)
     return Specific.takeError();
@@ -382,7 +382,7 @@ EncodedDataRef::create(const ObjectFileSchema &Schema,
   return get(B->build());
 }
 
-Expected<NameRef> NameRef::get(Expected<ObjectFormatNodeRef> Ref) {
+Expected<NameRef> NameRef::get(Expected<ObjectFormatNodeProxy> Ref) {
   auto Specific = SpecificRefT::getSpecific(std::move(Ref));
   if (!Specific)
     return Specific.takeError();
@@ -403,7 +403,7 @@ Expected<NameRef> NameRef::create(const ObjectFileSchema &Schema,
   return get(B->build());
 }
 
-Expected<BlockDataRef> BlockDataRef::get(Expected<ObjectFormatNodeRef> Ref) {
+Expected<BlockDataRef> BlockDataRef::get(Expected<ObjectFormatNodeProxy> Ref) {
   auto Specific = SpecificRefT::getSpecific(std::move(Ref));
   if (!Specific)
     return Specific.takeError();
@@ -521,7 +521,7 @@ Expected<TargetRef> TargetRef::get(const ObjectFileSchema &Schema,
     return TargetRef(Schema, ID, K);
   };
 
-  auto Object = ObjectFormatNodeRef::get(Schema, Schema.CAS.getNode(ID));
+  auto Object = ObjectFormatNodeProxy::get(Schema, Schema.CAS.getNode(ID));
   if (!Object) {
     consumeError(Object.takeError());
     return createStringError(inconvertibleErrorCode(), "invalid target");
@@ -547,7 +547,7 @@ StringRef SymbolDefinitionRef::getKindString(Kind K) {
 }
 
 Expected<SymbolDefinitionRef>
-SymbolDefinitionRef::get(Expected<ObjectFormatNodeRef> Ref,
+SymbolDefinitionRef::get(Expected<ObjectFormatNodeProxy> Ref,
                          Optional<Kind> ExpectedKind) {
   if (!Ref)
     return Ref.takeError();
@@ -570,7 +570,8 @@ SymbolDefinitionRef::get(Expected<ObjectFormatNodeRef> Ref,
   return SymbolDefinitionRef(*Ref, *K);
 }
 
-Expected<TargetListRef> TargetListRef::get(Expected<ObjectFormatNodeRef> Ref) {
+Expected<TargetListRef>
+TargetListRef::get(Expected<ObjectFormatNodeProxy> Ref) {
   auto Specific = SpecificRefT::getSpecific(std::move(Ref));
   if (!Specific)
     return Specific.takeError();
@@ -609,7 +610,7 @@ jitlink::MemProt SectionRef::getMemProt() const {
   return decodeProtectionFlags((data::SectionProtectionFlags)getData()[0]);
 }
 
-Expected<SectionRef> SectionRef::get(Expected<ObjectFormatNodeRef> Ref) {
+Expected<SectionRef> SectionRef::get(Expected<ObjectFormatNodeProxy> Ref) {
   auto Specific = SpecificRefT::getSpecific(std::move(Ref));
   if (!Specific)
     return Specific.takeError();
@@ -894,7 +895,7 @@ Expected<BlockRef> BlockRef::createImpl(const ObjectFileSchema &Schema,
   return get(B->build());
 }
 
-Expected<BlockRef> BlockRef::get(Expected<ObjectFormatNodeRef> Ref) {
+Expected<BlockRef> BlockRef::get(Expected<ObjectFormatNodeProxy> Ref) {
   auto Specific = SpecificRefT::getSpecific(std::move(Ref));
   if (!Specific)
     return Specific.takeError();
@@ -925,7 +926,7 @@ Expected<TargetRef> SymbolRef::getAsIndirectTarget() const {
   return TargetRef::getIndirectSymbol(getSchema(), **Name);
 }
 
-Expected<SymbolRef> SymbolRef::get(Expected<ObjectFormatNodeRef> Ref) {
+Expected<SymbolRef> SymbolRef::get(Expected<ObjectFormatNodeProxy> Ref) {
   auto Specific = SpecificRefT::getSpecific(std::move(Ref));
   if (!Specific)
     return Specific.takeError();
@@ -1132,7 +1133,7 @@ Expected<SymbolRef> SymbolRef::create(const ObjectFileSchema &Schema,
 }
 
 Expected<CompileUnitRef>
-CompileUnitRef::get(Expected<ObjectFormatNodeRef> Ref) {
+CompileUnitRef::get(Expected<ObjectFormatNodeProxy> Ref) {
   auto Specific = SpecificRefT::getSpecific(std::move(Ref));
   if (!Specific)
     return Specific.takeError();
@@ -1210,7 +1211,7 @@ Expected<NameListRef> NameListRef::create(const ObjectFileSchema &Schema,
   return get(B->build());
 }
 
-Expected<NameListRef> NameListRef::get(Expected<ObjectFormatNodeRef> Ref) {
+Expected<NameListRef> NameListRef::get(Expected<ObjectFormatNodeProxy> Ref) {
   auto Specific = SpecificRefT::getSpecific(std::move(Ref));
   if (!Specific)
     return Specific.takeError();
@@ -1335,7 +1336,7 @@ Expected<Optional<SymbolRef>> SymbolTableRef::lookupSymbol(NameRef Name) const {
 }
 
 Expected<SymbolTableRef>
-SymbolTableRef::get(Expected<ObjectFormatNodeRef> Ref) {
+SymbolTableRef::get(Expected<ObjectFormatNodeProxy> Ref) {
   auto Specific = SpecificRefT::getSpecific(std::move(Ref));
   if (!Specific)
     return Specific.takeError();

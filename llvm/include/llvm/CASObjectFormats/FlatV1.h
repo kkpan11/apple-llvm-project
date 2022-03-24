@@ -26,10 +26,10 @@ class CompileUnitBuilder;
 class FlatV1ObjectReader;
 
 /// FIXME: This is a copy from NestedV1 implementation. We should unify that.
-class ObjectFormatNodeRef : public cas::NodeProxy {
+class ObjectFormatNodeProxy : public cas::NodeProxy {
 public:
-  static Expected<ObjectFormatNodeRef> get(const ObjectFileSchema &Schema,
-                                           Expected<cas::NodeProxy> Ref);
+  static Expected<ObjectFormatNodeProxy> get(const ObjectFileSchema &Schema,
+                                             Expected<cas::NodeProxy> Ref);
   StringRef getKindString() const;
 
   /// Return the data skipping the type-id character.
@@ -37,15 +37,15 @@ public:
 
   const ObjectFileSchema &getSchema() const { return *Schema; }
 
-  bool operator==(const ObjectFormatNodeRef &RHS) const {
+  bool operator==(const ObjectFormatNodeProxy &RHS) const {
     return Schema == RHS.Schema && cas::CASID(*this) == cas::CASID(RHS);
   }
 
-  ObjectFormatNodeRef() = delete;
+  ObjectFormatNodeProxy() = delete;
 
 protected:
-  ObjectFormatNodeRef(const ObjectFileSchema &Schema,
-                      const cas::NodeProxy &Node)
+  ObjectFormatNodeProxy(const ObjectFileSchema &Schema,
+                        const cas::NodeProxy &Node)
       : cas::NodeProxy(Node), Schema(&Schema) {}
 
   class Builder {
@@ -55,7 +55,7 @@ protected:
     static Expected<Builder> startNode(const ObjectFileSchema &Schema,
                                        StringRef KindString);
 
-    Expected<ObjectFormatNodeRef> build();
+    Expected<ObjectFormatNodeProxy> build();
 
   private:
     Error startNodeImpl(StringRef KindString);
@@ -111,12 +111,12 @@ public:
 
   ObjectFileSchema(cas::CASDB &CAS);
 
-  Expected<ObjectFormatNodeRef> createNode(ArrayRef<cas::CASID> IDs,
-                                           StringRef Data) const {
-    return ObjectFormatNodeRef::get(*this, CAS.createNode(IDs, Data));
+  Expected<ObjectFormatNodeProxy> createNode(ArrayRef<cas::CASID> IDs,
+                                             StringRef Data) const {
+    return ObjectFormatNodeProxy::get(*this, CAS.createNode(IDs, Data));
   }
-  Expected<ObjectFormatNodeRef> getNode(cas::CASID ID) const {
-    return ObjectFormatNodeRef::get(*this, CAS.getNode(ID));
+  Expected<ObjectFormatNodeProxy> getNode(cas::CASID ID) const {
+    return ObjectFormatNodeProxy::get(*this, CAS.getNode(ID));
   }
 
 private:
@@ -134,16 +134,17 @@ private:
 
 /// A type-checked reference to a node of a specific kind.
 template <class DerivedT, class FinalT = DerivedT>
-class SpecificRef : public ObjectFormatNodeRef {
+class SpecificRef : public ObjectFormatNodeProxy {
 protected:
-  static Expected<DerivedT> get(Expected<ObjectFormatNodeRef> Ref) {
+  static Expected<DerivedT> get(Expected<ObjectFormatNodeProxy> Ref) {
     if (auto Specific = getSpecific(std::move(Ref)))
       return DerivedT(*Specific);
     else
       return Specific.takeError();
   }
 
-  static Expected<SpecificRef> getSpecific(Expected<ObjectFormatNodeRef> Ref) {
+  static Expected<SpecificRef>
+  getSpecific(Expected<ObjectFormatNodeProxy> Ref) {
     if (!Ref)
       return Ref.takeError();
     if (Ref->getKindString() == FinalT::KindString)
@@ -153,7 +154,7 @@ protected:
                                  "'");
   }
 
-  SpecificRef(ObjectFormatNodeRef Ref) : ObjectFormatNodeRef(Ref) {}
+  SpecificRef(ObjectFormatNodeProxy Ref) : ObjectFormatNodeProxy(Ref) {}
 };
 
 class NameRef : public SpecificRef<NameRef> {
@@ -166,7 +167,7 @@ public:
   StringRef getName() const { return getData(); }
 
   static Expected<NameRef> create(CompileUnitBuilder &CUB, StringRef Name);
-  static Expected<NameRef> get(Expected<ObjectFormatNodeRef> Ref);
+  static Expected<NameRef> get(Expected<ObjectFormatNodeProxy> Ref);
   static Expected<NameRef> get(const ObjectFileSchema &Schema, cas::CASID ID) {
     return get(Schema.getNode(ID));
   }
@@ -184,7 +185,7 @@ public:
 
   static Expected<SectionRef> create(CompileUnitBuilder &CUB,
                                      const jitlink::Section &S);
-  static Expected<SectionRef> get(Expected<ObjectFormatNodeRef> Ref);
+  static Expected<SectionRef> get(Expected<ObjectFormatNodeProxy> Ref);
   static Expected<SectionRef> get(const ObjectFileSchema &Schema,
                                   cas::CASID ID) {
     return get(Schema.getNode(ID));
@@ -206,7 +207,7 @@ public:
   static Expected<BlockRef> create(CompileUnitBuilder &CUB,
                                    const jitlink::Block &Block);
 
-  static Expected<BlockRef> get(Expected<ObjectFormatNodeRef> Ref);
+  static Expected<BlockRef> get(Expected<ObjectFormatNodeProxy> Ref);
   static Expected<BlockRef> get(const ObjectFileSchema &Schema, cas::CASID ID) {
     return get(Schema.getNode(ID));
   }
@@ -231,7 +232,7 @@ public:
   static Expected<BlockContentRef> create(CompileUnitBuilder &CUB,
                                           StringRef Content);
 
-  static Expected<BlockContentRef> get(Expected<ObjectFormatNodeRef> Ref);
+  static Expected<BlockContentRef> get(Expected<ObjectFormatNodeProxy> Ref);
   static Expected<BlockContentRef> get(const ObjectFileSchema &Schema,
                                        cas::CASID ID) {
     return get(Schema.getNode(ID));
@@ -251,7 +252,7 @@ public:
   static Expected<SymbolRef> create(CompileUnitBuilder &CUB,
                                     const jitlink::Symbol &S);
 
-  static Expected<SymbolRef> get(Expected<ObjectFormatNodeRef> Ref);
+  static Expected<SymbolRef> get(Expected<ObjectFormatNodeProxy> Ref);
   static Expected<SymbolRef> get(const ObjectFileSchema &Schema,
                                  cas::CASID ID) {
     return get(Schema.getNode(ID));
@@ -276,7 +277,7 @@ class CompileUnitRef : public SpecificRef<CompileUnitRef> {
 public:
   static constexpr StringLiteral KindString = "cas.o:compile-unit";
 
-  static Expected<CompileUnitRef> get(Expected<ObjectFormatNodeRef> Ref);
+  static Expected<CompileUnitRef> get(Expected<ObjectFormatNodeProxy> Ref);
   static Expected<CompileUnitRef> get(const ObjectFileSchema &Schema,
                                       cas::CASID ID) {
     return get(Schema.getNode(ID));
@@ -321,8 +322,8 @@ public:
 private:
   friend class CompileUnitRef;
 
-  unsigned recordNode(const ObjectFormatNodeRef &Ref);
-  unsigned commitNode(const ObjectFormatNodeRef &Ref);
+  unsigned recordNode(const ObjectFormatNodeProxy &Ref);
+  unsigned commitNode(const ObjectFormatNodeProxy &Ref);
   void pushNodes();
 
   // Cache all the CASID created.

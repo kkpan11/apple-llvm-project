@@ -455,7 +455,7 @@ void StatCollector::visitPOTItemNestedV1(
     function_ref<void(ObjectKindInfo &Info)> addNodeStats,
     cas::NodeProxy Node) {
   using namespace llvm::casobjectformats::nestedv1;
-  ObjectFormatNodeRef Object = ExitOnErr(Schema.getNode(Node));
+  ObjectFormatNodeProxy Object = ExitOnErr(Schema.getNode(Node));
   addNodeStats(Stats[Object.getKindString()]);
 
   // Check specific stats.
@@ -524,7 +524,7 @@ void StatCollector::visitPOTItemFlatV1(
     function_ref<void(ObjectKindInfo &Info)> addNodeStats,
     cas::NodeProxy Node) {
   using namespace llvm::casobjectformats::flatv1;
-  ObjectFormatNodeRef Object = ExitOnErr(Schema.getNode(Node));
+  ObjectFormatNodeProxy Object = ExitOnErr(Schema.getNode(Node));
   addNodeStats(Stats[Object.getKindString()]);
 }
 
