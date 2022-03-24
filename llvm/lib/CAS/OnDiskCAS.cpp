@@ -592,6 +592,52 @@ private:
   const Header *H = nullptr;
 };
 
+/// Proxy for an on-disk index record.
+struct IndexProxy {
+  FileOffset Offset;
+  ArrayRef<uint8_t> Hash;
+  TrieRecord &ObjectRef;
+};
+
+/// Proxy for an on-disk string record.
+struct OnDiskStringProxy {
+  FileOffset IndexOffset;
+  TrieRecord::Data Object;
+  StringRef String;
+};
+
+/// Proxy for an on-disk blob record.
+struct OnDiskBlobProxy {
+  FileOffset IndexOffset;
+  TrieRecord::Data Object;
+  ArrayRef<uint8_t> Hash;
+  ArrayRef<char> Data;
+};
+
+/// Proxy for an on-disk data record (node or tree).
+struct OnDiskDataRecordProxy {
+  FileOffset IndexOffset;
+  TrieRecord::Data Object;
+  ArrayRef<uint8_t> Hash;
+  DataRecordHandle Record;
+};
+
+/// Proxy for any on-disk object.
+struct OnDiskObjectProxy {
+  FileOffset IndexOffset;
+  TrieRecord::Data Object;
+  ArrayRef<uint8_t> Hash;
+  Optional<DataRecordHandle> Record;
+
+  /// Blobs and strings that don't have a data record are stored here.
+  Optional<ArrayRef<char>> Bytes;
+
+  static OnDiskObjectProxy get(OnDiskBlobProxy Blob) {
+    return OnDiskObjectProxy{Blob.IndexOffset, Blob.Object, Blob.Hash, None,
+                             Blob.Data};
+  }
+};
+
 /// On-disk CAS database and action cache (the latter should be separated).
 ///
 /// Here's a top-level description of the current layout (could expose or make
@@ -637,12 +683,6 @@ public:
   class TempFile;
   class MappedTempFile;
 
-  struct IndexProxy {
-    FileOffset Offset;
-    ArrayRef<uint8_t> Hash;
-    TrieRecord &ObjectRef;
-  };
-
   IndexProxy indexHash(ArrayRef<uint8_t> Hash);
   Expected<CASID> parseIDImpl(ArrayRef<uint8_t> Hash) final {
     return getID(indexHash(Hash));
@@ -665,56 +705,25 @@ public:
         getOrCreateNode(indexHash(ComputedHash), References, Data));
   }
 
-  struct StringProxy {
-    FileOffset IndexOffset;
-    TrieRecord::Data Object;
-    StringRef String;
-  };
-  struct BlobProxy {
-    FileOffset IndexOffset;
-    TrieRecord::Data Object;
-    ArrayRef<uint8_t> Hash;
-    ArrayRef<char> Data;
-  };
-  Expected<BlobProxy> getOrCreateBlob(IndexProxy I, ArrayRef<char> Data);
-  Expected<BlobProxy> createStandaloneBlob(IndexProxy &I, ArrayRef<char> Data);
+  Expected<OnDiskBlobProxy> getOrCreateBlob(IndexProxy I, ArrayRef<char> Data);
+  Expected<OnDiskBlobProxy> createStandaloneBlob(IndexProxy &I,
+                                                 ArrayRef<char> Data);
 
-  struct DataRecordProxy {
-    FileOffset IndexOffset;
-    TrieRecord::Data Object;
-    ArrayRef<uint8_t> Hash;
-    DataRecordHandle Record;
-  };
-
-  struct ObjectProxy {
-    FileOffset IndexOffset;
-    TrieRecord::Data Object;
-    ArrayRef<uint8_t> Hash;
-    Optional<DataRecordHandle> Record;
-
-    /// Blobs and strings that don't have a data record are stored here.
-    Optional<ArrayRef<char>> Bytes;
-
-    static ObjectProxy get(BlobProxy Blob) {
-      return ObjectProxy{Blob.IndexOffset, Blob.Object, Blob.Hash, None,
-                         Blob.Data};
-    }
-  };
-  Expected<DataRecordProxy>
+  Expected<OnDiskDataRecordProxy>
   getOrCreateDataRecord(IndexProxy &I, TrieRecord::ObjectKind OK,
                         DataRecordHandle::Input Input);
-  Expected<DataRecordProxy>
+  Expected<OnDiskDataRecordProxy>
   getOrCreateTree(IndexProxy I, ArrayRef<NamedTreeEntry> SortedEntries);
-  Expected<DataRecordProxy> getOrCreateNode(IndexProxy I,
-                                            ArrayRef<CASID> References,
-                                            ArrayRef<char> Data);
-  Expected<Optional<DataRecordProxy>> getDataRecord(IndexProxy I) const;
+  Expected<OnDiskDataRecordProxy> getOrCreateNode(IndexProxy I,
+                                                  ArrayRef<CASID> References,
+                                                  ArrayRef<char> Data);
+  Expected<Optional<OnDiskDataRecordProxy>> getDataRecord(IndexProxy I) const;
 
   Expected<MappedTempFile> createTempFile(StringRef FinalPath, uint64_t Size);
-  Expected<Optional<BlobProxy>> getBlob(IndexProxy I) const;
-  Expected<Optional<StringProxy>> getString(IndexProxy I) const;
+  Expected<Optional<OnDiskBlobProxy>> getBlob(IndexProxy I) const;
+  Expected<Optional<OnDiskStringProxy>> getString(IndexProxy I) const;
   Optional<StringRef> getString(InternalRef I) const;
-  Expected<Optional<ObjectProxy>> getObjectProxy(IndexProxy I) const;
+  Expected<Optional<OnDiskObjectProxy>> getObjectProxy(IndexProxy I) const;
   DataRecordHandle getPooledDataRecord(FileOffset Offset) const {
     return DataRecordHandle::get(DataPool.beginData(Offset));
   }
@@ -750,16 +759,16 @@ public:
   IndexProxy
   getIndexProxyFromPointer(OnDiskHashMappedTrie::const_pointer P) const;
 
-  Expected<StringProxy> getOrCreateString(IndexProxy I, StringRef String);
+  Expected<OnDiskStringProxy> getOrCreateString(IndexProxy I, StringRef String);
   Expected<InternalRef> getOrCreateStringRef(StringRef String);
   Optional<ObjectKind> getObjectKind(CASID ID) final;
 
   Expected<BlobRef> getBlob(CASID ID) final;
   Expected<NodeRef> getNode(CASID ID) final;
   Expected<TreeRef> getTree(CASID ID) final;
-  Expected<BlobRef> getBlobFromProxy(Expected<BlobProxy> Blob);
-  Expected<NodeRef> getNodeFromProxy(Expected<DataRecordProxy> Object);
-  Expected<TreeRef> getTreeFromProxy(Expected<DataRecordProxy> Object);
+  Expected<BlobRef> getBlobFromProxy(Expected<OnDiskBlobProxy> Blob);
+  Expected<NodeRef> getNodeFromProxy(Expected<OnDiskDataRecordProxy> Object);
+  Expected<TreeRef> getTreeFromProxy(Expected<OnDiskDataRecordProxy> Object);
 
   void print(raw_ostream &OS) const final;
 
@@ -1378,7 +1387,7 @@ void OnDiskCAS::print(raw_ostream &OS) const {
   }
 }
 
-OnDiskCAS::IndexProxy OnDiskCAS::indexHash(ArrayRef<uint8_t> Hash) {
+IndexProxy OnDiskCAS::indexHash(ArrayRef<uint8_t> Hash) {
   OnDiskHashMappedTrie::pointer P = Index.insertLazy(
       Hash, [](FileOffset TentativeOffset,
                OnDiskHashMappedTrie::ValueProxy TentativeValue) {
@@ -1391,7 +1400,7 @@ OnDiskCAS::IndexProxy OnDiskCAS::indexHash(ArrayRef<uint8_t> Hash) {
   return getIndexProxyFromPointer(P);
 }
 
-OnDiskCAS::IndexProxy OnDiskCAS::getIndexProxyFromPointer(
+IndexProxy OnDiskCAS::getIndexProxyFromPointer(
     OnDiskHashMappedTrie::const_pointer P) const {
   assert(P);
   assert(P.getOffset());
@@ -1438,9 +1447,10 @@ Optional<StringRef> OnDiskCAS::getString(InternalRef Ref) const {
   }
   if (OnDiskHashMappedTrie::const_pointer P =
           Index.recoverFromFileOffset(Ref.getFileOffset()))
-    if (Optional<Expected<StringProxy>> Proxy =
+    if (Optional<Expected<OnDiskStringProxy>> Proxy =
             dereferenceValue(getString(getIndexProxyFromPointer(P))))
-      if (Optional<StringProxy> Proxy2 = expectedToOptional(std::move(*Proxy)))
+      if (Optional<OnDiskStringProxy> Proxy2 =
+              expectedToOptional(std::move(*Proxy)))
         return Proxy2->String;
   return None;
 }
@@ -1484,13 +1494,13 @@ Optional<InternalRef> OnDiskCAS::getInternalRef(IndexProxy I,
   }
 }
 
-Expected<OnDiskCAS::StringProxy>
-OnDiskCAS::getOrCreateString(IndexProxy I, StringRef String) {
+Expected<OnDiskStringProxy> OnDiskCAS::getOrCreateString(IndexProxy I,
+                                                         StringRef String) {
   assert(String.size() <= UINT16_MAX &&
          "Expected caller to check string fits in 2B size");
 
   // See if it already exists.
-  if (Optional<Expected<StringProxy>> S = dereferenceValue(getString(I)))
+  if (Optional<Expected<OnDiskStringProxy>> S = dereferenceValue(getString(I)))
     return std::move(*S);
 
   FileOffset Offset;
@@ -1516,7 +1526,7 @@ OnDiskCAS::getOrCreateString(IndexProxy I, StringRef String) {
   // handle.
   TrieRecord::Data Existing;
   if (I.ObjectRef.compare_exchange_strong(Existing, StringData))
-    return StringProxy{I.Offset, StringData, S.getString()};
+    return OnDiskStringProxy{I.Offset, StringData, S.getString()};
 
   if (Existing.SK == TrieRecord::StorageKind::Unknown)
     return createCorruptObjectError(getID(I));
@@ -1528,7 +1538,7 @@ OnDiskCAS::getOrCreateString(IndexProxy I, StringRef String) {
 Expected<InternalRef> OnDiskCAS::getOrCreateStringRef(StringRef String) {
   // Make a blob if String is bigger than 64K.
   if (String.size() > UINT16_MAX) {
-    BlobProxy Blob;
+    OnDiskBlobProxy Blob;
     IndexProxy I =
         indexHash(BuiltinObjectHasher<HasherT>::hashBlob(toArrayRef(String)));
     if (Error E = getOrCreateBlob(I, toArrayRef(String)).moveInto(Blob))
@@ -1537,7 +1547,7 @@ Expected<InternalRef> OnDiskCAS::getOrCreateStringRef(StringRef String) {
   }
 
   // Make a string.
-  StringProxy S;
+  OnDiskStringProxy S;
   IndexProxy I = indexHash(BuiltinObjectHasher<HasherT>::hashString(String));
   if (Error E = getOrCreateString(I, String).moveInto(S))
     return std::move(E);
@@ -1567,52 +1577,51 @@ void OnDiskCAS::getStandalonePath(TrieRecord::StorageKind SK,
   sys::path::append(Path, FilePrefix + Twine(I.Offset.get()) + Suffix);
 }
 
-Expected<Optional<OnDiskCAS::StringProxy>>
-OnDiskCAS::getString(IndexProxy I) const {
-  Optional<OnDiskCAS::ObjectProxy> OP;
+Expected<Optional<OnDiskStringProxy>> OnDiskCAS::getString(IndexProxy I) const {
+  Optional<OnDiskObjectProxy> OP;
   if (Optional<Expected<NoneType>> E = moveValueInto(getObjectProxy(I), OP))
     return std::move(*E);
   assert(OP);
 
   assert(bool(OP->Record) != bool(OP->Bytes));
   if (OP->Bytes)
-    return StringProxy{I.Offset, OP->Object, toStringRef(*OP->Bytes)};
+    return OnDiskStringProxy{I.Offset, OP->Object, toStringRef(*OP->Bytes)};
 
   // Blobs and strings should not have references.
   if (!OP->Record->getRefs().empty())
     return createCorruptObjectError(getID(I));
-  return StringProxy{I.Offset, OP->Object, toStringRef(OP->Record->getData())};
+  return OnDiskStringProxy{I.Offset, OP->Object,
+                           toStringRef(OP->Record->getData())};
 }
 
-Expected<Optional<OnDiskCAS::BlobProxy>>
-OnDiskCAS::getBlob(IndexProxy I) const {
-  Optional<OnDiskCAS::ObjectProxy> OP;
+Expected<Optional<OnDiskBlobProxy>> OnDiskCAS::getBlob(IndexProxy I) const {
+  Optional<OnDiskObjectProxy> OP;
   if (Optional<Expected<NoneType>> E = moveValueInto(getObjectProxy(I), OP))
     return std::move(*E);
   assert(OP);
 
   assert(bool(OP->Record) != bool(OP->Bytes));
   if (OP->Bytes)
-    return BlobProxy{I.Offset, OP->Object, OP->Hash, *OP->Bytes};
+    return OnDiskBlobProxy{I.Offset, OP->Object, OP->Hash, *OP->Bytes};
 
   // Blobs should not have references.
   if (!OP->Record->getRefs().empty())
     return createCorruptObjectError(getID(I));
-  return BlobProxy{I.Offset, OP->Object, OP->Hash, OP->Record->getData()};
+  return OnDiskBlobProxy{I.Offset, OP->Object, OP->Hash, OP->Record->getData()};
 }
 
-Expected<Optional<OnDiskCAS::DataRecordProxy>>
+Expected<Optional<OnDiskDataRecordProxy>>
 OnDiskCAS::getDataRecord(IndexProxy I) const {
-  Optional<OnDiskCAS::ObjectProxy> OP;
+  Optional<OnDiskObjectProxy> OP;
   if (Optional<Expected<NoneType>> E = moveValueInto(getObjectProxy(I), OP))
     return std::move(*E);
 
   assert(OP->Record && "Expected record");
   assert(!OP->Bytes && "Unexpected blob");
-  return DataRecordProxy{I.Offset, OP->Object, OP->Hash, *OP->Record};
+  return OnDiskDataRecordProxy{I.Offset, OP->Object, OP->Hash, *OP->Record};
 }
 
-Expected<Optional<OnDiskCAS::ObjectProxy>>
+Expected<Optional<OnDiskObjectProxy>>
 OnDiskCAS::getObjectProxy(IndexProxy I) const {
   TrieRecord::Data Object = I.ObjectRef.load();
   if (Object.SK == TrieRecord::StorageKind::Unknown)
@@ -1628,15 +1637,15 @@ OnDiskCAS::getObjectProxy(IndexProxy I) const {
     DataRecordHandle Handle =
         DataRecordHandle::get(DataPool.beginData(Object.Offset));
     assert(Handle.getData().end()[0] == 0 && "Null termination");
-    return ObjectProxy{I.Offset, Object, I.Hash, Handle, None};
+    return OnDiskObjectProxy{I.Offset, Object, I.Hash, Handle, None};
   }
 
   case TrieRecord::StorageKind::DataPoolString2B: {
     String2BHandle Handle =
         String2BHandle::get(DataPool.beginData(Object.Offset));
     assert(Handle.getString().end()[0] == 0 && "Null termination");
-    return ObjectProxy{I.Offset, Object, I.Hash, None,
-                       toArrayRef(Handle.getString())};
+    return OnDiskObjectProxy{I.Offset, Object, I.Hash, None,
+                             toArrayRef(Handle.getString())};
   }
 
   case TrieRecord::StorageKind::Standalone:
@@ -1652,18 +1661,18 @@ OnDiskCAS::getObjectProxy(IndexProxy I) const {
   assert(!Object.Offset && "Unexpected offset for standalone objects");
 
   // Helper for creating the return.
-  auto createProxy = [&](MemoryBufferRef Buffer) -> ObjectProxy {
+  auto createProxy = [&](MemoryBufferRef Buffer) -> OnDiskObjectProxy {
     if (Blob) {
       assert(Buffer.getBuffer().drop_back(Blob0).end()[0] == 0 &&
              "Standalone blob missing null termination");
-      return ObjectProxy{I.Offset, Object, I.Hash, None,
-                         toArrayRef(Buffer.getBuffer().drop_back(Blob0))};
+      return OnDiskObjectProxy{I.Offset, Object, I.Hash, None,
+                               toArrayRef(Buffer.getBuffer().drop_back(Blob0))};
     }
 
     DataRecordHandle Record = DataRecordHandle::get(Buffer.getBuffer().data());
     assert(Record.getData().end()[0] == 0 &&
            "Standalone object record missing null termination for data");
-    return ObjectProxy{I.Offset, Object, I.Hash, Record, None};
+    return OnDiskObjectProxy{I.Offset, Object, I.Hash, Record, None};
   };
 
   // Check if we've loaded it already.
@@ -1711,8 +1720,8 @@ static size_t getPageSize() {
   return PageSize;
 }
 
-Expected<OnDiskCAS::BlobProxy>
-OnDiskCAS::createStandaloneBlob(IndexProxy &I, ArrayRef<char> Data) {
+Expected<OnDiskBlobProxy> OnDiskCAS::createStandaloneBlob(IndexProxy &I,
+                                                          ArrayRef<char> Data) {
   assert(Data.size() > TrieRecord::MaxEmbeddedSize &&
          "Expected a bigger file for external content...");
 
@@ -1754,10 +1763,10 @@ OnDiskCAS::createStandaloneBlob(IndexProxy &I, ArrayRef<char> Data) {
                           [&]() { return createCorruptObjectError(getID(I)); });
 }
 
-Expected<OnDiskCAS::BlobProxy> OnDiskCAS::getOrCreateBlob(IndexProxy I,
-                                                          ArrayRef<char> Data) {
+Expected<OnDiskBlobProxy> OnDiskCAS::getOrCreateBlob(IndexProxy I,
+                                                     ArrayRef<char> Data) {
   // See if it already exists.
-  if (Optional<Expected<BlobProxy>> Blob = dereferenceValue(getBlob(I)))
+  if (Optional<Expected<OnDiskBlobProxy>> Blob = dereferenceValue(getBlob(I)))
     return std::move(*Blob);
 
   if (Data.size() > TrieRecord::MaxEmbeddedSize)
@@ -1784,7 +1793,7 @@ Expected<OnDiskCAS::BlobProxy> OnDiskCAS::getOrCreateBlob(IndexProxy I,
                           [&]() { return createCorruptObjectError(getID(I)); });
 }
 
-Expected<OnDiskCAS::DataRecordProxy>
+Expected<OnDiskDataRecordProxy>
 OnDiskCAS::getOrCreateTree(IndexProxy I,
                            ArrayRef<NamedTreeEntry> SortedEntries) {
   InternalRefVector Refs;
@@ -1811,7 +1820,7 @@ OnDiskCAS::getOrCreateTree(IndexProxy I,
                                DataRecordHandle::Input{I.Offset, Refs, Data});
 }
 
-Expected<OnDiskCAS::DataRecordProxy>
+Expected<OnDiskDataRecordProxy>
 OnDiskCAS::getOrCreateNode(IndexProxy I, ArrayRef<CASID> References,
                            ArrayRef<char> Data) {
   InternalRefVector Refs;
@@ -1827,14 +1836,14 @@ OnDiskCAS::getOrCreateNode(IndexProxy I, ArrayRef<CASID> References,
                                DataRecordHandle::Input{I.Offset, Refs, Data});
 }
 
-Expected<OnDiskCAS::DataRecordProxy>
+Expected<OnDiskDataRecordProxy>
 OnDiskCAS::getOrCreateDataRecord(IndexProxy &I, TrieRecord::ObjectKind OK,
                                  DataRecordHandle::Input Input) {
   assert(OK != TrieRecord::ObjectKind::Blob &&
          "Expected blobs to be handled elsewhere");
 
   // See if it already exists.
-  if (Optional<Expected<DataRecordProxy>> Record =
+  if (Optional<Expected<OnDiskDataRecordProxy>> Record =
           dereferenceValue(getDataRecord(I)))
     return std::move(*Record);
 
@@ -1920,13 +1929,14 @@ OnDiskCAS::createPooledDataRecord(DataRecordHandle::Input Input) {
   return PooledDataRecord{Offset, Record};
 }
 
-Expected<BlobRef> OnDiskCAS::getBlobFromProxy(Expected<BlobProxy> Blob) {
+Expected<BlobRef> OnDiskCAS::getBlobFromProxy(Expected<OnDiskBlobProxy> Blob) {
   if (Blob)
     return makeBlobRef(getIDFromIndexOffset(Blob->IndexOffset), Blob->Data);
   return Blob.takeError();
 }
 
-Expected<NodeRef> OnDiskCAS::getNodeFromProxy(Expected<DataRecordProxy> Node) {
+Expected<NodeRef>
+OnDiskCAS::getNodeFromProxy(Expected<OnDiskDataRecordProxy> Node) {
   if (Node)
     return makeNodeRef(getIDFromIndexOffset(Node->IndexOffset),
                        &Node->Record.getHeader(), Node->Record.getNumRefs(),
@@ -1934,7 +1944,8 @@ Expected<NodeRef> OnDiskCAS::getNodeFromProxy(Expected<DataRecordProxy> Node) {
   return Node.takeError();
 }
 
-Expected<TreeRef> OnDiskCAS::getTreeFromProxy(Expected<DataRecordProxy> Tree) {
+Expected<TreeRef>
+OnDiskCAS::getTreeFromProxy(Expected<OnDiskDataRecordProxy> Tree) {
   if (Tree)
     return makeTreeRef(getIDFromIndexOffset(Tree->IndexOffset),
                        &Tree->Record.getHeader(),
@@ -1944,7 +1955,7 @@ Expected<TreeRef> OnDiskCAS::getTreeFromProxy(Expected<DataRecordProxy> Tree) {
 
 Expected<BlobRef> OnDiskCAS::getBlob(CASID ID) {
   if (OnDiskHashMappedTrie::const_pointer P = getInternalIndexPointer(ID))
-    if (Optional<Expected<BlobProxy>> Blob =
+    if (Optional<Expected<OnDiskBlobProxy>> Blob =
             dereferenceValue(getBlob(getIndexProxyFromPointer(P))))
       return getBlobFromProxy(std::move(*Blob));
   // FIXME: This should not be an error.
@@ -1953,7 +1964,7 @@ Expected<BlobRef> OnDiskCAS::getBlob(CASID ID) {
 
 Expected<NodeRef> OnDiskCAS::getNode(CASID ID) {
   if (OnDiskHashMappedTrie::const_pointer P = getInternalIndexPointer(ID))
-    if (Optional<Expected<DataRecordProxy>> Node =
+    if (Optional<Expected<OnDiskDataRecordProxy>> Node =
             dereferenceValue(getDataRecord(getIndexProxyFromPointer(P))))
       return getNodeFromProxy(std::move(*Node));
   // FIXME: This should not be an error.
@@ -1962,7 +1973,7 @@ Expected<NodeRef> OnDiskCAS::getNode(CASID ID) {
 
 Expected<TreeRef> OnDiskCAS::getTree(CASID ID) {
   if (OnDiskHashMappedTrie::const_pointer P = getInternalIndexPointer(ID))
-    if (Optional<Expected<DataRecordProxy>> Tree =
+    if (Optional<Expected<OnDiskDataRecordProxy>> Tree =
             dereferenceValue(getDataRecord(getIndexProxyFromPointer(P))))
       return getTreeFromProxy(std::move(*Tree));
   // FIXME: This should not be an error.
