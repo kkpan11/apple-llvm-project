@@ -690,19 +690,17 @@ public:
 
   Expected<BlobRef> createBlobImpl(ArrayRef<uint8_t> ComputedHash,
                                    ArrayRef<char> Data) final {
-    return getBlobFromProxy(getOrCreateBlob(indexHash(ComputedHash), Data));
+    return makeBlob(getOrCreateBlob(indexHash(ComputedHash), Data));
   }
   Expected<TreeRef>
   createTreeImpl(ArrayRef<uint8_t> ComputedHash,
                  ArrayRef<NamedTreeEntry> SortedEntries) final {
-    return getTreeFromProxy(
-        getOrCreateTree(indexHash(ComputedHash), SortedEntries));
+    return makeTree(getOrCreateTree(indexHash(ComputedHash), SortedEntries));
   }
   Expected<NodeRef> createNodeImpl(ArrayRef<uint8_t> ComputedHash,
                                    ArrayRef<CASID> References,
                                    ArrayRef<char> Data) final {
-    return getNodeFromProxy(
-        getOrCreateNode(indexHash(ComputedHash), References, Data));
+    return makeNode(getOrCreateNode(indexHash(ComputedHash), References, Data));
   }
 
   Expected<OnDiskBlobProxy> getOrCreateBlob(IndexProxy I, ArrayRef<char> Data);
@@ -766,9 +764,9 @@ public:
   Expected<BlobRef> getBlob(CASID ID) final;
   Expected<NodeRef> getNode(CASID ID) final;
   Expected<TreeRef> getTree(CASID ID) final;
-  Expected<BlobRef> getBlobFromProxy(Expected<OnDiskBlobProxy> Blob);
-  Expected<NodeRef> getNodeFromProxy(Expected<OnDiskDataRecordProxy> Object);
-  Expected<TreeRef> getTreeFromProxy(Expected<OnDiskDataRecordProxy> Object);
+  Expected<BlobRef> makeBlob(Expected<OnDiskBlobProxy> Blob);
+  Expected<NodeRef> makeNode(Expected<OnDiskDataRecordProxy> Object);
+  Expected<TreeRef> makeTree(Expected<OnDiskDataRecordProxy> Object);
 
   void print(raw_ostream &OS) const final;
 
@@ -1929,14 +1927,13 @@ OnDiskCAS::createPooledDataRecord(DataRecordHandle::Input Input) {
   return PooledDataRecord{Offset, Record};
 }
 
-Expected<BlobRef> OnDiskCAS::getBlobFromProxy(Expected<OnDiskBlobProxy> Blob) {
+Expected<BlobRef> OnDiskCAS::makeBlob(Expected<OnDiskBlobProxy> Blob) {
   if (Blob)
     return makeBlobRef(getIDFromIndexOffset(Blob->IndexOffset), Blob->Data);
   return Blob.takeError();
 }
 
-Expected<NodeRef>
-OnDiskCAS::getNodeFromProxy(Expected<OnDiskDataRecordProxy> Node) {
+Expected<NodeRef> OnDiskCAS::makeNode(Expected<OnDiskDataRecordProxy> Node) {
   if (Node)
     return makeNodeRef(getIDFromIndexOffset(Node->IndexOffset),
                        &Node->Record.getHeader(), Node->Record.getNumRefs(),
@@ -1944,8 +1941,7 @@ OnDiskCAS::getNodeFromProxy(Expected<OnDiskDataRecordProxy> Node) {
   return Node.takeError();
 }
 
-Expected<TreeRef>
-OnDiskCAS::getTreeFromProxy(Expected<OnDiskDataRecordProxy> Tree) {
+Expected<TreeRef> OnDiskCAS::makeTree(Expected<OnDiskDataRecordProxy> Tree) {
   if (Tree)
     return makeTreeRef(getIDFromIndexOffset(Tree->IndexOffset),
                        &Tree->Record.getHeader(),
@@ -1957,7 +1953,7 @@ Expected<BlobRef> OnDiskCAS::getBlob(CASID ID) {
   if (OnDiskHashMappedTrie::const_pointer P = getInternalIndexPointer(ID))
     if (Optional<Expected<OnDiskBlobProxy>> Blob =
             dereferenceValue(getBlob(getIndexProxyFromPointer(P))))
-      return getBlobFromProxy(std::move(*Blob));
+      return makeBlob(std::move(*Blob));
   // FIXME: This should not be an error.
   return createUnknownObjectError(ID);
 }
@@ -1966,7 +1962,7 @@ Expected<NodeRef> OnDiskCAS::getNode(CASID ID) {
   if (OnDiskHashMappedTrie::const_pointer P = getInternalIndexPointer(ID))
     if (Optional<Expected<OnDiskDataRecordProxy>> Node =
             dereferenceValue(getDataRecord(getIndexProxyFromPointer(P))))
-      return getNodeFromProxy(std::move(*Node));
+      return makeNode(std::move(*Node));
   // FIXME: This should not be an error.
   return createUnknownObjectError(ID);
 }
@@ -1975,7 +1971,7 @@ Expected<TreeRef> OnDiskCAS::getTree(CASID ID) {
   if (OnDiskHashMappedTrie::const_pointer P = getInternalIndexPointer(ID))
     if (Optional<Expected<OnDiskDataRecordProxy>> Tree =
             dereferenceValue(getDataRecord(getIndexProxyFromPointer(P))))
-      return getTreeFromProxy(std::move(*Tree));
+      return makeTree(std::move(*Tree));
   // FIXME: This should not be an error.
   return createUnknownObjectError(ID);
 }
