@@ -33,6 +33,8 @@ namespace builtin {
 ///   // Deal with None...
 /// }
 /// \endcode
+///
+/// FIXME: Needs tests. Should be moved to Error.h.
 template <class T>
 inline Optional<Expected<T>> transpose(Expected<Optional<T>> E) {
   if (!E)
@@ -54,6 +56,8 @@ inline Optional<Expected<T>> transpose(Expected<Optional<T>> E) {
 ///   // Deal with None...
 /// }
 /// \endcode
+///
+/// FIXME: Needs tests. Should be moved to Error.h.
 template <class T>
 inline Expected<T> dereferenceValue(Expected<Optional<T>> E,
                                     function_ref<Error()> OnNone) {
@@ -77,6 +81,8 @@ inline Expected<T> dereferenceValue(Expected<Optional<T>> E,
 ///   // Deal with value...
 /// }
 /// \endcode
+///
+/// FIXME: Needs tests. Should be moved to Error.h.
 template <class T, class SinkT>
 inline Optional<Expected<NoneType>>
 moveValueInto(Expected<Optional<T>> ExpectedOptional, SinkT &Sink) {
@@ -88,10 +94,14 @@ moveValueInto(Expected<Optional<T>> ExpectedOptional, SinkT &Sink) {
   return None;
 }
 
+/// FIXME: Should we switch to using ArrayRef<uint8_t>, or move this
+/// to StringExtras.h as an overload of the 'uint8_t' version?
 inline StringRef toStringRef(ArrayRef<char> Data) {
   return StringRef(Data.data(), Data.size());
 }
 
+/// FIXME: Should we switch to using ArrayRef<uint8_t>, or add a new
+/// name to arrayRefFromStringRef that works with 'char'?
 inline ArrayRef<char> toArrayRef(StringRef Data) {
   return ArrayRef<char>(Data.data(), Data.size());
 }
