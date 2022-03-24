@@ -11,11 +11,8 @@
 // RUN: cp %S/Inputs/header2.h %t.dir/Inputs/header2.h
 // RUN: cp %S/Inputs/module.modulemap %t.dir/Inputs/module.modulemap
 // RUN: sed -e "s|DIR|%/t.dir|g" %S/Inputs/modules_cdb.json > %t.cdb
-// RUN: sed -e "s|DIR|%/t.dir|g" %S/Inputs/modules_cdb_clangcl.json > %t_clangcl.cdb
 //
 // RUN: clang-scan-deps -cas -cas-path %t.dir/cas -compilation-database %t.cdb -j 1 -mode preprocess-minimized-sources | \
-// RUN:   FileCheck --check-prefixes=CHECK1,CHECK2,CHECK2NO %s
-// RUN: clang-scan-deps -cas -cas-path %t.dir/cas -compilation-database %t_clangcl.cdb -j 1 -mode preprocess-minimized-sources | \
 // RUN:   FileCheck --check-prefixes=CHECK1,CHECK2,CHECK2NO %s
 //
 // The output order is non-deterministic when using more than one thread,
@@ -25,19 +22,11 @@
 //
 // RUN: clang-scan-deps -cas -cas-path %t.dir/cas -compilation-database %t.cdb -j 2 -mode preprocess-minimized-sources | \
 // RUN:   FileCheck --check-prefix=CHECK1 %s
-// RUN: clang-scan-deps -cas -cas-path %t.dir/cas -compilation-database %t_clangcl.cdb -j 2 -mode preprocess-minimized-sources | \
-// RUN:   FileCheck --check-prefix=CHECK1 %s
 // RUN: clang-scan-deps -cas -cas-path %t.dir/cas -compilation-database %t.cdb -j 2 -mode preprocess | \
-// RUN:   FileCheck --check-prefix=CHECK1 %s
-// RUN: clang-scan-deps -cas -cas-path %t.dir/cas -compilation-database %t_clangcl.cdb -j 2 -mode preprocess | \
 // RUN:   FileCheck --check-prefix=CHECK1 %s
 // RUN: clang-scan-deps -cas -cas-path %t.dir/cas -compilation-database %t.cdb -j 2 -mode preprocess-minimized-sources | \
 // RUN:   FileCheck --check-prefix=CHECK2 %s
-// RUN: clang-scan-deps -cas -cas-path %t.dir/cas -compilation-database %t_clangcl.cdb -j 2 -mode preprocess-minimized-sources | \
-// RUN:   FileCheck --check-prefix=CHECK2 %s
 // RUN: clang-scan-deps -cas -cas-path %t.dir/cas -compilation-database %t.cdb -j 2 -mode preprocess | \
-// RUN:   FileCheck --check-prefix=CHECK2 %s
-// RUN: clang-scan-deps -cas -cas-path %t.dir/cas -compilation-database %t_clangcl.cdb -j 2 -mode preprocess | \
 // RUN:   FileCheck --check-prefix=CHECK2 %s
 
 #include "header.h"
