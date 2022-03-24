@@ -32,14 +32,14 @@ class ObjectFileSchema;
 /// instead... or, drop the type-id entirely except when it's needed to
 /// distinguish the type of a referenced object. (Note that dropping the
 /// type-id would break \a getKindString().)
-class ObjectFormatNodeRef : public cas::NodeRef {
+class ObjectFormatNodeRef : public cas::NodeProxy {
 public:
   static Expected<ObjectFormatNodeRef> get(const ObjectFileSchema &Schema,
-                                           Expected<cas::NodeRef> Ref);
+                                           Expected<cas::NodeProxy> Ref);
   StringRef getKindString() const;
 
   /// Return the data skipping the type-id character.
-  StringRef getData() const { return cas::NodeRef::getData().drop_front(); }
+  StringRef getData() const { return cas::NodeProxy::getData().drop_front(); }
 
   const ObjectFileSchema &getSchema() const { return *Schema; }
 
@@ -50,8 +50,9 @@ public:
   ObjectFormatNodeRef() = delete;
 
 protected:
-  ObjectFormatNodeRef(const ObjectFileSchema &Schema, const cas::NodeRef &Node)
-      : cas::NodeRef(Node), Schema(&Schema) {}
+  ObjectFormatNodeRef(const ObjectFileSchema &Schema,
+                      const cas::NodeProxy &Node)
+      : cas::NodeProxy(Node), Schema(&Schema) {}
 
   class Builder {
   public:
@@ -91,7 +92,7 @@ class ObjectFileSchema final : public SchemaBase {
   void anchor() override;
 
 public:
-  Optional<StringRef> getKindString(const cas::NodeRef &Node) const;
+  Optional<StringRef> getKindString(const cas::NodeProxy &Node) const;
   Optional<unsigned char> getKindStringID(StringRef KindString) const;
 
   cas::CASID getRootNodeTypeID() const { return *RootNodeTypeID; }
@@ -99,18 +100,18 @@ public:
   /// Check if \a Node is a root (entry node) for the schema. This is a strong
   /// check, since it requires that the first reference matches a complete
   /// type-id DAG.
-  bool isRootNode(const cas::NodeRef &Node) const override;
+  bool isRootNode(const cas::NodeProxy &Node) const override;
 
   /// Check if \a Node could be a node in the schema. This is a weak check,
   /// since it only looks up the KindString associated with the first
   /// character. The caller should ensure that the parent node is in the schema
   /// before calling this.
-  bool isNode(const cas::NodeRef &Node) const override;
+  bool isNode(const cas::NodeProxy &Node) const override;
 
   Expected<std::unique_ptr<reader::CASObjectReader>>
-  createObjectReader(cas::NodeRef RootNode) const override;
+  createObjectReader(cas::NodeProxy RootNode) const override;
 
-  Expected<cas::NodeRef>
+  Expected<cas::NodeProxy>
   createFromLinkGraphImpl(const jitlink::LinkGraph &G,
                           raw_ostream *DebugOS) const override;
 

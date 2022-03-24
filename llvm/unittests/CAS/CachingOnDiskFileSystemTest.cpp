@@ -353,7 +353,7 @@ TEST(CachingOnDiskFileSystemTest, TrackNewAccesses) {
     for (const auto &F : Files)
       EXPECT_FALSE(FS->getRealPath(F.path(), Path));
 
-    Optional<cas::TreeRef> Tree;
+    Optional<cas::TreeProxy> Tree;
     ASSERT_THAT_ERROR(FS->createTreeFromNewAccesses(
                             [&](const vfs::CachedDirectoryEntry &Entry) {
                               return Remapper.map(Entry);

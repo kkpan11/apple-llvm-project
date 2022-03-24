@@ -67,7 +67,7 @@ Expected<StringRef> DependencyScanningCASFilesystem::getMinimized(
     cas::CASID OutputID, StringRef Identifier,
     Optional<cas::CASID> &MinimizedDataID) {
   // Extract the blob IDs from the tree.
-  Expected<cas::TreeRef> Tree = CAS.getTree(OutputID);
+  Expected<cas::TreeProxy> Tree = CAS.getTree(OutputID);
   if (!Tree)
     return Tree.takeError();
   auto unwrapID =
@@ -163,7 +163,7 @@ Expected<StringRef> DependencyScanningCASFilesystem::computeMinimized(
   }
 
   // Success. Add to the CAS and get back persistent output data.
-  BlobRef Minimized = reportAsFatalIfError(CAS.createBlob(Buffer));
+  BlobProxy Minimized = reportAsFatalIfError(CAS.createBlob(Buffer));
   MinimizedDataID = Minimized;
   StringRef OutputData = *Minimized;
 
@@ -198,7 +198,7 @@ Expected<StringRef> DependencyScanningCASFilesystem::computeMinimized(
 
 Expected<StringRef>
 DependencyScanningCASFilesystem::getOriginal(cas::CASID InputDataID) {
-  Expected<cas::BlobRef> Blob = CAS.getBlob(InputDataID);
+  Expected<cas::BlobProxy> Blob = CAS.getBlob(InputDataID);
   if (Blob)
     return Blob->getData();
   return Blob.takeError();

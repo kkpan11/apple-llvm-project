@@ -31,20 +31,20 @@ enum class ObjectKind {
 };
 
 /// Generic CAS object reference.
-class ObjectRef {
+class ObjectProxy {
 public:
   CASID getID() const { return ID; }
   operator CASID() const { return ID; }
 
 protected:
-  explicit ObjectRef(CASID ID) : ID(ID) {}
+  explicit ObjectProxy(CASID ID) : ID(ID) {}
 
 private:
   CASID ID;
 };
 
 /// Reference to a blob in the CAS.
-class BlobRef : public ObjectRef {
+class BlobProxy : public ObjectProxy {
 public:
   /// Get the content of the blob. Valid as long as the CAS is valid.
   StringRef getData() const { return Data; }
@@ -54,10 +54,10 @@ public:
   StringRef operator*() const { return Data; }
   const StringRef *operator->() const { return &Data; }
 
-  BlobRef() = delete;
+  BlobProxy() = delete;
 
 private:
-  BlobRef(CASID ID, StringRef Data) : ObjectRef(ID), Data(Data) {
+  BlobProxy(CASID ID, StringRef Data) : ObjectProxy(ID), Data(Data) {
     assert(Data.end()[0] == 0 && "Blobs should guarantee null-termination");
   }
 
@@ -74,7 +74,7 @@ private:
 /// implementation of CASDB to use reference counting for tree objects. Not
 /// sure the utility, though, and it would add cost -- seems easier/better to
 /// just make objects valid "forever".
-class TreeRef : public ObjectRef {
+class TreeProxy : public ObjectProxy {
 public:
   bool empty() const { return NumEntries == 0; }
   size_t size() const { return NumEntries; }
@@ -87,11 +87,11 @@ public:
   inline Error
   forEachEntry(function_ref<Error(const NamedTreeEntry &)> Callback) const;
 
-  TreeRef() = delete;
+  TreeProxy() = delete;
 
 private:
-  TreeRef(CASID ID, CASDB &CAS, const void *Tree, size_t NumEntries)
-      : ObjectRef(ID), CAS(&CAS), Tree(Tree), NumEntries(NumEntries) {}
+  TreeProxy(CASID ID, CASDB &CAS, const void *Tree, size_t NumEntries)
+      : ObjectProxy(ID), CAS(&CAS), Tree(Tree), NumEntries(NumEntries) {}
 
   friend class CASDB;
   CASDB *CAS;
@@ -102,7 +102,7 @@ private:
 /// Reference to an abstract hierarchical node, with data and references.
 /// Reference is passed by value and is expected to be valid as long as the \a
 /// CASDB is.
-class NodeRef : public ObjectRef {
+class NodeProxy : public ObjectProxy {
 public:
   CASDB &getCAS() const { return *CAS; }
 
@@ -116,13 +116,13 @@ public:
   /// Get the content of the node. Valid as long as the CAS is valid.
   StringRef getData() const { return Data; }
 
-  NodeRef() = delete;
+  NodeProxy() = delete;
 
 private:
-  NodeRef(CASID ID, CASDB &CAS, const void *Object, size_t NumReferences,
-          StringRef Data)
-      : ObjectRef(ID), CAS(&CAS), Object(Object), NumReferences(NumReferences),
-        Data(Data) {}
+  NodeProxy(CASID ID, CASDB &CAS, const void *Object, size_t NumReferences,
+            StringRef Data)
+      : ObjectProxy(ID), CAS(&CAS), Object(Object),
+        NumReferences(NumReferences), Data(Data) {}
 
   friend class CASDB;
   CASDB *CAS;
@@ -141,13 +141,13 @@ public:
   /// be a reference that has been constructed correctly.
   virtual Expected<CASID> parseID(StringRef Reference) = 0;
 
-  virtual Expected<BlobRef> createBlob(StringRef Data) = 0;
+  virtual Expected<BlobProxy> createBlob(StringRef Data) = 0;
 
-  virtual Expected<TreeRef>
+  virtual Expected<TreeProxy>
   createTree(ArrayRef<NamedTreeEntry> Entries = None) = 0;
 
-  virtual Expected<NodeRef> createNode(ArrayRef<CASID> References,
-                                       StringRef Data) = 0;
+  virtual Expected<NodeProxy> createNode(ArrayRef<CASID> References,
+                                         StringRef Data) = 0;
 
   /// Default implementation reads \p FD and calls \a createBlob(). Does not
   /// take ownership of \p FD; the caller is responsible for closing it.
@@ -158,21 +158,21 @@ public:
   /// where \p Status implies).
   ///
   /// Returns the \a CASID and the size of the file.
-  Expected<BlobRef>
+  Expected<BlobProxy>
   createBlobFromOpenFile(sys::fs::file_t FD,
                          Optional<sys::fs::file_status> Status = None) {
     return createBlobFromOpenFileImpl(FD, Status);
   }
 
 protected:
-  virtual Expected<BlobRef>
+  virtual Expected<BlobProxy>
   createBlobFromOpenFileImpl(sys::fs::file_t FD,
                              Optional<sys::fs::file_status> Status);
 
 public:
-  virtual Expected<BlobRef> getBlob(CASID ID) = 0;
-  virtual Expected<TreeRef> getTree(CASID ID) = 0;
-  virtual Expected<NodeRef> getNode(CASID ID) = 0;
+  virtual Expected<BlobProxy> getBlob(CASID ID) = 0;
+  virtual Expected<TreeProxy> getTree(CASID ID) = 0;
+  virtual Expected<NodeProxy> getNode(CASID ID) = 0;
 
   virtual Optional<ObjectKind> getObjectKind(CASID ID) = 0;
   virtual bool isKnownObject(CASID ID) { return bool(getObjectKind(ID)); }
@@ -186,85 +186,87 @@ public:
   virtual ~CASDB() = default;
 
 protected:
-  // Support for TreeRef.
-  friend class TreeRef;
-  virtual Optional<NamedTreeEntry> lookupInTree(const TreeRef &Tree,
+  // Support for TreeProxy.
+  friend class TreeProxy;
+  virtual Optional<NamedTreeEntry> lookupInTree(const TreeProxy &Tree,
                                                 StringRef Name) const = 0;
-  virtual NamedTreeEntry getInTree(const TreeRef &Tree, size_t I) const = 0;
+  virtual NamedTreeEntry getInTree(const TreeProxy &Tree, size_t I) const = 0;
   virtual Error forEachEntryInTree(
-      const TreeRef &Tree,
+      const TreeProxy &Tree,
       function_ref<Error(const NamedTreeEntry &)> Callback) const = 0;
 
-  /// Build a \a BlobRef. For use by derived classes to access the private
-  /// constructor of \a BlobRef. Templated as a hack to allow this to be
-  /// declared before \a TreeRef.
-  static BlobRef makeBlobRef(CASID ID, StringRef Data) {
-    return BlobRef(ID, Data);
+  /// Build a \a BlobProxy. For use by derived classes to access the private
+  /// constructor of \a BlobProxy. Templated as a hack to allow this to be
+  /// declared before \a TreeProxy.
+  static BlobProxy makeBlobProxy(CASID ID, StringRef Data) {
+    return BlobProxy(ID, Data);
   }
 
-  static BlobRef makeBlobRef(CASID ID, ArrayRef<char> Data) {
-    return BlobRef(ID, StringRef(Data.data(), Data.size()));
+  static BlobProxy makeBlobProxy(CASID ID, ArrayRef<char> Data) {
+    return BlobProxy(ID, StringRef(Data.data(), Data.size()));
   }
 
   /// Extract the tree pointer from \p Ref. For use by derived classes to
   /// access the private pointer member. Ensures \p Ref comes from this
   /// instance.
   ///
-  const void *getTreePtr(const TreeRef &Ref) const {
+  const void *getTreePtr(const TreeProxy &Ref) const {
     assert(Ref.CAS == this);
     assert(Ref.Tree);
     return Ref.Tree;
   }
 
-  /// Build a \a TreeRef from a pointer. For use by derived classes to access
-  /// the private constructor of \a TreeRef.
-  TreeRef makeTreeRef(CASID ID, const void *TreePtr, size_t NumEntries) {
+  /// Build a \a TreeProxy from a pointer. For use by derived classes to access
+  /// the private constructor of \a TreeProxy.
+  TreeProxy makeTreeProxy(CASID ID, const void *TreePtr, size_t NumEntries) {
     assert(TreePtr);
-    return TreeRef(ID, *this, TreePtr, NumEntries);
+    return TreeProxy(ID, *this, TreePtr, NumEntries);
   }
 
-  // Support for NodeRef.
-  friend class NodeRef;
-  virtual CASID getReferenceInNode(const NodeRef &Ref, size_t I) const = 0;
+  // Support for NodeProxy.
+  friend class NodeProxy;
+  virtual CASID getReferenceInNode(const NodeProxy &Ref, size_t I) const = 0;
   virtual Error
-  forEachReferenceInNode(const NodeRef &Ref,
+  forEachReferenceInNode(const NodeProxy &Ref,
                          function_ref<Error(CASID)> Callback) const = 0;
 
   /// Extract the object pointer from \p Ref. For use by derived classes to
   /// access the private pointer member. Ensures \p Ref comes from this
   /// instance.
   ///
-  const void *getNodePtr(const NodeRef &Ref) const {
+  const void *getNodePtr(const NodeProxy &Ref) const {
     assert(Ref.CAS == this);
     assert(Ref.Object);
     return Ref.Object;
   }
 
-  /// Build a \a NodeRef from a pointer. For use by derived classes to
-  /// access the private constructor of \a NodeRef.
-  NodeRef makeNodeRef(CASID ID, const void *ObjectPtr, size_t NumReferences,
-                      StringRef Data) {
+  /// Build a \a NodeProxy from a pointer. For use by derived classes to
+  /// access the private constructor of \a NodeProxy.
+  NodeProxy makeNodeProxy(CASID ID, const void *ObjectPtr, size_t NumReferences,
+                          StringRef Data) {
     assert(ObjectPtr);
-    return NodeRef(ID, *this, ObjectPtr, NumReferences, Data);
+    return NodeProxy(ID, *this, ObjectPtr, NumReferences, Data);
   }
 };
 
-Optional<NamedTreeEntry> TreeRef::lookup(StringRef Name) const {
+Optional<NamedTreeEntry> TreeProxy::lookup(StringRef Name) const {
   return CAS->lookupInTree(*this, Name);
 }
 
-NamedTreeEntry TreeRef::get(size_t I) const { return CAS->getInTree(*this, I); }
+NamedTreeEntry TreeProxy::get(size_t I) const {
+  return CAS->getInTree(*this, I);
+}
 
-Error TreeRef::forEachEntry(
+Error TreeProxy::forEachEntry(
     function_ref<Error(const NamedTreeEntry &)> Callback) const {
   return CAS->forEachEntryInTree(*this, Callback);
 }
 
-CASID NodeRef::getReference(size_t I) const {
+CASID NodeProxy::getReference(size_t I) const {
   return CAS->getReferenceInNode(*this, I);
 }
 
-Error NodeRef::forEachReference(function_ref<Error(CASID)> Callback) const {
+Error NodeProxy::forEachReference(function_ref<Error(CASID)> Callback) const {
   return CAS->forEachReferenceInNode(*this, Callback);
 }
 

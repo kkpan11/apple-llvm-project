@@ -48,7 +48,7 @@ cl::opt<bool> InlineSymbols("inline-symbols",
                             cl::init(false));
 
 Expected<std::unique_ptr<CASObjectReader>>
-ObjectFileSchema::createObjectReader(cas::NodeRef RootNode) const {
+ObjectFileSchema::createObjectReader(cas::NodeProxy RootNode) const {
   if (!isRootNode(RootNode))
     return createStringError(inconvertibleErrorCode(), "invalid root node");
   auto CU = CompileUnitRef::get(*this, RootNode);
@@ -60,7 +60,7 @@ ObjectFileSchema::createObjectReader(cas::NodeRef RootNode) const {
   return std::move(Reader);
 }
 
-Expected<cas::NodeRef>
+Expected<cas::NodeProxy>
 ObjectFileSchema::createFromLinkGraphImpl(const jitlink::LinkGraph &G,
                                           raw_ostream *DebugOS) const {
   return CompileUnitRef::create(*this, G, DebugOS);
@@ -75,7 +75,7 @@ ObjectFileSchema::ObjectFileSchema(cas::CASDB &CAS) : SchemaBase(CAS) {
 Error ObjectFileSchema::fillCache() {
   Optional<cas::CASID> RootKindID;
   const unsigned Version = 0; // Bump this to error on old object files.
-  if (Expected<cas::NodeRef> ExpectedRootKind =
+  if (Expected<cas::NodeProxy> ExpectedRootKind =
           CAS.createNode(None, "cas.o:flatv1:schema:" + Twine(Version).str()))
     RootKindID = *ExpectedRootKind;
   else
@@ -106,7 +106,7 @@ Error ObjectFileSchema::fillCache() {
 }
 
 Optional<StringRef>
-ObjectFileSchema::getKindString(const cas::NodeRef &Node) const {
+ObjectFileSchema::getKindString(const cas::NodeProxy &Node) const {
   assert(&Node.getCAS() == &CAS);
   StringRef Data = Node.getData();
   if (Data.empty())
@@ -119,13 +119,13 @@ ObjectFileSchema::getKindString(const cas::NodeRef &Node) const {
   return None;
 }
 
-bool ObjectFileSchema::isRootNode(const cas::NodeRef &Node) const {
+bool ObjectFileSchema::isRootNode(const cas::NodeProxy &Node) const {
   if (Node.getNumReferences() < 1)
     return false;
   return Node.getReference(0) == *RootNodeTypeID;
 }
 
-bool ObjectFileSchema::isNode(const cas::NodeRef &Node) const {
+bool ObjectFileSchema::isNode(const cas::NodeProxy &Node) const {
   // This is a very weak check!
   return bool(getKindString(Node));
 }
@@ -221,7 +221,7 @@ static bool compareEdges(const jitlink::Edge *LHS, const jitlink::Edge *RHS) {
 
 Expected<ObjectFormatNodeRef>
 ObjectFormatNodeRef::get(const ObjectFileSchema &Schema,
-                         Expected<cas::NodeRef> Ref) {
+                         Expected<cas::NodeProxy> Ref) {
   if (!Ref)
     return Ref.takeError();
   if (!Schema.isNode(*Ref))

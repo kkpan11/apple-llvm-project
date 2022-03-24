@@ -45,18 +45,18 @@ public:
   /// Check if \a Node is a root (entry node) for the schema. This is a strong
   /// check, since it requires that the first reference matches a complete
   /// type-id DAG.
-  virtual bool isRootNode(const cas::NodeRef &Node) const = 0;
+  virtual bool isRootNode(const cas::NodeProxy &Node) const = 0;
 
   /// Check if \a Node could be a node in the schema. This is a weak check,
   /// since it only looks up the KindString associated with the first
   /// character. The caller should ensure that the parent node is in the schema
   /// before calling this.
-  virtual bool isNode(const cas::NodeRef &Node) const = 0;
+  virtual bool isNode(const cas::NodeProxy &Node) const = 0;
 
   virtual Expected<std::unique_ptr<reader::CASObjectReader>>
-  createObjectReader(cas::NodeRef RootNode) const = 0;
+  createObjectReader(cas::NodeProxy RootNode) const = 0;
 
-  Expected<cas::NodeRef>
+  Expected<cas::NodeProxy>
   createFromLinkGraph(const jitlink::LinkGraph &G,
                       raw_ostream *DebugOS = nullptr) const {
     return createFromLinkGraphImpl(G, DebugOS);
@@ -65,7 +65,7 @@ public:
   cas::CASDB &CAS;
 
 protected:
-  virtual Expected<cas::NodeRef>
+  virtual Expected<cas::NodeProxy>
   createFromLinkGraphImpl(const jitlink::LinkGraph &G,
                           raw_ostream *DebugOS) const = 0;
 
@@ -89,7 +89,7 @@ public:
   /// cannot be used beyond the \p SchemaPool instance's lifetime.
   ///
   /// Thread-safe.
-  SchemaBase *getSchemaForRoot(cas::NodeRef Node) const;
+  SchemaBase *getSchemaForRoot(cas::NodeProxy Node) const;
 
   Expected<std::unique_ptr<reader::CASObjectReader>>
   createObjectReader(cas::CASID ID) const;

@@ -688,18 +688,18 @@ public:
     return getID(indexHash(Hash));
   }
 
-  Expected<BlobRef> createBlobImpl(ArrayRef<uint8_t> ComputedHash,
-                                   ArrayRef<char> Data) final {
+  Expected<BlobProxy> createBlobImpl(ArrayRef<uint8_t> ComputedHash,
+                                     ArrayRef<char> Data) final {
     return makeBlob(getOrCreateBlob(indexHash(ComputedHash), Data));
   }
-  Expected<TreeRef>
+  Expected<TreeProxy>
   createTreeImpl(ArrayRef<uint8_t> ComputedHash,
                  ArrayRef<NamedTreeEntry> SortedEntries) final {
     return makeTree(getOrCreateTree(indexHash(ComputedHash), SortedEntries));
   }
-  Expected<NodeRef> createNodeImpl(ArrayRef<uint8_t> ComputedHash,
-                                   ArrayRef<CASID> References,
-                                   ArrayRef<char> Data) final {
+  Expected<NodeProxy> createNodeImpl(ArrayRef<uint8_t> ComputedHash,
+                                     ArrayRef<CASID> References,
+                                     ArrayRef<char> Data) final {
     return makeNode(getOrCreateNode(indexHash(ComputedHash), References, Data));
   }
 
@@ -761,12 +761,12 @@ public:
   Expected<InternalRef> getOrCreateStringRef(StringRef String);
   Optional<ObjectKind> getObjectKind(CASID ID) final;
 
-  Expected<BlobRef> getBlob(CASID ID) final;
-  Expected<NodeRef> getNode(CASID ID) final;
-  Expected<TreeRef> getTree(CASID ID) final;
-  Expected<BlobRef> makeBlob(Expected<OnDiskBlobProxy> Blob);
-  Expected<NodeRef> makeNode(Expected<OnDiskDataRecordProxy> Object);
-  Expected<TreeRef> makeTree(Expected<OnDiskDataRecordProxy> Object);
+  Expected<BlobProxy> getBlob(CASID ID) final;
+  Expected<NodeProxy> getNode(CASID ID) final;
+  Expected<TreeProxy> getTree(CASID ID) final;
+  Expected<BlobProxy> makeBlob(Expected<OnDiskBlobProxy> Blob);
+  Expected<NodeProxy> makeNode(Expected<OnDiskDataRecordProxy> Object);
+  Expected<TreeProxy> makeTree(Expected<OnDiskDataRecordProxy> Object);
 
   void print(raw_ostream &OS) const final;
 
@@ -777,18 +777,18 @@ public:
 
 private:
   // TreeAPI.
-  Optional<NamedTreeEntry> lookupInTree(const TreeRef &Tree,
+  Optional<NamedTreeEntry> lookupInTree(const TreeProxy &Tree,
                                         StringRef Name) const final;
   NamedTreeEntry makeTreeEntry(DataRecordHandle Record, size_t I,
                                ArrayRef<StringRef> NameCache = None) const;
-  NamedTreeEntry getInTree(const TreeRef &Tree, size_t I) const final;
+  NamedTreeEntry getInTree(const TreeProxy &Tree, size_t I) const final;
   Error forEachEntryInTree(
-      const TreeRef &Tree,
+      const TreeProxy &Tree,
       function_ref<Error(const NamedTreeEntry &)> Callback) const final;
 
   // NodeAPI.
-  CASID getReferenceInNode(const NodeRef &Ref, size_t I) const final;
-  Error forEachReferenceInNode(const NodeRef &Ref,
+  CASID getReferenceInNode(const NodeProxy &Ref, size_t I) const final;
+  Error forEachReferenceInNode(const NodeProxy &Ref,
                                function_ref<Error(CASID)> Callback) const final;
 
   StringRef getPathForID(StringRef BaseDir, CASID ID,
@@ -842,7 +842,7 @@ private:
   ///
   /// NOTE: Could use ThreadSafeHashMappedTrie here. For now, doing something
   /// simpler on the assumption there won't be much contention since most data
-  /// is not big. If there is contention, and we've already fixed NodeRef
+  /// is not big. If there is contention, and we've already fixed NodeProxy
   /// object handles to be cheap enough to use consistently, the fix might be
   /// to use better use of them rather than optimizing this map.
   ///
@@ -1927,29 +1927,29 @@ OnDiskCAS::createPooledDataRecord(DataRecordHandle::Input Input) {
   return PooledDataRecord{Offset, Record};
 }
 
-Expected<BlobRef> OnDiskCAS::makeBlob(Expected<OnDiskBlobProxy> Blob) {
+Expected<BlobProxy> OnDiskCAS::makeBlob(Expected<OnDiskBlobProxy> Blob) {
   if (Blob)
-    return makeBlobRef(getIDFromIndexOffset(Blob->IndexOffset), Blob->Data);
+    return makeBlobProxy(getIDFromIndexOffset(Blob->IndexOffset), Blob->Data);
   return Blob.takeError();
 }
 
-Expected<NodeRef> OnDiskCAS::makeNode(Expected<OnDiskDataRecordProxy> Node) {
+Expected<NodeProxy> OnDiskCAS::makeNode(Expected<OnDiskDataRecordProxy> Node) {
   if (Node)
-    return makeNodeRef(getIDFromIndexOffset(Node->IndexOffset),
-                       &Node->Record.getHeader(), Node->Record.getNumRefs(),
-                       toStringRef(Node->Record.getData()));
+    return makeNodeProxy(getIDFromIndexOffset(Node->IndexOffset),
+                         &Node->Record.getHeader(), Node->Record.getNumRefs(),
+                         toStringRef(Node->Record.getData()));
   return Node.takeError();
 }
 
-Expected<TreeRef> OnDiskCAS::makeTree(Expected<OnDiskDataRecordProxy> Tree) {
+Expected<TreeProxy> OnDiskCAS::makeTree(Expected<OnDiskDataRecordProxy> Tree) {
   if (Tree)
-    return makeTreeRef(getIDFromIndexOffset(Tree->IndexOffset),
-                       &Tree->Record.getHeader(),
-                       Tree->Record.getNumRefs() / 2);
+    return makeTreeProxy(getIDFromIndexOffset(Tree->IndexOffset),
+                         &Tree->Record.getHeader(),
+                         Tree->Record.getNumRefs() / 2);
   return Tree.takeError();
 }
 
-Expected<BlobRef> OnDiskCAS::getBlob(CASID ID) {
+Expected<BlobProxy> OnDiskCAS::getBlob(CASID ID) {
   if (OnDiskHashMappedTrie::const_pointer P = getInternalIndexPointer(ID))
     if (Optional<Expected<OnDiskBlobProxy>> Blob =
             dereferenceValue(getBlob(getIndexProxyFromPointer(P))))
@@ -1958,7 +1958,7 @@ Expected<BlobRef> OnDiskCAS::getBlob(CASID ID) {
   return createUnknownObjectError(ID);
 }
 
-Expected<NodeRef> OnDiskCAS::getNode(CASID ID) {
+Expected<NodeProxy> OnDiskCAS::getNode(CASID ID) {
   if (OnDiskHashMappedTrie::const_pointer P = getInternalIndexPointer(ID))
     if (Optional<Expected<OnDiskDataRecordProxy>> Node =
             dereferenceValue(getDataRecord(getIndexProxyFromPointer(P))))
@@ -1967,7 +1967,7 @@ Expected<NodeRef> OnDiskCAS::getNode(CASID ID) {
   return createUnknownObjectError(ID);
 }
 
-Expected<TreeRef> OnDiskCAS::getTree(CASID ID) {
+Expected<TreeProxy> OnDiskCAS::getTree(CASID ID) {
   if (OnDiskHashMappedTrie::const_pointer P = getInternalIndexPointer(ID))
     if (Optional<Expected<OnDiskDataRecordProxy>> Tree =
             dereferenceValue(getDataRecord(getIndexProxyFromPointer(P))))
@@ -1998,7 +1998,7 @@ NamedTreeEntry OnDiskCAS::makeTreeEntry(DataRecordHandle Record, size_t I,
   return NamedTreeEntry(*ID, Kind, Name);
 }
 
-Optional<NamedTreeEntry> OnDiskCAS::lookupInTree(const TreeRef &Tree,
+Optional<NamedTreeEntry> OnDiskCAS::lookupInTree(const TreeProxy &Tree,
                                                  StringRef Name) const {
   DataRecordHandle Record = DataRecordHandle::get(
       reinterpret_cast<char *>(const_cast<void *>(getTreePtr(Tree))));
@@ -2054,7 +2054,7 @@ Optional<NamedTreeEntry> OnDiskCAS::lookupInTree(const TreeRef &Tree,
   return None;
 }
 
-NamedTreeEntry OnDiskCAS::getInTree(const TreeRef &Tree, size_t I) const {
+NamedTreeEntry OnDiskCAS::getInTree(const TreeProxy &Tree, size_t I) const {
   DataRecordHandle Record = DataRecordHandle::get(
       reinterpret_cast<char *>(const_cast<void *>(getTreePtr(Tree))));
 
@@ -2062,7 +2062,7 @@ NamedTreeEntry OnDiskCAS::getInTree(const TreeRef &Tree, size_t I) const {
 }
 
 Error OnDiskCAS::forEachEntryInTree(
-    const TreeRef &Tree,
+    const TreeProxy &Tree,
     function_ref<Error(const NamedTreeEntry &)> Callback) const {
   DataRecordHandle Record = DataRecordHandle::get(
       reinterpret_cast<char *>(const_cast<void *>(getTreePtr(Tree))));
@@ -2075,7 +2075,7 @@ Error OnDiskCAS::forEachEntryInTree(
   return Error::success();
 }
 
-CASID OnDiskCAS::getReferenceInNode(const NodeRef &Node, size_t I) const {
+CASID OnDiskCAS::getReferenceInNode(const NodeProxy &Node, size_t I) const {
   DataRecordHandle Record = DataRecordHandle::get(
       reinterpret_cast<char *>(const_cast<void *>(getNodePtr(Node))));
 
@@ -2085,7 +2085,7 @@ CASID OnDiskCAS::getReferenceInNode(const NodeRef &Node, size_t I) const {
 }
 
 Error OnDiskCAS::forEachReferenceInNode(
-    const NodeRef &Node, function_ref<Error(CASID)> Callback) const {
+    const NodeProxy &Node, function_ref<Error(CASID)> Callback) const {
   DataRecordHandle Record = DataRecordHandle::get(
       reinterpret_cast<char *>(const_cast<void *>(getNodePtr(Node))));
 

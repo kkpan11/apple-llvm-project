@@ -26,7 +26,7 @@ std::string CASID::toString() const {
 }
 
 /// Default implementation opens the file and calls \a createBlob().
-Expected<BlobRef>
+Expected<BlobProxy>
 CASDB::createBlobFromOpenFileImpl(sys::fs::file_t FD,
                                   Optional<sys::fs::file_status> Status) {
   // Check whether we can trust the size from stat.

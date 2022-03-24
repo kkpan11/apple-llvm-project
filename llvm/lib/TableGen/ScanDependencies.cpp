@@ -76,7 +76,7 @@ void tablegen::scanTextForIncludes(StringRef Input,
 static Error
 fetchCachedIncludedFiles(cas::CASDB &CAS, cas::CASID ID,
                          SmallVectorImpl<StringRef> &IncludedFiles) {
-  Expected<cas::BlobRef> ExpectedBlob = CAS.getBlob(ID);
+  Expected<cas::BlobProxy> ExpectedBlob = CAS.getBlob(ID);
   if (!ExpectedBlob)
     return ExpectedBlob.takeError();
   splitFlattenedStrings(ExpectedBlob->getData(), IncludedFiles);
@@ -90,7 +90,7 @@ static Error computeIncludedFiles(cas::CASDB &CAS, cas::CASID Key,
   scanTextForIncludes(Input, IncludedFiles);
   flattenStrings(IncludedFiles, ResultToCache);
 
-  Expected<cas::BlobRef> ExpectedResult = CAS.createBlob(ResultToCache);
+  Expected<cas::BlobProxy> ExpectedResult = CAS.createBlob(ResultToCache);
   if (!ExpectedResult)
     return ExpectedResult.takeError();
   if (Error E = CAS.putCachedResult(Key, *ExpectedResult))
@@ -99,11 +99,11 @@ static Error computeIncludedFiles(cas::CASDB &CAS, cas::CASID Key,
 }
 
 Error tablegen::scanTextForIncludes(cas::CASDB &CAS, cas::CASID ExecID,
-                                    const cas::BlobRef &Blob,
+                                    const cas::BlobProxy &Blob,
                                     SmallVectorImpl<StringRef> &Includes) {
   constexpr StringLiteral CacheKeyData = "llvm::tablegen::scanTextForIncludes";
 
-  Expected<cas::NodeRef> Key = CAS.createNode({ExecID, Blob}, CacheKeyData);
+  Expected<cas::NodeProxy> Key = CAS.createNode({ExecID, Blob}, CacheKeyData);
   if (!Key)
     return Key.takeError();
 
@@ -135,18 +135,18 @@ tablegen::lookupIncludeID(cas::CachingOnDiskFileSystem &FS,
 Error tablegen::accessAllIncludes(cas::CachingOnDiskFileSystem &FS,
                                   cas::CASID ExecID,
                                   ArrayRef<std::string> IncludeDirs,
-                                  const cas::BlobRef &MainFileBlob) {
+                                  const cas::BlobProxy &MainFileBlob) {
   cas::CASDB &CAS = FS.getCAS();
 
   // Helper for adding to the worklist.
-  SmallVector<cas::BlobRef> Worklist = {MainFileBlob};
+  SmallVector<cas::BlobProxy> Worklist = {MainFileBlob};
   SmallDenseSet<cas::CASID, 16> Seen;
   Seen.insert(MainFileBlob);
   auto push = [&Seen, &Worklist, &CAS](cas::CASID ID) -> Error {
     if (!Seen.insert(ID).second)
       return Error::success();
 
-    Expected<cas::BlobRef> Blob = CAS.getBlob(ID);
+    Expected<cas::BlobProxy> Blob = CAS.getBlob(ID);
     if (!Blob)
       return Blob.takeError();
     Worklist.push_back(*Blob);
@@ -172,8 +172,8 @@ Error tablegen::accessAllIncludes(cas::CachingOnDiskFileSystem &FS,
   return Error::success();
 }
 
-static Expected<cas::BlobRef> openMainFile(cas::CachingOnDiskFileSystem &FS,
-                                           StringRef MainFilename) {
+static Expected<cas::BlobProxy> openMainFile(cas::CachingOnDiskFileSystem &FS,
+                                             StringRef MainFilename) {
   cas::CASDB &CAS = FS.getCAS();
 
   // FIXME: FileSystem should virtualize stdin.
@@ -208,7 +208,7 @@ Expected<ScanIncludesResult> tablegen::scanIncludes(
     return std::move(E);
 
   FS->trackNewAccesses();
-  Expected<cas::BlobRef> MainBlob = openMainFile(*FS, MainFilename);
+  Expected<cas::BlobProxy> MainBlob = openMainFile(*FS, MainFilename);
   if (!MainBlob)
     return MainBlob.takeError();
 
@@ -225,7 +225,7 @@ Expected<ScanIncludesResult> tablegen::scanIncludes(
     PM->sort();
   }
 
-  Expected<cas::TreeRef> Tree = FS->createTreeFromNewAccesses(
+  Expected<cas::TreeProxy> Tree = FS->createTreeFromNewAccesses(
       [&](const vfs::CachedDirectoryEntry &Entry) {
         return PM ? PM->map(Entry) : Entry.getTreePath();
       });

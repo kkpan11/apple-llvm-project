@@ -541,7 +541,7 @@ int cc1_main(ArrayRef<const char *> Argv, const char *Argv0, void *MainAddr) {
       llvm::report_fatal_error(Outputs.takeError());
 
     // Hack around llvm::errs() not being captured by the output backend yet.
-    Expected<llvm::cas::BlobRef> Errs = CAS->createBlob(ResultDiags);
+    Expected<llvm::cas::BlobProxy> Errs = CAS->createBlob(ResultDiags);
     if (!Errs)
       llvm::report_fatal_error(Errs.takeError());
 

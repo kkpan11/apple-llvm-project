@@ -18,7 +18,7 @@
 
 namespace llvm {
 namespace cas {
-class TreeRef;
+class TreeProxy;
 }
 } // namespace llvm
 
@@ -92,16 +92,16 @@ public:
                     llvm::Optional<StringRef> ModuleName = None);
 
   /// Collect dependency tree.
-  llvm::Expected<llvm::cas::TreeRef>
+  llvm::Expected<llvm::cas::TreeProxy>
   getDependencyTree(const std::vector<std::string> &CommandLine, StringRef CWD);
 
-  llvm::Expected<llvm::cas::TreeRef> getDependencyTreeFromCompilerInvocation(
+  llvm::Expected<llvm::cas::TreeProxy> getDependencyTreeFromCompilerInvocation(
       std::shared_ptr<CompilerInvocation> Invocation, StringRef CWD,
       DiagnosticConsumer &DiagsConsumer,
       llvm::function_ref<StringRef(const llvm::vfs::CachedDirectoryEntry &)>
           RemapPath = nullptr);
 
-  llvm::Expected<llvm::cas::TreeRef>
+  llvm::Expected<llvm::cas::TreeProxy>
   getDependencyTreeFromCC1CommandLine(ArrayRef<const char *> Args,
                                       StringRef CWD);
 

@@ -382,18 +382,18 @@ private:
       auto ID = readCASIDBuffer(CAS, MBRef);
       if (!ID)
         return ID.takeError();
-  
-      auto BlobRef = CAS.getBlob(*ID);
-      if (!BlobRef) {
+
+      auto BlobProxy = CAS.getBlob(*ID);
+      if (!BlobProxy) {
         // FIXME: Support CAS schema objects.
-        consumeError(BlobRef.takeError());
+        consumeError(BlobProxy.takeError());
         return createStringError(
             std::make_error_code(std::errc::invalid_argument),
             "CASID object input '" + Member.MemberName + "' not a blob object");
       }
-  
+
       // This is a native macho file.
-      Member.Contents = BlobRef->getData();
+      Member.Contents = BlobProxy->getData();
       // Clear file status since it doesn't matter, the source is the CAS ID.
       Member.ModTime = sys::TimePoint<std::chrono::seconds>();
       Member.UID = 0;

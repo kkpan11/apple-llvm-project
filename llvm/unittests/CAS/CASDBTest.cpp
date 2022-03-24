@@ -75,7 +75,7 @@ multiline text multiline text multiline text multiline text multiline text)",
   // Check that the blobs can be retrieved multiple times.
   for (int I = 0, E = IDs.size(); I != E; ++I) {
     for (int J = 0, JE = 3; J != JE; ++J) {
-      Optional<BlobRef> Buffer;
+      Optional<BlobProxy> Buffer;
       ASSERT_THAT_ERROR(CAS1->getBlob(IDs[I]).moveInto(Buffer), Succeeded());
       EXPECT_EQ(ContentStrings[I], **Buffer);
     }
@@ -93,7 +93,7 @@ multiline text multiline text multiline text multiline text multiline text)",
     auto &Content = ContentStrings[I - 1];
     EXPECT_EQ(ID, ExitOnErr(CAS2->createBlob(Content)));
 
-    Optional<BlobRef> Buffer;
+    Optional<BlobProxy> Buffer;
     ASSERT_THAT_ERROR(CAS2->getBlob(ID).moveInto(Buffer), Succeeded());
     EXPECT_EQ(Content, **Buffer);
   }
@@ -126,7 +126,7 @@ TEST_P(CASDBTest, BlobsBig) {
     Storage.resize(SizeE, '\01');
   for (size_t Size = InterestingSize - 2; Size != SizeE; ++Size) {
     StringRef Data(Storage.data(), Size);
-    Optional<BlobRef> Blob;
+    Optional<BlobProxy> Blob;
     ASSERT_THAT_ERROR(CAS->createBlob(Data).moveInto(Blob), Succeeded());
     ASSERT_EQ(Data, Blob->getData());
     ASSERT_EQ(0, Blob->getData().end()[0]);
@@ -183,7 +183,7 @@ TEST_P(CASDBTest, Trees) {
     ASSERT_THAT_ERROR(CAS1->createTree(FlatTreeEntries[I]).moveInto(ID),
                       Succeeded());
     EXPECT_EQ(FlatIDs[I], ID);
-    Optional<TreeRef> Tree;
+    Optional<TreeProxy> Tree;
     ASSERT_THAT_ERROR(CAS1->getTree(FlatIDs[I]).moveInto(Tree), Succeeded());
     EXPECT_EQ(FlatTreeEntries[I].size(), Tree->size());
 
@@ -213,7 +213,7 @@ TEST_P(CASDBTest, Trees) {
 
     // Check that the correct entries come back.
     for (CASDB *CAS : {&*CAS1, &*CAS2}) {
-      Optional<TreeRef> Tree = expectedToOptional(CAS->getTree(ID));
+      Optional<TreeProxy> Tree = expectedToOptional(CAS->getTree(ID));
       EXPECT_TRUE(Tree);
       for (int I = 0, E = SortedEntries.size(); I != E; ++I)
         EXPECT_EQ(SortedEntries[I], Tree->get(I));
@@ -253,7 +253,7 @@ TEST_P(CASDBTest, Trees) {
     EXPECT_EQ(ID, ExitOnErr(CAS2->createTree(Entries)));
 
     for (CASDB *CAS : {&*CAS1, &*CAS2}) {
-      Optional<TreeRef> Tree;
+      Optional<TreeProxy> Tree;
       ASSERT_THAT_ERROR(CAS->getTree(ID).moveInto(Tree), Succeeded());
       for (int I = 0, E = Entries.size(); I != E; ++I)
         EXPECT_EQ(Entries[I], Tree->get(I));
@@ -282,7 +282,7 @@ TEST_P(CASDBTest, NodesBig) {
   for (size_t Size = SizeB; Size < SizeE; Size += WordSize) {
     for (bool IsAligned : {false, true}) {
       StringRef Data(Storage.data(), Size - (IsAligned ? 0 : 1));
-      Optional<NodeRef> Node;
+      Optional<NodeProxy> Node;
       ASSERT_THAT_ERROR(CAS->createNode(None, Data).moveInto(Node), Succeeded());
       ASSERT_EQ(Data, Node->getData());
       ASSERT_EQ(0, Node->getData().end()[0]);

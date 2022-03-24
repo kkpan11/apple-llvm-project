@@ -79,7 +79,7 @@ void BuiltinCAS::printIDImpl(raw_ostream &OS, const CASID &ID) const {
   OS << getCASIDPrefix() << Hash;
 }
 
-Expected<BlobRef> BuiltinCAS::createBlob(ArrayRef<char> Data) {
+Expected<BlobProxy> BuiltinCAS::createBlob(ArrayRef<char> Data) {
   return createBlobImpl(BuiltinObjectHasher<HasherT>::hashBlob(Data), Data);
 }
 
@@ -88,7 +88,7 @@ static size_t getPageSize() {
   return PageSize;
 }
 
-Expected<BlobRef>
+Expected<BlobProxy>
 BuiltinCAS::createBlobFromOpenFileImpl(sys::fs::file_t FD,
                                        Optional<sys::fs::file_status> Status) {
   int PageSize = getPageSize();
@@ -100,7 +100,7 @@ BuiltinCAS::createBlobFromOpenFileImpl(sys::fs::file_t FD,
   }
 
   constexpr size_t MinMappedSize = 4 * 4096;
-  auto readWithStream = [&]() -> Expected<BlobRef> {
+  auto readWithStream = [&]() -> Expected<BlobProxy> {
     SmallString<MinMappedSize * 2> Data;
     if (Error E = sys::fs::readNativeFileToEOF(FD, Data, MinMappedSize))
       return std::move(E);
@@ -132,7 +132,7 @@ BuiltinCAS::createBlobFromOpenFileImpl(sys::fs::file_t FD,
   return createBlobImpl(ComputedHash, Data);
 }
 
-Expected<TreeRef> BuiltinCAS::createTree(ArrayRef<NamedTreeEntry> Entries) {
+Expected<TreeProxy> BuiltinCAS::createTree(ArrayRef<NamedTreeEntry> Entries) {
   // Ensure a stable order for tree entries and ignore name collisions.
   SmallVector<NamedTreeEntry> Sorted(Entries.begin(), Entries.end());
   std::stable_sort(Sorted.begin(), Sorted.end());
@@ -142,8 +142,8 @@ Expected<TreeRef> BuiltinCAS::createTree(ArrayRef<NamedTreeEntry> Entries) {
       BuiltinObjectHasher<HasherT>::hashTree(Sorted), Sorted);
 }
 
-Expected<NodeRef> BuiltinCAS::createNode(ArrayRef<CASID> References,
-                                         ArrayRef<char> Data) {
+Expected<NodeProxy> BuiltinCAS::createNode(ArrayRef<CASID> References,
+                                           ArrayRef<char> Data) {
   return createNodeImpl(BuiltinObjectHasher<HasherT>::hashNode(References, Data),
                         References, Data);
 }

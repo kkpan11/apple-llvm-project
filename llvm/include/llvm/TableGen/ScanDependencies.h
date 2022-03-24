@@ -43,7 +43,7 @@ void scanTextForIncludes(StringRef Input, SmallVectorImpl<StringRef> &Includes);
 /// \p ExecID is the Blob for the running executable. It can be used as part of
 /// the key for caching to avoid (fixed) bugs poisoning results.
 Error scanTextForIncludes(cas::CASDB &CAS, cas::CASID ExecID,
-                          const cas::BlobRef &Blob,
+                          const cas::BlobProxy &Blob,
                           SmallVectorImpl<StringRef> &Includes);
 
 /// Match logic from SourceMgr::AddIncludeFile.
@@ -59,13 +59,13 @@ Optional<cas::CASID> lookupIncludeID(cas::CachingOnDiskFileSystem &FS,
 /// the key for caching to avoid (fixed) bugs poisoning results.
 Error accessAllIncludes(cas::CachingOnDiskFileSystem &FS, cas::CASID ExecID,
                         ArrayRef<std::string> IncludeDirs,
-                        const cas::BlobRef &MainFileBlob);
+                        const cas::BlobProxy &MainFileBlob);
 
 Error createMainFileError(StringRef MainFilename, std::error_code EC);
 
 struct ScanIncludesResult {
   cas::CASID IncludesTree;
-  cas::BlobRef MainBlob;
+  cas::BlobProxy MainBlob;
 };
 
 /// Scan includes and build a CAS tree. If \p PrefixMappings is not \c None,

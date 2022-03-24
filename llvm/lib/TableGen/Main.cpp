@@ -292,7 +292,7 @@ Expected<cas::CASID> TableGenCache::createExecutableBlob(StringRef Argv0) {
   ErrorOr<std::unique_ptr<MemoryBuffer>> Buffer = MemoryBuffer::getFile(Argv0);
   if (!Buffer)
     return errorCodeToError(Buffer.getError());
-  Expected<cas::BlobRef> Blob = CAS->createBlob((**Buffer).getBuffer());
+  Expected<cas::BlobProxy> Blob = CAS->createBlob((**Buffer).getBuffer());
   if (!Blob)
     return Blob.takeError();
   return *Blob;
@@ -344,7 +344,7 @@ TableGenCache::createCommandLineBlob(ArrayRef<const char *> Args) {
     Args = Args.drop_front();
   }
 
-  Expected<cas::BlobRef> Blob = CAS->createBlob(CommandLine);
+  Expected<cas::BlobProxy> Blob = CAS->createBlob(CommandLine);
   if (!Blob)
     return Blob.takeError();
   return *Blob;
@@ -360,7 +360,7 @@ Error TableGenCache::createAction(ArrayRef<const char *> Args) {
   Builder.push(*MainFileID, cas::TreeEntry::Regular, "input");
   Builder.push(*ExecutableID, cas::TreeEntry::Regular, "executable");
   Builder.push(*CommandLineID, cas::TreeEntry::Regular, "command-line");
-  Expected<cas::TreeRef> Tree = Builder.create(*CAS);
+  Expected<cas::TreeProxy> Tree = Builder.create(*CAS);
   if (!Tree)
     return Tree.takeError();
   ActionID = *Tree;
@@ -472,7 +472,7 @@ Error TableGenCache::computeResult(TableGenMainFn *MainFn) {
     if (Error E = addFile("stderr", Diags.OS.str()))
       return E;
 
-  Expected<cas::TreeRef> Tree = Builder.create(*CAS);
+  Expected<cas::TreeProxy> Tree = Builder.create(*CAS);
   if (!Tree)
     return Tree.takeError();
   return CAS->putCachedResult(*ActionID, *Tree);
@@ -481,23 +481,23 @@ Error TableGenCache::computeResult(TableGenMainFn *MainFn) {
 Error TableGenCache::replayResult() {
   assert(ResultID && "Need a result!");
 
-  Expected<cas::TreeRef> Tree = CAS->getTree(*ResultID);
+  Expected<cas::TreeProxy> Tree = CAS->getTree(*ResultID);
   if (!Tree)
     return Tree.takeError();
 
-  auto getBlob = [&](StringRef Name, Optional<cas::BlobRef> &Blob) -> Error {
+  auto getBlob = [&](StringRef Name, Optional<cas::BlobProxy> &Blob) -> Error {
     Optional<cas::NamedTreeEntry> Entry = Tree->lookup(Name);
     if (!Entry)
       return Error::success();
-    Expected<cas::BlobRef> ExpectedBlob = CAS->getBlob(Entry->getID());
+    Expected<cas::BlobProxy> ExpectedBlob = CAS->getBlob(Entry->getID());
     if (!ExpectedBlob)
       return ExpectedBlob.takeError();
     Blob = *ExpectedBlob;
     return Error::success();
   };
-  Optional<cas::BlobRef> Output;
-  Optional<cas::BlobRef> Depend;
-  Optional<cas::BlobRef> Stderr;
+  Optional<cas::BlobProxy> Output;
+  Optional<cas::BlobProxy> Depend;
+  Optional<cas::BlobProxy> Stderr;
   if (Error E = getBlob("output", Output))
     return E;
   if (Error E = getBlob("depend", Depend))

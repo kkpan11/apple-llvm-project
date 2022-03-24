@@ -502,7 +502,7 @@ static Expected<InputFile *> addCASObject(SchemaPool &CASSchemas, CASID ID,
 static Error addCASTree(SchemaPool &CASSchemas, CASID ID) {
   return walkFileTreeRecursively(
       CASSchemas.getCAS(), ID,
-      [&](const NamedTreeEntry &entry, Optional<TreeRef>) -> Error {
+      [&](const NamedTreeEntry &entry, Optional<TreeProxy>) -> Error {
         if (entry.getKind() == TreeEntry::Tree)
           return Error::success();
         if (entry.getKind() != TreeEntry::Regular) {
@@ -1300,7 +1300,7 @@ static bool linkWithResultCaching(InputArgList &args, bool canExitEarly,
   CASDB &CAS = *config->CAS;
 
   Optional<CASID> optCacheKey;
-  Optional<TreeRef> rootRef;
+  Optional<TreeProxy> rootRef;
   {
     TimeTraceScope timeScope("Caching: create key");
 
@@ -1402,7 +1402,7 @@ static bool linkWithResultCaching(InputArgList &args, bool canExitEarly,
       return false;
     }
 
-    Expected<BlobRef> blob = CAS.createBlob(outBuffer->getBuffer());
+    Expected<BlobProxy> blob = CAS.createBlob(outBuffer->getBuffer());
     if (!blob) {
       error("error creating CAS blob for output: " +
             toString(blob.takeError()));

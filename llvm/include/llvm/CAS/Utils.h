@@ -19,7 +19,7 @@ namespace cas {
 class CASDB;
 class CASID;
 class NamedTreeEntry;
-class TreeRef;
+class TreeProxy;
 
 Expected<CASID> readCASIDBuffer(cas::CASDB &CAS, llvm::MemoryBufferRef Buffer);
 
@@ -31,11 +31,11 @@ void writeCASIDBuffer(const CASID &ID, llvm::raw_ostream &OS);
 /// The \p NamedTreeEntry, that the \p Callback receives, points to a name
 /// string that may not live beyond the return of the callback function.
 ///
-/// Passes the \p TreeRef if the entry is a \p TreeEntry::Tree, otherwise passes
-/// \p None.
+/// Passes the \p TreeProxy if the entry is a \p TreeEntry::Tree, otherwise
+/// passes \p None.
 Error walkFileTreeRecursively(
     CASDB &CAS, CASID ID,
-    function_ref<Error(const NamedTreeEntry &, Optional<TreeRef>)> Callback);
+    function_ref<Error(const NamedTreeEntry &, Optional<TreeProxy>)> Callback);
 
 } // namespace cas
 } // namespace llvm

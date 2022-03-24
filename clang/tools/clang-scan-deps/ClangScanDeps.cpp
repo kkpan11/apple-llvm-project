@@ -278,7 +278,7 @@ handleMakeDependencyToolResult(const std::string &Input,
 
 static bool
 handleTreeDependencyToolResult(llvm::cas::CASDB &CAS, const std::string &Input,
-                               llvm::Expected<llvm::cas::TreeRef> &MaybeTree,
+                               llvm::Expected<llvm::cas::TreeProxy> &MaybeTree,
                                SharedStream &OS, SharedStream &Errs) {
   if (!MaybeTree) {
     llvm::handleAllErrors(
@@ -601,7 +601,7 @@ int main(int argc, const char **argv) {
   struct DepTreeResult {
     size_t Index;
     std::string Filename;
-    Expected<llvm::cas::TreeRef> MaybeTree;
+    Expected<llvm::cas::TreeProxy> MaybeTree;
   };
   std::vector<DepTreeResult> TreeResults;
 
