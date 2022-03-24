@@ -27,14 +27,14 @@ namespace builtin {
 /// Expected<Optional<SomeType>> f1(...);
 ///
 /// Expected<SomeType> f2(...) {
-///   if (Optional<Expected<NoneType>> E = dereferenceValue(f1()))
+///   if (Optional<Expected<NoneType>> E = transpose(f1()))
 ///     return std::move(*E);
 ///
 ///   // Deal with None...
 /// }
 /// \endcode
 template <class T>
-inline Optional<Expected<T>> dereferenceValue(Expected<Optional<T>> E) {
+inline Optional<Expected<T>> transpose(Expected<Optional<T>> E) {
   if (!E)
     return Expected<T>(E.takeError());
   if (*E)
@@ -57,7 +57,7 @@ inline Optional<Expected<T>> dereferenceValue(Expected<Optional<T>> E) {
 template <class T>
 inline Expected<T> dereferenceValue(Expected<Optional<T>> E,
                                     function_ref<Error()> OnNone) {
-  if (Optional<Expected<T>> MaybeExpected = dereferenceValue(std::move(E)))
+  if (Optional<Expected<T>> MaybeExpected = transpose(std::move(E)))
     return std::move(*MaybeExpected);
   return OnNone();
 }

@@ -1446,7 +1446,7 @@ Optional<StringRef> OnDiskCAS::getString(InternalRef Ref) const {
   if (OnDiskHashMappedTrie::const_pointer P =
           Index.recoverFromFileOffset(Ref.getFileOffset()))
     if (Optional<Expected<OnDiskStringProxy>> Proxy =
-            dereferenceValue(getString(getIndexProxyFromPointer(P))))
+            transpose(getString(getIndexProxyFromPointer(P))))
       if (Optional<OnDiskStringProxy> Proxy2 =
               expectedToOptional(std::move(*Proxy)))
         return Proxy2->String;
@@ -1498,7 +1498,7 @@ Expected<OnDiskStringProxy> OnDiskCAS::getOrCreateString(IndexProxy I,
          "Expected caller to check string fits in 2B size");
 
   // See if it already exists.
-  if (Optional<Expected<OnDiskStringProxy>> S = dereferenceValue(getString(I)))
+  if (Optional<Expected<OnDiskStringProxy>> S = transpose(getString(I)))
     return std::move(*S);
 
   FileOffset Offset;
@@ -1764,7 +1764,7 @@ Expected<OnDiskBlobProxy> OnDiskCAS::createStandaloneBlob(IndexProxy &I,
 Expected<OnDiskBlobProxy> OnDiskCAS::getOrCreateBlob(IndexProxy I,
                                                      ArrayRef<char> Data) {
   // See if it already exists.
-  if (Optional<Expected<OnDiskBlobProxy>> Blob = dereferenceValue(getBlob(I)))
+  if (Optional<Expected<OnDiskBlobProxy>> Blob = transpose(getBlob(I)))
     return std::move(*Blob);
 
   if (Data.size() > TrieRecord::MaxEmbeddedSize)
@@ -1842,7 +1842,7 @@ OnDiskCAS::getOrCreateDataRecord(IndexProxy &I, TrieRecord::ObjectKind OK,
 
   // See if it already exists.
   if (Optional<Expected<OnDiskDataRecordProxy>> Record =
-          dereferenceValue(getDataRecord(I)))
+          transpose(getDataRecord(I)))
     return std::move(*Record);
 
   // Compute the storage kind, allocate it, and create the record.
@@ -1952,7 +1952,7 @@ Expected<TreeProxy> OnDiskCAS::makeTree(Expected<OnDiskDataRecordProxy> Tree) {
 Expected<BlobProxy> OnDiskCAS::getBlob(CASID ID) {
   if (OnDiskHashMappedTrie::const_pointer P = getInternalIndexPointer(ID))
     if (Optional<Expected<OnDiskBlobProxy>> Blob =
-            dereferenceValue(getBlob(getIndexProxyFromPointer(P))))
+            transpose(getBlob(getIndexProxyFromPointer(P))))
       return makeBlob(std::move(*Blob));
   // FIXME: This should not be an error.
   return createUnknownObjectError(ID);
@@ -1961,7 +1961,7 @@ Expected<BlobProxy> OnDiskCAS::getBlob(CASID ID) {
 Expected<NodeProxy> OnDiskCAS::getNode(CASID ID) {
   if (OnDiskHashMappedTrie::const_pointer P = getInternalIndexPointer(ID))
     if (Optional<Expected<OnDiskDataRecordProxy>> Node =
-            dereferenceValue(getDataRecord(getIndexProxyFromPointer(P))))
+            transpose(getDataRecord(getIndexProxyFromPointer(P))))
       return makeNode(std::move(*Node));
   // FIXME: This should not be an error.
   return createUnknownObjectError(ID);
@@ -1970,7 +1970,7 @@ Expected<NodeProxy> OnDiskCAS::getNode(CASID ID) {
 Expected<TreeProxy> OnDiskCAS::getTree(CASID ID) {
   if (OnDiskHashMappedTrie::const_pointer P = getInternalIndexPointer(ID))
     if (Optional<Expected<OnDiskDataRecordProxy>> Tree =
-            dereferenceValue(getDataRecord(getIndexProxyFromPointer(P))))
+            transpose(getDataRecord(getIndexProxyFromPointer(P))))
       return makeTree(std::move(*Tree));
   // FIXME: This should not be an error.
   return createUnknownObjectError(ID);
