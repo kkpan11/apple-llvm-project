@@ -25,10 +25,12 @@
 #include "clang/Tooling/DependencyScanning/DependencyScanningTool.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/Bitstream/BitstreamReader.h"
 #include "llvm/CAS/CASDB.h"
 #include "llvm/CAS/CachingOnDiskFileSystem.h"
 #include "llvm/CAS/HierarchicalTreeBuilder.h"
 #include "llvm/Option/ArgList.h"
+#include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/BuryPointer.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/Error.h"
@@ -281,12 +283,25 @@ struct DepscanSharing {
   Optional<StringRef> Name;
   Optional<StringRef> Stop;
   Optional<StringRef> Path;
+  SmallVector<const char *> CASArgs;
 };
 } // end namespace
 
 static Optional<std::string>
 makeDepscanDaemonKey(StringRef Mode, const DepscanSharing &Sharing) {
-  auto makeKey = [](uint64_t PID) { return Twine(PID).str(); };
+  auto makeKey = [&Sharing](uint64_t PID) -> std::string {
+    llvm::BLAKE3 Hasher;
+    Hasher.update(
+        llvm::makeArrayRef(reinterpret_cast<uint8_t *>(&PID), sizeof(PID)));
+    for (const char *Arg : Sharing.CASArgs)
+      Hasher.update(StringRef(Arg));
+    // Using same hash size as the module cache hash.
+    auto Hash = Hasher.final<sizeof(uint64_t)>();
+    uint64_t HashVal =
+        llvm::support::endian::read<uint64_t, llvm::support::native>(
+            Hash.data());
+    return toString(llvm::APInt(64, HashVal), 36, /*Signed=*/false);
+  };
 
   if (Sharing.Name) {
     // Check for fast path, which doesn't need to look up process names:
@@ -389,7 +404,6 @@ static llvm::Expected<llvm::cas::CASID> scanAndUpdateCC1UsingDaemon(
     const CASOptions &CASOpts, llvm::cas::CASDB &CAS) {
   using namespace clang::cc1depscand;
 
-  // FIXME: Forward CASOptions to the daemon.
   // FIXME: Skip some of this if -fcas-fs has been passed.
   SmallString<128> WorkingDirectory;
   if (auto E =
@@ -397,8 +411,9 @@ static llvm::Expected<llvm::cas::CASID> scanAndUpdateCC1UsingDaemon(
     return std::move(E);
 
   // llvm::dbgs() << "connecting to daemon...\n";
-  auto Daemon = NoSpawnDaemon ? ScanDaemon::connectToDaemonAndShakeHands(Path)
-                              : ScanDaemon::constructAndShakeHands(Path, Exec);
+  auto Daemon = NoSpawnDaemon
+                    ? ScanDaemon::connectToDaemonAndShakeHands(Path)
+                    : ScanDaemon::constructAndShakeHands(Path, Exec, CASOpts);
   if (!Daemon)
     return Daemon.takeError();
   CC1DepScanDProtocol Comms(*Daemon);
@@ -515,8 +530,8 @@ static int scanAndUpdateCC1(const char *Exec, ArrayRef<const char *> OldArgs,
       parseCASFSAutoPrefixMappings(Diag, Args);
 
   auto SaveArg = [&Args](const Twine &T) { return Args.MakeArgString(T); };
+  CompilerInvocation::GenerateCASArgs(CASOpts, Sharing.CASArgs, SaveArg);
 
-  // FIXME: Use CASOptions to determine the daemon path.
   auto ScanAndUpdate = [&]() {
     if (Optional<std::string> DaemonPath = makeDepscanDaemonPath(Mode, Sharing))
       return scanAndUpdateCC1UsingDaemon(
@@ -584,10 +599,12 @@ int cc1depscan_main(ArrayRef<const char *> Argv, const char *Argv0,
   SmallVector<const char *> NewArgs;
   Optional<llvm::cas::CASID> RootID;
 
-  // FIXME: Sniff CASOptions from CC1Args->getValues() instead of using
-  // "auto".
   CASOptions CASOpts;
-  CASOpts.CASPath = "auto";
+  auto ParsedCC1Args =
+      Opts.ParseArgs(CC1Args->getValues(), MissingArgIndex, MissingArgCount);
+  CompilerInvocation::ParseCASArgs(CASOpts, ParsedCC1Args, Diags);
+  CASOpts.ensurePersistentCAS();
+
   std::shared_ptr<llvm::cas::CASDB> CAS = CASOpts.getOrCreateCAS(Diags);
   if (!CAS)
     return 1;
@@ -658,14 +675,28 @@ int cc1depscand_main(ArrayRef<const char *> Argv, const char *Argv0,
     }
   }
 
+  ArrayRef<const char *> CASArgs;
+  auto CASArgsI = std::find(Argv.begin(), Argv.end(), StringRef("-cas-args"));
+  if (CASArgsI != Argv.end()) {
+    CASArgs = llvm::makeArrayRef(CASArgsI + 1, Argv.end());
+  }
+
+  auto formSpawnArgsForCommand =
+      [&](const char *Command) -> SmallVector<const char *> {
+    SmallVector<const char *> Args{Argv0,     "-cc1depscand",
+                                   Command,   BasePath.begin(),
+                                   "-detach", "-cas-args"};
+    Args.append(CASArgs.begin(), CASArgs.end());
+    Args.push_back(nullptr);
+    return Args;
+  };
+
   if (Command == "-launch") {
     signal(SIGCHLD, SIG_IGN);
-    const char *Args[] = {
-        Argv0, "-cc1depscand", "-run", BasePath.begin(), "-detach", nullptr,
-    };
+    auto Args = formSpawnArgsForCommand("-run");
     int IgnoredPid;
     int EC = ::posix_spawn(&IgnoredPid, Args[0], /*file_actions=*/nullptr,
-                           /*attrp=*/nullptr, const_cast<char **>(Args),
+                           /*attrp=*/nullptr, const_cast<char **>(Args.data()),
                            /*envp=*/nullptr);
     if (EC)
       llvm::report_fatal_error("clang -cc1depscand: failed to daemonize");
@@ -677,13 +708,12 @@ int cc1depscand_main(ArrayRef<const char *> Argv, const char *Argv0,
     llvm::EnableStatistics(/*DoPrintOnExit=*/true);
     if (!Detached) {
       signal(SIGCHLD, SIG_IGN);
-      const char *Args[] = {
-          Argv0, "-cc1depscand", "-start", BasePath.begin(), "-detach", nullptr,
-      };
+      auto Args = formSpawnArgsForCommand("-start");
       int IgnoredPid;
-      int EC = ::posix_spawn(&IgnoredPid, Args[0], /*file_actions=*/nullptr,
-                             /*attrp=*/nullptr, const_cast<char **>(Args),
-                             /*envp=*/nullptr);
+      int EC =
+          ::posix_spawn(&IgnoredPid, Args[0], /*file_actions=*/nullptr,
+                        /*attrp=*/nullptr, const_cast<char **>(Args.data()),
+                        /*envp=*/nullptr);
       if (EC)
         llvm::report_fatal_error("clang -cc1depscand: failed to daemonize");
       ::exit(0);
@@ -796,11 +826,15 @@ int cc1depscand_main(ArrayRef<const char *> Argv, const char *Argv0,
     ::close(ListenSocket);
   };
 
-  // FIXME: Take the CAS on the daemon command-line.
-  CASOptions CASOpts;
-  CASOpts.CASPath = "auto";
-
   DiagnosticsEngine Diags(new DiagnosticIDs(), new DiagnosticOptions());
+  CASOptions CASOpts;
+  const OptTable &Opts = clang::driver::getDriverOptTable();
+  unsigned MissingArgIndex, MissingArgCount;
+  auto ParsedCASArgs =
+      Opts.ParseArgs(CASArgs, MissingArgIndex, MissingArgCount);
+  CompilerInvocation::ParseCASArgs(CASOpts, ParsedCASArgs, Diags);
+  CASOpts.ensurePersistentCAS();
+
   std::shared_ptr<llvm::cas::CASDB> CAS = CASOpts.getOrCreateCAS(Diags);
   if (!CAS)
     llvm::report_fatal_error("clang -cc1depscand: cannot create CAS");

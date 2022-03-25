@@ -2187,9 +2187,9 @@ static bool checkVerifyPrefixes(const std::vector<std::string> &VerifyPrefixes,
   return Success;
 }
 
-static void GenerateCASArgs(const CASOptions &Opts,
-                            SmallVectorImpl<const char *> &Args,
-                            CompilerInvocation::StringAllocator SA) {
+void CompilerInvocation::GenerateCASArgs(
+    const CASOptions &Opts, SmallVectorImpl<const char *> &Args,
+    CompilerInvocation::StringAllocator SA) {
   const CASOptions &CASOpts = Opts;
 
 #define CAS_OPTION_WITH_MARSHALLING(                                           \
@@ -2204,8 +2204,8 @@ static void GenerateCASArgs(const CASOptions &Opts,
 #undef CAS_OPTION_WITH_MARSHALLING
 }
 
-static bool ParseCASArgs(CASOptions &Opts, const ArgList &Args,
-                         DiagnosticsEngine &Diags) {
+bool CompilerInvocation::ParseCASArgs(CASOptions &Opts, const ArgList &Args,
+                                      DiagnosticsEngine &Diags) {
   CASOptions &CASOpts = Opts;
   bool Success = true;
 

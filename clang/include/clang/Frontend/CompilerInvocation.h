@@ -258,6 +258,14 @@ public:
   void generateCC1CommandLine(llvm::SmallVectorImpl<const char *> &Args,
                               StringAllocator SA) const;
 
+  /// Parse command line options that map to \p CASOptions.
+  static bool ParseCASArgs(CASOptions &Opts, const llvm::opt::ArgList &Args,
+                           DiagnosticsEngine &Diags);
+
+  /// Generate command line options from CASOptions.
+  static void GenerateCASArgs(const CASOptions &Opts,
+                              SmallVectorImpl<const char *> &Args,
+                              CompilerInvocation::StringAllocator SA);
   /// @}
   /// @name Option Subgroups
   /// @{

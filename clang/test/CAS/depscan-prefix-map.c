@@ -1,5 +1,3 @@
-// TODO: Test should be updated to not depend on a working cache at default location, which is out of test/build directory.
-
 // Check with prefix mapping:
 //
 // RUN: rm -rf %t.d
@@ -13,7 +11,8 @@
 // RUN:    -cc1-args -triple x86_64-apple-macos11.0 -x c %s -o %t.d/out.o \
 // RUN:              -isysroot %S/Inputs/SDK                              \
 // RUN:              -working-directory %t.d                              \
-// RUN: | FileCheck %s
+// RUN:              -fcas-path %t.d/cas                                  \
+// RUN: | FileCheck %s -DPREFIX=%t.d
 // RUN: %clang -cc1depscan -dump-depscan-tree=%t.root -fdepscan=daemon    \
 // RUN:    -fdepscan-prefix-map=%S=/^source                               \
 // RUN:    -fdepscan-prefix-map=%t.d=/^testdir                            \
@@ -23,17 +22,18 @@
 // RUN:    -cc1-args -triple x86_64-apple-macos11.0 -x c %s -o %t.d/out.o \
 // RUN:              -isysroot %S/Inputs/SDK                              \
 // RUN:              -working-directory %t.d                              \
-// RUN: | FileCheck %s
+// RUN:              -fcas-path %t.d/cas                                  \
+// RUN: | FileCheck %s -DPREFIX=%t.d
 //
-// CHECK:      "-fcas-path" "auto"
+// CHECK:      "-fcas-path" "[[PREFIX]]/cas"
 // CHECK-SAME: "-working-directory" "/^testdir"
 // CHECK-SAME: "-x" "c" "/^source/depscan-prefix-map.c"
 // CHECK-SAME: "-isysroot" "/^sdk"
 
-// RUN: llvm-cas --cas auto --ls-tree-recursive @%t.root                  \
+// RUN: llvm-cas --cas %t.d/cas --ls-tree-recursive @%t.root              \
 // RUN: | FileCheck %s -check-prefix=CHECK-ROOT
 //
-// RUN: llvm-cas --cas auto --ls-tree-recursive @%t.root                  \
+// RUN: llvm-cas --cas %t.d/cas --ls-tree-recursive @%t.root              \
 // RUN: | FileCheck %s -check-prefix=CHECK-ROOT
 //
 // CHECK-ROOT:      tree

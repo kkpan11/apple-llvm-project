@@ -102,6 +102,10 @@ public:
   std::shared_ptr<llvm::cas::CASDB>
   getOrCreateCASAndHideConfig(DiagnosticsEngine &Diags);
 
+  /// If the configuration is not for a persistent store, it modifies it to the
+  /// default on-disk CAS, otherwise this is a noop.
+  void ensurePersistentCAS();
+
 private:
   struct CachedCAS {
     /// A cached CAS instance.
