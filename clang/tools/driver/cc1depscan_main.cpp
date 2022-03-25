@@ -283,7 +283,7 @@ struct DepscanSharing {
   Optional<StringRef> Stop;
   Optional<StringRef> Path;
 };
-} // end namespace;
+} // end namespace
 
 static Optional<std::string>
 makeDepscanDaemonKey(StringRef Mode, const DepscanSharing &Sharing) {
@@ -296,7 +296,8 @@ makeDepscanDaemonKey(StringRef Mode, const DepscanSharing &Sharing) {
       return makeKey(ProcessAncestorIterator::getParentPID());
 
     // Check the parent's process name, and then process ancestors.
-    for (ProcessAncestorIterator I = ProcessAncestorIterator::getParentBegin(), IE;
+    for (ProcessAncestorIterator I = ProcessAncestorIterator::getParentBegin(),
+                                 IE;
          I != IE; ++I) {
       if (I->Name == Sharing.Stop)
         break;
