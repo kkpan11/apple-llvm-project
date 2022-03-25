@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "BuiltinCAS.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/CAS/BuiltinObjectHasher.h"
 #include "llvm/Support/Alignment.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -18,43 +19,6 @@ using namespace llvm::cas::builtin;
 
 static StringRef getCASIDPrefix() { return "llvmcas://"; }
 
-static void extractPrintableHash(CASID ID, SmallVectorImpl<char> &Dest) {
-  ArrayRef<uint8_t> RawHash = ID.getHash();
-  assert(Dest.empty());
-  assert(RawHash.size() == 20);
-  Dest.reserve(40);
-  auto ToChar = [](uint8_t Bit) {
-    if (Bit < 10)
-      return '0' + Bit;
-    return Bit - 10 + 'a';
-  };
-  for (uint8_t Bit : RawHash) {
-    uint8_t High = Bit >> 4;
-    uint8_t Low = Bit & 0xf;
-    Dest.push_back(ToChar(High));
-    Dest.push_back(ToChar(Low));
-  }
-}
-
-static HashType stringToHash(StringRef Chars) {
-  auto FromChar = [](char Ch) -> unsigned {
-    if (Ch >= '0' && Ch <= '9')
-      return Ch - '0';
-    assert(Ch >= 'a');
-    assert(Ch <= 'f');
-    return Ch - 'a' + 10;
-  };
-
-  HashType Hash;
-  assert(Chars.size() == sizeof(Hash) * 2);
-  for (int I = 0, E = sizeof(Hash); I != E; ++I) {
-    uint8_t High = FromChar(Chars[I * 2]);
-    uint8_t Low = FromChar(Chars[I * 2 + 1]);
-    Hash[I] = (High << 4) | Low;
-  }
-  return Hash;
-}
-
 Expected<CASID> BuiltinCAS::parseID(StringRef Reference) {
   if (!Reference.consume_front(getCASIDPrefix()))
     return createStringError(std::make_error_code(std::errc::invalid_argument),
@@ -65,9 +29,12 @@ Expected<CASID> BuiltinCAS::parseID(StringRef Reference) {
     return createStringError(std::make_error_code(std::errc::invalid_argument),
                              "wrong size for cas-id hash '" + Reference + "'");
 
-  // FIXME: Take parsing as a hint that the ID will be loaded and do a look up
-  // of blobs and trees, rather than always allocating space for a hash.
-  return parseIDImpl(stringToHash(Reference));
+  std::string Binary;
+  if (!tryGetFromHex(Reference, Binary))
+    return createStringError(std::make_error_code(std::errc::invalid_argument),
+                             "invalid hash in cas-id '" + Reference + "'");
+
+  return parseIDImpl(arrayRefFromStringRef(Binary));
 }
 
 void BuiltinCAS::printIDImpl(raw_ostream &OS, const CASID &ID) const {
@@ -75,7 +42,7 @@ void BuiltinCAS::printIDImpl(raw_ostream &OS, const CASID &ID) const {
   assert(ID.getHash().size() == sizeof(HashType));
 
   SmallString<64> Hash;
-  extractPrintableHash(ID, Hash);
+  toHex(ID.getHash(), /*LowerCase=*/true, Hash);
   OS << getCASIDPrefix() << Hash;
 }
 
