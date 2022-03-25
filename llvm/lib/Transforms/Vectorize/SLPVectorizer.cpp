@@ -1964,8 +1964,12 @@ public:
   /// Checks if the instruction is marked for deletion.
   bool isDeleted(Instruction *I) const { return DeletedInstructions.count(I); }
 
-  /// Marks values operands for later deletion by replacing them with Undefs.
-  void eraseInstructions(ArrayRef<Value *> AV);
+  /// Removes an instruction from its block and eventually deletes it.
+  /// It's like Instruction::eraseFromParent() except that the actual deletion
+  /// is delayed until BoUpSLP is destructed.
+  void eraseInstruction(Instruction *I) {
+    DeletedInstructions.insert(I);
+  }
 
   ~BoUpSLP();
 
@@ -2521,20 +2525,12 @@ private:
   // invalidates capture results.
   BatchAAResults BatchAA;
 
-  /// Removes an instruction from its block and eventually deletes it.
-  /// It's like Instruction::eraseFromParent() except that the actual deletion
-  /// is delayed until BoUpSLP is destructed.
-  /// This is required to ensure that there are no incorrect collisions in the
-  /// AliasCache, which can happen if a new instruction is allocated at the
-  /// same address as a previously deleted instruction.
-  void eraseInstruction(Instruction *I, bool ReplaceOpsWithUndef = false) {
-    auto It = DeletedInstructions.try_emplace(I, ReplaceOpsWithUndef).first;
-    It->getSecond() = It->getSecond() && ReplaceOpsWithUndef;
-  }
-
   /// Temporary store for deleted instructions. Instructions will be deleted
-  /// eventually when the BoUpSLP is destructed.
-  DenseMap<Instruction *, bool> DeletedInstructions;
+  /// eventually when the BoUpSLP is destructed.  The deferral is required to
+  /// ensure that there are no incorrect collisions in the AliasCache, which
+  /// can happen if a new instruction is allocated at the same address as a
+  /// previously deleted instruction.
+  DenseSet<Instruction *> DeletedInstructions;
 
   /// A list of values that need to extracted out of the tree.
   /// This list holds pairs of (Internal Scalar : External User). External User
@@ -2877,7 +2873,8 @@ private:
         }
         // Handle the memory dependencies.
         for (ScheduleData *MemoryDepSD : BundleMember->MemoryDependencies) {
-          if (MemoryDepSD->incrementUnscheduledDeps(-1) == 0) {
+          if (MemoryDepSD->hasValidDependencies() &&
+              MemoryDepSD->incrementUnscheduledDeps(-1) == 0) {
             // There are no more unscheduled dependencies after decrementing,
             // so we can put the dependent instruction into the ready list.
             ScheduleData *DepBundle = MemoryDepSD->FirstInBundle;
@@ -2949,7 +2946,8 @@ private:
     void initialFillReadyList(ReadyListType &ReadyList) {
       for (auto *I = ScheduleStart; I != ScheduleEnd; I = I->getNextNode()) {
         doForAllOpcodes(I, [&](ScheduleData *SD) {
-          if (SD->isSchedulingEntity() && SD->isReady()) {
+          if (SD->isSchedulingEntity() && SD->hasValidDependencies() &&
+              SD->isReady()) {
             ReadyList.insert(SD);
             LLVM_DEBUG(dbgs()
                        << "SLP:    initially in ready list: " << *SD << "\n");
@@ -3206,32 +3204,18 @@ template <> struct DOTGraphTraits<BoUpSLP *> : public DefaultDOTGraphTraits {
 } // end namespace llvm
 
 BoUpSLP::~BoUpSLP() {
-  for (const auto &Pair : DeletedInstructions) {
-    // Replace operands of ignored instructions with Undefs in case if they were
-    // marked for deletion.
-    if (Pair.getSecond()) {
-      Value *Undef = UndefValue::get(Pair.getFirst()->getType());
-      Pair.getFirst()->replaceAllUsesWith(Undef);
-    }
-    Pair.getFirst()->dropAllReferences();
-  }
-  for (const auto &Pair : DeletedInstructions) {
-    assert(Pair.getFirst()->use_empty() &&
+  for (auto *I : DeletedInstructions)
+    I->dropAllReferences();
+  for (auto *I : DeletedInstructions) {
+    assert(I->use_empty() &&
            "trying to erase instruction with users.");
-    Pair.getFirst()->eraseFromParent();
+    I->eraseFromParent();
   }
 #ifdef EXPENSIVE_CHECKS
   // If we could guarantee that this call is not extremely slow, we could
   // remove the ifdef limitation (see PR47712).
   assert(!verifyFunction(*F, &dbgs()));
 #endif
-}
-
-void BoUpSLP::eraseInstructions(ArrayRef<Value *> AV) {
-  for (auto *V : AV) {
-    if (auto *I = dyn_cast<Instruction>(V))
-      eraseInstruction(I, /*ReplaceOpsWithUndef=*/true);
-  };
 }
 
 /// Reorders the given \p Reuses mask according to the given \p Mask. \p Reuses
@@ -8237,6 +8221,11 @@ void BoUpSLP::scheduleBlock(BlockScheduling *BS) {
 
   LLVM_DEBUG(dbgs() << "SLP: schedule block " << BS->BB->getName() << "\n");
 
+  // A key point - if we got here, pre-scheduling was able to find a valid
+  // scheduling of the sub-graph of the scheduling window which consists
+  // of all vector bundles and their transitive users.  As such, we do not
+  // need to reschedule anything *outside of* that subgraph.
+
   BS->resetSchedule();
 
   // For the real scheduling we use a more sophisticated ready-list: it is
@@ -8251,13 +8240,12 @@ void BoUpSLP::scheduleBlock(BlockScheduling *BS) {
   };
   std::set<ScheduleData *, ScheduleDataCompare> ReadyInsts;
 
-  // Ensure that all dependency data is updated and fill the ready-list with
-  // initial instructions.
+  // Ensure that all dependency data is updated (for nodes in the sub-graph)
+  // and fill the ready-list with initial instructions.
   int Idx = 0;
-  int NumToSchedule = 0;
   for (auto *I = BS->ScheduleStart; I != BS->ScheduleEnd;
        I = I->getNextNode()) {
-    BS->doForAllOpcodes(I, [this, &Idx, &NumToSchedule, BS](ScheduleData *SD) {
+    BS->doForAllOpcodes(I, [this, &Idx, BS](ScheduleData *SD) {
       TreeEntry *SDTE = getTreeEntry(SD->Inst);
       (void)SDTE;
       assert((isVectorLikeInstWithConstOps(SD->Inst) ||
@@ -8265,10 +8253,9 @@ void BoUpSLP::scheduleBlock(BlockScheduling *BS) {
                   (SDTE && !doesNotNeedToSchedule(SDTE->Scalars))) &&
              "scheduler and vectorizer bundle mismatch");
       SD->FirstInBundle->SchedulingPriority = Idx++;
-      if (SD->isSchedulingEntity()) {
+
+      if (SD->isSchedulingEntity() && SD->isPartOfBundle())
         BS->calculateDependencies(SD, false, this);
-        NumToSchedule++;
-      }
     });
   }
   BS->initialFillReadyList(ReadyInsts);
@@ -8291,9 +8278,7 @@ void BoUpSLP::scheduleBlock(BlockScheduling *BS) {
     }
 
     BS->schedule(picked, ReadyInsts);
-    NumToSchedule--;
   }
-  assert(NumToSchedule == 0 && "could not schedule all instructions");
 
   // Check that we didn't break any of our invariants.
 #ifdef EXPENSIVE_CHECKS
@@ -9828,9 +9813,26 @@ public:
 
       ReductionRoot->replaceAllUsesWith(VectorizedTree);
 
-      // Mark all scalar reduction ops for deletion, they are replaced by the
-      // vector reductions.
-      V.eraseInstructions(IgnoreList);
+      // The original scalar reduction is expected to have no remaining
+      // uses outside the reduction tree itself.  Assert that we got this
+      // correct, replace internal uses with undef, and mark for eventual
+      // deletion.
+#ifndef NDEBUG
+      SmallSet<Value *, 4> IgnoreSet;
+      IgnoreSet.insert(IgnoreList.begin(), IgnoreList.end());
+#endif
+      for (auto *Ignore : IgnoreList) {
+#ifndef NDEBUG
+        for (auto *U : Ignore->users()) {
+          assert(IgnoreSet.count(U));
+        }
+#endif
+        if (!Ignore->use_empty()) {
+          Value *Undef = UndefValue::get(Ignore->getType());
+          Ignore->replaceAllUsesWith(Undef);
+        }
+        V.eraseInstruction(cast<Instruction>(Ignore));
+      }
     }
     return VectorizedTree;
   }
