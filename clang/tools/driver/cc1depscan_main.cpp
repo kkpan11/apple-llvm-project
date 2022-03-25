@@ -338,20 +338,20 @@ makeDepscanDaemonPath(StringRef Mode, const DepscanSharing &Sharing) {
 }
 
 static Expected<llvm::cas::CASID>
-updateCC1Args(const char *Exec, ArrayRef<const char *> InputArgs,
-              SmallVectorImpl<const char *> &OutputArgs,
-              const cc1depscand::DepscanPrefixMapping &PrefixMapping,
-              llvm::function_ref<const char *(const Twine &)> SaveArg,
-              const CASOptions &CASOpts, llvm::cas::CASDB &CAS);
+scanAndUpdateCC1(const char *Exec, ArrayRef<const char *> InputArgs,
+                 SmallVectorImpl<const char *> &OutputArgs,
+                 const cc1depscand::DepscanPrefixMapping &PrefixMapping,
+                 llvm::function_ref<const char *(const Twine &)> SaveArg,
+                 const CASOptions &CASOpts, llvm::cas::CASDB &CAS);
 
-static Expected<llvm::cas::CASID>
-updateCC1Args(const CASOptions &CASOpts,
-              tooling::dependencies::DependencyScanningTool &Tool,
-              DiagnosticConsumer &DiagsConsumer, const char *Exec,
-              ArrayRef<const char *> InputArgs, StringRef WorkingDirectory,
-              SmallVectorImpl<const char *> &OutputArgs,
-              const cc1depscand::DepscanPrefixMapping &PrefixMapping,
-              llvm::function_ref<const char *(const Twine &)> SaveArg);
+static Expected<llvm::cas::CASID> scanAndUpdateCC1WithTool(
+    const CASOptions &CASOpts,
+    tooling::dependencies::DependencyScanningTool &Tool,
+    DiagnosticConsumer &DiagsConsumer, const char *Exec,
+    ArrayRef<const char *> InputArgs, StringRef WorkingDirectory,
+    SmallVectorImpl<const char *> &OutputArgs,
+    const cc1depscand::DepscanPrefixMapping &PrefixMapping,
+    llvm::function_ref<const char *(const Twine &)> SaveArg);
 
 // FIXME: This is a copy of Command::writeResponseFile. Command is too deeply
 // tied with clang::Driver to use directly.
@@ -400,8 +400,8 @@ static void addCC1ScanDepsArgsInline(
     const cc1depscand::DepscanPrefixMapping &PrefixMapping,
     llvm::function_ref<const char *(const Twine &)> SaveArg,
     const CASOptions &CASOpts, llvm::cas::CASDB &CAS) {
-  llvm::Error E = updateCC1Args(Exec, CC1Args, CC1Args, PrefixMapping, SaveArg,
-                                CASOpts, CAS)
+  llvm::Error E = scanAndUpdateCC1(Exec, CC1Args, CC1Args, PrefixMapping,
+                                   SaveArg, CASOpts, CAS)
                       .takeError();
 
   // FIXME: Use DiagnosticEngine somehow...
@@ -409,13 +409,12 @@ static void addCC1ScanDepsArgsInline(
   return;
 }
 
-static void CC1ScanDeps(const llvm::opt::Arg &A, const char *Exec,
-                        SmallVectorImpl<const char *> &CC1Args,
-                        DiagnosticsEngine &Diag,
-                        const llvm::opt::ArgList &Args) {
+static void scanAndUpdateCC1UsingMode(const llvm::opt::Arg &ModeArg,
+                                      const char *Exec,
+                                      SmallVectorImpl<const char *> &CC1Args,
+                                      DiagnosticsEngine &Diag,
+                                      const llvm::opt::ArgList &Args) {
   using namespace clang::driver;
-
-  StringRef Mode = A.getValue();
 
   // Collect these before returning to ensure they're claimed.
   DepscanSharing Sharing;
@@ -438,12 +437,13 @@ static void CC1ScanDeps(const llvm::opt::Arg &A, const char *Exec,
   if (Arg *A = Args.getLastArg(options::OPT_fdepscan_daemon_EQ))
     Sharing.Path = A->getValue();
 
+  StringRef Mode = ModeArg.getValue();
   if (Mode == "off")
     return;
 
   if (Mode != "daemon" && Mode != "inline" && Mode != "auto")
     Diag.Report(diag::err_drv_invalid_argument_to_option)
-        << Mode << A.getOption().getName();
+        << Mode << ModeArg.getOption().getName();
 
   cc1depscand::DepscanPrefixMapping PrefixMapping =
       parseCASFSAutoPrefixMappings(Diag, Args);
@@ -524,7 +524,7 @@ int cc1depscan_main(ArrayRef<const char *> Argv, const char *Argv0,
   if (DepScanArg && StringRef(DepScanArg->getValue()) != "inline") {
     for (auto *A : CC1Args->getValues())
       NewArgs.push_back(A);
-    CC1ScanDeps(*DepScanArg, Argv0, NewArgs, Diags, Args);
+    scanAndUpdateCC1UsingMode(*DepScanArg, Argv0, NewArgs, Diags, Args);
   } else {
     if (auto *Arg =
             Args.getLastArg(clang::driver::options::OPT_dump_depscan_tree_EQ))
@@ -547,10 +547,10 @@ int cc1depscan_main(ArrayRef<const char *> Argv, const char *Argv0,
         /*SkipExcludedPPRanges=*/true);
     tooling::dependencies::DependencyScanningTool Tool(Service);
     if (Error E =
-            updateCC1Args(CASOpts, Tool, *DiagsConsumer, Argv0,
-                          CC1Args->getValues(), WorkingDirectory, NewArgs,
-                          PrefixMapping,
-                          [&](const Twine &T) { return Saver.save(T).data(); })
+            scanAndUpdateCC1WithTool(
+                CASOpts, Tool, *DiagsConsumer, Argv0, CC1Args->getValues(),
+                WorkingDirectory, NewArgs, PrefixMapping,
+                [&](const Twine &T) { return Saver.save(T).data(); })
                 .moveInto(RootID)) {
       llvm::errs() << "failed to update -cc1: " << toString(std::move(E))
                    << "\n";
@@ -888,10 +888,10 @@ int cc1depscand_main(ArrayRef<const char *> Argv, const char *Argv0,
             DiagsOS, new DiagnosticOptions(), false);
 
         SmallVector<const char *> NewArgs;
-        auto RootID =
-            updateCC1Args(CASOpts, *Tool, *DiagsConsumer, Argv0, Args,
-                          WorkingDirectory, NewArgs, PrefixMapping,
-                          [&](const Twine &T) { return Saver.save(T).data(); });
+        auto RootID = scanAndUpdateCC1WithTool(
+            CASOpts, *Tool, *DiagsConsumer, Argv0, Args, WorkingDirectory,
+            NewArgs, PrefixMapping,
+            [&](const Twine &T) { return Saver.save(T).data(); });
         if (!RootID) {
           consumeError(RootID.takeError());
           SharedOS.applyLocked([&](raw_ostream &OS) {
@@ -1169,14 +1169,14 @@ static void updateCompilerInvocation(CompilerInvocation &Invocation,
   Mapper.mapInPlaceOrClear(CodeGenOpts.CoverageCompilationDir);
 }
 
-static Expected<llvm::cas::CASID>
-updateCC1Args(const CASOptions &CASOpts,
-              tooling::dependencies::DependencyScanningTool &Tool,
-              DiagnosticConsumer &DiagsConsumer, const char *Exec,
-              ArrayRef<const char *> InputArgs, StringRef WorkingDirectory,
-              SmallVectorImpl<const char *> &OutputArgs,
-              const cc1depscand::DepscanPrefixMapping &PrefixMapping,
-              llvm::function_ref<const char *(const Twine &)> SaveArg) {
+static Expected<llvm::cas::CASID> scanAndUpdateCC1WithTool(
+    const CASOptions &CASOpts,
+    tooling::dependencies::DependencyScanningTool &Tool,
+    DiagnosticConsumer &DiagsConsumer, const char *Exec,
+    ArrayRef<const char *> InputArgs, StringRef WorkingDirectory,
+    SmallVectorImpl<const char *> &OutputArgs,
+    const cc1depscand::DepscanPrefixMapping &PrefixMapping,
+    llvm::function_ref<const char *(const Twine &)> SaveArg) {
   llvm::cas::CachingOnDiskFileSystem &FS = Tool.getCachingFileSystem();
 
   DiagnosticsEngine Diags(new DiagnosticIDs(), new DiagnosticOptions());
@@ -1216,11 +1216,11 @@ updateCC1Args(const CASOptions &CASOpts,
 }
 
 static Expected<llvm::cas::CASID>
-updateCC1Args(const char *Exec, ArrayRef<const char *> InputArgs,
-              SmallVectorImpl<const char *> &OutputArgs,
-              const cc1depscand::DepscanPrefixMapping &PrefixMapping,
-              llvm::function_ref<const char *(const Twine &)> SaveArg,
-              const CASOptions &CASOpts, llvm::cas::CASDB &CAS) {
+scanAndUpdateCC1(const char *Exec, ArrayRef<const char *> InputArgs,
+                 SmallVectorImpl<const char *> &OutputArgs,
+                 const cc1depscand::DepscanPrefixMapping &PrefixMapping,
+                 llvm::function_ref<const char *(const Twine &)> SaveArg,
+                 const CASOptions &CASOpts, llvm::cas::CASDB &CAS) {
   IntrusiveRefCntPtr<llvm::cas::CachingOnDiskFileSystem> FS =
       llvm::cantFail(llvm::cas::createCachingOnDiskFileSystem(CAS));
 
@@ -1237,6 +1237,7 @@ updateCC1Args(const char *Exec, ArrayRef<const char *> InputArgs,
   reportAsFatalIfError(
       llvm::errorCodeToError(llvm::sys::fs::current_path(WorkingDirectory)));
 
-  return updateCC1Args(CASOpts, Tool, *DiagsConsumer, Exec, InputArgs,
-                       WorkingDirectory, OutputArgs, PrefixMapping, SaveArg);
+  return scanAndUpdateCC1WithTool(CASOpts, Tool, *DiagsConsumer, Exec,
+                                  InputArgs, WorkingDirectory, OutputArgs,
+                                  PrefixMapping, SaveArg);
 }
