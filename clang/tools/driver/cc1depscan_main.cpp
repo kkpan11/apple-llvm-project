@@ -1185,7 +1185,8 @@ updateCC1Args(const CASOptions &CASOpts,
     return llvm::createStringError(llvm::inconvertibleErrorCode(),
                                    "failed to create compiler invocation");
 
-  // Override the CASOptions if they don't match.
+  // Override the CASOptions. They may match (the caller having sniffed them
+  // out of InputArgs) but if they have been overridden we want the new ones.
   Invocation->getCASOpts() = CASOpts;
 
   llvm::BumpPtrAllocator Alloc;
