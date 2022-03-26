@@ -311,8 +311,8 @@ public:
   bool operator()(const CodeGenInstruction *RegInst) {
     X86Disassembler::RecognizableInstrBase RegRI(*RegInst);
     X86Disassembler::RecognizableInstrBase MemRI(*MemInst);
-    const Record *RegRec = RegRI.Rec;
-    const Record *MemRec = MemRI.Rec;
+    const Record *RegRec = RegInst->TheDef;
+    const Record *MemRec = MemInst->TheDef;
 
     // EVEX_B means different things for memory and register forms.
     if (RegRI.HasEVEX_B != 0 || MemRI.HasEVEX_B != 0)
@@ -328,15 +328,15 @@ public:
     if (RegRI.Encoding != MemRI.Encoding || RegRI.Opcode != MemRI.Opcode ||
         RegRI.OpPrefix != MemRI.OpPrefix || RegRI.OpMap != MemRI.OpMap ||
         RegRI.OpSize != MemRI.OpSize || RegRI.AdSize != MemRI.AdSize ||
-        RegRI.HasREX_WPrefix != MemRI.HasREX_WPrefix ||
+        RegRI.HasREX_W != MemRI.HasREX_W ||
         RegRI.HasVEX_4V != MemRI.HasVEX_4V ||
-        RegRI.HasVEX_LPrefix != MemRI.HasVEX_LPrefix ||
+        RegRI.HasVEX_L != MemRI.HasVEX_L ||
         RegRI.HasVEX_W != MemRI.HasVEX_W ||
         RegRI.IgnoresVEX_L != MemRI.IgnoresVEX_L ||
         RegRI.IgnoresVEX_W != MemRI.IgnoresVEX_W ||
         RegRI.HasEVEX_K != MemRI.HasEVEX_K ||
         RegRI.HasEVEX_KZ != MemRI.HasEVEX_KZ ||
-        RegRI.HasEVEX_L2Prefix != MemRI.HasEVEX_L2Prefix ||
+        RegRI.HasEVEX_L2 != MemRI.HasEVEX_L2 ||
         RegRec->getValueAsBit("hasEVEX_RC") !=
             MemRec->getValueAsBit("hasEVEX_RC") ||
         RegRec->getValueAsBit("hasLockPrefix") !=
@@ -555,8 +555,7 @@ void X86FoldTablesEmitter::run(formatted_raw_ostream &OS) {
 
   for (const CodeGenInstruction *Inst : NumberedInstructions) {
     const Record *Rec = Inst->TheDef;
-    if (!Rec->getNameInit() || !Rec->isSubClassOf("X86Inst") ||
-        Rec->getValueAsBit("isAsmParserOnly"))
+    if (!Rec->isSubClassOf("X86Inst") || Rec->getValueAsBit("isAsmParserOnly"))
       continue;
 
     // - Do not proceed if the instruction is marked as notMemoryFoldable.
