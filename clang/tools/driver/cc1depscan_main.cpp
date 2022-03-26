@@ -422,10 +422,9 @@ static llvm::Expected<llvm::cas::CASID> scanAndUpdateCC1UsingDaemon(
                                    "depscan daemon failed: " + FailedReason);
 
   // FIXME: Avoid this duplication.
-  NewArgs.resize(RawNewArgs.size() + 1);
-  NewArgs[0] = OldArgs[0];
+  NewArgs.resize(RawNewArgs.size());
   for (int I = 0, E = RawNewArgs.size(); I != E; ++I)
-    NewArgs[I + 1] = SaveArg(RawNewArgs[I]);
+    NewArgs[I] = SaveArg(RawNewArgs[I]);
 
   return CAS.parseID(RootID);
 }
