@@ -21,6 +21,8 @@ def err_cas_filesystem_cannot_set_working_directory : Error<
   " -fcas-fs-working-directory">, DefaultFatal;
 def err_cas_depscan_daemon_connection: Error<
   "Failed to establish connection with depscan daemon: %0">, DefaultFatal;
+def err_cas_depscan_failed: Error<
+  "CAS-based dependency scan failed: %0">, DefaultFatal;
 
 def remark_compile_job_cache_hit : Remark<
   "compile job cache hit for '%0' => '%1'">, InGroup<CompileJobCacheHit>;

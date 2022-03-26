@@ -395,20 +395,6 @@ parseCASFSAutoPrefixMappings(DiagnosticsEngine &Diag, const ArgList &Args) {
   return Mapping;
 }
 
-static void addCC1ScanDepsArgsInline(
-    const char *Exec, SmallVectorImpl<const char *> &CC1Args,
-    const cc1depscand::DepscanPrefixMapping &PrefixMapping,
-    llvm::function_ref<const char *(const Twine &)> SaveArg,
-    const CASOptions &CASOpts, llvm::cas::CASDB &CAS) {
-  llvm::Error E = scanAndUpdateCC1(Exec, CC1Args, CC1Args, PrefixMapping,
-                                   SaveArg, CASOpts, CAS)
-                      .takeError();
-
-  // FIXME: Use DiagnosticEngine somehow...
-  logAllUnhandledErrors(std::move(E), llvm::errs());
-  return;
-}
-
 static void scanAndUpdateCC1UsingMode(const llvm::opt::Arg &ModeArg,
                                       const char *Exec,
                                       SmallVectorImpl<const char *> &CC1Args,
@@ -465,9 +451,12 @@ static void scanAndUpdateCC1UsingMode(const llvm::opt::Arg &ModeArg,
     if (Err)
       Diag.Report(diag::err_cas_depscan_daemon_connection)
           << toString(std::move(Err));
-  } else
-    addCC1ScanDepsArgsInline(Exec, CC1Args, PrefixMapping, SaveArg, CASOpts,
-                             *CAS);
+  } else if (llvm::Error E =
+                 scanAndUpdateCC1(Exec, CC1Args, CC1Args, PrefixMapping,
+                                  SaveArg, CASOpts, *CAS)
+                     .takeError()) {
+    Diag.Report(diag::err_cas_depscan_failed) << toString(std::move(E));
+  }
 }
 
 int cc1depscan_main(ArrayRef<const char *> Argv, const char *Argv0,
