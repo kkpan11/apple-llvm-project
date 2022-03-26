@@ -1,4 +1,4 @@
-//===- CC1DepScanDProtocol.h - Communications for -cc1depscand ------------===//
+//===- cc1depscanProtocol.h - Communications for -cc1depscan --------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,11 +6,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_DRIVER_CC1DEPSCANDPROTOCOL_H
-#define LLVM_CLANG_DRIVER_CC1DEPSCANDPROTOCOL_H
+#ifndef LLVM_CLANG_TOOLS_DRIVER_CC1DEPSCANPROTOCOL_H
+#define LLVM_CLANG_TOOLS_DRIVER_CC1DEPSCANPROTOCOL_H
 
 #include "clang/Basic/LLVM.h"
-#include "clang/Driver/CC1DepScanDClient.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/StringSaver.h"
@@ -22,6 +21,17 @@
 
 namespace clang {
 namespace cc1depscand {
+
+struct DepscanPrefixMapping {
+  Optional<StringRef> NewSDKPath;
+  Optional<StringRef> NewToolchainPath;
+  SmallVector<StringRef> PrefixMap;
+};
+
+struct AutoArgEdit {
+  uint32_t Index = -1u;
+  StringRef NewArg;
+};
 
 std::string getBasePath(StringRef DaemonKey);
 
@@ -133,11 +143,12 @@ public:
                          DepscanPrefixMapping &Mapping);
 
   llvm::Error putAutoArgEdits(ArrayRef<AutoArgEdit> Edits);
-  llvm::Error getAutoArgEdits(llvm::StringSaver &Saver, SmallVectorImpl<AutoArgEdit> &Edits);
+  llvm::Error getAutoArgEdits(llvm::StringSaver &Saver,
+                              SmallVectorImpl<AutoArgEdit> &Edits);
 
   llvm::Error putScanResult(StringRef RootID, ArrayRef<AutoArgEdit> Edits);
-  llvm::Error getScanResult(llvm::StringSaver &Saver,
-                            StringRef &RootID, SmallVectorImpl<AutoArgEdit> &Edits);
+  llvm::Error getScanResult(llvm::StringSaver &Saver, StringRef &RootID,
+                            SmallVectorImpl<AutoArgEdit> &Edits);
 
   explicit CC1DepScanDProtocol(int Socket) : Socket(Socket) {}
   CC1DepScanDProtocol() = delete;
@@ -147,7 +158,76 @@ private:
   SmallString<128> Message;
 };
 
+class FileDescriptor {
+public:
+  operator int() const { return FD; }
+
+  FileDescriptor() = default;
+  explicit FileDescriptor(int FD) : FD(FD) {}
+
+  FileDescriptor(FileDescriptor &&X) : FD(X) { X.FD = -1; }
+  FileDescriptor &operator=(FileDescriptor &&X) {
+    close();
+    FD = X.FD;
+    X.FD = -1;
+    return *this;
+  }
+
+  FileDescriptor(const FileDescriptor &) = delete;
+  FileDescriptor &operator=(const FileDescriptor &) = delete;
+
+  ~FileDescriptor() { close(); }
+
+private:
+  void close() {
+    if (FD == -1)
+      return;
+    ::close(FD);
+    FD = -1;
+  }
+  int FD = -1;
+};
+
+class OpenSocket : public FileDescriptor {
+public:
+  static Expected<OpenSocket> create(StringRef BasePath);
+
+  OpenSocket() = delete;
+
+  OpenSocket(OpenSocket &&) = default;
+  OpenSocket &operator=(OpenSocket &&Socket) = default;
+
+private:
+  explicit OpenSocket(int FD) : FileDescriptor(FD) {}
+};
+
+class ScanDaemon : public OpenSocket {
+public:
+  static Expected<ScanDaemon> create(StringRef BasePath, const char *Arg0);
+
+  static Expected<ScanDaemon> constructAndShakeHands(StringRef BasePath,
+                                                     const char *Arg0);
+
+  static Expected<ScanDaemon> connectToDaemonAndShakeHands(StringRef BasePath);
+
+  llvm::Error shakeHands() const;
+
+private:
+  static Expected<ScanDaemon> launchDaemon(StringRef BasePath,
+                                           const char *Arg0);
+  static Expected<ScanDaemon> connectToDaemon(StringRef BasePath,
+                                              bool ShouldWait);
+  static Expected<ScanDaemon> connectToExistingDaemon(StringRef BasePath) {
+    return connectToDaemon(BasePath, /*ShouldWait=*/false);
+  }
+  static Expected<ScanDaemon> connectToJustLaunchedDaemon(StringRef BasePath) {
+    return connectToDaemon(BasePath, /*ShouldWait=*/true);
+  }
+
+  explicit ScanDaemon(OpenSocket S) : OpenSocket(std::move(S)) {}
+};
+
 } // namespace cc1depscand
 } // namespace clang
 
-#endif // LLVM_CLANG_DRIVER_CC1DEPSCANDPROTOCOL_H
+#endif // LLVM_CLANG_TOOLS_DRIVER_CC1DEPSCANPROTOCOL_H

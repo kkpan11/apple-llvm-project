@@ -1,4 +1,4 @@
-//===- CC1DepScanDProtocol.cpp - Communications for -cc1depscand ----------===//
+//===- cc1depscanProtocol.cpp - Communications for -cc1depscan ------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,8 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "clang/Driver/CC1DepScanDProtocol.h"
-#include "clang/Driver/CC1DepScanDClient.h"
+#include "cc1depscanProtocol.h"
 #include "llvm/CAS/CASDB.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Support/Error.h"
@@ -87,78 +86,6 @@ std::string cc1depscand::getBasePath(StringRef DaemonKey) {
 
   // Ensure null-termination.
   return BasePath.str().str();
-}
-
-namespace {
-
-class FileDescriptor {
-public:
-  operator int() const { return FD; }
-
-  FileDescriptor() = default;
-  explicit FileDescriptor(int FD) : FD(FD) {}
-
-  FileDescriptor(FileDescriptor &&X) : FD(X) { X.FD = -1; }
-  FileDescriptor &operator=(FileDescriptor &&X) {
-    close();
-    FD = X.FD;
-    X.FD = -1;
-    return *this;
-  }
-
-  FileDescriptor(const FileDescriptor &) = delete;
-  FileDescriptor &operator=(const FileDescriptor &) = delete;
-
-  ~FileDescriptor() { close(); }
-
-private:
-  void close() {
-    if (FD == -1)
-      return;
-    ::close(FD);
-    FD = -1;
-  }
-  int FD = -1;
-};
-
-class OpenSocket : public FileDescriptor {
-public:
-  static Expected<OpenSocket> create(StringRef BasePath);
-
-  OpenSocket() = delete;
-
-  OpenSocket(OpenSocket &&) = default;
-  OpenSocket &operator=(OpenSocket &&Socket) = default;
-
-private:
-  explicit OpenSocket(int FD) : FileDescriptor(FD) {}
-};
-
-class ScanDaemon : public OpenSocket {
-public:
-  static Expected<ScanDaemon> create(StringRef BasePath, const char *Arg0);
-
-  static Expected<ScanDaemon> constructAndShakeHands(StringRef BasePath,
-                                                     const char *Arg0);
-
-  static Expected<ScanDaemon> connectToDaemonAndShakeHands(StringRef BasePath);
-
-  Error shakeHands() const;
-
-private:
-  static Expected<ScanDaemon> launchDaemon(StringRef BasePath,
-                                           const char *Arg0);
-  static Expected<ScanDaemon> connectToDaemon(StringRef BasePath,
-                                              bool ShouldWait);
-  static Expected<ScanDaemon> connectToExistingDaemon(StringRef BasePath) {
-    return connectToDaemon(BasePath, /*ShouldWait=*/false);
-  }
-  static Expected<ScanDaemon> connectToJustLaunchedDaemon(StringRef BasePath) {
-    return connectToDaemon(BasePath, /*ShouldWait=*/true);
-  }
-
-  explicit ScanDaemon(OpenSocket S) : OpenSocket(std::move(S)) {}
-};
 }
 
 Expected<OpenSocket> OpenSocket::create(StringRef BasePath) {
@@ -259,7 +186,7 @@ Expected<ScanDaemon> ScanDaemon::create(StringRef BasePath, const char *Arg0) {
 }
 
 Expected<ScanDaemon> ScanDaemon::constructAndShakeHands(StringRef BasePath,
-    const char *Arg0) {
+                                                        const char *Arg0) {
   auto Daemon = ScanDaemon::create(BasePath, Arg0);
   if (!Daemon)
     return Daemon.takeError();
@@ -393,8 +320,8 @@ CC1DepScanDProtocol::getDepscanPrefixMapping(llvm::StringSaver &Saver,
 
   // Parse the mapping.
   size_t Count = 0;
-  for (auto I = FullMapping.begin(), B = I, E = FullMapping.end();
-        I != E; ++I) {
+  for (auto I = FullMapping.begin(), B = I, E = FullMapping.end(); I != E;
+       ++I) {
     if (I != B && I[-1])
       continue; // Wait for null-terminator.
     StringRef Map = I;
@@ -429,8 +356,9 @@ llvm::Error CC1DepScanDProtocol::putAutoArgEdits(ArrayRef<AutoArgEdit> Edits) {
   return Error::success();
 }
 
-llvm::Error CC1DepScanDProtocol::getAutoArgEdits(llvm::StringSaver &Saver,
-                                                 SmallVectorImpl<AutoArgEdit> &Edits) {
+llvm::Error
+CC1DepScanDProtocol::getAutoArgEdits(llvm::StringSaver &Saver,
+                                     SmallVectorImpl<AutoArgEdit> &Edits) {
   size_t NumEdits = 0;
   if (Error E = getNumber(NumEdits))
     return E;
@@ -444,7 +372,8 @@ llvm::Error CC1DepScanDProtocol::getAutoArgEdits(llvm::StringSaver &Saver,
   return Error::success();
 }
 
-llvm::Error CC1DepScanDProtocol::putScanResult(StringRef RootID, ArrayRef<AutoArgEdit> Edits) {
+llvm::Error CC1DepScanDProtocol::putScanResult(StringRef RootID,
+                                               ArrayRef<AutoArgEdit> Edits) {
   if (Error E = putString(RootID))
     return E;
   if (Error E = putAutoArgEdits(Edits))
@@ -452,83 +381,12 @@ llvm::Error CC1DepScanDProtocol::putScanResult(StringRef RootID, ArrayRef<AutoAr
   return Error::success();
 }
 
-llvm::Error CC1DepScanDProtocol::getScanResult(llvm::StringSaver &Saver,
-                                               StringRef &RootID, SmallVectorImpl<AutoArgEdit> &Edits) {
+llvm::Error
+CC1DepScanDProtocol::getScanResult(llvm::StringSaver &Saver, StringRef &RootID,
+                                   SmallVectorImpl<AutoArgEdit> &Edits) {
   if (Error E = getString(Saver, RootID))
     return E;
   if (Error E = getAutoArgEdits(Saver, Edits))
     return E;
   return Error::success();
-}
-
-llvm::Error cc1depscand::addCC1ScanDepsArgs(
-    const char *Exec, SmallVectorImpl<const char *> &Argv,
-    const DepscanPrefixMapping &Mapping, StringRef Path, bool NoSpawnDaemon,
-    llvm::function_ref<const char *(const Twine &)> SaveArg) {
-  // FIXME: Skip some of this if -fcas-fs has been passed.
-  SmallString<128> WorkingDirectory;
-  if (auto E =
-          llvm::errorCodeToError(llvm::sys::fs::current_path(WorkingDirectory)))
-    return E;
-
-  // llvm::dbgs() << "connecting to daemon...\n";
-  auto Daemon = NoSpawnDaemon ? ScanDaemon::connectToDaemonAndShakeHands(Path)
-                              : ScanDaemon::constructAndShakeHands(Path, Exec);
-  if (!Daemon)
-    return Daemon.takeError();
-  cc1depscand::CC1DepScanDProtocol Comms(*Daemon);
-
-  //llvm::dbgs() << "sending request...\n";
-  if (auto E = Comms.putCommand(WorkingDirectory, Argv, Mapping))
-    return E;
-
-  llvm::BumpPtrAllocator Alloc;
-  llvm::StringSaver Saver(Alloc);
-  SmallVector<AutoArgEdit> ArgEdits;
-  SmallVector<const char *> NewArgs;
-  cc1depscand::CC1DepScanDProtocol::ResultKind Result;
-  if (auto E = Comms.getResultKind(Result))
-    return E;
-
-  if (Result != cc1depscand::CC1DepScanDProtocol::SuccessResult)
-    return createStringError(inconvertibleErrorCode(),
-                             "cc1depscand returns failure");
-
-  if (auto E = Comms.getArgs(Saver, NewArgs))
-    return E;
-
-  // FIXME: Avoid this duplication.
-  Argv.resize(NewArgs.size() + 1);
-  for (int I = 0, E = NewArgs.size(); I != E; ++I)
-    Argv[I + 1] = SaveArg(NewArgs[I]);
-
-  return Error::success();
-}
-
-void cc1depscand::shutdownCC1ScanDepsDaemon(StringRef Path) {
-  SmallString<128> WorkingDirectory;
-  reportAsFatalIfError(
-      llvm::errorCodeToError(llvm::sys::fs::current_path(WorkingDirectory)));
-
-  //llvm::dbgs() << "connecting to daemon...\n";
-  auto Daemon = ScanDaemon::connectToDaemonAndShakeHands(Path);
-
-  if (!Daemon) {
-    logAllUnhandledErrors(Daemon.takeError(), llvm::errs(),
-                          "Cannot connect to the daemon to shutdown: ");
-    return;
-  }
-  cc1depscand::CC1DepScanDProtocol Comms(*Daemon);
-
-  DepscanPrefixMapping Mapping;
-  const char *Args[] = { "-shutdown", nullptr };
-  //llvm::dbgs() << "sending shutdown request...\n";
-  reportAsFatalIfError(Comms.putCommand(WorkingDirectory, Args[0], Mapping));
-
-  // Wait for the ack before return.
-  cc1depscand::CC1DepScanDProtocol::ResultKind Result;
-  reportAsFatalIfError(Comms.getResultKind(Result));
-
-  if (Result != cc1depscand::CC1DepScanDProtocol::SuccessResult)
-    llvm::report_fatal_error("Daemon shutdown failed");
 }

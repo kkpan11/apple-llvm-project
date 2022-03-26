@@ -6,6 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "cc1depscanProtocol.h"
 #include "clang/Basic/DiagnosticCAS.h"
 #include "clang/Basic/DiagnosticDriver.h"
 #include "clang/Basic/DiagnosticFrontend.h"
@@ -13,8 +14,6 @@
 #include "clang/Basic/TargetOptions.h"
 #include "clang/CodeGen/ObjectFilePCHContainerOperations.h"
 #include "clang/Config/config.h"
-#include "clang/Driver/CC1DepScanDClient.h"
-#include "clang/Driver/CC1DepScanDProtocol.h"
 #include "clang/Driver/Options.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/CompilerInvocation.h"
@@ -353,6 +352,82 @@ static Expected<llvm::cas::CASID> scanAndUpdateCC1WithTool(
     const cc1depscand::DepscanPrefixMapping &PrefixMapping,
     llvm::function_ref<const char *(const Twine &)> SaveArg);
 
+static void shutdownCC1ScanDepsDaemon(StringRef Path) {
+  using namespace clang::cc1depscand;
+  SmallString<128> WorkingDirectory;
+  reportAsFatalIfError(
+      llvm::errorCodeToError(llvm::sys::fs::current_path(WorkingDirectory)));
+
+  // llvm::dbgs() << "connecting to daemon...\n";
+  auto Daemon = ScanDaemon::connectToDaemonAndShakeHands(Path);
+
+  if (!Daemon) {
+    logAllUnhandledErrors(Daemon.takeError(), llvm::errs(),
+                          "Cannot connect to the daemon to shutdown: ");
+    return;
+  }
+  CC1DepScanDProtocol Comms(*Daemon);
+
+  DepscanPrefixMapping Mapping;
+  const char *Args[] = {"-shutdown", nullptr};
+  // llvm::dbgs() << "sending shutdown request...\n";
+  reportAsFatalIfError(Comms.putCommand(WorkingDirectory, Args[0], Mapping));
+
+  // Wait for the ack before return.
+  CC1DepScanDProtocol::ResultKind Result;
+  reportAsFatalIfError(Comms.getResultKind(Result));
+
+  if (Result != CC1DepScanDProtocol::SuccessResult)
+    llvm::report_fatal_error("Daemon shutdown failed");
+}
+
+static llvm::Error scanAndUpdateCC1UsingDaemon(
+    const char *Exec, SmallVectorImpl<const char *> &Argv,
+    const cc1depscand::DepscanPrefixMapping &Mapping, StringRef Path,
+    bool NoSpawnDaemon,
+    llvm::function_ref<const char *(const Twine &)> SaveArg) {
+  using namespace clang::cc1depscand;
+
+  // FIXME: Skip some of this if -fcas-fs has been passed.
+  SmallString<128> WorkingDirectory;
+  if (auto E =
+          llvm::errorCodeToError(llvm::sys::fs::current_path(WorkingDirectory)))
+    return E;
+
+  // llvm::dbgs() << "connecting to daemon...\n";
+  auto Daemon = NoSpawnDaemon ? ScanDaemon::connectToDaemonAndShakeHands(Path)
+                              : ScanDaemon::constructAndShakeHands(Path, Exec);
+  if (!Daemon)
+    return Daemon.takeError();
+  CC1DepScanDProtocol Comms(*Daemon);
+
+  // llvm::dbgs() << "sending request...\n";
+  if (auto E = Comms.putCommand(WorkingDirectory, Argv, Mapping))
+    return E;
+
+  llvm::BumpPtrAllocator Alloc;
+  llvm::StringSaver Saver(Alloc);
+  SmallVector<AutoArgEdit> ArgEdits;
+  SmallVector<const char *> NewArgs;
+  CC1DepScanDProtocol::ResultKind Result;
+  if (auto E = Comms.getResultKind(Result))
+    return E;
+
+  if (Result != CC1DepScanDProtocol::SuccessResult)
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "cc1depscand returns failure");
+
+  if (auto E = Comms.getArgs(Saver, NewArgs))
+    return E;
+
+  // FIXME: Avoid this duplication.
+  Argv.resize(NewArgs.size() + 1);
+  for (int I = 0, E = NewArgs.size(); I != E; ++I)
+    Argv[I + 1] = SaveArg(NewArgs[I]);
+
+  return Error::success();
+}
+
 // FIXME: This is a copy of Command::writeResponseFile. Command is too deeply
 // tied with clang::Driver to use directly.
 static void writeResponseFile(raw_ostream &OS,
@@ -445,7 +520,7 @@ static void scanAndUpdateCC1UsingMode(const llvm::opt::Arg &ModeArg,
   auto SaveArg = [&Args](const Twine &T) { return Args.MakeArgString(T); };
   if (Optional<std::string> DaemonPath = makeDepscanDaemonPath(Mode, Sharing)) {
     // FIXME: Pass CASOptions to cc1depscand to forward to the daemon.
-    auto Err = cc1depscand::addCC1ScanDepsArgs(
+    auto Err = scanAndUpdateCC1UsingDaemon(
         Exec, CC1Args, PrefixMapping, *DaemonPath,
         /*NoSpawnDaemon*/ (bool)Sharing.Path, SaveArg);
     if (Err)
@@ -644,7 +719,7 @@ int cc1depscand_main(ArrayRef<const char *> Argv, const char *Argv0,
   if (Command == "-shutdown") {
     // When shutdown command is received, connect to daemon and sent shuwdown
     // command.
-    cc1depscand::shutdownCC1ScanDepsDaemon(BasePath);
+    shutdownCC1ScanDepsDaemon(BasePath);
     ::exit(0);
   }
 
