@@ -337,13 +337,13 @@ makeDepscanDaemonPath(StringRef Mode, const DepscanSharing &Sharing) {
 }
 
 static Expected<llvm::cas::CASID>
-scanAndUpdateCC1(const char *Exec, ArrayRef<const char *> InputArgs,
-                 SmallVectorImpl<const char *> &OutputArgs,
-                 const cc1depscand::DepscanPrefixMapping &PrefixMapping,
-                 llvm::function_ref<const char *(const Twine &)> SaveArg,
-                 const CASOptions &CASOpts, llvm::cas::CASDB &CAS);
+scanAndUpdateCC1Inline(const char *Exec, ArrayRef<const char *> InputArgs,
+                       SmallVectorImpl<const char *> &OutputArgs,
+                       const cc1depscand::DepscanPrefixMapping &PrefixMapping,
+                       llvm::function_ref<const char *(const Twine &)> SaveArg,
+                       const CASOptions &CASOpts, llvm::cas::CASDB &CAS);
 
-static Expected<llvm::cas::CASID> scanAndUpdateCC1WithTool(
+static Expected<llvm::cas::CASID> scanAndUpdateCC1InlineWithTool(
     const CASOptions &CASOpts,
     tooling::dependencies::DependencyScanningTool &Tool,
     DiagnosticConsumer &DiagsConsumer, const char *Exec,
@@ -470,11 +470,12 @@ parseCASFSAutoPrefixMappings(DiagnosticsEngine &Diag, const ArgList &Args) {
   return Mapping;
 }
 
-static void scanAndUpdateCC1UsingMode(
-    const llvm::opt::Arg &ModeArg, const char *Exec,
-    SmallVectorImpl<const char *> &CC1Args, DiagnosticsEngine &Diag,
-    const llvm::opt::ArgList &Args, const CASOptions &CASOpts,
-    llvm::cas::CASDB &CAS, llvm::Optional<llvm::cas::CASID> &RootID) {
+static void scanAndUpdateCC1(const llvm::opt::Arg &ModeArg, const char *Exec,
+                             SmallVectorImpl<const char *> &CC1Args,
+                             DiagnosticsEngine &Diag,
+                             const llvm::opt::ArgList &Args,
+                             const CASOptions &CASOpts, llvm::cas::CASDB &CAS,
+                             llvm::Optional<llvm::cas::CASID> &RootID) {
   using namespace clang::driver;
 
   // Collect these before returning to ensure they're claimed.
@@ -523,9 +524,10 @@ static void scanAndUpdateCC1UsingMode(
     return;
   }
 
-  if (llvm::Error E = scanAndUpdateCC1(Exec, CC1Args, CC1Args, PrefixMapping,
-                                       SaveArg, CASOpts, CAS)
-                          .moveInto(RootID))
+  if (llvm::Error E =
+          scanAndUpdateCC1Inline(Exec, CC1Args, CC1Args, PrefixMapping, SaveArg,
+                                 CASOpts, CAS)
+              .moveInto(RootID))
     Diag.Report(diag::err_cas_depscan_failed) << toString(std::move(E));
 }
 
@@ -596,8 +598,8 @@ int cc1depscan_main(ArrayRef<const char *> Argv, const char *Argv0,
   if (DepScanArg && StringRef(DepScanArg->getValue()) != "inline") {
     for (auto *A : CC1Args->getValues())
       NewArgs.push_back(A);
-    scanAndUpdateCC1UsingMode(*DepScanArg, Argv0, NewArgs, Diags, Args, CASOpts,
-                              *CAS, RootID);
+    scanAndUpdateCC1(*DepScanArg, Argv0, NewArgs, Diags, Args, CASOpts, *CAS,
+                     RootID);
   } else {
 
     IntrusiveRefCntPtr<llvm::cas::CachingOnDiskFileSystem> FS =
@@ -609,7 +611,7 @@ int cc1depscan_main(ArrayRef<const char *> Argv, const char *Argv0,
         /*SkipExcludedPPRanges=*/true);
     tooling::dependencies::DependencyScanningTool Tool(Service);
     if (Error E =
-            scanAndUpdateCC1WithTool(
+            scanAndUpdateCC1InlineWithTool(
                 CASOpts, Tool, *DiagsConsumer, Argv0, CC1Args->getValues(),
                 WorkingDirectory, NewArgs, PrefixMapping,
                 [&](const Twine &T) { return Saver.save(T).data(); })
@@ -950,7 +952,7 @@ int cc1depscand_main(ArrayRef<const char *> Argv, const char *Argv0,
             DiagsOS, new DiagnosticOptions(), false);
 
         SmallVector<const char *> NewArgs;
-        auto RootID = scanAndUpdateCC1WithTool(
+        auto RootID = scanAndUpdateCC1InlineWithTool(
             CASOpts, *Tool, *DiagsConsumer, Argv0, Args, WorkingDirectory,
             NewArgs, PrefixMapping,
             [&](const Twine &T) { return Saver.save(T).data(); });
@@ -1221,7 +1223,7 @@ static void updateCompilerInvocation(CompilerInvocation &Invocation,
   Mapper.mapInPlaceOrClear(CodeGenOpts.CoverageCompilationDir);
 }
 
-static Expected<llvm::cas::CASID> scanAndUpdateCC1WithTool(
+static Expected<llvm::cas::CASID> scanAndUpdateCC1InlineWithTool(
     const CASOptions &CASOpts,
     tooling::dependencies::DependencyScanningTool &Tool,
     DiagnosticConsumer &DiagsConsumer, const char *Exec,
@@ -1268,11 +1270,11 @@ static Expected<llvm::cas::CASID> scanAndUpdateCC1WithTool(
 }
 
 static Expected<llvm::cas::CASID>
-scanAndUpdateCC1(const char *Exec, ArrayRef<const char *> InputArgs,
-                 SmallVectorImpl<const char *> &OutputArgs,
-                 const cc1depscand::DepscanPrefixMapping &PrefixMapping,
-                 llvm::function_ref<const char *(const Twine &)> SaveArg,
-                 const CASOptions &CASOpts, llvm::cas::CASDB &CAS) {
+scanAndUpdateCC1Inline(const char *Exec, ArrayRef<const char *> InputArgs,
+                       SmallVectorImpl<const char *> &OutputArgs,
+                       const cc1depscand::DepscanPrefixMapping &PrefixMapping,
+                       llvm::function_ref<const char *(const Twine &)> SaveArg,
+                       const CASOptions &CASOpts, llvm::cas::CASDB &CAS) {
   IntrusiveRefCntPtr<llvm::cas::CachingOnDiskFileSystem> FS =
       llvm::cantFail(llvm::cas::createCachingOnDiskFileSystem(CAS));
 
@@ -1289,7 +1291,7 @@ scanAndUpdateCC1(const char *Exec, ArrayRef<const char *> InputArgs,
   reportAsFatalIfError(
       llvm::errorCodeToError(llvm::sys::fs::current_path(WorkingDirectory)));
 
-  return scanAndUpdateCC1WithTool(CASOpts, Tool, *DiagsConsumer, Exec,
-                                  InputArgs, WorkingDirectory, OutputArgs,
-                                  PrefixMapping, SaveArg);
+  return scanAndUpdateCC1InlineWithTool(CASOpts, Tool, *DiagsConsumer, Exec,
+                                        InputArgs, WorkingDirectory, OutputArgs,
+                                        PrefixMapping, SaveArg);
 }
