@@ -394,7 +394,7 @@ static llvm::Expected<llvm::cas::CASID> scanAndUpdateCC1UsingDaemon(
   SmallString<128> WorkingDirectory;
   if (auto E =
           llvm::errorCodeToError(llvm::sys::fs::current_path(WorkingDirectory)))
-    return E;
+    return std::move(E);
 
   // llvm::dbgs() << "connecting to daemon...\n";
   auto Daemon = NoSpawnDaemon ? ScanDaemon::connectToDaemonAndShakeHands(Path)
@@ -405,7 +405,7 @@ static llvm::Expected<llvm::cas::CASID> scanAndUpdateCC1UsingDaemon(
 
   // llvm::dbgs() << "sending request...\n";
   if (auto E = Comms.putCommand(WorkingDirectory, OldArgs, Mapping))
-    return E;
+    return std::move(E);
 
   llvm::BumpPtrAllocator Alloc;
   llvm::StringSaver Saver(Alloc);
@@ -415,7 +415,7 @@ static llvm::Expected<llvm::cas::CASID> scanAndUpdateCC1UsingDaemon(
   StringRef RootID;
   if (auto E =
           Comms.getScanResult(Saver, Result, FailedReason, RootID, RawNewArgs))
-    return E;
+    return std::move(E);
 
   if (Result != CC1DepScanDProtocol::SuccessResult)
     return llvm::createStringError(llvm::inconvertibleErrorCode(),
