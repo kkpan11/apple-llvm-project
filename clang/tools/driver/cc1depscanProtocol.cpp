@@ -233,20 +233,6 @@ Error ScanDaemon::shakeHands() const {
   return llvm::Error::success();
 }
 
-static void reportAsFatalIfError(llvm::Error E) {
-  if (!E)
-    return;
-  llvm::logAllUnhandledErrors(std::move(E), llvm::errs());
-  abort();
-}
-
-template <typename T> static T reportAsFatalIfError(Expected<T> ValOrErr) {
-  if (!ValOrErr)
-    reportAsFatalIfError(ValOrErr.takeError());
-
-  return std::move(*ValOrErr);
-}
-
 llvm::Error CC1DepScanDProtocol::putArgs(ArrayRef<const char *> Args) {
   // Construct the args block.
   SmallString<256> ArgsBlock;
@@ -342,51 +328,38 @@ CC1DepScanDProtocol::getDepscanPrefixMapping(llvm::StringSaver &Saver,
   return llvm::Error::success();
 }
 
-llvm::Error CC1DepScanDProtocol::putAutoArgEdits(ArrayRef<AutoArgEdit> Edits) {
-  SmallString<256> AllEdits;
-  size_t NumEdits = Edits.size();
-  if (Error E = putNumber(NumEdits))
-    return E;
-  for (auto &Edit : Edits) {
-    if (Error E = putNumber(Edit.Index))
-      return E;
-    if (Error E = putString(Edit.NewArg))
-      return E;
-  }
-  return Error::success();
-}
-
 llvm::Error
-CC1DepScanDProtocol::getAutoArgEdits(llvm::StringSaver &Saver,
-                                     SmallVectorImpl<AutoArgEdit> &Edits) {
-  size_t NumEdits = 0;
-  if (Error E = getNumber(NumEdits))
+CC1DepScanDProtocol::getScanResult(llvm::StringSaver &Saver, ResultKind &Result,
+                                   StringRef &FailedReason, StringRef &RootID,
+                                   SmallVectorImpl<const char *> &Args) {
+  if (Error E = getResultKind(Result))
     return E;
-  while (NumEdits--) {
-    Edits.emplace_back();
-    if (Error E = getNumber(Edits.back().Index))
-      return E;
-    if (Error E = getString(Saver, Edits.back().NewArg))
-      return E;
+
+  if (Result == ErrorResult)
+    return getString(Saver, FailedReason);
+
+  if (Result == InvalidResult) {
+    FailedReason = "invalid scan result";
+    return Error::success();
   }
-  return Error::success();
-}
 
-llvm::Error CC1DepScanDProtocol::putScanResult(StringRef RootID,
-                                               ArrayRef<AutoArgEdit> Edits) {
-  if (Error E = putString(RootID))
-    return E;
-  if (Error E = putAutoArgEdits(Edits))
-    return E;
-  return Error::success();
-}
-
-llvm::Error
-CC1DepScanDProtocol::getScanResult(llvm::StringSaver &Saver, StringRef &RootID,
-                                   SmallVectorImpl<AutoArgEdit> &Edits) {
   if (Error E = getString(Saver, RootID))
     return E;
-  if (Error E = getAutoArgEdits(Saver, Edits))
+  return getArgs(Saver, Args);
+}
+
+llvm::Error
+CC1DepScanDProtocol::putScanResultSuccess(StringRef RootID,
+                                          ArrayRef<const char *> Args) {
+  if (Error E = putResultKind(SuccessResult))
     return E;
-  return Error::success();
+  if (Error E = putString(RootID))
+    return E;
+  return putArgs(Args);
+}
+
+llvm::Error CC1DepScanDProtocol::putScanResultFailed(StringRef Reason) {
+  if (Error E = putResultKind(ErrorResult))
+    return E;
+  return putString(Reason);
 }

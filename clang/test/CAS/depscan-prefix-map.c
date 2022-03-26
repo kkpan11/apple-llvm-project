@@ -14,6 +14,16 @@
 // RUN:              -isysroot %S/Inputs/SDK                              \
 // RUN:              -working-directory %t.d                              \
 // RUN: | FileCheck %s
+// RUN: %clang -cc1depscan -dump-depscan-tree=%t.root -fdepscan=daemon    \
+// RUN:    -fdepscan-prefix-map=%S=/^source                               \
+// RUN:    -fdepscan-prefix-map=%t.d=/^testdir                            \
+// RUN:    -fdepscan-prefix-map=%{objroot}=/^objroot                      \
+// RUN:    -fdepscan-prefix-map-toolchain=/^toolchain                     \
+// RUN:    -fdepscan-prefix-map-sdk=/^sdk                                 \
+// RUN:    -cc1-args -triple x86_64-apple-macos11.0 -x c %s -o %t.d/out.o \
+// RUN:              -isysroot %S/Inputs/SDK                              \
+// RUN:              -working-directory %t.d                              \
+// RUN: | FileCheck %s
 //
 // CHECK:      "-fcas-path" "auto"
 // CHECK-SAME: "-working-directory" "/^testdir"

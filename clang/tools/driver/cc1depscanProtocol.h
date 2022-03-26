@@ -142,13 +142,12 @@ public:
                          SmallVectorImpl<const char *> &Args,
                          DepscanPrefixMapping &Mapping);
 
-  llvm::Error putAutoArgEdits(ArrayRef<AutoArgEdit> Edits);
-  llvm::Error getAutoArgEdits(llvm::StringSaver &Saver,
-                              SmallVectorImpl<AutoArgEdit> &Edits);
-
-  llvm::Error putScanResult(StringRef RootID, ArrayRef<AutoArgEdit> Edits);
-  llvm::Error getScanResult(llvm::StringSaver &Saver, StringRef &RootID,
-                            SmallVectorImpl<AutoArgEdit> &Edits);
+  llvm::Error putScanResultFailed(StringRef Reason);
+  llvm::Error putScanResultSuccess(StringRef RootID,
+                                   ArrayRef<const char *> Args);
+  llvm::Error getScanResult(llvm::StringSaver &Saver, ResultKind &Result,
+                            StringRef &FailedReason, StringRef &RootID,
+                            SmallVectorImpl<const char *> &Args);
 
   explicit CC1DepScanDProtocol(int Socket) : Socket(Socket) {}
   CC1DepScanDProtocol() = delete;
