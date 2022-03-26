@@ -389,6 +389,13 @@ static llvm::Expected<llvm::cas::CASID> scanAndUpdateCC1UsingDaemon(
     const CASOptions &CASOpts, llvm::cas::CASDB &CAS) {
   using namespace clang::cc1depscand;
 
+  // FIXME: A bunch of data is sent back and forth to the daemon using IPC. Why
+  // not use the CAS?
+  // - Send the daemon the ID of a structured object describing the action,
+  //   with the working directory, original -cc1, and mapping instructions.
+  // - Daemon sends back the ID of a structured object with the result, new
+  //   args, and filesystem tree.
+
   // FIXME: Forward CASOptions to the daemon.
   // FIXME: Skip some of this if -fcas-fs has been passed.
   SmallString<128> WorkingDirectory;
