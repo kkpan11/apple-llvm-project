@@ -3914,9 +3914,10 @@ void Driver::BuildActions(Compilation &C, DerivedArgList &Args,
     // FIXME: To avoid globally adding the depscan phase to all the input types,
     // we try to inject depscan phase here if the first phase is preprocess and
     // -fdepscan is used.
-    if (PL.front() == phases::Preprocess &&
-        Args.hasArg(options::OPT_fdepscan_EQ))
-      PL.insert(PL.begin(), phases::Depscan);
+    if (PL.front() == phases::Preprocess)
+      if (Arg *A = Args.getLastArg(options::OPT_fdepscan_EQ))
+        if (A->getValue() != llvm::StringLiteral("off"))
+          PL.insert(PL.begin(), phases::Depscan);
 
     for (phases::ID Phase : PL) {
 

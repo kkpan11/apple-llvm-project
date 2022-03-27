@@ -4477,11 +4477,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &Job,
   if (IsIAMCU && types::isCXX(Input.getType()))
     D.Diag(diag::err_drv_clang_unsupported) << "C++ for IAMCU";
 
-  // Handle depscan.
-  if (Job.getKind() == Action::DepscanJobClass) {
-    CmdArgs.push_back("-cc1depscan");
-
-    // Pass depscan related options to cc1depscan.
+  {
     const OptSpecifier DepScanOpts[] = {
         options::OPT_fdepscan_EQ,
         options::OPT_fdepscan_share_EQ,
@@ -4494,12 +4490,24 @@ void Clang::ConstructJob(Compilation &C, const JobAction &Job,
         options::OPT_fdepscan_prefix_map_sdk_EQ,
         options::OPT_fdepscan_prefix_map_toolchain_EQ};
 
-    Args.AddAllArgs(CmdArgs, DepScanOpts);
+    // Handle depscan.
+    if (Job.getKind() == Action::DepscanJobClass) {
+      CmdArgs.push_back("-cc1depscan");
 
-    assert(Output.isFilename() && "Depscan needs to have file output");
-    CmdArgs.push_back("-o");
-    CmdArgs.push_back(Output.getFilename());
-    CmdArgs.push_back("-cc1-args");
+      // Pass depscan related options to cc1depscan.
+      Args.AddAllArgs(CmdArgs, DepScanOpts);
+
+      assert(Output.isFilename() && "Depscan needs to have file output");
+      CmdArgs.push_back("-o");
+      CmdArgs.push_back(Output.getFilename());
+      CmdArgs.push_back("-cc1-args");
+    } else if (Arg *A = Args.getLastArg(options::OPT_fdepscan_EQ)) {
+      if (A->getValue() == llvm::StringLiteral("off")) {
+        // Claim depscan args.
+        for (auto Opt : DepScanOpts)
+          Args.ClaimAllArgs(Opt);
+      }
+    }
   }
 
   // Invoke ourselves in -cc1 mode.
