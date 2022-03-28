@@ -5720,6 +5720,49 @@ bool SelectionDAGBuilder::EmitFuncArgumentDbgValue(
   if (!Op)
     return false;
 
+  // If we had a dbg addr, just emit it here.
+  if (Kind == FuncArgumentDbgValueKind::Addr) {
+    if (!Op->isReg()) {
+      LLVM_DEBUG(
+          llvm::dbgs()
+          << "Failed to emit dbg_value for llvm.dbg.addr since not a reg?!\n");
+      return false;
+    }
+
+    // Today, this code is only used on swift async contexts, so if we don't
+    // have one, then return early and emit an LLVM_DEBUG.
+    if (!Arg->getParent()->hasParamAttribute(Arg->getArgNo(),
+                                             Attribute::SwiftAsync) ||
+        Arg->getArgNo() != 0) {
+      LLVM_DEBUG(
+          llvm::dbgs()
+          << "Failed to emit dbg_value for llvm.dbg.addr since going along "
+             "swift async parameter path, but not a swift async parameter?!\n");
+      return false;
+    }
+
+    // Reg is always by nature of the swift async ABI to be the register of the
+    // first livein variable of a machine function.
+    unsigned Reg = MF.getRegInfo().livein_begin()->first;
+
+    // Then add the entry value to our expression.
+    Expr = DIExpression::prepend(Expr, DIExpression::EntryValue);
+
+    // And create the vreg dbg value with an entry value expression prepended.
+    SDDbgValue *SDV = DAG.getVRegDbgValue(
+        Variable, Expr, Reg, true /*is indirect*/, DL, SDNodeOrder);
+
+    // It may seem counter-intuitive that we are passing something that is
+    // clearly a parameter with false to "is parameter". The reason why we are
+    // doing this is semantically marking a debug value with this marker causes
+    // InstrEmitter to hoist the emitted debug info to the beginning of the
+    // entry block. This is a code pattern only valid with dbg.declare. In
+    // contrast, we need to emit dbg.addr at the specific location where it was
+    // asked to be emitted.
+    DAG.AddDbgValue(SDV, false /*treat as dbg.declare byval parameter*/);
+    return true;
+  }
+
   assert(Variable->isValidLocationForIntrinsic(DL) &&
          "Expected inlined-at fields to agree");
   MachineInstr *NewMI = nullptr;
@@ -6106,7 +6149,10 @@ void SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I,
         // Address is an argument, so try to emit its dbg value using
         // virtual register info from the FuncInfo.ValueMap.
         EmitFuncArgumentDbgValue(Address, Variable, Expression, dl,
-                                 FuncArgumentDbgValueKind::Declare, N);
+                                 Intrinsic == Intrinsic::dbg_addr
+                                     ? FuncArgumentDbgValueKind::Addr
+                                     : FuncArgumentDbgValueKind::Declare,
+                                 N);
         return;
       } else {
         SDV = DAG.getDbgValue(Variable, Expression, N.getNode(), N.getResNo(),
@@ -6117,7 +6163,10 @@ void SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I,
       // If Address is an argument then try to emit its dbg value using
       // virtual register info from the FuncInfo.ValueMap.
       if (!EmitFuncArgumentDbgValue(Address, Variable, Expression, dl,
-                                    FuncArgumentDbgValueKind::Declare, N)) {
+                                    Intrinsic == Intrinsic::dbg_addr
+                                        ? FuncArgumentDbgValueKind::Addr
+                                        : FuncArgumentDbgValueKind::Declare,
+                                    N)) {
         LLVM_DEBUG(dbgs() << "Dropping debug info for " << DI
                           << " (could not emit func-arg dbg_value)\n");
       }

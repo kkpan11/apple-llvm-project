@@ -2203,11 +2203,15 @@ bool VarLocBasedLDV::ExtendRanges(MachineFunction &MF,
       // In Swift async functions entry values are preferred, since they
       // can be evaluated in both live frames and virtual backtraces.
       if (isSwiftAsyncContext(MI)) {
-        MI.getOperand(3).setMetadata(DIExpression::prepend(
-            MI.getDebugExpression(), DIExpression::EntryValue));
+        // If our instruction is not an entry value yet, make it an entry value.
+        if (!MI.getDebugExpression()->isEntryValue()) {
+          MI.getOperand(3).setMetadata(DIExpression::prepend(
+              MI.getDebugExpression(), DIExpression::EntryValue));
+        }
         AsyncDbgValues.push_back(&MI);
-      } else
+      } else {
         recordEntryValue(MI, DefinedRegs, OpenRanges, VarLocIDs);
+      }
     }
   }
 
