@@ -67,6 +67,43 @@ public func addressOnlyVarTest<T : P>(_ x: T) {
     k.doSomething() // Set breakpoint addressOnlyVarTest here 4
 }
 
+//////////////////////
+// Arg Simple Tests //
+//////////////////////
+
+public func copyableValueArgTest(_ k: __owned Klass) {
+    print("stop here") // Set breakpoint copyableValueArgTest here 1
+    k.doSomething()
+    let m = _move(k) // Set breakpoint copyableValueArgTest here 2
+    m.doSomething() // Set breakpoint copyableValueArgTest here 3
+}
+
+public func copyableVarArgTest(_ k: inout Klass) {
+    print("stop here") // Set breakpoint copyableVarArgTest here 1
+    k.doSomething()
+    let m = _move(k) // Set breakpoint copyableVarArgTest here 2
+    m.doSomething()
+    k = Klass()     // Set breakpoint copyableVarArgTest here 3
+    k.doSomething() // Set breakpoint copyableVarArgTest here 4
+    print("stop here")
+}
+
+public func addressOnlyValueArgTest<T : P>(_ k: __owned T) {
+    print("stop here") // Set breakpoint addressOnlyValueArgTest here 1
+    k.doSomething()
+    let m = _move(k) // Set breakpoint addressOnlyValueArgTest here 2
+    m.doSomething() // Set breakpoint addressOnlyValueArgTest here 3
+}
+
+public func addressOnlyVarArgTest<T : P>(_ k: inout T, _ x: T) {
+    print("stop here") // Set breakpoint addressOnlyVarArgTest here 1
+    k.doSomething()
+    let m = _move(k) // Set breakpoint addressOnlyVarArgTest here 2
+    m.doSomething()
+    k = x // Set breakpoint addressOnlyVarArgTest here 3
+    k.doSomething() // Set breakpoint addressOnlyVarArgTest here 4
+}
+
 ////////////////////////////////////
 // Conditional Control Flow Tests //
 ////////////////////////////////////
@@ -145,6 +182,11 @@ func main() {
     copyableVarTest()
     addressOnlyValueTest(Klass())
     addressOnlyVarTest(Klass())
+    copyableValueArgTest(Klass())
+    var kls = Klass()
+    copyableVarArgTest(&kls)
+    addressOnlyValueArgTest(Klass())
+    addressOnlyVarArgTest(&kls, Klass())
     copyableValueCCFTrueTest()
     copyableValueCCFFalseTest()
     copyableVarTestCCFlowTrueReinitOutOfBlockTest()
