@@ -50,6 +50,23 @@
 // FULL-TREE-NEXT:   ]
 // FULL-TREE-NEXT: }
 
+// RUN: clang-scan-deps -compilation-database %t/cdb.json -cas-path %t/cas -format experimental-tree -emit-cas-compdb | FileCheck %s -DPREFIX=%/t -check-prefix=COMPDB
+// Check without sharing FileManager.
+// RUN: clang-scan-deps -compilation-database %t/cdb.json -cas-path %t/cas -format experimental-tree -reuse-filemanager=0 -emit-cas-compdb | FileCheck %s -DPREFIX=%/t -check-prefix=COMPDB
+// COMPDB: [
+// COMPDB:   {
+// COMPDB:     "file": "[[PREFIX]]/t1.c",
+// COMPDB:     "directory": "[[PREFIX]]",
+// COMPDB:     "arguments": [
+// COMPDB:       "clang",
+// COMPDB:       "-cc1",
+// COMPDB:       "-fcas-path",
+// COMPDB:       "[[PREFIX]]/cas",
+// COMPDB:       "-fcas-fs",
+// COMPDB:   {
+// COMPDB:     "file": "[[PREFIX]]/t2.c",
+// COMPDB:     "directory": "[[PREFIX]]",
+// COMPDB:     "arguments": [
 
 
 //--- cdb.json.template

@@ -126,6 +126,13 @@ public:
     return Worker.getCASFS();
   }
 
+  /// If \p DependencyScanningService enabled sharing of \p FileManager this
+  /// will return the same instance, otherwise it will create a new one for
+  /// each invocation.
+  llvm::IntrusiveRefCntPtr<FileManager> getOrCreateFileManager() const {
+    return Worker.getOrCreateFileManager();
+  }
+
 private:
   DependencyScanningWorker Worker;
 };

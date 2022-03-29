@@ -373,6 +373,13 @@ DependencyScanningWorker::DependencyScanningWorker(
     Files = new FileManager(FileSystemOptions(), RealFS);
 }
 
+llvm::IntrusiveRefCntPtr<FileManager>
+DependencyScanningWorker::getOrCreateFileManager() const {
+  if (Files)
+    return Files;
+  return new FileManager(FileSystemOptions(), RealFS);
+}
+
 static llvm::Error
 runWithDiags(DiagnosticOptions *DiagOpts,
              llvm::function_ref<bool(DiagnosticConsumer &, DiagnosticOptions &)>

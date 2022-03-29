@@ -83,6 +83,11 @@ public:
   llvm::cas::CachingOnDiskFileSystem &getCASFS() { return *CacheFS; }
   bool useCAS() const { return UseCAS; }
 
+  /// If \p DependencyScanningService enabled sharing of \p FileManager this
+  /// will return the same instance, otherwise it will create a new one for
+  /// each invocation.
+  llvm::IntrusiveRefCntPtr<FileManager> getOrCreateFileManager() const;
+
 private:
   std::shared_ptr<PCHContainerOperations> PCHContainerOps;
   std::unique_ptr<ExcludedPreprocessorDirectiveSkipMapping> PPSkipMappings;
