@@ -182,6 +182,9 @@ struct ThreadSafeHashMappedTrieBase::ImplType {
     return Ptr;
   }
 
+  /// FIXME: This should take a function that allocates and constructs the
+  /// content lazily (taking the hash as a separate parameter), in case of
+  /// collision.
   ThreadSafeAllocator<BumpPtrAllocator> ContentAlloc;
   TrieSubtrie Root; // Must be last! Tail-allocated.
 
