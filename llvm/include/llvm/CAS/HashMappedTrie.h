@@ -267,7 +267,7 @@ public:
     friend class ThreadSafeHashMappedTrie;
     LazyValueConstructor() = delete;
     LazyValueConstructor(void *Mem, value_type *&Result, ArrayRef<uint8_t> Hash)
-        : Mem( Mem), Result( Result), Hash( Hash) {
+        : Mem(Mem), Result(Result), Hash(Hash) {
       assert(Hash.size() == sizeof(HashT) && "Invalid hash");
       assert(Mem && "Invalid memory for construction");
     }
