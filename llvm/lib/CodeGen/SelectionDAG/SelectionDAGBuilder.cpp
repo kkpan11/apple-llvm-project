@@ -6122,7 +6122,11 @@ void SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I,
         SDDbgValue *SDV = DAG.getFrameIndexDbgValue(
             Variable, Expression, FI, getRoot().getNode(), /*IsIndirect*/ true,
             dl, SDNodeOrder);
-        DAG.AddDbgValue(SDV, isParameter);
+        // Even if we have a byval parameter, we want to mark this as false
+        // since if we mark this as a byval parameter, then the code in
+        // AddDbgValue will hoist it to the beginning of the function instead of
+        // treating it as the control dependent instruction that it is.
+        DAG.AddDbgValue(SDV, false /*is dbg.declare byval parameter*/);
       } else {
         LLVM_DEBUG(dbgs() << "Skipping " << DI
                           << " (variable info stashed in MF side table)\n");
