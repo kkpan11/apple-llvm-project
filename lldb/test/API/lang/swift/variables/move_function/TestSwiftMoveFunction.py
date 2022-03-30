@@ -28,6 +28,8 @@ class TestSwiftMoveFunctionType(TestBase):
 
     mydir = TestBase.compute_mydir(__file__)
 
+    # Skip on aarch64 linux: rdar://91005071
+    @skipIf(archs=['aarch64'], oslist=['linux'])
     @swiftTest
     def test_swift_move_function(self):
         """Check that we properly show variables at various points of the CFG while
