@@ -45,7 +45,6 @@ static uint32_t g_initialize_count = 0;
 void PlatformMacOSX::Initialize() {
   PlatformDarwin::Initialize();
   PlatformRemoteiOS::Initialize();
-  PlatformRemoteMacOSX::Initialize();
 #if defined(__APPLE__)
   PlatformAppleSimulator::Initialize();
   PlatformDarwinKernel::Initialize();
@@ -80,7 +79,6 @@ void PlatformMacOSX::Terminate() {
   PlatformDarwinKernel::Terminate();
   PlatformAppleSimulator::Terminate();
 #endif
-  PlatformRemoteMacOSX::Initialize();
   PlatformRemoteiOS::Terminate();
   PlatformDarwin::Terminate();
 }
