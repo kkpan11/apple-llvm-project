@@ -654,7 +654,8 @@ private:
                               CommandObject::CommandMap &command_map);
 
   // An interruptible wrapper around the stream output
-  void PrintCommandOutput(Stream &stream, llvm::StringRef str);
+  void PrintCommandOutput(IOHandler &io_handler, llvm::StringRef str,
+                          bool is_stdout);
 
   bool EchoCommandNonInteractive(llvm::StringRef line,
                                  const Flags &io_handler_flags) const;
