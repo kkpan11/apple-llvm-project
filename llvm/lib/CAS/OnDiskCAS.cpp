@@ -1928,25 +1928,40 @@ OnDiskCAS::createPooledDataRecord(DataRecordHandle::Input Input) {
 }
 
 Expected<BlobProxy> OnDiskCAS::makeBlob(Expected<OnDiskBlobProxy> Blob) {
-  if (Blob)
-    return makeBlobProxy(getIDFromIndexOffset(Blob->IndexOffset), Blob->Data);
-  return Blob.takeError();
+  if (!Blob)
+    return Blob.takeError();
+
+  if (Blob->Object.OK != TrieRecord::ObjectKind::Blob)
+    return createInvalidObjectError(getIDFromIndexOffset(Blob->IndexOffset),
+                                    ObjectKind::Blob);
+
+  return makeBlobProxy(getIDFromIndexOffset(Blob->IndexOffset), Blob->Data);
 }
 
 Expected<NodeProxy> OnDiskCAS::makeNode(Expected<OnDiskDataRecordProxy> Node) {
-  if (Node)
-    return makeNodeProxy(getIDFromIndexOffset(Node->IndexOffset),
-                         &Node->Record.getHeader(), Node->Record.getNumRefs(),
-                         toStringRef(Node->Record.getData()));
-  return Node.takeError();
+  if (!Node)
+    return Node.takeError();
+
+  if (Node->Object.OK != TrieRecord::ObjectKind::Node)
+    return createInvalidObjectError(getIDFromIndexOffset(Node->IndexOffset),
+                                    ObjectKind::Node);
+
+  return makeNodeProxy(getIDFromIndexOffset(Node->IndexOffset),
+                       &Node->Record.getHeader(), Node->Record.getNumRefs(),
+                       toStringRef(Node->Record.getData()));
 }
 
 Expected<TreeProxy> OnDiskCAS::makeTree(Expected<OnDiskDataRecordProxy> Tree) {
-  if (Tree)
-    return makeTreeProxy(getIDFromIndexOffset(Tree->IndexOffset),
-                         &Tree->Record.getHeader(),
-                         Tree->Record.getNumRefs() / 2);
-  return Tree.takeError();
+  if (!Tree)
+    return Tree.takeError();
+
+  if (Tree->Object.OK != TrieRecord::ObjectKind::Tree)
+    return createInvalidObjectError(getIDFromIndexOffset(Tree->IndexOffset),
+                                    ObjectKind::Tree);
+
+  return makeTreeProxy(getIDFromIndexOffset(Tree->IndexOffset),
+                       &Tree->Record.getHeader(),
+                       Tree->Record.getNumRefs() / 2);
 }
 
 Expected<BlobProxy> OnDiskCAS::getBlob(CASID ID) {
