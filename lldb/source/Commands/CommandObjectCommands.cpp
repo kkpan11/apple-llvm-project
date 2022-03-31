@@ -1450,7 +1450,7 @@ protected:
           m_short_help = std::string(option_arg);
         break;
       case 'o':
-        m_overwrite = true;
+        m_overwrite_lazy = eLazyBoolYes;
         break;
       case 's':
         m_synchronicity =
@@ -1472,7 +1472,7 @@ protected:
       m_class_name.clear();
       m_funct_name.clear();
       m_short_help.clear();
-      m_overwrite = false;
+      m_overwrite_lazy = eLazyBoolCalculate;
       m_synchronicity = eScriptedCommandSynchronicitySynchronous;
     }
 
@@ -1485,7 +1485,7 @@ protected:
     std::string m_class_name;
     std::string m_funct_name;
     std::string m_short_help;
-    bool m_overwrite;
+    LazyBool m_overwrite_lazy;
     ScriptedCommandSynchronicity m_synchronicity =
         eScriptedCommandSynchronicitySynchronous;
   };
@@ -1504,7 +1504,6 @@ protected:
 
     ScriptInterpreter *interpreter = GetDebugger().GetScriptInterpreter();
     if (interpreter) {
-
       StringList lines;
       lines.SplitIntoLines(data);
       if (lines.GetSize() > 0) {
@@ -1567,8 +1566,19 @@ protected:
       result.AppendError("'command script add' requires at least one argument");
       return false;
     }
-    // Store the options in case we get multi-line input
-    m_overwrite = m_options.m_overwrite;
+    // Store the options in case we get multi-line input, also figure out the
+    // default if not user supplied:
+    switch (m_options.m_overwrite_lazy) {
+      case eLazyBoolCalculate:
+        m_overwrite = !GetDebugger().GetCommandInterpreter().GetRequireCommandOverwrite();
+        break;
+      case eLazyBoolYes:
+        m_overwrite = true;
+        break;
+      case eLazyBoolNo:
+        m_overwrite = false;
+    }
+    
     Status path_error;
     m_container = GetCommandInterpreter().VerifyUserMultiwordCmdPath(
         command, true, path_error);
@@ -1642,8 +1652,9 @@ protected:
   std::string m_cmd_name;
   CommandObjectMultiword *m_container = nullptr;
   std::string m_short_help;
-  bool m_overwrite;
-  ScriptedCommandSynchronicity m_synchronicity;
+  bool m_overwrite = eLazyBoolCalculate;
+  ScriptedCommandSynchronicity m_synchronicity =
+      eScriptedCommandSynchronicitySynchronous;
 };
 
 // CommandObjectCommandsScriptList
