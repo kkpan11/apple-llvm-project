@@ -644,7 +644,7 @@ struct OnDiskObjectProxy {
 /// this configurable in the future).
 ///
 /// Files:
-/// - db/v1.index: HashMappedTrie(name="cas.hashes[sha1]")
+/// - db/v1.index: HashMappedTrie(name="cas.hashes[<hashname>]")
 /// - db/v1.data: DataStore(name="cas.objects[64K]") for objects <64KB
 /// - db/v1.<TrieRecordOffset>: Objects >=64KB
 ///
@@ -666,16 +666,28 @@ struct OnDiskObjectProxy {
 /// - Store by suffix tree
 class OnDiskCAS : public BuiltinCAS {
 public:
-  static constexpr StringLiteral IndexTableName = "llvm.cas.index[sha1]";
-  static constexpr StringLiteral DataPoolTableName = "llvm.cas.data[sha1]";
-  static constexpr StringLiteral ActionCacheTableName =
-      "llvm.cas.actions[sha1->sha1]";
+  static StringRef getIndexTableName() {
+    static const std::string Name =
+        ("llvm.cas.index[" + getHashName() + "]").str();
+    return Name;
+  }
+  static StringRef getDataPoolTableName() {
+    static const std::string Name =
+        ("llvm.cas.data[" + getHashName() + "]").str();
+    return Name;
+  }
+  static StringRef getActionCacheTableName() {
+    static const std::string Name =
+        ("llvm.cas.actions[" + getHashName() + "->" + getHashName() + "]")
+            .str();
+    return Name;
+  }
 
   static constexpr StringLiteral IndexFile = "index";
   static constexpr StringLiteral DataPoolFile = "data";
   static constexpr StringLiteral ActionCacheFile = "actions";
 
-  static constexpr StringLiteral FilePrefix = "v1.";
+  static constexpr StringLiteral FilePrefix = "v2.";
   static constexpr StringLiteral FileSuffixData = ".data";
   static constexpr StringLiteral FileSuffixBlob = ".blob";
   static constexpr StringLiteral FileSuffixBlob0 = ".blob0";
@@ -862,9 +874,6 @@ private:
 
 } // end anonymous namespace
 
-constexpr StringLiteral OnDiskCAS::IndexTableName;
-constexpr StringLiteral OnDiskCAS::DataPoolTableName;
-constexpr StringLiteral OnDiskCAS::ActionCacheTableName;
 constexpr StringLiteral OnDiskCAS::IndexFile;
 constexpr StringLiteral OnDiskCAS::DataPoolFile;
 constexpr StringLiteral OnDiskCAS::ActionCacheFile;
@@ -2178,25 +2187,25 @@ Expected<std::unique_ptr<OnDiskCAS>> OnDiskCAS::open(StringRef AbsPath) {
   constexpr uint64_t GB = 1024ull * 1024ull * 1024ull;
   Optional<OnDiskHashMappedTrie> Index;
   if (Error E = OnDiskHashMappedTrie::create(
-                    AbsPath + Slash + FilePrefix + IndexFile, IndexTableName,
-                    sizeof(HashType) * 8,
+                    AbsPath + Slash + FilePrefix + IndexFile,
+                    getIndexTableName(), sizeof(HashType) * 8,
                     /*DataSize=*/sizeof(TrieRecord), /*MaxFileSize=*/8 * GB,
                     /*MinFileSize=*/MB)
                     .moveInto(Index))
     return std::move(E);
 
   Optional<OnDiskDataAllocator> DataPool;
-  if (Error E =
-          OnDiskDataAllocator::create(
-              AbsPath + Slash + FilePrefix + DataPoolFile, DataPoolTableName,
-              /*MaxFileSize=*/16 * GB, /*MinFileSize=*/MB)
-              .moveInto(DataPool))
+  if (Error E = OnDiskDataAllocator::create(
+                    AbsPath + Slash + FilePrefix + DataPoolFile,
+                    getDataPoolTableName(),
+                    /*MaxFileSize=*/16 * GB, /*MinFileSize=*/MB)
+                    .moveInto(DataPool))
     return std::move(E);
 
   Optional<OnDiskHashMappedTrie> ActionCache;
   if (Error E = OnDiskHashMappedTrie::create(
                     AbsPath + Slash + FilePrefix + ActionCacheFile,
-                    ActionCacheTableName, sizeof(HashType) * 8,
+                    getActionCacheTableName(), sizeof(HashType) * 8,
                     /*DataSize=*/sizeof(ActionCacheResultT), /*MaxFileSize=*/GB,
                     /*MinFileSize=*/MB)
                     .moveInto(ActionCache))
