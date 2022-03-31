@@ -15,7 +15,6 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/FileSystem.h"
-#include "llvm/Support/SHA1.h"
 #include <atomic>
 #include <mutex>
 

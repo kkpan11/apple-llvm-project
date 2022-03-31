@@ -15,7 +15,6 @@
 #include "llvm/CAS/HierarchicalTreeBuilder.h"
 #include "llvm/Support/AlignOf.h"
 #include "llvm/Support/Allocator.h"
-#include "llvm/Support/SHA1.h"
 #include <mutex>
 
 // FIXME: Put the functions we need in FileSystem.h.
