@@ -318,9 +318,14 @@ void VPBasicBlock::execute(VPTransformState *State) {
     // Temporarily terminate with unreachable until CFG is rewired.
     UnreachableInst *Terminator = State->Builder.CreateUnreachable();
     State->Builder.SetInsertPoint(Terminator);
-    // Register NewBB in its loop. In innermost loops its the same for all BB's.
-    State->CurrentVectorLoop->addBasicBlockToLoop(NewBB, *State->LI);
     State->CFG.PrevBB = NewBB;
+  }
+
+  if (State->CurrentVectorLoop &&
+      !State->CurrentVectorLoop->contains(State->CFG.PrevBB)) {
+    // Register NewBB in its loop. In innermost loops its the same for all BB's.
+    State->CurrentVectorLoop->addBasicBlockToLoop(State->CFG.PrevBB,
+                                                  *State->LI);
   }
 
   // 2. Fill the IR basic block with IR instructions.
@@ -447,6 +452,17 @@ void VPRegionBlock::execute(VPTransformState *State) {
   ReversePostOrderTraversal<VPBlockBase *> RPOT(Entry);
 
   if (!isReplicator()) {
+    // Create and register the new vector loop.
+    State->CurrentVectorLoop = State->LI->AllocateLoop();
+    Loop *ParentLoop = State->LI->getLoopFor(State->CFG.VectorPreHeader);
+
+    // Insert the new loop into the loop nest and register the new basic blocks
+    // before calling any utilities such as SCEV that require valid LoopInfo.
+    if (ParentLoop)
+      ParentLoop->addChildLoop(State->CurrentVectorLoop);
+    else
+      State->LI->addTopLevelLoop(State->CurrentVectorLoop);
+
     // Visit the VPBlocks connected to "this", starting from it.
     for (VPBlockBase *Block : RPOT) {
       if (EnableVPlanNativePath) {
