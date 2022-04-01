@@ -2,8 +2,8 @@
 // RUN: split-file %s %t
 // RUN: sed -e "s|DIR|%/t|g" %t/cdb.json.template > %t/cdb.json
 
-// RUN: clang-scan-deps -compilation-database %t/cdb.json -cas -cas-path %t/cas -format experimental-tree -mode preprocess-minimized-sources > %t/result1.txt
-// RUN: clang-scan-deps -compilation-database %t/cdb.json -cas -cas-path %t/cas -format experimental-tree -mode preprocess > %t/result2.txt
+// RUN: clang-scan-deps -compilation-database %t/cdb.json -cas-path %t/cas -format experimental-tree -mode preprocess-minimized-sources > %t/result1.txt
+// RUN: clang-scan-deps -compilation-database %t/cdb.json -cas-path %t/cas -format experimental-tree -mode preprocess > %t/result2.txt
 // RUN: diff -u %t/result1.txt %t/result2.txt
 // RUN: FileCheck %s -input-file %t/result1.txt -DPREFIX=%/t
 

@@ -228,11 +228,6 @@ static llvm::cl::opt<ResourceDirRecipeKind> ResourceDirRecipe(
     llvm::cl::init(RDRK_ModifyCompilerPath),
     llvm::cl::cat(DependencyScannerCategory));
 
-llvm::cl::opt<bool> UseCAS("cas",
-                           llvm::cl::desc("Use CAS based dependency scanning."),
-                           llvm::cl::init(false),
-                           llvm::cl::cat(DependencyScannerCategory));
-
 llvm::cl::opt<bool> OverrideCASTokenCache(
     "override-cas-token-cache",
     llvm::cl::desc("Override the CAS-based token cache, using it always."),
@@ -295,6 +290,16 @@ handleTreeDependencyToolResult(llvm::cas::CASDB &CAS, const std::string &Input,
     OS << "tree " << MaybeTree->getID() << " for '" << Input << "'\n";
   });
   return false;
+}
+
+static bool outputFormatRequiresCAS() {
+  switch (Format) {
+    case ScanningOutputFormat::Make:
+    case ScanningOutputFormat::Full:
+      return false;
+    case ScanningOutputFormat::Tree:
+      return true;
+  }
 }
 
 static llvm::json::Array toJSONSorted(const llvm::StringSet<> &Set) {
@@ -568,7 +573,7 @@ int main(int argc, const char **argv) {
 
   std::unique_ptr<llvm::cas::CASDB> CAS;
   IntrusiveRefCntPtr<llvm::cas::CachingOnDiskFileSystem> FS;
-  if (UseCAS) {
+  if (outputFormatRequiresCAS()) {
     if (InMemoryCAS) {
       CAS = llvm::cas::createInMemoryCAS();
     } else {
