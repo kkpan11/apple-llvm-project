@@ -207,19 +207,6 @@ DependencyScanningTool::getDependencyTreeFromCompilerInvocation(
   return FS.createTreeFromNewAccesses(RemapPath);
 }
 
-llvm::Expected<llvm::cas::TreeProxy>
-DependencyScanningTool::getDependencyTreeFromCC1CommandLine(
-    ArrayRef<const char *> Args, StringRef CWD) {
-  llvm::cas::CachingOnDiskFileSystem &FS = Worker.getCASFS();
-  FS.trackNewAccesses();
-  MakeDependencyTree DepsConsumer(FS);
-  Worker.computeDependenciesFromCC1CommandLine(Args, CWD, DepsConsumer);
-  // return DepsConsumer.makeTree();
-  //
-  // FIXME: See FIXME in getDepencyTree().
-  return FS.createTreeFromNewAccesses();
-}
-
 llvm::Expected<FullDependenciesResult>
 DependencyScanningTool::getFullDependencies(
     const std::vector<std::string> &CommandLine, StringRef CWD,

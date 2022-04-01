@@ -101,10 +101,6 @@ public:
       llvm::function_ref<StringRef(const llvm::vfs::CachedDirectoryEntry &)>
           RemapPath = nullptr);
 
-  llvm::Expected<llvm::cas::TreeProxy>
-  getDependencyTreeFromCC1CommandLine(ArrayRef<const char *> Args,
-                                      StringRef CWD);
-
   /// Collect the full module dependency graph for the input, ignoring any
   /// modules which have already been seen. If \p ModuleName isn't empty, this
   /// function returns the full dependency information of module \p ModuleName.

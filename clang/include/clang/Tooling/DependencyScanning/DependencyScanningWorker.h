@@ -78,9 +78,6 @@ public:
       std::shared_ptr<CompilerInvocation> Invocation,
       StringRef WorkingDirectory, DependencyConsumer &Consumer,
       DiagnosticConsumer &DiagsConsumer);
-  void computeDependenciesFromCC1CommandLine(ArrayRef<const char *> Args,
-                                             StringRef WorkingDirectory,
-                                             DependencyConsumer &DepsConsumer);
 
   llvm::vfs::FileSystem &getRealFS() { return *RealFS; }
   llvm::cas::CachingOnDiskFileSystem &getCASFS() { return *CacheFS; }

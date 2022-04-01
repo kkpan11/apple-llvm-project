@@ -434,26 +434,6 @@ llvm::Error DependencyScanningWorker::computeDependencies(
                       });
 }
 
-void DependencyScanningWorker::computeDependenciesFromCC1CommandLine(
-    ArrayRef<const char *> Args, StringRef WorkingDirectory,
-    DependencyConsumer &DepsConsumer) {
-  // auto DiagsConsumer = std::make_unique<IgnoringDiagConsumer>();
-  auto DiagsConsumer = std::make_unique<TextDiagnosticPrinter>(
-      llvm::errs(), new DiagnosticOptions(), false);
-  DiagnosticsEngine Diags(new DiagnosticIDs(), new DiagnosticOptions());
-  Diags.setClient(DiagsConsumer.get(), /*ShouldOwnClient=*/false);
-
-  // Create the compiler invocation.
-  auto Invocation = std::make_shared<CompilerInvocation>();
-  if (!CompilerInvocation::CreateFromArgs(*Invocation, Args, Diags, Args[0])) {
-    llvm::errs() << "failed to create compiler invocation\n";
-    return;
-  }
-
-  computeDependenciesFromCompilerInvocation(
-      std::move(Invocation), WorkingDirectory, DepsConsumer, *DiagsConsumer);
-}
-
 void DependencyScanningWorker::computeDependenciesFromCompilerInvocation(
     std::shared_ptr<CompilerInvocation> Invocation, StringRef WorkingDirectory,
     DependencyConsumer &DepsConsumer, DiagnosticConsumer &DiagsConsumer) {
