@@ -68,13 +68,14 @@ size_t ABISysV_x86_64::GetRedZoneSize() const { return 128; }
 // Static Functions
 
 ABISP
-ABISysV_x86_64::CreateInstance(lldb::ProcessSP process_sp, const ArchSpec &arch) {
+ABISysV_x86_64::CreateInstance(lldb::ProcessSP process_sp,
+                               const ArchSpec &arch) {
   const llvm::Triple::ArchType arch_type = arch.GetTriple().getArch();
   const llvm::Triple::OSType os_type = arch.GetTriple().getOS();
   const llvm::Triple::EnvironmentType os_env =
       arch.GetTriple().getEnvironment();
   if (arch_type == llvm::Triple::x86_64) {
-    switch(os_type) {
+    switch (os_type) {
     case llvm::Triple::OSType::IOS:
     case llvm::Triple::OSType::TvOS:
     case llvm::Triple::OSType::WatchOS:
@@ -570,11 +571,10 @@ static bool ExtractBytesFromRegisters(
     ExecutionContext &exe_ctx, CompilerType &clang_type,
     const DataExtractor &rax_data, const DataExtractor &rdx_data,
     const DataExtractor &rcx_data, const DataExtractor &r8_data,
-    const DataExtractor &xmm0_data,
-    const DataExtractor &xmm1_data, const DataExtractor &xmm2_data,
-    const ByteOrder byte_order, DataBufferSP &data_sp,
-    uint32_t data_byte_offset, uint32_t &integer_bytes, uint32_t &fp_bytes,
-    bool &is_memory) {
+    const DataExtractor &xmm0_data, const DataExtractor &xmm1_data,
+    const DataExtractor &xmm2_data, const ByteOrder byte_order,
+    DataBufferSP &data_sp, uint32_t data_byte_offset, uint32_t &integer_bytes,
+    uint32_t &fp_bytes, bool &is_memory) {
   const bool is_swift_type = (clang_type.GetTypeInfo() & eTypeIsSwift);
   const uint32_t num_children = clang_type.GetNumFields();
   for (uint32_t idx = 0; idx < num_children; ++idx) {
@@ -633,52 +633,52 @@ static bool ExtractBytesFromRegisters(
         (field_type_flags & eTypeInstanceIsPointer &&
          child_is_base_class == false) ||
         is_simple_swift_enum) {
-          if (integer_bytes < 8) {
-            if (integer_bytes + field_byte_width <= 8) {
-              // This is in RAX, copy from register to our result structure:
-              copy_from_extractor = &rax_data;
-              copy_from_offset = integer_bytes;
-              integer_bytes += field_byte_width;
-            } else {
-              // The next field wouldn't fit in the remaining space, so we
-              // pushed it to rdx.
-              copy_from_extractor = &rdx_data;
-              copy_from_offset = 0;
-              integer_bytes = 8 + field_byte_width;
-            }
-          } else if (integer_bytes < 16) {
-            if (integer_bytes + field_byte_width <= 16) {
-              copy_from_extractor = &rdx_data;
-              copy_from_offset = integer_bytes - 8;
-              integer_bytes += field_byte_width;
-            } else if (is_swift_type) {
-              // This one got pushed to rcx
-              copy_from_extractor = &rcx_data;
-              copy_from_offset = 0;
-              integer_bytes = 8 + field_byte_width;
-            }
-          } else if (is_swift_type && integer_bytes < 24) {
-            if (integer_bytes + field_byte_width <= 24) {
-              copy_from_extractor = &rcx_data;
-              copy_from_offset = integer_bytes - 16;
-              integer_bytes += field_byte_width;
-            } else {
-              // This one got pushed to r8:
-              copy_from_extractor = &r8_data;
-              copy_from_offset = 0;
-              integer_bytes = 16 + field_byte_width;
-            }
-          } else if (is_swift_type && integer_bytes + field_byte_width <= 32) {
-            copy_from_extractor = &r8_data;
-            copy_from_offset = integer_bytes - 24;
-            integer_bytes += field_byte_width;
-          } else {
-            // The last field didn't fit.  I can't see how that would happen w/o
-            // the overall size being
-            // greater than 16 bytes.  For now, return a nullptr return value
-            // object.
-            return false;
-          }
+      if (integer_bytes < 8) {
+        if (integer_bytes + field_byte_width <= 8) {
+          // This is in RAX, copy from register to our result structure:
+          copy_from_extractor = &rax_data;
+          copy_from_offset = integer_bytes;
+          integer_bytes += field_byte_width;
+        } else {
+          // The next field wouldn't fit in the remaining space, so we
+          // pushed it to rdx.
+          copy_from_extractor = &rdx_data;
+          copy_from_offset = 0;
+          integer_bytes = 8 + field_byte_width;
+        }
+      } else if (integer_bytes < 16) {
+        if (integer_bytes + field_byte_width <= 16) {
+          copy_from_extractor = &rdx_data;
+          copy_from_offset = integer_bytes - 8;
+          integer_bytes += field_byte_width;
+        } else if (is_swift_type) {
+          // This one got pushed to rcx
+          copy_from_extractor = &rcx_data;
+          copy_from_offset = 0;
+          integer_bytes = 8 + field_byte_width;
+        }
+      } else if (is_swift_type && integer_bytes < 24) {
+        if (integer_bytes + field_byte_width <= 24) {
+          copy_from_extractor = &rcx_data;
+          copy_from_offset = integer_bytes - 16;
+          integer_bytes += field_byte_width;
+        } else {
+          // This one got pushed to r8:
+          copy_from_extractor = &r8_data;
+          copy_from_offset = 0;
+          integer_bytes = 16 + field_byte_width;
+        }
+      } else if (is_swift_type && integer_bytes + field_byte_width <= 32) {
+        copy_from_extractor = &r8_data;
+        copy_from_offset = integer_bytes - 24;
+        integer_bytes += field_byte_width;
+      } else {
+        // The last field didn't fit.  I can't see how that would happen w/o
+        // the overall size being
+        // greater than 16 bytes.  For now, return a nullptr return value
+        // object.
+        return false;
+      }
     } else if (field_type_flags & eTypeIsFloat ||
                field_type_flags & eTypeIsVector) {
       // Structs with long doubles are always passed in memory.
@@ -788,11 +788,9 @@ static bool ExtractBytesFromRegisters(
     // These two tests are just sanity checks.  If I somehow get the
     // type calculation wrong above it is better to just return nothing
     // than to assert or crash.
-    if (!already_copied)
-    {
-      if (copy_from_extractor &&
-          copy_from_offset + field_byte_width <=
-              copy_from_extractor->GetByteSize()) {
+    if (!already_copied) {
+      if (copy_from_extractor && copy_from_offset + field_byte_width <=
+                                     copy_from_extractor->GetByteSize()) {
         copy_from_extractor->CopyByteOrderedData(
             copy_from_offset, field_byte_width,
             data_sp->GetBytes() + field_byte_offset, field_byte_width,
@@ -808,12 +806,12 @@ static bool ExtractBytesFromRegisters(
 // This helper function will flatten an aggregate type
 // and return true if it can be returned in register(s) by value
 // return false if the aggregate is in memory
-static bool FlattenAggregateType(
-    Thread &thread, ExecutionContext &exe_ctx,
-    CompilerType &return_compiler_type,
-    uint32_t data_byte_offset,
-    std::vector<uint32_t> &aggregate_field_offsets,
-    std::vector<CompilerType> &aggregate_compiler_types) {
+static bool
+FlattenAggregateType(Thread &thread, ExecutionContext &exe_ctx,
+                     CompilerType &return_compiler_type,
+                     uint32_t data_byte_offset,
+                     std::vector<uint32_t> &aggregate_field_offsets,
+                     std::vector<CompilerType> &aggregate_compiler_types) {
 
   const uint32_t num_children = return_compiler_type.GetNumFields();
   for (uint32_t idx = 0; idx < num_children; ++idx) {
@@ -826,7 +824,7 @@ static bool FlattenAggregateType(
     CompilerType field_compiler_type = return_compiler_type.GetFieldAtIndex(
         idx, name, &field_bit_offset, nullptr, nullptr);
     llvm::Optional<uint64_t> field_bit_width =
-          field_compiler_type.GetBitSize(&thread);
+        field_compiler_type.GetBitSize(&thread);
 
     // if we don't know the size of the field (e.g. invalid type), exit
     if (!field_bit_width || *field_bit_width == 0) {
@@ -882,13 +880,13 @@ ValueObjectSP ABISysV_x86_64::GetReturnValueObjectImpl(
     std::vector<uint32_t> aggregate_field_offsets;
     std::vector<CompilerType> aggregate_compiler_types;
     if (return_compiler_type.GetTypeSystem()->CanPassInRegisters(
-          return_compiler_type) &&
-      *bit_width <= max_register_value_bit_width &&
-      FlattenAggregateType(thread, exe_ctx, return_compiler_type,
-                          0, aggregate_field_offsets,
-                          aggregate_compiler_types)) {
+            return_compiler_type) &&
+        *bit_width <= max_register_value_bit_width &&
+        FlattenAggregateType(thread, exe_ctx, return_compiler_type, 0,
+                             aggregate_field_offsets,
+                             aggregate_compiler_types)) {
       ByteOrder byte_order = target->GetArchitecture().GetByteOrder();
-      DataBufferSP data_sp(
+      WritableDataBufferSP data_sp(
           new DataBufferHeap(max_register_value_bit_width / 8, 0));
       DataExtractor return_ext(data_sp, byte_order,
                                target->GetArchitecture().GetAddressByteSize());
@@ -899,8 +897,7 @@ ValueObjectSP ABISysV_x86_64::GetReturnValueObjectImpl(
           reg_ctx_sp->GetRegisterInfoByName("rdx", 0);
       const RegisterInfo *rcx_info =
           reg_ctx_sp->GetRegisterInfoByName("rcx", 0);
-      const RegisterInfo *r8_info =
-          reg_ctx_sp->GetRegisterInfoByName("r8", 0);
+      const RegisterInfo *r8_info = reg_ctx_sp->GetRegisterInfoByName("r8", 0);
       const RegisterInfo *xmm0_info =
           reg_ctx_sp->GetRegisterInfoByName("xmm0", 0);
       const RegisterInfo *xmm1_info =
@@ -918,7 +915,7 @@ ValueObjectSP ABISysV_x86_64::GetReturnValueObjectImpl(
       reg_ctx_sp->ReadRegister(rax_info, rax_value);
       reg_ctx_sp->ReadRegister(rdx_info, rdx_value);
       reg_ctx_sp->ReadRegister(rcx_info, rcx_value);
-      reg_ctx_sp->ReadRegister(r8_info,  r8_value);
+      reg_ctx_sp->ReadRegister(r8_info, r8_value);
       reg_ctx_sp->ReadRegister(xmm0_info, xmm0_value);
       reg_ctx_sp->ReadRegister(xmm1_info, xmm1_value);
       reg_ctx_sp->ReadRegister(xmm2_info, xmm2_value);
@@ -966,7 +963,8 @@ ValueObjectSP ABISysV_x86_64::GetReturnValueObjectImpl(
         bool is_complex;
 
         CompilerType field_compiler_type = aggregate_compiler_types[idx];
-        uint32_t field_byte_width = (uint32_t) (*field_compiler_type.GetByteSize(&thread));
+        uint32_t field_byte_width =
+            (uint32_t)(*field_compiler_type.GetByteSize(&thread));
         uint32_t field_byte_offset = aggregate_field_offsets[idx];
 
         uint32_t field_bit_width = field_byte_width * 8;
@@ -978,7 +976,6 @@ ValueObjectSP ABISysV_x86_64::GetReturnValueObjectImpl(
         // bail out
         if (!field_bit_width || field_bit_width == 0)
           break;
-
 
         DataExtractor *copy_from_extractor = nullptr;
         uint32_t copy_from_offset = 0;
@@ -1137,14 +1134,14 @@ ValueObjectSP ABISysV_x86_64::GetReturnValueObjectImpl(
             return return_valobj_sp;
 
           if (ExtractBytesFromRegisters(
-                  exe_ctx, field_compiler_type, rax_data, rdx_data, rcx_data, r8_data,
-                  xmm0_data, xmm1_data, xmm2_data, byte_order, data_sp,
+                  exe_ctx, field_compiler_type, rax_data, rdx_data, rcx_data,
+                  r8_data, xmm0_data, xmm1_data, xmm2_data, byte_order, data_sp,
                   data_byte_offset + child_byte_offset, integer_bytes, fp_bytes,
                   is_memory) == false) {
             return return_valobj_sp;
           } else
             copy_from_extractor = &return_ext;
-            already_copied = true;
+          already_copied = true;
         }
 
         if (!already_copied) {
