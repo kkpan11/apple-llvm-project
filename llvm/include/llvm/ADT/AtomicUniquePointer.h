@@ -63,7 +63,7 @@ public:
   T *operator->() const { return &operator*(); }
 
   AtomicUniquePointer() : Storage(nullptr) {}
-  AtomicUniquePointer(nullptr_t) : Storage(nullptr) {}
+  AtomicUniquePointer(std::nullptr_t) : Storage(nullptr) {}
   AtomicUniquePointer(std::unique_ptr<T> Value) : Storage(Value.release()) {}
   AtomicUniquePointer(AtomicUniquePointer &&RHS) : Storage(RHS.take()) {}
   AtomicUniquePointer(const AtomicUniquePointer &) = delete;
@@ -71,7 +71,7 @@ public:
   /// Destroy the owned pointer.
   ~AtomicUniquePointer() { delete load(); }
 
-  AtomicUniquePointer &operator=(nullptr_t) {
+  AtomicUniquePointer &operator=(std::nullptr_t) {
     store(nullptr);
     return *this;
   }

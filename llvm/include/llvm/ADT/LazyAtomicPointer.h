@@ -137,12 +137,12 @@ public:
   T *operator->() const { return &operator*(); }
 
   LazyAtomicPointer() : Storage(0) {}
-  LazyAtomicPointer(nullptr_t) : Storage(0) {}
+  LazyAtomicPointer(std::nullptr_t) : Storage(0) {}
   LazyAtomicPointer(T *Value) : Storage(makeRaw(Value)) {}
   LazyAtomicPointer(const LazyAtomicPointer &RHS)
       : Storage(makeRaw(RHS.load())) {}
 
-  LazyAtomicPointer &operator=(nullptr_t) {
+  LazyAtomicPointer &operator=(std::nullptr_t) {
     store(nullptr);
     return *this;
   }
