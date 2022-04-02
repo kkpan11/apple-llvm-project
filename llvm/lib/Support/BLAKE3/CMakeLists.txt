@@ -52,12 +52,21 @@ if (IS_X64)
       blake3_avx512_x86-64_unix.S
     )
   endif()
+else()
+  # In a macOS Universal build (setting CMAKE_OSX_ARCHITECTURES to multiple values),
+  # IS_X64 and IS_ARM64 won't be set, but compilation of the source files will consider
+  # targeting either of them (each source file is internally compiled once for each
+  # architecture). Thus, if we on the CMake level decide not to include the assembly
+  # files, tell the source to not expect it to be present either.
+  add_definitions(-DBLAKE3_NO_AVX512 -DBLAKE3_NO_AVX2 -DBLAKE3_NO_SSE41 -DBLAKE3_NO_SSE2)
 endif()
 
 if (IS_ARM64)
   list(APPEND LLVM_BLAKE3_FILES
     blake3_neon.c
   )
+else()
+  add_definitions(-DBLAKE3_USE_NEON=0)
 endif()
 
 add_library(LLVMSupportBlake3 OBJECT EXCLUDE_FROM_ALL ${LLVM_BLAKE3_FILES})
