@@ -428,9 +428,12 @@ public:
     if (!isEntryValueValue(Num))
       return false;
 
-    // Emit a variable location using an entry value expression.
-    DIExpression *NewExpr =
-        DIExpression::prepend(Prop.DIExpr, DIExpression::EntryValue);
+    // Emit a variable location using an entry value expression. We only add the
+    // entry value expression if our expression is not yet an entry value.
+    const DIExpression *NewExpr = Prop.DIExpr;
+    if (!NewExpr->isEntryValue())
+      NewExpr =
+        DIExpression::prepend(NewExpr, DIExpression::EntryValue);
     Register Reg = MTracker->LocIdxToLocID[Num.getLoc()];
     MachineOperand MO = MachineOperand::CreateReg(Reg, false);
 

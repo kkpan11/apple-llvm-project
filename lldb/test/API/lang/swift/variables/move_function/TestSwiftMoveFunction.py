@@ -238,10 +238,7 @@ class TestSwiftMoveFunctionType(TestBase):
         # Go to the last breakpoint and make sure that k is reinitialized
         # properly.
         self.runCmd('continue')
-        # TODO: There is an error here. We are losing the debug info here
-        # for some reason.
-        #self.assertGreater(varK.unsigned, 0, "varK not initialized")
-        self.assertIsNone(varK.value, "K is live but was moved?!")
+        self.assertGreater(varK.unsigned, 0, "varK not initialized")
 
         # Run so we hit the next breakpoint to go to the next test.
         self.runCmd('continue')
@@ -285,8 +282,7 @@ class TestSwiftMoveFunctionType(TestBase):
         # There is some sort of bug here. We should have the value here. For now
         # leave the next line commented out and validate we are not seeing the
         # value so we can detect change in behavior.
-        #self.assertGreater(varK.unsigned, 0, "varK not initialized")
-        self.assertIsNone(varK.value, "K is live but was moved?!")
+        self.assertGreater(varK.unsigned, 0, "varK not initialized")
 
         # Run so we hit the next breakpoint as part of the next test.
         self.runCmd('continue')
