@@ -37,17 +37,9 @@ class TestSwiftMoveFunctionType(TestBase):
         """
         self.build()
 
-        self.exec_artifact = self.getBuildArtifact(self.exec_name)
-        self.target = self.dbg.CreateTarget(self.exec_artifact)
-        self.assertTrue(self.target, VALID_TARGET)
-
-        self.do_setup_breakpoints()
-
-        self.process = self.target.LaunchSimple(None, None, os.getcwd())
-        threads = lldbutil.get_threads_stopped_at_breakpoint(
-            self.process, self.breakpoints[0])
-        self.assertEqual(len(threads), 1)
-        self.thread = threads[0]
+        self.target, self.process, self.thread, self.bkpt = \
+            lldbutil.run_to_source_breakpoint(
+                self, 'Set breakpoint', lldb.SBFileSpec('main.swift'))
 
         self.do_check_copyable_value_test()
         self.do_check_copyable_var_test()
@@ -74,58 +66,9 @@ class TestSwiftMoveFunctionType(TestBase):
         self.main_source_spec = lldb.SBFileSpec(self.main_source)
         self.exec_name = "a.out"
 
-    def add_breakpoints(self, name, num_breakpoints):
-        pattern = 'Set breakpoint {} here {}'
-        for i in range(num_breakpoints):
-            pat = pattern.format(name, i+1)
-            brk = self.target.BreakpointCreateBySourceRegex(
-                pat, self.main_source_spec)
-            self.assertGreater(brk.GetNumLocations(), 0, VALID_BREAKPOINT)
-            yield brk
-
     def get_var(self, name):
         frame = self.thread.frames[0]
-        self.assertTrue(frame.IsValid(), "Couldn't get a frame.")
         return frame.FindVariable(name)
-
-    def do_setup_breakpoints(self):
-        self.breakpoints = []
-
-        self.breakpoints.extend(
-            self.add_breakpoints('copyableValueTest', 3))
-        self.breakpoints.extend(
-            self.add_breakpoints('addressOnlyValueTest', 3))
-        self.breakpoints.extend(
-            self.add_breakpoints('copyableVarTest', 4))
-        self.breakpoints.extend(
-            self.add_breakpoints('addressOnlyVarTest', 4))
-
-        self.breakpoints.extend(
-            self.add_breakpoints('copyableValueArgTest', 3))
-        self.breakpoints.extend(
-            self.add_breakpoints('addressOnlyValueArgTest', 3))
-        self.breakpoints.extend(
-            self.add_breakpoints('copyableVarArgTest', 4))
-        self.breakpoints.extend(
-            self.add_breakpoints('addressOnlyVarArgTest', 4))
-
-        self.breakpoints.extend(
-            self.add_breakpoints('copyableValueCCFTrueTest',
-                                 5))
-        self.breakpoints.extend(
-            self.add_breakpoints('copyableValueCCFFalseTest',
-                                 3))
-        self.breakpoints.extend(
-            self.add_breakpoints('copyableVarTestCCFlowTrueReinitOutOfBlockTest',
-                                 5))
-        self.breakpoints.extend(
-            self.add_breakpoints('copyableVarTestCCFlowTrueReinitInBlockTest',
-                                 5))
-        self.breakpoints.extend(
-            self.add_breakpoints('copyableVarTestCCFlowFalseReinitOutOfBlockTest',
-                                 4))
-        self.breakpoints.extend(
-            self.add_breakpoints('copyableVarTestCCFlowFalseReinitInBlockTest', 3))
 
     def do_check_copyable_value_test(self):
         # We haven't defined varK yet.
