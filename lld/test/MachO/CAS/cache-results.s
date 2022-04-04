@@ -8,8 +8,9 @@
 // RUN: llvm-ar rcs %t/alib/libt1.a %t/t1.o
 // RUN: %lld -dylib -o %t/dlib/libt2.dylib %t/t2.o
 
-// Check normal invocation.
-// RUN: %lld %t/main.o -o %t/exe-normal -lt1 -lt2 -L%t/alib -L%t/dlib
+// Check normal invocation. Need to move the output as output path is part of UUID
+// RUN: %lld %t/main.o -o %t/exe -lt1 -lt2 -L%t/alib -L%t/dlib
+// RUN: mv %t/exe %t/exe-normal
 // RUN: llvm-objdump --macho %t/exe-normal -t | FileCheck %s -check-prefix=SYMBOLS
 
 // Check result caching.

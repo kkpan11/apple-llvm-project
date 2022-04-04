@@ -7,8 +7,9 @@
 // RUN: llvm-mc -filetype=obj -triple=x86_64-apple-macos %t/t2.s -o %t/t2.o
 // RUN: llvm-libtool-darwin -static -o %t/alib/libt.a %t/t1.o %t/t2.o
 
-// Check normal invocation.
-// RUN: %lld -lSystem %t/main.o -o %t/exe-normal -lt -L%t/alib
+// Check normal invocation. Need to move the output as output path is part of UUID
+// RUN: %lld -lSystem %t/main.o -o %t/exe -lt -L%t/alib
+// RUN: mv %t/exe %t/exe-normal
 // RUN: llvm-objdump --macho %t/exe-normal -t | FileCheck %s -check-prefix=SYMBOLS
 
 // Check with embedded CASIDS.
