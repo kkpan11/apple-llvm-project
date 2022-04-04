@@ -589,7 +589,6 @@ int main(int argc, const char **argv) {
         llvm::cas::getDefaultOnDiskCASPath(CASPath);
       else
         CASPath += OnDiskCASPath;
-      llvm::errs() << "cas-path = '" << CASPath << "'\n";
       CAS = cantFail(llvm::cas::createOnDiskCAS(CASPath));
     }
     FS = llvm::cantFail(llvm::cas::createCachingOnDiskFileSystem(*CAS));
