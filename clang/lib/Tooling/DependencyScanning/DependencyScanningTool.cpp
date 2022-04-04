@@ -236,8 +236,9 @@ DependencyScanningTool::getFullDependencies(
       ContextHash = std::move(Hash);
     }
 
-    FullDependenciesResult getFullDependencies(
-        const std::vector<std::string> &OriginalCommandLine) const {
+    Expected<FullDependenciesResult>
+    getFullDependencies(const std::vector<std::string> &OriginalCommandLine,
+                        llvm::cas::CachingOnDiskFileSystem *FS) const {
       FullDependencies FD;
 
       FD.OriginalCommandLine =
@@ -254,6 +255,13 @@ DependencyScanningTool::getFullDependencies(
       }
 
       FD.PrebuiltModuleDeps = std::move(PrebuiltModuleDeps);
+
+      if (FS) {
+        if (auto Tree = FS->createTreeFromNewAccesses())
+          FD.CASFileSystemRootID = Tree->getID();
+        else
+          return Tree.takeError();
+      }
 
       FullDependenciesResult FDR;
 
@@ -279,11 +287,18 @@ DependencyScanningTool::getFullDependencies(
   };
 
   FullDependencyPrinterConsumer Consumer(AlreadySeen);
+  llvm::cas::CachingOnDiskFileSystem *FS =
+      Worker.useCAS() ? &Worker.getCASFS() : nullptr;
+  if (FS) {
+    FS->trackNewAccesses();
+    FS->setCurrentWorkingDirectory(CWD);
+  }
   llvm::Error Result =
       Worker.computeDependencies(CWD, CommandLine, Consumer, ModuleName);
   if (Result)
     return std::move(Result);
-  return Consumer.getFullDependencies(CommandLine);
+
+  return Consumer.getFullDependencies(CommandLine, FS);
 }
 
 } // end namespace dependencies

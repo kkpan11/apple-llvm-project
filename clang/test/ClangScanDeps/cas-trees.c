@@ -10,6 +10,47 @@
 // CHECK:      tree {{.*}} for '[[PREFIX]]/t1.c'
 // CHECK-NEXT: tree {{.*}} for '[[PREFIX]]/t2.c'
 
+// RUN: clang-scan-deps -compilation-database %t/cdb.json -cas-path %t/cas -format experimental-tree-full -mode preprocess | FileCheck %s -DPREFIX=%/t --check-prefix=FULL-TREE
+// FULL-TREE:      {
+// FULL-TREE-NEXT:   "modules": [],
+// FULL-TREE-NEXT:   "translation-units": [
+// FULL-TREE-NEXT:     {
+// FULL-TREE-NEXT: 			 "casfs-root-id": "llvmcas://{{[[:xdigit:]]+}}"
+// FULL-TREE-NEXT:       "clang-context-hash": "{{[A-Z0-9]+}}",
+// FULL-TREE-NEXT:       "clang-module-deps": [],
+// FULL-TREE-NEXT:       "command-line": [
+// FULL-TREE-NEXT:         "-fsyntax-only",
+// FULL-TREE-NEXT:         "[[PREFIX]]/t1.c",
+// FULL-TREE-NEXT:         "-fno-implicit-modules",
+// FULL-TREE-NEXT:         "-fno-implicit-module-maps"
+// FULL-TREE-NEXT:       ],
+// FULL-TREE-NEXT:       "file-deps": [
+// FULL-TREE-NEXT:         "[[PREFIX]]/t1.c",
+// FULL-TREE-NEXT:         "[[PREFIX]]/top.h",
+// FULL-TREE-NEXT:         "[[PREFIX]]/n1.h"
+// FULL-TREE-NEXT:       ],
+// FULL-TREE-NEXT:       "input-file": "[[PREFIX]]/t1.c"
+// FULL-TREE-NEXT:     },
+// FULL-TREE-NEXT:     {
+// FULL-TREE-NEXT: 			 "casfs-root-id": "llvmcas://{{[[:xdigit:]]+}}"
+// FULL-TREE-NEXT:       "clang-context-hash": "{{[A-Z0-9]+}}",
+// FULL-TREE-NEXT:       "clang-module-deps": [],
+// FULL-TREE-NEXT:       "command-line": [
+// FULL-TREE-NEXT:         "-fsyntax-only",
+// FULL-TREE-NEXT:         "[[PREFIX]]/t2.c",
+// FULL-TREE-NEXT:         "-fno-implicit-modules",
+// FULL-TREE-NEXT:         "-fno-implicit-module-maps"
+// FULL-TREE-NEXT:       ],
+// FULL-TREE-NEXT:       "file-deps": [
+// FULL-TREE-NEXT:         "[[PREFIX]]/t2.c",
+// FULL-TREE-NEXT:         "[[PREFIX]]/n1.h"
+// FULL-TREE-NEXT:       ],
+// FULL-TREE-NEXT:       "input-file": "[[PREFIX]]/t2.c"
+// FULL-TREE-NEXT:     }
+// FULL-TREE-NEXT:   ]
+// FULL-TREE-NEXT: }
+
+
 
 //--- cdb.json.template
 [

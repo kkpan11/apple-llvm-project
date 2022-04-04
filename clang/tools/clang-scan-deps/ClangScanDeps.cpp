@@ -136,6 +136,8 @@ static llvm::cl::opt<ScanningOutputFormat> Format(
                    "Makefile compatible dep file"),
         clEnumValN(ScanningOutputFormat::Tree, "experimental-tree",
                    "Write out a CAS tree that contains the dependencies."),
+        clEnumValN(ScanningOutputFormat::FullTree, "experimental-tree-full",
+                   "Full dependency graph with CAS tree as depdendency."),
         clEnumValN(ScanningOutputFormat::Full, "experimental-full",
                    "Full dependency graph suitable"
                    " for explicitly building modules. This format "
@@ -298,6 +300,7 @@ static bool outputFormatRequiresCAS() {
     case ScanningOutputFormat::Full:
       return false;
     case ScanningOutputFormat::Tree:
+    case ScanningOutputFormat::FullTree:
       return true;
   }
 }
@@ -335,6 +338,7 @@ public:
     ID.ContextHash = std::move(FD.ID.ContextHash);
     ID.FileDeps = std::move(FD.FileDeps);
     ID.ModuleDeps = std::move(FD.ClangModuleDeps);
+    ID.CASFileSystemRootID = FD.CASFileSystemRootID;
 
     std::unique_lock<std::mutex> ul(Lock);
     for (const ModuleDeps &MD : FDR.DiscoveredModules) {
@@ -398,6 +402,8 @@ public:
           {"clang-module-deps", toJSONSorted(I.ModuleDeps)},
           {"command-line", I.CommandLine},
       };
+      if (I.CASFileSystemRootID)
+        O.try_emplace("casfs-root-id", I.CASFileSystemRootID->toString());
       TUs.push_back(std::move(O));
     }
 
@@ -457,6 +463,7 @@ private:
     std::vector<std::string> FileDeps;
     std::vector<ModuleID> ModuleDeps;
     std::vector<std::string> CommandLine;
+    llvm::Optional<llvm::cas::CASID> CASFileSystemRootID;
   };
 
   std::mutex Lock;
@@ -672,7 +679,8 @@ int main(int argc, const char **argv) {
                                          Errs))
         HadErrors = true;
     }
-  } else if (Format == ScanningOutputFormat::Full) {
+  } else if (Format == ScanningOutputFormat::Full ||
+             Format == ScanningOutputFormat::FullTree) {
     FD.printFullOutput(llvm::outs());
   }
 

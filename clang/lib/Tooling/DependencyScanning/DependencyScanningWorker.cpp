@@ -275,6 +275,7 @@ public:
                                                         EmitDependencyFile));
       break;
     case ScanningOutputFormat::Full:
+    case ScanningOutputFormat::FullTree:
       ScanInstance.addDependencyCollector(std::make_shared<ModuleDepCollector>(
           std::move(Opts), ScanInstance, Consumer,
           std::move(OriginalInvocation), OptimizeArgs));
@@ -335,6 +336,7 @@ private:
 DependencyScanningWorker::DependencyScanningWorker(
     DependencyScanningService &Service)
     : Format(Service.getFormat()), OptimizeArgs(Service.canOptimizeArgs()),
+      UseCAS(Service.useCASScanning()),
       OverrideCASTokenCache(Service.overrideCASTokenCache()) {
   PCHContainerOps = std::make_shared<PCHContainerOperations>();
   PCHContainerOps->registerReader(
