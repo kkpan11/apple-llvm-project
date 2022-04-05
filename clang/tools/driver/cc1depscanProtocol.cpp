@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "cc1depscanProtocol.h"
+#include "clang/Frontend/CompilerInvocation.h"
 #include "llvm/CAS/CASDB.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Support/Error.h"
@@ -22,6 +23,8 @@ using namespace clang;
 using namespace clang::cc1depscand;
 using namespace llvm;
 
+static constexpr const char *SocketExtension = ".sock";
+
 int cc1depscand::createSocket() { return ::socket(AF_UNIX, SOCK_STREAM, 0); }
 
 int cc1depscand::acceptSocket(int Socket) {
@@ -34,7 +37,7 @@ int cc1depscand::acceptSocket(int Socket) {
 static sockaddr_un configureAddress(StringRef BasePath) {
   sockaddr_un Address;
   SmallString<128> SocketPath = BasePath;
-  SocketPath.append(".socket");
+  SocketPath.append(SocketExtension);
 
   Address.sun_family = AF_UNIX;
   if (SocketPath.size() >= sizeof(Address.sun_path))
@@ -46,7 +49,7 @@ static sockaddr_un configureAddress(StringRef BasePath) {
 
 void cc1depscand::unlinkBoundSocket(StringRef BasePath) {
   SmallString<128> SocketPath = BasePath;
-  SocketPath.append(".socket");
+  SocketPath.append(SocketExtension);
   ::unlink(SocketPath.c_str());
 }
 
@@ -71,7 +74,7 @@ int cc1depscand::bindToSocket(StringRef BasePath, int Socket) {
   // FIXME: shouldn't compute socket path twice. Also, not sure this is working
   // on crashes.
   SmallString<128> SocketPath = BasePath;
-  SocketPath.append(".socket");
+  SocketPath.append(SocketExtension);
   llvm::sys::RemoveFileOnSignal(SocketPath);
   return 0;
 }
@@ -82,7 +85,7 @@ std::string cc1depscand::getBasePath(StringRef DaemonKey) {
   // Construct the path.
   SmallString<128> BasePath;
   llvm::sys::path::system_temp_directory(/*ErasedOnReboot=*/true, BasePath);
-  llvm::sys::path::append(BasePath, "llvm.depscan.daemon", DaemonKey);
+  llvm::sys::path::append(BasePath, "llvm.depscan", DaemonKey);
 
   // Ensure null-termination.
   return BasePath.str().str();
@@ -129,14 +132,14 @@ Expected<ScanDaemon> ScanDaemon::connectToDaemon(StringRef BasePath,
 }
 
 Expected<ScanDaemon> ScanDaemon::launchDaemon(StringRef BasePath,
-                                              const char *Arg0) {
+                                              const char *Arg0,
+                                              const CASOptions &CASOpts) {
   std::string BasePathCStr = BasePath.str();
   const char *Args[] = {
       Arg0,
       "-cc1depscand",
       "-run", // -launch if we want the daemon to fork itself.
       BasePathCStr.c_str(),
-      nullptr,
   };
 
   const char *ArgsTestMode[] = {
@@ -145,23 +148,31 @@ Expected<ScanDaemon> ScanDaemon::launchDaemon(StringRef BasePath,
       "-run", // -launch if we want the daemon to fork itself.
       BasePathCStr.c_str(),
       "-shutdown",
-      nullptr,
   };
 
   static bool LaunchTestDaemon =
       llvm::sys::Process::GetEnv("__CLANG_TEST_CC1DEPSCAND_SHUTDOWN")
           .hasValue();
 
-  char **LaunchArgs = LaunchTestDaemon ? const_cast<char **>(ArgsTestMode)
-                                       : const_cast<char **>(Args);
+  llvm::BumpPtrAllocator Alloc;
+  llvm::StringSaver Saver(Alloc);
+  auto SA = [&Saver](const Twine &Arg) { return Saver.save(Arg).data(); };
+
+  ArrayRef<const char *> InitialArgs =
+      LaunchTestDaemon ? makeArrayRef(ArgsTestMode) : makeArrayRef(Args);
+  SmallVector<const char *> LaunchArgs(InitialArgs.begin(), InitialArgs.end());
+  LaunchArgs.push_back("-cas-args");
+  CompilerInvocation::GenerateCASArgs(CASOpts, LaunchArgs, SA);
+  LaunchArgs.push_back(nullptr);
 
   // Only do it the first time.
   LaunchTestDaemon = false;
 
   ::pid_t Pid;
-  int EC = ::posix_spawn(&Pid, Args[0], /*file_actions=*/nullptr,
-                         /*attrp=*/nullptr, LaunchArgs,
-                         /*envp=*/nullptr);
+  int EC =
+      ::posix_spawn(&Pid, Args[0], /*file_actions=*/nullptr,
+                    /*attrp=*/nullptr, const_cast<char **>(LaunchArgs.data()),
+                    /*envp=*/nullptr);
   if (EC)
     return llvm::errorCodeToError(std::error_code(EC, std::generic_category()));
 
@@ -176,18 +187,20 @@ Expected<ScanDaemon> ScanDaemon::launchDaemon(StringRef BasePath,
   return connectToJustLaunchedDaemon(BasePath);
 }
 
-Expected<ScanDaemon> ScanDaemon::create(StringRef BasePath, const char *Arg0) {
+Expected<ScanDaemon> ScanDaemon::create(StringRef BasePath, const char *Arg0,
+                                        const CASOptions &CASOpts) {
   if (Expected<ScanDaemon> Daemon = connectToExistingDaemon(BasePath))
     return Daemon;
   else
     llvm::consumeError(Daemon.takeError()); // FIXME: Sometimes return.
 
-  return launchDaemon(BasePath, Arg0);
+  return launchDaemon(BasePath, Arg0, CASOpts);
 }
 
-Expected<ScanDaemon> ScanDaemon::constructAndShakeHands(StringRef BasePath,
-                                                        const char *Arg0) {
-  auto Daemon = ScanDaemon::create(BasePath, Arg0);
+Expected<ScanDaemon>
+ScanDaemon::constructAndShakeHands(StringRef BasePath, const char *Arg0,
+                                   const CASOptions &CASOpts) {
+  auto Daemon = ScanDaemon::create(BasePath, Arg0, CASOpts);
   if (!Daemon)
     return Daemon.takeError();
 
@@ -196,7 +209,7 @@ Expected<ScanDaemon> ScanDaemon::constructAndShakeHands(StringRef BasePath,
     logAllUnhandledErrors(std::move(E), llvm::errs(),
                           "Restarting daemon due to error: ");
 
-    auto NewDaemon = launchDaemon(BasePath, Arg0);
+    auto NewDaemon = launchDaemon(BasePath, Arg0, CASOpts);
     // If recover failed, return Error.
     if (!NewDaemon)
       return NewDaemon.takeError();

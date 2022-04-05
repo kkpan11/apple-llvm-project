@@ -20,6 +20,8 @@
 #include <unistd.h>     // FIXME: Unix-only. Not portable.
 
 namespace clang {
+class CASOptions;
+
 namespace cc1depscand {
 
 struct DepscanPrefixMapping {
@@ -202,18 +204,20 @@ private:
 
 class ScanDaemon : public OpenSocket {
 public:
-  static Expected<ScanDaemon> create(StringRef BasePath, const char *Arg0);
+  static Expected<ScanDaemon> create(StringRef BasePath, const char *Arg0,
+                                     const CASOptions &CASOpts);
 
   static Expected<ScanDaemon> constructAndShakeHands(StringRef BasePath,
-                                                     const char *Arg0);
+                                                     const char *Arg0,
+                                                     const CASOptions &CASOpts);
 
   static Expected<ScanDaemon> connectToDaemonAndShakeHands(StringRef BasePath);
 
   llvm::Error shakeHands() const;
 
 private:
-  static Expected<ScanDaemon> launchDaemon(StringRef BasePath,
-                                           const char *Arg0);
+  static Expected<ScanDaemon> launchDaemon(StringRef BasePath, const char *Arg0,
+                                           const CASOptions &CASOpts);
   static Expected<ScanDaemon> connectToDaemon(StringRef BasePath,
                                               bool ShouldWait);
   static Expected<ScanDaemon> connectToExistingDaemon(StringRef BasePath) {

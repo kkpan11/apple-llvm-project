@@ -75,3 +75,16 @@ CASOptions::getOrCreateCASAndHideConfig(DiagnosticsEngine &Diags) {
 
   return CAS;
 }
+
+void CASOptions::ensurePersistentCAS() {
+  assert(!IsFrozen && "Expected to check for a persistent CAS before freezing");
+  switch (getKind()) {
+  case UnknownCAS:
+      llvm_unreachable("Cannot ensure persistent CAS if it's unknown / frozen");
+  case InMemoryCAS:
+    CASPath = "auto";
+    break;
+  case OnDiskCAS:
+    break;
+  }
+}
