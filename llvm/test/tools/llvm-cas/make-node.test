@@ -35,3 +35,6 @@ RUN: llvm-cas --cas %t/cas --ls-node-refs @%t/complex.casid |\
 RUN:   FileCheck %t/complex.check
 COMPLEX-KIND: node
 COMPLEX-DATA: content
+
+RUN: not llvm-cas --cas  %t/cas --ls-tree @%t/complex.casid 2>&1 | FileCheck %s --check-prefix=CHECK-WRONG-TYPE
+CHECK-WRONG-TYPE: llvm-cas: ls-tree: invalid object
