@@ -275,6 +275,7 @@ public:
                                                         EmitDependencyFile));
       break;
     case ScanningOutputFormat::Full:
+    case ScanningOutputFormat::FullTree:
       ScanInstance.addDependencyCollector(std::make_shared<ModuleDepCollector>(
           std::move(Opts), ScanInstance, Consumer,
           std::move(OriginalInvocation), OptimizeArgs));
@@ -335,6 +336,7 @@ private:
 DependencyScanningWorker::DependencyScanningWorker(
     DependencyScanningService &Service)
     : Format(Service.getFormat()), OptimizeArgs(Service.canOptimizeArgs()),
+      UseCAS(Service.useCASScanning()),
       OverrideCASTokenCache(Service.overrideCASTokenCache()) {
   PCHContainerOps = std::make_shared<PCHContainerOperations>();
   PCHContainerOps->registerReader(
@@ -432,26 +434,6 @@ llvm::Error DependencyScanningWorker::computeDependencies(
                         Invocation.setDiagnosticOptions(&DiagOpts);
                         return Invocation.run();
                       });
-}
-
-void DependencyScanningWorker::computeDependenciesFromCC1CommandLine(
-    ArrayRef<const char *> Args, StringRef WorkingDirectory,
-    DependencyConsumer &DepsConsumer) {
-  // auto DiagsConsumer = std::make_unique<IgnoringDiagConsumer>();
-  auto DiagsConsumer = std::make_unique<TextDiagnosticPrinter>(
-      llvm::errs(), new DiagnosticOptions(), false);
-  DiagnosticsEngine Diags(new DiagnosticIDs(), new DiagnosticOptions());
-  Diags.setClient(DiagsConsumer.get(), /*ShouldOwnClient=*/false);
-
-  // Create the compiler invocation.
-  auto Invocation = std::make_shared<CompilerInvocation>();
-  if (!CompilerInvocation::CreateFromArgs(*Invocation, Args, Diags, Args[0])) {
-    llvm::errs() << "failed to create compiler invocation\n";
-    return;
-  }
-
-  computeDependenciesFromCompilerInvocation(
-      std::move(Invocation), WorkingDirectory, DepsConsumer, *DiagsConsumer);
 }
 
 void DependencyScanningWorker::computeDependenciesFromCompilerInvocation(

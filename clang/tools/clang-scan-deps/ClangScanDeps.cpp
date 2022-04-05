@@ -136,6 +136,8 @@ static llvm::cl::opt<ScanningOutputFormat> Format(
                    "Makefile compatible dep file"),
         clEnumValN(ScanningOutputFormat::Tree, "experimental-tree",
                    "Write out a CAS tree that contains the dependencies."),
+        clEnumValN(ScanningOutputFormat::FullTree, "experimental-tree-full",
+                   "Full dependency graph with CAS tree as depdendency."),
         clEnumValN(ScanningOutputFormat::Full, "experimental-full",
                    "Full dependency graph suitable"
                    " for explicitly building modules. This format "
@@ -228,11 +230,6 @@ static llvm::cl::opt<ResourceDirRecipeKind> ResourceDirRecipe(
     llvm::cl::init(RDRK_ModifyCompilerPath),
     llvm::cl::cat(DependencyScannerCategory));
 
-llvm::cl::opt<bool> UseCAS("cas",
-                           llvm::cl::desc("Use CAS based dependency scanning."),
-                           llvm::cl::init(false),
-                           llvm::cl::cat(DependencyScannerCategory));
-
 llvm::cl::opt<bool> OverrideCASTokenCache(
     "override-cas-token-cache",
     llvm::cl::desc("Override the CAS-based token cache, using it always."),
@@ -297,6 +294,17 @@ handleTreeDependencyToolResult(llvm::cas::CASDB &CAS, const std::string &Input,
   return false;
 }
 
+static bool outputFormatRequiresCAS() {
+  switch (Format) {
+    case ScanningOutputFormat::Make:
+    case ScanningOutputFormat::Full:
+      return false;
+    case ScanningOutputFormat::Tree:
+    case ScanningOutputFormat::FullTree:
+      return true;
+  }
+}
+
 static llvm::json::Array toJSONSorted(const llvm::StringSet<> &Set) {
   std::vector<llvm::StringRef> Strings;
   for (auto &&I : Set)
@@ -330,6 +338,7 @@ public:
     ID.ContextHash = std::move(FD.ID.ContextHash);
     ID.FileDeps = std::move(FD.FileDeps);
     ID.ModuleDeps = std::move(FD.ClangModuleDeps);
+    ID.CASFileSystemRootID = FD.CASFileSystemRootID;
 
     std::unique_lock<std::mutex> ul(Lock);
     for (const ModuleDeps &MD : FDR.DiscoveredModules) {
@@ -393,6 +402,8 @@ public:
           {"clang-module-deps", toJSONSorted(I.ModuleDeps)},
           {"command-line", I.CommandLine},
       };
+      if (I.CASFileSystemRootID)
+        O.try_emplace("casfs-root-id", I.CASFileSystemRootID->toString());
       TUs.push_back(std::move(O));
     }
 
@@ -452,6 +463,7 @@ private:
     std::vector<std::string> FileDeps;
     std::vector<ModuleID> ModuleDeps;
     std::vector<std::string> CommandLine;
+    llvm::Optional<llvm::cas::CASID> CASFileSystemRootID;
   };
 
   std::mutex Lock;
@@ -568,7 +580,7 @@ int main(int argc, const char **argv) {
 
   std::unique_ptr<llvm::cas::CASDB> CAS;
   IntrusiveRefCntPtr<llvm::cas::CachingOnDiskFileSystem> FS;
-  if (UseCAS) {
+  if (outputFormatRequiresCAS()) {
     if (InMemoryCAS) {
       CAS = llvm::cas::createInMemoryCAS();
     } else {
@@ -577,7 +589,6 @@ int main(int argc, const char **argv) {
         llvm::cas::getDefaultOnDiskCASPath(CASPath);
       else
         CASPath += OnDiskCASPath;
-      llvm::errs() << "cas-path = '" << CASPath << "'\n";
       CAS = cantFail(llvm::cas::createOnDiskCAS(CASPath));
     }
     FS = llvm::cantFail(llvm::cas::createCachingOnDiskFileSystem(*CAS));
@@ -667,7 +678,8 @@ int main(int argc, const char **argv) {
                                          Errs))
         HadErrors = true;
     }
-  } else if (Format == ScanningOutputFormat::Full) {
+  } else if (Format == ScanningOutputFormat::Full ||
+             Format == ScanningOutputFormat::FullTree) {
     FD.printFullOutput(llvm::outs());
   }
 

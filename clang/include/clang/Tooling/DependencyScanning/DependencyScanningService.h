@@ -44,6 +44,10 @@ enum class ScanningOutputFormat {
 
   /// This emits the CAS ID of the scanned files.
   Tree,
+
+  /// This emits the full dependency graph but with CAS tree embedded as file
+  /// dependency.
+  FullTree,
 };
 
 /// The dependency scanning service contains the shared state that is used by

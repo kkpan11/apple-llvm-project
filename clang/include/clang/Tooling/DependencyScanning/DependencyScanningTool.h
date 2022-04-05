@@ -14,12 +14,13 @@
 #include "clang/Tooling/DependencyScanning/ModuleDepCollector.h"
 #include "clang/Tooling/JSONCompilationDatabase.h"
 #include "llvm/ADT/StringSet.h"
+#include "llvm/CAS/CASID.h"
 #include <string>
 
 namespace llvm {
 namespace cas {
 class TreeProxy;
-}
+} // namespace cas
 } // namespace llvm
 
 namespace clang {
@@ -50,6 +51,9 @@ struct FullDependencies {
 
   /// The original command line of the TU (excluding the compiler executable).
   std::vector<std::string> OriginalCommandLine;
+
+  /// The CASID for input file dependency tree.
+  llvm::Optional<llvm::cas::CASID> CASFileSystemRootID;
 
   /// Get the full command line.
   ///
@@ -100,10 +104,6 @@ public:
       DiagnosticConsumer &DiagsConsumer,
       llvm::function_ref<StringRef(const llvm::vfs::CachedDirectoryEntry &)>
           RemapPath = nullptr);
-
-  llvm::Expected<llvm::cas::TreeProxy>
-  getDependencyTreeFromCC1CommandLine(ArrayRef<const char *> Args,
-                                      StringRef CWD);
 
   /// Collect the full module dependency graph for the input, ignoring any
   /// modules which have already been seen. If \p ModuleName isn't empty, this
