@@ -37,6 +37,11 @@ add_custom_command(OUTPUT ${LLVM_TOOLS_BINARY_DIR}/clang-deps-launcher.py
   )
 
 add_custom_target(clang-deps-launcher ALL DEPENDS ${LLVM_TOOLS_BINARY_DIR}/clang-deps-launcher.py)
-install(PROGRAMS ${CMAKE_CURRENT_SOURCE_DIR}/clang-deps-launcher.py
-        DESTINATION bin
-        COMPONENT clang-deps-launcher)
+install(
+  FILES ${LLVM_TOOLS_BINARY_DIR}/clang-deps-launcher.py
+  DESTINATION bin
+  PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+  COMPONENT clang-deps-launcher)
+add_llvm_install_targets(install-clang-deps-launcher
+                         DEPENDS clang-deps-launcher
+                         COMPONENT clang-deps-launcher)
