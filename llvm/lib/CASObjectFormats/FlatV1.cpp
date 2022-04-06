@@ -267,7 +267,7 @@ Expected<SectionRef> SectionRef::create(CompileUnitBuilder &CUB,
 }
 
 Expected<CASSection> SectionRef::materialize() const {
-  CASSection Info;
+  CASSection Info(*this);
   Info.Prot = decodeProtectionFlags((data::SectionProtectionFlags)getData()[0]);
   Info.Name = getData().drop_front(1);
   return Info;
@@ -422,7 +422,7 @@ static Error decodeBlock(const FlatV1ObjectReader &Reader, unsigned BlockIdx,
 
 Expected<CASBlock> BlockRef::materializeBlock(const FlatV1ObjectReader &Reader,
                                               unsigned BlockIdx) const {
-  CASBlock Info;
+  CASBlock Info(*this);
   Error E =
       decodeBlock(Reader, BlockIdx, getData(),
                   [&](unsigned SectionIdx, unsigned NextOffset,
@@ -430,9 +430,11 @@ Expected<CASBlock> BlockRef::materializeBlock(const FlatV1ObjectReader &Reader,
                     data::BlockData Block(ContentData);
 
                     auto SectionRef = CASSectionRef{SectionIdx};
-                    Info = CASBlock{Block.getSize(), Block.getAlignment(),
-                                    Block.getAlignmentOffset(),
-                                    Block.getContent(), std::move(SectionRef)};
+        Info.Size = Block.getSize();
+        Info.Alignment = Block.getAlignment();
+        Info.AlignmentOffset = Block.getAlignmentOffset();
+        Info.Content = Block.getContent();
+        Info.SectionRef = std::move(SectionRef);
                     return Error::success();
                   });
   if (E)
@@ -948,14 +950,16 @@ Expected<CASSection> FlatV1ObjectReader::materialize(CASSectionRef Ref) const {
   auto Node = this->getSectionNode(Ref.Idx);
   if (!Node)
     return Node.takeError();
-  return Node->materialize();
+  Expected<CASSection> CASSec = Node->materialize();
+  return CASSec;
 }
 
 Expected<CASBlock> FlatV1ObjectReader::materialize(CASBlockRef Ref) const {
   auto Node = this->getBlockNode<BlockRef>(Ref.Idx, 0);
   if (!Node)
     return Node.takeError();
-  return Node->materializeBlock(*this, Ref.Idx);
+  Expected<CASBlock> CASBl = Node->materializeBlock(*this, Ref.Idx);
+  return CASBl;
 }
 
 Expected<CASSymbol> FlatV1ObjectReader::materialize(CASSymbolRef Ref) const {

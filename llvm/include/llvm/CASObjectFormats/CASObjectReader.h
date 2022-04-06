@@ -12,6 +12,8 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ExecutionEngine/JITLink/MemoryFlags.h"
 #include "llvm/Support/Error.h"
+#include "llvm/CAS/CASID.h"
+#include "llvm/CAS/CASDB.h"
 
 namespace llvm {
 
@@ -47,6 +49,8 @@ struct CASSymbolRef {
 struct CASSection {
   StringRef Name;
   jitlink::MemProt Prot;
+  llvm::cas::CASID ID;
+  CASSection(cas::ObjectProxy obj) : ID(obj.getID()) {}
 };
 
 struct CASBlock {
@@ -55,6 +59,8 @@ struct CASBlock {
   uint64_t AlignmentOffset;
   Optional<StringRef> Content;
   CASSectionRef SectionRef;
+  llvm::cas::CASID ID;
+  CASBlock(cas::ObjectProxy obj) : ID(obj.getID()) {}
 
   bool isZeroFill() const { return !Content.hasValue(); }
 };
