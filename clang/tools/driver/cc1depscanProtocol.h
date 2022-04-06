@@ -24,11 +24,7 @@ class CASOptions;
 
 namespace cc1depscand {
 
-struct DepscanPrefixMapping {
-  Optional<StringRef> NewSDKPath;
-  Optional<StringRef> NewToolchainPath;
-  SmallVector<StringRef> PrefixMap;
-};
+struct DepscanPrefixMapping;
 
 struct AutoArgEdit {
   uint32_t Index = -1u;

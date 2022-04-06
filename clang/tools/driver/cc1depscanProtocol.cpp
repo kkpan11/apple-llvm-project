@@ -8,6 +8,7 @@
 
 #include "cc1depscanProtocol.h"
 #include "clang/Frontend/CompilerInvocation.h"
+#include "clang/Tooling/DependencyScanning/ScanAndUpdateArgs.h"
 #include "llvm/CAS/CASDB.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Support/Error.h"

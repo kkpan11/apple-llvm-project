@@ -7,11 +7,14 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/Frontend/CompilerInstance.h"
+#include "clang/Frontend/TextDiagnosticPrinter.h"
 #include "clang/Tooling/CommonOptionsParser.h"
 #include "clang/Tooling/DependencyScanning/DependencyScanningService.h"
 #include "clang/Tooling/DependencyScanning/DependencyScanningTool.h"
 #include "clang/Tooling/DependencyScanning/DependencyScanningWorker.h"
+#include "clang/Tooling/DependencyScanning/ScanAndUpdateArgs.h"
 #include "clang/Tooling/JSONCompilationDatabase.h"
+#include "clang/Tooling/Tooling.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/CAS/CASDB.h"
@@ -28,6 +31,7 @@
 #include <thread>
 
 using namespace clang;
+using namespace tooling;
 using namespace tooling::dependencies;
 
 namespace {
@@ -230,6 +234,12 @@ static llvm::cl::opt<ResourceDirRecipeKind> ResourceDirRecipe(
     llvm::cl::init(RDRK_ModifyCompilerPath),
     llvm::cl::cat(DependencyScannerCategory));
 
+llvm::cl::opt<bool> EmitCASCompDB(
+    "emit-cas-compdb",
+    llvm::cl::desc("Emit compilation DB with updated clang arguments for CAS "
+                   "based dependency scanning build."),
+    llvm::cl::init(false), llvm::cl::cat(DependencyScannerCategory));
+
 llvm::cl::opt<bool> OverrideCASTokenCache(
     "override-cas-token-cache",
     llvm::cl::desc("Override the CAS-based token cache, using it always."),
@@ -250,6 +260,156 @@ llvm::cl::opt<bool> Verbose("v", llvm::cl::Optional,
                             llvm::cl::cat(DependencyScannerCategory));
 
 } // end anonymous namespace
+
+static bool emitCompilationDBWithCASTreeArguments(
+    llvm::cas::CASDB &CAS, const CASOptions &CASOpts,
+    std::vector<tooling::CompileCommand> Inputs,
+    DiagnosticConsumer &DiagsConsumer, const char *Exec,
+    const cc1depscand::DepscanPrefixMapping &PrefixMapping,
+    DependencyScanningService &Service, llvm::ThreadPool &Pool,
+    llvm::raw_ostream &OS) {
+
+  // Follow `-cc1depscan` and also ignore diagnostics.
+  // FIXME: Seems not a good idea to do this..
+  auto IgnoringDiagsConsumer = std::make_unique<IgnoringDiagConsumer>();
+
+  struct PerThreadState {
+    DependencyScanningTool Worker;
+    llvm::BumpPtrAllocator Alloc;
+    llvm::StringSaver Saver;
+    explicit PerThreadState(DependencyScanningService &Service)
+        : Worker(Service), Saver(Alloc) {}
+  };
+  std::vector<std::unique_ptr<PerThreadState>> PerThreadStates;
+  for (unsigned I = 0, E = Pool.getThreadCount(); I != E; ++I)
+    PerThreadStates.push_back(std::make_unique<PerThreadState>(Service));
+
+  std::atomic<bool> HadErrors(false);
+  std::mutex Lock;
+  size_t Index = 0;
+
+  struct CompDBEntry {
+    size_t Index;
+    std::string Filename;
+    std::string WorkDir;
+    SmallVector<const char *> Args;
+  };
+  std::vector<CompDBEntry> CompDBEntries;
+
+  for (unsigned I = 0, E = Pool.getThreadCount(); I != E; ++I) {
+    Pool.async([&, I]() {
+      while (true) {
+        const tooling::CompileCommand *Input;
+        std::string Filename;
+        std::string CWD;
+        size_t LocalIndex;
+        // Take the next input.
+        {
+          std::unique_lock<std::mutex> LockGuard(Lock);
+          if (Index >= Inputs.size())
+            return;
+          LocalIndex = Index;
+          Input = &Inputs[Index++];
+          Filename = std::move(Input->Filename);
+          CWD = std::move(Input->Directory);
+        }
+
+        tooling::dependencies::DependencyScanningTool &WorkerTool =
+            PerThreadStates[I]->Worker;
+
+        class ScanForCC1Action : public ToolAction {
+          const CASOptions &CASOpts;
+          tooling::dependencies::DependencyScanningTool &WorkerTool;
+          DiagnosticConsumer &DiagsConsumer;
+          const char *Exec;
+          StringRef CWD;
+          const cc1depscand::DepscanPrefixMapping &PrefixMapping;
+          SmallVectorImpl<const char *> &OutputArgs;
+          llvm::StringSaver &Saver;
+
+        public:
+          ScanForCC1Action(
+              const CASOptions &CASOpts,
+              tooling::dependencies::DependencyScanningTool &WorkerTool,
+              DiagnosticConsumer &DiagsConsumer, const char *Exec,
+              StringRef CWD,
+              const cc1depscand::DepscanPrefixMapping &PrefixMapping,
+              SmallVectorImpl<const char *> &OutputArgs,
+              llvm::StringSaver &Saver)
+              : CASOpts(CASOpts), WorkerTool(WorkerTool),
+                DiagsConsumer(DiagsConsumer), Exec(Exec), CWD(CWD),
+                PrefixMapping(PrefixMapping), OutputArgs(OutputArgs),
+                Saver(Saver) {}
+
+          bool
+          runInvocation(std::shared_ptr<CompilerInvocation> Invocation,
+                        FileManager *Files,
+                        std::shared_ptr<PCHContainerOperations> PCHContainerOps,
+                        DiagnosticConsumer *DiagConsumer) override {
+            Expected<llvm::cas::CASID> Root = scanAndUpdateCC1InlineWithTool(
+                CASOpts, WorkerTool, DiagsConsumer, Exec, *Invocation, CWD,
+                PrefixMapping);
+            if (!Root) {
+              llvm::consumeError(Root.takeError());
+              return false;
+            }
+            OutputArgs.push_back("-cc1");
+            Invocation->generateCC1CommandLine(OutputArgs, [&](const Twine &T) {
+              return Saver.save(T).data();
+            });
+            return true;
+          }
+        };
+
+        SmallVector<const char *> OutputArgs;
+        llvm::StringSaver &Saver = PerThreadStates[I]->Saver;
+        OutputArgs.push_back(Saver.save(Input->CommandLine.front()).data());
+        ScanForCC1Action Action(CASOpts, WorkerTool, *IgnoringDiagsConsumer,
+                                Exec, CWD, PrefixMapping, OutputArgs, Saver);
+
+        llvm::IntrusiveRefCntPtr<FileManager> FileMgr =
+            WorkerTool.getOrCreateFileManager();
+        ToolInvocation Invocation(Input->CommandLine, &Action, FileMgr.get(),
+                                  std::make_shared<PCHContainerOperations>());
+        if (!Invocation.run()) {
+          HadErrors = true;
+          continue;
+        }
+
+        {
+          std::unique_lock<std::mutex> LockGuard(Lock);
+          CompDBEntries.push_back({LocalIndex, std::move(Filename),
+                                   std::move(CWD), std::move(OutputArgs)});
+        }
+      }
+    });
+  }
+  Pool.wait();
+
+  std::sort(CompDBEntries.begin(), CompDBEntries.end(),
+            [](const CompDBEntry &LHS, const CompDBEntry &RHS) -> bool {
+              return LHS.Index < RHS.Index;
+            });
+
+  llvm::json::OStream J(OS, /*IndentSize*/ 2);
+  J.arrayBegin();
+  for (const auto &Entry : CompDBEntries) {
+    J.objectBegin();
+    J.attribute("file", Entry.Filename);
+    J.attribute("directory", Entry.WorkDir);
+    J.attributeBegin("arguments");
+    J.arrayBegin();
+    for (const char *Arg : Entry.Args) {
+      J.value(Arg);
+    }
+    J.arrayEnd();
+    J.attributeEnd();
+    J.objectEnd();
+  }
+  J.arrayEnd();
+
+  return HadErrors;
+}
 
 /// Takes the result of a dependency scan and prints error / dependency files
 /// based on the result.
@@ -518,6 +678,9 @@ int main(int argc, const char **argv) {
   AdjustingCompilations->appendArgumentsAdjuster(
       [&ResourceDirCache](const tooling::CommandLineArguments &Args,
                           StringRef FileName) {
+        if (EmitCASCompDB)
+          return Args; // Don't adjust.
+
         std::string LastO;
         bool HasResourceDir = false;
         bool ClangCLMode = false;
@@ -578,25 +741,43 @@ int main(int argc, const char **argv) {
   // Print out the dependency results to STDOUT by default.
   SharedStream DependencyOS(llvm::outs());
 
-  std::unique_ptr<llvm::cas::CASDB> CAS;
+  auto DiagsConsumer = std::make_unique<TextDiagnosticPrinter>(
+      llvm::errs(), new DiagnosticOptions(), false);
+  DiagnosticsEngine Diags(new DiagnosticIDs(), new DiagnosticOptions());
+  Diags.setClient(DiagsConsumer.get(), /*ShouldOwnClient=*/false);
+
+  CASOptions CASOpts;
+  std::shared_ptr<llvm::cas::CASDB> CAS;
   IntrusiveRefCntPtr<llvm::cas::CachingOnDiskFileSystem> FS;
   if (outputFormatRequiresCAS()) {
-    if (InMemoryCAS) {
-      CAS = llvm::cas::createInMemoryCAS();
-    } else {
-      SmallString<128> CASPath;
-      if (OnDiskCASPath.empty())
-        llvm::cas::getDefaultOnDiskCASPath(CASPath);
+    if (!InMemoryCAS) {
+      if (!OnDiskCASPath.empty())
+        CASOpts.CASPath = OnDiskCASPath;
       else
-        CASPath += OnDiskCASPath;
-      CAS = cantFail(llvm::cas::createOnDiskCAS(CASPath));
+        CASOpts.ensurePersistentCAS();
     }
+    CAS = CASOpts.getOrCreateCAS(Diags);
+    if (!CAS)
+      return 1;
     FS = llvm::cantFail(llvm::cas::createCachingOnDiskFileSystem(*CAS));
   }
   DependencyScanningService Service(ScanMode, Format, FS, ReuseFileManager,
                                     SkipExcludedPPRanges, OptimizeArgs,
                                     OverrideCASTokenCache);
   llvm::ThreadPool Pool(llvm::hardware_concurrency(NumThreads));
+
+  if (EmitCASCompDB) {
+    if (!CAS) {
+      llvm::errs() << "'-emit-cas-compdb' needs CAS setup\n";
+      return 1;
+    }
+    // FIXME: Configure this.
+    cc1depscand::DepscanPrefixMapping PrefixMapping;
+    return emitCompilationDBWithCASTreeArguments(
+        *CAS, CASOpts, AdjustingCompilations->getAllCompileCommands(),
+        *DiagsConsumer, argv[0], PrefixMapping, Service, Pool, llvm::outs());
+  }
+
   std::vector<std::unique_ptr<DependencyScanningTool>> WorkerTools;
   for (unsigned I = 0; I < Pool.getThreadCount(); ++I)
     WorkerTools.push_back(std::make_unique<DependencyScanningTool>(Service));
