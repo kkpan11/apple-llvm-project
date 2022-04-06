@@ -40,6 +40,25 @@ protected:
   }
 };
 
+TEST_P(CASDBTest, PrintIDs) {
+  std::unique_ptr<CASDB> CAS = createCAS();
+  ExitOnError ExitOnErr("PrintID");
+
+  Optional<CASID> ID1, ID2;
+  ASSERT_THAT_ERROR(CAS->createBlob("1").moveInto(ID1), Succeeded());
+  ASSERT_THAT_ERROR(CAS->createBlob("2").moveInto(ID2), Succeeded());
+  EXPECT_NE(ID1, ID2);
+  std::string PrintedID1 = ID1->toString();
+  std::string PrintedID2 = ID2->toString();
+  EXPECT_NE(PrintedID1, PrintedID2);
+
+  Optional<CASID> ParsedID1, ParsedID2;
+  ASSERT_THAT_ERROR(CAS->parseID(PrintedID1).moveInto(ParsedID1), Succeeded());
+  ASSERT_THAT_ERROR(CAS->parseID(PrintedID2).moveInto(ParsedID2), Succeeded());
+  EXPECT_EQ(ID1, ParsedID1);
+  EXPECT_EQ(ID2, ParsedID2);
+}
+
 TEST_P(CASDBTest, Blobs) {
   std::unique_ptr<CASDB> CAS1 = createCAS();
   StringRef ContentStrings[] = {
