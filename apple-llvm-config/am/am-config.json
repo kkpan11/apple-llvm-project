@@ -4,21 +4,6 @@
   "upstream": "llvm.org/main"
 },
 {
-  "target": "swift/swift-5.2-branch",
-  "upstream": "apple/stable/20190619",
-  "test_commits_in_bundle": true
-},
-{
-  "target": "swift/release/5.3",
-  "upstream": "apple/stable/20200108",
-  "test_commits_in_bundle": true
-},
-{
-  "target": "swift/release/5.4",
-  "upstream": "apple/stable/20200714",
-  "test_commits_in_bundle": true
-},
-{
   "target": "swift/release/5.5",
   "upstream": "apple/stable/20210107",
   "test_commits_in_bundle": true
@@ -26,6 +11,10 @@
 {
   "target": "stable/20210726",
   "upstream": "swift/release/5.6"
+},
+{
+  "target": "stable/20211026",
+  "upstream": "swift/release/5.7"
 },
 {
   "target": "experimental/cas/main",
