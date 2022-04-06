@@ -114,10 +114,10 @@ private:
   }
 
   HashT finish() {
-    StringRef Final = Hasher.final();
-    auto *Begin = reinterpret_cast<const uint8_t *>(Final.begin());
+    auto Final = Hasher.final();
+    // auto *Begin = reinterpret_cast<const uint8_t *>(Final.begin());
     HashT Hash;
-    std::copy(Begin, Begin + Final.size(), Hash.data());
+    std::copy(Final.begin(), Final.end(), Hash.data());
     return Hash;
   }
 
