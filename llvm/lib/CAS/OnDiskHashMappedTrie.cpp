@@ -660,7 +660,7 @@ OnDiskHashMappedTrie::recoverFromFileOffset(FileOffset Offset) const {
   // Check bounds.
   const uint64_t CurrentFileSize = Impl->File.getAlloc().size();
   if (Offset.get() > (int64_t)CurrentFileSize ||
-      Offset.get() + Impl->Trie.getRecordSize() >= CurrentFileSize)
+      Offset.get() + Impl->Trie.getRecordSize() > CurrentFileSize)
     return const_pointer();
 
   // Looks okay...
