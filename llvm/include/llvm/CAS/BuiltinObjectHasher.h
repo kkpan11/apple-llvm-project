@@ -115,7 +115,6 @@ private:
 
   HashT finish() {
     auto Final = Hasher.final();
-    // auto *Begin = reinterpret_cast<const uint8_t *>(Final.begin());
     HashT Hash;
     std::copy(Final.begin(), Final.end(), Hash.data());
     return Hash;
