@@ -4191,6 +4191,11 @@ class SBDebugger(object):
         return _lldb.SBDebugger_InitializeWithErrorHandling()
 
     @staticmethod
+    def PrintStackTraceOnError():
+        r"""PrintStackTraceOnError()"""
+        return _lldb.SBDebugger_PrintStackTraceOnError()
+
+    @staticmethod
     def Terminate():
         r"""Terminate()"""
         return _lldb.SBDebugger_Terminate()
@@ -4696,6 +4701,10 @@ def SBDebugger_Initialize():
 def SBDebugger_InitializeWithErrorHandling():
     r"""SBDebugger_InitializeWithErrorHandling() -> SBError"""
     return _lldb.SBDebugger_InitializeWithErrorHandling()
+
+def SBDebugger_PrintStackTraceOnError():
+    r"""SBDebugger_PrintStackTraceOnError()"""
+    return _lldb.SBDebugger_PrintStackTraceOnError()
 
 def SBDebugger_Terminate():
     r"""SBDebugger_Terminate()"""
