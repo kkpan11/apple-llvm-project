@@ -2222,7 +2222,8 @@ bool RegisterContextUnwind::WriteRegister(const RegisterInfo *reg_info,
 }
 
 // Don't need to implement this one
-bool RegisterContextUnwind::ReadAllRegisterValues(lldb::DataBufferSP &data_sp) {
+bool RegisterContextUnwind::ReadAllRegisterValues(
+    lldb::WritableDataBufferSP &data_sp) {
   return false;
 }
 

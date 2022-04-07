@@ -68,7 +68,7 @@ class TestCmdContainer(TestBase):
         # Make sure we really did overwrite:
         self.expect("test-multi test-multi-sub welcome friend", "Used the new command class",
                     substrs=["Hello friend, welcome again to LLDB"])
-        self.expect("apropos welcome", "welcome should show up in apropos", substrs=["A docstring for the second Welcome"])
+        self.expect("apropos welcome", "welcome should show up in apropos", substrs=["a docstring for the second Welcome"])
         
         # Now switch the default and make sure we can now delete w/o the overwrite option:
         self.runCmd("settings set interpreter.require-overwrite 0")
