@@ -1,13 +1,16 @@
 Triple: x86_64-apple-darwin
 
 SECTION: __TEXT,__text | MemProt: R-X
+CASID: llvmcas://041197874a3f436a36c66cc0737ead340ae241d8
 {
   BLOCK: size = 0x0010, align = 16, alignment-offset = 0
+  CASID: llvmcas://c835c2f06a1b767e2b85331b665212cd7151da8b
   {
     SYMBOL: __foo | offset: 0x0000, linkage: strong, scope: default, dead
     FIXUP: 0x0000, addend = +0x00000000, kind = Keep-Alive, target = <anon-1>
   }
   BLOCK: size = 0x0010, align = 16, alignment-offset = 0
+  CASID: llvmcas://b53dc24d7891784e5edc464aca7b2698f799577f
   {
     SYMBOL: _main | offset: 0x0000, linkage: strong, scope: default, dead
     FIXUP: 0x0000, addend = +0x00000000, kind = Keep-Alive, target = <anon-2>
@@ -17,8 +20,10 @@ SECTION: __TEXT,__text | MemProt: R-X
 }
 
 SECTION: __LD,__compact_unwind | MemProt: RW-
+CASID: llvmcas://bf8a1c24123ce78bfe41fcbf9cda989ff751a029
 {
   BLOCK: size = 0x0020, align = 8, alignment-offset = 0
+  CASID: llvmcas://6e2830d7748f281a3a15094a9a9e68076729586c
   {
     SYMBOL: <anon-0> | offset: 0x0000, linkage: strong, scope: local, live
     FIXUP: 0x0000, addend = +0x00000000, kind = Pointer64, target = _main
@@ -26,20 +31,24 @@ SECTION: __LD,__compact_unwind | MemProt: RW-
 }
 
 SECTION: __TEXT,__eh_frame | MemProt: RW-
+CASID: llvmcas://0ccf83e36ae9cb08da8a3d71ad30f2dccb2e7e05
 {
   BLOCK: size = 0x0020, align = 8, alignment-offset = 0
+  CASID: llvmcas://824463c46c0e51d295240efb6f1bca73b10ad986
   {
     SYMBOL: <anon-1> | offset: 0x0000, linkage: strong, scope: local, dead
     FIXUP: 0x0004, addend = +0x00000000, kind = NegDelta32, target = <anon-3>
     FIXUP: 0x0008, addend = +0x00000000, kind = Delta64, target = __foo
   }
   BLOCK: size = 0x0020, align = 8, alignment-offset = 0
+  CASID: llvmcas://81ac3cc44a5d03d099d6d0e6f56f924fdb68c85f
   {
     SYMBOL: <anon-2> | offset: 0x0000, linkage: strong, scope: local, dead
     FIXUP: 0x0004, addend = +0x00000000, kind = NegDelta32, target = <anon-3>
     FIXUP: 0x0008, addend = +0x00000000, kind = Delta64, target = _main
   }
   BLOCK: size = 0x0018, align = 8, alignment-offset = 0
+  CASID: llvmcas://47faf95177d440e47a6d224272ac24a2e7036339
   {
     SYMBOL: <anon-3> | offset: 0x0000, linkage: strong, scope: local, dead
   }
