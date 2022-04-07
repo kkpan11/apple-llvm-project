@@ -113,12 +113,7 @@ private:
     updateKind(Kind);
   }
 
-  HashT finish() {
-    auto Final = Hasher.final();
-    HashT Hash;
-    std::copy(Final.begin(), Final.end(), Hash.data());
-    return Hash;
-  }
+  HashT finish() { return Hasher.final(); }
 
   void updateKind(StableObjectKind Kind) {
     static_assert(sizeof(Kind) == 1, "Expected kind to be 1-byte");
