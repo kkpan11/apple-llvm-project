@@ -180,7 +180,6 @@ static void updateCompilerInvocation(CompilerInvocation &Invocation,
 }
 
 Expected<llvm::cas::CASID> clang::scanAndUpdateCC1InlineWithTool(
-    const CASOptions &CASOpts,
     tooling::dependencies::DependencyScanningTool &Tool,
     DiagnosticConsumer &DiagsConsumer, const char *Exec,
     CompilerInvocation &Invocation, StringRef WorkingDirectory,
@@ -189,7 +188,7 @@ Expected<llvm::cas::CASID> clang::scanAndUpdateCC1InlineWithTool(
 
   // Override the CASOptions. They may match (the caller having sniffed them
   // out of InputArgs) but if they have been overridden we want the new ones.
-  Invocation.getCASOpts() = CASOpts;
+  Invocation.getCASOpts() = Tool.getCASOpts();
 
   llvm::BumpPtrAllocator Alloc;
   llvm::StringSaver Saver(Alloc);

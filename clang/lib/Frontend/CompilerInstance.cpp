@@ -160,42 +160,7 @@ llvm::vfs::FileSystem &CompilerInstance::getVirtualFileSystem() const {
   return getFileManager().getVirtualFileSystem();
 }
 
-static llvm::cas::CASDB *extractCASFromFS(const llvm::vfs::FileSystem &FS) {
-  if (!FS.isCASFS())
-    return nullptr;
-  return &static_cast<const llvm::cas::CASFileSystemBase &>(FS).getCAS();
-}
-
-void CompilerInstance::setFileManager(FileManager *Value) {
-  /// FIXME: Stop checking this here; instead, trust anyone that overrides the
-  /// file manager to also override the CAS when appropriate. Needs some
-  /// layering fixes in clang-scan-deps though.
-  auto HasMatchingCAS = [&]() {
-    if (!CAS && !FileMgr)
-      return true;
-    if (!Value)
-      return true;
-
-    // Don't allow the CAS to be changed.
-    const llvm::cas::CASDB *NewCAS =
-        extractCASFromFS(Value->getVirtualFileSystem());
-    if (!NewCAS)
-      return true;
-
-    if (CAS)
-      return &*CAS == NewCAS;
-
-    assert(FileMgr && "Expected to return already if no FileMgr?");
-    if (const llvm::cas::CASDB *OldCAS =
-            extractCASFromFS(FileMgr->getVirtualFileSystem()))
-      return OldCAS == NewCAS;
-    return true;
-  };
-  assert(HasMatchingCAS() && "Expected matching CAS");
-  (void)HasMatchingCAS;
-
-  FileMgr = Value;
-}
+void CompilerInstance::setFileManager(FileManager *Value) { FileMgr = Value; }
 
 void CompilerInstance::setSourceManager(SourceManager *Value) {
   SourceMgr = Value;
@@ -880,15 +845,6 @@ llvm::vfs::OutputBackend &CompilerInstance::getOrCreateOutputBackend() {
 llvm::cas::CASDB &CompilerInstance::getOrCreateCAS() {
   if (CAS)
     return *CAS;
-
-  // Return the CAS from the VFS, if any.
-  //
-  // FIXME: This layering is hard to follow; instead, change clients to set the
-  // CAS when building a VFS with a CAS not available from CompilerInvocation.
-  if (FileMgr)
-    if (llvm::cas::CASDB *FSCAS =
-            extractCASFromFS(FileMgr->getVirtualFileSystem()))
-      return *FSCAS;
 
   // Create a new CAS instance from the CompilerInvocation. Future calls to
   // createFileManager() will use the same CAS.

@@ -142,6 +142,7 @@ class DependencyScanningAction : public tooling::ToolAction {
 public:
   DependencyScanningAction(
       StringRef WorkingDirectory, DependencyConsumer &Consumer,
+      const CASOptions &CASOpts,
       llvm::IntrusiveRefCntPtr<DependencyScanningWorkerFilesystem> DepFS,
       llvm::IntrusiveRefCntPtr<DependencyScanningCASFilesystem> DepCASFS,
       ExcludedPreprocessorDirectiveSkipMapping *PPSkipMappings,
@@ -149,9 +150,9 @@ public:
       bool OptimizeArgs, bool EmitDependencyFile,
       llvm::Optional<StringRef> ModuleName = None)
       : WorkingDirectory(WorkingDirectory), Consumer(Consumer),
-        DepFS(std::move(DepFS)), DepCASFS(std::move(DepCASFS)),
-        PPSkipMappings(PPSkipMappings), Format(Format),
-        OverrideCASTokenCache(OverrideCASTokenCache),
+        CASOpts(CASOpts), DepFS(std::move(DepFS)),
+        DepCASFS(std::move(DepCASFS)), PPSkipMappings(PPSkipMappings),
+        Format(Format), OverrideCASTokenCache(OverrideCASTokenCache),
         OptimizeArgs(OptimizeArgs), EmitDependencyFile(EmitDependencyFile),
         ModuleName(ModuleName) {}
 
@@ -165,6 +166,7 @@ public:
     // Create a compiler instance to handle the actual work.
     CompilerInstance ScanInstance(std::move(PCHContainerOps));
     ScanInstance.setInvocation(std::move(Invocation));
+    ScanInstance.getInvocation().getCASOpts() = CASOpts;
 
     // Create the compiler's actual diagnostics engine.
     sanitizeDiagOpts(ScanInstance.getDiagnosticOpts());
@@ -321,6 +323,7 @@ public:
 private:
   StringRef WorkingDirectory;
   DependencyConsumer &Consumer;
+  const CASOptions &CASOpts;
   llvm::IntrusiveRefCntPtr<DependencyScanningWorkerFilesystem> DepFS;
   llvm::IntrusiveRefCntPtr<DependencyScanningCASFilesystem> DepCASFS;
   ExcludedPreprocessorDirectiveSkipMapping *PPSkipMappings;
@@ -336,7 +339,7 @@ private:
 DependencyScanningWorker::DependencyScanningWorker(
     DependencyScanningService &Service)
     : Format(Service.getFormat()), OptimizeArgs(Service.canOptimizeArgs()),
-      UseCAS(Service.useCASScanning()),
+      CASOpts(Service.getCASOpts()), UseCAS(Service.useCASScanning()),
       OverrideCASTokenCache(Service.overrideCASTokenCache()) {
   PCHContainerOps = std::make_shared<PCHContainerOperations>();
   PCHContainerOps->registerReader(
@@ -426,10 +429,10 @@ llvm::Error DependencyScanningWorker::computeDependencies(
   return runWithDiags(CreateAndPopulateDiagOpts(FinalCCommandLine).release(),
                       [&](DiagnosticConsumer &DC, DiagnosticOptions &DiagOpts) {
                         DependencyScanningAction Action(
-                            WorkingDirectory, Consumer, DepFS, DepCASFS,
-                            PPSkipMappings.get(), OverrideCASTokenCache, Format,
-                            OptimizeArgs, /*EmitDependencyFile=*/false,
-                            ModuleName);
+                            WorkingDirectory, Consumer, getCASOpts(), DepFS,
+                            DepCASFS, PPSkipMappings.get(),
+                            OverrideCASTokenCache, Format, OptimizeArgs,
+                            /*EmitDependencyFile=*/false, ModuleName);
                         // Create an invocation that uses the underlying file
                         // system to ensure that any file system requests that
                         // are made by the driver do not go through the
@@ -471,10 +474,11 @@ void DependencyScanningWorker::computeDependenciesFromCompilerInvocation(
 
   // FIXME: EmitDependencyFile should only be set when it's for a real
   // compilation.
-  DependencyScanningAction Action(
-      WorkingDirectory, DepsConsumer, DepFS, DepCASFS, PPSkipMappings.get(),
-      OverrideCASTokenCache, Format, /*OptimizeArgs=*/false,
-      /*EmitDependencyFile=*/true);
+  DependencyScanningAction Action(WorkingDirectory, DepsConsumer, getCASOpts(),
+                                  DepFS, DepCASFS, PPSkipMappings.get(),
+                                  OverrideCASTokenCache, Format,
+                                  /*OptimizeArgs=*/false,
+                                  /*EmitDependencyFile=*/true);
 
   // Ignore result; we're just collecting dependencies.
   //
