@@ -11,6 +11,7 @@ add_llvm_unittest(CASTests
   CASUtilsTest.cpp
   CachingOnDiskFileSystemTest.cpp
   HashMappedTrieTest.cpp
+  OnDiskHashMappedTrieTest.cpp
   HierarchicalTreeBuilderTest.cpp
   )
 

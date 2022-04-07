@@ -658,9 +658,12 @@ OnDiskHashMappedTrie::recoverFromFileOffset(FileOffset Offset) const {
     return const_pointer();
 
   // Check bounds.
-  const uint64_t CurrentFileSize = Impl->File.getAlloc().size();
-  if (Offset.get() > (int64_t)CurrentFileSize ||
-      Offset.get() + Impl->Trie.getRecordSize() >= CurrentFileSize)
+  //
+  // Note: There's no potential overflow when using \c uint64_t because Offset
+  // is in \c [0,INT64_MAX] and the record size is in \c [0,UINT32_MAX].
+  assert(Offset.get() >= 0 && "Expected FileOffset constructor guarantee this");
+  if ((uint64_t)Offset.get() + Impl->Trie.getRecordSize() >
+      Impl->File.getAlloc().size())
     return const_pointer();
 
   // Looks okay...

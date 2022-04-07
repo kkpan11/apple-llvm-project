@@ -9,6 +9,7 @@
 #include "llvm/CAS/HashMappedTrie.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/Endian.h"
+#include "llvm/Support/SHA1.h"
 #include "gtest/gtest.h"
 
 using namespace llvm;
