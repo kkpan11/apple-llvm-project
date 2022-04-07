@@ -643,14 +643,35 @@ struct OnDiskObjectProxy {
 /// Here's a top-level description of the current layout (could expose or make
 /// this configurable in the future).
 ///
-/// Files:
-/// - db/v1.index: HashMappedTrie(name="cas.hashes[<hashname>]")
-/// - db/v1.data: DataStore(name="cas.objects[64K]") for objects <64KB
-/// - db/v1.<TrieRecordOffset>: Objects >=64KB
+/// Files, each with a prefix set by \a FilePrefix():
 ///
-/// In theory, these could all be in one file (using a root record that points
-/// at the two types of stores), but splitting the files enables setting
-/// different max settings.
+/// - db/<prefix>.index: a file for the "index" table, named by \a
+///   getIndexTableName() and managed by \a HashMappedTrie. The contents are 8B
+///   that are accessed atomically, describing the object kind and where/how
+///   it's stored (including an optional file offset). See \a TrieRecord for
+///   more details.
+/// - db/<prefix>.data: a file for the "data" table, named by \a
+///   getDataPoolTableName() and managed by \a DataStore. New objects within
+///   TrieRecord::MaxEmbeddedSize are inserted here as either \a
+///   TrieRecord::StorageKind::DataPool or
+///   TrieRecord::StorageKind::DataPoolString2B.
+///     - db/<prefix>.<offset>.data: a file storing an object outside the main
+///       "data" table, named by its offset into the "index" table, with the
+///       format of \a TrieRecord::StorageKind::Standalone.
+///     - db/<prefix>.<offset>.blob: a file storing a blob object outside the
+///       main "data" table, named by its offset into the "index" table, with
+///       the format of \a TrieRecord::StorageKind::StandaloneBlob.
+///     - db/<prefix>.<offset>.blob0: a file storing a blob object outside the
+///       main "data" table, named by its offset into the "index" table, with
+///       the format of \a TrieRecord::StorageKind::StandaloneBlob0.
+/// - db/<prefix>.actions: a file for the "actions" table, named by \a
+///   getActionCacheTableName() and managed by \a HashMappedTrie. The contents
+///   are \a CASID::getInternalID(), stored as \a ActionCacheResultT;
+///   effectively, a pointer into the "index" table.
+///
+/// The "index", "data", and "actions" tables could be stored in a single file,
+/// (using a root record that points at the two types of stores), but splitting
+/// the files seems more convenient for now.
 ///
 /// Eventually: update UniqueID/CASID to store:
 /// - uint64_t: for BuiltinCAS, this is a pointer to Trie record
