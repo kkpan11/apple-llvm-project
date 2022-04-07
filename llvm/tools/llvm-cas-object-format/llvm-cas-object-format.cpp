@@ -55,8 +55,10 @@ cl::opt<bool> SplitEHFrames("split-eh", cl::desc("Split eh-frame sections."),
                             cl::init(true));
 cl::opt<std::string> CASPath("cas", cl::desc("Path to CAS on disk."));
 cl::list<std::string> InputFiles(cl::Positional, cl::desc("Input object"));
-cl::opt<bool> ComputeStats("object-stats",
-                           cl::desc("Compute and print out stats."));
+cl::opt<std::string>
+    ComputeStats("object-stats",
+                 cl::desc("Compute and print out stats. Use '-' to print to "
+                          "stdout, otherwise provide path"));
 cl::opt<std::string> JustDsymutil("just-dsymutil",
                                   cl::desc("Just run dsymutil."));
 cl::opt<std::string> CASGlob("cas-glob",
@@ -91,6 +93,19 @@ cl::opt<InputKind> InputFileKind(
                           "print cas object from cas ID")),
     cl::init(InputKind::IngestFromFS));
 
+enum FormatType {
+  Pretty,
+  CSV,
+};
+
+cl::opt<FormatType> ObjectStatsFormat(
+    "object-stats-format", cl::desc("choose object stats format:"),
+    cl::values(
+        clEnumValN(Pretty, "pretty",
+                   "object stats formatted in a readable format (default)"),
+        clEnumValN(CSV, "csv", "object stats formatted in a CSV format")),
+    cl::init(FormatType::Pretty));
+
 namespace {
 
 class SharedStream {
@@ -121,7 +136,7 @@ createSchema(CASDB &CAS, StringRef SchemaName) {
 
 static CASID ingestFile(SchemaBase &Schema, StringRef InputFile,
                         MemoryBufferRef FileContent, SharedStream &OS);
-static void computeStats(CASDB &CAS, ArrayRef<CASID> IDs);
+static void computeStats(CASDB &CAS, ArrayRef<CASID> IDs, raw_ostream &StatOS);
 static Error printCASObjectOrTree(SchemaPool &Pool, CASID ID);
 
 int main(int argc, char *argv[]) {
@@ -271,8 +286,25 @@ int main(int argc, char *argv[]) {
     outs() << SummaryID << "\n";
   }
 
-  if (ComputeStats)
-    computeStats(*CAS, SummaryIDs);
+  if (ComputeStats.empty()) {
+    return 0;
+  }
+
+  bool PrintToStdout = false;
+  if (StringRef(ComputeStats) == "-")
+    PrintToStdout = true;
+
+  raw_ostream *StatOS = &outs();
+  Optional<raw_fd_ostream> StatsFile;
+
+  if (!PrintToStdout) {
+    std::error_code EC;
+    StatsFile.emplace(ComputeStats, EC, sys::fs::OF_None);
+    ExitOnErr(errorCodeToError(EC));
+    StatOS = &*StatsFile;
+  }
+
+  computeStats(*CAS, SummaryIDs, *StatOS);
 
   return 0;
 }
@@ -358,7 +390,7 @@ struct StatCollector {
                           flatv1::ObjectFileSchema &Schema,
                           function_ref<void(ObjectKindInfo &Info)> addNodeStats,
                           cas::NodeProxy Node);
-  void printToOuts(ArrayRef<CASID> TopLevels);
+  void printToOuts(ArrayRef<CASID> TopLevels, raw_ostream &StatOS);
 };
 } // end namespace
 
@@ -528,7 +560,8 @@ void StatCollector::visitPOTItemFlatV1(
   addNodeStats(Stats[Object.getKindString()]);
 }
 
-static void computeStats(CASDB &CAS, ArrayRef<CASID> TopLevels) {
+static void computeStats(CASDB &CAS, ArrayRef<CASID> TopLevels,
+                         raw_ostream &StatOS) {
   ExitOnError ExitOnErr;
   ExitOnErr.setBanner("llvm-cas-object-format: compute-stats: ");
 
@@ -622,10 +655,12 @@ static void computeStats(CASDB &CAS, ArrayRef<CASID> TopLevels) {
   }
 
   Collector.visitPOT(ExitOnErr, TopLevels, POT);
-  Collector.printToOuts(TopLevels);
+  Collector.printToOuts(TopLevels, StatOS);
 }
 
-void StatCollector::printToOuts(ArrayRef<CASID> TopLevels) {
+void StatCollector::printToOuts(ArrayRef<CASID> TopLevels,
+                                raw_ostream &StatOS) {
+
   SmallVector<StringRef> Kinds;
   auto addToTotal = [&Totals = this->Totals](ObjectKindInfo Info) {
     Totals.Count += Info.Count;
@@ -640,27 +675,41 @@ void StatCollector::printToOuts(ArrayRef<CASID> TopLevels) {
   llvm::sort(Kinds);
 
   size_t NumHashBytes = TopLevels.front().getHash().size();
-  outs() << "  => Note: 'Parents' counts incoming edges\n"
-         << "  => Note: 'Children' counts outgoing edges (to sub-objects)\n"
-         << "  => Note: HashSize = " << NumHashBytes << "B\n"
-         << "  => Note: PtrSize  = " << sizeof(void *) << "B\n"
-         << "  => Note: Cost     = Count*HashSize + PtrSize*Children + Data\n";
-  StringLiteral HeaderFormat = "{0,-22} {1,+10} {2,+7} {3,+10} {4,+7} {5,+10} "
-                               "{6,+7} {7,+10} {8,+7} {9,+10} {10,+7}\n";
-  StringLiteral Format = "{0,-22} {1,+10} {2,+7:P} {3,+10} {4,+7:P} {5,+10} "
-                         "{6,+7:P} {7,+10} {8,+7:P} {9,+10} {10,+7:P}\n";
-  outs() << llvm::formatv(HeaderFormat.begin(), "Kind", "Count", "", "Parents",
+  if (ObjectStatsFormat == FormatType::Pretty) {
+    StatOS
+        << "  => Note: 'Parents' counts incoming edges\n"
+        << "  => Note: 'Children' counts outgoing edges (to sub-objects)\n"
+        << "  => Note: HashSize = " << NumHashBytes << "B\n"
+        << "  => Note: PtrSize  = " << sizeof(void *) << "B\n"
+        << "  => Note: Cost     = Count*HashSize + PtrSize*Children + Data\n";
+  }
+  StringLiteral HeaderFormatPretty =
+      "{0,-22} {1,+10} {2,+7} {3,+10} {4,+7} {5,+10} "
+      "{6,+7} {7,+10} {8,+7} {9,+10} {10,+7}\n";
+  StringLiteral FormatPretty =
+      "{0,-22} {1,+10} {2,+7:P} {3,+10} {4,+7:P} {5,+10} "
+      "{6,+7:P} {7,+10} {8,+7:P} {9,+10} {10,+7:P}\n";
+  StringLiteral FormatCSV = "{0}, {1}, {3}, {5}, {7}, {9}\n";
+
+  StringLiteral HeaderFormat =
+      ObjectStatsFormat == FormatType::Pretty ? HeaderFormatPretty : FormatCSV;
+  StringLiteral Format =
+      ObjectStatsFormat == FormatType::Pretty ? FormatPretty : FormatCSV;
+
+  StatOS << llvm::formatv(HeaderFormat.begin(), "Kind", "Count", "", "Parents",
                           "", "Children", "", "Data (B)", "", "Cost (B)", "");
-  outs() << llvm::formatv(HeaderFormat.begin(), "====", "=====", "",
-                          "=======", "", "========", "", "========", "",
-                          "========", "");
-  auto printInfo = [Format, NumHashBytes, &Totals = this->Totals](
-                       StringRef Kind, ObjectKindInfo Info) {
+  if (ObjectStatsFormat == FormatType::Pretty) {
+    StatOS << llvm::formatv(HeaderFormat.begin(), "====", "=====", "",
+                            "=======", "", "========", "", "========", "",
+                            "========", "");
+  }
+
+  auto printInfo = [&](StringRef Kind, ObjectKindInfo Info) {
     if (!Info.Count)
       return;
     auto getPercent = [](double N, double D) { return D ? N / D : 0.0; };
     size_t Size = Info.getTotalSize(NumHashBytes);
-    outs() << llvm::formatv(
+    StatOS << llvm::formatv(
         Format.begin(), Kind, Info.Count, getPercent(Info.Count, Totals.Count),
         Info.NumParents, getPercent(Info.NumParents, Totals.NumParents),
         Info.NumChildren, getPercent(Info.NumChildren, Totals.NumChildren),
@@ -671,14 +720,20 @@ void StatCollector::printToOuts(ArrayRef<CASID> TopLevels) {
     printInfo(Kind, Stats.lookup(Kind));
   printInfo("TOTAL", Totals);
 
+  StringLiteral OtherStatsPretty = "{0,-22} {1,+10}\n";
+  StringLiteral OtherStatsCSV = "{0}, {1}\n";
+
+  StringLiteral OtherStats = ObjectStatsFormat == FormatType::Pretty
+                                 ? OtherStatsPretty
+                                 : OtherStatsCSV;
   // Other stats.
   bool HasPrinted = false;
-  auto printIfNotZero = [&HasPrinted](StringRef Name, size_t Num) {
+  auto printIfNotZero = [&](StringRef Name, size_t Num) {
     if (!Num)
       return;
     if (!HasPrinted)
-      outs() << "\n";
-    outs() << llvm::formatv("{0,-22} {1,+10}\n", Name, Num);
+      StatOS << "\n";
+    StatOS << llvm::formatv(OtherStats.begin(), Name, Num);
     HasPrinted = true;
   };
 
