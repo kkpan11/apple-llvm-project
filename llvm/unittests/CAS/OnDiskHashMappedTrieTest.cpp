@@ -21,10 +21,14 @@ namespace {
 TEST(OnDiskHashMappedTrieTest, Insertion) {
   unittest::TempDir Temp("on-disk-hash-mapped-trie", /*Unique=*/true);
 
-  // Create tries with various sizes of "hash" and with data. We want to check
-  // hash sizes that are either 8B-aligned or not.
+  // Create tries with various sizes of hash and with data.
+  //
+  // NOTE: The check related to \a recoverFromFileOffset() catches a potential
+  // off-by-one bounds-checking bug when the trie record size (data + hash) add
+  // up to a multiple of 8B. Iterate through a few different hash sizes to
+  // check it both ways.
   constexpr size_t MB = 1024u * 1024u;
-  constexpr size_t DataSize = 8; // 8B-aligned.
+  constexpr size_t DataSize = 8; // Multiple of 8B.
   for (size_t NumHashBytes : {1, 2, 4, 8}) {
     size_t NumHashBits = NumHashBytes * 8;
 
