@@ -51,6 +51,7 @@
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/TimeProfiler.h"
 #include "llvm/Support/Timer.h"
+#include "llvm/Support/VirtualOutputBackends.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
 #include <cstdio>
@@ -402,7 +403,8 @@ Optional<int> CompileJobCache::tryReplayCachedResult(CompilerInstance &Clang) {
       llvm::makeIntrusiveRefCnt<llvm::vfs::OnDiskOutputBackend>();
   if (WriteOutputAsCASID) {
     OnDiskOutputs = llvm::vfs::makeFilteringOutputBackend(
-        OnDiskOutputs, [this](StringRef ResolvedPath, llvm::vfs::OutputConfig) {
+        OnDiskOutputs,
+        [this](StringRef ResolvedPath, Optional<llvm::vfs::OutputConfig>) {
           return ResolvedPath != this->OutputFile;
         });
   }
