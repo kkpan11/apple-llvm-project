@@ -41,18 +41,19 @@ private:
 CASOutputBackend::CASOutputBackend(
     std::shared_ptr<CASDB> CAS,
     IntrusiveRefCntPtr<llvm::vfs::OutputBackend> CASIDOutputBackend,
-    function_ref<std::string(StringRef)> CASPathRewriter)
-    : CASOutputBackend(*CAS, std::move(CASIDOutputBackend), CASPathRewriter) {
+    unique_function<std::string(StringRef)> CASPathRewriter)
+    : CASOutputBackend(*CAS, std::move(CASIDOutputBackend),
+                       std::move(CASPathRewriter)) {
   this->OwnedCAS = std::move(CAS);
 }
 
 CASOutputBackend::CASOutputBackend(
     CASDB &CAS, IntrusiveRefCntPtr<llvm::vfs::OutputBackend> CASIDOutputBackend,
-    function_ref<std::string(StringRef)> CASPathRewriter)
+    unique_function<std::string(StringRef)> CASPathRewriter)
     : StableUniqueEntityAdaptorType(
           sys::path::Style::native /*FIXME: should be posix?*/),
       CAS(CAS), CASIDOutputBackend(std::move(CASIDOutputBackend)),
-      CASPathRewriter(CASPathRewriter) {}
+      CASPathRewriter(std::move(CASPathRewriter)) {}
 
 CASOutputBackend::~CASOutputBackend() = default;
 

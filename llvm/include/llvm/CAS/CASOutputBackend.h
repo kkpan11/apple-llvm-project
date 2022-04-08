@@ -32,13 +32,13 @@ public:
   CASOutputBackend(
       std::shared_ptr<CASDB> CAS,
       IntrusiveRefCntPtr<llvm::vfs::OutputBackend> CASIDOutputBackend,
-      function_ref<std::string(StringRef)> CASPathRewriter);
+      unique_function<std::string(StringRef)> CASPathRewriter);
   /// \param CASIDOutputBackend if set it will be used to write out the file
   /// contents as embedded CASID. Can be \p nullptr.
   CASOutputBackend(
       CASDB &CAS,
       IntrusiveRefCntPtr<llvm::vfs::OutputBackend> CASIDOutputBackend,
-      function_ref<std::string(StringRef)> CASPathRewriter);
+      unique_function<std::string(StringRef)> CASPathRewriter);
 
 private:
   ~CASOutputBackend();
@@ -48,7 +48,7 @@ private:
   CASDB &CAS;
   std::shared_ptr<CASDB> OwnedCAS;
   IntrusiveRefCntPtr<llvm::vfs::OutputBackend> CASIDOutputBackend;
-  function_ref<std::string(StringRef)> CASPathRewriter;
+  unique_function<std::string(StringRef)> CASPathRewriter;
 };
 
 } // namespace cas
