@@ -9,6 +9,7 @@
 #ifndef LLVM_CLANG_TOOLING_DEPENDENCYSCANNING_DEPENDENCYSCANNINGSERVICE_H
 #define LLVM_CLANG_TOOLING_DEPENDENCYSCANNING_DEPENDENCYSCANNINGSERVICE_H
 
+#include "clang/CAS/CASOptions.h"
 #include "clang/Tooling/DependencyScanning/DependencyScanningCASFilesystem.h"
 #include "clang/Tooling/DependencyScanning/DependencyScanningFilesystem.h"
 
@@ -55,7 +56,7 @@ enum class ScanningOutputFormat {
 class DependencyScanningService {
 public:
   DependencyScanningService(
-      ScanningMode Mode, ScanningOutputFormat Format,
+      ScanningMode Mode, ScanningOutputFormat Format, CASOptions CASOpts,
       IntrusiveRefCntPtr<llvm::cas::CachingOnDiskFileSystem> SharedFS,
       bool ReuseFileManager = true, bool SkipExcludedPPRanges = true,
       bool OptimizeArgs = false, bool OverrideCASTokenCache = false);
@@ -65,6 +66,8 @@ public:
   ScanningMode getMode() const { return Mode; }
 
   ScanningOutputFormat getFormat() const { return Format; }
+
+  const CASOptions &getCASOpts() const { return CASOpts; }
 
   bool canReuseFileManager() const { return ReuseFileManager; }
 
@@ -87,6 +90,7 @@ public:
 private:
   const ScanningMode Mode;
   const ScanningOutputFormat Format;
+  CASOptions CASOpts;
   const bool ReuseFileManager;
   /// Set to true to use the preprocessor optimization that skips excluded PP
   /// ranges by bumping the buffer pointer in the lexer instead of lexing the

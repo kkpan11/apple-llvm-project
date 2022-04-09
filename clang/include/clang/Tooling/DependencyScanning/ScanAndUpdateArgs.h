@@ -40,7 +40,6 @@ struct DepscanPrefixMapping {
 } // namespace cc1depscand
 
 Expected<llvm::cas::CASID> scanAndUpdateCC1InlineWithTool(
-    const CASOptions &CASOpts,
     tooling::dependencies::DependencyScanningTool &Tool,
     DiagnosticConsumer &DiagsConsumer, const char *Exec,
     CompilerInvocation &Invocation, StringRef WorkingDirectory,

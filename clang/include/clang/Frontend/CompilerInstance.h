@@ -418,8 +418,6 @@ public:
   llvm::vfs::OutputBackend &getOrCreateOutputBackend();
 
   /// Get the CAS, or create it using the configuration in CompilerInvocation.
-  ///
-  /// FIXME: Requires the filemanager to be set up already, but shouldn't.
   llvm::cas::CASDB &getOrCreateCAS();
 
   /// }

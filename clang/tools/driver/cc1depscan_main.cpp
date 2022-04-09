@@ -360,7 +360,6 @@ scanAndUpdateCC1Inline(const char *Exec, ArrayRef<const char *> InputArgs,
                        const CASOptions &CASOpts, llvm::cas::CASDB &CAS);
 
 static Expected<llvm::cas::CASID> scanAndUpdateCC1InlineWithTool(
-    const CASOptions &CASOpts,
     tooling::dependencies::DependencyScanningTool &Tool,
     DiagnosticConsumer &DiagsConsumer, const char *Exec,
     ArrayRef<const char *> InputArgs, StringRef WorkingDirectory,
@@ -844,7 +843,7 @@ int cc1depscand_main(ArrayRef<const char *> Argv, const char *Argv0,
       llvm::cantFail(llvm::cas::createCachingOnDiskFileSystem(*CAS));
   tooling::dependencies::DependencyScanningService Service(
       tooling::dependencies::ScanningMode::MinimizedSourcePreprocessing,
-      tooling::dependencies::ScanningOutputFormat::Tree, FS,
+      tooling::dependencies::ScanningOutputFormat::Tree, CASOpts, FS,
       /*ReuseFileManager=*/false,
       /*SkipExcludedPPRanges=*/true);
 
@@ -865,7 +864,7 @@ int cc1depscand_main(ArrayRef<const char *> Argv, const char *Argv0,
   for (unsigned I = 0; I < Pool.getThreadCount(); ++I) {
     Pool.async([&Service, &ShutDown, &ListenSocket, &NumRunning, &Start,
                 &SecondsSinceLastClose, I, Argv0, &SharedOS, ShutDownTest,
-                &ShutdownCleanUp, &CASOpts]() {
+                &ShutdownCleanUp]() {
       Optional<tooling::dependencies::DependencyScanningTool> Tool;
       SmallString<256> Message;
       while (true) {
@@ -962,8 +961,8 @@ int cc1depscand_main(ArrayRef<const char *> Argv, const char *Argv0,
 
         SmallVector<const char *> NewArgs;
         auto RootID = scanAndUpdateCC1InlineWithTool(
-            CASOpts, *Tool, *DiagsConsumer, Argv0, Args, WorkingDirectory,
-            NewArgs, PrefixMapping,
+            *Tool, *DiagsConsumer, Argv0, Args, WorkingDirectory, NewArgs,
+            PrefixMapping,
             [&](const Twine &T) { return Saver.save(T).data(); });
         if (!RootID) {
           consumeError(Comms.putScanResultFailed(toString(RootID.takeError())));
@@ -1071,7 +1070,6 @@ int cc1depscand_main(ArrayRef<const char *> Argv, const char *Argv0,
 }
 
 static Expected<llvm::cas::CASID> scanAndUpdateCC1InlineWithTool(
-    const CASOptions &CASOpts,
     tooling::dependencies::DependencyScanningTool &Tool,
     DiagnosticConsumer &DiagsConsumer, const char *Exec,
     ArrayRef<const char *> InputArgs, StringRef WorkingDirectory,
@@ -1086,8 +1084,7 @@ static Expected<llvm::cas::CASID> scanAndUpdateCC1InlineWithTool(
                                    "failed to create compiler invocation");
 
   Expected<llvm::cas::CASID> Root = scanAndUpdateCC1InlineWithTool(
-      CASOpts, Tool, DiagsConsumer, Exec, *Invocation, WorkingDirectory,
-      PrefixMapping);
+      Tool, DiagsConsumer, Exec, *Invocation, WorkingDirectory, PrefixMapping);
   if (!Root)
     return Root;
 
@@ -1108,7 +1105,7 @@ scanAndUpdateCC1Inline(const char *Exec, ArrayRef<const char *> InputArgs,
 
   tooling::dependencies::DependencyScanningService Service(
       tooling::dependencies::ScanningMode::MinimizedSourcePreprocessing,
-      tooling::dependencies::ScanningOutputFormat::Tree, FS,
+      tooling::dependencies::ScanningOutputFormat::Tree, CASOpts, FS,
       /*ReuseFileManager=*/false,
       /*SkipExcludedPPRanges=*/true);
   tooling::dependencies::DependencyScanningTool Tool(Service);
@@ -1119,7 +1116,7 @@ scanAndUpdateCC1Inline(const char *Exec, ArrayRef<const char *> InputArgs,
   reportAsFatalIfError(
       llvm::errorCodeToError(llvm::sys::fs::current_path(WorkingDirectory)));
 
-  return scanAndUpdateCC1InlineWithTool(CASOpts, Tool, *DiagsConsumer, Exec,
-                                        InputArgs, WorkingDirectory, OutputArgs,
+  return scanAndUpdateCC1InlineWithTool(Tool, *DiagsConsumer, Exec, InputArgs,
+                                        WorkingDirectory, OutputArgs,
                                         PrefixMapping, SaveArg);
 }
