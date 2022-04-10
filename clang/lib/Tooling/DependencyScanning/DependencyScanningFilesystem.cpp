@@ -343,7 +343,7 @@ llvm::ErrorOr<std::unique_ptr<llvm::vfs::File>> MinimizedVFSFile::create(
 
   const auto *EntrySkipMappings = Entry.getPPSkippedRangeMapping();
   if (EntrySkipMappings && !EntrySkipMappings->empty() && PPSkipMappings)
-    (*PPSkipMappings)[Result->Buffer->getBufferStart()] = *EntrySkipMappings;
+    (*PPSkipMappings)[Result->Buffer->getBufferStart()] = EntrySkipMappings;
 
   return llvm::ErrorOr<std::unique_ptr<llvm::vfs::File>>(
       std::unique_ptr<llvm::vfs::File>(std::move(Result)));

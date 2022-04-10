@@ -65,7 +65,8 @@ static Error cacheMinimized(cas::CASID InputID, cas::CASDB &CAS,
 
 Expected<StringRef> DependencyScanningCASFilesystem::getMinimized(
     cas::CASID OutputID, StringRef Identifier,
-    Optional<cas::CASID> &MinimizedDataID) {
+    Optional<cas::CASID> &MinimizedDataID,
+    std::unique_ptr<PreprocessorSkippedRangeMapping> &PPSkippedRangeMapping) {
   // Extract the blob IDs from the tree.
   Expected<cas::TreeProxy> Tree = CAS.getTree(OutputID);
   if (!Tree)
@@ -100,7 +101,7 @@ Expected<StringRef> DependencyScanningCASFilesystem::getMinimized(
   if (Ranges.empty())
     return OutputData;
 
-  PreprocessorSkippedRangeMapping Skip;
+  PPSkippedRangeMapping = std::make_unique<PreprocessorSkippedRangeMapping>();
   while (!Ranges.empty()) {
     unsigned Offset, Length;
     if (Ranges.consumeInteger(10, Offset) || !Ranges.consume_front(" ") ||
@@ -108,15 +109,16 @@ Expected<StringRef> DependencyScanningCASFilesystem::getMinimized(
       return createStringError(
           std::make_error_code(std::errc::invalid_argument),
           "invalid skipped ranges '" + Identifier + "'");
-    addSkippedRange(Skip, Offset, Length);
+    addSkippedRange(*PPSkippedRangeMapping, Offset, Length);
   }
-  (*PPSkipMappings)[OutputData.begin()] = std::move(Skip);
+
   return OutputData;
 }
 
 Expected<StringRef> DependencyScanningCASFilesystem::computeMinimized(
     cas::CASID InputDataID, StringRef Identifier,
-    Optional<llvm::cas::CASID> &MinimizedDataID) {
+    Optional<llvm::cas::CASID> &MinimizedDataID,
+    std::unique_ptr<PreprocessorSkippedRangeMapping> &SkipMappingsResults) {
   using namespace llvm;
   using namespace llvm::cas;
 
@@ -146,7 +148,8 @@ Expected<StringRef> DependencyScanningCASFilesystem::computeMinimized(
   // Check the result cache.
   if (Optional<CASID> OutputID =
           expectedToOptional(CAS.getCachedResult(*InputID))) {
-    auto Ex = getMinimized(*OutputID, Identifier, MinimizedDataID);
+    auto Ex = getMinimized(*OutputID, Identifier, MinimizedDataID,
+                           SkipMappingsResults);
     return reportAsFatalIfError(std::move(Ex));
   }
 
@@ -172,11 +175,10 @@ Expected<StringRef> DependencyScanningCASFilesystem::computeMinimized(
       SkippedRanges;
   minimize_source_to_dependency_directives::computeSkippedRanges(Tokens,
                                                                  SkippedRanges);
-  Optional<DenseMap<unsigned, unsigned>> SkipMappingsResults;
   Buffer.clear();
   if (!SkippedRanges.empty()) {
     if (PPSkipMappings)
-      SkipMappingsResults.emplace();
+      SkipMappingsResults = std::make_unique<PreprocessorSkippedRangeMapping>();
 
     raw_svector_ostream OS(Buffer);
     for (const auto &Range : SkippedRanges) {
@@ -191,8 +193,6 @@ Expected<StringRef> DependencyScanningCASFilesystem::computeMinimized(
   reportAsFatalIfError(
       cacheMinimized(*InputID, CAS, *MinimizedDataID, SkippedRangesID));
 
-  if (SkipMappingsResults)
-    (*PPSkipMappings)[OutputData.begin()] = std::move(SkipMappingsResults);
   return OutputData;
 }
 
@@ -281,8 +281,10 @@ DependencyScanningCASFilesystem::lookupPath(const Twine &Path) {
 
   llvm::ErrorOr<StringRef> Buffer = std::error_code();
   llvm::Optional<llvm::cas::CASID> EffectiveID;
+  std::unique_ptr<PreprocessorSkippedRangeMapping> PPSkippedRangeMapping;
   if (shouldMinimize(PathRef)) {
-    Buffer = expectedToErrorOr(computeMinimized(*FileID, PathRef, EffectiveID));
+    Buffer = expectedToErrorOr(
+        computeMinimized(*FileID, PathRef, EffectiveID, PPSkippedRangeMapping));
   } else {
     Buffer = expectedToErrorOr(getOriginal(*FileID));
     EffectiveID = *FileID;
@@ -303,6 +305,7 @@ DependencyScanningCASFilesystem::lookupPath(const Twine &Path) {
       MaybeStatus->getGroup(), Entry.Buffer->size(), MaybeStatus->getType(),
       MaybeStatus->getPermissions());
   Entry.ID = EffectiveID;
+  Entry.PPSkippedRangeMapping = std::move(PPSkippedRangeMapping);
   return LookupPathResult{&Entry, std::error_code()};
 }
 
@@ -369,6 +372,10 @@ DependencyScanningCASFilesystem::openFileForRead(const Twine &Path) {
   }
   if (Result.Entry->EC)
     return Result.Entry->EC;
+
+  const auto *EntrySkipMappings = Result.Entry->PPSkippedRangeMapping.get();
+  if (EntrySkipMappings && !EntrySkipMappings->empty() && PPSkipMappings)
+    (*PPSkipMappings)[Result.Entry->Buffer->begin()] = EntrySkipMappings;
 
   return std::make_unique<MinimizedVFSFile>(*Result.Entry->Buffer,
                                             Result.Entry->Status);

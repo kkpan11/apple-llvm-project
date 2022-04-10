@@ -84,6 +84,7 @@ private:
     Optional<StringRef> Buffer;
     llvm::vfs::Status Status;
     Optional<llvm::cas::CASID> ID;
+    std::unique_ptr<PreprocessorSkippedRangeMapping> PPSkippedRangeMapping;
   };
   llvm::BumpPtrAllocator EntryAlloc;
   llvm::StringMap<FileEntry, llvm::BumpPtrAllocator> Entries;
@@ -94,13 +95,15 @@ private:
     // Only filled if the Entry is nullptr.
     llvm::ErrorOr<llvm::vfs::Status> Status;
   };
-  Expected<StringRef>
-  computeMinimized(llvm::cas::CASID InputDataID, StringRef Identifier,
-                   Optional<llvm::cas::CASID> &MinimizedDataID);
+  Expected<StringRef> computeMinimized(
+      llvm::cas::CASID InputDataID, StringRef Identifier,
+      Optional<llvm::cas::CASID> &MinimizedDataID,
+      std::unique_ptr<PreprocessorSkippedRangeMapping> &PPSkippedRangeMapping);
 
-  Expected<StringRef> getMinimized(llvm::cas::CASID OutputID,
-                                   StringRef Identifier,
-                                   Optional<llvm::cas::CASID> &MinimizedDataID);
+  Expected<StringRef> getMinimized(
+      llvm::cas::CASID OutputID, StringRef Identifier,
+      Optional<llvm::cas::CASID> &MinimizedDataID,
+      std::unique_ptr<PreprocessorSkippedRangeMapping> &PPSkippedRangeMapping);
 
   Expected<StringRef> getOriginal(llvm::cas::CASID InputDataID);
 
