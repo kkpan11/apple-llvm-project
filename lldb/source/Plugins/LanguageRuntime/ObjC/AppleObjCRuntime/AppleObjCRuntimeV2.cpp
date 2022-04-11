@@ -1567,7 +1567,7 @@ AppleObjCRuntimeV2::DynamicClassInfoExtractor::GetClassInfoUtilityFunctionImpl(
   if (!utility_fn_or_error) {
     LLDB_LOG_ERROR(
         log, utility_fn_or_error.takeError(),
-        "Failed to get utility function for implementation lookup: {0}");
+        "Failed to get utility function for dynamic info extractor: {0}");
     return {};
   }
 
@@ -1697,7 +1697,7 @@ AppleObjCRuntimeV2::SharedCacheClassInfoExtractor::
   if (!utility_fn_or_error) {
     LLDB_LOG_ERROR(
         log, utility_fn_or_error.takeError(),
-        "Failed to get utility function for implementation lookup: {0}");
+        "Failed to get utility function for shared class info extractor: {0}");
     return nullptr;
   }
 
