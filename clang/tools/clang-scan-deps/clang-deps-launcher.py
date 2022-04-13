@@ -8,6 +8,7 @@ import subprocess
 import time
 import json
 import tempfile
+import fcntl
 
 
 TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -66,9 +67,25 @@ def main():
     scan_deps_object['time'] = end - start
     scan_deps_object['size'] = output_size
 
-    output_file = output_object + '.stats'
-    with open(output_file, 'w+') as of:
-        json.dump(scan_deps_object, of)
+    # Write outoput file.
+    # See if the output file environmental variable is set, if set, use
+    # accumulated json file format. If not, write next to output object.
+    accumulated_file = os.getenv('CLANG_SCAN_DEPS_OUTPUT_FILE')
+    if accumulated_file is None:
+        output_filename = output_object + '.stats'
+        with open(output_filename, 'w+') as of:
+            json.dump(scan_deps_object, of)
+        return
+
+    # Write accumulated JSON object file format
+    json_str = json.dumps(scan_deps_object)
+    with open(accumulated_file, 'a+') as of:
+        fcntl.flock(of, fcntl.LOCK_EX)  # lock file for write
+        of.write(str(len(json_str)))    # write the size of the JSON blob.
+        of.write('\n')                  # new line
+        of.write(json_str)              # write json blob
+        of.write('\n')                  # new line
+        fcntl.flock(of, fcntl.LOCK_UN)  # unlock output file
 
 
 if __name__ == '__main__':
