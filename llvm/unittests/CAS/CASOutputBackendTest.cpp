@@ -9,10 +9,12 @@
 #include "llvm/CAS/CASOutputBackend.h"
 #include "llvm/CAS/CASDB.h"
 #include "llvm/CAS/CASFileSystem.h"
+#include "llvm/Testing/Support/Error.h"
 #include "gtest/gtest.h"
 
 using namespace llvm;
 using namespace llvm::cas;
+using namespace llvm::vfs;
 
 template <class T>
 static std::unique_ptr<T>
@@ -35,53 +37,52 @@ TEST(CASOutputBackendTest, createFiles) {
   std::unique_ptr<CASDB> CAS = createInMemoryCAS();
   ASSERT_TRUE(CAS);
 
-  auto Outputs = makeIntrusiveRefCnt<CASOutputBackend>(
-      *CAS, nullptr, [](StringRef Path) { return Path.str(); });
+  auto Outputs = makeIntrusiveRefCnt<CASOutputBackend>(*CAS);
 
-  auto make = [&](StringRef Content, StringRef Path) {
-    auto O = expectedToPointer(Outputs->createFile(Path));
-    if (!O)
-      return false;
-    *O->takeOS() << Content;
-    return !errorToBool(O->close());
+  Optional<BlobProxy> Content1;
+  Optional<BlobProxy> Content2;
+  Optional<BlobProxy> AbsolutePath1;
+  Optional<BlobProxy> AbsolutePath2;
+  Optional<BlobProxy> RelativePath;
+  Optional<BlobProxy> WindowsPath;
+  ASSERT_THAT_ERROR(CAS->createBlob("content1").moveInto(Content1),
+                    Succeeded());
+  ASSERT_THAT_ERROR(CAS->createBlob("content2").moveInto(Content2),
+                    Succeeded());
+  ASSERT_THAT_ERROR(CAS->createBlob("/absolute/path/1").moveInto(AbsolutePath1),
+                    Succeeded());
+  ASSERT_THAT_ERROR(CAS->createBlob("/absolute/path/2").moveInto(AbsolutePath2),
+                    Succeeded());
+  ASSERT_THAT_ERROR(CAS->createBlob("relative/path/./2").moveInto(RelativePath),
+                    Succeeded());
+  ASSERT_THAT_ERROR(CAS->createBlob("c:\\windows/path").moveInto(WindowsPath),
+                    Succeeded());
+
+  // FIXME: Add test of duplicate paths. Maybe could error at createFile()...
+  struct OutputDescription {
+    BlobProxy Content;
+    BlobProxy Path;
   };
-  EXPECT_TRUE(make("blob2", "/d2"));
-  EXPECT_TRUE(make("blob1", "/t1/d1"));
-  EXPECT_TRUE(make("blob3", "/t3/d3"));
-  EXPECT_TRUE(make("blob1", "/t3/t1nested/d1"));
-  EXPECT_TRUE(make("blob1", "/t3/t2/d1also"));
-  EXPECT_TRUE(make("blob2", "/t3/t2/d2"));
+  OutputDescription OutputDescriptions[] = {
+      {*Content1, *AbsolutePath1}, {*Content2, *AbsolutePath2},
+      {*Content1, *AbsolutePath1}, {*Content1, *RelativePath},
+      {*Content1, *WindowsPath},
+  };
+  for (OutputDescription OD : OutputDescriptions) {
+    std::unique_ptr<OutputFile> O;
+    ASSERT_THAT_ERROR(Outputs->createFile(OD.Path.getData()).moveInto(O),
+                      Succeeded());
+    *O->takeOS() << OD.Content.getData();
+    ASSERT_THAT_ERROR(O->close(), Succeeded());
+  }
 
-  // FIXME: Add test of duplicate paths. Should probably error at createFile()
-  // instead of createTree() when possible?
-  Optional<TreeProxy> Root = expectedToOptional(Outputs->createTree());
-  ASSERT_TRUE(Root);
+  Optional<NodeProxy> Root;
+  ASSERT_THAT_ERROR(Outputs->createNode().moveInto(Root), Succeeded());
 
-  // FIXME: Test directly instead of using CASFS.
-  std::unique_ptr<vfs::FileSystem> CASFS =
-      expectedToPointer(createCASFileSystem(*CAS, Root->getID()));
-  ASSERT_TRUE(CASFS);
-
-  std::unique_ptr<MemoryBuffer> T1D1 =
-      errorOrToPointer(CASFS->getBufferForFile("/t1/d1"));
-  std::unique_ptr<MemoryBuffer> T1NestedD1 =
-      errorOrToPointer(CASFS->getBufferForFile("t3/t1nested/d1"));
-  std::unique_ptr<MemoryBuffer> T3T2D1Also =
-      errorOrToPointer(CASFS->getBufferForFile("/t3/t2/d1also"));
-  std::unique_ptr<MemoryBuffer> T3TD3 =
-      errorOrToPointer(CASFS->getBufferForFile("t3/d3"));
-  ASSERT_TRUE(T1D1);
-  ASSERT_TRUE(T1NestedD1);
-  ASSERT_TRUE(T3T2D1Also);
-  ASSERT_TRUE(T3TD3);
-
-  EXPECT_EQ("/t1/d1", T1D1->getBufferIdentifier());
-  EXPECT_EQ("t3/t1nested/d1", T1NestedD1->getBufferIdentifier());
-  EXPECT_EQ("/t3/t2/d1also", T3T2D1Also->getBufferIdentifier());
-  EXPECT_EQ("t3/d3", T3TD3->getBufferIdentifier());
-
-  EXPECT_EQ("blob1", T1D1->getBuffer());
-  EXPECT_EQ("blob1", T1NestedD1->getBuffer());
-  EXPECT_EQ("blob1", T3T2D1Also->getBuffer());
-  EXPECT_EQ("blob3", T3TD3->getBuffer());
+  auto Array = makeArrayRef(OutputDescriptions);
+  ASSERT_EQ(Array.size() * 2, Root->getNumReferences());
+  for (size_t I = 0, E = Array.size(); I != E; ++I) {
+    ASSERT_EQ(Array[I].Path.getID(), Root->getReference(I * 2));
+    ASSERT_EQ(Array[I].Content.getID(), Root->getReference(I * 2 + 1));
+  }
 }

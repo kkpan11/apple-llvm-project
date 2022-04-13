@@ -16,29 +16,19 @@ namespace llvm {
 namespace cas {
 class CASDB;
 class CASID;
-class TreeProxy;
+class NodeProxy;
 
 /// Handle the cas
 class CASOutputBackend final : public vfs::StableUniqueEntityAdaptor<> {
 public:
   /// Create a top-level tree for all created files. This will contain all files
-  Expected<TreeProxy> createTree();
+  Expected<NodeProxy> createNode();
 
   Expected<std::unique_ptr<vfs::OutputFile>>
   createFileImpl(StringRef ResolvedPath, vfs::OutputConfig Config) override;
 
-  /// \param CASIDOutputBackend if set it will be used to write out the file
-  /// contents as embedded CASID. Can be \p nullptr.
-  CASOutputBackend(
-      std::shared_ptr<CASDB> CAS,
-      IntrusiveRefCntPtr<llvm::vfs::OutputBackend> CASIDOutputBackend,
-      unique_function<std::string(StringRef)> CASPathRewriter);
-  /// \param CASIDOutputBackend if set it will be used to write out the file
-  /// contents as embedded CASID. Can be \p nullptr.
-  CASOutputBackend(
-      CASDB &CAS,
-      IntrusiveRefCntPtr<llvm::vfs::OutputBackend> CASIDOutputBackend,
-      unique_function<std::string(StringRef)> CASPathRewriter);
+  CASOutputBackend(std::shared_ptr<CASDB> CAS);
+  CASOutputBackend(CASDB &CAS);
 
 private:
   ~CASOutputBackend();
@@ -47,8 +37,6 @@ private:
 
   CASDB &CAS;
   std::shared_ptr<CASDB> OwnedCAS;
-  IntrusiveRefCntPtr<llvm::vfs::OutputBackend> CASIDOutputBackend;
-  unique_function<std::string(StringRef)> CASPathRewriter;
 };
 
 } // namespace cas
