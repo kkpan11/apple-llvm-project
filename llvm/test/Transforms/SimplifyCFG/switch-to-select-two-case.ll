@@ -67,6 +67,7 @@ return:
   ret i32 %retval.0
 }
 
+
 define i1 @switch_to_and0(i8 %0) {
 ; CHECK-LABEL: @switch_to_and0(
 ; CHECK-NEXT:    [[SWITCH_SELECTCMP_CASE1:%.*]] = icmp eq i8 [[TMP0:%.*]], 43
