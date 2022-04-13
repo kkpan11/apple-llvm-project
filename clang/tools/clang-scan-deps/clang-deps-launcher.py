@@ -55,9 +55,14 @@ def main():
     cdb_file.flush()
 
     # run clang-scan-deps to collect dependency.
+    cas_path = os.getenv('CLANG_SCAN_DEPS_CAS_PATH')
+    if cas_path is None:
+        scan_deps_extra_opt = '--in-memory-cas'
+    else:
+        scan_deps_extra_opt = '--cas-path=' + cas_path
     scan_deps = os.path.join(TOOLS_DIR, "clang-scan-deps")
     scan_deps_cmd = [scan_deps, '-compilation-database', cdb_file.name,
-                     '-format', 'experimental-tree-full']
+                     '-format', 'experimental-tree-full', scan_deps_extra_opt]
 
     scan_deps_output = subprocess.check_output(scan_deps_cmd)
     cdb_file.close()
