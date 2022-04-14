@@ -103,12 +103,16 @@ CallInst *BundledRetainClaimRVs::insertRVCallWithColors(
     Instruction *InsertPt, CallBase *AnnotatedCall,
     const DenseMap<BasicBlock *, ColorVector> &BlockColors) {
   IRBuilder<> Builder(InsertPt);
-  Function *Func = *objcarc::getAttachedARCFunction(AnnotatedCall);
-  assert(Func && "operand isn't a Function");
-  Type *ParamTy = Func->getArg(0)->getType();
+  Optional<Function *> Func = objcarc::getAttachedARCFunction(AnnotatedCall);
+  // This might be a call with an empty bundle, because contract already ran.
+  // In that case, we don't have to insert another call.
+  if (!Func)
+    return nullptr;
+
+  Type *ParamTy = (*Func)->getArg(0)->getType();
   Value *CallArg = Builder.CreateBitCast(AnnotatedCall, ParamTy);
   auto *Call =
-      createCallInstWithColors(Func, CallArg, "", InsertPt, BlockColors);
+      createCallInstWithColors(*Func, CallArg, "", InsertPt, BlockColors);
   RVCalls[Call] = AnnotatedCall;
   return Call;
 }
