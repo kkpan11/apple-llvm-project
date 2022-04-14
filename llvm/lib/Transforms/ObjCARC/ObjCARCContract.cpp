@@ -580,8 +580,8 @@ bool ObjCARCContract::run(Function &F, AAResults *A, DominatorTree *D) {
 
     if (auto *CI = dyn_cast<CallInst>(Inst))
       if (objcarc::hasAttachedCallOpBundle(CI)) {
-        BundledInsts->insertRVCallWithColors(&*I, CI, BlockColors);
-        --I;
+        if (BundledInsts->insertRVCallWithColors(&*I, CI, BlockColors))
+          --I;
         Changed = true;
       }
 
