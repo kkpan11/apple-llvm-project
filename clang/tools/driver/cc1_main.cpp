@@ -33,6 +33,7 @@
 #include "llvm/CAS/CASFileSystem.h"
 #include "llvm/CAS/CASOutputBackend.h"
 #include "llvm/CAS/HierarchicalTreeBuilder.h"
+#include "llvm/CAS/Utils.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/LinkAllPasses.h"
 #include "llvm/MC/TargetRegistry.h"
@@ -60,6 +61,7 @@
 
 using namespace clang;
 using namespace llvm::opt;
+using llvm::Error;
 
 //===----------------------------------------------------------------------===//
 // Main driver
@@ -229,59 +231,118 @@ createResultCacheKey(llvm::cas::CASDB &CAS, DiagnosticsEngine &Diags,
   return llvm::cantFail(Builder.create(CAS)).getID();
 }
 
-static int replayResult(llvm::cas::CASDB &CAS, llvm::cas::CASID ResultID) {
-  std::unique_ptr<llvm::vfs::FileSystem> FS;
-  if (Expected<std::unique_ptr<llvm::vfs::FileSystem>> ExpectedFS =
-          llvm::cas::createCASFileSystem(CAS, ResultID))
-    FS = std::move(*ExpectedFS);
-  else
-    llvm::report_fatal_error(ExpectedFS.takeError());
+namespace {
 
-  // FIXME: portable? Maybe, since CASFileSystem maybe will always be posix?
-  std::unique_ptr<llvm::MemoryBuffer> Errs;
-  if (auto ContentOrErr = FS->getBufferForFile("/stderr"))
-    Errs = std::move(*ContentOrErr);
-  else
-    llvm::report_fatal_error(
-        llvm::createStringError(ContentOrErr.getError(), "CAS error accessing stderr"));
-  llvm::errs() << Errs->getBuffer();
+// Manage caching and replay of compile jobs.
+//
+// The high-level model is:
+//
+//  1. Extract options from the CompilerInvocation:
+//       - that can be simulated and
+//       - that don't affect the compile job's result.
+//  2. Canonicalize the options extracted in (1).
+//  3. Compute the result of the compile job using the canonicalized
+//     CompilerInvocation, with hooks installed to redirect outputs and
+//     enable live-streaming of a running compile job to stdout or stderr.
+//       - Compute a cache key.
+//       - Check the cache, and run the compile job if there's a cache miss.
+//       - Store the result of the compile job in the cache.
+//  4. Replay the compile job, using the options extracted in (1).
+//
+// An example (albeit not yet implemented) is handling options controlling
+// output of diagnostics. The CompilerInvocation can be canonicalized to
+// serialize the diagnostics to a virtual path (<output>.diag or something).
+//
+//   - On a cache miss, the compile job runs, and the diagnostics are
+//     serialized and stored in the cache per the canonicalized options
+//     from (2).
+//   - Either way, the diagnostics are replayed according to the options
+//     extracted from (1) during (4).
+//
+// The above will produce the correct output for diagnostics, but the experience
+// will be degraded in the common command-line case (emitting to stderr)
+// because the diagnostics will not be streamed live. This can be improved:
+//
+//   - Change (3) to accept a hook: a DiagnosticsConsumer that diagnostics
+//     are mirrored to (in addition to canonicalized options from (2)).
+//   - If diagnostics would be live-streamed, send in a diagnostics consumer
+//     that matches (1). Otherwise, send in an IgnoringDiagnosticsConsumer.
+//   - In step (4), only skip replaying the diagnostics if they were already
+//     handled.
+class CompileJobCache {
+public:
+  /// Canonicalize \p Clang.
+  ///
+  /// Return status if should exit immediately, otherwise None.
+  ///
+  /// TODO: Refactor \a cc1_main() so that instead this canonicalizes the
+  /// CompilerInvocation before Clang gets access to command-line arguments, to
+  /// control what might leak.
+  Optional<int> initialize(CompilerInstance &Clang);
 
-  // FIXME: portable? Maybe, since CASFileSystem maybe will always be posix?
-  std::error_code EC;
-  for (llvm::vfs::recursive_directory_iterator I(*FS, "/outputs", EC), E;
-       I != E && !EC; I.increment(EC)) {
-    std::unique_ptr<llvm::MemoryBuffer> Content;
-    StringRef CASPath = I->path();
-    auto ContentOrErr = FS->getBufferForFile(CASPath);
-    if (!ContentOrErr)
-      continue; // Skip over directories.
-    Content = std::move(*ContentOrErr);
+  /// Try looking up a cached result and replaying it.
+  ///
+  /// Return status if should exit immediately, otherwise None.
+  Optional<int> tryReplayCachedResult(CompilerInstance &Clang);
 
-    // FIXME: This doesn't seem totally right, but it seems to "work" given
-    // that the outputs are being stored at the root right now (not in a
-    // working directory).
-    StringRef OutputPath = CASPath.drop_front(StringRef("/outputs").size());
+  /// Finish writing outputs from a computed result, after a cache miss.
+  void finishComputedResult(CompilerInstance &Clang, bool Success);
 
-    // The next part of the path component is either relative/absolute,
-    // depending on if the output path is relative or absolute.
-    if (OutputPath.consume_front("/absolute"))
-      assert(llvm::sys::path::is_absolute(OutputPath) &&
-             "OutputPath should be absolute");
-    else if (OutputPath.consume_front("/relative/"))
-      assert(!llvm::sys::path::is_absolute(OutputPath) &&
-             "OutputPath should be relative");
+private:
+  /// Replay a cache hit.
+  ///
+  /// Return status if should exit immediately, otherwise None.
+  Optional<int> replayCachedResult(llvm::cas::CASID ResultID,
+                                   bool JustComputedResult);
 
-    std::unique_ptr<llvm::FileOutputBuffer> Output;
-    if (Expected<std::unique_ptr<llvm::FileOutputBuffer>> ExpectedOutput =
-            llvm::FileOutputBuffer::create(OutputPath, Content->getBufferSize()))
-      Output = std::move(*ExpectedOutput);
-    else
-      llvm::report_fatal_error(ExpectedOutput.takeError());
-    llvm::copy(Content->getBuffer(), Output->getBufferStart());
-    if (llvm::Error E = Output->commit())
-      llvm::report_fatal_error(std::move(E));
-  }
-  return 0;
+  bool CacheCompileJob = false;
+  bool ComputedJobNeedsReplay = false;
+
+  std::shared_ptr<llvm::cas::CASDB> CAS;
+  SmallString<256> ResultDiags;
+  bool WriteOutputAsCASID = false;
+  Optional<llvm::cas::CASID> ResultCacheKey;
+  std::unique_ptr<llvm::raw_ostream> ResultDiagsOS;
+  IntrusiveRefCntPtr<llvm::cas::CASOutputBackend> CASOutputs;
+  std::string OutputFile;
+};
+} // end anonymous namespace
+
+Optional<int> CompileJobCache::initialize(CompilerInstance &Clang) {
+  CompilerInvocation &Invocation = Clang.getInvocation();
+  DiagnosticsEngine &Diags = Clang.getDiagnostics();
+
+  // Extract whether caching is on (and canonicalize setting).
+  CacheCompileJob = Invocation.getFrontendOpts().CacheCompileJob;
+  Invocation.getFrontendOpts().CacheCompileJob = false;
+
+  // Nothing else to do if we're not caching.
+  if (!CacheCompileJob)
+    return None;
+
+  // Hide the CAS configuration, canonicalizing it to keep the path to the
+  // CAS from leaking to the compile job, where it might affecting its
+  // output (e.g., in a diagnostic).
+  //
+  // TODO: Extract CASOptions.Path first if we need it later since it'll
+  // disappear here.
+  CAS = Invocation.getCASOpts().getOrCreateCASAndHideConfig(Diags);
+  if (!CAS)
+    return 1; // Exit with error!
+
+  // Canonicalize Invocation and save things in a side channel.
+  //
+  // TODO: Canonicalize DiagnosticOptions here to be "serialized" only. Pass in
+  // a hook to mirror diagnostics to stderr (when writing there), and handle
+  // other outputs during replay.
+  WriteOutputAsCASID = Invocation.getFrontendOpts().WriteOutputAsCASID;
+  Invocation.getFrontendOpts().WriteOutputAsCASID = false;
+  ComputedJobNeedsReplay |= WriteOutputAsCASID;
+
+  // TODO: Canonicalize OutputFile to "-" here. During replay, move it and
+  // derived outputs to the right place.
+  OutputFile = Invocation.getFrontendOpts().OutputFile;
+  return None;
 }
 
 namespace {
@@ -311,9 +372,187 @@ public:
 };
 } // namespace
 
+Optional<int> CompileJobCache::tryReplayCachedResult(CompilerInstance &Clang) {
+  if (!CacheCompileJob)
+    return None;
+
+  // Create the result cache key once Invocation has been canonicalized.
+  ResultCacheKey =
+      createResultCacheKey(*CAS, Clang.getDiagnostics(), Clang.getInvocation());
+  if (!ResultCacheKey)
+    return 1;
+
+  Expected<llvm::cas::CASID> Result = CAS->getCachedResult(*ResultCacheKey);
+  if (Result) {
+    Clang.getDiagnostics().Report(diag::remark_compile_job_cache_hit)
+        << ResultCacheKey->toString() << Result->toString();
+    Optional<int> Status =
+        replayCachedResult(std::move(*Result), /*JustComputedResult=*/false);
+    assert(Status && "Expected a status for a cache hit");
+    return *Status;
+  }
+  Clang.getDiagnostics().Report(diag::remark_compile_job_cache_miss)
+      << ResultCacheKey->toString();
+  llvm::consumeError(Result.takeError());
+
+  // Create an on-disk backend for streaming the results live if we run the
+  // computation. If we're writing the output as a CASID, skip it here, since
+  // it'll be handled during replay.
+  IntrusiveRefCntPtr<llvm::vfs::OutputBackend> OnDiskOutputs =
+      llvm::makeIntrusiveRefCnt<llvm::vfs::OnDiskOutputBackend>();
+  if (WriteOutputAsCASID) {
+    OnDiskOutputs = llvm::vfs::makeFilteringOutputBackend(
+        OnDiskOutputs, [this](StringRef ResolvedPath, llvm::vfs::OutputConfig) {
+          return ResolvedPath != this->OutputFile;
+        });
+  }
+
+  // Set up the output backend so we can save / cache the result after.
+  CASOutputs = llvm::makeIntrusiveRefCnt<llvm::cas::CASOutputBackend>(*CAS);
+
+  Clang.setOutputBackend(llvm::vfs::makeMirroringOutputBackend(
+      CASOutputs, std::move(OnDiskOutputs)));
+  ResultDiagsOS = std::make_unique<raw_mirroring_ostream>(
+      llvm::errs(), std::make_unique<llvm::raw_svector_ostream>(ResultDiags));
+
+  // FIXME: This should be saving/replaying serialized diagnostics, thus
+  // using the current llvm::errs() colour capabilities. We still want to
+  // print errors live during this compilation, just also serialize them.
+  //
+  // However, serialized diagnostics can only be written to a file, not to a
+  // raw_ostream. Need to fix that first. Also, maybe the format doesn't need
+  // to be bitcode... we just want to serialize them faithfully such that we
+  // can decide at output time whether to make the colours pretty.
+
+  // Notify the existing diagnostic client that all files were processed.
+  Clang.getDiagnosticClient().finish();
+
+  Clang.getDiagnostics().setClient(
+      new TextDiagnosticPrinter(*ResultDiagsOS,
+                                &Clang.getInvocation().getDiagnosticOpts()),
+      /*ShouldOwnClient=*/true);
+  return None;
+}
+
+void CompileJobCache::finishComputedResult(CompilerInstance &Clang,
+                                           bool Success) {
+  // Nothing to do if not caching.
+  if (!CacheCompileJob)
+    return;
+
+  // Don't cache failed builds.
+  //
+  // TODO: Consider caching failed builds!
+  if (!Success)
+    return;
+
+  // FIXME: Stop calling report_fatal_error().
+  Expected<llvm::cas::CASID> Outputs = CASOutputs->createNode();
+  if (!Outputs)
+    llvm::report_fatal_error(Outputs.takeError());
+
+  // Hack around llvm::errs() not being captured by the output backend yet.
+  //
+  // FIXME: Stop calling report_fatal_error().
+  Expected<llvm::cas::BlobProxy> Errs = CAS->createBlob(ResultDiags);
+  if (!Errs)
+    llvm::report_fatal_error(Errs.takeError());
+
+  // Cache the result.
+  //
+  // FIXME: Stop calling report_fatal_error().
+  llvm::cas::HierarchicalTreeBuilder Builder;
+  Builder.push(*Outputs, llvm::cas::TreeEntry::Regular, "outputs");
+  Builder.push(*Errs, llvm::cas::TreeEntry::Regular, "stderr");
+  Expected<llvm::cas::CASID> Result = Builder.create(*CAS);
+  if (!Result)
+    llvm::report_fatal_error(Result.takeError());
+  if (llvm::Error E = CAS->putCachedResult(*ResultCacheKey, *Result))
+    llvm::report_fatal_error(std::move(E));
+
+  // Replay / decanonicalize as necessary.
+  Optional<int> Status =
+      replayCachedResult(std::move(*Result), /*JustComputedResult=*/true);
+  (void)Status;
+  assert(Status == None);
+}
+
+/// Replay a result after a cache hit.
+Optional<int> CompileJobCache::replayCachedResult(llvm::cas::CASID ResultID,
+                                                  bool JustComputedResult) {
+  if (JustComputedResult && !ComputedJobNeedsReplay)
+    return None;
+
+  // FIXME: Stop calling report_fatal_error().
+  Optional<llvm::cas::TreeProxy> Result;
+  if (Error E = CAS->getTree(ResultID).moveInto(Result))
+    llvm::report_fatal_error(std::move(E));
+
+  // Replay diagnostics to stderr.
+  if (!JustComputedResult) {
+    Optional<llvm::cas::BlobProxy> Errs;
+    if (Optional<llvm::cas::NamedTreeEntry> Entry = Result->lookup("stderr"))
+      if (Error E = CAS->getBlob(Entry->getID()).moveInto(Errs))
+        llvm::report_fatal_error(std::move(E));
+    if (!Errs)
+      llvm::report_fatal_error("CAS error accessing stderr");
+    llvm::errs() << Errs->getData();
+  }
+
+  // Replay outputs.
+  //
+  // FIXME: Use a NodeReader here once it exists.
+  Optional<llvm::cas::NodeProxy> Outputs;
+  if (Optional<llvm::cas::NamedTreeEntry> Entry = Result->lookup("outputs"))
+    if (Error E = CAS->getNode(Entry->getID()).moveInto(Outputs))
+      llvm::report_fatal_error(std::move(E));
+  if (!Outputs)
+    llvm::report_fatal_error("CAS error accessing outputs");
+
+  for (size_t I = 0, E = Outputs->getNumReferences(); I + 1 < E; I += 2) {
+    llvm::cas::CASID PathID = Outputs->getReference(I);
+    llvm::cas::CASID BytesID = Outputs->getReference(I + 1);
+
+    Optional<llvm::cas::BlobProxy> Path;
+    if (Error E = CAS->getBlob(PathID).moveInto(Path))
+      llvm::report_fatal_error(std::move(E));
+
+    Optional<StringRef> Contents;
+    SmallString<50> ContentsStorage;
+    if (Path->getData() == OutputFile && WriteOutputAsCASID) {
+      {
+        llvm::raw_svector_ostream OS(ContentsStorage);
+        llvm::cas::writeCASIDBuffer(BytesID, OS);
+      }
+      Contents = ContentsStorage;
+    } else if (JustComputedResult) {
+      continue;
+    } else {
+      Optional<llvm::cas::BlobProxy> Bytes;
+      if (Error E = CAS->getBlob(BytesID).moveInto(Bytes))
+        llvm::report_fatal_error(std::move(E));
+      Contents = Bytes->getData();
+    }
+
+    std::unique_ptr<llvm::FileOutputBuffer> Output;
+    if (Error E =
+            llvm::FileOutputBuffer::create(Path->getData(), Contents->size())
+                .moveInto(Output))
+      llvm::report_fatal_error(std::move(E));
+    llvm::copy(*Contents, Output->getBufferStart());
+    if (llvm::Error E = Output->commit())
+      llvm::report_fatal_error(std::move(E));
+  }
+
+  if (JustComputedResult)
+    return None;
+  return 0;
+}
+
 int cc1_main(ArrayRef<const char *> Argv, const char *Argv0, void *MainAddr) {
   ensureSufficientStack();
 
+  CompileJobCache JobCache;
   std::unique_ptr<CompilerInstance> Clang(new CompilerInstance());
   IntrusiveRefCntPtr<DiagnosticIDs> DiagID(new DiagnosticIDs());
 
@@ -371,138 +610,23 @@ int cc1_main(ArrayRef<const char *> Argv, const char *Argv0, void *MainAddr) {
   auto FinishDiagnosticClient = llvm::make_scope_exit([&]() {
     // Notify the diagnostic client that all files were processed.
     Clang->getDiagnosticClient().finish();
+
+    // Our error handler depends on the Diagnostics object, which we're
+    // potentially about to delete. Uninstall the handler now so that any
+    // later errors use the default handling behavior instead.
+    llvm::remove_fatal_error_handler();
   });
 
   if (!Success)
     return 1;
 
-  // Cache the compile job, if enabled.
-  //
-  // The high-level model is:
-  //
-  //  1. Extract options from the CompilerInvocation:
-  //       - that can be simulated and
-  //       - that don't affect the compile job's result.
-  //  2. Canonicalize the options extracted in (1).
-  //  3. Compute the result of the compile job using the canonicalized
-  //     CompilerInvocation, with hooks installed to redirect outputs and
-  //     enable live-streaming of a running compile job to stdout or stderr.
-  //       - Compute a cache key.
-  //       - Check the cache, and run the compile job if there's a cache miss.
-  //       - Store the result of the compile job in the cache.
-  //  4. Replay the compile job, using the options extracted in (1).
-  //
-  // An example (albeit not yet implemented) is handling options controlling
-  // output of diagnostics. The CompilerInvocation can be canonicalized to
-  // serialize the diagnostics to a virtual path (<output>.diag or something).
-  //
-  //   - On a cache miss, the compile job runs, and the diagnostics are
-  //     serialized and stored in the cache per the canonicalized options
-  //     from (2).
-  //   - Either way, the diagnostics are replayed according to the options
-  //     extracted from (1) during (4).
-  //
-  // The above will produce the correct output for diagnostics, but the experience
-  // will be degraded in the common command-line case (emitting to stderr)
-  // because the diagnostics will not be streamed live. This can be improved:
-  //
-  //   - Change (3) to accept a hook: a DiagnosticsConsumer that diagnostics
-  //     are mirrored to (in addition to canonicalized options from (2)).
-  //   - If diagnostics would be live-streamed, send in a diagnostics consumer
-  //     that matches (1). Otherwise, send in an IgnoringDiagnosticsConsumer.
-  //   - In step (4), only skip replaying the diagnostics if they were already
-  //     handled.
-  Optional<llvm::cas::CASID> ResultCacheKey;
-  std::shared_ptr<llvm::cas::CASDB> CAS;
-  IntrusiveRefCntPtr<llvm::cas::CASOutputBackend> CASOutputs;
-  SmallString<256> ResultDiags;
-  std::unique_ptr<llvm::raw_ostream> ResultDiagsOS;
-  if (Clang->getInvocation().getFrontendOpts().CacheCompileJob) {
-    // Hide the CAS configuration, canonicalizing it to keep the path to the
-    // CAS from leaking to the compile job, where it might affecting its
-    // output (e.g., in a diagnostic).
-    CAS = Clang->getInvocation().getCASOpts().getOrCreateCASAndHideConfig(
-        Clang->getDiagnostics());
-    if (!CAS)
-      return 1; // Error already emitted.
+  // Initialize caching and replay, if enabled.
+  if (Optional<int> Status = JobCache.initialize(*Clang))
+    return *Status; // FIXME: Should write out timers before exiting!
 
-    // Check the result cache.
-    ResultCacheKey = createResultCacheKey(*CAS, Clang->getDiagnostics(),
-                                          Clang->getInvocation());
-
-    if (!ResultCacheKey)
-      return 1; // Error already emitted.
-    Expected<llvm::cas::CASID> Result = CAS->getCachedResult(*ResultCacheKey);
-    if (Result) {
-      Clang->getDiagnostics().Report(diag::remark_compile_job_cache_hit)
-          << ResultCacheKey->toString() << Result->toString();
-      int Failed = replayResult(*CAS, std::move(*Result));
-      llvm::remove_fatal_error_handler();
-      return Failed;
-    }
-    Clang->getDiagnostics().Report(diag::remark_compile_job_cache_miss)
-        << ResultCacheKey->toString();
-    llvm::consumeError(Result.takeError());
-
-    IntrusiveRefCntPtr<llvm::vfs::OutputBackend> OnDiskOutBackend =
-        llvm::makeIntrusiveRefCnt<llvm::vfs::OnDiskOutputBackend>();
-    IntrusiveRefCntPtr<llvm::vfs::OutputBackend> NormalFileOutBackend =
-        OnDiskOutBackend;
-    IntrusiveRefCntPtr<llvm::vfs::OutputBackend> CASIDFileOutBackend;
-    if (Clang->getInvocation().getFrontendOpts().WriteOutputAsCASID) {
-      std::string OutputFile =
-          Clang->getInvocation().getFrontendOpts().OutputFile;
-      // Create a backend that writes normal files contents but excludes the
-      // output filename.
-      NormalFileOutBackend = llvm::vfs::makeFilteringOutputBackend(
-          OnDiskOutBackend,
-          [OutputFile](StringRef ResolvedPath, llvm::vfs::OutputConfig) {
-            return ResolvedPath != OutputFile;
-          });
-      // Create a backend that writes files as embedded CASIDs but only for the
-      // output filename.
-      CASIDFileOutBackend = llvm::vfs::makeFilteringOutputBackend(
-          OnDiskOutBackend,
-          [OutputFile](StringRef ResolvedPath, llvm::vfs::OutputConfig) {
-            return ResolvedPath == OutputFile;
-          });
-    }
-
-    // Set up the output backend so we can save / cache the result after.
-    CASOutputs = llvm::makeIntrusiveRefCnt<llvm::cas::CASOutputBackend>(
-        *CAS, std::move(CASIDFileOutBackend), [](StringRef Path) {
-          // Convert the path in CAS tree depending on if the path is absolute
-          // or relative.
-          SmallString<256> NewPath;
-          if (llvm::sys::path::is_absolute(Path))
-            llvm::sys::path::append(NewPath, "absolute", Path);
-          else
-            llvm::sys::path::append(NewPath, "relative", Path);
-
-          return NewPath.str().str();
-        });
-    Clang->setOutputBackend(llvm::vfs::makeMirroringOutputBackend(
-        CASOutputs, std::move(NormalFileOutBackend)));
-    ResultDiagsOS = std::make_unique<raw_mirroring_ostream>(
-        llvm::errs(), std::make_unique<llvm::raw_svector_ostream>(ResultDiags));
-
-    // FIXME: This should be saving/replaying serialized diagnostics, thus
-    // using the current llvm::errs() colour capabilities. We still want to
-    // print errors live during this compilation, just also serialize them.
-    //
-    // However, serialized diagnostics can only be written to a file, not to a
-    // raw_ostream. Need to fix that first. Also, maybe the format doesn't need
-    // to be bitcode... we just want to serialize them faithfully such that we
-    // can decide at output time whether to make the colours pretty.
-
-    // Notify the existing diagnostic client that all files were processed.
-    Clang->getDiagnosticClient().finish();
-
-    Clang->getDiagnostics().setClient(
-        new TextDiagnosticPrinter(
-            *ResultDiagsOS, &Clang->getInvocation().getDiagnosticOpts()),
-        /*ShouldOwnClient=*/true);
-  }
+  // Check for a cache hit.
+  if (Optional<int> Status = JobCache.tryReplayCachedResult(*Clang))
+    return *Status; // FIXME: Should write out timers before exiting!
 
   // ExecuteAction takes responsibility.
   FinishDiagnosticClient.release();
@@ -512,6 +636,9 @@ int cc1_main(ArrayRef<const char *> Argv, const char *Argv0, void *MainAddr) {
     llvm::TimeTraceScope TimeScope("ExecuteCompiler");
     Success = ExecuteCompilerInvocation(Clang.get());
   }
+
+  // Cache the result, and decanonicalize and finish outputs.
+  JobCache.finishComputedResult(*Clang, Success);
 
   // If any timers were active but haven't been destroyed yet, print their
   // results now.  This happens in -disable-free mode.
@@ -531,34 +658,6 @@ int cc1_main(ArrayRef<const char *> Argv, const char *Argv0, void *MainAddr) {
       Clang->clearOutputFiles(false);
     }
   }
-
-  // Cache the result.
-  //
-  // FIXME: Also cache failed builds?
-  if (Success && ResultCacheKey) {
-    Expected<llvm::cas::CASID> Outputs = CASOutputs->createTree();
-    if (!Outputs)
-      llvm::report_fatal_error(Outputs.takeError());
-
-    // Hack around llvm::errs() not being captured by the output backend yet.
-    Expected<llvm::cas::BlobProxy> Errs = CAS->createBlob(ResultDiags);
-    if (!Errs)
-      llvm::report_fatal_error(Errs.takeError());
-
-    llvm::cas::HierarchicalTreeBuilder Builder;
-    Builder.push(*Outputs, llvm::cas::TreeEntry::Tree, "outputs");
-    Builder.push(*Errs, llvm::cas::TreeEntry::Regular, "stderr");
-    Expected<llvm::cas::CASID> Result = Builder.create(*CAS);
-    if (!Result)
-      llvm::report_fatal_error(Result.takeError());
-    if (llvm::Error E = CAS->putCachedResult(*ResultCacheKey, *Result))
-      llvm::report_fatal_error(std::move(E));
-  }
-
-  // Our error handler depends on the Diagnostics object, which we're
-  // potentially about to delete. Uninstall the handler now so that any
-  // later errors use the default handling behavior instead.
-  llvm::remove_fatal_error_handler();
 
   // When running with -disable-free, don't do any destruction or shutdown.
   if (Clang->getFrontendOpts().DisableFree) {

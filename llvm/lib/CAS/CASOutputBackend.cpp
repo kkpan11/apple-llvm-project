@@ -7,9 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/CAS/CASOutputBackend.h"
-#include "llvm/ADT/StringMap.h"
 #include "llvm/CAS/CASDB.h"
-#include "llvm/CAS/HierarchicalTreeBuilder.h"
 #include "llvm/CAS/Utils.h"
 #include "llvm/Support/AlignOf.h"
 #include "llvm/Support/Allocator.h"
@@ -38,53 +36,22 @@ private:
 };
 } // namespace
 
-CASOutputBackend::CASOutputBackend(
-    std::shared_ptr<CASDB> CAS,
-    IntrusiveRefCntPtr<llvm::vfs::OutputBackend> CASIDOutputBackend,
-    unique_function<std::string(StringRef)> CASPathRewriter)
-    : CASOutputBackend(*CAS, std::move(CASIDOutputBackend),
-                       std::move(CASPathRewriter)) {
+CASOutputBackend::CASOutputBackend(std::shared_ptr<CASDB> CAS)
+    : CASOutputBackend(*CAS) {
   this->OwnedCAS = std::move(CAS);
 }
 
-CASOutputBackend::CASOutputBackend(
-    CASDB &CAS, IntrusiveRefCntPtr<llvm::vfs::OutputBackend> CASIDOutputBackend,
-    unique_function<std::string(StringRef)> CASPathRewriter)
+CASOutputBackend::CASOutputBackend(CASDB &CAS)
     : StableUniqueEntityAdaptorType(
           sys::path::Style::native /*FIXME: should be posix?*/),
-      CAS(CAS), CASIDOutputBackend(std::move(CASIDOutputBackend)),
-      CASPathRewriter(std::move(CASPathRewriter)) {}
+      CAS(CAS) {}
 
 CASOutputBackend::~CASOutputBackend() = default;
 
 struct CASOutputBackend::PrivateImpl {
-  HierarchicalTreeBuilder Builder;
+  // FIXME: Use a NodeBuilder here once it exists.
+  SmallVector<CASID> IDs;
 };
-
-static Error writeOutputAsCASID(CASDB &CAS, CASID &ID, StringRef ResolvedPath,
-                                llvm::vfs::OutputBackend &CASIDOutputBackend,
-                                vfs::OutputConfig Config) {
-  auto ExpOutFile = CASIDOutputBackend.createFile(ResolvedPath, Config);
-  if (!ExpOutFile)
-    return ExpOutFile.takeError();
-  auto OutFile = std::move(*ExpOutFile);
-  if (CASOutputFile::isNull(*OutFile))
-    return Error::success();
-
-  writeCASIDBuffer(ID, *OutFile->getOS());
-
-  SmallString<50> Contents;
-  {
-    raw_svector_ostream OS(Contents);
-    writeCASIDBuffer(ID, OS);
-  }
-  Expected<BlobProxy> Blob = CAS.createBlob(Contents);
-  if (!Blob)
-    return Blob.takeError();
-  ID = *Blob;
-
-  return OutFile->close();
-}
 
 Expected<std::unique_ptr<vfs::OutputFile>>
 CASOutputBackend::createFileImpl(StringRef ResolvedPath,
@@ -94,26 +61,26 @@ CASOutputBackend::createFileImpl(StringRef ResolvedPath,
 
   return std::make_unique<CASOutputFile>(
       ResolvedPath, [&](StringRef Path, StringRef Bytes) -> Error {
-        Expected<BlobProxy> Blob = CAS.createBlob(Bytes);
-        if (!Blob)
-          return Blob.takeError();
-        CASID ID = *Blob;
-        if (CASIDOutputBackend) {
-          if (Error E = writeOutputAsCASID(CAS, ID, Path, *CASIDOutputBackend,
-                                           Config))
-            return E;
-        }
-        std::string TreePath = CASPathRewriter(Path);
-        Impl->Builder.push(ID, TreeEntry::Regular, TreePath);
+        Optional<BlobProxy> PathBlob;
+        Optional<BlobProxy> BytesBlob;
+        if (Error E = CAS.createBlob(Path).moveInto(PathBlob))
+          return E;
+        if (Error E = CAS.createBlob(Bytes).moveInto(BytesBlob))
+          return E;
+
+        // FIXME: Should there be a lock taken before accessing PrivateImpl?
+        Impl->IDs.push_back(PathBlob->getID());
+        Impl->IDs.push_back(BytesBlob->getID());
         return Error::success();
       });
 }
 
-Expected<TreeProxy> CASOutputBackend::createTree() {
+Expected<NodeProxy> CASOutputBackend::createNode() {
+  // FIXME: Should there be a lock taken before accessing PrivateImpl?
   if (!Impl)
-    return CAS.createTree();
+    return CAS.createNode(None, "");
 
-  Expected<TreeProxy> ExpectedTree = Impl->Builder.create(CAS);
-  Impl->Builder.clear();
-  return ExpectedTree;
+  SmallVector<CASID> MovedIDs;
+  std::swap(MovedIDs, Impl->IDs);
+  return CAS.createNode(MovedIDs, "");
 }
