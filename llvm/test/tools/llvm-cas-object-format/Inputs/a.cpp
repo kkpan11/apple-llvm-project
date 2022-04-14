@@ -1,4 +1,4 @@
 #include "foo.h"
 int a() {
-	return foo<int>(2);
+  return foo<int>(2);
 }

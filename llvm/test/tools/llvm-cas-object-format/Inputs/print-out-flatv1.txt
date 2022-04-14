@@ -1,16 +1,13 @@
 Triple: x86_64-apple-darwin
 
 SECTION: __TEXT,__text | MemProt: R-X
-CASID: llvmcas://2becf1eca41baad177b5d7a795d3db38d60b1ce1
 {
   BLOCK: size = 0x0010, align = 16, alignment-offset = 0
-  CASID: llvmcas://c8efee6b42067fe279403419d0a23de6cd3b43d9
   {
     SYMBOL: __foo | offset: 0x0000, linkage: strong, scope: default, dead, callable
     FIXUP: 0x0000, addend = +0x00000000, kind = Keep-Alive, target = <anon-2>
   }
   BLOCK: size = 0x0010, align = 16, alignment-offset = 0
-  CASID: llvmcas://d7aa60fd3c0bbe29bbeb723b149f0f960341d9ab
   {
     SYMBOL: _main | offset: 0x0000, linkage: strong, scope: default, dead, callable
     FIXUP: 0x0000, addend = +0x00000000, kind = Keep-Alive, target = <anon-3>
@@ -20,10 +17,8 @@ CASID: llvmcas://2becf1eca41baad177b5d7a795d3db38d60b1ce1
 }
 
 SECTION: __LD,__compact_unwind | MemProt: RW-
-CASID: llvmcas://2aa5ab6b0ac013049dfad4d35dde18a0f58b5bea
 {
   BLOCK: size = 0x0020, align = 8, alignment-offset = 0
-  CASID: llvmcas://f65378c4b1f1bf17a9251d7ff78153a19ed0b5e1
   {
     SYMBOL: <anon-0> | offset: 0x0000, linkage: strong, scope: local, dead
     FIXUP: 0x0000, addend = +0x00000000, kind = Pointer64, target = _main
@@ -31,22 +26,18 @@ CASID: llvmcas://2aa5ab6b0ac013049dfad4d35dde18a0f58b5bea
 }
 
 SECTION: __TEXT,__eh_frame | MemProt: RW-
-CASID: llvmcas://c9aeb94dbf9b4859901ed431449a5ff886b8a8c0
 {
   BLOCK: size = 0x0018, align = 8, alignment-offset = 0
-  CASID: llvmcas://2c1d2ffda80701c6444be7a3719684f012509e6a
   {
     SYMBOL: <anon-1> | offset: 0x0000, linkage: strong, scope: local, dead
   }
   BLOCK: size = 0x0020, align = 8, alignment-offset = 0
-  CASID: llvmcas://c4b83da25094b9a5cb0130cd8fc9e435145f0bbd
   {
     SYMBOL: <anon-2> | offset: 0x0000, linkage: strong, scope: local, dead
     FIXUP: 0x0004, addend = +0x00000000, kind = NegDelta32, target = <anon-1>
     FIXUP: 0x0008, addend = +0x00000000, kind = Delta64, target = __foo
   }
   BLOCK: size = 0x0020, align = 8, alignment-offset = 0
-  CASID: llvmcas://77454cc8422b18903a824167c66daf997a4d4569
   {
     SYMBOL: <anon-3> | offset: 0x0000, linkage: strong, scope: local, dead
     FIXUP: 0x0004, addend = +0x00000000, kind = NegDelta32, target = <anon-1>

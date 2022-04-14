@@ -430,11 +430,11 @@ Expected<CASBlock> BlockRef::materializeBlock(const FlatV1ObjectReader &Reader,
                     data::BlockData Block(ContentData);
 
                     auto SectionRef = CASSectionRef{SectionIdx};
-        Info.Size = Block.getSize();
-        Info.Alignment = Block.getAlignment();
-        Info.AlignmentOffset = Block.getAlignmentOffset();
-        Info.Content = Block.getContent();
-        Info.SectionRef = std::move(SectionRef);
+                    Info.Size = Block.getSize();
+                    Info.Alignment = Block.getAlignment();
+                    Info.AlignmentOffset = Block.getAlignmentOffset();
+                    Info.Content = Block.getContent();
+                    Info.SectionRef = std::move(SectionRef);
                     return Error::success();
                   });
   if (E)
@@ -950,16 +950,14 @@ Expected<CASSection> FlatV1ObjectReader::materialize(CASSectionRef Ref) const {
   auto Node = this->getSectionNode(Ref.Idx);
   if (!Node)
     return Node.takeError();
-  Expected<CASSection> CASSec = Node->materialize();
-  return CASSec;
+  return Node->materialize();
 }
 
 Expected<CASBlock> FlatV1ObjectReader::materialize(CASBlockRef Ref) const {
   auto Node = this->getBlockNode<BlockRef>(Ref.Idx, 0);
   if (!Node)
     return Node.takeError();
-  Expected<CASBlock> CASBl = Node->materializeBlock(*this, Ref.Idx);
-  return CASBl;
+  return Node->materializeBlock(*this, Ref.Idx);
 }
 
 Expected<CASSymbol> FlatV1ObjectReader::materialize(CASSymbolRef Ref) const {

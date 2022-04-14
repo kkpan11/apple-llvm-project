@@ -82,7 +82,7 @@ static cl::opt<bool> SortSections("print-cas-object-sort-sections",
                                   cl::init(false));
 
 Error casobjectformats::printCASObject(const reader::CASObjectReader &Reader,
-                                       raw_ostream &OS) {
+                                       raw_ostream &OS, bool omitCASID) {
   Triple TT = Reader.getTargetTriple();
   auto EdgeKindNameFn = jitlink::getGetEdgeKindNameFunction(TT);
   if (auto E = EdgeKindNameFn.takeError())
@@ -251,11 +251,13 @@ Error casobjectformats::printCASObject(const reader::CASObjectReader &Reader,
   }
   for (const auto &Section : Sections) {
     OS << "SECTION: " << Section->Description << '\n';
-    OS << "CASID: " << Section->ID << '\n';
+    if (!omitCASID)
+      OS << "CASID: " << Section->ID << '\n';
     OS << "{\n";
     for (const auto *Block : Section->Blocks) {
       OS.indent(2) << "BLOCK: " << Block->Description << '\n';
-      OS.indent(2) << "CASID: " << Block->ID << '\n';
+      if (!omitCASID)
+        OS.indent(2) << "CASID: " << Block->ID << '\n';
       OS.indent(2) << "{\n";
       for (const auto *Symbol : Block->Symbols) {
         OS.indent(4) << "SYMBOL: " << Symbol->Description;
