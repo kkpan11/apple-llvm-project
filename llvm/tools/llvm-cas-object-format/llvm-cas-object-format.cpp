@@ -79,6 +79,7 @@ enum InputKind {
   IngestFromCASTree,
   AnalysisCASTree,
   PrintCASTree,
+  PrintCASObject,
 };
 
 cl::opt<InputKind> InputFileKind(
@@ -90,7 +91,9 @@ cl::opt<InputKind> InputFileKind(
                clEnumValN(AnalysisCASTree, "analysis-only",
                           "analyze converted objects from cas tree"),
                clEnumValN(PrintCASTree, "print-cas-tree",
-                          "print cas object from cas tree ID")),
+                          "print cas object from cas tree ID"),
+               clEnumValN(PrintCASObject, "print-cas-object",
+                          "print cas object from cas object ID")),
     cl::init(InputKind::IngestFromFS));
 
 enum FormatType {
@@ -138,6 +141,7 @@ static ObjectRef ingestFile(ObjectFormatSchemaBase &Schema, StringRef InputFile,
                             MemoryBufferRef FileContent, SharedStream &OS);
 static void computeStats(CASDB &CAS, ArrayRef<CASID> IDs, raw_ostream &StatOS);
 static Error printCASObjectOrTree(ObjectFormatSchemaPool &Pool, CASID ID);
+static Error printCASObject(ObjectFormatSchemaPool &Pool, CASID ID);
 
 int main(int argc, char *argv[]) {
   ExitOnError ExitOnErr;
@@ -187,6 +191,12 @@ int main(int argc, char *argv[]) {
     case PrintCASTree: {
       auto ID = ExitOnErr(CAS->parseID(IF));
       ExitOnErr(printCASObjectOrTree(SchemaPool, ID));
+      break;
+    }
+
+    case PrintCASObject: {
+      auto ID = ExitOnErr(CAS->parseID(IF));
+      ExitOnErr(printCASObject(SchemaPool, ID));
       break;
     }
 
