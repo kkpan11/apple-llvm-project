@@ -147,6 +147,14 @@ class Function;
 /// Abstract Attribute helper functions.
 namespace AA {
 
+/// Flags to distinguish intra-procedural queries from *potentially*
+/// inter-procedural queries. Not that information can be valid for both and
+/// therefore both bits might be set.
+enum ValueScope : uint8_t {
+  Intraprocedural = 1,
+  Interprocedural = 2,
+};
+
 /// Return true if \p I is a `nosync` instruction. Use generic reasoning and
 /// potentially the corresponding AANoSync.
 bool isNoSyncInst(Attributor &A, const Instruction &I,
@@ -203,7 +211,7 @@ bool getAssumedUnderlyingObjects(Attributor &A, const Value &Ptr,
                                  const AbstractAttribute &QueryingAA,
                                  const Instruction *CtxI,
                                  bool &UsedAssumedInformation,
-                                 bool Intraprocedural = false);
+                                 AA::ValueScope VS = Interprocedural);
 
 /// Collect all potential values \p LI could read into \p PotentialValues. That
 /// is, the only values read by \p LI are assumed to be known and all are in
@@ -4292,10 +4300,9 @@ struct AAValueConstantRange
 /// contains every possible value (i.e. we cannot in any way limit the value
 /// that the target position can take). That never happens naturally, we only
 /// force it. As for the conditions under which we force it, see
-/// AAPotentialValues.
-template <typename MemberTy, typename KeyInfo = DenseMapInfo<MemberTy>>
-struct PotentialValuesState : AbstractState {
-  using SetTy = DenseSet<MemberTy, KeyInfo>;
+/// AAPotentialConstantValues.
+template <typename MemberTy> struct PotentialValuesState : AbstractState {
+  using SetTy = SmallSetVector<MemberTy, 8>;
 
   PotentialValuesState() : IsValidState(true), UndefIsContained(false) {}
 
@@ -4354,7 +4361,7 @@ struct PotentialValuesState : AbstractState {
     return PotentialValuesState(true);
   }
 
-  static PotentialValuesState getBestState(PotentialValuesState &PVS) {
+  static PotentialValuesState getBestState(const PotentialValuesState &PVS) {
     return getBestState();
   }
 
@@ -4383,6 +4390,12 @@ struct PotentialValuesState : AbstractState {
     IsValidState &= PVS.IsValidState;
     unionAssumed(PVS);
     return *this;
+  }
+
+protected:
+  SetTy &getAssumedSet() {
+    assert(isValidState() && "This set shoud not be used when it is invalid!");
+    return Set;
   }
 
 private:
@@ -4479,10 +4492,10 @@ raw_ostream &operator<<(raw_ostream &OS,
 ///      operator we do not currently handle).
 ///
 /// TODO: Support values other than constant integers.
-struct AAPotentialValues
+struct AAPotentialConstantValues
     : public StateWrapper<PotentialConstantIntValuesState, AbstractAttribute> {
   using Base = StateWrapper<PotentialConstantIntValuesState, AbstractAttribute>;
-  AAPotentialValues(const IRPosition &IRP, Attributor &A) : Base(IRP) {}
+  AAPotentialConstantValues(const IRPosition &IRP, Attributor &A) : Base(IRP) {}
 
   /// See AbstractAttribute::getState(...).
   PotentialConstantIntValuesState &getState() override { return *this; }
@@ -4491,8 +4504,8 @@ struct AAPotentialValues
   }
 
   /// Create an abstract attribute view for the position \p IRP.
-  static AAPotentialValues &createForPosition(const IRPosition &IRP,
-                                              Attributor &A);
+  static AAPotentialConstantValues &createForPosition(const IRPosition &IRP,
+                                                      Attributor &A);
 
   /// Return assumed constant for the associated value
   Optional<ConstantInt *>
@@ -4514,13 +4527,15 @@ struct AAPotentialValues
   }
 
   /// See AbstractAttribute::getName()
-  const std::string getName() const override { return "AAPotentialValues"; }
+  const std::string getName() const override {
+    return "AAPotentialConstantValues";
+  }
 
   /// See AbstractAttribute::getIdAddr()
   const char *getIdAddr() const override { return &ID; }
 
   /// This function should return true if the type of the \p AA is
-  /// AAPotentialValues
+  /// AAPotentialConstantValues
   static bool classof(const AbstractAttribute *AA) {
     return (AA->getIdAddr() == &ID);
   }
