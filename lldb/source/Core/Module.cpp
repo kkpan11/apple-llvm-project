@@ -1156,6 +1156,62 @@ bool Module::FileHasChanged() const {
   return m_file_has_changed;
 }
 
+void Module::ReportWarningOptimization(
+    llvm::Optional<lldb::user_id_t> debugger_id) {
+  ConstString file_name = GetFileSpec().GetFilename();
+  if (file_name.IsEmpty())
+    return;
+
+  StreamString ss;
+  ss << file_name.GetStringRef()
+     << " was compiled with optimization - stepping may behave "
+        "oddly; variables may not be available.";
+  Debugger::ReportWarning(std::string(ss.GetString()), debugger_id,
+                          &m_optimization_warning);
+}
+
+void Module::ReportWarningUnsupportedLanguage(
+    LanguageType language, llvm::Optional<lldb::user_id_t> debugger_id) {
+  StreamString ss;
+  ss << "This version of LLDB has no plugin for the language \""
+     << Language::GetNameForLanguageType(language)
+     << "\". "
+        "Inspection of frame variables will be limited.";
+  Debugger::ReportWarning(std::string(ss.GetString()), debugger_id,
+                          &m_language_warning);
+}
+
+#ifdef LLDB_ENABLE_SWIFT
+void Module::ReportWarningCantLoadSwiftModule(
+    std::string details, llvm::Optional<lldb::user_id_t> debugger_id) {
+  StreamString ss;
+  ss << GetFileSpec().GetCString() << ": "
+     << "Cannot load Swift type information: " << details;
+  Debugger::ReportWarning(std::string(ss.GetString()), debugger_id,
+                          &m_swift_import_warning);
+}
+
+void Module::ReportWarningToolchainMismatch(
+    CompileUnit &comp_unit, llvm::Optional<lldb::user_id_t> debugger_id) {
+  if (SymbolFile *sym_file = GetSymbolFile()) {
+    llvm::VersionTuple sym_file_version =
+        sym_file->GetProducerVersion(comp_unit);
+    llvm::VersionTuple swift_version =
+        swift::version::Version::getCurrentCompilerVersion();
+    if (sym_file_version != swift_version) {
+      std::string str = llvm::formatv(
+          "{0} was compiled with a different Swift compiler "
+          "(version '{1}') than the Swift compiler integrated into LLDB "
+          "(version '{2}'). Swift expression evaluation requires a matching "
+          "compiler and debugger from the same toolchain.",
+          GetFileSpec().GetFilename(), sym_file_version.getAsString(),
+          swift_version.getAsString());
+      Debugger::ReportWarning(str, debugger_id, &m_toolchain_mismatch_warning);
+    }
+  }
+}
+#endif
+
 void Module::ReportErrorIfModifyDetected(const char *format, ...) {
   if (!m_first_file_changed_log) {
     if (FileHasChanged()) {
