@@ -255,6 +255,7 @@ uint32_t PlatformWindows::DoLoadImage(Process *process,
         continue;
 
       search_paths.append(std::begin(buffer), std::end(buffer));
+      search_paths.emplace_back(L'\0');
     }
     search_paths.emplace_back(L'\0');
 
@@ -647,7 +648,7 @@ _Static_assert(sizeof(struct __lldb_LoadLibraryResult) <= 3 * sizeof(void *),
 
 void * __lldb_LoadLibraryHelper(const wchar_t *name, const wchar_t *paths,
                                 __lldb_LoadLibraryResult *result) {
-  for (const wchar_t *path = paths; path; ) {
+  for (const wchar_t *path = paths; path && *path; ) {
     (void)AddDllDirectory(path);
     path += wcslen(path) + 1;
   }
