@@ -2,7 +2,8 @@ RUN: rm -rf %t && mkdir -p %t
 RUN: clang %S/Inputs/a.cpp -c -gcas-friendly-debug-info --target=x86_64-apple-darwin21.1.0 -o %t/a.o
 RUN: clang %S/Inputs/b.cpp -c -gcas-friendly-debug-info --target=x86_64-apple-darwin21.1.0 -o %t/b.o
 RUN: find %t -name "*.o" &> %t/objects_to_ingest
-RUN: llvm-cas-object-format --cas %t/cas --ingest-schema=nestedv1 @%t/objects_to_ingest --object-stats - -silent | grep "llvmcas://" | xargs -I{} llvm-cas-object-format --cas %t/cas --ingest-schema=nestedv1 --print-cas-tree {} | FileCheck %s
+RUN: llvm-cas-object-format --cas %t/cas --ingest-schema=nestedv1 @%t/objects_to_ingest -silent > %t/output.casid
+RUN: llvm-cas-object-format --cas %t/cas --ingest-schema=nestedv1 --print-cas-tree @%t/output.casid | FileCheck %s
 
 CHECK: SECTION: __DWARF,__debug_line | MemProt: RW-
 CHECK-NEXT: CASID: llvmcas://[[DEBUG_LINE_CAS_ID:[a-z0-9]+]]
