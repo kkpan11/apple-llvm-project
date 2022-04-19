@@ -7143,8 +7143,7 @@ bool ObjectFileMachO::LoadCoreFileImages(lldb_private::Process &process) {
       module_spec.GetFileSpec() = FileSpec(image.filename.c_str());
     }
     if (image.currently_executing) {
-      Status error;
-      Symbols::DownloadObjectAndSymbolFile(module_spec, error, true);
+      Symbols::DownloadObjectAndSymbolFile(module_spec, true);
       if (FileSystem::Instance().Exists(module_spec.GetFileSpec())) {
         process.GetTarget().GetOrCreateModule(module_spec, false);
       }

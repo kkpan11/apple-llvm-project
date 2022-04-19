@@ -789,8 +789,7 @@ bool DynamicLoaderDarwinKernel::KextImageInfo::LoadImageUsingMemoryModule(
       // exists, instead of depending on the DebugSymbols preferences being
       // set.
       if (IsKernel()) {
-        Status error;
-        if (Symbols::DownloadObjectAndSymbolFile(module_spec, error, true)) {
+        if (Symbols::DownloadObjectAndSymbolFile(module_spec, true)) {
           if (FileSystem::Instance().Exists(module_spec.GetFileSpec())) {
             m_module_sp = std::make_shared<Module>(module_spec.GetFileSpec(),
                                                    target.GetArchitecture());
