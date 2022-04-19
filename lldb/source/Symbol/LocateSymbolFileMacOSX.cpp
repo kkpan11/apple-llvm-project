@@ -298,22 +298,13 @@ FileSpec Symbols::FindSymbolFileInBundle(const FileSpec &dsym_bundle_fspec,
 }
 
 static bool GetModuleSpecInfoFromUUIDDictionary(CFDictionaryRef uuid_dict,
-                                                ModuleSpec &module_spec,
-                                                Status &error) {
+                                                ModuleSpec &module_spec) {
   Log *log = GetLog(LLDBLog::Host);
   bool success = false;
   if (uuid_dict != NULL && CFGetTypeID(uuid_dict) == CFDictionaryGetTypeID()) {
     std::string str;
     CFStringRef cf_str;
     CFDictionaryRef cf_dict;
-
-    cf_str = (CFStringRef)CFDictionaryGetValue((CFDictionaryRef)uuid_dict,
-                                               CFSTR("DBGError"));
-    if (cf_str && CFGetTypeID(cf_str) == CFStringGetTypeID()) {
-      if (CFCString::FileSystemRepresentation(cf_str, str)) {
-        error.SetErrorString(str);
-      }
-    }
 
     cf_str = (CFStringRef)CFDictionaryGetValue(
         (CFDictionaryRef)uuid_dict, CFSTR("DBGSymbolRichExecutable"));
@@ -469,7 +460,7 @@ static bool GetModuleSpecInfoFromUUIDDictionary(CFDictionaryRef uuid_dict,
 }
 
 bool Symbols::DownloadObjectAndSymbolFile(ModuleSpec &module_spec,
-                                          Status &error, bool force_lookup) {
+                                          bool force_lookup) {
   bool success = false;
   const UUID *uuid_ptr = module_spec.GetUUIDPtr();
   const FileSpec *file_spec_ptr = module_spec.GetFileSpecPtr();
@@ -589,7 +580,7 @@ bool Symbols::DownloadObjectAndSymbolFile(ModuleSpec &module_spec,
             LLDB_LOGF(log, "Calling %s with file %s to find dSYM",
                       g_dsym_for_uuid_exe_path, file_path);
         }
-        error = Host::RunShellCommand(
+        Status error = Host::RunShellCommand(
             command.GetData(),
             FileSpec(),      // current working directory
             &exit_status,    // Exit status
@@ -613,8 +604,8 @@ bool Symbols::DownloadObjectAndSymbolFile(ModuleSpec &module_spec,
               CFCString uuid_cfstr(uuid_str.c_str());
               CFDictionaryRef uuid_dict = (CFDictionaryRef)CFDictionaryGetValue(
                   plist.get(), uuid_cfstr.get());
-              success = GetModuleSpecInfoFromUUIDDictionary(uuid_dict,
-                                                            module_spec, error);
+              success =
+                  GetModuleSpecInfoFromUUIDDictionary(uuid_dict, module_spec);
             } else {
               const CFIndex num_values = ::CFDictionaryGetCount(plist.get());
               if (num_values > 0) {
@@ -623,14 +614,14 @@ bool Symbols::DownloadObjectAndSymbolFile(ModuleSpec &module_spec,
                 ::CFDictionaryGetKeysAndValues(plist.get(), NULL,
                                                (const void **)&values[0]);
                 if (num_values == 1) {
-                  success = GetModuleSpecInfoFromUUIDDictionary(
-                      values[0], module_spec, error);
+                  success = GetModuleSpecInfoFromUUIDDictionary(values[0],
+                                                                module_spec);
                   return success;
                 } else {
                   for (CFIndex i = 0; i < num_values; ++i) {
                     ModuleSpec curr_module_spec;
-                    if (GetModuleSpecInfoFromUUIDDictionary(
-                            values[i], curr_module_spec, error)) {
+                    if (GetModuleSpecInfoFromUUIDDictionary(values[i],
+                                                            curr_module_spec)) {
                       if (module_spec.GetArchitecture().IsCompatibleMatch(
                               curr_module_spec.GetArchitecture())) {
                         module_spec = curr_module_spec;
