@@ -13,7 +13,6 @@
 
 #include "lldb/Core/FileSpecList.h"
 #include "lldb/Utility/FileSpec.h"
-#include "lldb/Utility/Status.h"
 
 namespace lldb_private {
 
@@ -51,7 +50,6 @@ public:
   // enabled the external program before calling.
   //
   static bool DownloadObjectAndSymbolFile(ModuleSpec &module_spec,
-                                          Status &error,
                                           bool force_lookup = true);
 };
 
