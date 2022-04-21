@@ -42,7 +42,6 @@ protected:
 
 TEST_P(CASDBTest, PrintIDs) {
   std::unique_ptr<CASDB> CAS = createCAS();
-  ExitOnError ExitOnErr("PrintID");
 
   Optional<CASID> ID1, ID2;
   ASSERT_THAT_ERROR(CAS->createBlob("1").moveInto(ID1), Succeeded());
@@ -72,14 +71,14 @@ multiline text multiline text multiline text multiline text multiline text
 multiline text multiline text multiline text multiline text multiline text)",
   };
 
-  ExitOnError ExitOnErr("Blobs");
-
   SmallVector<CASID> IDs;
   for (StringRef Content : ContentStrings) {
     // Use StringRef::str() to create a temporary std::string. This could cause
     // problems if the CAS is storing references to the input string instead of
     // copying it.
-    IDs.push_back(ExitOnErr(CAS1->createBlob(Content)));
+    Optional<BlobProxy> Blob;
+    ASSERT_THAT_ERROR(CAS1->createBlob(Content).moveInto(Blob), Succeeded());
+    IDs.push_back(Blob->getID());
 
     // Check basic printing of IDs.
     EXPECT_EQ(IDs.back().toString(), IDs.back().toString());
@@ -88,8 +87,12 @@ multiline text multiline text multiline text multiline text multiline text)",
   }
 
   // Check that the blobs give the same IDs later.
-  for (int I = 0, E = IDs.size(); I != E; ++I)
-    EXPECT_EQ(IDs[I], ExitOnErr(CAS1->createBlob(ContentStrings[I])));
+  for (int I = 0, E = IDs.size(); I != E; ++I) {
+    Optional<BlobProxy> Blob;
+    ASSERT_THAT_ERROR(CAS1->createBlob(ContentStrings[I]).moveInto(Blob),
+                      Succeeded());
+    EXPECT_EQ(IDs[I], Blob->getID());
+  }
 
   // Check that the blobs can be retrieved multiple times.
   for (int I = 0, E = IDs.size(); I != E; ++I) {
@@ -103,14 +106,16 @@ multiline text multiline text multiline text multiline text multiline text)",
   // Confirm these blobs don't exist in a fresh CAS instance.
   std::unique_ptr<CASDB> CAS2 = createCAS();
   for (int I = 0, E = IDs.size(); I != E; ++I)
-    EXPECT_EQ(None, expectedToOptional(CAS2->getBlob(IDs[I])));
+    EXPECT_THAT_EXPECTED(CAS2->getBlob(IDs[I]), Failed());
 
   // Insert into the second CAS and confirm the IDs are stable. Getting them
   // should work now.
   for (int I = IDs.size(), E = 0; I != E; --I) {
     auto &ID = IDs[I - 1];
     auto &Content = ContentStrings[I - 1];
-    EXPECT_EQ(ID, ExitOnErr(CAS2->createBlob(Content)));
+    Optional<BlobProxy> Blob;
+    ASSERT_THAT_ERROR(CAS2->createBlob(Content).moveInto(Blob), Succeeded());
+    EXPECT_EQ(ID, Blob->getID());
 
     Optional<BlobProxy> Buffer;
     ASSERT_THAT_ERROR(CAS2->getBlob(ID).moveInto(Buffer), Succeeded());
@@ -155,8 +160,6 @@ TEST_P(CASDBTest, BlobsBig) {
 TEST_P(CASDBTest, Trees) {
   std::unique_ptr<CASDB> CAS1 = createCAS();
   std::unique_ptr<CASDB> CAS2 = createCAS();
-
-  ExitOnError ExitOnErr("Trees: ");
 
   auto createBlobInBoth = [&](StringRef Content) {
     Optional<CASID> ID1, ID2;
@@ -228,12 +231,17 @@ TEST_P(CASDBTest, Trees) {
     llvm::sort(SortedEntries);
 
     // Confirm we get the same tree out of CAS2.
-    EXPECT_EQ(ID, ExitOnErr(CAS2->createTree(SortedEntries)));
+    {
+      Optional<TreeProxy> Tree;
+      ASSERT_THAT_ERROR(CAS2->createTree(SortedEntries).moveInto(Tree),
+                        Succeeded());
+      EXPECT_EQ(ID, Tree->getID());
+    }
 
     // Check that the correct entries come back.
     for (CASDB *CAS : {&*CAS1, &*CAS2}) {
-      Optional<TreeProxy> Tree = expectedToOptional(CAS->getTree(ID));
-      EXPECT_TRUE(Tree);
+      Optional<TreeProxy> Tree;
+      ASSERT_THAT_ERROR(CAS->getTree(ID).moveInto(Tree), Succeeded());
       for (int I = 0, E = SortedEntries.size(); I != E; ++I)
         EXPECT_EQ(SortedEntries[I], Tree->get(I));
     }
@@ -266,14 +274,20 @@ TEST_P(CASDBTest, Trees) {
       Entries.emplace_back(NestedTrees[(I * 3 + 2) % NestedTrees.size()],
                            TreeEntry::Tree, *Name2);
     }
-    CASID ID = ExitOnErr(CAS1->createTree(Entries));
-    llvm::sort(Entries);
-    EXPECT_EQ(ID, ExitOnErr(CAS1->createTree(Entries)));
-    EXPECT_EQ(ID, ExitOnErr(CAS2->createTree(Entries)));
+    Optional<CASID> ID;
+    {
+      Optional<TreeProxy> Tree;
+      ASSERT_THAT_ERROR(CAS1->createTree(Entries).moveInto(Tree), Succeeded());
+      ID = Tree->getID();
+    }
 
+    llvm::sort(Entries);
     for (CASDB *CAS : {&*CAS1, &*CAS2}) {
       Optional<TreeProxy> Tree;
-      ASSERT_THAT_ERROR(CAS->getTree(ID).moveInto(Tree), Succeeded());
+      ASSERT_THAT_ERROR(CAS->createTree(Entries).moveInto(Tree), Succeeded());
+      ASSERT_EQ(*ID, Tree->getID());
+      Tree.reset();
+      ASSERT_THAT_ERROR(CAS->getTree(*ID).moveInto(Tree), Succeeded());
       for (int I = 0, E = Entries.size(); I != E; ++I)
         EXPECT_EQ(Entries[I], Tree->get(I));
     }
