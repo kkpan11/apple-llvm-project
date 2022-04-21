@@ -9,6 +9,7 @@
 #ifndef LLVM_CAS_THREADSAFEALLOCATOR_H
 #define LLVM_CAS_THREADSAFEALLOCATOR_H
 
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/Support/Allocator.h"
 #include <atomic>
 
@@ -43,6 +44,11 @@ public:
   auto Allocate(size_t Size, size_t Align) {
     LockGuard Lock(Flag);
     return Alloc.Allocate(Size, Align);
+  }
+
+  void applyLocked(llvm::function_ref<void(AllocatorType &Alloc)> Fn) {
+    LockGuard Lock(Flag);
+    Fn(Alloc);
   }
 
 private:
