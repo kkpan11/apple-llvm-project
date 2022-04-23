@@ -164,8 +164,6 @@ public:
   static void parseLCLinkerOptions(MemoryBufferRef mb);
 
 private:
-  Section *compactUnwindSection = nullptr;
-
   void init(StringRef archiveName);
   template <class LP> void parseLazy();
   template <class SectionHeader> void parseSections(ArrayRef<SectionHeader>);
@@ -179,7 +177,7 @@ private:
   void parseRelocations(ArrayRef<SectionHeader> sectionHeaders,
                         const SectionHeader &, Section &);
   void parseDebugInfo();
-  void registerCompactUnwind();
+  void registerCompactUnwind(Section &compactUnwindSection);
 };
 
 // CAS-schema .o file
