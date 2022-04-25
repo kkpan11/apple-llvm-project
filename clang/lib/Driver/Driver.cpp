@@ -4322,6 +4322,8 @@ Action *Driver::ConstructPhaseAction(
                         options::OPT_fno_rewrite_includes, false) &&
           !Args.hasFlag(options::OPT_frewrite_imports,
                         options::OPT_fno_rewrite_imports, false) &&
+          !Args.hasFlag(options::OPT_fdirectives_only,
+                        options::OPT_fno_directives_only, false) &&
           !CCGenDiagnostics)
         OutputTy = types::getPreprocessedType(OutputTy);
       assert(OutputTy != types::TY_INVALID &&
