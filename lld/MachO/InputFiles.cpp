@@ -1171,7 +1171,8 @@ static DylibFile *findDylib(StringRef path, DylibFile *umbrella,
          make_pointee_range(currentTopLevelTapi->documents())) {
       assert(child.documents().empty());
       if (path == child.getInstallName()) {
-        auto file = make<DylibFile>(child, umbrella);
+        auto file = make<DylibFile>(child, umbrella, /*isBundleLoader=*/false,
+                                    /*explicitlyLinked=*/false);
         file->parseReexports(child);
         return file;
       }
@@ -1212,9 +1213,9 @@ static void loadReexport(StringRef path, DylibFile *umbrella,
 }
 
 DylibFile::DylibFile(MemoryBufferRef mb, DylibFile *umbrella,
-                     bool isBundleLoader)
+                     bool isBundleLoader, bool explicitlyLinked)
     : InputFile(DylibKind, mb), refState(RefState::Unreferenced),
-      isBundleLoader(isBundleLoader) {
+      explicitlyLinked(explicitlyLinked), isBundleLoader(isBundleLoader) {
   assert(!isBundleLoader || !umbrella);
   if (umbrella == nullptr)
     umbrella = this;
@@ -1327,18 +1328,26 @@ void DylibFile::parseLoadCommands(MemoryBufferRef mb) {
   }
 }
 
-// Some versions of XCode ship with .tbd files that don't have the right
+// Some versions of Xcode ship with .tbd files that don't have the right
 // platform settings.
-constexpr std::array<StringRef, 4> skipPlatformChecks{
+constexpr std::array<StringRef, 3> skipPlatformChecks{
     "/usr/lib/system/libsystem_kernel.dylib",
     "/usr/lib/system/libsystem_platform.dylib",
-    "/usr/lib/system/libsystem_pthread.dylib",
-    "/usr/lib/system/libcompiler_rt.dylib"};
+    "/usr/lib/system/libsystem_pthread.dylib"};
+
+static bool skipPlatformCheckForCatalyst(const InterfaceFile &interface,
+                                         bool explicitlyLinked) {
+  // Catalyst outputs can link against implicitly linked macOS-only libraries.
+  if (config->platform() != PLATFORM_MACCATALYST || explicitlyLinked)
+    return false;
+  return is_contained(interface.targets(),
+                      MachO::Target(config->arch(), PLATFORM_MACOS));
+}
 
 DylibFile::DylibFile(const InterfaceFile &interface, DylibFile *umbrella,
-                     bool isBundleLoader)
+                     bool isBundleLoader, bool explicitlyLinked)
     : InputFile(DylibKind, interface), refState(RefState::Unreferenced),
-      isBundleLoader(isBundleLoader) {
+      explicitlyLinked(explicitlyLinked), isBundleLoader(isBundleLoader) {
   // FIXME: Add test for the missing TBD code path.
 
   if (umbrella == nullptr)
@@ -1356,7 +1365,8 @@ DylibFile::DylibFile(const InterfaceFile &interface, DylibFile *umbrella,
   }
 
   if (!is_contained(skipPlatformChecks, installName) &&
-      !is_contained(interface.targets(), config->platformInfo.target)) {
+      !is_contained(interface.targets(), config->platformInfo.target) &&
+      !skipPlatformCheckForCatalyst(interface, explicitlyLinked)) {
     error(toString(this) + " is incompatible with " +
           std::string(config->platformInfo.target));
     return;

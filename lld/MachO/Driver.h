@@ -52,7 +52,8 @@ llvm::MachO::HeaderFileType getOutputType(const llvm::opt::InputArgList &args);
 llvm::Optional<StringRef> resolveDylibPath(llvm::StringRef path);
 
 DylibFile *loadDylib(llvm::MemoryBufferRef mbref, DylibFile *umbrella = nullptr,
-                     bool isBundleLoader = false);
+                     bool isBundleLoader = false,
+                     bool explicitlyLinked = false);
 void resetLoadedDylibs();
 
 /// Called after dependency scanning pass is finished, to reset to initial state for performing a normal link.
