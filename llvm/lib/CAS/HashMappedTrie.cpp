@@ -13,6 +13,7 @@
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
+#include <memory>
 
 using namespace llvm;
 using namespace llvm::cas;
@@ -92,8 +93,8 @@ private:
   unsigned NumBits = 0;
 
 public:
-  /// Linked list for ownership of tries.
-  AtomicUniquePointer<TrieSubtrie> Next;
+  /// Linked list for ownership of tries. The pointer is owned by TrieSubtrie.
+  std::atomic<TrieSubtrie *> Next;
 
   /// The (co-allocated) slots of the subtrie.
   MutableArrayRef<LazyAtomicPointer<TrieNode>> Slots;
@@ -123,7 +124,7 @@ std::unique_ptr<TrieSubtrie> TrieSubtrie::create(size_t StartBit,
 }
 
 TrieSubtrie::TrieSubtrie(size_t StartBit, size_t NumBits)
-    : TrieNode(true), StartBit(StartBit), NumBits(NumBits),
+    : TrieNode(true), StartBit(StartBit), NumBits(NumBits), Next(nullptr),
       Slots(reinterpret_cast<LazyAtomicPointer<TrieNode> *>(
                 reinterpret_cast<char *>(this) + sizeof(TrieSubtrie)),
             (1u << NumBits)) {
@@ -155,30 +156,23 @@ TrieSubtrie *TrieSubtrie::sink(
 }
 
 struct ThreadSafeHashMappedTrieBase::ImplType {
-  static std::unique_ptr<ImplType> create(size_t StartBit, size_t NumBits) {
+  static ImplType *create(size_t StartBit, size_t NumBits) {
     size_t Size = sizeof(ImplType) + getTrieTailSize(StartBit, NumBits);
     void *Memory = ::malloc(Size);
-    ImplType *Impl = ::new (Memory) ImplType(StartBit, NumBits);
-    return std::unique_ptr<ImplType>(Impl);
+    return ::new (Memory) ImplType(StartBit, NumBits);
   }
 
   TrieSubtrie *save(std::unique_ptr<TrieSubtrie> S) {
-    TrieSubtrie *Ptr = S.get();
+    TrieSubtrie *Ptr = S.release();
     TrieSubtrie *CurrentHead = nullptr;
 
     // Add ownership of "S" to front of the list, so that Root -> S ->
     // Root.Next. Be careful to handle concurrent calls.
-    //
-    // Note: The body of while loop temporarily adds an extra owning reference
-    // to "CurrentHead", releasing the extra reference from the previous
-    // iteration.
-    while (!Root.Next.compare_exchange_weak(CurrentHead, S))
-      S->Next.exchange(std::unique_ptr<TrieSubtrie>(CurrentHead)).release();
+    while (!Root.Next.compare_exchange_weak(CurrentHead, Ptr))
+      Ptr->Next.exchange(CurrentHead);
 
-    // Drop the extra ownership reference to the previous head of the list.
-    assert(CurrentHead == S.get() &&
+    assert(CurrentHead == Ptr->Next &&
            "Expected an owning reference to the previous head");
-    S.release();
     return Ptr;
   }
 
@@ -199,10 +193,12 @@ ThreadSafeHashMappedTrieBase::getOrCreateImpl() {
 
   // Create a new ImplType and store it if another thread doesn't do so first.
   // If another thread wins this one is destroyed locally.
-  std::unique_ptr<ImplType> Impl = ImplType::create(0, NumRootBits);
+  std::unique_ptr<ImplType> Impl(ImplType::create(0, NumRootBits));
   ImplType *ExistingImpl = nullptr;
-  (void)ImplPtr.compare_exchange_strong(ExistingImpl, Impl);
-  return *ImplPtr.load();
+  if (ImplPtr.compare_exchange_strong(ExistingImpl, Impl.get()))
+    return *Impl.release();
+
+  return *ExistingImpl;
 }
 
 ThreadSafeHashMappedTrieBase::PointerBase
@@ -427,7 +423,8 @@ ThreadSafeHashMappedTrieBase::ThreadSafeHashMappedTrieBase(
     : ContentAllocSize(ContentAllocSize), ContentAllocAlign(ContentAllocAlign),
       ContentOffset(ContentOffset),
       NumRootBits(NumRootBits ? *NumRootBits : DefaultNumRootBits),
-      NumSubtrieBits(NumSubtrieBits ? *NumSubtrieBits : DefaultNumSubtrieBits) {
+      NumSubtrieBits(NumSubtrieBits ? *NumSubtrieBits : DefaultNumSubtrieBits),
+      ImplPtr(nullptr) {
   assert((!NumRootBits || *NumRootBits < 20) &&
          "Root should have fewer than ~1M slots");
   assert((!NumSubtrieBits || *NumSubtrieBits < 10) &&
@@ -445,11 +442,12 @@ ThreadSafeHashMappedTrieBase::ThreadSafeHashMappedTrieBase(
 }
 
 ThreadSafeHashMappedTrieBase::~ThreadSafeHashMappedTrieBase() {
-  assert(!ImplPtr && "Expected subclass to call destroyImpl()");
+  assert(!ImplPtr.load() && "Expected subclass to call destroyImpl()");
 }
 
-void ThreadSafeHashMappedTrieBase::destroyImpl(function_ref<void (void *)> Destructor) {
-  std::unique_ptr<ImplType> Impl = ImplPtr.take();
+void ThreadSafeHashMappedTrieBase::destroyImpl(
+    function_ref<void(void *)> Destructor) {
+  std::unique_ptr<ImplType> Impl(ImplPtr.exchange(nullptr));
   if (!Impl)
     return;
 
@@ -464,10 +462,11 @@ void ThreadSafeHashMappedTrieBase::destroyImpl(function_ref<void (void *)> Destr
         if (auto *Content = dyn_cast_or_null<TrieContent>(Slot.load()))
           Destructor(Content->getValuePointer());
 
-  // Destroy the subtries using explicit iteration here to avoid recursive
-  // destructor calls. Incidentally, this destroys them in reverse order of
-  // creation (breadth-first, deepest first).
-  std::unique_ptr<TrieSubtrie> Trie = Impl->Root.Next.take();
-  while (Trie)
-    Trie = Trie->Next.take();
+  // Destroy the subtries.
+  TrieSubtrie *Trie = Impl->Root.Next;
+  while (Trie) {
+    TrieSubtrie *Next = Trie->Next.exchange(nullptr);
+    delete Trie;
+    Trie = Next;
+  }
 }

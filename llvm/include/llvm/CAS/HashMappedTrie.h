@@ -10,7 +10,6 @@
 #define LLVM_CAS_HASHMAPPEDTRIE_H
 
 #include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/AtomicUniquePointer.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"
@@ -122,7 +121,9 @@ private:
   unsigned short NumRootBits;
   unsigned short NumSubtrieBits;
   struct ImplType;
-  AtomicUniquePointer<ImplType> ImplPtr;
+  // ImplPtr is owned by ThreadSafeHashMappedTrieBase and needs to be freed in
+  // destoryImpl.
+  std::atomic<ImplType *> ImplPtr;
   ImplType &getOrCreateImpl();
   ImplType *getImpl() const;
 };
