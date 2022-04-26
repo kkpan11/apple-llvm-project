@@ -59,6 +59,7 @@ MATCHER_P(HasName, Name, "") { return arg.Name == Name; }
 MATCHER_P(TemplateArgs, TemplArgs, "") {
   return arg.TemplateSpecializationArgs == TemplArgs;
 }
+MATCHER_P(hasKind, Kind, "") { return arg.SymInfo.Kind == Kind; }
 MATCHER_P(DeclURI, P, "") {
   return StringRef(arg.CanonicalDeclaration.FileURI) == P;
 }
@@ -1847,6 +1848,17 @@ TEST_F(SymbolCollectorTest, NoCrashOnObjCMethodCStyleParam) {
   // We mostly care about not crashing.
   EXPECT_THAT(TU.headerSymbols(),
               UnorderedElementsAre(QName("Foo"), QName("Foo::fun:")));
+}
+
+TEST_F(SymbolCollectorTest, Concepts) {
+  const char *Header = R"cpp(
+    template <class T>
+    concept A = sizeof(T) <= 8;
+  )cpp";
+  runSymbolCollector("", Header, {"-std=c++20"});
+  EXPECT_THAT(Symbols,
+              UnorderedElementsAre(AllOf(
+                  qName("A"), hasKind(clang::index::SymbolKind::Concept))));
 }
 
 } // namespace
