@@ -42,7 +42,7 @@
 #include "llvm/CAS/CachingOnDiskFileSystem.h"
 #include "llvm/CAS/HierarchicalTreeBuilder.h"
 #include "llvm/CAS/Utils.h"
-#include "llvm/CASObjectFormats/SchemaBase.h"
+#include "llvm/CASObjectFormats/ObjectFormatSchemaBase.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/LTO/LTO.h"
 #include "llvm/Object/Archive.h"
@@ -280,8 +280,8 @@ static void handleFileForDepScanning(MemoryBufferRef mbref) {
 
 static DenseMap<StringRef, ArchiveFile *> loadedArchives;
 
-static Expected<InputFile *> addCASObject(SchemaPool &CASSchemas, CASID ID,
-                                          StringRef path);
+static Expected<InputFile *> addCASObject(ObjectFormatSchemaPool &CASSchemas,
+                                          CASID ID, StringRef path);
 
 static InputFile *addFile(StringRef path, ForceLoad forceLoadArchive,
                           bool isLazy = false, bool isExplicit = true,
@@ -473,8 +473,8 @@ static InputFile *addFile(StringRef path, ForceLoad forceLoadArchive,
 /// \param CAS CAS database.
 /// \param ID The CASID pointing at the root node of the CAS object.
 /// \param path The object filename.
-static Expected<InputFile *> addCASObject(SchemaPool &CASSchemas, CASID ID,
-                                          StringRef path) {
+static Expected<InputFile *> addCASObject(ObjectFormatSchemaPool &CASSchemas,
+                                          CASID ID, StringRef path) {
   // FIXME: Check format from the CAS data instead of using the filename.
   if (!path.endswith(".o")) {
     return createStringError(inconvertibleErrorCode(),
@@ -497,7 +497,7 @@ static Expected<InputFile *> addCASObject(SchemaPool &CASSchemas, CASID ID,
 /// Reads a CAS tree of CAS object files.
 /// \param CAS CAS database.
 /// \param ID The CASID pointing to a tree of files.
-static Error addCASTree(SchemaPool &CASSchemas, CASID ID) {
+static Error addCASTree(ObjectFormatSchemaPool &CASSchemas, CASID ID) {
   return walkFileTreeRecursively(
       CASSchemas.getCAS(), ID,
       [&](const NamedTreeEntry &entry, Optional<TreeProxy>) -> Error {
@@ -1580,7 +1580,8 @@ bool macho::link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
     auto CAS = llvm::cas::createOnDiskCAS(path);
     if (CAS) {
       config->CAS = std::move(*CAS);
-      config->CASSchemas = std::make_unique<SchemaPool>(*config->CAS);
+      config->CASSchemas =
+          std::make_unique<ObjectFormatSchemaPool>(*config->CAS);
     } else {
       error("error loading CAS at path '" + path +
             "': " + toString(CAS.takeError()));

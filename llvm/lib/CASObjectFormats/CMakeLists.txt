@@ -3,7 +3,7 @@ add_llvm_component_library(LLVMCASObjectFormats
   FlatV1.cpp
   LinkGraph.cpp
   NestedV1.cpp
-  SchemaBase.cpp
+  ObjectFormatSchemaBase.cpp
   ObjectFormatHelpers.cpp
   Utils.cpp
 

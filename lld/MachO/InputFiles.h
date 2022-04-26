@@ -35,7 +35,7 @@ class InterfaceFile;
 } // namespace MachO
 class TarWriter;
 namespace casobjectformats {
-class SchemaPool;
+class ObjectFormatSchemaPool;
 } // namespace casobjectformats
 } // namespace llvm
 
@@ -187,7 +187,7 @@ public:
   ~CASSchemaFile();
   static bool classof(const InputFile *f) { return f->kind() == CASSchemaKind; }
 
-  Error parse(llvm::casobjectformats::SchemaPool &CASSchemas,
+  Error parse(llvm::casobjectformats::ObjectFormatSchemaPool &CASSchemas,
               llvm::cas::CASID ID);
 };
 

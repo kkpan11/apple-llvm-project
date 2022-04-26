@@ -12,7 +12,7 @@
 #include "llvm/CAS/CASID.h"
 #include "llvm/CASObjectFormats/CASObjectReader.h"
 #include "llvm/CASObjectFormats/Data.h"
-#include "llvm/CASObjectFormats/SchemaBase.h"
+#include "llvm/CASObjectFormats/ObjectFormatSchemaBase.h"
 #include "llvm/ExecutionEngine/JITLink/JITLink.h"
 
 namespace llvm {
@@ -82,10 +82,12 @@ private:
 /// Instead, the first byte is stolen from \a getData().
 ///
 /// The root node type-id is structured as:
-class ObjectFileSchema final : public SchemaBase {
+class ObjectFileSchema final
+    : public RTTIExtends<ObjectFileSchema, ObjectFormatSchemaBase> {
   void anchor() override;
 
 public:
+  static char ID;
   Optional<StringRef> getKindString(const cas::NodeProxy &Node) const;
   Optional<unsigned char> getKindStringID(StringRef KindString) const;
 

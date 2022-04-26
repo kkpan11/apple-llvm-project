@@ -64,6 +64,7 @@ private:
 
 constexpr StringLiteral EncodedDataRef::KindString;
 
+char ObjectFileSchema::ID = 0;
 void ObjectFileSchema::anchor() {}
 
 namespace {
@@ -233,7 +234,8 @@ ObjectFileSchema::createObjectReader(cas::NodeProxy RootNode) const {
   return CU->createObjectReader();
 }
 
-ObjectFileSchema::ObjectFileSchema(cas::CASDB &CAS) : SchemaBase(CAS) {
+ObjectFileSchema::ObjectFileSchema(cas::CASDB &CAS)
+    : ObjectFileSchema::RTTIExtends(CAS) {
   // Fill the cache immediately to preserve thread-safety.
   if (Error E = fillCache())
     report_fatal_error(std::move(E));

@@ -64,7 +64,7 @@
 #include "llvm/BinaryFormat/MachO.h"
 #include "llvm/CAS/Utils.h"
 #include "llvm/CASObjectFormats/CASObjectReader.h"
-#include "llvm/CASObjectFormats/SchemaBase.h"
+#include "llvm/CASObjectFormats/ObjectFormatSchemaBase.h"
 #include "llvm/ExecutionEngine/JITLink/x86_64.h"
 #include "llvm/LTO/LTO.h"
 #include "llvm/Support/BinaryStreamReader.h"
@@ -1785,11 +1785,11 @@ static void applyArchRelocationProperties(jitlink::Edge::Kind kind,
   }
 }
 
-Error CASSchemaFile::parse(SchemaPool &CASSchemas, CASID ID) {
+Error CASSchemaFile::parse(ObjectFormatSchemaPool &CASSchemas, CASID ID) {
   Expected<cas::NodeProxy> Ref = CASSchemas.getCAS().getNode(ID);
   if (auto E = Ref.takeError())
     return E;
-  SchemaBase *Schema = CASSchemas.getSchemaForRoot(*Ref);
+  ObjectFormatSchemaBase *Schema = CASSchemas.getSchemaForRoot(*Ref);
   if (!Schema)
     return createStringError(inconvertibleErrorCode(),
                              "CAS object is not a recognized object file");

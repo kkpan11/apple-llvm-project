@@ -1,4 +1,4 @@
-//===- llvm/CASObjectFormats/SchemaBase.h -----------------------*- C++ -*-===//
+//===- llvm/CASObjectFormats/ObjectFormatSchemaBase.h -----------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,10 +6,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CASOBJECTFORMATS_SCHEMABASE_H
-#define LLVM_CASOBJECTFORMATS_SCHEMABASE_H
+#ifndef LLVM_CASOBJECTFORMATS_OBJECTFORMATSCHEMABASE_H
+#define LLVM_CASOBJECTFORMATS_OBJECTFORMATSCHEMABASE_H
 
 #include "llvm/CAS/CASDB.h"
+#include "llvm/CAS/CASNodeSchema.h"
 #include "llvm/CASObjectFormats/Data.h"
 #include "llvm/ExecutionEngine/JITLink/JITLink.h"
 
@@ -26,8 +27,9 @@ class CASObjectReader;
 ///
 /// Adding a new object file schema currently involves the following:
 ///
-/// 1. Derive from SchemaBase. See \a nestedv1::ObjectFileSchema for an
-///    example. Best to add some unit tests.
+/// 1. Derive from ObjectFormatSchemaBase. See \a nestedv1::ObjectFormatSchema
+/// for
+///    an example. Best to add some unit tests.
 /// 2. Add ingestion support in llvm-cas-object-format.cpp by updating its
 ///    factory method for creating a schema.
 /// 3. Optional: Add stats support in llvm-cas-object-format.cpp by adding the
@@ -38,10 +40,17 @@ class CASObjectReader;
 ///
 /// TODO: Maybe allow schemas to be registered somewhere? Maybe just
 /// object-file schemas?
-class SchemaBase {
-  virtual void anchor();
+class ObjectFormatSchemaBase
+    : public RTTIExtends<ObjectFormatSchemaBase, cas::NodeSchema> {
+  void anchor() override;
 
 public:
+  static char ID;
+
+  bool isRootNode(const cas::NodeHandle &Node) const final {
+    return isRootNode(cas::NodeProxy::load(CAS, Node));
+  }
+
   /// Check if \a Node is a root (entry node) for the schema. This is a strong
   /// check, since it requires that the first reference matches a complete
   /// type-id DAG.
@@ -62,45 +71,55 @@ public:
     return createFromLinkGraphImpl(G, DebugOS);
   }
 
-  cas::CASDB &CAS;
-
 protected:
   virtual Expected<cas::NodeProxy>
   createFromLinkGraphImpl(const jitlink::LinkGraph &G,
                           raw_ostream *DebugOS) const = 0;
 
-  SchemaBase(cas::CASDB &CAS) : CAS(CAS) {}
-
-public:
-  virtual ~SchemaBase() = default;
+  ObjectFormatSchemaBase(cas::CASDB &CAS)
+      : ObjectFormatSchemaBase::RTTIExtends(CAS) {}
 };
 
 /// Creates all the schemas and can be used to retrieve a particular schema
 /// based on a CAS root node. A client should aim to create and maximize re-use
 /// of an instance of this object.
-class SchemaPool {
+void addObjectFormatSchemas(cas::SchemaPool &Pool);
+
+Expected<std::unique_ptr<reader::CASObjectReader>>
+createObjectReader(const cas::SchemaPool &Pool, cas::CASID ID);
+
+/// Wrapper for a pool that is preloaded with object file schemas.
+class ObjectFormatSchemaPool {
 public:
   /// Creates all the schemas up front.
-  explicit SchemaPool(cas::CASDB &CAS);
+  explicit ObjectFormatSchemaPool(cas::CASDB &CAS) : Pool(CAS) {
+    addObjectFormatSchemas(Pool);
+  }
 
   /// Look up the schema for the provided root node. Returns \a nullptr if no
   /// schema was found or it's not actually a root node. The returned \p
-  /// SchemaBase pointer is owned by the \p SchemaPool instance, therefore it
-  /// cannot be used beyond the \p SchemaPool instance's lifetime.
+  /// ObjectFormatSchemaBase pointer is owned by the \p SchemaPool instance,
+  /// therefore it cannot be used beyond the \p SchemaPool instance's lifetime.
   ///
   /// Thread-safe.
-  SchemaBase *getSchemaForRoot(cas::NodeProxy Node) const;
+  ObjectFormatSchemaBase *getSchemaForRoot(cas::NodeHandle Node) const {
+    return dyn_cast_or_null<ObjectFormatSchemaBase>(
+        Pool.getSchemaForRoot(Node));
+  }
 
+  /// Convenience function that wraps the free function \a
+  /// casobjectformats::createObjectReader().
   Expected<std::unique_ptr<reader::CASObjectReader>>
   createObjectReader(cas::CASID ID) const;
 
-  cas::CASDB &getCAS() const { return Schemas.front()->CAS; }
+  cas::SchemaPool &getPool() { return Pool; }
+  cas::CASDB &getCAS() const { return Pool.getCAS(); }
 
 private:
-  SmallVector<std::unique_ptr<SchemaBase>> Schemas;
+  cas::SchemaPool Pool;
 };
 
 } // namespace casobjectformats
 } // namespace llvm
 
-#endif // LLVM_CASOBJECTFORMATS_SCHEMABASE_H
+#endif // LLVM_CASOBJECTFORMATS_OBJECTFORMATSCHEMABASE_H
