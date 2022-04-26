@@ -13,7 +13,7 @@
 
 using namespace llvm;
 
-TEST(ThreadSafeAllocatorTest, Basics) {
+TEST(ThreadSafeAllocatorTest, AllocWithAlign) {
   cas::ThreadSafeAllocator<BumpPtrAllocator> Alloc;
   ThreadPool Threads;
 
@@ -30,4 +30,19 @@ TEST(ThreadSafeAllocatorTest, Basics) {
   Alloc.applyLocked([](BumpPtrAllocator &Alloc) {
     EXPECT_EQ(4950U * sizeof(int), Alloc.getBytesAllocated());
   });
+}
+
+TEST(ThreadSafeAllocatorTest, SpecificBumpPtrAllocator) {
+  cas::ThreadSafeAllocator<SpecificBumpPtrAllocator<int>> Alloc;
+  ThreadPool Threads;
+
+  for (unsigned Index = 1; Index < 100; ++Index)
+    Threads.async(
+        [&Alloc](unsigned I) {
+          int *P = Alloc.Allocate(I);
+          P[I - 1] = I;
+        },
+        Index);
+
+  Threads.wait();
 }
