@@ -11,8 +11,9 @@ add_llvm_unittest(CASTests
   CASUtilsTest.cpp
   CachingOnDiskFileSystemTest.cpp
   HashMappedTrieTest.cpp
-  OnDiskHashMappedTrieTest.cpp
   HierarchicalTreeBuilderTest.cpp
+  OnDiskHashMappedTrieTest.cpp
+  ThreadSafeAllocatorTest.cpp
   )
 
 target_link_libraries(CASTests PRIVATE LLVMTestingSupport)
