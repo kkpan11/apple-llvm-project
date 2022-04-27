@@ -163,17 +163,18 @@ struct ThreadSafeHashMappedTrieBase::ImplType {
   }
 
   TrieSubtrie *save(std::unique_ptr<TrieSubtrie> S) {
-    TrieSubtrie *Ptr = S.release();
+    assert(!S->Next && "Expected S to a freshly-constructed leaf");
+
     TrieSubtrie *CurrentHead = nullptr;
-
     // Add ownership of "S" to front of the list, so that Root -> S ->
-    // Root.Next. Be careful to handle concurrent calls.
-    while (!Root.Next.compare_exchange_weak(CurrentHead, Ptr))
-      Ptr->Next.exchange(CurrentHead);
+    // Root.Next. This works by repeatedly setting S->Next to a candidate value
+    // of Root.Next (initially nullptr), then setting Root.Next to S once the
+    // candidate matches reality.
+    while (!Root.Next.compare_exchange_weak(CurrentHead, S.get()))
+      S->Next.exchange(CurrentHead);
 
-    assert(CurrentHead == Ptr->Next &&
-           "Expected an owning reference to the previous head");
-    return Ptr;
+    // Ownership transferred to subtrie.
+    return S.release();
   }
 
   /// FIXME: This should take a function that allocates and constructs the
@@ -462,7 +463,8 @@ void ThreadSafeHashMappedTrieBase::destroyImpl(
         if (auto *Content = dyn_cast_or_null<TrieContent>(Slot.load()))
           Destructor(Content->getValuePointer());
 
-  // Destroy the subtries.
+  // Destroy the subtries. Incidentally, this destroys them in the reverse order
+  // of saving.
   TrieSubtrie *Trie = Impl->Root.Next;
   while (Trie) {
     TrieSubtrie *Next = Trie->Next.exchange(nullptr);
