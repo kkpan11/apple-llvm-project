@@ -52,6 +52,8 @@
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/TimeProfiler.h"
 #include "llvm/Support/Timer.h"
+#include "llvm/Support/VirtualOutputBackends.h"
+#include "llvm/Support/VirtualOutputError.h"
 #include "llvm/Support/raw_ostream.h"
 #include <time.h>
 #include <utility>
@@ -777,15 +779,15 @@ void CompilerInstance::clearOutputFiles(bool EraseFiles) {
   if (!EraseFiles) {
     for (auto &O : OutputFiles)
       llvm::handleAllErrors(
-          O->close(),
-          [&](const llvm::vfs::OnDiskOutputRenameTempError &E) {
+          O.keep(),
+          [&](const llvm::vfs::TempFileOutputError &E) {
             getDiagnostics().Report(diag::err_unable_to_rename_temp)
                 << E.getTempPath() << E.getOutputPath()
-                << E.getErrorCode().message();
+                << E.convertToErrorCode().message();
           },
           [&](const llvm::vfs::OutputError &E) {
             getDiagnostics().Report(diag::err_fe_unable_to_open_output)
-                << E.getOutputPath() << E.getErrorCode().message();
+                << E.getOutputPath() << E.convertToErrorCode().message();
           });
   }
   OutputFiles.clear();
@@ -886,21 +888,19 @@ CompilerInstance::createOutputFileImpl(StringRef OutputPath, bool Binary,
   }
 
   using namespace llvm::vfs;
-  Expected<std::unique_ptr<OutputFile>> O =
-      getOrCreateOutputBackend().createFile(
-          OutputPath, OutputConfig()
-                          // FIXME: TextWithCTLF should imply Text.
-                          .setText(!Binary)
-                          .setTextWithCRLF(!Binary)
-                          .setCrashCleanup(RemoveFileOnSignal)
-                          .setAtomicWrite(UseTemporary)
-                          .setImplyCreateDirectories(UseTemporary &&
-                                                     CreateMissingDirectories));
+  Expected<OutputFile> O = getOrCreateOutputBackend().createFile(
+      OutputPath,
+      OutputConfig()
+          .setTextWithCRLF(!Binary)
+          .setCrashCleanup(RemoveFileOnSignal)
+          .setAtomicWrite(UseTemporary)
+          .setImplyCreateDirectories(UseTemporary && CreateMissingDirectories));
   if (!O)
     return O.takeError();
 
+  O->discardOnDestroy([](llvm::Error E) { consumeError(std::move(E)); });
   OutputFiles.push_back(std::move(*O));
-  return OutputFiles.back()->takeOS();
+  return OutputFiles.back().createProxy();
 }
 
 // Initialization Utilities

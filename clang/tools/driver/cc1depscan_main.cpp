@@ -42,6 +42,7 @@
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/ThreadPool.h"
+#include "llvm/Support/VirtualOutputBackends.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cstdio>
 #include <mutex>
@@ -616,12 +617,11 @@ int cc1depscan_main(ArrayRef<const char *> Argv, const char *Argv0,
   // FIXME: Use OutputBackend to OnDisk only now.
   auto OutputBackend =
       llvm::makeIntrusiveRefCnt<llvm::vfs::OnDiskOutputBackend>();
-  auto OutputFile =
+  auto OutputFile = consumeDiscardOnDestroy(
       OutputBackend->createFile(OutputPath, llvm::vfs::OutputConfig()
-                                                .setText(true)
                                                 .setTextWithCRLF(true)
                                                 .setCrashCleanup(false)
-                                                .setAtomicWrite(false));
+                                                .setAtomicWrite(false)));
   if (!OutputFile) {
     Diags.Report(diag::err_fe_unable_to_open_output)
         << OutputArg->getValue() << llvm::toString(OutputFile.takeError());
@@ -636,9 +636,9 @@ int cc1depscan_main(ArrayRef<const char *> Argv, const char *Argv0,
           << *DumpDepscanTree << EC.message();
     RootOS << RootID->toString() << "\n";
   }
-  writeResponseFile(*(*OutputFile)->getOS(), NewArgs);
+  writeResponseFile(*OutputFile, NewArgs);
 
-  if (auto Err = (*OutputFile)->close()) {
+  if (auto Err = OutputFile->keep()) {
     llvm::errs() << "failed closing outputfile: "
                  << llvm::toString(std::move(Err)) << "\n";
     return 1;

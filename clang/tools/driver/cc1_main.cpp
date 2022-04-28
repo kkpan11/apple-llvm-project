@@ -51,6 +51,7 @@
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/TimeProfiler.h"
 #include "llvm/Support/Timer.h"
+#include "llvm/Support/VirtualOutputBackends.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
 #include <cstdio>
@@ -402,7 +403,8 @@ Optional<int> CompileJobCache::tryReplayCachedResult(CompilerInstance &Clang) {
       llvm::makeIntrusiveRefCnt<llvm::vfs::OnDiskOutputBackend>();
   if (WriteOutputAsCASID) {
     OnDiskOutputs = llvm::vfs::makeFilteringOutputBackend(
-        OnDiskOutputs, [this](StringRef ResolvedPath, llvm::vfs::OutputConfig) {
+        OnDiskOutputs,
+        [this](StringRef ResolvedPath, Optional<llvm::vfs::OutputConfig>) {
           return ResolvedPath != this->OutputFile;
         });
   }
@@ -648,14 +650,16 @@ int cc1_main(ArrayRef<const char *> Argv, const char *Argv0, void *MainAddr) {
   if (llvm::timeTraceProfilerEnabled()) {
     SmallString<128> Path(Clang->getFrontendOpts().OutputFile);
     llvm::sys::path::replace_extension(Path, "json");
-    if (auto profilerOutput = Clang->createOutputFile(
-            Path.str(), /*Binary=*/false, /*RemoveFileOnSignal=*/false,
-            /*useTemporary=*/false)) {
+    llvm::vfs::OnDiskOutputBackend Backend;
+    if (Optional<llvm::vfs::OutputFile> profilerOutput =
+            llvm::expectedToOptional(
+                Backend.createFile(Path, llvm::vfs::OutputConfig()
+                                             .setTextWithCRLF()
+                                             .setNoCrashCleanup()
+                                             .setNoAtomicWrite()))) {
       llvm::timeTraceProfilerWrite(*profilerOutput);
-      // FIXME(ibiryukov): make profilerOutput flush in destructor instead.
-      profilerOutput->flush();
+      llvm::consumeError(profilerOutput->keep());
       llvm::timeTraceProfilerCleanup();
-      Clang->clearOutputFiles(false);
     }
   }
 

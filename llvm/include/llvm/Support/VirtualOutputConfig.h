@@ -1,4 +1,4 @@
-//===- OutputConfig.h - Output configuration --------------------*- C++ -*-===//
+//===- VirtualOutputConfig.h - Virtual output configuration -----*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_SUPPORT_OUTPUTCONFIG_H
-#define LLVM_SUPPORT_OUTPUTCONFIG_H
+#ifndef LLVM_SUPPORT_VIRTUALOUTPUTCONFIG_H
+#define LLVM_SUPPORT_VIRTUALOUTPUTCONFIG_H
 
 #include "llvm/Support/Compiler.h"
 #include <initializer_list>
@@ -15,6 +15,12 @@
 namespace llvm {
 
 class raw_ostream;
+
+namespace sys {
+namespace fs {
+enum OpenFlags : unsigned;
+} // end namespace fs
+} // end namespace sys
 
 namespace vfs {
 
@@ -40,21 +46,46 @@ public:
   }                                                                            \
   constexpr OutputConfig &set##NAME() { return set##NAME(true); }              \
   constexpr OutputConfig &setNo##NAME() { return set##NAME(false); }
-#include "llvm/Support/OutputConfig.def"
+#include "llvm/Support/VirtualOutputConfig.def"
+
+  constexpr OutputConfig &setBinary() { return setNoText().setNoCRLF(); }
+  constexpr OutputConfig &setTextWithCRLF() { return setText().setCRLF(); }
+  constexpr OutputConfig &setTextWithCRLF(bool Value) {
+    return Value ? setText().setCRLF() : setBinary();
+  }
+  constexpr bool getTextWithCRLF() { return getText() && getCRLF(); }
+  constexpr bool getBinary() { return !getText(); }
+
+  /// Updates Text and CRLF flags based on \a sys::fs::OF_Text and \a
+  /// sys::fs::OF_CRLF in \p Flags. Rejects CRLF without Text (calling
+  /// \a setBinary()).
+  OutputConfig &setOpenFlags(const sys::fs::OpenFlags &Flags);
 
   constexpr OutputConfig()
       : EmptyBaseClass()
 #define HANDLE_OUTPUT_CONFIG_FLAG(NAME, DEFAULT) , NAME(DEFAULT)
-#include "llvm/Support/OutputConfig.def"
+#include "llvm/Support/VirtualOutputConfig.def"
   {
   }
 
+  constexpr bool operator==(OutputConfig RHS) const {
+#define HANDLE_OUTPUT_CONFIG_FLAG(NAME, DEFAULT)                               \
+  if (NAME != RHS.NAME)                                                        \
+    return false;
+#include "llvm/Support/VirtualOutputConfig.def"
+    return true;
+  }
+  constexpr bool operator!=(OutputConfig RHS) const { return !operator==(RHS); }
+
 private:
 #define HANDLE_OUTPUT_CONFIG_FLAG(NAME, DEFAULT) bool NAME : 1;
-#include "llvm/Support/OutputConfig.def"
+#include "llvm/Support/VirtualOutputConfig.def"
 };
 
 } // namespace vfs
+
+raw_ostream &operator<<(raw_ostream &OS, vfs::OutputConfig Config);
+
 } // namespace llvm
 
-#endif // LLVM_SUPPORT_OUTPUTCONFIG_H
+#endif // LLVM_SUPPORT_VIRTUALOUTPUTCONFIG_H

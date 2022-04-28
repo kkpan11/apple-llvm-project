@@ -24,15 +24,6 @@ errorOrToPointer(ErrorOr<std::unique_ptr<T>> ErrorOrPointer) {
   return nullptr;
 }
 
-template <class T>
-static std::unique_ptr<T>
-expectedToPointer(Expected<std::unique_ptr<T>> ExpectedPointer) {
-  if (ExpectedPointer)
-    return std::move(*ExpectedPointer);
-  consumeError(ExpectedPointer.takeError());
-  return nullptr;
-}
-
 TEST(CASOutputBackendTest, createFiles) {
   std::unique_ptr<CASDB> CAS = createInMemoryCAS();
   ASSERT_TRUE(CAS);
@@ -69,11 +60,15 @@ TEST(CASOutputBackendTest, createFiles) {
       {*Content1, *WindowsPath},
   };
   for (OutputDescription OD : OutputDescriptions) {
-    std::unique_ptr<OutputFile> O;
-    ASSERT_THAT_ERROR(Outputs->createFile(OD.Path.getData()).moveInto(O),
-                      Succeeded());
-    *O->takeOS() << OD.Content.getData();
-    ASSERT_THAT_ERROR(O->close(), Succeeded());
+    // Use consumeDiscardOnDestroy() so that early exits from
+    // ASSERT_THAT_ERROR do not crash the unit test suite.
+    Optional<vfs::OutputFile> O;
+    ASSERT_THAT_ERROR(
+        consumeDiscardOnDestroy(Outputs->createFile(OD.Path.getData()))
+            .moveInto(O),
+        Succeeded());
+    *O << OD.Content.getData();
+    ASSERT_THAT_ERROR(O->keep(), Succeeded());
   }
 
   Optional<NodeProxy> Root;

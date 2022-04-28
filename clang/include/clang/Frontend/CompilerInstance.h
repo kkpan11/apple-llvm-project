@@ -23,7 +23,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/BuryPointer.h"
 #include "llvm/Support/FileSystem.h"
-#include "llvm/Support/OutputBackend.h"
+#include "llvm/Support/VirtualOutputBackend.h"
 #include <cassert>
 #include <list>
 #include <memory>
@@ -165,7 +165,7 @@ class CompilerInstance : public ModuleLoader {
   raw_ostream *VerboseOutputStream = &llvm::errs();
 
   /// The list of active output files.
-  std::list<std::unique_ptr<llvm::vfs::OutputFile>> OutputFiles;
+  std::list<llvm::vfs::OutputFile> OutputFiles;
 
   /// Force an output buffer.
   std::unique_ptr<llvm::raw_pwrite_stream> OutputStream;

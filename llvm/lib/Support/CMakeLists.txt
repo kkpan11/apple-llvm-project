@@ -184,8 +184,6 @@ add_llvm_component_library(LLVMSupport
   NativeFormatting.cpp
   OptimizedStructLayout.cpp
   Optional.cpp
-  OutputBackend.cpp
-  OutputConfig.cpp
   Parallel.cpp
   PluginLoader.cpp
   PrefixMapper.cpp
@@ -226,12 +224,18 @@ add_llvm_component_library(LLVMSupport
   UnicodeCaseFold.cpp
   VersionTuple.cpp
   VirtualFileSystem.cpp
+  VirtualOutputBackend.cpp
+  VirtualOutputBackends.cpp
+  VirtualOutputConfig.cpp
+  VirtualOutputError.cpp
+  VirtualOutputFile.cpp
   WithColor.cpp
   X86TargetParser.cpp
   YAMLParser.cpp
   YAMLTraits.cpp
   raw_os_ostream.cpp
   raw_ostream.cpp
+  raw_ostream_proxy.cpp
   regcomp.c
   regerror.c
   regexec.c

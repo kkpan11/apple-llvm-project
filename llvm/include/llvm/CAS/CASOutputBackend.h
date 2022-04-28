@@ -9,8 +9,9 @@
 #ifndef LLVM_CAS_CASOUTPUTBACKEND_H
 #define LLVM_CAS_CASOUTPUTBACKEND_H
 
-#include <llvm/Support/Error.h>
-#include <llvm/Support/OutputBackend.h>
+#include "llvm/CAS/HierarchicalTreeBuilder.h"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/VirtualOutputBackend.h"
 
 namespace llvm {
 namespace cas {
@@ -19,19 +20,29 @@ class CASID;
 class NodeProxy;
 
 /// Handle the cas
-class CASOutputBackend final : public vfs::StableUniqueEntityAdaptor<> {
+class CASOutputBackend : public vfs::OutputBackend {
+  void anchor() override;
+
 public:
   /// Create a top-level tree for all created files. This will contain all files
   Expected<NodeProxy> createNode();
 
-  Expected<std::unique_ptr<vfs::OutputFile>>
-  createFileImpl(StringRef ResolvedPath, vfs::OutputConfig Config) override;
+private:
+  Expected<std::unique_ptr<vfs::OutputFileImpl>>
+  createFileImpl(StringRef Path, Optional<vfs::OutputConfig> Config) override;
 
+  /// Backend is fully thread-safe (so far). Just return a pointer to itself.
+  IntrusiveRefCntPtr<vfs::OutputBackend> cloneImpl() const override {
+    return IntrusiveRefCntPtr<CASOutputBackend>(
+        const_cast<CASOutputBackend *>(this));
+  }
+
+public:
   CASOutputBackend(std::shared_ptr<CASDB> CAS);
   CASOutputBackend(CASDB &CAS);
+  ~CASOutputBackend();
 
 private:
-  ~CASOutputBackend();
   struct PrivateImpl;
   std::unique_ptr<PrivateImpl> Impl;
 

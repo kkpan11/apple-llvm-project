@@ -15,24 +15,24 @@
 using namespace llvm;
 using namespace llvm::cas;
 
+void CASOutputBackend::anchor() {}
+
 namespace {
-class CASOutputFile : public vfs::OutputFile {
+class CASOutputFile final : public vfs::OutputFileImpl {
 public:
-  Error storeContentBuffer(ContentBuffer &Content) override {
-    return OnClose(getPath(), Content.getBytes());
-  }
+  Error keep() override { return OnKeep(Path, Bytes); }
+  Error discard() override { return Error::success(); }
+  raw_pwrite_stream &getOS() override { return OS; }
 
-  using OnCloseType = llvm::unique_function<Error(StringRef, StringRef)>;
-
-  CASOutputFile(StringRef Path, OnCloseType OnClose)
-      : OutputFile(Path), OnClose(std::move(OnClose)) {}
-
-  static bool isNull(const OutputFile &File) {
-    return OutputFile::isNull(File);
-  }
+  using OnKeepType = llvm::unique_function<Error(StringRef, StringRef)>;
+  CASOutputFile(StringRef Path, OnKeepType OnKeep)
+      : Path(Path.str()), OS(Bytes), OnKeep(std::move(OnKeep)) {}
 
 private:
-  OnCloseType OnClose;
+  std::string Path;
+  SmallString<16> Bytes;
+  raw_svector_ostream OS;
+  OnKeepType OnKeep;
 };
 } // namespace
 
@@ -41,10 +41,7 @@ CASOutputBackend::CASOutputBackend(std::shared_ptr<CASDB> CAS)
   this->OwnedCAS = std::move(CAS);
 }
 
-CASOutputBackend::CASOutputBackend(CASDB &CAS)
-    : StableUniqueEntityAdaptorType(
-          sys::path::Style::native /*FIXME: should be posix?*/),
-      CAS(CAS) {}
+CASOutputBackend::CASOutputBackend(CASDB &CAS) : CAS(CAS) {}
 
 CASOutputBackend::~CASOutputBackend() = default;
 
@@ -53,12 +50,17 @@ struct CASOutputBackend::PrivateImpl {
   SmallVector<CASID> IDs;
 };
 
-Expected<std::unique_ptr<vfs::OutputFile>>
+Expected<std::unique_ptr<vfs::OutputFileImpl>>
 CASOutputBackend::createFileImpl(StringRef ResolvedPath,
-                                 vfs::OutputConfig Config) {
+                                 Optional<vfs::OutputConfig> Config) {
   if (!Impl)
     Impl = std::make_unique<PrivateImpl>();
 
+  // FIXME: CASIDOutputBackend.createFile() should be called NOW (not inside
+  // the OnKeep closure) so that if there are initialization errors (such as
+  // output directory not existing) they're reported by createFileImpl().
+  //
+  // The opened file can be kept inside \a CASOutputFile and forwarded.
   return std::make_unique<CASOutputFile>(
       ResolvedPath, [&](StringRef Path, StringRef Bytes) -> Error {
         Optional<BlobProxy> PathBlob;
