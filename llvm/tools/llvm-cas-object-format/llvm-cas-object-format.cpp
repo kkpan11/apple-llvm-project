@@ -124,7 +124,7 @@ private:
 
 } // namespace
 
-static Expected<std::unique_ptr<SchemaBase>>
+static Expected<std::unique_ptr<ObjectFormatSchemaBase>>
 createSchema(CASDB &CAS, StringRef SchemaName) {
   if (SchemaName == "nestedv1")
     return std::make_unique<nestedv1::ObjectFileSchema>(CAS);
@@ -134,10 +134,10 @@ createSchema(CASDB &CAS, StringRef SchemaName) {
                            "invalid schema '" + SchemaName + "'");
 }
 
-static CASID ingestFile(SchemaBase &Schema, StringRef InputFile,
+static CASID ingestFile(ObjectFormatSchemaBase &Schema, StringRef InputFile,
                         MemoryBufferRef FileContent, SharedStream &OS);
 static void computeStats(CASDB &CAS, ArrayRef<CASID> IDs, raw_ostream &StatOS);
-static Error printCASObjectOrTree(SchemaPool &Pool, CASID ID);
+static Error printCASObjectOrTree(ObjectFormatSchemaPool &Pool, CASID ID);
 
 int main(int argc, char *argv[]) {
   ExitOnError ExitOnErr;
@@ -163,7 +163,7 @@ int main(int argc, char *argv[]) {
     PoolStrategy.ThreadsRequested = NumThreads;
   ThreadPool Pool(PoolStrategy);
 
-  SchemaPool SchemaPool(*CAS);
+  ObjectFormatSchemaPool SchemaPool(*CAS);
   StringMap<CASID> Files;
   SmallVector<CASID> SummaryIDs;
   SharedStream OS(outs());
@@ -171,7 +171,7 @@ int main(int argc, char *argv[]) {
   StringSaver Saver(Alloc);
   std::mutex Lock;
 
-  std::unique_ptr<SchemaBase> IngestSchema =
+  std::unique_ptr<ObjectFormatSchemaBase> IngestSchema =
       ExitOnErr(createSchema(*CAS, IngestSchemaName));
   for (StringRef IF : InputFiles) {
     ExitOnError ExitOnErr;
@@ -318,7 +318,7 @@ struct NodeInfo {
 
 struct POTItem {
   CASID ID;
-  const SchemaBase *Schema = nullptr;
+  const ObjectFormatSchemaBase *Schema = nullptr;
 };
 
 struct ObjectKindInfo {
@@ -342,7 +342,8 @@ struct StatCollector {
   // FIXME: Utilize \p SchemaPool.
   nestedv1::ObjectFileSchema NestedV1Schema;
   flatv1::ObjectFileSchema FlatV1Schema;
-  SmallVector<std::pair<const SchemaBase *, POTItemHandler>> Schemas;
+  SmallVector<std::pair<const ObjectFormatSchemaBase *, POTItemHandler>>
+      Schemas;
 
   StatCollector(CASDB &CAS)
       : CAS(CAS), NestedV1Schema(CAS), FlatV1Schema(CAS) {
@@ -570,7 +571,7 @@ static void computeStats(CASDB &CAS, ArrayRef<CASID> TopLevels,
     CASID ID;
     bool Visited;
     StringRef Path;
-    const SchemaBase *Schema = nullptr;
+    const ObjectFormatSchemaBase *Schema = nullptr;
   };
   SmallVector<WorklistItem> Worklist;
   SmallVector<POTItem> POT;
@@ -581,7 +582,7 @@ static void computeStats(CASDB &CAS, ArrayRef<CASID> TopLevels,
     GlobP.emplace(ExitOnErr(GlobPattern::create(CASGlob)));
 
   auto push = [&](CASID ID, StringRef Path,
-                  const SchemaBase *Schema = nullptr) {
+                  const ObjectFormatSchemaBase *Schema = nullptr) {
     auto &Node = Nodes[ID];
     if (!Node.Done)
       Worklist.push_back({ID, false, Path, Schema});
@@ -631,7 +632,7 @@ static void computeStats(CASDB &CAS, ArrayRef<CASID> TopLevels,
     }
 
     NodeProxy Node = NodeProxy::load(CAS, Object->get<NodeHandle>());
-    const SchemaBase *&Schema = Worklist.back().Schema;
+    const ObjectFormatSchemaBase *&Schema = Worklist.back().Schema;
 
     // Update the schema.
     if (!Schema) {
@@ -744,14 +745,14 @@ void StatCollector::printToOuts(ArrayRef<CASID> TopLevels,
   printIfNotZero("num-2-target-blocks", Num1TargetBlocks);
 }
 
-static Error printCASObject(SchemaPool &Pool, CASID ID) {
+static Error printCASObject(ObjectFormatSchemaPool &Pool, CASID ID) {
   auto Reader = Pool.createObjectReader(ID);
   if (Error E = Reader.takeError())
     return E;
   return printCASObject(**Reader, outs());
 }
 
-static Error printCASObjectOrTree(SchemaPool &Pool, CASID ID) {
+static Error printCASObjectOrTree(ObjectFormatSchemaPool &Pool, CASID ID) {
   Expected<TreeProxy> ExpTree = Pool.getCAS().getTree(ID);
   if (Error E = ExpTree.takeError()) {
     // Not a tree.
@@ -839,7 +840,7 @@ static Error SplitDebugLine(jitlink::LinkGraph &G) {
   return Error::success();
 }
 
-static CASID ingestFile(SchemaBase &Schema, StringRef InputFile,
+static CASID ingestFile(ObjectFormatSchemaBase &Schema, StringRef InputFile,
                         MemoryBufferRef FileContent, SharedStream &OS) {
   ExitOnError ExitOnErr;
   ExitOnErr.setBanner(("llvm-cas-object-format: " + InputFile + ": ").str());

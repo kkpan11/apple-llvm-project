@@ -31,7 +31,7 @@ namespace cas {
 class CASDB;
 }
 namespace casobjectformats {
-class SchemaPool;
+class ObjectFormatSchemaPool;
 }
 namespace vfs {
 class FileSystem;
@@ -183,7 +183,7 @@ struct Configuration {
 
   llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> fs;
   std::unique_ptr<llvm::cas::CASDB> CAS;
-  std::unique_ptr<llvm::casobjectformats::SchemaPool> CASSchemas;
+  std::unique_ptr<llvm::casobjectformats::ObjectFormatSchemaPool> CASSchemas;
   bool depScanning = false;
 
   bool callGraphProfileSort = false;

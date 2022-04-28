@@ -35,6 +35,7 @@ constexpr StringLiteral SymbolRef::KindString;
 constexpr StringLiteral BlockContentRef::KindString;
 
 void ObjectFileSchema::anchor() {}
+char ObjectFileSchema::ID = 0;
 
 cl::opt<bool>
     UseIndirectSymbolName("indirect-symbol-name",
@@ -66,7 +67,8 @@ ObjectFileSchema::createFromLinkGraphImpl(const jitlink::LinkGraph &G,
   return CompileUnitRef::create(*this, G, DebugOS);
 }
 
-ObjectFileSchema::ObjectFileSchema(cas::CASDB &CAS) : SchemaBase(CAS) {
+ObjectFileSchema::ObjectFileSchema(cas::CASDB &CAS)
+    : ObjectFileSchema::RTTIExtends(CAS) {
   // Fill the cache immediately to preserve thread-safety.
   if (Error E = fillCache())
     report_fatal_error(std::move(E));
