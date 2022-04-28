@@ -650,13 +650,16 @@ int cc1_main(ArrayRef<const char *> Argv, const char *Argv0, void *MainAddr) {
   if (llvm::timeTraceProfilerEnabled()) {
     SmallString<128> Path(Clang->getFrontendOpts().OutputFile);
     llvm::sys::path::replace_extension(Path, "json");
-    if (auto profilerOutput = Clang->createOutputFile(
-            Path.str(), /*Binary=*/false, /*RemoveFileOnSignal=*/false,
-            /*useTemporary=*/false)) {
+    llvm::vfs::OnDiskOutputBackend Backend;
+    if (Optional<llvm::vfs::OutputFile> profilerOutput =
+            llvm::expectedToOptional(
+                Backend.createFile(Path, llvm::vfs::OutputConfig()
+                                             .setTextWithCRLF()
+                                             .setNoCrashCleanup()
+                                             .setNoAtomicWrite()))) {
       llvm::timeTraceProfilerWrite(*profilerOutput);
-      profilerOutput = nullptr;
+      llvm::consumeError(profilerOutput->keep());
       llvm::timeTraceProfilerCleanup();
-      Clang->clearOutputFiles(false);
     }
   }
 
