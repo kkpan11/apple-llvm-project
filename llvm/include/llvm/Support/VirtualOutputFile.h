@@ -48,7 +48,7 @@ public:
     assert(isOpen() && "Expected open output stream");
     return Impl->getOS();
   }
-  operator raw_ostream &() { return getOS(); }
+  operator raw_pwrite_stream &() { return getOS(); }
   template <class T> raw_ostream &operator<<(T &&V) {
     return getOS() << std::forward<T>(V);
   }
