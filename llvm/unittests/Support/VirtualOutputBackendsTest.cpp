@@ -612,4 +612,70 @@ TEST(VirtualOutputBackendAdaptors, makeFilteringOutputBackend) {
   SmallString<128> Path;
 }
 
+class AbsolutePathBackend : public ProxyOutputBackend {
+  IntrusiveRefCntPtr<OutputBackend> cloneImpl() const override {
+    llvm_unreachable("unimplemented");
+  }
+
+  Expected<std::unique_ptr<OutputFileImpl>>
+  createFileImpl(StringRef Path, Optional<OutputConfig> Config) override {
+    assert(!sys::path::is_absolute(Path) &&
+           "Expected tests to pass all relative paths");
+    SmallString<256> AbsPath;
+    sys::path::append(AbsPath, CWD, Path);
+    return ProxyOutputBackend::createFileImpl(AbsPath, Config);
+  }
+
+public:
+  AbsolutePathBackend(const Twine &CWD,
+                      IntrusiveRefCntPtr<OutputBackend> Backend)
+      : ProxyOutputBackend(std::move(Backend)), CWD(CWD.str()) {
+    assert(sys::path::is_absolute(this->CWD) &&
+           "Expected tests to pass a relative path");
+  }
+
+private:
+  std::string CWD;
+};
+
+TEST(VirtualOutputBackendAdaptors, makeMirroringOutputBackend) {
+  unittest::TempDir D1("MirroringOutputBackendTest.1.d", /*Unique=*/true);
+  unittest::TempDir D2("MirroringOutputBackendTest.2.d", /*Unique=*/true);
+
+  IntrusiveRefCntPtr<OutputBackend> Backend;
+  {
+    auto OnDisk = makeIntrusiveRefCnt<OnDiskOutputBackend>();
+    Backend = makeMirroringOutputBackend(
+        makeIntrusiveRefCnt<AbsolutePathBackend>(D1.path(), OnDisk),
+        makeIntrusiveRefCnt<AbsolutePathBackend>(D2.path(), OnDisk));
+  }
+
+  OnDiskFile OnDisk1(D1, "file");
+  OnDiskFile OnDisk2(D2, "file");
+  OutputFile Output;
+  ASSERT_THAT_ERROR(
+      consumeDiscardOnDestroy(Backend->createFile("file")).moveInto(Output),
+      Succeeded());
+  EXPECT_TRUE(OnDisk1.findTemp());
+  EXPECT_TRUE(OnDisk2.findTemp());
+
+  Output << "content";
+  Output.getOS().pwrite("ON", /*Size=*/2, /*Offset=*/1);
+  EXPECT_THAT_ERROR(Output.keep(), Succeeded());
+  EXPECT_EQ(StringRef("cONtent"), OnDisk1.getCurrentContent());
+  EXPECT_EQ(StringRef("cONtent"), OnDisk2.getCurrentContent());
+  EXPECT_NE(OnDisk1.getCurrentUniqueID(), OnDisk2.getCurrentUniqueID());
+}
+
+TEST(VirtualOutputBackendAdaptors, makeMirroringOutputBackendNull) {
+  IntrusiveRefCntPtr<OutputBackend> Backend = makeMirroringOutputBackend(
+      makeNullOutputBackend(), makeNullOutputBackend());
+
+  OutputFile Output;
+  ASSERT_THAT_ERROR(
+      consumeDiscardOnDestroy(Backend->createFile("file")).moveInto(Output),
+      Succeeded());
+  EXPECT_TRUE(Output.isNull());
+}
+
 } // end namespace
