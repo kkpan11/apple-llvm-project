@@ -88,7 +88,7 @@ public:
     /// OutputConfig::getNoAtomicWrite().
     bool DisableTemporaries = false;
 
-    // Default configuration.
+    // Default configuration for this backend.
     OutputConfig DefaultConfig;
   };
 
