@@ -58,8 +58,8 @@ public:
   DependencyScanningService(
       ScanningMode Mode, ScanningOutputFormat Format, CASOptions CASOpts,
       IntrusiveRefCntPtr<llvm::cas::CachingOnDiskFileSystem> SharedFS,
-      bool ReuseFileManager = true, bool SkipExcludedPPRanges = true,
-      bool OptimizeArgs = false, bool OverrideCASTokenCache = false);
+      bool ReuseFileManager = true, bool OptimizeArgs = false,
+      bool OverrideCASTokenCache = false);
 
   ~DependencyScanningService();
 
@@ -70,8 +70,6 @@ public:
   const CASOptions &getCASOpts() const { return CASOpts; }
 
   bool canReuseFileManager() const { return ReuseFileManager; }
-
-  bool canSkipExcludedPPRanges() const { return SkipExcludedPPRanges; }
 
   bool canOptimizeArgs() const { return OptimizeArgs; }
 
@@ -92,10 +90,6 @@ private:
   const ScanningOutputFormat Format;
   CASOptions CASOpts;
   const bool ReuseFileManager;
-  /// Set to true to use the preprocessor optimization that skips excluded PP
-  /// ranges by bumping the buffer pointer in the lexer instead of lexing the
-  /// tokens in the range until reaching the corresponding directive.
-  const bool SkipExcludedPPRanges;
   /// Whether to optimize the modules' command-line arguments.
   const bool OptimizeArgs;
   /// CAS options.

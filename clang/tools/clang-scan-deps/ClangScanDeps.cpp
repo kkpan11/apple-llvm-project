@@ -202,14 +202,6 @@ llvm::cl::opt<bool> ReuseFileManager(
     llvm::cl::desc("Reuse the file manager and its cache between invocations."),
     llvm::cl::init(true), llvm::cl::cat(DependencyScannerCategory));
 
-llvm::cl::opt<bool> SkipExcludedPPRanges(
-    "skip-excluded-pp-ranges",
-    llvm::cl::desc(
-        "Use the preprocessor optimization that skips excluded conditionals by "
-        "bumping the buffer pointer in the lexer instead of lexing the tokens  "
-        "until reaching the end directive."),
-    llvm::cl::init(true), llvm::cl::cat(DependencyScannerCategory));
-
 llvm::cl::opt<std::string> ModuleName(
     "module-name", llvm::cl::Optional,
     llvm::cl::desc("the module of which the dependencies are to be computed"),
@@ -758,8 +750,8 @@ int main(int argc, const char **argv) {
     FS = llvm::cantFail(llvm::cas::createCachingOnDiskFileSystem(*CAS));
   }
   DependencyScanningService Service(ScanMode, Format, CASOpts, FS,
-                                    ReuseFileManager, SkipExcludedPPRanges,
-                                    OptimizeArgs, OverrideCASTokenCache);
+                                    ReuseFileManager, OptimizeArgs,
+                                    OverrideCASTokenCache);
   llvm::ThreadPool Pool(llvm::hardware_concurrency(NumThreads));
 
   if (EmitCASCompDB) {

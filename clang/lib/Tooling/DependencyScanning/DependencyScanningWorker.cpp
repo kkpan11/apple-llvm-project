@@ -145,7 +145,7 @@ public:
       const CASOptions &CASOpts,
       llvm::IntrusiveRefCntPtr<DependencyScanningWorkerFilesystem> DepFS,
       llvm::IntrusiveRefCntPtr<DependencyScanningCASFilesystem> DepCASFS,
-      ExcludedPreprocessorDirectiveSkipMapping *PPSkipMappings,
+      ExcludedPreprocessorDirectiveSkipMapping &PPSkipMappings,
       bool OverrideCASTokenCache, ScanningOutputFormat Format,
       bool OptimizeArgs, bool EmitDependencyFile,
       llvm::Optional<StringRef> ModuleName = None)
@@ -218,9 +218,8 @@ public:
 
       // Pass the skip mappings which should speed up excluded conditional block
       // skipping in the preprocessor.
-      if (PPSkipMappings)
-        ScanInstance.getPreprocessorOpts()
-            .ExcludedConditionalDirectiveSkipMappings = PPSkipMappings;
+      ScanInstance.getPreprocessorOpts()
+          .ExcludedConditionalDirectiveSkipMappings = &PPSkipMappings;
     }
     // CAS Implementation.
     if (DepCASFS) {
@@ -246,9 +245,8 @@ public:
 
       // Pass the skip mappings which should speed up excluded conditional block
       // skipping in the preprocessor.
-      if (PPSkipMappings)
-        ScanInstance.getPreprocessorOpts()
-            .ExcludedConditionalDirectiveSkipMappings = PPSkipMappings;
+      ScanInstance.getPreprocessorOpts()
+          .ExcludedConditionalDirectiveSkipMappings = &PPSkipMappings;
     }
 
     // Create the dependency collector that will collect the produced
@@ -326,7 +324,7 @@ private:
   const CASOptions &CASOpts;
   llvm::IntrusiveRefCntPtr<DependencyScanningWorkerFilesystem> DepFS;
   llvm::IntrusiveRefCntPtr<DependencyScanningCASFilesystem> DepCASFS;
-  ExcludedPreprocessorDirectiveSkipMapping *PPSkipMappings;
+  ExcludedPreprocessorDirectiveSkipMapping &PPSkipMappings;
   ScanningOutputFormat Format;
   bool OverrideCASTokenCache;
   bool OptimizeArgs;
@@ -361,16 +359,12 @@ DependencyScanningWorker::DependencyScanningWorker(
     RealFS = CacheFS;
   }
 
-  if (Service.canSkipExcludedPPRanges())
-    PPSkipMappings =
-        std::make_unique<ExcludedPreprocessorDirectiveSkipMapping>();
   if (Service.getMode() == ScanningMode::MinimizedSourcePreprocessing) {
     if (Service.useCASScanning())
-      DepCASFS =
-          new DependencyScanningCASFilesystem(CacheFS, PPSkipMappings.get());
+      DepCASFS = new DependencyScanningCASFilesystem(CacheFS, &PPSkipMappings);
     else
-      DepFS = new DependencyScanningWorkerFilesystem(
-          Service.getSharedCache(), RealFS, PPSkipMappings.get());
+      DepFS = new DependencyScanningWorkerFilesystem(Service.getSharedCache(),
+                                                     RealFS, PPSkipMappings);
   }
   if (Service.canReuseFileManager())
     Files = new FileManager(FileSystemOptions(), RealFS);
@@ -430,7 +424,7 @@ llvm::Error DependencyScanningWorker::computeDependencies(
                       [&](DiagnosticConsumer &DC, DiagnosticOptions &DiagOpts) {
                         DependencyScanningAction Action(
                             WorkingDirectory, Consumer, getCASOpts(), DepFS,
-                            DepCASFS, PPSkipMappings.get(),
+                            DepCASFS, PPSkipMappings,
                             OverrideCASTokenCache, Format, OptimizeArgs,
                             /*EmitDependencyFile=*/false, ModuleName);
                         // Create an invocation that uses the underlying file
@@ -475,7 +469,7 @@ void DependencyScanningWorker::computeDependenciesFromCompilerInvocation(
   // FIXME: EmitDependencyFile should only be set when it's for a real
   // compilation.
   DependencyScanningAction Action(WorkingDirectory, DepsConsumer, getCASOpts(),
-                                  DepFS, DepCASFS, PPSkipMappings.get(),
+                                  DepFS, DepCASFS, PPSkipMappings,
                                   OverrideCASTokenCache, Format,
                                   /*OptimizeArgs=*/false,
                                   /*EmitDependencyFile=*/true);
