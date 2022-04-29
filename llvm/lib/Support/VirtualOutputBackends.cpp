@@ -306,7 +306,7 @@ Error OnDiskOutputFile::initializeFD(Optional<int> &FD) {
       OF |= sys::fs::OF_Text;
     if (std::error_code EC = sys::fs::openFileForWrite(
             OutputPath, NewFD, sys::fs::CD_CreateAlways, OF))
-      return errorCodeToOutputError(OutputPath, EC);
+      return convertToOutputError(OutputPath, EC);
     FD.emplace(NewFD);
 
     if (Config.getDiscardOnSignal())
@@ -376,14 +376,14 @@ Error OnDiskOutputFile::discard() {
 
   // Clean up the file that's in-progress.
   if (!TempPath)
-    return errorCodeToOutputError(OutputPath, discardPath(OutputPath));
-  return errorCodeToTempFileOutputError(*TempPath, OutputPath,
-                                        discardPath(*TempPath));
+    return convertToOutputError(OutputPath, discardPath(OutputPath));
+  return convertToTempFileOutputError(*TempPath, OutputPath,
+                                      discardPath(*TempPath));
 }
 
 Error OnDiskOutputBackend::makeAbsolute(SmallVectorImpl<char> &Path) const {
-  return errorCodeToOutputError(StringRef(Path.data(), Path.size()),
-                                sys::fs::make_absolute(Path));
+  return convertToOutputError(StringRef(Path.data(), Path.size()),
+                              sys::fs::make_absolute(Path));
 }
 
 Expected<std::unique_ptr<OutputFileImpl>>
