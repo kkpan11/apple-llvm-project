@@ -148,11 +148,12 @@ TEST(VirtualOutputFileTest, discard) {
     EXPECT_EQ(0, Data.Kept);
     EXPECT_EQ(1, Data.Discarded);
 
-    EXPECT_THAT_ERROR(
-        F.keep(), FailedWithMessage("some/file/path: output already closed"));
-    EXPECT_THAT_ERROR(
-        F.discard(),
-        FailedWithMessage("some/file/path: output already closed"));
+#if GTEST_HAS_DEATH_TEST
+    EXPECT_DEATH(
+        consumeError(F.keep()), "some/file/path: output already closed");
+    EXPECT_DEATH(
+        consumeError(F.discard()), "some/file/path: output already closed");
+#endif
   }
   EXPECT_EQ(0, Data.Kept);
   EXPECT_EQ(1, Data.Discarded);
@@ -227,11 +228,12 @@ TEST(VirtualOutputFileTest, keep) {
     EXPECT_EQ(1, Data.Kept);
     EXPECT_EQ(0, Data.Discarded);
 
-    EXPECT_THAT_ERROR(
-        F.keep(), FailedWithMessage("some/file/path: output already closed"));
-    EXPECT_THAT_ERROR(
-        F.discard(),
-        FailedWithMessage("some/file/path: output already closed"));
+#if GTEST_HAS_DEATH_TEST
+    EXPECT_DEATH(
+        consumeError(F.keep()), "some/file/path: output already closed");
+    EXPECT_DEATH(
+        consumeError(F.discard()), "some/file/path: output already closed");
+#endif
   }
   EXPECT_EQ(1, Data.Kept);
   EXPECT_EQ(0, Data.Discarded);
