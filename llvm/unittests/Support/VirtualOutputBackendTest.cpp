@@ -105,8 +105,8 @@ TEST(VirtualOutputBackendTest, createFile) {
   // Create more files and specify configs.
   for (OutputConfig Config : {
            OutputConfig(),
-           OutputConfig().setNoAtomicWrite().setCrashCleanup(),
-           OutputConfig().setAtomicWrite().setNoCrashCleanup(),
+           OutputConfig().setNoAtomicWrite().setDiscardOnSignal(),
+           OutputConfig().setAtomicWrite().setNoDiscardOnSignal(),
            OutputConfig().setText(),
            OutputConfig().setTextWithCRLF(),
        }) {

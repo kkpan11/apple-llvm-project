@@ -892,7 +892,7 @@ CompilerInstance::createOutputFileImpl(StringRef OutputPath, bool Binary,
       OutputPath,
       OutputConfig()
           .setTextWithCRLF(!Binary)
-          .setCrashCleanup(RemoveFileOnSignal)
+          .setDiscardOnSignal(RemoveFileOnSignal)
           .setAtomicWrite(UseTemporary)
           .setImplyCreateDirectories(UseTemporary && CreateMissingDirectories));
   if (!O)

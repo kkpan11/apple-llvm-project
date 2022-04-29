@@ -185,7 +185,7 @@ applySettings(Optional<OutputConfig> &&Config,
   if (Settings.DisableTemporaries)
     Config->setNoAtomicWrite();
   if (Settings.DisableRemoveOnSignal)
-    Config->setNoCrashCleanup();
+    Config->setNoDiscardOnSignal();
   return *Config;
 }
 
@@ -260,7 +260,7 @@ Error OnDiskOutputFile::tryToCreateTemporary(Optional<int> &FD) {
             sys::fs::createUniqueFile(TempPath, NewFD, TempPath))
       return make_error<TempFileOutputError>(TempPath, OutputPath, EC);
 
-    if (Config.getCrashCleanup())
+    if (Config.getDiscardOnSignal())
       sys::RemoveFileOnSignal(TempPath);
 
     this->TempPath = TempPath.str().str();
@@ -309,7 +309,7 @@ Error OnDiskOutputFile::initializeFD(Optional<int> &FD) {
       return errorCodeToOutputError(OutputPath, EC);
     FD.emplace(NewFD);
 
-    if (Config.getCrashCleanup())
+    if (Config.getDiscardOnSignal())
       sys::RemoveFileOnSignal(OutputPath);
     return Error::success();
   });
@@ -342,8 +342,8 @@ Error OnDiskOutputFile::keep() {
   FileOS.reset();
 
   // Close the file descriptor and remove crash cleanup before exit.
-  auto RemoveCrashCleanup = make_scope_exit([&]() {
-    if (Config.getCrashCleanup())
+  auto RemoveDiscardOnSignal = make_scope_exit([&]() {
+    if (Config.getDiscardOnSignal())
       sys::DontRemoveFileOnSignal(TempPath ? *TempPath : OutputPath);
   });
 

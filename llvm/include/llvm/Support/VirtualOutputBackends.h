@@ -81,7 +81,7 @@ public:
   /// On disk output settings.
   struct OutputSettings {
     /// Register output files to be deleted if a signal is received. Also
-    /// disabled for outputs with \a OutputConfig::getNoCrashCleanup().
+    /// disabled for outputs with \a OutputConfig::getNoDiscardOnSignal().
     bool DisableRemoveOnSignal = false;
 
     /// Disable temporary files. Also disabled for outputs with \a

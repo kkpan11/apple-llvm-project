@@ -655,7 +655,7 @@ int cc1_main(ArrayRef<const char *> Argv, const char *Argv0, void *MainAddr) {
             llvm::expectedToOptional(
                 Backend.createFile(Path, llvm::vfs::OutputConfig()
                                              .setTextWithCRLF()
-                                             .setNoCrashCleanup()
+                                             .setNoDiscardOnSignal()
                                              .setNoAtomicWrite()))) {
       llvm::timeTraceProfilerWrite(*profilerOutput);
       llvm::consumeError(profilerOutput->keep());

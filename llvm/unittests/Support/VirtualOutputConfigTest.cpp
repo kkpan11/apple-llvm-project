@@ -19,14 +19,14 @@ TEST(VirtualOutputConfigTest, construct) {
   // Test defaults.
   EXPECT_FALSE(OutputConfig().getText());
   EXPECT_FALSE(OutputConfig().getCRLF());
-  EXPECT_TRUE(OutputConfig().getCrashCleanup());
+  EXPECT_TRUE(OutputConfig().getDiscardOnSignal());
   EXPECT_TRUE(OutputConfig().getAtomicWrite());
   EXPECT_TRUE(OutputConfig().getImplyCreateDirectories());
 
   // Test inverted defaults.
   EXPECT_TRUE(OutputConfig().getNoText());
   EXPECT_TRUE(OutputConfig().getNoCRLF());
-  EXPECT_FALSE(OutputConfig().getNoCrashCleanup());
+  EXPECT_FALSE(OutputConfig().getNoDiscardOnSignal());
   EXPECT_FALSE(OutputConfig().getNoAtomicWrite());
   EXPECT_FALSE(OutputConfig().getNoImplyCreateDirectories());
 }
@@ -43,22 +43,24 @@ TEST(VirtualOutputConfigTest, set) {
 
   // Check a flag that defaults to true. Try both 'get's, all three 'set's, and
   // turning back on after turning it off.
-  ASSERT_TRUE(OutputConfig().getCrashCleanup());
-  EXPECT_FALSE(OutputConfig().setNoCrashCleanup().getCrashCleanup());
-  EXPECT_TRUE(OutputConfig().setNoCrashCleanup().getNoCrashCleanup());
-  EXPECT_FALSE(OutputConfig().setCrashCleanup(false).getCrashCleanup());
-  EXPECT_TRUE(
-      OutputConfig().setNoCrashCleanup().setCrashCleanup().getCrashCleanup());
+  ASSERT_TRUE(OutputConfig().getDiscardOnSignal());
+  EXPECT_FALSE(OutputConfig().setNoDiscardOnSignal().getDiscardOnSignal());
+  EXPECT_TRUE(OutputConfig().setNoDiscardOnSignal().getNoDiscardOnSignal());
+  EXPECT_FALSE(OutputConfig().setDiscardOnSignal(false).getDiscardOnSignal());
   EXPECT_TRUE(OutputConfig()
-                  .setNoCrashCleanup()
-                  .setCrashCleanup(true)
-                  .getCrashCleanup());
+                  .setNoDiscardOnSignal()
+                  .setDiscardOnSignal()
+                  .getDiscardOnSignal());
+  EXPECT_TRUE(OutputConfig()
+                  .setNoDiscardOnSignal()
+                  .setDiscardOnSignal(true)
+                  .getDiscardOnSignal());
 
   // Set multiple flags.
   OutputConfig Config;
-  Config.setText().setNoCrashCleanup().setNoImplyCreateDirectories();
+  Config.setText().setNoDiscardOnSignal().setNoImplyCreateDirectories();
   EXPECT_TRUE(Config.getText());
-  EXPECT_TRUE(Config.getNoCrashCleanup());
+  EXPECT_TRUE(Config.getNoDiscardOnSignal());
   EXPECT_TRUE(Config.getNoImplyCreateDirectories());
 }
 
@@ -79,10 +81,10 @@ static std::string toString(OutputConfig Config) {
 TEST(VirtualOutputConfigTest, print) {
   EXPECT_EQ("{}", toString(OutputConfig()));
   EXPECT_EQ("{Text}", toString(OutputConfig().setText()));
-  EXPECT_EQ("{Text,NoCrashCleanup}",
-            toString(OutputConfig().setText().setNoCrashCleanup()));
-  EXPECT_EQ("{Text,NoCrashCleanup}",
-            toString(OutputConfig().setNoCrashCleanup().setText()));
+  EXPECT_EQ("{Text,NoDiscardOnSignal}",
+            toString(OutputConfig().setText().setNoDiscardOnSignal()));
+  EXPECT_EQ("{Text,NoDiscardOnSignal}",
+            toString(OutputConfig().setNoDiscardOnSignal().setText()));
 }
 
 TEST(VirtualOutputConfigTest, BinaryAndTextWithCRLF) {
