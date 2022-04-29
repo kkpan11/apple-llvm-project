@@ -54,7 +54,7 @@ Error OutputFile::keep() {
   // This is safer than relying on clients to remember to flush(). Also call
   // OutputFile::discard() to give the backend a chance to clean up any
   // side effects (such as temporaries).
-  if (OpenProxy)
+  if (LLVM_UNLIKELY(OpenProxy))
     report_fatal_error(joinErrors(
         make_error<OutputError>(getPath(), OutputErrorCode::has_open_proxy),
         discard()));
