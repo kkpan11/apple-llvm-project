@@ -59,6 +59,8 @@ private:
   std::string OutputPath;
 };
 
+/// Return \a Error::success() or use \p OutputPath to create an \a
+/// OutputError, depending on \p EC.
 inline Error errorCodeToOutputError(const Twine &OutputPath,
                                     std::error_code EC) {
   if (EC)
@@ -119,6 +121,8 @@ private:
   std::string TempPath;
 };
 
+/// Return \a Error::success() or use \p TempPath and \p OutputPath to create a
+/// \a TempFileOutputError, depending on \p EC.
 inline Error errorCodeToTempFileOutputError(const Twine &TempPath,
                                             const Twine &OutputPath,
                                             std::error_code EC) {
