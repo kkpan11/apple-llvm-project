@@ -729,4 +729,40 @@ TEST(VirtualOutputBackendAdaptors, makeMirroringOutputBackendNull) {
   EXPECT_TRUE(Output.isNull());
 }
 
+class StringErrorBackend final : public OutputBackend {
+  IntrusiveRefCntPtr<OutputBackend> cloneImpl() const override {
+    llvm_unreachable("not implemented");
+  }
+
+  Expected<std::unique_ptr<OutputFileImpl>>
+  createFileImpl(StringRef Path, Optional<OutputConfig> Config) override {
+    return createStringError(inconvertibleErrorCode(), Msg);
+  }
+
+public:
+  StringErrorBackend(const Twine &Msg) : Msg(Msg.str()) {}
+  std::string Msg;
+};
+
+TEST(VirtualOutputBackendAdaptors, makeMirroringOutputBackendCreateError) {
+  auto Error1 = makeIntrusiveRefCnt<StringErrorBackend>("error-backend-1");
+  auto Null = makeNullOutputBackend();
+
+  auto Mirror = makeMirroringOutputBackend(Null, Error1);
+  EXPECT_THAT_ERROR(
+      consumeDiscardOnDestroy(Mirror->createFile("file")).takeError(),
+      FailedWithMessage(Error1->Msg));
+
+  Mirror = makeMirroringOutputBackend(Error1, Null);
+  EXPECT_THAT_ERROR(
+      consumeDiscardOnDestroy(Mirror->createFile("file")).takeError(),
+      FailedWithMessage(Error1->Msg));
+
+  auto Error2 = makeIntrusiveRefCnt<StringErrorBackend>("error-backend-2");
+  Mirror = makeMirroringOutputBackend(Error1, Error2);
+  EXPECT_THAT_ERROR(
+      consumeDiscardOnDestroy(Mirror->createFile("file")).takeError(),
+      FailedWithMessage(Error1->Msg));
+}
+
 } // end namespace

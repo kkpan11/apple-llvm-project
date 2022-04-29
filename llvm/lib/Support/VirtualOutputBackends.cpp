@@ -140,7 +140,7 @@ vfs::makeMirroringOutputBackend(IntrusiveRefCntPtr<OutputBackend> Backend1,
         return std::move(E);
       if (Error E =
               ProxyOutputBackend2::createFileImpl(Path, Config).moveInto(File2))
-        return joinErrors(std::move(E), File2->discard());
+        return joinErrors(std::move(E), File1->discard());
 
       // Skip the extra indirection if one of these is a null output.
       if (isa<NullOutputFileImpl>(*File1)) {
