@@ -248,7 +248,7 @@ public:
     if (FileOS) {
       *FileOS << Buffer->Data;
       // Make sure it hits disk now.
-      FileOS = nullptr;
+      FileOS.reset();
     }
 
     this->HasEmittedPreamblePCH = true;
