@@ -667,13 +667,64 @@ TEST(VirtualOutputBackendAdaptors, makeMirroringOutputBackend) {
   EXPECT_NE(OnDisk1.getCurrentUniqueID(), OnDisk2.getCurrentUniqueID());
 }
 
-TEST(VirtualOutputBackendAdaptors, makeMirroringOutputBackendNull) {
-  IntrusiveRefCntPtr<OutputBackend> Backend = makeMirroringOutputBackend(
-      makeNullOutputBackend(), makeNullOutputBackend());
+/// Behaves like NullOutputFileImpl, but doesn't match the RTTI (so OutputFile
+/// cannot tell).
+class LikeNullOutputFile final : public OutputFileImpl {
+  Error keep() final { return Error::success(); }
+  Error discard() final { return Error::success(); }
+  raw_pwrite_stream &getOS() final { return OS; }
 
+public:
+  LikeNullOutputFile(raw_null_ostream &OS) : OS(OS) {}
+  raw_null_ostream &OS;
+};
+class LikeNullOutputBackend final : public OutputBackend {
+  IntrusiveRefCntPtr<OutputBackend> cloneImpl() const override {
+    llvm_unreachable("not implemented");
+  }
+
+  Expected<std::unique_ptr<OutputFileImpl>>
+  createFileImpl(StringRef Path, Optional<OutputConfig> Config) override {
+    return std::make_unique<LikeNullOutputFile>(OS);
+  }
+
+public:
+  raw_null_ostream OS;
+};
+
+TEST(VirtualOutputBackendAdaptors, makeMirroringOutputBackendNull) {
+  // Check that null outputs are skipped by seeing that LikeNull->OS is passed
+  // through directly (without a mirroring proxy stream) to Output.
+  auto LikeNull = makeIntrusiveRefCnt<LikeNullOutputBackend>();
+  auto Null1 = makeNullOutputBackend();
+  auto Mirror = makeMirroringOutputBackend(Null1, LikeNull);
   OutputFile Output;
   ASSERT_THAT_ERROR(
-      consumeDiscardOnDestroy(Backend->createFile("file")).moveInto(Output),
+      consumeDiscardOnDestroy(Mirror->createFile("file")).moveInto(Output),
+      Succeeded());
+  EXPECT_TRUE(!Output.isNull());
+  EXPECT_EQ(&Output.getOS(), &LikeNull->OS);
+
+  // Check the other direction.
+  Mirror = makeMirroringOutputBackend(LikeNull, Null1);
+  ASSERT_THAT_ERROR(
+      consumeDiscardOnDestroy(Mirror->createFile("file")).moveInto(Output),
+      Succeeded());
+  EXPECT_TRUE(!Output.isNull());
+  EXPECT_EQ(&Output.getOS(), &LikeNull->OS);
+
+  // Same null backend, twice.
+  Mirror = makeMirroringOutputBackend(Null1, Null1);
+  ASSERT_THAT_ERROR(
+      consumeDiscardOnDestroy(Mirror->createFile("file")).moveInto(Output),
+      Succeeded());
+  EXPECT_TRUE(Output.isNull());
+
+  // Two null backends.
+  auto Null2 = makeNullOutputBackend();
+  Mirror = makeMirroringOutputBackend(Null1, Null2);
+  ASSERT_THAT_ERROR(
+      consumeDiscardOnDestroy(Mirror->createFile("file")).moveInto(Output),
       Succeeded());
   EXPECT_TRUE(Output.isNull());
 }
