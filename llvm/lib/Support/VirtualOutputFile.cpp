@@ -47,8 +47,10 @@ Expected<std::unique_ptr<raw_pwrite_stream>> OutputFile::createProxy() {
 }
 
 Error OutputFile::keep() {
-  if (!Impl)
-    return make_error<OutputError>(getPath(), OutputErrorCode::already_closed);
+  // Catch double-closing logic bugs.
+  if (LLVM_UNLIKELY(!Impl))
+    report_fatal_error(
+        make_error<OutputError>(getPath(), OutputErrorCode::already_closed));
 
   // Report a fatal error if there's an open proxy and the file is being kept.
   // This is safer than relying on clients to remember to flush(). Also call
@@ -66,8 +68,10 @@ Error OutputFile::keep() {
 }
 
 Error OutputFile::discard() {
-  if (!Impl)
-    return make_error<OutputError>(getPath(), OutputErrorCode::already_closed);
+  // Catch double-closing logic bugs.
+  if (LLVM_UNLIKELY(!Impl))
+    report_fatal_error(
+        make_error<OutputError>(getPath(), OutputErrorCode::already_closed));
 
   // Be lenient about open proxies since client teardown paths won't
   // necessarily clean up in the right order. Reset the proxy to flush any

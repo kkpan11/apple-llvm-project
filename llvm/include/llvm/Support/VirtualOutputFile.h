@@ -69,14 +69,18 @@ public:
     return getOS() << std::forward<T>(V);
   }
 
-  /// Keep an output. Errors if this fails or it's already closed.
+  /// Keep an output. Errors if this fails.
+  ///
+  /// If it has already been closed, calls \a report_fatal_error().
   ///
   /// If there's an open proxy from \a createProxy(), calls \a discard() to
   /// clean up temporaries followed by \a report_fatal_error().
   Error keep();
 
   /// Discard an output, cleaning up any temporary state. Errors if clean-up
-  /// fails or it's already closed.
+  /// fails.
+  ///
+  /// If it has already been closed, calls \a report_fatal_error().
   Error discard();
 
   /// Discard the output when destroying it if it's still open, sending the
