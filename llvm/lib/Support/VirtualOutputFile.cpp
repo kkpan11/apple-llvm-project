@@ -93,7 +93,7 @@ void OutputFile::destroy() {
   assert(!Impl && "Expected discard to destroy Impl");
 
   // If there's no handler, report a fatal error.
-  if (!DiscardHandler)
+  if (LLVM_UNLIKELY(!DiscardHandler))
     llvm::report_fatal_error(joinErrors(
         make_error<OutputError>(getPath(), OutputErrorCode::not_closed),
         std::move(E)));
