@@ -3473,6 +3473,15 @@ static void RenderOpenCLOptions(const ArgList &Args, ArgStringList &CmdArgs,
   }
 }
 
+static void RenderHLSLOptions(const ArgList &Args, ArgStringList &CmdArgs,
+                              types::ID InputType) {
+  const unsigned ForwardedArguments[] = {options::OPT_dxil_validator_version};
+
+  for (const auto &Arg : ForwardedArguments)
+    if (const auto *A = Args.getLastArg(Arg))
+      A->renderAsInput(Args, CmdArgs);
+}
+
 static void RenderARCMigrateToolOptions(const Driver &D, const ArgList &Args,
                                         ArgStringList &CmdArgs) {
   bool ARCMTEnabled = false;
@@ -6305,6 +6314,10 @@ void Clang::ConstructJob(Compilation &C, const JobAction &Job,
 
   // Forward -cl options to -cc1
   RenderOpenCLOptions(Args, CmdArgs, InputType);
+
+  // Forward hlsl options to -cc1
+  if (C.getDriver().IsDXCMode())
+    RenderHLSLOptions(Args, CmdArgs, InputType);
 
   if (IsHIP) {
     if (Args.hasFlag(options::OPT_fhip_new_launch_api,
