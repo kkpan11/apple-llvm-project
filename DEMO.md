@@ -126,6 +126,24 @@ Optionally also install experimental libtool and linker support:
 
 ### Caching with just-built toolchain
 
+#### Use `clang-cache` as compiler launcher
+
+Using `clang-cache` there's no need to modify compiler arguments.
+Set the environment variable `CLANG_CACHE_CAS_PATH` to specify a non-default
+location for the on-disk CAS.
+
+```
+% CLANG="$TOOLCHAIN"/usr/bin/clang
+% cmake -G Ninja                                   \
+     -DLLVM_ENABLE_PROJECTS="clang"                \
+     -DCMAKE_C_COMPILER_LAUNCHER=${CLANG}-cache    \
+     -DCMAKE_CXX_COMPILER_LAUNCHER=${CLANG}-cache  \
+     -DCMAKE_C_COMPILER=$CLANG                     \
+     -DCMAKE_CXX_COMPILER=${CLANG}++               \
+     ../llvm
+% ninja
+```
+
 #### LLVM project CMake configuration
 
 For building a CAS-aware branch (i.e., this one!), there are some extra CMake

@@ -24,6 +24,10 @@ def err_cas_depscan_daemon_connection: Error<
 def err_cas_depscan_failed: Error<
   "CAS-based dependency scan failed: %0">, DefaultFatal;
 
+def warn_clang_cache_disabled_caching: Warning<
+  "clang-cache invokes a different clang binary than itself, it will perform "
+  "a normal non-caching invocation of the compiler">, InGroup<CompileJobCache>;
+
 def remark_compile_job_cache_hit : Remark<
   "compile job cache hit for '%0' => '%1'">, InGroup<CompileJobCacheHit>;
 def remark_compile_job_cache_miss : Remark<
