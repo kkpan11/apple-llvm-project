@@ -1,11 +1,7 @@
 // In this test, the same source code is compiled into two different object files, the difference is that one of them has an extra new line in the beginning, it tests duplication with different line numbers and tests the resilience of the line numbers. This expects that no duplication happens right now in any blocks
 
 RUN: rm -rf %t && mkdir -p %t
-RUN: cat %S/Inputs/template_function_header.h > %t/temp_a.cpp
-RUN: cat %S/Inputs/template_function_user.cpp >> %t/temp_a.cpp
-RUN: echo " " > %t/temp_b.cpp
-RUN: cat %S/Inputs/template_function_header.h >> %t/temp_b.cpp
-RUN: cat %S/Inputs/template_function_user.cpp >> %t/temp_b.cpp
+RUN: split-file %s %t
 
 RUN: clang %t/temp_a.cpp -c -gcas-friendly-debug-info --target=x86_64-apple-darwin21.1.0 -o %t/temp_a.o
 RUN: clang %t/temp_b.cpp -c -gcas-friendly-debug-info --target=x86_64-apple-darwin21.1.0 -o %t/temp_b.o
@@ -82,3 +78,22 @@ FLAT-NEXT:     SYMBOL: {{.+}} | offset: 0x{{[a-z0-9]+}}, linkage: {{.*}}, scope:
 FLAT-NEXT:     FIXUP: 0x{{[a-z0-9]+}}, addend = +0x{{[a-z0-9]+}}, kind = {{.*}}, target = {{.*}}foo{{.*}}
 FLAT-NEXT:   }
 FLAT-NEXT: }
+
+//--- temp_a.cpp
+template <typename T>
+T foo(T s) {
+  return s * s;
+}
+int a() {
+  return foo<int>(2);
+}
+
+//--- temp_b.cpp
+
+template <typename T>
+T foo(T s) {
+  return s * s;
+}
+int a() {
+  return foo<int>(2);
+}

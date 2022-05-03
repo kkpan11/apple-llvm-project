@@ -164,7 +164,7 @@ Error casobjectformats::printCASObject(const reader::CASObjectReader &Reader,
     Expected<CASBlock> Info = Reader.materialize(BlockRef);
     if (!Info)
       return Info.takeError();
-    auto *PrintBlock = createBlock(Info->ID);
+    auto *PrintBlock = createBlock(Info->BlockContentID);
     auto PrintSection = recordSection(Info->SectionRef);
     if (!PrintSection)
       return PrintSection.takeError();
