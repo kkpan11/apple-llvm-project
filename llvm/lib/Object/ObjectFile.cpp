@@ -148,6 +148,7 @@ ObjectFile::createObjectFile(MemoryBufferRef Object, file_magic Type,
   case file_magic::goff_object:
   case file_magic::cuda_fatbinary:
   case file_magic::cas_id:
+  case file_magic::dxcontainer_object:
     return errorCodeToError(object_error::invalid_file_type);
   case file_magic::tapi_file:
     return errorCodeToError(object_error::invalid_file_type);
