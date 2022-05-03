@@ -18,6 +18,7 @@
 #include <map>
 #include <memory>
 #include <utility>
+#include <vector>
 
 namespace llvm {
 
@@ -47,13 +48,21 @@ struct RangeSpanList {
 };
 
 class DwarfFile {
+
+  // A flag to denote if the label corresponding to the start of the
+  // Abbreviation Section has been emitted.
+  bool AbbrevStartEmitted = false;
+
+  // A label corresponding to the start of the Abbreviation Section.
+  MCSymbol *AbbrevSectionStart = nullptr;
+
   // Target of Dwarf emission, used for sizing of abbreviations.
   AsmPrinter *Asm;
 
   BumpPtrAllocator AbbrevAllocator;
 
   // Used to uniquely define abbreviations.
-  DIEAbbrevSet Abbrevs;
+  std::vector<std::unique_ptr<DIEAbbrevSet>> Abbrevs;
 
   // A pointer to all units in the section.
   SmallVector<std::unique_ptr<DwarfCompileUnit>, 1> CUs;
@@ -109,6 +118,10 @@ public:
   const SmallVectorImpl<RangeSpanList> &getRangeLists() const {
     return CURangeLists;
   }
+
+  /// Create the label for the start of the Abbreviation Section and return it,
+  /// and if it already exists, just return it.
+  MCSymbol *getOrCreateAbbrevSectionStart();
 
   /// Compute the size and offset of a DIE given an incoming Offset.
   unsigned computeSizeAndOffset(DIE &Die, unsigned Offset);

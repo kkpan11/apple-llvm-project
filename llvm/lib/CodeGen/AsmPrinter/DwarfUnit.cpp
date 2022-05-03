@@ -1762,16 +1762,27 @@ void DwarfUnit::emitCommonHeader(bool UseOffsets, dwarf::UnitType UT) {
     Asm->emitInt8(Asm->MAI->getCodePointerSize());
   }
 
-  // We share one abbreviations table across all units so it's always at the
-  // start of the section. Use a relocatable offset where needed to ensure
-  // linking doesn't invalidate that offset.
+  // Since there can be multiple compile units in one translation unit, every
+  // DwarfUnit has its own Abbreviation Offset begin and end labels that are
+  // used to calculate the offset into the abbreviations section that pertains
+  // to that compile unit.
   Asm->OutStreamer->AddComment("Offset Into Abbrev. Section");
-  const TargetLoweringObjectFile &TLOF = Asm->getObjFileLowering();
-  if (UseOffsets)
-    Asm->emitDwarfLengthOrOffset(0);
-  else
-    Asm->emitDwarfSymbolReference(
-        TLOF.getDwarfAbbrevSection()->getBeginSymbol(), false);
+  // If the AbbrevOffset is the same as AbbrevOffsetBegin, that means that this
+  // is either the first compile unit, or there is only one Abbreviation
+  // contribution, in either case, emit the Abbreviation Offset to be the start
+  // of the Abbreviation Section, otherwise emit the offset as a label
+  // difference.
+  if (AbbrevSectionBegin && AbbrevOffset != AbbrevSectionBegin)
+    Asm->emitLabelDifference(getOrCreateAbbrevOffset(), AbbrevSectionBegin,
+                             Asm->getDwarfOffsetByteSize());
+  else {
+    const TargetLoweringObjectFile &TLOF = Asm->getObjFileLowering();
+    if (UseOffsets)
+      Asm->emitDwarfLengthOrOffset(0);
+    else
+      Asm->emitDwarfSymbolReference(
+          TLOF.getDwarfAbbrevSection()->getBeginSymbol(), false);
+  }
 
   if (Version <= 4) {
     Asm->OutStreamer->AddComment("Address Size (in bytes)");

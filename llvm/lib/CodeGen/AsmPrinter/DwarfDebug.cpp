@@ -2161,7 +2161,9 @@ void DwarfDebug::beginFunctionImpl(const MachineFunction *MF) {
     DICompileUnit *DCU = SP->getUnit();
     DICompileUnit *NewDCU = DIB.createCompileUnit(
         DCU->getSourceLanguage(), DCU->getFile(), DCU->getProducer(),
-        DCU->isOptimized(), DCU->getFlags(), DCU->getRuntimeVersion());
+        DCU->isOptimized(), DCU->getFlags(), DCU->getRuntimeVersion(), {},
+        DICompileUnit::DebugEmissionKind::FullDebug, 0, true, false,
+        DICompileUnit::DebugNameTableKind::Default, false, {}, {}, true);
 
     this->SingleCU = false;
     DwarfCompileUnit &CU = getOrCreateDwarfCompileUnit(NewDCU);

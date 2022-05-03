@@ -398,8 +398,11 @@ void dwarfgen::LineTable::writeProloguePayload(
 
 dwarfgen::Generator::Generator()
     : MAB(nullptr), MCE(nullptr), MS(nullptr), TLOF(nullptr),
-      StringPool(nullptr), Abbreviations(Allocator),
-      StringOffsetsStartSym(nullptr), Version(0) {}
+      StringPool(nullptr), StringOffsetsStartSym(nullptr), Version(0) {
+  std::unique_ptr<DIEAbbrevSet> newAbbrevSet =
+      std::make_unique<DIEAbbrevSet>(Allocator);
+  Abbreviations.push_back(std::move(newAbbrevSet));
+}
 dwarfgen::Generator::~Generator() = default;
 
 llvm::Expected<std::unique_ptr<dwarfgen::Generator>>
@@ -514,7 +517,10 @@ StringRef dwarfgen::Generator::generate() {
     SecOffset += CUOffset;
     CU->setLength(CUOffset - 4);
   }
-  Abbreviations.Emit(Asm.get(), TLOF->getDwarfAbbrevSection());
+  for (auto &Abbreviation : Abbreviations) {
+    Asm->OutStreamer->SwitchSection(TLOF->getDwarfAbbrevSection());
+    Abbreviation->Emit(Asm.get());
+  }
 
   StringPool->emitStringOffsetsTableHeader(*Asm, TLOF->getDwarfStrOffSection(),
                                            StringOffsetsStartSym);
