@@ -49,8 +49,6 @@ struct CASSymbolRef {
 struct CASSection {
   StringRef Name;
   jitlink::MemProt Prot;
-  llvm::cas::CASID ID;
-  CASSection(cas::ObjectProxy obj) : ID(obj.getID()) {}
 };
 
 struct CASBlock {

@@ -2047,10 +2047,7 @@ Expected<CASSection> SectionNodeRef::materialize() const {
   Expected<NameRef> Name = Section.getName();
   if (!Name)
     return Name.takeError();
-  CASSection Info(this->Section);
-  Info.Name = Name->getName();
-  Info.Prot = Section.getMemProt();
-  return Info;
+  return CASSection{Name->getName(), Section.getMemProt()};
 }
 
 Error BlockNodeRef::materializeFixups(

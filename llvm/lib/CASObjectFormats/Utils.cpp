@@ -97,8 +97,6 @@ Error casobjectformats::printCASObject(const reader::CASObjectReader &Reader,
     std::string Name;
     std::string Description;
     SmallVector<PrintBlock *> Blocks;
-    llvm::cas::CASID ID;
-    PrintSection(cas::CASID _ID) : ID(_ID) {}
   };
   struct PrintBlock {
     struct Fixup {
@@ -122,8 +120,8 @@ Error casobjectformats::printCASObject(const reader::CASObjectReader &Reader,
   };
 
   SmallVector<std::unique_ptr<PrintSection>> Sections;
-  auto createSection = [&](cas::CASID ID) -> PrintSection * {
-    Sections.push_back(std::make_unique<PrintSection>(ID));
+  auto createSection = [&]() -> PrintSection * {
+    Sections.push_back(std::make_unique<PrintSection>());
     return Sections.back().get();
   };
 
@@ -152,7 +150,7 @@ Error casobjectformats::printCASObject(const reader::CASObjectReader &Reader,
     Expected<CASSection> Info = Reader.materialize(SectionRef);
     if (!Info)
       return Info.takeError();
-    auto *PrintSection = createSection(Info->ID);
+    auto *PrintSection = createSection();
     PrintSection->Name = Info->Name.str();
     PrintSection->Description = getDescription(*Info);
     MappedSection = PrintSection;
@@ -251,13 +249,11 @@ Error casobjectformats::printCASObject(const reader::CASObjectReader &Reader,
   }
   for (const auto &Section : Sections) {
     OS << "SECTION: " << Section->Description << '\n';
-    if (!omitCASID)
-      OS << "CASID: " << Section->ID << '\n';
     OS << "{\n";
     for (const auto *Block : Section->Blocks) {
       OS.indent(2) << "BLOCK: " << Block->Description << '\n';
       if (!omitCASID)
-        OS.indent(2) << "CASID: " << Block->ID << '\n';
+        OS.indent(2) << "Block-Data-Cas-ID: " << Block->ID << '\n';
       OS.indent(2) << "{\n";
       for (const auto *Symbol : Block->Symbols) {
         OS.indent(4) << "SYMBOL: " << Symbol->Description;

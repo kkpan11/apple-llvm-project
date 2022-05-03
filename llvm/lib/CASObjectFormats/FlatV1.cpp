@@ -267,7 +267,7 @@ Expected<SectionRef> SectionRef::create(CompileUnitBuilder &CUB,
 }
 
 Expected<CASSection> SectionRef::materialize() const {
-  CASSection Info(*this);
+  CASSection Info;
   Info.Prot = decodeProtectionFlags((data::SectionProtectionFlags)getData()[0]);
   Info.Name = getData().drop_front(1);
   return Info;
