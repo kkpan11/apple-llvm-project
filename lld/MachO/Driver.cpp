@@ -871,9 +871,6 @@ static ICFLevel getICFLevel(const ArgList &args) {
     warn(Twine("unknown --icf=OPTION `") + icfLevelStr +
          "', defaulting to `none'");
     icfLevel = ICFLevel::none;
-  } else if (icfLevel == ICFLevel::safe) {
-    warn(Twine("`--icf=safe' is not yet implemented, reverting to `none'"));
-    icfLevel = ICFLevel::none;
   }
   return icfLevel;
 }
@@ -1979,8 +1976,11 @@ static bool link(InputArgList &args, bool canExitEarly, raw_ostream &stdoutOS,
     // ICF assumes that all literals have been folded already, so we must run
     // foldIdenticalLiterals before foldIdenticalSections.
     foldIdenticalLiterals();
-    if (config->icfLevel != ICFLevel::none)
+    if (config->icfLevel != ICFLevel::none) {
+      if (config->icfLevel == ICFLevel::safe)
+        markAddrSigSymbols();
       foldIdenticalSections();
+    }
 
     // Write to an output file.
     if (target->wordSize == 8)

@@ -160,6 +160,7 @@ public:
   const llvm::Optional<llvm::cas::CASID> casID;
   std::vector<ConcatInputSection *> debugSections;
   std::vector<CallGraphEntry> callGraph;
+  Section *addrSigSection = nullptr;
 
   static void parseLCLinkerOptions(MemoryBufferRef mb);
 
