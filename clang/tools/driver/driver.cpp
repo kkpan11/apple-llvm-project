@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/Driver/Driver.h"
+#include "CacheLauncherMode.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/DiagnosticOptions.h"
 #include "clang/Basic/Stack.h"
@@ -366,6 +367,13 @@ int main(int Argc, const char **Argv) {
   llvm::BumpPtrAllocator A;
   llvm::StringSaver Saver(A);
 
+  StringRef DriverMode =
+      getDriverMode(Args[0], llvm::makeArrayRef(Args).slice(1));
+  if (isClangCache(DriverMode)) {
+    if (Optional<int> ExitCode = handleClangCacheInvocation(Args, Saver))
+      return *ExitCode;
+  }
+
   // Parse response files using the GNU syntax, unless we're in CL mode. There
   // are two ways to put clang in CL compatibility mode: Args[0] is either
   // clang-cl or cl, or --driver-mode=cl is on the command line. The normal
@@ -373,8 +381,7 @@ int main(int Argc, const char **Argv) {
   // have to manually search for a --driver-mode=cl argument the hard way.
   // Finally, our -cc1 tools don't care which tokenization mode we use because
   // response files written by clang will tokenize the same way in either mode.
-  bool ClangCLMode =
-      IsClangCL(getDriverMode(Args[0], llvm::makeArrayRef(Args).slice(1)));
+  bool ClangCLMode = IsClangCL(DriverMode);
   enum { Default, POSIX, Windows } RSPQuoting = Default;
   for (const char *F : Args) {
     if (strcmp(F, "--rsp-quoting=posix") == 0)

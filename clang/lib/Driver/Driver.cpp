@@ -6229,3 +6229,7 @@ llvm::StringRef clang::driver::getDriverMode(StringRef ProgName,
 }
 
 bool driver::IsClangCL(StringRef DriverMode) { return DriverMode.equals("cl"); }
+
+bool driver::isClangCache(StringRef DriverMode) {
+  return DriverMode == "cache";
+}
