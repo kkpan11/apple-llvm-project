@@ -52,13 +52,12 @@ bool CommandObjectHealthcheck::DoExecute(Args &args,
 
   result.AppendMessageWithFormat("Health check written to %s\n",
                                  temp_path.c_str());
-#if defined(__APPLE__)
+
   // When in an interactive graphical session and not, for example,
   // running LLDB running over ssh, open the log file straight away in
   // the user's configured editor or the default Console.app otherwise.
   if (Host::IsInteractiveGraphicSession())
     Host::OpenFileInExternalEditor(FileSpec(temp_path), 0);
-#endif
 
   return true;
 }
