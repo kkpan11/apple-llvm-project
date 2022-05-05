@@ -351,7 +351,7 @@ multiline text multiline text multiline text multiline text multiline text)",
       ASSERT_TRUE(Object);
       Optional<NodeHandle> Node = Object->dyn_cast<NodeHandle>();
       ASSERT_TRUE(Node);
-      EXPECT_EQ(ContentStrings[I], CAS1->getDataString(Node->getData()));
+      EXPECT_EQ(ContentStrings[I], CAS1->getDataString(*Node));
     }
   }
 
@@ -380,7 +380,7 @@ multiline text multiline text multiline text multiline text multiline text)",
     ASSERT_TRUE(Object);
     Node = Object->dyn_cast<NodeHandle>();
     ASSERT_TRUE(Node);
-    EXPECT_EQ(Content, CAS2->getDataString(Node->getData()));
+    EXPECT_EQ(Content, CAS2->getDataString(*Node));
   }
 }
 

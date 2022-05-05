@@ -418,16 +418,6 @@ void StatCollector::visitPOTItem(ExitOnError &ExitOnErr, const POTItem &Item) {
   };
 
   size_t NumParents = Nodes.lookup(ID).NumParents;
-  if (auto Blob = Object->dyn_cast<BlobHandle>()) {
-    auto &Info = Stats["builtin:blob"];
-    ++Info.Count;
-    Info.DataSize += CAS.getDataSize(Blob->getData());
-    Info.NumPaths += NumPaths;
-    Info.NumParents += NumParents;
-    Totals.NumPaths += NumPaths; // Count paths to leafs.
-    return;
-  }
-
   if (auto TreeH = Object->dyn_cast<TreeHandle>()) {
     auto &Info = Stats["builtin:tree"];
     ++Info.Count;
@@ -612,9 +602,6 @@ static void computeStats(CASDB &CAS, ArrayRef<CASID> TopLevels,
       Worklist.pop_back();
       continue;
     }
-
-    if (Object->is<BlobHandle>())
-      continue;
 
     if (auto Tree = Object->dyn_cast<TreeHandle>()) {
       ExitOnErr(CAS.forEachTreeEntry(*Tree, [&](const NamedTreeEntry &Entry) {

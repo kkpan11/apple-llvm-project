@@ -33,18 +33,13 @@ enum class ObjectKind {
   /// A node, with data and zero or more references.
   Node,
 
-  /// Data, with no references.
-  ///
-  /// FIXME: Move into a Filesystem schema.
-  Blob,
-
   /// Filesystem tree, with named references and entry types.
   ///
   /// FIXME: Move into a Filesystem schema.
   Tree,
 };
 
-class BlobProxy;
+class LeafNodeProxy;
 class NodeProxy;
 class TreeProxy;
 
@@ -63,7 +58,7 @@ class TreeProxy;
 ///     - The UID can be printed (e.g., \a CASID::toString()) and it can parsed
 ///       by the same or a different CAS instance with \a CASDB::parseID().
 /// - An object can be looked up by content or by UID.
-///     - \a storeNode(), \a storeBlob(), and \a storeTree() are "get-or-create"
+///     - \a storeNode() and \a storeTree() are "get-or-create"
 ///       methods, writing an object if it doesn't exist yet, and return a
 ///       handle to it in any case.
 ///     - \a loadObject(const CASID&) looks up an object by its UID.
@@ -77,8 +72,6 @@ class TreeProxy;
 /// - ObjectKind::Tree: Sorted list of 0+ \a NamedTreeEntry, which associates a
 ///   name, another CAS object, and a \a TreeEntry::EntryKind. Designed to
 ///   represent a filesystem in the CAS. Created with \a storeTree().
-/// - ObjectKind::Blob: Contains 0+ bytes of data. Designed to represent an
-///   opaque file. Created with \a storeBlob().
 ///
 /// The \a CASDB interface has a few ways of referencing objects:
 ///
@@ -92,8 +85,6 @@ class TreeProxy;
 ///   data and references. In practice, right now you want a subclass:
 ///     - \a NodeHandle: a handle for a node. Returned by \a
 ///       storeNode() and the variant accessors.
-///     - \a BlobHandle: a handle for a blob. Returned by \a
-///       storeBlob() and the variant accessors.
 ///     - \a TreeHandle: a handle for a tree. Returned by \a
 ///       storeTree() and the variant accessors.
 ///     - \a AnyObjectHandle: a variant between \a ObjectHandle and its
@@ -120,19 +111,17 @@ class TreeProxy;
 /// Both ObjectRef and ObjectHandle are lightweight, wrapping a `uint64_t`.
 /// Doing anything with them requires a CASDB. As a convenience:
 ///
-/// - ObjectProxy (currently \a NodeProxy, \a TreeProxy, or \a BlobProxy) pairs
+/// - ObjectProxy (currently \a NodeProxy and \a TreeProxy) pairs
 ///   an ObjectHandle (subclass) with a CASDB, and wraps access APIs to avoid
 ///   having to pass extra parameters.
 ///
-/// TODO: Remove Blob and Tree, moving these concepts to a filesystem schema
+/// TODO: Remove Tree, moving these concepts to a filesystem schema
 /// that sits on top of the CAS.
 ///
 /// TODO: Remove CASID.
 ///
-/// Here's how to remove CASID, Blob, and Tree:
+/// Here's how to remove CASID and Tree:
 ///
-/// - Remove blobs. Merge them with "leaf nodes". Can rename BlobProxy
-///   to LeafNodeProxy.
 /// - Lift trees into a filesystem schema, dropping TreeHandle and making
 ///   TreeProxy inherit from NodeProxy.
 /// - Change TreeEntry and NamedTreeEntry to use ObjectRef instead of
@@ -185,21 +174,15 @@ public:
   virtual Expected<CASID> parseID(StringRef ID) = 0;
 
   /// FIXME: Remove these.
-  Expected<BlobProxy> createBlob(StringRef Data);
+  Expected<LeafNodeProxy> createBlob(StringRef Data);
   Expected<TreeProxy> createTree(ArrayRef<NamedTreeEntry> Entries = None);
   Expected<NodeProxy> createNode(ArrayRef<CASID> References, StringRef Data);
 
-  virtual Expected<BlobHandle> storeBlob(StringRef Data) = 0;
   virtual Expected<TreeHandle> storeTree(ArrayRef<NamedTreeEntry> Entries) = 0;
   virtual Expected<NodeHandle> storeNode(ArrayRef<ObjectRef> Refs,
                                          ArrayRef<char> Data) = 0;
 
-  /// FIXME: Delete and update callers.
-  Expected<BlobProxy>
-  createBlobFromOpenFile(sys::fs::file_t FD,
-                         Optional<sys::fs::file_status> Status = None);
-
-  /// Default implementation reads \p FD and calls \a storeBlob(). Does not
+  /// Default implementation reads \p FD and calls \a storeNode(). Does not
   /// take ownership of \p FD; the caller is responsible for closing it.
   ///
   /// If \p Status is sent in it is to be treated as a hint. Implementations
@@ -208,15 +191,15 @@ public:
   /// where \p Status implies).
   ///
   /// Returns the \a CASID and the size of the file.
-  Expected<BlobHandle>
-  storeBlobFromOpenFile(sys::fs::file_t FD,
+  Expected<NodeHandle>
+  storeNodeFromOpenFile(sys::fs::file_t FD,
                         Optional<sys::fs::file_status> Status = None) {
-    return storeBlobFromOpenFileImpl(FD, Status);
+    return storeNodeFromOpenFileImpl(FD, Status);
   }
 
 protected:
-  virtual Expected<BlobHandle>
-  storeBlobFromOpenFileImpl(sys::fs::file_t FD,
+  virtual Expected<NodeHandle>
+  storeNodeFromOpenFileImpl(sys::fs::file_t FD,
                             Optional<sys::fs::file_status> Status);
 
   /// Allow CASDB implementations to create internal handles.
@@ -226,7 +209,6 @@ protected:
   }
   MAKE_CAS_HANDLE_CONSTRUCTOR(NodeHandle)
   MAKE_CAS_HANDLE_CONSTRUCTOR(TreeHandle)
-  MAKE_CAS_HANDLE_CONSTRUCTOR(BlobHandle)
   MAKE_CAS_HANDLE_CONSTRUCTOR(ObjectRef)
 #undef MAKE_CAS_HANDLE_CONSTRUCTOR
 
@@ -264,23 +246,23 @@ public:
   Expected<ProxyT> loadObjectProxy(Expected<HandleT> H);
 
 public:
-  /// FIXME: Delete these. Update callers to call \a loadObject(), followed by
-  /// \a getBlob(), etc., or \a BlobProxy::get().
-  Expected<BlobProxy> getBlob(CASID ID);
+  /// FIXME: Delete these. Update callers to call \a loadObject() and create
+  /// the proxy themselves.
+  Expected<LeafNodeProxy> getBlob(CASID ID);
   Expected<TreeProxy> getTree(CASID ID);
   Expected<NodeProxy> getNode(CASID ID);
 
   /// Get the size of some data.
-  virtual uint64_t getDataSize(AnyDataHandle Data) const = 0;
+  virtual uint64_t getDataSize(NodeHandle Node) const = 0;
 
   /// Read the data from \p Data into \p OS.
-  uint64_t readData(AnyDataHandle Data, raw_ostream &OS, uint64_t Offset = 0,
+  uint64_t readData(NodeHandle Node, raw_ostream &OS, uint64_t Offset = 0,
                     uint64_t MaxBytes = -1ULL) const {
-    return readDataImpl(Data, OS, Offset, MaxBytes);
+    return readDataImpl(Node, OS, Offset, MaxBytes);
   }
 
 protected:
-  virtual uint64_t readDataImpl(AnyDataHandle Data, raw_ostream &OS,
+  virtual uint64_t readDataImpl(NodeHandle Node, raw_ostream &OS,
                                 uint64_t Offset, uint64_t MaxBytes) const = 0;
 
 public:
@@ -288,8 +270,8 @@ public:
   ///
   /// Depending on the CAS implementation, this may involve in-memory storage
   /// overhead.
-  StringRef getDataString(AnyDataHandle Data, bool NullTerminate = true) {
-    return toStringRef(getDataImpl(Data, NullTerminate));
+  StringRef getDataString(NodeHandle Node, bool NullTerminate = true) {
+    return toStringRef(getDataImpl(Node, NullTerminate));
   }
 
   /// Get a lifetime-extended ArrayRef pointing at \p Data.
@@ -297,29 +279,28 @@ public:
   /// Depending on the CAS implementation, this may involve in-memory storage
   /// overhead.
   template <class CharT = char>
-  ArrayRef<CharT> getDataArray(AnyDataHandle Data, bool NullTerminate = true) {
+  ArrayRef<CharT> getDataArray(NodeHandle Node, bool NullTerminate = true) {
     static_assert(std::is_same<CharT, char>::value ||
                       std::is_same<CharT, unsigned char>::value ||
                       std::is_same<CharT, signed char>::value,
                   "Expected byte type");
-    ArrayRef<char> S = getDataImpl(Data, NullTerminate);
+    ArrayRef<char> S = getDataImpl(Node, NullTerminate);
     return makeArrayRef(reinterpret_cast<const CharT *>(S.data()), S.size());
   }
 
 protected:
-  virtual ArrayRef<char> getDataImpl(AnyDataHandle Data,
-                                     bool NullTerminate) = 0;
+  virtual ArrayRef<char> getDataImpl(NodeHandle Node, bool NullTerminate) = 0;
 
 public:
   /// Get a MemoryBuffer with the contents of \p Data whose lifetime is
   /// independent of this CAS instance.
   Expected<std::unique_ptr<MemoryBuffer>>
-  loadIndependentDataBuffer(AnyDataHandle Data, const Twine &Name = "",
+  loadIndependentDataBuffer(NodeHandle Node, const Twine &Name = "",
                             bool NullTerminate = true) const;
 
 protected:
   virtual Expected<std::unique_ptr<MemoryBuffer>>
-  loadIndependentDataBufferImpl(AnyDataHandle Data, const Twine &Name,
+  loadIndependentDataBufferImpl(NodeHandle Node, const Twine &Name,
                                 bool NullTerminate) const;
 
 public:
@@ -374,30 +355,6 @@ public:
 protected:
   ProxyBase(const CASDB &CAS, HandleT H) : HandleT(H), CAS(&CAS) {}
   const CASDB *CAS;
-};
-
-/// Proxy for a Blob.
-class BlobProxy : public ProxyBase<BlobHandle> {
-public:
-  /// Get the content of the blob. Valid as long as the CAS is valid.
-  StringRef getData() const { return Data; }
-  ArrayRef<char> getDataArray() const {
-    return makeArrayRef(Data.begin(), Data.size());
-  }
-  StringRef operator*() const { return Data; }
-  const StringRef *operator->() const { return &Data; }
-
-  static BlobProxy load(CASDB &CAS, BlobHandle Blob) {
-    return BlobProxy(CAS, Blob, CAS.getDataString(Blob.getData()));
-  }
-
-private:
-  BlobProxy(const CASDB &CAS, BlobHandle H, StringRef Data)
-      : ProxyBase::ProxyBase(CAS, H), Data(Data) {
-    assert(Data.end()[0] == 0 && "Blobs should guarantee null-termination");
-  }
-
-  StringRef Data;
 };
 
 /// Proxy of a tree CAS object. Reference is passed by value and is
@@ -481,11 +438,15 @@ public:
   /// Get the content of the node. Valid as long as the CAS is valid.
   StringRef getData() const { return Data; }
 
+protected:
+  /// FIXME: Remove once LeafNodeProxy doesn't need this.
+  const StringRef *getDataPtr() const { return &Data; }
+
+public:
   NodeProxy() = delete;
 
   static NodeProxy load(CASDB &CAS, NodeHandle Node) {
-    return NodeProxy(CAS, Node, CAS.getNumRefs(Node),
-                     CAS.getDataString(Node.getData()));
+    return NodeProxy(CAS, Node, CAS.getNumRefs(Node), CAS.getDataString(Node));
   }
 
 private:
@@ -497,6 +458,29 @@ private:
   size_t NumReferences;
   StringRef Data;
 };
+
+/// Proxy for a leaf node.
+class LeafNodeProxy : public NodeProxy {
+public:
+  /// FIXME: Remove this after updating clients.
+  StringRef operator*() const { return getData(); }
+
+  /// FIXME: Remove this after updating clients.
+  const StringRef *operator->() const { return getDataPtr(); }
+
+  size_t getNumReferences() const = delete;
+  ObjectRef getReference(size_t I) const = delete;
+  CASID getReferenceID(size_t I) const = delete;
+  Error forEachReference(function_ref<Error(ObjectRef)> Callback) const = delete;
+  Error forEachReferenceID(function_ref<Error(CASID)> Callback) const = delete;
+
+  explicit LeafNodeProxy(NodeProxy N) : NodeProxy(std::move(N)) {
+    assert(this->NodeProxy::getNumReferences() == 0);
+  }
+};
+
+/// FIXME: Remove this after updating callers.
+using BlobProxy = LeafNodeProxy;
 
 Expected<std::unique_ptr<CASDB>>
 createPluginCAS(StringRef PluginPath, ArrayRef<std::string> PluginArgs = None);

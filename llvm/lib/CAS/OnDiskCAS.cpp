@@ -35,23 +35,23 @@ public:
     /// Unknown object.
     Unknown = 0,
 
-    /// v1.data: main pool, full DataStore record.
+    /// vX.data: main pool, full DataStore record.
     DataPool = 1,
 
-    /// v1.data: main pool, string with 2B size field.
+    /// vX.data: main pool, string with 2B size field.
     DataPoolString2B = 2,
 
-    /// v1.<TrieRecordOffset>.data: standalone, with a full DataStore record.
+    /// vX.<TrieRecordOffset>.data: standalone, with a full DataStore record.
     Standalone = 10,
 
-    /// v1.<TrieRecordOffset>.blob: standalone, just the data. File contents
+    /// vX.<TrieRecordOffset>.leaf: standalone, just the data. File contents
     /// exactly the data content and file size matches the data size. No refs.
-    StandaloneBlob = 11,
+    StandaloneLeaf = 11,
 
-    /// v1.<TrieRecordOffset>.blob+0: standalone, just the data plus an
+    /// vX.<TrieRecordOffset>.leaf+0: standalone, just the data plus an
     /// extra null character ('\0'). File size is 1 bigger than the data size.
     /// No refs.
-    StandaloneBlob0 = 12,
+    StandaloneLeaf0 = 12,
   };
 
   enum class ObjectKind : uint8_t {
@@ -60,9 +60,6 @@ public:
 
     /// Node: refs and data.
     Node = 1,
-
-    /// Blob: data, 8-byte alignment guaranteed, null-terminated.
-    Blob = 2,
 
     /// Tree: custom node. Pairs of refs pointing at target (arbitrary object)
     /// and names (String), and some data to describe the kind of the entry.
@@ -611,8 +608,8 @@ public:
     bool IsStandalone = false;
     switch (SK) {
     case TrieRecord::StorageKind::Standalone:
-    case TrieRecord::StorageKind::StandaloneBlob:
-    case TrieRecord::StorageKind::StandaloneBlob0:
+    case TrieRecord::StorageKind::StandaloneLeaf:
+    case TrieRecord::StorageKind::StandaloneLeaf0:
       IsStandalone = true;
       break;
     default:
@@ -718,12 +715,12 @@ static Expected<HandleT> castExpected(Expected<AnyObjectHandle> H) {
 ///     - db/<prefix>.<offset>.data: a file storing an object outside the main
 ///       "data" table, named by its offset into the "index" table, with the
 ///       format of \a TrieRecord::StorageKind::Standalone.
-///     - db/<prefix>.<offset>.blob: a file storing a blob object outside the
+///     - db/<prefix>.<offset>.leaf: a file storing a leaf node outside the
 ///       main "data" table, named by its offset into the "index" table, with
-///       the format of \a TrieRecord::StorageKind::StandaloneBlob.
-///     - db/<prefix>.<offset>.blob0: a file storing a blob object outside the
+///       the format of \a TrieRecord::StorageKind::StandaloneLeaf.
+///     - db/<prefix>.<offset>.leaf+0: a file storing a leaf object outside the
 ///       main "data" table, named by its offset into the "index" table, with
-///       the format of \a TrieRecord::StorageKind::StandaloneBlob0.
+///       the format of \a TrieRecord::StorageKind::StandaloneLeaf0.
 /// - db/<prefix>.actions: a file for the "actions" table, named by \a
 ///   getActionCacheTableName() and managed by \a HashMappedTrie. The contents
 ///   are \a CASID::getInternalID(), stored as \a ActionCacheResultT;
@@ -768,10 +765,10 @@ public:
   static constexpr StringLiteral DataPoolFile = "data";
   static constexpr StringLiteral ActionCacheFile = "actions";
 
-  static constexpr StringLiteral FilePrefix = "v2.";
+  static constexpr StringLiteral FilePrefix = "v3.";
   static constexpr StringLiteral FileSuffixData = ".data";
-  static constexpr StringLiteral FileSuffixBlob = ".blob";
-  static constexpr StringLiteral FileSuffixBlob0 = ".blob0";
+  static constexpr StringLiteral FileSuffixLeaf = ".leaf";
+  static constexpr StringLiteral FileSuffixLeaf0 = ".leaf+0";
 
   class TempFile;
   class MappedTempFile;
@@ -781,8 +778,6 @@ public:
     return getID(indexHash(Hash));
   }
 
-  Expected<BlobHandle> storeBlobImpl(ArrayRef<uint8_t> ComputedHash,
-                                     ArrayRef<char> Data) final;
   Expected<TreeHandle>
   storeTreeImpl(ArrayRef<uint8_t> ComputedHash,
                 ArrayRef<NamedTreeEntry> SortedEntries) final;
@@ -790,7 +785,7 @@ public:
                                      ArrayRef<ObjectRef> Refs,
                                      ArrayRef<char> Data) final;
 
-  Expected<BlobHandle> createStandaloneBlob(IndexProxy &I, ArrayRef<char> Data);
+  Expected<NodeHandle> createStandaloneLeaf(IndexProxy &I, ArrayRef<char> Data);
 
   Expected<AnyObjectHandle>
   loadOrCreateDataRecord(IndexProxy &I, TrieRecord::ObjectKind OK,
@@ -804,11 +799,6 @@ public:
   DataRecordHandle getDataRecordForTree(TreeHandle H) const {
     Optional<DataRecordHandle> Record = getDataRecordForObject(H);
     assert(Record && "Expected record for tree handle");
-    return *Record;
-  }
-  DataRecordHandle getDataRecordForNode(NodeHandle H) const {
-    Optional<DataRecordHandle> Record = getDataRecordForObject(H);
-    assert(Record && "Expected record for node handle");
     return *Record;
   }
   OnDiskContent getContentFromHandle(ObjectHandle H) const {
@@ -893,7 +883,7 @@ public:
 
   Expected<InternalRef> storeTreeEntryName(StringRef String);
 
-  ArrayRef<char> getDataConst(AnyDataHandle ADH) const final;
+  ArrayRef<char> getDataConst(NodeHandle Node) const final;
 
   void print(raw_ostream &OS) const final;
 
@@ -921,11 +911,16 @@ private:
       TreeHandle Tree,
       function_ref<Error(const NamedTreeEntry &)> Callback) const final;
 
+  InternalRefArrayRef getRefs(NodeHandle Node) const {
+    if (Optional<DataRecordHandle> Record = getDataRecordForObject(Node))
+      return Record->getRefs();
+    return None;
+  }
   size_t getNumRefs(NodeHandle Node) const final {
-    return getDataRecordForNode(Node).getRefs().size();
+    return getRefs(Node).size();
   }
   ObjectRef readRef(NodeHandle Node, size_t I) const final {
-    return getExternalReference(getDataRecordForNode(Node).getRefs()[I]);
+    return getExternalReference(getRefs(Node)[I]);
   }
   Error forEachRef(NodeHandle Node,
                    function_ref<Error(ObjectRef)> Callback) const final;
@@ -979,8 +974,8 @@ constexpr StringLiteral OnDiskCAS::DataPoolFile;
 constexpr StringLiteral OnDiskCAS::ActionCacheFile;
 constexpr StringLiteral OnDiskCAS::FilePrefix;
 constexpr StringLiteral OnDiskCAS::FileSuffixData;
-constexpr StringLiteral OnDiskCAS::FileSuffixBlob;
-constexpr StringLiteral OnDiskCAS::FileSuffixBlob0;
+constexpr StringLiteral OnDiskCAS::FileSuffixLeaf;
+constexpr StringLiteral OnDiskCAS::FileSuffixLeaf0;
 
 template <size_t N>
 const StandaloneDataInMemory &
@@ -1411,9 +1406,6 @@ void OnDiskCAS::print(raw_ostream &OS) const {
     case TrieRecord::ObjectKind::Node:
       OS << "node   ";
       break;
-    case TrieRecord::ObjectKind::Blob:
-      OS << "blob   ";
-      break;
     case TrieRecord::ObjectKind::Tree:
       OS << "tree   ";
       break;
@@ -1437,11 +1429,11 @@ void OnDiskCAS::print(raw_ostream &OS) const {
     case TrieRecord::StorageKind::Standalone:
       OS << "standalone-data  ";
       break;
-    case TrieRecord::StorageKind::StandaloneBlob:
-      OS << "standalone-blob  ";
+    case TrieRecord::StorageKind::StandaloneLeaf:
+      OS << "standalone-leaf  ";
       break;
-    case TrieRecord::StorageKind::StandaloneBlob0:
-      OS << "standalone-blob0 ";
+    case TrieRecord::StorageKind::StandaloneLeaf0:
+      OS << "standalone-leaf+0";
       break;
     }
     OS << " Offset=" << (void *)D.Offset.get();
@@ -1551,8 +1543,8 @@ CASID OnDiskCAS::getObjectID(InternalRef Ref) const {
   return getIDFromIndexOffset(*I);
 }
 
-ArrayRef<char> OnDiskCAS::getDataConst(AnyDataHandle ADH) const {
-  OnDiskContent Content = getContentFromHandle(ADH);
+ArrayRef<char> OnDiskCAS::getDataConst(NodeHandle Node) const {
+  OnDiskContent Content = getContentFromHandle(Node);
   if (Content.Bytes)
     return *Content.Bytes;
   assert(Content.Record && "Expected record or bytes");
@@ -1577,8 +1569,6 @@ AnyObjectHandle OnDiskCAS::getLoadedObject(const IndexProxy &I,
     report_fatal_error(createCorruptObjectError(getID(I)));
   case TrieRecord::ObjectKind::Node:
     return makeNodeHandle(Handle.getRawData());
-  case TrieRecord::ObjectKind::Blob:
-    return makeBlobHandle(Handle.getRawData());
   case TrieRecord::ObjectKind::Tree:
     return makeTreeHandle(Handle.getRawData());
   }
@@ -1610,8 +1600,8 @@ OnDiskCAS::makeInternalRef(FileOffset IndexOffset,
                                       Object.Offset);
 
   case TrieRecord::StorageKind::Standalone:
-  case TrieRecord::StorageKind::StandaloneBlob:
-  case TrieRecord::StorageKind::StandaloneBlob0:
+  case TrieRecord::StorageKind::StandaloneLeaf:
+  case TrieRecord::StorageKind::StandaloneLeaf0:
     return InternalRef::getFromOffset(InternalRef::OffsetKind::IndexRecord,
                                       IndexOffset);
   }
@@ -1676,11 +1666,11 @@ void OnDiskCAS::getStandalonePath(TrieRecord::StorageKind SK,
   case TrieRecord::StorageKind::Standalone:
     Suffix = FileSuffixData;
     break;
-  case TrieRecord::StorageKind::StandaloneBlob0:
-    Suffix = FileSuffixBlob0;
+  case TrieRecord::StorageKind::StandaloneLeaf0:
+    Suffix = FileSuffixLeaf0;
     break;
-  case TrieRecord::StorageKind::StandaloneBlob:
-    Suffix = FileSuffixBlob;
+  case TrieRecord::StorageKind::StandaloneLeaf:
+    Suffix = FileSuffixLeaf;
     break;
   }
 
@@ -1708,8 +1698,8 @@ Expected<InternalHandle> OnDiskCAS::loadContentForRef(const IndexProxy &I,
   default:
     return createCorruptObjectError(getID(I));
   case TrieRecord::StorageKind::Standalone:
-  case TrieRecord::StorageKind::StandaloneBlob0:
-  case TrieRecord::StorageKind::StandaloneBlob:
+  case TrieRecord::StorageKind::StandaloneLeaf0:
+  case TrieRecord::StorageKind::StandaloneLeaf:
     break;
   }
 
@@ -1755,26 +1745,26 @@ OnDiskContent OnDiskCAS::getContentFromHandle(InternalHandle Handle) const {
 }
 
 OnDiskContent StandaloneDataInMemory::getContent() const {
-  bool Blob0 = false;
-  bool Blob = false;
+  bool Leaf0 = false;
+  bool Leaf = false;
   switch (SK) {
   default:
     llvm_unreachable("Storage kind must be standalone");
   case TrieRecord::StorageKind::Standalone:
     break;
-  case TrieRecord::StorageKind::StandaloneBlob0:
-    Blob = Blob0 = true;
+  case TrieRecord::StorageKind::StandaloneLeaf0:
+    Leaf = Leaf0 = true;
     break;
-  case TrieRecord::StorageKind::StandaloneBlob:
-    Blob = true;
+  case TrieRecord::StorageKind::StandaloneLeaf:
+    Leaf = true;
     break;
   }
 
-  if (Blob) {
-    assert(Region->getBuffer().drop_back(Blob0).end()[0] == 0 &&
-           "Standalone blob missing null termination");
+  if (Leaf) {
+    assert(Region->getBuffer().drop_back(Leaf0).end()[0] == 0 &&
+           "Standalone node data missing null termination");
     return OnDiskContent{None,
-                         toArrayRef(Region->getBuffer().drop_back(Blob0))};
+                         toArrayRef(Region->getBuffer().drop_back(Leaf0))};
   }
 
   DataRecordHandle Record = DataRecordHandle::get(Region->getBuffer().data());
@@ -1807,17 +1797,17 @@ static size_t getPageSize() {
   return PageSize;
 }
 
-Expected<BlobHandle> OnDiskCAS::createStandaloneBlob(IndexProxy &I,
+Expected<NodeHandle> OnDiskCAS::createStandaloneLeaf(IndexProxy &I,
                                                      ArrayRef<char> Data) {
   assert(Data.size() > TrieRecord::MaxEmbeddedSize &&
          "Expected a bigger file for external content...");
 
-  bool Blob0 = isAligned(Align(getPageSize()), Data.size());
-  TrieRecord::StorageKind SK = Blob0 ? TrieRecord::StorageKind::StandaloneBlob0
-                                     : TrieRecord::StorageKind::StandaloneBlob;
+  bool Leaf0 = isAligned(Align(getPageSize()), Data.size());
+  TrieRecord::StorageKind SK = Leaf0 ? TrieRecord::StorageKind::StandaloneLeaf0
+                                     : TrieRecord::StorageKind::StandaloneLeaf;
 
   SmallString<256> Path;
-  int64_t FileSize = Data.size() + Blob0;
+  int64_t FileSize = Data.size() + Leaf0;
   getStandalonePath(SK, I, Path);
 
   // Write the file. Don't reuse this mapped_file_region, which is read/write.
@@ -1827,7 +1817,7 @@ Expected<BlobHandle> OnDiskCAS::createStandaloneBlob(IndexProxy &I,
     return File.takeError();
   assert(File->size() == (uint64_t)FileSize);
   llvm::copy(Data, File->data());
-  if (Blob0)
+  if (Leaf0)
     File->data()[Data.size()] = 0;
   assert(File->data()[Data.size()] == 0);
   if (Error E = File->keep(Path))
@@ -1836,68 +1826,20 @@ Expected<BlobHandle> OnDiskCAS::createStandaloneBlob(IndexProxy &I,
   // Store the object reference.
   TrieRecord::Data Existing;
   {
-    TrieRecord::Data Blob{SK, TrieRecord::ObjectKind::Blob, FileOffset()};
-    if (I.Ref.compare_exchange_strong(Existing, Blob))
-      return castExpected<BlobHandle>(
-          loadObject(I, Blob, *makeInternalRef(I.Offset, Blob)));
+    TrieRecord::Data Leaf{SK, TrieRecord::ObjectKind::Node, FileOffset()};
+    if (I.Ref.compare_exchange_strong(Existing, Leaf))
+      return castExpected<NodeHandle>(
+          loadObject(I, Leaf, *makeInternalRef(I.Offset, Leaf)));
   }
 
   // If there was a race, confirm that the new value has valid storage.
   if (Existing.SK == TrieRecord::StorageKind::Unknown ||
-      Existing.OK != TrieRecord::ObjectKind::Blob)
+      Existing.OK != TrieRecord::ObjectKind::Node)
     return createCorruptObjectError(getID(I));
 
-  // Get and return the inserted blob.
-  return castExpected<BlobHandle>(
+  // Get and return the inserted leaf node.
+  return castExpected<NodeHandle>(
       loadObject(I, Existing, *makeInternalRef(I.Offset, Existing)));
-}
-
-Expected<BlobHandle> OnDiskCAS::storeBlobImpl(ArrayRef<uint8_t> ComputedHash,
-                                              ArrayRef<char> Data) {
-  IndexProxy I = indexHash(ComputedHash);
-  TrieRecord::Data Object = I.Ref.load();
-
-  // Already exists!
-  if (Object.OK == TrieRecord::ObjectKind::Blob)
-    return castExpected<BlobHandle>(
-        loadObject(I, Object, *makeInternalRef(I.Offset, Object)));
-
-  // Check for a hash collision with a non-blob.
-  if (Object.OK != TrieRecord::ObjectKind::Invalid)
-    return createCorruptObjectError(getID(I));
-
-  // Big blobs.
-  if (Data.size() > TrieRecord::MaxEmbeddedSize)
-    return createStandaloneBlob(I, Data);
-
-  PooledDataRecord PDR =
-      createPooledDataRecord(DataRecordHandle::Input{I.Offset, None, Data});
-
-  // Try to store the value.
-  TrieRecord::Data Existing;
-  {
-    TrieRecord::Data Blob;
-    Blob.OK = TrieRecord::ObjectKind::Blob;
-    Blob.SK = TrieRecord::StorageKind::DataPool;
-    Blob.Offset = PDR.Offset;
-
-    // PooledDataRecord is always loaded.
-    if (I.Ref.compare_exchange_strong(Existing, Blob))
-      return castExpected<BlobHandle>(getLoadedObject(
-          I, Blob, InternalHandle(*makeInternalRef(I.Offset, Blob))));
-  }
-
-  // Lost the race. Check the existing record and return.
-  //
-  // TODO: Find a way to reuse the storage from the new-but-abandoned record
-  // handle.
-  if (Existing.SK == TrieRecord::StorageKind::Unknown ||
-      Existing.OK != TrieRecord::ObjectKind::Blob)
-    return createCorruptObjectError(getID(I));
-
-  // Load and return.
-  InternalRef ExistingRef = *makeInternalRef(I.Offset, Existing);
-  return castExpected<BlobHandle>(loadObject(I, Existing, ExistingRef));
 }
 
 Expected<TreeHandle>
@@ -1960,6 +1902,10 @@ Expected<NodeHandle> OnDiskCAS::storeNodeImpl(ArrayRef<uint8_t> ComputedHash,
       return createCorruptObjectError(getID(I));
   }
 
+  // Big leaf nodes.
+  if (Data.size() > TrieRecord::MaxEmbeddedSize)
+    return createStandaloneLeaf(I, Data);
+
   // TODO: Check whether it's worth checking the index for an already existing
   // object (like storeTreeImpl() does) before building up the
   // InternalRefVector.
@@ -1976,9 +1922,6 @@ Expected<NodeHandle> OnDiskCAS::storeNodeImpl(ArrayRef<uint8_t> ComputedHash,
 Expected<AnyObjectHandle>
 OnDiskCAS::loadOrCreateDataRecord(IndexProxy &I, TrieRecord::ObjectKind OK,
                                   DataRecordHandle::Input Input) {
-  assert(OK != TrieRecord::ObjectKind::Blob &&
-         "Expected blobs to be handled elsewhere");
-
   // Compute the storage kind, allocate it, and create the record.
   TrieRecord::StorageKind SK = TrieRecord::StorageKind::Unknown;
   FileOffset PoolOffset;
@@ -2149,8 +2092,7 @@ Error OnDiskCAS::forEachTreeEntry(
 
 Error OnDiskCAS::forEachRef(NodeHandle Node,
                             function_ref<Error(ObjectRef)> Callback) const {
-  DataRecordHandle Record = getDataRecordForNode(Node);
-  for (InternalRef Ref : Record.getRefs())
+  for (InternalRef Ref : getRefs(Node))
     if (Error E = Callback(getExternalReference(Ref)))
       return E;
   return Error::success();
@@ -2224,7 +2166,6 @@ Optional<CASID> OnDiskCAS::getID(InternalRef Ref) const {
   default:
     return None;
   case TrieRecord::ObjectKind::Node:
-  case TrieRecord::ObjectKind::Blob:
   case TrieRecord::ObjectKind::Tree:
     return getID(*I);
   }

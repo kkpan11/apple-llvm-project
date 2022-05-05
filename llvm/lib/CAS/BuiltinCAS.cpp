@@ -46,17 +46,13 @@ void BuiltinCAS::printIDImpl(raw_ostream &OS, const CASID &ID) const {
   OS << getCASIDPrefix() << Hash;
 }
 
-Expected<BlobHandle> BuiltinCAS::storeBlob(ArrayRef<char> Data) {
-  return storeBlobImpl(BuiltinObjectHasher<HasherT>::hashBlob(Data), Data);
-}
-
 static size_t getPageSize() {
   static int PageSize = sys::Process::getPageSizeEstimate();
   return PageSize;
 }
 
-Expected<BlobHandle>
-BuiltinCAS::storeBlobFromOpenFileImpl(sys::fs::file_t FD,
+Expected<NodeHandle>
+BuiltinCAS::storeNodeFromOpenFileImpl(sys::fs::file_t FD,
                                       Optional<sys::fs::file_status> Status) {
   int PageSize = getPageSize();
 
@@ -67,11 +63,11 @@ BuiltinCAS::storeBlobFromOpenFileImpl(sys::fs::file_t FD,
   }
 
   constexpr size_t MinMappedSize = 4 * 4096;
-  auto readWithStream = [&]() -> Expected<BlobHandle> {
+  auto readWithStream = [&]() -> Expected<NodeHandle> {
     SmallString<MinMappedSize * 2> Data;
     if (Error E = sys::fs::readNativeFileToEOF(FD, Data, MinMappedSize))
       return std::move(E);
-    return storeBlob(makeArrayRef(Data.data(), Data.size()));
+    return storeNode(None, makeArrayRef(Data.data(), Data.size()));
   };
 
   // Check whether we can trust the size from stat.
@@ -93,10 +89,11 @@ BuiltinCAS::storeBlobFromOpenFileImpl(sys::fs::file_t FD,
   // that the file size may have changed from ::stat if this file is volatile,
   // so we need to check for an actual null character at the end.
   ArrayRef<char> Data(Map.data(), Map.size());
-  HashType ComputedHash = BuiltinObjectHasher<HasherT>::hashBlob(Data);
+  HashType ComputedHash =
+      BuiltinObjectHasher<HasherT>::hashNode(*this, None, Data);
   if (!isAligned(Align(PageSize), Data.size()) && Data.end()[0] == 0)
-    return storeBlobFromNullTerminatedRegion(ComputedHash, std::move(Map));
-  return storeBlobImpl(ComputedHash, Data);
+    return storeNodeFromNullTerminatedRegion(ComputedHash, std::move(Map));
+  return storeNodeImpl(ComputedHash, None, Data);
 }
 
 Expected<TreeHandle> BuiltinCAS::storeTree(ArrayRef<NamedTreeEntry> Entries) {
@@ -114,9 +111,9 @@ Expected<NodeHandle> BuiltinCAS::storeNode(ArrayRef<ObjectRef> Refs,
       BuiltinObjectHasher<HasherT>::hashNode(*this, Refs, Data), Refs, Data);
 }
 
-uint64_t BuiltinCAS::readDataImpl(AnyDataHandle Handle, raw_ostream &OS,
+uint64_t BuiltinCAS::readDataImpl(NodeHandle Node, raw_ostream &OS,
                                   uint64_t Offset, uint64_t MaxBytes) const {
-  ArrayRef<char> Data = getDataConst(Handle);
+  ArrayRef<char> Data = getDataConst(Node);
   assert(Offset < Data.size() && "Expected valid offset");
   Data = Data.drop_front(Offset).take_front(MaxBytes);
   OS << toStringRef(Data);

@@ -64,9 +64,7 @@ public:
   enum HandleKind {
     TreeKind = 0x1,
     NodeKind = 0x2,
-    BlobKind = 0x4,
-    AnyDataKind = NodeKind | BlobKind,
-    AnyObjectKind = AnyDataKind | TreeKind,
+    AnyObjectKind = NodeKind | TreeKind,
   };
 
 private:
@@ -142,11 +140,9 @@ private:
 /// data and references.
 ///
 /// In practice, right now you really need/want \a NodeHandle, \a TreeHandle,
-/// \a BlobHandle, or one of the variants \a AnyObjectHandle and \a
-/// AnyDataHandle.
+/// or \a AnyObjectHandle.
 ///
-/// TODO: Remove all subclasses (merge with \a NodeHandle) once trees and blobs
-/// are gone.
+/// TODO: Remove all subclasses (merge with \a NodeHandle) once trees.
 class ObjectHandle : public ReferenceBase {
 public:
   friend bool operator==(const ObjectHandle &LHS, const ObjectHandle &RHS) {
@@ -174,28 +170,8 @@ private:
   static constexpr HandleKind getHandleKind() { return AnyObjectKind; }
 };
 
-class AnyDataHandle;
-
-/// Handle to a loaded blob in \a CASDB.
-class BlobHandle : public ObjectHandle {
-public:
-  inline AnyDataHandle getData() const;
-
-private:
-  friend class CASDB;
-  friend class testing_helpers::HandleFactory;
-  using ObjectHandle::ObjectHandle;
-  BlobHandle(ObjectHandle) = delete;
-  template <class HandleT, HandleKind> friend class AnyObjectHandleImpl;
-  static constexpr HandleKind getHandleKind() { return BlobKind; }
-};
-
 /// Handle to a loaded node in \a CASDB.
 class NodeHandle : public ObjectHandle {
-public:
-  inline AnyDataHandle getData() const;
-
-private:
   friend class CASDB;
   friend class testing_helpers::HandleFactory;
   using ObjectHandle::ObjectHandle;
@@ -256,41 +232,11 @@ protected:
   HandleKind Kind;
 };
 
-/// Type-safe variant between \a NodeHandle, \a BlobHandle, and \a
-/// RawDataHandle.
-class AnyDataHandle
-    : public AnyObjectHandleImpl<ObjectHandle, ObjectHandle::AnyDataKind> {
-  friend class AnyObjectHandle;
-
-public:
-  using AnyObjectHandleImpl::AnyObjectHandleImpl;
-
-private:
-  friend class BlobHandle;
-  friend class NodeHandle;
-  AnyDataHandle(BlobHandle H) : AnyObjectHandleImpl::AnyObjectHandleImpl(H) {}
-  AnyDataHandle(NodeHandle H) : AnyObjectHandleImpl::AnyObjectHandleImpl(H) {}
-};
-
-inline AnyDataHandle BlobHandle::getData() const {
-  return AnyDataHandle(*this);
-}
-inline AnyDataHandle NodeHandle::getData() const {
-  return AnyDataHandle(*this);
-}
-
-/// Type-safe variant between \a Handle, \a DataHandle, and \a AnyObjectHandle.
+/// Type-safe variant between \a NodeHandle and \a TreeHandle.
 class AnyObjectHandle
     : public AnyObjectHandleImpl<ObjectHandle, ObjectHandle::AnyObjectKind> {
 public:
   using AnyObjectHandleImpl::AnyObjectHandleImpl::AnyObjectHandleImpl;
-
-  Optional<AnyDataHandle> getData() const {
-    if (Kind & AnyDataKind)
-      return AnyDataHandle(
-          ObjectHandle(ObjectHandle::AnyObjectHandleTag{}, *this), Kind);
-    return None;
-  }
 };
 
 } // namespace cas

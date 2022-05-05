@@ -242,8 +242,6 @@ int catNodeData(CASDB &CAS, CASID ID) {
 }
 
 static StringRef getKindString(AnyObjectHandle Object) {
-  if (Object.is<BlobHandle>())
-    return "blob";
   if (Object.is<TreeHandle>())
     return "tree";
   assert(Object.is<NodeHandle>());
@@ -317,7 +315,7 @@ static GraphInfo traverseObjectGraph(CASDB &CAS, CASID TopLevel) {
     Worklist.back().second = true;
     CASID ID = Worklist.back().first;
     Optional<AnyObjectHandle> Object = ExitOnErr(CAS.loadObject(ID));
-    if (!Object || Object->is<BlobHandle>())
+    if (!Object)
       continue;
 
     if (auto Tree = Object->dyn_cast<TreeHandle>()) {

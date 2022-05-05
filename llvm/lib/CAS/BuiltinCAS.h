@@ -174,34 +174,28 @@ public:
                                              ArrayRef<ObjectRef> Refs,
                                              ArrayRef<char> Data) = 0;
 
-  Expected<BlobHandle>
-  storeBlobFromOpenFileImpl(sys::fs::file_t FD,
+  Expected<NodeHandle>
+  storeNodeFromOpenFileImpl(sys::fs::file_t FD,
                             Optional<sys::fs::file_status> Status) override;
-  virtual Expected<BlobHandle>
-  storeBlobFromNullTerminatedRegion(ArrayRef<uint8_t> ComputedHash,
+  virtual Expected<NodeHandle>
+  storeNodeFromNullTerminatedRegion(ArrayRef<uint8_t> ComputedHash,
                                     sys::fs::mapped_file_region Map) {
-    return storeBlobImpl(ComputedHash, makeArrayRef(Map.data(), Map.size()));
+    return storeNodeImpl(ComputedHash, None,
+                         makeArrayRef(Map.data(), Map.size()));
   }
-
-  Expected<BlobHandle> storeBlob(StringRef Data) final {
-    return storeBlob(makeArrayRef(Data.data(), Data.size()));
-  }
-  Expected<BlobHandle> storeBlob(ArrayRef<char> Data);
-  virtual Expected<BlobHandle> storeBlobImpl(ArrayRef<uint8_t> ComputedHash,
-                                             ArrayRef<char> Data) = 0;
 
   /// Both builtin CAS implementations provide lifetime for free, so this can
   /// be const, and readData() and getDataSize() can be implemented on top of
   /// it.
-  virtual ArrayRef<char> getDataConst(AnyDataHandle Data) const = 0;
+  virtual ArrayRef<char> getDataConst(NodeHandle Node) const = 0;
 
-  ArrayRef<char> getDataImpl(AnyDataHandle Data, bool NullTerminate) final {
-    return getDataConst(Data);
+  ArrayRef<char> getDataImpl(NodeHandle Node, bool NullTerminate) final {
+    return getDataConst(Node);
   }
-  uint64_t getDataSize(AnyDataHandle Data) const final {
-    return getDataConst(Data).size();
+  uint64_t getDataSize(NodeHandle Node) const final {
+    return getDataConst(Node).size();
   }
-  uint64_t readDataImpl(AnyDataHandle Data, raw_ostream &OS, uint64_t Offset,
+  uint64_t readDataImpl(NodeHandle Node, raw_ostream &OS, uint64_t Offset,
                         uint64_t MaxBytes) const final;
 
   Error createUnknownObjectError(CASID ID) const {

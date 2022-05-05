@@ -336,14 +336,13 @@ Expected<FileSystemCache::DirectoryEntry *>
 CachingOnDiskFileSystemImpl::makeFile(DirectoryEntry &Parent,
                                       StringRef TreePath, int BorrowedFD,
                                       sys::fs::file_status Status) {
-  Expected<BlobProxy> ExpectedBlob =
-      DB.createBlobFromOpenFile(BorrowedFD, Status);
-  if (!ExpectedBlob)
-    return ExpectedBlob.takeError();
+  Expected<NodeHandle> Node = DB.storeNodeFromOpenFile(BorrowedFD, Status);
+  if (!Node)
+    return Node.takeError();
 
   // Do not trust Status.size() in case the file is volatile.
-  return &Cache->makeFile(Parent, TreePath, *ExpectedBlob,
-                          ExpectedBlob->getData().size(),
+  return &Cache->makeFile(Parent, TreePath, DB.getObjectID(*Node),
+                          DB.getDataSize(*Node),
                           Status.permissions() & sys::fs::perms::owner_exe);
 }
 
