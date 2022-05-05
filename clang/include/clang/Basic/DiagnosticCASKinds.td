@@ -27,6 +27,12 @@ def err_cas_depscan_failed: Error<
 def warn_clang_cache_disabled_caching: Warning<
   "clang-cache invokes a different clang binary than itself, it will perform "
   "a normal non-caching invocation of the compiler">, InGroup<CompileJobCache>;
+def err_clang_cache_failed_execution: Error<
+  "clang-cache failed to execute compiler: %0">;
+def err_clang_cache_cannot_find_binary: Error<
+  "clang-cache cannot find compiler binary %0">;
+def err_clang_cache_missing_compiler_command: Error<
+  "missing compiler command for clang-cache">;
 
 def remark_compile_job_cache_hit : Remark<
   "compile job cache hit for '%0' => '%1'">, InGroup<CompileJobCacheHit>;
