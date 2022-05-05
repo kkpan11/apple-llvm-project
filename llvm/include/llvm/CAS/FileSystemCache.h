@@ -13,7 +13,7 @@
 #include "llvm/ADT/FunctionExtras.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringMap.h"
-#include "llvm/CAS/CASID.h"
+#include "llvm/CAS/CASReference.h"
 #include "llvm/CAS/HashMappedTrie.h"
 #include "llvm/CAS/ThreadSafeAllocator.h"
 #include "llvm/Support/AlignOf.h"
@@ -102,40 +102,41 @@ public:
   /// mutex.
   DirectoryEntry &makeDirectoryAlreadyLocked(DirectoryEntry &Parent,
                                              StringRef TreePath,
-                                             Optional<CASID> ID);
+                                             Optional<ObjectRef> Ref);
 
   /// Create a directory entry for a \a Symlink without allocating it.
   ///
   /// Not thread-safe. Assumes there is a lock in place already on \p Parent's
   /// mutex.
   DirectoryEntry &makeLazySymlinkAlreadyLocked(DirectoryEntry &Parent,
-                                               StringRef TreePath, CASID ID);
+                                               StringRef TreePath,
+                                               ObjectRef Ref);
 
   /// Create a directory entry for a \a File without allocating it.
   ///
   /// Not thread-safe. Assumes there is a lock in place already on \p Parent's
   /// mutex.
   DirectoryEntry &makeLazyFileAlreadyLocked(DirectoryEntry &Parent,
-                                            StringRef TreePath, CASID ID,
+                                            StringRef TreePath, ObjectRef Ref,
                                             bool IsExecutable);
 
   /// Create a directory entry and a directory (with no contents).
   ///
   /// Thread-safe; takes a lock on \p Parent's mutex.
   DirectoryEntry &makeDirectory(DirectoryEntry &Parent, StringRef TreePath,
-                                Optional<CASID> ID = None);
+                                Optional<ObjectRef> Ref = None);
 
   /// Create a directory entry and a symlink.
   ///
   /// Thread-safe; takes a lock on \p Parent's mutex.
   DirectoryEntry &makeSymlink(DirectoryEntry &Parent, StringRef TreePath,
-                              CASID ID, StringRef Target);
+                              ObjectRef Ref, StringRef Target);
 
   /// Create a directory entry and a file.
   ///
   /// Thread-safe; takes a lock on \p Parent's mutex.
-  DirectoryEntry &makeFile(DirectoryEntry &Parent, StringRef TreePath, CASID ID,
-                           size_t Size, bool IsExecutable);
+  DirectoryEntry &makeFile(DirectoryEntry &Parent, StringRef TreePath,
+                           ObjectRef Ref, size_t Size, bool IsExecutable);
 
   /// Fill in a lazy symlink, setting its target to \p Target.
   ///
@@ -199,7 +200,7 @@ public:
   FileSystemCache(FileSystemCache &&) = delete;
   FileSystemCache(const FileSystemCache &) = delete;
 
-  explicit FileSystemCache(Optional<CASID> RootID = None);
+  explicit FileSystemCache(Optional<ObjectRef> Root = None);
 
 private:
   ThreadSafeAllocator<SpecificBumpPtrAllocator<File>> FileAlloc;
@@ -235,7 +236,7 @@ public:
   bool isDirectory() const { return Kind == Directory; }
   EntryKind getKind() const { return Kind; }
   DirectoryEntry *getParent() const { return Parent; }
-  Optional<CASID> getID() const { return ID; }
+  Optional<ObjectRef> getRef() const { return Ref; }
 
   sys::fs::file_type getFileType() const;
 
@@ -295,16 +296,16 @@ public:
   DirectoryEntry() = delete;
 
   DirectoryEntry(DirectoryEntry *Parent, StringRef TreePath, EntryKind Kind,
-                 Optional<CASID> ID)
+                 Optional<ObjectRef> Ref)
       : CachedDirectoryEntry(TreePath), Parent(Parent), Kind(Kind),
-        Node(nullptr), ID(ID) {}
+        Node(nullptr), Ref(Ref) {}
 
 private:
   DirectoryEntry *Parent;
   EntryKind Kind;
   Optional<sys::fs::UniqueID> UniqueID;
   std::atomic<void *> Node;
-  Optional<CASID> ID; /// If this is a fixed tree.
+  Optional<ObjectRef> Ref; /// If this is a fixed tree.
 };
 
 struct FileSystemCache::DirectoryListingInfo {

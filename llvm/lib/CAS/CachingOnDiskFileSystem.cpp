@@ -201,12 +201,14 @@ public:
   /// Get the contents of the file as a \p MemoryBuffer.
   ErrorOr<std::unique_ptr<MemoryBuffer>> getBuffer(const Twine &RequestedName,
                                                    int64_t, bool, bool) final {
+    Expected<AnyObjectHandle> Object = DB.loadObject(*Entry->getRef());
+    if (!Object)
+      return errorToErrorCode(Object.takeError());
+    NodeHandle Node = Object->get<NodeHandle>();
+    assert(DB.getNumRefs(Node) == 0 && "Expected a leaf node");
     SmallString<256> Storage;
-    if (Expected<BlobProxy> ExpectedBlob = DB.getBlob(*Entry->getID()))
-      return MemoryBuffer::getMemBuffer(**ExpectedBlob,
-                                        RequestedName.toStringRef(Storage));
-    else
-      return errorToErrorCode(ExpectedBlob.takeError());
+    return MemoryBuffer::getMemBuffer(DB.getDataString(Node),
+                                      RequestedName.toStringRef(Storage));
   }
 
   /// Closes the file.
@@ -326,10 +328,11 @@ Expected<FileSystemCache::DirectoryEntry *>
 CachingOnDiskFileSystemImpl::makeSymlinkTo(DirectoryEntry &Parent,
                                            StringRef TreePath,
                                            StringRef Target) {
-  Expected<BlobProxy> Blob = DB.createBlob(Target);
-  if (!Blob)
-    return Blob.takeError();
-  return &Cache->makeSymlink(Parent, TreePath, *Blob, **Blob);
+  Expected<NodeHandle> Node = DB.storeNodeFromString(None, Target);
+  if (!Node)
+    return Node.takeError();
+  return &Cache->makeSymlink(Parent, TreePath, DB.getReference(*Node),
+                             DB.getDataString(*Node));
 }
 
 Expected<FileSystemCache::DirectoryEntry *>
@@ -341,7 +344,7 @@ CachingOnDiskFileSystemImpl::makeFile(DirectoryEntry &Parent,
     return Node.takeError();
 
   // Do not trust Status.size() in case the file is volatile.
-  return &Cache->makeFile(Parent, TreePath, DB.getObjectID(*Node),
+  return &Cache->makeFile(Parent, TreePath, DB.getReference(*Node),
                           DB.getDataSize(*Node),
                           Status.permissions() & sys::fs::perms::owner_exe);
 }
@@ -397,7 +400,7 @@ CachingOnDiskFileSystemImpl::statusAndFileID(const Twine &Path,
   if (!StatusOrErr)
     return StatusOrErr.getError();
   if (Entry->isFile())
-    FileID = *Entry->getID();
+    FileID = DB.getObjectID(*Entry->getRef());
   return StatusOrErr;
 }
 
@@ -613,16 +616,19 @@ getTreeEntryKind(const FileSystemCache::DirectoryEntry &Entry) {
 
 /// Push an entry to the builder, doing nothing (but returning false) for
 /// directories.
-static void pushEntryToBuilder(HierarchicalTreeBuilder &Builder,
+static void pushEntryToBuilder(const CASDB &DB,
+                               HierarchicalTreeBuilder &Builder,
                                const FileSystemCache::DirectoryEntry &Entry) {
   assert(!Entry.isDirectory());
 
   if (Entry.isSymlink()) {
-    Builder.push(*Entry.getID(), TreeEntry::Symlink, Entry.getTreePath());
+    Builder.push(DB.getObjectID(*Entry.getRef()), TreeEntry::Symlink,
+                 Entry.getTreePath());
     return;
   }
 
-  Builder.push(*Entry.getID(), getTreeEntryKind(Entry), Entry.getTreePath());
+  Builder.push(DB.getObjectID(*Entry.getRef()), getTreeEntryKind(Entry),
+               Entry.getTreePath());
 }
 
 void CachingOnDiskFileSystemImpl::trackNewAccesses() {
@@ -655,7 +661,8 @@ Expected<TreeProxy> CachingOnDiskFileSystemImpl::createTreeFromNewAccesses(
     if (Entry->isDirectory())
       Builder.pushDirectory(Path);
     else
-      Builder.push(*Entry->getID(), getTreeEntryKind(*Entry), Path);
+      Builder.push(DB.getObjectID(*Entry->getRef()), getTreeEntryKind(*Entry),
+                   Path);
   }
 
   return Builder.create(DB);
@@ -800,7 +807,7 @@ void CachingOnDiskFileSystemImpl::TreeBuilder::pushSymlink(
     const DirectoryEntry &Entry) {
   assert(Entry.isSymlink());
   if (Seen.insert(&Entry).second)
-    pushEntryToBuilder(Builder, Entry);
+    pushEntryToBuilder(FS.getCAS(), Builder, Entry);
 }
 
 void CachingOnDiskFileSystemImpl::TreeBuilder::pushEntry(
@@ -808,7 +815,7 @@ void CachingOnDiskFileSystemImpl::TreeBuilder::pushEntry(
   if (!Seen.insert(&Entry).second)
     return;
   if (Entry.isFile() || Entry.isSymlink())
-    pushEntryToBuilder(Builder, Entry);
+    pushEntryToBuilder(FS.getCAS(), Builder, Entry);
   if (!Entry.isFile())
     Worklist.push_back(&Entry);
 }
