@@ -57,18 +57,9 @@ void ReferenceBase::print(raw_ostream &OS, const ObjectRef &This) const {
   printReferenceBase(OS, "object-ref", InternalRef, ID);
 }
 
-Expected<BlobProxy>
-CASDB::createBlobFromOpenFile(sys::fs::file_t FD,
-                              Optional<sys::fs::file_status> Status) {
-  if (Expected<BlobHandle> Blob = storeBlobFromOpenFile(FD, Status))
-    return BlobProxy::load(*this, *Blob);
-  else
-    return Blob.takeError();
-}
-
 /// Default implementation opens the file and calls \a createBlob().
-Expected<BlobHandle>
-CASDB::storeBlobFromOpenFileImpl(sys::fs::file_t FD,
+Expected<NodeHandle>
+CASDB::storeNodeFromOpenFileImpl(sys::fs::file_t FD,
                                  Optional<sys::fs::file_status> Status) {
   // Check whether we can trust the size from stat.
   int64_t FileSize = -1;
@@ -83,7 +74,8 @@ CASDB::storeBlobFromOpenFileImpl(sys::fs::file_t FD,
   if (!ExpectedContent)
     return errorCodeToError(ExpectedContent.getError());
 
-  return storeBlob((*ExpectedContent)->getBuffer());
+  return storeNode(
+      None, arrayRefFromStringRef<char>((*ExpectedContent)->getBuffer()));
 }
 
 Expected<Optional<AnyObjectHandle>> CASDB::loadObject(const CASID &ID) {
@@ -118,9 +110,19 @@ Expected<ProxyT> CASDB::loadObjectProxy(Expected<HandleT> H) {
   return ProxyT::load(*this, *H);
 }
 
-Expected<BlobProxy> CASDB::getBlob(CASID ID) {
-  return loadObjectProxy<BlobProxy, BlobHandle>(ID);
+Expected<LeafNodeProxy> CASDB::getBlob(CASID ID) {
+  Optional<AnyObjectHandle> Object;
+  if (Error E = loadObject(ID).moveInto(Object))
+    return std::move(E);
+  if (!Object || !Object->is<NodeHandle>())
+    return createWrongKindError(ID);
+  Optional<NodeHandle> Node = Object->get<NodeHandle>();
+  if (getNumRefs(*Node) > 0)
+    return createStringError(std::make_error_code(std::errc::invalid_argument),
+                             "node '" + ID.toString() + "' is not a leaf");
+  return LeafNodeProxy(NodeProxy::load(*this, *Node));
 }
+
 Expected<TreeProxy> CASDB::getTree(CASID ID) {
   return loadObjectProxy<TreeProxy, TreeHandle>(ID);
 }
@@ -138,8 +140,12 @@ Error CASDB::createWrongKindError(CASID ID) {
                            "wrong object kind '" + ID.toString() + "'");
 }
 
-Expected<BlobProxy> CASDB::createBlob(StringRef Data) {
-  return loadObjectProxy<BlobProxy>(storeBlob(Data));
+Expected<LeafNodeProxy> CASDB::createBlob(StringRef Data) {
+  Optional<NodeHandle> Node;
+  if (Error E =
+          storeNode(None, arrayRefFromStringRef<char>(Data)).moveInto(Node))
+    return std::move(E);
+  return LeafNodeProxy(NodeProxy::load(*this, *Node));
 }
 
 Expected<TreeProxy> CASDB::createTree(ArrayRef<NamedTreeEntry> Entries) {
@@ -159,17 +165,17 @@ Expected<NodeProxy> CASDB::createNode(ArrayRef<CASID> IDs, StringRef Data) {
 }
 
 Expected<std::unique_ptr<MemoryBuffer>>
-CASDB::loadIndependentDataBuffer(AnyDataHandle Data, const Twine &Name,
+CASDB::loadIndependentDataBuffer(NodeHandle Node, const Twine &Name,
                                  bool NullTerminate) const {
-  return loadIndependentDataBufferImpl(Data, Name, NullTerminate);
+  return loadIndependentDataBufferImpl(Node, Name, NullTerminate);
 }
 
 Expected<std::unique_ptr<MemoryBuffer>>
-CASDB::loadIndependentDataBufferImpl(AnyDataHandle Data, const Twine &Name,
+CASDB::loadIndependentDataBufferImpl(NodeHandle Node, const Twine &Name,
                                      bool NullTerminate) const {
   SmallString<256> Bytes;
   raw_svector_ostream OS(Bytes);
-  readData(Data, OS);
+  readData(Node, OS);
   return std::make_unique<SmallVectorMemoryBuffer>(std::move(Bytes), Name.str(),
                                                    NullTerminate);
 }

@@ -50,14 +50,8 @@ public:
     /// Node with refs and data.
     RefNode,
 
-    /// Blob with data (8-byte alignment guaranteed, null-terminated).
-    RefBlob,
-
     /// Node with refs and data co-allocated.
     InlineNode,
-
-    /// Blob with data (as above) co-allocated.
-    InlineBlob,
 
     /// Tree: custom node. Pairs of refs pointing at target (arbitrary object)
     /// and names (String), and some data to describe the kind of the entry.
@@ -97,72 +91,6 @@ public:
     ArrayRef<char> Array = static_cast<const DerivedT *>(this)->getData();
     return StringRef(Array.begin(), Array.size());
   }
-};
-
-class InMemoryBlob : public InMemoryObject, public GetDataString<InMemoryBlob> {
-public:
-  static bool classof(const InMemoryObject *O) {
-    return O->getKind() == Kind::RefBlob || O->getKind() == Kind::InlineBlob;
-  }
-  inline ArrayRef<char> getData() const;
-
-private:
-  using InMemoryObject::InMemoryObject;
-};
-
-class InMemoryRefBlob : public InMemoryBlob {
-public:
-  static constexpr Kind KindValue = Kind::RefBlob;
-  static bool classof(const InMemoryObject *O) {
-    return O->getKind() == KindValue;
-  }
-
-  ArrayRef<char> getDataImpl() const { return Data; }
-  ArrayRef<char> getData() const { return Data; }
-
-  static InMemoryRefBlob &create(function_ref<void *(size_t Size)> Allocate,
-                                 const InMemoryIndexValueT &I,
-                                 ArrayRef<char> Data) {
-    void *Mem = Allocate(sizeof(InMemoryRefBlob));
-    return *new (Mem) InMemoryRefBlob(I, Data);
-  }
-
-private:
-  InMemoryRefBlob(const InMemoryIndexValueT &I, ArrayRef<char> Data)
-      : InMemoryBlob(KindValue, I), Data(Data) {
-    assert(isAddrAligned(Align(8), Data.data()) && "Expected 8-byte alignment");
-    assert(*Data.end() == 0 && "Expected null-termination");
-  }
-  ArrayRef<char> Data;
-};
-
-class InMemoryInlineBlob : public InMemoryBlob {
-public:
-  static constexpr Kind KindValue = Kind::InlineBlob;
-  static bool classof(const InMemoryObject *O) {
-    return O->getKind() == KindValue;
-  }
-
-  ArrayRef<char> getDataImpl() const {
-    return makeArrayRef(reinterpret_cast<const char *>(this + 1), Size);
-  }
-  ArrayRef<char> getData() const { return getDataImpl(); }
-
-  static InMemoryInlineBlob &create(function_ref<void *(size_t Size)> Allocate,
-                                    const InMemoryIndexValueT &I,
-                                    ArrayRef<char> Data) {
-    void *Mem = Allocate(sizeof(InMemoryInlineBlob) + Data.size() + 1);
-    return *new (Mem) InMemoryInlineBlob(I, Data);
-  }
-
-private:
-  InMemoryInlineBlob(const InMemoryIndexValueT &I, ArrayRef<char> Data)
-      : InMemoryBlob(KindValue, I), Size(Data.size()) {
-    auto *Begin = reinterpret_cast<char *>(this + 1);
-    llvm::copy(Data, Begin);
-    Begin[Data.size()] = 0;
-  }
-  size_t Size;
 };
 
 class InMemoryNode : public InMemoryObject, public GetDataString<InMemoryNode> {
@@ -334,8 +262,6 @@ public:
     return getID(indexHash(Hash));
   }
 
-  Expected<BlobHandle> storeBlobImpl(ArrayRef<uint8_t> ComputedHash,
-                                     ArrayRef<char> Data) final;
   Expected<TreeHandle>
   storeTreeImpl(ArrayRef<uint8_t> ComputedHash,
                 ArrayRef<NamedTreeEntry> SortedEntries) final;
@@ -343,8 +269,8 @@ public:
                                      ArrayRef<ObjectRef> Refs,
                                      ArrayRef<char> Data) final;
 
-  Expected<BlobHandle>
-  storeBlobFromNullTerminatedRegion(ArrayRef<uint8_t> ComputedHash,
+  Expected<NodeHandle>
+  storeNodeFromNullTerminatedRegion(ArrayRef<uint8_t> ComputedHash,
                                     sys::fs::mapped_file_region Map) override;
 
   CASID getID(const InMemoryIndexValueT &I) const {
@@ -366,17 +292,11 @@ public:
   }
 
   AnyObjectHandle getObjectHandle(const InMemoryObject &O) const {
-    if (auto *B = dyn_cast<InMemoryBlob>(&O))
-      return getBlobHandle(*B);
     if (auto *T = dyn_cast<InMemoryTree>(&O))
       return getTreeHandle(*T);
     return getNodeHandle(cast<InMemoryNode>(O));
   }
 
-  BlobHandle getBlobHandle(const InMemoryBlob &Blob) const {
-    assert(!(reinterpret_cast<uintptr_t>(&Blob) & 0x1ULL));
-    return makeBlobHandle(reinterpret_cast<uintptr_t>(&Blob));
-  }
   TreeHandle getTreeHandle(const InMemoryTree &Tree) const {
     assert(!(reinterpret_cast<uintptr_t>(&Tree) & 0x1ULL));
     return makeTreeHandle(reinterpret_cast<uintptr_t>(&Tree));
@@ -420,9 +340,6 @@ public:
   ObjectRef toReference(const InMemoryObject &O) const {
     return makeObjectRef(reinterpret_cast<uintptr_t>(&O));
   }
-  const InMemoryBlob &getInMemoryBlob(BlobHandle Blob) const {
-    return cast<InMemoryBlob>(getInMemoryObject(Blob));
-  }
   const InMemoryNode &getInMemoryNode(NodeHandle Node) const {
     return cast<InMemoryNode>(getInMemoryObject(Node));
   }
@@ -448,7 +365,9 @@ public:
     return toReference(asInMemoryObject(Handle));
   }
 
-  ArrayRef<char> getDataConst(AnyDataHandle Data) const final;
+  ArrayRef<char> getDataConst(NodeHandle Node) const final {
+    return cast<InMemoryNode>(asInMemoryObject(Node)).getData();
+  }
 
   void print(raw_ostream &OS) const final;
 
@@ -503,12 +422,6 @@ private:
 };
 
 } // end anonymous namespace
-
-ArrayRef<char> InMemoryBlob::getData() const {
-  if (auto *Derived = dyn_cast<InMemoryRefBlob>(this))
-    return Derived->getDataImpl();
-  return cast<InMemoryInlineBlob>(this)->getDataImpl();
-}
 
 ArrayRef<char> InMemoryNode::getData() const {
   if (auto *Derived = dyn_cast<InMemoryRefNode>(this))
@@ -571,23 +484,7 @@ const InMemoryTree::NamedRef *InMemoryTree::find(StringRef Name) const {
   return I;
 }
 
-Expected<BlobHandle> InMemoryCAS::storeBlobImpl(ArrayRef<uint8_t> ComputedHash,
-                                                ArrayRef<char> Data) {
-  // Look up the hash in the index, initializing to nullptr if it's new.
-  auto &I = indexHash(ComputedHash);
-
-  // Load or generate.
-  auto Allocator = [&](size_t Size) -> void * {
-    return Objects.Allocate(Size, alignof(InMemoryObject));
-  };
-  auto Generator = [&]() -> const InMemoryObject * {
-    return &InMemoryInlineBlob::create(Allocator, I, Data);
-  };
-
-  return getBlobHandle(cast<InMemoryBlob>(I.Data.loadOrGenerate(Generator)));
-}
-
-Expected<BlobHandle> InMemoryCAS::storeBlobFromNullTerminatedRegion(
+Expected<NodeHandle> InMemoryCAS::storeNodeFromNullTerminatedRegion(
     ArrayRef<uint8_t> ComputedHash, sys::fs::mapped_file_region Map) {
   // Look up the hash in the index, initializing to nullptr if it's new.
   ArrayRef<char> Data(Map.data(), Map.size());
@@ -598,17 +495,17 @@ Expected<BlobHandle> InMemoryCAS::storeBlobFromNullTerminatedRegion(
     return Objects.Allocate(Size, alignof(InMemoryObject));
   };
   auto Generator = [&]() -> const InMemoryObject * {
-    return &InMemoryRefBlob::create(Allocator, I, Data);
+    return &InMemoryRefNode::create(Allocator, I, None, Data);
   };
-  const InMemoryBlob &Blob =
-      cast<InMemoryBlob>(I.Data.loadOrGenerate(Generator));
+  const InMemoryNode &Node =
+      cast<InMemoryNode>(I.Data.loadOrGenerate(Generator));
 
-  // Save Map if the winning blob uses it.
-  if (auto *RefBlob = dyn_cast<InMemoryRefBlob>(&Blob))
-    if (RefBlob->getData().data() == Map.data())
+  // Save Map if the winning node uses it.
+  if (auto *RefNode = dyn_cast<InMemoryRefNode>(&Node))
+    if (RefNode->getData().data() == Map.data())
       new (MemoryMaps.Allocate()) sys::fs::mapped_file_region(std::move(Map));
 
-  return getBlobHandle(Blob);
+  return getNodeHandle(Node);
 }
 
 Expected<NodeHandle> InMemoryCAS::storeNodeImpl(ArrayRef<uint8_t> ComputedHash,
@@ -722,13 +619,6 @@ Error InMemoryCAS::forEachRef(NodeHandle Handle,
     if (Error E = Callback(toReference(*Ref)))
       return E;
   return Error::success();
-}
-
-ArrayRef<char> InMemoryCAS::getDataConst(AnyDataHandle Data) const {
-  const InMemoryObject &Object = asInMemoryObject(Data);
-  if (auto *B = dyn_cast<InMemoryBlob>(&Object))
-    return B->getData();
-  return cast<InMemoryNode>(Object).getData();
 }
 
 std::unique_ptr<CASDB> cas::createInMemoryCAS() {
