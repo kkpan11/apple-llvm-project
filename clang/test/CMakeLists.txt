@@ -58,6 +58,7 @@ list(APPEND CLANG_TEST_DEPS
   apinotes-test
   c-index-test
   clang
+  clang-cas-test
   clang-resource-headers
   clang-format
   clang-tblgen
