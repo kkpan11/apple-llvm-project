@@ -163,19 +163,19 @@ Error CASFileSystem::loadDirectory(DirectoryEntry &Parent) {
   size_t ParentPathSize = Path.size();
   auto makeCachedEntry =
       [&](const NamedTreeEntry &NewEntry) -> DirectoryEntry & {
-    Optional<ObjectRef> Ref = DB.getReference(NewEntry.getID());
-    assert(Ref && "Expected valid reference for new tree entry");
     Path.resize(ParentPathSize);
     sys::path::append(Path, sys::path::Style::posix, NewEntry.getName());
     switch (NewEntry.getKind()) {
     case TreeEntry::Regular:
     case TreeEntry::Executable:
-      return Cache->makeLazyFileAlreadyLocked(
-          Parent, Path, *Ref, NewEntry.getKind() == TreeEntry::Executable);
+      return Cache->makeLazyFileAlreadyLocked(Parent, Path, NewEntry.getRef(),
+                                              NewEntry.getKind() ==
+                                                  TreeEntry::Executable);
     case TreeEntry::Symlink:
-      return Cache->makeLazySymlinkAlreadyLocked(Parent, Path, *Ref);
+      return Cache->makeLazySymlinkAlreadyLocked(Parent, Path,
+                                                 NewEntry.getRef());
     case TreeEntry::Tree:
-      return Cache->makeDirectoryAlreadyLocked(Parent, Path, *Ref);
+      return Cache->makeDirectoryAlreadyLocked(Parent, Path, NewEntry.getRef());
     }
     llvm_unreachable("invalid tree type");
   };

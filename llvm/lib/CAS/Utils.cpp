@@ -50,13 +50,13 @@ void cas::writeCASIDBuffer(const CASID &ID, llvm::raw_ostream &OS) {
 }
 
 Error cas::walkFileTreeRecursively(
-    CASDB &CAS, CASID ID,
+    CASDB &CAS, const TreeHandle &Root,
     function_ref<Error(const NamedTreeEntry &, Optional<TreeProxy>)> Callback) {
   BumpPtrAllocator Alloc;
   StringSaver Saver(Alloc);
   SmallString<128> PathStorage;
   SmallVector<NamedTreeEntry> Stack;
-  Stack.emplace_back(ID, TreeEntry::Tree, "/");
+  Stack.emplace_back(CAS.getReference(Root), TreeEntry::Tree, "/");
 
   while (!Stack.empty()) {
     if (Stack.back().getKind() != TreeEntry::Tree) {
@@ -66,7 +66,7 @@ Error cas::walkFileTreeRecursively(
     }
 
     NamedTreeEntry Parent = Stack.pop_back_val();
-    Expected<TreeProxy> ExpTree = CAS.getTree(Parent.getID());
+    Expected<TreeProxy> ExpTree = CAS.loadTree(Parent.getRef());
     if (Error E = ExpTree.takeError())
       return E;
     TreeProxy Tree = *ExpTree;
@@ -78,7 +78,7 @@ Error cas::walkFileTreeRecursively(
 
       SmallString<128> PathStorage = Parent.getName();
       sys::path::append(PathStorage, sys::path::Style::posix, Child->getName());
-      Stack.emplace_back(Child->getID(), Child->getKind(),
+      Stack.emplace_back(Child->getRef(), Child->getKind(),
                          Saver.save(StringRef(PathStorage)));
     }
   }
@@ -105,12 +105,13 @@ static void printTreeEntryKind(raw_ostream &OS, TreeEntry::EntryKind Kind) {
 
 void cas::NamedTreeEntry::print(raw_ostream &OS, CASDB &CAS) const {
   printTreeEntryKind(OS, getKind());
-  OS << " " << getID() << " " << Name;
+  OS << " " << CAS.getObjectID(getRef()) << " " << Name;
   if (getKind() == TreeEntry::Tree)
     OS << "/";
   if (getKind() == TreeEntry::Symlink) {
-    auto Target = cantFail(CAS.getBlob(getID()));
-    OS << " -> " << *Target;
+    AnyObjectHandle Target = cantFail(CAS.loadObject(getRef()));
+    OS << " -> ";
+    CAS.readData(Target.get<NodeHandle>(), OS);
   }
   OS << "\n";
 }

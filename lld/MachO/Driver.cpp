@@ -281,7 +281,7 @@ static void handleFileForDepScanning(MemoryBufferRef mbref) {
 static DenseMap<StringRef, ArchiveFile *> loadedArchives;
 
 static Expected<InputFile *> addCASObject(ObjectFormatSchemaPool &CASSchemas,
-                                          CASID ID, StringRef path);
+                                          cas::ObjectRef ID, StringRef path);
 
 static InputFile *addFile(StringRef path, ForceLoad forceLoadArchive,
                           bool isLazy = false, bool isExplicit = true,
@@ -420,15 +420,19 @@ static InputFile *addFile(StringRef path, ForceLoad forceLoadArchive,
       break;
     }
     CASID ID = std::move(*expCASID);
-    auto blobRef = CAS.getBlob(ID);
-    if (blobRef) {
+    Optional<cas::ObjectRef> Node = CAS.getReference(ID);
+    if (!Node) {
+      error(path + ": unknown object '" + ID.toString() + "'");
+      break;
+    }
+    if (Expected<cas::LeafNodeProxy> blobRef = CAS.loadBlob(*Node)) {
       MemoryBufferRef casMBRef(blobRef->getData(), path);
       switch (identify_magic(casMBRef.getBuffer())) {
       case file_magic::archive:
         newFile = addArchive(casMBRef);
         break;
       case file_magic::macho_object:
-        newFile = make<ObjFile>(casMBRef, *blobRef, "");
+        newFile = make<ObjFile>(casMBRef, blobRef->getRef(), "");
         break;
       default:
         error(path + ": unexpected CASID file type");
@@ -436,7 +440,7 @@ static InputFile *addFile(StringRef path, ForceLoad forceLoadArchive,
       }
     } else {
       consumeError(blobRef.takeError());
-      auto casFile = addCASObject(*config->CASSchemas, ID, path);
+      auto casFile = addCASObject(*config->CASSchemas, *Node, path);
       if (!casFile) {
         error(path + ": " + toString(casFile.takeError()));
         break;
@@ -474,7 +478,7 @@ static InputFile *addFile(StringRef path, ForceLoad forceLoadArchive,
 /// \param ID The CASID pointing at the root node of the CAS object.
 /// \param path The object filename.
 static Expected<InputFile *> addCASObject(ObjectFormatSchemaPool &CASSchemas,
-                                          CASID ID, StringRef path) {
+                                          cas::ObjectRef ID, StringRef path) {
   // FIXME: Check format from the CAS data instead of using the filename.
   if (!path.endswith(".o")) {
     return createStringError(inconvertibleErrorCode(),
@@ -498,8 +502,14 @@ static Expected<InputFile *> addCASObject(ObjectFormatSchemaPool &CASSchemas,
 /// \param CAS CAS database.
 /// \param ID The CASID pointing to a tree of files.
 static Error addCASTree(ObjectFormatSchemaPool &CASSchemas, CASID ID) {
+  Optional<cas::ObjectRef> Object = CASSchemas.getCAS().getReference(ID);
+  if (!Object)
+    return createStringError(inconvertibleErrorCode(), "unknown tree root");
+  Expected<cas::TreeProxy> Tree = CASSchemas.getCAS().loadTree(*Object);
+  if (!Tree)
+    return Tree.takeError();
   return walkFileTreeRecursively(
-      CASSchemas.getCAS(), ID,
+      CASSchemas.getCAS(), *Tree,
       [&](const NamedTreeEntry &entry, Optional<TreeProxy>) -> Error {
         if (entry.getKind() == TreeEntry::Tree)
           return Error::success();
@@ -509,7 +519,7 @@ static Error addCASTree(ObjectFormatSchemaPool &CASSchemas, CASID ID) {
                                    "found non-regular entry: " +
                                        entry.getName());
         }
-        if (auto E = addCASObject(CASSchemas, entry.getID(), entry.getName())
+        if (auto E = addCASObject(CASSchemas, entry.getRef(), entry.getName())
                          .takeError())
           return E;
         return Error::success();
@@ -1293,7 +1303,7 @@ static bool shouldCacheResults(InputArgList &args) {
 static bool link(InputArgList &args, bool canExitEarly, raw_ostream &stdoutOS,
                  raw_ostream &stderrOS);
 
-static CASID createResultCacheKey(CASDB &CAS, CASID rootID,
+static CASID createResultCacheKey(CASDB &CAS, cas::ObjectRef rootID,
                                   const InputArgList &args) {
   // Change this when the schema for caching changes. It will ensure creation of
   // brand new cachets.
@@ -1301,15 +1311,16 @@ static CASID createResultCacheKey(CASDB &CAS, CASID rootID,
 
   HierarchicalTreeBuilder builder;
   builder.push(rootID, TreeEntry::Tree, "filesystem");
-  builder.push(cantFail(CAS.createBlob(
-                   createResponseFile(args, /*isForCacheKey=*/true))),
-               TreeEntry::Regular, "arguments");
+  builder.push(
+      cantFail(CAS.createBlob(createResponseFile(args, /*isForCacheKey=*/true)))
+          .getRef(),
+      TreeEntry::Regular, "arguments");
   std::string version = getLLDVersion();
   { raw_string_ostream(version) << '-' << CACHE_FORMAT_VERSION; }
-  builder.push(cantFail(CAS.createBlob(version)), TreeEntry::Regular,
+  builder.push(cantFail(CAS.createBlob(version)).getRef(), TreeEntry::Regular,
                "version");
 
-  return cantFail(builder.create(CAS)).getID();
+  return CAS.getObjectID(cantFail(builder.create(CAS)));
 }
 
 static Error replayResult(CASDB &CAS, CASID resultID) {
@@ -1386,7 +1397,7 @@ static bool linkWithResultCaching(InputArgList &args, bool canExitEarly,
       return false;
     }
 
-    optCacheKey = createResultCacheKey(CAS, *expectedRootRef, args);
+    optCacheKey = createResultCacheKey(CAS, expectedRootRef->getRef(), args);
     rootRef = *expectedRootRef;
   }
 
@@ -1456,19 +1467,20 @@ static bool linkWithResultCaching(InputArgList &args, bool canExitEarly,
     }
 
     HierarchicalTreeBuilder builder;
-    builder.push(*blob, TreeEntry::Executable, "/output");
-    auto resultID = builder.create(CAS);
-    if (!resultID) {
-      error("error creating result CASID: " + toString(resultID.takeError()));
+    builder.push(blob->getRef(), TreeEntry::Executable, "/output");
+    auto resultTree = builder.create(CAS);
+    if (!resultTree) {
+      error("error creating result CASID: " + toString(resultTree.takeError()));
       return false;
     }
 
-    if (Error E = CAS.putCachedResult(cacheKey, *resultID)) {
+    cas::CASID resultID = CAS.getObjectID(*resultTree);
+    if (Error E = CAS.putCachedResult(cacheKey, resultID)) {
       error("error storing cached result: " + toString(std::move(E)));
       return false;
     }
 
-    log("Caching: cached result: " + resultID->getID().toString());
+    log("Caching: cached result: " + resultID.toString());
   }
 
   return true;

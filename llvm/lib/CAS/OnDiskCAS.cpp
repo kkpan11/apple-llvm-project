@@ -1872,14 +1872,8 @@ OnDiskCAS::storeTreeImpl(ArrayRef<uint8_t> ComputedHash,
   }
 
   // Then target refs.
-  for (const NamedTreeEntry &E : SortedEntries) {
-    // Note that these calls to getInternalRef() each do a data access,
-    // converting from CASID to InternalRef.
-    if (Optional<ObjectRef> Ref = getReference(E.getID()))
-      Refs.push_back(getInternalRef(*Ref));
-    else
-      return createUnknownObjectError(E.getID());
-  }
+  for (const NamedTreeEntry &E : SortedEntries)
+    Refs.push_back(getInternalRef(E.getRef()));
 
   // Create the object.
   return castExpected<TreeHandle>(
@@ -2025,10 +2019,10 @@ NamedTreeEntry OnDiskCAS::makeTreeEntry(TreeHandle Tree,
   assert(I < NumNames);
   assert(Record.getNumRefs() % 2 == 0);
   StringRef Name = getTreeEntryName(Tree, Record.getRefs()[I]);
-  Optional<CASID> ID = getID(Record.getRefs()[I + NumNames]);
+  InternalRef Ref = Record.getRefs()[I + NumNames];
   TreeEntry::EntryKind Kind =
       getUnstableKind((StableTreeEntryKind)Record.getData()[I]);
-  return NamedTreeEntry(*ID, Kind, Name);
+  return NamedTreeEntry(getExternalReference(Ref), Kind, Name);
 }
 
 Optional<size_t> OnDiskCAS::lookupTreeEntry(TreeHandle Tree,

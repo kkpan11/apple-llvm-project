@@ -30,6 +30,12 @@ class ObjectRef;
 
 /// Base class for references to things in \a CASDB.
 class ReferenceBase {
+protected:
+  struct DenseMapEmptyTag {};
+  struct DenseMapTombstoneTag {};
+  static constexpr uint64_t getDenseMapEmptyRef() { return -1ULL; }
+  static constexpr uint64_t getDenseMapTombstoneRef() { return -2ULL; }
+
 public:
   /// Get an internal reference.
   uint64_t getInternalRef(const CASDB &ExpectedCAS) const {
@@ -39,13 +45,24 @@ public:
     return InternalRef;
   }
 
+  unsigned getDenseMapHash() const { return (unsigned)hash_value(InternalRef); }
+  bool isDenseMapEmpty() const { return InternalRef == getDenseMapEmptyRef(); }
+  bool isDenseMapTombstone() const {
+    return InternalRef == getDenseMapTombstoneRef();
+  }
+  bool isDenseMapSentinel() const {
+    return isDenseMapEmpty() || isDenseMapTombstone();
+  }
+
 protected:
   void print(raw_ostream &OS, const ObjectHandle &This) const;
   void print(raw_ostream &OS, const ObjectRef &This) const;
 
   bool hasSameInternalRef(const ReferenceBase &RHS) const {
 #if LLVM_ENABLE_ABI_BREAKING_CHECKS
-    assert(CAS == RHS.CAS && "Cannot compare across CAS instances");
+    assert(
+        (isDenseMapSentinel() || RHS.isDenseMapSentinel() || CAS == RHS.CAS) &&
+        "Cannot compare across CAS instances");
 #endif
     return InternalRef == RHS.InternalRef;
   }
@@ -58,7 +75,14 @@ protected:
 #if LLVM_ENABLE_ABI_BREAKING_CHECKS
     this->CAS = CAS;
 #endif
+    assert(InternalRef != getDenseMapEmptyRef() && "Reserved for DenseMapInfo");
+    assert(InternalRef != getDenseMapTombstoneRef() &&
+           "Reserved for DenseMapInfo");
   }
+  explicit ReferenceBase(DenseMapEmptyTag)
+      : InternalRef(getDenseMapEmptyRef()) {}
+  explicit ReferenceBase(DenseMapTombstoneTag)
+      : InternalRef(getDenseMapTombstoneRef()) {}
 
 public:
   enum HandleKind {
@@ -77,7 +101,7 @@ private:
   uint64_t InternalRef;
 
 #if LLVM_ENABLE_ABI_BREAKING_CHECKS
-  const CASDB *CAS;
+  const CASDB *CAS = nullptr;
 #endif
 };
 
@@ -104,6 +128,8 @@ private:
 /// Reference::getFromInternalRef(), but clients aren't expected to need to do
 /// this. These both require the right \a CASDB instance.
 class ObjectRef : public ReferenceBase {
+  struct DenseMapTag {};
+
 public:
   friend bool operator==(const ObjectRef &LHS, const ObjectRef &RHS) {
     return LHS.hasSameInternalRef(RHS);
@@ -115,6 +141,13 @@ public:
   /// Allow a reference to be recreated after it's deconstructed.
   static ObjectRef getFromInternalRef(const CASDB &CAS, uint64_t InternalRef) {
     return ObjectRef(CAS, InternalRef);
+  }
+
+  static ObjectRef getDenseMapEmptyKey() {
+    return ObjectRef(DenseMapEmptyTag{});
+  }
+  static ObjectRef getDenseMapTombstoneKey() {
+    return ObjectRef(DenseMapTombstoneTag{});
   }
 
   /// Print internal ref and/or CASID. Only suitable for debugging.
@@ -129,7 +162,12 @@ private:
   friend class testing_helpers::HandleFactory;
   using ReferenceBase::ReferenceBase;
   ObjectRef(const CASDB &CAS, uint64_t InternalRef)
-      : ReferenceBase(&CAS, InternalRef, /*IsHandle=*/false) {}
+      : ReferenceBase(&CAS, InternalRef, /*IsHandle=*/false) {
+    assert(InternalRef != -1ULL && "Reserved for DenseMapInfo");
+    assert(InternalRef != -2ULL && "Reserved for DenseMapInfo");
+  }
+  explicit ObjectRef(DenseMapEmptyTag T) : ReferenceBase(T) {}
+  explicit ObjectRef(DenseMapTombstoneTag T) : ReferenceBase(T) {}
   ObjectRef(ReferenceBase) = delete;
 };
 
@@ -240,6 +278,25 @@ public:
 };
 
 } // namespace cas
+
+template <> struct DenseMapInfo<cas::ObjectRef> {
+  static cas::ObjectRef getEmptyKey() {
+    return cas::ObjectRef::getDenseMapEmptyKey();
+  }
+
+  static cas::ObjectRef getTombstoneKey() {
+    return cas::ObjectRef::getDenseMapTombstoneKey();
+  }
+
+  static unsigned getHashValue(cas::ObjectRef Ref) {
+    return Ref.getDenseMapHash();
+  }
+
+  static bool isEqual(cas::ObjectRef LHS, cas::ObjectRef RHS) {
+    return LHS == RHS;
+  }
+};
+
 } // namespace llvm
 
 #endif // LLVM_CAS_CASREFERENCE_H

@@ -10,7 +10,7 @@
 #define LLVM_CAS_TREEENTRY_H
 
 #include "llvm/ADT/StringRef.h"
-#include "llvm/CAS/CASID.h"
+#include "llvm/CAS/CASReference.h"
 
 namespace llvm {
 namespace cas {
@@ -32,17 +32,17 @@ public:
   bool isSymlink() const { return Kind == Symlink; }
   bool isTree() const { return Kind == Tree; }
 
-  CASID getID() const { return ID; }
+  ObjectRef getRef() const { return Ref; }
 
   friend bool operator==(const TreeEntry &LHS, const TreeEntry &RHS) {
-    return LHS.Kind == RHS.Kind && LHS.ID == RHS.ID;
+    return LHS.Kind == RHS.Kind && LHS.Ref == RHS.Ref;
   }
 
-  TreeEntry(CASID ID, EntryKind Kind) : Kind(Kind), ID(ID) {}
+  TreeEntry(ObjectRef Ref, EntryKind Kind) : Kind(Kind), Ref(Ref) {}
 
 private:
   EntryKind Kind;
-  CASID ID;
+  ObjectRef Ref;
 };
 
 class NamedTreeEntry : public TreeEntry {
@@ -57,8 +57,8 @@ public:
     return LHS.Name < RHS.Name;
   }
 
-  NamedTreeEntry(CASID ID, EntryKind Kind, StringRef Name)
-      : TreeEntry(ID, Kind), Name(Name) {}
+  NamedTreeEntry(ObjectRef Ref, EntryKind Kind, StringRef Name)
+      : TreeEntry(Ref, Kind), Name(Name) {}
 
   void print(raw_ostream &OS, CASDB &CAS) const;
 

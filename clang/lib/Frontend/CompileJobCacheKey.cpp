@@ -23,6 +23,12 @@ using namespace llvm::cas;
 llvm::cas::CASID
 clang::createCompileJobCacheKey(CASDB &CAS, ArrayRef<const char *> CC1Args,
                                 llvm::cas::CASID FileSystemRootID) {
+  Optional<llvm::cas::ObjectRef> RootRef = CAS.getReference(FileSystemRootID);
+  if (!RootRef)
+    report_fatal_error(
+        createStringError(inconvertibleErrorCode(),
+                          "cannot handle unknown compile-job cache key: " +
+                              FileSystemRootID.toString()));
   assert(!CC1Args.empty() && StringRef(CC1Args[0]) == "-cc1");
   SmallString<256> CommandLine;
   for (StringRef Arg : CC1Args) {
@@ -31,17 +37,20 @@ clang::createCompileJobCacheKey(CASDB &CAS, ArrayRef<const char *> CC1Args,
   }
 
   llvm::cas::HierarchicalTreeBuilder Builder;
-  Builder.push(FileSystemRootID, llvm::cas::TreeEntry::Tree, "filesystem");
-  Builder.push(llvm::cantFail(CAS.createBlob(CommandLine)),
+  Builder.push(*RootRef, llvm::cas::TreeEntry::Tree, "filesystem");
+  Builder.push(CAS.getReference(
+                   llvm::cantFail(CAS.storeNodeFromString(None, CommandLine))),
                llvm::cas::TreeEntry::Regular, "command-line");
-  Builder.push(llvm::cantFail(CAS.createBlob("-cc1")),
-               llvm::cas::TreeEntry::Regular, "computation");
+  Builder.push(
+      CAS.getReference(llvm::cantFail(CAS.storeNodeFromString(None, "-cc1"))),
+      llvm::cas::TreeEntry::Regular, "computation");
 
   // FIXME: The version is maybe insufficient...
-  Builder.push(llvm::cantFail(CAS.createBlob(getClangFullVersion())),
+  Builder.push(CAS.getReference(llvm::cantFail(
+                   CAS.storeNodeFromString(None, getClangFullVersion()))),
                llvm::cas::TreeEntry::Regular, "version");
 
-  return llvm::cantFail(Builder.create(CAS)).getID();
+  return CAS.getObjectID(llvm::cantFail(Builder.create(CAS)));
 }
 
 Optional<llvm::cas::CASID>
@@ -68,9 +77,13 @@ clang::createCompileJobCacheKey(CASDB &CAS, DiagnosticsEngine &Diags,
   return createCompileJobCacheKey(CAS, Argv, *RootID);
 }
 
-static Error printFileSystem(cas::CASDB &CAS, cas::CASID ID, raw_ostream &OS) {
+static Error printFileSystem(cas::CASDB &CAS, cas::ObjectRef Ref,
+                             raw_ostream &OS) {
+  Expected<TreeProxy> Root = CAS.loadTree(Ref);
+  if (!Root)
+    return Root.takeError();
   return cas::walkFileTreeRecursively(
-      CAS, ID,
+      CAS, *Root,
       [&](const cas::NamedTreeEntry &Entry, Optional<cas::TreeProxy> Tree) {
         if (Entry.getKind() != cas::TreeEntry::Tree || Tree->empty()) {
           OS << "\n  ";
@@ -91,13 +104,13 @@ static Error printCompileJobCacheKey(cas::CASDB &CAS, cas::TreeHandle Tree,
     return strError("cas object is not a valid cache key");
 
   return CAS.forEachTreeEntry(Tree, [&](const cas::NamedTreeEntry &E) -> Error {
-    OS << E.getName() << ": " << E.getID();
+    OS << E.getName() << ": " << CAS.getObjectID(E.getRef());
     if (E.getKind() == cas::TreeEntry::Tree)
-      return printFileSystem(CAS, E.getID(), OS);
+      return printFileSystem(CAS, E.getRef(), OS);
 
     if (E.getKind() != cas::TreeEntry::Regular)
       return strError("expected blob for entry " + E.getName());
-    auto Blob = CAS.getBlob(E.getID());
+    auto Blob = CAS.loadBlob(E.getRef());
     if (!Blob)
       return Blob.takeError();
 

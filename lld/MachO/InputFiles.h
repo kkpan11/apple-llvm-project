@@ -18,7 +18,7 @@
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/BinaryFormat/MachO.h"
-#include "llvm/CAS/CASID.h"
+#include "llvm/CAS/CASReference.h"
 #include "llvm/DebugInfo/DWARF/DWARFUnit.h"
 #include "llvm/Object/Archive.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -151,13 +151,13 @@ public:
   ArrayRef<llvm::MachO::data_in_code_entry> getDataInCode() const;
   template <class LP> void parse();
 
-  ObjFile(MemoryBufferRef mb, llvm::cas::CASID ID, StringRef archiveName,
+  ObjFile(MemoryBufferRef mb, llvm::cas::ObjectRef ID, StringRef archiveName,
           bool lazy = false);
   static bool classof(const InputFile *f) { return f->kind() == ObjKind; }
 
   llvm::DWARFUnit *compileUnit = nullptr;
   const uint32_t modTime;
-  const llvm::Optional<llvm::cas::CASID> casID;
+  const llvm::Optional<llvm::cas::ObjectRef> casID;
   std::vector<ConcatInputSection *> debugSections;
   std::vector<CallGraphEntry> callGraph;
   Section *addrSigSection = nullptr;
@@ -189,7 +189,7 @@ public:
   static bool classof(const InputFile *f) { return f->kind() == CASSchemaKind; }
 
   Error parse(llvm::casobjectformats::ObjectFormatSchemaPool &CASSchemas,
-              llvm::cas::CASID ID);
+              llvm::cas::ObjectRef ID);
 };
 
 // command-line -sectcreate file

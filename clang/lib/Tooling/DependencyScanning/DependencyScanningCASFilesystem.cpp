@@ -52,15 +52,15 @@ static void addSkippedRange(llvm::DenseMap<unsigned, unsigned> &Skip,
 }
 
 static Error cacheMinimized(cas::CASID InputID, cas::CASDB &CAS,
-                            cas::CASID OutputDataID,
-                            cas::CASID SkippedRangesID) {
+                            cas::ObjectRef OutputDataID,
+                            cas::ObjectRef SkippedRangesID) {
   cas::HierarchicalTreeBuilder Builder;
   Builder.push(OutputDataID, cas::TreeEntry::Regular, "data");
   Builder.push(SkippedRangesID, cas::TreeEntry::Regular, "skipped-ranges");
-  Expected<cas::CASID> OutputID = Builder.create(CAS);
+  Expected<cas::TreeHandle> OutputID = Builder.create(CAS);
   if (!OutputID)
     return OutputID.takeError();
-  return CAS.putCachedResult(InputID, *OutputID);
+  return CAS.putCachedResult(InputID, CAS.getObjectID(*OutputID));
 }
 
 Expected<StringRef> DependencyScanningCASFilesystem::getMinimized(
@@ -72,9 +72,9 @@ Expected<StringRef> DependencyScanningCASFilesystem::getMinimized(
   if (!Tree)
     return Tree.takeError();
   auto unwrapID =
-      [](Optional<cas::NamedTreeEntry> Entry) -> Optional<cas::CASID> {
+      [this](Optional<cas::NamedTreeEntry> Entry) -> Optional<cas::CASID> {
     if (Entry)
-      return Entry->getID();
+      return CAS.getObjectID(Entry->getRef());
     return None;
   };
   Optional<cas::CASID> SkippedRangesID =
@@ -116,7 +116,7 @@ Expected<StringRef> DependencyScanningCASFilesystem::getMinimized(
 }
 
 Expected<StringRef> DependencyScanningCASFilesystem::computeMinimized(
-    cas::CASID InputDataID, StringRef Identifier,
+    cas::ObjectRef InputDataID, StringRef Identifier,
     Optional<llvm::cas::CASID> &MinimizedDataID,
     std::unique_ptr<PreprocessorSkippedRangeMapping> &SkipMappingsResults) {
   using namespace llvm;
@@ -125,15 +125,15 @@ Expected<StringRef> DependencyScanningCASFilesystem::computeMinimized(
   // Get a blob for the clang version string.
   if (!ClangFullVersionID)
     ClangFullVersionID =
-        reportAsFatalIfError(CAS.createBlob(getClangFullVersion()));
+        reportAsFatalIfError(CAS.createBlob(getClangFullVersion())).getRef();
 
   // Get a blob for the minimize command.
   if (!MinimizeID)
-    MinimizeID = reportAsFatalIfError(CAS.createBlob("minimize"));
+    MinimizeID = reportAsFatalIfError(CAS.createBlob("minimize")).getRef();
 
   // Get an empty blob.
   if (!EmptyBlobID)
-    EmptyBlobID = reportAsFatalIfError(CAS.createBlob(""));
+    EmptyBlobID = reportAsFatalIfError(CAS.createBlob("")).getRef();
 
   // Construct a tree for the input.
   Optional<CASID> InputID;
@@ -142,7 +142,8 @@ Expected<StringRef> DependencyScanningCASFilesystem::computeMinimized(
     Builder.push(*ClangFullVersionID, TreeEntry::Regular, "version");
     Builder.push(*MinimizeID, TreeEntry::Regular, "command");
     Builder.push(InputDataID, TreeEntry::Regular, "data");
-    InputID = reportAsFatalIfError(Builder.create(CAS));
+    InputID = CAS.getObjectID(
+        CAS.getReference(reportAsFatalIfError(Builder.create(CAS))));
   }
 
   // Check the result cache.
@@ -153,7 +154,7 @@ Expected<StringRef> DependencyScanningCASFilesystem::computeMinimized(
     return reportAsFatalIfError(std::move(Ex));
   }
 
-  StringRef InputData = *reportAsFatalIfError(CAS.getBlob(InputDataID));
+  StringRef InputData = *reportAsFatalIfError(CAS.loadBlob(InputDataID));
 
   // Try to minimize.
   llvm::SmallString<1024> Buffer;
@@ -167,7 +168,7 @@ Expected<StringRef> DependencyScanningCASFilesystem::computeMinimized(
 
   // Success. Add to the CAS and get back persistent output data.
   BlobProxy Minimized = reportAsFatalIfError(CAS.createBlob(Buffer));
-  MinimizedDataID = Minimized;
+  MinimizedDataID = Minimized.getID();
   StringRef OutputData = *Minimized;
 
   // Compute skipped ranges.
@@ -189,9 +190,10 @@ Expected<StringRef> DependencyScanningCASFilesystem::computeMinimized(
   }
 
   // Cache the computation.
-  CASID SkippedRangesID = reportAsFatalIfError(CAS.createBlob(Buffer));
-  reportAsFatalIfError(
-      cacheMinimized(*InputID, CAS, *MinimizedDataID, SkippedRangesID));
+  cas::NodeHandle SkippedRangesRef =
+      reportAsFatalIfError(CAS.storeNodeFromString(None, Buffer));
+  reportAsFatalIfError(cacheMinimized(*InputID, CAS, Minimized.getRef(),
+                                      CAS.getReference(SkippedRangesRef)));
 
   return OutputData;
 }
@@ -283,8 +285,10 @@ DependencyScanningCASFilesystem::lookupPath(const Twine &Path) {
   llvm::Optional<llvm::cas::CASID> EffectiveID;
   std::unique_ptr<PreprocessorSkippedRangeMapping> PPSkippedRangeMapping;
   if (shouldMinimize(PathRef)) {
-    Buffer = expectedToErrorOr(
-        computeMinimized(*FileID, PathRef, EffectiveID, PPSkippedRangeMapping));
+    Optional<cas::ObjectRef> FileRef = CAS.getReference(*FileID);
+    assert(FileRef && "ID should still exist");
+    Buffer = expectedToErrorOr(computeMinimized(*FileRef, PathRef, EffectiveID,
+                                                PPSkippedRangeMapping));
   } else {
     Buffer = expectedToErrorOr(getOriginal(*FileID));
     EffectiveID = *FileID;

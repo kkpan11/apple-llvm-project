@@ -880,8 +880,8 @@ ObjFile::ObjFile(MemoryBufferRef mb, uint32_t modTime, StringRef archiveName,
   init(archiveName);
 }
 
-ObjFile::ObjFile(MemoryBufferRef mb, llvm::cas::CASID ID, StringRef archiveName,
-                 bool lazy)
+ObjFile::ObjFile(MemoryBufferRef mb, llvm::cas::ObjectRef ID,
+                 StringRef archiveName, bool lazy)
     : InputFile(ObjKind, mb, lazy), modTime(0), casID(std::move(ID)) {
   init(archiveName);
 }
@@ -1585,7 +1585,7 @@ static Expected<InputFile *> loadArchiveMember(MemoryBufferRef mb,
     if (!blobRef)
       return blobRef.takeError();
     MemoryBufferRef objectMB(blobRef->getData(), memberName);
-    return make<ObjFile>(objectMB, *blobRef, archiveName);
+    return make<ObjFile>(objectMB, blobRef->getRef(), archiveName);
   }
   default:
     return createStringError(inconvertibleErrorCode(),
@@ -1788,8 +1788,8 @@ static void applyArchRelocationProperties(jitlink::Edge::Kind kind,
   }
 }
 
-Error CASSchemaFile::parse(ObjectFormatSchemaPool &CASSchemas, CASID ID) {
-  Expected<cas::NodeProxy> Ref = CASSchemas.getCAS().getNode(ID);
+Error CASSchemaFile::parse(ObjectFormatSchemaPool &CASSchemas, ObjectRef ID) {
+  Expected<cas::NodeProxy> Ref = CASSchemas.getCAS().loadNode(ID);
   if (auto E = Ref.takeError())
     return E;
   ObjectFormatSchemaBase *Schema = CASSchemas.getSchemaForRoot(*Ref);

@@ -11,7 +11,7 @@
 
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/CAS/CASID.h"
+#include "llvm/CAS/CASReference.h"
 #include "llvm/CAS/TreeEntry.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h" // FIXME: Split out sys::fs::file_status.
@@ -29,17 +29,17 @@ class HierarchicalTreeBuilder {
   struct HierarchicalEntry {
   public:
     StringRef getPath() const { return Path; }
-    Optional<CASID> getID() const { return ID; }
+    Optional<ObjectRef> getRef() const { return Ref; }
     TreeEntry::EntryKind getKind() const { return Kind; }
 
-    HierarchicalEntry(Optional<CASID> ID, TreeEntry::EntryKind Kind,
+    HierarchicalEntry(Optional<ObjectRef> Ref, TreeEntry::EntryKind Kind,
                       StringRef Path)
-        : ID(ID), Kind(Kind), Path(Path.str()) {
-      assert(ID || Kind == TreeEntry::Tree);
+        : Ref(Ref), Kind(Kind), Path(Path.str()) {
+      assert(Ref || Kind == TreeEntry::Tree);
     }
 
   private:
-    Optional<CASID> ID;
+    Optional<ObjectRef> Ref;
     TreeEntry::EntryKind Kind;
     std::string Path;
   };
@@ -48,7 +48,7 @@ class HierarchicalTreeBuilder {
   SmallVector<HierarchicalEntry, 8> Entries;
   SmallVector<HierarchicalEntry, 0> TreeContents;
 
-  void pushImpl(Optional<CASID> ID, TreeEntry::EntryKind Kind,
+  void pushImpl(Optional<ObjectRef> Ref, TreeEntry::EntryKind Kind,
                 const Twine &Path);
 
 public:
@@ -58,8 +58,8 @@ public:
   /// All ".." components will be squashed by eating the parent. Paths through
   /// symlinks will not work, and should be resolved ahead of time. Paths must
   /// be POSIX-style.
-  void push(CASID ID, TreeEntry::EntryKind Kind, const Twine &Path) {
-    return pushImpl(ID, Kind, Path);
+  void push(ObjectRef Ref, TreeEntry::EntryKind Kind, const Twine &Path) {
+    return pushImpl(Ref, Kind, Path);
   }
 
   /// Add a directory. Ensures the directory will exist even if there are no
@@ -73,14 +73,14 @@ public:
   ///   * Calling push() for every non-tree
   ///
   /// Allows merging the contents of multiple directories.
-  void pushTreeContent(CASID ID, const Twine &Path);
+  void pushTreeContent(ObjectRef Ref, const Twine &Path);
 
   /// Drop all entries.
   void clear() { Entries.clear(); }
 
   /// Recursively create the trees implied by calls to \a push(), return the
   /// top-level \a CASID.
-  Expected<TreeProxy> create(CASDB &CAS);
+  Expected<TreeHandle> create(CASDB &CAS);
 };
 
 } // namespace cas

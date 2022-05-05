@@ -15,15 +15,6 @@
 using namespace llvm;
 using namespace llvm::cas;
 
-template <typename T>
-static Error unwrapExpected(Expected<T> &&E, Optional<T> &O) {
-  O.reset();
-  if (!E)
-    return E.takeError();
-  O = std::move(*E);
-  return Error::success();
-}
-
 template <class T>
 static std::unique_ptr<T>
 errorOrToPointer(ErrorOr<std::unique_ptr<T>> ErrorOrPointer) {
@@ -45,18 +36,19 @@ TEST(HierarchicalTreeBuilderTest, Flat) {
   std::unique_ptr<CASDB> CAS = createInMemoryCAS();
 
   auto make = [&](StringRef Content) {
-    return *expectedToOptional(CAS->createBlob(Content));
+    return CAS->getReference(
+        *expectedToOptional(CAS->storeNodeFromString(None, Content)));
   };
 
   HierarchicalTreeBuilder Builder;
   Builder.push(make("1"), TreeEntry::Regular, "/file1");
   Builder.push(make("1"), TreeEntry::Regular, "/1");
   Builder.push(make("2"), TreeEntry::Regular, "/2");
-  Optional<TreeProxy> Root = expectedToOptional(Builder.create(*CAS));
+  Optional<TreeHandle> Root = expectedToOptional(Builder.create(*CAS));
   ASSERT_TRUE(Root);
 
   std::unique_ptr<vfs::FileSystem> CASFS =
-      expectedToPointer(createCASFileSystem(*CAS, *Root));
+      expectedToPointer(createCASFileSystem(*CAS, CAS->getObjectID(*Root)));
   ASSERT_TRUE(CASFS);
 
   std::unique_ptr<MemoryBuffer> F1 =
@@ -80,7 +72,8 @@ TEST(HierarchicalTreeBuilderTest, Nested) {
   std::unique_ptr<CASDB> CAS = createInMemoryCAS();
 
   auto make = [&](StringRef Content) {
-    return *expectedToOptional(CAS->createBlob(Content));
+    return CAS->getReference(
+        *expectedToOptional(CAS->storeNodeFromString(None, Content)));
   };
 
   HierarchicalTreeBuilder Builder;
@@ -90,11 +83,11 @@ TEST(HierarchicalTreeBuilderTest, Nested) {
   Builder.push(make("blob1"), TreeEntry::Regular, "/t3/t1nested/d1");
   Builder.push(make("blob1"), TreeEntry::Regular, "/t3/t2/d1also");
   Builder.push(make("blob2"), TreeEntry::Regular, "/t3/t2/d2");
-  Optional<TreeProxy> Root = expectedToOptional(Builder.create(*CAS));
+  Optional<TreeHandle> Root = expectedToOptional(Builder.create(*CAS));
   ASSERT_TRUE(Root);
 
   std::unique_ptr<vfs::FileSystem> CASFS =
-      expectedToPointer(createCASFileSystem(*CAS, *Root));
+      expectedToPointer(createCASFileSystem(*CAS, CAS->getObjectID(*Root)));
 
   std::unique_ptr<MemoryBuffer> T1D1 =
       errorOrToPointer(CASFS->getBufferForFile("/t1/d1"));
@@ -124,21 +117,25 @@ TEST(HierarchicalTreeBuilderTest, MergeDirectories) {
   std::unique_ptr<CASDB> CAS = createInMemoryCAS();
 
   auto make = [&](StringRef Content) {
-    return cantFail(CAS->createBlob(Content));
+    return CAS->getReference(
+        *expectedToOptional(CAS->storeNodeFromString(None, Content)));
   };
 
   auto createRoot = [&](StringRef Blob, StringRef Path,
-                        Optional<TreeProxy> &Root) {
+                        Optional<ObjectRef> &Root) {
     HierarchicalTreeBuilder Builder;
     Builder.push(make(Blob), TreeEntry::Regular, Path);
-    ASSERT_THAT_ERROR(unwrapExpected(Builder.create(*CAS), Root), Succeeded());
+
+    Optional<TreeHandle> H;
+    ASSERT_THAT_ERROR(Builder.create(*CAS).moveInto(H), Succeeded());
+    Root = CAS->getReference(*H);
   };
 
-  Optional<TreeProxy> Root1;
+  Optional<ObjectRef> Root1;
   createRoot("blob1", "/t1/d1", Root1);
-  Optional<TreeProxy> Root2;
+  Optional<ObjectRef> Root2;
   createRoot("blob2", "/t1/d2", Root2);
-  Optional<TreeProxy> Root3;
+  Optional<ObjectRef> Root3;
   createRoot("blob3", "/t1/nested/d1", Root3);
 
   HierarchicalTreeBuilder Builder;
@@ -147,11 +144,11 @@ TEST(HierarchicalTreeBuilderTest, MergeDirectories) {
   Builder.pushTreeContent(*Root3, "/");
   Builder.pushTreeContent(*Root1, "");
   Builder.pushTreeContent(*Root1, "other1/nest");
-  Optional<TreeProxy> Root;
-  ASSERT_THAT_ERROR(unwrapExpected(Builder.create(*CAS), Root), Succeeded());
+  Optional<TreeHandle> Root;
+  ASSERT_THAT_ERROR(Builder.create(*CAS).moveInto(Root), Succeeded());
 
   std::unique_ptr<vfs::FileSystem> CASFS =
-      cantFail(createCASFileSystem(*CAS, *Root));
+      cantFail(createCASFileSystem(*CAS, CAS->getObjectID(*Root)));
 
   std::unique_ptr<MemoryBuffer> T1D1 =
       errorOrToPointer(CASFS->getBufferForFile("/t1/d1"));
@@ -181,38 +178,39 @@ TEST(HierarchicalTreeBuilderTest, MergeDirectoriesConflict) {
   std::unique_ptr<CASDB> CAS = createInMemoryCAS();
 
   auto make = [&](StringRef Content) {
-    return cantFail(CAS->createBlob(Content));
+    return CAS->getReference(
+        *expectedToOptional(CAS->storeNodeFromString(None, Content)));
   };
 
   auto createRoot = [&](StringRef Blob, StringRef Path,
-                        Optional<TreeProxy> &Root) {
+                        Optional<TreeHandle> &Root) {
     HierarchicalTreeBuilder Builder;
     Builder.push(make(Blob), TreeEntry::Regular, Path);
-    ASSERT_THAT_ERROR(unwrapExpected(Builder.create(*CAS), Root), Succeeded());
+    ASSERT_THAT_ERROR(Builder.create(*CAS).moveInto(Root), Succeeded());
   };
 
-  Optional<TreeProxy> Root1;
+  Optional<TreeHandle> Root1;
   createRoot("blob1", "/t1/d1", Root1);
-  Optional<TreeProxy> Root2;
+  Optional<TreeHandle> Root2;
   createRoot("blob2", "/t1/d1", Root2);
-  Optional<TreeProxy> Root3;
+  Optional<TreeHandle> Root3;
   createRoot("blob3", "/t1/d1/nested", Root3);
 
   {
     HierarchicalTreeBuilder Builder;
-    Builder.pushTreeContent(*Root1, "");
-    Builder.pushTreeContent(*Root2, "");
-    Optional<TreeProxy> Root;
+    Builder.pushTreeContent(CAS->getReference(*Root1), "");
+    Builder.pushTreeContent(CAS->getReference(*Root2), "");
+    Optional<TreeHandle> Root;
     EXPECT_THAT_ERROR(
-        unwrapExpected(Builder.create(*CAS), Root),
+        Builder.create(*CAS).moveInto(Root),
         FailedWithMessage("duplicate path '/t1/d1' with different ID"));
   }
   {
     HierarchicalTreeBuilder Builder;
-    Builder.pushTreeContent(*Root1, "");
-    Builder.pushTreeContent(*Root3, "");
-    Optional<TreeProxy> Root;
-    EXPECT_THAT_ERROR(unwrapExpected(Builder.create(*CAS), Root),
+    Builder.pushTreeContent(CAS->getReference(*Root1), "");
+    Builder.pushTreeContent(CAS->getReference(*Root3), "");
+    Optional<TreeHandle> Root;
+    EXPECT_THAT_ERROR(Builder.create(*CAS).moveInto(Root),
                       FailedWithMessage("duplicate path '/t1/d1'"));
   }
 }

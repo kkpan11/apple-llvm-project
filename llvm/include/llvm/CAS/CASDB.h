@@ -124,8 +124,6 @@ class TreeProxy;
 ///
 /// - Lift trees into a filesystem schema, dropping TreeHandle and making
 ///   TreeProxy inherit from NodeProxy.
-/// - Change TreeEntry and NamedTreeEntry to use ObjectRef instead of
-///   CASID.
 /// - Add APIs for bypassing CASID when parsing:
 ///     - Validate an ID without doing anything else (current check done by
 ///       `parseID()`).
@@ -257,6 +255,11 @@ public:
   Expected<TreeProxy> getTree(CASID ID);
   Expected<NodeProxy> getNode(CASID ID);
 
+  /// FIXME: Move to the Filesystem schema once trees are removed from CASDB.
+  Expected<TreeProxy> loadTree(ObjectRef Ref);
+  Expected<LeafNodeProxy> loadBlob(ObjectRef Ref);
+  Expected<NodeProxy> loadNode(ObjectRef Ref);
+
   /// Get the size of some data.
   virtual uint64_t getDataSize(NodeHandle Node) const = 0;
 
@@ -338,6 +341,9 @@ public:
   const CASDB &getCAS() const { return *CAS; }
   CASID getID() const {
     return CAS->getObjectID(*static_cast<const ObjectHandle *>(this));
+  }
+  ObjectRef getRef() const {
+    return CAS->getReference(*static_cast<const ObjectHandle *>(this));
   }
 
   /// FIXME: Remove this.

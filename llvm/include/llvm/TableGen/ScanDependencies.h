@@ -42,29 +42,29 @@ void scanTextForIncludes(StringRef Input, SmallVectorImpl<StringRef> &Includes);
 ///
 /// \p ExecID is the Blob for the running executable. It can be used as part of
 /// the key for caching to avoid (fixed) bugs poisoning results.
-Error scanTextForIncludes(cas::CASDB &CAS, cas::CASID ExecID,
+Error scanTextForIncludes(cas::CASDB &CAS, cas::ObjectRef ExecID,
                           const cas::BlobProxy &Blob,
                           SmallVectorImpl<StringRef> &Includes);
 
 /// Match logic from SourceMgr::AddIncludeFile.
 ///
 /// FIXME: Take CASFileSystemBase once it adds statusAndFileID().
-Optional<cas::CASID> lookupIncludeID(cas::CachingOnDiskFileSystem &FS,
-                                     ArrayRef<std::string> IncludeDirs,
-                                     StringRef Filename);
+Optional<cas::ObjectRef> lookupIncludeID(cas::CachingOnDiskFileSystem &FS,
+                                         ArrayRef<std::string> IncludeDirs,
+                                         StringRef Filename);
 
 /// Helper to access all includes under \p MainFileBlob.
 ///
 /// \p ExecID is the Blob for the running executable. It can be used as part of
 /// the key for caching to avoid (fixed) bugs poisoning results.
-Error accessAllIncludes(cas::CachingOnDiskFileSystem &FS, cas::CASID ExecID,
+Error accessAllIncludes(cas::CachingOnDiskFileSystem &FS, cas::ObjectRef ExecID,
                         ArrayRef<std::string> IncludeDirs,
                         const cas::BlobProxy &MainFileBlob);
 
 Error createMainFileError(StringRef MainFilename, std::error_code EC);
 
 struct ScanIncludesResult {
-  cas::CASID IncludesTree;
+  cas::ObjectRef IncludesTree;
   cas::BlobProxy MainBlob;
 };
 
@@ -79,7 +79,7 @@ struct ScanIncludesResult {
 /// it'd be useful for build systems that want to collect dependencies ahead of
 /// time. Maybe can separate a tool/etc. for that.
 Expected<ScanIncludesResult>
-scanIncludes(cas::CASDB &CAS, cas::CASID ExecID, StringRef MainFilename,
+scanIncludes(cas::CASDB &CAS, cas::ObjectRef ExecID, StringRef MainFilename,
              ArrayRef<std::string> IncludeDirs,
              ArrayRef<MappedPrefix> PrefixMappings = None,
              Optional<TreePathPrefixMapper> *CapturedPM = nullptr);
@@ -91,7 +91,7 @@ scanIncludes(cas::CASDB &CAS, cas::CASID ExecID, StringRef MainFilename,
 /// \p ExecID is the Blob for the running executable. It can be used as part of
 /// the key for caching to avoid (fixed) bugs poisoning results.
 Expected<ScanIncludesResult>
-scanIncludesAndRemap(cas::CASDB &CAS, cas::CASID ExecID,
+scanIncludesAndRemap(cas::CASDB &CAS, cas::ObjectRef ExecID,
                      std::string &MainFilename,
                      std::vector<std::string> &IncludeDirs,
                      ArrayRef<MappedPrefix> PrefixMappings);
