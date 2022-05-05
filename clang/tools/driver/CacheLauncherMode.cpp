@@ -12,11 +12,11 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Program.h"
+#include "llvm/Support/StringSaver.h"
 
 using namespace clang;
 
-static bool isSameProgram(const char *clangCachePath,
-                          const char *compilerPath) {
+static bool isSameProgram(StringRef clangCachePath, StringRef compilerPath) {
   // Fast path check, see if they have the same parent path.
   if (llvm::sys::path::parent_path(clangCachePath) ==
       llvm::sys::path::parent_path(compilerPath))
@@ -33,11 +33,33 @@ static bool isSameProgram(const char *clangCachePath,
 Optional<int>
 clang::handleClangCacheInvocation(SmallVectorImpl<const char *> &Args,
                                   llvm::StringSaver &Saver) {
-  assert(Args.size() >= 2);
+  assert(Args.size() >= 1);
+
+  auto DiagsConsumer = std::make_unique<TextDiagnosticPrinter>(
+      llvm::errs(), new DiagnosticOptions(), false);
+  DiagnosticsEngine Diags(new DiagnosticIDs(), new DiagnosticOptions());
+  Diags.setClient(DiagsConsumer.get(), /*ShouldOwnClient=*/false);
+
+  if (Args.size() == 1) {
+    // FIXME: With just 'clang-cache' invocation consider outputting info, like
+    // the on-disk CAS path and its size.
+    Diags.Report(diag::err_clang_cache_missing_compiler_command);
+    return 1;
+  }
+
   const char *clangCachePath = Args.front();
   // Drop initial '/path/to/clang-cache' program name.
   Args.erase(Args.begin());
-  const char *compilerPath = Args.front();
+
+  llvm::ErrorOr<std::string> compilerPathOrErr =
+      llvm::sys::findProgramByName(Args.front());
+  if (!compilerPathOrErr) {
+    Diags.Report(diag::err_clang_cache_cannot_find_binary) << Args.front();
+    return 1;
+  }
+  std::string compilerPath = std::move(*compilerPathOrErr);
+  if (Args.front() != compilerPath)
+    Args[0] = Saver.save(compilerPath).data();
 
   if (isSameProgram(clangCachePath, compilerPath)) {
     if (const char *CASPath = ::getenv("CLANG_CACHE_CAS_PATH")) {
@@ -55,16 +77,19 @@ clang::handleClangCacheInvocation(SmallVectorImpl<const char *> &Args,
 
   // Not invoking same clang binary, do a normal invocation without changing
   // arguments, but warn because this may be unexpected to the user.
-  auto DiagsConsumer = std::make_unique<TextDiagnosticPrinter>(
-      llvm::errs(), new DiagnosticOptions(), false);
-  DiagnosticsEngine Diags(new DiagnosticIDs(), new DiagnosticOptions());
-  Diags.setClient(DiagsConsumer.get(), /*ShouldOwnClient=*/false);
   Diags.Report(diag::warn_clang_cache_disabled_caching);
 
   SmallVector<StringRef, 128> RefArgs;
   RefArgs.reserve(Args.size());
-  for (const char *Arg : ArrayRef<const char *>(Args).drop_front()) {
+  for (const char *Arg : Args) {
     RefArgs.push_back(Arg);
   }
-  return llvm::sys::ExecuteAndWait(compilerPath, RefArgs);
+  std::string ErrMsg;
+  int Result = llvm::sys::ExecuteAndWait(compilerPath, RefArgs, /*Env*/ None,
+                                         /*Redirects*/ {}, /*SecondsToWait*/ 0,
+                                         /*MemoryLimit*/ 0, &ErrMsg);
+  if (!ErrMsg.empty()) {
+    Diags.Report(diag::err_clang_cache_failed_execution) << ErrMsg;
+  }
+  return Result;
 }
