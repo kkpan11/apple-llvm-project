@@ -71,7 +71,7 @@ public:
 
   Optional<CASID> getFileCASID(const Twine &Path) final;
 
-  Error initialize(CASID RootID);
+  Error initialize(ObjectRef Root);
 
   CASFileSystem(std::shared_ptr<CASDB> DB) : DB(*DB), OwnedDB(std::move(DB)) {}
   CASFileSystem(CASDB &DB) : DB(DB) {}
@@ -101,12 +101,14 @@ public:
   /// Get the contents of the file as a \p MemoryBuffer.
   ErrorOr<std::unique_ptr<MemoryBuffer>> getBuffer(const Twine &Name, int64_t,
                                                    bool, bool) final {
+    Expected<AnyObjectHandle> Object = DB.loadObject(*Entry->getRef());
+    if (!Object)
+      return errorToErrorCode(Object.takeError());
+    NodeHandle Node = Object->get<NodeHandle>();
+    assert(DB.getNumRefs(Node) == 0 && "Expected a leaf node");
     SmallString<256> Storage;
-    if (Expected<BlobProxy> ExpectedBlob = DB.getBlob(*Entry->getID()))
-      return MemoryBuffer::getMemBuffer(**ExpectedBlob,
-                                        Name.toStringRef(Storage));
-    else
-      return errorToErrorCode(ExpectedBlob.takeError());
+    return MemoryBuffer::getMemBuffer(DB.getDataString(Node),
+                                      Name.toStringRef(Storage));
   }
 
   /// Closes the file.
@@ -125,8 +127,8 @@ private:
   DirectoryEntry *Entry;
 };
 
-Error CASFileSystem::initialize(CASID RootID) {
-  Cache = makeIntrusiveRefCnt<FileSystemCache>(RootID);
+Error CASFileSystem::initialize(ObjectRef Root) {
+  Cache = makeIntrusiveRefCnt<FileSystemCache>(Root);
 
   // Initial working directory is the root.
   WorkingDirectory.Entry = &Cache->getRoot();
@@ -161,32 +163,38 @@ Error CASFileSystem::loadDirectory(DirectoryEntry &Parent) {
   size_t ParentPathSize = Path.size();
   auto makeCachedEntry =
       [&](const NamedTreeEntry &NewEntry) -> DirectoryEntry & {
+    Optional<ObjectRef> Ref = DB.getReference(NewEntry.getID());
+    assert(Ref && "Expected valid reference for new tree entry");
     Path.resize(ParentPathSize);
     sys::path::append(Path, sys::path::Style::posix, NewEntry.getName());
     switch (NewEntry.getKind()) {
     case TreeEntry::Regular:
     case TreeEntry::Executable:
-      return Cache->makeLazyFileAlreadyLocked(Parent, Path, NewEntry.getID(),
-                                              NewEntry.getKind() ==
-                                                  TreeEntry::Executable);
+      return Cache->makeLazyFileAlreadyLocked(
+          Parent, Path, *Ref, NewEntry.getKind() == TreeEntry::Executable);
     case TreeEntry::Symlink:
-      return Cache->makeLazySymlinkAlreadyLocked(Parent, Path,
-                                                 NewEntry.getID());
+      return Cache->makeLazySymlinkAlreadyLocked(Parent, Path, *Ref);
     case TreeEntry::Tree:
-      return Cache->makeDirectoryAlreadyLocked(Parent, Path, NewEntry.getID());
+      return Cache->makeDirectoryAlreadyLocked(Parent, Path, *Ref);
     }
     llvm_unreachable("invalid tree type");
   };
-  Expected<TreeProxy> Tree = DB.getTree(*Parent.getID());
-  if (!Tree)
-    return Tree.takeError();
+  Expected<AnyObjectHandle> Object = DB.loadObject(*Parent.getRef());
+  if (!Object)
+    return Object.takeError();
+  Optional<TreeHandle> TreeH = Object->dyn_cast<TreeHandle>();
+  if (!TreeH)
+    report_fatal_error(createStringError(
+        inconvertibleErrorCode(),
+        "invalid tree '" + DB.getObjectID(*Object).toString() + "'"));
 
   // Lock and check for a race.
+  TreeProxy Tree = TreeProxy::load(DB, *TreeH);
   Directory::Writer W(D);
   if (D.isComplete())
     return Error::success();
 
-  if (Error E = Tree->forEachEntry([&](const NamedTreeEntry &NewEntry) {
+  if (Error E = Tree.forEachEntry([&](const NamedTreeEntry &NewEntry) {
         D.add(makeCachedEntry(NewEntry));
         return Error::success();
       }))
@@ -198,24 +206,24 @@ Error CASFileSystem::loadDirectory(DirectoryEntry &Parent) {
 Error CASFileSystem::loadFile(DirectoryEntry &Entry) {
   assert(Entry.isFile());
 
-  // FIXME: Add a feature in the CAS to just get the size to avoid malloc
-  // traffic for the memory buffer reference?
-  Expected<BlobProxy> ExpectedFile = DB.getBlob(*Entry.getID());
-  if (!ExpectedFile)
-    return ExpectedFile.takeError();
+  Expected<AnyObjectHandle> File = DB.loadObject(*Entry.getRef());
+  if (!File)
+    return File.takeError();
+  assert(File->is<NodeHandle>());
 
-  Cache->finishLazyFile(Entry, ExpectedFile->getData().size());
+  Cache->finishLazyFile(Entry, DB.getDataSize(File->get<NodeHandle>()));
   return Error::success();
 }
 
 Error CASFileSystem::loadSymlink(DirectoryEntry &Entry) {
   assert(Entry.isSymlink());
 
-  Expected<BlobProxy> ExpectedTarget = DB.getBlob(*Entry.getID());
-  if (!ExpectedTarget)
-    return ExpectedTarget.takeError();
+  Expected<AnyObjectHandle> File = DB.loadObject(*Entry.getRef());
+  if (!File)
+    return File.takeError();
+  assert(File->is<NodeHandle>());
 
-  Cache->finishLazySymlink(Entry, **ExpectedTarget);
+  Cache->finishLazySymlink(Entry, DB.getDataString(File->get<NodeHandle>()));
   return Error::success();
 }
 
@@ -261,7 +269,7 @@ Optional<CASID> CASFileSystem::getFileCASID(const Twine &Path) {
     return None; // Only return CASIDs for files.
   if (Entry->isSymlink())
     return None; // Broken symlink.
-  return Entry->getID();
+  return DB.getObjectID(*Entry->getRef());
 }
 
 Expected<const vfs::CachedDirectoryEntry *>
@@ -356,7 +364,11 @@ CASFileSystem::lookupPath(StringRef Path, bool FollowSymlinks) {
 
 static Expected<std::unique_ptr<CASFileSystem>>
 initializeCASFileSystem(std::unique_ptr<CASFileSystem> FS, CASID RootID) {
-  if (Error E = FS->initialize(RootID))
+  Optional<ObjectRef> Root = FS->getCAS().getReference(RootID);
+  if (!Root)
+    return createStringError(inconvertibleErrorCode(),
+                             "cannot get reference to root FS");
+  if (Error E = FS->initialize(*Root))
     return std::move(E);
   return std::move(FS);
 }

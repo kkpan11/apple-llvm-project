@@ -182,6 +182,11 @@ public:
   virtual Expected<NodeHandle> storeNode(ArrayRef<ObjectRef> Refs,
                                          ArrayRef<char> Data) = 0;
 
+  Expected<NodeHandle> storeNodeFromString(ArrayRef<ObjectRef> Refs,
+                                           StringRef String) {
+    return storeNode(Refs, arrayRefFromStringRef<char>(String));
+  }
+
   /// Default implementation reads \p FD and calls \a storeNode(). Does not
   /// take ownership of \p FD; the caller is responsible for closing it.
   ///

@@ -22,12 +22,12 @@ using namespace llvm::cas;
 
 using DirectoryEntry = FileSystemCache::DirectoryEntry;
 
-FileSystemCache::FileSystemCache(Optional<CASID> RootID) {
+FileSystemCache::FileSystemCache(Optional<ObjectRef> RootRef) {
   // FIXME: Only correct for posix. To generalize this (for both posix and
   // windows) we should refactor so that the root node has no name (instead of
   // "/").
   Root = new (EntryAlloc.Allocate())
-      DirectoryEntry(nullptr, "/", DirectoryEntry::Directory, RootID);
+      DirectoryEntry(nullptr, "/", DirectoryEntry::Directory, RootRef);
   Root->setDirectory(*new (DirectoryAlloc.Allocate()) Directory);
 }
 
@@ -97,61 +97,62 @@ static DirectoryEntry &makeLazyEntry(
     ThreadSafeAllocator<SpecificBumpPtrAllocator<char>> &TreePathAlloc,
     ThreadSafeAllocator<SpecificBumpPtrAllocator<DirectoryEntry>> &EntryAlloc,
     DirectoryEntry &Parent, FileSystemCache::Directory &D, StringRef TreePath,
-    DirectoryEntry::EntryKind Kind, Optional<CASID> ID) {
+    DirectoryEntry::EntryKind Kind, Optional<ObjectRef> Ref) {
   assert(sys::path::parent_path(TreePath) == Parent.getTreePath());
   assert(!D.lookup(sys::path::filename(TreePath)));
   assert(!D.isComplete());
 
   TreePath = allocateTreePath(TreePathAlloc, TreePath);
   DirectoryEntry &Entry =
-      *new (EntryAlloc.Allocate()) DirectoryEntry(&Parent, TreePath, Kind, ID);
+      *new (EntryAlloc.Allocate()) DirectoryEntry(&Parent, TreePath, Kind, Ref);
   D.add(Entry);
   return Entry;
 }
 
-DirectoryEntry &
-FileSystemCache::makeLazySymlinkAlreadyLocked(DirectoryEntry &Parent,
-                                              StringRef TreePath, CASID ID) {
+DirectoryEntry &FileSystemCache::makeLazySymlinkAlreadyLocked(
+    DirectoryEntry &Parent, StringRef TreePath, ObjectRef Ref) {
   return makeLazyEntry(TreePathAlloc, EntryAlloc, Parent, Parent.asDirectory(),
-                       TreePath, DirectoryEntry::Symlink, ID);
+                       TreePath, DirectoryEntry::Symlink, Ref);
 }
 
-DirectoryEntry &FileSystemCache::makeLazyFileAlreadyLocked(
-    DirectoryEntry &Parent, StringRef TreePath, CASID ID, bool IsExecutable) {
+DirectoryEntry &
+FileSystemCache::makeLazyFileAlreadyLocked(DirectoryEntry &Parent,
+                                           StringRef TreePath, ObjectRef Ref,
+                                           bool IsExecutable) {
   return makeLazyEntry(
       TreePathAlloc, EntryAlloc, Parent, Parent.asDirectory(), TreePath,
-      IsExecutable ? DirectoryEntry::Executable : DirectoryEntry::Regular, ID);
+      IsExecutable ? DirectoryEntry::Executable : DirectoryEntry::Regular, Ref);
 }
 
 DirectoryEntry &FileSystemCache::makeDirectory(DirectoryEntry &Parent,
                                                StringRef TreePath,
-                                               Optional<CASID> ID) {
+                                               Optional<ObjectRef> Ref) {
   Directory &D = Parent.asDirectory();
   Directory::Writer W(D);
   if (DirectoryEntry *Existing = D.lookup(sys::path::filename(TreePath)))
     return *Existing;
 
-  return makeDirectoryAlreadyLocked(Parent, TreePath, ID);
+  return makeDirectoryAlreadyLocked(Parent, TreePath, Ref);
 }
 
 DirectoryEntry &FileSystemCache::makeDirectoryAlreadyLocked(
-    DirectoryEntry &Parent, StringRef TreePath, Optional<CASID> ID) {
+    DirectoryEntry &Parent, StringRef TreePath, Optional<ObjectRef> Ref) {
   DirectoryEntry &Entry =
       makeLazyEntry(TreePathAlloc, EntryAlloc, Parent, Parent.asDirectory(),
-                    TreePath, DirectoryEntry::Directory, ID);
+                    TreePath, DirectoryEntry::Directory, Ref);
   Entry.setDirectory(*new (DirectoryAlloc.Allocate()) Directory);
   return Entry;
 }
 
 DirectoryEntry &FileSystemCache::makeSymlink(DirectoryEntry &Parent,
-                                             StringRef TreePath, CASID ID,
+                                             StringRef TreePath, ObjectRef Ref,
                                              StringRef Target) {
   Directory &D = Parent.asDirectory();
   Directory::Writer W(D);
   if (DirectoryEntry *Existing = D.lookup(sys::path::filename(TreePath)))
     return *Existing;
 
-  DirectoryEntry &Entry = makeLazySymlinkAlreadyLocked(Parent, TreePath, ID);
+  DirectoryEntry &Entry = makeLazySymlinkAlreadyLocked(Parent, TreePath, Ref);
   Entry.setSymlink(*new (SymlinkAlloc.Allocate()) Symlink(Target));
   return Entry;
 }
@@ -170,7 +171,7 @@ void FileSystemCache::finishLazySymlink(DirectoryEntry &SymlinkEntry,
 }
 
 DirectoryEntry &FileSystemCache::makeFile(DirectoryEntry &Parent,
-                                          StringRef TreePath, CASID ID,
+                                          StringRef TreePath, ObjectRef Ref,
                                           size_t Size, bool IsExecutable) {
   Directory &D = Parent.asDirectory();
   Directory::Writer W(D);
@@ -178,7 +179,7 @@ DirectoryEntry &FileSystemCache::makeFile(DirectoryEntry &Parent,
     return *Existing;
 
   DirectoryEntry &Entry =
-      makeLazyFileAlreadyLocked(Parent, TreePath, ID, IsExecutable);
+      makeLazyFileAlreadyLocked(Parent, TreePath, Ref, IsExecutable);
   Entry.setFile(*new (FileAlloc.Allocate()) File(Size));
   return Entry;
 }
