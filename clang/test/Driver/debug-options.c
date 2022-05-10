@@ -329,8 +329,6 @@
 //
 // G_STANDALONE: "-cc1"
 // G_STANDALONE: "-debug-info-kind=standalone"
-// G_CASFRIENDLY: "-cc1"
-// G_CASFRIENDLY: "-debug-info-kind=cas-friendly"
 // G_LIMITED: "-cc1"
 // G_LIMITED: "-debug-info-kind=constructor"
 // G_DWARF2: "-dwarf-version=2"

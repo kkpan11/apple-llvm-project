@@ -31,10 +31,9 @@
 #include "llvm/CodeGen/TargetLowering.h"
 #include "llvm/CodeGen/TargetRegisterInfo.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
-#include "llvm/DebugInfo/DWARF/DWARFDataExtractor.h"
 #include "llvm/DebugInfo/DWARF/DWARFExpression.h"
+#include "llvm/DebugInfo/DWARF/DWARFDataExtractor.h"
 #include "llvm/IR/Constants.h"
-#include "llvm/IR/DIBuilder.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/Module.h"
@@ -2150,29 +2149,10 @@ void DwarfDebug::beginFunctionImpl(const MachineFunction *MF) {
   if (SP->getUnit()->getEmissionKind() == DICompileUnit::NoDebug)
     return;
 
-  // If the EmissionKind is CasFriendly, this indicates to us that we want to
-  // split up the line tables by function rather than have it as one monolithic
-  // entry. That is, every function gets its own line table header. To achieve
-  // this we are creating a new CompileUnit per function so each function can
-  // get it's own line table header
-  if (SP->getUnit()->getEmissionKind() == llvm::DICompileUnit::CasFriendly) {
-    const Module *M = MF->getFunction().getParent();
-    DIBuilder DIB(*const_cast<Module *>(M));
-    DICompileUnit *DCU = SP->getUnit();
-    DICompileUnit *NewDCU = DIB.createCompileUnit(
-        DCU->getSourceLanguage(), DCU->getFile(), DCU->getProducer(),
-        DCU->isOptimized(), DCU->getFlags(), DCU->getRuntimeVersion());
+  DwarfCompileUnit &CU = getOrCreateDwarfCompileUnit(SP->getUnit());
 
-    this->SingleCU = false;
-    DwarfCompileUnit &CU = getOrCreateDwarfCompileUnit(NewDCU);
-    Asm->OutStreamer->getContext().setDwarfCompileUnitID(
-        getDwarfCompileUnitIDForLineTable(CU));
-    SP->replaceUnit(NewDCU);
-  } else {
-    DwarfCompileUnit &CU = getOrCreateDwarfCompileUnit(SP->getUnit());
-    Asm->OutStreamer->getContext().setDwarfCompileUnitID(
-        getDwarfCompileUnitIDForLineTable(CU));
-  }
+  Asm->OutStreamer->getContext().setDwarfCompileUnitID(
+      getDwarfCompileUnitIDForLineTable(CU));
 
   // Record beginning of function.
   PrologEndLoc = emitInitialLocDirective(
