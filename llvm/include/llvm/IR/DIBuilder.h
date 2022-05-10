@@ -163,7 +163,7 @@ namespace llvm {
                       DICompileUnit::DebugNameTableKind NameTableKind =
                           DICompileUnit::DebugNameTableKind::Default,
                       bool RangesBaseAddress = false, StringRef SysRoot = {},
-                      StringRef SDK = {});
+                      StringRef SDK = {}, bool CasFriendliness = false);
 
     /// Create a file descriptor to hold debugging information for a file.
     /// \param Filename  File name.

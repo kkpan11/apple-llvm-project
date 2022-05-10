@@ -97,7 +97,7 @@ protected:
         Context, 1, getFile(), "clang", false, "-g", 2, "",
         DICompileUnit::FullDebug, getTuple(), getTuple(), getTuple(),
         getTuple(), getTuple(), 0, true, false,
-        DICompileUnit::DebugNameTableKind::Default, false, "/", "");
+        DICompileUnit::DebugNameTableKind::Default, false, "/", "", false);
   }
   DIType *getBasicType(StringRef Name) {
     return DIBasicType::get(Context, dwarf::DW_TAG_unspecified_type, Name);
@@ -2177,11 +2177,13 @@ TEST_F(DICompileUnitTest, get) {
   MDTuple *Macros = getTuple();
   StringRef SysRoot = "/";
   StringRef SDK = "MacOSX.sdk";
+    bool CasFriendly = true;
   auto *N = DICompileUnit::getDistinct(
       Context, SourceLanguage, File, Producer, IsOptimized, Flags,
       RuntimeVersion, SplitDebugFilename, EmissionKind, EnumTypes,
       RetainedTypes, GlobalVariables, ImportedEntities, Macros, DWOId, true,
-      false, DICompileUnit::DebugNameTableKind::Default, false, SysRoot, SDK);
+      false, DICompileUnit::DebugNameTableKind::Default, false, SysRoot, SDK,
+      CasFriendly);
 
   EXPECT_EQ(dwarf::DW_TAG_compile_unit, N->getTag());
   EXPECT_EQ(SourceLanguage, N->getSourceLanguage());
@@ -2200,6 +2202,7 @@ TEST_F(DICompileUnitTest, get) {
   EXPECT_EQ(DWOId, N->getDWOId());
   EXPECT_EQ(SysRoot, N->getSysRoot());
   EXPECT_EQ(SDK, N->getSDK());
+  EXPECT_EQ(CasFriendly, N->isCasFriendly());
 
   TempDICompileUnit Temp = N->clone();
   EXPECT_EQ(dwarf::DW_TAG_compile_unit, Temp->getTag());
@@ -2218,6 +2221,7 @@ TEST_F(DICompileUnitTest, get) {
   EXPECT_EQ(Macros, Temp->getMacros().get());
   EXPECT_EQ(SysRoot, Temp->getSysRoot());
   EXPECT_EQ(SDK, Temp->getSDK());
+  EXPECT_EQ(CasFriendly, Temp->isCasFriendly());
 
   auto *TempAddress = Temp.get();
   auto *Clone = MDNode::replaceWithPermanent(std::move(Temp));
@@ -2244,7 +2248,7 @@ TEST_F(DICompileUnitTest, replaceArrays) {
       Context, SourceLanguage, File, Producer, IsOptimized, Flags,
       RuntimeVersion, SplitDebugFilename, EmissionKind, EnumTypes,
       RetainedTypes, nullptr, ImportedEntities, nullptr, DWOId, true, false,
-      DICompileUnit::DebugNameTableKind::Default, false, SysRoot, SDK);
+      DICompileUnit::DebugNameTableKind::Default, false, SysRoot, SDK, false);
 
   auto *GlobalVariables = MDTuple::getDistinct(Context, None);
   EXPECT_EQ(nullptr, N->getGlobalVariables().get());
