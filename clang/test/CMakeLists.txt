@@ -59,6 +59,7 @@ list(APPEND CLANG_TEST_DEPS
   c-index-test
   clang
   clang-cas-test
+  clang-fuzzer-dictionary
   clang-resource-headers
   clang-format
   clang-tblgen
