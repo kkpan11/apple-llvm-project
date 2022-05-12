@@ -422,7 +422,7 @@ static Error decodeBlock(const FlatV1ObjectReader &Reader, unsigned BlockIdx,
 
 Expected<CASBlock> BlockRef::materializeBlock(const FlatV1ObjectReader &Reader,
                                               unsigned BlockIdx) const {
-  CASBlock Info(*this);
+  Optional<CASBlock> Info;
   Error E =
       decodeBlock(Reader, BlockIdx, getData(),
                   [&](unsigned SectionIdx, unsigned NextOffset,
@@ -430,16 +430,15 @@ Expected<CASBlock> BlockRef::materializeBlock(const FlatV1ObjectReader &Reader,
                     data::BlockData Block(ContentData);
 
                     auto SectionRef = CASSectionRef{SectionIdx};
-                    Info.Size = Block.getSize();
-                    Info.Alignment = Block.getAlignment();
-                    Info.AlignmentOffset = Block.getAlignmentOffset();
-                    Info.Content = Block.getContent();
-                    Info.SectionRef = std::move(SectionRef);
+                    Info =
+                        CASBlock(Block.getSize(), Block.getAlignment(),
+                                 Block.getAlignmentOffset(), Block.getContent(),
+                                 std::move(SectionRef), this->getID());
                     return Error::success();
                   });
   if (E)
     return std::move(E);
-  return Info;
+  return *Info;
 }
 
 Error BlockRef::materializeFixups(

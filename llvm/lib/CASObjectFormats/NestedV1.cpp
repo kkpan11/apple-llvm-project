@@ -2034,12 +2034,8 @@ BlockNodeRef::materialize(const NestedV1ObjectReader &Reader) const {
     assert(Size == Content->size());
   }
 
-  CASBlock Info(*BlockData);
-  Info.Size = Size;
-  Info.Alignment = Alignment;
-  Info.AlignmentOffset = AlignmentOffset;
-  Info.Content = Content;
-  Info.SectionRef = *Section;
+  CASBlock Info(Size, Alignment, AlignmentOffset, Content, *Section,
+                *BlockData);
   return Info;
 }
 

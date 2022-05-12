@@ -58,9 +58,12 @@ struct CASBlock {
   Optional<StringRef> Content;
   CASSectionRef SectionRef;
   llvm::cas::CASID BlockContentID;
-  CASBlock(cas::NodeProxy obj)
-      : Size(0), Alignment(0), AlignmentOffset(0), Content(None),
-        SectionRef({0}), BlockContentID(obj.getID()) {}
+  CASBlock(uint64_t Size, uint64_t Alignment, uint64_t AlignmentOffset,
+           Optional<StringRef> Content, CASSectionRef SectionRef,
+           cas::CASID BlockContentID)
+      : Size(Size), Alignment(Alignment), AlignmentOffset(AlignmentOffset),
+        Content(Content), SectionRef(SectionRef),
+        BlockContentID(BlockContentID) {}
 
   bool isZeroFill() const { return !Content.hasValue(); }
 };
