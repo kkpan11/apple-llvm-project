@@ -2608,6 +2608,10 @@ public:
       emitRestrictExpansionWarning(Identifier);
   }
 
+  static void processPathForFileMacro(SmallVectorImpl<char> &Path,
+                                      const LangOptions &LangOpts,
+                                      const TargetInfo &TI);
+
 private:
   void emitMacroDeprecationWarning(const Token &Identifier) const;
   void emitRestrictExpansionWarning(const Token &Identifier) const;

@@ -1490,6 +1490,9 @@ void Clang::AddPreprocessingOptions(Compilation &C, const JobAction &JA,
 
   addMacroPrefixMapArg(D, Args, CmdArgs);
   addCoveragePrefixMapArg(D, Args, CmdArgs);
+
+  Args.AddLastArg(CmdArgs, options::OPT_ffile_reproducible,
+                  options::OPT_fno_file_reproducible);
 }
 
 // FIXME: Move to target hook.
@@ -3476,9 +3479,9 @@ static void RenderOpenCLOptions(const ArgList &Args, ArgStringList &CmdArgs,
 
 static void RenderHLSLOptions(const ArgList &Args, ArgStringList &CmdArgs,
                               types::ID InputType) {
-  const unsigned ForwardedArguments[] = {
-      options::OPT_dxil_validator_version, options::OPT_D, options::OPT_S,
-      options::OPT_emit_llvm, options::OPT_disable_llvm_passes};
+  const unsigned ForwardedArguments[] = {options::OPT_dxil_validator_version,
+                                         options::OPT_S, options::OPT_emit_llvm,
+                                         options::OPT_disable_llvm_passes};
 
   for (const auto &Arg : ForwardedArguments)
     if (const auto *A = Args.getLastArg(Arg))
