@@ -268,6 +268,41 @@ std::string CPlusPlusLanguage::MethodName::GetScopeQualifiedName() {
   return res;
 }
 
+bool CPlusPlusLanguage::MethodName::ContainsPath(llvm::StringRef path) {
+  if (!m_parsed)
+    Parse();
+  // If we can't parse the incoming name, then just check that it contains path.
+  if (m_parse_error)
+    return m_full.GetStringRef().contains(path);
+    
+  llvm::StringRef identifier;
+  llvm::StringRef context;
+  std::string path_str = path.str();
+  bool success 
+      = CPlusPlusLanguage::ExtractContextAndIdentifier(path_str.c_str(),
+                                                       context,
+                                                       identifier);
+  if (!success)
+    return m_full.GetStringRef().contains(path);
+
+  if (identifier != GetBasename())
+    return false;
+  // Incoming path only had an identifier, so we match.
+  if (context.empty())
+    return true;
+  // Incoming path has context but this method does not, no match.
+  if (m_context.empty())
+    return false;
+
+  llvm::StringRef haystack = m_context;
+  if (!haystack.consume_back(context))
+    return false;
+  if (haystack.empty() || !isalnum(haystack.back()))
+    return true;
+    
+  return false;
+}
+
 bool CPlusPlusLanguage::IsCPPMangledName(llvm::StringRef name) {
   Mangled::ManglingScheme scheme = Mangled::GetManglingScheme(name);
   switch (scheme) {
@@ -282,6 +317,12 @@ bool CPlusPlusLanguage::IsCPPMangledName(llvm::StringRef name) {
 #endif
     return false;
   }
+}
+
+bool CPlusPlusLanguage::DemangledNameContainsPath(llvm::StringRef path, 
+                                                  ConstString demangled) const {
+  MethodName demangled_name(demangled);
+  return demangled_name.ContainsPath(path);
 }
 
 bool CPlusPlusLanguage::ExtractContextAndIdentifier(
