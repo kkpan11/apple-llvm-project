@@ -622,13 +622,11 @@ static void pushEntryToBuilder(const CASDB &DB,
   assert(!Entry.isDirectory());
 
   if (Entry.isSymlink()) {
-    Builder.push(DB.getObjectID(*Entry.getRef()), TreeEntry::Symlink,
-                 Entry.getTreePath());
+    Builder.push(*Entry.getRef(), TreeEntry::Symlink, Entry.getTreePath());
     return;
   }
 
-  Builder.push(DB.getObjectID(*Entry.getRef()), getTreeEntryKind(Entry),
-               Entry.getTreePath());
+  Builder.push(*Entry.getRef(), getTreeEntryKind(Entry), Entry.getTreePath());
 }
 
 void CachingOnDiskFileSystemImpl::trackNewAccesses() {
@@ -637,6 +635,12 @@ void CachingOnDiskFileSystemImpl::trackNewAccesses() {
     return;
   TrackedAccesses.emplace();
   TrackedAccesses->reserve(128); // Seed with a bit of runway.
+}
+
+static Expected<TreeProxy> toProxy(CASDB &CAS, Expected<TreeHandle> Tree) {
+  if (Tree)
+    return TreeProxy::load(CAS, *Tree);
+  return Tree.takeError();
 }
 
 Expected<TreeProxy> CachingOnDiskFileSystemImpl::createTreeFromNewAccesses(
@@ -650,7 +654,7 @@ Expected<TreeProxy> CachingOnDiskFileSystemImpl::createTreeFromNewAccesses(
   }
 
   if (!MaybeTrackedAccesses || MaybeTrackedAccesses->empty())
-    return DB.createTree();
+    return toProxy(DB, DB.createTree());
 
   HierarchicalTreeBuilder Builder;
   for (const DirectoryEntry *Entry : *MaybeTrackedAccesses) {
@@ -661,11 +665,10 @@ Expected<TreeProxy> CachingOnDiskFileSystemImpl::createTreeFromNewAccesses(
     if (Entry->isDirectory())
       Builder.pushDirectory(Path);
     else
-      Builder.push(DB.getObjectID(*Entry->getRef()), getTreeEntryKind(*Entry),
-                   Path);
+      Builder.push(*Entry->getRef(), getTreeEntryKind(*Entry), Path);
   }
 
-  return Builder.create(DB);
+  return toProxy(DB, Builder.create(DB));
 }
 
 Expected<TreeProxy> CachingOnDiskFileSystemImpl::createTreeFromAllAccesses() {
@@ -677,7 +680,7 @@ Expected<TreeProxy> CachingOnDiskFileSystemImpl::createTreeFromAllAccesses() {
   // FIXME: don't know if we want this push to be recursive...
   if (Error E = Builder->push("/"))
     return std::move(E);
-  return Builder->create();
+  return toProxy(DB, Builder->create());
 }
 
 DiscoveryInstanceImpl::DiscoveryInstanceImpl(
@@ -781,7 +784,9 @@ public:
   /// error; the symlink will be added without the target.
   Error push(const Twine &Path) final;
 
-  Expected<TreeProxy> create() final { return Builder.create(FS.getCAS()); }
+  Expected<TreeProxy> create() final {
+    return toProxy(FS.getCAS(), Builder.create(FS.getCAS()));
+  }
 
   // Push \p Entry directly to \a Builder, asserting that it's a symlink.
   void pushSymlink(const DirectoryEntry &Entry);

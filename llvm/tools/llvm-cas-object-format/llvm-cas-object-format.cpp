@@ -134,8 +134,8 @@ createSchema(CASDB &CAS, StringRef SchemaName) {
                            "invalid schema '" + SchemaName + "'");
 }
 
-static CASID ingestFile(ObjectFormatSchemaBase &Schema, StringRef InputFile,
-                        MemoryBufferRef FileContent, SharedStream &OS);
+static ObjectRef ingestFile(ObjectFormatSchemaBase &Schema, StringRef InputFile,
+                            MemoryBufferRef FileContent, SharedStream &OS);
 static void computeStats(CASDB &CAS, ArrayRef<CASID> IDs, raw_ostream &StatOS);
 static Error printCASObjectOrTree(ObjectFormatSchemaPool &Pool, CASID ID);
 
@@ -164,7 +164,7 @@ int main(int argc, char *argv[]) {
   ThreadPool Pool(PoolStrategy);
 
   ObjectFormatSchemaPool SchemaPool(*CAS);
-  StringMap<CASID> Files;
+  StringMap<ObjectRef> Files;
   SmallVector<CASID> SummaryIDs;
   SharedStream OS(outs());
   BumpPtrAllocator Alloc;
@@ -194,7 +194,7 @@ int main(int argc, char *argv[]) {
       Pool.async([&, IF, ExitOnErr]() {
         auto ObjBuffer =
             ExitOnErr(errorOrToExpected(MemoryBuffer::getFile(IF)));
-        CASID ID =
+        ObjectRef ID =
             ingestFile(*IngestSchema, IF, ObjBuffer->getMemBufferRef(), OS);
         std::unique_lock<std::mutex> LockGuard(Lock);
         assert(!Files.count(IF));
@@ -205,8 +205,9 @@ int main(int argc, char *argv[]) {
 
     case IngestFromCASTree: {
       auto ID = ExitOnErr(CAS->parseID(IF));
+      auto Root = ExitOnErr(CAS->getTree(ID));
       SmallVector<NamedTreeEntry> Stack;
-      Stack.emplace_back(ID, TreeEntry::Tree, "/");
+      Stack.emplace_back(CAS->getReference(Root), TreeEntry::Tree, "/");
       Optional<GlobPattern> GlobP;
       if (!CASGlob.empty())
         GlobP.emplace(ExitOnErr(GlobPattern::create(CASGlob)));
@@ -218,12 +219,12 @@ int main(int argc, char *argv[]) {
           if (GlobP && !GlobP->match(Name))
               continue;
 
-          auto BlobContent = ExitOnErr(CAS->getBlob(Node.getID()));
+          auto BlobContent = ExitOnErr(CAS->loadBlob(Node.getRef()));
           Pool.async([&, Name, BlobContent]() {
             auto ObjBuffer =
                 MemoryBuffer::getMemBuffer(BlobContent.getData(), Name);
-            CASID ID = ingestFile(*IngestSchema, Name,
-                                  ObjBuffer->getMemBufferRef(), OS);
+            ObjectRef ID = ingestFile(*IngestSchema, Name,
+                                      ObjBuffer->getMemBufferRef(), OS);
             std::unique_lock<std::mutex> LockGuard(Lock);
             assert(!Files.count(Name));
             Files.try_emplace(Name, ID);
@@ -235,7 +236,7 @@ int main(int argc, char *argv[]) {
           ExitOnErr(createStringError(inconvertibleErrorCode(),
                                       "unexpected CAS kind in the tree"));
 
-        TreeProxy Tree = ExitOnErr(CAS->getTree(Node.getID()));
+        TreeProxy Tree = ExitOnErr(CAS->loadTree(Node.getRef()));
         ExitOnErr(Tree.forEachEntry([&](const NamedTreeEntry &Entry) {
           SmallString<128> PathStorage = Node.getName();
           sys::path::append(PathStorage, sys::path::Style::posix,
@@ -244,7 +245,7 @@ int main(int argc, char *argv[]) {
             if (GlobP && !GlobP->match(PathStorage))
               return Error::success();
           }
-          Stack.emplace_back(Entry.getID(), Entry.getKind(),
+          Stack.emplace_back(Entry.getRef(), Entry.getKind(),
                              Saver.save(StringRef(PathStorage)));
           return Error::success();
         }));
@@ -261,7 +262,7 @@ int main(int argc, char *argv[]) {
     SmallVector<char, 50> Contents;
     {
       raw_svector_ostream OS(Contents);
-      writeCASIDBuffer(File->second, OS);
+      writeCASIDBuffer(CAS->getObjectID(File->second), OS);
     }
     std::unique_ptr<FileOutputBuffer> outBuf =
         ExitOnErr(FileOutputBuffer::create(CASIDOutput, Contents.size()));
@@ -278,9 +279,10 @@ int main(int argc, char *argv[]) {
   if (!Files.empty()) {
     MSG("Making summary object...\n");
     HierarchicalTreeBuilder Builder;
-    for (auto &File : Files)
+    for (auto &File : Files) {
       Builder.push(File.second, TreeEntry::Regular, File.first());
-    CASID SummaryID = ExitOnErr(Builder.create(*CAS));
+    }
+    CASID SummaryID = CAS->getObjectID(ExitOnErr(Builder.create(*CAS)));
     SummaryIDs.emplace_back(SummaryID);
     MSG("summary tree: ");
     outs() << SummaryID << "\n";
@@ -412,9 +414,10 @@ void StatCollector::visitPOTItem(ExitOnError &ExitOnErr, const POTItem &Item) {
   Optional<AnyObjectHandle> Object = ExitOnErr(CAS.loadObject(ID));
   assert(Object);
 
-  auto updateChild = [&](CASID Child) {
-    ++Nodes[Child].NumParents;
-    Nodes[Child].NumPaths += NumPaths;
+  auto updateChild = [&](ObjectRef Child) {
+    CASID ChildID = CAS.getObjectID(Child);
+    ++Nodes[ChildID].NumParents;
+    Nodes[ChildID].NumPaths += NumPaths;
   };
 
   size_t NumParents = Nodes.lookup(ID).NumParents;
@@ -432,7 +435,7 @@ void StatCollector::visitPOTItem(ExitOnError &ExitOnErr, const POTItem &Item) {
       // FIXME: This is copied out of BuiltinCAS.cpp's makeTree.
       Info.DataSize += sizeof(uint64_t) + sizeof(uint32_t) +
                        alignTo(Entry.getName().size() + 1, Align(4));
-      updateChild(Entry.getID());
+      updateChild(Entry.getRef());
       return Error::success();
     }));
     return;
@@ -448,8 +451,8 @@ void StatCollector::visitPOTItem(ExitOnError &ExitOnErr, const POTItem &Item) {
     if (!Node.getNumReferences())
       Totals.NumPaths += NumPaths; // Count paths to leafs.
 
-    ExitOnErr(Node.forEachReferenceID([&](CASID ChildID) {
-      updateChild(ChildID);
+    ExitOnErr(Node.forEachReference([&](ObjectRef Child) {
+      updateChild(Child);
       return Error::success();
     }));
   };
@@ -612,7 +615,8 @@ static void computeStats(CASDB &CAS, ArrayRef<CASID> TopLevels,
           if (GlobP && !GlobP->match(PathStorage))
             return Error::success();
         }
-        push(Entry.getID(), Saver.save(StringRef(PathStorage)));
+        push(CAS.getObjectID(Entry.getRef()),
+             Saver.save(StringRef(PathStorage)));
         return Error::success();
       }));
       continue;
@@ -747,7 +751,7 @@ static Error printCASObjectOrTree(ObjectFormatSchemaPool &Pool, CASID ID) {
   }
 
   return walkFileTreeRecursively(
-      Pool.getCAS(), ID,
+      Pool.getCAS(), *ExpTree,
       [&](const NamedTreeEntry &entry, Optional<TreeProxy>) -> Error {
         if (entry.getKind() == TreeEntry::Tree)
           return Error::success();
@@ -756,7 +760,7 @@ static Error printCASObjectOrTree(ObjectFormatSchemaPool &Pool, CASID ID) {
                                    "found non-regular entry: " +
                                        entry.getName());
         }
-        return printCASObject(Pool, entry.getID());
+        return printCASObject(Pool, Pool.getCAS().getObjectID(entry.getRef()));
       });
 }
 
@@ -827,8 +831,8 @@ static Error SplitDebugLine(jitlink::LinkGraph &G) {
   return Error::success();
 }
 
-static CASID ingestFile(ObjectFormatSchemaBase &Schema, StringRef InputFile,
-                        MemoryBufferRef FileContent, SharedStream &OS) {
+static ObjectRef ingestFile(ObjectFormatSchemaBase &Schema, StringRef InputFile,
+                            MemoryBufferRef FileContent, SharedStream &OS) {
   ExitOnError ExitOnErr;
   ExitOnErr.setBanner(("llvm-cas-object-format: " + InputFile + ": ").str());
 
@@ -839,7 +843,8 @@ static CASID ingestFile(ObjectFormatSchemaBase &Schema, StringRef InputFile,
 
   auto &CAS = Schema.CAS;
   if (JustBlobs)
-    return ExitOnErr(CAS.createBlob(FileContent.getBuffer()));
+    return CAS.getReference(
+        ExitOnErr(CAS.storeNodeFromString(None, FileContent.getBuffer())));
 
   auto createLinkGraph =
       [&ExitOnErr](
@@ -860,7 +865,7 @@ static CASID ingestFile(ObjectFormatSchemaBase &Schema, StringRef InputFile,
     // Create a map for each symbol in TEXT.
     jitlink::Section *Text = G->findSectionByName("__TEXT,__text");
     if (!Text)
-      return ExitOnErr(CAS.createTree());
+      return CAS.getReference(ExitOnErr(CAS.storeTree(None)));
 
     auto MapFile = ExitOnErr(sys::fs::TempFile::create("/tmp/debug-%%%%%%%%.map"));
     auto DsymFile =
@@ -919,12 +924,13 @@ static CASID ingestFile(ObjectFormatSchemaBase &Schema, StringRef InputFile,
       // Read dsym.
       auto DwarfBuffer =
           ExitOnErr(errorOrToExpected(MemoryBuffer::getFile(DsymFile.TmpName)));
-      Builder.push(ExitOnErr(CAS.createBlob(DwarfBuffer->getBuffer())),
+      Builder.push(CAS.getReference(ExitOnErr(CAS.storeNodeFromString(
+                       None, DwarfBuffer->getBuffer()))),
                    TreeEntry::Regular, S->getName());
     }
     ExitOnErr(MapFile.discard());
     ExitOnErr(DsymFile.discard());
-    return ExitOnErr(Builder.create(CAS));
+    return CAS.getReference(ExitOnErr(Builder.create(CAS)));
   }
 
   if (Dump)
@@ -957,5 +963,5 @@ static CASID ingestFile(ObjectFormatSchemaBase &Schema, StringRef InputFile,
   if (Dump)
     dumpGraph(*RoundTripG, OS, "after round-trip");
 
-  return CompileUnit;
+  return CompileUnit.getRef();
 }

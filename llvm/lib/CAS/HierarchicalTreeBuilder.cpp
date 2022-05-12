@@ -49,32 +49,35 @@ static StringRef canonicalize(SmallVectorImpl<char> &Path,
   return StringRef(Path.begin(), Path.size());
 }
 
-void HierarchicalTreeBuilder::pushImpl(Optional<CASID> ID,
+void HierarchicalTreeBuilder::pushImpl(Optional<ObjectRef> Ref,
                                        TreeEntry::EntryKind Kind,
                                        const Twine &Path) {
   SmallVector<char, 256> CanonicalPath;
   Path.toVector(CanonicalPath);
-  Entries.emplace_back(ID, Kind, canonicalize(CanonicalPath, Kind));
+  Entries.emplace_back(Ref, Kind, canonicalize(CanonicalPath, Kind));
 }
 
-void HierarchicalTreeBuilder::pushTreeContent(CASID ID, const Twine &Path) {
+void HierarchicalTreeBuilder::pushTreeContent(ObjectRef Ref,
+                                              const Twine &Path) {
   SmallVector<char, 256> CanonicalPath;
   Path.toVector(CanonicalPath);
   TreeEntry::EntryKind Kind = TreeEntry::Tree;
-  TreeContents.emplace_back(ID, Kind, canonicalize(CanonicalPath, Kind));
+  TreeContents.emplace_back(Ref, Kind, canonicalize(CanonicalPath, Kind));
 }
 
-Expected<TreeProxy> HierarchicalTreeBuilder::create(CASDB &CAS) {
+Expected<TreeHandle> HierarchicalTreeBuilder::create(CASDB &CAS) {
   // FIXME: It is inefficient expanding the whole tree recursively like this,
   // use a more efficient algorithm to merge contents.
   for (const auto &TreeContent : TreeContents) {
-    CASID ID = *TreeContent.getID();
+    Optional<TreeProxy> LoadedTree;
+    if (Error E = CAS.loadTree(*TreeContent.getRef()).moveInto(LoadedTree))
+      return std::move(E);
     StringRef Path = TreeContent.getPath();
     Error E = walkFileTreeRecursively(
-        CAS, ID,
+        CAS, *LoadedTree,
         [&](const NamedTreeEntry &Entry, Optional<TreeProxy> Tree) -> Error {
           if (Entry.getKind() != TreeEntry::Tree) {
-            pushImpl(Entry.getID(), Entry.getKind(), Path + Entry.getName());
+            pushImpl(Entry.getRef(), Entry.getKind(), Path + Entry.getName());
             return Error::success();
           }
           if (Tree->empty())
@@ -96,8 +99,8 @@ Expected<TreeProxy> HierarchicalTreeBuilder::create(CASDB &CAS) {
         if (int Compare = LHS.getPath().compare(RHS.getPath()))
           return Compare < 0;
 
-        // Nodes with IDs first (only trees may have a missing ID).
-        return bool(LHS.getID()) > bool(RHS.getID());
+        // Nodes with IDs first (only trees may have a missing Ref).
+        return bool(LHS.getRef()) > bool(RHS.getRef());
       });
 
   // Compile into trees.
@@ -105,7 +108,7 @@ Expected<TreeProxy> HierarchicalTreeBuilder::create(CASDB &CAS) {
   struct Node {
     Node *Next = nullptr;
     Tree *Parent = nullptr;
-    Optional<CASID> ID;
+    Optional<ObjectRef> Ref;
     TreeEntry::EntryKind Kind;
     StringRef Name;
 
@@ -130,12 +133,12 @@ Expected<TreeProxy> HierarchicalTreeBuilder::create(CASDB &CAS) {
         return createStringError(
             std::make_error_code(std::errc::invalid_argument),
             "duplicate path '" + Entry.getPath() + "' with different kind");
-      if (!Entry.getID()) {
+      if (!Entry.getRef()) {
         assert(Entry.getKind() == TreeEntry::Tree);
         continue;
       }
-      assert(PrevEntry->getID());
-      if (*Entry.getID() != *PrevEntry->getID())
+      assert(PrevEntry->getRef());
+      if (*Entry.getRef() != *PrevEntry->getRef())
         return createStringError(
             std::make_error_code(std::errc::invalid_argument),
             "duplicate path '" + Entry.getPath() + "' with different ID");
@@ -162,9 +165,9 @@ Expected<TreeProxy> HierarchicalTreeBuilder::create(CASDB &CAS) {
         Path = Path.drop_front(Slash + 1);
       }
 
-      // If the tree Current already has an ID, then it's fixed and we can't
+      // If the tree Current already has a ref, then it's fixed and we can't
       // add anything to it.
-      if (Current->ID)
+      if (Current->Ref)
         return createStringError(
             std::make_error_code(std::errc::invalid_argument),
             "cannot add '" + Entry.getPath() + "' under fixed tree");
@@ -183,8 +186,8 @@ Expected<TreeProxy> HierarchicalTreeBuilder::create(CASDB &CAS) {
         if (Path == "" && Entry.getKind() == TreeEntry::Tree) {
           // Tree already exists. Sort order should ensure a fixed tree comes
           // first.
-          assert(!Entry.getID() ||
-                 (Current->ID && *Current->ID == *Entry.getID()));
+          assert(!Entry.getRef() ||
+                 (Current->Ref && *Current->Ref == *Entry.getRef()));
           break;
         }
         if (Current->First->Kind == TreeEntry::Tree) {
@@ -217,7 +220,7 @@ Expected<TreeProxy> HierarchicalTreeBuilder::create(CASDB &CAS) {
       New->Name = Name;
       if (Path == "") {
         New->Kind = Entry.getKind();
-        New->ID = Entry.getID();
+        New->Ref = Entry.getRef();
       } else {
         New->Kind = TreeEntry::Tree;
       }
@@ -233,9 +236,9 @@ Expected<TreeProxy> HierarchicalTreeBuilder::create(CASDB &CAS) {
   while (!Worklist.empty()) {
     Tree *T = Worklist.back();
     if (!T->Visited) {
-      assert(!T->ID && "Trees with fixed content shouldn't be visited");
+      assert(!T->Ref && "Trees with fixed content shouldn't be visited");
       for (Node *N = T->First; N; N = N->Next) {
-        if (!N->ID) {
+        if (!N->Ref) {
           assert(N->Kind == TreeEntry::Tree);
           Worklist.push_back(static_cast<Tree *>(N));
         }
@@ -246,13 +249,13 @@ Expected<TreeProxy> HierarchicalTreeBuilder::create(CASDB &CAS) {
 
     Worklist.pop_back();
     for (Node *N = T->First; N; N = N->Next)
-      Entries.emplace_back(*N->ID, N->Kind, N->Name);
+      Entries.emplace_back(*N->Ref, N->Kind, N->Name);
     Expected<TreeProxy> ExpectedTree = CAS.createTree(Entries);
     Entries.clear();
     if (!ExpectedTree)
       return ExpectedTree.takeError();
-    T->ID = ExpectedTree->getID();
+    T->Ref = ExpectedTree->getRef();
   }
 
-  return CAS.getTree(*Root.ID);
+  return cantFail(CAS.loadObject(*Root.Ref)).get<TreeHandle>();
 }

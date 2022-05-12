@@ -38,5 +38,8 @@ def remark_compile_job_cache_hit : Remark<
   "compile job cache hit for '%0' => '%1'">, InGroup<CompileJobCacheHit>;
 def remark_compile_job_cache_miss : Remark<
   "compile job cache miss for '%0'">, InGroup<CompileJobCacheMiss>;
+def remark_compile_job_cache_miss_result_not_found : Remark<
+  "compile job cache miss for '%0' (result not found: '%1')">,
+  InGroup<CompileJobCacheMiss>;
 
 } // let Component = "CAS" in

@@ -19,7 +19,7 @@ TEST(CASUtilsTest, walkFileTreeRecursively) {
   std::unique_ptr<CASDB> CAS = createInMemoryCAS();
 
   auto make = [&](StringRef Content) {
-    return cantFail(CAS->createBlob(Content));
+    return CAS->getReference(cantFail(CAS->storeNodeFromString(None, Content)));
   };
 
   HierarchicalTreeBuilder Builder;
@@ -27,7 +27,7 @@ TEST(CASUtilsTest, walkFileTreeRecursively) {
   Builder.push(make("blob1"), TreeEntry::Regular, "/t1/d1");
   Builder.push(make("blob3"), TreeEntry::Regular, "/t3/d3");
   Builder.push(make("blob1"), TreeEntry::Regular, "/t3/t1nested/d1");
-  Optional<TreeProxy> Root;
+  Optional<TreeHandle> Root;
   ASSERT_THAT_ERROR(Builder.create(*CAS).moveInto(Root), Succeeded());
 
   std::pair<std::string, bool> ExpectedEntries[] = {

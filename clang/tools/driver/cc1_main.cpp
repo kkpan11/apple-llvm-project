@@ -254,7 +254,7 @@ private:
   /// Replay a cache hit.
   ///
   /// Return status if should exit immediately, otherwise None.
-  Optional<int> replayCachedResult(llvm::cas::CASID ResultID,
+  Optional<int> replayCachedResult(llvm::cas::ObjectRef ResultID,
                                    bool JustComputedResult);
 
   bool CacheCompileJob = false;
@@ -346,16 +346,22 @@ Optional<int> CompileJobCache::tryReplayCachedResult(CompilerInstance &Clang) {
 
   Expected<llvm::cas::CASID> Result = CAS->getCachedResult(*ResultCacheKey);
   if (Result) {
-    Clang.getDiagnostics().Report(diag::remark_compile_job_cache_hit)
+    if (Optional<llvm::cas::ObjectRef> ResultRef = CAS->getReference(*Result)) {
+      Clang.getDiagnostics().Report(diag::remark_compile_job_cache_hit)
+          << ResultCacheKey->toString() << Result->toString();
+      Optional<int> Status =
+          replayCachedResult(*ResultRef, /*JustComputedResult=*/false);
+      assert(Status && "Expected a status for a cache hit");
+      return *Status;
+    }
+    Clang.getDiagnostics().Report(
+        diag::remark_compile_job_cache_miss_result_not_found)
         << ResultCacheKey->toString() << Result->toString();
-    Optional<int> Status =
-        replayCachedResult(std::move(*Result), /*JustComputedResult=*/false);
-    assert(Status && "Expected a status for a cache hit");
-    return *Status;
+  } else {
+    llvm::consumeError(Result.takeError());
+    Clang.getDiagnostics().Report(diag::remark_compile_job_cache_miss)
+        << ResultCacheKey->toString();
   }
-  Clang.getDiagnostics().Report(diag::remark_compile_job_cache_miss)
-      << ResultCacheKey->toString();
-  llvm::consumeError(Result.takeError());
 
   // Create an on-disk backend for streaming the results live if we run the
   // computation. If we're writing the output as a CASID, skip it here, since
@@ -412,7 +418,7 @@ void CompileJobCache::finishComputedResult(CompilerInstance &Clang,
     return;
 
   // FIXME: Stop calling report_fatal_error().
-  Expected<llvm::cas::CASID> Outputs = CASOutputs->createNode();
+  Expected<llvm::cas::NodeProxy> Outputs = CASOutputs->createNode();
   if (!Outputs)
     llvm::report_fatal_error(Outputs.takeError());
 
@@ -427,37 +433,38 @@ void CompileJobCache::finishComputedResult(CompilerInstance &Clang,
   //
   // FIXME: Stop calling report_fatal_error().
   llvm::cas::HierarchicalTreeBuilder Builder;
-  Builder.push(*Outputs, llvm::cas::TreeEntry::Regular, "outputs");
-  Builder.push(*Errs, llvm::cas::TreeEntry::Regular, "stderr");
-  Expected<llvm::cas::CASID> Result = Builder.create(*CAS);
+  Builder.push(Outputs->getRef(), llvm::cas::TreeEntry::Regular, "outputs");
+  Builder.push(Errs->getRef(), llvm::cas::TreeEntry::Regular, "stderr");
+  Expected<llvm::cas::TreeHandle> Result = Builder.create(*CAS);
   if (!Result)
     llvm::report_fatal_error(Result.takeError());
-  if (llvm::Error E = CAS->putCachedResult(*ResultCacheKey, *Result))
+  if (llvm::Error E =
+          CAS->putCachedResult(*ResultCacheKey, CAS->getObjectID(*Result)))
     llvm::report_fatal_error(std::move(E));
 
   // Replay / decanonicalize as necessary.
-  Optional<int> Status =
-      replayCachedResult(std::move(*Result), /*JustComputedResult=*/true);
+  Optional<int> Status = replayCachedResult(CAS->getReference(*Result),
+                                            /*JustComputedResult=*/true);
   (void)Status;
   assert(Status == None);
 }
 
 /// Replay a result after a cache hit.
-Optional<int> CompileJobCache::replayCachedResult(llvm::cas::CASID ResultID,
+Optional<int> CompileJobCache::replayCachedResult(llvm::cas::ObjectRef ResultID,
                                                   bool JustComputedResult) {
   if (JustComputedResult && !ComputedJobNeedsReplay)
     return None;
 
   // FIXME: Stop calling report_fatal_error().
   Optional<llvm::cas::TreeProxy> Result;
-  if (Error E = CAS->getTree(ResultID).moveInto(Result))
+  if (Error E = CAS->loadTree(ResultID).moveInto(Result))
     llvm::report_fatal_error(std::move(E));
 
   // Replay diagnostics to stderr.
   if (!JustComputedResult) {
     Optional<llvm::cas::BlobProxy> Errs;
     if (Optional<llvm::cas::NamedTreeEntry> Entry = Result->lookup("stderr"))
-      if (Error E = CAS->getBlob(Entry->getID()).moveInto(Errs))
+      if (Error E = CAS->loadBlob(Entry->getRef()).moveInto(Errs))
         llvm::report_fatal_error(std::move(E));
     if (!Errs)
       llvm::report_fatal_error("CAS error accessing stderr");
@@ -469,7 +476,7 @@ Optional<int> CompileJobCache::replayCachedResult(llvm::cas::CASID ResultID,
   // FIXME: Use a NodeReader here once it exists.
   Optional<llvm::cas::NodeProxy> Outputs;
   if (Optional<llvm::cas::NamedTreeEntry> Entry = Result->lookup("outputs"))
-    if (Error E = CAS->getNode(Entry->getID()).moveInto(Outputs))
+    if (Error E = CAS->loadNode(Entry->getRef()).moveInto(Outputs))
       llvm::report_fatal_error(std::move(E));
   if (!Outputs)
     llvm::report_fatal_error("CAS error accessing outputs");

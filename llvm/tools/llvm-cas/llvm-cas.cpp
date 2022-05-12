@@ -190,7 +190,7 @@ int listTree(CASDB &CAS, CASID ID) {
 int listTreeRecursively(CASDB &CAS, CASID ID) {
   ExitOnError ExitOnErr("llvm-cas: ls-tree-recursively: ");
   ExitOnErr(walkFileTreeRecursively(
-      CAS, ID,
+      CAS, ExitOnErr(CAS.getTree(ID)),
       [&](const NamedTreeEntry &Entry, Optional<TreeProxy> Tree) -> Error {
         if (Entry.getKind() != TreeEntry::Tree) {
           Entry.print(llvm::outs(), CAS);
@@ -320,7 +320,7 @@ static GraphInfo traverseObjectGraph(CASDB &CAS, CASID TopLevel) {
 
     if (auto Tree = Object->dyn_cast<TreeHandle>()) {
       ExitOnErr(CAS.forEachTreeEntry(*Tree, [&](const NamedTreeEntry &Entry) {
-        push(Entry.getID());
+        push(CAS.getObjectID(Entry.getRef()));
         return Error::success();
       }));
       continue;
@@ -433,16 +433,20 @@ static int mergeTrees(CASDB &CAS, ArrayRef<std::string> Objects) {
   for (const auto &Object : Objects) {
     auto ID = CAS.parseID(Object);
     if (ID) {
-      Builder.pushTreeContent(*ID, "");
+      if (Optional<ObjectRef> Ref = CAS.getReference(*ID))
+        Builder.pushTreeContent(*Ref, "");
+      else
+        ExitOnErr(createStringError(inconvertibleErrorCode(),
+                                    "unknown node with id: " + ID->toString()));
     } else {
       consumeError(ID.takeError());
       auto Ref = ExitOnErr(ingestFileSystemImpl(CAS, Object));
-      Builder.pushTreeContent(Ref, "");
+      Builder.pushTreeContent(Ref.getRef(), "");
     }
   }
 
   auto Ref = ExitOnErr(Builder.create(CAS));
-  outs() << Ref.getID() << "\n";
+  outs() << CAS.getObjectID(Ref) << "\n";
   return 0;
 }
 

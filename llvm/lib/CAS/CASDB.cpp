@@ -123,6 +123,40 @@ Expected<LeafNodeProxy> CASDB::getBlob(CASID ID) {
   return LeafNodeProxy(NodeProxy::load(*this, *Node));
 }
 
+Expected<TreeProxy> CASDB::loadTree(ObjectRef Ref) {
+  Expected<AnyObjectHandle> Object = loadObject(Ref);
+  if (!Object)
+    return Object.takeError();
+  Optional<TreeHandle> Tree = Object->dyn_cast<TreeHandle>();
+  if (!Tree)
+    return createWrongKindError(getObjectID(Ref));
+  return TreeProxy::load(*this, *Tree);
+}
+
+Expected<LeafNodeProxy> CASDB::loadBlob(ObjectRef Ref) {
+  Expected<AnyObjectHandle> Object = loadObject(Ref);
+  if (!Object)
+    return Object.takeError();
+  Optional<NodeHandle> Node = Object->dyn_cast<NodeHandle>();
+  if (!Node)
+    return createWrongKindError(getObjectID(Ref));
+  if (getNumRefs(*Node) > 0)
+    return createStringError(std::make_error_code(std::errc::invalid_argument),
+                             "node '" + getObjectID(Ref).toString() +
+                                 "' is not a leaf");
+  return LeafNodeProxy(NodeProxy::load(*this, *Node));
+}
+
+Expected<NodeProxy> CASDB::loadNode(ObjectRef Ref) {
+  Expected<AnyObjectHandle> Object = loadObject(Ref);
+  if (!Object)
+    return Object.takeError();
+  Optional<NodeHandle> Node = Object->dyn_cast<NodeHandle>();
+  if (!Node)
+    return createWrongKindError(getObjectID(Ref));
+  return NodeProxy::load(*this, *Node);
+}
+
 Expected<TreeProxy> CASDB::getTree(CASID ID) {
   return loadObjectProxy<TreeProxy, TreeHandle>(ID);
 }

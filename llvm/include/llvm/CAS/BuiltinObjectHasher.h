@@ -75,12 +75,12 @@ public:
     return H.finish();
   }
 
-  static HashT hashTree(ArrayRef<NamedTreeEntry> Entries) {
+  static HashT hashTree(const CASDB &CAS, ArrayRef<NamedTreeEntry> Entries) {
     BuiltinObjectHasher H;
     H.start(StableObjectKind::Tree);
     H.updateSize(Entries.size());
     for (const NamedTreeEntry &Entry : Entries) {
-      H.updateID(Entry.getID());
+      H.updateRef(CAS, Entry.getRef());
       H.updateString(Entry.getName());
       H.updateKind(getStableKind(Entry.getKind()));
     }

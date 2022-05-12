@@ -601,12 +601,17 @@ Expected<llvm::cas::CASID> PTHManager::computePTH(llvm::cas::CASID InputFile) {
   }
 
   llvm::cas::HierarchicalTreeBuilder Builder;
-  Builder.push(InputFile, llvm::cas::TreeEntry::Regular, "data");
-  Builder.push(*ClangVersion, llvm::cas::TreeEntry::Regular, "version");
-  Builder.push(*Operation, llvm::cas::TreeEntry::Regular, "operation");
-  Builder.push(*SerializedLangOpts, llvm::cas::TreeEntry::Regular, "lang-opts");
+  Builder.push(*CAS.getReference(InputFile), llvm::cas::TreeEntry::Regular,
+               "data");
+  Builder.push(*CAS.getReference(*ClangVersion), llvm::cas::TreeEntry::Regular,
+               "version");
+  Builder.push(*CAS.getReference(*Operation), llvm::cas::TreeEntry::Regular,
+               "operation");
+  Builder.push(*CAS.getReference(*SerializedLangOpts),
+               llvm::cas::TreeEntry::Regular, "lang-opts");
 
-  llvm::cas::CASID CacheKey = llvm::cantFail(Builder.create(CAS)).getID();
+  llvm::cas::CASID CacheKey =
+      CAS.getObjectID(llvm::cantFail(Builder.create(CAS)));
   if (Optional<llvm::cas::CASID> CachedPTH =
           expectedToOptional(CAS.getCachedResult(CacheKey)))
     return *CachedPTH;

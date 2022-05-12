@@ -102,7 +102,8 @@ Expected<TreeHandle> BuiltinCAS::storeTree(ArrayRef<NamedTreeEntry> Entries) {
   std::stable_sort(Sorted.begin(), Sorted.end());
   Sorted.erase(std::unique(Sorted.begin(), Sorted.end()), Sorted.end());
 
-  return storeTreeImpl(BuiltinObjectHasher<HasherT>::hashTree(Sorted), Sorted);
+  return storeTreeImpl(BuiltinObjectHasher<HasherT>::hashTree(*this, Sorted),
+                       Sorted);
 }
 
 Expected<NodeHandle> BuiltinCAS::storeNode(ArrayRef<ObjectRef> Refs,

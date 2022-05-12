@@ -379,7 +379,8 @@ public:
 private:
   // TreeAPI.
   NamedTreeEntry makeTreeEntry(const InMemoryTree::NamedEntry &Entry) const {
-    return NamedTreeEntry(getID(*Entry.Ref), Entry.Kind, Entry.Name->get());
+    return NamedTreeEntry(toReference(*Entry.Ref), Entry.Kind,
+                          Entry.Name->get());
   }
   NamedTreeEntry loadTreeEntry(TreeHandle Tree, size_t I) const final {
     return makeTreeEntry(getInMemoryTree(Tree)[I]);
@@ -552,10 +553,8 @@ InMemoryCAS::storeTreeImpl(ArrayRef<uint8_t> ComputedHash,
   // Create the tree.
   SmallVector<InMemoryTree::NamedEntry> InternalEntries;
   for (const NamedTreeEntry &E : SortedEntries) {
-    InternalEntries.push_back({getInMemoryObject(E.getID()),
+    InternalEntries.push_back({&asInMemoryObject(E.getRef()),
                                &getOrCreateString(E.getName()), E.getKind()});
-    if (!InternalEntries.back().Ref)
-      return createUnknownObjectError(E.getID());
   }
   auto Allocator = [&](size_t Size) -> void * {
     return Objects.Allocate(Size, alignof(InMemoryObject));

@@ -98,55 +98,57 @@ static Error computeIncludedFiles(cas::CASDB &CAS, cas::CASID Key,
   return Error::success();
 }
 
-Error tablegen::scanTextForIncludes(cas::CASDB &CAS, cas::CASID ExecID,
+Error tablegen::scanTextForIncludes(cas::CASDB &CAS, cas::ObjectRef ExecID,
                                     const cas::BlobProxy &Blob,
                                     SmallVectorImpl<StringRef> &Includes) {
   constexpr StringLiteral CacheKeyData = "llvm::tablegen::scanTextForIncludes";
 
-  Expected<cas::NodeProxy> Key = CAS.createNode({ExecID, Blob}, CacheKeyData);
+  Expected<cas::NodeHandle> Key =
+      CAS.storeNodeFromString({ExecID, Blob.getRef()}, CacheKeyData);
   if (!Key)
     return Key.takeError();
 
+  cas::CASID KeyID = CAS.getObjectID(*Key);
   if (Optional<cas::CASID> ResultID =
-          expectedToOptional(CAS.getCachedResult(*Key)))
+          expectedToOptional(CAS.getCachedResult(KeyID)))
     return fetchCachedIncludedFiles(CAS, *ResultID, Includes);
-  return computeIncludedFiles(CAS, *Key, Blob.getData(), Includes);
+  return computeIncludedFiles(CAS, KeyID, Blob.getData(), Includes);
 }
 
-Optional<cas::CASID>
+Optional<cas::ObjectRef>
 tablegen::lookupIncludeID(cas::CachingOnDiskFileSystem &FS,
                           ArrayRef<std::string> IncludeDirs,
                           StringRef Filename) {
   SmallString<256> Path;
   Optional<cas::CASID> ID;
   if (!FS.statusAndFileID(Filename, ID).getError())
-    return ID;
+    return FS.getCAS().getReference(*ID);
   for (StringRef Dir : IncludeDirs) {
     // Match path logic from SourceMgr::AddIncludeFile.
     Path.assign(Dir);
     Path.append(sys::path::get_separator());
     Path.append(Filename);
     if (!FS.statusAndFileID(Path, ID).getError())
-      return ID;
+      return FS.getCAS().getReference(*ID);
   }
-  return ID;
+  return None;
 }
 
 Error tablegen::accessAllIncludes(cas::CachingOnDiskFileSystem &FS,
-                                  cas::CASID ExecID,
+                                  cas::ObjectRef ExecID,
                                   ArrayRef<std::string> IncludeDirs,
                                   const cas::BlobProxy &MainFileBlob) {
   cas::CASDB &CAS = FS.getCAS();
 
   // Helper for adding to the worklist.
   SmallVector<cas::BlobProxy> Worklist = {MainFileBlob};
-  SmallDenseSet<cas::CASID, 16> Seen;
-  Seen.insert(MainFileBlob);
-  auto push = [&Seen, &Worklist, &CAS](cas::CASID ID) -> Error {
+  SmallDenseSet<cas::ObjectRef, 16> Seen;
+  Seen.insert(MainFileBlob.getRef());
+  auto push = [&Seen, &Worklist, &CAS](cas::ObjectRef ID) -> Error {
     if (!Seen.insert(ID).second)
       return Error::success();
 
-    Expected<cas::BlobProxy> Blob = CAS.getBlob(ID);
+    Expected<cas::BlobProxy> Blob = CAS.loadBlob(ID);
     if (!Blob)
       return Blob.takeError();
     Worklist.push_back(*Blob);
@@ -164,7 +166,7 @@ Error tablegen::accessAllIncludes(cas::CachingOnDiskFileSystem &FS,
     // Add included files to the worklist. Ignore files not found, since the
     // fuzzy search above could have found commented out includes.
     for (StringRef IncludedFile : IncludedFiles)
-      if (Optional<cas::CASID> ID =
+      if (Optional<cas::ObjectRef> ID =
               lookupIncludeID(FS, IncludeDirs, IncludedFile))
         if (Error E = push(*ID))
           return E;
@@ -200,7 +202,7 @@ Error tablegen::createMainFileError(StringRef MainFilename,
 }
 
 Expected<ScanIncludesResult> tablegen::scanIncludes(
-    cas::CASDB &CAS, cas::CASID ExecID, StringRef MainFilename,
+    cas::CASDB &CAS, cas::ObjectRef ExecID, StringRef MainFilename,
     ArrayRef<std::string> IncludeDirs, ArrayRef<MappedPrefix> PrefixMappings,
     Optional<TreePathPrefixMapper> *CapturedPM) {
   IntrusiveRefCntPtr<cas::CachingOnDiskFileSystem> FS;
@@ -232,11 +234,11 @@ Expected<ScanIncludesResult> tablegen::scanIncludes(
   if (!Tree)
     return Tree.takeError();
 
-  return ScanIncludesResult{*Tree, *MainBlob};
+  return ScanIncludesResult{Tree->getRef(), *MainBlob};
 }
 
 Expected<ScanIncludesResult>
-tablegen::scanIncludesAndRemap(cas::CASDB &CAS, cas::CASID ExecID,
+tablegen::scanIncludesAndRemap(cas::CASDB &CAS, cas::ObjectRef ExecID,
                                std::string &MainFilename,
                                std::vector<std::string> &IncludeDirs,
                                ArrayRef<MappedPrefix> PrefixMappings) {

@@ -15,6 +15,7 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/CAS/CASID.h"
+#include "llvm/CAS/CASReference.h"
 #include "llvm/CAS/ThreadSafeFileSystem.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/ErrorOr.h"
@@ -96,7 +97,7 @@ private:
     llvm::ErrorOr<llvm::vfs::Status> Status;
   };
   Expected<StringRef> computeMinimized(
-      llvm::cas::CASID InputDataID, StringRef Identifier,
+      llvm::cas::ObjectRef InputDataID, StringRef Identifier,
       Optional<llvm::cas::CASID> &MinimizedDataID,
       std::unique_ptr<PreprocessorSkippedRangeMapping> &PPSkippedRangeMapping);
 
@@ -112,9 +113,9 @@ private:
   llvm::cas::CachingOnDiskFileSystem &getCachingFS();
 
   llvm::cas::CASDB &CAS;
-  Optional<llvm::cas::CASID> ClangFullVersionID;
-  Optional<llvm::cas::CASID> MinimizeID;
-  Optional<llvm::cas::CASID> EmptyBlobID;
+  Optional<llvm::cas::ObjectRef> ClangFullVersionID;
+  Optional<llvm::cas::ObjectRef> MinimizeID;
+  Optional<llvm::cas::ObjectRef> EmptyBlobID;
 
   /// The optional mapping structure which records information about the
   /// excluded conditional directive skip mappings that are used by the
