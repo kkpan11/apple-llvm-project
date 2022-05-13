@@ -281,12 +281,12 @@
 // RUN: %clang -### -target %itanium_abi_triple -gmodules -gline-directives-only %s 2>&1 \
 // RUN:        | FileCheck -check-prefix=GLIO_ONLY %s
 //
-// RUN: %clang -### -c -gcas-friendly-debug-info %s -target x86_64-apple-darwin14 2>&1 \
-// RUN:             | FileCheck -check-prefix=G_CASFRIENDLY \
+// RUN: %clang -### -c -g -fcas-friendly-debug-info %s -target x86_64-apple-darwin14 2>&1 \
+// RUN:             | FileCheck -check-prefix=F_CASFRIENDLY \
 // RUN:                         -check-prefix=G_DWARF2 \
 // RUN:                         -check-prefix=G_LLDB %s
-// RUN: %clang -### -c -gcas-friendly-debug-info %s -target x86_64-apple-darwin16 2>&1 \
-// RUN:             | FileCheck -check-prefix=G_CASFRIENDLY \
+// RUN: %clang -### -c -g -fcas-friendly-debug-info %s -target x86_64-apple-darwin16 2>&1 \
+// RUN:             | FileCheck -check-prefix=F_CASFRIENDLY \
 // RUN:                         -check-prefix=G_DWARF4 \
 // RUN:                         -check-prefix=G_LLDB %s
 //
@@ -329,6 +329,8 @@
 //
 // G_STANDALONE: "-cc1"
 // G_STANDALONE: "-debug-info-kind=standalone"
+// F_CASFRIENDLY: "-cc1"
+// F_CASFRIENDLY: "-cas-friendliness-kind=cas-friendly"
 // G_LIMITED: "-cc1"
 // G_LIMITED: "-debug-info-kind=constructor"
 // G_DWARF2: "-dwarf-version=2"

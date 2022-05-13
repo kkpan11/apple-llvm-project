@@ -66,6 +66,8 @@ static uint32_t getDeclAlignIfRequired(const Decl *D, const ASTContext &Ctx) {
 
 CGDebugInfo::CGDebugInfo(CodeGenModule &CGM)
     : CGM(CGM), DebugKind(CGM.getCodeGenOpts().getDebugInfo()),
+      CasFriendliness(static_cast<codegenoptions::CasFriendlinessKind>(
+          CGM.getCodeGenOpts().CasFriendliness)),
       DebugTypeExtRefs(CGM.getCodeGenOpts().DebugTypeExtRefs),
       DBuilder(CGM.getModule()) {
   for (const auto &KV : CGM.getCodeGenOpts().DebugPrefixMap)
@@ -630,7 +632,8 @@ void CGDebugInfo::CreateCompileUnit() {
           ? llvm::DICompileUnit::DebugNameTableKind::None
           : static_cast<llvm::DICompileUnit::DebugNameTableKind>(
                 CGOpts.DebugNameTable),
-      CGOpts.DebugRangesBaseAddress, remapDIPath(Sysroot), SDK);
+      CGOpts.DebugRangesBaseAddress, remapDIPath(Sysroot), SDK,
+      CasFriendliness);
 }
 
 llvm::DIType *CGDebugInfo::CreateType(const BuiltinType *BT) {

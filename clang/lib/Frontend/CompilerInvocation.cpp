@@ -1407,6 +1407,17 @@ void CompilerInvocation::GenerateCodeGenArgs(
   if (DebugInfoVal)
     GenerateArg(Args, OPT_debug_info_kind_EQ, *DebugInfoVal, SA);
 
+  Optional<StringRef> CasFriendlinessVal;
+  switch (Opts.CasFriendliness) {
+  case codegenoptions::CasFriendlyDebugInfo:
+    CasFriendlinessVal = "cas-friendly";
+    break;
+  case codegenoptions::NoCasFriendlyDebugInfo:
+    break;
+  }
+  if (CasFriendlinessVal)
+    GenerateArg(Args, OPT_cas_friendliness_kind_EQ, *CasFriendlinessVal, SA);
+
   for (const auto &Prefix : Opts.DebugPrefixMap)
     GenerateArg(Args, OPT_fdebug_prefix_map_EQ,
                 Prefix.first + "=" + Prefix.second, SA);
@@ -1656,6 +1667,16 @@ bool CompilerInvocation::ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args,
       Args.hasArg(OPT_fdirect_access_external_data) ||
       (!Args.hasArg(OPT_fno_direct_access_external_data) &&
        LangOpts->PICLevel == 0);
+
+  if (Arg *A = Args.getLastArg(OPT_cas_friendliness_kind_EQ)) {
+    unsigned Val =
+        llvm::StringSwitch<unsigned>(A->getValue())
+            .Case("cas-friendly", codegenoptions::CasFriendlyDebugInfo)
+            .Default(codegenoptions::NoCasFriendlyDebugInfo);
+
+    Opts.CasFriendliness =
+        static_cast<codegenoptions::CasFriendlinessKind>(Val);
+  }
 
   if (Arg *A = Args.getLastArg(OPT_debug_info_kind_EQ)) {
     unsigned Val =
