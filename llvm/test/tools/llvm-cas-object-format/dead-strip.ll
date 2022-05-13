@@ -16,22 +16,22 @@
 ; RUN: llvm-cas-object-format --cas %t/cas %t/object.o --ingest-schema=nestedv1 \
 ; RUN:    -silent -dead-strip-section="__DATA,X" -dead-strip-section="__DATA,Y" \
 ; RUN:    > %t/dead-strip-XY.id
-; RUN: llvm-cas-object-format --cas %t/cas --print-cas-object @%t/default.id \
+; RUN: llvm-cas-object-format --cas %t/cas --print-cas-tree @%t/default.id \
 ; RUN:   --print-cas-object-sort-sections \
 ; RUN:   | FileCheck %s -check-prefixes=CHECK,KEEP-BSS,KEEP-X,KEEP-Y
-; RUN: llvm-cas-object-format --cas %t/cas --print-cas-object @%t/dead-strip.id \
+; RUN: llvm-cas-object-format --cas %t/cas --print-cas-tree @%t/dead-strip.id \
 ; RUN:   --print-cas-object-sort-sections \
 ; RUN:   | FileCheck %s -check-prefixes=CHECK
-; RUN: llvm-cas-object-format --cas %t/cas --print-cas-object @%t/dead-strip-X.id \
+; RUN: llvm-cas-object-format --cas %t/cas --print-cas-tree @%t/dead-strip-X.id \
 ; RUN:   --print-cas-object-sort-sections \
 ; RUN:   | FileCheck %s -check-prefixes=CHECK,KEEP-BSS,KEEP-Y
-; RUN: llvm-cas-object-format --cas %t/cas --print-cas-object @%t/dead-strip-XY.id \
+; RUN: llvm-cas-object-format --cas %t/cas --print-cas-tree @%t/dead-strip-XY.id \
 ; RUN:   --print-cas-object-sort-sections \
 ; RUN:   | FileCheck %s -check-prefixes=CHECK,KEEP-BSS
-; RUN: llvm-cas-object-format --cas %t/cas --print-cas-object @%t/keep-alive-X.id \
+; RUN: llvm-cas-object-format --cas %t/cas --print-cas-tree @%t/keep-alive-X.id \
 ; RUN:   --print-cas-object-sort-sections \
 ; RUN:   | FileCheck %s -check-prefixes=CHECK,KEEP-X
-; RUN: llvm-cas-object-format --cas %t/cas --print-cas-object @%t/keep-alive-XY.id \
+; RUN: llvm-cas-object-format --cas %t/cas --print-cas-tree @%t/keep-alive-XY.id \
 ; RUN:   --print-cas-object-sort-sections \
 ; RUN:   | FileCheck %s -check-prefixes=CHECK,KEEP-X,KEEP-Y
 

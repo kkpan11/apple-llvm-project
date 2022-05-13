@@ -20,7 +20,8 @@ namespace reader {
 class CASObjectReader;
 }
 
-Error printCASObject(const reader::CASObjectReader &Reader, raw_ostream &OS);
+Error printCASObject(const reader::CASObjectReader &Reader, raw_ostream &OS,
+                     bool omitCASID);
 
 } // end namespace casobjectformats
 } // end namespace llvm

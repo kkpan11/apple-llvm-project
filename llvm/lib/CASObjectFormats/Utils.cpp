@@ -10,6 +10,7 @@
 #include "llvm/CASObjectFormats/CASObjectReader.h"
 #include "llvm/ExecutionEngine/JITLink/JITLink.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/CAS/CASID.h"
 
 using namespace llvm;
 using namespace llvm::casobjectformats;
@@ -81,7 +82,7 @@ static cl::opt<bool> SortSections("print-cas-object-sort-sections",
                                   cl::init(false));
 
 Error casobjectformats::printCASObject(const reader::CASObjectReader &Reader,
-                                       raw_ostream &OS) {
+                                       raw_ostream &OS, bool omitCASID) {
   Triple TT = Reader.getTargetTriple();
   auto EdgeKindNameFn = jitlink::getGetEdgeKindNameFunction(TT);
   if (auto E = EdgeKindNameFn.takeError())
@@ -108,6 +109,8 @@ Error casobjectformats::printCASObject(const reader::CASObjectReader &Reader,
     PrintSection *Section = nullptr;
     SmallVector<PrintSymbol *> Symbols;
     SmallVector<Fixup> Fixups;
+    llvm::cas::CASID ID;
+    PrintBlock(cas::CASID _ID) : ID(_ID) {}
   };
   struct PrintSymbol {
     unsigned Offset;
@@ -123,8 +126,8 @@ Error casobjectformats::printCASObject(const reader::CASObjectReader &Reader,
   };
 
   SmallVector<std::unique_ptr<PrintBlock>> Blocks;
-  auto createBlock = [&]() -> PrintBlock * {
-    Blocks.push_back(std::make_unique<PrintBlock>());
+  auto createBlock = [&](cas::CASID ID) -> PrintBlock * {
+    Blocks.push_back(std::make_unique<PrintBlock>(ID));
     return Blocks.back().get();
   };
 
@@ -161,7 +164,7 @@ Error casobjectformats::printCASObject(const reader::CASObjectReader &Reader,
     Expected<CASBlock> Info = Reader.materialize(BlockRef);
     if (!Info)
       return Info.takeError();
-    auto *PrintBlock = createBlock();
+    auto *PrintBlock = createBlock(Info->BlockContentID);
     auto PrintSection = recordSection(Info->SectionRef);
     if (!PrintSection)
       return PrintSection.takeError();
@@ -249,6 +252,8 @@ Error casobjectformats::printCASObject(const reader::CASObjectReader &Reader,
     OS << "{\n";
     for (const auto *Block : Section->Blocks) {
       OS.indent(2) << "BLOCK: " << Block->Description << '\n';
+      if (!omitCASID)
+        OS.indent(2) << "Block-Data-Cas-ID: " << Block->ID << '\n';
       OS.indent(2) << "{\n";
       for (const auto *Symbol : Block->Symbols) {
         OS.indent(4) << "SYMBOL: " << Symbol->Description;

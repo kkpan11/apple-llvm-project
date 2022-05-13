@@ -12,6 +12,8 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ExecutionEngine/JITLink/MemoryFlags.h"
 #include "llvm/Support/Error.h"
+#include "llvm/CAS/CASID.h"
+#include "llvm/CAS/CASDB.h"
 
 namespace llvm {
 
@@ -55,6 +57,13 @@ struct CASBlock {
   uint64_t AlignmentOffset;
   Optional<StringRef> Content;
   CASSectionRef SectionRef;
+  llvm::cas::CASID BlockContentID;
+  CASBlock(uint64_t Size, uint64_t Alignment, uint64_t AlignmentOffset,
+           Optional<StringRef> Content, CASSectionRef SectionRef,
+           cas::CASID BlockContentID)
+      : Size(Size), Alignment(Alignment), AlignmentOffset(AlignmentOffset),
+        Content(Content), SectionRef(SectionRef),
+        BlockContentID(BlockContentID) {}
 
   bool isZeroFill() const { return !Content.hasValue(); }
 };

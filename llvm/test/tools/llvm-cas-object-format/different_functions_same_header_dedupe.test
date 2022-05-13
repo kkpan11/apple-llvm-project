@@ -1,0 +1,117 @@
+// In this test, both cpp files have similar code, but temp_a.cpp has an extra function at the top. The only function we expect any duplication in, is the one included from the header file 'template_function_header.h', that is because the function definition in the header has the same line table and it is just included at a different line number.
+
+RUN: rm -rf %t && mkdir -p %t
+RUN: split-file %s %t
+
+RUN: clang %t/temp_a.cpp -c -gcas-friendly-debug-info --target=x86_64-apple-darwin21.1.0 -o %t/temp_a.o
+RUN: clang %t/temp_b.cpp -c -gcas-friendly-debug-info --target=x86_64-apple-darwin21.1.0 -o %t/temp_b.o
+RUN: find %t -name "*.o" &> %t/objects_to_ingest
+RUN: llvm-cas-object-format --cas %t/cas --ingest-schema=nestedv1 @%t/objects_to_ingest -silent > %t/output.casid
+RUN: llvm-cas-object-format --cas %t/cas --ingest-schema=nestedv1 --print-cas-tree @%t/output.casid | FileCheck %s --check-prefix NESTED
+
+RUN: llvm-cas-object-format --cas %t/cas --ingest-schema=flatv1 @%t/objects_to_ingest -silent > %t/output.casid
+RUN: llvm-cas-object-format --cas %t/cas --ingest-schema=flatv1 --print-cas-tree @%t/output.casid | FileCheck %s --check-prefix FLAT
+
+NESTED: SECTION: __DWARF,__debug_line | MemProt: RW-
+NESTED-NEXT: {
+NESTED:   BLOCK: size = 0x{{[a-z0-9]+}}, align = {{[0-9]+}}, alignment-offset = {{[0-9]+}}
+NESTED-NEXT:   Block-Data-Cas-ID: llvmcas://[[UNIQUE_CAS_ID:[a-z0-9]+]]
+NESTED-NEXT:   {
+NESTED-NEXT:     SYMBOL: {{.*}} | offset: 0x{{[0-9]+}}, linkage: {{.*}}, scope: {{.*}}, {{.*}}
+NESTED-NEXT:     FIXUP: 0x{{[a-z0-9]+}}, addend = +0x{{[a-z0-9]+}}, kind = {{.*}}, target = {{.*}}a{{.*}}
+NESTED-NEXT:   }
+NESTED:   BLOCK: size = 0x{{[a-z0-9]+}}, align = {{[0-9]+}}, alignment-offset = {{[0-9]+}}
+NESTED-NEXT:   Block-Data-Cas-ID: llvmcas://[[UNIQUE_CAS_ID2:[a-z0-9]+]]
+NESTED-NEXT:   {
+NESTED-NEXT:     SYMBOL: {{.*}} | offset: 0x{{[0-9]+}}, linkage: {{.*}}, scope: {{.*}}, {{.*}}
+NESTED-NEXT:     FIXUP: 0x{{[a-z0-9]+}}, addend = +0x{{[a-z0-9]+}}, kind = {{.*}}, target = {{.*}}bar{{.*}}
+NESTED-NEXT:   }
+NESTED:   BLOCK: size = 0x{{[a-z0-9]+}}, align = {{[0-9]+}}, alignment-offset = {{[0-9]+}}
+NESTED-NEXT:   Block-Data-Cas-ID: llvmcas://[[DEBUG_LINE_BLOCK_CAS_ID:[a-z0-9]+]]
+NESTED-NEXT:   {
+NESTED-NEXT:     SYMBOL: {{.+}} | offset: 0x{{[a-z0-9]+}}, linkage: {{.*}}, scope: {{.*}}, {{.*}}
+NESTED-NEXT:     FIXUP: 0x{{[a-z0-9]+}}, addend = +0x{{[a-z0-9]+}}, kind = {{.*}}, target = {{.*}}foo{{.*}}
+NESTED-NEXT:   }
+NESTED-NEXT: }
+
+
+NESTED: SECTION: __DWARF,__debug_line | MemProt: RW-
+NESTED-NEXT: {
+NESTED:   BLOCK: size = 0x{{[a-z0-9]+}}, align = {{[0-9]+}}, alignment-offset = {{[0-9]+}}
+NESTED-NOT:   Block-Data-Cas-ID: llvmcas://[[UNIQUE_CAS_ID]]
+NESTED-NOT:   Block-Data-Cas-ID: llvmcas://[[UNIQUE_CAS_ID2]]
+NESTED:   {
+NESTED-NEXT:     SYMBOL: {{.*}} | offset: 0x{{[0-9]+}}, linkage: {{.*}}, scope: {{.*}}, {{.*}}
+NESTED-NEXT:     FIXUP: 0x{{[a-z0-9]+}}, addend = +0x{{[a-z0-9]+}}, kind = {{.*}}, target = {{.*}}b{{.*}}
+NESTED-NEXT:   }
+NESTED:   BLOCK: size = 0x{{[a-z0-9]+}}, align = {{[0-9]+}}, alignment-offset = {{[0-9]+}}
+NESTED-NEXT:   Block-Data-Cas-ID: llvmcas://[[DEBUG_LINE_BLOCK_CAS_ID]]
+NESTED-NEXT:   {
+NESTED-NEXT:     SYMBOL: {{.+}} | offset: 0x{{[a-z0-9]+}}, linkage: {{.*}}, scope: {{.*}}, {{.*}}
+NESTED-NEXT:     FIXUP: 0x{{[a-z0-9]+}}, addend = +0x{{[a-z0-9]+}}, kind = {{.*}}, target = {{.*}}foo{{.*}}
+NESTED-NEXT:   }
+NESTED-NEXT: }
+
+
+FLAT: SECTION: __DWARF,__debug_line | MemProt: RW-
+FLAT-NEXT: {
+FLAT:   BLOCK: size = 0x{{[a-z0-9]+}}, align = {{[0-9]+}}, alignment-offset = {{[0-9]+}}
+FLAT-NEXT:   Block-Data-Cas-ID: llvmcas://[[UNIQUE_CAS_ID2:[a-z0-9]+]]
+FLAT-NEXT:   {
+FLAT-NEXT:     SYMBOL: {{.*}} | offset: 0x{{[0-9]+}}, linkage: {{.*}}, scope: {{.*}}, {{.*}}
+FLAT-NEXT:     FIXUP: 0x{{[a-z0-9]+}}, addend = +0x{{[a-z0-9]+}}, kind = {{.*}}, target = {{.*}}bar{{.*}}
+FLAT-NEXT:   }
+FLAT:   BLOCK: size = 0x{{[a-z0-9]+}}, align = {{[0-9]+}}, alignment-offset = {{[0-9]+}}
+FLAT-NEXT:   Block-Data-Cas-ID: llvmcas://[[UNIQUE_CAS_ID:[a-z0-9]+]]
+FLAT-NEXT:   {
+FLAT-NEXT:     SYMBOL: {{.*}} | offset: 0x{{[0-9]+}}, linkage: {{.*}}, scope: {{.*}}, {{.*}}
+FLAT-NEXT:     FIXUP: 0x{{[a-z0-9]+}}, addend = +0x{{[a-z0-9]+}}, kind = {{.*}}, target = {{.*}}a{{.*}}
+FLAT-NEXT:   }
+FLAT:   BLOCK: size = 0x{{[a-z0-9]+}}, align = {{[0-9]+}}, alignment-offset = {{[0-9]+}}
+FLAT-NEXT:   Block-Data-Cas-ID: llvmcas://[[DEBUG_LINE_BLOCK_CAS_ID:[a-z0-9]+]]
+FLAT-NEXT:   {
+FLAT-NEXT:     SYMBOL: {{.+}} | offset: 0x{{[a-z0-9]+}}, linkage: {{.*}}, scope: {{.*}}, {{.*}}
+FLAT-NEXT:     FIXUP: 0x{{[a-z0-9]+}}, addend = +0x{{[a-z0-9]+}}, kind = {{.*}}, target = {{.*}}foo{{.*}}
+FLAT-NEXT:   }
+FLAT-NEXT: }
+
+
+FLAT: SECTION: __DWARF,__debug_line | MemProt: RW-
+FLAT-NEXT: {
+FLAT:   BLOCK: size = 0x{{[a-z0-9]+}}, align = {{[0-9]+}}, alignment-offset = {{[0-9]+}}
+FLAT-NOT:   Block-Data-Cas-ID: llvmcas://[[UNIQUE_CAS_ID]]
+FLAT-NOT:   Block-Data-Cas-ID: llvmcas://[[UNIQUE_CAS_ID2]]
+FLAT:   {
+FLAT-NEXT:     SYMBOL: {{.*}} | offset: 0x{{[0-9]+}}, linkage: {{.*}}, scope: {{.*}}, {{.*}}
+FLAT-NEXT:     FIXUP: 0x{{[a-z0-9]+}}, addend = +0x{{[a-z0-9]+}}, kind = {{.*}}, target = {{.*}}b{{.*}}
+FLAT-NEXT:   }
+FLAT:   BLOCK: size = 0x{{[a-z0-9]+}}, align = {{[0-9]+}}, alignment-offset = {{[0-9]+}}
+FLAT-NEXT:   Block-Data-Cas-ID: llvmcas://[[DEBUG_LINE_BLOCK_CAS_ID]]
+FLAT-NEXT:   {
+FLAT-NEXT:     SYMBOL: {{.+}} | offset: 0x{{[a-z0-9]+}}, linkage: {{.*}}, scope: {{.*}}, {{.*}}
+FLAT-NEXT:     FIXUP: 0x{{[a-z0-9]+}}, addend = +0x{{[a-z0-9]+}}, kind = {{.*}}, target = {{.*}}foo{{.*}}
+FLAT-NEXT:   }
+FLAT-NEXT: }
+
+
+//--- temp_a.cpp
+int bar(int x) {
+	return x*x;
+}
+#include "template_function_header.h"
+int a() {
+  return foo<int>(2);
+}
+
+//--- template_function_header.h
+template <typename T>
+T foo(T s) {
+  return s * s;
+}
+
+//--- temp_b.cpp
+#include "template_function_header.h"
+int b() {
+  return foo<int>(2);
+}
+

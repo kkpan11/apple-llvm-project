@@ -78,6 +78,7 @@ enum InputKind {
   IngestFromFS,
   IngestFromCASTree,
   AnalysisCASTree,
+  PrintCASTree,
   PrintCASObject,
 };
 
@@ -89,9 +90,16 @@ cl::opt<InputKind> InputFileKind(
                           "ingest object files from cas tree"),
                clEnumValN(AnalysisCASTree, "analysis-only",
                           "analyze converted objects from cas tree"),
+               clEnumValN(PrintCASTree, "print-cas-tree",
+                          "print cas object from cas tree ID"),
                clEnumValN(PrintCASObject, "print-cas-object",
-                          "print cas object from cas ID")),
+                          "print cas object from cas object ID")),
     cl::init(InputKind::IngestFromFS));
+
+cl::opt<bool> omitCASID(
+    "omit-cas-id",
+    cl::desc(
+        "Don't print cas ID when using print-cas-object or print-cas-tree"));
 
 enum FormatType {
   Pretty,
@@ -137,7 +145,8 @@ createSchema(CASDB &CAS, StringRef SchemaName) {
 static ObjectRef ingestFile(ObjectFormatSchemaBase &Schema, StringRef InputFile,
                             MemoryBufferRef FileContent, SharedStream &OS);
 static void computeStats(CASDB &CAS, ArrayRef<CASID> IDs, raw_ostream &StatOS);
-static Error printCASObjectOrTree(ObjectFormatSchemaPool &Pool, CASID ID);
+static Error printCASObjectOrTree(ObjectFormatSchemaPool &Pool, CASID ID, bool omitCASID);
+static Error printCASObject(ObjectFormatSchemaPool &Pool, CASID ID, bool omitCASID);
 
 int main(int argc, char *argv[]) {
   ExitOnError ExitOnErr;
@@ -184,9 +193,15 @@ int main(int argc, char *argv[]) {
       break;
     }
 
+    case PrintCASTree: {
+      auto ID = ExitOnErr(CAS->parseID(IF));
+      ExitOnErr(printCASObjectOrTree(SchemaPool, ID, omitCASID));
+      break;
+    }
+
     case PrintCASObject: {
       auto ID = ExitOnErr(CAS->parseID(IF));
-      ExitOnErr(printCASObjectOrTree(SchemaPool, ID));
+      ExitOnErr(printCASObject(SchemaPool, ID, omitCASID));
       break;
     }
 
@@ -736,18 +751,18 @@ void StatCollector::printToOuts(ArrayRef<CASID> TopLevels,
   printIfNotZero("num-2-target-blocks", Num1TargetBlocks);
 }
 
-static Error printCASObject(ObjectFormatSchemaPool &Pool, CASID ID) {
+static Error printCASObject(ObjectFormatSchemaPool &Pool, CASID ID, bool omitCASID) {
   auto Reader = Pool.createObjectReader(ID);
   if (Error E = Reader.takeError())
     return E;
-  return printCASObject(**Reader, outs());
+  return printCASObject(**Reader, outs(), omitCASID);
 }
 
-static Error printCASObjectOrTree(ObjectFormatSchemaPool &Pool, CASID ID) {
+static Error printCASObjectOrTree(ObjectFormatSchemaPool &Pool, CASID ID, bool omitCASID) {
   Expected<TreeProxy> ExpTree = Pool.getCAS().getTree(ID);
   if (Error E = ExpTree.takeError()) {
     // Not a tree.
-    return printCASObject(Pool, ID);
+    return printCASObject(Pool, ID, omitCASID);
   }
 
   return walkFileTreeRecursively(
@@ -760,7 +775,7 @@ static Error printCASObjectOrTree(ObjectFormatSchemaPool &Pool, CASID ID) {
                                    "found non-regular entry: " +
                                        entry.getName());
         }
-        return printCASObject(Pool, Pool.getCAS().getObjectID(entry.getRef()));
+        return printCASObject(Pool, Pool.getCAS().getObjectID(entry.getRef()), omitCASID);
       });
 }
 

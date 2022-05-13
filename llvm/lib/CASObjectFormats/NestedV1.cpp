@@ -145,7 +145,8 @@ public:
 
   Expected<CASSection> materialize(CASSectionRef Ref) const override {
     auto NodeRef = static_cast<SectionNodeRef *>((void *)Ref.Idx);
-    return NodeRef->materialize();
+    Expected<CASSection> CASSec = NodeRef->materialize();
+    return CASSec;
   }
 
   Expected<CASBlock> materialize(CASBlockRef Ref) const override {
@@ -2033,7 +2034,9 @@ BlockNodeRef::materialize(const NestedV1ObjectReader &Reader) const {
     assert(Size == Content->size());
   }
 
-  return CASBlock{Size, Alignment, AlignmentOffset, Content, *Section};
+  CASBlock Info(Size, Alignment, AlignmentOffset, Content, *Section,
+                *BlockData);
+  return Info;
 }
 
 Expected<CASSection> SectionNodeRef::materialize() const {
