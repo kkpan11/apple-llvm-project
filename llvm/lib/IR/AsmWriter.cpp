@@ -2109,6 +2109,7 @@ static void writeDICompileUnit(raw_ostream &Out, const DICompileUnit *N,
   Printer.printBool("rangesBaseAddress", N->getRangesBaseAddress(), false);
   Printer.printString("sysroot", N->getSysRoot());
   Printer.printString("sdk", N->getSDK());
+  Printer.printBool("casFriendly", N->isCasFriendly(), false);
   Out << ")";
 }
 

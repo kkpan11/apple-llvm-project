@@ -1798,6 +1798,7 @@ void ModuleBitcodeWriter::writeDICompileUnit(const DICompileUnit *N,
   Record.push_back(N->getRangesBaseAddress());
   Record.push_back(VE.getMetadataOrNullID(N->getRawSysRoot()));
   Record.push_back(VE.getMetadataOrNullID(N->getRawSDK()));
+  Record.push_back(N->isCasFriendly());
 
   Stream.EmitRecord(bitc::METADATA_COMPILE_UNIT, Record, Abbrev);
   Record.clear();

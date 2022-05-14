@@ -152,7 +152,7 @@ DICompileUnit *DIBuilder::createCompileUnit(
     DICompileUnit::DebugEmissionKind Kind, uint64_t DWOId,
     bool SplitDebugInlining, bool DebugInfoForProfiling,
     DICompileUnit::DebugNameTableKind NameTableKind, bool RangesBaseAddress,
-    StringRef SysRoot, StringRef SDK) {
+    StringRef SysRoot, StringRef SDK, bool CasFriendliness) {
 
   assert(((Lang <= dwarf::DW_LANG_Fortran08 && Lang >= dwarf::DW_LANG_C89) ||
           (Lang <= dwarf::DW_LANG_hi_user && Lang >= dwarf::DW_LANG_lo_user)) &&
@@ -163,7 +163,7 @@ DICompileUnit *DIBuilder::createCompileUnit(
       VMContext, Lang, File, Producer, isOptimized, Flags, RunTimeVer,
       SplitName, Kind, nullptr, nullptr, nullptr, nullptr, nullptr, DWOId,
       SplitDebugInlining, DebugInfoForProfiling, NameTableKind,
-      RangesBaseAddress, SysRoot, SDK);
+      RangesBaseAddress, SysRoot, SDK, CasFriendliness);
 
   // Create a named metadata so that it is easier to find cu in a module.
   NamedMDNode *NMD = M.getOrInsertNamedMetadata("llvm.dbg.cu");

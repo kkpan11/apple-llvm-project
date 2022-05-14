@@ -2715,6 +2715,8 @@ def ftrivial_auto_var_init_stop_after : Joined<["-"], "ftrivial-auto-var-init-st
   MarshallingInfoInt<LangOpts<"TrivialAutoVarInitStopAfter">>;
 def fstandalone_debug : Flag<["-"], "fstandalone-debug">, Group<f_Group>, Flags<[CoreOption]>,
   HelpText<"Emit full debug info for all types used by the program">;
+def fcas_friendly_debug_info : Flag<["-"], "fcas-friendly-debug-info">, Group<f_Group>,
+  Flags<[CoreOption]>, HelpText<"Emit debug information that is cas friendly">;
 def fno_standalone_debug : Flag<["-"], "fno-standalone-debug">, Group<f_Group>, Flags<[CoreOption]>,
   HelpText<"Limit debug information produced to reduce size of debug binary">;
 def flimit_debug_info : Flag<["-"], "flimit-debug-info">, Flags<[CoreOption]>, Alias<fno_standalone_debug>;
@@ -3032,8 +3034,6 @@ def g_Flag : Flag<["-"], "g">, Group<g_Group>,
   HelpText<"Generate source-level debug information">;
 def gline_tables_only : Flag<["-"], "gline-tables-only">, Group<gN_Group>,
   Flags<[CoreOption]>, HelpText<"Emit debug line number tables only">;
-def gcas_friendly_debug_info : Flag<["-"], "gcas-friendly-debug-info">, Group<gN_Group>,
-  Flags<[CoreOption]>, HelpText<"Emit debug information that is cas friendly">;
 def gline_directives_only : Flag<["-"], "gline-directives-only">, Group<gN_Group>,
   Flags<[CoreOption]>, HelpText<"Emit debug line info directives only">;
 def gmlt : Flag<["-"], "gmlt">, Alias<gline_tables_only>;
@@ -5140,6 +5140,7 @@ def migrator_no_finalize_removal : Flag<["-"], "no-finalize-removal">,
 let Flags = [CC1Option, CC1AsOption, NoDriverOption] in {
 
 def debug_info_kind_EQ : Joined<["-"], "debug-info-kind=">;
+def cas_friendliness_kind_EQ : Joined<["-"], "cas-friendliness-kind=">;
 def debug_info_macro : Flag<["-"], "debug-info-macro">,
   HelpText<"Emit macro debug information">,
   MarshallingInfoFlag<CodeGenOpts<"MacroDebugInfo">>;

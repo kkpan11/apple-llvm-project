@@ -2155,7 +2155,7 @@ void DwarfDebug::beginFunctionImpl(const MachineFunction *MF) {
   // entry. That is, every function gets its own line table header. To achieve
   // this we are creating a new CompileUnit per function so each function can
   // get it's own line table header
-  if (SP->getUnit()->getEmissionKind() == llvm::DICompileUnit::CasFriendly) {
+  if (SP->getUnit()->isCasFriendly()) {
     const Module *M = MF->getFunction().getParent();
     DIBuilder DIB(*const_cast<Module *>(M));
     DICompileUnit *DCU = SP->getUnit();

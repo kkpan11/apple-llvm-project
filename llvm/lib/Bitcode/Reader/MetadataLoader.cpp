@@ -1620,7 +1620,7 @@ Error MetadataLoader::MetadataLoaderImpl::parseOneMetadata(
     break;
   }
   case bitc::METADATA_COMPILE_UNIT: {
-    if (Record.size() < 14 || Record.size() > 22)
+    if (Record.size() < 14 || Record.size() > 23)
       return error("Invalid record");
 
     // Ignore Record[0], which indicates whether this compile unit is
@@ -1638,7 +1638,8 @@ Error MetadataLoader::MetadataLoaderImpl::parseOneMetadata(
         Record.size() <= 18 ? 0 : Record[18],
         Record.size() <= 19 ? false : Record[19],
         Record.size() <= 20 ? nullptr : getMDString(Record[20]),
-        Record.size() <= 21 ? nullptr : getMDString(Record[21]));
+        Record.size() <= 21 ? nullptr : getMDString(Record[21]),
+        Record.size() <= 22 ? false : Record[22]);
 
     MetadataList.assignValue(CU, NextMetadataNo);
     NextMetadataNo++;

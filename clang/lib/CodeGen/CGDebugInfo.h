@@ -57,6 +57,7 @@ class CGDebugInfo {
   friend class SaveAndRestoreLocation;
   CodeGenModule &CGM;
   const codegenoptions::DebugInfoKind DebugKind;
+  const codegenoptions::CasFriendlinessKind CasFriendliness;
   bool DebugTypeExtRefs;
   llvm::DIBuilder DBuilder;
   llvm::DICompileUnit *TheCU = nullptr;

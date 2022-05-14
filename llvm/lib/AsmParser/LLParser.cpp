@@ -4776,7 +4776,8 @@ bool LLParser::parseDICompileUnit(MDNode *&Result, bool IsDistinct) {
   OPTIONAL(nameTableKind, NameTableKindField, );                               \
   OPTIONAL(rangesBaseAddress, MDBoolField, = false);                           \
   OPTIONAL(sysroot, MDStringField, );                                          \
-  OPTIONAL(sdk, MDStringField, );
+  OPTIONAL(sdk, MDStringField, );                                              \
+  OPTIONAL(casFriendly, MDBoolField, = false);
   PARSE_MD_FIELDS();
 #undef VISIT_MD_FIELDS
 
@@ -4785,7 +4786,7 @@ bool LLParser::parseDICompileUnit(MDNode *&Result, bool IsDistinct) {
       runtimeVersion.Val, splitDebugFilename.Val, emissionKind.Val, enums.Val,
       retainedTypes.Val, globals.Val, imports.Val, macros.Val, dwoId.Val,
       splitDebugInlining.Val, debugInfoForProfiling.Val, nameTableKind.Val,
-      rangesBaseAddress.Val, sysroot.Val, sdk.Val);
+      rangesBaseAddress.Val, sysroot.Val, sdk.Val, casFriendly.Val);
   return false;
 }
 

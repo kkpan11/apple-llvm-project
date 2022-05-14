@@ -90,7 +90,7 @@ attributes #1 = { nofree nosync nounwind readnone speculatable willreturn }
 !llvm.module.flags = !{!2, !3, !4, !5, !6, !7}
 !llvm.ident = !{!8}
 
-!0 = distinct !DICompileUnit(language: DW_LANG_C99, file: !1, producer: "clang version 14.0.0 (git@github.com:apple/llvm-project.git 24e049152a8c2239a157a36f6a4d065e7a1b183b)", isOptimized: false, runtimeVersion: 0, emissionKind: CasFriendly, splitDebugInlining: false, nameTableKind: None, sysroot: "/")
+!0 = distinct !DICompileUnit(language: DW_LANG_C99, file: !1, producer: "clang version 14.0.0 (git@github.com:apple/llvm-project.git 24e049152a8c2239a157a36f6a4d065e7a1b183b)", isOptimized: false, runtimeVersion: 0, emissionKind: FullDebug, splitDebugInlining: false, nameTableKind: None, sysroot: "/", casFriendly: true)
 !1 = !DIFile(filename: "test.c", directory: "/Users/shubham/Development/testClangDebugInfo")
 !2 = !{i32 7, !"Dwarf Version", i32 4}
 !3 = !{i32 2, !"Debug Info Version", i32 3}

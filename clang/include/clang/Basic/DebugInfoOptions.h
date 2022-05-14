@@ -17,6 +17,15 @@ enum DebugInfoFormat {
   DIF_CodeView,
 };
 
+enum CasFriendlinessKind {
+  NoCasFriendlyDebugInfo,
+
+  /// Generate CAS friendly debug info to go along with the work being done for
+  /// llvm-cas. This involves, amongst other things, splitting line tables per
+  /// function.
+  CasFriendlyDebugInfo
+};
+
 enum DebugInfoKind {
   /// Don't generate debug info.
   NoDebugInfo,
@@ -52,11 +61,6 @@ enum DebugInfoKind {
   /// Generate debug info for types that may be unused in the source
   /// (-fno-eliminate-unused-debug-types).
   UnusedTypeInfo,
-
-  /// Generate CAS friendly debug info to go along with the work being done for
-  /// llvm-cas. this involves, amongst other things, splitting line tables per
-  /// function.
-  CasFriendlyDebugInfo
 };
 
 enum class DebugTemplateNamesKind {

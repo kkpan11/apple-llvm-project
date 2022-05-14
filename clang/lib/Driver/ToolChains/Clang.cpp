@@ -524,8 +524,6 @@ static codegenoptions::DebugInfoKind DebugLevelToInfoKind(const Arg &A) {
     return codegenoptions::DebugLineTablesOnly;
   if (A.getOption().matches(options::OPT_gline_directives_only))
     return codegenoptions::DebugDirectivesOnly;
-  if (A.getOption().matches(options::OPT_gcas_friendly_debug_info))
-    return codegenoptions::CasFriendlyDebugInfo;
   return codegenoptions::DebugInfoConstructor;
 }
 
@@ -1098,9 +1096,6 @@ static void RenderDebugEnablingArgs(const ArgList &Args, ArgStringList &CmdArgs,
     break;
   case codegenoptions::UnusedTypeInfo:
     CmdArgs.push_back("-debug-info-kind=unused-types");
-    break;
-  case codegenoptions::CasFriendlyDebugInfo:
-    CmdArgs.push_back("-debug-info-kind=cas-friendly");
     break;
   default:
     break;
@@ -4222,6 +4217,9 @@ static void renderDebugOptions(const ToolChain &TC, const Driver &D,
 
   if (T.isOSBinFormatELF() && SplitDWARFInlining)
     CmdArgs.push_back("-fsplit-dwarf-inlining");
+
+  if (const Arg *A = Args.getLastArg(options::OPT_fcas_friendly_debug_info))
+    CmdArgs.push_back("-cas-friendliness-kind=cas-friendly");
 
   // After we've dealt with all combinations of things that could
   // make DebugInfoKind be other than None or DebugLineTablesOnly,
