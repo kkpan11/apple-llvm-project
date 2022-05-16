@@ -9,6 +9,7 @@
 #include "cc1depscanProtocol.h"
 #include "clang/Frontend/CompilerInvocation.h"
 #include "clang/Tooling/DependencyScanning/ScanAndUpdateArgs.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/CAS/CASDB.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Support/Error.h"
@@ -169,11 +170,28 @@ Expected<ScanDaemon> ScanDaemon::launchDaemon(StringRef BasePath,
   // Only do it the first time.
   LaunchTestDaemon = false;
 
+  // Spawn attributes
+  posix_spawnattr_t Attrs;
+  if (int EC = posix_spawnattr_init(&Attrs))
+    return llvm::errorCodeToError(std::error_code(EC, std::generic_category()));
+  auto Attrs_cleanup =
+      llvm::make_scope_exit([&] { posix_spawnattr_destroy(&Attrs); });
+
+#ifdef POSIX_SPAWN_CLOEXEC_DEFAULT
+  // In the spawned process, close all file descriptors that are not explicitly
+  // described by the file actions object. This is particularly relevant for
+  // llbuild which waits on a "control file handle" and, if inherited, it would
+  // cause llbuild to wait for the spawned process to exit.
+  // FIXME: This is Darwin-specific extension, perform the same function on
+  // non-darwin platforms.
+  if (int EC = posix_spawnattr_setflags(&Attrs, POSIX_SPAWN_CLOEXEC_DEFAULT))
+    return llvm::errorCodeToError(std::error_code(EC, std::generic_category()));
+#endif
+
   ::pid_t Pid;
-  int EC =
-      ::posix_spawn(&Pid, Args[0], /*file_actions=*/nullptr,
-                    /*attrp=*/nullptr, const_cast<char **>(LaunchArgs.data()),
-                    /*envp=*/nullptr);
+  int EC = ::posix_spawn(&Pid, Args[0], /*file_actions=*/nullptr, &Attrs,
+                         const_cast<char **>(LaunchArgs.data()),
+                         /*envp=*/nullptr);
   if (EC)
     return llvm::errorCodeToError(std::error_code(EC, std::generic_category()));
 
