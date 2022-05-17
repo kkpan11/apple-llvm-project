@@ -983,6 +983,13 @@ Instruction *InstCombinerImpl::transformZExtICmp(ICmpInst *Cmp, ZExtInst &Zext) 
   // If we are just checking for a icmp eq of a single bit and zext'ing it
   // to an integer, then shift the bit to the appropriate place and then
   // cast to integer to avoid the comparison.
+
+  // FIXME: This set of transforms does not check for extra uses and/or creates
+  //        an extra instruction (an optional final cast is not included
+  //        in the transform comments). We may also want to favor icmp over
+  //        shifts in cases of equal instructions because icmp has better
+  //        analysis in general (invert the transform).
+
   const APInt *Op1CV;
   if (match(Cmp->getOperand(1), m_APInt(Op1CV))) {
 
@@ -1070,7 +1077,7 @@ Instruction *InstCombinerImpl::transformZExtICmp(ICmpInst *Cmp, ZExtInst &Zext) 
       KnownBits KnownLHS = computeKnownBits(LHS, 0, &Zext);
       KnownBits KnownRHS = computeKnownBits(RHS, 0, &Zext);
 
-      if (KnownLHS.Zero == KnownRHS.Zero && KnownLHS.One == KnownRHS.One) {
+      if (KnownLHS == KnownRHS) {
         APInt KnownBits = KnownLHS.Zero | KnownLHS.One;
         APInt UnknownBit = ~KnownBits;
         if (UnknownBit.countPopulation() == 1) {

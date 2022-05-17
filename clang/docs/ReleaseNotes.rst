@@ -149,6 +149,9 @@ Bug Fixes
   because there is no way to fully qualify the enumerator name, so this
   "extension" was unintentional and useless. This fixes
   `Issue 42372 <https://github.com/llvm/llvm-project/issues/42372>`_.
+- Clang shouldn't lookup allocation function in global scope for coroutines
+  in case it found the allocation function name in the promise_type body.
+  This fixes Issue `Issue 54881 <https://github.com/llvm/llvm-project/issues/54881>`_.
 
 Improvements to Clang's diagnostics
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -362,6 +365,8 @@ C++ Language Changes in Clang
   of clang; use the ``-fclang-abi-compat=14`` option to get the old mangling.
 - Preprocessor character literals with a ``u8`` prefix are now correctly treated as
   unsigned character literals. This fixes `Issue 54886 <https://github.com/llvm/llvm-project/issues/54886>`_.
+- Stopped allowing constraints on non-template functions to be compliant with
+  dcl.decl.general p4.
 
 C++20 Feature Support
 ^^^^^^^^^^^^^^^^^^^^^

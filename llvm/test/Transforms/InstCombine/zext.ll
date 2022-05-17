@@ -497,3 +497,16 @@ define i8 @notneg_zext_narrower_use(i32 %x) {
   %r = zext i1 %cmp to i8
   ret i8 %r
 }
+
+define i8 @disguised_signbit_clear_test(i64 %x) {
+; CHECK-LABEL: @disguised_signbit_clear_test(
+; CHECK-NEXT:    [[TMP1:%.*]] = trunc i64 [[X:%.*]] to i8
+; CHECK-NEXT:    [[TMP2:%.*]] = xor i8 [[TMP1]], -1
+; CHECK-NEXT:    [[TMP3:%.*]] = lshr i8 [[TMP2]], 7
+; CHECK-NEXT:    ret i8 [[TMP3]]
+;
+  %a1 = and i64 %x, 128
+  %t4 = icmp eq i64 %a1, 0
+  %t6 = zext i1 %t4 to i8
+  ret i8 %t6
+}
