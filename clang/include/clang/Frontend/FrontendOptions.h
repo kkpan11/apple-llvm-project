@@ -75,6 +75,9 @@ enum ActionKind {
   /// Emit a .o file.
   EmitObj,
 
+  // Extract API information
+  ExtractAPI,
+
   /// Parse and apply any fixits to the source.
   FixIt,
 
@@ -413,6 +416,10 @@ public:
 
   /// The name of the action to run when using a plugin action.
   std::string ActionName;
+
+  // Currently this is only used as part of the `-extract-api` action.
+  /// The name of the product the input files belong too.
+  std::string ProductName;
 
   /// Args to pass to the plugins
   std::map<std::string, std::vector<std::string>> PluginArgs;
