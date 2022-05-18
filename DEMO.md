@@ -144,6 +144,18 @@ location for the on-disk CAS.
 % ninja
 ```
 
+`clang-cache-build-session` can be used in combination with `clang-cache` to
+start a build command that indicates a "build session". After configuring with
+the above command, you can use it like this:
+
+```
+% $TOOLCHAIN/usr/bin/clang-cache-build-session ninja
+```
+
+`clang-cache-build-session` accepts a command that triggers a build and, while
+the command is running, all the clang invocations that are part of that build
+will be sharing the same dependency scanning daemon.
+
 #### LLVM project CMake configuration
 
 For building a CAS-aware branch (i.e., this one!), there are some extra CMake

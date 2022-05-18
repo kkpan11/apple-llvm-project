@@ -283,6 +283,7 @@ ProcessAncestorIterator &ProcessAncestorIterator::setPID(uint64_t NewPID) {
 namespace {
 struct DepscanSharing {
   bool OnlyShareParent = false;
+  bool ShareViaIdentifier = false;
   Optional<StringRef> Name;
   Optional<StringRef> Stop;
   Optional<StringRef> Path;
@@ -292,10 +293,9 @@ struct DepscanSharing {
 
 static Optional<std::string>
 makeDepscanDaemonKey(StringRef Mode, const DepscanSharing &Sharing) {
-  auto makeKey = [&Sharing](uint64_t PID) -> std::string {
-    llvm::BLAKE3 Hasher;
-    Hasher.update(
-        llvm::makeArrayRef(reinterpret_cast<uint8_t *>(&PID), sizeof(PID)));
+  auto completeKey = [&Sharing](llvm::BLAKE3 &Hasher) -> std::string {
+    // Only share depscan daemons that originated from the same clang version.
+    Hasher.update(getClangFullVersion());
     for (const char *Arg : Sharing.CASArgs)
       Hasher.update(StringRef(Arg));
     // Using same hash size as the module cache hash.
@@ -306,11 +306,26 @@ makeDepscanDaemonKey(StringRef Mode, const DepscanSharing &Sharing) {
     return toString(llvm::APInt(64, HashVal), 36, /*Signed=*/false);
   };
 
+  auto makePIDKey = [&completeKey](uint64_t PID) -> std::string {
+    llvm::BLAKE3 Hasher;
+    Hasher.update(
+        llvm::makeArrayRef(reinterpret_cast<uint8_t *>(&PID), sizeof(PID)));
+    return completeKey(Hasher);
+  };
+  auto makeIdentifierKey = [&completeKey](StringRef Ident) -> std::string {
+    llvm::BLAKE3 Hasher;
+    Hasher.update(Ident);
+    return completeKey(Hasher);
+  };
+
+  if (Sharing.ShareViaIdentifier)
+    return makeIdentifierKey(Sharing.Name.getValue());
+
   if (Sharing.Name) {
     // Check for fast path, which doesn't need to look up process names:
     // -fdepscan-share-parent without -fdepscan-share-stop.
     if (Sharing.Name->empty() && !Sharing.Stop)
-      return makeKey(ProcessAncestorIterator::getParentPID());
+      return makePIDKey(ProcessAncestorIterator::getParentPID());
 
     // Check the parent's process name, and then process ancestors.
     for (ProcessAncestorIterator I = ProcessAncestorIterator::getParentBegin(),
@@ -319,7 +334,7 @@ makeDepscanDaemonKey(StringRef Mode, const DepscanSharing &Sharing) {
       if (I->Name == Sharing.Stop)
         break;
       if (Sharing.Name->empty() || I->Name == *Sharing.Name)
-        return makeKey(I->PID);
+        return makePIDKey(I->PID);
       if (Sharing.OnlyShareParent)
         break;
     }
@@ -330,7 +345,7 @@ makeDepscanDaemonKey(StringRef Mode, const DepscanSharing &Sharing) {
   // Still daemonize, but use the PID from this process as the key to avoid
   // sharing state.
   if (Mode == "daemon")
-    return makeKey(ProcessAncestorIterator::getThisPID());
+    return makePIDKey(ProcessAncestorIterator::getThisPID());
 
   // Mode == "auto".
   //
@@ -501,6 +516,7 @@ static int scanAndUpdateCC1(const char *Exec, ArrayRef<const char *> OldArgs,
   if (Arg *A = Args.getLastArg(options::OPT_fdepscan_share_stop_EQ))
     Sharing.Stop = A->getValue();
   if (Arg *A = Args.getLastArg(options::OPT_fdepscan_share_EQ,
+                               options::OPT_fdepscan_share_identifier,
                                options::OPT_fdepscan_share_parent,
                                options::OPT_fdepscan_share_parent_EQ,
                                options::OPT_fno_depscan_share)) {
@@ -512,6 +528,9 @@ static int scanAndUpdateCC1(const char *Exec, ArrayRef<const char *> OldArgs,
     } else if (A->getOption().matches(options::OPT_fdepscan_share_parent)) {
       Sharing.Name = "";
       Sharing.OnlyShareParent = true;
+    } else if (A->getOption().matches(options::OPT_fdepscan_share_identifier)) {
+      Sharing.Name = A->getValue();
+      Sharing.ShareViaIdentifier = true;
     }
   }
   if (Arg *A = Args.getLastArg(options::OPT_fdepscan_daemon_EQ))

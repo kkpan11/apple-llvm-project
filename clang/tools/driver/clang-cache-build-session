@@ -1,0 +1,6 @@
+#!/bin/sh
+
+# Set 'CLANG_CACHE_BUILD_SESSION_ID' to the process id so that clang invocations
+# under the given command share the same depscan daemon while the command is
+# running.
+env CLANG_CACHE_BUILD_SESSION_ID=$$ "$@"

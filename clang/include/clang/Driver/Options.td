@@ -6274,6 +6274,12 @@ def fdepscan_share_stop_EQ : Joined<["-"], "fdepscan-share-stop=">,
              " process tree; if 'ninja' is found first, state is shared based"
              " on ninja's PID; if 'cmake' is found first, state is not"
              " shared.">;
+def fdepscan_share_identifier : Separate<["-"], "fdepscan-share-identifier">,
+    Group<f_Group>,
+    HelpText<"Share depscan daemon for Clang invocations using the same string "
+             "identifier.">;
+def fdepscan_share_identifier_EQ : Joined<["-"], "fdepscan-share-identifier=">,
+    Alias<fdepscan_share_identifier>;
 def fdepscan_daemon_EQ : Joined<["-"], "fdepscan-daemon=">, Group<f_Group>,
     HelpText<"Specify the path to the daemon to be used. Clang will use the"
              " daemon specified, rather than try to spawn its own based on"

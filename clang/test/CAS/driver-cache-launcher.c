@@ -12,13 +12,17 @@
 // RUN: env CLANG_CACHE_CAS_PATH=%t/cas clang-cache %t/clang-symlink-outside-bindir -c %s -o %t.o -### 2>&1 | FileCheck %s -check-prefix=CLANG -DPREFIX=%t
 // RUN: env CLANG_CACHE_CAS_PATH=%t/cas PATH="%t:$PATH" clang-cache clang-symlink-outside-bindir -c %s -o %t.o -### 2>&1 | FileCheck %s -check-prefix=CLANG -DPREFIX=%t
 
-// CLANG: "-cc1depscan" "-fdepscan=inline"
+// CLANG: "-cc1depscan" "-fdepscan=auto"
 // CLANG: "-fcas-path" "[[PREFIX]]/cas" "-fcas-token-cache" "-greproducible"
 // CLANG: "-x" "c"
 
-// CLANGPP: "-cc1depscan" "-fdepscan=inline"
+// CLANGPP: "-cc1depscan" "-fdepscan=auto"
 // CLANGPP: "-fcas-path" "[[PREFIX]]/cas" "-fcas-token-cache" "-greproducible"
 // CLANGPP: "-x" "c++"
+
+// RUN: env CLANG_CACHE_CAS_PATH=%t/cas clang-cache-build-session clang-cache %clang -c %s -o %t.o -### 2>&1 | FileCheck %s -check-prefix=SESSION -DPREFIX=%t
+// SESSION: "-cc1depscan" "-fdepscan=daemon" "-fdepscan-share-identifier"
+// SESSION: "-fcas-path" "[[PREFIX]]/cas" "-fcas-token-cache" "-greproducible"
 
 // 'clang-cache' launcher invokes a different clang, does normal non-caching launch.
 // RUN: env CLANG_CACHE_CAS_PATH=%t/cas clang-cache %t/clang -c %s -o %t.o 2>&1 | FileCheck %s -check-prefix=OTHERCLANG -DSRC=%s -DPREFIX=%t
