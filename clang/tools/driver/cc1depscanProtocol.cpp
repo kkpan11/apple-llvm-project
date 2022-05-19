@@ -156,6 +156,11 @@ Expected<ScanDaemon> ScanDaemon::launchDaemon(StringRef BasePath,
   ArrayRef<const char *> InitialArgs =
       LaunchTestDaemon ? makeArrayRef(ArgsTestMode) : makeArrayRef(Args);
   SmallVector<const char *> LaunchArgs(InitialArgs.begin(), InitialArgs.end());
+  if (Sharing.ShareViaIdentifier) {
+    // Invocations that share state via identifier will be isolated from
+    // unrelated daemons, so the daemon they share is safe to stay alive longer.
+    LaunchArgs.push_back("-long-running");
+  }
   LaunchArgs.push_back("-cas-args");
   LaunchArgs.append(Sharing.CASArgs);
   LaunchArgs.push_back(nullptr);

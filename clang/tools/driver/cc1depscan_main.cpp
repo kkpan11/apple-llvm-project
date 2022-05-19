@@ -692,6 +692,13 @@ int cc1depscand_main(ArrayRef<const char *> Argv, const char *Argv0,
     CASArgs = llvm::makeArrayRef(CASArgsI + 1, Argv.end());
   }
 
+  // Whether the daemon can safely stay alive a longer period of time.
+  // FIXME: Consider designing a mechanism to notify daemons, started for a
+  // particular "build session", to shutdown, then have it stay alive until the
+  // session is finished.
+  bool LongRunning =
+      std::find(Argv.begin(), CASArgsI, StringRef("-long-running")) != CASArgsI;
+
   auto formSpawnArgsForCommand =
       [&](const char *Command) -> SmallVector<const char *> {
     SmallVector<const char *> Args{Argv0,     "-cc1depscand",
@@ -1025,7 +1032,7 @@ int cc1depscand_main(ArrayRef<const char *> Argv, const char *Argv0,
 
   // Wait for the work to finish.
   const uint64_t SecondsBetweenAttempts = 5;
-  const uint64_t SecondsBeforeDestruction = 15;
+  const uint64_t SecondsBeforeDestruction = LongRunning ? 45 : 15;
   uint64_t SleepTime = SecondsBeforeDestruction;
   while (true) {
     ::sleep(SleepTime);
