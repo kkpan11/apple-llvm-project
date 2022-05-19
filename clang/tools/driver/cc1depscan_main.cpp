@@ -57,6 +57,7 @@
 
 using namespace clang;
 using namespace llvm::opt;
+using cc1depscand::DepscanSharing;
 using llvm::Error;
 
 #define DEBUG_TYPE "cc1depscand"
@@ -280,17 +281,6 @@ ProcessAncestorIterator &ProcessAncestorIterator::setPID(uint64_t NewPID) {
   return *this;
 }
 
-namespace {
-struct DepscanSharing {
-  bool OnlyShareParent = false;
-  bool ShareViaIdentifier = false;
-  Optional<StringRef> Name;
-  Optional<StringRef> Stop;
-  Optional<StringRef> Path;
-  SmallVector<const char *> CASArgs;
-};
-} // end namespace
-
 static Optional<std::string>
 makeDepscanDaemonKey(StringRef Mode, const DepscanSharing &Sharing) {
   auto completeKey = [&Sharing](llvm::BLAKE3 &Hasher) -> std::string {
@@ -417,8 +407,9 @@ static llvm::Expected<llvm::cas::CASID> scanAndUpdateCC1UsingDaemon(
     const char *Exec, ArrayRef<const char *> OldArgs,
     SmallVectorImpl<const char *> &NewArgs,
     const cc1depscand::DepscanPrefixMapping &Mapping, StringRef Path,
-    bool NoSpawnDaemon, llvm::function_ref<const char *(const Twine &)> SaveArg,
-    const CASOptions &CASOpts, llvm::cas::CASDB &CAS) {
+    const DepscanSharing &Sharing,
+    llvm::function_ref<const char *(const Twine &)> SaveArg,
+    llvm::cas::CASDB &CAS) {
   using namespace clang::cc1depscand;
 
   // FIXME: Skip some of this if -fcas-fs has been passed.
@@ -427,10 +418,11 @@ static llvm::Expected<llvm::cas::CASID> scanAndUpdateCC1UsingDaemon(
           llvm::errorCodeToError(llvm::sys::fs::current_path(WorkingDirectory)))
     return std::move(E);
 
+  bool NoSpawnDaemon = (bool)Sharing.Path;
   // llvm::dbgs() << "connecting to daemon...\n";
   auto Daemon = NoSpawnDaemon
                     ? ScanDaemon::connectToDaemonAndShakeHands(Path)
-                    : ScanDaemon::constructAndShakeHands(Path, Exec, CASOpts);
+                    : ScanDaemon::constructAndShakeHands(Path, Exec, Sharing);
   if (!Daemon)
     return Daemon.takeError();
   CC1DepScanDProtocol Comms(*Daemon);
@@ -555,9 +547,8 @@ static int scanAndUpdateCC1(const char *Exec, ArrayRef<const char *> OldArgs,
 
   auto ScanAndUpdate = [&]() {
     if (Optional<std::string> DaemonPath = makeDepscanDaemonPath(Mode, Sharing))
-      return scanAndUpdateCC1UsingDaemon(
-          Exec, OldArgs, NewArgs, PrefixMapping, *DaemonPath,
-          /*NoSpawnDaemon=*/(bool)Sharing.Path, SaveArg, CASOpts, CAS);
+      return scanAndUpdateCC1UsingDaemon(Exec, OldArgs, NewArgs, PrefixMapping,
+                                         *DaemonPath, Sharing, SaveArg, CAS);
     return scanAndUpdateCC1Inline(Exec, OldArgs, NewArgs, PrefixMapping,
                                   SaveArg, CASOpts, CAS);
   };
@@ -700,6 +691,13 @@ int cc1depscand_main(ArrayRef<const char *> Argv, const char *Argv0,
   if (CASArgsI != Argv.end()) {
     CASArgs = llvm::makeArrayRef(CASArgsI + 1, Argv.end());
   }
+
+  // Whether the daemon can safely stay alive a longer period of time.
+  // FIXME: Consider designing a mechanism to notify daemons, started for a
+  // particular "build session", to shutdown, then have it stay alive until the
+  // session is finished.
+  bool LongRunning =
+      std::find(Argv.begin(), CASArgsI, StringRef("-long-running")) != CASArgsI;
 
   auto formSpawnArgsForCommand =
       [&](const char *Command) -> SmallVector<const char *> {
@@ -1034,7 +1032,7 @@ int cc1depscand_main(ArrayRef<const char *> Argv, const char *Argv0,
 
   // Wait for the work to finish.
   const uint64_t SecondsBetweenAttempts = 5;
-  const uint64_t SecondsBeforeDestruction = 15;
+  const uint64_t SecondsBeforeDestruction = LongRunning ? 45 : 15;
   uint64_t SleepTime = SecondsBeforeDestruction;
   while (true) {
     ::sleep(SleepTime);

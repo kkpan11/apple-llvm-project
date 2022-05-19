@@ -20,11 +20,19 @@
 #include <unistd.h>     // FIXME: Unix-only. Not portable.
 
 namespace clang {
-class CASOptions;
 
 namespace cc1depscand {
 
 struct DepscanPrefixMapping;
+
+struct DepscanSharing {
+  bool OnlyShareParent = false;
+  bool ShareViaIdentifier = false;
+  Optional<StringRef> Name;
+  Optional<StringRef> Stop;
+  Optional<StringRef> Path;
+  SmallVector<const char *> CASArgs;
+};
 
 struct AutoArgEdit {
   uint32_t Index = -1u;
@@ -201,11 +209,11 @@ private:
 class ScanDaemon : public OpenSocket {
 public:
   static Expected<ScanDaemon> create(StringRef BasePath, const char *Arg0,
-                                     const CASOptions &CASOpts);
+                                     const DepscanSharing &Sharing);
 
-  static Expected<ScanDaemon> constructAndShakeHands(StringRef BasePath,
-                                                     const char *Arg0,
-                                                     const CASOptions &CASOpts);
+  static Expected<ScanDaemon>
+  constructAndShakeHands(StringRef BasePath, const char *Arg0,
+                         const DepscanSharing &Sharing);
 
   static Expected<ScanDaemon> connectToDaemonAndShakeHands(StringRef BasePath);
 
@@ -213,7 +221,7 @@ public:
 
 private:
   static Expected<ScanDaemon> launchDaemon(StringRef BasePath, const char *Arg0,
-                                           const CASOptions &CASOpts);
+                                           const DepscanSharing &Sharing);
   static Expected<ScanDaemon> connectToDaemon(StringRef BasePath,
                                               bool ShouldWait);
   static Expected<ScanDaemon> connectToExistingDaemon(StringRef BasePath) {
