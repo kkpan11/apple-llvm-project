@@ -22,6 +22,7 @@
 // RUN:     -fdepscan-share=python                                     \
 // RUN:     -fdepscan-share=                                           \
 // RUN:     -fdepscan-share-stop=python                                \
+// RUN:     -fdepscan-share-identifier                                 \
 // RUN:     -fno-depscan-share                                         \
 // RUN:     -fsyntax-only -x c %s                                      \
 // RUN:     -Xclang -fcas-path -Xclang %t.cas                          \

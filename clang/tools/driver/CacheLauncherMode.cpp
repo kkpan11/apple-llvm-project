@@ -62,13 +62,27 @@ clang::handleClangCacheInvocation(SmallVectorImpl<const char *> &Args,
     Args[0] = Saver.save(compilerPath).data();
 
   if (isSameProgram(clangCachePath, compilerPath)) {
+    if (const char *SessionId = ::getenv("CLANG_CACHE_BUILD_SESSION_ID")) {
+      // `CLANG_CACHE_BUILD_SESSION_ID` enables sharing of a depscan daemon
+      // using the string it is set to. The clang invocations under the same
+      // `CLANG_CACHE_BUILD_SESSION_ID` will launch and re-use the same daemon.
+      //
+      // This is a scheme where we are still launching daemons on-demand,
+      // instead of a scheme where we start a daemon at the beginning of the
+      // "build session" for all clang invocations to connect to.
+      // Launcing daemons on-demand is preferable because it allows having mixed
+      // toolchains, with different clang versions, running under the same
+      // `CLANG_CACHE_BUILD_SESSION_ID`; in such a case there will be one daemon
+      // started and shared for each unique clang version.
+      Args.append(
+          {"-fdepscan=daemon", "-fdepscan-share-identifier", SessionId});
+    } else {
+      Args.push_back("-fdepscan");
+    }
     if (const char *CASPath = ::getenv("CLANG_CACHE_CAS_PATH")) {
       Args.append({"-Xclang", "-fcas-path", "-Xclang", CASPath});
     }
-    // FIXME: Add capability to connect to a depscan daemon via 'clang-cache'
-    // launcher.
-    Args.append(
-        {"-fdepscan=inline", "-greproducible", "-Xclang", "-fcas-token-cache"});
+    Args.append({"-greproducible", "-Xclang", "-fcas-token-cache"});
     return None;
   }
 
