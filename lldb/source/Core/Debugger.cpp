@@ -1890,45 +1890,53 @@ void Debugger::HandleProgressEvent(const lldb::EventSP &event_sp) {
   // Determine whether the current output file is an interactive terminal with
   // color support. We assume that if we support ANSI escape codes we support
   // vt100 escape codes.
-  File &output = GetOutputFile();
-  if (!output.GetIsInteractive() || !output.GetIsTerminalWithColors())
+  File &file = GetOutputFile();
+  if (!file.GetIsInteractive() || !file.GetIsTerminalWithColors())
     return;
 
+  StreamSP output = GetAsyncOutputStream();
+
   // Print over previous line, if any.
-  output.Printf("\r");
+  output->Printf("\r");
 
   if (data->GetCompleted()) {
     // Clear the current line.
-    output.Printf("\x1B[2K");
-    output.Flush();
+    output->Printf("\x1B[2K");
+    output->Flush();
     return;
   }
+
+  // Trim the progress message if it exceeds the window's width and print it.
+  std::string message = data->GetMessage();
+  if (data->IsFinite())
+    message = llvm::formatv("[{0}/{1}] {2}", data->GetCompleted(),
+                            data->GetTotal(), message)
+                  .str();
+
+  // Trim the progress message if it exceeds the window's width and print it.
+  const uint32_t term_width = GetTerminalWidth();
+  const uint32_t ellipsis = 3;
+  if (message.size() + ellipsis >= term_width)
+    message = message.substr(0, term_width - ellipsis);
 
   const bool use_color = GetUseColor();
   llvm::StringRef ansi_prefix = GetShowProgressAnsiPrefix();
   if (!ansi_prefix.empty())
-    output.Printf(
+    output->Printf(
         "%s", ansi::FormatAnsiTerminalCodes(ansi_prefix, use_color).c_str());
 
-  // Print the progress message.
-  std::string message = data->GetMessage();
-  if (data->GetTotal() != UINT64_MAX) {
-    output.Printf("[%" PRIu64 "/%" PRIu64 "] %s...", data->GetCompleted(), data->GetTotal(),
-                  message.c_str());
-  } else {
-    output.Printf("%s...", message.c_str());
-  }
+  output->Printf("%s...", message.c_str());
 
   llvm::StringRef ansi_suffix = GetShowProgressAnsiSuffix();
   if (!ansi_suffix.empty())
-    output.Printf(
+    output->Printf(
         "%s", ansi::FormatAnsiTerminalCodes(ansi_suffix, use_color).c_str());
 
   // Clear until the end of the line.
-  output.Printf("\x1B[K\r");
+  output->Printf("\x1B[K\r");
 
   // Flush the output.
-  output.Flush();
+  output->Flush();
 }
 
 void Debugger::HandleDiagnosticEvent(const lldb::EventSP &event_sp) {
