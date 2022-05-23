@@ -361,6 +361,7 @@ makeDepscanDaemonPath(StringRef Mode, const DepscanSharing &Sharing) {
 
 static Expected<llvm::cas::CASID>
 scanAndUpdateCC1Inline(const char *Exec, ArrayRef<const char *> InputArgs,
+                       StringRef WorkingDirectory,
                        SmallVectorImpl<const char *> &OutputArgs,
                        const cc1depscand::DepscanPrefixMapping &PrefixMapping,
                        llvm::function_ref<const char *(const Twine &)> SaveArg,
@@ -405,7 +406,7 @@ static void shutdownCC1ScanDepsDaemon(StringRef Path) {
 
 static llvm::Expected<llvm::cas::CASID> scanAndUpdateCC1UsingDaemon(
     const char *Exec, ArrayRef<const char *> OldArgs,
-    SmallVectorImpl<const char *> &NewArgs,
+    StringRef WorkingDirectory, SmallVectorImpl<const char *> &NewArgs,
     const cc1depscand::DepscanPrefixMapping &Mapping, StringRef Path,
     const DepscanSharing &Sharing,
     llvm::function_ref<const char *(const Twine &)> SaveArg,
@@ -413,10 +414,6 @@ static llvm::Expected<llvm::cas::CASID> scanAndUpdateCC1UsingDaemon(
   using namespace clang::cc1depscand;
 
   // FIXME: Skip some of this if -fcas-fs has been passed.
-  SmallString<128> WorkingDirectory;
-  if (auto E =
-          llvm::errorCodeToError(llvm::sys::fs::current_path(WorkingDirectory)))
-    return std::move(E);
 
   bool NoSpawnDaemon = (bool)Sharing.Path;
   // llvm::dbgs() << "connecting to daemon...\n";
@@ -503,6 +500,20 @@ static int scanAndUpdateCC1(const char *Exec, ArrayRef<const char *> OldArgs,
                             llvm::Optional<llvm::cas::CASID> &RootID) {
   using namespace clang::driver;
 
+  StringRef WorkingDirectory;
+  SmallString<128> WorkingDirectoryBuf;
+  if (auto *Arg =
+          Args.getLastArg(clang::driver::options::OPT_working_directory)) {
+    WorkingDirectory = Arg->getValue();
+  } else {
+    if (llvm::Error E = llvm::errorCodeToError(
+            llvm::sys::fs::current_path(WorkingDirectoryBuf))) {
+      Diag.Report(diag::err_cas_depscan_failed) << toString(std::move(E));
+      return 1;
+    }
+    WorkingDirectory = WorkingDirectoryBuf;
+  }
+
   // Collect these before returning to ensure they're claimed.
   DepscanSharing Sharing;
   if (Arg *A = Args.getLastArg(options::OPT_fdepscan_share_stop_EQ))
@@ -547,10 +558,11 @@ static int scanAndUpdateCC1(const char *Exec, ArrayRef<const char *> OldArgs,
 
   auto ScanAndUpdate = [&]() {
     if (Optional<std::string> DaemonPath = makeDepscanDaemonPath(Mode, Sharing))
-      return scanAndUpdateCC1UsingDaemon(Exec, OldArgs, NewArgs, PrefixMapping,
-                                         *DaemonPath, Sharing, SaveArg, CAS);
-    return scanAndUpdateCC1Inline(Exec, OldArgs, NewArgs, PrefixMapping,
-                                  SaveArg, CASOpts, CAS);
+      return scanAndUpdateCC1UsingDaemon(Exec, OldArgs, WorkingDirectory,
+                                         NewArgs, PrefixMapping, *DaemonPath,
+                                         Sharing, SaveArg, CAS);
+    return scanAndUpdateCC1Inline(Exec, OldArgs, WorkingDirectory, NewArgs,
+                                  PrefixMapping, SaveArg, CASOpts, CAS);
   };
   if (llvm::Error E = ScanAndUpdate().moveInto(RootID)) {
     Diag.Report(diag::err_cas_depscan_failed) << toString(std::move(E));
@@ -576,24 +588,6 @@ int cc1depscan_main(ArrayRef<const char *> Argv, const char *Argv0,
     return 1;
   }
 
-  llvm::BumpPtrAllocator Alloc;
-  llvm::StringSaver Saver(Alloc);
-  StringRef WorkingDirectory;
-  if (auto *Arg =
-          Args.getLastArg(clang::driver::options::OPT_working_directory))
-    WorkingDirectory = Saver.save(Arg->getValue());
-
-  cc1depscand::DepscanPrefixMapping PrefixMapping;
-  for (auto &Arg :
-       Args.getAllArgValues(clang::driver::options::OPT_fdepscan_prefix_map_EQ))
-    PrefixMapping.PrefixMap.push_back(Saver.save(Arg));
-  if (auto *Arg = Args.getLastArg(
-          clang::driver::options::OPT_fdepscan_prefix_map_sdk_EQ))
-    PrefixMapping.NewSDKPath = Saver.save(Arg->getValue());
-  if (auto *Arg = Args.getLastArg(
-          clang::driver::options::OPT_fdepscan_prefix_map_toolchain_EQ))
-    PrefixMapping.NewToolchainPath = Saver.save(Arg->getValue());
-
   auto *CC1Args = Args.getLastArg(clang::driver::options::OPT_cc1_args);
   if (!CC1Args) {
     llvm::errs() << "missing -cc1-args option\n";
@@ -606,7 +600,7 @@ int cc1depscan_main(ArrayRef<const char *> Argv, const char *Argv0,
   Optional<StringRef> DumpDepscanTree;
   if (auto *Arg =
           Args.getLastArg(clang::driver::options::OPT_dump_depscan_tree_EQ))
-    DumpDepscanTree = Saver.save(Arg->getValue());
+    DumpDepscanTree = Arg->getValue();
 
   SmallVector<const char *> NewArgs;
   Optional<llvm::cas::CASID> RootID;
@@ -1095,6 +1089,7 @@ static Expected<llvm::cas::CASID> scanAndUpdateCC1InlineWithTool(
 
 static Expected<llvm::cas::CASID>
 scanAndUpdateCC1Inline(const char *Exec, ArrayRef<const char *> InputArgs,
+                       StringRef WorkingDirectory,
                        SmallVectorImpl<const char *> &OutputArgs,
                        const cc1depscand::DepscanPrefixMapping &PrefixMapping,
                        llvm::function_ref<const char *(const Twine &)> SaveArg,
@@ -1110,10 +1105,6 @@ scanAndUpdateCC1Inline(const char *Exec, ArrayRef<const char *> InputArgs,
   tooling::dependencies::DependencyScanningTool Tool(Service);
 
   auto DiagsConsumer = std::make_unique<IgnoringDiagConsumer>();
-
-  SmallString<128> WorkingDirectory;
-  reportAsFatalIfError(
-      llvm::errorCodeToError(llvm::sys::fs::current_path(WorkingDirectory)));
 
   return scanAndUpdateCC1InlineWithTool(Tool, *DiagsConsumer, Exec, InputArgs,
                                         WorkingDirectory, OutputArgs,
