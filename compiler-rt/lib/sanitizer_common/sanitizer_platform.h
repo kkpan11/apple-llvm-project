@@ -58,7 +58,8 @@
 #if defined(__APPLE__)
 #  define SANITIZER_APPLE 1
 // SANITIZER_MAC will be deprecated/removed in the future
-#  define SANITIZER_MAC SANITIZER_APPLE
+#  define SANITIZER_MAC \
+     error "SANITIZER_MAC will be removed, please use SANITIZER_APPLE"
 #  include <TargetConditionals.h>
 #  if TARGET_OS_OSX
 #    define SANITIZER_OSX 1
@@ -87,7 +88,7 @@
 #  endif
 #else
 #  define SANITIZER_APPLE 0
-#  define SANITIZER_MAC SANITIZER_APPLE
+#  define SANITIZER_OSX 0
 #  define SANITIZER_IOS 0
 #  define SANITIZER_WATCHOS 0
 #  define SANITIZER_TVOS 0
