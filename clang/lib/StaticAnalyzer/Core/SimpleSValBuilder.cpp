@@ -292,7 +292,6 @@ static NonLoc doRearrangeUnchecked(ProgramStateRef State,
   else
     llvm_unreachable("Operation not suitable for unchecked rearrangement!");
 
-  // FIXME: Can we use assume() without getting into an infinite recursion?
   if (LSym == RSym)
     return SVB.evalBinOpNN(State, Op, nonloc::ConcreteInt(LInt),
                            nonloc::ConcreteInt(RInt), ResultTy)
@@ -1152,7 +1151,6 @@ SVal SimpleSValBuilder::evalBinOpLN(ProgramStateRef state,
 
 const llvm::APSInt *SimpleSValBuilder::getKnownValue(ProgramStateRef state,
                                                    SVal V) {
-  V = simplifySVal(state, V);
   if (V.isUnknownOrUndef())
     return nullptr;
 
@@ -1346,14 +1344,6 @@ SVal SimpleSValBuilder::simplifySValOnce(ProgramStateRef State, SVal V) {
     SVal VisitSVal(SVal V) { return V; }
   };
 
-  // A crude way of preventing this function from calling itself from evalBinOp.
-  static bool isReentering = false;
-  if (isReentering)
-    return V;
-
-  isReentering = true;
   SVal SimplifiedV = Simplifier(State).Visit(V);
-  isReentering = false;
-
   return SimplifiedV;
 }
