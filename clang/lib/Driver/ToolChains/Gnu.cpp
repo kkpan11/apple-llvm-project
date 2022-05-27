@@ -1957,7 +1957,7 @@ void Generic_GCC::GCCInstallationDetector::init(
     if (!VFS.exists(Prefix))
       continue;
     for (StringRef Suffix : CandidateLibDirs) {
-      const std::string LibDir = Prefix + Suffix.str();
+      const std::string LibDir = concat(Prefix, Suffix);
       if (!VFS.exists(LibDir))
         continue;
       // Maybe filter out <libdir>/gcc and <libdir>/gcc-cross.
@@ -2023,7 +2023,7 @@ void Generic_GCC::GCCInstallationDetector::AddDefaultGCCPrefixes(
     // so we need to find those /usr/gcc/*/lib/gcc libdirs and go with
     // /usr/gcc/<version> as a prefix.
 
-    std::string PrefixDir = SysRoot.str() + "/usr/gcc";
+    std::string PrefixDir = concat(SysRoot, "/usr/gcc");
     std::error_code EC;
     for (llvm::vfs::directory_iterator LI = D.getVFS().dir_begin(PrefixDir, EC),
                                        LE;
@@ -2058,7 +2058,7 @@ void Generic_GCC::GCCInstallationDetector::AddDefaultGCCPrefixes(
     Prefixes.push_back("/opt/rh/devtoolset-3/root/usr");
     Prefixes.push_back("/opt/rh/devtoolset-2/root/usr");
   }
-  Prefixes.push_back(SysRoot.str() + "/usr");
+  Prefixes.push_back(concat(SysRoot, "/usr"));
 }
 
 /*static*/ void Generic_GCC::GCCInstallationDetector::CollectLibDirsAndTriples(
@@ -2571,7 +2571,7 @@ bool Generic_GCC::GCCInstallationDetector::ScanGentooConfigs(
     const llvm::Triple &TargetTriple, const ArgList &Args,
     const SmallVectorImpl<StringRef> &CandidateTriples,
     const SmallVectorImpl<StringRef> &CandidateBiarchTriples) {
-  if (!D.getVFS().exists(D.SysRoot + GentooConfigDir))
+  if (!D.getVFS().exists(concat(D.SysRoot, GentooConfigDir)))
     return false;
 
   for (StringRef CandidateTriple : CandidateTriples) {
@@ -2590,8 +2590,8 @@ bool Generic_GCC::GCCInstallationDetector::ScanGentooGccConfig(
     const llvm::Triple &TargetTriple, const ArgList &Args,
     StringRef CandidateTriple, bool NeedsBiarchSuffix) {
   llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> File =
-      D.getVFS().getBufferForFile(D.SysRoot + GentooConfigDir + "/config-" +
-                                  CandidateTriple.str());
+      D.getVFS().getBufferForFile(concat(D.SysRoot, GentooConfigDir,
+                                         "/config-" + CandidateTriple.str()));
   if (File) {
     SmallVector<StringRef, 2> Lines;
     File.get()->getBuffer().split(Lines, "\n");
@@ -2602,8 +2602,8 @@ bool Generic_GCC::GCCInstallationDetector::ScanGentooGccConfig(
         continue;
       // Process the config file pointed to by CURRENT.
       llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> ConfigFile =
-          D.getVFS().getBufferForFile(D.SysRoot + GentooConfigDir + "/" +
-                                      Line.str());
+          D.getVFS().getBufferForFile(
+              concat(D.SysRoot, GentooConfigDir, "/" + Line));
       std::pair<StringRef, StringRef> ActiveVersion = Line.rsplit('-');
       // List of paths to scan for libraries.
       SmallVector<StringRef, 4> GentooScanPaths;
@@ -2636,7 +2636,7 @@ bool Generic_GCC::GCCInstallationDetector::ScanGentooGccConfig(
 
       // Scan all paths for GCC libraries.
       for (const auto &GentooScanPath : GentooScanPaths) {
-        std::string GentooPath = D.SysRoot + std::string(GentooScanPath);
+        std::string GentooPath = concat(D.SysRoot, GentooScanPath);
         if (D.getVFS().exists(GentooPath + "/crtbegin.o")) {
           if (!ScanGCCForMultilibs(TargetTriple, Args, GentooPath,
                                    NeedsBiarchSuffix))
@@ -2922,9 +2922,9 @@ Generic_GCC::addLibCxxIncludePaths(const llvm::opt::ArgList &DriverArgs,
   // If this is a development, non-installed, clang, libcxx will
   // not be found at ../include/c++ but it likely to be found at
   // one of the following two locations:
-  if (AddIncludePath(SysRoot + "/usr/local/include"))
+  if (AddIncludePath(concat(SysRoot, "/usr/local/include")))
     return;
-  if (AddIncludePath(SysRoot + "/usr/include"))
+  if (AddIncludePath(concat(SysRoot, "/usr/include")))
     return;
 }
 
