@@ -145,14 +145,13 @@ public:
       const CASOptions &CASOpts,
       llvm::IntrusiveRefCntPtr<DependencyScanningWorkerFilesystem> DepFS,
       llvm::IntrusiveRefCntPtr<DependencyScanningCASFilesystem> DepCASFS,
-      ExcludedPreprocessorDirectiveSkipMapping &PPSkipMappings,
       bool OverrideCASTokenCache, ScanningOutputFormat Format,
       bool OptimizeArgs, bool EmitDependencyFile,
       llvm::Optional<StringRef> ModuleName = None)
       : WorkingDirectory(WorkingDirectory), Consumer(Consumer),
         CASOpts(CASOpts), DepFS(std::move(DepFS)),
-        DepCASFS(std::move(DepCASFS)), PPSkipMappings(PPSkipMappings),
-        Format(Format), OverrideCASTokenCache(OverrideCASTokenCache),
+        DepCASFS(std::move(DepCASFS)), Format(Format),
+        OverrideCASTokenCache(OverrideCASTokenCache),
         OptimizeArgs(OptimizeArgs), EmitDependencyFile(EmitDependencyFile),
         ModuleName(ModuleName) {}
 
@@ -197,29 +196,21 @@ public:
 
     // Use the dependency scanning optimized file system if requested to do so.
     if (DepFS) {
-      DepFS->enableMinimizationOfAllFiles();
-      // Don't minimize any files that contributed to prebuilt modules. The
-      // implicit build validates the modules by comparing the reported sizes of
-      // their inputs to the current state of the filesystem. Minimization would
-      // throw this mechanism off.
-      for (const auto &File : PrebuiltModulesInputFiles)
-        DepFS->disableMinimization(File.getKey());
-      // Don't minimize any files that were explicitly passed in the build
-      // settings and that might be opened.
-      for (const auto &E : ScanInstance.getHeaderSearchOpts().UserEntries)
-        DepFS->disableMinimization(E.Path);
-      for (const auto &F : ScanInstance.getHeaderSearchOpts().VFSOverlayFiles)
-        DepFS->disableMinimization(F);
-
       // Support for virtual file system overlays on top of the caching
       // filesystem.
       FileMgr->setVirtualFileSystem(createVFSFromCompilerInvocation(
           ScanInstance.getInvocation(), ScanInstance.getDiagnostics(), DepFS));
 
-      // Pass the skip mappings which should speed up excluded conditional block
-      // skipping in the preprocessor.
-      ScanInstance.getPreprocessorOpts()
-          .ExcludedConditionalDirectiveSkipMappings = &PPSkipMappings;
+      llvm::IntrusiveRefCntPtr<DependencyScanningWorkerFilesystem> LocalDepFS =
+          DepFS;
+      ScanInstance.getPreprocessorOpts().DependencyDirectivesForFile =
+          [LocalDepFS = std::move(LocalDepFS)](FileEntryRef File)
+          -> Optional<ArrayRef<dependency_directives_scan::Directive>> {
+        if (llvm::ErrorOr<EntryRef> Entry =
+                LocalDepFS->getOrCreateFileSystemEntry(File.getName()))
+          return Entry->getDirectiveTokens();
+        return None;
+      };
     }
     // CAS Implementation.
     if (DepCASFS) {
@@ -324,7 +315,6 @@ private:
   const CASOptions &CASOpts;
   llvm::IntrusiveRefCntPtr<DependencyScanningWorkerFilesystem> DepFS;
   llvm::IntrusiveRefCntPtr<DependencyScanningCASFilesystem> DepCASFS;
-  ExcludedPreprocessorDirectiveSkipMapping &PPSkipMappings;
   ScanningOutputFormat Format;
   bool OverrideCASTokenCache;
   bool OptimizeArgs;
@@ -359,12 +349,12 @@ DependencyScanningWorker::DependencyScanningWorker(
     RealFS = CacheFS;
   }
 
-  if (Service.getMode() == ScanningMode::MinimizedSourcePreprocessing) {
+  if (Service.getMode() == ScanningMode::DependencyDirectivesScan) {
     if (Service.useCASScanning())
       DepCASFS = new DependencyScanningCASFilesystem(CacheFS, &PPSkipMappings);
     else
       DepFS = new DependencyScanningWorkerFilesystem(Service.getSharedCache(),
-                                                     RealFS, PPSkipMappings);
+                                                     RealFS);
   }
   if (Service.canReuseFileManager())
     Files = new FileManager(FileSystemOptions(), RealFS);
@@ -424,9 +414,9 @@ llvm::Error DependencyScanningWorker::computeDependencies(
                       [&](DiagnosticConsumer &DC, DiagnosticOptions &DiagOpts) {
                         DependencyScanningAction Action(
                             WorkingDirectory, Consumer, getCASOpts(), DepFS,
-                            DepCASFS, PPSkipMappings,
-                            OverrideCASTokenCache, Format, OptimizeArgs,
-                            /*EmitDependencyFile=*/false, ModuleName);
+                            DepCASFS, OverrideCASTokenCache, Format,
+                            OptimizeArgs, /*EmitDependencyFile=*/false,
+                            ModuleName);
                         // Create an invocation that uses the underlying file
                         // system to ensure that any file system requests that
                         // are made by the driver do not go through the
