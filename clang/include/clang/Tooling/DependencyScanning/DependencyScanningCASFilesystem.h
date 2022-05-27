@@ -10,7 +10,6 @@
 #define LLVM_CLANG_TOOLING_DEPENDENCYSCANNING_DEPENDENCYSCANNINGCASFILESYSTEM_H
 
 #include "clang/Basic/LLVM.h"
-#include "clang/Lex/PreprocessorExcludedConditionalDirectiveSkipMapping.h"
 #include "clang/Tooling/DependencyScanning/DependencyScanningFilesystem.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringSet.h"
@@ -35,8 +34,7 @@ namespace dependencies {
 class DependencyScanningCASFilesystem : public llvm::cas::CASFileSystemBase {
 public:
   DependencyScanningCASFilesystem(
-      IntrusiveRefCntPtr<llvm::cas::CachingOnDiskFileSystem> WorkerFS,
-      ExcludedPreprocessorDirectiveSkipMapping *PPSkipMappings);
+      IntrusiveRefCntPtr<llvm::cas::CachingOnDiskFileSystem> WorkerFS);
 
   ~DependencyScanningCASFilesystem();
 
@@ -69,23 +67,24 @@ public:
   llvm::ErrorOr<std::unique_ptr<llvm::vfs::File>>
   openFileForRead(const Twine &Path) override;
 
-  /// Disable minimization of the given file.
-  void disableMinimization(StringRef Filename);
-  /// Enable minimization of all files.
-  void enableMinimizationOfAllFiles() { NotToBeMinimized.clear(); }
+  /// \returns The scanned preprocessor directive tokens of the file that are
+  /// used to speed up preprocessing, if available.
+  Optional<ArrayRef<dependency_directives_scan::Directive>>
+  getDirectiveTokens(const Twine &Path) const;
 
 private:
-  /// Check whether the file should be minimized.
-  bool shouldMinimize(StringRef Filename);
+  /// Check whether the file should be scanned for preprocessor directives.
+  bool shouldScanForDirectives(StringRef Filename);
 
   IntrusiveRefCntPtr<llvm::cas::CASFileSystemBase> FS;
 
   struct FileEntry {
     std::error_code EC; // If non-zero, caches a stat failure.
     Optional<StringRef> Buffer;
+    SmallVector<dependency_directives_scan::Token, 64> DepTokens;
+    SmallVector<dependency_directives_scan::Directive, 16> DepDirectives;
     llvm::vfs::Status Status;
     Optional<llvm::cas::CASID> ID;
-    std::unique_ptr<PreprocessorSkippedRangeMapping> PPSkippedRangeMapping;
   };
   llvm::BumpPtrAllocator EntryAlloc;
   llvm::StringMap<FileEntry, llvm::BumpPtrAllocator> Entries;
@@ -96,15 +95,10 @@ private:
     // Only filled if the Entry is nullptr.
     llvm::ErrorOr<llvm::vfs::Status> Status;
   };
-  Expected<StringRef> computeMinimized(
+  void scanForDirectives(
       llvm::cas::ObjectRef InputDataID, StringRef Identifier,
-      Optional<llvm::cas::CASID> &MinimizedDataID,
-      std::unique_ptr<PreprocessorSkippedRangeMapping> &PPSkippedRangeMapping);
-
-  Expected<StringRef> getMinimized(
-      llvm::cas::CASID OutputID, StringRef Identifier,
-      Optional<llvm::cas::CASID> &MinimizedDataID,
-      std::unique_ptr<PreprocessorSkippedRangeMapping> &PPSkippedRangeMapping);
+      SmallVectorImpl<dependency_directives_scan::Token> &DepTokens,
+      SmallVectorImpl<dependency_directives_scan::Directive> &DepDirectives);
 
   Expected<StringRef> getOriginal(llvm::cas::CASID InputDataID);
 
@@ -114,15 +108,8 @@ private:
 
   llvm::cas::CASDB &CAS;
   Optional<llvm::cas::ObjectRef> ClangFullVersionID;
-  Optional<llvm::cas::ObjectRef> MinimizeID;
+  Optional<llvm::cas::ObjectRef> DepDirectivesID;
   Optional<llvm::cas::ObjectRef> EmptyBlobID;
-
-  /// The optional mapping structure which records information about the
-  /// excluded conditional directive skip mappings that are used by the
-  /// currently active preprocessor.
-  ExcludedPreprocessorDirectiveSkipMapping *PPSkipMappings;
-  /// The set of files that should not be minimized.
-  llvm::StringSet<> NotToBeMinimized;
 };
 
 } // end namespace dependencies

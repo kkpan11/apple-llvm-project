@@ -854,7 +854,7 @@ int cc1depscand_main(ArrayRef<const char *> Argv, const char *Argv0,
   IntrusiveRefCntPtr<llvm::cas::CachingOnDiskFileSystem> FS =
       llvm::cantFail(llvm::cas::createCachingOnDiskFileSystem(*CAS));
   tooling::dependencies::DependencyScanningService Service(
-      tooling::dependencies::ScanningMode::MinimizedSourcePreprocessing,
+      tooling::dependencies::ScanningMode::DependencyDirectivesScan,
       tooling::dependencies::ScanningOutputFormat::Tree, CASOpts, FS,
       /*ReuseFileManager=*/false,
       /*SkipExcludedPPRanges=*/true);
@@ -1098,7 +1098,7 @@ scanAndUpdateCC1Inline(const char *Exec, ArrayRef<const char *> InputArgs,
       llvm::cantFail(llvm::cas::createCachingOnDiskFileSystem(CAS));
 
   tooling::dependencies::DependencyScanningService Service(
-      tooling::dependencies::ScanningMode::MinimizedSourcePreprocessing,
+      tooling::dependencies::ScanningMode::DependencyDirectivesScan,
       tooling::dependencies::ScanningOutputFormat::Tree, CASOpts, FS,
       /*ReuseFileManager=*/false,
       /*SkipExcludedPPRanges=*/true);

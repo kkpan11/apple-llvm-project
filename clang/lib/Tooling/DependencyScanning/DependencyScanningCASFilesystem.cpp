@@ -8,10 +8,11 @@
 
 #include "clang/Tooling/DependencyScanning/DependencyScanningCASFilesystem.h"
 #include "clang/Basic/Version.h"
-#include "clang/Lex/DependencyDirectivesSourceMinimizer.h"
+#include "clang/Lex/DependencyDirectivesScanner.h"
 #include "llvm/CAS/CASDB.h"
 #include "llvm/CAS/CachingOnDiskFileSystem.h"
 #include "llvm/CAS/HierarchicalTreeBuilder.h"
+#include "llvm/Support/EndianStream.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Threading.h"
 
@@ -34,91 +35,106 @@ using llvm::Error;
 namespace cas = llvm::cas;
 
 DependencyScanningCASFilesystem::DependencyScanningCASFilesystem(
-    IntrusiveRefCntPtr<llvm::cas::CachingOnDiskFileSystem> WorkerFS,
-    ExcludedPreprocessorDirectiveSkipMapping *PPSkipMappings)
-    : FS(WorkerFS), Entries(EntryAlloc), CAS(WorkerFS->getCAS()),
-      PPSkipMappings(PPSkipMappings) {}
+    IntrusiveRefCntPtr<llvm::cas::CachingOnDiskFileSystem> WorkerFS)
+    : FS(WorkerFS), Entries(EntryAlloc), CAS(WorkerFS->getCAS()) {}
 
 DependencyScanningCASFilesystem::~DependencyScanningCASFilesystem() = default;
 
-static void addSkippedRange(llvm::DenseMap<unsigned, unsigned> &Skip,
-                            unsigned Offset, unsigned Length) {
-  // Ignore small ranges as non-profitable.
-  //
-  // FIXME: This is a heuristic, its worth investigating the tradeoffs
-  // when it should be applied.
-  if (Length >= 16)
-    Skip[Offset] = Length;
-}
-
-static Error cacheMinimized(cas::CASID InputID, cas::CASDB &CAS,
-                            cas::ObjectRef OutputDataID,
-                            cas::ObjectRef SkippedRangesID) {
-  cas::HierarchicalTreeBuilder Builder;
-  Builder.push(OutputDataID, cas::TreeEntry::Regular, "data");
-  Builder.push(SkippedRangesID, cas::TreeEntry::Regular, "skipped-ranges");
-  Expected<cas::TreeHandle> OutputID = Builder.create(CAS);
-  if (!OutputID)
-    return OutputID.takeError();
-  return CAS.putCachedResult(InputID, CAS.getObjectID(*OutputID));
-}
-
-Expected<StringRef> DependencyScanningCASFilesystem::getMinimized(
-    cas::CASID OutputID, StringRef Identifier,
-    Optional<cas::CASID> &MinimizedDataID,
-    std::unique_ptr<PreprocessorSkippedRangeMapping> &PPSkippedRangeMapping) {
-  // Extract the blob IDs from the tree.
-  Expected<cas::TreeProxy> Tree = CAS.getTree(OutputID);
-  if (!Tree)
-    return Tree.takeError();
-  auto unwrapID =
-      [this](Optional<cas::NamedTreeEntry> Entry) -> Optional<cas::CASID> {
-    if (Entry)
-      return CAS.getObjectID(Entry->getRef());
-    return None;
-  };
-  Optional<cas::CASID> SkippedRangesID =
-      unwrapID(Tree->lookup("skipped-ranges"));
-  MinimizedDataID = unwrapID(Tree->lookup("data"));
-
-  if (!MinimizedDataID)
-    return createStringError(std::make_error_code(std::errc::invalid_argument),
-                             Twine("missing 'data' in result of minimizing '") +
-                                 Identifier + "'");
-  if (!SkippedRangesID)
-    return createStringError(
-        std::make_error_code(std::errc::invalid_argument),
-        Twine("missing 'skipped-ranges' in result of minimizing '") +
-            Identifier + "'");
-
-  StringRef OutputData = **expectedToOptional(CAS.getBlob(*MinimizedDataID));
-
-  if (!PPSkipMappings)
-    return OutputData;
-
-  // Parse the skipped ranges.
-  StringRef Ranges = **expectedToOptional(CAS.getBlob(*SkippedRangesID));
-  if (Ranges.empty())
-    return OutputData;
-
-  PPSkippedRangeMapping = std::make_unique<PreprocessorSkippedRangeMapping>();
-  while (!Ranges.empty()) {
-    unsigned Offset, Length;
-    if (Ranges.consumeInteger(10, Offset) || !Ranges.consume_front(" ") ||
-        Ranges.consumeInteger(10, Length) || !Ranges.consume_front("\n"))
-      return createStringError(
-          std::make_error_code(std::errc::invalid_argument),
-          "invalid skipped ranges '" + Identifier + "'");
-    addSkippedRange(*PPSkippedRangeMapping, Offset, Length);
+static Expected<cas::ObjectRef>
+storeDepDirectives(cas::CASDB &CAS,
+                   ArrayRef<dependency_directives_scan::Directive> Directives) {
+  llvm::SmallString<1024> Buffer;
+  llvm::raw_svector_ostream OS(Buffer);
+  llvm::support::endian::Writer W(OS, llvm::support::endianness::little);
+  size_t NumTokens = 0;
+  for (const auto &Directive : Directives)
+    NumTokens += Directive.Tokens.size();
+  W.write(NumTokens);
+  for (const auto &Directive : Directives) {
+    for (const auto &Token : Directive.Tokens) {
+      W.write(Token.Offset);
+      W.write(Token.Length);
+      W.write(static_cast<std::underlying_type<decltype(Token.Kind)>::type>(
+          Token.Kind));
+      W.write(Token.Flags);
+    }
   }
 
-  return OutputData;
+  size_t TokenIdx = 0;
+  W.write(Directives.size());
+  for (const auto &Directive : Directives) {
+    W.write(static_cast<std::underlying_type<decltype(Directive.Kind)>::type>(
+        Directive.Kind));
+    W.write(TokenIdx);
+    W.write(Directive.Tokens.size());
+    TokenIdx += Directive.Tokens.size();
+  }
+
+  auto Blob = CAS.createBlob(Buffer);
+  if (!Blob)
+    return Blob.takeError();
+  return Blob->getRef();
 }
 
-Expected<StringRef> DependencyScanningCASFilesystem::computeMinimized(
-    cas::ObjectRef InputDataID, StringRef Identifier,
-    Optional<llvm::cas::CASID> &MinimizedDataID,
-    std::unique_ptr<PreprocessorSkippedRangeMapping> &SkipMappingsResults) {
+template <typename T> static void readle(StringRef &Slice, T &Out) {
+  using namespace llvm::support::endian;
+  if (Slice.size() < sizeof(T))
+    llvm::report_fatal_error("buffer too small");
+  Out = read<T, llvm::support::little>(Slice.begin());
+  Slice = Slice.drop_front(sizeof(T));
+}
+
+static Error loadDepDirectives(
+    cas::CASDB &CAS, cas::CASID ID,
+    llvm::SmallVectorImpl<dependency_directives_scan::Token> &DepTokens,
+    llvm::SmallVectorImpl<dependency_directives_scan::Directive>
+        &DepDirectives) {
+  using namespace dependency_directives_scan;
+  auto Blob = CAS.getBlob(ID);
+  if (!Blob)
+    return Blob.takeError();
+
+  StringRef Data = Blob->getData();
+  StringRef Cursor = Data;
+
+  size_t NumTokens = 0;
+  readle(Cursor, NumTokens);
+  DepTokens.reserve(NumTokens);
+  for (size_t I = 0; I < NumTokens; ++I) {
+    DepTokens.emplace_back(0, 0, (tok::TokenKind)0, 0);
+    auto &Token = DepTokens.back();
+    readle(Cursor, Token.Offset);
+    readle(Cursor, Token.Length);
+    std::underlying_type<decltype(Token.Kind)>::type Kind;
+    readle(Cursor, Kind);
+    Token.Kind = static_cast<tok::TokenKind>(Kind);
+    readle(Cursor, Token.Flags);
+  }
+
+  size_t NumDirectives = 0;
+  readle(Cursor, NumDirectives);
+  DepDirectives.reserve(NumDirectives);
+  for (size_t I = 0; I < NumDirectives; ++I) {
+    std::underlying_type<DirectiveKind>::type Kind;
+    readle(Cursor, Kind);
+    size_t TokenStart, NumTokens;
+    readle(Cursor, TokenStart);
+    readle(Cursor, NumTokens);
+    assert(NumTokens <= DepTokens.size() &&
+           TokenStart <= DepTokens.size() - NumTokens);
+    DepDirectives.emplace_back(
+        static_cast<DirectiveKind>(Kind),
+        ArrayRef<Token>(DepTokens.begin() + TokenStart,
+                        DepTokens.begin() + TokenStart + NumTokens));
+  }
+  assert(Cursor.empty());
+  return Error::success();
+}
+
+void DependencyScanningCASFilesystem::scanForDirectives(
+    llvm::cas::ObjectRef InputDataID, StringRef Identifier,
+    SmallVectorImpl<dependency_directives_scan::Token> &Tokens,
+    SmallVectorImpl<dependency_directives_scan::Directive> &Directives) {
   using namespace llvm;
   using namespace llvm::cas;
 
@@ -127,9 +143,10 @@ Expected<StringRef> DependencyScanningCASFilesystem::computeMinimized(
     ClangFullVersionID =
         reportAsFatalIfError(CAS.createBlob(getClangFullVersion())).getRef();
 
-  // Get a blob for the minimize command.
-  if (!MinimizeID)
-    MinimizeID = reportAsFatalIfError(CAS.createBlob("minimize")).getRef();
+  // Get a blob for the dependency directives scan command.
+  if (!DepDirectivesID)
+    DepDirectivesID =
+        reportAsFatalIfError(CAS.createBlob("directives")).getRef();
 
   // Get an empty blob.
   if (!EmptyBlobID)
@@ -140,7 +157,7 @@ Expected<StringRef> DependencyScanningCASFilesystem::computeMinimized(
   {
     HierarchicalTreeBuilder Builder;
     Builder.push(*ClangFullVersionID, TreeEntry::Regular, "version");
-    Builder.push(*MinimizeID, TreeEntry::Regular, "command");
+    Builder.push(*DepDirectivesID, TreeEntry::Regular, "command");
     Builder.push(InputDataID, TreeEntry::Regular, "data");
     InputID = CAS.getObjectID(
         CAS.getReference(reportAsFatalIfError(Builder.create(CAS))));
@@ -149,53 +166,27 @@ Expected<StringRef> DependencyScanningCASFilesystem::computeMinimized(
   // Check the result cache.
   if (Optional<CASID> OutputID =
           expectedToOptional(CAS.getCachedResult(*InputID))) {
-    auto Ex = getMinimized(*OutputID, Identifier, MinimizedDataID,
-                           SkipMappingsResults);
-    return reportAsFatalIfError(std::move(Ex));
+    reportAsFatalIfError(loadDepDirectives(CAS, *OutputID, Tokens, Directives));
+    return;
   }
 
   StringRef InputData = *reportAsFatalIfError(CAS.loadBlob(InputDataID));
 
-  // Try to minimize.
-  llvm::SmallString<1024> Buffer;
-  SmallVector<minimize_source_to_dependency_directives::Token, 64> Tokens;
-  if (minimizeSourceToDependencyDirectives(InputData, Buffer, Tokens)) {
-    // Failure. Cache a self-mapping and return the input data unmodified.
+  if (scanSourceForDependencyDirectives(InputData, Tokens, Directives)) {
+    // FIXME: Propagate the diagnostic if desired by the client.
+    // Failure. Cache empty directives.
+    Tokens.clear();
+    Directives.clear();
     reportAsFatalIfError(
-        cacheMinimized(*InputID, CAS, InputDataID, *EmptyBlobID));
-    return InputData;
+        CAS.putCachedResult(*InputID, CAS.getObjectID(*EmptyBlobID)));
+    return;
   }
 
   // Success. Add to the CAS and get back persistent output data.
-  BlobProxy Minimized = reportAsFatalIfError(CAS.createBlob(Buffer));
-  MinimizedDataID = Minimized.getID();
-  StringRef OutputData = *Minimized;
-
-  // Compute skipped ranges.
-  llvm::SmallVector<minimize_source_to_dependency_directives::SkippedRange, 32>
-      SkippedRanges;
-  minimize_source_to_dependency_directives::computeSkippedRanges(Tokens,
-                                                                 SkippedRanges);
-  Buffer.clear();
-  if (!SkippedRanges.empty()) {
-    if (PPSkipMappings)
-      SkipMappingsResults = std::make_unique<PreprocessorSkippedRangeMapping>();
-
-    raw_svector_ostream OS(Buffer);
-    for (const auto &Range : SkippedRanges) {
-      OS << Range.Offset << " " << Range.Length << "\n";
-      if (SkipMappingsResults)
-        addSkippedRange(*SkipMappingsResults, Range.Offset, Range.Length);
-    }
-  }
-
+  cas::CASID DirectivesID = CAS.getObjectID(
+      reportAsFatalIfError(storeDepDirectives(CAS, Directives)));
   // Cache the computation.
-  cas::NodeHandle SkippedRangesRef =
-      reportAsFatalIfError(CAS.storeNodeFromString(None, Buffer));
-  reportAsFatalIfError(cacheMinimized(*InputID, CAS, Minimized.getRef(),
-                                      CAS.getReference(SkippedRangesRef)));
-
-  return OutputData;
+  reportAsFatalIfError(CAS.putCachedResult(*InputID, DirectivesID));
 }
 
 Expected<StringRef>
@@ -211,7 +202,7 @@ DependencyScanningCASFilesystem::getOriginal(cas::CASID InputDataID) {
 ///
 /// This is kinda hacky, it would be better if we knew what kind of file Clang
 /// was expecting instead.
-static bool shouldMinimizeBasedOnExtension(StringRef Filename) {
+static bool shouldScanForDirectivesBasedOnExtension(StringRef Filename) {
   StringRef Ext = llvm::sys::path::extension(Filename);
   if (Ext.empty())
     return true; // C++ standard library
@@ -228,24 +219,13 @@ static bool shouldCacheStatFailures(StringRef Filename) {
   StringRef Ext = llvm::sys::path::extension(Filename);
   if (Ext.empty())
     return false; // This may be the module cache directory.
-  return shouldMinimizeBasedOnExtension(
+  return shouldScanForDirectivesBasedOnExtension(
       Filename); // Only cache stat failures on source files.
 }
 
-void DependencyScanningCASFilesystem::disableMinimization(
+bool DependencyScanningCASFilesystem::shouldScanForDirectives(
     StringRef RawFilename) {
-  llvm::SmallString<256> Filename;
-  llvm::sys::path::native(RawFilename, Filename);
-  NotToBeMinimized.insert(Filename);
-}
-
-bool DependencyScanningCASFilesystem::shouldMinimize(StringRef RawFilename) {
-  if (!shouldMinimizeBasedOnExtension(RawFilename))
-    return false;
-
-  llvm::SmallString<256> Filename;
-  llvm::sys::path::native(RawFilename, Filename);
-  return !NotToBeMinimized.contains(Filename);
+  return shouldScanForDirectivesBasedOnExtension(RawFilename);
 }
 
 cas::CachingOnDiskFileSystem &DependencyScanningCASFilesystem::getCachingFS() {
@@ -281,26 +261,18 @@ DependencyScanningCASFilesystem::lookupPath(const Twine &Path) {
   if (MaybeStatus->isDirectory())
     return LookupPathResult{nullptr, std::move(MaybeStatus)};
 
-  llvm::ErrorOr<StringRef> Buffer = std::error_code();
-  llvm::Optional<llvm::cas::CASID> EffectiveID;
-  std::unique_ptr<PreprocessorSkippedRangeMapping> PPSkippedRangeMapping;
-  if (shouldMinimize(PathRef)) {
-    Optional<cas::ObjectRef> FileRef = CAS.getReference(*FileID);
-    assert(FileRef && "ID should still exist");
-    Buffer = expectedToErrorOr(computeMinimized(*FileRef, PathRef, EffectiveID,
-                                                PPSkippedRangeMapping));
-  } else {
-    Buffer = expectedToErrorOr(getOriginal(*FileID));
-    EffectiveID = *FileID;
-  }
-
   auto &Entry = Entries[PathRef];
+  Entry.ID = *FileID;
+  llvm::ErrorOr<StringRef> Buffer = expectedToErrorOr(getOriginal(*FileID));
   if (!Buffer) {
     // Cache CAS failures. Not going to recover later.
     Entry.EC = Buffer.getError();
     return LookupPathResult{&Entry, std::error_code()};
   }
-  assert(EffectiveID);
+
+  if (shouldScanForDirectives(PathRef))
+    scanForDirectives(*CAS.getReference(*FileID), PathRef, Entry.DepTokens,
+                      Entry.DepDirectives);
 
   Entry.Buffer = std::move(*Buffer);
   Entry.Status = llvm::vfs::Status(
@@ -308,8 +280,6 @@ DependencyScanningCASFilesystem::lookupPath(const Twine &Path) {
       MaybeStatus->getLastModificationTime(), MaybeStatus->getUser(),
       MaybeStatus->getGroup(), Entry.Buffer->size(), MaybeStatus->getType(),
       MaybeStatus->getPermissions());
-  Entry.ID = EffectiveID;
-  Entry.PPSkippedRangeMapping = std::move(PPSkippedRangeMapping);
   return LookupPathResult{&Entry, std::error_code()};
 }
 
@@ -341,9 +311,9 @@ DependencyScanningCASFilesystem::createThreadSafeProxyFS() {
 
 namespace {
 
-class MinimizedVFSFile final : public llvm::vfs::File {
+class DepScanFile final : public llvm::vfs::File {
 public:
-  MinimizedVFSFile(StringRef Buffer, llvm::vfs::Status Stat)
+  DepScanFile(StringRef Buffer, llvm::vfs::Status Stat)
       : Buffer(Buffer), Stat(std::move(Stat)) {}
 
   llvm::ErrorOr<llvm::vfs::Status> status() override { return Stat; }
@@ -377,10 +347,20 @@ DependencyScanningCASFilesystem::openFileForRead(const Twine &Path) {
   if (Result.Entry->EC)
     return Result.Entry->EC;
 
-  const auto *EntrySkipMappings = Result.Entry->PPSkippedRangeMapping.get();
-  if (EntrySkipMappings && !EntrySkipMappings->empty() && PPSkipMappings)
-    (*PPSkipMappings)[Result.Entry->Buffer->begin()] = EntrySkipMappings;
+  return std::make_unique<DepScanFile>(*Result.Entry->Buffer,
+                                       Result.Entry->Status);
+}
 
-  return std::make_unique<MinimizedVFSFile>(*Result.Entry->Buffer,
-                                            Result.Entry->Status);
+Optional<ArrayRef<dependency_directives_scan::Directive>>
+DependencyScanningCASFilesystem::getDirectiveTokens(const Twine &Path) const {
+  SmallString<256> PathStorage;
+  StringRef PathRef = Path.toStringRef(PathStorage);
+  auto I = Entries.find(PathRef);
+  if (I == Entries.end())
+    return None;
+
+  const FileEntry &Entry = I->second;
+  if (Entry.DepDirectives.empty())
+    return None;
+  return llvm::makeArrayRef(Entry.DepDirectives);
 }

@@ -214,30 +214,19 @@ public:
     }
     // CAS Implementation.
     if (DepCASFS) {
-      DepCASFS->enableMinimizationOfAllFiles();
-      // Don't minimize any files that contributed to prebuilt modules. The
-      // implicit build validates the modules by comparing the reported sizes of
-      // their inputs to the current state of the filesystem. Minimization would
-      // throw this mechanism off.
-      for (const auto &File : PrebuiltModulesInputFiles)
-        DepCASFS->disableMinimization(File.getKey());
-      // Don't minimize any files that were explicitly passed in the build
-      // settings and that might be opened.
-      for (const auto &E : ScanInstance.getHeaderSearchOpts().UserEntries)
-        DepCASFS->disableMinimization(E.Path);
-      for (const auto &F : ScanInstance.getHeaderSearchOpts().VFSOverlayFiles)
-        DepCASFS->disableMinimization(F);
-
       // Support for virtual file system overlays on top of the caching
       // filesystem.
       FileMgr->setVirtualFileSystem(createVFSFromCompilerInvocation(
           ScanInstance.getInvocation(), ScanInstance.getDiagnostics(),
           DepCASFS));
 
-      // Pass the skip mappings which should speed up excluded conditional block
-      // skipping in the preprocessor.
-      ScanInstance.getPreprocessorOpts()
-          .ExcludedConditionalDirectiveSkipMappings = &PPSkipMappings;
+      llvm::IntrusiveRefCntPtr<DependencyScanningCASFilesystem> LocalDepCASFS =
+          DepCASFS;
+      ScanInstance.getPreprocessorOpts().DependencyDirectivesForFile =
+          [LocalDepCASFS = std::move(LocalDepCASFS)](FileEntryRef File)
+          -> Optional<ArrayRef<dependency_directives_scan::Directive>> {
+        return LocalDepCASFS->getDirectiveTokens(File.getName());
+      };
     }
 
     // Create the dependency collector that will collect the produced
@@ -351,7 +340,7 @@ DependencyScanningWorker::DependencyScanningWorker(
 
   if (Service.getMode() == ScanningMode::DependencyDirectivesScan) {
     if (Service.useCASScanning())
-      DepCASFS = new DependencyScanningCASFilesystem(CacheFS, &PPSkipMappings);
+      DepCASFS = new DependencyScanningCASFilesystem(CacheFS);
     else
       DepFS = new DependencyScanningWorkerFilesystem(Service.getSharedCache(),
                                                      RealFS);
@@ -459,8 +448,8 @@ void DependencyScanningWorker::computeDependenciesFromCompilerInvocation(
   // FIXME: EmitDependencyFile should only be set when it's for a real
   // compilation.
   DependencyScanningAction Action(WorkingDirectory, DepsConsumer, getCASOpts(),
-                                  DepFS, DepCASFS, PPSkipMappings,
-                                  OverrideCASTokenCache, Format,
+                                  DepFS, DepCASFS, OverrideCASTokenCache,
+                                  Format,
                                   /*OptimizeArgs=*/false,
                                   /*EmitDependencyFile=*/true);
 

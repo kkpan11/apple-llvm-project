@@ -12,7 +12,7 @@
 // RUN: cp %S/Inputs/module.modulemap %t.dir/Inputs/module.modulemap
 // RUN: sed -e "s|DIR|%/t.dir|g" %S/Inputs/modules_cdb.json > %t.cdb
 //
-// RUN: clang-scan-deps -cas-path %t.dir/cas -format experimental-tree -compilation-database %t.cdb -j 1 -mode preprocess-minimized-sources | \
+// RUN: clang-scan-deps -cas-path %t.dir/cas -format experimental-tree -compilation-database %t.cdb -j 1 -mode preprocess-dependency-directives | \
 // RUN:   FileCheck %s
 
 #include "header.h"
