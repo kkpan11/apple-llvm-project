@@ -38,10 +38,11 @@ using namespace llvm::cas;
 using namespace llvm::casobjectformats;
 
 #ifndef NDEBUG
-// With assertions enabled do a check we get deterministic CASID for ingestion.
-constexpr unsigned DefaultRepeats = 1;
+    // With assertions enabled do a check we get deterministic CASID for
+    // ingestion.
+    constexpr unsigned DefaultRepeats = 1;
 #else
-constexpr unsigned DefaultRepeats = 0;
+    constexpr unsigned DefaultRepeats = 0;
 #endif
 
 cl::opt<int> NumThreads("num-threads", cl::desc("Num worker threads."));
@@ -420,6 +421,9 @@ struct StatCollector {
   size_t NumZeroFillBlocks = 0;
   size_t Num1TargetBlocks = 0;
   size_t Num2TargetBlocks = 0;
+  size_t TotalReferenceSize = 0;
+  size_t OptReferenceSize = 0;
+  size_t NumTinyObjects = 0;
 
   void visitPOT(ExitOnError &ExitOnErr, ArrayRef<CASID> TopLevels,
                 ArrayRef<POTItem> POT);
@@ -602,6 +606,31 @@ void StatCollector::visitPOTItemMCFlatV1(
   using namespace llvm::casobjectformats::flatv1;
   auto Object = ExitOnErr(Schema.getNode(Node));
   addNodeStats(Stats[Object.getKindString()]);
+
+  if (Object.getKindString() ==
+          llvm::mccasformats::flatv1::SubSectionRef::KindString) {
+    DenseSet<cas::CASID> UniqueChildren;
+    ExitOnErr(Object.forEachReferenceID([&](CASID ID) -> Error {
+      UniqueChildren.insert(ID);
+      return Error::success();
+    }));
+
+    size_t ReferenceSize = Object.getNumReferences() * sizeof(void *);
+
+    // Assume we don't overflow VBR8 (max 128) so each ref is 1 byte. This
+    // computes the lower bound if we use an array of the index to dedup CASID
+    // reference to its children.
+    size_t DedupSize =
+        UniqueChildren.size() * sizeof(void *) + Object.getNumReferences();
+
+    TotalReferenceSize += ReferenceSize;
+    OptReferenceSize += ReferenceSize > DedupSize ? DedupSize : ReferenceSize;
+  }
+
+  if (Object.getNumReferences() == 0 &&
+      Object.getData().size() <
+          (Object.getID().getHash().size() + sizeof(void *)))
+    ++NumTinyObjects;
 }
 
 static void computeStats(CASDB &CAS, ArrayRef<CASID> TopLevels,
@@ -788,6 +817,9 @@ void StatCollector::printToOuts(ArrayRef<CASID> TopLevels,
   printIfNotZero("num-zero-fill-blocks", NumZeroFillBlocks);
   printIfNotZero("num-1-target-blocks", Num2TargetBlocks);
   printIfNotZero("num-2-target-blocks", Num1TargetBlocks);
+  printIfNotZero("total-reference-size", TotalReferenceSize);
+  printIfNotZero("opt-reference-size", OptReferenceSize);
+  printIfNotZero("num-tiny-objects", NumTinyObjects);
 }
 
 static Error printCASObject(ObjectFormatSchemaPool &Pool, CASID ID, bool omitCASID) {

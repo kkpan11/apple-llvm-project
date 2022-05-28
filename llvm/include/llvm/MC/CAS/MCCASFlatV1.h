@@ -239,6 +239,33 @@ private:
   explicit PaddingRef(SpecificRefT Ref) : SpecificRefT(Ref) {}
 };
 
+class SubSectionRef : public SpecificRef<SubSectionRef> {
+  using SpecificRefT = SpecificRef<SubSectionRef>;
+  friend class SpecificRef<SubSectionRef>;
+
+public:
+  static constexpr StringLiteral KindString = "mc:sub_section";
+
+  static Expected<SubSectionRef> create(MCCASBuilder &MB,
+                                        ArrayRef<cas::CASID> Fragments);
+
+  static Expected<SubSectionRef> get(Expected<MCNodeProxy> Ref);
+  static Expected<SubSectionRef> get(const MCSchema &Schema, cas::CASID ID) {
+    return get(Schema.getNode(ID));
+  }
+  static Optional<SubSectionRef> Cast(MCNodeProxy Ref) {
+    auto Specific = SpecificRefT::Cast(Ref);
+    if (!Specific)
+      return None;
+    return SubSectionRef(*Specific);
+  }
+
+  Expected<uint64_t> materialize(MCCASReader &Reader) const;
+
+private:
+  explicit SubSectionRef(SpecificRefT Ref) : SpecificRefT(Ref) {}
+};
+
 class MCAssemblerRef : public SpecificRef<MCAssemblerRef> {
   using SpecificRefT = SpecificRef<MCAssemblerRef>;
   friend class SpecificRef<MCAssemblerRef>;
@@ -285,7 +312,13 @@ public:
   Error buildDataInCodeRegion();
   Error buildSymbolTable();
 
+  void startSubSection(const MCSymbol *Atom = nullptr);
   void addNode(cas::NodeProxy Node);
+  Error finalizeSubSection();
+  const MCSymbol *getCurrentAtom() const {
+    return SectionContext.back().CurrentAtom;
+  }
+
   Error buildFragment(const MCFragment &F, unsigned FragmentSize);
 
   // Scratch space
@@ -294,15 +327,17 @@ public:
 private:
   friend class MCAssemblerRef;
 
+  struct SubSectionContext {
+    SmallVector<cas::CASID> Fragments;
+    const MCSymbol *CurrentAtom;
+  };
+
   // Helper functions.
   Error createStringSection(StringRef S,
                             std::function<Error(StringRef)> CreateFn);
 
-  unsigned SymTableSize = 0;
-  DenseMap<cas::CASID, unsigned> CASIDMap;
-  std::vector<unsigned> FragmentIDs;
-  std::vector<cas::CASID> Fragments;
-  SmallVector<cas::CASID, 4> Sections;
+  SmallVector<SubSectionContext, 2> SectionContext;
+  SmallVector<cas::CASID> Sections;
 };
 
 class MCCASReader {
