@@ -3328,14 +3328,14 @@ TEST(CompletionTest, Concepts) {
   std::vector<Symbol> Syms = {conceptSym("same_as")};
   for (auto P : Code.points("tparam")) {
     ASSERT_THAT(completions(TU, P, Syms).Completions,
-                AllOf(Contains(named("A")), Contains(named("same_as")),
-                      Contains(named("class")), Contains(named("typename"))))
+                AllOf(Contains(Named("A")), Contains(Named("same_as")),
+                      Contains(Named("class")), Contains(Named("typename"))))
         << "Completing template parameter at position " << P;
   }
 
   for (auto P : Code.points("other")) {
     EXPECT_THAT(completions(TU, P, Syms).Completions,
-                AllOf(Contains(named("A")), Contains(named("same_as"))))
+                AllOf(Contains(Named("A")), Contains(Named("same_as"))))
         << "Completing 'requires' expression at position " << P;
   }
 }
