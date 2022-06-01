@@ -1858,7 +1858,7 @@ TEST_F(SymbolCollectorTest, Concepts) {
   runSymbolCollector("", Header, {"-std=c++20"});
   EXPECT_THAT(Symbols,
               UnorderedElementsAre(AllOf(
-                  qName("A"), hasKind(clang::index::SymbolKind::Concept))));
+                  QName("A"), hasKind(clang::index::SymbolKind::Concept))));
 }
 
 } // namespace
