@@ -512,7 +512,7 @@ Optional<int> CompileJobCache::replayCachedResult(llvm::cas::ObjectRef ResultID,
 
     Optional<StringRef> Contents;
     SmallString<50> ContentsStorage;
-    if (Path->getData() == OutputFile) {
+    if (Path->getData() == OutputFile && ComputedJobNeedsReplay) {
       llvm::raw_svector_ostream OS(ContentsStorage);
       if (WriteOutputAsCASID)
         llvm::cas::writeCASIDBuffer(BytesID, OS);
@@ -535,10 +535,6 @@ Optional<int> CompileJobCache::replayCachedResult(llvm::cas::ObjectRef ResultID,
             std::make_unique<llvm::mccasformats::flatv1::MCSchema>(*CAS);
         if (auto E = Schema->serializeObjectFile(*CASObj, OS))
           report_fatal_error(std::move(E));
-      } else {
-        Optional<llvm::cas::BlobProxy> Bytes;
-        if (Error E = CAS->getBlob(BytesID).moveInto(Bytes))
-          llvm::report_fatal_error(std::move(E));
       }
       Contents = ContentsStorage;
     } else if (JustComputedResult) {

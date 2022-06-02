@@ -77,7 +77,6 @@ add_llvm_component_library(LLVMMC
   Support
   BinaryFormat
   CAS
-  CASObjectFormats
   DebugInfoCodeView
   )
 
