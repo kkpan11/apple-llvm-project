@@ -41,7 +41,6 @@
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/WithColor.h"
 #include "llvm/Target/TargetOptions.h"
-#include "llvm/Target/TargetOptions.h"
 
 using namespace llvm;
 
@@ -574,10 +573,11 @@ int main(int argc, char **argv) {
     MCAsmBackend *MAB = TheTarget->createMCAsmBackend(*STI, *MRI, MCOptions);
     Str.reset(TheTarget->createMCObjectStreamer(
         TheTriple, Ctx, std::unique_ptr<MCAsmBackend>(MAB),
-        UseCASBackend ? MAB->createCASObjectWriter(*OS, TheTriple, *CASDB,
-                                                   llvm::CASBackendMode::Native)
-        : DwoOut      ? MAB->createDwoObjectWriter(*OS, DwoOut->os())
-                      : MAB->createObjectWriter(*OS),
+        UseCASBackend
+            ? MAB->createCASObjectWriter(*OS, TheTriple, *CASDB, MCOptions,
+                                         llvm::CASBackendMode::Verify)
+        : DwoOut ? MAB->createDwoObjectWriter(*OS, DwoOut->os())
+                 : MAB->createObjectWriter(*OS),
         std::unique_ptr<MCCodeEmitter>(CE), *STI, MCOptions.MCRelaxAll,
         MCOptions.MCIncrementalLinkerCompatible,
         /*DWARFMustBeAtTheEnd*/ false));

@@ -56,15 +56,15 @@ MCAsmBackend::createObjectWriter(raw_pwrite_stream &OS) const {
   }
 }
 
-std::unique_ptr<MCObjectWriter>
-MCAsmBackend::createCASObjectWriter(raw_pwrite_stream &OS, const Triple &TT,
-                                    cas::CASDB &CAS,
-                                    CASBackendMode Mode) const {
+std::unique_ptr<MCObjectWriter> MCAsmBackend::createCASObjectWriter(
+    raw_pwrite_stream &OS, const Triple &TT, cas::CASDB &CAS,
+    const MCTargetOptions &MCOpts, CASBackendMode Mode) const {
   auto TW = createObjectTargetWriter();
   switch (TW->getFormat()) {
   case Triple::MachO:
     return createMachOCASWriter(cast<MCMachObjectTargetWriter>(std::move(TW)),
-                                TT, CAS, Mode, OS, Endian == support::little);
+                                TT, CAS, Mode, OS, Endian == support::little,
+                                MCOpts.ResultCallBack);
   default:
     llvm_unreachable("unexpected object format");
   }

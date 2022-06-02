@@ -27,6 +27,9 @@ public:
   /// Create a top-level tree for all created files. This will contain all files
   Expected<NodeProxy> createNode();
 
+  /// Add a CAS object to the path in the output backend.
+  Error addObject(StringRef Path, const CASID &Object);
+
 private:
   Expected<std::unique_ptr<vfs::OutputFileImpl>>
   createFileImpl(StringRef Path, Optional<vfs::OutputConfig> Config) override;

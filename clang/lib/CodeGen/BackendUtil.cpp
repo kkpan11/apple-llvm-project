@@ -457,6 +457,10 @@ static bool initTargetOptions(DiagnosticsEngine &Diags,
     break;
   }
 
+  // CASOpts.
+  Options.MCOptions.CASDB = CASOpts.getOrCreateCAS(Diags);
+  Options.MCOptions.ResultCallBack = CodeGenOpts.MCCallBack;
+
   Options.MCOptions.SplitDwarfFile = CodeGenOpts.SplitDwarfFile;
   Options.MCOptions.MCRelaxAll = CodeGenOpts.RelaxAll;
   Options.MCOptions.MCSaveTempLabels = CodeGenOpts.SaveTempLabels;
@@ -563,9 +567,6 @@ void EmitAssemblyHelper::CreateTargetMachine(bool MustCreateTM) {
     return;
   TM.reset(TheTarget->createTargetMachine(Triple, TargetOpts.CPU, FeaturesStr,
                                           Options, RM, CM, OptLevel));
-
-  if (auto CASDB = CASOpts.getOrCreateCAS(Diags))
-    TM->setCASDB(CASDB);
 }
 
 bool EmitAssemblyHelper::AddEmitPasses(legacy::PassManager &CodeGenPasses,

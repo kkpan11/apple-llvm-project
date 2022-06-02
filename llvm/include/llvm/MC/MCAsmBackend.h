@@ -83,7 +83,8 @@ public:
   /// Create a CAS object writer for the assembler backend.
   std::unique_ptr<MCObjectWriter>
   createCASObjectWriter(raw_pwrite_stream &OS, const Triple &TT,
-                        cas::CASDB &CAS, CASBackendMode Mode)const;
+                        cas::CASDB &CAS, const MCTargetOptions &MCOpts,
+                        CASBackendMode Mode) const;
 
   /// Create an MCObjectWriter that writes two object files: a .o file which is
   /// linked into the final program and a .dwo file which is used by debuggers.

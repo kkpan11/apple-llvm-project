@@ -50,11 +50,13 @@ using namespace llvm::mccasformats;
 
 #define DEBUG_TYPE "mc"
 
-MachOCASWriter::MachOCASWriter(std::unique_ptr<MCMachObjectTargetWriter> MOTW,
-                               const Triple &TT, cas::CASDB &CAS,
-                               CASBackendMode Mode, raw_pwrite_stream &OS,
-                               bool IsLittleEndian)
-    : Target(TT), CAS(CAS), Mode(Mode), OS(OS), InternalOS(InternalBuffer),
+MachOCASWriter::MachOCASWriter(
+    std::unique_ptr<MCMachObjectTargetWriter> MOTW, const Triple &TT,
+    cas::CASDB &CAS, CASBackendMode Mode, raw_pwrite_stream &OS,
+    bool IsLittleEndian,
+    Optional<MCTargetOptions::ResultCallBackTy> ResultCallBack)
+    : Target(TT), CAS(CAS), Mode(Mode), ResultCallBack(ResultCallBack), OS(OS),
+      InternalOS(InternalBuffer),
       MOW(std::move(MOTW), InternalOS, IsLittleEndian) {
   assert(TT.isLittleEndian() == IsLittleEndian && "Endianess should match");
 }
@@ -64,6 +66,29 @@ uint64_t MachOCASWriter::writeObject(MCAssembler &Asm,
   uint64_t StartOffset = OS.tell();
   auto Schema = std::make_unique<flatv1::MCSchema>(CAS);
   auto CASObj = cantFail(Schema->createFromMCAssembler(*this, Asm, Layout));
+
+  auto VerifyObject = [&]() -> Error {
+    SmallString<512> ObjectBuffer;
+    raw_svector_ostream ObjectOS(ObjectBuffer);
+    if (auto E = Schema->serializeObjectFile(CASObj, ObjectOS))
+      return E;
+
+    if (!ObjectBuffer.equals(InternalBuffer))
+      return createStringError(
+          inconvertibleErrorCode(),
+          "CASBackend output round-trip verification error");
+
+    return Error::success();
+  };
+  // If there is a callback, then just hand off the result through callback.
+  if (ResultCallBack) {
+    cantFail((*ResultCallBack)(CASObj.getID()));
+    if (Mode == CASBackendMode::Verify) {
+      if (auto E = VerifyObject())
+        report_fatal_error(std::move(E));
+    }
+    return 0;
+  }
 
   switch (Mode) {
   case CASBackendMode::CASID:
@@ -93,11 +118,11 @@ uint64_t MachOCASWriter::writeObject(MCAssembler &Asm,
   return OS.tell() - StartOffset;
 }
 
-std::unique_ptr<MCObjectWriter>
-llvm::createMachOCASWriter(std::unique_ptr<MCMachObjectTargetWriter> MOTW,
-                           const Triple &TT, cas::CASDB &CAS,
-                           CASBackendMode Mode, raw_pwrite_stream &OS,
-                           bool IsLittleEndian) {
+std::unique_ptr<MCObjectWriter> llvm::createMachOCASWriter(
+    std::unique_ptr<MCMachObjectTargetWriter> MOTW, const Triple &TT,
+    cas::CASDB &CAS, CASBackendMode Mode, raw_pwrite_stream &OS,
+    bool IsLittleEndian,
+    Optional<MCTargetOptions::ResultCallBackTy> ResultCallBack) {
   return std::make_unique<MachOCASWriter>(std::move(MOTW), TT, CAS, Mode, OS,
-                                          IsLittleEndian);
+                                          IsLittleEndian, ResultCallBack);
 }

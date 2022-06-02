@@ -269,6 +269,7 @@ private:
   std::unique_ptr<llvm::raw_ostream> ResultDiagsOS;
   IntrusiveRefCntPtr<llvm::cas::CASOutputBackend> CASOutputs;
   std::string OutputFile;
+  Optional<llvm::cas::CASID> MCOutputID;
 };
 } // end anonymous namespace
 
@@ -301,9 +302,11 @@ Optional<int> CompileJobCache::initialize(CompilerInstance &Clang) {
   // other outputs during replay.
   WriteOutputAsCASID = Invocation.getFrontendOpts().WriteOutputAsCASID;
   Invocation.getFrontendOpts().WriteOutputAsCASID = false;
-  // FIXME: Hack, use CASIDFile to communicate CASID to replay job.
   UseCASBackend = Invocation.getCodeGenOpts().UseCASBackend;
-  Invocation.getCodeGenOpts().setCASObjMode(llvm::CASBackendMode::CASID);
+  Invocation.getCodeGenOpts().MCCallBack = [&](const llvm::cas::CASID &ID) {
+    MCOutputID = ID;
+    return Error::success();
+  };
   ComputedJobNeedsReplay |= WriteOutputAsCASID || UseCASBackend;
 
   // TODO: Canonicalize OutputFile to "-" here. During replay, move it and
@@ -384,8 +387,15 @@ Optional<int> CompileJobCache::tryReplayCachedResult(CompilerInstance &Clang) {
   // Set up the output backend so we can save / cache the result after.
   CASOutputs = llvm::makeIntrusiveRefCnt<llvm::cas::CASOutputBackend>(*CAS);
 
+  // When use CAS backend, filter out the output object file.
+  auto FilterBackend = llvm::vfs::makeFilteringOutputBackend(
+      CASOutputs,
+      [&](StringRef Path, Optional<llvm::vfs::OutputConfig> Config) {
+        return !(UseCASBackend && Path.equals(OutputFile));
+      });
+
   Clang.setOutputBackend(llvm::vfs::makeMirroringOutputBackend(
-      CASOutputs, std::move(OnDiskOutputs)));
+      FilterBackend, std::move(OnDiskOutputs)));
   ResultDiagsOS = std::make_unique<raw_mirroring_ostream>(
       llvm::errs(), std::make_unique<llvm::raw_svector_ostream>(ResultDiags));
 
@@ -423,6 +433,12 @@ void CompileJobCache::finishComputedResult(CompilerInstance &Clang,
     return;
 
   // FIXME: Stop calling report_fatal_error().
+  // Add the MC output to the CAS Outputs.
+  if (MCOutputID) {
+    if (auto E = CASOutputs->addObject(OutputFile, *MCOutputID))
+      llvm::report_fatal_error(std::move(E));
+  }
+
   Expected<llvm::cas::NodeProxy> Outputs = CASOutputs->createNode();
   if (!Outputs)
     llvm::report_fatal_error(Outputs.takeError());
@@ -501,16 +517,7 @@ Optional<int> CompileJobCache::replayCachedResult(llvm::cas::ObjectRef ResultID,
       if (WriteOutputAsCASID)
         llvm::cas::writeCASIDBuffer(BytesID, OS);
       else if (UseCASBackend) {
-        // Replay by write out object file. Current hack is pass CASBackend
-        // serialization in CASIDFile. Read out the CASID and serialize out to
-        // object file.
-        Optional<llvm::cas::BlobProxy> Bytes;
-        if (Error E = CAS->getBlob(BytesID).moveInto(Bytes))
-          llvm::report_fatal_error(std::move(E));
-        auto Buf = llvm::MemoryBuffer::getMemBufferCopy(Bytes->getData());
-        auto MCCASID = llvm::cas::readCASIDBuffer(*CAS, *Buf);
-        if (!MCCASID)
-          report_fatal_error(MCCASID.takeError());
+        // Replay by write out object file.
         // When the environmental variable is set, save the backend CASID for
         // analysis later.
         if (llvm::sys::Process::GetEnv("CLANG_CAS_BACKEND_SAVE_CASID_FILE")) {
@@ -519,10 +526,10 @@ Optional<int> CompileJobCache::replayCachedResult(llvm::cas::ObjectRef ResultID,
           llvm::raw_fd_ostream IDOS(CASIDPath, EC);
           if (EC)
             report_fatal_error(llvm::errorCodeToError(EC));
-          IDOS << Bytes->getData();
+          writeCASIDBuffer(BytesID, IDOS);
         }
         Optional<llvm::cas::NodeProxy> CASObj;
-        if (Error E = CAS->getNode(*MCCASID).moveInto(CASObj))
+        if (Error E = CAS->getNode(BytesID).moveInto(CASObj))
           llvm::report_fatal_error(std::move(E));
         auto Schema =
             std::make_unique<llvm::mccasformats::flatv1::MCSchema>(*CAS);

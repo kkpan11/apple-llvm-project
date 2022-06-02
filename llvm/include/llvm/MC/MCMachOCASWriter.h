@@ -30,6 +30,7 @@ namespace llvm {
 
 namespace cas {
 class CASDB;
+class CASID;
 } // namespace cas
 
 class MachOCASWriter : public MCObjectWriter {
@@ -38,10 +39,12 @@ public:
   const Triple Target;
   cas::CASDB &CAS;
   CASBackendMode Mode;
+  Optional<MCTargetOptions::ResultCallBackTy> ResultCallBack;
 
   MachOCASWriter(std::unique_ptr<MCMachObjectTargetWriter> MOTW,
                  const Triple &TT, cas::CASDB &CAS, CASBackendMode Mode,
-                 raw_pwrite_stream &OS, bool IsLittleEndian);
+                 raw_pwrite_stream &OS, bool IsLittleEndian,
+                 Optional<MCTargetOptions::ResultCallBackTy> CallBack);
 
   void recordRelocation(MCAssembler &Asm, const MCAsmLayout &Layout,
                         const MCFragment *Fragment, const MCFixup &Fixup,
@@ -127,10 +130,11 @@ private:
 /// \param CAS - The CASDB instance.
 /// \param OS - The stream to write to.
 /// \returns The constructed object writer.
-std::unique_ptr<MCObjectWriter>
-createMachOCASWriter(std::unique_ptr<MCMachObjectTargetWriter> MOTW,
-                     const Triple &TT, cas::CASDB &CAS, CASBackendMode Mode,
-                     raw_pwrite_stream &OS, bool IsLittleEndian);
+std::unique_ptr<MCObjectWriter> createMachOCASWriter(
+    std::unique_ptr<MCMachObjectTargetWriter> MOTW, const Triple &TT,
+    cas::CASDB &CAS, CASBackendMode Mode, raw_pwrite_stream &OS,
+    bool IsLittleEndian,
+    Optional<MCTargetOptions::ResultCallBackTy> CallBack = None);
 
 } // end namespace llvm
 
