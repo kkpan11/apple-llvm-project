@@ -216,6 +216,10 @@ static cl::opt<bool> NoExecStack("no-exec-stack",
                                  cl::desc("File doesn't need an exec stack"),
                                  cl::cat(MCCategory));
 
+static cl::opt<bool> UseMCCASBackend("cas-backend",
+                                     cl::desc("Use MCCAS backend"),
+                                     cl::cat(MCCategory));
+
 enum ActionType {
   AC_AsLex,
   AC_Assemble,
@@ -566,8 +570,9 @@ int main(int argc, char **argv) {
     }
 
     // This is used for testing llvm-mc with CASBackend.
-    bool UseCASBackend = (TheTriple.getObjectFormat() == Triple::MachO) &&
-                         llvm::sys::Process::GetEnv("LLVM_TEST_CAS_BACKEND");
+    bool UseCASBackend = UseMCCASBackend ||
+                         ((TheTriple.getObjectFormat() == Triple::MachO) &&
+                          llvm::sys::Process::GetEnv("LLVM_TEST_CAS_BACKEND"));
 
     MCCodeEmitter *CE = TheTarget->createMCCodeEmitter(*MCII, Ctx);
     MCAsmBackend *MAB = TheTarget->createMCAsmBackend(*STI, *MRI, MCOptions);
