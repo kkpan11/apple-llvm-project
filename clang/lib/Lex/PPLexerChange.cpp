@@ -75,7 +75,21 @@ bool Preprocessor::EnterSourceFile(FileID FID, ConstSearchDirIterator CurDir,
   if (MaxIncludeStackDepth < IncludeMacroStack.size())
     MaxIncludeStackDepth = IncludeMacroStack.size();
 
-  if (PTH) {
+  ArrayRef<dependency_directives_scan::Directive> ScannedDepDirectives;
+  if (getPreprocessorOpts().DependencyDirectivesForFile &&
+      FID != PredefinesFileID) {
+    if (Optional<FileEntryRef> File = SourceMgr.getFileEntryRefForID(FID)) {
+      if (Optional<ArrayRef<dependency_directives_scan::Directive>>
+              DepDirectives =
+                  getPreprocessorOpts().DependencyDirectivesForFile(*File)) {
+        ScannedDepDirectives = *DepDirectives;
+      }
+    }
+  }
+
+  // Avoid using \p PTHLexer if we have pre-lexed dependency directives, the
+  // dependency directives will result in much more efficient lexing.
+  if (PTH && ScannedDepDirectives.empty()) {
     if (std::unique_ptr<PTHLexer> PL = PTH->createLexer(FID)) {
       EnterSourceFileWithPTH(std::move(PL), CurDir);
       return false;
@@ -100,16 +114,7 @@ bool Preprocessor::EnterSourceFile(FileID FID, ConstSearchDirIterator CurDir,
   }
 
   Lexer *TheLexer = new Lexer(FID, *InputFile, *this, IsFirstIncludeOfFile);
-  if (getPreprocessorOpts().DependencyDirectivesForFile &&
-      FID != PredefinesFileID) {
-    if (Optional<FileEntryRef> File = SourceMgr.getFileEntryRefForID(FID)) {
-      if (Optional<ArrayRef<dependency_directives_scan::Directive>>
-              DepDirectives =
-                  getPreprocessorOpts().DependencyDirectivesForFile(*File)) {
-        TheLexer->DepDirectives = *DepDirectives;
-      }
-    }
-  }
+  TheLexer->DepDirectives = ScannedDepDirectives;
 
   EnterSourceFileWithLexer(TheLexer, CurDir);
   return false;
