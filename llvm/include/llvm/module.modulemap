@@ -328,6 +328,8 @@ module LLVM_MC {
 
   umbrella "MC"
   module * { export * }
+
+  textual header "MC/CAS/MCCASFlatV1.def"
 }
 
 // Used by llvm-tblgen
