@@ -424,6 +424,8 @@ struct StatCollector {
   size_t TotalReferenceSize = 0;
   size_t OptReferenceSize = 0;
   size_t NumTinyObjects = 0;
+  size_t SecRelocSize = 0;
+  size_t AtomRelocSize = 0;
 
   void visitPOT(ExitOnError &ExitOnErr, ArrayRef<CASID> TopLevels,
                 ArrayRef<POTItem> POT);
@@ -608,7 +610,11 @@ void StatCollector::visitPOTItemMCFlatV1(
   addNodeStats(Stats[Object.getKindString()]);
 
   if (Object.getKindString() ==
-          llvm::mccasformats::flatv1::SubSectionRef::KindString) {
+          llvm::mccasformats::flatv1::GroupRef::KindString ||
+      Object.getKindString() ==
+          llvm::mccasformats::flatv1::SectionRef::KindString ||
+      Object.getKindString() ==
+          llvm::mccasformats::flatv1::AtomRef::KindString) {
     DenseSet<cas::CASID> UniqueChildren;
     ExitOnErr(Object.forEachReferenceID([&](CASID ID) -> Error {
       UniqueChildren.insert(ID);
@@ -631,6 +637,17 @@ void StatCollector::visitPOTItemMCFlatV1(
       Object.getData().size() <
           (Object.getID().getHash().size() + sizeof(void *)))
     ++NumTinyObjects;
+
+  if (Object.getKindString() ==
+      llvm::mccasformats::flatv1::SectionRef::KindString) {
+    if (!Object.getData().empty())
+      SecRelocSize += Object.getData().size();
+  }
+  if (Object.getKindString() ==
+      llvm::mccasformats::flatv1::AtomRef::KindString) {
+    if (!Object.getData().empty())
+      AtomRelocSize += Object.getData().size();
+  }
 }
 
 static void computeStats(CASDB &CAS, ArrayRef<CASID> TopLevels,
@@ -820,6 +837,8 @@ void StatCollector::printToOuts(ArrayRef<CASID> TopLevels,
   printIfNotZero("total-reference-size", TotalReferenceSize);
   printIfNotZero("opt-reference-size", OptReferenceSize);
   printIfNotZero("num-tiny-objects", NumTinyObjects);
+  printIfNotZero("sec-reloc-size", SecRelocSize);
+  printIfNotZero("atom-reloc-size", AtomRelocSize);
 }
 
 static Error printCASObject(ObjectFormatSchemaPool &Pool, CASID ID, bool omitCASID) {

@@ -86,10 +86,7 @@ public:
   }
 
   void writeSectionData(MCAssembler &Asm, const MCAsmLayout &Layout) {
-    // Only need to do this for verify mode so we compare the output byte by
-    // byte.
-    if (Mode == CASBackendMode::Verify)
-      MOW.writeSectionData(Asm, Layout);
+    MOW.writeSectionData(Asm, Layout);
   }
 
   void writeRelocations(MCAssembler &Asm, const MCAsmLayout &Layout) {
@@ -109,6 +106,11 @@ public:
   void resetBuffer() { OSOffset = InternalOS.tell(); }
 
   StringRef getContent() const { return InternalBuffer.substr(OSOffset); }
+
+  DenseMap<const MCSection *, std::vector<MachObjectWriter::RelAndSymbol>> &
+  getRelocations() {
+    return MOW.getRelocations();
+  }
 
 private:
   raw_pwrite_stream &OS;
