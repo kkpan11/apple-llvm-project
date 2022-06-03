@@ -19,6 +19,7 @@
 #include "llvm/ExecutionEngine/JITLink/JITLink.h"
 #include "llvm/ExecutionEngine/JITLink/MachO.h"
 #include "llvm/ExecutionEngine/JITLink/MachO_x86_64.h"
+#include "llvm/MC/CAS/MCCASFlatV1.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FileOutputBuffer.h"
@@ -30,16 +31,18 @@
 #include "llvm/Support/StringSaver.h"
 #include "llvm/Support/ThreadPool.h"
 #include "llvm/Support/raw_ostream.h"
+#include <memory>
 
 using namespace llvm;
 using namespace llvm::cas;
 using namespace llvm::casobjectformats;
 
 #ifndef NDEBUG
-// With assertions enabled do a check we get deterministic CASID for ingestion.
-constexpr unsigned DefaultRepeats = 1;
+    // With assertions enabled do a check we get deterministic CASID for
+    // ingestion.
+    constexpr unsigned DefaultRepeats = 1;
 #else
-constexpr unsigned DefaultRepeats = 0;
+    constexpr unsigned DefaultRepeats = 0;
 #endif
 
 cl::opt<int> NumThreads("num-threads", cl::desc("Num worker threads."));
@@ -47,6 +50,8 @@ cl::opt<bool> Dump("dump", cl::desc("Dump link-graph."));
 cl::opt<bool>
     JustBlobs("just-blobs",
               cl::desc("Just ingest blobs, instead of breaking up files."));
+cl::opt<bool> CASIDFile("casid-file",
+                        cl::desc("Input is CASID file, just ingest CASID."));
 cl::opt<std::string> CASIDOutput("casid-output",
                                  cl::desc("Write output as embedded CASID"));
 cl::opt<bool> DebugIngest("debug-ingest",
@@ -73,6 +78,9 @@ cl::opt<std::string>
     IngestSchemaName("ingest-schema",
                      cl::desc("object file schema to ingest with"),
                      cl::init("nestedv1"));
+cl::opt<std::string> OutputPrefix("output-prefix",
+                                  cl::desc("output object file prefix"),
+                                  cl::init("."));
 
 enum InputKind {
   IngestFromFS,
@@ -80,6 +88,7 @@ enum InputKind {
   AnalysisCASTree,
   PrintCASTree,
   PrintCASObject,
+  MaterializeObjects,
 };
 
 cl::opt<InputKind> InputFileKind(
@@ -92,6 +101,8 @@ cl::opt<InputKind> InputFileKind(
                           "analyze converted objects from cas tree"),
                clEnumValN(PrintCASTree, "print-cas-tree",
                           "print cas object from cas tree ID"),
+               clEnumValN(MaterializeObjects, "materialize-objects",
+                          "materialize objects from CAS tree"),
                clEnumValN(PrintCASObject, "print-cas-object",
                           "print cas object from cas object ID")),
     cl::init(InputKind::IngestFromFS));
@@ -147,6 +158,7 @@ static ObjectRef ingestFile(ObjectFormatSchemaBase &Schema, StringRef InputFile,
 static void computeStats(CASDB &CAS, ArrayRef<CASID> IDs, raw_ostream &StatOS);
 static Error printCASObjectOrTree(ObjectFormatSchemaPool &Pool, CASID ID, bool omitCASID);
 static Error printCASObject(ObjectFormatSchemaPool &Pool, CASID ID, bool omitCASID);
+static Error materializeObjectsFromCASTree(CASDB &CAS, CASID ID);
 
 int main(int argc, char *argv[]) {
   ExitOnError ExitOnErr;
@@ -203,6 +215,12 @@ int main(int argc, char *argv[]) {
       auto ID = ExitOnErr(CAS->parseID(IF));
       ExitOnErr(printCASObject(SchemaPool, ID, omitCASID));
       break;
+    }
+
+    case MaterializeObjects: {
+      auto ID = ExitOnErr(CAS->parseID(IF));
+      ExitOnErr(materializeObjectsFromCASTree(*CAS, ID));
+      return 0;
     }
 
     case IngestFromFS: {
@@ -335,7 +353,7 @@ struct NodeInfo {
 
 struct POTItem {
   CASID ID;
-  const ObjectFormatSchemaBase *Schema = nullptr;
+  const NodeSchema *Schema = nullptr;
 };
 
 struct ObjectKindInfo {
@@ -359,11 +377,12 @@ struct StatCollector {
   // FIXME: Utilize \p SchemaPool.
   nestedv1::ObjectFileSchema NestedV1Schema;
   flatv1::ObjectFileSchema FlatV1Schema;
-  SmallVector<std::pair<const ObjectFormatSchemaBase *, POTItemHandler>>
+  llvm::mccasformats::flatv1::MCSchema MCFlatV1Schema;
+  SmallVector<std::pair<const NodeSchema*, POTItemHandler>>
       Schemas;
 
   StatCollector(CASDB &CAS)
-      : CAS(CAS), NestedV1Schema(CAS), FlatV1Schema(CAS) {
+      : CAS(CAS), NestedV1Schema(CAS), FlatV1Schema(CAS), MCFlatV1Schema(CAS) {
     Schemas.push_back(std::make_pair(
         &NestedV1Schema,
         [&](ExitOnError &ExitOnErr,
@@ -377,6 +396,13 @@ struct StatCollector {
             function_ref<void(ObjectKindInfo & Info)> addNodeStats,
             cas::NodeProxy Node) {
           visitPOTItemFlatV1(ExitOnErr, FlatV1Schema, addNodeStats, Node);
+        }));
+    Schemas.push_back(std::make_pair(
+        &MCFlatV1Schema,
+        [&](ExitOnError &ExitOnErr,
+            function_ref<void(ObjectKindInfo & Info)> addNodeStats,
+            cas::NodeProxy Node) {
+          visitPOTItemMCFlatV1(ExitOnErr, MCFlatV1Schema, addNodeStats, Node);
         }));
   }
 
@@ -395,6 +421,9 @@ struct StatCollector {
   size_t NumZeroFillBlocks = 0;
   size_t Num1TargetBlocks = 0;
   size_t Num2TargetBlocks = 0;
+  size_t TotalReferenceSize = 0;
+  size_t OptReferenceSize = 0;
+  size_t NumTinyObjects = 0;
 
   void visitPOT(ExitOnError &ExitOnErr, ArrayRef<CASID> TopLevels,
                 ArrayRef<POTItem> POT);
@@ -408,6 +437,11 @@ struct StatCollector {
                           flatv1::ObjectFileSchema &Schema,
                           function_ref<void(ObjectKindInfo &Info)> addNodeStats,
                           cas::NodeProxy Node);
+  void
+  visitPOTItemMCFlatV1(ExitOnError &ExitOnErr,
+                       llvm::mccasformats::flatv1::MCSchema &Schema,
+                       function_ref<void(ObjectKindInfo &Info)> addNodeStats,
+                       cas::NodeProxy Node);
   void printToOuts(ArrayRef<CASID> TopLevels, raw_ostream &StatOS);
 };
 } // end namespace
@@ -565,6 +599,40 @@ void StatCollector::visitPOTItemFlatV1(
   addNodeStats(Stats[Object.getKindString()]);
 }
 
+void StatCollector::visitPOTItemMCFlatV1(
+    ExitOnError &ExitOnErr, llvm::mccasformats::flatv1::MCSchema &Schema,
+    function_ref<void(ObjectKindInfo &Info)> addNodeStats,
+    cas::NodeProxy Node) {
+  using namespace llvm::casobjectformats::flatv1;
+  auto Object = ExitOnErr(Schema.getNode(Node));
+  addNodeStats(Stats[Object.getKindString()]);
+
+  if (Object.getKindString() ==
+          llvm::mccasformats::flatv1::SubSectionRef::KindString) {
+    DenseSet<cas::CASID> UniqueChildren;
+    ExitOnErr(Object.forEachReferenceID([&](CASID ID) -> Error {
+      UniqueChildren.insert(ID);
+      return Error::success();
+    }));
+
+    size_t ReferenceSize = Object.getNumReferences() * sizeof(void *);
+
+    // Assume we don't overflow VBR8 (max 128) so each ref is 1 byte. This
+    // computes the lower bound if we use an array of the index to dedup CASID
+    // reference to its children.
+    size_t DedupSize =
+        UniqueChildren.size() * sizeof(void *) + Object.getNumReferences();
+
+    TotalReferenceSize += ReferenceSize;
+    OptReferenceSize += ReferenceSize > DedupSize ? DedupSize : ReferenceSize;
+  }
+
+  if (Object.getNumReferences() == 0 &&
+      Object.getData().size() <
+          (Object.getID().getHash().size() + sizeof(void *)))
+    ++NumTinyObjects;
+}
+
 static void computeStats(CASDB &CAS, ArrayRef<CASID> TopLevels,
                          raw_ostream &StatOS) {
   ExitOnError ExitOnErr;
@@ -579,7 +647,7 @@ static void computeStats(CASDB &CAS, ArrayRef<CASID> TopLevels,
     CASID ID;
     bool Visited;
     StringRef Path;
-    const ObjectFormatSchemaBase *Schema = nullptr;
+    const NodeSchema *Schema = nullptr;
   };
   SmallVector<WorklistItem> Worklist;
   SmallVector<POTItem> POT;
@@ -590,7 +658,7 @@ static void computeStats(CASDB &CAS, ArrayRef<CASID> TopLevels,
     GlobP.emplace(ExitOnErr(GlobPattern::create(CASGlob)));
 
   auto push = [&](CASID ID, StringRef Path,
-                  const ObjectFormatSchemaBase *Schema = nullptr) {
+                  const NodeSchema *Schema = nullptr) {
     auto &Node = Nodes[ID];
     if (!Node.Done)
       Worklist.push_back({ID, false, Path, Schema});
@@ -638,7 +706,7 @@ static void computeStats(CASDB &CAS, ArrayRef<CASID> TopLevels,
     }
 
     NodeProxy Node = NodeProxy::load(CAS, Object->get<NodeHandle>());
-    const ObjectFormatSchemaBase *&Schema = Worklist.back().Schema;
+    const NodeSchema *&Schema = Worklist.back().Schema;
 
     // Update the schema.
     if (!Schema) {
@@ -749,6 +817,9 @@ void StatCollector::printToOuts(ArrayRef<CASID> TopLevels,
   printIfNotZero("num-zero-fill-blocks", NumZeroFillBlocks);
   printIfNotZero("num-1-target-blocks", Num2TargetBlocks);
   printIfNotZero("num-2-target-blocks", Num1TargetBlocks);
+  printIfNotZero("total-reference-size", TotalReferenceSize);
+  printIfNotZero("opt-reference-size", OptReferenceSize);
+  printIfNotZero("num-tiny-objects", NumTinyObjects);
 }
 
 static Error printCASObject(ObjectFormatSchemaPool &Pool, CASID ID, bool omitCASID) {
@@ -776,6 +847,46 @@ static Error printCASObjectOrTree(ObjectFormatSchemaPool &Pool, CASID ID, bool o
                                        entry.getName());
         }
         return printCASObject(Pool, Pool.getCAS().getObjectID(entry.getRef()), omitCASID);
+      });
+}
+
+static Error materializeObjectsFromCASTree(CASDB &CAS, CASID ID) {
+  Expected<TreeProxy> ExpTree = CAS.getTree(ID);
+  if (!ExpTree)
+    return ExpTree.takeError();
+
+  return walkFileTreeRecursively(
+      CAS, *ExpTree,
+      [&](const NamedTreeEntry &Entry, Optional<TreeProxy>) -> Error {
+        if (Entry.getKind() == TreeEntry::Tree)
+          return Error::success();
+        if (Entry.getKind() != TreeEntry::Regular) {
+          return createStringError(inconvertibleErrorCode(),
+                                   "found non-regular entry: " +
+                                       Entry.getName());
+        }
+        auto ObjRoot = CAS.loadNode(Entry.getRef());
+        if (!ObjRoot)
+          return ObjRoot.takeError();
+
+        SmallString<256> OutputPath(OutputPrefix);
+        StringRef ObjFileName = Entry.getName();
+        ObjFileName.consume_back(".casid");
+        llvm::sys::path::append(OutputPath, ObjFileName);
+
+        SmallString<50> ContentsStorage;
+        raw_svector_ostream ObjOS(ContentsStorage);
+        auto Schema =
+            std::make_unique<llvm::mccasformats::flatv1::MCSchema>(CAS);
+        if (Error E = Schema->serializeObjectFile(*ObjRoot, ObjOS))
+          return E;
+        std::unique_ptr<llvm::FileOutputBuffer> Output;
+        if (Error E = llvm::FileOutputBuffer::create(OutputPath,
+                                                     ContentsStorage.size())
+                          .moveInto(Output))
+          return E;
+        llvm::copy(ContentsStorage, Output->getBufferStart());
+        return Output->commit();
       });
 }
 
@@ -860,6 +971,11 @@ static ObjectRef ingestFile(ObjectFormatSchemaBase &Schema, StringRef InputFile,
   if (JustBlobs)
     return CAS.getReference(
         ExitOnErr(CAS.storeNodeFromString(None, FileContent.getBuffer())));
+
+  if (CASIDFile) {
+    auto ID = ExitOnErr(readCASIDBuffer(Schema.CAS, FileContent));
+    return ExitOnErr(Schema.CAS.getNode(ID)).getRef();
+  }
 
   auto createLinkGraph =
       [&ExitOnErr](

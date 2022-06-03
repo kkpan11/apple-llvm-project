@@ -86,3 +86,16 @@ Expected<NodeProxy> CASOutputBackend::createNode() {
   std::swap(MovedIDs, Impl->IDs);
   return CAS.createNode(MovedIDs, "");
 }
+
+Error CASOutputBackend::addObject(StringRef Path, const CASID &Object) {
+  if (!Impl)
+    Impl = std::make_unique<PrivateImpl>();
+
+  Optional<BlobProxy> PathBlob;
+  if (Error E = CAS.createBlob(Path).moveInto(PathBlob))
+    return E;
+
+  Impl->IDs.push_back(PathBlob->getID());
+  Impl->IDs.push_back(Object);
+  return Error::success();
+}

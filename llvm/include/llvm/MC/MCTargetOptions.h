@@ -10,10 +10,16 @@
 #define LLVM_MC_MCTARGETOPTIONS_H
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/Support/Error.h"
 #include <string>
 #include <vector>
 
 namespace llvm {
+
+namespace cas {
+class CASDB;
+class CASID;
+} // namespace cas
 
 enum class ExceptionHandling {
   None,     ///< No exception support
@@ -91,6 +97,12 @@ public:
   /// the textual name of the assembly language that we will use for this
   /// target, e.g. masm.
   StringRef getAssemblyLanguage() const;
+
+  // CASDB.
+  std::shared_ptr<cas::CASDB> CASDB;
+
+  using ResultCallBackTy = std::function<Error(const cas::CASID &)>;
+  Optional<ResultCallBackTy> ResultCallBack;
 };
 
 } // end namespace llvm

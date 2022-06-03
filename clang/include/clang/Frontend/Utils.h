@@ -35,6 +35,7 @@
 namespace clang {
 
 class ASTReader;
+class CASOptions;
 class CompilerInstance;
 class CompilerInvocation;
 class DiagnosticsEngine;

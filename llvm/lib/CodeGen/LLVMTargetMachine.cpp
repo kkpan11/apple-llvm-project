@@ -204,8 +204,12 @@ Expected<std::unique_ptr<MCStreamer>> LLVMTargetMachine::createMCStreamer(
     Triple T(getTargetTriple().str());
     AsmStreamer.reset(getTarget().createMCObjectStreamer(
         T, Context, std::unique_ptr<MCAsmBackend>(MAB),
-        DwoOut ? MAB->createDwoObjectWriter(Out, *DwoOut)
-               : MAB->createObjectWriter(Out),
+        Options.UseCASBackend
+            ? MAB->createCASObjectWriter(Out, getTargetTriple(),
+                                         *Options.MCOptions.CASDB,
+                                         Options.MCOptions, Options.CASObjMode)
+        : DwoOut ? MAB->createDwoObjectWriter(Out, *DwoOut)
+                 : MAB->createObjectWriter(Out),
         std::unique_ptr<MCCodeEmitter>(MCE), STI, Options.MCOptions.MCRelaxAll,
         Options.MCOptions.MCIncrementalLinkerCompatible,
         /*DWARFMustBeAtTheEnd*/ true));

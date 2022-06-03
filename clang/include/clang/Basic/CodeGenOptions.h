@@ -143,6 +143,9 @@ public:
     Never,    // No loop is assumed to be finite.
   };
 
+  /// The callback for mc result.
+  llvm::Optional<llvm::MCTargetOptions::ResultCallBackTy> MCCallBack;
+
   /// The code model to use (-mcmodel).
   std::string CodeModel;
 
