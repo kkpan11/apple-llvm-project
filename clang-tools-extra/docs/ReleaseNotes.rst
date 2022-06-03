@@ -136,10 +136,6 @@ New checks
   Future libc++ will remove the extension (`D120996
   <https://reviews.llvm.org/D120996>`).
 
-- New :doc:`misc-homoglyph <clang-tidy/checks/misc-homoglyph>` check.
-
-  Detects confusable unicode identifiers.
-
 New check aliases
 ^^^^^^^^^^^^^^^^^
 
@@ -239,7 +235,7 @@ The improvements are...
 Improvements to pp-trace
 ------------------------
 
-The improvements are...
+- Added `HashLoc` information to `InclusionDirective` callback output.
 
 Clang-tidy Visual Studio plugin
 -------------------------------
