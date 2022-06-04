@@ -1104,8 +1104,8 @@ bool SymbolPatterns::match(StringRef symbolName) const {
   return matchLiteral(symbolName) || matchGlob(symbolName);
 }
 
-static void handleSymbolPatternsListHelper(const Arg *arg,
-                                           SymbolPatterns &symbolPatterns) {
+static void parseSymbolPatternsFile(const Arg *arg,
+                                    SymbolPatterns &symbolPatterns) {
   StringRef path = arg->getValue();
   if (config->depScanning) {
     // Register the input path with the caching filesystem.
@@ -1125,6 +1125,7 @@ static void handleSymbolPatternsListHelper(const Arg *arg,
       symbolPatterns.insert(line);
   }
 }
+
 static void handleSymbolPatterns(InputArgList &args,
                                  SymbolPatterns &symbolPatterns,
                                  unsigned singleOptionCode,
@@ -1132,7 +1133,7 @@ static void handleSymbolPatterns(InputArgList &args,
   for (const Arg *arg : args.filtered(singleOptionCode))
     symbolPatterns.insert(arg->getValue());
   for (const Arg *arg : args.filtered(listFileOptionCode))
-    handleSymbolPatternsListHelper(arg, symbolPatterns);
+    parseSymbolPatternsFile(arg, symbolPatterns);
 }
 
 static void createFiles(const InputArgList &args) {
@@ -1872,7 +1873,6 @@ static bool link(InputArgList &args, bool canExitEarly, raw_ostream &stdoutOS,
       switch (arg->getOption().getID()) {
       case OPT_x:
         config->localSymbolsPresence = SymtabPresence::None;
-
         break;
       case OPT_non_global_symbols_no_strip_list:
         if (excludeLocal) {
@@ -1881,7 +1881,7 @@ static bool link(InputArgList &args, bool canExitEarly, raw_ostream &stdoutOS,
         } else {
           includeLocal = true;
           config->localSymbolsPresence = SymtabPresence::SelectivelyIncluded;
-          handleSymbolPatternsListHelper(arg, config->localSymbolPatterns);
+          parseSymbolPatternsFile(arg, config->localSymbolPatterns);
         }
         break;
       case OPT_non_global_symbols_strip_list:
@@ -1891,7 +1891,7 @@ static bool link(InputArgList &args, bool canExitEarly, raw_ostream &stdoutOS,
         } else {
           excludeLocal = true;
           config->localSymbolsPresence = SymtabPresence::SelectivelyExcluded;
-          handleSymbolPatternsListHelper(arg, config->localSymbolPatterns);
+          parseSymbolPatternsFile(arg, config->localSymbolPatterns);
         }
         break;
       default:
