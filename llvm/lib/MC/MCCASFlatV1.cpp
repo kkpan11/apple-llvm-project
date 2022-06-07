@@ -45,7 +45,7 @@ char MCSchema::ID = 0;
 cl::opt<unsigned>
     MCDataMergeThreshold("mc-cas-data-merge-threshold",
                          cl::desc("MCDataFragment merge threshold"),
-                         cl::init(64));
+                         cl::init(1024));
 cl::opt<bool> SplitStringSections(
     "mc-cas-split-string-sections",
     cl::desc("Split String Sections (SymTable and DebugStr)"), cl::init(true));
@@ -706,7 +706,7 @@ public:
       : Builder(Builder) {}
   ~MCDataFragmentMerger() { assert(MergeCandidates.empty() && "Not flushed"); }
 
-  Expected<bool> tryMerge(const MCFragment &F, unsigned Size);
+  Error tryMerge(const MCFragment &F, unsigned Size);
   Error flush() { return emitMergedFragments(); }
 private:
   Error emitMergedFragments();
@@ -717,42 +717,37 @@ private:
   std::vector<std::pair<const MCFragment *, unsigned>> MergeCandidates;
 };
 
-// Return true, if the fragment is handled by Merger. Return false for default
-// MCFragment serialization.
-Expected<bool> MCDataFragmentMerger::tryMerge(const MCFragment &F,
-                                              unsigned Size) {
+Error MCDataFragmentMerger::tryMerge(const MCFragment &F, unsigned Size) {
   bool IsSameAtom = Builder.getCurrentAtom() == F.getAtom();
+  bool Oversized = CurrentSize + Size > MCDataMergeThreshold;
   // TODO: Try merge align fragment?
   bool IsDataFragment = isa<MCEncodedFragment>(F);
   // If not the same atom, flush merge candidate and return false.
-  if (!IsSameAtom || !IsDataFragment) {
+  if (!IsSameAtom || !IsDataFragment || Oversized) {
     if (auto E = emitMergedFragments())
-      return std::move(E);
+      return E;
 
     // If it is a new Atom, start a new sub-section.
     if (!IsSameAtom) {
       if (auto E = Builder.finalizeAtom())
-        return std::move(E);
+        return E;
       Builder.startAtom(F.getAtom());
     }
-    return false;
   }
 
-  // If there are no candidates and the size is large enough, emit normal
-  // fragment.
-  if (MergeCandidates.empty() && Size > MCDataMergeThreshold)
-    return false;
+  // Emit none Data segments.
+  if (!IsDataFragment) {
+    if (auto E = Builder.buildFragment(F, Size))
+      return E;
 
-  // Use Merger to handle the fragment.
+    return Error::success();
+  }
+
+  // Add the fragment to the merge candidate.
   CurrentSize += Size;
   MergeCandidates.emplace_back(&F, Size);
-  // If we reach the threshold, emit the merged data fragment.
-  if (CurrentSize > MCDataMergeThreshold) {
-    if (auto E = emitMergedFragments())
-      return std::move(E);
-  }
 
-  return true;
+  return Error::success();
 }
 
 Error MCDataFragmentMerger::emitMergedFragments() {
@@ -861,14 +856,8 @@ Error MCCASBuilder::buildFragments() {
       if (!Size)
         continue;
 
-      auto MergedOrErr = Merger.tryMerge(F, Size);
-      if (!MergedOrErr)
-        return MergedOrErr.takeError();
-      if (*MergedOrErr)
-        continue;
-
-      if (auto Err = buildFragment(F, Size))
-        return Err;
+      if (auto E = Merger.tryMerge(F, Size))
+        return E;
     }
     if (auto E = Merger.flush())
       return E;
