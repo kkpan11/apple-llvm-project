@@ -16,6 +16,7 @@
 #include "llvm/ExecutionEngine/JITLink/DWARFRecordSectionSplitter.h"
 #include "llvm/ExecutionEngine/JITLink/MachO_arm64.h"
 #include "llvm/ExecutionEngine/JITLink/MachO_x86_64.h"
+#include "llvm/ExecutionEngine/JITLink/aarch64.h"
 #include "llvm/ExecutionEngine/JITLink/x86_64.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -80,7 +81,7 @@ Expected<LinkGraph::GetEdgeKindNameFunction>
 getGetEdgeKindNameFunctionForMachO(const Triple &TT) {
   assert(TT.isOSBinFormatMachO());
   if (TT.isAArch64()) // FIXME: Should this check for 64-bit pointers?
-    return getMachOARM64RelocationKindName;
+    return aarch64::getEdgeKindName;
   if (TT.getArch() == Triple::x86_64)
     return x86_64::getEdgeKindName;
 
