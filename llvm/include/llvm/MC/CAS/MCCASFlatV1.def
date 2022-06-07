@@ -13,8 +13,9 @@
 #ifdef CASV1_SIMPLE_DATA_REF
 
 CASV1_SIMPLE_DATA_REF(HeaderRef, mc:header)
+CASV1_SIMPLE_DATA_REF(RelocationsRef, mc:relocations)
 CASV1_SIMPLE_DATA_REF(DataInCodeRef, mc:data_in_code)
-CASV1_SIMPLE_DATA_REF(SymbolTableRef, mc:symbol_table)
+CASV1_SIMPLE_DATA_REF(CStringRef, mc:cstring)
 CASV1_SIMPLE_DATA_REF(MergedFragmentRef, mc:merged_fragment)
 CASV1_SIMPLE_DATA_REF(DebugStrRef, mc:debug_string)
 
@@ -26,6 +27,7 @@ CASV1_SIMPLE_DATA_REF(DebugStrRef, mc:debug_string)
 CASV1_SIMPLE_GROUP_REF(GroupRef, mc:group)
 CASV1_SIMPLE_GROUP_REF(SectionRef, mc:section)
 CASV1_SIMPLE_GROUP_REF(AtomRef, mc:atom)
+CASV1_SIMPLE_GROUP_REF(SymbolTableRef, mc:symbol_table)
 
 #undef CASV1_SIMPLE_GROUP_REF
 #endif /* CASV1_SIMPLE_GPOUP_REF */

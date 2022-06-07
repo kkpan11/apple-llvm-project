@@ -189,9 +189,8 @@ protected:
                                                                                \
   public:                                                                      \
     static constexpr StringLiteral KindString = #IdentifierName;               \
-    static Expected<RefName>                                                   \
-    create(MCCASBuilder &MB, ArrayRef<cas::CASID> IDs,                         \
-           ArrayRef<MachO::any_relocation_info> Rels);                         \
+    static Expected<RefName> create(MCCASBuilder &MB,                          \
+                                    ArrayRef<cas::CASID> IDs);                 \
     static Expected<RefName> get(Expected<MCNodeProxy> Ref) {                  \
       auto Specific = SpecificRefT::getSpecific(std::move(Ref));               \
       if (!Specific)                                                           \
@@ -332,6 +331,13 @@ public:
   const MCSymbol *getCurrentAtom() const { return CurrentAtom; }
 
   Error buildFragment(const MCFragment &F, unsigned FragmentSize);
+
+  ArrayRef<MachO::any_relocation_info> getSectionRelocs() const {
+    return SectionRelocs;
+  }
+  ArrayRef<MachO::any_relocation_info> getAtomRelocs() const {
+    return AtomRelocs;
+  }
 
   // Scratch space
   SmallString<8> FragmentData;

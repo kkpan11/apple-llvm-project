@@ -49,10 +49,18 @@ cl::opt<unsigned>
 cl::opt<bool> SplitStringSections(
     "mc-cas-split-string-sections",
     cl::desc("Split String Sections (SymTable and DebugStr)"), cl::init(true));
-cl::opt<bool>
-    RelocationInSection("mc-cas-reloc-in-sections",
-                        cl::desc("Put relocation in section (not atoms)"),
-                        cl::init(true));
+
+enum RelEncodeLoc {
+  Atom,
+  Section,
+  CompileUnit,
+};
+
+cl::opt<RelEncodeLoc> RelocLocation(
+    "mc-cas-reloc-encode-in", cl::desc("Where to put relocation in encoding"),
+    cl::values(clEnumVal(Atom, "In atom"), clEnumVal(Section, "In section"),
+               clEnumVal(CompileUnit, "In compile unit")),
+    cl::init(Atom));
 
 Expected<cas::NodeProxy>
 MCSchema::createFromMCAssemblerImpl(MachOCASWriter &ObjectWriter,
@@ -271,14 +279,12 @@ static Error decodeRelocations(MCCASReader &Reader, StringRef Data) {
 }
 
 Expected<GroupRef>
-GroupRef::create(MCCASBuilder &MB, ArrayRef<cas::CASID> Fragments,
-                 ArrayRef<MachO::any_relocation_info> Relocations) {
+GroupRef::create(MCCASBuilder &MB, ArrayRef<cas::CASID> Fragments) {
   Expected<Builder> B = Builder::startNode(MB.Schema, KindString);
   if (!B)
     return B.takeError();
 
   B->IDs.append(Fragments.begin(), Fragments.end());
-  assert(Relocations.empty() && "No relocations in groups");
 
   return get(B->build());
 }
@@ -301,15 +307,39 @@ Expected<uint64_t> GroupRef::materialize(MCCASReader &Reader) const {
   return Size;
 }
 
-Expected<SectionRef>
-SectionRef::create(MCCASBuilder &MB, ArrayRef<cas::CASID> Fragments,
-                   ArrayRef<MachO::any_relocation_info> Relocations) {
+Expected<SymbolTableRef>
+SymbolTableRef::create(MCCASBuilder &MB, ArrayRef<cas::CASID> Fragments) {
   Expected<Builder> B = Builder::startNode(MB.Schema, KindString);
   if (!B)
     return B.takeError();
 
   B->IDs.append(Fragments.begin(), Fragments.end());
-  writeRelocations(Relocations, B->Data);
+
+  return get(B->build());
+}
+
+Expected<uint64_t> SymbolTableRef::materialize(MCCASReader &Reader) const {
+  unsigned Size = 0;
+  if (auto E = forEachReferenceID([&](cas::CASID ID) -> Error {
+        auto FragmentSize = Reader.materializeGroup(ID);
+        if (!FragmentSize)
+          return FragmentSize.takeError();
+        Size += *FragmentSize;
+        return Error::success();
+      }))
+    return std::move(E);
+
+  return Size;
+}
+
+Expected<SectionRef>
+SectionRef::create(MCCASBuilder &MB, ArrayRef<cas::CASID> Fragments) {
+  Expected<Builder> B = Builder::startNode(MB.Schema, KindString);
+  if (!B)
+    return B.takeError();
+
+  B->IDs.append(Fragments.begin(), Fragments.end());
+  writeRelocations(MB.getSectionRelocs(), B->Data);
 
   return get(B->build());
 }
@@ -335,14 +365,13 @@ Expected<uint64_t> SectionRef::materialize(MCCASReader &Reader) const {
 }
 
 Expected<AtomRef>
-AtomRef::create(MCCASBuilder &MB, ArrayRef<cas::CASID> Fragments,
-                ArrayRef<MachO::any_relocation_info> Relocations) {
+AtomRef::create(MCCASBuilder &MB, ArrayRef<cas::CASID> Fragments) {
   Expected<Builder> B = Builder::startNode(MB.Schema, KindString);
   if (!B)
     return B.takeError();
 
   B->IDs.append(Fragments.begin(), Fragments.end());
-  writeRelocations(Relocations, B->Data);
+  writeRelocations(MB.getAtomRelocs(), B->Data);
 
   return get(B->build());
 }
@@ -821,7 +850,7 @@ Error MCCASBuilder::buildFragments() {
 
     MCDataFragmentMerger Merger(*this, &Sec);
     for (const MCFragment &F : Sec) {
-      if (!RelocationInSection) {
+      if (RelocLocation == Atom) {
         auto Relocs = RelMap.find(&F);
         if (Relocs != RelMap.end())
           AtomRelocs.append(Relocs->second.begin(), Relocs->second.end());
@@ -862,8 +891,17 @@ Error MCCASBuilder::buildFragments() {
 
 Error MCCASBuilder::buildRelocations() {
   ObjectWriter.resetBuffer();
-  if (ObjectWriter.Mode == CASBackendMode::Verify)
+  if (ObjectWriter.Mode == CASBackendMode::Verify ||
+      RelocLocation == CompileUnit)
     ObjectWriter.writeRelocations(Asm, Layout);
+
+  if (RelocLocation == CompileUnit) {
+    auto Relocs = RelocationsRef::create(*this, ObjectWriter.getContent());
+    if (!Relocs)
+      return Relocs.takeError();
+
+    addNode(*Relocs);
+  }
 
   return Error::success();
 }
@@ -883,18 +921,22 @@ Error MCCASBuilder::buildSymbolTable() {
   ObjectWriter.resetBuffer();
   ObjectWriter.writeSymbolTable(Asm, Layout);
   StringRef S = ObjectWriter.getContent();
-  startGroup();
-
+  std::vector<cas::CASID> CStrings;
   if (auto E = createStringSection(S, [&](StringRef S) -> Error {
-        auto Sym = SymbolTableRef::create(*this, S);
+        auto Sym = CStringRef::create(*this, S);
         if (!Sym)
           return Sym.takeError();
-        addNode(*Sym);
+        CStrings.push_back(Sym->getID());
         return Error::success();
       }))
     return E;
 
-  return finalizeGroup();
+  auto Ref = SymbolTableRef::create(*this, CStrings);
+  if (!Ref)
+    return Ref.takeError();
+  addNode(*Ref);
+
+  return Error::success();
 }
 
 void MCCASBuilder::startGroup() {
@@ -903,7 +945,7 @@ void MCCASBuilder::startGroup() {
 }
 
 Error MCCASBuilder::finalizeGroup() {
-  auto Ref = GroupRef::create(*this, GroupContext, {});
+  auto Ref = GroupRef::create(*this, GroupContext);
   if (!Ref)
     return Ref.takeError();
   GroupContext.clear();
@@ -919,18 +961,19 @@ void MCCASBuilder::startSection(const MCSection *Sec) {
   CurrentSection = Sec;
   CurrentContext = &SectionContext;
 
-  if (!RelocationInSection) {
+  if (RelocLocation == Atom) {
     // Build a map for lookup.
     for (auto R : ObjectWriter.getRelocations()[Sec])
       RelMap[R.F].push_back(R.MRE);
-  } else {
+  }
+  if (RelocLocation == Section) {
     for (auto R : ObjectWriter.getRelocations()[Sec])
       SectionRelocs.push_back(R.MRE);
   }
 }
 
 Error MCCASBuilder::finalizeSection() {
-  auto Ref = SectionRef::create(*this, SectionContext, SectionRelocs);
+  auto Ref = SectionRef::create(*this, SectionContext);
   if (!Ref)
     return Ref.takeError();
 
@@ -953,7 +996,7 @@ void MCCASBuilder::startAtom(const MCSymbol *Atom) {
 }
 
 Error MCCASBuilder::finalizeAtom() {
-  auto Ref = AtomRef::create(*this, AtomContext, AtomRelocs);
+  auto Ref = AtomRef::create(*this, AtomContext);
   if (!Ref)
     return Ref.takeError();
 
@@ -1015,12 +1058,28 @@ Expected<MCAssemblerRef> MCAssemblerRef::create(const MCSchema &Schema,
 }
 
 template <typename T>
-static Expected<uint64_t>
-materializeData(raw_ostream &OS, const MCAssemblerRef &Asm, unsigned Idx) {
-  auto Ref = T::get(Asm.getSchema(), Asm.getReferenceID(Idx));
-  if (!Ref)
-    return Ref.takeError();
-  return Ref->materialize(OS);
+static Expected<T> findSectionFromAsm(const MCAssemblerRef &Asm) {
+  for (unsigned I = 1; I < Asm.getNumReferences(); ++I) {
+    auto Node = MCNodeProxy::get(
+        Asm.getSchema(), Asm.getSchema().CAS.getNode(Asm.getReferenceID(I)));
+    if (!Node)
+      return Node.takeError();
+    if (auto Ref = T::Cast(*Node))
+      return *Ref;
+  }
+
+  return createStringError(inconvertibleErrorCode(),
+                           "cannot locate the requested section");
+}
+
+template <typename T>
+static Expected<uint64_t> materializeData(raw_ostream &OS,
+                                          const MCAssemblerRef &Asm) {
+  auto Node = findSectionFromAsm<T>(Asm);
+  if (!Node)
+    return Node.takeError();
+
+  return Node->materialize(OS);
 }
 
 Error MCAssemblerRef::materialize(raw_ostream &OS) const {
@@ -1035,21 +1094,15 @@ Error MCAssemblerRef::materialize(raw_ostream &OS) const {
   Triple Target(*TripleStr);
 
   MCCASReader Reader(OS, Target, getSchema());
-  // The first few referenced nodes are speical blocks: Header, Sections.
-  // Relocations, DataInCode, SymbolTable.
-  if (getNumReferences() != 5)
-    return createStringError(inconvertibleErrorCode(),
-                             "not enough sub-blocks in MCAssemblerRef");
-
   uint64_t Written = 0;
   // MachOHeader.
-  auto HeaderSize = materializeData<HeaderRef>(OS, *this, 1);
+  auto HeaderSize = materializeData<HeaderRef>(OS, *this);
   if (!HeaderSize)
     return HeaderSize.takeError();
   Written += *HeaderSize;
 
   // SectionData.
-  auto SectionDataRef = GroupRef::get(getSchema(), getReferenceID(2));
+  auto SectionDataRef = findSectionFromAsm<GroupRef>(*this);
   if (!SectionDataRef)
     return SectionDataRef.takeError();
   auto SectionDataSize = SectionDataRef->materialize(Reader);
@@ -1069,14 +1122,21 @@ Error MCAssemblerRef::materialize(raw_ostream &OS) const {
     }
   }
 
-  auto DCOrErr = materializeData<DataInCodeRef>(OS, *this, 3);
+  if (auto Relocations = findSectionFromAsm<RelocationsRef>(*this)) {
+    auto RelocSize = Relocations->materialize(OS);
+    if (!RelocSize)
+      return RelocSize.takeError();
+  } else
+    consumeError(Relocations.takeError()); // Relocations can be missing.
+
+  auto DCOrErr = materializeData<DataInCodeRef>(OS, *this);
   if (!DCOrErr)
     return DCOrErr.takeError();
 
-  auto SymbolTableRef = GroupRef::get(getSchema(), getReferenceID(4));
-  if (!SymbolTableRef)
-    return SymbolTableRef.takeError();
-  auto SymbolTableSize = SymbolTableRef->materialize(Reader);
+  auto SymTableRef = findSectionFromAsm<SymbolTableRef>(*this);
+  if (!SymTableRef)
+    return SymTableRef.takeError();
+  auto SymbolTableSize = SymTableRef->materialize(Reader);
   if (!SymbolTableSize)
     return SymbolTableSize.takeError();
 
@@ -1095,7 +1155,7 @@ Expected<uint64_t> MCCASReader::materializeGroup(cas::CASID ID) {
   // Group can have sections, symbol table strs.
   if (auto F = SectionRef::Cast(*Node))
     return F->materialize(*this);
-  if (auto F = SymbolTableRef::Cast(*Node)) {
+  if (auto F = CStringRef::Cast(*Node)) {
     auto Size = F->materialize(OS);
     if (!Size)
       return Size.takeError();
