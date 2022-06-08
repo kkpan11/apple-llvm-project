@@ -421,11 +421,9 @@ struct StatCollector {
   size_t NumZeroFillBlocks = 0;
   size_t Num1TargetBlocks = 0;
   size_t Num2TargetBlocks = 0;
-  size_t TotalReferenceSize = 0;
-  size_t OptReferenceSize = 0;
   size_t NumTinyObjects = 0;
-  size_t SecRelocSize = 0;
-  size_t AtomRelocSize = 0;
+  size_t SecRefSize = 0;
+  size_t AtomRefSize = 0;
 
   void visitPOT(ExitOnError &ExitOnErr, ArrayRef<CASID> TopLevels,
                 ArrayRef<POTItem> POT);
@@ -609,30 +607,6 @@ void StatCollector::visitPOTItemMCFlatV1(
   auto Object = ExitOnErr(Schema.getNode(Node));
   addNodeStats(Stats[Object.getKindString()]);
 
-  if (Object.getKindString() ==
-          llvm::mccasformats::flatv1::GroupRef::KindString ||
-      Object.getKindString() ==
-          llvm::mccasformats::flatv1::SectionRef::KindString ||
-      Object.getKindString() ==
-          llvm::mccasformats::flatv1::AtomRef::KindString) {
-    DenseSet<cas::CASID> UniqueChildren;
-    ExitOnErr(Object.forEachReferenceID([&](CASID ID) -> Error {
-      UniqueChildren.insert(ID);
-      return Error::success();
-    }));
-
-    size_t ReferenceSize = Object.getNumReferences() * sizeof(void *);
-
-    // Assume we don't overflow VBR8 (max 128) so each ref is 1 byte. This
-    // computes the lower bound if we use an array of the index to dedup CASID
-    // reference to its children.
-    size_t DedupSize =
-        UniqueChildren.size() * sizeof(void *) + Object.getNumReferences();
-
-    TotalReferenceSize += ReferenceSize;
-    OptReferenceSize += ReferenceSize > DedupSize ? DedupSize : ReferenceSize;
-  }
-
   if (Object.getNumReferences() == 0 &&
       Object.getData().size() <
           (Object.getID().getHash().size() + sizeof(void *)))
@@ -641,12 +615,12 @@ void StatCollector::visitPOTItemMCFlatV1(
   if (Object.getKindString() ==
       llvm::mccasformats::flatv1::SectionRef::KindString) {
     if (!Object.getData().empty())
-      SecRelocSize += Object.getData().size();
+      SecRefSize += Object.getData().size();
   }
   if (Object.getKindString() ==
       llvm::mccasformats::flatv1::AtomRef::KindString) {
     if (!Object.getData().empty())
-      AtomRelocSize += Object.getData().size();
+      AtomRefSize += Object.getData().size();
   }
 }
 
@@ -834,11 +808,9 @@ void StatCollector::printToOuts(ArrayRef<CASID> TopLevels,
   printIfNotZero("num-zero-fill-blocks", NumZeroFillBlocks);
   printIfNotZero("num-1-target-blocks", Num2TargetBlocks);
   printIfNotZero("num-2-target-blocks", Num1TargetBlocks);
-  printIfNotZero("total-reference-size", TotalReferenceSize);
-  printIfNotZero("opt-reference-size", OptReferenceSize);
   printIfNotZero("num-tiny-objects", NumTinyObjects);
-  printIfNotZero("sec-reloc-size", SecRelocSize);
-  printIfNotZero("atom-reloc-size", AtomRelocSize);
+  printIfNotZero("sec-ref-size", SecRefSize);
+  printIfNotZero("atom-ref-size", AtomRefSize);
 }
 
 static Error printCASObject(ObjectFormatSchemaPool &Pool, CASID ID, bool omitCASID) {

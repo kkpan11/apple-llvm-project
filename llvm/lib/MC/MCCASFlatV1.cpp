@@ -10,6 +10,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/BinaryFormat/MachO.h"
 #include "llvm/CAS/CASDB.h"
+#include "llvm/CAS/CASID.h"
 #include "llvm/MC/MCAsmBackend.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCObjectFileInfo.h"
@@ -278,29 +279,96 @@ static Error decodeRelocations(MCCASReader &Reader, StringRef Data) {
   return Error::success();
 }
 
+static Error encodeReferences(ArrayRef<cas::CASID> Refs,
+                              SmallVectorImpl<char> &Data,
+                              SmallVectorImpl<cas::CASID> &IDs) {
+  DenseMap<cas::CASID, unsigned> RefMap;
+  SmallVector<cas::CASID> CompactRefs;
+  for (const auto &ID : Refs) {
+    auto I = RefMap.try_emplace(ID, CompactRefs.size());
+    if (I.second)
+      CompactRefs.push_back(ID);
+  }
+
+  // Guess the size of the encoding. Made an assumption that VBR8 encoding is
+  // 1 byte (the minimal).
+  size_t ReferenceSize = Refs.size() * sizeof(void *);
+  size_t CompactSize = CompactRefs.size() * sizeof(void *) + Refs.size();
+  if (ReferenceSize <= CompactSize) {
+    writeVBR8(0, Data);
+    IDs.append(Refs.begin(), Refs.end());
+    return Error::success();
+  }
+
+  writeVBR8(Refs.size(), Data);
+  for (const auto &ID : Refs) {
+    auto Idx = RefMap.find(ID);
+    assert(Idx != RefMap.end() && "ID must be in the map");
+    writeVBR8(Idx->second, Data);
+  }
+
+  IDs.append(CompactRefs.begin(), CompactRefs.end());
+  return Error::success();
+}
+
+static Expected<SmallVector<cas::CASID>>
+decodeReferences(const MCNodeProxy &Node, StringRef &Remaining) {
+  SmallVector<cas::CASID> Refs;
+  if (auto E = Node.forEachReferenceID([&](cas::CASID ID) -> Error {
+        Refs.push_back(ID);
+        return Error::success();
+      }))
+    return std::move(E);
+
+  unsigned Size = 0;
+  if (auto E = consumeVBR8(Remaining, Size))
+    return std::move(E);
+
+  if (!Size)
+    return Refs;
+
+  SmallVector<cas::CASID> CompactRefs;
+  for (unsigned I = 0; I < Size; ++I) {
+    unsigned Idx = 0;
+    if (auto E = consumeVBR8(Remaining, Idx))
+      return std::move(E);
+
+    if (Idx >= Refs.size())
+      return createStringError(inconvertibleErrorCode(), "invalid ref index");
+
+    CompactRefs.push_back(Refs[Idx]);
+  }
+
+  return CompactRefs;
+}
+
 Expected<GroupRef>
 GroupRef::create(MCCASBuilder &MB, ArrayRef<cas::CASID> Fragments) {
   Expected<Builder> B = Builder::startNode(MB.Schema, KindString);
   if (!B)
     return B.takeError();
 
-  B->IDs.append(Fragments.begin(), Fragments.end());
+  if (auto E = encodeReferences(Fragments, B->Data, B->IDs))
+    return std::move(E);
 
   return get(B->build());
 }
 
 Expected<uint64_t> GroupRef::materialize(MCCASReader &Reader) const {
   unsigned Size = 0;
-  if (auto E = forEachReferenceID([&](cas::CASID ID) -> Error {
-        auto FragmentSize = Reader.materializeGroup(ID);
-        if (!FragmentSize)
-          return FragmentSize.takeError();
-        Size += *FragmentSize;
-        return Error::success();
-      }))
-    return std::move(E);
+  StringRef Remaining = getData();
+  auto Refs = decodeReferences(*this, Remaining);
+  if (!Refs)
+    return Refs.takeError();
 
-  if (!getData().empty())
+  for (auto ID : *Refs) {
+    auto FragmentSize = Reader.materializeGroup(ID);
+    if (!FragmentSize)
+      return FragmentSize.takeError();
+    Size += *FragmentSize;
+  }
+
+  if (!Remaining.empty())
     return createStringError(inconvertibleErrorCode(),
                              "Group should not have relocations");
 
@@ -313,21 +381,25 @@ SymbolTableRef::create(MCCASBuilder &MB, ArrayRef<cas::CASID> Fragments) {
   if (!B)
     return B.takeError();
 
-  B->IDs.append(Fragments.begin(), Fragments.end());
+  if (auto E = encodeReferences(Fragments, B->Data, B->IDs))
+    return std::move(E);
 
   return get(B->build());
 }
 
 Expected<uint64_t> SymbolTableRef::materialize(MCCASReader &Reader) const {
   unsigned Size = 0;
-  if (auto E = forEachReferenceID([&](cas::CASID ID) -> Error {
-        auto FragmentSize = Reader.materializeGroup(ID);
-        if (!FragmentSize)
-          return FragmentSize.takeError();
-        Size += *FragmentSize;
-        return Error::success();
-      }))
-    return std::move(E);
+  StringRef Remaining = getData();
+  auto Refs = decodeReferences(*this, Remaining);
+  if (!Refs)
+    return Refs.takeError();
+
+  for (auto ID : *Refs) {
+    auto FragmentSize = Reader.materializeGroup(ID);
+    if (!FragmentSize)
+      return FragmentSize.takeError();
+    Size += *FragmentSize;
+  }
 
   return Size;
 }
@@ -338,7 +410,9 @@ SectionRef::create(MCCASBuilder &MB, ArrayRef<cas::CASID> Fragments) {
   if (!B)
     return B.takeError();
 
-  B->IDs.append(Fragments.begin(), Fragments.end());
+  if (auto E = encodeReferences(Fragments, B->Data, B->IDs))
+    return std::move(E);
+
   writeRelocations(MB.getSectionRelocs(), B->Data);
 
   return get(B->build());
@@ -349,16 +423,19 @@ Expected<uint64_t> SectionRef::materialize(MCCASReader &Reader) const {
   Reader.Relocations.emplace_back();
 
   unsigned Size = 0;
-  if (auto E = forEachReferenceID([&](cas::CASID ID) -> Error {
-        auto FragmentSize = Reader.materializeSection(ID);
-        if (!FragmentSize)
-          return FragmentSize.takeError();
-        Size += *FragmentSize;
-        return Error::success();
-      }))
-    return std::move(E);
+  StringRef Remaining = getData();
+  auto Refs = decodeReferences(*this, Remaining);
+  if (!Refs)
+    return Refs.takeError();
 
-  if (auto E = decodeRelocations(Reader, getData()))
+  for (auto ID : *Refs) {
+    auto FragmentSize = Reader.materializeSection(ID);
+    if (!FragmentSize)
+      return FragmentSize.takeError();
+    Size += *FragmentSize;
+  }
+
+  if (auto E = decodeRelocations(Reader, Remaining))
     return std::move(E);
 
   return Size;
@@ -370,7 +447,9 @@ AtomRef::create(MCCASBuilder &MB, ArrayRef<cas::CASID> Fragments) {
   if (!B)
     return B.takeError();
 
-  B->IDs.append(Fragments.begin(), Fragments.end());
+  if (auto E = encodeReferences(Fragments, B->Data, B->IDs))
+    return std::move(E);
+
   writeRelocations(MB.getAtomRelocs(), B->Data);
 
   return get(B->build());
@@ -378,16 +457,19 @@ AtomRef::create(MCCASBuilder &MB, ArrayRef<cas::CASID> Fragments) {
 
 Expected<uint64_t> AtomRef::materialize(MCCASReader &Reader) const {
   unsigned Size = 0;
-  if (auto E = forEachReferenceID([&](cas::CASID ID) -> Error {
-        auto FragmentSize = Reader.materializeAtom(ID);
-        if (!FragmentSize)
-          return FragmentSize.takeError();
-        Size += *FragmentSize;
-        return Error::success();
-      }))
-    return std::move(E);
+  StringRef Remaining = getData();
+  auto Refs = decodeReferences(*this, Remaining);
+  if (!Refs)
+    return Refs.takeError();
 
-  if (auto E = decodeRelocations(Reader, getData()))
+  for (auto ID : *Refs) {
+    auto FragmentSize = Reader.materializeAtom(ID);
+    if (!FragmentSize)
+      return FragmentSize.takeError();
+    Size += *FragmentSize;
+  }
+
+  if (auto E = decodeRelocations(Reader, Remaining))
     return std::move(E);
 
   return Size;
