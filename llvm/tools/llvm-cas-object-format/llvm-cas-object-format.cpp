@@ -849,21 +849,28 @@ static Error materializeObjectsFromCASTree(CASDB &CAS, CASID ID) {
   return walkFileTreeRecursively(
       CAS, *ExpTree,
       [&](const NamedTreeEntry &Entry, Optional<TreeProxy>) -> Error {
-        if (Entry.getKind() == TreeEntry::Tree)
-          return Error::success();
-        if (Entry.getKind() != TreeEntry::Regular) {
+        if (Entry.getKind() != TreeEntry::Regular &&
+            Entry.getKind() != TreeEntry::Tree) {
           return createStringError(inconvertibleErrorCode(),
                                    "found non-regular entry: " +
                                        Entry.getName());
         }
-        auto ObjRoot = CAS.loadNode(Entry.getRef());
-        if (!ObjRoot)
-          return ObjRoot.takeError();
-
         SmallString<256> OutputPath(OutputPrefix);
         StringRef ObjFileName = Entry.getName();
         ObjFileName.consume_back(".casid");
         llvm::sys::path::append(OutputPath, ObjFileName);
+
+        if (Entry.getKind() == TreeEntry::Tree) {
+          // Check the path exists, if not, create the directory.
+          if (!llvm::sys::fs::exists(OutputPath)) {
+            if (auto EC = llvm::sys::fs::create_directory(OutputPath))
+              return errorCodeToError(EC);
+          }
+          return Error::success();
+        }
+        auto ObjRoot = CAS.loadNode(Entry.getRef());
+        if (!ObjRoot)
+          return ObjRoot.takeError();
 
         SmallString<50> ContentsStorage;
         raw_svector_ostream ObjOS(ContentsStorage);
