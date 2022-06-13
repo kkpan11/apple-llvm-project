@@ -146,14 +146,14 @@ public:
       llvm::IntrusiveRefCntPtr<DependencyScanningWorkerFilesystem> DepFS,
       llvm::IntrusiveRefCntPtr<DependencyScanningCASFilesystem> DepCASFS,
       bool OverrideCASTokenCache, ScanningOutputFormat Format,
-      bool OptimizeArgs, bool EmitDependencyFile,
+      bool OptimizeArgs, bool EmitDependencyFile, bool DisableFree,
       llvm::Optional<StringRef> ModuleName = None)
       : WorkingDirectory(WorkingDirectory), Consumer(Consumer),
         CASOpts(CASOpts), DepFS(std::move(DepFS)),
         DepCASFS(std::move(DepCASFS)), Format(Format),
         OverrideCASTokenCache(OverrideCASTokenCache),
         OptimizeArgs(OptimizeArgs), EmitDependencyFile(EmitDependencyFile),
-        ModuleName(ModuleName) {}
+        DisableFree(DisableFree), ModuleName(ModuleName) {}
 
   bool runInvocation(std::shared_ptr<CompilerInvocation> Invocation,
                      FileManager *FileMgr,
@@ -161,6 +161,8 @@ public:
                      DiagnosticConsumer *DiagConsumer) override {
     // Make a deep copy of the original Clang invocation.
     CompilerInvocation OriginalInvocation(*Invocation);
+    // Restore the value of DisableFree, which may be modified by Tooling.
+    OriginalInvocation.getFrontendOpts().DisableFree = DisableFree;
 
     // Create a compiler instance to handle the actual work.
     CompilerInstance ScanInstance(std::move(PCHContainerOps));
@@ -308,6 +310,7 @@ private:
   bool OverrideCASTokenCache;
   bool OptimizeArgs;
   bool EmitDependencyFile = false;
+  bool DisableFree;
   llvm::Optional<StringRef> ModuleName;
 };
 
@@ -401,11 +404,15 @@ llvm::Error DependencyScanningWorker::computeDependencies(
 
   return runWithDiags(CreateAndPopulateDiagOpts(FinalCCommandLine).release(),
                       [&](DiagnosticConsumer &DC, DiagnosticOptions &DiagOpts) {
+                        // DisableFree is modified by Tooling for running
+                        // in-process; preserve the original value, which is
+                        // always true for a driver invocation.
+                        bool DisableFree = true;
                         DependencyScanningAction Action(
                             WorkingDirectory, Consumer, getCASOpts(), DepFS,
                             DepCASFS, OverrideCASTokenCache, Format,
                             OptimizeArgs, /*EmitDependencyFile=*/false,
-                            ModuleName);
+                            DisableFree, ModuleName);
                         // Create an invocation that uses the underlying file
                         // system to ensure that any file system requests that
                         // are made by the driver do not go through the
@@ -451,7 +458,8 @@ void DependencyScanningWorker::computeDependenciesFromCompilerInvocation(
                                   DepFS, DepCASFS, OverrideCASTokenCache,
                                   Format,
                                   /*OptimizeArgs=*/false,
-                                  /*EmitDependencyFile=*/true);
+                                  /*EmitDependencyFile=*/true,
+                                  /*DisableFree=*/false);
 
   // Ignore result; we're just collecting dependencies.
   //
