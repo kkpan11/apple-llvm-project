@@ -14,6 +14,7 @@ add_lld_library(lldMachO
   Driver.cpp
   DriverUtils.cpp
   Dwarf.cpp
+  EhFrame.cpp
   ExportTrie.cpp
   FileSystem.cpp
   ICF.cpp

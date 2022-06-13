@@ -527,7 +527,7 @@ StringRef dwarfgen::Generator::generate() {
   StringPool->emit(*Asm, TLOF->getDwarfStrSection(),
                    TLOF->getDwarfStrOffSection());
 
-  MS->SwitchSection(TLOF->getDwarfInfoSection());
+  MS->switchSection(TLOF->getDwarfInfoSection());
   for (auto &CU : CompileUnits) {
     uint16_t Version = CU->getVersion();
     auto Length = CU->getLength();
@@ -546,7 +546,7 @@ StringRef dwarfgen::Generator::generate() {
     Asm->emitDwarfDIE(*CU->getUnitDIE().Die);
   }
 
-  MS->SwitchSection(TLOF->getDwarfLineSection());
+  MS->switchSection(TLOF->getDwarfLineSection());
   for (auto &LT : LineTables)
     LT->generate(*MC, *Asm);
 

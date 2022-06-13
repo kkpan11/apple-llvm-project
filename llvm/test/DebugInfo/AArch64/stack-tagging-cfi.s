@@ -1,4 +1,6 @@
-# RUN: llvm-mc -filetype=obj -triple aarch64 -mattr=+mte %s -o %t.o
+# REQUIRES: aarch64-registered-target
+
+# RUN: llvm-mc -filetype=obj -triple aarch64-elfs -mattr=+mte %s -o %t.o
 # RUN: llvm-dwarfdump --eh-frame %t.o | FileCheck %s
 
 # CHECK: Augmentation:          "zRG"

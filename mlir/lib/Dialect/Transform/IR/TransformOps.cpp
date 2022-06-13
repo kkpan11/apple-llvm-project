@@ -137,17 +137,6 @@ LogicalResult transform::GetClosestIsolatedParentOp::apply(
   return success();
 }
 
-void transform::GetClosestIsolatedParentOp::getEffects(
-    SmallVectorImpl<MemoryEffects::EffectInstance> &effects) {
-  effects.emplace_back(MemoryEffects::Read::get(), getTarget(),
-                       TransformMappingResource::get());
-  effects.emplace_back(MemoryEffects::Allocate::get(), getParent(),
-                       TransformMappingResource::get());
-  effects.emplace_back(MemoryEffects::Write::get(), getParent(),
-                       TransformMappingResource::get());
-  effects.emplace_back(MemoryEffects::Read::get(), PayloadIRResource::get());
-}
-
 //===----------------------------------------------------------------------===//
 // PDLMatchOp
 //===----------------------------------------------------------------------===//
@@ -323,8 +312,9 @@ void transform::SequenceOp::getEffects(
   }
 }
 
-OperandRange transform::SequenceOp::getSuccessorEntryOperands(unsigned index) {
-  assert(index == 0 && "unexpected region index");
+OperandRange
+transform::SequenceOp::getSuccessorEntryOperands(Optional<unsigned> index) {
+  assert(index && *index == 0 && "unexpected region index");
   if (getOperation()->getNumOperands() == 1)
     return getOperation()->getOperands();
   return OperandRange(getOperation()->operand_end(),

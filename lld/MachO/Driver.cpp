@@ -1224,8 +1224,9 @@ static void gatherInputSections() {
   int inputOrder = 0;
   for (const InputFile *file : inputFiles) {
     for (const Section *section : file->sections) {
+      // Compact unwind entries require special handling elsewhere. (In
+      // contrast, EH frames are handled like regular ConcatInputSections.)
       if (section->name == section_names::compactUnwind)
-        // Compact unwind entries require special handling elsewhere.
         continue;
       ConcatOutputSection *osec = nullptr;
       for (const Subsection &subsection : section->subsections) {
@@ -1748,6 +1749,7 @@ static bool link(InputArgList &args, bool canExitEarly, raw_ostream &stdoutOS,
   config->callGraphProfileSort = args.hasFlag(
       OPT_call_graph_profile_sort, OPT_no_call_graph_profile_sort, true);
   config->printSymbolOrder = args.getLastArgValue(OPT_print_symbol_order);
+  config->parseEhFrames = static_cast<bool>(getenv("LLD_IN_TEST"));
 
   // FIXME: Add a commandline flag for this too.
   config->zeroModTime = getenv("ZERO_AR_DATE");
