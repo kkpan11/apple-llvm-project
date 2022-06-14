@@ -803,9 +803,10 @@ Error MCDataFragmentMerger::tryMerge(const MCFragment &F, unsigned Size) {
   bool IsSameAtom = Builder.getCurrentAtom() == F.getAtom();
   bool Oversized = CurrentSize + Size > MCDataMergeThreshold;
   // TODO: Try merge align fragment?
-  bool IsDataFragment = isa<MCEncodedFragment>(F);
+  bool IsMergeableFragment =
+      isa<MCEncodedFragment>(F) || isa<MCAlignFragment>(F);
   // If not the same atom, flush merge candidate and return false.
-  if (!IsSameAtom || !IsDataFragment || Oversized) {
+  if (!IsSameAtom || !IsMergeableFragment || Oversized) {
     if (auto E = emitMergedFragments())
       return E;
 
@@ -818,7 +819,7 @@ Error MCDataFragmentMerger::tryMerge(const MCFragment &F, unsigned Size) {
   }
 
   // Emit none Data segments.
-  if (!IsDataFragment) {
+  if (!IsMergeableFragment) {
     if (auto E = Builder.buildFragment(F, Size))
       return E;
 
@@ -829,6 +830,41 @@ Error MCDataFragmentMerger::tryMerge(const MCFragment &F, unsigned Size) {
   CurrentSize += Size;
   MergeCandidates.emplace_back(&F, Size);
 
+  return Error::success();
+}
+
+static Error writeAlignFragment(MCCASBuilder &Builder,
+                                const MCAlignFragment &AF,
+                                raw_ostream &OS,
+                                unsigned FragmentSize) {
+  uint64_t Count = FragmentSize / AF.getValueSize();
+  if (AF.hasEmitNops()) {
+    if (!Builder.Asm.getBackend().writeNopData(OS, Count, AF.getSubtargetInfo()))
+      return createStringError(inconvertibleErrorCode(),
+                               "unable to write nop sequence of " +
+                                   Twine(Count) + " bytes");
+    return Error::success();
+  }
+  auto Endian = Builder.ObjectWriter.Target.isLittleEndian() ? support::little
+                                                             : support::big;
+  for (uint64_t I = 0; I != Count; ++I) {
+    switch (AF.getValueSize()) {
+    default:
+      llvm_unreachable("Invalid size!");
+    case 1:
+      OS << char(AF.getValue());
+      break;
+    case 2:
+      support::endian::write<uint16_t>(OS, AF.getValue(), Endian);
+      break;
+    case 4:
+      support::endian::write<uint32_t>(OS, AF.getValue(), Endian);
+      break;
+    case 8:
+      support::endian::write<uint64_t>(OS, AF.getValue(), Endian);
+      break;
+    }
+  }
   return Error::success();
 }
 
@@ -856,6 +892,12 @@ Error MCDataFragmentMerger::emitMergedFragments() {
   }
 #define MCFRAGMENT_ENCODED_FRAGMENT_ONLY
 #include "llvm/MC/CAS/MCCASFlatV1.def"
+    case MCFragment::FT_Align: {
+      const MCAlignFragment *AF = cast<MCAlignFragment>(F.first);
+      if (auto E = writeAlignFragment(Builder, *AF, FragmentOS, F.second))
+        return E;
+      break;
+    }
     default:
       llvm_unreachable("other framgents should not be added");
     }
