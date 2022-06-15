@@ -17,11 +17,8 @@ class TestSwiftProgressReporting(TestBase):
         self.broadcaster = self.dbg.GetBroadcaster()
         self.listener = lldbutil.start_listening_from(self.broadcaster,
                                         lldb.SBDebugger.eBroadcastBitProgress)
-
-    # Don't run ClangImporter tests if Clangimporter is disabled.
-    @skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
-    @skipUnlessDarwin
     @swiftTest
+    @skipIf(oslist=no_match(["macosx"]))
     def test_swift_progress_report(self):
         """Test that we are able to fetch swift type-system progress events"""
         self.build()
@@ -35,13 +32,11 @@ class TestSwiftProgressReporting(TestBase):
 
         # Resolve variable to exercise the type-system
         self.runCmd("expr boo")
-        self.runCmd("v s")
 
         beacons = [ "Loading Swift module",
                     "Caching Swift user imports from",
                     "Setting up Swift reflection for",
-                    "Getting Swift compile unit imports for",
-                    "Importing module", "Importing overlay module"]
+                    "Getting Swift compile unit imports for"]
 
         while len(beacons):
             event = lldbutil.fetch_next_event(self, self.listener, self.broadcaster)
