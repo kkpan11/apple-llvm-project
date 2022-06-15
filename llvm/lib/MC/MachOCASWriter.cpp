@@ -11,15 +11,10 @@
 #include "llvm/BinaryFormat/MachO.h"
 #include "llvm/CAS/CASDB.h"
 #include "llvm/CAS/Utils.h"
-#include "llvm/CASObjectFormats/CASObjectReader.h"
-#include "llvm/CASObjectFormats/FlatV1.h"
-#include "llvm/CASObjectFormats/LinkGraph.h"
-#include "llvm/CASObjectFormats/NestedV1.h"
-#include "llvm/CASObjectFormats/Utils.h"
 #include "llvm/ExecutionEngine/JITLink/JITLink.h"
 #include "llvm/ExecutionEngine/JITLink/MachO_x86_64.h"
-#include "llvm/MC/CAS/MCCASFlatV1.h"
 #include "llvm/MC/CAS/MCCASFormatSchemaBase.h"
+#include "llvm/MC/CAS/MCCASObjectV1.h"
 #include "llvm/MC/MCAsmBackend.h"
 #include "llvm/MC/MCAsmLayout.h"
 #include "llvm/MC/MCAssembler.h"
@@ -43,7 +38,6 @@
 #include "llvm/Support/raw_ostream.h"
 #include <memory>
 
-
 using namespace llvm;
 using namespace llvm::cas;
 using namespace llvm::mccasformats;
@@ -64,7 +58,7 @@ MachOCASWriter::MachOCASWriter(
 uint64_t MachOCASWriter::writeObject(MCAssembler &Asm,
                                      const MCAsmLayout &Layout) {
   uint64_t StartOffset = OS.tell();
-  auto Schema = std::make_unique<flatv1::MCSchema>(CAS);
+  auto Schema = std::make_unique<v1::MCSchema>(CAS);
   auto CASObj = cantFail(Schema->createFromMCAssembler(*this, Asm, Layout));
 
   auto VerifyObject = [&]() -> Error {

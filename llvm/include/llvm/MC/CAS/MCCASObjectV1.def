@@ -1,4 +1,4 @@
-//,,,-- llvm/MC/CAS/MCCASFlatV1.def - MCCASFlatV1 definitions ---*- C++ -*-,,,//
+//,,,-- llvm/MC/CAS/MCCASObjectV1.def - MCCASObjectV1 -----------*- C++ -*-,,,//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,7 +6,7 @@
 //
 //,,,----------------------------------------------------------------------,,,//
 //
-// Definitions for MCCASFlatV1
+// Definitions for MCCASObjectV1
 //
 //,,,----------------------------------------------------------------------,,,//
 

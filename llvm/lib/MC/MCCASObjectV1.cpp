@@ -1,4 +1,4 @@
-//===- MC/MCCASFlatV1.cpp -------------------------------------------------===//
+//===- MC/MCCASObjectV1.cpp -----------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,7 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/MC/CAS/MCCASFlatV1.h"
+#include "llvm/MC/CAS/MCCASObjectV1.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/BinaryFormat/MachO.h"
 #include "llvm/CAS/CASDB.h"
@@ -24,7 +24,7 @@
 
 using namespace llvm;
 using namespace llvm::mccasformats;
-using namespace llvm::mccasformats::flatv1;
+using namespace llvm::mccasformats::v1;
 using namespace llvm::mccasformats::reader;
 
 using namespace llvm::casobjectformats::encoding;
@@ -38,7 +38,7 @@ constexpr StringLiteral PaddingRef::KindString;
   constexpr StringLiteral RefName::KindString;
 #define MCFRAGMENT_NODE_REF(MCFragmentName, MCEnumName, MCEnumIdentifier)      \
   constexpr StringLiteral MCFragmentName##Ref::KindString;
-#include "llvm/MC/CAS/MCCASFlatV1.def"
+#include "llvm/MC/CAS/MCCASObjectV1.def"
 
 void MCSchema::anchor() {}
 char MCSchema::ID = 0;
@@ -91,7 +91,7 @@ Error MCSchema::fillCache() {
   Optional<cas::CASID> RootKindID;
   const unsigned Version = 0; // Bump this to error on old object files.
   if (Expected<cas::NodeProxy> ExpectedRootKind =
-          CAS.createNode(None, "mc:flatv1:schema:" + Twine(Version).str()))
+          CAS.createNode(None, "mc:v1:schema:" + Twine(Version).str()))
     RootKindID = *ExpectedRootKind;
   else
     return ExpectedRootKind.takeError();
@@ -103,7 +103,7 @@ Error MCSchema::fillCache() {
 #define CASV1_SIMPLE_GROUP_REF(RefName, IdentifierName) RefName::KindString,
 #define MCFRAGMENT_NODE_REF(MCFragmentName, MCEnumName, MCEnumIdentifier)      \
   MCFragmentName##Ref::KindString,
-#include "llvm/MC/CAS/MCCASFlatV1.def"
+#include "llvm/MC/CAS/MCCASObjectV1.def"
   };
   cas::CASID Refs[] = {*RootKindID};
   SmallVector<cas::CASID> IDs = {*RootKindID};
@@ -117,7 +117,7 @@ Error MCSchema::fillCache() {
            "Ran out of bits for kind strings");
   }
 
-  auto ExpectedTypeID = CAS.createNode(IDs, "mc:flatv1:root");
+  auto ExpectedTypeID = CAS.createNode(IDs, "mc:v1:root");
   if (!ExpectedTypeID)
     return ExpectedTypeID.takeError();
   RootNodeTypeID = *ExpectedTypeID;
@@ -228,7 +228,7 @@ Expected<RefName> RefName::get(Expected<MCNodeProxy> Ref) { \
     return Specific.takeError(); \
   return RefName(*Specific); \
 }
-#include "llvm/MC/CAS/MCCASFlatV1.def"
+#include "llvm/MC/CAS/MCCASObjectV1.def"
 
 Expected<PaddingRef> PaddingRef::create(MCCASBuilder &MB, uint64_t Size) {
   // Fake a FT_Fill Fragment that is zero filled.
@@ -736,7 +736,7 @@ MCSymbolIdFragmentRef::materialize(MCCASReader &Reader) const {
     return getData().size();                                                   \
   }
 #define MCFRAGMENT_ENCODED_FRAGMENT_ONLY
-#include "llvm/MC/CAS/MCCASFlatV1.def"
+#include "llvm/MC/CAS/MCCASObjectV1.def"
 
 Expected<MCAssemblerRef> MCAssemblerRef::get(Expected<MCNodeProxy> Ref) {
   auto Specific = SpecificRefT::getSpecific(std::move(Ref));
@@ -777,7 +777,7 @@ Error MCCASBuilder::buildFragment(const MCFragment &F, unsigned Size) {
     addNode(*FN);                                                              \
     return Error::success();                                                   \
   }
-#include "llvm/MC/CAS/MCCASFlatV1.def"
+#include "llvm/MC/CAS/MCCASObjectV1.def"
   }
   llvm_unreachable("unknown fragment");
 }
@@ -891,7 +891,7 @@ Error MCDataFragmentMerger::emitMergedFragments() {
     break;                                                                     \
   }
 #define MCFRAGMENT_ENCODED_FRAGMENT_ONLY
-#include "llvm/MC/CAS/MCCASFlatV1.def"
+#include "llvm/MC/CAS/MCCASObjectV1.def"
     case MCFragment::FT_Align: {
       const MCAlignFragment *AF = cast<MCAlignFragment>(F.first);
       if (auto E = writeAlignFragment(Builder, *AF, FragmentOS, F.second))
@@ -1310,7 +1310,7 @@ Expected<uint64_t> MCCASReader::materializeAtom(cas::CASID ID) {
 #define MCFRAGMENT_NODE_REF(MCFragmentName, MCEnumName, MCEnumIdentifier)      \
   if (auto F = MCFragmentName##Ref::Cast(*Node))                               \
     return F->materialize(*this);
-#include "llvm/MC/CAS/MCCASFlatV1.def"
+#include "llvm/MC/CAS/MCCASObjectV1.def"
   if (auto F = PaddingRef::Cast(*Node))
     return F->materialize(OS);
   if (auto F = MergedFragmentRef::Cast(*Node))

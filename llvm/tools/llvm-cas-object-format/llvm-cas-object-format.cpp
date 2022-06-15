@@ -19,7 +19,7 @@
 #include "llvm/ExecutionEngine/JITLink/JITLink.h"
 #include "llvm/ExecutionEngine/JITLink/MachO.h"
 #include "llvm/ExecutionEngine/JITLink/MachO_x86_64.h"
-#include "llvm/MC/CAS/MCCASFlatV1.h"
+#include "llvm/MC/CAS/MCCASObjectV1.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FileOutputBuffer.h"
@@ -377,12 +377,12 @@ struct StatCollector {
   // FIXME: Utilize \p SchemaPool.
   nestedv1::ObjectFileSchema NestedV1Schema;
   flatv1::ObjectFileSchema FlatV1Schema;
-  llvm::mccasformats::flatv1::MCSchema MCFlatV1Schema;
+  llvm::mccasformats::v1::MCSchema MCCASV1Schema;
   SmallVector<std::pair<const NodeSchema*, POTItemHandler>>
       Schemas;
 
   StatCollector(CASDB &CAS)
-      : CAS(CAS), NestedV1Schema(CAS), FlatV1Schema(CAS), MCFlatV1Schema(CAS) {
+      : CAS(CAS), NestedV1Schema(CAS), FlatV1Schema(CAS), MCCASV1Schema(CAS) {
     Schemas.push_back(std::make_pair(
         &NestedV1Schema,
         [&](ExitOnError &ExitOnErr,
@@ -398,11 +398,11 @@ struct StatCollector {
           visitPOTItemFlatV1(ExitOnErr, FlatV1Schema, addNodeStats, Node);
         }));
     Schemas.push_back(std::make_pair(
-        &MCFlatV1Schema,
+        &MCCASV1Schema,
         [&](ExitOnError &ExitOnErr,
             function_ref<void(ObjectKindInfo & Info)> addNodeStats,
             cas::NodeProxy Node) {
-          visitPOTItemMCFlatV1(ExitOnErr, MCFlatV1Schema, addNodeStats, Node);
+          visitPOTItemMCCASV1(ExitOnErr, MCCASV1Schema, addNodeStats, Node);
         }));
   }
 
@@ -438,10 +438,10 @@ struct StatCollector {
                           function_ref<void(ObjectKindInfo &Info)> addNodeStats,
                           cas::NodeProxy Node);
   void
-  visitPOTItemMCFlatV1(ExitOnError &ExitOnErr,
-                       llvm::mccasformats::flatv1::MCSchema &Schema,
-                       function_ref<void(ObjectKindInfo &Info)> addNodeStats,
-                       cas::NodeProxy Node);
+  visitPOTItemMCCASV1(ExitOnError &ExitOnErr,
+                      llvm::mccasformats::v1::MCSchema &Schema,
+                      function_ref<void(ObjectKindInfo &Info)> addNodeStats,
+                      cas::NodeProxy Node);
   void printToOuts(ArrayRef<CASID> TopLevels, raw_ostream &StatOS);
 };
 } // end namespace
@@ -599,8 +599,8 @@ void StatCollector::visitPOTItemFlatV1(
   addNodeStats(Stats[Object.getKindString()]);
 }
 
-void StatCollector::visitPOTItemMCFlatV1(
-    ExitOnError &ExitOnErr, llvm::mccasformats::flatv1::MCSchema &Schema,
+void StatCollector::visitPOTItemMCCASV1(
+    ExitOnError &ExitOnErr, llvm::mccasformats::v1::MCSchema &Schema,
     function_ref<void(ObjectKindInfo &Info)> addNodeStats,
     cas::NodeProxy Node) {
   using namespace llvm::casobjectformats::flatv1;
@@ -613,12 +613,12 @@ void StatCollector::visitPOTItemMCFlatV1(
     ++NumTinyObjects;
 
   if (Object.getKindString() ==
-      llvm::mccasformats::flatv1::SectionRef::KindString) {
+      llvm::mccasformats::v1::SectionRef::KindString) {
     if (!Object.getData().empty())
       SecRefSize += Object.getData().size();
   }
   if (Object.getKindString() ==
-      llvm::mccasformats::flatv1::AtomRef::KindString) {
+      llvm::mccasformats::v1::AtomRef::KindString) {
     if (!Object.getData().empty())
       AtomRefSize += Object.getData().size();
   }
@@ -874,8 +874,7 @@ static Error materializeObjectsFromCASTree(CASDB &CAS, CASID ID) {
 
         SmallString<50> ContentsStorage;
         raw_svector_ostream ObjOS(ContentsStorage);
-        auto Schema =
-            std::make_unique<llvm::mccasformats::flatv1::MCSchema>(CAS);
+        auto Schema = std::make_unique<llvm::mccasformats::v1::MCSchema>(CAS);
         if (Error E = Schema->serializeObjectFile(*ObjRoot, ObjOS))
           return E;
         std::unique_ptr<llvm::FileOutputBuffer> Output;

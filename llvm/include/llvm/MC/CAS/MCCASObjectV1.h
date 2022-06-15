@@ -1,4 +1,4 @@
-//===- llvm/MC/CAS/MCCASFlatV1.h --------------------------------*- C++ -*-===//
+//===- llvm/MC/CAS/MCCASObjectV1.h ------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_MC_CAS_MCCASFLATV1_H
-#define LLVM_MC_CAS_MCCASFLATV1_H
+#ifndef LLVM_MC_CAS_MCCASOBJECTV1_H
+#define LLVM_MC_CAS_MCCASOBJECTV1_H
 
 #include "llvm/BinaryFormat/MachO.h"
 #include "llvm/CAS/CASDB.h"
@@ -19,13 +19,13 @@
 
 namespace llvm {
 namespace mccasformats {
-namespace flatv1 {
+namespace v1 {
 
 class MCSchema;
 class MCCASBuilder;
 class MCCASReader;
 
-// FIXME: Using the same structure from FlatV1 from CASObjectFormat.
+// FIXME: Using the same structure from ObjectV1 from CASObjectFormat.
 class MCNodeProxy : public cas::NodeProxy {
 public:
   static Expected<MCNodeProxy> get(const MCSchema &Schema,
@@ -243,7 +243,7 @@ protected:
   private:                                                                     \
     explicit MCFragmentName##Ref(SpecificRefT Ref) : SpecificRefT(Ref) {}      \
   };
-#include "llvm/MC/CAS/MCCASFlatV1.def"
+#include "llvm/MC/CAS/MCCASObjectV1.def"
 
 class PaddingRef : public SpecificRef<PaddingRef> {
   using SpecificRefT = SpecificRef<PaddingRef>;
@@ -380,8 +380,8 @@ private:
   const MCSchema &Schema;
 };
 
-} // namespace flatv1
+} // namespace v1
 } // namespace mccasformats
 } // namespace llvm
 
-#endif // LLVM_MC_CAS_MCCASFLATV1_H
+#endif // LLVM_MC_CAS_MCCASOBJECTV1_H
