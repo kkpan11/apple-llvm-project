@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/MC/CAS/MCCASFormatSchemaBase.h"
-#include "llvm/MC/CAS/MCCASFlatV1.h"
+#include "llvm/MC/CAS/MCCASObjectV1.h"
 
 using namespace llvm;
 using namespace llvm::mccasformats;
@@ -17,6 +17,6 @@ void MCFormatSchemaBase::anchor() {}
 
 void mccasformats::addMCFormatSchemas(cas::SchemaPool &Pool) {
   auto &CAS = Pool.getCAS();
-  Pool.addSchema(std::make_unique<flatv1::MCSchema>(CAS));
+  Pool.addSchema(std::make_unique<v1::MCSchema>(CAS));
 }
 

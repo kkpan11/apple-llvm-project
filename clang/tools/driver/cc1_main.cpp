@@ -37,7 +37,7 @@
 #include "llvm/CAS/Utils.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/LinkAllPasses.h"
-#include "llvm/MC/CAS/MCCASFlatV1.h"
+#include "llvm/MC/CAS/MCCASObjectV1.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Option/Arg.h"
 #include "llvm/Option/ArgList.h"
@@ -532,7 +532,7 @@ Optional<int> CompileJobCache::replayCachedResult(llvm::cas::ObjectRef ResultID,
         if (Error E = CAS->getNode(BytesID).moveInto(CASObj))
           llvm::report_fatal_error(std::move(E));
         auto Schema =
-            std::make_unique<llvm::mccasformats::flatv1::MCSchema>(*CAS);
+            std::make_unique<llvm::mccasformats::v1::MCSchema>(*CAS);
         if (auto E = Schema->serializeObjectFile(*CASObj, OS))
           report_fatal_error(std::move(E));
       }

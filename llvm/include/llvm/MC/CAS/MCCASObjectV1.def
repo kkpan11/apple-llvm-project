@@ -1,4 +1,4 @@
-//,,,-- llvm/MC/CAS/MCCASFlatV1.def - MCCASFlatV1 definitions ---*- C++ -*-,,,//
+//,,,-- llvm/MC/CAS/MCCASObjectV1.def - MCCASObjectV1 -----------*- C++ -*-,,,//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,7 +6,7 @@
 //
 //,,,----------------------------------------------------------------------,,,//
 //
-// Definitions for MCCASFlatV1
+// Definitions for MCCASObjectV1
 //
 //,,,----------------------------------------------------------------------,,,//
 
@@ -15,12 +15,22 @@
 CASV1_SIMPLE_DATA_REF(HeaderRef, mc:header)
 CASV1_SIMPLE_DATA_REF(RelocationsRef, mc:relocations)
 CASV1_SIMPLE_DATA_REF(DataInCodeRef, mc:data_in_code)
-CASV1_SIMPLE_DATA_REF(SymbolTableRef, mc:symbol_table)
+CASV1_SIMPLE_DATA_REF(CStringRef, mc:cstring)
 CASV1_SIMPLE_DATA_REF(MergedFragmentRef, mc:merged_fragment)
 CASV1_SIMPLE_DATA_REF(DebugStrRef, mc:debug_string)
 
 #undef CASV1_SIMPLE_DATA_REF
 #endif /* CASV1_SIMPLE_DATA_REF */
+
+#ifdef CASV1_SIMPLE_GROUP_REF
+
+CASV1_SIMPLE_GROUP_REF(GroupRef, mc:group)
+CASV1_SIMPLE_GROUP_REF(SectionRef, mc:section)
+CASV1_SIMPLE_GROUP_REF(AtomRef, mc:atom)
+CASV1_SIMPLE_GROUP_REF(SymbolTableRef, mc:symbol_table)
+
+#undef CASV1_SIMPLE_GROUP_REF
+#endif /* CASV1_SIMPLE_GPOUP_REF */
 
 #ifdef MCFRAGMENT_NODE_REF
 

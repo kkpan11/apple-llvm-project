@@ -19,7 +19,7 @@
 #include "llvm/ExecutionEngine/JITLink/JITLink.h"
 #include "llvm/ExecutionEngine/JITLink/MachO.h"
 #include "llvm/ExecutionEngine/JITLink/MachO_x86_64.h"
-#include "llvm/MC/CAS/MCCASFlatV1.h"
+#include "llvm/MC/CAS/MCCASObjectV1.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FileOutputBuffer.h"
@@ -377,12 +377,12 @@ struct StatCollector {
   // FIXME: Utilize \p SchemaPool.
   nestedv1::ObjectFileSchema NestedV1Schema;
   flatv1::ObjectFileSchema FlatV1Schema;
-  llvm::mccasformats::flatv1::MCSchema MCFlatV1Schema;
+  llvm::mccasformats::v1::MCSchema MCCASV1Schema;
   SmallVector<std::pair<const NodeSchema*, POTItemHandler>>
       Schemas;
 
   StatCollector(CASDB &CAS)
-      : CAS(CAS), NestedV1Schema(CAS), FlatV1Schema(CAS), MCFlatV1Schema(CAS) {
+      : CAS(CAS), NestedV1Schema(CAS), FlatV1Schema(CAS), MCCASV1Schema(CAS) {
     Schemas.push_back(std::make_pair(
         &NestedV1Schema,
         [&](ExitOnError &ExitOnErr,
@@ -398,11 +398,11 @@ struct StatCollector {
           visitPOTItemFlatV1(ExitOnErr, FlatV1Schema, addNodeStats, Node);
         }));
     Schemas.push_back(std::make_pair(
-        &MCFlatV1Schema,
+        &MCCASV1Schema,
         [&](ExitOnError &ExitOnErr,
             function_ref<void(ObjectKindInfo & Info)> addNodeStats,
             cas::NodeProxy Node) {
-          visitPOTItemMCFlatV1(ExitOnErr, MCFlatV1Schema, addNodeStats, Node);
+          visitPOTItemMCCASV1(ExitOnErr, MCCASV1Schema, addNodeStats, Node);
         }));
   }
 
@@ -421,9 +421,9 @@ struct StatCollector {
   size_t NumZeroFillBlocks = 0;
   size_t Num1TargetBlocks = 0;
   size_t Num2TargetBlocks = 0;
-  size_t TotalReferenceSize = 0;
-  size_t OptReferenceSize = 0;
   size_t NumTinyObjects = 0;
+  size_t SecRefSize = 0;
+  size_t AtomRefSize = 0;
 
   void visitPOT(ExitOnError &ExitOnErr, ArrayRef<CASID> TopLevels,
                 ArrayRef<POTItem> POT);
@@ -438,10 +438,10 @@ struct StatCollector {
                           function_ref<void(ObjectKindInfo &Info)> addNodeStats,
                           cas::NodeProxy Node);
   void
-  visitPOTItemMCFlatV1(ExitOnError &ExitOnErr,
-                       llvm::mccasformats::flatv1::MCSchema &Schema,
-                       function_ref<void(ObjectKindInfo &Info)> addNodeStats,
-                       cas::NodeProxy Node);
+  visitPOTItemMCCASV1(ExitOnError &ExitOnErr,
+                      llvm::mccasformats::v1::MCSchema &Schema,
+                      function_ref<void(ObjectKindInfo &Info)> addNodeStats,
+                      cas::NodeProxy Node);
   void printToOuts(ArrayRef<CASID> TopLevels, raw_ostream &StatOS);
 };
 } // end namespace
@@ -599,38 +599,29 @@ void StatCollector::visitPOTItemFlatV1(
   addNodeStats(Stats[Object.getKindString()]);
 }
 
-void StatCollector::visitPOTItemMCFlatV1(
-    ExitOnError &ExitOnErr, llvm::mccasformats::flatv1::MCSchema &Schema,
+void StatCollector::visitPOTItemMCCASV1(
+    ExitOnError &ExitOnErr, llvm::mccasformats::v1::MCSchema &Schema,
     function_ref<void(ObjectKindInfo &Info)> addNodeStats,
     cas::NodeProxy Node) {
   using namespace llvm::casobjectformats::flatv1;
   auto Object = ExitOnErr(Schema.getNode(Node));
   addNodeStats(Stats[Object.getKindString()]);
 
-  if (Object.getKindString() ==
-          llvm::mccasformats::flatv1::SubSectionRef::KindString) {
-    DenseSet<cas::CASID> UniqueChildren;
-    ExitOnErr(Object.forEachReferenceID([&](CASID ID) -> Error {
-      UniqueChildren.insert(ID);
-      return Error::success();
-    }));
-
-    size_t ReferenceSize = Object.getNumReferences() * sizeof(void *);
-
-    // Assume we don't overflow VBR8 (max 128) so each ref is 1 byte. This
-    // computes the lower bound if we use an array of the index to dedup CASID
-    // reference to its children.
-    size_t DedupSize =
-        UniqueChildren.size() * sizeof(void *) + Object.getNumReferences();
-
-    TotalReferenceSize += ReferenceSize;
-    OptReferenceSize += ReferenceSize > DedupSize ? DedupSize : ReferenceSize;
-  }
-
   if (Object.getNumReferences() == 0 &&
       Object.getData().size() <
           (Object.getID().getHash().size() + sizeof(void *)))
     ++NumTinyObjects;
+
+  if (Object.getKindString() ==
+      llvm::mccasformats::v1::SectionRef::KindString) {
+    if (!Object.getData().empty())
+      SecRefSize += Object.getData().size();
+  }
+  if (Object.getKindString() ==
+      llvm::mccasformats::v1::AtomRef::KindString) {
+    if (!Object.getData().empty())
+      AtomRefSize += Object.getData().size();
+  }
 }
 
 static void computeStats(CASDB &CAS, ArrayRef<CASID> TopLevels,
@@ -817,9 +808,9 @@ void StatCollector::printToOuts(ArrayRef<CASID> TopLevels,
   printIfNotZero("num-zero-fill-blocks", NumZeroFillBlocks);
   printIfNotZero("num-1-target-blocks", Num2TargetBlocks);
   printIfNotZero("num-2-target-blocks", Num1TargetBlocks);
-  printIfNotZero("total-reference-size", TotalReferenceSize);
-  printIfNotZero("opt-reference-size", OptReferenceSize);
   printIfNotZero("num-tiny-objects", NumTinyObjects);
+  printIfNotZero("sec-ref-size", SecRefSize);
+  printIfNotZero("atom-ref-size", AtomRefSize);
 }
 
 static Error printCASObject(ObjectFormatSchemaPool &Pool, CASID ID, bool omitCASID) {
@@ -858,26 +849,32 @@ static Error materializeObjectsFromCASTree(CASDB &CAS, CASID ID) {
   return walkFileTreeRecursively(
       CAS, *ExpTree,
       [&](const NamedTreeEntry &Entry, Optional<TreeProxy>) -> Error {
-        if (Entry.getKind() == TreeEntry::Tree)
-          return Error::success();
-        if (Entry.getKind() != TreeEntry::Regular) {
+        if (Entry.getKind() != TreeEntry::Regular &&
+            Entry.getKind() != TreeEntry::Tree) {
           return createStringError(inconvertibleErrorCode(),
                                    "found non-regular entry: " +
                                        Entry.getName());
         }
-        auto ObjRoot = CAS.loadNode(Entry.getRef());
-        if (!ObjRoot)
-          return ObjRoot.takeError();
-
         SmallString<256> OutputPath(OutputPrefix);
         StringRef ObjFileName = Entry.getName();
         ObjFileName.consume_back(".casid");
         llvm::sys::path::append(OutputPath, ObjFileName);
 
+        if (Entry.getKind() == TreeEntry::Tree) {
+          // Check the path exists, if not, create the directory.
+          if (!llvm::sys::fs::exists(OutputPath)) {
+            if (auto EC = llvm::sys::fs::create_directory(OutputPath))
+              return errorCodeToError(EC);
+          }
+          return Error::success();
+        }
+        auto ObjRoot = CAS.loadNode(Entry.getRef());
+        if (!ObjRoot)
+          return ObjRoot.takeError();
+
         SmallString<50> ContentsStorage;
         raw_svector_ostream ObjOS(ContentsStorage);
-        auto Schema =
-            std::make_unique<llvm::mccasformats::flatv1::MCSchema>(CAS);
+        auto Schema = std::make_unique<llvm::mccasformats::v1::MCSchema>(CAS);
         if (Error E = Schema->serializeObjectFile(*ObjRoot, ObjOS))
           return E;
         std::unique_ptr<llvm::FileOutputBuffer> Output;

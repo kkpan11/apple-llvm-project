@@ -41,6 +41,7 @@
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/WithColor.h"
 #include "llvm/Target/TargetOptions.h"
+#include <memory>
 
 using namespace llvm;
 
@@ -216,9 +217,22 @@ static cl::opt<bool> NoExecStack("no-exec-stack",
                                  cl::desc("File doesn't need an exec stack"),
                                  cl::cat(MCCategory));
 
+static cl::opt<std::string> CASPath("cas", cl::desc("CAS Path"),
+                                    cl::cat(MCCategory));
+
 static cl::opt<bool> UseMCCASBackend("cas-backend",
                                      cl::desc("Use MCCAS backend"),
                                      cl::cat(MCCategory));
+
+static cl::opt<CASBackendMode> MCCASBackendMode(
+    cl::desc("MC CAS Backend Mode"), cl::init(CASBackendMode::Verify),
+    cl::values(clEnumValN(CASBackendMode::Verify, "mccas-verify",
+                          "Native object with verifier"),
+               clEnumValN(CASBackendMode::Native, "mccas-native",
+                          "Native object without verifier"),
+               clEnumValN(CASBackendMode::CASID, "mccas-casid",
+                          "CASID file output")),
+    cl::cat(MCCategory));
 
 enum ActionType {
   AC_AsLex,
@@ -519,7 +533,19 @@ int main(int argc, char **argv) {
   std::unique_ptr<buffer_ostream> BOS;
   raw_pwrite_stream *OS = &Out->os();
   std::unique_ptr<MCStreamer> Str;
-  auto CASDB = llvm::cas::createInMemoryCAS();
+  std::unique_ptr<cas::CASDB> CASDB;
+  if (CASPath.empty())
+    CASDB = cas::createInMemoryCAS();
+  else {
+    auto MaybeCAS = CASPath == "auto"
+                        ? cas::createOnDiskCAS(cas::getDefaultOnDiskCASPath())
+                        : cas::createOnDiskCAS(CASPath);
+    if (!MaybeCAS) {
+      WithColor::error() << toString(MaybeCAS.takeError()) << "\n";
+      return 1;
+    }
+    CASDB = std::move(*MaybeCAS);
+  }
 
   std::unique_ptr<MCInstrInfo> MCII(TheTarget->createMCInstrInfo());
   assert(MCII && "Unable to create instruction info!");
@@ -578,11 +604,10 @@ int main(int argc, char **argv) {
     MCAsmBackend *MAB = TheTarget->createMCAsmBackend(*STI, *MRI, MCOptions);
     Str.reset(TheTarget->createMCObjectStreamer(
         TheTriple, Ctx, std::unique_ptr<MCAsmBackend>(MAB),
-        UseCASBackend
-            ? MAB->createCASObjectWriter(*OS, TheTriple, *CASDB, MCOptions,
-                                         llvm::CASBackendMode::Verify)
-        : DwoOut ? MAB->createDwoObjectWriter(*OS, DwoOut->os())
-                 : MAB->createObjectWriter(*OS),
+        UseCASBackend ? MAB->createCASObjectWriter(*OS, TheTriple, *CASDB,
+                                                   MCOptions, MCCASBackendMode)
+        : DwoOut      ? MAB->createDwoObjectWriter(*OS, DwoOut->os())
+                      : MAB->createObjectWriter(*OS),
         std::unique_ptr<MCCodeEmitter>(CE), *STI, MCOptions.MCRelaxAll,
         MCOptions.MCIncrementalLinkerCompatible,
         /*DWARFMustBeAtTheEnd*/ false));

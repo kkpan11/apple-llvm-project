@@ -1,4 +1,4 @@
-//===- llvm/MC/CAS/MCCASFlatV1.h --------------------------------*- C++ -*-===//
+//===- llvm/MC/CAS/MCCASObjectV1.h ------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,24 +6,26 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_MC_CAS_MCCASFLATV1_H
-#define LLVM_MC_CAS_MCCASFLATV1_H
+#ifndef LLVM_MC_CAS_MCCASOBJECTV1_H
+#define LLVM_MC_CAS_MCCASOBJECTV1_H
 
+#include "llvm/BinaryFormat/MachO.h"
 #include "llvm/CAS/CASDB.h"
 #include "llvm/CAS/CASID.h"
 #include "llvm/MC/CAS/MCCASFormatSchemaBase.h"
 #include "llvm/MC/CAS/MCCASReader.h"
 #include "llvm/MC/MCAsmLayout.h"
+#include "llvm/Support/Endian.h"
 
 namespace llvm {
 namespace mccasformats {
-namespace flatv1 {
+namespace v1 {
 
 class MCSchema;
 class MCCASBuilder;
 class MCCASReader;
 
-// FIXME: Using the same structure from FlatV1 from CASObjectFormat.
+// FIXME: Using the same structure from ObjectV1 from CASObjectFormat.
 class MCNodeProxy : public cas::NodeProxy {
 public:
   static Expected<MCNodeProxy> get(const MCSchema &Schema,
@@ -180,6 +182,36 @@ protected:
     explicit RefName(SpecificRefT Ref) : SpecificRefT(Ref) {}                  \
   };
 
+#define CASV1_SIMPLE_GROUP_REF(RefName, IdentifierName)                        \
+  class RefName : public SpecificRef<RefName> {                                \
+    using SpecificRefT = SpecificRef<RefName>;                                 \
+    friend class SpecificRef<RefName>;                                         \
+                                                                               \
+  public:                                                                      \
+    static constexpr StringLiteral KindString = #IdentifierName;               \
+    static Expected<RefName> create(MCCASBuilder &MB,                          \
+                                    ArrayRef<cas::CASID> IDs);                 \
+    static Expected<RefName> get(Expected<MCNodeProxy> Ref) {                  \
+      auto Specific = SpecificRefT::getSpecific(std::move(Ref));               \
+      if (!Specific)                                                           \
+        return Specific.takeError();                                           \
+      return RefName(*Specific);                                               \
+    }                                                                          \
+    static Expected<RefName> get(const MCSchema &Schema, cas::CASID ID) {      \
+      return get(Schema.getNode(ID));                                          \
+    }                                                                          \
+    static Optional<RefName> Cast(MCNodeProxy Ref) {                           \
+      auto Specific = SpecificRefT::Cast(Ref);                                 \
+      if (!Specific)                                                           \
+        return None;                                                           \
+      return RefName(*Specific);                                               \
+    }                                                                          \
+    Expected<uint64_t> materialize(MCCASReader &Reader) const;                 \
+                                                                               \
+  private:                                                                     \
+    explicit RefName(SpecificRefT Ref) : SpecificRefT(Ref) {}                  \
+  };
+
 #define MCFRAGMENT_NODE_REF(MCFragmentName, MCEnumName, MCEnumIdentifier)      \
   class MCFragmentName##Ref : public SpecificRef<MCFragmentName##Ref> {        \
     using SpecificRefT = SpecificRef<MCFragmentName##Ref>;                     \
@@ -211,7 +243,7 @@ protected:
   private:                                                                     \
     explicit MCFragmentName##Ref(SpecificRefT Ref) : SpecificRefT(Ref) {}      \
   };
-#include "llvm/MC/CAS/MCCASFlatV1.def"
+#include "llvm/MC/CAS/MCCASObjectV1.def"
 
 class PaddingRef : public SpecificRef<PaddingRef> {
   using SpecificRefT = SpecificRef<PaddingRef>;
@@ -237,33 +269,6 @@ public:
 
 private:
   explicit PaddingRef(SpecificRefT Ref) : SpecificRefT(Ref) {}
-};
-
-class SubSectionRef : public SpecificRef<SubSectionRef> {
-  using SpecificRefT = SpecificRef<SubSectionRef>;
-  friend class SpecificRef<SubSectionRef>;
-
-public:
-  static constexpr StringLiteral KindString = "mc:sub_section";
-
-  static Expected<SubSectionRef> create(MCCASBuilder &MB,
-                                        ArrayRef<cas::CASID> Fragments);
-
-  static Expected<SubSectionRef> get(Expected<MCNodeProxy> Ref);
-  static Expected<SubSectionRef> get(const MCSchema &Schema, cas::CASID ID) {
-    return get(Schema.getNode(ID));
-  }
-  static Optional<SubSectionRef> Cast(MCNodeProxy Ref) {
-    auto Specific = SpecificRefT::Cast(Ref);
-    if (!Specific)
-      return None;
-    return SubSectionRef(*Specific);
-  }
-
-  Expected<uint64_t> materialize(MCCASReader &Reader) const;
-
-private:
-  explicit SubSectionRef(SpecificRefT Ref) : SpecificRefT(Ref) {}
 };
 
 class MCAssemblerRef : public SpecificRef<MCAssemblerRef> {
@@ -303,7 +308,8 @@ public:
                MCAssembler &Asm, const MCAsmLayout &Layout,
                raw_ostream *DebugOS)
       : CAS(Schema.CAS), ObjectWriter(ObjectWriter), Schema(Schema), Asm(Asm),
-        Layout(Layout), DebugOS(DebugOS), FragmentOS(FragmentData) {}
+        Layout(Layout), DebugOS(DebugOS), FragmentOS(FragmentData),
+        CurrentContext(&Sections) {}
 
   Error prepare();
   Error buildMachOHeader();
@@ -312,14 +318,26 @@ public:
   Error buildDataInCodeRegion();
   Error buildSymbolTable();
 
-  void startSubSection(const MCSymbol *Atom = nullptr);
+  void startGroup();
+  Error finalizeGroup();
+
+  void startSection(const MCSection *Sec);
+  Error finalizeSection();
+
+  void startAtom(const MCSymbol *Atom);
+  Error finalizeAtom();
+
   void addNode(cas::NodeProxy Node);
-  Error finalizeSubSection();
-  const MCSymbol *getCurrentAtom() const {
-    return SectionContext.back().CurrentAtom;
-  }
+  const MCSymbol *getCurrentAtom() const { return CurrentAtom; }
 
   Error buildFragment(const MCFragment &F, unsigned FragmentSize);
+
+  ArrayRef<MachO::any_relocation_info> getSectionRelocs() const {
+    return SectionRelocs;
+  }
+  ArrayRef<MachO::any_relocation_info> getAtomRelocs() const {
+    return AtomRelocs;
+  }
 
   // Scratch space
   SmallString<8> FragmentData;
@@ -327,34 +345,43 @@ public:
 private:
   friend class MCAssemblerRef;
 
-  struct SubSectionContext {
-    SmallVector<cas::CASID> Fragments;
-    const MCSymbol *CurrentAtom;
-  };
-
   // Helper functions.
   Error createStringSection(StringRef S,
                             std::function<Error(StringRef)> CreateFn);
 
-  SmallVector<SubSectionContext, 2> SectionContext;
-  SmallVector<cas::CASID> Sections;
+
+  const MCSection *CurrentSection = nullptr;
+  const MCSymbol *CurrentAtom = nullptr;
+
+  SmallVector<cas::CASID> Sections, GroupContext, SectionContext, AtomContext;
+  SmallVector<cas::CASID> *CurrentContext;
+
+  SmallVector<MachO::any_relocation_info> AtomRelocs;
+  SmallVector<MachO::any_relocation_info> SectionRelocs;
+  DenseMap<const MCFragment *, std::vector<MachO::any_relocation_info>> RelMap;
 };
 
 class MCCASReader {
 public:
   raw_ostream &OS;
 
-  MCCASReader(raw_ostream &OS, const Triple &Target, const MCSchema &Schema);
-  bool isLittleEndian() const { return Target.isLittleEndian(); }
+  std::vector<std::vector<MachO::any_relocation_info>> Relocations;
 
-  Expected<uint64_t> materializeFragment(cas::CASID ID);
+  MCCASReader(raw_ostream &OS, const Triple &Target, const MCSchema &Schema);
+  support::endianness getEndian() {
+    return Target.isLittleEndian() ? support::little : support::big;
+  }
+
+  Expected<uint64_t> materializeGroup(cas::CASID ID);
+  Expected<uint64_t> materializeSection(cas::CASID ID);
+  Expected<uint64_t> materializeAtom(cas::CASID ID);
 private:
   const Triple &Target;
   const MCSchema &Schema;
 };
 
-} // namespace flatv1
+} // namespace v1
 } // namespace mccasformats
 } // namespace llvm
 
-#endif // LLVM_MC_CAS_MCCASFLATV1_H
+#endif // LLVM_MC_CAS_MCCASOBJECTV1_H
