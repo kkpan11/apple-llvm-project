@@ -955,4 +955,51 @@ if.end:                                           ; preds = %entry
   unreachable
 }
 
+define half @test_sqrt(half %0) {
+; CHECK-LIBCALL-LABEL: test_sqrt:
+; CHECK-LIBCALL:       # %bb.0: # %entry
+; CHECK-LIBCALL-NEXT:    pushq %rax
+; CHECK-LIBCALL-NEXT:    .cfi_def_cfa_offset 16
+; CHECK-LIBCALL-NEXT:    callq __extendhfsf2@PLT
+; CHECK-LIBCALL-NEXT:    sqrtss %xmm0, %xmm0
+; CHECK-LIBCALL-NEXT:    callq __truncsfhf2@PLT
+; CHECK-LIBCALL-NEXT:    popq %rax
+; CHECK-LIBCALL-NEXT:    .cfi_def_cfa_offset 8
+; CHECK-LIBCALL-NEXT:    retq
+;
+; BWON-F16C-LABEL: test_sqrt:
+; BWON-F16C:       # %bb.0: # %entry
+; BWON-F16C-NEXT:    vpextrw $0, %xmm0, %eax
+; BWON-F16C-NEXT:    movzwl %ax, %eax
+; BWON-F16C-NEXT:    vmovd %eax, %xmm0
+; BWON-F16C-NEXT:    vcvtph2ps %xmm0, %xmm0
+; BWON-F16C-NEXT:    vsqrtss %xmm0, %xmm0, %xmm0
+; BWON-F16C-NEXT:    vcvtps2ph $4, %xmm0, %xmm0
+; BWON-F16C-NEXT:    vmovd %xmm0, %eax
+; BWON-F16C-NEXT:    vpinsrw $0, %eax, %xmm0, %xmm0
+; BWON-F16C-NEXT:    retq
+;
+; CHECK-I686-LABEL: test_sqrt:
+; CHECK-I686:       # %bb.0: # %entry
+; CHECK-I686-NEXT:    subl $12, %esp
+; CHECK-I686-NEXT:    .cfi_def_cfa_offset 16
+; CHECK-I686-NEXT:    pinsrw $0, {{[0-9]+}}(%esp), %xmm0
+; CHECK-I686-NEXT:    pextrw $0, %xmm0, %eax
+; CHECK-I686-NEXT:    movw %ax, (%esp)
+; CHECK-I686-NEXT:    calll __extendhfsf2
+; CHECK-I686-NEXT:    fstps {{[0-9]+}}(%esp)
+; CHECK-I686-NEXT:    movss {{.*#+}} xmm0 = mem[0],zero,zero,zero
+; CHECK-I686-NEXT:    sqrtss %xmm0, %xmm0
+; CHECK-I686-NEXT:    movss %xmm0, (%esp)
+; CHECK-I686-NEXT:    calll __truncsfhf2
+; CHECK-I686-NEXT:    addl $12, %esp
+; CHECK-I686-NEXT:    .cfi_def_cfa_offset 4
+; CHECK-I686-NEXT:    retl
+entry:
+  %1 = call half @llvm.sqrt.f16(half %0)
+  ret half %1
+}
+
+declare half @llvm.sqrt.f16(half)
+
 attributes #0 = { nounwind }
