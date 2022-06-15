@@ -144,17 +144,48 @@ location for the on-disk CAS.
 % ninja
 ```
 
-`clang-cache-build-session` can be used in combination with `clang-cache` to
+`cache-build-session` can be used in combination with `clang-cache` to
 start a build command that indicates a "build session". After configuring with
 the above command, you can use it like this:
 
 ```
-% $TOOLCHAIN/usr/bin/clang-cache-build-session ninja
+% $TOOLCHAIN/usr/bin/cache-build-session ninja
 ```
 
-`clang-cache-build-session` accepts a command that triggers a build and, while
+`cache-build-session` accepts a command that triggers a build and, while
 the command is running, all the clang invocations that are part of that build
 will be sharing the same dependency scanning daemon.
+
+Also using `-prefix-map-cmake` flag like:
+
+```
+% $TOOLCHAIN/usr/bin/cache-build-session -prefix-map-cmake ninja
+```
+
+Will instruct `cache-build-session` that it is running within a CMake
+build directory that was enabled for [CMake's File API](https://cmake.org/cmake/help/latest/manual/cmake-file-api.7.html).
+`cache-build-session` will infer the CMake project's source paths and
+setup the proper environment variable for `clang-cache` to create prefix mapping
+that results in build and source directory independent compilations.
+
+In order to enable CMake's File API run
+
+```
+% mkdir -p .cmake/api/v1/query/codemodel-v2
+```
+
+inside the build directory before invoking the `cmake` configure command; this
+only needs to happen once when the build directory is first created.
+
+Note that with prefix-mapped compilations `lldb` needs to receive the "reverse mapping"
+of the paths in order to be able to find the original source paths.
+Running
+
+```
+% $TOOLCHAIN/usr/bin/cache-build-session -prefix-map-cmake -v echo
+```
+
+will show all the inferred paths and how they were mapped.
 
 #### LLVM project CMake configuration
 
