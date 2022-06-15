@@ -127,7 +127,7 @@ void DwarfFile::emitAbbrevs(MCSection *Section) {
   // any labels. This is done because there are some targets do not support
   // labels inside debug sections.
   if (Abbrevs.size() == 1 && !Abbrevs[0]->isAbbreviationListEmpty()) {
-    Asm->OutStreamer->SwitchSection(Section);
+    Asm->OutStreamer->switchSection(Section);
     Abbrevs[0]->Emit(Asm);
     return;
   }
@@ -137,7 +137,7 @@ void DwarfFile::emitAbbrevs(MCSection *Section) {
     if (Abbrevs[I]->isAbbreviationListEmpty())
       continue;
 
-    Asm->OutStreamer->SwitchSection(Section);
+    Asm->OutStreamer->switchSection(Section);
     MCSymbol *AbbrevStartSym = getOrCreateAbbrevSectionStart();
     // Do not emit the same label again, AbbrevStartSym should be the same for
     // all abbreviation contributions, it denotes the start of the

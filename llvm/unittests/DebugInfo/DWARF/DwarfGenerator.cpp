@@ -518,7 +518,7 @@ StringRef dwarfgen::Generator::generate() {
     CU->setLength(CUOffset - 4);
   }
   for (auto &Abbreviation : Abbreviations) {
-    Asm->OutStreamer->SwitchSection(TLOF->getDwarfAbbrevSection());
+    Asm->OutStreamer->switchSection(TLOF->getDwarfAbbrevSection());
     Abbreviation->Emit(Asm.get());
   }
 
