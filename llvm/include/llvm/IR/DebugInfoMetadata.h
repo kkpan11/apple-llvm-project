@@ -1333,8 +1333,17 @@ public:
     LastDebugNameTableKind = None
   };
 
+  enum CasFriendlinessKind : unsigned {
+    NoCasFriendlyDebugInfo = 0,
+    DebugLineOnly,
+    DebugAbbrev,
+    LastCasFriendlinessKind = DebugAbbrev
+  };
+
   static Optional<DebugEmissionKind> getEmissionKind(StringRef Str);
+  static Optional<CasFriendlinessKind> getCasFriendlinessKind(StringRef Str);
   static const char *emissionKindString(DebugEmissionKind EK);
+  static const char *casFriendlinessString(CasFriendlinessKind CFK);
   static Optional<DebugNameTableKind> getNameTableKind(StringRef Str);
   static const char *nameTableKindString(DebugNameTableKind PK);
 
@@ -1348,14 +1357,14 @@ private:
   bool DebugInfoForProfiling;
   unsigned NameTableKind;
   bool RangesBaseAddress;
-  bool CasFriendliness;
-    
+  unsigned CasFriendliness;
+
   DICompileUnit(LLVMContext &C, StorageType Storage, unsigned SourceLanguage,
                 bool IsOptimized, unsigned RuntimeVersion,
                 unsigned EmissionKind, uint64_t DWOId, bool SplitDebugInlining,
                 bool DebugInfoForProfiling, unsigned NameTableKind,
                 bool RangesBaseAddress, ArrayRef<Metadata *> Ops,
-                bool CasFriendliness);
+                unsigned CasFriendliness);
   ~DICompileUnit() = default;
 
   static DICompileUnit *
@@ -1368,7 +1377,7 @@ private:
           DIImportedEntityArray ImportedEntities, DIMacroNodeArray Macros,
           uint64_t DWOId, bool SplitDebugInlining, bool DebugInfoForProfiling,
           unsigned NameTableKind, bool RangesBaseAddress, StringRef SysRoot,
-          StringRef SDK, bool CasFriendlieness, StorageType Storage,
+          StringRef SDK, unsigned CasFriendlieness, StorageType Storage,
           bool ShouldCreate = true) {
     return getImpl(
         Context, SourceLanguage, File, getCanonicalMDString(Context, Producer),
@@ -1390,7 +1399,8 @@ private:
           Metadata *Macros, uint64_t DWOId, bool SplitDebugInlining,
           bool DebugInfoForProfiling, unsigned NameTableKind,
           bool RangesBaseAddress, MDString *SysRoot, MDString *SDK,
-          bool CasFriendliness, StorageType Storage, bool ShouldCreate = true);
+          unsigned CasFriendliness, StorageType Storage,
+          bool ShouldCreate = true);
 
   TempDICompileUnit cloneImpl() const {
     return getTemporary(
@@ -1399,7 +1409,8 @@ private:
         getEmissionKind(), getEnumTypes(), getRetainedTypes(),
         getGlobalVariables(), getImportedEntities(), getMacros(), DWOId,
         getSplitDebugInlining(), getDebugInfoForProfiling(), getNameTableKind(),
-        getRangesBaseAddress(), getSysRoot(), getSDK(), isCasFriendly());
+        getRangesBaseAddress(), getSysRoot(), getSDK(),
+        getCasFriendlinessKind());
   }
 
 public:
@@ -1416,7 +1427,7 @@ public:
        DIImportedEntityArray ImportedEntities, DIMacroNodeArray Macros,
        uint64_t DWOId, bool SplitDebugInlining, bool DebugInfoForProfiling,
        DebugNameTableKind NameTableKind, bool RangesBaseAddress,
-       StringRef SysRoot, StringRef SDK, bool CasFriendliness),
+       StringRef SysRoot, StringRef SDK, unsigned CasFriendliness),
       (SourceLanguage, File, Producer, IsOptimized, Flags, RuntimeVersion,
        SplitDebugFilename, EmissionKind, EnumTypes, RetainedTypes,
        GlobalVariables, ImportedEntities, Macros, DWOId, SplitDebugInlining,
@@ -1431,7 +1442,7 @@ public:
        Metadata *ImportedEntities, Metadata *Macros, uint64_t DWOId,
        bool SplitDebugInlining, bool DebugInfoForProfiling,
        unsigned NameTableKind, bool RangesBaseAddress, MDString *SysRoot,
-       MDString *SDK, bool CasFriendliness),
+       MDString *SDK, unsigned CasFriendliness),
       (SourceLanguage, File, Producer, IsOptimized, Flags, RuntimeVersion,
        SplitDebugFilename, EmissionKind, EnumTypes, RetainedTypes,
        GlobalVariables, ImportedEntities, Macros, DWOId, SplitDebugInlining,
@@ -1446,7 +1457,9 @@ public:
   DebugEmissionKind getEmissionKind() const {
     return (DebugEmissionKind)EmissionKind;
   }
-  bool isCasFriendly() const { return CasFriendliness; }
+  CasFriendlinessKind getCasFriendlinessKind() const {
+    return (CasFriendlinessKind)CasFriendliness;
+  }
   bool isDebugDirectivesOnly() const {
     return EmissionKind == DebugDirectivesOnly;
   }

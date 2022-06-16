@@ -67,7 +67,7 @@ static uint32_t getDeclAlignIfRequired(const Decl *D, const ASTContext &Ctx) {
 CGDebugInfo::CGDebugInfo(CodeGenModule &CGM)
     : CGM(CGM), DebugKind(CGM.getCodeGenOpts().getDebugInfo()),
       CasFriendliness(static_cast<codegenoptions::CasFriendlinessKind>(
-          CGM.getCodeGenOpts().CasFriendliness)),
+          CGM.getCodeGenOpts().getCasFriendliness())),
       DebugTypeExtRefs(CGM.getCodeGenOpts().DebugTypeExtRefs),
       DBuilder(CGM.getModule()) {
   for (const auto &KV : CGM.getCodeGenOpts().DebugPrefixMap)
@@ -600,6 +600,19 @@ void CGDebugInfo::CreateCompileUnit() {
     break;
   }
 
+  llvm::DICompileUnit::CasFriendlinessKind CasFriendlinessKind;
+  switch (CasFriendliness) {
+  case codegenoptions::NoCasFriendlyDebugInfo:
+    CasFriendlinessKind = llvm::DICompileUnit::NoCasFriendlyDebugInfo;
+    break;
+  case codegenoptions::DebugLineOnly:
+    CasFriendlinessKind = llvm::DICompileUnit::DebugLineOnly;
+    break;
+  case codegenoptions::DebugAbbrev:
+    CasFriendlinessKind = llvm::DICompileUnit::DebugAbbrev;
+    break;
+  }
+
   uint64_t DwoId = 0;
   auto &CGOpts = CGM.getCodeGenOpts();
   // The DIFile used by the CU is distinct from the main source
@@ -633,7 +646,7 @@ void CGDebugInfo::CreateCompileUnit() {
           : static_cast<llvm::DICompileUnit::DebugNameTableKind>(
                 CGOpts.DebugNameTable),
       CGOpts.DebugRangesBaseAddress, remapDIPath(Sysroot), SDK,
-      CasFriendliness);
+      CasFriendlinessKind);
 }
 
 llvm::DIType *CGDebugInfo::CreateType(const BuiltinType *BT) {

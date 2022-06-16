@@ -816,7 +816,7 @@ DICompileUnit::DICompileUnit(LLVMContext &C, StorageType Storage,
                              uint64_t DWOId, bool SplitDebugInlining,
                              bool DebugInfoForProfiling, unsigned NameTableKind,
                              bool RangesBaseAddress, ArrayRef<Metadata *> Ops,
-                             bool CasFriendliness)
+                             unsigned CasFriendliness)
     : DIScope(C, DICompileUnitKind, Storage, dwarf::DW_TAG_compile_unit, Ops),
       SourceLanguage(SourceLanguage), IsOptimized(IsOptimized),
       RuntimeVersion(RuntimeVersion), EmissionKind(EmissionKind), DWOId(DWOId),
@@ -835,7 +835,8 @@ DICompileUnit *DICompileUnit::getImpl(
     Metadata *GlobalVariables, Metadata *ImportedEntities, Metadata *Macros,
     uint64_t DWOId, bool SplitDebugInlining, bool DebugInfoForProfiling,
     unsigned NameTableKind, bool RangesBaseAddress, MDString *SysRoot,
-    MDString *SDK, bool CasFriendliness, StorageType Storage, bool ShouldCreate) {
+    MDString *SDK, unsigned CasFriendliness, StorageType Storage,
+    bool ShouldCreate) {
   assert(Storage != Uniqued && "Cannot unique DICompileUnit");
   assert(isCanonical(Producer) && "Expected canonical MDString");
   assert(isCanonical(Flags) && "Expected canonical MDString");
@@ -870,6 +871,15 @@ DICompileUnit::getEmissionKind(StringRef Str) {
       .Default(None);
 }
 
+Optional<DICompileUnit::CasFriendlinessKind>
+DICompileUnit::getCasFriendlinessKind(StringRef Str) {
+  return StringSwitch<Optional<CasFriendlinessKind>>(Str)
+      .Case("NoCasFriendlyDebugInfo", NoCasFriendlyDebugInfo)
+      .Case("DebugLineOnly", DebugLineOnly)
+      .Case("DebugAbbrev", DebugAbbrev)
+      .Default(None);
+}
+
 Optional<DICompileUnit::DebugNameTableKind>
 DICompileUnit::getNameTableKind(StringRef Str) {
   return StringSwitch<Optional<DebugNameTableKind>>(Str)
@@ -889,6 +899,18 @@ const char *DICompileUnit::emissionKindString(DebugEmissionKind EK) {
     return "LineTablesOnly";
   case DebugDirectivesOnly:
     return "DebugDirectivesOnly";
+  }
+  return nullptr;
+}
+
+const char *DICompileUnit::casFriendlinessString(CasFriendlinessKind CFK) {
+  switch (CFK) {
+  case NoCasFriendlyDebugInfo:
+    return "NoCasFriendlyDebugInfo";
+  case DebugLineOnly:
+    return "DebugLineOnly";
+  case DebugAbbrev:
+    return "DebugAbbrev";
   }
   return nullptr;
 }

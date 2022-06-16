@@ -95,7 +95,9 @@ void DwarfFile::computeSizeAndOffsets() {
     // An initial Abbreviation contribution is pushed back when the DwarfFile is
     // created because there are cases where the compile units are emitted
     // without computing size and offsets for each DIE.
-    if (Abbrevs.size() != CUs.size() && TheU->getCUNode()->isCasFriendly()) {
+    if (Abbrevs.size() != CUs.size() &&
+        TheU->getCUNode()->getCasFriendlinessKind() ==
+            DICompileUnit::DebugAbbrev) {
       Abbrevs.emplace_back(std::make_unique<DIEAbbrevSet>(AbbrevAllocator));
     }
   }
