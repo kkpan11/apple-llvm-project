@@ -3989,6 +3989,11 @@ struct EmissionKindField : public MDUnsignedField {
   EmissionKindField() : MDUnsignedField(0, DICompileUnit::LastEmissionKind) {}
 };
 
+struct CasFriendlinessKindField : public MDUnsignedField {
+  CasFriendlinessKindField()
+      : MDUnsignedField(0, DICompileUnit::LastCasFriendlinessKind) {}
+};
+
 struct NameTableKindField : public MDUnsignedField {
   NameTableKindField()
       : MDUnsignedField(
@@ -4208,6 +4213,25 @@ bool LLParser::parseMDField(LocTy Loc, StringRef Name,
     return tokError("invalid emission kind" + Twine(" '") + Lex.getStrVal() +
                     "'");
   assert(*Kind <= Result.Max && "Expected valid emission kind");
+  Result.assign(*Kind);
+  Lex.Lex();
+  return false;
+}
+
+template <>
+bool LLParser::parseMDField(LocTy Loc, StringRef Name,
+                            CasFriendlinessKindField &Result) {
+  if (Lex.getKind() == lltok::APSInt)
+    return parseMDField(Loc, Name, static_cast<MDUnsignedField &>(Result));
+
+  if (Lex.getKind() != lltok::CasFriendlinessKind)
+    return tokError("expected cas friendliness kind");
+
+  auto Kind = DICompileUnit::getCasFriendlinessKind(Lex.getStrVal());
+  if (!Kind)
+    return tokError("invalid cas friendliness kind" + Twine(" '") +
+                    Lex.getStrVal() + "'");
+  assert(*Kind <= Result.Max && "Expected valid cas friendliness kind");
   Result.assign(*Kind);
   Lex.Lex();
   return false;
@@ -4862,7 +4886,7 @@ bool LLParser::parseDICompileUnit(MDNode *&Result, bool IsDistinct) {
   OPTIONAL(rangesBaseAddress, MDBoolField, = false);                           \
   OPTIONAL(sysroot, MDStringField, );                                          \
   OPTIONAL(sdk, MDStringField, );                                              \
-  OPTIONAL(casFriendly, MDBoolField, = false);
+  OPTIONAL(casFriendly, CasFriendlinessKindField, );
   PARSE_MD_FIELDS();
 #undef VISIT_MD_FIELDS
 

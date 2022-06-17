@@ -2155,7 +2155,8 @@ void DwarfDebug::beginFunctionImpl(const MachineFunction *MF) {
   // entry. That is, every function gets its own line table header. To achieve
   // this we are creating a new CompileUnit per function so each function can
   // get it's own line table header
-  if (SP->getUnit()->isCasFriendly()) {
+  if (SP->getUnit()->getCasFriendlinessKind() !=
+      DICompileUnit::NoCasFriendlyDebugInfo) {
     const Module *M = MF->getFunction().getParent();
     DIBuilder DIB(*const_cast<Module *>(M));
     DICompileUnit *DCU = SP->getUnit();
@@ -2163,7 +2164,8 @@ void DwarfDebug::beginFunctionImpl(const MachineFunction *MF) {
         DCU->getSourceLanguage(), DCU->getFile(), DCU->getProducer(),
         DCU->isOptimized(), DCU->getFlags(), DCU->getRuntimeVersion(), {},
         DICompileUnit::DebugEmissionKind::FullDebug, 0, true, false,
-        DICompileUnit::DebugNameTableKind::Default, false, {}, {}, true);
+        DICompileUnit::DebugNameTableKind::Default, false, {}, {},
+        DCU->getCasFriendlinessKind());
 
     this->SingleCU = false;
     DwarfCompileUnit &CU = getOrCreateDwarfCompileUnit(NewDCU);

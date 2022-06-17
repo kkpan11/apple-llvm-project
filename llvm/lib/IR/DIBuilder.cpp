@@ -152,7 +152,8 @@ DICompileUnit *DIBuilder::createCompileUnit(
     DICompileUnit::DebugEmissionKind Kind, uint64_t DWOId,
     bool SplitDebugInlining, bool DebugInfoForProfiling,
     DICompileUnit::DebugNameTableKind NameTableKind, bool RangesBaseAddress,
-    StringRef SysRoot, StringRef SDK, bool CasFriendliness) {
+    StringRef SysRoot, StringRef SDK,
+    DICompileUnit::CasFriendlinessKind CasFriendliness) {
 
   assert(((Lang <= dwarf::DW_LANG_Fortran08 && Lang >= dwarf::DW_LANG_C89) ||
           (Lang <= dwarf::DW_LANG_hi_user && Lang >= dwarf::DW_LANG_lo_user)) &&

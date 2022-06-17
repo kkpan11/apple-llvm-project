@@ -284,12 +284,20 @@
 // RUN: %clang -### -target %itanium_abi_triple -gmodules -gline-directives-only %s 2>&1 \
 // RUN:        | FileCheck -check-prefix=GLIO_ONLY %s
 //
-// RUN: %clang -### -c -g -fcas-friendly-debug-info %s -target x86_64-apple-darwin14 2>&1 \
-// RUN:             | FileCheck -check-prefix=F_CASFRIENDLY \
+// RUN: %clang -### -c -g -fcas-friendly-debug-info=debug-line-only %s -target x86_64-apple-darwin14 2>&1 \
+// RUN:             | FileCheck -check-prefix=F_CASFRIENDLY_DEBUG_LINE \
 // RUN:                         -check-prefix=G_DWARF2 \
 // RUN:                         -check-prefix=G_LLDB %s
-// RUN: %clang -### -c -g -fcas-friendly-debug-info %s -target x86_64-apple-darwin16 2>&1 \
-// RUN:             | FileCheck -check-prefix=F_CASFRIENDLY \
+// RUN: %clang -### -c -g -fcas-friendly-debug-info=debug-line-only %s -target x86_64-apple-darwin16 2>&1 \
+// RUN:             | FileCheck -check-prefix=F_CASFRIENDLY_DEBUG_LINE \
+// RUN:                         -check-prefix=G_DWARF4 \
+// RUN:                         -check-prefix=G_LLDB %s
+// RUN: %clang -### -c -g -fcas-friendly-debug-info=debug-abbrev %s -target x86_64-apple-darwin14 2>&1 \
+// RUN:             | FileCheck -check-prefix=F_CASFRIENDLY_DEBUG_ABBREV \
+// RUN:                         -check-prefix=G_DWARF2 \
+// RUN:                         -check-prefix=G_LLDB %s
+// RUN: %clang -### -c -g -fcas-friendly-debug-info=debug-abbrev %s -target x86_64-apple-darwin16 2>&1 \
+// RUN:             | FileCheck -check-prefix=F_CASFRIENDLY_DEBUG_ABBREV \
 // RUN:                         -check-prefix=G_DWARF4 \
 // RUN:                         -check-prefix=G_LLDB %s
 //
@@ -332,8 +340,10 @@
 //
 // G_STANDALONE: "-cc1"
 // G_STANDALONE: "-debug-info-kind=standalone"
-// F_CASFRIENDLY: "-cc1"
-// F_CASFRIENDLY: "-cas-friendliness-kind=cas-friendly"
+// F_CASFRIENDLY_DEBUG_LINE: "-cc1"
+// F_CASFRIENDLY_DEBUG_LINE: "-cas-friendliness-kind=debug-line-only"
+// F_CASFRIENDLY_DEBUG_ABBREV: "-cc1"
+// F_CASFRIENDLY_DEBUG_ABBREV: "-cas-friendliness-kind=debug-abbrev"
 // G_LIMITED: "-cc1"
 // G_LIMITED: "-debug-info-kind=constructor"
 // G_DWARF2: "-dwarf-version=2"
