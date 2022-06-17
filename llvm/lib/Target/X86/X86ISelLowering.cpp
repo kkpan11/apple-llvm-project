@@ -20803,6 +20803,25 @@ bool X86TargetLowering::isSoftFP16(T VT) const {
   return ::isSoftFP16(VT, Subtarget);
 }
 
+static SDValue promoteXINT_TO_FP(SDValue Op, SelectionDAG &DAG) {
+  bool IsStrict = Op->isStrictFPOpcode();
+  SDValue Src = Op.getOperand(IsStrict ? 1 : 0);
+  SDValue Chain = IsStrict ? Op->getOperand(0) : DAG.getEntryNode();
+  MVT VT = Op.getSimpleValueType();
+  MVT NVT = VT.isVector() ? VT.changeVectorElementType(MVT::f32) : MVT::f32;
+  SDLoc dl(Op);
+
+  SDValue Rnd = DAG.getIntPtrConstant(0, dl);
+  if (IsStrict)
+    return DAG.getNode(
+        ISD::STRICT_FP_ROUND, dl, {VT, MVT::Other},
+        {Chain,
+         DAG.getNode(Op.getOpcode(), dl, {NVT, MVT::Other}, {Chain, Src}),
+         Rnd});
+  return DAG.getNode(ISD::FP_ROUND, dl, VT,
+                     DAG.getNode(Op.getOpcode(), dl, NVT, Src), Rnd);
+}
+
 SDValue X86TargetLowering::LowerSINT_TO_FP(SDValue Op,
                                            SelectionDAG &DAG) const {
   bool IsStrict = Op->isStrictFPOpcode();
@@ -20812,6 +20831,9 @@ SDValue X86TargetLowering::LowerSINT_TO_FP(SDValue Op,
   MVT SrcVT = Src.getSimpleValueType();
   MVT VT = Op.getSimpleValueType();
   SDLoc dl(Op);
+
+  if (isSoftFP16(VT))
+    return promoteXINT_TO_FP(Op, DAG);
 
   if (Subtarget.isTargetWin64() && SrcVT == MVT::i128)
     return LowerWin64_INT128_TO_FP(Op, DAG);
@@ -20843,10 +20865,6 @@ SDValue X86TargetLowering::LowerSINT_TO_FP(SDValue Op,
 
   assert(SrcVT <= MVT::i64 && SrcVT >= MVT::i16 &&
          "Unknown SINT_TO_FP to lower!");
-
-  // Bail out when we don't have native conversion instructions.
-  if (isSoftFP16(VT))
-    return SDValue();
 
   bool UseSSEReg = isScalarFPTypeInSSEReg(VT);
 
@@ -21314,8 +21332,11 @@ SDValue X86TargetLowering::LowerUINT_TO_FP(SDValue Op,
   SDValue Chain = IsStrict ? Op.getOperand(0) : DAG.getEntryNode();
 
   // Bail out when we don't have native conversion instructions.
-  if (DstVT == MVT::f128 || isSoftFP16(DstVT))
+  if (DstVT == MVT::f128)
     return SDValue();
+
+  if (isSoftFP16(DstVT))
+    return promoteXINT_TO_FP(Op, DAG);
 
   if (DstVT.isVector())
     return lowerUINT_TO_FP_vec(Op, DAG, Subtarget);
@@ -22138,13 +22159,13 @@ SDValue X86TargetLowering::LowerFP_TO_INT(SDValue Op, SelectionDAG &DAG) const {
 
   SDValue Res;
   if (isSoftFP16(SrcVT)) {
+    MVT NVT = VT.isVector() ? VT.changeVectorElementType(MVT::f32) : MVT::f32;
     if (IsStrict)
-      return DAG.getNode(
-          Op.getOpcode(), dl, {VT, MVT::Other},
-          {Chain, DAG.getNode(ISD::STRICT_FP_EXTEND, dl, {MVT::f32, MVT::Other},
-                              {Chain, Src})});
+      return DAG.getNode(Op.getOpcode(), dl, {VT, MVT::Other},
+                         {Chain, DAG.getNode(ISD::STRICT_FP_EXTEND, dl,
+                                             {NVT, MVT::Other}, {Chain, Src})});
     return DAG.getNode(Op.getOpcode(), dl, VT,
-                       DAG.getNode(ISD::FP_EXTEND, dl, MVT::f32, Src));
+                       DAG.getNode(ISD::FP_EXTEND, dl, NVT, Src));
   }
 
   if (VT.isVector()) {
@@ -22703,8 +22724,6 @@ SDValue X86TargetLowering::LowerFP_EXTEND(SDValue Op, SelectionDAG &DAG) const {
   if (SVT == MVT::f16) {
     if (Subtarget.hasFP16())
       return Op;
-    if (!Subtarget.hasF16C())
-      return SDValue();
 
     if (VT != MVT::f32) {
       if (IsStrict)
@@ -22716,6 +22735,9 @@ SDValue X86TargetLowering::LowerFP_EXTEND(SDValue Op, SelectionDAG &DAG) const {
       return DAG.getNode(ISD::FP_EXTEND, DL, VT,
                          DAG.getNode(ISD::FP_EXTEND, DL, MVT::f32, In));
     }
+
+    if (!Subtarget.hasF16C())
+      return SDValue();
 
     In = DAG.getBitcast(MVT::i16, In);
     In = DAG.getNode(ISD::INSERT_VECTOR_ELT, DL, MVT::v8i16,
@@ -22779,8 +22801,6 @@ SDValue X86TargetLowering::LowerFP_ROUND(SDValue Op, SelectionDAG &DAG) const {
   if (VT == MVT::f16) {
     if (Subtarget.hasFP16())
       return Op;
-    if (!Subtarget.hasF16C())
-      return SDValue();
 
     if (SVT != MVT::f32) {
       if (IsStrict)
@@ -22795,6 +22815,9 @@ SDValue X86TargetLowering::LowerFP_ROUND(SDValue Op, SelectionDAG &DAG) const {
                          DAG.getNode(ISD::FP_ROUND, DL, MVT::f32, In, Op2),
                          Op2);
     }
+
+    if (!Subtarget.hasF16C())
+      return SDValue();
 
     SDValue Res;
     SDValue Rnd = DAG.getTargetConstant(X86::STATIC_ROUNDING::CUR_DIRECTION, DL,
@@ -39525,6 +39548,11 @@ static SDValue combineTargetShuffle(SDValue N, SelectionDAG &DAG,
   MVT VT = N.getSimpleValueType();
   SmallVector<int, 4> Mask;
   unsigned Opcode = N.getOpcode();
+
+  // FIXME: Remove this after we support vector FP16
+  if (isSoftFP16(peekThroughBitcasts(N.getOperand(0)).getSimpleValueType(),
+                 Subtarget))
+    return SDValue();
 
   if (SDValue R = combineCommutableSHUFP(N, VT, DL, DAG))
     return R;

@@ -82,6 +82,38 @@ static bool isScalarMoveInstr(const MachineInstr &MI) {
   }
 }
 
+static bool isSplatMoveInstr(const MachineInstr &MI) {
+  switch (MI.getOpcode()) {
+  default:
+    return false;
+  case RISCV::PseudoVMV_V_X_M1:
+  case RISCV::PseudoVMV_V_X_M2:
+  case RISCV::PseudoVMV_V_X_M4:
+  case RISCV::PseudoVMV_V_X_M8:
+  case RISCV::PseudoVMV_V_X_MF2:
+  case RISCV::PseudoVMV_V_X_MF4:
+  case RISCV::PseudoVMV_V_X_MF8:
+  case RISCV::PseudoVMV_V_I_M1:
+  case RISCV::PseudoVMV_V_I_M2:
+  case RISCV::PseudoVMV_V_I_M4:
+  case RISCV::PseudoVMV_V_I_M8:
+  case RISCV::PseudoVMV_V_I_MF2:
+  case RISCV::PseudoVMV_V_I_MF4:
+  case RISCV::PseudoVMV_V_I_MF8:
+    return true;
+  }
+}
+
+static bool isSplatOfZeroOrMinusOne(const MachineInstr &MI) {
+  if (!isSplatMoveInstr(MI))
+    return false;
+
+  const MachineOperand &SrcMO = MI.getOperand(1);
+  if (SrcMO.isImm())
+    return SrcMO.getImm() == 0 || SrcMO.getImm() == -1;
+  return SrcMO.isReg() && SrcMO.getReg() == RISCV::X0;
+}
+
 /// Get the EEW for a load or store instruction.  Return None if MI is not
 /// a load or store which ignores SEW.
 static Optional<unsigned> getEEWForLoadStore(const MachineInstr &MI) {
@@ -366,6 +398,14 @@ static DemandedFields getDemanded(const MachineInstr &MI) {
   // EMUL, but which allows us the flexibility to change SEW and LMUL
   // provided we don't change the ratio.
   if (getEEWForLoadStore(MI)) {
+    Res.SEW = false;
+    Res.LMUL = false;
+  }
+
+  // A splat of 0/-1 is always a splat of 0/-1, regardless of etype.
+  // TODO: We're currently demanding VL + SEWLMULRatio which is sufficient
+  // but not neccessary.  What we really need is VLInBytes.
+  if (isSplatOfZeroOrMinusOne(MI)) {
     Res.SEW = false;
     Res.LMUL = false;
   }
@@ -775,19 +815,6 @@ static bool isVLPreservingConfig(const MachineInstr &MI) {
   return RISCV::X0 == MI.getOperand(0).getReg();
 }
 
-static MachineInstr *elideCopies(MachineInstr *MI,
-                                 const MachineRegisterInfo *MRI) {
-  while (true) {
-    if (!MI->isFullCopy())
-      return MI;
-    if (!Register::isVirtualRegister(MI->getOperand(1).getReg()))
-      return nullptr;
-    MI = MRI->getVRegDef(MI->getOperand(1).getReg());
-    if (!MI)
-      return nullptr;
-  }
-}
-
 static VSETVLIInfo computeInfoForInstr(const MachineInstr &MI, uint64_t TSFlags,
                                        const MachineRegisterInfo *MRI) {
   VSETVLIInfo InstrInfo;
@@ -823,13 +850,10 @@ static VSETVLIInfo computeInfoForInstr(const MachineInstr &MI, uint64_t TSFlags,
     // If the tied operand is an IMPLICIT_DEF we can keep TailAgnostic.
     const MachineOperand &UseMO = MI.getOperand(UseOpIdx);
     MachineInstr *UseMI = MRI->getVRegDef(UseMO.getReg());
-    if (UseMI) {
-      UseMI = elideCopies(UseMI, MRI);
-      if (UseMI && UseMI->isImplicitDef()) {
-        TailAgnostic = true;
-        if (UsesMaskPolicy)
-          MaskAgnostic = true;
-      }
+    if (UseMI && UseMI->isImplicitDef()) {
+      TailAgnostic = true;
+      if (UsesMaskPolicy)
+        MaskAgnostic = true;
     }
     // Some pseudo instructions force a tail agnostic policy despite having a
     // tied def.
