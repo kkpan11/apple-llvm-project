@@ -18,6 +18,8 @@ add_llvm_component_library(LLVMMC
   MCCodeView.cpp
   MCContext.cpp
   MCDwarf.cpp
+  MCDXContainerStreamer.cpp
+  MCDXContainerWriter.cpp
   MCELFObjectTargetWriter.cpp
   MCELFStreamer.cpp
   MCExpr.cpp
@@ -40,6 +42,7 @@ add_llvm_component_library(LLVMMC
   MCSchedule.cpp
   MCSection.cpp
   MCSectionCOFF.cpp
+  MCSectionDXContainer.cpp
   MCSectionELF.cpp
   MCSectionMachO.cpp
   MCSectionWasm.cpp

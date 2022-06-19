@@ -48,6 +48,7 @@ public:
     SV_Wasm,
     SV_XCOFF,
     SV_SPIRV,
+    SV_DXContainer,
     SV_CAS,
   };
 
