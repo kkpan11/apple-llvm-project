@@ -1316,7 +1316,7 @@ already_lexed:
 
       case tok::l_paren:
         ++ParenDepth;
-        if (Result.hasValue())
+        if (Result)
           break;
         if (!SuppressDiagnostic) {
           PP.Diag(Tok.getLocation(), diag::err_pp_nested_paren) << II;
@@ -1346,7 +1346,7 @@ already_lexed:
 
       default: {
         // Parse the macro argument, if one not found so far.
-        if (Result.hasValue())
+        if (Result)
           break;
 
         bool HasLexedNextToken = false;
