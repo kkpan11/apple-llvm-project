@@ -3719,12 +3719,11 @@ SDValue RISCVTargetLowering::getStaticTLSAddr(GlobalAddressSDNode *N,
   SDValue AddrLo =
       DAG.getTargetGlobalAddress(GV, DL, Ty, 0, RISCVII::MO_TPREL_LO);
 
-  SDValue MNHi = SDValue(DAG.getMachineNode(RISCV::LUI, DL, Ty, AddrHi), 0);
+  SDValue MNHi = DAG.getNode(RISCVISD::HI, DL, Ty, AddrHi);
   SDValue TPReg = DAG.getRegister(RISCV::X4, XLenVT);
-  SDValue MNAdd = SDValue(
-      DAG.getMachineNode(RISCV::PseudoAddTPRel, DL, Ty, MNHi, TPReg, AddrAdd),
-      0);
-  return SDValue(DAG.getMachineNode(RISCV::ADDI, DL, Ty, MNAdd, AddrLo), 0);
+  SDValue MNAdd =
+      DAG.getNode(RISCVISD::ADD_TPREL, DL, Ty, MNHi, TPReg, AddrAdd);
+  return DAG.getNode(RISCVISD::ADD_LO, DL, Ty, MNAdd, AddrLo);
 }
 
 SDValue RISCVTargetLowering::getDynamicTLSAddr(GlobalAddressSDNode *N,
@@ -11185,6 +11184,7 @@ const char *RISCVTargetLowering::getTargetNodeName(unsigned Opcode) const {
   NODE_NAME_CASE(ADD_LO)
   NODE_NAME_CASE(HI)
   NODE_NAME_CASE(LLA)
+  NODE_NAME_CASE(ADD_TPREL)
   NODE_NAME_CASE(MULHSU)
   NODE_NAME_CASE(SLLW)
   NODE_NAME_CASE(SRAW)
@@ -11941,7 +11941,7 @@ bool RISCVTargetLowering::allowsMisalignedMemoryAccesses(
 bool RISCVTargetLowering::splitValueIntoRegisterParts(
     SelectionDAG &DAG, const SDLoc &DL, SDValue Val, SDValue *Parts,
     unsigned NumParts, MVT PartVT, Optional<CallingConv::ID> CC) const {
-  bool IsABIRegCopy = CC.hasValue();
+  bool IsABIRegCopy = CC.has_value();
   EVT ValueVT = Val.getValueType();
   if (IsABIRegCopy && ValueVT == MVT::f16 && PartVT == MVT::f32) {
     // Cast the f16 to i16, extend to i32, pad with ones to make a float nan,
@@ -11995,7 +11995,7 @@ bool RISCVTargetLowering::splitValueIntoRegisterParts(
 SDValue RISCVTargetLowering::joinRegisterPartsIntoValue(
     SelectionDAG &DAG, const SDLoc &DL, const SDValue *Parts, unsigned NumParts,
     MVT PartVT, EVT ValueVT, Optional<CallingConv::ID> CC) const {
-  bool IsABIRegCopy = CC.hasValue();
+  bool IsABIRegCopy = CC.has_value();
   if (IsABIRegCopy && ValueVT == MVT::f16 && PartVT == MVT::f32) {
     SDValue Val = Parts[0];
 

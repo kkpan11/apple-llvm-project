@@ -523,7 +523,7 @@ private:
 
     bool hasRecordedPreamble() const { return !ConditionalStack.empty(); }
 
-    bool reachedEOFWhileSkipping() const { return SkipInfo.hasValue(); }
+    bool reachedEOFWhileSkipping() const { return SkipInfo.has_value(); }
 
     void clearSkipInfo() { SkipInfo.reset(); }
 
