@@ -495,7 +495,8 @@ public:
   }
 
   friend lldb::ThreadPlanSP
-  Process::FindDetachedPlanExplainingStop(Thread &thread, Event *event_ptr);
+  Process::DoesStackExplainStopNoLock(ThreadPlanStack &stack, Thread &thread,
+                                      Event *event_ptr);
 
 protected:
   // Constructors and Destructors
