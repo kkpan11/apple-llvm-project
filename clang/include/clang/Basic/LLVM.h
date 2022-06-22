@@ -51,6 +51,14 @@ namespace llvm {
   class raw_ostream;
   class raw_pwrite_stream;
   // TODO: DenseMap, ...
+
+  namespace cas {
+  class CASDB;
+  class CASID;
+  class LeafNodeProxy;
+  class NodeProxy;
+  class ObjectRef;
+  } // namespace cas
 }
 
 
@@ -87,6 +95,14 @@ namespace clang {
 
   using llvm::raw_ostream;
   using llvm::raw_pwrite_stream;
+
+  namespace cas {
+  using llvm::cas::CASDB;
+  using llvm::cas::CASID;
+  using llvm::cas::LeafNodeProxy;
+  using llvm::cas::NodeProxy;
+  using llvm::cas::ObjectRef;
+  } // namespace cas
 } // end namespace clang.
 
 #endif

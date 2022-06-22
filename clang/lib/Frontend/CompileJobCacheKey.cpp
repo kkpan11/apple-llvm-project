@@ -77,15 +77,13 @@ clang::createCompileJobCacheKey(CASDB &CAS, DiagnosticsEngine &Diags,
   return createCompileJobCacheKey(CAS, Argv, *RootID);
 }
 
-static Error printFileSystem(cas::CASDB &CAS, cas::ObjectRef Ref,
-                             raw_ostream &OS) {
+static Error printFileSystem(CASDB &CAS, ObjectRef Ref, raw_ostream &OS) {
   Expected<TreeProxy> Root = CAS.loadTree(Ref);
   if (!Root)
     return Root.takeError();
-  return cas::walkFileTreeRecursively(
-      CAS, *Root,
-      [&](const cas::NamedTreeEntry &Entry, Optional<cas::TreeProxy> Tree) {
-        if (Entry.getKind() != cas::TreeEntry::Tree || Tree->empty()) {
+  return walkFileTreeRecursively(
+      CAS, *Root, [&](const NamedTreeEntry &Entry, Optional<TreeProxy> Tree) {
+        if (Entry.getKind() != TreeEntry::Tree || Tree->empty()) {
           OS << "\n  ";
           Entry.print(OS, CAS);
         }
@@ -93,7 +91,7 @@ static Error printFileSystem(cas::CASDB &CAS, cas::ObjectRef Ref,
       });
 }
 
-static Error printCompileJobCacheKey(cas::CASDB &CAS, cas::TreeHandle Tree,
+static Error printCompileJobCacheKey(CASDB &CAS, TreeHandle Tree,
                                      raw_ostream &OS) {
   auto strError = [](const Twine &Err) {
     return createStringError(inconvertibleErrorCode(), Err);
@@ -103,12 +101,12 @@ static Error printCompileJobCacheKey(cas::CASDB &CAS, cas::TreeHandle Tree,
   if (!CAS.lookupTreeEntry(Tree, "computation"))
     return strError("cas object is not a valid cache key");
 
-  return CAS.forEachTreeEntry(Tree, [&](const cas::NamedTreeEntry &E) -> Error {
+  return CAS.forEachTreeEntry(Tree, [&](const NamedTreeEntry &E) -> Error {
     OS << E.getName() << ": " << CAS.getObjectID(E.getRef());
-    if (E.getKind() == cas::TreeEntry::Tree)
+    if (E.getKind() == TreeEntry::Tree)
       return printFileSystem(CAS, E.getRef(), OS);
 
-    if (E.getKind() != cas::TreeEntry::Regular)
+    if (E.getKind() != TreeEntry::Regular)
       return strError("expected blob for entry " + E.getName());
     auto Blob = CAS.loadBlob(E.getRef());
     if (!Blob)
@@ -142,7 +140,7 @@ Error clang::printCompileJobCacheKey(CASDB &CAS, CASID Key, raw_ostream &OS) {
   if (!*H)
     return createStringError(inconvertibleErrorCode(),
                              "cache key not present in CAS");
-  auto Tree = (*H)->dyn_cast<cas::TreeHandle>();
+  auto Tree = (*H)->dyn_cast<TreeHandle>();
   if (!Tree) {
     std::string ErrStr;
     llvm::raw_string_ostream Err(ErrStr);
