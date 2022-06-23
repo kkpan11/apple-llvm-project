@@ -1649,7 +1649,10 @@ public:
                             "an address in the current target process.",
                             "memory region ADDR",
                             eCommandRequiresProcess | eCommandTryTargetAPILock |
-                                eCommandProcessMustBeLaunched) {}
+                                eCommandProcessMustBeLaunched) {
+        CommandArgumentData addr_arg{eArgTypeAddressOrExpression, eArgRepeatPlain};
+        m_arguments.push_back({addr_arg});
+    }
 
   ~CommandObjectMemoryRegion() override = default;
 
