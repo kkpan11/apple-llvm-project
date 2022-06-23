@@ -183,9 +183,8 @@ std::string macho::createResponseFile(const InputArgList &args,
          << quote(rewritePath(arg->getValue(2))) << "\n";
       break;
     case OPT_verbose:
-    case OPT_time_trace:
+    case OPT_time_trace_eq:
     case OPT_time_trace_granularity_eq:
-    case OPT_time_trace_file_eq:
       if (isForCacheKey) {
         // Useful to ignore so the option can be enabled/disabled without
         // affecting the caching itself.
