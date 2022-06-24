@@ -96,7 +96,7 @@ public:
                const Stmt &Stmt, ASTContext &Context, State &S) -> Result {
       auto Results = ast_matchers::matchDynamic(Matcher, Stmt, Context);
       if (Results.empty())
-        return {};
+        return Result();
       // Look through the map for the first binding of the form "TagN..." use
       // that to select the action.
       for (const auto &Element : Results[0].getMap()) {
@@ -109,7 +109,7 @@ public:
               ast_matchers::MatchFinder::MatchResult(Results[0], &Context), S);
         }
       }
-      return {};
+      return Result();
     };
   }
 
