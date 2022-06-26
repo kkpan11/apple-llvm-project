@@ -32,6 +32,7 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/SaveAndRestore.h"
 #include "llvm/Support/TimeProfiler.h"
 #include <cassert>
 #include <limits>
@@ -1016,7 +1017,14 @@ std::array<uint8_t, 4> ScriptParser::readFill() {
 
 SymbolAssignment *ScriptParser::readProvideHidden(bool provide, bool hidden) {
   expect("(");
-  SymbolAssignment *cmd = readSymbolAssignment(next());
+  StringRef name = next(), eq = peek();
+  if (eq != "=") {
+    setError("= expected, but got " + next());
+    while (!atEOF() && next() != ")")
+      ;
+    return nullptr;
+  }
+  SymbolAssignment *cmd = readSymbolAssignment(name);
   cmd->provide = provide;
   cmd->hidden = hidden;
   expect(")");
@@ -1030,14 +1038,22 @@ SymbolAssignment *ScriptParser::readAssignment(StringRef tok) {
 
   size_t oldPos = pos;
   SymbolAssignment *cmd = nullptr;
-  if (peek() == "=" || peek() == "+=")
+  if (peek().startswith("=")) {
+    // Support = followed by an expression without whitespace.
+    SaveAndRestore<bool> saved(inExpr, true);
     cmd = readSymbolAssignment(tok);
-  else if (tok == "PROVIDE")
+  } else if (peek() == "+=") {
+    cmd = readSymbolAssignment(tok);
+  } else if (tok == "PROVIDE") {
+    SaveAndRestore<bool> saved(inExpr, true);
     cmd = readProvideHidden(true, false);
-  else if (tok == "HIDDEN")
+  } else if (tok == "HIDDEN") {
+    SaveAndRestore<bool> saved(inExpr, true);
     cmd = readProvideHidden(false, true);
-  else if (tok == "PROVIDE_HIDDEN")
+  } else if (tok == "PROVIDE_HIDDEN") {
+    SaveAndRestore<bool> saved(inExpr, true);
     cmd = readProvideHidden(true, true);
+  }
 
   if (cmd) {
     cmd->commandString =
