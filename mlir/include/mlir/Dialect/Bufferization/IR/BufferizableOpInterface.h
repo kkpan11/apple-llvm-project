@@ -230,6 +230,11 @@ struct BufferizationOptions {
   /// bufferized or not.
   bool bufferizeFunctionBoundaries = false;
 
+  /// The default memory space that should be used when it cannot be inferred
+  /// from the context. If no default memory space is specified, bufferization
+  /// fails when the memory space cannot be inferred at any point.
+  Optional<unsigned> defaultMemorySpace = 0;
+
   /// Certain ops have aliasing OpOperand/OpResult invariants (e.g., scf.for).
   /// If this flag is set to `false`, those invariants are no longer enforced
   /// with buffer copies.
@@ -474,14 +479,15 @@ Value allocateTensorForShapedValue(OpBuilder &b, Location loc,
 /// Lookup the buffer for the given value. If the value was not bufferized
 /// yet, wrap it in a ToMemrefOp. Otherwise, it is the result of a ToTensorOp,
 /// from which the memref operand is returned.
-Value getBuffer(RewriterBase &rewriter, Value value,
-                const BufferizationOptions &options);
+FailureOr<Value> getBuffer(RewriterBase &rewriter, Value value,
+                           const BufferizationOptions &options);
 
 /// Return the buffer type for a given Value (tensor) after bufferization.
 ///
 /// Note: Op implementations should preferrably call `getBuffer()->getType()`.
 /// This function should only be used if `getBuffer` cannot be used.
-BaseMemRefType getBufferType(Value value, const BufferizationOptions &options);
+FailureOr<BaseMemRefType> getBufferType(Value value,
+                                        const BufferizationOptions &options);
 
 /// Replace an op with replacement values. The op is deleted. Tensor OpResults
 /// must be replaced with memref values.

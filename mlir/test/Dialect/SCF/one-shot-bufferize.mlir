@@ -124,11 +124,10 @@ func.func @execute_region_with_conflict(
     scf.yield %f1, %t2, %f1 : f32, tensor<?xf32>, f32
   }
 
-  // CHECK: %[[casted:.*]] = memref.cast %[[alloc]]
   // CHECK: %[[load:.*]] = memref.load %[[m1]]
   %3 = tensor.extract %t1[%idx] : tensor<?xf32>
 
-  // CHECK: return %{{.*}}, %[[casted]], %[[load]] : f32, memref<?xf32, #{{.*}}>, f32
+  // CHECK: return %{{.*}}, %[[alloc]], %[[load]] : f32, memref<?xf32>, f32
   return %0, %1, %3 : f32, tensor<?xf32>, f32
 }
 
@@ -313,10 +312,10 @@ func.func @scf_for_swapping_yields(
 //       CHECK:     %[[alloc2:.*]] = memref.alloc(%{{.*}})
 //       CHECK:     memref.copy %[[iter2]], %[[alloc2]]
 //       CHECK:     memref.dealloc %[[iter2]]
-//       CHECK:     %[[casted2:.*]] = memref.cast %[[alloc2]]
 //       CHECK:     %[[alloc1:.*]] = memref.alloc(%{{.*}})
 //       CHECK:     memref.copy %[[iter1]], %[[alloc1]]
 //       CHECK:     memref.dealloc %[[iter1]]
+//       CHECK:     %[[casted2:.*]] = memref.cast %[[alloc2]]
 //       CHECK:     %[[casted1:.*]] = memref.cast %[[alloc1]]
 //       CHECK:     %[[cloned1:.*]] = bufferization.clone %[[casted1]]
 //       CHECK:     memref.dealloc %[[alloc1]]
@@ -384,10 +383,10 @@ func.func @scf_while_non_equiv_condition(%arg0: tensor<5xi1>,
     // CHECK: %[[a1:.*]] = memref.alloc() {{.*}} : memref<5xi1>
     // CHECK: memref.copy %[[w1]], %[[a1]]
     // CHECK: memref.dealloc %[[w1]]
-    // CHECK: %[[casted1:.*]] = memref.cast %[[a1]]
     // CHECK: %[[a0:.*]] = memref.alloc() {{.*}} : memref<5xi1>
     // CHECK: memref.copy %[[w0]], %[[a0]]
     // CHECK: memref.dealloc %[[w0]]
+    // CHECK: %[[casted1:.*]] = memref.cast %[[a1]]
     // CHECK: %[[casted0:.*]] = memref.cast %[[a0]]
     // CHECK: %[[cloned0:.*]] = bufferization.clone %[[casted0]]
     // CHECK: memref.dealloc %[[a0]]
@@ -437,10 +436,10 @@ func.func @scf_while_non_equiv_condition_and_body(%arg0: tensor<5xi1>,
     // CHECK: %[[a1:.*]] = memref.alloc() {{.*}} : memref<5xi1>
     // CHECK: memref.copy %[[w1]], %[[a1]]
     // CHECK: memref.dealloc %[[w1]]
-    // CHECK: %[[casted1:.*]] = memref.cast %[[a1]]
     // CHECK: %[[a0:.*]] = memref.alloc() {{.*}} : memref<5xi1>
     // CHECK: memref.copy %[[w0]], %[[a0]]
     // CHECK: memref.dealloc %[[w0]]
+    // CHECK: %[[casted1:.*]] = memref.cast %[[a1]]
     // CHECK: %[[casted0:.*]] = memref.cast %[[a0]]
     // CHECK: %[[cloned0:.*]] = bufferization.clone %[[casted0]]
     // CHECK: memref.dealloc %[[a0]]
@@ -457,9 +456,9 @@ func.func @scf_while_non_equiv_condition_and_body(%arg0: tensor<5xi1>,
     // CHECK: %[[a3:.*]] = memref.alloc() {{.*}} : memref<5xi1>
     // CHECK: memref.copy %[[b1]], %[[a3]]
     // CHECK: memref.dealloc %[[b1]]
-    // CHECK: %[[casted3:.*]] = memref.cast %[[a3]]
     // CHECK: %[[a2:.*]] = memref.alloc() {{.*}} : memref<5xi1>
     // CHECK: memref.copy %[[b0]], %[[a2]]
+    // CHECK: %[[casted3:.*]] = memref.cast %[[a3]]
     // CHECK: %[[casted2:.*]] = memref.cast %[[a2]]
     // CHECK: %[[cloned2:.*]] = bufferization.clone %[[casted2]]
     // CHECK: memref.dealloc %[[a2]]

@@ -480,10 +480,12 @@ static void ensureToMemrefOpIsValid(Value tensor, Type memrefType) {
 #endif
 }
 
-Value bufferization::getBuffer(RewriterBase &rewriter, Value value,
-                               const BufferizationOptions &options) {
+FailureOr<Value> bufferization::getBuffer(RewriterBase &rewriter, Value value,
+                                          const BufferizationOptions &options) {
+#ifndef NDEBUG
   auto tensorType = value.getType().dyn_cast<TensorType>();
   assert(tensorType && "unexpected non-tensor type");
+#endif // NDEBUG
 
   // Replace "%t = to_tensor %m" with %m.
   if (auto toTensorOp = value.getDefiningOp<bufferization::ToTensorOp>())
@@ -492,20 +494,28 @@ Value bufferization::getBuffer(RewriterBase &rewriter, Value value,
   // Insert to_memref op.
   OpBuilder::InsertionGuard g(rewriter);
   setInsertionPointAfter(rewriter, value);
-  Type memrefType = getMemRefType(tensorType, options);
-  ensureToMemrefOpIsValid(value, memrefType);
-  return rewriter.create<bufferization::ToMemrefOp>(value.getLoc(), memrefType,
-                                                    value);
+  FailureOr<BaseMemRefType> memrefType = getBufferType(value, options);
+  if (failed(memrefType))
+    return failure();
+  ensureToMemrefOpIsValid(value, *memrefType);
+  return rewriter
+      .create<bufferization::ToMemrefOp>(value.getLoc(), *memrefType, value)
+      .getResult();
 }
 
 /// Return the buffer type for a given Value (tensor) after bufferization.
-BaseMemRefType
+FailureOr<BaseMemRefType>
 bufferization::getBufferType(Value value, const BufferizationOptions &options) {
   auto tensorType = value.getType().dyn_cast<TensorType>();
   assert(tensorType && "unexpected non-tensor type");
 
   if (auto toTensorOp = value.getDefiningOp<bufferization::ToTensorOp>())
     return toTensorOp.getMemref().getType().cast<BaseMemRefType>();
+
+  if (auto bbArg = value.dyn_cast<BlockArgument>())
+    if (auto bufferizableOp =
+            options.dynCastBufferizableOp(bbArg.getOwner()->getParentOp()))
+      return bufferizableOp.getBufferType(bbArg, options);
 
   return getMemRefType(tensorType, options);
 }

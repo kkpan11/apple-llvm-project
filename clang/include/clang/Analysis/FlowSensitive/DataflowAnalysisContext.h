@@ -17,6 +17,7 @@
 
 #include "clang/AST/Decl.h"
 #include "clang/AST/Expr.h"
+#include "clang/AST/TypeOrdering.h"
 #include "clang/Analysis/FlowSensitive/Solver.h"
 #include "clang/Analysis/FlowSensitive/StorageLocation.h"
 #include "clang/Analysis/FlowSensitive/Value.h"
@@ -152,6 +153,10 @@ public:
     return ThisPointeeLoc;
   }
 
+  /// Returns a pointer value that represents a null pointer. Calls with
+  /// `PointeeType` that are canonically equivalent will return the same result.
+  PointerValue &getOrCreateNullPointerValue(QualType PointeeType);
+
   /// Returns a symbolic boolean value that models a boolean literal equal to
   /// `Value`.
   AtomicBoolValue &getBoolLiteralValue(bool Value) const {
@@ -211,6 +216,27 @@ public:
   AtomicBoolValue &joinFlowConditions(AtomicBoolValue &FirstToken,
                                       AtomicBoolValue &SecondToken);
 
+  // FIXME: This function returns the flow condition expressed directly as its
+  // constraints: (C1 AND C2 AND ...). This differs from the general approach in
+  // the framework where a flow condition is represented as a token (an atomic
+  // boolean) with dependencies and constraints tracked in `FlowConditionDeps`
+  // and `FlowConditionConstraints`: (FC <=> C1 AND C2 AND ...).
+  // Consider if we should make the representation of flow condition consistent,
+  // returning an atomic boolean token with separate constraints instead.
+  //
+  /// Builds and returns the logical formula defining the flow condition
+  /// identified by `Token`. If a value in the formula is present as a key in
+  /// `Substitutions`, it will be substituted with the value it maps to.
+  /// As an example, say we have flow condition tokens FC1, FC2, FC3 and
+  /// FlowConditionConstraints: { FC1: C1,
+  ///                             FC2: C2,
+  ///                             FC3: (FC1 v FC2) ^ C3 }
+  /// buildAndSubstituteFlowCondition(FC3, {{C1 -> C1'}}) will return a value
+  /// corresponding to (C1' v C2) ^ C3.
+  BoolValue &buildAndSubstituteFlowCondition(
+      AtomicBoolValue &Token,
+      llvm::DenseMap<AtomicBoolValue *, BoolValue *> Substitutions);
+
   /// Returns true if and only if the constraints of the flow condition
   /// identified by `Token` imply that `Val` is true.
   bool flowConditionImplies(AtomicBoolValue &Token, BoolValue &Val);
@@ -246,6 +272,23 @@ private:
     return querySolver(std::move(Constraints)) == Solver::Result::Unsatisfiable;
   }
 
+  /// Returns a boolean value as a result of substituting `Val` and its sub
+  /// values based on entries in `SubstitutionsCache`. Intermediate results are
+  /// stored in `SubstitutionsCache` to avoid reprocessing values that have
+  /// already been visited.
+  BoolValue &substituteBoolValue(
+      BoolValue &Val,
+      llvm::DenseMap<BoolValue *, BoolValue *> &SubstitutionsCache);
+
+  /// Builds and returns the logical formula defining the flow condition
+  /// identified by `Token`, sub values may be substituted based on entries in
+  /// `SubstitutionsCache`. Intermediate results are stored in
+  /// `SubstitutionsCache` to avoid reprocessing values that have already been
+  /// visited.
+  BoolValue &buildAndSubstituteFlowConditionWithCache(
+      AtomicBoolValue &Token,
+      llvm::DenseMap<BoolValue *, BoolValue *> &SubstitutionsCache);
+
   std::unique_ptr<Solver> S;
 
   // Storage for the state of a program.
@@ -261,6 +304,14 @@ private:
   llvm::DenseMap<const Expr *, StorageLocation *> ExprToLoc;
 
   StorageLocation *ThisPointeeLoc = nullptr;
+
+  // Null pointer values, keyed by the canonical pointee type.
+  //
+  // FIXME: The pointer values are indexed by the pointee types which are
+  // required to initialize the `PointeeLoc` field in `PointerValue`. Consider
+  // creating a type-independent `NullPointerValue` without a `PointeeLoc`
+  // field.
+  llvm::DenseMap<QualType, PointerValue *> NullPointerVals;
 
   AtomicBoolValue &TrueVal;
   AtomicBoolValue &FalseVal;

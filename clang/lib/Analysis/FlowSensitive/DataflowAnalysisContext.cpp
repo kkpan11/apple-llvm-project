@@ -55,6 +55,19 @@ DataflowAnalysisContext::getStableStorageLocation(const Expr &E) {
   return Loc;
 }
 
+PointerValue &
+DataflowAnalysisContext::getOrCreateNullPointerValue(QualType PointeeType) {
+  assert(!PointeeType.isNull());
+  auto CanonicalPointeeType = PointeeType.getCanonicalType();
+  auto Res = NullPointerVals.try_emplace(CanonicalPointeeType, nullptr);
+  if (Res.second) {
+    auto &PointeeLoc = getStableStorageLocation(CanonicalPointeeType);
+    Res.first->second =
+        &takeOwnership(std::make_unique<PointerValue>(PointeeLoc));
+  }
+  return *Res.first->second;
+}
+
 static std::pair<BoolValue *, BoolValue *>
 makeCanonicalBoolValuePair(BoolValue &LHS, BoolValue &RHS) {
   auto Res = std::make_pair(&LHS, &RHS);
@@ -200,6 +213,76 @@ void DataflowAnalysisContext::addTransitiveFlowConditionConstraints(
                                             VisitedTokens);
     }
   }
+}
+
+BoolValue &DataflowAnalysisContext::substituteBoolValue(
+    BoolValue &Val,
+    llvm::DenseMap<BoolValue *, BoolValue *> &SubstitutionsCache) {
+  auto IT = SubstitutionsCache.find(&Val);
+  if (IT != SubstitutionsCache.end()) {
+    return *IT->second;
+  }
+  BoolValue *Result;
+  switch (Val.getKind()) {
+  case Value::Kind::AtomicBool: {
+    Result = &Val;
+    break;
+  }
+  case Value::Kind::Negation: {
+    auto &Negation = *cast<NegationValue>(&Val);
+    auto &Sub = substituteBoolValue(Negation.getSubVal(), SubstitutionsCache);
+    Result = &getOrCreateNegation(Sub);
+    break;
+  }
+  case Value::Kind::Disjunction: {
+    auto &Disjunct = *cast<DisjunctionValue>(&Val);
+    auto &LeftSub =
+        substituteBoolValue(Disjunct.getLeftSubValue(), SubstitutionsCache);
+    auto &RightSub =
+        substituteBoolValue(Disjunct.getRightSubValue(), SubstitutionsCache);
+    Result = &getOrCreateDisjunction(LeftSub, RightSub);
+    break;
+  }
+  case Value::Kind::Conjunction: {
+    auto &Conjunct = *cast<ConjunctionValue>(&Val);
+    auto &LeftSub =
+        substituteBoolValue(Conjunct.getLeftSubValue(), SubstitutionsCache);
+    auto &RightSub =
+        substituteBoolValue(Conjunct.getRightSubValue(), SubstitutionsCache);
+    Result = &getOrCreateConjunction(LeftSub, RightSub);
+    break;
+  }
+  default:
+    llvm_unreachable("Unhandled Value Kind");
+  }
+  SubstitutionsCache[&Val] = Result;
+  return *Result;
+}
+
+BoolValue &DataflowAnalysisContext::buildAndSubstituteFlowCondition(
+    AtomicBoolValue &Token,
+    llvm::DenseMap<AtomicBoolValue *, BoolValue *> Substitutions) {
+  llvm::DenseMap<BoolValue *, BoolValue *> SubstitutionsCache(
+      Substitutions.begin(), Substitutions.end());
+  return buildAndSubstituteFlowConditionWithCache(Token, SubstitutionsCache);
+}
+
+BoolValue &DataflowAnalysisContext::buildAndSubstituteFlowConditionWithCache(
+    AtomicBoolValue &Token,
+    llvm::DenseMap<BoolValue *, BoolValue *> &SubstitutionsCache) {
+  auto ConstraintsIT = FlowConditionConstraints.find(&Token);
+  if (ConstraintsIT == FlowConditionConstraints.end()) {
+    return getBoolLiteralValue(true);
+  }
+  auto DepsIT = FlowConditionDeps.find(&Token);
+  if (DepsIT != FlowConditionDeps.end()) {
+    for (AtomicBoolValue *DepToken : DepsIT->second) {
+      auto &NewDep = buildAndSubstituteFlowConditionWithCache(
+          *DepToken, SubstitutionsCache);
+      SubstitutionsCache[DepToken] = &NewDep;
+    }
+  }
+  return substituteBoolValue(*ConstraintsIT->second, SubstitutionsCache);
 }
 
 } // namespace dataflow
