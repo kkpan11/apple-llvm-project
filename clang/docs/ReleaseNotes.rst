@@ -346,7 +346,13 @@ Build System Changes
 AST Matchers
 ------------
 
-- Expanded ``isInline`` narrowing matcher to support c++17 inline variables.
+- Expanded ``isInline`` narrowing matcher to support C++17 inline variables.
+
+- Added ``forEachTemplateArgument`` matcher which creates a match every
+  time a ``templateArgument`` matches the matcher supplied to it.
+  
+- Added ``objcStringLiteral`` matcher which matches ObjectiveC String
+  literal expressions.
 
 clang-format
 ------------
