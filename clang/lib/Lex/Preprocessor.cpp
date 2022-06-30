@@ -1367,7 +1367,7 @@ bool Preprocessor::FinishLexStringLiteral(Token &Result, std::string &String,
 
   // Concatenate and parse the strings.
   StringLiteralParser Literal(StrToks, *this);
-  assert(Literal.isAscii() && "Didn't allow wide strings in");
+  assert(Literal.isOrdinary() && "Didn't allow wide strings in");
 
   if (Literal.hadError)
     return false;
