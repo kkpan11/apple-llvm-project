@@ -9641,19 +9641,12 @@ void ASTReader::diagnoseOdrViolations() {
     Other
   };
 
-  // Used with err_module_odr_violation_mismatch_decl_diff and
-  // note_module_odr_violation_mismatch_decl_diff
-  enum ODRMismatchDeclDifference {
+  // Used with err_module_odr_violation_record and
+  // note_module_odr_violation_record
+  enum ODRCXXRecordDifference {
     StaticAssertCondition,
     StaticAssertMessage,
     StaticAssertOnlyMessage,
-    FieldName,
-    FieldTypeName,
-    FieldSingleBitField,
-    FieldDifferentWidthBitField,
-    FieldSingleMutable,
-    FieldSingleInitializer,
-    FieldDifferentInitializers,
     MethodName,
     MethodDeleted,
     MethodDefaulted,
@@ -9672,13 +9665,6 @@ void ASTReader::diagnoseOdrViolations() {
     MethodDifferentTemplateArgument,
     MethodSingleBody,
     MethodDifferentBody,
-    TypedefName,
-    TypedefType,
-    VarName,
-    VarType,
-    VarSingleInitializer,
-    VarDifferentInitializer,
-    VarConstexpr,
     FriendTypeFunction,
     FriendType,
     FriendFunction,
@@ -9698,17 +9684,27 @@ void ASTReader::diagnoseOdrViolations() {
                           NamedDecl *FirstRecord, StringRef FirstModule,
                           StringRef SecondModule, FieldDecl *FirstField,
                           FieldDecl *SecondField) {
+    enum ODRFieldDifference {
+      FieldName,
+      FieldTypeName,
+      FieldSingleBitField,
+      FieldDifferentWidthBitField,
+      FieldSingleMutable,
+      FieldSingleInitializer,
+      FieldDifferentInitializers,
+    };
+
     auto DiagError = [FirstRecord, FirstField, FirstModule,
-                      this](ODRMismatchDeclDifference DiffType) {
+                      this](ODRFieldDifference DiffType) {
       return Diag(FirstField->getLocation(),
-                  diag::err_module_odr_violation_mismatch_decl_diff)
+                  diag::err_module_odr_violation_field)
              << FirstRecord << FirstModule.empty() << FirstModule
              << FirstField->getSourceRange() << DiffType;
     };
     auto DiagNote = [SecondField, SecondModule,
-                     this](ODRMismatchDeclDifference DiffType) {
+                     this](ODRFieldDifference DiffType) {
       return Diag(SecondField->getLocation(),
-                  diag::note_module_odr_violation_mismatch_decl_diff)
+                  diag::note_module_odr_violation_field)
              << SecondModule << SecondField->getSourceRange() << DiffType;
     };
 
@@ -9796,17 +9792,22 @@ void ASTReader::diagnoseOdrViolations() {
           NamedDecl *FirstRecord, StringRef FirstModule, StringRef SecondModule,
           TypedefNameDecl *FirstTD, TypedefNameDecl *SecondTD,
           bool IsTypeAlias) {
+        enum ODRTypedefDifference {
+          TypedefName,
+          TypedefType,
+        };
+
         auto DiagError = [FirstRecord, FirstTD, FirstModule,
-                          this](ODRMismatchDeclDifference DiffType) {
+                          this](ODRTypedefDifference DiffType) {
           return Diag(FirstTD->getLocation(),
-                      diag::err_module_odr_violation_mismatch_decl_diff)
+                      diag::err_module_odr_violation_typedef)
                  << FirstRecord << FirstModule.empty() << FirstModule
                  << FirstTD->getSourceRange() << DiffType;
         };
         auto DiagNote = [SecondTD, SecondModule,
-                         this](ODRMismatchDeclDifference DiffType) {
+                         this](ODRTypedefDifference DiffType) {
           return Diag(SecondTD->getLocation(),
-                      diag::note_module_odr_violation_mismatch_decl_diff)
+                      diag::note_module_odr_violation_typedef)
                  << SecondModule << SecondTD->getSourceRange() << DiffType;
         };
 
@@ -9834,17 +9835,24 @@ void ASTReader::diagnoseOdrViolations() {
                      this](NamedDecl *FirstRecord, StringRef FirstModule,
                            StringRef SecondModule, VarDecl *FirstVD,
                            VarDecl *SecondVD) {
+    enum ODRVarDifference {
+      VarName,
+      VarType,
+      VarSingleInitializer,
+      VarDifferentInitializer,
+      VarConstexpr,
+    };
+
     auto DiagError = [FirstRecord, FirstVD, FirstModule,
-                      this](ODRMismatchDeclDifference DiffType) {
+                      this](ODRVarDifference DiffType) {
       return Diag(FirstVD->getLocation(),
-                  diag::err_module_odr_violation_mismatch_decl_diff)
+                  diag::err_module_odr_violation_variable)
              << FirstRecord << FirstModule.empty() << FirstModule
              << FirstVD->getSourceRange() << DiffType;
     };
-    auto DiagNote = [SecondVD, SecondModule,
-                     this](ODRMismatchDeclDifference DiffType) {
+    auto DiagNote = [SecondVD, SecondModule, this](ODRVarDifference DiffType) {
       return Diag(SecondVD->getLocation(),
-                  diag::note_module_odr_violation_mismatch_decl_diff)
+                  diag::note_module_odr_violation_variable)
              << SecondModule << SecondVD->getSourceRange() << DiffType;
     };
 
@@ -10008,34 +10016,35 @@ void ASTReader::diagnoseOdrViolations() {
     }
   };
 
-  auto DiagnoseODRMismatch =
-      [this](DiffResult &DR, NamedDecl *FirstRecord, StringRef FirstModule,
-             NamedDecl *SecondRecord, StringRef SecondModule) {
-        SourceLocation FirstLoc;
-        SourceRange FirstRange;
-        auto *FirstTag = dyn_cast<TagDecl>(FirstRecord);
-        if (DR.FirstDiffType == EndOfClass && FirstTag) {
-          FirstLoc = FirstTag->getBraceRange().getEnd();
-        } else {
-          FirstLoc = DR.FirstDecl->getLocation();
-          FirstRange = DR.FirstDecl->getSourceRange();
-        }
-        Diag(FirstLoc, diag::err_module_odr_violation_mismatch_decl)
-            << FirstRecord << FirstModule.empty() << FirstModule << FirstRange
-            << DR.FirstDiffType;
+  auto DiagnoseODRMismatch = [this](DiffResult &DR, NamedDecl *FirstRecord,
+                                    StringRef FirstModule,
+                                    NamedDecl *SecondRecord,
+                                    StringRef SecondModule) {
+    auto GetMismatchedDeclLoc = [](const NamedDecl *Container,
+                                   ODRMismatchDecl DiffType, const Decl *D) {
+      SourceLocation Loc;
+      SourceRange Range;
+      auto *Tag = dyn_cast<TagDecl>(Container);
+      if (DiffType == EndOfClass && Tag) {
+        Loc = Tag->getBraceRange().getEnd();
+      } else {
+        Loc = D->getLocation();
+        Range = D->getSourceRange();
+      }
+      return std::make_pair(Loc, Range);
+    };
 
-        SourceLocation SecondLoc;
-        SourceRange SecondRange;
-        auto *SecondTag = dyn_cast<TagDecl>(SecondRecord);
-        if (DR.SecondDiffType == EndOfClass && SecondTag) {
-          SecondLoc = SecondTag->getBraceRange().getEnd();
-        } else {
-          SecondLoc = DR.SecondDecl->getLocation();
-          SecondRange = DR.SecondDecl->getSourceRange();
-        }
-        Diag(SecondLoc, diag::note_module_odr_violation_mismatch_decl)
-            << SecondModule << SecondRange << DR.SecondDiffType;
-      };
+    auto FirstDiagInfo =
+        GetMismatchedDeclLoc(FirstRecord, DR.FirstDiffType, DR.FirstDecl);
+    Diag(FirstDiagInfo.first, diag::err_module_odr_violation_mismatch_decl)
+        << FirstRecord << FirstModule.empty() << FirstModule
+        << FirstDiagInfo.second << DR.FirstDiffType;
+
+    auto SecondDiagInfo =
+        GetMismatchedDeclLoc(SecondRecord, DR.SecondDiffType, DR.SecondDecl);
+    Diag(SecondDiagInfo.first, diag::note_module_odr_violation_mismatch_decl)
+        << SecondModule << SecondDiagInfo.second << DR.SecondDiffType;
+  };
 
   // Issue any pending ODR-failure diagnostics.
   for (auto &Merge : OdrMergeFailures) {
@@ -10057,15 +10066,15 @@ void ASTReader::diagnoseOdrViolations() {
       std::string SecondModule = getOwningModuleNameForDiagnostic(SecondRecord);
       auto ODRDiagDeclError = [FirstRecord, &FirstModule,
                                this](SourceLocation Loc, SourceRange Range,
-                                     ODRMismatchDeclDifference DiffType) {
-        return Diag(Loc, diag::err_module_odr_violation_mismatch_decl_diff)
+                                     ODRCXXRecordDifference DiffType) {
+        return Diag(Loc, diag::err_module_odr_violation_record)
                << FirstRecord << FirstModule.empty() << FirstModule << Range
                << DiffType;
       };
       auto ODRDiagDeclNote = [&SecondModule,
                               this](SourceLocation Loc, SourceRange Range,
-                                    ODRMismatchDeclDifference DiffType) {
-        return Diag(Loc, diag::note_module_odr_violation_mismatch_decl_diff)
+                                    ODRCXXRecordDifference DiffType) {
+        return Diag(Loc, diag::note_module_odr_violation_record)
                << SecondModule << Range << DiffType;
       };
 
@@ -10392,13 +10401,13 @@ void ASTReader::diagnoseOdrViolations() {
         DeclarationName FirstName = FirstMethod->getDeclName();
         DeclarationName SecondName = SecondMethod->getDeclName();
         auto DiagMethodError = [&ODRDiagDeclError, FirstMethod, FirstMethodType,
-                                FirstName](ODRMismatchDeclDifference DiffType) {
+                                FirstName](ODRCXXRecordDifference DiffType) {
           return ODRDiagDeclError(FirstMethod->getLocation(),
                                   FirstMethod->getSourceRange(), DiffType)
                  << FirstMethodType << FirstName;
         };
         auto DiagMethodNote = [&ODRDiagDeclNote, SecondMethod, SecondMethodType,
-                               SecondName](ODRMismatchDeclDifference DiffType) {
+                               SecondName](ODRCXXRecordDifference DiffType) {
           return ODRDiagDeclNote(SecondMethod->getLocation(),
                                  SecondMethod->getSourceRange(), DiffType)
                  << SecondMethodType << SecondName;
@@ -10733,13 +10742,13 @@ void ASTReader::diagnoseOdrViolations() {
             SecondTemplate->getTemplateParameters();
 
         auto DiagTemplateError = [&ODRDiagDeclError, FirstTemplate](
-                                     ODRMismatchDeclDifference DiffType) {
+                                     ODRCXXRecordDifference DiffType) {
           return ODRDiagDeclError(FirstTemplate->getLocation(),
                                   FirstTemplate->getSourceRange(), DiffType)
                  << FirstTemplate;
         };
         auto DiagTemplateNote = [&ODRDiagDeclNote, SecondTemplate](
-                                    ODRMismatchDeclDifference DiffType) {
+                                    ODRCXXRecordDifference DiffType) {
           return ODRDiagDeclNote(SecondTemplate->getLocation(),
                                  SecondTemplate->getSourceRange(), DiffType)
                  << SecondTemplate;
