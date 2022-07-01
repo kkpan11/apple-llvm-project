@@ -1089,10 +1089,6 @@ void InitializePlatformEarly() {
   // Do nothing.
 }
 
-void MaybeReexec() {
-  // No need to re-exec on Windows.
-}
-
 void CheckASLR() {
   // Do nothing
 }

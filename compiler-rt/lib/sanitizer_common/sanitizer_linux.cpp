@@ -2167,10 +2167,6 @@ void InitializePlatformEarly() {
   // Do nothing.
 }
 
-void MaybeReexec() {
-  // No need to re-exec on Linux.
-}
-
 void CheckASLR() {
 #if SANITIZER_NETBSD
   int mib[3];
