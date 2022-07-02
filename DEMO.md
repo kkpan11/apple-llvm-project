@@ -129,7 +129,7 @@ Optionally also install experimental libtool and linker support:
 #### Use `clang-cache` as compiler launcher
 
 Using `clang-cache` there's no need to modify compiler arguments.
-Set the environment variable `CLANG_CACHE_CAS_PATH` to specify a non-default
+Set the environment variable `LLVM_CACHE_CAS_PATH` to specify a non-default
 location for the on-disk CAS.
 
 ```
