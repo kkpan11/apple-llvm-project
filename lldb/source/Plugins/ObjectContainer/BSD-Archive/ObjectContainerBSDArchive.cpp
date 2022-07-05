@@ -524,6 +524,19 @@ FileSpec GetChildFileSpecificationsFromThin(llvm::StringRef childPath,
   return child;
 }
 
+FileSpec GetChildFileSpecificationsFromThin(llvm::StringRef childPath,
+                                            const FileSpec &parentFileSpec) {
+  llvm::SmallString<128> FullPath;
+  if (llvm::sys::path::is_absolute(childPath)) {
+    FullPath = childPath;
+  } else {
+    FullPath = parentFileSpec.GetDirectory().GetStringRef();
+    llvm::sys::path::append(FullPath, childPath);
+  }
+  FileSpec child = FileSpec(FullPath.str(), llvm::sys::path::Style::posix);
+  return child;
+}
+
 ObjectFileSP ObjectContainerBSDArchive::GetObjectFile(const FileSpec *file) {
   ModuleSP module_sp(GetModule());
   if (module_sp) {
