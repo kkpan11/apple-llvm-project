@@ -12,6 +12,7 @@
 #include "clang/Frontend/CompilerInvocation.h"
 #include "llvm/CAS/CASDB.h"
 #include "llvm/CAS/HierarchicalTreeBuilder.h"
+#include "llvm/CAS/TreeSchema.h"
 #include "llvm/CAS/Utils.h"
 #include "llvm/Support/StringSaver.h"
 #include "llvm/Support/raw_ostream.h"
@@ -78,11 +79,12 @@ clang::createCompileJobCacheKey(CASDB &CAS, DiagnosticsEngine &Diags,
 }
 
 static Error printFileSystem(CASDB &CAS, ObjectRef Ref, raw_ostream &OS) {
-  Expected<TreeProxy> Root = CAS.loadTree(Ref);
+  Expected<ObjectHandle> Root = CAS.loadObject(Ref);
   if (!Root)
     return Root.takeError();
   return walkFileTreeRecursively(
-      CAS, *Root, [&](const NamedTreeEntry &Entry, Optional<TreeProxy> Tree) {
+      CAS, *Root,
+      [&](const NamedTreeEntry &Entry, Optional<NodeProxy> Tree) {
         if (Entry.getKind() != TreeEntry::Tree || Tree->empty()) {
           OS << "\n  ";
           Entry.print(OS, CAS);
@@ -91,17 +93,21 @@ static Error printFileSystem(CASDB &CAS, ObjectRef Ref, raw_ostream &OS) {
       });
 }
 
-static Error printCompileJobCacheKey(CASDB &CAS, TreeHandle Tree,
+static Error printCompileJobCacheKey(CASDB &CAS, NodeHandle Node,
                                      raw_ostream &OS) {
   auto strError = [](const Twine &Err) {
     return createStringError(inconvertibleErrorCode(), Err);
   };
 
+  Expected<TreeNodeProxy> Tree = TreeSchema(CAS).loadTree(Node);
+  if (!Tree)
+    return Tree.takeError();
+
   // Not exhaustive, but quick check that this looks like a cache key.
-  if (!CAS.lookupTreeEntry(Tree, "computation"))
+  if (!Tree->lookup("computation"))
     return strError("cas object is not a valid cache key");
 
-  return CAS.forEachTreeEntry(Tree, [&](const NamedTreeEntry &E) -> Error {
+  return Tree->forEachEntry([&](const NamedTreeEntry &E) -> Error {
     OS << E.getName() << ": " << CAS.getObjectID(E.getRef());
     if (E.getKind() == TreeEntry::Tree)
       return printFileSystem(CAS, E.getRef(), OS);
@@ -140,13 +146,13 @@ Error clang::printCompileJobCacheKey(CASDB &CAS, CASID Key, raw_ostream &OS) {
   if (!*H)
     return createStringError(inconvertibleErrorCode(),
                              "cache key not present in CAS");
-  auto Tree = (*H)->dyn_cast<TreeHandle>();
-  if (!Tree) {
+  auto Tree = (*H)->get<NodeHandle>();
+  if (!TreeSchema(CAS).isNode(Tree)) {
     std::string ErrStr;
     llvm::raw_string_ostream Err(ErrStr);
     Err << "expected cache key to be a CAS tree; got ";
     (*H)->print(Err);
     return createStringError(inconvertibleErrorCode(), Err.str());
   }
-  return ::printCompileJobCacheKey(CAS, *Tree, OS);
+  return ::printCompileJobCacheKey(CAS, Tree, OS);
 }
