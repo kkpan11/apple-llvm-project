@@ -393,7 +393,7 @@ PTHManager::PTHManager(llvm::cas::CASDB &CAS,
 #include "clang/Basic/LangOptions.def"
   }
 
-  SerializedLangOpts = llvm::cantFail(CAS.createBlob(LangBlock));
+  SerializedLangOpts = llvm::cantFail(CAS.createObject(None, LangBlock));
 }
 
 PTHManager::~PTHManager() = default;
@@ -500,7 +500,7 @@ std::unique_ptr<PTHLexer> PTHHandler::createLexer(PTHManager &PTHM,
 
 PTHHandler *PTHManager::createHandler(StringRef Filename,
                                       llvm::cas::CASID PTH) {
-  if (auto ExpectedBuffer = CAS.getBlob(PTH)) {
+  if (auto ExpectedBuffer = CAS.loadObjectProxy(PTH)) {
     return new (HandlerAlloc.Allocate())
         PTHHandler(*this, PP->getDiagnostics(), Filename, ExpectedBuffer->getData());
   } else {
@@ -596,8 +596,9 @@ Expected<llvm::cas::CASID> PTHManager::computePTH(llvm::cas::CASID InputFile) {
     assert(!Operation);
 
     // FIXME: This should be the clang executable...
-    ClangVersion = llvm::cantFail(CAS.createBlob(getClangFullVersion()));
-    Operation = llvm::cantFail(CAS.createBlob("generate-isolated-pth"));
+    ClangVersion =
+        llvm::cantFail(CAS.createObject(None, getClangFullVersion()));
+    Operation = llvm::cantFail(CAS.createObject(None, "generate-isolated-pth"));
   }
 
   llvm::cas::HierarchicalTreeBuilder Builder;
@@ -623,10 +624,11 @@ Expected<llvm::cas::CASID> PTHManager::computePTH(llvm::cas::CASID InputFile) {
 
     // FIXME: Maybe we should allow this to fail? Then we should cache the
     // failure.
-    Writer.generatePTH(OS, llvm::cantFail(CAS.getBlob(InputFile)).getData(),
+    Writer.generatePTH(OS,
+                       llvm::cantFail(CAS.loadObjectProxy(InputFile)).getData(),
                        CanonicalLangOpts);
   }
-  llvm::cas::BlobProxy PTH = llvm::cantFail(CAS.createBlob(PTHString));
+  auto PTH = llvm::cantFail(CAS.createObject(None, PTHString));
   llvm::cantFail(CAS.putCachedResult(CacheKey, PTH));
   return PTH;
 }

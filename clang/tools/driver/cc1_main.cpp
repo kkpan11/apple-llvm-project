@@ -440,14 +440,14 @@ void CompileJobCache::finishComputedResult(CompilerInstance &Clang,
       llvm::report_fatal_error(std::move(E));
   }
 
-  Expected<llvm::cas::NodeProxy> Outputs = CASOutputs->createNode();
+  Expected<llvm::cas::ObjectProxy> Outputs = CASOutputs->createNode();
   if (!Outputs)
     llvm::report_fatal_error(Outputs.takeError());
 
   // Hack around llvm::errs() not being captured by the output backend yet.
   //
   // FIXME: Stop calling report_fatal_error().
-  Expected<llvm::cas::BlobProxy> Errs = CAS->createBlob(ResultDiags);
+  Expected<llvm::cas::ObjectProxy> Errs = CAS->createObject(None, ResultDiags);
   if (!Errs)
     llvm::report_fatal_error(Errs.takeError());
 
@@ -457,7 +457,7 @@ void CompileJobCache::finishComputedResult(CompilerInstance &Clang,
   llvm::cas::HierarchicalTreeBuilder Builder;
   Builder.push(Outputs->getRef(), llvm::cas::TreeEntry::Regular, "outputs");
   Builder.push(Errs->getRef(), llvm::cas::TreeEntry::Regular, "stderr");
-  Expected<llvm::cas::NodeHandle> Result = Builder.create(*CAS);
+  Expected<llvm::cas::ObjectHandle> Result = Builder.create(*CAS);
   if (!Result)
     llvm::report_fatal_error(Result.takeError());
   if (llvm::Error E =
@@ -484,9 +484,9 @@ Optional<int> CompileJobCache::replayCachedResult(llvm::cas::ObjectRef ResultID,
 
   // Replay diagnostics to stderr.
   if (!JustComputedResult) {
-    Optional<llvm::cas::BlobProxy> Errs;
+    Optional<llvm::cas::ObjectProxy> Errs;
     if (Optional<llvm::cas::NamedTreeEntry> Entry = Result->lookup("stderr"))
-      if (Error E = CAS->loadBlob(Entry->getRef()).moveInto(Errs))
+      if (Error E = CAS->loadObjectProxy(Entry->getRef()).moveInto(Errs))
         llvm::report_fatal_error(std::move(E));
     if (!Errs)
       llvm::report_fatal_error("CAS error accessing stderr");
@@ -496,9 +496,9 @@ Optional<int> CompileJobCache::replayCachedResult(llvm::cas::ObjectRef ResultID,
   // Replay outputs.
   //
   // FIXME: Use a NodeReader here once it exists.
-  Optional<llvm::cas::NodeProxy> Outputs;
+  Optional<llvm::cas::ObjectProxy> Outputs;
   if (Optional<llvm::cas::NamedTreeEntry> Entry = Result->lookup("outputs"))
-    if (Error E = CAS->loadNode(Entry->getRef()).moveInto(Outputs))
+    if (Error E = CAS->loadObjectProxy(Entry->getRef()).moveInto(Outputs))
       llvm::report_fatal_error(std::move(E));
   if (!Outputs)
     llvm::report_fatal_error("CAS error accessing outputs");
@@ -507,8 +507,8 @@ Optional<int> CompileJobCache::replayCachedResult(llvm::cas::ObjectRef ResultID,
     llvm::cas::CASID PathID = Outputs->getReferenceID(I);
     llvm::cas::CASID BytesID = Outputs->getReferenceID(I + 1);
 
-    Optional<llvm::cas::BlobProxy> Path;
-    if (Error E = CAS->getBlob(PathID).moveInto(Path))
+    Optional<llvm::cas::ObjectProxy> Path;
+    if (Error E = CAS->loadObjectProxy(PathID).moveInto(Path))
       llvm::report_fatal_error(std::move(E));
 
     Optional<StringRef> Contents;
@@ -529,8 +529,8 @@ Optional<int> CompileJobCache::replayCachedResult(llvm::cas::ObjectRef ResultID,
             report_fatal_error(llvm::errorCodeToError(EC));
           writeCASIDBuffer(BytesID, IDOS);
         }
-        Optional<llvm::cas::NodeProxy> CASObj;
-        if (Error E = CAS->getNode(BytesID).moveInto(CASObj))
+        Optional<llvm::cas::ObjectProxy> CASObj;
+        if (Error E = CAS->loadObjectProxy(BytesID).moveInto(CASObj))
           llvm::report_fatal_error(std::move(E));
         auto Schema =
             std::make_unique<llvm::mccasformats::v1::MCSchema>(*CAS);
@@ -541,8 +541,8 @@ Optional<int> CompileJobCache::replayCachedResult(llvm::cas::ObjectRef ResultID,
     } else if (JustComputedResult) {
       continue;
     } else {
-      Optional<llvm::cas::BlobProxy> Bytes;
-      if (Error E = CAS->getBlob(BytesID).moveInto(Bytes))
+      Optional<llvm::cas::ObjectProxy> Bytes;
+      if (Error E = CAS->loadObjectProxy(BytesID).moveInto(Bytes))
         llvm::report_fatal_error(std::move(E));
       Contents = Bytes->getData();
     }

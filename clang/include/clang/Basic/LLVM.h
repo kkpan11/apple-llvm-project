@@ -55,8 +55,7 @@ namespace llvm {
   namespace cas {
   class CASDB;
   class CASID;
-  class LeafNodeProxy;
-  class NodeProxy;
+  class ObjectProxy;
   class ObjectRef;
   } // namespace cas
 }
@@ -99,8 +98,7 @@ namespace clang {
   namespace cas {
   using llvm::cas::CASDB;
   using llvm::cas::CASID;
-  using llvm::cas::LeafNodeProxy;
-  using llvm::cas::NodeProxy;
+  using llvm::cas::ObjectProxy;
   using llvm::cas::ObjectRef;
   } // namespace cas
 } // end namespace clang.

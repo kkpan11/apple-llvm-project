@@ -39,16 +39,16 @@ clang::createCompileJobCacheKey(CASDB &CAS, ArrayRef<const char *> CC1Args,
 
   llvm::cas::HierarchicalTreeBuilder Builder;
   Builder.push(*RootRef, llvm::cas::TreeEntry::Tree, "filesystem");
-  Builder.push(CAS.getReference(
-                   llvm::cantFail(CAS.storeNodeFromString(None, CommandLine))),
+  Builder.push(CAS.getReference(llvm::cantFail(
+                   CAS.storeObjectFromString(None, CommandLine))),
                llvm::cas::TreeEntry::Regular, "command-line");
   Builder.push(
-      CAS.getReference(llvm::cantFail(CAS.storeNodeFromString(None, "-cc1"))),
+      CAS.getReference(llvm::cantFail(CAS.storeObjectFromString(None, "-cc1"))),
       llvm::cas::TreeEntry::Regular, "computation");
 
   // FIXME: The version is maybe insufficient...
   Builder.push(CAS.getReference(llvm::cantFail(
-                   CAS.storeNodeFromString(None, getClangFullVersion()))),
+                   CAS.storeObjectFromString(None, getClangFullVersion()))),
                llvm::cas::TreeEntry::Regular, "version");
 
   return CAS.getObjectID(llvm::cantFail(Builder.create(CAS)));
@@ -94,7 +94,7 @@ static Error printFileSystem(CASDB &CAS, ObjectRef Ref, raw_ostream &OS) {
       });
 }
 
-static Error printCompileJobCacheKey(CASDB &CAS, NodeHandle Node,
+static Error printCompileJobCacheKey(CASDB &CAS, ObjectHandle Node,
                                      raw_ostream &OS) {
   auto strError = [](const Twine &Err) {
     return createStringError(inconvertibleErrorCode(), Err);
@@ -115,7 +115,7 @@ static Error printCompileJobCacheKey(CASDB &CAS, NodeHandle Node,
 
     if (E.getKind() != TreeEntry::Regular)
       return strError("expected blob for entry " + E.getName());
-    auto Blob = CAS.loadBlob(E.getRef());
+    auto Blob = CAS.loadObjectProxy(E.getRef());
     if (!Blob)
       return Blob.takeError();
 
@@ -147,13 +147,12 @@ Error clang::printCompileJobCacheKey(CASDB &CAS, CASID Key, raw_ostream &OS) {
   if (!*H)
     return createStringError(inconvertibleErrorCode(),
                              "cache key not present in CAS");
-  auto Tree = (*H)->get<NodeHandle>();
-  if (!TreeSchema(CAS).isNode(Tree)) {
+  if (!TreeSchema(CAS).isNode(**H)) {
     std::string ErrStr;
     llvm::raw_string_ostream Err(ErrStr);
     Err << "expected cache key to be a CAS tree; got ";
     (*H)->print(Err);
     return createStringError(inconvertibleErrorCode(), Err.str());
   }
-  return ::printCompileJobCacheKey(CAS, Tree, OS);
+  return ::printCompileJobCacheKey(CAS, **H, OS);
 }
