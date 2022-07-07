@@ -82,9 +82,10 @@ static Error printFileSystem(CASDB &CAS, ObjectRef Ref, raw_ostream &OS) {
   Expected<ObjectHandle> Root = CAS.loadObject(Ref);
   if (!Root)
     return Root.takeError();
-  return walkFileTreeRecursively(
+
+  return TreeSchema(CAS).walkFileTreeRecursively(
       CAS, *Root,
-      [&](const NamedTreeEntry &Entry, Optional<NodeProxy> Tree) {
+      [&](const NamedTreeEntry &Entry, Optional<TreeNodeProxy> Tree) {
         if (Entry.getKind() != TreeEntry::Tree || Tree->empty()) {
           OS << "\n  ";
           Entry.print(OS, CAS);
