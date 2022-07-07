@@ -239,7 +239,7 @@ int main(int argc, char *argv[]) {
 
     case IngestFromCASTree: {
       auto ID = ExitOnErr(CAS->parseID(IF));
-      auto Root = ExitOnErr(CAS->getNode(ID));
+      auto Root = ExitOnErr(CAS->loadObjectProxy(ID));
       TreeSchema Schema(*CAS);
       SmallVector<NamedTreeEntry> Stack;
       Stack.emplace_back(CAS->getReference(Root), TreeEntry::Tree, "/");
@@ -254,7 +254,7 @@ int main(int argc, char *argv[]) {
           if (GlobP && !GlobP->match(Name))
               continue;
 
-          auto BlobContent = ExitOnErr(CAS->loadBlob(Node.getRef()));
+          auto BlobContent = ExitOnErr(CAS->loadObjectProxy(Node.getRef()));
           Pool.async([&, Name, BlobContent]() {
             auto ObjBuffer =
                 MemoryBuffer::getMemBuffer(BlobContent.getData(), Name);
@@ -271,7 +271,7 @@ int main(int argc, char *argv[]) {
           ExitOnErr(createStringError(inconvertibleErrorCode(),
                                       "unexpected CAS kind in the tree"));
 
-        NodeProxy TreeN = ExitOnErr(CAS->loadNode(Node.getRef()));
+        ObjectProxy TreeN = ExitOnErr(CAS->loadObjectProxy(Node.getRef()));
         TreeNodeProxy Tree = ExitOnErr(Schema.loadTree(TreeN));
         ExitOnErr(Tree.forEachEntry([&](const NamedTreeEntry &Entry) {
           SmallString<128> PathStorage = Node.getName();
@@ -375,7 +375,7 @@ struct StatCollector {
   CASDB &CAS;
 
   using POTItemHandler = unique_function<void(
-      ExitOnError &, function_ref<void(ObjectKindInfo &)>, cas::NodeProxy)>;
+      ExitOnError &, function_ref<void(ObjectKindInfo &)>, cas::ObjectProxy)>;
 
   // FIXME: Utilize \p SchemaPool.
   nestedv1::ObjectFileSchema NestedV1Schema;
@@ -390,21 +390,21 @@ struct StatCollector {
         &NestedV1Schema,
         [&](ExitOnError &ExitOnErr,
             function_ref<void(ObjectKindInfo & Info)> addNodeStats,
-            cas::NodeProxy Node) {
+            cas::ObjectProxy Node) {
           visitPOTItemNestedV1(ExitOnErr, NestedV1Schema, addNodeStats, Node);
         }));
     Schemas.push_back(std::make_pair(
         &FlatV1Schema,
         [&](ExitOnError &ExitOnErr,
             function_ref<void(ObjectKindInfo & Info)> addNodeStats,
-            cas::NodeProxy Node) {
+            cas::ObjectProxy Node) {
           visitPOTItemFlatV1(ExitOnErr, FlatV1Schema, addNodeStats, Node);
         }));
     Schemas.push_back(std::make_pair(
         &MCCASV1Schema,
         [&](ExitOnError &ExitOnErr,
             function_ref<void(ObjectKindInfo & Info)> addNodeStats,
-            cas::NodeProxy Node) {
+            cas::ObjectProxy Node) {
           visitPOTItemMCCASV1(ExitOnErr, MCCASV1Schema, addNodeStats, Node);
         }));
   }
@@ -435,16 +435,16 @@ struct StatCollector {
   visitPOTItemNestedV1(ExitOnError &ExitOnErr,
                        nestedv1::ObjectFileSchema &Schema,
                        function_ref<void(ObjectKindInfo &Info)> addNodeStats,
-                       cas::NodeProxy Node);
+                       cas::ObjectProxy Node);
   void visitPOTItemFlatV1(ExitOnError &ExitOnErr,
                           flatv1::ObjectFileSchema &Schema,
                           function_ref<void(ObjectKindInfo &Info)> addNodeStats,
-                          cas::NodeProxy Node);
+                          cas::ObjectProxy Node);
   void
   visitPOTItemMCCASV1(ExitOnError &ExitOnErr,
                       llvm::mccasformats::v1::MCSchema &Schema,
                       function_ref<void(ObjectKindInfo &Info)> addNodeStats,
-                      cas::NodeProxy Node);
+                      cas::ObjectProxy Node);
   void printToOuts(ArrayRef<CASID> TopLevels, raw_ostream &StatOS);
 };
 } // end namespace
@@ -463,7 +463,7 @@ void StatCollector::visitPOT(ExitOnError &ExitOnErr, ArrayRef<CASID> TopLevels,
 void StatCollector::visitPOTItem(ExitOnError &ExitOnErr, const POTItem &Item) {
   cas::CASID ID = Item.ID;
   size_t NumPaths = Nodes.lookup(ID).NumPaths;
-  Optional<AnyObjectHandle> Object = ExitOnErr(CAS.loadObject(ID));
+  Optional<ObjectHandle> Object = ExitOnErr(CAS.loadObject(ID));
   assert(Object);
 
   auto updateChild = [&](ObjectRef Child) {
@@ -474,11 +474,10 @@ void StatCollector::visitPOTItem(ExitOnError &ExitOnErr, const POTItem &Item) {
 
   size_t NumParents = Nodes.lookup(ID).NumParents;
   TreeSchema Schema(CAS);
-  auto TreeH = Object->get<NodeHandle>();
-  if (Schema.isNode(TreeH)) {
+  if (Schema.isNode(*Object)) {
     auto &Info = Stats["builtin:tree"];
     ++Info.Count;
-    TreeNodeProxy Tree = ExitOnErr(Schema.loadTree(TreeH));
+    TreeNodeProxy Tree = ExitOnErr(Schema.loadTree(*Object));
     Info.NumChildren += Tree.size();
     Info.NumParents += NumParents;
     Info.NumPaths += NumPaths;
@@ -495,7 +494,7 @@ void StatCollector::visitPOTItem(ExitOnError &ExitOnErr, const POTItem &Item) {
     return;
   }
 
-  NodeProxy Node = NodeProxy::load(CAS, Object->get<NodeHandle>());
+  ObjectProxy Node = ObjectProxy::load(CAS, *Object);
   auto addNodeStats = [&](ObjectKindInfo &Info) {
     ++Info.Count;
     Info.NumChildren += Node.getNumReferences();
@@ -529,9 +528,9 @@ void StatCollector::visitPOTItem(ExitOnError &ExitOnErr, const POTItem &Item) {
 void StatCollector::visitPOTItemNestedV1(
     ExitOnError &ExitOnErr, nestedv1::ObjectFileSchema &Schema,
     function_ref<void(ObjectKindInfo &Info)> addNodeStats,
-    cas::NodeProxy Node) {
+    cas::ObjectProxy Node) {
   using namespace llvm::casobjectformats::nestedv1;
-  ObjectFormatNodeProxy Object = ExitOnErr(Schema.getNode(Node));
+  ObjectFormatObjectProxy Object = ExitOnErr(Schema.getNode(Node));
   addNodeStats(Stats[Object.getKindString()]);
 
   // Check specific stats.
@@ -598,16 +597,16 @@ void StatCollector::visitPOTItemNestedV1(
 void StatCollector::visitPOTItemFlatV1(
     ExitOnError &ExitOnErr, flatv1::ObjectFileSchema &Schema,
     function_ref<void(ObjectKindInfo &Info)> addNodeStats,
-    cas::NodeProxy Node) {
+    cas::ObjectProxy Node) {
   using namespace llvm::casobjectformats::flatv1;
-  ObjectFormatNodeProxy Object = ExitOnErr(Schema.getNode(Node));
+  ObjectFormatObjectProxy Object = ExitOnErr(Schema.getNode(Node));
   addNodeStats(Stats[Object.getKindString()]);
 }
 
 void StatCollector::visitPOTItemMCCASV1(
     ExitOnError &ExitOnErr, llvm::mccasformats::v1::MCSchema &Schema,
     function_ref<void(ObjectKindInfo &Info)> addNodeStats,
-    cas::NodeProxy Node) {
+    cas::ObjectProxy Node) {
   using namespace llvm::casobjectformats::flatv1;
   auto Object = ExitOnErr(Schema.getNode(Node));
   addNodeStats(Stats[Object.getKindString()]);
@@ -678,7 +677,7 @@ static void computeStats(CASDB &CAS, ArrayRef<CASID> TopLevels,
     Worklist.back().Visited = true;
 
     // FIXME: Maybe this should just assert?
-    Optional<AnyObjectHandle> Object = ExitOnErr(CAS.loadObject(ID));
+    Optional<ObjectHandle> Object = ExitOnErr(CAS.loadObject(ID));
     assert(Object);
     if (!Object) {
       Worklist.pop_back();
@@ -686,9 +685,8 @@ static void computeStats(CASDB &CAS, ArrayRef<CASID> TopLevels,
     }
 
     TreeSchema TSchema(CAS);
-    NodeHandle NodeH = Object->get<NodeHandle>();
-    if (TSchema.isNode(NodeH)) {
-      TreeNodeProxy Tree = ExitOnErr(TSchema.loadTree(NodeH));
+    if (TSchema.isNode(*Object)) {
+      TreeNodeProxy Tree = ExitOnErr(TSchema.loadTree(*Object));
       ExitOnErr(Tree.forEachEntry([&](const NamedTreeEntry &Entry) {
         SmallString<128> PathStorage = Name;
         sys::path::append(PathStorage, sys::path::Style::posix,
@@ -704,7 +702,7 @@ static void computeStats(CASDB &CAS, ArrayRef<CASID> TopLevels,
       continue;
     }
 
-    NodeProxy Node = NodeProxy::load(CAS, Object->get<NodeHandle>());
+    ObjectProxy Node = ObjectProxy::load(CAS, *Object);
     const NodeSchema *&Schema = Worklist.back().Schema;
 
     // Update the schema.
@@ -829,7 +827,7 @@ static Error printCASObject(ObjectFormatSchemaPool &Pool, CASID ID, bool omitCAS
 }
 
 static Error printCASObjectOrTree(ObjectFormatSchemaPool &Pool, CASID ID, bool omitCASID) {
-  Expected<NodeProxy> ExpTree = Pool.getCAS().getNode(ID);
+  Expected<ObjectProxy> ExpTree = Pool.getCAS().loadObjectProxy(ID);
   if (Error E = ExpTree.takeError()) {
     // Not a tree.
     return printCASObject(Pool, ID, omitCASID);
@@ -850,7 +848,7 @@ static Error printCASObjectOrTree(ObjectFormatSchemaPool &Pool, CASID ID, bool o
 }
 
 static Error materializeObjectsFromCASTree(CASDB &CAS, CASID ID) {
-  Expected<NodeProxy> ExpTree = CAS.getNode(ID);
+  Expected<ObjectProxy> ExpTree = CAS.loadObjectProxy(ID);
   if (!ExpTree)
     return ExpTree.takeError();
 
@@ -876,7 +874,7 @@ static Error materializeObjectsFromCASTree(CASDB &CAS, CASID ID) {
           }
           return Error::success();
         }
-        auto ObjRoot = CAS.loadNode(Entry.getRef());
+        auto ObjRoot = CAS.loadObjectProxy(Entry.getRef());
         if (!ObjRoot)
           return ObjRoot.takeError();
 
@@ -975,11 +973,11 @@ static ObjectRef ingestFile(ObjectFormatSchemaBase &Schema, StringRef InputFile,
   auto &CAS = Schema.CAS;
   if (JustBlobs)
     return CAS.getReference(
-        ExitOnErr(CAS.storeNodeFromString(None, FileContent.getBuffer())));
+        ExitOnErr(CAS.storeObjectFromString(None, FileContent.getBuffer())));
 
   if (CASIDFile) {
     auto ID = ExitOnErr(readCASIDBuffer(Schema.CAS, FileContent));
-    return ExitOnErr(Schema.CAS.getNode(ID)).getRef();
+    return ExitOnErr(Schema.CAS.loadObjectProxy(ID)).getRef();
   }
 
   auto createLinkGraph =
@@ -1060,7 +1058,7 @@ static ObjectRef ingestFile(ObjectFormatSchemaBase &Schema, StringRef InputFile,
       // Read dsym.
       auto DwarfBuffer =
           ExitOnErr(errorOrToExpected(MemoryBuffer::getFile(DsymFile.TmpName)));
-      Builder.push(CAS.getReference(ExitOnErr(CAS.storeNodeFromString(
+      Builder.push(CAS.getReference(ExitOnErr(CAS.storeObjectFromString(
                        None, DwarfBuffer->getBuffer()))),
                    TreeEntry::Regular, S->getName());
     }

@@ -237,6 +237,7 @@ public:
   static Error createUnknownObjectError(CASID ID);
 
   Expected<ObjectProxy> loadObjectProxy(CASID ID);
+  Expected<ObjectProxy> loadObjectProxy(ObjectRef Ref);
   Expected<ObjectProxy> loadObjectProxy(Expected<ObjectHandle> H);
 
   virtual Error validateObject(const CASID &ID) = 0;

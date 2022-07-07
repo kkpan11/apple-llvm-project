@@ -105,8 +105,7 @@ NamedTreeEntry TreeSchema::loadTreeEntry(TreeNodeProxy Tree, size_t I) const {
   TreeEntry::EntryKind Kind = (TreeEntry::EntryKind)Tree.getData()[I];
   // Names are stored in the front, followed by Refs.
   // FIXME: Name loading can't fail?
-  auto NameProxy =
-      cantFail(CAS.loadObjectProxy(CAS.loadObject(Tree.getReference(I + 1))));
+  auto NameProxy = cantFail(CAS.loadObjectProxy(Tree.getReference(I + 1)));
   auto ObjectRef = Tree.getReference(Tree.size() + I + 1);
 
   return {ObjectRef, Kind, NameProxy.getData()};
@@ -120,8 +119,7 @@ Optional<size_t> TreeSchema::lookupTreeEntry(TreeNodeProxy Tree,
 
   SmallVector<StringRef> Names(NumNames);
   auto GetName = [&](size_t I) {
-    auto NameProxy =
-        cantFail(CAS.loadObjectProxy(CAS.loadObject(Tree.getReference(I + 1))));
+    auto NameProxy = cantFail(CAS.loadObjectProxy(Tree.getReference(I + 1)));
     return NameProxy.getData();
   };
 

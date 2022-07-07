@@ -26,41 +26,39 @@ class MCFormatSchemaBase
 public:
   static char ID;
 
-  bool isRootNode(const cas::NodeHandle &Node) const final {
-    return isRootNode(cas::NodeProxy::load(CAS, Node));
+  bool isRootNode(const cas::ObjectHandle &Node) const final {
+    return isRootNode(cas::ObjectProxy::load(CAS, Node));
   }
 
-  bool isNode(const cas::NodeHandle &Node) const final {
-    return isNode(cas::NodeProxy::load(CAS, Node));
+  bool isNode(const cas::ObjectHandle &Node) const final {
+    return isNode(cas::ObjectProxy::load(CAS, Node));
   }
 
   /// Check if \a Node is a root (entry node) for the schema. This is a strong
   /// check, since it requires that the first reference matches a complete
   /// type-id DAG.
-  virtual bool isRootNode(const cas::NodeProxy &Node) const = 0;
+  virtual bool isRootNode(const cas::ObjectProxy &Node) const = 0;
 
   /// Check if \a Node could be a node in the schema. This is a weak check,
   /// since it only looks up the KindString associated with the first
   /// character. The caller should ensure that the parent node is in the schema
   /// before calling this.
-  virtual bool isNode(const cas::NodeProxy &Node) const = 0;
+  virtual bool isNode(const cas::ObjectProxy &Node) const = 0;
 
-  Expected<cas::NodeProxy>
+  Expected<cas::ObjectProxy>
   createFromMCAssembler(llvm::MachOCASWriter &ObjectWriter,
                         llvm::MCAssembler &Asm, const llvm::MCAsmLayout &Layout,
                         raw_ostream *DebugOS = nullptr) const {
     return createFromMCAssemblerImpl(ObjectWriter, Asm, Layout, DebugOS);
   }
 
-  virtual Error serializeObjectFile(cas::NodeProxy RootNode,
+  virtual Error serializeObjectFile(cas::ObjectProxy RootNode,
                                     llvm::raw_ostream &OS) const = 0;
 
 protected:
-  virtual Expected<cas::NodeProxy>
-  createFromMCAssemblerImpl(llvm::MachOCASWriter &ObjectWriter,
-                            llvm::MCAssembler &Asm,
-                            const llvm::MCAsmLayout &Layout,
-                            raw_ostream *DebugOS) const = 0;
+  virtual Expected<cas::ObjectProxy> createFromMCAssemblerImpl(
+      llvm::MachOCASWriter &ObjectWriter, llvm::MCAssembler &Asm,
+      const llvm::MCAsmLayout &Layout, raw_ostream *DebugOS) const = 0;
 
   MCFormatSchemaBase(cas::CASDB &CAS)
       : MCFormatSchemaBase::RTTIExtends(CAS) {}
@@ -85,7 +83,7 @@ public:
   /// therefore it cannot be used beyond the \p SchemaPool instance's lifetime.
   ///
   /// Thread-safe.
-  MCFormatSchemaBase *getSchemaForRoot(cas::NodeHandle Node) const {
+  MCFormatSchemaBase *getSchemaForRoot(cas::ObjectHandle Node) const {
     return dyn_cast_or_null<MCFormatSchemaBase>(
         Pool.getSchemaForRoot(Node));
   }

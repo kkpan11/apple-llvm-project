@@ -101,6 +101,10 @@ Expected<ObjectProxy> CASDB::loadObjectProxy(CASID ID) {
   return ObjectProxy::load(*this, *H);
 }
 
+Expected<ObjectProxy> CASDB::loadObjectProxy(ObjectRef Ref) {
+  return loadObjectProxy(loadObject(Ref));
+}
+
 Expected<ObjectProxy> CASDB::loadObjectProxy(Expected<ObjectHandle> H) {
   if (!H)
     return H.takeError();

@@ -63,14 +63,14 @@ cl::opt<RelEncodeLoc> RelocLocation(
                clEnumVal(CompileUnit, "In compile unit")),
     cl::init(Atom));
 
-Expected<cas::NodeProxy>
+Expected<cas::ObjectProxy>
 MCSchema::createFromMCAssemblerImpl(MachOCASWriter &ObjectWriter,
                                     MCAssembler &Asm, const MCAsmLayout &Layout,
                                     raw_ostream *DebugOS) const {
   return MCAssemblerRef::create(*this, ObjectWriter, Asm, Layout, DebugOS);
 }
 
-Error MCSchema::serializeObjectFile(cas::NodeProxy RootNode,
+Error MCSchema::serializeObjectFile(cas::ObjectProxy RootNode,
                                     raw_ostream &OS) const {
   if (!isRootNode(RootNode))
     return createStringError(inconvertibleErrorCode(), "invalid root node");
@@ -90,8 +90,8 @@ MCSchema::MCSchema(cas::CASDB &CAS) : MCSchema::RTTIExtends(CAS) {
 Error MCSchema::fillCache() {
   Optional<cas::CASID> RootKindID;
   const unsigned Version = 0; // Bump this to error on old object files.
-  if (Expected<cas::NodeProxy> ExpectedRootKind =
-          CAS.createNode(None, "mc:v1:schema:" + Twine(Version).str()))
+  if (Expected<cas::ObjectProxy> ExpectedRootKind =
+          CAS.createObject(None, "mc:v1:schema:" + Twine(Version).str()))
     RootKindID = *ExpectedRootKind;
   else
     return ExpectedRootKind.takeError();
@@ -108,7 +108,7 @@ Error MCSchema::fillCache() {
   cas::CASID Refs[] = {*RootKindID};
   SmallVector<cas::CASID> IDs = {*RootKindID};
   for (StringRef KS : AllKindStrings) {
-    auto ExpectedID = CAS.createNode(Refs, KS);
+    auto ExpectedID = CAS.createObjectFromIDs(Refs, KS);
     if (!ExpectedID)
       return ExpectedID.takeError();
     IDs.push_back(*ExpectedID);
@@ -117,14 +117,15 @@ Error MCSchema::fillCache() {
            "Ran out of bits for kind strings");
   }
 
-  auto ExpectedTypeID = CAS.createNode(IDs, "mc:v1:root");
+  auto ExpectedTypeID = CAS.createObjectFromIDs(IDs, "mc:v1:root");
   if (!ExpectedTypeID)
     return ExpectedTypeID.takeError();
   RootNodeTypeID = *ExpectedTypeID;
   return Error::success();
 }
 
-Optional<StringRef> MCSchema::getKindString(const cas::NodeProxy &Node) const {
+Optional<StringRef>
+MCSchema::getKindString(const cas::ObjectProxy &Node) const {
   assert(&Node.getCAS() == &CAS);
   StringRef Data = Node.getData();
   if (Data.empty())
@@ -137,20 +138,20 @@ Optional<StringRef> MCSchema::getKindString(const cas::NodeProxy &Node) const {
   return None;
 }
 
-bool MCSchema::isRootNode(const cas::NodeProxy &Node) const {
+bool MCSchema::isRootNode(const cas::ObjectProxy &Node) const {
   if (Node.getNumReferences() < 1)
     return false;
   return Node.getReferenceID(0) == *RootNodeTypeID;
 }
 
-bool MCSchema::isNode(const cas::NodeProxy &Node) const {
+bool MCSchema::isNode(const cas::ObjectProxy &Node) const {
   // This is a very weak check!
   return bool(getKindString(Node));
 }
 
-Expected<MCNodeProxy::Builder>
-MCNodeProxy::Builder::startRootNode(const MCSchema &Schema,
-                                    StringRef KindString) {
+Expected<MCObjectProxy::Builder>
+MCObjectProxy::Builder::startRootNode(const MCSchema &Schema,
+                                      StringRef KindString) {
   Builder B(Schema);
   B.IDs.push_back(Schema.getRootNodeTypeID());
 
@@ -159,7 +160,7 @@ MCNodeProxy::Builder::startRootNode(const MCSchema &Schema,
   return std::move(B);
 }
 
-Error MCNodeProxy::Builder::startNodeImpl(StringRef KindString) {
+Error MCObjectProxy::Builder::startNodeImpl(StringRef KindString) {
   Optional<unsigned char> TypeID = Schema->getKindStringID(KindString);
   if (!TypeID)
     return createStringError(inconvertibleErrorCode(),
@@ -168,19 +169,21 @@ Error MCNodeProxy::Builder::startNodeImpl(StringRef KindString) {
   return Error::success();
 }
 
-Expected<MCNodeProxy::Builder>
-MCNodeProxy::Builder::startNode(const MCSchema &Schema, StringRef KindString) {
+Expected<MCObjectProxy::Builder>
+MCObjectProxy::Builder::startNode(const MCSchema &Schema,
+                                  StringRef KindString) {
   Builder B(Schema);
   if (Error E = B.startNodeImpl(KindString))
     return std::move(E);
   return std::move(B);
 }
 
-Expected<MCNodeProxy> MCNodeProxy::Builder::build() {
-  return MCNodeProxy::get(*Schema, Schema->CAS.createNode(IDs, Data));
+Expected<MCObjectProxy> MCObjectProxy::Builder::build() {
+  return MCObjectProxy::get(*Schema,
+                            Schema->CAS.createObjectFromIDs(IDs, Data));
 }
 
-StringRef MCNodeProxy::getKindString() const {
+StringRef MCObjectProxy::getKindString() const {
   Optional<StringRef> KS = getSchema().getKindString(*this);
   assert(KS && "Expected valid kind string");
   return *KS;
@@ -193,14 +196,14 @@ Optional<unsigned char> MCSchema::getKindStringID(StringRef KindString) const {
   return None;
 }
 
-Expected<MCNodeProxy> MCNodeProxy::get(const MCSchema &Schema,
-                                       Expected<cas::NodeProxy> Ref) {
+Expected<MCObjectProxy> MCObjectProxy::get(const MCSchema &Schema,
+                                           Expected<cas::ObjectProxy> Ref) {
   if (!Ref)
     return Ref.takeError();
   if (!Schema.isNode(*Ref))
     return createStringError(inconvertibleErrorCode(),
                              "invalid kind-string for node in mc-cas-schema");
-  return MCNodeProxy(Schema, *Ref);
+  return MCObjectProxy(Schema, *Ref);
 }
 
 static Expected<StringRef> consumeDataOfSize(StringRef &Data, unsigned Size) {
@@ -215,19 +218,19 @@ static Expected<StringRef> consumeDataOfSize(StringRef &Data, unsigned Size) {
 }
 
 #define CASV1_SIMPLE_DATA_REF(RefName, IdentifierName)                         \
-Expected<RefName> RefName::create(MCCASBuilder &MB, StringRef Name) {      \
-  auto B = Builder::startNode(MB.Schema, KindString); \
-  if (!B) \
-    return B.takeError(); \
-  B->Data.append(Name); \
-  return get(B->build()); \
-} \
-Expected<RefName> RefName::get(Expected<MCNodeProxy> Ref) { \
-  auto Specific = SpecificRefT::getSpecific(std::move(Ref)); \
-  if (!Specific) \
-    return Specific.takeError(); \
-  return RefName(*Specific); \
-}
+  Expected<RefName> RefName::create(MCCASBuilder &MB, StringRef Name) {        \
+    auto B = Builder::startNode(MB.Schema, KindString);                        \
+    if (!B)                                                                    \
+      return B.takeError();                                                    \
+    B->Data.append(Name);                                                      \
+    return get(B->build());                                                    \
+  }                                                                            \
+  Expected<RefName> RefName::get(Expected<MCObjectProxy> Ref) {                \
+    auto Specific = SpecificRefT::getSpecific(std::move(Ref));                 \
+    if (!Specific)                                                             \
+      return Specific.takeError();                                             \
+    return RefName(*Specific);                                                 \
+  }
 #include "llvm/MC/CAS/MCCASObjectV1.def"
 
 Expected<PaddingRef> PaddingRef::create(MCCASBuilder &MB, uint64_t Size) {
@@ -249,7 +252,7 @@ Expected<uint64_t> PaddingRef::materialize(raw_ostream &OS) const {
   return Size;
 }
 
-Expected<PaddingRef> PaddingRef::get(Expected<MCNodeProxy> Ref) {
+Expected<PaddingRef> PaddingRef::get(Expected<MCObjectProxy> Ref) {
   auto Specific = SpecificRefT::getSpecific(std::move(Ref));
   if (!Specific)
     return Specific.takeError();
@@ -312,7 +315,7 @@ static Error encodeReferences(ArrayRef<cas::CASID> Refs,
 }
 
 static Expected<SmallVector<cas::CASID>>
-decodeReferences(const MCNodeProxy &Node, StringRef &Remaining) {
+decodeReferences(const MCObjectProxy &Node, StringRef &Remaining) {
   SmallVector<cas::CASID> Refs;
   if (auto E = Node.forEachReferenceID([&](cas::CASID ID) -> Error {
         Refs.push_back(ID);
@@ -342,8 +345,8 @@ decodeReferences(const MCNodeProxy &Node, StringRef &Remaining) {
   return CompactRefs;
 }
 
-Expected<GroupRef>
-GroupRef::create(MCCASBuilder &MB, ArrayRef<cas::CASID> Fragments) {
+Expected<GroupRef> GroupRef::create(MCCASBuilder &MB,
+                                    ArrayRef<cas::CASID> Fragments) {
   Expected<Builder> B = Builder::startNode(MB.Schema, KindString);
   if (!B)
     return B.takeError();
@@ -404,8 +407,8 @@ Expected<uint64_t> SymbolTableRef::materialize(MCCASReader &Reader) const {
   return Size;
 }
 
-Expected<SectionRef>
-SectionRef::create(MCCASBuilder &MB, ArrayRef<cas::CASID> Fragments) {
+Expected<SectionRef> SectionRef::create(MCCASBuilder &MB,
+                                        ArrayRef<cas::CASID> Fragments) {
   Expected<Builder> B = Builder::startNode(MB.Schema, KindString);
   if (!B)
     return B.takeError();
@@ -441,8 +444,8 @@ Expected<uint64_t> SectionRef::materialize(MCCASReader &Reader) const {
   return Size;
 }
 
-Expected<AtomRef>
-AtomRef::create(MCCASBuilder &MB, ArrayRef<cas::CASID> Fragments) {
+Expected<AtomRef> AtomRef::create(MCCASBuilder &MB,
+                                  ArrayRef<cas::CASID> Fragments) {
   Expected<Builder> B = Builder::startNode(MB.Schema, KindString);
   if (!B)
     return B.takeError();
@@ -499,8 +502,7 @@ MCAlignFragmentRef::create(MCCASBuilder &MB, const MCAlignFragment &F,
   return get(B->build());
 }
 
-Expected<uint64_t>
-MCAlignFragmentRef::materialize(MCCASReader &Reader) const {
+Expected<uint64_t> MCAlignFragmentRef::materialize(MCCASReader &Reader) const {
   uint64_t Count;
   auto Remaining = getData();
   auto Endian = Reader.getEndian();
@@ -650,8 +652,8 @@ Expected<uint64_t> MCLEBFragmentRef::materialize(MCCASReader &Reader) const {
 }
 
 Expected<MCNopsFragmentRef> MCNopsFragmentRef::create(MCCASBuilder &MB,
-                                                    const MCNopsFragment &F,
-                                                    unsigned FragmentSize) {
+                                                      const MCNopsFragment &F,
+                                                      unsigned FragmentSize) {
   Expected<Builder> B = Builder::startNode(MB.Schema, KindString);
   if (!B)
     return B.takeError();
@@ -738,7 +740,7 @@ MCSymbolIdFragmentRef::materialize(MCCASReader &Reader) const {
 #define MCFRAGMENT_ENCODED_FRAGMENT_ONLY
 #include "llvm/MC/CAS/MCCASObjectV1.def"
 
-Expected<MCAssemblerRef> MCAssemblerRef::get(Expected<MCNodeProxy> Ref) {
+Expected<MCAssemblerRef> MCAssemblerRef::get(Expected<MCObjectProxy> Ref) {
   auto Specific = SpecificRefT::getSpecific(std::move(Ref));
   if (!Specific)
     return Specific.takeError();
@@ -790,6 +792,7 @@ public:
 
   Error tryMerge(const MCFragment &F, unsigned Size);
   Error flush() { return emitMergedFragments(); }
+
 private:
   Error emitMergedFragments();
   void reset();
@@ -834,12 +837,12 @@ Error MCDataFragmentMerger::tryMerge(const MCFragment &F, unsigned Size) {
 }
 
 static Error writeAlignFragment(MCCASBuilder &Builder,
-                                const MCAlignFragment &AF,
-                                raw_ostream &OS,
+                                const MCAlignFragment &AF, raw_ostream &OS,
                                 unsigned FragmentSize) {
   uint64_t Count = FragmentSize / AF.getValueSize();
   if (AF.hasEmitNops()) {
-    if (!Builder.Asm.getBackend().writeNopData(OS, Count, AF.getSubtargetInfo()))
+    if (!Builder.Asm.getBackend().writeNopData(OS, Count,
+                                               AF.getSubtargetInfo()))
       return createStringError(inconvertibleErrorCode(),
                                "unable to write nop sequence of " +
                                    Twine(Count) + " bytes");
@@ -1122,7 +1125,7 @@ Error MCCASBuilder::finalizeAtom() {
   return Error::success();
 }
 
-void MCCASBuilder::addNode(cas::NodeProxy Node) {
+void MCCASBuilder::addNode(cas::ObjectProxy Node) {
   CurrentContext->push_back(Node.getID());
 }
 
@@ -1173,8 +1176,9 @@ Expected<MCAssemblerRef> MCAssemblerRef::create(const MCSchema &Schema,
 template <typename T>
 static Expected<T> findSectionFromAsm(const MCAssemblerRef &Asm) {
   for (unsigned I = 1; I < Asm.getNumReferences(); ++I) {
-    auto Node = MCNodeProxy::get(
-        Asm.getSchema(), Asm.getSchema().CAS.getNode(Asm.getReferenceID(I)));
+    auto Node = MCObjectProxy::get(
+        Asm.getSchema(),
+        Asm.getSchema().CAS.loadObjectProxy(Asm.getReferenceID(I)));
     if (!Node)
       return Node.takeError();
     if (auto Ref = T::Cast(*Node))
@@ -1229,7 +1233,7 @@ Error MCAssemblerRef::materialize(raw_ostream &OS) const {
   OS.write_zeros(SectionDataPad);
 
   for (auto &Sec : Reader.Relocations) {
-    for (auto &Entry: llvm::reverse(Sec)) {
+    for (auto &Entry : llvm::reverse(Sec)) {
       support::endian::write<uint32_t>(OS, Entry.r_word0, Reader.getEndian());
       support::endian::write<uint32_t>(OS, Entry.r_word1, Reader.getEndian());
     }
@@ -1261,7 +1265,7 @@ MCCASReader::MCCASReader(raw_ostream &OS, const Triple &Target,
     : OS(OS), Target(Target), Schema(Schema) {}
 
 Expected<uint64_t> MCCASReader::materializeGroup(cas::CASID ID) {
-  auto Node = MCNodeProxy::get(Schema, Schema.CAS.getNode(ID));
+  auto Node = MCObjectProxy::get(Schema, Schema.CAS.loadObjectProxy(ID));
   if (!Node)
     return Node.takeError();
 
@@ -1281,7 +1285,7 @@ Expected<uint64_t> MCCASReader::materializeGroup(cas::CASID ID) {
 }
 
 Expected<uint64_t> MCCASReader::materializeSection(cas::CASID ID) {
-  auto Node = MCNodeProxy::get(Schema, Schema.CAS.getNode(ID));
+  auto Node = MCObjectProxy::get(Schema, Schema.CAS.loadObjectProxy(ID));
   if (!Node)
     return Node.takeError();
 
@@ -1303,7 +1307,7 @@ Expected<uint64_t> MCCASReader::materializeSection(cas::CASID ID) {
 }
 
 Expected<uint64_t> MCCASReader::materializeAtom(cas::CASID ID) {
-  auto Node = MCNodeProxy::get(Schema, Schema.CAS.getNode(ID));
+  auto Node = MCObjectProxy::get(Schema, Schema.CAS.loadObjectProxy(ID));
   if (!Node)
     return Node.takeError();
 
