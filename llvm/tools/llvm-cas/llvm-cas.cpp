@@ -186,7 +186,7 @@ int listTree(CASDB &CAS, CASID ID) {
   ExitOnError ExitOnErr("llvm-cas: ls-tree: ");
 
   TreeSchema Schema(CAS);
-  NodeProxy TreeN = ExitOnErr(CAS.getNode(ID));
+  ObjectProxy TreeN = ExitOnErr(CAS.loadObjectProxy(ID));
   TreeNodeProxy Tree = ExitOnErr(Schema.loadTree(TreeN));
   ExitOnErr(Tree.forEachEntry([&](const NamedTreeEntry &Entry) {
     Entry.print(llvm::outs(), CAS);
@@ -199,7 +199,7 @@ int listTree(CASDB &CAS, CASID ID) {
 int listTreeRecursively(CASDB &CAS, CASID ID) {
   ExitOnError ExitOnErr("llvm-cas: ls-tree-recursively: ");
   ExitOnErr(TreeSchema(CAS).walkFileTreeRecursively(
-      CAS, ExitOnErr(CAS.getNode(ID)),
+      CAS, ExitOnErr(CAS.loadObjectProxy(ID)),
       [&](const NamedTreeEntry &Entry, Optional<TreeNodeProxy> Tree) -> Error {
         if (Entry.getKind() != TreeEntry::Tree) {
           Entry.print(llvm::outs(), CAS);
@@ -214,9 +214,7 @@ int listTreeRecursively(CASDB &CAS, CASID ID) {
 }
 
 int catBlob(CASDB &CAS, CASID ID) {
-  ExitOnError ExitOnErr("llvm-cas: cat-blob: ");
-  llvm::outs() << *ExitOnErr(CAS.getBlob(ID));
-  return 0;
+  return catNodeData(CAS, ID);
 }
 
 static Expected<std::unique_ptr<MemoryBuffer>>
@@ -239,27 +237,26 @@ int makeBlob(CASDB &CAS, StringRef DataPath) {
   std::unique_ptr<MemoryBuffer> Buffer =
       ExitOnErr(openBuffer(DataPath));
 
-  BlobProxy Blob = ExitOnErr(CAS.createBlob(Buffer->getBuffer()));
+  ObjectProxy Blob = ExitOnErr(CAS.createObject(None, Buffer->getBuffer()));
   llvm::outs() << Blob.getID() << "\n";
   return 0;
 }
 
 int catNodeData(CASDB &CAS, CASID ID) {
   ExitOnError ExitOnErr("llvm-cas: cat-node-data: ");
-  llvm::outs() << ExitOnErr(CAS.getNode(ID)).getData();
+  llvm::outs() << ExitOnErr(CAS.loadObjectProxy(ID)).getData();
   return 0;
 }
 
-static StringRef getKindString(CASDB &CAS, AnyObjectHandle Object) {
-  assert(Object.is<NodeHandle>());
-  if (TreeSchema(CAS).isNode(Object.get<NodeHandle>()))
+static StringRef getKindString(CASDB &CAS, ObjectHandle Object) {
+  if (TreeSchema(CAS).isNode(Object))
     return "tree";
-  return "node";
+  return "object";
 }
 
 int printKind(CASDB &CAS, CASID ID) {
   ExitOnError ExitOnErr("llvm-cas: print-kind: ");
-  Optional<AnyObjectHandle> Object = ExitOnErr(CAS.loadObject(ID));
+  Optional<ObjectHandle> Object = ExitOnErr(CAS.loadObject(ID));
   if (!Object)
     ExitOnErr(createStringError(inconvertibleErrorCode(), "unknown object"));
 
@@ -270,7 +267,7 @@ int printKind(CASDB &CAS, CASID ID) {
 int listObjectReferences(CASDB &CAS, CASID ID) {
   ExitOnError ExitOnErr("llvm-cas: ls-node-refs: ");
 
-  NodeProxy Object = ExitOnErr(CAS.getNode(ID));
+  ObjectProxy Object = ExitOnErr(CAS.loadObjectProxy(ID));
   ExitOnErr(Object.forEachReferenceID([&](CASID ID) -> Error {
     llvm::outs() << ID << "\n";
     return Error::success();
@@ -294,7 +291,8 @@ static int makeNode(CASDB &CAS, ArrayRef<std::string> Objects, StringRef DataPat
   }
 
   ExitOnError ExitOnErr("llvm-cas: make-node: ");
-  NodeProxy Object = ExitOnErr(CAS.createNode(IDs, Data->getBuffer()));
+  ObjectProxy Object =
+      ExitOnErr(CAS.createObjectFromIDs(IDs, Data->getBuffer()));
   llvm::outs() << Object.getID() << "\n";
   return 0;
 }
@@ -323,14 +321,13 @@ static GraphInfo traverseObjectGraph(CASDB &CAS, CASID TopLevel) {
     }
     Worklist.back().second = true;
     CASID ID = Worklist.back().first;
-    Optional<AnyObjectHandle> Object = ExitOnErr(CAS.loadObject(ID));
+    Optional<ObjectHandle> Object = ExitOnErr(CAS.loadObject(ID));
     if (!Object)
       continue;
 
-    auto Node = Object->get<NodeHandle>();
     TreeSchema Schema(CAS);
-    if (Schema.isNode(Node)) {
-      TreeNodeProxy Tree = ExitOnErr(Schema.loadTree(Node));
+    if (Schema.isNode(*Object)) {
+      TreeNodeProxy Tree = ExitOnErr(Schema.loadTree(*Object));
       ExitOnErr(Tree.forEachEntry([&](const NamedTreeEntry &Entry) {
         push(CAS.getObjectID(Entry.getRef()));
         return Error::success();
@@ -338,7 +335,7 @@ static GraphInfo traverseObjectGraph(CASDB &CAS, CASID TopLevel) {
       continue;
     }
 
-    ExitOnErr(CAS.forEachRef(Node, [&](ObjectRef Ref) {
+    ExitOnErr(CAS.forEachRef(*Object, [&](ObjectRef Ref) {
       push(CAS.getObjectID(Ref));
       return Error::success();
     }));
@@ -356,7 +353,7 @@ static void printDiffs(CASDB &CAS, const GraphInfo &Baseline,
       continue;
 
     StringRef KindString;
-    if (Optional<AnyObjectHandle> Object = ExitOnErr(CAS.loadObject(ID)))
+    if (Optional<ObjectHandle> Object = ExitOnErr(CAS.loadObject(ID)))
       KindString = getKindString(CAS, *Object);
 
     outs() << llvm::formatv("{0}{1,-4} {2}\n", NewName, KindString, ID);
@@ -401,7 +398,7 @@ static Error recursiveAccess(CachingOnDiskFileSystem &FS, StringRef Path) {
   return Error::success();
 }
 
-static Expected<NodeProxy> ingestFileSystemImpl(CASDB &CAS, StringRef Path) {
+static Expected<ObjectProxy> ingestFileSystemImpl(CASDB &CAS, StringRef Path) {
   auto FS = createCachingOnDiskFileSystem(CAS);
   if (!FS)
     return FS.takeError();

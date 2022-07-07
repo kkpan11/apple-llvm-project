@@ -23,10 +23,10 @@ class TreeSchema : public RTTIExtends<TreeSchema, NodeSchema> {
 
 public:
   static char ID;
-  bool isRootNode(const NodeHandle &Node) const final {
+  bool isRootNode(const ObjectHandle &Node) const final {
     return false; // TreeSchema doesn't have a root node.
   }
-  bool isNode(const NodeHandle &Node) const final;
+  bool isNode(const ObjectHandle &Node) const final;
 
   TreeSchema(CASDB &CAS);
 
@@ -53,7 +53,7 @@ public:
   NamedTreeEntry loadTreeEntry(TreeNodeProxy Tree, size_t I) const;
 
   Expected<TreeNodeProxy> loadTree(ObjectRef Object) const;
-  Expected<TreeNodeProxy> loadTree(NodeHandle Object) const;
+  Expected<TreeNodeProxy> loadTree(ObjectHandle Object) const;
 
   Expected<TreeNodeProxy> storeTree(ArrayRef<NamedTreeEntry> Entries = None);
 
@@ -67,10 +67,10 @@ private:
   Expected<ObjectRef> storeTreeNodeName(StringRef Name);
 };
 
-class TreeNodeProxy : public NodeProxy {
+class TreeNodeProxy : public ObjectProxy {
 public:
   static Expected<TreeNodeProxy> get(const TreeSchema &Schema,
-                                     Expected<NodeProxy> Ref);
+                                     Expected<ObjectProxy> Ref);
 
   static Expected<TreeNodeProxy> create(TreeSchema &Schema,
                                         ArrayRef<NamedTreeEntry> Entries);
@@ -100,8 +100,8 @@ public:
   TreeNodeProxy() = delete;
 
 private:
-  TreeNodeProxy(const TreeSchema &Schema, const NodeProxy &Node)
-      : NodeProxy(Node), Schema(&Schema) {}
+  TreeNodeProxy(const TreeSchema &Schema, const ObjectProxy &Node)
+      : ObjectProxy(Node), Schema(&Schema) {}
 
   class Builder {
   public:

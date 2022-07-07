@@ -21,10 +21,6 @@ namespace cas {
 
 class CASDB;
 
-namespace testing_helpers {
-class HandleFactory;
-}
-
 class ObjectHandle;
 class ObjectRef;
 
@@ -71,7 +67,6 @@ protected:
 
 protected:
   friend class CASDB;
-  friend class testing_helpers::HandleFactory;
   ReferenceBase(const CASDB *CAS, uint64_t InternalRef, bool IsHandle)
       : InternalRef(InternalRef) {
 #if LLVM_ENABLE_ABI_BREAKING_CHECKS
@@ -86,20 +81,7 @@ protected:
   explicit ReferenceBase(DenseMapTombstoneTag)
       : InternalRef(getDenseMapTombstoneRef()) {}
 
-public:
-  enum HandleKind {
-    TreeKind = 0x1,
-    NodeKind = 0x2,
-    AnyObjectKind = NodeKind | TreeKind,
-  };
-
 private:
-  friend class AnyObjectHandle;
-  template <class HandleT, HandleKind> friend class AnyObjectHandleImpl;
-  struct AnyObjectHandleTag {};
-  ReferenceBase(AnyObjectHandleTag, ReferenceBase Other)
-      : ReferenceBase(Other) {}
-
   uint64_t InternalRef;
 
 #if LLVM_ENABLE_ABI_BREAKING_CHECKS
@@ -159,9 +141,7 @@ public:
 
 private:
   friend class CASDB;
-  friend class AnyObjectHandle;
   friend class ReferenceBase;
-  friend class testing_helpers::HandleFactory;
   using ReferenceBase::ReferenceBase;
   ObjectRef(const CASDB &CAS, uint64_t InternalRef)
       : ReferenceBase(&CAS, InternalRef, /*IsHandle=*/false) {
@@ -199,84 +179,11 @@ public:
 
 private:
   friend class CASDB;
-  friend class AnyObjectHandle;
   friend class ReferenceBase;
-  friend class testing_helpers::HandleFactory;
   using ReferenceBase::ReferenceBase;
   explicit ObjectHandle(ReferenceBase) = delete;
   ObjectHandle(const CASDB &CAS, uint64_t InternalRef)
       : ReferenceBase(&CAS, InternalRef, /*IsHandle=*/true) {}
-  template <class HandleT, HandleKind> friend class AnyObjectHandleImpl;
-  static constexpr HandleKind getHandleKind() { return AnyObjectKind; }
-};
-
-/// Handle to a loaded node in \a CASDB.
-class NodeHandle : public ObjectHandle {
-  friend class CASDB;
-  friend class testing_helpers::HandleFactory;
-  using ObjectHandle::ObjectHandle;
-  explicit NodeHandle(ObjectHandle) = delete;
-  template <class HandleT, HandleKind> friend class AnyObjectHandleImpl;
-  static constexpr HandleKind getHandleKind() { return NodeKind; }
-};
-
-/// Handle to a loaded tree in \a CASDB.
-class TreeHandle : public ObjectHandle {
-  friend class CASDB;
-  friend class testing_helpers::HandleFactory;
-  using ObjectHandle::ObjectHandle;
-  explicit TreeHandle(ObjectHandle) = delete;
-  template <class HandleT, HandleKind> friend class AnyObjectHandleImpl;
-  static constexpr HandleKind getHandleKind() { return TreeKind; }
-};
-
-/// Type-safe variant between all non-variant subclasses of \a Handle.
-/// Besides the types accepted by \a AnyObjectHandle, this could also be a \a
-/// or an unadorned \a Handle.
-template <class HandleBaseT, ObjectHandle::HandleKind BaseKind>
-class AnyObjectHandleImpl : public HandleBaseT {
-public:
-  template <class HandleT,
-            std::enable_if_t<std::is_base_of<HandleBaseT, HandleT>::value &&
-                                 (HandleT::getHandleKind() & BaseKind),
-                             bool> = false>
-  AnyObjectHandleImpl(HandleT H)
-      : AnyObjectHandleImpl(H, HandleT::getHandleKind()) {}
-
-  template <class HandleT,
-            std::enable_if_t<std::is_base_of<HandleBaseT, HandleT>::value &&
-                                 (HandleT::getHandleKind() & BaseKind),
-                             bool> = false>
-  bool is() const {
-    constexpr auto NewKind = HandleT::getHandleKind();
-    if (Kind == NewKind)
-      return true;
-    // Check for NewKind as a base class of Kind. E.g., NodeKind < ObjectKind.
-    return (Kind & NewKind) && Kind < NewKind;
-  }
-  template <class HandleT> HandleT get() const {
-    assert(is<HandleT>() && "Expected kind to match");
-    return HandleT(typename HandleBaseT::AnyObjectHandleTag{}, *this);
-  }
-  template <class HandleT> Optional<HandleT> dyn_cast() const {
-    if (!is<HandleT>())
-      return None;
-    return get<HandleT>();
-  }
-
-protected:
-  using HandleKind = typename HandleBaseT::HandleKind;
-  using HandleBaseT::HandleBaseT;
-  AnyObjectHandleImpl(HandleBaseT H, HandleKind Kind)
-      : HandleBaseT(H), Kind(Kind) {}
-  HandleKind Kind;
-};
-
-/// Type-safe variant between \a NodeHandle and \a TreeHandle.
-class AnyObjectHandle
-    : public AnyObjectHandleImpl<ObjectHandle, ObjectHandle::AnyObjectKind> {
-public:
-  using AnyObjectHandleImpl::AnyObjectHandleImpl::AnyObjectHandleImpl;
 };
 
 } // namespace cas

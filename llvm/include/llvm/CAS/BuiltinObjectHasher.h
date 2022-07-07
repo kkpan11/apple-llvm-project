@@ -24,39 +24,6 @@ enum class StableObjectKind : uint8_t {
   String = 4,
 };
 
-enum class StableTreeEntryKind : uint8_t {
-  Tree = 1,
-  Regular = 2,
-  Executable = 3,
-  Symlink = 4,
-};
-
-inline StableTreeEntryKind getStableKind(TreeEntry::EntryKind Kind) {
-  switch (Kind) {
-  case TreeEntry::Tree:
-    return StableTreeEntryKind::Tree;
-  case TreeEntry::Regular:
-    return StableTreeEntryKind::Regular;
-  case TreeEntry::Executable:
-    return StableTreeEntryKind::Executable;
-  case TreeEntry::Symlink:
-    return StableTreeEntryKind::Symlink;
-  }
-}
-
-inline TreeEntry::EntryKind getUnstableKind(StableTreeEntryKind Kind) {
-  switch (Kind) {
-  case StableTreeEntryKind::Tree:
-    return TreeEntry::Tree;
-  case StableTreeEntryKind::Regular:
-    return TreeEntry::Regular;
-  case StableTreeEntryKind::Executable:
-    return TreeEntry::Executable;
-  case StableTreeEntryKind::Symlink:
-    return TreeEntry::Symlink;
-  }
-}
-
 template <class HasherT> class BuiltinObjectHasher {
 public:
   using HashT = decltype(HasherT::hash(std::declval<ArrayRef<uint8_t> &>()));
@@ -75,20 +42,8 @@ public:
     return H.finish();
   }
 
-  static HashT hashTree(const CASDB &CAS, ArrayRef<NamedTreeEntry> Entries) {
-    BuiltinObjectHasher H;
-    H.start(StableObjectKind::Tree);
-    H.updateSize(Entries.size());
-    for (const NamedTreeEntry &Entry : Entries) {
-      H.updateRef(CAS, Entry.getRef());
-      H.updateString(Entry.getName());
-      H.updateKind(getStableKind(Entry.getKind()));
-    }
-    return H.finish();
-  }
-
-  static HashT hashNode(const CASDB &CAS, ArrayRef<ObjectRef> Refs,
-                        ArrayRef<char> Data) {
+  static HashT hashObject(const CASDB &CAS, ArrayRef<ObjectRef> Refs,
+                          ArrayRef<char> Data) {
     BuiltinObjectHasher H;
     H.start(StableObjectKind::Node);
     H.updateSize(Refs.size());
@@ -106,11 +61,6 @@ private:
   HashT finish() { return Hasher.final(); }
 
   void updateKind(StableObjectKind Kind) {
-    static_assert(sizeof(Kind) == 1, "Expected kind to be 1-byte");
-    Hasher.update((uint8_t)Kind);
-  }
-
-  void updateKind(StableTreeEntryKind Kind) {
     static_assert(sizeof(Kind) == 1, "Expected kind to be 1-byte");
     Hasher.update((uint8_t)Kind);
   }

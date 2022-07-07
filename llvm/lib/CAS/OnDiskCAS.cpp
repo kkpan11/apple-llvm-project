@@ -57,15 +57,11 @@ public:
   };
 
   enum class ObjectKind : uint8_t {
-    /// Node: refs and data.
+    /// Object: refs and data.
     Invalid = 0,
 
-    /// Node: refs and data.
-    Node = 1,
-
-    /// Tree: custom node. Pairs of refs pointing at target (arbitrary object)
-    /// and names (String), and some data to describe the kind of the entry.
-    Tree = 3,
+    /// Object: refs and data.
+    Object = 1,
 
     /// String: data, no alignment guarantee, null-terminated.
     String = 4,
@@ -690,14 +686,6 @@ struct OnDiskContent {
   Optional<ArrayRef<char>> Bytes;
 };
 
-template <class HandleT>
-static Expected<HandleT> castExpected(Expected<AnyObjectHandle> H) {
-  if (H)
-    return H->get<HandleT>();
-  else
-    return H.takeError();
-}
-
 /// On-disk CAS database and action cache (the latter should be separated).
 ///
 /// Here's a top-level description of the current layout (could expose or make
@@ -781,16 +769,13 @@ public:
     return getID(indexHash(Hash));
   }
 
-  Expected<TreeHandle>
-  storeTreeImpl(ArrayRef<uint8_t> ComputedHash,
-                ArrayRef<NamedTreeEntry> SortedEntries) final;
-  Expected<NodeHandle> storeNodeImpl(ArrayRef<uint8_t> ComputedHash,
+  Expected<ObjectHandle> storeObjectImpl(ArrayRef<uint8_t> ComputedHash,
                                      ArrayRef<ObjectRef> Refs,
                                      ArrayRef<char> Data) final;
 
-  Expected<NodeHandle> createStandaloneLeaf(IndexProxy &I, ArrayRef<char> Data);
+  Expected<ObjectHandle> createStandaloneLeaf(IndexProxy &I, ArrayRef<char> Data);
 
-  Expected<AnyObjectHandle>
+  Expected<ObjectHandle>
   loadOrCreateDataRecord(IndexProxy &I, TrieRecord::ObjectKind OK,
                          DataRecordHandle::Input Input);
 
@@ -798,11 +783,6 @@ public:
 
   Optional<DataRecordHandle> getDataRecordForObject(ObjectHandle H) const {
     return getContentFromHandle(H).Record;
-  }
-  DataRecordHandle getDataRecordForTree(TreeHandle H) const {
-    Optional<DataRecordHandle> Record = getDataRecordForObject(H);
-    assert(Record && "Expected record for tree handle");
-    return *Record;
   }
   OnDiskContent getContentFromHandle(ObjectHandle H) const {
     return getContentFromHandle(getInternalHandle(H));
@@ -828,12 +808,12 @@ public:
     return ObjectRef::getFromInternalRef(*this, Ref.getRawData());
   }
 
-  Expected<AnyObjectHandle> loadObject(ObjectRef Ref) final;
-  Expected<AnyObjectHandle>
-  loadObject(const IndexProxy &I, TrieRecord::Data Object, InternalRef Ref);
+  Expected<ObjectHandle> loadObject(ObjectRef Ref) final;
+  Expected<ObjectHandle> loadObject(const IndexProxy &I,
+                                    TrieRecord::Data Object, InternalRef Ref);
 
-  AnyObjectHandle getLoadedObject(const IndexProxy &I, TrieRecord::Data Object,
-                                  InternalHandle Handle) const;
+  ObjectHandle getLoadedObject(const IndexProxy &I, TrieRecord::Data Object,
+                               InternalHandle Handle) const;
 
   struct PooledDataRecord {
     FileOffset Offset;
@@ -886,7 +866,7 @@ public:
 
   Expected<InternalRef> storeTreeEntryName(StringRef String);
 
-  ArrayRef<char> getDataConst(NodeHandle Node) const final;
+  ArrayRef<char> getDataConst(ObjectHandle Node) const final;
 
   void print(raw_ostream &OS) const final;
 
@@ -896,36 +876,18 @@ public:
   static Expected<std::unique_ptr<OnDiskCAS>> open(StringRef Path);
 
 private:
-  NamedTreeEntry loadTreeEntry(TreeHandle Tree, size_t I) const final {
-    return makeTreeEntry(Tree, getDataRecordForTree(Tree), I);
-  }
-  size_t getNumTreeEntries(TreeHandle Tree) const final {
-    size_t NumRefs = getDataRecordForTree(Tree).getNumRefs();
-    assert(NumRefs % 2 == 0 && "Expected even number of refs");
-    return NumRefs / 2;
-  }
-  Optional<size_t> lookupTreeEntry(TreeHandle Tree, StringRef Name) const final;
-
-  NamedTreeEntry makeTreeEntry(TreeHandle Tree, DataRecordHandle Record,
-                               size_t I) const;
-  StringRef getTreeEntryName(TreeHandle Tree, InternalRef Ref) const;
-
-  Error forEachTreeEntry(
-      TreeHandle Tree,
-      function_ref<Error(const NamedTreeEntry &)> Callback) const final;
-
-  InternalRefArrayRef getRefs(NodeHandle Node) const {
+  InternalRefArrayRef getRefs(ObjectHandle Node) const {
     if (Optional<DataRecordHandle> Record = getDataRecordForObject(Node))
       return Record->getRefs();
     return None;
   }
-  size_t getNumRefs(NodeHandle Node) const final {
+  size_t getNumRefs(ObjectHandle Node) const final {
     return getRefs(Node).size();
   }
-  ObjectRef readRef(NodeHandle Node, size_t I) const final {
+  ObjectRef readRef(ObjectHandle Node, size_t I) const final {
     return getExternalReference(getRefs(Node)[I]);
   }
-  Error forEachRef(NodeHandle Node,
+  Error forEachRef(ObjectHandle Node,
                    function_ref<Error(ObjectRef)> Callback) const final;
 
   StringRef getPathForID(StringRef BaseDir, CASID ID,
@@ -952,7 +914,7 @@ private:
   ///
   /// NOTE: Could use ThreadSafeHashMappedTrie here. For now, doing something
   /// simpler on the assumption there won't be much contention since most data
-  /// is not big. If there is contention, and we've already fixed NodeProxy
+  /// is not big. If there is contention, and we've already fixed ObjectProxy
   /// object handles to be cheap enough to use consistently, the fix might be
   /// to use better use of them rather than optimizing this map.
   ///
@@ -1406,11 +1368,8 @@ void OnDiskCAS::print(raw_ostream &OS) const {
     case TrieRecord::ObjectKind::Invalid:
       OS << "invalid";
       break;
-    case TrieRecord::ObjectKind::Node:
-      OS << "node   ";
-      break;
-    case TrieRecord::ObjectKind::Tree:
-      OS << "tree   ";
+    case TrieRecord::ObjectKind::Object:
+      OS << "object ";
       break;
     case TrieRecord::ObjectKind::String:
       OS << "string ";
@@ -1546,7 +1505,7 @@ CASID OnDiskCAS::getObjectID(InternalRef Ref) const {
   return getIDFromIndexOffset(*I);
 }
 
-ArrayRef<char> OnDiskCAS::getDataConst(NodeHandle Node) const {
+ArrayRef<char> OnDiskCAS::getDataConst(ObjectHandle Node) const {
   OnDiskContent Content = getContentFromHandle(Node);
   if (Content.Bytes)
     return *Content.Bytes;
@@ -1554,7 +1513,7 @@ ArrayRef<char> OnDiskCAS::getDataConst(NodeHandle Node) const {
   return Content.Record->getData();
 }
 
-Expected<AnyObjectHandle> OnDiskCAS::loadObject(ObjectRef ExternalRef) {
+Expected<ObjectHandle> OnDiskCAS::loadObject(ObjectRef ExternalRef) {
   InternalRef Ref = getInternalRef(ExternalRef);
   Optional<IndexProxy> I = getIndexProxyFromRef(Ref);
   if (!I)
@@ -1563,23 +1522,21 @@ Expected<AnyObjectHandle> OnDiskCAS::loadObject(ObjectRef ExternalRef) {
   return loadObject(*I, I->Ref.load(), Ref);
 }
 
-AnyObjectHandle OnDiskCAS::getLoadedObject(const IndexProxy &I,
-                                           TrieRecord::Data Object,
-                                           InternalHandle Handle) const {
+ObjectHandle OnDiskCAS::getLoadedObject(const IndexProxy &I,
+                                        TrieRecord::Data Object,
+                                        InternalHandle Handle) const {
   switch (Object.OK) {
   case TrieRecord::ObjectKind::Invalid:
   case TrieRecord::ObjectKind::String:
     report_fatal_error(createCorruptObjectError(getID(I)));
-  case TrieRecord::ObjectKind::Node:
-    return makeNodeHandle(Handle.getRawData());
-  case TrieRecord::ObjectKind::Tree:
-    return makeTreeHandle(Handle.getRawData());
+  case TrieRecord::ObjectKind::Object:
+    return makeObjectHandle(Handle.getRawData());
   }
 }
 
-Expected<AnyObjectHandle> OnDiskCAS::loadObject(const IndexProxy &I,
-                                                TrieRecord::Data Object,
-                                                InternalRef Ref) {
+Expected<ObjectHandle> OnDiskCAS::loadObject(const IndexProxy &I,
+                                             TrieRecord::Data Object,
+                                             InternalRef Ref) {
   Optional<InternalHandle> Handle;
   if (Error E = loadContentForRef(I, Object, Ref).moveInto(Handle))
     return std::move(E);
@@ -1800,7 +1757,7 @@ static size_t getPageSize() {
   return PageSize;
 }
 
-Expected<NodeHandle> OnDiskCAS::createStandaloneLeaf(IndexProxy &I,
+Expected<ObjectHandle> OnDiskCAS::createStandaloneLeaf(IndexProxy &I,
                                                      ArrayRef<char> Data) {
   assert(Data.size() > TrieRecord::MaxEmbeddedSize &&
          "Expected a bigger file for external content...");
@@ -1829,62 +1786,21 @@ Expected<NodeHandle> OnDiskCAS::createStandaloneLeaf(IndexProxy &I,
   // Store the object reference.
   TrieRecord::Data Existing;
   {
-    TrieRecord::Data Leaf{SK, TrieRecord::ObjectKind::Node, FileOffset()};
+    TrieRecord::Data Leaf{SK, TrieRecord::ObjectKind::Object, FileOffset()};
     if (I.Ref.compare_exchange_strong(Existing, Leaf))
-      return castExpected<NodeHandle>(
-          loadObject(I, Leaf, *makeInternalRef(I.Offset, Leaf)));
+      return loadObject(I, Leaf, *makeInternalRef(I.Offset, Leaf));
   }
 
   // If there was a race, confirm that the new value has valid storage.
   if (Existing.SK == TrieRecord::StorageKind::Unknown ||
-      Existing.OK != TrieRecord::ObjectKind::Node)
+      Existing.OK != TrieRecord::ObjectKind::Object)
     return createCorruptObjectError(getID(I));
 
   // Get and return the inserted leaf node.
-  return castExpected<NodeHandle>(
-      loadObject(I, Existing, *makeInternalRef(I.Offset, Existing)));
+  return loadObject(I, Existing, *makeInternalRef(I.Offset, Existing));
 }
 
-Expected<TreeHandle>
-OnDiskCAS::storeTreeImpl(ArrayRef<uint8_t> ComputedHash,
-                         ArrayRef<NamedTreeEntry> SortedEntries) {
-  IndexProxy I = indexHash(ComputedHash);
-
-  // Early return in case the tree exists.
-  {
-    TrieRecord::Data Existing = I.Ref.load();
-    if (Existing.OK == TrieRecord::ObjectKind::Tree)
-      return castExpected<TreeHandle>(
-          loadObject(I, Existing, *makeInternalRef(I.Offset, Existing)));
-    if (Existing.SK != TrieRecord::StorageKind::Unknown)
-      return createCorruptObjectError(getID(I));
-  }
-
-  InternalRefVector Refs;
-  SmallVector<char> Data;
-
-  // Names up front.
-  for (const NamedTreeEntry &E : SortedEntries) {
-    // Require names to be small enough that they fit in RawData. This means
-    // they don't need to be loaded separately later.
-    Optional<InternalRef> Ref;
-    if (Error Err = storeTreeEntryName(E.getName()).moveInto(Ref))
-      return std::move(Err);
-    Refs.push_back(*Ref);
-    Data.push_back((uint8_t)getStableKind(E.getKind()));
-  }
-
-  // Then target refs.
-  for (const NamedTreeEntry &E : SortedEntries)
-    Refs.push_back(getInternalRef(E.getRef()));
-
-  // Create the object.
-  return castExpected<TreeHandle>(
-      loadOrCreateDataRecord(I, TrieRecord::ObjectKind::Tree,
-                             DataRecordHandle::Input{I.Offset, Refs, Data}));
-}
-
-Expected<NodeHandle> OnDiskCAS::storeNodeImpl(ArrayRef<uint8_t> ComputedHash,
+Expected<ObjectHandle> OnDiskCAS::storeObjectImpl(ArrayRef<uint8_t> ComputedHash,
                                               ArrayRef<ObjectRef> Refs,
                                               ArrayRef<char> Data) {
   IndexProxy I = indexHash(ComputedHash);
@@ -1892,9 +1808,8 @@ Expected<NodeHandle> OnDiskCAS::storeNodeImpl(ArrayRef<uint8_t> ComputedHash,
   // Early return in case the node exists.
   {
     TrieRecord::Data Existing = I.Ref.load();
-    if (Existing.OK == TrieRecord::ObjectKind::Node)
-      return castExpected<NodeHandle>(
-          loadObject(I, Existing, *makeInternalRef(I.Offset, Existing)));
+    if (Existing.OK == TrieRecord::ObjectKind::Object)
+      return loadObject(I, Existing, *makeInternalRef(I.Offset, Existing));
     if (Existing.SK != TrieRecord::StorageKind::Unknown)
       return createCorruptObjectError(getID(I));
   }
@@ -1911,12 +1826,12 @@ Expected<NodeHandle> OnDiskCAS::storeNodeImpl(ArrayRef<uint8_t> ComputedHash,
     InternalRefs.push_back(getInternalRef(Ref));
 
   // Create the object.
-  return castExpected<NodeHandle>(loadOrCreateDataRecord(
-      I, TrieRecord::ObjectKind::Node,
-      DataRecordHandle::Input{I.Offset, InternalRefs, Data}));
+  return loadOrCreateDataRecord(
+      I, TrieRecord::ObjectKind::Object,
+      DataRecordHandle::Input{I.Offset, InternalRefs, Data});
 }
 
-Expected<AnyObjectHandle>
+Expected<ObjectHandle>
 OnDiskCAS::loadOrCreateDataRecord(IndexProxy &I, TrieRecord::ObjectKind OK,
                                   DataRecordHandle::Input Input) {
   // Compute the storage kind, allocate it, and create the record.
@@ -2005,89 +1920,7 @@ OnDiskCAS::createPooledDataRecord(DataRecordHandle::Input Input) {
   return PooledDataRecord{Offset, Record};
 }
 
-StringRef OnDiskCAS::getTreeEntryName(TreeHandle Tree, InternalRef Ref) const {
-  // Names for tree entries are always small enough not to be standalone.
-  if (Ref.getOffsetKind() == InternalRef::OffsetKind::IndexRecord)
-    report_fatal_error(createCorruptObjectError(getObjectID(Tree)));
-
-  OnDiskContent Name = getContentFromHandle(InternalHandle(Ref));
-  assert(Name.Bytes && "Expected direct string reference");
-  return toStringRef(*Name.Bytes);
-}
-
-NamedTreeEntry OnDiskCAS::makeTreeEntry(TreeHandle Tree,
-                                        DataRecordHandle Record,
-                                        size_t I) const {
-  size_t NumNames = Record.getNumRefs() / 2;
-  assert(I < NumNames);
-  assert(Record.getNumRefs() % 2 == 0);
-  StringRef Name = getTreeEntryName(Tree, Record.getRefs()[I]);
-  InternalRef Ref = Record.getRefs()[I + NumNames];
-  TreeEntry::EntryKind Kind =
-      getUnstableKind((StableTreeEntryKind)Record.getData()[I]);
-  return NamedTreeEntry(getExternalReference(Ref), Kind, Name);
-}
-
-Optional<size_t> OnDiskCAS::lookupTreeEntry(TreeHandle Tree,
-                                            StringRef Name) const {
-  DataRecordHandle Record = getDataRecordForTree(Tree);
-  if (!Record.getNumRefs())
-    return None;
-
-  // Names are at the front.
-  InternalRefArrayRef Refs = Record.getRefs();
-  size_t NumNames = Record.getNumRefs() / 2;
-  SmallVector<StringRef> Names(NumNames);
-
-  auto GetName = [&](InternalRefArrayRef::iterator I) {
-    auto &Name = Names[I - Refs.begin()];
-    if (Name.empty())
-      Name = getTreeEntryName(Tree, *I);
-    return Name;
-  };
-
-  // Start with a binary search, if there are enough entries.
-  //
-  // FIXME: Should just use std::lower_bound, but we need the actual iterators
-  // to know the index in the NameCache...
-  const intptr_t MaxLinearSearchSize = 4;
-  auto LastName = Refs.begin() + NumNames;
-  auto Last = LastName;
-  auto First = Refs.begin();
-  while (Last - First > MaxLinearSearchSize) {
-    auto I = First + (Last - First) / 2;
-    StringRef NameI = GetName(I);
-    switch (Name.compare(NameI)) {
-    case 0:
-      return I - Refs.begin();
-    case -1:
-      Last = I;
-      break;
-    case 1:
-      First = I + 1;
-      break;
-    }
-  }
-
-  // Use a linear search for small trees.
-  for (; First != Last; ++First)
-    if (Name == GetName(First))
-      return First - Refs.begin();
-
-  return None;
-}
-
-Error OnDiskCAS::forEachTreeEntry(
-    TreeHandle Tree,
-    function_ref<Error(const NamedTreeEntry &)> Callback) const {
-  DataRecordHandle Record = getDataRecordForTree(Tree);
-  for (size_t I = 0, IE = getNumTreeEntries(Tree); I != IE; ++I)
-    if (Error E = Callback(makeTreeEntry(Tree, Record, I)))
-      return E;
-  return Error::success();
-}
-
-Error OnDiskCAS::forEachRef(NodeHandle Node,
+Error OnDiskCAS::forEachRef(ObjectHandle Node,
                             function_ref<Error(ObjectRef)> Callback) const {
   for (InternalRef Ref : getRefs(Node))
     if (Error E = Callback(getExternalReference(Ref)))
@@ -2162,8 +1995,7 @@ Optional<CASID> OnDiskCAS::getID(InternalRef Ref) const {
   switch (I->Ref.load().OK) {
   default:
     return None;
-  case TrieRecord::ObjectKind::Node:
-  case TrieRecord::ObjectKind::Tree:
+  case TrieRecord::ObjectKind::Object:
     return getID(*I);
   }
 }

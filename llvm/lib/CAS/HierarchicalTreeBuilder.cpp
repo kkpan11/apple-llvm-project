@@ -65,7 +65,7 @@ void HierarchicalTreeBuilder::pushTreeContent(ObjectRef Ref,
   TreeContents.emplace_back(Ref, Kind, canonicalize(CanonicalPath, Kind));
 }
 
-Expected<NodeHandle> HierarchicalTreeBuilder::create(CASDB &CAS) {
+Expected<ObjectHandle> HierarchicalTreeBuilder::create(CASDB &CAS) {
   // FIXME: It is inefficient expanding the whole tree recursively like this,
   // use a more efficient algorithm to merge contents.
   TreeSchema Schema(CAS);
@@ -259,5 +259,5 @@ Expected<NodeHandle> HierarchicalTreeBuilder::create(CASDB &CAS) {
     T->Ref = ExpectedTree->getRef();
   }
 
-  return cantFail(CAS.loadObject(*Root.Ref)).get<NodeHandle>();
+  return cantFail(CAS.loadObject(*Root.Ref));
 }

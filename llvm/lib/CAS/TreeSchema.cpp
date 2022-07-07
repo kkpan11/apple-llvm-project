@@ -19,7 +19,7 @@ constexpr StringLiteral TreeSchema::SchemaName;
 
 void TreeSchema::anchor() {}
 
-bool TreeSchema::isNode(const NodeHandle &Node) const {
+bool TreeSchema::isNode(const ObjectHandle &Node) const {
   // Load the first ref to check its content.
   if (CAS.getNumRefs(Node) < 1)
     return false;
@@ -30,11 +30,10 @@ bool TreeSchema::isNode(const NodeHandle &Node) const {
     consumeError(Ref.takeError());
     return false;
   }
-  NodeHandle FirstNodeRef = Ref->get<NodeHandle>();
-  if (CAS.getNumRefs(FirstNodeRef) != 0)
+  if (CAS.getNumRefs(*Ref) != 0)
     return false;
 
-  return CAS.getDataString(FirstNodeRef) == SchemaName;
+  return CAS.getDataString(*Ref) == SchemaName;
 }
 
 TreeSchema::TreeSchema(cas::CASDB &CAS) : TreeSchema::RTTIExtends(CAS) {}
@@ -43,7 +42,7 @@ CASID TreeSchema::getKindID() {
   // Lazy initialize TreeKindID so the object is only constructed in CAS when
   // building Tree but will not be created when reading Tree.
   if (!TreeKindID) {
-    auto Kind = cantFail(CAS.createNode(None, SchemaName));
+    auto Kind = cantFail(CAS.createObject(None, SchemaName));
     TreeKindID.emplace(CAS.getObjectID(Kind));
   }
   return *TreeKindID;
@@ -106,10 +105,11 @@ NamedTreeEntry TreeSchema::loadTreeEntry(TreeNodeProxy Tree, size_t I) const {
   TreeEntry::EntryKind Kind = (TreeEntry::EntryKind)Tree.getData()[I];
   // Names are stored in the front, followed by Refs.
   // FIXME: Name loading can't fail?
-  auto NameHandle = cantFail(CAS.loadNode(Tree.getReference(I + 1)));
+  auto NameProxy =
+      cantFail(CAS.loadObjectProxy(CAS.loadObject(Tree.getReference(I + 1))));
   auto ObjectRef = Tree.getReference(Tree.size() + I + 1);
 
-  return {ObjectRef, Kind, NameHandle.getData()};
+  return {ObjectRef, Kind, NameProxy.getData()};
 }
 
 Optional<size_t> TreeSchema::lookupTreeEntry(TreeNodeProxy Tree,
@@ -120,8 +120,9 @@ Optional<size_t> TreeSchema::lookupTreeEntry(TreeNodeProxy Tree,
 
   SmallVector<StringRef> Names(NumNames);
   auto GetName = [&](size_t I) {
-    auto NameHandle = cantFail(CAS.loadNode(Tree.getReference(I + 1)));
-    return NameHandle.getData();
+    auto NameProxy =
+        cantFail(CAS.loadObjectProxy(CAS.loadObject(Tree.getReference(I + 1))));
+    return NameProxy.getData();
   };
 
   // Start with a binary search, if there are enough entries.
@@ -155,18 +156,18 @@ Optional<size_t> TreeSchema::lookupTreeEntry(TreeNodeProxy Tree,
 }
 
 Expected<TreeNodeProxy> TreeSchema::loadTree(ObjectRef Object) const {
-  auto TreeNode = CAS.loadNode(Object);
+  auto TreeNode = CAS.loadObject(Object);
   if (!TreeNode)
     return TreeNode.takeError();
 
   return loadTree(*TreeNode);
 }
 
-Expected<TreeNodeProxy> TreeSchema::loadTree(NodeHandle Object) const {
+Expected<TreeNodeProxy> TreeSchema::loadTree(ObjectHandle Object) const {
   if (!isNode(Object))
     return createStringError(inconvertibleErrorCode(), "not a tree object");
 
-  return TreeNodeProxy::get(*this, NodeProxy::load(CAS, Object));
+  return TreeNodeProxy::get(*this, ObjectProxy::load(CAS, Object));
 }
 
 Expected<TreeNodeProxy>
@@ -175,15 +176,15 @@ TreeSchema::storeTree(ArrayRef<NamedTreeEntry> Entries) {
 }
 
 Expected<ObjectRef> TreeSchema::storeTreeNodeName(StringRef Name) {
-  auto Node = CAS.storeNodeFromString({}, Name);
+  auto Node = CAS.storeObjectFromString({}, Name);
   if (!Node)
     return Node.takeError();
 
-  return NodeProxy::load(CAS, *Node).getRef();
+  return ObjectProxy::load(CAS, *Node).getRef();
 }
 
 Expected<TreeNodeProxy> TreeNodeProxy::get(const TreeSchema &Schema,
-                                           Expected<NodeProxy> Ref) {
+                                           Expected<ObjectProxy> Ref) {
   if (!Ref)
     return Ref.takeError();
   return TreeNodeProxy(Schema, *Ref);
@@ -225,5 +226,6 @@ TreeNodeProxy::Builder::startNode(TreeSchema &Schema) {
 }
 
 Expected<TreeNodeProxy> TreeNodeProxy::Builder::build() {
-  return TreeNodeProxy::get(*Schema, Schema->CAS.createNode(IDs, Data));
+  return TreeNodeProxy::get(*Schema,
+                            Schema->CAS.createObjectFromIDs(IDs, Data));
 }

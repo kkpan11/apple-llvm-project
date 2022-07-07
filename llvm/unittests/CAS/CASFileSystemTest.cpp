@@ -44,15 +44,15 @@ bufferHasContent(ErrorOr<std::unique_ptr<MemoryBuffer>> ErrorOrBuffer,
 
 static ObjectRef createBlobUnchecked(CASDB &CAS, StringRef Content) {
   return CAS.getReference(
-      llvm::cantFail(CAS.storeNodeFromString(None, Content)));
+      llvm::cantFail(CAS.storeObjectFromString(None, Content)));
 }
 
-static Expected<NodeHandle> createEmptyTree(CASDB &CAS) {
+static Expected<ObjectHandle> createEmptyTree(CASDB &CAS) {
   HierarchicalTreeBuilder Builder;
   return Builder.create(CAS);
 }
 
-static Expected<NodeHandle> createFlatTree(CASDB &CAS) {
+static Expected<ObjectHandle> createFlatTree(CASDB &CAS) {
   HierarchicalTreeBuilder Builder;
   Builder.push(createBlobUnchecked(CAS, "1"), TreeEntry::Regular, "file1");
   Builder.push(createBlobUnchecked(CAS, "1"), TreeEntry::Regular, "1");
@@ -60,7 +60,7 @@ static Expected<NodeHandle> createFlatTree(CASDB &CAS) {
   return Builder.create(CAS);
 }
 
-static Expected<NodeHandle> createNestedTree(CASDB &CAS) {
+static Expected<ObjectHandle> createNestedTree(CASDB &CAS) {
   ObjectRef Data1 = createBlobUnchecked(CAS, "blob1");
   ObjectRef Data2 = createBlobUnchecked(CAS, "blob2");
   ObjectRef Data3 = createBlobUnchecked(CAS, "blob3");
@@ -75,7 +75,7 @@ static Expected<NodeHandle> createNestedTree(CASDB &CAS) {
   return Builder.create(CAS);
 }
 
-static Expected<NodeHandle> createSymlinksTree(CASDB &CAS) {
+static Expected<ObjectHandle> createSymlinksTree(CASDB &CAS) {
   auto make = [&](StringRef Bytes) { return createBlobUnchecked(CAS, Bytes); };
 
   HierarchicalTreeBuilder Builder;
@@ -95,7 +95,7 @@ static Expected<NodeHandle> createSymlinksTree(CASDB &CAS) {
   return Builder.create(CAS);
 }
 
-static Expected<NodeHandle> createSymlinkLoopsTree(CASDB &CAS) {
+static Expected<ObjectHandle> createSymlinkLoopsTree(CASDB &CAS) {
   auto make = [&](StringRef Bytes) { return createBlobUnchecked(CAS, Bytes); };
 
   HierarchicalTreeBuilder Builder;
@@ -109,7 +109,7 @@ static Expected<NodeHandle> createSymlinkLoopsTree(CASDB &CAS) {
 }
 
 static Expected<std::unique_ptr<vfs::FileSystem>>
-createFS(CASDB &CAS, Expected<NodeHandle> Tree) {
+createFS(CASDB &CAS, Expected<ObjectHandle> Tree) {
   if (!Tree)
     return Tree.takeError();
   return createCASFileSystem(CAS, CAS.getObjectID(*Tree));

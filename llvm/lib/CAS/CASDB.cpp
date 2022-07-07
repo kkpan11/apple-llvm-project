@@ -58,9 +58,9 @@ void ReferenceBase::print(raw_ostream &OS, const ObjectRef &This) const {
 }
 
 /// Default implementation opens the file and calls \a createBlob().
-Expected<NodeHandle>
-CASDB::storeNodeFromOpenFileImpl(sys::fs::file_t FD,
-                                 Optional<sys::fs::file_status> Status) {
+Expected<ObjectHandle>
+CASDB::storeObjectFromOpenFileImpl(sys::fs::file_t FD,
+                                   Optional<sys::fs::file_status> Status) {
   // Check whether we can trust the size from stat.
   int64_t FileSize = -1;
   if (Status->type() == sys::fs::file_type::regular_file ||
@@ -74,94 +74,37 @@ CASDB::storeNodeFromOpenFileImpl(sys::fs::file_t FD,
   if (!ExpectedContent)
     return errorCodeToError(ExpectedContent.getError());
 
-  return storeNode(
+  return storeObject(
       None, arrayRefFromStringRef<char>((*ExpectedContent)->getBuffer()));
 }
 
-Expected<Optional<AnyObjectHandle>> CASDB::loadObject(const CASID &ID) {
+Expected<Optional<ObjectHandle>> CASDB::loadObject(const CASID &ID) {
   if (Optional<ObjectRef> Ref = getReference(ID))
     return loadObject(*Ref);
   return None;
 }
 
-void CASDB::readRefs(NodeHandle Node, SmallVectorImpl<ObjectRef> &Refs) const {
+void CASDB::readRefs(ObjectHandle Node,
+                     SmallVectorImpl<ObjectRef> &Refs) const {
   consumeError(forEachRef(Node, [&Refs](ObjectRef Ref) -> Error {
     Refs.push_back(Ref);
     return Error::success();
   }));
 }
 
-template <class ProxyT, class HandleT>
-Expected<ProxyT> CASDB::loadObjectProxy(CASID ID) {
-  Optional<AnyObjectHandle> H;
+Expected<ObjectProxy> CASDB::loadObjectProxy(CASID ID) {
+  Optional<ObjectHandle> H;
   if (Error E = loadObject(ID).moveInto(H))
     return std::move(E);
   if (!H)
     return createUnknownObjectError(ID);
-  if (Optional<HandleT> Casted = H->dyn_cast<HandleT>())
-    return ProxyT::load(*this, *Casted);
-  return createWrongKindError(ID);
+  return ObjectProxy::load(*this, *H);
 }
 
-template <class ProxyT, class HandleT>
-Expected<ProxyT> CASDB::loadObjectProxy(Expected<HandleT> H) {
+Expected<ObjectProxy> CASDB::loadObjectProxy(Expected<ObjectHandle> H) {
   if (!H)
     return H.takeError();
-  return ProxyT::load(*this, *H);
-}
-
-Expected<LeafNodeProxy> CASDB::getBlob(CASID ID) {
-  Optional<AnyObjectHandle> Object;
-  if (Error E = loadObject(ID).moveInto(Object))
-    return std::move(E);
-  if (!Object || !Object->is<NodeHandle>())
-    return createWrongKindError(ID);
-  Optional<NodeHandle> Node = Object->get<NodeHandle>();
-  if (getNumRefs(*Node) > 0)
-    return createStringError(std::make_error_code(std::errc::invalid_argument),
-                             "node '" + ID.toString() + "' is not a leaf");
-  return LeafNodeProxy(NodeProxy::load(*this, *Node));
-}
-
-Expected<TreeProxy> CASDB::loadTree(ObjectRef Ref) {
-  Expected<AnyObjectHandle> Object = loadObject(Ref);
-  if (!Object)
-    return Object.takeError();
-  Optional<TreeHandle> Tree = Object->dyn_cast<TreeHandle>();
-  if (!Tree)
-    return createWrongKindError(getObjectID(Ref));
-  return TreeProxy::load(*this, *Tree);
-}
-
-Expected<LeafNodeProxy> CASDB::loadBlob(ObjectRef Ref) {
-  Expected<AnyObjectHandle> Object = loadObject(Ref);
-  if (!Object)
-    return Object.takeError();
-  Optional<NodeHandle> Node = Object->dyn_cast<NodeHandle>();
-  if (!Node)
-    return createWrongKindError(getObjectID(Ref));
-  if (getNumRefs(*Node) > 0)
-    return createStringError(std::make_error_code(std::errc::invalid_argument),
-                             "node '" + getObjectID(Ref).toString() +
-                                 "' is not a leaf");
-  return LeafNodeProxy(NodeProxy::load(*this, *Node));
-}
-
-Expected<NodeProxy> CASDB::loadNode(ObjectRef Ref) {
-  Expected<AnyObjectHandle> Object = loadObject(Ref);
-  if (!Object)
-    return Object.takeError();
-  Optional<NodeHandle> Node = Object->dyn_cast<NodeHandle>();
-  if (!Node)
-    return createWrongKindError(getObjectID(Ref));
-  return NodeProxy::load(*this, *Node);
-}
-
-Expected<TreeProxy> CASDB::getTree(CASID ID) {
-  return loadObjectProxy<TreeProxy, TreeHandle>(ID);
-}
-Expected<NodeProxy> CASDB::getNode(CASID ID) {
-  return loadObjectProxy<NodeProxy, NodeHandle>(ID);
+  return ObjectProxy::load(*this, *H);
 }
 
 Error CASDB::createUnknownObjectError(CASID ID) {
@@ -169,24 +112,13 @@ Error CASDB::createUnknownObjectError(CASID ID) {
                            "unknown object '" + ID.toString() + "'");
 }
 
-Error CASDB::createWrongKindError(CASID ID) {
-  return createStringError(std::make_error_code(std::errc::invalid_argument),
-                           "wrong object kind '" + ID.toString() + "'");
+Expected<ObjectProxy> CASDB::createObject(ArrayRef<ObjectRef> Refs,
+                                          StringRef Data) {
+  return loadObjectProxy(storeObject(Refs, arrayRefFromStringRef<char>(Data)));
 }
 
-Expected<LeafNodeProxy> CASDB::createBlob(StringRef Data) {
-  Optional<NodeHandle> Node;
-  if (Error E =
-          storeNode(None, arrayRefFromStringRef<char>(Data)).moveInto(Node))
-    return std::move(E);
-  return LeafNodeProxy(NodeProxy::load(*this, *Node));
-}
-
-Expected<TreeProxy> CASDB::createTree(ArrayRef<NamedTreeEntry> Entries) {
-  return loadObjectProxy<TreeProxy>(storeTree(Entries));
-}
-
-Expected<NodeProxy> CASDB::createNode(ArrayRef<CASID> IDs, StringRef Data) {
+Expected<ObjectProxy> CASDB::createObjectFromIDs(ArrayRef<CASID> IDs,
+                                                 StringRef Data) {
   SmallVector<ObjectRef> Refs;
   for (CASID ID : IDs) {
     if (Optional<ObjectRef> Ref = getReference(ID))
@@ -194,18 +126,17 @@ Expected<NodeProxy> CASDB::createNode(ArrayRef<CASID> IDs, StringRef Data) {
     else
       return createUnknownObjectError(ID);
   }
-  return loadObjectProxy<NodeProxy>(
-      storeNode(Refs, arrayRefFromStringRef<char>(Data)));
+  return createObject(Refs, Data);
 }
 
 Expected<std::unique_ptr<MemoryBuffer>>
-CASDB::loadIndependentDataBuffer(NodeHandle Node, const Twine &Name,
+CASDB::loadIndependentDataBuffer(ObjectHandle Node, const Twine &Name,
                                  bool NullTerminate) const {
   return loadIndependentDataBufferImpl(Node, Name, NullTerminate);
 }
 
 Expected<std::unique_ptr<MemoryBuffer>>
-CASDB::loadIndependentDataBufferImpl(NodeHandle Node, const Twine &Name,
+CASDB::loadIndependentDataBufferImpl(ObjectHandle Node, const Twine &Name,
                                      bool NullTerminate) const {
   SmallString<256> Bytes;
   raw_svector_ostream OS(Bytes);

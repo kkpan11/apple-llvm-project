@@ -23,10 +23,10 @@ TEST(TreeSchemaTest, Trees) {
   std::unique_ptr<CASDB> CAS2 = createInMemoryCAS();
 
   auto createBlobInBoth = [&](StringRef Content) {
-    Optional<NodeHandle> H1, H2;
-    EXPECT_THAT_ERROR(CAS1->storeNodeFromString(None, Content).moveInto(H1),
+    Optional<ObjectHandle> H1, H2;
+    EXPECT_THAT_ERROR(CAS1->storeObjectFromString(None, Content).moveInto(H1),
                       Succeeded());
-    EXPECT_THAT_ERROR(CAS2->storeNodeFromString(None, Content).moveInto(H2),
+    EXPECT_THAT_ERROR(CAS2->storeObjectFromString(None, Content).moveInto(H2),
                       Succeeded());
     EXPECT_EQ(CAS1->getObjectID(*H1), CAS2->getObjectID(*H2));
     return CAS1->getReference(*H1);
@@ -192,8 +192,8 @@ TEST(TreeSchemaTest, Trees) {
 
 TEST(TreeSchemaTest, Lookup) {
   std::unique_ptr<CASDB> CAS = createInMemoryCAS();
-  Optional<NodeHandle> Node;
-  EXPECT_THAT_ERROR(CAS->storeNodeFromString(None, "blob").moveInto(Node),
+  Optional<ObjectHandle> Node;
+  EXPECT_THAT_ERROR(CAS->storeObjectFromString(None, "blob").moveInto(Node),
                     Succeeded());
   ObjectRef Blob = CAS->getReference(*Node);
   SmallVector<NamedTreeEntry> FlatTreeEntries = {
@@ -228,7 +228,7 @@ TEST(TreeSchemaTest, walkFileTreeRecursively) {
   std::unique_ptr<CASDB> CAS = createInMemoryCAS();
 
   auto make = [&](StringRef Content) {
-    return CAS->getReference(cantFail(CAS->storeNodeFromString(None, Content)));
+    return CAS->getReference(cantFail(CAS->storeObjectFromString(None, Content)));
   };
 
   HierarchicalTreeBuilder Builder;
@@ -236,7 +236,7 @@ TEST(TreeSchemaTest, walkFileTreeRecursively) {
   Builder.push(make("blob1"), TreeEntry::Regular, "/t1/d1");
   Builder.push(make("blob3"), TreeEntry::Regular, "/t3/d3");
   Builder.push(make("blob1"), TreeEntry::Regular, "/t3/t1nested/d1");
-  Optional<NodeHandle> Root;
+  Optional<ObjectHandle> Root;
   ASSERT_THAT_ERROR(Builder.create(*CAS).moveInto(Root), Succeeded());
 
   std::pair<std::string, bool> ExpectedEntries[] = {

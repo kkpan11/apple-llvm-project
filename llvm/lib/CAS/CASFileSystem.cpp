@@ -102,13 +102,12 @@ public:
   /// Get the contents of the file as a \p MemoryBuffer.
   ErrorOr<std::unique_ptr<MemoryBuffer>> getBuffer(const Twine &Name, int64_t,
                                                    bool, bool) final {
-    Expected<AnyObjectHandle> Object = DB.loadObject(*Entry->getRef());
+    Expected<ObjectHandle> Object = DB.loadObject(*Entry->getRef());
     if (!Object)
       return errorToErrorCode(Object.takeError());
-    NodeHandle Node = Object->get<NodeHandle>();
-    assert(DB.getNumRefs(Node) == 0 && "Expected a leaf node");
+    assert(DB.getNumRefs(*Object) == 0 && "Expected a leaf node");
     SmallString<256> Storage;
-    return MemoryBuffer::getMemBuffer(DB.getDataString(Node),
+    return MemoryBuffer::getMemBuffer(DB.getDataString(*Object),
                                       Name.toStringRef(Storage));
   }
 
@@ -180,19 +179,18 @@ Error CASFileSystem::loadDirectory(DirectoryEntry &Parent) {
     }
     llvm_unreachable("invalid tree type");
   };
-  Expected<AnyObjectHandle> Object = DB.loadObject(*Parent.getRef());
+  Expected<ObjectHandle> Object = DB.loadObject(*Parent.getRef());
   if (!Object)
     return Object.takeError();
 
   TreeSchema Schema(DB);
-  NodeHandle TreeH = Object->get<NodeHandle>();
-  if (!Schema.isNode(TreeH))
+  if (!Schema.isNode(*Object))
     report_fatal_error(createStringError(
         inconvertibleErrorCode(),
         "invalid tree '" + DB.getObjectID(*Object).toString() + "'"));
 
   // Lock and check for a race.
-  NodeProxy TreeN = NodeProxy::load(DB, TreeH);
+  ObjectProxy TreeN = ObjectProxy::load(DB, *Object);
   Directory::Writer W(D);
   if (D.isComplete())
     return Error::success();
@@ -213,24 +211,22 @@ Error CASFileSystem::loadDirectory(DirectoryEntry &Parent) {
 Error CASFileSystem::loadFile(DirectoryEntry &Entry) {
   assert(Entry.isFile());
 
-  Expected<AnyObjectHandle> File = DB.loadObject(*Entry.getRef());
+  Expected<ObjectHandle> File = DB.loadObject(*Entry.getRef());
   if (!File)
     return File.takeError();
-  assert(File->is<NodeHandle>());
 
-  Cache->finishLazyFile(Entry, DB.getDataSize(File->get<NodeHandle>()));
+  Cache->finishLazyFile(Entry, DB.getDataSize(*File));
   return Error::success();
 }
 
 Error CASFileSystem::loadSymlink(DirectoryEntry &Entry) {
   assert(Entry.isSymlink());
 
-  Expected<AnyObjectHandle> File = DB.loadObject(*Entry.getRef());
+  Expected<ObjectHandle> File = DB.loadObject(*Entry.getRef());
   if (!File)
     return File.takeError();
-  assert(File->is<NodeHandle>());
 
-  Cache->finishLazySymlink(Entry, DB.getDataString(File->get<NodeHandle>()));
+  Cache->finishLazySymlink(Entry, DB.getDataString(*File));
   return Error::success();
 }
 

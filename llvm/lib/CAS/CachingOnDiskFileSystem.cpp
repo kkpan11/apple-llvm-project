@@ -113,10 +113,10 @@ public:
                                                 SmallVectorImpl<char> &Storage);
 
   void trackNewAccesses() final;
-  Expected<NodeProxy> createTreeFromNewAccesses(
+  Expected<ObjectProxy> createTreeFromNewAccesses(
       llvm::function_ref<StringRef(const vfs::CachedDirectoryEntry &)>
           RemapPath) final;
-  Expected<NodeProxy> createTreeFromAllAccesses() final;
+  Expected<ObjectProxy> createTreeFromAllAccesses() final;
   std::unique_ptr<CachingOnDiskFileSystem::TreeBuilder>
   createTreeBuilder() final;
   Error pushCachedPath(const Twine &Path, TreeBuilder &State);
@@ -199,13 +199,12 @@ public:
   /// Get the contents of the file as a \p MemoryBuffer.
   ErrorOr<std::unique_ptr<MemoryBuffer>> getBuffer(const Twine &RequestedName,
                                                    int64_t, bool, bool) final {
-    Expected<AnyObjectHandle> Object = DB.loadObject(*Entry->getRef());
+    Expected<ObjectHandle> Object = DB.loadObject(*Entry->getRef());
     if (!Object)
       return errorToErrorCode(Object.takeError());
-    NodeHandle Node = Object->get<NodeHandle>();
-    assert(DB.getNumRefs(Node) == 0 && "Expected a leaf node");
+    assert(DB.getNumRefs(*Object) == 0 && "Expected a leaf node");
     SmallString<256> Storage;
-    return MemoryBuffer::getMemBuffer(DB.getDataString(Node),
+    return MemoryBuffer::getMemBuffer(DB.getDataString(*Object),
                                       RequestedName.toStringRef(Storage));
   }
 
@@ -301,7 +300,6 @@ CachingOnDiskFileSystemImpl::makeDirectory(DirectoryEntry &Parent,
   return &Cache->makeDirectory(Parent, TreePath);
 }
 
-
 #if defined(HAVE_UNISTD_H)
 // FIXME: sink into llvm::sys::fs?
 #include <unistd.h>
@@ -336,7 +334,7 @@ Expected<FileSystemCache::DirectoryEntry *>
 CachingOnDiskFileSystemImpl::makeSymlinkTo(DirectoryEntry &Parent,
                                            StringRef TreePath,
                                            StringRef Target) {
-  Expected<NodeHandle> Node = DB.storeNodeFromString(None, Target);
+  Expected<ObjectHandle> Node = DB.storeObjectFromString(None, Target);
   if (!Node)
     return Node.takeError();
   return &Cache->makeSymlink(Parent, TreePath, DB.getReference(*Node),
@@ -347,7 +345,7 @@ Expected<FileSystemCache::DirectoryEntry *>
 CachingOnDiskFileSystemImpl::makeFile(DirectoryEntry &Parent,
                                       StringRef TreePath, sys::fs::file_t F,
                                       sys::fs::file_status Status) {
-  Expected<NodeHandle> Node = DB.storeNodeFromOpenFile(F, Status);
+  Expected<ObjectHandle> Node = DB.storeObjectFromOpenFile(F, Status);
   if (!Node)
     return Node.takeError();
 
@@ -645,13 +643,13 @@ void CachingOnDiskFileSystemImpl::trackNewAccesses() {
   TrackedAccesses->reserve(128); // Seed with a bit of runway.
 }
 
-static Expected<NodeProxy> toProxy(CASDB &CAS, Expected<NodeHandle> Node) {
+static Expected<ObjectProxy> toProxy(CASDB &CAS, Expected<ObjectHandle> Node) {
   if (Node)
-    return NodeProxy::load(CAS, *Node);
+    return ObjectProxy::load(CAS, *Node);
   return Node.takeError();
 }
 
-Expected<NodeProxy> CachingOnDiskFileSystemImpl::createTreeFromNewAccesses(
+Expected<ObjectProxy> CachingOnDiskFileSystemImpl::createTreeFromNewAccesses(
     llvm::function_ref<StringRef(const vfs::CachedDirectoryEntry &)>
         RemapPath) {
   Optional<DenseSet<const DirectoryEntry *>> MaybeTrackedAccesses;
@@ -679,8 +677,7 @@ Expected<NodeProxy> CachingOnDiskFileSystemImpl::createTreeFromNewAccesses(
   return toProxy(DB, Builder.create(DB));
 }
 
-Expected<NodeProxy>
-CachingOnDiskFileSystemImpl::createTreeFromAllAccesses() {
+Expected<ObjectProxy> CachingOnDiskFileSystemImpl::createTreeFromAllAccesses() {
   std::unique_ptr<CachingOnDiskFileSystem::TreeBuilder> Builder =
       createTreeBuilder();
 
@@ -793,7 +790,7 @@ public:
   /// error; the symlink will be added without the target.
   Error push(const Twine &Path) final;
 
-  Expected<NodeProxy> create() final {
+  Expected<ObjectProxy> create() final {
     return toProxy(FS.getCAS(), Builder.create(FS.getCAS()));
   }
 
