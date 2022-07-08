@@ -25,26 +25,16 @@ bool TreeSchema::isNode(const ObjectHandle &Node) const {
     return false;
 
   // If can't load the first ref, consume error and return false.
-  auto Ref = CAS.loadObject(CAS.readRef(Node, 0));
-  if (!Ref) {
-    consumeError(Ref.takeError());
-    return false;
-  }
-  if (CAS.getNumRefs(*Ref) != 0)
-    return false;
-
-  return CAS.getDataString(*Ref) == SchemaName;
+  auto FirstRef = CAS.readRef(Node, 0);
+  return CAS.getObjectID(FirstRef) == getKindID();
 }
 
-TreeSchema::TreeSchema(cas::CASDB &CAS) : TreeSchema::RTTIExtends(CAS) {}
+TreeSchema::TreeSchema(cas::CASDB &CAS) : TreeSchema::RTTIExtends(CAS) {
+  auto Kind = cantFail(CAS.createObject(None, SchemaName));
+  TreeKindID.emplace(CAS.getObjectID(Kind));
+}
 
-CASID TreeSchema::getKindID() {
-  // Lazy initialize TreeKindID so the object is only constructed in CAS when
-  // building Tree but will not be created when reading Tree.
-  if (!TreeKindID) {
-    auto Kind = cantFail(CAS.createObject(None, SchemaName));
-    TreeKindID.emplace(CAS.getObjectID(Kind));
-  }
+CASID TreeSchema::getKindID() const {
   return *TreeKindID;
 }
 
