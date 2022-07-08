@@ -833,7 +833,8 @@ static Error printCASObjectOrTree(ObjectFormatSchemaPool &Pool, CASID ID, bool o
     return printCASObject(Pool, ID, omitCASID);
   }
 
-  return TreeSchema(Pool.getCAS()).walkFileTreeRecursively(
+  TreeSchema Schema(Pool.getCAS());
+  return Schema.walkFileTreeRecursively(
       Pool.getCAS(), *ExpTree,
       [&](const NamedTreeEntry &entry, Optional<TreeNodeProxy>) -> Error {
         if (entry.getKind() == TreeEntry::Tree)
@@ -852,7 +853,8 @@ static Error materializeObjectsFromCASTree(CASDB &CAS, CASID ID) {
   if (!ExpTree)
     return ExpTree.takeError();
 
-  return TreeSchema(CAS).walkFileTreeRecursively(
+  TreeSchema Schema(CAS);
+  return Schema.walkFileTreeRecursively(
       CAS, *ExpTree,
       [&](const NamedTreeEntry &Entry, Optional<TreeNodeProxy>) -> Error {
         if (Entry.getKind() != TreeEntry::Regular &&
@@ -998,8 +1000,9 @@ static ObjectRef ingestFile(ObjectFormatSchemaBase &Schema, StringRef InputFile,
   if (!JustDsymutil.empty()) {
     // Create a map for each symbol in TEXT.
     jitlink::Section *Text = G->findSectionByName("__TEXT,__text");
+    TreeSchema Schema(CAS);
     if (!Text)
-      return CAS.getReference(ExitOnErr(TreeSchema(CAS).storeTree()));
+      return CAS.getReference(ExitOnErr(Schema.storeTree()));
 
     auto MapFile = ExitOnErr(sys::fs::TempFile::create("/tmp/debug-%%%%%%%%.map"));
     auto DsymFile =

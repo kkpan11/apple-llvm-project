@@ -198,7 +198,8 @@ int listTree(CASDB &CAS, CASID ID) {
 
 int listTreeRecursively(CASDB &CAS, CASID ID) {
   ExitOnError ExitOnErr("llvm-cas: ls-tree-recursively: ");
-  ExitOnErr(TreeSchema(CAS).walkFileTreeRecursively(
+  TreeSchema Schema(CAS);
+  ExitOnErr(Schema.walkFileTreeRecursively(
       CAS, ExitOnErr(CAS.loadObjectProxy(ID)),
       [&](const NamedTreeEntry &Entry, Optional<TreeNodeProxy> Tree) -> Error {
         if (Entry.getKind() != TreeEntry::Tree) {
@@ -249,7 +250,8 @@ int catNodeData(CASDB &CAS, CASID ID) {
 }
 
 static StringRef getKindString(CASDB &CAS, ObjectHandle Object) {
-  if (TreeSchema(CAS).isNode(Object))
+  TreeSchema Schema(CAS);
+  if (Schema.isNode(Object))
     return "tree";
   return "object";
 }

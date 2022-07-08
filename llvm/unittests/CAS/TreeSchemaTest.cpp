@@ -251,7 +251,8 @@ TEST(TreeSchemaTest, walkFileTreeRecursively) {
   };
   auto RemainingEntries = makeArrayRef(ExpectedEntries);
 
-  Error E = TreeSchema(*CAS).walkFileTreeRecursively(
+  TreeSchema Schema(*CAS);
+  Error E = Schema.walkFileTreeRecursively(
       *CAS, *Root,
       [&](const NamedTreeEntry &Entry, Optional<TreeNodeProxy> Tree) -> Error {
         if (RemainingEntries.empty())

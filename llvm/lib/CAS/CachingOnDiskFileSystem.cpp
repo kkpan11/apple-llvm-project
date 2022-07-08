@@ -659,8 +659,9 @@ Expected<ObjectProxy> CachingOnDiskFileSystemImpl::createTreeFromNewAccesses(
     TrackedAccesses = None;
   }
 
+  TreeSchema Schema(DB);
   if (!MaybeTrackedAccesses || MaybeTrackedAccesses->empty())
-    return TreeSchema(DB).storeTree();
+    return Schema.storeTree();
 
   HierarchicalTreeBuilder Builder;
   for (const DirectoryEntry *Entry : *MaybeTrackedAccesses) {

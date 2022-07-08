@@ -514,7 +514,8 @@ static Error addCASTree(ObjectFormatSchemaPool &CASSchemas, CASID ID) {
       CASSchemas.getCAS().loadObjectProxy(*Object);
   if (!Tree)
     return Tree.takeError();
-  return TreeSchema(CASSchemas.getCAS()).walkFileTreeRecursively(
+  TreeSchema Schema(CASSchemas.getCAS());
+  return Schema.walkFileTreeRecursively(
       CASSchemas.getCAS(), *Tree,
       [&](const NamedTreeEntry &entry, Optional<TreeNodeProxy>) -> Error {
         if (entry.getKind() == TreeEntry::Tree)

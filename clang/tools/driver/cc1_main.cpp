@@ -479,7 +479,8 @@ Optional<int> CompileJobCache::replayCachedResult(llvm::cas::ObjectRef ResultID,
 
   // FIXME: Stop calling report_fatal_error().
   Optional<llvm::cas::TreeNodeProxy> Result;
-  if (Error E = llvm::cas::TreeSchema(*CAS).loadTree(ResultID).moveInto(Result))
+  llvm::cas::TreeSchema Schema(*CAS);
+  if (Error E = Schema.loadTree(ResultID).moveInto(Result))
     llvm::report_fatal_error(std::move(E));
 
   // Replay diagnostics to stderr.
