@@ -474,13 +474,14 @@ private:
   llvm::DenseMap<AtomicBoolValue *, Solver::Result::Assignment>
   buildSolution() {
     llvm::DenseMap<AtomicBoolValue *, Solver::Result::Assignment> Solution;
-    for (auto [Var, Val] : Formula.Atomics) {
+    for (auto &Atomic : Formula.Atomics) {
       // A variable may have a definite true/false assignment, or it may be
       // unassigned indicating its truth value does not affect the result of
       // the formula. Unassigned variables are assigned to true as a default.
-      Solution[Val] = VarAssignments[Var] == Assignment::AssignedFalse
-                          ? Solver::Result::Assignment::AssignedFalse
-                          : Solver::Result::Assignment::AssignedTrue;
+      Solution[Atomic.second] =
+          VarAssignments[Atomic.first] == Assignment::AssignedFalse
+              ? Solver::Result::Assignment::AssignedFalse
+              : Solver::Result::Assignment::AssignedTrue;
     }
     return Solution;
   }
