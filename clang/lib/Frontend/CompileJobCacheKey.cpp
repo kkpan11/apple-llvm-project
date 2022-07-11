@@ -39,19 +39,19 @@ clang::createCompileJobCacheKey(CASDB &CAS, ArrayRef<const char *> CC1Args,
 
   llvm::cas::HierarchicalTreeBuilder Builder;
   Builder.push(*RootRef, llvm::cas::TreeEntry::Tree, "filesystem");
-  Builder.push(CAS.getReference(llvm::cantFail(
-                   CAS.storeObjectFromString(None, CommandLine))),
-               llvm::cas::TreeEntry::Regular, "command-line");
   Builder.push(
-      CAS.getReference(llvm::cantFail(CAS.storeObjectFromString(None, "-cc1"))),
+      CAS.getReference(llvm::cantFail(CAS.storeFromString(None, CommandLine))),
+      llvm::cas::TreeEntry::Regular, "command-line");
+  Builder.push(
+      CAS.getReference(llvm::cantFail(CAS.storeFromString(None, "-cc1"))),
       llvm::cas::TreeEntry::Regular, "computation");
 
   // FIXME: The version is maybe insufficient...
   Builder.push(CAS.getReference(llvm::cantFail(
-                   CAS.storeObjectFromString(None, getClangFullVersion()))),
+                   CAS.storeFromString(None, getClangFullVersion()))),
                llvm::cas::TreeEntry::Regular, "version");
 
-  return CAS.getObjectID(llvm::cantFail(Builder.create(CAS)));
+  return CAS.getID(llvm::cantFail(Builder.create(CAS)));
 }
 
 Optional<llvm::cas::CASID>
@@ -79,7 +79,7 @@ clang::createCompileJobCacheKey(CASDB &CAS, DiagnosticsEngine &Diags,
 }
 
 static Error printFileSystem(CASDB &CAS, ObjectRef Ref, raw_ostream &OS) {
-  Expected<ObjectHandle> Root = CAS.loadObject(Ref);
+  Expected<ObjectHandle> Root = CAS.load(Ref);
   if (!Root)
     return Root.takeError();
 
@@ -111,13 +111,13 @@ static Error printCompileJobCacheKey(CASDB &CAS, ObjectHandle Node,
     return strError("cas object is not a valid cache key");
 
   return Tree->forEachEntry([&](const NamedTreeEntry &E) -> Error {
-    OS << E.getName() << ": " << CAS.getObjectID(E.getRef());
+    OS << E.getName() << ": " << CAS.getID(E.getRef());
     if (E.getKind() == TreeEntry::Tree)
       return printFileSystem(CAS, E.getRef(), OS);
 
     if (E.getKind() != TreeEntry::Regular)
       return strError("expected blob for entry " + E.getName());
-    auto Blob = CAS.loadObjectProxy(E.getRef());
+    auto Blob = CAS.getProxy(E.getRef());
     if (!Blob)
       return Blob.takeError();
 
@@ -143,7 +143,7 @@ static Error printCompileJobCacheKey(CASDB &CAS, ObjectHandle Node,
 }
 
 Error clang::printCompileJobCacheKey(CASDB &CAS, CASID Key, raw_ostream &OS) {
-  auto H = CAS.loadObject(Key);
+  auto H = CAS.load(Key);
   if (!H)
     return H.takeError();
   if (!*H)

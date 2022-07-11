@@ -26,12 +26,12 @@ bool TreeSchema::isNode(const ObjectHandle &Node) const {
 
   // If can't load the first ref, consume error and return false.
   auto FirstRef = CAS.readRef(Node, 0);
-  return CAS.getObjectID(FirstRef) == getKindID();
+  return CAS.getID(FirstRef) == getKindID();
 }
 
 TreeSchema::TreeSchema(cas::CASDB &CAS) : TreeSchema::RTTIExtends(CAS) {
-  auto Kind = cantFail(CAS.createObject(None, SchemaName));
-  TreeKindID.emplace(CAS.getObjectID(Kind));
+  auto Kind = cantFail(CAS.create(None, SchemaName));
+  TreeKindID.emplace(CAS.getID(Kind));
 }
 
 CASID TreeSchema::getKindID() const {
@@ -95,7 +95,7 @@ NamedTreeEntry TreeSchema::loadTreeEntry(TreeNodeProxy Tree, size_t I) const {
   TreeEntry::EntryKind Kind = (TreeEntry::EntryKind)Tree.getData()[I];
   // Names are stored in the front, followed by Refs.
   // FIXME: Name loading can't fail?
-  auto NameProxy = cantFail(CAS.loadObjectProxy(Tree.getReference(I + 1)));
+  auto NameProxy = cantFail(CAS.getProxy(Tree.getReference(I + 1)));
   auto ObjectRef = Tree.getReference(Tree.size() + I + 1);
 
   return {ObjectRef, Kind, NameProxy.getData()};
@@ -109,7 +109,7 @@ Optional<size_t> TreeSchema::lookupTreeEntry(TreeNodeProxy Tree,
 
   SmallVector<StringRef> Names(NumNames);
   auto GetName = [&](size_t I) {
-    auto NameProxy = cantFail(CAS.loadObjectProxy(Tree.getReference(I + 1)));
+    auto NameProxy = cantFail(CAS.getProxy(Tree.getReference(I + 1)));
     return NameProxy.getData();
   };
 
@@ -144,7 +144,7 @@ Optional<size_t> TreeSchema::lookupTreeEntry(TreeNodeProxy Tree,
 }
 
 Expected<TreeNodeProxy> TreeSchema::loadTree(ObjectRef Object) const {
-  auto TreeNode = CAS.loadObject(Object);
+  auto TreeNode = CAS.load(Object);
   if (!TreeNode)
     return TreeNode.takeError();
 
@@ -164,7 +164,7 @@ TreeSchema::storeTree(ArrayRef<NamedTreeEntry> Entries) {
 }
 
 Expected<ObjectRef> TreeSchema::storeTreeNodeName(StringRef Name) {
-  auto Node = CAS.storeObjectFromString({}, Name);
+  auto Node = CAS.storeFromString({}, Name);
   if (!Node)
     return Node.takeError();
 
@@ -195,13 +195,13 @@ TreeNodeProxy::create(TreeSchema &Schema, ArrayRef<NamedTreeEntry> Entries) {
     auto NameRef = Schema.storeTreeNodeName(Entry.getName());
     if (!NameRef)
       return NameRef.takeError();
-    B->IDs.push_back(Schema.CAS.getObjectID(*NameRef));
+    B->IDs.push_back(Schema.CAS.getID(*NameRef));
     B->Data.push_back((char)Entry.getKind());
   }
 
   // Store Refs after Names.
   for (auto &Entry : Sorted)
-    B->IDs.push_back(Schema.CAS.getObjectID(Entry.getRef()));
+    B->IDs.push_back(Schema.CAS.getID(Entry.getRef()));
 
   return B->build();
 }
@@ -214,6 +214,5 @@ TreeNodeProxy::Builder::startNode(TreeSchema &Schema) {
 }
 
 Expected<TreeNodeProxy> TreeNodeProxy::Builder::build() {
-  return TreeNodeProxy::get(*Schema,
-                            Schema->CAS.createObjectFromIDs(IDs, Data));
+  return TreeNodeProxy::get(*Schema, Schema->CAS.createFromIDs(IDs, Data));
 }

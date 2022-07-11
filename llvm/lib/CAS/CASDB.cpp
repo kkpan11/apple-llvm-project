@@ -41,7 +41,7 @@ void ReferenceBase::print(raw_ostream &OS, const ObjectHandle &This) const {
   Optional<CASID> ID;
 #if LLVM_ENABLE_ABI_BREAKING_CHECKS
   if (CAS)
-    ID = CAS->getObjectID(This);
+    ID = CAS->getID(This);
 #endif
   printReferenceBase(OS, "object-handle", InternalRef, ID);
 }
@@ -52,15 +52,15 @@ void ReferenceBase::print(raw_ostream &OS, const ObjectRef &This) const {
   Optional<CASID> ID;
 #if LLVM_ENABLE_ABI_BREAKING_CHECKS
   if (CAS)
-    ID = CAS->getObjectID(This);
+    ID = CAS->getID(This);
 #endif
   printReferenceBase(OS, "object-ref", InternalRef, ID);
 }
 
 /// Default implementation opens the file and calls \a createBlob().
 Expected<ObjectHandle>
-CASDB::storeObjectFromOpenFileImpl(sys::fs::file_t FD,
-                                   Optional<sys::fs::file_status> Status) {
+CASDB::storeFromOpenFileImpl(sys::fs::file_t FD,
+                             Optional<sys::fs::file_status> Status) {
   // Check whether we can trust the size from stat.
   int64_t FileSize = -1;
   if (Status->type() == sys::fs::file_type::regular_file ||
@@ -74,13 +74,13 @@ CASDB::storeObjectFromOpenFileImpl(sys::fs::file_t FD,
   if (!ExpectedContent)
     return errorCodeToError(ExpectedContent.getError());
 
-  return storeObject(
-      None, arrayRefFromStringRef<char>((*ExpectedContent)->getBuffer()));
+  return store(None,
+               arrayRefFromStringRef<char>((*ExpectedContent)->getBuffer()));
 }
 
-Expected<Optional<ObjectHandle>> CASDB::loadObject(const CASID &ID) {
+Expected<Optional<ObjectHandle>> CASDB::load(const CASID &ID) {
   if (Optional<ObjectRef> Ref = getReference(ID))
-    return loadObject(*Ref);
+    return load(*Ref);
   return None;
 }
 
@@ -92,20 +92,20 @@ void CASDB::readRefs(ObjectHandle Node,
   }));
 }
 
-Expected<ObjectProxy> CASDB::loadObjectProxy(CASID ID) {
+Expected<ObjectProxy> CASDB::getProxy(CASID ID) {
   Optional<ObjectHandle> H;
-  if (Error E = loadObject(ID).moveInto(H))
+  if (Error E = load(ID).moveInto(H))
     return std::move(E);
   if (!H)
     return createUnknownObjectError(ID);
   return ObjectProxy::load(*this, *H);
 }
 
-Expected<ObjectProxy> CASDB::loadObjectProxy(ObjectRef Ref) {
-  return loadObjectProxy(loadObject(Ref));
+Expected<ObjectProxy> CASDB::getProxy(ObjectRef Ref) {
+  return getProxy(load(Ref));
 }
 
-Expected<ObjectProxy> CASDB::loadObjectProxy(Expected<ObjectHandle> H) {
+Expected<ObjectProxy> CASDB::getProxy(Expected<ObjectHandle> H) {
   if (!H)
     return H.takeError();
   return ObjectProxy::load(*this, *H);
@@ -116,13 +116,12 @@ Error CASDB::createUnknownObjectError(CASID ID) {
                            "unknown object '" + ID.toString() + "'");
 }
 
-Expected<ObjectProxy> CASDB::createObject(ArrayRef<ObjectRef> Refs,
-                                          StringRef Data) {
-  return loadObjectProxy(storeObject(Refs, arrayRefFromStringRef<char>(Data)));
+Expected<ObjectProxy> CASDB::create(ArrayRef<ObjectRef> Refs, StringRef Data) {
+  return getProxy(store(Refs, arrayRefFromStringRef<char>(Data)));
 }
 
-Expected<ObjectProxy> CASDB::createObjectFromIDs(ArrayRef<CASID> IDs,
-                                                 StringRef Data) {
+Expected<ObjectProxy> CASDB::createFromIDs(ArrayRef<CASID> IDs,
+                                           StringRef Data) {
   SmallVector<ObjectRef> Refs;
   for (CASID ID : IDs) {
     if (Optional<ObjectRef> Ref = getReference(ID))
@@ -130,7 +129,7 @@ Expected<ObjectProxy> CASDB::createObjectFromIDs(ArrayRef<CASID> IDs,
     else
       return createUnknownObjectError(ID);
   }
-  return createObject(Refs, Data);
+  return create(Refs, Data);
 }
 
 Expected<std::unique_ptr<MemoryBuffer>>

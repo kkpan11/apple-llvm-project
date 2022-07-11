@@ -293,8 +293,7 @@ Expected<cas::ObjectRef> TableGenCache::createExecutableBlob(StringRef Argv0) {
   ErrorOr<std::unique_ptr<MemoryBuffer>> Buffer = MemoryBuffer::getFile(Argv0);
   if (!Buffer)
     return errorCodeToError(Buffer.getError());
-  Expected<cas::ObjectProxy> Blob =
-      CAS->createObject(None, (**Buffer).getBuffer());
+  Expected<cas::ObjectProxy> Blob = CAS->create(None, (**Buffer).getBuffer());
   if (!Blob)
     return Blob.takeError();
   return Blob->getRef();
@@ -346,7 +345,7 @@ TableGenCache::createCommandLineBlob(ArrayRef<const char *> Args) {
     Args = Args.drop_front();
   }
 
-  Expected<cas::ObjectProxy> Blob = CAS->createObject(None, CommandLine);
+  Expected<cas::ObjectProxy> Blob = CAS->create(None, CommandLine);
   if (!Blob)
     return Blob.takeError();
   return Blob->getRef();
@@ -394,7 +393,7 @@ Error TableGenCache::lookupCachedResult(ArrayRef<const char *> Args) {
 
   // Not an error for the result to be missing.
   if (Optional<cas::CASID> ID =
-          expectedToOptional(CAS->getCachedResult(CAS->getObjectID(*ActionID))))
+          expectedToOptional(CAS->getCachedResult(CAS->getID(*ActionID))))
     ResultID = CAS->getReference(*ID);
   return Error::success();
 }
@@ -436,8 +435,7 @@ Error TableGenCache::computeResult(TableGenMainFn *MainFn) {
   CapturedDiagnostics Diags;
   if (ActionID) {
     assert(IncludesTreeID && "Expected an input tree...");
-    if (auto FS =
-            cas::createCASFileSystem(*CAS, CAS->getObjectID(*IncludesTreeID)))
+    if (auto FS = cas::createCASFileSystem(*CAS, CAS->getID(*IncludesTreeID)))
       SrcMgr.setFileSystem(std::move(*FS));
     else
       return FS.takeError();
@@ -461,7 +459,7 @@ Error TableGenCache::computeResult(TableGenMainFn *MainFn) {
 
   cas::HierarchicalTreeBuilder Builder;
   auto addFile = [&](StringRef Name, StringRef Data) -> Error {
-    Expected<cas::ObjectHandle> ID = CAS->storeObjectFromString(None, Data);
+    Expected<cas::ObjectHandle> ID = CAS->storeFromString(None, Data);
     if (!ID)
       return ID.takeError();
     Builder.push(CAS->getReference(*ID), cas::TreeEntry::Regular, Name);
@@ -480,14 +478,13 @@ Error TableGenCache::computeResult(TableGenMainFn *MainFn) {
   Expected<cas::ObjectHandle> Tree = Builder.create(*CAS);
   if (!Tree)
     return Tree.takeError();
-  return CAS->putCachedResult(CAS->getObjectID(*ActionID),
-                              CAS->getObjectID(*Tree));
+  return CAS->putCachedResult(CAS->getID(*ActionID), CAS->getID(*Tree));
 }
 
 Error TableGenCache::replayResult() {
   assert(ResultID && "Need a result!");
 
-  Expected<cas::ObjectProxy> Node = CAS->loadObjectProxy(*ResultID);
+  Expected<cas::ObjectProxy> Node = CAS->getProxy(*ResultID);
   if (!Node)
     return Node.takeError();
 
@@ -501,7 +498,7 @@ Error TableGenCache::replayResult() {
     Optional<cas::NamedTreeEntry> Entry = Tree->lookup(Name);
     if (!Entry)
       return Error::success();
-    Expected<cas::ObjectProxy> ExpectedBlob = CAS->loadObjectProxy(*ResultID);
+    Expected<cas::ObjectProxy> ExpectedBlob = CAS->getProxy(*ResultID);
     if (!ExpectedBlob)
       return ExpectedBlob.takeError();
     Blob = *ExpectedBlob;

@@ -383,7 +383,7 @@ private:
       if (!ID)
         return ID.takeError();
 
-      auto BlobProxy = CAS.loadObjectProxy(*ID);
+      auto BlobProxy = CAS.getProxy(*ID);
       if (!BlobProxy) {
         // FIXME: Support CAS schema objects.
         consumeError(BlobProxy.takeError());
@@ -622,7 +622,7 @@ writeCASIDArchive(cas::CASDB &CAS, StringRef ArcName,
   if (!Buffer)
     return Buffer.takeError();
 
-  auto Blob = CAS.createObject(None, (*Buffer)->getBuffer());
+  auto Blob = CAS.create(None, (*Buffer)->getBuffer());
   if (!Blob)
     return Blob.takeError();
 

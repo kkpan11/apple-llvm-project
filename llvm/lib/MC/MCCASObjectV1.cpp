@@ -91,7 +91,7 @@ Error MCSchema::fillCache() {
   Optional<cas::CASID> RootKindID;
   const unsigned Version = 0; // Bump this to error on old object files.
   if (Expected<cas::ObjectProxy> ExpectedRootKind =
-          CAS.createObject(None, "mc:v1:schema:" + Twine(Version).str()))
+          CAS.create(None, "mc:v1:schema:" + Twine(Version).str()))
     RootKindID = *ExpectedRootKind;
   else
     return ExpectedRootKind.takeError();
@@ -108,7 +108,7 @@ Error MCSchema::fillCache() {
   cas::CASID Refs[] = {*RootKindID};
   SmallVector<cas::CASID> IDs = {*RootKindID};
   for (StringRef KS : AllKindStrings) {
-    auto ExpectedID = CAS.createObjectFromIDs(Refs, KS);
+    auto ExpectedID = CAS.createFromIDs(Refs, KS);
     if (!ExpectedID)
       return ExpectedID.takeError();
     IDs.push_back(*ExpectedID);
@@ -117,7 +117,7 @@ Error MCSchema::fillCache() {
            "Ran out of bits for kind strings");
   }
 
-  auto ExpectedTypeID = CAS.createObjectFromIDs(IDs, "mc:v1:root");
+  auto ExpectedTypeID = CAS.createFromIDs(IDs, "mc:v1:root");
   if (!ExpectedTypeID)
     return ExpectedTypeID.takeError();
   RootNodeTypeID = *ExpectedTypeID;
@@ -179,8 +179,7 @@ MCObjectProxy::Builder::startNode(const MCSchema &Schema,
 }
 
 Expected<MCObjectProxy> MCObjectProxy::Builder::build() {
-  return MCObjectProxy::get(*Schema,
-                            Schema->CAS.createObjectFromIDs(IDs, Data));
+  return MCObjectProxy::get(*Schema, Schema->CAS.createFromIDs(IDs, Data));
 }
 
 StringRef MCObjectProxy::getKindString() const {
@@ -1177,8 +1176,7 @@ template <typename T>
 static Expected<T> findSectionFromAsm(const MCAssemblerRef &Asm) {
   for (unsigned I = 1; I < Asm.getNumReferences(); ++I) {
     auto Node = MCObjectProxy::get(
-        Asm.getSchema(),
-        Asm.getSchema().CAS.loadObjectProxy(Asm.getReferenceID(I)));
+        Asm.getSchema(), Asm.getSchema().CAS.getProxy(Asm.getReferenceID(I)));
     if (!Node)
       return Node.takeError();
     if (auto Ref = T::Cast(*Node))
@@ -1265,7 +1263,7 @@ MCCASReader::MCCASReader(raw_ostream &OS, const Triple &Target,
     : OS(OS), Target(Target), Schema(Schema) {}
 
 Expected<uint64_t> MCCASReader::materializeGroup(cas::CASID ID) {
-  auto Node = MCObjectProxy::get(Schema, Schema.CAS.loadObjectProxy(ID));
+  auto Node = MCObjectProxy::get(Schema, Schema.CAS.getProxy(ID));
   if (!Node)
     return Node.takeError();
 
@@ -1285,7 +1283,7 @@ Expected<uint64_t> MCCASReader::materializeGroup(cas::CASID ID) {
 }
 
 Expected<uint64_t> MCCASReader::materializeSection(cas::CASID ID) {
-  auto Node = MCObjectProxy::get(Schema, Schema.CAS.loadObjectProxy(ID));
+  auto Node = MCObjectProxy::get(Schema, Schema.CAS.getProxy(ID));
   if (!Node)
     return Node.takeError();
 
@@ -1307,7 +1305,7 @@ Expected<uint64_t> MCCASReader::materializeSection(cas::CASID ID) {
 }
 
 Expected<uint64_t> MCCASReader::materializeAtom(cas::CASID ID) {
-  auto Node = MCObjectProxy::get(Schema, Schema.CAS.loadObjectProxy(ID));
+  auto Node = MCObjectProxy::get(Schema, Schema.CAS.getProxy(ID));
   if (!Node)
     return Node.takeError();
 

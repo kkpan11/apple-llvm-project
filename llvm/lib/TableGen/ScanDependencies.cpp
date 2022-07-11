@@ -76,7 +76,7 @@ void tablegen::scanTextForIncludes(StringRef Input,
 static Error
 fetchCachedIncludedFiles(cas::CASDB &CAS, cas::CASID ID,
                          SmallVectorImpl<StringRef> &IncludedFiles) {
-  Expected<cas::ObjectProxy> ExpectedBlob = CAS.loadObjectProxy(ID);
+  Expected<cas::ObjectProxy> ExpectedBlob = CAS.getProxy(ID);
   if (!ExpectedBlob)
     return ExpectedBlob.takeError();
   splitFlattenedStrings(ExpectedBlob->getData(), IncludedFiles);
@@ -90,8 +90,7 @@ static Error computeIncludedFiles(cas::CASDB &CAS, cas::CASID Key,
   scanTextForIncludes(Input, IncludedFiles);
   flattenStrings(IncludedFiles, ResultToCache);
 
-  Expected<cas::ObjectProxy> ExpectedResult =
-      CAS.createObject(None, ResultToCache);
+  Expected<cas::ObjectProxy> ExpectedResult = CAS.create(None, ResultToCache);
   if (!ExpectedResult)
     return ExpectedResult.takeError();
   if (Error E = CAS.putCachedResult(Key, *ExpectedResult))
@@ -105,11 +104,11 @@ Error tablegen::scanTextForIncludes(cas::CASDB &CAS, cas::ObjectRef ExecID,
   constexpr StringLiteral CacheKeyData = "llvm::tablegen::scanTextForIncludes";
 
   Expected<cas::ObjectHandle> Key =
-      CAS.storeObjectFromString({ExecID, Blob.getRef()}, CacheKeyData);
+      CAS.storeFromString({ExecID, Blob.getRef()}, CacheKeyData);
   if (!Key)
     return Key.takeError();
 
-  cas::CASID KeyID = CAS.getObjectID(*Key);
+  cas::CASID KeyID = CAS.getID(*Key);
   if (Optional<cas::CASID> ResultID =
           expectedToOptional(CAS.getCachedResult(KeyID)))
     return fetchCachedIncludedFiles(CAS, *ResultID, Includes);
@@ -149,7 +148,7 @@ Error tablegen::accessAllIncludes(cas::CachingOnDiskFileSystem &FS,
     if (!Seen.insert(ID).second)
       return Error::success();
 
-    Expected<cas::ObjectProxy> Blob = CAS.loadObjectProxy(ID);
+    Expected<cas::ObjectProxy> Blob = CAS.getProxy(ID);
     if (!Blob)
       return Blob.takeError();
     Worklist.push_back(*Blob);
@@ -185,14 +184,14 @@ static Expected<cas::ObjectProxy> openMainFile(cas::CachingOnDiskFileSystem &FS,
     ErrorOr<std::unique_ptr<MemoryBuffer>> MaybeFile = MemoryBuffer::getSTDIN();
     if (!MaybeFile)
       return createMainFileError(MainFilename, MaybeFile.getError());
-    return CAS.createObject(None, (**MaybeFile).getBuffer());
+    return CAS.create(None, (**MaybeFile).getBuffer());
   }
 
   Optional<cas::CASID> MainFileID;
   if (std::error_code EC =
           FS.statusAndFileID(MainFilename, MainFileID).getError())
     return createMainFileError(MainFilename, EC);
-  return CAS.loadObjectProxy(*MainFileID);
+  return CAS.getProxy(*MainFileID);
 }
 
 Error tablegen::createMainFileError(StringRef MainFilename,

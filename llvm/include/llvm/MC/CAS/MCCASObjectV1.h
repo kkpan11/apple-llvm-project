@@ -102,12 +102,12 @@ public:
 
   MCSchema(cas::CASDB &CAS);
 
-  Expected<MCObjectProxy> createNode(ArrayRef<cas::CASID> IDs,
-                                     StringRef Data) const {
-    return MCObjectProxy::get(*this, CAS.createObjectFromIDs(IDs, Data));
+  Expected<MCObjectProxy> create(ArrayRef<cas::CASID> IDs,
+                                 StringRef Data) const {
+    return MCObjectProxy::get(*this, CAS.createFromIDs(IDs, Data));
   }
-  Expected<MCObjectProxy> getNode(cas::CASID ID) const {
-    return MCObjectProxy::get(*this, CAS.loadObjectProxy(ID));
+  Expected<MCObjectProxy> get(cas::CASID ID) const {
+    return MCObjectProxy::get(*this, CAS.getProxy(ID));
   }
 
 private:
@@ -162,7 +162,7 @@ protected:
     static Expected<RefName> create(MCCASBuilder &MB, StringRef Data);         \
     static Expected<RefName> get(Expected<MCObjectProxy> Ref);                 \
     static Expected<RefName> get(const MCSchema &Schema, cas::CASID ID) {      \
-      return get(Schema.getNode(ID));                                          \
+      return get(Schema.get(ID));                                              \
     }                                                                          \
     static Optional<RefName> Cast(MCObjectProxy Ref) {                         \
       auto Specific = SpecificRefT::Cast(Ref);                                 \
@@ -195,7 +195,7 @@ protected:
       return RefName(*Specific);                                               \
     }                                                                          \
     static Expected<RefName> get(const MCSchema &Schema, cas::CASID ID) {      \
-      return get(Schema.getNode(ID));                                          \
+      return get(Schema.get(ID));                                              \
     }                                                                          \
     static Optional<RefName> Cast(MCObjectProxy Ref) {                         \
       auto Specific = SpecificRefT::Cast(Ref);                                 \
@@ -227,7 +227,7 @@ protected:
     }                                                                          \
     static Expected<MCFragmentName##Ref> get(const MCSchema &Schema,           \
                                              cas::CASID ID) {                  \
-      return get(Schema.getNode(ID));                                          \
+      return get(Schema.get(ID));                                              \
     }                                                                          \
     static Optional<MCFragmentName##Ref> Cast(MCObjectProxy Ref) {             \
       auto Specific = SpecificRefT::Cast(Ref);                                 \
@@ -253,7 +253,7 @@ public:
 
   static Expected<PaddingRef> get(Expected<MCObjectProxy> Ref);
   static Expected<PaddingRef> get(const MCSchema &Schema, cas::CASID ID) {
-    return get(Schema.getNode(ID));
+    return get(Schema.get(ID));
   }
   static Optional<PaddingRef> Cast(MCObjectProxy Ref) {
     auto Specific = SpecificRefT::Cast(Ref);
@@ -277,7 +277,7 @@ public:
 
   static Expected<MCAssemblerRef> get(Expected<MCObjectProxy> Ref);
   static Expected<MCAssemblerRef> get(const MCSchema &Schema, cas::CASID ID) {
-    return get(Schema.getNode(ID));
+    return get(Schema.get(ID));
   }
 
   static Expected<MCAssemblerRef>

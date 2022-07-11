@@ -199,13 +199,13 @@ public:
     return getID(indexHash(Hash));
   }
 
-  Expected<ObjectHandle> storeObjectImpl(ArrayRef<uint8_t> ComputedHash,
-                                         ArrayRef<ObjectRef> Refs,
-                                         ArrayRef<char> Data) final;
+  Expected<ObjectHandle> storeImpl(ArrayRef<uint8_t> ComputedHash,
+                                   ArrayRef<ObjectRef> Refs,
+                                   ArrayRef<char> Data) final;
 
   Expected<ObjectHandle>
-  storeObjectFromNullTerminatedRegion(ArrayRef<uint8_t> ComputedHash,
-                                      sys::fs::mapped_file_region Map) override;
+  storeFromNullTerminatedRegion(ArrayRef<uint8_t> ComputedHash,
+                                sys::fs::mapped_file_region Map) override;
 
   CASID getID(const InMemoryIndexValueT &I) const {
     return CASID::getFromInternalID(*this, reinterpret_cast<uintptr_t>(&I));
@@ -230,7 +230,7 @@ public:
     return makeObjectHandle(reinterpret_cast<uintptr_t>(&Node));
   }
 
-  Expected<ObjectHandle> loadObject(ObjectRef Ref) override {
+  Expected<ObjectHandle> load(ObjectRef Ref) override {
     return getObjectHandle(asInMemoryObject(Ref));
   }
 
@@ -265,11 +265,9 @@ public:
     return makeObjectRef(reinterpret_cast<uintptr_t>(&O));
   }
 
-  CASID getObjectID(ObjectRef Ref) const final { return getObjectIDImpl(Ref); }
-  CASID getObjectID(ObjectHandle Ref) const final {
-    return getObjectIDImpl(Ref);
-  }
-  CASID getObjectIDImpl(ReferenceBase Ref) const {
+  CASID getID(ObjectRef Ref) const final { return getIDImpl(Ref); }
+  CASID getID(ObjectHandle Ref) const final { return getIDImpl(Ref); }
+  CASID getIDImpl(ReferenceBase Ref) const {
     return getID(asInMemoryObject(Ref));
   }
 
@@ -346,8 +344,9 @@ void InMemoryCAS::print(raw_ostream &OS) const {
   ActionCache.print(OS);
 }
 
-Expected<ObjectHandle> InMemoryCAS::storeObjectFromNullTerminatedRegion(
-    ArrayRef<uint8_t> ComputedHash, sys::fs::mapped_file_region Map) {
+Expected<ObjectHandle>
+InMemoryCAS::storeFromNullTerminatedRegion(ArrayRef<uint8_t> ComputedHash,
+                                           sys::fs::mapped_file_region Map) {
   // Look up the hash in the index, initializing to nullptr if it's new.
   ArrayRef<char> Data(Map.data(), Map.size());
   auto &I = indexHash(ComputedHash);
@@ -370,9 +369,9 @@ Expected<ObjectHandle> InMemoryCAS::storeObjectFromNullTerminatedRegion(
   return getObjectHandle(Node);
 }
 
-Expected<ObjectHandle>
-InMemoryCAS::storeObjectImpl(ArrayRef<uint8_t> ComputedHash,
-                             ArrayRef<ObjectRef> Refs, ArrayRef<char> Data) {
+Expected<ObjectHandle> InMemoryCAS::storeImpl(ArrayRef<uint8_t> ComputedHash,
+                                              ArrayRef<ObjectRef> Refs,
+                                              ArrayRef<char> Data) {
   // Look up the hash in the index, initializing to nullptr if it's new.
   auto &I = indexHash(ComputedHash);
 

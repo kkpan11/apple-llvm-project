@@ -37,7 +37,7 @@ TEST(HierarchicalTreeBuilderTest, Flat) {
 
   auto make = [&](StringRef Content) {
     return CAS->getReference(
-        *expectedToOptional(CAS->storeObjectFromString(None, Content)));
+        *expectedToOptional(CAS->storeFromString(None, Content)));
   };
 
   HierarchicalTreeBuilder Builder;
@@ -48,7 +48,7 @@ TEST(HierarchicalTreeBuilderTest, Flat) {
   ASSERT_TRUE(Root);
 
   std::unique_ptr<vfs::FileSystem> CASFS =
-      expectedToPointer(createCASFileSystem(*CAS, CAS->getObjectID(*Root)));
+      expectedToPointer(createCASFileSystem(*CAS, CAS->getID(*Root)));
   ASSERT_TRUE(CASFS);
 
   std::unique_ptr<MemoryBuffer> F1 =
@@ -73,7 +73,7 @@ TEST(HierarchicalTreeBuilderTest, Nested) {
 
   auto make = [&](StringRef Content) {
     return CAS->getReference(
-        *expectedToOptional(CAS->storeObjectFromString(None, Content)));
+        *expectedToOptional(CAS->storeFromString(None, Content)));
   };
 
   HierarchicalTreeBuilder Builder;
@@ -87,7 +87,7 @@ TEST(HierarchicalTreeBuilderTest, Nested) {
   ASSERT_TRUE(Root);
 
   std::unique_ptr<vfs::FileSystem> CASFS =
-      expectedToPointer(createCASFileSystem(*CAS, CAS->getObjectID(*Root)));
+      expectedToPointer(createCASFileSystem(*CAS, CAS->getID(*Root)));
 
   std::unique_ptr<MemoryBuffer> T1D1 =
       errorOrToPointer(CASFS->getBufferForFile("/t1/d1"));
@@ -118,7 +118,7 @@ TEST(HierarchicalTreeBuilderTest, MergeDirectories) {
 
   auto make = [&](StringRef Content) {
     return CAS->getReference(
-        *expectedToOptional(CAS->storeObjectFromString(None, Content)));
+        *expectedToOptional(CAS->storeFromString(None, Content)));
   };
 
   auto createRoot = [&](StringRef Blob, StringRef Path,
@@ -148,7 +148,7 @@ TEST(HierarchicalTreeBuilderTest, MergeDirectories) {
   ASSERT_THAT_ERROR(Builder.create(*CAS).moveInto(Root), Succeeded());
 
   std::unique_ptr<vfs::FileSystem> CASFS =
-      cantFail(createCASFileSystem(*CAS, CAS->getObjectID(*Root)));
+      cantFail(createCASFileSystem(*CAS, CAS->getID(*Root)));
 
   std::unique_ptr<MemoryBuffer> T1D1 =
       errorOrToPointer(CASFS->getBufferForFile("/t1/d1"));
@@ -179,7 +179,7 @@ TEST(HierarchicalTreeBuilderTest, MergeDirectoriesConflict) {
 
   auto make = [&](StringRef Content) {
     return CAS->getReference(
-        *expectedToOptional(CAS->storeObjectFromString(None, Content)));
+        *expectedToOptional(CAS->storeFromString(None, Content)));
   };
 
   auto createRoot = [&](StringRef Blob, StringRef Path,

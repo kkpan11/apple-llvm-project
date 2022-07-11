@@ -25,7 +25,7 @@ class CASOutputBackend : public vfs::OutputBackend {
 
 public:
   /// Create a top-level tree for all created files. This will contain all files
-  Expected<ObjectProxy> createNode();
+  Expected<ObjectProxy> getCASProxy();
 
   /// Add a CAS object to the path in the output backend.
   Error addObject(StringRef Path, const CASID &Object);

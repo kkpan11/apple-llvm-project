@@ -163,20 +163,19 @@ public:
 
   virtual Expected<CASID> parseIDImpl(ArrayRef<uint8_t> Hash) = 0;
 
-  Expected<ObjectHandle> storeObject(ArrayRef<ObjectRef> Refs,
-                                     ArrayRef<char> Data) final;
-  virtual Expected<ObjectHandle> storeObjectImpl(ArrayRef<uint8_t> ComputedHash,
-                                                 ArrayRef<ObjectRef> Refs,
-                                                 ArrayRef<char> Data) = 0;
+  Expected<ObjectHandle> store(ArrayRef<ObjectRef> Refs,
+                               ArrayRef<char> Data) final;
+  virtual Expected<ObjectHandle> storeImpl(ArrayRef<uint8_t> ComputedHash,
+                                           ArrayRef<ObjectRef> Refs,
+                                           ArrayRef<char> Data) = 0;
 
   Expected<ObjectHandle>
-  storeObjectFromOpenFileImpl(sys::fs::file_t FD,
-                              Optional<sys::fs::file_status> Status) override;
+  storeFromOpenFileImpl(sys::fs::file_t FD,
+                        Optional<sys::fs::file_status> Status) override;
   virtual Expected<ObjectHandle>
-  storeObjectFromNullTerminatedRegion(ArrayRef<uint8_t> ComputedHash,
-                                      sys::fs::mapped_file_region Map) {
-    return storeObjectImpl(ComputedHash, None,
-                           makeArrayRef(Map.data(), Map.size()));
+  storeFromNullTerminatedRegion(ArrayRef<uint8_t> ComputedHash,
+                                sys::fs::mapped_file_region Map) {
+    return storeImpl(ComputedHash, None, makeArrayRef(Map.data(), Map.size()));
   }
 
   /// Both builtin CAS implementations provide lifetime for free, so this can
@@ -229,7 +228,7 @@ public:
                                  "'");
   }
 
-  Error validateObject(const CASID &ID) final;
+  Error validate(const CASID &ID) final;
 };
 
 } // end namespace builtin

@@ -769,9 +769,9 @@ public:
     return getID(indexHash(Hash));
   }
 
-  Expected<ObjectHandle> storeObjectImpl(ArrayRef<uint8_t> ComputedHash,
-                                     ArrayRef<ObjectRef> Refs,
-                                     ArrayRef<char> Data) final;
+  Expected<ObjectHandle> storeImpl(ArrayRef<uint8_t> ComputedHash,
+                                   ArrayRef<ObjectRef> Refs,
+                                   ArrayRef<char> Data) final;
 
   Expected<ObjectHandle> createStandaloneLeaf(IndexProxy &I, ArrayRef<char> Data);
 
@@ -808,9 +808,9 @@ public:
     return ObjectRef::getFromInternalRef(*this, Ref.getRawData());
   }
 
-  Expected<ObjectHandle> loadObject(ObjectRef Ref) final;
-  Expected<ObjectHandle> loadObject(const IndexProxy &I,
-                                    TrieRecord::Data Object, InternalRef Ref);
+  Expected<ObjectHandle> load(ObjectRef Ref) final;
+  Expected<ObjectHandle> load(const IndexProxy &I, TrieRecord::Data Object,
+                              InternalRef Ref);
 
   ObjectHandle getLoadedObject(const IndexProxy &I, TrieRecord::Data Object,
                                InternalHandle Handle) const;
@@ -823,19 +823,16 @@ public:
   void getStandalonePath(TrieRecord::StorageKind SK, const IndexProxy &I,
                          SmallVectorImpl<char> &Path) const;
 
-  CASID getObjectID(InternalRef Ref) const;
-  CASID getObjectID(ObjectRef Ref) const final {
-    return getObjectID(getInternalRef(Ref));
-  }
-  CASID getObjectID(ObjectHandle Handle) const final {
-    return getObjectID(getInternalHandle(Handle).getRef());
+  CASID getID(InternalRef Ref) const;
+  CASID getID(ObjectRef Ref) const final { return getID(getInternalRef(Ref)); }
+  CASID getID(ObjectHandle Handle) const final {
+    return getID(getInternalHandle(Handle).getRef());
   }
   Optional<FileOffset> getIndexOffset(InternalRef Ref) const;
 
   CASID getID(const IndexProxy &I) const {
     return getIDFromIndexOffset(I.Offset);
   }
-  Optional<CASID> getID(InternalRef Ref) const;
 
   Optional<ObjectRef> getReference(const CASID &ID) const final;
   ObjectRef getReference(ObjectHandle Handle) const final {
@@ -1499,7 +1496,7 @@ Optional<FileOffset> OnDiskCAS::getIndexOffset(InternalRef Ref) const {
   }
 }
 
-CASID OnDiskCAS::getObjectID(InternalRef Ref) const {
+CASID OnDiskCAS::getID(InternalRef Ref) const {
   Optional<FileOffset> I = getIndexOffset(Ref);
   assert(I);
   return getIDFromIndexOffset(*I);
@@ -1513,13 +1510,13 @@ ArrayRef<char> OnDiskCAS::getDataConst(ObjectHandle Node) const {
   return Content.Record->getData();
 }
 
-Expected<ObjectHandle> OnDiskCAS::loadObject(ObjectRef ExternalRef) {
+Expected<ObjectHandle> OnDiskCAS::load(ObjectRef ExternalRef) {
   InternalRef Ref = getInternalRef(ExternalRef);
   Optional<IndexProxy> I = getIndexProxyFromRef(Ref);
   if (!I)
     report_fatal_error(
         "OnDiskCAS: corrupt internal reference to unknown object");
-  return loadObject(*I, I->Ref.load(), Ref);
+  return load(*I, I->Ref.load(), Ref);
 }
 
 ObjectHandle OnDiskCAS::getLoadedObject(const IndexProxy &I,
@@ -1534,9 +1531,8 @@ ObjectHandle OnDiskCAS::getLoadedObject(const IndexProxy &I,
   }
 }
 
-Expected<ObjectHandle> OnDiskCAS::loadObject(const IndexProxy &I,
-                                             TrieRecord::Data Object,
-                                             InternalRef Ref) {
+Expected<ObjectHandle>
+OnDiskCAS::load(const IndexProxy &I, TrieRecord::Data Object, InternalRef Ref) {
   Optional<InternalHandle> Handle;
   if (Error E = loadContentForRef(I, Object, Ref).moveInto(Handle))
     return std::move(E);
@@ -1771,7 +1767,7 @@ Expected<ObjectHandle> OnDiskCAS::createStandaloneLeaf(IndexProxy &I,
   getStandalonePath(SK, I, Path);
 
   // Write the file. Don't reuse this mapped_file_region, which is read/write.
-  // Let loadObject() pull up one that's read-only.
+  // Let load() pull up one that's read-only.
   Expected<MappedTempFile> File = createTempFile(Path, FileSize);
   if (!File)
     return File.takeError();
@@ -1788,7 +1784,7 @@ Expected<ObjectHandle> OnDiskCAS::createStandaloneLeaf(IndexProxy &I,
   {
     TrieRecord::Data Leaf{SK, TrieRecord::ObjectKind::Object, FileOffset()};
     if (I.Ref.compare_exchange_strong(Existing, Leaf))
-      return loadObject(I, Leaf, *makeInternalRef(I.Offset, Leaf));
+      return load(I, Leaf, *makeInternalRef(I.Offset, Leaf));
   }
 
   // If there was a race, confirm that the new value has valid storage.
@@ -1797,19 +1793,19 @@ Expected<ObjectHandle> OnDiskCAS::createStandaloneLeaf(IndexProxy &I,
     return createCorruptObjectError(getID(I));
 
   // Get and return the inserted leaf node.
-  return loadObject(I, Existing, *makeInternalRef(I.Offset, Existing));
+  return load(I, Existing, *makeInternalRef(I.Offset, Existing));
 }
 
-Expected<ObjectHandle> OnDiskCAS::storeObjectImpl(ArrayRef<uint8_t> ComputedHash,
-                                              ArrayRef<ObjectRef> Refs,
-                                              ArrayRef<char> Data) {
+Expected<ObjectHandle> OnDiskCAS::storeImpl(ArrayRef<uint8_t> ComputedHash,
+                                            ArrayRef<ObjectRef> Refs,
+                                            ArrayRef<char> Data) {
   IndexProxy I = indexHash(ComputedHash);
 
   // Early return in case the node exists.
   {
     TrieRecord::Data Existing = I.Ref.load();
     if (Existing.OK == TrieRecord::ObjectKind::Object)
-      return loadObject(I, Existing, *makeInternalRef(I.Offset, Existing));
+      return load(I, Existing, *makeInternalRef(I.Offset, Existing));
     if (Existing.SK != TrieRecord::StorageKind::Unknown)
       return createCorruptObjectError(getID(I));
   }
@@ -1892,7 +1888,7 @@ OnDiskCAS::loadOrCreateDataRecord(IndexProxy &I, TrieRecord::ObjectKind OK,
     // handle.
     if (Existing.SK == TrieRecord::StorageKind::Unknown) {
       if (I.Ref.compare_exchange_strong(Existing, NewObject))
-        return loadObject(I, NewObject, *makeInternalRef(I.Offset, NewObject));
+        return load(I, NewObject, *makeInternalRef(I.Offset, NewObject));
     }
   }
 
@@ -1900,7 +1896,7 @@ OnDiskCAS::loadOrCreateDataRecord(IndexProxy &I, TrieRecord::ObjectKind OK,
     return createCorruptObjectError(getID(I));
 
   // Load existing object.
-  return loadObject(I, Existing, *makeInternalRef(I.Offset, Existing));
+  return load(I, Existing, *makeInternalRef(I.Offset, Existing));
 }
 
 OnDiskCAS::PooledDataRecord
@@ -1946,7 +1942,7 @@ Expected<CASID> OnDiskCAS::getCachedResult(CASID InputID) {
           ->load();
 
   // Return the result.
-  return getObjectID(getExternalReference(InternalRef::getFromRawData(Output)));
+  return getID(getExternalReference(InternalRef::getFromRawData(Output)));
 }
 
 Error OnDiskCAS::putCachedResult(CASID InputID, CASID OutputID) {
@@ -1983,21 +1979,8 @@ Error OnDiskCAS::putCachedResult(CASID InputID, CASID OutputID) {
     return Error::success();
 
   CASID ObservedID =
-      getObjectID(getExternalReference(InternalRef::getFromRawData(Observed)));
+      getID(getExternalReference(InternalRef::getFromRawData(Observed)));
   return createResultCachePoisonedError(InputID, OutputID, ObservedID);
-}
-
-Optional<CASID> OnDiskCAS::getID(InternalRef Ref) const {
-  Optional<IndexProxy> I = getIndexProxyFromRef(Ref);
-  if (!I)
-    return None;
-
-  switch (I->Ref.load().OK) {
-  default:
-    return None;
-  case TrieRecord::ObjectKind::Object:
-    return getID(*I);
-  }
 }
 
 Expected<std::unique_ptr<OnDiskCAS>> OnDiskCAS::open(StringRef AbsPath) {

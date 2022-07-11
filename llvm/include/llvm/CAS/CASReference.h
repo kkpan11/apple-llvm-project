@@ -92,17 +92,17 @@ private:
 /// Reference to an object in a \a CASDB instance.
 ///
 /// If you have an ObjectRef, you know the object exists, and you can point at
-/// it from new nodes with \a CASDB::storeNode(), but you don't know anything
+/// it from new nodes with \a CASDB::store(), but you don't know anything
 /// about it. "Loading" the object is a separate step that may not have
 /// happened yet, and which can fail (due to filesystem corruption) or
 /// introduce latency (if downloading from a remote store).
 ///
-/// \a CASDB::storeNode() takes a list of these, and these are returned by \a
+/// \a CASDB::store() takes a list of these, and these are returned by \a
 /// CASDB::forEachRef() and \a CASDB::readRef(), which are accessors for nodes,
 /// and \a CASDB::getReference().
 ///
-/// \a CASDB::loadObject() will load the referenced object, and returns \a
-/// AnyObjectHandle, a variant that knows what kind of entity it is. \a
+/// \a CASDB::load() will load the referenced object, and returns \a
+/// ObjectHandle, a variant that knows what kind of entity it is. \a
 /// CASDB::getReferenceKind() can expect the type of reference without asking
 /// for unloaded objects to be loaded.
 ///
@@ -158,11 +158,6 @@ private:
 /// ObjectHandle encapulates a *loaded* object in the CAS. You need one
 /// of these to inspect the content of an object: to look at its stored
 /// data and references.
-///
-/// In practice, right now you really need/want \a NodeHandle, \a TreeHandle,
-/// or \a AnyObjectHandle.
-///
-/// TODO: Remove all subclasses (merge with \a NodeHandle) once trees.
 class ObjectHandle : public ReferenceBase {
 public:
   friend bool operator==(const ObjectHandle &LHS, const ObjectHandle &RHS) {

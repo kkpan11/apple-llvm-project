@@ -65,9 +65,9 @@ CASOutputBackend::createFileImpl(StringRef ResolvedPath,
       ResolvedPath, [&](StringRef Path, StringRef Bytes) -> Error {
         Optional<ObjectProxy> PathBlob;
         Optional<ObjectProxy> BytesBlob;
-        if (Error E = CAS.createObject(None, Path).moveInto(PathBlob))
+        if (Error E = CAS.create(None, Path).moveInto(PathBlob))
           return E;
-        if (Error E = CAS.createObject(None, Bytes).moveInto(BytesBlob))
+        if (Error E = CAS.create(None, Bytes).moveInto(BytesBlob))
           return E;
 
         // FIXME: Should there be a lock taken before accessing PrivateImpl?
@@ -77,15 +77,15 @@ CASOutputBackend::createFileImpl(StringRef ResolvedPath,
       });
 }
 
-Expected<ObjectProxy> CASOutputBackend::createNode() {
+Expected<ObjectProxy> CASOutputBackend::getCASProxy() {
   // FIXME: Should there be a lock taken before accessing PrivateImpl?
   if (!Impl)
-    return CAS.createObject(None, "");
+    return CAS.create(None, "");
 
   SmallVector<CASID> MovedIDs;
   std::swap(MovedIDs, Impl->IDs);
 
-  return CAS.createObjectFromIDs(MovedIDs, "");
+  return CAS.createFromIDs(MovedIDs, "");
 }
 
 Error CASOutputBackend::addObject(StringRef Path, const CASID &Object) {
@@ -93,7 +93,7 @@ Error CASOutputBackend::addObject(StringRef Path, const CASID &Object) {
     Impl = std::make_unique<PrivateImpl>();
 
   Optional<ObjectProxy> PathBlob;
-  if (Error E = CAS.createObject(None, Path).moveInto(PathBlob))
+  if (Error E = CAS.create(None, Path).moveInto(PathBlob))
     return E;
 
   Impl->IDs.push_back(PathBlob->getID());

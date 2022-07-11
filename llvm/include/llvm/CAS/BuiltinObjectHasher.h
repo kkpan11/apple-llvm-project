@@ -69,9 +69,7 @@ private:
     updateArray(makeArrayRef(String.data(), String.size()));
   }
 
-  void updateRef(const CASDB &CAS, ObjectRef Ref) {
-    updateID(CAS.getObjectID(Ref));
-  }
+  void updateRef(const CASDB &CAS, ObjectRef Ref) { updateID(CAS.getID(Ref)); }
 
   void updateID(const CASID &ID) {
     // NOTE: Does not hash the size of the hash. That's a CAS implementation

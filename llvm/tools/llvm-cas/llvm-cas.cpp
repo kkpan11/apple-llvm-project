@@ -186,7 +186,7 @@ int listTree(CASDB &CAS, CASID ID) {
   ExitOnError ExitOnErr("llvm-cas: ls-tree: ");
 
   TreeSchema Schema(CAS);
-  ObjectProxy TreeN = ExitOnErr(CAS.loadObjectProxy(ID));
+  ObjectProxy TreeN = ExitOnErr(CAS.getProxy(ID));
   TreeNodeProxy Tree = ExitOnErr(Schema.loadTree(TreeN));
   ExitOnErr(Tree.forEachEntry([&](const NamedTreeEntry &Entry) {
     Entry.print(llvm::outs(), CAS);
@@ -200,7 +200,7 @@ int listTreeRecursively(CASDB &CAS, CASID ID) {
   ExitOnError ExitOnErr("llvm-cas: ls-tree-recursively: ");
   TreeSchema Schema(CAS);
   ExitOnErr(Schema.walkFileTreeRecursively(
-      CAS, ExitOnErr(CAS.loadObjectProxy(ID)),
+      CAS, ExitOnErr(CAS.getProxy(ID)),
       [&](const NamedTreeEntry &Entry, Optional<TreeNodeProxy> Tree) -> Error {
         if (Entry.getKind() != TreeEntry::Tree) {
           Entry.print(llvm::outs(), CAS);
@@ -238,14 +238,14 @@ int makeBlob(CASDB &CAS, StringRef DataPath) {
   std::unique_ptr<MemoryBuffer> Buffer =
       ExitOnErr(openBuffer(DataPath));
 
-  ObjectProxy Blob = ExitOnErr(CAS.createObject(None, Buffer->getBuffer()));
+  ObjectProxy Blob = ExitOnErr(CAS.create(None, Buffer->getBuffer()));
   llvm::outs() << Blob.getID() << "\n";
   return 0;
 }
 
 int catNodeData(CASDB &CAS, CASID ID) {
   ExitOnError ExitOnErr("llvm-cas: cat-node-data: ");
-  llvm::outs() << ExitOnErr(CAS.loadObjectProxy(ID)).getData();
+  llvm::outs() << ExitOnErr(CAS.getProxy(ID)).getData();
   return 0;
 }
 
@@ -258,7 +258,7 @@ static StringRef getKindString(CASDB &CAS, ObjectHandle Object) {
 
 int printKind(CASDB &CAS, CASID ID) {
   ExitOnError ExitOnErr("llvm-cas: print-kind: ");
-  Optional<ObjectHandle> Object = ExitOnErr(CAS.loadObject(ID));
+  Optional<ObjectHandle> Object = ExitOnErr(CAS.load(ID));
   if (!Object)
     ExitOnErr(createStringError(inconvertibleErrorCode(), "unknown object"));
 
@@ -269,7 +269,7 @@ int printKind(CASDB &CAS, CASID ID) {
 int listObjectReferences(CASDB &CAS, CASID ID) {
   ExitOnError ExitOnErr("llvm-cas: ls-node-refs: ");
 
-  ObjectProxy Object = ExitOnErr(CAS.loadObjectProxy(ID));
+  ObjectProxy Object = ExitOnErr(CAS.getProxy(ID));
   ExitOnErr(Object.forEachReferenceID([&](CASID ID) -> Error {
     llvm::outs() << ID << "\n";
     return Error::success();
@@ -293,8 +293,7 @@ static int makeNode(CASDB &CAS, ArrayRef<std::string> Objects, StringRef DataPat
   }
 
   ExitOnError ExitOnErr("llvm-cas: make-node: ");
-  ObjectProxy Object =
-      ExitOnErr(CAS.createObjectFromIDs(IDs, Data->getBuffer()));
+  ObjectProxy Object = ExitOnErr(CAS.createFromIDs(IDs, Data->getBuffer()));
   llvm::outs() << Object.getID() << "\n";
   return 0;
 }
@@ -323,7 +322,7 @@ static GraphInfo traverseObjectGraph(CASDB &CAS, CASID TopLevel) {
     }
     Worklist.back().second = true;
     CASID ID = Worklist.back().first;
-    Optional<ObjectHandle> Object = ExitOnErr(CAS.loadObject(ID));
+    Optional<ObjectHandle> Object = ExitOnErr(CAS.load(ID));
     if (!Object)
       continue;
 
@@ -331,14 +330,14 @@ static GraphInfo traverseObjectGraph(CASDB &CAS, CASID TopLevel) {
     if (Schema.isNode(*Object)) {
       TreeNodeProxy Tree = ExitOnErr(Schema.loadTree(*Object));
       ExitOnErr(Tree.forEachEntry([&](const NamedTreeEntry &Entry) {
-        push(CAS.getObjectID(Entry.getRef()));
+        push(CAS.getID(Entry.getRef()));
         return Error::success();
       }));
       continue;
     }
 
     ExitOnErr(CAS.forEachRef(*Object, [&](ObjectRef Ref) {
-      push(CAS.getObjectID(Ref));
+      push(CAS.getID(Ref));
       return Error::success();
     }));
   }
@@ -355,7 +354,7 @@ static void printDiffs(CASDB &CAS, const GraphInfo &Baseline,
       continue;
 
     StringRef KindString;
-    if (Optional<ObjectHandle> Object = ExitOnErr(CAS.loadObject(ID)))
+    if (Optional<ObjectHandle> Object = ExitOnErr(CAS.load(ID)))
       KindString = getKindString(CAS, *Object);
 
     outs() << llvm::formatv("{0}{1,-4} {2}\n", NewName, KindString, ID);
@@ -456,7 +455,7 @@ static int mergeTrees(CASDB &CAS, ArrayRef<std::string> Objects) {
   }
 
   auto Ref = ExitOnErr(Builder.create(CAS));
-  outs() << CAS.getObjectID(Ref) << "\n";
+  outs() << CAS.getID(Ref) << "\n";
   return 0;
 }
 
@@ -477,7 +476,7 @@ int getCASIDForFile(CASDB &CAS, CASID ID, StringRef Path) {
 
 int validateObject(CASDB &CAS, CASID ID) {
   ExitOnError ExitOnErr("llvm-cas: validate: ");
-  ExitOnErr(CAS.validateObject(ID));
+  ExitOnErr(CAS.validate(ID));
   outs() << ID << ": validated successfully\n";
   return 0;
 }

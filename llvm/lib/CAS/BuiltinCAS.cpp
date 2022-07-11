@@ -52,8 +52,8 @@ static size_t getPageSize() {
 }
 
 Expected<ObjectHandle>
-BuiltinCAS::storeObjectFromOpenFileImpl(sys::fs::file_t FD,
-                                        Optional<sys::fs::file_status> Status) {
+BuiltinCAS::storeFromOpenFileImpl(sys::fs::file_t FD,
+                                  Optional<sys::fs::file_status> Status) {
   int PageSize = getPageSize();
 
   if (!Status) {
@@ -68,7 +68,7 @@ BuiltinCAS::storeObjectFromOpenFileImpl(sys::fs::file_t FD,
     SmallString<4 * 4096 * 2> Data;
     if (Error E = sys::fs::readNativeFileToEOF(FD, Data, MinMappedSize))
       return std::move(E);
-    return storeObject(None, makeArrayRef(Data.data(), Data.size()));
+    return store(None, makeArrayRef(Data.data(), Data.size()));
   };
 
   // Check whether we can trust the size from stat.
@@ -93,14 +93,14 @@ BuiltinCAS::storeObjectFromOpenFileImpl(sys::fs::file_t FD,
   HashType ComputedHash =
       BuiltinObjectHasher<HasherT>::hashObject(*this, None, Data);
   if (!isAligned(Align(PageSize), Data.size()) && Data.end()[0] == 0)
-    return storeObjectFromNullTerminatedRegion(ComputedHash, std::move(Map));
-  return storeObjectImpl(ComputedHash, None, Data);
+    return storeFromNullTerminatedRegion(ComputedHash, std::move(Map));
+  return storeImpl(ComputedHash, None, Data);
 }
 
-Expected<ObjectHandle> BuiltinCAS::storeObject(ArrayRef<ObjectRef> Refs,
-                                               ArrayRef<char> Data) {
-  return storeObjectImpl(
-      BuiltinObjectHasher<HasherT>::hashObject(*this, Refs, Data), Refs, Data);
+Expected<ObjectHandle> BuiltinCAS::store(ArrayRef<ObjectRef> Refs,
+                                         ArrayRef<char> Data) {
+  return storeImpl(BuiltinObjectHasher<HasherT>::hashObject(*this, Refs, Data),
+                   Refs, Data);
 }
 
 uint64_t BuiltinCAS::readDataImpl(ObjectHandle Node, raw_ostream &OS,
@@ -112,8 +112,8 @@ uint64_t BuiltinCAS::readDataImpl(ObjectHandle Node, raw_ostream &OS,
   return Data.size();
 }
 
-Error BuiltinCAS::validateObject(const CASID &ID) {
-  auto Handle = loadObject(ID);
+Error BuiltinCAS::validate(const CASID &ID) {
+  auto Handle = load(ID);
   if (!Handle)
     return Handle.takeError();
 

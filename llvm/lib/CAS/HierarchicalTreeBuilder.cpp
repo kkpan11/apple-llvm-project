@@ -71,7 +71,7 @@ Expected<ObjectHandle> HierarchicalTreeBuilder::create(CASDB &CAS) {
   TreeSchema Schema(CAS);
   for (const auto &TreeContent : TreeContents) {
     Optional<ObjectHandle> LoadedTree;
-    if (Error E = CAS.loadObject(*TreeContent.getRef()).moveInto(LoadedTree))
+    if (Error E = CAS.load(*TreeContent.getRef()).moveInto(LoadedTree))
       return std::move(E);
     StringRef Path = TreeContent.getPath();
     Error E = Schema.walkFileTreeRecursively(
@@ -259,5 +259,5 @@ Expected<ObjectHandle> HierarchicalTreeBuilder::create(CASDB &CAS) {
     T->Ref = ExpectedTree->getRef();
   }
 
-  return cantFail(CAS.loadObject(*Root.Ref));
+  return cantFail(CAS.load(*Root.Ref));
 }

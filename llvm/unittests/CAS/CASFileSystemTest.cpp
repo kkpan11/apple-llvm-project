@@ -43,8 +43,7 @@ bufferHasContent(ErrorOr<std::unique_ptr<MemoryBuffer>> ErrorOrBuffer,
 }
 
 static ObjectRef createBlobUnchecked(CASDB &CAS, StringRef Content) {
-  return CAS.getReference(
-      llvm::cantFail(CAS.storeObjectFromString(None, Content)));
+  return CAS.getReference(llvm::cantFail(CAS.storeFromString(None, Content)));
 }
 
 static Expected<ObjectHandle> createEmptyTree(CASDB &CAS) {
@@ -112,7 +111,7 @@ static Expected<std::unique_ptr<vfs::FileSystem>>
 createFS(CASDB &CAS, Expected<ObjectHandle> Tree) {
   if (!Tree)
     return Tree.takeError();
-  return createCASFileSystem(CAS, CAS.getObjectID(*Tree));
+  return createCASFileSystem(CAS, CAS.getID(*Tree));
 }
 
 template <class IteratorType>

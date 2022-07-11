@@ -24,11 +24,11 @@ TEST(TreeSchemaTest, Trees) {
 
   auto createBlobInBoth = [&](StringRef Content) {
     Optional<ObjectHandle> H1, H2;
-    EXPECT_THAT_ERROR(CAS1->storeObjectFromString(None, Content).moveInto(H1),
+    EXPECT_THAT_ERROR(CAS1->storeFromString(None, Content).moveInto(H1),
                       Succeeded());
-    EXPECT_THAT_ERROR(CAS2->storeObjectFromString(None, Content).moveInto(H2),
+    EXPECT_THAT_ERROR(CAS2->storeFromString(None, Content).moveInto(H2),
                       Succeeded());
-    EXPECT_EQ(CAS1->getObjectID(*H1), CAS2->getObjectID(*H2));
+    EXPECT_EQ(CAS1->getID(*H1), CAS2->getID(*H2));
     return CAS1->getReference(*H1);
   };
 
@@ -61,7 +61,7 @@ TEST(TreeSchemaTest, Trees) {
   for (ArrayRef<NamedTreeEntry> Entries : FlatTreeEntries) {
     Optional<TreeNodeProxy> H;
     ASSERT_THAT_ERROR(Schema1.storeTree(Entries).moveInto(H), Succeeded());
-    FlatIDs.push_back(CAS1->getObjectID(*H));
+    FlatIDs.push_back(CAS1->getID(*H));
     FlatRefs.push_back(CAS1->getReference(*H));
   }
 
@@ -88,7 +88,7 @@ TEST(TreeSchemaTest, Trees) {
 
   // Run validation.
   for (int I = 1, E = FlatIDs.size(); I != E; ++I)
-    ASSERT_THAT_ERROR(CAS1->validateObject(FlatIDs[I]), Succeeded());
+    ASSERT_THAT_ERROR(CAS1->validate(FlatIDs[I]), Succeeded());
 
   // Confirm these trees don't exist in a fresh CAS instance. Skip the first
   // tree, which is empty and could be implicitly in some CAS.
@@ -104,7 +104,7 @@ TEST(TreeSchemaTest, Trees) {
       SmallVector<NamedTreeEntry> NewEntries;
       for (const NamedTreeEntry &Entry : FlatTreeEntries[I - 1]) {
         Optional<ObjectRef> NewRef =
-            CAS->getReference(CAS1->getObjectID(Entry.getRef()));
+            CAS->getReference(CAS1->getID(Entry.getRef()));
         ASSERT_TRUE(NewRef);
         NewEntries.emplace_back(*NewRef, Entry.getKind(), Entry.getName());
       }
@@ -168,7 +168,7 @@ TEST(TreeSchemaTest, Trees) {
       SmallVector<NamedTreeEntry> NewEntries;
       for (const NamedTreeEntry &Entry : Entries) {
         Optional<ObjectRef> NewRef =
-            CAS->getReference(CAS1->getObjectID(Entry.getRef()));
+            CAS->getReference(CAS1->getID(Entry.getRef()));
         ASSERT_TRUE(NewRef);
         NewEntries.emplace_back(*NewRef, Entry.getKind(), Entry.getName());
       }
@@ -179,7 +179,7 @@ TEST(TreeSchemaTest, Trees) {
       ASSERT_THAT_ERROR(Schema.storeTree(NewEntries).moveInto(Tree),
                         Succeeded());
       ASSERT_EQ(*ID, Tree->getID());
-      ASSERT_THAT_ERROR(CAS->validateObject(*ID), Succeeded());
+      ASSERT_THAT_ERROR(CAS->validate(*ID), Succeeded());
       Tree.reset();
       Optional<ObjectRef> Ref = CAS->getReference(*ID);
       ASSERT_TRUE(Ref);
@@ -193,7 +193,7 @@ TEST(TreeSchemaTest, Trees) {
 TEST(TreeSchemaTest, Lookup) {
   std::unique_ptr<CASDB> CAS = createInMemoryCAS();
   Optional<ObjectHandle> Node;
-  EXPECT_THAT_ERROR(CAS->storeObjectFromString(None, "blob").moveInto(Node),
+  EXPECT_THAT_ERROR(CAS->storeFromString(None, "blob").moveInto(Node),
                     Succeeded());
   ObjectRef Blob = CAS->getReference(*Node);
   SmallVector<NamedTreeEntry> FlatTreeEntries = {
@@ -228,7 +228,7 @@ TEST(TreeSchemaTest, walkFileTreeRecursively) {
   std::unique_ptr<CASDB> CAS = createInMemoryCAS();
 
   auto make = [&](StringRef Content) {
-    return CAS->getReference(cantFail(CAS->storeObjectFromString(None, Content)));
+    return CAS->getReference(cantFail(CAS->storeFromString(None, Content)));
   };
 
   HierarchicalTreeBuilder Builder;

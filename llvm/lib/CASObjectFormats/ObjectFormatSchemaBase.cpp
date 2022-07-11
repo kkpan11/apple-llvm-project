@@ -25,7 +25,7 @@ void casobjectformats::addObjectFormatSchemas(cas::SchemaPool &Pool) {
 Expected<std::unique_ptr<reader::CASObjectReader>>
 casobjectformats::createObjectReader(const cas::SchemaPool &Pool,
                                      cas::CASID ID) {
-  Expected<cas::ObjectProxy> Ref = Pool.getCAS().loadObjectProxy(ID);
+  Expected<cas::ObjectProxy> Ref = Pool.getCAS().getProxy(ID);
   if (auto E = Ref.takeError())
     return std::move(E);
   if (auto *Schema =

@@ -199,7 +199,7 @@ public:
   /// Get the contents of the file as a \p MemoryBuffer.
   ErrorOr<std::unique_ptr<MemoryBuffer>> getBuffer(const Twine &RequestedName,
                                                    int64_t, bool, bool) final {
-    Expected<ObjectHandle> Object = DB.loadObject(*Entry->getRef());
+    Expected<ObjectHandle> Object = DB.load(*Entry->getRef());
     if (!Object)
       return errorToErrorCode(Object.takeError());
     assert(DB.getNumRefs(*Object) == 0 && "Expected a leaf node");
@@ -334,7 +334,7 @@ Expected<FileSystemCache::DirectoryEntry *>
 CachingOnDiskFileSystemImpl::makeSymlinkTo(DirectoryEntry &Parent,
                                            StringRef TreePath,
                                            StringRef Target) {
-  Expected<ObjectHandle> Node = DB.storeObjectFromString(None, Target);
+  Expected<ObjectHandle> Node = DB.storeFromString(None, Target);
   if (!Node)
     return Node.takeError();
   return &Cache->makeSymlink(Parent, TreePath, DB.getReference(*Node),
@@ -345,7 +345,7 @@ Expected<FileSystemCache::DirectoryEntry *>
 CachingOnDiskFileSystemImpl::makeFile(DirectoryEntry &Parent,
                                       StringRef TreePath, sys::fs::file_t F,
                                       sys::fs::file_status Status) {
-  Expected<ObjectHandle> Node = DB.storeObjectFromOpenFile(F, Status);
+  Expected<ObjectHandle> Node = DB.storeFromOpenFile(F, Status);
   if (!Node)
     return Node.takeError();
 
@@ -406,7 +406,7 @@ CachingOnDiskFileSystemImpl::statusAndFileID(const Twine &Path,
   if (!StatusOrErr)
     return StatusOrErr.getError();
   if (Entry->isFile())
-    FileID = DB.getObjectID(*Entry->getRef());
+    FileID = DB.getID(*Entry->getRef());
   return StatusOrErr;
 }
 

@@ -102,7 +102,7 @@ public:
   /// Get the contents of the file as a \p MemoryBuffer.
   ErrorOr<std::unique_ptr<MemoryBuffer>> getBuffer(const Twine &Name, int64_t,
                                                    bool, bool) final {
-    Expected<ObjectHandle> Object = DB.loadObject(*Entry->getRef());
+    Expected<ObjectHandle> Object = DB.load(*Entry->getRef());
     if (!Object)
       return errorToErrorCode(Object.takeError());
     assert(DB.getNumRefs(*Object) == 0 && "Expected a leaf node");
@@ -179,7 +179,7 @@ Error CASFileSystem::loadDirectory(DirectoryEntry &Parent) {
     }
     llvm_unreachable("invalid tree type");
   };
-  Expected<ObjectHandle> Object = DB.loadObject(*Parent.getRef());
+  Expected<ObjectHandle> Object = DB.load(*Parent.getRef());
   if (!Object)
     return Object.takeError();
 
@@ -187,7 +187,7 @@ Error CASFileSystem::loadDirectory(DirectoryEntry &Parent) {
   if (!Schema.isNode(*Object))
     report_fatal_error(createStringError(
         inconvertibleErrorCode(),
-        "invalid tree '" + DB.getObjectID(*Object).toString() + "'"));
+        "invalid tree '" + DB.getID(*Object).toString() + "'"));
 
   // Lock and check for a race.
   ObjectProxy TreeN = ObjectProxy::load(DB, *Object);
@@ -211,7 +211,7 @@ Error CASFileSystem::loadDirectory(DirectoryEntry &Parent) {
 Error CASFileSystem::loadFile(DirectoryEntry &Entry) {
   assert(Entry.isFile());
 
-  Expected<ObjectHandle> File = DB.loadObject(*Entry.getRef());
+  Expected<ObjectHandle> File = DB.load(*Entry.getRef());
   if (!File)
     return File.takeError();
 
@@ -222,7 +222,7 @@ Error CASFileSystem::loadFile(DirectoryEntry &Entry) {
 Error CASFileSystem::loadSymlink(DirectoryEntry &Entry) {
   assert(Entry.isSymlink());
 
-  Expected<ObjectHandle> File = DB.loadObject(*Entry.getRef());
+  Expected<ObjectHandle> File = DB.load(*Entry.getRef());
   if (!File)
     return File.takeError();
 
@@ -272,7 +272,7 @@ Optional<CASID> CASFileSystem::getFileCASID(const Twine &Path) {
     return None; // Only return CASIDs for files.
   if (Entry->isSymlink())
     return None; // Broken symlink.
-  return DB.getObjectID(*Entry->getRef());
+  return DB.getID(*Entry->getRef());
 }
 
 Expected<const vfs::CachedDirectoryEntry *>

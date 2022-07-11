@@ -69,11 +69,11 @@ static void printTreeEntryKind(raw_ostream &OS, TreeEntry::EntryKind Kind) {
 
 void cas::NamedTreeEntry::print(raw_ostream &OS, CASDB &CAS) const {
   printTreeEntryKind(OS, getKind());
-  OS << " " << CAS.getObjectID(getRef()) << " " << Name;
+  OS << " " << CAS.getID(getRef()) << " " << Name;
   if (getKind() == TreeEntry::Tree)
     OS << "/";
   if (getKind() == TreeEntry::Symlink) {
-    ObjectHandle Target = cantFail(CAS.loadObject(getRef()));
+    ObjectHandle Target = cantFail(CAS.load(getRef()));
     OS << " -> ";
     CAS.readData(Target, OS);
   }

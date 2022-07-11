@@ -26,19 +26,6 @@ namespace cas {
 
 class CASDB;
 
-/// Kind of CAS object.
-///
-/// FIXME: Remove.
-enum class ObjectKind {
-  /// A node, with data and zero or more references.
-  Node,
-
-  /// Filesystem tree, with named references and entry types.
-  ///
-  /// FIXME: Move into a Filesystem schema.
-  Tree,
-};
-
 class ObjectProxy;
 
 /// Content-addressable storage for objects.
@@ -62,15 +49,6 @@ class ObjectProxy;
 ///     - \a loadObject(const CASID&) looks up an object by its UID.
 /// - Objects can reference other objects, forming an arbitrary DAG.
 ///
-/// There are currently three kinds of objects.
-///
-/// - ObjectKind::Node: Contains 0+ bytes of data and a list of 0+ \a
-///   ObjectRef. A \a ObjectRef points at another CAS object. Created with \a
-///   storeNode().
-/// - ObjectKind::Tree: Sorted list of 0+ \a NamedTreeEntry, which associates a
-///   name, another CAS object, and a \a TreeEntry::EntryKind. Designed to
-///   represent a filesystem in the CAS. Created with \a storeTree().
-///
 /// The \a CASDB interface has a few ways of referencing objects:
 ///
 /// - \a ObjectRef encapsulates a reference to something in the CAS. If you
@@ -80,15 +58,9 @@ class ObjectProxy;
 ///   or introduce latency (if downloading from a remote store).
 /// - \a ObjectHandle encapulates a *loaded* object in the CAS. You need one of
 ///   these to inspect the content of an object: to look at its stored
-///   data and references. In practice, right now you want a subclass:
-///     - \a NodeHandle: a handle for a node. Returned by \a
-///       storeNode() and the variant accessors.
-///     - \a TreeHandle: a handle for a tree. Returned by \a
-///       storeTree() and the variant accessors.
-///     - \a AnyObjectHandle: a variant between \a ObjectHandle and its
-///       non-variant subclasses. Returned by \a loadObject().
+///   data and references.
 /// - \a CASID: the UID for an object in the CAS, obtained through \a
-///   CASDB::getObjectID() or \a CASDB::parseID(). This is a valid CAS
+///   CASDB::getID() or \a CASDB::parseID(). This is a valid CAS
 ///   identifier, but may reference an object that is unknown to this CAS
 ///   instance.
 ///
@@ -100,21 +72,14 @@ class ObjectProxy;
 ///   is independent of the CAS (it can live longer).
 /// - \a getDataString() and \a getDataArray() return StringRef/ArrayRef with
 ///   lifetime is guaranteed to last as long as \a CASDB.
-/// - \a readRef() and \a forEachRef() iterate through the references in a
-///   node. There is no lifetime assumption.
-/// - \a loadTreeEntry(), \a lookupTreeEntry(), and \a forEachTreeEntry()
-///   iterate through the entries in a tree. The names are assumed to have the
-///   same lifetime as \a getDataString() would give.
+/// - \a readRef() and \a forEachRef() iterate through the references in an
+///   object. There is no lifetime assumption.
 ///
 /// Both ObjectRef and ObjectHandle are lightweight, wrapping a `uint64_t`.
 /// Doing anything with them requires a CASDB. As a convenience:
 ///
-/// - ObjectProxy (currently \a NodeProxy and \a TreeProxy) pairs
-///   an ObjectHandle (subclass) with a CASDB, and wraps access APIs to avoid
-///   having to pass extra parameters.
-///
-/// TODO: Remove Tree, moving these concepts to a filesystem schema
-/// that sits on top of the CAS.
+/// - ObjectProxy pairs an ObjectHandle (subclass) with a CASDB, and wraps
+/// access APIs to avoid having to pass extra parameters.
 ///
 /// TODO: Remove CASID.
 ///
@@ -170,15 +135,14 @@ public:
   virtual Expected<CASID> parseID(StringRef ID) = 0;
 
   /// FIXME: Remove these.
-  Expected<ObjectProxy> createObject(ArrayRef<ObjectRef> Refs, StringRef Data);
-  Expected<ObjectProxy> createObjectFromIDs(ArrayRef<CASID> IDs,
-                                            StringRef Data);
-  virtual Expected<ObjectHandle> storeObject(ArrayRef<ObjectRef> Refs,
-                                             ArrayRef<char> Data) = 0;
+  Expected<ObjectProxy> create(ArrayRef<ObjectRef> Refs, StringRef Data);
+  Expected<ObjectProxy> createFromIDs(ArrayRef<CASID> IDs, StringRef Data);
+  virtual Expected<ObjectHandle> store(ArrayRef<ObjectRef> Refs,
+                                       ArrayRef<char> Data) = 0;
 
-  Expected<ObjectHandle> storeObjectFromString(ArrayRef<ObjectRef> Refs,
-                                               StringRef String) {
-    return storeObject(Refs, arrayRefFromStringRef<char>(String));
+  Expected<ObjectHandle> storeFromString(ArrayRef<ObjectRef> Refs,
+                                         StringRef String) {
+    return store(Refs, arrayRefFromStringRef<char>(String));
   }
 
   /// Default implementation reads \p FD and calls \a storeNode(). Does not
@@ -191,15 +155,15 @@ public:
   ///
   /// Returns the \a CASID and the size of the file.
   Expected<ObjectHandle>
-  storeObjectFromOpenFile(sys::fs::file_t FD,
-                          Optional<sys::fs::file_status> Status = None) {
-    return storeObjectFromOpenFileImpl(FD, Status);
+  storeFromOpenFile(sys::fs::file_t FD,
+                    Optional<sys::fs::file_status> Status = None) {
+    return storeFromOpenFileImpl(FD, Status);
   }
 
 protected:
   virtual Expected<ObjectHandle>
-  storeObjectFromOpenFileImpl(sys::fs::file_t FD,
-                              Optional<sys::fs::file_status> Status);
+  storeFromOpenFileImpl(sys::fs::file_t FD,
+                        Optional<sys::fs::file_status> Status);
 
   /// Allow CASDB implementations to create internal handles.
 #define MAKE_CAS_HANDLE_CONSTRUCTOR(HandleKind)                                \
@@ -212,8 +176,8 @@ protected:
 
 public:
   /// Get an ID for \p Ref.
-  virtual CASID getObjectID(ObjectRef Ref) const = 0;
-  virtual CASID getObjectID(ObjectHandle Handle) const = 0;
+  virtual CASID getID(ObjectRef Ref) const = 0;
+  virtual CASID getID(ObjectHandle Handle) const = 0;
 
   /// Get a reference to the object called \p ID.
   ///
@@ -225,22 +189,22 @@ public:
   /// Load the object referenced by \p Ref.
   ///
   /// Errors if the object cannot be loaded.
-  virtual Expected<ObjectHandle> loadObject(ObjectRef Ref) = 0;
+  virtual Expected<ObjectHandle> load(ObjectRef Ref) = 0;
 
   /// Load the object called \p ID.
   ///
   /// Returns \c None if it's unknown in this CAS instance.
   ///
   /// Errors if the object cannot be loaded.
-  Expected<Optional<ObjectHandle>> loadObject(const CASID &ID);
+  Expected<Optional<ObjectHandle>> load(const CASID &ID);
 
   static Error createUnknownObjectError(CASID ID);
 
-  Expected<ObjectProxy> loadObjectProxy(CASID ID);
-  Expected<ObjectProxy> loadObjectProxy(ObjectRef Ref);
-  Expected<ObjectProxy> loadObjectProxy(Expected<ObjectHandle> H);
+  Expected<ObjectProxy> getProxy(CASID ID);
+  Expected<ObjectProxy> getProxy(ObjectRef Ref);
+  Expected<ObjectProxy> getProxy(Expected<ObjectHandle> H);
 
-  virtual Error validateObject(const CASID &ID) = 0;
+  virtual Error validate(const CASID &ID) = 0;
 
 public:
   /// Get the size of some data.
@@ -316,7 +280,7 @@ template <class HandleT> class ProxyBase : public HandleT {
 public:
   const CASDB &getCAS() const { return *CAS; }
   CASID getID() const {
-    return CAS->getObjectID(*static_cast<const ObjectHandle *>(this));
+    return CAS->getID(*static_cast<const ObjectHandle *>(this));
   }
   ObjectRef getRef() const {
     return CAS->getReference(*static_cast<const ObjectHandle *>(this));
@@ -360,7 +324,7 @@ public:
 
   // FIXME: Remove this.
   CASID getReferenceID(size_t I) const {
-    Optional<CASID> ID = getCAS().getObjectID(getReference(I));
+    Optional<CASID> ID = getCAS().getID(getReference(I));
     assert(ID && "Expected reference to be first-class object");
     return *ID;
   }
@@ -374,7 +338,7 @@ public:
   Error forEachReferenceID(function_ref<Error(CASID)> Callback) const {
     return getCAS().forEachRef(
         *static_cast<const ObjectHandle *>(this), [&](ObjectRef Ref) {
-          Optional<CASID> ID = getCAS().getObjectID(Ref);
+          Optional<CASID> ID = getCAS().getID(Ref);
           assert(ID && "Expected reference to be first-class object");
           return Callback(*ID);
         });

@@ -355,7 +355,7 @@ static InputFile *addFile(StringRef path, ForceLoad forceLoadArchive,
               error(archiveName + ": archive member " + memberName +
                     " failed reading CAS-ID: " + toString(ID.takeError()));
             }
-            auto blobRef = CAS.loadObjectProxy(*ID);
+            auto blobRef = CAS.getProxy(*ID);
             if (!blobRef) {
               consumeError(blobRef.takeError());
               error(archiveName + ": archive member " + memberName +
@@ -425,7 +425,7 @@ static InputFile *addFile(StringRef path, ForceLoad forceLoadArchive,
       error(path + ": unknown object '" + ID.toString() + "'");
       break;
     }
-    Expected<cas::ObjectProxy> blobRef = CAS.loadObjectProxy(*Node);
+    Expected<cas::ObjectProxy> blobRef = CAS.getProxy(*Node);
     if (!blobRef) {
       error(path +
             ": unexpected CASID file error: " + toString(blobRef.takeError()));
@@ -510,8 +510,7 @@ static Error addCASTree(ObjectFormatSchemaPool &CASSchemas, CASID ID) {
   Optional<cas::ObjectRef> Object = CASSchemas.getCAS().getReference(ID);
   if (!Object)
     return createStringError(inconvertibleErrorCode(), "unknown tree root");
-  Expected<cas::ObjectProxy> Tree =
-      CASSchemas.getCAS().loadObjectProxy(*Object);
+  Expected<cas::ObjectProxy> Tree = CASSchemas.getCAS().getProxy(*Object);
   if (!Tree)
     return Tree.takeError();
   TreeSchema Schema(CASSchemas.getCAS());
@@ -1324,17 +1323,16 @@ static CASID createResultCacheKey(CASDB &CAS, cas::ObjectRef rootID,
 
   HierarchicalTreeBuilder builder;
   builder.push(rootID, TreeEntry::Tree, "filesystem");
-  builder.push(
-      cantFail(CAS.createObject(
-                   None, createResponseFile(args, /*isForCacheKey=*/true)))
-          .getRef(),
-      TreeEntry::Regular, "arguments");
+  builder.push(cantFail(CAS.create(None, createResponseFile(
+                                             args, /*isForCacheKey=*/true)))
+                   .getRef(),
+               TreeEntry::Regular, "arguments");
   std::string version = getLLDVersion();
   { raw_string_ostream(version) << '-' << CACHE_FORMAT_VERSION; }
-  builder.push(cantFail(CAS.createObject(None, version)).getRef(),
-               TreeEntry::Regular, "version");
+  builder.push(cantFail(CAS.create(None, version)).getRef(), TreeEntry::Regular,
+               "version");
 
-  return CAS.getObjectID(cantFail(builder.create(CAS)));
+  return CAS.getID(cantFail(builder.create(CAS)));
 }
 
 static Error replayResult(CASDB &CAS, CASID resultID) {
@@ -1473,7 +1471,7 @@ static bool linkWithResultCaching(InputArgList &args, bool canExitEarly,
       return false;
     }
 
-    Expected<ObjectProxy> blob = CAS.createObject(None, outBuffer->getBuffer());
+    Expected<ObjectProxy> blob = CAS.create(None, outBuffer->getBuffer());
     if (!blob) {
       error("error creating CAS blob for output: " +
             toString(blob.takeError()));
@@ -1488,7 +1486,7 @@ static bool linkWithResultCaching(InputArgList &args, bool canExitEarly,
       return false;
     }
 
-    cas::CASID resultID = CAS.getObjectID(*resultTree);
+    cas::CASID resultID = CAS.getID(*resultTree);
     if (Error E = CAS.putCachedResult(cacheKey, resultID)) {
       error("error storing cached result: " + toString(std::move(E)));
       return false;

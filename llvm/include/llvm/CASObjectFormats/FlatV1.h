@@ -113,13 +113,12 @@ public:
 
   ObjectFileSchema(cas::CASDB &CAS);
 
-  Expected<ObjectFormatObjectProxy> createNode(ArrayRef<cas::CASID> IDs,
-                                               StringRef Data) const {
-    return ObjectFormatObjectProxy::get(*this,
-                                        CAS.createObjectFromIDs(IDs, Data));
+  Expected<ObjectFormatObjectProxy> create(ArrayRef<cas::CASID> IDs,
+                                           StringRef Data) const {
+    return ObjectFormatObjectProxy::get(*this, CAS.createFromIDs(IDs, Data));
   }
-  Expected<ObjectFormatObjectProxy> getNode(cas::CASID ID) const {
-    return ObjectFormatObjectProxy::get(*this, CAS.loadObjectProxy(ID));
+  Expected<ObjectFormatObjectProxy> get(cas::CASID ID) const {
+    return ObjectFormatObjectProxy::get(*this, CAS.getProxy(ID));
   }
 
 private:
@@ -172,7 +171,7 @@ public:
   static Expected<NameRef> create(CompileUnitBuilder &CUB, StringRef Name);
   static Expected<NameRef> get(Expected<ObjectFormatObjectProxy> Ref);
   static Expected<NameRef> get(const ObjectFileSchema &Schema, cas::CASID ID) {
-    return get(Schema.getNode(ID));
+    return get(Schema.get(ID));
   }
 
 private:
@@ -191,7 +190,7 @@ public:
   static Expected<SectionRef> get(Expected<ObjectFormatObjectProxy> Ref);
   static Expected<SectionRef> get(const ObjectFileSchema &Schema,
                                   cas::CASID ID) {
-    return get(Schema.getNode(ID));
+    return get(Schema.get(ID));
   }
 
   Expected<reader::CASSection> materialize() const;
@@ -212,7 +211,7 @@ public:
 
   static Expected<BlockRef> get(Expected<ObjectFormatObjectProxy> Ref);
   static Expected<BlockRef> get(const ObjectFileSchema &Schema, cas::CASID ID) {
-    return get(Schema.getNode(ID));
+    return get(Schema.get(ID));
   }
 
   Expected<reader::CASBlock> materializeBlock(const FlatV1ObjectReader &Reader,
@@ -238,7 +237,7 @@ public:
   static Expected<BlockContentRef> get(Expected<ObjectFormatObjectProxy> Ref);
   static Expected<BlockContentRef> get(const ObjectFileSchema &Schema,
                                        cas::CASID ID) {
-    return get(Schema.getNode(ID));
+    return get(Schema.get(ID));
   }
 
 private:
@@ -258,7 +257,7 @@ public:
   static Expected<SymbolRef> get(Expected<ObjectFormatObjectProxy> Ref);
   static Expected<SymbolRef> get(const ObjectFileSchema &Schema,
                                  cas::CASID ID) {
-    return get(Schema.getNode(ID));
+    return get(Schema.get(ID));
   }
 
   Expected<reader::CASSymbol> materialize(const FlatV1ObjectReader &Reader,
@@ -283,7 +282,7 @@ public:
   static Expected<CompileUnitRef> get(Expected<ObjectFormatObjectProxy> Ref);
   static Expected<CompileUnitRef> get(const ObjectFileSchema &Schema,
                                       cas::CASID ID) {
-    return get(Schema.getNode(ID));
+    return get(Schema.get(ID));
   }
 
   static Expected<CompileUnitRef> create(const ObjectFileSchema &Schema,
@@ -375,7 +374,7 @@ public:
     auto IDI = getIdx(IdxI);
     if (!IDI)
       return IDI.takeError();
-    return getNode<SectionRef>(*IDI);
+    return get<SectionRef>(*IDI);
   }
 
   Expected<unsigned> getBlockDataIndex(unsigned BlockI,
@@ -389,7 +388,7 @@ public:
     auto IDI = getBlockDataIndex(BlockI, OffsetI);
     if (!IDI)
       return IDI.takeError();
-    return getNode<RefT>(*IDI);
+    return get<RefT>(*IDI);
   }
 
   Expected<unsigned> getSymbolDataIndex(unsigned SymbolI,
@@ -403,7 +402,7 @@ public:
     auto IDI = getSymbolDataIndex(SymbolI, OffsetI);
     if (!IDI)
       return IDI.takeError();
-    return getNode<RefT>(*IDI);
+    return get<RefT>(*IDI);
   }
 
   bool hasIndirectSymbolNames() const { return HasIndirectSymbolNames; }
@@ -453,7 +452,7 @@ private:
     return IDs[IDIndex];
   }
 
-  template <typename RefT> Expected<RefT> getNode(unsigned I) const {
+  template <typename RefT> Expected<RefT> get(unsigned I) const {
     auto ID = getID(I);
     if (!ID)
       return ID.takeError();
