@@ -187,7 +187,7 @@ int listTree(CASDB &CAS, CASID ID) {
 
   TreeSchema Schema(CAS);
   ObjectProxy TreeN = ExitOnErr(CAS.getProxy(ID));
-  TreeNodeProxy Tree = ExitOnErr(Schema.loadTree(TreeN));
+  TreeProxy Tree = ExitOnErr(Schema.load(TreeN));
   ExitOnErr(Tree.forEachEntry([&](const NamedTreeEntry &Entry) {
     Entry.print(llvm::outs(), CAS);
     return Error::success();
@@ -201,7 +201,7 @@ int listTreeRecursively(CASDB &CAS, CASID ID) {
   TreeSchema Schema(CAS);
   ExitOnErr(Schema.walkFileTreeRecursively(
       CAS, ExitOnErr(CAS.getProxy(ID)),
-      [&](const NamedTreeEntry &Entry, Optional<TreeNodeProxy> Tree) -> Error {
+      [&](const NamedTreeEntry &Entry, Optional<TreeProxy> Tree) -> Error {
         if (Entry.getKind() != TreeEntry::Tree) {
           Entry.print(llvm::outs(), CAS);
           return Error::success();
@@ -328,7 +328,7 @@ static GraphInfo traverseObjectGraph(CASDB &CAS, CASID TopLevel) {
 
     TreeSchema Schema(CAS);
     if (Schema.isNode(*Object)) {
-      TreeNodeProxy Tree = ExitOnErr(Schema.loadTree(*Object));
+      TreeProxy Tree = ExitOnErr(Schema.load(*Object));
       ExitOnErr(Tree.forEachEntry([&](const NamedTreeEntry &Entry) {
         push(CAS.getID(Entry.getRef()));
         return Error::success();

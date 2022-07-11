@@ -38,12 +38,12 @@ CASID TreeSchema::getKindID() const {
   return *TreeKindID;
 }
 
-size_t TreeSchema::getNumTreeEntries(TreeNodeProxy Tree) const {
+size_t TreeSchema::getNumTreeEntries(TreeProxy Tree) const {
   return (CAS.getNumRefs(Tree) - 1) / 2;
 }
 
 Error TreeSchema::forEachTreeEntry(
-    TreeNodeProxy Tree,
+    TreeProxy Tree,
     function_ref<Error(const NamedTreeEntry &)> Callback) const {
   for (size_t I = 0, IE = getNumTreeEntries(Tree); I != IE; ++I)
     if (Error E = Callback(loadTreeEntry(Tree, I)))
@@ -54,7 +54,7 @@ Error TreeSchema::forEachTreeEntry(
 
 Error TreeSchema::walkFileTreeRecursively(
     CASDB &CAS, const ObjectHandle &Root,
-    function_ref<Error(const NamedTreeEntry &, Optional<TreeNodeProxy>)>
+    function_ref<Error(const NamedTreeEntry &, Optional<TreeProxy>)>
         Callback) {
   BumpPtrAllocator Alloc;
   StringSaver Saver(Alloc);
@@ -70,10 +70,10 @@ Error TreeSchema::walkFileTreeRecursively(
     }
 
     NamedTreeEntry Parent = Stack.pop_back_val();
-    Expected<TreeNodeProxy> ExpTree = loadTree(Parent.getRef());
+    Expected<TreeProxy> ExpTree = load(Parent.getRef());
     if (Error E = ExpTree.takeError())
       return E;
-    TreeNodeProxy Tree = *ExpTree;
+    TreeProxy Tree = *ExpTree;
     if (Error E = Callback(Parent, Tree))
       return E;
     for (int I = Tree.size(), E = 0; I != E; --I) {
@@ -90,7 +90,7 @@ Error TreeSchema::walkFileTreeRecursively(
   return Error::success();
 }
 
-NamedTreeEntry TreeSchema::loadTreeEntry(TreeNodeProxy Tree, size_t I) const {
+NamedTreeEntry TreeSchema::loadTreeEntry(TreeProxy Tree, size_t I) const {
   // Load entry from TreeNode.
   TreeEntry::EntryKind Kind = (TreeEntry::EntryKind)Tree.getData()[I];
   // Names are stored in the front, followed by Refs.
@@ -101,7 +101,7 @@ NamedTreeEntry TreeSchema::loadTreeEntry(TreeNodeProxy Tree, size_t I) const {
   return {ObjectRef, Kind, NameProxy.getData()};
 }
 
-Optional<size_t> TreeSchema::lookupTreeEntry(TreeNodeProxy Tree,
+Optional<size_t> TreeSchema::lookupTreeEntry(TreeProxy Tree,
                                              StringRef Name) const {
   size_t NumNames = Tree.size();
   if (!NumNames)
@@ -143,24 +143,24 @@ Optional<size_t> TreeSchema::lookupTreeEntry(TreeNodeProxy Tree,
   return None;
 }
 
-Expected<TreeNodeProxy> TreeSchema::loadTree(ObjectRef Object) const {
+Expected<TreeProxy> TreeSchema::load(ObjectRef Object) const {
   auto TreeNode = CAS.load(Object);
   if (!TreeNode)
     return TreeNode.takeError();
 
-  return loadTree(*TreeNode);
+  return load(*TreeNode);
 }
 
-Expected<TreeNodeProxy> TreeSchema::loadTree(ObjectHandle Object) const {
+Expected<TreeProxy> TreeSchema::load(ObjectHandle Object) const {
   if (!isNode(Object))
     return createStringError(inconvertibleErrorCode(), "not a tree object");
 
-  return TreeNodeProxy::get(*this, ObjectProxy::load(CAS, Object));
+  return TreeProxy::get(*this, ObjectProxy::load(CAS, Object));
 }
 
-Expected<TreeNodeProxy>
-TreeSchema::storeTree(ArrayRef<NamedTreeEntry> Entries) {
-  return TreeNodeProxy::create(*this, Entries);
+Expected<TreeProxy>
+TreeSchema::create(ArrayRef<NamedTreeEntry> Entries) {
+  return TreeProxy::create(*this, Entries);
 }
 
 Expected<ObjectRef> TreeSchema::storeTreeNodeName(StringRef Name) {
@@ -171,15 +171,15 @@ Expected<ObjectRef> TreeSchema::storeTreeNodeName(StringRef Name) {
   return ObjectProxy::load(CAS, *Node).getRef();
 }
 
-Expected<TreeNodeProxy> TreeNodeProxy::get(const TreeSchema &Schema,
+Expected<TreeProxy> TreeProxy::get(const TreeSchema &Schema,
                                            Expected<ObjectProxy> Ref) {
   if (!Ref)
     return Ref.takeError();
-  return TreeNodeProxy(Schema, *Ref);
+  return TreeProxy(Schema, *Ref);
 }
 
-Expected<TreeNodeProxy>
-TreeNodeProxy::create(TreeSchema &Schema, ArrayRef<NamedTreeEntry> Entries) {
+Expected<TreeProxy>
+TreeProxy::create(TreeSchema &Schema, ArrayRef<NamedTreeEntry> Entries) {
   // Ensure a stable order for tree entries and ignore name collisions.
   SmallVector<NamedTreeEntry> Sorted(Entries.begin(), Entries.end());
   std::stable_sort(Sorted.begin(), Sorted.end());
@@ -206,13 +206,13 @@ TreeNodeProxy::create(TreeSchema &Schema, ArrayRef<NamedTreeEntry> Entries) {
   return B->build();
 }
 
-Expected<TreeNodeProxy::Builder>
-TreeNodeProxy::Builder::startNode(TreeSchema &Schema) {
+Expected<TreeProxy::Builder>
+TreeProxy::Builder::startNode(TreeSchema &Schema) {
   Builder B(Schema);
   B.IDs.push_back(Schema.getKindID());
   return std::move(B);
 }
 
-Expected<TreeNodeProxy> TreeNodeProxy::Builder::build() {
-  return TreeNodeProxy::get(*Schema, Schema->CAS.createFromIDs(IDs, Data));
+Expected<TreeProxy> TreeProxy::Builder::build() {
+  return TreeProxy::get(*Schema, Schema->CAS.createFromIDs(IDs, Data));
 }

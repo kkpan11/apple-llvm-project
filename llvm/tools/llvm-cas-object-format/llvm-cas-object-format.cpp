@@ -272,7 +272,7 @@ int main(int argc, char *argv[]) {
                                       "unexpected CAS kind in the tree"));
 
         ObjectProxy TreeN = ExitOnErr(CAS->getProxy(Node.getRef()));
-        TreeNodeProxy Tree = ExitOnErr(Schema.loadTree(TreeN));
+        TreeProxy Tree = ExitOnErr(Schema.load(TreeN));
         ExitOnErr(Tree.forEachEntry([&](const NamedTreeEntry &Entry) {
           SmallString<128> PathStorage = Node.getName();
           sys::path::append(PathStorage, sys::path::Style::posix,
@@ -477,7 +477,7 @@ void StatCollector::visitPOTItem(ExitOnError &ExitOnErr, const POTItem &Item) {
   if (Schema.isNode(*Object)) {
     auto &Info = Stats["builtin:tree"];
     ++Info.Count;
-    TreeNodeProxy Tree = ExitOnErr(Schema.loadTree(*Object));
+    TreeProxy Tree = ExitOnErr(Schema.load(*Object));
     Info.NumChildren += Tree.size();
     Info.NumParents += NumParents;
     Info.NumPaths += NumPaths;
@@ -686,7 +686,7 @@ static void computeStats(CASDB &CAS, ArrayRef<CASID> TopLevels,
 
     TreeSchema TSchema(CAS);
     if (TSchema.isNode(*Object)) {
-      TreeNodeProxy Tree = ExitOnErr(TSchema.loadTree(*Object));
+      TreeProxy Tree = ExitOnErr(TSchema.load(*Object));
       ExitOnErr(Tree.forEachEntry([&](const NamedTreeEntry &Entry) {
         SmallString<128> PathStorage = Name;
         sys::path::append(PathStorage, sys::path::Style::posix,
@@ -835,7 +835,7 @@ static Error printCASObjectOrTree(ObjectFormatSchemaPool &Pool, CASID ID, bool o
   TreeSchema Schema(Pool.getCAS());
   return Schema.walkFileTreeRecursively(
       Pool.getCAS(), *ExpTree,
-      [&](const NamedTreeEntry &entry, Optional<TreeNodeProxy>) -> Error {
+      [&](const NamedTreeEntry &entry, Optional<TreeProxy>) -> Error {
         if (entry.getKind() == TreeEntry::Tree)
           return Error::success();
         if (entry.getKind() != TreeEntry::Regular) {
@@ -856,7 +856,7 @@ static Error materializeObjectsFromCASTree(CASDB &CAS, CASID ID) {
   TreeSchema Schema(CAS);
   return Schema.walkFileTreeRecursively(
       CAS, *ExpTree,
-      [&](const NamedTreeEntry &Entry, Optional<TreeNodeProxy>) -> Error {
+      [&](const NamedTreeEntry &Entry, Optional<TreeProxy>) -> Error {
         if (Entry.getKind() != TreeEntry::Regular &&
             Entry.getKind() != TreeEntry::Tree) {
           return createStringError(inconvertibleErrorCode(),
@@ -1002,7 +1002,7 @@ static ObjectRef ingestFile(ObjectFormatSchemaBase &Schema, StringRef InputFile,
     jitlink::Section *Text = G->findSectionByName("__TEXT,__text");
     TreeSchema Schema(CAS);
     if (!Text)
-      return CAS.getReference(ExitOnErr(Schema.storeTree()));
+      return CAS.getReference(ExitOnErr(Schema.create()));
 
     auto MapFile = ExitOnErr(sys::fs::TempFile::create("/tmp/debug-%%%%%%%%.map"));
     auto DsymFile =

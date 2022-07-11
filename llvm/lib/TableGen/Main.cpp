@@ -489,7 +489,7 @@ Error TableGenCache::replayResult() {
     return Node.takeError();
 
   llvm::cas::TreeSchema Schema(*CAS);
-  Expected<cas::TreeNodeProxy> Tree = Schema.loadTree(*Node);
+  Expected<cas::TreeProxy> Tree = Schema.load(*Node);
   if (!Tree)
     return Tree.takeError();
 

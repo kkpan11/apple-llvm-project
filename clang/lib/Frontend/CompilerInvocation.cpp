@@ -4746,7 +4746,7 @@ createBaseFS(const CompilerInvocation &Invocation, DiagnosticsEngine &Diags,
       llvm::cas::TreeSchema Schema(*CAS);
       // If we cannot create an empty tree, fall back to creating an empty
       // in-memory CAS.
-      if (llvm::Error E = Schema.storeTree(None).moveInto(EmptyRootID)) {
+      if (llvm::Error E = Schema.create(None).moveInto(EmptyRootID)) {
         consumeError(std::move(E));
         CAS = nullptr;
       }
@@ -4755,7 +4755,7 @@ createBaseFS(const CompilerInvocation &Invocation, DiagnosticsEngine &Diags,
     if (!CAS) {
       CAS = llvm::cas::createInMemoryCAS();
       llvm::cas::TreeSchema Schema(*CAS);
-      EmptyRootID = llvm::cantFail(Schema.storeTree(None));
+      EmptyRootID = llvm::cantFail(Schema.create(None));
     }
     return llvm::cantFail(
         llvm::cas::createCASFileSystem(std::move(CAS), *EmptyRootID));

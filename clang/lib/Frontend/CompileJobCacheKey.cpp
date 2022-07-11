@@ -86,7 +86,7 @@ static Error printFileSystem(CASDB &CAS, ObjectRef Ref, raw_ostream &OS) {
   TreeSchema Schema(CAS);
   return Schema.walkFileTreeRecursively(
       CAS, *Root,
-      [&](const NamedTreeEntry &Entry, Optional<TreeNodeProxy> Tree) {
+      [&](const NamedTreeEntry &Entry, Optional<TreeProxy> Tree) {
         if (Entry.getKind() != TreeEntry::Tree || Tree->empty()) {
           OS << "\n  ";
           Entry.print(OS, CAS);
@@ -102,7 +102,7 @@ static Error printCompileJobCacheKey(CASDB &CAS, ObjectHandle Node,
   };
 
   TreeSchema Schema(CAS);
-  Expected<TreeNodeProxy> Tree = Schema.loadTree(Node);
+  Expected<TreeProxy> Tree = Schema.load(Node);
   if (!Tree)
     return Tree.takeError();
 

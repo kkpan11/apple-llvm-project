@@ -363,8 +363,8 @@ TEST(CachingOnDiskFileSystemTest, TrackNewAccesses) {
                       Succeeded());
 
     llvm::cas::TreeSchema Schema(FS->getCAS());
-    Optional<llvm::cas::TreeNodeProxy> TreeNode;
-    ASSERT_THAT_ERROR(Schema.loadTree(Tree->getRef()).moveInto(TreeNode),
+    Optional<llvm::cas::TreeProxy> TreeNode;
+    ASSERT_THAT_ERROR(Schema.load(Tree->getRef()).moveInto(TreeNode),
                       Succeeded());
 
     // Check that all the files are found.

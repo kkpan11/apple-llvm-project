@@ -195,7 +195,7 @@ Error CASFileSystem::loadDirectory(DirectoryEntry &Parent) {
   if (D.isComplete())
     return Error::success();
 
-  Expected<TreeNodeProxy> Tree = Schema.loadTree(TreeN);
+  Expected<TreeProxy> Tree = Schema.load(TreeN);
   if (!Tree)
     return Tree.takeError();
 

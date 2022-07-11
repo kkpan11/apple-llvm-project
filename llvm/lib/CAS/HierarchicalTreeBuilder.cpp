@@ -77,7 +77,7 @@ Expected<ObjectHandle> HierarchicalTreeBuilder::create(CASDB &CAS) {
     Error E = Schema.walkFileTreeRecursively(
         CAS, *LoadedTree,
         [&](const NamedTreeEntry &Entry,
-            Optional<TreeNodeProxy> Tree) -> Error {
+            Optional<TreeProxy> Tree) -> Error {
           if (Entry.getKind() != TreeEntry::Tree) {
             pushImpl(Entry.getRef(), Entry.getKind(), Path + Entry.getName());
             return Error::success();
@@ -92,7 +92,7 @@ Expected<ObjectHandle> HierarchicalTreeBuilder::create(CASDB &CAS) {
   TreeContents.clear();
 
   if (Entries.empty())
-    return Schema.storeTree();
+    return Schema.create();
 
   std::stable_sort(
       Entries.begin(), Entries.end(),
@@ -252,7 +252,7 @@ Expected<ObjectHandle> HierarchicalTreeBuilder::create(CASDB &CAS) {
     Worklist.pop_back();
     for (Node *N = T->First; N; N = N->Next)
       Entries.emplace_back(*N->Ref, N->Kind, N->Name);
-    Expected<TreeNodeProxy> ExpectedTree = Schema.storeTree(Entries);
+    Expected<TreeProxy> ExpectedTree = Schema.create(Entries);
     Entries.clear();
     if (!ExpectedTree)
       return ExpectedTree.takeError();

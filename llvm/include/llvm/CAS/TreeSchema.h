@@ -16,7 +16,7 @@
 namespace llvm {
 namespace cas {
 
-class TreeNodeProxy;
+class TreeProxy;
 
 class TreeSchema : public RTTIExtends<TreeSchema, NodeSchema> {
   void anchor() override;
@@ -30,10 +30,10 @@ public:
 
   TreeSchema(CASDB &CAS);
 
-  size_t getNumTreeEntries(TreeNodeProxy Tree) const;
+  size_t getNumTreeEntries(TreeProxy Tree) const;
 
   Error
-  forEachTreeEntry(TreeNodeProxy Tree,
+  forEachTreeEntry(TreeProxy Tree,
                    function_ref<Error(const NamedTreeEntry &)> Callback) const;
 
   /// Visit each file entry in order, returning an error from \p Callback to
@@ -46,38 +46,38 @@ public:
   /// otherwise passes \p None.
   Error walkFileTreeRecursively(
       CASDB &CAS, const ObjectHandle &Root,
-      function_ref<Error(const NamedTreeEntry &, Optional<TreeNodeProxy>)>
+      function_ref<Error(const NamedTreeEntry &, Optional<TreeProxy>)>
           Callback);
 
-  Optional<size_t> lookupTreeEntry(TreeNodeProxy Tree, StringRef Name) const;
-  NamedTreeEntry loadTreeEntry(TreeNodeProxy Tree, size_t I) const;
+  Optional<size_t> lookupTreeEntry(TreeProxy Tree, StringRef Name) const;
+  NamedTreeEntry loadTreeEntry(TreeProxy Tree, size_t I) const;
 
-  Expected<TreeNodeProxy> loadTree(ObjectRef Object) const;
-  Expected<TreeNodeProxy> loadTree(ObjectHandle Object) const;
+  Expected<TreeProxy> load(ObjectRef Object) const;
+  Expected<TreeProxy> load(ObjectHandle Object) const;
 
-  Expected<TreeNodeProxy> storeTree(ArrayRef<NamedTreeEntry> Entries = None);
+  Expected<TreeProxy> create(ArrayRef<NamedTreeEntry> Entries = None);
 
 private:
   static constexpr StringLiteral SchemaName = "llvm::cas::schema::tree::v1";
   Optional<CASID> TreeKindID;
 
-  friend class TreeNodeProxy;
+  friend class TreeProxy;
 
   CASID getKindID() const;
   Expected<ObjectRef> storeTreeNodeName(StringRef Name);
 };
 
-class TreeNodeProxy : public ObjectProxy {
+class TreeProxy : public ObjectProxy {
 public:
-  static Expected<TreeNodeProxy> get(const TreeSchema &Schema,
+  static Expected<TreeProxy> get(const TreeSchema &Schema,
                                      Expected<ObjectProxy> Ref);
 
-  static Expected<TreeNodeProxy> create(TreeSchema &Schema,
+  static Expected<TreeProxy> create(TreeSchema &Schema,
                                         ArrayRef<NamedTreeEntry> Entries);
 
   const TreeSchema &getSchema() const { return *Schema; }
 
-  bool operator==(const TreeNodeProxy &RHS) const {
+  bool operator==(const TreeProxy &RHS) const {
     return Schema == RHS.Schema && cas::CASID(*this) == cas::CASID(RHS);
   }
 
@@ -97,17 +97,17 @@ public:
 
   NamedTreeEntry get(size_t I) const { return Schema->loadTreeEntry(*this, I); }
 
-  TreeNodeProxy() = delete;
+  TreeProxy() = delete;
 
 private:
-  TreeNodeProxy(const TreeSchema &Schema, const ObjectProxy &Node)
+  TreeProxy(const TreeSchema &Schema, const ObjectProxy &Node)
       : ObjectProxy(Node), Schema(&Schema) {}
 
   class Builder {
   public:
     static Expected<Builder> startNode(TreeSchema &Schema);
 
-    Expected<TreeNodeProxy> build();
+    Expected<TreeProxy> build();
 
   private:
     Builder(const TreeSchema &Schema) : Schema(&Schema) {}
