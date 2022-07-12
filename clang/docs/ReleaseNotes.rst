@@ -181,6 +181,8 @@ Bug Fixes
   emitted as a dynamic initializer. Previously the variable would
   incorrectly be zero-initialized. In contexts where a dynamic
   initializer is not allowed this is now diagnosed as an error.
+- Clang now correctly emits symbols for implicitly instantiated constexpr
+  template function. Fixes `Issue 55560 <https://github.com/llvm/llvm-project/issues/55560>`_.
 
 Improvements to Clang's diagnostics
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -279,6 +281,9 @@ Improvements to Clang's diagnostics
   unevaluated operands of a ``typeid`` expression, as they are now
   modeled correctly in the CFG. This fixes
   `Issue 21668 <https://github.com/llvm/llvm-project/issues/21668>`_.
+- ``-Wself-assign``, ``-Wself-assign-overloaded`` and ``-Wself-move`` will 
+  suggest a fix if the decl being assigned is a parameter that shadows a data
+  member of the contained class.
 
 Non-comprehensive list of changes in this release
 -------------------------------------------------
@@ -543,6 +548,8 @@ X86 Support in Clang
 - Added the ``-m[no-]rdpru`` flag to enable/disable the RDPRU instruction
   provided by AMD Zen2 and later processors. Defined intrinsics for using
   this instruction (see rdpruintrin.h).
+- Support ``-mstack-protector-guard-symbol=[SymbolName]`` to use the given
+  symbol for addressing the stack protector guard.
 
 DWARF Support in Clang
 ----------------------
