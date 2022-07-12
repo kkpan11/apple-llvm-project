@@ -498,11 +498,12 @@ public:
       Modules.insert(I, {{MD.ID, InputIndex}, std::move(MD)});
     }
 
-    ID.CommandLine = GenerateModulesPathArgs
-                         ? FD.getCommandLine(
-                               [&](ModuleID MID) { return lookupPCMPath(MID); })
-                         : FD.getCommandLineWithoutModulePaths();
-
+    ID.CommandLine =
+        GenerateModulesPathArgs
+            ? FD.getCommandLine([&](const ModuleID &MID, ModuleOutputKind MOK) {
+                return lookupModuleOutput(MID, MOK);
+              })
+            : FD.getCommandLineWithoutModulePaths();
     Inputs.push_back(std::move(ID));
   }
 
@@ -535,7 +536,9 @@ public:
           {"command-line",
            GenerateModulesPathArgs
                ? MD.getCanonicalCommandLine(
-                     [&](ModuleID MID) { return lookupPCMPath(MID); })
+                     [&](const ModuleID &MID, ModuleOutputKind MOK) {
+                       return lookupModuleOutput(MID, MOK);
+                     })
                : MD.getCanonicalCommandLineWithoutModulePaths()},
       };
       OutModules.push_back(std::move(O));
@@ -564,11 +567,22 @@ public:
   }
 
 private:
-  StringRef lookupPCMPath(ModuleID MID) {
+  std::string lookupModuleOutput(const ModuleID &MID, ModuleOutputKind MOK) {
+    // Cache the PCM path, since it will be queried repeatedly for each module.
+    // The other outputs are only queried once during getCanonicalCommandLine.
     auto PCMPath = PCMPaths.insert({MID, ""});
     if (PCMPath.second)
       PCMPath.first->second = constructPCMPath(MID);
-    return PCMPath.first->second;
+    switch (MOK) {
+    case ModuleOutputKind::ModuleFile:
+      return PCMPath.first->second;
+    case ModuleOutputKind::DependencyFile:
+      return PCMPath.first->second + ".d";
+    case ModuleOutputKind::DependencyTargets:
+      return ""; // Will get the default target name.
+    case ModuleOutputKind::DiagnosticSerializationFile:
+      return PCMPath.first->second + ".diag";
+    }
   }
 
   /// Construct a path for the explicitly built PCM.
