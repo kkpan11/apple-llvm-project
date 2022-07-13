@@ -47,7 +47,7 @@ CASOutputBackend::~CASOutputBackend() = default;
 
 struct CASOutputBackend::PrivateImpl {
   // FIXME: Use a NodeBuilder here once it exists.
-  SmallVector<CASID> IDs;
+  SmallVector<ObjectRef> Refs;
 };
 
 Expected<std::unique_ptr<vfs::OutputFileImpl>>
@@ -71,8 +71,8 @@ CASOutputBackend::createFileImpl(StringRef ResolvedPath,
           return E;
 
         // FIXME: Should there be a lock taken before accessing PrivateImpl?
-        Impl->IDs.push_back(PathBlob->getID());
-        Impl->IDs.push_back(BytesBlob->getID());
+        Impl->Refs.push_back(PathBlob->getRef());
+        Impl->Refs.push_back(BytesBlob->getRef());
         return Error::success();
       });
 }
@@ -82,13 +82,13 @@ Expected<ObjectProxy> CASOutputBackend::getCASProxy() {
   if (!Impl)
     return CAS.create(None, "");
 
-  SmallVector<CASID> MovedIDs;
-  std::swap(MovedIDs, Impl->IDs);
+  SmallVector<ObjectRef> MovedRefs;
+  std::swap(MovedRefs, Impl->Refs);
 
-  return CAS.createFromIDs(MovedIDs, "");
+  return CAS.create(MovedRefs, "");
 }
 
-Error CASOutputBackend::addObject(StringRef Path, const CASID &Object) {
+Error CASOutputBackend::addObject(StringRef Path, ObjectRef Object) {
   if (!Impl)
     Impl = std::make_unique<PrivateImpl>();
 
@@ -96,7 +96,7 @@ Error CASOutputBackend::addObject(StringRef Path, const CASID &Object) {
   if (Error E = CAS.create(None, Path).moveInto(PathBlob))
     return E;
 
-  Impl->IDs.push_back(PathBlob->getID());
-  Impl->IDs.push_back(Object);
+  Impl->Refs.push_back(PathBlob->getRef());
+  Impl->Refs.push_back(Object);
   return Error::success();
 }

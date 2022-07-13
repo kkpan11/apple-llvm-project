@@ -74,7 +74,7 @@ Error MCSchema::serializeObjectFile(cas::ObjectProxy RootNode,
                                     raw_ostream &OS) const {
   if (!isRootNode(RootNode))
     return createStringError(inconvertibleErrorCode(), "invalid root node");
-  auto Asm = MCAssemblerRef::get(*this, RootNode);
+  auto Asm = MCAssemblerRef::get(*this, RootNode.getRef());
   if (!Asm)
     return Asm.takeError();
 
@@ -88,11 +88,11 @@ MCSchema::MCSchema(cas::CASDB &CAS) : MCSchema::RTTIExtends(CAS) {
 }
 
 Error MCSchema::fillCache() {
-  Optional<cas::CASID> RootKindID;
+  Optional<cas::ObjectRef> RootKindID;
   const unsigned Version = 0; // Bump this to error on old object files.
   if (Expected<cas::ObjectProxy> ExpectedRootKind =
           CAS.create(None, "mc:v1:schema:" + Twine(Version).str()))
-    RootKindID = *ExpectedRootKind;
+    RootKindID = ExpectedRootKind->getRef();
   else
     return ExpectedRootKind.takeError();
 
@@ -105,22 +105,22 @@ Error MCSchema::fillCache() {
   MCFragmentName##Ref::KindString,
 #include "llvm/MC/CAS/MCCASObjectV1.def"
   };
-  cas::CASID Refs[] = {*RootKindID};
-  SmallVector<cas::CASID> IDs = {*RootKindID};
+  cas::ObjectRef Refs[] = {*RootKindID};
+  SmallVector<cas::ObjectRef> IDs = {*RootKindID};
   for (StringRef KS : AllKindStrings) {
-    auto ExpectedID = CAS.createFromIDs(Refs, KS);
+    auto ExpectedID = CAS.create(Refs, KS);
     if (!ExpectedID)
       return ExpectedID.takeError();
-    IDs.push_back(*ExpectedID);
+    IDs.push_back(ExpectedID->getRef());
     KindStrings.push_back(std::make_pair(KindStrings.size(), KS));
     assert(KindStrings.size() < UCHAR_MAX &&
            "Ran out of bits for kind strings");
   }
 
-  auto ExpectedTypeID = CAS.createFromIDs(IDs, "mc:v1:root");
+  auto ExpectedTypeID = CAS.create(IDs, "mc:v1:root");
   if (!ExpectedTypeID)
     return ExpectedTypeID.takeError();
-  RootNodeTypeID = *ExpectedTypeID;
+  RootNodeTypeID = ExpectedTypeID->getRef();
   return Error::success();
 }
 
@@ -141,7 +141,7 @@ MCSchema::getKindString(const cas::ObjectProxy &Node) const {
 bool MCSchema::isRootNode(const cas::ObjectProxy &Node) const {
   if (Node.getNumReferences() < 1)
     return false;
-  return Node.getReferenceID(0) == *RootNodeTypeID;
+  return Node.getReference(0) == *RootNodeTypeID;
 }
 
 bool MCSchema::isNode(const cas::ObjectProxy &Node) const {
@@ -153,7 +153,7 @@ Expected<MCObjectProxy::Builder>
 MCObjectProxy::Builder::startRootNode(const MCSchema &Schema,
                                       StringRef KindString) {
   Builder B(Schema);
-  B.IDs.push_back(Schema.getRootNodeTypeID());
+  B.Refs.push_back(Schema.getRootNodeTypeID());
 
   if (Error E = B.startNodeImpl(KindString))
     return std::move(E);
@@ -179,7 +179,7 @@ MCObjectProxy::Builder::startNode(const MCSchema &Schema,
 }
 
 Expected<MCObjectProxy> MCObjectProxy::Builder::build() {
-  return MCObjectProxy::get(*Schema, Schema->CAS.createFromIDs(IDs, Data));
+  return MCObjectProxy::get(*Schema, Schema->CAS.create(Refs, Data));
 }
 
 StringRef MCObjectProxy::getKindString() const {
@@ -281,11 +281,11 @@ static Error decodeRelocations(MCCASReader &Reader, StringRef Data) {
   return Error::success();
 }
 
-static Error encodeReferences(ArrayRef<cas::CASID> Refs,
+static Error encodeReferences(ArrayRef<cas::ObjectRef> Refs,
                               SmallVectorImpl<char> &Data,
-                              SmallVectorImpl<cas::CASID> &IDs) {
-  DenseMap<cas::CASID, unsigned> RefMap;
-  SmallVector<cas::CASID> CompactRefs;
+                              SmallVectorImpl<cas::ObjectRef> &IDs) {
+  DenseMap<cas::ObjectRef, unsigned> RefMap;
+  SmallVector<cas::ObjectRef> CompactRefs;
   for (const auto &ID : Refs) {
     auto I = RefMap.try_emplace(ID, CompactRefs.size());
     if (I.second)
@@ -313,10 +313,10 @@ static Error encodeReferences(ArrayRef<cas::CASID> Refs,
   return Error::success();
 }
 
-static Expected<SmallVector<cas::CASID>>
+static Expected<SmallVector<cas::ObjectRef>>
 decodeReferences(const MCObjectProxy &Node, StringRef &Remaining) {
-  SmallVector<cas::CASID> Refs;
-  if (auto E = Node.forEachReferenceID([&](cas::CASID ID) -> Error {
+  SmallVector<cas::ObjectRef> Refs;
+  if (auto E = Node.forEachReference([&](cas::ObjectRef ID) -> Error {
         Refs.push_back(ID);
         return Error::success();
       }))
@@ -329,7 +329,7 @@ decodeReferences(const MCObjectProxy &Node, StringRef &Remaining) {
   if (!Size)
     return Refs;
 
-  SmallVector<cas::CASID> CompactRefs;
+  SmallVector<cas::ObjectRef> CompactRefs;
   for (unsigned I = 0; I < Size; ++I) {
     unsigned Idx = 0;
     if (auto E = consumeVBR8(Remaining, Idx))
@@ -345,12 +345,12 @@ decodeReferences(const MCObjectProxy &Node, StringRef &Remaining) {
 }
 
 Expected<GroupRef> GroupRef::create(MCCASBuilder &MB,
-                                    ArrayRef<cas::CASID> Fragments) {
+                                    ArrayRef<cas::ObjectRef> Fragments) {
   Expected<Builder> B = Builder::startNode(MB.Schema, KindString);
   if (!B)
     return B.takeError();
 
-  if (auto E = encodeReferences(Fragments, B->Data, B->IDs))
+  if (auto E = encodeReferences(Fragments, B->Data, B->Refs))
     return std::move(E);
 
   return get(B->build());
@@ -378,12 +378,12 @@ Expected<uint64_t> GroupRef::materialize(MCCASReader &Reader) const {
 }
 
 Expected<SymbolTableRef>
-SymbolTableRef::create(MCCASBuilder &MB, ArrayRef<cas::CASID> Fragments) {
+SymbolTableRef::create(MCCASBuilder &MB, ArrayRef<cas::ObjectRef> Fragments) {
   Expected<Builder> B = Builder::startNode(MB.Schema, KindString);
   if (!B)
     return B.takeError();
 
-  if (auto E = encodeReferences(Fragments, B->Data, B->IDs))
+  if (auto E = encodeReferences(Fragments, B->Data, B->Refs))
     return std::move(E);
 
   return get(B->build());
@@ -407,12 +407,12 @@ Expected<uint64_t> SymbolTableRef::materialize(MCCASReader &Reader) const {
 }
 
 Expected<SectionRef> SectionRef::create(MCCASBuilder &MB,
-                                        ArrayRef<cas::CASID> Fragments) {
+                                        ArrayRef<cas::ObjectRef> Fragments) {
   Expected<Builder> B = Builder::startNode(MB.Schema, KindString);
   if (!B)
     return B.takeError();
 
-  if (auto E = encodeReferences(Fragments, B->Data, B->IDs))
+  if (auto E = encodeReferences(Fragments, B->Data, B->Refs))
     return std::move(E);
 
   writeRelocations(MB.getSectionRelocs(), B->Data);
@@ -444,12 +444,12 @@ Expected<uint64_t> SectionRef::materialize(MCCASReader &Reader) const {
 }
 
 Expected<AtomRef> AtomRef::create(MCCASBuilder &MB,
-                                  ArrayRef<cas::CASID> Fragments) {
+                                  ArrayRef<cas::ObjectRef> Fragments) {
   Expected<Builder> B = Builder::startNode(MB.Schema, KindString);
   if (!B)
     return B.takeError();
 
-  if (auto E = encodeReferences(Fragments, B->Data, B->IDs))
+  if (auto E = encodeReferences(Fragments, B->Data, B->Refs))
     return std::move(E);
 
   writeRelocations(MB.getAtomRelocs(), B->Data);
@@ -1036,12 +1036,12 @@ Error MCCASBuilder::buildSymbolTable() {
   ObjectWriter.resetBuffer();
   ObjectWriter.writeSymbolTable(Asm, Layout);
   StringRef S = ObjectWriter.getContent();
-  std::vector<cas::CASID> CStrings;
+  std::vector<cas::ObjectRef> CStrings;
   if (auto E = createStringSection(S, [&](StringRef S) -> Error {
         auto Sym = CStringRef::create(*this, S);
         if (!Sym)
           return Sym.takeError();
-        CStrings.push_back(Sym->getID());
+        CStrings.push_back(Sym->getRef());
         return Error::success();
       }))
     return E;
@@ -1125,7 +1125,7 @@ Error MCCASBuilder::finalizeAtom() {
 }
 
 void MCCASBuilder::addNode(cas::ObjectProxy Node) {
-  CurrentContext->push_back(Node.getID());
+  CurrentContext->push_back(Node.getRef());
 }
 
 Expected<MCAssemblerRef> MCAssemblerRef::create(const MCSchema &Schema,
@@ -1163,7 +1163,7 @@ Expected<MCAssemblerRef> MCAssemblerRef::create(const MCSchema &Schema,
     return B.takeError();
 
   // Put Header, Relocations, SymbolTable, etc. in the front.
-  B->IDs.append(Builder.Sections.begin(), Builder.Sections.end());
+  B->Refs.append(Builder.Sections.begin(), Builder.Sections.end());
 
   std::string NormalizedTriple = ObjectWriter.Target.normalize();
   writeVBR8(uint32_t(NormalizedTriple.size()), B->Data);
@@ -1262,7 +1262,7 @@ MCCASReader::MCCASReader(raw_ostream &OS, const Triple &Target,
                          const MCSchema &Schema)
     : OS(OS), Target(Target), Schema(Schema) {}
 
-Expected<uint64_t> MCCASReader::materializeGroup(cas::CASID ID) {
+Expected<uint64_t> MCCASReader::materializeGroup(cas::ObjectRef ID) {
   auto Node = MCObjectProxy::get(Schema, Schema.CAS.getProxy(ID));
   if (!Node)
     return Node.takeError();
@@ -1282,7 +1282,7 @@ Expected<uint64_t> MCCASReader::materializeGroup(cas::CASID ID) {
                            "unsupported CAS node for group");
 }
 
-Expected<uint64_t> MCCASReader::materializeSection(cas::CASID ID) {
+Expected<uint64_t> MCCASReader::materializeSection(cas::ObjectRef ID) {
   auto Node = MCObjectProxy::get(Schema, Schema.CAS.getProxy(ID));
   if (!Node)
     return Node.takeError();
@@ -1304,7 +1304,7 @@ Expected<uint64_t> MCCASReader::materializeSection(cas::CASID ID) {
                            "unsupported CAS node for atom");
 }
 
-Expected<uint64_t> MCCASReader::materializeAtom(cas::CASID ID) {
+Expected<uint64_t> MCCASReader::materializeAtom(cas::ObjectRef ID) {
   auto Node = MCObjectProxy::get(Schema, Schema.CAS.getProxy(ID));
   if (!Node)
     return Node.takeError();

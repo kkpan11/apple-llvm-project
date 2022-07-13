@@ -52,7 +52,7 @@ Expected<std::unique_ptr<CASObjectReader>>
 ObjectFileSchema::createObjectReader(cas::ObjectProxy RootNode) const {
   if (!isRootNode(RootNode))
     return createStringError(inconvertibleErrorCode(), "invalid root node");
-  auto CU = CompileUnitRef::get(*this, RootNode);
+  auto CU = CompileUnitRef::get(*this, RootNode.getRef());
   if (!CU)
     return CU.takeError();
   auto Reader = std::make_unique<FlatV1ObjectReader>(*CU);
@@ -75,11 +75,11 @@ ObjectFileSchema::ObjectFileSchema(cas::CASDB &CAS)
 }
 
 Error ObjectFileSchema::fillCache() {
-  Optional<cas::CASID> RootKindID;
+  Optional<cas::ObjectRef> RootKindID;
   const unsigned Version = 0; // Bump this to error on old object files.
   if (Expected<cas::ObjectProxy> ExpectedRootKind =
           CAS.create(None, "cas.o:flatv1:schema:" + Twine(Version).str()))
-    RootKindID = *ExpectedRootKind;
+    RootKindID = ExpectedRootKind->getRef();
   else
     return ExpectedRootKind.takeError();
 
@@ -88,22 +88,22 @@ Error ObjectFileSchema::fillCache() {
       NameRef::KindString,   SectionRef::KindString,
       SymbolRef::KindString, BlockContentRef::KindString,
   };
-  cas::CASID Refs[] = {*RootKindID};
-  SmallVector<cas::CASID> IDs = {*RootKindID};
+  cas::ObjectRef KindRefs[] = {*RootKindID};
+  SmallVector<cas::ObjectRef> Refs = {*RootKindID};
   for (StringRef KS : AllKindStrings) {
-    auto ExpectedID = CAS.createFromIDs(Refs, KS);
+    auto ExpectedID = CAS.create(KindRefs, KS);
     if (!ExpectedID)
       return ExpectedID.takeError();
-    IDs.push_back(*ExpectedID);
+    Refs.push_back(ExpectedID->getRef());
     KindStrings.push_back(std::make_pair(KindStrings.size(), KS));
     assert(KindStrings.size() < UCHAR_MAX &&
            "Ran out of bits for kind strings");
   }
 
-  auto ExpectedTypeID = CAS.createFromIDs(IDs, "cas.o:flatv1:root");
+  auto ExpectedTypeID = CAS.create(Refs, "cas.o:flatv1:root");
   if (!ExpectedTypeID)
     return ExpectedTypeID.takeError();
-  RootNodeTypeID = *ExpectedTypeID;
+  RootNodeTypeID = ExpectedTypeID->getRef();
   return Error::success();
 }
 
@@ -124,7 +124,7 @@ ObjectFileSchema::getKindString(const cas::ObjectProxy &Node) const {
 bool ObjectFileSchema::isRootNode(const cas::ObjectProxy &Node) const {
   if (Node.getNumReferences() < 1)
     return false;
-  return Node.getReferenceID(0) == *RootNodeTypeID;
+  return Node.getReference(0) == *RootNodeTypeID;
 }
 
 bool ObjectFileSchema::isNode(const cas::ObjectProxy &Node) const {
@@ -136,7 +136,7 @@ Expected<ObjectFormatObjectProxy::Builder>
 ObjectFormatObjectProxy::Builder::startRootNode(const ObjectFileSchema &Schema,
                                                 StringRef KindString) {
   Builder B(Schema);
-  B.IDs.push_back(Schema.getRootNodeTypeID());
+  B.Refs.push_back(Schema.getRootNodeTypeID());
 
   if (Error E = B.startNodeImpl(KindString))
     return std::move(E);
@@ -163,8 +163,7 @@ ObjectFormatObjectProxy::Builder::startNode(const ObjectFileSchema &Schema,
 }
 
 Expected<ObjectFormatObjectProxy> ObjectFormatObjectProxy::Builder::build() {
-  return ObjectFormatObjectProxy::get(*Schema,
-                                      Schema->CAS.createFromIDs(IDs, Data));
+  return ObjectFormatObjectProxy::get(*Schema, Schema->CAS.create(Refs, Data));
 }
 
 StringRef ObjectFormatObjectProxy::getKindString() const {
@@ -601,24 +600,24 @@ void CompileUnitBuilder::encodeIndex(unsigned Index) {
 
 unsigned CompileUnitBuilder::recordNode(const ObjectFormatObjectProxy &Ref) {
   // Try emplace the current index into map.
-  auto LastIdx = IDs.size();
-  auto Result = CASIDMap.try_emplace(Ref.getID(), LastIdx);
+  auto LastIdx = Refs.size();
+  auto Result = ObjRefMap.try_emplace(Ref.getRef(), LastIdx);
   // If insert successful, we need to store the ID into the vector.
   auto Idx = Result.second ? LastIdx : Result.first->getSecond();
   LocalIndexStorage.emplace_back(Idx);
   if (Result.second)
-    IDs.emplace_back(Ref.getID());
+    Refs.emplace_back(Ref.getRef());
   return Idx;
 }
 
 unsigned CompileUnitBuilder::commitNode(const ObjectFormatObjectProxy &Ref) {
   // Try emplace the current index into map.
-  auto LastIdx = IDs.size();
-  auto Result = CASIDMap.try_emplace(Ref.getID(), LastIdx);
+  auto LastIdx = Refs.size();
+  auto Result = ObjRefMap.try_emplace(Ref.getRef(), LastIdx);
   // If insert successful, we need to store the ID into the vector.
   auto Idx = Result.second ? LastIdx : Result.first->getSecond();
   if (Result.second)
-    IDs.emplace_back(Ref.getID());
+    Refs.emplace_back(Ref.getRef());
 
   Indexes.emplace_back(Idx);
   pushNodes();
@@ -819,7 +818,7 @@ Expected<CompileUnitRef> CompileUnitRef::create(const ObjectFileSchema &Schema,
   if (!B)
     return B.takeError();
 
-  B->IDs.insert(B->IDs.end(), Builder.IDs.begin(), Builder.IDs.end());
+  B->Refs.insert(B->Refs.end(), Builder.Refs.begin(), Builder.Refs.end());
 
   std::string NormalizedTriple = G.getTargetTriple().normalize();
   encoding::writeVBR8(uint32_t(G.getPointerSize()), B->Data);
@@ -852,8 +851,8 @@ Expected<CompileUnitRef> CompileUnitRef::create(const ObjectFileSchema &Schema,
 }
 
 Error CompileUnitRef::materialize(FlatV1ObjectReader &Reader) const {
-  if (auto E = forEachReferenceID([&](cas::CASID ID) {
-        Reader.IDs.emplace_back(ID);
+  if (auto E = forEachReference([&](cas::ObjectRef Ref) {
+        Reader.Refs.emplace_back(Ref);
         return Error::success();
       }))
     return E;

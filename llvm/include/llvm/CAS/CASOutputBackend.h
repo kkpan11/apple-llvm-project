@@ -28,7 +28,7 @@ public:
   Expected<ObjectProxy> getCASProxy();
 
   /// Add a CAS object to the path in the output backend.
-  Error addObject(StringRef Path, const CASID &Object);
+  Error addObject(StringRef Path, ObjectRef Object);
 
 private:
   Expected<std::unique_ptr<vfs::OutputFileImpl>>

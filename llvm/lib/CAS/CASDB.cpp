@@ -120,18 +120,6 @@ Expected<ObjectProxy> CASDB::create(ArrayRef<ObjectRef> Refs, StringRef Data) {
   return getProxy(store(Refs, arrayRefFromStringRef<char>(Data)));
 }
 
-Expected<ObjectProxy> CASDB::createFromIDs(ArrayRef<CASID> IDs,
-                                           StringRef Data) {
-  SmallVector<ObjectRef> Refs;
-  for (CASID ID : IDs) {
-    if (Optional<ObjectRef> Ref = getReference(ID))
-      Refs.push_back(*Ref);
-    else
-      return createUnknownObjectError(ID);
-  }
-  return create(Refs, Data);
-}
-
 Expected<std::unique_ptr<MemoryBuffer>>
 CASDB::loadIndependentDataBuffer(ObjectHandle Node, const Twine &Name,
                                  bool NullTerminate) const {

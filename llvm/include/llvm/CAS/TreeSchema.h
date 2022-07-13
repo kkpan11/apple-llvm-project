@@ -59,11 +59,11 @@ public:
 
 private:
   static constexpr StringLiteral SchemaName = "llvm::cas::schema::tree::v1";
-  Optional<CASID> TreeKindID;
+  Optional<ObjectRef> TreeKindRef;
 
   friend class TreeProxy;
 
-  CASID getKindID() const;
+  ObjectRef getKindRef() const;
   Expected<ObjectRef> storeTreeNodeName(StringRef Name);
 };
 
@@ -115,7 +115,7 @@ private:
 
   public:
     SmallString<256> Data;
-    SmallVector<CASID, 16> IDs;
+    SmallVector<ObjectRef, 16> Refs;
   };
   const TreeSchema *Schema;
 };

@@ -282,18 +282,18 @@ static int makeNode(CASDB &CAS, ArrayRef<std::string> Objects, StringRef DataPat
   std::unique_ptr<MemoryBuffer> Data =
       ExitOnError("llvm-cas: make-node: data: ")(openBuffer(DataPath));
 
-  SmallVector<CASID> IDs;
+  SmallVector<ObjectRef> IDs;
   for (StringRef Object : Objects) {
     ExitOnError ObjectErr("llvm-cas: make-node: ref: ");
-    CASID ID = ObjectErr(CAS.parseID(Object));
-    if (!CAS.getReference(ID))
+    Optional<ObjectRef> ID = CAS.getReference(ObjectErr(CAS.parseID(Object)));
+    if (!ID)
       ObjectErr(createStringError(inconvertibleErrorCode(),
                                   "unknown object '" + Object + "'"));
-    IDs.push_back(ID);
+    IDs.push_back(*ID);
   }
 
   ExitOnError ExitOnErr("llvm-cas: make-node: ");
-  ObjectProxy Object = ExitOnErr(CAS.createFromIDs(IDs, Data->getBuffer()));
+  ObjectProxy Object = ExitOnErr(CAS.create(IDs, Data->getBuffer()));
   llvm::outs() << Object.getID() << "\n";
   return 0;
 }

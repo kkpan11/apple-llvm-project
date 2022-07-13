@@ -436,8 +436,11 @@ void CompileJobCache::finishComputedResult(CompilerInstance &Clang,
   // FIXME: Stop calling report_fatal_error().
   // Add the MC output to the CAS Outputs.
   if (MCOutputID) {
-    if (auto E = CASOutputs->addObject(OutputFile, *MCOutputID))
-      llvm::report_fatal_error(std::move(E));
+    auto MCOutputRef = CAS->getReference(*MCOutputID);
+    if (MCOutputRef) {
+      if (auto E = CASOutputs->addObject(OutputFile, *MCOutputRef))
+        llvm::report_fatal_error(std::move(E));
+    }
   }
 
   Expected<llvm::cas::ObjectProxy> Outputs = CASOutputs->getCASProxy();

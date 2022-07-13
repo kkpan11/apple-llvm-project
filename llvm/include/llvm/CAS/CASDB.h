@@ -136,7 +136,6 @@ public:
 
   /// FIXME: Remove these.
   Expected<ObjectProxy> create(ArrayRef<ObjectRef> Refs, StringRef Data);
-  Expected<ObjectProxy> createFromIDs(ArrayRef<CASID> IDs, StringRef Data);
   virtual Expected<ObjectHandle> store(ArrayRef<ObjectRef> Refs,
                                        ArrayRef<char> Data) = 0;
 

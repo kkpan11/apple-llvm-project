@@ -26,17 +26,15 @@ bool TreeSchema::isNode(const ObjectHandle &Node) const {
 
   // If can't load the first ref, consume error and return false.
   auto FirstRef = CAS.readRef(Node, 0);
-  return CAS.getID(FirstRef) == getKindID();
+  return FirstRef == getKindRef();
 }
 
 TreeSchema::TreeSchema(cas::CASDB &CAS) : TreeSchema::RTTIExtends(CAS) {
   auto Kind = cantFail(CAS.create(None, SchemaName));
-  TreeKindID.emplace(CAS.getID(Kind));
+  TreeKindRef.emplace(Kind.getRef());
 }
 
-CASID TreeSchema::getKindID() const {
-  return *TreeKindID;
-}
+ObjectRef TreeSchema::getKindRef() const { return *TreeKindRef; }
 
 size_t TreeSchema::getNumTreeEntries(TreeProxy Tree) const {
   return (CAS.getNumRefs(Tree) - 1) / 2;
@@ -195,13 +193,13 @@ TreeProxy::create(TreeSchema &Schema, ArrayRef<NamedTreeEntry> Entries) {
     auto NameRef = Schema.storeTreeNodeName(Entry.getName());
     if (!NameRef)
       return NameRef.takeError();
-    B->IDs.push_back(Schema.CAS.getID(*NameRef));
+    B->Refs.push_back(*NameRef);
     B->Data.push_back((char)Entry.getKind());
   }
 
   // Store Refs after Names.
   for (auto &Entry : Sorted)
-    B->IDs.push_back(Schema.CAS.getID(Entry.getRef()));
+    B->Refs.push_back(Entry.getRef());
 
   return B->build();
 }
@@ -209,10 +207,10 @@ TreeProxy::create(TreeSchema &Schema, ArrayRef<NamedTreeEntry> Entries) {
 Expected<TreeProxy::Builder>
 TreeProxy::Builder::startNode(TreeSchema &Schema) {
   Builder B(Schema);
-  B.IDs.push_back(Schema.getKindID());
+  B.Refs.push_back(Schema.getKindRef());
   return std::move(B);
 }
 
 Expected<TreeProxy> TreeProxy::Builder::build() {
-  return TreeProxy::get(*Schema, Schema->CAS.createFromIDs(IDs, Data));
+  return TreeProxy::get(*Schema, Schema->CAS.create(Refs, Data));
 }

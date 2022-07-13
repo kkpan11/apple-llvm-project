@@ -53,7 +53,7 @@ public:
          function_ref<void(SmallVectorImpl<char> &)> Encode);
   static Expected<EncodedDataRef> get(Expected<ObjectFormatObjectProxy> Ref);
   static Expected<EncodedDataRef> get(const ObjectFileSchema &Schema,
-                                      cas::CASID ID) {
+                                      cas::ObjectRef ID) {
     return get(Schema.get(ID));
   }
 
@@ -167,13 +167,13 @@ public:
   }
 
   template <class RefT> struct TypedID {
-    cas::CASID ID;
-    operator cas::CASID() const { return ID; }
-    TypedID(RefT Ref) : ID(Ref.getID()) {}
+    cas::ObjectRef ID;
+    operator cas::ObjectRef() const { return ID; }
+    TypedID(RefT Ref) : ID(Ref.getRef()) {}
 
   private:
     friend struct DenseMapInfo<TypedID>;
-    explicit TypedID(cas::CASID ID) : ID(ID) {}
+    explicit TypedID(cas::ObjectRef ID) : ID(ID) {}
   };
 
   using TargetID = TypedID<TargetRef>;
@@ -211,7 +211,7 @@ private:
   mutable DenseMap<StringRef, CASSymbolRef> SymbolsByName;
 
   mutable sys::Mutex BlocksLock;
-  mutable DenseMap<cas::CASID, std::unique_ptr<BlockNodeRef>> Blocks;
+  mutable DenseMap<cas::ObjectRef, std::unique_ptr<BlockNodeRef>> Blocks;
 
   mutable sys::Mutex SectionsLock;
   mutable DenseMap<SectionID, std::unique_ptr<SectionNodeRef>> Sections;
@@ -229,7 +229,7 @@ Expected<std::unique_ptr<CASObjectReader>>
 ObjectFileSchema::createObjectReader(cas::ObjectProxy RootNode) const {
   if (!isRootNode(RootNode))
     return createStringError(inconvertibleErrorCode(), "invalid root node");
-  auto CU = CompileUnitRef::get(*this, RootNode);
+  auto CU = CompileUnitRef::get(*this, RootNode.getRef());
   if (!CU)
     return CU.takeError();
   return CU->createObjectReader();
@@ -243,11 +243,11 @@ ObjectFileSchema::ObjectFileSchema(cas::CASDB &CAS)
 }
 
 Error ObjectFileSchema::fillCache() {
-  Optional<cas::CASID> RootKindID;
+  Optional<cas::ObjectRef> RootKindID;
   const unsigned Version = 0; // Bump this to error on old object files.
   if (Expected<cas::ObjectProxy> ExpectedRootKind =
           CAS.create(None, "cas.o:nestedv1:schema:" + Twine(Version).str()))
-    RootKindID = *ExpectedRootKind;
+    RootKindID = ExpectedRootKind->getRef();
   else
     return ExpectedRootKind.takeError();
 
@@ -258,22 +258,22 @@ Error ObjectFileSchema::fillCache() {
       SectionRef::KindString,     SymbolRef::KindString,
       SymbolTableRef::KindString, TargetListRef::KindString,
   };
-  cas::CASID Refs[] = {*RootKindID};
-  SmallVector<cas::CASID> IDs = {*RootKindID};
+  cas::ObjectRef Refs[] = {*RootKindID};
+  SmallVector<cas::ObjectRef> IDs = {*RootKindID};
   for (StringRef KS : AllKindStrings) {
-    auto ExpectedID = CAS.createFromIDs(Refs, KS);
+    auto ExpectedID = CAS.create(Refs, KS);
     if (!ExpectedID)
       return ExpectedID.takeError();
-    IDs.push_back(*ExpectedID);
+    IDs.push_back(ExpectedID->getRef());
     KindStrings.push_back(std::make_pair(KindStrings.size(), KS));
     assert(KindStrings.size() < UCHAR_MAX &&
            "Ran out of bits for kind strings");
   }
 
-  auto ExpectedTypeID = CAS.createFromIDs(IDs, "cas.o:nestedv1:root");
+  auto ExpectedTypeID = CAS.create(IDs, "cas.o:nestedv1:root");
   if (!ExpectedTypeID)
     return ExpectedTypeID.takeError();
-  RootNodeTypeID = *ExpectedTypeID;
+  RootNodeTypeID = ExpectedTypeID->getRef();
   return Error::success();
 }
 
@@ -294,7 +294,7 @@ ObjectFileSchema::getKindString(const cas::ObjectProxy &Node) const {
 bool ObjectFileSchema::isRootNode(const cas::ObjectProxy &Node) const {
   if (Node.getNumReferences() < 1)
     return false;
-  return Node.getReferenceID(0) == *RootNodeTypeID;
+  return Node.getReference(0) == *RootNodeTypeID;
 }
 
 bool ObjectFileSchema::isNode(const cas::ObjectProxy &Node) const {
@@ -306,7 +306,7 @@ Expected<ObjectFormatObjectProxy::Builder>
 ObjectFormatObjectProxy::Builder::startRootNode(const ObjectFileSchema &Schema,
                                                 StringRef KindString) {
   Builder B(Schema);
-  B.IDs.push_back(Schema.getRootNodeTypeID());
+  B.Refs.push_back(Schema.getRootNodeTypeID());
 
   if (Error E = B.startNodeImpl(KindString))
     return std::move(E);
@@ -333,8 +333,7 @@ ObjectFormatObjectProxy::Builder::startNode(const ObjectFileSchema &Schema,
 }
 
 Expected<ObjectFormatObjectProxy> ObjectFormatObjectProxy::Builder::build() {
-  return ObjectFormatObjectProxy::get(*Schema,
-                                      Schema->CAS.createFromIDs(IDs, Data));
+  return ObjectFormatObjectProxy::get(*Schema, Schema->CAS.create(Refs, Data));
 }
 
 StringRef ObjectFormatObjectProxy::getKindString() const {
@@ -518,7 +517,8 @@ Expected<Optional<NameRef>> TargetRef::getName() const {
 }
 
 Expected<TargetRef> TargetRef::get(const ObjectFileSchema &Schema,
-                                   cas::CASID ID, Optional<Kind> ExpectedKind) {
+                                   cas::ObjectRef ID,
+                                   Optional<Kind> ExpectedKind) {
   auto checkExpectedKind = [&](Kind K, StringRef Name) -> Expected<TargetRef> {
     if (ExpectedKind && *ExpectedKind != K)
       return createStringError(inconvertibleErrorCode(),
@@ -592,7 +592,7 @@ Expected<TargetListRef> TargetListRef::create(const ObjectFileSchema &Schema,
   if (!B)
     return B.takeError();
 
-  B->IDs.append(Targets.begin(), Targets.end());
+  B->Refs.append(Targets.begin(), Targets.end());
   return get(B->build());
 }
 
@@ -603,7 +603,7 @@ Expected<SectionRef> SectionRef::create(const ObjectFileSchema &Schema,
   if (!B)
     return B.takeError();
 
-  B->IDs.push_back(SectionName);
+  B->Refs.push_back(SectionName.getRef());
 
   // FIXME: Does 1 byte leave enough space for expansion? Probably, but
   // 4 bytes would be fine too.
@@ -630,10 +630,10 @@ Optional<size_t> BlockRef::getTargetsIndex() const {
   return Flags.HasTargets ? 2 : Optional<size_t>();
 }
 
-Optional<cas::CASID> BlockRef::getTargetInfoID() const {
+Optional<cas::ObjectRef> BlockRef::getTargetInfoID() const {
   assert(Flags.HasEdges && "Expected edges");
   assert(!Flags.HasEmbeddedTargetInfo && "Expected explicit edges");
-  return getReferenceID(2U + unsigned(Flags.HasTargets));
+  return getReference(2U + unsigned(Flags.HasTargets));
 }
 
 Expected<FixupList> BlockRef::getFixups() const {
@@ -653,7 +653,7 @@ Expected<TargetInfoList> BlockRef::getTargetInfo() const {
   if (Flags.HasEmbeddedTargetInfo)
     return TargetInfoList(getData().drop_front());
 
-  Optional<cas::CASID> TargetInfoID = getTargetInfoID();
+  Optional<cas::ObjectRef> TargetInfoID = getTargetInfoID();
   if (!TargetInfoID)
     return TargetInfoList("");
 
@@ -671,7 +671,7 @@ Expected<TargetList> BlockRef::getTargets() const {
   if (Flags.HasTargetInline)
     return TargetList(*this, *TargetsIndex, *TargetsIndex + 1);
   if (Expected<TargetListRef> Targets =
-          TargetListRef::get(getSchema(), getReferenceID(*TargetsIndex)))
+          TargetListRef::get(getSchema(), getReference(*TargetsIndex)))
     return Targets->getTargets();
   else
     return Targets.takeError();
@@ -767,8 +767,8 @@ static Error decomposeAndSortEdges(
 
   // Collect targets, filtering out duplicate symbols.
 
-  // Pair of CASID for \p TargetRef and its index in the \p Targets array.
-  SmallDenseMap<cas::CASID, size_t, 16> SeenSymbolRefs;
+  // Pair of ObjectRef for \p TargetRef and its index in the \p Targets array.
+  SmallDenseMap<cas::ObjectRef, size_t, 16> SeenSymbolRefs;
   for (const EdgeTarget &EdgeTarget : EdgeTargets) {
     Expected<Optional<TargetRef>> TargetOrAbstractBackedge =
         GetTargetRef(*EdgeTarget.Symbol);
@@ -784,7 +784,7 @@ static Error decomposeAndSortEdges(
     decltype(SeenSymbolRefs)::iterator SeenSymIt;
     bool Inserted;
     std::tie(SeenSymIt, Inserted) =
-        SeenSymbolRefs.insert(std::make_pair(Target.getID(), Targets.size()));
+        SeenSymbolRefs.insert(std::make_pair(Target, Targets.size()));
     if (Inserted) {
       Targets.push_back(Target);
     }
@@ -844,7 +844,7 @@ Expected<BlockRef> BlockRef::createImpl(const ObjectFileSchema &Schema,
   if (!B)
     return B.takeError();
 
-  B->IDs.append({Section, Data});
+  B->Refs.append({Section.getRef(), Data.getRef()});
 
   bool HasAbstractBackedge = false;
   for (const auto &TI : TargetInfo) {
@@ -868,12 +868,12 @@ Expected<BlockRef> BlockRef::createImpl(const ObjectFileSchema &Schema,
       !TargetInfo.empty() && TargetInfo.size() <= MaxEdgesToEmbedInBlock;
   const bool HasTargetInline = InlineUnaryTargetLists && Targets.size() == 1;
   if (HasTargetInline) {
-    B->IDs.push_back(Targets[0].getID());
+    B->Refs.push_back(Targets[0]);
   } else if (!Targets.empty()) {
     auto TargetsRef = TargetListRef::create(Schema, Targets);
     if (!TargetsRef)
       return TargetsRef.takeError();
-    B->IDs.push_back(*TargetsRef);
+    B->Refs.push_back(TargetsRef->getRef());
   }
 
   unsigned Bits = 0;
@@ -894,7 +894,7 @@ Expected<BlockRef> BlockRef::createImpl(const ObjectFileSchema &Schema,
         });
     if (!TargetInfoRef)
       return TargetInfoRef.takeError();
-    B->IDs.push_back(*TargetInfoRef);
+    B->Refs.push_back(TargetInfoRef->getRef());
   }
 
   return get(B->build());
@@ -1130,9 +1130,9 @@ Expected<SymbolRef> SymbolRef::create(const ObjectFileSchema &Schema,
   if (Offset)
     encoding::writeVBR8(Offset, B->Data);
 
-  B->IDs.push_back(Definition);
+  B->Refs.push_back(Definition.getRef());
   if (SymbolName)
-    B->IDs.push_back(*SymbolName);
+    B->Refs.push_back(SymbolName->getRef());
 
   return get(B->build());
 }
@@ -1190,9 +1190,11 @@ Expected<CompileUnitRef> CompileUnitRef::create(
   encoding::writeVBR8(uint8_t(Endianness), B->Data);
   B->Data.append(NormalizedTriple);
 
-  assert(B->IDs.size() == 1 && "Expected the root type-id?");
-  B->IDs.append({DeadStripNever, DeadStripLink, IndirectDeadStripCompile,
-                 IndirectAnonymous, StrongSymbols, WeakSymbols, Unreferenced});
+  assert(B->Refs.size() == 1 && "Expected the root type-id?");
+  B->Refs.append({DeadStripNever.getRef(), DeadStripLink.getRef(),
+                  IndirectDeadStripCompile.getRef(), IndirectAnonymous.getRef(),
+                  StrongSymbols.getRef(), WeakSymbols.getRef(),
+                  Unreferenced.getRef()});
   return get(B->build());
 }
 
@@ -1211,7 +1213,8 @@ Expected<NameListRef> NameListRef::create(const ObjectFileSchema &Schema,
       return LHS.getName() < RHS.getName();
     });
   }
-  B->IDs.append(Names.begin(), Names.end());
+  for (const auto &Name : Names)
+    B->Refs.push_back(Name.getRef());
 
   return get(B->build());
 }
@@ -1239,7 +1242,7 @@ Expected<SymbolTableRef> SymbolTableRef::create(const ObjectFileSchema &Schema,
   // Sort the symbols to create a stable order.
   uint32_t NumAnonymousSymbols = 0;
   if (Symbols.size() == 1) {
-    B->IDs.push_back(Symbols[0]);
+    B->Refs.push_back(Symbols[0].getRef());
     if (!Symbols[0].hasName())
       ++NumAnonymousSymbols;
   } else if (Symbols.size() > 1) {
@@ -1288,10 +1291,10 @@ Expected<SymbolTableRef> SymbolTableRef::create(const ObjectFileSchema &Schema,
     // duplicates for some reason. E.g., this prevents adding support for
     // referencing anonymous symbols indirectly in a way that doesn't modify
     // the symbol itself. Maybe that's okay?
-    DenseSet<cas::CASID> UniqueIDs;
+    DenseSet<cas::ObjectRef> UniqueIDs;
     for (uint32_t I : Order)
-      if (UniqueIDs.insert(Symbols[I]).second)
-        B->IDs.push_back(Symbols[I]);
+      if (UniqueIDs.insert(Symbols[I].getRef()).second)
+        B->Refs.push_back(Symbols[I].getRef());
       else if (Names[I].empty())
         --NumAnonymousSymbols;
   }
@@ -1771,15 +1774,15 @@ Expected<CompileUnitRef> CompileUnitRef::create(const ObjectFileSchema &Schema,
 namespace llvm {
 template <class RefT>
 struct DenseMapInfo<NestedV1ObjectReader::TypedID<RefT>>
-    : public DenseMapInfo<cas::CASID> {
+    : public DenseMapInfo<cas::ObjectRef> {
   static NestedV1ObjectReader::TypedID<RefT> getEmptyKey() {
     return NestedV1ObjectReader::TypedID<RefT>{
-        DenseMapInfo<cas::CASID>::getEmptyKey()};
+        DenseMapInfo<cas::ObjectRef>::getEmptyKey()};
   }
 
   static NestedV1ObjectReader::TypedID<RefT> getTombstoneKey() {
     return NestedV1ObjectReader::TypedID<RefT>{
-        DenseMapInfo<cas::CASID>::getTombstoneKey()};
+        DenseMapInfo<cas::ObjectRef>::getTombstoneKey()};
   }
 };
 } // namespace llvm
@@ -1911,8 +1914,8 @@ Expected<CASBlockRef> NestedV1ObjectReader::getOrCreateCASBlockRef(
   bool CanShareBlockRef = MergeByContent && !Block->hasAbstractBackedge() &&
                           !Block->hasKeepAliveEdge();
 
-  cas::CASID IDKey =
-      CanShareBlockRef ? Block->getID() : ForSymbol.Symbol.getID();
+  cas::ObjectRef IDKey =
+      CanShareBlockRef ? Block->getRef() : ForSymbol.Symbol.getRef();
 
   std::lock_guard<sys::Mutex> Guard(BlocksLock);
   auto &Ref = Blocks[IDKey];

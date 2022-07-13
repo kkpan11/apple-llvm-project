@@ -270,7 +270,7 @@ TEST_P(CASDBTest, NodesBig) {
   if (Storage.size() < SizeE)
     Storage.resize(SizeE, '\01');
 
-  SmallVector<CASID, 4> CreatedNodes;
+  SmallVector<ObjectRef, 4> CreatedNodes;
   // Avoid checking every size because this is an expensive test. Just check
   // for data that is 8B-word-aligned, and one less. Also appending the created
   // nodes as the references in the next block to check references are created
@@ -279,17 +279,17 @@ TEST_P(CASDBTest, NodesBig) {
     for (bool IsAligned : {false, true}) {
       StringRef Data(Storage.data(), Size - (IsAligned ? 0 : 1));
       Optional<ObjectProxy> Node;
-      ASSERT_THAT_ERROR(CAS->createFromIDs(CreatedNodes, Data).moveInto(Node),
+      ASSERT_THAT_ERROR(CAS->create(CreatedNodes, Data).moveInto(Node),
                         Succeeded());
       ASSERT_EQ(Data, Node->getData());
       ASSERT_EQ(0, Node->getData().end()[0]);
       ASSERT_EQ(Node->getNumReferences(), CreatedNodes.size());
-      CreatedNodes.emplace_back(Node->getID());
+      CreatedNodes.emplace_back(Node->getRef());
     }
   }
 
   for (auto ID: CreatedNodes)
-    ASSERT_THAT_ERROR(CAS->validate(ID), Succeeded());
+    ASSERT_THAT_ERROR(CAS->validate(CAS->getID(ID)), Succeeded());
 }
 
 INSTANTIATE_TEST_SUITE_P(InMemoryCAS, CASDBTest, ::testing::Values([](int) {

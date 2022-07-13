@@ -65,7 +65,7 @@ protected:
 
   public:
     SmallString<256> Data;
-    SmallVector<cas::CASID, 16> IDs;
+    SmallVector<cas::ObjectRef, 16> Refs;
   };
 
 private:
@@ -91,7 +91,7 @@ public:
   Optional<StringRef> getKindString(const cas::ObjectProxy &Node) const;
   Optional<unsigned char> getKindStringID(StringRef KindString) const;
 
-  cas::CASID getRootNodeTypeID() const { return *RootNodeTypeID; }
+  cas::ObjectRef getRootNodeTypeID() const { return *RootNodeTypeID; }
 
   /// Check if \a Node is a root (entry node) for the schema. This is a strong
   /// check, since it requires that the first reference matches a complete
@@ -113,12 +113,12 @@ public:
 
   ObjectFileSchema(cas::CASDB &CAS);
 
-  Expected<ObjectFormatObjectProxy> create(ArrayRef<cas::CASID> IDs,
+  Expected<ObjectFormatObjectProxy> create(ArrayRef<cas::ObjectRef> Refs,
                                            StringRef Data) const {
-    return ObjectFormatObjectProxy::get(*this, CAS.createFromIDs(IDs, Data));
+    return ObjectFormatObjectProxy::get(*this, CAS.create(Refs, Data));
   }
-  Expected<ObjectFormatObjectProxy> get(cas::CASID ID) const {
-    return ObjectFormatObjectProxy::get(*this, CAS.getProxy(ID));
+  Expected<ObjectFormatObjectProxy> get(cas::ObjectRef Ref) const {
+    return ObjectFormatObjectProxy::get(*this, CAS.getProxy(Ref));
   }
 
 private:
@@ -128,7 +128,7 @@ private:
 
   // Optional as convenience for constructor, which does not return if it can't
   // fill this in.
-  Optional<cas::CASID> RootNodeTypeID;
+  Optional<cas::ObjectRef> RootNodeTypeID;
 
   // Called by constructor. Not thread-safe.
   Error fillCache();
@@ -170,8 +170,9 @@ public:
 
   static Expected<NameRef> create(CompileUnitBuilder &CUB, StringRef Name);
   static Expected<NameRef> get(Expected<ObjectFormatObjectProxy> Ref);
-  static Expected<NameRef> get(const ObjectFileSchema &Schema, cas::CASID ID) {
-    return get(Schema.get(ID));
+  static Expected<NameRef> get(const ObjectFileSchema &Schema,
+                               cas::ObjectRef Ref) {
+    return get(Schema.get(Ref));
   }
 
 private:
@@ -189,8 +190,8 @@ public:
                                      const jitlink::Section &S);
   static Expected<SectionRef> get(Expected<ObjectFormatObjectProxy> Ref);
   static Expected<SectionRef> get(const ObjectFileSchema &Schema,
-                                  cas::CASID ID) {
-    return get(Schema.get(ID));
+                                  cas::ObjectRef Ref) {
+    return get(Schema.get(Ref));
   }
 
   Expected<reader::CASSection> materialize() const;
@@ -210,8 +211,9 @@ public:
                                    const jitlink::Block &Block);
 
   static Expected<BlockRef> get(Expected<ObjectFormatObjectProxy> Ref);
-  static Expected<BlockRef> get(const ObjectFileSchema &Schema, cas::CASID ID) {
-    return get(Schema.get(ID));
+  static Expected<BlockRef> get(const ObjectFileSchema &Schema,
+                                cas::ObjectRef Ref) {
+    return get(Schema.get(Ref));
   }
 
   Expected<reader::CASBlock> materializeBlock(const FlatV1ObjectReader &Reader,
@@ -236,8 +238,8 @@ public:
 
   static Expected<BlockContentRef> get(Expected<ObjectFormatObjectProxy> Ref);
   static Expected<BlockContentRef> get(const ObjectFileSchema &Schema,
-                                       cas::CASID ID) {
-    return get(Schema.get(ID));
+                                       cas::ObjectRef Ref) {
+    return get(Schema.get(Ref));
   }
 
 private:
@@ -256,8 +258,8 @@ public:
 
   static Expected<SymbolRef> get(Expected<ObjectFormatObjectProxy> Ref);
   static Expected<SymbolRef> get(const ObjectFileSchema &Schema,
-                                 cas::CASID ID) {
-    return get(Schema.get(ID));
+                                 cas::ObjectRef Ref) {
+    return get(Schema.get(Ref));
   }
 
   Expected<reader::CASSymbol> materialize(const FlatV1ObjectReader &Reader,
@@ -281,8 +283,8 @@ public:
 
   static Expected<CompileUnitRef> get(Expected<ObjectFormatObjectProxy> Ref);
   static Expected<CompileUnitRef> get(const ObjectFileSchema &Schema,
-                                      cas::CASID ID) {
-    return get(Schema.get(ID));
+                                      cas::ObjectRef Ref) {
+    return get(Schema.get(Ref));
   }
 
   static Expected<CompileUnitRef> create(const ObjectFileSchema &Schema,
@@ -328,9 +330,9 @@ private:
   unsigned commitNode(const ObjectFormatObjectProxy &Ref);
   void pushNodes();
 
-  // Cache all the CASID created.
-  DenseMap<cas::CASID, unsigned> CASIDMap;
-  std::vector<cas::CASID> IDs;
+  // Cache all the ObjectRef created.
+  DenseMap<cas::ObjectRef, unsigned> ObjRefMap;
+  std::vector<cas::ObjectRef> Refs;
 
   // Index Storage.
   std::vector<unsigned> Indexes;
@@ -442,21 +444,21 @@ private:
     return Indexes[I];
   }
 
-  Expected<cas::CASID> getID(unsigned I) const {
+  Expected<cas::ObjectRef> getRef(unsigned I) const {
     // First ID is the RootTypeID
-    auto IDIndex = I + 1;
-    if (IDIndex >= IDs.size())
+    auto RefIndex = I + 1;
+    if (RefIndex >= Refs.size())
       return createStringError(inconvertibleErrorCode(),
                                "ID Index out of bound");
 
-    return IDs[IDIndex];
+    return Refs[RefIndex];
   }
 
   template <typename RefT> Expected<RefT> get(unsigned I) const {
-    auto ID = getID(I);
-    if (!ID)
-      return ID.takeError();
-    return RefT::get(Root.getSchema(), *ID);
+    auto Ref = getRef(I);
+    if (!Ref)
+      return Ref.takeError();
+    return RefT::get(Root.getSchema(), *Ref);
   }
 
   CompileUnitRef Root;
@@ -467,7 +469,7 @@ private:
   bool HasBlockContentNodes;
   bool HasInlinedSymbols;
 
-  std::vector<cas::CASID> IDs;
+  std::vector<cas::ObjectRef> Refs;
   std::vector<unsigned> Indexes;
 
   unsigned SectionsSize;

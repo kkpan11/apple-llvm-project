@@ -71,7 +71,7 @@ protected:
 
   public:
     SmallString<256> Data;
-    SmallVector<cas::CASID, 16> IDs;
+    SmallVector<cas::ObjectRef, 16> Refs;
   };
 
 private:
@@ -97,7 +97,7 @@ public:
   Optional<StringRef> getKindString(const cas::ObjectProxy &Node) const;
   Optional<unsigned char> getKindStringID(StringRef KindString) const;
 
-  cas::CASID getRootNodeTypeID() const { return *RootNodeTypeID; }
+  cas::ObjectRef getRootNodeTypeID() const { return *RootNodeTypeID; }
 
   /// Check if \a Node is a root (entry node) for the schema. This is a strong
   /// check, since it requires that the first reference matches a complete
@@ -119,11 +119,11 @@ public:
 
   ObjectFileSchema(cas::CASDB &CAS);
 
-  Expected<ObjectFormatObjectProxy> create(ArrayRef<cas::CASID> IDs,
+  Expected<ObjectFormatObjectProxy> create(ArrayRef<cas::ObjectRef> Refs,
                                            StringRef Data) const {
-    return ObjectFormatObjectProxy::get(*this, CAS.createFromIDs(IDs, Data));
+    return ObjectFormatObjectProxy::get(*this, CAS.create(Refs, Data));
   }
-  Expected<ObjectFormatObjectProxy> get(cas::CASID ID) const {
+  Expected<ObjectFormatObjectProxy> get(cas::ObjectRef ID) const {
     return ObjectFormatObjectProxy::get(*this, CAS.getProxy(ID));
   }
 
@@ -134,7 +134,7 @@ private:
 
   // Optional as convenience for constructor, which does not return if it can't
   // fill this in.
-  Optional<cas::CASID> RootNodeTypeID;
+  Optional<cas::ObjectRef> RootNodeTypeID;
 
   // Called by constructor. Not thread-safe.
   Error fillCache();
@@ -177,7 +177,8 @@ public:
   static Expected<NameRef> create(const ObjectFileSchema &Schema,
                                   StringRef Name);
   static Expected<NameRef> get(Expected<ObjectFormatObjectProxy> Ref);
-  static Expected<NameRef> get(const ObjectFileSchema &Schema, cas::CASID ID) {
+  static Expected<NameRef> get(const ObjectFileSchema &Schema,
+                               cas::ObjectRef ID) {
     return get(Schema.get(ID));
   }
 
@@ -212,7 +213,7 @@ public:
   // FIXME: Support "huge" bit?
   static constexpr StringLiteral KindString = "cas.o:section";
 
-  cas::CASID getNameID() const { return getReferenceID(0); }
+  cas::ObjectRef getNameID() const { return getReference(0); }
   Expected<NameRef> getName() const {
     return NameRef::get(getSchema(), getNameID());
   }
@@ -226,7 +227,7 @@ public:
 
   static Expected<SectionRef> get(Expected<ObjectFormatObjectProxy> Ref);
   static Expected<SectionRef> get(const ObjectFileSchema &Schema,
-                                  cas::CASID ID) {
+                                  cas::ObjectRef ID) {
     return get(Schema.get(ID));
   }
 
@@ -262,7 +263,7 @@ public:
 
   static Expected<BlockDataRef> get(Expected<ObjectFormatObjectProxy> Ref);
   static Expected<BlockDataRef> get(const ObjectFileSchema &Schema,
-                                    cas::CASID ID) {
+                                    cas::ObjectRef ID) {
     return get(Schema.get(ID));
   }
 
@@ -305,8 +306,10 @@ public:
 
   Kind getKind() const { return K; }
   const ObjectFileSchema &getSchema() const { return *Schema; }
-  cas::CASID getID() const { return ID; }
-  operator cas::CASID() const { return getID(); }
+  cas::ObjectRef getRef() const { return ID; }
+  operator cas::ObjectRef() const { return getRef(); }
+
+  cas::CASID getID() const { return Schema->CAS.getID(ID); }
 
   Expected<Optional<NameRef>> getName() const;
 
@@ -320,23 +323,24 @@ public:
 
   /// Get a \a TargetRef. If \c Kind is specified, returns an error on
   /// mismatch; otherwise just requires that it's a valid target.
-  static Expected<TargetRef> get(const ObjectFileSchema &Schema, cas::CASID ID,
+  static Expected<TargetRef> get(const ObjectFileSchema &Schema,
+                                 cas::ObjectRef ID,
                                  Optional<Kind> ExpectedKind = None);
 
   static TargetRef getIndirectSymbol(const ObjectFileSchema &Schema,
                                      NameRef Ref) {
-    return TargetRef(Schema, Ref, IndirectSymbol);
+    return TargetRef(Schema, Ref.getRef(), IndirectSymbol);
   }
   static TargetRef getSymbol(const ObjectFileSchema &Schema,
                              const SymbolRef &Ref);
 
 private:
   TargetRef() = delete;
-  TargetRef(const ObjectFileSchema &Schema, cas::CASID ID, Kind K)
+  TargetRef(const ObjectFileSchema &Schema, cas::ObjectRef ID, Kind K)
       : Schema(&Schema), ID(ID), K(K) {}
 
   const ObjectFileSchema *Schema;
-  cas::CASID ID;
+  cas::ObjectRef ID;
   Kind K;
 };
 
@@ -349,7 +353,7 @@ public:
   Expected<TargetRef> operator[](size_t I) const { return get(I); }
   Expected<TargetRef> get(size_t I) const {
     assert(I < size() && "past the end");
-    return TargetRef::get(Node->getSchema(), Node->getReferenceID(I + First));
+    return TargetRef::get(Node->getSchema(), Node->getReference(I + First));
   }
 
   TargetList() = default;
@@ -388,7 +392,7 @@ public:
 
   static Expected<TargetListRef> get(Expected<ObjectFormatObjectProxy> Ref);
   static Expected<TargetListRef> get(const ObjectFileSchema &Schema,
-                                     cas::CASID ID) {
+                                     cas::ObjectRef ID) {
     return get(Schema.get(ID));
   }
 
@@ -420,7 +424,7 @@ public:
   get(Expected<ObjectFormatObjectProxy> Ref,
       Optional<Kind> ExpectedKind = None);
   static Expected<SymbolDefinitionRef> get(const ObjectFileSchema &Schema,
-                                           cas::CASID ID,
+                                           cas::ObjectRef ID,
                                            Optional<Kind> ExpectedKind = None) {
     return get(Schema.get(ID), ExpectedKind);
   }
@@ -496,12 +500,12 @@ public:
   bool hasAbstractBackedge() const { return Flags.HasAbstractBackedge; }
   bool hasKeepAliveEdge() const { return Flags.HasKeepAliveEdge; }
 
-  cas::CASID getSectionID() const { return getReferenceID(0); }
-  cas::CASID getDataID() const { return getReferenceID(1); }
+  cas::ObjectRef getSectionID() const { return getReference(0); }
+  cas::ObjectRef getDataID() const { return getReference(1); }
 
 private:
   Optional<size_t> getTargetsIndex() const;
-  Optional<cas::CASID> getTargetInfoID() const;
+  Optional<cas::ObjectRef> getTargetInfoID() const;
 
 public:
   Expected<SectionRef> getSection() const {
@@ -532,7 +536,8 @@ public:
   }
 
   static Expected<BlockRef> get(Expected<ObjectFormatObjectProxy> Ref);
-  static Expected<BlockRef> get(const ObjectFileSchema &Schema, cas::CASID ID) {
+  static Expected<BlockRef> get(const ObjectFileSchema &Schema,
+                                cas::ObjectRef ID) {
     return get(Schema.get(ID));
   }
 
@@ -660,9 +665,9 @@ public:
            getMerge() == M_ByNameOrContent;
   }
 
-  cas::CASID getDefinitionID() const { return getReferenceID(0); }
-  Optional<cas::CASID> getNameID() const {
-    return hasName() ? getReferenceID(1) : Optional<cas::CASID>();
+  cas::ObjectRef getDefinitionID() const { return getReference(0); }
+  Optional<cas::ObjectRef> getNameID() const {
+    return hasName() ? getReference(1) : Optional<cas::ObjectRef>();
   }
 
   Expected<SymbolDefinitionRef> getDefinition() const {
@@ -676,7 +681,7 @@ public:
 
   static Expected<SymbolRef> get(Expected<ObjectFormatObjectProxy> Ref);
   static Expected<SymbolRef> get(const ObjectFileSchema &Schema,
-                                 cas::CASID ID) {
+                                 cas::ObjectRef ID) {
     return get(Schema.get(ID));
   }
 
@@ -703,7 +708,7 @@ private:
 
 inline TargetRef TargetRef::getSymbol(const ObjectFileSchema &Schema,
                                       const SymbolRef &Ref) {
-  return TargetRef(Schema, Ref, Symbol);
+  return TargetRef(Schema, Ref.getRef(), Symbol);
 }
 
 /// A symbol table.
@@ -719,7 +724,7 @@ public:
     return getNumSymbols() - getNumAnonymousSymbols();
   }
   size_t getNumSymbols() const { return getNumReferences(); }
-  cas::CASID getSymbolID(size_t I) const { return getReferenceID(I); }
+  cas::ObjectRef getSymbolID(size_t I) const { return getReference(I); }
 
   Expected<SymbolRef> getSymbol(size_t I) const {
     return SymbolRef::get(getSchema().get(getSymbolID(I)));
@@ -732,8 +737,8 @@ public:
 
   static Expected<SymbolTableRef> get(Expected<ObjectFormatObjectProxy> Ref);
   static Expected<SymbolTableRef> get(const ObjectFileSchema &Schema,
-                                      cas::CASID CASID) {
-    return get(Schema.get(CASID));
+                                      cas::ObjectRef ObjectRef) {
+    return get(Schema.get(ObjectRef));
   }
 
 private:
@@ -752,7 +757,7 @@ public:
   static constexpr StringLiteral KindString = "cas.o:name-list";
 
   size_t getNumNames() const { return getNumReferences(); }
-  cas::CASID getNameID(size_t I) const { return getReferenceID(I); }
+  cas::ObjectRef getNameID(size_t I) const { return getReference(I); }
   Expected<NameRef> getName(size_t I) const {
     return NameRef::get(getSchema(), getNameID(I));
   }
@@ -762,8 +767,8 @@ public:
 
   static Expected<NameListRef> get(Expected<ObjectFormatObjectProxy> Ref);
   static Expected<NameListRef> get(const ObjectFileSchema &Schema,
-                                   cas::CASID CASID) {
-    return get(Schema.get(CASID));
+                                   cas::ObjectRef ObjectRef) {
+    return get(Schema.get(ObjectRef));
   }
 
 private:
@@ -919,13 +924,15 @@ public:
   unsigned getPointerSize() const { return PointerSize; }
   support::endianness getEndianness() const { return Endianness; }
 
-  cas::CASID getDeadStripNeverID() const { return getReferenceID(1); }
-  cas::CASID getDeadStripLinkID() const { return getReferenceID(2); }
-  cas::CASID getIndirectDeadStripCompileID() const { return getReferenceID(3); }
-  cas::CASID getIndirectAnonymousID() const { return getReferenceID(4); }
-  cas::CASID getStrongExternalsID() const { return getReferenceID(5); }
-  cas::CASID getWeakExternalsID() const { return getReferenceID(6); }
-  cas::CASID getUnreferencedID() const { return getReferenceID(7); }
+  cas::ObjectRef getDeadStripNeverID() const { return getReference(1); }
+  cas::ObjectRef getDeadStripLinkID() const { return getReference(2); }
+  cas::ObjectRef getIndirectDeadStripCompileID() const {
+    return getReference(3);
+  }
+  cas::ObjectRef getIndirectAnonymousID() const { return getReference(4); }
+  cas::ObjectRef getStrongExternalsID() const { return getReference(5); }
+  cas::ObjectRef getWeakExternalsID() const { return getReference(6); }
+  cas::ObjectRef getUnreferencedID() const { return getReference(7); }
   Expected<SymbolTableRef> getDeadStripNever() const {
     return SymbolTableRef::get(getSchema().get(getDeadStripNeverID()));
   }
@@ -953,7 +960,7 @@ public:
 
   static Expected<CompileUnitRef> get(Expected<ObjectFormatObjectProxy> Ref);
   static Expected<CompileUnitRef> get(const ObjectFileSchema &Schema,
-                                      cas::CASID ID) {
+                                      cas::ObjectRef ID) {
     return get(Schema.get(ID));
   }
   static Expected<CompileUnitRef>
