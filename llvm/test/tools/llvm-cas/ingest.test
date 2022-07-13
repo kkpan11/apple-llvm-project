@@ -27,4 +27,3 @@ CHECK-ERROR: llvm-cas: get-cas-id: No such file or directory
 RUN: llvm-cas --cas  %t/cas --ls-node-refs @%t/cas.id 2>&1 | FileCheck %s --check-prefix=CHECK-NODE-REFS
 CHECK-NODE-REFS: llvmcas://
 CHECK-NODE-REFS: llvmcas://
-CHECK-NODE-REFS: llvmcas://

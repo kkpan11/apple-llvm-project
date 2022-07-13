@@ -7,6 +7,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/CAS/TreeSchema.h"
+#include "llvm/Support/Endian.h"
+#include "llvm/Support/EndianStream.h"
 #include "llvm/Support/MemoryBufferRef.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/StringSaver.h"
@@ -37,7 +39,7 @@ TreeSchema::TreeSchema(cas::CASDB &CAS) : TreeSchema::RTTIExtends(CAS) {
 ObjectRef TreeSchema::getKindRef() const { return *TreeKindRef; }
 
 size_t TreeSchema::getNumTreeEntries(TreeProxy Tree) const {
-  return (CAS.getNumRefs(Tree) - 1) / 2;
+  return CAS.getNumRefs(Tree) - 1;
 }
 
 Error TreeSchema::forEachTreeEntry(
@@ -90,13 +92,14 @@ Error TreeSchema::walkFileTreeRecursively(
 
 NamedTreeEntry TreeSchema::loadTreeEntry(TreeProxy Tree, size_t I) const {
   // Load entry from TreeNode.
-  TreeEntry::EntryKind Kind = (TreeEntry::EntryKind)Tree.getData()[I];
-  // Names are stored in the front, followed by Refs.
-  // FIXME: Name loading can't fail?
-  auto NameProxy = cantFail(CAS.getProxy(Tree.getReference(I + 1)));
-  auto ObjectRef = Tree.getReference(Tree.size() + I + 1);
+  TreeEntry::EntryKind Kind =
+      (TreeEntry::EntryKind)
+          Tree.getData()[I + (Tree.size() + 1) * sizeof(uint32_t)];
 
-  return {ObjectRef, Kind, NameProxy.getData()};
+  StringRef Name = Tree.getName(I);
+  auto ObjectRef = Tree.getReference(I + 1);
+
+  return {ObjectRef, Kind, Name};
 }
 
 Optional<size_t> TreeSchema::lookupTreeEntry(TreeProxy Tree,
@@ -106,10 +109,6 @@ Optional<size_t> TreeSchema::lookupTreeEntry(TreeProxy Tree,
     return None;
 
   SmallVector<StringRef> Names(NumNames);
-  auto GetName = [&](size_t I) {
-    auto NameProxy = cantFail(CAS.getProxy(Tree.getReference(I + 1)));
-    return NameProxy.getData();
-  };
 
   // Start with a binary search, if there are enough entries.
   //
@@ -120,7 +119,7 @@ Optional<size_t> TreeSchema::lookupTreeEntry(TreeProxy Tree,
   size_t First = 0;
   while (Last - First > MaxLinearSearchSize) {
     auto I = First + (Last - First) / 2;
-    StringRef NameI = GetName(I);
+    StringRef NameI = Tree.getName(I);
     switch (Name.compare(NameI)) {
     case 0:
       return I;
@@ -135,7 +134,7 @@ Optional<size_t> TreeSchema::lookupTreeEntry(TreeProxy Tree,
 
   // Use a linear search for small trees.
   for (; First != Last; ++First)
-    if (Name == GetName(First))
+    if (Name == Tree.getName(First))
       return First;
 
   return None;
@@ -161,14 +160,6 @@ TreeSchema::create(ArrayRef<NamedTreeEntry> Entries) {
   return TreeProxy::create(*this, Entries);
 }
 
-Expected<ObjectRef> TreeSchema::storeTreeNodeName(StringRef Name) {
-  auto Node = CAS.storeFromString({}, Name);
-  if (!Node)
-    return Node.takeError();
-
-  return ObjectProxy::load(CAS, *Node).getRef();
-}
-
 Expected<TreeProxy> TreeProxy::get(const TreeSchema &Schema,
                                            Expected<ObjectProxy> Ref) {
   if (!Ref)
@@ -176,32 +167,23 @@ Expected<TreeProxy> TreeProxy::get(const TreeSchema &Schema,
   return TreeProxy(Schema, *Ref);
 }
 
-Expected<TreeProxy>
-TreeProxy::create(TreeSchema &Schema, ArrayRef<NamedTreeEntry> Entries) {
-  // Ensure a stable order for tree entries and ignore name collisions.
-  SmallVector<NamedTreeEntry> Sorted(Entries.begin(), Entries.end());
-  std::stable_sort(Sorted.begin(), Sorted.end());
-  Sorted.erase(std::unique(Sorted.begin(), Sorted.end()), Sorted.end());
-
+Expected<TreeProxy> TreeProxy::create(TreeSchema &Schema,
+                                      ArrayRef<NamedTreeEntry> Entries) {
   auto B = Builder::startNode(Schema);
   if (!B)
     return B.takeError();
 
-  // Store Name and Kind.
-  for (auto &Entry : Sorted) {
-    // Create Name.
-    auto NameRef = Schema.storeTreeNodeName(Entry.getName());
-    if (!NameRef)
-      return NameRef.takeError();
-    B->Refs.push_back(*NameRef);
-    B->Data.push_back((char)Entry.getKind());
-  }
+  return B->build(Entries);
+}
 
-  // Store Refs after Names.
-  for (auto &Entry : Sorted)
-    B->Refs.push_back(Entry.getRef());
+StringRef TreeProxy::getName(size_t I) const {
+  uint32_t StartIdx = support::endian::read<uint32_t, 1>(
+      getData().data() + sizeof(uint32_t) * I, support::endianness::little);
+  uint32_t EndIdx = support::endian::read<uint32_t, 1>(
+      getData().data() + sizeof(uint32_t) * (I + 1),
+      support::endianness::little);
 
-  return B->build();
+  return StringRef(getData().data() + StartIdx, EndIdx - StartIdx);
 }
 
 Expected<TreeProxy::Builder>
@@ -211,6 +193,35 @@ TreeProxy::Builder::startNode(TreeSchema &Schema) {
   return std::move(B);
 }
 
-Expected<TreeProxy> TreeProxy::Builder::build() {
+Expected<TreeProxy>
+TreeProxy::Builder::build(ArrayRef<NamedTreeEntry> Entries) {
+  // Ensure a stable order for tree entries and ignore name collisions.
+  SmallVector<NamedTreeEntry> Sorted(Entries.begin(), Entries.end());
+  std::stable_sort(Sorted.begin(), Sorted.end());
+  Sorted.erase(std::unique(Sorted.begin(), Sorted.end()), Sorted.end());
+
+  raw_svector_ostream OS(Data);
+  support::endian::Writer Writer(OS, support::endianness::little);
+  // Write Name.
+  // The start of the string table index.
+  uint32_t StrIdx =
+      sizeof(uint8_t) * Sorted.size() + sizeof(uint32_t) * (Sorted.size() + 1);
+  for (auto &Entry : Sorted) {
+    Writer.write(StrIdx);
+    StrIdx += Entry.getName().size();
+
+    // Append refs.
+    Refs.push_back(Entry.getRef());
+  }
+  Writer.write(StrIdx);
+
+  // Write Kind.
+  for (auto &Entry : Sorted)
+    Writer.write((uint8_t)Entry.getKind());
+
+  // Write names in the end of the block.
+  for (auto &Entry : Sorted)
+    OS << Entry.getName();
+
   return TreeProxy::get(*Schema, Schema->CAS.create(Refs, Data));
 }

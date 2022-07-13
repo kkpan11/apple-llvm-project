@@ -64,7 +64,6 @@ private:
   friend class TreeProxy;
 
   ObjectRef getKindRef() const;
-  Expected<ObjectRef> storeTreeNodeName(StringRef Name);
 };
 
 class TreeProxy : public ObjectProxy {
@@ -95,6 +94,8 @@ public:
     return None;
   }
 
+  StringRef getName(size_t I) const;
+
   NamedTreeEntry get(size_t I) const { return Schema->loadTreeEntry(*this, I); }
 
   TreeProxy() = delete;
@@ -107,7 +108,7 @@ private:
   public:
     static Expected<Builder> startNode(TreeSchema &Schema);
 
-    Expected<TreeProxy> build();
+    Expected<TreeProxy> build(ArrayRef<NamedTreeEntry> Entries);
 
   private:
     Builder(const TreeSchema &Schema) : Schema(&Schema) {}
