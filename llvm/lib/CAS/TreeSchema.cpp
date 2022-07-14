@@ -80,7 +80,7 @@ Error TreeSchema::walkFileTreeRecursively(
       Optional<NamedTreeEntry> Child = Tree.get(I - 1);
       assert(Child && "Expected no corruption");
 
-      SmallString<128> PathStorage = Parent.getName();
+      PathStorage = Parent.getName();
       sys::path::append(PathStorage, sys::path::Style::posix, Child->getName());
       Stack.emplace_back(Child->getRef(), Child->getKind(),
                          Saver.save(StringRef(PathStorage)));
@@ -107,8 +107,6 @@ Optional<size_t> TreeSchema::lookupTreeEntry(TreeProxy Tree,
   size_t NumNames = Tree.size();
   if (!NumNames)
     return None;
-
-  SmallVector<StringRef> Names(NumNames);
 
   // Start with a binary search, if there are enough entries.
   //
@@ -177,11 +175,10 @@ Expected<TreeProxy> TreeProxy::create(TreeSchema &Schema,
 }
 
 StringRef TreeProxy::getName(size_t I) const {
-  uint32_t StartIdx = support::endian::read<uint32_t, 1>(
-      getData().data() + sizeof(uint32_t) * I, support::endianness::little);
-  uint32_t EndIdx = support::endian::read<uint32_t, 1>(
-      getData().data() + sizeof(uint32_t) * (I + 1),
-      support::endianness::little);
+  uint32_t StartIdx =
+      support::endian::read32le(getData().data() + sizeof(uint32_t) * I);
+  uint32_t EndIdx =
+      support::endian::read32le(getData().data() + sizeof(uint32_t) * (I + 1));
 
   return StringRef(getData().data() + StartIdx, EndIdx - StartIdx);
 }
@@ -202,6 +199,15 @@ TreeProxy::Builder::build(ArrayRef<NamedTreeEntry> Entries) {
 
   raw_svector_ostream OS(Data);
   support::endian::Writer Writer(OS, support::endianness::little);
+  // Encode the entires in the Data. The layout of the tree schema object is:
+  // * Name offset table: The offset of in the data blob for where to find the
+  //   string. It has N + 1 entries and you can find the name of n-th entry at
+  //   offset[n] -> offset[n+1]. Each offset is encoded as little-endian
+  //   uint32_t.
+  // * Kind: uint8_t for each entry.
+  // * Object: ObjectRef for each entry is at n + 1 refs for the object (with
+  //   the first one being the tree kind ID).
+
   // Write Name.
   // The start of the string table index.
   uint32_t StrIdx =
@@ -213,6 +219,7 @@ TreeProxy::Builder::build(ArrayRef<NamedTreeEntry> Entries) {
     // Append refs.
     Refs.push_back(Entry.getRef());
   }
+  // Write the end index for the last string.
   Writer.write(StrIdx);
 
   // Write Kind.
