@@ -32,7 +32,6 @@ static void reportAsFatalIfError(llvm::Error E) {
 }
 
 using llvm::Error;
-namespace cas = llvm::cas;
 
 DependencyScanningCASFilesystem::DependencyScanningCASFilesystem(
     IntrusiveRefCntPtr<llvm::cas::CachingOnDiskFileSystem> WorkerFS)
@@ -191,7 +190,7 @@ void DependencyScanningCASFilesystem::scanForDirectives(
 
 Expected<StringRef>
 DependencyScanningCASFilesystem::getOriginal(cas::CASID InputDataID) {
-  Expected<cas::BlobProxy> Blob = CAS.getBlob(InputDataID);
+  Expected<cas::LeafNodeProxy> Blob = CAS.getBlob(InputDataID);
   if (Blob)
     return Blob->getData();
   return Blob.takeError();
@@ -228,8 +227,9 @@ bool DependencyScanningCASFilesystem::shouldScanForDirectives(
   return shouldScanForDirectivesBasedOnExtension(RawFilename);
 }
 
-cas::CachingOnDiskFileSystem &DependencyScanningCASFilesystem::getCachingFS() {
-  return static_cast<cas::CachingOnDiskFileSystem &>(*FS);
+llvm::cas::CachingOnDiskFileSystem &
+DependencyScanningCASFilesystem::getCachingFS() {
+  return static_cast<llvm::cas::CachingOnDiskFileSystem &>(*FS);
 }
 
 DependencyScanningCASFilesystem::LookupPathResult
