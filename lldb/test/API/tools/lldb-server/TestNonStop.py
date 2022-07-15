@@ -196,15 +196,13 @@ class LldbGdbServerTestCase(gdbremote_testcase.GdbRemoteTestCaseBase):
     def test_multiple_s(self):
         self.multiple_resume_test("s")
 
-    @expectedFailureAll(archs=["arm"])  # TODO
-    @expectedFailureAll(archs=["aarch64"],
-                        bugnumber="https://github.com/llvm/llvm-project/issues/56268")
+    @skipIfWindows
     @add_test_categories(["llgs"])
     def test_multiple_vCont(self):
         self.build()
         self.set_inferior_startup_launch()
         procs = self.prep_debug_monitor_and_inferior(
-                inferior_args=["thread:new", "trap", "sleep:15"])
+                inferior_args=["thread:new", "stop", "sleep:15"])
         self.test_sequence.add_log_lines(
             ["read packet: $QNonStop:1#00",
              "send packet: $OK#00",
@@ -253,7 +251,7 @@ class LldbGdbServerTestCase(gdbremote_testcase.GdbRemoteTestCaseBase):
         self.build()
         self.set_inferior_startup_launch()
         procs = self.prep_debug_monitor_and_inferior(
-                inferior_args=["thread:new", "trap", "sleep:15"])
+                inferior_args=["thread:new", "stop", "sleep:15"])
         self.test_sequence.add_log_lines(
             ["read packet: $QNonStop:1#00",
              "send packet: $OK#00",
@@ -289,16 +287,12 @@ class LldbGdbServerTestCase(gdbremote_testcase.GdbRemoteTestCaseBase):
              ], True)
         self.expect_gdbremote_sequence()
 
-    @expectedFailureAll(archs=["arm"])  # TODO
-    @expectedFailureAll(archs=["aarch64"],
-                        bugnumber="https://github.com/llvm/llvm-project/issues/56268")
+    @skipIfWindows
     @add_test_categories(["llgs"])
     def test_vCont_then_partial_stop(self):
         self.vCont_then_partial_stop_test(False)
 
-    @expectedFailureAll(archs=["arm"])  # TODO
-    @expectedFailureAll(archs=["aarch64"],
-                        bugnumber="https://github.com/llvm/llvm-project/issues/56268")
+    @skipIfWindows
     @add_test_categories(["llgs"])
     def test_vCont_then_partial_stop_run_both(self):
         self.vCont_then_partial_stop_test(True)
