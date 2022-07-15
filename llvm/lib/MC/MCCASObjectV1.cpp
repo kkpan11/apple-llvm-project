@@ -91,7 +91,7 @@ Error MCSchema::fillCache() {
   Optional<cas::ObjectRef> RootKindID;
   const unsigned Version = 0; // Bump this to error on old object files.
   if (Expected<cas::ObjectProxy> ExpectedRootKind =
-          CAS.create(None, "mc:v1:schema:" + Twine(Version).str()))
+          CAS.createProxy(None, "mc:v1:schema:" + Twine(Version).str()))
     RootKindID = ExpectedRootKind->getRef();
   else
     return ExpectedRootKind.takeError();
@@ -108,7 +108,7 @@ Error MCSchema::fillCache() {
   cas::ObjectRef Refs[] = {*RootKindID};
   SmallVector<cas::ObjectRef> IDs = {*RootKindID};
   for (StringRef KS : AllKindStrings) {
-    auto ExpectedID = CAS.create(Refs, KS);
+    auto ExpectedID = CAS.createProxy(Refs, KS);
     if (!ExpectedID)
       return ExpectedID.takeError();
     IDs.push_back(ExpectedID->getRef());
@@ -117,7 +117,7 @@ Error MCSchema::fillCache() {
            "Ran out of bits for kind strings");
   }
 
-  auto ExpectedTypeID = CAS.create(IDs, "mc:v1:root");
+  auto ExpectedTypeID = CAS.createProxy(IDs, "mc:v1:root");
   if (!ExpectedTypeID)
     return ExpectedTypeID.takeError();
   RootNodeTypeID = ExpectedTypeID->getRef();
@@ -179,7 +179,7 @@ MCObjectProxy::Builder::startNode(const MCSchema &Schema,
 }
 
 Expected<MCObjectProxy> MCObjectProxy::Builder::build() {
-  return MCObjectProxy::get(*Schema, Schema->CAS.create(Refs, Data));
+  return MCObjectProxy::get(*Schema, Schema->CAS.createProxy(Refs, Data));
 }
 
 StringRef MCObjectProxy::getKindString() const {

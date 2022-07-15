@@ -116,7 +116,8 @@ Error CASDB::createUnknownObjectError(CASID ID) {
                            "unknown object '" + ID.toString() + "'");
 }
 
-Expected<ObjectProxy> CASDB::create(ArrayRef<ObjectRef> Refs, StringRef Data) {
+Expected<ObjectProxy> CASDB::createProxy(ArrayRef<ObjectRef> Refs,
+                                         StringRef Data) {
   return getProxy(store(Refs, arrayRefFromStringRef<char>(Data)));
 }
 

@@ -1323,14 +1323,15 @@ static CASID createResultCacheKey(CASDB &CAS, cas::ObjectRef rootID,
 
   HierarchicalTreeBuilder builder;
   builder.push(rootID, TreeEntry::Tree, "filesystem");
-  builder.push(cantFail(CAS.create(None, createResponseFile(
-                                             args, /*isForCacheKey=*/true)))
-                   .getRef(),
-               TreeEntry::Regular, "arguments");
+  builder.push(
+      cantFail(CAS.createProxy(
+                   None, createResponseFile(args, /*isForCacheKey=*/true)))
+          .getRef(),
+      TreeEntry::Regular, "arguments");
   std::string version = getLLDVersion();
   { raw_string_ostream(version) << '-' << CACHE_FORMAT_VERSION; }
-  builder.push(cantFail(CAS.create(None, version)).getRef(), TreeEntry::Regular,
-               "version");
+  builder.push(cantFail(CAS.createProxy(None, version)).getRef(),
+               TreeEntry::Regular, "version");
 
   return CAS.getID(cantFail(builder.create(CAS)));
 }
@@ -1471,7 +1472,7 @@ static bool linkWithResultCaching(InputArgList &args, bool canExitEarly,
       return false;
     }
 
-    Expected<ObjectProxy> blob = CAS.create(None, outBuffer->getBuffer());
+    Expected<ObjectProxy> blob = CAS.createProxy(None, outBuffer->getBuffer());
     if (!blob) {
       error("error creating CAS blob for output: " +
             toString(blob.takeError()));

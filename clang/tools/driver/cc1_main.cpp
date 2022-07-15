@@ -450,7 +450,7 @@ void CompileJobCache::finishComputedResult(CompilerInstance &Clang,
   // Hack around llvm::errs() not being captured by the output backend yet.
   //
   // FIXME: Stop calling report_fatal_error().
-  Expected<llvm::cas::ObjectProxy> Errs = CAS->create(None, ResultDiags);
+  Expected<llvm::cas::ObjectProxy> Errs = CAS->createProxy(None, ResultDiags);
   if (!Errs)
     llvm::report_fatal_error(Errs.takeError());
 

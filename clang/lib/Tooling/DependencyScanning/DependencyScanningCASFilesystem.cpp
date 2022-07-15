@@ -69,7 +69,7 @@ storeDepDirectives(cas::CASDB &CAS,
     TokenIdx += Directive.Tokens.size();
   }
 
-  auto Blob = CAS.create(None, Buffer);
+  auto Blob = CAS.createProxy(None, Buffer);
   if (!Blob)
     return Blob.takeError();
   return Blob->getRef();
@@ -140,16 +140,17 @@ void DependencyScanningCASFilesystem::scanForDirectives(
   // Get a blob for the clang version string.
   if (!ClangFullVersionID)
     ClangFullVersionID =
-        reportAsFatalIfError(CAS.create(None, getClangFullVersion())).getRef();
+        reportAsFatalIfError(CAS.createProxy(None, getClangFullVersion()))
+            .getRef();
 
   // Get a blob for the dependency directives scan command.
   if (!DepDirectivesID)
     DepDirectivesID =
-        reportAsFatalIfError(CAS.create(None, "directives")).getRef();
+        reportAsFatalIfError(CAS.createProxy(None, "directives")).getRef();
 
   // Get an empty blob.
   if (!EmptyBlobID)
-    EmptyBlobID = reportAsFatalIfError(CAS.create(None, "")).getRef();
+    EmptyBlobID = reportAsFatalIfError(CAS.createProxy(None, "")).getRef();
 
   // Construct a tree for the input.
   Optional<CASID> InputID;

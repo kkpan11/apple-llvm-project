@@ -238,7 +238,7 @@ int makeBlob(CASDB &CAS, StringRef DataPath) {
   std::unique_ptr<MemoryBuffer> Buffer =
       ExitOnErr(openBuffer(DataPath));
 
-  ObjectProxy Blob = ExitOnErr(CAS.create(None, Buffer->getBuffer()));
+  ObjectProxy Blob = ExitOnErr(CAS.createProxy(None, Buffer->getBuffer()));
   llvm::outs() << Blob.getID() << "\n";
   return 0;
 }
@@ -293,7 +293,7 @@ static int makeNode(CASDB &CAS, ArrayRef<std::string> Objects, StringRef DataPat
   }
 
   ExitOnError ExitOnErr("llvm-cas: make-node: ");
-  ObjectProxy Object = ExitOnErr(CAS.create(IDs, Data->getBuffer()));
+  ObjectProxy Object = ExitOnErr(CAS.createProxy(IDs, Data->getBuffer()));
   llvm::outs() << Object.getID() << "\n";
   return 0;
 }

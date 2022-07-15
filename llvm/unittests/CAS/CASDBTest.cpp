@@ -45,8 +45,8 @@ TEST_P(CASDBTest, PrintIDs) {
   std::unique_ptr<CASDB> CAS = createCAS();
 
   Optional<CASID> ID1, ID2;
-  ASSERT_THAT_ERROR(CAS->create(None, "1").moveInto(ID1), Succeeded());
-  ASSERT_THAT_ERROR(CAS->create(None, "2").moveInto(ID2), Succeeded());
+  ASSERT_THAT_ERROR(CAS->createProxy(None, "1").moveInto(ID1), Succeeded());
+  ASSERT_THAT_ERROR(CAS->createProxy(None, "2").moveInto(ID2), Succeeded());
   EXPECT_NE(ID1, ID2);
   std::string PrintedID1 = ID1->toString();
   std::string PrintedID2 = ID2->toString();
@@ -78,7 +78,8 @@ multiline text multiline text multiline text multiline text multiline text)",
     // problems if the CAS is storing references to the input string instead of
     // copying it.
     Optional<ObjectProxy> Blob;
-    ASSERT_THAT_ERROR(CAS1->create(None, Content).moveInto(Blob), Succeeded());
+    ASSERT_THAT_ERROR(CAS1->createProxy(None, Content).moveInto(Blob),
+                      Succeeded());
     IDs.push_back(Blob->getID());
 
     // Check basic printing of IDs.
@@ -90,7 +91,7 @@ multiline text multiline text multiline text multiline text multiline text)",
   // Check that the blobs give the same IDs later.
   for (int I = 0, E = IDs.size(); I != E; ++I) {
     Optional<ObjectProxy> Blob;
-    ASSERT_THAT_ERROR(CAS1->create(None, ContentStrings[I]).moveInto(Blob),
+    ASSERT_THAT_ERROR(CAS1->createProxy(None, ContentStrings[I]).moveInto(Blob),
                       Succeeded());
     EXPECT_EQ(IDs[I], Blob->getID());
   }
@@ -122,7 +123,8 @@ multiline text multiline text multiline text multiline text multiline text)",
     auto &ID = IDs[I - 1];
     auto &Content = ContentStrings[I - 1];
     Optional<ObjectProxy> Blob;
-    ASSERT_THAT_ERROR(CAS2->create(None, Content).moveInto(Blob), Succeeded());
+    ASSERT_THAT_ERROR(CAS2->createProxy(None, Content).moveInto(Blob),
+                      Succeeded());
     EXPECT_EQ(ID, Blob->getID());
 
     Optional<ObjectProxy> Buffer;
@@ -139,15 +141,19 @@ TEST_P(CASDBTest, BlobsBig) {
   while (String1.size() < 1024U * 1024U) {
     Optional<CASID> ID1;
     Optional<CASID> ID2;
-    ASSERT_THAT_ERROR(CAS->create(None, String1).moveInto(ID1), Succeeded());
-    ASSERT_THAT_ERROR(CAS->create(None, String1).moveInto(ID2), Succeeded());
+    ASSERT_THAT_ERROR(CAS->createProxy(None, String1).moveInto(ID1),
+                      Succeeded());
+    ASSERT_THAT_ERROR(CAS->createProxy(None, String1).moveInto(ID2),
+                      Succeeded());
     ASSERT_THAT_ERROR(CAS->validate(*ID1), Succeeded());
     ASSERT_THAT_ERROR(CAS->validate(*ID2), Succeeded());
     ASSERT_EQ(ID1, ID2);
 
     String1.append(String2);
-    ASSERT_THAT_ERROR(CAS->create(None, String2).moveInto(ID1), Succeeded());
-    ASSERT_THAT_ERROR(CAS->create(None, String2).moveInto(ID2), Succeeded());
+    ASSERT_THAT_ERROR(CAS->createProxy(None, String2).moveInto(ID1),
+                      Succeeded());
+    ASSERT_THAT_ERROR(CAS->createProxy(None, String2).moveInto(ID2),
+                      Succeeded());
     ASSERT_THAT_ERROR(CAS->validate(*ID1), Succeeded());
     ASSERT_THAT_ERROR(CAS->validate(*ID2), Succeeded());
     ASSERT_EQ(ID1, ID2);
@@ -164,7 +170,7 @@ TEST_P(CASDBTest, BlobsBig) {
   for (size_t Size = InterestingSize - 2; Size != SizeE; ++Size) {
     StringRef Data(Storage.data(), Size);
     Optional<ObjectProxy> Blob;
-    ASSERT_THAT_ERROR(CAS->create(None, Data).moveInto(Blob), Succeeded());
+    ASSERT_THAT_ERROR(CAS->createProxy(None, Data).moveInto(Blob), Succeeded());
     ASSERT_EQ(Data, Blob->getData());
     ASSERT_EQ(0, Blob->getData().end()[0]);
   }
@@ -279,7 +285,7 @@ TEST_P(CASDBTest, NodesBig) {
     for (bool IsAligned : {false, true}) {
       StringRef Data(Storage.data(), Size - (IsAligned ? 0 : 1));
       Optional<ObjectProxy> Node;
-      ASSERT_THAT_ERROR(CAS->create(CreatedNodes, Data).moveInto(Node),
+      ASSERT_THAT_ERROR(CAS->createProxy(CreatedNodes, Data).moveInto(Node),
                         Succeeded());
       ASSERT_EQ(Data, Node->getData());
       ASSERT_EQ(0, Node->getData().end()[0]);

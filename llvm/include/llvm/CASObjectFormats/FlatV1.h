@@ -115,7 +115,7 @@ public:
 
   Expected<ObjectFormatObjectProxy> create(ArrayRef<cas::ObjectRef> Refs,
                                            StringRef Data) const {
-    return ObjectFormatObjectProxy::get(*this, CAS.create(Refs, Data));
+    return ObjectFormatObjectProxy::get(*this, CAS.createProxy(Refs, Data));
   }
   Expected<ObjectFormatObjectProxy> get(cas::ObjectRef Ref) const {
     return ObjectFormatObjectProxy::get(*this, CAS.getProxy(Ref));

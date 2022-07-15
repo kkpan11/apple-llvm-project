@@ -245,8 +245,8 @@ ObjectFileSchema::ObjectFileSchema(cas::CASDB &CAS)
 Error ObjectFileSchema::fillCache() {
   Optional<cas::ObjectRef> RootKindID;
   const unsigned Version = 0; // Bump this to error on old object files.
-  if (Expected<cas::ObjectProxy> ExpectedRootKind =
-          CAS.create(None, "cas.o:nestedv1:schema:" + Twine(Version).str()))
+  if (Expected<cas::ObjectProxy> ExpectedRootKind = CAS.createProxy(
+          None, "cas.o:nestedv1:schema:" + Twine(Version).str()))
     RootKindID = ExpectedRootKind->getRef();
   else
     return ExpectedRootKind.takeError();
@@ -261,7 +261,7 @@ Error ObjectFileSchema::fillCache() {
   cas::ObjectRef Refs[] = {*RootKindID};
   SmallVector<cas::ObjectRef> IDs = {*RootKindID};
   for (StringRef KS : AllKindStrings) {
-    auto ExpectedID = CAS.create(Refs, KS);
+    auto ExpectedID = CAS.createProxy(Refs, KS);
     if (!ExpectedID)
       return ExpectedID.takeError();
     IDs.push_back(ExpectedID->getRef());
@@ -270,7 +270,7 @@ Error ObjectFileSchema::fillCache() {
            "Ran out of bits for kind strings");
   }
 
-  auto ExpectedTypeID = CAS.create(IDs, "cas.o:nestedv1:root");
+  auto ExpectedTypeID = CAS.createProxy(IDs, "cas.o:nestedv1:root");
   if (!ExpectedTypeID)
     return ExpectedTypeID.takeError();
   RootNodeTypeID = ExpectedTypeID->getRef();
@@ -333,7 +333,8 @@ ObjectFormatObjectProxy::Builder::startNode(const ObjectFileSchema &Schema,
 }
 
 Expected<ObjectFormatObjectProxy> ObjectFormatObjectProxy::Builder::build() {
-  return ObjectFormatObjectProxy::get(*Schema, Schema->CAS.create(Refs, Data));
+  return ObjectFormatObjectProxy::get(*Schema,
+                                      Schema->CAS.createProxy(Refs, Data));
 }
 
 StringRef ObjectFormatObjectProxy::getKindString() const {

@@ -393,7 +393,7 @@ PTHManager::PTHManager(llvm::cas::CASDB &CAS,
 #include "clang/Basic/LangOptions.def"
   }
 
-  SerializedLangOpts = llvm::cantFail(CAS.create(None, LangBlock));
+  SerializedLangOpts = llvm::cantFail(CAS.createProxy(None, LangBlock));
 }
 
 PTHManager::~PTHManager() = default;
@@ -596,8 +596,8 @@ Expected<llvm::cas::CASID> PTHManager::computePTH(llvm::cas::CASID InputFile) {
     assert(!Operation);
 
     // FIXME: This should be the clang executable...
-    ClangVersion = llvm::cantFail(CAS.create(None, getClangFullVersion()));
-    Operation = llvm::cantFail(CAS.create(None, "generate-isolated-pth"));
+    ClangVersion = llvm::cantFail(CAS.createProxy(None, getClangFullVersion()));
+    Operation = llvm::cantFail(CAS.createProxy(None, "generate-isolated-pth"));
   }
 
   llvm::cas::HierarchicalTreeBuilder Builder;
@@ -625,7 +625,7 @@ Expected<llvm::cas::CASID> PTHManager::computePTH(llvm::cas::CASID InputFile) {
     Writer.generatePTH(OS, llvm::cantFail(CAS.getProxy(InputFile)).getData(),
                        CanonicalLangOpts);
   }
-  auto PTH = llvm::cantFail(CAS.create(None, PTHString));
+  auto PTH = llvm::cantFail(CAS.createProxy(None, PTHString));
   llvm::cantFail(CAS.putCachedResult(CacheKey, PTH));
   return PTH;
 }

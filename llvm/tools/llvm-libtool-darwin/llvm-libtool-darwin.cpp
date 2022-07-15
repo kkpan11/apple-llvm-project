@@ -622,7 +622,7 @@ writeCASIDArchive(cas::CASDB &CAS, StringRef ArcName,
   if (!Buffer)
     return Buffer.takeError();
 
-  auto Blob = CAS.create(None, (*Buffer)->getBuffer());
+  auto Blob = CAS.createProxy(None, (*Buffer)->getBuffer());
   if (!Blob)
     return Blob.takeError();
 

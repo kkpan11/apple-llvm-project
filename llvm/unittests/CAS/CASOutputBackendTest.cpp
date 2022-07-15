@@ -36,21 +36,22 @@ TEST(CASOutputBackendTest, createFiles) {
   Optional<ObjectProxy> AbsolutePath2;
   Optional<ObjectProxy> RelativePath;
   Optional<ObjectProxy> WindowsPath;
-  ASSERT_THAT_ERROR(CAS->create(None, "content1").moveInto(Content1),
+  ASSERT_THAT_ERROR(CAS->createProxy(None, "content1").moveInto(Content1),
                     Succeeded());
-  ASSERT_THAT_ERROR(CAS->create(None, "content2").moveInto(Content2),
+  ASSERT_THAT_ERROR(CAS->createProxy(None, "content2").moveInto(Content2),
                     Succeeded());
   ASSERT_THAT_ERROR(
-      CAS->create(None, "/absolute/path/1").moveInto(AbsolutePath1),
+      CAS->createProxy(None, "/absolute/path/1").moveInto(AbsolutePath1),
       Succeeded());
   ASSERT_THAT_ERROR(
-      CAS->create(None, "/absolute/path/2").moveInto(AbsolutePath2),
+      CAS->createProxy(None, "/absolute/path/2").moveInto(AbsolutePath2),
       Succeeded());
   ASSERT_THAT_ERROR(
-      CAS->create(None, "relative/path/./2").moveInto(RelativePath),
+      CAS->createProxy(None, "relative/path/./2").moveInto(RelativePath),
       Succeeded());
-  ASSERT_THAT_ERROR(CAS->create(None, "c:\\windows/path").moveInto(WindowsPath),
-                    Succeeded());
+  ASSERT_THAT_ERROR(
+      CAS->createProxy(None, "c:\\windows/path").moveInto(WindowsPath),
+      Succeeded());
 
   // FIXME: Add test of duplicate paths. Maybe could error at createFile()...
   struct OutputDescription {

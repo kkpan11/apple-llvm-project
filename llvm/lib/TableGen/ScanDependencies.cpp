@@ -90,7 +90,8 @@ static Error computeIncludedFiles(cas::CASDB &CAS, cas::CASID Key,
   scanTextForIncludes(Input, IncludedFiles);
   flattenStrings(IncludedFiles, ResultToCache);
 
-  Expected<cas::ObjectProxy> ExpectedResult = CAS.create(None, ResultToCache);
+  Expected<cas::ObjectProxy> ExpectedResult =
+      CAS.createProxy(None, ResultToCache);
   if (!ExpectedResult)
     return ExpectedResult.takeError();
   if (Error E = CAS.putCachedResult(Key, *ExpectedResult))
@@ -184,7 +185,7 @@ static Expected<cas::ObjectProxy> openMainFile(cas::CachingOnDiskFileSystem &FS,
     ErrorOr<std::unique_ptr<MemoryBuffer>> MaybeFile = MemoryBuffer::getSTDIN();
     if (!MaybeFile)
       return createMainFileError(MainFilename, MaybeFile.getError());
-    return CAS.create(None, (**MaybeFile).getBuffer());
+    return CAS.createProxy(None, (**MaybeFile).getBuffer());
   }
 
   Optional<cas::CASID> MainFileID;

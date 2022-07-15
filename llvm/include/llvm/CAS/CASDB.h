@@ -134,7 +134,7 @@ public:
   /// extractHashFromID().
   virtual Expected<CASID> parseID(StringRef ID) = 0;
 
-  Expected<ObjectProxy> create(ArrayRef<ObjectRef> Refs, StringRef Data);
+  Expected<ObjectProxy> createProxy(ArrayRef<ObjectRef> Refs, StringRef Data);
   virtual Expected<ObjectHandle> store(ArrayRef<ObjectRef> Refs,
                                        ArrayRef<char> Data) = 0;
 

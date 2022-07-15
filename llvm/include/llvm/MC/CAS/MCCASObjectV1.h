@@ -104,7 +104,7 @@ public:
 
   Expected<MCObjectProxy> create(ArrayRef<cas::ObjectRef> Refs,
                                  StringRef Data) const {
-    return MCObjectProxy::get(*this, CAS.create(Refs, Data));
+    return MCObjectProxy::get(*this, CAS.createProxy(Refs, Data));
   }
   Expected<MCObjectProxy> get(cas::ObjectRef ID) const {
     return MCObjectProxy::get(*this, CAS.getProxy(ID));

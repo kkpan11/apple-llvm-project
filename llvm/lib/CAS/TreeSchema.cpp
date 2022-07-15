@@ -32,7 +32,7 @@ bool TreeSchema::isNode(const ObjectHandle &Node) const {
 }
 
 TreeSchema::TreeSchema(cas::CASDB &CAS) : TreeSchema::RTTIExtends(CAS) {
-  auto Kind = cantFail(CAS.create(None, SchemaName));
+  auto Kind = cantFail(CAS.createProxy(None, SchemaName));
   TreeKindRef.emplace(Kind.getRef());
 }
 
@@ -230,5 +230,5 @@ TreeProxy::Builder::build(ArrayRef<NamedTreeEntry> Entries) {
   for (auto &Entry : Sorted)
     OS << Entry.getName();
 
-  return TreeProxy::get(*Schema, Schema->CAS.create(Refs, Data));
+  return TreeProxy::get(*Schema, Schema->CAS.createProxy(Refs, Data));
 }
