@@ -3333,24 +3333,29 @@ void LSRInstance::CollectFixupsAndInitialFormulae() {
 
         // x == y  -->  x - y == 0
         const SCEV *N = SE.getSCEV(NV);
-        if (!NV->getType()->isPointerTy() ||
-            SE.getPointerBase(N) == SE.getPointerBase(S)) {
-          if (SE.isLoopInvariant(N, L) && Rewriter.isSafeToExpand(N)) {
-            // S is normalized, so normalize N before folding it into S
-            // to keep the result normalized.
-            N = normalizeForPostIncUse(N, TmpPostIncLoops, SE);
-            Kind = LSRUse::ICmpZero;
-            S = SE.getMinusSCEV(N, S);
-          } else if (L->isLoopInvariant(NV)) {
-            // If we can't generally expand the expression (e.g. it contains
-            // a divide), but it is already at a loop invariant point, wrap it
-            // in an unknwon (to prevent the expander from trying to re-expand
-            // in a potentially unsafe way.)
-            N = SE.getUnknown(NV);
-            N = normalizeForPostIncUse(N, TmpPostIncLoops, SE);
-            Kind = LSRUse::ICmpZero;
-            S = SE.getMinusSCEV(N, S);
-          }
+        if (SE.isLoopInvariant(N, L) && Rewriter.isSafeToExpand(N) &&
+            (!NV->getType()->isPointerTy() ||
+             SE.getPointerBase(N) == SE.getPointerBase(S))) {
+          // S is normalized, so normalize N before folding it into S
+          // to keep the result normalized.
+          N = normalizeForPostIncUse(N, TmpPostIncLoops, SE);
+          Kind = LSRUse::ICmpZero;
+          S = SE.getMinusSCEV(N, S);
+        } else if (L->isLoopInvariant(NV) &&
+                   (!isa<Instruction>(NV) ||
+                    DT.dominates(cast<Instruction>(NV), L->getHeader())) &&
+                   !NV->getType()->isPointerTy()) {
+          // If we can't generally expand the expression (e.g. it contains
+          // a divide), but it is already at a loop invariant point before the
+          // loop, wrap it in an unknown (to prevent the expander from trying
+          // to re-expand in a potentially unsafe way.)  The restriction to
+          // integer types is required because the unknown hides the base, and
+          // SCEV can't compute the difference of two unknown pointers.
+          N = SE.getUnknown(NV);
+          N = normalizeForPostIncUse(N, TmpPostIncLoops, SE);
+          Kind = LSRUse::ICmpZero;
+          S = SE.getMinusSCEV(N, S);
+          assert(!isa<SCEVCouldNotCompute>(S));
         }
 
         // -1 and the negations of all interesting strides (except the negation
