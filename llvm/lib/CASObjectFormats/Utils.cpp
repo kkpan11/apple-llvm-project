@@ -253,7 +253,7 @@ Error casobjectformats::printCASObject(const reader::CASObjectReader &Reader,
     for (const auto *Block : Section->Blocks) {
       OS.indent(2) << "BLOCK: " << Block->Description << '\n';
       if (!omitCASID)
-        OS.indent(2) << "Block-Data-Cas-ID: " << Block->ID << '\n';
+        OS.indent(2) << "Block-Cas-ID: " << Block->ID << '\n';
       OS.indent(2) << "{\n";
       for (const auto *Symbol : Block->Symbols) {
         OS.indent(4) << "SYMBOL: " << Symbol->Description;
