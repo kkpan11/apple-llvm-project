@@ -2106,7 +2106,7 @@ static Expected<InputFile *> loadArchiveMember(MemoryBufferRef mb,
       error(archiveName + ": archive member " + memberName +
             " failed reading CAS-ID: " + toString(id.takeError()));
     }
-    auto blobRef = cas.getBlob(*id);
+    auto blobRef = cas.getProxy(*id);
     if (!blobRef)
       return blobRef.takeError();
     MemoryBufferRef objectMB(blobRef->getData(), memberName);
@@ -2314,7 +2314,7 @@ static void applyArchRelocationProperties(jitlink::Edge::Kind kind,
 }
 
 Error CASSchemaFile::parse(ObjectFormatSchemaPool &CASSchemas, ObjectRef ID) {
-  Expected<cas::NodeProxy> Ref = CASSchemas.getCAS().loadNode(ID);
+  Expected<cas::ObjectProxy> Ref = CASSchemas.getCAS().getProxy(ID);
   if (auto E = Ref.takeError())
     return E;
   ObjectFormatSchemaBase *Schema = CASSchemas.getSchemaForRoot(*Ref);

@@ -355,7 +355,7 @@ static InputFile *addFile(StringRef path, ForceLoad forceLoadArchive,
               error(archiveName + ": archive member " + memberName +
                     " failed reading CAS-ID: " + toString(ID.takeError()));
             }
-            auto blobRef = CAS.getBlob(*ID);
+            auto blobRef = CAS.getProxy(*ID);
             if (!blobRef) {
               consumeError(blobRef.takeError());
               error(archiveName + ": archive member " + memberName +
@@ -425,7 +425,13 @@ static InputFile *addFile(StringRef path, ForceLoad forceLoadArchive,
       error(path + ": unknown object '" + ID.toString() + "'");
       break;
     }
-    if (Expected<cas::LeafNodeProxy> blobRef = CAS.loadBlob(*Node)) {
+    Expected<cas::ObjectProxy> blobRef = CAS.getProxy(*Node);
+    if (!blobRef) {
+      error(path +
+            ": unexpected CASID file error: " + toString(blobRef.takeError()));
+      break;
+    }
+    if (blobRef->getNumReferences() == 0) {
       MemoryBufferRef casMBRef(blobRef->getData(), path);
       switch (identify_magic(casMBRef.getBuffer())) {
       case file_magic::archive:
@@ -439,7 +445,6 @@ static InputFile *addFile(StringRef path, ForceLoad forceLoadArchive,
         break;
       }
     } else {
-      consumeError(blobRef.takeError());
       auto casFile = addCASObject(*config->CASSchemas, *Node, path);
       if (!casFile) {
         error(path + ": " + toString(casFile.takeError()));
@@ -505,10 +510,11 @@ static Error addCASTree(ObjectFormatSchemaPool &CASSchemas, CASID ID) {
   Optional<cas::ObjectRef> Object = CASSchemas.getCAS().getReference(ID);
   if (!Object)
     return createStringError(inconvertibleErrorCode(), "unknown tree root");
-  Expected<cas::TreeProxy> Tree = CASSchemas.getCAS().loadTree(*Object);
+  Expected<cas::ObjectProxy> Tree = CASSchemas.getCAS().getProxy(*Object);
   if (!Tree)
     return Tree.takeError();
-  return walkFileTreeRecursively(
+  TreeSchema Schema(CASSchemas.getCAS());
+  return Schema.walkFileTreeRecursively(
       CASSchemas.getCAS(), *Tree,
       [&](const NamedTreeEntry &entry, Optional<TreeProxy>) -> Error {
         if (entry.getKind() == TreeEntry::Tree)
@@ -1318,15 +1324,16 @@ static CASID createResultCacheKey(CASDB &CAS, cas::ObjectRef rootID,
   HierarchicalTreeBuilder builder;
   builder.push(rootID, TreeEntry::Tree, "filesystem");
   builder.push(
-      cantFail(CAS.createBlob(createResponseFile(args, /*isForCacheKey=*/true)))
+      cantFail(CAS.createProxy(
+                   None, createResponseFile(args, /*isForCacheKey=*/true)))
           .getRef(),
       TreeEntry::Regular, "arguments");
   std::string version = getLLDVersion();
   { raw_string_ostream(version) << '-' << CACHE_FORMAT_VERSION; }
-  builder.push(cantFail(CAS.createBlob(version)).getRef(), TreeEntry::Regular,
-               "version");
+  builder.push(cantFail(CAS.createProxy(None, version)).getRef(),
+               TreeEntry::Regular, "version");
 
-  return CAS.getObjectID(cantFail(builder.create(CAS)));
+  return CAS.getID(cantFail(builder.create(CAS)));
 }
 
 static Error replayResult(CASDB &CAS, CASID resultID) {
@@ -1363,7 +1370,7 @@ static bool linkWithResultCaching(InputArgList &args, bool canExitEarly,
   CASDB &CAS = *config->CAS;
 
   Optional<CASID> optCacheKey;
-  Optional<TreeProxy> rootRef;
+  Optional<ObjectProxy> rootRef;
   {
     TimeTraceScope timeScope("Caching: create key");
 
@@ -1465,7 +1472,7 @@ static bool linkWithResultCaching(InputArgList &args, bool canExitEarly,
       return false;
     }
 
-    Expected<BlobProxy> blob = CAS.createBlob(outBuffer->getBuffer());
+    Expected<ObjectProxy> blob = CAS.createProxy(None, outBuffer->getBuffer());
     if (!blob) {
       error("error creating CAS blob for output: " +
             toString(blob.takeError()));
@@ -1480,7 +1487,7 @@ static bool linkWithResultCaching(InputArgList &args, bool canExitEarly,
       return false;
     }
 
-    cas::CASID resultID = CAS.getObjectID(*resultTree);
+    cas::CASID resultID = CAS.getID(*resultTree);
     if (Error E = CAS.putCachedResult(cacheKey, resultID)) {
       error("error storing cached result: " + toString(std::move(E)));
       return false;

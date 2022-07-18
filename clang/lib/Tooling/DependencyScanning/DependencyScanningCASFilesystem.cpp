@@ -69,7 +69,7 @@ storeDepDirectives(cas::CASDB &CAS,
     TokenIdx += Directive.Tokens.size();
   }
 
-  auto Blob = CAS.createBlob(Buffer);
+  auto Blob = CAS.createProxy(None, Buffer);
   if (!Blob)
     return Blob.takeError();
   return Blob->getRef();
@@ -89,7 +89,7 @@ static Error loadDepDirectives(
     llvm::SmallVectorImpl<dependency_directives_scan::Directive>
         &DepDirectives) {
   using namespace dependency_directives_scan;
-  auto Blob = CAS.getBlob(ID);
+  auto Blob = CAS.getProxy(ID);
   if (!Blob)
     return Blob.takeError();
 
@@ -140,16 +140,17 @@ void DependencyScanningCASFilesystem::scanForDirectives(
   // Get a blob for the clang version string.
   if (!ClangFullVersionID)
     ClangFullVersionID =
-        reportAsFatalIfError(CAS.createBlob(getClangFullVersion())).getRef();
+        reportAsFatalIfError(CAS.createProxy(None, getClangFullVersion()))
+            .getRef();
 
   // Get a blob for the dependency directives scan command.
   if (!DepDirectivesID)
     DepDirectivesID =
-        reportAsFatalIfError(CAS.createBlob("directives")).getRef();
+        reportAsFatalIfError(CAS.createProxy(None, "directives")).getRef();
 
   // Get an empty blob.
   if (!EmptyBlobID)
-    EmptyBlobID = reportAsFatalIfError(CAS.createBlob("")).getRef();
+    EmptyBlobID = reportAsFatalIfError(CAS.createProxy(None, "")).getRef();
 
   // Construct a tree for the input.
   Optional<CASID> InputID;
@@ -158,8 +159,8 @@ void DependencyScanningCASFilesystem::scanForDirectives(
     Builder.push(*ClangFullVersionID, TreeEntry::Regular, "version");
     Builder.push(*DepDirectivesID, TreeEntry::Regular, "command");
     Builder.push(InputDataID, TreeEntry::Regular, "data");
-    InputID = CAS.getObjectID(
-        CAS.getReference(reportAsFatalIfError(Builder.create(CAS))));
+    InputID =
+        CAS.getID(CAS.getReference(reportAsFatalIfError(Builder.create(CAS))));
   }
 
   // Check the result cache.
@@ -169,7 +170,8 @@ void DependencyScanningCASFilesystem::scanForDirectives(
     return;
   }
 
-  StringRef InputData = *reportAsFatalIfError(CAS.loadBlob(InputDataID));
+  StringRef InputData =
+      reportAsFatalIfError(CAS.getProxy(InputDataID)).getData();
 
   if (scanSourceForDependencyDirectives(InputData, Tokens, Directives)) {
     // FIXME: Propagate the diagnostic if desired by the client.
@@ -177,20 +179,20 @@ void DependencyScanningCASFilesystem::scanForDirectives(
     Tokens.clear();
     Directives.clear();
     reportAsFatalIfError(
-        CAS.putCachedResult(*InputID, CAS.getObjectID(*EmptyBlobID)));
+        CAS.putCachedResult(*InputID, CAS.getID(*EmptyBlobID)));
     return;
   }
 
   // Success. Add to the CAS and get back persistent output data.
-  cas::CASID DirectivesID = CAS.getObjectID(
-      reportAsFatalIfError(storeDepDirectives(CAS, Directives)));
+  cas::CASID DirectivesID =
+      CAS.getID(reportAsFatalIfError(storeDepDirectives(CAS, Directives)));
   // Cache the computation.
   reportAsFatalIfError(CAS.putCachedResult(*InputID, DirectivesID));
 }
 
 Expected<StringRef>
 DependencyScanningCASFilesystem::getOriginal(cas::CASID InputDataID) {
-  Expected<cas::LeafNodeProxy> Blob = CAS.getBlob(InputDataID);
+  Expected<cas::ObjectProxy> Blob = CAS.getProxy(InputDataID);
   if (Blob)
     return Blob->getData();
   return Blob.takeError();

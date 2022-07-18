@@ -26,26 +26,26 @@ class MCCASBuilder;
 class MCCASReader;
 
 // FIXME: Using the same structure from ObjectV1 from CASObjectFormat.
-class MCNodeProxy : public cas::NodeProxy {
+class MCObjectProxy : public cas::ObjectProxy {
 public:
-  static Expected<MCNodeProxy> get(const MCSchema &Schema,
-                                   Expected<cas::NodeProxy> Ref);
+  static Expected<MCObjectProxy> get(const MCSchema &Schema,
+                                     Expected<cas::ObjectProxy> Ref);
   StringRef getKindString() const;
 
   /// Return the data skipping the type-id character.
-  StringRef getData() const { return cas::NodeProxy::getData().drop_front(); }
+  StringRef getData() const { return cas::ObjectProxy::getData().drop_front(); }
 
   const MCSchema &getSchema() const { return *Schema; }
 
-  bool operator==(const MCNodeProxy &RHS) const {
+  bool operator==(const MCObjectProxy &RHS) const {
     return Schema == RHS.Schema && cas::CASID(*this) == cas::CASID(RHS);
   }
 
-  MCNodeProxy() = delete;
+  MCObjectProxy() = delete;
 
 protected:
-  MCNodeProxy(const MCSchema &Schema, const cas::NodeProxy &Node)
-      : cas::NodeProxy(Node), Schema(&Schema) {}
+  MCObjectProxy(const MCSchema &Schema, const cas::ObjectProxy &Node)
+      : cas::ObjectProxy(Node), Schema(&Schema) {}
 
   class Builder {
   public:
@@ -54,7 +54,7 @@ protected:
     static Expected<Builder> startNode(const MCSchema &Schema,
                                        StringRef KindString);
 
-    Expected<MCNodeProxy> build();
+    Expected<MCObjectProxy> build();
 
   private:
     Error startNodeImpl(StringRef KindString);
@@ -64,7 +64,7 @@ protected:
 
   public:
     SmallString<256> Data;
-    SmallVector<cas::CASID, 16> IDs;
+    SmallVector<cas::ObjectRef, 16> Refs;
   };
 
 private:
@@ -77,39 +77,37 @@ class MCSchema final : public RTTIExtends<MCSchema, MCFormatSchemaBase> {
 
 public:
   static char ID;
-  Optional<StringRef> getKindString(const cas::NodeProxy &Node) const;
+  Optional<StringRef> getKindString(const cas::ObjectProxy &Node) const;
   Optional<unsigned char> getKindStringID(StringRef KindString) const;
 
-  cas::CASID getRootNodeTypeID() const { return *RootNodeTypeID; }
+  cas::ObjectRef getRootNodeTypeID() const { return *RootNodeTypeID; }
 
   /// Check if \a Node is a root (entry node) for the schema. This is a strong
   /// check, since it requires that the first reference matches a complete
   /// type-id DAG.
-  bool isRootNode(const cas::NodeProxy &Node) const override;
+  bool isRootNode(const cas::ObjectProxy &Node) const override;
 
   /// Check if \a Node could be a node in the schema. This is a weak check,
   /// since it only looks up the KindString associated with the first
   /// character. The caller should ensure that the parent node is in the schema
   /// before calling this.
-  bool isNode(const cas::NodeProxy &Node) const override;
+  bool isNode(const cas::ObjectProxy &Node) const override;
 
-  Expected<cas::NodeProxy>
-  createFromMCAssemblerImpl(llvm::MachOCASWriter &ObjectWriter,
-                            llvm::MCAssembler &Asm,
-                            const llvm::MCAsmLayout &Layout,
-                            raw_ostream *DebugOS) const override;
+  Expected<cas::ObjectProxy> createFromMCAssemblerImpl(
+      llvm::MachOCASWriter &ObjectWriter, llvm::MCAssembler &Asm,
+      const llvm::MCAsmLayout &Layout, raw_ostream *DebugOS) const override;
 
-  Error serializeObjectFile(cas::NodeProxy RootNode,
+  Error serializeObjectFile(cas::ObjectProxy RootNode,
                             raw_ostream &OS) const override;
 
   MCSchema(cas::CASDB &CAS);
 
-  Expected<MCNodeProxy> createNode(ArrayRef<cas::CASID> IDs,
-                                   StringRef Data) const {
-    return MCNodeProxy::get(*this, CAS.createNode(IDs, Data));
+  Expected<MCObjectProxy> create(ArrayRef<cas::ObjectRef> Refs,
+                                 StringRef Data) const {
+    return MCObjectProxy::get(*this, CAS.createProxy(Refs, Data));
   }
-  Expected<MCNodeProxy> getNode(cas::CASID ID) const {
-    return MCNodeProxy::get(*this, CAS.getNode(ID));
+  Expected<MCObjectProxy> get(cas::ObjectRef ID) const {
+    return MCObjectProxy::get(*this, CAS.getProxy(ID));
   }
 
 private:
@@ -119,7 +117,7 @@ private:
 
   // Optional as convenience for constructor, which does not return if it can't
   // fill this in.
-  Optional<cas::CASID> RootNodeTypeID;
+  Optional<cas::ObjectRef> RootNodeTypeID;
 
   // Called by constructor. Not thread-safe.
   Error fillCache();
@@ -127,32 +125,31 @@ private:
 
 /// A type-checked reference to a node of a specific kind.
 template <class DerivedT, class FinalT = DerivedT>
-class SpecificRef : public MCNodeProxy {
+class SpecificRef : public MCObjectProxy {
 protected:
-  static Expected<DerivedT> get(Expected<MCNodeProxy> Ref) {
+  static Expected<DerivedT> get(Expected<MCObjectProxy> Ref) {
     if (auto Specific = getSpecific(std::move(Ref)))
       return DerivedT(*Specific);
     else
       return Specific.takeError();
   }
 
-  static Expected<SpecificRef> getSpecific(Expected<MCNodeProxy> Ref) {
+  static Expected<SpecificRef> getSpecific(Expected<MCObjectProxy> Ref) {
     if (!Ref)
       return Ref.takeError();
     if (Ref->getKindString() == FinalT::KindString)
       return SpecificRef(*Ref);
     return createStringError(inconvertibleErrorCode(),
-                             "expected MC object '" + FinalT::KindString +
-                                 "'");
+                             "expected MC object '" + FinalT::KindString + "'");
   }
 
-  static Optional<SpecificRef> Cast(MCNodeProxy Ref) {
+  static Optional<SpecificRef> Cast(MCObjectProxy Ref) {
     if (Ref.getKindString() == FinalT::KindString)
       return SpecificRef(Ref);
     return None;
   }
 
-  SpecificRef(MCNodeProxy Ref) : MCNodeProxy(Ref) {}
+  SpecificRef(MCObjectProxy Ref) : MCObjectProxy(Ref) {}
 };
 
 #define CASV1_SIMPLE_DATA_REF(RefName, IdentifierName)                         \
@@ -163,11 +160,11 @@ protected:
   public:                                                                      \
     static constexpr StringLiteral KindString = #IdentifierName;               \
     static Expected<RefName> create(MCCASBuilder &MB, StringRef Data);         \
-    static Expected<RefName> get(Expected<MCNodeProxy> Ref);                   \
-    static Expected<RefName> get(const MCSchema &Schema, cas::CASID ID) {      \
-      return get(Schema.getNode(ID));                                          \
+    static Expected<RefName> get(Expected<MCObjectProxy> Ref);                 \
+    static Expected<RefName> get(const MCSchema &Schema, cas::ObjectRef ID) {  \
+      return get(Schema.get(ID));                                              \
     }                                                                          \
-    static Optional<RefName> Cast(MCNodeProxy Ref) {                           \
+    static Optional<RefName> Cast(MCObjectProxy Ref) {                         \
       auto Specific = SpecificRefT::Cast(Ref);                                 \
       if (!Specific)                                                           \
         return None;                                                           \
@@ -190,17 +187,17 @@ protected:
   public:                                                                      \
     static constexpr StringLiteral KindString = #IdentifierName;               \
     static Expected<RefName> create(MCCASBuilder &MB,                          \
-                                    ArrayRef<cas::CASID> IDs);                 \
-    static Expected<RefName> get(Expected<MCNodeProxy> Ref) {                  \
+                                    ArrayRef<cas::ObjectRef> IDs);             \
+    static Expected<RefName> get(Expected<MCObjectProxy> Ref) {                \
       auto Specific = SpecificRefT::getSpecific(std::move(Ref));               \
       if (!Specific)                                                           \
         return Specific.takeError();                                           \
       return RefName(*Specific);                                               \
     }                                                                          \
-    static Expected<RefName> get(const MCSchema &Schema, cas::CASID ID) {      \
-      return get(Schema.getNode(ID));                                          \
+    static Expected<RefName> get(const MCSchema &Schema, cas::ObjectRef ID) {  \
+      return get(Schema.get(ID));                                              \
     }                                                                          \
-    static Optional<RefName> Cast(MCNodeProxy Ref) {                           \
+    static Optional<RefName> Cast(MCObjectProxy Ref) {                         \
       auto Specific = SpecificRefT::Cast(Ref);                                 \
       if (!Specific)                                                           \
         return None;                                                           \
@@ -222,17 +219,17 @@ protected:
     static Expected<MCFragmentName##Ref>                                       \
     create(MCCASBuilder &MB, const MCFragmentName &Fragment,                   \
            unsigned FragmentSize);                                             \
-    static Expected<MCFragmentName##Ref> get(Expected<MCNodeProxy> Ref) {      \
+    static Expected<MCFragmentName##Ref> get(Expected<MCObjectProxy> Ref) {    \
       auto Specific = SpecificRefT::getSpecific(std::move(Ref));               \
       if (!Specific)                                                           \
         return Specific.takeError();                                           \
       return MCFragmentName##Ref(*Specific);                                   \
     }                                                                          \
     static Expected<MCFragmentName##Ref> get(const MCSchema &Schema,           \
-                                             cas::CASID ID) {                  \
-      return get(Schema.getNode(ID));                                          \
+                                             cas::ObjectRef ID) {              \
+      return get(Schema.get(ID));                                              \
     }                                                                          \
-    static Optional<MCFragmentName##Ref> Cast(MCNodeProxy Ref) {               \
+    static Optional<MCFragmentName##Ref> Cast(MCObjectProxy Ref) {             \
       auto Specific = SpecificRefT::Cast(Ref);                                 \
       if (!Specific)                                                           \
         return None;                                                           \
@@ -254,11 +251,11 @@ public:
 
   static Expected<PaddingRef> create(MCCASBuilder &MB, uint64_t Size);
 
-  static Expected<PaddingRef> get(Expected<MCNodeProxy> Ref);
-  static Expected<PaddingRef> get(const MCSchema &Schema, cas::CASID ID) {
-    return get(Schema.getNode(ID));
+  static Expected<PaddingRef> get(Expected<MCObjectProxy> Ref);
+  static Expected<PaddingRef> get(const MCSchema &Schema, cas::ObjectRef ID) {
+    return get(Schema.get(ID));
   }
-  static Optional<PaddingRef> Cast(MCNodeProxy Ref) {
+  static Optional<PaddingRef> Cast(MCObjectProxy Ref) {
     auto Specific = SpecificRefT::Cast(Ref);
     if (!Specific)
       return None;
@@ -278,16 +275,15 @@ class MCAssemblerRef : public SpecificRef<MCAssemblerRef> {
 public:
   static constexpr StringLiteral KindString = "mc:assembler";
 
-  static Expected<MCAssemblerRef> get(Expected<MCNodeProxy> Ref);
-  static Expected<MCAssemblerRef> get(const MCSchema &Schema, cas::CASID ID) {
-    return get(Schema.getNode(ID));
+  static Expected<MCAssemblerRef> get(Expected<MCObjectProxy> Ref);
+  static Expected<MCAssemblerRef> get(const MCSchema &Schema,
+                                      cas::ObjectRef ID) {
+    return get(Schema.get(ID));
   }
 
-  static Expected<MCAssemblerRef> create(const MCSchema &Schema,
-                                         MachOCASWriter &ObjectWriter,
-                                         MCAssembler &Asm,
-                                         const MCAsmLayout &Layout,
-                                         raw_ostream *DebugOS = nullptr);
+  static Expected<MCAssemblerRef>
+  create(const MCSchema &Schema, MachOCASWriter &ObjectWriter, MCAssembler &Asm,
+         const MCAsmLayout &Layout, raw_ostream *DebugOS = nullptr);
 
   Error materialize(raw_ostream &OS) const;
 
@@ -327,7 +323,7 @@ public:
   void startAtom(const MCSymbol *Atom);
   Error finalizeAtom();
 
-  void addNode(cas::NodeProxy Node);
+  void addNode(cas::ObjectProxy Node);
   const MCSymbol *getCurrentAtom() const { return CurrentAtom; }
 
   Error buildFragment(const MCFragment &F, unsigned FragmentSize);
@@ -342,6 +338,7 @@ public:
   // Scratch space
   SmallString<8> FragmentData;
   raw_svector_ostream FragmentOS;
+
 private:
   friend class MCAssemblerRef;
 
@@ -349,12 +346,12 @@ private:
   Error createStringSection(StringRef S,
                             std::function<Error(StringRef)> CreateFn);
 
-
   const MCSection *CurrentSection = nullptr;
   const MCSymbol *CurrentAtom = nullptr;
 
-  SmallVector<cas::CASID> Sections, GroupContext, SectionContext, AtomContext;
-  SmallVector<cas::CASID> *CurrentContext;
+  SmallVector<cas::ObjectRef> Sections, GroupContext, SectionContext,
+      AtomContext;
+  SmallVector<cas::ObjectRef> *CurrentContext;
 
   SmallVector<MachO::any_relocation_info> AtomRelocs;
   SmallVector<MachO::any_relocation_info> SectionRelocs;
@@ -372,9 +369,10 @@ public:
     return Target.isLittleEndian() ? support::little : support::big;
   }
 
-  Expected<uint64_t> materializeGroup(cas::CASID ID);
-  Expected<uint64_t> materializeSection(cas::CASID ID);
-  Expected<uint64_t> materializeAtom(cas::CASID ID);
+  Expected<uint64_t> materializeGroup(cas::ObjectRef ID);
+  Expected<uint64_t> materializeSection(cas::ObjectRef ID);
+  Expected<uint64_t> materializeAtom(cas::ObjectRef ID);
+
 private:
   const Triple &Target;
   const MCSchema &Schema;

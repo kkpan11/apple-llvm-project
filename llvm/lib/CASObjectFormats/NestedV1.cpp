@@ -51,10 +51,10 @@ public:
   static Expected<EncodedDataRef>
   create(const ObjectFileSchema &Schema,
          function_ref<void(SmallVectorImpl<char> &)> Encode);
-  static Expected<EncodedDataRef> get(Expected<ObjectFormatNodeProxy> Ref);
+  static Expected<EncodedDataRef> get(Expected<ObjectFormatObjectProxy> Ref);
   static Expected<EncodedDataRef> get(const ObjectFileSchema &Schema,
-                                      cas::CASID ID) {
-    return get(Schema.getNode(ID));
+                                      cas::ObjectRef ID) {
+    return get(Schema.get(ID));
   }
 
 private:
@@ -167,13 +167,13 @@ public:
   }
 
   template <class RefT> struct TypedID {
-    cas::CASID ID;
-    operator cas::CASID() const { return ID; }
-    TypedID(RefT Ref) : ID(Ref.getID()) {}
+    cas::ObjectRef ID;
+    operator cas::ObjectRef() const { return ID; }
+    TypedID(RefT Ref) : ID(Ref.getRef()) {}
 
   private:
     friend struct DenseMapInfo<TypedID>;
-    explicit TypedID(cas::CASID ID) : ID(ID) {}
+    explicit TypedID(cas::ObjectRef ID) : ID(ID) {}
   };
 
   using TargetID = TypedID<TargetRef>;
@@ -211,7 +211,7 @@ private:
   mutable DenseMap<StringRef, CASSymbolRef> SymbolsByName;
 
   mutable sys::Mutex BlocksLock;
-  mutable DenseMap<cas::CASID, std::unique_ptr<BlockNodeRef>> Blocks;
+  mutable DenseMap<cas::ObjectRef, std::unique_ptr<BlockNodeRef>> Blocks;
 
   mutable sys::Mutex SectionsLock;
   mutable DenseMap<SectionID, std::unique_ptr<SectionNodeRef>> Sections;
@@ -219,17 +219,17 @@ private:
 
 } // anonymous namespace
 
-Expected<cas::NodeProxy>
+Expected<cas::ObjectProxy>
 ObjectFileSchema::createFromLinkGraphImpl(const jitlink::LinkGraph &G,
                                           raw_ostream *DebugOS) const {
   return CompileUnitRef::create(*this, G, DebugOS);
 }
 
 Expected<std::unique_ptr<CASObjectReader>>
-ObjectFileSchema::createObjectReader(cas::NodeProxy RootNode) const {
+ObjectFileSchema::createObjectReader(cas::ObjectProxy RootNode) const {
   if (!isRootNode(RootNode))
     return createStringError(inconvertibleErrorCode(), "invalid root node");
-  auto CU = CompileUnitRef::get(*this, RootNode);
+  auto CU = CompileUnitRef::get(*this, RootNode.getRef());
   if (!CU)
     return CU.takeError();
   return CU->createObjectReader();
@@ -243,11 +243,11 @@ ObjectFileSchema::ObjectFileSchema(cas::CASDB &CAS)
 }
 
 Error ObjectFileSchema::fillCache() {
-  Optional<cas::CASID> RootKindID;
+  Optional<cas::ObjectRef> RootKindID;
   const unsigned Version = 0; // Bump this to error on old object files.
-  if (Expected<cas::NodeProxy> ExpectedRootKind =
-          CAS.createNode(None, "cas.o:nestedv1:schema:" + Twine(Version).str()))
-    RootKindID = *ExpectedRootKind;
+  if (Expected<cas::ObjectProxy> ExpectedRootKind = CAS.createProxy(
+          None, "cas.o:nestedv1:schema:" + Twine(Version).str()))
+    RootKindID = ExpectedRootKind->getRef();
   else
     return ExpectedRootKind.takeError();
 
@@ -258,27 +258,27 @@ Error ObjectFileSchema::fillCache() {
       SectionRef::KindString,     SymbolRef::KindString,
       SymbolTableRef::KindString, TargetListRef::KindString,
   };
-  cas::CASID Refs[] = {*RootKindID};
-  SmallVector<cas::CASID> IDs = {*RootKindID};
+  cas::ObjectRef Refs[] = {*RootKindID};
+  SmallVector<cas::ObjectRef> IDs = {*RootKindID};
   for (StringRef KS : AllKindStrings) {
-    auto ExpectedID = CAS.createNode(Refs, KS);
+    auto ExpectedID = CAS.createProxy(Refs, KS);
     if (!ExpectedID)
       return ExpectedID.takeError();
-    IDs.push_back(*ExpectedID);
+    IDs.push_back(ExpectedID->getRef());
     KindStrings.push_back(std::make_pair(KindStrings.size(), KS));
     assert(KindStrings.size() < UCHAR_MAX &&
            "Ran out of bits for kind strings");
   }
 
-  auto ExpectedTypeID = CAS.createNode(IDs, "cas.o:nestedv1:root");
+  auto ExpectedTypeID = CAS.createProxy(IDs, "cas.o:nestedv1:root");
   if (!ExpectedTypeID)
     return ExpectedTypeID.takeError();
-  RootNodeTypeID = *ExpectedTypeID;
+  RootNodeTypeID = ExpectedTypeID->getRef();
   return Error::success();
 }
 
 Optional<StringRef>
-ObjectFileSchema::getKindString(const cas::NodeProxy &Node) const {
+ObjectFileSchema::getKindString(const cas::ObjectProxy &Node) const {
   assert(&Node.getCAS() == &CAS);
   StringRef Data = Node.getData();
   if (Data.empty())
@@ -291,29 +291,29 @@ ObjectFileSchema::getKindString(const cas::NodeProxy &Node) const {
   return None;
 }
 
-bool ObjectFileSchema::isRootNode(const cas::NodeProxy &Node) const {
+bool ObjectFileSchema::isRootNode(const cas::ObjectProxy &Node) const {
   if (Node.getNumReferences() < 1)
     return false;
-  return Node.getReferenceID(0) == *RootNodeTypeID;
+  return Node.getReference(0) == *RootNodeTypeID;
 }
 
-bool ObjectFileSchema::isNode(const cas::NodeProxy &Node) const {
+bool ObjectFileSchema::isNode(const cas::ObjectProxy &Node) const {
   // This is a very weak check!
   return bool(getKindString(Node));
 }
 
-Expected<ObjectFormatNodeProxy::Builder>
-ObjectFormatNodeProxy::Builder::startRootNode(const ObjectFileSchema &Schema,
-                                              StringRef KindString) {
+Expected<ObjectFormatObjectProxy::Builder>
+ObjectFormatObjectProxy::Builder::startRootNode(const ObjectFileSchema &Schema,
+                                                StringRef KindString) {
   Builder B(Schema);
-  B.IDs.push_back(Schema.getRootNodeTypeID());
+  B.Refs.push_back(Schema.getRootNodeTypeID());
 
   if (Error E = B.startNodeImpl(KindString))
     return std::move(E);
   return std::move(B);
 }
 
-Error ObjectFormatNodeProxy::Builder::startNodeImpl(StringRef KindString) {
+Error ObjectFormatObjectProxy::Builder::startNodeImpl(StringRef KindString) {
   Optional<unsigned char> TypeID = Schema->getKindStringID(KindString);
   if (!TypeID)
     return createStringError(inconvertibleErrorCode(),
@@ -323,20 +323,21 @@ Error ObjectFormatNodeProxy::Builder::startNodeImpl(StringRef KindString) {
   return Error::success();
 }
 
-Expected<ObjectFormatNodeProxy::Builder>
-ObjectFormatNodeProxy::Builder::startNode(const ObjectFileSchema &Schema,
-                                          StringRef KindString) {
+Expected<ObjectFormatObjectProxy::Builder>
+ObjectFormatObjectProxy::Builder::startNode(const ObjectFileSchema &Schema,
+                                            StringRef KindString) {
   Builder B(Schema);
   if (Error E = B.startNodeImpl(KindString))
     return std::move(E);
   return std::move(B);
 }
 
-Expected<ObjectFormatNodeProxy> ObjectFormatNodeProxy::Builder::build() {
-  return ObjectFormatNodeProxy::get(*Schema, Schema->CAS.createNode(IDs, Data));
+Expected<ObjectFormatObjectProxy> ObjectFormatObjectProxy::Builder::build() {
+  return ObjectFormatObjectProxy::get(*Schema,
+                                      Schema->CAS.createProxy(Refs, Data));
 }
 
-StringRef ObjectFormatNodeProxy::getKindString() const {
+StringRef ObjectFormatObjectProxy::getKindString() const {
   Optional<StringRef> KS = getSchema().getKindString(*this);
   assert(KS && "Expected valid kind string");
   return *KS;
@@ -350,20 +351,20 @@ ObjectFileSchema::getKindStringID(StringRef KindString) const {
   return None;
 }
 
-Expected<ObjectFormatNodeProxy>
-ObjectFormatNodeProxy::get(const ObjectFileSchema &Schema,
-                           Expected<cas::NodeProxy> Ref) {
+Expected<ObjectFormatObjectProxy>
+ObjectFormatObjectProxy::get(const ObjectFileSchema &Schema,
+                             Expected<cas::ObjectProxy> Ref) {
   if (!Ref)
     return Ref.takeError();
   if (!Schema.isNode(*Ref))
     return createStringError(
         inconvertibleErrorCode(),
         "invalid kind-string for node in object-file-schema");
-  return ObjectFormatNodeProxy(Schema, *Ref);
+  return ObjectFormatObjectProxy(Schema, *Ref);
 }
 
 Expected<EncodedDataRef>
-EncodedDataRef::get(Expected<ObjectFormatNodeProxy> Ref) {
+EncodedDataRef::get(Expected<ObjectFormatObjectProxy> Ref) {
   auto Specific = SpecificRefT::getSpecific(std::move(Ref));
   if (!Specific)
     return Specific.takeError();
@@ -385,7 +386,7 @@ EncodedDataRef::create(const ObjectFileSchema &Schema,
   return get(B->build());
 }
 
-Expected<NameRef> NameRef::get(Expected<ObjectFormatNodeProxy> Ref) {
+Expected<NameRef> NameRef::get(Expected<ObjectFormatObjectProxy> Ref) {
   auto Specific = SpecificRefT::getSpecific(std::move(Ref));
   if (!Specific)
     return Specific.takeError();
@@ -406,7 +407,8 @@ Expected<NameRef> NameRef::create(const ObjectFileSchema &Schema,
   return get(B->build());
 }
 
-Expected<BlockDataRef> BlockDataRef::get(Expected<ObjectFormatNodeProxy> Ref) {
+Expected<BlockDataRef>
+BlockDataRef::get(Expected<ObjectFormatObjectProxy> Ref) {
   auto Specific = SpecificRefT::getSpecific(std::move(Ref));
   if (!Specific)
     return Specific.takeError();
@@ -516,7 +518,8 @@ Expected<Optional<NameRef>> TargetRef::getName() const {
 }
 
 Expected<TargetRef> TargetRef::get(const ObjectFileSchema &Schema,
-                                   cas::CASID ID, Optional<Kind> ExpectedKind) {
+                                   cas::ObjectRef ID,
+                                   Optional<Kind> ExpectedKind) {
   auto checkExpectedKind = [&](Kind K, StringRef Name) -> Expected<TargetRef> {
     if (ExpectedKind && *ExpectedKind != K)
       return createStringError(inconvertibleErrorCode(),
@@ -524,7 +527,7 @@ Expected<TargetRef> TargetRef::get(const ObjectFileSchema &Schema,
     return TargetRef(Schema, ID, K);
   };
 
-  auto Object = ObjectFormatNodeProxy::get(Schema, Schema.CAS.getNode(ID));
+  auto Object = ObjectFormatObjectProxy::get(Schema, Schema.CAS.getProxy(ID));
   if (!Object) {
     consumeError(Object.takeError());
     return createStringError(inconvertibleErrorCode(), "invalid target");
@@ -550,7 +553,7 @@ StringRef SymbolDefinitionRef::getKindString(Kind K) {
 }
 
 Expected<SymbolDefinitionRef>
-SymbolDefinitionRef::get(Expected<ObjectFormatNodeProxy> Ref,
+SymbolDefinitionRef::get(Expected<ObjectFormatObjectProxy> Ref,
                          Optional<Kind> ExpectedKind) {
   if (!Ref)
     return Ref.takeError();
@@ -574,7 +577,7 @@ SymbolDefinitionRef::get(Expected<ObjectFormatNodeProxy> Ref,
 }
 
 Expected<TargetListRef>
-TargetListRef::get(Expected<ObjectFormatNodeProxy> Ref) {
+TargetListRef::get(Expected<ObjectFormatObjectProxy> Ref) {
   auto Specific = SpecificRefT::getSpecific(std::move(Ref));
   if (!Specific)
     return Specific.takeError();
@@ -590,7 +593,7 @@ Expected<TargetListRef> TargetListRef::create(const ObjectFileSchema &Schema,
   if (!B)
     return B.takeError();
 
-  B->IDs.append(Targets.begin(), Targets.end());
+  B->Refs.append(Targets.begin(), Targets.end());
   return get(B->build());
 }
 
@@ -601,7 +604,7 @@ Expected<SectionRef> SectionRef::create(const ObjectFileSchema &Schema,
   if (!B)
     return B.takeError();
 
-  B->IDs.push_back(SectionName);
+  B->Refs.push_back(SectionName.getRef());
 
   // FIXME: Does 1 byte leave enough space for expansion? Probably, but
   // 4 bytes would be fine too.
@@ -613,7 +616,7 @@ jitlink::MemProt SectionRef::getMemProt() const {
   return decodeProtectionFlags((data::SectionProtectionFlags)getData()[0]);
 }
 
-Expected<SectionRef> SectionRef::get(Expected<ObjectFormatNodeProxy> Ref) {
+Expected<SectionRef> SectionRef::get(Expected<ObjectFormatObjectProxy> Ref) {
   auto Specific = SpecificRefT::getSpecific(std::move(Ref));
   if (!Specific)
     return Specific.takeError();
@@ -628,10 +631,10 @@ Optional<size_t> BlockRef::getTargetsIndex() const {
   return Flags.HasTargets ? 2 : Optional<size_t>();
 }
 
-Optional<cas::CASID> BlockRef::getTargetInfoID() const {
+Optional<cas::ObjectRef> BlockRef::getTargetInfoID() const {
   assert(Flags.HasEdges && "Expected edges");
   assert(!Flags.HasEmbeddedTargetInfo && "Expected explicit edges");
-  return getReferenceID(2U + unsigned(Flags.HasTargets));
+  return getReference(2U + unsigned(Flags.HasTargets));
 }
 
 Expected<FixupList> BlockRef::getFixups() const {
@@ -651,7 +654,7 @@ Expected<TargetInfoList> BlockRef::getTargetInfo() const {
   if (Flags.HasEmbeddedTargetInfo)
     return TargetInfoList(getData().drop_front());
 
-  Optional<cas::CASID> TargetInfoID = getTargetInfoID();
+  Optional<cas::ObjectRef> TargetInfoID = getTargetInfoID();
   if (!TargetInfoID)
     return TargetInfoList("");
 
@@ -669,7 +672,7 @@ Expected<TargetList> BlockRef::getTargets() const {
   if (Flags.HasTargetInline)
     return TargetList(*this, *TargetsIndex, *TargetsIndex + 1);
   if (Expected<TargetListRef> Targets =
-          TargetListRef::get(getSchema(), getReferenceID(*TargetsIndex)))
+          TargetListRef::get(getSchema(), getReference(*TargetsIndex)))
     return Targets->getTargets();
   else
     return Targets.takeError();
@@ -765,8 +768,8 @@ static Error decomposeAndSortEdges(
 
   // Collect targets, filtering out duplicate symbols.
 
-  // Pair of CASID for \p TargetRef and its index in the \p Targets array.
-  SmallDenseMap<cas::CASID, size_t, 16> SeenSymbolRefs;
+  // Pair of ObjectRef for \p TargetRef and its index in the \p Targets array.
+  SmallDenseMap<cas::ObjectRef, size_t, 16> SeenSymbolRefs;
   for (const EdgeTarget &EdgeTarget : EdgeTargets) {
     Expected<Optional<TargetRef>> TargetOrAbstractBackedge =
         GetTargetRef(*EdgeTarget.Symbol);
@@ -782,7 +785,7 @@ static Error decomposeAndSortEdges(
     decltype(SeenSymbolRefs)::iterator SeenSymIt;
     bool Inserted;
     std::tie(SeenSymIt, Inserted) =
-        SeenSymbolRefs.insert(std::make_pair(Target.getID(), Targets.size()));
+        SeenSymbolRefs.insert(std::make_pair(Target, Targets.size()));
     if (Inserted) {
       Targets.push_back(Target);
     }
@@ -842,7 +845,7 @@ Expected<BlockRef> BlockRef::createImpl(const ObjectFileSchema &Schema,
   if (!B)
     return B.takeError();
 
-  B->IDs.append({Section, Data});
+  B->Refs.append({Section.getRef(), Data.getRef()});
 
   bool HasAbstractBackedge = false;
   for (const auto &TI : TargetInfo) {
@@ -866,12 +869,12 @@ Expected<BlockRef> BlockRef::createImpl(const ObjectFileSchema &Schema,
       !TargetInfo.empty() && TargetInfo.size() <= MaxEdgesToEmbedInBlock;
   const bool HasTargetInline = InlineUnaryTargetLists && Targets.size() == 1;
   if (HasTargetInline) {
-    B->IDs.push_back(Targets[0].getID());
+    B->Refs.push_back(Targets[0]);
   } else if (!Targets.empty()) {
     auto TargetsRef = TargetListRef::create(Schema, Targets);
     if (!TargetsRef)
       return TargetsRef.takeError();
-    B->IDs.push_back(*TargetsRef);
+    B->Refs.push_back(TargetsRef->getRef());
   }
 
   unsigned Bits = 0;
@@ -892,13 +895,13 @@ Expected<BlockRef> BlockRef::createImpl(const ObjectFileSchema &Schema,
         });
     if (!TargetInfoRef)
       return TargetInfoRef.takeError();
-    B->IDs.push_back(*TargetInfoRef);
+    B->Refs.push_back(TargetInfoRef->getRef());
   }
 
   return get(B->build());
 }
 
-Expected<BlockRef> BlockRef::get(Expected<ObjectFormatNodeProxy> Ref) {
+Expected<BlockRef> BlockRef::get(Expected<ObjectFormatObjectProxy> Ref) {
   auto Specific = SpecificRefT::getSpecific(std::move(Ref));
   if (!Specific)
     return Specific.takeError();
@@ -929,7 +932,7 @@ Expected<TargetRef> SymbolRef::getAsIndirectTarget() const {
   return TargetRef::getIndirectSymbol(getSchema(), **Name);
 }
 
-Expected<SymbolRef> SymbolRef::get(Expected<ObjectFormatNodeProxy> Ref) {
+Expected<SymbolRef> SymbolRef::get(Expected<ObjectFormatObjectProxy> Ref) {
   auto Specific = SpecificRefT::getSpecific(std::move(Ref));
   if (!Specific)
     return Specific.takeError();
@@ -1128,15 +1131,15 @@ Expected<SymbolRef> SymbolRef::create(const ObjectFileSchema &Schema,
   if (Offset)
     encoding::writeVBR8(Offset, B->Data);
 
-  B->IDs.push_back(Definition);
+  B->Refs.push_back(Definition.getRef());
   if (SymbolName)
-    B->IDs.push_back(*SymbolName);
+    B->Refs.push_back(SymbolName->getRef());
 
   return get(B->build());
 }
 
 Expected<CompileUnitRef>
-CompileUnitRef::get(Expected<ObjectFormatNodeProxy> Ref) {
+CompileUnitRef::get(Expected<ObjectFormatObjectProxy> Ref) {
   auto Specific = SpecificRefT::getSpecific(std::move(Ref));
   if (!Specific)
     return Specific.takeError();
@@ -1188,9 +1191,11 @@ Expected<CompileUnitRef> CompileUnitRef::create(
   encoding::writeVBR8(uint8_t(Endianness), B->Data);
   B->Data.append(NormalizedTriple);
 
-  assert(B->IDs.size() == 1 && "Expected the root type-id?");
-  B->IDs.append({DeadStripNever, DeadStripLink, IndirectDeadStripCompile,
-                 IndirectAnonymous, StrongSymbols, WeakSymbols, Unreferenced});
+  assert(B->Refs.size() == 1 && "Expected the root type-id?");
+  B->Refs.append({DeadStripNever.getRef(), DeadStripLink.getRef(),
+                  IndirectDeadStripCompile.getRef(), IndirectAnonymous.getRef(),
+                  StrongSymbols.getRef(), WeakSymbols.getRef(),
+                  Unreferenced.getRef()});
   return get(B->build());
 }
 
@@ -1209,12 +1214,13 @@ Expected<NameListRef> NameListRef::create(const ObjectFileSchema &Schema,
       return LHS.getName() < RHS.getName();
     });
   }
-  B->IDs.append(Names.begin(), Names.end());
+  for (const auto &Name : Names)
+    B->Refs.push_back(Name.getRef());
 
   return get(B->build());
 }
 
-Expected<NameListRef> NameListRef::get(Expected<ObjectFormatNodeProxy> Ref) {
+Expected<NameListRef> NameListRef::get(Expected<ObjectFormatObjectProxy> Ref) {
   auto Specific = SpecificRefT::getSpecific(std::move(Ref));
   if (!Specific)
     return Specific.takeError();
@@ -1237,7 +1243,7 @@ Expected<SymbolTableRef> SymbolTableRef::create(const ObjectFileSchema &Schema,
   // Sort the symbols to create a stable order.
   uint32_t NumAnonymousSymbols = 0;
   if (Symbols.size() == 1) {
-    B->IDs.push_back(Symbols[0]);
+    B->Refs.push_back(Symbols[0].getRef());
     if (!Symbols[0].hasName())
       ++NumAnonymousSymbols;
   } else if (Symbols.size() > 1) {
@@ -1286,10 +1292,10 @@ Expected<SymbolTableRef> SymbolTableRef::create(const ObjectFileSchema &Schema,
     // duplicates for some reason. E.g., this prevents adding support for
     // referencing anonymous symbols indirectly in a way that doesn't modify
     // the symbol itself. Maybe that's okay?
-    DenseSet<cas::CASID> UniqueIDs;
+    DenseSet<cas::ObjectRef> UniqueIDs;
     for (uint32_t I : Order)
-      if (UniqueIDs.insert(Symbols[I]).second)
-        B->IDs.push_back(Symbols[I]);
+      if (UniqueIDs.insert(Symbols[I].getRef()).second)
+        B->Refs.push_back(Symbols[I].getRef());
       else if (Names[I].empty())
         --NumAnonymousSymbols;
   }
@@ -1339,7 +1345,7 @@ Expected<Optional<SymbolRef>> SymbolTableRef::lookupSymbol(NameRef Name) const {
 }
 
 Expected<SymbolTableRef>
-SymbolTableRef::get(Expected<ObjectFormatNodeProxy> Ref) {
+SymbolTableRef::get(Expected<ObjectFormatObjectProxy> Ref) {
   auto Specific = SpecificRefT::getSpecific(std::move(Ref));
   if (!Specific)
     return Specific.takeError();
@@ -1769,15 +1775,15 @@ Expected<CompileUnitRef> CompileUnitRef::create(const ObjectFileSchema &Schema,
 namespace llvm {
 template <class RefT>
 struct DenseMapInfo<NestedV1ObjectReader::TypedID<RefT>>
-    : public DenseMapInfo<cas::CASID> {
+    : public DenseMapInfo<cas::ObjectRef> {
   static NestedV1ObjectReader::TypedID<RefT> getEmptyKey() {
     return NestedV1ObjectReader::TypedID<RefT>{
-        DenseMapInfo<cas::CASID>::getEmptyKey()};
+        DenseMapInfo<cas::ObjectRef>::getEmptyKey()};
   }
 
   static NestedV1ObjectReader::TypedID<RefT> getTombstoneKey() {
     return NestedV1ObjectReader::TypedID<RefT>{
-        DenseMapInfo<cas::CASID>::getTombstoneKey()};
+        DenseMapInfo<cas::ObjectRef>::getTombstoneKey()};
   }
 };
 } // namespace llvm
@@ -1909,8 +1915,8 @@ Expected<CASBlockRef> NestedV1ObjectReader::getOrCreateCASBlockRef(
   bool CanShareBlockRef = MergeByContent && !Block->hasAbstractBackedge() &&
                           !Block->hasKeepAliveEdge();
 
-  cas::CASID IDKey =
-      CanShareBlockRef ? Block->getID() : ForSymbol.Symbol.getID();
+  cas::ObjectRef IDKey =
+      CanShareBlockRef ? Block->getRef() : ForSymbol.Symbol.getRef();
 
   std::lock_guard<sys::Mutex> Guard(BlocksLock);
   auto &Ref = Blocks[IDKey];
