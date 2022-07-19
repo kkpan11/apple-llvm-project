@@ -15,13 +15,13 @@ RUN: llvm-cas-object-format --cas %t/cas --ingest-schema=flatv1 --print-cas-tree
 NESTED: SECTION: __DWARF,__debug_line | MemProt: RW-
 NESTED-NEXT: {
 NESTED:   BLOCK: size = 0x{{[a-z0-9]+}}, align = {{[0-9]+}}, alignment-offset = {{[0-9]+}}
-NESTED-NEXT:   Block-Data-Cas-ID: llvmcas://[[UNIQUE_CAS_ID:[a-z0-9]+]]
+NESTED-NEXT:   Block-Cas-ID: llvmcas://[[UNIQUE_CAS_ID:[a-z0-9]+]]
 NESTED-NEXT:   {
 NESTED-NEXT:     SYMBOL: {{.*}} | offset: 0x{{[0-9]+}}, linkage: {{.*}}, scope: {{.*}}, {{.*}}
 NESTED-NEXT:     FIXUP: 0x{{[a-z0-9]+}}, addend = +0x{{[a-z0-9]+}}, kind = {{.*}}, target = {{.*}}a{{.*}}
 NESTED-NEXT:   }
 NESTED:   BLOCK: size = 0x{{[a-z0-9]+}}, align = {{[0-9]+}}, alignment-offset = {{[0-9]+}}
-NESTED-NEXT:   Block-Data-Cas-ID: llvmcas://[[DEBUG_LINE_BLOCK_CAS_ID:[a-z0-9]+]]
+NESTED-NEXT:   Block-Cas-ID: llvmcas://[[DEBUG_LINE_BLOCK_CAS_ID:[a-z0-9]+]]
 NESTED-NEXT:   {
 NESTED-NEXT:     SYMBOL: {{.+}} | offset: 0x{{[a-z0-9]+}}, linkage: {{.*}}, scope: {{.*}}, {{.*}}
 NESTED-NEXT:     FIXUP: 0x{{[a-z0-9]+}}, addend = +0x{{[a-z0-9]+}}, kind = {{.*}}, target = {{.*}}foo{{.*}}
@@ -32,13 +32,13 @@ NESTED-NEXT: }
 NESTED: SECTION: __DWARF,__debug_line | MemProt: RW-
 NESTED-NEXT: {
 NESTED:   BLOCK: size = 0x{{[a-z0-9]+}}, align = {{[0-9]+}}, alignment-offset = {{[0-9]+}}
-NESTED-NOT:   Block-Data-Cas-ID: llvmcas://[[UNIQUE_CAS_ID]]
+NESTED-NOT:   Block-Cas-ID: llvmcas://[[UNIQUE_CAS_ID]]
 NESTED:   {
 NESTED-NEXT:     SYMBOL: {{.*}} | offset: 0x{{[0-9]+}}, linkage: {{.*}}, scope: {{.*}}, {{.*}}
 NESTED-NEXT:     FIXUP: 0x{{[a-z0-9]+}}, addend = +0x{{[a-z0-9]+}}, kind = {{.*}}, target = {{.*}}a{{.*}}
 NESTED-NEXT:   }
 NESTED:   BLOCK: size = 0x{{[a-z0-9]+}}, align = {{[0-9]+}}, alignment-offset = {{[0-9]+}}
-NESTED-NOT:   Block-Data-Cas-ID: llvmcas://[[DEBUG_LINE_BLOCK_CAS_ID]]
+NESTED-NOT:   Block-Cas-ID: llvmcas://[[DEBUG_LINE_BLOCK_CAS_ID]]
 NESTED:   {
 NESTED-NEXT:     SYMBOL: {{.+}} | offset: 0x{{[a-z0-9]+}}, linkage: {{.*}}, scope: {{.*}}, {{.*}}
 NESTED-NEXT:     FIXUP: 0x{{[a-z0-9]+}}, addend = +0x{{[a-z0-9]+}}, kind = {{.*}}, target = {{.*}}foo{{.*}}
@@ -49,13 +49,13 @@ NESTED-NEXT: }
 FLAT: SECTION: __DWARF,__debug_line | MemProt: RW-
 FLAT-NEXT: {
 FLAT:   BLOCK: size = 0x{{[a-z0-9]+}}, align = {{[0-9]+}}, alignment-offset = {{[0-9]+}}
-FLAT-NEXT:   Block-Data-Cas-ID: llvmcas://[[UNIQUE_CAS_ID:[a-z0-9]+]]
+FLAT-NEXT:   Block-Cas-ID: llvmcas://[[UNIQUE_CAS_ID:[a-z0-9]+]]
 FLAT-NEXT:   {
 FLAT-NEXT:     SYMBOL: {{.*}} | offset: 0x{{[0-9]+}}, linkage: {{.*}}, scope: {{.*}}, {{.*}}
 FLAT-NEXT:     FIXUP: 0x{{[a-z0-9]+}}, addend = +0x{{[a-z0-9]+}}, kind = {{.*}}, target = {{.*}}a{{.*}}
 FLAT-NEXT:   }
 FLAT:   BLOCK: size = 0x{{[a-z0-9]+}}, align = {{[0-9]+}}, alignment-offset = {{[0-9]+}}
-FLAT-NEXT:   Block-Data-Cas-ID: llvmcas://[[DEBUG_LINE_BLOCK_CAS_ID:[a-z0-9]+]]
+FLAT-NEXT:   Block-Cas-ID: llvmcas://[[DEBUG_LINE_BLOCK_CAS_ID:[a-z0-9]+]]
 FLAT-NEXT:   {
 FLAT-NEXT:     SYMBOL: {{.+}} | offset: 0x{{[a-z0-9]+}}, linkage: {{.*}}, scope: {{.*}}, {{.*}}
 FLAT-NEXT:     FIXUP: 0x{{[a-z0-9]+}}, addend = +0x{{[a-z0-9]+}}, kind = {{.*}}, target = {{.*}}foo{{.*}}
@@ -66,13 +66,13 @@ FLAT-NEXT: }
 FLAT: SECTION: __DWARF,__debug_line | MemProt: RW-
 FLAT-NEXT: {
 FLAT:   BLOCK: size = 0x{{[a-z0-9]+}}, align = {{[0-9]+}}, alignment-offset = {{[0-9]+}}
-FLAT-NOT:   Block-Data-Cas-ID: llvmcas://[[UNIQUE_CAS_ID]]
+FLAT-NOT:   Block-Cas-ID: llvmcas://[[UNIQUE_CAS_ID]]
 FLAT:   {
 FLAT-NEXT:     SYMBOL: {{.*}} | offset: 0x{{[0-9]+}}, linkage: {{.*}}, scope: {{.*}}, {{.*}}
 FLAT-NEXT:     FIXUP: 0x{{[a-z0-9]+}}, addend = +0x{{[a-z0-9]+}}, kind = {{.*}}, target = {{.*}}a{{.*}}
 FLAT-NEXT:   }
 FLAT:   BLOCK: size = 0x{{[a-z0-9]+}}, align = {{[0-9]+}}, alignment-offset = {{[0-9]+}}
-FLAT-NOT:   Block-Data-Cas-ID: llvmcas://[[DEBUG_LINE_BLOCK_CAS_ID]]
+FLAT-NOT:   Block-Cas-ID: llvmcas://[[DEBUG_LINE_BLOCK_CAS_ID]]
 FLAT:   {
 FLAT-NEXT:     SYMBOL: {{.+}} | offset: 0x{{[a-z0-9]+}}, linkage: {{.*}}, scope: {{.*}}, {{.*}}
 FLAT-NEXT:     FIXUP: 0x{{[a-z0-9]+}}, addend = +0x{{[a-z0-9]+}}, kind = {{.*}}, target = {{.*}}foo{{.*}}
