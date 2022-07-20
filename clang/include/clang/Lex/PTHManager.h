@@ -98,7 +98,7 @@ class PTHManager {
   llvm::SpecificBumpPtrAllocator<IdentifierInfo *> IdentifierInfoCacheAlloc;
 
   llvm::cas::CASDB &CAS;
-  IntrusiveRefCntPtr<llvm::cas::CASFileSystemBase> FS;
+  IntrusiveRefCntPtr<llvm::vfs::FileSystem> FS;
   LangOptions CanonicalLangOpts;
   Optional<llvm::cas::CASID> SerializedLangOpts;
   Optional<llvm::cas::CASID> ClangVersion;
@@ -121,8 +121,7 @@ public:
   PTHManager() = delete;
 
   PTHManager(llvm::cas::CASDB &CAS,
-             IntrusiveRefCntPtr<llvm::cas::CASFileSystemBase> FS,
-             Preprocessor &PP);
+             IntrusiveRefCntPtr<llvm::vfs::FileSystem> FS, Preprocessor &PP);
 
   void setPreprocessor(Preprocessor *pp) { PP = pp; }
 

@@ -469,9 +469,8 @@ void CompilerInstance::createPreprocessor(TranslationUnitKind TUKind) {
     // token-caching can fall back to ingesting into an in-memory CAS itself.
     llvm::vfs::FileSystem &FS = getFileManager().getVirtualFileSystem();
     if (FS.isCASFS())
-      PP->setPTHManager(std::make_unique<PTHManager>(
-          getOrCreateCAS(), &static_cast<llvm::cas::CASFileSystemBase &>(FS),
-          *PP));
+      PP->setPTHManager(
+          std::make_unique<PTHManager>(getOrCreateCAS(), &FS, *PP));
   }
 
   if (PPOpts.DetailedRecord)
