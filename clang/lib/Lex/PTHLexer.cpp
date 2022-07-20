@@ -524,7 +524,7 @@ std::unique_ptr<PTHLexer> PTHManager::createLexer(FileID FID) {
   // FIXME: Consider reporting diag::err_invalid_pth_file or similar?
   StringRef Filename = FE->getName();
   if (llvm::ErrorOr<Optional<cas::ObjectRef>> InputRefOrErr =
-          FS->getCASContentsForFile(Filename)) {
+          FS->getObjectRefForFileContent(Filename)) {
     if (Optional<cas::ObjectRef> InputRef = *InputRefOrErr)
       if (Optional<llvm::cas::CASID> PTHFile =
               expectedToOptional(computePTH(CAS.getID(*InputRef))))
