@@ -344,12 +344,11 @@ SourceLocation PTHLexer::getSourceLocation() {
 //===----------------------------------------------------------------------===//
 
 PTHManager::PTHManager(llvm::cas::CASDB &CAS,
-                       IntrusiveRefCntPtr<llvm::cas::CASFileSystemBase> FS,
+                       IntrusiveRefCntPtr<llvm::vfs::FileSystem> FS,
                        Preprocessor &PP)
     : CAS(CAS), FS(std::move(FS)), PP(&PP) {
   // TODO: Allow the filesystem NOT to have a CAS instance, or (maybe?) to have
   // a different CAS instance. This requires ingesting files from FS into CAS.
-  assert(&CAS == &this->FS->getCAS() && "Expected the same CAS instance");
 
   {
     const LangOptions &OriginalLangOpts = PP.getLangOpts();
@@ -524,10 +523,13 @@ std::unique_ptr<PTHLexer> PTHManager::createLexer(FileID FID) {
   //
   // FIXME: Consider reporting diag::err_invalid_pth_file or similar?
   StringRef Filename = FE->getName();
-  if (Optional<llvm::cas::CASID> InputFile = FS->getFileCASID(Filename))
-    if (Optional<llvm::cas::CASID> PTHFile =
-            expectedToOptional(computePTH(*InputFile)))
-      Handler = createHandler(Filename, *PTHFile);
+  if (llvm::ErrorOr<Optional<cas::ObjectRef>> InputRefOrErr =
+          FS->getCASContentsForFile(Filename)) {
+    if (Optional<cas::ObjectRef> InputRef = *InputRefOrErr)
+      if (Optional<llvm::cas::CASID> PTHFile =
+              expectedToOptional(computePTH(CAS.getID(*InputRef))))
+        Handler = createHandler(Filename, *PTHFile);
+  }
 
   if (!Handler)
     Handler = &NullHandler;
