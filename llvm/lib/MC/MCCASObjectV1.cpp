@@ -1078,8 +1078,14 @@ void MCCASBuilder::startSection(const MCSection *Sec) {
 
   if (RelocLocation == Atom) {
     // Build a map for lookup.
-    for (auto R : ObjectWriter.getRelocations()[Sec])
-      RelMap[R.F].push_back(R.MRE);
+    for (auto R : ObjectWriter.getRelocations()[Sec]) {
+      if (R.F)
+        RelMap[R.F].push_back(R.MRE);
+      else
+        // If the fragment is nullptr, it should a section with only relocation
+        // in section. Encode in section.
+        SectionRelocs.push_back(R.MRE);
+    }
   }
   if (RelocLocation == Section) {
     for (auto R : ObjectWriter.getRelocations()[Sec])

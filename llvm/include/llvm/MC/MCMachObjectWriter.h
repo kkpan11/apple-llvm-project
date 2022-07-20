@@ -243,6 +243,12 @@ public:
   // to a symbol it should be passed as \p RelSymbol so that it can be updated
   // afterwards. If the relocation doesn't refer to a symbol, nullptr should be
   // used.
+  void addRelocation(const MCSymbol *RelSymbol, const MCSection *Sec,
+                     MachO::any_relocation_info &MRE) {
+    RelAndSymbol P(RelSymbol, nullptr, MRE);
+    Relocations[Sec].push_back(P);
+  }
+
   void addRelocation(const MCSymbol *RelSymbol, const MCFragment *F,
                      MachO::any_relocation_info &MRE) {
     RelAndSymbol P(RelSymbol, F, MRE);
@@ -277,9 +283,8 @@ public:
                                               const MCFragment &FB, bool InSet,
                                               bool IsPCRel) const override;
 
-  uint64_t writeObject(MCAssembler &Asm, const MCAsmLayout &Layout) override;
+  void populateAddrSigSection(MCAssembler &Asm);
 
-  void writeAddrsigSection(MCAssembler &Asm);
 
   // FIXME: Break down writeObject into following stages for slicing the output.
   // This is a very rough slicing and need to be improved.
@@ -289,6 +294,8 @@ public:
   void writeRelocations(MCAssembler &Asm, const MCAsmLayout &Layout);
   void writeDataInCodeRegion(MCAssembler &Asm, const MCAsmLayout &Layout);
   void writeSymbolTable(MCAssembler &Asm, const MCAsmLayout &Layout);
+
+  uint64_t writeObject(MCAssembler &Asm, const MCAsmLayout &Layout) override;
 };
 
 /// Construct a new Mach-O writer instance.
