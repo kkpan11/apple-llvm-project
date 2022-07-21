@@ -179,6 +179,11 @@ static const Function *getCalledFunction(const Value *V,
 static Optional<AllocFnsTy>
 getAllocationDataForFunction(const Function *Callee, AllocType AllocTy,
                              const TargetLibraryInfo *TLI) {
+  // Don't perform a slow TLI lookup, if this function doesn't return a pointer
+  // and thus can't be an allocation function.
+  if (!Callee->getReturnType()->isPointerTy())
+    return None;
+
   // Make sure that the function is available.
   LibFunc TLIFn;
   if (!TLI || !TLI->getLibFunc(*Callee, TLIFn) || !TLI->has(TLIFn))
@@ -356,9 +361,8 @@ static bool CheckedZextOrTrunc(APInt &I, unsigned IntTyBits) {
 }
 
 Optional<APInt>
-llvm::getAllocSize(const CallBase *CB,
-                   const TargetLibraryInfo *TLI,
-                   std::function<const Value*(const Value*)> Mapper) {
+llvm::getAllocSize(const CallBase *CB, const TargetLibraryInfo *TLI,
+                   function_ref<const Value *(const Value *)> Mapper) {
   // Note: This handles both explicitly listed allocation functions and
   // allocsize.  The code structure could stand to be cleaned up a bit.
   Optional<AllocFnsTy> FnData = getAllocationSize(CB, TLI);
@@ -527,20 +531,25 @@ bool llvm::isLibFreeFunction(const Function *F, const LibFunc TLIFn) {
   return true;
 }
 
-/// isFreeCall - Returns non-null if the value is a call to the builtin free()
-const CallInst *llvm::isFreeCall(const Value *I, const TargetLibraryInfo *TLI) {
+bool llvm::isFreeCall(const Value *I, const TargetLibraryInfo *TLI) {
   bool IsNoBuiltinCall;
   const Function *Callee = getCalledFunction(I, IsNoBuiltinCall);
   if (Callee == nullptr || IsNoBuiltinCall)
-    return nullptr;
+    return false;
 
   LibFunc TLIFn;
   if (!TLI || !TLI->getLibFunc(*Callee, TLIFn) || !TLI->has(TLIFn))
-    return nullptr;
+    return false;
 
-  return isLibFreeFunction(Callee, TLIFn) ? dyn_cast<CallInst>(I) : nullptr;
+  return isLibFreeFunction(Callee, TLIFn);
 }
 
+Value *llvm::getFreedOperand(const CallBase *CB, const TargetLibraryInfo *TLI) {
+  // All currently supported free functions free the first argument.
+  if (isFreeCall(CB, TLI))
+    return CB->getArgOperand(0);
+  return nullptr;
+}
 
 //===----------------------------------------------------------------------===//
 //  Utility functions to compute size of objects.
@@ -764,8 +773,7 @@ SizeOffsetType ObjectSizeOffsetVisitor::visitArgument(Argument &A) {
 }
 
 SizeOffsetType ObjectSizeOffsetVisitor::visitCallBase(CallBase &CB) {
-  auto Mapper = [](const Value *V) { return V; };
-  if (Optional<APInt> Size = getAllocSize(&CB, TLI, Mapper))
+  if (Optional<APInt> Size = getAllocSize(&CB, TLI))
     return std::make_pair(*Size, Zero);
   return unknown();
 }
