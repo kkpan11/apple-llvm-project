@@ -314,10 +314,6 @@ public:
   Error buildDataInCodeRegion();
   Error buildSymbolTable();
 
-  /// For each compile unit inside the __debug_info section, create a
-  /// corresponding DebugInfoRef CAS object.
-  Error splitDebugInfoCUs();
-
   void startGroup();
   Error finalizeGroup();
 
@@ -349,6 +345,15 @@ private:
   // Helper functions.
   Error createStringSection(StringRef S,
                             std::function<Error(StringRef)> CreateFn);
+  // If the Section is the DWARF Line Section, append all the contents of the
+  // section into a buffer and split it up into multiple CAS blocks, where one
+  // block represents one function's contribution into the section or one line
+  // table.
+  Error createLineSection(const MCSection *DebugLineSection);
+
+  /// For each compile unit inside the __debug_info section, create a
+  /// corresponding DebugInfoRef CAS object.
+  Error splitDebugInfoCUs();
 
   const MCSection *CurrentSection = nullptr;
   const MCSymbol *CurrentAtom = nullptr;
