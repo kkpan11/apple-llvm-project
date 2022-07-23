@@ -125,6 +125,7 @@ public:
 
   std::vector<Symbol *> symbols;
   std::vector<Section *> sections;
+  ArrayRef<uint8_t> objCImageInfo;
 
   // If not empty, this stores the name of the archive containing this file.
   // We use this string for creating error messages.
