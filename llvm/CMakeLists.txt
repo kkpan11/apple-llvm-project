@@ -716,6 +716,10 @@ else()
   set(LLVM_ENABLE_ONDISK_CAS_default OFF)
 endif()
 option(LLVM_ENABLE_ONDISK_CAS "Build OnDiskCAS." ${LLVM_ENABLE_ONDISK_CAS_default})
+option(LLVM_ENABLE_GRPC_CAS "Build gRPC CAS" OFF)
+if(LLVM_ENABLE_GRPC_CAS)
+  include(FindGRPC)
+endif()
 
 set(LLVM_INSTALL_DOXYGEN_HTML_DIR "${CMAKE_INSTALL_DOCDIR}/llvm/doxygen-html"
     CACHE STRING "Doxygen-generated HTML documentation install directory")

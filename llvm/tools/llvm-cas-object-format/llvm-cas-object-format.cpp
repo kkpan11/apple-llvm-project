@@ -21,6 +21,7 @@
 #include "llvm/ExecutionEngine/JITLink/MachO.h"
 #include "llvm/ExecutionEngine/JITLink/MachO_x86_64.h"
 #include "llvm/MC/CAS/MCCASObjectV1.h"
+#include "llvm/RemoteCachingService/RemoteCachingService.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FileOutputBuffer.h"
@@ -168,6 +169,7 @@ int main(int argc, char *argv[]) {
   ExitOnError ExitOnErr;
   ExitOnErr.setBanner(std::string(argv[0]) + ": ");
 
+  RegisterGRPCCAS Y;
   cl::ParseCommandLineOptions(argc, argv);
 
   if (!CASIDOutput.empty() && InputFiles.size() != 1) {
@@ -175,13 +177,8 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  std::unique_ptr<ObjectStore> CAS;
-  if (StringRef(CASPath).empty())
-    CAS = createInMemoryCAS();
-  else if (CASPath == "auto")
-    CAS = ExitOnErr(createOnDiskCAS(getDefaultOnDiskCASPath()));
-  else
-    CAS = ExitOnErr(createOnDiskCAS(CASPath));
+  std::unique_ptr<ObjectStore> CAS =
+      ExitOnErr(createCASFromIdentifier(CASPath));
 
   ThreadPoolStrategy PoolStrategy = hardware_concurrency();
   if (NumThreads != 0)

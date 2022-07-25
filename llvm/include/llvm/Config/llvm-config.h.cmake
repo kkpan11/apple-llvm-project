@@ -129,4 +129,7 @@
 /* Define to 1 if OnDiskCAS is enabled. */
 #cmakedefine01 LLVM_ENABLE_ONDISK_CAS
 
+/* Define to 1 if grpc CAS is enabled. */
+#cmakedefine01 LLVM_ENABLE_GRPC_CAS
+
 #endif
