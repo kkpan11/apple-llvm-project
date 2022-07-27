@@ -14,6 +14,7 @@
 #include "llvm/MC/MCAsmBackend.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCObjectFileInfo.h"
+#include "llvm/Support/BinaryStreamReader.h"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/EndianStream.h"
 #include <memory>
@@ -936,12 +937,97 @@ Error MCCASBuilder::createStringSection(
   return Error::success();
 }
 
+/// Reads and returns the length field of a debug info header contained in
+/// Reader, assuming Reader is positioned at the beginning of the section.
+/// The Reader's state is advanced to the first byte after the section.
+static Expected<size_t>
+getSizeFromDwarfHeaderAndSkip(BinaryStreamReader &Reader) {
+  // From DWARF 5 section 7.4:
+  // In the 32-bit DWARF format, an initial length field [...] is an unsigned
+  // 4-byte integer (which must be less than 0xfffffff0);
+  uint32_t Word1;
+  if (auto E = Reader.readInteger(Word1))
+    return std::move(E);
+
+  // TODO: handle 64-bit DWARF format.
+  if (Word1 >= 0xfffffff0)
+    return createStringError(inconvertibleErrorCode(),
+                             "DWARF input is not in the 32-bit format");
+
+  if (auto E = Reader.skip(Word1))
+    return std::move(E);
+  return Word1;
+}
+
+/// Given a list of MCFragments, return a vector with the concatenation of their
+/// data contents.
+/// If any fragment is not an MCDataFragment, an error is returned.
+static Expected<SmallVector<char, 0>>
+mergeDataFragmentContents(const MCSection::FragmentListType &FragmentList) {
+  SmallVector<char, 0> mergedData;
+  for (const MCFragment &Fragment : FragmentList) {
+    if (const auto *DataFragment = dyn_cast<MCDataFragment>(&Fragment))
+      llvm::append_range(mergedData, DataFragment->getContents());
+    else
+      return createStringError(inconvertibleErrorCode(),
+                               "Invalid fragment type");
+  }
+  return mergedData;
+}
+
+Error MCCASBuilder::splitDebugInfoCUs() {
+  auto *DebugInfoSection =
+      Asm.getContext().getObjectFileInfo()->getDwarfInfoSection();
+  if (!DebugInfoSection)
+    return Error::success();
+
+  const MCSection::FragmentListType &FragmentList =
+      DebugInfoSection->getFragmentList();
+
+  startSection(DebugInfoSection);
+
+  Expected<SmallVector<char, 0>> DebugInfoData =
+      mergeDataFragmentContents(FragmentList);
+  if (!DebugInfoData)
+    return DebugInfoData.takeError();
+
+  StringRef DebugInfoStrRef(DebugInfoData->data(), DebugInfoData->size());
+  BinaryStreamReader Reader(DebugInfoStrRef, Asm.getBackend().Endian);
+
+  // CU splitting loop.
+  while (!Reader.empty()) {
+    uint64_t StartOffset = Reader.getOffset();
+    Expected<size_t> CULength = getSizeFromDwarfHeaderAndSkip(Reader);
+    if (!CULength)
+      return CULength.takeError();
+
+    StringRef CUData =
+        DebugInfoStrRef.substr(StartOffset, Reader.getOffset() - StartOffset);
+    auto DbgInfoRef = DebugInfoCURef::create(*this, CUData);
+    if (!DbgInfoRef)
+      return DbgInfoRef.takeError();
+    addNode(*DbgInfoRef);
+  }
+
+  return finalizeSection();
+}
+
 Error MCCASBuilder::buildFragments() {
+  auto *DebugInfoSection =
+      Asm.getContext().getObjectFileInfo()->getDwarfInfoSection();
+
   startGroup();
 
   for (const MCSection &Sec : Asm) {
     if (Sec.isVirtualSection() || Sec.getFragmentList().empty())
       continue;
+
+    // Handle Debug Info sections separately.
+    if (DebugInfoSection == &Sec) {
+      if (auto E = splitDebugInfoCUs())
+        return E;
+      continue;
+    }
 
     // Start Subsection for one section.
     startSection(&Sec);
@@ -1075,15 +1161,18 @@ void MCCASBuilder::startSection(const MCSection *Sec) {
 
   CurrentSection = Sec;
   CurrentContext = &SectionContext;
+  const MCSection *DebugInfoSection =
+      Asm.getContext().getObjectFileInfo()->getDwarfInfoSection();
 
   if (RelocLocation == Atom) {
     // Build a map for lookup.
     for (auto R : ObjectWriter.getRelocations()[Sec]) {
-      if (R.F)
+      if (R.F && Sec != DebugInfoSection)
         RelMap[R.F].push_back(R.MRE);
       else
         // If the fragment is nullptr, it should a section with only relocation
         // in section. Encode in section.
+        // DebugInfo sections are also encoded in a single section.
         SectionRelocs.push_back(R.MRE);
     }
   }
@@ -1306,6 +1395,8 @@ Expected<uint64_t> MCCASReader::materializeSection(cas::ObjectRef ID) {
     OS.write_zeros(1);
     return *Size + 1;
   }
+  if (auto F = DebugInfoCURef::Cast(*Node))
+    return F->materialize(OS);
   return createStringError(inconvertibleErrorCode(),
                            "unsupported CAS node for atom");
 }
