@@ -571,7 +571,8 @@ public:
   ASTFileSignature WriteAST(Sema &SemaRef, StringRef OutputFile,
                             Module *WritingModule, StringRef isysroot,
                             bool hasErrors = false,
-                            bool ShouldCacheASTInMemory = false);
+                            bool ShouldCacheASTInMemory = false,
+                            bool OutputPathIndependent = false);
 
   /// Emit a token.
   void AddToken(const Token &Tok, RecordDataImpl &Record);
@@ -760,6 +761,7 @@ class PCHGenerator : public SemaConsumer {
   ASTWriter Writer;
   bool AllowASTWithErrors;
   bool ShouldCacheASTInMemory;
+  bool OutputPathIndependent;
 
 protected:
   ASTWriter &getWriter() { return Writer; }
@@ -772,7 +774,8 @@ public:
                std::shared_ptr<PCHBuffer> Buffer,
                ArrayRef<std::shared_ptr<ModuleFileExtension>> Extensions,
                bool AllowASTWithErrors = false, bool IncludeTimestamps = true,
-               bool ShouldCacheASTInMemory = false);
+               bool ShouldCacheASTInMemory = false,
+               bool OutputPathIndependent = false);
   ~PCHGenerator() override;
 
   void InitializeSema(Sema &S) override { SemaPtr = &S; }
