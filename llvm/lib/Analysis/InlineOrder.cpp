@@ -70,7 +70,7 @@ llvm::getInlineOrder(InlinePriorityMode UseInlinePriority,
         }));
 
   default:
-    assert("Unsupported Inline Priority Mode");
+    llvm_unreachable("Unsupported Inline Priority Mode");
     break;
   }
   return nullptr;
