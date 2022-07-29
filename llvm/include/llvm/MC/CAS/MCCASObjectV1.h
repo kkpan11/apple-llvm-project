@@ -314,6 +314,10 @@ public:
   Error buildDataInCodeRegion();
   Error buildSymbolTable();
 
+  /// For each compile unit inside the __debug_info section, create a
+  /// corresponding DebugInfoRef CAS object.
+  Error splitDebugInfoCUs();
+
   void startGroup();
   Error finalizeGroup();
 
