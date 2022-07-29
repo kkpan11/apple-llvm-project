@@ -170,7 +170,7 @@ Error casobjectformats::printCASObject(const reader::CASObjectReader &Reader,
       return PrintSection.takeError();
     PrintBlock->Ref = BlockRef;
     PrintBlock->Description = getDescription(*Info);
-    PrintBlock->Content = Info->Content.getValueOr(StringRef()).str();
+    PrintBlock->Content = Info->Content.value_or(StringRef()).str();
     PrintBlock->Section = *PrintSection;
     PrintBlock->Section->Blocks.push_back(PrintBlock);
     MappedBlock = PrintBlock;
