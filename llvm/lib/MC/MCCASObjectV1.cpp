@@ -1033,14 +1033,24 @@ splitDebugInfoSectionData(MutableArrayRef<char> SectionData,
   return SplitData;
 }
 
-Error MCCASBuilder::createDebugInfoSection() {
-  if (!DwarfSections.DebugInfo)
+Error MCCASBuilder::createDebugInfoSection(ArrayRef<DebugInfoCURef> CURefs) {
+  if (CURefs.empty())
     return Error::success();
+
+  startSection(DwarfSections.DebugInfo);
+  for (auto CURef : CURefs)
+    addNode(CURef);
+  if (auto E = createPaddingRef(DwarfSections.DebugInfo))
+    return E;
+  return finalizeSection();
+}
+
+Expected<SmallVector<DebugInfoCURef>> MCCASBuilder::splitDebugInfoSection() {
+  if (!DwarfSections.DebugInfo)
+    return SmallVector<DebugInfoCURef>();
 
   const MCSection::FragmentListType &FragmentList =
       DwarfSections.DebugInfo->getFragmentList();
-
-  startSection(DwarfSections.DebugInfo);
 
   Expected<SmallVector<char, 0>> DebugInfoData =
       mergeMCFragmentContents(FragmentList);
@@ -1052,15 +1062,15 @@ Error MCCASBuilder::createDebugInfoSection() {
   if (!SplitCUData)
     return SplitCUData.takeError();
 
+  SmallVector<DebugInfoCURef> CURefs;
   for (MutableArrayRef<char> CUData : *SplitCUData) {
     auto DbgInfoRef = DebugInfoCURef::create(*this, toStringRef(CUData));
     if (!DbgInfoRef)
       return DbgInfoRef.takeError();
-    addNode(*DbgInfoRef);
+    CURefs.push_back(*DbgInfoRef);
   }
-  if (auto E = createPaddingRef(DwarfSections.DebugInfo))
-    return E;
-  return finalizeSection();
+
+  return CURefs;
 }
 
 Error MCCASBuilder::createLineSection() {
@@ -1119,13 +1129,17 @@ Error MCCASBuilder::createDebugStrSection() {
 Error MCCASBuilder::buildFragments() {
   startGroup();
 
+  Expected<SmallVector<DebugInfoCURef>> CURefs = splitDebugInfoSection();
+  if (!CURefs)
+    return CURefs.takeError();
+
   for (const MCSection &Sec : Asm) {
     if (Sec.isVirtualSection() || Sec.getFragmentList().empty())
       continue;
 
     // Handle Debug Info sections separately.
     if (&Sec == DwarfSections.DebugInfo) {
-      if (auto E = createDebugInfoSection())
+      if (auto E = createDebugInfoSection(*CURefs))
         return E;
       continue;
     }
