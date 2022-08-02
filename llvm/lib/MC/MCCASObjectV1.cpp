@@ -1012,6 +1012,27 @@ mergeMCFragmentContents(const MCSection::FragmentListType &FragmentList,
   return mergedData;
 }
 
+/// Given the data associated with a Dwarf Debug Info section, split it into
+/// multiple pieces, one per Compile Unit.
+static Expected<SmallVector<MutableArrayRef<char>>>
+splitDebugInfoSectionData(MutableArrayRef<char> SectionData,
+                          support::endianness Endian) {
+  SmallVector<MutableArrayRef<char>> SplitData;
+  BinaryStreamReader Reader(llvm::toStringRef(SectionData), Endian);
+
+  // CU splitting loop.
+  while (!Reader.empty()) {
+    uint64_t StartOffset = Reader.getOffset();
+    Expected<size_t> CULength = getSizeFromDwarfHeaderAndSkip(Reader);
+    if (!CULength)
+      return CULength.takeError();
+    SplitData.push_back(
+        SectionData.slice(StartOffset, Reader.getOffset() - StartOffset));
+  }
+
+  return SplitData;
+}
+
 Error MCCASBuilder::createDebugInfoSection() {
   if (!DwarfSections.DebugInfo)
     return Error::success();
@@ -1026,19 +1047,13 @@ Error MCCASBuilder::createDebugInfoSection() {
   if (!DebugInfoData)
     return DebugInfoData.takeError();
 
-  StringRef DebugInfoStrRef(DebugInfoData->data(), DebugInfoData->size());
-  BinaryStreamReader Reader(DebugInfoStrRef, Asm.getBackend().Endian);
+  Expected<SmallVector<MutableArrayRef<char>>> SplitCUData =
+      splitDebugInfoSectionData(*DebugInfoData, Asm.getBackend().Endian);
+  if (!SplitCUData)
+    return SplitCUData.takeError();
 
-  // CU splitting loop.
-  while (!Reader.empty()) {
-    uint64_t StartOffset = Reader.getOffset();
-    Expected<size_t> CULength = getSizeFromDwarfHeaderAndSkip(Reader);
-    if (!CULength)
-      return CULength.takeError();
-
-    StringRef CUData =
-        DebugInfoStrRef.substr(StartOffset, Reader.getOffset() - StartOffset);
-    auto DbgInfoRef = DebugInfoCURef::create(*this, CUData);
+  for (MutableArrayRef<char> CUData : *SplitCUData) {
+    auto DbgInfoRef = DebugInfoCURef::create(*this, toStringRef(CUData));
     if (!DbgInfoRef)
       return DbgInfoRef.takeError();
     addNode(*DbgInfoRef);
