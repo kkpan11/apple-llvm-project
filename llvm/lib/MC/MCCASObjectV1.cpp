@@ -961,13 +961,24 @@ getSizeFromDwarfHeaderAndSkip(BinaryStreamReader &Reader) {
 
 /// Given a list of MCFragments, return a vector with the concatenation of their
 /// data contents.
-/// If any fragment is not an MCDataFragment, an error is returned.
+/// If any fragment is not an MCDataFragment, or the fragment is an
+/// MCDwarfLineAddrFragment and the section containing that fragment is not a
+/// debug_line section, an error is returned.
 static Expected<SmallVector<char, 0>>
-mergeDataFragmentContents(const MCSection::FragmentListType &FragmentList) {
+mergeMCFragmentContents(const MCSection::FragmentListType &FragmentList,
+                        bool IsDebugLineSection = false) {
   SmallVector<char, 0> mergedData;
   for (const MCFragment &Fragment : FragmentList) {
     if (const auto *DataFragment = dyn_cast<MCDataFragment>(&Fragment))
       llvm::append_range(mergedData, DataFragment->getContents());
+    else if (const auto *DwarfLineAddrFrag =
+                 dyn_cast<MCDwarfLineAddrFragment>(&Fragment))
+      if (IsDebugLineSection)
+        llvm::append_range(mergedData, DwarfLineAddrFrag->getContents());
+      else
+        return createStringError(
+            inconvertibleErrorCode(),
+            "Invalid MCDwarfLineAddrFragment in a non debug line section");
     else
       return createStringError(inconvertibleErrorCode(),
                                "Invalid fragment type");
@@ -987,7 +998,7 @@ Error MCCASBuilder::splitDebugInfoCUs() {
   startSection(DebugInfoSection);
 
   Expected<SmallVector<char, 0>> DebugInfoData =
-      mergeDataFragmentContents(FragmentList);
+      mergeMCFragmentContents(FragmentList);
   if (!DebugInfoData)
     return DebugInfoData.takeError();
 
@@ -1012,9 +1023,41 @@ Error MCCASBuilder::splitDebugInfoCUs() {
   return finalizeSection();
 }
 
+Error MCCASBuilder::createLineSection(const MCSection *DebugLineSection) {
+  if (!DebugLineSection)
+    return Error::success();
+
+  Expected<SmallVector<char, 0>> DebugLineData =
+      mergeMCFragmentContents(DebugLineSection->getFragmentList(), true);
+  if (!DebugLineData)
+    return DebugLineData.takeError();
+
+  startSection(DebugLineSection);
+
+  StringRef DebugLineStrRef(DebugLineData->data(), DebugLineData->size());
+  BinaryStreamReader SectionReader(DebugLineStrRef, Asm.getBackend().Endian);
+  // Iterate over the line section contents and split it up into individual cas
+  // blocks that represent one line table per function.
+  while (!SectionReader.empty()) {
+    uint64_t SectionStartOffset = SectionReader.getOffset();
+    auto Length = getSizeFromDwarfHeaderAndSkip(SectionReader);
+    if (!Length)
+      return Length.takeError();
+    StringRef LineTableData = DebugLineStrRef.substr(
+        SectionStartOffset, SectionReader.getOffset() - SectionStartOffset);
+    auto DbgLineRef = DebugLineRef::create(*this, LineTableData);
+    if (!DbgLineRef)
+      return DbgLineRef.takeError();
+    addNode(*DbgLineRef);
+  }
+  return finalizeSection();
+}
+
 Error MCCASBuilder::buildFragments() {
   auto *DebugInfoSection =
       Asm.getContext().getObjectFileInfo()->getDwarfInfoSection();
+  auto *DebugLineSection =
+      Asm.getContext().getObjectFileInfo()->getDwarfLineSection();
 
   startGroup();
 
@@ -1025,6 +1068,12 @@ Error MCCASBuilder::buildFragments() {
     // Handle Debug Info sections separately.
     if (DebugInfoSection == &Sec) {
       if (auto E = splitDebugInfoCUs())
+        return E;
+      continue;
+    }
+    // Handle Debug Line sections separately.
+    if (DebugLineSection == &Sec) {
+      if (auto E = createLineSection(DebugLineSection))
         return E;
       continue;
     }
@@ -1051,7 +1100,6 @@ Error MCCASBuilder::buildFragments() {
 
       continue;
     }
-
     // Start subsection for first Atom.
     startAtom(Sec.getFragmentList().front().getAtom());
 
@@ -1164,10 +1212,15 @@ void MCCASBuilder::startSection(const MCSection *Sec) {
   const MCSection *DebugInfoSection =
       Asm.getContext().getObjectFileInfo()->getDwarfInfoSection();
 
+  auto DwarfLineSection =
+      Asm.getContext().getObjectFileInfo()->getDwarfLineSection();
+
   if (RelocLocation == Atom) {
     // Build a map for lookup.
     for (auto R : ObjectWriter.getRelocations()[Sec]) {
-      if (R.F && Sec != DebugInfoSection)
+      // For the Dwarf Sections, just append the relocations to the
+      // SectionRelocs. No Atoms are considered for this section.
+      if (R.F && DwarfLineSection != Sec && Sec != DebugInfoSection)
         RelMap[R.F].push_back(R.MRE);
       else
         // If the fragment is nullptr, it should a section with only relocation
@@ -1396,6 +1449,8 @@ Expected<uint64_t> MCCASReader::materializeSection(cas::ObjectRef ID) {
     return *Size + 1;
   }
   if (auto F = DebugInfoCURef::Cast(*Node))
+    return F->materialize(OS);
+  if (auto F = DebugLineRef::Cast(*Node))
     return F->materialize(OS);
   return createStringError(inconvertibleErrorCode(),
                            "unsupported CAS node for atom");
