@@ -953,11 +953,10 @@ Error MCCASBuilder::createStringSection(
   return Error::success();
 }
 
-/// Reads and returns the length field of a debug info header contained in
-/// Reader, assuming Reader is positioned at the beginning of the section.
-/// The Reader's state is advanced to the first byte after the section.
-static Expected<size_t>
-getSizeFromDwarfHeaderAndSkip(BinaryStreamReader &Reader) {
+/// Reads and returns the length field of a dwarf header contained in Reader,
+/// assuming Reader is positioned at the beginning of the header. The Reader's
+/// state is advanced to the first byte after the header.
+static Expected<size_t> getSizeFromDwarfHeader(BinaryStreamReader &Reader) {
   // From DWARF 5 section 7.4:
   // In the 32-bit DWARF format, an initial length field [...] is an unsigned
   // 4-byte integer (which must be less than 0xfffffff0);
@@ -970,9 +969,20 @@ getSizeFromDwarfHeaderAndSkip(BinaryStreamReader &Reader) {
     return createStringError(inconvertibleErrorCode(),
                              "DWARF input is not in the 32-bit format");
 
-  if (auto E = Reader.skip(Word1))
-    return std::move(E);
   return Word1;
+}
+
+/// Reads and returns the length field of a dwarf header contained in Reader,
+/// assuming Reader is positioned at the beginning of the header. The Reader's
+/// state is advanced to the first byte after the section.
+static Expected<size_t>
+getSizeFromDwarfHeaderAndSkip(BinaryStreamReader &Reader) {
+  Expected<size_t> Size = getSizeFromDwarfHeader(Reader);
+  if (!Size)
+    return Size.takeError();
+  if (auto E = Reader.skip(*Size))
+    return std::move(E);
+  return Size;
 }
 
 /// Given a list of MCFragments, return a vector with the concatenation of their
