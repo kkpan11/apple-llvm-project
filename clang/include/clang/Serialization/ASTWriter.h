@@ -452,7 +452,7 @@ private:
 
   void WriteBlockInfoBlock();
   void WriteControlBlock(Preprocessor &PP, ASTContext &Context,
-                         StringRef isysroot, StringRef OutputFile);
+                         StringRef isysroot);
 
   /// Write out the signature and diagnostic options, and return the signature.
   ASTFileSignature writeUnhashedControlBlock(Preprocessor &PP,
@@ -531,7 +531,7 @@ private:
   void WriteDecl(ASTContext &Context, Decl *D);
 
   ASTFileSignature WriteASTCore(Sema &SemaRef, StringRef isysroot,
-                                StringRef OutputFile, Module *WritingModule);
+                                Module *WritingModule);
 
 public:
   /// Create a new precompiled header writer that outputs to
@@ -571,8 +571,7 @@ public:
   ASTFileSignature WriteAST(Sema &SemaRef, StringRef OutputFile,
                             Module *WritingModule, StringRef isysroot,
                             bool hasErrors = false,
-                            bool ShouldCacheASTInMemory = false,
-                            bool OutputPathIndependent = false);
+                            bool ShouldCacheASTInMemory = false);
 
   /// Emit a token.
   void AddToken(const Token &Tok, RecordDataImpl &Record);
@@ -761,7 +760,6 @@ class PCHGenerator : public SemaConsumer {
   ASTWriter Writer;
   bool AllowASTWithErrors;
   bool ShouldCacheASTInMemory;
-  bool OutputPathIndependent;
 
 protected:
   ASTWriter &getWriter() { return Writer; }
@@ -774,8 +772,7 @@ public:
                std::shared_ptr<PCHBuffer> Buffer,
                ArrayRef<std::shared_ptr<ModuleFileExtension>> Extensions,
                bool AllowASTWithErrors = false, bool IncludeTimestamps = true,
-               bool ShouldCacheASTInMemory = false,
-               bool OutputPathIndependent = false);
+               bool ShouldCacheASTInMemory = false);
   ~PCHGenerator() override;
 
   void InitializeSema(Sema &S) override { SemaPtr = &S; }
