@@ -291,6 +291,16 @@ private:
   MCAssemblerRef(SpecificRefT Ref) : SpecificRefT(Ref) {}
 };
 
+struct DwarfSectionsCache {
+  MCSection *DebugInfo;
+  MCSection *Line;
+  MCSection *Str;
+};
+
+/// Queries `Asm` for all dwarf sections and returns an object with (possibly
+/// null) pointers to them.
+DwarfSectionsCache getDwarfSections(MCAssembler &Asm);
+
 class MCCASBuilder {
 public:
   cas::CASDB &CAS;
@@ -305,7 +315,7 @@ public:
                raw_ostream *DebugOS)
       : CAS(Schema.CAS), ObjectWriter(ObjectWriter), Schema(Schema), Asm(Asm),
         Layout(Layout), DebugOS(DebugOS), FragmentOS(FragmentData),
-        CurrentContext(&Sections) {}
+        CurrentContext(&Sections), DwarfSections(getDwarfSections(Asm)) {}
 
   Error prepare();
   Error buildMachOHeader();
@@ -345,15 +355,18 @@ private:
   // Helper functions.
   Error createStringSection(StringRef S,
                             std::function<Error(StringRef)> CreateFn);
-  // If the Section is the DWARF Line Section, append all the contents of the
-  // section into a buffer and split it up into multiple CAS blocks, where one
-  // block represents one function's contribution into the section or one line
-  // table.
-  Error createLineSection(const MCSection *DebugLineSection);
 
-  /// For each compile unit inside the __debug_info section, create a
-  /// corresponding DebugInfoRef CAS object.
-  Error splitDebugInfoCUs();
+  // If a DWARF Line Section exists, create a DebugLineRef CAS object per
+  // function contribution to the line table.
+  Error createLineSection();
+
+  /// If a DWARF Debug Info section exists, create a DebugInfoRef CAS object
+  /// for each compile unit (CU) inside the section.
+  Error createDebugInfoSection();
+
+  // If a DWARF String section exists, create a DebugStrRef CAS object per
+  // string in the section.
+  Error createDebugStrSection();
 
   const MCSection *CurrentSection = nullptr;
   const MCSymbol *CurrentAtom = nullptr;
@@ -365,6 +378,8 @@ private:
   SmallVector<MachO::any_relocation_info> AtomRelocs;
   SmallVector<MachO::any_relocation_info> SectionRelocs;
   DenseMap<const MCFragment *, std::vector<MachO::any_relocation_info>> RelMap;
+
+  DwarfSectionsCache DwarfSections;
 };
 
 class MCCASReader {
