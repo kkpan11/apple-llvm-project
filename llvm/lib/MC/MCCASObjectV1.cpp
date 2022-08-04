@@ -928,6 +928,15 @@ void MCDataFragmentMerger::reset() {
   MergeCandidates.clear();
 }
 
+Error MCCASBuilder::createPaddingRef(const MCSection *Sec) {
+  uint64_t Pad = ObjectWriter.getPaddingSize(Sec, Layout);
+  auto Fill = PaddingRef::create(*this, Pad);
+  if (!Fill)
+    return Fill.takeError();
+  addNode(*Fill);
+  return Error::success();
+}
+
 Error MCCASBuilder::createStringSection(
     StringRef S, std::function<Error(StringRef)> CreateFn) {
   assert(S.endswith("\0") && "String sections are null terminated");
@@ -1024,7 +1033,8 @@ Error MCCASBuilder::createDebugInfoSection() {
       return DbgInfoRef.takeError();
     addNode(*DbgInfoRef);
   }
-
+  if (auto E = createPaddingRef(DwarfSections.DebugInfo))
+    return E;
   return finalizeSection();
 }
 
@@ -1055,6 +1065,8 @@ Error MCCASBuilder::createLineSection() {
       return DbgLineRef.takeError();
     addNode(*DbgLineRef);
   }
+  if (auto E = createPaddingRef(DwarfSections.Line))
+    return E;
   return finalizeSection();
 }
 
@@ -1136,11 +1148,8 @@ Error MCCASBuilder::buildFragments() {
     if (auto E = finalizeAtom())
       return E;
 
-    uint64_t Pad = ObjectWriter.getPaddingSize(&Sec, Layout);
-    auto Fill = PaddingRef::create(*this, Pad);
-    if (!Fill)
-      return Fill.takeError();
-    addNode(*Fill);
+    if (auto E = createPaddingRef(&Sec))
+      return E;
 
     if (auto E = finalizeSection())
       return E;

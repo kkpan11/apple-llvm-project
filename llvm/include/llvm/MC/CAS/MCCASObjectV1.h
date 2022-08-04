@@ -368,6 +368,11 @@ private:
   // string in the section.
   Error createDebugStrSection();
 
+  /// If there is any padding between one section and the next, create a
+  /// PaddingRef CAS object to represent the bytes of Padding between the two
+  /// sections.
+  Error createPaddingRef(const MCSection *Sec);
+
   const MCSection *CurrentSection = nullptr;
   const MCSymbol *CurrentAtom = nullptr;
 

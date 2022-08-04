@@ -5,6 +5,9 @@
 
 //CHECK: mc:debug_line             2 {{[0-9]+}}.{{[0-9]+}}% 2 {{[0-9]+}}.{{[0-9]+}}% 0{{.*}}
 
+// RUN: %clang -g -c -fcas-friendly-debug-info=debug-line-only --target=x86_64-apple-darwin21.6.0 -Xclang -fcas-backend -Xclang -fcas-backend-mode=native -Xclang -fcas-path -Xclang %t/cas %s -S -o %t/out.s
+// RUN: llvm-mc -n -cas-backend -triple x86_64-apple-darwin21.6.0 %t/out.s -filetype=obj --mccas-verify
+
 int foo() {
     return 1;
 }
