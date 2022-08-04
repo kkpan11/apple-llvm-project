@@ -16,6 +16,7 @@
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/Triple.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
+#include "llvm/CAS/CASDB.h"
 #include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/CodeGen/LinkAllAsmWriterComponents.h"
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
@@ -48,6 +49,7 @@
 #include "llvm/Support/Host.h"
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/PluginLoader.h"
+#include "llvm/Support/Process.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/TimeProfiler.h"
@@ -189,6 +191,20 @@ static cl::opt<std::string> RemarksFormat(
     "pass-remarks-format",
     cl::desc("The format used for serializing remarks (default: YAML)"),
     cl::value_desc("format"), cl::init("yaml"));
+
+static cl::opt<std::string> CASPath("cas", cl::desc("CAS Path"));
+
+static cl::opt<bool> UseMCCASBackend("cas-backend",
+                                     cl::desc("Use MCCAS backend"));
+
+static cl::opt<CASBackendMode> MCCASBackendMode(
+    cl::desc("MC CAS Backend Mode"), cl::init(CASBackendMode::Verify),
+    cl::values(clEnumValN(CASBackendMode::Verify, "mccas-verify",
+                          "Native object with verifier"),
+               clEnumValN(CASBackendMode::Native, "mccas-native",
+                          "Native object without verifier"),
+               clEnumValN(CASBackendMode::CASID, "mccas-casid",
+                          "CASID file output")));
 
 namespace {
 
@@ -337,6 +353,35 @@ struct LLCDiagnosticHandler : public DiagnosticHandler {
     return true;
   }
 };
+
+/// Returns a pointer to a CAS using the CLI parameters.
+static std::unique_ptr<cas::CASDB> getCAS() {
+  if (CASPath.empty())
+    return cas::createInMemoryCAS();
+  auto MaybeCAS = CASPath == "auto"
+                      ? cas::createOnDiskCAS(cas::getDefaultOnDiskCASPath())
+                      : cas::createOnDiskCAS(CASPath);
+  if (MaybeCAS)
+    return std::move(*MaybeCAS);
+  reportError(toString(MaybeCAS.takeError()));
+}
+
+/// Returns true if the LLC should use a CAS backend.
+static bool shouldUseCASBackend(const Triple &TheTriple) {
+  return UseMCCASBackend ||
+         ((TheTriple.getObjectFormat() == Triple::MachO) &&
+          llvm::sys::Process::GetEnv("LLVM_TEST_CAS_BACKEND"));
+}
+
+/// Exits the program if a CAS backend is requested but would not be honored.
+static void verifyCASOptions(const Triple &TheTriple) {
+  bool CASRequested = shouldUseCASBackend(TheTriple);
+
+  if (CASRequested && codegen::getFileType() != CGFT_ObjectFile)
+    reportError("CAS Backend requires .obj output");
+  if (CASRequested && TheTriple.getObjectFormat() != Triple::MachO)
+    reportError("CAS Backend requires MachO format");
+}
 
 // main - Entry point for the llc compiler.
 //
@@ -518,6 +563,12 @@ static int compileModule(char **argv, LLVMContext &Context) {
       Options.MCOptions.MCUseDwarfDirectory =
           MCTargetOptions::DefaultDwarfDirectory;
     }
+
+    // This is used for testing llc with a CAS backend.
+    verifyCASOptions(TheTriple);
+    Options.UseCASBackend = shouldUseCASBackend(TheTriple);
+    Options.MCOptions.CASDB = getCAS();
+    Options.MCOptions.CASObjMode = MCCASBackendMode;
   };
 
   Optional<Reloc::Model> RM = codegen::getExplicitRelocModel();
