@@ -360,9 +360,17 @@ private:
   // function contribution to the line table.
   Error createLineSection();
 
-  /// If a DWARF Debug Info section exists, create a DebugInfoRef CAS object
-  /// for each compile unit (CU) inside the section.
-  Error createDebugInfoSection();
+  /// If a DWARF Debug Info section exists, create a DebugInfoCURef CAS object
+  /// for each compile unit (CU) inside the section. An ordered container with
+  /// the CAS objects is returned.
+  /// The CAS objects appear in the same order as the CUs in the Debug Info
+  /// section.
+  /// If the section doesn't exist, an empty container is returned.
+  Expected<SmallVector<DebugInfoCURef>> splitDebugInfoSection();
+
+  /// If CURefs is non-empty, create a SectionRef CAS object with edges to all
+  /// CURefs. Otherwise, no objects are created and `success` is returned.
+  Error createDebugInfoSection(ArrayRef<DebugInfoCURef> CURefs);
 
   // If a DWARF String section exists, create a DebugStrRef CAS object per
   // string in the section.

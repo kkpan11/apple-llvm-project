@@ -953,11 +953,10 @@ Error MCCASBuilder::createStringSection(
   return Error::success();
 }
 
-/// Reads and returns the length field of a debug info header contained in
-/// Reader, assuming Reader is positioned at the beginning of the section.
-/// The Reader's state is advanced to the first byte after the section.
-static Expected<size_t>
-getSizeFromDwarfHeaderAndSkip(BinaryStreamReader &Reader) {
+/// Reads and returns the length field of a dwarf header contained in Reader,
+/// assuming Reader is positioned at the beginning of the header. The Reader's
+/// state is advanced to the first byte after the header.
+static Expected<size_t> getSizeFromDwarfHeader(BinaryStreamReader &Reader) {
   // From DWARF 5 section 7.4:
   // In the 32-bit DWARF format, an initial length field [...] is an unsigned
   // 4-byte integer (which must be less than 0xfffffff0);
@@ -970,9 +969,20 @@ getSizeFromDwarfHeaderAndSkip(BinaryStreamReader &Reader) {
     return createStringError(inconvertibleErrorCode(),
                              "DWARF input is not in the 32-bit format");
 
-  if (auto E = Reader.skip(Word1))
-    return std::move(E);
   return Word1;
+}
+
+/// Reads and returns the length field of a dwarf header contained in Reader,
+/// assuming Reader is positioned at the beginning of the header. The Reader's
+/// state is advanced to the first byte after the section.
+static Expected<size_t>
+getSizeFromDwarfHeaderAndSkip(BinaryStreamReader &Reader) {
+  Expected<size_t> Size = getSizeFromDwarfHeader(Reader);
+  if (!Size)
+    return Size.takeError();
+  if (auto E = Reader.skip(*Size))
+    return std::move(E);
+  return Size;
 }
 
 /// Given a list of MCFragments, return a vector with the concatenation of their
@@ -1002,22 +1012,13 @@ mergeMCFragmentContents(const MCSection::FragmentListType &FragmentList,
   return mergedData;
 }
 
-Error MCCASBuilder::createDebugInfoSection() {
-  if (!DwarfSections.DebugInfo)
-    return Error::success();
-
-  const MCSection::FragmentListType &FragmentList =
-      DwarfSections.DebugInfo->getFragmentList();
-
-  startSection(DwarfSections.DebugInfo);
-
-  Expected<SmallVector<char, 0>> DebugInfoData =
-      mergeMCFragmentContents(FragmentList);
-  if (!DebugInfoData)
-    return DebugInfoData.takeError();
-
-  StringRef DebugInfoStrRef(DebugInfoData->data(), DebugInfoData->size());
-  BinaryStreamReader Reader(DebugInfoStrRef, Asm.getBackend().Endian);
+/// Given the data associated with a Dwarf Debug Info section, split it into
+/// multiple pieces, one per Compile Unit.
+static Expected<SmallVector<MutableArrayRef<char>>>
+splitDebugInfoSectionData(MutableArrayRef<char> SectionData,
+                          support::endianness Endian) {
+  SmallVector<MutableArrayRef<char>> SplitData;
+  BinaryStreamReader Reader(llvm::toStringRef(SectionData), Endian);
 
   // CU splitting loop.
   while (!Reader.empty()) {
@@ -1025,17 +1026,51 @@ Error MCCASBuilder::createDebugInfoSection() {
     Expected<size_t> CULength = getSizeFromDwarfHeaderAndSkip(Reader);
     if (!CULength)
       return CULength.takeError();
-
-    StringRef CUData =
-        DebugInfoStrRef.substr(StartOffset, Reader.getOffset() - StartOffset);
-    auto DbgInfoRef = DebugInfoCURef::create(*this, CUData);
-    if (!DbgInfoRef)
-      return DbgInfoRef.takeError();
-    addNode(*DbgInfoRef);
+    SplitData.push_back(
+        SectionData.slice(StartOffset, Reader.getOffset() - StartOffset));
   }
+
+  return SplitData;
+}
+
+Error MCCASBuilder::createDebugInfoSection(ArrayRef<DebugInfoCURef> CURefs) {
+  if (CURefs.empty())
+    return Error::success();
+
+  startSection(DwarfSections.DebugInfo);
+  for (auto CURef : CURefs)
+    addNode(CURef);
   if (auto E = createPaddingRef(DwarfSections.DebugInfo))
     return E;
   return finalizeSection();
+}
+
+Expected<SmallVector<DebugInfoCURef>> MCCASBuilder::splitDebugInfoSection() {
+  if (!DwarfSections.DebugInfo)
+    return SmallVector<DebugInfoCURef>();
+
+  const MCSection::FragmentListType &FragmentList =
+      DwarfSections.DebugInfo->getFragmentList();
+
+  Expected<SmallVector<char, 0>> DebugInfoData =
+      mergeMCFragmentContents(FragmentList);
+  if (!DebugInfoData)
+    return DebugInfoData.takeError();
+
+  Expected<SmallVector<MutableArrayRef<char>>> SplitCUData =
+      splitDebugInfoSectionData(*DebugInfoData, Asm.getBackend().Endian);
+  if (!SplitCUData)
+    return SplitCUData.takeError();
+
+  SmallVector<DebugInfoCURef> CURefs;
+  for (MutableArrayRef<char> CUData : *SplitCUData) {
+    auto DbgInfoRef = DebugInfoCURef::create(*this, toStringRef(CUData));
+    if (!DbgInfoRef)
+      return DbgInfoRef.takeError();
+    CURefs.push_back(*DbgInfoRef);
+  }
+
+  return CURefs;
 }
 
 Error MCCASBuilder::createLineSection() {
@@ -1094,13 +1129,17 @@ Error MCCASBuilder::createDebugStrSection() {
 Error MCCASBuilder::buildFragments() {
   startGroup();
 
+  Expected<SmallVector<DebugInfoCURef>> CURefs = splitDebugInfoSection();
+  if (!CURefs)
+    return CURefs.takeError();
+
   for (const MCSection &Sec : Asm) {
     if (Sec.isVirtualSection() || Sec.getFragmentList().empty())
       continue;
 
     // Handle Debug Info sections separately.
     if (&Sec == DwarfSections.DebugInfo) {
-      if (auto E = createDebugInfoSection())
+      if (auto E = createDebugInfoSection(*CURefs))
         return E;
       continue;
     }
