@@ -1375,11 +1375,3 @@ if(LLVM_ENABLE_EXPERIMENTAL_CAS_BACKEND)
   append("-Xclang" CMAKE_C_FLAGS CMAKE_CXX_FLAGS)
   append("-fcas-backend" CMAKE_C_FLAGS CMAKE_CXX_FLAGS)
 endif()
-
-if(LLVM_INCLUDE_TESTS)
-  # Lit test suite requires at least python 3.6
-  set(LLVM_MINIMUM_PYTHON_VERSION 3.6)
-else()
-  # FIXME: it is unknown if this is the actual minimum bound
-  set(LLVM_MINIMUM_PYTHON_VERSION 3.0)
-endif()
