@@ -1,4 +1,5 @@
 set(LLVM_LINK_COMPONENTS
+  DebugInfoDWARF
   Support
   CAS
   CASObjectFormats
@@ -6,5 +7,6 @@ set(LLVM_LINK_COMPONENTS
 
 add_llvm_tool(llvm-cas-dump
   llvm-cas-dump.cpp
+  CASDWARFObject.cpp
   MCCASPrinter.cpp
 )

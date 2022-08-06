@@ -73,6 +73,7 @@ set(LLVM_TEST_DEPENDS
           llvm-cat
           llvm-cas
           llvm-cas-object-format
+          llvm-cas-dump
           llvm-cfi-verify
           llvm-config
           llvm-cov
