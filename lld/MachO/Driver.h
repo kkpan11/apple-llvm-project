@@ -20,8 +20,7 @@
 #include <set>
 #include <type_traits>
 
-namespace lld {
-namespace macho {
+namespace lld::macho {
 
 class DylibFile;
 class InputFile;
@@ -117,7 +116,6 @@ private:
 
 extern std::unique_ptr<DependencyTracker> depTracker;
 
-} // namespace macho
-} // namespace lld
+} // namespace lld::macho
 
 #endif
