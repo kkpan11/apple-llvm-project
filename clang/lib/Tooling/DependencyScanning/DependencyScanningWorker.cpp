@@ -200,14 +200,18 @@ public:
       llvm::IntrusiveRefCntPtr<DependencyScanningWorkerFilesystem> DepFS,
       llvm::IntrusiveRefCntPtr<DependencyScanningCASFilesystem> DepCASFS,
       bool OverrideCASTokenCache, ScanningOutputFormat Format,
-      bool OptimizeArgs, bool EmitDependencyFile, bool DisableFree,
-      llvm::Optional<StringRef> ModuleName = None)
+      bool OptimizeArgs, bool EmitDependencyFile,
+      bool DiagGenerationAsCompilation, bool DisableFree,
+      llvm::Optional<StringRef> ModuleName = None,
+      raw_ostream *VerboseOS = nullptr)
       : WorkingDirectory(WorkingDirectory), Consumer(Consumer),
         CASOpts(CASOpts), DepFS(std::move(DepFS)),
         DepCASFS(std::move(DepCASFS)), Format(Format),
         OverrideCASTokenCache(OverrideCASTokenCache),
         OptimizeArgs(OptimizeArgs), EmitDependencyFile(EmitDependencyFile),
-        DisableFree(DisableFree), ModuleName(ModuleName) {}
+        DiagGenerationAsCompilation(DiagGenerationAsCompilation),
+        DisableFree(DisableFree), ModuleName(ModuleName), VerboseOS(VerboseOS) {
+  }
 
   bool runInvocation(std::shared_ptr<CompilerInvocation> Invocation,
                      FileManager *FileMgr,
@@ -224,10 +228,13 @@ public:
     ScanInstance.getInvocation().getCASOpts() = CASOpts;
 
     // Create the compiler's actual diagnostics engine.
-    sanitizeDiagOpts(ScanInstance.getDiagnosticOpts());
+    if (!DiagGenerationAsCompilation)
+      sanitizeDiagOpts(ScanInstance.getDiagnosticOpts());
     ScanInstance.createDiagnostics(DiagConsumer, /*ShouldOwnClient=*/false);
     if (!ScanInstance.hasDiagnostics())
       return false;
+    if (VerboseOS)
+      ScanInstance.setVerboseOutputStream(*VerboseOS);
 
     ScanInstance.getPreprocessorOpts().AllowPCHWithDifferentModulesCachePath =
         true;
@@ -372,8 +379,10 @@ private:
   bool OverrideCASTokenCache;
   bool OptimizeArgs;
   bool EmitDependencyFile = false;
+  bool DiagGenerationAsCompilation;
   bool DisableFree;
   llvm::Optional<StringRef> ModuleName;
+  raw_ostream *VerboseOS;
 };
 
 } // end anonymous namespace
@@ -476,7 +485,8 @@ llvm::Error DependencyScanningWorker::computeDependencies(
                             WorkingDirectory, Consumer, getCASOpts(), DepFS,
                             DepCASFS, OverrideCASTokenCache, Format,
                             OptimizeArgs, /*EmitDependencyFile=*/false,
-                            DisableFree, ModuleName);
+                            /*DiagGenerationAsCompilation=*/false, DisableFree,
+                            ModuleName);
                         // Create an invocation that uses the underlying file
                         // system to ensure that any file system requests that
                         // are made by the driver do not go through the
@@ -493,7 +503,8 @@ llvm::Error DependencyScanningWorker::computeDependencies(
 void DependencyScanningWorker::computeDependenciesFromCompilerInvocation(
     std::shared_ptr<CompilerInvocation> Invocation, StringRef WorkingDirectory,
     DependencyScanningConsumerBase &DepsConsumer,
-    DiagnosticConsumer &DiagsConsumer) {
+    DiagnosticConsumer &DiagsConsumer, raw_ostream *VerboseOS,
+    bool DiagGenerationAsCompilation) {
   RealFS->setCurrentWorkingDirectory(WorkingDirectory);
 
   // Adjust the invocation.
@@ -509,7 +520,7 @@ void DependencyScanningWorker::computeDependenciesFromCompilerInvocation(
 
   // Make the output file path absolute relative to WorkingDirectory.
   std::string &DepFile = Invocation->getDependencyOutputOpts().OutputFile;
-  if (!llvm::sys::path::is_absolute(DepFile)) {
+  if (!DepFile.empty() && !llvm::sys::path::is_absolute(DepFile)) {
     // FIXME: On Windows, WorkingDirectory is insufficient for making an
     // absolute path if OutputFile has a root name.
     llvm::SmallString<128> Path = StringRef(DepFile);
@@ -519,12 +530,12 @@ void DependencyScanningWorker::computeDependenciesFromCompilerInvocation(
 
   // FIXME: EmitDependencyFile should only be set when it's for a real
   // compilation.
-  DependencyScanningAction Action(WorkingDirectory, DepsConsumer, getCASOpts(),
-                                  DepFS, DepCASFS, OverrideCASTokenCache,
-                                  Format,
-                                  /*OptimizeArgs=*/false,
-                                  /*EmitDependencyFile=*/true,
-                                  /*DisableFree=*/false);
+  DependencyScanningAction Action(
+      WorkingDirectory, DepsConsumer, getCASOpts(), DepFS, DepCASFS,
+      OverrideCASTokenCache, Format,
+      /*OptimizeArgs=*/false,
+      /*EmitDependencyFile=*/!DepFile.empty(), DiagGenerationAsCompilation,
+      /*DisableFree=*/false, /*ModuleName=*/None, VerboseOS);
 
   // Ignore result; we're just collecting dependencies.
   //
