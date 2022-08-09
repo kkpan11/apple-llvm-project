@@ -237,6 +237,27 @@ namespace {
 //     handled.
 class CompileJobCache {
 public:
+  /// Categorization for the output kinds that is used to decouple the
+  /// compilation cache key from the specific output paths.
+  enum class OutputKind {
+    MainOutput,
+    SerializedDiagnostics,
+    Dependencies,
+  };
+  static ArrayRef<OutputKind> getAllOutputKinds() {
+    static const OutputKind AllOutputKinds[] = {
+        OutputKind::MainOutput, OutputKind::SerializedDiagnostics,
+        OutputKind::Dependencies};
+    return llvm::makeArrayRef(AllOutputKinds);
+  }
+
+  static StringRef getOutputKindName(OutputKind Kind);
+
+  /// \returns \p None if \p Name doesn't match one of the output kind names.
+  static Optional<OutputKind> getOutputKindForName(StringRef Name);
+
+  StringRef getPathForOutputKind(OutputKind Kind);
+
   /// Canonicalize \p Clang.
   ///
   /// Return status if should exit immediately, otherwise None.
@@ -271,20 +292,61 @@ private:
   bool UseCASBackend = false;
   Optional<llvm::cas::CASID> ResultCacheKey;
   std::unique_ptr<llvm::raw_ostream> ResultDiagsOS;
+  SmallString<256> SerialDiagsBuf;
   IntrusiveRefCntPtr<llvm::cas::CASOutputBackend> CASOutputs;
   std::string OutputFile;
+  std::string SerialDiagsFile;
+  std::string DependenciesFile;
   Optional<llvm::cas::CASID> MCOutputID;
   Optional<llvm::vfs::OutputFile> SerialDiagsOutput;
 };
 } // end anonymous namespace
 
+static constexpr llvm::StringLiteral MainOutputKindName = "<output>";
+static constexpr llvm::StringLiteral SerializedDiagnosticsKindName =
+    "<serial-diags>";
+static constexpr llvm::StringLiteral DependenciesOutputKindName =
+    "<dependencies>";
+
+StringRef CompileJobCache::getOutputKindName(OutputKind Kind) {
+  switch (Kind) {
+  case OutputKind::MainOutput:
+    return MainOutputKindName;
+  case OutputKind::SerializedDiagnostics:
+    return SerializedDiagnosticsKindName;
+  case OutputKind::Dependencies:
+    return DependenciesOutputKindName;
+  }
+}
+
+Optional<CompileJobCache::OutputKind>
+CompileJobCache::getOutputKindForName(StringRef Name) {
+  return llvm::StringSwitch<Optional<OutputKind>>(Name)
+      .Case(MainOutputKindName, OutputKind::MainOutput)
+      .Case(SerializedDiagnosticsKindName, OutputKind::SerializedDiagnostics)
+      .Case(DependenciesOutputKindName, OutputKind::Dependencies)
+      .Default(None);
+}
+
+StringRef CompileJobCache::getPathForOutputKind(OutputKind Kind) {
+  switch (Kind) {
+  case OutputKind::MainOutput:
+    return OutputFile;
+  case OutputKind::SerializedDiagnostics:
+    return SerialDiagsFile;
+  case OutputKind::Dependencies:
+    return DependenciesFile;
+  }
+}
+
 Optional<int> CompileJobCache::initialize(CompilerInstance &Clang) {
   CompilerInvocation &Invocation = Clang.getInvocation();
   DiagnosticsEngine &Diags = Clang.getDiagnostics();
+  FrontendOptions &FrontendOpts = Invocation.getFrontendOpts();
 
   // Extract whether caching is on (and canonicalize setting).
-  CacheCompileJob = Invocation.getFrontendOpts().CacheCompileJob;
-  Invocation.getFrontendOpts().CacheCompileJob = false;
+  CacheCompileJob = FrontendOpts.CacheCompileJob;
+  FrontendOpts.CacheCompileJob = false;
 
   // Nothing else to do if we're not caching.
   if (!CacheCompileJob)
@@ -305,18 +367,19 @@ Optional<int> CompileJobCache::initialize(CompilerInstance &Clang) {
   // TODO: Canonicalize DiagnosticOptions here to be "serialized" only. Pass in
   // a hook to mirror diagnostics to stderr (when writing there), and handle
   // other outputs during replay.
-  WriteOutputAsCASID = Invocation.getFrontendOpts().WriteOutputAsCASID;
-  Invocation.getFrontendOpts().WriteOutputAsCASID = false;
+  WriteOutputAsCASID = FrontendOpts.WriteOutputAsCASID;
+  FrontendOpts.WriteOutputAsCASID = false;
   UseCASBackend = Invocation.getCodeGenOpts().UseCASBackend;
   Invocation.getCodeGenOpts().MCCallBack = [&](const llvm::cas::CASID &ID) {
     MCOutputID = ID;
     return Error::success();
   };
   ComputedJobNeedsReplay |= WriteOutputAsCASID || UseCASBackend;
+  FrontendOpts.IncludeTimestamps = false;
 
-  // TODO: Canonicalize OutputFile to "-" here. During replay, move it and
-  // derived outputs to the right place.
-  OutputFile = Invocation.getFrontendOpts().OutputFile;
+  OutputFile = FrontendOpts.OutputFile;
+  SerialDiagsFile = Invocation.getDiagnosticOpts().DiagnosticSerializationFile;
+  DependenciesFile = Invocation.getDependencyOutputOpts().OutputFile;
   return None;
 }
 
@@ -407,6 +470,11 @@ Optional<int> CompileJobCache::tryReplayCachedResult(CompilerInstance &Clang) {
 
   // Set up the output backend so we can save / cache the result after.
   CASOutputs = llvm::makeIntrusiveRefCnt<llvm::cas::CASOutputBackend>(*CAS);
+  for (OutputKind K : getAllOutputKinds()) {
+    StringRef OutPath = getPathForOutputKind(K);
+    if (!OutPath.empty())
+      CASOutputs->addKindMap(getOutputKindName(K), OutPath);
+  }
 
   // When use CAS backend, filter out the output object file.
   auto FilterBackend = llvm::vfs::makeFilteringOutputBackend(
@@ -469,6 +537,14 @@ Optional<int> CompileJobCache::tryReplayCachedResult(CompilerInstance &Clang) {
         OutputFile, &DiagOpts, /*MergeChildRecords*/ false, std::move(*OS));
     Diags.setClient(new ChainedDiagnosticConsumer(
         Diags.takeClient(), std::move(SerializedConsumer)));
+  } else {
+    // We always generate the serialized diagnostics so the key is independent
+    // of the presence of '--serialize-diagnostics'.
+    auto OS = std::make_unique<llvm::raw_svector_ostream>(SerialDiagsBuf);
+    auto SerializedConsumer = clang::serialized_diags::create(
+        StringRef(), &DiagOpts, /*MergeChildRecords*/ false, std::move(OS));
+    Diags.setClient(new ChainedDiagnosticConsumer(
+        Diags.takeClient(), std::move(SerializedConsumer)));
   }
 
   return None;
@@ -510,6 +586,21 @@ void CompileJobCache::finishComputedResult(CompilerInstance &Clang,
       if (auto E = CASOutputs->addObject(OutputFile, *MCOutputRef))
         llvm::report_fatal_error(std::move(E));
     }
+  }
+
+  if (!SerialDiagsOutput) {
+    // Not requested to get a serialized diagnostics file but we generated it
+    // and will store it regardless so that the key is independent of the
+    // presence of '--serialize-diagnostics'.
+    Expected<llvm::cas::ObjectProxy> SerialDiags =
+        CAS->createProxy(None, SerialDiagsBuf);
+    // FIXME: Stop calling report_fatal_error().
+    if (!SerialDiags)
+      llvm::report_fatal_error(SerialDiags.takeError());
+    if (Error E = CASOutputs->addObject(
+            getOutputKindName(OutputKind::SerializedDiagnostics),
+            SerialDiags->getRef()))
+      llvm::report_fatal_error(std::move(E));
   }
 
   Expected<llvm::cas::ObjectProxy> Outputs = CASOutputs->getCASProxy();
@@ -593,13 +684,23 @@ Optional<int> CompileJobCache::replayCachedResult(CompilerInstance &Clang,
     llvm::cas::CASID PathID = Outputs->getReferenceID(I);
     llvm::cas::CASID BytesID = Outputs->getReferenceID(I + 1);
 
-    Optional<llvm::cas::ObjectProxy> Path;
-    if (Error E = CAS->getProxy(PathID).moveInto(Path))
+    Optional<llvm::cas::ObjectProxy> PathProxy;
+    if (Error E = CAS->getProxy(PathID).moveInto(PathProxy))
       llvm::report_fatal_error(std::move(E));
+
+    Optional<OutputKind> OutKind = getOutputKindForName(PathProxy->getData());
+    StringRef Path =
+        OutKind ? getPathForOutputKind(*OutKind) : PathProxy->getData();
+    if (Path.empty()) {
+      // The output may be always generated but not needed with this invocation,
+      // like the serialized diagnostics file.
+      continue;
+    }
+    bool IsOutputFile = OutKind && (*OutKind == OutputKind::MainOutput);
 
     Optional<StringRef> Contents;
     SmallString<50> ContentsStorage;
-    if (Path->getData() == OutputFile && ComputedJobNeedsReplay) {
+    if (IsOutputFile && ComputedJobNeedsReplay) {
       llvm::raw_svector_ostream OS(ContentsStorage);
       if (WriteOutputAsCASID)
         llvm::cas::writeCASIDBuffer(BytesID, OS);
@@ -608,7 +709,7 @@ Optional<int> CompileJobCache::replayCachedResult(CompilerInstance &Clang,
         // When the environmental variable is set, save the backend CASID for
         // analysis later.
         if (llvm::sys::Process::GetEnv("CLANG_CAS_BACKEND_SAVE_CASID_FILE")) {
-          std::string CASIDPath = Path->getData().str() + ".casid";
+          std::string CASIDPath = Path.str() + ".casid";
           std::error_code EC;
           llvm::raw_fd_ostream IDOS(CASIDPath, EC);
           if (EC)
@@ -634,9 +735,8 @@ Optional<int> CompileJobCache::replayCachedResult(CompilerInstance &Clang,
     }
 
     std::unique_ptr<llvm::FileOutputBuffer> Output;
-    if (Error E =
-            llvm::FileOutputBuffer::create(Path->getData(), Contents->size())
-                .moveInto(Output))
+    if (Error E = llvm::FileOutputBuffer::create(Path, Contents->size())
+                      .moveInto(Output))
       llvm::report_fatal_error(std::move(E));
     llvm::copy(*Contents, Output->getBufferStart());
     if (llvm::Error E = Output->commit())
