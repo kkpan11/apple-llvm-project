@@ -51,6 +51,8 @@ def loongarch_ret : SDNode<"LoongArchISD::RET", SDTNone,
 def loongarch_sll_w : SDNode<"LoongArchISD::SLL_W", SDT_LoongArchIntBinOpW>;
 def loongarch_sra_w : SDNode<"LoongArchISD::SRA_W", SDT_LoongArchIntBinOpW>;
 def loongarch_srl_w : SDNode<"LoongArchISD::SRL_W", SDT_LoongArchIntBinOpW>;
+def loongarch_rotr_w : SDNode<"LoongArchISD::ROTR_W", SDT_LoongArchIntBinOpW>;
+def loongarch_rotl_w : SDNode<"LoongArchISD::ROTL_W", SDT_LoongArchIntBinOpW>;
 def loongarch_bstrins
     : SDNode<"LoongArchISD::BSTRINS", SDT_LoongArchBStrIns>;
 def loongarch_bstrpick
@@ -177,6 +179,12 @@ def NegImm : SDNodeXForm<imm, [{
 def fpimm0    : PatLeaf<(fpimm), [{return N->isExactlyValue(+0.0);}]>;
 def fpimm0neg : PatLeaf<(fpimm), [{return N->isExactlyValue(-0.0);}]>;
 def fpimm1    : PatLeaf<(fpimm), [{return N->isExactlyValue(+1.0);}]>;
+
+// Return an immediate subtracted from 32.
+def ImmSubFrom32 : SDNodeXForm<imm, [{
+  return CurDAG->getTargetConstant(32 - N->getZExtValue(), SDLoc(N),
+                                   N->getValueType(0));
+}]>;
 
 def CallSymbol: AsmOperandClass {
   let Name = "CallSymbol";
@@ -626,6 +634,8 @@ def : PatGprGpr<urem, MOD_WU>;
 def : PatGprGpr<mul, MUL_W>;
 def : PatGprGpr<mulhs, MULH_W>;
 def : PatGprGpr<mulhu, MULH_WU>;
+def : PatGprGpr<rotr, ROTR_W>;
+def : PatGprImm<rotr, ROTRI_W, uimm5>;
 } // Predicates = [IsLA32]
 
 let Predicates = [IsLA64] in {
@@ -639,6 +649,14 @@ def : PatGprGpr<sdiv, DIV_D>;
 def : PatGprGpr<udiv, DIV_DU>;
 def : PatGprGpr<srem, MOD_D>;
 def : PatGprGpr<urem, MOD_DU>;
+def : PatGprGpr<rotr, ROTR_D>;
+def : PatGprGpr<loongarch_rotr_w, ROTR_W>;
+def : PatGprImm<rotr, ROTRI_D, uimm6>;
+def : PatGprImm_32<rotr, ROTRI_W, uimm5>;
+def : Pat<(loongarch_rotl_w GPR:$rj, uimm5:$imm),
+          (ROTRI_W GPR:$rj, (ImmSubFrom32 uimm5:$imm))>;
+def : Pat<(sext_inreg (loongarch_rotl_w GPR:$rj, uimm5:$imm), i32),
+          (ROTRI_W GPR:$rj, (ImmSubFrom32 uimm5:$imm))>;
 // TODO: Select "_W[U]" instructions for i32xi32 if only lower 32 bits of the
 // product are used.
 def : PatGprGpr<mul, MUL_D>;
@@ -857,6 +875,24 @@ defm : LdPat<zextloadi32, LD_WU, i64>;
 defm : LdPat<load, LD_D, i64>;
 } // Predicates = [IsLA64]
 
+// LA64 register-register-addressed loads
+let Predicates = [IsLA64] in {
+class RegRegLdPat<PatFrag LoadOp, LAInst Inst>
+  : Pat<(i64 (LoadOp (add BaseAddr:$rj, GPR:$rk))),
+        (Inst BaseAddr:$rj, GPR:$rk)>;
+
+def : RegRegLdPat<extloadi8, LDX_B>;
+def : RegRegLdPat<sextloadi8, LDX_B>;
+def : RegRegLdPat<zextloadi8, LDX_BU>;
+def : RegRegLdPat<extloadi16, LDX_H>;
+def : RegRegLdPat<sextloadi16, LDX_H>;
+def : RegRegLdPat<zextloadi16, LDX_HU>;
+def : RegRegLdPat<extloadi32, LDX_W>;
+def : RegRegLdPat<sextloadi32, LDX_W>;
+def : RegRegLdPat<zextloadi32, LDX_WU>;
+def : RegRegLdPat<load, LDX_D>;
+} // Predicates = [IsLA64]
+
 /// Stores
 
 multiclass StPat<PatFrag StoreOp, LAInst Inst, RegisterClass StTy,
@@ -873,6 +909,18 @@ defm : StPat<store, ST_W, GPR, i32>, Requires<[IsLA32]>;
 let Predicates = [IsLA64] in {
 defm : StPat<truncstorei32, ST_W, GPR, i64>;
 defm : StPat<store, ST_D, GPR, i64>;
+} // Predicates = [IsLA64]
+
+// LA64 register-register-addressed stores
+let Predicates = [IsLA64] in {
+class RegRegStPat<PatFrag StoreOp, LAInst Inst, RegisterClass StTy>
+  : Pat<(StoreOp (i64 StTy:$rd), (add BaseAddr:$rj, GPR:$rk)),
+        (Inst StTy:$rd, BaseAddr:$rj, GPR:$rk)>;
+
+def : RegRegStPat<truncstorei8, STX_B, GPR>;
+def : RegRegStPat<truncstorei16, STX_H, GPR>;
+def : RegRegStPat<truncstorei32, STX_W, GPR>;
+def : RegRegStPat<store, STX_D, GPR>;
 } // Predicates = [IsLA64]
 
 /// Atomic loads and stores
