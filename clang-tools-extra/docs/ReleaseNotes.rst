@@ -106,6 +106,13 @@ Improvements to clang-tidy
   means it is advised to use YAML's block style initiated by the pipe character `|` for the `Checks`
   section in order to benefit from the easier syntax that works without commas.
 
+- Fixed a regression introduced in clang-tidy 14.0.0, which prevented NOLINTs
+  from suppressing diagnostics associated with macro arguments. This fixes
+  `Issue 55134 <https://github.com/llvm/llvm-project/issues/55134>`_.
+
+- Invalid parameters are no longer treated as being implicitly unused for the
+  `-misc-unused-parameters` check. This fixes `Issue 56152 <https://github.com/llvm/llvm-project/issues/56152>`_.
+
 New checks
 ^^^^^^^^^^
 
@@ -131,6 +138,10 @@ New checks
   ``std::allocator<const T>``. They do not compile with libstdc++ or MSVC.
   Future libc++ will remove the extension (`D120996
   <https://reviews.llvm.org/D120996>`).
+
+- New :doc:`misc-confusable-identifiers <clang-tidy/checks/misc-confusable-identifiers` check.
+
+  Detects confusable Unicode identifiers.
 
 New check aliases
 ^^^^^^^^^^^^^^^^^
@@ -197,13 +208,6 @@ Changes in existing checks
   <clang-tidy/checks/readability/non-const-parameter>` when the parameter is
   referenced by an lvalue.
 
-- Improved :doc:`performance-inefficient-vector-operation
-  <clang-tidy/checks/performance-inefficient-vector-operation>` to work when
-  the vector is a member of a structure.
-
-- Fixed nonsensical suggestion of :doc:`altera-struct-pack-align
-  <clang-tidy/checks/altera-struct-pack-align>` check for empty structs.
-
 - Expanded :doc:`readability-simplify-boolean-expr
   <clang-tidy/checks/readability/simplify-boolean-expr>` to simplify expressions
   using DeMorgan's Theorem.
@@ -215,11 +219,11 @@ Changes in existing checks
 - Fixed bugs in :doc:`bugprone-use-after-move
   <clang-tidy/checks/bugprone/use-after-move>`:
 
-- Fixed incorrect suggestions for :doc:`readability-container-size-empty
-  <clang-tidy/checks/readability-container-size-empty>` when smart pointers are involved.
+  - Treat a move in a lambda capture as happening in the function that defines
+    the lambda, not within the body of the lambda (as we were previously doing
+    erroneously).
 
-- Fixed some false positives in :doc:`bugprone-infinite-loop
-  <clang-tidy/checks/bugprone-infinite-loop>` involving dependent expressions.
+  - Don't emit an erroneous warning on self-moves.
 
 Removed checks
 ^^^^^^^^^^^^^^
