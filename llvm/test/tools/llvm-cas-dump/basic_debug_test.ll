@@ -1,5 +1,6 @@
 ; RUN: llc -O0 --filetype=obj --cas-backend --cas=%t.casdb --mccas-casid -o %t.casid %s
 ; RUN: llvm-cas-dump --cas=%t.casdb --dwarf-sections-only --casid-file %t.casid | FileCheck %s
+; RUN: llvm-cas-dump --cas=%t.casdb --dwarf-sections-only --dwarf-dump --casid-file %t.casid | FileCheck %s --check-prefix=DWARF
 
 ; This test is created from a C program like:
 ; int foo() { return 10; }
@@ -25,6 +26,39 @@
 ; CHECK-NEXT:     mc:cstring  llvmcas://{{.*}}
 ; CHECK-NEXT:     mc:cstring  llvmcas://{{.*}}
 ; CHECK-NEXT:     mc:cstring  llvmcas://{{.*}}
+
+; DWARF: mc:debug_info_cu
+; DWARF: Compile Unit: length = 0x00000047, format = DWARF32, version = 0x0004, abbr_offset = 0x0000, addr_size = 0x08
+; DWARF: DW_TAG_compile_unit
+; DWARF:   DW_AT_producer	("some_clang")
+; DWARF:   DW_AT_language	(DW_LANG_C99)
+; DWARF:   DW_AT_name	("test.c")
+; DWARF:   DW_AT_stmt_list	(0x00000000)
+; DWARF:   DW_AT_comp_dir	("some_dir")
+; DWARF:   DW_AT_low_pc	(0x0000000000000000)
+; DWARF:   DW_AT_high_pc	(0x0000000000000008)
+
+; DWARF: mc:debug_string
+; DWARF:   0x00000000: "some_clang"
+; DWARF: mc:debug_string
+; DWARF:   0x00000000: "test.c"
+; DWARF: mc:debug_string
+; DWARF:   0x00000000: "some_dir"
+; DWARF: mc:debug_string
+; DWARF:   0x00000000: "foo"
+; DWARF: mc:debug_string
+; DWARF:   0x00000000: "int"
+
+; DWARF: mc:debug_line
+; DWARF:   debug_line[0x00000000]
+; DWARF:   Line table prologue:
+; DWARF:       total_length: 0x00000039
+; DWARF:             format: DWARF32
+; DWARF:            version: 4
+; DWARF:    prologue_length: 0x0000001e
+; DWARF: 0x0000000000000000      2      0      1   0             0  is_stmt
+; DWARF: 0x0000000000000004      3      3      1   0             0  is_stmt prologue_end
+; DWARF: 0x0000000000000008      3      3      1   0             0  is_stmt end_sequence
 
 target triple = "arm64-apple-macosx12.0.0"
 

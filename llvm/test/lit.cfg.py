@@ -160,6 +160,7 @@ tools.extend([
     'dsymutil', 'lli', 'lli-child-target', 'llvm-ar', 'llvm-as',
     'llvm-addr2line', 'llvm-bcanalyzer', 'llvm-bitcode-strip', 'llvm-config',
     'llvm-cov', 'llvm-cxxdump', 'llvm-cvtres', 'llvm-debuginfod-find', 'llvm-debuginfod',
+    'llvm-cas-dump',
     'llvm-diff', 'llvm-dis', 'llvm-dwarfdump', 'llvm-dwarfutil', 'llvm-dlltool',
     'llvm-exegesis', 'llvm-extract', 'llvm-isel-fuzzer', 'llvm-ifs',
     'llvm-install-name-tool', 'llvm-jitlink', 'llvm-opt-fuzzer', 'llvm-lib',
