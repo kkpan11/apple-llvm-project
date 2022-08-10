@@ -11,9 +11,9 @@
 #include "llvm/CAS/CASDB.h"
 #include "llvm/CAS/CachingOnDiskFileSystem.h"
 
-namespace clang {
-namespace tooling {
-namespace dependencies {
+using namespace clang;
+using namespace tooling;
+using namespace dependencies;
 
 std::vector<std::string> FullDependencies::getCommandLine(
     llvm::function_ref<std::string(const ModuleID &, ModuleOutputKind)>
@@ -52,8 +52,9 @@ FullDependencies::getCommandLineWithoutModulePaths() const {
 }
 
 DependencyScanningTool::DependencyScanningTool(
-    DependencyScanningService &Service)
-    : Worker(Service) {}
+    DependencyScanningService &Service,
+    llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> FS)
+    : Worker(Service, std::move(FS)) {}
 
 llvm::Expected<std::string> DependencyScanningTool::getDependencyFile(
     const std::vector<std::string> &CommandLine, StringRef CWD,
@@ -295,7 +296,3 @@ DependencyScanningTool::getFullDependencies(
 
   return Consumer.getFullDependencies(CommandLine, FS);
 }
-
-} // end namespace dependencies
-} // end namespace tooling
-} // end namespace clang
