@@ -2563,7 +2563,8 @@ Error CASSchemaFile::parse(ObjectFormatSchemaPool &CASSchemas, ObjectRef ID) {
     if (segname == segment_names::text && subname == section_names::cString) {
       assert(!data.empty());
       flags = S_CSTRING_LITERALS;
-      isec = make<CStringInputSection>(*section, data, align);
+      isec = make<CStringInputSection>(*section, data, align,
+                                       config->dedupLiterals);
       // FIXME: Splitting should be redundant since CAS schema treats each
       // string as separate block, but this needs to be called to set the
       // initial piece at least.
