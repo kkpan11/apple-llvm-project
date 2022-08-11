@@ -418,6 +418,13 @@ inline Error writeOperand(const Edge::Kind &K, uint64_t OperandValue,
     }
     return createStringError(inconvertibleErrorCode(), "invalid fixup");
   }
+  case Pointer16: {
+    if (LLVM_LIKELY(isUInt<16>(OperandValue))) {
+      *(ulittle16_t *)FixupPtr = OperandValue;
+      break;
+    }
+    return createStringError(inconvertibleErrorCode(), "invalid fixup");
+  }
 
   case RequestGOTAndTransformToPCRel32GOTLoadRelaxable:
   case RequestGOTAndTransformToPCRel32GOTLoadREXRelaxable:
@@ -523,11 +530,7 @@ inline Error applyFixup(LinkGraph &G, Block &B, const Edge &E,
 
   case Pointer16: {
     uint64_t Value = E.getTarget().getAddress().getValue() + E.getAddend();
-    if (LLVM_LIKELY(isUInt<16>(Value)))
-      *(ulittle16_t *)FixupPtr = Value;
-    else
-      return makeTargetOutOfRangeError(G, B, E);
-    break;
+    return writeOperand(G, B, E, Value, BlockWorkingMem);
   }
 
   case PCRel32:
