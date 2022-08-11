@@ -524,3 +524,43 @@ DependencyScanningTool::getFullDependencies(
 
   return Consumer.getFullDependencies(CommandLine, FS);
 }
+
+Expected<FullDependenciesResult> FullDependencyConsumer::getFullDependencies(
+    const std::vector<std::string> &OriginalCommandLine,
+    llvm::cas::CachingOnDiskFileSystem *FS) const {
+  FullDependencies FD;
+
+  FD.OriginalCommandLine = ArrayRef<std::string>(OriginalCommandLine).slice(1);
+
+  FD.ID.ContextHash = std::move(ContextHash);
+
+  FD.FileDeps.assign(Dependencies.begin(), Dependencies.end());
+
+  for (auto &&M : ClangModuleDeps) {
+    auto &MD = M.second;
+    if (MD.ImportedByMainFile)
+      FD.ClangModuleDeps.push_back(MD.ID);
+  }
+
+  FD.PrebuiltModuleDeps = std::move(PrebuiltModuleDeps);
+
+  if (FS) {
+    if (auto Tree = FS->createTreeFromNewAccesses())
+      FD.CASFileSystemRootID = Tree->getID();
+    else
+      return Tree.takeError();
+  }
+
+  FullDependenciesResult FDR;
+
+  for (auto &&M : ClangModuleDeps) {
+    // TODO: Avoid handleModuleDependency even being called for modules
+    //   we've already seen.
+    if (AlreadySeen.count(M.first))
+      continue;
+    FDR.DiscoveredModules.push_back(std::move(M.second));
+  }
+
+  FDR.FullDeps = std::move(FD);
+  return FDR;
+}
