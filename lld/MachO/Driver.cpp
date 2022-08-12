@@ -234,10 +234,10 @@ static llvm::CachePruningPolicy getLTOCachePolicy(InputArgList &args) {
     val.toVector(ltoPolicy);
   };
   for (const Arg *arg :
-       args.filtered(OPT_thinlto_cache_policy, OPT_prune_interval_lto,
+       args.filtered(OPT_thinlto_cache_policy_eq, OPT_prune_interval_lto,
                      OPT_prune_after_lto, OPT_max_relative_cache_size_lto)) {
     switch (arg->getOption().getID()) {
-    case OPT_thinlto_cache_policy:
+    case OPT_thinlto_cache_policy_eq:
       add(arg->getValue());
       break;
     case OPT_prune_interval_lto:
@@ -1893,7 +1893,7 @@ static bool link(InputArgList &args, bool canExitEarly, raw_ostream &stdoutOS,
   config->ignoreOptimizationHints = args.hasArg(OPT_ignore_optimization_hints);
   config->callGraphProfileSort = args.hasFlag(
       OPT_call_graph_profile_sort, OPT_no_call_graph_profile_sort, true);
-  config->printSymbolOrder = args.getLastArgValue(OPT_print_symbol_order);
+  config->printSymbolOrder = args.getLastArgValue(OPT_print_symbol_order_eq);
   config->forceExactCpuSubtypeMatch =
       getenv("LD_DYLIB_CPU_SUBTYPES_MUST_MATCH");
   config->objcStubsMode = getObjCStubsMode(args);
