@@ -752,7 +752,8 @@ DwarfSectionsCache mccasformats::v1::getDwarfSections(MCAssembler &Asm) {
   return DwarfSectionsCache{
       Asm.getContext().getObjectFileInfo()->getDwarfInfoSection(),
       Asm.getContext().getObjectFileInfo()->getDwarfLineSection(),
-      Asm.getContext().getObjectFileInfo()->getDwarfStrSection()};
+      Asm.getContext().getObjectFileInfo()->getDwarfStrSection(),
+      Asm.getContext().getObjectFileInfo()->getDwarfAbbrevSection()};
 }
 
 Error MCCASBuilder::prepare() {
@@ -985,6 +986,39 @@ getSizeFromDwarfHeaderAndSkip(BinaryStreamReader &Reader) {
   return Size;
 }
 
+/// Returns Abbreviation Offset field of a Dwarf Compilation Unit (CU)
+/// contained in Reader, assuming Reader is positioned at the beginning of the
+/// CU. The Reader's state is advanced to the first byte after the CU.
+static Expected<uint32_t>
+getDebugAbbrevOffsetAndSkip(BinaryStreamReader &Reader) {
+  Expected<size_t> Size = getSizeFromDwarfHeader(Reader);
+  if (!Size)
+    return Size.takeError();
+
+  size_t AfterSizeOffset = Reader.getOffset();
+
+  // 2-byte Dwarf version identifier.
+  uint16_t DwarfVersion;
+  if (auto E = Reader.readInteger(DwarfVersion))
+    return std::move(E);
+
+  // TODO: Dwarf 5 has a different order for the next fields.
+  if (DwarfVersion != 4)
+    return createStringError(inconvertibleErrorCode(),
+                             "Expected Dwarf 4 input");
+
+  // TODO: Handle Dwarf 64 format, which uses 8 bytes.
+  uint32_t AbbrevOffset;
+  if (auto E = Reader.readInteger(AbbrevOffset))
+    return std::move(E);
+
+  Reader.setOffset(AfterSizeOffset);
+  if (auto E = Reader.skip(*Size))
+    return std::move(E);
+
+  return AbbrevOffset;
+}
+
 /// Given a list of MCFragments, return a vector with the concatenation of their
 /// data contents.
 /// If any fragment is not an MCDataFragment, or the fragment is an
@@ -1012,32 +1046,33 @@ mergeMCFragmentContents(const MCSection::FragmentListType &FragmentList,
   return mergedData;
 }
 
-/// Given the data associated with a Dwarf Debug Info section, split it into
-/// multiple pieces, one per Compile Unit.
-static Expected<SmallVector<MutableArrayRef<char>>>
-splitDebugInfoSectionData(MutableArrayRef<char> SectionData,
-                          support::endianness Endian) {
-  SmallVector<MutableArrayRef<char>> SplitData;
-  BinaryStreamReader Reader(llvm::toStringRef(SectionData), Endian);
+Expected<MCCASBuilder::CUSplit>
+MCCASBuilder::splitDebugInfoSectionData(MutableArrayRef<char> DebugInfoData) {
+  BinaryStreamReader Reader(toStringRef(DebugInfoData),
+                            Asm.getBackend().Endian);
 
+  CUSplit Split;
   // CU splitting loop.
   while (!Reader.empty()) {
     uint64_t StartOffset = Reader.getOffset();
-    Expected<size_t> CULength = getSizeFromDwarfHeaderAndSkip(Reader);
-    if (!CULength)
-      return CULength.takeError();
-    SplitData.push_back(
-        SectionData.slice(StartOffset, Reader.getOffset() - StartOffset));
+    Expected<uint32_t> AbbrevOffset = getDebugAbbrevOffsetAndSkip(Reader);
+    if (!AbbrevOffset)
+      return AbbrevOffset.takeError();
+    Split.SplitCUData.push_back(
+        DebugInfoData.slice(StartOffset, Reader.getOffset() - StartOffset));
+    Split.AbbrevOffsets.push_back(*AbbrevOffset);
   }
 
-  return SplitData;
+  return Split;
 }
 
-Error MCCASBuilder::createDebugInfoSection(ArrayRef<DebugInfoCURef> CURefs) {
+Error MCCASBuilder::createDebugInfoSection(
+    ArrayRef<DebugInfoCURef> CURefs, DebugAbbrevOffsetsRef AbbrevOffsetsRef) {
   if (CURefs.empty())
     return Error::success();
 
   startSection(DwarfSections.DebugInfo);
+  addNode(AbbrevOffsetsRef);
   for (auto CURef : CURefs)
     addNode(CURef);
   if (auto E = createPaddingRef(DwarfSections.DebugInfo))
@@ -1045,32 +1080,116 @@ Error MCCASBuilder::createDebugInfoSection(ArrayRef<DebugInfoCURef> CURefs) {
   return finalizeSection();
 }
 
-Expected<SmallVector<DebugInfoCURef>> MCCASBuilder::splitDebugInfoSection() {
+Error MCCASBuilder::createDebugAbbrevSection(
+    ArrayRef<DebugAbbrevRef> AbbrevRefs) {
+  startSection(DwarfSections.Abbrev);
+  for (auto AbbrevRef : AbbrevRefs)
+    addNode(AbbrevRef);
+  if (auto E = createPaddingRef(DwarfSections.Abbrev))
+    return E;
+  return finalizeSection();
+}
+
+Expected<SmallVector<DebugAbbrevRef>>
+MCCASBuilder::splitAbbrevSection(ArrayRef<size_t> AbbrevOffsetVec) {
+  // If we are here, the Abbrev section _must_ exist.
+  if (!DwarfSections.Abbrev)
+    return createStringError(inconvertibleErrorCode(),
+                             "Missing __debug_abbrev section");
+
+  const MCSection::FragmentListType &FragmentList =
+      DwarfSections.Abbrev->getFragmentList();
+
+  Expected<SmallVector<char, 0>> FullAbbrevData =
+      mergeMCFragmentContents(FragmentList);
+  if (!FullAbbrevData)
+    return FullAbbrevData.takeError();
+
+  // Sorted container of offsets such that, for any iterator `it`, the interval
+  // [*it, *(it+1)] describes where to find one Abbreviation contribution.
+  SmallVector<size_t> AbbrevOffsets(AbbrevOffsetVec);
+  AbbrevOffsets.push_back(FullAbbrevData->size());
+  sort(AbbrevOffsets);
+  AbbrevOffsets.erase(unique(AbbrevOffsets, std::equal_to()), AbbrevOffsets.end());
+
+  size_t StartOffset = *AbbrevOffsets.begin();
+  if (StartOffset != 0)
+    return createStringError(
+        inconvertibleErrorCode(),
+        "Expected one of the abbreviation offsets to be zero");
+
+  SmallVector<DebugAbbrevRef> AbbrevRefs;
+  for (size_t EndOffset : drop_begin(AbbrevOffsets)) {
+    StringRef AbbrevData =
+        toStringRef(*FullAbbrevData).slice(StartOffset, EndOffset);
+    auto AbbrevRef = DebugAbbrevRef::create(*this, AbbrevData);
+    if (!AbbrevRef)
+      return AbbrevRef.takeError();
+    AbbrevRefs.push_back(*AbbrevRef);
+    StartOffset = EndOffset;
+  }
+
+  return AbbrevRefs;
+}
+
+Expected<SmallVector<size_t>> DebugAbbrevOffsetsRefAdaptor::decodeOffsets() {
+  SmallVector<size_t>  DecodedOffsets;
+
+  for (StringRef Data = Ref.getData(); !Data.empty();) {
+    size_t Offset;
+    if (auto E = consumeVBR8(Data, Offset))
+      return std::move(E);
+    DecodedOffsets.push_back(Offset);
+  }
+
+  return DecodedOffsets;
+}
+
+SmallVector<char>
+DebugAbbrevOffsetsRefAdaptor::encodeOffsets(ArrayRef<size_t> Offsets) {
+  SmallVector<char> EncodedOffsets;
+  for (auto Offset : Offsets)
+    writeVBR8(Offset, EncodedOffsets);
+  return EncodedOffsets;
+}
+
+Expected<AbbrevAndDebugSplit> MCCASBuilder::splitDebugInfoAndAbbrevSections() {
   if (!DwarfSections.DebugInfo)
-    return SmallVector<DebugInfoCURef>();
+    return AbbrevAndDebugSplit{};
 
   const MCSection::FragmentListType &FragmentList =
       DwarfSections.DebugInfo->getFragmentList();
-
   Expected<SmallVector<char, 0>> DebugInfoData =
       mergeMCFragmentContents(FragmentList);
   if (!DebugInfoData)
     return DebugInfoData.takeError();
 
-  Expected<SmallVector<MutableArrayRef<char>>> SplitCUData =
-      splitDebugInfoSectionData(*DebugInfoData, Asm.getBackend().Endian);
-  if (!SplitCUData)
-    return SplitCUData.takeError();
+  Expected<CUSplit> SplitInfo = splitDebugInfoSectionData(*DebugInfoData);
+  if (!SplitInfo)
+    return SplitInfo.takeError();
+
+  Expected<SmallVector<DebugAbbrevRef>> AbbrevRefs =
+      splitAbbrevSection(SplitInfo->AbbrevOffsets);
+  if (!AbbrevRefs)
+    return AbbrevRefs.takeError();
 
   SmallVector<DebugInfoCURef> CURefs;
-  for (MutableArrayRef<char> CUData : *SplitCUData) {
+  for (MutableArrayRef<char> CUData : SplitInfo->SplitCUData) {
     auto DbgInfoRef = DebugInfoCURef::create(*this, toStringRef(CUData));
     if (!DbgInfoRef)
       return DbgInfoRef.takeError();
     CURefs.push_back(*DbgInfoRef);
   }
 
-  return CURefs;
+  SmallVector<char> EncodedOffsets =
+      DebugAbbrevOffsetsRefAdaptor::encodeOffsets(SplitInfo->AbbrevOffsets);
+  auto AbbrevOffsetsRef =
+      DebugAbbrevOffsetsRef::create(*this, toStringRef(EncodedOffsets));
+  if (!AbbrevOffsetsRef)
+    return AbbrevOffsetsRef.takeError();
+
+  return AbbrevAndDebugSplit{std::move(CURefs), std::move(*AbbrevRefs),
+                             *AbbrevOffsetsRef};
 }
 
 Error MCCASBuilder::createLineSection() {
@@ -1129,9 +1248,10 @@ Error MCCASBuilder::createDebugStrSection() {
 Error MCCASBuilder::buildFragments() {
   startGroup();
 
-  Expected<SmallVector<DebugInfoCURef>> CURefs = splitDebugInfoSection();
-  if (!CURefs)
-    return CURefs.takeError();
+  Expected<AbbrevAndDebugSplit> AbbrevAndCURefs =
+      splitDebugInfoAndAbbrevSections();
+  if (!AbbrevAndCURefs)
+    return AbbrevAndCURefs.takeError();
 
   for (const MCSection &Sec : Asm) {
     if (Sec.isVirtualSection() || Sec.getFragmentList().empty())
@@ -1139,7 +1259,15 @@ Error MCCASBuilder::buildFragments() {
 
     // Handle Debug Info sections separately.
     if (&Sec == DwarfSections.DebugInfo) {
-      if (auto E = createDebugInfoSection(*CURefs))
+      if (auto E = createDebugInfoSection(AbbrevAndCURefs->CURefs,
+                                          *AbbrevAndCURefs->AbbrevOffsetsRef))
+        return E;
+      continue;
+    }
+
+    // Handle Debug Abbrev sections separately.
+    if (&Sec == DwarfSections.Abbrev) {
+      if (auto E = createDebugAbbrevSection(AbbrevAndCURefs->AbbrevRefs))
         return E;
       continue;
     }
@@ -1273,7 +1401,8 @@ void MCCASBuilder::startSection(const MCSection *Sec) {
     for (auto R : ObjectWriter.getRelocations()[Sec]) {
       // For the Dwarf Sections, just append the relocations to the
       // SectionRelocs. No Atoms are considered for this section.
-      if (R.F && Sec != DwarfSections.Line && Sec != DwarfSections.DebugInfo)
+      if (R.F && Sec != DwarfSections.Line && Sec != DwarfSections.DebugInfo &&
+          Sec != DwarfSections.Abbrev)
         RelMap[R.F].push_back(R.MRE);
       else
         // If the fragment is nullptr, it should a section with only relocation
@@ -1505,6 +1634,11 @@ Expected<uint64_t> MCCASReader::materializeSection(cas::ObjectRef ID) {
     return F->materialize(OS);
   if (auto F = DebugLineRef::Cast(*Node))
     return F->materialize(OS);
+  if (auto F = DebugAbbrevRef::Cast(*Node))
+    return F->materialize(OS);
+  // TODO: handle this together with the section.
+  if (auto F = DebugAbbrevOffsetsRef::Cast(*Node))
+    return 0;
   return createStringError(inconvertibleErrorCode(),
                            "unsupported CAS node for atom");
 }
