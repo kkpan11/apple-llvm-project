@@ -112,6 +112,11 @@ public:
   /// generated.
   virtual uint64_t writeObject(MCAssembler &Asm, const MCAsmLayout &Layout) = 0;
 
+  virtual bool addAddend(const MCFragment *Fragment, uint64_t Addend,
+                         uint32_t Size, uint32_t Offset,
+                         uint32_t FullSizeInBytes, uint32_t RefKind,
+                         bool TargetKindIsFixupAarch64Movw) = 0;
+
   /// @}
 };
 

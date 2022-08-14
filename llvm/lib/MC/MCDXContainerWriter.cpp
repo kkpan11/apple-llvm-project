@@ -43,6 +43,12 @@ private:
                                 const MCAsmLayout &Layout) override {}
 
   uint64_t writeObject(MCAssembler &Asm, const MCAsmLayout &Layout) override;
+
+  bool addAddend(const MCFragment *Fragment, uint64_t Addend, uint32_t Size,
+                 uint32_t Offset, uint32_t FulleSizeInBytes, uint32_t RefKind,
+                 bool TargetKindIsFixupAarch64Movw) override {
+    return false;
+  }
 };
 } // namespace
 

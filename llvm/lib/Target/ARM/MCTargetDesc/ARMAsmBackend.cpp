@@ -1044,8 +1044,8 @@ static unsigned getFixupKindContainerSizeBytes(unsigned Kind) {
 void ARMAsmBackend::applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
                                const MCValue &Target,
                                MutableArrayRef<char> Data, uint64_t Value,
-                               bool IsResolved,
-                               const MCSubtargetInfo* STI) const {
+                               bool IsResolved, const MCSubtargetInfo *STI,
+                               const MCFragment *Fragment) const {
   unsigned Kind = Fixup.getKind();
   if (Kind >= FirstLiteralRelocationKind)
     return;
@@ -1059,11 +1059,16 @@ void ARMAsmBackend::applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
   assert(Offset + NumBytes <= Data.size() && "Invalid fixup offset!");
 
   // Used to point to big endian bytes.
-  unsigned FullSizeBytes;
+  unsigned FullSizeBytes = 0;
   if (Endian == support::big) {
     FullSizeBytes = getFixupKindContainerSizeBytes(Kind);
     assert((Offset + FullSizeBytes) <= Data.size() && "Invalid fixup size!");
     assert(NumBytes <= FullSizeBytes && "Invalid fixup size!");
+  }
+
+  if (!IsResolved && Asm.getWriter().addAddend(Fragment, Value, NumBytes,
+                                               Offset, FullSizeBytes, 0, 0)) {
+    Value = 0;
   }
 
   // For each byte of the fragment that the fixup touches, mask in the bits from

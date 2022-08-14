@@ -84,8 +84,8 @@ public:
 
   void applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
                   const MCValue &Target, MutableArrayRef<char> Data,
-                  uint64_t Value, bool IsResolved,
-                  const MCSubtargetInfo *STI) const override;
+                  uint64_t Value, bool IsResolved, const MCSubtargetInfo *STI,
+                  const MCFragment *Fragment) const override;
 
   bool fixupNeedsRelaxation(const MCFixup &Fixup, uint64_t Value,
                             const MCRelaxableFragment *DF,
@@ -389,10 +389,11 @@ unsigned AArch64AsmBackend::getFixupKindContainereSizeInBytes(unsigned Kind) con
 void AArch64AsmBackend::applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
                                    const MCValue &Target,
                                    MutableArrayRef<char> Data, uint64_t Value,
-                                   bool IsResolved,
-                                   const MCSubtargetInfo *STI) const {
-  if (!Value)
+                                   bool IsResolved, const MCSubtargetInfo *STI,
+                                   const MCFragment *Fragment) const {
+  if (!Value) {
     return; // Doesn't change encoding.
+  }
   unsigned Kind = Fixup.getKind();
   if (Kind >= FirstLiteralRelocationKind)
     return;
@@ -411,6 +412,18 @@ void AArch64AsmBackend::applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
 
   // Used to point to big endian bytes.
   unsigned FulleSizeInBytes = getFixupKindContainereSizeInBytes(Fixup.getKind());
+
+  AArch64MCExpr::VariantKind RefKind =
+      static_cast<AArch64MCExpr::VariantKind>(Target.getRefKind());
+  bool FixupAppliedLater =
+      !IsResolved
+          ? Asm.getWriter().addAddend(
+                Fragment, Value, NumBytes, Offset, FulleSizeInBytes, RefKind,
+                Fixup.getTargetKind() == AArch64::fixup_aarch64_movw)
+          : false;
+
+  if (FixupAppliedLater)
+    Value = 0;
 
   // For each byte of the fragment that the fixup touches, mask in the
   // bits from the fixup value.
@@ -431,10 +444,9 @@ void AArch64AsmBackend::applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
 
   // FIXME: getFixupKindInfo() and getFixupKindNumBytes() could be fixed to
   // handle this more cleanly. This may affect the output of -show-mc-encoding.
-  AArch64MCExpr::VariantKind RefKind =
-      static_cast<AArch64MCExpr::VariantKind>(Target.getRefKind());
-  if (AArch64MCExpr::getSymbolLoc(RefKind) == AArch64MCExpr::VK_SABS ||
-      (!RefKind && Fixup.getTargetKind() == AArch64::fixup_aarch64_movw)) {
+  if ((AArch64MCExpr::getSymbolLoc(RefKind) == AArch64MCExpr::VK_SABS ||
+       (!RefKind && Fixup.getTargetKind() == AArch64::fixup_aarch64_movw)) &&
+      !FixupAppliedLater) {
     // If the immediate is negative, generate MOVN else MOVZ.
     // (Bit 30 = 0) ==> MOVN, (Bit 30 = 1) ==> MOVZ.
     if (SignedValue < 0)

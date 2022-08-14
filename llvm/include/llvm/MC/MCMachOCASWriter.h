@@ -77,6 +77,10 @@ public:
     return MOW.getPaddingSize(SD, Layout);
   }
 
+  void applyAddends(MCAssembler &Asm, const MCAsmLayout &Layout) {
+    MOW.applyAddends(Asm, Layout);
+  }
+
   void prepareObject(MCAssembler &Asm, const MCAsmLayout &Layout) {
     MOW.prepareObject(Asm, Layout);
   }
@@ -101,6 +105,13 @@ public:
     MOW.writeSymbolTable(Asm, Layout);
   }
 
+  bool addAddend(const MCFragment *Fragment, uint64_t Addend, uint32_t Size,
+                 uint32_t Offset, uint32_t FullSizeInBytes, uint32_t RefKind,
+                 bool TargetKindIsFixupAarch64Movw) override {
+    return MOW.addAddend(Fragment, Addend, Size, Offset, FullSizeInBytes,
+                         RefKind, TargetKindIsFixupAarch64Movw);
+  }
+
   uint64_t writeObject(MCAssembler &Asm, const MCAsmLayout &Layout) override;
 
   void resetBuffer() { OSOffset = InternalOS.tell(); }
@@ -110,6 +121,12 @@ public:
   DenseMap<const MCSection *, std::vector<MachObjectWriter::RelAndSymbol>> &
   getRelocations() {
     return MOW.getRelocations();
+  }
+
+  DenseMap<const MCFragment *,
+           std::vector<MachObjectWriter::AddendsSizeAndOffset>> &
+  getAddends() {
+    return MOW.getAddends();
   }
 
 private:

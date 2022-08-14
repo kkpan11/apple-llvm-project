@@ -322,6 +322,12 @@ public:
   void writeWord(uint64_t Word) {
     is64Bit() ? W.write<uint64_t>(Word) : W.write<uint32_t>(Word);
   }
+
+  bool addAddend(const MCFragment *Fragment, uint64_t Addend, uint32_t Size,
+                 uint32_t Offset, uint32_t FulleSizeInBytes, uint32_t RefKind,
+                 bool TargetKindIsFixupAarch64Movw) override {
+    return false;
+  }
 };
 
 XCOFFObjectWriter::XCOFFObjectWriter(

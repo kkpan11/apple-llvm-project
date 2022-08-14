@@ -177,8 +177,8 @@ public:
 
   void applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
                   const MCValue &Target, MutableArrayRef<char> Data,
-                  uint64_t Value, bool IsResolved,
-                  const MCSubtargetInfo *STI) const override;
+                  uint64_t Value, bool IsResolved, const MCSubtargetInfo *STI,
+                  const MCFragment *Fragment) const override;
 
   bool mayNeedRelaxation(const MCInst &Inst,
                          const MCSubtargetInfo &STI) const override;
@@ -689,9 +689,9 @@ static unsigned getFixupKindSize(unsigned Kind) {
 
 void X86AsmBackend::applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
                                const MCValue &Target,
-                               MutableArrayRef<char> Data,
-                               uint64_t Value, bool IsResolved,
-                               const MCSubtargetInfo *STI) const {
+                               MutableArrayRef<char> Data, uint64_t Value,
+                               bool IsResolved, const MCSubtargetInfo *STI,
+                               const MCFragment *Fragment) const {
   unsigned Kind = Fixup.getKind();
   if (Kind >= FirstLiteralRelocationKind)
     return;

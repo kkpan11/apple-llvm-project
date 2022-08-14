@@ -203,7 +203,8 @@ protected:
         return None;                                                           \
       return RefName(*Specific);                                               \
     }                                                                          \
-    Expected<uint64_t> materialize(MCCASReader &Reader) const;                 \
+    Expected<uint64_t> materialize(MCCASReader &Reader,                        \
+                                   raw_ostream *Stream = nullptr) const;       \
                                                                                \
   private:                                                                     \
     explicit RefName(SpecificRefT Ref) : SpecificRefT(Ref) {}                  \
@@ -235,7 +236,8 @@ protected:
         return None;                                                           \
       return MCFragmentName##Ref(*Specific);                                   \
     }                                                                          \
-    Expected<uint64_t> materialize(MCCASReader &Reader) const;                 \
+    Expected<uint64_t> materialize(MCCASReader &Reader,                        \
+                                   raw_ostream *Stream) const;                 \
                                                                                \
   private:                                                                     \
     explicit MCFragmentName##Ref(SpecificRefT Ref) : SpecificRefT(Ref) {}      \
@@ -374,6 +376,12 @@ public:
   ArrayRef<MachO::any_relocation_info> getAtomRelocs() const {
     return AtomRelocs;
   }
+  ArrayRef<MachObjectWriter::AddendsSizeAndOffset> getSectionAddends() const {
+    return SectionAddends;
+  }
+  ArrayRef<MachObjectWriter::AddendsSizeAndOffset> getAtomAddends() const {
+    return AtomAddends;
+  }
 
   // Scratch space
   SmallString<8> FragmentData;
@@ -381,6 +389,10 @@ public:
 
 private:
   friend class MCAssemblerRef;
+
+  Expected<SmallVector<char, 0>>
+  mergeMCFragmentContents(const MCSection::FragmentListType &FragmentList,
+                          bool IsDebugLineSection = false);
 
   // Helper functions.
   Error createStringSection(StringRef S,
@@ -443,6 +455,8 @@ private:
 
   SmallVector<MachO::any_relocation_info> AtomRelocs;
   SmallVector<MachO::any_relocation_info> SectionRelocs;
+  SmallVector<MachObjectWriter::AddendsSizeAndOffset> AtomAddends;
+  SmallVector<MachObjectWriter::AddendsSizeAndOffset> SectionAddends;
   DenseMap<const MCFragment *, std::vector<MachO::any_relocation_info>> RelMap;
 
   DwarfSectionsCache DwarfSections;
@@ -453,15 +467,18 @@ public:
   raw_ostream &OS;
 
   std::vector<std::vector<MachO::any_relocation_info>> Relocations;
+  std::vector<MachObjectWriter::AddendsSizeAndOffset> Addends;
 
   MCCASReader(raw_ostream &OS, const Triple &Target, const MCSchema &Schema);
   support::endianness getEndian() {
     return Target.isLittleEndian() ? support::little : support::big;
   }
 
+  Triple::ArchType getArch() { return Target.getArch(); }
+
   Expected<uint64_t> materializeGroup(cas::ObjectRef ID);
-  Expected<uint64_t> materializeSection(cas::ObjectRef ID);
-  Expected<uint64_t> materializeAtom(cas::ObjectRef ID);
+  Expected<uint64_t> materializeSection(cas::ObjectRef ID, raw_ostream *Stream);
+  Expected<uint64_t> materializeAtom(cas::ObjectRef ID, raw_ostream *Stream);
 
 private:
   const Triple &Target;

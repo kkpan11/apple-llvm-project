@@ -108,8 +108,18 @@ public:
         : Sym(Sym), F(F), MRE(MRE) {}
   };
 
+  struct AddendsSizeAndOffset {
+    uint64_t Value;
+    uint32_t Size;
+    uint32_t Offset;
+    uint32_t FullSizeInBytes;
+    uint32_t RefKind;
+    bool TargetKindIsFixupAarch64Movw;
+  };
+
 private:
   DenseMap<const MCSection *, std::vector<RelAndSymbol>> Relocations;
+  DenseMap<const MCFragment *, std::vector<AddendsSizeAndOffset>> Addends;
   DenseMap<const MCSection *, unsigned> IndirectSymBase;
 
   SectionAddrMap SectionAddress;
@@ -184,6 +194,16 @@ public:
     return CPUType == MachO::CPU_TYPE_X86_64;
   }
 
+  bool isI386() const {
+    uint32_t CPUType = TargetObjectWriter->getCPUType();
+    return CPUType == MachO::CPU_TYPE_I386;
+  }
+
+  bool isAArch64() const {
+    uint32_t CPUType = TargetObjectWriter->getCPUType();
+    return CPUType == MachO::CPU_TYPE_ARM64;
+  }
+
   /// @}
 
   void writeHeader(MachO::HeaderFileType Type, unsigned NumLoadCommands,
@@ -224,6 +244,11 @@ public:
     return Relocations;
   }
 
+  DenseMap<const MCFragment *, std::vector<AddendsSizeAndOffset>> &
+  getAddends() {
+    return Addends;
+  }
+
   // FIXME: We really need to improve the relocation validation. Basically, we
   // want to implement a separate computation which evaluates the relocation
   // entry as the linker would, and verifies that the resultant fixup value is
@@ -253,6 +278,14 @@ public:
                      MachO::any_relocation_info &MRE) {
     RelAndSymbol P(RelSymbol, F, MRE);
     Relocations[F->getParent()].push_back(P);
+  }
+
+  bool addAddend(const MCFragment *Fragment, uint64_t Addend, uint32_t Size,
+                 uint32_t Offset, uint32_t FullSizeInBytes, uint32_t RefKind,
+                 bool TargetKindIsFixupAarch64Movw) override {
+    Addends[Fragment].push_back({Addend, Size, Offset, FullSizeInBytes, RefKind,
+                                 TargetKindIsFixupAarch64Movw});
+    return true;
   }
 
   void recordRelocation(MCAssembler &Asm, const MCAsmLayout &Layout,
@@ -288,6 +321,9 @@ public:
 
   // FIXME: Break down writeObject into following stages for slicing the output.
   // This is a very rough slicing and need to be improved.
+  void applyAddends(MCAssembler &Asm, const MCAsmLayout &Layout);
+  void applyAddendsHelper(MutableArrayRef<char> &Contents,
+                          const MCFragment *Fragment);
   void prepareObject(MCAssembler &Asm, const MCAsmLayout &Layout);
   void writeMachOHeader(MCAssembler &Asm, const MCAsmLayout &Layout);
   void writeSectionData(MCAssembler &Asm, const MCAsmLayout &Layout);

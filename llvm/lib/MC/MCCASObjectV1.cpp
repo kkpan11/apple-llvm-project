@@ -281,25 +281,59 @@ Expected<PaddingRef> PaddingRef::get(Expected<MCObjectProxy> Ref) {
   return PaddingRef(*Specific);
 }
 
-static void writeRelocations(ArrayRef<MachO::any_relocation_info> Rels,
-                             SmallVectorImpl<char> &Data) {
-  for (auto Rel : Rels) {
+static void writeRelocationsAndAddends(
+    ArrayRef<MachO::any_relocation_info> Rels,
+    ArrayRef<MachObjectWriter::AddendsSizeAndOffset> Addends,
+    SmallVectorImpl<char> &Data) {
+  writeVBR8(Rels.size(), Data);
+  for (unsigned I = 0; I < Rels.size(); I++) {
     // FIXME: Might be better just encode raw data?
-    writeVBR8(Rel.r_word0, Data);
-    writeVBR8(Rel.r_word1, Data);
+    writeVBR8(Rels[I].r_word0, Data);
+    writeVBR8(Rels[I].r_word1, Data);
+  }
+  writeVBR8(Addends.size(), Data);
+  for (unsigned I = 0; I < Addends.size(); I++) {
+    writeVBR8(Addends[I].Value, Data);
+    writeVBR8(Addends[I].Size, Data);
+    writeVBR8(Addends[I].Offset, Data);
+    writeVBR8(Addends[I].FullSizeInBytes, Data);
+    writeVBR8(Addends[I].RefKind, Data);
+    writeVBR8(Addends[I].TargetKindIsFixupAarch64Movw, Data);
   }
 }
 
-static Error decodeRelocations(MCCASReader &Reader, StringRef Data) {
-  while (!Data.empty()) {
-    MachO::any_relocation_info Rel;
+static Error decodeRelocationsAndAddends(MCCASReader &Reader, StringRef Data) {
+  uint32_t Size = 0;
+  if (auto E = consumeVBR8(Data, Size))
+    return E;
+  MachO::any_relocation_info Rel;
+  for (unsigned I = 0; I < Size; I++) {
     if (auto E = consumeVBR8(Data, Rel.r_word0))
       return E;
     if (auto E = consumeVBR8(Data, Rel.r_word1))
       return E;
-
     Reader.Relocations.back().push_back(Rel);
   }
+  if (auto E = consumeVBR8(Data, Size))
+    return E;
+  MachObjectWriter::AddendsSizeAndOffset Add;
+  for (unsigned I = 0; I < Size; I++) {
+    if (auto E = consumeVBR8(Data, Add.Value))
+      return E;
+    if (auto E = consumeVBR8(Data, Add.Size))
+      return E;
+    if (auto E = consumeVBR8(Data, Add.Offset))
+      return E;
+    if (auto E = consumeVBR8(Data, Add.FullSizeInBytes))
+      return E;
+    if (auto E = consumeVBR8(Data, Add.RefKind))
+      return E;
+    if (auto E = consumeVBR8(Data, Add.TargetKindIsFixupAarch64Movw))
+      return E;
+    Reader.Addends.push_back(Add);
+  }
+  assert(Data.empty() && "Relocations and Addends not encoded propely, still "
+                         "some metadata in the block!");
   return Error::success();
 }
 
@@ -377,7 +411,8 @@ Expected<GroupRef> GroupRef::create(MCCASBuilder &MB,
   return get(B->build());
 }
 
-Expected<uint64_t> GroupRef::materialize(MCCASReader &Reader) const {
+Expected<uint64_t> GroupRef::materialize(MCCASReader &Reader,
+                                         raw_ostream *Stream) const {
   unsigned Size = 0;
   StringRef Remaining = getData();
   auto Refs = decodeReferences(*this, Remaining);
@@ -410,7 +445,8 @@ SymbolTableRef::create(MCCASBuilder &MB, ArrayRef<cas::ObjectRef> Fragments) {
   return get(B->build());
 }
 
-Expected<uint64_t> SymbolTableRef::materialize(MCCASReader &Reader) const {
+Expected<uint64_t> SymbolTableRef::materialize(MCCASReader &Reader,
+                                               raw_ostream *Stream) const {
   unsigned Size = 0;
   StringRef Remaining = getData();
   auto Refs = decodeReferences(*this, Remaining);
@@ -436,7 +472,8 @@ Expected<SectionRef> SectionRef::create(MCCASBuilder &MB,
   if (auto E = encodeReferences(Fragments, B->Data, B->Refs))
     return std::move(E);
 
-  writeRelocations(MB.getSectionRelocs(), B->Data);
+  writeRelocationsAndAddends(MB.getSectionRelocs(), MB.getSectionAddends(),
+                             B->Data);
 
   return get(B->build());
 }
@@ -449,7 +486,8 @@ DebugInfoSectionRef::create(MCCASBuilder &MB,
     return B.takeError();
 
   append_range(B->Refs, ChildrenNode);
-  writeRelocations(MB.getSectionRelocs(), B->Data);
+  writeRelocationsAndAddends(MB.getSectionRelocs(), MB.getSectionAddends(),
+                             B->Data);
   return get(B->build());
 }
 
@@ -553,13 +591,52 @@ LoadedDebugInfoSection::load(DebugInfoSectionRef Section) {
   return LoadedSection;
 }
 
-Expected<uint64_t> DebugInfoSectionRef::materialize(MCCASReader &Reader) const {
+static Error applyAddends(MCCASReader &Reader,
+                          MutableArrayRef<char> SectionContents) {
+  for (unsigned I = 0; I < Reader.Addends.size(); I++) {
+    auto Addend = Reader.Addends[I];
+    uint32_t Offset = Addend.Offset;
+    uint64_t AddendVal = Addend.Value;
+    for (unsigned J = 0; J < Addend.Size; J++) {
+      if (!Addend.FullSizeInBytes) {
+        // Handle as little endian
+        if (Reader.getArch() == llvm::Triple::x86 ||
+            Reader.getArch() == llvm::Triple::x86_64)
+          SectionContents[Offset + J] = uint8_t(AddendVal >> (J * 8));
+        else
+          SectionContents[Offset + J] |= uint8_t((AddendVal >> (J * 8)) & 0xff);
+      } else {
+        // Handle as big endian
+        assert(Offset + Addend.FullSizeInBytes <= SectionContents.size() &&
+               "Invalid Addend size!");
+        assert(Addend.Size <= Addend.FullSizeInBytes && "Invalid Addend size!");
+        unsigned Idx = Addend.FullSizeInBytes - 1 - J;
+        SectionContents[Offset + Idx] |= uint8_t((AddendVal >> (J * 8)) & 0xff);
+      }
+    }
+    if (Reader.getArch() == llvm::Triple::aarch64) {
+      if ((Addend.RefKind & 0x00f) == 0x002 /*VariantKind::VK_SABS*/ ||
+          (!Addend.RefKind && Addend.TargetKindIsFixupAarch64Movw)) {
+        if (static_cast<int64_t>(AddendVal) < 0)
+          SectionContents[Offset + 3] &= ~(1 << 6);
+        else
+          SectionContents[Offset + 3] |= (1 << 6);
+      }
+    }
+  }
+  return Error::success();
+}
+
+Expected<uint64_t> DebugInfoSectionRef::materialize(MCCASReader &Reader,
+                                                    raw_ostream *Stream) const {
   // Start a new section for relocations.
   Reader.Relocations.emplace_back();
   auto LoadedSection = LoadedDebugInfoSection::load(*this);
   if (!LoadedSection)
     return LoadedSection.takeError();
 
+  SmallVector<char, 512> SectionContents;
+  raw_svector_ostream SectionStream(SectionContents);
   unsigned Size = 0;
   for (auto [AbbrevOffset, CUData] : LoadedSection->getOffsetAndCUDataRange()) {
     // Copy the data so that we can modify the abbrev offset prior to printing.
@@ -569,26 +646,36 @@ Expected<uint64_t> DebugInfoSectionRef::materialize(MCCASReader &Reader) const {
             MutableCUData, Reader.getEndian(), AbbrevOffset);
         !E)
       return E.takeError();
-    Reader.OS << MutableCUData;
+    SectionStream << MutableCUData;
     Size += CUData.size();
   }
 
   if (Optional<PaddingRef> Padding = LoadedSection->Padding) {
-    auto PaddingSize = Padding->materialize(Reader.OS);
+    auto PaddingSize = Padding->materialize(SectionStream);
     if (!PaddingSize)
       return PaddingSize.takeError();
     Size += *PaddingSize;
   }
 
-  if (auto E = decodeRelocations(Reader, LoadedSection->RelocationData))
+  if (auto E =
+          decodeRelocationsAndAddends(Reader, LoadedSection->RelocationData))
     return std::move(E);
+
+  if (auto E = applyAddends(Reader, SectionContents))
+    return std::move(E);
+
+  Reader.Addends.clear();
+  Reader.OS << SectionContents;
 
   return Size;
 }
 
-Expected<uint64_t> SectionRef::materialize(MCCASReader &Reader) const {
+Expected<uint64_t> SectionRef::materialize(MCCASReader &Reader,
+                                           raw_ostream *Stream) const {
   // Start a new section for relocations.
   Reader.Relocations.emplace_back();
+  SmallVector<char, 512> SectionContents;
+  raw_svector_ostream SectionStream(SectionContents);
 
   unsigned Size = 0;
   StringRef Remaining = getData();
@@ -597,14 +684,20 @@ Expected<uint64_t> SectionRef::materialize(MCCASReader &Reader) const {
     return Refs.takeError();
 
   for (auto ID : *Refs) {
-    auto FragmentSize = Reader.materializeSection(ID);
+    auto FragmentSize = Reader.materializeSection(ID, &SectionStream);
     if (!FragmentSize)
       return FragmentSize.takeError();
     Size += *FragmentSize;
   }
 
-  if (auto E = decodeRelocations(Reader, Remaining))
+  if (auto E = decodeRelocationsAndAddends(Reader, Remaining))
     return std::move(E);
+
+  if (auto E = applyAddends(Reader, SectionContents))
+    return std::move(E);
+
+  Reader.Addends.clear();
+  Reader.OS << SectionContents;
 
   return Size;
 }
@@ -618,12 +711,13 @@ Expected<AtomRef> AtomRef::create(MCCASBuilder &MB,
   if (auto E = encodeReferences(Fragments, B->Data, B->Refs))
     return std::move(E);
 
-  writeRelocations(MB.getAtomRelocs(), B->Data);
+  writeRelocationsAndAddends(MB.getAtomRelocs(), MB.getAtomAddends(), B->Data);
 
   return get(B->build());
 }
 
-Expected<uint64_t> AtomRef::materialize(MCCASReader &Reader) const {
+Expected<uint64_t> AtomRef::materialize(MCCASReader &Reader,
+                                        raw_ostream *Stream) const {
   unsigned Size = 0;
   StringRef Remaining = getData();
   auto Refs = decodeReferences(*this, Remaining);
@@ -631,13 +725,13 @@ Expected<uint64_t> AtomRef::materialize(MCCASReader &Reader) const {
     return Refs.takeError();
 
   for (auto ID : *Refs) {
-    auto FragmentSize = Reader.materializeAtom(ID);
+    auto FragmentSize = Reader.materializeAtom(ID, Stream);
     if (!FragmentSize)
       return FragmentSize.takeError();
     Size += *FragmentSize;
   }
 
-  if (auto E = decodeRelocations(Reader, Remaining))
+  if (auto E = decodeRelocationsAndAddends(Reader, Remaining))
     return std::move(E);
 
   return Size;
@@ -667,7 +761,8 @@ MCAlignFragmentRef::create(MCCASBuilder &MB, const MCAlignFragment &F,
   return get(B->build());
 }
 
-Expected<uint64_t> MCAlignFragmentRef::materialize(MCCASReader &Reader) const {
+Expected<uint64_t> MCAlignFragmentRef::materialize(MCCASReader &Reader,
+                                                   raw_ostream *Stream) const {
   uint64_t Count;
   auto Remaining = getData();
   auto Endian = Reader.getEndian();
@@ -676,7 +771,7 @@ Expected<uint64_t> MCAlignFragmentRef::materialize(MCCASReader &Reader) const {
 
   // hasEmitNops.
   if (!Count) {
-    Reader.OS << Remaining;
+    *Stream << Remaining;
     return Remaining.size();
   }
   int64_t Value;
@@ -691,16 +786,16 @@ Expected<uint64_t> MCAlignFragmentRef::materialize(MCCASReader &Reader) const {
     default:
       llvm_unreachable("Invalid size!");
     case 1:
-      Reader.OS << char(Value);
+      *Stream << char(Value);
       break;
     case 2:
-      support::endian::write<uint16_t>(Reader.OS, Value, Endian);
+      support::endian::write<uint16_t>(*Stream, Value, Endian);
       break;
     case 4:
-      support::endian::write<uint32_t>(Reader.OS, Value, Endian);
+      support::endian::write<uint32_t>(*Stream, Value, Endian);
       break;
     case 8:
-      support::endian::write<uint64_t>(Reader.OS, Value, Endian);
+      support::endian::write<uint64_t>(*Stream, Value, Endian);
       break;
     }
   }
@@ -721,8 +816,9 @@ Expected<MCBoundaryAlignFragmentRef> MCBoundaryAlignFragmentRef::create(
 }
 
 Expected<uint64_t>
-MCBoundaryAlignFragmentRef::materialize(MCCASReader &Reader) const {
-  Reader.OS << getData();
+MCBoundaryAlignFragmentRef::materialize(MCCASReader &Reader,
+                                        raw_ostream *Stream) const {
+  *Stream << getData();
   return getData().size();
 }
 
@@ -738,8 +834,9 @@ MCCVInlineLineTableFragmentRef::create(MCCASBuilder &MB,
 }
 
 Expected<uint64_t>
-MCCVInlineLineTableFragmentRef::materialize(MCCASReader &Reader) const {
-  Reader.OS << getData();
+MCCVInlineLineTableFragmentRef::materialize(MCCASReader &Reader,
+                                            raw_ostream *Stream) const {
+  *Stream << getData();
   return getData().size();
 }
 
@@ -749,7 +846,8 @@ MCDummyFragmentRef::create(MCCASBuilder &MB, const MCDummyFragment &F,
   llvm_unreachable("Should not have been added");
 }
 
-Expected<uint64_t> MCDummyFragmentRef::materialize(MCCASReader &Reader) const {
+Expected<uint64_t> MCDummyFragmentRef::materialize(MCCASReader &Reader,
+                                                   raw_ostream *Stream) const {
   llvm_unreachable("Should not have been added");
 }
 
@@ -765,7 +863,8 @@ Expected<MCFillFragmentRef> MCFillFragmentRef::create(MCCASBuilder &MB,
   return get(B->build());
 }
 
-Expected<uint64_t> MCFillFragmentRef::materialize(MCCASReader &Reader) const {
+Expected<uint64_t> MCFillFragmentRef::materialize(MCCASReader &Reader,
+                                                  raw_ostream *Stream) const {
   StringRef Remaining = getData();
   uint64_t Size;
   uint64_t Value;
@@ -793,11 +892,11 @@ Expected<uint64_t> MCFillFragmentRef::materialize(MCCASReader &Reader) const {
 
   StringRef Ref(Data, ChunkSize);
   for (uint64_t I = 0, E = Size / ChunkSize; I != E; ++I)
-    Reader.OS << Ref;
+    *Stream << Ref;
 
   unsigned TrailingCount = Size % ChunkSize;
   if (TrailingCount)
-    Reader.OS.write(Data, TrailingCount);
+    Stream->write(Data, TrailingCount);
   return Size;
 }
 
@@ -811,8 +910,9 @@ Expected<MCLEBFragmentRef> MCLEBFragmentRef::create(MCCASBuilder &MB,
   return get(B->build());
 }
 
-Expected<uint64_t> MCLEBFragmentRef::materialize(MCCASReader &Reader) const {
-  Reader.OS << getData();
+Expected<uint64_t> MCLEBFragmentRef::materialize(MCCASReader &Reader,
+                                                 raw_ostream *Stream) const {
+  *Stream << getData();
   return getData().size();
 }
 
@@ -845,8 +945,9 @@ Expected<MCNopsFragmentRef> MCNopsFragmentRef::create(MCCASBuilder &MB,
   return get(B->build());
 }
 
-Expected<uint64_t> MCNopsFragmentRef::materialize(MCCASReader &Reader) const {
-  Reader.OS << getData();
+Expected<uint64_t> MCNopsFragmentRef::materialize(MCCASReader &Reader,
+                                                  raw_ostream *Stream) const {
+  *Stream << getData();
   return getData().size();
 }
 
@@ -861,8 +962,9 @@ Expected<MCOrgFragmentRef> MCOrgFragmentRef::create(MCCASBuilder &MB,
   return get(B->build());
 }
 
-Expected<uint64_t> MCOrgFragmentRef::materialize(MCCASReader &Reader) const {
-  Reader.OS << getData();
+Expected<uint64_t> MCOrgFragmentRef::materialize(MCCASReader &Reader,
+                                                 raw_ostream *Stream) const {
+  *Stream << getData();
   return getData().size();
 }
 
@@ -877,8 +979,9 @@ MCSymbolIdFragmentRef::create(MCCASBuilder &MB, const MCSymbolIdFragment &F,
 }
 
 Expected<uint64_t>
-MCSymbolIdFragmentRef::materialize(MCCASReader &Reader) const {
-  Reader.OS << getData();
+MCSymbolIdFragmentRef::materialize(MCCASReader &Reader,
+                                   raw_ostream *Stream) const {
+  *Stream << getData();
   return getData().size();
 }
 
@@ -897,9 +1000,9 @@ MCSymbolIdFragmentRef::materialize(MCCASReader &Reader) const {
            "Size should match");                                               \
     return get(B->build());                                                    \
   }                                                                            \
-  Expected<uint64_t> MCFragmentName##Ref::materialize(MCCASReader &Reader)     \
-      const {                                                                  \
-    Reader.OS << getData();                                                    \
+  Expected<uint64_t> MCFragmentName##Ref::materialize(                         \
+      MCCASReader &Reader, raw_ostream *Stream) const {                        \
+    *Stream << getData();                                                      \
     return getData().size();                                                   \
   }
 #define MCFRAGMENT_ENCODED_FRAGMENT_ONLY
@@ -1204,9 +1307,8 @@ getAndSetDebugAbbrevOffsetAndSkip(MutableArrayRef<char> CUData,
 /// If any fragment is not an MCDataFragment, or the fragment is an
 /// MCDwarfLineAddrFragment and the section containing that fragment is not a
 /// debug_line section, an error is returned.
-static Expected<SmallVector<char, 0>>
-mergeMCFragmentContents(const MCSection::FragmentListType &FragmentList,
-                        bool IsDebugLineSection = false) {
+Expected<SmallVector<char, 0>> MCCASBuilder::mergeMCFragmentContents(
+    const MCSection::FragmentListType &FragmentList, bool IsDebugLineSection) {
   SmallVector<char, 0> mergedData;
   for (const MCFragment &Fragment : FragmentList) {
     if (const auto *DataFragment = dyn_cast<MCDataFragment>(&Fragment))
@@ -1423,6 +1525,20 @@ Error MCCASBuilder::createDebugStrSection() {
   return finalizeSection();
 }
 
+static void createAddendVector(
+    SmallVector<MachObjectWriter::AddendsSizeAndOffset> &Dest,
+    const std::vector<MachObjectWriter::AddendsSizeAndOffset> &Source,
+    const MCFragment *F, const MCAsmLayout &Layout) {
+  // Encode the fragment offset with the Addend offset to get the proper fixup
+  // offset in that section.
+  for (auto Addend : Source)
+    Dest.push_back(
+        {Addend.Value, Addend.Size,
+         static_cast<uint32_t>(Addend.Offset + Layout.getFragmentOffset(F)),
+         Addend.FullSizeInBytes, Addend.RefKind,
+         Addend.TargetKindIsFixupAarch64Movw});
+}
+
 Error MCCASBuilder::buildFragments() {
   startGroup();
 
@@ -1476,7 +1592,11 @@ Error MCCASBuilder::buildFragments() {
         auto Relocs = RelMap.find(&F);
         if (Relocs != RelMap.end())
           AtomRelocs.append(Relocs->second.begin(), Relocs->second.end());
-      }
+        createAddendVector(AtomAddends, ObjectWriter.getAddends()[&F], &F,
+                           Layout);
+      } else
+        createAddendVector(SectionAddends, ObjectWriter.getAddends()[&F], &F,
+                           Layout);
 
       auto Size = Asm.computeFragmentSize(Layout, F);
       // Don't need to encode the fragment if it doesn't contribute anything.
@@ -1589,6 +1709,14 @@ void MCCASBuilder::startSection(const MCSection *Sec) {
         SectionRelocs.push_back(R.MRE);
     }
   }
+
+  if (Sec == DwarfSections.Line || Sec == DwarfSections.DebugInfo) {
+    for (auto &Frag : *Sec) {
+      createAddendVector(SectionAddends, ObjectWriter.getAddends()[&Frag],
+                         &Frag, Layout);
+    }
+  }
+
   if (RelocLocation == Section) {
     for (auto R : ObjectWriter.getRelocations()[Sec])
       SectionRelocs.push_back(R.MRE);
@@ -1603,6 +1731,7 @@ Error MCCASBuilder::finalizeSection() {
 
   SectionContext.clear();
   SectionRelocs.clear();
+  SectionAddends.clear();
   RelMap.clear();
   CurrentSection = nullptr;
   CurrentContext = &GroupContext;
@@ -1626,6 +1755,7 @@ Error MCCASBuilder::finalizeAtom() {
 
   AtomContext.clear();
   AtomRelocs.clear();
+  AtomAddends.clear();
   CurrentAtom = nullptr;
   CurrentContext = &SectionContext;
   addNode(*Ref);
@@ -1655,8 +1785,10 @@ Expected<MCAssemblerRef> MCAssemblerRef::create(const MCSchema &Schema,
 
   // Only need to do this for verify mode so we compare the output byte by
   // byte.
-  if (ObjectWriter.Mode == CASBackendMode::Verify)
+  if (ObjectWriter.Mode == CASBackendMode::Verify) {
+    ObjectWriter.applyAddends(Asm, Layout);
     ObjectWriter.writeSectionData(Asm, Layout);
+  }
 
   if (auto E = Builder.buildRelocations())
     return std::move(E);
@@ -1793,45 +1925,47 @@ Expected<uint64_t> MCCASReader::materializeGroup(cas::ObjectRef ID) {
                            "unsupported CAS node for group");
 }
 
-Expected<uint64_t> MCCASReader::materializeSection(cas::ObjectRef ID) {
+Expected<uint64_t> MCCASReader::materializeSection(cas::ObjectRef ID,
+                                                   raw_ostream *Stream) {
   auto Node = MCObjectProxy::get(Schema, Schema.CAS.getProxy(ID));
   if (!Node)
     return Node.takeError();
 
   // Section can have atoms, padding, debug_strs.
   if (auto F = AtomRef::Cast(*Node))
-    return F->materialize(*this);
+    return F->materialize(*this, Stream);
   if (auto F = PaddingRef::Cast(*Node))
-    return F->materialize(OS);
+    return F->materialize(*Stream);
   if (auto F = DebugStrRef::Cast(*Node)) {
-    auto Size = F->materialize(OS);
+    auto Size = F->materialize(*Stream);
     if (!Size)
       return Size.takeError();
     // Write null between strings.
-    OS.write_zeros(1);
+    Stream->write_zeros(1);
     return *Size + 1;
   }
   if (auto F = DebugLineRef::Cast(*Node))
-    return F->materialize(OS);
+    return F->materialize(*Stream);
   if (auto F = DebugAbbrevRef::Cast(*Node))
-    return F->materialize(OS);
+    return F->materialize(*Stream);
   return createStringError(inconvertibleErrorCode(),
                            "unsupported CAS node for atom");
 }
 
-Expected<uint64_t> MCCASReader::materializeAtom(cas::ObjectRef ID) {
+Expected<uint64_t> MCCASReader::materializeAtom(cas::ObjectRef ID,
+                                                raw_ostream *Stream) {
   auto Node = MCObjectProxy::get(Schema, Schema.CAS.getProxy(ID));
   if (!Node)
     return Node.takeError();
 
 #define MCFRAGMENT_NODE_REF(MCFragmentName, MCEnumName, MCEnumIdentifier)      \
   if (auto F = MCFragmentName##Ref::Cast(*Node))                               \
-    return F->materialize(*this);
+    return F->materialize(*this, Stream);
 #include "llvm/MC/CAS/MCCASObjectV1.def"
   if (auto F = PaddingRef::Cast(*Node))
-    return F->materialize(OS);
+    return F->materialize(*Stream);
   if (auto F = MergedFragmentRef::Cast(*Node))
-    return F->materialize(OS);
+    return F->materialize(*Stream);
 
   return createStringError(inconvertibleErrorCode(),
                            "unsupported CAS node for fragment");
