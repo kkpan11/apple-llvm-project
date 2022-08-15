@@ -15,6 +15,7 @@
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCObjectFileInfo.h"
 #include "llvm/Support/BinaryStreamReader.h"
+#include "llvm/Support/BinaryStreamWriter.h"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/EndianStream.h"
 #include <memory>
@@ -64,6 +65,14 @@ cl::opt<RelEncodeLoc> RelocLocation(
                clEnumVal(CompileUnit, "In compile unit")),
     cl::init(Atom));
 
+struct CUInfo {
+  size_t CUSize;
+  uint32_t AbbrevOffset;
+};
+static Expected<CUInfo>
+getAndSetDebugAbbrevOffsetAndSkip(MutableArrayRef<char> CUData,
+                                  support::endianness Endian,
+                                  Optional<uint32_t> NewOffset = None);
 Expected<cas::ObjectProxy>
 MCSchema::createFromMCAssemblerImpl(MachOCASWriter &ObjectWriter,
                                     MCAssembler &Asm, const MCAsmLayout &Layout,
@@ -80,6 +89,18 @@ Error MCSchema::serializeObjectFile(cas::ObjectProxy RootNode,
     return Asm.takeError();
 
   return Asm->materialize(OS);
+}
+
+// Helper function to load the list of references inside an ObjectProxy.
+Expected<SmallVector<cas::ObjectRef>>
+loadReferences(const cas::ObjectProxy &Proxy) {
+  SmallVector<cas::ObjectRef> Refs;
+  if (auto E = Proxy.forEachReference([&](cas::ObjectRef ID) -> Error {
+        Refs.push_back(ID);
+        return Error::success();
+      }))
+    return std::move(E);
+  return Refs;
 }
 
 MCSchema::MCSchema(cas::CASDB &CAS) : MCSchema::RTTIExtends(CAS) {
@@ -316,12 +337,11 @@ static Error encodeReferences(ArrayRef<cas::ObjectRef> Refs,
 
 static Expected<SmallVector<cas::ObjectRef>>
 decodeReferences(const MCObjectProxy &Node, StringRef &Remaining) {
-  SmallVector<cas::ObjectRef> Refs;
-  if (auto E = Node.forEachReference([&](cas::ObjectRef ID) -> Error {
-        Refs.push_back(ID);
-        return Error::success();
-      }))
-    return std::move(E);
+  Expected<SmallVector<cas::ObjectRef>> MaybeRefs = loadReferences(Node);
+  if (!MaybeRefs)
+    return MaybeRefs.takeError();
+
+  SmallVector<cas::ObjectRef> Refs = std::move(*MaybeRefs);
 
   unsigned Size = 0;
   if (auto E = consumeVBR8(Remaining, Size))
@@ -419,6 +439,151 @@ Expected<SectionRef> SectionRef::create(MCCASBuilder &MB,
   writeRelocations(MB.getSectionRelocs(), B->Data);
 
   return get(B->build());
+}
+
+Expected<DebugInfoSectionRef>
+DebugInfoSectionRef::create(MCCASBuilder &MB,
+                            ArrayRef<cas::ObjectRef> ChildrenNode) {
+  Expected<Builder> B = Builder::startNode(MB.Schema, KindString);
+  if (!B)
+    return B.takeError();
+
+  append_range(B->Refs, ChildrenNode);
+  writeRelocations(MB.getSectionRelocs(), B->Data);
+  return get(B->build());
+}
+
+/// Class that represents a fully verified DebugInfoSectionRef object loaded
+/// from the CAS.
+struct LoadedDebugInfoSection {
+  SmallVector<size_t> AbbrevOffsets;
+  SmallVector<StringRef> CUData;
+  Optional<PaddingRef> Padding;
+  StringRef RelocationData;
+
+  /// Returns a range of (AbbrevOffset, CUData) pairs.
+  auto getOffsetAndCUDataRange() {
+    assert(CUData.size() == AbbrevOffsets.size());
+    return llvm::zip(AbbrevOffsets, CUData);
+  }
+
+  static Expected<LoadedDebugInfoSection> load(DebugInfoSectionRef Section);
+
+private:
+  /// Extracts the abbreviation offsets from `OffsetsProxy` and stores them
+  /// internally.
+  Error fillAbbrevOffsets(Expected<MCObjectProxy> OffsetsProxy) {
+    if (!OffsetsProxy)
+      return OffsetsProxy.takeError();
+    auto OffsetsRef = DebugAbbrevOffsetsRef::Cast(*OffsetsProxy);
+    if (!OffsetsRef)
+      return createStringError(inconvertibleErrorCode(),
+                               "Missing abbreviation offsets node");
+
+    DebugAbbrevOffsetsRefAdaptor OffsetsAdaptor(*OffsetsRef);
+    Expected<SmallVector<size_t>> MaybeAbbrevOffsets =
+        OffsetsAdaptor.decodeOffsets();
+    if (!MaybeAbbrevOffsets)
+      return MaybeAbbrevOffsets.takeError();
+    AbbrevOffsets = std::move(*MaybeAbbrevOffsets);
+    return Error::success();
+  }
+
+  /// Extracts the information contained in Proxy, which must be either a CURef
+  /// or a PaddingNode.
+  Error addNode(Expected<MCObjectProxy> Proxy) {
+    if (!Proxy)
+      return Proxy.takeError();
+    if (auto CURef = DebugInfoCURef::Cast(*Proxy)) {
+      if (Padding.has_value())
+        return createStringError(inconvertibleErrorCode(),
+                                 "Invalid CURef after PaddingRef");
+      CUData.push_back(CURef->getData());
+    }
+    else if (auto PaddingNode = PaddingRef::Cast(*Proxy)) {
+      if (Padding.has_value())
+        return createStringError(inconvertibleErrorCode(),
+                                 "Invalid multiple PaddingRefs");
+      Padding = PaddingNode;
+    }
+    else
+      return createStringError(inconvertibleErrorCode(),
+                               "Invalid node for Debug Info section");
+    return Error::success();
+  }
+
+  /// Ensures there are as many offsets as CU Refs.
+  Error checkSizes() {
+    if (AbbrevOffsets.size() == CUData.size())
+      return Error::success();
+    return createStringError(inconvertibleErrorCode(),
+                             "Expected as many abbreviation offsets as CURefs");
+  }
+};
+
+Expected<LoadedDebugInfoSection>
+LoadedDebugInfoSection::load(DebugInfoSectionRef Section) {
+  Expected<SmallVector<cas::ObjectRef>> MaybeRefs = loadReferences(Section);
+  if (!MaybeRefs)
+    return MaybeRefs.takeError();
+
+  auto Refs = makeArrayRef(*MaybeRefs);
+  if (Refs.empty())
+    return createStringError(inconvertibleErrorCode(),
+                             "DebugInfoSection must have children nodes");
+
+  const MCSchema &Schema = Section.getSchema();
+  cas::CASDB &CAS = Schema.CAS;
+  auto loadRef = [&](cas::ObjectRef Ref) {
+    return MCObjectProxy::get(Schema, CAS.getProxy(Ref));
+  };
+
+  LoadedDebugInfoSection LoadedSection;
+  if (auto E = LoadedSection.fillAbbrevOffsets(loadRef(Refs.front())))
+    return std::move(E);
+
+  for (auto Ref : Refs.drop_front())
+    if (auto E = LoadedSection.addNode(loadRef(Ref)))
+      return std::move(E);
+
+  if (auto E = LoadedSection.checkSizes())
+    return std::move(E);
+
+  LoadedSection.RelocationData = Section.getData();
+  return LoadedSection;
+}
+
+Expected<uint64_t> DebugInfoSectionRef::materialize(MCCASReader &Reader) const {
+  // Start a new section for relocations.
+  Reader.Relocations.emplace_back();
+  auto LoadedSection = LoadedDebugInfoSection::load(*this);
+  if (!LoadedSection)
+    return LoadedSection.takeError();
+
+  unsigned Size = 0;
+  for (auto [AbbrevOffset, CUData] : LoadedSection->getOffsetAndCUDataRange()) {
+    // Copy the data so that we can modify the abbrev offset prior to printing.
+    // FIXME: do this with a zero-copy strategy.
+    auto MutableCUData = to_vector(CUData);
+    if (auto E = getAndSetDebugAbbrevOffsetAndSkip(
+            MutableCUData, Reader.getEndian(), AbbrevOffset);
+        !E)
+      return E.takeError();
+    Reader.OS << MutableCUData;
+    Size += CUData.size();
+  }
+
+  if (Optional<PaddingRef> Padding = LoadedSection->Padding) {
+    auto PaddingSize = Padding->materialize(Reader.OS);
+    if (!PaddingSize)
+      return PaddingSize.takeError();
+    Size += *PaddingSize;
+  }
+
+  if (auto E = decodeRelocations(Reader, LoadedSection->RelocationData))
+    return std::move(E);
+
+  return Size;
 }
 
 Expected<uint64_t> SectionRef::materialize(MCCASReader &Reader) const {
@@ -986,11 +1151,15 @@ getSizeFromDwarfHeaderAndSkip(BinaryStreamReader &Reader) {
   return Size;
 }
 
-/// Returns Abbreviation Offset field of a Dwarf Compilation Unit (CU)
-/// contained in Reader, assuming Reader is positioned at the beginning of the
-/// CU. The Reader's state is advanced to the first byte after the CU.
-static Expected<uint32_t>
-getDebugAbbrevOffsetAndSkip(BinaryStreamReader &Reader) {
+/// Returns the Abbreviation Offset field of a Dwarf Compilation Unit (CU)
+/// contained in CUData, as well as the total number of bytes taken by the CU.
+/// Note: this is different from the length field of the Dwarf header, which
+/// does not account for the header size.
+static Expected<CUInfo>
+getAndSetDebugAbbrevOffsetAndSkip(MutableArrayRef<char> CUData,
+                                  support::endianness Endian,
+                                  Optional<uint32_t> NewOffset) {
+  BinaryStreamReader Reader(toStringRef(CUData), Endian);
   Expected<size_t> Size = getSizeFromDwarfHeader(Reader);
   if (!Size)
     return Size.takeError();
@@ -1008,15 +1177,26 @@ getDebugAbbrevOffsetAndSkip(BinaryStreamReader &Reader) {
                              "Expected Dwarf 4 input");
 
   // TODO: Handle Dwarf 64 format, which uses 8 bytes.
+  size_t AbbrevPosition = Reader.getOffset();
   uint32_t AbbrevOffset;
   if (auto E = Reader.readInteger(AbbrevOffset))
     return std::move(E);
+
+  if (NewOffset.has_value()) {
+    // FIXME: safe but ugly cast. Similar to: llvm::arrayRefFromStringRef.
+    auto UnsignedData = makeMutableArrayRef(
+        reinterpret_cast<uint8_t *>(CUData.data()), CUData.size());
+    BinaryStreamWriter Writer(UnsignedData, Endian);
+    Writer.setOffset(AbbrevPosition);
+    if (auto E = Writer.writeInteger(*NewOffset))
+      return std::move(E);
+  }
 
   Reader.setOffset(AfterSizeOffset);
   if (auto E = Reader.skip(*Size))
     return std::move(E);
 
-  return AbbrevOffset;
+  return CUInfo{Reader.getOffset(), AbbrevOffset};
 }
 
 /// Given a list of MCFragments, return a vector with the concatenation of their
@@ -1048,19 +1228,16 @@ mergeMCFragmentContents(const MCSection::FragmentListType &FragmentList,
 
 Expected<MCCASBuilder::CUSplit>
 MCCASBuilder::splitDebugInfoSectionData(MutableArrayRef<char> DebugInfoData) {
-  BinaryStreamReader Reader(toStringRef(DebugInfoData),
-                            Asm.getBackend().Endian);
-
   CUSplit Split;
   // CU splitting loop.
-  while (!Reader.empty()) {
-    uint64_t StartOffset = Reader.getOffset();
-    Expected<uint32_t> AbbrevOffset = getDebugAbbrevOffsetAndSkip(Reader);
-    if (!AbbrevOffset)
-      return AbbrevOffset.takeError();
-    Split.SplitCUData.push_back(
-        DebugInfoData.slice(StartOffset, Reader.getOffset() - StartOffset));
-    Split.AbbrevOffsets.push_back(*AbbrevOffset);
+  while (!DebugInfoData.empty()) {
+    Expected<CUInfo> Info = getAndSetDebugAbbrevOffsetAndSkip(
+        DebugInfoData, Asm.getBackend().Endian, /*NewOffset*/ 0);
+    if (!Info)
+      return Info.takeError();
+    Split.SplitCUData.push_back(DebugInfoData.take_front(Info->CUSize));
+    Split.AbbrevOffsets.push_back(Info->AbbrevOffset);
+    DebugInfoData = DebugInfoData.drop_front(Info->CUSize);
   }
 
   return Split;
@@ -1077,7 +1254,7 @@ Error MCCASBuilder::createDebugInfoSection(
     addNode(CURef);
   if (auto E = createPaddingRef(DwarfSections.DebugInfo))
     return E;
-  return finalizeSection();
+  return finalizeSection<DebugInfoSectionRef>();
 }
 
 Error MCCASBuilder::createDebugAbbrevSection(
@@ -1417,8 +1594,9 @@ void MCCASBuilder::startSection(const MCSection *Sec) {
   }
 }
 
+template <typename SectionRefTy>
 Error MCCASBuilder::finalizeSection() {
-  auto Ref = SectionRef::create(*this, SectionContext);
+  auto Ref = SectionRefTy::create(*this, SectionContext);
   if (!Ref)
     return Ref.takeError();
 
@@ -1608,6 +1786,8 @@ Expected<uint64_t> MCCASReader::materializeGroup(cas::ObjectRef ID) {
     OS.write_zeros(1);
     return *Size + 1;
   }
+  if (auto F = DebugInfoSectionRef::Cast(*Node))
+    return F->materialize(*this);
   return createStringError(inconvertibleErrorCode(),
                            "unsupported CAS node for group");
 }
@@ -1630,15 +1810,10 @@ Expected<uint64_t> MCCASReader::materializeSection(cas::ObjectRef ID) {
     OS.write_zeros(1);
     return *Size + 1;
   }
-  if (auto F = DebugInfoCURef::Cast(*Node))
-    return F->materialize(OS);
   if (auto F = DebugLineRef::Cast(*Node))
     return F->materialize(OS);
   if (auto F = DebugAbbrevRef::Cast(*Node))
     return F->materialize(OS);
-  // TODO: handle this together with the section.
-  if (auto F = DebugAbbrevOffsetsRef::Cast(*Node))
-    return 0;
   return createStringError(inconvertibleErrorCode(),
                            "unsupported CAS node for atom");
 }
