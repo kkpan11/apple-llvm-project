@@ -461,6 +461,7 @@ struct LoadedDebugInfoSection {
   Optional<PaddingRef> Padding;
   StringRef RelocationData;
 
+  /// Returns a range of (AbbrevOffset, CUData) pairs.
   auto getOffsetAndCUDataRange() {
     assert(CUData.size() == AbbrevOffsets.size());
     return llvm::zip(AbbrevOffsets, CUData);
@@ -561,7 +562,14 @@ Expected<uint64_t> DebugInfoSectionRef::materialize(MCCASReader &Reader) const {
 
   unsigned Size = 0;
   for (auto [AbbrevOffset, CUData] : LoadedSection->getOffsetAndCUDataRange()) {
-    Reader.OS << CUData;
+    // Copy the data so that we can modify the abbrev offset prior to printing.
+    // FIXME: do this with a zero-copy strategy.
+    auto MutableCUData = to_vector(CUData);
+    if (auto E = getAndSetDebugAbbrevOffsetAndSkip(
+            MutableCUData, Reader.getEndian(), AbbrevOffset);
+        !E)
+      return E.takeError();
+    Reader.OS << MutableCUData;
     Size += CUData.size();
   }
 
@@ -1224,7 +1232,7 @@ MCCASBuilder::splitDebugInfoSectionData(MutableArrayRef<char> DebugInfoData) {
   // CU splitting loop.
   while (!DebugInfoData.empty()) {
     Expected<CUInfo> Info = getAndSetDebugAbbrevOffsetAndSkip(
-        DebugInfoData, Asm.getBackend().Endian);
+        DebugInfoData, Asm.getBackend().Endian, /*NewOffset*/ 0);
     if (!Info)
       return Info.takeError();
     Split.SplitCUData.push_back(DebugInfoData.take_front(Info->CUSize));
