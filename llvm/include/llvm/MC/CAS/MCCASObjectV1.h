@@ -358,7 +358,7 @@ public:
   Error finalizeGroup();
 
   void startSection(const MCSection *Sec);
-  Error finalizeSection();
+  template <typename SectionRefTy = SectionRef> Error finalizeSection();
 
   void startAtom(const MCSymbol *Atom);
   Error finalizeAtom();

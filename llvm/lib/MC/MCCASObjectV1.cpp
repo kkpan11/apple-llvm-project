@@ -91,6 +91,18 @@ Error MCSchema::serializeObjectFile(cas::ObjectProxy RootNode,
   return Asm->materialize(OS);
 }
 
+// Helper function to load the list of references inside an ObjectProxy.
+Expected<SmallVector<cas::ObjectRef>>
+loadReferences(const cas::ObjectProxy &Proxy) {
+  SmallVector<cas::ObjectRef> Refs;
+  if (auto E = Proxy.forEachReference([&](cas::ObjectRef ID) -> Error {
+        Refs.push_back(ID);
+        return Error::success();
+      }))
+    return std::move(E);
+  return Refs;
+}
+
 MCSchema::MCSchema(cas::CASDB &CAS) : MCSchema::RTTIExtends(CAS) {
   // Fill the cache immediately to preserve thread-safety.
   if (Error E = fillCache())
@@ -325,12 +337,11 @@ static Error encodeReferences(ArrayRef<cas::ObjectRef> Refs,
 
 static Expected<SmallVector<cas::ObjectRef>>
 decodeReferences(const MCObjectProxy &Node, StringRef &Remaining) {
-  SmallVector<cas::ObjectRef> Refs;
-  if (auto E = Node.forEachReference([&](cas::ObjectRef ID) -> Error {
-        Refs.push_back(ID);
-        return Error::success();
-      }))
-    return std::move(E);
+  Expected<SmallVector<cas::ObjectRef>> MaybeRefs = loadReferences(Node);
+  if (!MaybeRefs)
+    return MaybeRefs.takeError();
+
+  SmallVector<cas::ObjectRef> Refs = std::move(*MaybeRefs);
 
   unsigned Size = 0;
   if (auto E = consumeVBR8(Remaining, Size))
@@ -1438,8 +1449,9 @@ void MCCASBuilder::startSection(const MCSection *Sec) {
   }
 }
 
+template <typename SectionRefTy>
 Error MCCASBuilder::finalizeSection() {
-  auto Ref = SectionRef::create(*this, SectionContext);
+  auto Ref = SectionRefTy::create(*this, SectionContext);
   if (!Ref)
     return Ref.takeError();
 
