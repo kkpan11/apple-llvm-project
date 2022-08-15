@@ -30,6 +30,7 @@ CASV1_SIMPLE_DATA_REF(DebugAbbrevOffsetsRef, mc:debug_abbrev_offsets)
 
 CASV1_SIMPLE_GROUP_REF(GroupRef, mc:group)
 CASV1_SIMPLE_GROUP_REF(SectionRef, mc:section)
+CASV1_SIMPLE_GROUP_REF(DebugInfoSectionRef, mc:debug_info_section)
 CASV1_SIMPLE_GROUP_REF(AtomRef, mc:atom)
 CASV1_SIMPLE_GROUP_REF(SymbolTableRef, mc:symbol_table)
 

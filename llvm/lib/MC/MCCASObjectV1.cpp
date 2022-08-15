@@ -441,6 +441,143 @@ Expected<SectionRef> SectionRef::create(MCCASBuilder &MB,
   return get(B->build());
 }
 
+Expected<DebugInfoSectionRef>
+DebugInfoSectionRef::create(MCCASBuilder &MB,
+                            ArrayRef<cas::ObjectRef> ChildrenNode) {
+  Expected<Builder> B = Builder::startNode(MB.Schema, KindString);
+  if (!B)
+    return B.takeError();
+
+  append_range(B->Refs, ChildrenNode);
+  writeRelocations(MB.getSectionRelocs(), B->Data);
+  return get(B->build());
+}
+
+/// Class that represents a fully verified DebugInfoSectionRef object loaded
+/// from the CAS.
+struct LoadedDebugInfoSection {
+  SmallVector<size_t> AbbrevOffsets;
+  SmallVector<StringRef> CUData;
+  Optional<PaddingRef> Padding;
+  StringRef RelocationData;
+
+  auto getOffsetAndCUDataRange() {
+    assert(CUData.size() == AbbrevOffsets.size());
+    return llvm::zip(AbbrevOffsets, CUData);
+  }
+
+  static Expected<LoadedDebugInfoSection> load(DebugInfoSectionRef Section);
+
+private:
+  /// Extracts the abbreviation offsets from `OffsetsProxy` and stores them
+  /// internally.
+  Error fillAbbrevOffsets(Expected<MCObjectProxy> OffsetsProxy) {
+    if (!OffsetsProxy)
+      return OffsetsProxy.takeError();
+    auto OffsetsRef = DebugAbbrevOffsetsRef::Cast(*OffsetsProxy);
+    if (!OffsetsRef)
+      return createStringError(inconvertibleErrorCode(),
+                               "Missing abbreviation offsets node");
+
+    DebugAbbrevOffsetsRefAdaptor OffsetsAdaptor(*OffsetsRef);
+    Expected<SmallVector<size_t>> MaybeAbbrevOffsets =
+        OffsetsAdaptor.decodeOffsets();
+    if (!MaybeAbbrevOffsets)
+      return MaybeAbbrevOffsets.takeError();
+    AbbrevOffsets = std::move(*MaybeAbbrevOffsets);
+    return Error::success();
+  }
+
+  /// Extracts the information contained in Proxy, which must be either a CURef
+  /// or a PaddingNode.
+  Error addNode(Expected<MCObjectProxy> Proxy) {
+    if (!Proxy)
+      return Proxy.takeError();
+    if (auto CURef = DebugInfoCURef::Cast(*Proxy)) {
+      if (Padding.has_value())
+        return createStringError(inconvertibleErrorCode(),
+                                 "Invalid CURef after PaddingRef");
+      CUData.push_back(CURef->getData());
+    }
+    else if (auto PaddingNode = PaddingRef::Cast(*Proxy)) {
+      if (Padding.has_value())
+        return createStringError(inconvertibleErrorCode(),
+                                 "Invalid multiple PaddingRefs");
+      Padding = PaddingNode;
+    }
+    else
+      return createStringError(inconvertibleErrorCode(),
+                               "Invalid node for Debug Info section");
+    return Error::success();
+  }
+
+  /// Ensures there are as many offsets as CU Refs.
+  Error checkSizes() {
+    if (AbbrevOffsets.size() == CUData.size())
+      return Error::success();
+    return createStringError(inconvertibleErrorCode(),
+                             "Expected as many abbreviation offsets as CURefs");
+  }
+};
+
+Expected<LoadedDebugInfoSection>
+LoadedDebugInfoSection::load(DebugInfoSectionRef Section) {
+  Expected<SmallVector<cas::ObjectRef>> MaybeRefs = loadReferences(Section);
+  if (!MaybeRefs)
+    return MaybeRefs.takeError();
+
+  auto Refs = makeArrayRef(*MaybeRefs);
+  if (Refs.empty())
+    return createStringError(inconvertibleErrorCode(),
+                             "DebugInfoSection must have children nodes");
+
+  const MCSchema &Schema = Section.getSchema();
+  cas::CASDB &CAS = Schema.CAS;
+  auto loadRef = [&](cas::ObjectRef Ref) {
+    return MCObjectProxy::get(Schema, CAS.getProxy(Ref));
+  };
+
+  LoadedDebugInfoSection LoadedSection;
+  if (auto E = LoadedSection.fillAbbrevOffsets(loadRef(Refs.front())))
+    return std::move(E);
+
+  for (auto Ref : Refs.drop_front())
+    if (auto E = LoadedSection.addNode(loadRef(Ref)))
+      return std::move(E);
+
+  if (auto E = LoadedSection.checkSizes())
+    return std::move(E);
+
+  LoadedSection.RelocationData = Section.getData();
+  return LoadedSection;
+}
+
+Expected<uint64_t> DebugInfoSectionRef::materialize(MCCASReader &Reader) const {
+  // Start a new section for relocations.
+  Reader.Relocations.emplace_back();
+  auto LoadedSection = LoadedDebugInfoSection::load(*this);
+  if (!LoadedSection)
+    return LoadedSection.takeError();
+
+  unsigned Size = 0;
+  for (auto [AbbrevOffset, CUData] : LoadedSection->getOffsetAndCUDataRange()) {
+    Reader.OS << CUData;
+    Size += CUData.size();
+  }
+
+  if (Optional<PaddingRef> Padding = LoadedSection->Padding) {
+    auto PaddingSize = Padding->materialize(Reader.OS);
+    if (!PaddingSize)
+      return PaddingSize.takeError();
+    Size += *PaddingSize;
+  }
+
+  if (auto E = decodeRelocations(Reader, LoadedSection->RelocationData))
+    return std::move(E);
+
+  return Size;
+}
+
 Expected<uint64_t> SectionRef::materialize(MCCASReader &Reader) const {
   // Start a new section for relocations.
   Reader.Relocations.emplace_back();
@@ -1109,7 +1246,7 @@ Error MCCASBuilder::createDebugInfoSection(
     addNode(CURef);
   if (auto E = createPaddingRef(DwarfSections.DebugInfo))
     return E;
-  return finalizeSection();
+  return finalizeSection<DebugInfoSectionRef>();
 }
 
 Error MCCASBuilder::createDebugAbbrevSection(
@@ -1641,6 +1778,8 @@ Expected<uint64_t> MCCASReader::materializeGroup(cas::ObjectRef ID) {
     OS.write_zeros(1);
     return *Size + 1;
   }
+  if (auto F = DebugInfoSectionRef::Cast(*Node))
+    return F->materialize(*this);
   return createStringError(inconvertibleErrorCode(),
                            "unsupported CAS node for group");
 }
@@ -1663,15 +1802,10 @@ Expected<uint64_t> MCCASReader::materializeSection(cas::ObjectRef ID) {
     OS.write_zeros(1);
     return *Size + 1;
   }
-  if (auto F = DebugInfoCURef::Cast(*Node))
-    return F->materialize(OS);
   if (auto F = DebugLineRef::Cast(*Node))
     return F->materialize(OS);
   if (auto F = DebugAbbrevRef::Cast(*Node))
     return F->materialize(OS);
-  // TODO: handle this together with the section.
-  if (auto F = DebugAbbrevOffsetsRef::Cast(*Node))
-    return 0;
   return createStringError(inconvertibleErrorCode(),
                            "unsupported CAS node for atom");
 }
