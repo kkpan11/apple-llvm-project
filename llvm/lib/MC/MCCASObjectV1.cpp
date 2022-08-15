@@ -15,6 +15,7 @@
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCObjectFileInfo.h"
 #include "llvm/Support/BinaryStreamReader.h"
+#include "llvm/Support/BinaryStreamWriter.h"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/EndianStream.h"
 #include <memory>
@@ -64,6 +65,14 @@ cl::opt<RelEncodeLoc> RelocLocation(
                clEnumVal(CompileUnit, "In compile unit")),
     cl::init(Atom));
 
+struct CUInfo {
+  size_t CUSize;
+  uint32_t AbbrevOffset;
+};
+static Expected<CUInfo>
+getAndSetDebugAbbrevOffsetAndSkip(MutableArrayRef<char> CUData,
+                                  support::endianness Endian,
+                                  Optional<uint32_t> NewOffset = None);
 Expected<cas::ObjectProxy>
 MCSchema::createFromMCAssemblerImpl(MachOCASWriter &ObjectWriter,
                                     MCAssembler &Asm, const MCAsmLayout &Layout,
@@ -986,11 +995,15 @@ getSizeFromDwarfHeaderAndSkip(BinaryStreamReader &Reader) {
   return Size;
 }
 
-/// Returns Abbreviation Offset field of a Dwarf Compilation Unit (CU)
-/// contained in Reader, assuming Reader is positioned at the beginning of the
-/// CU. The Reader's state is advanced to the first byte after the CU.
-static Expected<uint32_t>
-getDebugAbbrevOffsetAndSkip(BinaryStreamReader &Reader) {
+/// Returns the Abbreviation Offset field of a Dwarf Compilation Unit (CU)
+/// contained in CUData, as well as the total number of bytes taken by the CU.
+/// Note: this is different from the length field of the Dwarf header, which
+/// does not account for the header size.
+static Expected<CUInfo>
+getAndSetDebugAbbrevOffsetAndSkip(MutableArrayRef<char> CUData,
+                                  support::endianness Endian,
+                                  Optional<uint32_t> NewOffset) {
+  BinaryStreamReader Reader(toStringRef(CUData), Endian);
   Expected<size_t> Size = getSizeFromDwarfHeader(Reader);
   if (!Size)
     return Size.takeError();
@@ -1008,15 +1021,26 @@ getDebugAbbrevOffsetAndSkip(BinaryStreamReader &Reader) {
                              "Expected Dwarf 4 input");
 
   // TODO: Handle Dwarf 64 format, which uses 8 bytes.
+  size_t AbbrevPosition = Reader.getOffset();
   uint32_t AbbrevOffset;
   if (auto E = Reader.readInteger(AbbrevOffset))
     return std::move(E);
+
+  if (NewOffset.has_value()) {
+    // FIXME: safe but ugly cast. Similar to: llvm::arrayRefFromStringRef.
+    auto UnsignedData = makeMutableArrayRef(
+        reinterpret_cast<uint8_t *>(CUData.data()), CUData.size());
+    BinaryStreamWriter Writer(UnsignedData, Endian);
+    Writer.setOffset(AbbrevPosition);
+    if (auto E = Writer.writeInteger(*NewOffset))
+      return std::move(E);
+  }
 
   Reader.setOffset(AfterSizeOffset);
   if (auto E = Reader.skip(*Size))
     return std::move(E);
 
-  return AbbrevOffset;
+  return CUInfo{Reader.getOffset(), AbbrevOffset};
 }
 
 /// Given a list of MCFragments, return a vector with the concatenation of their
@@ -1048,19 +1072,16 @@ mergeMCFragmentContents(const MCSection::FragmentListType &FragmentList,
 
 Expected<MCCASBuilder::CUSplit>
 MCCASBuilder::splitDebugInfoSectionData(MutableArrayRef<char> DebugInfoData) {
-  BinaryStreamReader Reader(toStringRef(DebugInfoData),
-                            Asm.getBackend().Endian);
-
   CUSplit Split;
   // CU splitting loop.
-  while (!Reader.empty()) {
-    uint64_t StartOffset = Reader.getOffset();
-    Expected<uint32_t> AbbrevOffset = getDebugAbbrevOffsetAndSkip(Reader);
-    if (!AbbrevOffset)
-      return AbbrevOffset.takeError();
-    Split.SplitCUData.push_back(
-        DebugInfoData.slice(StartOffset, Reader.getOffset() - StartOffset));
-    Split.AbbrevOffsets.push_back(*AbbrevOffset);
+  while (!DebugInfoData.empty()) {
+    Expected<CUInfo> Info = getAndSetDebugAbbrevOffsetAndSkip(
+        DebugInfoData, Asm.getBackend().Endian);
+    if (!Info)
+      return Info.takeError();
+    Split.SplitCUData.push_back(DebugInfoData.take_front(Info->CUSize));
+    Split.AbbrevOffsets.push_back(Info->AbbrevOffset);
+    DebugInfoData = DebugInfoData.drop_front(Info->CUSize);
   }
 
   return Split;
