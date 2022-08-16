@@ -14,6 +14,7 @@
 
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/ExecutionEngine/JITLink/ELF_aarch64.h"
+#include "llvm/ExecutionEngine/JITLink/ELF_i386.h"
 #include "llvm/ExecutionEngine/JITLink/ELF_riscv.h"
 #include "llvm/ExecutionEngine/JITLink/ELF_x86_64.h"
 #include "llvm/ExecutionEngine/JITLink/x86_64.h"
@@ -72,6 +73,8 @@ createLinkGraphFromELFObject(MemoryBufferRef ObjectBuffer) {
     return createLinkGraphFromELFObject_riscv(ObjectBuffer);
   case ELF::EM_X86_64:
     return createLinkGraphFromELFObject_x86_64(ObjectBuffer);
+  case ELF::EM_386:
+    return createLinkGraphFromELFObject_i386(ObjectBuffer);
   default:
     return make_error<JITLinkError>(
         "Unsupported target machine architecture in ELF object " +
@@ -100,6 +103,9 @@ void link_ELF(std::unique_ptr<LinkGraph> G,
     return;
   case Triple::x86_64:
     link_ELF_x86_64(std::move(G), std::move(Ctx));
+    return;
+  case Triple::x86:
+    link_ELF_i386(std::move(G), std::move(Ctx));
     return;
   default:
     Ctx->notifyFailed(make_error<JITLinkError>(
