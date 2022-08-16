@@ -241,3 +241,15 @@ define i32 @i32_select_fcmp_oeq(double %a, double %b, i32 %c, i32 %d) nounwind {
   %2 = select i1 %1, i32 %c, i32 %d
   ret i32 %2
 }
+
+define i32 @select_fcmp_oeq_1_2(double %a, double %b) {
+; CHECK-LABEL: select_fcmp_oeq_1_2:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    feq.d a0, fa0, fa1
+; CHECK-NEXT:    li a1, 2
+; CHECK-NEXT:    sub a0, a1, a0
+; CHECK-NEXT:    ret
+  %1 = fcmp fast oeq double %a, %b
+  %2 = select i1 %1, i32 1, i32 2
+  ret i32 %2
+}
