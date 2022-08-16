@@ -33,5 +33,3 @@ DependencyScanningService::DependencyScanningService(
   llvm::InitializeAllAsmPrinters();
   llvm::InitializeAllAsmParsers();
 }
-
-DependencyScanningService::~DependencyScanningService() = default;

@@ -63,13 +63,9 @@ public:
       IntrusiveRefCntPtr<llvm::cas::CachingOnDiskFileSystem> SharedFS,
       bool ReuseFileManager = true, bool OptimizeArgs = false);
 
-  ~DependencyScanningService();
-
   ScanningMode getMode() const { return Mode; }
 
   ScanningOutputFormat getFormat() const { return Format; }
-
-  const CASOptions &getCASOpts() const { return CASOpts; }
 
   bool canReuseFileManager() const { return ReuseFileManager; }
 
@@ -80,6 +76,8 @@ public:
     assert(SharedCache && "Expected a shared cache");
     return *SharedCache;
   }
+
+  const CASOptions &getCASOpts() const { return CASOpts; }
 
   llvm::cas::ActionCache &getCache() const {
     assert(Cache && "Cache is not initialized");
