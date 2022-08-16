@@ -71,6 +71,7 @@ public:
   bool SetClangModulesCachePath(const FileSpec &path);
   bool GetEnableExternalLookup() const;
   bool SetEnableExternalLookup(bool new_value);
+  bool GetEnableBackgroundLookup() const;
   bool GetEnableLLDBIndexCache() const;
   bool SetEnableLLDBIndexCache(bool new_value);
   uint64_t GetLLDBIndexCacheMaxByteSize();
@@ -465,6 +466,8 @@ public:
 
   static void FindSharedModules(const ModuleSpec &module_spec,
                                 ModuleList &matching_module_list);
+
+  static lldb::ModuleSP FindSharedModule(const UUID &uuid);
 
   static size_t RemoveOrphanSharedModules(bool mandatory);
 
