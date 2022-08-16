@@ -8284,22 +8284,25 @@ static SDValue performSUBCombine(SDNode *N, SelectionDAG &DAG) {
   SDValue N1 = N->getOperand(1);
 
   // Prefer to make this 'add 0/1' rather than 'sub 0/1'
-  // sub constant(!0), 0/1 -> add constant - 1, 1/0
-  // NODE: constant == 0, No redundant instructions are generated.
+  // sub constant, 0/1 -> add constant - 1, 1/0
   // (sub constant, (setcc x, y, eq/neq)) ->
   // (add (setcc x, y, neq/eq), constant - 1)
   auto *N0C = dyn_cast<ConstantSDNode>(N0);
   if (N0C && N1.getOpcode() == ISD::SETCC && N1.hasOneUse()) {
     ISD::CondCode CCVal = cast<CondCodeSDNode>(N1.getOperand(2))->get();
     EVT SetCCOpVT = N1.getOperand(0).getValueType();
-    if (!N0C->isZero() && SetCCOpVT.isInteger() && isIntEqualitySetCC(CCVal)) {
+    if (SetCCOpVT.isInteger() && isIntEqualitySetCC(CCVal)) {
       EVT VT = N->getValueType(0);
-      const APInt &ImmVal = N0C->getAPIntValue();
-      CCVal = ISD::getSetCCInverse(CCVal, SetCCOpVT);
-      SDValue NewN0 =
-          DAG.getSetCC(SDLoc(N), VT, N1.getOperand(0), N1.getOperand(1), CCVal);
-      SDValue NewN1 = DAG.getConstant(ImmVal - 1, SDLoc(N), VT);
-      return DAG.getNode(ISD::ADD, SDLoc(N), VT, NewN0, NewN1);
+      APInt ImmValMinus1 = N0C->getAPIntValue() - 1;
+      // If this doesn't form ADDI, the transform won't save any instructions
+      // and may increase the number of constants we need.
+      if (ImmValMinus1.isSignedIntN(12)) {
+        CCVal = ISD::getSetCCInverse(CCVal, SetCCOpVT);
+        SDValue NewN0 = DAG.getSetCC(SDLoc(N1), VT, N1.getOperand(0),
+                                     N1.getOperand(1), CCVal);
+        SDValue NewN1 = DAG.getConstant(ImmValMinus1, SDLoc(N), VT);
+        return DAG.getNode(ISD::ADD, SDLoc(N), VT, NewN0, NewN1);
+      }
     }
   }
 
