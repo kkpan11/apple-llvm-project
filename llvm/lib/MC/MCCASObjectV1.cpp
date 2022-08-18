@@ -296,9 +296,6 @@ static void writeRelocationsAndAddends(
     writeVBR8(Addends[I].Value, Data);
     writeVBR8(Addends[I].Size, Data);
     writeVBR8(Addends[I].Offset, Data);
-    writeVBR8(Addends[I].FullSizeInBytes, Data);
-    writeVBR8(Addends[I].RefKind, Data);
-    writeVBR8(Addends[I].TargetKindIsFixupAarch64Movw, Data);
   }
 }
 
@@ -323,12 +320,6 @@ static Error decodeRelocationsAndAddends(MCCASReader &Reader, StringRef Data) {
     if (auto E = consumeVBR8(Data, Add.Size))
       return E;
     if (auto E = consumeVBR8(Data, Add.Offset))
-      return E;
-    if (auto E = consumeVBR8(Data, Add.FullSizeInBytes))
-      return E;
-    if (auto E = consumeVBR8(Data, Add.RefKind))
-      return E;
-    if (auto E = consumeVBR8(Data, Add.TargetKindIsFixupAarch64Movw))
       return E;
     Reader.Addends.push_back(Add);
   }
@@ -595,34 +586,8 @@ static Error applyAddends(MCCASReader &Reader,
                           MutableArrayRef<char> SectionContents) {
   for (unsigned I = 0; I < Reader.Addends.size(); I++) {
     auto Addend = Reader.Addends[I];
-    uint32_t Offset = Addend.Offset;
-    uint64_t AddendVal = Addend.Value;
-    for (unsigned J = 0; J < Addend.Size; J++) {
-      if (!Addend.FullSizeInBytes) {
-        // Handle as little endian
-        if (Reader.getArch() == llvm::Triple::x86 ||
-            Reader.getArch() == llvm::Triple::x86_64)
-          SectionContents[Offset + J] = uint8_t(AddendVal >> (J * 8));
-        else
-          SectionContents[Offset + J] |= uint8_t((AddendVal >> (J * 8)) & 0xff);
-      } else {
-        // Handle as big endian
-        assert(Offset + Addend.FullSizeInBytes <= SectionContents.size() &&
-               "Invalid Addend size!");
-        assert(Addend.Size <= Addend.FullSizeInBytes && "Invalid Addend size!");
-        unsigned Idx = Addend.FullSizeInBytes - 1 - J;
-        SectionContents[Offset + Idx] |= uint8_t((AddendVal >> (J * 8)) & 0xff);
-      }
-    }
-    if (Reader.getArch() == llvm::Triple::aarch64) {
-      if ((Addend.RefKind & 0x00f) == 0x002 /*VariantKind::VK_SABS*/ ||
-          (!Addend.RefKind && Addend.TargetKindIsFixupAarch64Movw)) {
-        if (static_cast<int64_t>(AddendVal) < 0)
-          SectionContents[Offset + 3] &= ~(1 << 6);
-        else
-          SectionContents[Offset + 3] |= (1 << 6);
-      }
-    }
+    for (unsigned J = 0; J < Addend.Size; J++)
+      SectionContents[Addend.Offset + J] = uint8_t(Addend.Value >> (J * 8));
   }
   return Error::success();
 }
@@ -1534,9 +1499,7 @@ static void createAddendVector(
   for (auto Addend : Source)
     Dest.push_back(
         {Addend.Value, Addend.Size,
-         static_cast<uint32_t>(Addend.Offset + Layout.getFragmentOffset(F)),
-         Addend.FullSizeInBytes, Addend.RefKind,
-         Addend.TargetKindIsFixupAarch64Movw});
+         static_cast<uint32_t>(Addend.Offset + Layout.getFragmentOffset(F))});
 }
 
 Error MCCASBuilder::buildFragments() {

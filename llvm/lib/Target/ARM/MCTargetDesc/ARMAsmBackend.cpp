@@ -1059,16 +1059,11 @@ void ARMAsmBackend::applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
   assert(Offset + NumBytes <= Data.size() && "Invalid fixup offset!");
 
   // Used to point to big endian bytes.
-  unsigned FullSizeBytes = 0;
+  unsigned FullSizeBytes;
   if (Endian == support::big) {
     FullSizeBytes = getFixupKindContainerSizeBytes(Kind);
     assert((Offset + FullSizeBytes) <= Data.size() && "Invalid fixup size!");
     assert(NumBytes <= FullSizeBytes && "Invalid fixup size!");
-  }
-
-  if (!IsResolved && Asm.getWriter().addAddend(Fragment, Value, NumBytes,
-                                               Offset, FullSizeBytes, 0, 0)) {
-    Value = 0;
   }
 
   // For each byte of the fragment that the fixup touches, mask in the bits from
@@ -1077,6 +1072,16 @@ void ARMAsmBackend::applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
   for (unsigned i = 0; i != NumBytes; ++i) {
     unsigned Idx = Endian == support::little ? i : (FullSizeBytes - 1 - i);
     Data[Offset + Idx] |= uint8_t((Value >> (i * 8)) & 0xff);
+  }
+
+  // Copy the Value at the fixup location and zero-out the fixup if it is
+  // unresolved, this is done to improve deduplication with MCCAS. The fixup
+  // will be applied later when the object file is being written out.
+  if (!IsResolved) {
+    std::memcpy(&Value, &Data[Offset], NumBytes);
+    if (Asm.getWriter().addAddend(Fragment, Value, NumBytes, Offset)) {
+      std::memset(&Data[Offset], 0, NumBytes);
+    }
   }
 }
 

@@ -110,11 +110,8 @@ public:
 
   struct AddendsSizeAndOffset {
     uint64_t Value;
-    uint32_t Size;
+    uint8_t Size;
     uint32_t Offset;
-    uint32_t FullSizeInBytes;
-    uint32_t RefKind;
-    bool TargetKindIsFixupAarch64Movw;
   };
 
 private:
@@ -280,11 +277,9 @@ public:
     Relocations[F->getParent()].push_back(P);
   }
 
-  bool addAddend(const MCFragment *Fragment, uint64_t Addend, uint32_t Size,
-                 uint32_t Offset, uint32_t FullSizeInBytes, uint32_t RefKind,
-                 bool TargetKindIsFixupAarch64Movw) override {
-    Addends[Fragment].push_back({Addend, Size, Offset, FullSizeInBytes, RefKind,
-                                 TargetKindIsFixupAarch64Movw});
+  bool addAddend(const MCFragment *Fragment, uint64_t Addend, uint8_t Size,
+                 uint32_t Offset) override {
+    Addends[Fragment].push_back({Addend, Size, Offset});
     return true;
   }
 

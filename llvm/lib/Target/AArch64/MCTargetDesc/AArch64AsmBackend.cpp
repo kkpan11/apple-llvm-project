@@ -391,9 +391,8 @@ void AArch64AsmBackend::applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
                                    MutableArrayRef<char> Data, uint64_t Value,
                                    bool IsResolved, const MCSubtargetInfo *STI,
                                    const MCFragment *Fragment) const {
-  if (!Value) {
+  if (!Value)
     return; // Doesn't change encoding.
-  }
   unsigned Kind = Fixup.getKind();
   if (Kind >= FirstLiteralRelocationKind)
     return;
@@ -412,18 +411,6 @@ void AArch64AsmBackend::applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
 
   // Used to point to big endian bytes.
   unsigned FulleSizeInBytes = getFixupKindContainereSizeInBytes(Fixup.getKind());
-
-  AArch64MCExpr::VariantKind RefKind =
-      static_cast<AArch64MCExpr::VariantKind>(Target.getRefKind());
-  bool FixupAppliedLater =
-      !IsResolved
-          ? Asm.getWriter().addAddend(
-                Fragment, Value, NumBytes, Offset, FulleSizeInBytes, RefKind,
-                Fixup.getTargetKind() == AArch64::fixup_aarch64_movw)
-          : false;
-
-  if (FixupAppliedLater)
-    Value = 0;
 
   // For each byte of the fragment that the fixup touches, mask in the
   // bits from the fixup value.
@@ -444,15 +431,26 @@ void AArch64AsmBackend::applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
 
   // FIXME: getFixupKindInfo() and getFixupKindNumBytes() could be fixed to
   // handle this more cleanly. This may affect the output of -show-mc-encoding.
-  if ((AArch64MCExpr::getSymbolLoc(RefKind) == AArch64MCExpr::VK_SABS ||
-       (!RefKind && Fixup.getTargetKind() == AArch64::fixup_aarch64_movw)) &&
-      !FixupAppliedLater) {
+  AArch64MCExpr::VariantKind RefKind =
+      static_cast<AArch64MCExpr::VariantKind>(Target.getRefKind());
+  if (AArch64MCExpr::getSymbolLoc(RefKind) == AArch64MCExpr::VK_SABS ||
+      (!RefKind && Fixup.getTargetKind() == AArch64::fixup_aarch64_movw)) {
     // If the immediate is negative, generate MOVN else MOVZ.
     // (Bit 30 = 0) ==> MOVN, (Bit 30 = 1) ==> MOVZ.
     if (SignedValue < 0)
       Data[Offset + 3] &= ~(1 << 6);
     else
       Data[Offset + 3] |= (1 << 6);
+  }
+
+  // Copy the Value at the fixup location and zero-out the fixup if it is
+  // unresolved, this is done to improve deduplication with MCCAS. The fixup
+  // will be applied later when the object file is being written out.
+  if (!IsResolved) {
+    std::memcpy(&Value, &Data[Offset], NumBytes);
+    if (Asm.getWriter().addAddend(Fragment, Value, NumBytes, Offset)) {
+      std::memset(&Data[Offset], 0, NumBytes);
+    }
   }
 }
 

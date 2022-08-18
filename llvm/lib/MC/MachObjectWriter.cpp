@@ -1159,31 +1159,8 @@ void MachObjectWriter::applyAddends(MCAssembler &Asm,
 void MachObjectWriter::applyAddendsHelper(MutableArrayRef<char> &Contents,
                                           const MCFragment *Fragment) {
   for (auto ASO : Addends[Fragment]) {
-    for (unsigned I = 0; I != ASO.Size; ++I) {
-      if (!ASO.FullSizeInBytes) {
-        // Handle as little endian
-        if (isX86_64() || isI386())
-          Contents[ASO.Offset + I] = uint8_t(ASO.Value >> (I * 8));
-        else
-          Contents[ASO.Offset + I] |= uint8_t((ASO.Value >> (I * 8)) & 0xff);
-      } else {
-        // Handle as big endian
-        assert((ASO.Offset + ASO.FullSizeInBytes) <= Contents.size() &&
-               "Invalid fixup size!");
-        assert(ASO.Size <= ASO.FullSizeInBytes && "Invalid fixup size!");
-        unsigned Idx = ASO.FullSizeInBytes - 1 - I;
-        Contents[ASO.Offset + Idx] |= uint8_t((ASO.Value >> (I * 8)) & 0xff);
-      }
-    }
-    if (isAArch64()) {
-      if ((ASO.RefKind & 0x00f) == 0x002 /*VariantKind::VK_SABS*/ ||
-          (!ASO.RefKind && ASO.TargetKindIsFixupAarch64Movw)) {
-        if (static_cast<int64_t>(ASO.Value) < 0)
-          Contents[ASO.Offset + 3] &= ~(1 << 6);
-        else
-          Contents[ASO.Offset + 3] |= (1 << 6);
-      }
-    }
+    for (unsigned I = 0; I != ASO.Size; ++I)
+      Contents[ASO.Offset + I] = uint8_t(ASO.Value >> (I * 8));
   }
 }
 
