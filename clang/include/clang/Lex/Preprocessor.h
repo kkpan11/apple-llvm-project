@@ -27,6 +27,7 @@
 #include "clang/Lex/MacroInfo.h"
 #include "clang/Lex/ModuleLoader.h"
 #include "clang/Lex/ModuleMap.h"
+#include "clang/Lex/PPCachedActions.h"
 #include "clang/Lex/PPCallbacks.h"
 #include "clang/Lex/Token.h"
 #include "clang/Lex/TokenLexer.h"
@@ -589,6 +590,10 @@ private:
   /// encountered (e.g. a file is \#included, etc).
   std::unique_ptr<PPCallbacks> Callbacks;
 
+  /// Actions that can override certain preprocessor activities, like handling
+  /// of \#include directives.
+  std::unique_ptr<PPCachedActions> CachedActions;
+
   struct MacroExpandsInfo {
     Token Tok;
     MacroDefinition MD;
@@ -1102,6 +1107,11 @@ public:
     Callbacks = std::move(C);
   }
   /// \}
+
+  PPCachedActions *getPPCachedActions() const { return CachedActions.get(); }
+  void setPPCachedActions(std::unique_ptr<PPCachedActions> CA) {
+    CachedActions = std::move(CA);
+  }
 
   /// Get the number of tokens processed so far.
   unsigned getTokenCount() const { return TokenCount; }
