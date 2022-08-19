@@ -6414,6 +6414,12 @@ InstructionCost BoUpSLP::getEntryCost(const TreeEntry *E,
         CommonCost -= (EntryVF - VL.size()) * ScalarEltCost;
       }
       InstructionCost ScalarCost = VecTy->getNumElements() * ScalarEltCost;
+      for (unsigned I = 0, Num = VL0->getNumOperands(); I < Num; ++I) {
+        if (all_of(VL, [I](Value *V) {
+              return isConstant(cast<Instruction>(V)->getOperand(I));
+            }))
+          Operands[I] = ConstantVector::getNullValue(VecTy);
+      }
       InstructionCost VecCost =
           TTI->getArithmeticInstrCost(E->getOpcode(), VecTy, CostKind, Op1VK,
                                       Op2VK, Op1VP, Op2VP, Operands, VL0);
@@ -11960,9 +11966,9 @@ static bool compareCmp(Value *V, Value *V2,
   return IsCompatibility;
 }
 
-bool SLPVectorizerPass::vectorizeSimpleInstructions(
-    SmallVectorImpl<Instruction *> &Instructions, BasicBlock *BB, BoUpSLP &R,
-    bool AtTerminator) {
+bool SLPVectorizerPass::vectorizeSimpleInstructions(InstSetVector &Instructions,
+                                                    BasicBlock *BB, BoUpSLP &R,
+                                                    bool AtTerminator) {
   bool OpsChanged = false;
   SmallVector<Instruction *, 4> PostponedCmps;
   for (auto *I : reverse(Instructions)) {
@@ -12031,9 +12037,10 @@ bool SLPVectorizerPass::vectorizeSimpleInstructions(
         /*LimitForRegisterSize=*/true);
     Instructions.clear();
   } else {
+    Instructions.clear();
     // Insert in reverse order since the PostponedCmps vector was filled in
     // reverse order.
-    Instructions.assign(PostponedCmps.rbegin(), PostponedCmps.rend());
+    Instructions.insert(PostponedCmps.rbegin(), PostponedCmps.rend());
   }
   return OpsChanged;
 }
@@ -12186,7 +12193,7 @@ bool SLPVectorizerPass::vectorizeChainsInBlock(BasicBlock *BB, BoUpSLP &R) {
 
   VisitedInstrs.clear();
 
-  SmallVector<Instruction *, 8> PostProcessInstructions;
+  InstSetVector PostProcessInstructions;
   SmallDenseSet<Instruction *, 4> KeyNodes;
   for (BasicBlock::iterator it = BB->begin(), e = BB->end(); it != e; ++it) {
     // Skip instructions with scalable type. The num of elements is unknown at
@@ -12238,8 +12245,12 @@ bool SLPVectorizerPass::vectorizeChainsInBlock(BasicBlock *BB, BoUpSLP &R) {
             !DT->isReachableFromEntry(P->getIncomingBlock(I)))
           continue;
 
-        Changed |= vectorizeRootInstruction(nullptr, P->getIncomingValue(I),
-                                            P->getIncomingBlock(I), R, TTI);
+        // Postponed instructions should not be vectorized here, delay their
+        // vectorization.
+        if (auto *PI = dyn_cast<Instruction>(P->getIncomingValue(I));
+            PI && !PostProcessInstructions.contains(PI))
+          Changed |= vectorizeRootInstruction(nullptr, P->getIncomingValue(I),
+                                              P->getIncomingBlock(I), R, TTI);
       }
       continue;
     }
@@ -12266,8 +12277,12 @@ bool SLPVectorizerPass::vectorizeChainsInBlock(BasicBlock *BB, BoUpSLP &R) {
       }
       if (TryToVectorizeRoot) {
         for (auto *V : it->operand_values()) {
-          // Try to match and vectorize a horizontal reduction.
-          OpsChanged |= vectorizeRootInstruction(nullptr, V, BB, R, TTI);
+          // Postponed instructions should not be vectorized here, delay their
+          // vectorization.
+          if (auto *VI = dyn_cast<Instruction>(V);
+              VI && !PostProcessInstructions.contains(VI))
+            // Try to match and vectorize a horizontal reduction.
+            OpsChanged |= vectorizeRootInstruction(nullptr, V, BB, R, TTI);
         }
       }
       // Start vectorization of post-process list of instructions from the
@@ -12286,7 +12301,7 @@ bool SLPVectorizerPass::vectorizeChainsInBlock(BasicBlock *BB, BoUpSLP &R) {
     }
 
     if (isa<CmpInst, InsertElementInst, InsertValueInst>(it))
-      PostProcessInstructions.push_back(&*it);
+      PostProcessInstructions.insert(&*it);
   }
 
   return Changed;
