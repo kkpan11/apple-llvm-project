@@ -334,12 +334,23 @@ FileManager::getFileRef(StringRef Filename, bool openFile, bool CacheFailure) {
     assert(Redirection.second->V.get<FileEntry *>() == &UFE &&
            "filename from getStatValue() refers to wrong file");
 
+    // For a non-asserts build, walk the chain until we hit the `FileEntry *`
+    // case. This is still incorrect (since the returned file will depend on
+    // the order files are requested in), but is a narrow workaround to avoid
+    // returning a `FileEntryRef` with `const void *` when all calling code
+    // expects it to be one with a `FileEntry *`.
+    FileEntryRef::MapEntry *BaseEntry = &Redirection;
+    while (const void *Next = BaseEntry->second->V.dyn_cast<const void *>()) {
+      BaseEntry = const_cast<FileEntryRef::MapEntry *>(
+          static_cast<const FileEntryRef::MapEntry *>(Next));
+    }
+
     // Cache the redirection in the previously-inserted entry, still available
     // in the tentative return value.
-    NamedFileEnt->second = FileEntryRef::MapValue(Redirection);
+    NamedFileEnt->second = FileEntryRef::MapValue(*BaseEntry);
 
     // Fix the tentative return value.
-    NamedFileEnt = &Redirection;
+    NamedFileEnt = BaseEntry;
   }
 
   FileEntryRef ReturnedRef(*NamedFileEnt);
