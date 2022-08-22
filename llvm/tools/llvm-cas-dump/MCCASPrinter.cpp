@@ -79,19 +79,15 @@ Error MCCASPrinter::printMCObject(MCObjectProxy MCObj, DWARFContext *DWARFCtx) {
   OS << formatv("{0, -15} {1} \n", MCObj.getKindString(),
                 MCSchema.CAS.getID(MCObj));
   if (Options.HexDump) {
-    auto Data = MCObj.getData();
-    int I = 0;
-    OS.indent(Indent);
-    for (unsigned char c : Data) {
-      I++;
-      OS << llvm::format_hex(c, 4) << " ";
-      if (I == 8) {
-        I = 0;
-        OS << "\n";
-        OS.indent(Indent);
-      }
+    auto data = MCObj.getData();
+    while (!data.empty()) {
+      OS.indent(Indent);
+      llvm::interleave(
+          data.take_front(8), OS,
+          [this](unsigned char c) { OS << llvm::format_hex(c, 4); }, " ");
+      OS << "\n";
+      data = data.drop_front(data.size() < 8 ? data.size() : 8);
     }
-    OS << "\n";
   }
 
   // Dwarfdump.
