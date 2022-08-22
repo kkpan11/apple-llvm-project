@@ -32,6 +32,10 @@ cl::opt<bool> DebugAbbrevOffsets(
     "debug-abbrev-offsets",
     cl::desc("Print the contents of abbreviation offsets block"));
 
+cl::opt<bool>
+    HexDump("hex-dump",
+            cl::desc("Print out a hex dump of every cas blocks contents"));
+
 namespace {
 
 /// If the input is a file (--casid-file), open the file given by `InputStr`
@@ -55,7 +59,8 @@ int main(int argc, char *argv[]) {
   ExitOnErr.setBanner(std::string(argv[0]) + ": ");
 
   cl::ParseCommandLineOptions(argc, argv);
-  PrinterOptions Options = {DwarfSectionsOnly, DwarfDump, DebugAbbrevOffsets};
+  PrinterOptions Options = {DwarfSectionsOnly, DwarfDump, DebugAbbrevOffsets,
+                            HexDump};
 
   std::unique_ptr<CASDB> CAS = ExitOnErr(createOnDiskCAS(CASPath));
   MCCASPrinter Printer(Options, *CAS, llvm::outs());

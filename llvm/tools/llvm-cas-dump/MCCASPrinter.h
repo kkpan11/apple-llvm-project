@@ -23,6 +23,7 @@ struct PrinterOptions {
   bool DwarfSectionsOnly = false;
   bool DwarfDump = false;
   bool DebugAbbrevOffsets = false;
+  bool HexDump = false;
 };
 
 struct MCCASPrinter {
