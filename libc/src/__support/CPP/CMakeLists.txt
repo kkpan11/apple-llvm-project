@@ -53,6 +53,15 @@ add_header_library(
 )
 
 add_header_library(
+  span
+  HDRS
+    span.h
+  DEPENDS
+    .array
+    .type_traits
+)
+
+add_header_library(
   string_view
   HDRS
     StringView.h
@@ -63,7 +72,7 @@ add_header_library(
   HDRS
     stringstream.h
   DEPENDS
-    .array_ref
+    .span
     .string_view
     libc.src.__support.integer_to_string
 )
