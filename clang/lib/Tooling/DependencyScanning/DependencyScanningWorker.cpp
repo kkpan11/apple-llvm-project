@@ -199,19 +199,18 @@ public:
       StringRef WorkingDirectory, DependencyConsumer &Consumer,
       llvm::IntrusiveRefCntPtr<DependencyScanningWorkerFilesystem> DepFS,
       llvm::IntrusiveRefCntPtr<DependencyScanningCASFilesystem> DepCASFS,
-      ScanningOutputFormat Format, bool OptimizeArgs, bool DisableFree,
-      bool EmitDependencyFile, bool DiagGenerationAsCompilation,
-      const CASOptions &CASOpts,
+      ScanningOutputFormat Format, bool OptimizeArgs, bool EagerLoadModules,
+      bool DisableFree, bool EmitDependencyFile,
+      bool DiagGenerationAsCompilation, const CASOptions &CASOpts,
       llvm::Optional<StringRef> ModuleName = None,
       raw_ostream *VerboseOS = nullptr)
       : WorkingDirectory(WorkingDirectory), Consumer(Consumer),
         DepFS(std::move(DepFS)), DepCASFS(std::move(DepCASFS)), Format(Format),
-        OptimizeArgs(OptimizeArgs), DisableFree(DisableFree),
-        CASOpts(CASOpts),
+        OptimizeArgs(OptimizeArgs), EagerLoadModules(EagerLoadModules),
+        DisableFree(DisableFree), CASOpts(CASOpts),
         EmitDependencyFile(EmitDependencyFile),
         DiagGenerationAsCompilation(DiagGenerationAsCompilation),
-        ModuleName(ModuleName), VerboseOS(VerboseOS) {
-  }
+        ModuleName(ModuleName), VerboseOS(VerboseOS) {}
 
   bool runInvocation(std::shared_ptr<CompilerInvocation> Invocation,
                      FileManager *FileMgr,
@@ -328,7 +327,7 @@ public:
     case ScanningOutputFormat::FullTree:
       ScanInstance.addDependencyCollector(std::make_shared<ModuleDepCollector>(
           std::move(Opts), ScanInstance, Consumer,
-          std::move(OriginalInvocation), OptimizeArgs));
+          std::move(OriginalInvocation), OptimizeArgs, EagerLoadModules));
       break;
     }
 
@@ -372,6 +371,7 @@ private:
   llvm::IntrusiveRefCntPtr<DependencyScanningCASFilesystem> DepCASFS;
   ScanningOutputFormat Format;
   bool OptimizeArgs;
+  bool EagerLoadModules;
   bool DisableFree;
   const CASOptions &CASOpts;
   bool EmitDependencyFile = false;
@@ -386,6 +386,7 @@ DependencyScanningWorker::DependencyScanningWorker(
     DependencyScanningService &Service,
     llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> FS)
     : Format(Service.getFormat()), OptimizeArgs(Service.canOptimizeArgs()),
+      EagerLoadModules(Service.shouldEagerLoadModules()),
       CASOpts(Service.getCASOpts()), UseCAS(Service.useCASScanning()) {
   PCHContainerOps = std::make_shared<PCHContainerOperations>();
   PCHContainerOps->registerReader(
@@ -477,10 +478,9 @@ llvm::Error DependencyScanningWorker::computeDependencies(
                         bool DisableFree = true;
                         DependencyScanningAction Action(
                             WorkingDirectory, Consumer, DepFS, DepCASFS, Format,
-                            OptimizeArgs, DisableFree,
+                            OptimizeArgs, EagerLoadModules, DisableFree,
                             /*EmitDependencyFile=*/false,
-                            /*DiagGenerationAsCompilation=*/false,
-                            getCASOpts(),
+                            /*DiagGenerationAsCompilation=*/false, getCASOpts(),
                             ModuleName);
                         // Create an invocation that uses the underlying file
                         // system to ensure that any file system requests that

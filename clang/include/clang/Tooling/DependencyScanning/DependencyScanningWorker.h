@@ -110,6 +110,8 @@ public:
                                   DependencyConsumer &Consumer,
                                   llvm::Optional<StringRef> ModuleName = None);
 
+  bool shouldEagerLoadModules() const { return EagerLoadModules; }
+
   ScanningOutputFormat getFormat() const { return Format; }
 
   /// Scan from a compiler invocation.
@@ -152,6 +154,8 @@ private:
   ScanningOutputFormat Format;
   /// Whether to optimize the modules' command-line arguments.
   bool OptimizeArgs;
+  /// Whether to set up command-lines to load PCM files eagerly.
+  bool EagerLoadModules;
 
   /// The caching file system.
   llvm::IntrusiveRefCntPtr<llvm::cas::CachingOnDiskFileSystem> CacheFS;
