@@ -294,8 +294,8 @@ static void writeRelocationsAndAddends(
   writeVBR8(Addends.size(), Data);
   for (unsigned I = 0; I < Addends.size(); I++) {
     writeVBR8(Addends[I].Value, Data);
-    writeVBR8(Addends[I].Size, Data);
     writeVBR8(Addends[I].Offset, Data);
+    writeVBR8(Addends[I].Size, Data);
   }
 }
 
@@ -317,9 +317,9 @@ static Error decodeRelocationsAndAddends(MCCASReader &Reader, StringRef Data) {
   for (unsigned I = 0; I < Size; I++) {
     if (auto E = consumeVBR8(Data, Add.Value))
       return E;
-    if (auto E = consumeVBR8(Data, Add.Size))
-      return E;
     if (auto E = consumeVBR8(Data, Add.Offset))
+      return E;
+    if (auto E = consumeVBR8(Data, Add.Size))
       return E;
     Reader.Addends.push_back(Add);
   }
@@ -1498,8 +1498,9 @@ static void createAddendVector(
   // offset in that section.
   for (auto Addend : Source)
     Dest.push_back(
-        {Addend.Value, Addend.Size,
-         static_cast<uint32_t>(Addend.Offset + Layout.getFragmentOffset(F))});
+        {Addend.Value,
+         static_cast<uint32_t>(Addend.Offset + Layout.getFragmentOffset(F)),
+         Addend.Size});
 }
 
 Error MCCASBuilder::buildFragments() {

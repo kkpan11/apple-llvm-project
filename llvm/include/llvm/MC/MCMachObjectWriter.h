@@ -110,8 +110,8 @@ public:
 
   struct AddendsSizeAndOffset {
     uint64_t Value;
-    uint8_t Size;
     uint32_t Offset;
+    uint8_t Size;
   };
 
 private:
@@ -191,16 +191,6 @@ public:
     return CPUType == MachO::CPU_TYPE_X86_64;
   }
 
-  bool isI386() const {
-    uint32_t CPUType = TargetObjectWriter->getCPUType();
-    return CPUType == MachO::CPU_TYPE_I386;
-  }
-
-  bool isAArch64() const {
-    uint32_t CPUType = TargetObjectWriter->getCPUType();
-    return CPUType == MachO::CPU_TYPE_ARM64;
-  }
-
   /// @}
 
   void writeHeader(MachO::HeaderFileType Type, unsigned NumLoadCommands,
@@ -277,9 +267,9 @@ public:
     Relocations[F->getParent()].push_back(P);
   }
 
-  bool addAddend(const MCFragment *Fragment, uint64_t Addend, uint8_t Size,
-                 uint32_t Offset) override {
-    Addends[Fragment].push_back({Addend, Size, Offset});
+  bool addAddend(const MCFragment *Fragment, uint64_t Addend, uint32_t Offset,
+                 uint8_t Size) override {
+    Addends[Fragment].push_back({Addend, Offset, Size});
     return true;
   }
 
@@ -317,7 +307,7 @@ public:
   // FIXME: Break down writeObject into following stages for slicing the output.
   // This is a very rough slicing and need to be improved.
   void applyAddends(MCAssembler &Asm, const MCAsmLayout &Layout);
-  void applyAddendsHelper(MutableArrayRef<char> &Contents,
+  void applyAddendsHelper(MutableArrayRef<char> Contents,
                           const MCFragment *Fragment);
   void prepareObject(MCAssembler &Asm, const MCAsmLayout &Layout);
   void writeMachOHeader(MCAssembler &Asm, const MCAsmLayout &Layout);

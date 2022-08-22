@@ -448,7 +448,7 @@ void AArch64AsmBackend::applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
   // will be applied later when the object file is being written out.
   if (!IsResolved) {
     std::memcpy(&Value, &Data[Offset], NumBytes);
-    if (Asm.getWriter().addAddend(Fragment, Value, NumBytes, Offset)) {
+    if (Asm.getWriter().addAddend(Fragment, Value, Offset, NumBytes)) {
       std::memset(&Data[Offset], 0, NumBytes);
     }
   }

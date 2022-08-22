@@ -105,9 +105,9 @@ public:
     MOW.writeSymbolTable(Asm, Layout);
   }
 
-  bool addAddend(const MCFragment *Fragment, uint64_t Addend, uint8_t Size,
-                 uint32_t Offset) override {
-    return MOW.addAddend(Fragment, Addend, Size, Offset);
+  bool addAddend(const MCFragment *Fragment, uint64_t Addend, uint32_t Offset,
+                 uint8_t Size) override {
+    return MOW.addAddend(Fragment, Addend, Offset, Size);
   }
 
   uint64_t writeObject(MCAssembler &Asm, const MCAsmLayout &Layout) override;

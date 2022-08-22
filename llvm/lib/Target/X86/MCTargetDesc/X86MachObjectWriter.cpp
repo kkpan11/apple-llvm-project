@@ -358,8 +358,6 @@ void X86MachObjectWriter::RecordX86_64Relocation(
   MRE.r_word1 = (Index << 0) | (IsPCRel << 24) | (Log2Size << 25) |
                 (IsExtern << 27) | (Type << 28);
   Writer->addRelocation(RelSymbol, Fragment, MRE);
-  Writer->addAddend(Fragment, FixedValue, (1 << Log2Size), Fixup.getOffset());
-  FixedValue = 0;
 }
 
 bool X86MachObjectWriter::recordScatteredRelocation(MachObjectWriter *Writer,
@@ -599,8 +597,6 @@ void X86MachObjectWriter::RecordX86Relocation(MachObjectWriter *Writer,
   MRE.r_word1 =
       (Index << 0) | (IsPCRel << 24) | (Log2Size << 25) | (Type << 28);
   Writer->addRelocation(RelSymbol, Fragment, MRE);
-  Writer->addAddend(Fragment, FixedValue, (1 << Log2Size), Fixup.getOffset());
-  FixedValue = 0;
 }
 
 std::unique_ptr<MCObjectTargetWriter>

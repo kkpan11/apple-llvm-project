@@ -112,8 +112,11 @@ public:
   /// generated.
   virtual uint64_t writeObject(MCAssembler &Asm, const MCAsmLayout &Layout) = 0;
 
+  /// Copy the Addend Value, Offset in the fragment, and size into the
+  /// objectwriter if it is a MachOCASWriter or a MachObjectWriter otherwise
+  /// return false.
   virtual bool addAddend(const MCFragment *Fragment, uint64_t Addend,
-                         uint8_t Size, uint32_t Offset) = 0;
+                         uint32_t Offset, uint8_t Size) = 0;
 
   /// @}
 };

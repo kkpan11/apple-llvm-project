@@ -1107,56 +1107,56 @@ void MachObjectWriter::applyAddends(MCAssembler &Asm,
                                     const MCAsmLayout &Layout) {
   for (MCSection &Sec : Asm) {
     for (MCFragment &F : Sec) {
+      MutableArrayRef<char> Contents;
       switch (F.getKind()) {
-      default:
+      case MCFragment::FT_Align:
+      case MCFragment::FT_CompactEncodedInst:
+      case MCFragment::FT_Fill:
+      case MCFragment::FT_Nops:
+      case MCFragment::FT_Org:
+      case MCFragment::FT_LEB:
+      case MCFragment::FT_BoundaryAlign:
+      case MCFragment::FT_SymbolId:
+      case MCFragment::FT_CVInlineLines:
+      case MCFragment::FT_Dummy:
         continue;
 
       case MCFragment::FT_Data: {
-        MutableArrayRef<char> Contents = cast<MCDataFragment>(F).getContents();
-        applyAddendsHelper(Contents, &F);
+        Contents = cast<MCDataFragment>(F).getContents();
         break;
       }
 
       case MCFragment::FT_Relaxable: {
-        MutableArrayRef<char> Contents =
-            cast<MCRelaxableFragment>(F).getContents();
-        applyAddendsHelper(Contents, &F);
+        Contents = cast<MCRelaxableFragment>(F).getContents();
         break;
       }
 
       case MCFragment::FT_CVDefRange: {
-        MutableArrayRef<char> Contents =
-            cast<MCCVDefRangeFragment>(F).getContents();
-        applyAddendsHelper(Contents, &F);
+        Contents = cast<MCCVDefRangeFragment>(F).getContents();
         break;
       }
 
       case MCFragment::FT_Dwarf: {
-        MutableArrayRef<char> Contents =
-            cast<MCDwarfLineAddrFragment>(F).getContents();
-        applyAddendsHelper(Contents, &F);
+        Contents = cast<MCDwarfLineAddrFragment>(F).getContents();
         break;
       }
 
       case MCFragment::FT_DwarfFrame: {
-        MutableArrayRef<char> Contents =
-            cast<MCDwarfCallFrameFragment>(F).getContents();
-        applyAddendsHelper(Contents, &F);
+        Contents = cast<MCDwarfCallFrameFragment>(F).getContents();
         break;
       }
 
       case MCFragment::FT_PseudoProbe: {
-        MutableArrayRef<char> Contents =
-            cast<MCPseudoProbeAddrFragment>(F).getContents();
-        applyAddendsHelper(Contents, &F);
+        Contents = cast<MCPseudoProbeAddrFragment>(F).getContents();
         break;
       }
       }
+      applyAddendsHelper(Contents, &F);
     }
   }
 }
 
-void MachObjectWriter::applyAddendsHelper(MutableArrayRef<char> &Contents,
+void MachObjectWriter::applyAddendsHelper(MutableArrayRef<char> Contents,
                                           const MCFragment *Fragment) {
   for (auto ASO : Addends[Fragment]) {
     for (unsigned I = 0; I != ASO.Size; ++I)
