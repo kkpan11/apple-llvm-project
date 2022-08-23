@@ -221,6 +221,11 @@ Changes in existing checks
 
   - Don't emit an erroneous warning on self-moves.
 
+- Improved `modernize-use-equals-default <clang-tidy/checks/modernize/use-equals-default.html>`_ check.
+
+  The check now skips unions since in this case a default constructor with empty body
+  is not equivalent to the explicitly defaulted one.
+
 Removed checks
 ^^^^^^^^^^^^^^
 
