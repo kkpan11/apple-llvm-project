@@ -78,6 +78,17 @@ Error MCCASPrinter::printMCObject(MCObjectProxy MCObj, DWARFContext *DWARFCtx) {
   OS.indent(Indent);
   OS << formatv("{0, -15} {1} \n", MCObj.getKindString(),
                 MCSchema.CAS.getID(MCObj));
+  if (Options.HexDump) {
+    auto data = MCObj.getData();
+    while (!data.empty()) {
+      OS.indent(Indent);
+      llvm::interleave(
+          data.take_front(8), OS,
+          [this](unsigned char c) { OS << llvm::format_hex(c, 4); }, " ");
+      OS << "\n";
+      data = data.drop_front(data.size() < 8 ? data.size() : 8);
+    }
+  }
 
   // Dwarfdump.
   if (DWARFCtx) {
