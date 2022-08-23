@@ -105,6 +105,7 @@ Error CASDWARFObject::dump(raw_ostream &OS, int Indent, DWARFContext &DWARFCtx,
                            MCObjectProxy MCObj) const {
   OS.indent(Indent);
   DIDumpOptions DumpOpts;
+  DumpOpts.ShowChildren = true;
   Error Err = Error::success();
   StringRef Data = MCObj.getData();
   if (Data.empty())
@@ -167,7 +168,6 @@ Error CASDWARFObject::dump(raw_ostream &OS, int Indent, DWARFContext &DWARFCtx,
                        getLocSection(), isLittleEndian(), false, UV);
     OS << "Real abbr_offset: " << CUOffset->second << "\n";
     U.dump(OS, DumpOpts);
-    // TODO: Dump more than just the CU.
   }
   return Err;
 }
