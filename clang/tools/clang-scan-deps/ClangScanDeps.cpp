@@ -167,6 +167,11 @@ static llvm::cl::opt<bool> OptimizeArgs(
     llvm::cl::desc("Whether to optimize command-line arguments of modules."),
     llvm::cl::init(false), llvm::cl::cat(DependencyScannerCategory));
 
+static llvm::cl::opt<bool> EagerLoadModules(
+    "eager-load-pcm",
+    llvm::cl::desc("Load PCM files eagerly (instead of lazily on import)."),
+    llvm::cl::init(false), llvm::cl::cat(DependencyScannerCategory));
+
 llvm::cl::opt<unsigned>
     NumThreads("j", llvm::cl::Optional,
                llvm::cl::desc("Number of worker threads to use (default: use "
@@ -787,7 +792,7 @@ int main(int argc, const char **argv) {
   }
   DependencyScanningService Service(ScanMode, Format, CASOpts, FS,
                                     ReuseFileManager, OptimizeArgs,
-                                    OverrideCASTokenCache);
+                                    EagerLoadModules, OverrideCASTokenCache);
   llvm::ThreadPool Pool(llvm::hardware_concurrency(NumThreads));
 
   if (EmitCASCompDB) {

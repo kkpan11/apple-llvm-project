@@ -133,6 +133,8 @@ public:
   /// each invocation.
   llvm::IntrusiveRefCntPtr<FileManager> getOrCreateFileManager() const;
 
+  bool shouldEagerLoadModules() const { return EagerLoadModules; }
+
 private:
   std::shared_ptr<PCHContainerOperations> PCHContainerOps;
 
@@ -150,6 +152,8 @@ private:
   ScanningOutputFormat Format;
   /// Whether to optimize the modules' command-line arguments.
   bool OptimizeArgs;
+  /// Whether to set up command-lines to load PCM files eagerly.
+  bool EagerLoadModules;
 
   /// The caching file system.
   llvm::IntrusiveRefCntPtr<llvm::cas::CachingOnDiskFileSystem> CacheFS;
