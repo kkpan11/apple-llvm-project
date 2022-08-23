@@ -60,7 +60,7 @@ public:
       ScanningMode Mode, ScanningOutputFormat Format, CASOptions CASOpts,
       IntrusiveRefCntPtr<llvm::cas::CachingOnDiskFileSystem> SharedFS,
       bool ReuseFileManager = true, bool OptimizeArgs = false,
-      bool OverrideCASTokenCache = false);
+      bool EagerLoadModules = false, bool OverrideCASTokenCache = false);
 
   ScanningMode getMode() const { return Mode; }
 
@@ -69,6 +69,8 @@ public:
   bool canReuseFileManager() const { return ReuseFileManager; }
 
   bool canOptimizeArgs() const { return OptimizeArgs; }
+
+  bool shouldEagerLoadModules() const { return EagerLoadModules; }
 
   DependencyScanningFilesystemSharedCache &getSharedCache() {
     assert(!SharedFS && "Expected not to have a CASFS");
@@ -91,6 +93,8 @@ private:
   const bool ReuseFileManager;
   /// Whether to optimize the modules' command-line arguments.
   const bool OptimizeArgs;
+  /// Whether to set up command-lines to load PCM files eagerly.
+  const bool EagerLoadModules;
   /// CAS options.
   const bool OverrideCASTokenCache;
   /// Shared CachingOnDiskFileSystem. Set to nullptr to not use CAS dependency
