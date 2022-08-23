@@ -532,9 +532,9 @@ void DependencyScanningWorker::computeDependenciesFromCompilerInvocation(
   // compilation.
   DependencyScanningAction Action(
       WorkingDirectory, DepsConsumer, DepFS, DepCASFS, Format,
-      /*OptimizeArgs=*/false, /*DisableFree=*/false,
+      /*OptimizeArgs=*/false, /*DisableFree=*/false, EagerLoadModules,
       /*EmitDependencyFile=*/!DepFile.empty(), DiagGenerationAsCompilation,
-      EagerLoadModules, getCASOpts(), OverrideCASTokenCache,
+      getCASOpts(), OverrideCASTokenCache,
       /*ModuleName=*/None, VerboseOS);
 
   // Ignore result; we're just collecting dependencies.
