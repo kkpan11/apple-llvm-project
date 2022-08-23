@@ -1221,7 +1221,7 @@ public:
   InstructionCost
   getMemoryOpCost(unsigned Opcode, Type *Src, MaybeAlign Alignment,
                   unsigned AddressSpace, TTI::TargetCostKind CostKind,
-                  TTI::OperandValueKind OpdInfo = TTI::OK_AnyValue,
+                  TTI::OperandValueInfo OpInfo = {TTI::OK_AnyValue, TTI::OP_None},
                   const Instruction *I = nullptr) {
     assert(!Src->isVoidTy() && "Invalid type");
     // Assume types, such as structs, are expensive.
@@ -2350,7 +2350,7 @@ public:
                                            Optional<FastMathFlags> FMF,
                                            TTI::TargetCostKind CostKind) {
     // Without any native support, this is equivalent to the cost of
-    // vecreduce.op(ext).
+    // vecreduce.opcode(ext(Ty A)).
     VectorType *ExtTy = VectorType::get(ResTy, Ty);
     InstructionCost RedCost =
         thisT()->getArithmeticReductionCost(Opcode, ExtTy, FMF, CostKind);
@@ -2365,7 +2365,8 @@ public:
                                          VectorType *Ty,
                                          TTI::TargetCostKind CostKind) {
     // Without any native support, this is equivalent to the cost of
-    // vecreduce.add(mul(ext, ext)).
+    // vecreduce.add(mul(ext(Ty A), ext(Ty B))) or
+    // vecreduce.add(mul(A, B)).
     VectorType *ExtTy = VectorType::get(ResTy, Ty);
     InstructionCost RedCost = thisT()->getArithmeticReductionCost(
         Instruction::Add, ExtTy, None, CostKind);
