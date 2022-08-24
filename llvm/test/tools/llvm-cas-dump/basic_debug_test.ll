@@ -42,7 +42,7 @@
 ; DWARF:   DW_AT_comp_dir	("some_dir")
 ; DWARF:   DW_AT_low_pc	(0x0000000000000000)
 ; DWARF:   DW_AT_high_pc	(0x0000000000000008)
-
+; DWARF:   DW_TAG_subprogram
 ; DWARF: mc:debug_string
 ; DWARF:   0x00000000: "some_clang"
 ; DWARF: mc:debug_string

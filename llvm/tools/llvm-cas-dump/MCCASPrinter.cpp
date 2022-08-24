@@ -44,7 +44,7 @@ bool isDwarfSection(MCObjectProxy MCObj) {
 MCCASPrinter::MCCASPrinter(PrinterOptions Options, CASDB &CAS, raw_ostream &OS)
     : Options(Options), MCSchema(CAS), Indent{0}, OS(OS) {}
 
-MCCASPrinter::~MCCASPrinter() {}
+MCCASPrinter::~MCCASPrinter() { OS << "\n"; }
 
 Error MCCASPrinter::printMCObject(ObjectRef CASObj, DWARFContext *DWARFCtx) {
   // The object identifying the schema is not considered an MCObject, as such we
