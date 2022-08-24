@@ -798,6 +798,10 @@ private:
   /// The files that have been included.
   IncludedFilesSet IncludedFiles;
 
+  /// The set of top-level modules that affected preprocessing, but were not
+  /// imported.
+  llvm::SmallSetVector<Module *, 2> AffectingModules;
+
   /// The set of known macros exported from modules.
   llvm::FoldingSet<ModuleMacro> ModuleMacros;
 
@@ -1273,6 +1277,12 @@ public:
   }
 
   /// \}
+
+  /// Get the set of top-level modules that affected preprocessing, but were not
+  /// imported.
+  const llvm::SmallSetVector<Module *, 2> &getAffectingModules() const {
+    return AffectingModules;
+  }
 
   /// Mark the file as included.
   /// Returns true if this is the first time the file was included.
