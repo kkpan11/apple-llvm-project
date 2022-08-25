@@ -471,7 +471,7 @@ void CompilerInstance::createPreprocessor(TranslationUnitKind TUKind) {
     llvm::vfs::FileSystem &FS = getFileManager().getVirtualFileSystem();
     if (FS.isCASFS())
       PP->setPTHManager(std::make_unique<PTHManager>(
-          getOrCreateCAS(), getOrCreateActionCache(), &FS, *PP));
+          getOrCreateObjectStore(), getOrCreateActionCache(), &FS, *PP));
   }
 
   if (PPOpts.DetailedRecord)
@@ -852,13 +852,13 @@ llvm::vfs::OutputBackend &CompilerInstance::getOrCreateOutputBackend() {
   return getOutputBackend();
 }
 
-llvm::cas::ObjectStore &CompilerInstance::getOrCreateCAS() {
+llvm::cas::ObjectStore &CompilerInstance::getOrCreateObjectStore() {
   if (CAS)
     return *CAS;
 
   // Create a new CAS instance from the CompilerInvocation. Future calls to
   // createFileManager() will use the same CAS.
-  CAS = getInvocation().getCASOpts().getOrCreateCAS(
+  CAS = getInvocation().getCASOpts().getOrCreateObjectStore(
       getDiagnostics(),
       /*CreateEmptyCASOnFailure=*/true);
   return *CAS;
