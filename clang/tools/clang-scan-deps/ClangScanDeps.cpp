@@ -564,7 +564,7 @@ public:
           {"file-deps", toJSONSorted(MD.FileDeps)},
           {"clang-module-deps", toJSONSorted(MD.ClangModuleDeps)},
           {"clang-modulemap-file", MD.ClangModuleMapFile},
-          {"command-line", MD.getCanonicalCommandLine()},
+          {"command-line", MD.BuildArguments},
       };
       OutModules.push_back(std::move(O));
     }
