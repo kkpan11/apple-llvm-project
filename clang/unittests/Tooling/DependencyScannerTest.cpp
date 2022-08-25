@@ -232,7 +232,7 @@ TEST(DependencyScanner, ScanDepsWithFS) {
 
   DependencyScanningService Service(ScanningMode::DependencyDirectivesScan,
                                     ScanningOutputFormat::Make, CASOptions(),
-                                    nullptr);
+                                    nullptr, nullptr);
   DependencyScanningTool ScanTool(Service, VFS);
 
   std::string DepFile;
@@ -255,7 +255,7 @@ TEST(DependencyScanner, DepScanFSWithCASProvider) {
 
   DependencyScanningService Service(ScanningMode::DependencyDirectivesScan,
                                     ScanningOutputFormat::Make, CASOptions(),
-                                    nullptr);
+                                    nullptr, nullptr);
   {
     DependencyScanningWorkerFilesystem DepFS(Service.getSharedCache(),
                                              std::move(CASFS));

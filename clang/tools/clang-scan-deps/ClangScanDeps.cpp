@@ -18,6 +18,7 @@
 #include "clang/Tooling/Tooling.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/CAS/ActionCache.h"
 #include "llvm/CAS/CASDB.h"
 #include "llvm/CAS/CASProvidingFileSystem.h"
 #include "llvm/CAS/CachingOnDiskFileSystem.h"
@@ -802,6 +803,7 @@ int main(int argc, const char **argv) {
 
   CASOptions CASOpts;
   std::shared_ptr<llvm::cas::CASDB> CAS;
+  std::shared_ptr<llvm::cas::ActionCache> Cache;
   IntrusiveRefCntPtr<llvm::cas::CachingOnDiskFileSystem> FS;
   if (outputFormatRequiresCAS()) {
     if (!InMemoryCAS) {
@@ -811,12 +813,14 @@ int main(int argc, const char **argv) {
         CASOpts.ensurePersistentCAS();
     }
     CAS = CASOpts.getOrCreateCAS(Diags);
+    // FIXME: Cache is not used here so just create a dummy in-memory cache.
+    Cache = CASOpts.getOrCreateActionCache(Diags);
     if (!CAS)
       return 1;
     if (Format != ScanningOutputFormat::IncludeTree)
       FS = llvm::cantFail(llvm::cas::createCachingOnDiskFileSystem(*CAS));
   }
-  DependencyScanningService Service(ScanMode, Format, CASOpts, FS,
+  DependencyScanningService Service(ScanMode, Format, CASOpts, Cache, FS,
                                     ReuseFileManager, OptimizeArgs);
   llvm::ThreadPool Pool(llvm::hardware_concurrency(NumThreads));
 
