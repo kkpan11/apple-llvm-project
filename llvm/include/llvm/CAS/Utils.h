@@ -16,10 +16,11 @@ class MemoryBufferRef;
 
 namespace cas {
 
-class CASDB;
+class ObjectStore;
 class CASID;
 
-Expected<CASID> readCASIDBuffer(cas::CASDB &CAS, llvm::MemoryBufferRef Buffer);
+Expected<CASID> readCASIDBuffer(cas::ObjectStore &CAS,
+                                llvm::MemoryBufferRef Buffer);
 
 void writeCASIDBuffer(const CASID &ID, llvm::raw_ostream &OS);
 

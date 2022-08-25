@@ -27,8 +27,8 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/CAS/ActionCache.h"
-#include "llvm/CAS/CASDB.h"
 #include "llvm/CAS/HierarchicalTreeBuilder.h"
+#include "llvm/CAS/ObjectStore.h"
 #include "llvm/Support/DJB.h"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/ErrorOr.h"
@@ -344,7 +344,8 @@ SourceLocation PTHLexer::getSourceLocation() {
 // PTHManager methods.
 //===----------------------------------------------------------------------===//
 
-PTHManager::PTHManager(llvm::cas::CASDB &CAS, llvm::cas::ActionCache &Cache,
+PTHManager::PTHManager(llvm::cas::ObjectStore &CAS,
+                       llvm::cas::ActionCache &Cache,
                        IntrusiveRefCntPtr<llvm::vfs::FileSystem> FS,
                        Preprocessor &PP)
     : CAS(CAS), Cache(Cache), FS(std::move(FS)), PP(&PP) {

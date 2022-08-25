@@ -17,7 +17,7 @@
 namespace llvm {
 
 namespace cas {
-class CASDB;
+class ObjectStore;
 class CASID;
 } // namespace cas
 
@@ -116,8 +116,8 @@ public:
   /// target, e.g. masm.
   StringRef getAssemblyLanguage() const;
 
-  // CASDB.
-  std::shared_ptr<cas::CASDB> CASDB;
+  // ObjectStore.
+  std::shared_ptr<cas::ObjectStore> CAS;
 
   using ResultCallBackTy = std::function<Error(const cas::CASID &)>;
   Optional<ResultCallBackTy> ResultCallBack;

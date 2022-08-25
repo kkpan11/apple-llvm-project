@@ -15,7 +15,7 @@
 #define LLVM_OBJECT_MACHO_H
 
 #include "llvm/CAS/CASID.h"
-#include "llvm/CAS/CASDB.h"
+#include "llvm/CAS/ObjectStore.h"
 #include "llvm/Object/Binary.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Object/SymbolicFile.h"
@@ -30,13 +30,13 @@ namespace object {
 class CASObjectFile : public ObjectFile {
 public:
   static Expected<std::unique_ptr<CASObjectFile>> create(cas::CASID Object,
-                                                         cas::CASDB &DB);
+                                                         cas::ObjectStore &DB);
 
 private:
-  CASObjectFile(cas::CASID Object, cas::CASDB &DB);
+  CASObjectFile(cas::CASID Object, cas::ObjectStore &DB);
 
   cas::CASID Object;
-  cas::CASDB &CAS;
+  cas::ObjectStore &CAS;
 };
 
 } // namespace object

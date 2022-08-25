@@ -12,7 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Disassembler.h"
-#include "llvm/CAS/CASDB.h"
+#include "llvm/CAS/ObjectStore.h"
 #include "llvm/MC/MCAsmBackend.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCCodeEmitter.h"
@@ -531,9 +531,9 @@ int main(int argc, char **argv) {
   std::unique_ptr<buffer_ostream> BOS;
   raw_pwrite_stream *OS = &Out->os();
   std::unique_ptr<MCStreamer> Str;
-  std::unique_ptr<cas::CASDB> CASDB;
+  std::unique_ptr<cas::ObjectStore> CAS;
   if (CASPath.empty())
-    CASDB = cas::createInMemoryCAS();
+    CAS = cas::createInMemoryCAS();
   else {
     auto MaybeCAS = CASPath == "auto"
                         ? cas::createOnDiskCAS(cas::getDefaultOnDiskCASPath())
@@ -542,7 +542,7 @@ int main(int argc, char **argv) {
       WithColor::error() << toString(MaybeCAS.takeError()) << "\n";
       return 1;
     }
-    CASDB = std::move(*MaybeCAS);
+    CAS = std::move(*MaybeCAS);
   }
 
   std::unique_ptr<MCInstrInfo> MCII(TheTarget->createMCInstrInfo());
@@ -602,7 +602,7 @@ int main(int argc, char **argv) {
     MCAsmBackend *MAB = TheTarget->createMCAsmBackend(*STI, *MRI, MCOptions);
     Str.reset(TheTarget->createMCObjectStreamer(
         TheTriple, Ctx, std::unique_ptr<MCAsmBackend>(MAB),
-        UseCASBackend ? MAB->createCASObjectWriter(*OS, TheTriple, *CASDB,
+        UseCASBackend ? MAB->createCASObjectWriter(*OS, TheTriple, *CAS,
                                                    MCOptions, MCCASBackendMode)
         : DwoOut      ? MAB->createDwoObjectWriter(*OS, DwoOut->os())
                       : MAB->createObjectWriter(*OS),

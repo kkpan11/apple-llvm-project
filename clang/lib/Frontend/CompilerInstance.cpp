@@ -852,7 +852,7 @@ llvm::vfs::OutputBackend &CompilerInstance::getOrCreateOutputBackend() {
   return getOutputBackend();
 }
 
-llvm::cas::CASDB &CompilerInstance::getOrCreateCAS() {
+llvm::cas::ObjectStore &CompilerInstance::getOrCreateCAS() {
   if (CAS)
     return *CAS;
 

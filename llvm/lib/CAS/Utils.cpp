@@ -8,7 +8,7 @@
 
 #include "llvm/CAS/Utils.h"
 #include "llvm/BinaryFormat/Magic.h"
-#include "llvm/CAS/CASDB.h"
+#include "llvm/CAS/ObjectStore.h"
 #include "llvm/CAS/TreeSchema.h"
 // FIXME: It's layer violation including this (libLLVMCAS should not depend on
 // headers of libLLVMCASObjectFormats) but 'Encoding.h' itself should really
@@ -22,7 +22,8 @@ using namespace llvm;
 using namespace llvm::cas;
 using namespace llvm::casobjectformats;
 
-Expected<CASID> cas::readCASIDBuffer(cas::CASDB &CAS, MemoryBufferRef Buffer) {
+Expected<CASID> cas::readCASIDBuffer(cas::ObjectStore &CAS,
+                                     MemoryBufferRef Buffer) {
   if (identify_magic(Buffer.getBuffer()) != file_magic::cas_id)
     return createStringError(std::errc::invalid_argument,
                              "buffer does not contain a CASID");
@@ -67,7 +68,7 @@ static void printTreeEntryKind(raw_ostream &OS, TreeEntry::EntryKind Kind) {
   }
 }
 
-void cas::NamedTreeEntry::print(raw_ostream &OS, CASDB &CAS) const {
+void cas::NamedTreeEntry::print(raw_ostream &OS, ObjectStore &CAS) const {
   printTreeEntryKind(OS, getKind());
   OS << " " << CAS.getID(getRef()) << " " << Name;
   if (getKind() == TreeEntry::Tree)

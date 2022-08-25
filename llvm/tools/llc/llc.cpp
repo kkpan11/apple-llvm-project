@@ -16,7 +16,7 @@
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/Triple.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
-#include "llvm/CAS/CASDB.h"
+#include "llvm/CAS/ObjectStore.h"
 #include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/CodeGen/LinkAllAsmWriterComponents.h"
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
@@ -355,7 +355,7 @@ struct LLCDiagnosticHandler : public DiagnosticHandler {
 };
 
 /// Returns a pointer to a CAS using the CLI parameters.
-static std::unique_ptr<cas::CASDB> getCAS() {
+static std::unique_ptr<cas::ObjectStore> getCAS() {
   if (CASPath.empty())
     return cas::createInMemoryCAS();
   auto MaybeCAS = CASPath == "auto"
@@ -567,7 +567,7 @@ static int compileModule(char **argv, LLVMContext &Context) {
     // This is used for testing llc with a CAS backend.
     verifyCASOptions(TheTriple);
     Options.UseCASBackend = shouldUseCASBackend(TheTriple);
-    Options.MCOptions.CASDB = getCAS();
+    Options.MCOptions.CAS = getCAS();
     Options.MCOptions.CASObjMode = MCCASBackendMode;
   };
 

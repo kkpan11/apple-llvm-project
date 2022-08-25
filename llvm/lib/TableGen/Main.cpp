@@ -252,7 +252,7 @@ int llvm::TableGenMain(const char *argv0, TableGenMainFn *MainFn) {
 
 namespace {
 struct TableGenCache {
-  std::unique_ptr<cas::CASDB> CAS;
+  std::unique_ptr<cas::ObjectStore> CAS;
   std::unique_ptr<cas::ActionCache> Cache;
   Optional<cas::ObjectRef> ExecutableID;
   Optional<cas::ObjectRef> IncludesTreeID;

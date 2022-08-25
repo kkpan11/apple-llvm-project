@@ -106,7 +106,7 @@ TEST(FlatV1SchemaTest, RoundTrip) {
   }
 
   std::unique_ptr<jitlink::LinkGraph> RoundTripG;
-  std::unique_ptr<cas::CASDB> CAS = cas::createInMemoryCAS();
+  std::unique_ptr<cas::ObjectStore> CAS = cas::createInMemoryCAS();
   {
     // Convert to cas.o.
     ObjectFileSchema Schema(*CAS);

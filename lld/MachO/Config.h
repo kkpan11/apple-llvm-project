@@ -30,7 +30,7 @@
 
 namespace llvm {
 namespace cas {
-class CASDB;
+class ObjectStore;
 }
 namespace casobjectformats {
 class ObjectFormatSchemaPool;
@@ -200,7 +200,7 @@ struct Configuration {
   std::vector<SegmentProtection> segmentProtections;
 
   llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> fs;
-  std::unique_ptr<llvm::cas::CASDB> CAS;
+  std::unique_ptr<llvm::cas::ObjectStore> CAS;
   std::unique_ptr<llvm::cas::ActionCache> actionCache;
   std::unique_ptr<llvm::casobjectformats::ObjectFormatSchemaPool> CASSchemas;
   bool depScanning = false;

@@ -9,7 +9,7 @@
 #include "llvm/MC/MCAsmBackend.h"
 #include "llvm/ADT/None.h"
 #include "llvm/ADT/STLArrayExtras.h"
-#include "llvm/CAS/CASDB.h"
+#include "llvm/CAS/ObjectStore.h"
 #include "llvm/MC/MCDXContainerWriter.h"
 #include "llvm/MC/MCELFObjectWriter.h"
 #include "llvm/MC/MCFixupKindInfo.h"
@@ -61,7 +61,7 @@ MCAsmBackend::createObjectWriter(raw_pwrite_stream &OS) const {
 }
 
 std::unique_ptr<MCObjectWriter> MCAsmBackend::createCASObjectWriter(
-    raw_pwrite_stream &OS, const Triple &TT, cas::CASDB &CAS,
+    raw_pwrite_stream &OS, const Triple &TT, cas::ObjectStore &CAS,
     const MCTargetOptions &MCOpts, CASBackendMode Mode) const {
   auto TW = createObjectTargetWriter();
   switch (TW->getFormat()) {

@@ -117,7 +117,7 @@ public:
   createFromLinkGraphImpl(const jitlink::LinkGraph &G,
                           raw_ostream *DebugOS) const override;
 
-  ObjectFileSchema(cas::CASDB &CAS);
+  ObjectFileSchema(cas::ObjectStore &CAS);
 
   Expected<ObjectFormatObjectProxy> create(ArrayRef<cas::ObjectRef> Refs,
                                            StringRef Data) const {

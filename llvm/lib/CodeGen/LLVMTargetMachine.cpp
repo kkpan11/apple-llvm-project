@@ -206,7 +206,7 @@ Expected<std::unique_ptr<MCStreamer>> LLVMTargetMachine::createMCStreamer(
         T, Context, std::unique_ptr<MCAsmBackend>(MAB),
         Options.UseCASBackend
             ? MAB->createCASObjectWriter(
-                  Out, getTargetTriple(), *Options.MCOptions.CASDB,
+                  Out, getTargetTriple(), *Options.MCOptions.CAS,
                   Options.MCOptions, Options.MCOptions.CASObjMode)
         : DwoOut ? MAB->createDwoObjectWriter(Out, *DwoOut)
                  : MAB->createObjectWriter(Out),

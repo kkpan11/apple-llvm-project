@@ -29,7 +29,7 @@ struct PrinterOptions {
 struct MCCASPrinter {
   /// Creates a printer object capable of printing MCCAS objects inside `CAS`.
   /// Output is sent to `OS`.
-  MCCASPrinter(PrinterOptions Options, cas::CASDB &CAS, raw_ostream &OS);
+  MCCASPrinter(PrinterOptions Options, cas::ObjectStore &CAS, raw_ostream &OS);
   ~MCCASPrinter();
 
   /// If `CASObj` is an MCObject, prints its contents and all nodes referenced

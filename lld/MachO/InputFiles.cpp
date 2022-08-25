@@ -2252,7 +2252,7 @@ loadArchiveMember(MemoryBufferRef mb, uint32_t modTime, StringRef archiveName,
                              forceHidden);
   case file_magic::cas_id: {
     StringRef memberName = mb.getBufferIdentifier();
-    CASDB &cas = *config->CAS;
+    ObjectStore &cas = *config->CAS;
     auto id = readCASIDBuffer(cas, mb);
     if (!id) {
       error(archiveName + ": archive member " + memberName +
