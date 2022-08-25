@@ -40,8 +40,10 @@ static bool shouldCacheInvocation(ArrayRef<const char *> Args,
   CheckArgs.erase(
       llvm::remove_if(CheckArgs, [](StringRef Arg) { return Arg == "-###"; }),
       CheckArgs.end());
-  std::shared_ptr<CompilerInvocation> CInvok =
-      createInvocationFromCommandLine(CheckArgs, Diags);
+  // 'ShouldRecoverOnErorrs' enables picking the first invocation in a
+  // multi-arch build.
+  std::shared_ptr<CompilerInvocation> CInvok = createInvocationFromCommandLine(
+      CheckArgs, Diags, /*VFS*/ nullptr, /*ShouldRecoverOnErorrs*/ true);
   if (!CInvok)
     return false;
   if (CInvok->getLangOpts()->Modules) {
