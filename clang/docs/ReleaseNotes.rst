@@ -106,6 +106,13 @@ Improvements to Clang's diagnostics
   compile-time value and printed out if the assertion fails.
 - Diagnostics about uninitialized ``constexpr`` varaibles have been improved
   to mention the missing constant initializer.
+- Correctly diagnose a future keyword if it exist as a keyword in the higher
+  language version and specifies in which version it will be a keyword. This
+  supports both c and c++ language.
+
+Non-comprehensive list of changes in this release
+-------------------------------------------------
+
 
 Non-comprehensive list of changes in this release
 -------------------------------------------------
@@ -176,7 +183,7 @@ C++20 Feature Support
 
 - Correctly set expression evaluation context as 'immediate function context' in
   consteval functions.
-  This fixes `GH51182 https://github.com/llvm/llvm-project/issues/51182`
+  This fixes `GH51182 <https://github.com/llvm/llvm-project/issues/51182>`
 
 
 C++2b Feature Support
