@@ -364,8 +364,8 @@ AVRAsmBackend::createObjectTargetWriter() const {
 void AVRAsmBackend::applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
                                const MCValue &Target,
                                MutableArrayRef<char> Data, uint64_t Value,
-                               bool IsResolved,
-                               const MCSubtargetInfo *STI) const {
+                               bool IsResolved, const MCSubtargetInfo *STI,
+                               const MCFragment *Fragment) const {
   adjustFixupValue(Fixup, Target, Value, &Asm.getContext());
   if (Value == 0)
     return; // Doesn't change encoding.

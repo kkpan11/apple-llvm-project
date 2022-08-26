@@ -557,8 +557,8 @@ bool RISCVAsmBackend::evaluateTargetFixup(
 void RISCVAsmBackend::applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
                                  const MCValue &Target,
                                  MutableArrayRef<char> Data, uint64_t Value,
-                                 bool IsResolved,
-                                 const MCSubtargetInfo *STI) const {
+                                 bool IsResolved, const MCSubtargetInfo *STI,
+                                 const MCFragment *Fragment) const {
   MCFixupKind Kind = Fixup.getKind();
   if (Kind >= FirstLiteralRelocationKind)
     return;
