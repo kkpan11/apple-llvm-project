@@ -247,8 +247,24 @@ TEST_F(TestTypeSystemSwiftTypeRef, GetTypeInfo) {
                                          b.NodeWithIndex(Node::Kind::Index,
                                                          0)))))))));
     CompilerType p = GetCompilerType(b.Mangle(n));
-    ASSERT_EQ(p.GetTypeInfo(), (eTypeIsEnumeration | eTypeIsSwift |
-                                eTypeIsGeneric | eTypeIsBound));
+    ASSERT_EQ(p.GetTypeInfo(),
+              (eTypeIsEnumeration | eTypeIsSwift | eTypeHasUnboundGeneric));
+  }
+  {
+    NodePointer n = b.GlobalType(
+        b.Node(Node::Kind::Tuple,
+               b.Node(Node::Kind::TupleElement,
+                      b.Node(Node::Kind::TupleElementName, "self"), 
+                                 b.Node(Node::Kind::DynamicSelf,
+                                        b.Node(Node::Kind::Type,
+                                        b.Node(Node::Kind::Class,
+                               b.Node(Node::Kind::Module, "a"),
+                               b.Node(Node::Kind::Identifier,
+                                      "Child")))))));
+
+    CompilerType p = GetCompilerType(b.Mangle(n));
+    ASSERT_EQ(p.GetTypeInfo(), (eTypeHasChildren | eTypeIsSwift | eTypeIsTuple |
+                                eTypeHasDynamicSelf));
   }
 }
 
