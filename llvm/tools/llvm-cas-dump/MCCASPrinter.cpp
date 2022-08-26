@@ -79,13 +79,21 @@ Error MCCASPrinter::printMCObject(MCObjectProxy MCObj, DWARFContext *DWARFCtx) {
   OS << formatv("{0, -15} {1} \n", MCObj.getKindString(), MCObj.getID());
   if (Options.HexDump) {
     auto data = MCObj.getData();
-    while (!data.empty()) {
+    if (Options.HexDumpOneLine) {
       OS.indent(Indent);
       llvm::interleave(
-          data.take_front(8), OS,
+          data.take_front(data.size()), OS,
           [this](unsigned char c) { OS << llvm::format_hex(c, 4); }, " ");
       OS << "\n";
-      data = data.drop_front(data.size() < 8 ? data.size() : 8);
+    } else {
+      while (!data.empty()) {
+        OS.indent(Indent);
+        llvm::interleave(
+            data.take_front(8), OS,
+            [this](unsigned char c) { OS << llvm::format_hex(c, 4); }, " ");
+        OS << "\n";
+        data = data.drop_front(data.size() < 8 ? data.size() : 8);
+      }
     }
   }
 
