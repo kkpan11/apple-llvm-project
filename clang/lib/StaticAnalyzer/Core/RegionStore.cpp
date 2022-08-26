@@ -370,6 +370,16 @@ private:
   /// To disable all small-struct-dependent behavior, set the option to "0".
   unsigned SmallStructLimit;
 
+  /// The largest number of element an array can have and still be
+  /// considered "small".
+  ///
+  /// This is currently used to decide whether or not it is worth "forcing" a
+  /// LazyCompoundVal on bind.
+  ///
+  /// This is controlled by 'region-store-small-struct-limit' option.
+  /// To disable all small-struct-dependent behavior, set the option to "0".
+  unsigned SmallArrayLimit;
+
   /// A helper used to populate the work list with the given set of
   /// regions.
   void populateWorkList(InvalidateRegionsWorker &W,
@@ -380,10 +390,11 @@ public:
   RegionStoreManager(ProgramStateManager& mgr, const RegionStoreFeatures &f)
     : StoreManager(mgr), Features(f),
       RBFactory(mgr.getAllocator()), CBFactory(mgr.getAllocator()),
-      SmallStructLimit(0) {
+      SmallStructLimit(0), SmallArrayLimit(0) {
     ExprEngine &Eng = StateMgr.getOwningEngine();
     AnalyzerOptions &Options = Eng.getAnalysisManager().options;
     SmallStructLimit = Options.RegionStoreSmallStructLimit;
+    SmallArrayLimit = Options.RegionStoreSmallArrayLimit;
   }
 
 
@@ -513,6 +524,11 @@ public: // Part of public interface to class.
   /// BindVector - Bind a compound value to a vector.
   RegionBindingsRef bindVector(RegionBindingsConstRef B,
                                const TypedValueRegion* R, SVal V);
+
+  Optional<RegionBindingsRef> tryBindSmallArray(RegionBindingsConstRef B,
+                                                const TypedValueRegion *R,
+                                                const ArrayType *AT,
+                                                nonloc::LazyCompoundVal LCV);
 
   RegionBindingsRef bindArray(RegionBindingsConstRef B,
                               const TypedValueRegion* R,
@@ -1908,6 +1924,30 @@ SVal RegionStoreManager::getSValFromStringLiteral(const StringLiteral *SL,
   return svalBuilder.makeIntVal(Code, ElemT);
 }
 
+static Optional<SVal> getDerivedSymbolForBinding(
+    RegionBindingsConstRef B, const TypedValueRegion *BaseRegion,
+    const TypedValueRegion *SubReg, const ASTContext &Ctx, SValBuilder &SVB) {
+  assert(BaseRegion);
+  QualType BaseTy = BaseRegion->getValueType();
+  QualType Ty = SubReg->getValueType();
+  if (BaseTy->isScalarType() && Ty->isScalarType()) {
+    if (Ctx.getTypeSizeInChars(BaseTy) >= Ctx.getTypeSizeInChars(Ty)) {
+      if (const Optional<SVal> &ParentValue = B.getDirectBinding(BaseRegion)) {
+        if (SymbolRef ParentValueAsSym = ParentValue->getAsSymbol())
+          return SVB.getDerivedRegionValueSymbolVal(ParentValueAsSym, SubReg);
+
+        if (ParentValue->isUndef())
+          return UndefinedVal();
+
+        // Other cases: give up.  We are indexing into a larger object
+        // that has some value, but we don't know how to handle that yet.
+        return UnknownVal();
+      }
+    }
+  }
+  return None;
+}
+
 SVal RegionStoreManager::getBindingForElement(RegionBindingsConstRef B,
                                               const ElementRegion* R) {
   // Check if the region has a binding.
@@ -1952,27 +1992,10 @@ SVal RegionStoreManager::getBindingForElement(RegionBindingsConstRef B,
   if (!O.getRegion())
     return UnknownVal();
 
-  if (const TypedValueRegion *baseR =
-        dyn_cast_or_null<TypedValueRegion>(O.getRegion())) {
-    QualType baseT = baseR->getValueType();
-    if (baseT->isScalarType()) {
-      QualType elemT = R->getElementType();
-      if (elemT->isScalarType()) {
-        if (Ctx.getTypeSizeInChars(baseT) >= Ctx.getTypeSizeInChars(elemT)) {
-          if (const Optional<SVal> &V = B.getDirectBinding(superR)) {
-            if (SymbolRef parentSym = V->getAsSymbol())
-              return svalBuilder.getDerivedRegionValueSymbolVal(parentSym, R);
+  if (const TypedValueRegion *baseR = dyn_cast<TypedValueRegion>(O.getRegion()))
+    if (auto V = getDerivedSymbolForBinding(B, baseR, R, Ctx, svalBuilder))
+      return *V;
 
-            if (V->isUnknownOrUndef())
-              return *V;
-            // Other cases: give up.  We are indexing into a larger object
-            // that has some value, but we don't know how to handle that yet.
-            return UnknownVal();
-          }
-        }
-      }
-    }
-  }
   return getBindingForFieldOrElementCommon(B, R, R->getElementType());
 }
 
@@ -2013,6 +2036,26 @@ SVal RegionStoreManager::getBindingForField(RegionBindingsConstRef B,
           }
         }
   }
+
+  // Handle the case where we are accessing into a larger scalar object.
+  // For example, this handles:
+  //   struct header {
+  //     unsigned a : 1;
+  //     unsigned b : 1;
+  //   };
+  //   struct parse_t {
+  //     unsigned bits0 : 1;
+  //     unsigned bits2 : 2; // <-- header
+  //     unsigned bits4 : 4;
+  //   };
+  //   int parse(parse_t *p) {
+  //     unsigned copy = p->bits2;
+  //     header *bits = (header *)&copy;
+  //     return bits->b;  <-- here
+  //   }
+  if (const auto *Base = dyn_cast<TypedValueRegion>(R->getBaseRegion()))
+    if (auto V = getDerivedSymbolForBinding(B, Base, R, Ctx, svalBuilder))
+      return *V;
 
   return getBindingForFieldOrElementCommon(B, R, Ty);
 }
@@ -2430,6 +2473,40 @@ RegionStoreManager::setImplicitDefaultValue(RegionBindingsConstRef B,
   return B.addBinding(R, BindingKey::Default, V);
 }
 
+Optional<RegionBindingsRef> RegionStoreManager::tryBindSmallArray(
+    RegionBindingsConstRef B, const TypedValueRegion *R, const ArrayType *AT,
+    nonloc::LazyCompoundVal LCV) {
+
+  auto CAT = dyn_cast<ConstantArrayType>(AT);
+
+  // If we don't know the size, create a lazyCompoundVal instead.
+  if (!CAT)
+    return None;
+
+  QualType Ty = CAT->getElementType();
+  if (!(Ty->isScalarType() || Ty->isReferenceType()))
+    return None;
+
+  // If the array is too big, create a LCV instead.
+  uint64_t ArrSize = CAT->getSize().getLimitedValue();
+  if (ArrSize > SmallArrayLimit)
+    return None;
+
+  RegionBindingsRef NewB = B;
+
+  for (uint64_t i = 0; i < ArrSize; ++i) {
+    auto Idx = svalBuilder.makeArrayIndex(i);
+    const ElementRegion *SrcER =
+        MRMgr.getElementRegion(Ty, Idx, LCV.getRegion(), Ctx);
+    SVal V = getBindingForElement(getRegionBindings(LCV.getStore()), SrcER);
+
+    const ElementRegion *DstER = MRMgr.getElementRegion(Ty, Idx, R, Ctx);
+    NewB = bind(NewB, loc::MemRegionVal(DstER), V);
+  }
+
+  return NewB;
+}
+
 RegionBindingsRef
 RegionStoreManager::bindArray(RegionBindingsConstRef B,
                               const TypedValueRegion* R,
@@ -2451,8 +2528,13 @@ RegionStoreManager::bindArray(RegionBindingsConstRef B,
   }
 
   // Handle lazy compound values.
-  if (Init.getAs<nonloc::LazyCompoundVal>())
+  if (Optional<nonloc::LazyCompoundVal> LCV =
+          Init.getAs<nonloc::LazyCompoundVal>()) {
+    if (Optional<RegionBindingsRef> NewB = tryBindSmallArray(B, R, AT, *LCV))
+      return *NewB;
+
     return bindAggregate(B, R, Init);
+  }
 
   if (Init.isUnknown())
     return bindAggregate(B, R, UnknownVal());
