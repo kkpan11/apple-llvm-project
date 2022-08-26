@@ -2758,8 +2758,7 @@ void InnerLoopVectorizer::scalarizeInstruction(Instruction *Instr,
   for (const auto &I : enumerate(RepRecipe->operands())) {
     auto InputInstance = Instance;
     VPValue *Operand = I.value();
-    VPReplicateRecipe *OperandR = dyn_cast<VPReplicateRecipe>(Operand);
-    if (OperandR && OperandR->isUniform())
+    if (vputils::isUniformAfterVectorization(Operand))
       InputInstance.Lane = VPLane::getFirstLane();
     Cloned->setOperand(I.index(), State.get(Operand, InputInstance));
   }
@@ -9868,8 +9867,7 @@ Value *VPTransformState::get(VPValue *Def, unsigned Part) {
     return ScalarValue;
   }
 
-  auto *RepR = dyn_cast<VPReplicateRecipe>(Def);
-  bool IsUniform = RepR && RepR->isUniform();
+  bool IsUniform = vputils::isUniformAfterVectorization(Def);
 
   unsigned LastLane = IsUniform ? 0 : VF.getKnownMinValue() - 1;
   // Check if there is a scalar value for the selected lane.

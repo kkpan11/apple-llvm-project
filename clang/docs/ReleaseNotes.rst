@@ -78,6 +78,13 @@ Bug Fixes
 - ``-Wtautological-compare`` missed warnings for tautological comparisons
   involving a negative integer literal. This fixes
   `Issue 42918 <https://github.com/llvm/llvm-project/issues/42918>`_.
+- Fix a crash when generating code coverage information for an
+  ``if consteval`` statement. This fixes
+  `Issue 57377 <https://github.com/llvm/llvm-project/issues/57377>`_.
+- Fix assert that triggers a crash during template name lookup when a type was
+  incomplete but was not also a TagType. This fixes
+  `Issue 57387 <https://github.com/llvm/llvm-project/issues/57387>`_.
+
 
 Improvements to Clang's diagnostics
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
