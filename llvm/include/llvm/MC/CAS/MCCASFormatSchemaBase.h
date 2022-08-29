@@ -9,8 +9,8 @@
 #ifndef LLVM_MC_CAS_MCCASFORMATSCHEMABASE_H
 #define LLVM_MC_CAS_MCCASFORMATSCHEMABASE_H
 
-#include "llvm/CAS/CASDB.h"
 #include "llvm/CAS/CASNodeSchema.h"
+#include "llvm/CAS/ObjectStore.h"
 #include "llvm/MC/MCAssembler.h"
 #include "llvm/MC/MCMachOCASWriter.h"
 #include "llvm/Support/Casting.h"
@@ -41,7 +41,7 @@ protected:
       llvm::MachOCASWriter &ObjectWriter, llvm::MCAssembler &Asm,
       const llvm::MCAsmLayout &Layout, raw_ostream *DebugOS) const = 0;
 
-  MCFormatSchemaBase(cas::CASDB &CAS)
+  MCFormatSchemaBase(cas::ObjectStore &CAS)
       : MCFormatSchemaBase::RTTIExtends(CAS) {}
 };
 
@@ -54,7 +54,7 @@ void addMCFormatSchemas(cas::SchemaPool &Pool);
 class MCFormatSchemaPool {
 public:
   /// Creates all the schemas up front.
-  explicit MCFormatSchemaPool(cas::CASDB &CAS) : Pool(CAS) {
+  explicit MCFormatSchemaPool(cas::ObjectStore &CAS) : Pool(CAS) {
     addMCFormatSchemas(Pool);
   }
 
@@ -70,7 +70,7 @@ public:
   }
 
   cas::SchemaPool &getPool() { return Pool; }
-  cas::CASDB &getCAS() const { return Pool.getCAS(); }
+  cas::ObjectStore &getCAS() const { return Pool.getCAS(); }
 
 private:
   cas::SchemaPool Pool;

@@ -22,7 +22,7 @@ namespace llvm {
 class Error;
 namespace cas {
 class ActionCache;
-class CASDB;
+class ObjectStore;
 } // end namespace cas
 } // end namespace llvm
 
@@ -75,7 +75,7 @@ private:
 /// Options configuring which CAS to use. User-accessible fields should be
 /// defined in CASConfiguration to enable caching a CAS instance.
 ///
-/// CASOptions includes \a getOrCreateCAS() and \a
+/// CASOptions includes \a getOrCreateObjectStore() and \a
 /// getOrCreateActionCache() for creating CAS and ActionCache.
 ///
 /// FIXME: The the caching is done here, instead of as a field in \a
@@ -91,9 +91,9 @@ public:
   ///
   /// If \p CreateEmptyCASOnFailure, returns an empty in-memory CAS on failure.
   /// Else, returns \c nullptr on failure.
-  std::shared_ptr<llvm::cas::CASDB>
-  getOrCreateCAS(DiagnosticsEngine &Diags,
-                 bool CreateEmptyCASOnFailure = false) const;
+  std::shared_ptr<llvm::cas::ObjectStore>
+  getOrCreateObjectStore(DiagnosticsEngine &Diags,
+                         bool CreateEmptyCASOnFailure = false) const;
 
   /// Get a ActionCache defined by the options above. Future calls will return
   /// the same ActionCache instance... unless the configuration has changed, in
@@ -110,8 +110,8 @@ public:
   ///
   /// The configuration will be wiped out to prevent it being observable or
   /// affecting the output of something that takes \a CASOptions as an input.
-  /// This also "locks in" the return value of \a getOrCreateCAS(): future
-  /// calls will not check if the configuration has changed.
+  /// This also "locks in" the return value of \a getOrCreateObjectStore():
+  /// future calls will not check if the configuration has changed.
   void freezeConfig(DiagnosticsEngine &Diags);
 
   /// If the configuration is not for a persistent store, it modifies it to the
@@ -124,7 +124,7 @@ private:
 
   struct CachedCAS {
     /// A cached CAS instance.
-    std::shared_ptr<llvm::cas::CASDB> CAS;
+    std::shared_ptr<llvm::cas::ObjectStore> CAS;
     /// An ActionCache instnace.
     std::shared_ptr<llvm::cas::ActionCache> AC;
 

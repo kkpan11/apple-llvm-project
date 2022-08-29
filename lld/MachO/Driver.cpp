@@ -38,10 +38,10 @@
 #include "llvm/BinaryFormat/MachO.h"
 #include "llvm/BinaryFormat/Magic.h"
 #include "llvm/CAS/ActionCache.h"
-#include "llvm/CAS/CASDB.h"
 #include "llvm/CAS/CASFileSystem.h"
 #include "llvm/CAS/CachingOnDiskFileSystem.h"
 #include "llvm/CAS/HierarchicalTreeBuilder.h"
+#include "llvm/CAS/ObjectStore.h"
 #include "llvm/CAS/Utils.h"
 #include "llvm/CASObjectFormats/ObjectFormatSchemaBase.h"
 #include "llvm/Config/llvm-config.h"
@@ -388,7 +388,7 @@ static InputFile *addFile(StringRef path, LoadType loadType,
               error(archiveName + ": archive member " + memberName +
                     " embedding a CAS-ID but CAS is not enabled");
             }
-            CASDB &CAS = *config->CAS;
+            ObjectStore &CAS = *config->CAS;
             auto ID = readCASIDBuffer(CAS, *mb);
             if (!ID) {
               error(archiveName + ": archive member " + memberName +
@@ -453,7 +453,7 @@ static InputFile *addFile(StringRef path, LoadType loadType,
       error(path + ": embedding a CAS-ID but CAS is not enabled");
       break;
     }
-    CASDB &CAS = *config->CAS;
+    ObjectStore &CAS = *config->CAS;
     Expected<CASID> expCASID = readCASIDBuffer(CAS, mbref);
     if (!expCASID) {
       error(path + ": failed reading: " + toString(expCASID.takeError()));
@@ -1408,7 +1408,7 @@ static bool shouldCacheResults(InputArgList &args) {
 static bool link(InputArgList &args, bool canExitEarly, raw_ostream &stdoutOS,
                  raw_ostream &stderrOS);
 
-static CASID createResultCacheKey(CASDB &CAS, cas::ObjectRef rootID,
+static CASID createResultCacheKey(ObjectStore &CAS, cas::ObjectRef rootID,
                                   const InputArgList &args) {
   // Change this when the schema for caching changes. It will ensure creation of
   // brand new cachets.
@@ -1429,7 +1429,7 @@ static CASID createResultCacheKey(CASDB &CAS, cas::ObjectRef rootID,
   return cantFail(builder.create(CAS)).getID();
 }
 
-static Error replayResult(CASDB &CAS, CASID resultID) {
+static Error replayResult(ObjectStore &CAS, CASID resultID) {
   TimeTraceScope timeScope("Caching: replay result");
 
   std::unique_ptr<vfs::FileSystem> fs;
@@ -1460,7 +1460,7 @@ static bool linkWithResultCaching(InputArgList &args, bool canExitEarly,
                                   raw_ostream &stdoutOS,
                                   raw_ostream &stderrOS) {
   assert(config->CAS);
-  CASDB &CAS = *config->CAS;
+  ObjectStore &CAS = *config->CAS;
 
   Optional<CASID> optCacheKey;
   Optional<ObjectProxy> rootRef;

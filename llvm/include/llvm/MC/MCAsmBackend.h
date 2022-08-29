@@ -41,7 +41,7 @@ class Triple;
 class raw_ostream;
 
 namespace cas {
-class CASDB;
+class ObjectStore;
 } // namespace cas
 
 /// Generic interface to target specific assembler backends.
@@ -83,7 +83,7 @@ public:
   /// Create a CAS object writer for the assembler backend.
   std::unique_ptr<MCObjectWriter>
   createCASObjectWriter(raw_pwrite_stream &OS, const Triple &TT,
-                        cas::CASDB &CAS, const MCTargetOptions &MCOpts,
+                        cas::ObjectStore &CAS, const MCTargetOptions &MCOpts,
                         CASBackendMode Mode) const;
 
   /// Create an MCObjectWriter that writes two object files: a .o file which is

@@ -13,7 +13,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/CAS/CASDB.h"
+#include "llvm/CAS/ObjectStore.h"
 #include "llvm/Support/Error.h"
 
 namespace llvm {
@@ -43,7 +43,7 @@ void scanTextForIncludes(StringRef Input, SmallVectorImpl<StringRef> &Includes);
 ///
 /// \p ExecID is the Blob for the running executable. It can be used as part of
 /// the key for caching to avoid (fixed) bugs poisoning results.
-Error scanTextForIncludes(cas::CASDB &CAS, cas::ActionCache &Cache,
+Error scanTextForIncludes(cas::ObjectStore &CAS, cas::ActionCache &Cache,
                           cas::ObjectRef ExecID, const cas::ObjectProxy &Blob,
                           SmallVectorImpl<StringRef> &Includes);
 
@@ -81,8 +81,9 @@ struct ScanIncludesResult {
 /// it'd be useful for build systems that want to collect dependencies ahead of
 /// time. Maybe can separate a tool/etc. for that.
 Expected<ScanIncludesResult>
-scanIncludes(cas::CASDB &CAS, cas::ActionCache &Cache, cas::ObjectRef ExecID,
-             StringRef MainFilename, ArrayRef<std::string> IncludeDirs,
+scanIncludes(cas::ObjectStore &CAS, cas::ActionCache &Cache,
+             cas::ObjectRef ExecID, StringRef MainFilename,
+             ArrayRef<std::string> IncludeDirs,
              ArrayRef<MappedPrefix> PrefixMappings = None,
              Optional<TreePathPrefixMapper> *CapturedPM = nullptr);
 
@@ -93,7 +94,7 @@ scanIncludes(cas::CASDB &CAS, cas::ActionCache &Cache, cas::ObjectRef ExecID,
 /// \p ExecID is the Blob for the running executable. It can be used as part of
 /// the key for caching to avoid (fixed) bugs poisoning results.
 Expected<ScanIncludesResult>
-scanIncludesAndRemap(cas::CASDB &CAS, cas::ActionCache &Cache,
+scanIncludesAndRemap(cas::ObjectStore &CAS, cas::ActionCache &Cache,
                      cas::ObjectRef ExecID, std::string &MainFilename,
                      std::vector<std::string> &IncludeDirs,
                      ArrayRef<MappedPrefix> PrefixMappings);

@@ -10,7 +10,7 @@
 #include "llvm/ADT/PointerUnion.h"
 #include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/STLExtras.h"
-#include "llvm/CAS/CASDB.h"
+#include "llvm/CAS/ObjectStore.h"
 #include "llvm/CASObjectFormats/Data.h"
 #include "llvm/CASObjectFormats/Encoding.h"
 #include "llvm/CASObjectFormats/ObjectFormatHelpers.h"
@@ -67,7 +67,7 @@ ObjectFileSchema::createFromLinkGraphImpl(const jitlink::LinkGraph &G,
   return CompileUnitRef::create(*this, G, DebugOS);
 }
 
-ObjectFileSchema::ObjectFileSchema(cas::CASDB &CAS)
+ObjectFileSchema::ObjectFileSchema(cas::ObjectStore &CAS)
     : ObjectFileSchema::RTTIExtends(CAS) {
   // Fill the cache immediately to preserve thread-safety.
   if (Error E = fillCache())

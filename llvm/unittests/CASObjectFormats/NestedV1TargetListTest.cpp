@@ -87,7 +87,7 @@ protected:
   jitlink::Section *Section = nullptr;
   jitlink::Block *Z = nullptr;
   jitlink::Symbol *DefinedS = nullptr;
-  std::unique_ptr<cas::CASDB> CAS;
+  std::unique_ptr<cas::ObjectStore> CAS;
   Optional<ObjectFileSchema> Schema;
   Optional<NameRef> CreatedExternalS;
   Optional<BlockRef> ZeroBlock;

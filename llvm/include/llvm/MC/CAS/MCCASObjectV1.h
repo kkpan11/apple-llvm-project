@@ -10,8 +10,8 @@
 #define LLVM_MC_CAS_MCCASOBJECTV1_H
 
 #include "llvm/BinaryFormat/MachO.h"
-#include "llvm/CAS/CASDB.h"
 #include "llvm/CAS/CASID.h"
+#include "llvm/CAS/ObjectStore.h"
 #include "llvm/MC/CAS/MCCASFormatSchemaBase.h"
 #include "llvm/MC/CAS/MCCASReader.h"
 #include "llvm/MC/MCAsmLayout.h"
@@ -100,7 +100,7 @@ public:
   Error serializeObjectFile(cas::ObjectProxy RootNode,
                             raw_ostream &OS) const override;
 
-  MCSchema(cas::CASDB &CAS);
+  MCSchema(cas::ObjectStore &CAS);
 
   Expected<MCObjectProxy> create(ArrayRef<cas::ObjectRef> Refs,
                                  StringRef Data) const {
@@ -333,7 +333,7 @@ DwarfSectionsCache getDwarfSections(MCAssembler &Asm);
 
 class MCCASBuilder {
 public:
-  cas::CASDB &CAS;
+  cas::ObjectStore &CAS;
   MachOCASWriter &ObjectWriter;
   const MCSchema &Schema;
   MCAssembler &Asm;

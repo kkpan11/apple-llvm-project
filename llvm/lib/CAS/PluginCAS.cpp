@@ -6,12 +6,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/CAS/CASDB.h"
+#include "llvm/CAS/ObjectStore.h"
 
 using namespace llvm;
 using namespace llvm::cas;
 
-Expected<std::unique_ptr<CASDB>>
+Expected<std::unique_ptr<ObjectStore>>
 cas::createPluginCAS(StringRef, ArrayRef<std::string>) {
   report_fatal_error("CAS plugins not implemented");
 }

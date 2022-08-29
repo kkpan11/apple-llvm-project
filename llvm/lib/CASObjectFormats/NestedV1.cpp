@@ -235,7 +235,7 @@ ObjectFileSchema::createObjectReader(cas::ObjectProxy RootNode) const {
   return CU->createObjectReader();
 }
 
-ObjectFileSchema::ObjectFileSchema(cas::CASDB &CAS)
+ObjectFileSchema::ObjectFileSchema(cas::ObjectStore &CAS)
     : ObjectFileSchema::RTTIExtends(CAS) {
   // Fill the cache immediately to preserve thread-safety.
   if (Error E = fillCache())
@@ -1403,7 +1403,7 @@ template <> struct GraphTraits<SymbolGraph> {
 namespace {
 class CompileUnitBuilder {
 public:
-  cas::CASDB &CAS;
+  cas::ObjectStore &CAS;
   const ObjectFileSchema &Schema;
   raw_ostream *DebugOS;
 

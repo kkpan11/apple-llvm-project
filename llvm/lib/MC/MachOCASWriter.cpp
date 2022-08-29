@@ -9,7 +9,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/iterator_range.h"
 #include "llvm/BinaryFormat/MachO.h"
-#include "llvm/CAS/CASDB.h"
+#include "llvm/CAS/ObjectStore.h"
 #include "llvm/CAS/Utils.h"
 #include "llvm/MC/CAS/MCCASFormatSchemaBase.h"
 #include "llvm/MC/CAS/MCCASObjectV1.h"
@@ -44,7 +44,7 @@ using namespace llvm::mccasformats;
 
 MachOCASWriter::MachOCASWriter(
     std::unique_ptr<MCMachObjectTargetWriter> MOTW, const Triple &TT,
-    cas::CASDB &CAS, CASBackendMode Mode, raw_pwrite_stream &OS,
+    cas::ObjectStore &CAS, CASBackendMode Mode, raw_pwrite_stream &OS,
     bool IsLittleEndian,
     Optional<MCTargetOptions::ResultCallBackTy> ResultCallBack)
     : Target(TT), CAS(CAS), Mode(Mode), ResultCallBack(ResultCallBack), OS(OS),
@@ -112,7 +112,7 @@ uint64_t MachOCASWriter::writeObject(MCAssembler &Asm,
 
 std::unique_ptr<MCObjectWriter> llvm::createMachOCASWriter(
     std::unique_ptr<MCMachObjectTargetWriter> MOTW, const Triple &TT,
-    cas::CASDB &CAS, CASBackendMode Mode, raw_pwrite_stream &OS,
+    cas::ObjectStore &CAS, CASBackendMode Mode, raw_pwrite_stream &OS,
     bool IsLittleEndian,
     Optional<MCTargetOptions::ResultCallBackTy> ResultCallBack) {
   return std::make_unique<MachOCASWriter>(std::move(MOTW), TT, CAS, Mode, OS,

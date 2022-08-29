@@ -44,7 +44,7 @@ namespace {
 /// If the input is a file (--casid-file), open the file given by `InputStr`
 /// and get the ID from the file buffer.
 /// Otherwise parse `InputStr` as a CASID.
-CASID getCASIDFromInput(CASDB &CAS, StringRef InputStr) {
+CASID getCASIDFromInput(ObjectStore &CAS, StringRef InputStr) {
   ExitOnError ExitOnErr;
   ExitOnErr.setBanner((InputStr + ": ").str());
 
@@ -65,7 +65,7 @@ int main(int argc, char *argv[]) {
   PrinterOptions Options = {DwarfSectionsOnly, DwarfDump, DebugAbbrevOffsets,
                             HexDump, HexDumpOneLine};
 
-  std::unique_ptr<CASDB> CAS = ExitOnErr(createOnDiskCAS(CASPath));
+  std::unique_ptr<ObjectStore> CAS = ExitOnErr(createOnDiskCAS(CASPath));
   MCCASPrinter Printer(Options, *CAS, llvm::outs());
 
   for (StringRef InputStr : InputStrings) {

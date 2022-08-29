@@ -9,8 +9,8 @@
 #ifndef LLVM_CASOBJECTFORMATS_OBJECTFORMATSCHEMABASE_H
 #define LLVM_CASOBJECTFORMATS_OBJECTFORMATSCHEMABASE_H
 
-#include "llvm/CAS/CASDB.h"
 #include "llvm/CAS/CASNodeSchema.h"
+#include "llvm/CAS/ObjectStore.h"
 #include "llvm/CASObjectFormats/Data.h"
 #include "llvm/ExecutionEngine/JITLink/JITLink.h"
 
@@ -61,7 +61,7 @@ protected:
   createFromLinkGraphImpl(const jitlink::LinkGraph &G,
                           raw_ostream *DebugOS) const = 0;
 
-  ObjectFormatSchemaBase(cas::CASDB &CAS)
+  ObjectFormatSchemaBase(cas::ObjectStore &CAS)
       : ObjectFormatSchemaBase::RTTIExtends(CAS) {}
 };
 
@@ -77,7 +77,7 @@ createObjectReader(const cas::SchemaPool &Pool, cas::CASID ID);
 class ObjectFormatSchemaPool {
 public:
   /// Creates all the schemas up front.
-  explicit ObjectFormatSchemaPool(cas::CASDB &CAS) : Pool(CAS) {
+  explicit ObjectFormatSchemaPool(cas::ObjectStore &CAS) : Pool(CAS) {
     addObjectFormatSchemas(Pool);
   }
 
@@ -98,7 +98,7 @@ public:
   createObjectReader(cas::CASID ID) const;
 
   cas::SchemaPool &getPool() { return Pool; }
-  cas::CASDB &getCAS() const { return Pool.getCAS(); }
+  cas::ObjectStore &getCAS() const { return Pool.getCAS(); }
 
 private:
   cas::SchemaPool Pool;

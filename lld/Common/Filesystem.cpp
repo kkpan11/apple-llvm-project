@@ -11,8 +11,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "lld/Common/Filesystem.h"
-#include "llvm/CAS/CASDB.h"
 #include "llvm/CAS/CASFileSystem.h"
+#include "llvm/CAS/ObjectStore.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/FileOutputBuffer.h"
 #include "llvm/Support/FileSystem.h"
@@ -132,7 +132,8 @@ std::error_code lld::tryCreateFile(StringRef path) {
 }
 
 Expected<IntrusiveRefCntPtr<llvm::vfs::FileSystem>>
-lld::createFileSystem(cas::CASDB *CAS, Optional<StringRef> CASFileSystemRootID,
+lld::createFileSystem(cas::ObjectStore *CAS,
+                      Optional<StringRef> CASFileSystemRootID,
                       Optional<StringRef> CASFileSystemWorkingDirectory) {
   if (!CAS || !CASFileSystemRootID.has_value())
     return llvm::vfs::getRealFileSystem();

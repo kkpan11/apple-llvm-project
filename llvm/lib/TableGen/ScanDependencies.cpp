@@ -75,7 +75,7 @@ void tablegen::scanTextForIncludes(StringRef Input,
 }
 
 static Error
-fetchCachedIncludedFiles(cas::CASDB &CAS, cas::ObjectRef ID,
+fetchCachedIncludedFiles(cas::ObjectStore &CAS, cas::ObjectRef ID,
                          SmallVectorImpl<StringRef> &IncludedFiles) {
   Expected<cas::ObjectProxy> ExpectedBlob = CAS.getProxy(ID);
   if (!ExpectedBlob)
@@ -84,8 +84,9 @@ fetchCachedIncludedFiles(cas::CASDB &CAS, cas::ObjectRef ID,
   return Error::success();
 }
 
-static Error computeIncludedFiles(cas::CASDB &CAS, cas::ActionCache &Cache,
-                                  cas::CASID Key, StringRef Input,
+static Error computeIncludedFiles(cas::ObjectStore &CAS,
+                                  cas::ActionCache &Cache, cas::CASID Key,
+                                  StringRef Input,
                                   SmallVectorImpl<StringRef> &IncludedFiles) {
   SmallString<256> ResultToCache;
   scanTextForIncludes(Input, IncludedFiles);
@@ -100,7 +101,8 @@ static Error computeIncludedFiles(cas::CASDB &CAS, cas::ActionCache &Cache,
   return Error::success();
 }
 
-Error tablegen::scanTextForIncludes(cas::CASDB &CAS, cas::ActionCache &Cache,
+Error tablegen::scanTextForIncludes(cas::ObjectStore &CAS,
+                                    cas::ActionCache &Cache,
                                     cas::ObjectRef ExecID,
                                     const cas::ObjectProxy &Blob,
                                     SmallVectorImpl<StringRef> &Includes) {
@@ -144,7 +146,7 @@ Error tablegen::accessAllIncludes(cas::CachingOnDiskFileSystem &FS,
                                   cas::ObjectRef ExecID,
                                   ArrayRef<std::string> IncludeDirs,
                                   const cas::ObjectProxy &MainFileBlob) {
-  cas::CASDB &CAS = FS.getCAS();
+  cas::ObjectStore &CAS = FS.getCAS();
 
   // Helper for adding to the worklist.
   SmallVector<cas::ObjectProxy> Worklist = {MainFileBlob};
@@ -182,7 +184,7 @@ Error tablegen::accessAllIncludes(cas::CachingOnDiskFileSystem &FS,
 
 static Expected<cas::ObjectProxy> openMainFile(cas::CachingOnDiskFileSystem &FS,
                                                StringRef MainFilename) {
-  cas::CASDB &CAS = FS.getCAS();
+  cas::ObjectStore &CAS = FS.getCAS();
 
   // FIXME: FileSystem should virtualize stdin.
   if (MainFilename == "-") {
@@ -208,7 +210,7 @@ Error tablegen::createMainFileError(StringRef MainFilename,
 }
 
 Expected<ScanIncludesResult>
-tablegen::scanIncludes(cas::CASDB &CAS, cas::ActionCache &Cache,
+tablegen::scanIncludes(cas::ObjectStore &CAS, cas::ActionCache &Cache,
                        cas::ObjectRef ExecID, StringRef MainFilename,
                        ArrayRef<std::string> IncludeDirs,
                        ArrayRef<MappedPrefix> PrefixMappings,
@@ -246,7 +248,7 @@ tablegen::scanIncludes(cas::CASDB &CAS, cas::ActionCache &Cache,
 }
 
 Expected<ScanIncludesResult>
-tablegen::scanIncludesAndRemap(cas::CASDB &CAS, cas::ActionCache &Cache,
+tablegen::scanIncludesAndRemap(cas::ObjectStore &CAS, cas::ActionCache &Cache,
                                cas::ObjectRef ExecID, std::string &MainFilename,
                                std::vector<std::string> &IncludeDirs,
                                ArrayRef<MappedPrefix> PrefixMappings) {

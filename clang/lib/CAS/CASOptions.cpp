@@ -10,14 +10,14 @@
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/DiagnosticCAS.h"
 #include "llvm/CAS/ActionCache.h"
-#include "llvm/CAS/CASDB.h"
+#include "llvm/CAS/ObjectStore.h"
 #include "llvm/Support/Error.h"
 
 using namespace clang;
 using namespace llvm::cas;
 
-static std::shared_ptr<llvm::cas::CASDB>
-createCAS(const CASConfiguration &Config, DiagnosticsEngine &Diags) {
+static std::shared_ptr<llvm::cas::ObjectStore>
+createObjectStore(const CASConfiguration &Config, DiagnosticsEngine &Diags) {
   if (Config.CASPath.empty())
     return llvm::cas::createInMemoryCAS();
 
@@ -37,9 +37,9 @@ createCAS(const CASConfiguration &Config, DiagnosticsEngine &Diags) {
   return nullptr;
 }
 
-std::shared_ptr<llvm::cas::CASDB>
-CASOptions::getOrCreateCAS(DiagnosticsEngine &Diags,
-                           bool CreateEmptyCASOnFailure) const {
+std::shared_ptr<llvm::cas::ObjectStore>
+CASOptions::getOrCreateObjectStore(DiagnosticsEngine &Diags,
+                                   bool CreateEmptyCASOnFailure) const {
   if (Cache.Config.IsFrozen)
     return Cache.CAS;
 
@@ -77,7 +77,7 @@ void CASOptions::freezeConfig(DiagnosticsEngine &Diags) {
 }
 
 static std::shared_ptr<llvm::cas::ActionCache>
-createCache(CASDB &CAS, const CASConfiguration &Config,
+createCache(ObjectStore &CAS, const CASConfiguration &Config,
             DiagnosticsEngine &Diags) {
   if (Config.CachePath.empty())
     return llvm::cas::createInMemoryActionCache(CAS);
@@ -131,6 +131,6 @@ void CASOptions::initCache(DiagnosticsEngine &Diags) const {
     return;
 
   Cache.Config = CurrentConfig;
-  Cache.CAS = createCAS(Cache.Config, Diags);
+  Cache.CAS = createObjectStore(Cache.Config, Diags);
   Cache.AC = createCache(*Cache.CAS, Cache.Config, Diags);
 }

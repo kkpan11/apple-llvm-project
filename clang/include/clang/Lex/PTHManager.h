@@ -21,9 +21,9 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/CAS/ActionCache.h"
-#include "llvm/CAS/CASDB.h"
 #include "llvm/CAS/CASFileSystem.h"
 #include "llvm/CAS/CASID.h"
+#include "llvm/CAS/ObjectStore.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/OnDiskHashTable.h"
 #include <memory>
@@ -99,7 +99,7 @@ class PTHManager {
   /// Allocator for pointers to IdentifierInfo caches.
   llvm::SpecificBumpPtrAllocator<IdentifierInfo *> IdentifierInfoCacheAlloc;
 
-  llvm::cas::CASDB &CAS;
+  llvm::cas::ObjectStore &CAS;
   llvm::cas::ActionCache &Cache;
   IntrusiveRefCntPtr<llvm::vfs::FileSystem> FS;
   LangOptions CanonicalLangOpts;
@@ -123,7 +123,7 @@ public:
   ~PTHManager();
   PTHManager() = delete;
 
-  PTHManager(llvm::cas::CASDB &CAS, llvm::cas::ActionCache &Cache,
+  PTHManager(llvm::cas::ObjectStore &CAS, llvm::cas::ActionCache &Cache,
              IntrusiveRefCntPtr<llvm::vfs::FileSystem> FS, Preprocessor &PP);
 
   void setPreprocessor(Preprocessor *pp) { PP = pp; }

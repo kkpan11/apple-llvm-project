@@ -41,7 +41,8 @@ bool isDwarfSection(MCObjectProxy MCObj) {
 }
 } // namespace
 
-MCCASPrinter::MCCASPrinter(PrinterOptions Options, CASDB &CAS, raw_ostream &OS)
+MCCASPrinter::MCCASPrinter(PrinterOptions Options, ObjectStore &CAS,
+                           raw_ostream &OS)
     : Options(Options), MCSchema(CAS), Indent{0}, OS(OS) {}
 
 MCCASPrinter::~MCCASPrinter() { OS << "\n"; }

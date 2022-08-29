@@ -145,7 +145,7 @@ private:
 } // namespace
 
 static Expected<std::unique_ptr<ObjectFormatSchemaBase>>
-createSchema(CASDB &CAS, StringRef SchemaName) {
+createSchema(ObjectStore &CAS, StringRef SchemaName) {
   if (SchemaName == "nestedv1")
     return std::make_unique<nestedv1::ObjectFileSchema>(CAS);
   if (SchemaName == "flatv1")
@@ -156,13 +156,13 @@ createSchema(CASDB &CAS, StringRef SchemaName) {
 
 static ObjectRef ingestFile(ObjectFormatSchemaBase &Schema, StringRef InputFile,
                             MemoryBufferRef FileContent, SharedStream &OS);
-static void computeStats(CASDB &CAS, ArrayRef<ObjectProxy> IDs,
+static void computeStats(ObjectStore &CAS, ArrayRef<ObjectProxy> IDs,
                          raw_ostream &StatOS);
 static Error printCASObjectOrTree(ObjectFormatSchemaPool &Pool, ObjectProxy ID,
                                   bool omitCASID);
 static Error printCASObject(ObjectFormatSchemaPool &Pool, ObjectProxy ID,
                             bool omitCASID);
-static Error materializeObjectsFromCASTree(CASDB &CAS, ObjectProxy ID);
+static Error materializeObjectsFromCASTree(ObjectStore &CAS, ObjectProxy ID);
 
 int main(int argc, char *argv[]) {
   ExitOnError ExitOnErr;
@@ -175,7 +175,7 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  std::unique_ptr<CASDB> CAS;
+  std::unique_ptr<ObjectStore> CAS;
   if (StringRef(CASPath).empty())
     CAS = createInMemoryCAS();
   else if (CASPath == "auto")
@@ -379,7 +379,7 @@ struct ObjectKindInfo {
 };
 
 struct StatCollector {
-  CASDB &CAS;
+  ObjectStore &CAS;
 
   using POTItemHandler = unique_function<void(
       ExitOnError &, function_ref<void(ObjectKindInfo &)>, cas::ObjectProxy)>;
@@ -391,7 +391,7 @@ struct StatCollector {
   SmallVector<std::pair<const NodeSchema*, POTItemHandler>>
       Schemas;
 
-  StatCollector(CASDB &CAS)
+  StatCollector(ObjectStore &CAS)
       : CAS(CAS), NestedV1Schema(CAS), FlatV1Schema(CAS), MCCASV1Schema(CAS) {
     Schemas.push_back(std::make_pair(
         &NestedV1Schema,
@@ -633,7 +633,7 @@ void StatCollector::visitPOTItemMCCASV1(
   }
 }
 
-static void computeStats(CASDB &CAS, ArrayRef<ObjectProxy> TopLevels,
+static void computeStats(ObjectStore &CAS, ArrayRef<ObjectProxy> TopLevels,
                          raw_ostream &StatOS) {
   ExitOnError ExitOnErr;
   ExitOnErr.setBanner("llvm-cas-object-format: compute-stats: ");
@@ -851,7 +851,7 @@ static Error printCASObjectOrTree(ObjectFormatSchemaPool &Pool, ObjectProxy ID,
       });
 }
 
-static Error materializeObjectsFromCASTree(CASDB &CAS, ObjectProxy ID) {
+static Error materializeObjectsFromCASTree(ObjectStore &CAS, ObjectProxy ID) {
   TreeSchema Schema(CAS);
   return Schema.walkFileTreeRecursively(
       CAS, ID, [&](const NamedTreeEntry &Entry, Optional<TreeProxy>) -> Error {

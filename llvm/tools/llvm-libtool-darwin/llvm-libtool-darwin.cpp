@@ -11,7 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/BinaryFormat/Magic.h"
-#include "llvm/CAS/CASDB.h"
+#include "llvm/CAS/ObjectStore.h"
 #include "llvm/CAS/Utils.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/Object/ArchiveWriter.h"
@@ -129,7 +129,7 @@ struct Config {
   bool Deterministic = true; // Updated by 'D' and 'U' modifiers.
   uint32_t ArchCPUType;
   uint32_t ArchCPUSubtype;
-  std::unique_ptr<cas::CASDB> CAS;
+  std::unique_ptr<cas::ObjectStore> CAS;
 };
 
 static Expected<std::string> searchForFile(const Twine &FileName) {
@@ -376,8 +376,8 @@ private:
             std::make_error_code(std::errc::invalid_argument),
             "CASID object input '" + Member.MemberName +
                 "' while '-fcas' is disabled");
-      CASDB &CAS = *Builder.C.CAS;
-  
+      ObjectStore &CAS = *Builder.C.CAS;
+
       auto MBRef = Member.Buf->getMemBufferRef();
       auto ID = readCASIDBuffer(CAS, MBRef);
       if (!ID)
@@ -613,7 +613,7 @@ buildSlices(LLVMContext &LLVMCtx,
 
 // FIXME: Mostly similar to \p writeArchive(), merge it with ArchiveWriter.cpp.
 static Error
-writeCASIDArchive(cas::CASDB &CAS, StringRef ArcName,
+writeCASIDArchive(cas::ObjectStore &CAS, StringRef ArcName,
                   ArrayRef<NewArchiveMember> NewMembers, bool WriteSymtab,
                   object::Archive::Kind Kind, bool Deterministic, bool Thin,
                   std::unique_ptr<MemoryBuffer> OldArchiveBuf = nullptr) {

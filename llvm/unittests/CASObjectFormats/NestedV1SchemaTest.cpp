@@ -64,7 +64,7 @@ TEST(NestedV1SchemaTest, Section) {
                                   jitlink::MemProt::Exec),
   };
 
-  std::unique_ptr<cas::CASDB> CAS = cas::createInMemoryCAS();
+  std::unique_ptr<cas::ObjectStore> CAS = cas::createInMemoryCAS();
   ObjectFileSchema Schema(*CAS);
   for (jitlink::Section *S : Sections) {
     Optional<SectionRef> Section =
@@ -103,7 +103,7 @@ TEST(NestedV1SchemaTest, BlockData) {
       &G.createContentBlock(Section, "other data", Addr2, /*Alignment=*/16, 6),
   };
 
-  std::unique_ptr<cas::CASDB> CAS = cas::createInMemoryCAS();
+  std::unique_ptr<cas::ObjectStore> CAS = cas::createInMemoryCAS();
   ObjectFileSchema Schema(*CAS);
   for (jitlink::Block *B : Blocks) {
     Optional<BlockDataRef> Ref =
@@ -146,7 +146,7 @@ TEST(NestedV1SchemaTest, LeafBlock) {
       &G.createContentBlock(Section1, "other data", Addr2, /*Alignment=*/16, 6),
   };
 
-  std::unique_ptr<cas::CASDB> CAS = cas::createInMemoryCAS();
+  std::unique_ptr<cas::ObjectStore> CAS = cas::createInMemoryCAS();
   ObjectFileSchema Schema(*CAS);
   for (jitlink::Block *B : Blocks) {
     // This is the API being tested.
@@ -260,7 +260,7 @@ TEST(NestedV1SchemaTest, BlockSymbols) {
                           false, false),
   };
 
-  std::unique_ptr<cas::CASDB> CAS = cas::createInMemoryCAS();
+  std::unique_ptr<cas::ObjectStore> CAS = cas::createInMemoryCAS();
   ObjectFileSchema Schema(*CAS);
   auto createSymbolDefinition =
       [&](const jitlink::Block &B) -> Expected<SymbolDefinitionRef> {
@@ -303,7 +303,7 @@ TEST(NestedV1SchemaTest, SymbolTable) {
                          16, true),
   };
 
-  std::unique_ptr<cas::CASDB> CAS = cas::createInMemoryCAS();
+  std::unique_ptr<cas::ObjectStore> CAS = cas::createInMemoryCAS();
   ObjectFileSchema Schema(*CAS);
   auto createSymbolDefinition =
       [&](const jitlink::Block &B) -> Expected<SymbolDefinitionRef> {
@@ -395,7 +395,7 @@ TEST(NestedV1SchemaTest, BlockWithEdges) {
     B.addEdge(Kinds[I], Offsets[I], *Targets[I], Addends[I]);
 
   // Prepare dependencies in the CAS.
-  std::unique_ptr<cas::CASDB> CAS = cas::createInMemoryCAS();
+  std::unique_ptr<cas::ObjectStore> CAS = cas::createInMemoryCAS();
   ObjectFileSchema Schema(*CAS);
 
   // Create the external symbols.
@@ -529,7 +529,7 @@ TEST(NestedV1SchemaTest, RoundTrip) {
                      jitlink::Scope::Default, false, false);
 
   std::unique_ptr<jitlink::LinkGraph> RoundTripG;
-  std::unique_ptr<cas::CASDB> CAS = cas::createInMemoryCAS();
+  std::unique_ptr<cas::ObjectStore> CAS = cas::createInMemoryCAS();
   {
     // Convert to cas.o.
     ObjectFileSchema Schema(*CAS);
@@ -657,7 +657,7 @@ TEST(NestedV1SchemaTest, RoundTripBlockOrder) {
                      jitlink::Scope::Default, false, false);
 
   std::unique_ptr<jitlink::LinkGraph> RoundTripG;
-  std::unique_ptr<cas::CASDB> CAS = cas::createInMemoryCAS();
+  std::unique_ptr<cas::ObjectStore> CAS = cas::createInMemoryCAS();
   {
     // Convert to cas.o.
     ObjectFileSchema Schema(*CAS);
@@ -710,7 +710,7 @@ TEST(NestedV1SchemaTest, ModInitFuncSection) {
       &G.addAnonymousSymbol(Block, 0, 0, true, false),
   };
 
-  std::unique_ptr<cas::CASDB> CAS = cas::createInMemoryCAS();
+  std::unique_ptr<cas::ObjectStore> CAS = cas::createInMemoryCAS();
   ObjectFileSchema Schema(*CAS);
   auto createSymbolDefinition =
       [&](const jitlink::Block &B) -> Expected<SymbolDefinitionRef> {

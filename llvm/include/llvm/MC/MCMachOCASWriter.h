@@ -29,20 +29,20 @@
 namespace llvm {
 
 namespace cas {
-class CASDB;
+class ObjectStore;
 class CASID;
 } // namespace cas
 
 class MachOCASWriter : public MCObjectWriter {
 public:
-  /// CASDB
+  /// ObjectStore
   const Triple Target;
-  cas::CASDB &CAS;
+  cas::ObjectStore &CAS;
   CASBackendMode Mode;
   Optional<MCTargetOptions::ResultCallBackTy> ResultCallBack;
 
   MachOCASWriter(std::unique_ptr<MCMachObjectTargetWriter> MOTW,
-                 const Triple &TT, cas::CASDB &CAS, CASBackendMode Mode,
+                 const Triple &TT, cas::ObjectStore &CAS, CASBackendMode Mode,
                  raw_pwrite_stream &OS, bool IsLittleEndian,
                  Optional<MCTargetOptions::ResultCallBackTy> CallBack);
 
@@ -129,12 +129,12 @@ private:
 ///
 /// \param MOTW - The target specific Mach-O writer subclass.
 /// \param TT - The target triple.
-/// \param CAS - The CASDB instance.
+/// \param CAS - The ObjectStore instance.
 /// \param OS - The stream to write to.
 /// \returns The constructed object writer.
 std::unique_ptr<MCObjectWriter> createMachOCASWriter(
     std::unique_ptr<MCMachObjectTargetWriter> MOTW, const Triple &TT,
-    cas::CASDB &CAS, CASBackendMode Mode, raw_pwrite_stream &OS,
+    cas::ObjectStore &CAS, CASBackendMode Mode, raw_pwrite_stream &OS,
     bool IsLittleEndian,
     Optional<MCTargetOptions::ResultCallBackTy> CallBack = None);
 

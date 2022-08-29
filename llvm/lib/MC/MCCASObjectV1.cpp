@@ -9,8 +9,8 @@
 #include "llvm/MC/CAS/MCCASObjectV1.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/BinaryFormat/MachO.h"
-#include "llvm/CAS/CASDB.h"
 #include "llvm/CAS/CASID.h"
+#include "llvm/CAS/ObjectStore.h"
 #include "llvm/MC/MCAsmBackend.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCObjectFileInfo.h"
@@ -103,7 +103,7 @@ loadReferences(const cas::ObjectProxy &Proxy) {
   return Refs;
 }
 
-MCSchema::MCSchema(cas::CASDB &CAS) : MCSchema::RTTIExtends(CAS) {
+MCSchema::MCSchema(cas::ObjectStore &CAS) : MCSchema::RTTIExtends(CAS) {
   // Fill the cache immediately to preserve thread-safety.
   if (Error E = fillCache())
     report_fatal_error(std::move(E));
@@ -533,7 +533,7 @@ LoadedDebugInfoSection::load(DebugInfoSectionRef Section) {
                              "DebugInfoSection must have children nodes");
 
   const MCSchema &Schema = Section.getSchema();
-  cas::CASDB &CAS = Schema.CAS;
+  cas::ObjectStore &CAS = Schema.CAS;
   auto loadRef = [&](cas::ObjectRef Ref) {
     return MCObjectProxy::get(Schema, CAS.getProxy(Ref));
   };

@@ -17,7 +17,7 @@ namespace llvm {
 template <typename T> class IntrusiveRefCntPtr;
 
 namespace cas {
-class CASDB;
+class ObjectStore;
 }
 
 namespace vfs {
@@ -31,7 +31,7 @@ void unlinkAsync(StringRef path);
 std::error_code tryCreateFile(StringRef path);
 
 Expected<llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem>>
-createFileSystem(llvm::cas::CASDB *CAS,
+createFileSystem(llvm::cas::ObjectStore *CAS,
                  llvm::Optional<StringRef> CASFileSystemRootID,
                  llvm::Optional<StringRef> CASFileSystemWorkingDirectory);
 
