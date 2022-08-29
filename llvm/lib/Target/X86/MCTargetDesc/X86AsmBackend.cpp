@@ -177,8 +177,8 @@ public:
 
   void applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
                   const MCValue &Target, MutableArrayRef<char> Data,
-                  uint64_t Value, bool IsResolved,
-                  const MCSubtargetInfo *STI) const override;
+                  uint64_t Value, bool IsResolved, const MCSubtargetInfo *STI,
+                  const MCFragment *Fragment) const override;
 
   bool mayNeedRelaxation(const MCInst &Inst,
                          const MCSubtargetInfo &STI) const override;
@@ -689,9 +689,9 @@ static unsigned getFixupKindSize(unsigned Kind) {
 
 void X86AsmBackend::applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
                                const MCValue &Target,
-                               MutableArrayRef<char> Data,
-                               uint64_t Value, bool IsResolved,
-                               const MCSubtargetInfo *STI) const {
+                               MutableArrayRef<char> Data, uint64_t Value,
+                               bool IsResolved, const MCSubtargetInfo *STI,
+                               const MCFragment *Fragment) const {
   unsigned Kind = Fixup.getKind();
   if (Kind >= FirstLiteralRelocationKind)
     return;
@@ -720,6 +720,15 @@ void X86AsmBackend::applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
 
   for (unsigned i = 0; i != Size; ++i)
     Data[Fixup.getOffset() + i] = uint8_t(Value >> (i * 8));
+
+  // Copy the Value at the fixup location and zero-out the fixup if it is
+  // unresolved, this is done to improve deduplication with MCCAS. The fixup
+  // will be applied later when the object file is being written out.
+  if (!IsResolved) {
+    if (Asm.getWriter().addAddend(Fragment, Value, Fixup.getOffset(), Size)) {
+      std::memset(&Data[Fixup.getOffset()], 0, Size);
+    }
+  }
 }
 
 bool X86AsmBackend::mayNeedRelaxation(const MCInst &Inst,

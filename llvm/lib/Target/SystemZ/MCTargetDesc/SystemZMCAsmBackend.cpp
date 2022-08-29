@@ -95,8 +95,8 @@ public:
                              const MCValue &Target) override;
   void applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
                   const MCValue &Target, MutableArrayRef<char> Data,
-                  uint64_t Value, bool IsResolved,
-                  const MCSubtargetInfo *STI) const override;
+                  uint64_t Value, bool IsResolved, const MCSubtargetInfo *STI,
+                  const MCFragment *Fragment) const override;
   bool fixupNeedsRelaxation(const MCFixup &Fixup, uint64_t Value,
                             const MCRelaxableFragment *Fragment,
                             const MCAsmLayout &Layout) const override {
@@ -158,12 +158,10 @@ bool SystemZMCAsmBackend::shouldForceRelocation(const MCAssembler &,
   return Fixup.getKind() >= FirstLiteralRelocationKind;
 }
 
-void SystemZMCAsmBackend::applyFixup(const MCAssembler &Asm,
-                                     const MCFixup &Fixup,
-                                     const MCValue &Target,
-                                     MutableArrayRef<char> Data, uint64_t Value,
-                                     bool IsResolved,
-                                     const MCSubtargetInfo *STI) const {
+void SystemZMCAsmBackend::applyFixup(
+    const MCAssembler &Asm, const MCFixup &Fixup, const MCValue &Target,
+    MutableArrayRef<char> Data, uint64_t Value, bool IsResolved,
+    const MCSubtargetInfo *STI, const MCFragment *Fragment) const {
   MCFixupKind Kind = Fixup.getKind();
   if (Kind >= FirstLiteralRelocationKind)
     return;

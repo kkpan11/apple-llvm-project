@@ -261,6 +261,11 @@ public:
   void markGnuAbi() override { SeenGnuAbi = true; }
   bool seenGnuAbi() const { return SeenGnuAbi; }
 
+  bool addAddend(const MCFragment *Fragment, uint64_t Addend, uint32_t Offset,
+                 uint8_t Size) override {
+    return false;
+  }
+
   friend struct ELFWriter;
 };
 
