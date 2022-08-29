@@ -36,6 +36,9 @@ cl::opt<bool>
     HexDump("hex-dump",
             cl::desc("Print out a hex dump of every cas blocks contents"));
 
+cl::opt<bool> HexDumpOneLine("hex-dump-one-line",
+                             cl::desc("Print out the hex dump in one line"));
+
 namespace {
 
 /// If the input is a file (--casid-file), open the file given by `InputStr`
@@ -60,7 +63,7 @@ int main(int argc, char *argv[]) {
 
   cl::ParseCommandLineOptions(argc, argv);
   PrinterOptions Options = {DwarfSectionsOnly, DwarfDump, DebugAbbrevOffsets,
-                            HexDump};
+                            HexDump, HexDumpOneLine};
 
   std::unique_ptr<CASDB> CAS = ExitOnErr(createOnDiskCAS(CASPath));
   MCCASPrinter Printer(Options, *CAS, llvm::outs());
