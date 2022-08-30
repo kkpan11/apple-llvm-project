@@ -526,7 +526,7 @@ void DependencyScanningWorker::computeDependenciesFromCompilerInvocation(
   // compilation.
   DependencyScanningAction Action(
       WorkingDirectory, DepsConsumer, DepFS, DepCASFS, Format,
-      /*OptimizeArgs=*/false, /*DisableFree=*/false,
+      /*OptimizeArgs=*/false, /*EagerLoadModules=*/false, /*DisableFree=*/false,
       /*EmitDependencyFile=*/!DepFile.empty(), DiagGenerationAsCompilation,
       getCASOpts(), /*ModuleName=*/None, VerboseOS);
 
