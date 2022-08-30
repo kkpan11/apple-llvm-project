@@ -542,6 +542,8 @@ def Tosa_DivOp : Tosa_Op<"div", [
   let results = (outs
     Tosa_Int32Tensor:$output
   );
+
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -737,6 +739,7 @@ def Tosa_MulOp : Tosa_Op<"mul", [
   );
 
   let hasCanonicalizer = 1;
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -785,6 +788,8 @@ def Tosa_SubOp : Tosa_Op<"sub", [
   let results = (outs
     Tosa_Tensor:$output
   );
+
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
