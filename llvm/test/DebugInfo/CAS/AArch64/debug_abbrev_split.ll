@@ -16,19 +16,18 @@ entry:
 }
 
 ; CHECK:        mc:group        llvmcas://
-; CHECK-NEXT:     mc:section      llvmcas://
+; CHECK-NEXT:     mc:debug_abbrev_section      llvmcas://
 ; CHECK-NEXT:       mc:debug_abbrev llvmcas://
 ; CHECK-NEXT:       mc:debug_abbrev llvmcas://
 ; CHECK-NEXT:       mc:padding llvmcas://
 ; CHECK-NEXT:     mc:debug_info_section      llvmcas://
+; CHECK-NEXT:       mc:debug_info_distinct_data      llvmcas://
 ; CHECK-NEXT:       mc:debug_abbrev_offsets llvmcas://
 ; CHECK-NEXT:         0, 55
 ; CHECK-NEXT:       mc:debug_info_cu llvmcas://
-; CHECK-NEXT:         Real abbr_offset: 0
 ; CHECK-NEXT:         abbr_offset = 0x0000
 ; CHECK:            mc:debug_info_cu llvmcas://
-; CHECK-NEXT:         Real abbr_offset: 55
-; CHECK-NEXT:         abbr_offset = 0x0000
+; CHECK-NEXT:         abbr_offset = 0x0037
 ; CHECK-NOT: debug_abbrev
 
 

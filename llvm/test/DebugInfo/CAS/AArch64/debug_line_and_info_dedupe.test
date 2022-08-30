@@ -5,11 +5,16 @@ RUN: llc -O0 --filetype=obj --cas-backend --cas=%t/cas --mccas-casid %t/a.ll -o 
 RUN: llc -O0 --filetype=obj --cas-backend --cas=%t/cas --mccas-casid %t/b.ll -o %t/b.id
 RUN: llvm-cas-dump --cas=%t/cas --casid-file %t/a.id %t/b.id | FileCheck %s
 
-CHECK: mc:debug_line   llvmcas://[[CASID:[a-z0-9]+]]
+CHECK: mc:debug_info_cu llvmcas://[[CUCASID:[a-z0-9]+]]
+CHECK-NEXT: mc:debug_info_cu llvmcas://
+CHECK: mc:debug_line   llvmcas://[[LINETABLECASID:[a-z0-9]+]]
 CHECK-NEXT: mc:debug_line   llvmcas://
 
+CHECK: mc:debug_info_cu llvmcas://
+CHECK-NEXT: mc:debug_info_cu llvmcas://[[CUCASID]]
+CHECK-NEXT: mc:debug_info_cu llvmcas://
 CHECK: mc:debug_line   llvmcas:// 
-CHECK-NEXT: mc:debug_line   llvmcas://[[CASID]]
+CHECK-NEXT: mc:debug_line   llvmcas://[[LINETABLECASID]]
 CHECK-NEXT: mc:debug_line   llvmcas:// 
 
 //--- a.ll
@@ -24,7 +29,7 @@ define void @bar(i32 noundef %x) #0 !dbg !15 {
 attributes #0 = { noinline nounwind optnone ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
 !llvm.dbg.cu = !{!0}
 !llvm.module.flags = !{!2, !3, !4, !5, !6, !7}
-!0 = distinct !DICompileUnit(language: DW_LANG_C99, file: !1, producer: "clang version 16.0.0 (https://github.com/apple/llvm-project.git d74d0d9fde90cccba7bf18066ac56e55e4402948)", isOptimized: false, runtimeVersion: 0, emissionKind: FullDebug, splitDebugInlining: false, nameTableKind: None, sysroot: "/", casFriendly: DebugLineOnly)
+!0 = distinct !DICompileUnit(language: DW_LANG_C99, file: !1, producer: "clang version 16.0.0 (https://github.com/apple/llvm-project.git d74d0d9fde90cccba7bf18066ac56e55e4402948)", isOptimized: false, runtimeVersion: 0, emissionKind: FullDebug, splitDebugInlining: false, nameTableKind: None, sysroot: "/", casFriendly: DebugAbbrev)
 !1 = !DIFile(filename: "a.c", directory: "/Users/shubham/Development/CASDelta")
 !2 = !{i32 7, !"Dwarf Version", i32 4}
 !3 = !{i32 2, !"Debug Info Version", i32 3}
@@ -60,7 +65,7 @@ ret void, !dbg !27
 attributes #0 = { noinline nounwind optnone ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
 !llvm.dbg.cu = !{!0}
 !llvm.module.flags = !{!2, !3, !4, !5, !6, !7}
-!0 = distinct !DICompileUnit(language: DW_LANG_C99, file: !1, producer: "clang version 16.0.0 (https://github.com/apple/llvm-project.git d74d0d9fde90cccba7bf18066ac56e55e4402948)", isOptimized: false, runtimeVersion: 0, emissionKind: FullDebug, splitDebugInlining: false, nameTableKind: None, sysroot: "/", casFriendly: DebugLineOnly)
+!0 = distinct !DICompileUnit(language: DW_LANG_C99, file: !1, producer: "clang version 16.0.0 (https://github.com/apple/llvm-project.git d74d0d9fde90cccba7bf18066ac56e55e4402948)", isOptimized: false, runtimeVersion: 0, emissionKind: FullDebug, splitDebugInlining: false, nameTableKind: None, sysroot: "/", casFriendly: DebugAbbrev)
 !1 = !DIFile(filename: "b.c", directory: "/Users/shubham/Development/CASDelta")
 !2 = !{i32 7, !"Dwarf Version", i32 4}
 !3 = !{i32 2, !"Debug Info Version", i32 3}

@@ -41,7 +41,7 @@ if (NOT WIN32)
 
 endif()
 
-set(LLVM_LINK_COMPONENTS Support Passes Core Target native AllTargetsInfos)
+set(LLVM_LINK_COMPONENTS MCParser Support Passes Core Target native AllTargetsInfos)
 add_llvm_unittest(PassesBindingsTests
 	PassBuilderBindingsTest.cpp
 	)

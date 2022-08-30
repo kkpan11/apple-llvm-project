@@ -7,12 +7,14 @@
 //===----------------------------------------------------------------------===//
 
 #include "CASDWARFObject.h"
+#include "llvm/CASObjectFormats/Encoding.h"
 #include "llvm/DebugInfo/DWARF/DWARFCompileUnit.h"
 #include "llvm/DebugInfo/DWARF/DWARFContext.h"
 #include "llvm/DebugInfo/DWARF/DWARFDataExtractor.h"
 #include "llvm/DebugInfo/DWARF/DWARFDebugAbbrev.h"
 #include "llvm/DebugInfo/DWARF/DWARFDebugLine.h"
 #include "llvm/Object/MachO.h"
+#include "llvm/Support/BinaryStreamReader.h"
 #include "llvm/Support/DataExtractor.h"
 #include "llvm/Support/FormatVariadic.h"
 
@@ -62,6 +64,47 @@ struct MachOHeaderParser {
 };
 } // namespace
 
+Error CASDWARFObject::discoverDebugInfoSection(ObjectRef CASObj,
+                                               raw_ostream &OS) {
+  if (CASObj == Schema.getRootNodeTypeID())
+    return Error::success();
+  Expected<MCObjectProxy> MCObj = Schema.get(CASObj);
+  if (!MCObj)
+    return MCObj.takeError();
+  return discoverDebugInfoSection(*MCObj, OS);
+}
+
+Error CASDWARFObject::discoverDebugInfoSection(MCObjectProxy MCObj,
+                                               raw_ostream &OS) {
+  if (auto DbgInfoSecRef = DebugInfoSectionRef::Cast(MCObj)) {
+    raw_svector_ostream OS(DebugInfoSection);
+    MCCASReader Reader(OS, Target, MCObj.getSchema());
+    auto Written = DbgInfoSecRef->materialize(
+        Reader, arrayRefFromStringRef<char>(getAbbrevSection()), &OS);
+    if (!Written)
+      return Written.takeError();
+
+    StringRef DebugInfoStringRef = toStringRef(DebugInfoSection);
+    BinaryStreamReader BinaryReader(DebugInfoStringRef,
+                                    IsLittleEndian ? support::endianness::little
+                                                   : support::endianness::big);
+    while (!BinaryReader.empty()) {
+      uint64_t SectionStartOffset = BinaryReader.getOffset();
+      Expected<size_t> Size =
+          mccasformats::v1::getSizeFromDwarfHeaderAndSkip(BinaryReader);
+      if (!Size)
+        return Size.takeError();
+      StringRef CUData = DebugInfoStringRef.substr(
+          SectionStartOffset, BinaryReader.getOffset() - SectionStartOffset);
+      CUDataVec.push_back(CUData);
+    }
+
+    return Error::success();
+  }
+  return MCObj.forEachReference(
+      [&](ObjectRef CASObj) { return discoverDebugInfoSection(CASObj, OS); });
+}
+
 Error CASDWARFObject::discoverDwarfSections(ObjectRef CASObj) {
   if (CASObj == Schema.getRootNodeTypeID())
     return Error::success();
@@ -73,6 +116,16 @@ Error CASDWARFObject::discoverDwarfSections(ObjectRef CASObj) {
 
 Error CASDWARFObject::discoverDwarfSections(MCObjectProxy MCObj) {
   StringRef Data = MCObj.getData();
+  if (auto MCAssRef = MCAssemblerRef::Cast(MCObj)) {
+    StringRef Remaining = MCAssRef->getData();
+    uint32_t NormalizedTripleSize;
+    if (auto E = casobjectformats::encoding::consumeVBR8(Remaining,
+                                                         NormalizedTripleSize))
+      return E;
+    auto TripleStr = Remaining.take_front(NormalizedTripleSize);
+    Triple Target(TripleStr);
+    this->Target = Target;
+  }
   if (HeaderRef::Cast(MCObj)) {
     MachOHeaderParser P;
     if (Error Err = P.parse(MCObj.getData()))
@@ -89,9 +142,7 @@ Error CASDWARFObject::discoverDwarfSections(MCObjectProxy MCObj) {
     // Reverse so that we can pop_back when assigning these to CURefs.
     std::reverse(DebugAbbrevOffsets.begin(), DebugAbbrevOffsets.end());
   }
-  if (auto CURef = DebugInfoCURef::Cast(MCObj))
-    CUToOffset[MCObj.getRef()] = DebugAbbrevOffsets.pop_back_val();
-  else if (DebugAbbrevRef::Cast(MCObj))
+  if (DebugAbbrevRef::Cast(MCObj))
     append_range(DebugAbbrevSection, MCObj.getData());
   else if (DebugStrRef::Cast(MCObj)) {
     DebugStringSection.append(Data.begin(), Data.end());
@@ -102,10 +153,12 @@ Error CASDWARFObject::discoverDwarfSections(MCObjectProxy MCObj) {
 }
 
 Error CASDWARFObject::dump(raw_ostream &OS, int Indent, DWARFContext &DWARFCtx,
-                           MCObjectProxy MCObj) const {
+                           MCObjectProxy MCObj, bool ShowForm, bool Verbose) {
   OS.indent(Indent);
   DIDumpOptions DumpOpts;
   DumpOpts.ShowChildren = true;
+  DumpOpts.ShowForm = ShowForm;
+  DumpOpts.Verbose = Verbose;
   Error Err = Error::success();
   StringRef Data = MCObj.getData();
   if (Data.empty())
@@ -144,19 +197,12 @@ Error CASDWARFObject::dump(raw_ostream &OS, int Indent, DWARFContext &DWARFCtx,
     // Dump __debug_info data.
     DWARFUnitVector UV;
     uint64_t Address = 0;
-    DWARFSection Section = {Data, Address};
+    DWARFSection Section = {CUDataVec[CompileUnitIndex++], Address};
     DWARFUnitHeader Header;
     DWARFDebugAbbrev Abbrev;
 
-    auto CUOffset = CUToOffset.find(MCObj.getRef());
-    if (CUOffset == CUToOffset.end())
-      return createStringError(inconvertibleErrorCode(),
-                               "Missing debug abbrev offset information");
-
-    StringRef AbbrevSectionContribution =
-        getAbbrevSection().drop_front(CUOffset->second);
-    Abbrev.extract(DataExtractor(AbbrevSectionContribution, isLittleEndian(),
-                                 getAddressSize()));
+    Abbrev.extract(
+        DataExtractor(getAbbrevSection(), isLittleEndian(), getAddressSize()));
     uint64_t offset_ptr = 0;
     Header.extract(
         DWARFCtx,
@@ -166,7 +212,6 @@ Error CASDWARFObject::dump(raw_ostream &OS, int Indent, DWARFContext &DWARFCtx,
                        &getLocSection(), getStrSection(),
                        getStrOffsetsSection(), &getAddrSection(),
                        getLocSection(), isLittleEndian(), false, UV);
-    OS << "Real abbr_offset: " << CUOffset->second << "\n";
     U.dump(OS, DumpOpts);
   }
   return Err;

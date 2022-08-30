@@ -47,7 +47,23 @@ MCCASPrinter::MCCASPrinter(PrinterOptions Options, ObjectStore &CAS,
 
 MCCASPrinter::~MCCASPrinter() { OS << "\n"; }
 
-Error MCCASPrinter::printMCObject(ObjectRef CASObj, DWARFContext *DWARFCtx) {
+Expected<CASDWARFObject>
+MCCASPrinter::discoverDwarfSections(cas::ObjectRef CASObj) {
+  Expected<MCObjectProxy> MCObj = MCSchema.get(CASObj);
+  if (!MCObj)
+    return MCObj.takeError();
+  CASDWARFObject DWARFObj(MCObj->getSchema());
+  if (Options.DwarfDump) {
+    if (Error E = DWARFObj.discoverDwarfSections(*MCObj))
+      return std::move(E);
+    if (Error E = DWARFObj.discoverDebugInfoSection(*MCObj, OS))
+      return std::move(E);
+  }
+  return DWARFObj;
+}
+
+Error MCCASPrinter::printMCObject(ObjectRef CASObj, CASDWARFObject &Obj,
+                                  DWARFContext *DWARFCtx) {
   // The object identifying the schema is not considered an MCObject, as such we
   // don't attempt to cast or print it.
   if (CASObj == MCSchema.getRootNodeTypeID())
@@ -56,16 +72,15 @@ Error MCCASPrinter::printMCObject(ObjectRef CASObj, DWARFContext *DWARFCtx) {
   Expected<MCObjectProxy> MCObj = MCSchema.get(CASObj);
   if (!MCObj)
     return MCObj.takeError();
-  return printMCObject(*MCObj, DWARFCtx);
+  return printMCObject(*MCObj, Obj, DWARFCtx);
 }
 
-Error MCCASPrinter::printMCObject(MCObjectProxy MCObj, DWARFContext *DWARFCtx) {
-  // Initialize DWARFObj and scan and make a first pass through the sections.
+Error MCCASPrinter::printMCObject(MCObjectProxy MCObj, CASDWARFObject &Obj,
+                                  DWARFContext *DWARFCtx) {
+  // Initialize DWARFObj.
   std::unique_ptr<DWARFContext> DWARFContextHolder;
   if (Options.DwarfDump && !DWARFCtx) {
-    auto DWARFObj = std::make_unique<CASDWARFObject>(MCObj.getSchema());
-    if (Error err = DWARFObj->discoverDwarfSections(MCObj))
-      return err;
+    auto DWARFObj = std::make_unique<CASDWARFObject>(Obj);
     DWARFContextHolder = std::make_unique<DWARFContext>(std::move(DWARFObj));
     DWARFCtx = DWARFContextHolder.get();
   }
@@ -101,12 +116,11 @@ Error MCCASPrinter::printMCObject(MCObjectProxy MCObj, DWARFContext *DWARFCtx) {
   // Dwarfdump.
   if (DWARFCtx) {
     IndentGuard Guard(Indent);
-    auto *DWARFObj =
-        static_cast<const CASDWARFObject *>(&DWARFCtx->getDWARFObj());
-    if (Error Err = DWARFObj->dump(OS, Indent, *DWARFCtx, MCObj))
+    if (Error Err = Obj.dump(OS, Indent, *DWARFCtx, MCObj, Options.ShowForm,
+                             Options.Verbose))
       return Err;
   }
-  return printSimpleNested(MCObj, DWARFCtx);
+  return printSimpleNested(MCObj, Obj, DWARFCtx);
 }
 
 static Error printAbbrevOffsets(raw_ostream &OS,
@@ -121,6 +135,7 @@ static Error printAbbrevOffsets(raw_ostream &OS,
 }
 
 Error MCCASPrinter::printSimpleNested(MCObjectProxy AssemblerRef,
+                                      CASDWARFObject &Obj,
                                       DWARFContext *DWARFCtx) {
   IndentGuard Guard(Indent);
 
@@ -130,5 +145,5 @@ Error MCCASPrinter::printSimpleNested(MCObjectProxy AssemblerRef,
       return E;
 
   return AssemblerRef.forEachReference(
-      [&](ObjectRef CASObj) { return printMCObject(CASObj, DWARFCtx); });
+      [&](ObjectRef CASObj) { return printMCObject(CASObj, Obj, DWARFCtx); });
 }

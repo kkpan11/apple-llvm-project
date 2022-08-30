@@ -44,6 +44,10 @@ public:
 
   uint64_t getOffset() const { return Offset; }
 
+  void setAbbrevDecl(const DWARFAbbreviationDeclaration *AbbrDecl = nullptr) {
+    AbbrevDecl = AbbrDecl;
+  }
+
   /// Returns index of the parent die.
   Optional<uint32_t> getParentIdx() const {
     if (ParentIdx == UINT32_MAX)

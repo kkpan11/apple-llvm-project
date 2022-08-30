@@ -14,7 +14,6 @@
 #include "llvm/MC/MCAsmBackend.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCObjectFileInfo.h"
-#include "llvm/Support/BinaryStreamReader.h"
 #include "llvm/Support/BinaryStreamWriter.h"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/EndianStream.h"
@@ -41,6 +40,9 @@ constexpr StringLiteral PaddingRef::KindString;
 #define MCFRAGMENT_NODE_REF(MCFragmentName, MCEnumName, MCEnumIdentifier)      \
   constexpr StringLiteral MCFragmentName##Ref::KindString;
 #include "llvm/MC/CAS/MCCASObjectV1.def"
+constexpr StringLiteral DebugInfoSectionRef::KindString;
+
+constexpr unsigned Dwarf4HeaderSize32Bit = 11;
 
 void MCSchema::anchor() {}
 char MCSchema::ID = 0;
@@ -69,10 +71,9 @@ struct CUInfo {
   size_t CUSize;
   uint32_t AbbrevOffset;
 };
-static Expected<CUInfo>
-getAndSetDebugAbbrevOffsetAndSkip(MutableArrayRef<char> CUData,
-                                  support::endianness Endian,
-                                  Optional<uint32_t> NewOffset = None);
+static Expected<CUInfo> getAndSetDebugAbbrevOffsetAndSkip(
+    MutableArrayRef<char> CUData, support::endianness Endian,
+    Optional<uint32_t> NewOffset = None, bool SkipData = true);
 Expected<cas::ObjectProxy>
 MCSchema::createFromMCAssemblerImpl(MachOCASWriter &ObjectWriter,
                                     MCAssembler &Asm, const MCAsmLayout &Layout,
@@ -121,6 +122,7 @@ Error MCSchema::fillCache() {
   StringRef AllKindStrings[] = {
       PaddingRef::KindString,
       MCAssemblerRef::KindString,
+      DebugInfoSectionRef::KindString,
 #define CASV1_SIMPLE_DATA_REF(RefName, IdentifierName) RefName::KindString,
 #define CASV1_SIMPLE_GROUP_REF(RefName, IdentifierName) RefName::KindString,
 #define MCFRAGMENT_NODE_REF(MCFragmentName, MCEnumName, MCEnumIdentifier)      \
@@ -401,6 +403,91 @@ Expected<GroupRef> GroupRef::create(MCCASBuilder &MB,
 
   return get(B->build());
 }
+/// Struct that represents a fully verified DebugAbbrevSectionRef object loaded
+/// from the CAS.
+struct LoadedDebugAbbrevSection {
+  SmallVector<char, 0> AbbrevContents;
+  Optional<PaddingRef> Padding;
+
+  static Expected<LoadedDebugAbbrevSection> load(DebugAbbrevSectionRef Section);
+
+private:
+  /// Extracts the information contained in \p Proxy, which must be either an
+  /// AbbrevRef or a PaddingNode.
+  Error addNode(Expected<MCObjectProxy> Proxy) {
+    if (!Proxy)
+      return Proxy.takeError();
+    if (auto AbbrevRef = DebugAbbrevRef::Cast(*Proxy)) {
+      if (Padding.has_value())
+        return createStringError(inconvertibleErrorCode(),
+                                 "Invalid CURef after PaddingRef");
+      append_range(AbbrevContents, AbbrevRef->getData());
+    } else if (auto PaddingNode = PaddingRef::Cast(*Proxy)) {
+      if (Padding.has_value())
+        return createStringError(inconvertibleErrorCode(),
+                                 "Invalid multiple PaddingRefs");
+      Padding = PaddingNode;
+      append_range(AbbrevContents, PaddingNode->getData());
+    } else
+      return createStringError(inconvertibleErrorCode(),
+                               "Invalid node for Debug Info section");
+    return Error::success();
+  }
+};
+
+Expected<LoadedDebugAbbrevSection>
+LoadedDebugAbbrevSection::load(DebugAbbrevSectionRef Section) {
+
+  StringRef Remaining = Section.getData();
+  auto Refs = decodeReferences(Section, Remaining);
+  if (!Refs)
+    return Refs.takeError();
+
+  const MCSchema &Schema = Section.getSchema();
+  cas::ObjectStore &CAS = Schema.CAS;
+  auto loadRef = [&](cas::ObjectRef Ref) {
+    return MCObjectProxy::get(Schema, CAS.getProxy(Ref));
+  };
+
+  LoadedDebugAbbrevSection LoadedSection;
+  for (auto Ref : *Refs) {
+    if (auto E = LoadedSection.addNode(loadRef(Ref)))
+      return std::move(E);
+  }
+
+  return LoadedSection;
+}
+
+Expected<DebugAbbrevSectionRef>
+findDebugAbbrevSectionRef(MCCASReader &Reader, ArrayRef<cas::ObjectRef> Refs) {
+  for (auto ID : Refs) {
+    auto Node = Reader.getObjectProxy(ID);
+    if (!Node)
+      return Node.takeError();
+    if (auto DbgAbbrevSecRef = DebugAbbrevSectionRef::Cast(*Node))
+      return *DbgAbbrevSecRef;
+  }
+  return createStringError(inconvertibleErrorCode(),
+                           "Could not find a DebugAbbrevSectionRef");
+}
+
+/// This function materializes the DebugInfoSectionRef by iterating over all the
+/// sections and getting the contents of the debug abbreviaion section which is
+/// passed on to the materialize method belonging to a DebugInfoSectionRef. It
+/// returns the number of bytes written to the output or an error.
+static Expected<uint64_t>
+materializeDebugInfoSection(MCCASReader &Reader, ArrayRef<cas::ObjectRef> Refs,
+                            DebugInfoSectionRef &DebugInfoRef) {
+  auto AbbrevSectionRef = findDebugAbbrevSectionRef(Reader, Refs);
+  if (!AbbrevSectionRef)
+    return AbbrevSectionRef.takeError();
+  auto LoadedAbbrev = LoadedDebugAbbrevSection::load(*AbbrevSectionRef);
+  if (!LoadedAbbrev)
+    return LoadedAbbrev.takeError();
+
+  return DebugInfoRef.materialize(Reader, LoadedAbbrev->AbbrevContents,
+                                  &Reader.OS);
+}
 
 Expected<uint64_t> GroupRef::materialize(MCCASReader &Reader,
                                          raw_ostream *Stream) const {
@@ -411,10 +498,21 @@ Expected<uint64_t> GroupRef::materialize(MCCASReader &Reader,
     return Refs.takeError();
 
   for (auto ID : *Refs) {
-    auto FragmentSize = Reader.materializeGroup(ID);
-    if (!FragmentSize)
-      return FragmentSize.takeError();
-    Size += *FragmentSize;
+    auto Node = Reader.getObjectProxy(ID);
+    if (!Node)
+      return Node.takeError();
+    if (auto F = DebugInfoSectionRef::Cast(*Node)) {
+      auto FragmentSize =
+          materializeDebugInfoSection(Reader, makeArrayRef(*Refs), *F);
+      if (!FragmentSize)
+        return FragmentSize.takeError();
+      Size += *FragmentSize;
+    } else {
+      auto FragmentSize = Reader.materializeGroup(ID);
+      if (!FragmentSize)
+        return FragmentSize.takeError();
+      Size += *FragmentSize;
+    }
   }
 
   if (!Remaining.empty())
@@ -482,11 +580,27 @@ DebugInfoSectionRef::create(MCCASBuilder &MB,
   return get(B->build());
 }
 
+Expected<DebugAbbrevSectionRef>
+DebugAbbrevSectionRef::create(MCCASBuilder &MB,
+                              ArrayRef<cas::ObjectRef> Fragments) {
+  Expected<Builder> B = Builder::startNode(MB.Schema, KindString);
+  if (!B)
+    return B.takeError();
+
+  if (auto E = encodeReferences(Fragments, B->Data, B->Refs))
+    return std::move(E);
+
+  writeRelocationsAndAddends(MB.getSectionRelocs(), MB.getSectionAddends(),
+                             B->Data);
+  return get(B->build());
+}
+
 /// Class that represents a fully verified DebugInfoSectionRef object loaded
 /// from the CAS.
 struct LoadedDebugInfoSection {
-  SmallVector<size_t> AbbrevOffsets;
-  SmallVector<StringRef> CUData;
+  StringRef DistinctData;
+  SmallVector<size_t, 0> AbbrevOffsets;
+  SmallVector<StringRef, 0> CUData;
   Optional<PaddingRef> Padding;
   StringRef RelocationData;
 
@@ -523,19 +637,22 @@ private:
   Error addNode(Expected<MCObjectProxy> Proxy) {
     if (!Proxy)
       return Proxy.takeError();
-    if (auto CURef = DebugInfoCURef::Cast(*Proxy)) {
+    if (auto DistinctDataRef = DebugInfoDistinctDataRef::Cast(*Proxy)) {
+      if (CUData.size())
+        return createStringError(inconvertibleErrorCode(),
+                                 "Invalid DistinctDataRef after CURef");
+      DistinctData = DistinctDataRef->getData();
+    } else if (auto CURef = DebugInfoCURef::Cast(*Proxy)) {
       if (Padding.has_value())
         return createStringError(inconvertibleErrorCode(),
                                  "Invalid CURef after PaddingRef");
       CUData.push_back(CURef->getData());
-    }
-    else if (auto PaddingNode = PaddingRef::Cast(*Proxy)) {
+    } else if (auto PaddingNode = PaddingRef::Cast(*Proxy)) {
       if (Padding.has_value())
         return createStringError(inconvertibleErrorCode(),
                                  "Invalid multiple PaddingRefs");
       Padding = PaddingNode;
-    }
-    else
+    } else
       return createStringError(inconvertibleErrorCode(),
                                "Invalid node for Debug Info section");
     return Error::success();
@@ -568,6 +685,10 @@ LoadedDebugInfoSection::load(DebugInfoSectionRef Section) {
   };
 
   LoadedDebugInfoSection LoadedSection;
+  if (auto E = LoadedSection.addNode(loadRef(Refs.front())))
+    return std::move(E);
+
+  Refs = Refs.drop_front();
   if (auto E = LoadedSection.fillAbbrevOffsets(loadRef(Refs.front())))
     return std::move(E);
 
@@ -592,27 +713,333 @@ static Error applyAddends(MCCASReader &Reader,
   return Error::success();
 }
 
-Expected<uint64_t> DebugInfoSectionRef::materialize(MCCASReader &Reader,
-                                                    raw_ostream *Stream) const {
+static Expected<uint64_t> getFormSize(dwarf::Form FormVal, dwarf::FormParams FP,
+                                      StringRef CUData, uint64_t CUOffset,
+                                      bool IsLittleEndian,
+                                      uint8_t AddressSize) {
+  uint64_t FormSize = 0;
+  bool Indirect = false;
+  Error Err = Error::success();
+  do {
+    Indirect = false;
+    switch (FormVal) {
+    case dwarf::DW_FORM_addr:
+    case dwarf::DW_FORM_ref_addr: {
+      FormSize += (FormVal == dwarf::DW_FORM_addr) ? FP.AddrSize
+                                                   : FP.getRefAddrByteSize();
+      break;
+    }
+    case dwarf::DW_FORM_exprloc:
+    case dwarf::DW_FORM_block: {
+      DWARFDataExtractor DWARFExtractor(CUData, IsLittleEndian, AddressSize);
+      uint64_t PrevOffset = CUOffset;
+      CUOffset += DWARFExtractor.getULEB128(&CUOffset, &Err);
+      FormSize += CUOffset - PrevOffset;
+      break;
+    }
+    case dwarf::DW_FORM_block1: {
+      DWARFDataExtractor DWARFExtractor(CUData, IsLittleEndian, AddressSize);
+      uint64_t PrevOffset = CUOffset;
+      CUOffset += DWARFExtractor.getU8(&CUOffset, &Err);
+      FormSize += CUOffset - PrevOffset;
+      break;
+    }
+    case dwarf::DW_FORM_block2: {
+      DWARFDataExtractor DWARFExtractor(CUData, IsLittleEndian, AddressSize);
+      uint64_t PrevOffset = CUOffset;
+      CUOffset += DWARFExtractor.getU16(&CUOffset, &Err);
+      FormSize += CUOffset - PrevOffset;
+      break;
+    }
+    case dwarf::DW_FORM_block4: {
+      DWARFDataExtractor DWARFExtractor(CUData, IsLittleEndian, AddressSize);
+      uint64_t PrevOffset = CUOffset;
+      CUOffset += DWARFExtractor.getU32(&CUOffset, &Err);
+      FormSize += CUOffset - PrevOffset;
+      break;
+    }
+    case dwarf::DW_FORM_implicit_const:
+    case dwarf::DW_FORM_flag_present: {
+      FormSize += 0;
+      break;
+    }
+    case dwarf::DW_FORM_data1:
+    case dwarf::DW_FORM_ref1:
+    case dwarf::DW_FORM_flag:
+    case dwarf::DW_FORM_strx1:
+    case dwarf::DW_FORM_addrx1: {
+      FormSize += 1;
+      break;
+    }
+    case dwarf::DW_FORM_data2:
+    case dwarf::DW_FORM_ref2:
+    case dwarf::DW_FORM_strx2:
+    case dwarf::DW_FORM_addrx2: {
+      FormSize += 2;
+      break;
+    }
+    case dwarf::DW_FORM_strx3: {
+      FormSize += 3;
+      break;
+    }
+    case dwarf::DW_FORM_data4:
+    case dwarf::DW_FORM_ref4:
+    case dwarf::DW_FORM_ref_sup4:
+    case dwarf::DW_FORM_strx4:
+    case dwarf::DW_FORM_addrx4: {
+      FormSize += 4;
+      break;
+    }
+    case dwarf::DW_FORM_ref_sig8:
+    case dwarf::DW_FORM_data8:
+    case dwarf::DW_FORM_ref8:
+    case dwarf::DW_FORM_ref_sup8: {
+      FormSize += 8;
+      break;
+    }
+    case dwarf::DW_FORM_data16: {
+      FormSize += 16;
+      break;
+    }
+    case dwarf::DW_FORM_sdata: {
+      DWARFDataExtractor DWARFExtractor(CUData, IsLittleEndian, AddressSize);
+      uint64_t PrevOffset = CUOffset;
+      DWARFExtractor.getSLEB128(&CUOffset, &Err);
+      FormSize += CUOffset - PrevOffset;
+      break;
+    }
+    case dwarf::DW_FORM_udata:
+    case dwarf::DW_FORM_ref_udata:
+    case dwarf::DW_FORM_rnglistx:
+    case dwarf::DW_FORM_loclistx:
+    case dwarf::DW_FORM_GNU_addr_index:
+    case dwarf::DW_FORM_GNU_str_index:
+    case dwarf::DW_FORM_addrx:
+    case dwarf::DW_FORM_strx: {
+      DWARFDataExtractor DWARFExtractor(CUData, IsLittleEndian, AddressSize);
+      uint64_t PrevOffset = CUOffset;
+      DWARFExtractor.getULEB128(&CUOffset, &Err);
+      FormSize += CUOffset - PrevOffset;
+      break;
+    }
+    case dwarf::DW_FORM_LLVM_addrx_offset: {
+      DWARFDataExtractor DWARFExtractor(CUData, IsLittleEndian, AddressSize);
+      uint64_t PrevOffset = CUOffset;
+      DWARFExtractor.getULEB128(&CUOffset, &Err);
+      FormSize += CUOffset - PrevOffset + 4;
+      break;
+    }
+    case dwarf::DW_FORM_string: {
+      DWARFDataExtractor DWARFExtractor(CUData, IsLittleEndian, AddressSize);
+      auto CurrOffset = CUOffset;
+      DWARFExtractor.getCStr(&CUOffset, &Err);
+      FormSize += CUOffset - CurrOffset;
+      break;
+    }
+    case dwarf::DW_FORM_indirect: {
+      DWARFDataExtractor DWARFExtractor(CUData, IsLittleEndian, AddressSize);
+      uint64_t PrevOffset = CUOffset;
+      FormVal =
+          static_cast<dwarf::Form>(DWARFExtractor.getULEB128(&CUOffset, &Err));
+      Indirect = true;
+      FormSize += CUOffset - PrevOffset;
+      break;
+    }
+    case dwarf::DW_FORM_strp:
+    case dwarf::DW_FORM_sec_offset:
+    case dwarf::DW_FORM_GNU_ref_alt:
+    case dwarf::DW_FORM_GNU_strp_alt:
+    case dwarf::DW_FORM_line_strp:
+    case dwarf::DW_FORM_strp_sup: {
+      FormSize += FP.getDwarfOffsetByteSize();
+      break;
+    }
+    case dwarf::DW_FORM_addrx3:
+    case dwarf::DW_FORM_lo_user: {
+      llvm_unreachable("usupported form");
+      break;
+    }
+    }
+  } while (Indirect && !Err);
+
+  if (Err)
+    return std::move(Err);
+
+  return FormSize;
+}
+
+static Error materializeCUDie(DWARFCompileUnit &DCU,
+                              MutableArrayRef<char> SectionContents,
+                              StringRef CUData,
+                              ArrayRef<char> DistinctDataArrayRef,
+                              uint64_t &CUOffset, uint64_t &DistinctDataOffset,
+                              uint64_t &SectionOffset) {
+  // Copy Abbrev Tag.
+  DWARFDataExtractor DWARFExtractor(CUData, DCU.isLittleEndian(),
+                                    DCU.getAddressByteSize());
+  uint64_t PrevOffset = CUOffset;
+  uint64_t AbbrevTag = DWARFExtractor.getULEB128(&CUOffset);
+  std::memcpy(&SectionContents[SectionOffset], &AbbrevTag,
+              CUOffset - PrevOffset);
+  SectionOffset += CUOffset - PrevOffset;
+
+  // Return if the abbrev tag is 0, this indicates the end of a sequence of
+  // children DWARFDies
+  if (AbbrevTag == 0)
+    return Error::success();
+
+  // Create a empty DWARFDie to extract the attributes.
+  DWARFDebugInfoEntry DDIE;
+  auto *AbbrevDecl =
+      DCU.getAbbreviations()->getAbbreviationDeclaration(AbbrevTag);
+  DDIE.setAbbrevDecl(AbbrevDecl);
+  DWARFDie CUDie(&DCU, &DDIE);
+
+  // Loop over all attributes in a compile unit die, read the data from the
+  // DistinctDataArrayRef or read it from the CUData, depending on the form,
+  // write this to a final buffer that represents the compile unit in an object
+  // file.
+  for (unsigned I = 0; I < AbbrevDecl->getNumAttributes(); I++) {
+    auto Form = AbbrevDecl->getFormByIndex(I);
+    auto *U = CUDie.getDwarfUnit();
+    dwarf::FormParams FP = U->getFormParams();
+    auto FormSize = getFormSize(Form, FP, CUData, CUOffset,
+                                DCU.isLittleEndian(), DCU.getAddressByteSize());
+
+    if (!FormSize)
+      return FormSize.takeError();
+    bool DidOverflow = false;
+    if (is_contained(InMemoryCASDWARFObject::PartitionedDebugInfoSection::
+                         FormsToPartition,
+                     Form)) {
+      auto Value = SaturatingAdd(*FormSize, DistinctDataOffset, &DidOverflow);
+      if (DidOverflow)
+        return createStringError(
+            inconvertibleErrorCode(),
+            "Overflow when adding FormSize and DistinctDataOffset");
+      if (Value > DistinctDataArrayRef.size())
+        return createStringError(
+            inconvertibleErrorCode(),
+            "Trying to read out of bounds from DistinctDataArrayRef");
+      memcpy(&SectionContents[SectionOffset],
+             &DistinctDataArrayRef[DistinctDataOffset], *FormSize);
+      DistinctDataOffset += *FormSize;
+    } else {
+      auto Value = SaturatingAdd(*FormSize, CUOffset, &DidOverflow);
+      if (DidOverflow)
+        return createStringError(inconvertibleErrorCode(),
+                                 "Overflow when adding FormSize and CUOffset");
+      if (Value > CUData.size())
+        return createStringError(inconvertibleErrorCode(),
+                                 "Trying to read out of bounds from CUData");
+      memcpy(&SectionContents[SectionOffset], &CUData.data()[CUOffset],
+             *FormSize);
+      CUOffset += *FormSize;
+    }
+    SectionOffset += *FormSize;
+  }
+  return Error::success();
+}
+
+Expected<uint64_t>
+DebugInfoSectionRef::materialize(MCCASReader &Reader,
+                                 ArrayRef<char> AbbrevSectionContents,
+                                 raw_ostream *Stream) const {
   // Start a new section for relocations.
   Reader.Relocations.emplace_back();
   auto LoadedSection = LoadedDebugInfoSection::load(*this);
   if (!LoadedSection)
     return LoadedSection.takeError();
 
-  SmallVector<char, 512> SectionContents;
+  SmallVector<char, 0> SectionContents;
   raw_svector_ostream SectionStream(SectionContents);
   unsigned Size = 0;
+  SmallVector<SmallVector<char>> CUContents;
   for (auto [AbbrevOffset, CUData] : LoadedSection->getOffsetAndCUDataRange()) {
     // Copy the data so that we can modify the abbrev offset prior to printing.
     // FIXME: do this with a zero-copy strategy.
     auto MutableCUData = to_vector(CUData);
     if (auto E = getAndSetDebugAbbrevOffsetAndSkip(
-            MutableCUData, Reader.getEndian(), AbbrevOffset);
+            MutableCUData, Reader.getEndian(), AbbrevOffset,
+            /* SkipData */ false);
         !E)
       return E.takeError();
-    SectionStream << MutableCUData;
-    Size += CUData.size();
+    CUContents.push_back(MutableCUData);
+  }
+
+  InMemoryCASDWARFObject CASObj(AbbrevSectionContents,
+                                Reader.getEndian() == support::little);
+  auto DWARFObj = std::make_unique<InMemoryCASDWARFObject>(CASObj);
+  auto DWARFContextHolder = std::make_unique<DWARFContext>(std::move(DWARFObj));
+  auto *DWARFCtx = DWARFContextHolder.get();
+  DWARFDebugAbbrev Abbrev;
+  Abbrev.extract(DataExtractor(toStringRef(AbbrevSectionContents),
+                               Reader.getEndian() == support::little, 8));
+  uint64_t DistinctDataOffset = 0;
+  for (auto CUData : CUContents) {
+
+    uint64_t OffsetPtr = 0;
+    DWARFUnitHeader Header;
+    SmallVector<char> SectionData;
+    uint64_t CUOffset = 0;
+    uint64_t SectionOffset = 0;
+
+    // Copy 11 bytes which represents the 32-bit DWARF Header for DWARF4.
+    if (CUData.size() < Dwarf4HeaderSize32Bit)
+      return createStringError(
+          inconvertibleErrorCode(),
+          "CUData is too small, it doesn't even contain a 32-bit DWARF Header");
+    SectionData.resize(Dwarf4HeaderSize32Bit);
+    memcpy(SectionData.data(), &CUData[0], Dwarf4HeaderSize32Bit);
+    SectionOffset += Dwarf4HeaderSize32Bit;
+    CUOffset += Dwarf4HeaderSize32Bit;
+
+    DWARFDataExtractor DWARFExtractor(toStringRef(SectionData),
+                                      Reader.getEndian() == support::little, 8);
+    uint64_t Offset = 0;
+    DWARFDataExtractor::Cursor C(Offset);
+    auto HeaderLength = DWARFExtractor.getRelocatedValue(C, 4);
+    auto DwarfVersion = DWARFExtractor.getRelocatedValue(C, 2);
+
+    // TODO: Add support for DWARF 5
+    if (DwarfVersion != 4)
+      return createStringError(inconvertibleErrorCode(),
+                               "Only DWARF 4 is supported right now");
+
+    // TODO: Add support for 64-bit DWARF Format
+    if (HeaderLength == 0xffffffff)
+      return createStringError(inconvertibleErrorCode(),
+                               "64-bit DWARF Format not yet supported");
+    if (HeaderLength < 0xfffffff0)
+      // Add 4 bytes to the size of the SectionData because the DWARF Header
+      // length doesn't count the 4 bytes it takes to store itself.
+      SectionData.resize(HeaderLength + 4);
+    else
+      llvm_unreachable("Unknown DWARF Format");
+    if (!C)
+      return C.takeError();
+
+    DWARFSection Section = {toStringRef(SectionData), 0 /*Address*/};
+    Header.extract(*DWARFCtx,
+                   DWARFDataExtractor(CASObj, Section,
+                                      Reader.getEndian() == support::little, 8),
+                   &OffsetPtr, DWARFSectionKind::DW_SECT_INFO);
+    DWARFUnitVector UV;
+    DWARFCompileUnit DCU(*DWARFCtx, Section, Header, &Abbrev,
+                         &CASObj.getRangesSection(), &CASObj.getLocSection(),
+                         CASObj.getStrSection(), CASObj.getStrOffsetsSection(),
+                         &CASObj.getAddrSection(), CASObj.getLocSection(),
+                         Reader.getEndian() == support::little, false, UV);
+    while (CUOffset < CUData.size()) {
+      auto Err = materializeCUDie(
+          DCU, SectionData, toStringRef(CUData),
+          arrayRefFromStringRef<char>(LoadedSection->DistinctData), CUOffset,
+          DistinctDataOffset, SectionOffset);
+      if (Err)
+        return std::move(Err);
+    }
+    SectionContents.append(SectionData.begin(), SectionData.end());
+    Size += SectionData.size();
   }
 
   if (Optional<PaddingRef> Padding = LoadedSection->Padding) {
@@ -630,7 +1057,7 @@ Expected<uint64_t> DebugInfoSectionRef::materialize(MCCASReader &Reader,
     return std::move(E);
 
   Reader.Addends.clear();
-  Reader.OS << SectionContents;
+  *Stream << SectionContents;
 
   return Size;
 }
@@ -639,7 +1066,40 @@ Expected<uint64_t> SectionRef::materialize(MCCASReader &Reader,
                                            raw_ostream *Stream) const {
   // Start a new section for relocations.
   Reader.Relocations.emplace_back();
-  SmallVector<char, 512> SectionContents;
+  SmallVector<char, 0> SectionContents;
+  raw_svector_ostream SectionStream(SectionContents);
+
+  unsigned Size = 0;
+  StringRef Remaining = getData();
+  auto Refs = decodeReferences(*this, Remaining);
+  if (!Refs)
+    return Refs.takeError();
+
+  for (auto ID : *Refs) {
+    auto FragmentSize = Reader.materializeSection(ID, &SectionStream);
+    if (!FragmentSize)
+      return FragmentSize.takeError();
+    Size += *FragmentSize;
+  }
+
+  if (auto E = decodeRelocationsAndAddends(Reader, Remaining))
+    return std::move(E);
+
+  if (auto E = applyAddends(Reader, SectionContents))
+    return std::move(E);
+
+  Reader.Addends.clear();
+  Reader.OS << SectionContents;
+
+  return Size;
+}
+
+Expected<uint64_t>
+DebugAbbrevSectionRef::materialize(MCCASReader &Reader,
+                                   raw_ostream *Stream) const {
+  // Start a new section for relocations.
+  Reader.Relocations.emplace_back();
+  SmallVector<char, 0> SectionContents;
   raw_svector_ostream SectionStream(SectionContents);
 
   unsigned Size = 0;
@@ -1206,11 +1666,8 @@ static Expected<size_t> getSizeFromDwarfHeader(BinaryStreamReader &Reader) {
   return Word1;
 }
 
-/// Reads and returns the length field of a dwarf header contained in Reader,
-/// assuming Reader is positioned at the beginning of the header. The Reader's
-/// state is advanced to the first byte after the section.
-static Expected<size_t>
-getSizeFromDwarfHeaderAndSkip(BinaryStreamReader &Reader) {
+Expected<size_t>
+mccasformats::v1::getSizeFromDwarfHeaderAndSkip(BinaryStreamReader &Reader) {
   Expected<size_t> Size = getSizeFromDwarfHeader(Reader);
   if (!Size)
     return Size.takeError();
@@ -1226,7 +1683,7 @@ getSizeFromDwarfHeaderAndSkip(BinaryStreamReader &Reader) {
 static Expected<CUInfo>
 getAndSetDebugAbbrevOffsetAndSkip(MutableArrayRef<char> CUData,
                                   support::endianness Endian,
-                                  Optional<uint32_t> NewOffset) {
+                                  Optional<uint32_t> NewOffset, bool SkipData) {
   BinaryStreamReader Reader(toStringRef(CUData), Endian);
   Expected<size_t> Size = getSizeFromDwarfHeader(Reader);
   if (!Size)
@@ -1260,10 +1717,13 @@ getAndSetDebugAbbrevOffsetAndSkip(MutableArrayRef<char> CUData,
       return std::move(E);
   }
 
-  Reader.setOffset(AfterSizeOffset);
-  if (auto E = Reader.skip(*Size))
-    return std::move(E);
-
+  // Do not skip the CU length when materializing the debug info section, the CU
+  // length will be larger than the CUData length.
+  if (SkipData) {
+    Reader.setOffset(AfterSizeOffset);
+    if (auto E = Reader.skip(*Size))
+      return std::move(E);
+  }
   return CUInfo{Reader.getOffset(), AbbrevOffset};
 }
 
@@ -1311,11 +1771,13 @@ MCCASBuilder::splitDebugInfoSectionData(MutableArrayRef<char> DebugInfoData) {
 }
 
 Error MCCASBuilder::createDebugInfoSection(
-    ArrayRef<DebugInfoCURef> CURefs, DebugAbbrevOffsetsRef AbbrevOffsetsRef) {
+    ArrayRef<DebugInfoCURef> CURefs, DebugAbbrevOffsetsRef AbbrevOffsetsRef,
+    DebugInfoDistinctDataRef DebugDistinctDataRef) {
   if (CURefs.empty())
     return Error::success();
 
   startSection(DwarfSections.DebugInfo);
+  addNode(DebugDistinctDataRef);
   addNode(AbbrevOffsetsRef);
   for (auto CURef : CURefs)
     addNode(CURef);
@@ -1331,28 +1793,21 @@ Error MCCASBuilder::createDebugAbbrevSection(
     addNode(AbbrevRef);
   if (auto E = createPaddingRef(DwarfSections.Abbrev))
     return E;
-  return finalizeSection();
+  return finalizeSection<DebugAbbrevSectionRef>();
 }
 
 Expected<SmallVector<DebugAbbrevRef>>
-MCCASBuilder::splitAbbrevSection(ArrayRef<size_t> AbbrevOffsetVec) {
+MCCASBuilder::splitAbbrevSection(ArrayRef<size_t> AbbrevOffsetVec,
+                                 ArrayRef<char> FullAbbrevData) {
   // If we are here, the Abbrev section _must_ exist.
   if (!DwarfSections.Abbrev)
     return createStringError(inconvertibleErrorCode(),
                              "Missing __debug_abbrev section");
 
-  const MCSection::FragmentListType &FragmentList =
-      DwarfSections.Abbrev->getFragmentList();
-
-  Expected<SmallVector<char, 0>> FullAbbrevData =
-      mergeMCFragmentContents(FragmentList);
-  if (!FullAbbrevData)
-    return FullAbbrevData.takeError();
-
   // Sorted container of offsets such that, for any iterator `it`, the interval
   // [*it, *(it+1)] describes where to find one Abbreviation contribution.
   SmallVector<size_t> AbbrevOffsets(AbbrevOffsetVec);
-  AbbrevOffsets.push_back(FullAbbrevData->size());
+  AbbrevOffsets.push_back(FullAbbrevData.size());
   sort(AbbrevOffsets);
   AbbrevOffsets.erase(unique(AbbrevOffsets, std::equal_to<size_t>()),
                       AbbrevOffsets.end());
@@ -1366,7 +1821,7 @@ MCCASBuilder::splitAbbrevSection(ArrayRef<size_t> AbbrevOffsetVec) {
   SmallVector<DebugAbbrevRef> AbbrevRefs;
   for (size_t EndOffset : drop_begin(AbbrevOffsets)) {
     StringRef AbbrevData =
-        toStringRef(*FullAbbrevData).slice(StartOffset, EndOffset);
+        toStringRef(FullAbbrevData).slice(StartOffset, EndOffset);
     auto AbbrevRef = DebugAbbrevRef::create(*this, AbbrevData);
     if (!AbbrevRef)
       return AbbrevRef.takeError();
@@ -1398,6 +1853,103 @@ DebugAbbrevOffsetsRefAdaptor::encodeOffsets(ArrayRef<size_t> Offsets) {
   return EncodedOffsets;
 }
 
+static void
+partitionCUDie(InMemoryCASDWARFObject::PartitionedDebugInfoSection &SplitData,
+               DWARFDie &CUDie, ArrayRef<char> DebugInfoData,
+               uint64_t &CUOffset, bool IsLittleEndian, uint8_t AddressSize) {
+
+  // Copy Abbrev Tag
+  DWARFDataExtractor DWARFExtractor(toStringRef(DebugInfoData), IsLittleEndian,
+                                    AddressSize);
+  auto PrevOffset = CUOffset;
+  DWARFExtractor.getULEB128(&CUOffset);
+  auto Size = CUOffset - PrevOffset;
+  append_range(SplitData.DebugInfoCURefData,
+               DebugInfoData.slice(PrevOffset, Size));
+  for (const DWARFAttribute &AttrValue : CUDie.attributes()) {
+    if (is_contained(InMemoryCASDWARFObject::PartitionedDebugInfoSection::
+                         FormsToPartition,
+                     AttrValue.Value.getForm()))
+      append_range(SplitData.DistinctData,
+                   DebugInfoData.slice(AttrValue.Offset, AttrValue.ByteSize));
+    else
+      append_range(SplitData.DebugInfoCURefData,
+                   DebugInfoData.slice(AttrValue.Offset, AttrValue.ByteSize));
+    CUOffset += AttrValue.ByteSize;
+  }
+
+  DWARFDie Child = CUDie.getFirstChild();
+  while (Child && Child.getAbbreviationDeclarationPtr()) {
+    partitionCUDie(SplitData, Child, DebugInfoData, CUOffset, IsLittleEndian,
+                   AddressSize);
+    Child = Child.getSibling();
+  }
+  if (Child && !Child.getAbbreviationDeclarationPtr()) {
+    SplitData.DebugInfoCURefData.push_back(DebugInfoData[CUOffset]);
+    CUOffset++;
+  }
+}
+
+Expected<InMemoryCASDWARFObject::PartitionedDebugInfoSection>
+InMemoryCASDWARFObject::splitUpCUData(ArrayRef<char> DebugInfoData,
+                                      uint64_t AbbrevOffset, uint64_t CUOffset,
+                                      DWARFContext *Ctx) {
+
+  StringRef AbbrevSectionContribution =
+      getAbbrevSection().drop_front(AbbrevOffset);
+  DWARFDebugAbbrev Abbrev;
+  Abbrev.extract(DataExtractor(AbbrevSectionContribution, isLittleEndian(), 8));
+  uint64_t OffsetPtr = 0;
+  DWARFUnitHeader Header;
+  DWARFSection Section = {toStringRef(DebugInfoData), 0 /*Address*/};
+  Header.extract(*Ctx, DWARFDataExtractor(*this, Section, isLittleEndian(), 8),
+                 &OffsetPtr, DWARFSectionKind::DW_SECT_INFO);
+
+  DWARFUnitVector UV;
+  DWARFCompileUnit DCU(*Ctx, Section, Header, &Abbrev, &getRangesSection(),
+                       &getLocSection(), getStrSection(),
+                       getStrOffsetsSection(), &getAddrSection(),
+                       getLocSection(), isLittleEndian(), false, UV);
+
+  InMemoryCASDWARFObject::PartitionedDebugInfoSection SplitData;
+  if (DWARFDie CUDie = DCU.getUnitDIE(false)) {
+    // Copy 11 bytes which represents the 32-bit DWARF Header for DWARF4.
+    if (DebugInfoData.size() < Dwarf4HeaderSize32Bit)
+      return createStringError(inconvertibleErrorCode(),
+                               "DebugInfoData is too small, it doesn't even "
+                               "contain a 32-bit DWARF Header");
+    append_range(SplitData.DebugInfoCURefData,
+                 DebugInfoData.take_front(Dwarf4HeaderSize32Bit));
+    CUOffset += Dwarf4HeaderSize32Bit;
+
+    DWARFDataExtractor DWARFExtractor(toStringRef(SplitData.DebugInfoCURefData),
+                                      IsLittleEndian, 8);
+    uint64_t Offset = 0;
+    DWARFDataExtractor::Cursor C(Offset);
+    auto HeaderLength = DWARFExtractor.getRelocatedValue(C, 4);
+    auto DwarfVersion = DWARFExtractor.getRelocatedValue(C, 2);
+
+    // TODO: Add support for DWARF 5
+    if (DwarfVersion != 4)
+      return createStringError(inconvertibleErrorCode(),
+                               "Only DWARF 4 is supported right now");
+
+    // TODO: Add support for 64-bit DWARF Format
+    if (HeaderLength == 0xffffffff)
+      return createStringError(inconvertibleErrorCode(),
+                               "64-bit DWARF Format not yet supported");
+    if (HeaderLength >= 0xfffffff0)
+      llvm_unreachable("Unknown DWARF Format");
+
+    if (!C)
+      return C.takeError();
+
+    partitionCUDie(SplitData, CUDie, DebugInfoData, CUOffset, IsLittleEndian,
+                   DCU.getAddressByteSize());
+  }
+  return SplitData;
+}
+
 Expected<AbbrevAndDebugSplit> MCCASBuilder::splitDebugInfoAndAbbrevSections() {
   if (!DwarfSections.DebugInfo)
     return AbbrevAndDebugSplit{};
@@ -1413,14 +1965,38 @@ Expected<AbbrevAndDebugSplit> MCCASBuilder::splitDebugInfoAndAbbrevSections() {
   if (!SplitInfo)
     return SplitInfo.takeError();
 
+  const MCSection::FragmentListType &AbbrevFragmentList =
+      DwarfSections.Abbrev->getFragmentList();
+
+  Expected<SmallVector<char, 0>> FullAbbrevData =
+      mergeMCFragmentContents(AbbrevFragmentList);
+  if (!FullAbbrevData)
+    return FullAbbrevData.takeError();
+
+  InMemoryCASDWARFObject CASObj(
+      *FullAbbrevData, Asm.getBackend().Endian == support::endianness::little);
+  auto DWARFObj = std::make_unique<InMemoryCASDWARFObject>(CASObj);
+  auto DWARFContextHolder = std::make_unique<DWARFContext>(std::move(DWARFObj));
+  auto *DWARFCtx = DWARFContextHolder.get();
+
   Expected<SmallVector<DebugAbbrevRef>> AbbrevRefs =
-      splitAbbrevSection(SplitInfo->AbbrevOffsets);
+      splitAbbrevSection(SplitInfo->AbbrevOffsets, *FullAbbrevData);
   if (!AbbrevRefs)
     return AbbrevRefs.takeError();
 
   SmallVector<DebugInfoCURef> CURefs;
-  for (MutableArrayRef<char> CUData : SplitInfo->SplitCUData) {
-    auto DbgInfoRef = DebugInfoCURef::create(*this, toStringRef(CUData));
+  SmallVector<char> DistinctData;
+  for (auto [CUData, AbbrevOffset] :
+       llvm::zip(SplitInfo->SplitCUData, SplitInfo->AbbrevOffsets)) {
+    uint64_t CUOffset = 0;
+    auto SplitData =
+        CASObj.splitUpCUData(CUData, AbbrevOffset, CUOffset, DWARFCtx);
+    if (!SplitData)
+      return SplitData.takeError();
+    DistinctData.append(SplitData->DistinctData.begin(),
+                        SplitData->DistinctData.end());
+    auto DbgInfoRef = DebugInfoCURef::create(
+        *this, toStringRef(SplitData->DebugInfoCURefData));
     if (!DbgInfoRef)
       return DbgInfoRef.takeError();
     CURefs.push_back(*DbgInfoRef);
@@ -1433,8 +2009,13 @@ Expected<AbbrevAndDebugSplit> MCCASBuilder::splitDebugInfoAndAbbrevSections() {
   if (!AbbrevOffsetsRef)
     return AbbrevOffsetsRef.takeError();
 
+  auto DebugDistinctDataRef =
+      DebugInfoDistinctDataRef::create(*this, toStringRef(DistinctData));
+  if (!DebugDistinctDataRef)
+    return DebugDistinctDataRef.takeError();
+
   return AbbrevAndDebugSplit{std::move(CURefs), std::move(*AbbrevRefs),
-                             *AbbrevOffsetsRef};
+                             *AbbrevOffsetsRef, *DebugDistinctDataRef};
 }
 
 Error MCCASBuilder::createLineSection() {
@@ -1517,8 +2098,9 @@ Error MCCASBuilder::buildFragments() {
 
     // Handle Debug Info sections separately.
     if (&Sec == DwarfSections.DebugInfo) {
-      if (auto E = createDebugInfoSection(AbbrevAndCURefs->CURefs,
-                                          *AbbrevAndCURefs->AbbrevOffsetsRef))
+      if (auto E = createDebugInfoSection(
+              AbbrevAndCURefs->CURefs, *AbbrevAndCURefs->AbbrevOffsetsRef,
+              *AbbrevAndCURefs->DebugDistinctDataRef))
         return E;
       continue;
     }
@@ -1884,6 +2466,10 @@ Expected<uint64_t> MCCASReader::materializeGroup(cas::ObjectRef ID) {
     return *Size + 1;
   }
   if (auto F = DebugInfoSectionRef::Cast(*Node))
+    return createStringError(
+        inconvertibleErrorCode(),
+        "DebugInfoSectionRef should not be materialized here!");
+  if (auto F = DebugAbbrevSectionRef::Cast(*Node))
     return F->materialize(*this);
   return createStringError(inconvertibleErrorCode(),
                            "unsupported CAS node for group");

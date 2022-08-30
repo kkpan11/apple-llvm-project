@@ -22,6 +22,7 @@ CASV1_SIMPLE_DATA_REF(DebugInfoCURef, mc:debug_info_cu)
 CASV1_SIMPLE_DATA_REF(DebugLineRef, mc:debug_line)
 CASV1_SIMPLE_DATA_REF(DebugAbbrevRef, mc:debug_abbrev)
 CASV1_SIMPLE_DATA_REF(DebugAbbrevOffsetsRef, mc:debug_abbrev_offsets)
+CASV1_SIMPLE_DATA_REF(DebugInfoDistinctDataRef, mc:debug_info_distinct_data)
 
 #undef CASV1_SIMPLE_DATA_REF
 #endif /* CASV1_SIMPLE_DATA_REF */
@@ -30,7 +31,7 @@ CASV1_SIMPLE_DATA_REF(DebugAbbrevOffsetsRef, mc:debug_abbrev_offsets)
 
 CASV1_SIMPLE_GROUP_REF(GroupRef, mc:group)
 CASV1_SIMPLE_GROUP_REF(SectionRef, mc:section)
-CASV1_SIMPLE_GROUP_REF(DebugInfoSectionRef, mc:debug_info_section)
+CASV1_SIMPLE_GROUP_REF(DebugAbbrevSectionRef, mc:debug_abbrev_section)
 CASV1_SIMPLE_GROUP_REF(AtomRef, mc:atom)
 CASV1_SIMPLE_GROUP_REF(SymbolTableRef, mc:symbol_table)
 
