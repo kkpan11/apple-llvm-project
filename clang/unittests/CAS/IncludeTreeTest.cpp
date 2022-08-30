@@ -1,8 +1,8 @@
 #include "clang/CAS/IncludeTree.h"
 #include "clang/Tooling/DependencyScanning/DependencyScanningTool.h"
-#include "llvm/CAS/CASDB.h"
 #include "llvm/CAS/CASProvidingFileSystem.h"
 #include "llvm/CAS/CachingOnDiskFileSystem.h"
+#include "llvm/CAS/ObjectStore.h"
 #include "llvm/Testing/Support/Error.h"
 #include "gtest/gtest.h"
 
@@ -13,7 +13,7 @@ using namespace tooling;
 using namespace dependencies;
 
 TEST(IncludeTree, IncludeTreeScan) {
-  std::shared_ptr<CASDB> DB = llvm::cas::createInMemoryCAS();
+  std::shared_ptr<ObjectStore> DB = llvm::cas::createInMemoryCAS();
   auto FS = llvm::makeIntrusiveRefCnt<llvm::vfs::InMemoryFileSystem>();
   auto add = [&](StringRef Path, StringRef Contents) {
     FS->addFile(Path, 0, llvm::MemoryBuffer::getMemBuffer(Contents));
@@ -39,7 +39,7 @@ TEST(IncludeTree, IncludeTreeScan) {
 
   DependencyScanningService Service(ScanningMode::DependencyDirectivesScan,
                                     ScanningOutputFormat::IncludeTree,
-                                    CASOptions(), nullptr);
+                                    CASOptions(), nullptr, nullptr);
   DependencyScanningTool ScanTool(Service, std::move(VFS));
 
   std::vector<std::string> CommandLine = {"clang",

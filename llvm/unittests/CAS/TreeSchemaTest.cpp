@@ -6,9 +6,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/CAS/CASDB.h"
-#include "llvm/CAS/HierarchicalTreeBuilder.h"
 #include "llvm/CAS/TreeSchema.h"
+#include "llvm/CAS/HierarchicalTreeBuilder.h"
+#include "llvm/CAS/ObjectStore.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Testing/Support/Error.h"
@@ -19,17 +19,17 @@ using namespace llvm;
 using namespace llvm::cas;
 
 TEST(TreeSchemaTest, Trees) {
-  std::unique_ptr<CASDB> CAS1 = createInMemoryCAS();
-  std::unique_ptr<CASDB> CAS2 = createInMemoryCAS();
+  std::unique_ptr<ObjectStore> CAS1 = createInMemoryCAS();
+  std::unique_ptr<ObjectStore> CAS2 = createInMemoryCAS();
 
   auto createBlobInBoth = [&](StringRef Content) {
-    Optional<ObjectHandle> H1, H2;
+    Optional<ObjectRef> H1, H2;
     EXPECT_THAT_ERROR(CAS1->storeFromString(None, Content).moveInto(H1),
                       Succeeded());
     EXPECT_THAT_ERROR(CAS2->storeFromString(None, Content).moveInto(H2),
                       Succeeded());
     EXPECT_EQ(CAS1->getID(*H1), CAS2->getID(*H2));
-    return CAS1->getReference(*H1);
+    return *H1;
   };
 
   ObjectRef Blob1 = createBlobInBoth("blob1");
@@ -61,8 +61,8 @@ TEST(TreeSchemaTest, Trees) {
   for (ArrayRef<NamedTreeEntry> Entries : FlatTreeEntries) {
     Optional<TreeProxy> H;
     ASSERT_THAT_ERROR(Schema1.create(Entries).moveInto(H), Succeeded());
-    FlatIDs.push_back(CAS1->getID(*H));
-    FlatRefs.push_back(CAS1->getReference(*H));
+    FlatIDs.push_back(H->getID());
+    FlatRefs.push_back(H->getRef());
   }
 
   // Confirm we get the same IDs the second time and that the trees can be
@@ -97,7 +97,7 @@ TEST(TreeSchemaTest, Trees) {
 
   // Insert into the other CAS and confirm the IDs are stable.
   for (int I = FlatIDs.size(), E = 0; I != E; --I) {
-    for (CASDB *CAS : {&*CAS1, &*CAS2}) {
+    for (ObjectStore *CAS : {&*CAS1, &*CAS2}) {
       TreeSchema Schema(*CAS);
       auto &ID = FlatIDs[I - 1];
       // Make a copy of the original entries and sort them.
@@ -163,7 +163,7 @@ TEST(TreeSchemaTest, Trees) {
     }
 
     llvm::sort(Entries);
-    for (CASDB *CAS : {&*CAS1, &*CAS2}) {
+    for (ObjectStore *CAS : {&*CAS1, &*CAS2}) {
       // Make a copy of the original entries and sort them.
       SmallVector<NamedTreeEntry> NewEntries;
       for (const NamedTreeEntry &Entry : Entries) {
@@ -191,11 +191,11 @@ TEST(TreeSchemaTest, Trees) {
 }
 
 TEST(TreeSchemaTest, Lookup) {
-  std::unique_ptr<CASDB> CAS = createInMemoryCAS();
-  Optional<ObjectHandle> Node;
+  std::unique_ptr<ObjectStore> CAS = createInMemoryCAS();
+  Optional<ObjectRef> Node;
   EXPECT_THAT_ERROR(CAS->storeFromString(None, "blob").moveInto(Node),
                     Succeeded());
-  ObjectRef Blob = CAS->getReference(*Node);
+  ObjectRef Blob = *Node;
   SmallVector<NamedTreeEntry> FlatTreeEntries = {
       NamedTreeEntry(Blob, TreeEntry::Regular, "e"),
       NamedTreeEntry(Blob, TreeEntry::Regular, "b"),
@@ -225,10 +225,10 @@ TEST(TreeSchemaTest, Lookup) {
 }
 
 TEST(TreeSchemaTest, walkFileTreeRecursively) {
-  std::unique_ptr<CASDB> CAS = createInMemoryCAS();
+  std::unique_ptr<ObjectStore> CAS = createInMemoryCAS();
 
   auto make = [&](StringRef Content) {
-    return CAS->getReference(cantFail(CAS->storeFromString(None, Content)));
+    return cantFail(CAS->storeFromString(None, Content));
   };
 
   HierarchicalTreeBuilder Builder;
@@ -236,7 +236,7 @@ TEST(TreeSchemaTest, walkFileTreeRecursively) {
   Builder.push(make("blob1"), TreeEntry::Regular, "/t1/d1");
   Builder.push(make("blob3"), TreeEntry::Regular, "/t3/d3");
   Builder.push(make("blob1"), TreeEntry::Regular, "/t3/t1nested/d1");
-  Optional<ObjectHandle> Root;
+  Optional<ObjectProxy> Root;
   ASSERT_THAT_ERROR(Builder.create(*CAS).moveInto(Root), Succeeded());
 
   std::pair<std::string, bool> ExpectedEntries[] = {

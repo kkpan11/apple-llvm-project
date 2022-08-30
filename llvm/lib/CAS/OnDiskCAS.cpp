@@ -62,9 +62,6 @@ public:
 
     /// Object: refs and data.
     Object = 1,
-
-    /// String: data, no alignment guarantee, null-terminated.
-    String = 4,
   };
 
   enum Limits : int64_t {
@@ -712,22 +709,18 @@ struct OnDiskContent {
 ///     - db/<prefix>.<offset>.leaf+0: a file storing a leaf object outside the
 ///       main "data" table, named by its offset into the "index" table, with
 ///       the format of \a TrieRecord::StorageKind::StandaloneLeaf0.
-/// - db/<prefix>.actions: a file for the "actions" table, named by \a
-///   getActionCacheTableName() and managed by \a HashMappedTrie. The contents
-///   are \a CASID::getInternalID(), stored as \a ActionCacheResultT;
-///   effectively, a pointer into the "index" table.
 ///
-/// The "index", "data", and "actions" tables could be stored in a single file,
+/// The "index", and "data" tables could be stored in a single file,
 /// (using a root record that points at the two types of stores), but splitting
 /// the files seems more convenient for now.
 ///
 /// Eventually: update UniqueID/CASID to store:
 /// - uint64_t: for BuiltinCAS, this is a pointer to Trie record
-/// - CASDB*: for knowing how to compare, and for getHash()
+/// - ObjectStore*: for knowing how to compare, and for getHash()
 ///
 /// Eventually: add ObjectHandle (update ObjectRef):
 /// - uint64_t: for BuiltinCAS, this is a pointer to Data record
-/// - CASDB*: for implementing APIs
+/// - ObjectStore*: for implementing APIs
 ///
 /// Eventually: consider creating a StringPool for strings instead of using
 /// RecordDataStore table.
@@ -745,18 +738,11 @@ public:
         ("llvm.cas.data[" + getHashName() + "]").str();
     return Name;
   }
-  static StringRef getActionCacheTableName() {
-    static const std::string Name =
-        ("llvm.cas.actions[" + getHashName() + "->" + getHashName() + "]")
-            .str();
-    return Name;
-  }
 
   static constexpr StringLiteral IndexFile = "index";
   static constexpr StringLiteral DataPoolFile = "data";
-  static constexpr StringLiteral ActionCacheFile = "actions";
 
-  static constexpr StringLiteral FilePrefix = "v5.";
+  static constexpr StringLiteral FilePrefix = "v6.";
   static constexpr StringLiteral FileSuffixData = ".data";
   static constexpr StringLiteral FileSuffixLeaf = ".leaf";
   static constexpr StringLiteral FileSuffixLeaf0 = ".leaf+0";
@@ -769,13 +755,13 @@ public:
     return getID(indexHash(Hash));
   }
 
-  Expected<ObjectHandle> storeImpl(ArrayRef<uint8_t> ComputedHash,
-                                   ArrayRef<ObjectRef> Refs,
-                                   ArrayRef<char> Data) final;
+  Expected<ObjectRef> storeImpl(ArrayRef<uint8_t> ComputedHash,
+                                ArrayRef<ObjectRef> Refs,
+                                ArrayRef<char> Data) final;
 
-  Expected<ObjectHandle> createStandaloneLeaf(IndexProxy &I, ArrayRef<char> Data);
+  Expected<ObjectRef> createStandaloneLeaf(IndexProxy &I, ArrayRef<char> Data);
 
-  Expected<ObjectHandle>
+  Expected<ObjectRef>
   loadOrCreateDataRecord(IndexProxy &I, TrieRecord::ObjectKind OK,
                          DataRecordHandle::Input Input);
 
@@ -835,6 +821,7 @@ public:
   }
 
   Optional<ObjectRef> getReference(const CASID &ID) const final;
+  Optional<ObjectRef> getReference(ArrayRef<uint8_t> Hash) const final;
   ObjectRef getReference(ObjectHandle Handle) const final {
     return getExternalReference(getInternalHandle(Handle).getRef());
   }
@@ -861,14 +848,9 @@ public:
   IndexProxy
   getIndexProxyFromPointer(OnDiskHashMappedTrie::const_pointer P) const;
 
-  Expected<InternalRef> storeTreeEntryName(StringRef String);
-
   ArrayRef<char> getDataConst(ObjectHandle Node) const final;
 
   void print(raw_ostream &OS) const final;
-
-  Expected<CASID> getCachedResult(CASID InputID) final;
-  Error putCachedResult(CASID InputID, CASID OutputID) final;
 
   static Expected<std::unique_ptr<OnDiskCAS>> open(StringRef Path);
 
@@ -895,7 +877,7 @@ private:
                                                          CASID ID);
 
   OnDiskCAS(StringRef RootPath, OnDiskHashMappedTrie Index,
-            OnDiskDataAllocator DataPool, OnDiskHashMappedTrie ActionCache);
+            OnDiskDataAllocator DataPool);
 
   /// Mapping from hash to object reference.
   ///
@@ -918,13 +900,6 @@ private:
   /// FIXME: Figure out the right number of shards, if any.
   mutable StandaloneDataMap<16> StandaloneData;
 
-  /// Action cache.
-  ///
-  /// FIXME: Separate out. Likely change key to be independent from CASID and
-  /// stored separately.
-  OnDiskHashMappedTrie ActionCache;
-  using ActionCacheResultT = std::atomic<uint64_t>;
-
   std::string RootPath;
   std::string TempPrefix;
 };
@@ -933,7 +908,6 @@ private:
 
 constexpr StringLiteral OnDiskCAS::IndexFile;
 constexpr StringLiteral OnDiskCAS::DataPoolFile;
-constexpr StringLiteral OnDiskCAS::ActionCacheFile;
 constexpr StringLiteral OnDiskCAS::FilePrefix;
 constexpr StringLiteral OnDiskCAS::FileSuffixData;
 constexpr StringLiteral OnDiskCAS::FileSuffixLeaf;
@@ -1368,9 +1342,6 @@ void OnDiskCAS::print(raw_ostream &OS) const {
     case TrieRecord::ObjectKind::Object:
       OS << "object ";
       break;
-    case TrieRecord::ObjectKind::String:
-      OS << "string ";
-      break;
     }
     OS << " SK=";
     switch (D.SK) {
@@ -1455,6 +1426,16 @@ Optional<ObjectRef> OnDiskCAS::getReference(const CASID &ID) const {
   return None;
 }
 
+Optional<ObjectRef> OnDiskCAS::getReference(ArrayRef<uint8_t> Hash) const {
+  OnDiskHashMappedTrie::const_pointer P = Index.find(Hash);
+  if (!P)
+    return None;
+  IndexProxy I = getIndexProxyFromPointer(P);
+  if (Optional<InternalRef> Ref = makeInternalRef(I.Offset, I.Ref.load()))
+    return getExternalReference(*Ref);
+  return None;
+}
+
 OnDiskHashMappedTrie::const_pointer
 OnDiskCAS::getInternalIndexPointer(const CASID &ID) const {
   // Recover the pointer from the FileOffset if ID comes from this CAS.
@@ -1524,8 +1505,6 @@ ObjectHandle OnDiskCAS::getLoadedObject(const IndexProxy &I,
                                         InternalHandle Handle) const {
   switch (Object.OK) {
   case TrieRecord::ObjectKind::Invalid:
-  case TrieRecord::ObjectKind::String:
-    report_fatal_error(createCorruptObjectError(getID(I)));
   case TrieRecord::ObjectKind::Object:
     return makeObjectHandle(Handle.getRawData());
   }
@@ -1561,54 +1540,6 @@ OnDiskCAS::makeInternalRef(FileOffset IndexOffset,
     return InternalRef::getFromOffset(InternalRef::OffsetKind::IndexRecord,
                                       IndexOffset);
   }
-}
-
-Expected<InternalRef> OnDiskCAS::storeTreeEntryName(StringRef String) {
-  if (String.size() > UINT16_MAX)
-    return createStringError(std::make_error_code(std::errc::invalid_argument),
-                             "tree entry name too large for implementation");
-
-  // Make a string.
-  //
-  // FIXME: Should be using a content-based trie, rather than computing a hash
-  // and using a hash-based trie... otherwise this doesn't give any storage
-  // savings!
-  IndexProxy I = indexHash(BuiltinObjectHasher<HasherT>::hashString(String));
-
-  // Already exists!
-  TrieRecord::Data Object = I.Ref.load();
-  if (Object.OK == TrieRecord::ObjectKind::String)
-    return *makeInternalRef(I.Offset, Object);
-  if (Object.OK != TrieRecord::ObjectKind::Invalid)
-    return createCorruptStorageError();
-
-  FileOffset Offset;
-  auto Alloc = [&](size_t Size) -> char * {
-    OnDiskDataAllocator::pointer P = DataPool.allocate(Size);
-    Offset = P.getOffset();
-    LLVM_DEBUG({
-      dbgs() << "pool-alloc addr=" << (void *)Offset.get() << " size=" << Size
-             << " end=" << (void *)(Offset.get() + Size) << "\n";
-    });
-    return P->data();
-  };
-  (void)String2BHandle::create(Alloc, String);
-
-  TrieRecord::Data Existing;
-  {
-    TrieRecord::Data StringData{TrieRecord::StorageKind::DataPoolString2B,
-                                TrieRecord::ObjectKind::String, Offset};
-
-    if (I.Ref.compare_exchange_strong(Existing, StringData))
-      return *makeInternalRef(I.Offset, StringData);
-  }
-
-  // TODO: Find a way to reuse the storage from the new-but-abandoned
-  // String2BHandle.
-  if (Existing.SK != TrieRecord::StorageKind::DataPoolString2B)
-    return createCorruptStorageError();
-
-  return *makeInternalRef(I.Offset, Existing);
 }
 
 void OnDiskCAS::getStandalonePath(TrieRecord::StorageKind SK,
@@ -1685,7 +1616,7 @@ OnDiskContent OnDiskCAS::getContentFromHandle(InternalHandle Handle) const {
     auto Handle =
         String2BHandle::get(DataPool.beginData(DirectRef.getFileOffset()));
     assert(Handle.getString().end()[0] == 0 && "Null termination");
-    return OnDiskContent{None, toArrayRef(Handle.getString())};
+    return OnDiskContent{None, arrayRefFromStringRef<char>(Handle.getString())};
   }
 
   case InternalRef::OffsetKind::DataRecord: {
@@ -1719,8 +1650,8 @@ OnDiskContent StandaloneDataInMemory::getContent() const {
   if (Leaf) {
     assert(Region->getBuffer().drop_back(Leaf0).end()[0] == 0 &&
            "Standalone node data missing null termination");
-    return OnDiskContent{None,
-                         toArrayRef(Region->getBuffer().drop_back(Leaf0))};
+    return OnDiskContent{None, arrayRefFromStringRef<char>(
+                                   Region->getBuffer().drop_back(Leaf0))};
   }
 
   DataRecordHandle Record = DataRecordHandle::get(Region->getBuffer().data());
@@ -1753,8 +1684,8 @@ static size_t getPageSize() {
   return PageSize;
 }
 
-Expected<ObjectHandle> OnDiskCAS::createStandaloneLeaf(IndexProxy &I,
-                                                     ArrayRef<char> Data) {
+Expected<ObjectRef> OnDiskCAS::createStandaloneLeaf(IndexProxy &I,
+                                                    ArrayRef<char> Data) {
   assert(Data.size() > TrieRecord::MaxEmbeddedSize &&
          "Expected a bigger file for external content...");
 
@@ -1784,7 +1715,7 @@ Expected<ObjectHandle> OnDiskCAS::createStandaloneLeaf(IndexProxy &I,
   {
     TrieRecord::Data Leaf{SK, TrieRecord::ObjectKind::Object, FileOffset()};
     if (I.Ref.compare_exchange_strong(Existing, Leaf))
-      return load(I, Leaf, *makeInternalRef(I.Offset, Leaf));
+      return getExternalReference(*makeInternalRef(I.Offset, Leaf));
   }
 
   // If there was a race, confirm that the new value has valid storage.
@@ -1793,19 +1724,19 @@ Expected<ObjectHandle> OnDiskCAS::createStandaloneLeaf(IndexProxy &I,
     return createCorruptObjectError(getID(I));
 
   // Get and return the inserted leaf node.
-  return load(I, Existing, *makeInternalRef(I.Offset, Existing));
+  return getExternalReference(*makeInternalRef(I.Offset, Existing));
 }
 
-Expected<ObjectHandle> OnDiskCAS::storeImpl(ArrayRef<uint8_t> ComputedHash,
-                                            ArrayRef<ObjectRef> Refs,
-                                            ArrayRef<char> Data) {
+Expected<ObjectRef> OnDiskCAS::storeImpl(ArrayRef<uint8_t> ComputedHash,
+                                         ArrayRef<ObjectRef> Refs,
+                                         ArrayRef<char> Data) {
   IndexProxy I = indexHash(ComputedHash);
 
   // Early return in case the node exists.
   {
     TrieRecord::Data Existing = I.Ref.load();
     if (Existing.OK == TrieRecord::ObjectKind::Object)
-      return load(I, Existing, *makeInternalRef(I.Offset, Existing));
+      return getExternalReference(*makeInternalRef(I.Offset, Existing));
     if (Existing.SK != TrieRecord::StorageKind::Unknown)
       return createCorruptObjectError(getID(I));
   }
@@ -1827,7 +1758,7 @@ Expected<ObjectHandle> OnDiskCAS::storeImpl(ArrayRef<uint8_t> ComputedHash,
       DataRecordHandle::Input{I.Offset, InternalRefs, Data});
 }
 
-Expected<ObjectHandle>
+Expected<ObjectRef>
 OnDiskCAS::loadOrCreateDataRecord(IndexProxy &I, TrieRecord::ObjectKind OK,
                                   DataRecordHandle::Input Input) {
   // Compute the storage kind, allocate it, and create the record.
@@ -1888,7 +1819,7 @@ OnDiskCAS::loadOrCreateDataRecord(IndexProxy &I, TrieRecord::ObjectKind OK,
     // handle.
     if (Existing.SK == TrieRecord::StorageKind::Unknown) {
       if (I.Ref.compare_exchange_strong(Existing, NewObject))
-        return load(I, NewObject, *makeInternalRef(I.Offset, NewObject));
+        return getExternalReference(*makeInternalRef(I.Offset, NewObject));
     }
   }
 
@@ -1896,7 +1827,7 @@ OnDiskCAS::loadOrCreateDataRecord(IndexProxy &I, TrieRecord::ObjectKind OK,
     return createCorruptObjectError(getID(I));
 
   // Load existing object.
-  return load(I, Existing, *makeInternalRef(I.Offset, Existing));
+  return getExternalReference(*makeInternalRef(I.Offset, Existing));
 }
 
 OnDiskCAS::PooledDataRecord
@@ -1924,65 +1855,6 @@ Error OnDiskCAS::forEachRef(ObjectHandle Node,
   return Error::success();
 }
 
-Expected<CASID> OnDiskCAS::getCachedResult(CASID InputID) {
-  // Check that InputID is valid.
-  //
-  // FIXME: InputID check is silly; we should have a separate ActionKey.
-  if (!getReference(InputID))
-    return createUnknownObjectError(InputID);
-
-  // Check the result cache.
-  //
-  // FIXME: Failure here should not be an error.
-  OnDiskHashMappedTrie::pointer ActionP = ActionCache.find(InputID.getHash());
-  if (!ActionP)
-    return createResultCacheMissError(InputID);
-  const uint64_t Output =
-      reinterpret_cast<const ActionCacheResultT *>(ActionP->Data.data())
-          ->load();
-
-  // Return the result.
-  return getID(getExternalReference(InternalRef::getFromRawData(Output)));
-}
-
-Error OnDiskCAS::putCachedResult(CASID InputID, CASID OutputID) {
-  // Check that both IDs are valid.
-  //
-  // FIXME: InputID check is silly; we should have a separate ActionKey.
-  if (!getReference(InputID))
-    return createUnknownObjectError(InputID);
-
-  Optional<InternalRef> OutputRef;
-  if (Optional<ObjectRef> ExternalRef = getReference(OutputID))
-    OutputRef = getInternalRef(*ExternalRef);
-  else
-    return createUnknownObjectError(OutputID);
-
-  // Insert Input the result cache.
-  //
-  // FIXME: Consider templating OnDiskHashMappedTrie (really, renaming it to
-  // OnDiskHashMappedTrieBase and adding a type-safe layer on top).
-  const uint64_t Expected = OutputRef->getRawData();
-  OnDiskHashMappedTrie::pointer ActionP = ActionCache.insertLazy(
-      InputID.getHash(), [&](FileOffset TentativeOffset,
-                             OnDiskHashMappedTrie::ValueProxy TentativeValue) {
-        assert(TentativeValue.Data.size() == sizeof(ActionCacheResultT));
-        assert(isAddrAligned(Align::Of<ActionCacheResultT>(),
-                             TentativeValue.Data.data()));
-        new (TentativeValue.Data.data()) ActionCacheResultT(Expected);
-      });
-  const uint64_t Observed =
-      reinterpret_cast<const ActionCacheResultT *>(ActionP->Data.data())
-          ->load();
-
-  if (Expected == Observed)
-    return Error::success();
-
-  CASID ObservedID =
-      getID(getExternalReference(InternalRef::getFromRawData(Observed)));
-  return createResultCachePoisonedError(InputID, OutputID, ObservedID);
-}
-
 Expected<std::unique_ptr<OnDiskCAS>> OnDiskCAS::open(StringRef AbsPath) {
   if (std::error_code EC = sys::fs::create_directories(AbsPath))
     return createFileError(AbsPath, EC);
@@ -2007,31 +1879,20 @@ Expected<std::unique_ptr<OnDiskCAS>> OnDiskCAS::open(StringRef AbsPath) {
                     .moveInto(DataPool))
     return std::move(E);
 
-  Optional<OnDiskHashMappedTrie> ActionCache;
-  if (Error E = OnDiskHashMappedTrie::create(
-                    AbsPath + Slash + FilePrefix + ActionCacheFile,
-                    getActionCacheTableName(), sizeof(HashType) * 8,
-                    /*DataSize=*/sizeof(ActionCacheResultT), /*MaxFileSize=*/GB,
-                    /*MinFileSize=*/MB)
-                    .moveInto(ActionCache))
-    return std::move(E);
-
-  return std::unique_ptr<OnDiskCAS>(new OnDiskCAS(AbsPath, std::move(*Index),
-                                                  std::move(*DataPool),
-                                                  std::move(*ActionCache)));
+  return std::unique_ptr<OnDiskCAS>(
+      new OnDiskCAS(AbsPath, std::move(*Index), std::move(*DataPool)));
 }
 
 OnDiskCAS::OnDiskCAS(StringRef RootPath, OnDiskHashMappedTrie Index,
-                     OnDiskDataAllocator DataPool,
-                     OnDiskHashMappedTrie ActionCache)
+                     OnDiskDataAllocator DataPool)
     : Index(std::move(Index)), DataPool(std::move(DataPool)),
-      ActionCache(std::move(ActionCache)), RootPath(RootPath.str()) {
+      RootPath(RootPath.str()) {
   SmallString<128> Temp = RootPath;
   sys::path::append(Temp, "tmp.");
   TempPrefix = Temp.str().str();
 }
 
-Expected<std::unique_ptr<CASDB>> cas::createOnDiskCAS(const Twine &Path) {
+Expected<std::unique_ptr<ObjectStore>> cas::createOnDiskCAS(const Twine &Path) {
   // FIXME: An absolute path isn't really good enough. Should open a directory
   // and use openat() for files underneath.
   SmallString<256> AbsPath;
@@ -2047,19 +1908,17 @@ Expected<std::unique_ptr<CASDB>> cas::createOnDiskCAS(const Twine &Path) {
 
 #else /* LLVM_ENABLE_ONDISK_CAS */
 
-Expected<std::unique_ptr<CASDB>> cas::createOnDiskCAS(const Twine &Path) {
+Expected<std::unique_ptr<ObjectStore>> cas::createOnDiskCAS(const Twine &Path) {
   return createStringError(inconvertibleErrorCode(), "OnDiskCAS is disabled");
 }
 
 #endif /* LLVM_ENABLE_ONDISK_CAS */
 
-// FIXME: Proxy not portable. Maybe also error-prone?
-constexpr StringLiteral DefaultDirProxy = "/^llvm::cas::builtin::default";
-constexpr StringLiteral DefaultName = "llvm.cas.builtin.default";
+static constexpr StringLiteral DefaultName = "cas";
 
 void cas::getDefaultOnDiskCASStableID(SmallVectorImpl<char> &Path) {
   Path.assign(DefaultDirProxy.begin(), DefaultDirProxy.end());
-  llvm::sys::path::append(Path, DefaultName);
+  llvm::sys::path::append(Path, DefaultDir, DefaultName);
 }
 
 std::string cas::getDefaultOnDiskCASStableID() {
@@ -2072,7 +1931,7 @@ void cas::getDefaultOnDiskCASPath(SmallVectorImpl<char> &Path) {
   // FIXME: Should this return 'Error' instead of hard-failing?
   if (!llvm::sys::path::cache_directory(Path))
     report_fatal_error("cannot get default cache directory");
-  llvm::sys::path::append(Path, DefaultName);
+  llvm::sys::path::append(Path, DefaultDir, DefaultName);
 }
 
 std::string cas::getDefaultOnDiskCASPath() {

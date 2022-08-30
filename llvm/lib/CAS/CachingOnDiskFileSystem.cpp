@@ -10,9 +10,9 @@
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringMap.h"
-#include "llvm/CAS/CASDB.h"
 #include "llvm/CAS/HashMappedTrie.h"
 #include "llvm/CAS/HierarchicalTreeBuilder.h"
+#include "llvm/CAS/ObjectStore.h"
 #include "llvm/Config/config.h"
 #include "llvm/Support/AlignOf.h"
 #include "llvm/Support/Allocator.h"
@@ -124,11 +124,11 @@ public:
     return makeIntrusiveRefCnt<CachingOnDiskFileSystemImpl>(*this);
   }
 
-  CachingOnDiskFileSystemImpl(std::shared_ptr<CASDB> DB)
+  CachingOnDiskFileSystemImpl(std::shared_ptr<ObjectStore> DB)
       : CachingOnDiskFileSystem(std::move(DB)) {
     initializeWorkingDirectory();
   }
-  CachingOnDiskFileSystemImpl(CASDB &DB) : CachingOnDiskFileSystem(DB) {
+  CachingOnDiskFileSystemImpl(ObjectStore &DB) : CachingOnDiskFileSystem(DB) {
     initializeWorkingDirectory();
   }
 
@@ -184,10 +184,11 @@ private:
 };
 } // namespace
 
-CachingOnDiskFileSystem::CachingOnDiskFileSystem(std::shared_ptr<CASDB> DB)
+CachingOnDiskFileSystem::CachingOnDiskFileSystem(
+    std::shared_ptr<ObjectStore> DB)
     : DB(*DB), OwnedDB(std::move(DB)) {}
 
-CachingOnDiskFileSystem::CachingOnDiskFileSystem(CASDB &DB) : DB(DB) {}
+CachingOnDiskFileSystem::CachingOnDiskFileSystem(ObjectStore &DB) : DB(DB) {}
 
 class CachingOnDiskFileSystemImpl::VFSFile : public vfs::File {
 public:
@@ -198,12 +199,12 @@ public:
   /// Get the contents of the file as a \p MemoryBuffer.
   ErrorOr<std::unique_ptr<MemoryBuffer>> getBuffer(const Twine &RequestedName,
                                                    int64_t, bool, bool) final {
-    Expected<ObjectHandle> Object = DB.load(*Entry->getRef());
+    Expected<ObjectProxy> Object = DB.getProxy(*Entry->getRef());
     if (!Object)
       return errorToErrorCode(Object.takeError());
-    assert(DB.getNumRefs(*Object) == 0 && "Expected a leaf node");
+    assert(Object->getNumReferences() == 0 && "Expected a leaf node");
     SmallString<256> Storage;
-    return DB.getMemoryBuffer(*Object, RequestedName.toStringRef(Storage));
+    return Object->getMemoryBuffer(RequestedName.toStringRef(Storage));
   }
 
   llvm::ErrorOr<Optional<cas::ObjectRef>> getObjectRefForContent() final {
@@ -214,11 +215,11 @@ public:
   std::error_code close() final { return std::error_code(); }
 
   VFSFile() = delete;
-  explicit VFSFile(CASDB &DB, DirectoryEntry &Entry, StringRef Name)
+  explicit VFSFile(ObjectStore &DB, DirectoryEntry &Entry, StringRef Name)
       : DB(DB), Entry(&Entry), Name(Name.str()) {}
 
 private:
-  CASDB &DB;
+  ObjectStore &DB;
   DirectoryEntry *Entry;
   std::string Name;
 };
@@ -336,24 +337,26 @@ Expected<FileSystemCache::DirectoryEntry *>
 CachingOnDiskFileSystemImpl::makeSymlinkTo(DirectoryEntry &Parent,
                                            StringRef TreePath,
                                            StringRef Target) {
-  Expected<ObjectHandle> Node = DB.storeFromString(None, Target);
+  Expected<ObjectRef> Node = DB.storeFromString(None, Target);
   if (!Node)
     return Node.takeError();
-  return &Cache->makeSymlink(Parent, TreePath, DB.getReference(*Node),
-                             DB.getDataString(*Node));
+  return &Cache->makeSymlink(Parent, TreePath, *Node, Target);
 }
 
 Expected<FileSystemCache::DirectoryEntry *>
 CachingOnDiskFileSystemImpl::makeFile(DirectoryEntry &Parent,
                                       StringRef TreePath, sys::fs::file_t F,
                                       sys::fs::file_status Status) {
-  Expected<ObjectHandle> Node = DB.storeFromOpenFile(F, Status);
+  Expected<ObjectRef> Node = DB.storeFromOpenFile(F, Status);
   if (!Node)
     return Node.takeError();
 
+  // Load back the data from CAS since we stored from openFile buffer.
+  Expected<ObjectProxy> Handle = DB.getProxy(*Node);
+  if (!Handle)
+    return Handle.takeError();
   // Do not trust Status.size() in case the file is volatile.
-  return &Cache->makeFile(Parent, TreePath, DB.getReference(*Node),
-                          DB.getDataSize(*Node),
+  return &Cache->makeFile(Parent, TreePath, *Node, Handle->getData().size(),
                           Status.permissions() & sys::fs::perms::owner_exe);
 }
 
@@ -611,7 +614,7 @@ getTreeEntryKind(const FileSystemCache::DirectoryEntry &Entry) {
 
 /// Push an entry to the builder, doing nothing (but returning false) for
 /// directories.
-static void pushEntryToBuilder(const CASDB &DB,
+static void pushEntryToBuilder(const ObjectStore &DB,
                                HierarchicalTreeBuilder &Builder,
                                const FileSystemCache::DirectoryEntry &Entry) {
   assert(!Entry.isDirectory());
@@ -630,12 +633,6 @@ void CachingOnDiskFileSystemImpl::trackNewAccesses() {
     return;
   TrackedAccesses.emplace();
   TrackedAccesses->reserve(128); // Seed with a bit of runway.
-}
-
-static Expected<ObjectProxy> toProxy(CASDB &CAS, Expected<ObjectHandle> Node) {
-  if (Node)
-    return ObjectProxy::load(CAS, *Node);
-  return Node.takeError();
 }
 
 Expected<ObjectProxy> CachingOnDiskFileSystemImpl::createTreeFromNewAccesses(
@@ -664,7 +661,7 @@ Expected<ObjectProxy> CachingOnDiskFileSystemImpl::createTreeFromNewAccesses(
       Builder.push(*Entry->getRef(), getTreeEntryKind(*Entry), Path);
   }
 
-  return toProxy(DB, Builder.create(DB));
+  return Builder.create(DB);
 }
 
 Expected<ObjectProxy> CachingOnDiskFileSystemImpl::createTreeFromAllAccesses() {
@@ -781,7 +778,7 @@ public:
   Error push(const Twine &Path) final;
 
   Expected<ObjectProxy> create() final {
-    return toProxy(FS.getCAS(), Builder.create(FS.getCAS()));
+    return Builder.create(FS.getCAS());
   }
 
   // Push \p Entry directly to \a Builder, asserting that it's a symlink.
@@ -882,11 +879,11 @@ Error CachingOnDiskFileSystemImpl::TreeBuilder::push(const Twine &Path) {
 }
 
 Expected<IntrusiveRefCntPtr<CachingOnDiskFileSystem>>
-cas::createCachingOnDiskFileSystem(std::shared_ptr<CASDB> DB) {
+cas::createCachingOnDiskFileSystem(std::shared_ptr<ObjectStore> DB) {
   return std::make_unique<CachingOnDiskFileSystemImpl>(std::move(DB));
 }
 
 Expected<IntrusiveRefCntPtr<CachingOnDiskFileSystem>>
-cas::createCachingOnDiskFileSystem(CASDB &DB) {
+cas::createCachingOnDiskFileSystem(ObjectStore &DB) {
   return std::make_unique<CachingOnDiskFileSystemImpl>(DB);
 }

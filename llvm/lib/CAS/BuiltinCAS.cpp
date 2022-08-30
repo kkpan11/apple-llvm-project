@@ -51,7 +51,7 @@ static size_t getPageSize() {
   return PageSize;
 }
 
-Expected<ObjectHandle>
+Expected<ObjectRef>
 BuiltinCAS::storeFromOpenFileImpl(sys::fs::file_t FD,
                                   Optional<sys::fs::file_status> Status) {
   int PageSize = getPageSize();
@@ -63,7 +63,7 @@ BuiltinCAS::storeFromOpenFileImpl(sys::fs::file_t FD,
   }
 
   constexpr size_t MinMappedSize = 4 * 4096;
-  auto readWithStream = [&]() -> Expected<ObjectHandle> {
+  auto readWithStream = [&]() -> Expected<ObjectRef> {
     // FIXME: MSVC: SmallString<MinMappedSize * 2>
     SmallString<4 * 4096 * 2> Data;
     if (Error E = sys::fs::readNativeFileToEOF(FD, Data, MinMappedSize))
@@ -97,21 +97,22 @@ BuiltinCAS::storeFromOpenFileImpl(sys::fs::file_t FD,
   return storeImpl(ComputedHash, None, Data);
 }
 
-Expected<ObjectHandle> BuiltinCAS::store(ArrayRef<ObjectRef> Refs,
-                                         ArrayRef<char> Data) {
+Expected<ObjectRef> BuiltinCAS::store(ArrayRef<ObjectRef> Refs,
+                                      ArrayRef<char> Data) {
   return storeImpl(BuiltinObjectHasher<HasherT>::hashObject(*this, Refs, Data),
                    Refs, Data);
 }
 
 Error BuiltinCAS::validate(const CASID &ID) {
-  auto Handle = load(ID);
+  auto Ref = getReference(ID);
+  if (!Ref)
+    return createUnknownObjectError(ID);
+
+  auto Handle = load(*Ref);
   if (!Handle)
     return Handle.takeError();
 
-  if (!*Handle)
-    return createUnknownObjectError(ID);
-
-  auto Proxy = ObjectProxy::load(*this, **Handle);
+  auto Proxy = ObjectProxy::load(*this, *Handle);
   SmallVector<ObjectRef> Refs;
   if (auto E = Proxy.forEachReference([&](ObjectRef Ref) -> Error {
         Refs.push_back(Ref);

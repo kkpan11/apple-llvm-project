@@ -407,7 +407,8 @@ DependencyScanningWorker::DependencyScanningWorker(
 
   if (Service.getMode() == ScanningMode::DependencyDirectivesScan) {
     if (Service.useCASScanning())
-      DepCASFS = new DependencyScanningCASFilesystem(CacheFS);
+      DepCASFS =
+          new DependencyScanningCASFilesystem(CacheFS, Service.getCache());
     else
       DepFS = new DependencyScanningWorkerFilesystem(Service.getSharedCache(),
                                                      RealFS);

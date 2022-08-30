@@ -39,11 +39,6 @@ using InMemoryStringPoolT =
     ThreadSafeHashMappedTrie<LazyAtomicPointer<const InMemoryString>,
                              sizeof(HashType)>;
 
-/// Action cache type (map: Hash -> InMemoryObject*). Always refers to existing
-/// objects.
-using InMemoryCacheT =
-    ThreadSafeHashMappedTrie<const InMemoryIndexValueT *, sizeof(HashType)>;
-
 class InMemoryObject {
 public:
   enum class Kind {
@@ -194,11 +189,11 @@ public:
     return getID(indexHash(Hash));
   }
 
-  Expected<ObjectHandle> storeImpl(ArrayRef<uint8_t> ComputedHash,
-                                   ArrayRef<ObjectRef> Refs,
-                                   ArrayRef<char> Data) final;
+  Expected<ObjectRef> storeImpl(ArrayRef<uint8_t> ComputedHash,
+                                ArrayRef<ObjectRef> Refs,
+                                ArrayRef<char> Data) final;
 
-  Expected<ObjectHandle>
+  Expected<ObjectRef>
   storeFromNullTerminatedRegion(ArrayRef<uint8_t> ComputedHash,
                                 sys::fs::mapped_file_region Map) override;
 
@@ -266,10 +261,14 @@ public:
     return getID(asInMemoryObject(Ref));
   }
 
-  const InMemoryString &getOrCreateString(StringRef String);
   Optional<ObjectRef> getReference(const CASID &ID) const final {
     if (const InMemoryObject *Object = getInMemoryObject(ID))
       return toReference(*Object);
+    return None;
+  }
+  Optional<ObjectRef> getReference(ArrayRef<uint8_t> Hash) const final {
+    if (InMemoryIndexT::const_pointer P = Index.find(Hash))
+      return toReference(*P->Data);
     return None;
   }
   ObjectRef getReference(ObjectHandle Handle) const final {
@@ -281,9 +280,6 @@ public:
   }
 
   void print(raw_ostream &OS) const final;
-
-  Expected<CASID> getCachedResult(CASID InputID) final;
-  Error putCachedResult(CASID InputID, CASID OutputID) final;
 
   InMemoryCAS() = default;
 
@@ -306,9 +302,6 @@ private:
 
   /// String pool for trees.
   InMemoryStringPoolT StringPool;
-
-  /// Action cache (map: Hash -> InMemoryObject*).
-  InMemoryCacheT ActionCache;
 
   ThreadSafeAllocator<BumpPtrAllocator> Objects;
   ThreadSafeAllocator<BumpPtrAllocator> Strings;
@@ -335,11 +328,9 @@ void InMemoryCAS::print(raw_ostream &OS) const {
   Index.print(OS);
   OS << "strings: ";
   StringPool.print(OS);
-  OS << "action-cache: ";
-  ActionCache.print(OS);
 }
 
-Expected<ObjectHandle>
+Expected<ObjectRef>
 InMemoryCAS::storeFromNullTerminatedRegion(ArrayRef<uint8_t> ComputedHash,
                                            sys::fs::mapped_file_region Map) {
   // Look up the hash in the index, initializing to nullptr if it's new.
@@ -361,12 +352,12 @@ InMemoryCAS::storeFromNullTerminatedRegion(ArrayRef<uint8_t> ComputedHash,
     if (RefNode->getData().data() == Map.data())
       new (MemoryMaps.Allocate()) sys::fs::mapped_file_region(std::move(Map));
 
-  return getObjectHandle(Node);
+  return toReference(Node);
 }
 
-Expected<ObjectHandle> InMemoryCAS::storeImpl(ArrayRef<uint8_t> ComputedHash,
-                                              ArrayRef<ObjectRef> Refs,
-                                              ArrayRef<char> Data) {
+Expected<ObjectRef> InMemoryCAS::storeImpl(ArrayRef<uint8_t> ComputedHash,
+                                           ArrayRef<ObjectRef> Refs,
+                                           ArrayRef<char> Data) {
   // Look up the hash in the index, initializing to nullptr if it's new.
   auto &I = indexHash(ComputedHash);
 
@@ -380,50 +371,7 @@ Expected<ObjectHandle> InMemoryCAS::storeImpl(ArrayRef<uint8_t> ComputedHash,
   auto Generator = [&]() -> const InMemoryObject * {
     return &InMemoryInlineObject::create(Allocator, I, InternalRefs, Data);
   };
-  return getObjectHandle(
-      cast<InMemoryObject>(I.Data.loadOrGenerate(Generator)));
-}
-
-const InMemoryString &InMemoryCAS::getOrCreateString(StringRef String) {
-  InMemoryStringPoolT::value_type S = *StringPool.insertLazy(
-      BuiltinObjectHasher<HasherT>::hashString(String),
-      [&](auto ValueConstructor) { ValueConstructor.emplace(nullptr); });
-
-  auto Allocator = [&](size_t Size) -> void * {
-    return Strings.Allocate(Size, alignof(InMemoryString));
-  };
-  auto Generator = [&]() -> const InMemoryString * {
-    return &InMemoryString::create(Allocator, String);
-  };
-  return S.Data.loadOrGenerate(Generator);
-}
-
-Expected<CASID> InMemoryCAS::getCachedResult(CASID InputID) {
-  InMemoryCacheT::pointer P = ActionCache.find(InputID.getHash());
-  if (!P)
-    return createResultCacheMissError(InputID);
-
-  /// TODO: Although, consider inserting null on cache misses and returning a
-  /// handle to avoid a second lookup!
-  assert(P->Data && "Unexpected null in result cache");
-  return getID(*P->Data);
-}
-
-Error InMemoryCAS::putCachedResult(CASID InputID, CASID OutputID) {
-  const InMemoryIndexT::value_type &Expected = indexHash(OutputID.getHash());
-  const InMemoryCacheT::value_type &Cached =
-      *ActionCache.insertLazy(InputID.getHash(), [&](auto ValueConstructor) {
-        ValueConstructor.emplace(&Expected);
-      });
-
-  /// TODO: Although, consider changing \a getCachedResult() to insert nullptr
-  /// and returning a handle on cache misses!
-  assert(Cached.Data && "Unexpected null in result cache");
-  const InMemoryIndexT::value_type &Observed = *Cached.Data;
-  if (&Expected == &Observed)
-    return Error::success();
-
-  return createResultCachePoisonedError(InputID, OutputID, getID(Observed));
+  return toReference(cast<InMemoryObject>(I.Data.loadOrGenerate(Generator)));
 }
 
 Error InMemoryCAS::forEachRef(ObjectHandle Handle,
@@ -435,6 +383,6 @@ Error InMemoryCAS::forEachRef(ObjectHandle Handle,
   return Error::success();
 }
 
-std::unique_ptr<CASDB> cas::createInMemoryCAS() {
+std::unique_ptr<ObjectStore> cas::createInMemoryCAS() {
   return std::make_unique<InMemoryCAS>();
 }

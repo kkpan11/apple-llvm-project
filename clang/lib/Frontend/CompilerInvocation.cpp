@@ -63,8 +63,8 @@
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/Triple.h"
 #include "llvm/ADT/Twine.h"
-#include "llvm/CAS/CASDB.h"
 #include "llvm/CAS/CASFileSystem.h"
+#include "llvm/CAS/ObjectStore.h"
 #include "llvm/CAS/TreeSchema.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/IR/DebugInfoMetadata.h"
@@ -2826,7 +2826,7 @@ static void determineInputFromIncludeTree(
     Diags.Report(diag::err_fe_unable_to_load_include_tree)
         << IncludeTreeID << llvm::toString(std::move(E));
   };
-  auto CAS = CASOpts.getOrCreateCAS(Diags);
+  auto CAS = CASOpts.getOrCreateObjectStore(Diags);
   if (!CAS)
     return;
   auto ID = CAS->parseID(IncludeTreeID);
@@ -2834,7 +2834,7 @@ static void determineInputFromIncludeTree(
     return reportError(ID.takeError());
   auto Object = CAS->getReference(*ID);
   if (!Object)
-    return reportError(llvm::cas::CASDB::createUnknownObjectError(*ID));
+    return reportError(llvm::cas::ObjectStore::createUnknownObjectError(*ID));
   auto Root = cas::IncludeTreeRoot::get(*CAS, *Object);
   if (!Root)
     return reportError(Root.takeError());
@@ -4960,15 +4960,15 @@ void CompilerInvocation::generateCC1CommandLine(
 
 static IntrusiveRefCntPtr<llvm::vfs::FileSystem>
 createBaseFS(const CompilerInvocation &Invocation, DiagnosticsEngine &Diags,
-             std::shared_ptr<llvm::cas::CASDB> OverrideCAS) {
+             std::shared_ptr<llvm::cas::ObjectStore> OverrideCAS) {
   const FileSystemOptions &FSOpts = Invocation.getFileSystemOpts();
   if (FSOpts.CASFileSystemRootID.empty())
     return llvm::vfs::getRealFileSystem();
 
   // If no CAS was provided, create one with CASOptions.
-  std::shared_ptr<llvm::cas::CASDB> CAS = std::move(OverrideCAS);
+  std::shared_ptr<llvm::cas::ObjectStore> CAS = std::move(OverrideCAS);
   if (!CAS)
-    CAS = Invocation.getCASOpts().getOrCreateCAS(Diags);
+    CAS = Invocation.getCASOpts().getOrCreateObjectStore(Diags);
 
   // Helper for creating a valid (but empty) CASFS if an error is encountered.
   auto makeEmptyCASFS = [&CAS]() {
@@ -5028,7 +5028,7 @@ createBaseFS(const CompilerInvocation &Invocation, DiagnosticsEngine &Diags,
 IntrusiveRefCntPtr<llvm::vfs::FileSystem>
 clang::createVFSFromCompilerInvocation(
     const CompilerInvocation &CI, DiagnosticsEngine &Diags,
-    std::shared_ptr<llvm::cas::CASDB> OverrideCAS) {
+    std::shared_ptr<llvm::cas::ObjectStore> OverrideCAS) {
   return createVFSFromCompilerInvocation(
       CI, Diags, createBaseFS(CI, Diags, std::move(OverrideCAS)));
 }

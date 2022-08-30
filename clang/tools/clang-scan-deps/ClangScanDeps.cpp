@@ -18,9 +18,10 @@
 #include "clang/Tooling/Tooling.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Twine.h"
-#include "llvm/CAS/CASDB.h"
+#include "llvm/CAS/ActionCache.h"
 #include "llvm/CAS/CASProvidingFileSystem.h"
 #include "llvm/CAS/CachingOnDiskFileSystem.h"
+#include "llvm/CAS/ObjectStore.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FileUtilities.h"
 #include "llvm/Support/InitLLVM.h"
@@ -260,7 +261,7 @@ llvm::cl::opt<bool> Verbose("v", llvm::cl::Optional,
 } // end anonymous namespace
 
 static bool emitCompilationDBWithCASTreeArguments(
-    std::shared_ptr<llvm::cas::CASDB> DB,
+    std::shared_ptr<llvm::cas::ObjectStore> DB,
     std::vector<tooling::CompileCommand> Inputs,
     DiagnosticConsumer &DiagsConsumer, const char *Exec,
     const cc1depscand::DepscanPrefixMapping &PrefixMapping,
@@ -322,7 +323,7 @@ static bool emitCompilationDBWithCASTreeArguments(
             PerThreadStates[I]->Worker;
 
         class ScanForCC1Action : public ToolAction {
-          llvm::cas::CASDB &DB;
+          llvm::cas::ObjectStore &DB;
           tooling::dependencies::DependencyScanningTool &WorkerTool;
           DiagnosticConsumer &DiagsConsumer;
           const char *Exec;
@@ -333,7 +334,7 @@ static bool emitCompilationDBWithCASTreeArguments(
 
         public:
           ScanForCC1Action(
-              llvm::cas::CASDB &DB,
+              llvm::cas::ObjectStore &DB,
               tooling::dependencies::DependencyScanningTool &WorkerTool,
               DiagnosticConsumer &DiagsConsumer, const char *Exec,
               StringRef CWD,
@@ -437,7 +438,7 @@ handleMakeDependencyToolResult(const std::string &Input,
 }
 
 static bool handleTreeDependencyToolResult(
-    llvm::cas::CASDB &CAS, const std::string &Input,
+    llvm::cas::ObjectStore &CAS, const std::string &Input,
     llvm::Expected<llvm::cas::ObjectProxy> &MaybeTree, SharedStream &OS,
     SharedStream &Errs) {
   if (!MaybeTree) {
@@ -458,7 +459,8 @@ static bool handleTreeDependencyToolResult(
 }
 
 static bool
-handleIncludeTreeToolResult(llvm::cas::CASDB &CAS, const std::string &Input,
+handleIncludeTreeToolResult(llvm::cas::ObjectStore &CAS,
+                            const std::string &Input,
                             Expected<cas::IncludeTreeRoot> &MaybeTree,
                             SharedStream &OS, SharedStream &Errs) {
   if (!MaybeTree) {
@@ -801,7 +803,8 @@ int main(int argc, const char **argv) {
   Diags.setClient(DiagsConsumer.get(), /*ShouldOwnClient=*/false);
 
   CASOptions CASOpts;
-  std::shared_ptr<llvm::cas::CASDB> CAS;
+  std::shared_ptr<llvm::cas::ObjectStore> CAS;
+  std::shared_ptr<llvm::cas::ActionCache> Cache;
   IntrusiveRefCntPtr<llvm::cas::CachingOnDiskFileSystem> FS;
   if (outputFormatRequiresCAS()) {
     if (!InMemoryCAS) {
@@ -810,13 +813,15 @@ int main(int argc, const char **argv) {
       else
         CASOpts.ensurePersistentCAS();
     }
-    CAS = CASOpts.getOrCreateCAS(Diags);
+    CAS = CASOpts.getOrCreateObjectStore(Diags);
+    // FIXME: Cache is not used here so just create a dummy in-memory cache.
+    Cache = CASOpts.getOrCreateActionCache(Diags);
     if (!CAS)
       return 1;
     if (Format != ScanningOutputFormat::IncludeTree)
       FS = llvm::cantFail(llvm::cas::createCachingOnDiskFileSystem(*CAS));
   }
-  DependencyScanningService Service(ScanMode, Format, CASOpts, FS,
+  DependencyScanningService Service(ScanMode, Format, CASOpts, Cache, FS,
                                     ReuseFileManager, OptimizeArgs);
   llvm::ThreadPool Pool(llvm::hardware_concurrency(NumThreads));
 

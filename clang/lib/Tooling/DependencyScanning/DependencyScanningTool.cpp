@@ -11,8 +11,8 @@
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/Utils.h"
 #include "clang/Lex/Preprocessor.h"
-#include "llvm/CAS/CASDB.h"
 #include "llvm/CAS/CachingOnDiskFileSystem.h"
+#include "llvm/CAS/ObjectStore.h"
 
 using namespace clang;
 using namespace tooling;
@@ -211,7 +211,7 @@ DependencyScanningTool::getDependencyTreeFromCompilerInvocation(
 namespace {
 class IncludeTreePPConsumer : public PPIncludeActionsConsumer {
 public:
-  explicit IncludeTreePPConsumer(cas::CASDB &DB) : DB(DB) {}
+  explicit IncludeTreePPConsumer(cas::ObjectStore &DB) : DB(DB) {}
 
   Expected<cas::IncludeTreeRoot> getIncludeTree();
 
@@ -250,7 +250,7 @@ private:
     return *E;
   }
 
-  cas::CASDB &DB;
+  cas::ObjectStore &DB;
   Optional<cas::ObjectRef> PCHRef;
   llvm::BitVector SeenIncludeFiles;
   SmallVector<cas::IncludeFileList::FileEntry> IncludedFiles;
@@ -408,13 +408,12 @@ IncludeTreePPConsumer::getObjectForFileNonCached(FileManager &FM,
 Expected<cas::ObjectRef>
 IncludeTreePPConsumer::getObjectForBuffer(const SrcMgr::FileInfo &FI) {
   // This is a non-file buffer, like the predefines.
-  auto Handle = DB.storeFromString(
+  auto Ref = DB.storeFromString(
       {}, FI.getContentCache().getBufferIfLoaded()->getBuffer());
-  if (!Handle)
-    return Handle.takeError();
-  cas::ObjectRef CASContents = DB.getReference(*Handle);
+  if (!Ref)
+    return Ref.takeError();
   Expected<cas::IncludeFile> FileNode =
-      cas::IncludeFile::create(DB, FI.getName(), CASContents);
+      cas::IncludeFile::create(DB, FI.getName(), *Ref);
   if (!FileNode)
     return FileNode.takeError();
   return FileNode->getRef();
@@ -480,7 +479,7 @@ Expected<cas::IncludeTreeRoot> IncludeTreePPConsumer::getIncludeTree() {
 }
 
 Expected<cas::IncludeTreeRoot> DependencyScanningTool::getIncludeTree(
-    cas::CASDB &DB, const std::vector<std::string> &CommandLine,
+    cas::ObjectStore &DB, const std::vector<std::string> &CommandLine,
     StringRef CWD) {
   IncludeTreePPConsumer Consumer(DB);
   llvm::Error Result = Worker.computeDependencies(CWD, CommandLine, Consumer);
@@ -491,7 +490,7 @@ Expected<cas::IncludeTreeRoot> DependencyScanningTool::getIncludeTree(
 
 Expected<cas::IncludeTreeRoot>
 DependencyScanningTool::getIncludeTreeFromCompilerInvocation(
-    cas::CASDB &DB, std::shared_ptr<CompilerInvocation> Invocation,
+    cas::ObjectStore &DB, std::shared_ptr<CompilerInvocation> Invocation,
     StringRef CWD, DiagnosticConsumer &DiagsConsumer, raw_ostream *VerboseOS,
     bool DiagGenerationAsCompilation) {
   IncludeTreePPConsumer Consumer(DB);

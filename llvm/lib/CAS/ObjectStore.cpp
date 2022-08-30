@@ -1,4 +1,4 @@
-//===- CASDB.cpp ------------------------------------------------*- C++ -*-===//
+//===- ObjectStore.cpp ------------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,7 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/CAS/CASDB.h"
+#include "llvm/CAS/ObjectStore.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/SmallVectorMemoryBuffer.h"
@@ -15,10 +15,10 @@ using namespace llvm;
 using namespace llvm::cas;
 
 void CASIDContext::anchor() {}
-void CASDB::anchor() {}
+void ObjectStore::anchor() {}
 
 LLVM_DUMP_METHOD void CASID::dump() const { print(dbgs()); }
-LLVM_DUMP_METHOD void CASDB::dump() const { print(dbgs()); }
+LLVM_DUMP_METHOD void ObjectStore::dump() const { print(dbgs()); }
 LLVM_DUMP_METHOD void ObjectRef::dump() const { print(dbgs()); }
 LLVM_DUMP_METHOD void ObjectHandle::dump() const { print(dbgs()); }
 
@@ -58,83 +58,80 @@ void ReferenceBase::print(raw_ostream &OS, const ObjectRef &This) const {
 }
 
 std::unique_ptr<MemoryBuffer>
-CASDB::getMemoryBuffer(ObjectHandle Node, StringRef Name,
-                       bool RequiresNullTerminator) {
+ObjectStore::getMemoryBuffer(ObjectHandle Node, StringRef Name,
+                             bool RequiresNullTerminator) {
   return MemoryBuffer::getMemBuffer(
       toStringRef(getData(Node, RequiresNullTerminator)), Name,
       RequiresNullTerminator);
 }
 
-/// Default implementation opens the file and calls \a createBlob().
-Expected<ObjectHandle>
-CASDB::storeFromOpenFileImpl(sys::fs::file_t FD,
-                             Optional<sys::fs::file_status> Status) {
-  // Check whether we can trust the size from stat.
-  int64_t FileSize = -1;
-  if (Status->type() == sys::fs::file_type::regular_file ||
-      Status->type() == sys::fs::file_type::block_file)
-    FileSize = Status->getSize();
-
-  // No need for a null terminator since the buffer will be dropped.
-  ErrorOr<std::unique_ptr<MemoryBuffer>> ExpectedContent =
-      MemoryBuffer::getOpenFile(FD, /*Filename=*/"", FileSize,
-                                /*RequiresNullTerminator=*/false);
-  if (!ExpectedContent)
-    return errorCodeToError(ExpectedContent.getError());
-
-  return store(None,
-               arrayRefFromStringRef<char>((*ExpectedContent)->getBuffer()));
-}
-
-Expected<Optional<ObjectHandle>> CASDB::load(const CASID &ID) {
-  if (Optional<ObjectRef> Ref = getReference(ID))
-    return load(*Ref);
-  return None;
-}
-
-void CASDB::readRefs(ObjectHandle Node,
-                     SmallVectorImpl<ObjectRef> &Refs) const {
+void ObjectStore::readRefs(ObjectHandle Node,
+                           SmallVectorImpl<ObjectRef> &Refs) const {
   consumeError(forEachRef(Node, [&Refs](ObjectRef Ref) -> Error {
     Refs.push_back(Ref);
     return Error::success();
   }));
 }
 
-Expected<ObjectProxy> CASDB::getProxy(CASID ID) {
-  Optional<ObjectHandle> H;
-  if (Error E = load(ID).moveInto(H))
-    return std::move(E);
-  if (!H)
+Expected<ObjectProxy> ObjectStore::getProxy(CASID ID) {
+  Optional<ObjectRef> Ref = getReference(ID);
+  if (!Ref)
     return createUnknownObjectError(ID);
+
+  Optional<ObjectHandle> H;
+  if (Error E = load(*Ref).moveInto(H))
+    return std::move(E);
+
   return ObjectProxy::load(*this, *H);
 }
 
-Expected<ObjectProxy> CASDB::getProxy(ObjectRef Ref) {
+Expected<Optional<ObjectProxy>> ObjectStore::getProxyOrNone(CASID ID) {
+  Optional<ObjectRef> Ref = getReference(ID);
+  if (!Ref)
+    return None;
+
+  Optional<ObjectHandle> H;
+  if (Error E = load(*Ref).moveInto(H))
+    return std::move(E);
+
+  return ObjectProxy::load(*this, *H);
+}
+
+Expected<ObjectProxy> ObjectStore::getProxy(ObjectRef Ref) {
   return getProxy(load(Ref));
 }
 
-Expected<ObjectProxy> CASDB::getProxy(Expected<ObjectHandle> H) {
+Expected<ObjectProxy> ObjectStore::getProxy(Expected<ObjectHandle> H) {
   if (!H)
     return H.takeError();
   return ObjectProxy::load(*this, *H);
 }
 
-Error CASDB::createUnknownObjectError(CASID ID) {
+Error ObjectStore::createUnknownObjectError(CASID ID) {
   return createStringError(std::make_error_code(std::errc::invalid_argument),
                            "unknown object '" + ID.toString() + "'");
 }
 
-Expected<ObjectProxy> CASDB::createProxy(ArrayRef<ObjectRef> Refs,
-                                         StringRef Data) {
-  return getProxy(store(Refs, arrayRefFromStringRef<char>(Data)));
+Expected<ObjectProxy> ObjectStore::createProxy(ArrayRef<ObjectRef> Refs,
+                                               StringRef Data) {
+  Expected<ObjectRef> Ref = store(Refs, arrayRefFromStringRef<char>(Data));
+  if (!Ref)
+    return Ref.takeError();
+  return getProxy(*Ref);
 }
 
 Expected<std::unique_ptr<MemoryBuffer>>
-CASDB::loadIndependentDataBuffer(ObjectHandle Node, const Twine &Name,
-                                 bool NullTerminate) const {
+ObjectStore::loadIndependentDataBuffer(ObjectHandle Node, const Twine &Name,
+                                       bool NullTerminate) const {
   SmallString<256> Bytes;
   raw_svector_ostream OS(Bytes);
   readData(Node, OS);
   return std::make_unique<SmallVectorMemoryBuffer>(std::move(Bytes), Name.str(),
                                                    NullTerminate);
+}
+
+std::unique_ptr<MemoryBuffer>
+ObjectProxy::getMemoryBuffer(StringRef Name,
+                             bool RequiresNullTerminator) const {
+  return CAS->getMemoryBuffer(H, Name, RequiresNullTerminator);
 }

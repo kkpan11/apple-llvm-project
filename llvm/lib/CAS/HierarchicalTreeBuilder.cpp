@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/CAS/HierarchicalTreeBuilder.h"
-#include "llvm/CAS/CASDB.h"
+#include "llvm/CAS/ObjectStore.h"
 #include "llvm/CAS/Utils.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/Debug.h"
@@ -65,13 +65,13 @@ void HierarchicalTreeBuilder::pushTreeContent(ObjectRef Ref,
   TreeContents.emplace_back(Ref, Kind, canonicalize(CanonicalPath, Kind));
 }
 
-Expected<ObjectHandle> HierarchicalTreeBuilder::create(CASDB &CAS) {
+Expected<ObjectProxy> HierarchicalTreeBuilder::create(ObjectStore &CAS) {
   // FIXME: It is inefficient expanding the whole tree recursively like this,
   // use a more efficient algorithm to merge contents.
   TreeSchema Schema(CAS);
   for (const auto &TreeContent : TreeContents) {
-    Optional<ObjectHandle> LoadedTree;
-    if (Error E = CAS.load(*TreeContent.getRef()).moveInto(LoadedTree))
+    Optional<ObjectProxy> LoadedTree;
+    if (Error E = CAS.getProxy(*TreeContent.getRef()).moveInto(LoadedTree))
       return std::move(E);
     StringRef Path = TreeContent.getPath();
     Error E = Schema.walkFileTreeRecursively(
@@ -259,5 +259,5 @@ Expected<ObjectHandle> HierarchicalTreeBuilder::create(CASDB &CAS) {
     T->Ref = ExpectedTree->getRef();
   }
 
-  return cantFail(CAS.load(*Root.Ref));
+  return cantFail(CAS.getProxy(*Root.Ref));
 }

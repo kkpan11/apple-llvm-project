@@ -6,9 +6,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/CAS/CASDB.h"
-#include "llvm/CAS/CASFileSystem.h"
 #include "llvm/CAS/HierarchicalTreeBuilder.h"
+#include "llvm/CAS/CASFileSystem.h"
+#include "llvm/CAS/ObjectStore.h"
 #include "llvm/Testing/Support/Error.h"
 #include "gtest/gtest.h"
 
@@ -33,22 +33,21 @@ expectedToPointer(Expected<std::unique_ptr<T>> ExpectedPointer) {
 }
 
 TEST(HierarchicalTreeBuilderTest, Flat) {
-  std::unique_ptr<CASDB> CAS = createInMemoryCAS();
+  std::unique_ptr<ObjectStore> CAS = createInMemoryCAS();
 
   auto make = [&](StringRef Content) {
-    return CAS->getReference(
-        *expectedToOptional(CAS->storeFromString(None, Content)));
+    return *expectedToOptional(CAS->storeFromString(None, Content));
   };
 
   HierarchicalTreeBuilder Builder;
   Builder.push(make("1"), TreeEntry::Regular, "/file1");
   Builder.push(make("1"), TreeEntry::Regular, "/1");
   Builder.push(make("2"), TreeEntry::Regular, "/2");
-  Optional<ObjectHandle> Root = expectedToOptional(Builder.create(*CAS));
+  Optional<ObjectProxy> Root = expectedToOptional(Builder.create(*CAS));
   ASSERT_TRUE(Root);
 
   std::unique_ptr<vfs::FileSystem> CASFS =
-      expectedToPointer(createCASFileSystem(*CAS, CAS->getID(*Root)));
+      expectedToPointer(createCASFileSystem(*CAS, Root->getID()));
   ASSERT_TRUE(CASFS);
 
   std::unique_ptr<MemoryBuffer> F1 =
@@ -69,11 +68,10 @@ TEST(HierarchicalTreeBuilderTest, Flat) {
 }
 
 TEST(HierarchicalTreeBuilderTest, Nested) {
-  std::unique_ptr<CASDB> CAS = createInMemoryCAS();
+  std::unique_ptr<ObjectStore> CAS = createInMemoryCAS();
 
   auto make = [&](StringRef Content) {
-    return CAS->getReference(
-        *expectedToOptional(CAS->storeFromString(None, Content)));
+    return *expectedToOptional(CAS->storeFromString(None, Content));
   };
 
   HierarchicalTreeBuilder Builder;
@@ -83,11 +81,11 @@ TEST(HierarchicalTreeBuilderTest, Nested) {
   Builder.push(make("blob1"), TreeEntry::Regular, "/t3/t1nested/d1");
   Builder.push(make("blob1"), TreeEntry::Regular, "/t3/t2/d1also");
   Builder.push(make("blob2"), TreeEntry::Regular, "/t3/t2/d2");
-  Optional<ObjectHandle> Root = expectedToOptional(Builder.create(*CAS));
+  Optional<ObjectProxy> Root = expectedToOptional(Builder.create(*CAS));
   ASSERT_TRUE(Root);
 
   std::unique_ptr<vfs::FileSystem> CASFS =
-      expectedToPointer(createCASFileSystem(*CAS, CAS->getID(*Root)));
+      expectedToPointer(createCASFileSystem(*CAS, Root->getID()));
 
   std::unique_ptr<MemoryBuffer> T1D1 =
       errorOrToPointer(CASFS->getBufferForFile("/t1/d1"));
@@ -114,11 +112,10 @@ TEST(HierarchicalTreeBuilderTest, Nested) {
 }
 
 TEST(HierarchicalTreeBuilderTest, MergeDirectories) {
-  std::unique_ptr<CASDB> CAS = createInMemoryCAS();
+  std::unique_ptr<ObjectStore> CAS = createInMemoryCAS();
 
   auto make = [&](StringRef Content) {
-    return CAS->getReference(
-        *expectedToOptional(CAS->storeFromString(None, Content)));
+    return *expectedToOptional(CAS->storeFromString(None, Content));
   };
 
   auto createRoot = [&](StringRef Blob, StringRef Path,
@@ -126,7 +123,7 @@ TEST(HierarchicalTreeBuilderTest, MergeDirectories) {
     HierarchicalTreeBuilder Builder;
     Builder.push(make(Blob), TreeEntry::Regular, Path);
 
-    Optional<ObjectHandle> H;
+    Optional<ObjectProxy> H;
     ASSERT_THAT_ERROR(Builder.create(*CAS).moveInto(H), Succeeded());
     Root = CAS->getReference(*H);
   };
@@ -144,11 +141,11 @@ TEST(HierarchicalTreeBuilderTest, MergeDirectories) {
   Builder.pushTreeContent(*Root3, "/");
   Builder.pushTreeContent(*Root1, "");
   Builder.pushTreeContent(*Root1, "other1/nest");
-  Optional<ObjectHandle> Root;
+  Optional<ObjectProxy> Root;
   ASSERT_THAT_ERROR(Builder.create(*CAS).moveInto(Root), Succeeded());
 
   std::unique_ptr<vfs::FileSystem> CASFS =
-      cantFail(createCASFileSystem(*CAS, CAS->getID(*Root)));
+      cantFail(createCASFileSystem(*CAS, Root->getID()));
 
   std::unique_ptr<MemoryBuffer> T1D1 =
       errorOrToPointer(CASFS->getBufferForFile("/t1/d1"));
@@ -175,41 +172,40 @@ TEST(HierarchicalTreeBuilderTest, MergeDirectories) {
 }
 
 TEST(HierarchicalTreeBuilderTest, MergeDirectoriesConflict) {
-  std::unique_ptr<CASDB> CAS = createInMemoryCAS();
+  std::unique_ptr<ObjectStore> CAS = createInMemoryCAS();
 
   auto make = [&](StringRef Content) {
-    return CAS->getReference(
-        *expectedToOptional(CAS->storeFromString(None, Content)));
+    return *expectedToOptional(CAS->storeFromString(None, Content));
   };
 
   auto createRoot = [&](StringRef Blob, StringRef Path,
-                        Optional<ObjectHandle> &Root) {
+                        Optional<ObjectProxy> &Root) {
     HierarchicalTreeBuilder Builder;
     Builder.push(make(Blob), TreeEntry::Regular, Path);
     ASSERT_THAT_ERROR(Builder.create(*CAS).moveInto(Root), Succeeded());
   };
 
-  Optional<ObjectHandle> Root1;
+  Optional<ObjectProxy> Root1;
   createRoot("blob1", "/t1/d1", Root1);
-  Optional<ObjectHandle> Root2;
+  Optional<ObjectProxy> Root2;
   createRoot("blob2", "/t1/d1", Root2);
-  Optional<ObjectHandle> Root3;
+  Optional<ObjectProxy> Root3;
   createRoot("blob3", "/t1/d1/nested", Root3);
 
   {
     HierarchicalTreeBuilder Builder;
-    Builder.pushTreeContent(CAS->getReference(*Root1), "");
-    Builder.pushTreeContent(CAS->getReference(*Root2), "");
-    Optional<ObjectHandle> Root;
+    Builder.pushTreeContent(Root1->getRef(), "");
+    Builder.pushTreeContent(Root2->getRef(), "");
+    Optional<ObjectProxy> Root;
     EXPECT_THAT_ERROR(
         Builder.create(*CAS).moveInto(Root),
         FailedWithMessage("duplicate path '/t1/d1' with different ID"));
   }
   {
     HierarchicalTreeBuilder Builder;
-    Builder.pushTreeContent(CAS->getReference(*Root1), "");
-    Builder.pushTreeContent(CAS->getReference(*Root3), "");
-    Optional<ObjectHandle> Root;
+    Builder.pushTreeContent(Root1->getRef(), "");
+    Builder.pushTreeContent(Root3->getRef(), "");
+    Optional<ObjectProxy> Root;
     EXPECT_THAT_ERROR(Builder.create(*CAS).moveInto(Root),
                       FailedWithMessage("duplicate path '/t1/d1'"));
   }

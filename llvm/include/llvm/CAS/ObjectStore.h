@@ -1,4 +1,4 @@
-//===- llvm/CAS/CASDB.h -----------------------------------------*- C++ -*-===//
+//===- llvm/CAS/ObjectStore.h -----------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CAS_CASDB_H
-#define LLVM_CAS_CASDB_H
+#ifndef LLVM_CAS_OBJECTSTORE_H
+#define LLVM_CAS_OBJECTSTORE_H
 
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/StringRef.h"
@@ -24,7 +24,7 @@ class MemoryBuffer;
 
 namespace cas {
 
-class CASDB;
+class ObjectStore;
 
 class ObjectProxy;
 
@@ -41,45 +41,50 @@ class ObjectProxy;
 ///     - It's comparable between any two CAS instances that have the same \a
 ///       CASIDContext::getHashSchemaIdentifier().
 ///     - The UID can be printed (e.g., \a CASID::toString()) and it can parsed
-///       by the same or a different CAS instance with \a CASDB::parseID().
+///       by the same or a different CAS instance with \a
+///       ObjectStore::parseID().
 /// - An object can be looked up by content or by UID.
-///     - \a storeNode() and \a storeTree() are "get-or-create"
-///       methods, writing an object if it doesn't exist yet, and return a
-///       handle to it in any case.
+///     - \a store() is "get-or-create"  methods, writing an object if it
+///       doesn't exist yet, and return a ref to it in any case.
 ///     - \a loadObject(const CASID&) looks up an object by its UID.
 /// - Objects can reference other objects, forming an arbitrary DAG.
 ///
-/// The \a CASDB interface has a few ways of referencing objects:
+/// The \a ObjectStore interface has a few ways of referencing objects:
 ///
-/// - \a ObjectRef encapsulates a reference to something in the CAS. If you
-///   have an ObjectRef, you know the object exists, but you don't know
-///   anything about it. "Loading" the object is a separate step that may
-///   not have happened yet, and which can fail (due to filesystem corruption)
-///   or introduce latency (if downloading from a remote store).
+/// - \a ObjectRef encapsulates a reference to something in the CAS. It is an
+///   opaque type that references an object inside a specific CAS. It is
+///   implementation defined if the underlying object exists or not for an
+///   ObjectRef, and it can used to speed up CAS lookup as an implementation
+///   detail. However, you don't know anything about the underlying objects.
+///   "Loading" the object is a separate step that may not have happened
+///   yet, and which can fail (e.g. due to filesystem corruption) or introduce
+///   latency (if downloading from a remote store).
 /// - \a ObjectHandle encapulates a *loaded* object in the CAS. You need one of
 ///   these to inspect the content of an object: to look at its stored
-///   data and references.
+///   data and references. This is internal to CAS implementation and not
+///   availble from CAS public APIs.
 /// - \a CASID: the UID for an object in the CAS, obtained through \a
-///   CASDB::getID() or \a CASDB::parseID(). This is a valid CAS
+///   ObjectStore::getID() or \a ObjectStore::parseID(). This is a valid CAS
 ///   identifier, but may reference an object that is unknown to this CAS
 ///   instance.
+/// - \a ObjectProxy pairs an ObjectHandle (subclass) with a ObjectStore, and
+///   wraps access APIs to avoid having to pass extra parameters. It is the
+///   object used for accessing underlying data and refs by CAS users.
 ///
 /// There are a few options for accessing content of objects, with different
 /// lifetime tradeoffs:
 ///
-/// - \a readData() accesses data without exposing lifetime at all.
+/// - \a getData() accesses data without exposing lifetime at all.
 /// - \a loadIndependentDataBuffer() returns a \a MemoryBuffer whose lifetime
 ///   is independent of the CAS (it can live longer).
-/// - \a getDataString() and \a getDataArray() return StringRef/ArrayRef with
-///   lifetime is guaranteed to last as long as \a CASDB.
+/// - \a getDataString() return StringRef with lifetime is guaranteed to last as
+///   long as \a ObjectStore.
 /// - \a readRef() and \a forEachRef() iterate through the references in an
 ///   object. There is no lifetime assumption.
 ///
 /// Both ObjectRef and ObjectHandle are lightweight, wrapping a `uint64_t`.
-/// Doing anything with them requires a CASDB. As a convenience:
+/// Doing anything with them requires a ObjectStore. As a convenience:
 ///
-/// - ObjectProxy pairs an ObjectHandle (subclass) with a CASDB, and wraps
-/// access APIs to avoid having to pass extra parameters.
 ///
 /// TODO: Remove CASID.
 ///
@@ -97,10 +102,10 @@ class ObjectProxy;
 /// TODO: Consider optimizing small and/or string-like leaf objects:
 ///
 /// - \a NodeBuilder and \a NodeReader interfaces can bring some of the same
-///   gains without adding complexity to \a CASDB. E.g., \a NodeBuilder could
-///   have an API to add a named field to a node under construction; if the
-///   name is small enough, it's stored locally in the node's own data, but if
-///   it's bigger then it's outlined to a separate CAS object. \a NodeReader
+///   gains without adding complexity to \a ObjectStore. E.g., \a NodeBuilder
+///   could have an API to add a named field to a node under construction; if
+///   the name is small enough, it's stored locally in the node's own data, but
+///   if it's bigger then it's outlined to a separate CAS object. \a NodeReader
 ///   could handle the complications of reading.
 /// - Implementations can do fast lookups of small objects by adding a
 ///   content-based index for them (prefix tree / suffix tree of content),
@@ -120,7 +125,8 @@ class ObjectProxy;
 ///
 /// FIXME: Split out ActionCache as a separate concept, and rename this
 /// ObjectStore.
-class CASDB : public CASIDContext {
+class ObjectStore : public CASIDContext {
+  friend class ObjectProxy;
   void anchor() override;
 
 public:
@@ -132,9 +138,9 @@ public:
   /// extractHashFromID().
   virtual Expected<CASID> parseID(StringRef ID) = 0;
 
-  /// Store object into CASDB.
-  virtual Expected<ObjectHandle> store(ArrayRef<ObjectRef> Refs,
-                                       ArrayRef<char> Data) = 0;
+  /// Store object into ObjectStore.
+  virtual Expected<ObjectRef> store(ArrayRef<ObjectRef> Refs,
+                                    ArrayRef<char> Data) = 0;
   /// Get an ID for \p Ref.
   virtual CASID getID(ObjectRef Ref) const = 0;
   /// Get an ID for \p Handle.
@@ -145,6 +151,13 @@ public:
   /// Returns \c None if not stored in this CAS.
   virtual Optional<ObjectRef> getReference(const CASID &ID) const = 0;
 
+  /// Get a reference to the object has the hash value \p Hash.
+  virtual Optional<ObjectRef> getReference(ArrayRef<uint8_t> Hash) const = 0;
+
+  /// Validate the underlying object referred by CASID.
+  virtual Error validate(const CASID &ID) = 0;
+
+protected:
   /// Get a Ref from Handle.
   virtual ObjectRef getReference(ObjectHandle Handle) const = 0;
 
@@ -152,9 +165,6 @@ public:
   ///
   /// Errors if the object cannot be loaded.
   virtual Expected<ObjectHandle> load(ObjectRef Ref) = 0;
-
-  /// Validate the underlying object referred by CASID.
-  virtual Error validate(const CASID &ID) = 0;
 
   /// Get the size of some data.
   virtual uint64_t getDataSize(ObjectHandle Node) const = 0;
@@ -167,75 +177,10 @@ public:
   virtual ArrayRef<char> getData(ObjectHandle Node,
                                  bool RequiresNullTerminator = false) const = 0;
 
-public:
-  /// ActionCache APIs.
-  // FIXME: Split out in the future. This should also be generic key-value
-  // storage interface, rather than CASID -> CASID.
-  virtual Expected<CASID> getCachedResult(CASID InputID) = 0;
-  virtual Error putCachedResult(CASID InputID, CASID OutputID) = 0;
-
-protected:
-  virtual Expected<ObjectHandle>
+  /// Get ObjectRef from open file.
+  virtual Expected<ObjectRef>
   storeFromOpenFileImpl(sys::fs::file_t FD,
-                        Optional<sys::fs::file_status> Status);
-
-  /// Allow CASDB implementations to create internal handles.
-#define MAKE_CAS_HANDLE_CONSTRUCTOR(HandleKind)                                \
-  HandleKind make##HandleKind(uint64_t InternalRef) const {                    \
-    return HandleKind(*this, InternalRef);                                     \
-  }
-  MAKE_CAS_HANDLE_CONSTRUCTOR(ObjectHandle)
-  MAKE_CAS_HANDLE_CONSTRUCTOR(ObjectRef)
-#undef MAKE_CAS_HANDLE_CONSTRUCTOR
-
-public:
-  /// Helper functions to store object and returns a ObjectProxy.
-  Expected<ObjectProxy> createProxy(ArrayRef<ObjectRef> Refs, StringRef Data);
-
-  /// Store object from StringRef.
-  Expected<ObjectHandle> storeFromString(ArrayRef<ObjectRef> Refs,
-                                         StringRef String) {
-    return store(Refs, arrayRefFromStringRef<char>(String));
-  }
-
-  /// Default implementation reads \p FD and calls \a storeNode(). Does not
-  /// take ownership of \p FD; the caller is responsible for closing it.
-  ///
-  /// If \p Status is sent in it is to be treated as a hint. Implementations
-  /// must protect against the file size potentially growing after the status
-  /// was taken (i.e., they cannot assume that an mmap will be null-terminated
-  /// where \p Status implies).
-  ///
-  /// Returns the \a CASID and the size of the file.
-  Expected<ObjectHandle>
-  storeFromOpenFile(sys::fs::file_t FD,
-                    Optional<sys::fs::file_status> Status = None) {
-    return storeFromOpenFileImpl(FD, Status);
-  }
-
-  /// Load the object called \p ID.
-  ///
-  /// Returns \c None if it's unknown in this CAS instance.
-  ///
-  /// Errors if the object cannot be loaded.
-  Expected<Optional<ObjectHandle>> load(const CASID &ID);
-
-  static Error createUnknownObjectError(CASID ID);
-
-  /// Create ObjectProxy from other types that refer to object.
-  Expected<ObjectProxy> getProxy(CASID ID);
-  Expected<ObjectProxy> getProxy(ObjectRef Ref);
-  Expected<ObjectProxy> getProxy(Expected<ObjectHandle> H);
-
-  /// Read the data from \p Data into \p OS.
-  uint64_t readData(ObjectHandle Node, raw_ostream &OS, uint64_t Offset = 0,
-                    uint64_t MaxBytes = -1ULL) const {
-    ArrayRef<char> Data = getData(Node);
-    assert(Offset < Data.size() && "Expected valid offset");
-    Data = Data.drop_front(Offset).take_front(MaxBytes);
-    OS << toStringRef(Data);
-    return Data.size();
-  }
+                        Optional<sys::fs::file_status> Status) = 0;
 
   /// Get a lifetime-extended StringRef pointing at \p Data.
   ///
@@ -253,71 +198,96 @@ public:
   getMemoryBuffer(ObjectHandle Node, StringRef Name = "",
                   bool RequiresNullTerminator = true);
 
+  /// Read all the refs from object in a SmallVector.
+  virtual void readRefs(ObjectHandle Node,
+                        SmallVectorImpl<ObjectRef> &Refs) const;
+
+  Expected<ObjectProxy> getProxy(Expected<ObjectHandle> Ref);
+
+  /// Allow ObjectStore implementations to create internal handles.
+#define MAKE_CAS_HANDLE_CONSTRUCTOR(HandleKind)                                \
+  HandleKind make##HandleKind(uint64_t InternalRef) const {                    \
+    return HandleKind(*this, InternalRef);                                     \
+  }
+  MAKE_CAS_HANDLE_CONSTRUCTOR(ObjectHandle)
+  MAKE_CAS_HANDLE_CONSTRUCTOR(ObjectRef)
+#undef MAKE_CAS_HANDLE_CONSTRUCTOR
+
+public:
+  /// Helper functions to store object and returns a ObjectProxy.
+  Expected<ObjectProxy> createProxy(ArrayRef<ObjectRef> Refs, StringRef Data);
+
+  /// Store object from StringRef.
+  Expected<ObjectRef> storeFromString(ArrayRef<ObjectRef> Refs,
+                                      StringRef String) {
+    return store(Refs, arrayRefFromStringRef<char>(String));
+  }
+
+  /// Default implementation reads \p FD and calls \a storeNode(). Does not
+  /// take ownership of \p FD; the caller is responsible for closing it.
+  ///
+  /// If \p Status is sent in it is to be treated as a hint. Implementations
+  /// must protect against the file size potentially growing after the status
+  /// was taken (i.e., they cannot assume that an mmap will be null-terminated
+  /// where \p Status implies).
+  ///
+  /// Returns the \a CASID and the size of the file.
+  Expected<ObjectRef>
+  storeFromOpenFile(sys::fs::file_t FD,
+                    Optional<sys::fs::file_status> Status = None) {
+    return storeFromOpenFileImpl(FD, Status);
+  }
+
+  static Error createUnknownObjectError(CASID ID);
+
+  /// Create ObjectProxy from CASID. If the object doesn't exit, get an error.
+  Expected<ObjectProxy> getProxy(CASID ID);
+  /// Create ObjectProxy from CASID. If the object doesn't exit, get None..
+  Expected<Optional<ObjectProxy>> getProxyOrNone(CASID ID);
+  /// Create ObjectProxy from ObjectRef. If the object can't be loaded, get an
+  /// error.
+  Expected<ObjectProxy> getProxy(ObjectRef Ref);
+
+  /// Read the data from \p Data into \p OS.
+  uint64_t readData(ObjectHandle Node, raw_ostream &OS, uint64_t Offset = 0,
+                    uint64_t MaxBytes = -1ULL) const {
+    ArrayRef<char> Data = getData(Node);
+    assert(Offset < Data.size() && "Expected valid offset");
+    Data = Data.drop_front(Offset).take_front(MaxBytes);
+    OS << toStringRef(Data);
+    return Data.size();
+  }
+
   /// Get a MemoryBuffer with the contents of \p Data whose lifetime is
   /// independent of this CAS instance.
   virtual Expected<std::unique_ptr<MemoryBuffer>>
   loadIndependentDataBuffer(ObjectHandle Node, const Twine &Name = "",
                             bool NullTerminate = true) const;
 
-  /// Read all the refs from object in a SmallVector.
-  virtual void readRefs(ObjectHandle Node,
-                        SmallVectorImpl<ObjectRef> &Refs) const;
-
-  /// Print the CASDB internals for debugging purpose.
+  /// Print the ObjectStore internals for debugging purpose.
   virtual void print(raw_ostream &) const {}
   void dump() const;
 
-  virtual ~CASDB() = default;
+  virtual ~ObjectStore() = default;
 };
-
-template <class HandleT> class ProxyBase : public HandleT {
-public:
-  const CASDB &getCAS() const { return *CAS; }
-  CASDB &getCAS() { return *CAS; }
-  CASID getID() const {
-    return CAS->getID(*static_cast<const ObjectHandle *>(this));
-  }
-  ObjectRef getRef() const {
-    return CAS->getReference(*static_cast<const ObjectHandle *>(this));
-  }
-
-  /// FIXME: Remove this.
-  operator CASID() const { return getID(); }
-
-  friend bool operator==(const ProxyBase &Proxy, ObjectRef Ref) {
-    return Proxy.CAS->getReference(
-               *static_cast<const ObjectHandle *>(&Proxy)) == Ref;
-  }
-  friend bool operator==(ObjectRef Ref, const ProxyBase &Proxy) {
-    return Proxy == Ref;
-  }
-  friend bool operator!=(const ProxyBase &Proxy, ObjectRef Ref) {
-    return !(Proxy == Ref);
-  }
-  friend bool operator!=(ObjectRef Ref, const ProxyBase &Proxy) {
-    return !(Proxy == Ref);
-  }
-
-protected:
-  ProxyBase(CASDB &CAS, HandleT H) : HandleT(H), CAS(&CAS) {}
-  CASDB *CAS;
-};
-
 
 /// Reference to an abstract hierarchical node, with data and references.
 /// Reference is passed by value and is expected to be valid as long as the \a
-/// CASDB is.
+/// ObjectStore is.
 ///
-/// TODO: Expose \a CASDB::readData() and only call \a CASDB::getDataString()
-/// when asked.
-class ObjectProxy : public ProxyBase<ObjectHandle> {
+/// TODO: Expose \a ObjectStore::readData() and only call \a
+/// ObjectStore::getDataString() when asked.
+class ObjectProxy {
 public:
-  size_t getNumReferences() const { return NumReferences; }
-  ObjectRef getReference(size_t I) const {
-    return getCAS().readRef(*static_cast<const ObjectHandle *>(this), I);
-  }
+  const ObjectStore &getCAS() const { return *CAS; }
+  ObjectStore &getCAS() { return *CAS; }
+  CASID getID() const { return CAS->getID(H); }
+  ObjectRef getRef() const { return CAS->getReference(H); }
+  size_t getNumReferences() const { return CAS->getNumRefs(H); }
+  ObjectRef getReference(size_t I) const { return CAS->readRef(H, I); }
 
   // FIXME: Remove this.
+  operator CASID() const { return getID(); }
   CASID getReferenceID(size_t I) const {
     Optional<CASID> ID = getCAS().getID(getReference(I));
     assert(ID && "Expected reference to be first-class object");
@@ -327,44 +297,53 @@ public:
   /// Visit each reference in order, returning an error from \p Callback to
   /// stop early.
   Error forEachReference(function_ref<Error(ObjectRef)> Callback) const {
-    return getCAS().forEachRef(*static_cast<const ObjectHandle *>(this),
-                               Callback);
+    return CAS->forEachRef(H, Callback);
   }
   Error forEachReferenceID(function_ref<Error(CASID)> Callback) const {
-    return getCAS().forEachRef(
-        *static_cast<const ObjectHandle *>(this), [&](ObjectRef Ref) {
-          Optional<CASID> ID = getCAS().getID(Ref);
-          assert(ID && "Expected reference to be first-class object");
-          return Callback(*ID);
-        });
+    return CAS->forEachRef(H, [&](ObjectRef Ref) {
+      Optional<CASID> ID = getCAS().getID(Ref);
+      assert(ID && "Expected reference to be first-class object");
+      return Callback(*ID);
+    });
   }
 
-  /// Get the content of the node. Valid as long as the CAS is valid.
-  StringRef getData() const { return Data; }
+  std::unique_ptr<MemoryBuffer>
+  getMemoryBuffer(StringRef Name = "",
+                  bool RequiresNullTerminator = true) const;
 
-protected:
-  /// FIXME: Remove once LeafNodeProxy doesn't need this.
-  const StringRef *getDataPtr() const { return &Data; }
+  /// Get the content of the node. Valid as long as the CAS is valid.
+  StringRef getData() const { return CAS->getDataString(H); }
+
+  friend bool operator==(const ObjectProxy &Proxy, ObjectRef Ref) {
+    return Proxy.getRef() == Ref;
+  }
+  friend bool operator==(ObjectRef Ref, const ObjectProxy &Proxy) {
+    return Proxy.getRef() == Ref;
+  }
+  friend bool operator!=(const ObjectProxy &Proxy, ObjectRef Ref) {
+    return !(Proxy.getRef() == Ref);
+  }
+  friend bool operator!=(ObjectRef Ref, const ObjectProxy &Proxy) {
+    return !(Proxy.getRef() == Ref);
+  }
 
 public:
   ObjectProxy() = delete;
 
-  static ObjectProxy load(CASDB &CAS, ObjectHandle Node) {
-    return ObjectProxy(CAS, Node, CAS.getNumRefs(Node),
-                       CAS.getDataString(Node));
+  static ObjectProxy load(ObjectStore &CAS, ObjectHandle Node) {
+    return ObjectProxy(CAS, Node);
   }
 
 private:
-  ObjectProxy(CASDB &CAS, ObjectHandle H, size_t NumReferences, StringRef Data)
-      : ProxyBase::ProxyBase(CAS, H), NumReferences(NumReferences), Data(Data) {
-  }
+  ObjectProxy(ObjectStore &CAS, ObjectHandle H) : CAS(&CAS), H(H) {}
 
-  size_t NumReferences;
-  StringRef Data;
+  ObjectStore *CAS;
+  ObjectHandle H;
 };
 
 
-std::unique_ptr<CASDB> createInMemoryCAS();
+
+std::unique_ptr<ObjectStore> createInMemoryCAS();
 
 /// Gets or creates a persistent on-disk path at \p Path.
 ///
@@ -373,7 +352,7 @@ std::unique_ptr<CASDB> createInMemoryCAS();
 ///
 /// FIXME: Remove the special behaviour for getDefaultOnDiskCASStableID(). The
 /// client should handle this logic, if/when desired.
-Expected<std::unique_ptr<CASDB>> createOnDiskCAS(const Twine &Path);
+Expected<std::unique_ptr<ObjectStore>> createOnDiskCAS(const Twine &Path);
 
 /// Set \p Path to a reasonable default on-disk path for a persistent CAS for
 /// the current user.
@@ -392,4 +371,4 @@ std::string getDefaultOnDiskCASStableID();
 } // namespace cas
 } // namespace llvm
 
-#endif // LLVM_CAS_CASDB_H
+#endif // LLVM_CAS_OBJECTSTORE_H

@@ -11,8 +11,8 @@
 #include "clang/Basic/Version.h"
 #include "clang/CAS/IncludeTree.h"
 #include "clang/Frontend/CompilerInvocation.h"
-#include "llvm/CAS/CASDB.h"
 #include "llvm/CAS/HierarchicalTreeBuilder.h"
+#include "llvm/CAS/ObjectStore.h"
 #include "llvm/CAS/TreeSchema.h"
 #include "llvm/CAS/Utils.h"
 #include "llvm/Support/StringSaver.h"
@@ -24,7 +24,8 @@ using namespace llvm;
 using namespace llvm::cas;
 
 static llvm::cas::CASID
-createCompileJobCacheKeyForArgs(CASDB &CAS, ArrayRef<const char *> CC1Args,
+createCompileJobCacheKeyForArgs(ObjectStore &CAS,
+                                ArrayRef<const char *> CC1Args,
                                 llvm::cas::CASID RootID, bool IsIncludeTree) {
   Optional<llvm::cas::ObjectRef> RootRef = CAS.getReference(RootID);
   if (!RootRef)
@@ -45,22 +46,21 @@ createCompileJobCacheKeyForArgs(CASDB &CAS, ArrayRef<const char *> CC1Args,
     Builder.push(*RootRef, llvm::cas::TreeEntry::Tree, "filesystem");
   }
   Builder.push(
-      CAS.getReference(llvm::cantFail(CAS.storeFromString(None, CommandLine))),
+      llvm::cantFail(CAS.storeFromString(None, CommandLine)),
       llvm::cas::TreeEntry::Regular, "command-line");
   Builder.push(
-      CAS.getReference(llvm::cantFail(CAS.storeFromString(None, "-cc1"))),
+      llvm::cantFail(CAS.storeFromString(None, "-cc1")),
       llvm::cas::TreeEntry::Regular, "computation");
 
   // FIXME: The version is maybe insufficient...
-  Builder.push(CAS.getReference(llvm::cantFail(
-                   CAS.storeFromString(None, getClangFullVersion()))),
+  Builder.push(llvm::cantFail(CAS.storeFromString(None, getClangFullVersion())),
                llvm::cas::TreeEntry::Regular, "version");
 
-  return CAS.getID(llvm::cantFail(Builder.create(CAS)));
+  return llvm::cantFail(Builder.create(CAS)).getID();
 }
 
 Optional<llvm::cas::CASID>
-clang::createCompileJobCacheKey(CASDB &CAS, DiagnosticsEngine &Diags,
+clang::createCompileJobCacheKey(ObjectStore &CAS, DiagnosticsEngine &Diags,
                                 const CompilerInvocation &OriginalInvocation) {
   CompilerInvocation InvocationForCacheKey(OriginalInvocation);
   FrontendOptions &FrontendOpts = InvocationForCacheKey.getFrontendOpts();
@@ -107,8 +107,8 @@ clang::createCompileJobCacheKey(CASDB &CAS, DiagnosticsEngine &Diags,
   return createCompileJobCacheKeyForArgs(CAS, Argv, *RootID, IsIncludeTree);
 }
 
-static Error printFileSystem(CASDB &CAS, ObjectRef Ref, raw_ostream &OS) {
-  Expected<ObjectHandle> Root = CAS.load(Ref);
+static Error printFileSystem(ObjectStore &CAS, ObjectRef Ref, raw_ostream &OS) {
+  Expected<ObjectProxy> Root = CAS.getProxy(Ref);
   if (!Root)
     return Root.takeError();
 
@@ -124,7 +124,7 @@ static Error printFileSystem(CASDB &CAS, ObjectRef Ref, raw_ostream &OS) {
       });
 }
 
-static Error printCompileJobCacheKey(CASDB &CAS, ObjectHandle Node,
+static Error printCompileJobCacheKey(ObjectStore &CAS, ObjectProxy Node,
                                      raw_ostream &OS) {
   auto strError = [](const Twine &Err) {
     return createStringError(inconvertibleErrorCode(), Err);
@@ -180,20 +180,18 @@ static Error printCompileJobCacheKey(CASDB &CAS, ObjectHandle Node,
   });
 }
 
-Error clang::printCompileJobCacheKey(CASDB &CAS, CASID Key, raw_ostream &OS) {
-  auto H = CAS.load(Key);
+Error clang::printCompileJobCacheKey(ObjectStore &CAS, CASID Key,
+                                     raw_ostream &OS) {
+  auto H = CAS.getProxy(Key);
   if (!H)
     return H.takeError();
-  if (!*H)
-    return createStringError(inconvertibleErrorCode(),
-                             "cache key not present in CAS");
   TreeSchema Schema(CAS);
-  if (!Schema.isNode(**H)) {
+  if (!Schema.isNode(*H)) {
     std::string ErrStr;
     llvm::raw_string_ostream Err(ErrStr);
     Err << "expected cache key to be a CAS tree; got ";
-    (*H)->print(Err);
+    H->getID().print(Err);
     return createStringError(inconvertibleErrorCode(), Err.str());
   }
-  return ::printCompileJobCacheKey(CAS, **H, OS);
+  return ::printCompileJobCacheKey(CAS, *H, OS);
 }

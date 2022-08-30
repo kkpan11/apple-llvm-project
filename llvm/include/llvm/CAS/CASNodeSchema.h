@@ -14,6 +14,9 @@
 
 namespace llvm {
 namespace cas {
+
+class ObjectProxy;
+
 /// A base class for schemas built on top of CAS nodes.
 ///
 /// TODO: Build a FilesystemSchema on top of this for reimplementing Trees on
@@ -27,14 +30,14 @@ public:
   /// Check if \a Node is a root (entry node) for the schema. This is a strong
   /// check, since it requires that the first reference matches a complete
   /// type-id DAG.
-  virtual bool isRootNode(const cas::ObjectHandle &Node) const = 0;
+  virtual bool isRootNode(const cas::ObjectProxy &Node) const = 0;
 
-  virtual bool isNode(const cas::ObjectHandle &Node) const = 0;
+  virtual bool isNode(const cas::ObjectProxy &Node) const = 0;
 
-  cas::CASDB &CAS;
+  cas::ObjectStore &CAS;
 
 protected:
-  NodeSchema(cas::CASDB &CAS) : CAS(CAS) {}
+  NodeSchema(cas::ObjectStore &CAS) : CAS(CAS) {}
 
 public:
   virtual ~NodeSchema() = default;
@@ -51,19 +54,19 @@ public:
   /// cannot be used beyond the \p SchemaPool instance's lifetime.
   ///
   /// Thread-safe.
-  NodeSchema *getSchemaForRoot(cas::ObjectHandle Node) const;
+  NodeSchema *getSchemaForRoot(cas::ObjectProxy Node) const;
 
   /// Add a schema to the pool.
   void addSchema(std::unique_ptr<NodeSchema> S) {
     Schemas.push_back(std::move(S));
   }
 
-  cas::CASDB &getCAS() const { return CAS; }
+  cas::ObjectStore &getCAS() const { return CAS; }
 
-  explicit SchemaPool(cas::CASDB &CAS) : CAS(CAS) {}
+  explicit SchemaPool(cas::ObjectStore &CAS) : CAS(CAS) {}
 
 private:
-  cas::CASDB &CAS;
+  cas::ObjectStore &CAS;
   SmallVector<std::unique_ptr<NodeSchema>> Schemas;
 };
 
