@@ -1910,6 +1910,12 @@ bool llvm::promoteLoopAccessesToScalars(
          SafetyInfo != nullptr &&
          "Unexpected Input to promoteLoopAccessesToScalars");
 
+  LLVM_DEBUG({
+    dbgs() << "Trying to promote set of must-aliased pointers:\n";
+    for (Value *Ptr : PointerMustAliases)
+      dbgs() << "  " << *Ptr << "\n";
+  });
+
   Value *SomePtr = *PointerMustAliases.begin();
   BasicBlock *Preheader = CurLoop->getLoopPreheader();
 
@@ -1967,7 +1973,6 @@ bool llvm::promoteLoopAccessesToScalars(
 
   const DataLayout &MDL = Preheader->getModule()->getDataLayout();
 
-  bool IsKnownThreadLocalObject = false;
   if (SafetyInfo->anyBlockMayThrow()) {
     // If a loop can throw, we have to insert a store along each unwind edge.
     // That said, we can't actually make the unwind edge explicit. Therefore,
@@ -1977,9 +1982,6 @@ bool llvm::promoteLoopAccessesToScalars(
     Value *Object = getUnderlyingObject(SomePtr);
     if (!isNotVisibleOnUnwindInLoop(Object, CurLoop, DT))
       return false;
-    // Subtlety: Alloca's aren't visible to callers, but *are* potentially
-    // visible to other threads if captured and used during their lifetimes.
-    IsKnownThreadLocalObject = !isa<AllocaInst>(Object);
   }
 
   // Check that all accesses to pointers in the alias set use the same type.
@@ -2036,13 +2038,10 @@ bool llvm::promoteLoopAccessesToScalars(
         bool GuaranteedToExecute =
             SafetyInfo->isGuaranteedToExecute(*UI, DT, CurLoop);
         StoreIsGuanteedToExecute |= GuaranteedToExecute;
-        if (!DereferenceableInPH || !SafeToInsertStore ||
-            (InstAlignment > Alignment)) {
-          if (GuaranteedToExecute) {
-            DereferenceableInPH = true;
-            SafeToInsertStore = true;
-            Alignment = std::max(Alignment, InstAlignment);
-          }
+        if (GuaranteedToExecute) {
+          DereferenceableInPH = true;
+          SafeToInsertStore = true;
+          Alignment = std::max(Alignment, InstAlignment);
         }
 
         // If a store dominates all exit blocks, it is safe to sink.
@@ -2097,22 +2096,21 @@ bool llvm::promoteLoopAccessesToScalars(
     return false;
 
   // If we couldn't prove we can hoist the load, bail.
-  if (!DereferenceableInPH)
+  if (!DereferenceableInPH) {
+    LLVM_DEBUG(dbgs() << "Not promoting: Not dereferenceable in preheader\n");
     return false;
+  }
 
   // We know we can hoist the load, but don't have a guaranteed store.
   // Check whether the location is thread-local. If it is, then we can insert
   // stores along paths which originally didn't have them without violating the
   // memory model.
   if (!SafeToInsertStore) {
-    if (IsKnownThreadLocalObject)
-      SafeToInsertStore = true;
-    else {
-      Value *Object = getUnderlyingObject(SomePtr);
-      SafeToInsertStore =
-          (isNoAliasCall(Object) || isa<AllocaInst>(Object)) &&
-          isNotCapturedBeforeOrInLoop(Object, CurLoop, DT);
-    }
+    Value *Object = getUnderlyingObject(SomePtr);
+    SafeToInsertStore =
+        (isNoAliasCall(Object) || isa<AllocaInst>(Object) ||
+         (isa<Argument>(Object) && cast<Argument>(Object)->hasByValAttr())) &&
+        isNotCapturedBeforeOrInLoop(Object, CurLoop, DT);
   }
 
   // If we've still failed to prove we can sink the store, hoist the load
