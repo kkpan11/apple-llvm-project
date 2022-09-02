@@ -2007,6 +2007,11 @@ bool Preprocessor::checkModuleIsAvailable(const LangOptions &LangOpts,
 
 std::pair<ConstSearchDirIterator, const FileEntry *>
 Preprocessor::getIncludeNextStart(const Token &IncludeNextTok) const {
+  if (getPPCachedActions()) {
+    // We have pre-recorded include lookups.
+    return std::make_pair(nullptr, nullptr);
+  }
+
   // #include_next is like #include, except that we start searching after
   // the current found directory.  If we can't do this, issue a
   // diagnostic.
