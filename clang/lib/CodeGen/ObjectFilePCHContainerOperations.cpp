@@ -108,7 +108,7 @@ class PCHContainerGenerator : public ASTConsumer {
         return true;
 
       SmallVector<QualType, 16> ArgTypes;
-      for (auto i : D->parameters())
+      for (auto *i : D->parameters())
         ArgTypes.push_back(i->getType());
       QualType RetTy = D->getReturnType();
       QualType FnTy = Ctx.getFunctionType(RetTy, ArgTypes,
@@ -127,7 +127,7 @@ class PCHContainerGenerator : public ASTConsumer {
       ArgTypes.push_back(D->getSelfType(Ctx, D->getClassInterface(),
                                         selfIsPseudoStrong, selfIsConsumed));
       ArgTypes.push_back(Ctx.getObjCSelType());
-      for (auto i : D->parameters())
+      for (auto *i : D->parameters())
         ArgTypes.push_back(i->getType());
       QualType RetTy = D->getReturnType();
       QualType FnTy = Ctx.getFunctionType(RetTy, ArgTypes,
