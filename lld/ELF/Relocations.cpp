@@ -1401,7 +1401,8 @@ template <class ELFT, class RelTy> void RelocationScanner::scanOne(RelTy *&i) {
   // be resolved within the executable will actually be resolved that way at
   // runtime, because the main executable is always at the beginning of a search
   // list. We can leverage that fact.
-  if (!sym.isPreemptible && (!sym.isGnuIFunc() || config->zIfuncNoplt)) {
+  const bool isIfunc = sym.isGnuIFunc();
+  if (!sym.isPreemptible && (!isIfunc || config->zIfuncNoplt)) {
     if (expr != R_GOT_PC) {
       // The 0x8000 bit of r_addend of R_PPC_PLTREL24 is used to choose call
       // stub type. It should be ignored if optimized to R_PC.
@@ -1421,7 +1422,7 @@ template <class ELFT, class RelTy> void RelocationScanner::scanOne(RelTy *&i) {
 
   // We were asked not to generate PLT entries for ifuncs. Instead, pass the
   // direct relocation on through.
-  if (sym.isGnuIFunc() && config->zIfuncNoplt) {
+  if (LLVM_UNLIKELY(isIfunc) && config->zIfuncNoplt) {
     sym.exportDynamic = true;
     mainPart->relaDyn->addSymbolReloc(type, sec, offset, sym, addend, type);
     return;
@@ -1442,7 +1443,7 @@ template <class ELFT, class RelTy> void RelocationScanner::scanOne(RelTy *&i) {
     }
   } else if (needsPlt(expr)) {
     sym.needsPlt = true;
-  } else {
+  } else if (LLVM_UNLIKELY(isIfunc)) {
     sym.hasDirectReloc = true;
   }
 
@@ -1515,13 +1516,30 @@ void RelocationScanner::scan(ArrayRef<RelTy> rels) {
                       });
 }
 
-template <class ELFT> void elf::scanRelocations(InputSectionBase &s) {
+template <class ELFT> static void scanSection(InputSectionBase &s) {
   RelocationScanner scanner(s);
   const RelsOrRelas<ELFT> rels = s.template relsOrRelas<ELFT>();
   if (rels.areRelocsRel())
     scanner.template scan<ELFT>(rels.rels);
   else
     scanner.template scan<ELFT>(rels.relas);
+}
+
+template <class ELFT> void elf::scanRelocations() {
+  // Scan all relocations. Each relocation goes through a series of tests to
+  // determine if it needs special treatment, such as creating GOT, PLT,
+  // copy relocations, etc. Note that relocations for non-alloc sections are
+  // directly processed by InputSection::relocateNonAlloc.
+  for (InputSectionBase *sec : inputSections)
+    if (sec->isLive() && (sec->flags & SHF_ALLOC))
+      scanSection<ELFT>(*sec);
+  for (Partition &part : partitions) {
+    for (EhInputSection *sec : part.ehFrame->sections)
+      scanSection<ELFT>(*sec);
+    if (part.armExidx && part.armExidx->isLive())
+      for (InputSection *sec : part.armExidx->exidxSections)
+        scanSection<ELFT>(*sec);
+  }
 }
 
 static bool handleNonPreemptibleIfunc(Symbol &sym) {
@@ -2231,7 +2249,7 @@ void elf::hexagonTLSSymbolUpdate(ArrayRef<OutputSection *> outputSections) {
       });
 }
 
-template void elf::scanRelocations<ELF32LE>(InputSectionBase &);
-template void elf::scanRelocations<ELF32BE>(InputSectionBase &);
-template void elf::scanRelocations<ELF64LE>(InputSectionBase &);
-template void elf::scanRelocations<ELF64BE>(InputSectionBase &);
+template void elf::scanRelocations<ELF32LE>();
+template void elf::scanRelocations<ELF32BE>();
+template void elf::scanRelocations<ELF64LE>();
+template void elf::scanRelocations<ELF64BE>();
