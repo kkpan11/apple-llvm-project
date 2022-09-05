@@ -755,7 +755,7 @@ public:
 
   std::unique_ptr<MCObjectTargetWriter>
   createObjectTargetWriter() const override {
-    return createAArch64WinCOFFObjectWriter();
+    return createAArch64WinCOFFObjectWriter(TheTriple);
   }
 };
 }
