@@ -87,7 +87,9 @@ static bool isMaxValAllBitSetLiteral(const EnumDecl *EnumDec) {
 }
 
 static int countNonPowOfTwoLiteralNum(const EnumDecl *EnumDec) {
-  return llvm::count_if(EnumDec->enumerators(), isNonPowerOf2NorNullLiteral);
+  return std::count_if(
+      EnumDec->enumerator_begin(), EnumDec->enumerator_end(),
+      [](const EnumConstantDecl *E) { return isNonPowerOf2NorNullLiteral(E); });
 }
 
 /// Check if there is one or two enumerators that are not a power of 2 and are
