@@ -34,6 +34,8 @@ class TestRosetta(TestBase):
 
     NO_DEBUG_INFO_TESTCASE = True
 
+    mydir = TestBase.compute_mydir(__file__)
+
     @skipUnlessAppleSilicon
     def test_rosetta(self):
         """There can be many tests in a test case - describe this test here."""
