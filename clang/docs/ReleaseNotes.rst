@@ -91,6 +91,8 @@ Bug Fixes
   `Issue 57431 <https://github.com/llvm/llvm-project/issues/57431>`_
 - Fix a crash where we attempt to define a deleted destructor. This fixes
   `Issue 57516 <https://github.com/llvm/llvm-project/issues/57516>`_
+- Fix ``__builtin_assume_aligned`` crash when the 1st arg is array type. This fixes
+  `Issue 57169 <https://github.com/llvm/llvm-project/issues/57169>`_
 
 
 Improvements to Clang's diagnostics
@@ -138,6 +140,13 @@ Non-comprehensive list of changes in this release
 - It's now possible to set the crash diagnostics directory through
   the environment variable ``CLANG_CRASH_DIAGNOSTICS_DIR``.
   The ``-fcrash-diagnostics-dir`` flag takes precedence.
+- When using header modules, inclusion of a private header and violations of
+  the `use-declaration rules
+  <https://clang.llvm.org/docs/Modules.html#use-declaration>`_ are now
+  diagnosed even when the includer is a textual header. This change can be
+  temporarily reversed with ``-Xclang
+  -fno-modules-validate-textual-header-includes``, but this flag will be
+  removed in a future Clang release.
 
 New Compiler Flags
 ------------------

@@ -74,6 +74,7 @@
 #include "llvm/Transforms/Instrumentation/MemProfiler.h"
 #include "llvm/Transforms/Instrumentation/MemorySanitizer.h"
 #include "llvm/Transforms/Instrumentation/SanitizerCoverage.h"
+#include "llvm/Transforms/Instrumentation/SanitizerBinaryMetadata.h"
 #include "llvm/Transforms/Instrumentation/ThreadSanitizer.h"
 #include "llvm/Transforms/ObjCARC.h"
 #include "llvm/Transforms/Scalar.h"
@@ -217,6 +218,14 @@ getSancovOptsFromCGOpts(const CodeGenOptions &CGOpts) {
   Opts.StackDepth = CGOpts.SanitizeCoverageStackDepth;
   Opts.TraceLoads = CGOpts.SanitizeCoverageTraceLoads;
   Opts.TraceStores = CGOpts.SanitizeCoverageTraceStores;
+  return Opts;
+}
+
+static SanitizerBinaryMetadataOptions
+getSanitizerBinaryMetadataOptions(const CodeGenOptions &CGOpts) {
+  SanitizerBinaryMetadataOptions Opts;
+  Opts.Covered = CGOpts.SanitizeBinaryMetadataCovered;
+  Opts.Atomics = CGOpts.SanitizeBinaryMetadataAtomics;
   return Opts;
 }
 
@@ -636,9 +645,14 @@ static void addSanitizers(const Triple &TargetTriple,
                                          OptimizationLevel Level) {
     if (CodeGenOpts.hasSanitizeCoverage()) {
       auto SancovOpts = getSancovOptsFromCGOpts(CodeGenOpts);
-      MPM.addPass(ModuleSanitizerCoveragePass(
+      MPM.addPass(SanitizerCoveragePass(
           SancovOpts, CodeGenOpts.SanitizeCoverageAllowlistFiles,
           CodeGenOpts.SanitizeCoverageIgnorelistFiles));
+    }
+
+    if (CodeGenOpts.hasSanitizeBinaryMetadata()) {
+      MPM.addPass(SanitizerBinaryMetadataPass(
+          getSanitizerBinaryMetadataOptions(CodeGenOpts)));
     }
 
     auto MSanPass = [&](SanitizerMask Mask, bool CompileKernel) {
@@ -648,7 +662,7 @@ static void addSanitizers(const Triple &TargetTriple,
 
         MemorySanitizerOptions options(TrackOrigins, Recover, CompileKernel,
                                        CodeGenOpts.SanitizeMemoryParamRetval);
-        MPM.addPass(ModuleMemorySanitizerPass(options));
+        MPM.addPass(MemorySanitizerPass(options));
         if (Level != OptimizationLevel::O0) {
           // MemorySanitizer inserts complex instrumentation that mostly
           // follows the logic of the original code, but operates on
