@@ -459,20 +459,11 @@ NativeHashedStorageHandler::NativeHashedStorageHandler(
       std::vector<TypeSystemSwift::TupleElement> tuple_elements{
           {g_key, key_type}, {g_value, value_type}};
       m_element_type = type_system->CreateTupleType(tuple_elements);
-      auto *swift_type = 
-          m_element_type.GetCanonicalType().GetOpaqueQualType();
-      auto element_stride = m_element_type.GetByteStride(m_process);
-      if (element_stride) {
+      if (auto result = runtime->GetMemberVariableOffset(
+              m_element_type, nativeStorage_sp.get(), "1"))
+        m_key_stride_padded = *result;
+      else if (auto element_stride = m_element_type.GetByteStride(m_process))
         m_key_stride_padded = *element_stride - m_value_stride;
-      }
-      if (type_system->IsTupleType(swift_type)) {
-        Status error;
-        llvm::Optional<uint64_t> result = runtime->GetMemberVariableOffset(
-            {type_system, swift_type}, nativeStorage_sp.get(), "1",
-            &error);
-        if (result)
-          m_key_stride_padded = result.getValue();
-      }
     }
   } else {
     m_element_type = key_type;
@@ -606,8 +597,8 @@ NativeHashedStorageHandler::GetElementAtIndex(size_t idx) {
   if (idx >= m_occupiedBuckets.size())
     return nullptr;
   Bucket bucket = m_occupiedBuckets[idx];
-  DataBufferSP full_buffer_sp(
-    new DataBufferHeap(m_key_stride_padded + m_value_stride, 0));
+  WritableDataBufferSP full_buffer_sp(
+      new DataBufferHeap(m_key_stride_padded + m_value_stride, 0));
   uint8_t *key_buffer_ptr = full_buffer_sp->GetBytes();
   uint8_t *value_buffer_ptr =
     m_value_stride ? (key_buffer_ptr + m_key_stride_padded) : nullptr;

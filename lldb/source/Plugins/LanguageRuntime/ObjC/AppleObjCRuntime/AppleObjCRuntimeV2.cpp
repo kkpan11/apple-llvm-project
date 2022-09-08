@@ -6,20 +6,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include <cstdint>
-
-#include <memory>
-#include <string>
-#include <vector>
-
-#include "clang/AST/ASTContext.h"
-#include "clang/AST/DeclObjC.h"
-
-#include "lldb/Host/OptionParser.h"
-#include "lldb/Symbol/CompilerType.h"
-#include "lldb/lldb-enumerations.h"
-
+#include "Plugins/LanguageRuntime/ObjC/ObjCLanguageRuntime.h"
 #include "Plugins/TypeSystem/Clang/TypeSystemClang.h"
+
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/DebuggerEvents.h"
 #include "lldb/Core/Module.h"
@@ -30,11 +19,13 @@
 #include "lldb/Expression/DiagnosticManager.h"
 #include "lldb/Expression/FunctionCaller.h"
 #include "lldb/Expression/UtilityFunction.h"
+#include "lldb/Host/OptionParser.h"
 #include "lldb/Interpreter/CommandObject.h"
 #include "lldb/Interpreter/CommandObjectMultiword.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
 #include "lldb/Interpreter/OptionArgParser.h"
 #include "lldb/Interpreter/OptionValueBoolean.h"
+#include "lldb/Symbol/CompilerType.h"
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Symbol/Symbol.h"
 #include "lldb/Symbol/TypeList.h"
@@ -56,6 +47,7 @@
 #include "lldb/Utility/Stream.h"
 #include "lldb/Utility/StreamString.h"
 #include "lldb/Utility/Timer.h"
+#include "lldb/lldb-enumerations.h"
 
 #include "AppleObjCClassDescriptorV2.h"
 #include "AppleObjCDeclVendor.h"
@@ -66,9 +58,11 @@
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/DeclObjC.h"
 #include "clang/Basic/TargetInfo.h"
+#include "llvm/ADT/ScopeExit.h"
 
-#include "Plugins/LanguageRuntime/ObjC/ObjCLanguageRuntime.h"
-
+#include <cstdint>
+#include <memory>
+#include <string>
 #include <vector>
 
 using namespace lldb;
@@ -205,13 +199,13 @@ __lldb_apple_objc_v2_get_dynamic_class_info2(void *gdb_objc_realized_classes_ptr
     DEBUG_PRINTF ("count = %u\n", count);
 
     uint32_t idx = 0;
-    for (uint32_t i=0; i<=count; ++i)
+    for (uint32_t i=0; i<count; ++i)
     {
         if (idx < max_class_infos)
         {
             Class isa = realized_class_list[i];
             const char *name_ptr = objc_debug_class_getNameRaw(isa);
-            if (name_ptr == NULL)
+            if (!name_ptr)
                 continue;
             const char *s = name_ptr;
             uint32_t h = 5381;
@@ -231,6 +225,83 @@ __lldb_apple_objc_v2_get_dynamic_class_info2(void *gdb_objc_realized_classes_ptr
     }
 
     free(realized_class_list);
+    return count;
+}
+)";
+
+static const char *g_get_dynamic_class_info3_name =
+    "__lldb_apple_objc_v2_get_dynamic_class_info3";
+
+static const char *g_get_dynamic_class_info3_body = R"(
+
+extern "C" {
+    int printf(const char * format, ...);
+    void free(void *ptr);
+    size_t objc_getRealizedClassList_trylock(Class *buffer, size_t len);
+    const char* objc_debug_class_getNameRaw(Class cls);
+    const char* class_getName(Class cls);
+}
+
+#define DEBUG_PRINTF(fmt, ...) if (should_log) printf(fmt, ## __VA_ARGS__)
+
+struct ClassInfo
+{
+    Class isa;
+    uint32_t hash;
+} __attribute__((__packed__));
+
+uint32_t
+__lldb_apple_objc_v2_get_dynamic_class_info3(void *gdb_objc_realized_classes_ptr,
+                                             void *class_infos_ptr,
+                                             uint32_t class_infos_byte_size,
+                                             void *class_buffer,
+                                             uint32_t class_buffer_len,
+                                             uint32_t should_log)
+{
+    DEBUG_PRINTF ("class_infos_ptr = %p\n", class_infos_ptr);
+    DEBUG_PRINTF ("class_infos_byte_size = %u\n", class_infos_byte_size);
+
+    const size_t max_class_infos = class_infos_byte_size/sizeof(ClassInfo);
+    DEBUG_PRINTF ("max_class_infos = %u\n", max_class_infos);
+
+    ClassInfo *class_infos = (ClassInfo *)class_infos_ptr;
+
+    Class *realized_class_list = (Class*)class_buffer;
+
+    uint32_t count = objc_getRealizedClassList_trylock(realized_class_list,
+                                                       class_buffer_len);
+    DEBUG_PRINTF ("count = %u\n", count);
+
+    uint32_t idx = 0;
+    for (uint32_t i=0; i<count; ++i)
+    {
+        if (idx < max_class_infos)
+        {
+            Class isa = realized_class_list[i];
+            const char *name_ptr = objc_debug_class_getNameRaw(isa);
+            if (!name_ptr) {
+               class_getName(isa); // Realize name of lazy classes.
+               name_ptr = objc_debug_class_getNameRaw(isa);
+            }
+            if (!name_ptr)
+                continue;
+            const char *s = name_ptr;
+            uint32_t h = 5381;
+            for (unsigned char c = *s; c; c = *++s)
+                h = ((h << 5) + h) + c;
+            class_infos[idx].hash = h;
+            class_infos[idx].isa = isa;
+            DEBUG_PRINTF ("[%u] isa = %8p %s\n", idx, class_infos[idx].isa, name_ptr);
+        }
+        idx++;
+    }
+
+    if (idx < max_class_infos)
+    {
+        class_infos[idx].isa = NULL;
+        class_infos[idx].hash = 0;
+    }
+
     return count;
 }
 )";
@@ -663,7 +734,8 @@ AppleObjCRuntimeV2::AppleObjCRuntimeV2(Process *process,
       m_isa_hash_table_ptr(LLDB_INVALID_ADDRESS),
       m_relative_selector_base(LLDB_INVALID_ADDRESS), m_hash_signature(),
       m_has_object_getClass(false), m_has_objc_copyRealizedClassList(false),
-      m_loaded_objc_opt(false), m_non_pointer_isa_cache_up(),
+      m_has_objc_getRealizedClassList_trylock(false), m_loaded_objc_opt(false),
+      m_non_pointer_isa_cache_up(),
       m_tagged_pointer_vendor_up(
           TaggedPointerVendorV2::CreateInstance(*this, objc_module_sp)),
       m_encoding_to_type_sp(), m_CFBoolean_values(),
@@ -672,7 +744,11 @@ AppleObjCRuntimeV2::AppleObjCRuntimeV2(Process *process,
   m_has_object_getClass = HasSymbol(g_gdb_object_getClass);
   static const ConstString g_objc_copyRealizedClassList(
       "_ZL33objc_copyRealizedClassList_nolockPj");
+  static const ConstString g_objc_getRealizedClassList_trylock(
+      "_objc_getRealizedClassList_trylock");
   m_has_objc_copyRealizedClassList = HasSymbol(g_objc_copyRealizedClassList);
+  m_has_objc_getRealizedClassList_trylock =
+      HasSymbol(g_objc_getRealizedClassList_trylock);
   WarnIfNoExpandedSharedCache();
   RegisterObjCExceptionRecognizer(process);
 }
@@ -1481,7 +1557,7 @@ AppleObjCRuntimeV2::GetClassDescriptor(ValueObject &valobj) {
 
   objc_class_sp = GetClassDescriptorFromISA(isa);
   if (isa && !objc_class_sp) {
-    Log *log = GetLog(LLDBLog::Process | LLDBLog::Commands);
+    Log *log = GetLog(LLDBLog::Process | LLDBLog::Types);
     LLDB_LOGF(log,
               "0x%" PRIx64 ": AppleObjCRuntimeV2::GetClassDescriptor() ISA was "
               "not in class descriptor cache 0x%" PRIx64,
@@ -1552,8 +1628,9 @@ lldb::addr_t AppleObjCRuntimeV2::GetISAHashTablePointer() {
 
 std::unique_ptr<UtilityFunction>
 AppleObjCRuntimeV2::DynamicClassInfoExtractor::GetClassInfoUtilityFunctionImpl(
-    ExecutionContext &exe_ctx, std::string code, std::string name) {
-  Log *log = GetLog(LLDBLog::Process | LLDBLog::Commands);
+    ExecutionContext &exe_ctx, Helper helper, std::string code,
+    std::string name) {
+  Log *log = GetLog(LLDBLog::Process | LLDBLog::Types);
 
   LLDB_LOG(log, "Creating utility function {0}", name);
 
@@ -1567,7 +1644,7 @@ AppleObjCRuntimeV2::DynamicClassInfoExtractor::GetClassInfoUtilityFunctionImpl(
   if (!utility_fn_or_error) {
     LLDB_LOG_ERROR(
         log, utility_fn_or_error.takeError(),
-        "Failed to get utility function for implementation lookup: {0}");
+        "Failed to get utility function for dynamic info extractor: {0}");
     return {};
   }
 
@@ -1587,6 +1664,15 @@ AppleObjCRuntimeV2::DynamicClassInfoExtractor::GetClassInfoUtilityFunctionImpl(
   value.SetValueType(Value::ValueType::Scalar);
   value.SetCompilerType(clang_uint32_t_type);
   arguments.PushValue(value);
+
+  // objc_getRealizedClassList_trylock takes an additional buffer and length.
+  if (helper == Helper::objc_getRealizedClassList_trylock) {
+    value.SetCompilerType(clang_void_pointer_type);
+    arguments.PushValue(value);
+    value.SetCompilerType(clang_uint32_t_type);
+    arguments.PushValue(value);
+  }
+
   arguments.PushValue(value);
 
   std::unique_ptr<UtilityFunction> utility_fn = std::move(*utility_fn_or_error);
@@ -1612,7 +1698,7 @@ AppleObjCRuntimeV2::DynamicClassInfoExtractor::GetClassInfoUtilityFunction(
   case gdb_objc_realized_classes: {
     if (!m_gdb_objc_realized_classes_helper.utility_function)
       m_gdb_objc_realized_classes_helper.utility_function =
-          GetClassInfoUtilityFunctionImpl(exe_ctx,
+          GetClassInfoUtilityFunctionImpl(exe_ctx, helper,
                                           g_get_dynamic_class_info_body,
                                           g_get_dynamic_class_info_name);
     return m_gdb_objc_realized_classes_helper.utility_function.get();
@@ -1620,10 +1706,18 @@ AppleObjCRuntimeV2::DynamicClassInfoExtractor::GetClassInfoUtilityFunction(
   case objc_copyRealizedClassList: {
     if (!m_objc_copyRealizedClassList_helper.utility_function)
       m_objc_copyRealizedClassList_helper.utility_function =
-          GetClassInfoUtilityFunctionImpl(exe_ctx,
+          GetClassInfoUtilityFunctionImpl(exe_ctx, helper,
                                           g_get_dynamic_class_info2_body,
                                           g_get_dynamic_class_info2_name);
     return m_objc_copyRealizedClassList_helper.utility_function.get();
+  }
+  case objc_getRealizedClassList_trylock: {
+    if (!m_objc_getRealizedClassList_trylock_helper.utility_function)
+      m_objc_getRealizedClassList_trylock_helper.utility_function =
+          GetClassInfoUtilityFunctionImpl(exe_ctx, helper,
+                                          g_get_dynamic_class_info3_body,
+                                          g_get_dynamic_class_info3_name);
+    return m_objc_getRealizedClassList_trylock_helper.utility_function.get();
   }
   }
   llvm_unreachable("Unexpected helper");
@@ -1636,19 +1730,37 @@ AppleObjCRuntimeV2::DynamicClassInfoExtractor::GetClassInfoArgs(Helper helper) {
     return m_gdb_objc_realized_classes_helper.args;
   case objc_copyRealizedClassList:
     return m_objc_copyRealizedClassList_helper.args;
+  case objc_getRealizedClassList_trylock:
+    return m_objc_getRealizedClassList_trylock_helper.args;
   }
   llvm_unreachable("Unexpected helper");
 }
 
 AppleObjCRuntimeV2::DynamicClassInfoExtractor::Helper
-AppleObjCRuntimeV2::DynamicClassInfoExtractor::ComputeHelper() const {
-  if (!m_runtime.m_has_objc_copyRealizedClassList)
+AppleObjCRuntimeV2::DynamicClassInfoExtractor::ComputeHelper(
+    ExecutionContext &exe_ctx) const {
+  if (!m_runtime.m_has_objc_copyRealizedClassList &&
+      !m_runtime.m_has_objc_getRealizedClassList_trylock)
     return DynamicClassInfoExtractor::gdb_objc_realized_classes;
 
   if (Process *process = m_runtime.GetProcess()) {
     if (DynamicLoader *loader = process->GetDynamicLoader()) {
-      if (loader->IsFullyInitialized())
-        return DynamicClassInfoExtractor::objc_copyRealizedClassList;
+      if (loader->IsFullyInitialized()) {
+        switch (exe_ctx.GetTargetRef().GetDynamicClassInfoHelper()) {
+        case eDynamicClassInfoHelperAuto:
+          [[clang::fallthrough]];
+        case eDynamicClassInfoHelperGetRealizedClassList:
+          if (m_runtime.m_has_objc_getRealizedClassList_trylock)
+            return DynamicClassInfoExtractor::objc_getRealizedClassList_trylock;
+          [[clang::fallthrough]];
+        case eDynamicClassInfoHelperCopyRealizedClassList:
+          if (m_runtime.m_has_objc_copyRealizedClassList)
+            return DynamicClassInfoExtractor::objc_copyRealizedClassList;
+          [[clang::fallthrough]];
+        case eDynamicClassInfoHelperRealizedClassesStruct:
+          return DynamicClassInfoExtractor::gdb_objc_realized_classes;
+        }
+      }
     }
   }
 
@@ -1658,7 +1770,7 @@ AppleObjCRuntimeV2::DynamicClassInfoExtractor::ComputeHelper() const {
 std::unique_ptr<UtilityFunction>
 AppleObjCRuntimeV2::SharedCacheClassInfoExtractor::
     GetClassInfoUtilityFunctionImpl(ExecutionContext &exe_ctx) {
-  Log *log = GetLog(LLDBLog::Process | LLDBLog::Commands);
+  Log *log = GetLog(LLDBLog::Process | LLDBLog::Types);
 
   LLDB_LOG(log, "Creating utility function {0}",
            g_get_shared_cache_class_info_name);
@@ -1697,7 +1809,7 @@ AppleObjCRuntimeV2::SharedCacheClassInfoExtractor::
   if (!utility_fn_or_error) {
     LLDB_LOG_ERROR(
         log, utility_fn_or_error.takeError(),
-        "Failed to get utility function for implementation lookup: {0}");
+        "Failed to get utility function for shared class info extractor: {0}");
     return nullptr;
   }
 
@@ -1761,7 +1873,7 @@ AppleObjCRuntimeV2::DynamicClassInfoExtractor::UpdateISAToDescriptorMap(
 
   uint32_t num_class_infos = 0;
 
-  Log *log = GetLog(LLDBLog::Process | LLDBLog::Commands);
+  Log *log = GetLog(LLDBLog::Process | LLDBLog::Types);
 
   ExecutionContext exe_ctx;
 
@@ -1784,7 +1896,7 @@ AppleObjCRuntimeV2::DynamicClassInfoExtractor::UpdateISAToDescriptorMap(
   Status err;
 
   // Compute which helper we're going to use for this update.
-  const DynamicClassInfoExtractor::Helper helper = ComputeHelper();
+  const DynamicClassInfoExtractor::Helper helper = ComputeHelper(exe_ctx);
 
   // Read the total number of classes from the hash table
   const uint32_t num_classes =
@@ -1828,19 +1940,55 @@ AppleObjCRuntimeV2::DynamicClassInfoExtractor::UpdateISAToDescriptorMap(
     return DescriptorMapUpdateResult::Fail();
   }
 
+  auto deallocate_class_infos = llvm::make_scope_exit([&] {
+    // Deallocate the memory we allocated for the ClassInfo array
+    if (class_infos_addr != LLDB_INVALID_ADDRESS)
+      process->DeallocateMemory(class_infos_addr);
+  });
+
+  lldb::addr_t class_buffer_addr = LLDB_INVALID_ADDRESS;
+  const uint32_t class_byte_size = addr_size;
+  const uint32_t class_buffer_len = num_classes;
+  const uint32_t class_buffer_byte_size = class_buffer_len * class_byte_size;
+  if (helper == Helper::objc_getRealizedClassList_trylock) {
+    class_buffer_addr = process->AllocateMemory(
+        class_buffer_byte_size, ePermissionsReadable | ePermissionsWritable,
+        err);
+    if (class_buffer_addr == LLDB_INVALID_ADDRESS) {
+      LLDB_LOGF(log,
+                "unable to allocate %" PRIu32
+                " bytes in process for shared cache read",
+                class_buffer_byte_size);
+      return DescriptorMapUpdateResult::Fail();
+    }
+  }
+
+  auto deallocate_class_buffer = llvm::make_scope_exit([&] {
+    // Deallocate the memory we allocated for the Class array
+    if (class_buffer_addr != LLDB_INVALID_ADDRESS)
+      process->DeallocateMemory(class_buffer_addr);
+  });
+
   std::lock_guard<std::mutex> guard(m_mutex);
 
   // Fill in our function argument values
-  arguments.GetValueAtIndex(0)->GetScalar() = hash_table.GetTableLoadAddress();
-  arguments.GetValueAtIndex(1)->GetScalar() = class_infos_addr;
-  arguments.GetValueAtIndex(2)->GetScalar() = class_infos_byte_size;
+  uint32_t index = 0;
+  arguments.GetValueAtIndex(index++)->GetScalar() =
+      hash_table.GetTableLoadAddress();
+  arguments.GetValueAtIndex(index++)->GetScalar() = class_infos_addr;
+  arguments.GetValueAtIndex(index++)->GetScalar() = class_infos_byte_size;
+
+  if (class_buffer_addr != LLDB_INVALID_ADDRESS) {
+    arguments.GetValueAtIndex(index++)->GetScalar() = class_buffer_addr;
+    arguments.GetValueAtIndex(index++)->GetScalar() = class_buffer_byte_size;
+  }
 
   // Only dump the runtime classes from the expression evaluation if the log is
   // verbose:
-  Log *type_log = GetLog(LLDBLog::Commands);
+  Log *type_log = GetLog(LLDBLog::Types);
   bool dump_log = type_log && type_log->GetVerbose();
 
-  arguments.GetValueAtIndex(3)->GetScalar() = dump_log ? 1 : 0;
+  arguments.GetValueAtIndex(index++)->GetScalar() = dump_log ? 1 : 0;
 
   bool success = false;
 
@@ -1901,9 +2049,6 @@ AppleObjCRuntimeV2::DynamicClassInfoExtractor::UpdateISAToDescriptorMap(
     }
   }
 
-  // Deallocate the memory we allocated for the ClassInfo array
-  process->DeallocateMemory(class_infos_addr);
-
   return DescriptorMapUpdateResult(success, num_class_infos);
 }
 
@@ -1917,7 +2062,7 @@ uint32_t AppleObjCRuntimeV2::ParseClassInfoArray(const DataExtractor &data,
   //        uint32_t hash;
   //    } __attribute__((__packed__));
 
-  Log *log = GetLog(LLDBLog::Commands);
+  Log *log = GetLog(LLDBLog::Types);
   bool should_log = log && log->GetVerbose();
 
   uint32_t num_parsed = 0;
@@ -1990,7 +2135,7 @@ AppleObjCRuntimeV2::SharedCacheClassInfoExtractor::UpdateISAToDescriptorMap() {
   if (process == nullptr)
     return DescriptorMapUpdateResult::Fail();
 
-  Log *log = GetLog(LLDBLog::Process | LLDBLog::Commands);
+  Log *log = GetLog(LLDBLog::Process | LLDBLog::Types);
 
   ExecutionContext exe_ctx;
 
@@ -2023,7 +2168,8 @@ AppleObjCRuntimeV2::SharedCacheClassInfoExtractor::UpdateISAToDescriptorMap() {
     return DescriptorMapUpdateResult::Fail();
 
   // The number of entries to pre-allocate room for.
-  const uint32_t max_num_classes = 256 * 1024;
+  // Each entry is (addrsize + 4) bytes
+  const uint32_t max_num_classes = 163840;
 
   UtilityFunction *get_class_info_code = GetClassInfoUtilityFunction(exe_ctx);
   if (!get_class_info_code) {
@@ -2071,7 +2217,7 @@ AppleObjCRuntimeV2::SharedCacheClassInfoExtractor::UpdateISAToDescriptorMap() {
   arguments.GetValueAtIndex(4)->GetScalar() = class_infos_byte_size;
   // Only dump the runtime classes from the expression evaluation if the log is
   // verbose:
-  Log *type_log = GetLog(LLDBLog::Commands);
+  Log *type_log = GetLog(LLDBLog::Types);
   bool dump_log = type_log && type_log->GetVerbose();
 
   arguments.GetValueAtIndex(5)->GetScalar() = dump_log ? 1 : 0;
@@ -2231,7 +2377,7 @@ lldb::addr_t AppleObjCRuntimeV2::GetSharedCacheBaseAddress() {
 void AppleObjCRuntimeV2::UpdateISAToDescriptorMapIfNeeded() {
   LLDB_SCOPED_TIMER();
 
-  Log *log = GetLog(LLDBLog::Process | LLDBLog::Commands);
+  Log *log = GetLog(LLDBLog::Process | LLDBLog::Types);
 
   // Else we need to check with our process to see when the map was updated.
   Process *process = GetProcess();
@@ -2318,7 +2464,7 @@ bool AppleObjCRuntimeV2::RealizedClassGenerationCountChanged() {
       objc_debug_realized_class_generation_count)
     return false;
 
-  Log *log = GetLog(LLDBLog::Process | LLDBLog::Commands);
+  Log *log = GetLog(LLDBLog::Process | LLDBLog::Types);
   LLDB_LOG(log,
            "objc_debug_realized_class_generation_count changed from {0} to {1}",
            m_realized_class_generation_count,
@@ -2353,14 +2499,14 @@ void AppleObjCRuntimeV2::WarnIfNoClassesCached(
   Debugger &debugger(GetProcess()->GetTarget().GetDebugger());
   switch (reason) {
   case SharedCacheWarningReason::eNotEnoughClassesRead:
-    Debugger::ReportWarning("warning: could not find Objective-C class data in "
+    Debugger::ReportWarning("could not find Objective-C class data in "
                             "the process. This may reduce the quality of type "
                             "information available.\n",
                             debugger.GetID(), &m_no_classes_cached_warning);
     break;
   case SharedCacheWarningReason::eExpressionExecutionFailure:
     Debugger::ReportWarning(
-        "warning: could not execute support code to read "
+        "could not execute support code to read "
         "Objective-C class data in the process. This may "
         "reduce the quality of type information available.\n",
         debugger.GetID(), &m_no_classes_cached_warning);
@@ -2385,7 +2531,7 @@ void AppleObjCRuntimeV2::WarnIfNoExpandedSharedCache() {
   std::string buffer;
   llvm::raw_string_ostream os(buffer);
 
-  os << "warning: libobjc.A.dylib is being read from process memory. This "
+  os << "libobjc.A.dylib is being read from process memory. This "
         "indicates that LLDB could not ";
   if (PlatformSP platform_sp = target.GetPlatform()) {
     if (platform_sp->IsHost()) {
@@ -2475,7 +2621,7 @@ AppleObjCRuntimeV2::NonPointerISACache::CreateInstance(
 
   Status error;
 
-  Log *log = GetLog(LLDBLog::Commands);
+  Log *log = GetLog(LLDBLog::Types);
 
   auto objc_debug_isa_magic_mask = ExtractRuntimeGlobalSymbol(
       process, ConstString("objc_debug_isa_magic_mask"), objc_module_sp, error);
@@ -2912,7 +3058,7 @@ AppleObjCRuntimeV2::NonPointerISACache::GetClassDescriptor(ObjCISA isa) {
 
 bool AppleObjCRuntimeV2::NonPointerISACache::EvaluateNonPointerISA(
     ObjCISA isa, ObjCISA &ret_isa) {
-  Log *log = GetLog(LLDBLog::Commands);
+  Log *log = GetLog(LLDBLog::Types);
 
   LLDB_LOGF(log, "AOCRT::NPI Evaluate(isa = 0x%" PRIx64 ")", (uint64_t)isa);
 

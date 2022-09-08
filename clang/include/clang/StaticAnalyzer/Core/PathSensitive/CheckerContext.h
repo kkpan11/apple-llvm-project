@@ -84,8 +84,6 @@ public:
     return Eng.getContext();
   }
 
-  const ASTContext &getASTContext() const { return Eng.getContext(); }
-
   const LangOptions &getLangOpts() const {
     return Eng.getContext().getLangOpts();
   }

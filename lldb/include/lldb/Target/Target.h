@@ -84,6 +84,13 @@ enum ImportStdModule {
   eImportStdModuleTrue,
 };
 
+enum DynamicClassInfoHelper {
+  eDynamicClassInfoHelperAuto,
+  eDynamicClassInfoHelperRealizedClassesStruct,
+  eDynamicClassInfoHelperCopyRealizedClassList,
+  eDynamicClassInfoHelperGetRealizedClassList,
+};
+
 class TargetExperimentalProperties : public Properties {
 public:
   TargetExperimentalProperties();
@@ -177,6 +184,10 @@ public:
   
   bool GetSwiftReadMetadataFromDSYM() const;
 
+  bool GetSwiftDiscoverImplicitSearchPaths() const;
+
+  bool GetSwiftEnableBareSlashRegex() const;
+
   bool GetSwiftAutoImportFrameworks() const;
 
   bool GetEnableAutoImportClangModules() const;
@@ -186,6 +197,8 @@ public:
   void SetUseAllCompilerFlags(bool b);
 
   ImportStdModule GetImportStdModule() const;
+
+  DynamicClassInfoHelper GetDynamicClassInfoHelper() const;
 
   bool GetEnableAutoApplyFixIts() const;
 
@@ -200,6 +213,15 @@ public:
   uint32_t GetMaxZeroPaddingInFloatFormat() const;
 
   uint32_t GetMaximumNumberOfChildrenToDisplay() const;
+
+  /// Get the max depth value, augmented with a bool to indicate whether the
+  /// depth is the default.
+  ///
+  /// When the user has customized the max depth, the bool will be false.
+  ///
+  /// \returns the max depth, and true if the max depth is the system default,
+  /// otherwise false.
+  std::pair<uint32_t, bool> GetMaximumDepthOfChildrenToDisplay() const;
 
   uint32_t GetMaximumSizeOfStringSummary() const;
 

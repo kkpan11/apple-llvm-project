@@ -639,6 +639,9 @@ def index_unit_output_path : Separate<["-"], "index-unit-output-path">, MetaVarN
 def index_ignore_macros : Flag<["-"], "index-ignore-macros">, Flags<[CC1Option]>,
   HelpText<"Ignore macros during indexing">,
   MarshallingInfoFlag<FrontendOpts<"IndexIgnoreMacros">>;
+def index_ignore_pcms : Flag<["-"], "index-ignore-pcms">, Flags<[CC1Option]>,
+  HelpText<"Ignore symbols from imported pcm modules">,
+  MarshallingInfoFlag<FrontendOpts<"IndexIgnorePcms">>;
 
 // Make sure all other -ccc- options are rejected.
 def ccc_ : Joined<["-"], "ccc-">, Group<internal_Group>, Flags<[Unsupported]>;
@@ -1088,6 +1091,10 @@ def emit_merged_ifs : Flag<["-"], "emit-merged-ifs">,
   HelpText<"Generate Interface Stub Files, emit merged text not binary.">;
 def interface_stub_version_EQ : JoinedOrSeparate<["-"], "interface-stub-version=">, Flags<[CC1Option]>;
 def exported__symbols__list : Separate<["-"], "exported_symbols_list">;
+def extract_api : Flag<["-"], "extract-api">, Flags<[CC1Option]>, Group<Action_Group>,
+  HelpText<"Extract API information">;
+def product_name_EQ: Joined<["--"], "product-name=">, Flags<[CC1Option]>,
+  MarshallingInfoString<FrontendOpts<"ProductName">>;
 def e : JoinedOrSeparate<["-"], "e">, Flags<[LinkerInput]>, Group<Link_Group>;
 def fmax_tokens_EQ : Joined<["-"], "fmax-tokens=">, Group<f_Group>, Flags<[CC1Option]>,
   HelpText<"Max total number of preprocessed tokens for -Wmax-tokens.">,

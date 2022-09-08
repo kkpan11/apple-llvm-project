@@ -281,6 +281,9 @@ public:
   swift::ModuleDecl *CreateModule(const SourceModule &module, Status &error,
                                   swift::ImplicitImportInfo importInfo);
 
+  static bool ReportModuleLoadingProgress(llvm::StringRef module_name,
+                                          bool is_overlay);
+
   // This function should only be called when all search paths
   // for all items in a swift::ASTContext have been setup to
   // allow for imports to happen correctly. Use with caution,
@@ -760,6 +763,12 @@ public:
           &modules,
       Status &error);
 
+  // FIXME: the correct thing to do would be to get the modules by calling
+  // CompilerInstance::getImplicitImportInfo, instead of loading these
+  // modules manually. However, we currently don't have  access to a
+  // CompilerInstance, which is why this function is needed.
+  void LoadImplicitModules(lldb::TargetSP target, lldb::ProcessSP process,
+                           ExecutionContextScope &exe_scope);
   /// Cache the user's imports from a SourceFile in a given execution scope such
   /// that they are carried over into future expression evaluations.
   static bool CacheUserImports(SwiftASTContext &swift_ast_context,

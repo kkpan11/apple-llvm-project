@@ -16,6 +16,12 @@ let Definition = "target_experimental" in {
   def SwiftReadMetadataFromDSYM: Property<"swift-read-metadata-from-dsym", "Boolean">,
     DefaultFalse,
     Desc<"Read Swift reflection metadata from the dsym instead of the process when possible">;
+  def SwiftDiscoverImplicitSearchPaths: Property<"swift-discover-implicit-search-paths", "Boolean">,
+    DefaultTrue,
+    Desc<"Discover implicit search paths from all implicitly imported Swift modules and make them available to the expression context. A Swift module built with -serialize-debugging-options can contain additional search paths which are discovered as the module is imported. This optiondoes an eager import of all modules first to make sure all implicit search paths are availableto the expression evaluator. If the build system registers all Swift modules with the linker (Darwin: via -add_ast_path, Other platforms: -module-wrap), turning this on is not necessary.">;
+  def SwiftEnableBareSlashRegex: Property<"swift-enable-bare-slash-regex", "Boolean">,
+    DefaultFalse,
+    Desc<"Passes the -enable-bare-slash-regex compiler flag to the swift compiler.">;
 }
 
 let Definition = "target" in {
@@ -66,6 +72,10 @@ let Definition = "target" in {
     EnumValues<"OptionEnumValues(g_import_std_module_value_types)">,
     Desc<"Import the 'std' C++ module to improve expression parsing involving "
          " C++ standard library types.">;
+  def DynamicClassInfoHelper: Property<"objc-dynamic-class-extractor", "Enum">,
+    DefaultEnumValue<"eDynamicClassInfoHelperAuto">,
+    EnumValues<"OptionEnumValues(g_dynamic_class_info_helper_value_types)">,
+    Desc<"Configure how LLDB parses dynamic Objective-C class metadata. By default LLDB will choose the most appropriate method for the target OS.">;
   def AutoApplyFixIts: Property<"auto-apply-fixits", "Boolean">,
     DefaultTrue,
     Desc<"Automatically apply fix-it hints to expressions.">;
@@ -84,6 +94,9 @@ let Definition = "target" in {
   def MaxChildrenCount: Property<"max-children-count", "SInt64">,
     DefaultUnsignedValue<256>,
     Desc<"Maximum number of children to expand in any level of depth.">;
+  def MaxChildrenDepth: Property<"max-children-depth", "UInt64">,
+    DefaultUnsignedValue<6>,
+    Desc<"Maximum depth to expand children.">;
   def MaxSummaryLength: Property<"max-string-summary-length", "SInt64">,
     DefaultUnsignedValue<1024>,
     Desc<"Maximum number of characters to show when using %s in summary strings.">;

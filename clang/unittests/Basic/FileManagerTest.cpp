@@ -358,6 +358,15 @@ TEST_F(FileManagerTest, getFileRefEquality) {
   StatCache->InjectFile("dir/f1-also.cpp", 41);
   StatCache->InjectFile("dir/f1-redirect.cpp", 41, "dir/f1.cpp");
   StatCache->InjectFile("dir/f2.cpp", 42);
+  // This may seem contrived, but is easily possible with the VFS. Consider
+  // the following set of overlays:
+  //   - dir/f1-redirect.cpp -> dir/f1.cpp
+  //   - dir/f1-bad-redirect.cpp -> dir/f1-redirect.cpp
+  //   - Underlying FS contains dir/f1.cpp and dir/f1-bad-redirect.cpp
+  //
+  // Looking up dir/f1-redirect.cpp gives dir/f1.cpp and looking up
+  // dir/f1-bad-redirect.cpp gives dir/f1-redirect.cpp.
+  StatCache->InjectFile("dir/f1-bad-redirect.cpp", 43, "dir/f1-redirect.cpp");
   manager.setStatCache(std::move(StatCache));
 
   auto F1 = manager.getFileRef("dir/f1.cpp");
@@ -365,6 +374,7 @@ TEST_F(FileManagerTest, getFileRefEquality) {
   auto F1Also = manager.getFileRef("dir/f1-also.cpp");
   auto F1Redirect = manager.getFileRef("dir/f1-redirect.cpp");
   auto F2 = manager.getFileRef("dir/f2.cpp");
+  auto F1BadRedirect = manager.getFileRef("dir/f1-redirect.cpp");
 
   // Check Expected<FileEntryRef> for error.
   ASSERT_FALSE(!F1);
@@ -401,6 +411,13 @@ TEST_F(FileManagerTest, getFileRefEquality) {
   EXPECT_TRUE(F1->isSameRef(*F1Redirect));
   EXPECT_FALSE(F1->isSameRef(*F1Also));
   EXPECT_FALSE(F1->isSameRef(*F2));
+
+  // It should not be the case that this gives `dir/f1.cpp`, but that's better
+  // than the corruption that would otherwise occur.
+  ASSERT_FALSE(!F1BadRedirect);
+  EXPECT_EQ("dir/f1.cpp", F1BadRedirect->getName());
+  EXPECT_EQ(*F1, *F1BadRedirect);
+  EXPECT_TRUE(F1->isSameRef(*F1BadRedirect));
 }
 
 // getFile() Should return the same entry as getVirtualFile if the file actually

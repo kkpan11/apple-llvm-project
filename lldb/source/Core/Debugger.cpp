@@ -385,6 +385,12 @@ bool Debugger::GetShowProgress() const {
       nullptr, idx, g_debugger_properties[idx].default_uint_value != 0);
 }
 
+bool Debugger::SetShowProgress(bool show_progress) {
+  const uint32_t idx = ePropertyShowProgress;
+  return m_collection_sp->SetPropertyAtIndexAsBoolean(nullptr, idx,
+                                                      show_progress);
+}
+
 llvm::StringRef Debugger::GetShowProgressAnsiPrefix() const {
   const uint32_t idx = ePropertyShowProgressAnsiPrefix;
   return m_collection_sp->GetPropertyAtIndexAsString(nullptr, idx, "");
@@ -1233,11 +1239,11 @@ bool Debugger::PopIOHandler(const IOHandlerSP &pop_reader_sp) {
 }
 
 StreamSP Debugger::GetAsyncOutputStream() {
-  return std::make_shared<StreamAsynchronousIO>(*this, true);
+  return std::make_shared<StreamAsynchronousIO>(*this, true, GetUseColor());
 }
 
 StreamSP Debugger::GetAsyncErrorStream() {
-  return std::make_shared<StreamAsynchronousIO>(*this, false);
+  return std::make_shared<StreamAsynchronousIO>(*this, false, GetUseColor());
 }
 
 size_t Debugger::GetNumDebuggers() {
@@ -1868,9 +1874,20 @@ void Debugger::HandleProgressEvent(const lldb::EventSP &event_sp) {
   // going to show the progress.
   const uint64_t id = data->GetID();
   if (m_current_event_id) {
+    Log *log = GetLog(LLDBLog::Events);
+    if (log && log->GetVerbose()) {
+      StreamString log_stream;
+      log_stream.AsRawOstream()
+          << static_cast<void *>(this) << " Debugger(" << GetID()
+          << ")::HandleProgressEvent( m_current_event_id = "
+          << *m_current_event_id << ", data = { ";
+      data->Dump(&log_stream);
+      log_stream << " } )";
+      log->PutString(log_stream.GetString());
+    }
     if (id != *m_current_event_id)
       return;
-    if (data->GetCompleted())
+    if (data->GetCompleted() == data->GetTotal())
       m_current_event_id.reset();
   } else {
     m_current_event_id = id;
@@ -1884,45 +1901,53 @@ void Debugger::HandleProgressEvent(const lldb::EventSP &event_sp) {
   // Determine whether the current output file is an interactive terminal with
   // color support. We assume that if we support ANSI escape codes we support
   // vt100 escape codes.
-  File &output = GetOutputFile();
-  if (!output.GetIsInteractive() || !output.GetIsTerminalWithColors())
+  File &file = GetOutputFile();
+  if (!file.GetIsInteractive() || !file.GetIsTerminalWithColors())
     return;
+
+  StreamSP output = GetAsyncOutputStream();
 
   // Print over previous line, if any.
-  output.Printf("\r");
+  output->Printf("\r");
 
-  if (data->GetCompleted()) {
+  if (data->GetCompleted() == data->GetTotal()) {
     // Clear the current line.
-    output.Printf("\x1B[2K");
-    output.Flush();
+    output->Printf("\x1B[2K");
+    output->Flush();
     return;
   }
+
+  // Trim the progress message if it exceeds the window's width and print it.
+  std::string message = data->GetMessage();
+  if (data->IsFinite())
+    message = llvm::formatv("[{0}/{1}] {2}", data->GetCompleted(),
+                            data->GetTotal(), message)
+                  .str();
+
+  // Trim the progress message if it exceeds the window's width and print it.
+  const uint32_t term_width = GetTerminalWidth();
+  const uint32_t ellipsis = 3;
+  if (message.size() + ellipsis >= term_width)
+    message = message.substr(0, term_width - ellipsis);
 
   const bool use_color = GetUseColor();
   llvm::StringRef ansi_prefix = GetShowProgressAnsiPrefix();
   if (!ansi_prefix.empty())
-    output.Printf(
+    output->Printf(
         "%s", ansi::FormatAnsiTerminalCodes(ansi_prefix, use_color).c_str());
 
-  // Print the progress message.
-  std::string message = data->GetMessage();
-  if (data->GetTotal() != UINT64_MAX) {
-    output.Printf("[%" PRIu64 "/%" PRIu64 "] %s...", data->GetCompleted(), data->GetTotal(),
-                  message.c_str());
-  } else {
-    output.Printf("%s...", message.c_str());
-  }
+  output->Printf("%s...", message.c_str());
 
   llvm::StringRef ansi_suffix = GetShowProgressAnsiSuffix();
   if (!ansi_suffix.empty())
-    output.Printf(
+    output->Printf(
         "%s", ansi::FormatAnsiTerminalCodes(ansi_suffix, use_color).c_str());
 
   // Clear until the end of the line.
-  output.Printf("\x1B[K\r");
+  output->Printf("\x1B[K\r");
 
   // Flush the output.
-  output.Flush();
+  output->Flush();
 }
 
 void Debugger::HandleDiagnosticEvent(const lldb::EventSP &event_sp) {

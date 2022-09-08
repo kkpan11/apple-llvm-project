@@ -75,6 +75,9 @@ enum ActionKind {
   /// Emit a .o file.
   EmitObj,
 
+  // Extract API information
+  ExtractAPI,
+
   /// Parse and apply any fixits to the source.
   FixIt,
 
@@ -307,6 +310,7 @@ public:
   unsigned IndexIgnoreSystemSymbols : 1;
   unsigned IndexRecordCodegenName : 1;
   unsigned IndexIgnoreMacros : 1;
+  unsigned IndexIgnorePcms : 1;
 
   /// Output (and read) PCM files regardless of compiler errors.
   unsigned AllowPCMWithCompilerErrors : 1;
@@ -413,6 +417,10 @@ public:
 
   /// The name of the action to run when using a plugin action.
   std::string ActionName;
+
+  // Currently this is only used as part of the `-extract-api` action.
+  /// The name of the product the input files belong too.
+  std::string ProductName;
 
   /// Args to pass to the plugins
   std::map<std::string, std::vector<std::string>> PluginArgs;

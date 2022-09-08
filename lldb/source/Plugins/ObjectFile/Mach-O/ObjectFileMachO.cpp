@@ -773,9 +773,9 @@ public:
       // Write out the EXC registers
       data.PutHex32(EXCRegSet);
       data.PutHex32(EXCWordCount);
-      PrintRegisterValue(reg_ctx, "far", NULL, 8, data);
-      PrintRegisterValue(reg_ctx, "esr", NULL, 4, data);
-      PrintRegisterValue(reg_ctx, "exception", NULL, 4, data);
+      PrintRegisterValue(reg_ctx, "far", nullptr, 8, data);
+      PrintRegisterValue(reg_ctx, "esr", nullptr, 4, data);
+      PrintRegisterValue(reg_ctx, "exception", nullptr, 4, data);
       return true;
     }
     return false;
@@ -839,7 +839,7 @@ void ObjectFileMachO::Terminate() {
 }
 
 ObjectFile *ObjectFileMachO::CreateInstance(const lldb::ModuleSP &module_sp,
-                                            DataBufferSP &data_sp,
+                                            DataBufferSP data_sp,
                                             lldb::offset_t data_offset,
                                             const FileSpec *file,
                                             lldb::offset_t file_offset,
@@ -870,7 +870,7 @@ ObjectFile *ObjectFileMachO::CreateInstance(const lldb::ModuleSP &module_sp,
 }
 
 ObjectFile *ObjectFileMachO::CreateMemoryInstance(
-    const lldb::ModuleSP &module_sp, DataBufferSP &data_sp,
+    const lldb::ModuleSP &module_sp, WritableDataBufferSP data_sp,
     const ProcessSP &process_sp, lldb::addr_t header_addr) {
   if (ObjectFileMachO::MagicBytesMatch(data_sp, 0, data_sp->GetByteSize())) {
     std::unique_ptr<ObjectFile> objfile_up(
@@ -951,7 +951,7 @@ ConstString ObjectFileMachO::GetSectionNameEHFrame() {
   return g_section_name_eh_frame;
 }
 
-bool ObjectFileMachO::MagicBytesMatch(DataBufferSP &data_sp,
+bool ObjectFileMachO::MagicBytesMatch(DataBufferSP data_sp,
                                       lldb::addr_t data_offset,
                                       lldb::addr_t data_length) {
   DataExtractor data;
@@ -962,7 +962,7 @@ bool ObjectFileMachO::MagicBytesMatch(DataBufferSP &data_sp,
 }
 
 ObjectFileMachO::ObjectFileMachO(const lldb::ModuleSP &module_sp,
-                                 DataBufferSP &data_sp,
+                                 DataBufferSP data_sp,
                                  lldb::offset_t data_offset,
                                  const FileSpec *file,
                                  lldb::offset_t file_offset,
@@ -976,7 +976,7 @@ ObjectFileMachO::ObjectFileMachO(const lldb::ModuleSP &module_sp,
 }
 
 ObjectFileMachO::ObjectFileMachO(const lldb::ModuleSP &module_sp,
-                                 lldb::DataBufferSP &header_data_sp,
+                                 lldb::WritableDataBufferSP header_data_sp,
                                  const lldb::ProcessSP &process_sp,
                                  lldb::addr_t header_addr)
     : ObjectFile(module_sp, process_sp, header_addr, header_data_sp),
@@ -5133,7 +5133,7 @@ void ObjectFileMachO::GetAllArchSpecs(const llvm::MachO::mach_header &header,
   lldb::offset_t offset = lc_offset;
   for (uint32_t i = 0; i < header.ncmds; ++i) {
     const lldb::offset_t cmd_offset = offset;
-    if (data.GetU32(&offset, &load_cmd, 2) == NULL)
+    if (data.GetU32(&offset, &load_cmd, 2) == nullptr)
       break;
 
     llvm::MachO::version_min_command version_min;
@@ -5183,7 +5183,7 @@ void ObjectFileMachO::GetAllArchSpecs(const llvm::MachO::mach_header &header,
   offset = lc_offset;
   for (uint32_t i = 0; i < header.ncmds; ++i) {
     const lldb::offset_t cmd_offset = offset;
-    if (data.GetU32(&offset, &load_cmd, 2) == NULL)
+    if (data.GetU32(&offset, &load_cmd, 2) == nullptr)
       break;
 
     do {
@@ -5209,7 +5209,7 @@ void ObjectFileMachO::GetAllArchSpecs(const llvm::MachO::mach_header &header,
           triple.setEnvironmentName(os_env.environment);
         add_triple(triple);
       }
-    } while (0);
+    } while (false);
     offset = cmd_offset + load_cmd.cmdsize;
   }
 
@@ -7143,7 +7143,8 @@ bool ObjectFileMachO::LoadCoreFileImages(lldb_private::Process &process) {
       module_spec.GetFileSpec() = FileSpec(image.filename.c_str());
     }
     if (image.currently_executing) {
-      Symbols::DownloadObjectAndSymbolFile(module_spec, true);
+      Status error;
+      Symbols::DownloadObjectAndSymbolFile(module_spec, error, true);
       if (FileSystem::Instance().Exists(module_spec.GetFileSpec())) {
         process.GetTarget().GetOrCreateModule(module_spec, false);
       }

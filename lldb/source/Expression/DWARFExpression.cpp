@@ -465,22 +465,19 @@ bool DWARFExpression::Update_DW_OP_addr(lldb::addr_t file_addr) {
       // first, then modify it, and if all goes well, we then replace the data
       // for this expression
 
-      // So first we copy the data into a heap buffer
-      std::unique_ptr<DataBufferHeap> head_data_up(
-          new DataBufferHeap(m_data.GetDataStart(), m_data.GetByteSize()));
-
-      // Make en encoder so we can write the address into the buffer using the
-      // correct byte order (endianness)
-      DataEncoder encoder(head_data_up->GetBytes(), head_data_up->GetByteSize(),
+      // Make en encoder that contains a copy of the location expression data
+      // so we can write the address into the buffer using the correct byte
+      // order.
+      DataEncoder encoder(m_data.GetDataStart(), m_data.GetByteSize(),
                           m_data.GetByteOrder(), addr_byte_size);
 
       // Replace the address in the new buffer
-      if (encoder.PutUnsigned(offset, addr_byte_size, file_addr) == UINT32_MAX)
+      if (encoder.PutAddress(offset, file_addr) == UINT32_MAX)
         return false;
 
       // All went well, so now we can reset the data using a shared pointer to
       // the heap data so "m_data" will now correctly manage the heap data.
-      m_data.SetData(DataBufferSP(head_data_up.release()));
+      m_data.SetData(encoder.GetDataBuffer());
       return true;
     } else {
       const offset_t op_arg_size = GetOpcodeDataSize(m_data, offset, op);
@@ -526,15 +523,11 @@ bool DWARFExpression::LinkThreadLocalStorage(
   // We have to make a copy of the data as we don't know if this data is from a
   // read only memory mapped buffer, so we duplicate all of the data first,
   // then modify it, and if all goes well, we then replace the data for this
-  // expression
+  // expression.
 
-  // So first we copy the data into a heap buffer
-  std::shared_ptr<DataBufferHeap> heap_data_sp(
-      new DataBufferHeap(m_data.GetDataStart(), m_data.GetByteSize()));
-
-  // Make en encoder so we can write the address into the buffer using the
-  // correct byte order (endianness)
-  DataEncoder encoder(heap_data_sp->GetBytes(), heap_data_sp->GetByteSize(),
+  // Make en encoder that contains a copy of the location expression data so we
+  // can write the address into the buffer using the correct byte order.
+  DataEncoder encoder(m_data.GetDataStart(), m_data.GetByteSize(),
                       m_data.GetByteOrder(), addr_byte_size);
 
   lldb::offset_t offset = 0;
@@ -608,7 +601,7 @@ bool DWARFExpression::LinkThreadLocalStorage(
   // and read the
   // TLS data
   m_module_wp = new_module_sp;
-  m_data.SetData(heap_data_sp);
+  m_data.SetData(encoder.GetDataBuffer());
   return true;
 }
 
@@ -738,13 +731,6 @@ static bool Evaluate_DW_OP_entry_value(std::vector<Value> &stack,
     return false;
   }
 
-  Function *parent_func =
-      parent_frame->GetSymbolContext(eSymbolContextFunction).function;
-  if (!parent_func) {
-    LLDB_LOG(log, "Evaluate_DW_OP_entry_value: no parent function");
-    return false;
-  }
-
   // 2. Find the call edge in the parent function responsible for creating the
   //    current activation.
   Function *current_func =
@@ -758,6 +744,7 @@ static bool Evaluate_DW_OP_entry_value(std::vector<Value> &stack,
   ModuleList &modlist = target.GetImages();
   ExecutionContext parent_exe_ctx = *exe_ctx;
   parent_exe_ctx.SetFrameSP(parent_frame);
+  Function *parent_func = nullptr;
 #ifdef LLDB_ENABLE_SWIFT
   // Swift async function arguments are represented relative to a
   // DW_OP_entry_value that fetches the async context register. This
@@ -767,6 +754,14 @@ static bool Evaluate_DW_OP_entry_value(std::vector<Value> &stack,
   auto fn_name = current_func->GetMangled().GetMangledName().GetStringRef();
   if (!SwiftLanguageRuntime::IsAnySwiftAsyncFunctionSymbol(fn_name)) {
 #endif
+
+  parent_func =
+    parent_frame->GetSymbolContext(eSymbolContextFunction).function;
+  if (!parent_func) {
+    LLDB_LOG(log, "Evaluate_DW_OP_entry_value: no parent function");
+    return false;
+  }
+
   if (!parent_frame->IsArtificial()) {
     // If the parent frame is not artificial, the current activation may be
     // produced by an ambiguous tail call. In this case, refuse to proceed.
@@ -852,7 +847,8 @@ static bool Evaluate_DW_OP_entry_value(std::vector<Value> &stack,
   }
   llvm::Optional<DWARFExpression> subexpr;
   if (!matched_param) {
-    subexpr.emplace(parent_func->CalculateSymbolContextModule(),
+    auto *ctx_func = parent_func ? parent_func : current_func;
+    subexpr.emplace(ctx_func->CalculateSymbolContextModule(),
                     DataExtractor(opcodes, subexpr_offset, subexpr_len),
                     dwarf_cu);
   }
@@ -901,29 +897,28 @@ bool DWARFExpression::Evaluate(ExecutionContext *exe_ctx,
   ModuleSP module_sp = m_module_wp.lock();
 
   if (IsLocationList()) {
-    addr_t pc;
+    Address pc;
     StackFrame *frame = nullptr;
-    if (reg_ctx)
-      pc = reg_ctx->GetPC();
-    else {
+    if (!reg_ctx || !reg_ctx->GetPCForSymbolication(pc)) {
       frame = exe_ctx->GetFramePtr();
       if (!frame)
         return false;
       RegisterContextSP reg_ctx_sp = frame->GetRegisterContext();
       if (!reg_ctx_sp)
         return false;
-      pc = reg_ctx_sp->GetPC();
+      reg_ctx_sp->GetPCForSymbolication(pc);
     }
 
     if (func_load_addr != LLDB_INVALID_ADDRESS) {
-      if (pc == LLDB_INVALID_ADDRESS) {
+      if (!pc.IsValid()) {
         if (error_ptr)
           error_ptr->SetErrorString("Invalid PC in frame.");
         return false;
       }
 
-      if (llvm::Optional<DataExtractor> expr =
-              GetLocationExpression(func_load_addr, pc)) {
+      Target *target = exe_ctx->GetTargetPtr();
+      if (llvm::Optional<DataExtractor> expr = GetLocationExpression(
+              func_load_addr, pc.GetLoadAddress(target))) {
         return DWARFExpression::Evaluate(
             exe_ctx, reg_ctx, module_sp, *expr, m_dwarf_cu, m_reg_kind,
             initial_value_ptr, object_address_ptr, result, error_ptr);
@@ -2777,7 +2772,7 @@ bool DWARFExpression::MatchesOperand(StackFrame &frame,
     if (load_function_start == LLDB_INVALID_ADDRESS)
       return false;
 
-    addr_t pc = frame.GetFrameCodeAddress().GetLoadAddress(
+    addr_t pc = frame.GetFrameCodeAddressForSymbolication().GetLoadAddress(
         frame.CalculateTarget().get());
 
     if (llvm::Optional<DataExtractor> expr = GetLocationExpression(load_function_start, pc))
@@ -2855,4 +2850,3 @@ bool DWARFExpression::MatchesOperand(StackFrame &frame,
     return MatchRegOp(*reg)(operand);
   }
 }
-

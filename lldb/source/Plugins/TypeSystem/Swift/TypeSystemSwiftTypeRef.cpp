@@ -177,10 +177,10 @@ TypeSystemSwiftTypeRef::GetBaseName(swift::Demangle::NodePointer node) {
   }
 }
 
-/// Create a mangled name for a type alias node.
+/// Create a mangled name for a type node.
 static swift::Demangle::ManglingErrorOr<std::string>
-GetTypeAlias(swift::Demangle::Demangler &dem,
-             swift::Demangle::NodePointer node) {
+GetMangledName(swift::Demangle::Demangler &dem,
+               swift::Demangle::NodePointer node) {
   using namespace swift::Demangle;
   auto global = dem.createNode(Node::Kind::Global);
   auto type_mangling = dem.createNode(Node::Kind::TypeMangling);
@@ -434,6 +434,33 @@ GetNominal(swift::Demangle::Demangler &dem, swift::Demangle::NodePointer node) {
   return {};
 }
 
+/// Detect the AnyObject type alias.
+static bool IsAnyObjectTypeAlias(swift::Demangle::NodePointer node) {
+  using namespace swift::Demangle;
+  if (!node || node->getKind() != Node::Kind::TypeAlias)
+    return false;
+  if (node->getNumChildren() < 2)
+    return false;
+  NodePointer module = node->getChild(0);
+  if (!module || !module->hasText() || module->getText() != swift::STDLIB_NAME)
+    return false;
+  NodePointer ident = node->getChild(1);
+  if (!ident || !ident->hasText() || ident->getText() != "AnyObject")
+    return false;
+  return true;
+}
+
+/// Build a demangle tree for the builtin AnyObject type.
+static swift::Demangle::NodePointer
+GetBuiltinAnyObjectNode(swift::Demangle::Demangler &dem) {
+  auto proto_list_any = dem.createNode(Node::Kind::ProtocolListWithAnyObject);
+  auto proto_list = dem.createNode(Node::Kind::ProtocolList);
+  auto type_list = dem.createNode(Node::Kind::TypeList);
+  proto_list_any->addChild(proto_list, dem);
+  proto_list->addChild(type_list, dem);
+  return proto_list_any;
+}
+
 /// Resolve a type alias node and return a demangle tree for the
 /// resolved type. If the type alias resolves to a Clang type, return
 /// a Clang CompilerType.
@@ -463,11 +490,16 @@ TypeSystemSwiftTypeRef::ResolveTypeAlias(swift::Demangle::Demangler &dem,
     return clang_type.GetCanonicalType();
   };
 
+  // Hardcode that the Swift.AnyObject type alias always resolves to
+  // the builtin AnyObject type.
+  if (IsAnyObjectTypeAlias(node))
+    return {GetBuiltinAnyObjectNode(dem), {}};
+
   using namespace swift::Demangle;
   // Try to look this up as a Swift type alias. For each *Swift*
   // type alias there is a debug info entry that has the mangled
   // name as name and the aliased type as a type.
-  auto mangling = GetTypeAlias(dem, node);
+  auto mangling = GetMangledName(dem, node);
   if (!mangling.isSuccess()) {
     LLDB_LOGF(GetLog(LLDBLog::Types),
               "Failed while mangling type alias (%d:%u)", mangling.error().code,
@@ -3141,6 +3173,15 @@ bool TypeSystemSwiftTypeRef::IsImportedType(opaque_compiler_type_t type,
     Demangler dem;
     NodePointer node = GetDemangledType(dem, AsMangledName(type));
 
+    auto *log = GetLog(LLDBLog::Types);
+    // Types with generic parameters have to be resolved before calling
+    // IsImportedType.
+    if (log && ContainsGenericTypeParameter(node))
+      LLDB_LOGF(log,
+                "Checking if type %s which contains a generic parameter is "
+                "an imported type",
+                AsMangledName(type));
+
     // This is an imported Objective-C type; look it up in the debug info.
     StringRef ident = GetObjCTypeName(node);
     if (ident.empty())
@@ -3666,6 +3707,16 @@ bool TypeSystemSwiftTypeRef::IsTypedefType(opaque_compiler_type_t type) {
     return node && (node->getKind() == Node::Kind::TypeAlias ||
                     node->getKind() == Node::Kind::BoundGenericTypeAlias);
   };
+
+#ifndef NDEBUG
+  {
+    // Sometimes SwiftASTContext returns the resolved AnyObject type.
+    Demangler dem;
+    NodePointer node = GetDemangledType(dem, AsMangledName(type));
+    if (IsAnyObjectTypeAlias(node))
+      return impl();
+  }
+#endif
 
   VALIDATE_AND_RETURN(impl, IsTypedefType, type, g_no_exe_ctx,
                       (ReconstructType(type)), (ReconstructType(type)));

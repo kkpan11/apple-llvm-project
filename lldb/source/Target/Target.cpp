@@ -2546,6 +2546,9 @@ llvm::Optional<SwiftScratchContextReader> Target::GetSwiftScratchContext(
     if (!create_on_demand || !GetSwiftScratchContextLock().try_lock())
       return nullptr;
 
+    auto unlock = llvm::make_scope_exit(
+        [this] { GetSwiftScratchContextLock().unlock(); });
+
     auto type_system_or_err = GetScratchTypeSystemForLanguage(eLanguageTypeSwift, false);
     if (!type_system_or_err) {
       llvm::consumeError(type_system_or_err.takeError());
@@ -2564,7 +2567,6 @@ llvm::Optional<SwiftScratchContextReader> Target::GetSwiftScratchContext(
         lldb::eLanguageTypeSwift, *this, *lldb_module);
     typesystem_sp->GetSwiftASTContext();
     m_scratch_typesystem_for_module.insert({idx, typesystem_sp});
-    GetSwiftScratchContextLock().unlock();
     if (log)
       log->Printf("created module-wide scratch context\n");
     return typesystem_sp.get();
@@ -3937,6 +3939,22 @@ static constexpr OptionEnumValueElement g_import_std_module_value_types[] = {
     },
 };
 
+static constexpr OptionEnumValueElement
+    g_dynamic_class_info_helper_value_types[] = {
+        {
+            eDynamicClassInfoHelperAuto,
+            "auto",
+            "Automatically determine the most appropriate method for the "
+            "target OS.",
+        },
+        {eDynamicClassInfoHelperRealizedClassesStruct, "RealizedClassesStruct",
+         "Prefer using the realized classes struct."},
+        {eDynamicClassInfoHelperCopyRealizedClassList, "CopyRealizedClassList",
+         "Prefer using the CopyRealizedClassList API."},
+        {eDynamicClassInfoHelperGetRealizedClassList, "GetRealizedClassList",
+         "Prefer using the GetRealizedClassList API."},
+};
+
 static constexpr OptionEnumValueElement g_hex_immediate_style_values[] = {
     {
         Disassembler::eHexStyleC,
@@ -4175,7 +4193,6 @@ bool TargetProperties::GetSwiftCreateModuleContextsInParallel() const {
     return true;
 }
 
-
 bool TargetProperties::GetSwiftReadMetadataFromFileCache() const {
   const Property *exp_property = m_collection_sp->GetPropertyAtIndex(
       nullptr, false, ePropertyExperimental);
@@ -4212,6 +4229,29 @@ bool TargetProperties::GetSwiftReadMetadataFromDSYM() const {
   return true;
 }
 
+bool TargetProperties::GetSwiftDiscoverImplicitSearchPaths() const {
+  const Property *exp_property = m_collection_sp->GetPropertyAtIndex(
+      nullptr, false, ePropertyExperimental);
+  OptionValueProperties *exp_values =
+      exp_property->GetValue()->GetAsProperties();
+  if (exp_values)
+    return exp_values->GetPropertyAtIndexAsBoolean(
+        nullptr, ePropertySwiftDiscoverImplicitSearchPaths, true);
+
+  return true;
+}
+
+bool TargetProperties::GetSwiftEnableBareSlashRegex() const {
+  const Property *exp_property = m_collection_sp->GetPropertyAtIndex(
+      nullptr, false, ePropertyExperimental);
+  OptionValueProperties *exp_values =
+      exp_property->GetValue()->GetAsProperties();
+  if (exp_values)
+    return exp_values->GetPropertyAtIndexAsBoolean(
+        nullptr, ePropertySwiftEnableBareSlashRegex, true);
+
+  return true;
+}
 bool TargetProperties::GetSwiftAutoImportFrameworks() const {
   const uint32_t idx = ePropertySwiftAutoImportFrameworks;
   return m_collection_sp->GetPropertyAtIndexAsBoolean(
@@ -4531,6 +4571,13 @@ ImportStdModule TargetProperties::GetImportStdModule() const {
       nullptr, idx, g_target_properties[idx].default_uint_value);
 }
 
+DynamicClassInfoHelper TargetProperties::GetDynamicClassInfoHelper() const {
+  const uint32_t idx = ePropertyDynamicClassInfoHelper;
+  return (DynamicClassInfoHelper)
+      m_collection_sp->GetPropertyAtIndexAsEnumeration(
+          nullptr, idx, g_target_properties[idx].default_uint_value);
+}
+
 bool TargetProperties::GetEnableAutoApplyFixIts() const {
   const uint32_t idx = ePropertyAutoApplyFixIts;
   return m_collection_sp->GetPropertyAtIndexAsBoolean(
@@ -4571,6 +4618,15 @@ uint32_t TargetProperties::GetMaximumNumberOfChildrenToDisplay() const {
   const uint32_t idx = ePropertyMaxChildrenCount;
   return m_collection_sp->GetPropertyAtIndexAsSInt64(
       nullptr, idx, g_target_properties[idx].default_uint_value);
+}
+
+std::pair<uint32_t, bool>
+TargetProperties::GetMaximumDepthOfChildrenToDisplay() const {
+  const uint32_t idx = ePropertyMaxChildrenDepth;
+  auto *option_value =
+      m_collection_sp->GetPropertyAtIndexAsOptionValueUInt64(nullptr, idx);
+  bool is_default = !option_value->OptionWasSet();
+  return {option_value->GetCurrentValue(), is_default};
 }
 
 uint32_t TargetProperties::GetMaximumSizeOfStringSummary() const {

@@ -8,10 +8,11 @@
 
 #include "CommandObjectHealthcheck.h"
 
+#include "lldb/Host/FileSystem.h"
+#include "lldb/Host/Host.h"
 #include "lldb/Host/HostInfo.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
 #include "lldb/Utility/Log.h"
-#include "lldb/Host/FileSystem.h"
 #include "lldb/lldb-private.h"
 
 #include "Plugins/Language/Swift/LogChannelSwift.h"
@@ -21,9 +22,13 @@ using namespace lldb_private;
 
 CommandObjectHealthcheck::CommandObjectHealthcheck(
     CommandInterpreter &interpreter)
-    : CommandObjectParsed(interpreter, "swift-healthcheck",
-                          "Show the LLDB debugger health check diagnostics.",
-                          "swift-healthcheck") {}
+    : CommandObjectParsed(
+          interpreter, "swift-healthcheck",
+          "Provides logging related to the Swift expression evaluator, "
+          "including Swift compiler diagnostics. This makes it easier to "
+          "identify project misconfigurations that result in module import "
+          "failures in the debugger. The command is meant to be run after a "
+          "expression evaluator failure has occurred.") {}
 
 bool CommandObjectHealthcheck::DoExecute(Args &args,
                                          CommandReturnObject &result) {
@@ -51,5 +56,16 @@ bool CommandObjectHealthcheck::DoExecute(Args &args,
 
   result.AppendMessageWithFormat("Health check written to %s\n",
                                  temp_path.c_str());
+
+#if APPLE
+  // When in an interactive graphical session and not, for example,
+  // running LLDB running over ssh, open the log file straight away in
+  // the user's configured editor or the default Console.app otherwise.
+  if ((strcmp("lldb", getprogname()) == 0 ||
+       strcmp("lldb-rpc-server", getprogname()) == 0) &&
+      Host::IsInteractiveGraphicSession())
+    Host::OpenFileInExternalEditor(FileSpec(temp_path), 0);
+#endif
+
   return true;
 }

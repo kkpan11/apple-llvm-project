@@ -623,8 +623,25 @@ GetObjectFileFormat(llvm::Triple::ObjectFormatType obj_format_type) {
   return obj_file_format;
 }
 
+static llvm::SmallVector<llvm::StringRef, 1>
+GetLikelySwiftImageNamesForModule(ModuleSP module) {
+  if (!module || !module->GetFileSpec())
+    return {};
+
+  auto name =
+      module->GetFileSpec().GetFileNameStrippingExtension().GetStringRef();
+  if (name == "libswiftCore")
+    name = "Swift";
+  if (name.startswith("libswift"))
+    name = name.drop_front(8);
+  if (name.startswith("lib"))
+    name = name.drop_front(3);
+  return {name};
+}
+
 bool SwiftLanguageRuntimeImpl::AddJitObjectFileToReflectionContext(
-    ObjectFile &obj_file, llvm::Triple::ObjectFormatType obj_format_type) {
+    ObjectFile &obj_file, llvm::Triple::ObjectFormatType obj_format_type,
+      llvm::SmallVector<llvm::StringRef, 1> likely_module_names) {
   assert(obj_file.GetType() == ObjectFile::eTypeJIT &&
          "Not a JIT object file!");
   auto obj_file_format = GetObjectFileFormat(obj_format_type);
@@ -635,8 +652,7 @@ bool SwiftLanguageRuntimeImpl::AddJitObjectFileToReflectionContext(
   return m_reflection_ctx->addImage(
       [&](swift::ReflectionSectionKind section_kind)
           -> std::pair<swift::remote::RemoteRef<void>, uint64_t> {
-        auto section_name =
-            obj_file_format->getSectionName(section_kind);
+        auto section_name = obj_file_format->getSectionName(section_kind);
         for (auto section : *obj_file.GetSectionList()) {
           JITSection *jit_section = llvm::dyn_cast<JITSection>(section.get());
           if (jit_section && section->GetName().AsCString() == section_name) {
@@ -658,11 +674,13 @@ bool SwiftLanguageRuntimeImpl::AddJitObjectFileToReflectionContext(
           }
         }
         return {};
-      });
+      },
+      likely_module_names);
 }
 
 bool SwiftLanguageRuntimeImpl::AddObjectFileToReflectionContext(
-    ModuleSP module) {
+    ModuleSP module,
+    llvm::SmallVector<llvm::StringRef, 1> likely_module_names) {
   auto obj_format_type =
       module->GetArchitecture().GetTriple().getObjectFormat();
 
@@ -787,6 +805,7 @@ bool SwiftLanguageRuntimeImpl::AddObjectFileToReflectionContext(
     }
     return {};
   };
+
   return m_reflection_ctx->addImage(
       [&](swift::ReflectionSectionKind section_kind)
           -> std::pair<swift::remote::RemoteRef<void>, uint64_t> {
@@ -794,7 +813,8 @@ bool SwiftLanguageRuntimeImpl::AddObjectFileToReflectionContext(
         if (pair.first)
           return pair;
         return find_section_with_kind(maybe_secondary_segment, section_kind);
-      });
+      },
+      likely_module_names);
 }
 
 bool SwiftLanguageRuntimeImpl::AddModuleToReflectionContext(
@@ -813,10 +833,12 @@ bool SwiftLanguageRuntimeImpl::AddModuleToReflectionContext(
   Address start_address = obj_file->GetBaseAddress();
   auto load_ptr = static_cast<uintptr_t>(
       start_address.GetLoadAddress(&target));
+  auto likely_module_names = GetLikelySwiftImageNamesForModule(module_sp);
   if (obj_file->GetType() == ObjectFile::eTypeJIT) {
     auto object_format_type =
         module_sp->GetArchitecture().GetTriple().getObjectFormat();
-    return AddJitObjectFileToReflectionContext(*obj_file, object_format_type);
+    return AddJitObjectFileToReflectionContext(*obj_file, object_format_type,
+                                               likely_module_names);
   }
 
   if (load_ptr == 0 || load_ptr == LLDB_INVALID_ADDRESS) {
@@ -843,13 +865,17 @@ bool SwiftLanguageRuntimeImpl::AddModuleToReflectionContext(
     llvm::sys::MemoryBlock file_buffer((void *)file_data, size);
     m_reflection_ctx->readELF(
         swift::remote::RemoteAddress(load_ptr),
-        llvm::Optional<llvm::sys::MemoryBlock>(file_buffer));
+        llvm::Optional<llvm::sys::MemoryBlock>(file_buffer),
+        likely_module_names);
   } else if (read_from_file_cache &&
              obj_file->GetPluginName().equals("mach-o")) {
-    if (!AddObjectFileToReflectionContext(module_sp))
-      m_reflection_ctx->addImage(swift::remote::RemoteAddress(load_ptr));
+    if (!AddObjectFileToReflectionContext(module_sp, likely_module_names)) {
+      m_reflection_ctx->addImage(swift::remote::RemoteAddress(load_ptr),
+                                 likely_module_names);
+    }
   } else {
-    m_reflection_ctx->addImage(swift::remote::RemoteAddress(load_ptr));
+    m_reflection_ctx->addImage(swift::remote::RemoteAddress(load_ptr),
+                               likely_module_names);
   }
   return true;
 }
@@ -2462,33 +2488,49 @@ SwiftLanguageRuntime::GetRuntimeUnwindPlan(ProcessSP process_sp,
                                             eSymbolContextSymbol))
       return UnwindPlanSP();
 
+  Address func_start_addr;
+  uint32_t prologue_size;
+  ConstString mangled_name;
   if (sc.function) {
-    Address func_start_addr = sc.function->GetAddressRange().GetBaseAddress();
-    AddressRange prologue_range(func_start_addr,
-                                sc.function->GetPrologueByteSize());
-    if (prologue_range.ContainsLoadAddress(pc, &target) ||
-        func_start_addr == pc) {
-      return UnwindPlanSP();
-    }
+    func_start_addr = sc.function->GetAddressRange().GetBaseAddress();
+    prologue_size = sc.function->GetPrologueByteSize();
+    mangled_name = sc.function->GetMangled().GetMangledName();
   } else if (sc.symbol) {
-    Address func_start_addr = sc.symbol->GetAddress();
-    AddressRange prologue_range(func_start_addr,
-                                sc.symbol->GetPrologueByteSize());
-    if (prologue_range.ContainsLoadAddress(pc, &target) ||
-        func_start_addr == pc) {
-      return UnwindPlanSP();
-    }
+    func_start_addr = sc.symbol->GetAddress();
+    prologue_size = sc.symbol->GetPrologueByteSize();
+    mangled_name = sc.symbol->GetMangled().GetMangledName();
+  } else {
+    return UnwindPlanSP();
   }
 
-  addr_t saved_fp = LLDB_INVALID_ADDRESS;
-  Status error;
-  if (!process_sp->ReadMemory(fp, &saved_fp, 8, error))
-    return UnwindPlanSP();
+  AddressRange prologue_range(func_start_addr, prologue_size);
+  bool in_prologue = (func_start_addr == pc ||
+                      prologue_range.ContainsLoadAddress(pc, &target));
 
-  // Get the high nibble of the dreferenced fp; if the 60th bit is set,
-  // this is the transition to a swift async AsyncContext chain.
-  if ((saved_fp & (0xfULL << 60)) >> 60 != 1)
-    return UnwindPlanSP();
+  if (in_prologue) {
+    if (!IsAnySwiftAsyncFunctionSymbol(mangled_name.GetStringRef()))
+      return UnwindPlanSP();
+  } else {
+    addr_t saved_fp = LLDB_INVALID_ADDRESS;
+    Status error;
+    if (!process_sp->ReadMemory(fp, &saved_fp, 8, error))
+      return UnwindPlanSP();
+
+    // Get the high nibble of the dreferenced fp; if the 60th bit is set,
+    // this is the transition to a swift async AsyncContext chain.
+    if ((saved_fp & (0xfULL << 60)) >> 60 != 1)
+      return UnwindPlanSP();
+  }
+
+  // The coroutine funclets split from an async function have 2 different ABIs:
+  //  - Async suspend partial functions and the first funclet get their async
+  //    context directly in the async register.
+  //  - Async await resume partial functions take their context indirectly, it
+  //    needs to be dereferenced to get the actual function's context.
+  // The debug info for locals reflects this difference, so our unwinding of the
+  // context register needs to reflect it too.
+  bool indirect_context =
+      IsSwiftAsyncAwaitResumePartialFunctionSymbol(mangled_name.GetStringRef());
 
   UnwindPlan::RowSP row(new UnwindPlan::Row);
   const int32_t ptr_size = 8;
@@ -2529,30 +2571,30 @@ SwiftLanguageRuntime::GetRuntimeUnwindPlan(ProcessSP process_sp,
   else
     llvm_unreachable("Unsupported architecture");
 
-  row->GetCFAValue().SetIsDWARFExpression(expr, expr_size);
-  // The coroutine funclets split from an async function have 2 different ABIs:
-  //  - Async suspend partial functions and the first funclet get their async
-  //    context directly in the async register.
-  //  - Async await resume partial functions take their context indirectly, it
-  //    needs to be dereferenced to get the actual function's context.
-  // The debug info for locals reflects this difference, so our unwinding of the
-  // context register needs to reflect it too.
-  bool indirect_context =
-      sc.symbol ? IsSwiftAsyncAwaitResumePartialFunctionSymbol(
-                      sc.symbol->GetMangled().GetMangledName().GetStringRef())
-                : false;
+  if (in_prologue) {
+    if (indirect_context)
+      row->GetCFAValue().SetIsRegisterDereferenced(regnums->async_ctx_regnum);
+    else
+      row->GetCFAValue().SetIsRegisterPlusOffset(regnums->async_ctx_regnum, 0);
+  } else {
+    row->GetCFAValue().SetIsDWARFExpression(expr, expr_size);
+  }
 
   if (indirect_context) {
-    // In a "resume" coroutine, the passed context argument needs to be
-    // dereferenced once to get the context. This is reflected in the debug
-    // info so we need to account for it and report am async register value
-    // that needs to be dereferenced to get to the context.
-    // Note that the size passed for the DWARF expression is the size of the
-    // array minus one. This skips the last deref for this use.
-    assert(expr[expr_size - 1] == llvm::dwarf::DW_OP_deref &&
-           "Should skip a deref");
-    row->SetRegisterLocationToIsDWARFExpression(regnums->async_ctx_regnum, expr,
-                                                expr_size - 1, false);
+    if (in_prologue) {
+      row->SetRegisterLocationToSame(regnums->async_ctx_regnum, false);
+    } else {
+      // In a "resume" coroutine, the passed context argument needs to be
+      // dereferenced once to get the context. This is reflected in the debug
+      // info so we need to account for it and report am async register value
+      // that needs to be dereferenced to get to the context.
+      // Note that the size passed for the DWARF expression is the size of the
+      // array minus one. This skips the last deref for this use.
+      assert(expr[expr_size - 1] == llvm::dwarf::DW_OP_deref &&
+             "Should skip a deref");
+      row->SetRegisterLocationToIsDWARFExpression(regnums->async_ctx_regnum,
+                                                  expr, expr_size - 1, false);
+    }
   } else {
     // In the first part of a split async function, the context is passed
     // directly, so we can use the CFA value directly.

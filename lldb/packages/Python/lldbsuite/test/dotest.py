@@ -883,6 +883,7 @@ def run_suite():
 
     import lldb
     lldb.SBDebugger.Initialize()
+    lldb.SBDebugger.PrintStackTraceOnError()
 
     # Use host platform by default.
     lldb.selected_platform = lldb.SBPlatform.GetHostPlatform()

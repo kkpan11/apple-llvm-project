@@ -31,40 +31,40 @@ var falseBoolValue : Bool { false }
 //////////////////
 
 public func copyableValueTest() {
-    print("stop here") // Set breakpoint copyableValueTest here 1
+    print("stop here") // Set breakpoint
     let k = Klass()
     k.doSomething()
-    let m = _move(k) // Set breakpoint copyableValueTest here 2
-    m.doSomething() // Set breakpoint copyableValueTest here 3
+    let m = _move(k) // Set breakpoint
+    m.doSomething() // Set breakpoint
 }
 
 public func copyableVarTest() {
-    print("stop here") // Set breakpoint copyableVarTest here 1
+    print("stop here") // Set breakpoint
     var k = Klass()
     k.doSomething()
-    let m = _move(k) // Set breakpoint copyableVarTest here 2
+    let m = _move(k) // Set breakpoint
     m.doSomething()
-    k = Klass()     // Set breakpoint copyableVarTest here 3
-    k.doSomething() // Set breakpoint copyableVarTest here 4
+    k = Klass()     // Set breakpoint
+    k.doSomething() // Set breakpoint
     print("stop here")
 }
 
 public func addressOnlyValueTest<T : P>(_ x: T) {
-    print("stop here") // Set breakpoint addressOnlyValueTest here 1
+    print("stop here") // Set breakpoint
     let k = x
     k.doSomething()
-    let m = _move(k) // Set breakpoint addressOnlyValueTest here 2
-    m.doSomething() // Set breakpoint addressOnlyValueTest here 3
+    let m = _move(k) // Set breakpoint
+    m.doSomething() // Set breakpoint
 }
 
 public func addressOnlyVarTest<T : P>(_ x: T) {
-    print("stop here") // Set breakpoint addressOnlyVarTest here 1
+    print("stop here") // Set breakpoint
     var k = x
     k.doSomething()
-    let m = _move(k) // Set breakpoint addressOnlyVarTest here 2
+    let m = _move(k) // Set breakpoint
     m.doSomething()
-    k = x // Set breakpoint addressOnlyVarTest here 3
-    k.doSomething() // Set breakpoint addressOnlyVarTest here 4
+    k = x // Set breakpoint
+    k.doSomething() // Set breakpoint
 }
 
 //////////////////////
@@ -72,36 +72,36 @@ public func addressOnlyVarTest<T : P>(_ x: T) {
 //////////////////////
 
 public func copyableValueArgTest(_ k: __owned Klass) {
-    print("stop here") // Set breakpoint copyableValueArgTest here 1
+    print("stop here") // Set breakpoint
     k.doSomething()
-    let m = _move(k) // Set breakpoint copyableValueArgTest here 2
-    m.doSomething() // Set breakpoint copyableValueArgTest here 3
+    let m = _move(k) // Set breakpoint
+    m.doSomething() // Set breakpoint
 }
 
 public func copyableVarArgTest(_ k: inout Klass) {
-    print("stop here") // Set breakpoint copyableVarArgTest here 1
+    print("stop here") // Set breakpoint
     k.doSomething()
-    let m = _move(k) // Set breakpoint copyableVarArgTest here 2
+    let m = _move(k) // Set breakpoint
     m.doSomething()
-    k = Klass()     // Set breakpoint copyableVarArgTest here 3
-    k.doSomething() // Set breakpoint copyableVarArgTest here 4
+    k = Klass()     // Set breakpoint
+    k.doSomething() // Set breakpoint
     print("stop here")
 }
 
 public func addressOnlyValueArgTest<T : P>(_ k: __owned T) {
-    print("stop here") // Set breakpoint addressOnlyValueArgTest here 1
+    print("stop here") // Set breakpoint
     k.doSomething()
-    let m = _move(k) // Set breakpoint addressOnlyValueArgTest here 2
-    m.doSomething() // Set breakpoint addressOnlyValueArgTest here 3
+    let m = _move(k) // Set breakpoint
+    m.doSomething() // Set breakpoint
 }
 
 public func addressOnlyVarArgTest<T : P>(_ k: inout T, _ x: T) {
-    print("stop here") // Set breakpoint addressOnlyVarArgTest here 1
+    print("stop here") // Set breakpoint
     k.doSomething()
-    let m = _move(k) // Set breakpoint addressOnlyVarArgTest here 2
+    let m = _move(k) // Set breakpoint
     m.doSomething()
-    k = x // Set breakpoint addressOnlyVarArgTest here 3
-    k.doSomething() // Set breakpoint addressOnlyVarArgTest here 4
+    k = x // Set breakpoint
+    k.doSomething() // Set breakpoint
 }
 
 ////////////////////////////////////
@@ -109,68 +109,68 @@ public func addressOnlyVarArgTest<T : P>(_ k: inout T, _ x: T) {
 ////////////////////////////////////
 
 public func copyableValueCCFTrueTest() {
-    let k = Klass() // Set breakpoint copyableValueCCFTrueTest here 1
-    k.doSomething() // Set breakpoint copyableValueCCFTrueTest here 2
+    let k = Klass() // Set breakpoint
+    k.doSomething() // Set breakpoint
     if trueBoolValue {
-        let m = _move(k) // Set breakpoint copyableValueCCFTrueTest here 3
-        m.doSomething() // Set breakpoint copyableValueCCFTrueTest here 4
+        let m = _move(k) // Set breakpoint
+        m.doSomething() // Set breakpoint
     }
-    // Set breakpoint copyableValueCCFTrueTest here 5
+    // Set breakpoint
 }
 
 public func copyableValueCCFFalseTest() {
-    let k = Klass() // Set breakpoint copyableValueCCFFalseTest here 1
-    k.doSomething() // Set breakpoint copyableValueCCFFalseTest here 2
+    let k = Klass() // Set breakpoint
+    k.doSomething() // Set breakpoint
     if falseBoolValue {
         let m = _move(k)
         m.doSomething()
     }
-    // Set breakpoint copyableValueCCFFalseTest here 3
+    // Set breakpoint
 }
 
 public func copyableVarTestCCFlowTrueReinitOutOfBlockTest() {
-    var k = Klass() // Set breakpoint copyableVarTestCCFlowTrueReinitOutOfBlockTest here 1
+    var k = Klass() // Set breakpoint
     k.doSomething()
     if trueBoolValue {
-        let m = _move(k) // Set breakpoint copyableVarTestCCFlowTrueReinitOutOfBlockTest here 2
-        m.doSomething() // Set breakpoint copyableVarTestCCFlowTrueReinitOutOfBlockTest here 3
+        let m = _move(k) // Set breakpoint
+        m.doSomething() // Set breakpoint
     }
-    k = Klass() // Set breakpoint copyableVarTestCCFlowTrueReinitOutOfBlockTest here 4
-    k.doSomething() // Set breakpoint copyableVarTestCCFlowTrueReinitOutOfBlockTest here 5
+    k = Klass() // Set breakpoint
+    k.doSomething() // Set breakpoint
 }
 
 public func copyableVarTestCCFlowTrueReinitInBlockTest() {
-    var k = Klass() // Set breakpoint copyableVarTestCCFlowTrueReinitInBlockTest here 1
+    var k = Klass() // Set breakpoint
     k.doSomething()
     if trueBoolValue {
-        let m = _move(k) // Set breakpoint copyableVarTestCCFlowTrueReinitInBlockTest here 2
+        let m = _move(k) // Set breakpoint
         m.doSomething()
-        k = Klass() // Set breakpoint copyableVarTestCCFlowTrueReinitInBlockTest here 3
-        k.doSomething() // Set breakpoint copyableVarTestCCFlowTrueReinitInBlockTest here 4
+        k = Klass() // Set breakpoint
+        k.doSomething() // Set breakpoint
     }
-    k.doSomething() // Set breakpoint copyableVarTestCCFlowTrueReinitInBlockTest here 5
+    k.doSomething() // Set breakpoint
 }
 
 public func copyableVarTestCCFlowFalseReinitOutOfBlockTest() {
-    var k = Klass() // Set breakpoint copyableVarTestCCFlowFalseReinitOutOfBlockTest here 1
-    k.doSomething() // Set breakpoint copyableVarTestCCFlowFalseReinitOutOfBlockTest here 2
+    var k = Klass() // Set breakpoint
+    k.doSomething() // Set breakpoint
     if falseBoolValue {
         let m = _move(k)
         m.doSomething()
     }
-    k = Klass() // Set breakpoint copyableVarTestCCFlowFalseReinitOutOfBlockTest here 3
-    k.doSomething() // Set breakpoint copyableVarTestCCFlowFalseReinitOutOfBlockTest here 4
+    k = Klass() // Set breakpoint
+    k.doSomething() // Set breakpoint
 }
 
 public func copyableVarTestCCFlowFalseReinitInBlockTest() {
-    var k = Klass() // Set breakpoint copyableVarTestCCFlowFalseReinitInBlockTest here 1
-    k.doSomething()  // Set breakpoint copyableVarTestCCFlowFalseReinitInBlockTest here 2
+    var k = Klass() // Set breakpoint
+    k.doSomething()  // Set breakpoint
     if falseBoolValue {
         let m = _move(k)
         m.doSomething()
         k = Klass()
     }
-    k.doSomething() // Set breakpoint copyableVarTestCCFlowFalseReinitInBlockTest here 3
+    k.doSomething() // Set breakpoint
 }
 
 //////////////////////////
