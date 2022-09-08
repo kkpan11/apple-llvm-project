@@ -216,8 +216,6 @@ ProgramState::invalidateRegionsImpl(ValueList Values,
 }
 
 ProgramStateRef ProgramState::killBinding(Loc LV) const {
-  assert(!LV.getAs<loc::MemRegionVal>() && "Use invalidateRegion instead.");
-
   Store OldStore = getStore();
   const StoreRef &newStore =
     getStateManager().StoreMgr->killBinding(OldStore, LV);
