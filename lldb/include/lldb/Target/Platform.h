@@ -869,6 +869,34 @@ public:
     return nullptr;
   }
 
+  /// Detect a binary in memory that will determine which Platform and
+  /// DynamicLoader should be used in this target/process, and update
+  /// the Platform/DynamicLoader.
+  /// The binary will be loaded into the Target, or will be registered with
+  /// the DynamicLoader so that it will be loaded at a later stage.  Returns
+  /// true to indicate that this is a platform binary and has been
+  /// loaded/registered, no further action should be taken by the caller.
+  ///
+  /// \param[in] process
+  ///     Process read memory from, a Process must be provided.
+  ///
+  /// \param[in] addr
+  ///     Address of a binary in memory.
+  ///
+  /// \param[in] notify
+  ///     Whether ModulesDidLoad should be called, if a binary is loaded.
+  ///     Caller may prefer to call ModulesDidLoad for multiple binaries
+  ///     that were loaded at the same time.
+  ///
+  /// \return
+  ///     Returns true if the binary was loaded in the target (or will be
+  ///     via a DynamicLoader).  Returns false if the binary was not
+  ///     loaded/registered, and the caller must load it into the target.
+  virtual bool LoadPlatformBinaryAndSetup(Process *process, lldb::addr_t addr,
+                                          bool notify) {
+    return false;
+  }
+
 protected:
   /// For unit testing purposes only.
   static void Clear();
@@ -1026,6 +1054,61 @@ public:
     }
   }
 
+<<<<<<< HEAD
+=======
+  lldb::PlatformSP GetOrCreate(llvm::StringRef name);
+  lldb::PlatformSP GetOrCreate(const ArchSpec &arch,
+                               const ArchSpec &process_host_arch,
+                               ArchSpec *platform_arch_ptr, Status &error);
+  lldb::PlatformSP GetOrCreate(const ArchSpec &arch,
+                               const ArchSpec &process_host_arch,
+                               ArchSpec *platform_arch_ptr);
+
+  /// Get the platform for the given list of architectures.
+  ///
+  /// The algorithm works a follows:
+  ///
+  /// 1. Returns the selected platform if it matches any of the architectures.
+  /// 2. Returns the host platform if it matches any of the architectures.
+  /// 3. Returns the platform that matches all the architectures.
+  ///
+  /// If none of the above apply, this function returns a default platform. The
+  /// candidates output argument differentiates between either no platforms
+  /// supporting the given architecture or multiple platforms supporting the
+  /// given architecture.
+  lldb::PlatformSP GetOrCreate(llvm::ArrayRef<ArchSpec> archs,
+                               const ArchSpec &process_host_arch,
+                               std::vector<lldb::PlatformSP> &candidates);
+
+  lldb::PlatformSP Create(llvm::StringRef name);
+
+  /// Detect a binary in memory that will determine which Platform and
+  /// DynamicLoader should be used in this target/process, and update
+  /// the Platform/DynamicLoader.
+  /// The binary will be loaded into the Target, or will be registered with
+  /// the DynamicLoader so that it will be loaded at a later stage.  Returns
+  /// true to indicate that this is a platform binary and has been
+  /// loaded/registered, no further action should be taken by the caller.
+  ///
+  /// \param[in] process
+  ///     Process read memory from, a Process must be provided.
+  ///
+  /// \param[in] addr
+  ///     Address of a binary in memory.
+  ///
+  /// \param[in] notify
+  ///     Whether ModulesDidLoad should be called, if a binary is loaded.
+  ///     Caller may prefer to call ModulesDidLoad for multiple binaries
+  ///     that were loaded at the same time.
+  ///
+  /// \return
+  ///     Returns true if the binary was loaded in the target (or will be
+  ///     via a DynamicLoader).  Returns false if the binary was not
+  ///     loaded/registered, and the caller must load it into the target.
+  bool LoadPlatformBinaryAndSetup(Process *process, lldb::addr_t addr,
+                                  bool notify);
+
+>>>>>>> 8a568a7165a (Recognize a platform binary in ProcessGDBRemote which determines plugins)
 protected:
   typedef std::vector<lldb::PlatformSP> collection;
   mutable std::recursive_mutex m_mutex;
