@@ -651,7 +651,7 @@ TEST(NestedV1SchemaTest, RoundTripBlockOrder) {
   jitlink::Block &TB =
       G.createContentBlock(Section, BlockContent, Addr, 256, 0);
   jitlink::Symbol *Targets[] = {&B1, &B2, &B3};
-  for (unsigned I = 0; I != array_lengthof(Targets); ++I)
+  for (unsigned I = 0; I != std::size(Targets); ++I)
     TB.addEdge(jitlink::Edge::FirstKeepAlive, 0, *Targets[I], 0);
   G.addDefinedSymbol(TB, 0, "T1", 0, jitlink::Linkage::Strong,
                      jitlink::Scope::Default, false, false);
@@ -690,7 +690,7 @@ TEST(NestedV1SchemaTest, RoundTripBlockOrder) {
                return LHS->getAddress() < RHS->getAddress();
              });
   const char *NamesToCheck[] = {"T1", "B1", "B2", "B3"};
-  for (unsigned I = 0; I != array_lengthof(NamesToCheck); ++I) {
+  for (unsigned I = 0; I != std::size(NamesToCheck); ++I) {
     ASSERT_TRUE(I < RTBlocks.size());
     const auto &Syms = RTBlockSymbols[RTBlocks[I]];
     ASSERT_EQ(Syms.size(), size_t(1));
