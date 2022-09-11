@@ -600,8 +600,8 @@ computeMemberData(raw_ostream &StringTable, raw_ostream &SymNames,
     if (NeedSymbols) {
       Expected<std::vector<unsigned>> SymbolsOrErr =
           getSymbols(M.getContentsBufferRef(), SymNames, HasObject);
-      if (auto E = SymbolsOrErr.takeError())
-        return std::move(E);
+      if (!SymbolsOrErr)
+        return createFileError(M.MemberName, SymbolsOrErr.takeError());
       Symbols = std::move(*SymbolsOrErr);
     }
 
