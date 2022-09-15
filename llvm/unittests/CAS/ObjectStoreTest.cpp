@@ -276,3 +276,25 @@ TEST_P(CASTest, NodesBig) {
   for (auto ID : CreatedNodes)
     ASSERT_THAT_ERROR(CAS->validate(CAS->getID(ID)), Succeeded());
 }
+
+TEST_P(CASTest, ManyNodes) {
+  std::unique_ptr<ObjectStore> CAS = createObjectStore();
+  std::vector<ObjectRef> CreatedNodes;
+
+  // Create lots of unique nodes.
+  for (uint8_t Seed = 0; Seed < UINT8_MAX; ++Seed) {
+    SmallVector<uint8_t> Data;
+    for (size_t Size = 0; Size < 100; ++Size) {
+      Data.push_back(Seed);
+      Optional<ObjectProxy> Node;
+      ASSERT_THAT_ERROR(
+          CAS->createProxy(None, toStringRef(Data)).moveInto(Node),
+          Succeeded());
+      ASSERT_EQ(toStringRef(Data), Node->getData());
+      CreatedNodes.emplace_back(Node->getRef());
+    }
+  }
+
+  for (auto ID : CreatedNodes)
+    ASSERT_THAT_ERROR(CAS->validate(CAS->getID(ID)), Succeeded());
+}
