@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/Basic/DiagnosticCAS.h"
+#include "clang/Basic/FileManager.h"
 #include "clang/Basic/Stack.h"
 #include "clang/Basic/TargetOptions.h"
 #include "clang/Basic/Version.h"
@@ -23,6 +24,7 @@
 #include "clang/Frontend/CASDependencyCollector.h"
 #include "clang/Frontend/ChainedDiagnosticConsumer.h"
 #include "clang/Frontend/CompileJobCacheKey.h"
+#include "clang/Frontend/CompileJobCacheResult.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/CompilerInvocation.h"
 #include "clang/Frontend/FrontendDiagnostic.h"
@@ -200,6 +202,77 @@ static int PrintSupportedCPUs(std::string TargetStr) {
 
 namespace {
 
+/// Represents a mechanism for storing and retrieving compilation artifacts.
+/// It includes common functionality and extension points for specific backend
+/// implementations.
+class CachingOutputs {
+public:
+  using OutputKind = cas::CompileJobCacheResult::OutputKind;
+
+  CachingOutputs(CompilerInstance &Clang);
+  virtual ~CachingOutputs() = default;
+
+  /// \returns true if result was found and replayed, false otherwise.
+  virtual Expected<bool>
+  tryReplayCachedResult(const llvm::cas::CASID &ResultCacheKey) = 0;
+
+  /// \returns true on failure, false on success.
+  virtual bool prepareOutputCollection() = 0;
+
+  /// Finish writing outputs from a computed result, after a cache miss.
+  virtual Error
+  finishComputedResult(const llvm::cas::CASID &ResultCacheKey) = 0;
+
+  void finishSerializedDiagnostics();
+
+protected:
+  StringRef getPathForOutputKind(OutputKind Kind);
+
+  bool prepareOutputCollectionCommon(
+      IntrusiveRefCntPtr<llvm::vfs::OutputBackend> CacheOutputs);
+
+  CompilerInstance &Clang;
+  cas::CompileJobCacheResult::Builder CachedResultBuilder;
+  std::string OutputFile;
+  std::string SerialDiagsFile;
+  std::string DependenciesFile;
+  SmallString<256> ResultDiags;
+  std::unique_ptr<llvm::raw_ostream> ResultDiagsOS;
+  SmallString<256> SerialDiagsBuf;
+  Optional<llvm::vfs::OutputFile> SerialDiagsOutput;
+};
+
+/// Store and retrieve compilation artifacts using \p llvm::cas::ObjectStore and
+/// \p llvm::cas::ActionCache.
+class ObjectStoreCachingOutputs : public CachingOutputs {
+public:
+  ObjectStoreCachingOutputs(CompilerInstance &Clang,
+                            std::shared_ptr<llvm::cas::ObjectStore> DB,
+                            std::shared_ptr<llvm::cas::ActionCache> Cache)
+      : CachingOutputs(Clang), CAS(std::move(DB)), Cache(std::move(Cache)) {
+    CASOutputs = llvm::makeIntrusiveRefCnt<llvm::cas::CASOutputBackend>(*CAS);
+  }
+
+private:
+  Expected<bool>
+  tryReplayCachedResult(const llvm::cas::CASID &ResultCacheKey) override;
+
+  bool prepareOutputCollection() override;
+
+  Error finishComputedResult(const llvm::cas::CASID &ResultCacheKey) override;
+
+  /// Replay a cache hit.
+  ///
+  /// Return status if should exit immediately, otherwise None.
+  Optional<int> replayCachedResult(llvm::cas::ObjectRef ResultID,
+                                   bool JustComputedResult);
+
+  std::shared_ptr<llvm::cas::ObjectStore> CAS;
+  std::shared_ptr<llvm::cas::ActionCache> Cache;
+  IntrusiveRefCntPtr<llvm::cas::CASOutputBackend> CASOutputs;
+  Optional<llvm::cas::ObjectRef> DependenciesOutput;
+};
+
 // Manage caching and replay of compile jobs.
 //
 // The high-level model is:
@@ -238,24 +311,7 @@ namespace {
 //     handled.
 class CompileJobCache {
 public:
-  /// Categorization for the output kinds that is used to decouple the
-  /// compilation cache key from the specific output paths.
-  enum class OutputKind {
-    MainOutput,
-    SerializedDiagnostics,
-    Dependencies,
-  };
-  static ArrayRef<OutputKind> getAllOutputKinds() {
-    static const OutputKind AllOutputKinds[] = {
-        OutputKind::MainOutput, OutputKind::SerializedDiagnostics,
-        OutputKind::Dependencies};
-    return llvm::makeArrayRef(AllOutputKinds);
-  }
-
-  static StringRef getOutputKindName(OutputKind Kind);
-
-  /// \returns \p None if \p Name doesn't match one of the output kind names.
-  static Optional<OutputKind> getOutputKindForName(StringRef Name);
+  using OutputKind = cas::CompileJobCacheResult::OutputKind;
 
   StringRef getPathForOutputKind(OutputKind Kind);
 
@@ -277,57 +333,22 @@ public:
   void finishComputedResult(CompilerInstance &Clang, bool Success);
 
 private:
-  /// Replay a cache hit.
-  ///
-  /// Return status if should exit immediately, otherwise None.
-  Optional<int> replayCachedResult(CompilerInstance &Clang,
-                                   llvm::cas::ObjectRef ResultID,
-                                   bool JustComputedResult);
+  int reportCachingBackendError(DiagnosticsEngine &Diag, Error &&E) {
+    Diag.Report(diag::err_caching_backend_fail) << llvm::toString(std::move(E));
+    return 1;
+  }
 
   bool CacheCompileJob = false;
 
   std::shared_ptr<llvm::cas::ObjectStore> CAS;
   std::shared_ptr<llvm::cas::ActionCache> Cache;
-  SmallString<256> ResultDiags;
   Optional<llvm::cas::CASID> ResultCacheKey;
-  std::unique_ptr<llvm::raw_ostream> ResultDiagsOS;
-  SmallString<256> SerialDiagsBuf;
-  IntrusiveRefCntPtr<llvm::cas::CASOutputBackend> CASOutputs;
-  std::string OutputFile;
-  std::string SerialDiagsFile;
-  std::string DependenciesFile;
-  Optional<llvm::cas::ObjectRef> DependenciesOutput;
-  Optional<llvm::vfs::OutputFile> SerialDiagsOutput;
+
+  std::unique_ptr<CachingOutputs> CacheBackend;
 };
 } // end anonymous namespace
 
-static constexpr llvm::StringLiteral MainOutputKindName = "<output>";
-static constexpr llvm::StringLiteral SerializedDiagnosticsKindName =
-    "<serial-diags>";
-static constexpr llvm::StringLiteral DependenciesOutputKindName =
-    "<dependencies>";
-
-StringRef CompileJobCache::getOutputKindName(OutputKind Kind) {
-  switch (Kind) {
-  case OutputKind::MainOutput:
-    return MainOutputKindName;
-  case OutputKind::SerializedDiagnostics:
-    return SerializedDiagnosticsKindName;
-  case OutputKind::Dependencies:
-    return DependenciesOutputKindName;
-  }
-}
-
-Optional<CompileJobCache::OutputKind>
-CompileJobCache::getOutputKindForName(StringRef Name) {
-  return llvm::StringSwitch<Optional<OutputKind>>(Name)
-      .Case(MainOutputKindName, OutputKind::MainOutput)
-      .Case(SerializedDiagnosticsKindName, OutputKind::SerializedDiagnostics)
-      .Case(DependenciesOutputKindName, OutputKind::Dependencies)
-      .Default(None);
-}
-
-StringRef CompileJobCache::getPathForOutputKind(OutputKind Kind) {
+StringRef CachingOutputs::getPathForOutputKind(OutputKind Kind) {
   switch (Kind) {
   case OutputKind::MainOutput:
     return OutputFile;
@@ -335,7 +356,20 @@ StringRef CompileJobCache::getPathForOutputKind(OutputKind Kind) {
     return SerialDiagsFile;
   case OutputKind::Dependencies:
     return DependenciesFile;
+  default:
+    return "";
   }
+}
+
+static std::string fixupRelativePath(const std::string &Path, FileManager &FM) {
+  // FIXME: this needs to stay in sync with createOutputFileImpl. Ideally, clang
+  // would create output files by their "kind" rather than by path.
+  if (!Path.empty() && Path != "-" && !llvm::sys::path::is_absolute(Path)) {
+    SmallString<128> PathStorage(Path);
+    if (FM.FixupRelativePath(PathStorage))
+      return std::string(PathStorage);
+  }
+  return Path;
 }
 
 Optional<int> CompileJobCache::initialize(CompilerInstance &Clang) {
@@ -372,10 +406,21 @@ Optional<int> CompileJobCache::initialize(CompilerInstance &Clang) {
   // other outputs during replay.
   FrontendOpts.IncludeTimestamps = false;
 
-  OutputFile = FrontendOpts.OutputFile;
-  SerialDiagsFile = Invocation.getDiagnosticOpts().DiagnosticSerializationFile;
-  DependenciesFile = Invocation.getDependencyOutputOpts().OutputFile;
+  CacheBackend = std::make_unique<ObjectStoreCachingOutputs>(Clang, CAS, Cache);
   return None;
+}
+
+CachingOutputs::CachingOutputs(CompilerInstance &Clang) : Clang(Clang) {
+  CompilerInvocation &Invocation = Clang.getInvocation();
+  FrontendOptions &FrontendOpts = Invocation.getFrontendOpts();
+  if (!Clang.hasFileManager())
+    Clang.createFileManager();
+  FileManager &FM = Clang.getFileManager();
+  OutputFile = fixupRelativePath(FrontendOpts.OutputFile, FM);
+  SerialDiagsFile = fixupRelativePath(
+      Invocation.getDiagnosticOpts().DiagnosticSerializationFile, FM);
+  DependenciesFile =
+      fixupRelativePath(Invocation.getDependencyOutputOpts().OutputFile, FM);
 }
 
 namespace {
@@ -421,6 +466,28 @@ createBinaryOutputFile(CompilerInstance &Clang, StringRef OutputPath) {
   return O;
 }
 
+Expected<bool> ObjectStoreCachingOutputs::tryReplayCachedResult(
+    const llvm::cas::CASID &ResultCacheKey) {
+  DiagnosticsEngine &Diags = Clang.getDiagnostics();
+
+  Expected<Optional<llvm::cas::ObjectRef>> Result = Cache->get(ResultCacheKey);
+  if (!Result)
+    return Result.takeError();
+
+  if (Optional<llvm::cas::ObjectRef> ResultRef = *Result) {
+    Diags.Report(diag::remark_compile_job_cache_hit)
+        << ResultCacheKey.toString() << CAS->getID(*ResultRef).toString();
+    Optional<int> Status =
+        replayCachedResult(*ResultRef, /*JustComputedResult=*/false);
+    assert(Status && "Expected a status for a cache hit");
+    assert(*Status == 0 && "Expected success status for a cache hit");
+    return true;
+  }
+  Diags.Report(diag::remark_compile_job_cache_miss)
+      << ResultCacheKey.toString();
+  return false;
+}
+
 Optional<int> CompileJobCache::tryReplayCachedResult(CompilerInstance &Clang) {
   if (!CacheCompileJob)
     return None;
@@ -432,21 +499,22 @@ Optional<int> CompileJobCache::tryReplayCachedResult(CompilerInstance &Clang) {
   if (!ResultCacheKey)
     return 1;
 
-  Optional<llvm::cas::ObjectRef> Result;
-  if (auto E = Cache->get(*ResultCacheKey).moveInto(Result))
-    consumeError(std::move(E)); // ignore error and treat it as a cache miss.
+  Expected<bool> ReplayedResult =
+      CacheBackend->tryReplayCachedResult(*ResultCacheKey);
+  if (!ReplayedResult)
+    return reportCachingBackendError(Clang.getDiagnostics(),
+                                     ReplayedResult.takeError());
+  if (*ReplayedResult)
+    return 0;
 
-  if (Result) {
-    Diags.Report(diag::remark_compile_job_cache_hit)
-        << ResultCacheKey->toString() << CAS->getID(*Result).toString();
-    Optional<int> Status =
-        replayCachedResult(Clang, *Result, /*JustComputedResult=*/false);
-    assert(Status && "Expected a status for a cache hit");
-    return *Status;
-  }
-  Diags.Report(diag::remark_compile_job_cache_miss)
-      << ResultCacheKey->toString();
+  if (CacheBackend->prepareOutputCollection())
+    return 1;
 
+  return None;
+}
+
+bool CachingOutputs::prepareOutputCollectionCommon(
+    IntrusiveRefCntPtr<llvm::vfs::OutputBackend> CacheOutputs) {
   // Create an on-disk backend for streaming the results live if we run the
   // computation. If we're writing the output as a CASID, skip it here, since
   // it'll be handled during replay.
@@ -454,22 +522,24 @@ Optional<int> CompileJobCache::tryReplayCachedResult(CompilerInstance &Clang) {
       llvm::makeIntrusiveRefCnt<llvm::vfs::OnDiskOutputBackend>();
 
   // Set up the output backend so we can save / cache the result after.
-  CASOutputs = llvm::makeIntrusiveRefCnt<llvm::cas::CASOutputBackend>(*CAS);
-  for (OutputKind K : getAllOutputKinds()) {
+  for (OutputKind K : cas::CompileJobCacheResult::getAllOutputKinds()) {
     StringRef OutPath = getPathForOutputKind(K);
     if (!OutPath.empty())
-      CASOutputs->addKindMap(getOutputKindName(K), OutPath);
+      CachedResultBuilder.addKindMap(K, OutPath);
   }
 
+  // Always filter out the dependencies file, since we build a CAS-specific
+  // object for it.
+  auto FilterBackend = llvm::vfs::makeFilteringOutputBackend(
+      CacheOutputs,
+      [&](StringRef Path, Optional<llvm::vfs::OutputConfig> Config) {
+        return Path != DependenciesFile;
+      });
+
   Clang.setOutputBackend(llvm::vfs::makeMirroringOutputBackend(
-      CASOutputs, std::move(OnDiskOutputs)));
+      FilterBackend, std::move(OnDiskOutputs)));
   ResultDiagsOS = std::make_unique<raw_mirroring_ostream>(
       llvm::errs(), std::make_unique<llvm::raw_svector_ostream>(ResultDiags));
-
-  if (!Clang.getDependencyOutputOpts().OutputFile.empty())
-    Clang.addDependencyCollector(std::make_shared<CASDependencyCollector>(
-        Clang.getDependencyOutputOpts(), *CAS,
-        [this](Optional<cas::ObjectRef> Deps) { DependenciesOutput = Deps; }));
 
   // FIXME: This should be saving/replaying structured diagnostics, not saving
   // stderr and a separate diagnostics file, thus using the current llvm::errs()
@@ -493,6 +563,7 @@ Optional<int> CompileJobCache::tryReplayCachedResult(CompilerInstance &Clang) {
   // Notify the existing diagnostic client that all files were processed.
   Clang.getDiagnosticClient().finish();
 
+  DiagnosticsEngine &Diags = Clang.getDiagnostics();
   DiagnosticOptions &DiagOpts = Clang.getInvocation().getDiagnosticOpts();
   Clang.getDiagnostics().setClient(
       new TextDiagnosticPrinter(*ResultDiagsOS, &DiagOpts),
@@ -530,7 +601,19 @@ Optional<int> CompileJobCache::tryReplayCachedResult(CompilerInstance &Clang) {
         Diags.takeClient(), std::move(SerializedConsumer)));
   }
 
-  return None;
+  return false;
+}
+
+bool ObjectStoreCachingOutputs::prepareOutputCollection() {
+  if (prepareOutputCollectionCommon(CASOutputs))
+    return true;
+
+  if (!Clang.getDependencyOutputOpts().OutputFile.empty())
+    Clang.addDependencyCollector(std::make_shared<CASDependencyCollector>(
+        Clang.getDependencyOutputOpts(), *CAS,
+        [this](Optional<cas::ObjectRef> Deps) { DependenciesOutput = Deps; }));
+
+  return false;
 }
 
 void CompileJobCache::finishComputedResult(CompilerInstance &Clang,
@@ -539,6 +622,30 @@ void CompileJobCache::finishComputedResult(CompilerInstance &Clang,
   if (!CacheCompileJob)
     return;
 
+  CacheBackend->finishSerializedDiagnostics();
+
+  // Don't cache failed builds.
+  //
+  // TODO: Consider caching failed builds! Note: when output files are written
+  // without a temporary (non-atomically), failure may cause the removal of a
+  // preexisting file. That behaviour is not currently modeled by the cache.
+  if (!Success)
+    return;
+
+  // Existing diagnostic client is finished, create a new one in case we need
+  // to print more diagnostics.
+  Clang.getDiagnostics().setClient(
+      new TextDiagnosticPrinter(llvm::errs(),
+                                &Clang.getInvocation().getDiagnosticOpts()),
+      /*ShouldOwnClient=*/true);
+
+  if (Error E = CacheBackend->finishComputedResult(*ResultCacheKey)) {
+    reportCachingBackendError(Clang.getDiagnostics(), std::move(E));
+    Success = false;
+  }
+}
+
+void CachingOutputs::finishSerializedDiagnostics() {
   if (SerialDiagsOutput) {
     llvm::handleAllErrors(
         SerialDiagsOutput->keep(),
@@ -552,15 +659,10 @@ void CompileJobCache::finishComputedResult(CompilerInstance &Clang,
               << E.getOutputPath() << E.convertToErrorCode().message();
         });
   }
+}
 
-  // Don't cache failed builds.
-  //
-  // TODO: Consider caching failed builds! Note: when output files are written
-  // without a temporary (non-atomically), failure may cause the removal of a
-  // preexisting file. That behaviour is not currently modeled by the cache.
-  if (!Success)
-    return;
-
+Error ObjectStoreCachingOutputs::finishComputedResult(
+    const llvm::cas::CASID &ResultCacheKey) {
   // FIXME: Stop calling report_fatal_error().
   if (!SerialDiagsOutput) {
     // Not requested to get a serialized diagnostics file but we generated it
@@ -571,51 +673,48 @@ void CompileJobCache::finishComputedResult(CompilerInstance &Clang,
     // FIXME: Stop calling report_fatal_error().
     if (!SerialDiags)
       llvm::report_fatal_error(SerialDiags.takeError());
-    if (Error E = CASOutputs->addObject(
-            getOutputKindName(OutputKind::SerializedDiagnostics),
-            SerialDiags->getRef()))
-      llvm::report_fatal_error(std::move(E));
+    CachedResultBuilder.addOutput(OutputKind::SerializedDiagnostics,
+                                  SerialDiags->getRef());
   }
 
   if (DependenciesOutput)
-    if (auto E = CASOutputs->addObject(
-            getOutputKindName(OutputKind::Dependencies), *DependenciesOutput))
-      llvm::report_fatal_error(std::move(E));
+    CachedResultBuilder.addOutput(OutputKind::Dependencies,
+                                  *DependenciesOutput);
 
-  Expected<llvm::cas::ObjectProxy> Outputs = CASOutputs->getCASProxy();
-  if (!Outputs)
-    llvm::report_fatal_error(Outputs.takeError());
+  auto BackendOutputs = CASOutputs->takeOutputs();
+  for (auto &Output : BackendOutputs)
+    if (auto Err = CachedResultBuilder.addOutput(Output.Path, Output.Object))
+      llvm::report_fatal_error(std::move(Err));
 
   // Hack around llvm::errs() not being captured by the output backend yet.
   //
   // FIXME: Stop calling report_fatal_error().
-  Expected<llvm::cas::ObjectProxy> Errs = CAS->createProxy(None, ResultDiags);
+  Expected<llvm::cas::ObjectRef> Errs = CAS->storeFromString(None, ResultDiags);
   if (!Errs)
     llvm::report_fatal_error(Errs.takeError());
+  CachedResultBuilder.addOutput(OutputKind::Stderr, *Errs);
 
   // Cache the result.
   //
   // FIXME: Stop calling report_fatal_error().
-  llvm::cas::HierarchicalTreeBuilder Builder;
-  Builder.push(Outputs->getRef(), llvm::cas::TreeEntry::Regular, "outputs");
-  Builder.push(Errs->getRef(), llvm::cas::TreeEntry::Regular, "stderr");
-  Expected<llvm::cas::ObjectProxy> Result = Builder.create(*CAS);
+  Expected<cas::ObjectRef> Result = CachedResultBuilder.build(*CAS);
   if (!Result)
     llvm::report_fatal_error(Result.takeError());
-  if (llvm::Error E = Cache->put(*ResultCacheKey, Result->getRef()))
+  if (llvm::Error E = Cache->put(ResultCacheKey, *Result))
     llvm::report_fatal_error(std::move(E));
 
   // Replay / decanonicalize as necessary.
-  Optional<int> Status = replayCachedResult(Clang, Result->getRef(),
+  Optional<int> Status = replayCachedResult(*Result,
                                             /*JustComputedResult=*/true);
   (void)Status;
   assert(Status == None);
+  return Error::success();
 }
 
 /// Replay a result after a cache hit.
-Optional<int> CompileJobCache::replayCachedResult(CompilerInstance &Clang,
-                                                  llvm::cas::ObjectRef ResultID,
-                                                  bool JustComputedResult) {
+Optional<int>
+ObjectStoreCachingOutputs::replayCachedResult(llvm::cas::ObjectRef ResultID,
+                                              bool JustComputedResult) {
   if (JustComputedResult)
     return None;
 
@@ -632,73 +731,53 @@ Optional<int> CompileJobCache::replayCachedResult(CompilerInstance &Clang,
   }
 
   // FIXME: Stop calling report_fatal_error().
-  Optional<llvm::cas::TreeProxy> Result;
-  llvm::cas::TreeSchema Schema(*CAS);
+  Optional<cas::CompileJobCacheResult> Result;
+  cas::CompileJobResultSchema Schema(*CAS);
   if (Error E = Schema.load(ResultID).moveInto(Result))
     llvm::report_fatal_error(std::move(E));
 
-  // Replay diagnostics to stderr.
-  if (!JustComputedResult) {
-    Optional<llvm::cas::ObjectProxy> Errs;
-    if (Optional<llvm::cas::NamedTreeEntry> Entry = Result->lookup("stderr"))
-      if (Error E = CAS->getProxy(Entry->getRef()).moveInto(Errs))
-        llvm::report_fatal_error(std::move(E));
-    if (!Errs)
-      llvm::report_fatal_error("CAS error accessing stderr");
-    llvm::errs() << Errs->getData();
-  }
+  auto Err = Result->forEachOutput([&](cas::CompileJobCacheResult::Output O)
+                                       -> Error {
+    if (O.Kind == OutputKind::Stderr) {
+      Optional<llvm::cas::ObjectProxy> Errs;
+      if (Error E = CAS->getProxy(O.Object).moveInto(Errs))
+        return E;
+      llvm::errs() << Errs->getData();
+      return Error::success(); // continue
+    }
 
-  // Replay outputs.
-  //
-  // FIXME: Use a NodeReader here once it exists.
-  Optional<llvm::cas::ObjectProxy> Outputs;
-  if (Optional<llvm::cas::NamedTreeEntry> Entry = Result->lookup("outputs"))
-    if (Error E = CAS->getProxy(Entry->getRef()).moveInto(Outputs))
-      llvm::report_fatal_error(std::move(E));
-  if (!Outputs)
-    llvm::report_fatal_error("CAS error accessing outputs");
-
-  for (size_t I = 0, E = Outputs->getNumReferences(); I + 1 < E; I += 2) {
-    llvm::cas::CASID PathID = Outputs->getReferenceID(I);
-    cas::ObjectRef BytesRef = Outputs->getReference(I + 1);
-    llvm::cas::CASID BytesID = Outputs->getReferenceID(I + 1);
-
-    Optional<llvm::cas::ObjectProxy> PathProxy;
-    if (Error E = CAS->getProxy(PathID).moveInto(PathProxy))
-      llvm::report_fatal_error(std::move(E));
-
-    Optional<OutputKind> OutKind = getOutputKindForName(PathProxy->getData());
-    StringRef Path =
-        OutKind ? getPathForOutputKind(*OutKind) : PathProxy->getData();
-    if (Path.empty()) {
+    std::string Path = std::string(getPathForOutputKind(O.Kind));
+    if (Path.empty())
       // The output may be always generated but not needed with this invocation,
       // like the serialized diagnostics file.
-      continue;
-    }
+      return Error::success(); // continue
 
     Optional<StringRef> Contents;
     SmallString<50> ContentsStorage;
-    if (OutKind == OutputKind::Dependencies) {
+    if (O.Kind == OutputKind::Dependencies) {
       llvm::raw_svector_ostream OS(ContentsStorage);
       if (auto E = CASDependencyCollector::replay(
-              Clang.getDependencyOutputOpts(), *CAS, BytesRef, OS))
-        llvm::report_fatal_error(std::move(E));
+              Clang.getDependencyOutputOpts(), *CAS, O.Object, OS))
+        return E;
       Contents = ContentsStorage;
     } else {
       Optional<llvm::cas::ObjectProxy> Bytes;
-      if (Error E = CAS->getProxy(BytesID).moveInto(Bytes))
-        llvm::report_fatal_error(std::move(E));
+      if (Error E = CAS->getProxy(O.Object).moveInto(Bytes))
+        return E;
       Contents = Bytes->getData();
     }
 
     std::unique_ptr<llvm::FileOutputBuffer> Output;
     if (Error E = llvm::FileOutputBuffer::create(Path, Contents->size())
                       .moveInto(Output))
-      llvm::report_fatal_error(std::move(E));
+      return E;
     llvm::copy(*Contents, Output->getBufferStart());
-    if (llvm::Error E = Output->commit())
-      llvm::report_fatal_error(std::move(E));
-  }
+    return Output->commit();
+  });
+
+  // FIXME: Stop calling report_fatal_error().
+  if (Err)
+    llvm::report_fatal_error(std::move(Err));
 
   if (JustComputedResult)
     return None;
