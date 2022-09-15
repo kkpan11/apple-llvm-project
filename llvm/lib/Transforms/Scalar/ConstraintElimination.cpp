@@ -78,6 +78,8 @@ struct ConstraintTy {
   SmallVector<int64_t, 8> Coefficients;
   SmallVector<PreconditionTy, 2> Preconditions;
 
+  SmallVector<SmallVector<int64_t, 8>> ExtraInfo;
+
   bool IsSigned = false;
   bool IsEq = false;
 
@@ -89,18 +91,6 @@ struct ConstraintTy {
   unsigned size() const { return Coefficients.size(); }
 
   unsigned empty() const { return Coefficients.empty(); }
-
-  /// Returns true if any constraint has a non-zero coefficient for any of the
-  /// newly added indices. Zero coefficients for new indices are removed. If it
-  /// returns true, no new variable need to be added to the system.
-  bool needsNewIndices(const DenseMap<Value *, unsigned> &NewIndices) {
-    for (unsigned I = 0; I < NewIndices.size(); ++I) {
-      int64_t Last = Coefficients.pop_back_val();
-      if (Last != 0)
-        return true;
-    }
-    return false;
-  }
 
   /// Returns true if all preconditions for this list of constraints are
   /// satisfied given \p CS and the corresponding \p Value2Index mapping.
@@ -176,23 +166,38 @@ public:
                              SmallVectorImpl<StackEntry> &DFSInStack);
 };
 
+/// Represents a (Coefficient * Variable) entry after IR decomposition.
+struct DecompEntry {
+  int64_t Coefficient;
+  Value *Variable;
+  /// True if the variable is known positive in the current constraint.
+  bool IsKnownPositive;
+
+  DecompEntry(int64_t Coefficient, Value *Variable,
+              bool IsKnownPositive = false)
+      : Coefficient(Coefficient), Variable(Variable),
+        IsKnownPositive(IsKnownPositive) {}
+};
+
 } // namespace
 
-// Decomposes \p V into a vector of pairs of the form { c, X } where c * X. The
-// sum of the pairs equals \p V.  The first pair is the constant-factor and X
-// must be nullptr. If the expression cannot be decomposed, returns an empty
-// vector.
-static SmallVector<std::pair<int64_t, Value *>, 4>
+// Decomposes \p V into a vector of entries of the form { Coefficient, Variable
+// } where Coefficient * Variable. The sum of the pairs equals \p V.  The first
+// pair is the constant-factor and X must be nullptr. If the expression cannot
+// be decomposed, returns an empty vector.
+static SmallVector<DecompEntry, 4>
 decompose(Value *V, SmallVector<PreconditionTy, 4> &Preconditions,
           bool IsSigned) {
 
+  auto CanUseSExt = [](ConstantInt *CI) {
+    const APInt &Val = CI->getValue();
+    return Val.sgt(MinSignedConstraintValue) && Val.slt(MaxConstraintValue);
+  };
   // Decompose \p V used with a signed predicate.
   if (IsSigned) {
     if (auto *CI = dyn_cast<ConstantInt>(V)) {
-      const APInt &Val = CI->getValue();
-      if (Val.sle(MinSignedConstraintValue) || Val.sge(MaxConstraintValue))
-        return {};
-      return {{CI->getSExtValue(), nullptr}};
+      if (CanUseSExt(CI))
+        return {{CI->getSExtValue(), nullptr}};
     }
 
     return {{0, nullptr}, {1, V}};
@@ -201,7 +206,7 @@ decompose(Value *V, SmallVector<PreconditionTy, 4> &Preconditions,
   if (auto *CI = dyn_cast<ConstantInt>(V)) {
     if (CI->uge(MaxConstraintValue))
       return {};
-    return {{CI->getZExtValue(), nullptr}};
+    return {{int64_t(CI->getZExtValue()), nullptr}};
   }
   auto *GEP = dyn_cast<GetElementPtrInst>(V);
   if (GEP && GEP->getNumOperands() == 2 && GEP->isInBounds()) {
@@ -211,29 +216,33 @@ decompose(Value *V, SmallVector<PreconditionTy, 4> &Preconditions,
     // If the index is zero-extended, it is guaranteed to be positive.
     if (match(GEP->getOperand(GEP->getNumOperands() - 1),
               m_ZExt(m_Value(Op0)))) {
-      if (match(Op0, m_NUWShl(m_Value(Op1), m_ConstantInt(CI))))
+      if (match(Op0, m_NUWShl(m_Value(Op1), m_ConstantInt(CI))) &&
+          CanUseSExt(CI))
         return {{0, nullptr},
                 {1, GEP->getPointerOperand()},
-                {std::pow(int64_t(2), CI->getSExtValue()), Op1}};
-      if (match(Op0, m_NSWAdd(m_Value(Op1), m_ConstantInt(CI))))
+                {int64_t(std::pow(int64_t(2), CI->getSExtValue())), Op1}};
+      if (match(Op0, m_NSWAdd(m_Value(Op1), m_ConstantInt(CI))) &&
+          CanUseSExt(CI))
         return {{CI->getSExtValue(), nullptr},
                 {1, GEP->getPointerOperand()},
                 {1, Op1}};
-      return {{0, nullptr}, {1, GEP->getPointerOperand()}, {1, Op0}};
+      return {{0, nullptr}, {1, GEP->getPointerOperand()}, {1, Op0, true}};
     }
 
     if (match(GEP->getOperand(GEP->getNumOperands() - 1), m_ConstantInt(CI)) &&
-        !CI->isNegative())
+        !CI->isNegative() && CanUseSExt(CI))
       return {{CI->getSExtValue(), nullptr}, {1, GEP->getPointerOperand()}};
 
-    SmallVector<std::pair<int64_t, Value *>, 4> Result;
+    SmallVector<DecompEntry, 4> Result;
     if (match(GEP->getOperand(GEP->getNumOperands() - 1),
-              m_NUWShl(m_Value(Op0), m_ConstantInt(CI))))
+              m_NUWShl(m_Value(Op0), m_ConstantInt(CI))) &&
+        CanUseSExt(CI))
       Result = {{0, nullptr},
                 {1, GEP->getPointerOperand()},
-                {std::pow(int64_t(2), CI->getSExtValue()), Op0}};
+                {int(std::pow(int64_t(2), CI->getSExtValue())), Op0}};
     else if (match(GEP->getOperand(GEP->getNumOperands() - 1),
-                   m_NSWAdd(m_Value(Op0), m_ConstantInt(CI))))
+                   m_NSWAdd(m_Value(Op0), m_ConstantInt(CI))) &&
+             CanUseSExt(CI))
       Result = {{CI->getSExtValue(), nullptr},
                 {1, GEP->getPointerOperand()},
                 {1, Op0}};
@@ -249,29 +258,43 @@ decompose(Value *V, SmallVector<PreconditionTy, 4> &Preconditions,
   }
 
   Value *Op0;
-  if (match(V, m_ZExt(m_Value(Op0))))
+  bool IsKnownPositive = false;
+  if (match(V, m_ZExt(m_Value(Op0)))) {
+    IsKnownPositive = true;
     V = Op0;
+  }
 
   Value *Op1;
   ConstantInt *CI;
   if (match(V, m_NUWAdd(m_Value(Op0), m_ConstantInt(CI))) &&
-      !CI->uge(MaxConstraintValue))
-    return {{CI->getZExtValue(), nullptr}, {1, Op0}};
-  if (match(V, m_Add(m_Value(Op0), m_ConstantInt(CI))) && CI->isNegative()) {
+      !CI->uge(MaxConstraintValue)) {
+    auto Res = decompose(Op0, Preconditions, IsSigned);
+    Res[0].Coefficient += int(CI->getZExtValue());
+    return Res;
+  }
+  if (match(V, m_Add(m_Value(Op0), m_ConstantInt(CI))) && CI->isNegative() &&
+      CanUseSExt(CI)) {
     Preconditions.emplace_back(
         CmpInst::ICMP_UGE, Op0,
         ConstantInt::get(Op0->getType(), CI->getSExtValue() * -1));
-    return {{CI->getSExtValue(), nullptr}, {1, Op0}};
+    auto Res = decompose(Op0, Preconditions, IsSigned);
+    Res[0].Coefficient += int(CI->getSExtValue());
+    return Res;
   }
-  if (match(V, m_NUWAdd(m_Value(Op0), m_Value(Op1))))
-    return {{0, nullptr}, {1, Op0}, {1, Op1}};
+  if (match(V, m_NUWAdd(m_Value(Op0), m_Value(Op1)))) {
+    auto Res = decompose(Op0, Preconditions, IsSigned);
+    auto D1 = decompose(Op1, Preconditions, IsSigned);
+    Res[0].Coefficient += D1[0].Coefficient;
+    append_range(Res, drop_begin(D1));
+    return Res;
+  }
 
-  if (match(V, m_NUWSub(m_Value(Op0), m_ConstantInt(CI))))
+  if (match(V, m_NUWSub(m_Value(Op0), m_ConstantInt(CI))) && CanUseSExt(CI))
     return {{-1 * CI->getSExtValue(), nullptr}, {1, Op0}};
   if (match(V, m_NUWSub(m_Value(Op0), m_Value(Op1))))
     return {{0, nullptr}, {1, Op0}, {-1, Op1}};
 
-  return {{0, nullptr}, {1, V}};
+  return {{0, nullptr}, {1, V, IsKnownPositive}};
 }
 
 ConstraintTy
@@ -322,8 +345,8 @@ ConstraintInfo::getConstraint(CmpInst::Predicate Pred, Value *Op0, Value *Op1,
   if (ADec.empty() || BDec.empty())
     return {};
 
-  int64_t Offset1 = ADec[0].first;
-  int64_t Offset2 = BDec[0].first;
+  int64_t Offset1 = ADec[0].Coefficient;
+  int64_t Offset2 = BDec[0].Coefficient;
   Offset1 *= -1;
 
   // Create iterator ranges that skip the constant-factor.
@@ -342,22 +365,30 @@ ConstraintInfo::getConstraint(CmpInst::Predicate Pred, Value *Op0, Value *Op1,
   };
 
   // Make sure all variables have entries in Value2Index or NewIndices.
-  for (const auto &KV :
-       concat<std::pair<int64_t, Value *>>(VariablesA, VariablesB))
-    GetOrAddIndex(KV.second);
+  for (const auto &KV : concat<DecompEntry>(VariablesA, VariablesB))
+    GetOrAddIndex(KV.Variable);
 
   // Build result constraint, by first adding all coefficients from A and then
   // subtracting all coefficients from B.
   ConstraintTy Res(
       SmallVector<int64_t, 8>(Value2Index.size() + NewIndices.size() + 1, 0),
       IsSigned);
+  // Collect variables that are known to be positive in all uses in the
+  // constraint.
+  DenseMap<Value *, bool> KnownPositiveVariables;
   Res.IsEq = IsEq;
   auto &R = Res.Coefficients;
-  for (const auto &KV : VariablesA)
-    R[GetOrAddIndex(KV.second)] += KV.first;
+  for (const auto &KV : VariablesA) {
+    R[GetOrAddIndex(KV.Variable)] += KV.Coefficient;
+    auto I = KnownPositiveVariables.insert({KV.Variable, KV.IsKnownPositive});
+    I.first->second &= KV.IsKnownPositive;
+  }
 
-  for (const auto &KV : VariablesB)
-    R[GetOrAddIndex(KV.second)] -= KV.first;
+  for (const auto &KV : VariablesB) {
+    R[GetOrAddIndex(KV.Variable)] -= KV.Coefficient;
+    auto I = KnownPositiveVariables.insert({KV.Variable, KV.IsKnownPositive});
+    I.first->second &= KV.IsKnownPositive;
+  }
 
   int64_t OffsetSum;
   if (AddOverflow(Offset1, Offset2, OffsetSum))
@@ -367,6 +398,31 @@ ConstraintInfo::getConstraint(CmpInst::Predicate Pred, Value *Op0, Value *Op1,
       return {};
   R[0] = OffsetSum;
   Res.Preconditions = std::move(Preconditions);
+
+  // Remove any (Coefficient, Variable) entry where the Coefficient is 0 for the
+  // new variables that need to be added to the system. Set NewIndexNeeded to
+  // true if any of the new variables has a non-zero coefficient.
+  bool NewIndexNeeded = false;
+  for (unsigned I = 0; I < NewIndices.size(); ++I) {
+    int64_t Last = R.back();
+    if (Last != 0) {
+      NewIndexNeeded = true;
+      break;
+    }
+    R.pop_back();
+  }
+  // All new variables had Coefficients of 0, so no new variables are needed.
+  if (!NewIndexNeeded)
+    NewIndices.clear();
+
+  // Add extra constraints for variables that are known positive.
+  for (auto &KV : KnownPositiveVariables) {
+    if (!KV.second)
+      continue;
+    SmallVector<int64_t, 8> C(Value2Index.size() + NewIndices.size() + 1, 0);
+    C[GetOrAddIndex(KV.first)] = -1;
+    Res.ExtraInfo.push_back(C);
+  }
   return Res;
 }
 
@@ -628,7 +684,7 @@ tryToSimplifyOverflowMath(IntrinsicInst *II, ConstraintInfo &Info,
                               ConstraintInfo &Info) {
     DenseMap<Value *, unsigned> NewIndices;
     auto R = Info.getConstraint(Pred, A, B, NewIndices);
-    if (R.size() < 2 || R.needsNewIndices(NewIndices) || !R.isValid(Info))
+    if (R.size() < 2 || !NewIndices.empty() || !R.isValid(Info))
       return false;
 
     auto &CSToUse = Info.getCS(CmpInst::isSigned(Pred));
@@ -746,11 +802,21 @@ static bool eliminateConstraints(Function &F, DominatorTree &DT) {
 
         DenseMap<Value *, unsigned> NewIndices;
         auto R = Info.getConstraint(Cmp, NewIndices);
-        if (R.IsEq || R.empty() || R.needsNewIndices(NewIndices) ||
-            !R.isValid(Info))
+        if (R.IsEq || R.empty() || !NewIndices.empty() || !R.isValid(Info))
           continue;
 
         auto &CSToUse = Info.getCS(R.IsSigned);
+
+        // If there was extra information collected during decomposition, apply
+        // it now and remove it immediately once we are done with reasoning
+        // about the constraint.
+        for (auto &Row : R.ExtraInfo)
+          CSToUse.addVariableRow(Row);
+        auto InfoRestorer = make_scope_exit([&]() {
+          for (unsigned I = 0; I < R.ExtraInfo.size(); ++I)
+            CSToUse.popLastConstraint();
+        });
+
         if (CSToUse.isConditionImplied(R.Coefficients)) {
           if (!DebugCounter::shouldExecute(EliminatedCounter))
             continue;
