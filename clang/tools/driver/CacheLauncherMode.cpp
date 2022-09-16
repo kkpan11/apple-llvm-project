@@ -69,7 +69,7 @@ static int executeAsProcess(ArrayRef<const char *> Args,
     RefArgs.push_back(Arg);
   }
   std::string ErrMsg;
-  int Result = llvm::sys::ExecuteAndWait(Args[0], RefArgs, /*Env*/ None,
+  int Result = llvm::sys::ExecuteAndWait(RefArgs[0], RefArgs, /*Env*/ None,
                                          /*Redirects*/ {}, /*SecondsToWait*/ 0,
                                          /*MemoryLimit*/ 0, &ErrMsg);
   if (!ErrMsg.empty()) {
