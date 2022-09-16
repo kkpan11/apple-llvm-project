@@ -249,7 +249,8 @@ public:
     Scanned = true;
 
     // Create a compiler instance to handle the actual work.
-    CompilerInstance ScanInstance(std::move(PCHContainerOps));
+    ScanInstanceStorage.emplace(std::move(PCHContainerOps));
+    CompilerInstance &ScanInstance = *ScanInstanceStorage;
     ScanInstance.setInvocation(std::move(Invocation));
     ScanInstance.getInvocation().getCASOpts() = CASOpts;
 
@@ -442,7 +443,8 @@ private:
   bool OverrideCASTokenCache;
   bool EmitDependencyFile = false;
   bool DiagGenerationAsCompilation;
-  llvm::Optional<StringRef> ModuleName;
+  Optional<StringRef> ModuleName;
+  Optional<CompilerInstance> ScanInstanceStorage;
   std::shared_ptr<ModuleDepCollector> MDC;
   std::vector<std::string> LastCC1Arguments;
   bool Scanned = false;
