@@ -6503,6 +6503,11 @@ defm cache_compile_job : BoolFOption<"cache-compile-job",
                          " (for now) without -fcas-fs.">,
     NegFlag<SetFalse>>;
 
+defm cache_disable_replay : BoolFOption<"cache-disable-replay",
+    FrontendOpts<"DisableCachedCompileJobReplay">, DefaultFalse,
+    PosFlag<SetTrue, [], "Disable replaying a cached compile job">,
+    NegFlag<SetFalse>>;
+
 // FIXME: Add to driver under -fexperimental-cache=raw-lex.
 defm cache_raw_lex : BoolFOption<"cache-raw-lex",
     PreprocessorOpts<"CacheRawLex">, DefaultFalse,

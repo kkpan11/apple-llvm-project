@@ -362,6 +362,10 @@ public:
   /// is specified.
   unsigned CacheCompileJob : 1;
 
+  /// Avoid checking if the compile job is already cached, force compilation and
+  /// caching of compilation outputs. This is used for testing purposes.
+  unsigned DisableCachedCompileJobReplay : 1;
+
   /// When using CacheCompileJob, write a CASID for the output file.
   ///
   /// FIXME: Add clang tests for this functionality.
@@ -542,8 +546,9 @@ public:
         ASTDumpLookups(false), BuildingImplicitModule(false),
         BuildingImplicitModuleUsesLock(true), ModulesEmbedAllFiles(false),
         IncludeTimestamps(true), UseTemporary(true), CacheCompileJob(false),
-        WriteOutputAsCASID(false), AllowPCMWithCompilerErrors(false),
-        ModulesShareFileManager(true), TimeTraceGranularity(500) {}
+        DisableCachedCompileJobReplay(false), WriteOutputAsCASID(false),
+        AllowPCMWithCompilerErrors(false), ModulesShareFileManager(true),
+        TimeTraceGranularity(500) {}
 
   /// getInputKindForExtension - Return the appropriate input kind for a file
   /// extension. For example, "c" would return Language::C.
