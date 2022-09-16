@@ -26,8 +26,8 @@ class TestSwiftUnknownReference(lldbtest.TestBase):
         lldbutil.check_variable(self, m_base_string, summary='"hello"')
         lldbutil.check_variable(self, m_string, summary='"world"')
 
-    
     @swiftTest
+    @skipIfDarwin # This test fails non-reproducibly in CI. rdar://100034078
     @skipUnlessFoundation
     def test_unknown_objc_ref(self):
         """Test unknown references to Objective-C objects."""

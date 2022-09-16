@@ -32,6 +32,7 @@ class TestSwiftUnknownSelf(lldbtest.TestBase):
 
 
     @skipIf(bugnumber="SR-10216", archs=['ppc64le'])
+    @skipIfDarwin # This test fails non-reproducibly in CI. rdar://100034078
     @swiftTest
     @skipUnlessFoundation
     def test_unknown_self_objc_ref(self):
