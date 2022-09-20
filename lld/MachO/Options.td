@@ -1011,6 +1011,10 @@ def objc_stubs_fast : Flag<["-"], "objc_stubs_fast">,
 def objc_stubs_small : Flag<["-"], "objc_stubs_small">,
     HelpText<"Produce smaller stubs for Objective-C method calls with more jumps.">,
     Group<grp_rare>;
+def dyld_env : Separate<["-"], "dyld_env">,
+    MetaVarName<"<dyld_env_var>">,
+    HelpText<"Specifies a LC_DYLD_ENVIRONMENT variable value pair.">,
+    Group<grp_rare>;
 
 def grp_deprecated : OptionGroup<"deprecated">, HelpText<"DEPRECATED">;
 
@@ -1239,10 +1243,6 @@ def debug_snapshot : Flag<["-"], "debug_snapshot">,
     Group<grp_undocumented>;
 def demangle : Flag<["-"], "demangle">,
     HelpText<"Demangle symbol names in diagnostics">;
-def dyld_env : Flag<["-"], "dyld_env">,
-    HelpText<"This option is undocumented in ld64">,
-    Flags<[HelpHidden]>,
-    Group<grp_undocumented>;
 def encryptable : Flag<["-"], "encryptable">,
     HelpText<"Generate the LC_ENCRYPTION_INFO load command">,
     Group<grp_undocumented>;
