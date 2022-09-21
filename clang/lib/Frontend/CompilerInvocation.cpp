@@ -2972,7 +2972,8 @@ static bool ParseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
       Opts.ModuleFiles.push_back(std::string(Val));
   }
   for (const Arg *A : Args.filtered(OPT_fmodule_file_cache_key)) {
-    auto [Path, Key] = StringRef(A->getValue()).rsplit('=');
+    StringRef Path, Key;
+    std::tie(Path, Key) = StringRef(A->getValue()).rsplit('=');
     if (Key.empty() || Path.empty()) {
       Diags.Report(diag::err_module_cache_key_spelling);
     } else {
