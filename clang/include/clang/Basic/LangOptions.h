@@ -476,6 +476,11 @@ public:
     return getCompilingModule() != CMK_None;
   }
 
+  /// Are we compiling a module implementation?
+  bool isCompilingModuleImplementation() const {
+    return !isCompilingModule() && !ModuleName.empty();
+  }
+
   /// Do we need to track the owning module for a local declaration?
   bool trackLocalOwningModule() const {
     return isCompilingModule() || ModulesLocalVisibility;
