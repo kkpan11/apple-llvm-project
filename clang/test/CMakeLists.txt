@@ -10,6 +10,7 @@ llvm_canonicalize_cmake_booleans(
   CLANG_PLUGIN_SUPPORT
   CLANG_SPAWN_CC1
   ENABLE_BACKTRACES
+  LLVM_CAS_ENABLE_REMOTE_CACHE
   LLVM_ENABLE_ZLIB
   LLVM_ENABLE_PER_TARGET_RUNTIME_DIR
   LLVM_ENABLE_THREADS
@@ -138,6 +139,9 @@ if( NOT CLANG_BUILT_STANDALONE )
 
   if(TARGET llvm-lto)
     list(APPEND CLANG_TEST_DEPS llvm-lto)
+  endif()
+  if(TARGET llvm-remote-cache-test)
+    list(APPEND CLANG_TEST_DEPS llvm-remote-cache-test)
   endif()
 endif()
 
