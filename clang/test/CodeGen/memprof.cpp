@@ -6,6 +6,9 @@
 // INSTRUMENT: Running pass: MemProfilerPass on main
 // INSTRUMENT: Running pass: ModuleMemProfilerPass on [module]
 
+// Avoid failures on big-endian systems that can't read the raw profile properly
+// REQUIRES: x86_64-linux
+
 // TODO: Use text profile inputs once that is available for memprof.
 //
 // The following commands were used to compile the source to instrumented

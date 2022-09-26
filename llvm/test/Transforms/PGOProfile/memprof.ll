@@ -1,6 +1,10 @@
-; REQUIRES: zlib
-
 ;; Tests memprof profile matching (with and without instrumentation profiles).
+
+;; Several requirements due to using raw profile inputs:
+;; PGO profile uses zlib compression
+; REQUIRES: zlib
+;; Avoid failures on big-endian systems that can't read the profile properly
+; REQUIRES: x86_64-linux
 
 ;; TODO: Use text profile inputs once that is available for memprof.
 
@@ -336,27 +340,27 @@ for.end:                                          ; preds = %for.cond
 ; MEMPROF: #[[A1]] = { builtin allocsize(0) "memprof"="notcold" }
 ; MEMPROF: #[[A2]] = { builtin allocsize(0) "memprof"="cold" }
 ; MEMPROF: ![[M1]] = !{![[MIB1:[0-9]+]], ![[MIB2:[0-9]+]], ![[MIB3:[0-9]+]], ![[MIB4:[0-9]+]], ![[MIB5:[0-9]+]]}
-; MEMPROF: ![[MIB1]] = !{![[STACK1:[0-9]+]], !"notcold"}
-; MEMPROF: ![[STACK1]] = !{i64 -2458008693472584243, i64 3952224878458323, i64 -6408471049535768163, i64 -6408471049535768163, i64 -6408471049535768163, i64 -6408471049535768163}
+; MEMPROF: ![[MIB1]] = !{![[STACK1:[0-9]+]], !"cold"}
+; MEMPROF: ![[STACK1]] = !{i64 2732490490862098848, i64 748269490701775343}
 ; MEMPROF: ![[MIB2]] = !{![[STACK2:[0-9]+]], !"cold"}
-; MEMPROF: ![[STACK2]] = !{i64 -2458008693472584243, i64 3952224878458323, i64 -6408471049535768163, i64 -6408471049535768163, i64 -6408471049535768163, i64 -2523213715586649525}
-; MEMPROF: ![[MIB3]] = !{![[STACK3:[0-9]+]], !"cold"}
-; MEMPROF: ![[STACK3]] = !{i64 -2458008693472584243, i64 4060711043150162853}
-; MEMPROF: ![[MIB4]] = !{![[STACK4:[0-9]+]], !"notcold"}
-; MEMPROF: ![[STACK4]] = !{i64 -2458008693472584243, i64 6197270713521362189}
-; MEMPROF: ![[MIB5]] = !{![[STACK5:[0-9]+]], !"cold"}
-; MEMPROF: ![[STACK5]] = !{i64 -2458008693472584243, i64 -8079659623765193173}
-; MEMPROF: ![[C1]] = !{i64 -2458008693472584243}
-; MEMPROF: ![[C2]] = !{i64 -8079659623765193173}
-; MEMPROF: ![[C3]] = !{i64 -972865200055133905}
-; MEMPROF: ![[C4]] = !{i64 -4805294506621015872}
-; MEMPROF: ![[C5]] = !{i64 3952224878458323}
-; MEMPROF: ![[C6]] = !{i64 -6408471049535768163}
-; MEMPROF: ![[C7]] = !{i64 6197270713521362189}
-; MEMPROF: ![[C8]] = !{i64 4060711043150162853}
-; MEMPROF: ![[C9]] = !{i64 1503792662459039327}
-; MEMPROF: ![[C10]] = !{i64 -1910610273966575552}
-; MEMPROF: ![[C11]] = !{i64 -2523213715586649525}
+; MEMPROF: ![[STACK2]] = !{i64 2732490490862098848, i64 2104812325165620841, i64 6281715513834610934, i64 6281715513834610934, i64 6281715513834610934, i64 1544787832369987002}
+; MEMPROF: ![[MIB3]] = !{![[STACK3:[0-9]+]], !"notcold"}
+; MEMPROF: ![[STACK3]] = !{i64 2732490490862098848, i64 2104812325165620841, i64 6281715513834610934, i64 6281715513834610934, i64 6281715513834610934, i64 6281715513834610934}
+; MEMPROF: ![[MIB4]] = !{![[STACK4:[0-9]+]], !"cold"}
+; MEMPROF: ![[STACK4]] = !{i64 2732490490862098848, i64 8467819354083268568}
+; MEMPROF: ![[MIB5]] = !{![[STACK5:[0-9]+]], !"notcold"}
+; MEMPROF: ![[STACK5]] = !{i64 2732490490862098848, i64 8690657650969109624}
+; MEMPROF: ![[C1]] = !{i64 2732490490862098848}
+; MEMPROF: ![[C2]] = !{i64 8467819354083268568}
+; MEMPROF: ![[C3]] = !{i64 9086428284934609951}
+; MEMPROF: ![[C4]] = !{i64 -5964873800580613432}
+; MEMPROF: ![[C5]] = !{i64 2104812325165620841}
+; MEMPROF: ![[C6]] = !{i64 6281715513834610934}
+; MEMPROF: ![[C7]] = !{i64 8690657650969109624}
+; MEMPROF: ![[C8]] = !{i64 748269490701775343}
+; MEMPROF: ![[C9]] = !{i64 -5747251260480066785}
+; MEMPROF: ![[C10]] = !{i64 2061451396820446691}
+; MEMPROF: ![[C11]] = !{i64 1544787832369987002}
 
 ; Function Attrs: argmemonly nofree nounwind willreturn writeonly
 declare void @llvm.memset.p0.i64(ptr nocapture writeonly, i8, i64, i1 immarg) #3

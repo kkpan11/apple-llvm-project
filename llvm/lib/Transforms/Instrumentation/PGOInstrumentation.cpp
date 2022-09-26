@@ -99,6 +99,7 @@
 #include "llvm/IR/Value.h"
 #include "llvm/ProfileData/InstrProf.h"
 #include "llvm/ProfileData/InstrProfReader.h"
+#include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/BranchProbability.h"
 #include "llvm/Support/CRC.h"
 #include "llvm/Support/Casting.h"
@@ -108,6 +109,7 @@
 #include "llvm/Support/Error.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/GraphWriter.h"
+#include "llvm/Support/HashBuilder.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Instrumentation.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
@@ -1242,12 +1244,18 @@ static void addCallsiteMetadata(Instruction &I,
                 buildCallstackMetadata(InlinedCallStack, Ctx));
 }
 
-static hash_code computeStackId(GlobalValue::GUID Function, uint32_t LineOffset,
-                                uint32_t Column) {
-  return hash_combine(Function, LineOffset, Column);
+static uint64_t computeStackId(GlobalValue::GUID Function, uint32_t LineOffset,
+                               uint32_t Column) {
+  llvm::HashBuilder<llvm::TruncatedBLAKE3<8>, llvm::support::endianness::little>
+      HashBuilder;
+  HashBuilder.add(Function, LineOffset, Column);
+  llvm::BLAKE3Result<8> Hash = HashBuilder.final();
+  uint64_t Id;
+  std::memcpy(&Id, Hash.data(), sizeof(Hash));
+  return Id;
 }
 
-static hash_code computeStackId(const memprof::Frame &Frame) {
+static uint64_t computeStackId(const memprof::Frame &Frame) {
   return computeStackId(Frame.Function, Frame.LineOffset, Frame.Column);
 }
 

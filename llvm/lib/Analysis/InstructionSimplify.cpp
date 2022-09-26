@@ -4233,6 +4233,57 @@ static Value *simplifySelectBitTest(Value *TrueVal, Value *FalseVal, Value *X,
   return nullptr;
 }
 
+static Value *simplifyCmpSelOfMaxMin(Value *CmpLHS, Value *CmpRHS,
+                                     ICmpInst::Predicate Pred, Value *TVal,
+                                     Value *FVal) {
+  // Canonicalize max/min as false value of select.
+  if (match(TVal, m_c_MaxOrMin(m_Specific(FVal), m_Value()))) {
+    std::swap(TVal, FVal);
+    Pred = ICmpInst::getInversePredicate(Pred);
+  }
+
+  // Cond ? X : max(X, Y)
+  Value *X = TVal, *Y;
+  if (!match(FVal, m_c_MaxOrMin(m_Specific(X), m_Value(Y))))
+    return nullptr;
+
+  // Canonicalize common select operand X as CmpLHS.
+  if (CmpRHS == X) {
+    std::swap(CmpLHS, CmpRHS);
+    Pred = ICmpInst::getSwappedPredicate(Pred);
+  }
+
+  // (X Pred Y) ? X : max(X, Y)
+  if (CmpLHS != X || CmpRHS != Y)
+    return nullptr;
+
+  if (auto *MMI = dyn_cast<MinMaxIntrinsic>(FVal)) {
+    ICmpInst::Predicate MMPred = MMI->getPredicate();
+    // (X >  Y) ? X : max(X, Y) --> max(X, Y)
+    // (X >= Y) ? X : max(X, Y) --> max(X, Y)
+    // (X == Y) ? X : max(X, Y) --> max(X, Y)
+    // (X <  Y) ? X : min(X, Y) --> min(X, Y)
+    // (X <= Y) ? X : min(X, Y) --> min(X, Y)
+    // (X == Y) ? X : min(X, Y) --> min(X, Y)
+    if (MMPred == Pred || MMPred == CmpInst::getStrictPredicate(Pred) ||
+        Pred == ICmpInst::ICMP_EQ)
+      return MMI;
+
+    // (X <  Y) ? X : max(X, Y) --> X
+    // (X <= Y) ? X : max(X, Y) --> X
+    // (X != Y) ? X : max(X, Y) --> X
+    // (X >  Y) ? X : min(X, Y) --> X
+    // (X >= Y) ? X : min(X, Y) --> X
+    // (X != Y) ? X : min(X, Y) --> X
+    ICmpInst::Predicate InvPred = CmpInst::getInversePredicate(Pred);
+    if (MMPred == InvPred || MMPred == CmpInst::getStrictPredicate(InvPred) ||
+        Pred == ICmpInst::ICMP_NE)
+      return X;
+  }
+
+  return nullptr;
+}
+
 /// An alternative way to test if a bit is set or not uses sgt/slt instead of
 /// eq/ne.
 static Value *simplifySelectWithFakeICmpEq(Value *CmpLHS, Value *CmpRHS,
@@ -4257,6 +4308,9 @@ static Value *simplifySelectWithICmpCond(Value *CondVal, Value *TrueVal,
   Value *CmpLHS, *CmpRHS;
   if (!match(CondVal, m_ICmp(Pred, m_Value(CmpLHS), m_Value(CmpRHS))))
     return nullptr;
+
+  if (Value *V = simplifyCmpSelOfMaxMin(CmpLHS, CmpRHS, Pred, TrueVal, FalseVal))
+    return V;
 
   // Canonicalize ne to eq predicate.
   if (Pred == ICmpInst::ICMP_NE) {
