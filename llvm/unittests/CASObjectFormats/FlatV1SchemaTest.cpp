@@ -32,8 +32,8 @@ TEST(FlatV1SchemaTest, RoundTrip) {
                        support::little, jitlink::getGenericEdgeKindName);
   jitlink::Section &Section =
       G.createSection("section", jitlink::MemProt::Exec);
-  jitlink::Symbol &S1 = G.addExternalSymbol("S1", 0, jitlink::Linkage::Strong);
-  jitlink::Symbol &S2 = G.addExternalSymbol("S2", 0, jitlink::Linkage::Weak);
+  jitlink::Symbol &S1 = G.addExternalSymbol("S1", 0, false);
+  jitlink::Symbol &S2 = G.addExternalSymbol("S2", 0, true);
 
   // Add a defined symbol so there are two types of targets.
   orc::ExecutorAddr Addr(0x0);

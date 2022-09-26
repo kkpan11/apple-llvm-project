@@ -81,7 +81,8 @@ Error LinkGraphBuilder::addSymbol(CASSymbolRef Ref, const CASSymbol &Info) {
 
 Expected<Symbol *> LinkGraphBuilder::createSymbol(const CASSymbol &Info) {
   if (!Info.isDefined()) {
-    return &LG->addExternalSymbol(Info.Name, /*Size=*/0, Info.Linkage);
+    return &LG->addExternalSymbol(Info.Name, /*Size=*/0,
+                                  Info.Linkage == Linkage::Weak);
   }
 
   Expected<Block *> Block = getOrCreateBlock(*Info.BlockRef);
