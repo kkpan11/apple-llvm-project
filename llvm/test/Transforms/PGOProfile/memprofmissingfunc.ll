@@ -1,6 +1,9 @@
 ;; Tests that we get a missing memprof error for a function not in profile when
 ;; using -pgo-warn-missing-function.
 
+;; Avoid failures on big-endian systems that can't read the raw profile properly
+; REQUIRES: x86_64-linux
+
 ;; TODO: Use text profile inputs once that is available for memprof.
 
 ;; The raw profiles have been generated from the source used for the memprof.ll

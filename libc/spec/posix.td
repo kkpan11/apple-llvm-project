@@ -37,6 +37,9 @@ def StructDirentPtr : PtrType<StructDirent>;
 def StructDirentPtrPtr : PtrType<StructDirentPtr>;
 def ConstStructDirentPtrPtr : ConstType<StructDirentPtrPtr>;
 
+def StructTimeSpec : NamedType<"struct timespec">;
+def StructTimeSpecPtr : PtrType<StructTimeSpec>;
+
 def POSIX : StandardSpec<"POSIX"> {
   PtrType CharPtr = PtrType<CharType>;
   RestrictedPtrType RestrictedCharPtr = RestrictedPtrType<CharType>;
@@ -201,6 +204,13 @@ def POSIX : StandardSpec<"POSIX"> {
       [], // Enumerations
       [
         FunctionSpec<
+            "madvise",
+            RetValSpec<IntType>,
+            [ArgSpec<VoidPtr>,
+             ArgSpec<SizeTType>,
+             ArgSpec<IntType>]
+        >,
+        FunctionSpec<
             "mmap",
             RetValSpec<VoidPtr>,
             [ArgSpec<VoidPtr>,
@@ -211,9 +221,23 @@ def POSIX : StandardSpec<"POSIX"> {
              ArgSpec<OffTType>]
         >,
         FunctionSpec<
+            "mprotect",
+            RetValSpec<IntType>,
+            [ArgSpec<VoidPtr>,
+             ArgSpec<SizeTType>,
+             ArgSpec<IntType>]
+        >,
+        FunctionSpec<
             "munmap",
             RetValSpec<IntType>,
             [ArgSpec<VoidPtr>, ArgSpec<SizeTType>]
+        >,
+        FunctionSpec<
+            "posix_madvise",
+            RetValSpec<IntType>,
+            [ArgSpec<VoidPtr>,
+             ArgSpec<SizeTType>,
+             ArgSpec<IntType>]
         >,
       ]
   >;
@@ -898,6 +922,23 @@ def POSIX : StandardSpec<"POSIX"> {
       ]
   >;
 
+  HeaderSpec Time = HeaderSpec<
+      "time.h",
+      [], // Macros
+      [StructTimeSpec], // Types
+      [], // Enumerations
+      [
+          FunctionSpec<
+              "nanosleep",
+              RetValSpec<IntType>,
+              [
+	      	      ArgSpec<StructTimeSpecPtr>,
+	      	      ArgSpec<StructTimeSpecPtr>,
+	            ]
+          >,
+      ]
+  >;
+
   let Headers = [
     CType,
     Dirent,
@@ -911,6 +952,7 @@ def POSIX : StandardSpec<"POSIX"> {
     SysResource,
     SysStat,
     SysUtsName,
+    Time,
     UniStd,
     String
   ];

@@ -24,7 +24,7 @@
 #include "llvm/ADT/SmallBitVector.h"
 
 namespace mlir {
-#define GEN_PASS_DEF_CONVERTMEMREFTOLLVM
+#define GEN_PASS_DEF_MEMREFTOLLVMCONVERSIONPASS
 #include "mlir/Conversion/Passes.h.inc"
 } // namespace mlir
 
@@ -191,6 +191,11 @@ struct ReallocOpLoweringBase : public AllocationOpLLVMLowering {
     // Compute total byte size.
     auto dstByteSize =
         rewriter.create<LLVM::MulOp>(loc, dstNumElements, sizeInBytes);
+    // Since the src and dst memref are guarantee to have the same
+    // element type by the verifier, it is safe here to reuse the
+    // type size computed from dst memref.
+    auto srcByteSize =
+        rewriter.create<LLVM::MulOp>(loc, srcNumElements, sizeInBytes);
     // Allocate a new buffer.
     auto [dstRawPtr, dstAlignedPtr] =
         allocateBuffer(rewriter, loc, dstByteSize, op);
@@ -202,7 +207,7 @@ struct ReallocOpLoweringBase : public AllocationOpLLVMLowering {
       return rewriter.create<LLVM::BitcastOp>(loc, getVoidPtrType(), ptr);
     };
     rewriter.create<LLVM::MemcpyOp>(loc, toVoidPtr(dstAlignedPtr),
-                                    toVoidPtr(srcAlignedPtr), dstByteSize,
+                                    toVoidPtr(srcAlignedPtr), srcByteSize,
                                     isVolatile);
     // Deallocate the old buffer.
     LLVM::LLVMFuncOp freeFunc =
@@ -2103,9 +2108,9 @@ void mlir::populateMemRefToLLVMConversionPatterns(LLVMTypeConverter &converter,
 }
 
 namespace {
-struct MemRefToLLVMPass
-    : public impl::ConvertMemRefToLLVMBase<MemRefToLLVMPass> {
-  MemRefToLLVMPass() = default;
+struct MemRefToLLVMConversionPass
+    : public impl::MemRefToLLVMConversionPassBase<MemRefToLLVMConversionPass> {
+  using MemRefToLLVMConversionPassBase::MemRefToLLVMConversionPassBase;
 
   void runOnOperation() override {
     Operation *op = getOperation();
@@ -2132,7 +2137,3 @@ struct MemRefToLLVMPass
   }
 };
 } // namespace
-
-std::unique_ptr<Pass> mlir::createMemRefToLLVMPass() {
-  return std::make_unique<MemRefToLLVMPass>();
-}

@@ -93,6 +93,7 @@ add_gen_header(
     .llvm_libc_common_h
     .llvm-libc-types.time_t
     .llvm-libc-types.struct_tm
+    .llvm-libc-types.struct_timespec
 )
 
 add_gen_header(
@@ -203,6 +204,7 @@ add_gen_header(
     .llvm_libc_common_h
     .llvm-libc-types.off_t
     .llvm-libc-types.ssize_t
+    .llvm-libc-macros.sys_mman_macros
 )
 
 add_gen_header(

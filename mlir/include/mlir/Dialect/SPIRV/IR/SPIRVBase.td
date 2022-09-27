@@ -24,7 +24,7 @@ include "mlir/Dialect/SPIRV/IR/SPIRVAvailability.td"
 //===----------------------------------------------------------------------===//
 
 def SPIRV_Dialect : Dialect {
-  let name = "spv";
+  let name = "spirv";
 
   let summary = "The SPIR-V dialect in MLIR.";
 
@@ -72,10 +72,6 @@ def SPIRV_Dialect : Dialect {
     void printAttribute(
         Attribute attr, DialectAsmPrinter &printer) const override;
   }];
-
-  // TODO: This has overlapping accessors with generated when switched to
-  // prefixed. Fix and update to _Both & then _Prefixed.
-  let emitAccessorPrefix = kEmitAccessorPrefix_Raw;
 }
 
 //===----------------------------------------------------------------------===//
