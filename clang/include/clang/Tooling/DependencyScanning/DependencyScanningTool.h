@@ -60,9 +60,9 @@ struct FullDependencies {
 
   /// Get the full command line.
   ///
-  /// \param LookupModuleOutput This function is called to fill in
-  ///                           "-fmodule-file=", "-o" and other output
-  ///                           arguments for dependencies.
+  /// \param LookupOutput This function is called to fill in
+  ///                     "-fmodule-file=", "-o" and other output
+  ///                     arguments for dependencies.
   std::vector<std::string> getCommandLine(
       llvm::function_ref<std::string(const ModuleID &, ModuleOutputKind)>
           LookupOutput) const;
