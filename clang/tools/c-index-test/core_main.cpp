@@ -126,8 +126,6 @@ static cl::opt<std::string>
 static cl::opt<std::string>
     OutputDir("output-dir", cl::desc("directory for module output files "
                                      "(defaults 'module-outputs')"));
-static cl::opt<bool> UseScanDepsV2("scandeps-v2",
-                                   cl::desc("use the old v2 scandeps API"));
 static cl::opt<bool>
     SerializeDiags("serialize-diagnostics",
                    cl::desc("module builds should serialize diagnostics"));
@@ -674,8 +672,7 @@ static void printSymbolNameAndUSR(const clang::Module *Mod, raw_ostream &OS) {
 
 static int scanDeps(ArrayRef<const char *> Args, std::string WorkingDirectory,
                     bool SerializeDiags, bool DependencyFile,
-                    ArrayRef<std::string> DepTargets, bool UseV2API,
-                    std::string OutputPath,
+                    ArrayRef<std::string> DepTargets, std::string OutputPath,
                     Optional<std::string> ModuleName = None) {
   CXDependencyScannerService Service =
       clang_experimental_DependencyScannerService_create_v0(
@@ -747,26 +744,11 @@ static int scanDeps(ArrayRef<const char *> Args, std::string WorkingDirectory,
 
 
   CXFileDependencies *Result = nullptr;
-  if (UseV2API) {
-    if (ModuleName) {
-      Result =
-          clang_experimental_DependencyScannerWorker_getDependenciesByModuleName_v0(
-              Worker, Args.size(), Args.data(), ModuleName->c_str(),
-              WorkingDirectory.c_str(), CB.Callback, CB.Context, &Error);
-    } else {
-      Result =
-          clang_experimental_DependencyScannerWorker_getFileDependencies_v2(
-              Worker, Args.size(), Args.data(), WorkingDirectory.c_str(),
-              CB.Callback, CB.Context, &Error);
-    }
-  } else {
-    // Current API
-    Result = clang_experimental_DependencyScannerWorker_getFileDependencies_v3(
-        Worker, Args.size(), Args.data(),
-        ModuleName ? ModuleName->c_str() : nullptr, WorkingDirectory.c_str(),
-        CB.Context, CB.Callback, LookupOutputCB.Context,
-        LookupOutputCB.Callback, /*Options=*/0, &Error);
-  }
+  Result = clang_experimental_DependencyScannerWorker_getFileDependencies_v3(
+      Worker, Args.size(), Args.data(),
+      ModuleName ? ModuleName->c_str() : nullptr, WorkingDirectory.c_str(),
+      CB.Context, CB.Callback, LookupOutputCB.Context, LookupOutputCB.Callback,
+      /*Options=*/0, &Error);
 
   if (!Result) {
     llvm::errs() << "error: failed to get dependencies\n";
@@ -1105,7 +1087,7 @@ int indextest_core_main(int argc, const char **argv) {
     }
     return scanDeps(CompArgs, options::InputFiles[0], options::SerializeDiags,
                     options::DependencyFile, options::DependencyTargets,
-                    options::UseScanDepsV2, options::OutputDir);
+                    options::OutputDir);
   }
 
   if (options::Action == ActionType::ScanDepsByModuleName) {
@@ -1120,8 +1102,7 @@ int indextest_core_main(int argc, const char **argv) {
     }
     return scanDeps(CompArgs, options::InputFiles[0], options::SerializeDiags,
                     options::DependencyFile, options::DependencyTargets,
-                    options::UseScanDepsV2, options::OutputDir,
-                    options::ModuleName);
+                    options::OutputDir, options::ModuleName);
   }
 
   if (options::Action == ActionType::WatchDir) {

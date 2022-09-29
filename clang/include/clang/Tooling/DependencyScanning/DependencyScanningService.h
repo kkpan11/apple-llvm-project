@@ -61,25 +61,26 @@ public:
       ScanningMode Mode, ScanningOutputFormat Format, CASOptions CASOpts,
       std::shared_ptr<llvm::cas::ActionCache> Cache,
       IntrusiveRefCntPtr<llvm::cas::CachingOnDiskFileSystem> SharedFS,
-      bool ReuseFileManager = true, bool OptimizeArgs = false);
-
-  ~DependencyScanningService();
+      bool ReuseFileManager = true, bool OptimizeArgs = false,
+      bool EagerLoadModules = false);
 
   ScanningMode getMode() const { return Mode; }
 
   ScanningOutputFormat getFormat() const { return Format; }
 
-  const CASOptions &getCASOpts() const { return CASOpts; }
-
   bool canReuseFileManager() const { return ReuseFileManager; }
 
   bool canOptimizeArgs() const { return OptimizeArgs; }
+
+  bool shouldEagerLoadModules() const { return EagerLoadModules; }
 
   DependencyScanningFilesystemSharedCache &getSharedCache() {
     assert(!SharedFS && "Expected not to have a CASFS");
     assert(SharedCache && "Expected a shared cache");
     return *SharedCache;
   }
+
+  const CASOptions &getCASOpts() const { return CASOpts; }
 
   llvm::cas::ActionCache &getCache() const {
     assert(Cache && "Cache is not initialized");
@@ -98,6 +99,8 @@ private:
   const bool ReuseFileManager;
   /// Whether to optimize the modules' command-line arguments.
   const bool OptimizeArgs;
+  /// Whether to set up command-lines to load PCM files eagerly.
+  const bool EagerLoadModules;
   /// Shared CachingOnDiskFileSystem. Set to nullptr to not use CAS dependency
   /// scanning.
   IntrusiveRefCntPtr<llvm::cas::CachingOnDiskFileSystem> SharedFS;

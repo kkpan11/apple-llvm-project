@@ -45,6 +45,9 @@ public:
   virtual void handleModuleDependency(ModuleDeps MD) = 0;
 
   virtual void handleContextHash(std::string Hash) = 0;
+
+  virtual std::string lookupModuleOutput(const ModuleID &ID,
+                                         ModuleOutputKind Kind) = 0;
 };
 
 // FIXME: This may need to merge with \p DependencyConsumer in order to support
@@ -74,6 +77,9 @@ protected:
   void handleContextHash(std::string Hash) override {
     llvm::report_fatal_error("unexpected callback for include-tree");
   }
+  std::string lookupModuleOutput(const ModuleID &, ModuleOutputKind) override {
+    llvm::report_fatal_error("unexpected callback for include-tree");
+  }
 };
 
 /// An individual dependency scanning worker that is able to run on its own
@@ -98,6 +104,8 @@ public:
                                   const std::vector<std::string> &CommandLine,
                                   DependencyConsumer &Consumer,
                                   llvm::Optional<StringRef> ModuleName = None);
+
+  bool shouldEagerLoadModules() const { return EagerLoadModules; }
 
   ScanningOutputFormat getFormat() const { return Format; }
 
@@ -131,21 +139,23 @@ private:
   llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> RealFS;
   /// The in-memory filesystem laid on top the physical filesystem in `RealFS`.
   llvm::IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> InMemoryFS;
-  /// The caching file system.
-  llvm::IntrusiveRefCntPtr<llvm::cas::CachingOnDiskFileSystem> CacheFS;
   /// The file system that is used by each worker when scanning for
   /// dependencies. This filesystem persists across multiple compiler
   /// invocations.
   llvm::IntrusiveRefCntPtr<DependencyScanningWorkerFilesystem> DepFS;
-  /// The CAS Dependency Filesytem. This is not set at the sametime as DepFS;
-  llvm::IntrusiveRefCntPtr<DependencyScanningCASFilesystem> DepCASFS;
   /// The file manager that is reused across multiple invocations by this
   /// worker. If null, the file manager will not be reused.
   llvm::IntrusiveRefCntPtr<FileManager> Files;
   ScanningOutputFormat Format;
   /// Whether to optimize the modules' command-line arguments.
   bool OptimizeArgs;
+  /// Whether to set up command-lines to load PCM files eagerly.
+  bool EagerLoadModules;
 
+  /// The caching file system.
+  llvm::IntrusiveRefCntPtr<llvm::cas::CachingOnDiskFileSystem> CacheFS;
+  /// The CAS Dependency Filesytem. This is not set at the sametime as DepFS;
+  llvm::IntrusiveRefCntPtr<DependencyScanningCASFilesystem> DepCASFS;
   CASOptions CASOpts;
   bool UseCAS;
 };
