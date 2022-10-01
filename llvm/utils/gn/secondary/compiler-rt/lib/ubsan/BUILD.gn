@@ -108,9 +108,11 @@ static_library("ubsan_static") {
   complete_static_lib = true
   configs -= [
     "//llvm/utils/gn/build:llvm_code",
+    "//llvm/utils/gn/build:no_rtti",
     "//llvm/utils/gn/build:thin_archive",
   ]
   configs += [ "//llvm/utils/gn/build:crt_code" ]
+  sources = [ "ubsan_init_standalone_preinit.cpp" ]
   deps = [
     ":sources",
     ":standalone_sources",
@@ -175,7 +177,7 @@ shared_library("ubsan_shared") {
     ":standalone_sources",
     ":version_script",
   ]
-  if (current_os != "mac") {
+  if (current_os != "mac" && current_os != "win") {
     inputs = [ "$target_gen_dir/ubsan.vers" ]
     ldflags =
         [ "-Wl,--version-script," + rebase_path(inputs[0], root_build_dir) ]
