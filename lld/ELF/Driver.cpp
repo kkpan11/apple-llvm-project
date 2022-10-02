@@ -15,7 +15,7 @@
 // linker path or library paths) for each host OS.
 //
 // I don't think implicit default values are useful because they are
-// usually explicitly specified by the compiler driver. They can even
+// usually explicitly specified by the compiler ctx.driver. They can even
 // be harmful when you are doing cross-linking. Therefore, in LLD, we
 // simply trust the compiler driver to pass all required options and
 // don't try to make effort on our side.
@@ -27,6 +27,7 @@
 #include "ICF.h"
 #include "InputFiles.h"
 #include "InputSection.h"
+#include "LTO.h"
 #include "LinkerScript.h"
 #include "MarkLive.h"
 #include "OutputSections.h"
@@ -75,7 +76,6 @@ using namespace lld::elf;
 
 ConfigWrapper elf::config;
 Ctx elf::ctx;
-std::unique_ptr<LinkerDriver> elf::driver;
 
 static void setConfigs(opt::InputArgList &args);
 static void readConfigs(opt::InputArgList &args);
@@ -88,6 +88,7 @@ void elf::errorOrWarn(const Twine &msg) {
 }
 
 void Ctx::reset() {
+  driver = LinkerDriver();
   memoryBuffers.clear();
   objectFiles.clear();
   sharedFiles.clear();
@@ -111,6 +112,7 @@ bool elf::link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
   ctx->e.initialize(stdoutOS, stderrOS, exitEarly, disableOutput);
   ctx->e.cleanupCallback = []() {
     elf::ctx.reset();
+    symtab = SymbolTable();
 
     inputSections.clear();
     ehInputSections.clear();
@@ -130,9 +132,7 @@ bool elf::link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
                                  "--error-limit=0 to see all errors)";
 
   config = ConfigWrapper();
-  driver = std::make_unique<LinkerDriver>();
   script = std::make_unique<LinkerScript>();
-  symtab = std::make_unique<SymbolTable>();
 
   symAux.emplace_back();
 
@@ -141,7 +141,7 @@ bool elf::link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
 
   config->progName = args[0];
 
-  driver->linkerMain(args);
+  elf::ctx.driver.linkerMain(args);
 
   return errorCount() == 0;
 }
@@ -1837,7 +1837,7 @@ static void handleUndefinedGlob(StringRef arg) {
   // Calling sym->extract() in the loop is not safe because it may add new
   // symbols to the symbol table, invalidating the current iterator.
   SmallVector<Symbol *, 0> syms;
-  for (Symbol *sym : symtab->getSymbols())
+  for (Symbol *sym : symtab.getSymbols())
     if (!sym->isPlaceholder() && pat->match(sym->getName()))
       syms.push_back(sym);
 
@@ -1846,7 +1846,7 @@ static void handleUndefinedGlob(StringRef arg) {
 }
 
 static void handleLibcall(StringRef name) {
-  Symbol *sym = symtab->find(name);
+  Symbol *sym = symtab.find(name);
   if (!sym || !sym->isLazy())
     return;
 
@@ -1879,7 +1879,7 @@ static void writeArchiveStats() {
   for (BitcodeFile *file : ctx.bitcodeFiles)
     if (file->archiveName.size())
       ++extracted[CachedHashStringRef(file->archiveName)];
-  for (std::pair<StringRef, unsigned> f : driver->archiveFiles) {
+  for (std::pair<StringRef, unsigned> f : ctx.driver.archiveFiles) {
     unsigned &v = extracted[CachedHashString(f.first)];
     os << f.second << '\t' << v << '\t' << f.first << '\n';
     // If the archive occurs multiple times, other instances have a count of 0.
@@ -2024,7 +2024,7 @@ static void replaceCommonSymbols() {
 // --no-allow-shlib-undefined diagnostics. Similarly, demote lazy symbols.
 static void demoteSharedAndLazySymbols() {
   llvm::TimeTraceScope timeScope("Demote shared and lazy symbols");
-  for (Symbol *sym : symtab->getSymbols()) {
+  for (Symbol *sym : symtab.getSymbols()) {
     auto *s = dyn_cast<SharedSymbol>(sym);
     if (!(s && !cast<SharedFile>(s->file)->isNeeded) && !sym->isLazy())
       continue;
@@ -2054,7 +2054,7 @@ template <class ELFT>
 static void findKeepUniqueSections(opt::InputArgList &args) {
   for (auto *arg : args.filtered(OPT_keep_unique)) {
     StringRef name = arg->getValue();
-    auto *d = dyn_cast_or_null<Defined>(symtab->find(name));
+    auto *d = dyn_cast_or_null<Defined>(symtab.find(name));
     if (!d || !d->section) {
       warn("could not find symbol " + name + " to keep unique");
       continue;
@@ -2069,7 +2069,7 @@ static void findKeepUniqueSections(opt::InputArgList &args) {
 
   // Symbols in the dynsym could be address-significant in other executables
   // or DSOs, so we conservatively mark them as address-significant.
-  for (Symbol *sym : symtab->getSymbols())
+  for (Symbol *sym : symtab.getSymbols())
     if (sym->includeInDynsym())
       markAddrsig(sym);
 
@@ -2152,7 +2152,7 @@ static void readSymbolPartitionSection(InputSectionBase *s) {
 
 static Symbol *addUnusedUndefined(StringRef name,
                                   uint8_t binding = STB_GLOBAL) {
-  return symtab->addSymbol(Undefined{nullptr, name, binding, STV_DEFAULT, 0});
+  return symtab.addSymbol(Undefined{nullptr, name, binding, STV_DEFAULT, 0});
 }
 
 static void markBuffersAsDontNeed(bool skipLinkedOutput) {
@@ -2236,7 +2236,7 @@ static std::vector<WrappedSymbol> addWrappedSymbols(opt::InputArgList &args) {
     if (!seen.insert(name).second)
       continue;
 
-    Symbol *sym = symtab->find(name);
+    Symbol *sym = symtab.find(name);
     if (!sym)
       continue;
 
@@ -2277,7 +2277,7 @@ static void combineVersionedSymbol(Symbol &sym,
   //
   // * There is a definition of foo@v1 and foo@@v1.
   // * There is a definition of foo@v1 and foo.
-  Defined *sym2 = dyn_cast_or_null<Defined>(symtab->find(sym.getName()));
+  Defined *sym2 = dyn_cast_or_null<Defined>(symtab.find(sym.getName()));
   if (!sym2)
     return;
   const char *suffix2 = sym2->getVersionSuffix();
@@ -2332,7 +2332,7 @@ static void redirectSymbols(ArrayRef<WrappedSymbol> wrapped) {
   // symbols with a non-default version (foo@v1) and check whether it should be
   // combined with foo or foo@@v1.
   if (config->versionDefinitions.size() > 2)
-    for (Symbol *sym : symtab->getSymbols())
+    for (Symbol *sym : symtab.getSymbols())
       if (sym->hasVersionSuffix)
         combineVersionedSymbol(*sym, map);
 
@@ -2348,7 +2348,7 @@ static void redirectSymbols(ArrayRef<WrappedSymbol> wrapped) {
 
   // Update pointers in the symbol table.
   for (const WrappedSymbol &w : wrapped)
-    symtab->wrap(w.sym, w.real, w.wrap);
+    symtab.wrap(w.sym, w.real, w.wrap);
 }
 
 static void checkAndReportMissingFeature(StringRef config, uint32_t features,
@@ -2502,7 +2502,7 @@ void LinkerDriver::link(opt::InputArgList &args) {
 
   // Handle --trace-symbol.
   for (auto *arg : args.filtered(OPT_trace_symbol))
-    symtab->insert(arg->getValue())->traced = true;
+    symtab.insert(arg->getValue())->traced = true;
 
   // Handle -u/--undefined before input files. If both a.a and b.so define foo,
   // -u foo a.a b.so will extract a.a.
@@ -2540,11 +2540,11 @@ void LinkerDriver::link(opt::InputArgList &args) {
 
   // Prevent LTO from removing any definition referenced by -u.
   for (StringRef name : config->undefined)
-    if (Defined *sym = dyn_cast_or_null<Defined>(symtab->find(name)))
+    if (Defined *sym = dyn_cast_or_null<Defined>(symtab.find(name)))
       sym->isUsedInRegularObj = true;
 
   // If an entry symbol is in a static archive, pull out that file now.
-  if (Symbol *sym = symtab->find(config->entry))
+  if (Symbol *sym = symtab.find(config->entry))
     handleUndefined(sym, "--entry");
 
   // Handle the `--undefined-glob <pattern>` options.
@@ -2552,9 +2552,9 @@ void LinkerDriver::link(opt::InputArgList &args) {
     handleUndefinedGlob(pat);
 
   // Mark -init and -fini symbols so that the LTO doesn't eliminate them.
-  if (Symbol *sym = dyn_cast_or_null<Defined>(symtab->find(config->init)))
+  if (Symbol *sym = dyn_cast_or_null<Defined>(symtab.find(config->init)))
     sym->isUsedInRegularObj = true;
-  if (Symbol *sym = dyn_cast_or_null<Defined>(symtab->find(config->fini)))
+  if (Symbol *sym = dyn_cast_or_null<Defined>(symtab.find(config->fini)))
     sym->isUsedInRegularObj = true;
 
   // If any of our inputs are bitcode files, the LTO code generator may create
@@ -2633,7 +2633,7 @@ void LinkerDriver::link(opt::InputArgList &args) {
   // name "foo@ver1") rather do harm, so we don't call this if -r is given.
   if (!config->relocatable) {
     llvm::TimeTraceScope timeScope("Process symbol versions");
-    symtab->scanVersionScript();
+    symtab.scanVersionScript();
   }
 
   // Skip the normal linked output if some LTO options are specified.
