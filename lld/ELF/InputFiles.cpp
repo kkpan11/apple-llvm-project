@@ -324,7 +324,7 @@ std::string InputFile::getSrcMsg(const Symbol &sym, InputSectionBase &sec,
                                  uint64_t offset) {
   if (kind() != ObjKind)
     return "";
-  switch (config->ekind) {
+  switch (ekind) {
   default:
     llvm_unreachable("Invalid kind");
   case ELF32LEKind:
@@ -449,22 +449,6 @@ Optional<DILineInfo> ObjFile<ELFT>::getDILineInfo(InputSectionBase *s,
 ELFFileBase::ELFFileBase(Kind k, ELFKind ekind, MemoryBufferRef mb)
     : InputFile(k, mb) {
   this->ekind = ekind;
-  switch (ekind) {
-  case ELF32LEKind:
-    init<ELF32LE>(k);
-    break;
-  case ELF32BEKind:
-    init<ELF32BE>(k);
-    break;
-  case ELF64LEKind:
-    init<ELF64LE>(k);
-    break;
-  case ELF64BEKind:
-    init<ELF64BE>(k);
-    break;
-  default:
-    llvm_unreachable("getELFKind");
-  }
 }
 
 template <typename Elf_Shdr>
@@ -473,6 +457,25 @@ static const Elf_Shdr *findSection(ArrayRef<Elf_Shdr> sections, uint32_t type) {
     if (sec.sh_type == type)
       return &sec;
   return nullptr;
+}
+
+void ELFFileBase::init() {
+  switch (ekind) {
+  case ELF32LEKind:
+    init<ELF32LE>(fileKind);
+    break;
+  case ELF32BEKind:
+    init<ELF32BE>(fileKind);
+    break;
+  case ELF64LEKind:
+    init<ELF64LE>(fileKind);
+    break;
+  case ELF64BEKind:
+    init<ELF64BE>(fileKind);
+    break;
+  default:
+    llvm_unreachable("getELFKind");
+  }
 }
 
 template <class ELFT> void ELFFileBase::init(InputFile::Kind k) {
@@ -558,9 +561,9 @@ template <class ELFT> void ObjFile<ELFT>::parse(bool ignoreComdats) {
           check(this->getObj().getSectionContents(sec));
       StringRef name = check(obj.getSectionName(sec, shstrtab));
       this->sections[i] = &InputSection::discarded;
-      if (Error e = attributes.parse(contents, config->ekind == ELF32LEKind
-                                                   ? support::little
-                                                   : support::big)) {
+      if (Error e =
+              attributes.parse(contents, ekind == ELF32LEKind ? support::little
+                                                              : support::big)) {
         InputSection isec(*this, sec, name);
         warn(toString(&isec) + ": " + llvm::toString(std::move(e)));
       } else {
@@ -1233,6 +1236,7 @@ template <class ELFT>
 static bool isNonCommonDef(ELFKind ekind, MemoryBufferRef mb, StringRef symName,
                            StringRef archiveName) {
   ObjFile<ELFT> *obj = make<ObjFile<ELFT>>(ekind, mb, archiveName);
+  obj->init();
   StringRef stringtable = obj->getStringTable();
 
   for (auto sym : obj->template getGlobalELFSyms<ELFT>()) {
@@ -1754,6 +1758,7 @@ ELFFileBase *elf::createObjFile(MemoryBufferRef mb, StringRef archiveName,
   default:
     llvm_unreachable("getELFKind");
   }
+  f->init();
   f->lazy = lazy;
   return f;
 }
