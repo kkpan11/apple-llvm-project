@@ -16,6 +16,7 @@
 #include "clang/AST/Decl.h"
 #include "clang/Basic/Diagnostic.h"
 #include "llvm/ADT/PointerIntPair.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/iterator_range.h"
@@ -44,11 +45,11 @@ public:
   enum ScopeFlags {
     /// This indicates that the scope corresponds to a function, which
     /// means that labels are set here.
-    FnScope       = 0x01,
+    FnScope = 0x01,
 
     /// This is a while, do, switch, for, etc that can have break
     /// statements embedded into it.
-    BreakScope    = 0x02,
+    BreakScope = 0x02,
 
     /// This is a while, do, for, which can have continue statements
     /// embedded into it.
@@ -196,7 +197,7 @@ private:
   /// popped, these declarations are removed from the IdentifierTable's notion
   /// of current declaration.  It is up to the current Action implementation to
   /// implement these semantics.
-  using DeclSetTy = llvm::SmallPtrSet<Decl *, 32>;
+  using DeclSetTy = llvm::SmallSetVector<Decl *, 32>;
   DeclSetTy DeclsInScope;
 
   /// The DeclContext with which this scope is associated. For
@@ -238,19 +239,15 @@ public:
   const Scope *getFnParent() const { return FnParent; }
   Scope *getFnParent() { return FnParent; }
 
-  const Scope *getMSLastManglingParent() const {
-    return MSLastManglingParent;
-  }
+  const Scope *getMSLastManglingParent() const { return MSLastManglingParent; }
   Scope *getMSLastManglingParent() { return MSLastManglingParent; }
 
   /// getContinueParent - Return the closest scope that a continue statement
   /// would be affected by.
-  Scope *getContinueParent() {
-    return ContinueParent;
-  }
+  Scope *getContinueParent() { return ContinueParent; }
 
   const Scope *getContinueParent() const {
-    return const_cast<Scope*>(this)->getContinueParent();
+    return const_cast<Scope *>(this)->getContinueParent();
   }
 
   // Set whether we're in the scope of a condition variable, where 'continue'
@@ -260,17 +257,13 @@ public:
             (InConditionVarScope ? ConditionVarScope : 0);
   }
 
-  bool isConditionVarScope() const {
-    return Flags & ConditionVarScope;
-  }
+  bool isConditionVarScope() const { return Flags & ConditionVarScope; }
 
   /// getBreakParent - Return the closest scope that a break statement
   /// would be affected by.
-  Scope *getBreakParent() {
-    return BreakParent;
-  }
+  Scope *getBreakParent() { return BreakParent; }
   const Scope *getBreakParent() const {
-    return const_cast<Scope*>(this)->getBreakParent();
+    return const_cast<Scope *>(this)->getBreakParent();
   }
 
   Scope *getBlockParent() { return BlockParent; }
@@ -284,9 +277,7 @@ public:
 
   /// Returns the number of function prototype scopes in this scope
   /// chain.
-  unsigned getFunctionPrototypeDepth() const {
-    return PrototypeDepth;
-  }
+  unsigned getFunctionPrototypeDepth() const { return PrototypeDepth; }
 
   /// Return the number of parameters declared in this function
   /// prototype, increasing it by one for the next call.
@@ -303,11 +294,9 @@ public:
 
   bool decl_empty() const { return DeclsInScope.empty(); }
 
-  void AddDecl(Decl *D) {
-    DeclsInScope.insert(D);
-  }
+  void AddDecl(Decl *D) { DeclsInScope.insert(D); }
 
-  void RemoveDecl(Decl *D) { DeclsInScope.erase(D); }
+  void RemoveDecl(Decl *D) { DeclsInScope.remove(D); }
 
   void incrementMSManglingNumber() {
     if (Scope *MSLMP = getMSLastManglingParent()) {
@@ -329,13 +318,13 @@ public:
     return 1;
   }
 
-  unsigned getMSCurManglingNumber() const {
-    return MSCurManglingNumber;
-  }
+  unsigned getMSCurManglingNumber() const { return MSCurManglingNumber; }
 
   /// isDeclScope - Return true if this is the scope that the specified decl is
   /// declared in.
-  bool isDeclScope(const Decl *D) const { return DeclsInScope.contains(D); }
+  bool isDeclScope(const Decl *D) const {
+    return DeclsInScope.contains(const_cast<Decl *>(D));
+  }
 
   /// Get the entity corresponding to this scope.
   DeclContext *getEntity() const {
@@ -424,9 +413,7 @@ public:
   }
 
   /// isAtCatchScope - Return true if this scope is \@catch.
-  bool isAtCatchScope() const {
-    return getFlags() & Scope::AtCatchScope;
-  }
+  bool isAtCatchScope() const { return getFlags() & Scope::AtCatchScope; }
 
   /// isCatchScope - Return true if this scope is a C++ catch statement.
   bool isCatchScope() const { return getFlags() & Scope::CatchScope; }
@@ -436,10 +423,10 @@ public:
     for (const Scope *S = this; S; S = S->getParent()) {
       if (S->getFlags() & Scope::SwitchScope)
         return true;
-      else if (S->getFlags() & (Scope::FnScope | Scope::ClassScope |
-                                Scope::BlockScope | Scope::TemplateParamScope |
-                                Scope::FunctionPrototypeScope |
-                                Scope::AtCatchScope | Scope::ObjCMethodScope))
+      else if (S->getFlags() &
+               (Scope::FnScope | Scope::ClassScope | Scope::BlockScope |
+                Scope::TemplateParamScope | Scope::FunctionPrototypeScope |
+                Scope::AtCatchScope | Scope::ObjCMethodScope))
         return false;
     }
     return false;
@@ -507,7 +494,7 @@ public:
   ///
   /// The caller is responsible for calling this only if one of the two scopes
   /// is an ancestor of the other.
-  bool Contains(const Scope& rhs) const { return Depth < rhs.Depth; }
+  bool Contains(const Scope &rhs) const { return Depth < rhs.Depth; }
 
   /// containedInPrototypeScope - Return true if this or a parent scope
   /// is a FunctionPrototypeScope.
