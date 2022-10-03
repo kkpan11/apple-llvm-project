@@ -12,12 +12,40 @@
 #include "llvm/BinaryFormat/MachO.h"
 #include "llvm/CAS/CASID.h"
 #include "llvm/CAS/ObjectStore.h"
+#include "llvm/DebugInfo/DWARF/DWARFCompileUnit.h"
+#include "llvm/DebugInfo/DWARF/DWARFContext.h"
+#include "llvm/DebugInfo/DWARF/DWARFDataExtractor.h"
+#include "llvm/DebugInfo/DWARF/DWARFDebugAbbrev.h"
+#include "llvm/DebugInfo/DWARF/DWARFDebugLine.h"
 #include "llvm/MC/CAS/MCCASFormatSchemaBase.h"
 #include "llvm/MC/CAS/MCCASReader.h"
 #include "llvm/MC/MCAsmLayout.h"
+#include "llvm/Support/BinaryStreamReader.h"
+#include "llvm/Support/DataExtractor.h"
 #include "llvm/Support/Endian.h"
 
 namespace llvm {
+
+template <> struct DenseMapInfo<llvm::dwarf::Form> {
+  static llvm::dwarf::Form getEmptyKey() {
+    return static_cast<llvm::dwarf::Form>(
+        DenseMapInfo<uint16_t>::getEmptyKey());
+  }
+
+  static llvm::dwarf::Form getTombstoneKey() {
+    return static_cast<llvm::dwarf::Form>(
+        DenseMapInfo<uint16_t>::getTombstoneKey());
+  }
+
+  static unsigned getHashValue(const llvm::dwarf::Form &OVal) {
+    return DenseMapInfo<uint16_t>::getHashValue(OVal);
+  }
+
+  static bool isEqual(const llvm::dwarf::Form &LHS,
+                      const llvm::dwarf::Form &RHS) {
+    return LHS == RHS;
+  }
+};
 namespace mccasformats {
 namespace v1 {
 
@@ -306,11 +334,18 @@ struct DwarfSectionsCache {
   MCSection *Str;
   MCSection *Abbrev;
 };
-
+/// This struct represents the result of properly converting all the information
+/// in the debug info section into cas objects. CURefs are the cas objects for
+/// the compile units, AbbrevRefs are the cas objects for their abbreviation
+/// contributions, AbbrevOffsetsRef is a cas object that contains the
+/// abbreviation offset for every compile unit, and DebugDistinctDataRef is a
+/// cas object contains the information from every compile unit that will not
+/// deduplicate.
 struct AbbrevAndDebugSplit {
   SmallVector<DebugInfoCURef> CURefs;
   SmallVector<DebugAbbrevRef> AbbrevRefs;
   Optional<DebugAbbrevOffsetsRef> AbbrevOffsetsRef;
+  Optional<DebugInfoDistinctDataRef> DebugDistinctDataRef;
 };
 
 /// Helper class to allow reusing the logic of encoding/decoding Abbreviation
@@ -332,6 +367,11 @@ private:
 /// Queries `Asm` for all dwarf sections and returns an object with (possibly
 /// null) pointers to them.
 DwarfSectionsCache getDwarfSections(MCAssembler &Asm);
+
+/// Reads and returns the length field of a dwarf header contained in Reader,
+/// assuming Reader is positioned at the beginning of the header. The Reader's
+/// state is advanced to the first byte after the section.
+Expected<size_t> getSizeFromDwarfHeaderAndSkip(BinaryStreamReader &Reader);
 
 class MCCASBuilder {
 public:
@@ -413,7 +453,8 @@ private:
   /// If CURefs is non-empty, create a SectionRef CAS object with edges to all
   /// CURefs. Otherwise, no objects are created and `success` is returned.
   Error createDebugInfoSection(ArrayRef<DebugInfoCURef> CURefs,
-                               DebugAbbrevOffsetsRef AbbrevOffsetsRef);
+                               DebugAbbrevOffsetsRef AbbrevOffsetsRef,
+                               DebugInfoDistinctDataRef DebugDistinctDataRef);
 
   /// If AbbrevRefs is non-empty, create a SectionRef CAS object with edges to all
   /// AbbrevRefs. Otherwise, no objects are created and `success` is returned.
@@ -422,10 +463,11 @@ private:
   /// Split the Dwarf Abbrev section using `AbbrevOffsets` (possibly unsorted)
   /// as the split points for the section, creating one DebugAbbrevRef per
   /// _unique_ offset in the input.
-  /// Returns a sequence of DebbugAbbrevRefs, sorted by the order in which they
+  /// Returns a sequence of DebugAbbrevRefs, sorted by the order in which they
   /// should appear in the object file.
   Expected<SmallVector<DebugAbbrevRef>>
-  splitAbbrevSection(ArrayRef<size_t> AbbrevOffsets);
+  splitAbbrevSection(ArrayRef<size_t> AbbrevOffsets,
+                     ArrayRef<char> FullAbbrevData);
 
   struct CUSplit {
     SmallVector<MutableArrayRef<char>> SplitCUData;
@@ -474,6 +516,13 @@ public:
     return Target.isLittleEndian() ? support::little : support::big;
   }
 
+  Expected<MCObjectProxy> getObjectProxy(cas::ObjectRef ID) {
+    auto Node = MCObjectProxy::get(Schema, Schema.CAS.getProxy(ID));
+    if (!Node)
+      return Node.takeError();
+    return Node;
+  }
+
   Triple::ArchType getArch() { return Target.getArch(); }
 
   Expected<uint64_t> materializeGroup(cas::ObjectRef ID);
@@ -483,6 +532,80 @@ public:
 private:
   const Triple &Target;
   const MCSchema &Schema;
+};
+
+/// A DWARFObject implementation that can be used to dwarfdump CAS-formatted
+/// debug info.
+class InMemoryCASDWARFObject : public DWARFObject {
+  ArrayRef<char> DebugAbbrevSection;
+  bool IsLittleEndian;
+
+public:
+  InMemoryCASDWARFObject(ArrayRef<char> AbbrevContents, bool IsLittleEndian)
+      : DebugAbbrevSection(AbbrevContents), IsLittleEndian(IsLittleEndian) {}
+  bool isLittleEndian() const override { return IsLittleEndian; }
+
+  StringRef getAbbrevSection() const override {
+    return toStringRef(DebugAbbrevSection);
+  }
+
+  Optional<RelocAddrEntry> find(const DWARFSection &Sec,
+                                uint64_t Pos) const override {
+    return {};
+  }
+
+  /// This struct represents the Data in one Compile Unit. The DistinctData is
+  /// the data that doesn't deduplicate and must be stored separately, the
+  /// DebugInfoRefData is the data that is stored in one DebugInfoCURef cas
+  /// object and will deduplicate for a link ODR function.
+  struct PartitionedDebugInfoSection {
+    SmallVector<char, 0> DebugInfoCURefData;
+    SmallVector<char, 0> DistinctData;
+    constexpr static std::array FormsToPartition{
+        llvm::dwarf::Form::DW_FORM_strp, llvm::dwarf::Form::DW_FORM_sec_offset};
+  };
+
+  /// Create a DwarfCompileUnit that represents the compile unit at \p CUOffset
+  /// in the debug info section, and iterate over the individual DIEs to
+  /// identify and separate the Forms that do not deduplicate in
+  /// PartitionedDebugInfoSection::FormsToPartition and those that do
+  /// deduplicate. Store both kinds of Forms in their own buffers per compile
+  /// unit.
+  Expected<PartitionedDebugInfoSection>
+  splitUpCUData(ArrayRef<char> DebugInfoData, uint64_t AbbrevOffset,
+                uint64_t CUOffset, DWARFContext *Ctx);
+};
+
+class DebugInfoSectionRef : public SpecificRef<DebugInfoSectionRef> {
+  using SpecificRefT = SpecificRef<DebugInfoSectionRef>;
+  friend class SpecificRef<DebugInfoSectionRef>;
+
+public:
+  static constexpr StringLiteral KindString = "mc:debug_info_section";
+  static Expected<DebugInfoSectionRef> create(MCCASBuilder &MB,
+                                              ArrayRef<cas::ObjectRef> IDs);
+  static Expected<DebugInfoSectionRef> get(Expected<MCObjectProxy> Ref) {
+    auto Specific = SpecificRefT::getSpecific(std::move(Ref));
+    if (!Specific)
+      return Specific.takeError();
+    return DebugInfoSectionRef(*Specific);
+  }
+  static Expected<DebugInfoSectionRef> get(const MCSchema &Schema,
+                                           cas::ObjectRef ID) {
+    return get(Schema.get(ID));
+  }
+  static Optional<DebugInfoSectionRef> Cast(MCObjectProxy Ref) {
+    auto Specific = SpecificRefT::Cast(Ref);
+    if (!Specific)
+      return None;
+    return DebugInfoSectionRef(*Specific);
+  }
+  Expected<uint64_t> materialize(MCCASReader &Reader,
+                                 ArrayRef<char> AbbrevSectionContents,
+                                 raw_ostream *Stream = nullptr) const;
+
+private:
+  explicit DebugInfoSectionRef(SpecificRefT Ref) : SpecificRefT(Ref) {}
 };
 
 } // namespace v1

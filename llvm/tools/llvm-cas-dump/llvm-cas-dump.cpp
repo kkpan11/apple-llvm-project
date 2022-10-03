@@ -38,6 +38,10 @@ cl::opt<bool>
 
 cl::opt<bool> HexDumpOneLine("hex-dump-one-line",
                              cl::desc("Print out the hex dump in one line"));
+cl::opt<bool>
+    ShowForm("show-form",
+             cl::desc("Print out the DW_FORMs in the dwarfdump output"));
+cl::opt<bool> Verbose("v", cl::desc("Enable verbse output in the dwarfdump"));
 
 namespace {
 
@@ -62,8 +66,9 @@ int main(int argc, char *argv[]) {
   ExitOnErr.setBanner(std::string(argv[0]) + ": ");
 
   cl::ParseCommandLineOptions(argc, argv);
-  PrinterOptions Options = {DwarfSectionsOnly, DwarfDump, DebugAbbrevOffsets,
-                            HexDump, HexDumpOneLine};
+  PrinterOptions Options = {
+      DwarfSectionsOnly, DwarfDump, DebugAbbrevOffsets, HexDump, HexDumpOneLine,
+      ShowForm,          Verbose};
 
   std::unique_ptr<ObjectStore> CAS = ExitOnErr(createOnDiskCAS(CASPath));
   MCCASPrinter Printer(Options, *CAS, llvm::outs());
@@ -77,7 +82,13 @@ int main(int argc, char *argv[]) {
       return 1;
     }
 
-    ExitOnErr(Printer.printMCObject(*Ref));
+    // Do one pass over all CASObjectRefs to discover debug info section
+    // contents
+    auto Obj = Printer.discoverDwarfSections(*Ref);
+    if (!Obj)
+      ExitOnErr(Obj.takeError());
+
+    ExitOnErr(Printer.printMCObject(*Ref, *Obj));
   }
   return 0;
 }

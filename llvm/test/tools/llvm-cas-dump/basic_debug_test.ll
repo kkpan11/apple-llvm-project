@@ -1,6 +1,8 @@
 ; RUN: llc -O0 --filetype=obj --cas-backend --cas=%t.casdb --mccas-casid -o %t.casid %s
 ; RUN: llvm-cas-dump --cas=%t.casdb --dwarf-sections-only --debug-abbrev-offsets --casid-file %t.casid | FileCheck %s
 ; RUN: llvm-cas-dump --cas=%t.casdb --dwarf-sections-only --dwarf-dump --casid-file %t.casid | FileCheck %s --check-prefix=DWARF
+; RUN: llvm-cas-dump --cas=%t.casdb --dwarf-sections-only --dwarf-dump --show-form --casid-file %t.casid | FileCheck %s --check-prefix=DWARF-FORM
+; RUN: llvm-cas-dump --cas=%t.casdb --dwarf-sections-only --dwarf-dump --v --casid-file %t.casid | FileCheck %s --check-prefix=DWARF-VERBOSE
 
 ; This test is created from a C program like:
 ; int foo() { return 10; }
@@ -8,10 +10,11 @@
 ; CHECK:      mc:assembler  llvmcas://{{.*}}
 ; CHECK-NEXT:   mc:header  llvmcas://{{.*}}
 ; CHECK-NEXT:   mc:group  llvmcas://{{.*}}
-; CHECK-NEXT:     mc:section  llvmcas://{{.*}}
+; CHECK-NEXT:     mc:debug_abbrev_section  llvmcas://{{.*}}
 ; CHECK-NEXT:       mc:debug_abbrev  llvmcas://{{.*}}
 ; CHECK-NEXT:       mc:padding  llvmcas://{{.*}}
 ; CHECK-NEXT:     mc:debug_info_section  llvmcas://{{.*}}
+; CHECK-NEXT:       mc:debug_info_distinct_data  llvmcas://{{.*}}
 ; CHECK-NEXT:       mc:debug_abbrev_offsets  llvmcas://{{.*}}
 ; CHECK-NEXT:         0
 ; CHECK-NEXT:       mc:debug_info_cu  llvmcas://{{.*}}
@@ -64,6 +67,20 @@
 ; DWARF: 0x0000000000000000      2      0      1   0             0  is_stmt
 ; DWARF: 0x0000000000000004      3      3      1   0             0  is_stmt prologue_end
 ; DWARF: 0x0000000000000008      3      3      1   0             0  is_stmt end_sequence
+
+; DWARF-FORM: mc:debug_info_cu
+; DWARF-FORM-NEXT: Compile Unit: length = 0x00000047, format = DWARF32, version = 0x0004, abbr_offset = 0x0000, addr_size = 0x08
+; DWARF-FORM: DW_TAG_compile_unit
+; DWARF-FORM-NEXT: DW_AT_producer [DW_FORM_strp]	("some_clang")
+; DWARF-FORM-NEXT: DW_AT_language [DW_FORM_data2]	(DW_LANG_C99)
+; DWARF-FORM-NEXT: DW_AT_name [DW_FORM_strp]	("test.c")
+; DWARF-FORM-NEXT: DW_AT_stmt_list [DW_FORM_sec_offset]	(0x00000000)
+; DWARF-FORM-NEXT: DW_AT_comp_dir [DW_FORM_strp]	("some_dir")
+; DWARF-FORM-NEXT: DW_AT_low_pc [DW_FORM_addr]	(0x0000000000000000)
+; DWARF-FORM-NEXT: DW_AT_high_pc [DW_FORM_data4]	(0x00000008)
+
+; DWARF-VERBOSE: 0x00000000: Compile Unit: length = 0x00000047, format = DWARF32, version = 0x0004, abbr_offset = 0x0000, addr_size = 0x08 (next unit at 0x0000004b)
+; DWARF-VERBOSE: 0x0000000b: DW_TAG_compile_unit [1] *
 
 target triple = "arm64-apple-macosx12.0.0"
 
