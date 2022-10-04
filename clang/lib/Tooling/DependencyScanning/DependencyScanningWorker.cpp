@@ -482,8 +482,6 @@ DependencyScanningWorker::DependencyScanningWorker(
 
 llvm::IntrusiveRefCntPtr<FileManager>
 DependencyScanningWorker::getOrCreateFileManager() const {
-  if (Files)
-    return Files;
   return new FileManager(FileSystemOptions(), RealFS);
 }
 
