@@ -217,11 +217,11 @@ public:
   Expected<NameRef> getName() const {
     return NameRef::get(getSchema(), getNameID());
   }
-  jitlink::MemProt getMemProt() const;
+  orc::MemProt getMemProt() const;
 
   static Expected<SectionRef> create(const ObjectFileSchema &Schema,
                                      NameRef SectionName,
-                                     jitlink::MemProt MemProt);
+                                     orc::MemProt MemProt);
   static Expected<SectionRef> create(const ObjectFileSchema &Schema,
                                      const jitlink::Section &S);
 

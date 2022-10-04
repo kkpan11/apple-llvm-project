@@ -14,8 +14,8 @@
 #include "llvm/CASObjectFormats/CASObjectReader.h"
 #include "llvm/CASObjectFormats/Encoding.h"
 #include "llvm/CASObjectFormats/ObjectFormatHelpers.h"
-#include "llvm/ExecutionEngine/JITLink/MemoryFlags.h"
 #include "llvm/ExecutionEngine/Orc/Shared/ExecutorAddress.h"
+#include "llvm/ExecutionEngine/Orc/Shared/MemoryFlags.h"
 #include "llvm/Support/EndianStream.h"
 #include "llvm/Support/Mutex.h"
 #include "llvm/Support/Threading.h"
@@ -599,7 +599,7 @@ Expected<TargetListRef> TargetListRef::create(const ObjectFileSchema &Schema,
 
 Expected<SectionRef> SectionRef::create(const ObjectFileSchema &Schema,
                                         NameRef SectionName,
-                                        jitlink::MemProt MemProt) {
+                                        orc::MemProt MemProt) {
   Expected<Builder> B = Builder::startNode(Schema, KindString);
   if (!B)
     return B.takeError();
@@ -612,7 +612,7 @@ Expected<SectionRef> SectionRef::create(const ObjectFileSchema &Schema,
   return get(B->build());
 }
 
-jitlink::MemProt SectionRef::getMemProt() const {
+orc::MemProt SectionRef::getMemProt() const {
   return decodeProtectionFlags((data::SectionProtectionFlags)getData()[0]);
 }
 

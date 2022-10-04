@@ -57,11 +57,11 @@ TEST(NestedV1SchemaTest, Section) {
   jitlink::LinkGraph G("graph", Triple("x86_64-apple-darwin"), 8,
                        support::little, jitlink::getGenericEdgeKindName);
   jitlink::Section *Sections[]{
-      &G.createSection("read", jitlink::MemProt::Read),
-      &G.createSection("write", jitlink::MemProt::Write),
-      &G.createSection("exec", jitlink::MemProt::Exec),
-      &G.createSection("all", jitlink::MemProt::Read | jitlink::MemProt::Write |
-                                  jitlink::MemProt::Exec),
+      &G.createSection("read", orc::MemProt::Read),
+      &G.createSection("write", orc::MemProt::Write),
+      &G.createSection("exec", orc::MemProt::Exec),
+      &G.createSection("all", orc::MemProt::Read | orc::MemProt::Write |
+                                  orc::MemProt::Exec),
   };
 
   std::unique_ptr<cas::ObjectStore> CAS = cas::createInMemoryCAS();
@@ -87,7 +87,7 @@ TEST(NestedV1SchemaTest, BlockData) {
   jitlink::LinkGraph G("graph", Triple("x86_64-apple-darwin"), 8,
                        support::little, jitlink::getGenericEdgeKindName);
   jitlink::Section &Section =
-      G.createSection("section", jitlink::MemProt::Exec);
+      G.createSection("section", orc::MemProt::Exec);
   orc::ExecutorAddr Addr1(0x0);
   orc::ExecutorAddr Addr2(0x40);
   jitlink::Block *Blocks[] = {
@@ -127,9 +127,9 @@ TEST(NestedV1SchemaTest, LeafBlock) {
   jitlink::LinkGraph G("graph", Triple("x86_64-apple-darwin"), 8,
                        support::little, jitlink::getGenericEdgeKindName);
   jitlink::Section &Section1 =
-      G.createSection("section1", jitlink::MemProt::Exec);
+      G.createSection("section1", orc::MemProt::Exec);
   jitlink::Section &Section2 =
-      G.createSection("section2", jitlink::MemProt::Exec);
+      G.createSection("section2", orc::MemProt::Exec);
   orc::ExecutorAddr Addr1(0x0);
   orc::ExecutorAddr Addr2(0x40);
   jitlink::Block *Blocks[] = {
@@ -176,7 +176,7 @@ TEST(NestedV1SchemaTest, SymbolFlags) {
   jitlink::LinkGraph G("graph", Triple("x86_64-apple-darwin"), 8,
                        support::little, jitlink::getGenericEdgeKindName);
   jitlink::Section &Section =
-      G.createSection("section", jitlink::MemProt::Exec);
+      G.createSection("section", orc::MemProt::Exec);
   orc::ExecutorAddr Addr(0x0);
   jitlink::Block &Block =
       G.createContentBlock(Section, BlockContent, Addr, 16, 0);
@@ -236,7 +236,7 @@ TEST(NestedV1SchemaTest, BlockSymbols) {
   jitlink::LinkGraph G("graph", Triple("x86_64-apple-darwin"), 8,
                        support::little, jitlink::getGenericEdgeKindName);
   jitlink::Section &Section =
-      G.createSection("section", jitlink::MemProt::Exec);
+      G.createSection("section", orc::MemProt::Exec);
   orc::ExecutorAddr Addr(0x0);
   jitlink::Block &Block =
       G.createContentBlock(Section, BlockContent, Addr, 16, 0);
@@ -290,7 +290,7 @@ TEST(NestedV1SchemaTest, SymbolTable) {
   jitlink::LinkGraph G("graph", Triple("x86_64-apple-darwin"), 8,
                        support::little, jitlink::getGenericEdgeKindName);
   jitlink::Section &Section =
-      G.createSection("section", jitlink::MemProt::Exec);
+      G.createSection("section", orc::MemProt::Exec);
   orc::ExecutorAddr Addr(0x0);
   jitlink::Block &Block =
       G.createContentBlock(Section, BlockContent, Addr, 16, 0);
@@ -352,7 +352,7 @@ TEST(NestedV1SchemaTest, BlockWithEdges) {
   jitlink::LinkGraph G("graph", Triple("x86_64-apple-darwin"), 8,
                        support::little, jitlink::getGenericEdgeKindName);
   jitlink::Section &Section =
-      G.createSection("section", jitlink::MemProt::Exec);
+      G.createSection("section", orc::MemProt::Exec);
   jitlink::Symbol &S1 = G.addExternalSymbol("S1", 0, false);
   jitlink::Symbol &S2 = G.addExternalSymbol("S2", 0, false);
 
@@ -463,7 +463,7 @@ TEST(NestedV1SchemaTest, RoundTrip) {
   jitlink::LinkGraph G("graph", Triple("x86_64-apple-darwin"), 8,
                        support::little, jitlink::getGenericEdgeKindName);
   jitlink::Section &Section =
-      G.createSection("section", jitlink::MemProt::Exec);
+      G.createSection("section", orc::MemProt::Exec);
   jitlink::Symbol &S1 = G.addExternalSymbol("S1", 0, false);
   jitlink::Symbol &S2 = G.addExternalSymbol("S2", 0, true);
 
@@ -629,7 +629,7 @@ TEST(NestedV1SchemaTest, RoundTripBlockOrder) {
   jitlink::LinkGraph G("graph", Triple("x86_64-apple-darwin"), 8,
                        support::little, jitlink::getGenericEdgeKindName);
   jitlink::Section &Section =
-      G.createSection("section", jitlink::MemProt::Exec);
+      G.createSection("section", orc::MemProt::Exec);
 
   orc::ExecutorAddr Addr(0x0);
   auto createBlock = [&]() -> jitlink::Block & {
@@ -702,7 +702,7 @@ TEST(NestedV1SchemaTest, ModInitFuncSection) {
   jitlink::LinkGraph G("graph", Triple("x86_64-apple-darwin"), 8,
                        support::little, jitlink::getGenericEdgeKindName);
   jitlink::Section &Section =
-      G.createSection("__DATA,__mod_init_func", jitlink::MemProt::Exec);
+      G.createSection("__DATA,__mod_init_func", orc::MemProt::Exec);
   orc::ExecutorAddr Addr(0x0);
   jitlink::Block &Block =
       G.createContentBlock(Section, BlockContent, Addr, 16, 0);

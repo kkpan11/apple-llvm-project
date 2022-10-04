@@ -2374,8 +2374,8 @@ Error CASSchemaFile::parse(ObjectFormatSchemaPool &CASSchemas, ObjectRef ID) {
         segname = secName;
       }
       containsPureInstructions =
-          bool(section.Prot & jitlink::MemProt::Exec) &&
-          !(unsigned(section.Prot) & unsigned(jitlink::MemProt::Write));
+          bool(section.Prot & orc::MemProt::Exec) &&
+          !(unsigned(section.Prot) & unsigned(orc::MemProt::Write));
       isCommonSection = secName == "__common";
     }
   };

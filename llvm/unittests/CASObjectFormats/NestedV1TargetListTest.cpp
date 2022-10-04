@@ -33,7 +33,7 @@ protected:
   void SetUp() override {
     G.emplace("graph", Triple("x86_64-apple-darwin"), 8, support::little,
               jitlink::getGenericEdgeKindName);
-    Section = &G->createSection("section", jitlink::MemProt::Exec);
+    Section = &G->createSection("section", orc::MemProt::Exec);
     orc::ExecutorAddr Addr(0x0);
     Z = &G->createZeroFillBlock(*Section, 256, Addr, 256, 0);
     DefinedS =

@@ -31,7 +31,7 @@ TEST(FlatV1SchemaTest, RoundTrip) {
   jitlink::LinkGraph G("graph", Triple("x86_64-apple-darwin"), 8,
                        support::little, jitlink::getGenericEdgeKindName);
   jitlink::Section &Section =
-      G.createSection("section", jitlink::MemProt::Exec);
+      G.createSection("section", orc::MemProt::Exec);
   jitlink::Symbol &S1 = G.addExternalSymbol("S1", 0, false);
   jitlink::Symbol &S2 = G.addExternalSymbol("S2", 0, true);
 

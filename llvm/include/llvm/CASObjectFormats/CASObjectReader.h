@@ -12,7 +12,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/CAS/CASID.h"
 #include "llvm/CAS/ObjectStore.h"
-#include "llvm/ExecutionEngine/JITLink/MemoryFlags.h"
+#include "llvm/ExecutionEngine/Orc/Shared/MemoryFlags.h"
 #include "llvm/Support/Error.h"
 
 namespace llvm {
@@ -48,7 +48,7 @@ struct CASSymbolRef {
 
 struct CASSection {
   StringRef Name;
-  jitlink::MemProt Prot;
+  orc::MemProt Prot;
 };
 
 struct CASBlock {
