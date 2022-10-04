@@ -53,22 +53,20 @@ enum class ScanningOutputFormat {
   IncludeTree,
 };
 
-/// The dependency scanning service contains the shared state that is used by
-/// the invidual dependency scanning workers.
+/// The dependency scanning service contains shared configuration and state that
+/// is used by the individual dependency scanning workers.
 class DependencyScanningService {
 public:
   DependencyScanningService(
       ScanningMode Mode, ScanningOutputFormat Format, CASOptions CASOpts,
       std::shared_ptr<llvm::cas::ActionCache> Cache,
       IntrusiveRefCntPtr<llvm::cas::CachingOnDiskFileSystem> SharedFS,
-      bool ReuseFileManager = true, bool OptimizeArgs = false,
-      bool EagerLoadModules = false, bool OverrideCASTokenCache = false);
+      bool OptimizeArgs = false, bool EagerLoadModules = false,
+      bool OverrideCASTokenCache = false);
 
   ScanningMode getMode() const { return Mode; }
 
   ScanningOutputFormat getFormat() const { return Format; }
-
-  bool canReuseFileManager() const { return ReuseFileManager; }
 
   bool canOptimizeArgs() const { return OptimizeArgs; }
 
@@ -97,7 +95,6 @@ private:
   const ScanningOutputFormat Format;
   CASOptions CASOpts;
   std::shared_ptr<llvm::cas::ActionCache> Cache;
-  const bool ReuseFileManager;
   /// Whether to optimize the modules' command-line arguments.
   const bool OptimizeArgs;
   /// Whether to set up command-lines to load PCM files eagerly.
