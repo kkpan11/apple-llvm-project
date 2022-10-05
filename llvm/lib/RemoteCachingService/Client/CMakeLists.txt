@@ -1,19 +1,11 @@
-add_subdirectory(RemoteCacheProto)
-add_subdirectory(RemoteCacheServer)
-add_subdirectory(Client)
-
 set(LLVM_LINK_COMPONENTS
   RemoteCacheKVProto
   RemoteCacheCASProto
-  RemoteCacheClient
   )
 
 include_directories($<TARGET_PROPERTY:LLVMRemoteCacheKVProto,BINARY_DIR>)
 include_directories($<TARGET_PROPERTY:LLVMRemoteCacheCASProto,BINARY_DIR>)
 
-add_llvm_library(LLVMRemoteCachingService
-  GRPCRelayCAS.cpp
-
-  LINK_COMPONENTS
-  CAS
+add_llvm_library(LLVMRemoteCacheClient
+  Client.cpp
 )

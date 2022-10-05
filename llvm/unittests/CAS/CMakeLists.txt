@@ -26,5 +26,8 @@ target_link_libraries(CASTests PRIVATE LLVMTestingSupport)
 if(LLVM_CAS_ENABLE_REMOTE_CACHE)
   include_directories($<TARGET_PROPERTY:LLVMRemoteCacheKVProto,BINARY_DIR>)
   include_directories($<TARGET_PROPERTY:LLVMRemoteCacheCASProto,BINARY_DIR>)
-  target_link_libraries(CASTests PRIVATE LLVMRemoteCachingService)
+  target_link_libraries(CASTests PRIVATE
+    LLVMRemoteCachingService
+    LLVMRemoteCacheServer
+  )
 endif()

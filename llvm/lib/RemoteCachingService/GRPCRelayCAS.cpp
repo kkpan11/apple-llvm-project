@@ -12,6 +12,7 @@
 #include "llvm/CAS/ObjectStore.h"
 #include "llvm/CAS/ThreadSafeAllocator.h"
 #include "llvm/Config/config.h"
+#include "llvm/RemoteCachingService/Client.h"
 #include "llvm/RemoteCachingService/RemoteCachingService.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/FileSystem.h"
@@ -20,16 +21,8 @@
 
 #define DEBUG_TYPE "grpc-cas"
 
-#include "compilation_caching_cas.grpc.pb.h"
-#include "compilation_caching_kv.grpc.pb.h"
-#include <grpcpp/grpcpp.h>
-#include <grpcpp/support/status.h>
-
 using namespace llvm;
 using namespace llvm::cas;
-using namespace compilation_cache_service::cas::v1;
-using namespace compilation_cache_service::keyvalue::v1;
-using namespace grpc;
 
 namespace {
 
@@ -204,52 +197,14 @@ private:
     return I.Data.loadOrGenerate(Generator);
   }
 
-  CASDataID createCASDataID(ObjectRef Ref) {
+  std::string getDataIDFromRef(ObjectRef Ref) {
     StringRef Hash =
         toStringRef(asInMemoryIndexValue(Ref).Hash).take_front(ServiceHashSize);
-    CASDataID ID;
-    ID.set_id(Hash.str());
-    return ID;
-  }
-
-  CASObject createCASObject(ArrayRef<ObjectRef> Refs, ArrayRef<char> Data) {
-    CASObject D;
-    D.mutable_blob()->set_data(toStringRef(Data).str());
-    for (ObjectRef Ref : Refs) {
-      CASDataID *NewRef = D.add_references();
-      StringRef HashStr = toStringRef(asInMemoryIndexValue(Ref).Hash)
-                              .take_front(ServiceHashSize);
-      NewRef->set_id(HashStr.str());
-    }
-    return D;
-  }
-
-  CASBlob createCASBlob(StringRef Data) {
-    CASBlob D;
-    D.mutable_blob()->set_data(Data.str());
-    return D;
-  }
-
-  CASObject createCASObject(StringRef Path) {
-    CASObject D;
-    D.mutable_blob()->set_file_path(Path.str());
-    return D;
-  }
-
-  Error createUnknownObjectError(ObjectRef Ref) const {
-    CASID ID = getID(Ref);
-    return createStringError(std::make_error_code(std::errc::invalid_argument),
-                             "unknown object '" + ID.toString() + "'");
-  }
-
-  Error createGRPCResponseError(
-      const compilation_cache_service::cas::v1::ResponseError &RE) const {
-    return createStringError(std::make_error_code(std::errc::bad_message),
-                             "grpc error: " + RE.description());
+    return Hash.str();
   }
 
   // Stub for compile_cache_service.
-  std::unique_ptr<CASDBService::Stub> CASStub;
+  std::unique_ptr<CASDBClient> CASDB;
 
   // Index to manage the remote CAS.
   mutable InMemoryIndexT Index;
@@ -262,30 +217,16 @@ private:
 
 class GRPCActionCache : public ActionCache {
 public:
-  GRPCActionCache(StringRef Path);
+  GRPCActionCache(StringRef Path, Error &Err);
 
   Expected<Optional<CASID>> getImpl(ArrayRef<uint8_t> ResolvedKey) const final;
   Error putImpl(ArrayRef<uint8_t> ResolvedKey, const CASID &Result) final;
 
 private:
-  Error createGRPCResponseError(
-      const compilation_cache_service::keyvalue::v1::ResponseError &RE) const {
-    return createStringError(std::make_error_code(std::errc::bad_message),
-                             "grpc error: " + RE.description());
-  }
-
-  std::unique_ptr<KeyValueDB::Stub> KVStub;
+  std::unique_ptr<KeyValueDBClient> KVDB;
 };
 
 } // namespace
-
-static Error createGRPCStatusError(const Status &Status) {
-  if (Status.ok())
-    return Error::success();
-  return createStringError(std::make_error_code(std::errc::connection_aborted),
-                           "grpc error (" + toStringRef(Status.error_code()) +
-                               "): " + Status.error_message());
-}
 
 const GRPCCASContext &GRPCCASContext::getDefaultContext() {
   static GRPCCASContext DefaultContext;
@@ -296,30 +237,22 @@ void GRPCCASContext::anchor() {}
 GRPCRelayCAS::GRPCRelayCAS(StringRef Path, Error &Err)
     : ObjectStore(GRPCCASContext::getDefaultContext()) {
   ErrorAsOutParameter ErrAsOutParam(&Err);
-  std::string Address("unix:");
-  Address += Path;
-  ChannelArguments Args;
-  Args.SetMaxReceiveMessageSize(INT_MAX);
-  Args.SetMaxSendMessageSize(INT_MAX);
-  const auto Channel = grpc::CreateCustomChannel(
-      std::move(Address), grpc::InsecureChannelCredentials(), Args);
-  CASStub = CASDBService::NewStub(Channel);
+  auto DB = createRemoteCASDBClient(Path);
+  if (!DB) {
+    Err = DB.takeError();
+    return;
+  }
+  CASDB = std::move(*DB);
 
   // Send a put request to the CAS to determine hash size.
-  CASPutRequest Request;
-  ClientContext Context;
-  CASPutResponse Response;
-  Request.mutable_data()->CopyFrom(createCASObject(None, ""));
-  grpc::Status Status = CASStub->Put(&Context, Request, &Response);
-  if (!Status.ok()) {
-    Err = createGRPCStatusError(Status);
+  auto &SaveQueue = CASDB->saveQueue();
+  SaveQueue.saveDataAsync("");
+  auto Response = SaveQueue.receiveNext();
+  if (!Response) {
+    Err = Response.takeError();
     return;
   }
-  if (Response.has_error()) {
-    Err = createGRPCResponseError(Response.error());
-    return;
-  }
-  ServiceHashSize = Response.cas_id().id().size();
+  ServiceHashSize = Response->CASID.size();
   if (ServiceHashSize > 80)
     Err = createStringError(std::make_error_code(std::errc::message_size),
                             "Hash from CASService is too long");
@@ -349,21 +282,17 @@ Expected<CASID> GRPCRelayCAS::parseID(StringRef Reference) {
 
 Expected<ObjectRef> GRPCRelayCAS::store(ArrayRef<ObjectRef> Refs,
                                         ArrayRef<char> Data) {
-  // Send CASPutRequest.
-  // TODO: Async API. Maybe check local CAS first to decide if needs to go
-  // remote?
-  CASPutRequest Request;
-  ClientContext Context;
-  CASPutResponse Response;
-  Request.mutable_data()->CopyFrom(createCASObject(Refs, Data));
-  grpc::Status Status = CASStub->Put(&Context, Request, &Response);
-  if (!Status.ok())
-    return createGRPCStatusError(Status);
+  auto &PutQueue = CASDB->putQueue();
+  SmallVector<std::string> RefIDs;
+  for (auto Ref: Refs)
+    RefIDs.emplace_back(getDataIDFromRef(Ref));
 
-  if (Response.has_error())
-    return createGRPCResponseError(Response.error());
+  PutQueue.putDataAsync(toStringRef(Data).str(), RefIDs);
+  auto Response = PutQueue.receiveNext();
+  if (!Response)
+    return Response.takeError();
 
-  auto &I = indexHash(arrayRefFromStringRef(Response.cas_id().id()));
+  auto &I = indexHash(arrayRefFromStringRef(Response->CASID));
   // Create the node.
   SmallVector<const InMemoryIndexValueT *> InternalRefs;
   for (ObjectRef Ref : Refs)
@@ -403,34 +332,23 @@ Expected<ObjectHandle> GRPCRelayCAS::load(ObjectRef Ref) {
   // can't return nullptr to indicate failed load now, we can't lock the entry
   // into busy state. we will send parallel loads and put one of the result into
   // the local CAS.
-  CASGetRequest Request;
-  ClientContext Context;
-  CASGetResponse Response;
-  Request.mutable_cas_id()->CopyFrom(createCASDataID(Ref));
-  Request.set_write_to_disk(false);
-  grpc::Status Status = CASStub->Get(&Context, Request, &Response);
-  if (!Status.ok())
-    return createGRPCStatusError(Status);
-  auto Outcome = Response.outcome();
-  if (Outcome == CASGetResponse_Outcome_OBJECT_NOT_FOUND)
-    return createUnknownObjectError(Ref);
-  if (Response.has_error())
-    return createGRPCResponseError(Response.error());
+  auto &GetQueue = CASDB->getQueue();
+  GetQueue.getAsync(getDataIDFromRef(Ref));
+  auto Response = GetQueue.receiveNext();
+  if (!Response)
+    return Response.takeError();
 
   SmallVector<const InMemoryIndexValueT *> InternalRefs;
-  for (const CASDataID &ID : Response.data().references()) {
-    auto &Ref = indexHash(arrayRefFromStringRef(ID.id()));
+  for (auto &ID : Response->Refs) {
+    auto &Ref = indexHash(arrayRefFromStringRef(ID));
     InternalRefs.push_back(&Ref);
   }
-  if (Response.data().blob().has_file_path()) {
-    auto MB = MemoryBuffer::getFile(Response.data().blob().file_path());
-    if (!MB)
-      return errorCodeToError(MB.getError());
-    return getObjectHandle(storeObjectImpl(
-        I, InternalRefs, arrayRefFromStringRef<char>((*MB)->getBuffer())));
-  }
-  std::string Data = Response.data().blob().data();
-  ArrayRef<char> Content(Data.data(), Data.size());
+  if (!Response->BlobData)
+    return createStringError(std::make_error_code(std::errc::invalid_argument),
+                             "Expect result to be returned in buffer");
+
+  ArrayRef<char> Content(Response->BlobData->data(),
+                         Response->BlobData->size());
   return getObjectHandle(storeObjectImpl(I, InternalRefs, Content));
 }
 
@@ -470,42 +388,32 @@ GRPCRelayCAS::storeFromOpenFileImpl(sys::fs::file_t FD,
   if (EC)
     return errorCodeToError(EC);
 
+  auto &SaveQueue = CASDB->saveQueue();
   ArrayRef<char> Data(Map.data(), Map.size());
-  CASPutRequest Request;
-  ClientContext Context;
-  CASPutResponse Response;
   SmallString<128> Path;
   if (sys::fs::getRealPathFromHandle(FD, Path))
-    Request.mutable_data()->CopyFrom(createCASObject(Path));
+    SaveQueue.saveFileAsync(Path.str().str());
   else
-    Request.mutable_data()->CopyFrom(createCASObject(None, Data));
+    SaveQueue.saveDataAsync(toStringRef(Data).str());
 
+  auto Response = SaveQueue.receiveNext();
+  if (!Response)
+    return Response.takeError();
 
-  grpc::Status Status = CASStub->Put(&Context, Request, &Response);
-  if (!Status.ok())
-    return createGRPCStatusError(Status);
-  if (Response.has_error())
-    return createGRPCResponseError(Response.error());
-
-  auto &I = indexHash(arrayRefFromStringRef(Response.cas_id().id()));
+  auto &I = indexHash(arrayRefFromStringRef(Response->CASID));
   // TODO: we can avoid the copy by implementing InMemoryRef object like
   // InMemoryCAS.
   return toReference(storeObjectImpl(I, None, Data));
 }
 
 Expected<ObjectRef> GRPCRelayCAS::storeFile(StringRef Content) {
-  CASSaveRequest Request;
-  ClientContext Context;
-  CASSaveResponse Response;
-  Request.mutable_data()->CopyFrom(createCASBlob(Content));
-  grpc::Status Status = CASStub->Save(&Context, Request, &Response);
-  if (!Status.ok())
-    return createGRPCStatusError(Status);
+  auto &SaveQueue = CASDB->saveQueue();
+  SaveQueue.saveDataAsync(Content.str());
+  auto Response = SaveQueue.receiveNext();
+  if (!Response)
+    return Response.takeError();
 
-  if (Response.has_error())
-    return createGRPCResponseError(Response.error());
-
-  auto &I = indexHash(arrayRefFromStringRef(Response.cas_id().id()));
+  auto &I = indexHash(arrayRefFromStringRef(Response->CASID));
   ArrayRef<char> Data = arrayRefFromStringRef<char>(Content);
   return toReference(storeObjectImpl(I, {}, Data));
 }
@@ -519,19 +427,9 @@ Expected<StringRef> GRPCRelayCAS::loadFile(ObjectRef Ref) {
     return toStringRef(Existing->getData());
   }
 
-  CASLoadRequest Request;
-  ClientContext Context;
-  CASLoadResponse Response;
-  Request.mutable_cas_id()->CopyFrom(createCASDataID(Ref));
-  Request.set_write_to_disk(false);
-  grpc::Status Status = CASStub->Load(&Context, Request, &Response);
-  if (!Status.ok())
-    return createGRPCStatusError(Status);
-  auto Outcome = Response.outcome();
-  if (Outcome == CASLoadResponse_Outcome_OBJECT_NOT_FOUND)
-    return createUnknownObjectError(Ref);
-  if (Response.has_error())
-    return createGRPCResponseError(Response.error());
+  auto &LoadQueue = CASDB->loadQueue();
+  LoadQueue.loadAsync(getDataIDFromRef(Ref));
+  auto Response = LoadQueue.receiveNext();
 
   auto getDataAsStringRef =
       [&](Expected<ObjectHandle> Handle) -> Expected<StringRef> {
@@ -539,65 +437,49 @@ Expected<StringRef> GRPCRelayCAS::loadFile(ObjectRef Ref) {
       return Handle.takeError();
     return toStringRef(getData(*Handle));
   };
-  if (Response.data().blob().has_file_path()) {
-    auto MB = MemoryBuffer::getFile(Response.data().blob().file_path());
-    if (!MB)
-      return errorCodeToError(MB.getError());
-    return getDataAsStringRef(getObjectHandle(storeObjectImpl(
-        I, None, arrayRefFromStringRef<char>((*MB)->getBuffer()))));
-  }
-  std::string Data = Response.data().blob().data();
+  assert(Response->BlobData && "Expect the result to be returned in Blob");
+  std::string Data = *Response->BlobData;
   ArrayRef<char> Content(Data.data(), Data.size());
   return getDataAsStringRef(getObjectHandle(storeObjectImpl(I, {}, Content)));
 }
 
-GRPCActionCache::GRPCActionCache(StringRef Path)
+GRPCActionCache::GRPCActionCache(StringRef Path, Error &Err)
     : ActionCache(GRPCCASContext::getDefaultContext()) {
-  std::string Address("unix:");
-  Address += Path;
-  ChannelArguments Args;
-  const auto Channel = grpc::CreateCustomChannel(
-      std::move(Address), grpc::InsecureChannelCredentials(), Args);
-  KVStub = KeyValueDB::NewStub(std::move(Channel));
+  ErrorAsOutParameter ErrAsOutParam(&Err);
+  auto Cache = createRemoteKeyValueClient(Path);
+  if (!Cache) {
+    Err = Cache.takeError();
+    return;
+  }
+  KVDB = std::move(*Cache);
 }
 
 Expected<Optional<CASID>>
 GRPCActionCache::getImpl(ArrayRef<uint8_t> ResolvedKey) const {
-  GetValueRequest Request;
-  ClientContext Context;
-  GetValueResponse Response;
-  Request.set_key(toStringRef(ResolvedKey).str());
-  grpc::Status Status = KVStub->GetValue(&Context, Request, &Response);
-  if (!Status.ok())
-    return createGRPCStatusError(Status);
-
-  if (Response.has_error())
-    return createGRPCResponseError(Response.error());
-
-  auto Outcome = Response.outcome();
-  if (Outcome == GetValueResponse_Outcome_KEY_NOT_FOUND)
+  auto &GetValueQueue = KVDB->getValueQueue();
+  GetValueQueue.getValueAsync(ResolvedKey);
+  auto Response = GetValueQueue.receiveNext();
+  if (!Response)
+    return Response.takeError();
+  if (!Response->Value)
     return None;
 
-  std::string Value = Response.value().entries().at("CASID");
+  auto Result = Response->Value->find("CASID");
+  if (Result == Response->Value->end())
+    return None;
+  std::string Value = Result->getValue();
   return CASID::create(&getContext(), Value);
 }
 
 Error GRPCActionCache::putImpl(ArrayRef<uint8_t> ResolvedKey,
                                const CASID &Result) {
-  PutValueRequest Request;
-  ClientContext Context;
-  PutValueResponse Response;
-  std::string InputStr = toStringRef(ResolvedKey).str();
-  std::string OutputStr = toStringRef(Result.getHash()).str();
-  // Store the CASID in the CASID dictionary field.
-  Request.mutable_value()->mutable_entries()->insert({"CASID", OutputStr});
-  Request.set_key(InputStr);
-  grpc::Status Status = KVStub->PutValue(&Context, Request, &Response);
-  if (!Status.ok())
-    return createGRPCStatusError(Status);
-
-  if (Response.has_error())
-    return createGRPCResponseError(Response.error());
+  auto &PutValueQueue = KVDB->putValueQueue();
+  llvm::cas::KeyValueDBClient::ValueTy CompResult;
+  CompResult["CASID"] = toStringRef(Result.getHash()).str();
+  PutValueQueue.putValueAsync(ResolvedKey, CompResult);
+  auto Response = PutValueQueue.receiveNext();
+  if (!Response)
+    return Response.takeError();
 
   return Error::success();
 }
@@ -614,7 +496,11 @@ cas::createGRPCRelayCAS(const Twine &Path) {
 
 Expected<std::unique_ptr<cas::ActionCache>>
 cas::createGRPCActionCache(StringRef Path) {
-  return std::make_unique<GRPCActionCache>(Path);
+  Error Err = Error::success();
+  auto Cache = std::make_unique<GRPCActionCache>(Path, Err);
+  if (Err)
+    return std::move(Err);
+  return Cache;
 }
 
 RegisterGRPCCAS::RegisterGRPCCAS() {

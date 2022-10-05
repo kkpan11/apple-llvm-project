@@ -6,12 +6,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "RemoteCacheServer.h"
+#include "llvm/RemoteCachingService/RemoteCacheServer.h"
 #include "RemoteCacheProvider.h"
+#include "llvm/CAS/ActionCache.h"
+#include "llvm/CAS/ObjectStore.h"
 #include <grpcpp/grpcpp.h>
 
 using namespace llvm;
-using namespace remote_cache_test;
+using namespace llvm::cas;
 using namespace compilation_cache_service::cas::v1;
 using namespace compilation_cache_service::keyvalue::v1;
 
@@ -36,7 +38,7 @@ public:
 
   ~Implementation() { Shutdown(); }
 
-  void Run() {
+  void Start() {
     std::string Address("unix:");
     Address += SocketPath;
 
@@ -48,7 +50,9 @@ public:
     CQ = Builder.AddCompletionQueue();
     // Finally assemble the server.
     Server = Builder.BuildAndStart();
+  }
 
+  void Wait() {
     // Proceed to the server's main loop.
     HandleRpcs();
   }
@@ -97,6 +101,22 @@ private:
 
     static constexpr auto ProviderFunc = &RemoteCacheProvider::CASSaveAsync;
     static constexpr auto ServiceRequest = &ServiceT::RequestSave;
+  };
+
+  template <> struct RequestTraits<CASGetRequest> {
+    using ResponseT = CASGetResponse;
+    using ServiceT = CASDBService::AsyncService;
+
+    static constexpr auto ProviderFunc = &RemoteCacheProvider::CASGetAsync;
+    static constexpr auto ServiceRequest = &ServiceT::RequestGet;
+  };
+
+  template <> struct RequestTraits<CASPutRequest> {
+    using ResponseT = CASPutResponse;
+    using ServiceT = CASDBService::AsyncService;
+
+    static constexpr auto ProviderFunc = &RemoteCacheProvider::CASPutAsync;
+    static constexpr auto ServiceRequest = &ServiceT::RequestPut;
   };
 
   // Class encompasing the state and logic needed to serve a request.
@@ -182,6 +202,10 @@ private:
                                        CacheProvider.get());
     new RequestHandler<CASSaveRequest>(&CASService, CQ.get(),
                                        CacheProvider.get());
+    new RequestHandler<CASGetRequest>(&CASService, CQ.get(),
+                                      CacheProvider.get());
+    new RequestHandler<CASPutRequest>(&CASService, CQ.get(),
+                                      CacheProvider.get());
 
     void *tag; // uniquely identifies a request.
     bool ok;
@@ -206,16 +230,17 @@ private:
 
 RemoteCacheServer::~RemoteCacheServer() = default;
 
-void RemoteCacheServer::Run() { return Impl->Run(); }
-
+void RemoteCacheServer::Start() { return Impl->Start(); }
+void RemoteCacheServer::Wait() { return Impl->Wait(); }
 void RemoteCacheServer::Shutdown() { return Impl->Shutdown(); }
 
 RemoteCacheServer::RemoteCacheServer(
     std::unique_ptr<RemoteCacheServer::Implementation> Impl)
     : Impl(std::move(Impl)) {}
 
-RemoteCacheServer remote_cache_test::createServer(
-    StringRef SocketPath, std::unique_ptr<RemoteCacheProvider> CacheProvider) {
-  return RemoteCacheServer(std::make_unique<RemoteCacheServer::Implementation>(
-      SocketPath, std::move(CacheProvider)));
-}
+RemoteCacheServer::RemoteCacheServer(StringRef SocketPath, StringRef TempPath,
+                                     std::unique_ptr<ObjectStore> CAS,
+                                     std::unique_ptr<ActionCache> Cache)
+    : RemoteCacheServer(std::make_unique<RemoteCacheServer::Implementation>(
+          SocketPath, createLLVMCASCacheProvider(TempPath, std::move(CAS),
+                                                 std::move(Cache)))) {}

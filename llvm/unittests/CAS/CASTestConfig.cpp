@@ -44,14 +44,15 @@ INSTANTIATE_TEST_SUITE_P(OnDiskCAS, CASTest, ::testing::Values(createOnDisk));
 #endif /* LLVM_ENABLE_ONDISK_CAS */
 
 #if LLVM_CAS_ENABLE_REMOTE_CACHE
-std::unique_ptr<unittest::cas::MockEnv> createGRPCEnv(StringRef Path);
+std::unique_ptr<unittest::cas::MockEnv> createGRPCEnv(StringRef Socket,
+                                                      StringRef TempDir);
 
 static TestingAndDir createGRPCCAS(int I) {
   std::unique_ptr<ObjectStore> CAS;
   unittest::TempDir Temp("daemon", /*Unique=*/true);
   SmallString<100> DaemonPath(Temp.path());
   sys::path::append(DaemonPath, "grpc");
-  auto Env = createGRPCEnv(DaemonPath);
+  auto Env = createGRPCEnv(DaemonPath, Temp.path());
   EXPECT_THAT_ERROR(createGRPCRelayCAS(DaemonPath).moveInto(CAS), Succeeded());
   std::unique_ptr<ActionCache> Cache;
   EXPECT_THAT_ERROR(createGRPCActionCache(DaemonPath).moveInto(Cache),
