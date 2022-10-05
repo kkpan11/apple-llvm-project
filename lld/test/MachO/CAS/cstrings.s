@@ -20,17 +20,17 @@
 // CHECK: movq	%rdi, -8(%rsp)
 
 // CHECK: Contents of section __TEXT,__cstring:
-// CHECK:  1000003d0 68656c6c 6f00776f 726c6400 2100      hello.world.!.
+// CHECK:  68656c6c 6f00776f 726c6400 2100      hello.world.!.
 // CHECK: Contents of section __DATA,__data:
-// CHECK:  100001000 d0030000 01000000 d6030000 01000000
-// CHECK:  100001010 dc030000 01000000
+// CHECK:  00040000 01000000 06040000 01000000
+// CHECK:  0c040000 01000000
 
 // CHECK: SYMBOL TABLE:
-// CHECK: 00000001000003c0 l     F __TEXT,__text _puts_stub
-// CHECK: 0000000100000380 g     F __TEXT,__text _main
-// CHECK: 0000000100001000 g     O __DATA,__data _svar1
-// CHECK: 0000000100001008 g     O __DATA,__data _svar2
-// CHECK: 0000000100001010 g     O __DATA,__data _svar3
+// CHECK: l     F __TEXT,__text _puts_stub
+// CHECK: g     F __TEXT,__text _main
+// CHECK: g     O __DATA,__data _svar1
+// CHECK: g     O __DATA,__data _svar2
+// CHECK: g     O __DATA,__data _svar3
 
 
 ## This is assembly output of:
