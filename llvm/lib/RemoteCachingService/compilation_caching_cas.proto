@@ -1,14 +1,24 @@
+//===--- compilation_caching_cas.proto - CAS service definition -----------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
 syntax = "proto3";
 
 option java_multiple_files = true;
-option java_package = "org.llvm.compilation_cache_service";
+option java_package = "com.apple.dt.compilation_cache_service";
 option java_outer_classname = "CompilationCachingProto";
 option objc_class_prefix = "CCS";
 
 package compilation_cache_service.cas.v1;
 
 // MARK: - Data types
-message CASDataID { bytes id = 1; }
+message CASDataID {
+  bytes id = 1;
+}
 
 // `CASObject` and `CASBlob` should be wire compatible.
 message CASObject {
@@ -17,7 +27,9 @@ message CASObject {
 }
 
 // `CASObject` and `CASBlob` should be wire compatible.
-message CASBlob { CASBytes blob = 1; }
+message CASBlob {
+    CASBytes blob = 1;
+}
 
 message CASBytes {
   oneof contents {
@@ -42,7 +54,9 @@ message ResponseError { string description = 1; }
 // MARK: - Service request/response types
 
 // MARK: Put
-message CASPutRequest { CASObject data = 1; }
+message CASPutRequest {
+  CASObject data = 1;
+}
 
 message CASPutResponse {
   oneof contents {
@@ -54,8 +68,8 @@ message CASPutResponse {
 // MARK: Get
 message CASGetRequest {
   CASDataID cas_id = 1;
-  // If set, the client asks for the service to write the blob part to disk,
-  // with a file path of the service's choosing.
+  // If set, the client asks for the service to write the blob part to disk, with a
+  // file path of the service's choosing.
   //
   // However this is not a hard requirement, the service can still choose to
   // return the blob back as `bytes`. The client should always check whether
@@ -69,6 +83,7 @@ message CASGetRequest {
 message CASGetResponse {
   enum Outcome {
     ERROR = 0; // if unset, we'll get error
+
     OBJECT_NOT_FOUND = 1;
     SUCCESS = 2;
   }
@@ -80,7 +95,9 @@ message CASGetResponse {
 }
 
 // MARK: Save
-message CASSaveRequest { CASBlob data = 1; }
+message CASSaveRequest {
+  CASBlob data = 1;
+}
 
 message CASSaveResponse {
   oneof contents {
@@ -92,8 +109,8 @@ message CASSaveResponse {
 // MARK: Load
 message CASLoadRequest {
   CASDataID cas_id = 1;
-  // If set, the client asks for the service to write the blob part to disk,
-  // with a file path of the service's choosing.
+  // If set, the client asks for the service to write the blob part to disk, with a
+  // file path of the service's choosing.
   //
   // However this is not a hard requirement, the service can still choose to
   // return the blob back as `bytes`. The client should always check whether
@@ -107,6 +124,7 @@ message CASLoadRequest {
 message CASLoadResponse {
   enum Outcome {
     ERROR = 0; // if unset, we'll get error
+
     OBJECT_NOT_FOUND = 1;
     SUCCESS = 2;
   }

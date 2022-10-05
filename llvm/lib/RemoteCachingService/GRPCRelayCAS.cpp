@@ -20,8 +20,6 @@
 
 #define DEBUG_TYPE "grpc-cas"
 
-#if LLVM_ENABLE_GRPC_CAS
-
 #include "compilation_caching_cas.grpc.pb.h"
 #include "compilation_caching_kv.grpc.pb.h"
 #include <grpcpp/grpcpp.h>
@@ -622,23 +620,3 @@ cas::createGRPCActionCache(StringRef Path) {
 RegisterGRPCCAS::RegisterGRPCCAS() {
   cas::registerCASURLScheme("grpc://", &cas::createGRPCRelayCAS);
 }
-
-#else /* LLVM_ENABLE_GRPC_CAS */
-
-using namespace llvm;
-
-Expected<std::unique_ptr<cas::ObjectStore>>
-cas::createGRPCRelayCAS(const Twine &Path) {
-  return createStringError(inconvertibleErrorCode(),
-                           "GRPCRelayCAS is disabled");
-}
-
-Expected<std::unique_ptr<cas::ActionCache>>
-cas::createGRPCActionCache(StringRef Path) {
-  return createStringError(inconvertibleErrorCode(),
-                           "GRPCActionCache is disabled");
-}
-
-cas::RegisterGRPCCAS::RegisterGRPCCAS() {}
-
-#endif /* LLVM_ENABLE_GRPC_CAS */

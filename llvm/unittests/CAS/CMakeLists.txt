@@ -23,8 +23,8 @@ add_llvm_unittest(CASTests
 
 target_link_libraries(CASTests PRIVATE LLVMTestingSupport)
 
-if(LLVM_ENABLE_GRPC_CAS)
-  include_directories($<TARGET_PROPERTY:LLVMRemoteCachingKVProto,BINARY_DIR>)
-  include_directories($<TARGET_PROPERTY:LLVMRemoteCachingCASProto,BINARY_DIR>)
+if(LLVM_CAS_ENABLE_REMOTE_CACHE)
+  include_directories($<TARGET_PROPERTY:LLVMRemoteCacheKVProto,BINARY_DIR>)
+  include_directories($<TARGET_PROPERTY:LLVMRemoteCacheCASProto,BINARY_DIR>)
   target_link_libraries(CASTests PRIVATE LLVMRemoteCachingService)
 endif()

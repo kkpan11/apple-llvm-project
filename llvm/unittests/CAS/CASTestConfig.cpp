@@ -43,7 +43,7 @@ TestingAndDir createOnDisk(int I) {
 INSTANTIATE_TEST_SUITE_P(OnDiskCAS, CASTest, ::testing::Values(createOnDisk));
 #endif /* LLVM_ENABLE_ONDISK_CAS */
 
-#if LLVM_ENABLE_GRPC_CAS
+#if LLVM_CAS_ENABLE_REMOTE_CACHE
 std::unique_ptr<unittest::cas::MockEnv> createGRPCEnv(StringRef Path);
 
 static TestingAndDir createGRPCCAS(int I) {
@@ -61,4 +61,4 @@ static TestingAndDir createGRPCCAS(int I) {
 }
 INSTANTIATE_TEST_SUITE_P(GRPCRelayCAS, CASTest,
                          ::testing::Values(createGRPCCAS));
-#endif /* LLVM_ENABLE_GRPC_CAS */
+#endif /* LLVM_CAS_ENABLE_REMOTE_CACHE */

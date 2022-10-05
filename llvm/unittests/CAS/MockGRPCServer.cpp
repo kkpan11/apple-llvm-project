@@ -19,7 +19,7 @@
 
 #include "CASTestConfig.h"
 
-#if LLVM_ENABLE_GRPC_CAS
+#if LLVM_CAS_ENABLE_REMOTE_CACHE
 
 #include "compilation_caching_cas.grpc.pb.h"
 #include "compilation_caching_kv.grpc.pb.h"
@@ -244,4 +244,4 @@ std::unique_ptr<llvm::unittest::cas::MockEnv> createGRPCEnv(StringRef Path) {
   return std::make_unique<MockEnvImpl>(Path.str());
 }
 
-#endif /* LLVM_ENABLE_GRPC_CAS */
+#endif /* LLVM_CAS_ENABLE_REMOTE_CACHE */

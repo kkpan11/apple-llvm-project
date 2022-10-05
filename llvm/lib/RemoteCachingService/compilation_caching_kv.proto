@@ -1,7 +1,15 @@
+//===--- compilation_caching_kv.proto - Key/Value service definition ------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
 syntax = "proto3";
 
 option java_multiple_files = true;
-option java_package = "org.llvm.compilation_cache_service";
+option java_package = "com.apple.dt.compilation_cache_service";
 option java_outer_classname = "CompilationCachingProto";
 option objc_class_prefix = "CCS";
 
@@ -20,6 +28,7 @@ message GetValueRequest { bytes key = 1; }
 message GetValueResponse {
   enum Outcome {
     ERROR = 0; // if unset, we'll get error
+
     KEY_NOT_FOUND = 1;
     SUCCESS = 2;
   }
