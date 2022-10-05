@@ -82,6 +82,8 @@ set(TARGET_LIBC_ENTRYPOINTS
     libc.src.stdlib.llabs
     libc.src.stdlib.lldiv
     libc.src.stdlib.qsort
+    libc.src.stdlib.rand
+    libc.src.stdlib.srand
     libc.src.stdlib.strtod
     libc.src.stdlib.strtof
     libc.src.stdlib.strtol
@@ -128,6 +130,9 @@ set(TARGET_LIBC_ENTRYPOINTS
 
     # sys/utsname.h entrypoints
     libc.src.sys.utsname.uname
+
+    # sys/wait.h entrypoints
+    libc.src.sys.wait.wait
 
     # unistd.h entrypoints
     libc.src.unistd.access
@@ -401,6 +406,9 @@ if(LLVM_LIBC_FULL_BUILD)
     libc.src.time.mktime
     libc.src.time.nanosleep
     libc.src.time.clock_gettime
+
+    # unistd.h entrypoints
+    libc.src.unistd.fork
   )
 endif()
 
