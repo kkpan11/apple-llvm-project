@@ -228,6 +228,11 @@ Changes in existing checks
   copy assignment operators with nonstandard return types. The check is restricted to
   c++11-or-later.
 
+- Fixed crashes in :doc:`readability-braces-around-statements
+  <clang-tidy/checks/readability/braces-around-statements>` and
+  :doc:`readability-simplify-boolean-expr <clang-tidy/checks/readability/simplify-boolean-expr>`
+  when using a C++23 ``if consteval`` statement.
+
 Removed checks
 ^^^^^^^^^^^^^^
 
