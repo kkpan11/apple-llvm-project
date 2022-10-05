@@ -48,7 +48,6 @@
 // CHECK: g     F __TEXT,__text _main
 // CHECK: g     O __DATA,__common _mys1
 // CHECK: g     F __TEXT,__text __mh_execute_header
-// CHECK:         *UND* ___cxa_atexit
 // CHECK:         *UND* dyld_stub_binder
 
 ## This is assembly output of:
