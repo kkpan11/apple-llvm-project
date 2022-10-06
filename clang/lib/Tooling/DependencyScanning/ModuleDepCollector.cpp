@@ -406,11 +406,11 @@ ModuleID ModuleDepCollectorPP::handleTopLevelModule(const Module *M) {
 
   llvm::DenseSet<const FileEntry *> SeenModuleMaps;
   for (const Module *SM : SeenDeps)
-    if (const FileEntry *SMM = MDC.ScanInstance.getPreprocessor()
-                                   .getHeaderSearchInfo()
-                                   .getModuleMap()
-                                   .getModuleMapFileForUniquing(SM))
-      SeenModuleMaps.insert(SMM);
+    if (Optional<FileEntryRef> SMM = MDC.ScanInstance.getPreprocessor()
+                                         .getHeaderSearchInfo()
+                                         .getModuleMap()
+                                         .getModuleMapFileForUniquing(SM))
+      SeenModuleMaps.insert(*SMM);
 
   MDC.ScanInstance.getASTReader()->visitTopLevelModuleMaps(
       *MF, [&](const FileEntry *FE) {
