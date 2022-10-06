@@ -752,8 +752,8 @@ void StatCollector::printToOuts(ArrayRef<ObjectProxy> TopLevels,
       "{0,-22} {1,+10} {2,+7} {3,+10} {4,+7} {5,+10} "
       "{6,+7} {7,+10} {8,+7} {9,+10} {10,+7}\n";
   StringLiteral FormatPretty =
-      "{0,-22} {1,+10} {2,+7:P} {3,+10} {4,+7:P} {5,+10} "
-      "{6,+7:P} {7,+10} {8,+7:P} {9,+10} {10,+7:P}\n";
+    "{0,-22} {1,+10:N} {2,+7:P} {3,+10:N} {4,+7:P} {5,+10:N} "
+      "{6,+7:P} {7,+10:N} {8,+7:P} {9,+10:N} {10,+7:P}\n";
   StringLiteral FormatCSV = "{0}, {1}, {3}, {5}, {7}, {9}\n";
 
   StringLiteral HeaderFormat =
