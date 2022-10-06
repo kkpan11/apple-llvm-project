@@ -288,10 +288,6 @@ static void LoadSwiftFormatters(lldb::TypeCategoryImplSP swift_category_sp) {
                 lldb_private::formatters::swift::Array_SummaryProvider,
                 "Swift.Array summary provider",
                 ConstString("^Swift.Array<.+>$"), summary_flags, true);
-  AddCXXSummary(swift_category_sp,
-                lldb_private::formatters::swift::Array_SummaryProvider,
-                "Swift.Array summary provider",
-                ConstString("Swift._NSSwiftArray"), summary_flags, false);
   AddCXXSummary(
       swift_category_sp, lldb_private::formatters::swift::Array_SummaryProvider,
       "Swift.ContiguousArray summary provider",
@@ -341,11 +337,6 @@ static void LoadSwiftFormatters(lldb::TypeCategoryImplSP swift_category_sp) {
       lldb_private::formatters::swift::ArraySyntheticFrontEndCreator,
       "Swift.Array synthetic children", ConstString("^Swift.Array<.+>$"),
       synth_flags, true);
-  AddCXXSynthetic(
-      swift_category_sp,
-      lldb_private::formatters::swift::ArraySyntheticFrontEndCreator,
-      "Swift.Array synthetic children", ConstString("Swift._NSSwiftArray"),
-      synth_flags, false);
   AddCXXSynthetic(
       swift_category_sp,
       lldb_private::formatters::swift::ArraySyntheticFrontEndCreator,
@@ -471,8 +462,6 @@ static void LoadSwiftFormatters(lldb::TypeCategoryImplSP swift_category_sp) {
 
   // do not move the relative order of these - @unchecked needs to come first or
   // else pain will ensue
-  AddSummary(swift_category_sp, swift_unchecked_optional_summary_sp,
-             ConstString("^Swift.ImplicitlyUnwrappedOptional<.+>$"), true);
   AddSummary(swift_category_sp, swift_optional_summary_sp,
              ConstString("^Swift.Optional<.+>$"), true);
 
@@ -486,12 +475,6 @@ static void LoadSwiftFormatters(lldb::TypeCategoryImplSP swift_category_sp) {
   AddSummary(swift_category_sp, swift_optional_summary_sp, ConstString("()?"),
              false);
 
-  AddCXXSynthetic(swift_category_sp,
-                  lldb_private::formatters::swift::
-                      SwiftUncheckedOptionalSyntheticFrontEndCreator,
-                  "Swift.Optional synthetic children",
-                  ConstString("^Swift.ImplicitlyUnwrappedOptional<.+>$"),
-                  optional_synth_flags, true);
   AddCXXSynthetic(
       swift_category_sp,
       lldb_private::formatters::swift::SwiftOptionalSyntheticFrontEndCreator,
@@ -565,18 +548,6 @@ static void LoadSwiftFormatters(lldb::TypeCategoryImplSP swift_category_sp) {
                 lldb_private::formatters::swift::GLKit_SummaryProvider,
                 "GLKit summary provider", ConstString(GLKitTypes),
                 simd_summary_flags, true);
-
-  TypeSummaryImpl::Flags nil_summary_flags;
-  nil_summary_flags.SetCascades(true)
-      .SetDontShowChildren(true)
-      .SetDontShowValue(true)
-      .SetHideItemNames(false)
-      .SetShowMembersOneLiner(false)
-      .SetSkipPointers(true)
-      .SetSkipReferences(false);
-
-  AddStringSummary(swift_category_sp, "nil", ConstString("Swift._Nil"),
-                   nil_summary_flags);
 
   AddStringSummary(swift_category_sp, "${var.native}",
                    ConstString("CoreGraphics.CGFloat"), summary_flags);
