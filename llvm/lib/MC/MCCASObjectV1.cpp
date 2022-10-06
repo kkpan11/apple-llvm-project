@@ -11,6 +11,11 @@
 #include "llvm/BinaryFormat/MachO.h"
 #include "llvm/CAS/CASID.h"
 #include "llvm/CAS/ObjectStore.h"
+#include "llvm/DebugInfo/DWARF/DWARFCompileUnit.h"
+#include "llvm/DebugInfo/DWARF/DWARFContext.h"
+#include "llvm/DebugInfo/DWARF/DWARFDataExtractor.h"
+#include "llvm/DebugInfo/DWARF/DWARFDebugAbbrev.h"
+#include "llvm/DebugInfo/DWARF/DWARFDebugLine.h"
 #include "llvm/MC/MCAsmBackend.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCObjectFileInfo.h"
@@ -66,6 +71,69 @@ cl::opt<RelEncodeLoc> RelocLocation(
     cl::values(clEnumVal(Atom, "In atom"), clEnumVal(Section, "In section"),
                clEnumVal(CompileUnit, "In compile unit")),
     cl::init(Atom));
+
+template <> struct llvm::DenseMapInfo<llvm::dwarf::Form> {
+  static llvm::dwarf::Form getEmptyKey() {
+    return static_cast<llvm::dwarf::Form>(
+        DenseMapInfo<uint16_t>::getEmptyKey());
+  }
+
+  static llvm::dwarf::Form getTombstoneKey() {
+    return static_cast<llvm::dwarf::Form>(
+        DenseMapInfo<uint16_t>::getTombstoneKey());
+  }
+
+  static unsigned getHashValue(const llvm::dwarf::Form &OVal) {
+    return DenseMapInfo<uint16_t>::getHashValue(OVal);
+  }
+
+  static bool isEqual(const llvm::dwarf::Form &LHS,
+                      const llvm::dwarf::Form &RHS) {
+    return LHS == RHS;
+  }
+};
+
+/// A DWARFObject implementation that can be used to dwarfdump CAS-formatted
+/// debug info.
+class InMemoryCASDWARFObject : public DWARFObject {
+  ArrayRef<char> DebugAbbrevSection;
+  bool IsLittleEndian;
+
+public:
+  InMemoryCASDWARFObject(ArrayRef<char> AbbrevContents, bool IsLittleEndian)
+      : DebugAbbrevSection(AbbrevContents), IsLittleEndian(IsLittleEndian) {}
+  bool isLittleEndian() const override { return IsLittleEndian; }
+
+  StringRef getAbbrevSection() const override {
+    return toStringRef(DebugAbbrevSection);
+  }
+
+  Optional<RelocAddrEntry> find(const DWARFSection &Sec,
+                                uint64_t Pos) const override {
+    return {};
+  }
+
+  /// This struct represents the Data in one Compile Unit. The DistinctData is
+  /// the data that doesn't deduplicate and must be stored separately, the
+  /// DebugInfoRefData is the data that is stored in one DebugInfoCURef cas
+  /// object and will deduplicate for a link ODR function.
+  struct PartitionedDebugInfoSection {
+    SmallVector<char, 0> DebugInfoCURefData;
+    SmallVector<char, 0> DistinctData;
+    constexpr static std::array FormsToPartition{
+        llvm::dwarf::Form::DW_FORM_strp, llvm::dwarf::Form::DW_FORM_sec_offset};
+  };
+
+  /// Create a DwarfCompileUnit that represents the compile unit at \p CUOffset
+  /// in the debug info section, and iterate over the individual DIEs to
+  /// identify and separate the Forms that do not deduplicate in
+  /// PartitionedDebugInfoSection::FormsToPartition and those that do
+  /// deduplicate. Store both kinds of Forms in their own buffers per compile
+  /// unit.
+  Expected<PartitionedDebugInfoSection>
+  splitUpCUData(ArrayRef<char> DebugInfoData, uint64_t AbbrevOffset,
+                uint64_t CUOffset, DWARFContext *Ctx);
+};
 
 struct CUInfo {
   size_t CUSize;

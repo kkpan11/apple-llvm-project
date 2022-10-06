@@ -1,5 +1,4 @@
 # Create an object library instead of a whole static archive.
-add_library(clangNullRemoteCache OBJECT EXCLUDE_FROM_ALL
+add_clang_library(clangNullRemoteCache
   NullClient.cpp
 )
-llvm_update_compile_flags(clangNullRemoteCache)
