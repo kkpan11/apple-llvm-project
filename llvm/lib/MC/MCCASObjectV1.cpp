@@ -72,7 +72,7 @@ cl::opt<RelEncodeLoc> RelocLocation(
                clEnumVal(CompileUnit, "In compile unit")),
     cl::init(Atom));
 
-template <> struct DenseMapInfo<llvm::dwarf::Form> {
+template <> struct llvm::DenseMapInfo<llvm::dwarf::Form> {
   static llvm::dwarf::Form getEmptyKey() {
     return static_cast<llvm::dwarf::Form>(
         DenseMapInfo<uint16_t>::getEmptyKey());
