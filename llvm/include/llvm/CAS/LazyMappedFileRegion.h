@@ -123,21 +123,18 @@ private:
     MappedRegions = RHS.MappedRegions;
 #else
     Map = std::move(RHS.Map);
+    assert(!RHS.Map && "Expected Optional(Optional&&) to clear RHS.Map");
 #endif
     CachedSize = RHS.CachedSize.load();
     RHS.CachedSize = 0;
     MaxSizeIncrement = RHS.MaxSizeIncrement;
-
-#ifndef _WIN32
-    assert(!RHS.Map && "Expected Optional(Optional&&) to clear RHS.Map");
-#endif
   }
 
   std::string Path;
   Optional<int> FD;
 #ifdef _WIN32
-  char *VM;
-  uint64_t MaxSize;
+  char *VM = nullptr;
+  uint64_t MaxSize = 0;
   std::vector<void*> MappedRegions;
 #else
   sys::fs::mapped_file_region Map;

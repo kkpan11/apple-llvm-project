@@ -83,7 +83,7 @@ Expected<LazyMappedFileRegion> LazyMappedFileRegion::create(
   auto Unlock = make_scope_exit([FD = *LMFR.FD]() { sys::fs::unlockFile(FD); });
 
   sys::fs::file_t File = sys::fs::convertFDToNativeFile(FD);
-  // Status the file so we can devide if we need to run init.
+  // Status the file so we can decide if we need to run init.
   sys::fs::file_status Status;
   if (std::error_code EC = sys::fs::status(File, Status))
     return errorCodeToError(EC);
