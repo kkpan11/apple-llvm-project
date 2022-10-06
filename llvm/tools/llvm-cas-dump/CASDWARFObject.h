@@ -9,6 +9,11 @@
 #ifndef LLVM_TOOLS_LLVM_CAS_DUMP_CASDWARFOBJECT_H
 #define LLVM_TOOLS_LLVM_CAS_DUMP_CASDWARFOBJECT_H
 
+#include "llvm/DebugInfo/DWARF/DWARFCompileUnit.h"
+#include "llvm/DebugInfo/DWARF/DWARFContext.h"
+#include "llvm/DebugInfo/DWARF/DWARFDataExtractor.h"
+#include "llvm/DebugInfo/DWARF/DWARFDebugAbbrev.h"
+#include "llvm/DebugInfo/DWARF/DWARFDebugLine.h"
 #include "llvm/DebugInfo/DWARF/DWARFObject.h"
 #include "llvm/MC/CAS/MCCASObjectV1.h"
 
