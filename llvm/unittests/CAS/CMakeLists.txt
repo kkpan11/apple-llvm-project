@@ -1,7 +1,14 @@
+if (LLVM_CAS_ENABLE_REMOTE_CACHE)
+  append("-DLLVM_CAS_ENABLE_REMOTE_CACHE=1" CMAKE_C_FLAGS CMAKE_CXX_FLAGS)
+  set(ADDITIONAL_CAS_TEST_DEPS "RemoteCacheServer")
+endif()
+
 set(LLVM_LINK_COMPONENTS
   Support
   CAS
+  RemoteCachingService
   TestingSupport
+  ${ADDITIONAL_CAS_TEST_DEPS}
   )
 
 add_llvm_unittest(CASTests
@@ -22,12 +29,3 @@ add_llvm_unittest(CASTests
   )
 
 target_link_libraries(CASTests PRIVATE LLVMTestingSupport)
-
-if(LLVM_CAS_ENABLE_REMOTE_CACHE)
-  include_directories($<TARGET_PROPERTY:LLVMRemoteCacheKVProto,BINARY_DIR>)
-  include_directories($<TARGET_PROPERTY:LLVMRemoteCacheCASProto,BINARY_DIR>)
-  target_link_libraries(CASTests PRIVATE
-    LLVMRemoteCachingService
-    LLVMRemoteCacheServer
-  )
-endif()

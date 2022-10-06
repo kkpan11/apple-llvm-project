@@ -13,7 +13,6 @@ set( LLVM_LINK_COMPONENTS
   ObjCARCOpts
   Option
   RemoteCachingService
-  RemoteCacheClient
   ScalarOpts
   Support
   TransformUtils

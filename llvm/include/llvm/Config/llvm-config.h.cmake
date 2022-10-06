@@ -129,7 +129,4 @@
 /* Define to 1 if OnDiskCAS is enabled. */
 #cmakedefine01 LLVM_ENABLE_ONDISK_CAS
 
-/* Define to 1 if RemoteCachingService is enabled. */
-#cmakedefine01 LLVM_CAS_ENABLE_REMOTE_CACHE
-
 #endif

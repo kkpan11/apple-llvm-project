@@ -502,7 +502,3 @@ cas::createGRPCActionCache(StringRef Path) {
     return std::move(Err);
   return Cache;
 }
-
-RegisterGRPCCAS::RegisterGRPCCAS() {
-  cas::registerCASURLScheme("grpc://", &cas::createGRPCRelayCAS);
-}
