@@ -2829,7 +2829,7 @@ void ModuleVisitor::DoAddUse(SourceName location, SourceName localName,
       } else {
         return;
       }
-    } else if (&useUltimate == &BypassGeneric(localUltimate)) {
+    } else if (&useUltimate == &BypassGeneric(localUltimate).GetUltimate()) {
       return; // nothing to do; used subprogram is local's specific
     }
   } else if (useGeneric) {
@@ -3196,8 +3196,8 @@ void InterfaceVisitor::CheckGenericProcedures(Symbol &generic) {
   auto &details{generic.get<GenericDetails>()};
   if (auto *proc{details.CheckSpecific()}) {
     auto msg{
-        "'%s' may not be the name of both a generic interface and a"
-        " procedure unless it is a specific procedure of the generic"_err_en_US};
+        "'%s' should not be the name of both a generic interface and a"
+        " procedure unless it is a specific procedure of the generic"_warn_en_US};
     if (proc->name().begin() > generic.name().begin()) {
       Say(proc->name(), std::move(msg));
     } else {
@@ -3230,7 +3230,7 @@ void InterfaceVisitor::CheckGenericProcedures(Symbol &generic) {
     SayDerivedType(generic.name(),
         "Generic interface '%s' may only contain functions due to derived type"
         " with same name"_err_en_US,
-        *details.derivedType()->scope());
+        *details.derivedType()->GetUltimate().scope());
   }
   generic.set(isFunction ? Symbol::Flag::Function : Symbol::Flag::Subroutine);
 }
@@ -7259,9 +7259,9 @@ void ResolveNamesVisitor::CreateGeneric(const parser::GenericSpec &x) {
       }
     } else if (ultimate.has<SubprogramDetails>() ||
         ultimate.has<SubprogramNameDetails>()) {
-      genericDetails.set_specific(ultimate);
+      genericDetails.set_specific(*existing);
     } else if (ultimate.has<DerivedTypeDetails>()) {
-      genericDetails.set_derivedType(ultimate);
+      genericDetails.set_derivedType(*existing);
     } else {
       SayAlreadyDeclared(symbolName, *existing);
       return;
