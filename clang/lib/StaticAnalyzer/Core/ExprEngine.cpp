@@ -1384,10 +1384,10 @@ void ExprEngine::ProcessAutomaticObjDtor(const CFGAutomaticObjDtor Dtor,
                                   "Prepare for object destruction");
   PreImplicitCall PP(DtorDecl, varDecl->getLocation(), LCtx, &PT);
   Pred = Bldr.generateNode(PP, state, Pred);
-  Bldr.takeNodes(Pred);
 
   if (!Pred)
     return;
+  Bldr.takeNodes(Pred);
 
   VisitCXXDestructor(varType, Region, Dtor.getTriggerStmt(),
                      /*IsBase=*/false, Pred, Dst, CallOpts);
@@ -1458,10 +1458,10 @@ void ExprEngine::ProcessDeleteDtor(const CFGDeleteDtor Dtor,
                                   "Prepare for object destruction");
   PreImplicitCall PP(getDtorDecl(DTy), DE->getBeginLoc(), LCtx, &PT);
   Pred = Bldr.generateNode(PP, State, Pred);
-  Bldr.takeNodes(Pred);
 
   if (!Pred)
     return;
+  Bldr.takeNodes(Pred);
 
   VisitCXXDestructor(DTy, ArgR, DE, /*IsBase=*/false, Pred, Dst, CallOpts);
 }
@@ -1534,10 +1534,10 @@ void ExprEngine::ProcessMemberDtor(const CFGMemberDtor D,
                                   "Prepare for object destruction");
   PreImplicitCall PP(DtorDecl, Member->getLocation(), LCtx, &PT);
   Pred = Bldr.generateNode(PP, State, Pred);
-  Bldr.takeNodes(Pred);
 
   if (!Pred)
     return;
+  Bldr.takeNodes(Pred);
 
   VisitCXXDestructor(T, FieldVal.getAsRegion(), CurDtor->getBody(),
                      /*IsBase=*/false, Pred, Dst, CallOpts);
