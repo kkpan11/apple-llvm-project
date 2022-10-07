@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/ADT/LazyAtomicPointer.h"
+#include "llvm/Config/llvm-config.h"
 #include "llvm/Support/ThreadPool.h"
 #include "gtest/gtest.h"
 
@@ -30,30 +31,36 @@ TEST(LazyAtomicPointer, loadOrGenerate) {
     });
 
   Threads.wait();
-  
   EXPECT_EQ(Ptr.load(), &Value);
 }
 
+#if (LLVM_ENABLE_THREADS)
 TEST(LazyAtomicPointer, BusyState) {
   int Value = 0;
   LazyAtomicPointer<int> Ptr;
   ThreadPool Threads;
 
-  std::mutex BusyStart, BusyEnd;
-  BusyStart.lock();
-  BusyEnd.lock();
+  std::mutex BusyLock, EndLock;
+  std::condition_variable Busy, End;
+  bool IsBusy = false, IsEnd = false;
   Threads.async([&]() {
     Ptr.loadOrGenerate([&]() {
-      BusyStart.unlock();
-      while (!BusyEnd.try_lock()) {
-        // wait till the lock is unlocked.
+      // Notify busy state.
+      {
+        std::lock_guard<std::mutex> Lock(BusyLock);
+        IsBusy = true;
       }
+      Busy.notify_all();
+      std::unique_lock<std::mutex> LEnd(EndLock);
+      // Wait for end state.
+      End.wait(LEnd, [&]() { return IsEnd; });
       return &Value;
     });
   });
 
   // Wait for busy state.
-  std::lock_guard<std::mutex> BusyLockG(BusyStart);
+  std::unique_lock<std::mutex> LBusy(BusyLock);
+  Busy.wait(LBusy);
   int *ExistingValue = nullptr;
   // Busy state will not exchange the value.
   EXPECT_FALSE(Ptr.compare_exchange_weak(ExistingValue, nullptr));
@@ -62,9 +69,14 @@ TEST(LazyAtomicPointer, BusyState) {
   EXPECT_EQ(Ptr.load(), nullptr);
 
   // End busy state.
-  BusyEnd.unlock();
+  {
+    std::lock_guard<std::mutex> Lock(EndLock);
+    IsEnd = true;
+  }
+  End.notify_all();
   Threads.wait();
   EXPECT_EQ(Ptr.load(), &Value);
 }
+#endif
 
 } // namespace
