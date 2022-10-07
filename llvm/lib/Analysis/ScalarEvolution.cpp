@@ -8393,6 +8393,9 @@ void ScalarEvolution::forgetBlockAndLoopDispositions(Value *V) {
     return;
   }
 
+  if (!isSCEVable(V->getType()))
+    return;
+
   const SCEV *S = getExistingSCEV(V);
   if (!S)
     return;
