@@ -11,6 +11,7 @@
 
 using namespace llvm;
 using namespace llvm::cas;
+using namespace llvm::cas::remote;
 
 void AsyncCallerContext::anchor() {}
 void AsyncQueueBase::anchor() {}
@@ -42,16 +43,16 @@ cas::createGRPCActionCache(StringRef Path) {
 }
 
 Expected<ClientServices>
-cas::createCompilationCachingRemoteClient(StringRef SocketPath) {
+remote::createCompilationCachingRemoteClient(StringRef SocketPath) {
   return unsupportedError();
 }
 
 Expected<std::unique_ptr<CASDBClient>>
-cas::createRemoteCASDBClient(StringRef SocketPath) {
+remote::createRemoteCASDBClient(StringRef SocketPath) {
   return unsupportedError();
 }
 
 Expected<std::unique_ptr<KeyValueDBClient>>
-cas::createRemoteKeyValueClient(StringRef SocketPath) {
+remote::createRemoteKeyValueClient(StringRef SocketPath) {
   return unsupportedError();
 }

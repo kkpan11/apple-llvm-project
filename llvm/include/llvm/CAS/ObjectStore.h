@@ -371,9 +371,9 @@ std::string getDefaultOnDiskCASStableID();
 ///  * InMemory CAS: mem://
 ///  * OnDisk CAS: file://${PATH_TO_ONDISK_CAS}
 ///  * PlugIn CAS: plugin://${PATH_TO_PLUGIN}
-/// If no URL scheme is used, it is default to following (but might change in
+/// If no URL scheme is used, it defaults to following (but might change in
 /// future)
-///  * empty string: InMemory CAS
+///  * empty string: Error!
 ///  * "auto": default OnDiskCAS location
 ///  * Other: path to OnDiskCAS.
 /// FIXME: Need to implement proper URL encoding scheme that allows "%". Also

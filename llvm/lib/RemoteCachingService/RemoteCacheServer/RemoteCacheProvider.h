@@ -15,11 +15,12 @@
 #include "llvm/Support/Error.h"
 #include <memory>
 
-namespace llvm {
-namespace cas {
+namespace llvm::cas {
 
 class ActionCache;
 class ObjectStore;
+
+namespace remote {
 
 /// A caching backend that provides the underlying functionality for
 /// implementing the remote cache protocol.
@@ -69,8 +70,7 @@ std::unique_ptr<RemoteCacheProvider>
 createLLVMCASCacheProvider(StringRef TempPath, std::unique_ptr<ObjectStore> CAS,
                            std::unique_ptr<ActionCache> Cache);
 
-
-} // namespace cas
-} // namespace llvm
+} // namespace remote
+} // namespace llvm::cas
 
 #endif

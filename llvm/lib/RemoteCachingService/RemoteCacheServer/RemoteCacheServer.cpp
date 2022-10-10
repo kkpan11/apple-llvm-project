@@ -14,6 +14,7 @@
 
 using namespace llvm;
 using namespace llvm::cas;
+using namespace llvm::cas::remote;
 using namespace compilation_cache_service::cas::v1;
 using namespace compilation_cache_service::keyvalue::v1;
 
@@ -52,7 +53,7 @@ public:
     Server = Builder.BuildAndStart();
   }
 
-  void Wait() {
+  void Listen() {
     // Proceed to the server's main loop.
     HandleRpcs();
   }
@@ -231,7 +232,7 @@ private:
 RemoteCacheServer::~RemoteCacheServer() = default;
 
 void RemoteCacheServer::Start() { return Impl->Start(); }
-void RemoteCacheServer::Wait() { return Impl->Wait(); }
+void RemoteCacheServer::Listen() { return Impl->Listen(); }
 void RemoteCacheServer::Shutdown() { return Impl->Shutdown(); }
 
 RemoteCacheServer::RemoteCacheServer(

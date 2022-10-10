@@ -12,13 +12,12 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
 
-namespace llvm {
-namespace cas {
+namespace llvm::cas {
 
-class RemoteCacheProvider;
-class RemoteCacheServer;
 class ActionCache;
 class ObjectStore;
+
+namespace remote {
 
 /// A gRPC service for the remote caching protocol.
 class RemoteCacheServer {
@@ -31,7 +30,7 @@ public:
   ~RemoteCacheServer();
 
   void Start();
-  void Wait();
+  void Listen();
   void Shutdown();
 
 private:
@@ -41,7 +40,7 @@ private:
   std::unique_ptr<RemoteCacheServer::Implementation> Impl;
 };
 
-} // namespace cas
-} // namespace llvm
+} // namespace remote
+} // namespace llvm::cas
 
 #endif

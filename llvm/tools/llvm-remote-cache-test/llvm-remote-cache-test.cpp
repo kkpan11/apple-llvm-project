@@ -84,10 +84,10 @@ int main(int Argc, const char **Argv) {
 
   if (ServerMode) {
     outs() << "Server listening on " << SocketPath << '\n';
-    RemoteCacheServer Server(SocketPath, TempPath, std::move(*CAS),
-                             std::move(*Cache));
+    remote::RemoteCacheServer Server(SocketPath, TempPath, std::move(*CAS),
+                                     std::move(*Cache));
     Server.Start();
-    Server.Wait();
+    Server.Listen();
     return 0;
   }
 
@@ -112,11 +112,11 @@ int main(int Argc, const char **Argv) {
     RefArgs.push_back(Arg);
   }
 
-  RemoteCacheServer Server(SocketPath, TempPath, std::move(*CAS),
-                           std::move(*Cache));
+  remote::RemoteCacheServer Server(SocketPath, TempPath, std::move(*CAS),
+                                   std::move(*Cache));
   std::thread ServerThread([&Server]() {
     Server.Start();
-    Server.Wait();
+    Server.Listen();
   });
 
   setenv("LLVM_CACHE_REMOTE_SERVICE_SOCKET_PATH", SocketPath.c_str(), true);

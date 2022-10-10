@@ -7,10 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/CAS/ObjectStore.h"
-#include "llvm/Config/llvm-config.h"
-#include "llvm/RemoteCachingService/RemoteCachingService.h"
 #include "llvm/Support/FileSystem.h"
-#include "llvm/Support/Path.h"
 #include "llvm/Testing/Support/Error.h"
 #include "llvm/Testing/Support/SupportHelpers.h"
 #include "gtest/gtest.h"

@@ -15,6 +15,7 @@
 #include "llvm/RemoteCachingService/Client.h"
 #include "llvm/RemoteCachingService/RemoteCachingService.h"
 #include "llvm/Support/Allocator.h"
+#include "llvm/Support/Base64.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include <memory>
@@ -91,7 +92,7 @@ class GRPCCASContext : public CASContext {
   void anchor() override;
 
 public:
-  static StringRef getHashName() { return "Luxon"; }
+  static StringRef getHashName() { return "RemoteCAS"; }
   StringRef getHashSchemaIdentifier() const final {
     static const std::string ID =
         ("grpc::cas::service::v1[" + getHashName() + "]").str();
@@ -134,10 +135,6 @@ public:
   Expected<ObjectRef>
   storeFromOpenFileImpl(sys::fs::file_t FD,
                         Optional<sys::fs::file_status> Status) override;
-
-  // API that uses the file API.
-  Expected<ObjectRef> storeFile(StringRef Content);
-  Expected<StringRef> loadFile(ObjectRef Node);
 
 private:
   InMemoryIndexValueT &indexHash(ArrayRef<uint8_t> Hash) const {
@@ -204,7 +201,7 @@ private:
   }
 
   // Stub for compile_cache_service.
-  std::unique_ptr<CASDBClient> CASDB;
+  std::unique_ptr<remote::CASDBClient> CASDB;
 
   // Index to manage the remote CAS.
   mutable InMemoryIndexT Index;
@@ -223,7 +220,7 @@ public:
   Error putImpl(ArrayRef<uint8_t> ResolvedKey, const CASID &Result) final;
 
 private:
-  std::unique_ptr<KeyValueDBClient> KVDB;
+  std::unique_ptr<remote::KeyValueDBClient> KVDB;
 };
 
 } // namespace
@@ -237,7 +234,7 @@ void GRPCCASContext::anchor() {}
 GRPCRelayCAS::GRPCRelayCAS(StringRef Path, Error &Err)
     : ObjectStore(GRPCCASContext::getDefaultContext()) {
   ErrorAsOutParameter ErrAsOutParam(&Err);
-  auto DB = createRemoteCASDBClient(Path);
+  auto DB = remote::createRemoteCASDBClient(Path);
   if (!DB) {
     Err = DB.takeError();
     return;
@@ -263,21 +260,18 @@ ArrayRef<uint8_t> GRPCRelayCAS::getHashImpl(const CASID &ID) const {
   return ExtendedHash.take_front(ServiceHashSize);
 }
 
-// FIXME: Just print out as hexdump for now. Should move this into GRPC
+// FIXME: Just print out as base64 encode for now. Should move this into GRPC
 // protocol.
 void GRPCCASContext::printIDImpl(raw_ostream &OS, const CASID &ID) const {
   assert(&ID.getContext() == this);
-  SmallString<64> Hash;
-  toHex(ID.getHash(), /*LowerCase=*/true, Hash);
-  OS << Hash;
+  OS << encodeBase64(ID.getHash());
 }
 
 Expected<CASID> GRPCRelayCAS::parseID(StringRef Reference) {
-  std::string Binary;
-  if (!tryGetFromHex(Reference, Binary))
-    return createStringError(std::make_error_code(std::errc::invalid_argument),
-                             "invalid hash in cas-id '" + Reference + "'");
-  return getID(indexHash(arrayRefFromStringRef(Binary)));
+  std::vector<char> Binary;
+  if (Error Err = decodeBase64(Reference, Binary))
+    return std::move(Err);
+  return getID(indexHash(arrayRefFromStringRef(toStringRef(Binary))));
 }
 
 Expected<ObjectRef> GRPCRelayCAS::store(ArrayRef<ObjectRef> Refs,
@@ -406,47 +400,10 @@ GRPCRelayCAS::storeFromOpenFileImpl(sys::fs::file_t FD,
   return toReference(storeObjectImpl(I, None, Data));
 }
 
-Expected<ObjectRef> GRPCRelayCAS::storeFile(StringRef Content) {
-  auto &SaveQueue = CASDB->saveQueue();
-  SaveQueue.saveDataAsync(Content.str());
-  auto Response = SaveQueue.receiveNext();
-  if (!Response)
-    return Response.takeError();
-
-  auto &I = indexHash(arrayRefFromStringRef(Response->CASID));
-  ArrayRef<char> Data = arrayRefFromStringRef<char>(Content);
-  return toReference(storeObjectImpl(I, {}, Data));
-}
-
-Expected<StringRef> GRPCRelayCAS::loadFile(ObjectRef Ref) {
-  auto &I = asInMemoryIndexValue(Ref);
-
-  // Return the existing value if we have one.
-  if (const InMemoryCASData *Existing = I.Data.load()) {
-    assert(Existing->getNumRefs() == 0 && "File should have zero refs");
-    return toStringRef(Existing->getData());
-  }
-
-  auto &LoadQueue = CASDB->loadQueue();
-  LoadQueue.loadAsync(getDataIDFromRef(Ref));
-  auto Response = LoadQueue.receiveNext();
-
-  auto getDataAsStringRef =
-      [&](Expected<ObjectHandle> Handle) -> Expected<StringRef> {
-    if (!Handle)
-      return Handle.takeError();
-    return toStringRef(getData(*Handle));
-  };
-  assert(Response->BlobData && "Expect the result to be returned in Blob");
-  std::string Data = *Response->BlobData;
-  ArrayRef<char> Content(Data.data(), Data.size());
-  return getDataAsStringRef(getObjectHandle(storeObjectImpl(I, {}, Content)));
-}
-
 GRPCActionCache::GRPCActionCache(StringRef Path, Error &Err)
     : ActionCache(GRPCCASContext::getDefaultContext()) {
   ErrorAsOutParameter ErrAsOutParam(&Err);
-  auto Cache = createRemoteKeyValueClient(Path);
+  auto Cache = remote::createRemoteKeyValueClient(Path);
   if (!Cache) {
     Err = Cache.takeError();
     return;
@@ -466,7 +423,9 @@ GRPCActionCache::getImpl(ArrayRef<uint8_t> ResolvedKey) const {
 
   auto Result = Response->Value->find("CASID");
   if (Result == Response->Value->end())
-    return None;
+    return createStringError(
+        inconvertibleErrorCode(),
+        "malformed value object returned by remote service");
   std::string Value = Result->getValue();
   return CASID::create(&getContext(), Value);
 }
@@ -474,7 +433,7 @@ GRPCActionCache::getImpl(ArrayRef<uint8_t> ResolvedKey) const {
 Error GRPCActionCache::putImpl(ArrayRef<uint8_t> ResolvedKey,
                                const CASID &Result) {
   auto &PutValueQueue = KVDB->putValueQueue();
-  llvm::cas::KeyValueDBClient::ValueTy CompResult;
+  remote::KeyValueDBClient::ValueTy CompResult;
   CompResult["CASID"] = toStringRef(Result.getHash()).str();
   PutValueQueue.putValueAsync(ResolvedKey, CompResult);
   auto Response = PutValueQueue.receiveNext();

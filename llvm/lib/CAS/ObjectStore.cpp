@@ -148,10 +148,11 @@ cas::createCASFromIdentifier(StringRef Path) {
       return Scheme.getValue()(Path);
   }
 
-  // FIXME: some current default behavior.
   if (Path.empty())
-    return createInMemoryCAS();
+    return createStringError(std::make_error_code(std::errc::invalid_argument),
+                             "No CAS identifier is provided");
 
+  // FIXME: some current default behavior.
   if (Path == "auto")
     return createOnDiskCAS(getDefaultOnDiskCASPath());
 

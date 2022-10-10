@@ -9,7 +9,6 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/CAS/ObjectStore.h"
-#include "llvm/Config/llvm-config.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/Mutex.h"
 #include "llvm/Support/Threading.h"
@@ -38,7 +37,7 @@ public:
   ~MockEnvImpl();
 
 private:
-  RemoteCacheServer Server;
+  remote::RemoteCacheServer Server;
   std::unique_ptr<thread> Thread;
 };
 
@@ -49,7 +48,7 @@ MockEnvImpl::MockEnvImpl(StringRef Socket, StringRef Temp,
                          std::unique_ptr<ActionCache> Cache)
     : Server(Socket, Temp, std::move(CAS), std::move(Cache)) {
   Server.Start();
-  auto ServerFunc = [&]() { Server.Wait(); };
+  auto ServerFunc = [&]() { Server.Listen(); };
   Thread = std::make_unique<thread>(ServerFunc);
 }
 

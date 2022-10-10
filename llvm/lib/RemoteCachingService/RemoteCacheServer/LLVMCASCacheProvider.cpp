@@ -28,6 +28,7 @@
 
 using namespace llvm;
 using namespace llvm::cas;
+using namespace llvm::cas::remote;
 using namespace compilation_cache_service::cas::v1;
 using namespace compilation_cache_service::keyvalue::v1;
 
@@ -335,9 +336,9 @@ CASPutResponse LLVMCASCacheProvider::CASPut(const CASPutRequest &Request) {
 }
 
 std::unique_ptr<RemoteCacheProvider>
-cas::createLLVMCASCacheProvider(StringRef TempPath,
-                                std::unique_ptr<ObjectStore> CAS,
-                                std::unique_ptr<ActionCache> Cache) {
+cas::remote::createLLVMCASCacheProvider(StringRef TempPath,
+                                        std::unique_ptr<ObjectStore> CAS,
+                                        std::unique_ptr<ActionCache> Cache) {
   auto Provider = std::make_unique<LLVMCASCacheProvider>();
   Provider->initialize(TempPath, std::move(CAS), std::move(Cache));
   return Provider;

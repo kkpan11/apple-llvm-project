@@ -21,8 +21,7 @@
 #include <memory>
 #include <string>
 
-namespace llvm {
-namespace cas {
+namespace llvm::cas::remote {
 
 /// Used to optionally associate additional context with a particular request.
 class AsyncCallerContext {
@@ -60,7 +59,7 @@ class KeyValueDBClient {
 public:
   virtual ~KeyValueDBClient() = default;
 
-  using ValueTy = llvm::StringMap<std::string>;
+  using ValueTy = StringMap<std::string>;
 
   class GetValueAsyncQueue : public AsyncQueueBase {
     virtual void anchor() override;
@@ -73,7 +72,7 @@ public:
       getValueAsyncImpl(std::move(Key), std::move(CallCtx));
       ++NumPending;
     }
-    void getValueAsync(llvm::ArrayRef<uint8_t> Key,
+    void getValueAsync(ArrayRef<uint8_t> Key,
                        std::shared_ptr<AsyncCallerContext> CallCtx = nullptr) {
       getValueAsync(toStringRef(Key).str(), std::move(CallCtx));
     }
@@ -81,9 +80,9 @@ public:
     struct Response {
       std::shared_ptr<AsyncCallerContext> CallCtx;
       // If this is \p None it means the key was not found.
-      llvm::Optional<ValueTy> Value;
+      Optional<ValueTy> Value;
     };
-    llvm::Expected<Response> receiveNext() {
+    Expected<Response> receiveNext() {
       assert(NumPending);
       --NumPending;
       return receiveNextImpl();
@@ -93,7 +92,7 @@ public:
     virtual void
     getValueAsyncImpl(std::string Key,
                       std::shared_ptr<AsyncCallerContext> CallCtx) = 0;
-    virtual llvm::Expected<Response> receiveNextImpl() = 0;
+    virtual Expected<Response> receiveNextImpl() = 0;
   };
 
   class PutValueAsyncQueue : public AsyncQueueBase {
@@ -107,7 +106,7 @@ public:
       putValueAsyncImpl(std::move(Key), Value, std::move(CallCtx));
       ++NumPending;
     }
-    void putValueAsync(llvm::ArrayRef<uint8_t> Key, const ValueTy &Value,
+    void putValueAsync(ArrayRef<uint8_t> Key, const ValueTy &Value,
                        std::shared_ptr<AsyncCallerContext> CallCtx = nullptr) {
       putValueAsync(toStringRef(Key).str(), Value, std::move(CallCtx));
     }
@@ -115,7 +114,7 @@ public:
     struct Response {
       std::shared_ptr<AsyncCallerContext> CallCtx;
     };
-    llvm::Expected<Response> receiveNext() {
+    Expected<Response> receiveNext() {
       assert(NumPending);
       --NumPending;
       return receiveNextImpl();
@@ -125,7 +124,7 @@ public:
     virtual void
     putValueAsyncImpl(std::string Key, const ValueTy &Value,
                       std::shared_ptr<AsyncCallerContext> CallCtx) = 0;
-    virtual llvm::Expected<Response> receiveNextImpl() = 0;
+    virtual Expected<Response> receiveNextImpl() = 0;
   };
 
   GetValueAsyncQueue &getValueQueue() const { return *GetValueQueue; }
@@ -138,8 +137,6 @@ protected:
 
 /// An asynchronous gRPC client for the CAS service of the remote cache
 /// protocol.
-///
-/// FIXME: This only implements the \p CASSave and \p CASLoad APIs.
 ///
 /// Example usage:
 /// \code
@@ -165,7 +162,7 @@ public:
     virtual ~LoadAsyncQueue() = default;
 
     void loadAsync(std::string CASID,
-                   llvm::Optional<std::string> OutFilePath = llvm::None,
+                   Optional<std::string> OutFilePath = None,
                    std::shared_ptr<AsyncCallerContext> CallCtx = nullptr) {
       loadAsyncImpl(std::move(CASID), std::move(OutFilePath),
                     std::move(CallCtx));
@@ -175,9 +172,9 @@ public:
     struct Response {
       std::shared_ptr<AsyncCallerContext> CallCtx;
       bool KeyNotFound = false;
-      llvm::Optional<std::string> BlobData;
+      Optional<std::string> BlobData;
     };
-    llvm::Expected<Response> receiveNext() {
+    Expected<Response> receiveNext() {
       assert(NumPending);
       --NumPending;
       return receiveNextImpl();
@@ -185,9 +182,9 @@ public:
 
   protected:
     virtual void loadAsyncImpl(std::string CASID,
-                               llvm::Optional<std::string> OutFilePath,
+                               Optional<std::string> OutFilePath,
                                std::shared_ptr<AsyncCallerContext> CallCtx) = 0;
-    virtual llvm::Expected<Response> receiveNextImpl() = 0;
+    virtual Expected<Response> receiveNextImpl() = 0;
   };
 
   class SaveAsyncQueue : public AsyncQueueBase {
@@ -212,7 +209,7 @@ public:
       std::shared_ptr<AsyncCallerContext> CallCtx;
       std::string CASID;
     };
-    llvm::Expected<Response> receiveNext() {
+    Expected<Response> receiveNext() {
       assert(NumPending);
       --NumPending;
       return receiveNextImpl();
@@ -225,7 +222,7 @@ public:
     virtual void
     saveFileAsyncImpl(std::string FilePath,
                       std::shared_ptr<AsyncCallerContext> CallCtx) = 0;
-    virtual llvm::Expected<Response> receiveNextImpl() = 0;
+    virtual Expected<Response> receiveNextImpl() = 0;
   };
 
   class GetAsyncQueue : public AsyncQueueBase {
@@ -235,7 +232,7 @@ public:
     virtual ~GetAsyncQueue() = default;
 
     void getAsync(std::string CASID,
-                  llvm::Optional<std::string> OutFilePath = llvm::None,
+                  Optional<std::string> OutFilePath = None,
                   std::shared_ptr<AsyncCallerContext> CallCtx = nullptr) {
       getAsyncImpl(std::move(CASID), std::move(OutFilePath),
                    std::move(CallCtx));
@@ -245,10 +242,10 @@ public:
     struct Response {
       std::shared_ptr<AsyncCallerContext> CallCtx;
       bool KeyNotFound = false;
-      llvm::Optional<std::string> BlobData;
+      Optional<std::string> BlobData;
       std::vector<std::string> Refs;
     };
-    llvm::Expected<Response> receiveNext() {
+    Expected<Response> receiveNext() {
       assert(NumPending);
       --NumPending;
       return receiveNextImpl();
@@ -256,9 +253,9 @@ public:
 
   protected:
     virtual void getAsyncImpl(std::string CASID,
-                              llvm::Optional<std::string> OutFilePath,
+                              Optional<std::string> OutFilePath,
                               std::shared_ptr<AsyncCallerContext> CallCtx) = 0;
-    virtual llvm::Expected<Response> receiveNextImpl() = 0;
+    virtual Expected<Response> receiveNextImpl() = 0;
   };
 
   class PutAsyncQueue : public AsyncQueueBase {
@@ -267,13 +264,13 @@ public:
   public:
     virtual ~PutAsyncQueue() = default;
 
-    void putDataAsync(std::string BlobData, llvm::ArrayRef<std::string> Refs,
+    void putDataAsync(std::string BlobData, ArrayRef<std::string> Refs,
                       std::shared_ptr<AsyncCallerContext> CallCtx = nullptr) {
       putDataAsyncImpl(std::move(BlobData), Refs, std::move(CallCtx));
       ++NumPending;
     }
 
-    void putFileAsync(std::string FilePath, llvm::ArrayRef<std::string> Refs,
+    void putFileAsync(std::string FilePath, ArrayRef<std::string> Refs,
                       std::shared_ptr<AsyncCallerContext> CallCtx = nullptr) {
       putFileAsyncImpl(std::move(FilePath), Refs, std::move(CallCtx));
       ++NumPending;
@@ -283,7 +280,7 @@ public:
       std::shared_ptr<AsyncCallerContext> CallCtx;
       std::string CASID;
     };
-    llvm::Expected<Response> receiveNext() {
+    Expected<Response> receiveNext() {
       assert(NumPending);
       --NumPending;
       return receiveNextImpl();
@@ -291,12 +288,12 @@ public:
 
   protected:
     virtual void
-    putDataAsyncImpl(std::string BlobData, llvm::ArrayRef<std::string> Refs,
+    putDataAsyncImpl(std::string BlobData, ArrayRef<std::string> Refs,
                      std::shared_ptr<AsyncCallerContext> CallCtx) = 0;
     virtual void
-    putFileAsyncImpl(std::string FilePath, llvm::ArrayRef<std::string> Refs,
+    putFileAsyncImpl(std::string FilePath, ArrayRef<std::string> Refs,
                      std::shared_ptr<AsyncCallerContext> CallCtx) = 0;
-    virtual llvm::Expected<Response> receiveNextImpl() = 0;
+    virtual Expected<Response> receiveNextImpl() = 0;
   };
 
   LoadAsyncQueue &loadQueue() const { return *LoadQueue; }
@@ -316,16 +313,15 @@ struct ClientServices {
   std::unique_ptr<CASDBClient> CASDB;
 };
 
-llvm::Expected<std::unique_ptr<CASDBClient>>
-createRemoteCASDBClient(llvm::StringRef SocketPath);
+Expected<std::unique_ptr<CASDBClient>>
+createRemoteCASDBClient(StringRef SocketPath);
 
-llvm::Expected<std::unique_ptr<KeyValueDBClient>>
-createRemoteKeyValueClient(llvm::StringRef SocketPath);
+Expected<std::unique_ptr<KeyValueDBClient>>
+createRemoteKeyValueClient(StringRef SocketPath);
 
-llvm::Expected<ClientServices>
-createCompilationCachingRemoteClient(llvm::StringRef SocketPath);
+Expected<ClientServices>
+createCompilationCachingRemoteClient(StringRef SocketPath);
 
-} // namespace cas
-} // namespace llvm
+} // namespace llvm::cas::remote
 
 #endif

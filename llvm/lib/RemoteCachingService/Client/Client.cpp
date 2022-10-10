@@ -19,6 +19,7 @@ using namespace compilation_cache_service::cas::v1;
 using namespace compilation_cache_service::keyvalue::v1;
 using namespace llvm;
 using namespace llvm::cas;
+using namespace llvm::cas::remote;
 
 void AsyncCallerContext::anchor() {}
 void AsyncQueueBase::anchor() {}
@@ -482,7 +483,7 @@ public:
 } // namespace
 
 Expected<ClientServices>
-cas::createCompilationCachingRemoteClient(StringRef SocketPath) {
+cas::remote::createCompilationCachingRemoteClient(StringRef SocketPath) {
   std::string Address("unix:");
   Address += SocketPath;
   const auto Channel = grpc::CreateChannel(std::move(Address),
@@ -493,7 +494,7 @@ cas::createCompilationCachingRemoteClient(StringRef SocketPath) {
 }
 
 Expected<std::unique_ptr<CASDBClient>>
-cas::createRemoteCASDBClient(StringRef SocketPath) {
+cas::remote::createRemoteCASDBClient(StringRef SocketPath) {
   std::string Address("unix:");
   Address += SocketPath;
   const auto Channel = grpc::CreateChannel(std::move(Address),
@@ -502,7 +503,7 @@ cas::createRemoteCASDBClient(StringRef SocketPath) {
 }
 
 Expected<std::unique_ptr<KeyValueDBClient>>
-cas::createRemoteKeyValueClient(StringRef SocketPath) {
+cas::remote::createRemoteKeyValueClient(StringRef SocketPath) {
   std::string Address("unix:");
   Address += SocketPath;
   const auto Channel = grpc::CreateChannel(std::move(Address),
