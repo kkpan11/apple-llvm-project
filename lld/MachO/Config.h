@@ -182,6 +182,7 @@ struct Configuration {
   bool demangle = false;
   bool deadStrip = false;
   bool errorForArchMismatch = false;
+  bool ignoreAutoLink = false;
   PlatformInfo platformInfo;
   llvm::Optional<PlatformInfo> secondaryPlatformInfo;
   NamespaceKind namespaceKind = NamespaceKind::twolevel;

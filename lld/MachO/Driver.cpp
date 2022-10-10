@@ -630,6 +630,9 @@ static void addFramework(StringRef name, bool isNeeded, bool isWeak,
 // parser to improve performance.
 void macho::parseLCLinkerOption(StringRef inputName, unsigned argc,
                                 StringRef data) {
+  if (config->ignoreAutoLink)
+    return;
+
   SmallVector<StringRef, 4> argv;
   size_t offset = 0;
   for (unsigned i = 0; i < argc && offset < data.size(); ++i) {
@@ -2004,6 +2007,7 @@ static bool link(InputArgList &args, bool canExitEarly, raw_ostream &stdoutOS,
   config->forceExactCpuSubtypeMatch =
       getenv("LD_DYLIB_CPU_SUBTYPES_MUST_MATCH");
   config->objcStubsMode = getObjCStubsMode(args);
+  config->ignoreAutoLink = args.hasArg(OPT_ignore_auto_link);
 
   for (const Arg *arg : args.filtered(OPT_alias)) {
     config->aliasedSymbols.push_back(
