@@ -1340,7 +1340,7 @@ bool HeaderSearch::isFileMultipleIncludeGuarded(const FileEntry *File) {
 void HeaderSearch::MarkFileModuleHeader(const FileEntry *FE,
                                         ModuleMap::ModuleHeaderRole Role,
                                         bool isCompilingModuleHeader) {
-  bool isModularHeader = !(Role & ModuleMap::TextualHeader);
+  bool isModularHeader = ModuleMap::isModular(Role);
 
   // Don't mark the file info as non-external if there's nothing to change.
   if (!isCompilingModuleHeader) {
@@ -1511,14 +1511,14 @@ bool HeaderSearch::hasModuleMap(StringRef FileName,
 }
 
 ModuleMap::KnownHeader
-HeaderSearch::findModuleForHeader(const FileEntry *File,
-                                  bool AllowTextual) const {
+HeaderSearch::findModuleForHeader(const FileEntry *File, bool AllowTextual,
+                                  bool AllowExcluded) const {
   if (ExternalSource) {
     // Make sure the external source has handled header info about this file,
     // which includes whether the file is part of a module.
     (void)getExistingFileInfo(File);
   }
-  return ModMap.findModuleForHeader(File, AllowTextual);
+  return ModMap.findModuleForHeader(File, AllowTextual, AllowExcluded);
 }
 
 ArrayRef<ModuleMap::KnownHeader>

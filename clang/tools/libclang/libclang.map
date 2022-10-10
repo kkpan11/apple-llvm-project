@@ -470,6 +470,11 @@ LLVM_13 {
   local: *;
 };
 
+LLVM_16 {
+  global:
+    clang_experimental_DependencyScannerWorker_getFileDependencies_v5;
+};
+
 # Example of how to add a new symbol version entry.  If you do add a new symbol
 # version, please update the example to depend on the version you added.
 # LLVM_X {

@@ -524,6 +524,13 @@ Module *Preprocessor::getCurrentModule() {
   return getHeaderSearchInfo().lookupModule(getLangOpts().CurrentModule);
 }
 
+Module *Preprocessor::getCurrentModuleImplementation() {
+  if (!getLangOpts().isCompilingModuleImplementation())
+    return nullptr;
+
+  return getHeaderSearchInfo().lookupModule(getLangOpts().ModuleName);
+}
+
 //===----------------------------------------------------------------------===//
 // Preprocessor Initialization Methods
 //===----------------------------------------------------------------------===//
