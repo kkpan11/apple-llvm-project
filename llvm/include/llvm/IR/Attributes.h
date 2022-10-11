@@ -1088,9 +1088,6 @@ public:
   /// Return true if the builder has IR-level attributes.
   bool hasAttributes() const { return !Attrs.empty(); }
 
-  /// Return true if the builder has an alignment attribute.
-  bool hasAlignmentAttr() const;
-
   /// Return Attribute with the given Kind. The returned attribute will be
   /// invalid if the Kind is not present in the builder.
   Attribute getAttribute(Attribute::AttrKind Kind) const;
@@ -1148,12 +1145,6 @@ public:
   /// Retrieve the allocsize args, if the allocsize attribute exists.  If it
   /// doesn't exist, pair(0, 0) is returned.
   std::pair<unsigned, Optional<unsigned>> getAllocSizeArgs() const;
-
-  /// Retrieve the minimum value of 'vscale_range'.
-  unsigned getVScaleRangeMin() const;
-
-  /// Retrieve the maximum value of 'vscale_range' or None when unknown.
-  Optional<unsigned> getVScaleRangeMax() const;
 
   /// Add integer attribute with raw value (packed/encoded if necessary).
   AttrBuilder &addRawIntAttr(Attribute::AttrKind Kind, uint64_t Value);
