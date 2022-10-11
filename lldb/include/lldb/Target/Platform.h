@@ -1054,34 +1054,6 @@ public:
     }
   }
 
-<<<<<<< HEAD
-=======
-  lldb::PlatformSP GetOrCreate(llvm::StringRef name);
-  lldb::PlatformSP GetOrCreate(const ArchSpec &arch,
-                               const ArchSpec &process_host_arch,
-                               ArchSpec *platform_arch_ptr, Status &error);
-  lldb::PlatformSP GetOrCreate(const ArchSpec &arch,
-                               const ArchSpec &process_host_arch,
-                               ArchSpec *platform_arch_ptr);
-
-  /// Get the platform for the given list of architectures.
-  ///
-  /// The algorithm works a follows:
-  ///
-  /// 1. Returns the selected platform if it matches any of the architectures.
-  /// 2. Returns the host platform if it matches any of the architectures.
-  /// 3. Returns the platform that matches all the architectures.
-  ///
-  /// If none of the above apply, this function returns a default platform. The
-  /// candidates output argument differentiates between either no platforms
-  /// supporting the given architecture or multiple platforms supporting the
-  /// given architecture.
-  lldb::PlatformSP GetOrCreate(llvm::ArrayRef<ArchSpec> archs,
-                               const ArchSpec &process_host_arch,
-                               std::vector<lldb::PlatformSP> &candidates);
-
-  lldb::PlatformSP Create(llvm::StringRef name);
-
   /// Detect a binary in memory that will determine which Platform and
   /// DynamicLoader should be used in this target/process, and update
   /// the Platform/DynamicLoader.
@@ -1108,7 +1080,6 @@ public:
   bool LoadPlatformBinaryAndSetup(Process *process, lldb::addr_t addr,
                                   bool notify);
 
->>>>>>> 8a568a7165a (Recognize a platform binary in ProcessGDBRemote which determines plugins)
 protected:
   typedef std::vector<lldb::PlatformSP> collection;
   mutable std::recursive_mutex m_mutex;
