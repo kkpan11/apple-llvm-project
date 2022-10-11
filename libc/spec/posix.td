@@ -402,6 +402,11 @@ def POSIX : StandardSpec<"POSIX"> {
           [ArgSpec<VoidType>]
         >,
         FunctionSpec<
+          "isatty",
+          RetValSpec<IntType>,
+          [ArgSpec<IntType>]
+        >,
+        FunctionSpec<
           "link",
           RetValSpec<IntType>,
           [ArgSpec<ConstCharPtr>, ArgSpec<ConstCharPtr>]
@@ -510,6 +515,11 @@ def POSIX : StandardSpec<"POSIX"> {
           "symlinkat",
           RetValSpec<IntType>,
           [ArgSpec<IntType>, ArgSpec<ConstCharPtr>, ArgSpec<IntType>, ArgSpec<ConstCharPtr>]
+        >,
+        FunctionSpec<
+          "sysconf",
+          RetValSpec<IntType>,
+          [ArgSpec<IntType>]
         >,
         FunctionSpec<
           "__llvm_libc_syscall",
@@ -1025,6 +1035,16 @@ def POSIX : StandardSpec<"POSIX"> {
     ]
   >;
 
+  HeaderSpec SysIOctl = HeaderSpec<
+    "sys/ioctl.h",
+    [
+      Macro<"TIOCGETD">,
+    ],  // Macros
+    [], // Types
+    [], // Enumerations
+    []  // Functions
+  >;
+
   let Headers = [
     CType,
     Dirent,
@@ -1034,6 +1054,7 @@ def POSIX : StandardSpec<"POSIX"> {
     Signal,
     StdIO,
     StdLib,
+    SysIOctl,
     SysMMan,
     SysResource,
     SysStat,

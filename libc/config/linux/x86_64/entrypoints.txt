@@ -156,6 +156,7 @@ set(TARGET_LIBC_ENTRYPOINTS
     libc.src.unistd.getpid
     libc.src.unistd.getppid
     libc.src.unistd.getuid
+    libc.src.unistd.isatty
     libc.src.unistd.link
     libc.src.unistd.linkat
     libc.src.unistd.lseek
@@ -167,6 +168,7 @@ set(TARGET_LIBC_ENTRYPOINTS
     libc.src.unistd.rmdir
     libc.src.unistd.symlink
     libc.src.unistd.symlinkat
+    libc.src.unistd.sysconf
     libc.src.unistd.truncate
     libc.src.unistd.unlink
     libc.src.unistd.unlinkat

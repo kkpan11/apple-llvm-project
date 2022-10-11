@@ -2015,7 +2015,8 @@ static bool link(InputArgList &args, bool canExitEarly, raw_ostream &stdoutOS,
   }
 
   // FIXME: Add a commandline flag for this too.
-  config->zeroModTime = getenv("ZERO_AR_DATE");
+  if (const char *zero = getenv("ZERO_AR_DATE"))
+    config->zeroModTime = strcmp(zero, "0") != 0;
 
   std::array<PlatformType, 3> encryptablePlatforms{
       PLATFORM_IOS, PLATFORM_WATCHOS, PLATFORM_TVOS};
