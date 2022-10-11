@@ -967,9 +967,9 @@ bool PlatformDarwinKernel::LoadPlatformBinaryAndSetup(Process *process,
   // Set the Target's Platform to be PlatformDarwinKernel, and the
   // Process' DynamicLoader to be DynamicLoaderDarwinKernel.
 
-  PlatformSP platform_sp =
-      process->GetTarget().GetDebugger().GetPlatformList().Create(
-          PlatformDarwinKernel::GetPluginNameStatic());
+  Status error;
+  PlatformSP platform_sp(Platform::Create(
+      ConstString(PlatformDarwinKernel::GetPluginNameStatic()), error));
   if (platform_sp)
     process->GetTarget().SetPlatform(platform_sp);
 
