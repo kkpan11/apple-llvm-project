@@ -232,6 +232,9 @@ public:
   /// Prevents intended crashes when using #pragma clang __debug. For testing.
   bool DisablePragmaDebugCrash = false;
 
+  /// If set, the UNIX timestamp specified by SOURCE_DATE_EPOCH.
+  Optional<uint64_t> SourceDateEpoch;
+
   /// Cache raw tokenization. Currently ignored unless the filesystem has is
   /// CAS-friendly.
   bool CacheRawLex = false;
