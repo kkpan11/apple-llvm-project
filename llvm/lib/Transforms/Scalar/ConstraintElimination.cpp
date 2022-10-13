@@ -189,6 +189,13 @@ static bool canUseSExt(ConstantInt *CI) {
   return Val.sgt(MinSignedConstraintValue) && Val.slt(MaxConstraintValue);
 }
 
+// A helper to multiply 2 signed integers where overflowing is allowed.
+static int64_t multiplyWithOverflow(int64_t A, int64_t B) {
+  int64_t Result;
+  MulOverflow(A, B, Result);
+  return Result;
+}
+
 static SmallVector<DecompEntry, 4>
 decomposeGEP(GetElementPtrInst &GEP,
              SmallVector<PreconditionTy, 4> &Preconditions, bool IsSigned,
@@ -214,7 +221,7 @@ decomposeGEP(GetElementPtrInst &GEP,
       isa<ConstantInt>(GEP.getOperand(1))) {
     APInt Offset = cast<ConstantInt>(GEP.getOperand(1))->getValue();
     auto Result = decompose(InnerGEP, Preconditions, IsSigned, DL);
-    Result[0].Coefficient += Scale * Offset.getSExtValue();
+    Result[0].Coefficient += multiplyWithOverflow(Scale, Offset.getSExtValue());
     if (Offset.isNegative()) {
       // Add pre-condition ensuring the GEP is increasing monotonically and
       // can be de-composed.
@@ -233,10 +240,12 @@ decomposeGEP(GetElementPtrInst &GEP,
     if (match(Op0, m_NUWShl(m_Value(Op1), m_ConstantInt(CI))) && canUseSExt(CI))
       return {{0, nullptr},
               {1, GEP.getPointerOperand()},
-              {Scale * int64_t(std::pow(int64_t(2), CI->getSExtValue())), Op1}};
+              {multiplyWithOverflow(
+                   Scale, int64_t(std::pow(int64_t(2), CI->getSExtValue()))),
+               Op1}};
     if (match(Op0, m_NSWAdd(m_Value(Op1), m_ConstantInt(CI))) &&
         canUseSExt(CI) && match(Op0, m_NUWAdd(m_Value(), m_Value())))
-      return {{Scale * CI->getSExtValue(), nullptr},
+      return {{multiplyWithOverflow(Scale, CI->getSExtValue()), nullptr},
               {1, GEP.getPointerOperand()},
               {Scale, Op1}};
 
@@ -245,7 +254,7 @@ decomposeGEP(GetElementPtrInst &GEP,
 
   if (match(GEP.getOperand(GEP.getNumOperands() - 1), m_ConstantInt(CI)) &&
       !CI->isNegative() && canUseSExt(CI))
-    return {{Scale * CI->getSExtValue(), nullptr},
+    return {{multiplyWithOverflow(Scale, CI->getSExtValue()), nullptr},
             {1, GEP.getPointerOperand()}};
 
   SmallVector<DecompEntry, 4> Result;
@@ -254,11 +263,13 @@ decomposeGEP(GetElementPtrInst &GEP,
       canUseSExt(CI))
     Result = {{0, nullptr},
               {1, GEP.getPointerOperand()},
-              {Scale * int64_t(std::pow(int64_t(2), CI->getSExtValue())), Op0}};
+              {multiplyWithOverflow(
+                   Scale, int64_t(std::pow(int64_t(2), CI->getSExtValue()))),
+               Op0}};
   else if (match(GEP.getOperand(GEP.getNumOperands() - 1),
                  m_NSWAdd(m_Value(Op0), m_ConstantInt(CI))) &&
            canUseSExt(CI))
-    Result = {{Scale * CI->getSExtValue(), nullptr},
+    Result = {{multiplyWithOverflow(Scale, CI->getSExtValue()), nullptr},
               {1, GEP.getPointerOperand()},
               {Scale, Op0}};
   else {
@@ -695,6 +706,62 @@ void State::addInfoFor(BasicBlock &BB) {
     WorkList.emplace_back(DT.getNode(Br->getSuccessor(1)), CmpI, true);
 }
 
+static bool checkAndReplaceCondition(CmpInst *Cmp, ConstraintInfo &Info) {
+  LLVM_DEBUG(dbgs() << "Checking " << *Cmp << "\n");
+  CmpInst::Predicate Pred = Cmp->getPredicate();
+  Value *A = Cmp->getOperand(0);
+  Value *B = Cmp->getOperand(1);
+
+  auto R = Info.getConstraintForSolving(Pred, A, B);
+  if (R.empty() || !R.isValid(Info))
+    return false;
+
+  auto &CSToUse = Info.getCS(R.IsSigned);
+
+  // If there was extra information collected during decomposition, apply
+  // it now and remove it immediately once we are done with reasoning
+  // about the constraint.
+  for (auto &Row : R.ExtraInfo)
+    CSToUse.addVariableRow(Row);
+  auto InfoRestorer = make_scope_exit([&]() {
+    for (unsigned I = 0; I < R.ExtraInfo.size(); ++I)
+      CSToUse.popLastConstraint();
+  });
+
+  bool Changed = false;
+  LLVMContext &Ctx = Cmp->getModule()->getContext();
+  if (CSToUse.isConditionImplied(R.Coefficients)) {
+    if (!DebugCounter::shouldExecute(EliminatedCounter))
+      return false;
+
+    LLVM_DEBUG({
+      dbgs() << "Condition " << *Cmp << " implied by dominating constraints\n";
+      dumpWithNames(CSToUse, Info.getValue2Index(R.IsSigned));
+    });
+    Cmp->replaceUsesWithIf(ConstantInt::getTrue(Ctx), [](Use &U) {
+      // Conditions in an assume trivially simplify to true. Skip uses
+      // in assume calls to not destroy the available information.
+      auto *II = dyn_cast<IntrinsicInst>(U.getUser());
+      return !II || II->getIntrinsicID() != Intrinsic::assume;
+    });
+    NumCondsRemoved++;
+    Changed = true;
+  }
+  if (CSToUse.isConditionImplied(ConstraintSystem::negate(R.Coefficients))) {
+    if (!DebugCounter::shouldExecute(EliminatedCounter))
+      return false;
+
+    LLVM_DEBUG({
+      dbgs() << "Condition !" << *Cmp << " implied by dominating constraints\n";
+      dumpWithNames(CSToUse, Info.getValue2Index(R.IsSigned));
+    });
+    Cmp->replaceAllUsesWith(ConstantInt::getFalse(Ctx));
+    NumCondsRemoved++;
+    Changed = true;
+  }
+  return Changed;
+}
+
 void ConstraintInfo::addFact(CmpInst::Predicate Pred, Value *A, Value *B,
                              unsigned NumIn, unsigned NumOut,
                              SmallVectorImpl<StackEntry> &DFSInStack) {
@@ -884,58 +951,7 @@ static bool eliminateConstraints(Function &F, DominatorTree &DT) {
         if (!Cmp)
           continue;
 
-        LLVM_DEBUG(dbgs() << "Checking " << *Cmp << "\n");
-        auto R = Info.getConstraintForSolving(
-            Cmp->getPredicate(), Cmp->getOperand(0), Cmp->getOperand(1));
-        if (R.empty() || !R.isValid(Info))
-          continue;
-
-        auto &CSToUse = Info.getCS(R.IsSigned);
-
-        // If there was extra information collected during decomposition, apply
-        // it now and remove it immediately once we are done with reasoning
-        // about the constraint.
-        for (auto &Row : R.ExtraInfo)
-          CSToUse.addVariableRow(Row);
-        auto InfoRestorer = make_scope_exit([&]() {
-          for (unsigned I = 0; I < R.ExtraInfo.size(); ++I)
-            CSToUse.popLastConstraint();
-        });
-
-        if (CSToUse.isConditionImplied(R.Coefficients)) {
-          if (!DebugCounter::shouldExecute(EliminatedCounter))
-            continue;
-
-          LLVM_DEBUG({
-            dbgs() << "Condition " << *Cmp
-                   << " implied by dominating constraints\n";
-            dumpWithNames(CSToUse, Info.getValue2Index(R.IsSigned));
-          });
-          Cmp->replaceUsesWithIf(
-              ConstantInt::getTrue(F.getParent()->getContext()), [](Use &U) {
-                // Conditions in an assume trivially simplify to true. Skip uses
-                // in assume calls to not destroy the available information.
-                auto *II = dyn_cast<IntrinsicInst>(U.getUser());
-                return !II || II->getIntrinsicID() != Intrinsic::assume;
-              });
-          NumCondsRemoved++;
-          Changed = true;
-        }
-        if (CSToUse.isConditionImplied(
-                ConstraintSystem::negate(R.Coefficients))) {
-          if (!DebugCounter::shouldExecute(EliminatedCounter))
-            continue;
-
-          LLVM_DEBUG({
-            dbgs() << "Condition !" << *Cmp
-                   << " implied by dominating constraints\n";
-            dumpWithNames(CSToUse, Info.getValue2Index(R.IsSigned));
-          });
-          Cmp->replaceAllUsesWith(
-              ConstantInt::getFalse(F.getParent()->getContext()));
-          NumCondsRemoved++;
-          Changed = true;
-        }
+        Changed |= checkAndReplaceCondition(Cmp, Info);
       }
       continue;
     }

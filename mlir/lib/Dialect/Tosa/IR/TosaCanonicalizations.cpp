@@ -662,7 +662,7 @@ OpFoldResult SubOp::fold(ArrayRef<Attribute> operands) {
 namespace {
 template <typename Cmp>
 struct ComparisonFold {
-  ComparisonFold() {}
+  ComparisonFold() = default;
   APInt operator()(const APInt &l, const APInt &r) {
     return APInt(1, Cmp()(l, r));
   }
@@ -673,13 +673,17 @@ struct ComparisonFold {
 };
 
 struct APIntFoldGreater {
-  APIntFoldGreater() {}
-  APInt operator()(APInt l, APInt r) { return APInt(1, l.sgt(r)); }
+  APIntFoldGreater() = default;
+  APInt operator()(const APInt &l, const APInt &r) {
+    return APInt(1, l.sgt(r));
+  }
 };
 
 struct APIntFoldGreaterEqual {
-  APIntFoldGreaterEqual() {}
-  APInt operator()(APInt l, APInt r) { return APInt(1, l.sge(r)); }
+  APIntFoldGreaterEqual() = default;
+  APInt operator()(const APInt &l, const APInt &r) {
+    return APInt(1, l.sge(r));
+  }
 };
 } // namespace
 
