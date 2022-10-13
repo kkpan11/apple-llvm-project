@@ -51,7 +51,6 @@
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
 #include "llvm/RemoteCachingService/Client.h"
-#include "llvm/Support/Base64.h"
 #include "llvm/Support/BuryPointer.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -365,6 +364,8 @@ private:
   Expected<bool> replayCachedResult(
       const llvm::cas::CASID &ResultCacheKey,
       const llvm::cas::remote::KeyValueDBClient::ValueTy &CompResult);
+
+  std::string getPrintableRemoteID(StringRef RemoteCASIDBytes);
 
   void tryReleaseLLBuildExecutionLane();
 
@@ -1142,7 +1143,7 @@ Expected<bool> RemoteCachingOutputs::replayCachedResult(
       return Response.takeError();
     const CallCtx &Ctx = *static_cast<CallCtx *>(Response->CallCtx.get());
     if (Response->KeyNotFound) {
-      std::string PrintedRemoteCASID = llvm::encodeBase64(Ctx.CASID);
+      std::string PrintedRemoteCASID = getPrintableRemoteID(Ctx.CASID);
       Diags.Report(diag::remark_compile_job_cache_backend_output_not_found)
           << Ctx.OutputName << ResultCacheKey.toString() << PrintedRemoteCASID;
       HasMissingOutput = true;
@@ -1162,7 +1163,7 @@ Expected<bool> RemoteCachingOutputs::replayCachedResult(
   auto MainOutputI = CompResult.find(MainOutputName);
   assert(MainOutputI != CompResult.end());
   std::string PrintedRemoteMainOutputCASID =
-      llvm::encodeBase64(MainOutputI->second);
+      getPrintableRemoteID(MainOutputI->second);
   Diags.Report(diag::remark_compile_job_cache_hit)
       << ResultCacheKey.toString()
       << (Twine(MainOutputName) + ": " + PrintedRemoteMainOutputCASID).str();
@@ -1248,6 +1249,13 @@ Error RemoteCachingOutputs::finishComputedResult(
     return Response.takeError();
 
   return Error::success();
+}
+
+std::string
+RemoteCachingOutputs::getPrintableRemoteID(StringRef RemoteCASIDBytes) {
+  // FIXME: Enhance the remote protocol for the service to be able to provide
+  // a string suitable for logging a remote CASID.
+  return "<remote-ID>";
 }
 
 void RemoteCachingOutputs::tryReleaseLLBuildExecutionLane() {
