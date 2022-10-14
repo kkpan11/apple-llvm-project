@@ -54,9 +54,13 @@ class TypeClass {
   list<Type> Types;
 }
 
-def AluTypeClass : TypeClass {
+def NumberTypeClass : TypeClass {
   let Types = [Sint8, Uint8, Sint16, Uint16, Sint32,
-               Uint32, Sint64, Uint64, Bool];
+               Uint32, Sint64, Uint64];
+}
+
+def AluTypeClass : TypeClass {
+  let Types = !listconcat(NumberTypeClass.Types, [Bool]);
 }
 
 def PtrTypeClass : TypeClass {
@@ -393,7 +397,14 @@ def SubOffset : AluOpcode;
 def Sub : AluOpcode;
 def Add : AluOpcode;
 def Mul : AluOpcode;
-
+def Rem : Opcode {
+  let Types = [NumberTypeClass];
+  let HasGroup = 1;
+}
+def Div : Opcode {
+  let Types = [NumberTypeClass];
+  let HasGroup = 1;
+}
 
 //===----------------------------------------------------------------------===//
 // Unary operators.
@@ -408,6 +419,12 @@ def Inv: Opcode {
 // [Real] -> [Real]
 def Neg: Opcode {
   let Types = [AluTypeClass];
+  let HasGroup = 1;
+}
+
+// [Real] -> [Real]
+def Comp: Opcode {
+  let Types = [NumberTypeClass];
   let HasGroup = 1;
 }
 

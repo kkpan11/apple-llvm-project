@@ -3,6 +3,10 @@
 // RUN: %clang_cc1 -std=c++11 -verify=ref %s
 // RUN: %clang_cc1 -std=c++20 -verify=ref %s
 
+#define INT_MIN (~__INT_MAX__)
+#define INT_MAX __INT_MAX__
+
+
 static_assert(true, "");
 static_assert(false, ""); // expected-error{{failed}} ref-error{{failed}}
 static_assert(nullptr == nullptr, "");
@@ -65,6 +69,18 @@ static_assert(!5 == false, "");
 static_assert(!0, "");
 static_assert(-true, "");
 static_assert(-false, ""); //expected-error{{failed}} ref-error{{failed}}
+
+static_assert(~0 == -1, "");
+static_assert(~1 == -2, "");
+static_assert(~-1 == 0, "");
+static_assert(~255 == -256, "");
+static_assert(~INT_MIN == INT_MAX, "");
+static_assert(~INT_MAX == INT_MIN, "");
+
+enum E {};
+constexpr E e = static_cast<E>(0);
+static_assert(~e == -1, "");
+
 
 constexpr int m = 10;
 constexpr const int *p = &m;
@@ -144,4 +160,53 @@ namespace SizeOf {
                               // expected-note {{required by 'constinit' specifier}} \
 
 #endif
+};
+
+namespace rem {
+  static_assert(2 % 2 == 0, "");
+  static_assert(2 % 1 == 0, "");
+  static_assert(-3 % 4 == -3, "");
+  static_assert(4 % -2 == 0, "");
+  static_assert(-3 % -4 == -3, "");
+
+  constexpr int zero() { return 0; }
+  static_assert(10 % zero() == 20, ""); // ref-error {{not an integral constant expression}} \
+                                        // ref-note {{division by zero}} \
+                                        // expected-error {{not an integral constant expression}} \
+                                        // expected-note {{division by zero}}
+
+
+  static_assert(true % true == 0, "");
+  static_assert(false % true == 0, "");
+  static_assert(true % false == 10, ""); // ref-error {{not an integral constant expression}} \
+                                         // ref-note {{division by zero}} \
+                                         // expected-error {{not an integral constant expression}} \
+                                         // expected-note {{division by zero}}
+  constexpr int x = INT_MIN % - 1; // ref-error {{must be initialized by a constant expression}} \
+                                   // ref-note {{value 2147483648 is outside the range}} \
+                                   // expected-error {{must be initialized by a constant expression}} \
+                                   // expected-note {{value 2147483648 is outside the range}} \
+
+};
+
+namespace div {
+  constexpr int zero() { return 0; }
+  static_assert(12 / 3 == 4, "");
+  static_assert(12 / zero() == 12, ""); // ref-error {{not an integral constant expression}} \
+                                        // ref-note {{division by zero}} \
+                                        // expected-error {{not an integral constant expression}} \
+                                        // expected-note {{division by zero}}
+  static_assert(12 / -3 == -4, "");
+  static_assert(-12 / 3 == -4, "");
+
+
+  constexpr int LHS = 12;
+  constexpr long unsigned RHS = 3;
+  static_assert(LHS / RHS == 4, "");
+
+  constexpr int x = INT_MIN / - 1; // ref-error {{must be initialized by a constant expression}} \
+                                   // ref-note {{value 2147483648 is outside the range}} \
+                                   // expected-error {{must be initialized by a constant expression}} \
+                                   // expected-note {{value 2147483648 is outside the range}} \
+
 };
