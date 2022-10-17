@@ -442,6 +442,17 @@ static bool isOpcWithIntImmediate(const SDNode *N, unsigned Opc,
          isIntImmediate(N->getOperand(1).getNode(), Imm);
 }
 
+// isIntImmediateEq - This method tests to see if N is a constant operand that
+// is equivalent to 'ImmExpected'.
+#ifndef NDEBUG
+static bool isIntImmediateEq(SDValue N, const uint64_t ImmExpected) {
+  uint64_t Imm;
+  if (!isIntImmediate(N.getNode(), Imm))
+    return false;
+  return Imm == ImmExpected;
+}
+#endif
+
 bool AArch64DAGToDAGISel::SelectInlineAsmMemoryOperand(
     const SDValue &Op, unsigned ConstraintID, std::vector<SDValue> &OutOps) {
   switch(ConstraintID) {
@@ -2551,6 +2562,7 @@ static bool isBitfieldPositioningOpFromAnd(SelectionDAG *CurDAG, SDValue Op,
   EVT VT = Op.getValueType();
   assert((VT == MVT::i32 || VT == MVT::i64) &&
          "Caller guarantees VT is one of i32 or i64");
+  (void)VT;
 
   uint64_t AndImm;
   if (!isOpcWithIntImmediate(Op.getNode(), ISD::AND, AndImm))
@@ -2584,11 +2596,45 @@ static bool isBitfieldPositioningOpFromAnd(SelectionDAG *CurDAG, SDValue Op,
   // amount.  BiggerPattern is true when this pattern is being matched for BFI,
   // BiggerPattern is false when this pattern is being matched for UBFIZ, in
   // which case it is not profitable to insert an extra shift.
-  if (ShlImm != DstLSB && !BiggerPattern)
+  if (ShlImm != uint64_t(DstLSB) && !BiggerPattern)
     return false;
 
   Src = getLeftShift(CurDAG, AndOp0.getOperand(0), ShlImm - DstLSB);
   return true;
+}
+
+// For node (shl (and val, mask), N)), returns true if the node is equivalent to
+// UBFIZ.
+static bool isSeveralBitsPositioningOpFromShl(const uint64_t ShlImm, SDValue Op,
+                                              SDValue &Src, int &DstLSB,
+                                              int &Width) {
+  // Caller should have verified that N is a left shift with constant shift
+  // amount; asserts that.
+  assert(Op.getOpcode() == ISD::SHL &&
+         "Op.getNode() should be a SHL node to call this function");
+  assert(isIntImmediateEq(Op.getOperand(1), ShlImm) &&
+         "Op.getNode() should shift ShlImm to call this function");
+
+  uint64_t AndImm = 0;
+  SDValue Op0 = Op.getOperand(0);
+  if (!isOpcWithIntImmediate(Op0.getNode(), ISD::AND, AndImm))
+    return false;
+
+  const uint64_t ShiftedAndImm = ((AndImm << ShlImm) >> ShlImm);
+  if (isMask_64(ShiftedAndImm)) {
+    // AndImm is a superset of (AllOnes >> ShlImm); in other words, AndImm
+    // should end with Mask, and could be prefixed with random bits if those
+    // bits are shifted out.
+    //
+    // For example, xyz11111 (with {x,y,z} being 0 or 1) is fine if ShlImm >= 3;
+    // the AND result corresponding to those bits are shifted out, so it's fine
+    // to not extract them.
+    Width = countTrailingOnes(ShiftedAndImm);
+    DstLSB = ShlImm;
+    Src = Op0.getOperand(0);
+    return true;
+  }
+  return false;
 }
 
 static bool isBitfieldPositioningOpFromShl(SelectionDAG *CurDAG, SDValue Op,
@@ -2601,6 +2647,7 @@ static bool isBitfieldPositioningOpFromShl(SelectionDAG *CurDAG, SDValue Op,
   EVT VT = Op.getValueType();
   assert((VT == MVT::i32 || VT == MVT::i64) &&
          "Caller guarantees that type is i32 or i64");
+  (void)VT;
 
   uint64_t ShlImm;
   if (!isOpcWithIntImmediate(Op.getNode(), ISD::SHL, ShlImm))
@@ -2609,10 +2656,13 @@ static bool isBitfieldPositioningOpFromShl(SelectionDAG *CurDAG, SDValue Op,
   if (!BiggerPattern && !Op.hasOneUse())
     return false;
 
+  if (isSeveralBitsPositioningOpFromShl(ShlImm, Op, Src, DstLSB, Width))
+    return true;
+
   DstLSB = countTrailingZeros(NonZeroBits);
   Width = countTrailingOnes(NonZeroBits >> DstLSB);
 
-  if (DstLSB != ShlImm && !BiggerPattern)
+  if (ShlImm != uint64_t(DstLSB) && !BiggerPattern)
     return false;
 
   Src = getLeftShift(CurDAG, Op.getOperand(0), ShlImm - DstLSB);
