@@ -946,8 +946,11 @@ static Error materializeCUDie(DWARFCompileUnit &DCU,
   DWARFDataExtractor DWARFExtractor(CUData, DCU.isLittleEndian(),
                                     DCU.getAddressByteSize());
   uint64_t PrevOffset = CUOffset;
-  uint64_t AbbrevTag = DWARFExtractor.getULEB128(&CUOffset);
-  std::memcpy(&SectionContents[SectionOffset], &AbbrevTag,
+  Error Err = Error::success();
+  uint64_t AbbrevTag = DWARFExtractor.getULEB128(&CUOffset, &Err);
+  if (Err)
+    return Err;
+  std::memcpy(&SectionContents[SectionOffset], CUData.data() + PrevOffset,
               CUOffset - PrevOffset);
   SectionOffset += CUOffset - PrevOffset;
 
@@ -960,6 +963,7 @@ static Error materializeCUDie(DWARFCompileUnit &DCU,
   DWARFDebugInfoEntry DDIE;
   auto *AbbrevDecl =
       DCU.getAbbreviations()->getAbbreviationDeclaration(AbbrevTag);
+  assert(AbbrevDecl && "AbbrevDecl not found!");
   DDIE.setAbbrevDecl(AbbrevDecl);
   DWARFDie CUDie(&DCU, &DDIE);
 
@@ -971,15 +975,23 @@ static Error materializeCUDie(DWARFCompileUnit &DCU,
     auto Form = AbbrevDecl->getFormByIndex(I);
     auto *U = CUDie.getDwarfUnit();
     dwarf::FormParams FP = U->getFormParams();
-    auto FormSize = getFormSize(Form, FP, CUData, CUOffset,
-                                DCU.isLittleEndian(), DCU.getAddressByteSize());
+    bool FormInDistinctDataRef = is_contained(
+        InMemoryCASDWARFObject::PartitionedDebugInfoSection::FormsToPartition,
+        Form);
+    auto FormSize = getFormSize(
+        Form, FP,
+        FormInDistinctDataRef ? toStringRef(DistinctDataArrayRef) : CUData,
+        FormInDistinctDataRef ? DistinctDataOffset : CUOffset,
+        DCU.isLittleEndian(), DCU.getAddressByteSize());
 
     if (!FormSize)
       return FormSize.takeError();
+    // Some forms can have the size zero, such as DW_FORM_flag_present, skip the
+    // iteration if this is the case.
+    if (!*FormSize)
+      continue;
     bool DidOverflow = false;
-    if (is_contained(InMemoryCASDWARFObject::PartitionedDebugInfoSection::
-                         FormsToPartition,
-                     Form)) {
+    if (FormInDistinctDataRef) {
       auto Value = SaturatingAdd(*FormSize, DistinctDataOffset, &DidOverflow);
       if (DidOverflow)
         return createStringError(
@@ -1098,7 +1110,7 @@ DebugInfoSectionRef::materialize(MCCASReader &Reader,
                          CASObj.getStrSection(), CASObj.getStrOffsetsSection(),
                          &CASObj.getAddrSection(), CASObj.getLocSection(),
                          Reader.getEndian() == support::little, false, UV);
-    while (CUOffset < CUData.size()) {
+    while (SectionOffset < SectionData.size()) {
       auto Err = materializeCUDie(
           DCU, SectionData, toStringRef(CUData),
           arrayRefFromStringRef<char>(LoadedSection->DistinctData), CUOffset,
@@ -1109,6 +1121,9 @@ DebugInfoSectionRef::materialize(MCCASReader &Reader,
     SectionContents.append(SectionData.begin(), SectionData.end());
     Size += SectionData.size();
   }
+
+  assert(DistinctDataOffset == LoadedSection->DistinctData.size() &&
+         "Mismatched materialization of the CAS");
 
   if (Optional<PaddingRef> Padding = LoadedSection->Padding) {
     auto PaddingSize = Padding->materialize(SectionStream);
