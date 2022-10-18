@@ -13,6 +13,8 @@ from lldbsuite.test import lldbutil
 
 class TestMultipleBinaryCorefile(TestBase):
 
+    mydir = TestBase.compute_mydir(__file__)
+
     def initial_setup(self):
         self.build()
         self.aout_exe_basename = "a.out"
