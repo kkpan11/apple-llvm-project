@@ -724,12 +724,16 @@ Status PluginManager::SaveCore(const lldb::ProcessSP &process_sp,
 struct ObjectContainerInstance
     : public PluginInstance<ObjectContainerCreateInstance> {
   ObjectContainerInstance(
-      ConstString name, std::string description, CallbackType create_callback,
+      ConstString name, std::string description,
+      CallbackType create_callback,
+      ObjectContainerCreateMemoryInstance create_memory_callback,
       ObjectFileGetModuleSpecifications get_module_specifications)
-      : PluginInstance<ObjectContainerCreateInstance>(
-            name, std::move(description), create_callback),
+      : PluginInstance<ObjectContainerCreateInstance>(name, std::move(description),
+                                                      create_callback),
+        create_memory_callback(create_memory_callback),
         get_module_specifications(get_module_specifications) {}
 
+  ObjectContainerCreateMemoryInstance create_memory_callback;
   ObjectFileGetModuleSpecifications get_module_specifications;
 };
 typedef PluginInstances<ObjectContainerInstance> ObjectContainerInstances;
@@ -742,9 +746,10 @@ static ObjectContainerInstances &GetObjectContainerInstances() {
 bool PluginManager::RegisterPlugin(
     llvm::StringRef name, llvm::StringRef description,
     ObjectContainerCreateInstance create_callback,
-    ObjectFileGetModuleSpecifications get_module_specifications) {
+    ObjectFileGetModuleSpecifications get_module_specifications,
+    ObjectContainerCreateMemoryInstance create_memory_callback) {
   return GetObjectContainerInstances().RegisterPlugin(
-      ConstString(name), description.str().c_str(), create_callback,
+      ConstString(name), description.str().c_str(), create_callback, create_memory_callback,
       get_module_specifications);
 }
 
@@ -756,6 +761,14 @@ bool PluginManager::UnregisterPlugin(
 ObjectContainerCreateInstance
 PluginManager::GetObjectContainerCreateCallbackAtIndex(uint32_t idx) {
   return GetObjectContainerInstances().GetCallbackAtIndex(idx);
+}
+
+ObjectContainerCreateMemoryInstance
+PluginManager::GetObjectContainerCreateMemoryCallbackAtIndex(uint32_t idx) {
+  const auto &instances = GetObjectContainerInstances().GetInstances();
+  if (idx < instances.size())
+    return instances[idx].create_memory_callback;
+  return nullptr;
 }
 
 ObjectFileGetModuleSpecifications

@@ -958,6 +958,17 @@ bool ObjectFileMachO::MagicBytesMatch(DataBufferSP data_sp,
   data.SetData(data_sp, data_offset, data_length);
   lldb::offset_t offset = 0;
   uint32_t magic = data.GetU32(&offset);
+
+  offset += 4; // cputype
+  offset += 4; // cpusubtype
+  uint32_t filetype = data.GetU32(&offset);
+
+  // A fileset has a Mach-O header but is not an
+  // individual file and must be handled via an
+  // ObjectContainer plugin.
+  if (filetype == llvm::MachO::MH_FILESET)
+    return false;
+
   return MachHeaderSizeFromMagic(magic) != 0;
 }
 
@@ -5760,7 +5771,8 @@ bool ObjectFileMachO::GetCorefileMainBinaryInfo(addr_t &value,
             }
 
             if (m_data.CopyData(offset, sizeof(uuid_t), raw_uuid) != 0) {
-              uuid = UUID::fromOptionalData(raw_uuid, sizeof(uuid_t));
+              if (!uuid_is_null(raw_uuid))
+                uuid = UUID::fromOptionalData(raw_uuid, sizeof(uuid_t));
               // convert the "main bin spec" type into our
               // ObjectFile::BinaryType enum
               switch (binspec_type) {
@@ -7079,7 +7091,8 @@ ObjectFileMachO::GetCorefileAllImageInfos() {
 
           MachOCorefileImageEntry image_entry;
           image_entry.filename = (const char *)m_data.GetCStr(&filepath_offset);
-          image_entry.uuid = UUID::fromData(uuid, sizeof(uuid_t));
+          if (!uuid_is_null(uuid))
+            image_entry.uuid = UUID::fromData(uuid, sizeof(uuid_t));
           image_entry.load_address = load_address;
           image_entry.currently_executing = currently_executing;
 
@@ -7110,9 +7123,11 @@ ObjectFileMachO::GetCorefileAllImageInfos() {
 
           MachOCorefileImageEntry image_entry;
           image_entry.filename = filename;
-          image_entry.uuid = UUID::fromData(uuid, sizeof(uuid_t));
+          if (!uuid_is_null(uuid))
+            image_entry.uuid = UUID::fromData(uuid, sizeof(uuid_t));
           image_entry.load_address = load_address;
           image_entry.slide = slide;
+          image_entry.currently_executing = true;
           image_infos.all_image_infos.push_back(image_entry);
         }
       }
@@ -7126,45 +7141,81 @@ ObjectFileMachO::GetCorefileAllImageInfos() {
 bool ObjectFileMachO::LoadCoreFileImages(lldb_private::Process &process) {
   MachOCorefileAllImageInfos image_infos = GetCorefileAllImageInfos();
   Log *log = GetLog(LLDBLog::DynamicLoader);
+  Status error;
 
+  bool found_platform_binary = false;
   ModuleList added_modules;
-  for (const MachOCorefileImageEntry &image : image_infos.all_image_infos) {
-    ModuleSpec module_spec;
-    module_spec.GetUUID() = image.uuid;
-    if (image.filename.empty()) {
-      char namebuf[80];
-      if (image.load_address != LLDB_INVALID_ADDRESS)
-        snprintf(namebuf, sizeof(namebuf), "mem-image-0x%" PRIx64,
-                 image.load_address);
-      else
-        snprintf(namebuf, sizeof(namebuf), "mem-image+0x%" PRIx64, image.slide);
-      module_spec.GetFileSpec() = FileSpec(namebuf);
-    } else {
-      module_spec.GetFileSpec() = FileSpec(image.filename.c_str());
+  for (MachOCorefileImageEntry &image : image_infos.all_image_infos) {
+    ModuleSP module_sp, local_filesystem_module_sp;
+
+    // If this is a platform binary, it has been loaded (or registered with
+    // the DynamicLoader to be loaded), we don't need to do any further
+    // processing.  We're not going to call ModulesDidLoad on this in this
+    // method, so notify==true.
+    if (process.GetTarget()
+            .GetDebugger()
+            .GetPlatformList()
+            .LoadPlatformBinaryAndSetup(&process, image.load_address,
+                                        true /* notify */)) {
+      LLDB_LOGF(log,
+                "ObjectFileMachO::%s binary at 0x%" PRIx64
+                " is a platform binary, has been handled by a Platform plugin.",
+                __FUNCTION__, image.load_address);
+      continue;
     }
-    if (image.currently_executing) {
-      Status error;
+
+    // If this binary is currently executing, we want to force a
+    // possibly expensive search for the binary and its dSYM.
+    if (image.currently_executing && image.uuid.IsValid()) {
+      ModuleSpec module_spec;
+      module_spec.GetUUID() = image.uuid;
       Symbols::DownloadObjectAndSymbolFile(module_spec, error, true);
       if (FileSystem::Instance().Exists(module_spec.GetFileSpec())) {
-        process.GetTarget().GetOrCreateModule(module_spec, false);
+        module_sp = process.GetTarget().GetOrCreateModule(module_spec, false);
+        process.GetTarget().GetImages().AppendIfNeeded(module_sp,
+                                                       false /* notify */);
       }
     }
-    Status error;
-    ModuleSP module_sp =
-        process.GetTarget().GetOrCreateModule(module_spec, false, &error);
-    if (!module_sp.get() || !module_sp->GetObjectFile()) {
-      if (image.load_address != LLDB_INVALID_ADDRESS) {
-        module_sp = process.ReadModuleFromMemory(module_spec.GetFileSpec(),
-                                                 image.load_address);
-      }
+
+    // We have an address, that's the best way to discover the binary.
+    if (!module_sp && image.load_address != LLDB_INVALID_ADDRESS) {
+      module_sp = DynamicLoader::LoadBinaryWithUUIDAndAddress(
+          &process, image.filename, image.uuid, image.load_address,
+          false /* value_is_offset */, image.currently_executing,
+          false /* notify */);
     }
-    if (module_sp.get()) {
-      // Will call ModulesDidLoad with all modules once they've all
-      // been added to the Target with load addresses.  Don't notify
-      // here, before the load address is set.
-      const bool notify = false;
-      process.GetTarget().GetImages().AppendIfNeeded(module_sp, notify);
-      added_modules.Append(module_sp, notify);
+
+    // If we have a slide, we need to find the original binary
+    // by UUID, then we can apply the slide value.
+    if (!module_sp && image.uuid.IsValid() &&
+        image.slide != LLDB_INVALID_ADDRESS) {
+      module_sp = DynamicLoader::LoadBinaryWithUUIDAndAddress(
+          &process, image.filename, image.uuid, image.slide,
+          true /* value_is_offset */, image.currently_executing,
+          false /* notify */);
+    }
+
+    // Try to find the binary by UUID or filename on the local
+    // filesystem or in lldb's global module cache.
+    if (!module_sp) {
+      Status error;
+      ModuleSpec module_spec;
+      if (image.uuid.IsValid())
+        module_spec.GetUUID() = image.uuid;
+      if (!image.filename.empty())
+        module_spec.GetFileSpec() = FileSpec(image.filename.c_str());
+      module_sp =
+          process.GetTarget().GetOrCreateModule(module_spec, false, &error);
+      process.GetTarget().GetImages().AppendIfNeeded(module_sp,
+                                                     false /* notify */);
+    }
+
+    // We have a ModuleSP to load in the Target.  Load it at the
+    // correct address/slide and notify/load scripting resources.
+    if (module_sp) {
+      added_modules.Append(module_sp, false /* notify */);
+
+      // We have a list of segment load address
       if (image.segment_load_addresses.size() > 0) {
         if (log) {
           std::string uuidstr = image.uuid.GetAsString();
@@ -7225,5 +7276,11 @@ bool ObjectFileMachO::LoadCoreFileImages(lldb_private::Process &process) {
     process.Flush();
     return true;
   }
+  // Return true if the only binary we found was the platform binary,
+  // and it was loaded outside the scope of this method.
+  if (found_platform_binary)
+    return true;
+
+  // No binaries.
   return false;
 }

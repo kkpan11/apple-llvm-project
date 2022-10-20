@@ -167,6 +167,7 @@ add_lldb_test_dependency(
   llvm-objcopy
   llvm-pdbutil
   llvm-readobj
+  llvm-ar
   )
 
 if(TARGET lld)
