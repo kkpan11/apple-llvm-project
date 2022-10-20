@@ -516,10 +516,8 @@ static int scanAndUpdateCC1(const char *Exec, ArrayRef<const char *> OldArgs,
   using namespace clang::driver;
 
   llvm::ScopedDurationTimer ScopedTime([&Diag](double Seconds) {
-    SmallString<16> DurationStr;
-    llvm::raw_svector_ostream(DurationStr)
-        << llvm::format("%.6f", Seconds) << 's';
-    Diag.Report(diag::remark_compile_job_cache_timing_depscan) << DurationStr;
+    Diag.Report(diag::remark_compile_job_cache_timing_depscan)
+        << llvm::format("%.6fs", Seconds);
   });
 
   StringRef WorkingDirectory;
