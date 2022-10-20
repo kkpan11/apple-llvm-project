@@ -714,6 +714,9 @@ public:
     return false;
   }
 
+  static lldb::DataBufferSP MapFileData(const FileSpec &file, uint64_t Size,
+                                        uint64_t Offset);
+
 protected:
   // Member variables.
   FileSpec m_file;
@@ -746,9 +749,6 @@ protected:
 
   /// The number of bytes to read when going through the plugins.
   static size_t g_initial_bytes_to_read;
-
-  static lldb::DataBufferSP MapFileData(const FileSpec &file, uint64_t Size,
-                                        uint64_t Offset);
 
 private:
   ObjectFile(const ObjectFile &) = delete;
