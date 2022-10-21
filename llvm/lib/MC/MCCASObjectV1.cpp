@@ -663,6 +663,21 @@ DebugAbbrevSectionRef::create(MCCASBuilder &MB,
   return get(B->build());
 }
 
+Expected<DebugLineSectionRef>
+DebugLineSectionRef::create(MCCASBuilder &MB,
+                            ArrayRef<cas::ObjectRef> Fragments) {
+  Expected<Builder> B = Builder::startNode(MB.Schema, KindString);
+  if (!B)
+    return B.takeError();
+
+  if (auto E = encodeReferences(Fragments, B->Data, B->Refs))
+    return std::move(E);
+
+  writeRelocationsAndAddends(MB.getSectionRelocs(), MB.getSectionAddends(),
+                             B->Data);
+  return get(B->build());
+}
+
 /// Class that represents a fully verified DebugInfoSectionRef object loaded
 /// from the CAS.
 struct LoadedDebugInfoSection {
@@ -1180,6 +1195,38 @@ Expected<uint64_t> SectionRef::materialize(MCCASReader &Reader,
 Expected<uint64_t>
 DebugAbbrevSectionRef::materialize(MCCASReader &Reader,
                                    raw_ostream *Stream) const {
+  // Start a new section for relocations.
+  Reader.Relocations.emplace_back();
+  SmallVector<char, 0> SectionContents;
+  raw_svector_ostream SectionStream(SectionContents);
+
+  unsigned Size = 0;
+  StringRef Remaining = getData();
+  auto Refs = decodeReferences(*this, Remaining);
+  if (!Refs)
+    return Refs.takeError();
+
+  for (auto ID : *Refs) {
+    auto FragmentSize = Reader.materializeSection(ID, &SectionStream);
+    if (!FragmentSize)
+      return FragmentSize.takeError();
+    Size += *FragmentSize;
+  }
+
+  if (auto E = decodeRelocationsAndAddends(Reader, Remaining))
+    return std::move(E);
+
+  if (auto E = applyAddends(Reader, SectionContents))
+    return std::move(E);
+
+  Reader.Addends.clear();
+  Reader.OS << SectionContents;
+
+  return Size;
+}
+
+Expected<uint64_t> DebugLineSectionRef::materialize(MCCASReader &Reader,
+                                                    raw_ostream *Stream) const {
   // Start a new section for relocations.
   Reader.Relocations.emplace_back();
   SmallVector<char, 0> SectionContents;
@@ -2130,7 +2177,7 @@ Error MCCASBuilder::createLineSection() {
   }
   if (auto E = createPaddingRef(DwarfSections.Line))
     return E;
-  return finalizeSection();
+  return finalizeSection<DebugLineSectionRef>();
 }
 
 Error MCCASBuilder::createDebugStrSection() {
@@ -2552,6 +2599,8 @@ Expected<uint64_t> MCCASReader::materializeGroup(cas::ObjectRef ID) {
     return createStringError(
         inconvertibleErrorCode(),
         "DebugInfoSectionRef should not be materialized here!");
+  if (auto F = DebugLineSectionRef::Cast(*Node))
+    return F->materialize(*this);
   if (auto F = DebugAbbrevSectionRef::Cast(*Node))
     return F->materialize(*this);
   return createStringError(inconvertibleErrorCode(),
