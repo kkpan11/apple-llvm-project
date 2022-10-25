@@ -634,6 +634,7 @@ public:
   }
   Expected<uint64_t> materialize(MCCASReader &Reader,
                                  ArrayRef<char> AbbrevSectionContents,
+                                 ArrayRef<uint32_t> SecOffsetVals,
                                  raw_ostream *Stream = nullptr) const;
 
 private:

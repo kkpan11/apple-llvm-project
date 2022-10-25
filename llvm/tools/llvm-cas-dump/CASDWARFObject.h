@@ -30,6 +30,8 @@ class CASDWARFObject : public DWARFObject {
   SmallVector<size_t> DebugAbbrevOffsets;
   SmallVector<char> DebugInfoSection;
   SmallVector<StringRef> CUDataVec;
+  SmallVector<uint32_t> SecOffsetVals;
+  unsigned LineTableOffset = 0;
   unsigned CompileUnitIndex = 0;
 
   const mccasformats::v1::MCSchema &Schema;
@@ -74,6 +76,7 @@ public:
                                 uint64_t Pos) const override {
     return {};
   };
+  ArrayRef<uint32_t> getSecOffsetVals() { return SecOffsetVals; }
 };
 } // namespace llvm
 
