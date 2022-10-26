@@ -1720,14 +1720,17 @@ public:
   // SubstTempalteTypeParmPack, SubstNonTypeTemplateParmPack, and
   // FunctionParmPackExpr are all partially substituted, which cannot happen
   // with concepts at this point in translation.
+  using inherited::TransformTemplateTypeParmType;
   QualType TransformTemplateTypeParmType(TypeLocBuilder &TLB,
-                                         TemplateTypeParmTypeLoc TL) {
+                                         TemplateTypeParmTypeLoc TL, bool) {
     assert(TL.getDecl()->getDepth() <= TemplateDepth &&
            "Nothing should reference a value below the actual template depth, "
            "depth is likely wrong");
     if (TL.getDecl()->getDepth() != TemplateDepth)
       Result = true;
-    return inherited::TransformTemplateTypeParmType(TLB, TL);
+    return inherited::TransformTemplateTypeParmType(
+        TLB, TL,
+        /*SuppressObjCLifetime=*/false);
   }
 
   Decl *TransformDecl(SourceLocation Loc, Decl *D) {
@@ -3849,13 +3852,10 @@ QualType Sema::CheckTemplateIdType(TemplateName Name,
     if (Pattern->isInvalidDecl())
       return QualType();
 
-    TemplateArgumentList StackTemplateArgs(TemplateArgumentList::OnStack,
-                                           CanonicalConverted);
-
     // Only substitute for the innermost template argument list.
     MultiLevelTemplateArgumentList TemplateArgLists;
-    TemplateArgLists.addOuterTemplateArguments(Template,
-                                               StackTemplateArgs.asArray());
+    TemplateArgLists.addOuterTemplateArguments(Template, SugaredConverted,
+                                               /*Final=*/true);
     TemplateArgLists.addOuterRetainedLevels(
         AliasTemplate->getTemplateParameters()->getDepth());
 
@@ -3981,9 +3981,9 @@ QualType Sema::CheckTemplateIdType(TemplateName Name,
         ClassTemplate->getTemplatedDecl()->hasAttrs()) {
       InstantiatingTemplate Inst(*this, TemplateLoc, Decl);
       if (!Inst.isInvalid()) {
-        MultiLevelTemplateArgumentList TemplateArgLists;
-        TemplateArgLists.addOuterTemplateArguments(Template,
-                                                   CanonicalConverted);
+        MultiLevelTemplateArgumentList TemplateArgLists(Template,
+                                                        CanonicalConverted,
+                                                        /*Final=*/false);
         InstantiateAttrsForDecl(TemplateArgLists,
                                 ClassTemplate->getTemplatedDecl(), Decl);
       }
@@ -4861,12 +4861,13 @@ Sema::CheckConceptTemplateId(const CXXScopeSpec &SS,
 
   auto *CSD = ImplicitConceptSpecializationDecl::Create(
       Context, NamedConcept->getDeclContext(), NamedConcept->getLocation(),
-      CanonicalConverted);
+      SugaredConverted);
   ConstraintSatisfaction Satisfaction;
   bool AreArgsDependent =
       TemplateSpecializationType::anyDependentTemplateArguments(
-          *TemplateArgs, CanonicalConverted);
-  MultiLevelTemplateArgumentList MLTAL(NamedConcept, CanonicalConverted);
+          *TemplateArgs, SugaredConverted);
+  MultiLevelTemplateArgumentList MLTAL(NamedConcept, SugaredConverted,
+                                       /*Final=*/true);
   LocalInstantiationScope Scope(*this);
 
   EnterExpressionEvaluationContext EECtx{
@@ -5260,29 +5261,25 @@ bool Sema::CheckTemplateTypeArgument(
 /// \param Converted the list of template arguments provided for template
 /// parameters that precede \p Param in the template parameter list.
 /// \returns the substituted template argument, or NULL if an error occurred.
-static TypeSourceInfo *
-SubstDefaultTemplateArgument(Sema &SemaRef,
-                             TemplateDecl *Template,
-                             SourceLocation TemplateLoc,
-                             SourceLocation RAngleLoc,
-                             TemplateTypeParmDecl *Param,
-                             SmallVectorImpl<TemplateArgument> &Converted) {
+static TypeSourceInfo *SubstDefaultTemplateArgument(
+    Sema &SemaRef, TemplateDecl *Template, SourceLocation TemplateLoc,
+    SourceLocation RAngleLoc, TemplateTypeParmDecl *Param,
+    ArrayRef<TemplateArgument> SugaredConverted,
+    ArrayRef<TemplateArgument> CanonicalConverted) {
   TypeSourceInfo *ArgType = Param->getDefaultArgumentInfo();
 
   // If the argument type is dependent, instantiate it now based
   // on the previously-computed template arguments.
   if (ArgType->getType()->isInstantiationDependentType()) {
-    Sema::InstantiatingTemplate Inst(SemaRef, TemplateLoc,
-                                     Param, Template, Converted,
+    Sema::InstantiatingTemplate Inst(SemaRef, TemplateLoc, Param, Template,
+                                     SugaredConverted,
                                      SourceRange(TemplateLoc, RAngleLoc));
     if (Inst.isInvalid())
       return nullptr;
 
-    TemplateArgumentList TemplateArgs(TemplateArgumentList::OnStack, Converted);
-
     // Only substitute for the innermost template argument list.
-    MultiLevelTemplateArgumentList TemplateArgLists(Template,
-                                                    TemplateArgs.asArray());
+    MultiLevelTemplateArgumentList TemplateArgLists(Template, SugaredConverted,
+                                                    /*Final=*/true);
     for (unsigned i = 0, e = Param->getDepth(); i != e; ++i)
       TemplateArgLists.addOuterTemplateArguments(None);
 
@@ -5321,24 +5318,20 @@ SubstDefaultTemplateArgument(Sema &SemaRef,
 /// parameters that precede \p Param in the template parameter list.
 ///
 /// \returns the substituted template argument, or NULL if an error occurred.
-static ExprResult
-SubstDefaultTemplateArgument(Sema &SemaRef,
-                             TemplateDecl *Template,
-                             SourceLocation TemplateLoc,
-                             SourceLocation RAngleLoc,
-                             NonTypeTemplateParmDecl *Param,
-                        SmallVectorImpl<TemplateArgument> &Converted) {
-  Sema::InstantiatingTemplate Inst(SemaRef, TemplateLoc,
-                                   Param, Template, Converted,
+static ExprResult SubstDefaultTemplateArgument(
+    Sema &SemaRef, TemplateDecl *Template, SourceLocation TemplateLoc,
+    SourceLocation RAngleLoc, NonTypeTemplateParmDecl *Param,
+    ArrayRef<TemplateArgument> SugaredConverted,
+    ArrayRef<TemplateArgument> CanonicalConverted) {
+  Sema::InstantiatingTemplate Inst(SemaRef, TemplateLoc, Param, Template,
+                                   SugaredConverted,
                                    SourceRange(TemplateLoc, RAngleLoc));
   if (Inst.isInvalid())
     return ExprError();
 
-  TemplateArgumentList TemplateArgs(TemplateArgumentList::OnStack, Converted);
-
   // Only substitute for the innermost template argument list.
-  MultiLevelTemplateArgumentList TemplateArgLists(Template,
-                                                  TemplateArgs.asArray());
+  MultiLevelTemplateArgumentList TemplateArgLists(Template, SugaredConverted,
+                                                  /*Final=*/true);
   for (unsigned i = 0, e = Param->getDepth(); i != e; ++i)
     TemplateArgLists.addOuterTemplateArguments(None);
 
@@ -5373,25 +5366,21 @@ SubstDefaultTemplateArgument(Sema &SemaRef,
 /// source-location information) that precedes the template name.
 ///
 /// \returns the substituted template argument, or NULL if an error occurred.
-static TemplateName
-SubstDefaultTemplateArgument(Sema &SemaRef,
-                             TemplateDecl *Template,
-                             SourceLocation TemplateLoc,
-                             SourceLocation RAngleLoc,
-                             TemplateTemplateParmDecl *Param,
-                       SmallVectorImpl<TemplateArgument> &Converted,
-                             NestedNameSpecifierLoc &QualifierLoc) {
+static TemplateName SubstDefaultTemplateArgument(
+    Sema &SemaRef, TemplateDecl *Template, SourceLocation TemplateLoc,
+    SourceLocation RAngleLoc, TemplateTemplateParmDecl *Param,
+    ArrayRef<TemplateArgument> SugaredConverted,
+    ArrayRef<TemplateArgument> CanonicalConverted,
+    NestedNameSpecifierLoc &QualifierLoc) {
   Sema::InstantiatingTemplate Inst(
-      SemaRef, TemplateLoc, TemplateParameter(Param), Template, Converted,
-      SourceRange(TemplateLoc, RAngleLoc));
+      SemaRef, TemplateLoc, TemplateParameter(Param), Template,
+      SugaredConverted, SourceRange(TemplateLoc, RAngleLoc));
   if (Inst.isInvalid())
     return TemplateName();
 
-  TemplateArgumentList TemplateArgs(TemplateArgumentList::OnStack, Converted);
-
   // Only substitute for the innermost template argument list.
-  MultiLevelTemplateArgumentList TemplateArgLists(Template,
-                                                  TemplateArgs.asArray());
+  MultiLevelTemplateArgumentList TemplateArgLists(Template, SugaredConverted,
+                                                  /*Final=*/true);
   for (unsigned i = 0, e = Param->getDepth(); i != e; ++i)
     TemplateArgLists.addOuterTemplateArguments(None);
 
@@ -5415,14 +5404,11 @@ SubstDefaultTemplateArgument(Sema &SemaRef,
 /// If the given template parameter has a default template
 /// argument, substitute into that default template argument and
 /// return the corresponding template argument.
-TemplateArgumentLoc
-Sema::SubstDefaultTemplateArgumentIfAvailable(TemplateDecl *Template,
-                                              SourceLocation TemplateLoc,
-                                              SourceLocation RAngleLoc,
-                                              Decl *Param,
-                                              SmallVectorImpl<TemplateArgument>
-                                                &Converted,
-                                              bool &HasDefaultArg) {
+TemplateArgumentLoc Sema::SubstDefaultTemplateArgumentIfAvailable(
+    TemplateDecl *Template, SourceLocation TemplateLoc,
+    SourceLocation RAngleLoc, Decl *Param,
+    ArrayRef<TemplateArgument> SugaredConverted,
+    ArrayRef<TemplateArgument> CanonicalConverted, bool &HasDefaultArg) {
   HasDefaultArg = false;
 
   if (TemplateTypeParmDecl *TypeParm = dyn_cast<TemplateTypeParmDecl>(Param)) {
@@ -5430,11 +5416,9 @@ Sema::SubstDefaultTemplateArgumentIfAvailable(TemplateDecl *Template,
       return TemplateArgumentLoc();
 
     HasDefaultArg = true;
-    TypeSourceInfo *DI = SubstDefaultTemplateArgument(*this, Template,
-                                                      TemplateLoc,
-                                                      RAngleLoc,
-                                                      TypeParm,
-                                                      Converted);
+    TypeSourceInfo *DI = SubstDefaultTemplateArgument(
+        *this, Template, TemplateLoc, RAngleLoc, TypeParm, SugaredConverted,
+        CanonicalConverted);
     if (DI)
       return TemplateArgumentLoc(TemplateArgument(DI->getType()), DI);
 
@@ -5447,11 +5431,9 @@ Sema::SubstDefaultTemplateArgumentIfAvailable(TemplateDecl *Template,
       return TemplateArgumentLoc();
 
     HasDefaultArg = true;
-    ExprResult Arg = SubstDefaultTemplateArgument(*this, Template,
-                                                  TemplateLoc,
-                                                  RAngleLoc,
-                                                  NonTypeParm,
-                                                  Converted);
+    ExprResult Arg = SubstDefaultTemplateArgument(
+        *this, Template, TemplateLoc, RAngleLoc, NonTypeParm, SugaredConverted,
+        CanonicalConverted);
     if (Arg.isInvalid())
       return TemplateArgumentLoc();
 
@@ -5466,12 +5448,9 @@ Sema::SubstDefaultTemplateArgumentIfAvailable(TemplateDecl *Template,
 
   HasDefaultArg = true;
   NestedNameSpecifierLoc QualifierLoc;
-  TemplateName TName = SubstDefaultTemplateArgument(*this, Template,
-                                                    TemplateLoc,
-                                                    RAngleLoc,
-                                                    TempTempParm,
-                                                    Converted,
-                                                    QualifierLoc);
+  TemplateName TName = SubstDefaultTemplateArgument(
+      *this, Template, TemplateLoc, RAngleLoc, TempTempParm, SugaredConverted,
+      CanonicalConverted, QualifierLoc);
   if (TName.isNull())
     return TemplateArgumentLoc();
 
@@ -5567,15 +5546,13 @@ bool Sema::CheckTemplateArgument(
         !Template->getDeclContext()->isDependentContext()) {
       // Do substitution on the type of the non-type template parameter.
       InstantiatingTemplate Inst(*this, TemplateLoc, Template, NTTP,
-                                 CanonicalConverted,
+                                 SugaredConverted,
                                  SourceRange(TemplateLoc, RAngleLoc));
       if (Inst.isInvalid())
         return true;
 
-      TemplateArgumentList TemplateArgs(TemplateArgumentList::OnStack,
-                                        CanonicalConverted);
-
-      MultiLevelTemplateArgumentList MLTAL(Template, TemplateArgs.asArray());
+      MultiLevelTemplateArgumentList MLTAL(Template, SugaredConverted,
+                                           /*Final=*/true);
       // If the parameter is a pack expansion, expand this slice of the pack.
       if (auto *PET = NTTPType->getAs<PackExpansionType>()) {
         Sema::ArgumentPackSubstitutionIndexRAII SubstIndex(*this,
@@ -5737,9 +5714,10 @@ bool Sema::CheckTemplateArgument(
     if (Inst.isInvalid())
       return true;
 
-    Params = SubstTemplateParams(
-        Params, CurContext,
-        MultiLevelTemplateArgumentList(Template, CanonicalConverted));
+    Params =
+        SubstTemplateParams(Params, CurContext,
+                            MultiLevelTemplateArgumentList(
+                                Template, SugaredConverted, /*Final=*/true));
     if (!Params)
       return true;
   }
@@ -6018,7 +5996,8 @@ bool Sema::CheckTemplateArgumentList(
                                        NewArgs);
 
       TypeSourceInfo *ArgType = SubstDefaultTemplateArgument(
-          *this, Template, TemplateLoc, RAngleLoc, TTP, CanonicalConverted);
+          *this, Template, TemplateLoc, RAngleLoc, TTP, SugaredConverted,
+          CanonicalConverted);
       if (!ArgType)
         return true;
 
@@ -6031,7 +6010,8 @@ bool Sema::CheckTemplateArgumentList(
                                        NewArgs);
 
       ExprResult E = SubstDefaultTemplateArgument(
-          *this, Template, TemplateLoc, RAngleLoc, NTTP, CanonicalConverted);
+          *this, Template, TemplateLoc, RAngleLoc, NTTP, SugaredConverted,
+          CanonicalConverted);
       if (E.isInvalid())
         return true;
 
@@ -6047,8 +6027,8 @@ bool Sema::CheckTemplateArgumentList(
 
       NestedNameSpecifierLoc QualifierLoc;
       TemplateName Name = SubstDefaultTemplateArgument(
-          *this, Template, TemplateLoc, RAngleLoc, TempParm, CanonicalConverted,
-          QualifierLoc);
+          *this, Template, TemplateLoc, RAngleLoc, TempParm, SugaredConverted,
+          CanonicalConverted, QualifierLoc);
       if (Name.isNull())
         return true;
 
@@ -6062,7 +6042,7 @@ bool Sema::CheckTemplateArgumentList(
     // template here, we just create this object to put a note into the
     // context stack.
     InstantiatingTemplate Inst(*this, RAngleLoc, Template, *Param,
-                               CanonicalConverted,
+                               SugaredConverted,
                                SourceRange(TemplateLoc, RAngleLoc));
     if (Inst.isInvalid())
       return true;
@@ -6118,7 +6098,7 @@ bool Sema::CheckTemplateArgumentList(
 
   if (!PartialTemplateArgs) {
     TemplateArgumentList StackTemplateArgs(TemplateArgumentList::OnStack,
-                                           CanonicalConverted);
+                                           SugaredConverted);
     // Setup the context/ThisScope for the case where we are needing to
     // re-instantiate constraints outside of normal instantiation.
     DeclContext *NewContext = Template->getDeclContext();
@@ -6138,7 +6118,8 @@ bool Sema::CheckTemplateArgumentList(
     CXXThisScopeRAII(*this, RD, ThisQuals, RD != nullptr);
 
     MultiLevelTemplateArgumentList MLTAL = getTemplateInstantiationArgs(
-        Template, &StackTemplateArgs, /*RelativeToPrimary=*/true,
+        Template, /*Final=*/true, &StackTemplateArgs,
+        /*RelativeToPrimary=*/true,
         /*Pattern=*/nullptr,
         /*ForConceptInstantiation=*/true);
     if (EnsureTemplateArgumentListConstraints(
