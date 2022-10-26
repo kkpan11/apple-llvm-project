@@ -568,7 +568,7 @@ class JSONCrashLogParser(CrashLogParser):
                 head, _, tail = buffer.partition("\n")
                 return json.loads(tail)
 
-        with open(path, "r") as f:
+        with open(path, "r", encoding="utf-8") as f:
             buffer = f.read()
         try:
             return parse_json(buffer)
@@ -910,7 +910,7 @@ class TextCrashLogParser(CrashLogParser):
         self.symbols = {}
 
     def parse(self):
-        with open(self.path, "r") as f:
+        with open(self.path, "r", encoding="utf-8") as f:
             lines = f.read().splitlines()
 
         idx = 0
@@ -1257,7 +1257,7 @@ def save_crashlog(debugger, command, exe_ctx, result, dict):
             "error: invalid arguments, a single output file is the only valid argument"
         )
         return
-    out_file = open(args[0], "w")
+    out_file = open(args[0], "w", encoding="utf-8")
     if not out_file:
         result.PutCString("error: failed to open file '%s' for writing...", args[0])
         return
