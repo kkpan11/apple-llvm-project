@@ -560,6 +560,9 @@ C++20 Feature Support
 - Implemented `P2113R0: Proposed resolution for 2019 comment CA 112 <https://wg21.link/P2113R0>`_
   ([temp.func.order]p6.2.1 is not implemented, matching GCC).
 
+- Do not hide templated base members introduced via using-decl in derived class
+  (useful specially for constrained members). Fixes `GH50886 <https://github.com/llvm/llvm-project/issues/50886>`_.
+
 C++2b Feature Support
 ^^^^^^^^^^^^^^^^^^^^^
 
@@ -614,6 +617,11 @@ X86 Support in Clang
 - Support ISA of ``CMPCCXADD``.
   * Support intrinsic of ``__cmpccxadd_epi32``.
   * Support intrinsic of ``__cmpccxadd_epi64``.
+- Add support for ``RAO-INT`` instructions.
+  * Support intrinsic of ``_aadd_i32/64``
+  * Support intrinsic of ``_aand_i32/64``
+  * Support intrinsic of ``_aor_i32/64``
+  * Support intrinsic of ``_axor_i32/64``
 
 WebAssembly Support in Clang
 ----------------------------
@@ -623,6 +631,13 @@ proposals are standardized and available in all major engines.
 
 DWARF Support in Clang
 ----------------------
+
+Previously when emitting DWARFv4 and tuning for GDB, Clang would use DWARF v2's
+``DW_AT_bit_offset`` and ``DW_AT_data_member_location``. Clang now uses DWARF v4's
+``DW_AT_data_bit_offset`` regardless of tuning.
+
+Support for ``DW_AT_data_bit_offset`` was added in GDB 8.0. For earlier versions,
+you can use the ``-gdwarf-3`` option to emit compatible DWARF.
 
 Arm and AArch64 Support in Clang
 --------------------------------
