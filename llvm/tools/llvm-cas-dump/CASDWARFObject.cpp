@@ -80,7 +80,8 @@ Error CASDWARFObject::discoverDebugInfoSection(MCObjectProxy MCObj,
     raw_svector_ostream OS(DebugInfoSection);
     MCCASReader Reader(OS, Target, MCObj.getSchema());
     auto Written = DbgInfoSecRef->materialize(
-        Reader, arrayRefFromStringRef<char>(getAbbrevSection()), &OS);
+        Reader, arrayRefFromStringRef<char>(getAbbrevSection()),
+        getSecOffsetVals(), &OS);
     if (!Written)
       return Written.takeError();
 
@@ -132,8 +133,7 @@ Error CASDWARFObject::discoverDwarfSections(MCObjectProxy MCObj) {
       return Err;
     Is64Bit = P.Is64Bit;
     IsLittleEndian = P.IsLittleEndian;
-  }
-  else if (auto OffsetsRef = DebugAbbrevOffsetsRef::Cast(MCObj)) {
+  } else if (auto OffsetsRef = DebugAbbrevOffsetsRef::Cast(MCObj)) {
     DebugAbbrevOffsetsRefAdaptor Adaptor(*OffsetsRef);
     Expected<SmallVector<size_t>> DecodedOffsets = Adaptor.decodeOffsets();
     if (!DecodedOffsets)
@@ -141,6 +141,9 @@ Error CASDWARFObject::discoverDwarfSections(MCObjectProxy MCObj) {
     DebugAbbrevOffsets = std::move(*DecodedOffsets);
     // Reverse so that we can pop_back when assigning these to CURefs.
     std::reverse(DebugAbbrevOffsets.begin(), DebugAbbrevOffsets.end());
+  } else if (auto LineRef = DebugLineRef::Cast(MCObj)) {
+    SecOffsetVals.push_back(LineTableOffset);
+    LineTableOffset += LineRef->getData().size();
   }
   if (DebugAbbrevRef::Cast(MCObj))
     append_range(DebugAbbrevSection, MCObj.getData());
