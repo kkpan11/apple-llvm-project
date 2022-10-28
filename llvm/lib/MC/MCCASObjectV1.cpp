@@ -1087,7 +1087,7 @@ materializeCUDie(DWARFCompileUnit &DCU, MutableArrayRef<char> SectionContents,
       memcpy(&SectionContents[SectionOffset],
              &DistinctDataArrayRef[DistinctDataOffset], *FormSize);
       DistinctDataOffset += *FormSize;
-    } else if (Form == llvm::dwarf::DW_FORM_sec_offset) {
+    } else if (AbbrevDecl->getAttrByIndex(I) == llvm::dwarf::DW_AT_stmt_list) {
       memcpy(&SectionContents[SectionOffset], &SecOffsetVals[SecOffsetIndex],
              *FormSize);
       assert(SecOffsetVals.size() != 0 &&
@@ -2081,7 +2081,7 @@ static void partitionCUDie(
                      AttrValue.Value.getForm()))
       append_range(PartitionedData.DistinctData,
                    DebugInfoData.slice(AttrValue.Offset, AttrValue.ByteSize));
-    else if (AttrValue.Value.getForm() != llvm::dwarf::DW_FORM_sec_offset)
+    else if (AttrValue.Attr != llvm::dwarf::DW_AT_stmt_list)
       append_range(PartitionedData.DebugInfoCURefData,
                    DebugInfoData.slice(AttrValue.Offset, AttrValue.ByteSize));
     CUOffset += AttrValue.ByteSize;
