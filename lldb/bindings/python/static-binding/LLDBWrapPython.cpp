@@ -18412,6 +18412,86 @@ fail:
 SWIGINTERN PyObject *_wrap_SBCompileUnit_FindLineEntryIndex__SWIG_0(PyObject *SWIGUNUSEDPARM(self), Py_ssize_t nobjs, PyObject **swig_obj) {
   PyObject *resultobj = 0;
   lldb::SBCompileUnit *arg1 = (lldb::SBCompileUnit *) 0 ;
+  lldb::SBLineEntry *arg2 = 0 ;
+  bool arg3 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  void *argp2 = 0 ;
+  int res2 = 0 ;
+  bool val3 ;
+  int ecode3 = 0 ;
+  uint32_t result;
+  
+  if ((nobjs < 3) || (nobjs > 3)) SWIG_fail;
+  res1 = SWIG_ConvertPtr(swig_obj[0], &argp1,SWIGTYPE_p_lldb__SBCompileUnit, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "SBCompileUnit_FindLineEntryIndex" "', argument " "1"" of type '" "lldb::SBCompileUnit const *""'"); 
+  }
+  arg1 = reinterpret_cast< lldb::SBCompileUnit * >(argp1);
+  res2 = SWIG_ConvertPtr(swig_obj[1], &argp2, SWIGTYPE_p_lldb__SBLineEntry,  0 );
+  if (!SWIG_IsOK(res2)) {
+    SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "SBCompileUnit_FindLineEntryIndex" "', argument " "2"" of type '" "lldb::SBLineEntry &""'"); 
+  }
+  if (!argp2) {
+    SWIG_exception_fail(SWIG_ValueError, "invalid null reference " "in method '" "SBCompileUnit_FindLineEntryIndex" "', argument " "2"" of type '" "lldb::SBLineEntry &""'"); 
+  }
+  arg2 = reinterpret_cast< lldb::SBLineEntry * >(argp2);
+  ecode3 = SWIG_AsVal_bool(swig_obj[2], &val3);
+  if (!SWIG_IsOK(ecode3)) {
+    SWIG_exception_fail(SWIG_ArgError(ecode3), "in method '" "SBCompileUnit_FindLineEntryIndex" "', argument " "3"" of type '" "bool""'");
+  } 
+  arg3 = static_cast< bool >(val3);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (uint32_t)((lldb::SBCompileUnit const *)arg1)->FindLineEntryIndex(*arg2,arg3);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
+  resultobj = SWIG_From_unsigned_SS_int(static_cast< unsigned int >(result));
+  return resultobj;
+fail:
+  return NULL;
+}
+
+
+SWIGINTERN PyObject *_wrap_SBCompileUnit_FindLineEntryIndex__SWIG_1(PyObject *SWIGUNUSEDPARM(self), Py_ssize_t nobjs, PyObject **swig_obj) {
+  PyObject *resultobj = 0;
+  lldb::SBCompileUnit *arg1 = (lldb::SBCompileUnit *) 0 ;
+  lldb::SBLineEntry *arg2 = 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  void *argp2 = 0 ;
+  int res2 = 0 ;
+  uint32_t result;
+  
+  if ((nobjs < 2) || (nobjs > 2)) SWIG_fail;
+  res1 = SWIG_ConvertPtr(swig_obj[0], &argp1,SWIGTYPE_p_lldb__SBCompileUnit, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "SBCompileUnit_FindLineEntryIndex" "', argument " "1"" of type '" "lldb::SBCompileUnit const *""'"); 
+  }
+  arg1 = reinterpret_cast< lldb::SBCompileUnit * >(argp1);
+  res2 = SWIG_ConvertPtr(swig_obj[1], &argp2, SWIGTYPE_p_lldb__SBLineEntry,  0 );
+  if (!SWIG_IsOK(res2)) {
+    SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "SBCompileUnit_FindLineEntryIndex" "', argument " "2"" of type '" "lldb::SBLineEntry &""'"); 
+  }
+  if (!argp2) {
+    SWIG_exception_fail(SWIG_ValueError, "invalid null reference " "in method '" "SBCompileUnit_FindLineEntryIndex" "', argument " "2"" of type '" "lldb::SBLineEntry &""'"); 
+  }
+  arg2 = reinterpret_cast< lldb::SBLineEntry * >(argp2);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (uint32_t)((lldb::SBCompileUnit const *)arg1)->FindLineEntryIndex(*arg2);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
+  resultobj = SWIG_From_unsigned_SS_int(static_cast< unsigned int >(result));
+  return resultobj;
+fail:
+  return NULL;
+}
+
+
+SWIGINTERN PyObject *_wrap_SBCompileUnit_FindLineEntryIndex__SWIG_2(PyObject *SWIGUNUSEDPARM(self), Py_ssize_t nobjs, PyObject **swig_obj) {
+  PyObject *resultobj = 0;
+  lldb::SBCompileUnit *arg1 = (lldb::SBCompileUnit *) 0 ;
   uint32_t arg2 ;
   uint32_t arg3 ;
   lldb::SBFileSpec *arg4 = (lldb::SBFileSpec *) 0 ;
@@ -18458,7 +18538,7 @@ fail:
 }
 
 
-SWIGINTERN PyObject *_wrap_SBCompileUnit_FindLineEntryIndex__SWIG_1(PyObject *SWIGUNUSEDPARM(self), Py_ssize_t nobjs, PyObject **swig_obj) {
+SWIGINTERN PyObject *_wrap_SBCompileUnit_FindLineEntryIndex__SWIG_3(PyObject *SWIGUNUSEDPARM(self), Py_ssize_t nobjs, PyObject **swig_obj) {
   PyObject *resultobj = 0;
   lldb::SBCompileUnit *arg1 = (lldb::SBCompileUnit *) 0 ;
   uint32_t arg2 ;
@@ -18523,6 +18603,40 @@ SWIGINTERN PyObject *_wrap_SBCompileUnit_FindLineEntryIndex(PyObject *self, PyOb
   
   if (!(argc = SWIG_Python_UnpackTuple(args, "SBCompileUnit_FindLineEntryIndex", 0, 5, argv))) SWIG_fail;
   --argc;
+  if (argc == 2) {
+    int _v;
+    void *vptr = 0;
+    int res = SWIG_ConvertPtr(argv[0], &vptr, SWIGTYPE_p_lldb__SBCompileUnit, 0);
+    _v = SWIG_CheckState(res);
+    if (_v) {
+      void *vptr = 0;
+      int res = SWIG_ConvertPtr(argv[1], &vptr, SWIGTYPE_p_lldb__SBLineEntry, SWIG_POINTER_NO_NULL);
+      _v = SWIG_CheckState(res);
+      if (_v) {
+        return _wrap_SBCompileUnit_FindLineEntryIndex__SWIG_1(self, argc, argv);
+      }
+    }
+  }
+  if (argc == 3) {
+    int _v;
+    void *vptr = 0;
+    int res = SWIG_ConvertPtr(argv[0], &vptr, SWIGTYPE_p_lldb__SBCompileUnit, 0);
+    _v = SWIG_CheckState(res);
+    if (_v) {
+      void *vptr = 0;
+      int res = SWIG_ConvertPtr(argv[1], &vptr, SWIGTYPE_p_lldb__SBLineEntry, SWIG_POINTER_NO_NULL);
+      _v = SWIG_CheckState(res);
+      if (_v) {
+        {
+          int res = SWIG_AsVal_bool(argv[2], NULL);
+          _v = SWIG_CheckState(res);
+        }
+        if (_v) {
+          return _wrap_SBCompileUnit_FindLineEntryIndex__SWIG_0(self, argc, argv);
+        }
+      }
+    }
+  }
   if (argc == 4) {
     int _v;
     void *vptr = 0;
@@ -18543,7 +18657,7 @@ SWIGINTERN PyObject *_wrap_SBCompileUnit_FindLineEntryIndex(PyObject *self, PyOb
           int res = SWIG_ConvertPtr(argv[3], &vptr, SWIGTYPE_p_lldb__SBFileSpec, 0);
           _v = SWIG_CheckState(res);
           if (_v) {
-            return _wrap_SBCompileUnit_FindLineEntryIndex__SWIG_0(self, argc, argv);
+            return _wrap_SBCompileUnit_FindLineEntryIndex__SWIG_2(self, argc, argv);
           }
         }
       }
@@ -18574,7 +18688,7 @@ SWIGINTERN PyObject *_wrap_SBCompileUnit_FindLineEntryIndex(PyObject *self, PyOb
               _v = SWIG_CheckState(res);
             }
             if (_v) {
-              return _wrap_SBCompileUnit_FindLineEntryIndex__SWIG_1(self, argc, argv);
+              return _wrap_SBCompileUnit_FindLineEntryIndex__SWIG_3(self, argc, argv);
             }
           }
         }
@@ -18585,6 +18699,8 @@ SWIGINTERN PyObject *_wrap_SBCompileUnit_FindLineEntryIndex(PyObject *self, PyOb
 fail:
   SWIG_Python_RaiseOrModifyTypeError("Wrong number or type of arguments for overloaded function 'SBCompileUnit_FindLineEntryIndex'.\n"
     "  Possible C/C++ prototypes are:\n"
+    "    lldb::SBCompileUnit::FindLineEntryIndex(lldb::SBLineEntry &,bool) const\n"
+    "    lldb::SBCompileUnit::FindLineEntryIndex(lldb::SBLineEntry &) const\n"
     "    lldb::SBCompileUnit::FindLineEntryIndex(uint32_t,uint32_t,lldb::SBFileSpec *) const\n"
     "    lldb::SBCompileUnit::FindLineEntryIndex(uint32_t,uint32_t,lldb::SBFileSpec *,bool) const\n");
   return 0;
@@ -82366,8 +82482,22 @@ static PyMethodDef SwigMethods[] = {
 	 { "SBCompileUnit_GetNumLineEntries", _wrap_SBCompileUnit_GetNumLineEntries, METH_O, "SBCompileUnit_GetNumLineEntries(SBCompileUnit self) -> uint32_t"},
 	 { "SBCompileUnit_GetLineEntryAtIndex", _wrap_SBCompileUnit_GetLineEntryAtIndex, METH_VARARGS, "SBCompileUnit_GetLineEntryAtIndex(SBCompileUnit self, uint32_t idx) -> SBLineEntry"},
 	 { "SBCompileUnit_FindLineEntryIndex", _wrap_SBCompileUnit_FindLineEntryIndex, METH_VARARGS, "\n"
+		"SBCompileUnit_FindLineEntryIndex(SBCompileUnit self, SBLineEntry line_entry, bool exact=False) -> uint32_t\n"
 		"SBCompileUnit_FindLineEntryIndex(SBCompileUnit self, uint32_t start_idx, uint32_t line, SBFileSpec inline_file_spec) -> uint32_t\n"
 		"SBCompileUnit_FindLineEntryIndex(SBCompileUnit self, uint32_t start_idx, uint32_t line, SBFileSpec inline_file_spec, bool exact) -> uint32_t\n"
+		"\n"
+		"     Get the index for a provided line entry in this compile unit.\n"
+		"\n"
+		"     @param[in] line_entry\n"
+		"        The SBLineEntry object for which we are looking for the index.\n"
+		"\n"
+		"     @param[in] exact\n"
+		"        An optional boolean defaulting to false that ensures that the provided\n"
+		"        line entry has a perfect match in the compile unit.\n"
+		"\n"
+		"     @return\n"
+		"        The index of the user-provided line entry. UINT32_MAX if the line entry\n"
+		"        was not found in the compile unit.\n"
 		""},
 	 { "SBCompileUnit_GetSupportFileAtIndex", _wrap_SBCompileUnit_GetSupportFileAtIndex, METH_VARARGS, "SBCompileUnit_GetSupportFileAtIndex(SBCompileUnit self, uint32_t idx) -> SBFileSpec"},
 	 { "SBCompileUnit_GetNumSupportFiles", _wrap_SBCompileUnit_GetNumSupportFiles, METH_O, "SBCompileUnit_GetNumSupportFiles(SBCompileUnit self) -> uint32_t"},
