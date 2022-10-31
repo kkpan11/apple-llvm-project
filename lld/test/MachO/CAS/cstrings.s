@@ -17,7 +17,7 @@
 // CHECK: callq	_puts_stub
 
 // CHECK: _puts_stub:
-// CHECK: movq	%rdi, -8(%rsp)
+// CHECK: movq	%rdi, -0x8(%rsp)
 
 // CHECK: Contents of section __TEXT,__cstring:
 // CHECK:  68656c6c 6f00776f 726c6400 2100      hello.world.!.

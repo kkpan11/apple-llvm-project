@@ -10,10 +10,10 @@
 
 // CHECK: _main:
 // CHECK: pushq %rax
-// CHECK: movl  $0, 4(%rsp)
+// CHECK: movl  $0x0, 0x4(%rsp)
 // CHECK: leaq  _sometlv(%rip), %rdi
 // CHECK: callq *(%rdi)
-// CHECK: movl  $1, (%rax)
+// CHECK: movl  $0x1, (%rax)
 // CHECK: movl  (%rax), %eax
 // CHECK: popq  %rcx
 // CHECK: retq
