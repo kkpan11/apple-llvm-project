@@ -1206,13 +1206,14 @@ static void computeKnownBitsFromOperator(const Operator *I,
     // Handle cast from vector integer type to scalar or vector integer.
     auto *SrcVecTy = dyn_cast<FixedVectorType>(SrcTy);
     if (!SrcVecTy || !SrcVecTy->getElementType()->isIntegerTy() ||
-        !I->getType()->isIntOrIntVectorTy())
+        !I->getType()->isIntOrIntVectorTy() ||
+        isa<ScalableVectorType>(I->getType()))
       break;
 
     // Look through a cast from narrow vector elements to wider type.
     // Examples: v4i32 -> v2i64, v3i8 -> v24
     unsigned SubBitWidth = SrcVecTy->getScalarSizeInBits();
-    if (BitWidth % SubBitWidth == 0 && !isa<ScalableVectorType>(I->getType())) {
+    if (BitWidth % SubBitWidth == 0) {
       // Known bits are automatically intersected across demanded elements of a
       // vector. So for example, if a bit is computed as known zero, it must be
       // zero across all demanded elements of the vector.
@@ -5722,11 +5723,6 @@ static bool programUndefinedIfUndefOrPoison(const Value *V,
   SmallSet<const BasicBlock *, 4> Visited;
 
   YieldsPoison.insert(V);
-  auto Propagate = [&](const User *User) {
-    if (propagatesPoison(cast<Operator>(User)))
-      YieldsPoison.insert(User);
-  };
-  for_each(V->users(), Propagate);
   Visited.insert(BB);
 
   while (true) {
@@ -5740,9 +5736,16 @@ static bool programUndefinedIfUndefOrPoison(const Value *V,
       if (!isGuaranteedToTransferExecutionToSuccessor(&I))
         return false;
 
-      // Mark poison that propagates from I through uses of I.
-      if (YieldsPoison.count(&I))
-        for_each(I.users(), Propagate);
+      // If this instruction propagates poison, mark it as poison if any of
+      // its operands are poison
+      if (propagatesPoison(cast<Operator>(&I))) {
+        for (const Value *Op : I.operands()) {
+          if (YieldsPoison.count(Op)) {
+            YieldsPoison.insert(&I);
+            break;
+          }
+        }
+      }
     }
 
     BB = BB->getSingleSuccessor();
