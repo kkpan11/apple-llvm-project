@@ -34,6 +34,22 @@ def sve_pred_enum : Operand<i32>, TImmLeaf<i32, [{
   let ParserMatchClass = SVEPatternOperand;
 }
 
+def SVEVecLenSpecifierOperand : AsmOperandClass {
+  let Name = "SVEVecLenSpecifier";
+  let ParserMethod = "tryParseSVEVecLenSpecifier";
+  let PredicateMethod = "isSVEVecLenSpecifier";
+  let RenderMethod = "addImmOperands";
+  let DiagnosticType = "InvalidSVEVecLenSpecifier";
+}
+
+def sve_vec_len_specifier_enum : Operand<i32>, TImmLeaf<i32, [{
+  return (((uint32_t)Imm) < 2);
+  }]> {
+
+  let PrintMethod = "printSVEVecLenSpecifier";
+  let ParserMatchClass = SVEVecLenSpecifierOperand;
+}
+
 def SVEPrefetchOperand : AsmOperandClass {
   let Name = "SVEPrefetch";
   let ParserMethod = "tryParsePrefetch<true>";
@@ -9014,4 +9030,65 @@ multiclass sve2p1_mem_cst_si_4z<string mnemonic, bits<2> msz, bit n,
 
   def : InstAlias<mnemonic # " $Zt, $PNg, [$Rn]",
                   (!cast<Instruction>(NAME) vector_ty:$Zt, PNRAny_p8to15:$PNg, GPR64sp:$Rn,0), 1>;
+}
+
+// SVE predicate count (predicate-as-counter)
+class sve2p1_pcount_pn<string mnemonic, bits<3> opc, bits<2> sz, PNRRegOp pnrty>
+   : I<(outs GPR64:$Rd),
+       (ins pnrty:$PNn, sve_vec_len_specifier_enum:$vl),
+       mnemonic, "\t$Rd, $PNn, $vl",
+       "", []>, Sched<[]> {
+  bits<5> Rd;
+  bits<4> PNn;
+  bits<1> vl;
+  let Inst{31-24} = 0b00100101;
+  let Inst{23-22} = sz;
+  let Inst{21-19} = 0b100;
+  let Inst{18-16} = opc;
+  let Inst{15-11} = 0b10000;
+  let Inst{10}    = vl;
+  let Inst{9}     = 0b1;
+  let Inst{8-5}   = PNn;
+  let Inst{4-0}   = Rd;
+}
+
+multiclass sve2p1_pcount_pn<string mnemonic, bits<3> opc> {
+  def _B : sve2p1_pcount_pn<mnemonic, opc, 0b00, PNR8>;
+  def _H : sve2p1_pcount_pn<mnemonic, opc, 0b01, PNR16>;
+  def _S : sve2p1_pcount_pn<mnemonic, opc, 0b10, PNR32>;
+  def _D : sve2p1_pcount_pn<mnemonic, opc, 0b11, PNR64>;
+}
+
+
+class sve2p1_int_while_rr_pn<string mnemonic, bits<2> sz, bits<3> opc,
+                             PNRP8to15RegOp pnrty>
+    : I<(outs pnrty:$PNd), (ins GPR64:$Rn, GPR64:$Rm, sve_vec_len_specifier_enum:$vl),
+        mnemonic, "\t$PNd, $Rn, $Rm, $vl",
+        "", []>, Sched<[]> {
+  bits<3> PNd;
+  bits<5> Rn;
+  bits<1> vl;
+  bits<5> Rm;
+  let Inst{31-24} = 0b00100101;
+  let Inst{23-22} = sz;
+  let Inst{21}    = 0b1;
+  let Inst{20-16} = Rm;
+  let Inst{15-14} = 0b01;
+  let Inst{13}    = vl;
+  let Inst{12}    = 0b0;
+  let Inst{11-10} = opc{2-1};
+  let Inst{9-5}   = Rn;
+  let Inst{4}     = 0b1;
+  let Inst{3}     = opc{0};
+  let Inst{2-0}   = PNd;
+
+  let Defs = [NZCV];
+}
+
+
+multiclass sve2p1_int_while_rr_pn<string mnemonic, bits<3> opc> {
+ def _B : sve2p1_int_while_rr_pn<mnemonic, 0b00, opc, PNR8_p8to15>;
+ def _H : sve2p1_int_while_rr_pn<mnemonic, 0b01, opc, PNR16_p8to15>;
+ def _S : sve2p1_int_while_rr_pn<mnemonic, 0b10, opc, PNR32_p8to15>;
+ def _D : sve2p1_int_while_rr_pn<mnemonic, 0b11, opc, PNR64_p8to15>;
 }

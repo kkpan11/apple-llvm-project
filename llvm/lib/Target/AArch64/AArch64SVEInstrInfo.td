@@ -3589,6 +3589,7 @@ def UDOT_ZZZ_HtoS  : sve2p1_two_way_dot_vv<"udot", 0b1>;
 def SDOT_ZZZI_HtoS : sve2p1_two_way_dot_vvi<"sdot", 0b0>;
 def UDOT_ZZZI_HtoS : sve2p1_two_way_dot_vvi<"udot", 0b1>;
 
+defm CNTP_XCI : sve2p1_pcount_pn<"cntp", 0b000>;
 defm PEXT_PCI : sve2p1_pred_as_ctr_to_mask<"pext">;
 defm PTRUE_C  : sve2p1_ptrue_pn<"ptrue">;
 
@@ -3670,4 +3671,13 @@ defm STNT1B_4Z_IMM : sve2p1_mem_cst_si_4z<"stnt1b", 0b00, 0b1, ZZZZ_b_mul_r>;
 defm STNT1H_4Z_IMM : sve2p1_mem_cst_si_4z<"stnt1h", 0b01, 0b1, ZZZZ_h_mul_r>;
 defm STNT1W_4Z_IMM : sve2p1_mem_cst_si_4z<"stnt1w", 0b10, 0b1, ZZZZ_s_mul_r>;
 defm STNT1D_4Z_IMM : sve2p1_mem_cst_si_4z<"stnt1d", 0b11, 0b1, ZZZZ_d_mul_r>;
+
+defm WHILEGE_CXX  : sve2p1_int_while_rr_pn<"whilege", 0b000>;
+defm WHILEGT_CXX  : sve2p1_int_while_rr_pn<"whilegt", 0b001>;
+defm WHILELT_CXX  : sve2p1_int_while_rr_pn<"whilelt", 0b010>;
+defm WHILELE_CXX  : sve2p1_int_while_rr_pn<"whilele", 0b011>;
+defm WHILEHS_CXX  : sve2p1_int_while_rr_pn<"whilehs", 0b100>;
+defm WHILEHI_CXX  : sve2p1_int_while_rr_pn<"whilehi", 0b101>;
+defm WHILELO_CXX  : sve2p1_int_while_rr_pn<"whilelo", 0b110>;
+defm WHILELS_CXX  : sve2p1_int_while_rr_pn<"whilels", 0b111>;
 } // End HasSVE2p1_or_HasSME2
