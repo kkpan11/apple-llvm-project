@@ -2073,7 +2073,6 @@ void ASTWriter::WriteSourceManagerBlock(SourceManager &SourceMgr,
     // Record the offset of this source-location entry.
     uint64_t Offset = Stream.GetCurrentBitNo() - SLocEntryOffsetsBase;
     assert((Offset >> 32) == 0 && "SLocEntry offset too large");
-    SLocEntryOffsets.push_back(Offset);
 
     // Figure out which record code to use.
     unsigned Code;
@@ -2088,8 +2087,6 @@ void ASTWriter::WriteSourceManagerBlock(SourceManager &SourceMgr,
     Record.clear();
     Record.push_back(Code);
 
-    // Starting offset of this entry within this module, so skip the dummy.
-    Record.push_back(getAdjustedOffset(SLoc->getOffset()) - 2);
     if (SLoc->isFile()) {
       const SrcMgr::FileInfo &File = SLoc->getFile();
       const SrcMgr::ContentCache *Content = &File.getContentCache();
@@ -2099,6 +2096,9 @@ void ASTWriter::WriteSourceManagerBlock(SourceManager &SourceMgr,
         // Do not emit files that were not listed as inputs.
         continue;
       }
+      SLocEntryOffsets.push_back(Offset);
+      // Starting offset of this entry within this module, so skip the dummy.
+      Record.push_back(getAdjustedOffset(SLoc->getOffset()) - 2);
       AddSourceLocation(File.getIncludeLoc(), Record);
       Record.push_back(File.getFileCharacteristic()); // FIXME: stable encoding
       Record.push_back(File.hasLineDirectives());
@@ -2159,6 +2159,9 @@ void ASTWriter::WriteSourceManagerBlock(SourceManager &SourceMgr,
     } else {
       // The source location entry is a macro expansion.
       const SrcMgr::ExpansionInfo &Expansion = SLoc->getExpansion();
+      SLocEntryOffsets.push_back(Offset);
+      // Starting offset of this entry within this module, so skip the dummy.
+      Record.push_back(getAdjustedOffset(SLoc->getOffset()) - 2);
       AddSourceLocation(Expansion.getSpellingLoc(), Record);
       AddSourceLocation(Expansion.getExpansionLocStart(), Record);
       AddSourceLocation(Expansion.isMacroArgExpansion()
