@@ -40,7 +40,7 @@ public:
   bool hasPending() const { return NumPending != 0; }
 
 protected:
-  unsigned NumPending = 0;
+  std::atomic<unsigned> NumPending = 0;
 };
 
 /// An asynchronous gRPC client for the key-value service of the remote cache
