@@ -12,6 +12,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/LTO/legacy/ThinLTOCodeGenerator.h"
+#include "llvm/CAS/ActionCache.h"
+#include "llvm/CAS/ObjectStore.h"
+#include "llvm/RemoteCachingService/Client.h"
 #include "llvm/Support/CommandLine.h"
 
 #include "llvm/ADT/ScopeExit.h"
@@ -60,6 +63,7 @@
 #include "llvm/Transforms/ObjCARC.h"
 #include "llvm/Transforms/Utils/FunctionImportUtils.h"
 
+#include <memory>
 #include <numeric>
 
 #if !defined(_MSC_VER) && !defined(__MINGW32__)
@@ -348,15 +352,12 @@ std::unique_ptr<MemoryBuffer> codegenModule(Module &TheModule,
       std::move(OutputBuffer), /*RequiresNullTerminator=*/false);
 }
 
-/// Manage caching for a single Module.
-class ModuleCacheEntry {
-  SmallString<128> EntryPath;
-
+class FileModuleCacheEntry : public ModuleCacheEntry {
 public:
   // Create a cache entry. This compute a unique hash for the Module considering
   // the current list of export/import, and offer an interface to query to
   // access the content in the cache.
-  ModuleCacheEntry(
+  FileModuleCacheEntry(
       StringRef CachePath, const ModuleSummaryIndex &Index, StringRef ModuleID,
       const FunctionImporter::ImportMapTy &ImportList,
       const FunctionImporter::ExportSetTy &ExportList,
@@ -366,37 +367,22 @@ public:
     if (CachePath.empty())
       return;
 
-    if (!Index.modulePaths().count(ModuleID))
-      // The module does not have an entry, it can't have a hash at all
-      return;
+    Optional<std::string> Key =
+        computeCacheKey(Index, ModuleID, ImportList, ExportList, ResolvedODR,
+                        DefinedGVSummaries, OptLevel, Freestanding, TMBuilder);
 
-    if (all_of(Index.getModuleHash(ModuleID),
-               [](uint32_t V) { return V == 0; }))
-      // No hash entry, no caching!
+    if (!Key)
       return;
-
-    llvm::lto::Config Conf;
-    Conf.OptLevel = OptLevel;
-    Conf.Options = TMBuilder.Options;
-    Conf.CPU = TMBuilder.MCpu;
-    Conf.MAttrs.push_back(TMBuilder.MAttr);
-    Conf.RelocModel = TMBuilder.RelocModel;
-    Conf.CGOptLevel = TMBuilder.CGOptLevel;
-    Conf.Freestanding = Freestanding;
-    SmallString<40> Key;
-    computeLTOCacheKey(Key, Conf, Index, ModuleID, ImportList, ExportList,
-                       ResolvedODR, DefinedGVSummaries);
 
     // This choice of file name allows the cache to be pruned (see pruneCache()
     // in include/llvm/Support/CachePruning.h).
-    sys::path::append(EntryPath, CachePath, "llvmcache-" + Key);
+    sys::path::append(EntryPath, CachePath, "llvmcache-" + *Key);
   }
 
-  // Access the path to this entry in the cache.
-  StringRef getEntryPath() { return EntryPath; }
+  std::string getEntryPath() final { return EntryPath.str().str(); }
 
   // Try loading the buffer for this cache entry.
-  ErrorOr<std::unique_ptr<MemoryBuffer>> tryLoadingBuffer() {
+  ErrorOr<std::unique_ptr<MemoryBuffer>> tryLoadingBuffer() final {
     if (EntryPath.empty())
       return std::error_code();
     SmallString<64> ResultPath;
@@ -411,7 +397,7 @@ public:
   }
 
   // Cache the Produced object file
-  void write(const MemoryBuffer &OutputBuffer) {
+  void write(const MemoryBuffer &OutputBuffer) final {
     if (EntryPath.empty())
       return;
 
@@ -439,6 +425,215 @@ public:
       consumeError(std::move(Err));
     }
   }
+
+  Error writeObject(const MemoryBuffer &OutputBuffer,
+                    StringRef OutputPath) final {
+    // Cache is enabled, hard-link the entry (or copy if hard-link fails).
+    std::string CacheEntryPath = getEntryPath();
+    auto Err = sys::fs::create_hard_link(CacheEntryPath, OutputPath);
+    if (!Err)
+      return Error::success();
+    // Hard linking failed, try to copy.
+    Err = sys::fs::copy_file(CacheEntryPath, OutputPath);
+    if (!Err)
+      return Error::success();
+    // Copy failed (could be because the CacheEntry was removed from the cache
+    // in the meantime by another process), fall back and try to write down the
+    // buffer to the output.
+    errs() << "remark: can't link or copy from cached entry '" << CacheEntryPath
+           << "' to '" << OutputPath << "'\n";
+    // Fallback to default.
+    return ModuleCacheEntry::writeObject(OutputBuffer, OutputPath);
+  }
+
+  Optional<std::unique_ptr<MemoryBuffer>> getMappedBuffer() final {
+    if (getEntryPath().empty())
+      return None;
+
+    auto ReloadedBufferOrErr = tryLoadingBuffer();
+    if (auto EC = ReloadedBufferOrErr.getError()) {
+      // On error, keep the preexisting buffer and print a diagnostic.
+      errs() << "remark: can't reload cached file '" << getEntryPath()
+             << "': " << EC.message() << "\n";
+    }
+    return std::move(*ReloadedBufferOrErr);
+  }
+
+private:
+  SmallString<128> EntryPath;
+};
+
+class CASModuleCacheEntry : public ModuleCacheEntry {
+public:
+  // Create a cache entry. This compute a unique hash for the Module considering
+  // the current list of export/import, and offer an interface to query to
+  // access the content in the cache.
+  CASModuleCacheEntry(
+      cas::ObjectStore &CAS, cas::ActionCache &Cache,
+      const ModuleSummaryIndex &Index, StringRef ModuleID,
+      const FunctionImporter::ImportMapTy &ImportList,
+      const FunctionImporter::ExportSetTy &ExportList,
+      const std::map<GlobalValue::GUID, GlobalValue::LinkageTypes> &ResolvedODR,
+      const GVSummaryMapTy &DefinedGVSummaries, unsigned OptLevel,
+      bool Freestanding, const TargetMachineBuilder &TMBuilder)
+      : CAS(CAS), Cache(Cache) {
+    Optional<std::string> Key =
+        computeCacheKey(Index, ModuleID, ImportList, ExportList, ResolvedODR,
+                        DefinedGVSummaries, OptLevel, Freestanding, TMBuilder);
+
+    if (!Key)
+      return;
+
+    // Create the key by inserting cache key (SHA1) into CAS to create a ID for
+    // the correct context.
+    // TODO: We can have an alternative hashing function that doesn't
+    // need to store the key into CAS to get the CacheKey.
+    auto CASKey = CAS.createProxy(None, *Key);
+    if (!CASKey) {
+      // FIXME: ignore error.
+      consumeError(CASKey.takeError());
+      return;
+    }
+
+    ID = CASKey->getID();
+  }
+
+  std::string getEntryPath() final {
+    if (!ID)
+      return "";
+
+    return ID->toString();
+  }
+
+  // Try loading the buffer for this cache entry.
+  ErrorOr<std::unique_ptr<MemoryBuffer>> tryLoadingBuffer() final {
+    if (!ID)
+      return std::error_code();
+
+    auto MaybeKeyID = Cache.get(*ID);
+    if (!MaybeKeyID)
+      return errorToErrorCode(MaybeKeyID.takeError());
+
+    if (!*MaybeKeyID)
+      return std::error_code();
+
+    auto MaybeObject = CAS.getProxy(**MaybeKeyID);
+    if (!MaybeObject)
+      return errorToErrorCode(MaybeObject.takeError());
+
+    return MaybeObject->getMemoryBuffer("", /*NullTerminated=*/true);
+  }
+
+  // Cache the Produced object file
+  void write(const MemoryBuffer &OutputBuffer) final {
+    if (!ID)
+      return;
+
+    auto Proxy = CAS.createProxy(None, OutputBuffer.getBuffer());
+    if (!Proxy) {
+      // Ignore error and return.
+      consumeError(Proxy.takeError());
+      return;
+    }
+
+    auto Err = Cache.put(*ID, Proxy->getID());
+    // Ignore error.
+    consumeError(std::move(Err));
+  }
+
+private:
+  cas::ObjectStore &CAS;
+  cas::ActionCache &Cache;
+  Optional<cas::CASID> ID;
+};
+
+class RemoteModuleCacheEntry : public ModuleCacheEntry {
+public:
+  // Create a cache entry. This compute a unique hash for the Module considering
+  // the current list of export/import, and offer an interface to query to
+  // access the content in the cache.
+  RemoteModuleCacheEntry(
+      cas::remote::ClientServices &Service, const ModuleSummaryIndex &Index,
+      StringRef ModuleID, const FunctionImporter::ImportMapTy &ImportList,
+      const FunctionImporter::ExportSetTy &ExportList,
+      const std::map<GlobalValue::GUID, GlobalValue::LinkageTypes> &ResolvedODR,
+      const GVSummaryMapTy &DefinedGVSummaries, unsigned OptLevel,
+      bool Freestanding, const TargetMachineBuilder &TMBuilder)
+      : Service(Service) {
+    Optional<std::string> Key =
+        computeCacheKey(Index, ModuleID, ImportList, ExportList, ResolvedODR,
+                        DefinedGVSummaries, OptLevel, Freestanding, TMBuilder);
+
+    if (!Key)
+      return;
+
+    ID = *Key;
+  }
+
+  std::string getEntryPath() final { return ID; }
+
+  // Try loading the buffer for this cache entry.
+  ErrorOr<std::unique_ptr<MemoryBuffer>> tryLoadingBuffer() final {
+    if (ID.empty())
+      return std::error_code();
+
+    // Lookup the output value from KVDB.
+    auto &GetValueQueue = Service.KVDB->getValueQueue();
+    GetValueQueue.getValueAsync(ID);
+    auto GetResponse = GetValueQueue.receiveNext();
+    if (!GetResponse)
+      return errorToErrorCode(GetResponse.takeError());
+    // Cache Miss.
+    if (!GetResponse->Value)
+      return std::error_code();
+
+    // Malformed output. Error.
+    auto Result = GetResponse->Value->find("Output");
+    if (Result == GetResponse->Value->end())
+      return std::make_error_code(std::errc::message_size);
+
+    // Request the output buffer.
+    auto &LoadQueue = Service.CASDB->loadQueue();
+    LoadQueue.loadAsync(Result->getValue());
+    auto LoadResponse = LoadQueue.receiveNext();
+    if (!LoadResponse)
+      return errorToErrorCode(LoadResponse.takeError());
+    // Object not found. Treat it as a miss.
+    if (LoadResponse->KeyNotFound || !LoadResponse->BlobData)
+      return std::error_code();
+
+    return MemoryBuffer::getMemBufferCopy(*LoadResponse->BlobData);
+  }
+
+  // Cache the Produced object file
+  void write(const MemoryBuffer &OutputBuffer) final {
+    if (ID.empty())
+      return;
+
+    auto &SaveQueue = Service.CASDB->saveQueue();
+    SaveQueue.saveDataAsync(OutputBuffer.getBuffer().str());
+    auto SaveResponse = SaveQueue.receiveNext();
+    if (!SaveResponse) {
+      consumeError(SaveResponse.takeError());
+      return;
+    }
+
+
+    auto &PutValueQueue = Service.KVDB->putValueQueue();
+    cas::remote::KeyValueDBClient::ValueTy CompResult;
+    CompResult["Output"] = SaveResponse->CASID;
+    PutValueQueue.putValueAsync(ID, CompResult);
+    auto PutResponse = PutValueQueue.receiveNext();
+    if (!PutResponse) {
+      // Ignore error.
+      consumeError(PutResponse.takeError());
+      return;
+    }
+  }
+
+private:
+  cas::remote::ClientServices &Service;
+  std::string ID;
 };
 
 static std::unique_ptr<MemoryBuffer>
@@ -567,6 +762,70 @@ static void initTMBuilder(TargetMachineBuilder &TMBuilder,
 }
 
 } // end anonymous namespace
+
+Optional<std::string> ModuleCacheEntry::computeCacheKey(
+    const ModuleSummaryIndex &Index, StringRef ModuleID,
+    const FunctionImporter::ImportMapTy &ImportList,
+    const FunctionImporter::ExportSetTy &ExportList,
+    const std::map<GlobalValue::GUID, GlobalValue::LinkageTypes> &ResolvedODR,
+    const GVSummaryMapTy &DefinedGVSummaries, unsigned OptLevel,
+    bool Freestanding, const TargetMachineBuilder &TMBuilder) {
+  if (!Index.modulePaths().count(ModuleID))
+    // The module does not have an entry, it can't have a hash at all
+    return None;
+
+  if (all_of(Index.getModuleHash(ModuleID), [](uint32_t V) { return V == 0; }))
+    // No hash entry, no caching!
+    return None;
+
+  llvm::lto::Config Conf;
+  Conf.OptLevel = OptLevel;
+  Conf.Options = TMBuilder.Options;
+  Conf.CPU = TMBuilder.MCpu;
+  Conf.MAttrs.push_back(TMBuilder.MAttr);
+  Conf.RelocModel = TMBuilder.RelocModel;
+  Conf.CGOptLevel = TMBuilder.CGOptLevel;
+  Conf.Freestanding = Freestanding;
+  SmallString<40> Key;
+  computeLTOCacheKey(Key, Conf, Index, ModuleID, ImportList, ExportList,
+                     ResolvedODR, DefinedGVSummaries);
+
+  return Key.str().str();
+}
+
+Error ModuleCacheEntry::writeObject(const MemoryBuffer &OutputBuffer,
+                                    StringRef OutputPath) {
+  std::error_code Err;
+  raw_fd_ostream OS(OutputPath, Err, sys::fs::OF_None);
+  if (Err)
+    return createStringError(Err, Twine("Can't open output '") + OutputPath);
+  OS << OutputBuffer.getBuffer();
+  return Error::success();
+}
+
+std::unique_ptr<ModuleCacheEntry> ThinLTOCodeGenerator::createModuleCacheEntry(
+    const ModuleSummaryIndex &Index, StringRef ModuleID,
+    const FunctionImporter::ImportMapTy &ImportList,
+    const FunctionImporter::ExportSetTy &ExportList,
+    const std::map<GlobalValue::GUID, GlobalValue::LinkageTypes> &ResolvedODR,
+    const GVSummaryMapTy &DefinedGVSummaries, unsigned OptLevel,
+    bool Freestanding, const TargetMachineBuilder &TMBuilder) {
+  switch (CacheOptions.Type) {
+  case CachingOptions::CacheType::CacheDirectory:
+    return std::make_unique<FileModuleCacheEntry>(
+        CacheOptions.Path, Index, ModuleID, ImportList, ExportList, ResolvedODR,
+        DefinedGVSummaries, OptLevel, Freestanding, TMBuilder);
+  case CachingOptions::CacheType::CAS:
+    return std::make_unique<CASModuleCacheEntry>(
+        *CacheOptions.CAS, *CacheOptions.Cache, Index, ModuleID, ImportList,
+        ExportList, ResolvedODR, DefinedGVSummaries, OptLevel, Freestanding,
+        TMBuilder);
+  case CachingOptions::CacheType::RemoteService:
+    return std::make_unique<RemoteModuleCacheEntry>(
+        *CacheOptions.Service, Index, ModuleID, ImportList, ExportList,
+        ResolvedODR, DefinedGVSummaries, OptLevel, Freestanding, TMBuilder);
+  }
+}
 
 void ThinLTOCodeGenerator::addModule(StringRef Identifier, StringRef Data) {
   MemoryBufferRef Buffer(Data, Identifier);
@@ -926,9 +1185,8 @@ void ThinLTOCodeGenerator::optimize(Module &TheModule) {
 /// Write out the generated object file, either from CacheEntryPath or from
 /// OutputBuffer, preferring hard-link when possible.
 /// Returns the path to the generated file in SavedObjectsDirectoryPath.
-std::string
-ThinLTOCodeGenerator::writeGeneratedObject(int count, StringRef CacheEntryPath,
-                                           const MemoryBuffer &OutputBuffer) {
+std::string ThinLTOCodeGenerator::writeGeneratedObject(
+    int count, ModuleCacheEntry *CacheEntry, const MemoryBuffer &OutputBuffer) {
   auto ArchName = TMBuilder.TheTriple.getArchName();
   SmallString<128> OutputPath(SavedObjectsDirectoryPath);
   llvm::sys::path::append(OutputPath,
@@ -938,20 +1196,10 @@ ThinLTOCodeGenerator::writeGeneratedObject(int count, StringRef CacheEntryPath,
     sys::fs::remove(OutputPath);
 
   // We don't return a memory buffer to the linker, just a list of files.
-  if (!CacheEntryPath.empty()) {
-    // Cache is enabled, hard-link the entry (or copy if hard-link fails).
-    auto Err = sys::fs::create_hard_link(CacheEntryPath, OutputPath);
-    if (!Err)
-      return std::string(OutputPath.str());
-    // Hard linking failed, try to copy.
-    Err = sys::fs::copy_file(CacheEntryPath, OutputPath);
-    if (!Err)
-      return std::string(OutputPath.str());
-    // Copy failed (could be because the CacheEntry was removed from the cache
-    // in the meantime by another process), fall back and try to write down the
-    // buffer to the output.
-    errs() << "remark: can't link or copy from cached entry '" << CacheEntryPath
-           << "' to '" << OutputPath << "'\n";
+  if (CacheEntry) {
+    Error Err = CacheEntry->writeObject(OutputBuffer, OutputPath);
+    if (Err)
+      report_fatal_error(std::move(Err));
   }
   // No cache entry, just write out the buffer.
   std::error_code Err;
@@ -1001,7 +1249,7 @@ void ThinLTOCodeGenerator::run() {
           ProducedBinaries[count] = std::move(OutputBuffer);
         else
           ProducedBinaryFiles[count] =
-              writeGeneratedObject(count, "", *OutputBuffer);
+              writeGeneratedObject(count, nullptr, *OutputBuffer);
       }, count++);
     }
 
@@ -1135,15 +1383,14 @@ void ThinLTOCodeGenerator::run() {
         auto &DefinedGVSummaries = ModuleToDefinedGVSummaries[ModuleIdentifier];
 
         // The module may be cached, this helps handling it.
-        ModuleCacheEntry CacheEntry(CacheOptions.Path, *Index, ModuleIdentifier,
-                                    ImportLists[ModuleIdentifier], ExportList,
-                                    ResolvedODR[ModuleIdentifier],
-                                    DefinedGVSummaries, OptLevel, Freestanding,
-                                    TMBuilder);
-        auto CacheEntryPath = CacheEntry.getEntryPath();
+        auto CacheEntry = createModuleCacheEntry(
+            *Index, ModuleIdentifier, ImportLists[ModuleIdentifier], ExportList,
+            ResolvedODR[ModuleIdentifier], DefinedGVSummaries, OptLevel,
+            Freestanding, TMBuilder);
+        auto CacheEntryPath = CacheEntry->getEntryPath();
 
         {
-          auto ErrOrBuffer = CacheEntry.tryLoadingBuffer();
+          auto ErrOrBuffer = CacheEntry->tryLoadingBuffer();
           LLVM_DEBUG(dbgs() << "Cache " << (ErrOrBuffer ? "hit" : "miss")
                             << " '" << CacheEntryPath << "' for buffer "
                             << count << " " << ModuleIdentifier << "\n");
@@ -1154,7 +1401,7 @@ void ThinLTOCodeGenerator::run() {
               ProducedBinaries[count] = std::move(ErrOrBuffer.get());
             else
               ProducedBinaryFiles[count] = writeGeneratedObject(
-                  count, CacheEntryPath, *ErrOrBuffer.get());
+                  count, CacheEntry.get(), *ErrOrBuffer.get());
             return;
           }
         }
@@ -1188,31 +1435,25 @@ void ThinLTOCodeGenerator::run() {
             DebugPassManager);
 
         // Commit to the cache (if enabled)
-        CacheEntry.write(*OutputBuffer);
+        CacheEntry->write(*OutputBuffer);
 
         if (SavedObjectsDirectoryPath.empty()) {
           // We need to generated a memory buffer for the linker.
-          if (!CacheEntryPath.empty()) {
-            // When cache is enabled, reload from the cache if possible.
-            // Releasing the buffer from the heap and reloading it from the
-            // cache file with mmap helps us to lower memory pressure.
-            // The freed memory can be used for the next input file.
-            // The final binary link will read from the VFS cache (hopefully!)
-            // or from disk (if the memory pressure was too high).
-            auto ReloadedBufferOrErr = CacheEntry.tryLoadingBuffer();
-            if (auto EC = ReloadedBufferOrErr.getError()) {
-              // On error, keep the preexisting buffer and print a diagnostic.
-              errs() << "remark: can't reload cached file '" << CacheEntryPath
-                     << "': " << EC.message() << "\n";
-            } else {
-              OutputBuffer = std::move(*ReloadedBufferOrErr);
-            }
-          }
+          auto ReloadedBuffer = CacheEntry->getMappedBuffer();
+          // When cache is enabled, reload from the cache if possible.
+          // Releasing the buffer from the heap and reloading it from the
+          // cache file with mmap helps us to lower memory pressure.
+          // The freed memory can be used for the next input file.
+          // The final binary link will read from the VFS cache (hopefully!)
+          // or from disk (if the memory pressure was too high).
+          if (ReloadedBuffer)
+            OutputBuffer = std::move(*ReloadedBuffer);
+
           ProducedBinaries[count] = std::move(OutputBuffer);
           return;
         }
-        ProducedBinaryFiles[count] = writeGeneratedObject(
-            count, CacheEntryPath, *OutputBuffer);
+        ProducedBinaryFiles[count] =
+            writeGeneratedObject(count, CacheEntry.get(), *OutputBuffer);
       }, IndexCount);
     }
   }
