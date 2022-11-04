@@ -57,8 +57,7 @@ class TestTwoHitsOneActual(TestBase):
             process.Continue()
             for thread in process.threads:
                 if thread.id == main_thread.id:
-                    self.assertEqual(thread.stop_reason, lldb.eStopReasonBreakpoint)
+                    self.assertStopReason(thread.stop_reason, lldb.eStopReasonBreakpoint)
                 else:
-                    self.assertEqual(thread.stop_reason, lldb.eStopReasonNone)
+                    self.assertStopReason(thread.stop_reason, lldb.eStopReasonNone)
 
-                
