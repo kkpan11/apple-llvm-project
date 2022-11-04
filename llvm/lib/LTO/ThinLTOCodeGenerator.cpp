@@ -579,10 +579,10 @@ public:
 
     // Lookup the output value from KVDB.
     auto &GetValueQueue = Service.KVDB->getValueQueue();
-    GetValueQueue.getValueAsync(ID);
-    auto GetResponse = GetValueQueue.receiveNext();
+    auto GetResponse = GetValueQueue.getValueSync(ID);
     if (!GetResponse)
       return errorToErrorCode(GetResponse.takeError());
+
     // Cache Miss.
     if (!GetResponse->Value)
       return std::error_code();
@@ -594,10 +594,10 @@ public:
 
     // Request the output buffer.
     auto &LoadQueue = Service.CASDB->loadQueue();
-    LoadQueue.loadAsync(Result->getValue());
-    auto LoadResponse = LoadQueue.receiveNext();
+    auto LoadResponse = LoadQueue.loadSync(Result->getValue(), None);
     if (!LoadResponse)
       return errorToErrorCode(LoadResponse.takeError());
+
     // Object not found. Treat it as a miss.
     if (LoadResponse->KeyNotFound || !LoadResponse->BlobData)
       return std::error_code();
@@ -611,19 +611,16 @@ public:
       return;
 
     auto &SaveQueue = Service.CASDB->saveQueue();
-    SaveQueue.saveDataAsync(OutputBuffer.getBuffer().str());
-    auto SaveResponse = SaveQueue.receiveNext();
+    auto SaveResponse = SaveQueue.saveDataSync(OutputBuffer.getBuffer().str());
     if (!SaveResponse) {
       consumeError(SaveResponse.takeError());
       return;
     }
 
-
     auto &PutValueQueue = Service.KVDB->putValueQueue();
     cas::remote::KeyValueDBClient::ValueTy CompResult;
     CompResult["Output"] = SaveResponse->CASID;
-    PutValueQueue.putValueAsync(ID, CompResult);
-    auto PutResponse = PutValueQueue.receiveNext();
+    auto PutResponse = PutValueQueue.putValueSync(ID, CompResult);
     if (!PutResponse) {
       // Ignore error.
       consumeError(PutResponse.takeError());

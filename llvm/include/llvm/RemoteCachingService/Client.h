@@ -88,12 +88,19 @@ public:
       --NumPending;
       return receiveNextImpl();
     }
+    Expected<Response> getValueSync(std::string Key) {
+      return getValueSyncImpl(std::move(Key));
+    }
+    Expected<Response> getValueSync(ArrayRef<uint8_t> Key) {
+      return getValueSync(toStringRef(Key).str());
+    }
 
   protected:
     virtual void
     getValueAsyncImpl(std::string Key,
                       std::shared_ptr<AsyncCallerContext> CallCtx) = 0;
     virtual Expected<Response> receiveNextImpl() = 0;
+    virtual Expected<Response> getValueSyncImpl(std::string Key) = 0;
   };
 
   class PutValueAsyncQueue : public AsyncQueueBase {
@@ -120,12 +127,21 @@ public:
       --NumPending;
       return receiveNextImpl();
     }
+    Expected<Response> putValueSync(std::string Key, const ValueTy &Value) {
+      return putValueSyncImpl(std::move(Key), Value);
+    }
+    Expected<Response>
+    putValueSync(ArrayRef<uint8_t> Key, const ValueTy &Value) {
+      return putValueSync(toStringRef(Key).str(), Value);
+    }
 
   protected:
     virtual void
     putValueAsyncImpl(std::string Key, const ValueTy &Value,
                       std::shared_ptr<AsyncCallerContext> CallCtx) = 0;
     virtual Expected<Response> receiveNextImpl() = 0;
+    virtual Expected<Response> putValueSyncImpl(std::string Key,
+                                                const ValueTy &Value) = 0;
   };
 
   GetValueAsyncQueue &getValueQueue() const { return *GetValueQueue; }
@@ -180,12 +196,18 @@ public:
       --NumPending;
       return receiveNextImpl();
     }
+    Expected<Response> loadSync(std::string CASID,
+                                Optional<std::string> OutFilePath = None) {
+      return loadSyncImpl(std::move(CASID), std::move(OutFilePath));
+    }
 
   protected:
     virtual void loadAsyncImpl(std::string CASID,
                                Optional<std::string> OutFilePath,
                                std::shared_ptr<AsyncCallerContext> CallCtx) = 0;
     virtual Expected<Response> receiveNextImpl() = 0;
+    virtual Expected<Response>
+    loadSyncImpl(std::string CASID, Optional<std::string> OutFilePath) = 0;
   };
 
   class SaveAsyncQueue : public AsyncQueueBase {
@@ -215,6 +237,12 @@ public:
       --NumPending;
       return receiveNextImpl();
     }
+    Expected<Response> saveDataSync(std::string BlobData) {
+      return saveDataSyncImpl(std::move(BlobData));
+    }
+    Expected<Response> saveFileSync(std::string FilePath) {
+      return saveFileSyncImpl(std::move(FilePath));
+    }
 
   protected:
     virtual void
@@ -224,6 +252,8 @@ public:
     saveFileAsyncImpl(std::string FilePath,
                       std::shared_ptr<AsyncCallerContext> CallCtx) = 0;
     virtual Expected<Response> receiveNextImpl() = 0;
+    virtual Expected<Response> saveDataSyncImpl(std::string BlobData) = 0;
+    virtual Expected<Response> saveFileSyncImpl(std::string FilePath) = 0;
   };
 
   class GetAsyncQueue : public AsyncQueueBase {
@@ -251,12 +281,18 @@ public:
       --NumPending;
       return receiveNextImpl();
     }
+    Expected<Response> getSync(std::string CASID,
+                               Optional<std::string> OutFilePath = None) {
+      return getSyncImpl(std::move(CASID), std::move(OutFilePath));
+    }
 
   protected:
     virtual void getAsyncImpl(std::string CASID,
                               Optional<std::string> OutFilePath,
                               std::shared_ptr<AsyncCallerContext> CallCtx) = 0;
     virtual Expected<Response> receiveNextImpl() = 0;
+    virtual Expected<Response>
+    getSyncImpl(std::string CASID, Optional<std::string> OutFilePath) = 0;
   };
 
   class PutAsyncQueue : public AsyncQueueBase {
@@ -286,6 +322,14 @@ public:
       --NumPending;
       return receiveNextImpl();
     }
+    Expected<Response> putDataSync(std::string BlobData,
+                                   ArrayRef<std::string> Refs) {
+      return putDataSyncImpl(std::move(BlobData), Refs);
+    }
+    Expected<Response> putFileSync(std::string FilePath,
+                                   ArrayRef<std::string> Refs) {
+      return putFileSyncImpl(std::move(FilePath), Refs);
+    }
 
   protected:
     virtual void
@@ -295,6 +339,10 @@ public:
     putFileAsyncImpl(std::string FilePath, ArrayRef<std::string> Refs,
                      std::shared_ptr<AsyncCallerContext> CallCtx) = 0;
     virtual Expected<Response> receiveNextImpl() = 0;
+    virtual Expected<Response> putDataSyncImpl(std::string BlobData,
+                                               ArrayRef<std::string> Refs) = 0;
+    virtual Expected<Response> putFileSyncImpl(std::string FilePath,
+                                               ArrayRef<std::string> Refs) = 0;
   };
 
   LoadAsyncQueue &loadQueue() const { return *LoadQueue; }

@@ -243,8 +243,7 @@ GRPCRelayCAS::GRPCRelayCAS(StringRef Path, Error &Err)
 
   // Send a put request to the CAS to determine hash size.
   auto &SaveQueue = CASDB->saveQueue();
-  SaveQueue.saveDataAsync("");
-  auto Response = SaveQueue.receiveNext();
+  auto Response = SaveQueue.saveDataSync("");
   if (!Response) {
     Err = Response.takeError();
     return;
@@ -281,8 +280,7 @@ Expected<ObjectRef> GRPCRelayCAS::store(ArrayRef<ObjectRef> Refs,
   for (auto Ref: Refs)
     RefIDs.emplace_back(getDataIDFromRef(Ref));
 
-  PutQueue.putDataAsync(toStringRef(Data).str(), RefIDs);
-  auto Response = PutQueue.receiveNext();
+  auto Response = PutQueue.putDataSync(toStringRef(Data).str(), RefIDs);
   if (!Response)
     return Response.takeError();
 
@@ -327,8 +325,7 @@ Expected<ObjectHandle> GRPCRelayCAS::load(ObjectRef Ref) {
   // into busy state. we will send parallel loads and put one of the result into
   // the local CAS.
   auto &GetQueue = CASDB->getQueue();
-  GetQueue.getAsync(getDataIDFromRef(Ref));
-  auto Response = GetQueue.receiveNext();
+  auto Response = GetQueue.getSync(getDataIDFromRef(Ref));
   if (!Response)
     return Response.takeError();
 
@@ -385,14 +382,15 @@ GRPCRelayCAS::storeFromOpenFileImpl(sys::fs::file_t FD,
   auto &SaveQueue = CASDB->saveQueue();
   ArrayRef<char> Data(Map.data(), Map.size());
   SmallString<128> Path;
-  if (sys::fs::getRealPathFromHandle(FD, Path))
-    SaveQueue.saveFileAsync(Path.str().str());
-  else
-    SaveQueue.saveDataAsync(toStringRef(Data).str());
-
-  auto Response = SaveQueue.receiveNext();
-  if (!Response)
-    return Response.takeError();
+  Optional<remote::CASDBClient::SaveAsyncQueue::Response> Response;
+  if (sys::fs::getRealPathFromHandle(FD, Path)) {
+    if (auto Err = SaveQueue.saveFileSync(Path.str().str()).moveInto(Response))
+      return std::move(Err);
+  } else {
+    if (auto Err =
+            SaveQueue.saveDataSync(toStringRef(Data).str()).moveInto(Response))
+      return std::move(Err);
+  }
 
   auto &I = indexHash(arrayRefFromStringRef(Response->CASID));
   // TODO: we can avoid the copy by implementing InMemoryRef object like
@@ -414,8 +412,7 @@ GRPCActionCache::GRPCActionCache(StringRef Path, Error &Err)
 Expected<Optional<CASID>>
 GRPCActionCache::getImpl(ArrayRef<uint8_t> ResolvedKey) const {
   auto &GetValueQueue = KVDB->getValueQueue();
-  GetValueQueue.getValueAsync(ResolvedKey);
-  auto Response = GetValueQueue.receiveNext();
+  auto Response = GetValueQueue.getValueSync(ResolvedKey);
   if (!Response)
     return Response.takeError();
   if (!Response->Value)
@@ -435,8 +432,7 @@ Error GRPCActionCache::putImpl(ArrayRef<uint8_t> ResolvedKey,
   auto &PutValueQueue = KVDB->putValueQueue();
   remote::KeyValueDBClient::ValueTy CompResult;
   CompResult["CASID"] = toStringRef(Result.getHash()).str();
-  PutValueQueue.putValueAsync(ResolvedKey, CompResult);
-  auto Response = PutValueQueue.receiveNext();
+  auto Response = PutValueQueue.putValueSync(ResolvedKey, CompResult);
   if (!Response)
     return Response.takeError();
 
