@@ -11,8 +11,6 @@ from lldbsuite.test.decorators import *
 from lldbsuite.test.lldbtest import *
 from lldbsuite.test import lldbutil
 
-import six
-
 
 class ProcessLaunchTestCase(TestBase):
     NO_DEBUG_INFO_TESTCASE = True
@@ -199,4 +197,4 @@ class ProcessLaunchTestCase(TestBase):
 
         self.assertEqual(value, evil_var)
         process.Continue()
-        self.assertEqual(process.GetState(), lldb.eStateExited, PROCESS_EXITED)
+        self.assertState(process.GetState(), lldb.eStateExited, PROCESS_EXITED)

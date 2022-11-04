@@ -6,7 +6,8 @@ from __future__ import print_function
 
 
 import lldb
-import six
+import io
+import sys
 from lldbsuite.test.decorators import *
 from lldbsuite.test.lldbtest import *
 from lldbsuite.test import lldbutil
@@ -39,11 +40,7 @@ class TestSTTYBeforeAndAfter(TestBase):
         lldb_prompt = "(lldb) "
 
         # So that the child gets torn down after the test.
-        import sys
-        if sys.version_info.major == 3:
-          self.child = pexpect.spawnu('expect')
-        else:
-          self.child = pexpect.spawn('expect')
+        self.child = pexpect.spawnu('expect')
         child = self.child
 
         child.expect(expect_prompt)
@@ -60,8 +57,8 @@ class TestSTTYBeforeAndAfter(TestBase):
         child.expect(expect_prompt)
 
         # Turn on loggings for input/output to/from the child.
-        child.logfile_send = child_send1 = six.StringIO()
-        child.logfile_read = child_read1 = six.StringIO()
+        child.logfile_send = child_send1 = io.StringIO()
+        child.logfile_read = child_read1 = io.StringIO()
         child.sendline('stty -a')
         child.expect(expect_prompt)
 
@@ -78,8 +75,8 @@ class TestSTTYBeforeAndAfter(TestBase):
         child.sendline('quit')
         child.expect(expect_prompt)
 
-        child.logfile_send = child_send2 = six.StringIO()
-        child.logfile_read = child_read2 = six.StringIO()
+        child.logfile_send = child_send2 = io.StringIO()
+        child.logfile_read = child_read2 = io.StringIO()
         child.sendline('stty -a')
         child.expect(expect_prompt)
 
