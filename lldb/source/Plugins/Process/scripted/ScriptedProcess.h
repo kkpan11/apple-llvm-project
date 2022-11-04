@@ -63,8 +63,6 @@ public:
 
   llvm::StringRef GetPluginName() override { return GetPluginNameStatic(); }
 
-  SystemRuntime *GetSystemRuntime() override { return nullptr; }
-
   Status DoLoadCore() override;
 
   Status DoLaunch(Module *exe_module, ProcessLaunchInfo &launch_info) override;
@@ -91,6 +89,8 @@ public:
 
   lldb_private::StructuredData::ObjectSP
   GetLoadedDynamicLibrariesInfos() override;
+
+  lldb_private::StructuredData::DictionarySP GetMetadata() override;
 
 protected:
   Status DoStop();
