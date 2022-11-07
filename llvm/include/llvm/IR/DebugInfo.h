@@ -49,6 +49,10 @@ void findDbgUsers(SmallVectorImpl<DbgVariableIntrinsic *> &DbgInsts, Value *V);
 /// Find subprogram that is enclosing this scope.
 DISubprogram *getDISubprogram(const MDNode *Scope);
 
+/// Produce a DebugLoc to use for each dbg.declare that is promoted to a
+/// dbg.value.
+DebugLoc getDebugValueLoc(DbgVariableIntrinsic *DII);
+
 /// Strip debug info in the module if it exists.
 ///
 /// To do this, we remove all calls to the debugger intrinsics and any named
@@ -211,6 +215,9 @@ inline AssignmentMarkerRange getAssignmentMarkers(const Instruction *Inst) {
   else
     return make_range(Value::user_iterator(), Value::user_iterator());
 }
+
+/// Delete the llvm.dbg.assign intrinsics linked to \p Inst.
+void deleteAssignmentMarkers(const Instruction *Inst);
 
 /// Replace all uses (and attachments) of \p Old with \p New.
 void RAUW(DIAssignID *Old, DIAssignID *New);

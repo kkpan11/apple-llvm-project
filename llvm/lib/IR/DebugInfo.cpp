@@ -140,6 +140,18 @@ DISubprogram *llvm::getDISubprogram(const MDNode *Scope) {
   return nullptr;
 }
 
+DebugLoc llvm::getDebugValueLoc(DbgVariableIntrinsic *DII) {
+  // Original dbg.declare must have a location.
+  const DebugLoc &DeclareLoc = DII->getDebugLoc();
+  MDNode *Scope = DeclareLoc.getScope();
+  DILocation *InlinedAt = DeclareLoc.getInlinedAt();
+  // Because no machine insts can come from debug intrinsics, only the scope
+  // and inlinedAt is significant. Zero line numbers are used in case this
+  // DebugLoc leaks into any adjacent instructions. Produce an unknown location
+  // with the correct scope / inlinedAt fields.
+  return DILocation::get(DII->getContext(), 0, 0, Scope, InlinedAt);
+}
+
 //===----------------------------------------------------------------------===//
 // DebugInfoFinder implementations.
 //===----------------------------------------------------------------------===//
@@ -1662,6 +1674,15 @@ AssignmentMarkerRange at::getAssignmentMarkers(DIAssignID *ID) {
     return make_range(Value::user_iterator(), Value::user_iterator());
 
   return make_range(IDAsValue->user_begin(), IDAsValue->user_end());
+}
+
+void at::deleteAssignmentMarkers(const Instruction *Inst) {
+  auto Range = getAssignmentMarkers(Inst);
+  if (Range.empty())
+    return;
+  SmallVector<DbgAssignIntrinsic *> ToDelete(Range.begin(), Range.end());
+  for (auto *DAI : ToDelete)
+    DAI->eraseFromParent();
 }
 
 void at::RAUW(DIAssignID *Old, DIAssignID *New) {
