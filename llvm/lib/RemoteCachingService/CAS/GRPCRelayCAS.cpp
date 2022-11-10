@@ -242,13 +242,12 @@ GRPCRelayCAS::GRPCRelayCAS(StringRef Path, Error &Err)
   CASDB = std::move(*DB);
 
   // Send a put request to the CAS to determine hash size.
-  auto &SaveQueue = CASDB->saveQueue();
-  auto Response = SaveQueue.saveDataSync("");
+  auto Response = CASDB->saveDataSync("");
   if (!Response) {
     Err = Response.takeError();
     return;
   }
-  ServiceHashSize = Response->CASID.size();
+  ServiceHashSize = Response->size();
   if (ServiceHashSize > 80)
     Err = createStringError(std::make_error_code(std::errc::message_size),
                             "Hash from CASService is too long");
@@ -275,16 +274,15 @@ Expected<CASID> GRPCRelayCAS::parseID(StringRef Reference) {
 
 Expected<ObjectRef> GRPCRelayCAS::store(ArrayRef<ObjectRef> Refs,
                                         ArrayRef<char> Data) {
-  auto &PutQueue = CASDB->putQueue();
   SmallVector<std::string> RefIDs;
   for (auto Ref: Refs)
     RefIDs.emplace_back(getDataIDFromRef(Ref));
 
-  auto Response = PutQueue.putDataSync(toStringRef(Data).str(), RefIDs);
+  auto Response = CASDB->putDataSync(toStringRef(Data).str(), RefIDs);
   if (!Response)
     return Response.takeError();
 
-  auto &I = indexHash(arrayRefFromStringRef(Response->CASID));
+  auto &I = indexHash(arrayRefFromStringRef(*Response));
   // Create the node.
   SmallVector<const InMemoryIndexValueT *> InternalRefs;
   for (ObjectRef Ref : Refs)
@@ -324,8 +322,7 @@ Expected<ObjectHandle> GRPCRelayCAS::load(ObjectRef Ref) {
   // can't return nullptr to indicate failed load now, we can't lock the entry
   // into busy state. we will send parallel loads and put one of the result into
   // the local CAS.
-  auto &GetQueue = CASDB->getQueue();
-  auto Response = GetQueue.getSync(getDataIDFromRef(Ref));
+  auto Response = CASDB->getSync(getDataIDFromRef(Ref));
   if (!Response)
     return Response.takeError();
 
@@ -379,20 +376,19 @@ GRPCRelayCAS::storeFromOpenFileImpl(sys::fs::file_t FD,
   if (EC)
     return errorCodeToError(EC);
 
-  auto &SaveQueue = CASDB->saveQueue();
   ArrayRef<char> Data(Map.data(), Map.size());
   SmallString<128> Path;
-  Optional<remote::CASDBClient::SaveAsyncQueue::Response> Response;
+  Optional<std::string> Response;
   if (sys::fs::getRealPathFromHandle(FD, Path)) {
-    if (auto Err = SaveQueue.saveFileSync(Path.str().str()).moveInto(Response))
+    if (auto Err = CASDB->saveFileSync(Path.str().str()).moveInto(Response))
       return std::move(Err);
   } else {
     if (auto Err =
-            SaveQueue.saveDataSync(toStringRef(Data).str()).moveInto(Response))
+            CASDB->saveDataSync(toStringRef(Data).str()).moveInto(Response))
       return std::move(Err);
   }
 
-  auto &I = indexHash(arrayRefFromStringRef(Response->CASID));
+  auto &I = indexHash(arrayRefFromStringRef(*Response));
   // TODO: we can avoid the copy by implementing InMemoryRef object like
   // InMemoryCAS.
   return toReference(storeObjectImpl(I, None, Data));
@@ -411,15 +407,14 @@ GRPCActionCache::GRPCActionCache(StringRef Path, Error &Err)
 
 Expected<Optional<CASID>>
 GRPCActionCache::getImpl(ArrayRef<uint8_t> ResolvedKey) const {
-  auto &GetValueQueue = KVDB->getValueQueue();
-  auto Response = GetValueQueue.getValueSync(ResolvedKey);
+  auto Response = KVDB->getValueSync(ResolvedKey);
   if (!Response)
     return Response.takeError();
-  if (!Response->Value)
+  if (!*Response)
     return None;
 
-  auto Result = Response->Value->find("CASID");
-  if (Result == Response->Value->end())
+  auto Result = (*Response)->find("CASID");
+  if (Result == (*Response)->end())
     return createStringError(
         inconvertibleErrorCode(),
         "malformed value object returned by remote service");
@@ -429,12 +424,10 @@ GRPCActionCache::getImpl(ArrayRef<uint8_t> ResolvedKey) const {
 
 Error GRPCActionCache::putImpl(ArrayRef<uint8_t> ResolvedKey,
                                const CASID &Result) {
-  auto &PutValueQueue = KVDB->putValueQueue();
   remote::KeyValueDBClient::ValueTy CompResult;
   CompResult["CASID"] = toStringRef(Result.getHash()).str();
-  auto Response = PutValueQueue.putValueSync(ResolvedKey, CompResult);
-  if (!Response)
-    return Response.takeError();
+  if (auto Err = KVDB->putValueSync(ResolvedKey, CompResult))
+    return Err;
 
   return Error::success();
 }

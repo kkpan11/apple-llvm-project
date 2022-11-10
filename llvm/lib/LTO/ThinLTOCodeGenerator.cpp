@@ -578,23 +578,21 @@ public:
       return std::error_code();
 
     // Lookup the output value from KVDB.
-    auto &GetValueQueue = Service.KVDB->getValueQueue();
-    auto GetResponse = GetValueQueue.getValueSync(ID);
+    auto GetResponse = Service.KVDB->getValueSync(ID);
     if (!GetResponse)
       return errorToErrorCode(GetResponse.takeError());
 
     // Cache Miss.
-    if (!GetResponse->Value)
+    if (!*GetResponse)
       return std::error_code();
 
     // Malformed output. Error.
-    auto Result = GetResponse->Value->find("Output");
-    if (Result == GetResponse->Value->end())
+    auto Result = (*GetResponse)->find("Output");
+    if (Result == (*GetResponse)->end())
       return std::make_error_code(std::errc::message_size);
 
     // Request the output buffer.
-    auto &LoadQueue = Service.CASDB->loadQueue();
-    auto LoadResponse = LoadQueue.loadSync(Result->getValue(), None);
+    auto LoadResponse = Service.CASDB->loadSync(Result->getValue(), None);
     if (!LoadResponse)
       return errorToErrorCode(LoadResponse.takeError());
 
@@ -610,22 +608,17 @@ public:
     if (ID.empty())
       return;
 
-    auto &SaveQueue = Service.CASDB->saveQueue();
-    auto SaveResponse = SaveQueue.saveDataSync(OutputBuffer.getBuffer().str());
+    auto SaveResponse =
+        Service.CASDB->saveDataSync(OutputBuffer.getBuffer().str());
     if (!SaveResponse) {
       consumeError(SaveResponse.takeError());
       return;
     }
 
-    auto &PutValueQueue = Service.KVDB->putValueQueue();
     cas::remote::KeyValueDBClient::ValueTy CompResult;
-    CompResult["Output"] = SaveResponse->CASID;
-    auto PutResponse = PutValueQueue.putValueSync(ID, CompResult);
-    if (!PutResponse) {
-      // Ignore error.
-      consumeError(PutResponse.takeError());
-      return;
-    }
+    CompResult["Output"] = *SaveResponse;
+    if (auto Err = Service.KVDB->putValueSync(ID, CompResult))
+      consumeError(std::move(Err));
   }
 
 private:
