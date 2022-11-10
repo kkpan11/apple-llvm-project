@@ -1385,3 +1385,6 @@ if(LLVM_ENABLE_EXPERIMENTAL_CAS_BACKEND)
   append("-Xclang" CMAKE_C_FLAGS CMAKE_CXX_FLAGS)
   append("-fcas-backend" CMAKE_C_FLAGS CMAKE_CXX_FLAGS)
 endif()
+
+set(LLVM_THIRD_PARTY_DIR  ${CMAKE_CURRENT_SOURCE_DIR}/../third-party CACHE STRING
+    "Directory containing third party software used by LLVM (e.g. googletest)")
