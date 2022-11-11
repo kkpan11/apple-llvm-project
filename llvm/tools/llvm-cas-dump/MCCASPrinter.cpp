@@ -134,16 +134,15 @@ static Error printAbbrevOffsets(raw_ostream &OS,
   return Error::success();
 }
 
-Error MCCASPrinter::printSimpleNested(MCObjectProxy AssemblerRef,
-                                      CASDWARFObject &Obj,
+Error MCCASPrinter::printSimpleNested(MCObjectProxy Ref, CASDWARFObject &Obj,
                                       DWARFContext *DWARFCtx) {
   IndentGuard Guard(Indent);
 
-  if (auto AbbrevOffsetsRef = DebugAbbrevOffsetsRef::Cast(AssemblerRef);
+  if (auto AbbrevOffsetsRef = DebugAbbrevOffsetsRef::Cast(Ref);
       Options.DebugAbbrevOffsets && AbbrevOffsetsRef)
     if (auto E = printAbbrevOffsets(OS, *AbbrevOffsetsRef))
       return E;
 
-  return AssemblerRef.forEachReference(
+  return Ref.forEachReference(
       [&](ObjectRef CASObj) { return printMCObject(CASObj, Obj, DWARFCtx); });
 }

@@ -12,6 +12,7 @@ add_llvm_component_library(LLVMMC
   MCAsmMacro.cpp
   MCAsmStreamer.cpp
   MCAssembler.cpp
+  MCCASDebugV1.cpp
   MCCASObjectV1.cpp
   MCCASFormatSchemaBase.cpp
   MCCodeEmitter.cpp

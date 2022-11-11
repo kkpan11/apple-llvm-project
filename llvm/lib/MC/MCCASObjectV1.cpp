@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/MC/CAS/MCCASObjectV1.h"
+#include "llvm/MC/CAS/MCCASDebugV1.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/BinaryFormat/MachO.h"
 #include "llvm/CAS/CASID.h"
@@ -72,27 +73,6 @@ cl::opt<RelEncodeLoc> RelocLocation(
                clEnumVal(CompileUnit, "In compile unit")),
     cl::init(Atom));
 
-template <> struct llvm::DenseMapInfo<llvm::dwarf::Form> {
-  static llvm::dwarf::Form getEmptyKey() {
-    return static_cast<llvm::dwarf::Form>(
-        DenseMapInfo<uint16_t>::getEmptyKey());
-  }
-
-  static llvm::dwarf::Form getTombstoneKey() {
-    return static_cast<llvm::dwarf::Form>(
-        DenseMapInfo<uint16_t>::getTombstoneKey());
-  }
-
-  static unsigned getHashValue(const llvm::dwarf::Form &OVal) {
-    return DenseMapInfo<uint16_t>::getHashValue(OVal);
-  }
-
-  static bool isEqual(const llvm::dwarf::Form &LHS,
-                      const llvm::dwarf::Form &RHS) {
-    return LHS == RHS;
-  }
-};
-
 /// A DWARFObject implementation that can be used to dwarfdump CAS-formatted
 /// debug info.
 class InMemoryCASDWARFObject : public DWARFObject {
@@ -120,41 +100,6 @@ public:
   struct PartitionedDebugInfoSection {
     SmallVector<char, 0> DebugInfoCURefData;
     SmallVector<char, 0> DistinctData;
-
-    static bool doesntDedup(dwarf::Form Form, dwarf::Attribute Attr) {
-      // This is a list of attributes known to have a high impact in the
-      // deduplication of CAS objects.
-      // Some of these are dependent on the Attribute in which they are used.
-      static const DenseMap<dwarf::Form, SmallVector<dwarf::Attribute>>
-          FormsToPartition{
-              {dwarf::Form::DW_FORM_strp, {}},
-              {dwarf::Form::DW_FORM_ref_addr, {}},
-              {dwarf::Form::DW_FORM_data1,
-               {dwarf::Attribute::DW_AT_call_file,
-                dwarf::Attribute::DW_AT_decl_file,
-                dwarf::Attribute::DW_AT_decl_line}},
-              {dwarf::Form::DW_FORM_data2,
-               {dwarf::Attribute::DW_AT_call_file,
-                dwarf::Attribute::DW_AT_decl_file,
-                dwarf::Attribute::DW_AT_decl_line}},
-              {dwarf::Form::DW_FORM_data4,
-               {dwarf::Attribute::DW_AT_call_file,
-                dwarf::Attribute::DW_AT_decl_file,
-                dwarf::Attribute::DW_AT_decl_line}},
-              {dwarf::Form::DW_FORM_data8,
-               {dwarf::Attribute::DW_AT_decl_file,
-                dwarf::Attribute::DW_AT_call_file,
-                dwarf::Attribute::DW_AT_decl_line}},
-              {dwarf::Form::DW_FORM_addrx, {}},
-          };
-
-      auto it = FormsToPartition.find(Form);
-      if (it == FormsToPartition.end())
-        return false;
-      if (it->second.empty())
-        return true;
-      return llvm::is_contained(it->second, Attr);
-    }
   };
 
   /// Create a DwarfCompileUnit that represents the compile unit at \p CUOffset
@@ -897,161 +842,6 @@ static Error applyAddends(MCCASReader &Reader,
   return Error::success();
 }
 
-static Expected<uint64_t> getFormSize(dwarf::Form FormVal, dwarf::FormParams FP,
-                                      StringRef CUData, uint64_t CUOffset,
-                                      bool IsLittleEndian,
-                                      uint8_t AddressSize) {
-  uint64_t FormSize = 0;
-  bool Indirect = false;
-  Error Err = Error::success();
-  do {
-    Indirect = false;
-    switch (FormVal) {
-    case dwarf::DW_FORM_addr:
-    case dwarf::DW_FORM_ref_addr: {
-      FormSize += (FormVal == dwarf::DW_FORM_addr) ? FP.AddrSize
-                                                   : FP.getRefAddrByteSize();
-      break;
-    }
-    case dwarf::DW_FORM_exprloc:
-    case dwarf::DW_FORM_block: {
-      DWARFDataExtractor DWARFExtractor(CUData, IsLittleEndian, AddressSize);
-      uint64_t PrevOffset = CUOffset;
-      CUOffset += DWARFExtractor.getULEB128(&CUOffset, &Err);
-      FormSize += CUOffset - PrevOffset;
-      break;
-    }
-    case dwarf::DW_FORM_block1: {
-      DWARFDataExtractor DWARFExtractor(CUData, IsLittleEndian, AddressSize);
-      uint64_t PrevOffset = CUOffset;
-      CUOffset += DWARFExtractor.getU8(&CUOffset, &Err);
-      FormSize += CUOffset - PrevOffset;
-      break;
-    }
-    case dwarf::DW_FORM_block2: {
-      DWARFDataExtractor DWARFExtractor(CUData, IsLittleEndian, AddressSize);
-      uint64_t PrevOffset = CUOffset;
-      CUOffset += DWARFExtractor.getU16(&CUOffset, &Err);
-      FormSize += CUOffset - PrevOffset;
-      break;
-    }
-    case dwarf::DW_FORM_block4: {
-      DWARFDataExtractor DWARFExtractor(CUData, IsLittleEndian, AddressSize);
-      uint64_t PrevOffset = CUOffset;
-      CUOffset += DWARFExtractor.getU32(&CUOffset, &Err);
-      FormSize += CUOffset - PrevOffset;
-      break;
-    }
-    case dwarf::DW_FORM_implicit_const:
-    case dwarf::DW_FORM_flag_present: {
-      FormSize += 0;
-      break;
-    }
-    case dwarf::DW_FORM_data1:
-    case dwarf::DW_FORM_ref1:
-    case dwarf::DW_FORM_flag:
-    case dwarf::DW_FORM_strx1:
-    case dwarf::DW_FORM_addrx1: {
-      FormSize += 1;
-      break;
-    }
-    case dwarf::DW_FORM_data2:
-    case dwarf::DW_FORM_ref2:
-    case dwarf::DW_FORM_strx2:
-    case dwarf::DW_FORM_addrx2: {
-      FormSize += 2;
-      break;
-    }
-    case dwarf::DW_FORM_strx3: {
-      FormSize += 3;
-      break;
-    }
-    case dwarf::DW_FORM_data4:
-    case dwarf::DW_FORM_ref4:
-    case dwarf::DW_FORM_ref_sup4:
-    case dwarf::DW_FORM_strx4:
-    case dwarf::DW_FORM_addrx4: {
-      FormSize += 4;
-      break;
-    }
-    case dwarf::DW_FORM_ref_sig8:
-    case dwarf::DW_FORM_data8:
-    case dwarf::DW_FORM_ref8:
-    case dwarf::DW_FORM_ref_sup8: {
-      FormSize += 8;
-      break;
-    }
-    case dwarf::DW_FORM_data16: {
-      FormSize += 16;
-      break;
-    }
-    case dwarf::DW_FORM_sdata: {
-      DWARFDataExtractor DWARFExtractor(CUData, IsLittleEndian, AddressSize);
-      uint64_t PrevOffset = CUOffset;
-      DWARFExtractor.getSLEB128(&CUOffset, &Err);
-      FormSize += CUOffset - PrevOffset;
-      break;
-    }
-    case dwarf::DW_FORM_udata:
-    case dwarf::DW_FORM_ref_udata:
-    case dwarf::DW_FORM_rnglistx:
-    case dwarf::DW_FORM_loclistx:
-    case dwarf::DW_FORM_GNU_addr_index:
-    case dwarf::DW_FORM_GNU_str_index:
-    case dwarf::DW_FORM_addrx:
-    case dwarf::DW_FORM_strx: {
-      DWARFDataExtractor DWARFExtractor(CUData, IsLittleEndian, AddressSize);
-      uint64_t PrevOffset = CUOffset;
-      DWARFExtractor.getULEB128(&CUOffset, &Err);
-      FormSize += CUOffset - PrevOffset;
-      break;
-    }
-    case dwarf::DW_FORM_LLVM_addrx_offset: {
-      DWARFDataExtractor DWARFExtractor(CUData, IsLittleEndian, AddressSize);
-      uint64_t PrevOffset = CUOffset;
-      DWARFExtractor.getULEB128(&CUOffset, &Err);
-      FormSize += CUOffset - PrevOffset + 4;
-      break;
-    }
-    case dwarf::DW_FORM_string: {
-      DWARFDataExtractor DWARFExtractor(CUData, IsLittleEndian, AddressSize);
-      auto CurrOffset = CUOffset;
-      DWARFExtractor.getCStr(&CUOffset, &Err);
-      FormSize += CUOffset - CurrOffset;
-      break;
-    }
-    case dwarf::DW_FORM_indirect: {
-      DWARFDataExtractor DWARFExtractor(CUData, IsLittleEndian, AddressSize);
-      uint64_t PrevOffset = CUOffset;
-      FormVal =
-          static_cast<dwarf::Form>(DWARFExtractor.getULEB128(&CUOffset, &Err));
-      Indirect = true;
-      FormSize += CUOffset - PrevOffset;
-      break;
-    }
-    case dwarf::DW_FORM_strp:
-    case dwarf::DW_FORM_sec_offset:
-    case dwarf::DW_FORM_GNU_ref_alt:
-    case dwarf::DW_FORM_GNU_strp_alt:
-    case dwarf::DW_FORM_line_strp:
-    case dwarf::DW_FORM_strp_sup: {
-      FormSize += FP.getDwarfOffsetByteSize();
-      break;
-    }
-    case dwarf::DW_FORM_addrx3:
-    case dwarf::DW_FORM_lo_user: {
-      llvm_unreachable("usupported form");
-      break;
-    }
-    }
-  } while (Indirect && !Err);
-
-  if (Err)
-    return std::move(Err);
-
-  return FormSize;
-}
-
 static Error
 materializeCUDie(DWARFCompileUnit &DCU, MutableArrayRef<char> SectionContents,
                  StringRef CUData, ArrayRef<char> DistinctDataArrayRef,
@@ -1092,9 +882,7 @@ materializeCUDie(DWARFCompileUnit &DCU, MutableArrayRef<char> SectionContents,
     auto Attr = AbbrevDecl->getAttrByIndex(I);
     auto *U = CUDie.getDwarfUnit();
     dwarf::FormParams FP = U->getFormParams();
-    bool FormInDistinctDataRef =
-        InMemoryCASDWARFObject::PartitionedDebugInfoSection::doesntDedup(Form,
-                                                                         Attr);
+    bool FormInDistinctDataRef = doesntDedup(Form, Attr);
     auto FormSize = getFormSize(
         Form, FP,
         FormInDistinctDataRef ? toStringRef(DistinctDataArrayRef) : CUData,
@@ -2110,8 +1898,7 @@ static void partitionCUDie(
   append_range(PartitionedData.DebugInfoCURefData,
                DebugInfoData.slice(PrevOffset, Size));
   for (const DWARFAttribute &AttrValue : CUDie.attributes()) {
-    if (InMemoryCASDWARFObject::PartitionedDebugInfoSection::doesntDedup(
-            AttrValue.Value.getForm(), AttrValue.Attr))
+    if (doesntDedup(AttrValue.Value.getForm(), AttrValue.Attr))
       append_range(PartitionedData.DistinctData,
                    DebugInfoData.slice(AttrValue.Offset, AttrValue.ByteSize));
     else if (AttrValue.Attr != llvm::dwarf::DW_AT_stmt_list)
