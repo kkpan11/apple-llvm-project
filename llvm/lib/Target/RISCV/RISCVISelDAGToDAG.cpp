@@ -1790,6 +1790,10 @@ void RISCVDAGToDAGISel::Select(SDNode *Node) {
   case RISCVISD::VFMV_S_F_VL:
   case RISCVISD::VMV_V_X_VL:
   case RISCVISD::VFMV_V_F_VL: {
+    // Only if we have optimized zero-stride vector load.
+    if (!Subtarget->hasOptimizedZeroStrideLoad())
+      break;
+
     // Try to match splat of a scalar load to a strided load with stride of x0.
     bool IsScalarMove = Node->getOpcode() == RISCVISD::VMV_S_X_VL ||
                         Node->getOpcode() == RISCVISD::VFMV_S_F_VL;
@@ -2319,6 +2323,7 @@ bool RISCVDAGToDAGISel::hasAllNBitUsers(SDNode *Node, unsigned Bits) const {
       break;
     }
     case RISCV::SEXT_B:
+    case RISCV::PACKH:
       if (Bits < 8)
         return false;
       break;
@@ -2326,7 +2331,12 @@ bool RISCVDAGToDAGISel::hasAllNBitUsers(SDNode *Node, unsigned Bits) const {
     case RISCV::FMV_H_X:
     case RISCV::ZEXT_H_RV32:
     case RISCV::ZEXT_H_RV64:
+    case RISCV::PACKW:
       if (Bits < 16)
+        return false;
+      break;
+    case RISCV::PACK:
+      if (Bits < (Subtarget->getXLen() / 2))
         return false;
       break;
     case RISCV::ADD_UW:
