@@ -1,8 +1,7 @@
 get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
 
-add_flang_library(HLFIRDialect
-  HLFIRDialect.cpp
-  HLFIROps.cpp
+add_flang_library(HLFIRTransforms
+  ConvertToFIR.cpp
 
   DEPENDS
   FIRDialect
@@ -11,6 +10,9 @@ add_flang_library(HLFIRDialect
 
   LINK_LIBS
   FIRDialect
+  FIRBuilder
+  FIRSupport
+  HLFIRDialect
   MLIRIR
   ${dialect_libs}
 
