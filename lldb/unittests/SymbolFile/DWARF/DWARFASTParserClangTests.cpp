@@ -9,6 +9,7 @@
 #include "Plugins/SymbolFile/DWARF/DWARFASTParserClang.h"
 #include "Plugins/SymbolFile/DWARF/DWARFCompileUnit.h"
 #include "Plugins/SymbolFile/DWARF/DWARFDIE.h"
+#include "TestingSupport/Symbol/ClangTestUtils.h"
 #include "TestingSupport/Symbol/YAMLModuleTester.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -93,7 +94,9 @@ DWARF:
   YAMLModuleTester t(yamldata);
   ASSERT_TRUE((bool)t.GetDwarfUnit());
 
-  TypeSystemClang ast_ctx("dummy ASTContext", HostInfoBase::GetTargetTriple());
+  auto holder = std::make_unique<clang_utils::TypeSystemClangHolder>("ast");
+  auto &ast_ctx = *holder->GetAST();
+
   DWARFASTParserClangStub ast_parser(ast_ctx);
 
   DWARFUnit *unit = t.GetDwarfUnit();
@@ -244,7 +247,8 @@ DWARF:
   ASSERT_EQ(cu_entry->Tag(), DW_TAG_compile_unit);
   DWARFDIE cu_die(unit, cu_entry);
 
-  TypeSystemClang ast_ctx("dummy ASTContext", HostInfoBase::GetTargetTriple());
+  auto holder = std::make_unique<clang_utils::TypeSystemClangHolder>("ast");
+  auto &ast_ctx = *holder->GetAST();
   DWARFASTParserClangStub ast_parser(ast_ctx);
 
   std::vector<std::string> found_function_types;

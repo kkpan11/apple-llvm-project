@@ -196,8 +196,8 @@ void FormatManager::GetPossibleMatches(
         {type_name, did_strip_ptr, did_strip_ref, did_strip_typedef});
 
 // BEGIN SWIFT
-    TypeSystem *ts = compiler_type.GetTypeSystem();
-    if (ts && !llvm::isa<TypeSystemClang>(ts)) {
+    auto ts = compiler_type.GetTypeSystem();
+    if (ts && !ts.isa_and_nonnull<TypeSystemClang>()) {
 // END SWIFT
       const SymbolContext *sc = nullptr;
       if (valobj.GetFrameSP())

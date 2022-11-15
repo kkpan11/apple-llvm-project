@@ -1736,10 +1736,10 @@ ClangASTImporter::DeclOrigin ClangASTSource::GetDeclOrigin(const clang::Decl *de
 }
 
 CompilerType ClangASTSource::GuardedCopyType(const CompilerType &src_type) {
-  TypeSystemClang *src_ast =
-      llvm::dyn_cast_or_null<TypeSystemClang>(src_type.GetTypeSystem());
-  if (src_ast == nullptr)
-    return CompilerType();
+  auto ts = src_type.GetTypeSystem();
+  auto src_ast = ts.dyn_cast_or_null<TypeSystemClang>();
+  if (!src_ast)
+    return {};
 
   QualType copied_qual_type = ClangUtil::GetQualType(
       m_ast_importer_sp->CopyType(*m_clang_ast_context, src_type));
@@ -1748,7 +1748,7 @@ CompilerType ClangASTSource::GuardedCopyType(const CompilerType &src_type) {
       copied_qual_type->getCanonicalTypeInternal().isNull())
     // this shouldn't happen, but we're hardening because the AST importer
     // seems to be generating bad types on occasion.
-    return CompilerType();
+    return {};
 
   return m_clang_ast_context->GetType(copied_qual_type);
 }

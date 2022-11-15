@@ -236,8 +236,10 @@ static void ForcefullyCompleteType(CompilerType type) {
   lldbassert(started && "Unable to start a class type definition.");
   TypeSystemClang::CompleteTagDeclarationDefinition(type);
   const clang::TagDecl *td = ClangUtil::GetAsTagDecl(type);
-  auto &ts = llvm::cast<TypeSystemClang>(*type.GetTypeSystem());
-  ts.GetMetadata(td)->SetIsForcefullyCompleted();
+  auto ts_sp = type.GetTypeSystem();
+  auto ts = ts_sp.dyn_cast_or_null<TypeSystemClang>();
+  if (ts)
+    ts->GetMetadata(td)->SetIsForcefullyCompleted();
 }
 
 /// Complete a type from debug info, or mark it as forcefully completed if
@@ -827,8 +829,9 @@ TypeSP DWARFASTParserClang::ParseEnum(const SymbolContext &sc,
 
   CompilerType enumerator_clang_type;
   CompilerType clang_type;
-  clang_type.SetCompilerType(
-      &m_ast, dwarf->GetForwardDeclDieToClangType().lookup(die.GetDIE()));
+  clang_type =
+      CompilerType(m_ast.weak_from_this(),
+                   dwarf->GetForwardDeclDieToClangType().lookup(die.GetDIE()));
   if (!clang_type) {
     if (attrs.type.IsValid()) {
       Type *enumerator_type =
@@ -1394,9 +1397,8 @@ void DWARFASTParserClang::ParseInheritance(
     const lldb::ModuleSP &module_sp,
     std::vector<std::unique_ptr<clang::CXXBaseSpecifier>> &base_classes,
     ClangASTImporter::LayoutInfo &layout_info) {
-
-  TypeSystemClang *ast =
-      llvm::dyn_cast_or_null<TypeSystemClang>(class_clang_type.GetTypeSystem());
+  auto ast =
+      class_clang_type.GetTypeSystem().dyn_cast_or_null<TypeSystemClang>();
   if (ast == nullptr)
     return;
 
@@ -1713,8 +1715,9 @@ DWARFASTParserClang::ParseStructureLikeDIE(const SymbolContext &sc,
   assert(tag_decl_kind != -1);
   (void)tag_decl_kind;
   bool clang_type_was_created = false;
-  clang_type.SetCompilerType(
-      &m_ast, dwarf->GetForwardDeclDieToClangType().lookup(die.GetDIE()));
+  clang_type =
+      CompilerType(m_ast.weak_from_this(),
+                   dwarf->GetForwardDeclDieToClangType().lookup(die.GetDIE()));
   if (!clang_type) {
     clang::DeclContext *decl_ctx =
         GetClangDeclContextContainingDIE(die, nullptr);
@@ -2885,8 +2888,8 @@ bool DWARFASTParserClang::ParseChildMembers(
   FieldInfo last_field_info;
 
   ModuleSP module_sp = parent_die.GetDWARF()->GetObjectFile()->GetModule();
-  TypeSystemClang *ast =
-      llvm::dyn_cast_or_null<TypeSystemClang>(class_clang_type.GetTypeSystem());
+  auto ts = class_clang_type.GetTypeSystem();
+  auto ast = ts.dyn_cast_or_null<TypeSystemClang>();
   if (ast == nullptr)
     return false;
 

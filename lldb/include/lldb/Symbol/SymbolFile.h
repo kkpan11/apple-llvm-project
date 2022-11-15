@@ -262,7 +262,7 @@ public:
 
   virtual void PreloadSymbols();
 
-  virtual llvm::Expected<lldb_private::TypeSystem &>
+  virtual llvm::Expected<lldb::TypeSystemSP>
   GetTypeSystemForLanguage(lldb::LanguageType language);
 
   virtual CompilerDeclContext

@@ -310,8 +310,10 @@ void SymbolFileNativePDB::InitializeObject() {
     LLDB_LOG_ERROR(GetLog(LLDBLog::Symbols), std::move(err),
                    "Failed to initialize");
   } else {
-    ts_or_err->SetSymbolFile(this);
-    auto *clang = llvm::cast_or_null<TypeSystemClang>(&ts_or_err.get());
+    if (auto ts = *ts_or_err)
+      ts->SetSymbolFile(this);
+
+    auto *clang = llvm::cast_or_null<TypeSystemClang>(ts_or_err->get());
     lldbassert(clang);
     m_ast = std::make_unique<PdbAstBuilder>(*m_objfile_sp, *m_index, *clang);
   }
@@ -724,7 +726,6 @@ TypeSP SymbolFileNativePDB::CreateAndCacheType(PdbTypeSymId type_id) {
   }
 
   PdbTypeSymId best_decl_id = full_decl_uid ? *full_decl_uid : type_id;
-
   clang::QualType qt = m_ast->GetOrCreateType(best_decl_id);
 
   TypeSP result = CreateType(best_decl_id, m_ast->ToCompilerType(qt));
@@ -1929,13 +1930,13 @@ SymbolFileNativePDB::FindNamespace(ConstString name,
   return {};
 }
 
-llvm::Expected<TypeSystem &>
+llvm::Expected<lldb::TypeSystemSP>
 SymbolFileNativePDB::GetTypeSystemForLanguage(lldb::LanguageType language) {
   auto type_system_or_err =
       m_objfile_sp->GetModule()->GetTypeSystemForLanguage(language);
-  if (type_system_or_err) {
-    type_system_or_err->SetSymbolFile(this);
-  }
+  if (type_system_or_err)
+    if (auto ts = *type_system_or_err)
+      ts->SetSymbolFile(this);
   return type_system_or_err;
 }
 

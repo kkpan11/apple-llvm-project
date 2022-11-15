@@ -219,7 +219,7 @@ public:
                 lldb::TypeClass type_mask,
                 lldb_private::TypeList &type_list) override;
 
-  llvm::Expected<lldb_private::TypeSystem &>
+  llvm::Expected<lldb::TypeSystemSP>
   GetTypeSystemForLanguage(lldb::LanguageType language) override;
 
   lldb_private::CompilerDeclContext FindNamespace(
@@ -312,8 +312,7 @@ public:
 
   lldb_private::FileSpec GetFile(DWARFUnit &unit, size_t file_idx);
 
-  static llvm::Expected<lldb_private::TypeSystem &>
-  GetTypeSystem(DWARFUnit &unit);
+  static llvm::Expected<lldb::TypeSystemSP> GetTypeSystem(DWARFUnit &unit);
 
   static DWARFASTParser *GetDWARFParser(DWARFUnit &unit);
 
