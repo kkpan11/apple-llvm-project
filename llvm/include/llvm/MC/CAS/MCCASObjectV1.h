@@ -720,6 +720,44 @@ private:
   explicit DIEDataRef(SpecificRefT Ref) : SpecificRefT(Ref) {}
 };
 
+struct LoadedDIETopLevel {
+  SmallVector<StringRef, 0> AbbrevEntries;
+  DIEDistinctDataRef DistinctData;
+  DIEDataRef RootDIE;
+};
+
+/// Helper function to load the relevant information from a DIETopLevelRef:
+/// 1. The list of abbreviation entries.
+/// 2. The distinct data.
+/// 3. The root DIE node.
+Expected<LoadedDIETopLevel> loadDIETopLevel(DIETopLevelRef TopLevelRef);
+inline Expected<LoadedDIETopLevel>
+loadDIETopLevel(Expected<DIETopLevelRef> TopLevelRef) {
+  if (!TopLevelRef)
+    return TopLevelRef.takeError();
+  return loadDIETopLevel(*TopLevelRef);
+}
+
+/// Loads and returns all the references of Obj, ensuring they are CAS objects
+/// of type RefTy.
+template <typename RefTy>
+Expected<SmallVector<RefTy>> loadAllRefs(MCObjectProxy Obj) {
+  const MCSchema &Schema = Obj.getSchema();
+  SmallVector<RefTy> Children;
+  Children.reserve(Obj.getNumReferences());
+
+  auto LoadAs = [&](cas::ObjectRef ChildRef) -> Error {
+    auto MaybeNode = RefTy::get(Schema, ChildRef);
+    if (!MaybeNode)
+      return MaybeNode.takeError();
+    Children.push_back(*MaybeNode);
+    return Error::success();
+  };
+
+  if (auto E = Obj.forEachReference(LoadAs))
+    return std::move(E);
+  return Children;
+}
 } // namespace v1
 } // namespace mccasformats
 } // namespace llvm
