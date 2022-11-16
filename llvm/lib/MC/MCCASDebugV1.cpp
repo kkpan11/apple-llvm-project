@@ -223,3 +223,14 @@ bool mccasformats::v1::doesntDedup(dwarf::Form Form, dwarf::Attribute Attr) {
     return true;
   return llvm::is_contained(it->second, Attr);
 }
+
+void AbbrevEntryWriter::writeAbbrevEntry(DWARFDie DIE) {
+  // [uleb(Tag), has_children]
+  // [uleb(Attr), uleb(Form)]*
+  writeULEB128(DIE.getTag());
+  writeByte(DIE.hasChildren());
+  for (const DWARFAttribute &AttrValue : DIE.attributes()) {
+    writeULEB128(AttrValue.Attr);
+    writeULEB128(AttrValue.Value.getForm());
+  }
+}
