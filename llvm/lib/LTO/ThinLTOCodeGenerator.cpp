@@ -50,6 +50,7 @@
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FileUtilities.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/Process.h"
 #include "llvm/Support/SHA1.h"
 #include "llvm/Support/SmallVectorMemoryBuffer.h"
 #include "llvm/Support/ThreadPool.h"
@@ -93,6 +94,32 @@ namespace {
 // thred per core, as indicated by the usage of
 // heavyweight_hardware_concurrency() below.
 static cl::opt<int> ThreadCount("threads", cl::init(0));
+static cl::opt<bool> CacheLogging(
+    "thinlto-cache-logging", cl::desc("Enable logging for thinLTO caching"),
+    cl::init((bool)sys::Process::GetEnv("LLVM_THINLTO_CACHE_LOGGING")),
+    cl::Hidden);
+static cl::opt<bool> DeterministicCheck(
+    "thinlto-deterministic-check",
+    cl::desc("Enable deterministic check for thinLTO caching"),
+    cl::init((bool)sys::Process::GetEnv(
+        "LLVM_CACHE_CHECK_REPRODUCIBLE_CACHING_ISSUES")),
+    cl::Hidden);
+
+class LoggingStream {
+public:
+  LoggingStream(raw_ostream &OS) : OS(OS) {}
+  void applyLocked(llvm::function_ref<void(raw_ostream &OS)> Fn) {
+    std::unique_lock<std::mutex> LockGuard(Lock);
+    auto Now = std::chrono::system_clock::now();
+    OS << Now << ": ";
+    Fn(OS);
+    OS.flush();
+  }
+
+private:
+  std::mutex Lock;
+  raw_ostream &OS;
+};
 
 // Simple helper to save temporary files for debug.
 static void saveTempBitcode(const Module &TheModule, StringRef TempDir,
@@ -591,6 +618,9 @@ public:
     if (Result == (*GetResponse)->end())
       return std::make_error_code(std::errc::message_size);
 
+    if (DeterministicCheck)
+      PresumedOutput = Result->getValue();
+
     // Request the output buffer.
     auto LoadResponse = Service.CASDB->loadSync(Result->getValue(), None);
     if (!LoadResponse)
@@ -615,6 +645,14 @@ public:
       return;
     }
 
+    // Only check determinism when the cache lookup succeeded before.
+    if (DeterministicCheck && PresumedOutput) {
+      if (*PresumedOutput != *SaveResponse)
+        report_fatal_error(
+            (Twine) "ThinLTO deterministic check failed: " + *PresumedOutput +
+            " (expected) vs. " + *SaveResponse + " (actual)");
+    }
+
     cas::remote::KeyValueDBClient::ValueTy CompResult;
     CompResult["Output"] = *SaveResponse;
     if (auto Err = Service.KVDB->putValueSync(ID, CompResult))
@@ -624,6 +662,7 @@ public:
 private:
   cas::remote::ClientServices &Service;
   std::string ID;
+  Optional<std::string> PresumedOutput;
 };
 
 static std::unique_ptr<MemoryBuffer>
@@ -1360,6 +1399,7 @@ void ThinLTOCodeGenerator::run() {
     llvm::timeTraceProfilerEnd();
 
   TimeTraceScopeExit.release();
+  LoggingStream CacheLogOS(llvm::errs());
 
   // Parallel optimizer + codegen
   {
@@ -1380,10 +1420,21 @@ void ThinLTOCodeGenerator::run() {
         auto CacheEntryPath = CacheEntry->getEntryPath();
 
         {
+          if (CacheLogging)
+            CacheLogOS.applyLocked([&](raw_ostream &OS) {
+              OS << "Look up cache entry for " << ModuleIdentifier << "\n";
+            });
+
           auto ErrOrBuffer = CacheEntry->tryLoadingBuffer();
           LLVM_DEBUG(dbgs() << "Cache " << (ErrOrBuffer ? "hit" : "miss")
                             << " '" << CacheEntryPath << "' for buffer "
                             << count << " " << ModuleIdentifier << "\n");
+          if (CacheLogging)
+            CacheLogOS.applyLocked([&](raw_ostream &OS) {
+              OS << "Cache " << (ErrOrBuffer ? "hit" : "miss") << " '"
+                 << CacheEntryPath << "' for buffer " << count << " "
+                 << ModuleIdentifier << "\n";
+            });
 
           if (ErrOrBuffer) {
             // Cache Hit!
@@ -1392,7 +1443,9 @@ void ThinLTOCodeGenerator::run() {
             else
               ProducedBinaryFiles[count] = writeGeneratedObject(
                   count, CacheEntry.get(), *ErrOrBuffer.get());
-            return;
+
+            if (!DeterministicCheck)
+              return;
           }
         }
 
@@ -1423,6 +1476,11 @@ void ThinLTOCodeGenerator::run() {
             ModuleToDefinedGVSummaries[ModuleIdentifier], CacheOptions,
             DisableCodeGen, SaveTempsDir, Freestanding, OptLevel, count,
             DebugPassManager);
+
+        if (CacheLogging)
+          CacheLogOS.applyLocked([&](raw_ostream &OS) {
+            OS << "Update cached result for " << ModuleIdentifier << "\n";
+          });
 
         // Commit to the cache (if enabled)
         CacheEntry->write(*OutputBuffer);
