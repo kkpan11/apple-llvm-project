@@ -3,6 +3,8 @@
 ; RUN: llvm-cas-dump --cas=%t.casdb --dwarf-sections-only --dwarf-dump --casid-file %t.casid | FileCheck %s --check-prefix=DWARF
 ; RUN: llvm-cas-dump --cas=%t.casdb --dwarf-sections-only --dwarf-dump --show-form --casid-file %t.casid | FileCheck %s --check-prefix=DWARF-FORM
 ; RUN: llvm-cas-dump --cas=%t.casdb --dwarf-sections-only --dwarf-dump --v --casid-file %t.casid | FileCheck %s --check-prefix=DWARF-VERBOSE
+; RUN: llc -mc-cas-create-die-blocks -O0 --filetype=obj --cas-backend --cas=%t.casdb --mccas-casid -o %t_DIE.casid %s
+; RUN: llvm-cas-dump --cas=%t.casdb --casid-file %t_DIE.casid  --die-refs | FileCheck %s --check-prefix=DWARF-DIE
 
 ; This test is created from a C program like:
 ; int foo() { return 10; }
@@ -83,6 +85,33 @@
 
 ; DWARF-VERBOSE: 0x00000000: Compile Unit: length = 0x00000047, format = DWARF32, version = 0x0004, abbr_offset = 0x0000, addr_size = 0x08 (next unit at 0x0000004b)
 ; DWARF-VERBOSE: 0x0000000b: DW_TAG_compile_unit [1] *
+
+; DWARF-DIE:        mc:debug_DIE_top_level llvmcas://{{.*}}
+; DWARF-DIE-NEXT:   Header = [47 0 0 0 4 0 0 0 0 0 8]
+; DWARF-DIE-NEXT:   CAS Block: llvmcas://{{.*}}
+; DWARF-DIE-NEXT:   DW_TAG_compile_unit  AbbrevIdx = 2
+; DWARF-DIE-NEXT:     DW_AT_producer                 DW_FORM_strp           [dedups]    [{{.*}}]
+; DWARF-DIE-NEXT:     DW_AT_language                 DW_FORM_data2          [dedups]    [{{.*}}]
+; DWARF-DIE-NEXT:     DW_AT_name                     DW_FORM_strp           [dedups]    [{{.*}}]
+; DWARF-DIE-NEXT:     DW_AT_stmt_list                DW_FORM_sec_offset     [dedups]    [{{.*}}]
+; DWARF-DIE-NEXT:     DW_AT_comp_dir                 DW_FORM_strp           [dedups]    [{{.*}}]
+; DWARF-DIE-NEXT:     DW_AT_low_pc                   DW_FORM_addr           [dedups]    [{{.*}}]
+; DWARF-DIE-NEXT:     DW_AT_high_pc                  DW_FORM_data4          [dedups]    [{{.*}}]
+; DWARF-DIE-NEXT:     CAS Block: llvmcas://{{.*}}
+; DWARF-DIE-NEXT:     DW_TAG_subprogram  AbbrevIdx = 3
+; DWARF-DIE-NEXT:       DW_AT_low_pc                   DW_FORM_addr         [dedups]      [{{.*}}]
+; DWARF-DIE-NEXT:       DW_AT_high_pc                  DW_FORM_data4        [dedups]      [{{.*}}]
+; DWARF-DIE-NEXT:       DW_AT_APPLE_omit_frame_ptr     DW_FORM_flag_present [dedups]      []
+; DWARF-DIE-NEXT:       DW_AT_frame_base               DW_FORM_exprloc      [dedups]      [{{.*}}]
+; DWARF-DIE-NEXT:       DW_AT_name                     DW_FORM_strp         [dedups]      [{{.*}}]
+; DWARF-DIE-NEXT:       DW_AT_decl_file                DW_FORM_data1        [distinct]      [{{.*}}]
+; DWARF-DIE-NEXT:       DW_AT_decl_line                DW_FORM_data1        [distinct]      [{{.*}}]
+; DWARF-DIE-NEXT:       DW_AT_type                     DW_FORM_ref4         [dedups]      [{{.*}}]
+; DWARF-DIE-NEXT:       DW_AT_external                 DW_FORM_flag_present [dedups]      []
+; DWARF-DIE-NEXT:     DW_TAG_base_type  AbbrevIdx = 4
+; DWARF-DIE-NEXT:       DW_AT_name                     DW_FORM_strp         [dedups]      [{{.*}}]
+; DWARF-DIE-NEXT:       DW_AT_encoding                 DW_FORM_data1        [dedups]      [{{.*}}]
+; DWARF-DIE-NEXT:       DW_AT_byte_size                DW_FORM_data1        [dedups]      [{{.*}}]
 
 target triple = "arm64-apple-macosx12.0.0"
 

@@ -108,6 +108,7 @@
 #ifndef LLVM_MC_CAS_MCCASOBJECTV1_H
 #define LLVM_MC_CAS_MCCASOBJECTV1_H
 
+#include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/BinaryFormat/MachO.h"
 #include "llvm/CAS/CASID.h"
 #include "llvm/CAS/ObjectStore.h"
@@ -758,6 +759,29 @@ Expected<SmallVector<RefTy>> loadAllRefs(MCObjectProxy Obj) {
     return std::move(E);
   return Children;
 }
+
+/// Visits the DIEs contained in the debug info section represented by
+/// TopLevelRef. DIEs and Tags are visited in depth first order.
+/// * HeaderCallback is called with the data corresponding to the header of a
+/// CU.
+/// * AttrCallback is called whenever an attribute is visited. The parameters
+/// are the Attribute, the Form, the form data, and a boolean that is true if
+/// the data came from the distinct data block.
+/// * StartTagCallback is called to indicate the start of a new DIE. The Tag
+/// and its Abbreviation Index (as stored in the CAS) are provided.
+/// * EndTagCallback is called to indicate the end of a DIE. A boolean
+/// HadChildren is provided to indicate whether this Tag had children DIE.
+/// * NewBlockCallback is called to indicate that data from a new CAS block is
+/// about to be read.
+Error visitDebugInfo(
+    Expected<DIETopLevelRef> TopLevelRef,
+    std::function<void(StringRef)> HeaderCallback,
+    std::function<void(dwarf::Tag, uint64_t)> StartTagCallback,
+    std::function<void(dwarf::Attribute, dwarf::Form, StringRef, bool)>
+        AttrCallback,
+    std::function<void(bool)> EndTagCallback,
+    std::function<void(StringRef)> NewBlockCallback = [](StringRef) {});
+
 } // namespace v1
 } // namespace mccasformats
 } // namespace llvm

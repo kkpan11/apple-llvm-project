@@ -9,6 +9,7 @@
 #include "MCCASPrinter.h"
 #include "CASDWARFObject.h"
 #include "llvm/DebugInfo/DWARF/DWARFContext.h"
+#include "llvm/MC/CAS/MCCASDebugV1.h"
 #include "llvm/Support/DataExtractor.h"
 #include "llvm/Support/FormatVariadic.h"
 
@@ -134,6 +135,36 @@ static Error printAbbrevOffsets(raw_ostream &OS,
   return Error::success();
 }
 
+Error printDIE(DIETopLevelRef TopRef, raw_ostream &OS, int Indent) {
+  auto HeaderCallback = [&](StringRef HeaderData) {
+    OS.indent(Indent) << "Header = " << '[';
+    llvm::interleave(
+        HeaderData, OS, [&](uint8_t Char) { OS << utohexstr(Char); }, " ");
+    OS << "]\n";
+  };
+  auto AttrCallback = [&](dwarf::Attribute Attr, dwarf::Form Form,
+                          StringRef Data, bool InSeparateBlock) {
+    OS.indent(Indent) << formatv("{0, -30} {1, -25}  {2, -10} [",
+                                 dwarf::AttributeString(Attr),
+                                 dwarf::FormEncodingString(Form),
+                                 InSeparateBlock ? "[distinct]" : "[dedups]");
+    llvm::interleave(
+        Data, OS, [&](uint8_t Char) { OS << utohexstr(Char); }, " ");
+    OS << "]\n";
+  };
+  auto StartTagCallback = [&](dwarf::Tag Tag, uint64_t AbbrevIdx) {
+    OS.indent(Indent) << formatv("{0, -25} AbbrevIdx = {1}\n",
+                                 dwarf::TagString(Tag), AbbrevIdx);
+    Indent += 2;
+  };
+  auto EndTagCallback = [&](bool) { Indent -= 2; };
+  auto NewBlockCallback = [&](StringRef BlockId) {
+    OS.indent(Indent) << "CAS Block: " << BlockId << "\n";
+  };
+  return visitDebugInfo(TopRef, HeaderCallback, StartTagCallback, AttrCallback,
+                        EndTagCallback, NewBlockCallback);
+}
+
 Error MCCASPrinter::printSimpleNested(MCObjectProxy Ref, CASDWARFObject &Obj,
                                       DWARFContext *DWARFCtx) {
   IndentGuard Guard(Indent);
@@ -157,6 +188,9 @@ Error MCCASPrinter::printSimpleNested(MCObjectProxy Ref, CASDWARFObject &Obj,
     }
     return Error::success();
   }
+
+  if (auto TopRef = DIETopLevelRef::Cast(Ref); TopRef && Options.DIERefs)
+    return printDIE(*TopRef, OS, Indent);
 
   return Ref.forEachReference(
       [&](ObjectRef CASObj) { return printMCObject(CASObj, Obj, DWARFCtx); });

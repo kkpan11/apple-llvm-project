@@ -3024,3 +3024,170 @@ mccasformats::v1::loadDIETopLevel(DIETopLevelRef TopLevelRef) {
   return LoadedDIETopLevel{std::move(AbbrevData), *DistinctData,
                            *RootDIE};
 }
+
+struct DIEVisitor {
+  Error visitDIERef(DIEDataRef Ref);
+  Error visitDIERef(BinaryStreamReader &DataReader, unsigned AbbrevIdx,
+                    StringRef DIEData, ArrayRef<DIEDataRef> &DIEChildrenStack);
+  Error visitDIEAttrs(AbbrevEntryReader &AbbrevReader,
+                      BinaryStreamReader &Reader, StringRef DIEData);
+
+  ArrayRef<StringRef> AbbrevEntries;
+  BinaryStreamReader DistinctReader;
+
+  std::function<void(StringRef)> HeaderCallback;
+  std::function<void(dwarf::Tag, uint64_t)> StartTagCallback;
+  std::function<void(dwarf::Attribute, dwarf::Form, StringRef, bool)>
+      AttrCallback;
+  std::function<void(bool)> EndTagCallback;
+  std::function<void(StringRef)> NewBlockCallback;
+};
+
+Error DIEVisitor::visitDIEAttrs(AbbrevEntryReader &AbbrevReader,
+                                BinaryStreamReader &DataReader,
+                                StringRef DIEData) {
+  constexpr auto IsLittleEndian = true;
+  constexpr auto AddrSize = 8;
+  constexpr auto FormParams =
+      dwarf::FormParams{4 /*Version*/, AddrSize, dwarf::DwarfFormat::DWARF32};
+
+  while (true) {
+    Expected<dwarf::Attribute> Attr = AbbrevReader.readAttr();
+    if (!Attr)
+      return Attr.takeError();
+    if (*Attr == getEndOfAttributesMarker())
+      break;
+
+    Expected<dwarf::Form> Form = AbbrevReader.readForm();
+    if (!Form)
+      return Form.takeError();
+
+    Expected<uint64_t> FormSize =
+        getFormSize(*Form, FormParams, DIEData, DataReader.getOffset(),
+                    IsLittleEndian, AddrSize);
+    if (!FormSize)
+      return FormSize.takeError();
+
+    bool DataInDistinct = doesntDedup(*Form, *Attr);
+    auto &ReaderForData = DataInDistinct ? DistinctReader : DataReader;
+    ArrayRef<char> RawBytes;
+    if (auto E = ReaderForData.readArray(RawBytes, *FormSize))
+      return E;
+    AttrCallback(*Attr, *Form, toStringRef(RawBytes), DataInDistinct);
+  }
+  return Error::success();
+}
+
+static Expected<uint64_t> readAbbrevIdx(BinaryStreamReader &Reader) {
+  uint64_t Idx;
+  if (auto E = Reader.readULEB128(Idx))
+    return std::move(E);
+  return Idx;
+}
+
+static AbbrevEntryReader getAbbrevEntryReader(ArrayRef<StringRef> AbbrevEntries,
+                                              unsigned AbbrevIdx) {
+  StringRef AbbrevData =
+      AbbrevEntries[decodeAbbrevIndexAsAbbrevSetIdx(AbbrevIdx)];
+  return AbbrevEntryReader(AbbrevData);
+}
+
+Error DIEVisitor::visitDIERef(BinaryStreamReader &DataReader,
+                              unsigned AbbrevIdx, StringRef DIEData,
+                              ArrayRef<DIEDataRef> &DIEChildrenStack) {
+  AbbrevEntryReader AbbrevReader =
+      getAbbrevEntryReader(AbbrevEntries, AbbrevIdx);
+
+  if (Expected<dwarf::Tag> MaybeTag = AbbrevReader.readTag())
+    StartTagCallback(*MaybeTag, AbbrevIdx);
+  else
+    return MaybeTag.takeError();
+
+  Expected<bool> MaybeHasChildren = AbbrevReader.readHasChildren();
+  if (!MaybeHasChildren)
+    return MaybeHasChildren.takeError();
+
+  if (auto E = visitDIEAttrs(AbbrevReader, DataReader, DIEData))
+    return E;
+
+  if (!*MaybeHasChildren) {
+    EndTagCallback(false /*HadChildren*/);
+    return Error::success();
+  }
+
+  while (true) {
+    Expected<uint64_t> ChildAbbrevIdx = readAbbrevIdx(DistinctReader);
+    if (!ChildAbbrevIdx)
+      return ChildAbbrevIdx.takeError();
+
+    if (*ChildAbbrevIdx == getEndOfDIESiblingsMarker())
+      break;
+
+    if (*ChildAbbrevIdx == getDIEInAnotherBlockMarker()) {
+      if (auto E = visitDIERef(DIEChildrenStack.front()))
+        return E;
+      DIEChildrenStack = DIEChildrenStack.drop_front();
+      continue;
+    }
+
+    if (auto E =
+            visitDIERef(DataReader, *ChildAbbrevIdx, DIEData, DIEChildrenStack))
+      return E;
+  }
+
+  EndTagCallback(true /*HadChildren*/);
+  return Error::success();
+}
+
+Error DIEVisitor::visitDIERef(DIEDataRef StartDIERef) {
+  StringRef DIEData = StartDIERef.getData();
+  BinaryStreamReader DataReader(DIEData, support::endianness::little);
+
+  Expected<uint64_t> MaybeAbbrevIdx = readAbbrevIdx(DistinctReader);
+  if (!MaybeAbbrevIdx)
+    return MaybeAbbrevIdx.takeError();
+  auto AbbrevIdx = *MaybeAbbrevIdx;
+
+  // The tag of a fresh block must be meaningful, otherwise we wouldn't have
+  // made a new block.
+  assert(AbbrevIdx != getEndOfDIESiblingsMarker() &&
+         AbbrevIdx != getDIEInAnotherBlockMarker());
+
+  NewBlockCallback(StartDIERef.getID().toString());
+
+  Expected<SmallVector<DIEDataRef>> MaybeChildren =
+      loadAllRefs<DIEDataRef>(StartDIERef);
+  if (!MaybeChildren)
+    return MaybeChildren.takeError();
+  ArrayRef<DIEDataRef> Children = *MaybeChildren;
+
+  return visitDIERef(DataReader, AbbrevIdx, DIEData, Children);
+}
+
+Error mccasformats::v1::visitDebugInfo(
+    Expected<DIETopLevelRef> MaybeTopLevelRef,
+    std::function<void(StringRef)> HeaderCallback,
+    std::function<void(dwarf::Tag, uint64_t)> StartTagCallback,
+    std::function<void(dwarf::Attribute, dwarf::Form, StringRef, bool)>
+        AttrCallback,
+    std::function<void(bool)> EndTagCallback,
+    std::function<void(StringRef)> NewBlockCallback) {
+
+  Expected<LoadedDIETopLevel> LoadedTopRef =
+      loadDIETopLevel(std::move(MaybeTopLevelRef));
+  if (!LoadedTopRef)
+    return LoadedTopRef.takeError();
+
+  BinaryStreamReader DistinctReader(LoadedTopRef->DistinctData.getData(),
+                                    support::endianness::little);
+  ArrayRef<char> HeaderData;
+  if (auto E = DistinctReader.readArray(HeaderData, Dwarf4HeaderSize32Bit))
+    return E;
+  HeaderCallback(toStringRef(HeaderData));
+
+  ArrayRef<StringRef> AbbrevEntries = LoadedTopRef->AbbrevEntries;
+  DIEVisitor Visitor{AbbrevEntries,    DistinctReader, HeaderCallback,
+                     StartTagCallback, AttrCallback,   EndTagCallback,
+                     NewBlockCallback};
+  return Visitor.visitDIERef(LoadedTopRef->RootDIE);
+}
