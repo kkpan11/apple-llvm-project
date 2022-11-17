@@ -47,6 +47,7 @@ constexpr StringLiteral PaddingRef::KindString;
   constexpr StringLiteral MCFragmentName##Ref::KindString;
 #include "llvm/MC/CAS/MCCASObjectV1.def"
 constexpr StringLiteral DebugInfoSectionRef::KindString;
+constexpr StringLiteral DebugInfoCURef::KindString;
 
 constexpr unsigned Dwarf4HeaderSize32Bit = 11;
 
@@ -169,6 +170,7 @@ Error MCSchema::fillCache() {
       PaddingRef::KindString,
       MCAssemblerRef::KindString,
       DebugInfoSectionRef::KindString,
+      DebugInfoCURef::KindString,
 #define CASV1_SIMPLE_DATA_REF(RefName, IdentifierName) RefName::KindString,
 #define CASV1_SIMPLE_GROUP_REF(RefName, IdentifierName) RefName::KindString,
 #define MCFRAGMENT_NODE_REF(MCFragmentName, MCEnumName, MCEnumIdentifier)      \
@@ -436,6 +438,27 @@ decodeReferences(const MCObjectProxy &Node, StringRef &Remaining) {
   }
 
   return CompactRefs;
+}
+
+Expected<DebugInfoCURef> DebugInfoCURef::create(MCCASBuilder &MB,
+                                                StringRef Name,
+                                                ArrayRef<cas::ObjectRef> Refs) {
+  auto B = Builder::startNode(MB.Schema, KindString);
+  if (!B)
+    return B.takeError();
+
+  if (auto E = encodeReferences(Refs, B->Data, B->Refs))
+    return std::move(E);
+
+  B->Data.append(Name);
+  return get(B->build());
+}
+
+Expected<DebugInfoCURef> DebugInfoCURef::get(Expected<MCObjectProxy> Ref) {
+  auto Specific = SpecificRefT::getSpecific(std::move(Ref));
+  if (!Specific)
+    return Specific.takeError();
+  return DebugInfoCURef(*Specific);
 }
 
 Expected<GroupRef> GroupRef::create(MCCASBuilder &MB,
@@ -2024,8 +2047,9 @@ Expected<AbbrevAndDebugSplit> MCCASBuilder::splitDebugInfoAndAbbrevSections() {
       return PartitionedData.takeError();
     DistinctData.append(PartitionedData->DistinctData.begin(),
                         PartitionedData->DistinctData.end());
+    SmallVector<cas::ObjectRef, 0> Refs;
     auto DbgInfoRef = DebugInfoCURef::create(
-        *this, toStringRef(PartitionedData->DebugInfoCURefData));
+        *this, toStringRef(PartitionedData->DebugInfoCURefData), Refs);
     if (!DbgInfoRef)
       return DbgInfoRef.takeError();
     CURefs.push_back(*DbgInfoRef);

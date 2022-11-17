@@ -402,6 +402,34 @@ private:
   MCAssemblerRef(SpecificRefT Ref) : SpecificRefT(Ref) {}
 };
 
+class DebugInfoCURef : public SpecificRef<DebugInfoCURef> {
+  using SpecificRefT = SpecificRef<DebugInfoCURef>;
+  friend class SpecificRef<DebugInfoCURef>;
+
+public:
+  static constexpr StringLiteral KindString = "mc:debug_info_cu";
+  static Expected<DebugInfoCURef> create(MCCASBuilder &MB, StringRef Data,
+                                         ArrayRef<cas::ObjectRef> Refs);
+  static Expected<DebugInfoCURef> get(Expected<MCObjectProxy> Ref);
+  static Expected<DebugInfoCURef> get(const MCSchema &Schema,
+                                      cas::ObjectRef ID) {
+    return get(Schema.get(ID));
+  }
+  static Optional<DebugInfoCURef> Cast(MCObjectProxy Ref) {
+    auto Specific = SpecificRefT::Cast(Ref);
+    if (!Specific)
+      return None;
+    return DebugInfoCURef(*Specific);
+  }
+  Expected<uint64_t> materialize(raw_ostream &OS) const {
+    OS << getData();
+    return getData().size();
+  }
+
+private:
+  explicit DebugInfoCURef(SpecificRefT Ref) : SpecificRefT(Ref) {}
+};
+
 struct DwarfSectionsCache {
   MCSection *DebugInfo;
   MCSection *Line;
