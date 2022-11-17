@@ -581,12 +581,13 @@ public:
   // access the content in the cache.
   RemoteModuleCacheEntry(
       cas::remote::ClientServices &Service, const ModuleSummaryIndex &Index,
-      StringRef ModuleID, const FunctionImporter::ImportMapTy &ImportList,
+      StringRef ModuleID, StringRef OutputPath,
+      const FunctionImporter::ImportMapTy &ImportList,
       const FunctionImporter::ExportSetTy &ExportList,
       const std::map<GlobalValue::GUID, GlobalValue::LinkageTypes> &ResolvedODR,
       const GVSummaryMapTy &DefinedGVSummaries, unsigned OptLevel,
       bool Freestanding, const TargetMachineBuilder &TMBuilder)
-      : Service(Service) {
+      : Service(Service), OutputPath(OutputPath.str()) {
     Optional<std::string> Key =
         computeCacheKey(Index, ModuleID, ImportList, ExportList, ResolvedODR,
                         DefinedGVSummaries, OptLevel, Freestanding, TMBuilder);
@@ -622,15 +623,25 @@ public:
       PresumedOutput = Result->getValue();
 
     // Request the output buffer.
-    auto LoadResponse = Service.CASDB->loadSync(Result->getValue(), None);
+    auto LoadResponse = Service.CASDB->loadSync(Result->getValue(), OutputPath);
     if (!LoadResponse)
       return errorToErrorCode(LoadResponse.takeError());
 
     // Object not found. Treat it as a miss.
-    if (LoadResponse->KeyNotFound || !LoadResponse->BlobData)
+    if (LoadResponse->KeyNotFound)
       return std::error_code();
 
-    return MemoryBuffer::getMemBufferCopy(*LoadResponse->BlobData);
+    ProducedOutput = true;
+
+    SmallString<64> ResultPath;
+    Expected<sys::fs::file_t> FDOrErr = sys::fs::openNativeFileForRead(
+        Twine(OutputPath), sys::fs::OF_UpdateAtime, &ResultPath);
+    if (!FDOrErr)
+      return errorToErrorCode(FDOrErr.takeError());
+    ErrorOr<std::unique_ptr<MemoryBuffer>> MBOrErr = MemoryBuffer::getOpenFile(
+        *FDOrErr, OutputPath, /*FileSize=*/-1, /*RequiresNullTerminator=*/false);
+    sys::fs::closeFile(*FDOrErr);
+    return MBOrErr;
   }
 
   // Cache the Produced object file
@@ -638,8 +649,11 @@ public:
     if (ID.empty())
       return;
 
-    auto SaveResponse =
-        Service.CASDB->saveDataSync(OutputBuffer.getBuffer().str());
+    if (!ProducedOutput)
+      cantFail(ModuleCacheEntry::writeObject(OutputBuffer, OutputPath));
+
+    ProducedOutput = true;
+    auto SaveResponse = Service.CASDB->saveFileSync(OutputPath);
     if (!SaveResponse) {
       consumeError(SaveResponse.takeError());
       return;
@@ -659,9 +673,37 @@ public:
       consumeError(std::move(Err));
   }
 
+  Error writeObject(const MemoryBuffer &OutputBuffer,
+                    StringRef OutputPath) final {
+    // There is nothing to do here.
+    return Error::success();
+  }
+
+  Optional<std::unique_ptr<MemoryBuffer>> getMappedBuffer() final {
+    if (!ProducedOutput)
+      return None;
+
+    SmallString<64> ResultPath;
+    Expected<sys::fs::file_t> FDOrErr = sys::fs::openNativeFileForRead(
+        Twine(OutputPath), sys::fs::OF_UpdateAtime, &ResultPath);
+    if (!FDOrErr) {
+      consumeError(FDOrErr.takeError());
+      return None;
+    }
+    ErrorOr<std::unique_ptr<MemoryBuffer>> MBOrErr = MemoryBuffer::getOpenFile(
+        *FDOrErr, OutputPath, /*FileSize=*/-1, /*RequiresNullTerminator=*/false);
+    sys::fs::closeFile(*FDOrErr);
+    if (!MBOrErr)
+      return None;
+
+    return std::move(*MBOrErr);
+  }
+
 private:
   cas::remote::ClientServices &Service;
   std::string ID;
+  std::string OutputPath;
+  bool ProducedOutput = false;
   Optional<std::string> PresumedOutput;
 };
 
@@ -824,6 +866,9 @@ Optional<std::string> ModuleCacheEntry::computeCacheKey(
 
 Error ModuleCacheEntry::writeObject(const MemoryBuffer &OutputBuffer,
                                     StringRef OutputPath) {
+  if (sys::fs::exists(OutputPath))
+    sys::fs::remove(OutputPath);
+
   std::error_code Err;
   raw_fd_ostream OS(OutputPath, Err, sys::fs::OF_None);
   if (Err)
@@ -833,7 +878,7 @@ Error ModuleCacheEntry::writeObject(const MemoryBuffer &OutputBuffer,
 }
 
 std::unique_ptr<ModuleCacheEntry> ThinLTOCodeGenerator::createModuleCacheEntry(
-    const ModuleSummaryIndex &Index, StringRef ModuleID,
+    const ModuleSummaryIndex &Index, StringRef ModuleID, StringRef OutputPath,
     const FunctionImporter::ImportMapTy &ImportList,
     const FunctionImporter::ExportSetTy &ExportList,
     const std::map<GlobalValue::GUID, GlobalValue::LinkageTypes> &ResolvedODR,
@@ -851,8 +896,9 @@ std::unique_ptr<ModuleCacheEntry> ThinLTOCodeGenerator::createModuleCacheEntry(
         TMBuilder);
   case CachingOptions::CacheType::RemoteService:
     return std::make_unique<RemoteModuleCacheEntry>(
-        *CacheOptions.Service, Index, ModuleID, ImportList, ExportList,
-        ResolvedODR, DefinedGVSummaries, OptLevel, Freestanding, TMBuilder);
+        *CacheOptions.Service, Index, ModuleID, OutputPath, ImportList,
+        ExportList, ResolvedODR, DefinedGVSummaries, OptLevel, Freestanding,
+        TMBuilder);
   }
 }
 
@@ -977,6 +1023,16 @@ static void computeDeadSymbolsInIndex(
   };
   computeDeadSymbolsWithConstProp(Index, GUIDPreservedSymbols, isPrevailing,
                                   /* ImportEnabled = */ true);
+}
+
+static std::string computeThinLTOOutputPath(unsigned count,
+                                            StringRef SavedObjectsDirectoryPath,
+                                            TargetMachineBuilder &TMBuilder) {
+  auto ArchName = TMBuilder.TheTriple.getArchName();
+  SmallString<128> OutputPath(SavedObjectsDirectoryPath);
+  llvm::sys::path::append(OutputPath,
+                          Twine(count) + "." + ArchName + ".thinlto.o");
+  return OutputPath.c_str(); // Ensure the string is null terminated.
 }
 
 /**
@@ -1214,23 +1270,21 @@ void ThinLTOCodeGenerator::optimize(Module &TheModule) {
 /// Write out the generated object file, either from CacheEntryPath or from
 /// OutputBuffer, preferring hard-link when possible.
 /// Returns the path to the generated file in SavedObjectsDirectoryPath.
-std::string ThinLTOCodeGenerator::writeGeneratedObject(
-    int count, ModuleCacheEntry *CacheEntry, const MemoryBuffer &OutputBuffer) {
-  auto ArchName = TMBuilder.TheTriple.getArchName();
-  SmallString<128> OutputPath(SavedObjectsDirectoryPath);
-  llvm::sys::path::append(OutputPath,
-                          Twine(count) + "." + ArchName + ".thinlto.o");
-  OutputPath.c_str(); // Ensure the string is null terminated.
-  if (sys::fs::exists(OutputPath))
-    sys::fs::remove(OutputPath);
-
+std::string
+ThinLTOCodeGenerator::writeGeneratedObject(StringRef OutputPath,
+                                           ModuleCacheEntry *CacheEntry,
+                                           const MemoryBuffer &OutputBuffer) {
   // We don't return a memory buffer to the linker, just a list of files.
   if (CacheEntry) {
     Error Err = CacheEntry->writeObject(OutputBuffer, OutputPath);
     if (Err)
       report_fatal_error(std::move(Err));
+    return OutputPath.str();
   }
   // No cache entry, just write out the buffer.
+  if (sys::fs::exists(OutputPath))
+    sys::fs::remove(OutputPath);
+
   std::error_code Err;
   raw_fd_ostream OS(OutputPath, Err, sys::fs::OF_None);
   if (Err)
@@ -1248,9 +1302,24 @@ void ThinLTOCodeGenerator::run() {
   });
   // Prepare the resulting object vector
   assert(ProducedBinaries.empty() && "The generator should not be reused");
-  if (SavedObjectsDirectoryPath.empty())
+
+  // Need SavedObjectsDirectory for remote cache.
+  bool UseBufferAPI = SavedObjectsDirectoryPath.empty();
+  std::string TempDirectory;
+  if (CacheOptions.Type == CachingOptions::CacheType::RemoteService &&
+      SavedObjectsDirectoryPath.empty()) {
+    SmallString<128> TempPath;
+    std::error_code EC = llvm::sys::fs::createUniqueDirectory("temp", TempPath);
+    if (EC)
+      report_fatal_error("cannot create temp directory");
+    SavedObjectsDirectoryPath = TempPath.c_str();
+    TempDirectory = SavedObjectsDirectoryPath;
+  }
+
+  if (UseBufferAPI)
     ProducedBinaries.resize(Modules.size());
-  else {
+
+  if (!SavedObjectsDirectoryPath.empty()) {
     sys::fs::create_directories(SavedObjectsDirectoryPath);
     bool IsDir;
     sys::fs::is_directory(SavedObjectsDirectoryPath, IsDir);
@@ -1258,6 +1327,11 @@ void ThinLTOCodeGenerator::run() {
       report_fatal_error(Twine("Unexistent dir: '") + SavedObjectsDirectoryPath + "'");
     ProducedBinaryFiles.resize(Modules.size());
   }
+
+  auto CleanTempDirAtExit = make_scope_exit([&]() {
+    if (!TempDirectory.empty())
+      llvm::sys::fs::remove_directories(TempDirectory);
+  });
 
   if (CodeGenOnly) {
     // Perform only parallel codegen and return.
@@ -1268,17 +1342,20 @@ void ThinLTOCodeGenerator::run() {
         LLVMContext Context;
         Context.setDiscardValueNames(LTODiscardValueNames);
 
+        std::string OutputPath = computeThinLTOOutputPath(
+            count, SavedObjectsDirectoryPath, TMBuilder);
+
         // Parse module now
         auto TheModule = loadModuleFromInput(Mod.get(), Context, false,
                                              /*IsImporting*/ false);
 
         // CodeGen
         auto OutputBuffer = codegenModule(*TheModule, *TMBuilder.create());
-        if (SavedObjectsDirectoryPath.empty())
+        if (UseBufferAPI)
           ProducedBinaries[count] = std::move(OutputBuffer);
         else
           ProducedBinaryFiles[count] =
-              writeGeneratedObject(count, nullptr, *OutputBuffer);
+              writeGeneratedObject(OutputPath, nullptr, *OutputBuffer);
       }, count++);
     }
 
@@ -1412,11 +1489,15 @@ void ThinLTOCodeGenerator::run() {
 
         auto &DefinedGVSummaries = ModuleToDefinedGVSummaries[ModuleIdentifier];
 
+        // Compute the output name.
+        std::string OutputPath = computeThinLTOOutputPath(
+            count, SavedObjectsDirectoryPath, TMBuilder);
+
         // The module may be cached, this helps handling it.
         auto CacheEntry = createModuleCacheEntry(
-            *Index, ModuleIdentifier, ImportLists[ModuleIdentifier], ExportList,
-            ResolvedODR[ModuleIdentifier], DefinedGVSummaries, OptLevel,
-            Freestanding, TMBuilder);
+            *Index, ModuleIdentifier, OutputPath, ImportLists[ModuleIdentifier],
+            ExportList, ResolvedODR[ModuleIdentifier], DefinedGVSummaries,
+            OptLevel, Freestanding, TMBuilder);
         auto CacheEntryPath = CacheEntry->getEntryPath();
 
         {
@@ -1438,11 +1519,11 @@ void ThinLTOCodeGenerator::run() {
 
           if (ErrOrBuffer) {
             // Cache Hit!
-            if (SavedObjectsDirectoryPath.empty())
+            if (UseBufferAPI)
               ProducedBinaries[count] = std::move(ErrOrBuffer.get());
             else
               ProducedBinaryFiles[count] = writeGeneratedObject(
-                  count, CacheEntry.get(), *ErrOrBuffer.get());
+                  OutputPath, CacheEntry.get(), *ErrOrBuffer.get());
 
             if (!DeterministicCheck)
               return;
@@ -1485,7 +1566,7 @@ void ThinLTOCodeGenerator::run() {
         // Commit to the cache (if enabled)
         CacheEntry->write(*OutputBuffer);
 
-        if (SavedObjectsDirectoryPath.empty()) {
+        if (UseBufferAPI) {
           // We need to generated a memory buffer for the linker.
           auto ReloadedBuffer = CacheEntry->getMappedBuffer();
           // When cache is enabled, reload from the cache if possible.
@@ -1501,7 +1582,7 @@ void ThinLTOCodeGenerator::run() {
           return;
         }
         ProducedBinaryFiles[count] =
-            writeGeneratedObject(count, CacheEntry.get(), *OutputBuffer);
+            writeGeneratedObject(OutputPath, CacheEntry.get(), *OutputBuffer);
       }, IndexCount);
     }
   }

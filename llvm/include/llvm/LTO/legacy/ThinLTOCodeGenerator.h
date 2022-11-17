@@ -203,7 +203,7 @@ public:
 
   /// Create a cache entry for the module
   std::unique_ptr<ModuleCacheEntry> createModuleCacheEntry(
-      const ModuleSummaryIndex &Index, StringRef ModuleID,
+      const ModuleSummaryIndex &Index, StringRef ModuleID, StringRef OutputPath,
       const FunctionImporter::ImportMapTy &ImportList,
       const FunctionImporter::ExportSetTy &ExportList,
       const std::map<GlobalValue::GUID, GlobalValue::LinkageTypes> &ResolvedODR,
@@ -373,7 +373,8 @@ public:
    * to Cache directory if needed. Returns the path to the generated file in
    * SavedObjectsDirectoryPath.
    */
-  std::string writeGeneratedObject(int count, ModuleCacheEntry *CacheEntry,
+  std::string writeGeneratedObject(StringRef OutputPath,
+                                   ModuleCacheEntry *CacheEntry,
                                    const MemoryBuffer &OutputBuffer);
   /**@}*/
 
