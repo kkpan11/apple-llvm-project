@@ -6,12 +6,20 @@ RUN: llc -O0 --filetype=obj --cas-backend --cas=%t/cas --mccas-casid %t/b.ll -o 
 RUN: llvm-cas-dump --cas=%t/cas --casid-file %t/a.id %t/b.id | FileCheck %s
 
 CHECK: mc:debug_info_cu llvmcas://[[CUCASID:[a-z0-9]+]]
+CHECK-NEXT: mc:debug_string llvmcas://
+CHECK-NEXT: mc:debug_string llvmcas://
 CHECK-NEXT: mc:debug_info_cu llvmcas://
+CHECK-NEXT: mc:debug_string llvmcas://
+CHECK-NEXT: mc:debug_string llvmcas://
 CHECK: mc:debug_line   llvmcas://[[LINETABLECASID:[a-z0-9]+]]
 CHECK-NEXT: mc:debug_line   llvmcas://
 
 CHECK: mc:debug_info_cu llvmcas://
+CHECK-NEXT: mc:debug_string llvmcas://
+CHECK-NEXT: mc:debug_string llvmcas://
 CHECK-NEXT: mc:debug_info_cu llvmcas://[[CUCASID]]
+CHECK-NEXT: mc:debug_string llvmcas://
+CHECK-NEXT: mc:debug_string llvmcas://
 CHECK-NEXT: mc:debug_info_cu llvmcas://
 CHECK: mc:debug_line   llvmcas:// 
 CHECK-NEXT: mc:debug_line   llvmcas://[[LINETABLECASID]]

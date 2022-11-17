@@ -18,8 +18,10 @@
 ; CHECK-NEXT:       mc:debug_abbrev_offsets  llvmcas://{{.*}}
 ; CHECK-NEXT:         0
 ; CHECK-NEXT:       mc:debug_info_cu  llvmcas://{{.*}}
+; CHECK-NEXT:         mc:debug_string llvmcas://{{.*}}
+; CHECK-NEXT:         mc:debug_string llvmcas://{{.*}}
 ; CHECK-NEXT:       mc:padding  llvmcas://{{.*}}
-; CHECK-NEXT:     mc:section  llvmcas://{{.*}}
+; CHECK-NEXT:     mc:debug_string_section  llvmcas://{{.*}}
 ; CHECK-NEXT:       mc:debug_string  llvmcas://{{.*}}
 ; CHECK-NEXT:       mc:debug_string  llvmcas://{{.*}}
 ; CHECK-NEXT:       mc:debug_string  llvmcas://{{.*}}
