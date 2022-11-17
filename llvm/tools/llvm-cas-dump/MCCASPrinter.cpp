@@ -143,6 +143,21 @@ Error MCCASPrinter::printSimpleNested(MCObjectProxy Ref, CASDWARFObject &Obj,
     if (auto E = printAbbrevOffsets(OS, *AbbrevOffsetsRef))
       return E;
 
+  auto Data = Ref.getData();
+  if (DebugAbbrevSectionRef::Cast(Ref) || GroupRef::Cast(Ref) ||
+      SymbolTableRef::Cast(Ref) || SectionRef::Cast(Ref) ||
+      DebugLineSectionRef::Cast(Ref) || AtomRef::Cast(Ref) ||
+      DebugInfoCURef::Cast(Ref)) {
+    auto Refs = MCObjectProxy::decodeReferences(Ref, Data);
+    if (!Refs)
+      return Refs.takeError();
+    for (auto Ref : *Refs) {
+      if (Error E = printMCObject(Ref, Obj, DWARFCtx))
+        return E;
+    }
+    return Error::success();
+  }
+
   return Ref.forEachReference(
       [&](ObjectRef CASObj) { return printMCObject(CASObj, Obj, DWARFCtx); });
 }
