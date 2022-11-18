@@ -196,7 +196,6 @@ bool mccasformats::v1::doesntDedup(dwarf::Form Form, dwarf::Attribute Attr) {
   // Some of these are dependent on the Attribute in which they are used.
   static const DenseMap<dwarf::Form, SmallVector<dwarf::Attribute>>
       FormsToPartition{
-          {dwarf::Form::DW_FORM_strp, {}},
           {dwarf::Form::DW_FORM_ref_addr, {}},
           {dwarf::Form::DW_FORM_data1,
            {dwarf::Attribute::DW_AT_call_file,

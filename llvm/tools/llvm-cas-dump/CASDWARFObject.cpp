@@ -81,7 +81,7 @@ Error CASDWARFObject::discoverDebugInfoSection(MCObjectProxy MCObj,
     MCCASReader Reader(OS, Target, MCObj.getSchema());
     auto Written = DbgInfoSecRef->materialize(
         Reader, arrayRefFromStringRef<char>(getAbbrevSection()),
-        getSecOffsetVals(), &OS);
+        getSecOffsetVals(), getMapOfStringOffsets(), &OS);
     if (!Written)
       return Written.takeError();
 
@@ -148,8 +148,22 @@ Error CASDWARFObject::discoverDwarfSections(MCObjectProxy MCObj) {
   if (DebugAbbrevRef::Cast(MCObj))
     append_range(DebugAbbrevSection, MCObj.getData());
   else if (DebugStrRef::Cast(MCObj)) {
+    MapOfStringOffsets.try_emplace(MCObj.getRef(), DebugStringSection.size());
     DebugStringSection.append(Data.begin(), Data.end());
     DebugStringSection.push_back(0);
+  } else if (DebugInfoCURef::Cast(MCObj))
+    return Error::success();
+  if (DebugAbbrevSectionRef::Cast(MCObj) || GroupRef::Cast(MCObj) ||
+      SymbolTableRef::Cast(MCObj) || SectionRef::Cast(MCObj) ||
+      DebugLineSectionRef::Cast(MCObj) || AtomRef::Cast(MCObj)) {
+    auto Refs = MCObjectProxy::decodeReferences(MCObj, Data);
+    if (!Refs)
+      return Refs.takeError();
+    for (auto Ref : *Refs) {
+      if (Error E = discoverDwarfSections(Ref))
+        return E;
+    }
+    return Error::success();
   }
   return MCObj.forEachReference(
       [this](ObjectRef CASObj) { return discoverDwarfSections(CASObj); });
@@ -162,10 +176,9 @@ Error CASDWARFObject::dump(raw_ostream &OS, int Indent, DWARFContext &DWARFCtx,
   DumpOpts.ShowChildren = true;
   DumpOpts.ShowForm = ShowForm;
   DumpOpts.Verbose = Verbose;
-  Error Err = Error::success();
   StringRef Data = MCObj.getData();
   if (Data.empty())
-    return Err;
+    return Error::success();
   if (DebugStrRef::Cast(MCObj)) {
     // Dump __debug_str data.
     assert(Data.data()[Data.size()] == 0);
@@ -175,6 +188,7 @@ Error CASDWARFObject::dump(raw_ostream &OS, int Indent, DWARFContext &DWARFCtx,
     // DWARFContext.cpp
     uint64_t Offset = 0;
     uint64_t StrOffset = 0;
+    Error Err = Error::success();
     while (StrData.isValidOffset(Offset)) {
       const char *CStr = StrData.getCStr(&Offset, &Err);
       if (Err)
@@ -217,5 +231,5 @@ Error CASDWARFObject::dump(raw_ostream &OS, int Indent, DWARFContext &DWARFCtx,
                        getLocSection(), isLittleEndian(), false, UV);
     U.dump(OS, DumpOpts);
   }
-  return Err;
+  return Error::success();
 }
