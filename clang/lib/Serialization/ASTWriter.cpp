@@ -6822,7 +6822,9 @@ void OMPClauseWriter::VisitOMPGrainsizeClause(OMPGrainsizeClause *C) {
 
 void OMPClauseWriter::VisitOMPNumTasksClause(OMPNumTasksClause *C) {
   VisitOMPClauseWithPreInit(C);
+  Record.writeEnum(C->getModifier());
   Record.AddStmt(C->getNumTasks());
+  Record.AddSourceLocation(C->getModifierLoc());
   Record.AddSourceLocation(C->getLParenLoc());
 }
 
@@ -7020,6 +7022,11 @@ void OMPClauseWriter::VisitOMPSeverityClause(OMPSeverityClause *C) {
   Record.push_back(C->getSeverityKind());
   Record.AddSourceLocation(C->getLParenLoc());
   Record.AddSourceLocation(C->getSeverityKindKwLoc());
+}
+
+void OMPClauseWriter::VisitOMPMessageClause(OMPMessageClause *C) {
+  Record.AddStmt(C->getMessageString());
+  Record.AddSourceLocation(C->getLParenLoc());
 }
 
 void OMPClauseWriter::VisitOMPNontemporalClause(OMPNontemporalClause *C) {
