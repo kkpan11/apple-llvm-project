@@ -765,36 +765,8 @@ def : InstRW<[Zn2WriteLEAVE], (instregex "LEAVE")>;
 // PAUSE.
 def : InstRW<[WriteMicrocoded], (instrs PAUSE)>;
 
-// RDTSC.
-def : InstRW<[WriteMicrocoded], (instregex "RDTSC")>;
-
-// RDPMC.
-def : InstRW<[WriteMicrocoded], (instrs RDPMC)>;
-
 // RDRAND.
 def : InstRW<[WriteMicrocoded], (instregex "RDRAND(16|32|64)r")>;
-
-// XGETBV.
-def : InstRW<[WriteMicrocoded], (instregex "XGETBV")>;
-
-//-- String instructions --//
-// CMPS.
-def : InstRW<[WriteMicrocoded], (instregex "CMPS(B|L|Q|W)")>;
-
-// LODSB/W.
-def : InstRW<[WriteMicrocoded], (instregex "LODS(B|W)")>;
-
-// LODSD/Q.
-def : InstRW<[WriteMicrocoded], (instregex "LODS(L|Q)")>;
-
-// MOVS.
-def : InstRW<[WriteMicrocoded], (instregex "MOVS(B|L|Q|W)")>;
-
-// SCAS.
-def : InstRW<[WriteMicrocoded], (instregex "SCAS(B|W|L|Q)")>;
-
-// STOS
-def : InstRW<[WriteMicrocoded], (instregex "STOS(B|L|Q|W)")>;
 
 // XADD.
 def Zn2XADD : SchedWriteRes<[Zn2ALU]>;
