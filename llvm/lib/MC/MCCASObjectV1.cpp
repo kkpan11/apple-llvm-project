@@ -690,6 +690,29 @@ materializeDebugInfoSection(MCCASReader &Reader, ArrayRef<cas::ObjectRef> Refs,
                                   LoadedString->MapOfStringOffsets, &Reader.OS);
 }
 
+static Expected<DIETopLevelRef>
+findDIETopLevelRef(MCCASReader &Reader, ArrayRef<cas::ObjectRef> Refs) {
+  for (auto ID : Refs) {
+    auto Node = Reader.getObjectProxy(ID);
+    if (!Node)
+      return Node.takeError();
+    if (auto TopRef = DIETopLevelRef::Cast(*Node))
+      return *TopRef;
+  }
+  return createStringError(inconvertibleErrorCode(),
+                           "failed to find DIETopLevelRef");
+}
+
+Expected<uint64_t> materializeAbbrevFromTagImpl(MCCASReader &Reader,
+                                                ArrayRef<cas::ObjectRef> Refs) {
+  Expected<LoadedDIETopLevel> LoadedTopRef =
+      loadDIETopLevel(findDIETopLevelRef(Reader, Refs));
+  if (!LoadedTopRef)
+    return LoadedTopRef.takeError();
+
+  return reconstructAbbrevSection(Reader.OS, LoadedTopRef->AbbrevEntries);
+}
+
 Expected<uint64_t> GroupRef::materialize(MCCASReader &Reader,
                                          raw_ostream *Stream) const {
   unsigned Size = 0;
@@ -708,12 +731,21 @@ Expected<uint64_t> GroupRef::materialize(MCCASReader &Reader,
       if (!FragmentSize)
         return FragmentSize.takeError();
       Size += *FragmentSize;
-    } else {
-      auto FragmentSize = Reader.materializeGroup(ID);
+      continue;
+    }
+    if (auto AbbrevRef = DebugAbbrevSectionRef::Cast(*Node);
+        AbbrevRef && CreateDIEBlocks) {
+      auto FragmentSize =
+          materializeAbbrevFromTagImpl(Reader, makeArrayRef(*Refs));
       if (!FragmentSize)
         return FragmentSize.takeError();
       Size += *FragmentSize;
+      continue;
     }
+    auto FragmentSize = Reader.materializeGroup(ID);
+    if (!FragmentSize)
+      return FragmentSize.takeError();
+    Size += *FragmentSize;
   }
 
   if (!Remaining.empty())

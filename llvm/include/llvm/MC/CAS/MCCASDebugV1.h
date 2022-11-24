@@ -90,6 +90,13 @@ struct AbbrevEntryReader {
 private:
   BinaryStreamReader DataStream;
 };
+
+/// Given a sequence of AbbrevEntries, as written by an AbbrevEntryWriter,
+/// reconstruct the abbreviation section into OS according to the DWARF
+/// specification.
+/// Returns the number of bytes written to OS.
+uint64_t reconstructAbbrevSection(raw_ostream &OS,
+                                  ArrayRef<StringRef> AbbrevEntries);
 } // namespace v1
 } // namespace mccasformats
 } // namespace llvm
