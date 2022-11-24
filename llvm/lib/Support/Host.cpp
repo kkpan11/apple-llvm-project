@@ -1687,7 +1687,7 @@ static int computeHostNumPhysicalCores() {
 }
 #elif defined(_WIN32) && LLVM_ENABLE_THREADS != 0
 // Defined in llvm/lib/Support/Windows/Threading.inc
-static int computeHostNumPhysicalCores();
+int computeHostNumPhysicalCores();
 #else
 // On other systems, return -1 to indicate unknown.
 static int computeHostNumPhysicalCores() { return -1; }

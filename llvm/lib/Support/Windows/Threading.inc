@@ -239,7 +239,7 @@ static unsigned aggregate(R &&Range, UnaryPredicate P) {
 }
 
 // for sys::getHostNumPhysicalCores
-static int computeHostNumPhysicalCores() {
+int computeHostNumPhysicalCores() {
   static unsigned Cores =
       aggregate(getProcessorGroups(), [](const ProcessorGroup &G) {
         return G.UsableThreads / G.ThreadsPerCore;
