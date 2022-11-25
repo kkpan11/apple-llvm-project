@@ -50,6 +50,16 @@ inline uint64_t decodeAbbrevIndexAsAbbrevSetIdx(uint64_t Index) {
   return Index - 2;
 }
 
+/// Decodes a value written to the CAS as an index into DWARF's abbreviation
+/// table.
+inline uint64_t decodeAbbrevIndexAsDwarfAbbrevIdx(uint64_t Index) {
+  assert(Index != getEndOfDIESiblingsMarker() &&
+         Index != getDIEInAnotherBlockMarker());
+  // Dwarf 5: Section 7.5.3:
+  // the abbreviation code 0 is reserved for null debugging information entries.
+  return Index - 1;
+}
+
 /// A special value to indicate the end of a sequence of attributes. This must
 /// not conflict with any dwarf::Attribute.
 inline uint16_t getEndOfAttributesMarker() { return 0; }

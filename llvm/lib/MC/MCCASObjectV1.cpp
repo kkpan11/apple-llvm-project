@@ -723,6 +723,46 @@ Expected<uint64_t> materializeAbbrevFromTagImpl(MCCASReader &Reader,
   return reconstructAbbrevSection(Reader.OS, LoadedTopRef->AbbrevEntries);
 }
 
+static Expected<uint64_t>
+materializeDebugInfoFromTagImpl(MCCASReader &Reader,
+                                ArrayRef<cas::ObjectRef> Refs,
+                                DebugInfoSectionRef SectionRef) {
+  Expected<DIETopLevelRef> MaybeTopRef = findDIETopLevelRef(Reader, Refs);
+  SmallVector<char, 0> SectionContents;
+  raw_svector_ostream SectionStream(SectionContents);
+
+  auto HeaderCallback = [&](StringRef HeaderData) {
+    SectionStream << HeaderData;
+  };
+
+  auto StartTagCallback = [&](dwarf::Tag, uint64_t AbbrevIdx) {
+    encodeULEB128(decodeAbbrevIndexAsDwarfAbbrevIdx(AbbrevIdx), SectionStream);
+  };
+
+  auto AttrCallback = [&](dwarf::Attribute, dwarf::Form, StringRef FormData,
+                          bool) {
+    SectionStream << FormData;
+  };
+
+  auto EndTagCallback = [&](bool HadChildren) {
+    SectionStream.write_zeros(HadChildren);
+  };
+
+  if (auto E = visitDebugInfo(std::move(MaybeTopRef), HeaderCallback,
+                              StartTagCallback, AttrCallback, EndTagCallback))
+    return std::move(E);
+
+  Reader.Relocations.emplace_back();
+  if (auto E = decodeRelocationsAndAddends(Reader, SectionRef.getData()))
+    return std::move(E);
+  if (auto E = applyAddends(Reader, SectionContents))
+    return std::move(E);
+  Reader.Addends.clear();
+
+  Reader.OS << SectionContents;
+  return SectionContents.size();
+}
+
 Expected<uint64_t> GroupRef::materialize(MCCASReader &Reader,
                                          raw_ostream *Stream) const {
   unsigned Size = 0;
@@ -737,7 +777,9 @@ Expected<uint64_t> GroupRef::materialize(MCCASReader &Reader,
       return Node.takeError();
     if (auto F = DebugInfoSectionRef::Cast(*Node)) {
       auto FragmentSize =
-          materializeDebugInfoSection(Reader, makeArrayRef(*Refs), *F);
+          CreateDIEBlocks
+              ? materializeDebugInfoFromTagImpl(Reader, *Refs, *F)
+              : materializeDebugInfoSection(Reader, makeArrayRef(*Refs), *F);
       if (!FragmentSize)
         return FragmentSize.takeError();
       Size += *FragmentSize;
