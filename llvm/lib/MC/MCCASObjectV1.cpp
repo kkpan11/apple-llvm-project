@@ -337,6 +337,16 @@ Expected<PaddingRef> PaddingRef::get(Expected<MCObjectProxy> Ref) {
   return PaddingRef(*Specific);
 }
 
+static Error applyAddends(MCCASReader &Reader,
+                          MutableArrayRef<char> SectionContents) {
+  for (unsigned I = 0; I < Reader.Addends.size(); I++) {
+    auto Addend = Reader.Addends[I];
+    for (unsigned J = 0; J < Addend.Size; J++)
+      SectionContents[Addend.Offset + J] = uint8_t(Addend.Value >> (J * 8));
+  }
+  return Error::success();
+}
+
 static void writeRelocationsAndAddends(
     ArrayRef<MachO::any_relocation_info> Rels,
     ArrayRef<MachObjectWriter::AddendsSizeAndOffset> Addends,
@@ -971,16 +981,6 @@ LoadedDebugInfoSection::load(DebugInfoSectionRef Section) {
 
   LoadedSection.RelocationData = Section.getData();
   return LoadedSection;
-}
-
-static Error applyAddends(MCCASReader &Reader,
-                          MutableArrayRef<char> SectionContents) {
-  for (unsigned I = 0; I < Reader.Addends.size(); I++) {
-    auto Addend = Reader.Addends[I];
-    for (unsigned J = 0; J < Addend.Size; J++)
-      SectionContents[Addend.Offset + J] = uint8_t(Addend.Value >> (J * 8));
-  }
-  return Error::success();
 }
 
 static Error
