@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MachOLinkGraphBuilder.h"
+#include <optional>
 
 #define DEBUG_TYPE "jitlink"
 
@@ -264,7 +265,7 @@ Error MachOLinkGraphBuilder::createNormalizedSymbols() {
     if (Type & MachO::N_STAB)
       continue;
 
-    Optional<StringRef> Name;
+    std::optional<StringRef> Name;
     if (NStrX) {
       if (auto NameOrErr = SymRef.getName())
         Name = *NameOrErr;
@@ -541,7 +542,7 @@ Error MachOLinkGraphBuilder::graphifyRegularSymbols() {
                                        BlockStart, NSec.Alignment,
                                        BlockStart % NSec.Alignment);
 
-      Optional<orc::ExecutorAddr> LastCanonicalAddr;
+      std::optional<orc::ExecutorAddr> LastCanonicalAddr;
       auto SymEnd = BlockEnd;
       while (!BlockSyms.empty()) {
         auto &NSym = *BlockSyms.back();
