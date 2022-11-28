@@ -200,7 +200,7 @@ static bool checkCompatibility(const InputFile *input) {
 // would require altering many callers to track the state.
 DenseMap<CachedHashStringRef, MemoryBufferRef> macho::cachedReads;
 // Open a given file path and return it as a memory-mapped file.
-Optional<MemoryBufferRef> macho::readFile(StringRef path) {
+std::optional<MemoryBufferRef> macho::readFile(StringRef path) {
   CachedHashStringRef key(path);
   auto entry = cachedReads.find(key);
   if (entry != cachedReads.end())
@@ -1536,7 +1536,7 @@ lld::DWARFCache *ObjFile::getDwarf() {
 }
 // The path can point to either a dylib or a .tbd file.
 static DylibFile *loadDylib(StringRef path, DylibFile *umbrella) {
-  Optional<MemoryBufferRef> mbref = readFile(path);
+  std::optional<MemoryBufferRef> mbref = readFile(path);
   if (!mbref) {
     error("could not read dylib file at " + path);
     return nullptr;
@@ -1566,10 +1566,11 @@ static DylibFile *findDylib(StringRef path, DylibFile *umbrella,
       for (StringRef dir : config->frameworkSearchPaths) {
         SmallString<128> candidate = dir;
         path::append(candidate, frameworkName);
-        if (Optional<StringRef> dylibPath = resolveDylibPath(candidate.str()))
+        if (std::optional<StringRef> dylibPath =
+                resolveDylibPath(candidate.str()))
           return loadDylib(*dylibPath, umbrella);
       }
-    } else if (Optional<StringRef> dylibPath = findPathCombination(
+    } else if (std::optional<StringRef> dylibPath = findPathCombination(
                    stem, config->librarySearchPaths, {".tbd", ".dylib"}))
       return loadDylib(*dylibPath, umbrella);
   }
@@ -1577,7 +1578,8 @@ static DylibFile *findDylib(StringRef path, DylibFile *umbrella,
   // 2. As absolute path.
   if (path::is_absolute(path, path::Style::posix))
     for (StringRef root : config->systemLibraryRoots)
-      if (Optional<StringRef> dylibPath = resolveDylibPath((root + path).str()))
+      if (std::optional<StringRef> dylibPath =
+              resolveDylibPath((root + path).str()))
         return loadDylib(*dylibPath, umbrella);
 
   // 3. As relative path.
@@ -1606,7 +1608,7 @@ static DylibFile *findDylib(StringRef path, DylibFile *umbrella,
         path::remove_filename(newPath);
       }
       path::append(newPath, rpath, path.drop_front(strlen("@rpath/")));
-      if (Optional<StringRef> dylibPath = resolveDylibPath(newPath.str()))
+      if (std::optional<StringRef> dylibPath = resolveDylibPath(newPath.str()))
         return loadDylib(*dylibPath, umbrella);
     }
   }
@@ -1625,7 +1627,7 @@ static DylibFile *findDylib(StringRef path, DylibFile *umbrella,
     }
   }
 
-  if (Optional<StringRef> dylibPath = resolveDylibPath(path))
+  if (std::optional<StringRef> dylibPath = resolveDylibPath(path))
     return loadDylib(*dylibPath, umbrella);
 
   return nullptr;

@@ -89,8 +89,8 @@ public:
     return toStringRef(DebugAbbrevSection);
   }
 
-  Optional<RelocAddrEntry> find(const DWARFSection &Sec,
-                                uint64_t Pos) const override {
+  std::optional<RelocAddrEntry> find(const DWARFSection &Sec,
+                                     uint64_t Pos) const override {
     return {};
   }
 

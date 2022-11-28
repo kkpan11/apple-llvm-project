@@ -157,7 +157,7 @@ std::string macho::createResponseFile(const InputArgList &args,
       }
       break;
     case OPT_filelist:
-      if (Optional<MemoryBufferRef> buffer = readFile(arg->getValue()))
+      if (std::optional<MemoryBufferRef> buffer = readFile(arg->getValue()))
         for (StringRef path : args::getLines(*buffer))
           os << quote(rewriteInputPath(path)) << "\n";
       break;
@@ -206,7 +206,7 @@ static void searchedDylib(const Twine &path, bool found) {
     depTracker->logFileNotFound(path);
 }
 
-Optional<StringRef> macho::resolveDylibPath(StringRef dylibPath) {
+std::optional<StringRef> macho::resolveDylibPath(StringRef dylibPath) {
   // TODO: if a tbd and dylib are both present, we should check to make sure
   // they are consistent.
   SmallString<261> tbdPath = dylibPath;
@@ -275,7 +275,7 @@ DylibFile *macho::loadDylib(MemoryBufferRef mbref, DylibFile *umbrella,
 
 void macho::resetLoadedDylibs() { loadedDylibs.clear(); }
 
-Optional<StringRef>
+std::optional<StringRef>
 macho::findPathCombination(const Twine &name,
                            const std::vector<StringRef> &roots,
                            ArrayRef<StringRef> extensions) {
@@ -298,7 +298,7 @@ StringRef macho::rerootPath(StringRef path) {
   if (!path::is_absolute(path, path::Style::posix) || path.endswith(".o"))
     return path;
 
-  if (Optional<StringRef> rerootedPath =
+  if (std::optional<StringRef> rerootedPath =
           findPathCombination(path, config->systemLibraryRoots))
     return *rerootedPath;
 
