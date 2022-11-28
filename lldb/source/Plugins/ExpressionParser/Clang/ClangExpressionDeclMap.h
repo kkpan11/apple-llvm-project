@@ -353,7 +353,7 @@ private:
   /// The following values contain layout information for the materialized
   /// struct, but are not specific to a single materialization
   struct StructVars {
-    StructVars() : m_result_name(), m_object_pointer_type(nullptr, nullptr) {}
+    StructVars() : m_result_name(), m_object_pointer_type(nullptr, {}) {}
 
     lldb::offset_t m_struct_alignment =
         0;                    ///< The alignment of the struct in bytes.

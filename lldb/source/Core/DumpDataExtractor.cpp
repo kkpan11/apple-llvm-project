@@ -653,29 +653,31 @@ lldb::offset_t lldb_private::DumpDataExtractor(
         if (!type_system_or_err) {
           llvm::consumeError(type_system_or_err.takeError());
         } else {
-          auto &type_system = *type_system_or_err;
-          llvm::SmallVector<char, 256> sv;
-          // Show full precision when printing float values
-          const unsigned format_precision = 0;
-          const unsigned format_max_padding =
-              target_sp->GetMaxZeroPaddingInFloatFormat();
+          if (auto type_system = *type_system_or_err) {
+            llvm::SmallVector<char, 256> sv;
+            // Show full precision when printing float values
+            const unsigned format_precision = 0;
+            const unsigned format_max_padding =
+                target_sp->GetMaxZeroPaddingInFloatFormat();
 
-          const auto &semantics =
-              type_system.GetFloatTypeSemantics(item_byte_size);
+            const auto &semantics =
+                type_system->GetFloatTypeSemantics(item_byte_size);
 
-          // Recalculate the byte size in case of a difference. This is possible
-          // when item_byte_size is 16 (128-bit), because you could get back the
-          // x87DoubleExtended semantics which has a byte size of 10 (80-bit).
-          const size_t semantics_byte_size =
-              (llvm::APFloat::getSizeInBits(semantics) + 7) / 8;
-          llvm::Optional<llvm::APInt> apint =
-              GetAPInt(DE, &offset, semantics_byte_size);
-          if (apint.hasValue()) {
-            llvm::APFloat apfloat(semantics, apint.getValue());
-            apfloat.toString(sv, format_precision, format_max_padding);
-            if (!sv.empty()) {
-              s->Printf("%*.*s", (int)sv.size(), (int)sv.size(), sv.data());
-              used_upfloat = true;
+            // Recalculate the byte size in case of a difference. This is
+            // possible when item_byte_size is 16 (128-bit), because you could
+            // get back the x87DoubleExtended semantics which has a byte size of
+            // 10 (80-bit).
+            const size_t semantics_byte_size =
+                (llvm::APFloat::getSizeInBits(semantics) + 7) / 8;
+            llvm::Optional<llvm::APInt> apint =
+                GetAPInt(DE, &offset, semantics_byte_size);
+            if (apint.hasValue()) {
+              llvm::APFloat apfloat(semantics, apint.getValue());
+              apfloat.toString(sv, format_precision, format_max_padding);
+              if (!sv.empty()) {
+                s->Printf("%*.*s", (int)sv.size(), (int)sv.size(), sv.data());
+                used_upfloat = true;
+              }
             }
           }
         }
