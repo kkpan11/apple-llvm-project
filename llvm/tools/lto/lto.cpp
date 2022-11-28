@@ -544,12 +544,14 @@ thinlto_code_gen_t thinlto_create_codegen(void) {
     }
   }
   // Set up remote cache if environment is set.
-  if (auto CacheSocket =
-          sys::Process::GetEnv("LLVM_CACHE_REMOTE_SERVICE_SOCKET_PATH")) {
-    std::string Path = std::string("grpc:") + *CacheSocket;
-    auto Err = CodeGen->setCacheDir(Path);
-    if (Err)
-      report_fatal_error(std::move(Err));
+  if (sys::Process::GetEnv("LLVM_THINLTO_USE_REMOTE_CACHE")) {
+    if (auto CacheSocket =
+            sys::Process::GetEnv("LLVM_CACHE_REMOTE_SERVICE_SOCKET_PATH")) {
+      std::string Path = std::string("grpc:") + *CacheSocket;
+      auto Err = CodeGen->setCacheDir(Path);
+      if (Err)
+        report_fatal_error(std::move(Err));
+    }
   }
   return wrap(CodeGen);
 }
