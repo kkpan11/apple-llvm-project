@@ -73,8 +73,8 @@ public:
   StringRef getStrSection() const override {
     return llvm::toStringRef(DebugStringSection);
   }
-  Optional<RelocAddrEntry> find(const DWARFSection &Sec,
-                                uint64_t Pos) const override {
+  std::optional<RelocAddrEntry> find(const DWARFSection &Sec,
+                                     uint64_t Pos) const override {
     return {};
   };
   ArrayRef<uint32_t> getSecOffsetVals() { return SecOffsetVals; }
