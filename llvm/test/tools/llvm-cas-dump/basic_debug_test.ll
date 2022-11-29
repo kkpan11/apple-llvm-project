@@ -90,26 +90,26 @@
 ; DWARF-DIE-NEXT:   Header = [47 0 0 0 4 0 0 0 0 0 8]
 ; DWARF-DIE-NEXT:   CAS Block: llvmcas://{{.*}}
 ; DWARF-DIE-NEXT:   DW_TAG_compile_unit  AbbrevIdx = 2
-; DWARF-DIE-NEXT:     DW_AT_producer                 DW_FORM_strp           [dedups]    [{{.*}}]
+; DWARF-DIE-NEXT:     DW_AT_producer                 DW_FORM_strp           [distinct]    [{{.*}}]
 ; DWARF-DIE-NEXT:     DW_AT_language                 DW_FORM_data2          [dedups]    [{{.*}}]
-; DWARF-DIE-NEXT:     DW_AT_name                     DW_FORM_strp           [dedups]    [{{.*}}]
+; DWARF-DIE-NEXT:     DW_AT_name                     DW_FORM_strp           [distinct]    [{{.*}}]
 ; DWARF-DIE-NEXT:     DW_AT_stmt_list                DW_FORM_sec_offset     [dedups]    [{{.*}}]
-; DWARF-DIE-NEXT:     DW_AT_comp_dir                 DW_FORM_strp           [dedups]    [{{.*}}]
+; DWARF-DIE-NEXT:     DW_AT_comp_dir                 DW_FORM_strp           [distinct]    [{{.*}}]
 ; DWARF-DIE-NEXT:     DW_AT_low_pc                   DW_FORM_addr           [dedups]    [{{.*}}]
 ; DWARF-DIE-NEXT:     DW_AT_high_pc                  DW_FORM_data4          [dedups]    [{{.*}}]
 ; DWARF-DIE-NEXT:     CAS Block: llvmcas://{{.*}}
 ; DWARF-DIE-NEXT:     DW_TAG_subprogram  AbbrevIdx = 3
 ; DWARF-DIE-NEXT:       DW_AT_low_pc                   DW_FORM_addr         [dedups]      [{{.*}}]
-; DWARF-DIE-NEXT:       DW_AT_high_pc                  DW_FORM_data4        [dedups]      [{{.*}}]
+; DWARF-DIE-NEXT:       DW_AT_high_pc                  DW_FORM_data4        [dedups]     [{{.*}}]
 ; DWARF-DIE-NEXT:       DW_AT_APPLE_omit_frame_ptr     DW_FORM_flag_present [dedups]      []
 ; DWARF-DIE-NEXT:       DW_AT_frame_base               DW_FORM_exprloc      [dedups]      [{{.*}}]
-; DWARF-DIE-NEXT:       DW_AT_name                     DW_FORM_strp         [dedups]      [{{.*}}]
+; DWARF-DIE-NEXT:       DW_AT_name                     DW_FORM_strp         [distinct]      [{{.*}}]
 ; DWARF-DIE-NEXT:       DW_AT_decl_file                DW_FORM_data1        [distinct]      [{{.*}}]
 ; DWARF-DIE-NEXT:       DW_AT_decl_line                DW_FORM_data1        [distinct]      [{{.*}}]
-; DWARF-DIE-NEXT:       DW_AT_type                     DW_FORM_ref4         [dedups]      [{{.*}}]
+; DWARF-DIE-NEXT:       DW_AT_type                     DW_FORM_ref4         [distinct]      [{{.*}}]
 ; DWARF-DIE-NEXT:       DW_AT_external                 DW_FORM_flag_present [dedups]      []
 ; DWARF-DIE-NEXT:     DW_TAG_base_type  AbbrevIdx = 4
-; DWARF-DIE-NEXT:       DW_AT_name                     DW_FORM_strp         [dedups]      [{{.*}}]
+; DWARF-DIE-NEXT:       DW_AT_name                     DW_FORM_strp         [distinct]      [{{.*}}]
 ; DWARF-DIE-NEXT:       DW_AT_encoding                 DW_FORM_data1        [dedups]      [{{.*}}]
 ; DWARF-DIE-NEXT:       DW_AT_byte_size                DW_FORM_data1        [dedups]      [{{.*}}]
 
