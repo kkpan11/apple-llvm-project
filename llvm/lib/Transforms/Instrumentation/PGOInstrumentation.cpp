@@ -107,6 +107,7 @@
 #include "llvm/Support/Error.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/GraphWriter.h"
+#include "llvm/Support/VirtualFileSystem.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Instrumentation.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
@@ -1726,6 +1727,7 @@ static void verifyFuncBFI(PGOUseFunc &Func, LoopInfo &LI,
 
 static bool annotateAllFunctions(
     Module &M, StringRef ProfileFileName, StringRef ProfileRemappingFileName,
+    vfs::FileSystem &FS,
     function_ref<TargetLibraryInfo &(Function &)> LookupTLI,
     function_ref<BranchProbabilityInfo *(Function &)> LookupBPI,
     function_ref<BlockFrequencyInfo *(Function &)> LookupBFI,
@@ -1733,8 +1735,8 @@ static bool annotateAllFunctions(
   LLVM_DEBUG(dbgs() << "Read in profile counters: ");
   auto &Ctx = M.getContext();
   // Read the counter array from file.
-  auto ReaderOrErr =
-      IndexedInstrProfReader::create(ProfileFileName, ProfileRemappingFileName);
+  auto ReaderOrErr = IndexedInstrProfReader::create(ProfileFileName, FS,
+                                                    ProfileRemappingFileName);
   if (Error E = ReaderOrErr.takeError()) {
     handleAllErrors(std::move(E), [&](const ErrorInfoBase &EI) {
       Ctx.diagnose(
@@ -1908,15 +1910,18 @@ static bool annotateAllFunctions(
   return true;
 }
 
-PGOInstrumentationUse::PGOInstrumentationUse(std::string Filename,
-                                             std::string RemappingFilename,
-                                             bool IsCS)
+PGOInstrumentationUse::PGOInstrumentationUse(
+    std::string Filename, std::string RemappingFilename, bool IsCS,
+    IntrusiveRefCntPtr<vfs::FileSystem> VFS)
     : ProfileFileName(std::move(Filename)),
-      ProfileRemappingFileName(std::move(RemappingFilename)), IsCS(IsCS) {
+      ProfileRemappingFileName(std::move(RemappingFilename)), IsCS(IsCS),
+      FS(std::move(VFS)) {
   if (!PGOTestProfileFile.empty())
     ProfileFileName = PGOTestProfileFile;
   if (!PGOTestProfileRemappingFile.empty())
     ProfileRemappingFileName = PGOTestProfileRemappingFile;
+  if (!FS)
+    FS = vfs::getRealFileSystem();
 }
 
 PreservedAnalyses PGOInstrumentationUse::run(Module &M,
@@ -1935,7 +1940,7 @@ PreservedAnalyses PGOInstrumentationUse::run(Module &M,
 
   auto *PSI = &AM.getResult<ProfileSummaryAnalysis>(M);
 
-  if (!annotateAllFunctions(M, ProfileFileName, ProfileRemappingFileName,
+  if (!annotateAllFunctions(M, ProfileFileName, ProfileRemappingFileName, *FS,
                             LookupTLI, LookupBPI, LookupBFI, PSI, IsCS))
     return PreservedAnalyses::all();
 
