@@ -412,15 +412,8 @@ public:
   ErrorOr<std::unique_ptr<MemoryBuffer>> tryLoadingBuffer() final {
     if (EntryPath.empty())
       return std::error_code();
-    SmallString<64> ResultPath;
-    Expected<sys::fs::file_t> FDOrErr = sys::fs::openNativeFileForRead(
-        Twine(EntryPath), sys::fs::OF_UpdateAtime, &ResultPath);
-    if (!FDOrErr)
-      return errorToErrorCode(FDOrErr.takeError());
-    ErrorOr<std::unique_ptr<MemoryBuffer>> MBOrErr = MemoryBuffer::getOpenFile(
-        *FDOrErr, EntryPath, /*FileSize=*/-1, /*RequiresNullTerminator=*/false);
-    sys::fs::closeFile(*FDOrErr);
-    return MBOrErr;
+
+    return MemoryBuffer::getFile(EntryPath);
   }
 
   // Cache the Produced object file
@@ -516,11 +509,8 @@ public:
     // TODO: We can have an alternative hashing function that doesn't
     // need to store the key into CAS to get the CacheKey.
     auto CASKey = CAS.createProxy(None, *Key);
-    if (!CASKey) {
-      // FIXME: ignore error.
-      consumeError(CASKey.takeError());
-      return;
-    }
+    if (!CASKey)
+      report_fatal_error(CASKey.takeError());
 
     ID = CASKey->getID();
   }
@@ -557,15 +547,11 @@ public:
       return;
 
     auto Proxy = CAS.createProxy(None, OutputBuffer.getBuffer());
-    if (!Proxy) {
-      // Ignore error and return.
-      consumeError(Proxy.takeError());
-      return;
-    }
+    if (!Proxy)
+      report_fatal_error(Proxy.takeError());
 
-    auto Err = Cache.put(*ID, Proxy->getID());
-    // Ignore error.
-    consumeError(std::move(Err));
+    if (auto Err = Cache.put(*ID, Proxy->getID()))
+      report_fatal_error(std::move(Err));
   }
 
 private:
@@ -632,16 +618,7 @@ public:
       return std::error_code();
 
     ProducedOutput = true;
-
-    SmallString<64> ResultPath;
-    Expected<sys::fs::file_t> FDOrErr = sys::fs::openNativeFileForRead(
-        Twine(OutputPath), sys::fs::OF_UpdateAtime, &ResultPath);
-    if (!FDOrErr)
-      return errorToErrorCode(FDOrErr.takeError());
-    ErrorOr<std::unique_ptr<MemoryBuffer>> MBOrErr = MemoryBuffer::getOpenFile(
-        *FDOrErr, OutputPath, /*FileSize=*/-1, /*RequiresNullTerminator=*/false);
-    sys::fs::closeFile(*FDOrErr);
-    return MBOrErr;
+    return MemoryBuffer::getFile(OutputPath);
   }
 
   // Cache the Produced object file
@@ -654,10 +631,8 @@ public:
 
     ProducedOutput = true;
     auto SaveResponse = Service.CASDB->saveFileSync(OutputPath);
-    if (!SaveResponse) {
-      consumeError(SaveResponse.takeError());
-      return;
-    }
+    if (!SaveResponse)
+      report_fatal_error(SaveResponse.takeError());
 
     // Only check determinism when the cache lookup succeeded before.
     if (DeterministicCheck && PresumedOutput) {
@@ -670,7 +645,7 @@ public:
     cas::remote::KeyValueDBClient::ValueTy CompResult;
     CompResult["Output"] = *SaveResponse;
     if (auto Err = Service.KVDB->putValueSync(ID, CompResult))
-      consumeError(std::move(Err));
+      report_fatal_error(std::move(Err));
   }
 
   Error writeObject(const MemoryBuffer &OutputBuffer,
@@ -683,16 +658,8 @@ public:
     if (!ProducedOutput)
       return None;
 
-    SmallString<64> ResultPath;
-    Expected<sys::fs::file_t> FDOrErr = sys::fs::openNativeFileForRead(
-        Twine(OutputPath), sys::fs::OF_UpdateAtime, &ResultPath);
-    if (!FDOrErr) {
-      consumeError(FDOrErr.takeError());
-      return None;
-    }
-    ErrorOr<std::unique_ptr<MemoryBuffer>> MBOrErr = MemoryBuffer::getOpenFile(
-        *FDOrErr, OutputPath, /*FileSize=*/-1, /*RequiresNullTerminator=*/false);
-    sys::fs::closeFile(*FDOrErr);
+    ErrorOr<std::unique_ptr<MemoryBuffer>> MBOrErr =
+        MemoryBuffer::getFile(OutputPath);
     if (!MBOrErr)
       return None;
 
@@ -1303,7 +1270,10 @@ void ThinLTOCodeGenerator::run() {
   // Prepare the resulting object vector
   assert(ProducedBinaries.empty() && "The generator should not be reused");
 
-  // Need SavedObjectsDirectory for remote cache.
+  // When using RemoteService caching, we will always create a saved object
+  // directory for remote service to pass back the cached object file.
+  // First, we need to remember whether the caller requests buffer API or file
+  // API based on if the SavedObjectsDirectoryPath was set or not.
   bool UseBufferAPI = SavedObjectsDirectoryPath.empty();
   std::string TempDirectory;
   if (CacheOptions.Type == CachingOptions::CacheType::RemoteService &&

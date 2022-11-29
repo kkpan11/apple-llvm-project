@@ -174,17 +174,17 @@ class CASDBClient {
 public:
   virtual ~CASDBClient() = default;
 
-  struct LoadRespond {
+  struct LoadResponse {
     bool KeyNotFound = false;
     Optional<std::string> BlobData;
   };
-  struct GetRespond {
+  struct GetResponse {
     bool KeyNotFound = false;
     Optional<std::string> BlobData;
     std::vector<std::string> Refs;
   };
-  Expected<LoadRespond> loadSync(std::string CASID,
-                                 Optional<std::string> OutFilePath = None) {
+  Expected<LoadResponse> loadSync(std::string CASID,
+                                  Optional<std::string> OutFilePath = None) {
     return loadSyncImpl(std::move(CASID), std::move(OutFilePath));
   }
   Expected<std::string> saveDataSync(std::string BlobData) {
@@ -193,8 +193,8 @@ public:
   Expected<std::string> saveFileSync(std::string FilePath) {
     return saveFileSyncImpl(std::move(FilePath));
   }
-  Expected<GetRespond> getSync(std::string CASID,
-                               Optional<std::string> OutFilePath = None) {
+  Expected<GetResponse> getSync(std::string CASID,
+                                Optional<std::string> OutFilePath = None) {
     return getSyncImpl(std::move(CASID), std::move(OutFilePath));
   }
   Expected<std::string> putDataSync(std::string BlobData,
@@ -207,11 +207,11 @@ public:
   }
 
 protected:
-  virtual Expected<LoadRespond>
+  virtual Expected<LoadResponse>
   loadSyncImpl(std::string CASID, Optional<std::string> OutFilePath) = 0;
   virtual Expected<std::string> saveDataSyncImpl(std::string BlobData) = 0;
   virtual Expected<std::string> saveFileSyncImpl(std::string FilePath) = 0;
-  virtual Expected<GetRespond>
+  virtual Expected<GetResponse>
   getSyncImpl(std::string CASID, Optional<std::string> OutFilePath) = 0;
   virtual Expected<std::string> putDataSyncImpl(std::string BlobData,
                                                 ArrayRef<std::string> Refs) = 0;

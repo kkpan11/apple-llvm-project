@@ -39,7 +39,7 @@ static Error errorFromGRPCStatus(const grpc::Status &Status) {
 }
 
 static Expected<Optional<KeyValueDBClient::ValueTy>>
-createGetValueRespond(const GetValueResponse &Resp) {
+createGetValueResponse(const GetValueResponse &Resp) {
   if (Resp.has_error())
     return createStringError(inconvertibleErrorCode(),
                              Resp.error().description());
@@ -54,22 +54,22 @@ createGetValueRespond(const GetValueResponse &Resp) {
   return Ret;
 }
 
-static Expected<CASDBClient::LoadRespond>
-createLoadRespond(const CASLoadResponse &Respond,
-                  Optional<std::string> OutFilePath) {
-  CASDBClient::LoadRespond Resp;
-  switch (Respond.outcome()) {
+static Expected<CASDBClient::LoadResponse>
+createLoadResponse(const CASLoadResponse &Response,
+                   Optional<std::string> OutFilePath) {
+  CASDBClient::LoadResponse Resp;
+  switch (Response.outcome()) {
   case CASLoadResponse_Outcome_OBJECT_NOT_FOUND:
     Resp.KeyNotFound = true;
     return Resp;
   case CASLoadResponse_Outcome_ERROR:
     return createStringError(inconvertibleErrorCode(),
-                             Respond.error().description());
+                             Response.error().description());
   default:
     break;
   }
-  assert(Respond.outcome() == CASLoadResponse_Outcome_SUCCESS);
-  const auto &Blob = Respond.data().blob();
+  assert(Response.outcome() == CASLoadResponse_Outcome_SUCCESS);
+  const auto &Blob = Response.data().blob();
   if (OutFilePath.has_value()) {
     if (Blob.has_file_path()) {
       if (std::error_code EC = sys::fs::rename(Blob.file_path(), *OutFilePath))
@@ -101,22 +101,22 @@ createLoadRespond(const CASLoadResponse &Respond,
   return Resp;
 }
 
-static Expected<CASDBClient::GetRespond>
-createGetRespond(const CASGetResponse &Respond,
+static Expected<CASDBClient::GetResponse>
+createGetResponse(const CASGetResponse &Response,
                  Optional<std::string> OutFilePath) {
-  CASDBClient::GetRespond Resp;
-  switch (Respond.outcome()) {
+  CASDBClient::GetResponse Resp;
+  switch (Response.outcome()) {
   case CASGetResponse_Outcome_OBJECT_NOT_FOUND:
     Resp.KeyNotFound = true;
     return Resp;
   case CASGetResponse_Outcome_ERROR:
     return createStringError(inconvertibleErrorCode(),
-                             Respond.error().description());
+                             Response.error().description());
   default:
     break;
   }
-  assert(Respond.outcome() == CASGetResponse_Outcome_SUCCESS);
-  const auto &Blob = Respond.data().blob();
+  assert(Response.outcome() == CASGetResponse_Outcome_SUCCESS);
+  const auto &Blob = Response.data().blob();
   if (OutFilePath.has_value()) {
     if (Blob.has_file_path()) {
       if (std::error_code EC = sys::fs::rename(Blob.file_path(), *OutFilePath))
@@ -145,7 +145,7 @@ createGetRespond(const CASGetResponse &Respond,
       Resp.BlobData = Blob.data();
     }
   }
-  for (const CASDataID &ID : Respond.data().references())
+  for (const CASDataID &ID : Response.data().references())
     Resp.Refs.emplace_back(ID.id());
 
   return Resp;
@@ -203,7 +203,7 @@ public:
       return createStringError(inconvertibleErrorCode(),
                                "service channel shutdown");
 
-    auto Value = createGetValueRespond(call->Response);
+    auto Value = createGetValueResponse(call->Response);
     if (!Value)
       return Value.takeError();
     Response Resp;
@@ -305,7 +305,7 @@ public:
     Response Resp;
     Resp.CallCtx = std::move(call->CallCtx);
 
-    auto Value = createLoadRespond(call->Response, call->OutFilePath);
+    auto Value = createLoadResponse(call->Response, call->OutFilePath);
     if (!Value)
       return Value.takeError();
     Resp.KeyNotFound = Value->KeyNotFound;
@@ -413,7 +413,7 @@ public:
 
     Response Resp;
     Resp.CallCtx = std::move(call->CallCtx);
-    auto Value = createGetRespond(call->Response, call->OutFilePath);
+    auto Value = createGetResponse(call->Response, call->OutFilePath);
     if (!Value)
       return Value.takeError();
 
@@ -501,7 +501,7 @@ class KeyValueDBClientImpl : public KeyValueDBClient {
     if (!Status.ok())
       return errorFromGRPCStatus(Status);
 
-    return createGetValueRespond(Resp);
+    return createGetValueResponse(Resp);
   }
 
   Error putValueSyncImpl(std::string Key,
@@ -536,17 +536,17 @@ public:
 class CASDBClientImpl : public CASDBClient {
   std::unique_ptr<CASDBService::Stub> Stub;
 
-  Expected<CASDBClient::LoadRespond>
+  Expected<CASDBClient::LoadResponse>
   loadSyncImpl(std::string CASID, Optional<std::string> OutFilePath) override {
     CASLoadRequest Request;
     grpc::ClientContext Context;
-    CASLoadResponse Respond;
+    CASLoadResponse Response;
     Request.mutable_cas_id()->set_id(std::move(CASID));
     Request.set_write_to_disk(OutFilePath.has_value());
-    grpc::Status Status = Stub->Load(&Context, Request, &Respond);
+    grpc::Status Status = Stub->Load(&Context, Request, &Response);
     if (!Status.ok())
       return errorFromGRPCStatus(Status);
-    return createLoadRespond(Respond, OutFilePath);
+    return createLoadResponse(Response, OutFilePath);
   }
 
   Expected<std::string> saveDataSyncImpl(std::string BlobData) override {
@@ -564,25 +564,25 @@ class CASDBClientImpl : public CASDBClient {
 
   Expected<std::string> casSaveSync(const CASSaveRequest &Request) {
     grpc::ClientContext Context;
-    CASSaveResponse Respond;
-    grpc::Status Status = Stub->Save(&Context, Request, &Respond);
+    CASSaveResponse Response;
+    grpc::Status Status = Stub->Save(&Context, Request, &Response);
     if (!Status.ok())
       return errorFromGRPCStatus(Status);
-    if (Respond.has_error())
+    if (Response.has_error())
       return createStringError(inconvertibleErrorCode(),
-                               Respond.error().description());
-    return Respond.cas_id().id();
+                               Response.error().description());
+    return Response.cas_id().id();
   }
 
-  Expected<CASDBClient::GetRespond>
+  Expected<CASDBClient::GetResponse>
   getSyncImpl(std::string CASID, Optional<std::string> OutFilePath) override {
     CASGetRequest Request;
     grpc::ClientContext Context;
-    CASGetResponse Respond;
+    CASGetResponse Response;
     Request.mutable_cas_id()->set_id(std::move(CASID));
     Request.set_write_to_disk(OutFilePath.has_value());
-    grpc::Status Status = Stub->Get(&Context, Request, &Respond);
-    return createGetRespond(Respond, OutFilePath);
+    grpc::Status Status = Stub->Get(&Context, Request, &Response);
+    return createGetResponse(Response, OutFilePath);
   }
 
   Expected<std::string> putDataSyncImpl(std::string BlobData,
@@ -610,15 +610,15 @@ class CASDBClientImpl : public CASDBClient {
 
   Expected<std::string> casPutSync(const CASPutRequest &Request) {
     grpc::ClientContext Context;
-    CASPutResponse Respond;
-    grpc::Status Status = Stub->Put(&Context, Request, &Respond);
+    CASPutResponse Response;
+    grpc::Status Status = Stub->Put(&Context, Request, &Response);
     if (!Status.ok())
       return errorFromGRPCStatus(Status);
 
-    if (Respond.has_error())
+    if (Response.has_error())
       return createStringError(inconvertibleErrorCode(),
-                               Respond.error().description());
-    return Respond.cas_id().id();
+                               Response.error().description());
+    return Response.cas_id().id();
   }
 
 public:
