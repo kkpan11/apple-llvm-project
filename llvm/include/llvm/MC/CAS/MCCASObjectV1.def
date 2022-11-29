@@ -20,8 +20,6 @@ CASV1_SIMPLE_DATA_REF(MergedFragmentRef, mc:merged_fragment)
 CASV1_SIMPLE_DATA_REF(DebugStrRef, mc:debug_string)
 CASV1_SIMPLE_DATA_REF(DebugLineRef, mc:debug_line)
 CASV1_SIMPLE_DATA_REF(DebugAbbrevRef, mc:debug_abbrev)
-CASV1_SIMPLE_DATA_REF(DebugAbbrevOffsetsRef, mc:debug_abbrev_offsets)
-CASV1_SIMPLE_DATA_REF(DebugInfoDistinctDataRef, mc:debug_info_distinct_data)
 CASV1_SIMPLE_DATA_REF(DIEAbbrevRef, mc:debug_DIE_abbrev)
 CASV1_SIMPLE_DATA_REF(DIEDistinctDataRef, mc:debug_DIE_distinct_data)
 

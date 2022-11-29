@@ -28,19 +28,12 @@ cl::opt<bool> DwarfSectionsOnly("dwarf-sections-only",
                                 cl::desc("Only print DWARF related sections"));
 cl::opt<bool> DwarfDump("dwarf-dump",
                         cl::desc("Print the contents of DWARF sections"));
-cl::opt<bool> DebugAbbrevOffsets(
-    "debug-abbrev-offsets",
-    cl::desc("Print the contents of abbreviation offsets block"));
-
 cl::opt<bool>
     HexDump("hex-dump",
             cl::desc("Print out a hex dump of every cas blocks contents"));
 
 cl::opt<bool> HexDumpOneLine("hex-dump-one-line",
                              cl::desc("Print out the hex dump in one line"));
-cl::opt<bool>
-    ShowForm("show-form",
-             cl::desc("Print out the DW_FORMs in the dwarfdump output"));
 cl::opt<bool> Verbose("v", cl::desc("Enable verbse output in the dwarfdump"));
 cl::opt<bool> DIERefs("die-refs",
                       cl::desc("Print out the DIERef block structure"));
@@ -68,10 +61,8 @@ int main(int argc, char *argv[]) {
   ExitOnErr.setBanner(std::string(argv[0]) + ": ");
 
   cl::ParseCommandLineOptions(argc, argv);
-  PrinterOptions Options = {
-      DwarfSectionsOnly, DwarfDump,      DebugAbbrevOffsets,
-      HexDump,           HexDumpOneLine, ShowForm,
-      Verbose,           DIERefs};
+  PrinterOptions Options = {DwarfSectionsOnly, DwarfDump, HexDump,
+                            HexDumpOneLine,    Verbose,   DIERefs};
 
   std::unique_ptr<ObjectStore> CAS = ExitOnErr(createOnDiskCAS(CASPath));
   MCCASPrinter Printer(Options, *CAS, llvm::outs());

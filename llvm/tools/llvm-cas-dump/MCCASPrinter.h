@@ -24,10 +24,8 @@ namespace v1 {
 struct PrinterOptions {
   bool DwarfSectionsOnly = false;
   bool DwarfDump = false;
-  bool DebugAbbrevOffsets = false;
   bool HexDump = false;
   bool HexDumpOneLine = false;
-  bool ShowForm = false;
   bool Verbose = false;
   bool DIERefs = false;
 };
