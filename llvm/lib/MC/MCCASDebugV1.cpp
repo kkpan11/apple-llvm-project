@@ -223,3 +223,44 @@ bool mccasformats::v1::doesntDedup(dwarf::Form Form, dwarf::Attribute Attr) {
     return true;
   return llvm::is_contained(it->second, Attr);
 }
+
+void AbbrevEntryWriter::writeAbbrevEntry(DWARFDie DIE) {
+  // [uleb(Tag), has_children]
+  // [uleb(Attr), uleb(Form)]*
+  writeULEB128(DIE.getTag());
+  writeByte(DIE.hasChildren());
+  for (const DWARFAttribute &AttrValue : DIE.attributes()) {
+    writeULEB128(AttrValue.Attr);
+    writeULEB128(AttrValue.Value.getForm());
+  }
+}
+
+Expected<dwarf::Tag> AbbrevEntryReader::readTag() {
+  uint64_t TagAsInt;
+  if (auto E = DataStream.readULEB128(TagAsInt))
+    return std::move(E);
+  return static_cast<dwarf::Tag>(TagAsInt);
+}
+
+Expected<bool> AbbrevEntryReader::readHasChildren() {
+  char HasChildren;
+  if (auto E = DataStream.readInteger(HasChildren))
+    return std::move(E);
+  return HasChildren;
+}
+
+Expected<dwarf::Attribute> AbbrevEntryReader::readAttr() {
+  if (DataStream.bytesRemaining() == 0)
+    return static_cast<dwarf::Attribute>(getEndOfAttributesMarker());
+  uint64_t AttrAsInt;
+  if (auto E = DataStream.readULEB128(AttrAsInt))
+    return std::move(E);
+  return static_cast<dwarf::Attribute>(AttrAsInt);
+}
+
+Expected<dwarf::Form> AbbrevEntryReader::readForm() {
+  uint64_t FormAsInt;
+  if (auto E = DataStream.readULEB128(FormAsInt))
+    return std::move(E);
+  return static_cast<dwarf::Form>(FormAsInt);
+}

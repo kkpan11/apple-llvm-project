@@ -108,6 +108,7 @@
 #ifndef LLVM_MC_CAS_MCCASOBJECTV1_H
 #define LLVM_MC_CAS_MCCASOBJECTV1_H
 
+#include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/BinaryFormat/MachO.h"
 #include "llvm/CAS/CASID.h"
 #include "llvm/CAS/ObjectStore.h"
@@ -685,6 +686,101 @@ public:
 private:
   explicit DebugInfoSectionRef(SpecificRefT Ref) : SpecificRefT(Ref) {}
 };
+
+class DIEDataRef : public SpecificRef<DIEDataRef> {
+  using SpecificRefT = SpecificRef<DIEDataRef>;
+  friend class SpecificRef<DIEDataRef>;
+
+public:
+  static constexpr StringLiteral KindString = "mc:debug_DIE_data";
+  static Expected<DIEDataRef> create(MCCASBuilder &MB,
+                                     ArrayRef<cas::ObjectRef> Children,
+                                     ArrayRef<char> Contents);
+
+  static Expected<DIEDataRef> get(Expected<MCObjectProxy> Ref) {
+    auto Specific = SpecificRefT::getSpecific(std::move(Ref));
+    if (!Specific)
+      return Specific.takeError();
+    return DIEDataRef(*Specific);
+  }
+  static Expected<DIEDataRef> get(const MCSchema &Schema, cas::ObjectRef ID) {
+    return get(Schema.get(ID));
+  }
+  static Optional<DIEDataRef> Cast(MCObjectProxy Ref) {
+    auto Specific = SpecificRefT::Cast(Ref);
+    if (!Specific)
+      return None;
+    return DIEDataRef(*Specific);
+  }
+  Expected<uint64_t> materialize(MCCASReader &Reader,
+                                 ArrayRef<char> AbbrevSectionContents,
+                                 ArrayRef<uint32_t> SecOffsetVals,
+                                 raw_ostream *Stream = nullptr) const;
+
+private:
+  explicit DIEDataRef(SpecificRefT Ref) : SpecificRefT(Ref) {}
+};
+
+struct LoadedDIETopLevel {
+  SmallVector<StringRef, 0> AbbrevEntries;
+  DIEDistinctDataRef DistinctData;
+  DIEDataRef RootDIE;
+};
+
+/// Helper function to load the relevant information from a DIETopLevelRef:
+/// 1. The list of abbreviation entries.
+/// 2. The distinct data.
+/// 3. The root DIE node.
+Expected<LoadedDIETopLevel> loadDIETopLevel(DIETopLevelRef TopLevelRef);
+inline Expected<LoadedDIETopLevel>
+loadDIETopLevel(Expected<DIETopLevelRef> TopLevelRef) {
+  if (!TopLevelRef)
+    return TopLevelRef.takeError();
+  return loadDIETopLevel(*TopLevelRef);
+}
+
+/// Loads and returns all the references of Obj, ensuring they are CAS objects
+/// of type RefTy.
+template <typename RefTy>
+Expected<SmallVector<RefTy>> loadAllRefs(MCObjectProxy Obj) {
+  const MCSchema &Schema = Obj.getSchema();
+  SmallVector<RefTy> Children;
+  Children.reserve(Obj.getNumReferences());
+
+  auto LoadAs = [&](cas::ObjectRef ChildRef) -> Error {
+    auto MaybeNode = RefTy::get(Schema, ChildRef);
+    if (!MaybeNode)
+      return MaybeNode.takeError();
+    Children.push_back(*MaybeNode);
+    return Error::success();
+  };
+
+  if (auto E = Obj.forEachReference(LoadAs))
+    return std::move(E);
+  return Children;
+}
+
+/// Visits the DIEs contained in the debug info section represented by
+/// TopLevelRef. DIEs and Tags are visited in depth first order.
+/// * HeaderCallback is called with the data corresponding to the header of a
+/// CU.
+/// * AttrCallback is called whenever an attribute is visited. The parameters
+/// are the Attribute, the Form, the form data, and a boolean that is true if
+/// the data came from the distinct data block.
+/// * StartTagCallback is called to indicate the start of a new DIE. The Tag
+/// and its Abbreviation Index (as stored in the CAS) are provided.
+/// * EndTagCallback is called to indicate the end of a DIE. A boolean
+/// HadChildren is provided to indicate whether this Tag had children DIE.
+/// * NewBlockCallback is called to indicate that data from a new CAS block is
+/// about to be read.
+Error visitDebugInfo(
+    Expected<DIETopLevelRef> TopLevelRef,
+    std::function<void(StringRef)> HeaderCallback,
+    std::function<void(dwarf::Tag, uint64_t)> StartTagCallback,
+    std::function<void(dwarf::Attribute, dwarf::Form, StringRef, bool)>
+        AttrCallback,
+    std::function<void(bool)> EndTagCallback,
+    std::function<void(StringRef)> NewBlockCallback = [](StringRef) {});
 
 } // namespace v1
 } // namespace mccasformats
