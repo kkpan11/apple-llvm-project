@@ -311,6 +311,11 @@ Bug Fixes
   `Issue 58067 <https://github.com/llvm/llvm-project/issues/58057>`_
   `Issue 59014 <https://github.com/llvm/llvm-project/issues/59014>`_
   `Issue 54746 <https://github.com/llvm/llvm-project/issues/54746>`_
+- Fix assert that triggers a crash during some types of list initialization that
+  generate a CXXTemporaryObjectExpr instead of a InitListExpr. This fixes
+  `Issue 58302 <https://github.com/llvm/llvm-project/issues/58302>`_
+  `Issue 58753 <https://github.com/llvm/llvm-project/issues/58753>`_
+  `Issue 59100 <https://github.com/llvm/llvm-project/issues/59100>`_
 
 Improvements to Clang's diagnostics
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -618,11 +623,6 @@ C++ Language Changes in Clang
 - Implemented DR2358 allowing init captures in lambdas in default arguments.
 - implemented `DR2654 <https://wg21.link/cwg2654>`_ which undeprecates
   all compound assignements operations on volatile qualified variables.
-- Implemented DR2631. Invalid ``consteval`` calls in default arguments and default
-  member initializers are diagnosed when and if the default is used.
-  This Fixes `Issue 56379 <https://github.com/llvm/llvm-project/issues/56379>`_
-  and changes the value of ``std::source_location::current()``
-  used in default parameters calls compared to previous versions of Clang.
 
 C++20 Feature Support
 ^^^^^^^^^^^^^^^^^^^^^
