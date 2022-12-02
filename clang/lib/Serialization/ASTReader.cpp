@@ -5893,8 +5893,7 @@ bool ASTReader::ParseHeaderSearchOptions(const RecordData &Record,
                                           Complain);
 }
 
-bool ASTReader::ParseHeaderSearchPaths(const RecordData &Record,
-                                       bool Complain,
+bool ASTReader::ParseHeaderSearchPaths(const RecordData &Record, bool Complain,
                                        ASTReaderListener &Listener) {
   HeaderSearchOptions HSOpts;
   unsigned Idx = 0;
@@ -5903,7 +5902,7 @@ bool ASTReader::ParseHeaderSearchPaths(const RecordData &Record,
   for (unsigned N = Record[Idx++]; N; --N) {
     std::string Path = ReadString(Record, Idx);
     frontend::IncludeDirGroup Group
-      = static_cast<frontend::IncludeDirGroup>(Record[Idx++]);
+        = static_cast<frontend::IncludeDirGroup>(Record[Idx++]);
     bool IsFramework = Record[Idx++];
     bool IgnoreSysRoot = Record[Idx++];
     HSOpts.UserEntries.emplace_back(std::move(Path), Group, IsFramework,
@@ -5917,8 +5916,13 @@ bool ASTReader::ParseHeaderSearchPaths(const RecordData &Record,
     HSOpts.SystemHeaderPrefixes.emplace_back(std::move(Prefix), IsSystemHeader);
   }
 
-  // TODO: implement checking and warnings for path mismatches.
-  return false;
+  // VFS overlay files.
+  for (unsigned N = Record[Idx++]; N; --N) {
+    std::string VFSOverlayFile = ReadString(Record, Idx);
+    HSOpts.VFSOverlayFiles.emplace_back(std::move(VFSOverlayFile));
+  }
+
+  return Listener.ReadHeaderSearchPaths(HSOpts, Complain);
 }
 
 bool ASTReader::ParsePreprocessorOptions(const RecordData &Record,
