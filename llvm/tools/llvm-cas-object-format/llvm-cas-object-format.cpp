@@ -1001,7 +1001,7 @@ static ObjectRef ingestFile(ObjectFormatSchemaBase &Schema, StringRef InputFile,
     auto MapFile = ExitOnErr(sys::fs::TempFile::create("/tmp/debug-%%%%%%%%.map"));
     auto DsymFile =
         ExitOnErr(sys::fs::TempFile::create(MapFile.TmpName + ".dwarf"));
-    Optional<StringRef> Redirects[] = {
+    std::optional<StringRef> Redirects[] = {
         StringRef(),
         None,
         None,

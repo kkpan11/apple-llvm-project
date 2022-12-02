@@ -267,7 +267,7 @@ public:
   void Print(llvm::raw_ostream &OS, const char *Terminator, bool Quote,
              CrashReportInfo *CrashInfo = nullptr) const override;
 
-  int Execute(ArrayRef<Optional<StringRef>> Redirects, std::string *ErrMsg,
+  int Execute(ArrayRef<std::optional<StringRef>> Redirects, std::string *ErrMsg,
               bool *ExecutionFailed) const override;
 
   void setEnvironment(llvm::ArrayRef<const char *> NewEnvironment) override;
