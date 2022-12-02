@@ -1105,7 +1105,7 @@ static bool DeserializeAllCompilerFlags(swift::CompilerInvocation &invocation,
       found_swift_modules = true;
       StringRef moduleData = buf.substr(0, info.bytes);
 
-      auto remap = [&](std::string path) {
+      auto remap = [&](const std::string &path) {
         ConstString remapped;
         if (module.GetSourceMappingList().RemapPath(ConstString(path),
                                                     remapped))
