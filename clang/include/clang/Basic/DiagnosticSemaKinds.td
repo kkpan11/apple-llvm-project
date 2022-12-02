@@ -11716,4 +11716,13 @@ def err_non_designated_init_used : Error<
   "a randomized struct can only be initialized with a designated initializer">;
 def err_cast_from_randomized_struct : Error<
   "casting from randomized structure pointer type %0 to %1">;
+
+// LoongArch-specific Diagnostics
+def err_loongarch_builtin_requires_la64 : Error<
+  "this builtin requires target: loongarch64">;
+
+// Unsafe buffer usage diagnostics.
+def warn_unsafe_buffer_usage : Warning<
+  "unchecked operation on raw buffer in expression">,
+  InGroup<DiagGroup<"unsafe-buffer-usage">>, DefaultIgnore;
 } // end of sema component.
