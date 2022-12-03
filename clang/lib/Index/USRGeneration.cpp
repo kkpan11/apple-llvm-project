@@ -1058,7 +1058,7 @@ void USRGenerator::VisitConceptDecl(const ConceptDecl *D) {
 void USRGenerator::VisitMSGuidDecl(const MSGuidDecl *D) {
   VisitDeclContext(D->getDeclContext());
   Out << "@MG@";
-  D->NamedDecl::printName(Out);
+  D->printName(Out);
 }
 
 //===----------------------------------------------------------------------===//
