@@ -51,7 +51,7 @@ public:
   /// Returns index of the parent die.
   Optional<uint32_t> getParentIdx() const {
     if (ParentIdx == UINT32_MAX)
-      return None;
+      return std::nullopt;
 
     return ParentIdx;
   }
@@ -59,7 +59,7 @@ public:
   /// Returns index of the sibling die.
   Optional<uint32_t> getSiblingIdx() const {
     if (SiblingIdx == 0)
-      return None;
+      return std::nullopt;
 
     return SiblingIdx;
   }

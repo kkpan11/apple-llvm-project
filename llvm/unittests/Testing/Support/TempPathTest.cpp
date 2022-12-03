@@ -32,10 +32,10 @@ TEST(TempPathTest, TempDir) {
   ASSERT_EQ(Path, Dir2->path());
   ASSERT_TRUE(sys::fs::exists(Path));
 
-  Dir1 = None;
+  Dir1 = std::nullopt;
   ASSERT_TRUE(sys::fs::exists(Path));
 
-  Dir2 = None;
+  Dir2 = std::nullopt;
   ASSERT_FALSE(sys::fs::exists(Path));
 }
 
@@ -59,10 +59,10 @@ TEST(TempPathTest, TempFile) {
   ASSERT_EQ(Path, File2->path());
   ASSERT_TRUE(sys::fs::exists(Path));
 
-  File1 = None;
+  File1 = std::nullopt;
   ASSERT_TRUE(sys::fs::exists(Path));
 
-  File2 = None;
+  File2 = std::nullopt;
   ASSERT_FALSE(sys::fs::exists(Path));
 }
 
@@ -87,10 +87,10 @@ TEST(TempPathTest, TempLink) {
   ASSERT_EQ(Path, Link2->path());
   ASSERT_TRUE(sys::fs::exists(Path));
 
-  Link1 = None;
+  Link1 = std::nullopt;
   ASSERT_TRUE(sys::fs::exists(Path));
 
-  Link2 = None;
+  Link2 = std::nullopt;
   ASSERT_FALSE(sys::fs::exists(Path));
 }
 
