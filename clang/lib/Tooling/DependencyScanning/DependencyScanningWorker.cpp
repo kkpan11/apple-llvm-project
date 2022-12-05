@@ -293,7 +293,7 @@ public:
       bool DisableFree, bool EmitDependencyFile,
       bool DiagGenerationAsCompilation, const CASOptions &CASOpts,
       RemapPathCallback RemapPath, bool OverrideCASTokenCache,
-      llvm::Optional<StringRef> ModuleName = None,
+      llvm::Optional<StringRef> ModuleName = std::nullopt,
       raw_ostream *VerboseOS = nullptr)
       : WorkingDirectory(WorkingDirectory), Consumer(Consumer),
         DepFS(std::move(DepFS)), DepCASFS(std::move(DepCASFS)),
@@ -383,7 +383,7 @@ public:
         if (llvm::ErrorOr<EntryRef> Entry =
                 LocalDepFS->getOrCreateFileSystemEntry(File.getName()))
           return Entry->getDirectiveTokens();
-        return None;
+        return std::nullopt;
       };
     }
     // CAS Implementation.
