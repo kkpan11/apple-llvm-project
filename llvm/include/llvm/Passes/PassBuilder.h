@@ -21,7 +21,6 @@
 #include "llvm/Passes/OptimizationLevel.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/PGOOptions.h"
-#include "llvm/Support/VirtualFileSystem.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/IPO/Inliner.h"
 #include "llvm/Transforms/IPO/ModuleInliner.h"
@@ -570,8 +569,7 @@ public:
   /// Add PGOInstrumenation passes for O0 only.
   void addPGOInstrPassesForO0(ModulePassManager &MPM, bool RunProfileGen,
                               bool IsCS, std::string ProfileFile,
-                              std::string ProfileRemappingFile,
-                              IntrusiveRefCntPtr<vfs::FileSystem> FS);
+                              std::string ProfileRemappingFile);
 
   /// Returns PIC. External libraries can use this to register pass
   /// instrumentation callbacks.
@@ -611,8 +609,7 @@ private:
   void addPGOInstrPasses(ModulePassManager &MPM, OptimizationLevel Level,
                          bool RunProfileGen, bool IsCS, std::string ProfileFile,
                          std::string ProfileRemappingFile,
-                         ThinOrFullLTOPhase LTOPhase,
-                         IntrusiveRefCntPtr<vfs::FileSystem> FS);
+                         ThinOrFullLTOPhase LTOPhase);
   void invokePeepholeEPCallbacks(FunctionPassManager &, OptimizationLevel);
 
   // Extension Point callbacks

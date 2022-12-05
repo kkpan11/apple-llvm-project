@@ -44,7 +44,6 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/SaveAndRestore.h"
 #include "llvm/Support/Threading.h"
-#include "llvm/Support/VirtualFileSystem.h"
 #include "llvm/Target/CGPassBuilderOption.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Transforms/Scalar.h"
@@ -1180,7 +1179,7 @@ void TargetPassConfig::addMachinePasses() {
     if (!ProfileFile.empty() && !DisableRAFSProfileLoader)
       addPass(
           createMIRProfileLoaderPass(ProfileFile, getFSRemappingFile(TM),
-                                     sampleprof::FSDiscriminatorPass::Pass1, nullptr));
+                                     sampleprof::FSDiscriminatorPass::Pass1));
   }
 
   // Run register allocation and passes that are tightly coupled with it,
@@ -1550,7 +1549,7 @@ void TargetPassConfig::addBlockPlacement() {
     if (!ProfileFile.empty() && !DisableLayoutFSProfileLoader)
       addPass(
           createMIRProfileLoaderPass(ProfileFile, getFSRemappingFile(TM),
-                                     sampleprof::FSDiscriminatorPass::Pass2, nullptr));
+                                     sampleprof::FSDiscriminatorPass::Pass2));
   }
   if (addPass(&MachineBlockPlacementID)) {
     // Run a separate pass to collect block placement statistics.

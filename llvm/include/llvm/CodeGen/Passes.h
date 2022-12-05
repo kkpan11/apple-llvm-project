@@ -31,11 +31,6 @@ class Pass;
 class TargetMachine;
 class raw_ostream;
 
-template <typename T> class IntrusiveRefCntPtr;
-namespace vfs {
-class FileSystem;
-} // namespace vfs
-
 } // End llvm namespace
 
 // List of target independent CodeGen pass IDs.
@@ -533,10 +528,9 @@ namespace llvm {
   createMIRAddFSDiscriminatorsPass(sampleprof::FSDiscriminatorPass P);
 
   /// Read Flow Sensitive Profile.
-  FunctionPass *
-  createMIRProfileLoaderPass(std::string File, std::string RemappingFile,
-                             sampleprof::FSDiscriminatorPass P,
-                             IntrusiveRefCntPtr<vfs::FileSystem> FS);
+  FunctionPass *createMIRProfileLoaderPass(std::string File,
+                                           std::string RemappingFile,
+                                           sampleprof::FSDiscriminatorPass P);
 
   /// Creates MIR Debugify pass. \see MachineDebugify.cpp
   ModulePass *createDebugifyMachineModulePass();
