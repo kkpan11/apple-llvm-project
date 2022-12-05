@@ -675,6 +675,13 @@ def AArch64tbl : SDNode<"AArch64ISD::TBL", SDT_AArch64TBL>;
 def AArch64mrs : SDNode<"AArch64ISD::MRS",
                         SDTypeProfile<1, 1, [SDTCisVT<0, i64>, SDTCisVT<1, i32>]>,
                         [SDNPHasChain, SDNPOutGlue]>;
+
+// Match mul with enough sign-bits. Can be reduced to a smaller mul operand.
+def smullwithsignbits : PatFrag<(ops node:$l, node:$r), (mul node:$l, node:$r), [{
+  return CurDAG->ComputeNumSignBits(N->getOperand(0)) > 32 &&
+         CurDAG->ComputeNumSignBits(N->getOperand(1)) > 32;
+}]>;
+
 //===----------------------------------------------------------------------===//
 
 //===----------------------------------------------------------------------===//
@@ -1883,6 +1890,26 @@ def : Pat<(i64 (sub GPR64:$Ra, (mul (sext_inreg GPR64:$Rn, i32),
                                     (s64imm_32bit:$C)))),
           (SMSUBLrrr (i32 (EXTRACT_SUBREG GPR64:$Rn, sub_32)),
                      (MOVi32imm (trunc_imm imm:$C)), GPR64:$Ra)>;
+
+def : Pat<(i64 (smullwithsignbits GPR64:$Rn, GPR64:$Rm)),
+          (SMADDLrrr (EXTRACT_SUBREG $Rn, sub_32), (EXTRACT_SUBREG $Rm, sub_32), XZR)>;
+def : Pat<(i64 (smullwithsignbits GPR64:$Rn, (sext GPR32:$Rm))),
+          (SMADDLrrr (EXTRACT_SUBREG $Rn, sub_32), $Rm, XZR)>;
+
+def : Pat<(i64 (add (smullwithsignbits GPR64:$Rn, GPR64:$Rm), GPR64:$Ra)),
+          (SMADDLrrr (EXTRACT_SUBREG $Rn, sub_32), (EXTRACT_SUBREG $Rm, sub_32), GPR64:$Ra)>;
+def : Pat<(i64 (add (smullwithsignbits GPR64:$Rn, (sext GPR32:$Rm)), GPR64:$Ra)),
+          (SMADDLrrr (EXTRACT_SUBREG $Rn, sub_32), $Rm, GPR64:$Ra)>;
+
+def : Pat<(i64 (ineg (smullwithsignbits GPR64:$Rn, GPR64:$Rm))),
+          (SMSUBLrrr (EXTRACT_SUBREG $Rn, sub_32), (EXTRACT_SUBREG $Rm, sub_32), XZR)>;
+def : Pat<(i64 (ineg (smullwithsignbits GPR64:$Rn, (sext GPR32:$Rm)))),
+          (SMSUBLrrr (EXTRACT_SUBREG $Rn, sub_32), $Rm, XZR)>;
+
+def : Pat<(i64 (sub GPR64:$Ra, (smullwithsignbits GPR64:$Rn, GPR64:$Rm))),
+          (SMSUBLrrr (EXTRACT_SUBREG $Rn, sub_32), (EXTRACT_SUBREG $Rm, sub_32), GPR64:$Ra)>;
+def : Pat<(i64 (sub GPR64:$Ra, (smullwithsignbits GPR64:$Rn, (sext GPR32:$Rm)))),
+          (SMSUBLrrr (EXTRACT_SUBREG $Rn, sub_32), $Rm, GPR64:$Ra)>;
 } // AddedComplexity = 5
 
 def : MulAccumWAlias<"mul", MADDWrrr>;
