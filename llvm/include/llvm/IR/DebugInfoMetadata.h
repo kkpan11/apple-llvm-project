@@ -16,7 +16,6 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/BitmaskEnum.h"
 #include "llvm/ADT/None.h"
-#include "llvm/ADT/Optional.h"
 #include "llvm/ADT/PointerUnion.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
@@ -32,6 +31,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
+#include <optional>
 #include <vector>
 
 // Helper macros for defining get() overrides.
@@ -518,7 +518,7 @@ public:
 
   inline StringRef getFilename() const;
   inline StringRef getDirectory() const;
-  inline Optional<StringRef> getSource() const;
+  inline std::optional<StringRef> getSource() const;
 
   StringRef getName() const;
   DIScope *getScope() const;
@@ -597,33 +597,33 @@ public:
   };
 
 private:
-  Optional<ChecksumInfo<MDString *>> Checksum;
-  Optional<MDString *> Source;
+  std::optional<ChecksumInfo<MDString *>> Checksum;
+  std::optional<MDString *> Source;
 
   DIFile(LLVMContext &C, StorageType Storage,
-         Optional<ChecksumInfo<MDString *>> CS, Optional<MDString *> Src,
-         ArrayRef<Metadata *> Ops);
+         std::optional<ChecksumInfo<MDString *>> CS,
+         std::optional<MDString *> Src, ArrayRef<Metadata *> Ops);
   ~DIFile() = default;
 
   static DIFile *getImpl(LLVMContext &Context, StringRef Filename,
                          StringRef Directory,
-                         Optional<ChecksumInfo<StringRef>> CS,
-                         Optional<StringRef> Source, StorageType Storage,
+                         std::optional<ChecksumInfo<StringRef>> CS,
+                         std::optional<StringRef> Source, StorageType Storage,
                          bool ShouldCreate = true) {
-    Optional<ChecksumInfo<MDString *>> MDChecksum;
+    std::optional<ChecksumInfo<MDString *>> MDChecksum;
     if (CS)
       MDChecksum.emplace(CS->Kind, getCanonicalMDString(Context, CS->Value));
-    return getImpl(
-        Context, getCanonicalMDString(Context, Filename),
-        getCanonicalMDString(Context, Directory), MDChecksum,
-        Source ? Optional<MDString *>(getCanonicalMDString(Context, *Source))
-               : std::nullopt,
-        Storage, ShouldCreate);
+    return getImpl(Context, getCanonicalMDString(Context, Filename),
+                   getCanonicalMDString(Context, Directory), MDChecksum,
+                   Source ? std::optional<MDString *>(
+                                getCanonicalMDString(Context, *Source))
+                          : std::nullopt,
+                   Storage, ShouldCreate);
   }
   static DIFile *getImpl(LLVMContext &Context, MDString *Filename,
                          MDString *Directory,
-                         Optional<ChecksumInfo<MDString *>> CS,
-                         Optional<MDString *> Source, StorageType Storage,
+                         std::optional<ChecksumInfo<MDString *>> CS,
+                         std::optional<MDString *> Source, StorageType Storage,
                          bool ShouldCreate = true);
 
   TempDIFile cloneImpl() const {
@@ -634,36 +634,39 @@ private:
 public:
   DEFINE_MDNODE_GET(DIFile,
                     (StringRef Filename, StringRef Directory,
-                     Optional<ChecksumInfo<StringRef>> CS = std::nullopt,
-                     Optional<StringRef> Source = std::nullopt),
+                     std::optional<ChecksumInfo<StringRef>> CS = std::nullopt,
+                     std::optional<StringRef> Source = std::nullopt),
                     (Filename, Directory, CS, Source))
   DEFINE_MDNODE_GET(DIFile,
                     (MDString * Filename, MDString *Directory,
-                     Optional<ChecksumInfo<MDString *>> CS = std::nullopt,
-                     Optional<MDString *> Source = std::nullopt),
+                     std::optional<ChecksumInfo<MDString *>> CS = std::nullopt,
+                     std::optional<MDString *> Source = std::nullopt),
                     (Filename, Directory, CS, Source))
 
   TempDIFile clone() const { return cloneImpl(); }
 
   StringRef getFilename() const { return getStringOperand(0); }
   StringRef getDirectory() const { return getStringOperand(1); }
-  Optional<ChecksumInfo<StringRef>> getChecksum() const {
-    Optional<ChecksumInfo<StringRef>> StringRefChecksum;
+  std::optional<ChecksumInfo<StringRef>> getChecksum() const {
+    std::optional<ChecksumInfo<StringRef>> StringRefChecksum;
     if (Checksum)
       StringRefChecksum.emplace(Checksum->Kind, Checksum->Value->getString());
     return StringRefChecksum;
   }
-  Optional<StringRef> getSource() const {
-    return Source ? Optional<StringRef>((*Source)->getString()) : std::nullopt;
+  std::optional<StringRef> getSource() const {
+    return Source ? std::optional<StringRef>((*Source)->getString())
+                  : std::nullopt;
   }
 
   MDString *getRawFilename() const { return getOperandAs<MDString>(0); }
   MDString *getRawDirectory() const { return getOperandAs<MDString>(1); }
-  Optional<ChecksumInfo<MDString *>> getRawChecksum() const { return Checksum; }
-  Optional<MDString *> getRawSource() const { return Source; }
+  std::optional<ChecksumInfo<MDString *>> getRawChecksum() const {
+    return Checksum;
+  }
+  std::optional<MDString *> getRawSource() const { return Source; }
 
   static StringRef getChecksumKindAsString(ChecksumKind CSKind);
-  static Optional<ChecksumKind> getChecksumKind(StringRef CSKindStr);
+  static std::optional<ChecksumKind> getChecksumKind(StringRef CSKindStr);
 
   static bool classof(const Metadata *MD) {
     return MD->getMetadataID() == DIFileKind;
@@ -682,7 +685,7 @@ StringRef DIScope::getDirectory() const {
   return "";
 }
 
-Optional<StringRef> DIScope::getSource() const {
+std::optional<StringRef> DIScope::getSource() const {
   if (auto *F = getFile())
     return F->getSource();
   return std::nullopt;
@@ -857,9 +860,9 @@ public:
 
   enum class Signedness { Signed, Unsigned };
 
-  /// Return the signedness of this type, or None if this type is neither
-  /// signed nor unsigned.
-  Optional<Signedness> getSignedness() const;
+  /// Return the signedness of this type, or std::nullopt if this type is
+  /// neither signed nor unsigned.
+  std::optional<Signedness> getSignedness() const;
 
   static bool classof(const Metadata *MD) {
     return MD->getMetadataID() == DIBasicTypeKind;
@@ -965,22 +968,22 @@ class DIDerivedType : public DIType {
 
   /// The DWARF address space of the memory pointed to or referenced by a
   /// pointer or reference type respectively.
-  Optional<unsigned> DWARFAddressSpace;
+  std::optional<unsigned> DWARFAddressSpace;
 
   DIDerivedType(LLVMContext &C, StorageType Storage, unsigned Tag,
                 unsigned Line, uint64_t SizeInBits, uint32_t AlignInBits,
-                uint64_t OffsetInBits, Optional<unsigned> DWARFAddressSpace,
-                DIFlags Flags, ArrayRef<Metadata *> Ops)
+                uint64_t OffsetInBits,
+                std::optional<unsigned> DWARFAddressSpace, DIFlags Flags,
+                ArrayRef<Metadata *> Ops)
       : DIType(C, DIDerivedTypeKind, Storage, Tag, Line, SizeInBits,
                AlignInBits, OffsetInBits, Flags, Ops),
         DWARFAddressSpace(DWARFAddressSpace) {}
   ~DIDerivedType() = default;
-
   static DIDerivedType *
   getImpl(LLVMContext &Context, unsigned Tag, StringRef Name, DIFile *File,
           unsigned Line, DIScope *Scope, DIType *BaseType, uint64_t SizeInBits,
           uint32_t AlignInBits, uint64_t OffsetInBits,
-          Optional<unsigned> DWARFAddressSpace, DIFlags Flags,
+          std::optional<unsigned> DWARFAddressSpace, DIFlags Flags,
           Metadata *ExtraData, DINodeArray Annotations, StorageType Storage,
           bool ShouldCreate = true) {
     return getImpl(Context, Tag, getCanonicalMDString(Context, Name), File,
@@ -992,7 +995,7 @@ class DIDerivedType : public DIType {
   getImpl(LLVMContext &Context, unsigned Tag, MDString *Name, Metadata *File,
           unsigned Line, Metadata *Scope, Metadata *BaseType,
           uint64_t SizeInBits, uint32_t AlignInBits, uint64_t OffsetInBits,
-          Optional<unsigned> DWARFAddressSpace, DIFlags Flags,
+          std::optional<unsigned> DWARFAddressSpace, DIFlags Flags,
           Metadata *ExtraData, Metadata *Annotations, StorageType Storage,
           bool ShouldCreate = true);
 
@@ -1009,7 +1012,7 @@ public:
       (unsigned Tag, MDString *Name, Metadata *File, unsigned Line,
        Metadata *Scope, Metadata *BaseType, uint64_t SizeInBits,
        uint32_t AlignInBits, uint64_t OffsetInBits,
-       Optional<unsigned> DWARFAddressSpace, DIFlags Flags,
+       std::optional<unsigned> DWARFAddressSpace, DIFlags Flags,
        Metadata *ExtraData = nullptr, Metadata *Annotations = nullptr),
       (Tag, Name, File, Line, Scope, BaseType, SizeInBits, AlignInBits,
        OffsetInBits, DWARFAddressSpace, Flags, ExtraData, Annotations))
@@ -1017,7 +1020,7 @@ public:
                     (unsigned Tag, StringRef Name, DIFile *File, unsigned Line,
                      DIScope *Scope, DIType *BaseType, uint64_t SizeInBits,
                      uint32_t AlignInBits, uint64_t OffsetInBits,
-                     Optional<unsigned> DWARFAddressSpace, DIFlags Flags,
+                     std::optional<unsigned> DWARFAddressSpace, DIFlags Flags,
                      Metadata *ExtraData = nullptr,
                      DINodeArray Annotations = nullptr),
                     (Tag, Name, File, Line, Scope, BaseType, SizeInBits,
@@ -1032,7 +1035,9 @@ public:
 
   /// \returns The DWARF address space of the memory pointed to or referenced by
   /// a pointer or reference type respectively.
-  Optional<unsigned> getDWARFAddressSpace() const { return DWARFAddressSpace; }
+  std::optional<unsigned> getDWARFAddressSpace() const {
+    return DWARFAddressSpace;
+  }
 
   /// Get extra data associated with this derived type.
   ///
@@ -1384,11 +1389,11 @@ public:
     LastCasFriendlinessKind = DebugAbbrev
   };
 
-  static Optional<DebugEmissionKind> getEmissionKind(StringRef Str);
+  static std::optional<DebugEmissionKind> getEmissionKind(StringRef Str);
   static Optional<CasFriendlinessKind> getCasFriendlinessKind(StringRef Str);
   static const char *emissionKindString(DebugEmissionKind EK);
   static const char *casFriendlinessString(CasFriendlinessKind CFK);
-  static Optional<DebugNameTableKind> getNameTableKind(StringRef Str);
+  static std::optional<DebugNameTableKind> getNameTableKind(StringRef Str);
   static const char *nameTableKindString(DebugNameTableKind PK);
 
 private:
@@ -1676,7 +1681,7 @@ public:
   DIFile *getFile() const { return getScope()->getFile(); }
   StringRef getFilename() const { return getScope()->getFilename(); }
   StringRef getDirectory() const { return getScope()->getDirectory(); }
-  Optional<StringRef> getSource() const { return getScope()->getSource(); }
+  std::optional<StringRef> getSource() const { return getScope()->getSource(); }
 
   /// Get the scope where this is inlined.
   ///
@@ -1742,8 +1747,8 @@ public:
   /// Returns a new DILocation with updated base discriminator \p BD. Only the
   /// base discriminator is set in the new DILocation, the other encoded values
   /// are elided.
-  /// If the discriminator cannot be encoded, the function returns None.
-  inline Optional<const DILocation *>
+  /// If the discriminator cannot be encoded, the function returns std::nullopt.
+  inline std::optional<const DILocation *>
   cloneWithBaseDiscriminator(unsigned BD) const;
 
   /// Returns the duplication factor stored in the discriminator, or 1 if no
@@ -1759,8 +1764,8 @@ public:
   /// Returns a new DILocation with duplication factor \p DF * current
   /// duplication factor encoded in the discriminator. The current duplication
   /// factor is as defined by getDuplicationFactor().
-  /// Returns None if encoding failed.
-  inline Optional<const DILocation *>
+  /// Returns std::nullopt if encoding failed.
+  inline std::optional<const DILocation *>
   cloneByMultiplyingDuplicationFactor(unsigned DF) const;
 
   /// When two instructions are combined into a single instruction we also
@@ -1819,8 +1824,8 @@ public:
   /// The return is None if the values cannot be encoded in 32 bits - for
   /// example, values for BD or DF larger than 12 bits. Otherwise, the return is
   /// the encoded value.
-  static Optional<unsigned> encodeDiscriminator(unsigned BD, unsigned DF,
-                                                unsigned CI);
+  static std::optional<unsigned> encodeDiscriminator(unsigned BD, unsigned DF,
+                                                     unsigned CI);
 
   /// Raw decoder for values in an encoded discriminator D.
   static void decodeDiscriminator(unsigned D, unsigned &BD, unsigned &DF,
@@ -2278,7 +2283,7 @@ unsigned DILocation::getCopyIdentifier() const {
   return getCopyIdentifierFromDiscriminator(getDiscriminator());
 }
 
-Optional<const DILocation *>
+std::optional<const DILocation *>
 DILocation::cloneWithBaseDiscriminator(unsigned D) const {
   unsigned BD, DF, CI;
 
@@ -2292,12 +2297,12 @@ DILocation::cloneWithBaseDiscriminator(unsigned D) const {
   decodeDiscriminator(getDiscriminator(), BD, DF, CI);
   if (D == BD)
     return this;
-  if (Optional<unsigned> Encoded = encodeDiscriminator(D, DF, CI))
+  if (std::optional<unsigned> Encoded = encodeDiscriminator(D, DF, CI))
     return cloneWithDiscriminator(*Encoded);
   return std::nullopt;
 }
 
-Optional<const DILocation *>
+std::optional<const DILocation *>
 DILocation::cloneByMultiplyingDuplicationFactor(unsigned DF) const {
   assert(!EnableFSDiscriminator && "FSDiscriminator should not call this.");
 
@@ -2307,7 +2312,7 @@ DILocation::cloneByMultiplyingDuplicationFactor(unsigned DF) const {
 
   unsigned BD = getBaseDiscriminator();
   unsigned CI = getCopyIdentifier();
-  if (Optional<unsigned> D = encodeDiscriminator(BD, DF, CI))
+  if (std::optional<unsigned> D = encodeDiscriminator(BD, DF, CI))
     return cloneWithDiscriminator(*D);
   return std::nullopt;
 }
@@ -2564,11 +2569,11 @@ public:
   uint32_t getAlignInBits() const { return AlignInBits; }
   uint32_t getAlignInBytes() const { return getAlignInBits() / CHAR_BIT; }
   /// Determines the size of the variable's type.
-  Optional<uint64_t> getSizeInBits() const;
+  std::optional<uint64_t> getSizeInBits() const;
 
-  /// Return the signedness of this variable's type, or None if this type is
-  /// neither signed nor unsigned.
-  Optional<DIBasicType::Signedness> getSignedness() const {
+  /// Return the signedness of this variable's type, or std::nullopt if this
+  /// type is neither signed nor unsigned.
+  std::optional<DIBasicType::Signedness> getSignedness() const {
     if (auto *BT = dyn_cast<DIBasicType>(getType()))
       return BT->getSignedness();
     return std::nullopt;
@@ -2586,7 +2591,7 @@ public:
     return "";
   }
 
-  Optional<StringRef> getSource() const {
+  std::optional<StringRef> getSource() const {
     if (auto *F = getFile())
       return F->getSource();
     return std::nullopt;
@@ -2648,7 +2653,7 @@ public:
   enum SignedOrUnsignedConstant { SignedConstant, UnsignedConstant };
   /// Determine whether this represents a constant value, if so
   // return it's sign information.
-  llvm::Optional<SignedOrUnsignedConstant> isConstant() const;
+  std::optional<SignedOrUnsignedConstant> isConstant() const;
 
   /// Return the number of unique location operands referred to (via
   /// DW_OP_LLVM_arg) in this expression; this is not necessarily the number of
@@ -2780,11 +2785,11 @@ public:
   };
 
   /// Retrieve the details of this fragment expression.
-  static Optional<FragmentInfo> getFragmentInfo(expr_op_iterator Start,
-                                                expr_op_iterator End);
+  static std::optional<FragmentInfo> getFragmentInfo(expr_op_iterator Start,
+                                                     expr_op_iterator End);
 
   /// Retrieve the details of this fragment expression.
-  Optional<FragmentInfo> getFragmentInfo() const {
+  std::optional<FragmentInfo> getFragmentInfo() const {
     return getFragmentInfo(expr_op_begin(), expr_op_end());
   }
 
@@ -2877,7 +2882,7 @@ public:
   /// \return             Creating a fragment expression may fail if \c Expr
   ///                     contains arithmetic operations that would be
   ///                     truncated.
-  static Optional<DIExpression *>
+  static std::optional<DIExpression *>
   createFragmentExpression(const DIExpression *Expr, unsigned OffsetInBits,
                            unsigned SizeInBits);
 
@@ -3679,7 +3684,7 @@ class DebugVariable {
   using FragmentInfo = DIExpression::FragmentInfo;
 
   const DILocalVariable *Variable;
-  Optional<FragmentInfo> Fragment;
+  std::optional<FragmentInfo> Fragment;
   const DILocation *InlinedAt;
 
   /// Fragment that will overlap all other fragments. Used as default when
@@ -3689,7 +3694,8 @@ class DebugVariable {
 public:
   DebugVariable(const DbgVariableIntrinsic *DII);
 
-  DebugVariable(const DILocalVariable *Var, Optional<FragmentInfo> FragmentInfo,
+  DebugVariable(const DILocalVariable *Var,
+                std::optional<FragmentInfo> FragmentInfo,
                 const DILocation *InlinedAt)
       : Variable(Var), Fragment(FragmentInfo), InlinedAt(InlinedAt) {}
 
@@ -3700,7 +3706,7 @@ public:
         InlinedAt(InlinedAt) {}
 
   const DILocalVariable *getVariable() const { return Variable; }
-  Optional<FragmentInfo> getFragment() const { return Fragment; }
+  std::optional<FragmentInfo> getFragment() const { return Fragment; }
   const DILocation *getInlinedAt() const { return InlinedAt; }
 
   FragmentInfo getFragmentOrDefault() const {
@@ -3737,7 +3743,7 @@ template <> struct DenseMapInfo<DebugVariable> {
 
   static unsigned getHashValue(const DebugVariable &D) {
     unsigned HV = 0;
-    const Optional<FragmentInfo> Fragment = D.getFragment();
+    const std::optional<FragmentInfo> Fragment = D.getFragment();
     if (Fragment)
       HV = DenseMapInfo<FragmentInfo>::getHashValue(*Fragment);
 
