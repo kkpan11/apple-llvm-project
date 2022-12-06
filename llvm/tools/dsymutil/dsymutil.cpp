@@ -211,7 +211,7 @@ getAccelTableKind(opt::InputArgList &Args) {
   if (opt::Arg *Accelerator = Args.getLastArg(OPT_accelerator)) {
     StringRef S = Accelerator->getValue();
     if (S == "None")
-      return DwarfLinkerAccelTableKind::None;
+      return DsymutilAccelTableKind::None;
     if (S == "Apple")
       return DsymutilAccelTableKind::Apple;
     if (S == "Dwarf")
