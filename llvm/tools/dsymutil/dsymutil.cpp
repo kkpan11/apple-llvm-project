@@ -799,7 +799,7 @@ int main(int argc, char **argv) {
           break;
         FileOffset += stat->getSize();
         if (FileOffset > UINT32_MAX) {
-          WithColor::error() << "the univesral binary has a slice with an "
+          WithColor::error() << "the universal binary has a slice with an "
               "offset exceeds 4GB and will produce an invalid Mach-O file.";
           return EXIT_FAILURE;
         }
