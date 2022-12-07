@@ -1568,6 +1568,9 @@ unsigned SwiftExpressionParser::Parse(DiagnosticManager &diagnostic_manager,
       return 1;
     }
   } else {
+    if (m_options.GetPCMacroEnabled()) {
+      swift::performPCMacro(parsed_expr->source_file);
+    }
     swift::performPlaygroundTransform(
         parsed_expr->source_file,
         m_options.GetPlaygroundTransformHighPerformance());
