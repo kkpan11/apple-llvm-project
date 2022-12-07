@@ -13,6 +13,7 @@
 #include "clang/Tooling/DependencyScanning/DependencyScanningTool.h"
 #include "llvm/CAS/CachingOnDiskFileSystem.h"
 #include "llvm/CAS/ObjectStore.h"
+#include "llvm/Support/Errc.h"
 #include "llvm/Support/PrefixMapper.h"
 
 using namespace clang;
