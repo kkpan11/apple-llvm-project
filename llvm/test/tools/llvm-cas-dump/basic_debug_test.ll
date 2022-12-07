@@ -69,7 +69,7 @@
 ; DWARF:            version: 4
 ; DWARF:    prologue_length: 0x0000001e
 ; DWARF: 0x0000000000000000      2      0      1   0             0  is_stmt
-; DWARF: 0x0000000000000004      3      3      1   0             0  is_stmt prologue_end
+; DWARF: 0x0000000000000000      3      3      1   0             0  is_stmt prologue_end
 ; DWARF: 0x0000000000000008      3      3      1   0             0  is_stmt end_sequence
 
 ; DWARF-FORM: mc:debug_info_cu

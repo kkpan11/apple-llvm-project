@@ -206,28 +206,28 @@ static Error verifyOptions(const DsymutilOptions &Options) {
   return Error::success();
 }
 
-static Expected<DwarfLinkerAccelTableKind>
+static Expected<DsymutilAccelTableKind>
 getAccelTableKind(opt::InputArgList &Args) {
   if (opt::Arg *Accelerator = Args.getLastArg(OPT_accelerator)) {
     StringRef S = Accelerator->getValue();
     if (S == "None")
-      return DwarfLinkerAccelTableKind::None;
+      return DsymutilAccelTableKind::None;
     if (S == "Apple")
-      return DwarfLinkerAccelTableKind::Apple;
+      return DsymutilAccelTableKind::Apple;
     if (S == "Dwarf")
-      return DwarfLinkerAccelTableKind::Dwarf;
+      return DsymutilAccelTableKind::Dwarf;
     if (S == "Pub")
-      return DwarfLinkerAccelTableKind::Pub;
+      return DsymutilAccelTableKind::Pub;
     if (S == "Default")
-      return DwarfLinkerAccelTableKind::Default;
+      return DsymutilAccelTableKind::Default;
     if (S == "None")
-      return DwarfLinkerAccelTableKind::None;
+      return DsymutilAccelTableKind::None;
     return make_error<StringError>("invalid accelerator type specified: '" + S +
                                        "'. Supported values are 'Apple', "
                                        "'Dwarf', 'Pub', 'Default' and 'None'.",
                                    inconvertibleErrorCode());
   }
-  return DwarfLinkerAccelTableKind::Default;
+  return DsymutilAccelTableKind::Default;
 }
 
 static Expected<ReproducerMode> getReproducerMode(opt::InputArgList &Args) {
@@ -312,7 +312,7 @@ static Expected<DsymutilOptions> getOptions(opt::InputArgList &Args) {
     }
   }
 
-  if (Expected<DwarfLinkerAccelTableKind> AccelKind = getAccelTableKind(Args)) {
+  if (Expected<DsymutilAccelTableKind> AccelKind = getAccelTableKind(Args)) {
     Options.LinkOpts.TheAccelTableKind = *AccelKind;
   } else {
     return AccelKind.takeError();

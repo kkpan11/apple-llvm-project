@@ -341,7 +341,7 @@ static IdentifyingPassPtr overridePass(AnalysisID StandardID,
 static std::string getFSProfileFile(const TargetMachine *TM) {
   if (!FSProfileFile.empty())
     return FSProfileFile.getValue();
-  const Optional<PGOOptions> &PGOOpt = TM->getPGOOption();
+  const std::optional<PGOOptions> &PGOOpt = TM->getPGOOption();
   if (PGOOpt == std::nullopt || PGOOpt->Action != PGOOptions::SampleUse)
     return std::string();
   return PGOOpt->ProfileFile;
@@ -352,7 +352,7 @@ static std::string getFSProfileFile(const TargetMachine *TM) {
 static std::string getFSRemappingFile(const TargetMachine *TM) {
   if (!FSRemappingFile.empty())
     return FSRemappingFile.getValue();
-  const Optional<PGOOptions> &PGOOpt = TM->getPGOOption();
+  const std::optional<PGOOptions> &PGOOpt = TM->getPGOOption();
   if (PGOOpt == std::nullopt || PGOOpt->Action != PGOOptions::SampleUse)
     return std::string();
   return PGOOpt->ProfileRemappingFile;
@@ -1271,6 +1271,7 @@ void TargetPassConfig::addMachinePasses() {
 
   addPass(&StackMapLivenessID);
   addPass(&LiveDebugValuesID);
+  addPass(&MachineSanitizerBinaryMetadataID);
 
   if (TM->Options.EnableMachineOutliner && getOptLevel() != CodeGenOpt::None &&
       EnableMachineOutliner != RunOutliner::NeverOutline) {
