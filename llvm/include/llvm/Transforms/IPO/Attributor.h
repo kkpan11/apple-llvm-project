@@ -4004,7 +4004,7 @@ protected:
   /// Helper to track validity and fixpoint
   BooleanState BS;
 
-  /// An assumed simplified value. Initially, it is set to Optional::None, which
+  /// An assumed simplified value. Initially, it is set to std::nullopt, which
   /// means that the value is not clear under current assumption. If in the
   /// pessimistic state, getAssumedSimplifiedValue doesn't return this value but
   /// returns orignal associated value.
@@ -4040,7 +4040,7 @@ struct AAValueSimplify
 private:
   /// Return an assumed simplified value if a single candidate is found. If
   /// there cannot be one, return original value. If it is not clear yet, return
-  /// the Optional::NoneType.
+  /// std::nullopt.
   ///
   /// Use `Attributor::getAssumedSimplified` for value simplification.
   virtual std::optional<Value *>
@@ -4986,7 +4986,7 @@ struct AAPointerInfo : public AbstractAttribute {
   AAPointerInfo(const IRPosition &IRP) : AbstractAttribute(IRP) {}
 
   enum AccessKind {
-    // First two bits to distinguish may and must accesses
+    // First two bits to distinguish may and must accesses.
     AK_MUST = 1 << 0,
     AK_MAY = 1 << 1,
 
@@ -4994,6 +4994,11 @@ struct AAPointerInfo : public AbstractAttribute {
     AK_R = 1 << 2,
     AK_W = 1 << 3,
     AK_RW = AK_R | AK_W,
+
+    // One special case for assumptions about memory content. These
+    // are neither reads nor writes. They are however always modeled
+    // as read to avoid using them for write removal.
+    AK_ASSUMPTION = (1 << 4) | AK_MUST,
 
     // Helper for easy access.
     AK_MAY_READ = AK_MAY | AK_R,
@@ -5054,6 +5059,8 @@ struct AAPointerInfo : public AbstractAttribute {
     void verify() {
       assert(isMustAccess() + isMayAccess() == 1 &&
              "Expect must or may access, not both.");
+      assert(isAssumption() + isWrite() <= 1 &&
+             "Expect assumption access or write access, never both.");
     }
 
     /// Return the access kind.
@@ -5064,6 +5071,12 @@ struct AAPointerInfo : public AbstractAttribute {
 
     /// Return true if this is a write access.
     bool isWrite() const { return Kind & AK_W; }
+
+    /// Return true if this is a write access.
+    bool isWriteOrAssumption() const { return isWrite() || isAssumption(); }
+
+    /// Return true if this is an assumption access.
+    bool isAssumption() const { return Kind == AK_ASSUMPTION; }
 
     bool isMustAccess() const { return Kind & AK_MUST; }
     bool isMayAccess() const { return Kind & AK_MAY; }

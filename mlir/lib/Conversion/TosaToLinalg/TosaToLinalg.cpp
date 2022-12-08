@@ -1681,13 +1681,24 @@ public:
           dy = rewriter.create<arith::ExtSIOp>(loc, resultElementTy, dy);
         }
 
+        Value xScaleNExt = xScaleN;
+        Value yScaleNExt = yScaleN;
+
+        if (xScaleN.getType() != resultElementTy)
+          xScaleNExt =
+              rewriter.create<arith::ExtSIOp>(loc, resultElementTy, xScaleN);
+
+        if (yScaleN.getType() != resultElementTy)
+          yScaleNExt =
+              rewriter.create<arith::ExtSIOp>(loc, resultElementTy, yScaleN);
+
         Value topAcc, bottomAcc;
         if (imageW == 1) {
-          topAcc = rewriter.create<arith::MulIOp>(loc, y0x0, xScaleN);
-          bottomAcc = rewriter.create<arith::MulIOp>(loc, y1x0, xScaleN);
+          topAcc = rewriter.create<arith::MulIOp>(loc, y0x0, xScaleNExt);
+          bottomAcc = rewriter.create<arith::MulIOp>(loc, y1x0, xScaleNExt);
         } else {
           Value rightPart = dx;
-          Value leftPart = rewriter.create<arith::SubIOp>(loc, xScaleN, dx);
+          Value leftPart = rewriter.create<arith::SubIOp>(loc, xScaleNExt, dx);
 
           y0x0 = rewriter.create<arith::MulIOp>(loc, y0x0, leftPart);
           y0x1 = rewriter.create<arith::MulIOp>(loc, y0x1, rightPart);
@@ -1700,10 +1711,10 @@ public:
 
         Value result;
         if (imageH == 1) {
-          result = rewriter.create<arith::MulIOp>(loc, topAcc, yScaleN);
+          result = rewriter.create<arith::MulIOp>(loc, topAcc, yScaleNExt);
         } else {
           Value bottomPart = dy;
-          Value topPart = rewriter.create<arith::SubIOp>(loc, yScaleN, dy);
+          Value topPart = rewriter.create<arith::SubIOp>(loc, yScaleNExt, dy);
           topAcc = rewriter.create<arith::MulIOp>(loc, topAcc, topPart);
           bottomAcc =
               rewriter.create<arith::MulIOp>(loc, bottomAcc, bottomPart);
@@ -1928,81 +1939,6 @@ struct TileConverter : public OpConversionPattern<tosa::TileOp> {
     rewriter.replaceOpWithNewOp<tosa::ReshapeOp>(
         op, resultTy, genericOp.getResult(0),
         rewriter.getI64ArrayAttr(resultTy.getShape()));
-    return success();
-  }
-};
-
-class PadConverter : public OpRewritePattern<tosa::PadOp> {
-public:
-  using OpRewritePattern<tosa::PadOp>::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(tosa::PadOp padOp,
-                                PatternRewriter &rewriter) const final {
-    auto loc = padOp.getLoc();
-    auto input = padOp.getInput1();
-    auto padding = padOp.getPadding();
-
-    ShapedType inputTy = input.getType().cast<ShapedType>();
-    Type elementTy = inputTy.getElementType();
-    int64_t rank = inputTy.getRank();
-
-    // Setup the default constantAttr.
-
-    Value padConstant;
-
-    if (padOp.getPadConst()) {
-      padConstant = rewriter.createOrFold<tensor::ExtractOp>(
-          loc, padOp.getPadConst(), ValueRange({}));
-    } else {
-      Attribute constantAttr;
-      if (elementTy.isa<FloatType>()) {
-        constantAttr = rewriter.getFloatAttr(elementTy, 0.0);
-      } else if (elementTy.isa<IntegerType>() && !padOp.getQuantizationInfo()) {
-        constantAttr = rewriter.getIntegerAttr(elementTy, 0);
-      } else if (elementTy.isa<IntegerType>() && padOp.getQuantizationInfo()) {
-        int64_t value = padOp.getQuantizationInfo()->getInputZp();
-        constantAttr = rewriter.getIntegerAttr(elementTy, value);
-      }
-      if (constantAttr)
-        padConstant = rewriter.create<arith::ConstantOp>(loc, constantAttr);
-    }
-
-    if (!padConstant) {
-      return rewriter.notifyMatchFailure(
-          padOp, "tosa.pad was unable to determine the pad constant value.");
-    }
-
-    Value lowIndex =
-        rewriter.create<arith::ConstantOp>(loc, rewriter.getIndexAttr(0));
-    Value highIndex =
-        rewriter.create<arith::ConstantOp>(loc, rewriter.getIndexAttr(1));
-
-    SmallVector<OpFoldResult, 3> lowValues;
-    SmallVector<OpFoldResult, 3> highValues;
-
-    lowValues.reserve(rank);
-    highValues.reserve(rank);
-
-    for (int i = 0; i < rank; i++) {
-      Value inputIndex = rewriter.createOrFold<arith::ConstantIndexOp>(loc, i);
-      Value lowVal = rewriter.createOrFold<tensor::ExtractOp>(
-          loc, padding, ValueRange({inputIndex, lowIndex}));
-      Value highVal = rewriter.createOrFold<tensor::ExtractOp>(
-          loc, padding, ValueRange({inputIndex, highIndex}));
-
-      lowVal = rewriter.createOrFold<arith::IndexCastOp>(
-          loc, rewriter.getIndexType(), lowVal);
-      highVal = rewriter.createOrFold<arith::IndexCastOp>(
-          loc, rewriter.getIndexType(), highVal);
-
-      lowValues.push_back(lowVal);
-      highValues.push_back(highVal);
-    }
-
-    auto newPadOp = rewriter.create<tensor::PadOp>(
-        loc, padOp.getType(), input, lowValues, highValues, padConstant);
-
-    rewriter.replaceOp(padOp, newPadOp.getResult());
     return success();
   }
 };
@@ -2375,7 +2311,6 @@ void mlir::tosa::populateTosaToLinalgConversionPatterns(
       ArgMaxConverter,
       ConcatConverter,
       GatherConverter,
-      PadConverter,
       ReshapeConverterCollapse,
       ReshapeConverterExpand,
       ReshapeConverterCollapseExpand,

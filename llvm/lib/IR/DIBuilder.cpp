@@ -157,7 +157,7 @@ DICompileUnit *DIBuilder::createCompileUnit(
     StringRef SysRoot, StringRef SDK,
     DICompileUnit::CasFriendlinessKind CasFriendliness) {
 
-  assert(((Lang <= dwarf::DW_LANG_Fortran08 && Lang >= dwarf::DW_LANG_C89) ||
+  assert(((Lang <= dwarf::DW_LANG_Ada2012 && Lang >= dwarf::DW_LANG_C89) ||
           (Lang <= dwarf::DW_LANG_hi_user && Lang >= dwarf::DW_LANG_lo_user)) &&
          "Invalid Language tag");
 
