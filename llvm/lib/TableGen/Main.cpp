@@ -93,7 +93,7 @@ static SmallVectorImpl<char> *CapturedDepend = nullptr;
 static std::string *CapturedOutput = nullptr;
 
 static Error
-createDependencyFileImpl(function_ref<void(raw_ostream &OS)> Write) {
+createDependencyFileImpl(function_ref<Error(raw_ostream &OS)> Write) {
   if (OutputFilename == "-")
     return createStringError(inconvertibleErrorCode(),
                              "the option -d must be used together with -o");
@@ -103,7 +103,8 @@ createDependencyFileImpl(function_ref<void(raw_ostream &OS)> Write) {
   if (EC)
     return createStringError(EC, "error opening " + DependFilename + ":" +
                                      EC.message());
-  Write(DepOut.os());
+  if (Error E = Write(DepOut.os()))
+    return E;
   DepOut.keep();
   return Error::success();
 }
@@ -116,13 +117,17 @@ static PrefixMapper *CreateDependencyFilePM = nullptr;
 /// It is similar to GCC's `-M*` family of options.
 template <class StringSetT>
 static Error createDependencyFile(const StringSetT &Dependencies) {
-  return createDependencyFileImpl([&](raw_ostream &OS) {
+  return createDependencyFileImpl([&](raw_ostream &OS) -> Error {
     OS << OutputFilename << ":";
-    for (StringRef Dep : Dependencies) {
-      OS << ' '
-         << (CreateDependencyFilePM ? CreateDependencyFilePM->map(Dep) : Dep);
+    for (StringRef DepRef : Dependencies) {
+      std::string Dep = DepRef.str();
+      if (CreateDependencyFilePM)
+        if (Error E = CreateDependencyFilePM->mapInPlace(Dep))
+          return E;
+      OS << ' ' << Dep;
     }
     OS << "\n";
+    return Error::success();
   });
 }
 
@@ -278,17 +283,19 @@ struct TableGenCache {
   Error computeResult(TableGenMainFn *MainFn);
   Error replayResult();
 
-  void createInversePrefixMap();
+  Error createInversePrefixMap();
 };
 } // end namespace
 
-void TableGenCache::createInversePrefixMap() {
+Error TableGenCache::createInversePrefixMap() {
   if (PrefixMappings.empty())
-    return;
+    return Error::success();
 
-  InversePM.emplace(Alloc);
-  InversePM->addInverseRange(PrefixMappings);
+  InversePM.emplace();
+  if (Error E = InversePM->addInverseRange(PrefixMappings))
+    return E;
   CreateDependencyFilePM = &*InversePM;
+  return Error::success();
 }
 
 Expected<cas::ObjectRef> TableGenCache::createExecutableBlob(StringRef Argv0) {
@@ -557,7 +564,8 @@ int llvm::TableGenMain(ArrayRef<const char *> Args, TableGenMainFn *MainFn) {
   if (Error E =
           MappedPrefix::transformJoined(DepscanPrefixMap, Cache.PrefixMappings))
     return reportError(Args[0], std::move(E));
-  Cache.createInversePrefixMap();
+  if (Error E = Cache.createInversePrefixMap())
+    return reportError(Args[0], std::move(E));
 
   if (Error E = Cache.lookupCachedResult(Args))
     return reportError(Args[0], std::move(E));
