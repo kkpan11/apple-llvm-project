@@ -192,15 +192,22 @@ void MCDwarfLineTable::emitOne(
       EndEntryEmitted = true;
       continue;
     }
+    if (LineEntry.IsEndOfFunction) {
+      MCOS->emitInt8(char(dwarf::DW_LNS_extended_op));
+      MCOS->emitInt8(char(1));
+      MCOS->emitInt8(char(dwarf::DW_LNE_end_sequence));
+      init();
+      continue;
+    }
 
     int64_t LineDelta = static_cast<int64_t>(LineEntry.getLine()) - LastLine;
 
-    if (FileNum != LineEntry.getFileNum()) {
+    if (FileNum != LineEntry.getFileNum() || LineEntry.IsEndOfFunction) {
       FileNum = LineEntry.getFileNum();
       MCOS->emitInt8(dwarf::DW_LNS_set_file);
       MCOS->emitULEB128IntValue(FileNum);
     }
-    if (Column != LineEntry.getColumn()) {
+    if (Column != LineEntry.getColumn() || LineEntry.IsEndOfFunction) {
       Column = LineEntry.getColumn();
       MCOS->emitInt8(dwarf::DW_LNS_set_column);
       MCOS->emitULEB128IntValue(Column);
