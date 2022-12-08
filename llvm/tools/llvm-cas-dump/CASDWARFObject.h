@@ -27,24 +27,17 @@ class CASDWARFObject : public DWARFObject {
   Triple Target;
   SmallVector<uint8_t> DebugStringSection;
   SmallVector<uint8_t> DebugAbbrevSection;
-  SmallVector<size_t> DebugAbbrevOffsets;
   SmallVector<char> DebugInfoSection;
   SmallVector<StringRef> CUDataVec;
   SmallVector<uint32_t> SecOffsetVals;
   unsigned LineTableOffset = 0;
   DenseMap<cas::ObjectRef, unsigned> MapOfStringOffsets;
-  unsigned CompileUnitIndex = 0;
 
   const mccasformats::v1::MCSchema &Schema;
 
   /// Function to get the MCObjectProxy for a ObjectRef \p CASObj and pass it to
   /// discoverDwarfSections(mccasformats::v1::MCObjectProxy MCObj);
   Error discoverDwarfSections(cas::ObjectRef CASObj);
-
-  /// Function to get the MCObjectProxy for a ObjectRef \p CASObj and pass it to
-  /// discoverDebugInfoSection(mccasformats::v1::MCObjectProxy MCObj,
-  /// raw_ostream &OS);
-  Error discoverDebugInfoSection(cas::ObjectRef CASObj, raw_ostream &OS);
 
 public:
   CASDWARFObject(const mccasformats::v1::MCSchema &Schema) : Schema(Schema) {}
@@ -53,15 +46,9 @@ public:
   /// work.
   Error discoverDwarfSections(mccasformats::v1::MCObjectProxy MCObj);
 
-  /// Takes an MCObjectProxy \p MCObj and if it is a DebugInfoSectionRef, writes
-  /// its materialized contents into the \p OS.
-  Error discoverDebugInfoSection(mccasformats::v1::MCObjectProxy MCObj,
-                                 raw_ostream &OS);
-
   /// Dump MCObj as textual DWARF output.
   Error dump(raw_ostream &OS, int Indent, DWARFContext &DWARFCtx,
-             mccasformats::v1::MCObjectProxy MCObj, bool ShowForm,
-             bool Verbose);
+             mccasformats::v1::MCObjectProxy MCObj, bool Verbose);
 
   StringRef getFileName() const override { return "CAS"; }
   ArrayRef<SectionName> getSectionNames() const override { return {}; }

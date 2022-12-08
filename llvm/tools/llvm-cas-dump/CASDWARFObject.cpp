@@ -64,48 +64,6 @@ struct MachOHeaderParser {
 };
 } // namespace
 
-Error CASDWARFObject::discoverDebugInfoSection(ObjectRef CASObj,
-                                               raw_ostream &OS) {
-  if (CASObj == Schema.getRootNodeTypeID())
-    return Error::success();
-  Expected<MCObjectProxy> MCObj = Schema.get(CASObj);
-  if (!MCObj)
-    return MCObj.takeError();
-  return discoverDebugInfoSection(*MCObj, OS);
-}
-
-Error CASDWARFObject::discoverDebugInfoSection(MCObjectProxy MCObj,
-                                               raw_ostream &OS) {
-  if (auto DbgInfoSecRef = DebugInfoSectionRef::Cast(MCObj)) {
-    raw_svector_ostream OS(DebugInfoSection);
-    MCCASReader Reader(OS, Target, MCObj.getSchema());
-    auto Written = DbgInfoSecRef->materialize(
-        Reader, arrayRefFromStringRef<char>(getAbbrevSection()),
-        getSecOffsetVals(), getMapOfStringOffsets(), &OS);
-    if (!Written)
-      return Written.takeError();
-
-    StringRef DebugInfoStringRef = toStringRef(DebugInfoSection);
-    BinaryStreamReader BinaryReader(DebugInfoStringRef,
-                                    IsLittleEndian ? support::endianness::little
-                                                   : support::endianness::big);
-    while (!BinaryReader.empty()) {
-      uint64_t SectionStartOffset = BinaryReader.getOffset();
-      Expected<size_t> Size =
-          mccasformats::v1::getSizeFromDwarfHeaderAndSkip(BinaryReader);
-      if (!Size)
-        return Size.takeError();
-      StringRef CUData = DebugInfoStringRef.substr(
-          SectionStartOffset, BinaryReader.getOffset() - SectionStartOffset);
-      CUDataVec.push_back(CUData);
-    }
-
-    return Error::success();
-  }
-  return MCObj.forEachReference(
-      [&](ObjectRef CASObj) { return discoverDebugInfoSection(CASObj, OS); });
-}
-
 Error CASDWARFObject::discoverDwarfSections(ObjectRef CASObj) {
   if (CASObj == Schema.getRootNodeTypeID())
     return Error::success();
@@ -133,14 +91,6 @@ Error CASDWARFObject::discoverDwarfSections(MCObjectProxy MCObj) {
       return Err;
     Is64Bit = P.Is64Bit;
     IsLittleEndian = P.IsLittleEndian;
-  } else if (auto OffsetsRef = DebugAbbrevOffsetsRef::Cast(MCObj)) {
-    DebugAbbrevOffsetsRefAdaptor Adaptor(*OffsetsRef);
-    Expected<SmallVector<size_t>> DecodedOffsets = Adaptor.decodeOffsets();
-    if (!DecodedOffsets)
-      return DecodedOffsets.takeError();
-    DebugAbbrevOffsets = std::move(*DecodedOffsets);
-    // Reverse so that we can pop_back when assigning these to CURefs.
-    std::reverse(DebugAbbrevOffsets.begin(), DebugAbbrevOffsets.end());
   } else if (auto LineRef = DebugLineRef::Cast(MCObj)) {
     SecOffsetVals.push_back(LineTableOffset);
     LineTableOffset += LineRef->getData().size();
@@ -151,8 +101,7 @@ Error CASDWARFObject::discoverDwarfSections(MCObjectProxy MCObj) {
     MapOfStringOffsets.try_emplace(MCObj.getRef(), DebugStringSection.size());
     DebugStringSection.append(Data.begin(), Data.end());
     DebugStringSection.push_back(0);
-  } else if (DebugInfoCURef::Cast(MCObj))
-    return Error::success();
+  }
   if (DebugAbbrevSectionRef::Cast(MCObj) || GroupRef::Cast(MCObj) ||
       SymbolTableRef::Cast(MCObj) || SectionRef::Cast(MCObj) ||
       DebugLineSectionRef::Cast(MCObj) || AtomRef::Cast(MCObj)) {
@@ -170,11 +119,10 @@ Error CASDWARFObject::discoverDwarfSections(MCObjectProxy MCObj) {
 }
 
 Error CASDWARFObject::dump(raw_ostream &OS, int Indent, DWARFContext &DWARFCtx,
-                           MCObjectProxy MCObj, bool ShowForm, bool Verbose) {
+                           MCObjectProxy MCObj, bool Verbose) {
   OS.indent(Indent);
   DIDumpOptions DumpOpts;
   DumpOpts.ShowChildren = true;
-  DumpOpts.ShowForm = ShowForm;
   DumpOpts.Verbose = Verbose;
   StringRef Data = MCObj.getData();
   if (Data.empty())
@@ -210,26 +158,6 @@ Error CASDWARFObject::dump(raw_ostream &OS, int Indent, DWARFContext &DWARFCtx,
       Parser.parseNext(DumpOpts.WarningHandler, DumpOpts.WarningHandler, &OS,
                        DumpOpts.Verbose);
     }
-  } else if (DebugInfoCURef::Cast(MCObj)) {
-    // Dump __debug_info data.
-    DWARFUnitVector UV;
-    uint64_t Address = 0;
-    DWARFSection Section = {CUDataVec[CompileUnitIndex++], Address};
-    DWARFUnitHeader Header;
-    DWARFDebugAbbrev Abbrev;
-
-    Abbrev.extract(
-        DataExtractor(getAbbrevSection(), isLittleEndian(), getAddressSize()));
-    uint64_t offset_ptr = 0;
-    Header.extract(
-        DWARFCtx,
-        DWARFDataExtractor(*this, Section, isLittleEndian(), getAddressSize()),
-        &offset_ptr, DWARFSectionKind::DW_SECT_INFO);
-    DWARFCompileUnit U(DWARFCtx, Section, Header, &Abbrev, &getRangesSection(),
-                       &getLocSection(), getStrSection(),
-                       getStrOffsetsSection(), &getAddrSection(),
-                       getLocSection(), isLittleEndian(), false, UV);
-    U.dump(OS, DumpOpts);
   }
   return Error::success();
 }

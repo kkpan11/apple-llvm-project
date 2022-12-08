@@ -1,16 +1,14 @@
 ;RUN: llc -O0 --filetype=obj --cas-backend  --cas=%t/cas  --mccas-casid %s -o %t/test.id
-;RUN: llvm-cas-dump --cas=%t/cas --casid-file %t/test.id --hex-dump --hex-dump-one-line | FileCheck %s
+;RUN: llvm-cas-dump --cas=%t/cas --casid-file %t/test.id --die-refs | FileCheck %s
 
-; This file checks to see if relocation addends are zero-ed out correctly in the CAS. The offset's 30, 43, 94, and 107 should all have 8 0x00 bytes.
+; This file checks to see if relocation addends resulting from FORM_addr are
+; zeroed out
 
-;CHECK: mc:debug_info_cu llvmcas://{{[0-9a-z]+}}
-;CHECK-NEXT: 0x00 0x00 0x00 0x00
-;CHECK-SAME: 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00
-;CHECK-SAME: 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00
-;CHECK: mc:debug_info_cu llvmcas://{{[0-9a-z]+}}
-;CHECK-NEXT: 0x00 0x00 0x00 0x00
-;CHECK-SAME: 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00
-;CHECK-SAME: 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00
+; CHECK-NOT: FORM_addr
+; CHECK:  DW_FORM_addr               [dedups]   [0 0 0 0 0 0 0 0]
+; CHECK:  DW_FORM_addr               [dedups]   [0 0 0 0 0 0 0 0]
+; CHECK:  DW_FORM_addr               [dedups]   [0 0 0 0 0 0 0 0]
+; CHECK-NOT: FORM_addr
 
 target triple = "arm64-apple-macosx12.0.0"
 
@@ -22,7 +20,7 @@ define void @bar(i32 noundef %x) #0 !dbg !17 {
 }
 !llvm.dbg.cu = !{!0}
 !llvm.module.flags = !{!2, !3, !7}
-!0 = distinct !DICompileUnit(language: DW_LANG_C99, file: !1, producer: "clang version 16.0.0 (https://github.com/apple/llvm-project.git 4a36109b6b7cbe6f88be348fc0073875b19636ed)", emissionKind: FullDebug, casFriendly: DebugAbbrev)
+!0 = distinct !DICompileUnit(language: DW_LANG_C99, file: !1, producer: "clang version 16.0.0 (https://github.com/apple/llvm-project.git 4a36109b6b7cbe6f88be348fc0073875b19636ed)", emissionKind: FullDebug)
 !1 = !DIFile(filename: "c.c", directory: "/Users/shubham/Development/testclang")
 !2 = !{i32 7, !"Dwarf Version", i32 4}
 !3 = !{i32 2, !"Debug Info Version", i32 3}

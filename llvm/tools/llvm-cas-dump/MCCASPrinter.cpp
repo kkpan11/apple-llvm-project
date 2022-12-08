@@ -57,8 +57,6 @@ MCCASPrinter::discoverDwarfSections(cas::ObjectRef CASObj) {
   if (Options.DwarfDump) {
     if (Error E = DWARFObj.discoverDwarfSections(*MCObj))
       return std::move(E);
-    if (Error E = DWARFObj.discoverDebugInfoSection(*MCObj, OS))
-      return std::move(E);
   }
   return DWARFObj;
 }
@@ -117,22 +115,10 @@ Error MCCASPrinter::printMCObject(MCObjectProxy MCObj, CASDWARFObject &Obj,
   // Dwarfdump.
   if (DWARFCtx) {
     IndentGuard Guard(Indent);
-    if (Error Err = Obj.dump(OS, Indent, *DWARFCtx, MCObj, Options.ShowForm,
-                             Options.Verbose))
+    if (Error Err = Obj.dump(OS, Indent, *DWARFCtx, MCObj, Options.Verbose))
       return Err;
   }
   return printSimpleNested(MCObj, Obj, DWARFCtx);
-}
-
-static Error printAbbrevOffsets(raw_ostream &OS,
-                                DebugAbbrevOffsetsRef OffsetsRef) {
-  DebugAbbrevOffsetsRefAdaptor Adaptor(OffsetsRef);
-  Expected<SmallVector<size_t>> Offsets = Adaptor.decodeOffsets();
-  if (!Offsets)
-    return Offsets.takeError();
-  llvm::interleaveComma(*Offsets, OS);
-  OS << "\n";
-  return Error::success();
 }
 
 Error printDIE(DIETopLevelRef TopRef, raw_ostream &OS, int Indent) {
@@ -169,16 +155,10 @@ Error MCCASPrinter::printSimpleNested(MCObjectProxy Ref, CASDWARFObject &Obj,
                                       DWARFContext *DWARFCtx) {
   IndentGuard Guard(Indent);
 
-  if (auto AbbrevOffsetsRef = DebugAbbrevOffsetsRef::Cast(Ref);
-      Options.DebugAbbrevOffsets && AbbrevOffsetsRef)
-    if (auto E = printAbbrevOffsets(OS, *AbbrevOffsetsRef))
-      return E;
-
   auto Data = Ref.getData();
   if (DebugAbbrevSectionRef::Cast(Ref) || GroupRef::Cast(Ref) ||
       SymbolTableRef::Cast(Ref) || SectionRef::Cast(Ref) ||
-      DebugLineSectionRef::Cast(Ref) || AtomRef::Cast(Ref) ||
-      DebugInfoCURef::Cast(Ref)) {
+      DebugLineSectionRef::Cast(Ref) || AtomRef::Cast(Ref)) {
     auto Refs = MCObjectProxy::decodeReferences(Ref, Data);
     if (!Refs)
       return Refs.takeError();

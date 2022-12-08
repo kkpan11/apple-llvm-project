@@ -3,24 +3,23 @@ RUN: split-file %s %t
 
 RUN: llc -O0 --filetype=obj --cas-backend --cas=%t/cas --mccas-casid %t/a.ll -o %t/a.id
 RUN: llc -O0 --filetype=obj --cas-backend --cas=%t/cas --mccas-casid %t/b.ll -o %t/b.id
-RUN: llvm-cas-dump --cas=%t/cas --casid-file %t/a.id %t/b.id | FileCheck %s
+RUN: llvm-cas-dump --die-refs --cas=%t/cas --casid-file %t/a.id %t/b.id | FileCheck %s
 
-CHECK: mc:debug_info_cu llvmcas://[[CUCASID:[a-z0-9]+]]
-CHECK-NEXT: mc:debug_string llvmcas://
-CHECK-NEXT: mc:debug_string llvmcas://
-CHECK-NEXT: mc:debug_info_cu llvmcas://
-CHECK-NEXT: mc:debug_string llvmcas://
-CHECK-NEXT: mc:debug_string llvmcas://
+CHECK: mc:debug_DIE_top_level
+CHECK: CAS Block: llvmcas://
+CHECK-NEXT: DW_TAG_compile_unit
+CHECK: CAS Block: llvmcas://[[SUBPROGRAM_FOO:[a-z0-9]+]]
+CHECK-NEXT: DW_TAG_subprogram
 CHECK: mc:debug_line   llvmcas://[[LINETABLECASID:[a-z0-9]+]]
 CHECK-NEXT: mc:debug_line   llvmcas://
 
-CHECK: mc:debug_info_cu llvmcas://
-CHECK-NEXT: mc:debug_string llvmcas://
-CHECK-NEXT: mc:debug_string llvmcas://
-CHECK-NEXT: mc:debug_info_cu llvmcas://[[CUCASID]]
-CHECK-NEXT: mc:debug_string llvmcas://
-CHECK-NEXT: mc:debug_string llvmcas://
-CHECK-NEXT: mc:debug_info_cu llvmcas://
+
+CHECK: mc:assembler
+CHECK: mc:debug_DIE_top_level
+CHECK: mc:debug_DIE_top_level
+CHECK: DW_TAG_compile_unit
+CHECK: CAS Block: llvmcas://[[SUBPROGRAM_FOO]]
+CHECK-NEXT: DW_TAG_subprogram
 CHECK: mc:debug_line   llvmcas:// 
 CHECK-NEXT: mc:debug_line   llvmcas://[[LINETABLECASID]]
 CHECK-NEXT: mc:debug_line   llvmcas:// 

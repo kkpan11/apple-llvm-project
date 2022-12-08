@@ -410,68 +410,11 @@ private:
   MCAssemblerRef(SpecificRefT Ref) : SpecificRefT(Ref) {}
 };
 
-class DebugInfoCURef : public SpecificRef<DebugInfoCURef> {
-  using SpecificRefT = SpecificRef<DebugInfoCURef>;
-  friend class SpecificRef<DebugInfoCURef>;
-
-public:
-  static constexpr StringLiteral KindString = "mc:debug_info_cu";
-  static Expected<DebugInfoCURef> create(MCCASBuilder &MB, StringRef Data,
-                                         ArrayRef<cas::ObjectRef> Refs);
-  static Expected<DebugInfoCURef> get(Expected<MCObjectProxy> Ref);
-  static Expected<DebugInfoCURef> get(const MCSchema &Schema,
-                                      cas::ObjectRef ID) {
-    return get(Schema.get(ID));
-  }
-  static Optional<DebugInfoCURef> Cast(MCObjectProxy Ref) {
-    auto Specific = SpecificRefT::Cast(Ref);
-    if (!Specific)
-      return None;
-    return DebugInfoCURef(*Specific);
-  }
-  Expected<uint64_t> materialize(raw_ostream &OS) const {
-    OS << getData();
-    return getData().size();
-  }
-
-private:
-  explicit DebugInfoCURef(SpecificRefT Ref) : SpecificRefT(Ref) {}
-};
-
 struct DwarfSectionsCache {
   MCSection *DebugInfo;
   MCSection *Line;
   MCSection *Str;
   MCSection *Abbrev;
-};
-/// This struct represents the result of properly converting all the information
-/// in the debug info section into cas objects. CURefs are the cas objects for
-/// the compile units, AbbrevRefs are the cas objects for their abbreviation
-/// contributions, AbbrevOffsetsRef is a cas object that contains the
-/// abbreviation offset for every compile unit, and DebugDistinctDataRef is a
-/// cas object contains the information from every compile unit that will not
-/// deduplicate.
-struct AbbrevAndDebugSplit {
-  SmallVector<DebugInfoCURef> CURefs;
-  SmallVector<DebugAbbrevRef> AbbrevRefs;
-  Optional<DebugAbbrevOffsetsRef> AbbrevOffsetsRef;
-  Optional<DebugInfoDistinctDataRef> DebugDistinctDataRef;
-};
-
-/// Helper class to allow reusing the logic of encoding/decoding Abbreviation
-/// Offsets.
-struct DebugAbbrevOffsetsRefAdaptor {
-  DebugAbbrevOffsetsRefAdaptor(DebugAbbrevOffsetsRef Ref) : Ref(Ref) {}
-
-  /// Decode the offsets inside the CAS object and return them.
-  Expected<SmallVector<size_t>> decodeOffsets();
-
-  /// Encode the `Offsets` vector into data suitable for creating a
-  /// DebugAbbrevRef.
-  static SmallVector<char> encodeOffsets(ArrayRef<size_t> Offsets);
-
-private:
-  DebugAbbrevOffsetsRef Ref;
 };
 
 /// Queries `Asm` for all dwarf sections and returns an object with (possibly
@@ -558,18 +501,15 @@ private:
   /// A pair of vectors with the CAS objects is returned.
   /// The CAS objects appear in the same order as in the object file.
   /// If the section doesn't exist, an empty container is returned.
-  Expected<AbbrevAndDebugSplit> splitDebugInfoAndAbbrevSections(
-      DenseMap<unsigned, cas::ObjectRef> &MapOfStringRefs);
+  Error splitDebugInfoAndAbbrevSections();
 
   /// If CURefs is non-empty, create a SectionRef CAS object with edges to all
   /// CURefs. Otherwise, no objects are created and `success` is returned.
-  Error createDebugInfoSection(ArrayRef<DebugInfoCURef> CURefs,
-                               DebugAbbrevOffsetsRef AbbrevOffsetsRef,
-                               DebugInfoDistinctDataRef DebugDistinctDataRef);
+  Error createDebugInfoSection();
 
   /// If AbbrevRefs is non-empty, create a SectionRef CAS object with edges to all
   /// AbbrevRefs. Otherwise, no objects are created and `success` is returned.
-  Error createDebugAbbrevSection(ArrayRef<DebugAbbrevRef> AbbrevRefs);
+  Error createDebugAbbrevSection();
 
   /// Split the Dwarf Abbrev section using `AbbrevOffsets` (possibly unsorted)
   /// as the split points for the section, creating one DebugAbbrevRef per
