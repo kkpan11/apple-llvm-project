@@ -382,6 +382,27 @@ inline unsigned getFieldMemSizesIndex(unsigned fid) {
   return fid - dataFieldIdx;
 }
 
+template <bool>
+struct SparseTensorValueArrayRef;
+
+// Uses ValueRange for immuatable descriptors; uses SmallVectorImpl<Value> &
+// for mutable descriptors.
+template <>
+struct SparseTensorValueArrayRef<false> {
+  using ValueArray = ValueRange;
+};
+
+// Using SmallVector for mutable descriptor allows users to reuse it as a tmp
+// buffers to append value for some special cases, though users should be
+// responsible to restore the buffer to legal states after their use. It is
+// probably not a clean way, but it is the most efficient way to avoid copying
+// the fields into another SmallVector. If a more clear way is wanted, we
+// should change it to MutableArrayRef instead.
+template <>
+struct SparseTensorValueArrayRef<true> {
+  using ValueArray = SmallVectorImpl<Value> &;
+};
+
 /// A helper class around an array of values that corresponding to a sparse
 /// tensor, provides a set of meaningful APIs to query and update a particular
 /// field in a consistent way.
@@ -390,28 +411,7 @@ inline unsigned getFieldMemSizesIndex(unsigned fid) {
 template <bool mut>
 class SparseTensorDescriptorImpl {
 private:
-  template <bool>
-  struct ArrayStorage;
-
-  template <>
-  struct ArrayStorage<false> {
-    using ValueArray = ValueRange;
-  };
-
-  template <>
-  struct ArrayStorage<true> {
-    using ValueArray = SmallVectorImpl<Value> &;
-  };
-
-  // Uses ValueRange for immuatable descriptors; uses SmallVectorImpl<Value> &
-  // for mutable descriptors.
-  // Using SmallVector for mutable descriptor allows users to reuse it as a tmp
-  // buffers to append value for some special cases, though users should be
-  // responsible to restore the buffer to legal states after their use. It is
-  // probably not a clean way, but it is the most efficient way to avoid copying
-  // the fields into another SmallVector. If a more clear way is wanted, we
-  // should change it to MutableArrayRef instead.
-  using Storage = typename ArrayStorage<mut>::ValueArray;
+  using Storage = typename SparseTensorValueArrayRef<mut>::ValueArray;
 
 public:
   SparseTensorDescriptorImpl(Type tp, Storage fields)

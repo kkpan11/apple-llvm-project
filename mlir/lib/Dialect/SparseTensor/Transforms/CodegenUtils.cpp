@@ -172,6 +172,7 @@ void sparse_tensor::foreachFieldAndTypeInSparseTensor(
         case SparseTensorFieldKind::ValMemRef:
           return callback(valMemType, fieldIdx, fieldKind, dim, dlt);
         };
+        llvm_unreachable("unrecognized field kind");
       });
 }
 
