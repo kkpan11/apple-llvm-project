@@ -7,8 +7,7 @@
 // implementation will be chosen at link time. we want to ensure that the
 // profiling data does not contain a reference to the discarded section.
 
-// UNSUPPORTED: windows
-
+// REQUIRES: linux
 // RUN: mkdir -p %t.d
 // RUN: %clangxx_pgogen -O2 -fPIC -ffunction-sections -fdata-sections -c %s -o %t.d/a1.o -DOBJECT_1 -mllvm -disable-preinline
 // RUN: %clangxx_pgogen -O2 -fPIC -ffunction-sections -fdata-sections -c %s -o %t.d/a2.o

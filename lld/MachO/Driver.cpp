@@ -1109,6 +1109,15 @@ static bool supportsNoPie() {
            config->arch() == AK_arm64_32);
 }
 
+static bool shouldAdhocSignByDefault(Architecture arch, PlatformType platform) {
+  if (arch != AK_arm64 && arch != AK_arm64e)
+    return false;
+
+  return platform == PLATFORM_MACOS || platform == PLATFORM_IOSSIMULATOR ||
+         platform == PLATFORM_TVOSSIMULATOR ||
+         platform == PLATFORM_WATCHOSSIMULATOR;
+}
+
 static bool dataConstDefault(const InputArgList &args) {
   static const std::array<std::pair<PlatformType, VersionTuple>, 5> minVersion =
       {{{PLATFORM_MACOS, VersionTuple(10, 15)},
@@ -2199,8 +2208,7 @@ static bool link(InputArgList &args, bool canExitEarly, raw_ostream &stdoutOS,
 
   config->adhocCodesign = args.hasFlag(
       OPT_adhoc_codesign, OPT_no_adhoc_codesign,
-      (config->arch() == AK_arm64 || config->arch() == AK_arm64e) &&
-          config->platform() == PLATFORM_MACOS);
+      shouldAdhocSignByDefault(config->arch(), config->platform()));
 
   if (args.hasArg(OPT_v)) {
     message(getLLDVersion(), lld::errs());
