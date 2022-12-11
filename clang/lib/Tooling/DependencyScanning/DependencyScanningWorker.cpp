@@ -772,7 +772,7 @@ void DependencyScanningWorker::computeDependenciesFromCompilerInvocation(
       /*OptimizeArgs=*/false, /*DisableFree=*/false, EagerLoadModules,
       /*EmitDependencyFile=*/!DepFile.empty(), DiagGenerationAsCompilation,
       getCASOpts(), RemapPath, OverrideCASTokenCache,
-      /*ModuleName=*/None, VerboseOS);
+      /*ModuleName=*/std::nullopt, VerboseOS);
 
   // Ignore result; we're just collecting dependencies.
   //

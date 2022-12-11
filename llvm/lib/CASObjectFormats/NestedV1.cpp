@@ -246,7 +246,7 @@ Error ObjectFileSchema::fillCache() {
   Optional<cas::ObjectRef> RootKindID;
   const unsigned Version = 0; // Bump this to error on old object files.
   if (Expected<cas::ObjectProxy> ExpectedRootKind = CAS.createProxy(
-          None, "cas.o:nestedv1:schema:" + Twine(Version).str()))
+          std::nullopt, "cas.o:nestedv1:schema:" + Twine(Version).str()))
     RootKindID = ExpectedRootKind->getRef();
   else
     return ExpectedRootKind.takeError();
@@ -282,13 +282,13 @@ ObjectFileSchema::getKindString(const cas::ObjectProxy &Node) const {
   assert(&Node.getCAS() == &CAS);
   StringRef Data = Node.getData();
   if (Data.empty())
-    return None;
+    return std::nullopt;
 
   unsigned char ID = Data[0];
   for (auto &I : KindStrings)
     if (I.first == ID)
       return I.second;
-  return None;
+  return std::nullopt;
 }
 
 bool ObjectFileSchema::isRootNode(const cas::ObjectProxy &Node) const {
@@ -348,7 +348,7 @@ ObjectFileSchema::getKindStringID(StringRef KindString) const {
   for (auto &I : KindStrings)
     if (I.second == KindString)
       return I.first;
-  return None;
+  return std::nullopt;
 }
 
 Expected<ObjectFormatObjectProxy>
@@ -497,7 +497,8 @@ Expected<BlockDataRef>
 BlockDataRef::createZeroFill(const ObjectFileSchema &Schema, uint64_t Size,
                              uint64_t Alignment, uint64_t AlignmentOffset,
                              ArrayRef<Fixup> Fixups) {
-  return createImpl(Schema, None, Size, Alignment, AlignmentOffset, Fixups);
+  return createImpl(Schema, std::nullopt, Size, Alignment, AlignmentOffset,
+                    Fixups);
 }
 
 Expected<BlockDataRef>
@@ -561,7 +562,7 @@ SymbolDefinitionRef::get(Expected<ObjectFormatObjectProxy> Ref,
                          .Case(SymbolRef::KindString, Alias)
                          .Case(NameRef::KindString, IndirectAlias)
                          .Case(BlockRef::KindString, Block)
-                         .Default(None);
+                         .Default(std::nullopt);
   if (!K)
     return createStringError(inconvertibleErrorCode(),
                              "invalid object kind '" + Ref->getKindString() +
@@ -1341,7 +1342,7 @@ Expected<Optional<SymbolRef>> SymbolTableRef::lookupSymbol(NameRef Name) const {
     else
       F = I + 1;
   }
-  return None;
+  return std::nullopt;
 }
 
 Expected<SymbolTableRef>
@@ -1661,7 +1662,7 @@ CompileUnitBuilder::getOrCreateTarget(const jitlink::Symbol &S,
   // Use an abstract target for the back-edge from FDEs in __TEXT,__eh_frame.
   if (UseAbstractBackedgeForPCBeginInFDEDuringBlockIngestion &&
       isPCBeginFromFDE(S, SourceBlock))
-    return None;
+    return std::nullopt;
 
   // Mark this symbol as NOT being unreferenced.
   {
@@ -1839,7 +1840,7 @@ Error NestedV1ObjectReader::forEachSymbol(
   if (!Table)
     return Table.takeError();
   for (size_t I = 0, E = Table->getNumSymbols(); I != E; ++I) {
-    auto CASSymRef = getOrCreateCASSymbolRef(Table->getSymbol(I), None);
+    auto CASSymRef = getOrCreateCASSymbolRef(Table->getSymbol(I), std::nullopt);
     if (!CASSymRef)
       return CASSymRef.takeError();
     auto CASSym = materialize(*CASSymRef);
@@ -1893,7 +1894,7 @@ NestedV1ObjectReader::getCASSymbolRefByName(StringRef Name) const {
   std::lock_guard<sys::Mutex> Guard(SymbolsLock);
   auto SymI = SymbolsByName.find(Name);
   if (SymI == SymbolsByName.end())
-    return None;
+    return std::nullopt;
   return SymI->second;
 }
 
@@ -1901,7 +1902,7 @@ Expected<CASSymbol>
 ExternalSymbolNodeRef::materialize(const NestedV1ObjectReader &) const {
   StringRef Name = SymbolName.getName();
   CASSymbol Info{Name,  /*Offset=*/0, Linkage, jitlink::Scope::Default,
-                 false, false,        false,   None};
+                 false, false,        false,   std::nullopt};
   return Info;
 }
 
@@ -2102,7 +2103,7 @@ Error BlockNodeRef::materializeFixups(
     if (Target->getKind() == TargetRef::Symbol) {
       Expected<CASSymbolRef> ExpTarget = Reader.getOrCreateCASSymbolRef(
           SymbolRef::get(Target->getSchema(), *Target),
-          F->Kind == jitlink::Edge::KeepAlive ? ForSymbol : None);
+          F->Kind == jitlink::Edge::KeepAlive ? ForSymbol : std::nullopt);
       if (!ExpTarget)
         return ExpTarget.takeError();
       TargetRef = *ExpTarget;

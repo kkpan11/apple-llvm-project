@@ -115,7 +115,7 @@ Error BlockData::decode(uint64_t &Size, uint64_t &Alignment,
                         FixupList &Fixups) const {
   // Reset everything to start.
   Size = Alignment = AlignmentOffset = 0;
-  Content = None;
+  Content = std::nullopt;
   Fixups = FixupList("");
 
   // First byte.
@@ -160,7 +160,7 @@ Error BlockData::consumeContent(StringRef &Remaining, uint64_t Size,
 
 Optional<StringRef> BlockData::getContent() const {
   if (isZeroFill())
-    return None;
+    return std::nullopt;
 
   StringRef Remaining = Data.drop_front(AfterHeader);
   uint64_t Size = consumeSizeFatal(Remaining);

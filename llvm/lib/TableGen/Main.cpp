@@ -296,7 +296,7 @@ Expected<cas::ObjectRef> TableGenCache::createExecutableBlob(StringRef Argv0) {
   if (!Buffer)
     return errorCodeToError(Buffer.getError());
   Expected<cas::ObjectProxy> Blob =
-      CAS->createProxy(None, (**Buffer).getBuffer());
+      CAS->createProxy(std::nullopt, (**Buffer).getBuffer());
   if (!Blob)
     return Blob.takeError();
   return Blob->getRef();
@@ -348,7 +348,7 @@ TableGenCache::createCommandLineBlob(ArrayRef<const char *> Args) {
     Args = Args.drop_front();
   }
 
-  Expected<cas::ObjectProxy> Blob = CAS->createProxy(None, CommandLine);
+  Expected<cas::ObjectProxy> Blob = CAS->createProxy(std::nullopt, CommandLine);
   if (!Blob)
     return Blob.takeError();
   return Blob->getRef();
@@ -472,7 +472,7 @@ Error TableGenCache::computeResult(TableGenMainFn *MainFn) {
 
   cas::HierarchicalTreeBuilder Builder;
   auto addFile = [&](StringRef Name, StringRef Data) -> Error {
-    Expected<cas::ObjectRef> ID = CAS->storeFromString(None, Data);
+    Expected<cas::ObjectRef> ID = CAS->storeFromString(std::nullopt, Data);
     if (!ID)
       return ID.takeError();
     Builder.push(*ID, cas::TreeEntry::Regular, Name);

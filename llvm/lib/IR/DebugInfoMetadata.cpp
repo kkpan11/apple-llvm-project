@@ -13,7 +13,6 @@
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "LLVMContextImpl.h"
 #include "MetadataImpl.h"
-#include "llvm/ADT/None.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/BinaryFormat/Dwarf.h"
@@ -913,7 +912,7 @@ DICompileUnit::getCasFriendlinessKind(StringRef Str) {
       .Case("NoCasFriendlyDebugInfo", NoCasFriendlyDebugInfo)
       .Case("DebugLineOnly", DebugLineOnly)
       .Case("DebugAbbrev", DebugAbbrev)
-      .Default(None);
+      .Default(std::nullopt);
 }
 
 std::optional<DICompileUnit::DebugNameTableKind>

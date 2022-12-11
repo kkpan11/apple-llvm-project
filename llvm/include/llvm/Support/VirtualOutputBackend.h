@@ -9,7 +9,6 @@
 #ifndef LLVM_SUPPORT_VIRTUALOUTPUTBACKEND_H
 #define LLVM_SUPPORT_VIRTUALOUTPUTBACKEND_H
 
-#include "llvm/ADT/None.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/VirtualOutputConfig.h"
@@ -39,7 +38,7 @@ public:
   ///
   /// Thread-safe.
   Expected<OutputFile> createFile(const Twine &Path,
-                                  Optional<OutputConfig> Config = None);
+                                  Optional<OutputConfig> Config = std::nullopt);
 
 protected:
   /// Must be thread-safe. Virtual function has a different name than \a

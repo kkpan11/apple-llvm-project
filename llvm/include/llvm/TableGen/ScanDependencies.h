@@ -84,7 +84,7 @@ Expected<ScanIncludesResult>
 scanIncludes(cas::ObjectStore &CAS, cas::ActionCache &Cache,
              cas::ObjectRef ExecID, StringRef MainFilename,
              ArrayRef<std::string> IncludeDirs,
-             ArrayRef<MappedPrefix> PrefixMappings = None,
+             ArrayRef<MappedPrefix> PrefixMappings = std::nullopt,
              Optional<TreePathPrefixMapper> *CapturedPM = nullptr);
 
 /// Scan includes and build a CAS tree where their prefixes have been remapped

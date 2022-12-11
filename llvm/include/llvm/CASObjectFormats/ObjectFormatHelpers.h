@@ -38,8 +38,8 @@ Error writeNopForArch(Triple::ArchType Arch, raw_ostream &OS, uint64_t Count);
 Expected<StringRef>
 canonicalizeContent(Triple::ArchType Arch, StringRef Content,
                     SmallVectorImpl<char> &Storage,
-                    ArrayRef<data::Fixup> FixupsToZero = None,
-                    Optional<Align> TrailingNopsAlignment = None);
+                    ArrayRef<data::Fixup> FixupsToZero = std::nullopt,
+                    Optional<Align> TrailingNopsAlignment = std::nullopt);
 
 /// Helpers to sort jitlink::Symbols into stable ordering so the same object
 /// will always have the same symbol ordering between builds.

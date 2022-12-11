@@ -969,7 +969,8 @@ static ObjectRef ingestFile(ObjectFormatSchemaBase &Schema, StringRef InputFile,
 
   auto &CAS = Schema.CAS;
   if (JustBlobs)
-    return ExitOnErr(CAS.storeFromString(None, FileContent.getBuffer()));
+    return ExitOnErr(
+        CAS.storeFromString(std::nullopt, FileContent.getBuffer()));
 
   if (CASIDFile) {
     auto ID = ExitOnErr(readCASIDBuffer(Schema.CAS, FileContent));
@@ -1003,8 +1004,8 @@ static ObjectRef ingestFile(ObjectFormatSchemaBase &Schema, StringRef InputFile,
         ExitOnErr(sys::fs::TempFile::create(MapFile.TmpName + ".dwarf"));
     std::optional<StringRef> Redirects[] = {
         StringRef(),
-        None,
-        None,
+        std::nullopt,
+        std::nullopt,
     };
 
     DenseSet<jitlink::Block *> Seen;
@@ -1048,16 +1049,16 @@ static ObjectRef ingestFile(ObjectFormatSchemaBase &Schema, StringRef InputFile,
           MapFile.TmpName,
       };
 
-      if (sys::ExecuteAndWait(JustDsymutil, Args, None, Redirects))
+      if (sys::ExecuteAndWait(JustDsymutil, Args, std::nullopt, Redirects))
         ExitOnErr(
             createStringError(inconvertibleErrorCode(), "dsymutil failed"));
 
       // Read dsym.
       auto DwarfBuffer =
           ExitOnErr(errorOrToExpected(MemoryBuffer::getFile(DsymFile.TmpName)));
-      Builder.push(
-          ExitOnErr(CAS.storeFromString(None, DwarfBuffer->getBuffer())),
-          TreeEntry::Regular, S->getName());
+      Builder.push(ExitOnErr(CAS.storeFromString(std::nullopt,
+                                                 DwarfBuffer->getBuffer())),
+                   TreeEntry::Regular, S->getName());
     }
     ExitOnErr(MapFile.discard());
     ExitOnErr(DsymFile.discard());

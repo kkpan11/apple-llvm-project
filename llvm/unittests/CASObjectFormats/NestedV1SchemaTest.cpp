@@ -107,7 +107,7 @@ TEST(NestedV1SchemaTest, BlockData) {
   ObjectFileSchema Schema(*CAS);
   for (jitlink::Block *B : Blocks) {
     Optional<BlockDataRef> Ref =
-        expectedToOptional(BlockDataRef::create(Schema, *B, None));
+        expectedToOptional(BlockDataRef::create(Schema, *B, std::nullopt));
     ASSERT_TRUE(Ref);
     EXPECT_EQ(B->getSize(), Ref->getSize());
     EXPECT_EQ(B->getAlignment(), Ref->getAlignment());
@@ -159,7 +159,7 @@ TEST(NestedV1SchemaTest, LeafBlock) {
 
     // Independently look up block data and section.
     Optional<BlockDataRef> BlockData =
-        expectedToOptional(BlockDataRef::create(Schema, *B, None));
+        expectedToOptional(BlockDataRef::create(Schema, *B, std::nullopt));
     Optional<SectionRef> Section =
         expectedToOptional(SectionRef::create(Schema, B->getSection()));
     ASSERT_TRUE(BlockData);

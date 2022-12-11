@@ -325,7 +325,7 @@ public:
   /// mismatch; otherwise just requires that it's a valid target.
   static Expected<TargetRef> get(const ObjectFileSchema &Schema,
                                  cas::ObjectRef ID,
-                                 Optional<Kind> ExpectedKind = None);
+                                 Optional<Kind> ExpectedKind = std::nullopt);
 
   static TargetRef getIndirectSymbol(const ObjectFileSchema &Schema,
                                      NameRef Ref) {
@@ -422,10 +422,10 @@ public:
   /// mismatch; otherwise just requires that it's a valid target.
   static Expected<SymbolDefinitionRef>
   get(Expected<ObjectFormatObjectProxy> Ref,
-      Optional<Kind> ExpectedKind = None);
-  static Expected<SymbolDefinitionRef> get(const ObjectFileSchema &Schema,
-                                           cas::ObjectRef ID,
-                                           Optional<Kind> ExpectedKind = None) {
+      Optional<Kind> ExpectedKind = std::nullopt);
+  static Expected<SymbolDefinitionRef>
+  get(const ObjectFileSchema &Schema, cas::ObjectRef ID,
+      Optional<Kind> ExpectedKind = std::nullopt) {
     return get(Schema.get(ID), ExpectedKind);
   }
 
@@ -525,7 +525,8 @@ public:
 
   static Expected<BlockRef> create(const ObjectFileSchema &Schema,
                                    SectionRef Section, BlockDataRef Data) {
-    return createImpl(Schema, Section, Data, None, None, None);
+    return createImpl(Schema, Section, Data, std::nullopt, std::nullopt,
+                      std::nullopt);
   }
   static Expected<BlockRef> create(const ObjectFileSchema &Schema,
                                    SectionRef Section, BlockDataRef Data,
@@ -675,7 +676,7 @@ public:
   }
   Expected<Optional<NameRef>> getName() const {
     if (!hasName())
-      return None;
+      return std::nullopt;
     return NameRef::get(getSchema(), *getNameID());
   }
 

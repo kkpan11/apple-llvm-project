@@ -256,7 +256,7 @@ protected:
   static Optional<SpecificRef> Cast(MCObjectProxy Ref) {
     if (Ref.getKindString() == FinalT::KindString)
       return SpecificRef(Ref);
-    return None;
+    return std::nullopt;
   }
 
   SpecificRef(MCObjectProxy Ref) : MCObjectProxy(Ref) {}
@@ -277,7 +277,7 @@ protected:
     static Optional<RefName> Cast(MCObjectProxy Ref) {                         \
       auto Specific = SpecificRefT::Cast(Ref);                                 \
       if (!Specific)                                                           \
-        return None;                                                           \
+        return std::nullopt;                                                           \
       return RefName(*Specific);                                               \
     }                                                                          \
     Expected<uint64_t> materialize(raw_ostream &OS) const {                    \
@@ -310,7 +310,7 @@ protected:
     static Optional<RefName> Cast(MCObjectProxy Ref) {                         \
       auto Specific = SpecificRefT::Cast(Ref);                                 \
       if (!Specific)                                                           \
-        return None;                                                           \
+        return std::nullopt;                                                           \
       return RefName(*Specific);                                               \
     }                                                                          \
     Expected<uint64_t> materialize(MCCASReader &Reader,                        \
@@ -343,7 +343,7 @@ protected:
     static Optional<MCFragmentName##Ref> Cast(MCObjectProxy Ref) {             \
       auto Specific = SpecificRefT::Cast(Ref);                                 \
       if (!Specific)                                                           \
-        return None;                                                           \
+        return std::nullopt;                                                           \
       return MCFragmentName##Ref(*Specific);                                   \
     }                                                                          \
     Expected<uint64_t> materialize(MCCASReader &Reader,                        \
@@ -370,7 +370,7 @@ public:
   static Optional<PaddingRef> Cast(MCObjectProxy Ref) {
     auto Specific = SpecificRefT::Cast(Ref);
     if (!Specific)
-      return None;
+      return std::nullopt;
     return PaddingRef(*Specific);
   }
 
@@ -402,7 +402,7 @@ public:
   static Optional<MCAssemblerRef> Cast(MCObjectProxy Ref) {
     auto Specific = SpecificRefT::Cast(Ref);
     if (!Specific)
-      return None;
+      return std::nullopt;
     return MCAssemblerRef(*Specific);
   }
 
@@ -613,7 +613,7 @@ public:
   static Optional<DebugInfoSectionRef> Cast(MCObjectProxy Ref) {
     auto Specific = SpecificRefT::Cast(Ref);
     if (!Specific)
-      return None;
+      return std::nullopt;
     return DebugInfoSectionRef(*Specific);
   }
 
@@ -649,7 +649,7 @@ public:
   static Optional<DIEDataRef> Cast(MCObjectProxy Ref) {
     auto Specific = SpecificRefT::Cast(Ref);
     if (!Specific)
-      return None;
+      return std::nullopt;
     return DIEDataRef(*Specific);
   }
   Expected<uint64_t> materialize(MCCASReader &Reader,
