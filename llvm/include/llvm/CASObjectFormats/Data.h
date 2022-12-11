@@ -9,6 +9,7 @@
 #ifndef LLVM_CASOBJECTFORMATS_DATA_H
 #define LLVM_CASOBJECTFORMATS_DATA_H
 
+#include "llvm/ADT/None.h"
 #include "llvm/ExecutionEngine/JITLink/JITLink.h"
 #include "llvm/Support/Alignment.h"
 #include <type_traits>

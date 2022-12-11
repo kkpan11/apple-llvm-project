@@ -15,6 +15,7 @@
 #define LLVM_REMOTECACHINGSERVICE_CLIENT_H
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/None.h"
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/Error.h"

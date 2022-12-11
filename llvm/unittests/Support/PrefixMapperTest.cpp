@@ -8,6 +8,7 @@
 
 #include "llvm/Support/PrefixMapper.h"
 #include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/None.h"
 #include "llvm/Support/VirtualFileSystem.h"
 #include "llvm/Testing/Support/Error.h"
 #include "gtest/gtest.h"
