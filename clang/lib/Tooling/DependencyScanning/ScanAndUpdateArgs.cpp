@@ -22,10 +22,9 @@ using llvm::Error;
 static void updateCompilerInvocation(CompilerInvocation &Invocation,
                                      llvm::StringSaver &Saver,
                                      bool ProduceIncludeTree,
-                                     llvm::cas::CachingOnDiskFileSystem &FS,
                                      std::string RootID,
                                      StringRef CASWorkingDirectory,
-                                     llvm::TreePathPrefixMapper &Mapper) {
+                                     llvm::PrefixMapper &Mapper) {
   // "Fix" the CAS options.
   auto &FileSystemOpts = Invocation.getFileSystemOpts();
   if (ProduceIncludeTree) {
@@ -64,8 +63,8 @@ static void updateCompilerInvocation(CompilerInvocation &Invocation,
   DepscanPrefixMapping::remapInvocationPaths(Invocation, Mapper);
 }
 
-void DepscanPrefixMapping::remapInvocationPaths(
-    CompilerInvocation &Invocation, llvm::TreePathPrefixMapper &Mapper) {
+void DepscanPrefixMapping::remapInvocationPaths(CompilerInvocation &Invocation,
+                                                llvm::PrefixMapper &Mapper) {
   // If there are no mappings, we're done. Otherwise, continue and remap
   // everything.
   if (Mapper.getMappings().empty())
@@ -129,7 +128,9 @@ void DepscanPrefixMapping::remapInvocationPaths(
         if (Input.isBuffer())
           return false; // FIXME: Can this happen when parsing command-line?
 
-        Optional<StringRef> RemappedFile = Mapper.mapOrNone(Input.getFile());
+        SmallString<256> PathBuf;
+        Optional<StringRef> RemappedFile =
+            Mapper.mapOrNoneIfError(Input.getFile(), PathBuf);
         if (!RemappedFile)
           return true;
         if (RemappedFile != Input.getFile())
@@ -171,8 +172,7 @@ void DepscanPrefixMapping::remapInvocationPaths(
 }
 
 Error DepscanPrefixMapping::configurePrefixMapper(
-    const CompilerInvocation &Invocation, llvm::StringSaver &Saver,
-    llvm::TreePathPrefixMapper &Mapper) const {
+    const CompilerInvocation &Invocation, llvm::PrefixMapper &Mapper) const {
   auto isPathApplicableAsPrefix = [](StringRef Path) -> bool {
     if (Path.empty())
       return false;
@@ -189,7 +189,7 @@ Error DepscanPrefixMapping::configurePrefixMapper(
     StringRef SDK = HSOpts.Sysroot;
     if (isPathApplicableAsPrefix(SDK))
       // Need a new copy of the string since the invocation will be modified.
-      if (auto E = Mapper.add({Saver.save(SDK), *NewSDKPath}))
+      if (auto E = Mapper.add({SDK, *NewSDKPath}))
         return E;
   }
   if (NewToolchainPath) {
@@ -207,7 +207,7 @@ Error DepscanPrefixMapping::configurePrefixMapper(
     }
     if (isPathApplicableAsPrefix(Guess))
       // Need a new copy of the string since the invocation will be modified.
-      if (auto E = Mapper.add({Saver.save(Guess), *NewToolchainPath}))
+      if (auto E = Mapper.add({Guess, *NewToolchainPath}))
         return E;
   }
   if (!PrefixMap.empty()) {
@@ -242,8 +242,8 @@ Expected<llvm::cas::CASID> clang::scanAndUpdateCC1InlineWithTool(
 
   llvm::BumpPtrAllocator Alloc;
   llvm::StringSaver Saver(Alloc);
-  llvm::TreePathPrefixMapper Mapper(&FS, Alloc);
-  if (Error E = PrefixMapping.configurePrefixMapper(Invocation, Saver, Mapper))
+  llvm::TreePathPrefixMapper Mapper(&FS);
+  if (Error E = PrefixMapping.configurePrefixMapper(Invocation, Mapper))
     return std::move(E);
 
   auto ScanInvocation = std::make_shared<CompilerInvocation>(Invocation);
@@ -268,12 +268,12 @@ Expected<llvm::cas::CASID> clang::scanAndUpdateCC1InlineWithTool(
                           DiagsConsumer, VerboseOS,
                           /*DiagGenerationAsCompilation*/ true,
                           [&](const llvm::vfs::CachedDirectoryEntry &Entry) {
-                            return Mapper.map(Entry);
+                            return Mapper.mapDirEntry(Entry, Saver);
                           })
                       .moveInto(Root))
       return std::move(E);
   }
-  updateCompilerInvocation(Invocation, Saver, ProduceIncludeTree, FS,
+  updateCompilerInvocation(Invocation, Saver, ProduceIncludeTree,
                            Root->toString(), WorkingDirectory, Mapper);
   return *Root;
 }
