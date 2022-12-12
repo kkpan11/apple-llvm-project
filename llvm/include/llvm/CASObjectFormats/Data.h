@@ -9,7 +9,6 @@
 #ifndef LLVM_CASOBJECTFORMATS_DATA_H
 #define LLVM_CASOBJECTFORMATS_DATA_H
 
-#include "llvm/ADT/None.h"
 #include "llvm/ExecutionEngine/JITLink/JITLink.h"
 #include "llvm/Support/Alignment.h"
 #include <type_traits>
@@ -144,7 +143,7 @@ public:
   Optional<ArrayRef<char>> getContentArray() const {
     if (Optional<StringRef> Content = getContent())
       return makeArrayRef(Content->begin(), Content->end());
-    return None;
+    return std::nullopt;
   }
   Optional<StringRef> getContent() const;
   FixupList getFixups() const;

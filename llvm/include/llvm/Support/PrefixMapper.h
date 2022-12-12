@@ -11,7 +11,6 @@
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
-#include "llvm/ADT/None.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/Path.h"
 
@@ -81,7 +80,7 @@ public:
                                        SmallVectorImpl<char> &Storage) {
     if (Error E = map(Path, Storage)) {
       consumeError(std::move(E));
-      return None;
+      return std::nullopt;
     }
     return StringRef(Storage.begin(), Storage.size());
   }

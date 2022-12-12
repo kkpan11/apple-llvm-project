@@ -9,7 +9,6 @@
 #ifndef LLVM_CAS_LAZYMAPPEDFILEREGION_H
 #define LLVM_CAS_LAZYMAPPEDFILEREGION_H
 
-#include "llvm/ADT/None.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h"
@@ -117,7 +116,7 @@ private:
   void moveImpl(LazyMappedFileRegion &RHS) {
     Path = std::move(RHS.Path);
     FD = std::move(RHS.FD);
-    RHS.FD = None;
+    RHS.FD = std::nullopt;
 #ifdef _WIN32
     VM = RHS.VM;
     MaxSize = RHS.MaxSize;

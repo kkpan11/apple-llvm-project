@@ -51,9 +51,9 @@ TEST(MappedPrefixTest, getInverse) {
 
 TEST(MappedPrefixTest, getFromJoined) {
   auto split = MappedPrefix::getFromJoined;
-  EXPECT_EQ(None, split(""));
-  EXPECT_EQ(None, split("a"));
-  EXPECT_EQ(None, split("abc"));
+  EXPECT_EQ(std::nullopt, split(""));
+  EXPECT_EQ(std::nullopt, split("a"));
+  EXPECT_EQ(std::nullopt, split("abc"));
   EXPECT_EQ((MappedPrefix{"", ""}), split("="));
   EXPECT_EQ((MappedPrefix{"a", ""}), split("a="));
   EXPECT_EQ((MappedPrefix{"", "b"}), split("=b"));
@@ -529,7 +529,7 @@ TEST(TreePathPrefixMapperTest, map) {
     EXPECT_THAT_ERROR(State.PM.map(S, NotFoundS), Failed());
     EXPECT_EQ("", NotFoundV);
     EXPECT_EQ("", NotFoundS);
-    EXPECT_EQ(None, State.PM.mapOrNoneIfError(S, NotFoundV));
+    EXPECT_EQ(std::nullopt, State.PM.mapOrNoneIfError(S, NotFoundV));
   }
 
   for (MappedPrefix Map : State.Tests) {

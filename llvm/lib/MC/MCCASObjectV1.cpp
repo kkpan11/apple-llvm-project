@@ -107,7 +107,7 @@ struct CUInfo {
 };
 static Expected<CUInfo> getAndSetDebugAbbrevOffsetAndSkip(
     MutableArrayRef<char> CUData, support::endianness Endian,
-    Optional<uint32_t> NewOffset = None, bool SkipData = true);
+    Optional<uint32_t> NewOffset = std::nullopt, bool SkipData = true);
 Expected<cas::ObjectProxy>
 MCSchema::createFromMCAssemblerImpl(MachOCASWriter &ObjectWriter,
                                     MCAssembler &Asm, const MCAsmLayout &Layout,
@@ -148,7 +148,7 @@ Error MCSchema::fillCache() {
   Optional<cas::ObjectRef> RootKindID;
   const unsigned Version = 0; // Bump this to error on old object files.
   if (Expected<cas::ObjectProxy> ExpectedRootKind =
-          CAS.createProxy(None, "mc:v1:schema:" + Twine(Version).str()))
+          CAS.createProxy(std::nullopt, "mc:v1:schema:" + Twine(Version).str()))
     RootKindID = ExpectedRootKind->getRef();
   else
     return ExpectedRootKind.takeError();
@@ -188,13 +188,13 @@ MCSchema::getKindString(const cas::ObjectProxy &Node) const {
   assert(&Node.getCAS() == &CAS);
   StringRef Data = Node.getData();
   if (Data.empty())
-    return None;
+    return std::nullopt;
 
   unsigned char ID = Data[0];
   for (auto &I : KindStrings)
     if (I.first == ID)
       return I.second;
-  return None;
+  return std::nullopt;
 }
 
 bool MCSchema::isRootNode(const cas::ObjectProxy &Node) const {
@@ -251,7 +251,7 @@ Optional<unsigned char> MCSchema::getKindStringID(StringRef KindString) const {
   for (auto &I : KindStrings)
     if (I.second == KindString)
       return I.first;
-  return None;
+  return std::nullopt;
 }
 
 Expected<MCObjectProxy> MCObjectProxy::get(const MCSchema &Schema,

@@ -386,7 +386,7 @@ void LazyMappedFileRegion::destroyImpl() {
   if (FD) {
     sys::fs::file_t File = sys::fs::convertFDToNativeFile(*FD);
     sys::fs::closeFile(File);
-    FD = None;
+    FD = std::nullopt;
   }
 #ifdef _WIN32
   for (auto *Region : MappedRegions)

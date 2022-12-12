@@ -19,7 +19,6 @@
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/None.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -1684,7 +1683,7 @@ struct MDFieldPrinter {
   void printEmissionKind(StringRef Name, DICompileUnit::DebugEmissionKind EK);
   void printCasFriendlinessKind(
       StringRef Name, DICompileUnit::CasFriendlinessKind EK,
-      Optional<DICompileUnit::CasFriendlinessKind> Default = None);
+      Optional<DICompileUnit::CasFriendlinessKind> Default = std::nullopt);
   void printNameTableKind(StringRef Name,
                           DICompileUnit::DebugNameTableKind NTK);
 };

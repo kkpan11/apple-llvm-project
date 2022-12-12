@@ -394,7 +394,7 @@ PTHManager::PTHManager(llvm::cas::ObjectStore &CAS,
 #include "clang/Basic/LangOptions.def"
   }
 
-  SerializedLangOpts = llvm::cantFail(CAS.createProxy(None, LangBlock));
+  SerializedLangOpts = llvm::cantFail(CAS.createProxy(std::nullopt, LangBlock));
 }
 
 PTHManager::~PTHManager() = default;
@@ -420,7 +420,7 @@ void PTHHandler::initialize(PTHManager &PTHM, DiagnosticsEngine &Diags,
   if ((BufEnd - BufBeg) < (signed)(sizeof("cfe-pth") + 4 + 4) ||
       memcmp(BufBeg, "cfe-pth", sizeof("cfe-pth")) != 0) {
     Diags.Report(diag::err_invalid_pth_file) << File;
-    PTH = None;
+    PTH = std::nullopt;
     return;
   }
 
@@ -435,7 +435,7 @@ void PTHHandler::initialize(PTHManager &PTHM, DiagnosticsEngine &Diags,
         Version < PTHManager::Version
             ? "PTH file uses an older PTH format that is no longer supported"
             : "PTH file uses a newer PTH format that cannot be read");
-    PTH = None;
+    PTH = std::nullopt;
     return;
   }
 
@@ -445,7 +445,7 @@ void PTHHandler::initialize(PTHManager &PTHM, DiagnosticsEngine &Diags,
       BufBeg + endian::readNext<uint32_t, little, aligned>(CurrentPtr);
   if (!(IdentifierTable >= BufBeg && IdentifierTable < BufEnd)) {
     Diags.Report(diag::err_invalid_pth_file) << File;
-    PTH = None;
+    PTH = std::nullopt;
     return;
   }
 
@@ -464,7 +464,7 @@ void PTHHandler::initialize(PTHManager &PTHM, DiagnosticsEngine &Diags,
       BufBeg + endian::readNext<uint32_t, little, aligned>(CurrentPtr);
   if (!(StringsTable >= BufBeg && StringsTable <= BufEnd)) {
     Diags.Report(diag::err_invalid_pth_file) << File;
-    PTH = None;
+    PTH = std::nullopt;
     return;
   }
 
@@ -473,7 +473,7 @@ void PTHHandler::initialize(PTHManager &PTHM, DiagnosticsEngine &Diags,
       BufBeg + endian::readNext<uint32_t, little, aligned>(CurrentPtr);
   if (!(PPCondTable >= BufBeg && PPCondTable < BufEnd)) {
     Diags.Report(diag::err_invalid_pth_file) << File;
-    PTH = None;
+    PTH = std::nullopt;
     return;
   }
   unsigned PPCondTableSize =
@@ -483,7 +483,7 @@ void PTHHandler::initialize(PTHManager &PTHM, DiagnosticsEngine &Diags,
     PPCondTable = nullptr;
   } else if (!(PPCondTableEnd >= BufBeg && PPCondTableEnd < BufEnd)) {
     Diags.Report(diag::err_invalid_pth_file) << File;
-    PTH = None;
+    PTH = std::nullopt;
     return;
   }
 
@@ -600,8 +600,10 @@ Expected<llvm::cas::CASID> PTHManager::computePTH(llvm::cas::CASID InputFile) {
     assert(!Operation);
 
     // FIXME: This should be the clang executable...
-    ClangVersion = llvm::cantFail(CAS.createProxy(None, getClangFullVersion()));
-    Operation = llvm::cantFail(CAS.createProxy(None, "generate-isolated-pth"));
+    ClangVersion =
+        llvm::cantFail(CAS.createProxy(std::nullopt, getClangFullVersion()));
+    Operation =
+        llvm::cantFail(CAS.createProxy(std::nullopt, "generate-isolated-pth"));
   }
 
   llvm::cas::HierarchicalTreeBuilder Builder;
@@ -633,13 +635,13 @@ Expected<llvm::cas::CASID> PTHManager::computePTH(llvm::cas::CASID InputFile) {
     Writer.generatePTH(OS, llvm::cantFail(CAS.getProxy(InputFile)).getData(),
                        CanonicalLangOpts);
   }
-  auto PTH = llvm::cantFail(CAS.createProxy(None, PTHString));
+  auto PTH = llvm::cantFail(CAS.createProxy(std::nullopt, PTHString));
   llvm::cantFail(Cache.put(CacheKey, PTH));
   return PTH;
 }
 
 OffsetType PTHWriter::getStringOffset(StringRef S) {
-  auto &E = *CachedStrs.insert(std::make_pair(S, None)).first;
+  auto &E = *CachedStrs.insert(std::make_pair(S, std::nullopt)).first;
 
   // If this is a new string entry, bump the PTH offset.
   if (!E.second) {

@@ -96,7 +96,7 @@ TEST(BlockDataTest, ZeroFill) {
 #if !defined(NDEBUG) && GTEST_HAS_DEATH_TEST
 TEST(BlockDataTest, MismatchedContentSize) {
   BumpPtrAllocator Alloc;
-  EXPECT_DEATH(makeData(Alloc, 2, 1, 0, StringRef("2"), None),
+  EXPECT_DEATH(makeData(Alloc, 2, 1, 0, StringRef("2"), std::nullopt),
                "Mismatched content size");
 }
 #endif
@@ -104,7 +104,7 @@ TEST(BlockDataTest, MismatchedContentSize) {
 #if !defined(NDEBUG) && GTEST_HAS_DEATH_TEST
 TEST(BlockDataTest, NoAlignment) {
   BumpPtrAllocator Alloc;
-  EXPECT_DEATH(makeData(Alloc, 2, 0, 0, None, None),
+  EXPECT_DEATH(makeData(Alloc, 2, 0, 0, std::nullopt, std::nullopt),
                "Expected non-zero alignment");
 }
 #endif
@@ -112,13 +112,13 @@ TEST(BlockDataTest, NoAlignment) {
 #if !defined(NDEBUG) && GTEST_HAS_DEATH_TEST
 TEST(BlockDataTest, AlignmentOffsetTooBig) {
   BumpPtrAllocator Alloc;
-  EXPECT_DEATH(makeData(Alloc, 2, 1, 1, None, None),
+  EXPECT_DEATH(makeData(Alloc, 2, 1, 1, std::nullopt, std::nullopt),
                "Expected alignment offset to be less than alignment");
-  EXPECT_DEATH(makeData(Alloc, 2, 1, 2, None, None),
+  EXPECT_DEATH(makeData(Alloc, 2, 1, 2, std::nullopt, std::nullopt),
                "Expected alignment offset to be less than alignment");
-  EXPECT_DEATH(makeData(Alloc, 2, 2, 2, None, None),
+  EXPECT_DEATH(makeData(Alloc, 2, 2, 2, std::nullopt, std::nullopt),
                "Expected alignment offset to be less than alignment");
-  EXPECT_DEATH(makeData(Alloc, 2, 1024, 1024, None, None),
+  EXPECT_DEATH(makeData(Alloc, 2, 1024, 1024, std::nullopt, std::nullopt),
                "Expected alignment offset to be less than alignment");
 }
 #endif

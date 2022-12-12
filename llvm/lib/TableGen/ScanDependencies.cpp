@@ -94,7 +94,7 @@ static Error computeIncludedFiles(cas::ObjectStore &CAS,
   flattenStrings(IncludedFiles, ResultToCache);
 
   Expected<cas::ObjectProxy> ExpectedResult =
-      CAS.createProxy(None, ResultToCache);
+      CAS.createProxy(std::nullopt, ResultToCache);
   if (!ExpectedResult)
     return ExpectedResult.takeError();
   if (Error E = Cache.put(Key, *ExpectedResult))
@@ -141,7 +141,7 @@ tablegen::lookupIncludeID(cas::CachingOnDiskFileSystem &FS,
     if (!FS.statusAndFileID(Path, ID).getError())
       return FS.getCAS().getReference(*ID);
   }
-  return None;
+  return std::nullopt;
 }
 
 Error tablegen::accessAllIncludes(cas::CachingOnDiskFileSystem &FS,
@@ -195,7 +195,7 @@ static Expected<cas::ObjectProxy> openMainFile(cas::CachingOnDiskFileSystem &FS,
     ErrorOr<std::unique_ptr<MemoryBuffer>> MaybeFile = MemoryBuffer::getSTDIN();
     if (!MaybeFile)
       return createMainFileError(MainFilename, MaybeFile.getError());
-    return CAS.createProxy(None, (**MaybeFile).getBuffer());
+    return CAS.createProxy(std::nullopt, (**MaybeFile).getBuffer());
   }
 
   Optional<cas::CASID> MainFileID;

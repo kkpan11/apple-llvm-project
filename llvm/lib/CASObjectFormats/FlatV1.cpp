@@ -77,8 +77,8 @@ ObjectFileSchema::ObjectFileSchema(cas::ObjectStore &CAS)
 Error ObjectFileSchema::fillCache() {
   Optional<cas::ObjectRef> RootKindID;
   const unsigned Version = 0; // Bump this to error on old object files.
-  if (Expected<cas::ObjectProxy> ExpectedRootKind =
-          CAS.createProxy(None, "cas.o:flatv1:schema:" + Twine(Version).str()))
+  if (Expected<cas::ObjectProxy> ExpectedRootKind = CAS.createProxy(
+          std::nullopt, "cas.o:flatv1:schema:" + Twine(Version).str()))
     RootKindID = ExpectedRootKind->getRef();
   else
     return ExpectedRootKind.takeError();
@@ -112,13 +112,13 @@ ObjectFileSchema::getKindString(const cas::ObjectProxy &Node) const {
   assert(&Node.getCAS() == &CAS);
   StringRef Data = Node.getData();
   if (Data.empty())
-    return None;
+    return std::nullopt;
 
   unsigned char ID = Data[0];
   for (auto &I : KindStrings)
     if (I.first == ID)
       return I.second;
-  return None;
+  return std::nullopt;
 }
 
 bool ObjectFileSchema::isRootNode(const cas::ObjectProxy &Node) const {
@@ -178,7 +178,7 @@ ObjectFileSchema::getKindStringID(StringRef KindString) const {
   for (auto &I : KindStrings)
     if (I.second == KindString)
       return I.first;
-  return None;
+  return std::nullopt;
 }
 
 static Expected<StringRef> consumeDataOfSize(StringRef &Data, unsigned Size) {
@@ -551,7 +551,7 @@ static Expected<CASSymbol> decodeSymbol(const FlatV1ObjectReader &Reader,
   bool IsDefined = Bits & (1U << 3);
   if (!IsDefined) {
     CASSymbol Info{Name,  Offset, Linkage, jitlink::Scope::Default,
-                   false, false,  false,   None};
+                   false, false,  false,   std::nullopt};
     return Info;
   }
 

@@ -151,7 +151,7 @@ std::unique_ptr<MCObjectWriter> createMachOCASWriter(
     std::unique_ptr<MCMachObjectTargetWriter> MOTW, const Triple &TT,
     cas::ObjectStore &CAS, CASBackendMode Mode, raw_pwrite_stream &OS,
     bool IsLittleEndian,
-    Optional<MCTargetOptions::ResultCallBackTy> CallBack = None);
+    Optional<MCTargetOptions::ResultCallBackTy> CallBack = std::nullopt);
 
 } // end namespace llvm
 
