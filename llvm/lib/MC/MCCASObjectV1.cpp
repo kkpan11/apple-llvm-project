@@ -2578,6 +2578,15 @@ static bool shouldCreateSeparateBlockFor(DWARFDie &DIE) {
   if (Tag == dwarf::Tag::DW_TAG_enumeration_type)
     return true;
 
+  if (Tag == dwarf::Tag::DW_TAG_structure_type ||
+      Tag == dwarf::Tag::DW_TAG_class_type) {
+    // Don't split on declarations, as these are short
+    for (const DWARFAttribute &AttrValue : DIE.attributes())
+      if (AttrValue.Attr == dwarf::Attribute::DW_AT_declaration)
+        return false;
+    return true;
+  }
+
   return false;
 }
 
