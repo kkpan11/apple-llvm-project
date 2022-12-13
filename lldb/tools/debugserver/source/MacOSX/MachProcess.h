@@ -361,6 +361,8 @@ public:
 
   DNBProfileDataScanType GetProfileScanType() { return m_profile_scan_type; }
 
+  JSONGenerator::ObjectSP GetDyldProcessState();
+
 private:
   enum {
     eMachProcessFlagsNone = 0,
@@ -467,6 +469,7 @@ private:
   void (*m_dyld_process_info_release)(void *info);
   void (*m_dyld_process_info_get_cache)(void *info, void *cacheInfo);
   uint32_t (*m_dyld_process_info_get_platform)(void *info);
+  void (*m_dyld_process_info_get_state)(void *info, void *stateInfo);
 };
 
 #endif // LLDB_TOOLS_DEBUGSERVER_SOURCE_MACOSX_MACHPROCESS_H
