@@ -3617,7 +3617,7 @@ OpenMPIRBuilder::InsertPointTy OpenMPIRBuilder::emitCommonDirectiveEntry(
   // Emit thenBB and set the Builder's insertion point there for
   // body generation next. Place the block after the current block.
   Function *CurFn = EntryBB->getParent();
-  CurFn->getBasicBlockList().insertAfter(EntryBB->getIterator(), ThenBB);
+  CurFn->insertBasicBlockAt(std::next(EntryBB->getIterator()), ThenBB);
 
   // Move Entry branch to end of ThenBB, and replace with conditional
   // branch (If-stmt)
@@ -3968,6 +3968,35 @@ Constant *OpenMPIRBuilder::createTargetRegionEntryAddr(Function *OutlinedFn,
   return new GlobalVariable(
       M, Builder.getInt8Ty(), /*isConstant=*/true, GlobalValue::InternalLinkage,
       Constant::getNullValue(Builder.getInt8Ty()), EntryFnName);
+}
+
+void OpenMPIRBuilder::emitTargetRegionFunction(
+    OffloadEntriesInfoManager &InfoManager, TargetRegionEntryInfo &EntryInfo,
+    FunctionGenCallback &GenerateFunctionCallback, int32_t NumTeams,
+    int32_t NumThreads, bool IsOffloadEntry, Function *&OutlinedFn,
+    Constant *&OutlinedFnID) {
+
+  SmallString<64> EntryFnName;
+  InfoManager.getTargetRegionEntryFnName(EntryFnName, EntryInfo);
+
+  OutlinedFn = Config.isEmbedded() || !Config.openMPOffloadMandatory()
+                   ? GenerateFunctionCallback(EntryFnName)
+                   : nullptr;
+
+  // If this target outline function is not an offload entry, we don't need to
+  // register it. This may be in the case of a false if clause, or if there are
+  // no OpenMP targets.
+  if (!IsOffloadEntry)
+    return;
+
+  std::string EntryFnIDName =
+      Config.isEmbedded()
+          ? std::string(EntryFnName)
+          : createPlatformSpecificName({EntryFnName, "region_id"});
+
+  OutlinedFnID = registerTargetRegionFunction(
+      InfoManager, EntryInfo, OutlinedFn, EntryFnName, EntryFnIDName, NumTeams,
+      NumThreads);
 }
 
 Constant *OpenMPIRBuilder::registerTargetRegionFunction(
