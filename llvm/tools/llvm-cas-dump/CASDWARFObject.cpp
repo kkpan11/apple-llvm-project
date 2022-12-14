@@ -91,9 +91,12 @@ Error CASDWARFObject::discoverDwarfSections(MCObjectProxy MCObj) {
       return Err;
     Is64Bit = P.Is64Bit;
     IsLittleEndian = P.IsLittleEndian;
-  } else if (auto LineRef = DebugLineRef::Cast(MCObj)) {
-    SecOffsetVals.push_back(LineTableOffset);
-    LineTableOffset += LineRef->getData().size();
+  } else if (auto LineSectionRef = DebugLineSectionRef::Cast(MCObj)) {
+    raw_svector_ostream OS(DebugLineSection);
+    MCCASReader Reader(OS, Target, MCObj.getSchema());
+    auto Written = LineSectionRef->materialize(Reader);
+    if (!Written)
+      return Written.takeError();
   }
   if (DebugAbbrevRef::Cast(MCObj))
     append_range(DebugAbbrevSection, MCObj.getData());
@@ -146,10 +149,11 @@ Error CASDWARFObject::dump(raw_ostream &OS, int Indent, DWARFContext &DWARFCtx,
       OS << "\"\n";
       StrOffset = Offset;
     }
-  } else if (DebugLineRef::Cast(MCObj)) {
+  } else if (DebugLineSectionRef::Cast(MCObj)) {
     // Dump __debug_line data.
     uint64_t Address = 0;
-    DWARFDataExtractor LineData(*this, {Data, Address}, isLittleEndian(), 0);
+    DWARFDataExtractor LineData(*this, {toStringRef(DebugLineSection), Address},
+                                isLittleEndian(), 0);
     DWARFDebugLine::SectionParser Parser(LineData, DWARFCtx,
                                          DWARFCtx.normal_units());
     while (!Parser.done()) {

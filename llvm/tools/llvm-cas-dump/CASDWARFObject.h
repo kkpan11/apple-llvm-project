@@ -29,8 +29,7 @@ class CASDWARFObject : public DWARFObject {
   SmallVector<uint8_t> DebugAbbrevSection;
   SmallVector<char> DebugInfoSection;
   SmallVector<StringRef> CUDataVec;
-  SmallVector<uint32_t> SecOffsetVals;
-  unsigned LineTableOffset = 0;
+  SmallVector<char> DebugLineSection;
   DenseMap<cas::ObjectRef, unsigned> MapOfStringOffsets;
 
   const mccasformats::v1::MCSchema &Schema;
@@ -64,7 +63,6 @@ public:
                                      uint64_t Pos) const override {
     return {};
   };
-  ArrayRef<uint32_t> getSecOffsetVals() { return SecOffsetVals; }
   DenseMap<cas::ObjectRef, unsigned> &getMapOfStringOffsets() {
     return MapOfStringOffsets;
   }

@@ -192,16 +192,17 @@ private:
 public:
   // Constructor to create an MCDwarfLineEntry given a symbol and the dwarf loc.
   MCDwarfLineEntry(MCSymbol *label, const MCDwarfLoc loc,
-                   bool _IsEndOfFunction = false)
-      : MCDwarfLoc(loc), Label(label), IsEndOfFunction(_IsEndOfFunction) {}
+                   bool isEndOfFunction = false)
+      : MCDwarfLoc(loc), Label(label), IsEndOfFunction(isEndOfFunction) {}
 
   MCSymbol *getLabel() const { return Label; }
 
   // This indicates the line entry is synthesized for an end entry.
   bool IsEndEntry = false;
 
-  // This indicates that the line entry belongs to a new function. To only be
-  // used for CasFriendly debug info.
+  // This indicated that the current line entry denotes the end of a function,
+  // it is used to emit a DW_LNE_end_sequnece to reset the state machine
+  // registers. To only be used for CasFriendly debug info.
   bool IsEndOfFunction;
 
   // Override the label with the given EndLabel.

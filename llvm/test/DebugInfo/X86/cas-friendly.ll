@@ -1,37 +1,33 @@
 ; RUN: llc -mtriple=x86_64-apple-macosx12.0.0 -filetype=obj %s -o %t 
 ; RUN: llvm-dwarfdump -debug-line --debug-info %t | FileCheck %s
 
-; CHECK: 0x{{[0-9a-z]+}}:   DW_TAG_subprogram
-; CHECK-NEXT:                DW_AT_low_pc ([[LOC1:0x[0-9a-z]+]])
-
-; CHECK: 0x{{[0-9a-z]+}}:   DW_TAG_subprogram
-; CHECK-NEXT:                DW_AT_low_pc ([[LOC2:0x[0-9a-z]+]])
-
-; CHECK: 0x{{[0-9a-z]+}}:   DW_TAG_subprogram
-; CHECK-NEXT:                DW_AT_low_pc ([[LOC3:0x[0-9a-z]+]])
-
-; This test is checking if the cas-friendly debug info splits the line table into multiple parts per function, that is why the checks below are checking for three seperate line tables for three distinct functions in this test
+; This test checks if the line tables are emitted in a cas-friendly manner, which means they emit end_sequences when a function's contribution to the line table has ended. This is done to be able to split a function's contribution to the line table into individual cas blocks.
 
 ; CHECK: debug_line[0x{{[0-9a-z]+}}]
 ; CHECK-NEXT: Line table prologue:
 
 ; CHECK: Address            Line   Column File   ISA Discriminator Flags
 ; CHECK-NEXT: ------------------ ------ ------ ------ --- ------------- -------------
-; CHECK-NEXT: [[LOC1]]      1      0      1   0             0  is_stmt
-
-; CHECK: debug_line[0x{{[0-9a-z]+}}]
-; CHECK-NEXT: Line table prologue:
-
-; CHECK: Address            Line   Column File   ISA Discriminator Flags
-; CHECK-NEXT: ------------------ ------ ------ ------ --- ------------- -------------
-; CHECK-NEXT: [[LOC2]]      5      0      1   0             0  is_stmt
-
-; CHECK: debug_line[0x{{[0-9a-z]+}}]
-; CHECK-NEXT: Line table prologue:
-
-; CHECK Address            Line   Column File   ISA Discriminator Flags
-; CHECK-NEXT ------------------ ------ ------ ------ --- ------------- -------------
-; CHECK-NEXT [[LOC3]]      9      0      1   0             0  is_stmt
+; CHECK-NEXT: 0x{{[0-9a-z]+}}      1      0      1   0             0  is_stmt
+; CHECK-NEXT: 0x{{[0-9a-z]+}}      2      9      1   0             0  is_stmt prologue_end
+; CHECK-NEXT: 0x{{[0-9a-z]+}}      2     10      1   0             0 
+; CHECK-NEXT: 0x{{[0-9a-z]+}}      2      2      1   0             0 
+; CHECK-NEXT: 0x{{[0-9a-z]+}}      2      2      1   0             0  end_sequence
+; CHECK-NEXT: 0x{{[0-9a-z]+}}      5      0      1   0             0  is_stmt
+; CHECK-NEXT: 0x{{[0-9a-z]+}}      6     11      1   0             0  is_stmt prologue_end
+; CHECK-NEXT: 0x{{[0-9a-z]+}}      6     10      1   0             0 
+; CHECK-NEXT: 0x{{[0-9a-z]+}}      6      2      1   0             0 
+; CHECK-NEXT: 0x{{[0-9a-z]+}}      6      2      1   0             0  end_sequence
+; CHECK-NEXT: 0x{{[0-9a-z]+}}      9      0      1   0             0  is_stmt
+; CHECK-NEXT: 0x{{[0-9a-z]+}}     10     13      1   0             0  is_stmt prologue_end
+; CHECK-NEXT: 0x{{[0-9a-z]+}}     10      9      1   0             0 
+; CHECK-NEXT: 0x{{[0-9a-z]+}}     10     25      1   0             0 
+; CHECK-NEXT: 0x{{[0-9a-z]+}}     10     21      1   0             0 
+; CHECK-NEXT: 0x{{[0-9a-z]+}}     10     19      1   0             0 
+; CHECK-NEXT: 0x{{[0-9a-z]+}}     10      2      1   0             0 
+; CHECK-NEXT: 0x{{[0-9a-z]+}}     10      2      1   0             0  epilogue_begin
+; CHECK-NEXT: 0x{{[0-9a-z]+}}     10      2      1   0             0  end_sequence
+; CHECK-NEXT: 0x{{[0-9a-z]+}}      1      0      1   0             0  is_stmt end_sequence
 
 ; ModuleID = './test.c'
 source_filename = "./test.c"

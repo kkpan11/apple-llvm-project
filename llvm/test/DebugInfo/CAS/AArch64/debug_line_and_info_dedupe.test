@@ -10,19 +10,20 @@ CHECK: CAS Block: llvmcas://
 CHECK-NEXT: DW_TAG_compile_unit
 CHECK: CAS Block: llvmcas://[[SUBPROGRAM_FOO:[a-z0-9]+]]
 CHECK-NEXT: DW_TAG_subprogram
-CHECK: mc:debug_line   llvmcas://[[LINETABLECASID:[a-z0-9]+]]
+CHECK: mc:debug_line   llvmcas://
 CHECK-NEXT: mc:debug_line   llvmcas://
+CHECK-NEXT: mc:debug_line   llvmcas://[[LINETABLECASID:[a-z0-9]+]]
 
 
 CHECK: mc:assembler
-CHECK: mc:debug_DIE_top_level
 CHECK: mc:debug_DIE_top_level
 CHECK: DW_TAG_compile_unit
 CHECK: CAS Block: llvmcas://[[SUBPROGRAM_FOO]]
 CHECK-NEXT: DW_TAG_subprogram
 CHECK: mc:debug_line   llvmcas:// 
-CHECK-NEXT: mc:debug_line   llvmcas://[[LINETABLECASID]]
 CHECK-NEXT: mc:debug_line   llvmcas:// 
+CHECK-NEXT: mc:debug_line   llvmcas:// 
+CHECK-NEXT: mc:debug_line   llvmcas://[[LINETABLECASID]]
 
 //--- a.ll
 
