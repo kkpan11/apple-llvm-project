@@ -2585,7 +2585,8 @@ Error CASSchemaFile::parse(ObjectFormatSchemaPool &CASSchemas, ObjectRef ID) {
   // the translation unit, via \p forEachSymbol(). If that is the case then
   // \p getOrCreateSymbol() can be removed.
   for (unsigned I = 0; I < blocksForFixups.size(); ++I) {
-    const BlockData &block = blocksForFixups[I];
+    // make copy since the pointer can be invalide due to resize of the vector.
+    const BlockData block = blocksForFixups[I];
     Error E = reader.materializeFixups(
         block.ref, [&](const CASBlockFixup &fixup) -> Error {
           bool isRelocation = fixup.Kind >= jitlink::Edge::FirstRelocation;

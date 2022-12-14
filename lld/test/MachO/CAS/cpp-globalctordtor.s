@@ -41,10 +41,10 @@
 // NESTED: l     F __TEXT,__text ___cxx_global_var_init
 
 // CHECK: l     O __DATA,__data __dyld_private
-// CHECK: l     F __TEXT,__text __ZN3MySC1Ev
-// CHECK: l     F __TEXT,__text __ZN3MySD1Ev
-// CHECK: l     F __TEXT,__text __ZN3MySC2Ev
-// CHECK: l     F __TEXT,__text __ZN3MySD2Ev
+// CHECK: l     F __TEXT,__text .hidden __ZN3MySC1Ev
+// CHECK: l     F __TEXT,__text .hidden __ZN3MySD1Ev
+// CHECK: l     F __TEXT,__text .hidden __ZN3MySC2Ev
+// CHECK: l     F __TEXT,__text .hidden __ZN3MySD2Ev
 // CHECK: g     F __TEXT,__text _main
 // CHECK: g     O __DATA,__common _mys1
 // CHECK: g     F __TEXT,__text __mh_execute_header
