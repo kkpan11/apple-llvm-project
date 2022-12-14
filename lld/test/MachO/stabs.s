@@ -1,6 +1,5 @@
 # REQUIRES: x86, shell
 # UNSUPPORTED: system-windows
-# XFAIL: *
 # RUN: rm -rf %t; split-file %s %t
 # RUN: llvm-mc -filetype=obj -triple=x86_64-apple-darwin %t/test.s -o %t/test.o
 # RUN: llvm-mc -filetype=obj -triple=x86_64-apple-darwin %t/foo.s -o %t/foo.o
