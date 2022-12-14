@@ -76,7 +76,8 @@ DebugLoc DebugLoc::replaceInlinedAtSubprogram(
   // Collect the inline chain, stopping if we find a location that has already
   // been processed.
   for (DILocation *Loc = RootLoc; Loc; Loc = Loc->getInlinedAt()) {
-    if (auto It = Cache.find(Loc); It != Cache.end()) {
+    auto It = Cache.find(Loc);
+    if (It != Cache.end()) {
       CachedResult = cast<DILocation>(It->second);
       break;
     }

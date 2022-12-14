@@ -945,7 +945,8 @@ DILocalScope *DILocalScope::cloneScopeForSubprogram(
 
   for (DIScope *Scope = &RootScope; !isa<DISubprogram>(Scope);
        Scope = Scope->getScope()) {
-    if (auto It = Cache.find(Scope); It != Cache.end()) {
+    auto It = Cache.find(Scope);
+    if (It != Cache.end()) {
       CachedResult = cast<DIScope>(It->second);
       break;
     }
