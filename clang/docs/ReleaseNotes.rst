@@ -236,6 +236,11 @@ Attribute Changes in Clang
   format string must correctly format the fixed parameter types of the function.
   Using the attribute this way emits a GCC compatibility diagnostic.
 
+- Introduced a new record declaration attribute ``__attribute__((enforce_read_only_placement))``
+  to support analysis of instances of a given type focused on read-only program
+  memory placement. It emits a warning if something in the code provably prevents
+  an instance from a read-only memory placement.
+
 Windows Support
 ---------------
 

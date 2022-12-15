@@ -1370,3 +1370,5 @@ def PedanticMacros : DiagGroup<"pedantic-macros",
 
 def BranchProtection : DiagGroup<"branch-protection">;
 
+// Warnings and notes related to const_var_decl_type attribute checks
+def ReadOnlyPlacementChecks : DiagGroup<"read-only-types">;
