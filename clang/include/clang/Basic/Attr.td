@@ -4061,3 +4061,9 @@ def NoRandomizeLayout : InheritableAttr {
   let LangOpts = [COnly];
 }
 def : MutualExclusions<[RandomizeLayout, NoRandomizeLayout]>;
+
+def ReadOnlyPlacement : InheritableAttr {
+  let Spellings = [Clang<"enforce_read_only_placement">];
+  let Subjects = SubjectList<[Record]>;
+  let Documentation = [ReadOnlyPlacementDocs];
+}
