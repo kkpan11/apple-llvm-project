@@ -2160,33 +2160,9 @@ void DwarfDebug::beginFunctionImpl(const MachineFunction *MF) {
   if (SP->getUnit()->getEmissionKind() == DICompileUnit::NoDebug)
     return;
 
-  // If the CasFriendlinessKind is CasFriendly, this indicates to us that we
-  // want to split up the line tables by function rather than have it as one
-  // monolithic entry. That is, every function gets its own line table header.
-  // To achieve this we are creating a new CompileUnit per function so each
-  // function can get it's own line table header
-  if (SP->getUnit()->getCasFriendlinessKind() !=
-      DICompileUnit::NoCasFriendlyDebugInfo) {
-    const Module *M = MF->getFunction().getParent();
-    DIBuilder DIB(*const_cast<Module *>(M));
-    DICompileUnit *DCU = SP->getUnit();
-    DICompileUnit *NewDCU = DIB.createCompileUnit(
-        DCU->getSourceLanguage(), DCU->getFile(), DCU->getProducer(),
-        DCU->isOptimized(), DCU->getFlags(), DCU->getRuntimeVersion(), {},
-        DCU->getEmissionKind(), 0, true, false,
-        DICompileUnit::DebugNameTableKind::Default, false, {}, {},
-        DCU->getCasFriendlinessKind());
-
-    this->SingleCU = false;
-    DwarfCompileUnit &CU = getOrCreateDwarfCompileUnit(NewDCU);
-    Asm->OutStreamer->getContext().setDwarfCompileUnitID(
-        getDwarfCompileUnitIDForLineTable(CU));
-    SP->replaceUnit(NewDCU);
-  } else {
-    DwarfCompileUnit &CU = getOrCreateDwarfCompileUnit(SP->getUnit());
-    Asm->OutStreamer->getContext().setDwarfCompileUnitID(
-        getDwarfCompileUnitIDForLineTable(CU));
-  }
+  DwarfCompileUnit &CU = getOrCreateDwarfCompileUnit(SP->getUnit());
+  Asm->OutStreamer->getContext().setDwarfCompileUnitID(
+      getDwarfCompileUnitIDForLineTable(CU));
 
   // Record beginning of function.
   PrologEndLoc = emitInitialLocDirective(
@@ -2299,6 +2275,24 @@ void DwarfDebug::endFunctionImpl(const MachineFunction *MF) {
 
   // Construct call site entries.
   constructCallSiteEntryDIEs(*SP, TheCU, ScopeDIE, *MF);
+
+  // If the CasFriendlinessKind is CasFriendly, this indicates to us that we
+  // want to split up the line tables by function. To do this, we want to emit a
+  // DW_LNE_end_sequence at the end of a function's contribution to the line
+  // table.
+  if (SP->getUnit()->getCasFriendlinessKind() !=
+      DICompileUnit::NoCasFriendlyDebugInfo) {
+    MCSymbol *LineSym = Asm->OutStreamer->getContext().createTempSymbol();
+    Asm->OutStreamer->emitLabel(LineSym);
+    MCDwarfLoc DwarfLoc(
+        1, 1, 0, DWARF2_LINE_DEFAULT_IS_STMT ? DWARF2_FLAG_IS_STMT : 0, 0, 0);
+    MCDwarfLineEntry LineEntry(LineSym, DwarfLoc, /*IsEndOfFunction*/ true);
+    Asm->OutStreamer->getContext()
+        .getMCDwarfLineTable(
+            Asm->OutStreamer->getContext().getDwarfCompileUnitID())
+        .getMCLineSections()
+        .addLineEntry(LineEntry, Asm->OutStreamer->getCurrentSectionOnly());
+  }
 
   // Clear debug info
   // Ownership of DbgVariables is a bit subtle - ScopeVariables owns all the

@@ -7,16 +7,17 @@
 ; This test is created from a C program like:
 ; int foo() { return 10; }
 
-; DWARF: mc:debug_line
+; DWARF: mc:debug_line_section
 ; DWARF:   debug_line[0x00000000]
 ; DWARF:   Line table prologue:
-; DWARF:       total_length: 0x00000039
+; DWARF:       total_length: 0x00000045
 ; DWARF:             format: DWARF32
 ; DWARF:            version: 4
 ; DWARF:    prologue_length: 0x0000001e
 ; DWARF: 0x0000000000000000      2      0      1   0             0  is_stmt
 ; DWARF: 0x0000000000000000      3      3      1   0             0  is_stmt prologue_end
-; DWARF: 0x0000000000000008      3      3      1   0             0  is_stmt end_sequence
+; DWARF: 0x0000000000000000      3      3      1   0             0  is_stmt end_sequence
+; DWARF: 0x0000000000000008      1      0      1   0             0  is_stmt end_sequence
 
 ; CHECK:      mc:assembler  llvmcas://{{.*}}
 ; CHECK-NEXT:   mc:header  llvmcas://{{.*}}
@@ -39,7 +40,10 @@
 ; CHECK-NEXT:       mc:debug_string  llvmcas://{{.*}}
 ; CHECK-NEXT:       mc:debug_string  llvmcas://{{.*}}
 ; CHECK-NEXT:       mc:debug_string  llvmcas://{{.*}}
+; CHECK-NEXT:       mc:debug_string  llvmcas://{{.*}}
 ; CHECK-NEXT:     mc:debug_line_section  llvmcas://{{.*}}
+; CHECK-NEXT:       mc:debug_line_distinct_data  llvmcas://{{.*}}
+; CHECK-NEXT:       mc:debug_line  llvmcas://{{.*}}
 ; CHECK-NEXT:       mc:debug_line  llvmcas://{{.*}}
 ; CHECK-NEXT:       mc:padding  llvmcas://{{.*}}
 ; CHECK-NEXT:   mc:data_in_code  llvmcas://{{.*}}
@@ -50,12 +54,13 @@
 ; CHECK-NEXT:     mc:cstring  llvmcas://{{.*}}
 
 ; DWARF-DIE:        mc:debug_DIE_top_level llvmcas://{{.*}}
-; DWARF-DIE-NEXT:   Header = [47 0 0 0 4 0 0 0 0 0 8]
+; DWARF-DIE-NEXT:   Header = [4B 0 0 0 4 0 0 0 0 0 8]
 ; DWARF-DIE-NEXT:   CAS Block: llvmcas://{{.*}}
 ; DWARF-DIE-NEXT:   DW_TAG_compile_unit  AbbrevIdx = 2
 ; DWARF-DIE-NEXT:     DW_AT_producer                 DW_FORM_strp           [distinct]    [{{.*}}]
 ; DWARF-DIE-NEXT:     DW_AT_language                 DW_FORM_data2          [dedups]    [{{.*}}]
 ; DWARF-DIE-NEXT:     DW_AT_name                     DW_FORM_strp           [distinct]    [{{.*}}]
+; DWARF-DIE-NEXT:     DW_AT_LLVM_sysroot             DW_FORM_strp           [distinct]    [{{.*}}]
 ; DWARF-DIE-NEXT:     DW_AT_stmt_list                DW_FORM_sec_offset     [dedups]    [{{.*}}]
 ; DWARF-DIE-NEXT:     DW_AT_comp_dir                 DW_FORM_strp           [distinct]    [{{.*}}]
 ; DWARF-DIE-NEXT:     DW_AT_low_pc                   DW_FORM_addr           [dedups]    [{{.*}}]

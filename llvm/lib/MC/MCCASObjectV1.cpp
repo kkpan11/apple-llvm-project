@@ -753,36 +753,299 @@ DebugAbbrevSectionRef::materialize(MCCASReader &Reader,
   return Size;
 }
 
+struct LineTablePrologue {
+  uint64_t Length;
+  uint16_t Version;
+  uint32_t PrologueLength;
+  uint64_t Offset;
+  uint8_t OpcodeBase;
+  dwarf::DwarfFormat Format;
+};
+
+static Expected<LineTablePrologue>
+getLineTableLengthInfoAndVersion(DWARFDataExtractor &LineTableDataReader,
+                                 uint64_t *OffsetPtr) {
+  LineTablePrologue Prologue;
+  Error Err = Error::success();
+  // From DWARF 5 section 7.4:
+  // In the 32-bit DWARF format, an initial length field [...] is an unsigned
+  // 4-byte integer (which must be less than 0xfffffff0);
+  auto Length = LineTableDataReader.getU32(OffsetPtr, &Err);
+  if (Err)
+    return std::move(Err);
+  if (Length >= 0xfffffff0)
+    return createStringError(inconvertibleErrorCode(),
+                             "DWARF input is not in the 32-bit format");
+  Prologue.Length = Length;
+  Prologue.Format = llvm::dwarf::DWARF32;
+  auto Version = LineTableDataReader.getU16(OffsetPtr, &Err);
+  if (Err)
+    return std::move(Err);
+  if (Version >= 5)
+    return createStringError(inconvertibleErrorCode(),
+                             "DWARF 5 and above is not currently supported");
+  Prologue.Version = Version;
+  // Since we do not support 64 bit DWARF, the prologue length is 4 bytes in
+  // size.
+  auto PrologueLength = LineTableDataReader.getU32(OffsetPtr, &Err);
+  if (Err)
+    return std::move(Err);
+
+  Prologue.PrologueLength = PrologueLength;
+  Prologue.Offset = *OffsetPtr + PrologueLength;
+  return Prologue;
+}
+
+static Expected<LineTablePrologue>
+parseLineTableHeaderAndSkip(DWARFDataExtractor &LineTableDataReader) {
+  uint64_t Offset = 0;
+  uint64_t *OffsetPtr = &Offset;
+  auto Prologue =
+      getLineTableLengthInfoAndVersion(LineTableDataReader, OffsetPtr);
+  if (!Prologue)
+    return Prologue.takeError();
+  Error Err = Error::success();
+  // Parse Minimum instruction length.
+  LineTableDataReader.getU8(OffsetPtr, &Err);
+  // Parse Maximum Operands Per Instruction, if it exists.
+  if (Prologue->Version >= 4)
+    LineTableDataReader.getU8(OffsetPtr, &Err);
+  // Parse DefaultIsStmt, LineBase, and LineRange.
+  LineTableDataReader.getU8(OffsetPtr, &Err);
+  LineTableDataReader.getU8(OffsetPtr, &Err);
+  LineTableDataReader.getU8(OffsetPtr, &Err);
+  // Parse OpcodeBase.
+  Prologue->OpcodeBase = LineTableDataReader.getU8(OffsetPtr, &Err);
+  if (Err)
+    return std::move(Err);
+  return Prologue;
+}
+
+static Error
+handleExtendedOpcodesForLineTable(DWARFDataExtractor &LineTableDataReader,
+                                  DWARFDataExtractor::Cursor &LineTableCursor,
+                                  uint8_t SubOpcode, uint64_t Len,
+                                  bool &IsEndSequence) {
+  switch (SubOpcode) {
+  case dwarf::DW_LNE_end_sequence: {
+    // Takes no operand, it needs to be handled specially when materializing and
+    // creating the CAS.
+    IsEndSequence = true;
+  } break;
+  case dwarf::DW_LNE_set_address: {
+    // Takes a relocatable address size, move cursor to the end of the
+    // address.
+    if (LineTableDataReader.getAddressSize() != Len - 1)
+      return createStringError(inconvertibleErrorCode(),
+                               "Address size mismatch");
+    LineTableDataReader.getRelocatedAddress(LineTableCursor);
+  } break;
+  case dwarf::DW_LNE_define_file: {
+    // Takes 4 arguments. The first is a null terminated string containing
+    // a source file name. The second is an unsigned LEB128 number
+    // representing the directory index of the directory in which the file
+    // was found. The third is an unsigned LEB128 number representing the
+    // time of last modification of the file. The fourth is an unsigned
+    // LEB128 number representing the length in bytes of the file. Move
+    // cursor to the end of the arguments.
+    LineTableDataReader.getCStr(LineTableCursor);
+    LineTableDataReader.getULEB128(LineTableCursor);
+    LineTableDataReader.getULEB128(LineTableCursor);
+    LineTableDataReader.getULEB128(LineTableCursor);
+  } break;
+  case dwarf::DW_LNE_set_discriminator:
+    // Takes one operand, a ULEB128 value. Move cursor to end of operand.
+    LineTableDataReader.getULEB128(LineTableCursor);
+    break;
+  default:
+    llvm_unreachable("Unknown special opcode for line table");
+    break;
+  }
+  return Error::success();
+}
+
+static Error
+handleStandardOpcodesForLineTable(DWARFDataExtractor &LineTableDataReader,
+                                  DWARFDataExtractor::Cursor &LineTableCursor,
+                                  uint8_t Opcode, bool &IsSetFile) {
+  switch (Opcode) {
+  case dwarf::DW_LNS_copy:
+  case dwarf::DW_LNS_negate_stmt:
+  case dwarf::DW_LNS_set_basic_block:
+  case dwarf::DW_LNS_const_add_pc:
+  case dwarf::DW_LNS_set_prologue_end:
+  case dwarf::DW_LNS_set_epilogue_begin:
+    // Takes no arguments, move on
+    break;
+  case dwarf::DW_LNS_advance_pc:
+  case dwarf::DW_LNS_advance_line:
+  case dwarf::DW_LNS_set_column:
+  case dwarf::DW_LNS_set_isa: {
+    // Takes a single unsigned LEB128 operand, move cursor to the end of
+    // operand.
+    LineTableDataReader.getULEB128(LineTableCursor);
+  } break;
+  case dwarf::DW_LNS_set_file: {
+    // Takes a single unsigned LEB128 operand, it needs to be handled specially
+    // when materializing and creating the CAS.
+    IsSetFile = true;
+  } break;
+  case dwarf::DW_LNS_fixed_advance_pc: {
+    // Takes a single uhalf operand, move cursor to the end of operand.
+    LineTableDataReader.getU16(LineTableCursor);
+  } break;
+  default:
+    llvm_unreachable("Unknown standard opcode for line table");
+    break;
+  }
+  return Error::success();
+}
+
+static Expected<std::pair<uint64_t, uint64_t>>
+getOpcodeAndOperandSize(StringRef DistinctData, StringRef LineTableData,
+                        uint64_t DistinctOffset, uint64_t LineTableOffset,
+                        bool IsLittleEndian, uint8_t OpcodeBase) {
+  DWARFDataExtractor LineTableDataReader(LineTableData, IsLittleEndian, 8);
+  DWARFDataExtractor DistinctDataReader(DistinctData, IsLittleEndian, 8);
+  DWARFDataExtractor::Cursor LineTableCursor(LineTableOffset);
+  DWARFDataExtractor::Cursor DistinctCursor(DistinctOffset);
+
+  auto Opcode = LineTableDataReader.getU8(LineTableCursor);
+  if (Opcode == 0) {
+    // Extended Opcodes always start with a zero opcode followed by
+    // a uleb128 length so you can skip ones you don't know about
+    uint64_t Len = LineTableDataReader.getULEB128(LineTableCursor);
+    if (Len == 0)
+      return createStringError(inconvertibleErrorCode(),
+                               "0 Length for an extended opcode is wrong");
+
+    uint8_t SubOpcode = LineTableDataReader.getU8(LineTableCursor);
+    bool IsEndSequence = false;
+    auto Err = handleExtendedOpcodesForLineTable(
+        LineTableDataReader, LineTableCursor, SubOpcode, Len, IsEndSequence);
+    if (Err)
+      return std::move(Err);
+    if (IsEndSequence) {
+      // The SubOpcode is a DW_LNE_end_sequence, it takes no operand, but check
+      // if this is the end of the line table and return.
+      assert(LineTableData.size() == LineTableCursor.tell() &&
+             "Malformed Line Table, data exists after a DW_LNE_end_sequence");
+    }
+  } else if (Opcode < OpcodeBase) {
+    bool IsSetFile = false;
+    auto Err = handleStandardOpcodesForLineTable(
+        LineTableDataReader, LineTableCursor, Opcode, IsSetFile);
+    if (Err)
+      return std::move(Err);
+    if (IsSetFile) {
+      // The Opcode is DW_LNS_set_file, this means we need to get the file
+      // number from the DistinctData, which is stored as a ULEB.
+      DistinctDataReader.getULEB128(DistinctCursor);
+    }
+  } else {
+    // Special Opcodes, do nothing.
+  }
+
+  if (!LineTableCursor)
+    return LineTableCursor.takeError();
+  if (!DistinctCursor)
+    return DistinctCursor.takeError();
+
+  return std::make_pair(LineTableCursor.tell() - LineTableOffset,
+                        DistinctCursor.tell() - DistinctOffset);
+}
+
+static Expected<SmallVector<char, 0>>
+materializeDebugLineSection(MCCASReader &Reader,
+                            ArrayRef<cas::ObjectRef> Refs) {
+  SmallVector<char, 0> DistinctData;
+  uint64_t DistinctOffset = 0;
+  uint8_t OpcodeBase = 0;
+  SmallVector<char, 0> DebugLineSection;
+  bool DistinctDebugLineRefSeen = false;
+  for (auto Ref : Refs) {
+    auto Node = Reader.getObjectProxy(Ref);
+    if (!Node)
+      return Node.takeError();
+    if (auto DistinctRef = DistinctDebugLineRef::Cast(*Node)) {
+      DistinctDebugLineRefSeen = true;
+      auto Data = DistinctRef->getData();
+      DistinctData.append(Data.begin(), Data.end());
+      DWARFDataExtractor LineTableDataReader(Data, Reader.getEndian(), 8);
+      auto Prologue = parseLineTableHeaderAndSkip(LineTableDataReader);
+      if (!Prologue)
+        return Prologue.takeError();
+      DistinctOffset = Prologue->Offset;
+      OpcodeBase = Prologue->OpcodeBase;
+      // Copy line table prologue into final debug line section.
+      DebugLineSection.append(DistinctData.begin(),
+                              DistinctData.begin() + DistinctOffset);
+    } else if (auto LineRef = DebugLineRef::Cast(*Node)) {
+      if (!DistinctDebugLineRefSeen)
+        return createStringError(inconvertibleErrorCode(),
+                                 "Line Table layout is incorrect, unexpected "
+                                 "DebugLineRef before a DistinctDebugLineRef");
+      auto Data = LineRef->getData();
+      uint64_t LineTableOffset = 0;
+      while (LineTableOffset < Data.size()) {
+        auto Sizes = getOpcodeAndOperandSize(toStringRef(DistinctData), Data,
+                                             DistinctOffset, LineTableOffset,
+                                             Reader.getEndian(), OpcodeBase);
+        if (!Sizes)
+          return Sizes.takeError();
+        // Copy opcode and operand, only in the case of DW_LNS_set_file, the
+        // operand will be in the DistinctData.
+        DebugLineSection.append(Data.begin() + LineTableOffset,
+                                Data.begin() + LineTableOffset + Sizes->first);
+        LineTableOffset += Sizes->first;
+        if (Sizes->second) {
+          DebugLineSection.append(DistinctData.begin() + DistinctOffset,
+                                  DistinctData.begin() + DistinctOffset +
+                                      Sizes->second);
+          DistinctOffset += Sizes->second;
+        }
+      }
+    } else if (auto PadRef = PaddingRef::Cast(*Node)) {
+      if (!DistinctDebugLineRefSeen)
+        return createStringError(inconvertibleErrorCode(),
+                                 "Line Table layout is incorrect, unexpected "
+                                 "PaddingRef before a DistinctDebugLineRef");
+      raw_svector_ostream OS(DebugLineSection);
+      auto Size = PadRef->materialize(OS);
+      if (!Size)
+        return Size.takeError();
+    } else {
+      return createStringError(inconvertibleErrorCode(),
+                               "Unknown cas node type for debug line section");
+    }
+  }
+  return DebugLineSection;
+}
+
 Expected<uint64_t> DebugLineSectionRef::materialize(MCCASReader &Reader,
                                                     raw_ostream *Stream) const {
   // Start a new section for relocations.
   Reader.Relocations.emplace_back();
-  SmallVector<char, 0> SectionContents;
-  raw_svector_ostream SectionStream(SectionContents);
 
-  unsigned Size = 0;
   StringRef Remaining = getData();
   auto Refs = decodeReferences(*this, Remaining);
   if (!Refs)
     return Refs.takeError();
 
-  for (auto ID : *Refs) {
-    auto FragmentSize = Reader.materializeSection(ID, &SectionStream);
-    if (!FragmentSize)
-      return FragmentSize.takeError();
-    Size += *FragmentSize;
-  }
+  auto SectionContents = materializeDebugLineSection(Reader, *Refs);
+  if (!SectionContents)
+    return SectionContents.takeError();
 
   if (auto E = decodeRelocationsAndAddends(Reader, Remaining))
     return std::move(E);
 
-  if (auto E = applyAddends(Reader, SectionContents))
+  if (auto E = applyAddends(Reader, *SectionContents))
     return std::move(E);
 
   Reader.Addends.clear();
-  Reader.OS << SectionContents;
+  Reader.OS << *SectionContents;
 
-  return Size;
+  return SectionContents->size();
 }
 
 Expected<uint64_t>
@@ -1359,6 +1622,7 @@ static Expected<size_t> getSizeFromDwarfHeader(BinaryStreamReader &Reader) {
   return Word1;
 }
 
+// TODO: Remove
 Expected<size_t>
 mccasformats::v1::getSizeFromDwarfHeaderAndSkip(BinaryStreamReader &Reader) {
   Expected<size_t> Size = getSizeFromDwarfHeader(Reader);
@@ -1678,6 +1942,13 @@ Error MCCASBuilder::splitDebugInfoAndAbbrevSections() {
   return Error::success();
 }
 
+inline void copyData(SmallVector<char, 0> &Data, StringRef DebugLineStrRef,
+                     uint64_t &CurrOffset, DWARFDataExtractor::Cursor &Cursor) {
+  Data.append(DebugLineStrRef.data() + CurrOffset,
+              DebugLineStrRef.data() + Cursor.tell());
+  CurrOffset = Cursor.tell();
+}
+
 Error MCCASBuilder::createLineSection() {
   if (!DwarfSections.Line)
     return Error::success();
@@ -1688,23 +1959,85 @@ Error MCCASBuilder::createLineSection() {
     return DebugLineData.takeError();
 
   startSection(DwarfSections.Line);
-
   StringRef DebugLineStrRef(DebugLineData->data(), DebugLineData->size());
-  BinaryStreamReader SectionReader(DebugLineStrRef, Asm.getBackend().Endian);
-  // Iterate over the line section contents and split it up into individual cas
-  // blocks that represent one line table per function.
-  while (!SectionReader.empty()) {
-    uint64_t SectionStartOffset = SectionReader.getOffset();
-    auto Length = getSizeFromDwarfHeaderAndSkip(SectionReader);
-    if (!Length)
-      return Length.takeError();
-    StringRef LineTableData = DebugLineStrRef.substr(
-        SectionStartOffset, SectionReader.getOffset() - SectionStartOffset);
-    auto DbgLineRef = DebugLineRef::create(*this, LineTableData);
-    if (!DbgLineRef)
-      return DbgLineRef.takeError();
-    addNode(*DbgLineRef);
+  DWARFDataExtractor LineTableDataReader(DebugLineStrRef,
+                                         Asm.getBackend().Endian, 8);
+  auto Prologue = parseLineTableHeaderAndSkip(LineTableDataReader);
+  if (!Prologue)
+    return Prologue.takeError();
+  SmallVector<char, 0> DistinctData;
+  // Copy line table prologue into the DistinctData buffer.
+  DistinctData.append(DebugLineStrRef.data(),
+                      DebugLineStrRef.data() + Prologue->Offset);
+  SmallVector<DebugLineRef, 0> LineTableVector;
+  SmallVector<char, 0> LineTableData;
+  uint64_t *OffsetPtr = &Prologue->Offset;
+  uint64_t End =
+      Prologue->Length + (Prologue->Format == dwarf::DWARF32 ? 4 : 8);
+  uint64_t LineTableStartOffset = Prologue->Offset;
+  while (*OffsetPtr < End) {
+    DWARFDataExtractor::Cursor Cursor(*OffsetPtr);
+    auto Opcode = LineTableDataReader.getU8(Cursor);
+    if (Opcode == 0) {
+      // Extended Opcodes always start with a zero opcode followed by
+      // a uleb128 length so unknown opcodes can be skipped.
+      uint64_t Len = LineTableDataReader.getULEB128(Cursor);
+      if (Len == 0)
+        return createStringError(inconvertibleErrorCode(),
+                                 "0 Length for an extended opcode is wrong");
+
+      uint8_t SubOpcode = LineTableDataReader.getU8(Cursor);
+      bool IsEndSequence = false;
+      auto Err = handleExtendedOpcodesForLineTable(
+          LineTableDataReader, Cursor, SubOpcode, Len, IsEndSequence);
+      if (Err)
+        return Err;
+      if (IsEndSequence) {
+        // The current Opcode is a DW_LNE_end_sequence. It takes no operand,
+        // create a cas block here.
+        copyData(LineTableData, DebugLineStrRef, LineTableStartOffset, Cursor);
+        auto LineTable =
+            DebugLineRef::create(*this, toStringRef(LineTableData));
+        if (!LineTable)
+          return LineTable.takeError();
+        LineTableVector.push_back(*LineTable);
+        LineTableStartOffset = Cursor.tell();
+        LineTableData.clear();
+      }
+    } else if (Opcode < Prologue->OpcodeBase) {
+      bool IsSetFile = false;
+      auto Err = handleStandardOpcodesForLineTable(LineTableDataReader, Cursor,
+                                                   Opcode, IsSetFile);
+      if (Err)
+        return Err;
+      if (IsSetFile) {
+        // The current Opcode is a DW_LNS_set_file. Store file numbers in the
+        // distinct data.
+        copyData(LineTableData, DebugLineStrRef, LineTableStartOffset, Cursor);
+        LineTableDataReader.getULEB128(Cursor);
+        // The file number doesn't dedupe, so store that in the DistinctData.
+        copyData(DistinctData, DebugLineStrRef, LineTableStartOffset, Cursor);
+      }
+    } else {
+      // Special Opcodes. Do nothing, move on.
+    }
+    if (!Cursor)
+      return Cursor.takeError();
+    *OffsetPtr = Cursor.tell();
   }
+
+  // Create DistinctDebugLineRef.
+  auto DistinctRef =
+      DistinctDebugLineRef::create(*this, toStringRef(DistinctData));
+  if (!DistinctRef)
+    return DistinctRef.takeError();
+
+  // Add Nodes in order. DistinctDebugLineRef first, then the DebugLineRefs,
+  // then a PaddingRef if needed.
+  addNode(*DistinctRef);
+  for (auto &Node : LineTableVector)
+    addNode(Node);
+
   if (auto E = createPaddingRef(DwarfSections.Line))
     return E;
   return finalizeSection<DebugLineSectionRef>();
@@ -2176,8 +2509,6 @@ Expected<uint64_t> MCCASReader::materializeSection(cas::ObjectRef ID,
     Stream->write_zeros(1);
     return *Size + 1;
   }
-  if (auto F = DebugLineRef::Cast(*Node))
-    return F->materialize(*Stream);
   if (auto F = DebugAbbrevRef::Cast(*Node))
     return F->materialize(*Stream);
   return createStringError(inconvertibleErrorCode(),
