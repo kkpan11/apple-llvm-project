@@ -211,7 +211,7 @@ namespace {
 /// implementations.
 class CachingOutputs {
 public:
-  using OutputKind = cas::CompileJobCacheResult::OutputKind;
+  using OutputKind = clang::cas::CompileJobCacheResult::OutputKind;
 
   CachingOutputs(CompilerInstance &Clang);
   virtual ~CachingOutputs() = default;
@@ -238,7 +238,7 @@ protected:
       IntrusiveRefCntPtr<llvm::vfs::OutputBackend> CacheOutputs);
 
   CompilerInstance &Clang;
-  cas::CompileJobCacheResult::Builder CachedResultBuilder;
+  clang::cas::CompileJobCacheResult::Builder CachedResultBuilder;
   std::string OutputFile;
   std::string SerialDiagsFile;
   std::string DependenciesFile;
@@ -268,7 +268,8 @@ private:
   Error finishComputedResult(const llvm::cas::CASID &ResultCacheKey,
                              bool SkipCache) override;
 
-  Expected<cas::ObjectRef> writeOutputs(const llvm::cas::CASID &ResultCacheKey);
+  Expected<llvm::cas::ObjectRef>
+  writeOutputs(const llvm::cas::CASID &ResultCacheKey);
 
   /// Replay a cache hit.
   ///
@@ -413,7 +414,7 @@ private:
 //     handled.
 class CompileJobCache {
 public:
-  using OutputKind = cas::CompileJobCacheResult::OutputKind;
+  using OutputKind = clang::cas::CompileJobCacheResult::OutputKind;
 
   StringRef getPathForOutputKind(OutputKind Kind);
 
@@ -675,7 +676,7 @@ bool CachingOutputs::prepareOutputCollectionCommon(
       llvm::makeIntrusiveRefCnt<llvm::vfs::OnDiskOutputBackend>();
 
   // Set up the output backend so we can save / cache the result after.
-  for (OutputKind K : cas::CompileJobCacheResult::getAllOutputKinds()) {
+  for (OutputKind K : clang::cas::CompileJobCacheResult::getAllOutputKinds()) {
     StringRef OutPath = getPathForOutputKind(K);
     if (!OutPath.empty())
       CachedResultBuilder.addKindMap(K, OutPath);
@@ -764,7 +765,9 @@ bool ObjectStoreCachingOutputs::prepareOutputCollection() {
   if (!Clang.getDependencyOutputOpts().OutputFile.empty())
     Clang.addDependencyCollector(std::make_shared<CASDependencyCollector>(
         Clang.getDependencyOutputOpts(), *CAS,
-        [this](Optional<cas::ObjectRef> Deps) { DependenciesOutput = Deps; }));
+        [this](Optional<llvm::cas::ObjectRef> Deps) {
+          DependenciesOutput = Deps;
+        }));
 
   return false;
 }
@@ -833,7 +836,7 @@ void CachingOutputs::finishSerializedDiagnostics() {
   }
 }
 
-Expected<cas::ObjectRef> ObjectStoreCachingOutputs::writeOutputs(
+Expected<llvm::cas::ObjectRef> ObjectStoreCachingOutputs::writeOutputs(
     const llvm::cas::CASID &ResultCacheKey) {
   DiagnosticsEngine &Diags = Clang.getDiagnostics();
   auto ElapsedDiag = [&Diags](double Seconds) {
@@ -876,7 +879,7 @@ Expected<cas::ObjectRef> ObjectStoreCachingOutputs::writeOutputs(
 
 Error ObjectStoreCachingOutputs::finishComputedResult(
     const llvm::cas::CASID &ResultCacheKey, bool SkipCache) {
-  Expected<cas::ObjectRef> Result = writeOutputs(ResultCacheKey);
+  Expected<llvm::cas::ObjectRef> Result = writeOutputs(ResultCacheKey);
   if (!Result)
     return Result.takeError();
 
@@ -923,13 +926,13 @@ ObjectStoreCachingOutputs::replayCachedResult(llvm::cas::ObjectRef ResultID,
   }
 
   // FIXME: Stop calling report_fatal_error().
-  Optional<cas::CompileJobCacheResult> Result;
-  cas::CompileJobResultSchema Schema(*CAS);
+  Optional<clang::cas::CompileJobCacheResult> Result;
+  clang::cas::CompileJobResultSchema Schema(*CAS);
   if (Error E = Schema.load(ResultID).moveInto(Result))
     llvm::report_fatal_error(std::move(E));
 
-  auto Err = Result->forEachOutput([&](cas::CompileJobCacheResult::Output O)
-                                       -> Error {
+  auto Err = Result->forEachOutput([&](clang::cas::CompileJobCacheResult::Output
+                                           O) -> Error {
     if (O.Kind == OutputKind::Stderr) {
       Optional<llvm::cas::ObjectProxy> Errs;
       if (Error E = CAS->getProxy(O.Object).moveInto(Errs))
@@ -1160,7 +1163,7 @@ Expected<bool> RemoteCachingOutputs::replayCachedResult(
 
 bool RemoteCachingOutputs::prepareOutputCollection() {
   // Set up the output backend so we can save / cache the result after.
-  for (OutputKind K : cas::CompileJobCacheResult::getAllOutputKinds()) {
+  for (OutputKind K : clang::cas::CompileJobCacheResult::getAllOutputKinds()) {
     StringRef OutPath = getPathForOutputKind(K);
     if (!OutPath.empty())
       CollectingOutputs->addKindMap(getOutputKindName(K), OutPath);
