@@ -325,12 +325,18 @@ define <16 x float> @test_ldnp_v16f32(<16 x float>* %A) {
 define <17 x float> @test_ldnp_v17f32(<17 x float>* %A) {
 ; CHECK-LABEL: test_ldnp_v17f32:
 ; CHECK:       ; %bb.0:
-; CHECK-NEXT:    ldp q1, q2, [x0, #32]
-; CHECK-NEXT:    ldp q3, q4, [x0]
-; CHECK-NEXT:    ldr s0, [x0, #64]
-; CHECK-NEXT:    stp q3, q4, [x8]
-; CHECK-NEXT:    stp q1, q2, [x8, #32]
-; CHECK-NEXT:    str s0, [x8, #64]
+; CHECK-NEXT:    ldnp d1, d0, [x0, #16]
+; CHECK-NEXT:    ldnp d3, d2, [x0, #48]
+; CHECK-NEXT:    ldnp d6, d5, [x0, #32]
+; CHECK-NEXT:    mov.d v1[1], v0[0]
+; CHECK-NEXT:    ldnp d16, d7, [x0]
+; CHECK-NEXT:    mov.d v3[1], v2[0]
+; CHECK-NEXT:    ldr s4, [x0, #64]
+; CHECK-NEXT:    mov.d v6[1], v5[0]
+; CHECK-NEXT:    mov.d v16[1], v7[0]
+; CHECK-NEXT:    str s4, [x8, #64]
+; CHECK-NEXT:    stp q6, q3, [x8, #32]
+; CHECK-NEXT:    stp q16, q1, [x8]
 ; CHECK-NEXT:    ret
 ;
 ; CHECK-BE-LABEL: test_ldnp_v17f32:
@@ -359,24 +365,61 @@ define <17 x float> @test_ldnp_v17f32(<17 x float>* %A) {
 define <33 x double> @test_ldnp_v33f64(<33 x double>* %A) {
 ; CHECK-LABEL: test_ldnp_v33f64:
 ; CHECK:       ; %bb.0:
-; CHECK-NEXT:    ldp q0, q1, [x0]
-; CHECK-NEXT:    ldp q2, q3, [x0, #32]
-; CHECK-NEXT:    ldp q4, q5, [x0, #64]
-; CHECK-NEXT:    ldp q6, q7, [x0, #96]
-; CHECK-NEXT:    ldp q16, q17, [x0, #128]
-; CHECK-NEXT:    ldp q18, q19, [x0, #160]
-; CHECK-NEXT:    ldp q21, q22, [x0, #224]
-; CHECK-NEXT:    ldp q23, q24, [x0, #192]
-; CHECK-NEXT:    ldr d20, [x0, #256]
-; CHECK-NEXT:    stp q0, q1, [x8]
-; CHECK-NEXT:    stp q2, q3, [x8, #32]
-; CHECK-NEXT:    stp q4, q5, [x8, #64]
-; CHECK-NEXT:    str d20, [x8, #256]
-; CHECK-NEXT:    stp q6, q7, [x8, #96]
-; CHECK-NEXT:    stp q16, q17, [x8, #128]
-; CHECK-NEXT:    stp q18, q19, [x8, #160]
-; CHECK-NEXT:    stp q23, q24, [x8, #192]
-; CHECK-NEXT:    stp q21, q22, [x8, #224]
+; CHECK-NEXT:    stp d13, d12, [sp, #-48]! ; 16-byte Folded Spill
+; CHECK-NEXT:    .cfi_def_cfa_offset 48
+; CHECK-NEXT:    stp d11, d10, [sp, #16] ; 16-byte Folded Spill
+; CHECK-NEXT:    stp d9, d8, [sp, #32] ; 16-byte Folded Spill
+; CHECK-NEXT:    .cfi_offset b8, -8
+; CHECK-NEXT:    .cfi_offset b9, -16
+; CHECK-NEXT:    .cfi_offset b10, -24
+; CHECK-NEXT:    .cfi_offset b11, -32
+; CHECK-NEXT:    .cfi_offset b12, -40
+; CHECK-NEXT:    .cfi_offset b13, -48
+; CHECK-NEXT:    ldnp d31, d30, [x0, #240]
+; CHECK-NEXT:    ldnp d9, d8, [x0, #224]
+; CHECK-NEXT:    ldnp d0, d1, [x0]
+; CHECK-NEXT:    mov.d v31[1], v30[0]
+; CHECK-NEXT:    ldnp d2, d3, [x0, #16]
+; CHECK-NEXT:    mov.d v9[1], v8[0]
+; CHECK-NEXT:    ldnp d4, d5, [x0, #32]
+; CHECK-NEXT:    mov.d v0[1], v1[0]
+; CHECK-NEXT:    ldnp d6, d7, [x0, #48]
+; CHECK-NEXT:    mov.d v2[1], v3[0]
+; CHECK-NEXT:    ldnp d16, d17, [x0, #64]
+; CHECK-NEXT:    mov.d v4[1], v5[0]
+; CHECK-NEXT:    ldnp d18, d19, [x0, #80]
+; CHECK-NEXT:    mov.d v6[1], v7[0]
+; CHECK-NEXT:    ldnp d21, d20, [x0, #96]
+; CHECK-NEXT:    mov.d v16[1], v17[0]
+; CHECK-NEXT:    ldnp d23, d22, [x0, #112]
+; CHECK-NEXT:    mov.d v18[1], v19[0]
+; CHECK-NEXT:    ldnp d25, d24, [x0, #144]
+; CHECK-NEXT:    mov.d v21[1], v20[0]
+; CHECK-NEXT:    ldnp d27, d26, [x0, #176]
+; CHECK-NEXT:    mov.d v23[1], v22[0]
+; CHECK-NEXT:    ldnp d29, d28, [x0, #208]
+; CHECK-NEXT:    mov.d v25[1], v24[0]
+; CHECK-NEXT:    ldnp d11, d10, [x0, #192]
+; CHECK-NEXT:    mov.d v27[1], v26[0]
+; CHECK-NEXT:    ldnp d12, d30, [x0, #160]
+; CHECK-NEXT:    mov.d v29[1], v28[0]
+; CHECK-NEXT:    ldnp d13, d8, [x0, #128]
+; CHECK-NEXT:    mov.d v11[1], v10[0]
+; CHECK-NEXT:    ldr d28, [x0, #256]
+; CHECK-NEXT:    stp q9, q31, [x8, #224]
+; CHECK-NEXT:    mov.d v12[1], v30[0]
+; CHECK-NEXT:    stp q21, q23, [x8, #96]
+; CHECK-NEXT:    stp q16, q18, [x8, #64]
+; CHECK-NEXT:    mov.d v13[1], v8[0]
+; CHECK-NEXT:    str d28, [x8, #256]
+; CHECK-NEXT:    stp q11, q29, [x8, #192]
+; CHECK-NEXT:    stp q12, q27, [x8, #160]
+; CHECK-NEXT:    stp q4, q6, [x8, #32]
+; CHECK-NEXT:    stp q13, q25, [x8, #128]
+; CHECK-NEXT:    stp q0, q2, [x8]
+; CHECK-NEXT:    ldp d9, d8, [sp, #32] ; 16-byte Folded Reload
+; CHECK-NEXT:    ldp d11, d10, [sp, #16] ; 16-byte Folded Reload
+; CHECK-NEXT:    ldp d13, d12, [sp], #48 ; 16-byte Folded Reload
 ; CHECK-NEXT:    ret
 ;
 ; CHECK-BE-LABEL: test_ldnp_v33f64:
@@ -453,10 +496,13 @@ define <33 x double> @test_ldnp_v33f64(<33 x double>* %A) {
 define <33 x i8> @test_ldnp_v33i8(<33 x i8>* %A) {
 ; CHECK-LABEL: test_ldnp_v33i8:
 ; CHECK:       ; %bb.0:
-; CHECK-NEXT:    ldp q1, q0, [x0]
+; CHECK-NEXT:    ldnp d1, d0, [x0, #16]
+; CHECK-NEXT:    ldnp d3, d2, [x0]
 ; CHECK-NEXT:    ldrb w9, [x0, #32]
-; CHECK-NEXT:    stp q1, q0, [x8]
+; CHECK-NEXT:    mov.d v1[1], v0[0]
+; CHECK-NEXT:    mov.d v3[1], v2[0]
 ; CHECK-NEXT:    strb w9, [x8, #32]
+; CHECK-NEXT:    stp q3, q1, [x8]
 ; CHECK-NEXT:    ret
 ;
 ; CHECK-BE-LABEL: test_ldnp_v33i8:
@@ -497,24 +543,22 @@ define <4 x i65> @test_ldnp_v4i65(<4 x i65>* %A) {
 ; CHECK-BE-NEXT:    ldp x9, x8, [x0, #16]
 ; CHECK-BE-NEXT:    ldp x11, x10, [x0]
 ; CHECK-BE-NEXT:    ldrb w7, [x0, #32]
-; CHECK-BE-NEXT:    lsr x13, x9, #56
-; CHECK-BE-NEXT:    lsr x14, x11, #56
-; CHECK-BE-NEXT:    extr x15, x10, x9, #56
-; CHECK-BE-NEXT:    bfi x7, x8, #8, #56
-; CHECK-BE-NEXT:    extr x8, x9, x8, #56
+; CHECK-BE-NEXT:    extr x13, x9, x8, #56
+; CHECK-BE-NEXT:    extr x9, x10, x9, #56
 ; CHECK-BE-NEXT:    extr x12, x11, x10, #56
-; CHECK-BE-NEXT:    lsr x11, x11, #59
-; CHECK-BE-NEXT:    ubfx x9, x9, #57, #1
-; CHECK-BE-NEXT:    extr x5, x13, x8, #1
-; CHECK-BE-NEXT:    extr x1, x14, x12, #3
-; CHECK-BE-NEXT:    ubfx x12, x10, #58, #1
-; CHECK-BE-NEXT:    fmov d0, x11
-; CHECK-BE-NEXT:    and x11, x8, #0x1
-; CHECK-BE-NEXT:    lsr x10, x10, #56
-; CHECK-BE-NEXT:    fmov d2, x9
-; CHECK-BE-NEXT:    fmov d1, x12
-; CHECK-BE-NEXT:    extr x3, x10, x15, #2
-; CHECK-BE-NEXT:    fmov d3, x11
+; CHECK-BE-NEXT:    bfi x7, x8, #8, #56
+; CHECK-BE-NEXT:    lsr x8, x11, #59
+; CHECK-BE-NEXT:    lsr x10, x11, #56
+; CHECK-BE-NEXT:    and x14, x13, #0x1
+; CHECK-BE-NEXT:    ubfx x15, x9, #1, #1
+; CHECK-BE-NEXT:    ubfx x11, x12, #2, #1
+; CHECK-BE-NEXT:    extr x1, x10, x12, #3
+; CHECK-BE-NEXT:    fmov d0, x8
+; CHECK-BE-NEXT:    extr x3, x12, x9, #2
+; CHECK-BE-NEXT:    extr x5, x9, x13, #1
+; CHECK-BE-NEXT:    fmov d2, x15
+; CHECK-BE-NEXT:    fmov d1, x11
+; CHECK-BE-NEXT:    fmov d3, x14
 ; CHECK-BE-NEXT:    mov v0.d[1], x1
 ; CHECK-BE-NEXT:    mov v2.d[1], x5
 ; CHECK-BE-NEXT:    mov v1.d[1], x3
@@ -561,14 +605,9 @@ define <4 x i63> @test_ldnp_v4i63(<4 x i63>* %A) {
 define <5 x double> @test_ldnp_v5f64(<5 x double>* %A) {
 ; CHECK-LABEL: test_ldnp_v5f64:
 ; CHECK:       ; %bb.0:
-; CHECK-NEXT:    ldp q0, q2, [x0]
-; CHECK-NEXT:    ext.16b v1, v0, v0, #8
-; CHECK-NEXT:    ; kill: def $d0 killed $d0 killed $q0
-; CHECK-NEXT:    ; kill: def $d1 killed $d1 killed $q1
-; CHECK-NEXT:    ext.16b v3, v2, v2, #8
+; CHECK-NEXT:    ldnp d0, d1, [x0]
+; CHECK-NEXT:    ldnp d2, d3, [x0, #16]
 ; CHECK-NEXT:    ldr d4, [x0, #32]
-; CHECK-NEXT:    ; kill: def $d2 killed $d2 killed $q2
-; CHECK-NEXT:    ; kill: def $d3 killed $d3 killed $q3
 ; CHECK-NEXT:    ; kill: def $d4 killed $d4 killed $q4
 ; CHECK-NEXT:    ret
 ;
