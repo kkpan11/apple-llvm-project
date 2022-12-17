@@ -28,9 +28,7 @@ class Strategy;
 
 // Because we're dealing with raw pointers, let's define what we mean by that.
 static auto hasPointerType() {
-  return anyOf(hasType(pointerType()),
-               hasType(autoType(hasDeducedType(
-                   hasUnqualifiedDesugaredType(pointerType())))));
+    return hasType(hasCanonicalType(pointerType()));
 }
 
 namespace {
@@ -191,9 +189,9 @@ public:
   static Matcher matcher() {
     // FIXME: What if the index is integer literal 0? Should this be
     // a safe gadget in this case?
-    return stmt(
-        arraySubscriptExpr(hasBase(ignoringParenImpCasts(hasPointerType())))
-            .bind(ArraySubscrTag));
+    return stmt(arraySubscriptExpr(hasBase(ignoringParenImpCasts(hasPointerType())),
+                                   unless(hasIndex(integerLiteral(equals(0)))))
+                .bind(ArraySubscrTag));
   }
 
   const ArraySubscriptExpr *getBaseStmt() const override { return ASE; }
