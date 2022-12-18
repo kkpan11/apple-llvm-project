@@ -53,6 +53,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -2278,7 +2279,7 @@ public:
   ///
   /// Returns std::nullopt on failure.  \p isAngled indicates whether the file
   /// reference is for system \#include's or not (i.e. using <> instead of "").
-  Optional<FileEntryRef>
+  std::optional<FileEntryRef>
   LookupFile(SourceLocation FilenameLoc, StringRef Filename, bool isAngled,
              ConstSearchDirIterator FromDir, const FileEntry *FromFile,
              ConstSearchDirIterator *CurDir, SmallVectorImpl<char> *SearchPath,
@@ -2556,7 +2557,7 @@ private:
     }
   };
 
-  Optional<FileEntryRef> LookupHeaderIncludeOrImport(
+  std::optional<FileEntryRef> LookupHeaderIncludeOrImport(
       ConstSearchDirIterator *CurDir, StringRef &Filename,
       SourceLocation FilenameLoc, CharSourceRange FilenameRange,
       const Token &FilenameTok, bool &IsFrameworkFound, bool IsImportDecl,
