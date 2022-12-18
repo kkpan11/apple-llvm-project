@@ -49,7 +49,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -534,7 +533,7 @@ void Preprocessor::HandlePragmaDependency(Token &DependencyTok) {
     return;
 
   // Search include directories for this file.
-  std::optional<FileEntryRef> File =
+  Optional<FileEntryRef> File =
       LookupFile(FilenameTok.getLocation(), Filename, isAngled, nullptr,
                  nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
   if (!File) {
