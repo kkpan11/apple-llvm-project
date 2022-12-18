@@ -529,7 +529,7 @@ static int scanAndUpdateCC1(const char *Exec, ArrayRef<const char *> OldArgs,
   } else {
     if (llvm::Error E = llvm::errorCodeToError(
             llvm::sys::fs::current_path(WorkingDirectoryBuf))) {
-      Diag.Report(diag::err_cas_depscan_failed) << toString(std::move(E));
+      Diag.Report(diag::err_cas_depscan_failed) << std::move(E);
       return 1;
     }
     WorkingDirectory = WorkingDirectoryBuf;
@@ -591,7 +591,7 @@ static int scanAndUpdateCC1(const char *Exec, ArrayRef<const char *> OldArgs,
                                   PrefixMapping, SaveArg, CASOpts, DB, Cache);
   };
   if (llvm::Error E = ScanAndUpdate().moveInto(RootID)) {
-    Diag.Report(diag::err_cas_depscan_failed) << toString(std::move(E));
+    Diag.Report(diag::err_cas_depscan_failed) << std::move(E);
     return 1;
   }
   return DiagnosticErrorOccurred;
