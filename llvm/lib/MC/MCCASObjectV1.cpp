@@ -460,6 +460,7 @@ static Expected<RefTy> findRef(MCCASReader &Reader,
 }
 
 Expected<uint64_t> materializeAbbrevFromTagImpl(MCCASReader &Reader,
+                                                DebugAbbrevSectionRef AbbrevRef,
                                                 ArrayRef<cas::ObjectRef> Refs) {
   auto MaybeDebugInfoSectionRef = findRef<DebugInfoSectionRef>(Reader, Refs);
   if (!MaybeDebugInfoSectionRef)
@@ -472,7 +473,18 @@ Expected<uint64_t> materializeAbbrevFromTagImpl(MCCASReader &Reader,
   if (!LoadedTopRef)
     return LoadedTopRef.takeError();
 
-  return reconstructAbbrevSection(Reader.OS, LoadedTopRef->AbbrevEntries);
+  uint64_t Size =
+      reconstructAbbrevSection(Reader.OS, LoadedTopRef->AbbrevEntries);
+
+  auto MaybePaddingRef = findRef<PaddingRef>(Reader, loadReferences(AbbrevRef));
+  if (!MaybePaddingRef)
+    return MaybePaddingRef.takeError();
+
+  Expected<uint64_t> MaybePaddingSize = MaybePaddingRef->materialize(Reader.OS);
+  if (!MaybePaddingSize)
+    return MaybePaddingSize.takeError();
+
+  return Size + *MaybePaddingSize;
 }
 
 static Expected<uint64_t>
@@ -511,6 +523,14 @@ materializeDebugInfoFromTagImpl(MCCASReader &Reader,
     return std::move(E);
   Reader.Addends.clear();
 
+  auto MaybePaddingRef = findRef<PaddingRef>(Reader, Refs);
+  if (!MaybePaddingRef)
+    return MaybePaddingRef.takeError();
+
+  Expected<uint64_t> Size = MaybePaddingRef->materialize(SectionStream);
+  if (!Size)
+    return Size.takeError();
+
   Reader.OS << SectionContents;
   return SectionContents.size();
 }
@@ -529,7 +549,7 @@ Expected<uint64_t> GroupRef::materialize(MCCASReader &Reader,
       return Node.takeError();
     if (auto AbbrevRef = DebugAbbrevSectionRef::Cast(*Node)) {
       auto FragmentSize =
-          materializeAbbrevFromTagImpl(Reader, makeArrayRef(*Refs));
+          materializeAbbrevFromTagImpl(Reader, *AbbrevRef, makeArrayRef(*Refs));
       if (!FragmentSize)
         return FragmentSize.takeError();
       Size += *FragmentSize;
