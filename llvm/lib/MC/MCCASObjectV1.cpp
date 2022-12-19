@@ -127,14 +127,13 @@ Error MCSchema::serializeObjectFile(cas::ObjectProxy RootNode,
 }
 
 // Helper function to load the list of references inside an ObjectProxy.
-Expected<SmallVector<cas::ObjectRef>>
-loadReferences(const cas::ObjectProxy &Proxy) {
+SmallVector<cas::ObjectRef> loadReferences(const cas::ObjectProxy &Proxy) {
   SmallVector<cas::ObjectRef> Refs;
   if (auto E = Proxy.forEachReference([&](cas::ObjectRef ID) -> Error {
         Refs.push_back(ID);
         return Error::success();
       }))
-    return std::move(E);
+    llvm_unreachable("Callback never returns an error");
   return Refs;
 }
 
@@ -410,11 +409,7 @@ Error MCObjectProxy::encodeReferences(ArrayRef<cas::ObjectRef> Refs,
 Expected<SmallVector<cas::ObjectRef>>
 MCObjectProxy::decodeReferences(const MCObjectProxy &Node,
                                 StringRef &Remaining) {
-  Expected<SmallVector<cas::ObjectRef>> MaybeRefs = loadReferences(Node);
-  if (!MaybeRefs)
-    return MaybeRefs.takeError();
-
-  SmallVector<cas::ObjectRef> Refs = std::move(*MaybeRefs);
+  SmallVector<cas::ObjectRef> Refs = loadReferences(Node);
 
   unsigned Size = 0;
   if (auto E = consumeVBR8(Remaining, Size))
