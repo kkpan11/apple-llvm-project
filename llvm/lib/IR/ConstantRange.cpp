@@ -37,7 +37,6 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
-#include <optional>
 
 using namespace llvm;
 
@@ -86,7 +85,7 @@ KnownBits ConstantRange::toKnownBits() const {
   APInt Min = getUnsignedMin();
   APInt Max = getUnsignedMax();
   KnownBits Known = KnownBits::makeConstant(Min);
-  if (std::optional<unsigned> DifferentBit =
+  if (Optional<unsigned> DifferentBit =
           APIntOps::GetMostSignificantDifferentBit(Min, Max)) {
     Known.Zero.clearLowBits(*DifferentBit + 1);
     Known.One.clearLowBits(*DifferentBit + 1);

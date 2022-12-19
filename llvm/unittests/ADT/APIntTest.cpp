@@ -12,7 +12,6 @@
 #include "llvm/ADT/Twine.h"
 #include "gtest/gtest.h"
 #include <array>
-#include <optional>
 
 using namespace llvm;
 
@@ -2957,7 +2956,7 @@ TEST(APIntTest, GetMostSignificantDifferentBit) {
 
 TEST(APIntTest, GetMostSignificantDifferentBitExaustive) {
   auto GetHighestDifferentBitBruteforce =
-      [](const APInt &V0, const APInt &V1) -> std::optional<unsigned> {
+      [](const APInt &V0, const APInt &V1) -> llvm::Optional<unsigned> {
     assert(V0.getBitWidth() == V1.getBitWidth() && "Must have same bitwidth");
     if (V0 == V1)
       return llvm::None; // Bitwise identical.
