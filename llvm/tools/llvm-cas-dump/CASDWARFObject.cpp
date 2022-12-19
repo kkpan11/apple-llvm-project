@@ -98,9 +98,7 @@ Error CASDWARFObject::discoverDwarfSections(MCObjectProxy MCObj) {
     if (!Written)
       return Written.takeError();
   }
-  if (DebugAbbrevRef::Cast(MCObj))
-    append_range(DebugAbbrevSection, MCObj.getData());
-  else if (DebugStrRef::Cast(MCObj)) {
+  if (DebugStrRef::Cast(MCObj)) {
     MapOfStringOffsets.try_emplace(MCObj.getRef(), DebugStringSection.size());
     DebugStringSection.append(Data.begin(), Data.end());
     DebugStringSection.push_back(0);
