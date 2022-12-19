@@ -477,23 +477,30 @@ findSectionRef(MCCASReader &Reader, ArrayRef<cas::ObjectRef> Refs) {
   return DebugRefs;
 }
 
-static Expected<DIETopLevelRef>
-findDIETopLevelRef(MCCASReader &Reader, ArrayRef<cas::ObjectRef> Refs) {
+template <typename RefTy>
+static Expected<RefTy> findRef(MCCASReader &Reader,
+                               ArrayRef<cas::ObjectRef> Refs) {
   for (auto ID : Refs) {
     auto Node = Reader.getObjectProxy(ID);
     if (!Node)
       return Node.takeError();
-    if (auto TopRef = DIETopLevelRef::Cast(*Node))
+    if (auto TopRef = RefTy::Cast(*Node))
       return *TopRef;
   }
   return createStringError(inconvertibleErrorCode(),
-                           "failed to find DIETopLevelRef");
+                           "failed to find reference");
 }
 
 Expected<uint64_t> materializeAbbrevFromTagImpl(MCCASReader &Reader,
                                                 ArrayRef<cas::ObjectRef> Refs) {
-  Expected<LoadedDIETopLevel> LoadedTopRef =
-      loadDIETopLevel(findDIETopLevelRef(Reader, Refs));
+  auto MaybeDebugInfoSectionRef = findRef<DebugInfoSectionRef>(Reader, Refs);
+  if (!MaybeDebugInfoSectionRef)
+    return MaybeDebugInfoSectionRef.takeError();
+  SmallVector<cas::ObjectRef> DebugInfoSectionRefs =
+      loadReferences(*MaybeDebugInfoSectionRef);
+
+  auto LoadedTopRef =
+      loadDIETopLevel(findRef<DIETopLevelRef>(Reader, DebugInfoSectionRefs));
   if (!LoadedTopRef)
     return LoadedTopRef.takeError();
 
@@ -502,9 +509,9 @@ Expected<uint64_t> materializeAbbrevFromTagImpl(MCCASReader &Reader,
 
 static Expected<uint64_t>
 materializeDebugInfoFromTagImpl(MCCASReader &Reader,
-                                ArrayRef<cas::ObjectRef> Refs,
                                 DebugInfoSectionRef SectionRef) {
-  Expected<DIETopLevelRef> MaybeTopRef = findDIETopLevelRef(Reader, Refs);
+  SmallVector<cas::ObjectRef> Refs = loadReferences(SectionRef);
+  auto MaybeTopRef = findRef<DIETopLevelRef>(Reader, Refs);
   SmallVector<char, 0> SectionContents;
   raw_svector_ostream SectionStream(SectionContents);
 
@@ -552,13 +559,6 @@ Expected<uint64_t> GroupRef::materialize(MCCASReader &Reader,
     auto Node = Reader.getObjectProxy(ID);
     if (!Node)
       return Node.takeError();
-    if (auto F = DebugInfoSectionRef::Cast(*Node)) {
-      auto FragmentSize = materializeDebugInfoFromTagImpl(Reader, *Refs, *F);
-      if (!FragmentSize)
-        return FragmentSize.takeError();
-      Size += *FragmentSize;
-      continue;
-    }
     if (auto AbbrevRef = DebugAbbrevSectionRef::Cast(*Node)) {
       auto FragmentSize =
           materializeAbbrevFromTagImpl(Reader, makeArrayRef(*Refs));
@@ -1724,6 +1724,10 @@ MCCASBuilder::splitDebugInfoSectionData(MutableArrayRef<char> DebugInfoData) {
 
 Error MCCASBuilder::createDebugInfoSection() {
   startSection(DwarfSections.DebugInfo);
+
+  if (auto E = splitDebugInfoAndAbbrevSections())
+    return E;
+
   if (auto E = createPaddingRef(DwarfSections.DebugInfo))
     return E;
   return finalizeSection<DebugInfoSectionRef>();
@@ -2092,9 +2096,6 @@ Error MCCASBuilder::buildFragments() {
   auto DebugStringContents = createDebugStringRefs();
   if (!DebugStringContents)
     return DebugStringContents.takeError();
-
-  if (auto E = splitDebugInfoAndAbbrevSections())
-    return E;
 
   for (const MCSection &Sec : Asm) {
     if (Sec.isVirtualSection() || Sec.getFragmentList().empty())
@@ -2471,16 +2472,11 @@ Expected<uint64_t> MCCASReader::materializeGroup(cas::ObjectRef ID) {
     return *Size + 1;
   }
   if (auto F = DebugInfoSectionRef::Cast(*Node))
-    return createStringError(
-        inconvertibleErrorCode(),
-        "DebugInfoSectionRef should not be materialized here!");
+    return materializeDebugInfoFromTagImpl(*this, *F);
   if (auto F = DebugLineSectionRef::Cast(*Node))
     return F->materialize(*this);
   if (auto F = DebugAbbrevSectionRef::Cast(*Node))
     return F->materialize(*this);
-  // Transition period: ignore DIE nodes.
-  if (DIETopLevelRef::Cast(*Node))
-    return 0;
   return createStringError(inconvertibleErrorCode(),
                            "unsupported CAS node for group");
 }
