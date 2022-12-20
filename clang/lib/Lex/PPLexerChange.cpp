@@ -78,7 +78,7 @@ bool Preprocessor::EnterSourceFile(FileID FID, ConstSearchDirIterator CurDir,
   ArrayRef<dependency_directives_scan::Directive> ScannedDepDirectives;
   if (getPreprocessorOpts().DependencyDirectivesForFile &&
       FID != PredefinesFileID) {
-    if (Optional<FileEntryRef> File = SourceMgr.getFileEntryRefForID(FID)) {
+    if (OptionalFileEntryRef File = SourceMgr.getFileEntryRefForID(FID)) {
       if (Optional<ArrayRef<dependency_directives_scan::Directive>>
               DepDirectives =
                   getPreprocessorOpts().DependencyDirectivesForFile(*File)) {

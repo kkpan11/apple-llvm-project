@@ -1260,7 +1260,7 @@ static bool EvaluateHasIncludeCommon(Token &Tok, IdentifierInfo *II,
     return false;
 
   // Search include directories.
-  Optional<FileEntryRef> File =
+  OptionalFileEntryRef File =
       PP.LookupFile(FilenameLoc, Filename, isAngled, LookupFrom, LookupFromFile,
                     nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
 
