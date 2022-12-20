@@ -80,19 +80,17 @@ public:
   SLocEntry(FileInfo FI) : File(std::move(FI)), IsExpansion(false) {}
   SLocEntry(ExpansionInfo EI) : Expansion(std::move(EI)), IsExpansion(true) {}
 
-  SLocEntry(const SLocEntry &SE) {
-    IsExpansion = SE.IsExpansion;
-    if (IsExpansion)
-      Expansion = SE.Expansion;
+  SLocEntry(const SLocEntry &SE) : SLocEntry() {
+    if (SE.IsExpansion)
+      *this = SE.Expansion;
     else
-      File = SE.File;
+      *this = SE.File;
   }
-  SLocEntry(SLocEntry &&SE) {
-    IsExpansion = SE.IsExpansion;
-    if (IsExpansion)
-      Expansion = std::move(SE.Expansion);
+  SLocEntry(SLocEntry &&SE) : SLocEntry() {
+    if (SE.IsExpansion)
+      *this = std::move(SE.Expansion);
     else
-      File = std::move(SE.File);
+      *this = std::move(SE.File);
   }
 
   ~SLocEntry() {
