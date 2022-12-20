@@ -153,12 +153,8 @@ public:
   /// owned by this class.
   DIEAbbrev &uniqueAbbreviation(DIE &Die);
 
-  /// Print all abbreviations using the specified AsmPrinter. This function
-  /// does not switch to the Abbreviation section, this is should be done before
-  /// it is called.
-  void Emit(const AsmPrinter *AP) const;
-
-  bool isAbbreviationListEmpty() { return Abbreviations.empty(); }
+  /// Print all abbreviations using the specified asm printer.
+  void Emit(const AsmPrinter *AP, MCSection *Section) const;
 };
 
 //===--------------------------------------------------------------------===//
@@ -834,10 +830,8 @@ public:
   /// \param CUOffset the compile/type unit relative offset in bytes.
   /// \returns the offset for the DIE that follows this DIE within the
   /// current compile/type unit.
-  unsigned computeOffsetsAndAbbrevs(
-      const dwarf::FormParams &FormParams,
-      std::vector<std::unique_ptr<DIEAbbrevSet>> &AbbrevSetVec,
-      unsigned CUOffset);
+  unsigned computeOffsetsAndAbbrevs(const dwarf::FormParams &FormParams,
+                                    DIEAbbrevSet &AbbrevSet, unsigned CUOffset);
 
   /// Climb up the parent chain to get the compile unit or type unit DIE that
   /// this DIE belongs to.

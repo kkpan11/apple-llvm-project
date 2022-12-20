@@ -34,13 +34,6 @@ class MCSymbol;
 /// source file.
 class DwarfUnit : public DIEUnit {
 protected:
-  // Label to denote the beginning of the Abbreviation contribution of this
-  // compile unit.
-  MCSymbol *AbbrevOffset = nullptr;
-
-  // Label to denote the start of Abbreviation Section.
-  MCSymbol *AbbrevSectionBegin = nullptr;
-
   /// MDNode for the compile unit.
   const DICompileUnit *CUNode;
 
@@ -105,16 +98,6 @@ public:
   uint16_t getLanguage() const { return CUNode->getSourceLanguage(); }
   const DICompileUnit *getCUNode() const { return CUNode; }
   DwarfDebug &getDwarfDebug() const { return *DD; }
-  /// Create a label to denote the end of a compile unit's abbreviation
-  /// contribution and return it, if it already exists, just return it.
-  MCSymbol *getOrCreateAbbrevOffset() {
-    if (!AbbrevOffset)
-      AbbrevOffset = Asm->createTempSymbol("debug_abbrev_begin");
-    return AbbrevOffset;
-  }
-  void setAbbrevOffset(MCSymbol *Sym) { AbbrevOffset = Sym; }
-  MCSymbol *getAbbrevSectionBegin() { return AbbrevSectionBegin; }
-  void setAbbrevSectionBegin(MCSymbol *Sym) { AbbrevSectionBegin = Sym; }
   /// Return true if this compile unit has something to write out.
   bool hasContent() const { return getUnitDie().hasChildren(); }
 

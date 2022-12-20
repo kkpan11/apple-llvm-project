@@ -18,9 +18,7 @@
 using namespace llvm;
 
 DwarfFile::DwarfFile(AsmPrinter *AP, StringRef Pref, BumpPtrAllocator &DA)
-    : Asm(AP), StrPool(DA, *Asm, Pref) {
-  Abbrevs.emplace_back(std::make_unique<DIEAbbrevSet>(AbbrevAllocator));
-}
+    : Asm(AP), Abbrevs(AbbrevAllocator), StrPool(DA, *Asm, Pref) {}
 
 void DwarfFile::addUnit(std::unique_ptr<DwarfCompileUnit> U) {
   CUs.push_back(std::move(U));
@@ -29,19 +27,8 @@ void DwarfFile::addUnit(std::unique_ptr<DwarfCompileUnit> U) {
 // Emit the various dwarf units to the unit section USection with
 // the abbreviations going into ASection.
 void DwarfFile::emitUnits(bool UseOffsets) {
-  bool FirstContribution = true;
-  for (const auto &TheU : CUs) {
-    getOrCreateAbbrevSectionStart();
-    TheU.get()->setAbbrevSectionBegin(AbbrevSectionStart);
-    // If there is only one Abbreviation contribution or we are working with the
-    // first compile unit, we can avoid label arithmetic by setting the offset
-    // to the start of the section.
-    if (FirstContribution || Abbrevs.size() == 1) {
-      FirstContribution = false;
-      TheU.get()->setAbbrevOffset(AbbrevSectionStart);
-    }
+  for (const auto &TheU : CUs)
     emitUnit(TheU.get(), UseOffsets);
-  }
 }
 
 void DwarfFile::emitUnit(DwarfUnit *TheU, bool UseOffsets) {
@@ -66,12 +53,6 @@ void DwarfFile::emitUnit(DwarfUnit *TheU, bool UseOffsets) {
     Asm->OutStreamer->emitLabel(EndLabel);
 }
 
-MCSymbol *DwarfFile::getOrCreateAbbrevSectionStart() {
-  if (!AbbrevSectionStart)
-    AbbrevSectionStart = Asm->createTempSymbol("debug_abbrev_begin");
-  return AbbrevSectionStart;
-}
-
 // Compute the size and offset for each DIE.
 void DwarfFile::computeSizeAndOffsets() {
   // Offset from the first CU in the debug info section is 0 initially.
@@ -90,16 +71,6 @@ void DwarfFile::computeSizeAndOffsets() {
 
     TheU->setDebugSectionOffset(SecOffset);
     SecOffset += computeSizeAndOffsetsForUnit(TheU.get());
-    // Only push_back a new .debug_abbrev contribution when emitting
-    // CAS-friendly debug info, and make sure to not add an extra compile unit.
-    // An initial Abbreviation contribution is pushed back when the DwarfFile is
-    // created because there are cases where the compile units are emitted
-    // without computing size and offsets for each DIE.
-    if (Abbrevs.size() != CUs.size() &&
-        TheU->getCUNode()->getCasFriendlinessKind() !=
-            DICompileUnit::NoCasFriendlyDebugInfo) {
-      Abbrevs.emplace_back(std::make_unique<DIEAbbrevSet>(AbbrevAllocator));
-    }
   }
   if (SecOffset > UINT32_MAX && !Asm->isDwarf64())
     report_fatal_error("The generated debug information is too large "
@@ -123,42 +94,7 @@ unsigned DwarfFile::computeSizeAndOffset(DIE &Die, unsigned Offset) {
                                       Offset);
 }
 
-void DwarfFile::emitAbbrevs(MCSection *Section) {
-  // If the abbreviation vector only has one .debug_abbrev contribution and the
-  // contribution has non-zero abbreviations in use, emit it without emitting
-  // any labels. This is done because there are some targets do not support
-  // labels inside debug sections.
-  if (Abbrevs.size() == 1 && !Abbrevs[0]->isAbbreviationListEmpty()) {
-    Asm->OutStreamer->switchSection(Section);
-    Abbrevs[0]->Emit(Asm);
-    return;
-  }
-  for (unsigned I = 0; I < Abbrevs.size(); I++) {
-    // If the abbreviation contribution is empty, do not
-    // switch sections or emit labels.
-    if (Abbrevs[I]->isAbbreviationListEmpty())
-      continue;
-
-    Asm->OutStreamer->switchSection(Section);
-    MCSymbol *AbbrevStartSym = getOrCreateAbbrevSectionStart();
-    // Do not emit the same label again, AbbrevStartSym should be the same for
-    // all abbreviation contributions, it denotes the start of the
-    // abbreviation Section.
-    if (!AbbrevStartEmitted) {
-      AbbrevStartEmitted = true;
-      Asm->OutStreamer->emitLabel(AbbrevStartSym);
-    }
-    CUs[I]->setAbbrevSectionBegin(AbbrevSectionStart);
-    // If this is the first abbreviation contribution, we do not emit label
-    // differences, therefore the abbreviation offset is set to be the same
-    // as the start of the abbreviation section.
-    if (I == 0)
-      CUs[0]->setAbbrevOffset(AbbrevSectionStart);
-    else
-      Asm->OutStreamer->emitLabel(CUs[I]->getOrCreateAbbrevOffset());
-    Abbrevs[I]->Emit(Asm);
-  }
-}
+void DwarfFile::emitAbbrevs(MCSection *Section) { Abbrevs.Emit(Asm, Section); }
 
 // Emit strings into a string section.
 void DwarfFile::emitStrings(MCSection *StrSection, MCSection *OffsetSection,

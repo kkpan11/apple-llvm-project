@@ -92,7 +92,7 @@ entry:
 !llvm.module.flags = !{!2, !3, !4, !5, !6, !7}
 !llvm.ident = !{!8}
 
-!0 = distinct !DICompileUnit(language: DW_LANG_C99, file: !1, producer: "some_clang", isOptimized: false, runtimeVersion: 0, emissionKind: FullDebug, splitDebugInlining: false, nameTableKind: None, sysroot: "/", casFriendly: DebugAbbrev)
+!0 = distinct !DICompileUnit(language: DW_LANG_C99, file: !1, producer: "some_clang", isOptimized: false, runtimeVersion: 0, emissionKind: FullDebug, splitDebugInlining: false, nameTableKind: None, sysroot: "/", casFriendly: DebugLineOnly)
 !1 = !DIFile(filename: "test.c", directory: "some_dir")
 !2 = !{i32 7, !"Dwarf Version", i32 4}
 !3 = !{i32 2, !"Debug Info Version", i32 3}
