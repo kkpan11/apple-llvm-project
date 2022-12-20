@@ -6635,3 +6635,220 @@ is only supported in compute shaders.
 The full documentation is available here: https://docs.microsoft.com/en-us/windows/win32/direct3dhlsl/sv-groupindex
   }];
 }
+
+def HLSLResourceBindingDocs : Documentation {
+  let Category = DocCatFunction;
+  let Content = [{
+The resource binding attribute sets the virtual register and logical register space for a resource.
+Attribute spelling in HLSL is: ``register(slot [, space])``.
+``slot`` takes the format ``[type][number]``,
+where ``type`` is a single character specifying the resource type and ``number`` is the virtual register number.
+
+Register types are:
+t for shader resource views (SRV),
+s for samplers,
+u for unordered access views (UAV),
+b for constant buffer views (CBV).
+
+Register space is specified in the format ``space[number]`` and defaults to ``space0`` if omitted.
+Here're resource binding examples with and without space:
+.. code-block:: c++
+
+  RWBuffer<float> Uav : register(u3, space1);
+  Buffer<float> Buf : register(t1);
+
+The full documentation is available here: https://docs.microsoft.com/en-us/windows/win32/direct3d12/resource-binding-in-hlsl
+  }];
+}
+
+def HLSLSV_DispatchThreadIDDocs : Documentation {
+  let Category = DocCatFunction;
+  let Content = [{
+The ``SV_DispatchThreadID`` semantic, when applied to an input parameter,
+specifies a data binding to map the global thread offset within the Dispatch
+call (per dimension of the group) to the specified parameter.
+When applied to a field of a struct, the data binding is specified to the field
+when the struct is used as a parameter type.
+The semantic on the field is ignored when not used as a parameter.
+This attribute is only supported in compute shaders.
+
+The full documentation is available here: https://docs.microsoft.com/en-us/windows/win32/direct3dhlsl/sv-dispatchthreadid
+  }];
+}
+
+def HLSLGroupSharedAddressSpaceDocs : Documentation {
+  let Category = DocCatVariable;
+  let Content = [{
+HLSL enables threads of a compute shader to exchange values via shared memory.
+HLSL provides barrier primitives such as GroupMemoryBarrierWithGroupSync,
+and so on to ensure the correct ordering of reads and writes to shared memory
+in the shader and to avoid data races.
+Here's an example to declare a groupshared variable.
+.. code-block:: c++
+
+  groupshared GSData data[5*5*1];
+
+The full documentation is available here: https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx-graphics-hlsl-variable-syntax#group-shared
+  }];
+}
+
+def AnnotateTypeDocs : Documentation {
+  let Category = DocCatType;
+  let Heading = "annotate_type";
+  let Content = [{
+This attribute is used to add annotations to types, typically for use by static
+analysis tools that are not integrated into the core Clang compiler (e.g.,
+Clang-Tidy checks or out-of-tree Clang-based tools). It is a counterpart to the
+`annotate` attribute, which serves the same purpose, but for declarations.
+
+The attribute takes a mandatory string literal argument specifying the
+annotation category and an arbitrary number of optional arguments that provide
+additional information specific to the annotation category. The optional
+arguments must be constant expressions of arbitrary type.
+
+For example:
+
+.. code-block:: c++
+
+  int* [[clang::annotate("category1", "foo", 1)]] f(int[[clang::annotate("category2")]] *);
+
+The attribute does not have any effect on the semantics of the type system,
+neither type checking rules, nor runtime semantics. In particular:
+
+- ``std::is_same<T, T [[clang::annotate_type("foo")]]>`` is true for all types
+  ``T``.
+
+- It is not permissible for overloaded functions or template specializations
+  to differ merely by an ``annotate_type`` attribute.
+
+- The presence of an ``annotate_type`` attribute will not affect name
+  mangling.
+  }];
+}
+
+def WeakDocs : Documentation {
+  let Category = DocCatDecl;
+  let Content = [{
+
+In supported output formats the ``weak`` attribute can be used to
+specify that a variable or function should be emitted as a symbol with
+``weak`` (if a definition) or ``extern_weak`` (if a declaration of an
+external symbol) `linkage
+<https://llvm.org/docs/LangRef.html#linkage-types>`_.
+
+If there is a non-weak definition of the symbol the linker will select
+that over the weak. They must have same type and alignment (variables
+must also have the same size), but may have a different value.
+
+If there are multiple weak definitions of same symbol, but no non-weak
+definition, they should have same type, size, alignment and value, the
+linker will select one of them (see also selectany_ attribute).
+
+If the ``weak`` attribute is applied to a ``const`` qualified variable
+definition that variable is no longer consider a compiletime constant
+as its value can change during linking (or dynamic linking). This
+means that it can e.g no longer be part of an initializer expression.
+
+.. code-block:: c
+
+  const int ANSWER __attribute__ ((weak)) = 42;
+
+  /* This function may be replaced link-time */
+  __attribute__ ((weak)) void debug_log(const char *msg)
+  {
+      fprintf(stderr, "DEBUG: %s\n", msg);
+  }
+
+  int main(int argc, const char **argv)
+  {
+      debug_log ("Starting up...");
+
+      /* This may print something else than "6 * 7 = 42",
+         if there is a non-weak definition of "ANSWER" in
+	 an object linked in */
+      printf("6 * 7 = %d\n", ANSWER);
+
+      return 0;
+   }
+
+If an external declaration is marked weak and that symbol does not
+exist during linking (possibly dynamic) the address of the symbol will
+evaluate to NULL.
+
+.. code-block:: c
+
+  void may_not_exist(void) __attribute__ ((weak));
+
+  int main(int argc, const char **argv)
+  {
+      if (may_not_exist) {
+          may_not_exist();
+      } else {
+          printf("Function did not exist\n");
+      }
+      return 0;
+  }
+  }];
+}
+
+def FunctionReturnThunksDocs : Documentation {
+  let Category = DocCatFunction;
+  let Content = [{
+The attribute ``function_return`` can replace return instructions with jumps to
+target-specific symbols. This attribute supports 2 possible values,
+corresponding to the values supported by the ``-mfunction-return=`` command
+line flag:
+
+* ``__attribute__((function_return("keep")))`` to disable related transforms.
+  This is useful for undoing global setting from ``-mfunction-return=`` locally
+  for individual functions.
+* ``__attribute__((function_return("thunk-extern")))`` to replace returns with
+  jumps, while NOT emitting the thunk.
+
+The values ``thunk`` and ``thunk-inline`` from GCC are not supported.
+
+The symbol used for ``thunk-extern`` is target specific:
+* X86: ``__x86_return_thunk``
+
+As such, this function attribute is currently only supported on X86 targets.
+  }];
+}
+
+def ReadOnlyPlacementDocs : Documentation {
+  let Category = DocCatType;
+  let Content = [{This attribute is attached to a structure, class or union declaration.
+  When attached to a record declaration/definition, it checks if all instances
+  of this type can be placed in the read-only data segment of the program. If it
+  finds an instance that can not be placed in a read-only segment, the compiler
+  emits a warning at the source location where the type was used.
+
+  Examples:
+  * ``struct __attribute__((enforce_read_only_placement)) Foo;``
+  * ``struct __attribute__((enforce_read_only_placement)) Bar { ... };``
+
+  Both ``Foo`` and ``Bar`` types have the ``enforce_read_only_placement`` attribute.
+
+  The goal of introducing this attribute is to assist developers with writing secure
+  code. A ``const``-qualified global is generally placed in the read-only section
+  of the memory that has additional run time protection from malicious writes. By
+  attaching this attribute to a declaration, the developer can express the intent
+  to place all instances of the annotated type in the read-only program memory.
+
+  Note 1: The attribute doesn't guarantee that the object will be placed in the
+  read-only data segment as it does not instruct the compiler to ensure such
+  a placement. It emits a warning if something in the code can be proven to prevent
+  an instance from being placed in the read-only data segment.
+
+  Note 2: Currently, clang only checks if all global declarations of a given type 'T'
+  are ``const``-qualified. The following conditions would also prevent the data to be
+  put into read only segment, but the corresponding warnings are not yet implemented.
+
+  1. An instance of type ``T`` is allocated on the heap/stack.
+  2. Type ``T`` defines/inherits a mutable field.
+  3. Type ``T`` defines/inherits non-constexpr constructor(s) for initialization.
+  4. A field of type ``T`` is defined by type ``Q``, which does not bear the
+     ``enforce_read_only_placement`` attribute.
+  5. A type ``Q`` inherits from type ``T`` and it does not have the
+     ``enforce_read_only_placement`` attribute.
+  }];
+}

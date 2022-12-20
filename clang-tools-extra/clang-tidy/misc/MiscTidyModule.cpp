@@ -25,6 +25,7 @@
 #include "UnusedAliasDeclsCheck.h"
 #include "UnusedParametersCheck.h"
 #include "UnusedUsingDeclsCheck.h"
+#include "UseAnonymousNamespaceCheck.h"
 
 namespace clang {
 namespace tidy {
@@ -62,6 +63,8 @@ public:
         "misc-unused-parameters");
     CheckFactories.registerCheck<UnusedUsingDeclsCheck>(
         "misc-unused-using-decls");
+    CheckFactories.registerCheck<UseAnonymousNamespaceCheck>(
+        "misc-use-anonymous-namespace");
   }
 };
 

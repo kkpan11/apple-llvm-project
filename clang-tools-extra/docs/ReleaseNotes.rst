@@ -139,6 +139,17 @@ New checks
   Future libc++ will remove the extension (`D120996
   <https://reviews.llvm.org/D120996>`).
 
+- New :doc:`misc-use-anonymous-namespace
+  <clang-tidy/checks/misc/use-anonymous-namespace>` check.
+
+  Warns when using ``static`` function or variables at global scope, and suggests
+  moving them into an anonymous namespace.
+
+- New :doc:`bugprone-standalone-empty <clang-tidy/checks/bugprone/standalone-empty>` check.
+
+  Warns when `empty()` is used on a range and the result is ignored. Suggests `clear()`
+  if it is an existing member function.
+
 New check aliases
 ^^^^^^^^^^^^^^^^^
 
