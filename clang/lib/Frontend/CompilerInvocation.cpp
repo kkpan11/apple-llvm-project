@@ -1502,9 +1502,6 @@ void CompilerInvocation::GenerateCodeGenArgs(
   case codegenoptions::DebugLineOnly:
     CasFriendlinessVal = "debug-line-only";
     break;
-  case codegenoptions::DebugAbbrev:
-    CasFriendlinessVal = "debug-abbrev";
-    break;
   }
   if (CasFriendlinessVal)
     GenerateArg(Args, OPT_cas_friendliness_kind_EQ, *CasFriendlinessVal, SA);
@@ -1763,7 +1760,6 @@ bool CompilerInvocation::ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args,
   if (Arg *A = Args.getLastArg(OPT_cas_friendliness_kind_EQ)) {
     unsigned Val = llvm::StringSwitch<unsigned>(A->getValue())
                        .Case("debug-line-only", codegenoptions::DebugLineOnly)
-                       .Case("debug-abbrev", codegenoptions::DebugAbbrev)
                        .Default(codegenoptions::NoCasFriendlyDebugInfo);
 
     Opts.CasFriendliness =

@@ -30,11 +30,11 @@
                              isOptimized: false, flags: "", runtimeVersion: 0,
                              splitDebugFilename: "", emissionKind: NoDebug)
 
-; CHECK: !10 = distinct !DICompileUnit(language: DW_LANG_C99, file: !1, producer: "clang", isOptimized: true, flags: "-O2", runtimeVersion: 2, splitDebugFilename: "abc.debug", emissionKind: LineTablesOnly, splitDebugInlining: false, casFriendly: DebugAbbrev)
+; CHECK: !10 = distinct !DICompileUnit(language: DW_LANG_C99, file: !1, producer: "clang", isOptimized: true, flags: "-O2", runtimeVersion: 2, splitDebugFilename: "abc.debug", emissionKind: LineTablesOnly, splitDebugInlining: false)
 !10 = distinct !DICompileUnit(language: DW_LANG_C99, file: !1, producer: "clang",
                              isOptimized: true, flags: "-O2", runtimeVersion: 2,
                              splitDebugFilename: "abc.debug",
-                             emissionKind: LineTablesOnly, splitDebugInlining: false, casFriendly: DebugAbbrev)
+                             emissionKind: LineTablesOnly, splitDebugInlining: false)
 
 !llvm.module.flags = !{!11}
 !11 = !{i32 2, !"Debug Info Version", i32 3}

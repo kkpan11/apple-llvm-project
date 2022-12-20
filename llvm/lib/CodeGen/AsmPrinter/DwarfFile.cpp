@@ -96,8 +96,8 @@ void DwarfFile::computeSizeAndOffsets() {
     // created because there are cases where the compile units are emitted
     // without computing size and offsets for each DIE.
     if (Abbrevs.size() != CUs.size() &&
-        TheU->getCUNode()->getCasFriendlinessKind() ==
-            DICompileUnit::DebugAbbrev) {
+        TheU->getCUNode()->getCasFriendlinessKind() !=
+            DICompileUnit::NoCasFriendlyDebugInfo) {
       Abbrevs.emplace_back(std::make_unique<DIEAbbrevSet>(AbbrevAllocator));
     }
   }

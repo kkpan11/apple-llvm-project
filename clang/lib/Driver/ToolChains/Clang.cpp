@@ -4206,8 +4206,6 @@ static void renderDebugOptions(const ToolChain &TC, const Driver &D,
     StringRef ArgValue = A->getValue();
     if (ArgValue == "debug-line-only")
       CmdArgs.push_back("-cas-friendliness-kind=debug-line-only");
-    else if (ArgValue == "debug-abbrev")
-      CmdArgs.push_back("-cas-friendliness-kind=debug-abbrev");
     else
       D.Diag(diag::warn_drv_unsupported_debug_info_opt_for_target)
           << A->getAsString(Args) << TC.getTripleString();

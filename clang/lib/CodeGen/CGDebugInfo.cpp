@@ -627,9 +627,6 @@ void CGDebugInfo::CreateCompileUnit() {
   case codegenoptions::DebugLineOnly:
     CasFriendlinessKind = llvm::DICompileUnit::DebugLineOnly;
     break;
-  case codegenoptions::DebugAbbrev:
-    CasFriendlinessKind = llvm::DICompileUnit::DebugAbbrev;
-    break;
   }
 
   uint64_t DwoId = 0;
