@@ -4,6 +4,7 @@ set(LLVM_LINK_COMPONENTS
   Core
   Object
   Support
+  TargetParser
   TextAPI
   ${LLVM_TARGETS_TO_BUILD}
   )

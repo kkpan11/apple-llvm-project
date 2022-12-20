@@ -50,6 +50,7 @@ add_lld_library(lldMachO
   Option
   Passes
   Support
+  TargetParser
   TextAPI
 
   LINK_LIBS

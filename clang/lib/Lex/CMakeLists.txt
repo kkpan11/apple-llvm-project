@@ -1,6 +1,10 @@
 # TODO: Add -maltivec when ARCH is PowerPC.
 
-set(LLVM_LINK_COMPONENTS support CAS)
+set(LLVM_LINK_COMPONENTS
+  Support
+  CAS
+  TargetParser
+  )
 
 add_clang_library(clangLex
   DependencyDirectivesScanner.cpp
