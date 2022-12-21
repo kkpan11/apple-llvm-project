@@ -511,15 +511,6 @@ private:
   /// AbbrevRefs. Otherwise, no objects are created and `success` is returned.
   Error createDebugAbbrevSection();
 
-  /// Split the Dwarf Abbrev section using `AbbrevOffsets` (possibly unsorted)
-  /// as the split points for the section, creating one DebugAbbrevRef per
-  /// _unique_ offset in the input.
-  /// Returns a sequence of DebugAbbrevRefs, sorted by the order in which they
-  /// should appear in the object file.
-  Expected<SmallVector<DebugAbbrevRef>>
-  splitAbbrevSection(ArrayRef<size_t> AbbrevOffsets,
-                     ArrayRef<char> FullAbbrevData);
-
   struct DebugStringSectionContents {
     SmallVector<DebugStrRef, 0> DebugStringRefs;
     DenseMap<unsigned, cas::ObjectRef> MapOfStringRefs;
@@ -616,13 +607,6 @@ public:
       return std::nullopt;
     return DebugInfoSectionRef(*Specific);
   }
-
-  Expected<uint64_t>
-  materialize(MCCASReader &Reader, ArrayRef<char> AbbrevSectionContents,
-              ArrayRef<uint32_t> SecOffsetVals,
-              const DenseMap<cas::ObjectRef, unsigned> &MapOfStringOffsets,
-              raw_ostream *Stream = nullptr) const;
-
 private:
   explicit DebugInfoSectionRef(SpecificRefT Ref) : SpecificRefT(Ref) {}
 };

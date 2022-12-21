@@ -127,14 +127,13 @@ Error MCSchema::serializeObjectFile(cas::ObjectProxy RootNode,
 }
 
 // Helper function to load the list of references inside an ObjectProxy.
-Expected<SmallVector<cas::ObjectRef>>
-loadReferences(const cas::ObjectProxy &Proxy) {
+SmallVector<cas::ObjectRef> loadReferences(const cas::ObjectProxy &Proxy) {
   SmallVector<cas::ObjectRef> Refs;
   if (auto E = Proxy.forEachReference([&](cas::ObjectRef ID) -> Error {
         Refs.push_back(ID);
         return Error::success();
       }))
-    return std::move(E);
+    llvm_unreachable("Callback never returns an error");
   return Refs;
 }
 
@@ -410,11 +409,7 @@ Error MCObjectProxy::encodeReferences(ArrayRef<cas::ObjectRef> Refs,
 Expected<SmallVector<cas::ObjectRef>>
 MCObjectProxy::decodeReferences(const MCObjectProxy &Node,
                                 StringRef &Remaining) {
-  Expected<SmallVector<cas::ObjectRef>> MaybeRefs = loadReferences(Node);
-  if (!MaybeRefs)
-    return MaybeRefs.takeError();
-
-  SmallVector<cas::ObjectRef> Refs = std::move(*MaybeRefs);
+  SmallVector<cas::ObjectRef> Refs = loadReferences(Node);
 
   unsigned Size = 0;
   if (auto E = consumeVBR8(Remaining, Size))
@@ -450,66 +445,53 @@ Expected<GroupRef> GroupRef::create(MCCASBuilder &MB,
   return get(B->build());
 }
 
-struct DebugInfoMaterializationSecs {
-  Optional<DebugAbbrevSectionRef> AbbrevSectionRef;
-  Optional<DebugLineSectionRef> LineSectionRef;
-  Optional<DebugStringSectionRef> StringSectionRef;
-};
-
-Expected<DebugInfoMaterializationSecs>
-findSectionRef(MCCASReader &Reader, ArrayRef<cas::ObjectRef> Refs) {
-  DebugInfoMaterializationSecs DebugRefs;
+template <typename RefTy>
+static Expected<RefTy> findRef(MCCASReader &Reader,
+                               ArrayRef<cas::ObjectRef> Refs) {
   for (auto ID : Refs) {
     auto Node = Reader.getObjectProxy(ID);
     if (!Node)
       return Node.takeError();
-    if (auto AbbrevSectionRef = DebugAbbrevSectionRef::Cast(*Node))
-      DebugRefs.AbbrevSectionRef = AbbrevSectionRef;
-    else if (auto LineSectionRef = DebugLineSectionRef::Cast(*Node))
-      DebugRefs.LineSectionRef = LineSectionRef;
-    else if (auto StringSectionRef = DebugStringSectionRef::Cast(*Node))
-      DebugRefs.StringSectionRef = StringSectionRef;
-  }
-  if (!DebugRefs.AbbrevSectionRef)
-    return createStringError(inconvertibleErrorCode(),
-                             "Could not find a DebugAbbrevSectionRef");
-  if (!DebugRefs.LineSectionRef)
-    return createStringError(inconvertibleErrorCode(),
-                             "Could not find a DebugLineSectionRef");
-  if (!DebugRefs.StringSectionRef)
-    return createStringError(inconvertibleErrorCode(),
-                             "Could not find a DebugStringSectionRef");
-  return DebugRefs;
-}
-
-static Expected<DIETopLevelRef>
-findDIETopLevelRef(MCCASReader &Reader, ArrayRef<cas::ObjectRef> Refs) {
-  for (auto ID : Refs) {
-    auto Node = Reader.getObjectProxy(ID);
-    if (!Node)
-      return Node.takeError();
-    if (auto TopRef = DIETopLevelRef::Cast(*Node))
+    if (auto TopRef = RefTy::Cast(*Node))
       return *TopRef;
   }
   return createStringError(inconvertibleErrorCode(),
-                           "failed to find DIETopLevelRef");
+                           "failed to find reference");
 }
 
 Expected<uint64_t> materializeAbbrevFromTagImpl(MCCASReader &Reader,
+                                                DebugAbbrevSectionRef AbbrevRef,
                                                 ArrayRef<cas::ObjectRef> Refs) {
-  Expected<LoadedDIETopLevel> LoadedTopRef =
-      loadDIETopLevel(findDIETopLevelRef(Reader, Refs));
+  auto MaybeDebugInfoSectionRef = findRef<DebugInfoSectionRef>(Reader, Refs);
+  if (!MaybeDebugInfoSectionRef)
+    return MaybeDebugInfoSectionRef.takeError();
+  SmallVector<cas::ObjectRef> DebugInfoSectionRefs =
+      loadReferences(*MaybeDebugInfoSectionRef);
+
+  auto LoadedTopRef =
+      loadDIETopLevel(findRef<DIETopLevelRef>(Reader, DebugInfoSectionRefs));
   if (!LoadedTopRef)
     return LoadedTopRef.takeError();
 
-  return reconstructAbbrevSection(Reader.OS, LoadedTopRef->AbbrevEntries);
+  uint64_t Size =
+      reconstructAbbrevSection(Reader.OS, LoadedTopRef->AbbrevEntries);
+
+  auto MaybePaddingRef = findRef<PaddingRef>(Reader, loadReferences(AbbrevRef));
+  if (!MaybePaddingRef)
+    return MaybePaddingRef.takeError();
+
+  Expected<uint64_t> MaybePaddingSize = MaybePaddingRef->materialize(Reader.OS);
+  if (!MaybePaddingSize)
+    return MaybePaddingSize.takeError();
+
+  return Size + *MaybePaddingSize;
 }
 
 static Expected<uint64_t>
 materializeDebugInfoFromTagImpl(MCCASReader &Reader,
-                                ArrayRef<cas::ObjectRef> Refs,
                                 DebugInfoSectionRef SectionRef) {
-  Expected<DIETopLevelRef> MaybeTopRef = findDIETopLevelRef(Reader, Refs);
+  SmallVector<cas::ObjectRef> Refs = loadReferences(SectionRef);
+  auto MaybeTopRef = findRef<DIETopLevelRef>(Reader, Refs);
   SmallVector<char, 0> SectionContents;
   raw_svector_ostream SectionStream(SectionContents);
 
@@ -541,6 +523,14 @@ materializeDebugInfoFromTagImpl(MCCASReader &Reader,
     return std::move(E);
   Reader.Addends.clear();
 
+  auto MaybePaddingRef = findRef<PaddingRef>(Reader, Refs);
+  if (!MaybePaddingRef)
+    return MaybePaddingRef.takeError();
+
+  Expected<uint64_t> Size = MaybePaddingRef->materialize(SectionStream);
+  if (!Size)
+    return Size.takeError();
+
   Reader.OS << SectionContents;
   return SectionContents.size();
 }
@@ -557,16 +547,9 @@ Expected<uint64_t> GroupRef::materialize(MCCASReader &Reader,
     auto Node = Reader.getObjectProxy(ID);
     if (!Node)
       return Node.takeError();
-    if (auto F = DebugInfoSectionRef::Cast(*Node)) {
-      auto FragmentSize = materializeDebugInfoFromTagImpl(Reader, *Refs, *F);
-      if (!FragmentSize)
-        return FragmentSize.takeError();
-      Size += *FragmentSize;
-      continue;
-    }
     if (auto AbbrevRef = DebugAbbrevSectionRef::Cast(*Node)) {
       auto FragmentSize =
-          materializeAbbrevFromTagImpl(Reader, makeArrayRef(*Refs));
+          materializeAbbrevFromTagImpl(Reader, *AbbrevRef, makeArrayRef(*Refs));
       if (!FragmentSize)
         return FragmentSize.takeError();
       Size += *FragmentSize;
@@ -690,39 +673,6 @@ DebugStringSectionRef::create(MCCASBuilder &MB,
 
 Expected<uint64_t> SectionRef::materialize(MCCASReader &Reader,
                                            raw_ostream *Stream) const {
-  // Start a new section for relocations.
-  Reader.Relocations.emplace_back();
-  SmallVector<char, 0> SectionContents;
-  raw_svector_ostream SectionStream(SectionContents);
-
-  unsigned Size = 0;
-  StringRef Remaining = getData();
-  auto Refs = decodeReferences(*this, Remaining);
-  if (!Refs)
-    return Refs.takeError();
-
-  for (auto ID : *Refs) {
-    auto FragmentSize = Reader.materializeSection(ID, &SectionStream);
-    if (!FragmentSize)
-      return FragmentSize.takeError();
-    Size += *FragmentSize;
-  }
-
-  if (auto E = decodeRelocationsAndAddends(Reader, Remaining))
-    return std::move(E);
-
-  if (auto E = applyAddends(Reader, SectionContents))
-    return std::move(E);
-
-  Reader.Addends.clear();
-  Reader.OS << SectionContents;
-
-  return Size;
-}
-
-Expected<uint64_t>
-DebugAbbrevSectionRef::materialize(MCCASReader &Reader,
-                                   raw_ostream *Stream) const {
   // Start a new section for relocations.
   Reader.Relocations.emplace_back();
   SmallVector<char, 0> SectionContents;
@@ -1729,6 +1679,10 @@ MCCASBuilder::splitDebugInfoSectionData(MutableArrayRef<char> DebugInfoData) {
 
 Error MCCASBuilder::createDebugInfoSection() {
   startSection(DwarfSections.DebugInfo);
+
+  if (auto E = splitDebugInfoAndAbbrevSections())
+    return E;
+
   if (auto E = createPaddingRef(DwarfSections.DebugInfo))
     return E;
   return finalizeSection<DebugInfoSectionRef>();
@@ -1739,42 +1693,6 @@ Error MCCASBuilder::createDebugAbbrevSection() {
   if (auto E = createPaddingRef(DwarfSections.Abbrev))
     return E;
   return finalizeSection<DebugAbbrevSectionRef>();
-}
-
-Expected<SmallVector<DebugAbbrevRef>>
-MCCASBuilder::splitAbbrevSection(ArrayRef<size_t> AbbrevOffsetVec,
-                                 ArrayRef<char> FullAbbrevData) {
-  // If we are here, the Abbrev section _must_ exist.
-  if (!DwarfSections.Abbrev)
-    return createStringError(inconvertibleErrorCode(),
-                             "Missing __debug_abbrev section");
-
-  // Sorted container of offsets such that, for any iterator `it`, the interval
-  // [*it, *(it+1)] describes where to find one Abbreviation contribution.
-  SmallVector<size_t> AbbrevOffsets(AbbrevOffsetVec);
-  AbbrevOffsets.push_back(FullAbbrevData.size());
-  sort(AbbrevOffsets);
-  AbbrevOffsets.erase(unique(AbbrevOffsets, std::equal_to<size_t>()),
-                      AbbrevOffsets.end());
-
-  size_t StartOffset = *AbbrevOffsets.begin();
-  if (StartOffset != 0)
-    return createStringError(
-        inconvertibleErrorCode(),
-        "Expected one of the abbreviation offsets to be zero");
-
-  SmallVector<DebugAbbrevRef> AbbrevRefs;
-  for (size_t EndOffset : drop_begin(AbbrevOffsets)) {
-    StringRef AbbrevData =
-        toStringRef(FullAbbrevData).slice(StartOffset, EndOffset);
-    auto AbbrevRef = DebugAbbrevRef::create(*this, AbbrevData);
-    if (!AbbrevRef)
-      return AbbrevRef.takeError();
-    AbbrevRefs.push_back(*AbbrevRef);
-    StartOffset = EndOffset;
-  }
-
-  return AbbrevRefs;
 }
 
 /// Helper class to create DIEDataRefs by keeping track of references to
@@ -2097,9 +2015,6 @@ Error MCCASBuilder::buildFragments() {
   auto DebugStringContents = createDebugStringRefs();
   if (!DebugStringContents)
     return DebugStringContents.takeError();
-
-  if (auto E = splitDebugInfoAndAbbrevSections())
-    return E;
 
   for (const MCSection &Sec : Asm) {
     if (Sec.isVirtualSection() || Sec.getFragmentList().empty())
@@ -2476,16 +2391,9 @@ Expected<uint64_t> MCCASReader::materializeGroup(cas::ObjectRef ID) {
     return *Size + 1;
   }
   if (auto F = DebugInfoSectionRef::Cast(*Node))
-    return createStringError(
-        inconvertibleErrorCode(),
-        "DebugInfoSectionRef should not be materialized here!");
+    return materializeDebugInfoFromTagImpl(*this, *F);
   if (auto F = DebugLineSectionRef::Cast(*Node))
     return F->materialize(*this);
-  if (auto F = DebugAbbrevSectionRef::Cast(*Node))
-    return F->materialize(*this);
-  // Transition period: ignore DIE nodes.
-  if (DIETopLevelRef::Cast(*Node))
-    return 0;
   return createStringError(inconvertibleErrorCode(),
                            "unsupported CAS node for group");
 }
@@ -2509,8 +2417,6 @@ Expected<uint64_t> MCCASReader::materializeSection(cas::ObjectRef ID,
     Stream->write_zeros(1);
     return *Size + 1;
   }
-  if (auto F = DebugAbbrevRef::Cast(*Node))
-    return F->materialize(*Stream);
   return createStringError(inconvertibleErrorCode(),
                            "unsupported CAS node for atom");
 }
