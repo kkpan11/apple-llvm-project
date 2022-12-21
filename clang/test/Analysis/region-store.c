@@ -1,6 +1,6 @@
 // RUN: %clang_analyze_cc1 -analyzer-checker=core,unix,debug.ExprInspection \
 // RUN:    -verify -analyzer-config eagerly-assume=false -std=c99 %s \
-// RUN:    -Wno-implicit-function-declaration
+// RUN:    -Wno-implicit-function-declaration -w
 
 int printf(const char *restrict,...);
 
@@ -60,22 +60,22 @@ void testConstraintOnRegionOffsetStack(int *values, int length, int i) {
 }
 
 int buffer[10];
-void b(); // expected-warning {{a function declaration without a prototype is deprecated in all versions of C and is treated as a zero-parameter prototype in C2x, conflicting with a subsequent definition}}
+void b();
 void missingPrototypeCallsiteMatchingArgsAndParams() {
-  // expected-warning@+1 {{passing arguments to 'b' without a prototype is deprecated in all versions of C and is not supported in C2x}}
+  
   b(&buffer);
 }
-void b(int *c) { // expected-note {{conflicting prototype is here}}
+void b(int *c) {
   clang_analyzer_dump(c); // expected-warning {{&Element{buffer,0 S64b,int}}}
   *c = 42; // no-crash
 }
 
-void c(); // expected-warning {{a function declaration without a prototype is deprecated in all versions of C and is treated as a zero-parameter prototype in C2x, conflicting with a subsequent definition}}
+void c(); 
 void missingPrototypeCallsiteMismatchingArgsAndParams() {
-  // expected-warning@+1 {{passing arguments to 'c' without a prototype is deprecated in all versions of C and is not supported in C2x}}
+
   c(&buffer, &buffer);
 }
-void c(int *c) { // expected-note {{conflicting prototype is here}}
+void c(int *c) {
   clang_analyzer_dump(c); // expected-warning {{Unknown}}
   *c = 42; // no-crash
 }
