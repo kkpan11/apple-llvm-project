@@ -6674,4 +6674,3 @@ def ReadOnlyPlacementDocs : Documentation {
      ``enforce_read_only_placement`` attribute.
   }];
 }
->>>>>>> 678ded017f21 ([clang] Support for read-only types)
