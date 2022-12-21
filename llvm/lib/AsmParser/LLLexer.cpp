@@ -929,8 +929,7 @@ lltok::Kind LLLexer::LexIdentifier() {
     return lltok::EmissionKind;
   }
 
-  if (Keyword == "NoCasFriendlyDebugInfo" || Keyword == "DebugLineOnly" ||
-      Keyword == "DebugAbbrev") {
+  if (Keyword == "NoCasFriendlyDebugInfo" || Keyword == "DebugLineOnly") {
     StrVal.assign(Keyword.begin(), Keyword.end());
     return lltok::CasFriendlinessKind;
   }

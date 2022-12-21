@@ -911,7 +911,6 @@ DICompileUnit::getCasFriendlinessKind(StringRef Str) {
   return StringSwitch<Optional<CasFriendlinessKind>>(Str)
       .Case("NoCasFriendlyDebugInfo", NoCasFriendlyDebugInfo)
       .Case("DebugLineOnly", DebugLineOnly)
-      .Case("DebugAbbrev", DebugAbbrev)
       .Default(std::nullopt);
 }
 
@@ -944,8 +943,6 @@ const char *DICompileUnit::casFriendlinessString(CasFriendlinessKind CFK) {
     return "NoCasFriendlyDebugInfo";
   case DebugLineOnly:
     return "DebugLineOnly";
-  case DebugAbbrev:
-    return "DebugAbbrev";
   }
   return nullptr;
 }

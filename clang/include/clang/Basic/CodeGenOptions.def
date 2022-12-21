@@ -390,7 +390,7 @@ VALUE_CODEGENOPT(SSPBufferSize, 32, 0)
 ENUM_CODEGENOPT(DebugInfo, codegenoptions::DebugInfoKind, 4, codegenoptions::NoDebugInfo)
 
 /// How to split up the debug info.
-ENUM_CODEGENOPT(CasFriendliness, codegenoptions::CasFriendlinessKind, 2, codegenoptions::NoCasFriendlyDebugInfo)
+ENUM_CODEGENOPT(CasFriendliness, codegenoptions::CasFriendlinessKind, 1, codegenoptions::NoCasFriendlyDebugInfo)
 
 /// Whether to make debug info reproducible.
 CODEGENOPT(ReproducibleDebugInfo, 1, 0)

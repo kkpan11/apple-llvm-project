@@ -161,9 +161,10 @@ DIEAbbrev &DIEAbbrevSet::uniqueAbbreviation(DIE &Die) {
   return *New;
 }
 
-void DIEAbbrevSet::Emit(const AsmPrinter *AP) const {
+void DIEAbbrevSet::Emit(const AsmPrinter *AP, MCSection *Section) const {
   if (!Abbreviations.empty()) {
     // Start the debug abbrev section.
+    AP->OutStreamer->switchSection(Section);
     AP->emitDwarfAbbrevs(Abbreviations);
   }
 }
@@ -268,18 +269,12 @@ LLVM_DUMP_METHOD void DIE::dump() const {
 }
 #endif
 
-unsigned DIE::computeOffsetsAndAbbrevs(
-    const dwarf::FormParams &FormParams,
-    std::vector<std::unique_ptr<DIEAbbrevSet>> &AbbrevSetVec,
-    unsigned CUOffset) {
+unsigned DIE::computeOffsetsAndAbbrevs(const dwarf::FormParams &FormParams,
+                                       DIEAbbrevSet &AbbrevSet,
+                                       unsigned CUOffset) {
   // Unique the abbreviation and fill in the abbreviation number so this DIE
-  // can be emitted. The AbbrevSetVec has at least one element in it, this is
-  // created when the DwarfFile Object is constructed. The reason for using the
-  // last element of the vector is that, for each compile unit, a new
-  // DIEAbbrevSet is added to the vector (but not for the last compile unit,
-  // since the vector starts of with at least one DIEAbbrevSet in it), and then
-  // its offset and Abbreviations are computed.
-  const DIEAbbrev &Abbrev = AbbrevSetVec.back()->uniqueAbbreviation(*this);
+  // can be emitted.
+  const DIEAbbrev &Abbrev = AbbrevSet.uniqueAbbreviation(*this);
 
   // Set compile/type unit relative offset of this DIE.
   setOffset(CUOffset);
@@ -298,7 +293,7 @@ unsigned DIE::computeOffsetsAndAbbrevs(
 
     for (auto &Child : children())
       CUOffset =
-          Child.computeOffsetsAndAbbrevs(FormParams, AbbrevSetVec, CUOffset);
+          Child.computeOffsetsAndAbbrevs(FormParams, AbbrevSet, CUOffset);
 
     // Each child chain is terminated with a zero byte, adjust the offset.
     CUOffset += sizeof(int8_t);

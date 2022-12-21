@@ -1383,8 +1383,7 @@ public:
   enum CasFriendlinessKind : unsigned {
     NoCasFriendlyDebugInfo = 0,
     DebugLineOnly,
-    DebugAbbrev,
-    LastCasFriendlinessKind = DebugAbbrev
+    LastCasFriendlinessKind = DebugLineOnly
   };
 
   static std::optional<DebugEmissionKind> getEmissionKind(StringRef Str);

@@ -256,7 +256,7 @@ class Generator {
   std::unique_ptr<DwarfStringPool> StringPool; // Entries owned by Allocator.
   std::vector<std::unique_ptr<CompileUnit>> CompileUnits;
   std::vector<std::unique_ptr<LineTable>> LineTables;
-  std::vector<std::unique_ptr<DIEAbbrevSet>> Abbreviations;
+  DIEAbbrevSet Abbreviations;
 
   MCSymbol *StringOffsetsStartSym;
 
@@ -309,9 +309,7 @@ public:
   BumpPtrAllocator &getAllocator() { return Allocator; }
   AsmPrinter *getAsmPrinter() const { return Asm.get(); }
   MCContext *getMCContext() const { return MC.get(); }
-  std::vector<std::unique_ptr<DIEAbbrevSet>> &getAbbrevSet() {
-    return Abbreviations;
-  }
+  DIEAbbrevSet &getAbbrevSet() { return Abbreviations; }
   DwarfStringPool &getStringPool() { return *StringPool; }
   MCSymbol *getStringOffsetsStartSym() const { return StringOffsetsStartSym; }
 

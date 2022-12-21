@@ -21,17 +21,10 @@ enum CasFriendlinessKind {
   NoCasFriendlyDebugInfo,
 
   /// Generate CAS friendly debug info to go along with the work being done for
-  /// llvm-cas. This option will split the line tables so that every function
-  /// has its own line table header. Note: To achieve this, every function is
-  /// given its own compile unit.
+  /// llvm-cas. This option will make the line table split-able by inserting a
+  /// DW_LNE_end_sequence at the end of a function's contribution to a line
+  /// table.
   DebugLineOnly,
-
-  /// Generate CAS friendly debug info to go along with the work being done for
-  /// llvm-cas. This option will make it so that every compiler unit has its own
-  /// contribution into the debug abbreviation section. Note: To achieve this,
-  /// every function is given its own compile unit, which means each compile
-  /// unit also has its own line table header.
-  DebugAbbrev
 };
 
 enum DebugInfoKind {
