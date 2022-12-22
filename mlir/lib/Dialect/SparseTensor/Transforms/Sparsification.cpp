@@ -604,34 +604,6 @@ static bool isAdmissibleTensorExp(CodegenEnv &env, unsigned exp,
 // Sparse compiler synthesis methods (statements and expressions).
 //===----------------------------------------------------------------------===//
 
-/// Generates loop boundary statements (entering/exiting loops). The function
-/// passes and updates the reduction value.
-static Optional<Operation *> genLoopBoundary(
-    CodegenEnv &env,
-    function_ref<Optional<Operation *>(MutableArrayRef<Value> reduc)>
-        callback) {
-  SmallVector<Value> reduc;
-  if (env.isReduc())
-    reduc.push_back(env.getReduc());
-  if (env.isExpand())
-    reduc.push_back(env.getExpandCount());
-  if (env.getInsertionChain())
-    reduc.push_back(env.getInsertionChain());
-
-  auto r = callback(reduc);
-
-  // Callback should do in-place update on reduction value vector.
-  unsigned i = 0;
-  if (env.isReduc())
-    env.updateReduc(reduc[i++]);
-  if (env.isExpand())
-    env.updateExpandCount(reduc[i++]);
-  if (env.getInsertionChain())
-    env.updateInsertionChain(reduc[i]);
-
-  return r;
-}
-
 /// Local bufferization of all dense and sparse data structures.
 static void genBuffers(CodegenEnv &env, OpBuilder &builder) {
   linalg::GenericOp op = env.op();
@@ -1056,21 +1028,24 @@ static bool isParallelFor(CodegenEnv &env, bool isOuter, bool isSparse) {
 
 /// Generates a for-loop on a single index.
 static Operation *genFor(CodegenEnv &env, OpBuilder &builder, bool isOuter,
-                         bool isInner, unsigned idx, size_t tid, size_t dim,
-                         ArrayRef<size_t> extraTids,
-                         ArrayRef<size_t> extraDims) {
+                         bool isInner, unsigned idx, ArrayRef<size_t> tids,
+                         ArrayRef<size_t> dims) {
   linalg::GenericOp op = env.op();
   Location loc = op.getLoc();
   auto iteratorTypes = op.getIteratorTypesArray();
-  bool isSparse =
-      isCompressedDLT(env.dlt(tid, idx)) || isSingletonDLT(env.dlt(tid, idx));
+  bool isSparse = llvm::any_of(tids, [idx, &env](size_t tid) {
+    return isCompressedDLT(env.dlt(tid, idx)) ||
+           isSingletonDLT(env.dlt(tid, idx));
+  });
+
   bool isParallel = isParallelFor(env, isOuter, isSparse);
 
-  Operation *loop = *genLoopBoundary(env, [&](MutableArrayRef<Value> reduc) {
+  Operation *loop = *env.genLoopBoundary([&](MutableArrayRef<Value> reduc) {
     if (env.merger().isFilterLoop(idx)) {
-      // extraTids/extraDims must be empty because filter loops only
+      size_t tid = tids.front(), dim = dims.front();
+      // tids/dims must only have one value because filter loops only
       // corresponding to the one and only sparse tensor level.
-      assert(isSparse && extraTids.empty() && extraDims.empty());
+      assert(isSparse && tids.size() == 1 && dims.size() == 1);
       OpOperand *t = &op->getOpOperand(tid);
       auto enc = getSparseTensorEncoding(t->get().getType());
       // Retrieves the affine expression for the filter loop.
@@ -1079,8 +1054,8 @@ static Operation *genFor(CodegenEnv &env, OpBuilder &builder, bool isOuter,
       return env.emitter()->enterFilterLoopOverTensorAtDim(builder, loc, tid,
                                                            dim, a, reduc);
     }
-    return env.emitter()->enterLoopOverTensorAtDim(
-        builder, loc, tid, dim, reduc, isParallel, extraTids, extraDims);
+    return env.emitter()->enterLoopOverTensorAtDim(builder, loc, tids, dims,
+                                                   reduc, isParallel);
   });
   assert(loop);
   return loop;
@@ -1088,16 +1063,13 @@ static Operation *genFor(CodegenEnv &env, OpBuilder &builder, bool isOuter,
 
 /// Emit a while-loop for co-iteration over multiple indices.
 static Operation *genWhile(CodegenEnv &env, OpBuilder &builder, unsigned idx,
-                           bool needsUniv, ArrayRef<size_t> condTids,
-                           ArrayRef<size_t> condDims,
-                           ArrayRef<size_t> extraTids,
-                           ArrayRef<size_t> extraDims) {
-  Operation *loop = *genLoopBoundary(env, [&](MutableArrayRef<Value> reduc) {
+                           bool needsUniv, ArrayRef<size_t> tids,
+                           ArrayRef<size_t> dims) {
+  Operation *loop = *env.genLoopBoundary([&](MutableArrayRef<Value> reduc) {
     // Construct the while-loop with a parameter for each
     // index.
     return env.emitter()->enterCoIterationOverTensorsAtDims(
-        builder, env.op().getLoc(), condTids, condDims, needsUniv, reduc,
-        extraTids, extraDims);
+        builder, env.op().getLoc(), tids, dims, needsUniv, reduc);
   });
   assert(loop);
   return loop;
@@ -1106,20 +1078,16 @@ static Operation *genWhile(CodegenEnv &env, OpBuilder &builder, unsigned idx,
 /// Generates a for-loop or a while-loop, depending on whether it implements
 /// singleton iteration or co-iteration over the given conjunction.
 static Operation *genLoop(CodegenEnv &env, OpBuilder &builder, unsigned at,
-                          bool needsUniv, ArrayRef<size_t> condTids,
-                          ArrayRef<size_t> condDims, ArrayRef<size_t> extraTids,
-                          ArrayRef<size_t> extraDims) {
-  assert(condTids.size() == condDims.size());
-  assert(extraTids.size() == extraDims.size());
+                          bool needsUniv, ArrayRef<size_t> tids,
+                          ArrayRef<size_t> dims, bool isFor) {
+  assert(tids.size() == dims.size());
   unsigned idx = env.topSortAt(at);
-  if (condTids.size() == 1) {
+  if (isFor) {
     bool isOuter = at == 0;
     bool isInner = at == env.topSortSize() - 1;
-    return genFor(env, builder, isOuter, isInner, idx, condTids.front(),
-                  condDims.front(), extraTids, extraDims);
+    return genFor(env, builder, isOuter, isInner, idx, tids, dims);
   }
-  return genWhile(env, builder, idx, needsUniv, condTids, condDims, extraTids,
-                  extraDims);
+  return genWhile(env, builder, idx, needsUniv, tids, dims);
 }
 
 /// Generates the induction structure for a while-loop.
@@ -1291,15 +1259,15 @@ static void genInitConstantDenseAddress(CodegenEnv &env,
     genConstantDenseAddressFromLevel(env, rewriter, tid, 0);
 }
 
-static void translateBitsToTidDimPairs(
-    CodegenEnv &env, unsigned li, unsigned idx,
-    SmallVectorImpl<size_t> &condTids, SmallVectorImpl<size_t> &condDims,
-    SmallVectorImpl<size_t> &extraTids, SmallVectorImpl<size_t> &extraDims,
-    SmallVectorImpl<size_t> &affineTids, SmallVectorImpl<size_t> &affineDims,
-    SmallVectorImpl<AffineExpr> &exps) {
+/// Return true if the lattices bit can be iterated by a for loop.
+static bool translateBitsToTidDimPairs(
+    CodegenEnv &env, unsigned li, unsigned idx, SmallVectorImpl<size_t> &tids,
+    SmallVectorImpl<size_t> &dims, SmallVectorImpl<size_t> &affineTids,
+    SmallVectorImpl<size_t> &affineDims, SmallVectorImpl<AffineExpr> &exps) {
   const BitVector &all = env.lat(li).bits;
   const BitVector &simple = env.lat(li).simple;
 
+  unsigned numloopCond = 0;
   // Converts bits to array + dim pair
   env.merger().foreachTidDimPairInBits(all, [&, idx](unsigned b, unsigned tid,
                                                      Optional<unsigned> dim,
@@ -1318,12 +1286,12 @@ static void translateBitsToTidDimPairs(
         if (!dim)
           return;
       }
-      condTids.push_back(tid);
-      condDims.push_back(*dim);
+      tids.push_back(tid);
+      dims.push_back(*dim);
+      numloopCond++;
     } else if (isDenseDLT(dlt)) {
-      // TODO: get rid of extraTids and extraDims.
-      extraTids.push_back(tid);
-      extraDims.push_back(*dim);
+      tids.push_back(tid);
+      dims.push_back(*dim);
     } else {
       assert(isUndefDLT(dlt));
       linalg::GenericOp op = env.op();
@@ -1372,31 +1340,31 @@ static void translateBitsToTidDimPairs(
     // unconditionally, since they may not appear in the lattice, but may be
     // needed for linearized env.
     auto dim = *env.merger().getDimNum(env.merger().getOutTensorID(), idx);
-    extraTids.push_back(env.merger().getOutTensorID());
-    extraDims.push_back(dim);
+    tids.push_back(env.merger().getOutTensorID());
+    dims.push_back(dim);
   }
+
+  assert(numloopCond > 0);
+  // If we just need to one loop conditions, the loop can be generated by a for
+  // loop.
+  return numloopCond == 1;
 }
 
 /// Starts a single loop in current sequence.
 static Operation *startLoop(CodegenEnv &env, OpBuilder &builder, unsigned at,
                             unsigned li, bool needsUniv) {
   // The set of tensors + dims to generate loops on
-  SmallVector<size_t> condTids, condDims;
-  // The set of (dense) tensors that is optimized from condition, yet still
-  // need extra locals to iterate on them.
-  SmallVector<size_t> extraTids, extraDims;
+  SmallVector<size_t> tids, dims;
   // The set of dense tensors with non-trivial affine expression that just
   // becomes invariant and the address shall now be generated at the current
   // level.
   SmallVector<size_t> affineTids, affineDims;
   SmallVector<AffineExpr> affines;
-  translateBitsToTidDimPairs(env, li, env.topSortAt(at), condTids, condDims,
-                             extraTids, extraDims, affineTids, affineDims,
-                             affines);
+  bool isFor = translateBitsToTidDimPairs(
+      env, li, env.topSortAt(at), tids, dims, affineTids, affineDims, affines);
 
   // Emit the for/while-loop control.
-  Operation *loop = genLoop(env, builder, at, needsUniv, condTids, condDims,
-                            extraTids, extraDims);
+  Operation *loop = genLoop(env, builder, at, needsUniv, tids, dims, isFor);
   for (auto [tid, dim, exp] : llvm::zip(affineTids, affineDims, affines)) {
     env.emitter()->genDenseAffineAddressAtCurLevel(builder, env.op().getLoc(),
                                                    tid, dim, exp);
@@ -1405,8 +1373,8 @@ static Operation *startLoop(CodegenEnv &env, OpBuilder &builder, unsigned at,
   // Until now, we have entered every <tid, dim> pair in {cond, extra,
   // affine}Tids/Dims. The addresses of the upcoming levels which are dependent
   // on constant affines expression may now be determined.
-  auto allTids = llvm::concat<size_t>(condTids, extraTids, affineTids);
-  auto allDims = llvm::concat<size_t>(condDims, extraDims, affineDims);
+  auto allTids = llvm::concat<size_t>(tids, affineTids);
+  auto allDims = llvm::concat<size_t>(dims, affineDims);
   for (auto [tid, dim] : llvm::zip(allTids, allDims)) {
     if (tid != env.merger().getOutTensorID())
       genConstantDenseAddressFromLevel(env, builder, tid, dim + 1);
@@ -1425,7 +1393,7 @@ static bool endLoop(CodegenEnv &env, RewriterBase &rewriter, Operation *loop,
     needsUniv = false;
   }
 
-  genLoopBoundary(env, [&](MutableArrayRef<Value> reduc) {
+  env.genLoopBoundary([&](MutableArrayRef<Value> reduc) {
     env.emitter()->exitCurrentLoop(rewriter, env.op().getLoc(), reduc);
     return std::nullopt;
   });
