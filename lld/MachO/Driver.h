@@ -40,7 +40,8 @@ enum {
 #undef OPTION
 };
 
-void parseLCLinkerOption(StringRef inputName, unsigned argc, StringRef data);
+void parseLCLinkerOption(StringRef inputName, unsigned argc, StringRef data,
+                         InputFile *f = nullptr);
 
 std::string createResponseFile(const llvm::opt::InputArgList &args,
                                bool isForCacheKey = false);

@@ -73,7 +73,7 @@
 // RUN: diff %t/exe %t/exe.bak
 
 // CACHE-MISS:      Caching: cache miss
-// CACHE-MISS-NEXT: Caching: cached result
+// CACHE-MISS:      Caching: cached result
 
 // CACHE-HIT: Caching: cache hit
 
