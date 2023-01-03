@@ -2632,6 +2632,7 @@ struct DIEVisitor {
 
   ArrayRef<StringRef> AbbrevEntries;
   BinaryStreamReader DistinctReader;
+  StringRef DistinctData;
 
   std::function<void(StringRef)> HeaderCallback;
   std::function<void(dwarf::Tag, uint64_t)> StartTagCallback;
@@ -2660,14 +2661,15 @@ Error DIEVisitor::visitDIEAttrs(AbbrevEntryReader &AbbrevReader,
     if (!Form)
       return Form.takeError();
 
+    bool DataInDistinct = doesntDedup(*Form, *Attr);
+    auto &ReaderForData = DataInDistinct ? DistinctReader : DataReader;
+    StringRef DataToUse = DataInDistinct ? DistinctData : DIEData;
     Expected<uint64_t> FormSize =
-        getFormSize(*Form, FormParams, DIEData, DataReader.getOffset(),
+        getFormSize(*Form, FormParams, DataToUse, ReaderForData.getOffset(),
                     IsLittleEndian, AddrSize);
     if (!FormSize)
       return FormSize.takeError();
 
-    bool DataInDistinct = doesntDedup(*Form, *Attr);
-    auto &ReaderForData = DataInDistinct ? DistinctReader : DataReader;
     ArrayRef<char> RawBytes;
     if (auto E = ReaderForData.readArray(RawBytes, *FormSize))
       return E;
@@ -2776,16 +2778,16 @@ Error mccasformats::v1::visitDebugInfo(
   if (!LoadedTopRef)
     return LoadedTopRef.takeError();
 
-  BinaryStreamReader DistinctReader(LoadedTopRef->DistinctData.getData(),
-                                    support::endianness::little);
+  StringRef DistinctData = LoadedTopRef->DistinctData.getData();
+  BinaryStreamReader DistinctReader(DistinctData, support::endianness::little);
   ArrayRef<char> HeaderData;
   if (auto E = DistinctReader.readArray(HeaderData, Dwarf4HeaderSize32Bit))
     return E;
   HeaderCallback(toStringRef(HeaderData));
 
   ArrayRef<StringRef> AbbrevEntries = LoadedTopRef->AbbrevEntries;
-  DIEVisitor Visitor{AbbrevEntries,    DistinctReader, HeaderCallback,
-                     StartTagCallback, AttrCallback,   EndTagCallback,
-                     NewBlockCallback};
+  DIEVisitor Visitor{AbbrevEntries,  DistinctReader,   DistinctData,
+                     HeaderCallback, StartTagCallback, AttrCallback,
+                     EndTagCallback, NewBlockCallback};
   return Visitor.visitDIERef(LoadedTopRef->RootDIE);
 }
