@@ -146,7 +146,35 @@ struct DemandedFields {
     TailPolicy = true;
     MaskPolicy = true;
   }
+#if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
+  /// Support for debugging, callable in GDB: V->dump()
+  LLVM_DUMP_METHOD void dump() const {
+    print(dbgs());
+    dbgs() << "\n";
+  }
+
+  /// Implement operator<<.
+  void print(raw_ostream &OS) const {
+    OS << "{";
+    OS << "VL=" << VL << ", ";
+    OS << "SEW=" << SEW << ", ";
+    OS << "LMUL=" << LMUL << ", ";
+    OS << "SEWLMULRatio=" << SEWLMULRatio << ", ";
+    OS << "TailPolicy=" << TailPolicy << ", ";
+    OS << "MaskPolicy=" << MaskPolicy;
+    OS << "}";
+  }
+#endif
 };
+
+#if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
+LLVM_ATTRIBUTE_USED
+inline raw_ostream &operator<<(raw_ostream &OS, const DemandedFields &DF) {
+  DF.print(OS);
+  return OS;
+}
+#endif
+
 
 /// Return true if the two values of the VTYPE register provided are
 /// indistinguishable from the perspective of an instruction (or set of
@@ -232,10 +260,11 @@ static DemandedFields getDemanded(const MachineInstr &MI) {
     Res.LMUL = false;
   }
 
-  // For vmv.s.x and vfmv.s.f, there is only two behaviors, VL = 0 and VL > 0.
-  // As such, the result does not depend on LMUL.
-  if (isScalarMoveInstr(MI))
+  // For vmv.s.x and vfmv.s.f, there are only two behaviors, VL = 0 and VL > 0.
+  if (isScalarMoveInstr(MI)) {
     Res.LMUL = false;
+    Res.SEWLMULRatio = false;
+  }
 
   return Res;
 }
@@ -350,16 +379,6 @@ public:
 
   bool hasSEWLMULRatioOnly() const { return SEWLMULRatioOnly; }
 
-  bool hasSameSEW(const VSETVLIInfo &Other) const {
-    assert(isValid() && Other.isValid() &&
-           "Can't compare invalid VSETVLIInfos");
-    assert(!isUnknown() && !Other.isUnknown() &&
-           "Can't compare VTYPE in unknown state");
-    assert(!SEWLMULRatioOnly && !Other.SEWLMULRatioOnly &&
-           "Can't compare when only LMUL/SEW ratio is valid.");
-    return SEW == Other.SEW;
-  }
-
   bool hasSameVTYPE(const VSETVLIInfo &Other) const {
     assert(isValid() && Other.isValid() &&
            "Can't compare invalid VSETVLIInfos");
@@ -390,15 +409,6 @@ public:
     return getSEWLMULRatio() == Other.getSEWLMULRatio();
   }
 
-  bool hasSamePolicy(const VSETVLIInfo &Other) const {
-    assert(isValid() && Other.isValid() &&
-           "Can't compare invalid VSETVLIInfos");
-    assert(!isUnknown() && !Other.isUnknown() &&
-           "Can't compare VTYPE in unknown state");
-    return TailAgnostic == Other.TailAgnostic &&
-           MaskAgnostic == Other.MaskAgnostic;
-  }
-
   bool hasCompatibleVTYPE(const DemandedFields &Used,
                           const VSETVLIInfo &Require) const {
     return areCompatibleVTYPEs(encodeVTYPE(), Require.encodeVTYPE(), Used);
@@ -426,8 +436,7 @@ public:
       if (SEW == Require.SEW)
         return true;
 
-    // TODO: Check Used.VL here
-    if (!hasSameAVL(Require))
+    if (Used.VL && !hasSameAVL(Require))
       return false;
     return areCompatibleVTYPEs(encodeVTYPE(), Require.encodeVTYPE(), Used);
   }
@@ -776,22 +785,27 @@ bool RISCVInsertVSETVLI::needVSETVLI(const MachineInstr &MI,
   if (!CurInfo.isValid() || CurInfo.isUnknown() || CurInfo.hasSEWLMULRatioOnly())
     return true;
 
-  const DemandedFields Used = getDemanded(MI);
-  if (CurInfo.isCompatible(Used, Require))
-    return false;
+  DemandedFields Used = getDemanded(MI);
 
-  // For vmv.s.x and vfmv.s.f, there is only two behaviors, VL = 0 and VL > 0.
-  // Additionally, if writing to an implicit_def operand, we don't need to
-  // preserve any other bits and are thus compatible with any larger etype,
-  // and can disregard policy bits.
+  // For vmv.s.x and vfmv.s.f, there are only two behaviors, VL = 0 and VL > 0.
   if (isScalarMoveInstr(MI) && CurInfo.hasEquallyZeroAVL(Require)) {
+    Used.VL = false;
+    // Additionally, if writing to an implicit_def operand, we don't need to
+    // preserve any other bits and are thus compatible with any larger etype,
+    // and can disregard policy bits.  Warning: It's tempting to try doing
+    // this for any tail agnostic operation, but we can't as TA requires
+    // tail lanes to either be the original value or -1.  We are writing
+    // unknown bits to the lanes here.
     auto *VRegDef = MRI->getVRegDef(MI.getOperand(1).getReg());
     if (VRegDef && VRegDef->isImplicitDef() &&
-        CurInfo.getSEW() >= Require.getSEW())
-      return false;
-    if (CurInfo.hasSameSEW(Require) && CurInfo.hasSamePolicy(Require))
-      return false;
+        CurInfo.getSEW() >= Require.getSEW()) {
+      Used.SEW = false;
+      Used.TailPolicy = false;
+    }
   }
+
+  if (CurInfo.isCompatible(Used, Require))
+    return false;
 
   // We didn't find a compatible value. If our AVL is a virtual register,
   // it might be defined by a VSET(I)VLI. If it has the same VLMAX we need
