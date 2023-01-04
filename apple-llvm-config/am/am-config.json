@@ -4,10 +4,6 @@
   "upstream": "llvm.org/main"
 },
 {
-  "target": "stable/20210726",
-  "upstream": "swift/release/5.6"
-},
-{
   "target": "stable/20211026",
   "upstream": "swift/release/5.7"
 },
