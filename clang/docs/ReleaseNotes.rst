@@ -522,6 +522,10 @@ C++20 Feature Support
   which removes the requirement for the ``typename`` keyword in certain contexts.
 - Implemented The Equality Operator You Are Looking For (`P2468 <http://wg21.link/p2468r2>`_).
 
+- Implemented `P0960R3: <https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2019/p0960r3.html>`_
+  and `P1975R0: <https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2019/p1975r0.html>`_,
+  which allows parenthesized aggregate-initialization.
+
 C++2b Feature Support
 ^^^^^^^^^^^^^^^^^^^^^
 
