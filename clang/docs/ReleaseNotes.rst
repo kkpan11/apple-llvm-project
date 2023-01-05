@@ -798,7 +798,7 @@ X86 Support in Clang
   * Support intrinsic of ``_mm(256)_cvtneobf16_ps``.
   * Support intrinsic of ``_mm(256)_cvtneoph_ps``.
   * Support intrinsic of ``_mm(256)_cvtneps_avx_pbh``.
-- ``-march=raptorlake`` and ``-march=meteorlake`` are now supported.
+- ``-march=raptorlake``, ``-march=meteorlake`` and ``-march=emeraldrapids`` are now supported.
 - ``-march=sierraforest``, ``-march=graniterapids`` and ``-march=grandridge`` are now supported.
 - Lift _BitInt() supported max width from 128 to 8388608.
 - Support intrinsics of ``_mm(256)_reduce_(add|mul|or|and)_epi8/16``.
@@ -867,6 +867,8 @@ clang-format
   To match the default behavior of clang-format 15, use the ``Keyword`` value.
 - Add ``IntegerLiteralSeparator`` option for fixing integer literal separators
   in C++, C#, Java, and JavaScript.
+- Add ``BreakAfterAttributes`` option for breaking after a group of C++11
+  attributes before a function declaration/definition name.
 
 clang-extdef-mapping
 --------------------
