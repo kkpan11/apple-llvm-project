@@ -714,10 +714,6 @@ C++20 Feature Support
   (useful specially for constrained members). Fixes `GH50886 <https://github.com/llvm/llvm-project/issues/50886>`_.
 - Implemented CWG2635 as a Defect Report, which prohibits structured bindings from being constrained.
 
-- Implemented `P0960R3: <https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2019/p0960r3.html>`_
-  and `P1975R0: <https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2019/p1975r0.html>`_,
-  which allows parenthesized aggregate-initialization.
-
 C++2b Feature Support
 ^^^^^^^^^^^^^^^^^^^^^
 
@@ -754,9 +750,6 @@ ABI Changes in Clang
   classified such types as non-POD (for the purposes of Itanium ABI). Clang now
   matches the gcc behavior (except on Darwin and PS4). You can switch back to
   the old ABI behavior with the flag: ``-fclang-abi-compat=15.0``.
-- Some types with implicitly deleted special member functions were accidentally
-  marked as non-trivially copyable. This has been fixed
-  (`#59624 <https://github.com/llvm/llvm-project/issues/59624>`_).
 
 OpenMP Support in Clang
 -----------------------
