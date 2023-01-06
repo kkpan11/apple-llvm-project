@@ -484,6 +484,8 @@ LLVM_16 {
     clang_experimental_DependencyScannerServiceOptions_setObjectStore;
     clang_experimental_DependencyScannerWorker_getFileDependencies_v5;
     clang_createAPISet;
+    clang_getDiagnosticFileContents;
+    clang_getDiagnosticFileOriginalSourceRange;
     clang_disposeAPISet;
     clang_getSymbolGraphForCursor;
     clang_getSymbolGraphForUSR;
