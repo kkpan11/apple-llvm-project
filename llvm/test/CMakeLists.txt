@@ -83,6 +83,7 @@ set(LLVM_TEST_DEPENDS
           llvm-cxxfilt
           llvm-cxxmap
           llvm-debuginfo-analyzer
+          llvm-debuginfod
           llvm-debuginfod-find
           llvm-diff
           llvm-dis
