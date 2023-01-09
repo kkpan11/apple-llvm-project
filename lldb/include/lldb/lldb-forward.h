@@ -256,6 +256,7 @@ class TypeNameSpecifierImpl;
 class TypeSummaryImpl;
 class TypeSummaryOptions;
 class TypeSystem;
+class TypeSystemClang;
 class UUID;
 class UnixSignals;
 class Unwind;
@@ -430,6 +431,7 @@ typedef std::shared_ptr<lldb_private::TypeMemberFunctionImpl>
 typedef std::shared_ptr<lldb_private::TypeEnumMemberImpl> TypeEnumMemberImplSP;
 typedef std::shared_ptr<lldb_private::TypeFilterImpl> TypeFilterImplSP;
 typedef std::shared_ptr<lldb_private::TypeSystem> TypeSystemSP;
+typedef std::shared_ptr<lldb_private::TypeSystemClang> TypeSystemClangSP;
 typedef std::weak_ptr<lldb_private::TypeSystem> TypeSystemWP;
 typedef std::shared_ptr<lldb_private::TypeFormatImpl> TypeFormatImplSP;
 typedef std::shared_ptr<lldb_private::TypeNameSpecifierImpl>
