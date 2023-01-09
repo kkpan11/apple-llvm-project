@@ -181,30 +181,6 @@ unsigned getHostcallImplicitArgPosition() {
   }
 }
 
-unsigned getDefaultQueueImplicitArgPosition() {
-  switch (AmdhsaCodeObjectVersion) {
-  case 2:
-  case 3:
-  case 4:
-    return 32;
-  case 5:
-  default:
-    return AMDGPU::ImplicitArg::DEFAULT_QUEUE_OFFSET;
-  }
-}
-
-unsigned getCompletionActionImplicitArgPosition() {
-  switch (AmdhsaCodeObjectVersion) {
-  case 2:
-  case 3:
-  case 4:
-    return 40;
-  case 5:
-  default:
-    return AMDGPU::ImplicitArg::COMPLETION_ACTION_OFFSET;
-  }
-}
-
 #define GET_MIMGBaseOpcodesTable_IMPL
 #define GET_MIMGDimInfoTable_IMPL
 #define GET_MIMGInfoTable_IMPL
@@ -1902,8 +1878,8 @@ bool hasMIMG_R128(const MCSubtargetInfo &STI) {
   return STI.getFeatureBits()[AMDGPU::FeatureMIMG_R128] && !STI.getFeatureBits()[AMDGPU::FeatureR128A16];
 }
 
-bool hasGFX10A16(const MCSubtargetInfo &STI) {
-  return STI.getFeatureBits()[AMDGPU::FeatureGFX10A16];
+bool hasA16(const MCSubtargetInfo &STI) {
+  return STI.getFeatureBits()[AMDGPU::FeatureA16];
 }
 
 bool hasG16(const MCSubtargetInfo &STI) {
