@@ -18,6 +18,7 @@
 #include "clang/AST/EvaluatedExprVisitor.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/ExprObjC.h"
+#include "clang/AST/OperationKinds.h"
 #include "clang/AST/ParentMap.h"
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/AST/StmtCXX.h"
@@ -2150,8 +2151,35 @@ public:
   UnsafeBufferUsageReporter(Sema &S) : S(S) {}
 
   void handleUnsafeOperation(const Stmt *Operation) override {
-    S.Diag(Operation->getBeginLoc(), diag::warn_unsafe_buffer_expression)
-        << Operation->getSourceRange();
+    SourceLocation Loc;
+    SourceRange Range;
+    if (auto ASE = dyn_cast<ArraySubscriptExpr>(Operation)) {
+      Loc = ASE->getBase()->getExprLoc();
+      Range = ASE->getBase()->getSourceRange();
+    } else if (auto BO = dyn_cast<BinaryOperator>(Operation)) {
+      const auto Op = BO->getOpcode();
+      if (Op == BO_Add || Op == BO_AddAssign || Op == BO_Sub ||
+          Op == BO_SubAssign) {
+        if (BO->getRHS()->getType()->isIntegerType()) {
+          Loc = BO->getLHS()->getExprLoc();
+          Range = BO->getLHS()->getSourceRange();
+        } else {
+          Loc = BO->getRHS()->getExprLoc();
+          Range = BO->getRHS()->getSourceRange();
+        }
+      }
+    } else if (auto UO = dyn_cast<UnaryOperator>(Operation)) {
+      const auto Op = UO->getOpcode();
+      if (Op == UO_PreInc || Op == UO_PreDec || Op == UO_PostInc ||
+          Op == UO_PostDec) {
+        Loc = UO->getSubExpr()->getExprLoc();
+        Range = UO->getSubExpr()->getSourceRange();
+      }
+    } else {
+      Loc = Operation->getBeginLoc();
+      Range = Operation->getSourceRange();
+    }
+    S.Diag(Loc, diag::warn_unsafe_buffer_expression) << Range;
   }
 
   void handleFixableVariable(const VarDecl *Variable,
