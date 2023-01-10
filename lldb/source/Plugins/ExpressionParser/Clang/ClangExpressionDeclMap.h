@@ -12,6 +12,7 @@
 #include <csignal>
 #include <cstdint>
 
+#include <memory>
 #include <vector>
 
 #include "ClangASTSource.h"
@@ -379,7 +380,7 @@ private:
   /// Deallocate struct variables
   void DisableStructVars() { m_struct_vars.reset(); }
 
-  TypeSystemClang *GetScratchContext(Target &target) {
+  lldb::TypeSystemClangSP GetScratchContext(Target &target) {
     return ScratchTypeSystemClang::GetForTarget(target,
                                                 m_ast_context->getLangOpts());
   }
