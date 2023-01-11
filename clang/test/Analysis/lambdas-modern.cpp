@@ -1,6 +1,5 @@
 // RUN: %clang_analyze_cc1 -std=c++14 -analyzer-checker=core,debug.ExprInspection -analyzer-config inline-lambdas=true -verify %s
 // RUN: %clang_analyze_cc1 -std=c++17 -analyzer-checker=core,debug.ExprInspection -analyzer-config inline-lambdas=true -verify %s
-// XFAIL: *
 
 #include "Inputs/system-header-simulator-cxx.h"
 

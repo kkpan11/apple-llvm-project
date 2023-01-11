@@ -1153,20 +1153,16 @@ void ExprEngine::VisitLambdaExpr(const LambdaExpr *LE, ExplodedNode *Pred,
 
     SVal InitVal;
     if (!FieldForCapture->hasCapturedVLAType()) {
-      Expr *InitExpr = *i;
-
-      if (const auto AILE = dyn_cast<ArrayInitLoopExpr>(InitExpr)) {
-        // If the AILE initializes a POD array, we need to keep it as the
-        // InitExpr.
-        if (dyn_cast<CXXConstructExpr>(AILE->getSubExpr()))
-          InitExpr = AILE->getSubExpr();
-      }
+      const Expr *InitExpr = *i;
 
       assert(InitExpr && "Capture missing initialization expression");
 
-      if (dyn_cast<CXXConstructExpr>(InitExpr)) {
-        InitVal = *getObjectUnderConstruction(State, {LE, Idx}, LocCtxt);
-        InitVal = State->getSVal(InitVal.getAsRegion());
+      // With C++17 copy elision the InitExpr can be anything, so instead of
+      // pattern matching all cases, we simple check if the current field is
+      // under construction or not, regardless what it's InitExpr is.
+      if (const auto OUC =
+              getObjectUnderConstruction(State, {LE, Idx}, LocCtxt)) {
+        InitVal = State->getSVal(OUC->getAsRegion());
 
         State = finishObjectConstruction(State, {LE, Idx}, LocCtxt);
       } else
