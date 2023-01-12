@@ -43,6 +43,9 @@ public:
 // through the handler class.
 void checkUnsafeBufferUsage(const Decl *D, UnsafeBufferUsageHandler &Handler);
 
+/// The text indicating that the user needs to provide input there:
+constexpr static const char *const UserFillPlaceHolder = "<# placeholder #>";
+
 } // end namespace clang
 
 #endif /* LLVM_CLANG_ANALYSIS_ANALYSES_UNSAFEBUFFERUSAGE_H */

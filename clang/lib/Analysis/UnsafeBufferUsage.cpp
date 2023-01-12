@@ -612,11 +612,170 @@ static FixableGadgetSets groupFixablesByVar(FixableGadgetList &&AllFixableOperat
   return FixablesForUnsafeVars;
 }
 
+static Strategy
+getNaiveStrategy(const llvm::SmallVectorImpl<const VarDecl *> &UnsafeVars) {
+  Strategy S;
+  for (const VarDecl *VD : UnsafeVars) {
+    S.set(VD, Strategy::Kind::Span);
+  }
+  return S;
+}
+
+
+// For a non-null initializer `Init` of `T *` type, this function writes
+// `{Init,  S}` as a part of a fix-it to output stream . The list-initializer
+// `{Init, S}` belongs to a span constructor, where `Init` specifies the
+// address of the data and `S` is the extent.  In many cases, this function
+// cannot figure out the actual extent `S`.  It then will use a place holder to
+// replace `S` to ask users to fill `S` in.  The span object being constructed
+// will have type `span<T, S>`.
+//
+// FIXME: This function so far only works for spanify "single-level" pointers.
+// When it comes to multi-level pointers, the data address is not necessarily
+// identical to `Init` and the element type of the constructing span object is
+// not necessarily `T`.
+//
+// Parameters:
+//   `Init` a pointer to the initializer expression
+//   `Ctx` a reference to the ASTContext
+//   `OS` the output stream where fix-it texts being written to
+static void populateInitializerFixItWithSpan(const Expr *Init,
+                                     const ASTContext &Ctx, raw_ostream &OS) {
+  const PrintingPolicy &PP = Ctx.getPrintingPolicy();
+
+  // Prints the begin address of the span constructor:
+  OS << "{";
+  Init->printPretty(OS, nullptr, PP);
+  OS << ", ";
+
+  bool ExtKnown = false; // true iff the extent can be obtained
+  // Printers that print extent into OS and sets ExtKnown to true:
+  std::function PrintExpr = [&ExtKnown, &OS, &PP](const Expr *Size) {
+    Size->printPretty(OS, nullptr, PP);
+    ExtKnown = true;
+  };
+  std::function PrintAPInt = [&ExtKnown, &OS](const APInt &Size) {
+    Size.print(OS, false);
+    ExtKnown = true;
+  };
+  std::function PrintOne = [&ExtKnown, &OS](void) {
+    OS << "1";
+    ExtKnown = true;
+  };
+
+  // Try to get the data extent. Break into different cases:
+  if (auto CxxNew = dyn_cast<CXXNewExpr>(Init->IgnoreImpCasts())) {
+    // In cases `Init` is `new T[n]` and there is no explicit cast over
+    // `Init`, we know that `Init` must evaluates to a pointer to `n` objects
+    // of `T`. So the extent is `n` unless `n` has side effects.  Similar but
+    // simpler for `Init` is `new T`.
+    if (const Expr *Ext = CxxNew->getArraySize().value_or(nullptr)) {
+      if (!Ext->HasSideEffects(Ctx))
+        PrintExpr(Ext);
+    } else if (!CxxNew->isArray())
+      PrintOne();
+  } else if (auto CArrTy = dyn_cast<ConstantArrayType>(
+                 Init->IgnoreImpCasts()->getType().getTypePtr())) {
+    // In cases `Init` is of an array type after stripping off implicit casts,
+    // `PointeeTy` must besimilar to the element type of `CArrTy`, so the
+    // extent is the array size of `CArrTy`.  Note that if the array size is
+    // not a constant, we cannot use it as the extent.
+    PrintAPInt(CArrTy->getSize());
+    // FIXME: local static array may be converted to std:array.  Is there any
+    // dependency among these fix-its?
+  } else {
+    // In cases `Init` is of the form `&Var` after stripping of implicit
+    // casts, where `&` is the built-in operator, `PointeeTy` must be similar
+    // to the type of `Var`, so the extent is 1.
+    if (auto AddrOfExpr = dyn_cast<UnaryOperator>(Init->IgnoreImpCasts()))
+      if (AddrOfExpr->getOpcode() == UnaryOperatorKind::UO_AddrOf &&
+          isa_and_present<DeclRefExpr>(AddrOfExpr->getSubExpr()))
+        PrintOne();
+    // TODO: we can handle more cases, e.g., `&a[0]`, `&a`, std::addressof,...
+    // etc.
+  }
+  if (!ExtKnown)
+    OS << UserFillPlaceHolder;
+  OS << "}";
+}
+
+// For a `VarDecl` of the form `T  * var (= Init)?`, this
+// function generates a fix-it for the declaration, which re-declares `var` to
+// be of `span<T>` type and transforms the initializer, if present, to a span
+// constructor---`span<T> var {Init, Extent}`, where `Extent` may need the user
+// to fill in.
+//
+// FIXME:
+// For now, we only consider single level pointer types, i.e., given `T` is
+// `int **`, the converted type will be `span<int*>`.
+// We need to handle multi-level pointers correctly later.
+//
+// Parameters:
+//   `D` a pointer the variable declaration node
+//   `Ctx` a reference to the ASTContext
+// Returns:
+//    the generated fix-it
+static FixItHint fixVarDeclWithSpan(const VarDecl *D,
+                                          const ASTContext &Ctx) {
+  const QualType &T = D->getType().getDesugaredType(Ctx);
+  const QualType &SpanEltT = T->getPointeeType();
+  assert(!SpanEltT.isNull() && "Trying to fix a non-pointer type variable!");
+
+  SmallString<32> Replacement;
+  raw_svector_ostream OS(Replacement);
+
+  // Simply make `D` to be of span type:
+  OS << "std::span<" << SpanEltT.getAsString() << "> " << D->getName();
+  if (const Expr *Init = D->getInit())
+    populateInitializerFixItWithSpan(Init, Ctx, OS);
+
+  return FixItHint::CreateReplacement(
+      SourceRange{D->getInnerLocStart(), D->getEndLoc()}, OS.str());
+}
+
+static FixItList fixVariableWithSpan(const VarDecl *VD,
+                                     const DeclUseTracker &Tracker,
+                                     const ASTContext &Ctx) {
+  const DeclStmt *DS = Tracker.lookupDecl(VD);
+  assert(DS && "Fixing non-local variables not implemented yet!");
+  assert(DS->getSingleDecl() == VD &&
+         "Fixing non-single declarations not implemented yet!");
+  // Currently DS is an unused variable but we'll need it when
+  // non-single decls are implemented, where the pointee type name
+  // and the '*' are spread around the place.
+  (void)DS;
+
+  // FIXME: handle cases where DS has multiple declarations
+  FixItHint Fix = fixVarDeclWithSpan(VD, Ctx);
+  return {Fix};
+}
+
+static FixItList fixVariable(const VarDecl *VD, Strategy::Kind K,
+                             const DeclUseTracker &Tracker,
+                             const ASTContext &Ctx) {
+  switch (K) {
+  case Strategy::Kind::Span:
+    return fixVariableWithSpan(VD, Tracker, Ctx);
+  case Strategy::Kind::Iterator:
+  case Strategy::Kind::Array:
+  case Strategy::Kind::Vector:
+    llvm_unreachable("Strategy not implemented yet!");
+  case Strategy::Kind::Wontfix:
+    llvm_unreachable("Invalid strategy!");
+  }
+}
+
 static std::map<const VarDecl *, FixItList>
-getFixIts(FixableGadgetSets &FixablesForUnsafeVars, const Strategy &S) {
+getFixIts(FixableGadgetSets &FixablesForUnsafeVars, const Strategy &S, const DeclUseTracker &Tracker, const ASTContext &Ctx) {
   std::map<const VarDecl *, FixItList> FixItsForVariable;
   for (const auto &[VD, Fixables] : FixablesForUnsafeVars.byVar) {
-    // TODO fixVariable - fixit for the variable itself
+    FixItsForVariable[VD] = fixVariable(VD, S.lookup(VD), Tracker, Ctx);
+    // If we fail to produce Fix-It for the declaration we have to skip the variable entirely.
+    if (FixItsForVariable[VD].empty()) {
+      FixItsForVariable.erase(VD);
+      continue;
+    }
+
     bool ImpossibleToFix = false;
     llvm::SmallVector<FixItHint, 16> FixItsForVD;
     for (const auto &F : Fixables) {
@@ -638,15 +797,6 @@ getFixIts(FixableGadgetSets &FixablesForUnsafeVars, const Strategy &S) {
                                    FixItsForVD.begin(), FixItsForVD.end());
   }
   return FixItsForVariable;
-}
-
-static Strategy
-getNaiveStrategy(const llvm::SmallVectorImpl<const VarDecl *> &UnsafeVars) {
-  Strategy S;
-  for (const VarDecl *VD : UnsafeVars) {
-    S.set(VD, Strategy::Kind::Span);
-  }
-  return S;
 }
 
 void clang::checkUnsafeBufferUsage(const Decl *D,
@@ -681,7 +831,7 @@ void clang::checkUnsafeBufferUsage(const Decl *D,
 
   Strategy NaiveStrategy = getNaiveStrategy(UnsafeVars);
   std::map<const VarDecl *, FixItList> FixItsForVariable =
-      getFixIts(FixablesForUnsafeVars, NaiveStrategy);
+      getFixIts(FixablesForUnsafeVars, NaiveStrategy, Tracker, D->getASTContext());
 
   // FIXME Detect overlapping FixIts.
 
