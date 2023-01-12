@@ -10,7 +10,6 @@
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/CAS/HierarchicalTreeBuilder.h"
 #include "llvm/CAS/TreeSchema.h"
-#include "llvm/CAS/Utils.h"
 #include "llvm/CASObjectFormats/CASObjectReader.h"
 #include "llvm/CASObjectFormats/FlatV1.h"
 #include "llvm/CASObjectFormats/LinkGraph.h"

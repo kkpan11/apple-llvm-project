@@ -10,7 +10,7 @@
 #include "llvm/ADT/iterator_range.h"
 #include "llvm/BinaryFormat/MachO.h"
 #include "llvm/CAS/ObjectStore.h"
-#include "llvm/CAS/Utils.h"
+#include "llvm/CASObjectFormats/Utils.h"
 #include "llvm/MC/CAS/MCCASFormatSchemaBase.h"
 #include "llvm/MC/CAS/MCCASObjectV1.h"
 #include "llvm/MC/MCAsmBackend.h"

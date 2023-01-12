@@ -9,10 +9,23 @@
 #ifndef LLVM_CASOBJECTFORMATS_UTILS_H
 #define LLVM_CASOBJECTFORMATS_UTILS_H
 
+#include "llvm/Support/Error.h"
+
 namespace llvm {
 
-class Error;
 class raw_ostream;
+class MemoryBufferRef;
+
+namespace cas {
+class ObjectStore;
+class CASID;
+
+Expected<CASID> readCASIDBuffer(cas::ObjectStore &CAS,
+                                llvm::MemoryBufferRef Buffer);
+
+void writeCASIDBuffer(const CASID &ID, llvm::raw_ostream &OS);
+
+}
 
 namespace casobjectformats {
 
