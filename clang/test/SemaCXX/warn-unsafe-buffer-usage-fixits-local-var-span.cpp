@@ -37,7 +37,7 @@ void local_array_subscript_auto() {
 void local_array_subscript_variable_extent() {
   int n = 10;
 // CHECK: std::span<int> p{new int [n], n};
-// CHECK: std::span<int> q{new int [n++], ...};
+// CHECK: std::span<int> q{new int [n++], <# placeholder #>};
 // CHECK: foo(p[5], q[5]);
   int *p = new int[n];
   // If the extent expression does not have a constant value, we cannot fill the extent for users...
@@ -51,7 +51,7 @@ void local_ptr_to_array() {
   int a[10];
   int b[n];  // If the extent expression does not have a constant value, we cannot fill the extent for users...
 // CHECK: std::span<int> p{a, 10};
-// CHECK: std::span<int> q{b, ...};
+// CHECK: std::span<int> q{b, <# placeholder #>};
 // CHECK: foo(p[5], q[5]);
   int *p = a;
   int *q = b;

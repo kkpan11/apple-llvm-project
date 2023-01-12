@@ -695,7 +695,7 @@ static void populateInitializerFixItWithSpan(const Expr *Init,
     // etc.
   }
   if (!ExtKnown)
-    OS << UserFillPlaceHolder;
+    OS << UnsafeBufferUsageHandler::getUserFillPlaceHolder();
   OS << "}";
 }
 
