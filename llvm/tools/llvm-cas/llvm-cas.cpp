@@ -13,7 +13,6 @@
 #include "llvm/CAS/HierarchicalTreeBuilder.h"
 #include "llvm/CAS/ObjectStore.h"
 #include "llvm/CAS/TreeSchema.h"
-#include "llvm/CAS/Utils.h"
 #include "llvm/RemoteCachingService/RemoteCachingService.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Error.h"

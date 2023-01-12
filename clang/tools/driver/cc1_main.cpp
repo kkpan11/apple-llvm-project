@@ -43,7 +43,7 @@
 #include "llvm/CAS/HierarchicalTreeBuilder.h"
 #include "llvm/CAS/ObjectStore.h"
 #include "llvm/CAS/TreeSchema.h"
-#include "llvm/CAS/Utils.h"
+#include "llvm/CASObjectFormats/Utils.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/LinkAllPasses.h"
 #include "llvm/MC/CAS/MCCASObjectV1.h"

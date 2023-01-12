@@ -19,7 +19,6 @@
 #include "llvm/ADT/CachedHashString.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/CAS/ObjectStore.h"
-#include "llvm/CAS/Utils.h"
 #include "llvm/LTO/LTO.h"
 #include "llvm/Option/Arg.h"
 #include "llvm/Option/ArgList.h"
