@@ -103,7 +103,9 @@ public:
     GetFirstValueByName (const char* name) const;
 
     %extend {
+#ifdef SWIGPYTHON
        %nothreadallow;
+#endif
        std::string lldb::SBValueList::__str__ (){
            lldb::SBStream description;
            const size_t n = $self->GetSize();
@@ -122,7 +124,9 @@ public:
                --desc_len;
            return std::string(desc, desc_len);
        }
+#ifdef SWIGPYTHON
        %clearnothreadallow;
+#endif
     }
 
 #ifdef SWIGPYTHON
