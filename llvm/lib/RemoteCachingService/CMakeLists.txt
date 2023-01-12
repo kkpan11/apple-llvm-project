@@ -1,27 +1,32 @@
 if (LLVM_CAS_ENABLE_REMOTE_CACHE)
 add_subdirectory(RemoteCacheProto)
 add_subdirectory(RemoteCacheServer)
-add_subdirectory(Client)
-add_subdirectory(CAS)
 
 set(LLVM_LINK_COMPONENTS
   RemoteCacheKVProto
   RemoteCacheCASProto
-  RemoteCacheClient
-  GRPCRelayCAS
   )
-else ()
-add_subdirectory(NullService)
 
-set(LLVM_LINK_COMPONENTS
-  RemoteNullService
-  )
-endif()
+  include_directories($<TARGET_PROPERTY:LLVMRemoteCacheKVProto,BINARY_DIR>)
+  include_directories($<TARGET_PROPERTY:LLVMRemoteCacheCASProto,BINARY_DIR>)
 
-add_llvm_component_library(LLVMRemoteCachingService
+  add_llvm_component_library(LLVMRemoteCachingService
   RemoteCachingService.cpp
+  Client/Client.cpp
+  CAS/GRPCRelayCAS.cpp
 
   LINK_COMPONENTS
   Support
   CAS
 )
+
+else ()
+add_llvm_component_library(LLVMRemoteCachingService
+  RemoteCachingService.cpp
+  NullService/NullService.cpp
+
+  LINK_COMPONENTS
+  Support
+  CAS
+)
+endif()

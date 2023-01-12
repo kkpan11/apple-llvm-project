@@ -11,6 +11,7 @@ set(LLVM_LINK_COMPONENTS
   DWARFLinker
   DWARFLinkerParallel
   MC
+  MCCAS
   Object
   CodeGen
   Option
