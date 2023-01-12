@@ -19,20 +19,25 @@ import unittest2
 
 class TestSwiftUnknownSelf(lldbtest.TestBase):
 
-    def check_class(self, var_self, broken):
+    mydir = lldbtest.TestBase.compute_mydir(__file__)
+
+    def check_class(self, var_self, weak):
+        self.expect("v self", substrs=["hello", "world"])
         lldbutil.check_variable(self, var_self, num_children=2)
         m_base_string = var_self.GetChildMemberWithName("base_string")
         m_string = var_self.GetChildMemberWithName("string")
-        if not broken:
+        # FIXME: This is inconsistent. If self is Optional, an extra
+        #        indirection is needed.
+        if not weak:
             lldbutil.check_variable(self, m_base_string, summary='"hello"')
         lldbutil.check_variable(self, m_string, summary='"world"')
         # Also check the expression evaluator.
         self.expect("expr self", substrs=["hello", "world"])
-        self.expect("fr v self", substrs=["hello", "world"])
+        self.expect("expr self%s.base_string"%("!" if weak else ""),
+                    substrs=["hello"])
 
 
     @skipIf(bugnumber="SR-10216", archs=['ppc64le'])
-    @skipIfDarwin # This test fails non-reproducibly in CI. rdar://100034078
     @swiftTest
     @skipUnlessFoundation
     def test_unknown_self_objc_ref(self):
@@ -45,14 +50,14 @@ class TestSwiftUnknownSelf(lldbtest.TestBase):
             self.assertTrue(thread.GetStopReason() == lldb.eStopReasonBreakpoint)
             frame = thread.frames[0]
             var_self = frame.FindVariable("self")
-            self.check_class(var_self, broken=False)
+            self.check_class(var_self, weak=False)
             process.Continue()
 
             # weak
             self.assertTrue(thread.GetStopReason() == lldb.eStopReasonBreakpoint)
             frame = thread.frames[0]
             var_self = frame.FindVariable("self")
-            self.check_class(var_self, broken=True)
+            self.check_class(var_self, weak=True)
             process.Continue()
 
         self.assertTrue(thread.GetStopReason() != lldb.eStopReasonBreakpoint)
