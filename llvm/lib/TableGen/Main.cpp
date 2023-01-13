@@ -299,11 +299,7 @@ Expected<cas::ObjectRef> TableGenCache::createExecutableBlob(StringRef Argv0) {
   ErrorOr<std::unique_ptr<MemoryBuffer>> Buffer = MemoryBuffer::getFile(Argv0);
   if (!Buffer)
     return errorCodeToError(Buffer.getError());
-  Expected<cas::ObjectProxy> Blob =
-      CAS->createProxy(std::nullopt, (**Buffer).getBuffer());
-  if (!Blob)
-    return Blob.takeError();
-  return Blob->getRef();
+  return CAS->storeFromString(std::nullopt, (**Buffer).getBuffer());
 }
 
 Expected<cas::ObjectRef>
@@ -352,10 +348,7 @@ TableGenCache::createCommandLineBlob(ArrayRef<const char *> Args) {
     Args = Args.drop_front();
   }
 
-  Expected<cas::ObjectProxy> Blob = CAS->createProxy(std::nullopt, CommandLine);
-  if (!Blob)
-    return Blob.takeError();
-  return Blob->getRef();
+  return CAS->storeFromString(std::nullopt, CommandLine);
 }
 
 Error TableGenCache::createAction(ArrayRef<const char *> Args) {
