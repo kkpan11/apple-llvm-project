@@ -503,9 +503,19 @@ materializeDebugInfoFromTagImpl(MCCASReader &Reader,
     encodeULEB128(decodeAbbrevIndexAsDwarfAbbrevIdx(AbbrevIdx), SectionStream);
   };
 
-  auto AttrCallback = [&](dwarf::Attribute, dwarf::Form, StringRef FormData,
-                          bool) {
-    SectionStream << FormData;
+  auto AttrCallback = [&](dwarf::Attribute, dwarf::Form Form,
+                          StringRef FormData, bool) {
+    if (Form == dwarf::Form::DW_FORM_ref4_cas ||
+        Form == dwarf::Form::DW_FORM_strp_cas) {
+      auto Reader = BinaryStreamReader(FormData, support::endianness::little);
+      uint64_t Data64;
+      if (auto Err = Reader.readULEB128(Data64))
+        handleAllErrors(std::move(Err));
+      uint32_t Data32 = Data64;
+      assert(Data32 == Data64 && Reader.empty());
+      SectionStream.write(reinterpret_cast<char *>(&Data32), sizeof(Data32));
+    } else
+      SectionStream << FormData;
   };
 
   auto EndTagCallback = [&](bool HadChildren) {
@@ -2504,10 +2514,13 @@ static void writeDIEAttrs(DWARFDie &DIE, ArrayRef<char> DebugInfoData,
     dwarf::Form Form = AttrValue.Value.getForm();
     ArrayRef<char> FormData =
         DebugInfoData.slice(AttrValue.Offset, AttrValue.ByteSize);
-    if (doesntDedup(Form, Attr))
-      DistinctWriter.writeData(FormData);
+    auto &WriterToUse = doesntDedup(Form, Attr)
+                            ? static_cast<DataWriter &>(DistinctWriter)
+                            : DIEWriter;
+    if (Form == dwarf::Form::DW_FORM_ref4 || Form == dwarf::Form::DW_FORM_strp)
+      convertFourByteFormDataToULEB(FormData, WriterToUse);
     else
-      DIEWriter.writeData(FormData);
+      WriterToUse.writeData(FormData);
   }
 }
 

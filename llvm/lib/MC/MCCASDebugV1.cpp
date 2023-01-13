@@ -111,6 +111,8 @@ mccasformats::v1::getFormSize(dwarf::Form Form, dwarf::FormParams FP,
     }
     case dwarf::DW_FORM_udata:
     case dwarf::DW_FORM_ref_udata:
+    case dwarf::DW_FORM_ref4_cas:
+    case dwarf::DW_FORM_strp_cas:
     case dwarf::DW_FORM_rnglistx:
     case dwarf::DW_FORM_loclistx:
     case dwarf::DW_FORM_GNU_addr_index:
@@ -198,7 +200,9 @@ bool mccasformats::v1::doesntDedup(dwarf::Form Form, dwarf::Attribute Attr) {
       FormsToPartition{
           {dwarf::Form::DW_FORM_ref_addr, {}},
           {dwarf::Form::DW_FORM_strp, {}},
+          {dwarf::Form::DW_FORM_strp_cas, {}},
           {dwarf::Form::DW_FORM_ref4, {}},
+          {dwarf::Form::DW_FORM_ref4_cas, {}},
           {dwarf::Form::DW_FORM_data1,
            {dwarf::Attribute::DW_AT_call_file,
             dwarf::Attribute::DW_AT_decl_file}},
@@ -222,6 +226,20 @@ bool mccasformats::v1::doesntDedup(dwarf::Form Form, dwarf::Attribute Attr) {
   return llvm::is_contained(it->second, Attr);
 }
 
+uint64_t
+mccasformats::v1::convertFourByteFormDataToULEB(ArrayRef<char> FormData,
+                                                DataWriter &Writer) {
+  assert(FormData.size() == 4);
+  auto Reader =
+      BinaryStreamReader(toStringRef(FormData), support::endianness::little);
+
+  uint32_t IntegerData;
+  if (auto Err = Reader.readInteger(IntegerData))
+    handleAllErrors(std::move(Err)); // this should never fail
+  Writer.writeULEB128(IntegerData);
+  return getULEB128Size(IntegerData);
+}
+
 void AbbrevEntryWriter::writeAbbrevEntry(DWARFDie DIE) {
   // [uleb(Tag), has_children]
   // [uleb(Attr), uleb(Form)]*
@@ -229,7 +247,12 @@ void AbbrevEntryWriter::writeAbbrevEntry(DWARFDie DIE) {
   writeByte(DIE.hasChildren());
   for (const DWARFAttribute &AttrValue : DIE.attributes()) {
     writeULEB128(AttrValue.Attr);
-    writeULEB128(AttrValue.Value.getForm());
+    dwarf::Form Form = AttrValue.Value.getForm();
+    if (Form == dwarf::Form::DW_FORM_ref4)
+      Form = dwarf::Form::DW_FORM_ref4_cas;
+    if (Form == dwarf::Form::DW_FORM_strp)
+      Form = dwarf::Form::DW_FORM_strp_cas;
+    writeULEB128(Form);
   }
 }
 
@@ -275,8 +298,38 @@ mccasformats::v1::reconstructAbbrevSection(raw_ostream &OS,
     const uint64_t AbbrevCode = EntryIdx + 1;
     WrittenSize += encodeULEB128(AbbrevCode, OS);
 
-    OS << EntryData;
-    WrittenSize += EntryData.size();
+    BinaryStreamReader Reader(EntryData, support::endianness::little);
+    // [uleb(Tag), has_children]
+    uint64_t TagAsInt;
+    uint8_t HasChildren;
+    if (auto Err = Reader.readULEB128(TagAsInt))
+      handleAllErrors(std::move(Err));
+    if (auto Err = Reader.readInteger(HasChildren))
+      handleAllErrors(std::move(Err));
+    WrittenSize += encodeULEB128(TagAsInt, OS);
+    OS << HasChildren;
+    WrittenSize += 1;
+    assert(HasChildren == 0 || HasChildren == 1);
+
+    // [uleb(Attr), uleb(Form)]*
+    while (!Reader.empty()) {
+      uint64_t AttrAsInt;
+      uint64_t FormAsInt;
+      if (auto Err = Reader.readULEB128(AttrAsInt))
+        handleAllErrors(std::move(Err));
+      if (auto Err = Reader.readULEB128(FormAsInt))
+        handleAllErrors(std::move(Err));
+
+      WrittenSize += encodeULEB128(AttrAsInt, OS);
+
+      auto Form = static_cast<dwarf::Form>(FormAsInt);
+      if (Form == dwarf::Form::DW_FORM_ref4_cas)
+        Form = dwarf::Form::DW_FORM_ref4;
+      if (Form == dwarf::Form::DW_FORM_strp_cas)
+        Form = dwarf::Form::DW_FORM_strp;
+
+      WrittenSize += encodeULEB128(Form, OS);
+    }
 
     // Dwarf 5: Section 7.5.3:
     // The series of attribute specifications ends with an entry containing 0
