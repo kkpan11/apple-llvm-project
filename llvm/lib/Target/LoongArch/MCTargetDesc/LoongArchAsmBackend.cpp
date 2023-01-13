@@ -134,7 +134,8 @@ void LoongArchAsmBackend::applyFixup(const MCAssembler &Asm,
                                      const MCValue &Target,
                                      MutableArrayRef<char> Data, uint64_t Value,
                                      bool IsResolved,
-                                     const MCSubtargetInfo *STI) const {
+                                     const MCSubtargetInfo *STI,
+                                     const MCFragment *Fragment) const {
   if (!Value)
     return; // Doesn't change encoding.
 
