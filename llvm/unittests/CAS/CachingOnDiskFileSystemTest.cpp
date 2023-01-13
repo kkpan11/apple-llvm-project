@@ -595,7 +595,7 @@ TEST(CachingOnDiskFileSystemTest, TrackNewAccessesExists) {
 
   unsigned FileCount = 0;
   cantFail(Schema.walkFileTreeRecursively(
-      FS->getCAS(), *Tree,
+      FS->getCAS(), Tree->getRef(),
       [&](const cas::NamedTreeEntry &Entry, Optional<cas::TreeProxy>) {
         if (Entry.isFile()) {
           FileCount++;
