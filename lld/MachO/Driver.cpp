@@ -556,7 +556,7 @@ static Error addCASTree(ObjectFormatSchemaPool &CASSchemas, const CASID &ID) {
     return Tree.takeError();
   TreeSchema Schema(CASSchemas.getCAS());
   return Schema.walkFileTreeRecursively(
-      CASSchemas.getCAS(), *Tree,
+      CASSchemas.getCAS(), Tree->getRef(),
       [&](const NamedTreeEntry &entry, Optional<TreeProxy>) -> Error {
         if (entry.getKind() == TreeEntry::Tree)
           return Error::success();

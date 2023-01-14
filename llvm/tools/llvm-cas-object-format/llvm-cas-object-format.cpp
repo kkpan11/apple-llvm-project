@@ -242,10 +242,10 @@ int main(int argc, char *argv[]) {
 
     case IngestFromCASTree: {
       auto ID = ExitOnErr(CAS->parseID(IF));
-      auto Root = ExitOnErr(CAS->getProxy(ID));
+      auto Root = *CAS->getReference(ID);
       TreeSchema Schema(*CAS);
       SmallVector<NamedTreeEntry> Stack;
-      Stack.emplace_back(Root.getRef(), TreeEntry::Tree, "/");
+      Stack.emplace_back(Root, TreeEntry::Tree, "/");
       Optional<GlobPattern> GlobP;
       if (!CASGlob.empty())
         GlobP.emplace(ExitOnErr(GlobPattern::create(CASGlob)));
@@ -831,7 +831,7 @@ static Error printCASObjectOrTree(ObjectFormatSchemaPool &Pool, ObjectProxy ID,
   }
 
   return Schema.walkFileTreeRecursively(
-      Pool.getCAS(), ID,
+      Pool.getCAS(), ID.getRef(),
       [&](const NamedTreeEntry &entry, Optional<TreeProxy>) -> Error {
         if (entry.getKind() == TreeEntry::Tree)
           return Error::success();
@@ -850,7 +850,8 @@ static Error printCASObjectOrTree(ObjectFormatSchemaPool &Pool, ObjectProxy ID,
 static Error materializeObjectsFromCASTree(ObjectStore &CAS, ObjectProxy ID) {
   TreeSchema Schema(CAS);
   return Schema.walkFileTreeRecursively(
-      CAS, ID, [&](const NamedTreeEntry &Entry, Optional<TreeProxy>) -> Error {
+      CAS, ID.getRef(),
+      [&](const NamedTreeEntry &Entry, Optional<TreeProxy>) -> Error {
         if (Entry.getKind() != TreeEntry::Regular &&
             Entry.getKind() != TreeEntry::Tree) {
           return createStringError(inconvertibleErrorCode(),

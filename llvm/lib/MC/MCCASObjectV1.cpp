@@ -146,11 +146,10 @@ MCSchema::MCSchema(cas::ObjectStore &CAS) : MCSchema::RTTIExtends(CAS) {
 Error MCSchema::fillCache() {
   Optional<cas::ObjectRef> RootKindID;
   const unsigned Version = 0; // Bump this to error on old object files.
-  if (Expected<cas::ObjectProxy> ExpectedRootKind =
-          CAS.createProxy(std::nullopt, "mc:v1:schema:" + Twine(Version).str()))
-    RootKindID = ExpectedRootKind->getRef();
-  else
-    return ExpectedRootKind.takeError();
+  if (Error E = CAS.storeFromString(std::nullopt,
+                                    "mc:v1:schema:" + Twine(Version).str())
+                    .moveInto(RootKindID))
+    return E;
 
   StringRef AllKindStrings[] = {
       PaddingRef::KindString,
@@ -166,20 +165,16 @@ Error MCSchema::fillCache() {
   cas::ObjectRef Refs[] = {*RootKindID};
   SmallVector<cas::ObjectRef> IDs = {*RootKindID};
   for (StringRef KS : AllKindStrings) {
-    auto ExpectedID = CAS.createProxy(Refs, KS);
+    auto ExpectedID = CAS.storeFromString(Refs, KS);
     if (!ExpectedID)
       return ExpectedID.takeError();
-    IDs.push_back(ExpectedID->getRef());
+    IDs.push_back(*ExpectedID);
     KindStrings.push_back(std::make_pair(KindStrings.size(), KS));
     assert(KindStrings.size() < UCHAR_MAX &&
            "Ran out of bits for kind strings");
   }
 
-  auto ExpectedTypeID = CAS.createProxy(IDs, "mc:v1:root");
-  if (!ExpectedTypeID)
-    return ExpectedTypeID.takeError();
-  RootNodeTypeID = ExpectedTypeID->getRef();
-  return Error::success();
+  return CAS.storeFromString(IDs, "mc:v1:root").moveInto(RootNodeTypeID);
 }
 
 Optional<StringRef>

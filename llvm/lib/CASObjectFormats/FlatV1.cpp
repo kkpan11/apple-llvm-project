@@ -77,11 +77,10 @@ ObjectFileSchema::ObjectFileSchema(cas::ObjectStore &CAS)
 Error ObjectFileSchema::fillCache() {
   Optional<cas::ObjectRef> RootKindID;
   const unsigned Version = 0; // Bump this to error on old object files.
-  if (Expected<cas::ObjectProxy> ExpectedRootKind = CAS.createProxy(
-          std::nullopt, "cas.o:flatv1:schema:" + Twine(Version).str()))
-    RootKindID = ExpectedRootKind->getRef();
-  else
-    return ExpectedRootKind.takeError();
+  if (Error E = CAS.storeFromString(std::nullopt, "cas.o:flatv1:schema:" +
+                                                      Twine(Version).str())
+                    .moveInto(RootKindID))
+    return E;
 
   StringRef AllKindStrings[] = {
       BlockRef::KindString,  CompileUnitRef::KindString,
@@ -91,20 +90,17 @@ Error ObjectFileSchema::fillCache() {
   cas::ObjectRef KindRefs[] = {*RootKindID};
   SmallVector<cas::ObjectRef> Refs = {*RootKindID};
   for (StringRef KS : AllKindStrings) {
-    auto ExpectedID = CAS.createProxy(KindRefs, KS);
+    auto ExpectedID = CAS.storeFromString(KindRefs, KS);
     if (!ExpectedID)
       return ExpectedID.takeError();
-    Refs.push_back(ExpectedID->getRef());
+    Refs.push_back(*ExpectedID);
     KindStrings.push_back(std::make_pair(KindStrings.size(), KS));
     assert(KindStrings.size() < UCHAR_MAX &&
            "Ran out of bits for kind strings");
   }
 
-  auto ExpectedTypeID = CAS.createProxy(Refs, "cas.o:flatv1:root");
-  if (!ExpectedTypeID)
-    return ExpectedTypeID.takeError();
-  RootNodeTypeID = ExpectedTypeID->getRef();
-  return Error::success();
+  return CAS.storeFromString(Refs, "cas.o:flatv1:root")
+      .moveInto(RootNodeTypeID);
 }
 
 Optional<StringRef>
