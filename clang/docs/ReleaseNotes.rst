@@ -131,6 +131,7 @@ Bug Fixes
 
 Improvements to Clang's diagnostics
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- Disabled FIT-IT suggested for a case of bad conversion in system headers.
 - ``-Wliteral-range`` will warn on floating-point equality comparisons with
   constants that are not representable in a casted value. For example,
   ``(float) f == 0.1`` is always false.
