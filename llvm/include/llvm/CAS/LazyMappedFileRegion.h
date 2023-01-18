@@ -123,7 +123,8 @@ private:
     MappedRegions = RHS.MappedRegions;
 #else
     Map = std::move(RHS.Map);
-    assert(!RHS.Map && "Expected Optional(Optional&&) to clear RHS.Map");
+    assert(!RHS.Map &&
+           "Expected std::optional(std::optional&&) to clear RHS.Map");
 #endif
     CachedSize = RHS.CachedSize.load();
     RHS.CachedSize = 0;
@@ -131,7 +132,7 @@ private:
   }
 
   std::string Path;
-  Optional<int> FD;
+  std::optional<int> FD;
 #ifdef _WIN32
   char *VM = nullptr;
   uint64_t MaxSize = 0;

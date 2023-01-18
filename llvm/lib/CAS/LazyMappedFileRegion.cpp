@@ -155,7 +155,7 @@ Error LazyMappedFileRegion::extendSizeImpl(uint64_t MinSize) {
 
   // Synchronize with other threads. Skip if constructing a new file since
   // exclusive access is already guaranteed.
-  Optional<std::lock_guard<std::mutex>> Lock;
+  std::optional<std::lock_guard<std::mutex>> Lock;
   if (!IsConstructingNewFile)
     Lock.emplace(Mutex);
 
@@ -282,7 +282,7 @@ Error LazyMappedFileRegion::extendSizeImpl(uint64_t MinSize) {
 
   // Synchronize with other threads. Skip if constructing a new file since
   // exclusive access is already guaranteed.
-  Optional<std::lock_guard<std::mutex>> Lock;
+  std::optional<std::lock_guard<std::mutex>> Lock;
   if (!IsConstructingNewFile)
     Lock.emplace(Mutex);
 

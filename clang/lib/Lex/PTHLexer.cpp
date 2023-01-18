@@ -452,7 +452,7 @@ void PTHHandler::initialize(PTHManager &PTHM, DiagnosticsEngine &Diags,
   // Get the number of IdentifierInfos and pre-allocate the identifier cache.
   if (uint32_t NumIDs =
           endian::read<uint32_t, little, aligned>(IdentifierTable))
-    IdentifierInfoCache = llvm::makeMutableArrayRef(
+    IdentifierInfoCache = llvm::MutableArrayRef(
         new (PTHM.IdentifierInfoCacheAlloc.Allocate(NumIDs))
             IdentifierInfo *[NumIDs],
         NumIDs);

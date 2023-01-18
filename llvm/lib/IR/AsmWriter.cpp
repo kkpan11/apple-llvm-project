@@ -1694,7 +1694,7 @@ struct MDFieldPrinter {
   void printEmissionKind(StringRef Name, DICompileUnit::DebugEmissionKind EK);
   void printCasFriendlinessKind(
       StringRef Name, DICompileUnit::CasFriendlinessKind EK,
-      Optional<DICompileUnit::CasFriendlinessKind> Default = std::nullopt);
+      std::optional<DICompileUnit::CasFriendlinessKind> Default = std::nullopt);
   void printNameTableKind(StringRef Name,
                           DICompileUnit::DebugNameTableKind NTK);
 };
@@ -1828,7 +1828,7 @@ void MDFieldPrinter::printEmissionKind(StringRef Name,
 
 void MDFieldPrinter::printCasFriendlinessKind(
     StringRef Name, DICompileUnit::CasFriendlinessKind EK,
-    Optional<DICompileUnit::CasFriendlinessKind> Default) {
+    std::optional<DICompileUnit::CasFriendlinessKind> Default) {
   if (Default && *Default == EK)
     return;
   Out << FS << Name << ": " << DICompileUnit::casFriendlinessString(EK);

@@ -7,11 +7,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "flang/Runtime/allocatable.h"
+#include "assign.h"
 #include "derived.h"
 #include "stat.h"
 #include "terminator.h"
 #include "type-info.h"
-#include "flang/Runtime/assign.h"
 
 namespace Fortran::runtime {
 extern "C" {
@@ -61,6 +61,10 @@ void RTNAME(AllocatableSetDerivedLength)(
 
 void RTNAME(AllocatableApplyMold)(
     Descriptor &descriptor, const Descriptor &mold) {
+  if (descriptor.IsAllocated()) {
+    // 9.7.1.3 Return so the error can be emitted by AllocatableAllocate.
+    return;
+  }
   descriptor = mold;
   descriptor.set_base_addr(nullptr);
   descriptor.raw().attribute = CFI_attribute_allocatable;
@@ -84,6 +88,22 @@ int RTNAME(AllocatableAllocate)(Descriptor &descriptor, bool hasStat,
         }
       }
     }
+  }
+  return stat;
+}
+
+int RTNAME(AllocatableAllocateSource)(Descriptor &alloc,
+    const Descriptor &source, bool hasStat, const Descriptor *errMsg,
+    const char *sourceFile, int sourceLine) {
+  if (alloc.Elements() == 0) {
+    return StatOk;
+  }
+  int stat{RTNAME(AllocatableAllocate)(
+      alloc, hasStat, errMsg, sourceFile, sourceLine)};
+  if (stat == StatOk) {
+    Terminator terminator{sourceFile, sourceLine};
+    // 9.7.1.2(7)
+    Assign(alloc, source, terminator, /*skipRealloc=*/true);
   }
   return stat;
 }
@@ -125,6 +145,6 @@ void RTNAME(AllocatableDeallocateNoFinal)(
   }
 }
 
-// TODO: AllocatableCheckLengthParameter, AllocatableAllocateSource
+// TODO: AllocatableCheckLengthParameter
 }
 } // namespace Fortran::runtime

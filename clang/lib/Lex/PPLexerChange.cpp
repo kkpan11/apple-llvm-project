@@ -23,6 +23,7 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBufferRef.h"
 #include "llvm/Support/Path.h"
+#include <optional>
 
 using namespace clang;
 
@@ -79,7 +80,7 @@ bool Preprocessor::EnterSourceFile(FileID FID, ConstSearchDirIterator CurDir,
   if (getPreprocessorOpts().DependencyDirectivesForFile &&
       FID != PredefinesFileID) {
     if (OptionalFileEntryRef File = SourceMgr.getFileEntryRefForID(FID)) {
-      if (Optional<ArrayRef<dependency_directives_scan::Directive>>
+      if (std::optional<ArrayRef<dependency_directives_scan::Directive>>
               DepDirectives =
                   getPreprocessorOpts().DependencyDirectivesForFile(*File)) {
         ScannedDepDirectives = *DepDirectives;
@@ -97,7 +98,7 @@ bool Preprocessor::EnterSourceFile(FileID FID, ConstSearchDirIterator CurDir,
   }
 
   // Get the MemoryBuffer for this FID, if it fails, we fail.
-  llvm::Optional<llvm::MemoryBufferRef> InputFile =
+  std::optional<llvm::MemoryBufferRef> InputFile =
       getSourceManager().getBufferOrNone(FID, Loc);
   if (!InputFile) {
     SourceLocation FileStart = SourceMgr.getLocForStartOfFile(FID);

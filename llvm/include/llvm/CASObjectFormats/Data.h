@@ -75,7 +75,7 @@ public:
     explicit iterator(StringRef Data) : Data(Data) { decode(/*IsInit=*/true); }
 
     StringRef Data;
-    Optional<Fixup> F;
+    std::optional<Fixup> F;
   };
 
   iterator begin() const { return iterator(Data); }
@@ -123,11 +123,11 @@ public:
   /// Uses minimum of 2B (1B + VBR8(Size)). \p AlignmentOffset, \p Content, and
   /// \p Fixups add no storage cost if they are not used.
   static void encode(uint64_t Size, uint64_t Alignment,
-                     uint64_t AlignmentOffset, Optional<StringRef> Content,
+                     uint64_t AlignmentOffset, std::optional<StringRef> Content,
                      ArrayRef<Fixup> Fixups, SmallVectorImpl<char> &Data);
 
   Error decode(uint64_t &Size, uint64_t &Alignment, uint64_t &AlignmentOffset,
-               Optional<StringRef> &Content, FixupList &Fixups) const;
+               std::optional<StringRef> &Content, FixupList &Fixups) const;
 
   bool isZeroFill() const { return front() & (1u << IsZeroFillBit); }
   uint64_t getSize() const {
@@ -140,12 +140,12 @@ public:
   uint64_t getAlignmentOffset() const {
     return hasAlignmentOffset() ? decodeAlignmentOffset() : 0;
   }
-  Optional<ArrayRef<char>> getContentArray() const {
-    if (Optional<StringRef> Content = getContent())
+  std::optional<ArrayRef<char>> getContentArray() const {
+    if (std::optional<StringRef> Content = getContent())
       return ArrayRef(Content->begin(), Content->end());
     return std::nullopt;
   }
-  Optional<StringRef> getContent() const;
+  std::optional<StringRef> getContent() const;
   FixupList getFixups() const;
 
 private:
@@ -156,7 +156,7 @@ private:
                                           : Alignment < (1ULL << 32) ? 4 : 8;
   }
   static Error consumeContent(StringRef &Remaining, uint64_t Size,
-                              Optional<StringRef> &Content);
+                              std::optional<StringRef> &Content);
   static Error consumeSize(StringRef &Remaining, uint64_t &Size);
   static uint64_t consumeSizeFatal(StringRef &Remaining);
   bool hasAlignmentOffset() const {
@@ -221,7 +221,7 @@ public:
     explicit iterator(StringRef Data) : Data(Data) { decode(/*IsInit=*/true); }
 
     StringRef Data;
-    Optional<TargetInfo> TI;
+    std::optional<TargetInfo> TI;
   };
 
   iterator begin() const { return iterator(Data); }

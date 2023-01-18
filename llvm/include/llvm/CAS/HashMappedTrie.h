@@ -91,10 +91,10 @@ protected:
 
   ThreadSafeHashMappedTrieBase() = delete;
 
-  ThreadSafeHashMappedTrieBase(size_t ContentAllocSize,
-                               size_t ContentAllocAlign, size_t ContentOffset,
-                               Optional<size_t> NumRootBits = std::nullopt,
-                               Optional<size_t> NumSubtrieBits = std::nullopt);
+  ThreadSafeHashMappedTrieBase(
+      size_t ContentAllocSize, size_t ContentAllocAlign, size_t ContentOffset,
+      std::optional<size_t> NumRootBits = std::nullopt,
+      std::optional<size_t> NumSubtrieBits = std::nullopt);
 
   /// Destructor, which asserts if there's anything to do. Subclasses should
   /// call \a destroyImpl().
@@ -319,8 +319,8 @@ public:
     return ThreadSafeHashMappedTrieBase::find(Hash);
   }
 
-  ThreadSafeHashMappedTrie(Optional<size_t> NumRootBits = std::nullopt,
-                           Optional<size_t> NumSubtrieBits = std::nullopt)
+  ThreadSafeHashMappedTrie(std::optional<size_t> NumRootBits = std::nullopt,
+                           std::optional<size_t> NumSubtrieBits = std::nullopt)
       : ThreadSafeHashMappedTrieBase(getContentAllocSize<value_type>(),
                                      getContentAllocAlign<value_type>(),
                                      getContentOffset<value_type>(),

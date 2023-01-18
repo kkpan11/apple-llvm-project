@@ -1387,7 +1387,7 @@ public:
   };
 
   static std::optional<DebugEmissionKind> getEmissionKind(StringRef Str);
-  static Optional<CasFriendlinessKind> getCasFriendlinessKind(StringRef Str);
+  static std::optional<CasFriendlinessKind> getCasFriendlinessKind(StringRef Str);
   static const char *emissionKindString(DebugEmissionKind EK);
   static const char *casFriendlinessString(CasFriendlinessKind CFK);
   static std::optional<DebugNameTableKind> getNameTableKind(StringRef Str);
@@ -3796,7 +3796,7 @@ template <> struct DenseMapInfo<DebugVariable> {
     return DebugVariable(nullptr, std::nullopt, nullptr);
   }
 
-  /// Difference in tombstone is that the Optional is meaningful.
+  /// Difference in tombstone is that the std::optional is meaningful.
   static inline DebugVariable getTombstoneKey() {
     return DebugVariable(nullptr, {{0, 0}}, nullptr);
   }

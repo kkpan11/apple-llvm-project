@@ -44,7 +44,7 @@ TEST(BlockDataTest, ZeroFill) {
   for (StringRef ContentHint : {"1", "longer content\n"}) {
     for (uint64_t Size :
          {1ULL, 2ULL, 7ULL, 1024ULL, (unsigned long long)ContentHint.size()}) {
-      Optional<StringRef> Content;
+      std::optional<StringRef> Content;
       if (Size == ContentHint.size())
         Content = ContentHint;
       for (Align A :
@@ -74,7 +74,7 @@ TEST(BlockDataTest, ZeroFill) {
             uint64_t DecodedSize;
             uint64_t DecodedAlignment;
             uint64_t DecodedAlignmentOffset;
-            Optional<StringRef> DecodedContent;
+            std::optional<StringRef> DecodedContent;
             FixupList DecodedFL;
             EXPECT_THAT_ERROR(Data.decode(DecodedSize, DecodedAlignment,
                                           DecodedAlignmentOffset,

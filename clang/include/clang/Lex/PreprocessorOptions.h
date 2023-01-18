@@ -18,6 +18,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <utility>
@@ -222,7 +223,7 @@ public:
   /// Enables a client to cache the directives for a file and provide them
   /// across multiple compiler invocations.
   /// FIXME: Allow returning an error.
-  std::function<Optional<ArrayRef<dependency_directives_scan::Directive>>(
+  std::function<std::optional<ArrayRef<dependency_directives_scan::Directive>>(
       FileEntryRef)>
       DependencyDirectivesForFile;
 
@@ -233,7 +234,7 @@ public:
   bool DisablePragmaDebugCrash = false;
 
   /// If set, the UNIX timestamp specified by SOURCE_DATE_EPOCH.
-  Optional<uint64_t> SourceDateEpoch;
+  std::optional<uint64_t> SourceDateEpoch;
 
   /// Cache raw tokenization. Currently ignored unless the filesystem has is
   /// CAS-friendly.

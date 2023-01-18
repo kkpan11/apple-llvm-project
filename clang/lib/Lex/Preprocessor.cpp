@@ -67,6 +67,7 @@
 #include <algorithm>
 #include <cassert>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -408,7 +409,7 @@ bool Preprocessor::SetCodeCompletionPoint(const FileEntry *File,
   assert(!CodeCompletionFile && "Already set");
 
   // Load the actual file's contents.
-  Optional<llvm::MemoryBufferRef> Buffer =
+  std::optional<llvm::MemoryBufferRef> Buffer =
       SourceMgr.getMemoryBufferForFileOrNone(File);
   if (!Buffer)
     return true;

@@ -42,7 +42,9 @@ public:
   /// Simplify the operations within the given regions.
   bool simplify(MutableArrayRef<Region> regions);
 
-  /// Add the given operation to the worklist.
+  /// Add the given operation to the worklist. Parent ops may or may not be
+  /// added to the worklist, depending on the type of rewrite driver. By
+  /// default, parent ops are added.
   virtual void addToWorklist(Operation *op);
 
   /// Pop the next operation from the worklist.
@@ -56,6 +58,9 @@ public:
   void finalizeRootUpdate(Operation *op) override;
 
 protected:
+  /// Add the given operation to the worklist.
+  void addSingleOpToWorklist(Operation *op);
+
   // Implement the hook for inserting operations, and make sure that newly
   // inserted ops are added to the worklist for processing.
   void notifyOperationInserted(Operation *op) override;
@@ -74,9 +79,6 @@ protected:
   // simplifications to its users - make sure to add them to the worklist
   // before the root is changed.
   void notifyRootReplaced(Operation *op, ValueRange replacement) override;
-
-  /// PatternRewriter hook for erasing a dead operation.
-  void eraseOp(Operation *op) override;
 
   /// PatternRewriter hook for notifying match failure reasons.
   LogicalResult
@@ -101,6 +103,10 @@ protected:
   GreedyRewriteConfig config;
 
 private:
+  /// Only ops within this scope are simplified. This is set at the beginning
+  /// of `simplify()` to the current scope the rewriter operates on.
+  DenseSet<Region *> scope;
+
 #ifndef NDEBUG
   /// A logger used to emit information during the application process.
   llvm::ScopedPrinter logger{llvm::dbgs()};
@@ -119,6 +125,9 @@ GreedyPatternRewriteDriver::GreedyPatternRewriteDriver(
 }
 
 bool GreedyPatternRewriteDriver::simplify(MutableArrayRef<Region> regions) {
+  for (Region &r : regions)
+    scope.insert(&r);
+
 #ifndef NDEBUG
   const char *logLineComment =
       "//===-------------------------------------------===//\n";
@@ -306,6 +315,24 @@ bool GreedyPatternRewriteDriver::simplify(MutableArrayRef<Region> regions) {
 }
 
 void GreedyPatternRewriteDriver::addToWorklist(Operation *op) {
+  // Gather potential ancestors while looking for a "scope" parent region.
+  SmallVector<Operation *, 8> ancestors;
+  ancestors.push_back(op);
+  while (Region *region = op->getParentRegion()) {
+    if (scope.contains(region)) {
+      // All gathered ops are in fact ancestors.
+      for (Operation *op : ancestors)
+        addSingleOpToWorklist(op);
+      break;
+    }
+    op = region->getParentOp();
+    if (!op)
+      break;
+    ancestors.push_back(op);
+  }
+}
+
+void GreedyPatternRewriteDriver::addSingleOpToWorklist(Operation *op) {
   // Check to see if the worklist already contains this op.
   if (worklistMap.count(op))
     return;
@@ -364,6 +391,11 @@ void GreedyPatternRewriteDriver::addOperandsToWorklist(ValueRange operands) {
 }
 
 void GreedyPatternRewriteDriver::notifyOperationRemoved(Operation *op) {
+  LLVM_DEBUG({
+    logger.startLine() << "** Erase   : '" << op->getName() << "'(" << op
+                       << ")\n";
+  });
+
   addOperandsToWorklist(op->getOperands());
   op->walk([this](Operation *operation) {
     removeFromWorklist(operation);
@@ -380,14 +412,6 @@ void GreedyPatternRewriteDriver::notifyRootReplaced(Operation *op,
   for (auto result : op->getResults())
     for (auto *user : result.getUsers())
       addToWorklist(user);
-}
-
-void GreedyPatternRewriteDriver::eraseOp(Operation *op) {
-  LLVM_DEBUG({
-    logger.startLine() << "** Erase   : '" << op->getName() << "'(" << op
-                       << ")\n";
-  });
-  PatternRewriter::eraseOp(op);
 }
 
 LogicalResult GreedyPatternRewriteDriver::notifyMatchFailure(
@@ -540,7 +564,8 @@ namespace {
 /// This is a specialized GreedyPatternRewriteDriver to apply patterns and
 /// perform folding for a supplied set of ops. It repeatedly simplifies while
 /// restricting the rewrites to only the provided set of ops or optionally
-/// to those directly affected by it (result users or operand providers).
+/// to those directly affected by it (result users or operand providers). Parent
+/// ops are not considered.
 class MultiOpPatternRewriteDriver : public GreedyPatternRewriteDriver {
 public:
   explicit MultiOpPatternRewriteDriver(MLIRContext *ctx,
@@ -549,11 +574,12 @@ public:
       : GreedyPatternRewriteDriver(ctx, patterns, GreedyRewriteConfig()),
         strictMode(strict) {}
 
-  bool simplifyLocally(ArrayRef<Operation *> op);
+  LogicalResult simplifyLocally(ArrayRef<Operation *> op,
+                                bool *changed = nullptr);
 
   void addToWorklist(Operation *op) override {
     if (!strictMode || strictModeFilteredOps.contains(op))
-      GreedyPatternRewriteDriver::addToWorklist(op);
+      GreedyPatternRewriteDriver::addSingleOpToWorklist(op);
   }
 
 private:
@@ -600,13 +626,16 @@ private:
 // there is no strong rationale to re-add all operations into the worklist and
 // rerun until an iteration changes nothing. If more widereaching simplification
 // is desired, GreedyPatternRewriteDriver should be used.
-bool MultiOpPatternRewriteDriver::simplifyLocally(ArrayRef<Operation *> ops) {
+LogicalResult
+MultiOpPatternRewriteDriver::simplifyLocally(ArrayRef<Operation *> ops,
+                                             bool *changed) {
   if (strictMode) {
     strictModeFilteredOps.clear();
     strictModeFilteredOps.insert(ops.begin(), ops.end());
   }
 
-  bool changed = false;
+  if (changed)
+    *changed = false;
   worklist.clear();
   worklistMap.clear();
   for (Operation *op : ops)
@@ -632,7 +661,8 @@ bool MultiOpPatternRewriteDriver::simplifyLocally(ArrayRef<Operation *> ops) {
     if (isOpTriviallyDead(op)) {
       notifyOperationRemoved(op);
       op->erase();
-      changed = true;
+      if (changed)
+        *changed = true;
       continue;
     }
 
@@ -662,7 +692,8 @@ bool MultiOpPatternRewriteDriver::simplifyLocally(ArrayRef<Operation *> ops) {
     bool inPlaceUpdate;
     if (succeeded(folder.tryToFold(op, processGeneratedConstants,
                                    preReplaceAction, &inPlaceUpdate))) {
-      changed = true;
+      if (changed)
+        *changed = true;
       if (!inPlaceUpdate) {
         // Op has been erased.
         continue;
@@ -673,12 +704,13 @@ bool MultiOpPatternRewriteDriver::simplifyLocally(ArrayRef<Operation *> ops) {
     // notified of any necessary changes, so there is nothing else to do
     // here.
     if (succeeded(matcher.matchAndRewrite(op, *this))) {
-      changed = true;
+      if (changed)
+        *changed = true;
       ++numRewrites;
     }
   }
 
-  return changed;
+  return success(worklist.empty());
 }
 
 /// Rewrites only `op` using the supplied canonicalization patterns and
@@ -701,14 +733,18 @@ LogicalResult mlir::applyOpPatternsAndFold(
   return converged;
 }
 
-bool mlir::applyOpPatternsAndFold(ArrayRef<Operation *> ops,
-                                  const FrozenRewritePatternSet &patterns,
-                                  bool strict) {
-  if (ops.empty())
-    return false;
+LogicalResult
+mlir::applyOpPatternsAndFold(ArrayRef<Operation *> ops,
+                             const FrozenRewritePatternSet &patterns,
+                             bool strict, bool *changed) {
+  if (ops.empty()) {
+    if (changed)
+      *changed = false;
+    return success();
+  }
 
   // Start the pattern driver.
   MultiOpPatternRewriteDriver driver(ops.front()->getContext(), patterns,
                                      strict);
-  return driver.simplifyLocally(ops);
+  return driver.simplifyLocally(ops, changed);
 }

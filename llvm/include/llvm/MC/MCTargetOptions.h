@@ -117,7 +117,7 @@ public:
   std::shared_ptr<cas::ObjectStore> CAS;
 
   using ResultCallBackTy = std::function<Error(const cas::CASID &)>;
-  Optional<ResultCallBackTy> ResultCallBack;
+  std::optional<ResultCallBackTy> ResultCallBack;
 
   CASBackendMode CASObjMode;
 };

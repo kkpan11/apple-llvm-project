@@ -37,7 +37,6 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/FoldingSet.h"
 #include "llvm/ADT/FunctionExtras.h"
-#include "llvm/ADT/Optional.h"
 #include "llvm/ADT/PointerUnion.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -53,6 +52,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -590,7 +590,7 @@ private:
 
     void clearSkipInfo() { SkipInfo.reset(); }
 
-    llvm::Optional<PreambleSkipInfo> SkipInfo;
+    std::optional<PreambleSkipInfo> SkipInfo;
 
   private:
     SmallVector<PPConditionalInfo, 4> ConditionalStack;
@@ -920,9 +920,9 @@ private:
   };
 
   struct MacroAnnotations {
-    llvm::Optional<MacroAnnotationInfo> DeprecationInfo;
-    llvm::Optional<MacroAnnotationInfo> RestrictExpansionInfo;
-    llvm::Optional<SourceLocation> FinalAnnotationLoc;
+    std::optional<MacroAnnotationInfo> DeprecationInfo;
+    std::optional<MacroAnnotationInfo> RestrictExpansionInfo;
+    std::optional<SourceLocation> FinalAnnotationLoc;
 
     static MacroAnnotations makeDeprecation(SourceLocation Loc,
                                             std::string Msg) {
@@ -2626,14 +2626,14 @@ public:
     PreambleConditionalStack.setStack(s);
   }
 
-  void setReplayablePreambleConditionalStack(ArrayRef<PPConditionalInfo> s,
-                                             llvm::Optional<PreambleSkipInfo> SkipInfo) {
+  void setReplayablePreambleConditionalStack(
+      ArrayRef<PPConditionalInfo> s, std::optional<PreambleSkipInfo> SkipInfo) {
     PreambleConditionalStack.startReplaying();
     PreambleConditionalStack.setStack(s);
     PreambleConditionalStack.SkipInfo = SkipInfo;
   }
 
-  llvm::Optional<PreambleSkipInfo> getPreambleSkipInfo() const {
+  std::optional<PreambleSkipInfo> getPreambleSkipInfo() const {
     return PreambleConditionalStack.SkipInfo;
   }
 

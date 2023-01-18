@@ -94,9 +94,11 @@ Error helpers::writeNopForArch(Triple::ArchType Arch, raw_ostream &OS,
   return createArchError(Arch, "writeNopForArch");
 }
 
-Expected<StringRef> helpers::canonicalizeContent(
-    Triple::ArchType Arch, StringRef Content, SmallVectorImpl<char> &Storage,
-    ArrayRef<data::Fixup> FixupsToZero, Optional<Align> TrailingNopsAlignment) {
+Expected<StringRef>
+helpers::canonicalizeContent(Triple::ArchType Arch, StringRef Content,
+                             SmallVectorImpl<char> &Storage,
+                             ArrayRef<data::Fixup> FixupsToZero,
+                             std::optional<Align> TrailingNopsAlignment) {
   SmallVectorImpl<char> *MutableContent = nullptr;
   auto initializeMutableContent = [&]() {
     if (MutableContent)

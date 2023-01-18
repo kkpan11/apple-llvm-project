@@ -1060,9 +1060,12 @@ private:
       auto leftVal = hlfir::loadTrivialScalar(l, b, leftElement);
       return unaryOp.gen(l, b, op.derived(), leftVal);
     };
-    // TODO: deal with hlfir.elemental result destruction.
-    return hlfir::EntityWithAttributes{hlfir::genElementalOp(
-        loc, builder, elementType, shape, typeParams, genKernel)};
+    mlir::Value elemental = hlfir::genElementalOp(loc, builder, elementType,
+                                                  shape, typeParams, genKernel);
+    fir::FirOpBuilder *bldr = &builder;
+    getStmtCtx().attachCleanup(
+        [=]() { bldr->create<hlfir::DestroyOp>(loc, elemental); });
+    return hlfir::EntityWithAttributes{elemental};
   }
 
   template <typename D, typename R, typename LO, typename RO>
@@ -1102,9 +1105,12 @@ private:
       auto rightVal = hlfir::loadTrivialScalar(l, b, rightElement);
       return binaryOp.gen(l, b, op.derived(), leftVal, rightVal);
     };
-    // TODO: deal with hlfir.elemental result destruction.
-    return hlfir::EntityWithAttributes{hlfir::genElementalOp(
-        loc, builder, elementType, shape, typeParams, genKernel)};
+    mlir::Value elemental = hlfir::genElementalOp(loc, builder, elementType,
+                                                  shape, typeParams, genKernel);
+    fir::FirOpBuilder *bldr = &builder;
+    getStmtCtx().attachCleanup(
+        [=]() { bldr->create<hlfir::DestroyOp>(loc, elemental); });
+    return hlfir::EntityWithAttributes{elemental};
   }
 
   hlfir::EntityWithAttributes
@@ -1200,34 +1206,84 @@ hlfir::EntityWithAttributes Fortran::lower::convertExprToHLFIR(
   return HlfirBuilder(loc, converter, symMap, stmtCtx).gen(expr);
 }
 
+fir::BoxValue Fortran::lower::convertToBox(
+    mlir::Location loc, Fortran::lower::AbstractConverter &converter,
+    hlfir::Entity entity, Fortran::lower::StatementContext &stmtCtx) {
+  auto exv = Fortran::lower::translateToExtendedValue(
+      loc, converter.getFirOpBuilder(), entity, stmtCtx);
+  if (fir::isa_trivial(fir::getBase(exv).getType()))
+    TODO(loc, "place trivial in memory");
+  return fir::factory::createBoxValue(converter.getFirOpBuilder(), loc, exv);
+}
 fir::BoxValue Fortran::lower::convertExprToBox(
     mlir::Location loc, Fortran::lower::AbstractConverter &converter,
     const Fortran::lower::SomeExpr &expr, Fortran::lower::SymMap &symMap,
     Fortran::lower::StatementContext &stmtCtx) {
   hlfir::EntityWithAttributes loweredExpr =
       HlfirBuilder(loc, converter, symMap, stmtCtx).gen(expr);
-  auto exv = Fortran::lower::translateToExtendedValue(
-      loc, converter.getFirOpBuilder(), loweredExpr, stmtCtx);
-  if (fir::isa_trivial(fir::getBase(exv).getType()))
-    TODO(loc, "place trivial in memory");
-  return fir::factory::createBoxValue(converter.getFirOpBuilder(), loc, exv);
+  return convertToBox(loc, converter, loweredExpr, stmtCtx);
 }
 
-fir::ExtendedValue Fortran::lower::convertExprToAddress(
-    mlir::Location loc, Fortran::lower::AbstractConverter &converter,
-    const Fortran::lower::SomeExpr &expr, Fortran::lower::SymMap &symMap,
-    Fortran::lower::StatementContext &stmtCtx) {
-  hlfir::EntityWithAttributes loweredExpr =
-      HlfirBuilder(loc, converter, symMap, stmtCtx).gen(expr);
-  if (expr.Rank() > 0 && !Fortran::evaluate::IsSimplyContiguous(
-                             expr, converter.getFoldingContext()))
+fir::ExtendedValue
+Fortran::lower::convertToAddress(mlir::Location loc,
+                                 Fortran::lower::AbstractConverter &converter,
+                                 hlfir::Entity entity, bool isSimplyContiguous,
+                                 Fortran::lower::StatementContext &stmtCtx) {
+  if (!isSimplyContiguous)
     TODO(loc, "genExprAddr of non contiguous variables in HLFIR");
   fir::ExtendedValue exv = Fortran::lower::translateToExtendedValue(
-      loc, converter.getFirOpBuilder(), loweredExpr, stmtCtx);
+      loc, converter.getFirOpBuilder(), entity, stmtCtx);
   if (fir::isa_trivial(fir::getBase(exv).getType()))
     TODO(loc, "place trivial in memory");
   if (const auto *mutableBox = exv.getBoxOf<fir::MutableBoxValue>())
     exv = fir::factory::genMutableBoxRead(converter.getFirOpBuilder(), loc,
                                           *mutableBox);
   return exv;
+}
+fir::ExtendedValue Fortran::lower::convertExprToAddress(
+    mlir::Location loc, Fortran::lower::AbstractConverter &converter,
+    const Fortran::lower::SomeExpr &expr, Fortran::lower::SymMap &symMap,
+    Fortran::lower::StatementContext &stmtCtx) {
+  hlfir::EntityWithAttributes loweredExpr =
+      HlfirBuilder(loc, converter, symMap, stmtCtx).gen(expr);
+  bool isSimplyContiguous =
+      expr.Rank() == 0 || Fortran::evaluate::IsSimplyContiguous(
+                              expr, converter.getFoldingContext());
+  return convertToAddress(loc, converter, loweredExpr, isSimplyContiguous,
+                          stmtCtx);
+}
+
+fir::ExtendedValue Fortran::lower::convertToValue(
+    mlir::Location loc, Fortran::lower::AbstractConverter &converter,
+    hlfir::Entity entity, Fortran::lower::StatementContext &stmtCtx) {
+  auto &builder = converter.getFirOpBuilder();
+  fir::ExtendedValue exv =
+      Fortran::lower::translateToExtendedValue(loc, builder, entity, stmtCtx);
+  // Load scalar references to integer, logical, real, or complex value
+  // to an mlir value, dereference allocatable and pointers, and get rid
+  // of fir.box that are not needed or create a copy into contiguous memory.
+  return exv.match(
+      [&](const fir::UnboxedValue &box) -> fir::ExtendedValue {
+        if (mlir::Type elementType = fir::dyn_cast_ptrEleTy(box.getType()))
+          if (fir::isa_trivial(elementType))
+            return builder.create<fir::LoadOp>(loc, box);
+        return box;
+      },
+      [&](const fir::CharBoxValue &box) -> fir::ExtendedValue { return box; },
+      [&](const fir::ArrayBoxValue &box) -> fir::ExtendedValue { return box; },
+      [&](const fir::CharArrayBoxValue &box) -> fir::ExtendedValue {
+        return box;
+      },
+      [&](const auto &) -> fir::ExtendedValue {
+        TODO(loc, "lower descriptor designator to HLFIR value");
+      });
+}
+
+fir::ExtendedValue Fortran::lower::convertExprToValue(
+    mlir::Location loc, Fortran::lower::AbstractConverter &converter,
+    const Fortran::lower::SomeExpr &expr, Fortran::lower::SymMap &symMap,
+    Fortran::lower::StatementContext &stmtCtx) {
+  hlfir::EntityWithAttributes loweredExpr =
+      HlfirBuilder(loc, converter, symMap, stmtCtx).gen(expr);
+  return convertToValue(loc, converter, loweredExpr, stmtCtx);
 }

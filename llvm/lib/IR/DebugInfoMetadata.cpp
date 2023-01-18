@@ -906,9 +906,9 @@ DICompileUnit::getEmissionKind(StringRef Str) {
       .Default(std::nullopt);
 }
 
-Optional<DICompileUnit::CasFriendlinessKind>
+std::optional<DICompileUnit::CasFriendlinessKind>
 DICompileUnit::getCasFriendlinessKind(StringRef Str) {
-  return StringSwitch<Optional<CasFriendlinessKind>>(Str)
+  return StringSwitch<std::optional<CasFriendlinessKind>>(Str)
       .Case("NoCasFriendlyDebugInfo", NoCasFriendlyDebugInfo)
       .Case("DebugLineOnly", DebugLineOnly)
       .Default(std::nullopt);

@@ -59,8 +59,9 @@ void FixupList::iterator::decode(bool IsInit) {
 }
 
 void BlockData::encode(uint64_t Size, uint64_t Alignment,
-                       uint64_t AlignmentOffset, Optional<StringRef> Content,
-                       ArrayRef<Fixup> Fixups, SmallVectorImpl<char> &Data) {
+                       uint64_t AlignmentOffset,
+                       std::optional<StringRef> Content, ArrayRef<Fixup> Fixups,
+                       SmallVectorImpl<char> &Data) {
   assert(!Content || Size == Content->size() && "Mismatched content size");
   assert(Alignment && "Expected non-zero alignment");
   assert(isPowerOf2_64(Alignment) && "Expected alignment to be a power of 2");
@@ -111,7 +112,8 @@ void BlockData::encode(uint64_t Size, uint64_t Alignment,
 }
 
 Error BlockData::decode(uint64_t &Size, uint64_t &Alignment,
-                        uint64_t &AlignmentOffset, Optional<StringRef> &Content,
+                        uint64_t &AlignmentOffset,
+                        std::optional<StringRef> &Content,
                         FixupList &Fixups) const {
   // Reset everything to start.
   Size = Alignment = AlignmentOffset = 0;
@@ -150,7 +152,7 @@ uint64_t BlockData::consumeSizeFatal(StringRef &Remaining) {
 }
 
 Error BlockData::consumeContent(StringRef &Remaining, uint64_t Size,
-                                Optional<StringRef> &Content) {
+                                std::optional<StringRef> &Content) {
   if (Remaining.size() < Size)
     return createStringError(inconvertibleErrorCode(), "corrupt block data");
   Content = Remaining.take_front(Size);
@@ -158,13 +160,13 @@ Error BlockData::consumeContent(StringRef &Remaining, uint64_t Size,
   return Error::success();
 }
 
-Optional<StringRef> BlockData::getContent() const {
+std::optional<StringRef> BlockData::getContent() const {
   if (isZeroFill())
     return std::nullopt;
 
   StringRef Remaining = Data.drop_front(AfterHeader);
   uint64_t Size = consumeSizeFatal(Remaining);
-  Optional<StringRef> Content;
+  std::optional<StringRef> Content;
   if (Error E = consumeContent(Remaining, Size, Content))
     report_fatal_error(std::move(E));
   return Content;

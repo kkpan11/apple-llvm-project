@@ -184,7 +184,7 @@ public:
   Section *addrSigSection = nullptr;
   const uint32_t modTime;
   bool forceHidden;
-  const llvm::Optional<llvm::cas::ObjectRef> casID;
+  const std::optional<llvm::cas::ObjectRef> casID;
   std::vector<ConcatInputSection *> debugSections;
   std::vector<CallGraphEntry> callGraph;
   llvm::DenseMap<ConcatInputSection *, FDE> fdes;

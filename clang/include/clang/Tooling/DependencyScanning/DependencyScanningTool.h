@@ -99,7 +99,7 @@ public:
   /// occurred, dependency file contents otherwise.
   llvm::Expected<std::string>
   getDependencyFile(const std::vector<std::string> &CommandLine, StringRef CWD,
-                    llvm::Optional<StringRef> ModuleName = std::nullopt);
+                    std::optional<StringRef> ModuleName = std::nullopt);
 
   /// Collect dependency tree.
   llvm::Expected<llvm::cas::ObjectProxy>
@@ -149,7 +149,7 @@ public:
   getFullDependencies(const std::vector<std::string> &CommandLine,
                       StringRef CWD, const llvm::StringSet<> &AlreadySeen,
                       LookupModuleOutputCallback LookupModuleOutput,
-                      llvm::Optional<StringRef> ModuleName = std::nullopt);
+                      std::optional<StringRef> ModuleName = std::nullopt);
 
   ScanningOutputFormat getScanningFormat() const {
     return Worker.getScanningFormat();
@@ -172,7 +172,7 @@ public:
       const std::vector<std::string> &CommandLine, StringRef CWD,
       const llvm::StringSet<> &AlreadySeen,
       LookupModuleOutputCallback LookupModuleOutput,
-      llvm::Optional<StringRef> ModuleName = std::nullopt);
+      std::optional<StringRef> ModuleName = std::nullopt);
 
 private:
   DependencyScanningWorker Worker;
