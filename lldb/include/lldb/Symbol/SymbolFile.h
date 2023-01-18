@@ -416,6 +416,15 @@ public:
     return type_sp;
   }
 
+  virtual lldb::TypeSP CopyType(const lldb::TypeSP &other_type) {
+     // Make sure the real symbol file matches when copying types.
+     if (this != other_type->GetSymbolFile())
+      return lldb::TypeSP();
+     lldb::TypeSP type_sp(new Type(*other_type));
+     m_type_list.Insert(type_sp);
+     return type_sp;
+  }
+
 protected:
   void AssertModuleLock();
   virtual uint32_t CalculateNumCompileUnits() = 0;
