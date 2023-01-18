@@ -1621,7 +1621,7 @@ getAndSetDebugAbbrevOffsetAndSkip(MutableArrayRef<char> CUData,
 
   if (NewOffset.has_value()) {
     // FIXME: safe but ugly cast. Similar to: llvm::arrayRefFromStringRef.
-    auto UnsignedData = makeMutableArrayRef(
+    auto UnsignedData = MutableArrayRef(
         reinterpret_cast<uint8_t *>(CUData.data()), CUData.size());
     BinaryStreamWriter Writer(UnsignedData, Endian);
     Writer.setOffset(AbbrevPosition);
