@@ -30,6 +30,8 @@ WARNING_GADGET(Decrement)
 WARNING_GADGET(ArraySubscript)
 WARNING_GADGET(PointerArithmetic)
 
+FIXABLE_GADGET(DerefArithOnDREFixable)
+
 #undef FIXABLE_GADGET
 #undef WARNING_GADGET
 #undef GADGET

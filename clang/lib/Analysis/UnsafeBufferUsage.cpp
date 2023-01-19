@@ -7,8 +7,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/Analysis/Analyses/UnsafeBufferUsage.h"
+#include "clang/AST/Expr.h"
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
+#include "clang/ASTMatchers/ASTMatchers.h"
 #include "llvm/ADT/SmallVector.h"
 #include <memory>
 #include <optional>
@@ -464,6 +466,105 @@ public:
 };
 } // namespace
 
+namespace {
+  Gadget::Matcher getMemAccessContext(clang::ast_matchers::internal:: Matcher<clang::Stmt> InnerMatcher) {
+    // TODO
+    return expr(InnerMatcher);
+  }
+} // namespace
+
+// TODO since span can index only in the positive direction we should disallow minus and signed integers
+class DerefArithOnDREFixableGadget : public FixableGadget {
+  static constexpr const char *const BaseDeclRefExprTag = "BaseDRE";
+  static constexpr const char *const DerefOpTag = "DerefOp";
+  // static constexpr const char *const ParenExprTag = "ParenExpr";
+  static constexpr const char *const AddOpTag = "AddOp";
+  static constexpr const char *const RHSTag = "RHS";
+
+  const DeclRefExpr *BaseDeclRefExpr = nullptr;
+  const UnaryOperator *DerefOp = nullptr;
+  // const ParenExpr *ParenEx = nullptr;
+  const BinaryOperator *AddOp = nullptr;
+  const Expr *RHS = nullptr;
+public:
+  DerefArithOnDREFixableGadget(const MatchFinder::MatchResult &Result)
+      : FixableGadget(Kind::DerefArithOnDREFixable),
+        BaseDeclRefExpr(Result.Nodes.getNodeAs<DeclRefExpr>(BaseDeclRefExprTag)),
+        DerefOp(Result.Nodes.getNodeAs<UnaryOperator>(DerefOpTag)),
+        //ParenEx(Result.Nodes.getNodeAs<ParenExpr>(ParenExprTag)),
+        AddOp(Result.Nodes.getNodeAs<BinaryOperator>(AddOpTag)),
+        RHS(Result.Nodes.getNodeAs<Expr>(RHSTag))
+        {}
+
+  // TODO
+  static Matcher matcher() {
+// TODO need also the mirror version
+// TODO generalize for any number of parens and impl casts?
+// clang-format off
+    return getMemAccessContext(
+      unaryOperator(
+        hasOperatorName("*"),
+        hasUnaryOperand(
+          ignoringParenImpCasts(
+          // TODO parenExpr(
+            binaryOperator(
+              hasOperatorName("+"),
+              hasLHS(
+                expr(
+                  hasPointerType(),
+                  ignoringParenImpCasts(
+                    declRefExpr().bind(BaseDeclRefExprTag)
+                  )
+                )
+              ),
+              hasRHS(integerLiteral(
+                // TODO all literals are signed hasType(isUnsignedInteger())
+                ).bind(RHSTag)
+              )
+            ).bind(AddOpTag)
+          )
+          // TODO ).bind(ParenExprTag)
+        )
+      ).bind(DerefOpTag)
+    );
+// clang-format on
+  }
+  // TODO
+  virtual std::optional<FixItList> getFixits(const Strategy &s) const final {
+    // TODO can the base refer to not-a-VarDecl?
+    if (s.lookup(dyn_cast<VarDecl>(BaseDeclRefExpr->getDecl())) == Strategy::Kind::Span) {
+      // *(pointer + 123)
+      // fix:
+      // remove '*'
+      // replace '+' -> '['
+      // insert ']' after 123
+      // FIXME remove ( and )?
+      FixItList Fixit;
+      Fixit.emplace_back(
+        FixItHint::CreateRemoval(DerefOp->getOperatorLoc())
+      );
+      Fixit.emplace_back(
+        FixItHint::CreateReplacement(AddOp->getOperatorLoc(), "[")
+      );
+      Fixit.emplace_back(
+        FixItHint::CreateInsertion(AddOp->getEndLoc(), "]")
+      );
+      return Fixit;
+    }
+
+    return std::nullopt;
+  }
+  // TODO
+  virtual const Stmt *getBaseStmt() const final {
+    return nullptr;
+  }
+
+  virtual DeclUseList getClaimedVarUseSites() const final {
+    return {BaseDeclRefExpr};
+  }
+};
+
+
 /// Scan the function and return a list of gadgets found with provided kits.
 static std::tuple<FixableGadgetList, WarningGadgetList, DeclUseTracker> findGadgets(const Decl *D) {
 
@@ -662,7 +763,7 @@ void clang::checkUnsafeBufferUsage(const Decl *D,
   for (auto it = FixablesForUnsafeVars.byVar.cbegin();
        it != FixablesForUnsafeVars.byVar.cend();) {
     // FIXME: Support ParmVarDecl as well.
-    if (it->first->isLocalVarDecl() || Tracker.hasUnclaimedUses(it->first)) {
+    if (!it->first->isLocalVarDecl() || Tracker.hasUnclaimedUses(it->first)) {
       it = FixablesForUnsafeVars.byVar.erase(it);
     } else {
       ++it;
