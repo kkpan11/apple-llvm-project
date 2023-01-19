@@ -157,10 +157,6 @@ private:
 /// In-memory CAS database and action cache (the latter should be separated).
 class InMemoryCAS : public BuiltinCAS {
 public:
-  Expected<CASID> parseIDImpl(ArrayRef<uint8_t> Hash) final {
-    return getID(indexHash(Hash));
-  }
-
   Expected<ObjectRef> storeImpl(ArrayRef<uint8_t> ComputedHash,
                                 ArrayRef<ObjectRef> Refs,
                                 ArrayRef<char> Data) final;
@@ -214,7 +210,6 @@ public:
   }
 
   CASID getID(ObjectRef Ref) const final { return getIDImpl(Ref); }
-  CASID getID(ObjectHandle Ref) const final { return getIDImpl(Ref); }
   CASID getIDImpl(ReferenceBase Ref) const {
     return getID(asInMemoryObject(Ref));
   }
