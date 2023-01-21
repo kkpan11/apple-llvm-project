@@ -303,6 +303,8 @@
 // RUN: %clang -### -gmodules -gno-modules %s 2>&1 \
 // RUN:        | FileCheck -check-prefix=NOGEXTREFS %s
 //
+// RUN: %clang -### -gno-modules %s 2>&1 | FileCheck -check-prefix=GNOMOD %s
+//
 
 // RUN: %clang -### -c -g -fcas-friendly-debug-info=debug-line-only %s -target x86_64-apple-darwin14 2>&1 \
 // RUN:             | FileCheck -check-prefix=F_CASFRIENDLY_DEBUG_LINE \
@@ -423,6 +425,8 @@
 // GEXTREFS: "-dwarf-ext-refs" "-fmodule-format=obj"
 // GEXTREFS: "-debug-info-kind={{standalone|constructor}}"
 // NOGEXTREFS-NOT: -dwarf-ext-refs
+//
+// GNOMOD-NOT: -debug-info-kind=
 
 // RUN: not %clang -cc1 -debug-info-kind=watkind 2>&1 | FileCheck -check-prefix=BADSTRING1 %s
 // BADSTRING1: error: invalid value 'watkind' in '-debug-info-kind=watkind'
