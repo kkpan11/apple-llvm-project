@@ -387,6 +387,10 @@ namespace {
     SDValue PromoteExtend(SDValue Op);
     bool PromoteLoad(SDValue Op);
 
+    SDValue combineMinNumMaxNum(const SDLoc &DL, EVT VT, SDValue LHS,
+                                SDValue RHS, SDValue True, SDValue False,
+                                ISD::CondCode CC);
+
     /// Call the node-specific routine that knows how to fold each
     /// particular type of node. If that doesn't do anything, try the
     /// target-specific DAG combines.
@@ -10346,14 +10350,11 @@ static bool isLegalToCombineMinNumMaxNum(SelectionDAG &DAG, SDValue LHS,
          DAG.isKnownNeverNaN(LHS) && DAG.isKnownNeverNaN(RHS);
 }
 
-/// Generate Min/Max node
-static SDValue combineMinNumMaxNum(const SDLoc &DL, EVT VT, SDValue LHS,
-                                   SDValue RHS, SDValue True, SDValue False,
-                                   ISD::CondCode CC, const TargetLowering &TLI,
-                                   SelectionDAG &DAG) {
-  if (!(LHS == True && RHS == False) && !(LHS == False && RHS == True))
-    return SDValue();
-
+static SDValue combineMinNumMaxNumImpl(const SDLoc &DL, EVT VT, SDValue LHS,
+                                       SDValue RHS, SDValue True, SDValue False,
+                                       ISD::CondCode CC,
+                                       const TargetLowering &TLI,
+                                       SelectionDAG &DAG) {
   EVT TransformVT = TLI.getTypeToTransformTo(*DAG.getContext(), VT);
   switch (CC) {
   case ISD::SETOLT:
@@ -10392,6 +10393,46 @@ static SDValue combineMinNumMaxNum(const SDLoc &DL, EVT VT, SDValue LHS,
   default:
     return SDValue();
   }
+}
+
+/// Generate Min/Max node
+SDValue DAGCombiner::combineMinNumMaxNum(const SDLoc &DL, EVT VT, SDValue LHS,
+                                         SDValue RHS, SDValue True,
+                                         SDValue False, ISD::CondCode CC) {
+  if ((LHS == True && RHS == False) || (LHS == False && RHS == True))
+    return combineMinNumMaxNumImpl(DL, VT, LHS, RHS, True, False, CC, TLI, DAG);
+
+  // If we can't directly match this, try to see if we can pull an fneg out of
+  // the select.
+  SDValue NegTrue = TLI.getCheaperOrNeutralNegatedExpression(
+      True, DAG, LegalOperations, ForCodeSize);
+  if (!NegTrue)
+    return SDValue();
+
+  HandleSDNode NegTrueHandle(NegTrue);
+
+  // Try to unfold an fneg from the select if we are comparing the negated
+  // constant.
+  //
+  // select (setcc x, K) (fneg x), -K -> fneg(minnum(x, K))
+  //
+  // TODO: Handle fabs
+  if (LHS == NegTrue) {
+    // If we can't directly match this, try to see if we can pull an fneg out of
+    // the select.
+    SDValue NegRHS = TLI.getCheaperOrNeutralNegatedExpression(
+        RHS, DAG, LegalOperations, ForCodeSize);
+    if (NegRHS) {
+      HandleSDNode NegRHSHandle(NegRHS);
+      if (NegRHS == False) {
+        SDValue Combined = combineMinNumMaxNumImpl(DL, VT, LHS, RHS, NegTrue,
+                                                   False, CC, TLI, DAG);
+        return DAG.getNode(ISD::FNEG, DL, VT, Combined);
+      }
+    }
+  }
+
+  return SDValue();
 }
 
 /// If a (v)select has a condition value that is a sign-bit test, try to smear
@@ -10778,8 +10819,8 @@ SDValue DAGCombiner::visitSELECT(SDNode *N) {
     //
     // This is OK if we don't care what happens if either operand is a NaN.
     if (N0.hasOneUse() && isLegalToCombineMinNumMaxNum(DAG, N1, N2, TLI))
-      if (SDValue FMinMax = combineMinNumMaxNum(DL, VT, Cond0, Cond1, N1, N2,
-                                                CC, TLI, DAG))
+      if (SDValue FMinMax =
+              combineMinNumMaxNum(DL, VT, Cond0, Cond1, N1, N2, CC))
         return FMinMax;
 
     // Use 'unsigned add with overflow' to optimize an unsigned saturating add.
@@ -11291,8 +11332,7 @@ SDValue DAGCombiner::visitVSELECT(SDNode *N) {
     // NaN.
     //
     if (N0.hasOneUse() && isLegalToCombineMinNumMaxNum(DAG, LHS, RHS, TLI)) {
-      if (SDValue FMinMax =
-              combineMinNumMaxNum(DL, VT, LHS, RHS, N1, N2, CC, TLI, DAG))
+      if (SDValue FMinMax = combineMinNumMaxNum(DL, VT, LHS, RHS, N1, N2, CC))
         return FMinMax;
     }
 
