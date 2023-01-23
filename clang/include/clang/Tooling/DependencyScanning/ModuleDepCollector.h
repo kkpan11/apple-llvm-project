@@ -170,7 +170,8 @@ private:
   /// Traverses the previously collected direct modular dependencies to discover
   /// transitive modular dependencies and fills the parent \c ModuleDepCollector
   /// with both.
-  ModuleID handleTopLevelModule(const Module *M);
+  /// Returns the ID or nothing if the dependency is spurious and is ignored.
+  llvm::Optional<ModuleID> handleTopLevelModule(const Module *M);
   void addAllSubmoduleDeps(const Module *M, ModuleDeps &MD,
                            llvm::DenseSet<const Module *> &AddedModules);
   void addModuleDep(const Module *M, ModuleDeps &MD,
