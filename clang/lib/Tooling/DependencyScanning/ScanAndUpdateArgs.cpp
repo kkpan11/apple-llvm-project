@@ -51,6 +51,12 @@ static void updateCompilerInvocation(CompilerInvocation &Invocation,
       PPOpts.MacroIncludes.clear();
       PPOpts.Includes.clear();
     }
+    // Disable `-gmodules` to avoid debug info referencing a non-existent PCH
+    // filename.
+    // NOTE: We'd have to preserve \p HeaderSearchOptions::ModuleFormat (code
+    // above resets \p HeaderSearchOptions) when properly supporting
+    // `-gmodules`.
+    Invocation.getCodeGenOpts().DebugTypeExtRefs = false;
   } else {
     FileSystemOpts.CASFileSystemRootID = RootID;
     FileSystemOpts.CASFileSystemWorkingDirectory = CASWorkingDirectory.str();
