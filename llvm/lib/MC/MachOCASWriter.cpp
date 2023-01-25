@@ -10,9 +10,7 @@
 #include "llvm/ADT/iterator_range.h"
 #include "llvm/BinaryFormat/MachO.h"
 #include "llvm/CAS/ObjectStore.h"
-#include "llvm/CASObjectFormats/Utils.h"
-#include "llvm/MC/CAS/MCCASFormatSchemaBase.h"
-#include "llvm/MC/CAS/MCCASObjectV1.h"
+#include "llvm/CASUtil/Utils.h"
 #include "llvm/MC/MCAsmBackend.h"
 #include "llvm/MC/MCAsmLayout.h"
 #include "llvm/MC/MCAssembler.h"
@@ -28,6 +26,8 @@
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/MC/MCSymbolMachO.h"
 #include "llvm/MC/MCValue.h"
+#include "llvm/MCCAS/MCCASFormatSchemaBase.h"
+#include "llvm/MCCAS/MCCASObjectV1.h"
 #include "llvm/Support/Alignment.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/Casting.h"
@@ -46,23 +46,30 @@ MachOCASWriter::MachOCASWriter(
     std::unique_ptr<MCMachObjectTargetWriter> MOTW, const Triple &TT,
     cas::ObjectStore &CAS, CASBackendMode Mode, raw_pwrite_stream &OS,
     bool IsLittleEndian,
+    std::function<const cas::ObjectProxy(
+        llvm::MachOCASWriter &, llvm::MCAssembler &, const llvm::MCAsmLayout &,
+        cas::ObjectStore &, raw_ostream *)>
+        CreateFromMcAssembler,
+    std::function<Error(cas::ObjectProxy, cas::ObjectStore &, raw_ostream &)>
+        SerializeObjectFile,
     Optional<MCTargetOptions::ResultCallBackTy> ResultCallBack)
     : Target(TT), CAS(CAS), Mode(Mode), ResultCallBack(ResultCallBack), OS(OS),
       InternalOS(InternalBuffer),
-      MOW(std::move(MOTW), InternalOS, IsLittleEndian) {
+      MOW(std::move(MOTW), InternalOS, IsLittleEndian),
+      CreateFromMcAssembler(CreateFromMcAssembler),
+      SerializeObjectFile(SerializeObjectFile) {
   assert(TT.isLittleEndian() == IsLittleEndian && "Endianess should match");
 }
 
 uint64_t MachOCASWriter::writeObject(MCAssembler &Asm,
                                      const MCAsmLayout &Layout) {
   uint64_t StartOffset = OS.tell();
-  auto Schema = std::make_unique<v1::MCSchema>(CAS);
-  auto CASObj = cantFail(Schema->createFromMCAssembler(*this, Asm, Layout));
+  auto CASObj = CreateFromMcAssembler(*this, Asm, Layout, CAS, nullptr);
 
   auto VerifyObject = [&]() -> Error {
     SmallString<512> ObjectBuffer;
     raw_svector_ostream ObjectOS(ObjectBuffer);
-    if (auto E = Schema->serializeObjectFile(CASObj, ObjectOS))
+    if (auto E = SerializeObjectFile(CASObj, CAS, ObjectOS))
       return E;
 
     if (!ObjectBuffer.equals(InternalBuffer))
@@ -87,7 +94,7 @@ uint64_t MachOCASWriter::writeObject(MCAssembler &Asm,
     writeCASIDBuffer(CASObj.getID(), OS);
     break;
   case CASBackendMode::Native: {
-    auto E = Schema->serializeObjectFile(CASObj, OS);
+    auto E = SerializeObjectFile(CASObj, CAS, OS);
     if (E)
       report_fatal_error(std::move(E));
     break;
@@ -95,7 +102,7 @@ uint64_t MachOCASWriter::writeObject(MCAssembler &Asm,
   case CASBackendMode::Verify: {
     SmallString<512> ObjectBuffer;
     raw_svector_ostream ObjectOS(ObjectBuffer);
-    auto E = Schema->serializeObjectFile(CASObj, ObjectOS);
+    auto E = SerializeObjectFile(CASObj, CAS, ObjectOS);
     if (E)
       report_fatal_error(std::move(E));
 
@@ -114,7 +121,14 @@ std::unique_ptr<MCObjectWriter> llvm::createMachOCASWriter(
     std::unique_ptr<MCMachObjectTargetWriter> MOTW, const Triple &TT,
     cas::ObjectStore &CAS, CASBackendMode Mode, raw_pwrite_stream &OS,
     bool IsLittleEndian,
+    std::function<const cas::ObjectProxy(
+        llvm::MachOCASWriter &, llvm::MCAssembler &, const llvm::MCAsmLayout &,
+        cas::ObjectStore &, raw_ostream *)>
+        CreateFromMcAssembler,
+    std::function<Error(cas::ObjectProxy, cas::ObjectStore &, raw_ostream &)>
+        SerializeObjectFile,
     Optional<MCTargetOptions::ResultCallBackTy> ResultCallBack) {
   return std::make_unique<MachOCASWriter>(std::move(MOTW), TT, CAS, Mode, OS,
-                                          IsLittleEndian, ResultCallBack);
+                                          IsLittleEndian, CreateFromMcAssembler,
+                                          SerializeObjectFile, ResultCallBack);
 }

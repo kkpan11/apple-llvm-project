@@ -18,6 +18,8 @@ set( LLVM_LINK_COMPONENTS
   TargetParser
   TransformUtils
   Vectorize
+  MCCAS
+  CASUtil
   )
 
 # Support plugins.

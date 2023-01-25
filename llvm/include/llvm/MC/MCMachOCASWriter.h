@@ -12,6 +12,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/BinaryFormat/MachO.h"
+#include "llvm/CAS/ObjectStore.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCMachObjectWriter.h"
 #include "llvm/MC/MCObjectWriter.h"
@@ -41,10 +42,17 @@ public:
   CASBackendMode Mode;
   Optional<MCTargetOptions::ResultCallBackTy> ResultCallBack;
 
-  MachOCASWriter(std::unique_ptr<MCMachObjectTargetWriter> MOTW,
-                 const Triple &TT, cas::ObjectStore &CAS, CASBackendMode Mode,
-                 raw_pwrite_stream &OS, bool IsLittleEndian,
-                 Optional<MCTargetOptions::ResultCallBackTy> CallBack);
+  MachOCASWriter(
+      std::unique_ptr<MCMachObjectTargetWriter> MOTW, const Triple &TT,
+      cas::ObjectStore &CAS, CASBackendMode Mode, raw_pwrite_stream &OS,
+      bool IsLittleEndian,
+      std::function<const cas::ObjectProxy(
+          llvm::MachOCASWriter &, llvm::MCAssembler &,
+          const llvm::MCAsmLayout &, cas::ObjectStore &, raw_ostream *)>
+          CreateFromMcAssembler,
+      std::function<Error(cas::ObjectProxy, cas::ObjectStore &, raw_ostream &)>
+          SerializeObjectFile,
+      Optional<MCTargetOptions::ResultCallBackTy> CallBack);
 
   void recordRelocation(MCAssembler &Asm, const MCAsmLayout &Layout,
                         const MCFragment *Fragment, const MCFixup &Fixup,
@@ -136,6 +144,13 @@ private:
   MachObjectWriter MOW;
 
   uint64_t OSOffset = 0;
+
+  std::function<const cas::ObjectProxy(
+      llvm::MachOCASWriter &, llvm::MCAssembler &, const llvm::MCAsmLayout &,
+      cas::ObjectStore &, raw_ostream *)>
+      CreateFromMcAssembler;
+  std::function<Error(cas::ObjectProxy, cas::ObjectStore &, raw_ostream &)>
+      SerializeObjectFile;
 };
 
 /// Construct a new Mach-O CAS writer instance.
@@ -151,6 +166,12 @@ std::unique_ptr<MCObjectWriter> createMachOCASWriter(
     std::unique_ptr<MCMachObjectTargetWriter> MOTW, const Triple &TT,
     cas::ObjectStore &CAS, CASBackendMode Mode, raw_pwrite_stream &OS,
     bool IsLittleEndian,
+    std::function<const cas::ObjectProxy(
+        llvm::MachOCASWriter &, llvm::MCAssembler &, const llvm::MCAsmLayout &,
+        cas::ObjectStore &, raw_ostream *)>
+        CreateFromMcAssembler,
+    std::function<Error(cas::ObjectProxy, cas::ObjectStore &, raw_ostream &)>
+        SerializeObjectFile,
     Optional<MCTargetOptions::ResultCallBackTy> CallBack = std::nullopt);
 
 } // end namespace llvm

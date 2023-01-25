@@ -10,6 +10,7 @@ set(LLVM_LINK_COMPONENTS
   Core
   IRReader
   MC
+  MCCAS
   MIRParser
   Remarks
   ScalarOpts
@@ -19,6 +20,7 @@ set(LLVM_LINK_COMPONENTS
   TargetParser
   TransformUtils
   Vectorize
+  CAS
   )
 
 add_llvm_tool(llc
