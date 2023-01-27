@@ -11,7 +11,7 @@ target triple = "aarch64-unknown-linux-gnu"
 define dso_local void @func1(i64* %v1, i64* %v2, i64* %v3, i64* %v4, i64* %v5, i64* %v6, i64* %v7, i64* %v8,
 ; CHECK-LABEL: func1:
 ; CHECK:       // %bb.0:
-; CHECK-NEXT:    str x25, [sp, #-64]! // 8-byte Folded Spill
+; CHECK-NEXT:    stp x29, x25, [sp, #-64]! // 16-byte Folded Spill
 ; CHECK-NEXT:    .cfi_def_cfa_offset 64
 ; CHECK-NEXT:    stp x24, x23, [sp, #16] // 16-byte Folded Spill
 ; CHECK-NEXT:    stp x22, x21, [sp, #32] // 16-byte Folded Spill
@@ -22,7 +22,8 @@ define dso_local void @func1(i64* %v1, i64* %v2, i64* %v3, i64* %v4, i64* %v5, i
 ; CHECK-NEXT:    .cfi_offset w22, -32
 ; CHECK-NEXT:    .cfi_offset w23, -40
 ; CHECK-NEXT:    .cfi_offset w24, -48
-; CHECK-NEXT:    .cfi_offset w25, -64
+; CHECK-NEXT:    .cfi_offset w25, -56
+; CHECK-NEXT:    .cfi_offset w29, -64
 ; CHECK-NEXT:    add x8, sp, #64
 ; CHECK-NEXT:    add x9, sp, #128
 ; CHECK-NEXT:    add x10, sp, #160
@@ -61,7 +62,7 @@ define dso_local void @func1(i64* %v1, i64* %v2, i64* %v3, i64* %v4, i64* %v5, i
 ; CHECK-NEXT:    stp x12, x11, [sp, #320]
 ; CHECK-NEXT:    stp x10, x9, [sp, #336]
 ; CHECK-NEXT:    str x8, [sp, #352]
-; CHECK-NEXT:    ldr x25, [sp], #64 // 8-byte Folded Reload
+; CHECK-NEXT:    ldp x29, x25, [sp], #64 // 16-byte Folded Reload
 ; CHECK-NEXT:    b func2
                              i64* %v9, i64* %v10, i64* %v11, i64* %v12, i64* %v13, i64* %v14,  i64* %v15, i64* %v16,
                              i64* %v17, i64* %v18, i64* %v19, i64* %v20, i64* %v21, i64* %v22, i64* %v23, i64* %v24,
