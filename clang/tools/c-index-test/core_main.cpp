@@ -136,9 +136,6 @@ static cl::opt<bool>
 static cl::list<std::string> DependencyTargets(
     "dependency-target",
     cl::desc("module builds should use the given dependency target(s)"));
-static cl::opt<bool> DeprecatedDriverCommand(
-    "deprecated-driver-command",
-    cl::desc("use a single driver command to build the tu (deprecated)"));
 static llvm::cl::opt<std::string>
     CASPath("cas-path", llvm::cl::desc("Path for on-disk CAS."));
 static llvm::cl::opt<std::string>
@@ -813,56 +810,23 @@ static int scanDeps(ArrayRef<const char *> Args, std::string WorkingDirectory,
     llvm::outs() << "\n";
   };
 
-  if (options::DeprecatedDriverCommand) {
-    CXString Error;
-    CXFileDependencies *Result =
-        clang_experimental_DependencyScannerWorker_getFileDependencies_v3(
-            Worker, Args.size(), Args.data(),
-            ModuleName ? ModuleName->c_str() : nullptr,
-            WorkingDirectory.c_str(), CB.Context, CB.Callback,
-            LookupOutputCB.Context, LookupOutputCB.Callback,
-            /*Options=*/0, &Error);
-    if (Result) {
-      llvm::outs() << "dependencies:\n";
-      HandleCommand(Result->ContextHash, Result->ModuleDeps, Result->FileDeps,
-                    Result->BuildArguments);
-      clang_experimental_FileDependencies_dispose(Result);
-      return 0;
-    }
-    llvm::errs() << "error: failed to get dependencies\n";
-    llvm::errs() << clang_getCString(Error) << "\n";
-    clang_disposeString(Error);
-    return 1;
-  }
-
-  CXFileDependenciesList *Result = nullptr;
-  CXDiagnosticSet Diags;
-  auto DisposeDiagnosticSet =
-      llvm::make_scope_exit([&]() { clang_disposeDiagnosticSet(Diags); });
-  CXErrorCode Err =
-      clang_experimental_DependencyScannerWorker_getFileDependencies_v5(
+  CXFileDependencies *Result =
+      clang_experimental_DependencyScannerWorker_getFileDependencies_v3(
           Worker, Args.size(), Args.data(),
-          ModuleName ? ModuleName->c_str() : nullptr, WorkingDirectory.c_str(),
-          CB.Context, CB.Callback, LookupOutputCB.Context,
-          LookupOutputCB.Callback,
-          /*Options=*/0, &Result, &Diags);
-  if (Err == CXError_Success) {
+          ModuleName ? ModuleName->c_str() : nullptr,
+          WorkingDirectory.c_str(), CB.Context, CB.Callback,
+          LookupOutputCB.Context, LookupOutputCB.Callback,
+          /*Options=*/0, &Error);
+  if (Result) {
     llvm::outs() << "dependencies:\n";
-    for (size_t I = 0; I < Result->NumCommands; ++I)
-      HandleCommand(
-          Result->Commands[I].ContextHash, Result->Commands[I].ModuleDeps,
-          Result->Commands[I].FileDeps, Result->Commands[I].BuildArguments);
-    clang_experimental_FileDependenciesList_dispose(Result);
+    HandleCommand(Result->ContextHash, Result->ModuleDeps, Result->FileDeps,
+                  Result->BuildArguments);
+    clang_experimental_FileDependencies_dispose(Result);
     return 0;
   }
   llvm::errs() << "error: failed to get dependencies\n";
-  for (unsigned I = 0, N = clang_getNumDiagnosticsInSet(Diags); I < N; ++I) {
-    CXDiagnostic Diag = clang_getDiagnosticInSet(Diags, I);
-    CXString Spelling = clang_getDiagnosticSpelling(Diag);
-    llvm::errs() << clang_getCString(Spelling) << "\n";
-    clang_disposeString(Spelling);
-    clang_disposeDiagnostic(Diag);
-  }
+  llvm::errs() << clang_getCString(Error) << "\n";
+  clang_disposeString(Error);
   return 1;
 }
 
