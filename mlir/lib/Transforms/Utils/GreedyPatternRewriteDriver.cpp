@@ -39,8 +39,7 @@ class GreedyPatternRewriteDriver : public PatternRewriter {
 public:
   explicit GreedyPatternRewriteDriver(MLIRContext *ctx,
                                       const FrozenRewritePatternSet &patterns,
-                                      const GreedyRewriteConfig &config,
-                                      const Region &scope);
+                                      const GreedyRewriteConfig &config);
 
   /// Simplify the ops within the given region.
   bool simplify(Region &region) &&;
@@ -60,7 +59,7 @@ public:
 
 protected:
   /// Add the given operation to the worklist.
-  virtual void addSingleOpToWorklist(Operation *op);
+  void addSingleOpToWorklist(Operation *op);
 
   // Implement the hook for inserting operations, and make sure that newly
   // inserted ops are added to the worklist for processing.
@@ -103,8 +102,11 @@ protected:
   /// Configuration information for how to simplify.
   const GreedyRewriteConfig config;
 
-  /// Only ops within this scope are simplified.
-  const Region &scope;
+  /// The list of ops we are restricting our rewrites to. These include the
+  /// supplied set of ops as well as new ops created while rewriting those ops
+  /// depending on `strictMode`. This set is not maintained when
+  /// `config.strictMode` is GreedyRewriteStrictness::AnyOp.
+  llvm::SmallDenseSet<Operation *, 4> strictModeFilteredOps;
 
 private:
 #ifndef NDEBUG
@@ -116,9 +118,9 @@ private:
 
 GreedyPatternRewriteDriver::GreedyPatternRewriteDriver(
     MLIRContext *ctx, const FrozenRewritePatternSet &patterns,
-    const GreedyRewriteConfig &config, const Region &scope)
-    : PatternRewriter(ctx), matcher(patterns), folder(ctx), config(config),
-      scope(scope) {
+    const GreedyRewriteConfig &config)
+    : PatternRewriter(ctx), matcher(patterns), folder(ctx), config(config) {
+  assert(config.scope && "scope is not specified");
   worklist.reserve(64);
 
   // Apply a simple cost model based solely on pattern benefit.
@@ -153,6 +155,12 @@ bool GreedyPatternRewriteDriver::simplify(Region &region) && {
         return true;
     return false;
   };
+
+  // Populate strict mode ops.
+  if (config.strictMode != GreedyRewriteStrictness::AnyOp) {
+    strictModeFilteredOps.clear();
+    region.walk([&](Operation *op) { strictModeFilteredOps.insert(op); });
+  }
 
   bool changed = false;
   int64_t iteration = 0;
@@ -313,7 +321,7 @@ void GreedyPatternRewriteDriver::addToWorklist(Operation *op) {
   SmallVector<Operation *, 8> ancestors;
   ancestors.push_back(op);
   while (Region *region = op->getParentRegion()) {
-    if (&scope == region) {
+    if (config.scope == region) {
       // All gathered ops are in fact ancestors.
       for (Operation *op : ancestors)
         addSingleOpToWorklist(op);
@@ -327,12 +335,15 @@ void GreedyPatternRewriteDriver::addToWorklist(Operation *op) {
 }
 
 void GreedyPatternRewriteDriver::addSingleOpToWorklist(Operation *op) {
-  // Check to see if the worklist already contains this op.
-  if (worklistMap.count(op))
-    return;
+  if (config.strictMode == GreedyRewriteStrictness::AnyOp ||
+      strictModeFilteredOps.contains(op)) {
+    // Check to see if the worklist already contains this op.
+    if (worklistMap.count(op))
+      return;
 
-  worklistMap[op] = worklist.size();
-  worklist.push_back(op);
+    worklistMap[op] = worklist.size();
+    worklist.push_back(op);
+  }
 }
 
 Operation *GreedyPatternRewriteDriver::popFromWorklist() {
@@ -359,6 +370,8 @@ void GreedyPatternRewriteDriver::notifyOperationInserted(Operation *op) {
     logger.startLine() << "** Insert  : '" << op->getName() << "'(" << op
                        << ")\n";
   });
+  if (config.strictMode == GreedyRewriteStrictness::ExistingAndNewOps)
+    strictModeFilteredOps.insert(op);
   addToWorklist(op);
 }
 
@@ -395,6 +408,9 @@ void GreedyPatternRewriteDriver::notifyOperationRemoved(Operation *op) {
     removeFromWorklist(operation);
     folder.notifyRemoval(operation);
   });
+
+  if (config.strictMode != GreedyRewriteStrictness::AnyOp)
+    strictModeFilteredOps.erase(op);
 }
 
 void GreedyPatternRewriteDriver::notifyRootReplaced(Operation *op,
@@ -434,9 +450,12 @@ mlir::applyPatternsAndFoldGreedily(Region &region,
   assert(region.getParentOp()->hasTrait<OpTrait::IsIsolatedFromAbove>() &&
          "patterns can only be applied to operations IsolatedFromAbove");
 
+  // Set scope if not specified.
+  if (!config.scope)
+    config.scope = &region;
+
   // Start the pattern driver.
-  GreedyPatternRewriteDriver driver(region.getContext(), patterns, config,
-                                    region);
+  GreedyPatternRewriteDriver driver(region.getContext(), patterns, config);
   bool converged = std::move(driver).simplify(region);
   LLVM_DEBUG(if (!converged) {
     llvm::dbgs() << "The pattern rewrite did not converge after scanning "
@@ -460,10 +479,10 @@ class MultiOpPatternRewriteDriver : public GreedyPatternRewriteDriver {
 public:
   explicit MultiOpPatternRewriteDriver(
       MLIRContext *ctx, const FrozenRewritePatternSet &patterns,
-      const Region &scope, GreedyRewriteStrictness strictMode,
+      const GreedyRewriteConfig &config,
       llvm::SmallDenseSet<Operation *, 4> *survivingOps = nullptr)
-      : GreedyPatternRewriteDriver(ctx, patterns, GreedyRewriteConfig(), scope),
-        strictMode(strictMode), survivingOps(survivingOps) {}
+      : GreedyPatternRewriteDriver(ctx, patterns, config),
+        survivingOps(survivingOps) {}
 
   /// Performs the specified rewrites on `ops` while also trying to fold these
   /// ops. `strictMode` controls which other ops are simplified. Only ops
@@ -477,37 +496,12 @@ public:
   LogicalResult simplifyLocally(ArrayRef<Operation *> op,
                                 bool *changed = nullptr) &&;
 
-protected:
-  void addSingleOpToWorklist(Operation *op) override {
-    if (strictMode == GreedyRewriteStrictness::AnyOp ||
-        strictModeFilteredOps.contains(op))
-      GreedyPatternRewriteDriver::addSingleOpToWorklist(op);
-  }
-
 private:
-  void notifyOperationInserted(Operation *op) override {
-    if (strictMode == GreedyRewriteStrictness::ExistingAndNewOps)
-      strictModeFilteredOps.insert(op);
-    GreedyPatternRewriteDriver::notifyOperationInserted(op);
-  }
-
   void notifyOperationRemoved(Operation *op) override {
     GreedyPatternRewriteDriver::notifyOperationRemoved(op);
     if (survivingOps)
       survivingOps->erase(op);
-    if (strictMode != GreedyRewriteStrictness::AnyOp)
-      strictModeFilteredOps.erase(op);
   }
-
-  /// `strictMode` control which ops are added to the worklist during
-  /// simplification.
-  const GreedyRewriteStrictness strictMode = GreedyRewriteStrictness::AnyOp;
-
-  /// The list of ops we are restricting our rewrites to. These include the
-  /// supplied set of ops as well as new ops created while rewriting those ops
-  /// depending on `strictMode`. This set is not maintained when `strictMode`
-  /// is GreedyRewriteStrictness::AnyOp.
-  llvm::SmallDenseSet<Operation *, 4> strictModeFilteredOps;
 
   /// An optional set of ops that survived the rewrite. This set is populated
   /// at the beginning of `simplifyLocally` with the inititally provided list
@@ -525,7 +519,7 @@ MultiOpPatternRewriteDriver::simplifyLocally(ArrayRef<Operation *> ops,
     survivingOps->insert(ops.begin(), ops.end());
   }
 
-  if (strictMode != GreedyRewriteStrictness::AnyOp) {
+  if (config.strictMode != GreedyRewriteStrictness::AnyOp) {
     strictModeFilteredOps.clear();
     strictModeFilteredOps.insert(ops.begin(), ops.end());
   }
@@ -550,7 +544,7 @@ MultiOpPatternRewriteDriver::simplifyLocally(ArrayRef<Operation *> ops,
     if (op == nullptr)
       continue;
 
-    assert((strictMode == GreedyRewriteStrictness::AnyOp ||
+    assert((config.strictMode == GreedyRewriteStrictness::AnyOp ||
             strictModeFilteredOps.contains(op)) &&
            "unexpected op was inserted under strict mode");
 
@@ -636,11 +630,9 @@ static Region *findCommonAncestor(ArrayRef<Operation *> ops) {
   return region;
 }
 
-LogicalResult
-mlir::applyOpPatternsAndFold(ArrayRef<Operation *> ops,
-                             const FrozenRewritePatternSet &patterns,
-                             GreedyRewriteStrictness strictMode, bool *changed,
-                             bool *allErased, Region *scope) {
+LogicalResult mlir::applyOpPatternsAndFold(
+    ArrayRef<Operation *> ops, const FrozenRewritePatternSet &patterns,
+    GreedyRewriteConfig config, bool *changed, bool *allErased) {
   if (ops.empty()) {
     if (changed)
       *changed = false;
@@ -649,14 +641,15 @@ mlir::applyOpPatternsAndFold(ArrayRef<Operation *> ops,
     return success();
   }
 
-  if (!scope) {
+  // Determine scope of rewrite.
+  if (!config.scope) {
     // Compute scope if none was provided.
-    scope = findCommonAncestor(ops);
+    config.scope = findCommonAncestor(ops);
   } else {
     // If a scope was provided, make sure that all ops are in scope.
 #ifndef NDEBUG
     bool allOpsInScope = llvm::all_of(ops, [&](Operation *op) {
-      return static_cast<bool>(scope->findAncestorOpInRegion(*op));
+      return static_cast<bool>(config.scope->findAncestorOpInRegion(*op));
     });
     assert(allOpsInScope && "ops must be within the specified scope");
 #endif // NDEBUG
@@ -665,14 +658,13 @@ mlir::applyOpPatternsAndFold(ArrayRef<Operation *> ops,
   // Start the pattern driver.
   llvm::SmallDenseSet<Operation *, 4> surviving;
   MultiOpPatternRewriteDriver driver(ops.front()->getContext(), patterns,
-                                     *scope, strictMode,
-                                     allErased ? &surviving : nullptr);
+                                     config, allErased ? &surviving : nullptr);
   LogicalResult converged = std::move(driver).simplifyLocally(ops, changed);
   if (allErased)
     *allErased = surviving.empty();
   LLVM_DEBUG(if (failed(converged)) {
     llvm::dbgs() << "The pattern rewrite did not converge after "
-                 << GreedyRewriteConfig().maxNumRewrites << " rewrites";
+                 << config.maxNumRewrites << " rewrites";
   });
   return converged;
 }
