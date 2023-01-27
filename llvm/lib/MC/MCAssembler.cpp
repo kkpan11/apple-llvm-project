@@ -926,7 +926,7 @@ void MCAssembler::layout(MCAsmLayout &Layout) {
         std::tie(Target, FixedValue, IsResolved) =
             handleFixup(Layout, Frag, Fixup);
         getBackend().applyFixup(*this, Fixup, Target, Contents, FixedValue,
-                                IsResolved, STI, &Frag);
+                                IsResolved, STI);
       }
     }
   }

@@ -312,60 +312,24 @@ Expected<PaddingRef> PaddingRef::get(Expected<MCObjectProxy> Ref) {
   return PaddingRef(*Specific);
 }
 
-static Error applyAddends(MCCASReader &Reader,
-                          MutableArrayRef<char> SectionContents) {
-  for (unsigned I = 0; I < Reader.Addends.size(); I++) {
-    auto Addend = Reader.Addends[I];
-    for (unsigned J = 0; J < Addend.Size; J++)
-      SectionContents[Addend.Offset + J] = uint8_t(Addend.Value >> (J * 8));
-  }
-  return Error::success();
-}
-
-static void writeRelocationsAndAddends(
-    ArrayRef<MachO::any_relocation_info> Rels,
-    ArrayRef<MachObjectWriter::AddendsSizeAndOffset> Addends,
-    SmallVectorImpl<char> &Data) {
-  writeVBR8(Rels.size(), Data);
-  for (unsigned I = 0; I < Rels.size(); I++) {
+static void writeRelocations(ArrayRef<MachO::any_relocation_info> Rels,
+                             SmallVectorImpl<char> &Data) {
+  for (auto Rel : Rels) {
     // FIXME: Might be better just encode raw data?
-    writeVBR8(Rels[I].r_word0, Data);
-    writeVBR8(Rels[I].r_word1, Data);
-  }
-  writeVBR8(Addends.size(), Data);
-  for (unsigned I = 0; I < Addends.size(); I++) {
-    writeVBR8(Addends[I].Value, Data);
-    writeVBR8(Addends[I].Offset, Data);
-    writeVBR8(Addends[I].Size, Data);
+    writeVBR8(Rel.r_word0, Data);
+    writeVBR8(Rel.r_word1, Data);
   }
 }
 
-static Error decodeRelocationsAndAddends(MCCASReader &Reader, StringRef Data) {
-  uint32_t Size = 0;
-  if (auto E = consumeVBR8(Data, Size))
-    return E;
-  MachO::any_relocation_info Rel;
-  for (unsigned I = 0; I < Size; I++) {
+static Error decodeRelocations(MCCASReader &Reader, StringRef Data) {
+  while (!Data.empty()) {
+    MachO::any_relocation_info Rel;
     if (auto E = consumeVBR8(Data, Rel.r_word0))
       return E;
     if (auto E = consumeVBR8(Data, Rel.r_word1))
       return E;
     Reader.Relocations.back().push_back(Rel);
   }
-  if (auto E = consumeVBR8(Data, Size))
-    return E;
-  MachObjectWriter::AddendsSizeAndOffset Add;
-  for (unsigned I = 0; I < Size; I++) {
-    if (auto E = consumeVBR8(Data, Add.Value))
-      return E;
-    if (auto E = consumeVBR8(Data, Add.Offset))
-      return E;
-    if (auto E = consumeVBR8(Data, Add.Size))
-      return E;
-    Reader.Addends.push_back(Add);
-  }
-  assert(Data.empty() && "Relocations and Addends not encoded propely, still "
-                         "some metadata in the block!");
   return Error::success();
 }
 
@@ -522,11 +486,8 @@ materializeDebugInfoFromTagImpl(MCCASReader &Reader,
     return std::move(E);
 
   Reader.Relocations.emplace_back();
-  if (auto E = decodeRelocationsAndAddends(Reader, SectionRef.getData()))
+  if (auto E = decodeRelocations(Reader, SectionRef.getData()))
     return std::move(E);
-  if (auto E = applyAddends(Reader, SectionContents))
-    return std::move(E);
-  Reader.Addends.clear();
 
   auto MaybePaddingRef = findRef<PaddingRef>(Reader, Refs);
   if (!MaybePaddingRef)
@@ -612,8 +573,7 @@ Expected<SectionRef> SectionRef::create(MCCASBuilder &MB,
   if (auto E = encodeReferences(Fragments, B->Data, B->Refs))
     return std::move(E);
 
-  writeRelocationsAndAddends(MB.getSectionRelocs(), MB.getSectionAddends(),
-                             B->Data);
+  writeRelocations(MB.getSectionRelocs(), B->Data);
 
   return get(B->build());
 }
@@ -626,8 +586,7 @@ DebugInfoSectionRef::create(MCCASBuilder &MB,
     return B.takeError();
 
   append_range(B->Refs, ChildrenNode);
-  writeRelocationsAndAddends(MB.getSectionRelocs(), MB.getSectionAddends(),
-                             B->Data);
+  writeRelocations(MB.getSectionRelocs(), B->Data);
   return get(B->build());
 }
 
@@ -641,8 +600,7 @@ DebugAbbrevSectionRef::create(MCCASBuilder &MB,
   if (auto E = encodeReferences(Fragments, B->Data, B->Refs))
     return std::move(E);
 
-  writeRelocationsAndAddends(MB.getSectionRelocs(), MB.getSectionAddends(),
-                             B->Data);
+  writeRelocations(MB.getSectionRelocs(), B->Data);
   return get(B->build());
 }
 
@@ -656,8 +614,7 @@ DebugLineSectionRef::create(MCCASBuilder &MB,
   if (auto E = encodeReferences(Fragments, B->Data, B->Refs))
     return std::move(E);
 
-  writeRelocationsAndAddends(MB.getSectionRelocs(), MB.getSectionAddends(),
-                             B->Data);
+  writeRelocations(MB.getSectionRelocs(), B->Data);
   return get(B->build());
 }
 
@@ -671,8 +628,7 @@ DebugStringSectionRef::create(MCCASBuilder &MB,
   if (auto E = encodeReferences(Fragments, B->Data, B->Refs))
     return std::move(E);
 
-  writeRelocationsAndAddends(MB.getSectionRelocs(), MB.getSectionAddends(),
-                             B->Data);
+  writeRelocations(MB.getSectionRelocs(), B->Data);
   return get(B->build());
 }
 
@@ -696,13 +652,8 @@ Expected<uint64_t> SectionRef::materialize(MCCASReader &Reader,
     Size += *FragmentSize;
   }
 
-  if (auto E = decodeRelocationsAndAddends(Reader, Remaining))
+  if (auto E = decodeRelocations(Reader, Remaining))
     return std::move(E);
-
-  if (auto E = applyAddends(Reader, SectionContents))
-    return std::move(E);
-
-  Reader.Addends.clear();
   Reader.OS << SectionContents;
 
   return Size;
@@ -991,13 +942,8 @@ Expected<uint64_t> DebugLineSectionRef::materialize(MCCASReader &Reader,
   if (!SectionContents)
     return SectionContents.takeError();
 
-  if (auto E = decodeRelocationsAndAddends(Reader, Remaining))
+  if (auto E = decodeRelocations(Reader, Remaining))
     return std::move(E);
-
-  if (auto E = applyAddends(Reader, *SectionContents))
-    return std::move(E);
-
-  Reader.Addends.clear();
   Reader.OS << *SectionContents;
 
   return SectionContents->size();
@@ -1024,13 +970,8 @@ DebugStringSectionRef::materialize(MCCASReader &Reader,
     Size += *FragmentSize;
   }
 
-  if (auto E = decodeRelocationsAndAddends(Reader, Remaining))
+  if (auto E = decodeRelocations(Reader, Remaining))
     return std::move(E);
-
-  if (auto E = applyAddends(Reader, SectionContents))
-    return std::move(E);
-
-  Reader.Addends.clear();
   Reader.OS << SectionContents;
 
   return Size;
@@ -1045,7 +986,7 @@ Expected<AtomRef> AtomRef::create(MCCASBuilder &MB,
   if (auto E = encodeReferences(Fragments, B->Data, B->Refs))
     return std::move(E);
 
-  writeRelocationsAndAddends(MB.getAtomRelocs(), MB.getAtomAddends(), B->Data);
+  writeRelocations(MB.getAtomRelocs(), B->Data);
 
   return get(B->build());
 }
@@ -1065,7 +1006,7 @@ Expected<uint64_t> AtomRef::materialize(MCCASReader &Reader,
     Size += *FragmentSize;
   }
 
-  if (auto E = decodeRelocationsAndAddends(Reader, Remaining))
+  if (auto E = decodeRelocations(Reader, Remaining))
     return std::move(E);
 
   return Size;
@@ -1975,19 +1916,6 @@ Error MCCASBuilder::createDebugStrSection(
   return finalizeSection<DebugStringSectionRef>();
 }
 
-static void createAddendVector(
-    SmallVector<MachObjectWriter::AddendsSizeAndOffset> &Dest,
-    const std::vector<MachObjectWriter::AddendsSizeAndOffset> &Source,
-    const MCFragment *F, const MCAsmLayout &Layout) {
-  // Encode the fragment offset with the Addend offset to get the proper fixup
-  // offset in that section.
-  for (auto Addend : Source)
-    Dest.push_back(
-        {Addend.Value,
-         static_cast<uint32_t>(Addend.Offset + Layout.getFragmentOffset(F)),
-         Addend.Size});
-}
-
 Expected<MCCASBuilder::DebugStringSectionContents>
 MCCASBuilder::createDebugStringRefs() {
   if (!DwarfSections.Str || !DwarfSections.Str->getFragmentList().size())
@@ -2065,11 +1993,7 @@ Error MCCASBuilder::buildFragments() {
         auto Relocs = RelMap.find(&F);
         if (Relocs != RelMap.end())
           AtomRelocs.append(Relocs->second.begin(), Relocs->second.end());
-        createAddendVector(AtomAddends, ObjectWriter.getAddends()[&F], &F,
-                           Layout);
-      } else
-        createAddendVector(SectionAddends, ObjectWriter.getAddends()[&F], &F,
-                           Layout);
+      }
 
       auto Size = Asm.computeFragmentSize(Layout, F);
       // Don't need to encode the fragment if it doesn't contribute anything.
@@ -2184,13 +2108,6 @@ void MCCASBuilder::startSection(const MCSection *Sec) {
     }
   }
 
-  if (Sec == DwarfSections.Line || Sec == DwarfSections.DebugInfo) {
-    for (auto &Frag : *Sec) {
-      createAddendVector(SectionAddends, ObjectWriter.getAddends()[&Frag],
-                         &Frag, Layout);
-    }
-  }
-
   if (RelocLocation == Section) {
     for (auto R : ObjectWriter.getRelocations()[Sec])
       SectionRelocs.push_back(R.MRE);
@@ -2205,7 +2122,6 @@ Error MCCASBuilder::finalizeSection() {
 
   SectionContext.clear();
   SectionRelocs.clear();
-  SectionAddends.clear();
   RelMap.clear();
   CurrentSection = nullptr;
   CurrentContext = &GroupContext;
@@ -2229,7 +2145,6 @@ Error MCCASBuilder::finalizeAtom() {
 
   AtomContext.clear();
   AtomRelocs.clear();
-  AtomAddends.clear();
   CurrentAtom = nullptr;
   CurrentContext = &SectionContext;
   addNode(*Ref);
@@ -2260,7 +2175,6 @@ Expected<MCAssemblerRef> MCAssemblerRef::create(const MCSchema &Schema,
   // Only need to do this for verify mode so we compare the output byte by
   // byte.
   if (ObjectWriter.Mode == CASBackendMode::Verify) {
-    ObjectWriter.applyAddends(Asm, Layout);
     ObjectWriter.writeSectionData(Asm, Layout);
   }
 

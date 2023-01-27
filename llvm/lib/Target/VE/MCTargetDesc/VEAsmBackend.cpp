@@ -189,8 +189,8 @@ public:
 
   void applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
                   const MCValue &Target, MutableArrayRef<char> Data,
-                  uint64_t Value, bool IsResolved, const MCSubtargetInfo *STI,
-                  const MCFragment *Fragment) const override {
+                  uint64_t Value, bool IsResolved,
+                  const MCSubtargetInfo *STI) const override {
     Value = adjustFixupValue(Fixup.getKind(), Value);
     if (!Value)
       return; // Doesn't change encoding.

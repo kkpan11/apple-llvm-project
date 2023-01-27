@@ -84,8 +84,8 @@ public:
 
   void applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
                   const MCValue &Target, MutableArrayRef<char> Data,
-                  uint64_t Value, bool IsResolved, const MCSubtargetInfo *STI,
-                  const MCFragment *Fragment) const override;
+                  uint64_t Value, bool IsResolved,
+                  const MCSubtargetInfo *STI) const override;
 
   bool fixupNeedsRelaxation(const MCFixup &Fixup, uint64_t Value,
                             const MCRelaxableFragment *DF,
@@ -390,8 +390,8 @@ unsigned AArch64AsmBackend::getFixupKindContainereSizeInBytes(unsigned Kind) con
 void AArch64AsmBackend::applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
                                    const MCValue &Target,
                                    MutableArrayRef<char> Data, uint64_t Value,
-                                   bool IsResolved, const MCSubtargetInfo *STI,
-                                   const MCFragment *Fragment) const {
+                                   bool IsResolved,
+                                   const MCSubtargetInfo *STI) const {
   if (!Value)
     return; // Doesn't change encoding.
   unsigned Kind = Fixup.getKind();
@@ -442,16 +442,6 @@ void AArch64AsmBackend::applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
       Data[Offset + 3] &= ~(1 << 6);
     else
       Data[Offset + 3] |= (1 << 6);
-  }
-
-  // Copy the Value at the fixup location and zero-out the fixup if it is
-  // unresolved, this is done to improve deduplication with MCCAS. The fixup
-  // will be applied later when the object file is being written out.
-  if (!IsResolved) {
-    std::memcpy(&Value, &Data[Offset], NumBytes);
-    if (Asm.getWriter().addAddend(Fragment, Value, Offset, NumBytes)) {
-      std::memset(&Data[Offset], 0, NumBytes);
-    }
   }
 }
 

@@ -469,12 +469,6 @@ public:
   ArrayRef<MachO::any_relocation_info> getAtomRelocs() const {
     return AtomRelocs;
   }
-  ArrayRef<MachObjectWriter::AddendsSizeAndOffset> getSectionAddends() const {
-    return SectionAddends;
-  }
-  ArrayRef<MachObjectWriter::AddendsSizeAndOffset> getAtomAddends() const {
-    return AtomAddends;
-  }
 
   // Scratch space
   SmallString<8> FragmentData;
@@ -546,8 +540,6 @@ private:
 
   SmallVector<MachO::any_relocation_info> AtomRelocs;
   SmallVector<MachO::any_relocation_info> SectionRelocs;
-  SmallVector<MachObjectWriter::AddendsSizeAndOffset> AtomAddends;
-  SmallVector<MachObjectWriter::AddendsSizeAndOffset> SectionAddends;
   DenseMap<const MCFragment *, std::vector<MachO::any_relocation_info>> RelMap;
 
   DwarfSectionsCache DwarfSections;
@@ -558,7 +550,6 @@ public:
   raw_ostream &OS;
 
   std::vector<std::vector<MachO::any_relocation_info>> Relocations;
-  std::vector<MachObjectWriter::AddendsSizeAndOffset> Addends;
 
   MCCASReader(raw_ostream &OS, const Triple &Target, const MCSchema &Schema);
   support::endianness getEndian() {

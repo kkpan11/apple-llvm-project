@@ -1045,8 +1045,8 @@ static unsigned getFixupKindContainerSizeBytes(unsigned Kind) {
 void ARMAsmBackend::applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
                                const MCValue &Target,
                                MutableArrayRef<char> Data, uint64_t Value,
-                               bool IsResolved, const MCSubtargetInfo *STI,
-                               const MCFragment *Fragment) const {
+                               bool IsResolved,
+                               const MCSubtargetInfo *STI) const {
   unsigned Kind = Fixup.getKind();
   if (Kind >= FirstLiteralRelocationKind)
     return;
@@ -1073,16 +1073,6 @@ void ARMAsmBackend::applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
   for (unsigned i = 0; i != NumBytes; ++i) {
     unsigned Idx = Endian == support::little ? i : (FullSizeBytes - 1 - i);
     Data[Offset + Idx] |= uint8_t((Value >> (i * 8)) & 0xff);
-  }
-
-  // Copy the Value at the fixup location and zero-out the fixup if it is
-  // unresolved, this is done to improve deduplication with MCCAS. The fixup
-  // will be applied later when the object file is being written out.
-  if (!IsResolved) {
-    std::memcpy(&Value, &Data[Offset], NumBytes);
-    if (Asm.getWriter().addAddend(Fragment, Value, Offset, NumBytes)) {
-      std::memset(&Data[Offset], 0, NumBytes);
-    }
   }
 }
 
