@@ -7,10 +7,16 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/Analysis/Analyses/UnsafeBufferUsage.h"
+#include "clang/AST/Decl.h"
+#include "clang/AST/Expr.h"
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
-#include "clang/Lex/Preprocessor.h"
+#include "clang/ASTMatchers/ASTMatchers.h"
+#include "clang/Basic/CharInfo.h"
+#include "clang/Basic/SourceLocation.h"
+#include "clang/Basic/SourceManager.h"
 #include "clang/Lex/Lexer.h"
+#include "clang/Lex/Preprocessor.h"
 #include "llvm/ADT/SmallVector.h"
 #include <memory>
 #include <optional>
@@ -560,6 +566,117 @@ public:
   }
 };
 } // namespace
+
+namespace {
+  /// \returns either begin of sequence of horizontal whitespace preceding
+  /// \p Loc or Loc if there's no preceding whitespace or Loc is invalid.
+  SourceLocation getBeginOfPrecHWSpace(SourceLocation Loc, SourceManager& SM){
+    assert(Loc.isValid());
+
+    while(true) {
+      SourceLocation PrecLoc = Loc.getLocWithOffset(-1);
+      if (PrecLoc.isInvalid())
+        break;
+      if (isHorizontalWhitespace(*SM.getCharacterData(PrecLoc))) {
+        Loc = PrecLoc;
+        continue;
+      }
+      break;
+    }
+    return Loc;
+  }
+} // namespace
+
+class DerefSimplePtrArithFixableGadget : public FixableGadget {
+  static constexpr const char *const BaseDeclRefExprTag = "BaseDRE";
+  static constexpr const char *const DerefOpTag = "DerefOp";
+  static constexpr const char *const ParenExprTag = "ParenExpr";
+  static constexpr const char *const AddOpTag = "AddOp";
+  static constexpr const char *const RHSTag = "RHS";
+
+  const DeclRefExpr *BaseDeclRefExpr = nullptr;
+  const UnaryOperator *DerefOp = nullptr;
+  const ParenExpr *ParenEx = nullptr;
+  const BinaryOperator *AddOp = nullptr;
+  const IntegerLiteral *RHS = nullptr;
+public:
+  DerefSimplePtrArithFixableGadget(const MatchFinder::MatchResult &Result)
+      : FixableGadget(Kind::DerefSimplePtrArithFixable),
+        BaseDeclRefExpr(Result.Nodes.getNodeAs<DeclRefExpr>(BaseDeclRefExprTag)),
+        DerefOp(Result.Nodes.getNodeAs<UnaryOperator>(DerefOpTag)),
+        ParenEx(Result.Nodes.getNodeAs<ParenExpr>(ParenExprTag)),
+        AddOp(Result.Nodes.getNodeAs<BinaryOperator>(AddOpTag)),
+        RHS(Result.Nodes.getNodeAs<IntegerLiteral>(RHSTag))
+        {}
+
+  static Matcher matcher() {
+// FIXME: implement the mirror version: idx + pointer
+// FIXME: generalize for any number of parens and impl casts
+// clang-format off
+    return isInUnspecifiedLvalueContext(
+      unaryOperator(
+        hasOperatorName("*"),
+        hasUnaryOperand(
+          parenExpr(
+            has(
+              binaryOperator(
+                hasOperatorName("+"),
+                hasLHS(
+                  expr(
+                    hasPointerType(),
+                    ignoringImpCasts(
+                      declRefExpr().bind(BaseDeclRefExprTag)))),
+                hasRHS(integerLiteral().bind(RHSTag)
+              )).bind(AddOpTag)
+          )).bind(ParenExprTag)
+      )).bind(DerefOpTag));
+// clang-format on
+  }
+
+  virtual std::optional<FixItList> getFixits(const Strategy &s) const final {
+    const VarDecl* VD = dyn_cast<VarDecl>(BaseDeclRefExpr->getDecl());
+    assert(VD);
+    if (s.lookup(VD) == Strategy::Kind::Span) {
+      ASTContext& Ctx = VD->getASTContext();
+      // std::span can't represent elements before its begin()
+      if (RHS->getIntegerConstantExpr(Ctx)->isNegative())
+        return std::nullopt;
+
+      // example:
+      //   *(pointer + 123)
+      // goal:
+      //   pointer[123]
+      // Fix-It:
+      //   remove '*('
+      //   replace ' + ' with '['
+      //   replace ')' with ']'
+
+      SourceManager &SM = Ctx.getSourceManager();
+      CharSourceRange StarWithTrailWhitespace = clang::CharSourceRange::getCharRange(DerefOp->getOperatorLoc(), BaseDeclRefExpr->getBeginLoc());
+      CharSourceRange PlusWithSurroundingWhitespace = clang::CharSourceRange::getCharRange(getBeginOfPrecHWSpace(AddOp->getOperatorLoc(), SM), RHS->getLocation());
+      CharSourceRange ClosingParenWithPrecWhitespace = clang::CharSourceRange::getCharRange(getBeginOfPrecHWSpace(ParenEx->getEndLoc(), SM), ParenEx->getRParen().getLocWithOffset(1));
+
+      return FixItList{{
+        FixItHint::CreateRemoval(StarWithTrailWhitespace),
+        FixItHint::CreateReplacement(PlusWithSurroundingWhitespace, "["),
+        FixItHint::CreateReplacement(ClosingParenWithPrecWhitespace, "]")
+      }};
+    }
+
+    llvm_unreachable("unsupported strategies for FixableGadgets");
+    return std::nullopt;
+  }
+
+  // TODO remove this method from FixableGadget interface
+  virtual const Stmt *getBaseStmt() const final {
+    return nullptr;
+  }
+
+  virtual DeclUseList getClaimedVarUseSites() const final {
+    return {BaseDeclRefExpr};
+  }
+};
+
 
 /// Scan the function and return a list of gadgets found with provided kits.
 static std::tuple<FixableGadgetList, WarningGadgetList, DeclUseTracker>
