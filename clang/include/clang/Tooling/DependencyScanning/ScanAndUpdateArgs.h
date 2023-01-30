@@ -10,9 +10,9 @@
 #define LLVM_CLANG_DRIVER_SCANANDUPDATEARGS_H
 
 #include "clang/Basic/LLVM.h"
-#include "llvm/ADT/Optional.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
+#include <optional>
 
 namespace llvm {
 class StringSaver;
@@ -41,8 +41,8 @@ void configureInvocationForCaching(CompilerInvocation &CI, CASOptions CASOpts,
                                    bool ProduceIncludeTree);
 
 struct DepscanPrefixMapping {
-  Optional<std::string> NewSDKPath;
-  Optional<std::string> NewToolchainPath;
+  std::optional<std::string> NewSDKPath;
+  std::optional<std::string> NewToolchainPath;
   SmallVector<std::string> PrefixMap;
 
   /// Add path mappings from the current path in \p Invocation to the new path

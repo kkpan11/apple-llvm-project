@@ -411,7 +411,7 @@ int clang_main(int Argc, char **Argv) {
   StringRef DriverMode =
       getDriverMode(Args[0], llvm::ArrayRef(Args).slice(1));
   if (isClangCache(DriverMode)) {
-    if (Optional<int> ExitCode = handleClangCacheInvocation(Args, Saver))
+    if (std::optional<int> ExitCode = handleClangCacheInvocation(Args, Saver))
       return *ExitCode;
   }
 

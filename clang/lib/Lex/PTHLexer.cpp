@@ -525,10 +525,10 @@ std::unique_ptr<PTHLexer> PTHManager::createLexer(FileID FID) {
   //
   // FIXME: Consider reporting diag::err_invalid_pth_file or similar?
   StringRef Filename = FE->getName();
-  if (llvm::ErrorOr<Optional<cas::ObjectRef>> InputRefOrErr =
+  if (llvm::ErrorOr<std::optional<cas::ObjectRef>> InputRefOrErr =
           FS->getObjectRefForFileContent(Filename)) {
-    if (Optional<cas::ObjectRef> InputRef = *InputRefOrErr)
-      if (Optional<llvm::cas::CASID> PTHFile =
+    if (std::optional<cas::ObjectRef> InputRef = *InputRefOrErr)
+      if (std::optional<llvm::cas::CASID> PTHFile =
               expectedToOptional(computePTH(CAS.getID(*InputRef))))
         Handler = createHandler(Filename, *PTHFile);
   }
@@ -542,11 +542,11 @@ std::unique_ptr<PTHLexer> PTHManager::createLexer(FileID FID) {
 namespace {
 typedef uint32_t OffsetType;
 class PTHWriter {
-  typedef llvm::StringMap<Optional<OffsetType>, llvm::BumpPtrAllocator>
+  typedef llvm::StringMap<std::optional<OffsetType>, llvm::BumpPtrAllocator>
       CachedStrsTy;
 
   raw_pwrite_stream &OS;
-  SmallVector<llvm::StringMapEntry<Optional<OffsetType>> *> StrEntries;
+  SmallVector<llvm::StringMapEntry<std::optional<OffsetType>> *> StrEntries;
   CachedStrsTy CachedStrs;
   OffsetType CurStrOffset = 0;
   llvm::StringMap<uint32_t> RawIDIndexPlus1;
@@ -621,7 +621,8 @@ Expected<llvm::cas::CASID> PTHManager::computePTH(llvm::cas::CASID InputFile) {
   if (!Cached)
     return Cached.takeError();
   if (*Cached) {
-    if (Optional<llvm::cas::ObjectRef> CachedPTH = CAS.getReference(**Cached))
+    if (std::optional<llvm::cas::ObjectRef> CachedPTH =
+            CAS.getReference(**Cached))
       return CAS.getID(*CachedPTH);
   }
 

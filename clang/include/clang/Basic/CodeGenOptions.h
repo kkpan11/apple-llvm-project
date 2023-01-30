@@ -164,7 +164,7 @@ public:
   };
 
   /// The callback for mc result.
-  llvm::Optional<llvm::MCTargetOptions::ResultCallBackTy> MCCallBack;
+  std::optional<llvm::MCTargetOptions::ResultCallBackTy> MCCallBack;
 
   /// The code model to use (-mcmodel).
   std::string CodeModel;
