@@ -62,7 +62,7 @@ struct FullDependencies {
   std::vector<ModuleID> ClangModuleDeps;
 
   /// The CASID for input file dependency tree.
-  llvm::Optional<llvm::cas::CASID> CASFileSystemRootID;
+  std::optional<llvm::cas::CASID> CASFileSystemRootID;
 
   /// The sequence of commands required to build the translation unit. Commands
   /// should be executed in order.

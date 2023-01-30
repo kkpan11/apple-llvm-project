@@ -224,7 +224,7 @@ private:
 
   bool hasErrorOccurred() const { return ErrorToReport.has_value(); }
 
-  template <typename T> Optional<T> check(Expected<T> &&E) {
+  template <typename T> std::optional<T> check(Expected<T> &&E) {
     if (!E) {
       ErrorToReport = E.takeError();
       return std::nullopt;
@@ -235,17 +235,18 @@ private:
   cas::ObjectStore &DB;
   const DepscanPrefixMapping &PrefixMapping;
   llvm::PrefixMapper PrefixMapper;
-  Optional<cas::ObjectRef> PCHRef;
+  std::optional<cas::ObjectRef> PCHRef;
   bool StartedEnteringIncludes = false;
   // When a PCH is used this lists the filenames of the included files as they
   // are recorded in the PCH, ordered by \p FileEntry::UID index.
   SmallVector<StringRef> PreIncludedFileNames;
   llvm::BitVector SeenIncludeFiles;
   SmallVector<cas::IncludeFileList::FileEntry> IncludedFiles;
-  Optional<cas::ObjectRef> PredefinesBufferRef;
+  std::optional<cas::ObjectRef> PredefinesBufferRef;
   SmallVector<FilePPState> IncludeStack;
-  llvm::DenseMap<const FileEntry *, Optional<cas::ObjectRef>> ObjectForFile;
-  Optional<llvm::Error> ErrorToReport;
+  llvm::DenseMap<const FileEntry *, std::optional<cas::ObjectRef>>
+      ObjectForFile;
+  std::optional<llvm::Error> ErrorToReport;
 };
 } // namespace
 
@@ -301,7 +302,7 @@ void IncludeTreePPConsumer::enteredInclude(Preprocessor &PP, FileID FID) {
     }
   }
 
-  Optional<cas::ObjectRef> FileRef = check(getObjectForFile(PP, FID));
+  std::optional<cas::ObjectRef> FileRef = check(getObjectForFile(PP, FID));
   if (!FileRef)
     return;
   const SrcMgr::FileInfo &FI =
@@ -316,7 +317,7 @@ void IncludeTreePPConsumer::exitedInclude(Preprocessor &PP, FileID IncludedBy,
     return;
 
   assert(*check(getObjectForFile(PP, Include)) == IncludeStack.back().File);
-  Optional<cas::IncludeTree> IncludeTree =
+  std::optional<cas::IncludeTree> IncludeTree =
       check(getCASTreeForFileIncludes(IncludeStack.pop_back_val()));
   if (!IncludeTree)
     return;
@@ -347,7 +348,7 @@ Error IncludeTreePPConsumer::finalize(CompilerInstance &ScanInstance,
         return Error::success();
       return llvm::errorCodeToError(FE.getError());
     }
-    Optional<cas::ObjectRef> Ref;
+    std::optional<cas::ObjectRef> Ref;
     return addToFileList(FM, *FE).moveInto(Ref);
   };
 
@@ -404,7 +405,7 @@ Error IncludeTreePPConsumer::finalize(CompilerInstance &ScanInstance,
       return FileNode.takeError();
   }
 
-  llvm::ErrorOr<Optional<cas::ObjectRef>> CASContents =
+  llvm::ErrorOr<std::optional<cas::ObjectRef>> CASContents =
       FM.getObjectRefForFileContent(PPOpts.ImplicitPCHInclude);
   if (!CASContents)
     return llvm::errorCodeToError(CASContents.getError());
@@ -467,7 +468,7 @@ IncludeTreePPConsumer::getObjectForBuffer(const SrcMgr::FileInfo &FI) {
 Expected<cas::ObjectRef>
 IncludeTreePPConsumer::addToFileList(FileManager &FM, const FileEntry *FE) {
   StringRef Filename = FE->getName();
-  llvm::ErrorOr<Optional<cas::ObjectRef>> CASContents =
+  llvm::ErrorOr<std::optional<cas::ObjectRef>> CASContents =
       FM.getObjectRefForFileContent(Filename);
   if (!CASContents)
     return llvm::errorCodeToError(CASContents.getError());

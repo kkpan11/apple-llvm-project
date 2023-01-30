@@ -189,11 +189,11 @@ private:
   OptionalFileEntryRef ASTFile;
 
   /// The \c ActionCache key for this module, if any.
-  Optional<std::string> ModuleCacheKey;
+  std::optional<std::string> ModuleCacheKey;
 
   /// The CAS filesystem root ID for implicit modules built with the dependency
   /// scanner, if any.
-  Optional<std::string> CASFileSystemRootID;
+  std::optional<std::string> CASFileSystemRootID;
 
   /// The top-level headers associated with this module.
   llvm::SmallSetVector<const FileEntry *, 2> TopHeaders;
@@ -626,7 +626,7 @@ public:
     getTopLevelModule()->ASTFile = File;
   }
 
-  Optional<std::string> getModuleCacheKey() const {
+  std::optional<std::string> getModuleCacheKey() const {
     return getTopLevelModule()->ModuleCacheKey;
   }
 
@@ -635,7 +635,7 @@ public:
     getTopLevelModule()->ModuleCacheKey = std::move(Key);
   }
 
-  Optional<std::string> getCASFileSystemRootID() const {
+  std::optional<std::string> getCASFileSystemRootID() const {
     return getTopLevelModule()->CASFileSystemRootID;
   }
 

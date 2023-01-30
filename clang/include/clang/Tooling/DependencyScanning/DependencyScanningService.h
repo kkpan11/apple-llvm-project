@@ -105,7 +105,7 @@ private:
   /// scanning.
   IntrusiveRefCntPtr<llvm::cas::CachingOnDiskFileSystem> SharedFS;
   /// The global file system cache.
-  Optional<DependencyScanningFilesystemSharedCache> SharedCache;
+  std::optional<DependencyScanningFilesystemSharedCache> SharedCache;
 };
 
 } // end namespace dependencies

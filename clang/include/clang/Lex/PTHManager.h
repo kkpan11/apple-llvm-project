@@ -59,7 +59,7 @@ public:
 private:
   void initialize(PTHManager &PTHM, DiagnosticsEngine &Diags, StringRef File);
 
-  Optional<StringRef> PTH;
+  std::optional<StringRef> PTH;
 
   MutableArrayRef<IdentifierInfo *> IdentifierInfoCache;
 
@@ -103,9 +103,9 @@ class PTHManager {
   llvm::cas::ActionCache &Cache;
   IntrusiveRefCntPtr<llvm::vfs::FileSystem> FS;
   LangOptions CanonicalLangOpts;
-  Optional<llvm::cas::CASID> SerializedLangOpts;
-  Optional<llvm::cas::CASID> ClangVersion;
-  Optional<llvm::cas::CASID> Operation;
+  std::optional<llvm::cas::CASID> SerializedLangOpts;
+  std::optional<llvm::cas::CASID> ClangVersion;
+  std::optional<llvm::cas::CASID> Operation;
 
   /// PP - The Preprocessor object that will use this PTHManager to create
   ///  PTHLexer objects.

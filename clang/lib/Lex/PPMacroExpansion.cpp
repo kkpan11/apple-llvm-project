@@ -1189,7 +1189,7 @@ static bool EvaluateHasIncludeCommon(Token &Tok, IdentifierInfo *II,
                                      Preprocessor &PP,
                                      ConstSearchDirIterator LookupFrom,
                                      const FileEntry *LookupFromFile,
-                                     Optional<bool> Precomputed) {
+                                     std::optional<bool> Precomputed) {
   // Save the location of the current token.  If a '(' is later found, use
   // that location.  If not, use the end of this location instead.
   SourceLocation LParenLoc = Tok.getLocation();
@@ -1277,7 +1277,7 @@ static bool EvaluateHasIncludeCommon(Token &Tok, IdentifierInfo *II,
 }
 
 bool Preprocessor::EvaluateHasInclude(Token &Tok, IdentifierInfo *II) {
-  Optional<bool> Precomputed;
+  std::optional<bool> Precomputed;
   if (auto *CActions = getPPCachedActions()) {
     Precomputed = CActions->evaluateHasInclude(*this, Tok.getLocation(),
                                                /*IsIncludeNext*/ false);
@@ -1287,7 +1287,7 @@ bool Preprocessor::EvaluateHasInclude(Token &Tok, IdentifierInfo *II) {
 }
 
 bool Preprocessor::EvaluateHasIncludeNext(Token &Tok, IdentifierInfo *II) {
-  Optional<bool> Precomputed;
+  std::optional<bool> Precomputed;
   if (auto *CActions = getPPCachedActions()) {
     Precomputed = CActions->evaluateHasInclude(*this, Tok.getLocation(),
                                                /*IsIncludeNext*/ true);
