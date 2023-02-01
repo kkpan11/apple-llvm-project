@@ -48,6 +48,10 @@ namespace object {
 class BuildIDFetcher;
 } // namespace object
 
+namespace vfs {
+class FileSystem;
+} // namespace vfs
+
 namespace coverage {
 
 class CoverageMappingReader;
