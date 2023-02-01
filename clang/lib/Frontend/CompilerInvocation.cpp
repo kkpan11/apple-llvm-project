@@ -1847,6 +1847,11 @@ bool CompilerInvocation::ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args,
             : codegenoptions::DebugTemplateNamesKind::Mangled);
   }
 
+  if (!Opts.ProfileInstrumentUsePath.empty()) {
+    auto FS = createBaseFS(FSOpts, FEOpts, CASOpts, Diags, nullptr);
+    setPGOUseInstrumentor(Opts, Opts.ProfileInstrumentUsePath, *FS, Diags);
+  }
+
   if (const Arg *A = Args.getLastArg(OPT_ftime_report, OPT_ftime_report_EQ)) {
     Opts.TimePasses = true;
 
@@ -4798,17 +4803,6 @@ bool CompilerInvocation::CreateFromArgsImpl(
   if (Res.getCodeGenOpts().CodeViewCommandLine) {
     Res.getCodeGenOpts().Argv0 = Argv0;
     append_range(Res.getCodeGenOpts().CommandLineArgs, CommandLineArgs);
-  }
-
-  // Set PGOOptions. Need to create a temporary VFS to read the profile
-  // to determine the PGO type.
-  if (!Res.getCodeGenOpts().ProfileInstrumentUsePath.empty()) {
-    auto FS =
-        createVFSFromOverlayFiles(Res.getHeaderSearchOpts().VFSOverlayFiles,
-                                  Diags, llvm::vfs::getRealFileSystem());
-    setPGOUseInstrumentor(Res.getCodeGenOpts(),
-                          Res.getCodeGenOpts().ProfileInstrumentUsePath, *FS,
-                          Diags);
   }
 
   FixupInvocation(Res, Diags, Args, DashX);
