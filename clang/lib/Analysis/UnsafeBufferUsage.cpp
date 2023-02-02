@@ -10,6 +10,7 @@
 #include "clang/AST/Decl.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/RecursiveASTVisitor.h"
+#include "clang/AST/Type.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/ASTMatchers/ASTMatchers.h"
 #include "clang/Basic/CharInfo.h"
@@ -19,6 +20,7 @@
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Tooling/Inclusions/HeaderIncludes.h"
 #include "clang/Tooling/Inclusions/IncludeStyle.h"
+#include "clang/Sema/Lookup.h"
 #include "llvm/ADT/SmallVector.h"
 #include <memory>
 #include <optional>
@@ -1316,6 +1318,169 @@ static FixItList fixVarDeclWithSpan(const VarDecl *D, const ASTContext &Ctx,
   return FixIts;
 }
 
+static bool hasConflictingOverload(Sema &S, const FunctionDecl *FD) {
+  clang::LookupResult R(S, FD->getIdentifier(), FD->getBeginLoc(),
+                        clang::Sema::LookupOrdinaryName,
+                        Sema::NotForRedeclaration);
+
+  // TODO is CurScope actually correct?
+  S.LookupName(R, S.getCurScope());
+
+  // FIXME bail only in case of conflict.
+  return !R.isSingleResult();
+}
+
+static FixItList fixParamWithSpan(const ParmVarDecl *PVD, const ASTContext &Ctx,
+                                  Sema &S) {
+  assert(PVD->getType()->isPointerType() &&
+         "Only PointerType ParmVarDecl can be changed to std::span.");
+
+  auto *FD = dyn_cast<clang::FunctionDecl>(PVD->getDeclContext());
+  if (!FD)
+    return {};
+
+  if (hasConflictingOverload(S, FD))
+    return {};
+
+  // TODO It looks like testLambdaCaptureAndGlobal in
+  // warn-unsafe-buffer-usage.cpp doesn't have a body and we crash below.
+  if (!FD->getBody())
+    return {};
+
+  // FIXME Respect indentation of the original code.
+
+  // TODO don't hardcode line delimiter - follow what the source file uses
+  // example:
+  //  void foo(int* ptr) { ... }
+  // goal:
+  //  [[clang::unsafe_buffer_usage]] void foo(int* ptr) { std::span(ptr, <# size
+  //  #>) } void foo(int* ptr) { ... }
+
+  const SourceManager &SM = Ctx.getSourceManager();
+
+  // TODO desugaring might be undesirable in some cases
+  // e.g. std::string -> std::basic_string<...>
+  // Maybe this is predominantly specific to std?
+  const std::string newSpanTypeSpelling =
+      "std::span<" +
+      PVD->getType().getDesugaredType(Ctx)->getPointeeType().getAsString() +
+      ">";
+
+  const std::string compatOverloadNameAndSignature = [&]() -> std::string {
+    std::string result =
+        "[[clang::unsafe_buffer_usage]] " +
+        std::string(SM.getCharacterData(FD->getBeginLoc()),
+                    SM.getCharacterData(FD->getBody()->getBeginLoc()));
+    while (!result.empty()) {
+      if (isHorizontalWhitespace(result.back()))
+        result.pop_back();
+      else
+        break;
+    }
+    return result;
+  }();
+
+  const std::string compatOverloadDef = [&]() -> std::string {
+    // create compat overload definition
+    std::string compatOverloadDef = compatOverloadNameAndSignature + "\n" +
+                                    "{\n" + "  return " +
+                                    FD->getNameInfo().getAsString() + "(";
+    for (ParmVarDecl *Param : FD->parameters()) {
+      if (Param->isImplicit())
+        return std::string{}; // TODO error handling
+
+      // FIXME: if a param doesn't have a name - add a name in the signature of
+      // compat overload and use it here to pass to the original overload
+      if (Param->getNameAsString().empty())
+        return std::string{}; // TODO error handling
+
+      if (Param == PVD) {
+        // This is our spanified paramter!
+        // TODO don't hardcode the placeholder
+        compatOverloadDef += newSpanTypeSpelling + "(" +
+                             Param->getNameAsString() + ", <# size #>)";
+      } else {
+        compatOverloadDef += Param->getNameAsString();
+      }
+
+      compatOverloadDef += ", ";
+    }
+    // remove the last ", "
+    compatOverloadDef.pop_back();
+    compatOverloadDef.pop_back();
+    // finish call
+    compatOverloadDef += ");\n";
+    // finish body
+    compatOverloadDef += "}\n";
+    // FIXME: 80-char line formatting?
+    return compatOverloadDef;
+  }();
+
+  if (compatOverloadDef.empty())
+    return {};
+
+  FixItList FixIts{};
+
+  for (FunctionDecl *FReDecl : FD->redecls()) {
+    if (FReDecl->isThisDeclarationADefinition()) {
+      // define compatibility overload
+      // We need to call the origin overload from the compatibility overload.
+      // Let's make sure it has been defined before the call-site by adding the
+      // definition below the definition of the original overload.
+      FixIts.emplace_back(FixItHint::CreateInsertion(
+          FReDecl->getEndLoc().getLocWithOffset(1), "\n" + compatOverloadDef));
+    } else {
+      // declare compatibility overload
+      // Declarations commonly have Doxygen comments or other similar form of
+      // documentation. In order to not break the documentation we'll add the
+      // compatibility overload below the orginal one.
+      // FIXME: I failed to get location of the ';' after the declaration so I
+      // am adding one before the compatiblity overload.
+      FixIts.emplace_back(
+          FixItHint::CreateInsertion(FReDecl->getEndLoc().getLocWithOffset(1),
+                                     ";\n" + compatOverloadNameAndSignature));
+    }
+
+    // get ParmVar redecl in current function redecl that corresponds to PVD
+    ParmVarDecl *const PVReDecl =
+        FReDecl->getParamDecl(PVD->getFunctionScopeIndex());
+
+    // FIXME: At least in some special cases we should be able to emit a Fix-It
+    // for the default argument (at least with a placeholder).
+    if (PVReDecl->hasDefaultArg())
+      return {}; // TODO test
+
+    const Type *PVReDeclTy = PVReDecl->getType().getTypePtrOrNull();
+    if (!PVReDeclTy)
+      return {}; // TODO test
+
+    // FIXME: We should use std::move() to forward the argument.
+    if (isa<RValueReferenceType>(PVReDeclTy))
+      return {}; // TODO test
+
+    if (const auto *PVReDeclRecTy = dyn_cast<RecordType>(PVReDeclTy)) {
+      if (CXXRecordDecl *PVReDeclCXXRecDe =
+              PVReDeclRecTy->getAsCXXRecordDecl()) {
+        // FIXME: We should check if we can move the argument.
+        if (!PVReDeclCXXRecDe->isTriviallyCopyable())
+          return {}; // TODO test
+      }
+    }
+
+    // change parameter type in the original overload
+    FixIts.emplace_back(FixItHint::CreateReplacement(
+        clang::CharSourceRange::getCharRange(
+            PVReDecl->getTypeSourceInfo()->getTypeLoc().getBeginLoc(),
+            PVReDecl->getTypeSourceInfo()
+                ->getTypeLoc()
+                .getEndLoc()
+                .getLocWithOffset(1)),
+        newSpanTypeSpelling + " "));
+  }
+
+  return FixIts;
+}
+
 static FixItList fixVariableWithSpan(const VarDecl *VD,
                                      const DeclUseTracker &Tracker,
                                      const ASTContext &Ctx,
@@ -1337,12 +1502,35 @@ static FixItList fixVariableWithSpan(const VarDecl *VD,
 
 static FixItList fixVariable(const VarDecl *VD, Strategy::Kind K,
                              const DeclUseTracker &Tracker,
-                             const ASTContext &Ctx,
+                             const ASTContext &Ctx, Sema &S,
                              UnsafeBufferUsageHandler &Handler) {
+  if (const auto *PVD = dyn_cast<ParmVarDecl>(VD)) {
+    auto *FD = dyn_cast<clang::FunctionDecl>(PVD->getDeclContext());
+    if (!FD)
+      return {};
+
+    // TODO If function has a try block we can't change params unless we check
+    // also its catch block for their use.
+    // FIXME We might support static class methods, some select methods,
+    // operators and possibly lamdas.
+    if (FD->isMain() || FD->isConstexpr() ||
+        FD->getTemplatedKind() != FunctionDecl::TemplatedKind::TK_NonTemplate ||
+        FD->isVariadic() ||
+        isa<CXXMethodDecl>(FD) // also covers call-operator of lamdas
+        || FD->isOverloadedOperator())
+      return {}; // TODO test all these cases
+  }
+
   switch (K) {
   case Strategy::Kind::Span: {
-    if (VD->getType()->isPointerType() && VD->isLocalVarDecl())
-      return fixVariableWithSpan(VD, Tracker, Ctx, Handler);
+    if (VD->getType()->isPointerType()) {
+      if (const auto *PVD = dyn_cast<ParmVarDecl>(VD))
+        return fixParamWithSpan(PVD, Ctx, S);
+
+      if (VD->isLocalVarDecl())
+        return fixVariableWithSpan(VD, Tracker, Ctx, Handler);
+    }
+
     return {};
   }
   case Strategy::Kind::Iterator:
@@ -1386,14 +1574,14 @@ static std::string getHeaderFilenameForStrategyKind(Strategy::Kind TargetType) {
 
 static std::map<const VarDecl *, FixItList>
 getFixIts(FixableGadgetSets &FixablesForUnsafeVars, const Strategy &S,
-          const DeclUseTracker &Tracker, const ASTContext &Ctx,
+          const DeclUseTracker &Tracker, const ASTContext &Ctx, Sema &SA,
           UnsafeBufferUsageHandler &Handler) {
   const SourceManager &SM = Ctx.getSourceManager();
   std::map<const VarDecl *, FixItList> FixItsForVariable;
   for (const auto &[VD, Fixables] : FixablesForUnsafeVars.byVar) {
     const Strategy::Kind ReplacementTypeForVD = S.lookup(VD);
     FixItsForVariable[VD] =
-        fixVariable(VD, ReplacementTypeForVD, Tracker, Ctx, Handler);
+        fixVariable(VD, ReplacementTypeForVD, Tracker, Ctx, SA, Handler);
     // If we fail to produce Fix-It for the declaration we have to skip the
     // variable entirely.
     if (FixItsForVariable[VD].empty()) {
@@ -1475,7 +1663,7 @@ getNaiveStrategy(const llvm::SmallVectorImpl<const VarDecl *> &UnsafeVars) {
 
 void clang::checkUnsafeBufferUsage(const Decl *D,
                                    UnsafeBufferUsageHandler &Handler,
-                                   bool EmitFixits) {
+                                   bool EmitFixits, Sema &S) {
   assert(D && D->getBody());
 
   WarningGadgetSets UnsafeOps;
@@ -1495,8 +1683,7 @@ void clang::checkUnsafeBufferUsage(const Decl *D,
     // Filter out non-local vars and vars with unclaimed DeclRefExpr-s.
     for (auto it = FixablesForUnsafeVars.byVar.cbegin();
          it != FixablesForUnsafeVars.byVar.cend();) {
-      // FIXME: Support ParmVarDecl as well.
-      if (!it->first->isLocalVarDecl() || Tracker.hasUnclaimedUses(it->first)) {
+      if (Tracker.hasUnclaimedUses(it->first)) {
         it = FixablesForUnsafeVars.byVar.erase(it);
       } else {
         ++it;
@@ -1509,7 +1696,7 @@ void clang::checkUnsafeBufferUsage(const Decl *D,
 
     Strategy NaiveStrategy = getNaiveStrategy(UnsafeVars);
     FixItsForVariable = getFixIts(FixablesForUnsafeVars, NaiveStrategy, Tracker,
-                                  D->getASTContext(), Handler);
+                                  D->getASTContext(), S, Handler);
 
     // FIXME Detect overlapping FixIts.
   }
