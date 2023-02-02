@@ -216,7 +216,7 @@ public:
   /// Returns a fixit that would fix the current gadget according to
   /// the current strategy. Returns None if the fix cannot be produced;
   /// returns an empty list if no fixes are necessary.
-  virtual std::optional<FixItList> getFixits(const Strategy &) const {
+  virtual std::optional<FixItList> getFixits(Strategy &) const {
     return std::nullopt;
   }
 };
@@ -410,7 +410,7 @@ public:
     return expr(isInUnspecifiedLvalueContext(Target));
   }
 
-  virtual std::optional<FixItList> getFixits(const Strategy &S) const override;
+  virtual std::optional<FixItList> getFixits(Strategy &S) const override;
 
   virtual const Stmt *getBaseStmt() const override { return Node; }
 
@@ -422,6 +422,50 @@ public:
   }
 };
 
+/// A pointer assignment expression of one of the forms:
+///  \code
+///  p = q;
+///  \endcode
+class PtrAssignmentGadget : public FixableGadget {
+private:
+    static constexpr const char *const PointerAssignemntTag = "ptrAssign";
+    static constexpr const char *const PointerAssignLHSTag = "ptrLHS";
+    static constexpr const char *const PointerAssignRHSTag = "ptrRHS";
+    const BinaryOperator *PA;    // pointer arithmetic expression
+    const Expr * PtrLHS;         // the LHS pointer expression in `PA`
+    const Expr * PtrRHS;         // the RHS pointer expression in `PA`
+
+public:
+    PtrAssignmentGadget(const MatchFinder::MatchResult &Result)
+      : FixableGadget(Kind::PtrAssignment),
+    PA(Result.Nodes.getNodeAs<BinaryOperator>(PointerAssignemntTag)),
+    PtrLHS(Result.Nodes.getNodeAs<Expr>(PointerAssignLHSTag)),
+    PtrRHS(Result.Nodes.getNodeAs<Expr>(PointerAssignRHSTag)) {
+    assert(PA != nullptr && "Expecting a non-null matching result");
+  }
+
+  static bool classof(const Gadget *G) {
+    return G->getKind() == Kind::PtrAssignment;
+  }
+
+  static Matcher matcher() {
+    auto PtrAtRight = allOf(hasOperatorName("="), hasRHS(expr(hasPointerType()).bind(PointerAssignRHSTag)));
+    auto PtrAtLeft = allOf(hasOperatorName("="), hasLHS(expr(hasPointerType()).bind(PointerAssignLHSTag)));
+
+    return stmt(binaryOperator(allOf(PtrAtLeft, PtrAtRight)).bind(PointerAssignemntTag));
+  }
+
+  virtual std::optional<FixItList> getFixits(Strategy &S) const override;
+
+  virtual const Stmt *getBaseStmt() const override { return PA; }
+
+  virtual DeclUseList getClaimedVarUseSites() const override {
+    if (const auto *DRE = dyn_cast<DeclRefExpr>(PtrLHS->IgnoreParenImpCasts())) {
+      return {DRE};
+    }
+    return {};
+  }
+};
 
 /// A call of a function or method that performs unchecked buffer operations
 /// over one of its pointer parameters.
@@ -694,7 +738,7 @@ groupFixablesByVar(FixableGadgetList &&AllFixableOperations) {
 }
 
 std::optional<FixItList>
-ULCArraySubscriptGadget::getFixits(const Strategy &S) const {
+ULCArraySubscriptGadget::getFixits(Strategy &S) const {
   if (const auto *DRE = dyn_cast<DeclRefExpr>(Node->getBase()->IgnoreImpCasts()))
     if (const auto *VD = dyn_cast<VarDecl>(DRE->getDecl())) {
       switch (S.lookup(VD)) {
@@ -707,6 +751,28 @@ ULCArraySubscriptGadget::getFixits(const Strategy &S) const {
         llvm_unreachable("unsupported strategies for FixableGadgets");
       }
     }
+  return std::nullopt;
+}
+
+std::optional<FixItList>PtrAssignmentGadget::getFixits(Strategy &S) const {
+  if (const auto *LeftDRE = dyn_cast<DeclRefExpr>(PA->getLHS()->IgnoreImpCasts())) {
+    if (const VarDecl *LeftVD = dyn_cast<VarDecl>(LeftDRE->getDecl())) {
+      if (const auto *RightDRE = dyn_cast<DeclRefExpr>(PA->getRHS()->IgnoreImpCasts())) {
+        if (const VarDecl *RightVD = dyn_cast<VarDecl>(RightDRE->getDecl())) {
+            switch (S.lookup(RightVD)) {
+              case Strategy::Kind::Span:
+                S.set(LeftVD, Strategy::Kind::Span);
+                return FixItList{};
+              case Strategy::Kind::Wontfix:
+              case Strategy::Kind::Iterator:
+              case Strategy::Kind::Array:
+              case Strategy::Kind::Vector:
+                  llvm_unreachable("unsupported strategies for FixableGadgets");
+            }
+         }
+      }
+    }
+  }
   return std::nullopt;
 }
 
@@ -917,7 +983,7 @@ static bool overlapWithMacro(const FixItList &FixIts) {
 }
 
 static std::map<const VarDecl *, FixItList>
-getFixIts(FixableGadgetSets &FixablesForUnsafeVars, const Strategy &S,
+getFixIts(FixableGadgetSets &FixablesForUnsafeVars, Strategy &S,
           const DeclUseTracker &Tracker, const ASTContext &Ctx,
           UnsafeBufferUsageHandler &Handler) {
   std::map<const VarDecl *, FixItList> FixItsForVariable;
@@ -983,7 +1049,7 @@ void clang::checkUnsafeBufferUsage(const Decl *D,
   for (auto it = FixablesForUnsafeVars.byVar.cbegin();
        it != FixablesForUnsafeVars.byVar.cend();) {
     // FIXME: Support ParmVarDecl as well.
-    if (!it->first->isLocalVarDecl() || Tracker.hasUnclaimedUses(it->first)) {
+    if (!it->first->isLocalVarDecl() /*|| Tracker.hasUnclaimedUses(it->first)*/) {
       it = FixablesForUnsafeVars.byVar.erase(it);
     } else {
       ++it;
@@ -1014,4 +1080,14 @@ void clang::checkUnsafeBufferUsage(const Decl *D,
       Handler.handleUnsafeOperation(G->getBaseStmt(), /*IsRelatedToDecl=*/true);
     }
   }
+    
+  for (const auto &[VD, FixableGadgets] : FixablesForUnsafeVars.byVar) {
+    auto FixItsIt = FixItsForVariable.find(VD);
+    Handler.handleFixableVariable(VD, FixItsIt != FixItsForVariable.end()
+                                          ? std::move(FixItsIt->second)
+                                          : FixItList{});
+     for (const auto &G : FixableGadgets) {
+       Handler.handleUnsafeOperation(G->getBaseStmt(), /*IsRelatedToDecl=*/true);
+     }
+   }
 }
