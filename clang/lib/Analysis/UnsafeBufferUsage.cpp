@@ -889,7 +889,7 @@ static FixItList fixVariable(const VarDecl *VD, Strategy::Kind K,
                              UnsafeBufferUsageHandler &Handler) {
   switch (K) {
   case Strategy::Kind::Span: {
-    if (VD->getType()->isPointerType())
+    if (VD->getType()->isPointerType() && VD->isLocalVarDecl())
       return fixVariableWithSpan(VD, Tracker, Ctx, Handler);
     return {};
   }
