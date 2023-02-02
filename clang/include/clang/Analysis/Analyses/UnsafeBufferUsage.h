@@ -19,6 +19,8 @@
 
 namespace clang {
 
+class Sema;
+
 /// The interface that lets the caller handle unsafe buffer usage analysis
 /// results by overriding this class's handle... methods.
 class UnsafeBufferUsageHandler {
@@ -54,7 +56,7 @@ public:
 // This function invokes the analysis and allows the caller to react to it
 // through the handler class.
 void checkUnsafeBufferUsage(const Decl *D, UnsafeBufferUsageHandler &Handler,
-                            bool EmitFixits);
+                            bool EmitFixits, Sema &S);
 
 namespace internal {
 // Tests if any two `FixItHint`s in `FixIts` conflict.  Two `FixItHint`s
