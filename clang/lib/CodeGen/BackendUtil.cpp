@@ -195,7 +195,8 @@ public:
                      Module *M, IntrusiveRefCntPtr<llvm::vfs::FileSystem> VFS)
       : Diags(_Diags), HSOpts(HeaderSearchOpts), CodeGenOpts(CGOpts),
         TargetOpts(TOpts), LangOpts(LOpts), CASOpts(COpts), TheModule(M),
-        VFS(VFS), CodeGenerationTime("codegen", "Code Generation Time"),
+        VFS(std::move(VFS)),
+        CodeGenerationTime("codegen", "Code Generation Time"),
         TargetTriple(TheModule->getTargetTriple()) {}
 
   ~EmitAssemblyHelper() {
