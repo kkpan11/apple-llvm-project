@@ -645,16 +645,33 @@ Expected<uint64_t> SectionRef::materialize(MCCASReader &Reader,
   if (!Refs)
     return Refs.takeError();
 
+  if (auto E = Reader.checkIfAddendRefExistsAndCopy(*Refs))
+    return std::move(E);
+
+  if (auto E = decodeRelocations(Reader, Remaining))
+    return std::move(E);
+
+  SmallVector<char, 0> FragmentContents;
+  raw_svector_ostream FragmentStream(FragmentContents);
+
   for (auto ID : *Refs) {
-    auto FragmentSize = Reader.materializeSection(ID, &SectionStream);
+    auto FragmentSize = Reader.materializeSection(ID, &FragmentStream);
     if (!FragmentSize)
       return FragmentSize.takeError();
     Size += *FragmentSize;
   }
 
-  if (auto E = decodeRelocations(Reader, Remaining))
-    return std::move(E);
+  auto AddendSize =
+      Reader.reconstructSection(SectionContents, FragmentContents);
+  if (!AddendSize)
+    return AddendSize.takeError();
+
+  Size += *AddendSize;
+
   Reader.OS << SectionContents;
+  // Reset the state for section materialization.
+  Reader.AddendBufferIndex = 0;
+  Reader.Addends.clear();
 
   return Size;
 }
@@ -1009,22 +1026,24 @@ Expected<uint64_t> AtomRef::materialize(MCCASReader &Reader,
   if (!Refs)
     return Refs.takeError();
 
+  if (auto E = decodeRelocations(Reader, Remaining))
+    return std::move(E);
+
   for (auto ID : *Refs) {
     auto FragmentSize = Reader.materializeAtom(ID, Stream);
     if (!FragmentSize)
       return FragmentSize.takeError();
+
     Size += *FragmentSize;
   }
-
-  if (auto E = decodeRelocations(Reader, Remaining))
-    return std::move(E);
 
   return Size;
 }
 
 Expected<MCAlignFragmentRef>
 MCAlignFragmentRef::create(MCCASBuilder &MB, const MCAlignFragment &F,
-                           unsigned FragmentSize) {
+                           unsigned FragmentSize,
+                           ArrayRef<char> FragmentContents) {
   Expected<Builder> B = Builder::startNode(MB.Schema, KindString);
   if (!B)
     return B.takeError();
@@ -1088,7 +1107,8 @@ Expected<uint64_t> MCAlignFragmentRef::materialize(MCCASReader &Reader,
 }
 
 Expected<MCBoundaryAlignFragmentRef> MCBoundaryAlignFragmentRef::create(
-    MCCASBuilder &MB, const MCBoundaryAlignFragment &F, unsigned FragmentSize) {
+    MCCASBuilder &MB, const MCBoundaryAlignFragment &F, unsigned FragmentSize,
+    ArrayRef<char> FragmentContents) {
   Expected<Builder> B = Builder::startNode(MB.Schema, KindString);
   if (!B)
     return B.takeError();
@@ -1107,10 +1127,9 @@ MCBoundaryAlignFragmentRef::materialize(MCCASReader &Reader,
   return getData().size();
 }
 
-Expected<MCCVInlineLineTableFragmentRef>
-MCCVInlineLineTableFragmentRef::create(MCCASBuilder &MB,
-                                       const MCCVInlineLineTableFragment &F,
-                                       unsigned FragmentSize) {
+Expected<MCCVInlineLineTableFragmentRef> MCCVInlineLineTableFragmentRef::create(
+    MCCASBuilder &MB, const MCCVInlineLineTableFragment &F,
+    unsigned FragmentSize, ArrayRef<char> FragmentContents) {
   Expected<Builder> B = Builder::startNode(MB.Schema, KindString);
   if (!B)
     return B.takeError();
@@ -1127,7 +1146,8 @@ MCCVInlineLineTableFragmentRef::materialize(MCCASReader &Reader,
 
 Expected<MCDummyFragmentRef>
 MCDummyFragmentRef::create(MCCASBuilder &MB, const MCDummyFragment &F,
-                           unsigned FragmentSize) {
+                           unsigned FragmentSize,
+                           ArrayRef<char> FragmentContents) {
   llvm_unreachable("Should not have been added");
 }
 
@@ -1136,9 +1156,10 @@ Expected<uint64_t> MCDummyFragmentRef::materialize(MCCASReader &Reader,
   llvm_unreachable("Should not have been added");
 }
 
-Expected<MCFillFragmentRef> MCFillFragmentRef::create(MCCASBuilder &MB,
-                                                      const MCFillFragment &F,
-                                                      unsigned FragmentSize) {
+Expected<MCFillFragmentRef>
+MCFillFragmentRef::create(MCCASBuilder &MB, const MCFillFragment &F,
+                          unsigned FragmentSize,
+                          ArrayRef<char> FragmentContents) {
   Expected<Builder> B = Builder::startNode(MB.Schema, KindString);
   if (!B)
     return B.takeError();
@@ -1185,9 +1206,10 @@ Expected<uint64_t> MCFillFragmentRef::materialize(MCCASReader &Reader,
   return Size;
 }
 
-Expected<MCLEBFragmentRef> MCLEBFragmentRef::create(MCCASBuilder &MB,
-                                                    const MCLEBFragment &F,
-                                                    unsigned FragmentSize) {
+Expected<MCLEBFragmentRef>
+MCLEBFragmentRef::create(MCCASBuilder &MB, const MCLEBFragment &F,
+                         unsigned FragmentSize,
+                         ArrayRef<char> FragmentContents) {
   Expected<Builder> B = Builder::startNode(MB.Schema, KindString);
   if (!B)
     return B.takeError();
@@ -1201,9 +1223,10 @@ Expected<uint64_t> MCLEBFragmentRef::materialize(MCCASReader &Reader,
   return getData().size();
 }
 
-Expected<MCNopsFragmentRef> MCNopsFragmentRef::create(MCCASBuilder &MB,
-                                                      const MCNopsFragment &F,
-                                                      unsigned FragmentSize) {
+Expected<MCNopsFragmentRef>
+MCNopsFragmentRef::create(MCCASBuilder &MB, const MCNopsFragment &F,
+                          unsigned FragmentSize,
+                          ArrayRef<char> FragmentContents) {
   Expected<Builder> B = Builder::startNode(MB.Schema, KindString);
   if (!B)
     return B.takeError();
@@ -1236,9 +1259,10 @@ Expected<uint64_t> MCNopsFragmentRef::materialize(MCCASReader &Reader,
   return getData().size();
 }
 
-Expected<MCOrgFragmentRef> MCOrgFragmentRef::create(MCCASBuilder &MB,
-                                                    const MCOrgFragment &F,
-                                                    unsigned FragmentSize) {
+Expected<MCOrgFragmentRef>
+MCOrgFragmentRef::create(MCCASBuilder &MB, const MCOrgFragment &F,
+                         unsigned FragmentSize,
+                         ArrayRef<char> FragmentContents) {
   Expected<Builder> B = Builder::startNode(MB.Schema, KindString);
   if (!B)
     return B.takeError();
@@ -1255,7 +1279,8 @@ Expected<uint64_t> MCOrgFragmentRef::materialize(MCCASReader &Reader,
 
 Expected<MCSymbolIdFragmentRef>
 MCSymbolIdFragmentRef::create(MCCASBuilder &MB, const MCSymbolIdFragment &F,
-                              unsigned FragmentSize) {
+                              unsigned FragmentSize,
+                              ArrayRef<char> FragmentContents) {
   Expected<Builder> B = Builder::startNode(MB.Schema, KindString);
   if (!B)
     return B.takeError();
@@ -1272,14 +1297,15 @@ MCSymbolIdFragmentRef::materialize(MCCASReader &Reader,
 
 #define MCFRAGMENT_NODE_REF(MCFragmentName, MCEnumName, MCEnumIdentifier)      \
   Expected<MCFragmentName##Ref> MCFragmentName##Ref::create(                   \
-      MCCASBuilder &MB, const MCFragmentName &F, unsigned FragmentSize) {      \
+      MCCASBuilder &MB, const MCFragmentName &F, unsigned FragmentSize,        \
+      ArrayRef<char> FragmentContents) {                                       \
     Expected<Builder> B = Builder::startNode(MB.Schema, KindString);           \
     if (!B)                                                                    \
       return B.takeError();                                                    \
     MB.Asm.writeFragmentPadding(MB.FragmentOS, F, FragmentSize);               \
     ArrayRef<char> Contents = F.getContents();                                 \
     B->Data.append(MB.FragmentData);                                           \
-    B->Data.append(Contents.begin(), Contents.end());                          \
+    B->Data.append(FragmentContents.begin(), FragmentContents.end());          \
     assert(((MB.FragmentData.empty() && Contents.empty()) ||                   \
             (MB.FragmentData.size() + Contents.size() == FragmentSize)) &&     \
            "Size should match");                                               \
@@ -1328,13 +1354,14 @@ Error MCCASBuilder::buildMachOHeader() {
   return Error::success();
 }
 
-Error MCCASBuilder::buildFragment(const MCFragment &F, unsigned Size) {
+Error MCCASBuilder::buildFragment(const MCFragment &F, unsigned Size,
+                                  ArrayRef<char> FragmentContents) {
   FragmentData.clear();
   switch (F.getKind()) {
 #define MCFRAGMENT_NODE_REF(MCFragmentName, MCEnumName, MCEnumIdentifier)      \
   case MCFragment::MCEnumName: {                                               \
     const MCFragmentName &SF = cast<MCFragmentName>(F);                        \
-    auto FN = MCFragmentName##Ref::create(*this, SF, Size);                    \
+    auto FN = MCFragmentName##Ref::create(*this, SF, Size, FragmentContents);  \
     if (!FN)                                                                   \
       return FN.takeError();                                                   \
     addNode(*FN);                                                              \
@@ -1351,8 +1378,10 @@ public:
       : Builder(Builder) {}
   ~MCDataFragmentMerger() { assert(MergeCandidates.empty() && "Not flushed"); }
 
-  Error tryMerge(const MCFragment &F, unsigned Size);
+  Error tryMerge(const MCFragment &F, unsigned Size,
+                 ArrayRef<char> FinalFragmentContents);
   Error flush() { return emitMergedFragments(); }
+  SmallVector<SmallVector<char, 0>> MergeCandidatesContents;
 
 private:
   Error emitMergedFragments();
@@ -1363,7 +1392,8 @@ private:
   std::vector<std::pair<const MCFragment *, unsigned>> MergeCandidates;
 };
 
-Error MCDataFragmentMerger::tryMerge(const MCFragment &F, unsigned Size) {
+Error MCDataFragmentMerger::tryMerge(const MCFragment &F, unsigned Size,
+                                     ArrayRef<char> FinalFragmentContents) {
   bool IsSameAtom = Builder.getCurrentAtom() == F.getAtom();
   bool Oversized = CurrentSize + Size > MCDataMergeThreshold;
   // TODO: Try merge align fragment?
@@ -1384,7 +1414,7 @@ Error MCDataFragmentMerger::tryMerge(const MCFragment &F, unsigned Size) {
 
   // Emit none Data segments.
   if (!IsMergeableFragment) {
-    if (auto E = Builder.buildFragment(F, Size))
+    if (auto E = Builder.buildFragment(F, Size, FinalFragmentContents))
       return E;
 
     return Error::success();
@@ -1393,6 +1423,9 @@ Error MCDataFragmentMerger::tryMerge(const MCFragment &F, unsigned Size) {
   // Add the fragment to the merge candidate.
   CurrentSize += Size;
   MergeCandidates.emplace_back(&F, Size);
+  MergeCandidatesContents.push_back({});
+  MergeCandidatesContents.back().append(FinalFragmentContents.begin(),
+                                        FinalFragmentContents.end());
 
   return Error::success();
 }
@@ -1439,26 +1472,29 @@ Error MCDataFragmentMerger::emitMergedFragments() {
   // Use normal node to store the node.
   if (MergeCandidates.size() == 1) {
     auto E = Builder.buildFragment(*MergeCandidates.front().first,
-                                   MergeCandidates.front().second);
+                                   MergeCandidates.front().second,
+                                   MergeCandidatesContents.back());
     reset();
     return E;
   }
   SmallString<8> FragmentData;
   raw_svector_ostream FragmentOS(FragmentData);
-  for (auto &F : MergeCandidates) {
-    switch (F.first->getKind()) {
+  for (const auto &[Candidate, CandidateContents] :
+       llvm::zip(MergeCandidates, MergeCandidatesContents)) {
+    switch (Candidate.first->getKind()) {
 #define MCFRAGMENT_NODE_REF(MCFragmentName, MCEnumName, MCEnumIdentifier)      \
   case MCFragment::MCEnumName: {                                               \
-    const MCFragmentName *SF = cast<MCFragmentName>(F.first);                  \
-    Builder.Asm.writeFragmentPadding(FragmentOS, *SF, F.second);               \
-    FragmentData.append(SF->getContents());                                    \
+    const MCFragmentName *SF = cast<MCFragmentName>(Candidate.first);          \
+    Builder.Asm.writeFragmentPadding(FragmentOS, *SF, Candidate.second);       \
+    FragmentData.append(CandidateContents);                                    \
     break;                                                                     \
   }
 #define MCFRAGMENT_ENCODED_FRAGMENT_ONLY
 #include "llvm/MCCAS/MCCASObjectV1.def"
     case MCFragment::FT_Align: {
-      const MCAlignFragment *AF = cast<MCAlignFragment>(F.first);
-      if (auto E = writeAlignFragment(Builder, *AF, FragmentOS, F.second))
+      const MCAlignFragment *AF = cast<MCAlignFragment>(Candidate.first);
+      if (auto E =
+              writeAlignFragment(Builder, *AF, FragmentOS, Candidate.second))
         return E;
       break;
     }
@@ -1480,6 +1516,7 @@ Error MCDataFragmentMerger::emitMergedFragments() {
 void MCDataFragmentMerger::reset() {
   CurrentSize = 0;
   MergeCandidates.clear();
+  MergeCandidatesContents.clear();
 }
 
 Error MCCASBuilder::createPaddingRef(const MCSection *Sec) {
@@ -1972,6 +2009,102 @@ MCCASBuilder::createDebugStringRefs() {
   return DebugStringContents;
 }
 
+static ArrayRef<char> getFragmentContents(const MCFragment &Fragment) {
+  switch (Fragment.getKind()) {
+#define MCFRAGMENT_NODE_REF(MCFragmentName, MCEnumName, MCEnumIdentifier)      \
+  case MCFragment::MCEnumName: {                                               \
+    const MCFragmentName &SF = cast<MCFragmentName>(Fragment);                 \
+    return SF.getContents();                                                   \
+  }
+#define MCFRAGMENT_ENCODED_FRAGMENT_ONLY
+#include "llvm/MCCAS/MCCASObjectV1.def"
+  case MCFragment::FT_CVInlineLines: {
+    const MCCVInlineLineTableFragment &SF =
+        cast<MCCVInlineLineTableFragment>(Fragment);
+    return SF.getContents();
+  }
+  case MCFragment::FT_LEB: {
+    const MCLEBFragment &SF = cast<MCLEBFragment>(Fragment);
+    return SF.getContents();
+  }
+  default:
+    return ArrayRef<char>();
+  }
+}
+
+static unsigned getRelocationSize(const MachO::any_relocation_info &RE,
+                                  bool IsLittleEndian) {
+  if (IsLittleEndian)
+    return 1 << ((RE.r_word1 >> 25) & 3);
+  return 1 << ((RE.r_word1 >> 5) & 3);
+}
+
+static uint32_t getRelocationOffset(const MachO::any_relocation_info &RE) {
+  return RE.r_word0;
+}
+
+/// This helper function is used to partition a Fragment into 2 parts, the \p
+/// FinalFragmentContents will contain the contents of the Fragment that will
+/// deduplicate and will be stored as part of a *FragmentRef or a
+/// MergedFragmentRef, the \p Addends stores all the relocation
+/// addends that will not deduplicate in the CAS and must be stored separately,
+/// there is one AddendRef per section in the CAS. Depending on the situation,
+/// the \p RelocationBuffer may have the relocations for the entire section,
+/// thereforem there may not be a way to know whether a relocation belongs to
+/// the current fragment being processed. The \p RelocationBufferIndex is an out
+/// parameter and is the index into the \p RelocationBuffer, which is used to
+/// access the current relocation that has to be partitioned.
+static void
+partitionFragment(const MCAsmLayout &Layout, SmallVector<char, 0> &Addends,
+                  SmallVector<char, 0> &FinalFragmentContents,
+                  ArrayRef<MachO::any_relocation_info> RelocationBuffer,
+                  const MCFragment &Fragment, uint64_t &RelocationBufferIndex,
+                  bool IsLittleEndian) {
+  auto FragmentContents = getFragmentContents(Fragment);
+  /// FragmentIndex: It denotes the index into the FragmentContents that is used
+  /// to copy the data that deduplicates in the \p FinalFragmentContents.
+  uint64_t FragmentIndex = 0;
+  /// PrevOffset: A relocation can sometimes be divided into multiple parts, all
+  /// of them share the same offset, but describe only one Addend, if we already
+  /// copied the addend out of the FragmentContents at a particular offset, we
+  /// should skip all relocations that matches the same offset.
+  int64_t PrevOffset = -1;
+  // Relocations are stored in the Section.
+  for (; RelocationBufferIndex < RelocationBuffer.size();
+       RelocationBufferIndex++) {
+    auto Reloc = RelocationBuffer[RelocationBufferIndex];
+    uint32_t RelocOffset = getRelocationOffset(Reloc);
+    if (PrevOffset == RelocOffset)
+      continue;
+    uint64_t FragmentOffset = Layout.getFragmentOffset(&Fragment);
+    if (RelocOffset < FragmentOffset + FragmentContents.size()) {
+      /// RelocOffsetInFragment: This is used to denote the offset of the
+      /// relocation in the current Fragment. Relocation offsets are always from
+      /// the start of the section, we need to normalize this value to start at
+      /// the start of the Fragment instead.
+      uint32_t RelocOffsetInFragment = RelocOffset - FragmentOffset;
+      // Copy contents of fragment upto relocation addend data in the
+      // FinalFragmentContents.
+      FinalFragmentContents.append(FragmentContents.data() + FragmentIndex,
+                                   FragmentContents.data() +
+                                       RelocOffsetInFragment);
+      // Addend belongs to the current fragment, copy the addend into the
+      // Addend vector.
+      Addends.append(FragmentContents.data() + RelocOffsetInFragment,
+                     FragmentContents.data() + RelocOffsetInFragment +
+                         getRelocationSize(Reloc, IsLittleEndian));
+      FragmentIndex =
+          RelocOffsetInFragment + getRelocationSize(Reloc, IsLittleEndian);
+      PrevOffset = RelocOffset;
+    } else
+      break;
+  }
+  // Copy any leftover fragment contents into the FinalFragmentContents.
+  FinalFragmentContents.append(FragmentContents.data() + FragmentIndex,
+                               FragmentContents.data() +
+                                   FragmentContents.size());
+}
+
 Error MCCASBuilder::buildFragments() {
   startGroup();
 
@@ -2017,20 +2150,46 @@ Error MCCASBuilder::buildFragments() {
     // Start subsection for first Atom.
     startAtom(Sec.getFragmentList().front().getAtom());
 
+    SmallVector<char, 0> Addends;
+    ArrayRef<MachO::any_relocation_info> RelocationBuffer;
     MCDataFragmentMerger Merger(*this, &Sec);
+    uint64_t RelocationBufferIndex = 0;
     for (const MCFragment &F : Sec) {
+      auto Relocs = RelMap.find(&F);
       if (RelocLocation == Atom) {
-        auto Relocs = RelMap.find(&F);
-        if (Relocs != RelMap.end())
+        if (Relocs != RelMap.end()) {
           AtomRelocs.append(Relocs->second.begin(), Relocs->second.end());
+          // Reset RelocationBufferIndex if Relocations exist per Fragment. This
+          // is done because if the relocations are stored in the RelMap, and
+          // not with the SectionContents, we need to reset the
+          // RelocationBufferIndex to start at the beginning of the Fragments
+          // relocation buffer.
+          RelocationBufferIndex = 0;
+        }
       }
+
+      // Relocations are in the RelMap or in the SectionRelocs. If they are in
+      // the RelMap, they are accessible per fragment. Choose the correct buffer
+      // where they are stored. Initialize RelocationBuffer to an empty
+      // ArrayRef, if no Relocations are present.
+      if (Relocs != RelMap.end())
+        RelocationBuffer = Relocs->second;
+      else if (SectionRelocs.empty())
+        RelocationBuffer = ArrayRef<MachO::any_relocation_info>();
+      else
+        RelocationBuffer = SectionRelocs;
 
       auto Size = Asm.computeFragmentSize(Layout, F);
       // Don't need to encode the fragment if it doesn't contribute anything.
       if (!Size)
         continue;
 
-      if (auto E = Merger.tryMerge(F, Size))
+      SmallVector<char, 0> FinalFragmentContents;
+      partitionFragment(Layout, Addends, FinalFragmentContents,
+                        RelocationBuffer, F, RelocationBufferIndex,
+                        ObjectWriter.Target.isLittleEndian());
+
+      if (auto E = Merger.tryMerge(F, Size, FinalFragmentContents))
         return E;
     }
     if (auto E = Merger.flush())
@@ -2042,6 +2201,14 @@ Error MCCASBuilder::buildFragments() {
 
     if (auto E = createPaddingRef(&Sec))
       return E;
+
+    // Do not create an AddendsRef if there were no relocations in this section.
+    if (!Addends.empty()) {
+      auto AddendRef = AddendsRef::create(*this, toStringRef(Addends));
+      if (!AddendRef)
+        return AddendRef.takeError();
+      addNode(*AddendRef);
+    }
 
     if (auto E = finalizeSection())
       return E;
@@ -2366,8 +2533,57 @@ Expected<uint64_t> MCCASReader::materializeSection(cas::ObjectRef ID,
     Stream->write_zeros(1);
     return *Size + 1;
   }
+  if (auto F = AddendsRef::Cast(*Node))
+    // AddendsRef is already handled when materializing Atoms, skip.
+    return 0;
   return createStringError(inconvertibleErrorCode(),
                            "unsupported CAS node for atom");
+}
+
+/// This helper function reconstructs the current Section as it was before the
+/// CAS was created. In the CAS, each section is split into multiple
+/// *FragmentRef or MergedFragmentRef blocks, and an AddendsRef block that
+/// contains the relocation addends for that section. The \p SectionBuffer is an
+/// out parameter that will contain the contents of the entire section after it
+/// is properly reconstructed. The \p FragmentBuffer contains the contents of
+/// all the Fragments for that section.
+Expected<uint64_t>
+MCCASReader::reconstructSection(SmallVectorImpl<char> &SectionBuffer,
+                                ArrayRef<char> FragmentBuffer) {
+  /// FragmentIndex: It denotes the index into the \p FragmentBuffer that is
+  /// used to copy the Fragment contents into the \p SectionBuffer.
+  uint64_t FragmentIndex = 0;
+  /// PrevOffset: A relocation can sometimes be divided into multiple parts, all
+  /// of them share the same offset, but describe only one Addend, if we already
+  /// copied the addend out of the Addends at a particular offset, we should
+  /// skip all relocations that matches the same offset.
+  int64_t PrevOffset = -1;
+  for (auto Reloc : Relocations.back()) {
+    auto RelocationOffsetInSection = getRelocationOffset(Reloc);
+    if (PrevOffset == RelocationOffsetInSection)
+      continue;
+    auto RelocationSize =
+        getRelocationSize(Reloc, getEndian() == support::little);
+    /// NumOfBytesToReloc: This denotes the number of bytes needed to be copied
+    /// into the \p SectionBuffer before we copy the next addend.
+    auto NumOfBytesToReloc = RelocationOffsetInSection - SectionBuffer.size();
+    // Copy the contents of the fragment till the next relocation.
+    SectionBuffer.append(FragmentBuffer.begin() + FragmentIndex,
+                         FragmentBuffer.begin() + FragmentIndex +
+                             NumOfBytesToReloc);
+    FragmentIndex += NumOfBytesToReloc;
+    // Copy the relocation addend.
+    SectionBuffer.append(Addends.begin() + AddendBufferIndex,
+                         Addends.begin() + AddendBufferIndex + RelocationSize);
+    AddendBufferIndex += RelocationSize;
+    PrevOffset = RelocationOffsetInSection;
+  }
+  // Copy any remaining bytes of the fragment into the SectionBuffer.
+  SectionBuffer.append(FragmentBuffer.begin() + FragmentIndex,
+                       FragmentBuffer.end());
+  assert(AddendBufferIndex == Addends.size() &&
+         "All addends for section not copied into final section buffer");
+  return AddendBufferIndex;
 }
 
 Expected<uint64_t> MCCASReader::materializeAtom(cas::ObjectRef ID,
@@ -2387,6 +2603,20 @@ Expected<uint64_t> MCCASReader::materializeAtom(cas::ObjectRef ID,
 
   return createStringError(inconvertibleErrorCode(),
                            "unsupported CAS node for fragment");
+}
+
+/// If the AddendsRef exists in the current section, copy its contents into the
+/// Addends buffer.
+Error MCCASReader::checkIfAddendRefExistsAndCopy(
+    ArrayRef<cas::ObjectRef> Refs) {
+  auto ID = Refs.back();
+  auto Node = getObjectProxy(ID);
+  if (!Node)
+    return Node.takeError();
+
+  if (auto F = AddendsRef::Cast(*Node))
+    Addends.append(F->getData().begin(), F->getData().end());
+  return Error::success();
 }
 
 Expected<DIEAbbrevSetRef>
