@@ -32,7 +32,7 @@ class TestSwiftDeploymentTarget(TestBase):
         lldbutil.run_to_source_breakpoint(self,
                                           "break here",
                                           lldb.SBFileSpec('main.swift'))
-        self.expect("p f", substrs=['i = 23'])
+        self.expect("expression f", substrs=['i = 23'])
 
     @skipUnlessDarwin
     @skipIfDarwinEmbedded # This test uses macOS triples explicitly.
@@ -45,7 +45,7 @@ class TestSwiftDeploymentTarget(TestBase):
         bkpt = target.BreakpointCreateBySourceRegex(
             'break here', lldb.SBFileSpec('NewerTarget.swift'))
         lldbutil.continue_to_breakpoint(process, bkpt)
-        self.expect("p self", substrs=['i = 23'])
+        self.expect("expression self", substrs=['i = 23'])
 
     @skipUnlessDarwin
     @skipIfDarwinEmbedded # This test uses macOS triples explicitly.
@@ -59,7 +59,7 @@ class TestSwiftDeploymentTarget(TestBase):
         lldbutil.run_to_source_breakpoint(self,
                                           "break here",
                                           lldb.SBFileSpec('main.swift'))
-        self.expect("p f", substrs=['i = 23'])
+        self.expect("expression f", substrs=['i = 23'])
 
         found_no_ast = False
         found_triple = False
