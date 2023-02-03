@@ -469,6 +469,46 @@ public:
     return {};
   }
 };
+
+class PointerDereferenceGadget: public FixableGadget {
+  static constexpr const char *const BaseDeclRefExprTag = "BaseDRE";
+  static constexpr const char *const OperatorTag = "op";
+
+  const DeclRefExpr *BaseDeclRefExpr = nullptr;
+  const UnaryOperator *Op;
+
+public:
+  PointerDereferenceGadget(const MatchFinder::MatchResult &Result)
+    : FixableGadget(Kind::PointerDereference),
+      BaseDeclRefExpr(Result.Nodes.getNodeAs<DeclRefExpr>(BaseDeclRefExprTag)),
+      Op(Result.Nodes.getNodeAs<UnaryOperator>(OperatorTag)) {}
+
+  static bool classof(const Gadget *G) {
+    return G->getKind() == Kind::PointerDereference;
+  }
+
+  static Matcher matcher() {
+    auto Target =
+           unaryOperator(
+             hasOperatorName("*"),
+             has(
+               expr(ignoringParenImpCasts(declRefExpr().bind(BaseDeclRefExprTag)))
+             )
+           ).bind(OperatorTag);
+
+    return expr(isInUnspecifiedLvalueContext(Target));
+  }
+
+  DeclUseList getClaimedVarUseSites() const override {
+    return {BaseDeclRefExpr};
+  }
+
+  virtual const Stmt *getBaseStmt() const final {
+    return nullptr;
+  }
+
+   virtual std::optional<FixItList> getFixits(const Strategy &S) const override;
+};
 } // namespace
 
 namespace {
@@ -918,6 +958,29 @@ static StringRef getExprText(const Expr *E, const SourceManager &SM,
       LangOpts);
 }
 
+std::optional<FixItList>
+PointerDereferenceGadget::getFixits(const Strategy &S) const {
+     if (const auto *DRE = dyn_cast<DeclRefExpr>(Op->getSubExpr()->IgnoreImpCasts()))
+      if (const auto *VD = dyn_cast<VarDecl>(DRE->getDecl())) {
+        if (S.lookup(VD) == Strategy::Kind::Span) {
+          ASTContext& Ctx = VD->getASTContext();
+          SourceManager &SM = Ctx.getSourceManager();
+          // Required changes: *(ptr); => (ptr[0]); and *ptr; => ptr[0]
+          // Deletes the *operand
+          CharSourceRange derefRange = clang::CharSourceRange::getCharRange(Op->getBeginLoc(), Op->getBeginLoc().getLocWithOffset(1));
+          // Inserts the [0]
+          std::optional<SourceLocation> endOfOperand = getEndCharLoc(DRE, SM, Ctx.getLangOpts());
+          if(endOfOperand) {
+            return FixItList{{
+              FixItHint::CreateRemoval(derefRange),
+              FixItHint::CreateInsertion(endOfOperand.value().getLocWithOffset(1), "[0]")
+            }};
+          }
+        }
+      }
+    llvm_unreachable("unsupported strategies for FixableGadgets");
+    return std::nullopt;
+}
 // For a non-null initializer `Init` of `T *` type, this function returns
 // `FixItHint`s producing a list initializer `{Init,  S}` as a part of a fix-it
 // to output stream.
