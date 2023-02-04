@@ -136,11 +136,11 @@ struct InstructionMapper {
   DenseMap<MachineBasicBlock *, unsigned> MBBFlagsMap;
 
   /// The vector of unsigned integers that the module is mapped to.
-  std::vector<unsigned> UnsignedVec;
+  SmallVector<unsigned> UnsignedVec;
 
   /// Stores the location of the instruction associated with the integer
   /// at index i in \p UnsignedVec for each index i.
-  std::vector<MachineBasicBlock::iterator> InstrList;
+  SmallVector<MachineBasicBlock::iterator> InstrList;
 
   // Set if we added an illegal number in the previous step.
   // Since each illegal number is unique, we only need one of them between
@@ -157,8 +157,8 @@ struct InstructionMapper {
   unsigned mapToLegalUnsigned(
       MachineBasicBlock::iterator &It, bool &CanOutlineWithPrevInstr,
       bool &HaveLegalRange, unsigned &NumLegalInBlock,
-      std::vector<unsigned> &UnsignedVecForMBB,
-      std::vector<MachineBasicBlock::iterator> &InstrListForMBB) {
+      SmallVector<unsigned> &UnsignedVecForMBB,
+      SmallVector<MachineBasicBlock::iterator> &InstrListForMBB) {
     // We added something legal, so we should unset the AddedLegalLastTime
     // flag.
     AddedIllegalLastTime = false;
@@ -211,8 +211,8 @@ struct InstructionMapper {
   /// \returns The integer that \p *It was mapped to.
   unsigned mapToIllegalUnsigned(
       MachineBasicBlock::iterator &It, bool &CanOutlineWithPrevInstr,
-      std::vector<unsigned> &UnsignedVecForMBB,
-      std::vector<MachineBasicBlock::iterator> &InstrListForMBB) {
+      SmallVector<unsigned> &UnsignedVecForMBB,
+      SmallVector<MachineBasicBlock::iterator> &InstrListForMBB) {
     // Can't outline an illegal instruction. Set the flag.
     CanOutlineWithPrevInstr = false;
 
@@ -287,8 +287,8 @@ struct InstructionMapper {
 
     // FIXME: Should this all just be handled in the target, rather than using
     // repeated calls to getOutliningType?
-    std::vector<unsigned> UnsignedVecForMBB;
-    std::vector<MachineBasicBlock::iterator> InstrListForMBB;
+    SmallVector<unsigned> UnsignedVecForMBB;
+    SmallVector<MachineBasicBlock::iterator> InstrListForMBB;
 
     LLVM_DEBUG(dbgs() << "*** Mapping outlinable ranges ***\n");
     for (auto &OutlinableRange : OutlinableRanges) {
@@ -361,8 +361,8 @@ struct InstructionMapper {
       // repeated substring.
       mapToIllegalUnsigned(It, CanOutlineWithPrevInstr, UnsignedVecForMBB,
                            InstrListForMBB);
-      llvm::append_range(InstrList, InstrListForMBB);
-      llvm::append_range(UnsignedVec, UnsignedVecForMBB);
+      append_range(InstrList, InstrListForMBB);
+      append_range(UnsignedVec, UnsignedVecForMBB);
     }
   }
 
@@ -572,11 +572,19 @@ void MachineOutliner::findCandidates(
   // First, find all of the repeated substrings in the tree of minimum length
   // 2.
   std::vector<Candidate> CandidatesForRepeatedSeq;
+  LLVM_DEBUG(dbgs() << "*** Discarding overlapping candidates *** \n");
+  LLVM_DEBUG(
+      dbgs() << "Searching for overlaps in all repeated sequences...\n");
   for (const SuffixTree::RepeatedSubstring &RS : ST) {
     CandidatesForRepeatedSeq.clear();
     unsigned StringLen = RS.Length;
+    LLVM_DEBUG(dbgs() << "  Sequence length: " << StringLen << "\n");
+    // Debug code to keep track of how many candidates we removed.
+#ifndef NDEBUG
+    unsigned NumDiscarded = 0;
+    unsigned NumKept = 0;
+#endif
     for (const unsigned &StartIdx : RS.StartIndices) {
-      unsigned EndIdx = StartIdx + StringLen - 1;
       // Trick: Discard some candidates that would be incompatible with the
       // ones we've already found for this sequence. This will save us some
       // work in candidate selection.
@@ -598,23 +606,39 @@ void MachineOutliner::findCandidates(
       // That is, one must either
       // * End before the other starts
       // * Start after the other ends
-      if (llvm::all_of(CandidatesForRepeatedSeq, [&StartIdx,
-                                                  &EndIdx](const Candidate &C) {
-            return (EndIdx < C.getStartIdx() || StartIdx > C.getEndIdx());
-          })) {
-        // It doesn't overlap with anything, so we can outline it.
-        // Each sequence is over [StartIt, EndIt].
-        // Save the candidate and its location.
-
-        MachineBasicBlock::iterator StartIt = Mapper.InstrList[StartIdx];
-        MachineBasicBlock::iterator EndIt = Mapper.InstrList[EndIdx];
-        MachineBasicBlock *MBB = StartIt->getParent();
-
-        CandidatesForRepeatedSeq.emplace_back(StartIdx, StringLen, StartIt,
-                                              EndIt, MBB, FunctionList.size(),
-                                              Mapper.MBBFlagsMap[MBB]);
+      unsigned EndIdx = StartIdx + StringLen - 1;
+      auto FirstOverlap = find_if(
+          CandidatesForRepeatedSeq, [StartIdx, EndIdx](const Candidate &C) {
+            return EndIdx >= C.getStartIdx() && StartIdx <= C.getEndIdx();
+          });
+      if (FirstOverlap != CandidatesForRepeatedSeq.end()) {
+#ifndef NDEBUG
+        ++NumDiscarded;
+        LLVM_DEBUG(dbgs() << "    .. DISCARD candidate @ [" << StartIdx
+                          << ", " << EndIdx << "]; overlaps with candidate @ ["
+                          << FirstOverlap->getStartIdx() << ", "
+                          << FirstOverlap->getEndIdx() << "]\n");
+#endif
+        continue;
       }
+      // It doesn't overlap with anything, so we can outline it.
+      // Each sequence is over [StartIt, EndIt].
+      // Save the candidate and its location.
+#ifndef NDEBUG
+      ++NumKept;
+#endif
+      MachineBasicBlock::iterator StartIt = Mapper.InstrList[StartIdx];
+      MachineBasicBlock::iterator EndIt = Mapper.InstrList[EndIdx];
+      MachineBasicBlock *MBB = StartIt->getParent();
+      CandidatesForRepeatedSeq.emplace_back(StartIdx, StringLen, StartIt, EndIt,
+                                            MBB, FunctionList.size(),
+                                            Mapper.MBBFlagsMap[MBB]);
     }
+#ifndef NDEBUG
+    LLVM_DEBUG(dbgs() << "    Candidates discarded: " << NumDiscarded
+                      << "\n");
+    LLVM_DEBUG(dbgs() << "    Candidates kept: " << NumKept << "\n\n");
+#endif
 
     // We've found something we might want to outline.
     // Create an OutlinedFunction to store it and check if it'd be beneficial
@@ -759,7 +783,7 @@ MachineFunction *MachineOutliner::createOutlinedFunction(
     Mangler Mg;
     // Get the mangled name of the function for the linkage name.
     std::string Dummy;
-    llvm::raw_string_ostream MangledNameStream(Dummy);
+    raw_string_ostream MangledNameStream(Dummy);
     Mg.getNameWithPrefix(MangledNameStream, F, false);
 
     DISubprogram *OutlinedSP = DB.createFunction(
@@ -793,21 +817,22 @@ bool MachineOutliner::outline(Module &M,
   bool OutlinedSomething = false;
 
   // Sort by benefit. The most beneficial functions should be outlined first.
-  llvm::stable_sort(FunctionList, [](const OutlinedFunction &LHS,
-                                     const OutlinedFunction &RHS) {
-    return LHS.getBenefit() > RHS.getBenefit();
-  });
+  stable_sort(FunctionList,
+              [](const OutlinedFunction &LHS, const OutlinedFunction &RHS) {
+                return LHS.getBenefit() > RHS.getBenefit();
+              });
 
   // Walk over each function, outlining them as we go along. Functions are
   // outlined greedily, based off the sort above.
+  auto *UnsignedVecBegin = Mapper.UnsignedVec.begin();
   for (OutlinedFunction &OF : FunctionList) {
     // If we outlined something that overlapped with a candidate in a previous
     // step, then we can't outline from it.
-    erase_if(OF.Candidates, [&Mapper](Candidate &C) {
-      return std::any_of(
-          Mapper.UnsignedVec.begin() + C.getStartIdx(),
-          Mapper.UnsignedVec.begin() + C.getEndIdx() + 1,
-          [](unsigned I) { return (I == static_cast<unsigned>(-1)); });
+    erase_if(OF.Candidates, [&UnsignedVecBegin](Candidate &C) {
+      return std::any_of(UnsignedVecBegin + C.getStartIdx(),
+                         UnsignedVecBegin + C.getEndIdx() + 1, [](unsigned I) {
+                           return I == static_cast<unsigned>(-1);
+                         });
     });
 
     // If we made it unbeneficial to outline this function, skip it.
@@ -898,9 +923,8 @@ bool MachineOutliner::outline(Module &M,
       MBB.erase(std::next(StartIt), std::next(EndIt));
 
       // Keep track of what we removed by marking them all as -1.
-      for (unsigned &I :
-           llvm::make_range(Mapper.UnsignedVec.begin() + C.getStartIdx(),
-                            Mapper.UnsignedVec.begin() + C.getEndIdx() + 1))
+      for (unsigned &I : make_range(UnsignedVecBegin + C.getStartIdx(),
+                                    UnsignedVecBegin + C.getEndIdx() + 1))
         I = static_cast<unsigned>(-1);
       OutlinedSomething = true;
 
@@ -956,7 +980,7 @@ void MachineOutliner::populateMapper(InstructionMapper &Mapper, Module &M,
       // contain something worth outlining.
       // FIXME: This should be based off of the maximum size in B of an outlined
       // call versus the size in B of the MBB.
-      if (MBB.empty() || MBB.size() < 2)
+      if (MBB.size() < 2)
         continue;
 
       // Check if MBB could be the target of an indirect branch. If it is, then
