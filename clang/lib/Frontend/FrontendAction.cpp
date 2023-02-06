@@ -1168,6 +1168,9 @@ void FrontendAction::EndSourceFile() {
   // FrontendAction.
   CI.clearOutputFiles(/*EraseFiles=*/shouldEraseOutputFiles());
 
+  // The resources are owned by AST when the current file is AST.
+  // So we reset the resources here to avoid users accessing it
+  // accidently.
   if (isCurrentFileAST()) {
     if (DisableFree) {
       CI.resetAndLeakPreprocessor();
