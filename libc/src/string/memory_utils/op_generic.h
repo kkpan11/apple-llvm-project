@@ -26,8 +26,8 @@
 #include "src/__support/CPP/array.h"
 #include "src/__support/CPP/type_traits.h"
 #include "src/__support/common.h"
-#include "src/__support/compiler_features.h"
 #include "src/__support/endian.h"
+#include "src/__support/macros/compiler_features.h"
 #include "src/string/memory_utils/op_builtin.h"
 #include "src/string/memory_utils/utils.h"
 
@@ -470,7 +470,7 @@ template <size_t Size, size_t MaxSize> struct Memmove {
     const size_t tail_offset = count - Size;
     const auto tail_value = T::load(src + tail_offset);
     size_t offset = 0;
-    LLVM_LIBC_LOOP_NOUNROLL
+    LIBC_LOOP_NOUNROLL
     do {
       block(dst + offset, src + offset);
       offset += Size;
@@ -497,7 +497,7 @@ template <size_t Size, size_t MaxSize> struct Memmove {
     static_assert(Size > 1, "a loop of size 1 does not need tail");
     const auto head_value = T::load(src);
     ptrdiff_t offset = count - Size;
-    LLVM_LIBC_LOOP_NOUNROLL
+    LIBC_LOOP_NOUNROLL
     do {
       block(dst + offset, src + offset);
       offset -= Size;
