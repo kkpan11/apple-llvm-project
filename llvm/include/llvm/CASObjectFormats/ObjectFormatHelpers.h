@@ -9,9 +9,9 @@
 #ifndef LLVM_CASOBJECTFORMATS_OBJECTFORMATHELPERS_H
 #define LLVM_CASOBJECTFORMATS_OBJECTFORMATHELPERS_H
 
-#include "llvm/ADT/Triple.h"
 #include "llvm/CASObjectFormats/Data.h"
 #include "llvm/ExecutionEngine/JITLink/JITLink.h"
+#include "llvm/TargetParser/Triple.h"
 
 namespace llvm {
 namespace casobjectformats {
