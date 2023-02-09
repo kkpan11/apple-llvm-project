@@ -170,15 +170,20 @@ isInUnspecifiedPointerContext(internal::Matcher<Stmt> InnerMatcher) {
   // 2. the operand of a cast operation; or
   // ...
   auto CallArgMatcher =
-      callExpr(hasAnyArgument(allOf(
-                   hasPointerType() /* array also decays to pointer type*/,
-                   InnerMatcher)),
-               unless(callee(functionDecl(hasAttr(attr::UnsafeBufferUsage)))));
+      callExpr(forEachArgumentWithParam(InnerMatcher, 
+                  hasPointerType() /* array also decays to pointer type*/),
+          unless(callee(functionDecl(hasAttr(attr::UnsafeBufferUsage)))));
+
   auto CastOperandMatcher =
       explicitCastExpr(hasCastKind(CastKind::CK_PointerToIntegral),
                        castSubExpr(allOf(hasPointerType(), InnerMatcher)));
 
- return stmt(anyOf(CallArgMatcher, CastOperandMatcher));
+  auto CompOperandMatcher =
+      binaryOperator(hasAnyOperatorName("!=", "==", "<", "<=", ">", ">="),
+                     eachOf(hasLHS(allOf(hasPointerType(), InnerMatcher)),
+                            hasRHS(allOf(hasPointerType(), InnerMatcher))));
+
+  return stmt(anyOf(CallArgMatcher, CastOperandMatcher, CompOperandMatcher));
   // FIXME: any more cases? (UPC excludes the RHS of an assignment.  For now we
   // don't have to check that.)
 }
@@ -488,6 +493,43 @@ public:
 
   virtual DeclUseList getClaimedVarUseSites() const override {
     if (const auto *DRE = dyn_cast<DeclRefExpr>(Node->getBase()->IgnoreImpCasts())) {
+      return {DRE};
+    }
+    return {};
+  }
+};
+
+// Fixable gadget to handle the expressions DRE in the unspecified pointer
+// context.
+class PointerCtxAccessGadget : public FixableGadget {
+private:
+  static constexpr const char *const DeclRefExprTag = "PtrAccess";
+  const DeclRefExpr *Node;
+
+public:
+  PointerCtxAccessGadget(const MatchFinder::MatchResult &Result)
+      : FixableGadget(Kind::PointerCtxAccess),
+        Node(Result.Nodes.getNodeAs<DeclRefExpr>(DeclRefExprTag)) {
+    assert(Node != nullptr && "Expecting a non-null matching result");
+  }
+
+  static bool classof(const Gadget *G) {
+    return G->getKind() == Kind::PointerCtxAccess;
+  }
+
+  static Matcher matcher() {
+    auto ArrayOrPtr = anyOf(hasPointerType(), hasArrayType());
+    auto target = expr(
+        ignoringParenImpCasts(declRefExpr(ArrayOrPtr).bind(DeclRefExprTag)));
+    return stmt(isInUnspecifiedPointerContext(target));
+  }
+
+  virtual std::optional<FixItList> getFixits(const Strategy &S) const override;
+
+  virtual const Stmt *getBaseStmt() const override { return Node; }
+
+  virtual DeclUseList getClaimedVarUseSites() const override {
+    if (const auto *DRE = dyn_cast<DeclRefExpr>(Node)) {
       return {DRE};
     }
     return {};
@@ -1100,6 +1142,34 @@ fixUPCAddressofArraySubscriptWithSpan(const UnaryOperator *Node) {
           FixItHint::CreateReplacement(Node->getSourceRange(), SS.str())};
     }
   return std::nullopt; // something went wrong. no fix-it
+}
+
+
+// Generates fix-its replacing an expression of the form UPC(DRE) with
+// `DRE.data()`
+std::optional<FixItList> PointerCtxAccessGadget::getFixits(const Strategy &S)
+      const {
+  if (const auto *DRE = dyn_cast<DeclRefExpr>(Node))
+     if (const auto *VD = dyn_cast<VarDecl>(DRE->getDecl())) {
+      switch (S.lookup(VD)) {
+      case Strategy::Kind::Span: {
+        ASTContext &Ctx = VD->getASTContext();
+        SourceManager &SM = Ctx.getSourceManager();
+        // Inserts the .data() after the DRE
+        std::optional<SourceLocation> endOfOperand =
+            getEndCharLoc(DRE, SM, Ctx.getLangOpts());
+
+        return FixItList{{FixItHint::CreateInsertion(
+            endOfOperand.value().getLocWithOffset(1), ".data()")}};
+      }
+      case Strategy::Kind::Wontfix:
+      case Strategy::Kind::Iterator:
+      case Strategy::Kind::Array:
+      case Strategy::Kind::Vector:
+        llvm_unreachable("unsupported strategies for FixableGadgets");
+      }
+    }
+    return std::nullopt;
 }
 
 // For a non-null initializer `Init` of `T *` type, this function returns
