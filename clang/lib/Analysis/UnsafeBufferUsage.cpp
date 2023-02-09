@@ -17,6 +17,8 @@
 #include "clang/Basic/SourceManager.h"
 #include "clang/Lex/Lexer.h"
 #include "clang/Lex/Preprocessor.h"
+#include "clang/Tooling/Inclusions/HeaderIncludes.h"
+#include "clang/Tooling/Inclusions/IncludeStyle.h"
 #include "llvm/ADT/SmallVector.h"
 #include <memory>
 #include <optional>
@@ -120,22 +122,21 @@ private:
 
 // Because we're dealing with raw pointers, let's define what we mean by that.
 static auto hasPointerType() {
-    return hasType(hasCanonicalType(pointerType()));
+  return hasType(hasCanonicalType(pointerType()));
 }
 
-static auto hasArrayType() {
-    return hasType(hasCanonicalType(arrayType()));
-}
+static auto hasArrayType() { return hasType(hasCanonicalType(arrayType())); }
 
 AST_MATCHER_P(Stmt, forEveryDescendant, internal::Matcher<Stmt>, innerMatcher) {
   const DynTypedMatcher &DTM = static_cast<DynTypedMatcher>(innerMatcher);
-  
-  MatchDescendantVisitor Visitor(&DTM, Finder, Builder, ASTMatchFinder::BK_All);  
+
+  MatchDescendantVisitor Visitor(&DTM, Finder, Builder, ASTMatchFinder::BK_All);
   return Visitor.findMatch(DynTypedNode::create(Node));
 }
 
 // Matches a `Stmt` node iff the node is in a safe-buffer opt-out region
-AST_MATCHER_P(Stmt, notInSafeBufferOptOut, const UnsafeBufferUsageHandler *, Handler) {
+AST_MATCHER_P(Stmt, notInSafeBufferOptOut, const UnsafeBufferUsageHandler *,
+              Handler) {
   return !Handler->isSafeBufferOptOut(Node.getBeginLoc());
 }
 
@@ -146,7 +147,7 @@ AST_MATCHER_P(CastExpr, castSubExpr, internal::Matcher<Expr>, innerMatcher) {
 // Returns a matcher that matches any expression 'e' such that `innerMatcher`
 // matches 'e' and 'e' is in an Unspecified Lvalue Context.
 static auto isInUnspecifiedLvalueContext(internal::Matcher<Expr> innerMatcher) {
-// clang-format off
+  // clang-format off
   return
     expr(eachOf(
       implicitCastExpr(
@@ -366,7 +367,7 @@ public:
               anyOf(hasPointerType(), hasArrayType()))),
             unless(hasIndex(integerLiteral(equals(0)))))
             .bind(ArraySubscrTag));
-      // clang-format on
+    // clang-format on
   }
 
   const ArraySubscriptExpr *getBaseStmt() const override { return ASE; }
@@ -389,10 +390,10 @@ class PointerArithmeticGadget : public WarningGadget {
   static constexpr const char *const PointerArithmeticTag = "ptrAdd";
   static constexpr const char *const PointerArithmeticPointerTag = "ptrAddPtr";
   const BinaryOperator *PA; // pointer arithmetic expression
-  const Expr * Ptr;         // the pointer expression in `PA`
+  const Expr *Ptr;          // the pointer expression in `PA`
 
 public:
-    PointerArithmeticGadget(const MatchFinder::MatchResult &Result)
+  PointerArithmeticGadget(const MatchFinder::MatchResult &Result)
       : WarningGadget(Kind::PointerArithmetic),
         PA(Result.Nodes.getNodeAs<BinaryOperator>(PointerArithmeticTag)),
         Ptr(Result.Nodes.getNodeAs<Expr>(PointerArithmeticPointerTag)) {}
@@ -402,43 +403,42 @@ public:
   }
 
   static Matcher matcher() {
-    auto HasIntegerType = anyOf(
-          hasType(isInteger()), hasType(enumType()));
-    auto PtrAtRight = allOf(hasOperatorName("+"),
-                            hasRHS(expr(hasPointerType()).bind(PointerArithmeticPointerTag)),
-                            hasLHS(HasIntegerType));
-    auto PtrAtLeft = allOf(
-           anyOf(hasOperatorName("+"), hasOperatorName("-"),
-                 hasOperatorName("+="), hasOperatorName("-=")),
-           hasLHS(expr(hasPointerType()).bind(PointerArithmeticPointerTag)),
-           hasRHS(HasIntegerType));
+    auto HasIntegerType = anyOf(hasType(isInteger()), hasType(enumType()));
+    auto PtrAtRight =
+        allOf(hasOperatorName("+"),
+              hasRHS(expr(hasPointerType()).bind(PointerArithmeticPointerTag)),
+              hasLHS(HasIntegerType));
+    auto PtrAtLeft =
+        allOf(anyOf(hasOperatorName("+"), hasOperatorName("-"),
+                    hasOperatorName("+="), hasOperatorName("-=")),
+              hasLHS(expr(hasPointerType()).bind(PointerArithmeticPointerTag)),
+              hasRHS(HasIntegerType));
 
-    return stmt(binaryOperator(anyOf(PtrAtLeft, PtrAtRight)).bind(PointerArithmeticTag));
+    return stmt(binaryOperator(anyOf(PtrAtLeft, PtrAtRight))
+                    .bind(PointerArithmeticTag));
   }
 
   const Stmt *getBaseStmt() const override { return PA; }
 
   DeclUseList getClaimedVarUseSites() const override {
-    if (const auto *DRE =
-            dyn_cast<DeclRefExpr>(Ptr->IgnoreParenImpCasts())) {
+    if (const auto *DRE = dyn_cast<DeclRefExpr>(Ptr->IgnoreParenImpCasts())) {
       return {DRE};
     }
 
     return {};
   }
   // FIXME: pointer adding zero should be fine
-  //FIXME: this gadge will need a fix-it
+  // FIXME: this gadge will need a fix-it
 };
-
 
 /// A call of a function or method that performs unchecked buffer operations
 /// over one of its pointer parameters.
 class UnsafeBufferUsageAttrGadget : public WarningGadget {
-    constexpr static const char *const OpTag = "call_expr";
-    const CallExpr *Op;
+  constexpr static const char *const OpTag = "call_expr";
+  const CallExpr *Op;
 
 public:
-    UnsafeBufferUsageAttrGadget(const MatchFinder::MatchResult &Result)
+  UnsafeBufferUsageAttrGadget(const MatchFinder::MatchResult &Result)
       : WarningGadget(Kind::UnsafeBufferUsageAttr),
         Op(Result.Nodes.getNodeAs<CallExpr>(OpTag)) {}
 
@@ -448,22 +448,20 @@ public:
 
   static Matcher matcher() {
     return stmt(callExpr(callee(functionDecl(hasAttr(attr::UnsafeBufferUsage))))
-                          .bind(OpTag));
+                    .bind(OpTag));
   }
   const Stmt *getBaseStmt() const override { return Op; }
 
-  DeclUseList getClaimedVarUseSites() const override {
-    return {};
-  }
+  DeclUseList getClaimedVarUseSites() const override { return {}; }
 };
-  
 
 // Represents expressions of the form `DRE[*]` in the Unspecified Lvalue
 // Context (see `isInUnspecifiedLvalueContext`).
 // Note here `[]` is the built-in subscript operator.
 class ULCArraySubscriptGadget : public FixableGadget {
 private:
-  static constexpr const char *const ULCArraySubscriptTag = "ArraySubscriptUnderULC";
+  static constexpr const char *const ULCArraySubscriptTag =
+      "ArraySubscriptUnderULC";
   const ArraySubscriptExpr *Node;
 
 public:
@@ -492,7 +490,8 @@ public:
   virtual const Stmt *getBaseStmt() const override { return Node; }
 
   virtual DeclUseList getClaimedVarUseSites() const override {
-    if (const auto *DRE = dyn_cast<DeclRefExpr>(Node->getBase()->IgnoreImpCasts())) {
+    if (const auto *DRE =
+            dyn_cast<DeclRefExpr>(Node->getBase()->IgnoreImpCasts())) {
       return {DRE};
     }
     return {};
@@ -536,7 +535,7 @@ public:
   }
 };
 
-class PointerDereferenceGadget: public FixableGadget {
+class PointerDereferenceGadget : public FixableGadget {
   static constexpr const char *const BaseDeclRefExprTag = "BaseDRE";
   static constexpr const char *const OperatorTag = "op";
 
@@ -545,22 +544,20 @@ class PointerDereferenceGadget: public FixableGadget {
 
 public:
   PointerDereferenceGadget(const MatchFinder::MatchResult &Result)
-    : FixableGadget(Kind::PointerDereference),
-      BaseDeclRefExpr(Result.Nodes.getNodeAs<DeclRefExpr>(BaseDeclRefExprTag)),
-      Op(Result.Nodes.getNodeAs<UnaryOperator>(OperatorTag)) {}
+      : FixableGadget(Kind::PointerDereference),
+        BaseDeclRefExpr(
+            Result.Nodes.getNodeAs<DeclRefExpr>(BaseDeclRefExprTag)),
+        Op(Result.Nodes.getNodeAs<UnaryOperator>(OperatorTag)) {}
 
   static bool classof(const Gadget *G) {
     return G->getKind() == Kind::PointerDereference;
   }
 
   static Matcher matcher() {
-    auto Target =
-           unaryOperator(
-             hasOperatorName("*"),
-             has(
-               expr(ignoringParenImpCasts(declRefExpr().bind(BaseDeclRefExprTag)))
-             )
-           ).bind(OperatorTag);
+    auto Target = unaryOperator(hasOperatorName("*"),
+                                has(expr(ignoringParenImpCasts(
+                                    declRefExpr().bind(BaseDeclRefExprTag)))))
+                      .bind(OperatorTag);
 
     return expr(isInUnspecifiedLvalueContext(Target));
   }
@@ -569,11 +566,9 @@ public:
     return {BaseDeclRefExpr};
   }
 
-  virtual const Stmt *getBaseStmt() const final {
-    return nullptr;
-  }
+  virtual const Stmt *getBaseStmt() const final { return nullptr; }
 
-   virtual std::optional<FixItList> getFixits(const Strategy &S) const override;
+  virtual std::optional<FixItList> getFixits(const Strategy &S) const override;
 };
 // Represents expressions of the form `&DRE[any]` in the Unspecified Pointer
 // Context (see `isInUnspecifiedPointerContext`).
@@ -685,11 +680,11 @@ namespace {
 class Strategy {
 public:
   enum class Kind {
-    Wontfix,    // We don't plan to emit a fixit for this variable.
-    Span,       // We recommend replacing the variable with std::span.
-    Iterator,   // We recommend replacing the variable with std::span::iterator.
-    Array,      // We recommend replacing the variable with std::array.
-    Vector      // We recommend replacing the variable with std::vector.
+    Wontfix,  // We don't plan to emit a fixit for this variable.
+    Span,     // We recommend replacing the variable with std::span.
+    Iterator, // We recommend replacing the variable with std::span::iterator.
+    Array,    // We recommend replacing the variable with std::array.
+    Vector    // We recommend replacing the variable with std::vector.
   };
 
 private:
@@ -702,9 +697,7 @@ public:
   Strategy(const Strategy &) = delete; // Let's avoid copies.
   Strategy(Strategy &&) = default;
 
-  void set(const VarDecl *VD, Kind K) {
-    Map[VD] = K;
-  }
+  void set(const VarDecl *VD, Kind K) { Map[VD] = K; }
 
   Kind lookup(const VarDecl *VD) const {
     auto I = Map.find(VD);
@@ -717,23 +710,23 @@ public:
 } // namespace
 
 namespace {
-  /// \returns either begin of sequence of horizontal whitespace preceding
-  /// \p Loc or Loc if there's no preceding whitespace or Loc is invalid.
-  SourceLocation getBeginOfPrecHWSpace(SourceLocation Loc, SourceManager& SM){
-    assert(Loc.isValid());
+/// \returns either begin of sequence of horizontal whitespace preceding
+/// \p Loc or Loc if there's no preceding whitespace or Loc is invalid.
+SourceLocation getBeginOfPrecHWSpace(SourceLocation Loc, SourceManager &SM) {
+  assert(Loc.isValid());
 
-    while(true) {
-      SourceLocation PrecLoc = Loc.getLocWithOffset(-1);
-      if (PrecLoc.isInvalid())
-        break;
-      if (isHorizontalWhitespace(*SM.getCharacterData(PrecLoc))) {
-        Loc = PrecLoc;
-        continue;
-      }
+  while (true) {
+    SourceLocation PrecLoc = Loc.getLocWithOffset(-1);
+    if (PrecLoc.isInvalid())
       break;
+    if (isHorizontalWhitespace(*SM.getCharacterData(PrecLoc))) {
+      Loc = PrecLoc;
+      continue;
     }
-    return Loc;
+    break;
   }
+  return Loc;
+}
 } // namespace
 
 class DerefSimplePtrArithFixableGadget : public FixableGadget {
@@ -748,20 +741,21 @@ class DerefSimplePtrArithFixableGadget : public FixableGadget {
   const ParenExpr *ParenEx = nullptr;
   const BinaryOperator *AddOp = nullptr;
   const IntegerLiteral *RHS = nullptr;
+
 public:
   DerefSimplePtrArithFixableGadget(const MatchFinder::MatchResult &Result)
       : FixableGadget(Kind::DerefSimplePtrArithFixable),
-        BaseDeclRefExpr(Result.Nodes.getNodeAs<DeclRefExpr>(BaseDeclRefExprTag)),
+        BaseDeclRefExpr(
+            Result.Nodes.getNodeAs<DeclRefExpr>(BaseDeclRefExprTag)),
         DerefOp(Result.Nodes.getNodeAs<UnaryOperator>(DerefOpTag)),
         ParenEx(Result.Nodes.getNodeAs<ParenExpr>(ParenExprTag)),
         AddOp(Result.Nodes.getNodeAs<BinaryOperator>(AddOpTag)),
-        RHS(Result.Nodes.getNodeAs<IntegerLiteral>(RHSTag))
-        {}
+        RHS(Result.Nodes.getNodeAs<IntegerLiteral>(RHSTag)) {}
 
   static Matcher matcher() {
-// FIXME: implement the mirror version: idx + pointer
-// FIXME: generalize for any number of parens and impl casts
-// clang-format off
+    // FIXME: implement the mirror version: idx + pointer
+    // FIXME: generalize for any number of parens and impl casts
+    // clang-format off
     return isInUnspecifiedLvalueContext(
       unaryOperator(
         hasOperatorName("*"),
@@ -779,14 +773,14 @@ public:
               )).bind(AddOpTag)
           )).bind(ParenExprTag)
       )).bind(DerefOpTag));
-// clang-format on
+    // clang-format on
   }
 
   virtual std::optional<FixItList> getFixits(const Strategy &s) const final {
-    const VarDecl* VD = dyn_cast<VarDecl>(BaseDeclRefExpr->getDecl());
+    const VarDecl *VD = dyn_cast<VarDecl>(BaseDeclRefExpr->getDecl());
     assert(VD);
     if (s.lookup(VD) == Strategy::Kind::Span) {
-      ASTContext& Ctx = VD->getASTContext();
+      ASTContext &Ctx = VD->getASTContext();
       // std::span can't represent elements before its begin()
       if (RHS->getIntegerConstantExpr(Ctx)->isNegative())
         return std::nullopt;
@@ -801,15 +795,22 @@ public:
       //   replace ')' with ']'
 
       SourceManager &SM = Ctx.getSourceManager();
-      CharSourceRange StarWithTrailWhitespace = clang::CharSourceRange::getCharRange(DerefOp->getOperatorLoc(), BaseDeclRefExpr->getBeginLoc());
-      CharSourceRange PlusWithSurroundingWhitespace = clang::CharSourceRange::getCharRange(getBeginOfPrecHWSpace(AddOp->getOperatorLoc(), SM), RHS->getLocation());
-      CharSourceRange ClosingParenWithPrecWhitespace = clang::CharSourceRange::getCharRange(getBeginOfPrecHWSpace(ParenEx->getEndLoc(), SM), ParenEx->getRParen().getLocWithOffset(1));
+      CharSourceRange StarWithTrailWhitespace =
+          clang::CharSourceRange::getCharRange(DerefOp->getOperatorLoc(),
+                                               BaseDeclRefExpr->getBeginLoc());
+      CharSourceRange PlusWithSurroundingWhitespace =
+          clang::CharSourceRange::getCharRange(
+              getBeginOfPrecHWSpace(AddOp->getOperatorLoc(), SM),
+              RHS->getLocation());
+      CharSourceRange ClosingParenWithPrecWhitespace =
+          clang::CharSourceRange::getCharRange(
+              getBeginOfPrecHWSpace(ParenEx->getEndLoc(), SM),
+              ParenEx->getRParen().getLocWithOffset(1));
 
-      return FixItList{{
-        FixItHint::CreateRemoval(StarWithTrailWhitespace),
-        FixItHint::CreateReplacement(PlusWithSurroundingWhitespace, "["),
-        FixItHint::CreateReplacement(ClosingParenWithPrecWhitespace, "]")
-      }};
+      return FixItList{
+          {FixItHint::CreateRemoval(StarWithTrailWhitespace),
+           FixItHint::CreateReplacement(PlusWithSurroundingWhitespace, "["),
+           FixItHint::CreateReplacement(ClosingParenWithPrecWhitespace, "]")}};
     }
 
     llvm_unreachable("unsupported strategies for FixableGadgets");
@@ -817,15 +818,12 @@ public:
   }
 
   // TODO remove this method from FixableGadget interface
-  virtual const Stmt *getBaseStmt() const final {
-    return nullptr;
-  }
+  virtual const Stmt *getBaseStmt() const final { return nullptr; }
 
   virtual DeclUseList getClaimedVarUseSites() const final {
     return {BaseDeclRefExpr};
   }
 };
-
 
 /// Scan the function and return a list of gadgets found with provided kits.
 static std::tuple<FixableGadgetList, WarningGadgetList, DeclUseTracker>
@@ -859,17 +857,17 @@ findGadgets(const Decl *D, const UnsafeBufferUsageHandler &Handler) {
       // Figure out which matcher we've found, and call the appropriate
       // subclass constructor.
       // FIXME: Can we do this more logarithmically?
-#define FIXABLE_GADGET(name)                                                           \
-      if (Result.Nodes.getNodeAs<Stmt>(#name)) {                               \
-        FixableGadgets.push_back(std::make_unique<name ## Gadget>(Result));           \
-        NEXT;                                                                  \
-      }
+#define FIXABLE_GADGET(name)                                                   \
+  if (Result.Nodes.getNodeAs<Stmt>(#name)) {                                   \
+    FixableGadgets.push_back(std::make_unique<name##Gadget>(Result));          \
+    NEXT;                                                                      \
+  }
 #include "clang/Analysis/Analyses/UnsafeBufferUsageGadgets.def"
-#define WARNING_GADGET(name)                                                           \
-      if (Result.Nodes.getNodeAs<Stmt>(#name)) {                               \
-        WarningGadgets.push_back(std::make_unique<name ## Gadget>(Result));           \
-        NEXT;                                                                  \
-      }
+#define WARNING_GADGET(name)                                                   \
+  if (Result.Nodes.getNodeAs<Stmt>(#name)) {                                   \
+    WarningGadgets.push_back(std::make_unique<name##Gadget>(Result));          \
+    NEXT;                                                                      \
+  }
 #include "clang/Analysis/Analyses/UnsafeBufferUsageGadgets.def"
 
       assert(numFound >= 1 && "Gadgets not found in match result!");
@@ -923,7 +921,8 @@ findGadgets(const Decl *D, const UnsafeBufferUsageHandler &Handler) {
     }
   }
 
-  return {std::move(CB.FixableGadgets), std::move(CB.WarningGadgets), std::move(CB.Tracker)};
+  return {std::move(CB.FixableGadgets), std::move(CB.WarningGadgets),
+          std::move(CB.Tracker)};
 }
 
 struct WarningGadgetSets {
@@ -975,8 +974,8 @@ groupFixablesByVar(FixableGadgetList &&AllFixableOperations) {
   return FixablesForUnsafeVars;
 }
 
-bool clang::internal::anyConflict(
-    const SmallVectorImpl<FixItHint> &FixIts, const SourceManager &SM) {
+bool clang::internal::anyConflict(const SmallVectorImpl<FixItHint> &FixIts,
+                                  const SourceManager &SM) {
   // A simple interval overlap detection algorithm.  Sorts all ranges by their
   // begin location then finds the first overlap in one pass.
   std::vector<const FixItHint *> All; // a copy of `FixIts`
@@ -1008,7 +1007,8 @@ bool clang::internal::anyConflict(
 
 std::optional<FixItList>
 ULCArraySubscriptGadget::getFixits(const Strategy &S) const {
-  if (const auto *DRE = dyn_cast<DeclRefExpr>(Node->getBase()->IgnoreImpCasts()))
+  if (const auto *DRE =
+          dyn_cast<DeclRefExpr>(Node->getBase()->IgnoreImpCasts()))
     if (const auto *VD = dyn_cast<VarDecl>(DRE->getDecl())) {
       switch (S.lookup(VD)) {
       case Strategy::Kind::Span: {
@@ -1097,7 +1097,7 @@ static SourceLocation getPastLoc(const NodeTy *Node, const SourceManager &SM,
 
 // Return text representation of an `Expr`.
 static StringRef getExprText(const Expr *E, const SourceManager &SM,
-                               const LangOptions &LangOpts) {
+                             const LangOptions &LangOpts) {
   SourceLocation LastCharLoc = getPastLoc(E, SM, LangOpts);
 
   return Lexer::getSourceText(
@@ -1107,26 +1107,29 @@ static StringRef getExprText(const Expr *E, const SourceManager &SM,
 
 std::optional<FixItList>
 PointerDereferenceGadget::getFixits(const Strategy &S) const {
-     if (const auto *DRE = dyn_cast<DeclRefExpr>(Op->getSubExpr()->IgnoreImpCasts()))
-      if (const auto *VD = dyn_cast<VarDecl>(DRE->getDecl())) {
-        if (S.lookup(VD) == Strategy::Kind::Span) {
-          ASTContext& Ctx = VD->getASTContext();
-          SourceManager &SM = Ctx.getSourceManager();
-          // Required changes: *(ptr); => (ptr[0]); and *ptr; => ptr[0]
-          // Deletes the *operand
-          CharSourceRange derefRange = clang::CharSourceRange::getCharRange(Op->getBeginLoc(), Op->getBeginLoc().getLocWithOffset(1));
-          // Inserts the [0]
-          std::optional<SourceLocation> endOfOperand = getEndCharLoc(DRE, SM, Ctx.getLangOpts());
-          if(endOfOperand) {
-            return FixItList{{
-              FixItHint::CreateRemoval(derefRange),
-              FixItHint::CreateInsertion(endOfOperand.value().getLocWithOffset(1), "[0]")
-            }};
-          }
+  if (const auto *DRE =
+          dyn_cast<DeclRefExpr>(Op->getSubExpr()->IgnoreImpCasts()))
+    if (const auto *VD = dyn_cast<VarDecl>(DRE->getDecl())) {
+      if (S.lookup(VD) == Strategy::Kind::Span) {
+        ASTContext &Ctx = VD->getASTContext();
+        SourceManager &SM = Ctx.getSourceManager();
+        // Required changes: *(ptr); => (ptr[0]); and *ptr; => ptr[0]
+        // Deletes the *operand
+        CharSourceRange derefRange = clang::CharSourceRange::getCharRange(
+            Op->getBeginLoc(), Op->getBeginLoc().getLocWithOffset(1));
+        // Inserts the [0]
+        std::optional<SourceLocation> endOfOperand =
+            getEndCharLoc(DRE, SM, Ctx.getLangOpts());
+        if (endOfOperand) {
+          return FixItList{
+              {FixItHint::CreateRemoval(derefRange),
+               FixItHint::CreateInsertion(
+                   endOfOperand.value().getLocWithOffset(1), "[0]")}};
         }
       }
-    llvm_unreachable("unsupported strategies for FixableGadgets");
-    return std::nullopt;
+    }
+  llvm_unreachable("unsupported strategies for FixableGadgets");
+  return std::nullopt;
 }
 // Generates fix-its replacing an expression of the form `&DRE[e]` with
 // `&DRE.data()[e]`:
@@ -1160,13 +1163,12 @@ fixUPCAddressofArraySubscriptWithSpan(const UnaryOperator *Node) {
   return std::nullopt; // something went wrong. no fix-it
 }
 
-
 // Generates fix-its replacing an expression of the form UPC(DRE) with
 // `DRE.data()`
-std::optional<FixItList> PointerCtxAccessGadget::getFixits(const Strategy &S)
-      const {
+std::optional<FixItList>
+PointerCtxAccessGadget::getFixits(const Strategy &S) const {
   if (const auto *DRE = dyn_cast<DeclRefExpr>(Node))
-     if (const auto *VD = dyn_cast<VarDecl>(DRE->getDecl())) {
+    if (const auto *VD = dyn_cast<VarDecl>(DRE->getDecl())) {
       switch (S.lookup(VD)) {
       case Strategy::Kind::Span: {
         ASTContext &Ctx = VD->getASTContext();
@@ -1185,7 +1187,7 @@ std::optional<FixItList> PointerCtxAccessGadget::getFixits(const Strategy &S)
         llvm_unreachable("unsupported strategies for FixableGadgets");
       }
     }
-    return std::nullopt;
+  return std::nullopt;
 }
 
 // For a non-null initializer `Init` of `T *` type, this function returns
@@ -1253,8 +1255,8 @@ populateInitializerFixItWithSpan(const Expr *Init, const ASTContext &Ctx,
       if (AddrOfExpr->getOpcode() == UnaryOperatorKind::UO_AddrOf &&
           isa_and_present<DeclRefExpr>(AddrOfExpr->getSubExpr()))
         ExtentText = One;
-    // TODO: we can handle more cases, e.g., `&a[0]`, `&a`, `std::addressof`, and explicit casting, etc.
-    // etc.
+    // TODO: we can handle more cases, e.g., `&a[0]`, `&a`, `std::addressof`,
+    // and explicit casting, etc. etc.
   }
 
   SmallString<32> StrBuffer{};
@@ -1322,7 +1324,7 @@ static FixItList fixVariableWithSpan(const VarDecl *VD,
   assert(DS && "Fixing non-local variables not implemented yet!");
   if (!DS->isSingleDecl()) {
     // FIXME: to support handling multiple `VarDecl`s in a single `DeclStmt`
-    return{};
+    return {};
   }
   // Currently DS is an unused variable but we'll need it when
   // non-single decls are implemented, where the pointee type name
@@ -1367,13 +1369,31 @@ static bool overlapWithMacro(const FixItList &FixIts) {
   });
 }
 
+static std::string getHeaderFilenameForStrategyKind(Strategy::Kind TargetType) {
+  switch (TargetType) {
+  case Strategy::Kind::Span:
+    return "span";
+  case Strategy::Kind::Array:
+    return "array";
+  case Strategy::Kind::Vector:
+    return "vector";
+  case Strategy::Kind::Iterator:
+    return "span";
+  case Strategy::Kind::Wontfix:
+    assert(false && "Wonfix strategy shouldn't be used to generate Fix-Its");
+  };
+}
+
 static std::map<const VarDecl *, FixItList>
 getFixIts(FixableGadgetSets &FixablesForUnsafeVars, const Strategy &S,
           const DeclUseTracker &Tracker, const ASTContext &Ctx,
           UnsafeBufferUsageHandler &Handler) {
+  const SourceManager &SM = Ctx.getSourceManager();
   std::map<const VarDecl *, FixItList> FixItsForVariable;
   for (const auto &[VD, Fixables] : FixablesForUnsafeVars.byVar) {
-    FixItsForVariable[VD] = fixVariable(VD, S.lookup(VD), Tracker, Ctx, Handler);
+    const Strategy::Kind ReplacementTypeForVD = S.lookup(VD);
+    FixItsForVariable[VD] =
+        fixVariable(VD, ReplacementTypeForVD, Tracker, Ctx, Handler);
     // If we fail to produce Fix-It for the declaration we have to skip the
     // variable entirely.
     if (FixItsForVariable[VD].empty()) {
@@ -1393,18 +1413,52 @@ getFixIts(FixableGadgetSets &FixablesForUnsafeVars, const Strategy &S,
                            CorrectFixes.end());
       }
     }
-    if (ImpossibleToFix)
+
+    if (ImpossibleToFix) {
       FixItsForVariable.erase(VD);
-    else
-      FixItsForVariable[VD].insert(FixItsForVariable[VD].end(),
-                                   FixItsForVD.begin(), FixItsForVD.end());
-    // We conservatively discard fix-its of a variable if
-    // a fix-it overlaps with macros; or
-    // a fix-it conflicts with another one
+      continue;
+    }
+
+    FixItsForVariable[VD].insert(FixItsForVariable[VD].end(),
+                                 FixItsForVD.begin(), FixItsForVD.end());
+
+    // Fix-it shall not overlap with macros or/and templates:
     if (overlapWithMacro(FixItsForVariable[VD]) ||
         clang::internal::anyConflict(FixItsForVariable[VD],
-                                     Ctx.getSourceManager())) {      
+                                     Ctx.getSourceManager())) {
       FixItsForVariable.erase(VD);
+      continue;
+    }
+
+    assert(FixItsForVariable[VD].front().RemoveRange.isValid());
+    const FileID FileOfVarDeclFixIt =
+        SM.getFileID(FixItsForVariable[VD].front().RemoveRange.getBegin());
+
+    const FileEntry *FEOfVarDeclFixIt =
+        SM.getFileEntryForID(FileOfVarDeclFixIt);
+    if (!FEOfVarDeclFixIt) {
+      FixItsForVariable.erase(VD);
+      continue;
+    }
+    std::optional<llvm::MemoryBufferRef> FileContent =
+        SM.getBufferOrNone(FileOfVarDeclFixIt);
+    if (!FileContent) {
+      FixItsForVariable.erase(VD);
+      continue;
+    }
+
+    tooling::IncludeStyle InclStyle; // TODO set IncludeStyle
+    tooling::HeaderIncludes HeaderIncls(FEOfVarDeclFixIt->getName(),
+                                        FileContent.value().getBuffer(),
+                                        InclStyle);
+    std::optional<tooling::Replacement> Include = HeaderIncls.insert(
+        getHeaderFilenameForStrategyKind(ReplacementTypeForVD), true,
+        clang::tooling::IncludeDirective::Include);
+    if (Include.has_value()) {
+      SourceLocation HeaderInsertLoc =
+          SM.getComposedLoc(FileOfVarDeclFixIt, Include->getOffset());
+      FixItsForVariable[VD].push_back(FixItHint::CreateInsertion(
+          HeaderInsertLoc, Include->getReplacementText()));
     }
   }
   return FixItsForVariable;
