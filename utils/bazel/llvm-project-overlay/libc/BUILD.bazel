@@ -79,9 +79,24 @@ libc_support_library(
 )
 
 libc_support_library(
+    name = "__support_macros_config",
+    hdrs = ["src/__support/macros/config.h"],
+    deps = [":libc_root"],
+)
+
+libc_support_library(
     name = "__support_macros_attributes",
     hdrs = ["src/__support/macros/attributes.h"],
     deps = [":libc_root"],
+)
+
+libc_support_library(
+    name = "__support_macros_optimization",
+    hdrs = ["src/__support/macros/optimization.h"],
+    deps = [
+        ":__support_macros_properties_compiler",
+        ":libc_root",
+    ],
 )
 
 libc_support_library(
@@ -113,7 +128,7 @@ libc_support_library(
     name = "__support_cpp_bit",
     hdrs = ["src/__support/CPP/bit.h"],
     deps = [
-        ":__support_macros_properties_compiler",
+        ":__support_macros_config",
         ":libc_root",
     ],
 )
@@ -294,7 +309,7 @@ libc_support_library(
     deps = [
         ":__support_cpp_type_traits",
         ":__support_macros_attributes",
-        ":__support_macros_properties_compiler",
+        ":__support_macros_config",
         ":__support_named_pair",
         ":libc_root",
     ],
@@ -1366,7 +1381,7 @@ libc_support_library(
         ":__support_cpp_cstddef",
         ":__support_cpp_type_traits",
         ":__support_macros_attributes",
-        ":__support_macros_properties_compiler",
+        ":__support_macros_optimization",
         ":libc_root",
     ],
 )
