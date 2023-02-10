@@ -82,6 +82,12 @@ struct TranslationUnitDeps {
   std::vector<std::string> DriverCommandLine;
 };
 
+struct P1689Rule {
+  std::string PrimaryOutput;
+  std::optional<P1689ModuleInfo> Provides;
+  std::vector<P1689ModuleInfo> Requires;
+};
+
 /// The high-level implementation of the dependency discovery tool that runs on
 /// an individual worker thread.
 class DependencyScanningTool {
@@ -130,6 +136,23 @@ public:
       StringRef CWD, const DepscanPrefixMapping &PrefixMapping,
       DiagnosticConsumer &DiagsConsumer, raw_ostream *VerboseOS,
       bool DiagGenerationAsCompilation);
+
+  /// Collect the module dependency in P1689 format for C++20 named modules.
+  ///
+  /// \param MakeformatOutput The output parameter for dependency information
+  /// in make format if the command line requires to generate make-format
+  /// dependency information by `-MD -MF <dep_file>`.
+  ///
+  /// \param MakeformatOutputPath The output parameter for the path to
+  /// \param MakeformatOutput.
+  ///
+  /// \returns A \c StringError with the diagnostic output if clang errors
+  /// occurred, P1689 dependency format rules otherwise.
+  llvm::Expected<P1689Rule>
+  getP1689ModuleDependencyFile(
+      const clang::tooling::CompileCommand &Command, StringRef CWD,
+      std::string &MakeformatOutput, std::string &MakeformatOutputPath,
+      std::optional<StringRef> ModuleName = std::nullopt);
 
   /// Given a Clang driver command-line for a translation unit, gather the
   /// modular dependencies and return the information needed for explicit build.
