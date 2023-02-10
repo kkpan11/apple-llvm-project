@@ -117,6 +117,15 @@ private:
   bool Matches;
 };
 
+// Because we're dealing with raw pointers, let's define what we mean by that.
+static auto hasPointerType() {
+    return hasType(hasCanonicalType(pointerType()));
+}
+
+static auto hasArrayType() {
+    return hasType(hasCanonicalType(arrayType()));
+}
+
 AST_MATCHER_P(Stmt, forEveryDescendant, internal::Matcher<Stmt>, innerMatcher) {
   const DynTypedMatcher &DTM = static_cast<DynTypedMatcher>(innerMatcher);
   
@@ -149,6 +158,29 @@ static auto isInUnspecifiedLvalueContext(internal::Matcher<Expr> innerMatcher) {
     ));
 // clang-format off
 }
+
+// Returns a matcher that matches any expression `e` such that `InnerMatcher`
+// matches `e` and `e` is in an Unspecified Pointer Context (UPC).
+static internal::Matcher<Stmt>
+isInUnspecifiedPointerContext(internal::Matcher<Stmt> InnerMatcher) {
+  // A UPC can be
+  // 1. an argument of a function call (except the callee has [[unsafe_...]]
+  // attribute), or
+  // 2. the operand of a cast operation; or
+  // ...
+  auto CallArgMatcher =
+      callExpr(hasAnyArgument(allOf(
+                   hasPointerType() /* array also decays to pointer type*/,
+                   InnerMatcher)),
+               unless(callee(functionDecl(hasAttr(attr::UnsafeBufferUsage)))));
+  auto CastOperandMatcher =
+      explicitCastExpr(hasCastKind(CastKind::CK_PointerToIntegral),
+                       castSubExpr(allOf(hasPointerType(), InnerMatcher)));
+
+ return stmt(anyOf(CallArgMatcher, CastOperandMatcher));
+  // FIXME: any more cases? (UPC excludes the RHS of an assignment.  For now we
+  // don't have to check that.)
+}
 } // namespace clang::ast_matchers
 
 namespace {
@@ -162,15 +194,6 @@ using FixItList = SmallVector<FixItHint, 4>;
 // Defined below.
 class Strategy;
 } // namespace
-
-// Because we're dealing with raw pointers, let's define what we mean by that.
-static auto hasPointerType() {
-    return hasType(hasCanonicalType(pointerType()));
-}
-
-static auto hasArrayType() {
-    return hasType(hasCanonicalType(arrayType()));
-}
 
 namespace {
 /// Gadget is an individual operation in the code that may be of interest to
@@ -508,6 +531,49 @@ public:
   }
 
    virtual std::optional<FixItList> getFixits(const Strategy &S) const override;
+};
+// Represents expressions of the form `&DRE[any]` in the Unspecified Pointer
+// Context (see `isInUnspecifiedPointerContext`).
+// Note here `[]` is the built-in subscript operator.
+class UPCAddressofArraySubscriptGadget : public FixableGadget {
+private:
+  static constexpr const char *const UPCAddressofArraySubscriptTag =
+      "AddressofArraySubscriptUnderUPC";
+  const UnaryOperator *Node; // the `&DRE[any]` node
+
+public:
+  UPCAddressofArraySubscriptGadget(const MatchFinder::MatchResult &Result)
+      : FixableGadget(Kind::ULCArraySubscript),
+        Node(Result.Nodes.getNodeAs<UnaryOperator>(
+            UPCAddressofArraySubscriptTag)) {
+    assert(Node != nullptr && "Expecting a non-null matching result");
+  }
+
+  static bool classof(const Gadget *G) {
+    return G->getKind() == Kind::UPCAddressofArraySubscript;
+  }
+
+  static Matcher matcher() {
+    return expr(isInUnspecifiedPointerContext(expr(ignoringImpCasts(
+        unaryOperator(hasOperatorName("&"),
+                      hasUnaryOperand(arraySubscriptExpr(
+                          hasBase(ignoringParenImpCasts(declRefExpr())))))
+            .bind(UPCAddressofArraySubscriptTag)))));
+  }
+
+  virtual std::optional<FixItList> getFixits(const Strategy &) const override;
+
+  virtual const Stmt *getBaseStmt() const override { return Node; }
+
+  virtual DeclUseList getClaimedVarUseSites() const override {
+    if (const auto *ArraySubst =
+            dyn_cast<ArraySubscriptExpr>(Node->getSubExpr()))
+      if (const auto *DRE =
+              dyn_cast<DeclRefExpr>(ArraySubst->getBase()->IgnoreImpCasts())) {
+        return {DRE};
+      }
+    return {};
+  }
 };
 } // namespace
 
@@ -925,6 +991,28 @@ ULCArraySubscriptGadget::getFixits(const Strategy &S) const {
   return std::nullopt;
 }
 
+static std::optional<FixItList> // forward declaration
+fixUPCAddressofArraySubscriptWithSpan(const UnaryOperator *Node);
+
+std::optional<FixItList>
+UPCAddressofArraySubscriptGadget::getFixits(const Strategy &S) const {
+  auto DREs = getClaimedVarUseSites();
+
+  if (DREs.size() == 1)
+    if (const auto *VD = dyn_cast<VarDecl>(DREs.front()->getDecl())) {
+      switch (S.lookup(VD)) {
+      case Strategy::Kind::Span:
+        return fixUPCAddressofArraySubscriptWithSpan(Node);
+      case Strategy::Kind::Wontfix:
+      case Strategy::Kind::Iterator:
+      case Strategy::Kind::Array:
+      case Strategy::Kind::Vector:
+        llvm_unreachable("unsupported strategies for FixableGadgets");
+      }
+    }
+  return std::nullopt; // something went wrong, no fix-it
+}
+
 // Return the text representation of the given `APInt Val`:
 static std::string getAPIntText(APInt Val) {
   SmallVector<char> Txt;
@@ -981,6 +1069,32 @@ PointerDereferenceGadget::getFixits(const Strategy &S) const {
     llvm_unreachable("unsupported strategies for FixableGadgets");
     return std::nullopt;
 }
+// Generates fix-its replacing an expression of the form `&DRE[e]` with
+// `(DRE.data() + e)`:
+static std::optional<FixItList>
+fixUPCAddressofArraySubscriptWithSpan(const UnaryOperator *Node) {
+  if (const auto *ArraySub = dyn_cast<ArraySubscriptExpr>(Node->getSubExpr()))
+    if (const auto *DRE =
+            dyn_cast<DeclRefExpr>(ArraySub->getBase()->IgnoreImpCasts())) {
+      // FIXME: this `getASTContext` call is costy, we should pass the
+      // ASTContext in:
+      const ASTContext &Ctx = DRE->getDecl()->getASTContext();
+      const Expr *Idx = ArraySub->getIdx();
+      const SourceManager &SM = Ctx.getSourceManager();
+      const LangOptions &LangOpts = Ctx.getLangOpts();
+      SmallString<32> StrBuffer;
+
+      StrBuffer.append("(");
+      StrBuffer.append(getExprText(DRE, SM, LangOpts));
+      StrBuffer.append(".data() + ");
+      StrBuffer.append(getExprText(Idx, SM, LangOpts));
+      StrBuffer.append(")");
+      return FixItList{FixItHint::CreateReplacement(Node->getSourceRange(),
+                                           StrBuffer.str())};
+    }
+  return std::nullopt; // something went wrong. no fix-it
+}
+
 // For a non-null initializer `Init` of `T *` type, this function returns
 // `FixItHint`s producing a list initializer `{Init,  S}` as a part of a fix-it
 // to output stream.
