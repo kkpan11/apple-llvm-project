@@ -50,12 +50,12 @@
 #include "llvm/Support/Compression.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h"
-#include "llvm/Support/Host.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/RISCVISAInfo.h"
 #include "llvm/Support/YAMLParser.h"
 #include "llvm/TargetParser/ARMTargetParserCommon.h"
+#include "llvm/TargetParser/Host.h"
 #include "llvm/TargetParser/RISCVTargetParser.h"
 #include <cctype>
 
@@ -5064,7 +5064,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &Job,
 
     C.addCommand(std::make_unique<Command>(
         Job, *this, ResponseFileSupport::AtFileUTF8(), D.getClangProgramPath(),
-        CmdArgs, Inputs, Output));
+        CmdArgs, Inputs, Output, D.getPrependArg()));
     return;
   }
 
@@ -7502,13 +7502,13 @@ void Clang::ConstructJob(Compilation &C, const JobAction &Job,
 
   if (D.CC1Main && !D.CCGenDiagnostics) {
     // Invoke the CC1 directly in this process
-    C.addCommand(std::make_unique<CC1Command>(Job, *this,
-                                              ResponseFileSupport::AtFileUTF8(),
-                                              Exec, CmdArgs, Inputs, Output));
+    C.addCommand(std::make_unique<CC1Command>(
+        Job, *this, ResponseFileSupport::AtFileUTF8(), Exec, CmdArgs, Inputs,
+        Output, D.getPrependArg()));
   } else {
-    C.addCommand(std::make_unique<Command>(Job, *this,
-                                           ResponseFileSupport::AtFileUTF8(),
-                                           Exec, CmdArgs, Inputs, Output));
+    C.addCommand(std::make_unique<Command>(
+        Job, *this, ResponseFileSupport::AtFileUTF8(), Exec, CmdArgs, Inputs,
+        Output, D.getPrependArg()));
   }
 
   // Make the compile command echo its inputs for /showFilenames.
@@ -8267,13 +8267,13 @@ void ClangAs::ConstructJob(Compilation &C, const JobAction &JA,
   const char *Exec = getToolChain().getDriver().getClangProgramPath();
   if (D.CC1Main && !D.CCGenDiagnostics) {
     // Invoke cc1as directly in this process.
-    C.addCommand(std::make_unique<CC1Command>(JA, *this,
-                                              ResponseFileSupport::AtFileUTF8(),
-                                              Exec, CmdArgs, Inputs, Output));
+    C.addCommand(std::make_unique<CC1Command>(
+        JA, *this, ResponseFileSupport::AtFileUTF8(), Exec, CmdArgs, Inputs,
+        Output, D.getPrependArg()));
   } else {
-    C.addCommand(std::make_unique<Command>(JA, *this,
-                                           ResponseFileSupport::AtFileUTF8(),
-                                           Exec, CmdArgs, Inputs, Output));
+    C.addCommand(std::make_unique<Command>(
+        JA, *this, ResponseFileSupport::AtFileUTF8(), Exec, CmdArgs, Inputs,
+        Output, D.getPrependArg()));
   }
 }
 
