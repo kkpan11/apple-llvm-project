@@ -614,6 +614,56 @@ public:
     return {};
   }
 };
+
+class PointerArithmeticFixableGadget : public FixableGadget {
+private:
+  static constexpr const char *const DRETag = "DRETag";
+  static constexpr const char *const RHSLiteralTag = "RHSLiteralTag";
+  const DeclRefExpr *DRE = nullptr;
+  const IntegerLiteral *RHSLiteral = nullptr;
+
+public:
+  PointerArithmeticFixableGadget(const MatchFinder::MatchResult &Result)
+      : FixableGadget(Kind::PointerCtxAccess),
+        DRE(Result.Nodes.getNodeAs<DeclRefExpr>(DRETag)),
+        RHSLiteral(Result.Nodes.getNodeAs<IntegerLiteral>(RHSLiteralTag)) {
+    assert(DRE != nullptr && "Expecting a non-null matching result");
+  }
+
+  static bool classof(const Gadget *G) {
+    return G->getKind() == Kind::PointerCtxAccess;
+  }
+
+  static Matcher matcher() {
+    auto ArrayOrPtr = anyOf(hasPointerType(), hasArrayType());
+    auto target = expr(
+        ignoringParenImpCasts(
+          binaryOperator(
+            hasOperatorName("+"),
+            hasLHS(
+              expr(
+                hasPointerType(),
+                ignoringImpCasts(
+                  declRefExpr().bind(DRETag)))),
+            hasRHS(
+              anyOf(
+                integerLiteral().bind(RHSLiteralTag),
+                expr(
+                  hasType(isUnsignedInteger())
+                )
+              )
+        ))));
+    return stmt(isInUnspecifiedPointerContext(target));
+  }
+
+  virtual std::optional<FixItList> getFixits(const Strategy &S) const override;
+
+  virtual const Stmt *getBaseStmt() const override { return DRE; }
+
+  virtual DeclUseList getClaimedVarUseSites() const override {
+    return {DRE};
+  }
+};
 } // namespace
 
 namespace {
@@ -1182,6 +1232,23 @@ PointerCtxAccessGadget::getFixits(const Strategy &S) const {
         llvm_unreachable("unsupported strategies for FixableGadgets");
       }
     }
+  return std::nullopt;
+}
+
+std::optional<FixItList> PointerArithmeticFixableGadget::getFixits(const Strategy &S) const {
+  if (const auto *VD = dyn_cast<VarDecl>(DRE->getDecl())) {
+    if (S.lookup(VD) == Strategy::Kind::Span) {
+      ASTContext &Ctx = VD->getASTContext();
+      if (RHSLiteral && RHSLiteral->getIntegerConstantExpr(Ctx)->isNegative())
+        return std::nullopt;
+      SourceManager &SM = Ctx.getSourceManager();
+      std::optional<SourceLocation> endOfOperand =
+          getEndCharLoc(DRE, SM, Ctx.getLangOpts());
+
+      return FixItList{{FixItHint::CreateInsertion(
+          endOfOperand.value().getLocWithOffset(1), ".data()")}};
+    }
+  }
   return std::nullopt;
 }
 
