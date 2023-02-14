@@ -411,7 +411,7 @@ int main(int argc, char **argv) {
   initializeScalarizeMaskedMemIntrinLegacyPassPass(*Registry);
   initializeExpandReductionsPass(*Registry);
   initializeExpandVectorPredicationPass(*Registry);
-  initializeHardwareLoopsPass(*Registry);
+  initializeHardwareLoopsLegacyPass(*Registry);
   initializeTransformUtils(*Registry);
   initializeReplaceWithVeclibLegacyPass(*Registry);
   initializeTLSVariableHoistLegacyPassPass(*Registry);
