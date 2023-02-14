@@ -687,6 +687,8 @@ public:
     void *NewPtr = allocate(NewSize, Chunk::Origin::Malloc, Alignment);
     if (LIKELY(NewPtr)) {
       memcpy(NewPtr, OldTaggedPtr, Min(NewSize, OldSize));
+      if (UNLIKELY(&__scudo_deallocate_hook))
+        __scudo_deallocate_hook(OldTaggedPtr);
       quarantineOrDeallocateChunk(Options, OldTaggedPtr, &OldHeader, OldSize);
     }
     return NewPtr;
@@ -726,9 +728,7 @@ public:
   // sizing purposes.
   uptr getStats(char *Buffer, uptr Size) {
     ScopedString Str;
-    disable();
     const uptr Length = getStats(&Str) + 1;
-    enable();
     if (Length < Size)
       Size = Length;
     if (Buffer && Size) {
@@ -740,9 +740,7 @@ public:
 
   void printStats() {
     ScopedString Str;
-    disable();
     getStats(&Str);
-    enable();
     Str.output();
   }
 
