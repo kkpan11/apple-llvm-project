@@ -185,12 +185,6 @@ Pass *createSimpleLoopUnrollPass(int OptLevel = 2, bool OnlyWhenForced = false,
 
 //===----------------------------------------------------------------------===//
 //
-// LoopUnrollAndJam - This pass is a simple loop unroll and jam pass.
-//
-Pass *createLoopUnrollAndJamPass(int OptLevel = 2);
-
-//===----------------------------------------------------------------------===//
-//
 // LoopReroll - This pass is a simple loop rerolling pass.
 //
 Pass *createLoopRerollPass();
@@ -480,27 +474,9 @@ FunctionPass *createNaryReassociatePass();
 
 //===----------------------------------------------------------------------===//
 //
-// LoopDistribute - Distribute loops.
-//
-FunctionPass *createLoopDistributePass();
-
-//===----------------------------------------------------------------------===//
-//
 // LoopFuse - Fuse loops.
 //
 FunctionPass *createLoopFusePass();
-
-//===----------------------------------------------------------------------===//
-//
-// LoopLoadElimination - Perform loop-aware load elimination.
-//
-FunctionPass *createLoopLoadEliminationPass();
-
-//===----------------------------------------------------------------------===//
-//
-// LoopVersioning - Perform loop multi-versioning.
-//
-FunctionPass *createLoopVersioningPass();
 
 //===----------------------------------------------------------------------===//
 //
