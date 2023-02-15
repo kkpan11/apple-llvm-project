@@ -170,23 +170,37 @@ isInUnspecifiedPointerContext(internal::Matcher<Stmt> InnerMatcher) {
   // A UPC can be
   // 1. an argument of a function call (except the callee has [[unsafe_...]]
   // attribute), or
-  // 2. the operand of a cast operation; or
-  // ...
+  // 2. the operand of a cast-to-(Integer or Boolean) operation; or
+  // 3. the operand of a pointer subtraction operation; or
+  // 4. the operand of a pointer comparison operation; or
+  // ... 
   auto CallArgMatcher =
-      callExpr(forEachArgumentWithParam(InnerMatcher, 
+      callExpr(forEachArgumentWithParam(InnerMatcher,
                   hasPointerType() /* array also decays to pointer type*/),
           unless(callee(functionDecl(hasAttr(attr::UnsafeBufferUsage)))));
 
   auto CastOperandMatcher =
-      explicitCastExpr(hasCastKind(CastKind::CK_PointerToIntegral),
-                       castSubExpr(allOf(hasPointerType(), InnerMatcher)));
+    castExpr(anyOf(hasCastKind(CastKind::CK_PointerToIntegral),
+		   hasCastKind(CastKind::CK_PointerToBoolean)),
+	     castSubExpr(allOf(hasPointerType(), InnerMatcher)));
+
+  // A matcher that matches pointer subtractions:
+  auto PtrSubtractionMatcher =
+    binaryOperator(hasOperatorName("-"),
+		   // Note that here we need both LHS and RHS to be
+		   // pointer. Then the inner matcher can match any of
+		   // them:
+		   allOf(hasLHS(hasPointerType()),
+			       hasRHS(hasPointerType())),
+		   eachOf(hasLHS(InnerMatcher),
+			        hasRHS(InnerMatcher)));
 
   auto CompOperandMatcher =
       binaryOperator(hasAnyOperatorName("!=", "==", "<", "<=", ">", ">="),
                      eachOf(hasLHS(allOf(hasPointerType(), InnerMatcher)),
                             hasRHS(allOf(hasPointerType(), InnerMatcher))));
 
-  return stmt(anyOf(CallArgMatcher, CastOperandMatcher, CompOperandMatcher));
+  return stmt(anyOf(CallArgMatcher, CastOperandMatcher, CompOperandMatcher, PtrSubtractionMatcher));
   // FIXME: any more cases? (UPC excludes the RHS of an assignment.  For now we
   // don't have to check that.)
 }
