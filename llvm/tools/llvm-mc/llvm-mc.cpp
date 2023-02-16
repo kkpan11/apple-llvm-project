@@ -536,9 +536,7 @@ int main(int argc, char **argv) {
   if (CASPath.empty())
     CAS = cas::createInMemoryCAS();
   else {
-    auto MaybeCAS = CASPath == "auto"
-                        ? cas::createOnDiskCAS(cas::getDefaultOnDiskCASPath())
-                        : cas::createOnDiskCAS(CASPath);
+    auto MaybeCAS = cas::createCASFromIdentifier(CASPath);
     if (!MaybeCAS) {
       WithColor::error() << toString(MaybeCAS.takeError()) << "\n";
       return 1;

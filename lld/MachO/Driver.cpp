@@ -1901,24 +1901,15 @@ bool macho::link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
   // mechanism as on the clang side to be able to use any kind of CAS.
   if (args.hasArg(OPT_cas_path)) {
     StringRef path = args.getLastArgValue(OPT_cas_path);
-    auto CAS = llvm::cas::createOnDiskCAS(path);
-    if (CAS) {
-      config->CAS = std::move(*CAS);
+    std::pair<std::unique_ptr<ObjectStore>, std::unique_ptr<ActionCache>> DBs;
+    if (Error E = createOnDiskUnifiedCASDatabases(path).moveInto(DBs)) {
+      error("error loading CAS at path '" + path +
+            "': " + toString(std::move(E)));
+    } else {
+      std::tie(config->CAS, config->actionCache) = std::move(DBs);
       config->CASSchemas =
           std::make_unique<ObjectFormatSchemaPool>(*config->CAS);
-    } else {
-      error("error loading CAS at path '" + path +
-            "': " + toString(CAS.takeError()));
     }
-    std::string defaultCachePath = llvm::cas::getDefaultOnDiskActionCachePath();
-    StringRef cachePath =
-        args.getLastArgValue(OPT_cache_path, defaultCachePath);
-    auto cache = llvm::cas::createOnDiskActionCache(cachePath);
-    if (cache)
-      config->actionCache = std::move(*cache);
-    else
-      error("error loading ActionCache at path '" + cachePath +
-            "': " + toString(cache.takeError()));
   }
   Optional<StringRef> CASFileSystemRootID;
   if (args.hasArg(OPT_fcas_fs))
