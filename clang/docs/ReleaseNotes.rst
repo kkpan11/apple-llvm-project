@@ -170,7 +170,6 @@ here. Generic improvements to Clang as a whole or to its underlying
 infrastructure are described first, followed by language-specific
 sections with improvements to Clang's support for those languages.
 
-Major New Features
 ------------------
 
 Bug Fixes
