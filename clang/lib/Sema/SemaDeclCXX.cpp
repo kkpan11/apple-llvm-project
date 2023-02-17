@@ -17146,14 +17146,6 @@ Decl *Sema::BuildStaticAssertDeclaration(SourceLocation StaticAssertLoc,
                        FoldKind).isInvalid())
       Failed = true;
 
-    // If the static_assert passes, only verify that
-    // the message is grammatically valid without evaluating it.
-    if (!Failed && AssertMessage && Cond.getBoolValue()) {
-      std::string Str;
-      EvaluateStaticAssertMessageAsString(AssertMessage, Str, Context,
-                                          /*ErrorOnInvalidMessage=*/false);
-    }
-
     // CWG2518
     // [dcl.pre]/p10  If [...] the expression is evaluated in the context of a
     // template definition, the declaration has no effect.
@@ -17161,6 +17153,7 @@ Decl *Sema::BuildStaticAssertDeclaration(SourceLocation StaticAssertLoc,
         getLangOpts().CPlusPlus && CurContext->isDependentContext();
 
     if (!Failed && !Cond && !InTemplateDefinition) {
+
       SmallString<256> MsgBuffer;
       llvm::raw_svector_ostream Msg(MsgBuffer);
       bool HasMessage = AssertMessage;
@@ -17192,8 +17185,8 @@ Decl *Sema::BuildStaticAssertDeclaration(SourceLocation StaticAssertLoc,
             << InnerCond->getSourceRange();
         DiagnoseStaticAssertDetails(InnerCond);
       } else {
-        Diag(AssertExpr->getBeginLoc(), diag::err_static_assert_failed)
-            << !HasMessage << Msg.str() << AssertExpr->getSourceRange();
+        Diag(StaticAssertLoc, diag::err_static_assert_failed)
+            << !AssertMessage << Msg.str() << AssertExpr->getSourceRange();
         PrintContextStack();
       }
       Failed = true;
