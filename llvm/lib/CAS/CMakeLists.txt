@@ -24,6 +24,7 @@ add_llvm_component_library(LLVMCAS
   OnDiskKeyValueDB.cpp
   PluginCAS.cpp
   TreeSchema.cpp
+  UnifiedOnDiskCache.cpp
 
   ADDITIONAL_HEADER_DIRS
   ${LLVM_MAIN_INCLUDE_DIR}/llvm/CAS
