@@ -475,7 +475,7 @@ class PointerDereferenceGadget: public FixableGadget {
   static constexpr const char *const OperatorTag = "op";
 
   const DeclRefExpr *BaseDeclRefExpr = nullptr;
-  const UnaryOperator *Op;
+  const UnaryOperator *Op = nullptr;
 
 public:
   PointerDereferenceGadget(const MatchFinder::MatchResult &Result)
@@ -499,13 +499,9 @@ public:
     return expr(isInUnspecifiedLvalueContext(Target));
   }
 
-  DeclUseList getClaimedVarUseSites() const override {
-    return {BaseDeclRefExpr};
-  }
+  DeclUseList getClaimedVarUseSites() const override { return {BaseDeclRefExpr};}
 
-  virtual const Stmt *getBaseStmt() const final {
-    return nullptr;
-  }
+  virtual const Stmt *getBaseStmt() const final { return Op;}
 
    virtual std::optional<FixItList> getFixits(const Strategy &S) const override;
 };
@@ -960,26 +956,32 @@ static StringRef getExprText(const Expr *E, const SourceManager &SM,
 
 std::optional<FixItList>
 PointerDereferenceGadget::getFixits(const Strategy &S) const {
-     if (const auto *DRE = dyn_cast<DeclRefExpr>(Op->getSubExpr()->IgnoreImpCasts()))
-      if (const auto *VD = dyn_cast<VarDecl>(DRE->getDecl())) {
-        if (S.lookup(VD) == Strategy::Kind::Span) {
-          ASTContext& Ctx = VD->getASTContext();
-          SourceManager &SM = Ctx.getSourceManager();
-          // Required changes: *(ptr); => (ptr[0]); and *ptr; => ptr[0]
-          // Deletes the *operand
-          CharSourceRange derefRange = clang::CharSourceRange::getCharRange(Op->getBeginLoc(), Op->getBeginLoc().getLocWithOffset(1));
-          // Inserts the [0]
-          std::optional<SourceLocation> endOfOperand = getEndCharLoc(DRE, SM, Ctx.getLangOpts());
-          if(endOfOperand) {
-            return FixItList{{
-              FixItHint::CreateRemoval(derefRange),
-              FixItHint::CreateInsertion(endOfOperand.value().getLocWithOffset(1), "[0]")
-            }};
-          }
+  const VarDecl *VD = dyn_cast<VarDecl>(BaseDeclRefExpr->getDecl());
+    switch (S.lookup(VD)) {
+      case Strategy::Kind::Span: {
+        ASTContext &Ctx = VD->getASTContext();
+        SourceManager &SM = Ctx.getSourceManager();
+        // Required changes: *(ptr); => (ptr[0]); and *ptr; => ptr[0]
+        // Deletes the *operand
+        CharSourceRange derefRange = clang::CharSourceRange::getCharRange(Op->getBeginLoc(), Op->getBeginLoc().getLocWithOffset(1));
+        // Inserts the [0]
+        std::optional<SourceLocation> endOfOperand = getEndCharLoc(BaseDeclRefExpr, SM, Ctx.getLangOpts());
+        if(endOfOperand) {
+          return FixItList{{
+            FixItHint::CreateRemoval(derefRange),
+            FixItHint::CreateInsertion(endOfOperand.value().getLocWithOffset(1), "[0]")
+          }};
         }
       }
-    llvm_unreachable("unsupported strategies for FixableGadgets");
-    return std::nullopt;
+      case Strategy::Kind::Iterator:
+      case Strategy::Kind::Array:
+      case Strategy::Kind::Vector:
+        llvm_unreachable("Strategy not implemented yet!");
+      case Strategy::Kind::Wontfix:
+        llvm_unreachable("Invalid strategy!");
+    }
+
+  return std::nullopt;
 }
 // For a non-null initializer `Init` of `T *` type, this function returns
 // `FixItHint`s producing a list initializer `{Init,  S}` as a part of a fix-it
