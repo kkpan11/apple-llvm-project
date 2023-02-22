@@ -500,20 +500,20 @@ public:
 
 // Fixable gadget to handle the expressions DRE in the unspecified pointer
 // context.
-class PointerCtxAccessGadget : public FixableGadget {
+class PointerReferenceGadget : public FixableGadget {
 private:
   static constexpr const char *const DeclRefExprTag = "PtrAccess";
   const DeclRefExpr *Node;
 
 public:
-  PointerCtxAccessGadget(const MatchFinder::MatchResult &Result)
-      : FixableGadget(Kind::PointerCtxAccess),
+  PointerReferenceGadget(const MatchFinder::MatchResult &Result)
+      : FixableGadget(Kind::PointerReference),
         Node(Result.Nodes.getNodeAs<DeclRefExpr>(DeclRefExprTag)) {
     assert(Node != nullptr && "Expecting a non-null matching result");
   }
 
   static bool classof(const Gadget *G) {
-    return G->getKind() == Kind::PointerCtxAccess;
+    return G->getKind() == Kind::PointerReference;
   }
 
   static Matcher matcher() {
@@ -528,10 +528,7 @@ public:
   virtual const Stmt *getBaseStmt() const override { return Node; }
 
   virtual DeclUseList getClaimedVarUseSites() const override {
-    if (const auto *DRE = dyn_cast<DeclRefExpr>(Node)) {
-      return {DRE};
-    }
-    return {};
+    return {Node};
   }
 };
 
@@ -1140,17 +1137,16 @@ fixUPCAddressofArraySubscriptWithSpan(const UnaryOperator *Node) {
 
 // Generates fix-its replacing an expression of the form UPC(DRE) with
 // `DRE.data()`
-std::optional<FixItList> PointerCtxAccessGadget::getFixits(const Strategy &S)
+std::optional<FixItList> PointerReferenceGadget::getFixits(const Strategy &S)
       const {
-  if (const auto *DRE = dyn_cast<DeclRefExpr>(Node))
-     if (const auto *VD = dyn_cast<VarDecl>(DRE->getDecl())) {
-      switch (S.lookup(VD)) {
+  if(const VarDecl *VD = dyn_cast<VarDecl>(Node->getDecl())) { 
+    switch (S.lookup(VD)) {
       case Strategy::Kind::Span: {
         ASTContext &Ctx = VD->getASTContext();
         SourceManager &SM = Ctx.getSourceManager();
         // Inserts the .data() after the DRE
         std::optional<SourceLocation> endOfOperand =
-            getEndCharLoc(DRE, SM, Ctx.getLangOpts());
+            getEndCharLoc(Node, SM, Ctx.getLangOpts());
 
         return FixItList{{FixItHint::CreateInsertion(
             endOfOperand.value().getLocWithOffset(1), ".data()")}};
@@ -1160,9 +1156,9 @@ std::optional<FixItList> PointerCtxAccessGadget::getFixits(const Strategy &S)
       case Strategy::Kind::Array:
       case Strategy::Kind::Vector:
         llvm_unreachable("unsupported strategies for FixableGadgets");
-      }
     }
-    return std::nullopt;
+  }
+  return std::nullopt;
 }
 
 // For a non-null initializer `Init` of `T *` type, this function returns
