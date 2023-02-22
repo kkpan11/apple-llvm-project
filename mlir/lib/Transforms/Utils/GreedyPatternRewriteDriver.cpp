@@ -54,7 +54,7 @@ protected:
 
   /// Notify the driver that the specified operation may have been modified
   /// in-place. The operation is added to the worklist.
-  void finalizeRootUpdate(Operation *op) override;
+  void notifyOperationModified(Operation *op) override;
 
   /// Notify the driver that the specified operation was inserted. Update the
   /// worklist as needed: The operation is enqueued depending on scope and
@@ -102,6 +102,9 @@ private:
 
   /// Pop the next operation from the worklist.
   Operation *popFromWorklist();
+
+  /// Notify the driver that the given block was created.
+  void notifyBlockCreated(Block *block) override;
 
   /// For debugging only: Notify the driver of a pattern match failure.
   LogicalResult
@@ -315,17 +318,24 @@ void GreedyPatternRewriteDriver::removeFromWorklist(Operation *op) {
   }
 }
 
+void GreedyPatternRewriteDriver::notifyBlockCreated(Block *block) {
+  if (config.listener)
+    config.listener->notifyBlockCreated(block);
+}
+
 void GreedyPatternRewriteDriver::notifyOperationInserted(Operation *op) {
   LLVM_DEBUG({
     logger.startLine() << "** Insert  : '" << op->getName() << "'(" << op
                        << ")\n";
   });
+  if (config.listener)
+    config.listener->notifyOperationInserted(op);
   if (config.strictMode == GreedyRewriteStrictness::ExistingAndNewOps)
     strictModeFilteredOps.insert(op);
   addToWorklist(op);
 }
 
-void GreedyPatternRewriteDriver::finalizeRootUpdate(Operation *op) {
+void GreedyPatternRewriteDriver::notifyOperationModified(Operation *op) {
   LLVM_DEBUG({
     logger.startLine() << "** Modified: '" << op->getName() << "'(" << op
                        << ")\n";
@@ -352,6 +362,8 @@ void GreedyPatternRewriteDriver::notifyOperationRemoved(Operation *op) {
     logger.startLine() << "** Erase   : '" << op->getName() << "'(" << op
                        << ")\n";
   });
+  if (config.listener)
+    config.listener->notifyOperationRemoved(op);
 
   addOperandsToWorklist(op->getOperands());
   op->walk([this](Operation *operation) {
@@ -369,6 +381,8 @@ void GreedyPatternRewriteDriver::notifyOperationReplaced(
     logger.startLine() << "** Replace : '" << op->getName() << "'(" << op
                        << ")\n";
   });
+  if (config.listener)
+    config.listener->notifyOperationReplaced(op, replacement);
   for (auto result : op->getResults())
     for (auto *user : result.getUsers())
       addToWorklist(user);
@@ -381,6 +395,8 @@ LogicalResult GreedyPatternRewriteDriver::notifyMatchFailure(
     reasonCallback(diag);
     logger.startLine() << "** Failure : " << diag.str() << "\n";
   });
+  if (config.listener)
+    return config.listener->notifyMatchFailure(loc, reasonCallback);
   return failure();
 }
 
