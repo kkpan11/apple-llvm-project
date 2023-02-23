@@ -39,6 +39,7 @@
 #include "llvm/BinaryFormat/MachO.h"
 #include "llvm/BinaryFormat/Magic.h"
 #include "llvm/CAS/ActionCache.h"
+#include "llvm/CAS/BuiltinUnifiedCASDatabases.h"
 #include "llvm/CAS/CASFileSystem.h"
 #include "llvm/CAS/CachingOnDiskFileSystem.h"
 #include "llvm/CAS/HierarchicalTreeBuilder.h"
