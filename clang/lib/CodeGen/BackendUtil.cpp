@@ -460,7 +460,7 @@ static bool initTargetOptions(DiagnosticsEngine &Diags,
   }
 
   // CASOpts.
-  Options.MCOptions.CAS = CASOpts.getOrCreateObjectStore(Diags);
+  Options.MCOptions.CAS = CASOpts.getOrCreateDatabases(Diags).first;
   Options.MCOptions.ResultCallBack = CodeGenOpts.MCCallBack;
   Options.MCOptions.CASObjMode = CodeGenOpts.getCASObjMode();
 
