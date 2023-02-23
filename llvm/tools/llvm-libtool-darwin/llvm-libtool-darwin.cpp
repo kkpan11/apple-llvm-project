@@ -812,10 +812,7 @@ static Expected<Config> parseCommandLine(int Argc, char **Argv) {
     return createStringError(std::errc::invalid_argument,
                              "plugin CAS not supported");
   } else if (CASSelection == CASKind::Builtin) {
-    std::string CASPath = CASBuiltinPath;
-    if (CASPath.empty())
-      CASPath = llvm::cas::getDefaultOnDiskCASStableID();
-    auto MaybeCAS = cas::createOnDiskCAS(CASPath);
+    auto MaybeCAS = cas::createCASFromIdentifier(CASBuiltinPath);
     if (Error E = MaybeCAS.takeError())
       return std::move(E);
     C.CAS = std::move(*MaybeCAS);

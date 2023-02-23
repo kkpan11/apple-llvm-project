@@ -7,8 +7,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/CAS/ObjectStore.h"
+#include "BuiltinCAS.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/StringMap.h"
+#include "llvm/CAS/UnifiedOnDiskCache.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/ManagedStatic.h"
@@ -178,8 +180,11 @@ cas::createCASFromIdentifier(StringRef Path) {
   if (Path == "auto")
     return createOnDiskCAS(getDefaultOnDiskCASPath());
 
-  // Fallback is to create OnDiskCAS.
-  return createOnDiskCAS(Path);
+  // Fallback is to create UnifiedOnDiskCache.
+  auto UniDB = builtin::createBuiltinUnifiedOnDiskCache(Path);
+  if (!UniDB)
+    return UniDB.takeError();
+  return builtin::createObjectStoreFromUnifiedOnDiskCache(std::move(*UniDB));
 }
 
 void cas::registerCASURLScheme(StringRef Prefix,
