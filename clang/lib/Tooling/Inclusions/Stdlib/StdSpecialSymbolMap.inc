@@ -233,7 +233,32 @@ SYMBOL(ssize, std::, <unordered_map>)
 SYMBOL(ssize, std::, <unordered_set>)
 SYMBOL(ssize, std::, <vector>)
 
+// Add headers for generic integer-type abs.
+// Ignore other variants (std::complex, std::valarray, std::intmax_t)
+SYMBOL(abs, std::, <cstdlib>)
+SYMBOL(abs, std::, <cmath>)
+SYMBOL(abs, None, <cstdlib>)
+SYMBOL(abs, None, <stdlib.h>)
+SYMBOL(abs, None, <cmath>)
+SYMBOL(abs, None, <math.h>)
+
 // std::get has a few variants for different types (tuple, array, pair etc)
 // which is tricky to disambiguate without type information.
 // Don't set any header for it, as it comes with the type header.
 SYMBOL(get, std::, /*no headers*/)
+
+// Macros
+SYMBOL(NULL, None, <cstddef>)
+SYMBOL(NULL, None, <stddef.h>)
+SYMBOL(NULL, None, <cstdlib>)
+SYMBOL(NULL, None, <stdlib.h>)
+SYMBOL(NULL, None, <cstring>)
+SYMBOL(NULL, None, <string.h>)
+SYMBOL(NULL, None, <cwchar>)
+SYMBOL(NULL, None, <wchar.h>)
+SYMBOL(NULL, None, <ctime>)
+SYMBOL(NULL, None, <time.h>)
+SYMBOL(NULL, None, <clocale>)
+SYMBOL(NULL, None, <locale.h>)
+SYMBOL(NULL, None, <cstdio>)
+SYMBOL(NULL, None, <stdio.h>)
