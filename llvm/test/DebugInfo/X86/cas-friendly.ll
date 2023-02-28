@@ -1,4 +1,4 @@
-; RUN: llc -mtriple=x86_64-apple-macosx12.0.0 -filetype=obj %s -o %t 
+; RUN: llc -cas-friendly-debug-info -mtriple=x86_64-apple-macosx12.0.0 -filetype=obj %s -o %t 
 ; RUN: llvm-dwarfdump -debug-line --debug-info %t | FileCheck %s
 
 ; This test checks if the line tables are emitted in a cas-friendly manner, which means they emit end_sequences when a function's contribution to the line table has ended. This is done to be able to split a function's contribution to the line table into individual cas blocks.
@@ -86,7 +86,7 @@ attributes #1 = { nofree nosync nounwind readnone speculatable willreturn }
 !llvm.module.flags = !{!2, !3, !4, !5, !6, !7}
 !llvm.ident = !{!8}
 
-!0 = distinct !DICompileUnit(language: DW_LANG_C99, file: !1, producer: "clang version 14.0.0 (git@github.com:apple/llvm-project.git 24e049152a8c2239a157a36f6a4d065e7a1b183b)", isOptimized: false, runtimeVersion: 0, emissionKind: FullDebug, splitDebugInlining: false, nameTableKind: None, sysroot: "/", casFriendly: DebugLineOnly)
+!0 = distinct !DICompileUnit(language: DW_LANG_C99, file: !1, producer: "clang version 14.0.0 (git@github.com:apple/llvm-project.git 24e049152a8c2239a157a36f6a4d065e7a1b183b)", isOptimized: false, runtimeVersion: 0, emissionKind: FullDebug, splitDebugInlining: false, nameTableKind: None, sysroot: "/")
 !1 = !DIFile(filename: "test.c", directory: "/Users/shubham/Development/testClangDebugInfo")
 !2 = !{i32 7, !"Dwarf Version", i32 4}
 !3 = !{i32 2, !"Debug Info Version", i32 3}

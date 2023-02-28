@@ -170,6 +170,10 @@ static cl::opt<DwarfDebug::MinimizeAddrInV5> MinimizeAddrInV5Option(
                           "Stuff")),
     cl::init(DwarfDebug::MinimizeAddrInV5::Default));
 
+static cl::opt<bool> CasFriendlyDebugInfo(
+    "cas-friendly-debug-info", cl::Hidden,
+    cl::desc("Emit debug information that is cas friendly"), cl::init(false));
+
 static constexpr unsigned ULEB128PadSize = 4;
 
 void DebugLocDwarfExpression::emitOp(uint8_t Op, const char *Comment) {
@@ -465,6 +469,8 @@ DwarfDebug::DwarfDebug(AsmPrinter *A)
   Asm->OutStreamer->getContext().setDwarfVersion(DwarfVersion);
   Asm->OutStreamer->getContext().setDwarfFormat(Dwarf64 ? dwarf::DWARF64
                                                         : dwarf::DWARF32);
+
+  GenerateCasFriendlyDebugInfo = CasFriendlyDebugInfo;
 }
 
 // Define out of line so we don't have to include DwarfUnit.h in DwarfDebug.h.
@@ -2305,12 +2311,11 @@ void DwarfDebug::endFunctionImpl(const MachineFunction *MF) {
   // Construct call site entries.
   constructCallSiteEntryDIEs(*SP, TheCU, ScopeDIE, *MF);
 
-  // If the CasFriendlinessKind is CasFriendly, this indicates to us that we
-  // want to split up the line tables by function. To do this, we want to emit a
-  // DW_LNE_end_sequence at the end of a function's contribution to the line
-  // table.
-  if (SP->getUnit()->getCasFriendlinessKind() !=
-      DICompileUnit::NoCasFriendlyDebugInfo) {
+  // If the GenerateCasFriendlyDebugInfo flag is true, this indicates to us that
+  // we want to split up the line tables by function. To do this, we want to
+  // emit a DW_LNE_end_sequence at the end of a function's contribution to the
+  // line table.
+  if (GenerateCasFriendlyDebugInfo) {
     MCSymbol *LineSym = Asm->OutStreamer->getContext().createTempSymbol();
     Asm->OutStreamer->emitLabel(LineSym);
     MCDwarfLoc DwarfLoc(

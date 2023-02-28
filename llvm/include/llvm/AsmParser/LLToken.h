@@ -454,25 +454,24 @@ enum Kind {
   SummaryID,  // ^42
 
   // String valued tokens (StrVal).
-  LabelStr,            // foo:
-  GlobalVar,           // @foo @"foo"
-  ComdatVar,           // $foo
-  LocalVar,            // %foo %"foo"
-  MetadataVar,         // !foo
-  StringConstant,      // "foo"
-  DwarfTag,            // DW_TAG_foo
-  DwarfAttEncoding,    // DW_ATE_foo
-  DwarfVirtuality,     // DW_VIRTUALITY_foo
-  DwarfLang,           // DW_LANG_foo
-  DwarfCC,             // DW_CC_foo
-  EmissionKind,        // lineTablesOnly
-  CasFriendlinessKind, // casFriendliness
-  NameTableKind,       // GNU
-  DwarfOp,             // DW_OP_foo
-  DIFlag,              // DIFlagFoo
-  DISPFlag,            // DISPFlagFoo
-  DwarfMacinfo,        // DW_MACINFO_foo
-  ChecksumKind,        // CSK_foo
+  LabelStr,         // foo:
+  GlobalVar,        // @foo @"foo"
+  ComdatVar,        // $foo
+  LocalVar,         // %foo %"foo"
+  MetadataVar,      // !foo
+  StringConstant,   // "foo"
+  DwarfTag,         // DW_TAG_foo
+  DwarfAttEncoding, // DW_ATE_foo
+  DwarfVirtuality,  // DW_VIRTUALITY_foo
+  DwarfLang,        // DW_LANG_foo
+  DwarfCC,          // DW_CC_foo
+  EmissionKind,     // lineTablesOnly
+  NameTableKind,    // GNU
+  DwarfOp,          // DW_OP_foo
+  DIFlag,           // DIFlagFoo
+  DISPFlag,         // DISPFlagFoo
+  DwarfMacinfo,     // DW_MACINFO_foo
+  ChecksumKind,     // CSK_foo
 
   // Type valued tokens (TyVal).
   Type,

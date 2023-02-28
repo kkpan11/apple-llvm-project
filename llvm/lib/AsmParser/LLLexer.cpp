@@ -946,11 +946,6 @@ lltok::Kind LLLexer::LexIdentifier() {
     return lltok::EmissionKind;
   }
 
-  if (Keyword == "NoCasFriendlyDebugInfo" || Keyword == "DebugLineOnly") {
-    StrVal.assign(Keyword.begin(), Keyword.end());
-    return lltok::CasFriendlinessKind;
-  }
-
   if (Keyword == "GNU" || Keyword == "None" || Keyword == "Default") {
     StrVal.assign(Keyword.begin(), Keyword.end());
     return lltok::NameTableKind;

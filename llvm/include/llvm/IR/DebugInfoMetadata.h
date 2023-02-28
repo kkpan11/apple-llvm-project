@@ -1380,16 +1380,8 @@ public:
     LastDebugNameTableKind = None
   };
 
-  enum CasFriendlinessKind : unsigned {
-    NoCasFriendlyDebugInfo = 0,
-    DebugLineOnly,
-    LastCasFriendlinessKind = DebugLineOnly
-  };
-
   static std::optional<DebugEmissionKind> getEmissionKind(StringRef Str);
-  static std::optional<CasFriendlinessKind> getCasFriendlinessKind(StringRef Str);
   static const char *emissionKindString(DebugEmissionKind EK);
-  static const char *casFriendlinessString(CasFriendlinessKind CFK);
   static std::optional<DebugNameTableKind> getNameTableKind(StringRef Str);
   static const char *nameTableKindString(DebugNameTableKind PK);
 
@@ -1403,14 +1395,12 @@ private:
   bool DebugInfoForProfiling;
   unsigned NameTableKind;
   bool RangesBaseAddress;
-  unsigned CasFriendliness;
 
   DICompileUnit(LLVMContext &C, StorageType Storage, unsigned SourceLanguage,
                 bool IsOptimized, unsigned RuntimeVersion,
                 unsigned EmissionKind, uint64_t DWOId, bool SplitDebugInlining,
                 bool DebugInfoForProfiling, unsigned NameTableKind,
-                bool RangesBaseAddress, ArrayRef<Metadata *> Ops,
-                unsigned CasFriendliness);
+                bool RangesBaseAddress, ArrayRef<Metadata *> Ops);
   ~DICompileUnit() = default;
 
   static DICompileUnit *
@@ -1423,8 +1413,7 @@ private:
           DIImportedEntityArray ImportedEntities, DIMacroNodeArray Macros,
           uint64_t DWOId, bool SplitDebugInlining, bool DebugInfoForProfiling,
           unsigned NameTableKind, bool RangesBaseAddress, StringRef SysRoot,
-          StringRef SDK, unsigned CasFriendlieness, StorageType Storage,
-          bool ShouldCreate = true) {
+          StringRef SDK, StorageType Storage, bool ShouldCreate = true) {
     return getImpl(
         Context, SourceLanguage, File, getCanonicalMDString(Context, Producer),
         IsOptimized, getCanonicalMDString(Context, Flags), RuntimeVersion,
@@ -1433,8 +1422,7 @@ private:
         ImportedEntities.get(), Macros.get(), DWOId, SplitDebugInlining,
         DebugInfoForProfiling, NameTableKind, RangesBaseAddress,
         getCanonicalMDString(Context, SysRoot),
-        getCanonicalMDString(Context, SDK), CasFriendlieness, Storage,
-        ShouldCreate);
+        getCanonicalMDString(Context, SDK), Storage, ShouldCreate);
   }
   static DICompileUnit *
   getImpl(LLVMContext &Context, unsigned SourceLanguage, Metadata *File,
@@ -1445,8 +1433,7 @@ private:
           Metadata *Macros, uint64_t DWOId, bool SplitDebugInlining,
           bool DebugInfoForProfiling, unsigned NameTableKind,
           bool RangesBaseAddress, MDString *SysRoot, MDString *SDK,
-          unsigned CasFriendliness, StorageType Storage,
-          bool ShouldCreate = true);
+          StorageType Storage, bool ShouldCreate = true);
 
   TempDICompileUnit cloneImpl() const {
     return getTemporary(
@@ -1455,8 +1442,7 @@ private:
         getEmissionKind(), getEnumTypes(), getRetainedTypes(),
         getGlobalVariables(), getImportedEntities(), getMacros(), DWOId,
         getSplitDebugInlining(), getDebugInfoForProfiling(), getNameTableKind(),
-        getRangesBaseAddress(), getSysRoot(), getSDK(),
-        getCasFriendlinessKind());
+        getRangesBaseAddress(), getSysRoot(), getSDK());
   }
 
 public:
@@ -1473,12 +1459,12 @@ public:
        DIImportedEntityArray ImportedEntities, DIMacroNodeArray Macros,
        uint64_t DWOId, bool SplitDebugInlining, bool DebugInfoForProfiling,
        DebugNameTableKind NameTableKind, bool RangesBaseAddress,
-       StringRef SysRoot, StringRef SDK, unsigned CasFriendliness),
+       StringRef SysRoot, StringRef SDK),
       (SourceLanguage, File, Producer, IsOptimized, Flags, RuntimeVersion,
        SplitDebugFilename, EmissionKind, EnumTypes, RetainedTypes,
        GlobalVariables, ImportedEntities, Macros, DWOId, SplitDebugInlining,
        DebugInfoForProfiling, (unsigned)NameTableKind, RangesBaseAddress,
-       SysRoot, SDK, CasFriendliness))
+       SysRoot, SDK))
   DEFINE_MDNODE_GET_DISTINCT_TEMPORARY(
       DICompileUnit,
       (unsigned SourceLanguage, Metadata *File, MDString *Producer,
@@ -1488,12 +1474,11 @@ public:
        Metadata *ImportedEntities, Metadata *Macros, uint64_t DWOId,
        bool SplitDebugInlining, bool DebugInfoForProfiling,
        unsigned NameTableKind, bool RangesBaseAddress, MDString *SysRoot,
-       MDString *SDK, unsigned CasFriendliness),
+       MDString *SDK),
       (SourceLanguage, File, Producer, IsOptimized, Flags, RuntimeVersion,
        SplitDebugFilename, EmissionKind, EnumTypes, RetainedTypes,
        GlobalVariables, ImportedEntities, Macros, DWOId, SplitDebugInlining,
-       DebugInfoForProfiling, NameTableKind, RangesBaseAddress, SysRoot, SDK,
-       CasFriendliness))
+       DebugInfoForProfiling, NameTableKind, RangesBaseAddress, SysRoot, SDK))
 
   TempDICompileUnit clone() const { return cloneImpl(); }
 
@@ -1502,9 +1487,6 @@ public:
   unsigned getRuntimeVersion() const { return RuntimeVersion; }
   DebugEmissionKind getEmissionKind() const {
     return (DebugEmissionKind)EmissionKind;
-  }
-  CasFriendlinessKind getCasFriendlinessKind() const {
-    return (CasFriendlinessKind)CasFriendliness;
   }
   bool isDebugDirectivesOnly() const {
     return EmissionKind == DebugDirectivesOnly;
