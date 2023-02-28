@@ -80,9 +80,12 @@ public:
     return VisitorBase::TraverseDecl(Node);
   }
    
-    bool TraverseGenericSelectionExpr(GenericSelectionExpr *Node) {
+  bool TraverseGenericSelectionExpr(GenericSelectionExpr *Node) {
     // These are unevaluated, except the result expression.
-     return TraverseStmt(Node->getResultExpr());
+     if(ignoreUnevaluatedContext)
+       return TraverseStmt(Node->getResultExpr());
+     // return VisitorBase::TraverseGenericSelectionExpr(Node);
+     return TraverseStmt(Node);
   }
 
   bool TraverseUnaryExprOrTypeTraitExpr(UnaryExprOrTypeTraitExpr *Node) {

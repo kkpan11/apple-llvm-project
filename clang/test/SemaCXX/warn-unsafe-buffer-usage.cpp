@@ -120,7 +120,7 @@ void testUnevaluatedContext(int * p) { // expected-warning{{'p' is an unsafe poi
   __is_trivially_constructible(__typeof(p[5]), decltype(p[5])); // no-note
   _Generic(p[1], int: 2, float: 3); // no-note
   _Generic(1, int: p[2], float: 3); // expected-note{{used in buffer access here}}
-  _Generic(1, int: 2, float: p[3]); // no-note
+   _Generic(1, int: 2, float: p[3]); // no-note
   decltype(p[2]) var = y; // no-note
   noexcept(p[2]); // no-note
   typeid(p[3]); // no-note
