@@ -369,9 +369,6 @@ def warn_drv_unsupported_opt_for_target : Warning<
 def warn_drv_unsupported_debug_info_opt_for_target : Warning<
   "debug information option '%0' is not supported for target '%1'">,
   InGroup<UnsupportedTargetOpt>;
-def warn_drv_unsupported_cas_friendliness_opt_for_target : Warning<
-  "cas friendliness option '%0' is not supported for target '%1'">,
-  InGroup<UnsupportedTargetOpt>;
 def warn_drv_dwarf_version_limited_by_target : Warning<
   "debug information option '%0' is not supported; requires DWARF-%2 but "
   "target '%1' only provides DWARF-%3">,

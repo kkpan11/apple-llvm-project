@@ -850,15 +850,13 @@ DICompileUnit::DICompileUnit(LLVMContext &C, StorageType Storage,
                              unsigned RuntimeVersion, unsigned EmissionKind,
                              uint64_t DWOId, bool SplitDebugInlining,
                              bool DebugInfoForProfiling, unsigned NameTableKind,
-                             bool RangesBaseAddress, ArrayRef<Metadata *> Ops,
-                             unsigned CasFriendliness)
+                             bool RangesBaseAddress, ArrayRef<Metadata *> Ops)
     : DIScope(C, DICompileUnitKind, Storage, dwarf::DW_TAG_compile_unit, Ops),
       SourceLanguage(SourceLanguage), IsOptimized(IsOptimized),
       RuntimeVersion(RuntimeVersion), EmissionKind(EmissionKind), DWOId(DWOId),
       SplitDebugInlining(SplitDebugInlining),
       DebugInfoForProfiling(DebugInfoForProfiling),
-      NameTableKind(NameTableKind), RangesBaseAddress(RangesBaseAddress),
-      CasFriendliness(CasFriendliness) {
+      NameTableKind(NameTableKind), RangesBaseAddress(RangesBaseAddress) {
   assert(Storage != Uniqued);
 }
 
@@ -870,8 +868,7 @@ DICompileUnit *DICompileUnit::getImpl(
     Metadata *GlobalVariables, Metadata *ImportedEntities, Metadata *Macros,
     uint64_t DWOId, bool SplitDebugInlining, bool DebugInfoForProfiling,
     unsigned NameTableKind, bool RangesBaseAddress, MDString *SysRoot,
-    MDString *SDK, unsigned CasFriendliness, StorageType Storage,
-    bool ShouldCreate) {
+    MDString *SDK, StorageType Storage, bool ShouldCreate) {
   assert(Storage != Uniqued && "Cannot unique DICompileUnit");
   assert(isCanonical(Producer) && "Expected canonical MDString");
   assert(isCanonical(Flags) && "Expected canonical MDString");
@@ -892,7 +889,7 @@ DICompileUnit *DICompileUnit::getImpl(
                        Context, Storage, SourceLanguage, IsOptimized,
                        RuntimeVersion, EmissionKind, DWOId, SplitDebugInlining,
                        DebugInfoForProfiling, NameTableKind, RangesBaseAddress,
-                       Ops, CasFriendliness),
+                       Ops),
                    Storage);
 }
 
@@ -903,14 +900,6 @@ DICompileUnit::getEmissionKind(StringRef Str) {
       .Case("FullDebug", FullDebug)
       .Case("LineTablesOnly", LineTablesOnly)
       .Case("DebugDirectivesOnly", DebugDirectivesOnly)
-      .Default(std::nullopt);
-}
-
-std::optional<DICompileUnit::CasFriendlinessKind>
-DICompileUnit::getCasFriendlinessKind(StringRef Str) {
-  return StringSwitch<std::optional<CasFriendlinessKind>>(Str)
-      .Case("NoCasFriendlyDebugInfo", NoCasFriendlyDebugInfo)
-      .Case("DebugLineOnly", DebugLineOnly)
       .Default(std::nullopt);
 }
 
@@ -933,16 +922,6 @@ const char *DICompileUnit::emissionKindString(DebugEmissionKind EK) {
     return "LineTablesOnly";
   case DebugDirectivesOnly:
     return "DebugDirectivesOnly";
-  }
-  return nullptr;
-}
-
-const char *DICompileUnit::casFriendlinessString(CasFriendlinessKind CFK) {
-  switch (CFK) {
-  case NoCasFriendlyDebugInfo:
-    return "NoCasFriendlyDebugInfo";
-  case DebugLineOnly:
-    return "DebugLineOnly";
   }
   return nullptr;
 }

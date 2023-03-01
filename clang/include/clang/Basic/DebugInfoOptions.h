@@ -17,16 +17,6 @@ enum DebugInfoFormat {
   DIF_CodeView,
 };
 
-enum CasFriendlinessKind {
-  NoCasFriendlyDebugInfo,
-
-  /// Generate CAS friendly debug info to go along with the work being done for
-  /// llvm-cas. This option will make the line table split-able by inserting a
-  /// DW_LNE_end_sequence at the end of a function's contribution to a line
-  /// table.
-  DebugLineOnly,
-};
-
 enum DebugInfoKind {
   /// Don't generate debug info.
   NoDebugInfo,

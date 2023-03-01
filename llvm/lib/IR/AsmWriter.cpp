@@ -1696,9 +1696,6 @@ struct MDFieldPrinter {
   void printDwarfEnum(StringRef Name, IntTy Value, Stringifier toString,
                       bool ShouldSkipZero = true);
   void printEmissionKind(StringRef Name, DICompileUnit::DebugEmissionKind EK);
-  void printCasFriendlinessKind(
-      StringRef Name, DICompileUnit::CasFriendlinessKind EK,
-      std::optional<DICompileUnit::CasFriendlinessKind> Default = std::nullopt);
   void printNameTableKind(StringRef Name,
                           DICompileUnit::DebugNameTableKind NTK);
 };
@@ -1828,14 +1825,6 @@ void MDFieldPrinter::printDISPFlags(StringRef Name,
 void MDFieldPrinter::printEmissionKind(StringRef Name,
                                        DICompileUnit::DebugEmissionKind EK) {
   Out << FS << Name << ": " << DICompileUnit::emissionKindString(EK);
-}
-
-void MDFieldPrinter::printCasFriendlinessKind(
-    StringRef Name, DICompileUnit::CasFriendlinessKind EK,
-    std::optional<DICompileUnit::CasFriendlinessKind> Default) {
-  if (Default && *Default == EK)
-    return;
-  Out << FS << Name << ": " << DICompileUnit::casFriendlinessString(EK);
 }
 
 void MDFieldPrinter::printNameTableKind(StringRef Name,
@@ -2143,8 +2132,6 @@ static void writeDICompileUnit(raw_ostream &Out, const DICompileUnit *N,
   Printer.printBool("rangesBaseAddress", N->getRangesBaseAddress(), false);
   Printer.printString("sysroot", N->getSysRoot());
   Printer.printString("sdk", N->getSDK());
-  Printer.printCasFriendlinessKind("casFriendly", N->getCasFriendlinessKind(),
-                                   DICompileUnit::NoCasFriendlyDebugInfo);
   Out << ")";
 }
 

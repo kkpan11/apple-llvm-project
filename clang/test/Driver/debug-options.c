@@ -306,15 +306,6 @@
 // RUN: %clang -### -gno-modules %s 2>&1 | FileCheck -check-prefix=GNOMOD %s
 //
 
-// RUN: %clang -### -c -g -fcas-friendly-debug-info=debug-line-only %s -target x86_64-apple-darwin14 2>&1 \
-// RUN:             | FileCheck -check-prefix=F_CASFRIENDLY_DEBUG_LINE \
-// RUN:                         -check-prefix=G_DWARF2 \
-// RUN:                         -check-prefix=G_LLDB %s
-// RUN: %clang -### -c -g -fcas-friendly-debug-info=debug-line-only %s -target x86_64-apple-darwin16 2>&1 \
-// RUN:             | FileCheck -check-prefix=F_CASFRIENDLY_DEBUG_LINE \
-// RUN:                         -check-prefix=G_DWARF4 \
-// RUN:                         -check-prefix=G_LLDB %s
-
 // NOG_PS: "-cc1"
 // NOG_PS-NOT: "-dwarf-version=
 // NOG_PS: "-generate-arange-section"
@@ -354,8 +345,6 @@
 //
 // G_STANDALONE: "-cc1"
 // G_STANDALONE: "-debug-info-kind=standalone"
-// F_CASFRIENDLY_DEBUG_LINE: "-cc1"
-// F_CASFRIENDLY_DEBUG_LINE: "-cas-friendliness-kind=debug-line-only"
 // G_LIMITED: "-cc1"
 // G_LIMITED: "-debug-info-kind=constructor"
 // G_DWARF2: "-dwarf-version=2"

@@ -692,8 +692,7 @@ private:
         RetainedTypes, GlobalVariables, ImportedEntities, CU->getMacros(),
         CU->getDWOId(), CU->getSplitDebugInlining(),
         CU->getDebugInfoForProfiling(), CU->getNameTableKind(),
-        CU->getRangesBaseAddress(), CU->getSysRoot(), CU->getSDK(),
-        CU->getCasFriendlinessKind());
+        CU->getRangesBaseAddress(), CU->getSysRoot(), CU->getSDK());
   }
 
   DILocation *getReplacementMDLocation(DILocation *MLD) {
@@ -1049,9 +1048,7 @@ LLVMMetadataRef LLVMDIBuilderCreateCompileUnit(
       static_cast<DICompileUnit::DebugEmissionKind>(Kind), DWOId,
       SplitDebugInlining, DebugInfoForProfiling,
       DICompileUnit::DebugNameTableKind::Default, false,
-      StringRef(SysRoot, SysRootLen), StringRef(SDK, SDKLen),
-      /*NoCasFriendlyDebugInfo*/
-      static_cast<DICompileUnit::CasFriendlinessKind>(0)));
+      StringRef(SysRoot, SysRootLen), StringRef(SDK, SDKLen)));
 }
 
 LLVMMetadataRef

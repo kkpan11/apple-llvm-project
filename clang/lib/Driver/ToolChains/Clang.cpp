@@ -4283,15 +4283,6 @@ static void renderDebugOptions(const ToolChain &TC, const Driver &D,
   if (T.isOSBinFormatELF() && SplitDWARFInlining)
     CmdArgs.push_back("-fsplit-dwarf-inlining");
 
-  if (const Arg *A = Args.getLastArg(options::OPT_fcas_friendly_debug_info)) {
-    StringRef ArgValue = A->getValue();
-    if (ArgValue == "debug-line-only")
-      CmdArgs.push_back("-cas-friendliness-kind=debug-line-only");
-    else
-      D.Diag(diag::warn_drv_unsupported_debug_info_opt_for_target)
-          << A->getAsString(Args) << TC.getTripleString();
-  }
-
   // After we've dealt with all combinations of things that could
   // make DebugInfoKind be other than None or DebugLineTablesOnly,
   // figure out if we need to "upgrade" it to standalone debug info.
