@@ -82,10 +82,9 @@ public:
    
   bool TraverseGenericSelectionExpr(GenericSelectionExpr *Node) {
     // These are unevaluated, except the result expression.
-     if(ignoreUnevaluatedContext)
-       return TraverseStmt(Node->getResultExpr());
-     // return VisitorBase::TraverseGenericSelectionExpr(Node);
-     return TraverseStmt(Node);
+    if(ignoreUnevaluatedContext)
+      return TraverseStmt(Node->getResultExpr());
+    return VisitorBase::TraverseGenericSelectionExpr(Node);
   }
 
   bool TraverseUnaryExprOrTypeTraitExpr(UnaryExprOrTypeTraitExpr *Node) {
@@ -1004,19 +1003,19 @@ findGadgets(const Decl *D, const UnsafeBufferUsageHandler &Handler) {
 #define FIXABLE_GADGET(x)                                                              \
         x ## Gadget::matcher().bind(#x),
 #include "clang/Analysis/Analyses/UnsafeBufferUsageGadgets.def"
-        // Also match DeclStmts because we'll need them when fixing
-        // their underlying VarDecls that otherwise don't have
-        // any backreferences to DeclStmts.
-        declStmt().bind("any_ds")
+        // In parallel, match all DeclRefExprs so that to find out
+        // whether there are any uncovered by gadgets.
+        declRefExpr(anyOf(hasPointerType(), hasArrayType()), to(varDecl())).bind("any_dre")
       ))),
       forEveryDescendantEvaluatedStmt(stmt(anyOf(
         // Add Gadget::matcher() for every gadget in the registry.
 #define WARNING_GADGET(x)                                                              \
         allOf(x ## Gadget::matcher().bind(#x), notInSafeBufferOptOut(&Handler)),
 #include "clang/Analysis/Analyses/UnsafeBufferUsageGadgets.def"
-        // In parallel, match all DeclRefExprs so that to find out
-        // whether there are any uncovered by gadgets.
-        declRefExpr(anyOf(hasPointerType(), hasArrayType()), to(varDecl())).bind("any_dre")
+        // Also match DeclStmts because we'll need them when fixing
+        // their underlying VarDecls that otherwise don't have
+        // any backreferences to DeclStmts. 
+        declStmt().bind("any_ds")
       ))
     ))),
     &CB
