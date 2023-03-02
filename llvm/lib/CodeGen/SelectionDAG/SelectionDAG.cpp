@@ -1935,6 +1935,27 @@ SDValue SelectionDAG::getCondCode(ISD::CondCode Cond) {
   return SDValue(CondCodeNodes[Cond], 0);
 }
 
+SDValue SelectionDAG::getVScale(const SDLoc &DL, EVT VT, APInt MulImm,
+                                bool ConstantFold) {
+  assert(MulImm.getSignificantBits() <= VT.getSizeInBits() &&
+         "Immediate does not fit VT");
+
+  MulImm = MulImm.sextOrTrunc(VT.getSizeInBits());
+
+  if (ConstantFold) {
+    const MachineFunction &MF = getMachineFunction();
+    auto Attr = MF.getFunction().getFnAttribute(Attribute::VScaleRange);
+    if (Attr.isValid()) {
+      unsigned VScaleMin = Attr.getVScaleRangeMin();
+      if (std::optional<unsigned> VScaleMax = Attr.getVScaleRangeMax())
+        if (*VScaleMax == VScaleMin)
+          return getConstant(MulImm * VScaleMin, DL, VT);
+    }
+  }
+
+  return getNode(ISD::VSCALE, DL, VT, getConstant(MulImm, DL, VT));
+}
+
 SDValue SelectionDAG::getStepVector(const SDLoc &DL, EVT ResVT) {
   APInt One(ResVT.getScalarSizeInBits(), 1);
   return getStepVector(DL, ResVT, One);
@@ -12199,37 +12220,10 @@ void SelectionDAG::copyExtraInfo(SDNode *From, SDNode *To) {
   if (I == SDEI.end())
     return;
 
-  // We need to copy NodeExtraInfo to all _new_ nodes that are being introduced
-  // through the replacement of From with To. Otherwise, replacements of a node
-  // (From) with more complex nodes (To and its operands) may result in lost
-  // extra info where the root node (To) is insignificant in further propagating
-  // and using extra info when further lowering to MIR.
-  //
-  // In the first step pre-populate the visited set with the nodes reachable
-  // from the old From node. This avoids copying NodeExtraInfo to parts of the
-  // DAG that is not new and should be left untouched.
-  SmallPtrSet<const SDNode *, 32> Visited;
-  auto VisitFrom = [&Visited](auto &&Self, SDNode *N) {
-    if (!Visited.insert(N).second)
-      return;
-    for (const SDValue &Op : N->op_values())
-      Self(Self, Op.getNode());
-  };
-  VisitFrom(VisitFrom, From);
-
   // Use of operator[] on the DenseMap may cause an insertion, which invalidates
   // the iterator, hence the need to make a copy to prevent a use-after-free.
   NodeExtraInfo Copy = I->second;
-
-  // Copy extra info to To and all its transitive operands (that are new).
-  auto DeepCopyTo = [this, &Copy, &Visited](auto &&Self, SDNode *To) {
-    if (!Visited.insert(To).second)
-      return;
-    SDEI[To] = Copy;
-    for (const SDValue &Op : To->op_values())
-      Self(Self, Op.getNode());
-  };
-  DeepCopyTo(DeepCopyTo, To);
+  SDEI[To] = std::move(Copy);
 }
 
 #ifndef NDEBUG
