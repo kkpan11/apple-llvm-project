@@ -1104,72 +1104,10 @@ void MachObjectWriter::writeSymbolTable(MCAssembler &Asm,
     StringTable.write(W.OS);
 }
 
-void MachObjectWriter::applyAddends(MCAssembler &Asm,
-                                    const MCAsmLayout &Layout) {
-  for (MCSection &Sec : Asm) {
-    for (MCFragment &F : Sec) {
-      MutableArrayRef<char> Contents;
-      switch (F.getKind()) {
-      case MCFragment::FT_Align:
-      case MCFragment::FT_CompactEncodedInst:
-      case MCFragment::FT_Fill:
-      case MCFragment::FT_Nops:
-      case MCFragment::FT_Org:
-      case MCFragment::FT_LEB:
-      case MCFragment::FT_BoundaryAlign:
-      case MCFragment::FT_SymbolId:
-      case MCFragment::FT_CVInlineLines:
-      case MCFragment::FT_Dummy:
-        continue;
-
-      case MCFragment::FT_Data: {
-        Contents = cast<MCDataFragment>(F).getContents();
-        break;
-      }
-
-      case MCFragment::FT_Relaxable: {
-        Contents = cast<MCRelaxableFragment>(F).getContents();
-        break;
-      }
-
-      case MCFragment::FT_CVDefRange: {
-        Contents = cast<MCCVDefRangeFragment>(F).getContents();
-        break;
-      }
-
-      case MCFragment::FT_Dwarf: {
-        Contents = cast<MCDwarfLineAddrFragment>(F).getContents();
-        break;
-      }
-
-      case MCFragment::FT_DwarfFrame: {
-        Contents = cast<MCDwarfCallFrameFragment>(F).getContents();
-        break;
-      }
-
-      case MCFragment::FT_PseudoProbe: {
-        Contents = cast<MCPseudoProbeAddrFragment>(F).getContents();
-        break;
-      }
-      }
-      applyAddendsHelper(Contents, &F);
-    }
-  }
-}
-
-void MachObjectWriter::applyAddendsHelper(MutableArrayRef<char> Contents,
-                                          const MCFragment *Fragment) {
-  for (auto ASO : Addends[Fragment]) {
-    for (unsigned I = 0; I != ASO.Size; ++I)
-      Contents[ASO.Offset + I] = uint8_t(ASO.Value >> (I * 8));
-  }
-}
-
 uint64_t MachObjectWriter::writeObject(MCAssembler &Asm,
                                        const MCAsmLayout &Layout) {
   uint64_t StartOffset = W.OS.tell();
 
-  applyAddends(Asm, Layout);
   prepareObject(Asm, Layout);
   writeMachOHeader(Asm, Layout);
   writeSectionData(Asm, Layout);

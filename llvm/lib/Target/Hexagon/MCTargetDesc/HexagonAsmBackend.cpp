@@ -415,8 +415,7 @@ public:
   void applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
                   const MCValue &Target, MutableArrayRef<char> Data,
                   uint64_t FixupValue, bool IsResolved,
-                  const MCSubtargetInfo *STI,
-                  const MCFragment *Fragment) const override {
+                  const MCSubtargetInfo *STI) const override {
 
     // When FixupValue is 0 the relocation is external and there
     // is nothing for us to do.

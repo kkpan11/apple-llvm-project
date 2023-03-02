@@ -28,8 +28,8 @@ public:
 
   void applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
                   const MCValue &Target, MutableArrayRef<char> Data,
-                  uint64_t Value, bool IsResolved, const MCSubtargetInfo *STI,
-                  const MCFragment *Fragment) const override;
+                  uint64_t Value, bool IsResolved,
+                  const MCSubtargetInfo *STI) const override;
 
   std::unique_ptr<MCObjectTargetWriter>
   createObjectTargetWriter() const override;
@@ -63,8 +63,8 @@ bool BPFAsmBackend::writeNopData(raw_ostream &OS, uint64_t Count,
 void BPFAsmBackend::applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
                                const MCValue &Target,
                                MutableArrayRef<char> Data, uint64_t Value,
-                               bool IsResolved, const MCSubtargetInfo *STI,
-                               const MCFragment *Fragment) const {
+                               bool IsResolved,
+                               const MCSubtargetInfo *STI) const {
   if (Fixup.getKind() == FK_SecRel_8) {
     // The Value is 0 for global variables, and the in-section offset
     // for static variables. Write to the immediate field of the inst.

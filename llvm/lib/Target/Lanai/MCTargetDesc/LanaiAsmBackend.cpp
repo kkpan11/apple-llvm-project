@@ -50,8 +50,8 @@ public:
 
   void applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
                   const MCValue &Target, MutableArrayRef<char> Data,
-                  uint64_t Value, bool IsResolved, const MCSubtargetInfo *STI,
-                  const MCFragment *Fragment) const override;
+                  uint64_t Value, bool IsResolved,
+                  const MCSubtargetInfo *STI) const override;
 
   std::unique_ptr<MCObjectTargetWriter>
   createObjectTargetWriter() const override;
@@ -88,8 +88,7 @@ void LanaiAsmBackend::applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
                                  const MCValue &Target,
                                  MutableArrayRef<char> Data, uint64_t Value,
                                  bool /*IsResolved*/,
-                                 const MCSubtargetInfo * /*STI*/,
-                                 const MCFragment *Fragment) const {
+                                 const MCSubtargetInfo * /*STI*/) const {
   MCFixupKind Kind = Fixup.getKind();
   Value = adjustFixupValue(static_cast<unsigned>(Kind), Value);
 

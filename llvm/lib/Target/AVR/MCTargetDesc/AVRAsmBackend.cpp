@@ -378,8 +378,8 @@ AVRAsmBackend::createObjectTargetWriter() const {
 void AVRAsmBackend::applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
                                const MCValue &Target,
                                MutableArrayRef<char> Data, uint64_t Value,
-                               bool IsResolved, const MCSubtargetInfo *STI,
-                               const MCFragment *Fragment) const {
+                               bool IsResolved,
+                               const MCSubtargetInfo *STI) const {
   if (Fixup.getKind() >= FirstLiteralRelocationKind)
     return;
   adjustFixupValue(Fixup, Target, Value, &Asm.getContext());

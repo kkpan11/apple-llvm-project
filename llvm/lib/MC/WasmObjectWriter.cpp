@@ -361,10 +361,6 @@ private:
   uint32_t getTagType(const MCSymbolWasm &Symbol);
   void registerFunctionType(const MCSymbolWasm &Symbol);
   void registerTagType(const MCSymbolWasm &Symbol);
-  bool addAddend(const MCFragment *Fragment, uint64_t Addend, uint32_t Offset,
-                 uint8_t Size) override {
-    return false;
-  }
 };
 
 } // end anonymous namespace
