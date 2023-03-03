@@ -1621,7 +1621,8 @@ protected:
       auto cmd_obj_sp = interpreter->CreateScriptCommandObject(
           m_options.m_class_name.c_str());
       if (!cmd_obj_sp) {
-        result.AppendError("cannot create helper object");
+        result.AppendErrorWithFormatv("cannot create helper object for: "
+                                      "'{0}'", m_options.m_class_name);
         return false;
       }
 
