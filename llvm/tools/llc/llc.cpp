@@ -358,9 +358,10 @@ struct LLCDiagnosticHandler : public DiagnosticHandler {
 static std::unique_ptr<cas::ObjectStore> getCAS() {
   if (CASPath.empty())
     return cas::createInMemoryCAS();
-  auto MaybeCAS = CASPath == "auto"
-                      ? cas::createOnDiskCAS(cas::getDefaultOnDiskCASPath())
-                      : cas::createOnDiskCAS(CASPath);
+  auto MaybeCAS =
+      CASPath == "auto"
+          ? cas::createCASFromIdentifier(cas::getDefaultOnDiskCASPath())
+          : cas::createCASFromIdentifier(CASPath);
   if (MaybeCAS)
     return std::move(*MaybeCAS);
   reportError(toString(MaybeCAS.takeError()));
