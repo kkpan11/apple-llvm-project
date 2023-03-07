@@ -212,7 +212,7 @@ static LogicalResult processBuffer(raw_ostream &os,
   context.allowUnregisteredDialects(config.shouldAllowUnregisteredDialects());
   if (config.shouldVerifyDiagnostics())
     context.printOpOnDiagnostic(false);
-  context.getActionManager().registerActionHandler<tracing::DebugCounter>();
+  context.registerActionHandler(tracing::DebugCounter());
 
   // If we are in verify diagnostics mode then we have a lot of work to do,
   // otherwise just perform the actions without worrying about it.
@@ -336,6 +336,7 @@ LogicalResult mlir::MlirOptMain(int argc, char **argv, llvm::StringRef toolName,
   // Parse pass names in main to ensure static initialization completed.
   cl::ParseCommandLineOptions(argc, argv, helpHeader);
   MlirOptMainConfig config = MlirOptMainConfig::createFromCLOptions();
+  config.preloadDialectsInContext(preloadDialectsInContext);
 
   // Set up the input file.
   std::string errorMessage;
