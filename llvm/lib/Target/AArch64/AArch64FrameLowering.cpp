@@ -2484,10 +2484,7 @@ static unsigned getPrologueDeath(MachineFunction &MF, unsigned Reg) {
 
 static bool produceCompactUnwindFrame(MachineFunction &MF) {
   const AArch64Subtarget &Subtarget = MF.getSubtarget<AArch64Subtarget>();
-  AttributeList Attrs = MF.getFunction().getAttributes();
   return Subtarget.isTargetMachO() &&
-         !(Subtarget.getTargetLowering()->supportSwiftError() &&
-           Attrs.hasAttrSomewhere(Attribute::SwiftError)) &&
          MF.getFunction().getCallingConv() != CallingConv::SwiftTail;
 }
 
@@ -2896,9 +2893,14 @@ bool AArch64FrameLowering::restoreCalleeSavedRegisters(
 
   computeCalleeSaveRegisterPairs(MF, CSI, TRI, RegPairs, hasFP(MF));
 
+  AttributeList Attrs = MF.getFunction().getAttributes();
   auto EmitMI = [&](const RegPairInfo &RPI) -> MachineBasicBlock::iterator {
     unsigned Reg1 = RPI.Reg1;
     unsigned Reg2 = RPI.Reg2;
+
+    if (MF.getSubtarget().getTargetLowering()->supportSwiftError() &&
+        Attrs.hasAttrSomewhere(Attribute::SwiftError) && Reg1 == AArch64::X21)
+      Reg1 = AArch64::XZR;
 
     // Issue sequence of restores for cs regs. The last restore may be converted
     // to a post-increment load later by emitEpilogue if the callee-save stack

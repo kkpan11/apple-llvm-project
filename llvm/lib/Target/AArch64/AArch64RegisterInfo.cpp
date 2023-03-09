@@ -151,11 +151,6 @@ AArch64RegisterInfo::getDarwinCalleeSavedRegs(const MachineFunction *MF) const {
     return MF->getInfo<AArch64FunctionInfo>()->isSplitCSR()
                ? CSR_Darwin_AArch64_CXX_TLS_PE_SaveList
                : CSR_Darwin_AArch64_CXX_TLS_SaveList;
-  if (MF->getSubtarget<AArch64Subtarget>().getTargetLowering()
-          ->supportSwiftError() &&
-      MF->getFunction().getAttributes().hasAttrSomewhere(
-          Attribute::SwiftError))
-    return CSR_Darwin_AArch64_AAPCS_SwiftError_SaveList;
   if (MF->getFunction().getCallingConv() == CallingConv::SwiftTail)
     return CSR_Darwin_AArch64_AAPCS_SwiftTail_SaveList;
   if (MF->getFunction().getCallingConv() == CallingConv::PreserveMost)

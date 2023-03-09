@@ -221,9 +221,9 @@ define float @foo_vararg(%swift_error** swifterror %error_ptr_ref, ...) {
 ; CHECK: mov w0, #16
 ; CHECK: malloc
 ; CHECK: mov [[ID:w[0-9]+]], #1
-; CHECK: mov x21, x0
-; CHECK-NOT: x21
 ; CHECK: strb [[ID]], [x0, #8]
+; CHECK-NOT: x21
+; CHECK: mov x21, x0
 ; CHECK-NOT: x21
 
 ; First vararg
@@ -318,10 +318,10 @@ entry:
 
 ; CHECK-LABEL: params_in_reg
 ; Save callee saved registers and swifterror since it will be clobbered by the first call to params_in_reg2.
-; CHECK:  str     x28, [sp
-; CHECK:  stp     x27, x26, [sp
-; CHECK:  stp     x25, x24, [sp
-; CHECK:  stp     x23, x22, [sp
+; CHECK:  stp     x28, x27, [sp
+; CHECK:  stp     x26, x25, [sp
+; CHECK:  stp     x24, x23, [sp
+; CHECK:  stp     x22, x21, [sp
 ; CHECK:  stp     x20, x19, [sp
 ; CHECK:  stp     x29, x30, [sp
 ; Store argument registers.
@@ -343,7 +343,7 @@ entry:
 ; CHECK:  mov     w6, #7
 ; CHECK:  mov     w7, #8
 ; CHECK:  mov      x21, xzr
-; CHECK:  str     xzr, [sp]
+; CHECK:  stp     xzr, x8, [sp]
 ; CHECK:  bl      _params_in_reg2
 ; Restore original arguments for next call.
 ; CHECK:  mov      x1, x20
@@ -358,19 +358,12 @@ entry:
 ; CHECK:  ldr      x8, [sp
 ; CHECK:  bl      _params_in_reg2
 ; Restore calle save registers but don't clober swifterror x21.
-; CHECK-NOT: x21
 ; CHECK:  ldp     x29, x30, [sp
-; CHECK-NOT: x21
 ; CHECK:  ldp     x20, x19, [sp
-; CHECK-NOT: x21
-; CHECK:  ldp     x23, x22, [sp
-; CHECK-NOT: x21
-; CHECK:  ldp     x25, x24, [sp
-; CHECK-NOT: x21
-; CHECK:  ldp     x27, x26, [sp
-; CHECK-NOT: x21
-; CHECK:  ldr     x28, [sp
-; CHECK-NOT: x21
+; CHECK:  ldp     x22, xzr, [sp
+; CHECK:  ldp     x24, x23, [sp
+; CHECK:  ldp     x26, x25, [sp
+; CHECK:  ldp     x28, x27, [sp
 ; CHECK:  ret
 define swiftcc void @params_in_reg(i64, i64, i64, i64, i64, i64, i64, i64, i8*, %swift_error** nocapture swifterror %err) {
   %error_ptr_ref = alloca swifterror %swift_error*, align 8
@@ -383,10 +376,10 @@ declare swiftcc void @params_in_reg2(i64, i64, i64, i64, i64, i64, i64, i64, i8*
 
 ; CHECK-LABEL: params_and_return_in_reg
 ; Store callee saved registers.
-; CHECK:  stp     x28, x21, [sp, #16
-; CHECK:  stp     x27, x26, [sp
-; CHECK:  stp     x25, x24, [sp
-; CHECK:  stp     x23, x22, [sp
+; CHECK:  stp     x28, x27, [sp, #32
+; CHECK:  stp     x26, x25, [sp
+; CHECK:  stp     x24, x23, [sp
+; CHECK:  stp     x22, x21, [sp
 ; CHECK:  stp     x20, x19, [sp
 ; CHECK:  stp     x29, x30, [sp
 ; Save original arguments.
@@ -409,7 +402,7 @@ declare swiftcc void @params_in_reg2(i64, i64, i64, i64, i64, i64, i64, i64, i8*
 ; CHECK:  mov      x21, xzr
 ; CHECK:  bl      _params_in_reg2
 ; Store swifterror %error_ptr_ref.
-; CHECK:  stp     {{x[0-9]+}}, x21, [sp]
+; CHECK:  str      x21, [sp, #16]
 ; Setup call arguments from original arguments.
 ; CHECK:  mov      x0, x19
 ; CHECK:  mov      x1, x20
@@ -442,7 +435,7 @@ declare swiftcc void @params_in_reg2(i64, i64, i64, i64, i64, i64, i64, i64, i8*
 ; CHECK:  mov     w6, #7
 ; CHECK:  mov     w7, #8
 ; ... setup call with swiferror %error_ptr_ref.
-; CHECK:  ldr     x21, [sp, #8]
+; CHECK:  ldr     x21, [sp, #16]
 ; CHECK:  bl      _params_in_reg2
 ; Restore return values for return from this function.
 ; CHECK:  mov      x0, x19
@@ -453,14 +446,14 @@ declare swiftcc void @params_in_reg2(i64, i64, i64, i64, i64, i64, i64, i64, i8*
 ; CHECK:  mov      x5, x25
 ; CHECK:  mov      x6, x26
 ; CHECK:  mov      x7, x27
-; CHECK:  ldp     x29, x30, [sp
 ; CHECK:  mov      x21, x28
+; CHECK:  ldp     x29, x30, [sp
 ; Restore callee save registers.
 ; CHECK:  ldp     x20, x19, [sp
-; CHECK:  ldp     x23, x22, [sp
-; CHECK:  ldp     x25, x24, [sp
-; CHECK:  ldp     x27, x26, [sp
-; CHECK:  ldr     x28, [sp
+; CHECK:  ldp     x22, xzr, [sp
+; CHECK:  ldp     x24, x23, [sp
+; CHECK:  ldp     x26, x25, [sp
+; CHECK:  ldp     x28, x27, [sp
 ; CHECK:  ret
 define swiftcc { i64, i64, i64, i64, i64, i64, i64, i64 } @params_and_return_in_reg(i64, i64, i64, i64, i64, i64, i64, i64, i8* , %swift_error** nocapture swifterror %err) {
   %error_ptr_ref = alloca swifterror %swift_error*, align 8
