@@ -167,7 +167,8 @@ struct IncludeTreePPCallbacks : public PPCallbacks {
   Preprocessor &PP;
 
 public:
-  IncludeTreePPCallbacks(DependencyActionController &Controller, Preprocessor &PP)
+  IncludeTreePPCallbacks(DependencyActionController &Controller,
+                         Preprocessor &PP)
       : Controller(Controller), PP(PP) {}
 
   void LexedFileChanged(FileID FID, LexedFileChangeReason Reason,
@@ -264,8 +265,8 @@ class WrapScanModuleBuildAction : public WrapperFrontendAction {
 public:
   WrapScanModuleBuildAction(std::unique_ptr<FrontendAction> WrappedAction,
                             DependencyActionController &Controller)
-      : WrapperFrontendAction(std::move(WrappedAction)), Controller(Controller) {
-  }
+      : WrapperFrontendAction(std::move(WrappedAction)),
+        Controller(Controller) {}
 
 private:
   bool BeginInvocation(CompilerInstance &CI) override {
@@ -475,9 +476,9 @@ public:
       ScanInstance.addDependencyCollector(MDC);
       if (CacheFS) {
         ScanInstance.setGenModuleActionWrapper(
-            [CacheFS = CacheFS,
-             &Controller = Controller](const FrontendOptions &Opts,
-                                   std::unique_ptr<FrontendAction> Wrapped) {
+            [CacheFS = CacheFS, &Controller = Controller](
+                const FrontendOptions &Opts,
+                std::unique_ptr<FrontendAction> Wrapped) {
               return std::make_unique<WrapScanModuleBuildAction>(
                   std::move(Wrapped), Controller);
             });
@@ -769,8 +770,8 @@ DependencyActionController::~DependencyActionController() {}
 void DependencyScanningWorker::computeDependenciesFromCompilerInvocation(
     std::shared_ptr<CompilerInvocation> Invocation, StringRef WorkingDirectory,
     DependencyConsumer &DepsConsumer, DependencyActionController &Controller,
-    DiagnosticConsumer &DiagsConsumer,
-    raw_ostream *VerboseOS, bool DiagGenerationAsCompilation) {
+    DiagnosticConsumer &DiagsConsumer, raw_ostream *VerboseOS,
+    bool DiagGenerationAsCompilation) {
   BaseFS->setCurrentWorkingDirectory(WorkingDirectory);
 
   // Adjust the invocation.
@@ -797,7 +798,8 @@ void DependencyScanningWorker::computeDependenciesFromCompilerInvocation(
   // FIXME: EmitDependencyFile should only be set when it's for a real
   // compilation.
   DependencyScanningAction Action(
-      WorkingDirectory, DepsConsumer, Controller, DepFS, DepCASFS, CacheFS, Format,
+      WorkingDirectory, DepsConsumer, Controller, DepFS, DepCASFS, CacheFS,
+      Format,
       /*OptimizeArgs=*/false, /*DisableFree=*/false, EagerLoadModules,
       /*EmitDependencyFile=*/!DepFile.empty(), DiagGenerationAsCompilation,
       getCASOpts(), OverrideCASTokenCache,
