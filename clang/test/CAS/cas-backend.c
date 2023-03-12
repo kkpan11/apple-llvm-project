@@ -3,7 +3,7 @@
 //
 // RUN: %clang -cc1 -triple x86_64-apple-macos11 -fcas-backend \
 // RUN:   -fcas-path %t/cas -fcas-fs @%t/casid -fcache-compile-job \
-// RUN:   -Rcompile-job-cache -emit-obj -o %t/output.o \
+// RUN:   -Rcompile-job-cache %s -emit-obj -o %t/output.o \
 // RUN:   -debug-info-kind=standalone -dwarf-version=4 -debugger-tuning=lldb \
 // RUN:   -dependency-file %t/deps.d -MT %t/output.o 2>&1 \
 // RUN:   | FileCheck %s --allow-empty --check-prefix=CACHE-MISS
@@ -14,7 +14,7 @@
 // RUN: CLANG_CAS_BACKEND_SAVE_CASID_FILE=1 %clang -cc1 \
 // RUN:   -triple x86_64-apple-macos11 -fcas-backend \
 // RUN:   -fcas-path %t/cas -fcas-fs @%t/casid -fcache-compile-job \
-// RUN:   -Rcompile-job-cache -emit-obj -o %t/output.o \
+// RUN:   -Rcompile-job-cache %s -emit-obj -o %t/output.o \
 // RUN:   -debug-info-kind=standalone -dwarf-version=4 -debugger-tuning=lldb \
 // RUN:   -dependency-file %t/deps.d -MT %t/output.o 2>&1 \
 // RUN:   | FileCheck %s --check-prefix=CACHE-HIT
