@@ -28,6 +28,7 @@ class TestSwiftMoveFunctionType(TestBase):
 
     # Skip on aarch64 linux: rdar://91005071
     @skipIf(archs=['aarch64'], oslist=['linux'])
+    @skipIf(bugnumber="rdar://106810588")
     @swiftTest
     def test_swift_move_function(self):
         """Check that we properly show variables at various points of the CFG while
