@@ -193,6 +193,10 @@ Bug Fixes in This Version
   (`#60405 <https://github.com/llvm/llvm-project/issues/60405>`_)
 - Fix aggregate initialization inside lambda constexpr.
   (`#60936 <https://github.com/llvm/llvm-project/issues/60936>`_)
+- No longer issue a false positive diagnostic about a catch handler that cannot
+  be reached despite being reachable. This fixes
+  `#61177 <https://github.com/llvm/llvm-project/issues/61177>`_ in anticipation
+  of `CWG2699 <https://wg21.link/CWG2699>_` being accepted by WG21.
 
 Bug Fixes to Compiler Builtins
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -314,6 +318,10 @@ libclang
 - Deprecated two functions ``clang_CXIndex_setGlobalOptions`` and
   ``clang_CXIndex_setInvocationEmissionPathOption`` in favor of the new
   function ``clang_createIndexWithOptions`` in order to improve thread safety.
+
+- Added check in ``clang_getFieldDeclBitWidth`` for whether a bit-field
+  has an evaluable bit width. Fixes undefined behavior when called on a
+  bit-field whose width depends on a template paramter.
 
 Static Analyzer
 ---------------
