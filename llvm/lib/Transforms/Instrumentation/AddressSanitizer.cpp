@@ -667,17 +667,8 @@ struct AddressSanitizer {
     assert(this->UseAfterReturn != AsanDetectStackUseAfterReturnMode::Invalid);
   }
 
-  uint64_t getAllocaSizeInBytes(const AllocaInst &AI) const {
-    uint64_t ArraySize = 1;
-    if (AI.isArrayAllocation()) {
-      const ConstantInt *CI = dyn_cast<ConstantInt>(AI.getArraySize());
-      assert(CI && "non-constant array size");
-      ArraySize = CI->getZExtValue();
-    }
-    Type *Ty = AI.getAllocatedType();
-    uint64_t SizeInBytes =
-        AI.getModule()->getDataLayout().getTypeAllocSize(Ty);
-    return SizeInBytes * ArraySize;
+  TypeSize getAllocaSizeInBytes(const AllocaInst &AI) const {
+    return *AI.getAllocationSize(AI.getModule()->getDataLayout());
   }
 
   /// Check if we want (and can) handle this alloca.
@@ -1040,7 +1031,9 @@ struct FunctionStackPoisoner : public InstVisitor<FunctionStackPoisoner> {
 
   /// Collect Alloca instructions we want (and can) handle.
   void visitAllocaInst(AllocaInst &AI) {
-    if (!ASan.isInterestingAlloca(AI)) {
+    // FIXME: Handle scalable vectors instead of ignoring them.
+    if (!ASan.isInterestingAlloca(AI) ||
+        isa<ScalableVectorType>(AI.getAllocatedType())) {
       if (AI.isStaticAlloca()) {
         // Skip over allocas that are present *before* the first instrumented
         // alloca, we don't want to move those around.
@@ -1254,7 +1247,7 @@ bool AddressSanitizer::isInterestingAlloca(const AllocaInst &AI) {
   bool IsInteresting =
       (AI.getAllocatedType()->isSized() &&
        // alloca() may be called with 0 size, ignore it.
-       ((!AI.isStaticAlloca()) || getAllocaSizeInBytes(AI) > 0) &&
+       ((!AI.isStaticAlloca()) || !getAllocaSizeInBytes(AI).isZero()) &&
        // We are only interested in allocas not promotable to registers.
        // Promotable allocas are common under -O0.
        (!ClSkipPromotableAllocas || !isAllocaPromotable(&AI)) &&
@@ -1437,69 +1430,6 @@ static void doInstrumentAddress(AddressSanitizer *Pass, Instruction *I,
   }
   Pass->instrumentUnusualSizeOrAlignment(I, InsertBefore, Addr, TypeStoreSize,
                                          IsWrite, nullptr, UseCalls, Exp);
-}
-
-static void SplitBlockAndInsertSimpleForLoop(Value *End,
-                                             Instruction *SplitBefore,
-                                             Instruction *&BodyIP,
-                                             Value *&Index) {
-  BasicBlock *LoopPred = SplitBefore->getParent();
-  BasicBlock *LoopBody = SplitBlock(SplitBefore->getParent(), SplitBefore);
-  BasicBlock *LoopExit = SplitBlock(SplitBefore->getParent(), SplitBefore);
-
-  auto *Ty = End->getType();
-  auto &DL = SplitBefore->getModule()->getDataLayout();
-  const unsigned Bitwidth = DL.getTypeSizeInBits(Ty);
-
-  IRBuilder<> Builder(LoopBody->getTerminator());
-  auto *IV = Builder.CreatePHI(Ty, 2, "iv");
-  auto *IVNext =
-    Builder.CreateAdd(IV, ConstantInt::get(Ty, 1), IV->getName() + ".next",
-                      /*HasNUW=*/true, /*HasNSW=*/Bitwidth != 2);
-  auto *IVCheck = Builder.CreateICmpEQ(IVNext, End,
-                                       IV->getName() + ".check");
-  Builder.CreateCondBr(IVCheck, LoopExit, LoopBody);
-  LoopBody->getTerminator()->eraseFromParent();
-
-  // Populate the IV PHI.
-  IV->addIncoming(ConstantInt::get(Ty, 0), LoopPred);
-  IV->addIncoming(IVNext, LoopBody);
-
-  BodyIP = LoopBody->getFirstNonPHI();
-  Index = IV;
-}
-
-/// Utility function for performing a given action on each lane of a vector
-/// with \p EC elements.  To simplify porting legacy code, this defaults to
-/// unrolling the implied loop for non-scalable element counts, but this is
-/// not considered to be part of the contract of this routine, and is
-/// expected to change in the future.
-static void
-SplitBlockAndInsertForEachLane(ElementCount EC,
-                               Type *IndexTy,
-                               Instruction *InsertBefore,
-                               std::function<void(IRBuilderBase&, Value*)> Func) {
-
-  IRBuilder<> IRB(InsertBefore);
-
-  if (EC.isScalable()) {
-    Value *NumElements = IRB.CreateElementCount(IndexTy, EC);
-
-    Instruction *BodyIP;
-    Value *Index;
-    SplitBlockAndInsertSimpleForLoop(NumElements, InsertBefore,
-                                     BodyIP, Index);
-
-    IRB.SetInsertPoint(BodyIP);
-    Func(IRB, Index);
-    return;
-  }
-
-  unsigned Num = EC.getFixedValue();
-  for (unsigned Idx = 0; Idx < Num; ++Idx) {
-    IRB.SetInsertPoint(InsertBefore);
-    Func(IRB, ConstantInt::get(IndexTy, Idx));
-  }
 }
 
 static void instrumentMaskedLoadOrStore(AddressSanitizer *Pass,
@@ -3555,6 +3485,10 @@ void FunctionStackPoisoner::handleDynamicAllocaCall(AllocaInst *AI) {
 // constant inbounds index.
 bool AddressSanitizer::isSafeAccess(ObjectSizeOffsetVisitor &ObjSizeVis,
                                     Value *Addr, TypeSize TypeStoreSize) const {
+  if (TypeStoreSize.isScalable())
+    // TODO: We can use vscale_range to convert a scalable value to an
+    // upper bound on the access size.
+    return false;
   SizeOffsetType SizeOffset = ObjSizeVis.compute(Addr);
   if (!ObjSizeVis.bothKnown(SizeOffset)) return false;
   uint64_t Size = SizeOffset.first.getZExtValue();
