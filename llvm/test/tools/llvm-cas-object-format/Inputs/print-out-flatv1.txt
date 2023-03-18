@@ -5,23 +5,14 @@ SECTION: __TEXT,__text | MemProt: R-X
   BLOCK: size = 0x0010, align = 16, alignment-offset = 0
   {
     SYMBOL: __foo | offset: 0x0000, linkage: strong, scope: default, dead, callable
-    FIXUP: 0x0000, addend = +0x00000000, kind = Keep-Alive, target = <anon-2>
+    FIXUP: 0x0000, addend = +0x00000000, kind = Keep-Alive, target = <anon-1>
   }
   BLOCK: size = 0x0010, align = 16, alignment-offset = 0
   {
     SYMBOL: _main | offset: 0x0000, linkage: strong, scope: default, dead, callable
-    FIXUP: 0x0000, addend = +0x00000000, kind = Keep-Alive, target = <anon-3>
+    FIXUP: 0x0000, addend = +0x00000000, kind = Keep-Alive, target = <anon-2>
     FIXUP: 0x0002, addend = +0x00000000, kind = BranchPCRel32, target = _foo_ext
     FIXUP: 0x0007, addend = +0x00000000, kind = BranchPCRel32, target = __foo
-  }
-}
-
-SECTION: __LD,__compact_unwind | MemProt: RW-
-{
-  BLOCK: size = 0x0020, align = 8, alignment-offset = 0
-  {
-    SYMBOL: <anon-0> | offset: 0x0000, linkage: strong, scope: local, dead
-    FIXUP: 0x0000, addend = +0x00000000, kind = Pointer64, target = _main
   }
 }
 
@@ -29,19 +20,28 @@ SECTION: __TEXT,__eh_frame | MemProt: RW-
 {
   BLOCK: size = 0x0018, align = 8, alignment-offset = 0
   {
-    SYMBOL: <anon-1> | offset: 0x0000, linkage: strong, scope: local, dead
+    SYMBOL: <anon-0> | offset: 0x0000, linkage: strong, scope: local, dead
   }
   BLOCK: size = 0x0020, align = 8, alignment-offset = 0
   {
-    SYMBOL: <anon-2> | offset: 0x0000, linkage: strong, scope: local, dead
-    FIXUP: 0x0004, addend = +0x00000000, kind = NegDelta32, target = <anon-1>
+    SYMBOL: <anon-1> | offset: 0x0000, linkage: strong, scope: local, dead
+    FIXUP: 0x0004, addend = +0x00000000, kind = NegDelta32, target = <anon-0>
     FIXUP: 0x0008, addend = +0x00000000, kind = Delta64, target = __foo
   }
   BLOCK: size = 0x0020, align = 8, alignment-offset = 0
   {
-    SYMBOL: <anon-3> | offset: 0x0000, linkage: strong, scope: local, dead
-    FIXUP: 0x0004, addend = +0x00000000, kind = NegDelta32, target = <anon-1>
+    SYMBOL: <anon-2> | offset: 0x0000, linkage: strong, scope: local, dead
+    FIXUP: 0x0004, addend = +0x00000000, kind = NegDelta32, target = <anon-0>
     FIXUP: 0x0008, addend = +0x00000000, kind = Delta64, target = _main
+  }
+}
+
+SECTION: __LD,__compact_unwind | MemProt: RW-
+{
+  BLOCK: size = 0x0020, align = 8, alignment-offset = 0
+  {
+    SYMBOL: <anon-3> | offset: 0x0000, linkage: strong, scope: local, dead
+    FIXUP: 0x0000, addend = +0x00000000, kind = Pointer64, target = _main
   }
 }
 
