@@ -1309,12 +1309,12 @@ std::optional<FixItList> UPCPreIncrementGadget::getFixits(const Strategy &S) con
       // To transform UPC(++p) to UPC((p = p.subspan(1)).data()):
       SS << "(" << varName.data() << " = " << varName.data()
          << ".subspan(1)).data()";
-      std::optional<SourceLocation> loc =
+      std::optional<SourceLocation> location =
         getEndCharLoc(PreIncNode, Ctx.getSourceManager(), Ctx.getLangOpts());
 
-      if(loc)
+      if(location)
         Fixes.push_back(FixItHint::CreateReplacement(
-            SourceRange(PreIncNode->getBeginLoc(), loc.value()), SS.str()));
+            SourceRange(PreIncNode->getBeginLoc(), location.value()), SS.str()));
       return Fixes;
     }
   }
@@ -1349,9 +1349,9 @@ populateInitializerFixItWithSpan(const Expr *Init, const ASTContext &Ctx,
           // &`? It should. Maybe worth an NFC patch later.
           Expr::NullPointerConstantValueDependence::
               NPC_ValueDependentIsNotNull)) {
-    std::optional<SourceLocation> loc = getEndCharLoc(Init, SM, LangOpts);
-    if(loc) {
-      SourceRange SR(Init->getBeginLoc(), loc.value());
+    std::optional<SourceLocation> location = getEndCharLoc(Init, SM, LangOpts);
+    if(location) {
+      SourceRange SR(Init->getBeginLoc(), location.value());
       return {FixItHint::CreateRemoval(SR)};
     } else {
       return {};
