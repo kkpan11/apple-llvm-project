@@ -13,6 +13,24 @@ void address_to_integer(int x) {
   // CHECK: fix-it:"{{.*}}":{[[@LINE-1]]:37-[[@LINE-1]]:42}:"(p.data() + x)"
 }
 
+void address_to_bool(int x) {
+  int * p = new int[10];
+  bool a = (bool) &p[5];
+  // CHECK: fix-it:"{{.*}}":{[[@LINE-1]]:19-[[@LINE-1]]:24}:"&p.data()[5]"
+  bool b = (bool) &p[x];
+  // CHECK: fix-it:"{{.*}}":{[[@LINE-1]]:19-[[@LINE-1]]:24}:"&p.data()[x]"
+
+  bool a1 = &p[5];
+  // CHECK: fix-it:"{{.*}}":{[[@LINE-1]]:13-[[@LINE-1]]:18}:"&p.data()[5]"
+  bool b1 = &p[x];
+  // CHECK: fix-it:"{{.*}}":{[[@LINE-1]]:13-[[@LINE-1]]:18}:"&p.data()[x]"
+
+  if (&p[5]) {
+    // CHECK: fix-it:"{{.*}}":{[[@LINE-1]]:7-[[@LINE-1]]:12}:"&p.data()[5]"
+    return;
+  }
+}
+
 void call_argument(int x) {
   int * p = new int[10];
 
@@ -45,8 +63,24 @@ void odd_subscript_form() {
   // CHECK: fix-it:"{{.*}}":{[[@LINE-1]]:37-[[@LINE-1]]:42}:"(p.data() + 5)"
 }
 
+void pointer_subtraction(int x) {
+  int * p = new int[10];
+  // CHECK: fix-it:"{{.*}}":{[[@LINE-1]]:3-[[@LINE-1]]:12}:"std::span<int> p"
+  // CHECK: fix-it:"{{.*}}":{[[@LINE-2]]:13-[[@LINE-2]]:13}:"{"
+  // CHECK: fix-it:"{{.*}}":{[[@LINE-3]]:24-[[@LINE-3]]:24}:", 10}"
+
+  int n = &p[9] - &p[4];
+  // CHECK: fix-it:"{{.*}}":{[[@LINE-1]]:11-[[@LINE-1]]:16}:"&p.data()[9]"
+  // CHECK: fix-it:"{{.*}}":{[[@LINE-2]]:19-[[@LINE-2]]:24}:"&p.data()[4]"
+  if (&p[9] - &p[x]) {
+    // CHECK: fix-it:"{{.*}}":{[[@LINE-1]]:7-[[@LINE-1]]:12}:"&p.data()[9]"
+    // CHECK: fix-it:"{{.*}}":{[[@LINE-2]]:15-[[@LINE-2]]:20}:"&p.data()[x]"
+    return;
+  }
+}
+
 // To test multiple function declarations, each of which carries
-// different incomplete informations:
+// different incomplete informations.
 [[clang::unsafe_buffer_usage]]
 void unsafe_g(void*);
 
