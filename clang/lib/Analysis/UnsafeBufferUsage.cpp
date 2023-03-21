@@ -492,7 +492,8 @@ public:
            unaryOperator(
              hasOperatorName("*"),
              has(
-               expr(ignoringParenImpCasts(declRefExpr().bind(BaseDeclRefExprTag)))
+               expr(ignoringParenImpCasts(
+                 declRefExpr(to(varDecl())).bind(BaseDeclRefExprTag)))
              )
            ).bind(OperatorTag);
 
@@ -958,6 +959,13 @@ std::optional<FixItList>
 PointerDereferenceGadget::getFixits(const Strategy &S) const {
   const VarDecl *VD = dyn_cast<VarDecl>(BaseDeclRefExpr->getDecl());
     switch (S.lookup(VD)) {
+      case Strategy::Kind::Iterator:
+      case Strategy::Kind::Array:
+      case Strategy::Kind::Vector:
+        llvm_unreachable("Strategy not implemented yet!");
+      case Strategy::Kind::Wontfix:
+        llvm_unreachable("Invalid strategy!");
+        return std::nullopt;
       case Strategy::Kind::Span: {
         ASTContext &Ctx = VD->getASTContext();
         SourceManager &SM = Ctx.getSourceManager();
@@ -973,12 +981,6 @@ PointerDereferenceGadget::getFixits(const Strategy &S) const {
           }};
         }
       }
-      case Strategy::Kind::Iterator:
-      case Strategy::Kind::Array:
-      case Strategy::Kind::Vector:
-        llvm_unreachable("Strategy not implemented yet!");
-      case Strategy::Kind::Wontfix:
-        llvm_unreachable("Invalid strategy!");
     }
 
   return std::nullopt;
