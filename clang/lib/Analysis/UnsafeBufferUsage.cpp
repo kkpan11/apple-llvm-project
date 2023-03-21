@@ -1184,7 +1184,7 @@ static std::optional<SourceLocation> getEndCharLoc(const NodeTy *Node, const Sou
   if(Loc.isValid())
     return Loc;
   else
-    return {};
+    return std::nullopt;
 }
 
 // Return the source location just past the last character of the AST `Node`.
@@ -1197,7 +1197,7 @@ static std::optional<SourceLocation> getPastLoc(const NodeTy *Node, const Source
   if(Loc.isValid())
     return Loc;
   else
-    return {};
+    return std::nullopt;
 }
 
 // Return text representation of an `Expr`.
@@ -1207,7 +1207,7 @@ static StringRef getExprText(const Expr *E, const SourceManager &SM,
 
   if(LastCharLoc)
     return Lexer::getSourceText(
-        CharSourceRange::getCharRange(E->getBeginLoc(), LastCharLoc.value()), SM,
+        CharSourceRange::getCharRange(E->getBeginLoc(), *LastCharLoc), SM,
         LangOpts);
   else
    return "";
@@ -1312,10 +1312,11 @@ std::optional<FixItList> UPCPreIncrementGadget::getFixits(const Strategy &S) con
       std::optional<SourceLocation> location =
         getEndCharLoc(PreIncNode, Ctx.getSourceManager(), Ctx.getLangOpts());
 
-      if(location)
+      if(location) {
         Fixes.push_back(FixItHint::CreateReplacement(
             SourceRange(PreIncNode->getBeginLoc(), location.value()), SS.str()));
-      return Fixes;
+        return Fixes;
+      }
     }
   }
   return std::nullopt; // Not in the cases that we can handle for now, give up.
@@ -1397,12 +1398,13 @@ populateInitializerFixItWithSpan(const Expr *Init, const ASTContext &Ctx,
   SmallString<32> StrBuffer{};
   std::optional<SourceLocation> LocPassInit = getPastLoc(Init, SM, LangOpts);
 
-  if(LocPassInit) {
-    StrBuffer.append(", ");
-    StrBuffer.append(ExtentText);
-    StrBuffer.append("}");
-    FixIts.push_back(FixItHint::CreateInsertion(LocPassInit.value(), StrBuffer.str()));
-  }
+  if(!LocPassInit)
+    return {};
+
+  StrBuffer.append(", ");
+  StrBuffer.append(ExtentText);
+  StrBuffer.append("}");
+  FixIts.push_back(FixItHint::CreateInsertion(LocPassInit.value(), StrBuffer.str()));
   return FixIts;
 }
 
@@ -1433,9 +1435,8 @@ static FixItList fixVarDeclWithSpan(const VarDecl *D, const ASTContext &Ctx,
     FixItList InitFixIts =
         populateInitializerFixItWithSpan(Init, Ctx, UserFillPlaceHolder);
 
-    assert(!InitFixIts.empty() &&
-           "Expected at least one fix-it for an initializer of an unsafe "
-           "variable declaration.");
+    if(InitFixIts.empty())
+      return {};
     // The loc right before the initializer:
     ReplacementLastLoc = Init->getBeginLoc().getLocWithOffset(-1);
     FixIts.insert(FixIts.end(), std::make_move_iterator(InitFixIts.begin()),
@@ -1448,8 +1449,11 @@ static FixItList fixVarDeclWithSpan(const VarDecl *D, const ASTContext &Ctx,
   raw_svector_ostream OS(Replacement);
 
   OS << "std::span<" << SpanEltT.getAsString() << "> " << D->getName();
-  if(ReplacementLastLoc)
-    FixIts.push_back(FixItHint::CreateReplacement(
+
+  if(!ReplacementLastLoc)
+    return {};
+
+  FixIts.push_back(FixItHint::CreateReplacement(
         SourceRange{D->getBeginLoc(), ReplacementLastLoc.value()}, OS.str()));
   return FixIts;
 }
