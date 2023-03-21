@@ -239,7 +239,7 @@ TableGenMainImpl(std::function<TableGenMainFn> MainFn,
   else if (MainFn)
     status = MainFn(Out, Records);
   else
-    return 1;
+    return make_error<AlreadyReportedError>();
   Records.stopBackendTimer();
   if (status)
     return make_error<AlreadyReportedError>();
@@ -297,7 +297,7 @@ struct TableGenCache {
 
   Error lookupCachedResult(ArrayRef<const char *> Args);
 
-  Error computeResult(TableGenMainFn *MainFn);
+  Error computeResult(std::function<TableGenMainFn> MainFn);
   Error replayResult();
 
   void createInversePrefixMap();
