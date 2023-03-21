@@ -6681,7 +6681,7 @@ static llvm::PHINode *GetInductionVariable(const Loop &L, ScalarEvolution &SE,
   return nullptr;
 }
 
-static std::optional<std::tuple<PHINode *, PHINode *, const SCEV *>>
+static std::optional<std::tuple<PHINode *, PHINode *, const SCEV *, bool>>
 canFoldTermCondOfLoop(Loop *L, ScalarEvolution &SE, DominatorTree &DT,
                       const LoopInfo &LI) {
   if (!L->isInnermost()) {
@@ -6743,6 +6743,7 @@ canFoldTermCondOfLoop(Loop *L, ScalarEvolution &SE, DominatorTree &DT,
 
   PHINode *ToHelpFold = nullptr;
   const SCEV *TermValueS = nullptr;
+  bool MustDropPoison = false;
   for (PHINode &PN : L->getHeader()->phis()) {
     if (ToFold == &PN)
       continue;
@@ -6762,26 +6763,70 @@ canFoldTermCondOfLoop(Loop *L, ScalarEvolution &SE, DominatorTree &DT,
       continue;
     }
 
-    // FIXME: This does not properly account for overflow.
-    const SCEV *TermValueSLocal = SE.getAddExpr(
-        AddRec->getOperand(0),
-        SE.getTruncateOrZeroExtend(
-            SE.getMulExpr(
-                AddRec->getOperand(1),
-                SE.getTruncateOrZeroExtend(
-                    SE.getAddExpr(BECount, SE.getOne(BECount->getType())),
-                    AddRec->getOperand(1)->getType())),
-            AddRec->getOperand(0)->getType()));
+    // Check that we can compute the value of AddRec on the exiting iteration
+    // without soundness problems.  evaluateAtIteration internally needs
+    // to multiply the stride of the iteration number - which may wrap around.
+    // The issue here is subtle because computing the result accounting for
+    // wrap is insufficient. In order to use the result in an exit test, we
+    // must also know that AddRec doesn't take the same value on any previous
+    // iteration. The simplest case to consider is a candidate IV which is
+    // narrower than the trip count (and thus original IV), but this can
+    // also happen due to non-unit strides on the candidate IVs.
+    // TODO: This check should be replaceable with PostInc->hasNoSelfWrap(),
+    // but in practice we appear to be missing inference for cases we should
+    // be able to catch.
+    ConstantRange StepCR = SE.getSignedRange(AddRec->getStepRecurrence(SE));
+    ConstantRange BECountCR = SE.getUnsignedRange(BECount);
+    unsigned NoOverflowBitWidth = BECountCR.getActiveBits() + StepCR.getMinSignedBits();
+    unsigned ARBitWidth = SE.getTypeSizeInBits(AddRec->getType());
+    if (NoOverflowBitWidth > ARBitWidth)
+      continue;
+
+    const SCEVAddRecExpr *PostInc = AddRec->getPostIncExpr(SE);
+    const SCEV *TermValueSLocal = PostInc->evaluateAtIteration(BECount, SE);
     if (!Expander.isSafeToExpand(TermValueSLocal)) {
       LLVM_DEBUG(
           dbgs() << "Is not safe to expand terminating value for phi node" << PN
                  << "\n");
       continue;
     }
+
+    // The candidate IV may have been otherwise dead and poison from the
+    // very first iteration.  If we can't disprove that, we can't use the IV.
+    if (!mustExecuteUBIfPoisonOnPathTo(&PN, LoopLatch->getTerminator(), &DT)) {
+      LLVM_DEBUG(dbgs() << "Can not prove poison safety for IV "
+                        << PN << "\n");
+      continue;
+    }
+
+    // The candidate IV may become poison on the last iteration.  If this
+    // value is not branched on, this is a well defined program.  We're
+    // about to add a new use to this IV, and we have to ensure we don't
+    // insert UB which didn't previously exist.
+    bool MustDropPoisonLocal = false;
+    Instruction *PostIncV =
+      cast<Instruction>(PN.getIncomingValueForBlock(LoopLatch));
+    if (!mustExecuteUBIfPoisonOnPathTo(PostIncV, LoopLatch->getTerminator(),
+                                       &DT)) {
+      LLVM_DEBUG(dbgs() << "Can not prove poison safety to insert use"
+                        << PN << "\n");
+
+      // If this is a complex recurrance with multiple instructions computing
+      // the backedge value, we might need to strip poison flags from all of
+      // them.
+      if (PostIncV->getOperand(0) != &PN)
+        continue;
+
+      // In order to perform the transform, we need to drop the poison generating
+      // flags on this instruction (if any).
+      MustDropPoisonLocal = PostIncV->hasPoisonGeneratingFlags();
+    }
+
     // We pick the last legal alternate IV.  We could expore choosing an optimal
     // alternate IV if we had a decent heuristic to do so.
     ToHelpFold = &PN;
     TermValueS = TermValueSLocal;
+    MustDropPoison = MustDropPoisonLocal;
   }
 
   LLVM_DEBUG(if (ToFold && !ToHelpFold) dbgs()
@@ -6797,7 +6842,7 @@ canFoldTermCondOfLoop(Loop *L, ScalarEvolution &SE, DominatorTree &DT,
 
   if (!ToFold || !ToHelpFold)
     return std::nullopt;
-  return std::make_tuple(ToFold, ToHelpFold, TermValueS);
+  return std::make_tuple(ToFold, ToHelpFold, TermValueS, MustDropPoison);
 }
 
 static bool ReduceLoopStrength(Loop *L, IVUsers &IU, ScalarEvolution &SE,
@@ -6860,7 +6905,7 @@ static bool ReduceLoopStrength(Loop *L, IVUsers &IU, ScalarEvolution &SE,
 
   if (AllowTerminatingConditionFoldingAfterLSR) {
     if (auto Opt = canFoldTermCondOfLoop(L, SE, DT, LI)) {
-      auto [ToFold, ToHelpFold, TermValueS] = *Opt;
+      auto [ToFold, ToHelpFold, TermValueS, MustDrop] = *Opt;
 
       Changed = true;
       NumTermFold++;
@@ -6877,6 +6922,10 @@ static bool ReduceLoopStrength(Loop *L, IVUsers &IU, ScalarEvolution &SE,
       Value *StartValue = ToHelpFold->getIncomingValueForBlock(LoopPreheader);
       (void)StartValue;
       Value *LoopValue = ToHelpFold->getIncomingValueForBlock(LoopLatch);
+
+      // See comment in canFoldTermCondOfLoop on why this is sufficient.
+      if (MustDrop)
+        cast<Instruction>(LoopValue)->dropPoisonGeneratingFlags();
 
       // SCEVExpander for both use in preheader and latch
       const DataLayout &DL = L->getHeader()->getModule()->getDataLayout();

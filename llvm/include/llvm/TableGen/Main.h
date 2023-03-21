@@ -14,6 +14,7 @@
 #define LLVM_TABLEGEN_MAIN_H
 
 #include "llvm/ADT/ArrayRef.h"
+#include <functional>
 
 namespace llvm {
 
@@ -24,10 +25,12 @@ class RecordKeeper;
 /// Returns true on error, false otherwise.
 using TableGenMainFn = bool (raw_ostream &OS, RecordKeeper &Records);
 
-int TableGenMain(ArrayRef<const char *> Args, TableGenMainFn *MainFn);
+int TableGenMain(ArrayRef<const char *> Args,
+                 std::function<TableGenMainFn> MainFn = nullptr);
 
 /// Deprecated. Clients should pass all args to enable caching.
-int TableGenMain(const char *argv0, TableGenMainFn *MainFn);
+int TableGenMain(const char *argv0,
+                 std::function<TableGenMainFn> MainFn = nullptr);
 
 } // end namespace llvm
 

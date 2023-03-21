@@ -42,6 +42,7 @@
 #include "llvm/TableGen/Error.h"
 #include "llvm/TableGen/Record.h"
 #include "llvm/TableGen/ScanDependencies.h"
+#include "llvm/TableGen/TableGenBackend.h"
 #include <memory>
 #include <string>
 #include <system_error>
@@ -195,7 +196,7 @@ static Error createOutputFile(StringRef Out) {
 }
 
 static Error
-TableGenMainImpl(TableGenMainFn *MainFn,
+TableGenMainImpl(std::function<TableGenMainFn> MainFn,
                  std::unique_ptr<MemoryBuffer> MainFile = nullptr) {
   RecordKeeper Records;
 
@@ -231,7 +232,14 @@ TableGenMainImpl(TableGenMainFn *MainFn,
   Records.startBackendTimer("Backend overall");
   std::string OutString;
   raw_string_ostream Out(OutString);
-  unsigned status = MainFn(Out, Records);
+  unsigned status = 0;
+  TableGen::Emitter::FnT ActionFn = TableGen::Emitter::Action->getValue();
+  if (ActionFn)
+    ActionFn(Records, Out);
+  else if (MainFn)
+    status = MainFn(Out, Records);
+  else
+    return 1;
   Records.stopBackendTimer();
   if (status)
     return make_error<AlreadyReportedError>();
@@ -260,8 +268,8 @@ TableGenMainImpl(TableGenMainFn *MainFn,
   return Error::success();
 }
 
-int llvm::TableGenMain(const char *argv0, TableGenMainFn *MainFn) {
-  return reportError(argv0, TableGenMainImpl(MainFn));
+int llvm::TableGenMain(const char *argv0, std::function<TableGenMainFn> MainFn) {
+  return reportError(argv0, TableGenMainImpl(std::move(MainFn)));
 }
 
 namespace {
@@ -444,7 +452,7 @@ struct CapturedDiagnostics {
 };
 } // end namespace
 
-Error TableGenCache::computeResult(TableGenMainFn *MainFn) {
+Error TableGenCache::computeResult(std::function<TableGenMainFn> MainFn) {
   if (ResultID)
     return replayResult();
 
@@ -470,7 +478,7 @@ Error TableGenCache::computeResult(TableGenMainFn *MainFn) {
   });
 
   // Don't cache failed builds for now.
-  if (Error E = TableGenMainImpl(MainFn, std::move(MainFile)))
+  if (Error E = TableGenMainImpl(std::move(MainFn), std::move(MainFile)))
     return E;
 
   // Caching not turned on.
@@ -555,10 +563,11 @@ Error TableGenCache::replayResult() {
   return Error::success();
 }
 
-int llvm::TableGenMain(ArrayRef<const char *> Args, TableGenMainFn *MainFn) {
+int llvm::TableGenMain(ArrayRef<const char *> Args,
+                       std::function<TableGenMainFn> MainFn) {
   assert(!Args.empty() && "Missing argv0!");
   if (!Depscan)
-    return TableGenMain(Args[0], MainFn);
+    return TableGenMain(Args[0], std::move(MainFn));
 
   TableGenCache Cache;
   if (Error E =
@@ -569,6 +578,6 @@ int llvm::TableGenMain(ArrayRef<const char *> Args, TableGenMainFn *MainFn) {
   if (Error E = Cache.lookupCachedResult(Args))
     return reportError(Args[0], std::move(E));
 
-  Error E = Cache.computeResult(MainFn);
+  Error E = Cache.computeResult(std::move(MainFn));
   return reportError(Args[0], std::move(E));
 }
