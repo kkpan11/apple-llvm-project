@@ -1314,7 +1314,7 @@ std::optional<FixItList> UPCPreIncrementGadget::getFixits(const Strategy &S) con
 
       if(location) {
         Fixes.push_back(FixItHint::CreateReplacement(
-            SourceRange(PreIncNode->getBeginLoc(), location.value()), SS.str()));
+            SourceRange(PreIncNode->getBeginLoc(), *location), SS.str()));
         return Fixes;
       }
     }
@@ -1352,7 +1352,7 @@ populateInitializerFixItWithSpan(const Expr *Init, const ASTContext &Ctx,
               NPC_ValueDependentIsNotNull)) {
     std::optional<SourceLocation> location = getEndCharLoc(Init, SM, LangOpts);
     if(location) {
-      SourceRange SR(Init->getBeginLoc(), location.value());
+      SourceRange SR(Init->getBeginLoc(), *location);
       return {FixItHint::CreateRemoval(SR)};
     } else {
       return {};
@@ -1404,7 +1404,7 @@ populateInitializerFixItWithSpan(const Expr *Init, const ASTContext &Ctx,
   StrBuffer.append(", ");
   StrBuffer.append(ExtentText);
   StrBuffer.append("}");
-  FixIts.push_back(FixItHint::CreateInsertion(LocPassInit.value(), StrBuffer.str()));
+  FixIts.push_back(FixItHint::CreateInsertion(*LocPassInit, StrBuffer.str()));
   return FixIts;
 }
 
@@ -1454,7 +1454,7 @@ static FixItList fixVarDeclWithSpan(const VarDecl *D, const ASTContext &Ctx,
     return {};
 
   FixIts.push_back(FixItHint::CreateReplacement(
-        SourceRange{D->getBeginLoc(), ReplacementLastLoc.value()}, OS.str()));
+        SourceRange{D->getBeginLoc(), *ReplacementLastLoc}, OS.str()));
   return FixIts;
 }
 
