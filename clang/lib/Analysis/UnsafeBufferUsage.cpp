@@ -1210,7 +1210,7 @@ static StringRef getExprText(const Expr *E, const SourceManager &SM,
         CharSourceRange::getCharRange(E->getBeginLoc(), *LastCharLoc), SM,
         LangOpts);
   else
-   return "";
+   return StringRef();
 }
 
 std::optional<FixItList>
