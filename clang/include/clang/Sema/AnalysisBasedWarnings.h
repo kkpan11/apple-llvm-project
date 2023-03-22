@@ -13,6 +13,7 @@
 #ifndef LLVM_CLANG_SEMA_ANALYSISBASEDWARNINGS_H
 #define LLVM_CLANG_SEMA_ANALYSISBASEDWARNINGS_H
 
+#include "clang/AST/Decl.h"
 #include "llvm/ADT/DenseMap.h"
 #include <memory>
 
@@ -94,6 +95,8 @@ public:
 
   void IssueWarnings(Policy P, FunctionScopeInfo *fscope,
                      const Decl *D, QualType BlockType);
+
+  void CheckUnsafeBufferUsage(const TranslationUnitDecl *D);
 
   Policy getDefaultPolicy() { return DefaultPolicy; }
 

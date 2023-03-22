@@ -16,6 +16,7 @@
 
 #include "clang/AST/Decl.h"
 #include "clang/AST/Stmt.h"
+#include "clang/Sema/Sema.h"
 
 namespace clang {
 
@@ -51,10 +52,15 @@ public:
   }
 };
 
-// This function invokes the analysis and allows the caller to react to it
-// through the handler class.
-void checkUnsafeBufferUsage(const Decl *D, UnsafeBufferUsageHandler &Handler,
-                            bool EmitFixits);
+// TODO: this function should be customizable through format
+static StringRef getEndOfLine() {
+  static const char *const EOL = "\n";
+  return EOL;
+}
+
+void checkUnsafeBufferUsageForTU(const TranslationUnitDecl *TU,
+                                 UnsafeBufferUsageHandler &Handler,
+                                 clang::Sema &S, bool EmitFixits);
 
 namespace internal {
 // Tests if any two `FixItHint`s in `FixIts` conflict.  Two `FixItHint`s
