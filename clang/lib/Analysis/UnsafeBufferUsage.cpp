@@ -1139,17 +1139,16 @@ fixUPCAddressofArraySubscriptWithSpan(const UnaryOperator *Node) {
 // `DRE.data()`
 std::optional<FixItList> UPCStandalonePointerGadget::getFixits(const Strategy &S)
       const {
-  const VarDecl *VD = cast<VarDecl>(Node->getDecl());  
+  const auto VD = cast<VarDecl>(Node->getDecl());
   switch (S.lookup(VD)) {
     case Strategy::Kind::Span: {
       ASTContext &Ctx = VD->getASTContext();
       SourceManager &SM = Ctx.getSourceManager();
       // Inserts the .data() after the DRE
-      std::optional<SourceLocation> endOfOperand =
-          getEndCharLoc(Node, SM, Ctx.getLangOpts());
+      SourceLocation endOfOperand = getEndCharLoc(Node, SM, Ctx.getLangOpts());
 
       return FixItList{{FixItHint::CreateInsertion(
-          endOfOperand.value().getLocWithOffset(1), ".data()")}};
+          endOfOperand.getLocWithOffset(1), ".data()")}};
     }
     case Strategy::Kind::Wontfix:
     case Strategy::Kind::Iterator:
