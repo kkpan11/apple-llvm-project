@@ -500,26 +500,26 @@ public:
 
 // Fixable gadget to handle the expressions DRE in the unspecified pointer
 // context.
-class PointerReferenceGadget : public FixableGadget {
+class UPCStandalonePointerGadget : public FixableGadget {
 private:
   static constexpr const char *const DeclRefExprTag = "PtrAccess";
   const DeclRefExpr *Node;
 
 public:
-  PointerReferenceGadget(const MatchFinder::MatchResult &Result)
-      : FixableGadget(Kind::PointerReference),
+  UPCStandalonePointerGadget(const MatchFinder::MatchResult &Result)
+      : FixableGadget(Kind::UPCStandalonePointer),
         Node(Result.Nodes.getNodeAs<DeclRefExpr>(DeclRefExprTag)) {
     assert(Node != nullptr && "Expecting a non-null matching result");
   }
 
   static bool classof(const Gadget *G) {
-    return G->getKind() == Kind::PointerReference;
+    return G->getKind() == Kind::UPCStandalonePointer;
   }
 
   static Matcher matcher() {
     auto ArrayOrPtr = anyOf(hasPointerType(), hasArrayType());
     auto target = expr(
-        ignoringParenImpCasts(declRefExpr(ArrayOrPtr).bind(DeclRefExprTag)));
+        ignoringParenImpCasts(declRefExpr(allOf(ArrayOrPtr, to(varDecl()))).bind(DeclRefExprTag)));
     return stmt(isInUnspecifiedPointerContext(target));
   }
 
@@ -1137,27 +1137,27 @@ fixUPCAddressofArraySubscriptWithSpan(const UnaryOperator *Node) {
 
 // Generates fix-its replacing an expression of the form UPC(DRE) with
 // `DRE.data()`
-std::optional<FixItList> PointerReferenceGadget::getFixits(const Strategy &S)
+std::optional<FixItList> UPCStandalonePointerGadget::getFixits(const Strategy &S)
       const {
-  if(const VarDecl *VD = dyn_cast<VarDecl>(Node->getDecl())) { 
-    switch (S.lookup(VD)) {
-      case Strategy::Kind::Span: {
-        ASTContext &Ctx = VD->getASTContext();
-        SourceManager &SM = Ctx.getSourceManager();
-        // Inserts the .data() after the DRE
-        std::optional<SourceLocation> endOfOperand =
-            getEndCharLoc(Node, SM, Ctx.getLangOpts());
+  const VarDecl *VD = cast<VarDecl>(Node->getDecl());  
+  switch (S.lookup(VD)) {
+    case Strategy::Kind::Span: {
+      ASTContext &Ctx = VD->getASTContext();
+      SourceManager &SM = Ctx.getSourceManager();
+      // Inserts the .data() after the DRE
+      std::optional<SourceLocation> endOfOperand =
+          getEndCharLoc(Node, SM, Ctx.getLangOpts());
 
-        return FixItList{{FixItHint::CreateInsertion(
-            endOfOperand.value().getLocWithOffset(1), ".data()")}};
-      }
-      case Strategy::Kind::Wontfix:
-      case Strategy::Kind::Iterator:
-      case Strategy::Kind::Array:
-      case Strategy::Kind::Vector:
-        llvm_unreachable("unsupported strategies for FixableGadgets");
+      return FixItList{{FixItHint::CreateInsertion(
+          endOfOperand.value().getLocWithOffset(1), ".data()")}};
     }
+    case Strategy::Kind::Wontfix:
+    case Strategy::Kind::Iterator:
+    case Strategy::Kind::Array:
+    case Strategy::Kind::Vector:
+      llvm_unreachable("unsupported strategies for FixableGadgets");
   }
+ 
   return std::nullopt;
 }
 
