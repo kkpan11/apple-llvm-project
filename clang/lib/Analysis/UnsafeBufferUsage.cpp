@@ -1201,7 +1201,7 @@ static std::optional<SourceLocation> getPastLoc(const NodeTy *Node, const Source
 }
 
 // Return text representation of an `Expr`.
-static StringRef getExprText(const Expr *E, const SourceManager &SM,
+static std::optional<StringRef> getExprText(const Expr *E, const SourceManager &SM,
                              const LangOptions &LangOpts) {
   std::optional<SourceLocation> LastCharLoc = getPastLoc(E, SM, LangOpts);
 
@@ -1210,7 +1210,7 @@ static StringRef getExprText(const Expr *E, const SourceManager &SM,
         CharSourceRange::getCharRange(E->getBeginLoc(), *LastCharLoc), SM,
         LangOpts);
   else
-   return StringRef();
+    return std::nullopt;
 }
 
 std::optional<FixItList>
@@ -1254,10 +1254,15 @@ fixUPCAddressofArraySubscriptWithSpan(const UnaryOperator *Node) {
       const LangOptions &LangOpts = Ctx.getLangOpts();
       SmallString<32> StrBuffer;
 
+      std::optional<StringRef> dreString = getExprText(DRE, SM, LangOpts);
+      if(!dreString) return std::nullopt;
+      std::optional<StringRef> indexString = getExprText(Idx, SM, LangOpts);
+      if(!indexString) return std::nullopt;
+
       StrBuffer.append("(");
-      StrBuffer.append(getExprText(DRE, SM, LangOpts));
+      StrBuffer.append(*dreString);
       StrBuffer.append(".data() + ");
-      StrBuffer.append(getExprText(Idx, SM, LangOpts));
+      StrBuffer.append(*indexString);
       StrBuffer.append(")");
       return FixItList{FixItHint::CreateReplacement(Node->getSourceRange(),
                                                     StrBuffer.str())};
@@ -1372,8 +1377,11 @@ populateInitializerFixItWithSpan(const Expr *Init, const ASTContext &Ctx,
     // of `T`. So the extent is `n` unless `n` has side effects.  Similar but
     // simpler for the case where `Init` is `new T`.
     if (const Expr *Ext = CxxNew->getArraySize().value_or(nullptr)) {
-      if (!Ext->HasSideEffects(Ctx))
-        ExtentText = getExprText(Ext, SM, LangOpts);
+      if (!Ext->HasSideEffects(Ctx)) {
+        std::optional<StringRef> extentString = getExprText(Ext, SM, LangOpts);
+        if(!extentString) return {};
+        ExtentText = *extentString;
+      }
     } else if (!CxxNew->isArray())
       // Although the initializer is not allocating a buffer, the pointer
       // variable could still be used in buffer access operations.
