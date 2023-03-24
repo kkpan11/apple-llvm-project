@@ -1181,7 +1181,7 @@ static std::optional<SourceLocation> getEndCharLoc(const NodeTy *Node, const Sou
                                     const LangOptions &LangOpts) {
   unsigned TkLen = Lexer::MeasureTokenLength(Node->getEndLoc(), SM, LangOpts);
   SourceLocation Loc = Node->getEndLoc().getLocWithOffset(TkLen - 1);
-  if(Loc.isValid())
+  if (Loc.isValid())
     return Loc;
   else
     return std::nullopt;
@@ -1194,7 +1194,7 @@ static std::optional<SourceLocation> getPastLoc(const NodeTy *Node, const Source
   SourceLocation Loc =
       Lexer::getLocForEndOfToken(Node->getEndLoc(), 0, SM, LangOpts);
 
-  if(Loc.isValid())
+  if (Loc.isValid())
     return Loc;
   else
     return std::nullopt;
@@ -1205,7 +1205,7 @@ static std::optional<StringRef> getExprText(const Expr *E, const SourceManager &
                              const LangOptions &LangOpts) {
   std::optional<SourceLocation> LastCharLoc = getPastLoc(E, SM, LangOpts);
 
-  if(LastCharLoc)
+  if (LastCharLoc)
     return Lexer::getSourceText(
         CharSourceRange::getCharRange(E->getBeginLoc(), *LastCharLoc), SM,
         LangOpts);
@@ -1255,9 +1255,9 @@ fixUPCAddressofArraySubscriptWithSpan(const UnaryOperator *Node) {
       SmallString<32> StrBuffer;
 
       std::optional<StringRef> dreString = getExprText(DRE, SM, LangOpts);
-      if(!dreString) return std::nullopt;
+      if (!dreString) return std::nullopt;
       std::optional<StringRef> indexString = getExprText(Idx, SM, LangOpts);
-      if(!indexString) return std::nullopt;
+      if (!indexString) return std::nullopt;
 
       StrBuffer.append("(");
       StrBuffer.append(*dreString);
@@ -1317,7 +1317,7 @@ std::optional<FixItList> UPCPreIncrementGadget::getFixits(const Strategy &S) con
       std::optional<SourceLocation> location =
         getEndCharLoc(PreIncNode, Ctx.getSourceManager(), Ctx.getLangOpts());
 
-      if(location) {
+      if (location) {
         Fixes.push_back(FixItHint::CreateReplacement(
             SourceRange(PreIncNode->getBeginLoc(), *location), SS.str()));
         return Fixes;
@@ -1356,7 +1356,7 @@ populateInitializerFixItWithSpan(const Expr *Init, const ASTContext &Ctx,
           Expr::NullPointerConstantValueDependence::
               NPC_ValueDependentIsNotNull)) {
     std::optional<SourceLocation> location = getEndCharLoc(Init, SM, LangOpts);
-    if(location) {
+    if (location) {
       SourceRange SR(Init->getBeginLoc(), *location);
       return {FixItHint::CreateRemoval(SR)};
     } else {
@@ -1379,7 +1379,7 @@ populateInitializerFixItWithSpan(const Expr *Init, const ASTContext &Ctx,
     if (const Expr *Ext = CxxNew->getArraySize().value_or(nullptr)) {
       if (!Ext->HasSideEffects(Ctx)) {
         std::optional<StringRef> extentString = getExprText(Ext, SM, LangOpts);
-        if(!extentString) return {};
+        if (!extentString) return {};
         ExtentText = *extentString;
       }
     } else if (!CxxNew->isArray())
@@ -1406,7 +1406,7 @@ populateInitializerFixItWithSpan(const Expr *Init, const ASTContext &Ctx,
   SmallString<32> StrBuffer{};
   std::optional<SourceLocation> LocPassInit = getPastLoc(Init, SM, LangOpts);
 
-  if(!LocPassInit)
+  if (!LocPassInit)
     return {};
 
   StrBuffer.append(", ");
@@ -1443,7 +1443,7 @@ static FixItList fixVarDeclWithSpan(const VarDecl *D, const ASTContext &Ctx,
     FixItList InitFixIts =
         populateInitializerFixItWithSpan(Init, Ctx, UserFillPlaceHolder);
 
-    if(InitFixIts.empty())
+    if (InitFixIts.empty())
       return {};
     // The loc right before the initializer:
     ReplacementLastLoc = Init->getBeginLoc().getLocWithOffset(-1);
@@ -1458,7 +1458,7 @@ static FixItList fixVarDeclWithSpan(const VarDecl *D, const ASTContext &Ctx,
 
   OS << "std::span<" << SpanEltT.getAsString() << "> " << D->getName();
 
-  if(!ReplacementLastLoc)
+  if (!ReplacementLastLoc)
     return {};
 
   FixIts.push_back(FixItHint::CreateReplacement(
