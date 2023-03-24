@@ -2285,6 +2285,24 @@ static void flushDiagnostics(Sema &S, const sema::FunctionScopeInfo *fscope) {
 }
 
 void clang::sema::AnalysisBasedWarnings::IssueWarnings(
+    const TranslationUnitDecl *TU) {
+  if (!TU)
+    return; // This is unexpected, give up quietly.
+
+  DiagnosticsEngine &Diags = S.getDiagnostics();
+
+  // Emit unsafe buffer usage warnings and fixits.
+  if (!Diags.isIgnored(diag::warn_unsafe_buffer_operation, SourceLocation()) ||
+      !Diags.isIgnored(diag::warn_unsafe_buffer_variable, SourceLocation())) {
+    UnsafeBufferUsageReporter R(S);
+    checkUnsafeBufferUsageForTU(
+        TU, R, S,
+        /*EmitFixits=*/S.getDiagnostics().getDiagnosticOptions().ShowFixits &&
+            S.getLangOpts().CPlusPlus20);
+  }
+}
+
+void clang::sema::AnalysisBasedWarnings::IssueWarnings(
     sema::AnalysisBasedWarnings::Policy P, sema::FunctionScopeInfo *fscope,
     const Decl *D, QualType BlockType) {
 
@@ -2511,16 +2529,6 @@ void clang::sema::AnalysisBasedWarnings::IssueWarnings(
     if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(D))
       if (S.getLangOpts().CPlusPlus && isNoexcept(FD))
         checkThrowInNonThrowingFunc(S, FD, AC);
-
-  // Emit unsafe buffer usage warnings and fixits.
-  if (!Diags.isIgnored(diag::warn_unsafe_buffer_operation, D->getBeginLoc()) ||
-      !Diags.isIgnored(diag::warn_unsafe_buffer_variable, D->getBeginLoc())) {
-    UnsafeBufferUsageReporter R(S);
-    checkUnsafeBufferUsage(
-        D, R,
-        /*EmitFixits=*/S.getDiagnostics().getDiagnosticOptions().ShowFixits &&
-            S.getLangOpts().CPlusPlus20);
-  }
 
   // If none of the previous checks caused a CFG build, trigger one here
   // for the logical error handler.
