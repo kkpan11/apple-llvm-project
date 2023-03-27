@@ -1,4 +1,4 @@
-//===-- RISCVISAInfo.cpp - RISCV Arch String Parser -------------*- C++ -*-===//
+//===-- RISCVISAInfo.cpp - RISC-V Arch String Parser ------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -658,10 +658,18 @@ RISCVISAInfo::parseArchString(StringRef Arch, bool EnableExperimentalExtension,
         llvm_unreachable("Default extension version not found?");
   } else {
     // Baseline is `i` or `e`
-    if (auto E = getExtensionVersion(std::string(1, Baseline), Exts, Major, Minor,
-                                     ConsumeLength, EnableExperimentalExtension,
-                                     ExperimentalExtensionVersionCheck))
-      return std::move(E);
+    if (auto E = getExtensionVersion(
+            std::string(1, Baseline), Exts, Major, Minor, ConsumeLength,
+            EnableExperimentalExtension, ExperimentalExtensionVersionCheck)) {
+      if (!IgnoreUnknown)
+        return std::move(E);
+      // If IgnoreUnknown, then ignore an unrecognised version of the baseline
+      // ISA and just use the default supported version.
+      consumeError(std::move(E));
+      auto Version = findDefaultVersion(std::string(1, Baseline));
+      Major = Version->Major;
+      Minor = Version->Minor;
+    }
 
     ISAInfo->addExtension(std::string(1, Baseline), Major, Minor);
   }
@@ -1100,6 +1108,8 @@ std::vector<std::string> RISCVISAInfo::toFeatureVector() const {
   for (auto const &Ext : Exts) {
     std::string ExtName = Ext.first;
     if (ExtName == "i") // i is not recognized in clang -cc1
+      continue;
+    if (!isSupportedExtension(ExtName))
       continue;
     std::string Feature = isExperimentalExtension(ExtName)
                               ? "+experimental-" + ExtName
