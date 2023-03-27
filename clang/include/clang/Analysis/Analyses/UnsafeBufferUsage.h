@@ -20,6 +20,8 @@
 
 namespace clang {
 
+class Sema;
+
 /// The interface that lets the caller handle unsafe buffer usage analysis
 /// results by overriding this class's handle... methods.
 class UnsafeBufferUsageHandler {
@@ -51,12 +53,6 @@ public:
     return s;
   }
 };
-
-// TODO: this function should be customizable through format
-static StringRef getEndOfLine() {
-  static const char *const EOL = "\n";
-  return EOL;
-}
 
 void checkUnsafeBufferUsageForTU(const TranslationUnitDecl *TU,
                                  UnsafeBufferUsageHandler &Handler,
