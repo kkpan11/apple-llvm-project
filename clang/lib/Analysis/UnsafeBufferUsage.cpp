@@ -1592,7 +1592,7 @@ getNaiveStrategy(const llvm::SmallVectorImpl<const VarDecl *> &UnsafeVars) {
   return S;
 }
 
-void clang::checkUnsafeBufferUsage(const Decl *D,
+void checkUnsafeBufferUsage(const Decl *D,
                                    UnsafeBufferUsageHandler &Handler,
                                    bool EmitFixits) {
   assert(D && D->getBody());
@@ -1648,3 +1648,58 @@ void clang::checkUnsafeBufferUsage(const Decl *D,
     }
   }
 }
+
+void clang::checkUnsafeBufferUsageForTU(const TranslationUnitDecl *TU,
+                                 UnsafeBufferUsageHandler &Handler,
+                                 clang::Sema &S, bool EmitFixits) {
+  DiagnosticsEngine &Diags = S.getDiagnostics();
+  static constexpr StringRef Tag = "Callable";
+
+  struct CallableFinderCallback : MatchFinder::MatchCallback {
+    UnsafeBufferUsageHandler &Handler;
+    DiagnosticsEngine &Diags;
+    clang::Sema &S;
+    const bool EmitFixits;
+
+    CallableFinderCallback(UnsafeBufferUsageHandler &Handler,
+                           DiagnosticsEngine &Diags, clang::Sema &S,
+                           bool EmitFixits)
+        : Handler(Handler), Diags(Diags), S(S), EmitFixits(EmitFixits) {}
+
+    void run(const MatchFinder::MatchResult &Result) override {
+      if (const auto *Callable = Result.Nodes.getNodeAs<Decl>(Tag)) {
+        // Do not do any analysis if we are going to just ignore them.
+        if (Diags.getIgnoreAllWarnings() ||
+            (Diags.getSuppressSystemWarnings() &&
+             S.SourceMgr.isInSystemHeader(Callable->getLocation())))
+          return;
+
+        // For code in dependent contexts, we'll do this at instantiation time.
+        if (cast<DeclContext>(Callable)->isDependentContext())
+          return;
+
+        if (S.hasUncompilableErrorOccurred())
+          return;
+
+        assert (Callable->getBody());
+
+        // Above checks and early returns are copied from
+        // `clang::sema::AnalysisBasedWarnings::IssueWarnings`.
+        checkUnsafeBufferUsage(Callable, Handler, EmitFixits);
+        // FIXME: add notes for template instantiations
+      }
+    }
+  };
+
+  MatchFinder Finder;
+  CallableFinderCallback CB(Handler, Diags, S, EmitFixits);
+
+  Finder.addMatcher(
+      decl(forEachDescendant(decl(anyOf(
+          functionDecl(hasBody(anything())).bind(Tag),
+          objcMethodDecl(isDefinition()).bind(Tag), blockDecl().bind(Tag))))),
+      &CB);
+  Finder.addMatcher(stmt(forEachDescendant(stmt(lambdaExpr().bind(Tag)))), &CB);
+  Finder.match(*TU, TU->getASTContext());
+}
+
