@@ -2156,9 +2156,11 @@ public:
 namespace {
 class UnsafeBufferUsageReporter : public UnsafeBufferUsageHandler {
   Sema &S;
+  bool SuggestSuggestions;  // Recommend -fsafe-buffer-usage-suggestions?
 
 public:
-  UnsafeBufferUsageReporter(Sema &S) : S(S) {}
+  UnsafeBufferUsageReporter(Sema &S, bool SuggestSuggestions)
+    : S(S), SuggestSuggestions(SuggestSuggestions) {}
 
   void handleUnsafeOperation(const Stmt *Operation,
                              bool IsRelatedToDecl) override {
@@ -2192,20 +2194,30 @@ public:
       }
     } else {
       if (isa<CallExpr>(Operation)) {
+        // note_unsafe_buffer_operation doesn't have this mode yet.
+        assert(!IsRelatedToDecl && "Not implemented yet!");
         MsgParam = 3;
       }
       Loc = Operation->getBeginLoc();
       Range = Operation->getSourceRange();
     }
-    if (IsRelatedToDecl)
+    if (IsRelatedToDecl) {
+      assert(!SuggestSuggestions &&
+             "Variables blamed for unsafe buffer usage without suggestions!");
       S.Diag(Loc, diag::note_unsafe_buffer_operation) << MsgParam << Range;
-    else
+    } else {
       S.Diag(Loc, diag::warn_unsafe_buffer_operation) << MsgParam << Range;
+      if (SuggestSuggestions) {
+        S.Diag(Loc, diag::note_safe_buffer_usage_suggestions_disabled);
+      }
+    }
   }
 
   // FIXME: rename to handleUnsafeVariable
   void handleFixableVariable(const VarDecl *Variable,
                              FixItList &&Fixes) override {
+    assert(!SuggestSuggestions &&
+           "Unsafe buffer usage fixits displayed without suggestions!");
     S.Diag(Variable->getLocation(), diag::warn_unsafe_buffer_variable)
         << Variable << (Variable->getType()->isPointerType() ? 0 : 1)
         << Variable->getSourceRange();
@@ -2300,11 +2312,17 @@ void clang::sema::AnalysisBasedWarnings::IssueWarnings(
   // Emit unsafe buffer usage warnings and fixits.
   if (!Diags.isIgnored(diag::warn_unsafe_buffer_operation, SourceLocation()) ||
       !Diags.isIgnored(diag::warn_unsafe_buffer_variable, SourceLocation())) {
-    UnsafeBufferUsageReporter R(S);
-    checkUnsafeBufferUsageForTU(
-        TU, R, S,
-        /*EmitFixits=*/S.getDiagnostics().getDiagnosticOptions().ShowFixits &&
-            S.getLangOpts().CPlusPlus20);
+    DiagnosticOptions &DiagOpts = S.getDiagnostics().getDiagnosticOptions();
+
+    bool CanEmitSuggestions = S.getLangOpts().CPlusPlus20;
+    // Should != Can.
+    bool ShouldEmitSuggestions = CanEmitSuggestions &&
+                                 DiagOpts.ShowSafeBufferUsageSuggestions;
+    bool ShouldSuggestSuggestions = CanEmitSuggestions &&
+                                    !DiagOpts.ShowSafeBufferUsageSuggestions;
+
+    UnsafeBufferUsageReporter R(S, ShouldSuggestSuggestions);
+    checkUnsafeBufferUsageForTU(TU, R, S, ShouldEmitSuggestions);
   }
 }
 

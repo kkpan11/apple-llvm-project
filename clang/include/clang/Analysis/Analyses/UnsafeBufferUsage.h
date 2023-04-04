@@ -52,10 +52,10 @@ public:
   }
 };
 
-/// Analyze all function declarations in a complete `TU`: 
+/// Analyze all function declarations in a complete `TU`:
 void checkUnsafeBufferUsageForTU(const TranslationUnitDecl *TU,
                                  UnsafeBufferUsageHandler &Handler,
-                                 clang::Sema &S, bool EmitFixits);
+                                 clang::Sema &S, bool EmitSuggestions);
 
 namespace internal {
 // Tests if any two `FixItHint`s in `FixIts` conflict.  Two `FixItHint`s
