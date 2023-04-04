@@ -48,19 +48,18 @@
 
 void foo(int *x) { // \
   // ON-warning{{'x' is an unsafe pointer used for buffer access}}
-  // FIXME: Better "OFF" warning?
   x[5] = 10; // \
   // ON-note    {{used in buffer access here}} \
-  // OFF-warning{{unsafe buffer access}} \
+  // OFF-warning{{unsafe buffer access through raw pointer}} \
   // OFF-note   {{pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions}}
 
   x += 5;  // \
   // ON-note    {{used in pointer arithmetic here}} \
-  // OFF-warning{{unsafe pointer arithmetic}} \
+  // OFF-warning{{unsafe arithmetic on raw pointer}} \
   // OFF-note   {{pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions}}
 
   bar(x);  // \
-  // ON-warning{{function introduces unsafe buffer manipulation}} \
-  // OFF-warning{{function introduces unsafe buffer manipulation}} \
+  // ON-warning {{function call introduces unsafe buffer manipulation}} \
+  // OFF-warning{{function call introduces unsafe buffer manipulation}} \
   // OFF-note   {{pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions}}
 }

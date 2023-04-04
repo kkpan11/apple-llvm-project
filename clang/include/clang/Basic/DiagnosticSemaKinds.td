@@ -11787,11 +11787,18 @@ def warn_unsafe_buffer_variable : Warning<
   "does not perform bounds checks}1">,
   InGroup<UnsafeBufferUsage>, DefaultIgnore;
 def warn_unsafe_buffer_operation : Warning<
-  "%select{unsafe pointer operation|unsafe pointer arithmetic|"
-  "unsafe buffer access|function introduces unsafe buffer manipulation}0">,
-  InGroup<UnsafeBufferUsage>, DefaultIgnore;
+  "%select{"
+    "unsafe operation on raw pointer in expression|"
+    "unsafe arithmetic on raw pointer|"
+    "unsafe buffer access through raw pointer|"
+    "function call introduces unsafe buffer manipulation"
+  "}0">, InGroup<UnsafeBufferUsage>, DefaultIgnore;
 def note_unsafe_buffer_operation : Note<
-  "used%select{| in pointer arithmetic| in buffer access}0 here">;
+  "used %select{"
+    "|"
+    "in pointer arithmetic|"
+    "in buffer access"
+  "}0 here">;
 def note_unsafe_buffer_variable_fixit : Note<
   "change type of '%0' to '%select{std::span|std::array|std::span::iterator}1' to preserve bounds information">;
 def note_safe_buffer_usage_suggestions_disabled : Note<
