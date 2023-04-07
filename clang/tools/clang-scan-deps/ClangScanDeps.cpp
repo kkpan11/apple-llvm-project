@@ -265,8 +265,10 @@ llvm::cl::opt<bool> Verbose("v", llvm::cl::Optional,
 static bool emitCompilationDBWithCASTreeArguments(
     std::shared_ptr<llvm::cas::ObjectStore> DB,
     std::vector<tooling::CompileCommand> Inputs,
-    DiagnosticConsumer &DiagsConsumer, DependencyScanningService &Service,
-    llvm::ThreadPool &Pool, llvm::raw_ostream &OS) {
+    DiagnosticConsumer &DiagsConsumer,
+    const DepscanPrefixMapping &PrefixMapping,
+    DependencyScanningService &Service, llvm::ThreadPool &Pool,
+    llvm::raw_ostream &OS) {
 
   // Follow `-cc1depscan` and also ignore diagnostics.
   // FIXME: Seems not a good idea to do this..
@@ -327,6 +329,7 @@ static bool emitCompilationDBWithCASTreeArguments(
           tooling::dependencies::DependencyScanningTool &WorkerTool;
           DiagnosticConsumer &DiagsConsumer;
           StringRef CWD;
+          const DepscanPrefixMapping &PrefixMapping;
           SmallVectorImpl<const char *> &OutputArgs;
           llvm::StringSaver &Saver;
 
@@ -335,10 +338,12 @@ static bool emitCompilationDBWithCASTreeArguments(
               llvm::cas::ObjectStore &DB,
               tooling::dependencies::DependencyScanningTool &WorkerTool,
               DiagnosticConsumer &DiagsConsumer, StringRef CWD,
+              const DepscanPrefixMapping &PrefixMapping,
               SmallVectorImpl<const char *> &OutputArgs,
               llvm::StringSaver &Saver)
               : DB(DB), WorkerTool(WorkerTool), DiagsConsumer(DiagsConsumer),
-                CWD(CWD), OutputArgs(OutputArgs), Saver(Saver) {}
+                CWD(CWD), PrefixMapping(PrefixMapping), OutputArgs(OutputArgs),
+                Saver(Saver) {}
 
           bool
           runInvocation(std::shared_ptr<CompilerInvocation> Invocation,
@@ -347,7 +352,7 @@ static bool emitCompilationDBWithCASTreeArguments(
                         DiagnosticConsumer *DiagConsumer) override {
             Expected<llvm::cas::CASID> Root = scanAndUpdateCC1InlineWithTool(
                 WorkerTool, DiagsConsumer, /*VerboseOS*/ nullptr, *Invocation,
-                CWD, DB);
+                CWD, PrefixMapping, DB);
             if (!Root) {
               llvm::consumeError(Root.takeError());
               return false;
@@ -364,7 +369,7 @@ static bool emitCompilationDBWithCASTreeArguments(
         llvm::StringSaver &Saver = PerThreadStates[I]->Saver;
         OutputArgs.push_back(Saver.save(Input->CommandLine.front()).data());
         ScanForCC1Action Action(*DB, WorkerTool, *IgnoringDiagsConsumer, CWD,
-                                OutputArgs, Saver);
+                                PrefixMapping, OutputArgs, Saver);
 
         llvm::IntrusiveRefCntPtr<FileManager> FileMgr =
             WorkerTool.getOrCreateFileManager();
@@ -866,14 +871,6 @@ int main(int argc, const char **argv) {
           }
         }
         AdjustedArgs.insert(AdjustedArgs.end(), FlagsEnd, Args.end());
-        if (!PrefixMapToolchain.empty())
-          AdjustedArgs.push_back("-fdepscan-prefix-map-toolchain=" +
-                                 PrefixMapToolchain);
-        if (!PrefixMapSDK.empty())
-          AdjustedArgs.push_back("-fdepscan-prefix-map-sdk=" + PrefixMapSDK);
-        for (StringRef Map : PrefixMaps) {
-          AdjustedArgs.push_back("-fdepscan-prefix-map=" + std::string(Map));
-        }
         return AdjustedArgs;
       });
 
@@ -905,6 +902,13 @@ int main(int argc, const char **argv) {
       FS = llvm::cantFail(llvm::cas::createCachingOnDiskFileSystem(*CAS));
   }
 
+  DepscanPrefixMapping PrefixMapping;
+  if (!PrefixMapToolchain.empty())
+    PrefixMapping.NewToolchainPath = PrefixMapToolchain;
+  if (!PrefixMapSDK.empty())
+    PrefixMapping.NewSDKPath = PrefixMapSDK;
+  PrefixMapping.PrefixMap.append(PrefixMaps.begin(), PrefixMaps.end());
+
   DependencyScanningService Service(ScanMode, Format, CASOpts, CAS, Cache, FS,
                                     OptimizeArgs, EagerLoadModules);
   llvm::ThreadPool Pool(llvm::hardware_concurrency(NumThreads));
@@ -916,7 +920,7 @@ int main(int argc, const char **argv) {
     }
     return emitCompilationDBWithCASTreeArguments(
         CAS, AdjustingCompilations->getAllCompileCommands(), *DiagsConsumer,
-        Service, Pool, llvm::outs());
+        PrefixMapping, Service, Pool, llvm::outs());
   }
 
   std::vector<std::unique_ptr<DependencyScanningTool>> WorkerTools;
@@ -959,7 +963,7 @@ int main(int argc, const char **argv) {
                  << " files using " << Pool.getThreadCount() << " workers\n";
   }
   for (unsigned I = 0; I < Pool.getThreadCount(); ++I) {
-    Pool.async([I, &CAS, &Lock, &Index, &Inputs, &TreeResults,
+    Pool.async([I, &CAS, &PrefixMapping, &Lock, &Index, &Inputs, &TreeResults,
                 &HadErrors, &FD, &WorkerTools, &DependencyOS, &Errs]() {
       llvm::StringSet<> AlreadySeenModules;
       while (true) {
@@ -996,27 +1000,28 @@ int main(int argc, const char **argv) {
                                              Errs))
             HadErrors = true;
         } else if (Format == ScanningOutputFormat::Tree) {
-          auto MaybeTree =
-              WorkerTools[I]->getDependencyTree(Input->CommandLine, CWD);
+          auto MaybeTree = WorkerTools[I]->getDependencyTree(
+              Input->CommandLine, CWD, PrefixMapping);
           std::unique_lock<std::mutex> LockGuard(Lock);
           TreeResults.emplace_back(LocalIndex, std::move(Filename),
                                    std::move(MaybeTree));
         } else if (Format == ScanningOutputFormat::IncludeTree) {
           auto MaybeTree = WorkerTools[I]->getIncludeTree(
-              *CAS, Input->CommandLine, CWD, LookupOutput);
+              *CAS, Input->CommandLine, CWD, LookupOutput, PrefixMapping);
           std::unique_lock<std::mutex> LockGuard(Lock);
           TreeResults.emplace_back(LocalIndex, std::move(Filename),
                                    std::move(MaybeTree));
         } else if (MaybeModuleName) {
           auto MaybeFullDeps = WorkerTools[I]->getModuleDependencies(
               *MaybeModuleName, Input->CommandLine, CWD, AlreadySeenModules,
-              LookupOutput);
+              LookupOutput, PrefixMapping);
           if (handleModuleResult(Filename, MaybeFullDeps, FD, LocalIndex,
                                  DependencyOS, Errs))
             HadErrors = true;
         } else {
           auto MaybeTUDeps = WorkerTools[I]->getTranslationUnitDependencies(
-              Input->CommandLine, CWD, AlreadySeenModules, LookupOutput);
+              Input->CommandLine, CWD, AlreadySeenModules, LookupOutput,
+              PrefixMapping);
           if (handleTranslationUnitResult(Filename, MaybeTUDeps, FD, LocalIndex,
                                           DependencyOS, Errs))
             HadErrors = true;

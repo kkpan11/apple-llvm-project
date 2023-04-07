@@ -163,14 +163,17 @@ public:
       const DependencyOutputOptions &Opts)
       : DependencyFileGenerator(Opts) {}
 
-  void initialize(const CompilerInvocation &CI) {
+  Error initialize(const CompilerInvocation &CI,
+                   const DepscanPrefixMapping &PrefixMapping) {
     llvm::PrefixMapper Mapper;
-    DepscanPrefixMapping::configurePrefixMapper(CI, Mapper);
+    if (Error E = PrefixMapping.configurePrefixMapper(CI, Mapper))
+      return E;
     if (Mapper.empty())
-      return;
+      return Error::success();
 
     ReverseMapper.addInverseRange(Mapper.getMappings());
     ReverseMapper.sort();
+    return Error::success();
   }
 
   void maybeAddDependency(StringRef Filename, bool FromModule, bool IsSystem,
@@ -406,7 +409,9 @@ public:
         auto DFG =
             std::make_shared<ReversePrefixMappingDependencyFileGenerator>(
                 *Opts);
-        DFG->initialize(ScanInstance.getInvocation());
+        if (auto *Mapping = Controller.getPrefixMapping())
+          if (auto E = DFG->initialize(ScanInstance.getInvocation(), *Mapping))
+            return reportError(std::move(E));
         ScanInstance.addDependencyCollector(std::move(DFG));
       }
 

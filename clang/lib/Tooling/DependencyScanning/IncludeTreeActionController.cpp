@@ -25,8 +25,10 @@ class IncludeTreeBuilder;
 class IncludeTreeActionController : public CallbackActionController {
 public:
   IncludeTreeActionController(cas::ObjectStore &DB,
+                              DepscanPrefixMapping PrefixMapping,
                               LookupModuleOutputCallback LookupOutput)
-      : CallbackActionController(LookupOutput), DB(DB) {}
+      : CallbackActionController(LookupOutput), DB(DB),
+        PrefixMapping(std::move(PrefixMapping)) {}
 
   Expected<cas::IncludeTreeRoot> getIncludeTree();
 
@@ -41,6 +43,10 @@ private:
   Error finalizeModuleInvocation(CompilerInvocation &CI,
                                  const ModuleDeps &MD) override;
 
+  const DepscanPrefixMapping *getPrefixMapping() override {
+    return &PrefixMapping;
+  }
+
 private:
   IncludeTreeBuilder &current() {
     assert(!BuilderStack.empty());
@@ -50,6 +56,7 @@ private:
 private:
   cas::ObjectStore &DB;
   CASOptions CASOpts;
+  DepscanPrefixMapping PrefixMapping;
   llvm::PrefixMapper PrefixMapper;
   // IncludeTreePPCallbacks keeps a pointer to the current builder, so use a
   // pointer so the builder cannot move when resizing.
@@ -289,7 +296,9 @@ Expected<cas::IncludeTreeRoot> IncludeTreeActionController::getIncludeTree() {
 
 Error IncludeTreeActionController::initialize(
     CompilerInstance &ScanInstance, CompilerInvocation &NewInvocation) {
-  DepscanPrefixMapping::configurePrefixMapper(NewInvocation, PrefixMapper);
+  if (Error E =
+          PrefixMapping.configurePrefixMapper(NewInvocation, PrefixMapper))
+    return E;
 
   auto ensurePathRemapping = [&]() {
     if (PrefixMapper.empty())
@@ -813,6 +822,8 @@ IncludeTreeBuilder::createIncludeFile(StringRef Filename,
 
 std::unique_ptr<DependencyActionController>
 dependencies::createIncludeTreeActionController(
-    LookupModuleOutputCallback LookupModuleOutput, cas::ObjectStore &DB) {
-  return std::make_unique<IncludeTreeActionController>(DB, LookupModuleOutput);
+    LookupModuleOutputCallback LookupModuleOutput, cas::ObjectStore &DB,
+    DepscanPrefixMapping PrefixMapping) {
+  return std::make_unique<IncludeTreeActionController>(
+      DB, std::move(PrefixMapping), LookupModuleOutput);
 }

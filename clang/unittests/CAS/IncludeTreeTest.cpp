@@ -54,8 +54,10 @@ TEST(IncludeTree, IncludeTreeScan) {
                                           "-o"
                                           "t.cpp.o"};
   Optional<IncludeTreeRoot> Root;
+  DepscanPrefixMapping PrefixMapping;
   ASSERT_THAT_ERROR(
-      ScanTool.getIncludeTree(*DB, CommandLine, /*CWD*/ "", nullptr)
+      ScanTool
+          .getIncludeTree(*DB, CommandLine, /*CWD*/ "", nullptr, PrefixMapping)
           .moveInto(Root),
       llvm::Succeeded());
 

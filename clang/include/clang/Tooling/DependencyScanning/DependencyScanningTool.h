@@ -106,7 +106,8 @@ public:
 
   /// Collect dependency tree.
   llvm::Expected<llvm::cas::ObjectProxy>
-  getDependencyTree(const std::vector<std::string> &CommandLine, StringRef CWD);
+  getDependencyTree(const std::vector<std::string> &CommandLine, StringRef CWD,
+                    DepscanPrefixMapping PrefixMapping = {});
 
   /// If \p DiagGenerationAsCompilation is true it will generate error
   /// diagnostics same way as the normal compilation, with "N errors generated"
@@ -116,12 +117,14 @@ public:
   getDependencyTreeFromCompilerInvocation(
       std::shared_ptr<CompilerInvocation> Invocation, StringRef CWD,
       DiagnosticConsumer &DiagsConsumer, raw_ostream *VerboseOS,
-      bool DiagGenerationAsCompilation);
+      bool DiagGenerationAsCompilation,
+      DepscanPrefixMapping PrefixMapping = {});
 
   Expected<cas::IncludeTreeRoot>
   getIncludeTree(cas::ObjectStore &DB,
                  const std::vector<std::string> &CommandLine, StringRef CWD,
-                 LookupModuleOutputCallback LookupModuleOutput);
+                 LookupModuleOutputCallback LookupModuleOutput,
+                 const DepscanPrefixMapping &PrefixMapping);
 
   /// If \p DiagGenerationAsCompilation is true it will generate error
   /// diagnostics same way as the normal compilation, with "N errors generated"
@@ -130,6 +133,7 @@ public:
   Expected<cas::IncludeTreeRoot> getIncludeTreeFromCompilerInvocation(
       cas::ObjectStore &DB, std::shared_ptr<CompilerInvocation> Invocation,
       StringRef CWD, LookupModuleOutputCallback LookupModuleOutput,
+      const DepscanPrefixMapping &PrefixMapping,
       DiagnosticConsumer &DiagsConsumer, raw_ostream *VerboseOS,
       bool DiagGenerationAsCompilation);
 
@@ -151,7 +155,8 @@ public:
   getTranslationUnitDependencies(const std::vector<std::string> &CommandLine,
                                  StringRef CWD,
                                  const llvm::StringSet<> &AlreadySeen,
-                                 LookupModuleOutputCallback LookupModuleOutput);
+                                 LookupModuleOutputCallback LookupModuleOutput,
+                                 DepscanPrefixMapping PrefixMapping);
 
   /// Given a compilation context specified via the Clang driver command-line,
   /// gather modular dependencies of module with the given name, and return the
@@ -160,7 +165,8 @@ public:
   getModuleDependencies(StringRef ModuleName,
                         const std::vector<std::string> &CommandLine,
                         StringRef CWD, const llvm::StringSet<> &AlreadySeen,
-                        LookupModuleOutputCallback LookupModuleOutput);
+                        LookupModuleOutputCallback LookupModuleOutput,
+                        DepscanPrefixMapping PrefixMapping);
 
   ScanningOutputFormat getScanningFormat() const {
     return Worker.getScanningFormat();
@@ -181,11 +187,13 @@ public:
 
   static std::unique_ptr<DependencyActionController>
   createActionController(DependencyScanningWorker &Worker,
-                         LookupModuleOutputCallback LookupModuleOutput);
+                         LookupModuleOutputCallback LookupModuleOutput,
+                         DepscanPrefixMapping PrefixMapping);
 
 private:
   std::unique_ptr<DependencyActionController>
-  createActionController(LookupModuleOutputCallback LookupModuleOutput);
+  createActionController(LookupModuleOutputCallback LookupModuleOutput,
+                         DepscanPrefixMapping PrefixMapping);
 
 private:
   DependencyScanningWorker Worker;

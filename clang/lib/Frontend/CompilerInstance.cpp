@@ -2081,12 +2081,8 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
           PrivateModule, PP->getIdentifierInfo(Module->Name)->getTokenID());
       PrivPath.push_back(std::make_pair(&II, Path[0].second));
 
-      std::string FileName;
-      // If there is a modulemap module or prebuilt module, load it.
       if (PP->getHeaderSearchInfo().lookupModule(PrivateModule, ImportLoc, true,
-                                                 !IsInclusionDirective) ||
-          selectModuleSource(nullptr, PrivateModule, FileName, BuiltModules,
-                             PP->getHeaderSearchInfo()) != MS_ModuleNotFound)
+                                                 !IsInclusionDirective))
         Sub = loadModule(ImportLoc, PrivPath, Visibility, IsInclusionDirective);
       if (Sub) {
         MapPrivateSubModToTopLevel = true;

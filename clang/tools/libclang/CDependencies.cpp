@@ -145,8 +145,8 @@ ScanningOutputFormat DependencyScannerServiceOptions::getFormat() const {
   if (llvm::sys::Process::GetEnv("CLANG_CACHE_USE_CASFS_DEPSCAN"))
     return ScanningOutputFormat::FullTree;
 
-  // Use include-tree by default.
-  return ScanningOutputFormat::FullIncludeTree;
+  // Note: default caching behaviour is currently cas-fs.
+  return ScanningOutputFormat::FullTree;
 }
 
 CXDependencyScannerService
@@ -230,7 +230,7 @@ static CXErrorCode getFullDependencies(DependencyScanningWorker *Worker,
   llvm::StringSet<> AlreadySeen;
   FullDependencyConsumer DepConsumer(AlreadySeen);
   auto Controller = DependencyScanningTool::createActionController(
-      *Worker, std::move(LookupOutput));
+      *Worker, std::move(LookupOutput), /*PrefixMapping=*/{});
 
   bool HasDiagConsumer = DiagConsumer;
   bool HasError = Error;
