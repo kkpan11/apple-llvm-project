@@ -173,14 +173,14 @@ static auto hasPointerType() {
 
 static auto hasArrayType() { return hasType(hasCanonicalType(arrayType())); }
 
-AST_MATCHER_P(Stmt, forEveryDescendantEvaluatedStmt, internal::Matcher<Stmt>, innerMatcher) {
+AST_MATCHER_P(Stmt, forEachDescendantEvaluatedStmt, internal::Matcher<Stmt>, innerMatcher) {
   const DynTypedMatcher &DTM = static_cast<DynTypedMatcher>(innerMatcher);
 
   MatchDescendantVisitor Visitor(&DTM, Finder, Builder, ASTMatchFinder::BK_All, true);
   return Visitor.findMatch(DynTypedNode::create(Node));
 }
 
-AST_MATCHER_P(Stmt, forEveryDescendantStmt, internal::Matcher<Stmt>, innerMatcher) {
+AST_MATCHER_P(Stmt, forEachDescendantStmt, internal::Matcher<Stmt>, innerMatcher) {
   const DynTypedMatcher &DTM = static_cast<DynTypedMatcher>(innerMatcher);
 
   MatchDescendantVisitor Visitor(&DTM, Finder, Builder, ASTMatchFinder::BK_All, false);
@@ -999,7 +999,7 @@ findGadgets(const Decl *D, const UnsafeBufferUsageHandler &Handler) {
       // We also should make sure no two `FixableGadget` (resp. `WarningGadget`) matchers
       // match for the same node, so that we can group them
       // in one `anyOf` group (for better performance via short-circuiting).
-      forEveryDescendantStmt(stmt(anyOf(
+      forEachDescendantStmt(stmt(anyOf(
 #define FIXABLE_GADGET(x)                                                              \
         x ## Gadget::matcher().bind(#x),
 #include "clang/Analysis/Analyses/UnsafeBufferUsageGadgets.def"
@@ -1007,7 +1007,7 @@ findGadgets(const Decl *D, const UnsafeBufferUsageHandler &Handler) {
         // whether there are any uncovered by gadgets.
         declRefExpr(anyOf(hasPointerType(), hasArrayType()), to(varDecl())).bind("any_dre")
       ))),
-      forEveryDescendantEvaluatedStmt(stmt(anyOf(
+      forEachDescendantEvaluatedStmt(stmt(anyOf(
         // Add Gadget::matcher() for every gadget in the registry.
 #define WARNING_GADGET(x)                                                              \
         allOf(x ## Gadget::matcher().bind(#x), notInSafeBufferOptOut(&Handler)),
