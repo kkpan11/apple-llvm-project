@@ -24,14 +24,6 @@ void testAsSystemHeader(char *p) {
 
 #else
 
-namespace std {
-  class type_info;
-  class bad_cast;
-  class bad_typeid;
-}
-using size_t = __typeof(sizeof(int));
-void *malloc(size_t);
-
 void testIncrement(char *p) { // expected-warning{{'p' is an unsafe pointer used for buffer access}}
   ++p; // expected-note{{used in pointer arithmetic here}}
   p++; // expected-note{{used in pointer arithmetic here}}
@@ -108,22 +100,6 @@ void testArraySubscriptsWithAuto(int *p, int **pp) {
   		     expected-note{{change type of 'ap4' to 'std::span' to preserve bounds information}}
 
   foo(ap4[1]);    // expected-note{{used in buffer access here}}
-}
-
-void testUnevaluatedContext(int * p) { // expected-warning{{'p' is an unsafe pointer used for buffer access}}
-  foo(sizeof(p[1]), // no-note
-      sizeof(decltype(p[1]))); // no-note
-  __typeof(p[5]) x; // no-note
-  int *q = (int *)malloc(sizeof(p[5])); // no-note
-  int y = sizeof(p[5]); // no-note
-  __is_pod(__typeof(p[5])); // no-note
-  __is_trivially_constructible(__typeof(p[5]), decltype(p[5])); // no-note
-  _Generic(p[1], int: 2, float: 3); // no-note
-  _Generic(1, int: p[2], float: 3); // expected-note{{used in buffer access here}}
-   _Generic(1, int: 2, float: p[3]); // no-note
-  decltype(p[2]) var = y; // no-note
-  noexcept(p[2]); // no-note
-  typeid(p[3]); // no-note
 }
 
 void testQualifiedParameters(const int * p, const int * const q, const int a[10], const int b[10][10]) {
