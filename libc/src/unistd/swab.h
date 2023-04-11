@@ -1,4 +1,4 @@
-//===-- Implementation of strrchr------------------------------------------===//
+//===-- Implementation header for swab --------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,15 +6,15 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "src/string/strrchr.h"
+#ifndef LLVM_LIBC_SRC_UNISTD_SWAB_H
+#define LLVM_LIBC_SRC_UNISTD_SWAB_H
 
-#include "src/__support/common.h"
-#include "src/string/string_utils.h"
+#include <unistd.h> // For ssize_t
 
 namespace __llvm_libc {
 
-LLVM_LIBC_FUNCTION(char *, strrchr, (const char *src, int c)) {
-  return internal::strrchr_implementation(src, c);
-}
+void swab(const void *__restrict from, void *__restrict to, ssize_t n);
 
 } // namespace __llvm_libc
+
+#endif // LLVM_LIBC_SRC_UNISTD_SWAB_H
