@@ -1974,11 +1974,14 @@ Error MCCASBuilder::createLineSection() {
   return finalizeSection<DebugLineSectionRef>();
 }
 
-Error MCCASBuilder::createDebugStrSection(
-    ArrayRef<DebugStrRef> DebugStringRefs) {
+Error MCCASBuilder::createDebugStrSection() {
+
+  auto DebugStringContents = createDebugStringRefs();
+  if (!DebugStringContents)
+    return DebugStringContents.takeError();
 
   startSection(DwarfSections.Str);
-  for (auto DebugStringRef : DebugStringRefs)
+  for (auto DebugStringRef : DebugStringContents->DebugStringRefs)
     addNode(DebugStringRef);
   return finalizeSection<DebugStringSectionRef>();
 }
@@ -2108,10 +2111,6 @@ partitionFragment(const MCAsmLayout &Layout, SmallVector<char, 0> &Addends,
 Error MCCASBuilder::buildFragments() {
   startGroup();
 
-  auto DebugStringContents = createDebugStringRefs();
-  if (!DebugStringContents)
-    return DebugStringContents.takeError();
-
   for (const MCSection &Sec : Asm) {
     if (Sec.isVirtualSection() || Sec.getFragmentList().empty())
       continue;
@@ -2139,7 +2138,7 @@ Error MCCASBuilder::buildFragments() {
 
     // Handle Debug Str sections separately.
     if (&Sec == DwarfSections.Str) {
-      if (auto E = createDebugStrSection(DebugStringContents->DebugStringRefs))
+      if (auto E = createDebugStrSection())
         return E;
       continue;
     }

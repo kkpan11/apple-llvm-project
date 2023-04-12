@@ -589,7 +589,7 @@ private:
 
   // If a DWARF String section exists, create a DebugStrRef CAS object per
   // string in the section.
-  Error createDebugStrSection(ArrayRef<DebugStrRef> DebugStringRefs);
+  Error createDebugStrSection();
 
   /// If there is any padding between one section and the next, create a
   /// PaddingRef CAS object to represent the bytes of Padding between the two
