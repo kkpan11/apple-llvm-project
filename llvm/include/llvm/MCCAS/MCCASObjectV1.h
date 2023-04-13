@@ -548,7 +548,7 @@ private:
 
   // Helper functions.
   Error createStringSection(StringRef S,
-                            std::function<Error(StringRef, unsigned)> CreateFn);
+                            std::function<Error(StringRef)> CreateFn);
 
   // If a DWARF Line Section exists, create a DebugLineRef CAS object per
   // function contribution to the line table.
@@ -570,12 +570,7 @@ private:
   /// AbbrevRefs. Otherwise, no objects are created and `success` is returned.
   Error createDebugAbbrevSection();
 
-  struct DebugStringSectionContents {
-    SmallVector<DebugStrRef, 0> DebugStringRefs;
-    DenseMap<unsigned, cas::ObjectRef> MapOfStringRefs;
-  };
-
-  Expected<DebugStringSectionContents> createDebugStringRefs();
+  Expected<SmallVector<DebugStrRef, 0>> createDebugStringRefs();
 
   struct CUSplit {
     SmallVector<MutableArrayRef<char>> SplitCUData;

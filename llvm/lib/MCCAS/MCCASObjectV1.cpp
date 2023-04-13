@@ -1529,17 +1529,15 @@ Error MCCASBuilder::createPaddingRef(const MCSection *Sec) {
 }
 
 Error MCCASBuilder::createStringSection(
-    StringRef S, std::function<Error(StringRef, unsigned)> CreateFn) {
+    StringRef S, std::function<Error(StringRef)> CreateFn) {
   assert(S.endswith("\0") && "String sections are null terminated");
-  unsigned DebugStringOffset = 0;
   if (!SplitStringSections)
-    return CreateFn(S, DebugStringOffset);
+    return CreateFn(S);
 
   while (!S.empty()) {
     auto SplitSym = S.split('\0');
-    if (auto E = CreateFn(SplitSym.first, DebugStringOffset))
+    if (auto E = CreateFn(SplitSym.first))
       return E;
-    DebugStringOffset += SplitSym.first.size() + 1;
 
     S = SplitSym.second;
   }
@@ -1976,40 +1974,36 @@ Error MCCASBuilder::createLineSection() {
 
 Error MCCASBuilder::createDebugStrSection() {
 
-  auto DebugStringContents = createDebugStringRefs();
-  if (!DebugStringContents)
-    return DebugStringContents.takeError();
+  auto DebugStringRefs = createDebugStringRefs();
+  if (!DebugStringRefs)
+    return DebugStringRefs.takeError();
 
   startSection(DwarfSections.Str);
-  for (auto DebugStringRef : DebugStringContents->DebugStringRefs)
+  for (auto DebugStringRef : *DebugStringRefs)
     addNode(DebugStringRef);
   return finalizeSection<DebugStringSectionRef>();
 }
 
-Expected<MCCASBuilder::DebugStringSectionContents>
-MCCASBuilder::createDebugStringRefs() {
+Expected<SmallVector<DebugStrRef, 0>> MCCASBuilder::createDebugStringRefs() {
   if (!DwarfSections.Str || !DwarfSections.Str->getFragmentList().size())
-    return DebugStringSectionContents{{}, DenseMap<unsigned, cas::ObjectRef>()};
+    return SmallVector<DebugStrRef, 0>();
 
   assert(DwarfSections.Str->getFragmentList().size() == 1 &&
          "One fragment in debug str section");
 
-  DebugStringSectionContents DebugStringContents;
+  SmallVector<DebugStrRef, 0> DebugStringRefs;
   ArrayRef<char> DebugStrData =
       cast<MCDataFragment>(*DwarfSections.Str->begin()).getContents();
   StringRef S(DebugStrData.data(), DebugStrData.size());
-  if (auto E = createStringSection(
-          S, [&](StringRef S, unsigned DebugStringOffset) -> Error {
-            auto Sym = DebugStrRef::create(*this, S);
-            if (!Sym)
-              return Sym.takeError();
-            DebugStringContents.DebugStringRefs.push_back(*Sym);
-            DebugStringContents.MapOfStringRefs.try_emplace(DebugStringOffset,
-                                                            Sym->getRef());
-            return Error::success();
-          }))
+  if (auto E = createStringSection(S, [&](StringRef S) -> Error {
+        auto Sym = DebugStrRef::create(*this, S);
+        if (!Sym)
+          return Sym.takeError();
+        DebugStringRefs.push_back(*Sym);
+        return Error::success();
+      }))
     return std::move(E);
-  return DebugStringContents;
+  return DebugStringRefs;
 }
 
 static ArrayRef<char> getFragmentContents(const MCFragment &Fragment) {
@@ -2248,14 +2242,13 @@ Error MCCASBuilder::buildSymbolTable() {
   ObjectWriter.writeSymbolTable(Asm, Layout);
   StringRef S = ObjectWriter.getContent();
   std::vector<cas::ObjectRef> CStrings;
-  if (auto E = createStringSection(
-          S, [&](StringRef S, unsigned DebugStringOffset) -> Error {
-            auto Sym = CStringRef::create(*this, S);
-            if (!Sym)
-              return Sym.takeError();
-            CStrings.push_back(Sym->getRef());
-            return Error::success();
-          }))
+  if (auto E = createStringSection(S, [&](StringRef S) -> Error {
+        auto Sym = CStringRef::create(*this, S);
+        if (!Sym)
+          return Sym.takeError();
+        CStrings.push_back(Sym->getRef());
+        return Error::success();
+      }))
     return E;
 
   auto Ref = SymbolTableRef::create(*this, CStrings);
