@@ -55,9 +55,11 @@ cl::opt<unsigned>
     MCDataMergeThreshold("mc-cas-data-merge-threshold",
                          cl::desc("MCDataFragment merge threshold"),
                          cl::init(1024));
-cl::opt<bool> SplitStringSections(
-    "mc-cas-split-string-sections",
-    cl::desc("Split String Sections (SymTable and DebugStr)"), cl::init(true));
+cl::opt<bool>
+    DebugInfoUnopt("debug-info-unopt",
+                   cl::desc("Whether debug info storage should be optimized or "
+                            "just stored as one cas block per section"),
+                   cl::init(false));
 
 enum RelEncodeLoc {
   Atom,
@@ -1531,7 +1533,7 @@ Error MCCASBuilder::createPaddingRef(const MCSection *Sec) {
 Error MCCASBuilder::createStringSection(
     StringRef S, std::function<Error(StringRef)> CreateFn) {
   assert(S.endswith("\0") && "String sections are null terminated");
-  if (!SplitStringSections)
+  if (DebugInfoUnopt)
     return CreateFn(S);
 
   while (!S.empty()) {
