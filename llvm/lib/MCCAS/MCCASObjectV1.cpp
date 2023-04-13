@@ -1548,7 +1548,9 @@ Error MCCASBuilder::createStringSection(
     StringRef S, std::function<Error(StringRef)> CreateFn) {
   assert(S.endswith("\0") && "String sections are null terminated");
   if (DebugInfoUnopt)
-    return CreateFn(S);
+    // Drop the null terminator at the end when not splitting the debug_string
+    // section as it is always added when materializing.
+    return CreateFn(S.drop_back());
 
   while (!S.empty()) {
     auto SplitSym = S.split('\0');
