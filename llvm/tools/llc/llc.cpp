@@ -355,7 +355,7 @@ struct LLCDiagnosticHandler : public DiagnosticHandler {
 };
 
 /// Returns a pointer to a CAS using the CLI parameters.
-static std::unique_ptr<cas::ObjectStore> getCAS() {
+static std::shared_ptr<cas::ObjectStore> getCAS() {
   if (CASPath.empty())
     return cas::createInMemoryCAS();
   auto MaybeCAS =
