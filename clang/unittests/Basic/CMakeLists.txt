@@ -17,7 +17,6 @@ add_clang_unittest(BasicTests
 
 clang_target_link_libraries(BasicTests
   PRIVATE
-  clangAST
   clangBasic
   clangLex
   )

@@ -6656,7 +6656,8 @@ or switch that it is attached to is completely unpredictable.
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The existence of the ``!dereferenceable`` metadata on the instruction
-tells the optimizer that the value loaded is known to be dereferenceable.
+tells the optimizer that the value loaded is known to be dereferenceable,
+otherwise the behavior is undefined.
 The number of bytes known to be dereferenceable is specified by the integer
 value in the metadata node. This is analogous to the ''dereferenceable''
 attribute on parameters and return values.
@@ -6668,7 +6669,7 @@ attribute on parameters and return values.
 
 The existence of the ``!dereferenceable_or_null`` metadata on the
 instruction tells the optimizer that the value loaded is known to be either
-dereferenceable or null.
+dereferenceable or null, otherwise the behavior is undefined.
 The number of bytes known to be dereferenceable is specified by the integer
 value in the metadata node. This is analogous to the ''dereferenceable_or_null''
 attribute on parameters and return values.
@@ -9585,7 +9586,13 @@ Overview:
 """""""""
 
 The '``frem``' instruction returns the remainder from the division of
-its two operands.
+its two operands. 
+
+.. note::
+
+	The instruction is implemented as a call to libm's '``fmod``'
+	for some targets, and using the instruction may thus require linking libm.
+
 
 Arguments:
 """"""""""
@@ -23466,7 +23473,9 @@ Proper :ref:`function attributes <fnattrs>` usage is required for the
 constrained intrinsics to function correctly.
 
 All function *calls* done in a function that uses constrained floating
-point intrinsics must have the ``strictfp`` attribute.
+point intrinsics must have the ``strictfp`` attribute either on the
+calling instruction or on the declaration or definition of the function
+being called.
 
 All function *definitions* that use constrained floating point intrinsics
 must have the ``strictfp`` attribute.

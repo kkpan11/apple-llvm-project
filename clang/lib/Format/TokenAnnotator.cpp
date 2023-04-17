@@ -421,8 +421,7 @@ private:
           FormatToken *Next = CurrentToken->Next;
           if (PrevPrev && PrevPrev->is(tok::identifier) &&
               Prev->isOneOf(tok::star, tok::amp, tok::ampamp) &&
-              CurrentToken->is(tok::identifier) &&
-              !Next->isOneOf(tok::equal, tok::l_brace)) {
+              CurrentToken->is(tok::identifier) && Next->isNot(tok::equal)) {
             Prev->setType(TT_BinaryOperator);
             LookForDecls = false;
           }
@@ -2517,12 +2516,6 @@ private:
       return TT_PointerOrReference;
     }
 
-    // if (Class* obj { function() })
-    if (PrevToken->Tok.isAnyIdentifier() && NextToken->Tok.isAnyIdentifier() &&
-        NextToken->Next && NextToken->Next->is(tok::l_brace)) {
-      return TT_PointerOrReference;
-    }
-
     if (PrevToken->endsSequence(tok::r_square, tok::l_square, tok::kw_delete))
       return TT_UnaryOperator;
 
@@ -3032,8 +3025,8 @@ void TokenAnnotator::setCommentLineLevels(
 
     // If the comment is currently aligned with the line immediately following
     // it, that's probably intentional and we should keep it.
-    if (NextNonCommentLine && Line->isComment() &&
-        NextNonCommentLine->First->NewlinesBefore <= 1 &&
+    if (NextNonCommentLine && !NextNonCommentLine->First->Finalized &&
+        Line->isComment() && NextNonCommentLine->First->NewlinesBefore <= 1 &&
         NextNonCommentLine->First->OriginalColumn ==
             Line->First->OriginalColumn) {
       const bool PPDirectiveOrImportStmt =
@@ -3707,9 +3700,11 @@ bool TokenAnnotator::spaceRequiredBetween(const AnnotatedLine &Line,
       LeftParen = &Left;
     else if (Right.is(tok::r_paren) && Right.MatchingParen)
       LeftParen = Right.MatchingParen;
-    if (LeftParen && LeftParen->Previous &&
-        isKeywordWithCondition(*LeftParen->Previous)) {
-      return true;
+    if (LeftParen) {
+      if (LeftParen->is(TT_ConditionLParen))
+        return true;
+      if (LeftParen->Previous && isKeywordWithCondition(*LeftParen->Previous))
+        return true;
     }
   }
 

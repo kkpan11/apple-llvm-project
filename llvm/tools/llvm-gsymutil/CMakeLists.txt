@@ -6,11 +6,9 @@ set(LLVM_LINK_COMPONENTS
   MCCAS
   Object
   Support
-  Target
   TargetParser
   )
 
 add_llvm_tool(llvm-gsymutil
   llvm-gsymutil.cpp
-
   )

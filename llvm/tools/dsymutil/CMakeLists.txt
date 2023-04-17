@@ -7,13 +7,12 @@ set(LLVM_LINK_COMPONENTS
   AllTargetsDescs
   AllTargetsInfos
   AsmPrinter
-  DebugInfoDWARF
+  CodeGen
   DWARFLinker
-  DWARFLinkerParallel
+  DebugInfoDWARF
   MC
   MCCAS
   Object
-  CodeGen
   Option
   Remarks
   Support

@@ -8,6 +8,7 @@ set(LLVM_LINK_COMPONENTS
   BitWriter
   CodeGen
   Core
+  IPO
   IRReader
   MC
   MCCAS
@@ -17,7 +18,6 @@ set(LLVM_LINK_COMPONENTS
   Target
   TargetParser
   TransformUtils
-  IPO
   )
 
 add_llvm_tool(llvm-reduce

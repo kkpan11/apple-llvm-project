@@ -841,10 +841,8 @@ PassBuilder::buildInlinerPipeline(OptimizationLevel Level,
   // functions.
   MainCGPipeline.addPass(PostOrderFunctionAttrsPass(/*SkipNonRecursive*/ true));
 
-  // When at O3 add argument promotion to the pass pipeline.
-  // FIXME: It isn't at all clear why this should be limited to O3.
-  if (Level == OptimizationLevel::O3)
-    MainCGPipeline.addPass(ArgumentPromotionPass());
+  // Try to promote pointer arguments for internal functions.
+  MainCGPipeline.addPass(ArgumentPromotionPass());
 
   // Try to perform OpenMP specific optimizations. This is a (quick!) no-op if
   // there are no OpenMP runtime calls present in the module.
@@ -1838,10 +1836,24 @@ PassBuilder::buildLTODefaultPipeline(OptimizationLevel Level,
     MPM.addPass(HotColdSplittingPass());
 
   // Add late LTO optimization passes.
+  FunctionPassManager LateFPM;
+
+  // LoopSink pass sinks instructions hoisted by LICM, which serves as a
+  // canonicalization pass that enables other optimizations. As a result,
+  // LoopSink pass needs to be a very late IR pass to avoid undoing LICM
+  // result too early.
+  LateFPM.addPass(LoopSinkPass());
+
+  // This hoists/decomposes div/rem ops. It should run after other sink/hoist
+  // passes to avoid re-sinking, but before SimplifyCFG because it can allow
+  // flattening of blocks.
+  LateFPM.addPass(DivRemPairsPass());
+
   // Delete basic blocks, which optimization passes may have killed.
-  MPM.addPass(createModuleToFunctionPassAdaptor(SimplifyCFGPass(
+  LateFPM.addPass(SimplifyCFGPass(
       SimplifyCFGOptions().convertSwitchRangeToICmp(true).hoistCommonInsts(
-          true))));
+          true)));
+  MPM.addPass(createModuleToFunctionPassAdaptor(std::move(LateFPM)));
 
   // Drop bodies of available eternally objects to improve GlobalDCE.
   MPM.addPass(EliminateAvailableExternallyPass());

@@ -64,6 +64,17 @@ enum EdgeKind_x86_64 : Edge::Kind {
   ///
   Pointer16,
 
+  /// A plain 8-bit pointer value relocation.
+  ///
+  /// Fixup expression:
+  ///   Fixup <- Target + Addend : uint8
+  ///
+  /// Errors:
+  ///   - The target must reside in the low 8-bits of the address space,
+  ///     otherwise an out-of-range error will be returned.
+  ///
+  Pointer8,
+
   /// A 64-bit delta.
   ///
   /// Delta from the fixup to the target.
@@ -426,6 +437,14 @@ inline Error writeOperand(const Edge::Kind &K, uint64_t OperandValue,
     return createStringError(inconvertibleErrorCode(), "invalid fixup");
   }
 
+  case Pointer8: {
+    if (LLVM_LIKELY(isUInt<8>(OperandValue))) {
+      *(uint8_t *)FixupPtr = OperandValue;
+      break;
+    }
+    return createStringError(inconvertibleErrorCode(), "invalid fixup");
+  }
+
   case RequestGOTAndTransformToPCRel32GOTLoadRelaxable:
   case RequestGOTAndTransformToPCRel32GOTLoadREXRelaxable:
   case RequestTLVPAndTransformToPCRel32TLVPLoadREXRelaxable:
@@ -529,6 +548,11 @@ inline Error applyFixup(LinkGraph &G, Block &B, const Edge &E,
   }
 
   case Pointer16: {
+    uint64_t Value = E.getTarget().getAddress().getValue() + E.getAddend();
+    return writeOperand(G, B, E, Value, BlockWorkingMem);
+  }
+
+  case Pointer8: {
     uint64_t Value = E.getTarget().getAddress().getValue() + E.getAddend();
     return writeOperand(G, B, E, Value, BlockWorkingMem);
   }

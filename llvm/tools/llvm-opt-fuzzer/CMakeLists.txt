@@ -1,5 +1,5 @@
 set(LLVM_LINK_COMPONENTS
-  MCParser
+  AggressiveInstCombine
   AllTargetsAsmParsers
   AllTargetsCodeGens
   AllTargetsDescs
@@ -10,24 +10,23 @@ set(LLVM_LINK_COMPONENTS
   CodeGen
   Core
   Coroutines
+  FuzzMutate
+  FuzzerCLI
   IPO
-  IRReader
-  AggressiveInstCombine
   InstCombine
   Instrumentation
-  FuzzerCLI
-  FuzzMutate
   MC
   MCCAS
+  MCParser
   ObjCARCOpts
+  Passes
   ScalarOpts
   Support
   Target
   TargetParser
   TransformUtils
   Vectorize
-  Passes
-)
+  )
 
 add_llvm_fuzzer(llvm-opt-fuzzer
   llvm-opt-fuzzer.cpp
