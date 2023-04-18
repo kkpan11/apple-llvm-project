@@ -1,4 +1,4 @@
-//===- ReifyValueBounds.cpp --- Reify value bounds with affine ops ------*-===//
+//===- ReifyValueBounds.cpp --- Reify value bounds with arith ops -------*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,19 +6,65 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "mlir/Dialect/Affine/Transforms/Transforms.h"
+#include "mlir/Dialect/Arith/Transforms/Transforms.h"
 
-#include "mlir/Dialect/Affine/IR/AffineOps.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Interfaces/ValueBoundsOpInterface.h"
 
 using namespace mlir;
+using namespace mlir::arith;
+
+/// Build Arith IR for the given affine map and its operands.
+static Value buildArithValue(OpBuilder &b, Location loc, AffineMap map,
+                             ValueRange operands) {
+  assert(map.getNumResults() == 1 && "multiple results not supported yet");
+  std::function<Value(AffineExpr)> buildExpr = [&](AffineExpr e) -> Value {
+    switch (e.getKind()) {
+    case AffineExprKind::Constant:
+      return b.create<ConstantIndexOp>(loc,
+                                       e.cast<AffineConstantExpr>().getValue());
+    case AffineExprKind::DimId:
+      return operands[e.cast<AffineDimExpr>().getPosition()];
+    case AffineExprKind::SymbolId:
+      return operands[e.cast<AffineSymbolExpr>().getPosition() +
+                      map.getNumDims()];
+    case AffineExprKind::Add: {
+      auto binaryExpr = e.cast<AffineBinaryOpExpr>();
+      return b.create<AddIOp>(loc, buildExpr(binaryExpr.getLHS()),
+                              buildExpr(binaryExpr.getRHS()));
+    }
+    case AffineExprKind::Mul: {
+      auto binaryExpr = e.cast<AffineBinaryOpExpr>();
+      return b.create<MulIOp>(loc, buildExpr(binaryExpr.getLHS()),
+                              buildExpr(binaryExpr.getRHS()));
+    }
+    case AffineExprKind::FloorDiv: {
+      auto binaryExpr = e.cast<AffineBinaryOpExpr>();
+      return b.create<DivSIOp>(loc, buildExpr(binaryExpr.getLHS()),
+                               buildExpr(binaryExpr.getRHS()));
+    }
+    case AffineExprKind::CeilDiv: {
+      auto binaryExpr = e.cast<AffineBinaryOpExpr>();
+      return b.create<CeilDivSIOp>(loc, buildExpr(binaryExpr.getLHS()),
+                                   buildExpr(binaryExpr.getRHS()));
+    }
+    case AffineExprKind::Mod: {
+      auto binaryExpr = e.cast<AffineBinaryOpExpr>();
+      return b.create<RemSIOp>(loc, buildExpr(binaryExpr.getLHS()),
+                               buildExpr(binaryExpr.getRHS()));
+    }
+    }
+    llvm_unreachable("unsupported AffineExpr kind");
+  };
+  return buildExpr(map.getResult(0));
+}
 
 static FailureOr<OpFoldResult>
 reifyValueBound(OpBuilder &b, Location loc, presburger::BoundType type,
                 Value value, std::optional<int64_t> dim,
-                function_ref<bool(Value, std::optional<int64_t>)> stopCondition,
+                ValueBoundsConstraintSet::StopConditionFn stopCondition,
                 bool closedUB) {
   // Compute bound.
   AffineMap boundMap;
@@ -40,12 +86,12 @@ reifyValueBound(OpBuilder &b, Location loc, presburger::BoundType type,
       continue;
     }
 
-    assert(cast<ShapedType>(value.getType()).isDynamicDim(*dim) &&
+    assert(value.getType().cast<ShapedType>().isDynamicDim(*dim) &&
            "expected dynamic dim");
-    if (isa<RankedTensorType>(value.getType())) {
+    if (value.getType().isa<RankedTensorType>()) {
       // A tensor dimension is used: generate a tensor.dim.
       operands.push_back(b.create<tensor::DimOp>(loc, value, *dim));
-    } else if (isa<MemRefType>(value.getType())) {
+    } else if (value.getType().isa<MemRefType>()) {
       // A memref dimension is used: generate a memref.dim.
       operands.push_back(b.create<memref::DimOp>(loc, value, *dim));
     } else {
@@ -53,34 +99,31 @@ reifyValueBound(OpBuilder &b, Location loc, presburger::BoundType type,
     }
   }
 
-  // Simplify and return bound.
-  mlir::canonicalizeMapAndOperands(&boundMap, &operands);
-  // Check for special cases where no affine.apply op is needed.
+  // Check for special cases where no arith ops are needed.
   if (boundMap.isSingleConstant()) {
     // Bound is a constant: return an IntegerAttr.
     return static_cast<OpFoldResult>(
         b.getIndexAttr(boundMap.getSingleConstantResult()));
   }
-  // No affine.apply op is needed if the bound is a single SSA value.
+  // No arith ops are needed if the bound is a single SSA value.
   if (auto expr = boundMap.getResult(0).dyn_cast<AffineDimExpr>())
     return static_cast<OpFoldResult>(operands[expr.getPosition()]);
   if (auto expr = boundMap.getResult(0).dyn_cast<AffineSymbolExpr>())
     return static_cast<OpFoldResult>(
         operands[expr.getPosition() + boundMap.getNumDims()]);
-  // General case: build affine.apply op.
-  return static_cast<OpFoldResult>(
-      b.create<AffineApplyOp>(loc, boundMap, operands).getResult());
+  // General case: build Arith ops.
+  return static_cast<OpFoldResult>(buildArithValue(b, loc, boundMap, operands));
 }
 
-FailureOr<OpFoldResult> mlir::reifyShapedValueDimBound(
+FailureOr<OpFoldResult> mlir::arith::reifyShapedValueDimBound(
     OpBuilder &b, Location loc, presburger::BoundType type, Value value,
     int64_t dim, ValueBoundsConstraintSet::StopConditionFn stopCondition,
     bool closedUB) {
   auto reifyToOperands = [&](Value v, std::optional<int64_t> d) {
     // We are trying to reify a bound for `value` in terms of the owning op's
     // operands. Construct a stop condition that evaluates to "true" for any SSA
-    // value except for `value`. I.e., the bound will be computed in terms of
-    // any SSA values except for `value`. The first such values are operands of
+    // value expect for `value`. I.e., the bound will be computed in terms of
+    // any SSA values expect for `value`. The first such values are operands of
     // the owner of `value`.
     return v != value;
   };
@@ -89,7 +132,7 @@ FailureOr<OpFoldResult> mlir::reifyShapedValueDimBound(
                          closedUB);
 }
 
-FailureOr<OpFoldResult> mlir::reifyIndexValueBound(
+FailureOr<OpFoldResult> mlir::arith::reifyIndexValueBound(
     OpBuilder &b, Location loc, presburger::BoundType type, Value value,
     ValueBoundsConstraintSet::StopConditionFn stopCondition, bool closedUB) {
   auto reifyToOperands = [&](Value v, std::optional<int64_t> d) {
