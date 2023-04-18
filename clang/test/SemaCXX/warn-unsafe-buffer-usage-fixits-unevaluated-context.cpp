@@ -77,3 +77,18 @@ void uneval_context_fix_pointer_dereference_not_handled() {
   noexcept(*p);
   typeid(*p);
 }
+
+//FIXME: Emit fixits for non-overlapping DREs with overlapping contexts.
+void overlapping_contexts() {
+  auto p = new int[10];
+  // CHECK-NOT: fix-it:"{{.*}}":{[[@LINE-1]]:3-[[@LINE-1]]:11}:"std::span<int> p"
+  // CHECK-NOT: fix-it:"{{.*}}":{[[@LINE-2]]:12-[[@LINE-2]]:12}:"{"
+  // CHECK-NOT: fix-it:"{{.*}}":{[[@LINE-3]]:23-[[@LINE-3]]:23}:", 10}"
+
+  int tmp = p[5]; // Some unsafe operation
+
+  foo(p, p); // Both DREs share the context, but only one DRE can currently claim it.
+             // Therefore, causing one of them to go unclaimed.
+  // CHECK-NOT: fix-it:"{{.*}}":{[[@LINE-2]]:8-[[@LINE-2]]:8}:".data()"
+  // CHECK-NOT: fix-it:"{{.*}}":{[[@LINE-3]]:11-[[@LINE-3]]:11}:".data()"
+}
