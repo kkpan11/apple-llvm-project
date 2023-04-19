@@ -999,7 +999,7 @@ findGadgets(const Decl *D, const UnsafeBufferUsageHandler &Handler) {
       // We also should make sure no two `FixableGadget` (resp. `WarningGadget`) matchers
       // match for the same node, so that we can group them
       // in one `anyOf` group (for better performance via short-circuiting).
-      forEachDescendantStmt(stmt(anyOf(
+      forEachDescendantStmt(stmt(eachOf(
 #define FIXABLE_GADGET(x)                                                              \
         x ## Gadget::matcher().bind(#x),
 #include "clang/Analysis/Analyses/UnsafeBufferUsageGadgets.def"
