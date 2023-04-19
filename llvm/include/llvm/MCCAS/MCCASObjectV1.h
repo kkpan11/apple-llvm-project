@@ -550,9 +550,13 @@ private:
   Error createStringSection(StringRef S,
                             std::function<Error(StringRef)> CreateFn);
 
-  // If a DWARF Line Section exists, create a DebugLineRef CAS object per
-  // function contribution to the line table.
+  // If a DWARF Line Section exists, create a debug_line section representation
+  // in the CAS.
   Error createLineSection();
+
+  // If the option --debug-info-unopt is not used, create a DebugLineRef CAS
+  // object per function contribution to the line table.
+  Error createOptimizedLineSection(StringRef DebugLineStrRef);
 
   /// If a DWARF Debug Info section exists, create a DebugInfoCURef CAS object
   /// for each compile unit (CU) inside the section, and a DebugAbbrevRef CAS

@@ -903,15 +903,33 @@ materializeDebugLineSection(MCCASReader &Reader,
     auto Node = Reader.getObjectProxy(Ref);
     if (!Node)
       return Node.takeError();
+    if (auto PadRef = PaddingRef::Cast(*Node)) {
+      if (!DistinctDebugLineRefSeen && !DebugLineUnoptRefSeen)
+        return createStringError(
+            inconvertibleErrorCode(),
+            "Line Table layout is incorrect, unexpected "
+            "PaddingRef before a DistinctDebugLineRef or a DebugLineUnoptRef");
+      raw_svector_ostream OS(DebugLineSection);
+      auto Size = PadRef->materialize(OS);
+      if (!Size)
+        return Size.takeError();
+      continue;
+    }
+
+    if (DebugLineUnoptRefSeen)
+      return createStringError(
+          inconvertibleErrorCode(),
+          "DebugLineUnoptRef seen, only block allowed after is a PaddingRef");
+
     if (auto LineUnoptRef = DebugLineUnoptRef::Cast(*Node)) {
+
       DebugLineUnoptRefSeen = true;
       auto Data = LineUnoptRef->getData();
       DebugLineSection.append(Data.begin(), Data.end());
-    } else if (auto DistinctRef = DistinctDebugLineRef::Cast(*Node)) {
-      if (DebugLineUnoptRefSeen)
-        return createStringError(
-            inconvertibleErrorCode(),
-            "DebugLineUnoptRef seen, only block allowed after is a PaddingRef");
+      continue;
+    }
+    if (auto DistinctRef = DistinctDebugLineRef::Cast(*Node)) {
+
       DistinctDebugLineRefSeen = true;
       auto Data = DistinctRef->getData();
       DistinctData.append(Data.begin(), Data.end());
@@ -924,11 +942,10 @@ materializeDebugLineSection(MCCASReader &Reader,
       // Copy line table prologue into final debug line section.
       DebugLineSection.append(DistinctData.begin(),
                               DistinctData.begin() + DistinctOffset);
-    } else if (auto LineRef = DebugLineRef::Cast(*Node)) {
-      if (DebugLineUnoptRefSeen)
-        return createStringError(
-            inconvertibleErrorCode(),
-            "DebugLineUnoptRef seen, only block allowed after is a PaddingRef");
+      continue;
+    }
+    if (auto LineRef = DebugLineRef::Cast(*Node)) {
+
       if (!DistinctDebugLineRefSeen)
         return createStringError(inconvertibleErrorCode(),
                                  "Line Table layout is incorrect, unexpected "
@@ -953,20 +970,10 @@ materializeDebugLineSection(MCCASReader &Reader,
           DistinctOffset += Sizes->second;
         }
       }
-    } else if (auto PadRef = PaddingRef::Cast(*Node)) {
-      if (!DistinctDebugLineRefSeen && !DebugLineUnoptRefSeen)
-        return createStringError(
-            inconvertibleErrorCode(),
-            "Line Table layout is incorrect, unexpected "
-            "PaddingRef before a DistinctDebugLineRef or a DebugLineUnoptRef");
-      raw_svector_ostream OS(DebugLineSection);
-      auto Size = PadRef->materialize(OS);
-      if (!Size)
-        return Size.takeError();
-    } else {
-      return createStringError(inconvertibleErrorCode(),
-                               "Unknown cas node type for debug line section");
+      continue;
     }
+    return createStringError(inconvertibleErrorCode(),
+                             "Unknown cas node type for debug line section");
   }
   return DebugLineSection;
 }
@@ -1876,6 +1883,107 @@ inline void copyData(SmallVector<char, 0> &Data, StringRef DebugLineStrRef,
   CurrOffset = Cursor.tell();
 }
 
+Error MCCASBuilder::createOptimizedLineSection(StringRef DebugLineStrRef) {
+  DWARFDataExtractor LineTableDataReader(DebugLineStrRef,
+                                         Asm.getBackend().Endian, 8);
+  auto Prologue = parseLineTableHeaderAndSkip(LineTableDataReader);
+  if (!Prologue)
+    return Prologue.takeError();
+  SmallVector<char, 0> DistinctData;
+  // Copy line table prologue into the DistinctData buffer.
+  DistinctData.append(DebugLineStrRef.data(),
+                      DebugLineStrRef.data() + Prologue->Offset);
+  SmallVector<DebugLineRef, 0> LineTableVector;
+  SmallVector<char, 0> LineTableData;
+  uint64_t *OffsetPtr = &Prologue->Offset;
+  uint64_t End =
+      Prologue->Length + (Prologue->Format == dwarf::DWARF32 ? 4 : 8);
+  while (*OffsetPtr < End) {
+    DWARFDataExtractor::Cursor Cursor(*OffsetPtr);
+    auto Opcode = LineTableDataReader.getU8(Cursor);
+    LineTableData.push_back(Opcode);
+    if (Opcode == 0) {
+      // Extended Opcodes always start with a zero opcode followed by
+      // a uleb128 length so unknown opcodes can be skipped.
+      uint64_t CurrOffset = Cursor.tell();
+      uint64_t Len = LineTableDataReader.getULEB128(Cursor);
+      if (Len == 0)
+        return createStringError(inconvertibleErrorCode(),
+                                 "0 Length for an extended opcode is wrong");
+      copyData(LineTableData, DebugLineStrRef, CurrOffset, Cursor);
+
+      uint8_t SubOpcode = LineTableDataReader.getU8(Cursor);
+      LineTableData.push_back(SubOpcode);
+      bool IsEndSequence = false;
+      bool IsRelocation = false;
+      CurrOffset = Cursor.tell();
+      auto Err = handleExtendedOpcodesForLineTable(LineTableDataReader, Cursor,
+                                                   SubOpcode, Len,
+                                                   IsEndSequence, IsRelocation);
+      if (Err)
+        return Err;
+      if (IsRelocation) {
+        // Move cursor to end of relocation and copy.
+        LineTableDataReader.getRelocatedAddress(Cursor);
+        copyData(DistinctData, DebugLineStrRef, CurrOffset, Cursor);
+      } else
+        copyData(LineTableData, DebugLineStrRef, CurrOffset, Cursor);
+
+      if (IsEndSequence) {
+        // The current Opcode is a DW_LNE_end_sequence. It takes no operand,
+        // create a cas block here.
+        auto LineTable =
+            DebugLineRef::create(*this, toStringRef(LineTableData));
+        if (!LineTable)
+          return LineTable.takeError();
+        LineTableVector.push_back(*LineTable);
+        LineTableData.clear();
+      }
+    } else if (Opcode < Prologue->OpcodeBase) {
+      bool IsSetFile = false;
+      bool IsRelocation = false;
+      uint64_t CurrOffset = Cursor.tell();
+      auto Err = handleStandardOpcodesForLineTable(
+          LineTableDataReader, Cursor, Opcode, IsSetFile, IsRelocation);
+      if (Err)
+        return Err;
+      if (IsRelocation) {
+        // Move cursor to end of relocation and copy.
+        LineTableDataReader.getRelocatedValue(Cursor, 2);
+        copyData(DistinctData, DebugLineStrRef, CurrOffset, Cursor);
+      } else
+        copyData(LineTableData, DebugLineStrRef, CurrOffset, Cursor);
+
+      if (IsSetFile) {
+        // The current Opcode is a DW_LNS_set_file. Store file numbers in the
+        // distinct data.
+        uint64_t CurrOffset = Cursor.tell();
+        LineTableDataReader.getULEB128(Cursor);
+        // The file number doesn't dedupe, so store that in the DistinctData.
+        copyData(DistinctData, DebugLineStrRef, CurrOffset, Cursor);
+      }
+    } else {
+      // Special Opcodes. Do nothing, move on.
+    }
+    if (!Cursor)
+      return Cursor.takeError();
+    *OffsetPtr = Cursor.tell();
+  }
+
+  // Create DistinctDebugLineRef.
+  auto DistinctRef =
+      DistinctDebugLineRef::create(*this, toStringRef(DistinctData));
+  if (!DistinctRef)
+    return DistinctRef.takeError();
+
+  // Add Nodes in order. DistinctDebugLineRef first, then the DebugLineRefs,
+  // then a PaddingRef if needed.
+  addNode(*DistinctRef);
+  for (auto &Node : LineTableVector)
+    addNode(Node);
+  return Error::success();
+}
+
 Error MCCASBuilder::createLineSection() {
   if (!DwarfSections.Line)
     return Error::success();
@@ -1895,103 +2003,8 @@ Error MCCASBuilder::createLineSection() {
     addNode(*DbgLineUnoptRef);
   } else {
     StringRef DebugLineStrRef(DebugLineData->data(), DebugLineData->size());
-    DWARFDataExtractor LineTableDataReader(DebugLineStrRef,
-                                           Asm.getBackend().Endian, 8);
-    auto Prologue = parseLineTableHeaderAndSkip(LineTableDataReader);
-    if (!Prologue)
-      return Prologue.takeError();
-    SmallVector<char, 0> DistinctData;
-    // Copy line table prologue into the DistinctData buffer.
-    DistinctData.append(DebugLineStrRef.data(),
-                        DebugLineStrRef.data() + Prologue->Offset);
-    SmallVector<DebugLineRef, 0> LineTableVector;
-    SmallVector<char, 0> LineTableData;
-    uint64_t *OffsetPtr = &Prologue->Offset;
-    uint64_t End =
-        Prologue->Length + (Prologue->Format == dwarf::DWARF32 ? 4 : 8);
-    while (*OffsetPtr < End) {
-      DWARFDataExtractor::Cursor Cursor(*OffsetPtr);
-      auto Opcode = LineTableDataReader.getU8(Cursor);
-      LineTableData.push_back(Opcode);
-      if (Opcode == 0) {
-        // Extended Opcodes always start with a zero opcode followed by
-        // a uleb128 length so unknown opcodes can be skipped.
-        uint64_t CurrOffset = Cursor.tell();
-        uint64_t Len = LineTableDataReader.getULEB128(Cursor);
-        if (Len == 0)
-          return createStringError(inconvertibleErrorCode(),
-                                   "0 Length for an extended opcode is wrong");
-        copyData(LineTableData, DebugLineStrRef, CurrOffset, Cursor);
-
-        uint8_t SubOpcode = LineTableDataReader.getU8(Cursor);
-        LineTableData.push_back(SubOpcode);
-        bool IsEndSequence = false;
-        bool IsRelocation = false;
-        CurrOffset = Cursor.tell();
-        auto Err = handleExtendedOpcodesForLineTable(
-            LineTableDataReader, Cursor, SubOpcode, Len, IsEndSequence,
-            IsRelocation);
-        if (Err)
-          return Err;
-        if (IsRelocation) {
-          // Move cursor to end of relocation and copy.
-          LineTableDataReader.getRelocatedAddress(Cursor);
-          copyData(DistinctData, DebugLineStrRef, CurrOffset, Cursor);
-        } else
-          copyData(LineTableData, DebugLineStrRef, CurrOffset, Cursor);
-
-        if (IsEndSequence) {
-          // The current Opcode is a DW_LNE_end_sequence. It takes no operand,
-          // create a cas block here.
-          auto LineTable =
-              DebugLineRef::create(*this, toStringRef(LineTableData));
-          if (!LineTable)
-            return LineTable.takeError();
-          LineTableVector.push_back(*LineTable);
-          LineTableData.clear();
-        }
-      } else if (Opcode < Prologue->OpcodeBase) {
-        bool IsSetFile = false;
-        bool IsRelocation = false;
-        uint64_t CurrOffset = Cursor.tell();
-        auto Err = handleStandardOpcodesForLineTable(
-            LineTableDataReader, Cursor, Opcode, IsSetFile, IsRelocation);
-        if (Err)
-          return Err;
-        if (IsRelocation) {
-          // Move cursor to end of relocation and copy.
-          LineTableDataReader.getRelocatedValue(Cursor, 2);
-          copyData(DistinctData, DebugLineStrRef, CurrOffset, Cursor);
-        } else
-          copyData(LineTableData, DebugLineStrRef, CurrOffset, Cursor);
-
-        if (IsSetFile) {
-          // The current Opcode is a DW_LNS_set_file. Store file numbers in the
-          // distinct data.
-          uint64_t CurrOffset = Cursor.tell();
-          LineTableDataReader.getULEB128(Cursor);
-          // The file number doesn't dedupe, so store that in the DistinctData.
-          copyData(DistinctData, DebugLineStrRef, CurrOffset, Cursor);
-        }
-      } else {
-        // Special Opcodes. Do nothing, move on.
-      }
-      if (!Cursor)
-        return Cursor.takeError();
-      *OffsetPtr = Cursor.tell();
-    }
-
-    // Create DistinctDebugLineRef.
-    auto DistinctRef =
-        DistinctDebugLineRef::create(*this, toStringRef(DistinctData));
-    if (!DistinctRef)
-      return DistinctRef.takeError();
-
-    // Add Nodes in order. DistinctDebugLineRef first, then the DebugLineRefs,
-    // then a PaddingRef if needed.
-    addNode(*DistinctRef);
-    for (auto &Node : LineTableVector)
-      addNode(Node);
+    if (auto E = createOptimizedLineSection(DebugLineStrRef))
+      return E;
   }
 
   if (auto E = createPaddingRef(DwarfSections.Line))
