@@ -370,6 +370,10 @@ public:
   /// caching of compilation outputs. This is used for testing purposes.
   unsigned DisableCachedCompileJobReplay : 1;
 
+  /// Keep the diagnostic client open for receiving diagnostics after the source
+  /// files have been processed.
+  unsigned MayEmitDiagnosticsAfterProcessingSourceFiles : 1;
+
   /// When using CacheCompileJob, write a CASID for the output file.
   ///
   /// FIXME: Add clang tests for this functionality.
@@ -568,9 +572,10 @@ public:
         BuildingImplicitModule(false), BuildingImplicitModuleUsesLock(true),
         ModulesEmbedAllFiles(false), IncludeTimestamps(true),
         UseTemporary(true), CacheCompileJob(false),
-        DisableCachedCompileJobReplay(false), WriteOutputAsCASID(false),
-        AllowPCMWithCompilerErrors(false), ModulesShareFileManager(true),
-        TimeTraceGranularity(500) {}
+        DisableCachedCompileJobReplay(false),
+        MayEmitDiagnosticsAfterProcessingSourceFiles(false),
+        WriteOutputAsCASID(false), AllowPCMWithCompilerErrors(false),
+        ModulesShareFileManager(true), TimeTraceGranularity(500) {}
 
   /// getInputKindForExtension - Return the appropriate input kind for a file
   /// extension. For example, "c" would return Language::C.
