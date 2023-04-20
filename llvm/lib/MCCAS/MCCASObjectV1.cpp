@@ -55,9 +55,11 @@ cl::opt<unsigned>
     MCDataMergeThreshold("mc-cas-data-merge-threshold",
                          cl::desc("MCDataFragment merge threshold"),
                          cl::init(1024));
-cl::opt<bool> SplitStringSections(
-    "mc-cas-split-string-sections",
-    cl::desc("Split String Sections (SymTable and DebugStr)"), cl::init(true));
+cl::opt<bool>
+    DebugInfoUnopt("debug-info-unopt",
+                   cl::desc("Whether debug info storage should be optimized or "
+                            "just stored as one cas block per section"),
+                   cl::init(false));
 
 enum RelEncodeLoc {
   Atom,
@@ -896,11 +898,38 @@ materializeDebugLineSection(MCCASReader &Reader,
   uint8_t OpcodeBase = 0;
   SmallVector<char, 0> DebugLineSection;
   bool DistinctDebugLineRefSeen = false;
+  bool DebugLineUnoptRefSeen = false;
   for (auto Ref : Refs) {
     auto Node = Reader.getObjectProxy(Ref);
     if (!Node)
       return Node.takeError();
+    if (auto PadRef = PaddingRef::Cast(*Node)) {
+      if (!DistinctDebugLineRefSeen && !DebugLineUnoptRefSeen)
+        return createStringError(
+            inconvertibleErrorCode(),
+            "Line Table layout is incorrect, unexpected "
+            "PaddingRef before a DistinctDebugLineRef or a DebugLineUnoptRef");
+      raw_svector_ostream OS(DebugLineSection);
+      auto Size = PadRef->materialize(OS);
+      if (!Size)
+        return Size.takeError();
+      continue;
+    }
+
+    if (DebugLineUnoptRefSeen)
+      return createStringError(
+          inconvertibleErrorCode(),
+          "DebugLineUnoptRef seen, only block allowed after is a PaddingRef");
+
+    if (auto LineUnoptRef = DebugLineUnoptRef::Cast(*Node)) {
+
+      DebugLineUnoptRefSeen = true;
+      auto Data = LineUnoptRef->getData();
+      DebugLineSection.append(Data.begin(), Data.end());
+      continue;
+    }
     if (auto DistinctRef = DistinctDebugLineRef::Cast(*Node)) {
+
       DistinctDebugLineRefSeen = true;
       auto Data = DistinctRef->getData();
       DistinctData.append(Data.begin(), Data.end());
@@ -913,7 +942,10 @@ materializeDebugLineSection(MCCASReader &Reader,
       // Copy line table prologue into final debug line section.
       DebugLineSection.append(DistinctData.begin(),
                               DistinctData.begin() + DistinctOffset);
-    } else if (auto LineRef = DebugLineRef::Cast(*Node)) {
+      continue;
+    }
+    if (auto LineRef = DebugLineRef::Cast(*Node)) {
+
       if (!DistinctDebugLineRefSeen)
         return createStringError(inconvertibleErrorCode(),
                                  "Line Table layout is incorrect, unexpected "
@@ -938,19 +970,10 @@ materializeDebugLineSection(MCCASReader &Reader,
           DistinctOffset += Sizes->second;
         }
       }
-    } else if (auto PadRef = PaddingRef::Cast(*Node)) {
-      if (!DistinctDebugLineRefSeen)
-        return createStringError(inconvertibleErrorCode(),
-                                 "Line Table layout is incorrect, unexpected "
-                                 "PaddingRef before a DistinctDebugLineRef");
-      raw_svector_ostream OS(DebugLineSection);
-      auto Size = PadRef->materialize(OS);
-      if (!Size)
-        return Size.takeError();
-    } else {
-      return createStringError(inconvertibleErrorCode(),
-                               "Unknown cas node type for debug line section");
+      continue;
     }
+    return createStringError(inconvertibleErrorCode(),
+                             "Unknown cas node type for debug line section");
   }
   return DebugLineSection;
 }
@@ -1529,17 +1552,17 @@ Error MCCASBuilder::createPaddingRef(const MCSection *Sec) {
 }
 
 Error MCCASBuilder::createStringSection(
-    StringRef S, std::function<Error(StringRef, unsigned)> CreateFn) {
+    StringRef S, std::function<Error(StringRef)> CreateFn) {
   assert(S.endswith("\0") && "String sections are null terminated");
-  unsigned DebugStringOffset = 0;
-  if (!SplitStringSections)
-    return CreateFn(S, DebugStringOffset);
+  if (DebugInfoUnopt)
+    // Drop the null terminator at the end when not splitting the debug_string
+    // section as it is always added when materializing.
+    return CreateFn(S.drop_back());
 
   while (!S.empty()) {
     auto SplitSym = S.split('\0');
-    if (auto E = CreateFn(SplitSym.first, DebugStringOffset))
+    if (auto E = CreateFn(SplitSym.first))
       return E;
-    DebugStringOffset += SplitSym.first.size() + 1;
 
     S = SplitSym.second;
   }
@@ -1860,17 +1883,7 @@ inline void copyData(SmallVector<char, 0> &Data, StringRef DebugLineStrRef,
   CurrOffset = Cursor.tell();
 }
 
-Error MCCASBuilder::createLineSection() {
-  if (!DwarfSections.Line)
-    return Error::success();
-
-  Expected<SmallVector<char, 0>> DebugLineData =
-      mergeMCFragmentContents(DwarfSections.Line->getFragmentList(), true);
-  if (!DebugLineData)
-    return DebugLineData.takeError();
-
-  startSection(DwarfSections.Line);
-  StringRef DebugLineStrRef(DebugLineData->data(), DebugLineData->size());
+Error MCCASBuilder::createOptimizedLineSection(StringRef DebugLineStrRef) {
   DWARFDataExtractor LineTableDataReader(DebugLineStrRef,
                                          Asm.getBackend().Endian, 8);
   auto Prologue = parseLineTableHeaderAndSkip(LineTableDataReader);
@@ -1968,45 +1981,69 @@ Error MCCASBuilder::createLineSection() {
   addNode(*DistinctRef);
   for (auto &Node : LineTableVector)
     addNode(Node);
+  return Error::success();
+}
+
+Error MCCASBuilder::createLineSection() {
+  if (!DwarfSections.Line)
+    return Error::success();
+
+  Expected<SmallVector<char, 0>> DebugLineData =
+      mergeMCFragmentContents(DwarfSections.Line->getFragmentList(), true);
+  if (!DebugLineData)
+    return DebugLineData.takeError();
+
+  startSection(DwarfSections.Line);
+
+  if (DebugInfoUnopt) {
+    auto DbgLineUnoptRef =
+        DebugLineUnoptRef::create(*this, toStringRef(*DebugLineData));
+    if (!DbgLineUnoptRef)
+      return DbgLineUnoptRef.takeError();
+    addNode(*DbgLineUnoptRef);
+  } else {
+    StringRef DebugLineStrRef(DebugLineData->data(), DebugLineData->size());
+    if (auto E = createOptimizedLineSection(DebugLineStrRef))
+      return E;
+  }
 
   if (auto E = createPaddingRef(DwarfSections.Line))
     return E;
   return finalizeSection<DebugLineSectionRef>();
 }
 
-Error MCCASBuilder::createDebugStrSection(
-    ArrayRef<DebugStrRef> DebugStringRefs) {
+Error MCCASBuilder::createDebugStrSection() {
+
+  auto DebugStringRefs = createDebugStringRefs();
+  if (!DebugStringRefs)
+    return DebugStringRefs.takeError();
 
   startSection(DwarfSections.Str);
-  for (auto DebugStringRef : DebugStringRefs)
+  for (auto DebugStringRef : *DebugStringRefs)
     addNode(DebugStringRef);
   return finalizeSection<DebugStringSectionRef>();
 }
 
-Expected<MCCASBuilder::DebugStringSectionContents>
-MCCASBuilder::createDebugStringRefs() {
+Expected<SmallVector<DebugStrRef, 0>> MCCASBuilder::createDebugStringRefs() {
   if (!DwarfSections.Str || !DwarfSections.Str->getFragmentList().size())
-    return DebugStringSectionContents{{}, DenseMap<unsigned, cas::ObjectRef>()};
+    return SmallVector<DebugStrRef, 0>();
 
   assert(DwarfSections.Str->getFragmentList().size() == 1 &&
          "One fragment in debug str section");
 
-  DebugStringSectionContents DebugStringContents;
+  SmallVector<DebugStrRef, 0> DebugStringRefs;
   ArrayRef<char> DebugStrData =
       cast<MCDataFragment>(*DwarfSections.Str->begin()).getContents();
   StringRef S(DebugStrData.data(), DebugStrData.size());
-  if (auto E = createStringSection(
-          S, [&](StringRef S, unsigned DebugStringOffset) -> Error {
-            auto Sym = DebugStrRef::create(*this, S);
-            if (!Sym)
-              return Sym.takeError();
-            DebugStringContents.DebugStringRefs.push_back(*Sym);
-            DebugStringContents.MapOfStringRefs.try_emplace(DebugStringOffset,
-                                                            Sym->getRef());
-            return Error::success();
-          }))
+  if (auto E = createStringSection(S, [&](StringRef S) -> Error {
+        auto Sym = DebugStrRef::create(*this, S);
+        if (!Sym)
+          return Sym.takeError();
+        DebugStringRefs.push_back(*Sym);
+        return Error::success();
+      }))
     return std::move(E);
-  return DebugStringContents;
+  return DebugStringRefs;
 }
 
 static ArrayRef<char> getFragmentContents(const MCFragment &Fragment) {
@@ -2108,10 +2145,6 @@ partitionFragment(const MCAsmLayout &Layout, SmallVector<char, 0> &Addends,
 Error MCCASBuilder::buildFragments() {
   startGroup();
 
-  auto DebugStringContents = createDebugStringRefs();
-  if (!DebugStringContents)
-    return DebugStringContents.takeError();
-
   for (const MCSection &Sec : Asm) {
     if (Sec.isVirtualSection() || Sec.getFragmentList().empty())
       continue;
@@ -2139,7 +2172,7 @@ Error MCCASBuilder::buildFragments() {
 
     // Handle Debug Str sections separately.
     if (&Sec == DwarfSections.Str) {
-      if (auto E = createDebugStrSection(DebugStringContents->DebugStringRefs))
+      if (auto E = createDebugStrSection())
         return E;
       continue;
     }
@@ -2249,14 +2282,13 @@ Error MCCASBuilder::buildSymbolTable() {
   ObjectWriter.writeSymbolTable(Asm, Layout);
   StringRef S = ObjectWriter.getContent();
   std::vector<cas::ObjectRef> CStrings;
-  if (auto E = createStringSection(
-          S, [&](StringRef S, unsigned DebugStringOffset) -> Error {
-            auto Sym = CStringRef::create(*this, S);
-            if (!Sym)
-              return Sym.takeError();
-            CStrings.push_back(Sym->getRef());
-            return Error::success();
-          }))
+  if (auto E = createStringSection(S, [&](StringRef S) -> Error {
+        auto Sym = CStringRef::create(*this, S);
+        if (!Sym)
+          return Sym.takeError();
+        CStrings.push_back(Sym->getRef());
+        return Error::success();
+      }))
     return E;
 
   auto Ref = SymbolTableRef::create(*this, CStrings);

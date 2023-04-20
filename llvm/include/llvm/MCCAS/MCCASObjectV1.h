@@ -548,11 +548,15 @@ private:
 
   // Helper functions.
   Error createStringSection(StringRef S,
-                            std::function<Error(StringRef, unsigned)> CreateFn);
+                            std::function<Error(StringRef)> CreateFn);
 
-  // If a DWARF Line Section exists, create a DebugLineRef CAS object per
-  // function contribution to the line table.
+  // If a DWARF Line Section exists, create a debug_line section representation
+  // in the CAS.
   Error createLineSection();
+
+  // If the option --debug-info-unopt is not used, create a DebugLineRef CAS
+  // object per function contribution to the line table.
+  Error createOptimizedLineSection(StringRef DebugLineStrRef);
 
   /// If a DWARF Debug Info section exists, create a DebugInfoCURef CAS object
   /// for each compile unit (CU) inside the section, and a DebugAbbrevRef CAS
@@ -570,12 +574,7 @@ private:
   /// AbbrevRefs. Otherwise, no objects are created and `success` is returned.
   Error createDebugAbbrevSection();
 
-  struct DebugStringSectionContents {
-    SmallVector<DebugStrRef, 0> DebugStringRefs;
-    DenseMap<unsigned, cas::ObjectRef> MapOfStringRefs;
-  };
-
-  Expected<DebugStringSectionContents> createDebugStringRefs();
+  Expected<SmallVector<DebugStrRef, 0>> createDebugStringRefs();
 
   struct CUSplit {
     SmallVector<MutableArrayRef<char>> SplitCUData;
@@ -589,7 +588,7 @@ private:
 
   // If a DWARF String section exists, create a DebugStrRef CAS object per
   // string in the section.
-  Error createDebugStrSection(ArrayRef<DebugStrRef> DebugStringRefs);
+  Error createDebugStrSection();
 
   /// If there is any padding between one section and the next, create a
   /// PaddingRef CAS object to represent the bytes of Padding between the two
