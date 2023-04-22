@@ -160,7 +160,7 @@ int main(int argc, char *argv[]) {
   PrinterOptions Options = {DwarfSectionsOnly, DwarfDump, HexDump,
                             HexDumpOneLine,    Verbose,   DIERefs};
 
-  std::unique_ptr<ObjectStore> CAS =
+  std::shared_ptr<ObjectStore> CAS =
       ExitOnErr(createCASFromIdentifier(CASPath));
   MCCASPrinter Printer(Options, *CAS, llvm::outs());
 

@@ -176,7 +176,7 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  std::unique_ptr<ObjectStore> CAS =
+  std::shared_ptr<ObjectStore> CAS =
       ExitOnErr(createCASFromIdentifier(CASPath));
 
   ThreadPoolStrategy PoolStrategy = hardware_concurrency();

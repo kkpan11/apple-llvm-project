@@ -140,7 +140,7 @@ struct Config {
   bool Deterministic = true; // Updated by 'D' and 'U' modifiers.
   uint32_t ArchCPUType;
   uint32_t ArchCPUSubtype;
-  std::unique_ptr<cas::ObjectStore> CAS;
+  std::shared_ptr<cas::ObjectStore> CAS;
 };
 
 static Expected<std::string> searchForFile(const Twine &FileName) {

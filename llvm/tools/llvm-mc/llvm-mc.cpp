@@ -532,7 +532,7 @@ int main(int argc, char **argv) {
   std::unique_ptr<buffer_ostream> BOS;
   raw_pwrite_stream *OS = &Out->os();
   std::unique_ptr<MCStreamer> Str;
-  std::unique_ptr<cas::ObjectStore> CAS;
+  std::shared_ptr<cas::ObjectStore> CAS;
   if (CASPath.empty())
     CAS = cas::createInMemoryCAS();
   else {
