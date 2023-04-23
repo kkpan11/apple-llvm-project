@@ -513,7 +513,7 @@ private:
     int Offset;
     unsigned Register2;
   };
-  unsigned AddressSpace;
+  unsigned AddressSpace = ~0u;
   std::vector<char> Values;
   std::string Comment;
 
