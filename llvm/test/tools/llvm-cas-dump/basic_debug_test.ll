@@ -16,8 +16,7 @@
 ; DWARF:            version: 4
 ; DWARF:    prologue_length: 0x000000{{[0-9a-f]+}}
 ; DWARF: 0x0000000000000000      3      3      1   0             0  is_stmt prologue_end
-; DWARF: 0x0000000000000000      3      3      1   0             0  is_stmt end_sequence
-; DWARF: 0x0000000000000008      1      0      1   0             0  is_stmt end_sequence
+; DWARF: 0x0000000000000008      3      3      1   0             0  is_stmt end_sequence
 
 ; CHECK:      mc:assembler  llvmcas://{{.*}}
 ; CHECK-NEXT:   mc:header  llvmcas://{{.*}}
@@ -43,7 +42,6 @@
 ; CHECK-NEXT:       mc:debug_string  llvmcas://{{.*}}
 ; CHECK-NEXT:     mc:debug_line_section  llvmcas://{{.*}}
 ; CHECK-NEXT:       mc:debug_line_distinct_data  llvmcas://{{.*}}
-; CHECK-NEXT:       mc:debug_line  llvmcas://{{.*}}
 ; CHECK-NEXT:       mc:debug_line  llvmcas://{{.*}}
 ; CHECK-NEXT:       mc:padding  llvmcas://{{.*}}
 ; CHECK-NEXT:   mc:data_in_code  llvmcas://{{.*}}
