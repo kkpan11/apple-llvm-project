@@ -3269,9 +3269,9 @@ static bool isDeinterleaveShuffle(MVT VT, MVT ContainerVT, SDValue V1,
 
 /// Is this shuffle interleaving contiguous elements from one vector into the
 /// even elements and contiguous elements from another vector into the odd
-/// elements. \p Src1 will contain the element that should be in the first even
-/// element. \p Src2 will contain the element that should be in the first odd
-/// element. These can be the first element in a source or the element half
+/// elements. \p EvenSrc will contain the element that should be in the first
+/// even element. \p OddSrc will contain the element that should be in the first
+/// odd element. These can be the first element in a source or the element half
 /// way through the source.
 static bool isInterleaveShuffle(ArrayRef<int> Mask, MVT VT, int &EvenSrc,
                                 int &OddSrc, const RISCVSubtarget &Subtarget) {
@@ -3280,7 +3280,8 @@ static bool isInterleaveShuffle(ArrayRef<int> Mask, MVT VT, int &EvenSrc,
     return false;
 
   int Size = Mask.size();
-  assert(Size == (int)VT.getVectorNumElements() && "Unexpected mask size");
+  int NumElts = VT.getVectorNumElements();
+  assert(Size == (int)NumElts && "Unexpected mask size");
 
   SmallVector<unsigned, 2> StartIndexes;
   if (!ShuffleVectorInst::isInterleaveMask(Mask, 2, Size * 2, StartIndexes))
@@ -3293,7 +3294,14 @@ static bool isInterleaveShuffle(ArrayRef<int> Mask, MVT VT, int &EvenSrc,
   if (EvenSrc != 0 && OddSrc != 0)
     return false;
 
-  return true;
+  // Subvectors will be subtracted from either at the start of the two input
+  // vectors, or at the start and middle of the first vector if it's an unary
+  // interleave.
+  // In both cases, HalfNumElts will be extracted.
+  // So make sure that EvenSrc/OddSrc are within range.
+  int HalfNumElts = NumElts / 2;
+  return (((EvenSrc % NumElts) + HalfNumElts) <= NumElts) &&
+         (((OddSrc % NumElts) + HalfNumElts) <= NumElts);
 }
 
 /// Match shuffles that concatenate two vectors, rotate the concatenation,
@@ -4622,7 +4630,7 @@ SDValue RISCVTargetLowering::LowerOperation(SDValue Op,
   case ISD::SELECT_CC: {
     // This occurs because we custom legalize SETGT and SETUGT for setcc. That
     // causes LegalizeDAG to think we need to custom legalize select_cc. Expand
-    // into separate SETCC+SELECT_CC just like LegalizeDAG.
+    // into separate SETCC+SELECT just like LegalizeDAG.
     SDValue Tmp1 = Op.getOperand(0);
     SDValue Tmp2 = Op.getOperand(1);
     SDValue True = Op.getOperand(2);
@@ -5108,20 +5116,13 @@ SDValue RISCVTargetLowering::lowerGlobalTLSAddress(SDValue Op,
   return Addr;
 }
 
-SDValue RISCVTargetLowering::lowerSELECT(SDValue Op, SelectionDAG &DAG) const {
-  SDValue CondV = Op.getOperand(0);
-  SDValue TrueV = Op.getOperand(1);
-  SDValue FalseV = Op.getOperand(2);
-  SDLoc DL(Op);
-  MVT VT = Op.getSimpleValueType();
-  MVT XLenVT = Subtarget.getXLenVT();
-
-  // Lower vector SELECTs to VSELECTs by splatting the condition.
-  if (VT.isVector()) {
-    MVT SplatCondVT = VT.changeVectorElementType(MVT::i1);
-    SDValue CondSplat = DAG.getSplat(SplatCondVT, DL, CondV);
-    return DAG.getNode(ISD::VSELECT, DL, VT, CondSplat, TrueV, FalseV);
-  }
+static SDValue combineSelectToBinOp(SDNode *N, SelectionDAG &DAG,
+                                    const RISCVSubtarget &Subtarget) {
+  SDValue CondV = N->getOperand(0);
+  SDValue TrueV = N->getOperand(1);
+  SDValue FalseV = N->getOperand(2);
+  MVT VT = N->getSimpleValueType(0);
+  SDLoc DL(N);
 
   if (!Subtarget.hasShortForwardBranchOpt()) {
     // (select c, -1, y) -> -c | y
@@ -5148,6 +5149,27 @@ SDValue RISCVTargetLowering::lowerSELECT(SDValue Op, SelectionDAG &DAG) const {
       return DAG.getNode(ISD::AND, DL, VT, Neg, TrueV);
     }
   }
+
+  return SDValue();
+}
+
+SDValue RISCVTargetLowering::lowerSELECT(SDValue Op, SelectionDAG &DAG) const {
+  SDValue CondV = Op.getOperand(0);
+  SDValue TrueV = Op.getOperand(1);
+  SDValue FalseV = Op.getOperand(2);
+  SDLoc DL(Op);
+  MVT VT = Op.getSimpleValueType();
+  MVT XLenVT = Subtarget.getXLenVT();
+
+  // Lower vector SELECTs to VSELECTs by splatting the condition.
+  if (VT.isVector()) {
+    MVT SplatCondVT = VT.changeVectorElementType(MVT::i1);
+    SDValue CondSplat = DAG.getSplat(SplatCondVT, DL, CondV);
+    return DAG.getNode(ISD::VSELECT, DL, VT, CondSplat, TrueV, FalseV);
+  }
+
+  if (SDValue V = combineSelectToBinOp(Op.getNode(), DAG, Subtarget))
+    return V;
 
   // If the condition is not an integer SETCC which operates on XLenVT, we need
   // to emit a RISCVISD::SELECT_CC comparing the condition to zero. i.e.:
@@ -15734,6 +15756,57 @@ RISCVTargetLowering::getRegisterByName(const char *RegName, LLT VT,
     report_fatal_error(Twine("Trying to obtain non-reserved register \"" +
                              StringRef(RegName) + "\"."));
   return Reg;
+}
+
+MachineMemOperand::Flags
+RISCVTargetLowering::getTargetMMOFlags(const Instruction &I) const {
+  const MDNode *NontemporalInfo = I.getMetadata(LLVMContext::MD_nontemporal);
+
+  if (NontemporalInfo == nullptr)
+    return MachineMemOperand::MONone;
+
+  // 1 for default value work as __RISCV_NTLH_ALL
+  // 2 -> __RISCV_NTLH_INNERMOST_PRIVATE
+  // 3 -> __RISCV_NTLH_ALL_PRIVATE
+  // 4 -> __RISCV_NTLH_INNERMOST_SHARED
+  // 5 -> __RISCV_NTLH_ALL
+  int NontemporalLevel = 5;
+  const MDNode *RISCVNontemporalInfo =
+      I.getMetadata("riscv-nontemporal-domain");
+  if (RISCVNontemporalInfo != nullptr)
+    NontemporalLevel =
+        cast<ConstantInt>(
+            cast<ConstantAsMetadata>(RISCVNontemporalInfo->getOperand(0))
+                ->getValue())
+            ->getZExtValue();
+
+  assert((1 <= NontemporalLevel && NontemporalLevel <= 5) &&
+         "RISC-V target doesn't support this non-temporal domain.");
+
+  NontemporalLevel -= 2;
+  MachineMemOperand::Flags Flags = MachineMemOperand::MONone;
+  if (NontemporalLevel & 0b1)
+    Flags |= MONontemporalBit0;
+  if (NontemporalLevel & 0b10)
+    Flags |= MONontemporalBit1;
+
+  return Flags;
+}
+
+MachineMemOperand::Flags
+RISCVTargetLowering::getTargetMMOFlags(const MemSDNode &Node) const {
+
+  MachineMemOperand::Flags NodeFlags = Node.getMemOperand()->getFlags();
+  MachineMemOperand::Flags TargetFlags = MachineMemOperand::MONone;
+  TargetFlags |= (NodeFlags & MONontemporalBit0);
+  TargetFlags |= (NodeFlags & MONontemporalBit1);
+
+  return TargetFlags;
+}
+
+bool RISCVTargetLowering::areTwoSDNodeTargetMMOFlagsMergeable(
+    const MemSDNode &NodeX, const MemSDNode &NodeY) const {
+  return getTargetMMOFlags(NodeX) == getTargetMMOFlags(NodeY);
 }
 
 namespace llvm::RISCVVIntrinsicsTable {
