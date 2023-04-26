@@ -5,10 +5,18 @@ set(LLVM_LINK_COMPONENTS
   MC
   MCCAS
   Object
+  Option
   Support
   TargetParser
   )
 
+set(LLVM_TARGET_DEFINITIONS Opts.td)
+tablegen(LLVM Opts.inc -gen-opt-parser-defs)
+add_public_tablegen_target(GSYMUtilOptsTableGen)
+
 add_llvm_tool(llvm-gsymutil
   llvm-gsymutil.cpp
+
+  DEPENDS
+  GSYMUtilOptsTableGen
   )
