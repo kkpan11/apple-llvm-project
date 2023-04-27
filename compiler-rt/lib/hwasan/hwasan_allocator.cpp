@@ -384,9 +384,12 @@ static void *HwasanReallocate(StackTrace *stack, void *tagged_ptr_old,
   if (tagged_ptr_old && tagged_ptr_new) {
     Metadata *meta =
         reinterpret_cast<Metadata *>(allocator.GetMetaData(untagged_ptr_old));
-    internal_memcpy(
-        UntagPtr(tagged_ptr_new), untagged_ptr_old,
-        Min(new_size, static_cast<uptr>(meta->GetRequestedSize())));
+    void *untagged_ptr_new =
+        InTaggableRegion(reinterpret_cast<uptr>(tagged_ptr_new))
+            ? UntagPtr(tagged_ptr_new)
+            : tagged_ptr_new;
+    internal_memcpy(untagged_ptr_new, untagged_ptr_old,
+                    Min(new_size, static_cast<uptr>(meta->GetRequestedSize())));
     HwasanDeallocate(stack, tagged_ptr_old);
   }
   return tagged_ptr_new;
@@ -413,7 +416,8 @@ HwasanChunkView FindHeapChunkByAddress(uptr address) {
 }
 
 static const void *AllocationBegin(const void *p) {
-  const void *untagged_ptr = UntagPtr(p);
+  const void *untagged_ptr =
+      __hwasan::InTaggableRegion(reinterpret_cast<uptr>(p)) ? UntagPtr(p) : p;
   if (!untagged_ptr)
     return nullptr;
 
@@ -429,12 +433,14 @@ static const void *AllocationBegin(const void *p) {
   return (const void *)AddTagToPointer((uptr)beg, tag);
 }
 
-static uptr AllocationSize(const void *tagged_ptr) {
-  const void *untagged_ptr = UntagPtr(tagged_ptr);
+static uptr AllocationSize(const void *p) {
+  const void *untagged_ptr =
+      __hwasan::InTaggableRegion(reinterpret_cast<uptr>(p)) ? UntagPtr(p) : p;
   if (!untagged_ptr) return 0;
   const void *beg = allocator.GetBlockBegin(untagged_ptr);
-  Metadata *b = (Metadata *)allocator.GetMetaData(untagged_ptr);
-  if (beg != untagged_ptr) return 0;
+  if (!beg)
+    return 0;
+  Metadata *b = (Metadata *)allocator.GetMetaData(beg);
   return b->GetRequestedSize();
 }
 
@@ -677,3 +683,5 @@ const void *__sanitizer_get_allocated_begin(const void *p) {
 }
 
 uptr __sanitizer_get_allocated_size(const void *p) { return AllocationSize(p); }
+
+void __sanitizer_purge_allocator() { allocator.ForceReleaseToOS(); }
