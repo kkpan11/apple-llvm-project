@@ -19,4 +19,6 @@ add_llvm_tool(llvm-gsymutil
 
   DEPENDS
   GSYMUtilOptsTableGen
+
+  GENERATE_DRIVER
   )
