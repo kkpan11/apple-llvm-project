@@ -9,6 +9,10 @@ add_llvm_library(LLVMTableGenCommon STATIC OBJECT EXCLUDE_FROM_ALL
   SDNodeProperties.cpp
   VTEmitter.cpp
   PARTIAL_SOURCES_INTENDED
+
+  LINK_COMPONENTS
+  Support
+  TableGen
   )
 set_target_properties(LLVMTableGenCommon PROPERTIES FOLDER "Tablegenning")
 
@@ -20,6 +24,11 @@ add_tablegen(llvm-min-tblgen LLVM_HEADERS
   PARTIAL_SOURCES_INTENDED
   )
 set_target_properties(llvm-min-tblgen PROPERTIES FOLDER "Tablegenning")
+
+set(LLVM_LINK_COMPONENTS
+  CodeGenTypes
+  Support
+  )
 
 add_tablegen(llvm-tblgen LLVM
   DESTINATION "${LLVM_TOOLS_INSTALL_DIR}"
@@ -77,9 +86,6 @@ add_tablegen(llvm-tblgen LLVM
   X86RecognizableInstr.cpp
   WebAssemblyDisassemblerEmitter.cpp
   $<TARGET_OBJECTS:obj.LLVMTableGenCommon>
-
-  DEPENDS
-  intrinsics_gen
   )
 target_link_libraries(llvm-tblgen PRIVATE LLVMTableGenGlobalISel)
 set_target_properties(llvm-tblgen PROPERTIES FOLDER "Tablegenning")
