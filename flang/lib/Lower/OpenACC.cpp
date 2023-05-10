@@ -992,7 +992,8 @@ createComputeOp(Fortran::lower::AbstractConverter &converter,
   addOperand(operands, operandSegments, selfCond);
   if constexpr (!std::is_same_v<Op, mlir::acc::KernelsOp>)
     addOperands(operands, operandSegments, reductionOperands);
-  operandSegments.append({0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0});
+  if constexpr (!std::is_same_v<Op, mlir::acc::ParallelOp>)
+    operandSegments.append({0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0});
   if constexpr (!std::is_same_v<Op, mlir::acc::KernelsOp>) {
     addOperands(operands, operandSegments, privateOperands);
     addOperands(operands, operandSegments, firstprivateOperands);
@@ -1120,7 +1121,6 @@ static void genACCDataOp(Fortran::lower::AbstractConverter &converter,
   llvm::SmallVector<mlir::Value> operands;
   llvm::SmallVector<int32_t> operandSegments;
   addOperand(operands, operandSegments, ifCond);
-  operandSegments.append({0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0});
   addOperands(operands, operandSegments, dataClauseOperands);
 
   auto dataOp = createRegionOp<mlir::acc::DataOp, mlir::acc::TerminatorOp>(
