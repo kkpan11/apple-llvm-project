@@ -146,12 +146,10 @@ genBaseBoundsOps(fir::FirOpBuilder &builder, mlir::Location loc,
     mlir::Value baseLb =
         fir::factory::readLowerBound(builder, loc, dataExv, dim, one);
     mlir::Value ext = fir::factory::readExtent(builder, loc, dataExv, dim);
-    mlir::Value lb =
-        baseLb == one ? builder.createIntegerConstant(loc, idxTy, 0) : baseLb;
+    mlir::Value lb = builder.createIntegerConstant(loc, idxTy, 0);
 
-    // ub = baseLb + extent - 1
-    mlir::Value lbExt = builder.create<mlir::arith::AddIOp>(loc, ext, baseLb);
-    mlir::Value ub = builder.create<mlir::arith::SubIOp>(loc, lbExt, one);
+    // ub = extent - 1
+    mlir::Value ub = builder.create<mlir::arith::SubIOp>(loc, ext, one);
     mlir::Value bound = builder.create<mlir::acc::DataBoundsOp>(
         loc, boundTy, lb, ub, mlir::Value(), one, false, baseLb);
     bounds.push_back(bound);
@@ -1368,7 +1366,6 @@ genACCExitDataOp(Fortran::lower::AbstractConverter &converter,
   addOperand(operands, operandSegments, async);
   addOperand(operands, operandSegments, waitDevnum);
   addOperands(operands, operandSegments, waitOperands);
-  operandSegments.append({0, 0, 0});
   addOperands(operands, operandSegments, dataClauseOperands);
 
   mlir::acc::ExitDataOp exitDataOp = createSimpleOp<mlir::acc::ExitDataOp>(
@@ -1482,6 +1479,16 @@ genACCUpdateOp(Fortran::lower::AbstractConverter &converter,
           dataClauseOperands, mlir::acc::DataClause::acc_update_device, false);
     } else if (std::get_if<Fortran::parser::AccClause::IfPresent>(&clause.u)) {
       addIfPresentAttr = true;
+    } else if (const auto *selfClause =
+                   std::get_if<Fortran::parser::AccClause::Self>(&clause.u)) {
+      const std::optional<Fortran::parser::AccSelfClause> &accSelfClause =
+          selfClause->v;
+      const auto *accObjectList =
+          std::get_if<Fortran::parser::AccObjectList>(&(*accSelfClause).u);
+      assert(accObjectList && "expect AccObjectList");
+      genDataOperandOperations<mlir::acc::GetDevicePtrOp>(
+          *accObjectList, converter, semanticsContext, stmtCtx,
+          updateHostOperands, mlir::acc::DataClause::acc_update_self, false);
     }
   }
 
