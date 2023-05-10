@@ -1,5 +1,5 @@
 # RUN: llc -mtriple=s390x-linux-gnu -mcpu=z15 -O3 -start-before=finalize-isel %s -o - \
-# RUN:   | FileCheck %s
+# RUN:   -verify-machineinstrs | FileCheck %s
 #
 # Test that the exrl used for the remainder of a memset (after xc loop) is
 # not rescheduled incorrectly in a way that interfers with CC liveness.

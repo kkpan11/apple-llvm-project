@@ -8508,6 +8508,7 @@ SystemZTargetLowering::emitMemMemWrapper(MachineInstr &MI,
           MBB->addLiveIn(SystemZ::CC);
       }
     }
+    MF.getProperties().reset(MachineFunctionProperties::Property::NoPHIs);
   }
 
   // Handle any remaining bytes with straight-line code.
