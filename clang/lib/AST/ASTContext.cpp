@@ -1156,7 +1156,7 @@ ArrayRef<Decl *> ASTContext::getModuleInitializers(Module *M) {
 void ASTContext::setCurrentNamedModule(Module *M) {
   assert(M->isModulePurview());
   assert(!CurrentCXXNamedModule &&
-         "We should set named module for ASTContext for only once");
+        "We should set named module for ASTContext for only once");
   CurrentCXXNamedModule = M;
 }
 
