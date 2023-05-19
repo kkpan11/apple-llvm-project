@@ -929,6 +929,8 @@ static void addPGOAndCoverageFlags(const ToolChain &TC, Compilation &C,
     } else {
       CoverageFilename = llvm::sys::path::filename(Output.getBaseInput());
     }
+    if (llvm::sys::path::is_relative(CoverageFilename))
+      (void)D.getVFS().makeAbsolute(CoverageFilename);
     llvm::sys::path::replace_extension(CoverageFilename, "gcno");
     if (EmitCovNotes) {
       CmdArgs.push_back("-coverage-notes-file");
@@ -2515,6 +2517,9 @@ static void CollectArgsForIntegratedAssembler(Compilation &C,
 
   Args.AddLastArg(CmdArgs, options::OPT_femit_dwarf_unwind_EQ);
 
+  Args.addOptInFlag(CmdArgs, options::OPT_femit_compact_unwind_non_canonical,
+                    options::OPT_fno_emit_compact_unwind_non_canonical);
+
   // If you add more args here, also add them to the block below that
   // starts with "// If CollectArgsForIntegratedAssembler() isn't called below".
 
@@ -3693,10 +3698,13 @@ static bool RenderModulesOptions(Compilation &C, const Driver &D,
   // modules support by default.
   bool HaveStdCXXModules =
       IsCXX && Std &&
-      (Std->containsValue("c++2a") || Std->containsValue("c++20") ||
-       Std->containsValue("c++2b") || Std->containsValue("c++23") ||
-       Std->containsValue("c++2c") || Std->containsValue("c++26") ||
-       Std->containsValue("c++latest"));
+      (Std->containsValue("c++2a") || Std->containsValue("gnu++2a") ||
+       Std->containsValue("c++20") || Std->containsValue("gnu++20") ||
+       Std->containsValue("c++2b") || Std->containsValue("gnu++2b") ||
+       Std->containsValue("c++23") || Std->containsValue("gnu++23") ||
+       Std->containsValue("c++2c") || Std->containsValue("gnu++2c") ||
+       Std->containsValue("c++26") || Std->containsValue("gnu++26") ||
+       Std->containsValue("c++latest") || Std->containsValue("gnu++latest"));
   bool HaveModules = HaveStdCXXModules;
 
   // -fmodules enables the use of precompiled modules (off by default).
