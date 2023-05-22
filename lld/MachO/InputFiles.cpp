@@ -2505,9 +2505,8 @@ Error CASSchemaFile::parse(ObjectFormatSchemaPool &CASSchemas, ObjectRef ID) {
     bool noDeadStrip = false;
     if (sym.Scope != jitlink::Scope::Local) {
       return symtab->addDefined(name, file, isec, symbolOffset, size, isWeakDef,
-                                isPrivateExtern, isThumb,
-                                isReferencedDynamically, noDeadStrip,
-                                /*isWeakDefCanBeHidden=*/false);
+                                isPrivateExtern, isReferencedDynamically,
+                                noDeadStrip, /*isWeakDefCanBeHidden=*/false);
     } else {
       return make<Defined>(name, file, isec, symbolOffset, size, isWeakDef,
                            /*isExternal=*/false, /*isPrivateExtern=*/false,
