@@ -1999,8 +1999,11 @@ protected:
             result.GetOutputStream().EOL();
             result.GetOutputStream().EOL();
           }
-          if (GetDebugger().InterruptRequested())
+          if (INTERRUPT_REQUESTED(GetDebugger(), 
+                                  "Interrupted in dump all symtabs with {0} "
+                                  "of {1} dumped.", num_dumped, num_modules))
             break;
+
           num_dumped++;
           DumpModuleSymtab(m_interpreter, result.GetOutputStream(),
                            module_sp.get(), m_options.m_sort_order,
@@ -2026,8 +2029,11 @@ protected:
                 result.GetOutputStream().EOL();
                 result.GetOutputStream().EOL();
               }
-              if (GetDebugger().InterruptRequested())
+              if (INTERRUPT_REQUESTED(GetDebugger(), 
+                    "Interrupted in dump symtab list with {0} of {1} dumped.", 
+                    num_dumped, num_matches))
                 break;
+
               num_dumped++;
               DumpModuleSymtab(m_interpreter, result.GetOutputStream(),
                                module_sp.get(), m_options.m_sort_order,
@@ -2087,8 +2093,11 @@ protected:
       result.GetOutputStream().Format("Dumping sections for {0} modules.\n",
                                       num_modules);
       for (size_t image_idx = 0; image_idx < num_modules; ++image_idx) {
-        if (GetDebugger().InterruptRequested())
+        if (INTERRUPT_REQUESTED(GetDebugger(), 
+              "Interrupted in dump all sections with {0} of {1} dumped",
+              image_idx, num_modules))
           break;
+
         num_dumped++;
         DumpModuleSections(
             m_interpreter, result.GetOutputStream(),
@@ -2105,8 +2114,11 @@ protected:
             FindModulesByName(target, arg_cstr, module_list, true);
         if (num_matches > 0) {
           for (size_t i = 0; i < num_matches; ++i) {
-            if (GetDebugger().InterruptRequested())
+            if (INTERRUPT_REQUESTED(GetDebugger(), 
+                  "Interrupted in dump section list with {0} of {1} dumped.",
+                  i, num_matches))
               break;
+
             Module *module = module_list.GetModulePointerAtIndex(i);
             if (module) {
               num_dumped++;
@@ -2219,7 +2231,7 @@ protected:
       result.GetOutputStream().Format("Dumping clang ast for {0} modules.\n",
                                       num_modules);
       for (ModuleSP module_sp : module_list.ModulesNoLocking()) {
-        if (GetDebugger().InterruptRequested())
+        if (INTERRUPT_REQUESTED(GetDebugger(), "Interrupted dumping clang ast"))
           break;
         if (SymbolFile *sf = module_sp->GetSymbolFile())
           sf->DumpClangAST(result.GetOutputStream());
@@ -2244,8 +2256,11 @@ protected:
       }
 
       for (size_t i = 0; i < num_matches; ++i) {
-        if (GetDebugger().InterruptRequested())
+        if (INTERRUPT_REQUESTED(GetDebugger(), 
+              "Interrupted in dump clang ast list with {0} of {1} dumped.",
+              i, num_matches))
           break;
+
         Module *m = module_list.GetModulePointerAtIndex(i);
         if (SymbolFile *sf = m->GetSymbolFile())
           sf->DumpClangAST(result.GetOutputStream());
@@ -2293,8 +2308,11 @@ protected:
       result.GetOutputStream().Format(
           "Dumping debug symbols for {0} modules.\n", num_modules);
       for (ModuleSP module_sp : target_modules.ModulesNoLocking()) {
-        if (GetDebugger().InterruptRequested())
+        if (INTERRUPT_REQUESTED(GetDebugger(), "Interrupted in dumping all "
+                                "debug symbols with {0} of {1} modules dumped",
+                                 num_dumped, num_modules))
           break;
+
         if (DumpModuleSymbolFile(result.GetOutputStream(), module_sp.get()))
           num_dumped++;
       }
@@ -2309,7 +2327,9 @@ protected:
             FindModulesByName(target, arg_cstr, module_list, true);
         if (num_matches > 0) {
           for (size_t i = 0; i < num_matches; ++i) {
-            if (GetDebugger().InterruptRequested())
+            if (INTERRUPT_REQUESTED(GetDebugger(), "Interrupted dumping {0} "
+                                                   "of {1} requested modules",
+                                                   i, num_matches))
               break;
             Module *module = module_list.GetModulePointerAtIndex(i);
             if (module) {
@@ -2373,11 +2393,16 @@ protected:
 
         const ModuleList &target_modules = target->GetImages();
         std::lock_guard<std::recursive_mutex> guard(target_modules.GetMutex());
-        if (target_modules.GetSize() > 0) {
+        size_t num_modules = target_modules.GetSize();
+        if (num_modules > 0) {
           uint32_t num_dumped = 0;
           for (ModuleSP module_sp : target_modules.ModulesNoLocking()) {
-            if (GetDebugger().InterruptRequested())
+            if (INTERRUPT_REQUESTED(GetDebugger(), 
+                                    "Interrupted in dump all line tables with "
+                                    "{0} of {1} dumped", num_dumped, 
+                                    num_modules))
               break;
+
             if (DumpCompileUnitLineTable(
                     m_interpreter, result.GetOutputStream(), module_sp.get(),
                     file_spec,
