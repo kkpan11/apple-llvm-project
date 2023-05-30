@@ -1039,7 +1039,7 @@ OptionalFileEntryRef Preprocessor::LookupFile(
     // map file.
     if (!FileEnt) {
       if (FID == SourceMgr.getMainFileID() && MainFileDir) {
-        Includers.push_back(std::make_pair(nullptr, MainFileDir));
+        Includers.push_back(std::make_pair(nullptr, *MainFileDir));
         BuildSystemModule = getCurrentModule()->IsSystem;
       } else if ((FileEnt =
                     SourceMgr.getFileEntryForID(SourceMgr.getMainFileID())))
