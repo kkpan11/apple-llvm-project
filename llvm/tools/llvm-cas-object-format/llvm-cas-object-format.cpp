@@ -246,7 +246,7 @@ int main(int argc, char *argv[]) {
       TreeSchema Schema(*CAS);
       SmallVector<NamedTreeEntry> Stack;
       Stack.emplace_back(Root, TreeEntry::Tree, "/");
-      Optional<GlobPattern> GlobP;
+      std::optional<GlobPattern> GlobP;
       if (!CASGlob.empty())
         GlobP.emplace(ExitOnErr(GlobPattern::create(CASGlob)));
 
@@ -336,7 +336,7 @@ int main(int argc, char *argv[]) {
     PrintToStdout = true;
 
   raw_ostream *StatOS = &outs();
-  Optional<raw_fd_ostream> StatsFile;
+  std::optional<raw_fd_ostream> StatsFile;
 
   if (!PrintToStdout) {
     std::error_code EC;
@@ -536,27 +536,28 @@ void StatCollector::visitPOTItemNestedV1(
 
   // Check specific stats.
   if (Object.getKindString() == BlockRef::KindString) {
-    if (Optional<BlockRef> Block = expectedToOptional(BlockRef::get(Object))) {
-      if (Optional<TargetList> Targets =
+    if (std::optional<BlockRef> Block =
+            expectedToOptional(BlockRef::get(Object))) {
+      if (std::optional<TargetList> Targets =
               expectedToOptional(Block->getTargets())) {
         for (size_t I = 0, E = Targets->size(); I != E; ++I) {
-          if (Optional<TargetRef> Target =
+          if (std::optional<TargetRef> Target =
                   expectedToOptional(Targets->get(I))) {
-            if (Optional<StringRef> Name =
-                    expectedToOptional(Target->getNameString()))
-              if (Name->startswith("cas.o:"))
-                GeneratedNames.insert(*Name);
+              if (std::optional<StringRef> Name =
+                      expectedToOptional(Target->getNameString()))
+                if (Name->startswith("cas.o:"))
+                  GeneratedNames.insert(*Name);
 
-            if (Target->getKind() == TargetRef::Symbol)
-              if (Optional<SymbolRef> Symbol =
-                      expectedToOptional(SymbolRef::get(Schema, *Target)))
-                NumTemplateTargets += Symbol->isSymbolTemplate();
+              if (Target->getKind() == TargetRef::Symbol)
+                if (std::optional<SymbolRef> Symbol =
+                        expectedToOptional(SymbolRef::get(Schema, *Target)))
+                  NumTemplateTargets += Symbol->isSymbolTemplate();
           }
         }
         Num1TargetBlocks += Targets->size() == 1;
         Num2TargetBlocks += Targets->size() == 2;
       }
-      if (Optional<BlockDataRef> Data =
+      if (std::optional<BlockDataRef> Data =
               expectedToOptional(Block->getBlockData())) {
         if (Data->isZeroFill())
           ++NumZeroFillBlocks;
@@ -564,11 +565,11 @@ void StatCollector::visitPOTItemNestedV1(
     }
   }
   if (Object.getKindString() == SymbolRef::KindString) {
-    if (Optional<SymbolRef> Symbol =
+    if (std::optional<SymbolRef> Symbol =
             expectedToOptional(SymbolRef::get(Object))) {
       NumAnonymousSymbols += !Symbol->hasName();
       NumTemplateSymbols += Symbol->isSymbolTemplate();
-      if (Optional<cas::ObjectRef> Name = Symbol->getNameID()) {
+      if (std::optional<cas::ObjectRef> Name = Symbol->getNameID()) {
         SymbolNames.insert(*Name);
         UndefinedSymbols.erase(*Name);
       }
@@ -577,7 +578,7 @@ void StatCollector::visitPOTItemNestedV1(
   if (Object.getKindString() == NameListRef::KindString) {
     // FIXME: This is only valid because NameList is currently just used for
     // lists of symbols.
-    if (Optional<NameListRef> List =
+    if (std::optional<NameListRef> List =
             expectedToOptional(NameListRef::get(Object))) {
       for (size_t I = 0, E = List->getNumNames(); I != E; ++I) {
         cas::ObjectRef Name = List->getNameID(I);
@@ -587,9 +588,9 @@ void StatCollector::visitPOTItemNestedV1(
     }
   }
   if (Object.getKindString() == SectionRef::KindString) {
-    if (Optional<SectionRef> Section =
+    if (std::optional<SectionRef> Section =
             expectedToOptional(SectionRef::get(Object))) {
-      if (Optional<cas::ObjectRef> Name = Section->getNameID())
+      if (std::optional<cas::ObjectRef> Name = Section->getNameID())
         SectionNames.insert(*Name);
     }
   }
@@ -649,7 +650,7 @@ static void computeStats(ObjectStore &CAS, ArrayRef<ObjectProxy> TopLevels,
   SmallVector<POTItem> POT;
   BumpPtrAllocator Alloc;
   StringSaver Saver(Alloc);
-  Optional<GlobPattern> GlobP;
+  std::optional<GlobPattern> GlobP;
   if (!CASGlob.empty())
     GlobP.emplace(ExitOnErr(GlobPattern::create(CASGlob)));
 
@@ -852,7 +853,7 @@ static Error printCASObjectOrTree(ObjectFormatSchemaPool &Pool, ObjectProxy ID,
 
   return Schema.walkFileTreeRecursively(
       Pool.getCAS(), ID.getRef(),
-      [&](const NamedTreeEntry &entry, Optional<TreeProxy>) -> Error {
+      [&](const NamedTreeEntry &entry, std::optional<TreeProxy>) -> Error {
         if (entry.getKind() == TreeEntry::Tree)
           return Error::success();
         if (entry.getKind() != TreeEntry::Regular) {
@@ -871,7 +872,7 @@ static Error materializeObjectsFromCASTree(ObjectStore &CAS, ObjectProxy ID) {
   TreeSchema Schema(CAS);
   return Schema.walkFileTreeRecursively(
       CAS, ID.getRef(),
-      [&](const NamedTreeEntry &Entry, Optional<TreeProxy>) -> Error {
+      [&](const NamedTreeEntry &Entry, std::optional<TreeProxy>) -> Error {
         if (Entry.getKind() != TreeEntry::Regular &&
             Entry.getKind() != TreeEntry::Tree) {
           return createStringError(inconvertibleErrorCode(),
@@ -1089,7 +1090,7 @@ static ObjectRef ingestFile(ObjectFormatSchemaBase &Schema, StringRef InputFile,
     dumpGraph(*G, OS, "parse result");
 
   SmallString<256> DebugIngestOutput;
-  Optional<raw_svector_ostream> DebugOS;
+  std::optional<raw_svector_ostream> DebugOS;
   if (DebugIngest)
     DebugOS.emplace(DebugIngestOutput);
   auto CompileUnit = ExitOnErr(

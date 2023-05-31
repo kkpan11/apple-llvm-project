@@ -94,10 +94,10 @@ public:
 class DefinedSymbolNodeRef : public SymbolNodeRefBase {
 public:
   SymbolRef Symbol;
-  Optional<CASSymbolRef> KeptAliveBySymbol;
+  std::optional<CASSymbolRef> KeptAliveBySymbol;
 
   DefinedSymbolNodeRef(SymbolRef Symbol,
-                       Optional<CASSymbolRef> KeptAliveBySymbol)
+                       std::optional<CASSymbolRef> KeptAliveBySymbol)
       : Symbol(std::move(Symbol)),
         KeptAliveBySymbol(std::move(KeptAliveBySymbol)) {}
 
@@ -107,12 +107,12 @@ public:
 
 class BlockNodeRef {
 public:
-  Optional<CASSymbolRef> ForSymbol;
+  std::optional<CASSymbolRef> ForSymbol;
   BlockRef Block;
-  Optional<CASSymbolRef> KeptAliveBySymbol;
+  std::optional<CASSymbolRef> KeptAliveBySymbol;
 
-  BlockNodeRef(Optional<CASSymbolRef> ForSymbol, BlockRef Block,
-               Optional<CASSymbolRef> KeptAliveBySymbol)
+  BlockNodeRef(std::optional<CASSymbolRef> ForSymbol, BlockRef Block,
+               std::optional<CASSymbolRef> KeptAliveBySymbol)
       : ForSymbol(std::move(ForSymbol)), Block(std::move(Block)),
         KeptAliveBySymbol(std::move(KeptAliveBySymbol)) {}
 
@@ -181,14 +181,14 @@ public:
 
   Expected<CASSymbolRef>
   getOrCreateCASSymbolRef(Expected<SymbolRef> Symbol,
-                          Optional<CASSymbolRef> KeptAliveBySymbol) const;
+                          std::optional<CASSymbolRef> KeptAliveBySymbol) const;
   Expected<CASBlockRef> getOrCreateCASBlockRef(
       const DefinedSymbolNodeRef &ForSymbol, Expected<BlockRef> Block,
-      Optional<CASSymbolRef> KeptAliveBySymbol, bool MergeByContent) const;
+      std::optional<CASSymbolRef> KeptAliveBySymbol, bool MergeByContent) const;
   Expected<CASSectionRef>
   getOrCreateCASSectionRef(Expected<SectionRef> Section) const;
 
-  Optional<CASSymbolRef> getCASSymbolRefByName(StringRef Name) const;
+  std::optional<CASSymbolRef> getCASSymbolRefByName(StringRef Name) const;
 
 private:
   Error forEachExternalSymbol(
@@ -243,7 +243,7 @@ ObjectFileSchema::ObjectFileSchema(cas::ObjectStore &CAS)
 }
 
 Error ObjectFileSchema::fillCache() {
-  Optional<cas::ObjectRef> RootKindID;
+  std::optional<cas::ObjectRef> RootKindID;
   const unsigned Version = 0; // Bump this to error on old object files.
   if (Error E = CAS.storeFromString(std::nullopt, "cas.o:nestedv1:schema:" +
                                                       Twine(Version).str())
@@ -273,7 +273,7 @@ Error ObjectFileSchema::fillCache() {
       .moveInto(RootNodeTypeID);
 }
 
-Optional<StringRef>
+std::optional<StringRef>
 ObjectFileSchema::getKindString(const cas::ObjectProxy &Node) const {
   assert(&Node.getCAS() == &CAS);
   StringRef Data = Node.getData();
@@ -310,7 +310,7 @@ ObjectFormatObjectProxy::Builder::startRootNode(const ObjectFileSchema &Schema,
 }
 
 Error ObjectFormatObjectProxy::Builder::startNodeImpl(StringRef KindString) {
-  Optional<unsigned char> TypeID = Schema->getKindStringID(KindString);
+  std::optional<unsigned char> TypeID = Schema->getKindStringID(KindString);
   if (!TypeID)
     return createStringError(inconvertibleErrorCode(),
                              "invalid object format kind string: " +
@@ -334,12 +334,12 @@ Expected<ObjectFormatObjectProxy> ObjectFormatObjectProxy::Builder::build() {
 }
 
 StringRef ObjectFormatObjectProxy::getKindString() const {
-  Optional<StringRef> KS = getSchema().getKindString(*this);
+  std::optional<StringRef> KS = getSchema().getKindString(*this);
   assert(KS && "Expected valid kind string");
   return *KS;
 }
 
-Optional<unsigned char>
+std::optional<unsigned char>
 ObjectFileSchema::getKindStringID(StringRef KindString) const {
   for (auto &I : KindStrings)
     if (I.second == KindString)
@@ -421,9 +421,11 @@ cl::opt<size_t> MaxEdgesToEmbedInBlock(
     "max-edges-to-embed-in-block",
     cl::desc("Maximum number of edges to embed in a block."), cl::init(8));
 
-Expected<BlockDataRef> BlockDataRef::createImpl(
-    const ObjectFileSchema &Schema, Optional<StringRef> Content, uint64_t Size,
-    uint64_t Alignment, uint64_t AlignmentOffset, ArrayRef<Fixup> Fixups) {
+Expected<BlockDataRef>
+BlockDataRef::createImpl(const ObjectFileSchema &Schema,
+                         std::optional<StringRef> Content, uint64_t Size,
+                         uint64_t Alignment, uint64_t AlignmentOffset,
+                         ArrayRef<Fixup> Fixups) {
   Expected<Builder> B = Builder::startNode(Schema, KindString);
   if (!B)
     return B.takeError();
@@ -469,7 +471,7 @@ Expected<BlockDataRef> BlockDataRef::create(const ObjectFileSchema &Schema,
   // FIXME: Only do this when reading blocks parsed from Mach-O.
   //
   // FIXME: Probably we want this elsewhere (not just __TEXT,__text).
-  Optional<Align> TrailingNopsAlignment;
+  std::optional<Align> TrailingNopsAlignment;
   if (AppendTrailingNopPaddingDuringBlockIngestion__text &&
       Block.getSection().getName() == "__TEXT,__text")
     TrailingNopsAlignment = Align(16);
@@ -505,7 +507,7 @@ BlockDataRef::createContent(const ObjectFileSchema &Schema, StringRef Content,
                     Fixups);
 }
 
-Expected<Optional<NameRef>> TargetRef::getName() const {
+Expected<std::optional<NameRef>> TargetRef::getName() const {
   if (getKind() == IndirectSymbol)
     return NameRef::get(*Schema, ID);
   auto Symbol = SymbolRef::get(*Schema, ID);
@@ -516,7 +518,7 @@ Expected<Optional<NameRef>> TargetRef::getName() const {
 
 Expected<TargetRef> TargetRef::get(const ObjectFileSchema &Schema,
                                    cas::ObjectRef ID,
-                                   Optional<Kind> ExpectedKind) {
+                                   std::optional<Kind> ExpectedKind) {
   auto checkExpectedKind = [&](Kind K, StringRef Name) -> Expected<TargetRef> {
     if (ExpectedKind && *ExpectedKind != K)
       return createStringError(inconvertibleErrorCode(),
@@ -551,14 +553,15 @@ StringRef SymbolDefinitionRef::getKindString(Kind K) {
 
 Expected<SymbolDefinitionRef>
 SymbolDefinitionRef::get(Expected<ObjectFormatObjectProxy> Ref,
-                         Optional<Kind> ExpectedKind) {
+                         std::optional<Kind> ExpectedKind) {
   if (!Ref)
     return Ref.takeError();
-  Optional<Kind> K = StringSwitch<Optional<Kind>>(Ref->getKindString())
-                         .Case(SymbolRef::KindString, Alias)
-                         .Case(NameRef::KindString, IndirectAlias)
-                         .Case(BlockRef::KindString, Block)
-                         .Default(std::nullopt);
+  std::optional<Kind> K =
+      StringSwitch<std::optional<Kind>>(Ref->getKindString())
+          .Case(SymbolRef::KindString, Alias)
+          .Case(NameRef::KindString, IndirectAlias)
+          .Case(BlockRef::KindString, Block)
+          .Default(std::nullopt);
   if (!K)
     return createStringError(inconvertibleErrorCode(),
                              "invalid object kind '" + Ref->getKindString() +
@@ -624,11 +627,11 @@ Expected<SectionRef> SectionRef::get(Expected<ObjectFormatObjectProxy> Ref) {
   return SectionRef(*Specific);
 }
 
-Optional<size_t> BlockRef::getTargetsIndex() const {
-  return Flags.HasTargets ? 2 : Optional<size_t>();
+std::optional<size_t> BlockRef::getTargetsIndex() const {
+  return Flags.HasTargets ? 2 : std::optional<size_t>();
 }
 
-Optional<cas::ObjectRef> BlockRef::getTargetInfoID() const {
+std::optional<cas::ObjectRef> BlockRef::getTargetInfoID() const {
   assert(Flags.HasEdges && "Expected edges");
   assert(!Flags.HasEmbeddedTargetInfo && "Expected explicit edges");
   return getReference(2U + unsigned(Flags.HasTargets));
@@ -651,7 +654,7 @@ Expected<TargetInfoList> BlockRef::getTargetInfo() const {
   if (Flags.HasEmbeddedTargetInfo)
     return TargetInfoList(getData().drop_front());
 
-  Optional<cas::ObjectRef> TargetInfoID = getTargetInfoID();
+  std::optional<cas::ObjectRef> TargetInfoID = getTargetInfoID();
   if (!TargetInfoID)
     return TargetInfoList("");
 
@@ -663,7 +666,7 @@ Expected<TargetInfoList> BlockRef::getTargetInfo() const {
 }
 
 Expected<TargetList> BlockRef::getTargets() const {
-  Optional<size_t> TargetsIndex = getTargetsIndex();
+  std::optional<size_t> TargetsIndex = getTargetsIndex();
   if (!TargetsIndex)
     return TargetList();
   if (Flags.HasTargetInline)
@@ -717,7 +720,7 @@ visitEdgesInStableOrder(const jitlink::Block &Block,
 static Error decomposeAndSortEdges(
     const jitlink::Block &Block, SmallVectorImpl<Fixup> &Fixups,
     SmallVectorImpl<TargetInfo> &TIs, SmallVectorImpl<TargetRef> &Targets,
-    function_ref<Expected<Optional<TargetRef>>(const jitlink::Symbol &)>
+    function_ref<Expected<std::optional<TargetRef>>(const jitlink::Symbol &)>
         GetTargetRef) {
   assert(Fixups.empty());
   assert(TIs.empty());
@@ -768,7 +771,7 @@ static Error decomposeAndSortEdges(
   // Pair of ObjectRef for \p TargetRef and its index in the \p Targets array.
   SmallDenseMap<cas::ObjectRef, size_t, 16> SeenSymbolRefs;
   for (const EdgeTarget &EdgeTarget : EdgeTargets) {
-    Expected<Optional<TargetRef>> TargetOrAbstractBackedge =
+    Expected<std::optional<TargetRef>> TargetOrAbstractBackedge =
         GetTargetRef(*EdgeTarget.Symbol);
     if (!TargetOrAbstractBackedge)
       return TargetOrAbstractBackedge.takeError();
@@ -804,7 +807,7 @@ static Error decomposeAndSortEdges(
 
 Expected<BlockRef> BlockRef::create(
     const ObjectFileSchema &Schema, const jitlink::Block &Block,
-    function_ref<Expected<Optional<TargetRef>>(const jitlink::Symbol &)>
+    function_ref<Expected<std::optional<TargetRef>>(const jitlink::Symbol &)>
         GetTargetRef) {
   Expected<SectionRef> Section = SectionRef::create(Schema, Block.getSection());
   if (!Section)
@@ -919,7 +922,7 @@ Expected<BlockRef> BlockRef::get(Expected<ObjectFormatObjectProxy> Ref) {
 }
 
 Expected<TargetRef> SymbolRef::getAsIndirectTarget() const {
-  Expected<Optional<NameRef>> Name = getName();
+  Expected<std::optional<NameRef>> Name = getName();
   if (!Name)
     return Name.takeError();
   if (!*Name)
@@ -1090,7 +1093,7 @@ Expected<SymbolRef> SymbolRef::create(
   if (!Definition)
     return Definition.takeError();
 
-  Optional<NameRef> Name;
+  std::optional<NameRef> Name;
   if (!S.getName().empty()) {
     Expected<NameRef> ExpectedName = NameRef::create(Schema, S.getName());
     if (!ExpectedName)
@@ -1103,7 +1106,7 @@ Expected<SymbolRef> SymbolRef::create(
 }
 
 Expected<SymbolRef> SymbolRef::create(const ObjectFileSchema &Schema,
-                                      Optional<NameRef> SymbolName,
+                                      std::optional<NameRef> SymbolName,
                                       SymbolDefinitionRef Definition,
                                       uint64_t Offset, Flags F) {
   // Anonymous symbols cannot be exported or merged by name.
@@ -1257,7 +1260,7 @@ Expected<SymbolTableRef> SymbolTableRef::create(const ObjectFileSchema &Schema,
         Names.push_back("");
         continue;
       }
-      Expected<Optional<NameRef>> Name = S.getName();
+      Expected<std::optional<NameRef>> Name = S.getName();
       if (!Name)
         return Name.takeError();
       Names.push_back((*Name)->getName());
@@ -1313,7 +1316,8 @@ Expected<SymbolTableRef> SymbolTableRef::create(const ObjectFileSchema &Schema,
   return get(B->build());
 }
 
-Expected<Optional<SymbolRef>> SymbolTableRef::lookupSymbol(NameRef Name) const {
+Expected<std::optional<SymbolRef>>
+SymbolTableRef::lookupSymbol(NameRef Name) const {
   // Do a binary search.
   uint32_t F = getNumAnonymousSymbols();
   uint32_t L = getNumSymbols();
@@ -1328,7 +1332,7 @@ Expected<Optional<SymbolRef>> SymbolTableRef::lookupSymbol(NameRef Name) const {
     if (*Symbol->getNameID() == Name)
       return *Symbol;
 
-    Expected<Optional<NameRef>> IName = Symbol->getName();
+    Expected<std::optional<NameRef>> IName = Symbol->getName();
     if (!IName)
       return IName.takeError();
 
@@ -1408,8 +1412,8 @@ public:
       : CAS(Schema.CAS), Schema(Schema), DebugOS(DebugOS) {}
 
   struct SymbolInfo {
-    Optional<NameRef> Indirect;
-    Optional<SymbolRef> Symbol;
+    std::optional<NameRef> Indirect;
+    std::optional<SymbolRef> Symbol;
   };
   DenseMap<const jitlink::Symbol *, SymbolInfo> Symbols;
   DenseMap<const jitlink::Block *, BlockRef> Blocks;
@@ -1441,7 +1445,7 @@ public:
   /// Merge=M_ByContent && Scope=S_Local. In those cases, we'd want to
   /// reference an anonymous symbol directly, and only keep the name around as
   /// an alias as a convenience for users.
-  Expected<Optional<TargetRef>>
+  Expected<std::optional<TargetRef>>
   getOrCreateTarget(const jitlink::Symbol &S,
                     const jitlink::Block &SourceBlock);
 
@@ -1523,7 +1527,7 @@ Error CompileUnitBuilder::createSymbol(const jitlink::Symbol &S) {
   // FIXME: Handle absolute symbols.
   assert(!S.isAbsolute());
 
-  Optional<NameRef> Name = Symbols.lookup(&S).Indirect;
+  std::optional<NameRef> Name = Symbols.lookup(&S).Indirect;
   bool HasIndirectReference = bool(Name);
 
   Expected<SymbolDefinitionRef> Definition = getOrCreateSymbolDefinition(S);
@@ -1652,7 +1656,7 @@ cl::opt<bool>
                              cl::desc("Prefer referencing symbols indirectly."),
                              cl::init(false));
 
-Expected<Optional<TargetRef>>
+Expected<std::optional<TargetRef>>
 CompileUnitBuilder::getOrCreateTarget(const jitlink::Symbol &S,
                                       const jitlink::Block &SourceBlock) {
   // Use an abstract target for the back-edge from FDEs in __TEXT,__eh_frame.
@@ -1690,7 +1694,7 @@ CompileUnitBuilder::getOrCreateTarget(const jitlink::Symbol &S,
     if (Info.Symbol->getDeadStrip() == SymbolRef::DS_CompileUnit)
       IndirectDeadStripCompileSymbols.push_back(*Info.Symbol);
 
-    Expected<Optional<NameRef>> Name = Info.Symbol->getName();
+    Expected<std::optional<NameRef>> Name = Info.Symbol->getName();
     if (!Name)
       return Name.takeError();
     assert(*Name && "Symbol definition missing a name");
@@ -1698,7 +1702,7 @@ CompileUnitBuilder::getOrCreateTarget(const jitlink::Symbol &S,
     return createIndirectTarget(**Name);
   }
 
-  Optional<std::string> NameStorage;
+  std::optional<std::string> NameStorage;
   auto getName = [&]() -> StringRef {
     if (S.hasName())
       return S.getName();
@@ -1866,7 +1870,7 @@ Expected<CASSymbolRef> NestedV1ObjectReader::getOrCreateExternalCASSymbolRef(
 
 Expected<CASSymbolRef> NestedV1ObjectReader::getOrCreateCASSymbolRef(
     Expected<SymbolRef> Symbol,
-    Optional<CASSymbolRef> KeptAliveBySymbol) const {
+    std::optional<CASSymbolRef> KeptAliveBySymbol) const {
   if (!Symbol)
     return Symbol.takeError();
 
@@ -1876,7 +1880,7 @@ Expected<CASSymbolRef> NestedV1ObjectReader::getOrCreateCASSymbolRef(
   if (!Ref) {
     Ref = std::make_unique<DefinedSymbolNodeRef>(std::move(*Symbol),
                                                  std::move(KeptAliveBySymbol));
-    Expected<Optional<NameRef>> NameRef = Symbol->getName();
+    Expected<std::optional<NameRef>> NameRef = Symbol->getName();
     if (!NameRef)
       return NameRef.takeError();
     if (NameRef->has_value())
@@ -1885,7 +1889,7 @@ Expected<CASSymbolRef> NestedV1ObjectReader::getOrCreateCASSymbolRef(
   return CASSymbolRef{uint64_t(Ref.get())};
 }
 
-Optional<CASSymbolRef>
+std::optional<CASSymbolRef>
 NestedV1ObjectReader::getCASSymbolRefByName(StringRef Name) const {
   std::lock_guard<sys::Mutex> Guard(SymbolsLock);
   auto SymI = SymbolsByName.find(Name);
@@ -1904,7 +1908,7 @@ ExternalSymbolNodeRef::materialize(const NestedV1ObjectReader &) const {
 
 Expected<CASBlockRef> NestedV1ObjectReader::getOrCreateCASBlockRef(
     const DefinedSymbolNodeRef &ForSymbol, Expected<BlockRef> Block,
-    Optional<CASSymbolRef> KeptAliveBySymbol, bool MergeByContent) const {
+    std::optional<CASSymbolRef> KeptAliveBySymbol, bool MergeByContent) const {
   if (!Block)
     return Block.takeError();
 
@@ -1918,8 +1922,8 @@ Expected<CASBlockRef> NestedV1ObjectReader::getOrCreateCASBlockRef(
   std::lock_guard<sys::Mutex> Guard(BlocksLock);
   auto &Ref = Blocks[IDKey];
   if (!Ref) {
-    Optional<CASSymbolRef> ForSymbolInBlock;
-    Optional<CASSymbolRef> KeptAliveBySymbolInBlock;
+    std::optional<CASSymbolRef> ForSymbolInBlock;
+    std::optional<CASSymbolRef> KeptAliveBySymbolInBlock;
     if (!CanShareBlockRef) {
       ForSymbolInBlock = CASSymbolRef{uint64_t(&ForSymbol)};
       KeptAliveBySymbolInBlock = KeptAliveBySymbol;
@@ -1946,7 +1950,7 @@ Expected<CASSectionRef> NestedV1ObjectReader::getOrCreateCASSectionRef(
 
 Expected<CASSymbol>
 DefinedSymbolNodeRef::materialize(const NestedV1ObjectReader &Reader) const {
-  Expected<Optional<NameRef>> ExpectedName = Symbol.getName();
+  Expected<std::optional<NameRef>> ExpectedName = Symbol.getName();
   if (!ExpectedName)
     return ExpectedName.takeError();
 
@@ -2030,7 +2034,7 @@ BlockNodeRef::materialize(const NestedV1ObjectReader &Reader) const {
   uint64_t Size = BlockData->getSize();
   uint64_t Alignment = BlockData->getAlignment();
   uint64_t AlignmentOffset = BlockData->getAlignmentOffset();
-  Optional<StringRef> Content;
+  std::optional<StringRef> Content;
   if (!BlockData->isZeroFill()) {
     Content = BlockData->getContent();
     assert(Content && "Block is not zero-fill so it should have data");

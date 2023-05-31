@@ -21,7 +21,7 @@ using namespace llvm::casobjectformats;
 using namespace llvm::casobjectformats::nestedv1;
 
 template <typename T>
-static Error unwrapExpected(Expected<T> &&E, Optional<T> &O) {
+static Error unwrapExpected(Expected<T> &&E, std::optional<T> &O) {
   O.reset();
   if (!E)
     return E.takeError();
@@ -67,12 +67,12 @@ TEST(NestedV1SchemaTest, Section) {
   std::unique_ptr<cas::ObjectStore> CAS = cas::createInMemoryCAS();
   ObjectFileSchema Schema(*CAS);
   for (jitlink::Section *S : Sections) {
-    Optional<SectionRef> Section =
+    std::optional<SectionRef> Section =
         expectedToOptional(SectionRef::create(Schema, *S));
     ASSERT_TRUE(Section);
 
     EXPECT_EQ(S->getMemProt(), Section->getMemProt());
-    Optional<NameRef> Name = expectedToOptional(Section->getName());
+    std::optional<NameRef> Name = expectedToOptional(Section->getName());
     ASSERT_TRUE(Name);
     EXPECT_EQ(S->getName(), Name->getName());
   }
@@ -106,7 +106,7 @@ TEST(NestedV1SchemaTest, BlockData) {
   std::unique_ptr<cas::ObjectStore> CAS = cas::createInMemoryCAS();
   ObjectFileSchema Schema(*CAS);
   for (jitlink::Block *B : Blocks) {
-    Optional<BlockDataRef> Ref =
+    std::optional<BlockDataRef> Ref =
         expectedToOptional(BlockDataRef::create(Schema, *B, std::nullopt));
     ASSERT_TRUE(Ref);
     EXPECT_EQ(B->getSize(), Ref->getSize());
@@ -114,7 +114,7 @@ TEST(NestedV1SchemaTest, BlockData) {
     EXPECT_EQ(B->getAlignmentOffset(), Ref->getAlignmentOffset());
     EXPECT_EQ(B->isZeroFill(), Ref->isZeroFill());
 
-    Optional<ArrayRef<char>> Content = Ref->getContentArray();
+    std::optional<ArrayRef<char>> Content = Ref->getContentArray();
     if (B->isZeroFill()) {
       EXPECT_FALSE(bool(Content));
       continue;
@@ -150,7 +150,7 @@ TEST(NestedV1SchemaTest, LeafBlock) {
   ObjectFileSchema Schema(*CAS);
   for (jitlink::Block *B : Blocks) {
     // This is the API being tested.
-    Optional<BlockRef> Block = expectedToOptional(BlockRef::create(
+    std::optional<BlockRef> Block = expectedToOptional(BlockRef::create(
         Schema, *B, [](const jitlink::Symbol &) -> Expected<TargetRef> {
           return createStringError(inconvertibleErrorCode(),
                                    "expected a leaf block");
@@ -158,9 +158,9 @@ TEST(NestedV1SchemaTest, LeafBlock) {
     ASSERT_TRUE(Block);
 
     // Independently look up block data and section.
-    Optional<BlockDataRef> BlockData =
+    std::optional<BlockDataRef> BlockData =
         expectedToOptional(BlockDataRef::create(Schema, *B, std::nullopt));
-    Optional<SectionRef> Section =
+    std::optional<SectionRef> Section =
         expectedToOptional(SectionRef::create(Schema, B->getSection()));
     ASSERT_TRUE(BlockData);
     ASSERT_TRUE(Section);
@@ -269,7 +269,7 @@ TEST(NestedV1SchemaTest, BlockSymbols) {
 
   for (jitlink::Symbol *S : Symbols) {
     // This is the API being tested.
-    Optional<SymbolRef> Symbol = expectedToOptional(
+    std::optional<SymbolRef> Symbol = expectedToOptional(
         SymbolRef::create(Schema, *S, createSymbolDefinition));
     ASSERT_TRUE(Symbol);
 
@@ -277,7 +277,7 @@ TEST(NestedV1SchemaTest, BlockSymbols) {
     EXPECT_EQ(SymbolRef::getFlags(*S), Symbol->getFlags());
 
     // Get out a block independently and check that it's correct.
-    Optional<BlockRef> Block = expectedToOptional(
+    std::optional<BlockRef> Block = expectedToOptional(
         BlockRef::create(Schema, S->getBlock(), createTarget));
     ASSERT_TRUE(Block);
 
@@ -312,7 +312,7 @@ TEST(NestedV1SchemaTest, SymbolTable) {
 
   SmallVector<SymbolRef> AllRefs;
   for (jitlink::Symbol *S : Symbols) {
-    Optional<SymbolRef> Ref = expectedToOptional(
+    std::optional<SymbolRef> Ref = expectedToOptional(
         SymbolRef::create(Schema, *S, createSymbolDefinition));
     ASSERT_TRUE(Ref);
     AllRefs.push_back(*Ref);
@@ -328,7 +328,7 @@ TEST(NestedV1SchemaTest, SymbolTable) {
   };
 
   // This is the API being tested.
-  Optional<SymbolTableRef> Table =
+  std::optional<SymbolTableRef> Table =
       expectedToOptional(SymbolTableRef::create(Schema, TableRefs));
   ASSERT_TRUE(Table);
 
@@ -342,7 +342,7 @@ TEST(NestedV1SchemaTest, SymbolTable) {
   EXPECT_EQ(2u, Table->getNumAnonymousSymbols());
   ASSERT_EQ(ExpectedOrder.size(), Table->getNumSymbols());
   for (size_t I = 0, E = ExpectedOrder.size(); I != E; ++I) {
-    Optional<SymbolRef> Symbol = expectedToOptional(Table->getSymbol(I));
+    std::optional<SymbolRef> Symbol = expectedToOptional(Table->getSymbol(I));
     ASSERT_TRUE(Symbol);
     EXPECT_EQ(ExpectedOrder[I].getID(), Symbol->getID());
   }
@@ -399,7 +399,7 @@ TEST(NestedV1SchemaTest, BlockWithEdges) {
   ObjectFileSchema Schema(*CAS);
 
   // Create the external symbols.
-  SmallDenseMap<jitlink::Symbol *, Optional<TargetRef>, 8> CreatedSymbols;
+  SmallDenseMap<jitlink::Symbol *, std::optional<TargetRef>, 8> CreatedSymbols;
   for (jitlink::Symbol *S : {&S1, &S2}) {
     auto Indirect = expectedToOptional(NameRef::create(Schema, S->getName()));
     ASSERT_TRUE(Indirect);
@@ -407,13 +407,13 @@ TEST(NestedV1SchemaTest, BlockWithEdges) {
   }
 
   // Create the block and symbol for S3.
-  Optional<BlockRef> ZeroBlock = expectedToOptional(BlockRef::create(
+  std::optional<BlockRef> ZeroBlock = expectedToOptional(BlockRef::create(
       Schema, Z, [](const jitlink::Symbol &S) -> Expected<TargetRef> {
         return createStringError(inconvertibleErrorCode(),
                                  "expected leaf block");
       }));
   ASSERT_TRUE(ZeroBlock);
-  Optional<SymbolRef> DirectS3 = expectedToOptional(SymbolRef::create(
+  std::optional<SymbolRef> DirectS3 = expectedToOptional(SymbolRef::create(
       Schema, S3,
       [&](const jitlink::Block &B) -> Expected<SymbolDefinitionRef> {
         assert(&B == &Z);
@@ -427,7 +427,7 @@ TEST(NestedV1SchemaTest, BlockWithEdges) {
   };
 
   // This is the API being tested, which should build an edge list.
-  Optional<BlockRef> Block;
+  std::optional<BlockRef> Block;
   ASSERT_THAT_ERROR(
       unwrapExpected(BlockRef::create(Schema, B, createTarget), Block),
       Succeeded());
@@ -447,7 +447,8 @@ TEST(NestedV1SchemaTest, BlockWithEdges) {
   for (size_t I = 0, E = std::extent<decltype(AddOrder)>::value; I != E;
        ++I, ++F, ++TI) {
     ASSERT_LT(TI->Index, BlockTargets.size());
-    Optional<TargetRef> Target = expectedToOptional(BlockTargets[TI->Index]);
+    std::optional<TargetRef> Target =
+        expectedToOptional(BlockTargets[TI->Index]);
     ASSERT_TRUE(Target);
     TargetRef ExpectedTarget = *CreatedSymbols.lookup(Targets[I]);
 
@@ -533,12 +534,12 @@ TEST(NestedV1SchemaTest, RoundTrip) {
   {
     // Convert to cas.o.
     ObjectFileSchema Schema(*CAS);
-    Optional<CompileUnitRef> CU;
+    std::optional<CompileUnitRef> CU;
     ASSERT_THAT_ERROR(unwrapExpected(CompileUnitRef::create(Schema, G), CU),
                       Succeeded());
 
     // Convert back to LinkGraph.
-    Optional<std::unique_ptr<reader::CASObjectReader>> Reader;
+    std::optional<std::unique_ptr<reader::CASObjectReader>> Reader;
     ASSERT_THAT_ERROR(
         unwrapExpected(Schema.createObjectReader(std::move(*CU)), Reader),
         Succeeded());
@@ -661,12 +662,12 @@ TEST(NestedV1SchemaTest, RoundTripBlockOrder) {
   {
     // Convert to cas.o.
     ObjectFileSchema Schema(*CAS);
-    Optional<CompileUnitRef> CU;
+    std::optional<CompileUnitRef> CU;
     ASSERT_THAT_ERROR(unwrapExpected(CompileUnitRef::create(Schema, G), CU),
                       Succeeded());
 
     // Convert back to LinkGraph.
-    Optional<std::unique_ptr<reader::CASObjectReader>> Reader;
+    std::optional<std::unique_ptr<reader::CASObjectReader>> Reader;
     ASSERT_THAT_ERROR(
         unwrapExpected(Schema.createObjectReader(std::move(*CU)), Reader),
         Succeeded());
@@ -718,7 +719,7 @@ TEST(NestedV1SchemaTest, ModInitFuncSection) {
   };
 
   for (jitlink::Symbol *S : Symbols) {
-    Optional<SymbolRef> Symbol = expectedToOptional(
+    std::optional<SymbolRef> Symbol = expectedToOptional(
         SymbolRef::create(Schema, *S, createSymbolDefinition));
     ASSERT_TRUE(Symbol);
     EXPECT_EQ(SymbolRef::getFlags(*S).DeadStrip, SymbolRef::DS_Never);

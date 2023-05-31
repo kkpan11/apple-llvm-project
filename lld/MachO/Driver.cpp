@@ -464,7 +464,7 @@ static InputFile *addFile(StringRef path, LoadType loadType,
       break;
     }
     CASID ID = std::move(*expCASID);
-    Optional<cas::ObjectRef> Node = CAS.getReference(ID);
+    std::optional<cas::ObjectRef> Node = CAS.getReference(ID);
     if (!Node) {
       error(path + ": unknown object '" + ID.toString() + "'");
       break;
@@ -551,7 +551,7 @@ static Expected<InputFile *> addCASObject(ObjectFormatSchemaPool &CASSchemas,
 /// \param CAS CAS database.
 /// \param ID The CASID pointing to a tree of files.
 static Error addCASTree(ObjectFormatSchemaPool &CASSchemas, const CASID &ID) {
-  Optional<cas::ObjectRef> Object = CASSchemas.getCAS().getReference(ID);
+  std::optional<cas::ObjectRef> Object = CASSchemas.getCAS().getReference(ID);
   if (!Object)
     return createStringError(inconvertibleErrorCode(), "unknown tree root");
   Expected<cas::ObjectProxy> Tree = CASSchemas.getCAS().getProxy(*Object);
@@ -560,7 +560,7 @@ static Error addCASTree(ObjectFormatSchemaPool &CASSchemas, const CASID &ID) {
   TreeSchema Schema(CASSchemas.getCAS());
   return Schema.walkFileTreeRecursively(
       CASSchemas.getCAS(), Tree->getRef(),
-      [&](const NamedTreeEntry &entry, Optional<TreeProxy>) -> Error {
+      [&](const NamedTreeEntry &entry, std::optional<TreeProxy>) -> Error {
         if (entry.getKind() == TreeEntry::Tree)
           return Error::success();
         if (entry.getKind() != TreeEntry::Regular) {
@@ -1565,8 +1565,8 @@ static bool linkWithResultCaching(InputArgList &args, bool canExitEarly,
   assert(config->CAS);
   ObjectStore &CAS = *config->CAS;
 
-  Optional<CASID> optCacheKey;
-  Optional<ObjectProxy> rootRef;
+  std::optional<CASID> optCacheKey;
+  std::optional<ObjectProxy> rootRef;
   {
     TimeTraceScope timeScope("Caching: create key");
 
@@ -1917,10 +1917,10 @@ bool macho::link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
           std::make_unique<ObjectFormatSchemaPool>(*config->CAS);
     }
   }
-  Optional<StringRef> CASFileSystemRootID;
+  std::optional<StringRef> CASFileSystemRootID;
   if (args.hasArg(OPT_fcas_fs))
     CASFileSystemRootID = args.getLastArgValue(OPT_fcas_fs);
-  Optional<StringRef> CASFileSystemWorkingDirectory;
+  std::optional<StringRef> CASFileSystemWorkingDirectory;
   if (args.hasArg(OPT_fcas_fs_working_directory))
     CASFileSystemRootID = args.getLastArgValue(OPT_fcas_fs_working_directory);
   auto fs = lld::createFileSystem(config->CAS.get(), CASFileSystemRootID,

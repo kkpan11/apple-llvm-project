@@ -55,11 +55,11 @@ struct CASBlock {
   uint64_t Size;
   uint64_t Alignment;
   uint64_t AlignmentOffset;
-  Optional<StringRef> Content;
+  std::optional<StringRef> Content;
   CASSectionRef SectionRef;
   llvm::cas::CASID BlockContentID;
   CASBlock(uint64_t Size, uint64_t Alignment, uint64_t AlignmentOffset,
-           Optional<StringRef> Content, CASSectionRef SectionRef,
+           std::optional<StringRef> Content, CASSectionRef SectionRef,
            cas::CASID BlockContentID)
       : Size(Size), Alignment(Alignment), AlignmentOffset(AlignmentOffset),
         Content(Content), SectionRef(SectionRef),
@@ -84,7 +84,7 @@ struct CASSymbol {
   bool IsLive;
   bool IsCallable;
   bool IsAutoHide;
-  Optional<CASBlockRef> BlockRef;
+  std::optional<CASBlockRef> BlockRef;
 
   bool isDefined() const { return BlockRef.has_value(); }
 };

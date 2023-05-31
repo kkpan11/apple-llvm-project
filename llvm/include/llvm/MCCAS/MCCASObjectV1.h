@@ -251,8 +251,8 @@ class MCSchema final : public RTTIExtends<MCSchema, MCFormatSchemaBase> {
 
 public:
   static char ID;
-  Optional<StringRef> getKindString(const cas::ObjectProxy &Node) const;
-  Optional<unsigned char> getKindStringID(StringRef KindString) const;
+  std::optional<StringRef> getKindString(const cas::ObjectProxy &Node) const;
+  std::optional<unsigned char> getKindStringID(StringRef KindString) const;
 
   cas::ObjectRef getRootNodeTypeID() const { return *RootNodeTypeID; }
 
@@ -289,9 +289,9 @@ private:
   // index.
   SmallVector<std::pair<unsigned char, StringRef>, 16> KindStrings;
 
-  // Optional as convenience for constructor, which does not return if it can't
-  // fill this in.
-  Optional<cas::ObjectRef> RootNodeTypeID;
+  // std::optional as convenience for constructor, which does not return if it
+  // can't fill this in.
+  std::optional<cas::ObjectRef> RootNodeTypeID;
 
   // Called by constructor. Not thread-safe.
   Error fillCache();
@@ -317,7 +317,7 @@ protected:
                              "expected MC object '" + FinalT::KindString + "'");
   }
 
-  static Optional<SpecificRef> Cast(MCObjectProxy Ref) {
+  static std::optional<SpecificRef> Cast(MCObjectProxy Ref) {
     if (Ref.getKindString() == FinalT::KindString)
       return SpecificRef(Ref);
     return std::nullopt;
@@ -338,10 +338,10 @@ protected:
     static Expected<RefName> get(const MCSchema &Schema, cas::ObjectRef ID) {  \
       return get(Schema.get(ID));                                              \
     }                                                                          \
-    static Optional<RefName> Cast(MCObjectProxy Ref) {                         \
+    static std::optional<RefName> Cast(MCObjectProxy Ref) {                    \
       auto Specific = SpecificRefT::Cast(Ref);                                 \
       if (!Specific)                                                           \
-        return std::nullopt;                                                           \
+        return std::nullopt;                                                   \
       return RefName(*Specific);                                               \
     }                                                                          \
     Expected<uint64_t> materialize(raw_ostream &OS) const {                    \
@@ -371,10 +371,10 @@ protected:
     static Expected<RefName> get(const MCSchema &Schema, cas::ObjectRef ID) {  \
       return get(Schema.get(ID));                                              \
     }                                                                          \
-    static Optional<RefName> Cast(MCObjectProxy Ref) {                         \
+    static std::optional<RefName> Cast(MCObjectProxy Ref) {                    \
       auto Specific = SpecificRefT::Cast(Ref);                                 \
       if (!Specific)                                                           \
-        return std::nullopt;                                                           \
+        return std::nullopt;                                                   \
       return RefName(*Specific);                                               \
     }                                                                          \
     Expected<uint64_t> materialize(MCCASReader &Reader,                        \
@@ -404,7 +404,7 @@ protected:
                                              cas::ObjectRef ID) {              \
       return get(Schema.get(ID));                                              \
     }                                                                          \
-    static Optional<MCFragmentName##Ref> Cast(MCObjectProxy Ref) {             \
+    static std::optional<MCFragmentName##Ref> Cast(MCObjectProxy Ref) {        \
       auto Specific = SpecificRefT::Cast(Ref);                                 \
       if (!Specific)                                                           \
         return std::nullopt;                                                   \
@@ -431,7 +431,7 @@ public:
   static Expected<PaddingRef> get(const MCSchema &Schema, cas::ObjectRef ID) {
     return get(Schema.get(ID));
   }
-  static Optional<PaddingRef> Cast(MCObjectProxy Ref) {
+  static std::optional<PaddingRef> Cast(MCObjectProxy Ref) {
     auto Specific = SpecificRefT::Cast(Ref);
     if (!Specific)
       return std::nullopt;
@@ -463,7 +463,7 @@ public:
 
   Error materialize(raw_ostream &OS) const;
 
-  static Optional<MCAssemblerRef> Cast(MCObjectProxy Ref) {
+  static std::optional<MCAssemblerRef> Cast(MCObjectProxy Ref) {
     auto Specific = SpecificRefT::Cast(Ref);
     if (!Specific)
       return std::nullopt;
@@ -663,12 +663,13 @@ public:
                                            cas::ObjectRef ID) {
     return get(Schema.get(ID));
   }
-  static Optional<DebugInfoSectionRef> Cast(MCObjectProxy Ref) {
+  static std::optional<DebugInfoSectionRef> Cast(MCObjectProxy Ref) {
     auto Specific = SpecificRefT::Cast(Ref);
     if (!Specific)
       return std::nullopt;
     return DebugInfoSectionRef(*Specific);
   }
+
 private:
   explicit DebugInfoSectionRef(SpecificRefT Ref) : SpecificRefT(Ref) {}
 };
@@ -692,7 +693,7 @@ public:
   static Expected<DIEDataRef> get(const MCSchema &Schema, cas::ObjectRef ID) {
     return get(Schema.get(ID));
   }
-  static Optional<DIEDataRef> Cast(MCObjectProxy Ref) {
+  static std::optional<DIEDataRef> Cast(MCObjectProxy Ref) {
     auto Specific = SpecificRefT::Cast(Ref);
     if (!Specific)
       return std::nullopt;

@@ -94,8 +94,8 @@ class ObjectFileSchema final
 
 public:
   static char ID;
-  Optional<StringRef> getKindString(const cas::ObjectProxy &Node) const;
-  Optional<unsigned char> getKindStringID(StringRef KindString) const;
+  std::optional<StringRef> getKindString(const cas::ObjectProxy &Node) const;
+  std::optional<unsigned char> getKindStringID(StringRef KindString) const;
 
   cas::ObjectRef getRootNodeTypeID() const { return *RootNodeTypeID; }
 
@@ -132,9 +132,9 @@ private:
   // index.
   SmallVector<std::pair<unsigned char, StringRef>, 16> KindStrings;
 
-  // Optional as convenience for constructor, which does not return if it can't
-  // fill this in.
-  Optional<cas::ObjectRef> RootNodeTypeID;
+  // std::optional as convenience for constructor, which does not return if it
+  // can't fill this in.
+  std::optional<cas::ObjectRef> RootNodeTypeID;
 
   // Called by constructor. Not thread-safe.
   Error fillCache();
@@ -256,8 +256,8 @@ public:
   uint64_t getAlignment() const { return Data.getAlignment(); }
   uint64_t getAlignmentOffset() const { return Data.getAlignmentOffset(); }
   FixupList getFixups() const { return Data.getFixups(); }
-  Optional<StringRef> getContent() const { return Data.getContent(); }
-  Optional<ArrayRef<char>> getContentArray() const {
+  std::optional<StringRef> getContent() const { return Data.getContent(); }
+  std::optional<ArrayRef<char>> getContentArray() const {
     return Data.getContentArray();
   }
 
@@ -289,7 +289,7 @@ private:
       : SpecificRefT(Ref), Data(Data) {}
 
   static Expected<BlockDataRef> createImpl(const ObjectFileSchema &Schema,
-                                           Optional<StringRef> Content,
+                                           std::optional<StringRef> Content,
                                            uint64_t Size, uint64_t Alignment,
                                            uint64_t AlignmentOffset,
                                            ArrayRef<Fixup> Fixups);
@@ -311,7 +311,7 @@ public:
 
   cas::CASID getID() const { return Schema->CAS.getID(ID); }
 
-  Expected<Optional<NameRef>> getName() const;
+  Expected<std::optional<NameRef>> getName() const;
 
   /// Get the name, which may be empty.
   Expected<StringRef> getNameString() const {
@@ -323,9 +323,9 @@ public:
 
   /// Get a \a TargetRef. If \c Kind is specified, returns an error on
   /// mismatch; otherwise just requires that it's a valid target.
-  static Expected<TargetRef> get(const ObjectFileSchema &Schema,
-                                 cas::ObjectRef ID,
-                                 Optional<Kind> ExpectedKind = std::nullopt);
+  static Expected<TargetRef>
+  get(const ObjectFileSchema &Schema, cas::ObjectRef ID,
+      std::optional<Kind> ExpectedKind = std::nullopt);
 
   static TargetRef getIndirectSymbol(const ObjectFileSchema &Schema,
                                      NameRef Ref) {
@@ -363,7 +363,7 @@ public:
   }
 
 private:
-  Optional<ObjectFormatObjectProxy> Node;
+  std::optional<ObjectFormatObjectProxy> Node;
   uint32_t First = 0;
   uint32_t Last = 0;
 };
@@ -422,10 +422,10 @@ public:
   /// mismatch; otherwise just requires that it's a valid target.
   static Expected<SymbolDefinitionRef>
   get(Expected<ObjectFormatObjectProxy> Ref,
-      Optional<Kind> ExpectedKind = std::nullopt);
+      std::optional<Kind> ExpectedKind = std::nullopt);
   static Expected<SymbolDefinitionRef>
   get(const ObjectFileSchema &Schema, cas::ObjectRef ID,
-      Optional<Kind> ExpectedKind = std::nullopt) {
+      std::optional<Kind> ExpectedKind = std::nullopt) {
     return get(Schema.get(ID), ExpectedKind);
   }
 
@@ -504,8 +504,8 @@ public:
   cas::ObjectRef getDataID() const { return getReference(1); }
 
 private:
-  Optional<size_t> getTargetsIndex() const;
-  Optional<cas::ObjectRef> getTargetInfoID() const;
+  std::optional<size_t> getTargetsIndex() const;
+  std::optional<cas::ObjectRef> getTargetInfoID() const;
 
 public:
   Expected<SectionRef> getSection() const {
@@ -518,10 +518,10 @@ public:
   Expected<TargetInfoList> getTargetInfo() const;
   Expected<TargetList> getTargets() const;
 
-  static Expected<BlockRef>
-  create(const ObjectFileSchema &Schema, const jitlink::Block &Block,
-         function_ref<Expected<Optional<TargetRef>>(const jitlink::Symbol &)>
-             GetTargetRef);
+  static Expected<BlockRef> create(
+      const ObjectFileSchema &Schema, const jitlink::Block &Block,
+      function_ref<Expected<std::optional<TargetRef>>(const jitlink::Symbol &)>
+          GetTargetRef);
 
   static Expected<BlockRef> create(const ObjectFileSchema &Schema,
                                    SectionRef Section, BlockDataRef Data) {
@@ -667,14 +667,14 @@ public:
   }
 
   cas::ObjectRef getDefinitionID() const { return getReference(0); }
-  Optional<cas::ObjectRef> getNameID() const {
-    return hasName() ? getReference(1) : Optional<cas::ObjectRef>();
+  std::optional<cas::ObjectRef> getNameID() const {
+    return hasName() ? getReference(1) : std::optional<cas::ObjectRef>();
   }
 
   Expected<SymbolDefinitionRef> getDefinition() const {
     return SymbolDefinitionRef::get(getSchema().get(getDefinitionID()));
   }
-  Expected<Optional<NameRef>> getName() const {
+  Expected<std::optional<NameRef>> getName() const {
     if (!hasName())
       return std::nullopt;
     return NameRef::get(getSchema(), *getNameID());
@@ -692,7 +692,7 @@ public:
   Expected<TargetRef> getAsIndirectTarget() const;
 
   static Expected<SymbolRef> create(const ObjectFileSchema &Schema,
-                                    Optional<NameRef> SymbolName,
+                                    std::optional<NameRef> SymbolName,
                                     SymbolDefinitionRef Definition,
                                     uint64_t Offset, Flags F);
 
@@ -731,7 +731,7 @@ public:
     return SymbolRef::get(getSchema().get(getSymbolID(I)));
   }
 
-  Expected<Optional<SymbolRef>> lookupSymbol(NameRef Name) const;
+  Expected<std::optional<SymbolRef>> lookupSymbol(NameRef Name) const;
 
   static Expected<SymbolTableRef> create(const ObjectFileSchema &Schema,
                                          ArrayRef<SymbolRef> Symbols);

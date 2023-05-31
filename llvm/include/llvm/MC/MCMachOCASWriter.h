@@ -40,7 +40,7 @@ public:
   const Triple Target;
   cas::ObjectStore &CAS;
   CASBackendMode Mode;
-  Optional<MCTargetOptions::ResultCallBackTy> ResultCallBack;
+  std::optional<MCTargetOptions::ResultCallBackTy> ResultCallBack;
 
   MachOCASWriter(
       std::unique_ptr<MCMachObjectTargetWriter> MOTW, const Triple &TT,
@@ -52,7 +52,7 @@ public:
           CreateFromMcAssembler,
       std::function<Error(cas::ObjectProxy, cas::ObjectStore &, raw_ostream &)>
           SerializeObjectFile,
-      Optional<MCTargetOptions::ResultCallBackTy> CallBack);
+      std::optional<MCTargetOptions::ResultCallBackTy> CallBack);
 
   void recordRelocation(MCAssembler &Asm, const MCAsmLayout &Layout,
                         const MCFragment *Fragment, const MCFixup &Fixup,
@@ -157,7 +157,7 @@ std::unique_ptr<MCObjectWriter> createMachOCASWriter(
         CreateFromMcAssembler,
     std::function<Error(cas::ObjectProxy, cas::ObjectStore &, raw_ostream &)>
         SerializeObjectFile,
-    Optional<MCTargetOptions::ResultCallBackTy> CallBack = std::nullopt);
+    std::optional<MCTargetOptions::ResultCallBackTy> CallBack = std::nullopt);
 
 } // end namespace llvm
 

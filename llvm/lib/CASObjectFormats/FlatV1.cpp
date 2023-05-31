@@ -75,7 +75,7 @@ ObjectFileSchema::ObjectFileSchema(cas::ObjectStore &CAS)
 }
 
 Error ObjectFileSchema::fillCache() {
-  Optional<cas::ObjectRef> RootKindID;
+  std::optional<cas::ObjectRef> RootKindID;
   const unsigned Version = 0; // Bump this to error on old object files.
   if (Error E = CAS.storeFromString(std::nullopt, "cas.o:flatv1:schema:" +
                                                       Twine(Version).str())
@@ -103,7 +103,7 @@ Error ObjectFileSchema::fillCache() {
       .moveInto(RootNodeTypeID);
 }
 
-Optional<StringRef>
+std::optional<StringRef>
 ObjectFileSchema::getKindString(const cas::ObjectProxy &Node) const {
   assert(&Node.getCAS() == &CAS);
   StringRef Data = Node.getData();
@@ -140,7 +140,7 @@ ObjectFormatObjectProxy::Builder::startRootNode(const ObjectFileSchema &Schema,
 }
 
 Error ObjectFormatObjectProxy::Builder::startNodeImpl(StringRef KindString) {
-  Optional<unsigned char> TypeID = Schema->getKindStringID(KindString);
+  std::optional<unsigned char> TypeID = Schema->getKindStringID(KindString);
   if (!TypeID)
     return createStringError(inconvertibleErrorCode(),
                              "invalid object format kind string: " +
@@ -164,12 +164,12 @@ Expected<ObjectFormatObjectProxy> ObjectFormatObjectProxy::Builder::build() {
 }
 
 StringRef ObjectFormatObjectProxy::getKindString() const {
-  Optional<StringRef> KS = getSchema().getKindString(*this);
+  std::optional<StringRef> KS = getSchema().getKindString(*this);
   assert(KS && "Expected valid kind string");
   return *KS;
 }
 
-Optional<unsigned char>
+std::optional<unsigned char>
 ObjectFileSchema::getKindStringID(StringRef KindString) const {
   for (auto &I : KindStrings)
     if (I.second == KindString)
@@ -346,13 +346,13 @@ Expected<BlockRef> BlockRef::create(CompileUnitBuilder &CUB,
 
   // Create BlockData.
   SmallString<1024> MutableContentStorage;
-  Optional<StringRef> Content;
+  std::optional<StringRef> Content;
   size_t BlockSize = Block.getSize();
   if (!Block.isZeroFill()) {
     // Normalize content and put it at the end of the block.
     // FIXME: assume current block alignment is the alignment for padding and
     // just pad every block.
-    Optional<Align> TrailingNopsAlignment;
+    std::optional<Align> TrailingNopsAlignment;
     TrailingNopsAlignment = Align{Block.getAlignment()};
     StringRef BlockContent(Block.getContent().begin(), Block.getSize());
     if (Error E = helpers::canonicalizeContent(CUB.TT.getArch(), BlockContent,
@@ -419,7 +419,7 @@ static Error decodeBlock(const FlatV1ObjectReader &Reader, unsigned BlockIdx,
 
 Expected<CASBlock> BlockRef::materializeBlock(const FlatV1ObjectReader &Reader,
                                               unsigned BlockIdx) const {
-  Optional<CASBlock> Info;
+  std::optional<CASBlock> Info;
   Error E =
       decodeBlock(Reader, BlockIdx, getData(),
                   [&](unsigned SectionIdx, unsigned NextOffset,

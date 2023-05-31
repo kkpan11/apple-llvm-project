@@ -109,7 +109,7 @@ struct CUInfo {
 };
 static Expected<CUInfo> getAndSetDebugAbbrevOffsetAndSkip(
     MutableArrayRef<char> CUData, support::endianness Endian,
-    Optional<uint32_t> NewOffset = std::nullopt, bool SkipData = true);
+    std::optional<uint32_t> NewOffset = std::nullopt, bool SkipData = true);
 Expected<cas::ObjectProxy>
 MCSchema::createFromMCAssemblerImpl(MachOCASWriter &ObjectWriter,
                                     MCAssembler &Asm, const MCAsmLayout &Layout,
@@ -146,7 +146,7 @@ MCSchema::MCSchema(cas::ObjectStore &CAS) : MCSchema::RTTIExtends(CAS) {
 }
 
 Error MCSchema::fillCache() {
-  Optional<cas::ObjectRef> RootKindID;
+  std::optional<cas::ObjectRef> RootKindID;
   const unsigned Version = 0; // Bump this to error on old object files.
   if (Error E = CAS.storeFromString(std::nullopt,
                                     "mc:v1:schema:" + Twine(Version).str())
@@ -179,7 +179,7 @@ Error MCSchema::fillCache() {
   return CAS.storeFromString(IDs, "mc:v1:root").moveInto(RootNodeTypeID);
 }
 
-Optional<StringRef>
+std::optional<StringRef>
 MCSchema::getKindString(const cas::ObjectProxy &Node) const {
   assert(&Node.getCAS() == &CAS);
   StringRef Data = Node.getData();
@@ -216,7 +216,7 @@ MCObjectProxy::Builder::startRootNode(const MCSchema &Schema,
 }
 
 Error MCObjectProxy::Builder::startNodeImpl(StringRef KindString) {
-  Optional<unsigned char> TypeID = Schema->getKindStringID(KindString);
+  std::optional<unsigned char> TypeID = Schema->getKindStringID(KindString);
   if (!TypeID)
     return createStringError(inconvertibleErrorCode(),
                              "invalid mc format kind string: " + KindString);
@@ -238,12 +238,13 @@ Expected<MCObjectProxy> MCObjectProxy::Builder::build() {
 }
 
 StringRef MCObjectProxy::getKindString() const {
-  Optional<StringRef> KS = getSchema().getKindString(*this);
+  std::optional<StringRef> KS = getSchema().getKindString(*this);
   assert(KS && "Expected valid kind string");
   return *KS;
 }
 
-Optional<unsigned char> MCSchema::getKindStringID(StringRef KindString) const {
+std::optional<unsigned char>
+MCSchema::getKindStringID(StringRef KindString) const {
   for (auto &I : KindStrings)
     if (I.second == KindString)
       return I.first;
@@ -1603,10 +1604,9 @@ mccasformats::v1::getSizeFromDwarfHeaderAndSkip(BinaryStreamReader &Reader) {
 /// contained in CUData, as well as the total number of bytes taken by the CU.
 /// Note: this is different from the length field of the Dwarf header, which
 /// does not account for the header size.
-static Expected<CUInfo>
-getAndSetDebugAbbrevOffsetAndSkip(MutableArrayRef<char> CUData,
-                                  support::endianness Endian,
-                                  Optional<uint32_t> NewOffset, bool SkipData) {
+static Expected<CUInfo> getAndSetDebugAbbrevOffsetAndSkip(
+    MutableArrayRef<char> CUData, support::endianness Endian,
+    std::optional<uint32_t> NewOffset, bool SkipData) {
   BinaryStreamReader Reader(toStringRef(CUData), Endian);
   Expected<size_t> Size = getSizeFromDwarfHeader(Reader);
   if (!Size)

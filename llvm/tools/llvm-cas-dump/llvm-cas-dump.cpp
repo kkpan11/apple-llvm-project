@@ -204,7 +204,7 @@ int main(int argc, char *argv[]) {
       PrintToStdout = true;
 
     raw_ostream *StatOS = &outs();
-    Optional<raw_fd_ostream> StatsFile;
+    std::optional<raw_fd_ostream> StatsFile;
 
     if (!PrintToStdout) {
       std::error_code EC;

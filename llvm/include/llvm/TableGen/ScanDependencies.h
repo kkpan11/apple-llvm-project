@@ -50,9 +50,9 @@ Error scanTextForIncludes(cas::ObjectStore &CAS, cas::ActionCache &Cache,
 /// Match logic from SourceMgr::AddIncludeFile.
 ///
 /// FIXME: Take CASFileSystemBase once it adds statusAndFileID().
-Optional<cas::ObjectRef> lookupIncludeID(cas::CachingOnDiskFileSystem &FS,
-                                         ArrayRef<std::string> IncludeDirs,
-                                         StringRef Filename);
+std::optional<cas::ObjectRef> lookupIncludeID(cas::CachingOnDiskFileSystem &FS,
+                                              ArrayRef<std::string> IncludeDirs,
+                                              StringRef Filename);
 
 /// Helper to access all includes under \p MainFileBlob.
 ///
@@ -85,7 +85,7 @@ scanIncludes(cas::ObjectStore &CAS, cas::ActionCache &Cache,
              cas::ObjectRef ExecID, StringRef MainFilename,
              ArrayRef<std::string> IncludeDirs,
              ArrayRef<MappedPrefix> PrefixMappings = std::nullopt,
-             Optional<TreePathPrefixMapper> *CapturedPM = nullptr);
+             std::optional<TreePathPrefixMapper> *CapturedPM = nullptr);
 
 /// Scan includes and build a CAS tree where their prefixes have been remapped
 /// according to \a PrefixMappings. Also remap the main file and include

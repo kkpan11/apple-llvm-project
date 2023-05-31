@@ -20,7 +20,7 @@ using namespace llvm::casobjectformats::nestedv1;
 namespace {
 
 template <typename T>
-static Error unwrapExpected(Expected<T> &&E, Optional<T> &O) {
+static Error unwrapExpected(Expected<T> &&E, std::optional<T> &O) {
   O.reset();
   if (!E)
     return E.takeError();
@@ -83,15 +83,15 @@ protected:
     G.reset();
   }
 
-  Optional<jitlink::LinkGraph> G;
+  std::optional<jitlink::LinkGraph> G;
   jitlink::Section *Section = nullptr;
   jitlink::Block *Z = nullptr;
   jitlink::Symbol *DefinedS = nullptr;
   std::unique_ptr<cas::ObjectStore> CAS;
-  Optional<ObjectFileSchema> Schema;
-  Optional<NameRef> CreatedExternalS;
-  Optional<BlockRef> ZeroBlock;
-  Optional<SymbolRef> CreatedDefinedS;
+  std::optional<ObjectFileSchema> Schema;
+  std::optional<NameRef> CreatedExternalS;
+  std::optional<BlockRef> ZeroBlock;
+  std::optional<SymbolRef> CreatedDefinedS;
 };
 
 TEST_F(TargetListTest, empty) {
@@ -110,7 +110,7 @@ TEST_F(TargetListTest, symbols) {
   };
 
   // Create a list.
-  Optional<TargetListRef> ListRef =
+  std::optional<TargetListRef> ListRef =
       expectedToOptional(TargetListRef::create(*Schema, Input));
   ASSERT_TRUE(ListRef);
   TargetList List = ListRef->getTargets();
@@ -119,7 +119,7 @@ TEST_F(TargetListTest, symbols) {
   ASSERT_FALSE(List.empty());
   ASSERT_EQ(std::extent<decltype(Input)>::value, List.size());
   for (size_t I = 0, E = List.size(); I != E; ++I) {
-    Optional<TargetRef> Ref = expectedToOptional(List[I]);
+    std::optional<TargetRef> Ref = expectedToOptional(List[I]);
     ASSERT_TRUE(Ref);
     ASSERT_EQ(Input[I].getID(), Ref->getID());
     ASSERT_EQ(Input[I].getKind(), Ref->getKind());

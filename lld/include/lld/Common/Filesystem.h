@@ -10,7 +10,6 @@
 #define LLD_FILESYSTEM_H
 
 #include "lld/Common/LLVM.h"
-#include "llvm/ADT/Optional.h"
 #include <system_error>
 
 namespace llvm {
@@ -32,8 +31,8 @@ std::error_code tryCreateFile(StringRef path);
 
 Expected<llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem>>
 createFileSystem(llvm::cas::ObjectStore *CAS,
-                 llvm::Optional<StringRef> CASFileSystemRootID,
-                 llvm::Optional<StringRef> CASFileSystemWorkingDirectory);
+                 std::optional<StringRef> CASFileSystemRootID,
+                 std::optional<StringRef> CASFileSystemWorkingDirectory);
 
 } // namespace lld
 

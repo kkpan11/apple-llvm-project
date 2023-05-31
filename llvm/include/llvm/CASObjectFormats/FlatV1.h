@@ -88,8 +88,8 @@ class ObjectFileSchema final
 
 public:
   static char ID;
-  Optional<StringRef> getKindString(const cas::ObjectProxy &Node) const;
-  Optional<unsigned char> getKindStringID(StringRef KindString) const;
+  std::optional<StringRef> getKindString(const cas::ObjectProxy &Node) const;
+  std::optional<unsigned char> getKindStringID(StringRef KindString) const;
 
   cas::ObjectRef getRootNodeTypeID() const { return *RootNodeTypeID; }
 
@@ -126,9 +126,9 @@ private:
   // index.
   SmallVector<std::pair<unsigned char, StringRef>, 16> KindStrings;
 
-  // Optional as convenience for constructor, which does not return if it can't
-  // fill this in.
-  Optional<cas::ObjectRef> RootNodeTypeID;
+  // std::optional as convenience for constructor, which does not return if it
+  // can't fill this in.
+  std::optional<cas::ObjectRef> RootNodeTypeID;
 
   // Called by constructor. Not thread-safe.
   Error fillCache();

@@ -276,17 +276,17 @@ namespace {
 struct TableGenCache {
   std::unique_ptr<cas::ObjectStore> CAS;
   std::unique_ptr<cas::ActionCache> Cache;
-  Optional<cas::ObjectRef> ExecutableID;
-  Optional<cas::ObjectRef> IncludesTreeID;
-  Optional<cas::ObjectRef> ActionID;
-  Optional<cas::ObjectRef> ResultID;
-  Optional<cas::ObjectRef> MainFileID;
+  std::optional<cas::ObjectRef> ExecutableID;
+  std::optional<cas::ObjectRef> IncludesTreeID;
+  std::optional<cas::ObjectRef> ActionID;
+  std::optional<cas::ObjectRef> ResultID;
+  std::optional<cas::ObjectRef> MainFileID;
   std::unique_ptr<MemoryBuffer> MainFile;
-  Optional<std::string> OriginalInputFilename;
+  std::optional<std::string> OriginalInputFilename;
 
   SmallVector<MappedPrefix> PrefixMappings;
   BumpPtrAllocator Alloc;
-  Optional<PrefixMapper> InversePM;
+  std::optional<PrefixMapper> InversePM;
 
   TableGenCache() = default;
   ~TableGenCache() { CreateDependencyFilePM = nullptr; }
@@ -420,7 +420,7 @@ Error TableGenCache::lookupCachedResult(ArrayRef<const char *> Args) {
   if (!Result)
     return Result.takeError();
   if (*Result) {
-    if (Optional<cas::ObjectRef> ID = CAS->getReference(**Result))
+    if (std::optional<cas::ObjectRef> ID = CAS->getReference(**Result))
       ResultID = *ID;
   }
   return Error::success();
@@ -522,8 +522,8 @@ Error TableGenCache::replayResult() {
     return Tree.takeError();
 
   auto getBlob = [&](StringRef Name,
-                     Optional<cas::ObjectProxy> &Blob) -> Error {
-    Optional<cas::NamedTreeEntry> Entry = Tree->lookup(Name);
+                     std::optional<cas::ObjectProxy> &Blob) -> Error {
+    std::optional<cas::NamedTreeEntry> Entry = Tree->lookup(Name);
     if (!Entry)
       return Error::success();
     Expected<cas::ObjectProxy> ExpectedBlob = CAS->getProxy(*ResultID);
@@ -532,9 +532,9 @@ Error TableGenCache::replayResult() {
     Blob = *ExpectedBlob;
     return Error::success();
   };
-  Optional<cas::ObjectProxy> Output;
-  Optional<cas::ObjectProxy> Depend;
-  Optional<cas::ObjectProxy> Stderr;
+  std::optional<cas::ObjectProxy> Output;
+  std::optional<cas::ObjectProxy> Depend;
+  std::optional<cas::ObjectProxy> Stderr;
   if (Error E = getBlob("output", Output))
     return E;
   if (Error E = getBlob("depend", Depend))

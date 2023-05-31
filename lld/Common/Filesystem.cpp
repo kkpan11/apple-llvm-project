@@ -133,8 +133,8 @@ std::error_code lld::tryCreateFile(StringRef path) {
 
 Expected<IntrusiveRefCntPtr<llvm::vfs::FileSystem>>
 lld::createFileSystem(cas::ObjectStore *CAS,
-                      Optional<StringRef> CASFileSystemRootID,
-                      Optional<StringRef> CASFileSystemWorkingDirectory) {
+                      std::optional<StringRef> CASFileSystemRootID,
+                      std::optional<StringRef> CASFileSystemWorkingDirectory) {
   if (!CAS || !CASFileSystemRootID.has_value())
     return llvm::vfs::getRealFileSystem();
 

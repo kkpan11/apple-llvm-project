@@ -119,18 +119,18 @@ Error tablegen::scanTextForIncludes(cas::ObjectStore &CAS,
   if (!Result)
     return Result.takeError();
   if (*Result) {
-    if (Optional<cas::ObjectRef> ResultID = CAS.getReference(**Result))
+    if (std::optional<cas::ObjectRef> ResultID = CAS.getReference(**Result))
       return fetchCachedIncludedFiles(CAS, *ResultID, Includes);
   }
   return computeIncludedFiles(CAS, Cache, KeyID, Blob.getData(), Includes);
 }
 
-Optional<cas::ObjectRef>
+std::optional<cas::ObjectRef>
 tablegen::lookupIncludeID(cas::CachingOnDiskFileSystem &FS,
                           ArrayRef<std::string> IncludeDirs,
                           StringRef Filename) {
   SmallString<256> Path;
-  Optional<cas::CASID> ID;
+  std::optional<cas::CASID> ID;
   if (!FS.statusAndFileID(Filename, ID).getError())
     return FS.getCAS().getReference(*ID);
   for (StringRef Dir : IncludeDirs) {
@@ -177,7 +177,7 @@ Error tablegen::accessAllIncludes(cas::CachingOnDiskFileSystem &FS,
     // Add included files to the worklist. Ignore files not found, since the
     // fuzzy search above could have found commented out includes.
     for (StringRef IncludedFile : IncludedFiles)
-      if (Optional<cas::ObjectRef> ID =
+      if (std::optional<cas::ObjectRef> ID =
               lookupIncludeID(FS, IncludeDirs, IncludedFile))
         if (Error E = push(*ID))
           return E;
@@ -198,7 +198,7 @@ static Expected<cas::ObjectProxy> openMainFile(cas::CachingOnDiskFileSystem &FS,
     return CAS.createProxy(std::nullopt, (**MaybeFile).getBuffer());
   }
 
-  Optional<cas::CASID> MainFileID;
+  std::optional<cas::CASID> MainFileID;
   if (std::error_code EC =
           FS.statusAndFileID(MainFilename, MainFileID).getError())
     return createMainFileError(MainFilename, EC);
@@ -217,7 +217,7 @@ tablegen::scanIncludes(cas::ObjectStore &CAS, cas::ActionCache &Cache,
                        cas::ObjectRef ExecID, StringRef MainFilename,
                        ArrayRef<std::string> IncludeDirs,
                        ArrayRef<MappedPrefix> PrefixMappings,
-                       Optional<TreePathPrefixMapper> *CapturedPM) {
+                       std::optional<TreePathPrefixMapper> *CapturedPM) {
   IntrusiveRefCntPtr<cas::CachingOnDiskFileSystem> FS;
   if (Error E = cas::createCachingOnDiskFileSystem(CAS).moveInto(FS))
     return std::move(E);
@@ -231,8 +231,8 @@ tablegen::scanIncludes(cas::ObjectStore &CAS, cas::ActionCache &Cache,
   if (Error E = accessAllIncludes(*FS, Cache, ExecID, IncludeDirs, *MainBlob))
     return std::move(E);
 
-  Optional<TreePathPrefixMapper> LocalPM;
-  Optional<TreePathPrefixMapper> &PM = CapturedPM ? *CapturedPM : LocalPM;
+  std::optional<TreePathPrefixMapper> LocalPM;
+  std::optional<TreePathPrefixMapper> &PM = CapturedPM ? *CapturedPM : LocalPM;
   if (!PrefixMappings.empty()) {
     PM.emplace(FS);
     PM->addRange(PrefixMappings);
@@ -255,7 +255,7 @@ tablegen::scanIncludesAndRemap(cas::ObjectStore &CAS, cas::ActionCache &Cache,
                                cas::ObjectRef ExecID, std::string &MainFilename,
                                std::vector<std::string> &IncludeDirs,
                                ArrayRef<MappedPrefix> PrefixMappings) {
-  Optional<TreePathPrefixMapper> PM;
+  std::optional<TreePathPrefixMapper> PM;
   auto Result = scanIncludes(CAS, Cache, ExecID, MainFilename, IncludeDirs,
                              PrefixMappings, &PM);
   if (!Result)
