@@ -716,12 +716,7 @@ static void addPGOAndCoverageFlags(const ToolChain &TC, Compilation &C,
       PGOGenerateArg->getOption().matches(options::OPT_fno_profile_generate))
     PGOGenerateArg = nullptr;
 
-  auto *CSPGOGenerateArg = Args.getLastArg(options::OPT_fcs_profile_generate,
-                                           options::OPT_fcs_profile_generate_EQ,
-                                           options::OPT_fno_profile_generate);
-  if (CSPGOGenerateArg &&
-      CSPGOGenerateArg->getOption().matches(options::OPT_fno_profile_generate))
-    CSPGOGenerateArg = nullptr;
+  auto *CSPGOGenerateArg = getLastCSProfileGenerateArg(Args);
 
   auto *ProfileGenerateArg = Args.getLastArg(
       options::OPT_fprofile_instr_generate,
@@ -4116,6 +4111,9 @@ static void RenderDiagnosticsOptions(const Driver &D, const ArgList &Args,
 
   Args.addOptOutFlag(CmdArgs, options::OPT_fshow_source_location,
                      options::OPT_fno_show_source_location);
+
+  Args.addOptOutFlag(CmdArgs, options::OPT_fdiagnostics_show_line_numbers,
+                     options::OPT_fno_diagnostics_show_line_numbers);
 
   if (Args.hasArg(options::OPT_fdiagnostics_absolute_paths))
     CmdArgs.push_back("-fdiagnostics-absolute-paths");

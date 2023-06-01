@@ -124,6 +124,12 @@ def strict_auto_link : Flag<["--"], "strict-auto-link">,
 def check_category_conflicts : Flag<["--"], "check-category-conflicts">,
     HelpText<"Check for conflicts between category & class methods">,
     Group<grp_lld>;
+def lto_debug_pass_manager: Flag<["--"], "lto-debug-pass-manager">,
+    HelpText<"Debug new pass manager">, Group<grp_lld>;
+def cs_profile_generate: Flag<["--"], "cs-profile-generate">,
+    HelpText<"Perform context senstive PGO instrumentation">, Group<grp_lld>;
+def cs_profile_path: Joined<["--"], "cs-profile-path=">,
+    HelpText<"Context sensitive profile file path">, Group<grp_lld>;
 
 // CAS-related options.
 // FIXME: Include missing CAS options from clang.
