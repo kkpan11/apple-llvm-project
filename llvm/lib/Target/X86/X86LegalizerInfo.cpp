@@ -63,10 +63,16 @@ X86LegalizerInfo::X86LegalizerInfo(const X86Subtarget &STI,
 
   bool Is64Bit = Subtarget.is64Bit();
   bool HasSSE2 = Subtarget.hasSSE2();
+  bool HasSSE41 = Subtarget.hasSSE41();
+  bool HasAVX = Subtarget.hasAVX();
   bool HasAVX2 = Subtarget.hasAVX2();
   bool HasAVX512 = Subtarget.hasAVX512();
+  bool HasVLX = Subtarget.hasVLX();
+  bool HasDQI = Subtarget.hasAVX512() && Subtarget.hasDQI();
   bool HasBWI = Subtarget.hasAVX512() && Subtarget.hasBWI();
 
+  const LLT p0 = LLT::pointer(0, TM.getPointerSizeInBits(0));
+  const LLT s1 = LLT::scalar(1);
   const LLT s8 = LLT::scalar(8);
   const LLT s16 = LLT::scalar(16);
   const LLT s32 = LLT::scalar(32);
@@ -117,6 +123,39 @@ X86LegalizerInfo::X86LegalizerInfo(const X86Subtarget &STI,
       .clampScalar(0, s8, sMaxScalar)
       .scalarize(0);
 
+  // integer multiply
+  getActionDefinitionsBuilder(G_MUL)
+      .legalIf([=](const LegalityQuery &Query) -> bool {
+        if (typeInSet(0, {s8, s16, s32})(Query))
+          return true;
+        if (Is64Bit && typeInSet(0, {s64})(Query))
+          return true;
+        if (HasSSE2 && typeInSet(0, {v8s16})(Query))
+          return true;
+        if (HasSSE41 && typeInSet(0, {v4s32})(Query))
+          return true;
+        if (HasAVX2 && typeInSet(0, {v16s16, v8s32})(Query))
+          return true;
+        if (HasAVX512 && typeInSet(0, {v16s32})(Query))
+          return true;
+        if (HasDQI && typeInSet(0, {v8s64})(Query))
+          return true;
+        if (HasDQI && HasVLX && typeInSet(0, {v2s64, v4s64})(Query))
+          return true;
+        if (HasBWI && typeInSet(0, {v32s16})(Query))
+          return true;
+        return false;
+      })
+      .clampMinNumElements(0, s16, 8)
+      .clampMinNumElements(0, s32, 4)
+      .clampMinNumElements(0, s64, HasVLX ? 2 : 8)
+      .clampMaxNumElements(0, s16, HasBWI ? 32 : (HasAVX2 ? 16 : 8))
+      .clampMaxNumElements(0, s32, HasAVX512 ? 16 : (HasAVX2 ? 8 : 4))
+      .clampMaxNumElements(0, s64, 8)
+      .widenScalarToNextPow2(0, /*Min=*/32)
+      .clampScalar(0, s8, sMaxScalar)
+      .scalarize(0);
+
   // integer divisions
   getActionDefinitionsBuilder({G_SDIV, G_SREM, G_UDIV, G_UREM})
       .legalIf([=](const LegalityQuery &Query) -> bool {
@@ -133,6 +172,33 @@ X86LegalizerInfo::X86LegalizerInfo(const X86Subtarget &STI,
       })
       .clampScalar(0, s8, sMaxScalar)
       .clampScalar(1, s8, s8);
+
+  // integer logic
+  getActionDefinitionsBuilder({G_AND, G_OR, G_XOR})
+      .legalIf([=](const LegalityQuery &Query) -> bool {
+        if (typeInSet(0, {s8, s16, s32})(Query))
+          return true;
+        if (Is64Bit && typeInSet(0, {s64})(Query))
+          return true;
+        if (HasSSE2 && typeInSet(0, {v16s8, v8s16, v4s32, v2s64})(Query))
+          return true;
+        if (HasAVX && typeInSet(0, {v32s8, v16s16, v8s32, v4s64})(Query))
+          return true;
+        if (HasAVX512 && typeInSet(0, {v64s8, v32s16, v16s32, v8s64})(Query))
+          return true;
+        return false;
+      })
+      .clampMinNumElements(0, s8, 16)
+      .clampMinNumElements(0, s16, 8)
+      .clampMinNumElements(0, s32, 4)
+      .clampMinNumElements(0, s64, 2)
+      .clampMaxNumElements(0, s8, HasAVX512 ? 64 : (HasAVX ? 32 : 16))
+      .clampMaxNumElements(0, s16, HasAVX512 ? 32 : (HasAVX ? 16 : 8))
+      .clampMaxNumElements(0, s32, HasAVX512 ? 16 : (HasAVX ? 8 : 4))
+      .clampMaxNumElements(0, s64, HasAVX512 ? 8 : (HasAVX ? 4 : 2))
+      .widenScalarToNextPow2(0, /*Min=*/32)
+      .clampScalar(0, s8, sMaxScalar)
+      .scalarize(0);
 
   // bswap
   getActionDefinitionsBuilder(G_BSWAP)
@@ -163,17 +229,24 @@ X86LegalizerInfo::X86LegalizerInfo(const X86Subtarget &STI,
       .widenScalarToNextPow2(1, /*Min=*/16)
       .clampScalar(1, s16, sMaxScalar);
 
+  // pointer handling
+  const std::initializer_list<LLT> PtrTypes32 = {s1, s8, s16, s32};
+  const std::initializer_list<LLT> PtrTypes64 = {s1, s8, s16, s32, s64};
+
+  getActionDefinitionsBuilder(G_PTRTOINT)
+      .legalForCartesianProduct(Is64Bit ? PtrTypes64 : PtrTypes32, {p0})
+      .maxScalar(0, sMaxScalar)
+      .widenScalarToNextPow2(0, /*Min*/ 8);
+
+  getActionDefinitionsBuilder(G_INTTOPTR).legalFor({{p0, sMaxScalar}});
+
   setLegalizerInfo32bit();
   setLegalizerInfo64bit();
   setLegalizerInfoSSE1();
   setLegalizerInfoSSE2();
-  setLegalizerInfoSSE41();
-  setLegalizerInfoSSE42();
   setLegalizerInfoAVX();
   setLegalizerInfoAVX2();
   setLegalizerInfoAVX512();
-  setLegalizerInfoAVX512DQ();
-  setLegalizerInfoAVX512BW();
 
   getActionDefinitionsBuilder(G_INTRINSIC_ROUNDEVEN)
     .scalarize(0)
@@ -182,8 +255,6 @@ X86LegalizerInfo::X86LegalizerInfo(const X86Subtarget &STI,
 
   auto &LegacyInfo = getLegacyLegalizerInfo();
   LegacyInfo.setLegalizeScalarToDifferentSizeStrategy(G_PHI, 0, widen_1);
-  for (unsigned BinOp : {G_MUL, G_AND, G_OR, G_XOR})
-    LegacyInfo.setLegalizeScalarToDifferentSizeStrategy(BinOp, 0, widen_1);
   for (unsigned MemOp : {G_LOAD, G_STORE})
     LegacyInfo.setLegalizeScalarToDifferentSizeStrategy(
         MemOp, 0, LegacyLegalizerInfo::narrowToSmallerAndWidenToSmallest);
@@ -223,10 +294,6 @@ void X86LegalizerInfo::setLegalizerInfo32bit() {
   for (auto Ty : {s8, s16, s32, p0})
     LegacyInfo.setAction({G_PHI, Ty}, LegacyLegalizeActions::Legal);
 
-  for (unsigned BinOp : {G_MUL, G_AND, G_OR, G_XOR})
-    for (auto Ty : {s8, s16, s32})
-      LegacyInfo.setAction({BinOp, Ty}, LegacyLegalizeActions::Legal);
-
   for (unsigned Op : {G_UADDE}) {
     LegacyInfo.setAction({Op, s32}, LegacyLegalizeActions::Legal);
     LegacyInfo.setAction({Op, 1, s1}, LegacyLegalizeActions::Legal);
@@ -248,12 +315,6 @@ void X86LegalizerInfo::setLegalizerInfo32bit() {
   LegacyInfo.setAction({G_PTR_ADD, 1, s32}, LegacyLegalizeActions::Legal);
 
   if (!Subtarget.is64Bit()) {
-    getActionDefinitionsBuilder(G_PTRTOINT)
-        .legalForCartesianProduct({s1, s8, s16, s32}, {p0})
-        .maxScalar(0, s32)
-        .widenScalarToNextPow2(0, /*Min*/ 8);
-    getActionDefinitionsBuilder(G_INTTOPTR).legalFor({{p0, s32}});
-
     // Comparison
     getActionDefinitionsBuilder(G_ICMP)
         .legalForCartesianProduct({s8}, {s8, s16, s32, p0})
@@ -295,7 +356,6 @@ void X86LegalizerInfo::setLegalizerInfo64bit() {
     return;
 
   const LLT p0 = LLT::pointer(0, TM.getPointerSizeInBits(0));
-  const LLT s1 = LLT::scalar(1);
   const LLT s8 = LLT::scalar(8);
   const LLT s16 = LLT::scalar(16);
   const LLT s32 = LLT::scalar(32);
@@ -311,19 +371,11 @@ void X86LegalizerInfo::setLegalizerInfo64bit() {
 
   LegacyInfo.setAction({G_PHI, s64}, LegacyLegalizeActions::Legal);
 
-  for (unsigned BinOp : {G_MUL, G_AND, G_OR, G_XOR})
-    LegacyInfo.setAction({BinOp, s64}, LegacyLegalizeActions::Legal);
-
   for (unsigned MemOp : {G_LOAD, G_STORE})
     LegacyInfo.setAction({MemOp, s64}, LegacyLegalizeActions::Legal);
 
   // Pointer-handling
   LegacyInfo.setAction({G_PTR_ADD, 1, s64}, LegacyLegalizeActions::Legal);
-  getActionDefinitionsBuilder(G_PTRTOINT)
-      .legalForCartesianProduct({s1, s8, s16, s32, s64}, {p0})
-      .maxScalar(0, s64)
-      .widenScalarToNextPow2(0, /*Min*/ 8);
-  getActionDefinitionsBuilder(G_INTTOPTR).legalFor({{p0, s64}});
 
   // Constants
   LegacyInfo.setAction({TargetOpcode::G_CONSTANT, s64},
@@ -423,8 +475,6 @@ void X86LegalizerInfo::setLegalizerInfoSSE2() {
     for (auto Ty : {s64, v2s64})
       LegacyInfo.setAction({BinOp, Ty}, LegacyLegalizeActions::Legal);
 
-  LegacyInfo.setAction({G_MUL, v8s16}, LegacyLegalizeActions::Legal);
-
   LegacyInfo.setAction({G_FPEXT, s64}, LegacyLegalizeActions::Legal);
   LegacyInfo.setAction({G_FPEXT, 1, s32}, LegacyLegalizeActions::Legal);
 
@@ -447,23 +497,6 @@ void X86LegalizerInfo::setLegalizerInfoSSE2() {
                          LegacyLegalizeActions::Legal);
     LegacyInfo.setAction({G_UNMERGE_VALUES, Ty}, LegacyLegalizeActions::Legal);
   }
-}
-
-void X86LegalizerInfo::setLegalizerInfoSSE41() {
-  if (!Subtarget.hasSSE41())
-    return;
-
-  const LLT v4s32 = LLT::fixed_vector(4, 32);
-
-  auto &LegacyInfo = getLegacyLegalizerInfo();
-
-  LegacyInfo.setAction({G_MUL, v4s32}, LegacyLegalizeActions::Legal);
-}
-
-void X86LegalizerInfo::setLegalizerInfoSSE42() {
-  if (!Subtarget.hasSSE42())
-    return;
-
 }
 
 void X86LegalizerInfo::setLegalizerInfoAVX() {
@@ -529,9 +562,6 @@ void X86LegalizerInfo::setLegalizerInfoAVX2() {
 
   auto &LegacyInfo = getLegacyLegalizerInfo();
 
-  for (auto Ty : {v16s16, v8s32})
-    LegacyInfo.setAction({G_MUL, Ty}, LegacyLegalizeActions::Legal);
-
   // Merge/Unmerge
   for (const auto &Ty : {v64s8, v32s16, v16s32, v8s64}) {
     LegacyInfo.setAction({G_CONCAT_VECTORS, Ty}, LegacyLegalizeActions::Legal);
@@ -543,9 +573,6 @@ void X86LegalizerInfo::setLegalizerInfoAVX2() {
                          LegacyLegalizeActions::Legal);
     LegacyInfo.setAction({G_UNMERGE_VALUES, Ty}, LegacyLegalizeActions::Legal);
   }
-
-  getActionDefinitionsBuilder({G_AND, G_OR, G_XOR})
-    .legalFor({v8s32, v4s64});
 }
 
 void X86LegalizerInfo::setLegalizerInfoAVX512() {
@@ -569,9 +596,6 @@ void X86LegalizerInfo::setLegalizerInfoAVX512() {
 
   auto &LegacyInfo = getLegacyLegalizerInfo();
 
-
-  LegacyInfo.setAction({G_MUL, v16s32}, LegacyLegalizeActions::Legal);
-
   for (unsigned MemOp : {G_LOAD, G_STORE})
     for (auto Ty : {v16s32, v8s64})
       LegacyInfo.setAction({MemOp, Ty}, LegacyLegalizeActions::Legal);
@@ -584,53 +608,4 @@ void X86LegalizerInfo::setLegalizerInfoAVX512() {
     LegacyInfo.setAction({G_INSERT, 1, Ty}, LegacyLegalizeActions::Legal);
     LegacyInfo.setAction({G_EXTRACT, Ty}, LegacyLegalizeActions::Legal);
   }
-
-  /************ VLX *******************/
-  if (!Subtarget.hasVLX())
-    return;
-
-  for (auto Ty : {v4s32, v8s32})
-    LegacyInfo.setAction({G_MUL, Ty}, LegacyLegalizeActions::Legal);
-}
-
-void X86LegalizerInfo::setLegalizerInfoAVX512DQ() {
-  if (!(Subtarget.hasAVX512() && Subtarget.hasDQI()))
-    return;
-
-  const LLT v8s64 = LLT::fixed_vector(8, 64);
-
-  auto &LegacyInfo = getLegacyLegalizerInfo();
-
-  LegacyInfo.setAction({G_MUL, v8s64}, LegacyLegalizeActions::Legal);
-
-  /************ VLX *******************/
-  if (!Subtarget.hasVLX())
-    return;
-
-  const LLT v2s64 = LLT::fixed_vector(2, 64);
-  const LLT v4s64 = LLT::fixed_vector(4, 64);
-
-  for (auto Ty : {v2s64, v4s64})
-    LegacyInfo.setAction({G_MUL, Ty}, LegacyLegalizeActions::Legal);
-}
-
-void X86LegalizerInfo::setLegalizerInfoAVX512BW() {
-  if (!(Subtarget.hasAVX512() && Subtarget.hasBWI()))
-    return;
-
-  const LLT v32s16 = LLT::fixed_vector(32, 16);
-
-  auto &LegacyInfo = getLegacyLegalizerInfo();
-
-  LegacyInfo.setAction({G_MUL, v32s16}, LegacyLegalizeActions::Legal);
-
-  /************ VLX *******************/
-  if (!Subtarget.hasVLX())
-    return;
-
-  const LLT v8s16 = LLT::fixed_vector(8, 16);
-  const LLT v16s16 = LLT::fixed_vector(16, 16);
-
-  for (auto Ty : {v8s16, v16s16})
-    LegacyInfo.setAction({G_MUL, Ty}, LegacyLegalizeActions::Legal);
 }
