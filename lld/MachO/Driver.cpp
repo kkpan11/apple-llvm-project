@@ -346,7 +346,7 @@ static InputFile *addFile(StringRef path, LoadType loadType,
 
     bool isLCLinkerForceLoad = loadType == LoadType::LCLinkerOption &&
                                config->forceLoadSwift &&
-                               path::filename(path).startswith("libswift");
+                               path::filename(path).starts_with("libswift");
     if ((isCommandLineLoad && config->allLoad) ||
         loadType == LoadType::CommandLineForce || isLCLinkerForceLoad) {
       if (std::optional<MemoryBufferRef> buffer = readFile(path)) {
@@ -374,7 +374,7 @@ static InputFile *addFile(StringRef path, LoadType loadType,
       }
     } else if (isCommandLineLoad && config->forceLoadObjC) {
       for (const object::Archive::Symbol &sym : file->getArchive().symbols())
-        if (sym.getName().startswith(objc::klass))
+        if (sym.getName().starts_with(objc::klass))
           file->fetch(sym);
 
       // TODO: no need to look for ObjC sections for a given archive member if
@@ -505,7 +505,7 @@ static InputFile *addFile(StringRef path, LoadType loadType,
     if ((isa<ObjFile>(newFile) || isa<BitcodeFile>(newFile)) && newFile->lazy &&
         config->forceLoadObjC) {
       for (Symbol *sym : newFile->symbols)
-        if (sym && sym->getName().startswith(objc::klass)) {
+        if (sym && sym->getName().starts_with(objc::klass)) {
           extract(*newFile, "-ObjC");
           break;
         }
@@ -1109,7 +1109,7 @@ static std::vector<SectionAlign> parseSectAlign(const opt::InputArgList &args) {
     StringRef segName = arg->getValue(0);
     StringRef sectName = arg->getValue(1);
     StringRef alignStr = arg->getValue(2);
-    if (alignStr.startswith("0x") || alignStr.startswith("0X"))
+    if (alignStr.starts_with("0x") || alignStr.starts_with("0X"))
       alignStr = alignStr.drop_front(2);
     uint32_t align;
     if (alignStr.getAsInteger(16, align)) {
@@ -1447,7 +1447,7 @@ static void addSynthenticMethnames() {
   const int prefixLength = ObjCStubsSection::symbolPrefix.size();
   for (Symbol *sym : symtab->getSymbols())
     if (isa<Undefined>(sym))
-      if (sym->getName().startswith(ObjCStubsSection::symbolPrefix))
+      if (sym->getName().starts_with(ObjCStubsSection::symbolPrefix))
         os << sym->getName().drop_front(prefixLength) << '\0';
 
   if (data.empty())
@@ -1888,7 +1888,7 @@ bool macho::link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
       StringRef sep = sys::path::get_separator();
       // real_path removes trailing slashes as part of the normalization, but
       // these are meaningful for our text based stripping
-      if (config->osoPrefix.equals(".") || config->osoPrefix.endswith(sep))
+      if (config->osoPrefix.equals(".") || config->osoPrefix.ends_with(sep))
         expanded += sep;
       config->osoPrefix = saver().save(expanded.str());
     }
