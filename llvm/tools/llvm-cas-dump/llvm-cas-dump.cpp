@@ -56,6 +56,10 @@ cl::opt<StatsCollector::FormatType> ObjectStatsFormat(
                    "object stats formatted in a CSV format")),
     cl::init(StatsCollector::FormatType::Pretty));
 
+cl::opt<bool>
+    AnalysisCASTree("analysis-only",
+                    cl::desc("analyze converted objects from cas tree"));
+
 /// If the input is a file (--casid-file), open the file given by `InputStr`
 /// and get the ID from the file buffer.
 /// Otherwise parse `InputStr` as a CASID.
@@ -165,8 +169,15 @@ int main(int argc, char *argv[]) {
   MCCASPrinter Printer(Options, *CAS, llvm::outs());
 
   StringMap<ObjectRef> Files;
+  SmallVector<ObjectProxy> SummaryIDs;
   for (StringRef InputStr : InputStrings) {
     auto ID = getCASIDFromInput(*CAS, InputStr);
+
+    if (AnalysisCASTree) {
+      auto Proxy = ExitOnErr(CAS->getProxy(ID));
+      SummaryIDs.emplace_back(Proxy);
+      continue;
+    }
 
     auto Ref = CAS->getReference(ID);
     if (!Ref) {
@@ -188,16 +199,17 @@ int main(int argc, char *argv[]) {
     ExitOnErr(Printer.printMCObject(*Ref, *Obj));
   }
   if (!ComputeStats.empty()) {
-    outs() << "Making summary object...\n";
-    HierarchicalTreeBuilder Builder;
-    SmallVector<ObjectProxy> SummaryIDs;
-    for (auto &File : Files) {
-      Builder.push(File.second, TreeEntry::Regular, File.first());
+    if (!Files.empty()) {
+      llvm::outs() << ("Making summary object...\n");
+      HierarchicalTreeBuilder Builder;
+      for (auto &File : Files) {
+        Builder.push(File.second, TreeEntry::Regular, File.first());
+      }
+      ObjectProxy SummaryRef = ExitOnErr(Builder.create(*CAS));
+      SummaryIDs.emplace_back(SummaryRef);
+      llvm::outs() << ("summary tree: ");
+      outs() << SummaryRef.getID() << "\n";
     }
-    ObjectProxy SummaryRef = ExitOnErr(Builder.create(*CAS));
-    SummaryIDs.emplace_back(SummaryRef);
-    outs() << "summary tree: ";
-    outs() << SummaryRef.getID() << "\n";
 
     bool PrintToStdout = false;
     if (StringRef(ComputeStats) == "-")
