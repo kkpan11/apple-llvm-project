@@ -171,6 +171,11 @@ int main(int argc, char *argv[]) {
   StringMap<ObjectRef> Files;
   SmallVector<ObjectProxy> SummaryIDs;
   for (StringRef InputStr : InputStrings) {
+    // Print object file name dumping cas contents, but not when dumping object
+    // stats.
+    if (ComputeStats.empty())
+      outs() << "CASID File Name: " << InputStr << "\n";
+
     auto ID = getCASIDFromInput(*CAS, InputStr);
 
     if (AnalysisCASTree) {
