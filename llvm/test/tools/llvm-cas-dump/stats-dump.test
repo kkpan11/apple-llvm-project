@@ -63,4 +63,3 @@ PRETTY-NEXT: sec-ref-size                {{[0-9]+}}
 PRETTY-NEXT: atom-ref-size          {{[0-9]+}}
 
 ANALYSIS-ONLY-NOT: llvmcas://{{[0-9a-f]+}}
-ANALYSIS-ONLY: Collecting object stats...

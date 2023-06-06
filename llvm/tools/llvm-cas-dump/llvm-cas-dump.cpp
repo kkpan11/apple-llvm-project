@@ -80,7 +80,7 @@ static void computeStats(ObjectStore &CAS, ArrayRef<ObjectProxy> TopLevels,
   ExitOnError ExitOnErr;
   ExitOnErr.setBanner("llvm-cas-object-format: compute-stats: ");
 
-  outs() << "Collecting object stats...\n";
+  llvm::errs() << "Collecting object stats...\n";
 
   // In the first traversal, just collect a POT. Use NumPaths as a "Seen" list.
   StatsCollector Collector(CAS, ObjectStatsFormat);
@@ -203,16 +203,17 @@ int main(int argc, char *argv[]) {
 
     ExitOnErr(Printer.printMCObject(*Ref, *Obj));
   }
+
   if (!ComputeStats.empty()) {
     if (!Files.empty()) {
-      llvm::outs() << ("Making summary object...\n");
+      llvm::errs() << "Making summary object...\n";
       HierarchicalTreeBuilder Builder;
       for (auto &File : Files) {
         Builder.push(File.second, TreeEntry::Regular, File.first());
       }
       ObjectProxy SummaryRef = ExitOnErr(Builder.create(*CAS));
       SummaryIDs.emplace_back(SummaryRef);
-      llvm::outs() << ("summary tree: ");
+      llvm::errs() << "summary tree: ";
       outs() << SummaryRef.getID() << "\n";
     }
 
