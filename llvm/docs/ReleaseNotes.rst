@@ -61,6 +61,8 @@ Changes to the LLVM IR
 * The ``nofpclass`` attribute was introduced. This allows more
   optimizations around special floating point value comparisons.
 
+* Introduced new ``llvm.ldexp`` and ``llvm.experimental.constrained.ldexp`` intrinsics.
+
 * The constant expression variants of the following instructions have been
   removed:
 
@@ -343,6 +345,11 @@ Changes to Sanitizers
 
 Other Changes
 -------------
+
+* ``llvm::demangle`` now takes a ``std::string_view`` rather than a
+  ``const std::string&``. Be careful passing temporaries into
+  ``llvm::demangle`` that don't outlive the expression using
+  ``llvm::demangle``.
 
 External Open Source Projects Using LLVM 15
 ===========================================
