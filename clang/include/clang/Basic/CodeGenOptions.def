@@ -511,9 +511,6 @@ CODEGENOPT(UseCASBackend, 1, 0)
 ENUM_CODEGENOPT(CASObjMode, llvm::CASBackendMode,
                 2, llvm::CASBackendMode::Native)
 
-/// Whether to use opaque pointers.
-CODEGENOPT(OpaquePointers, 1, 0)
-
 /// Modify C++ ABI to returning `this` pointer from constructors and
 /// non-deleting destructors. (No effect on Microsoft ABI.)
 CODEGENOPT(CtorDtorReturnThis, 1, 0)
