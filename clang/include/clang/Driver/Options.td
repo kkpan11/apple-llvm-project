@@ -3580,16 +3580,14 @@ def mdefault_build_attributes : Joined<["-"], "mdefault-build-attributes">, Grou
 def mno_default_build_attributes : Joined<["-"], "mno-default-build-attributes">, Group<m_Group>;
 let Flags = [TargetSpecific] in {
 def mconstant_cfstrings : Flag<["-"], "mconstant-cfstrings">, Group<clang_ignored_m_Group>;
-} // let Flags = [TargetSpecific]
-def mconsole : Joined<["-"], "mconsole">, Group<m_Group>, Flags<[NoXarchOption]>;
-def mwindows : Joined<["-"], "mwindows">, Group<m_Group>, Flags<[NoXarchOption]>;
-def mdll : Joined<["-"], "mdll">, Group<m_Group>, Flags<[NoXarchOption]>;
-def municode : Joined<["-"], "municode">, Group<m_Group>, Flags<[NoXarchOption]>;
-def mthreads : Joined<["-"], "mthreads">, Group<m_Group>, Flags<[NoXarchOption]>;
-def mguard_EQ : Joined<["-"], "mguard=">, Group<m_Group>, Flags<[NoXarchOption]>,
+def mconsole : Joined<["-"], "mconsole">, Group<m_Group>;
+def mwindows : Joined<["-"], "mwindows">, Group<m_Group>;
+def mdll : Joined<["-"], "mdll">, Group<m_Group>;
+def municode : Joined<["-"], "municode">, Group<m_Group>;
+def mthreads : Joined<["-"], "mthreads">, Group<m_Group>;
+def mguard_EQ : Joined<["-"], "mguard=">, Group<m_Group>,
   HelpText<"Enable or disable Control Flow Guard checks and guard tables emission">,
   Values<"none,cf,cf-nochecks">;
-let Flags = [TargetSpecific] in {
 def mcpu_EQ : Joined<["-"], "mcpu=">, Group<m_Group>,
   HelpText<"For a list of available CPUs for the target use '-mcpu=help'">;
 def mmcu_EQ : Joined<["-"], "mmcu=">, Group<m_Group>;
@@ -4779,6 +4777,7 @@ foreach i = {0-7} in
 } // let Flags = [TargetSpecific]
 
 // X86 feature flags
+let Flags = [TargetSpecific] in {
 def mx87 : Flag<["-"], "mx87">, Group<m_x86_Features_Group>;
 def mno_x87 : Flag<["-"], "mno-x87">, Group<m_x86_Features_Group>;
 def m80387 : Flag<["-"], "m80387">, Alias<mx87>;
@@ -4812,7 +4811,11 @@ def mssse3 : Flag<["-"], "mssse3">, Group<m_x86_Features_Group>;
 def mno_ssse3 : Flag<["-"], "mno-ssse3">, Group<m_x86_Features_Group>;
 def msse4_1 : Flag<["-"], "msse4.1">, Group<m_x86_Features_Group>;
 def mno_sse4_1 : Flag<["-"], "mno-sse4.1">, Group<m_x86_Features_Group>;
+} // let Flags = [TargetSpecific]
+// TODO: Make -msse4.2 TargetSpecific after
+// https://github.com/llvm/llvm-project/issues/63270 is fixed.
 def msse4_2 : Flag<["-"], "msse4.2">, Group<m_x86_Features_Group>;
+let Flags = [TargetSpecific] in {
 def mno_sse4_2 : Flag<["-"], "mno-sse4.2">, Group<m_x86_Features_Group>;
 def msse4 : Flag<["-"], "msse4">, Alias<msse4_2>;
 // -mno-sse4 turns off sse4.1 which has the effect of turning off everything
@@ -4985,6 +4988,7 @@ def mretpoline_external_thunk : Flag<["-"], "mretpoline-external-thunk">, Group<
 def mno_retpoline_external_thunk : Flag<["-"], "mno-retpoline-external-thunk">, Group<m_x86_Features_Group>;
 def mvzeroupper : Flag<["-"], "mvzeroupper">, Group<m_x86_Features_Group>;
 def mno_vzeroupper : Flag<["-"], "mno-vzeroupper">, Group<m_x86_Features_Group>;
+} // let Flags = [TargetSpecific]
 
 // These are legacy user-facing driver-level option spellings. They are always
 // aliases for options that are spelled using the more common Unix / GNU flag
