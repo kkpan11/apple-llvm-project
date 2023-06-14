@@ -776,7 +776,6 @@ struct DataFlowGraph {
 
   Ref getNextRelated(Instr IA, Ref RA) const;
   Ref getNextShadow(Instr IA, Ref RA, bool Create);
-  Ref getNextShadow(Instr IA, Ref RA) const;
 
   NodeList getRelatedRefs(Instr IA, Ref RA) const;
 
@@ -847,7 +846,7 @@ private:
 
   void buildStmt(Block BA, MachineInstr &In);
   void recordDefsForDF(BlockRefsMap &PhiM, Block BA);
-  void buildPhis(BlockRefsMap &PhiM, RegisterSet &AllRefs, Block BA);
+  void buildPhis(BlockRefsMap &PhiM, Block BA);
   void removeUnusedPhis();
 
   void pushClobbers(Instr IA, DefStackMap &DM);
