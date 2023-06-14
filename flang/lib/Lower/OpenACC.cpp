@@ -33,73 +33,6 @@ getDesignatorNameIfDataRef(const Fortran::parser::Designator &designator) {
   return dataRef ? std::get_if<Fortran::parser::Name>(&dataRef->u) : nullptr;
 }
 
-static void
-genObjectList(const Fortran::parser::AccObjectList &objectList,
-              Fortran::lower::AbstractConverter &converter,
-              Fortran::semantics::SemanticsContext &semanticsContext,
-              Fortran::lower::StatementContext &stmtCtx,
-              llvm::SmallVectorImpl<mlir::Value> &operands) {
-  auto addOperands = [&](Fortran::lower::SymbolRef sym) {
-    const auto variable = converter.getSymbolAddress(sym);
-    // TODO: Might need revisiting to handle for non-shared clauses
-    if (variable) {
-      operands.push_back(variable);
-    } else {
-      if (const auto *details =
-              sym->detailsIf<Fortran::semantics::HostAssocDetails>())
-        operands.push_back(converter.getSymbolAddress(details->symbol()));
-    }
-  };
-
-  fir::FirOpBuilder &builder = converter.getFirOpBuilder();
-
-  for (const auto &accObject : objectList.v) {
-    std::visit(
-        Fortran::common::visitors{
-            [&](const Fortran::parser::Designator &designator) {
-              mlir::Location operandLocation =
-                  converter.genLocation(designator.source);
-              if (auto expr{Fortran::semantics::AnalyzeExpr(semanticsContext,
-                                                            designator)}) {
-                if ((*expr).Rank() > 0 &&
-                    Fortran::parser::Unwrap<Fortran::parser::ArrayElement>(
-                        designator)) {
-                  // Array sections.
-                  fir::ExtendedValue exV =
-                      converter.genExprBox(operandLocation, *expr, stmtCtx);
-                  mlir::Value section = fir::getBase(exV);
-                  auto mem = builder.create<fir::AllocaOp>(
-                      operandLocation, section.getType(), /*pinned=*/false);
-                  builder.create<fir::StoreOp>(operandLocation, section, mem);
-                  operands.push_back(mem);
-                } else if (Fortran::parser::Unwrap<
-                               Fortran::parser::StructureComponent>(
-                               designator)) {
-                  // Derived type components.
-                  fir::ExtendedValue fieldAddr =
-                      converter.genExprAddr(operandLocation, *expr, stmtCtx);
-                  operands.push_back(fir::getBase(fieldAddr));
-                } else {
-                  // Scalar or full array.
-                  if (const auto *dataRef{std::get_if<Fortran::parser::DataRef>(
-                          &designator.u)}) {
-                    const Fortran::parser::Name &name =
-                        Fortran::parser::GetLastName(*dataRef);
-                    addOperands(*name.symbol);
-                  } else { // Unsupported
-                    TODO(operandLocation,
-                         "Unsupported type of OpenACC operand");
-                  }
-                }
-              }
-            },
-            [&](const Fortran::parser::Name &name) {
-              addOperands(*name.symbol);
-            }},
-        accObject.u);
-  }
-}
-
 /// Generate the acc.bounds operation from the descriptor information.
 static llvm::SmallVector<mlir::Value>
 genBoundsOpsFromBox(fir::FirOpBuilder &builder, mlir::Location loc,
@@ -857,7 +790,6 @@ createLoopOp(Fortran::lower::AbstractConverter &converter,
           } else if (const auto *staticArg =
                          std::get_if<Fortran::parser::AccGangArg::Static>(
                              &gangArg.u)) {
-
             const Fortran::parser::AccSizeExpr &sizeExpr = staticArg->v;
             if (sizeExpr.v) {
               gangStatic = fir::getBase(converter.genExprValue(
@@ -868,6 +800,11 @@ createLoopOp(Fortran::lower::AbstractConverter &converter,
               gangStatic = builder.createIntegerConstant(
                   clauseLocation, builder.getIndexType(), starCst);
             }
+          } else if (const auto *dim =
+                         std::get_if<Fortran::parser::AccGangArg::Dim>(
+                             &gangArg.u)) {
+            gangDim = fir::getBase(converter.genExprValue(
+                *Fortran::semantics::GetExpr(dim->v), stmtCtx));
           }
         }
       }
