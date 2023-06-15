@@ -1508,12 +1508,8 @@ static bool shouldCacheResults(InputArgList &args) {
   return true;
 }
 
-namespace lld {
-namespace macho {
 static bool link(InputArgList &args, bool canExitEarly, raw_ostream &stdoutOS,
                  raw_ostream &stderrOS);
-} // namespace macho
-} // namespace lld
 
 static CASID createResultCacheKey(ObjectStore &CAS, cas::ObjectRef rootID,
                                   const InputArgList &args) {
