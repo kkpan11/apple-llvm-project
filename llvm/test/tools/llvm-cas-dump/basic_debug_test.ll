@@ -18,7 +18,8 @@
 ; DWARF: 0x0000000000000000      3      3      1   0             0  is_stmt prologue_end
 ; DWARF: 0x0000000000000008      3      3      1   0             0  is_stmt end_sequence
 
-; CHECK:      mc:assembler  llvmcas://{{.*}}
+; CHECK: CASID File Name: {{.+}}
+; CHECK-NEXT:      mc:assembler  llvmcas://{{.*}}
 ; CHECK-NEXT:   mc:header  llvmcas://{{.*}}
 ; CHECK-NEXT:   mc:group  llvmcas://{{.*}}
 ; CHECK-NEXT:     mc:debug_abbrev_section  llvmcas://{{.*}}
