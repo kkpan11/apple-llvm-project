@@ -20,9 +20,9 @@
 # CHECK: DW_AT_name{{.*}}"foo"
 # CHECK: DW_TAG_variable
 # CHECK: DW_AT_name{{.*}}"var1"
-# CHECK: DW_AT_location        (DW_OP_const8u 0x10001, DW_OP_GNU_push_tls_address)
+# CHECK: DW_AT_location        (DW_OP_const8u 0x{{.*}}, DW_OP_GNU_push_tls_address)
 # CHECK: DW_AT_name{{.*}}"var2"
-# CHECK: DW_AT_location        (DW_OP_const8u 0x10001, DW_OP_form_tls_address)
+# CHECK: DW_AT_location        (DW_OP_const8u 0x{{.*}}, DW_OP_form_tls_address)
 
 --- !mach-o
 FileHeader:

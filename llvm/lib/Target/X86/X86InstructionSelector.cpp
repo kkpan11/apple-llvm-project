@@ -92,7 +92,7 @@ private:
                  MachineFunction &MF) const;
   bool selectFCmp(MachineInstr &I, MachineRegisterInfo &MRI,
                   MachineFunction &MF) const;
-  bool selectUadde(MachineInstr &I, MachineRegisterInfo &MRI,
+  bool selectUAddSubE(MachineInstr &I, MachineRegisterInfo &MRI,
                    MachineFunction &MF) const;
   bool selectDebugInstr(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectCopy(MachineInstr &I, MachineRegisterInfo &MRI) const;
@@ -403,7 +403,8 @@ bool X86InstructionSelector::select(MachineInstr &I) {
   case TargetOpcode::G_FCMP:
     return selectFCmp(I, MRI, MF);
   case TargetOpcode::G_UADDE:
-    return selectUadde(I, MRI, MF);
+  case TargetOpcode::G_USUBE:
+    return selectUAddSubE(I, MRI, MF);
   case TargetOpcode::G_UNMERGE_VALUES:
     return selectUnmergeValues(I, MRI, MF);
   case TargetOpcode::G_MERGE_VALUES:
@@ -1069,21 +1070,56 @@ bool X86InstructionSelector::selectFCmp(MachineInstr &I,
   return true;
 }
 
-bool X86InstructionSelector::selectUadde(MachineInstr &I,
+bool X86InstructionSelector::selectUAddSubE(MachineInstr &I,
                                          MachineRegisterInfo &MRI,
                                          MachineFunction &MF) const {
-  assert((I.getOpcode() == TargetOpcode::G_UADDE) && "unexpected instruction");
+  assert((I.getOpcode() == TargetOpcode::G_UADDE ||
+          I.getOpcode() == TargetOpcode::G_USUBE) &&
+         "unexpected instruction");
 
   const Register DstReg = I.getOperand(0).getReg();
   const Register CarryOutReg = I.getOperand(1).getReg();
   const Register Op0Reg = I.getOperand(2).getReg();
   const Register Op1Reg = I.getOperand(3).getReg();
   Register CarryInReg = I.getOperand(4).getReg();
+  bool IsSub = I.getOpcode() == TargetOpcode::G_USUBE;
 
   const LLT DstTy = MRI.getType(DstReg);
+  assert(DstTy.isScalar() && "G_UADDE only supported for scalar types");
 
-  if (DstTy != LLT::scalar(32))
-    return false;
+  // TODO: Handle immediate argument variants?
+  unsigned OpADC, OpADD, OpSBB, OpSUB;
+  switch (DstTy.getSizeInBits()) {
+  case 8:
+    OpADC = X86::ADC8rr;
+    OpADD = X86::ADD8rr;
+    OpSBB = X86::SBB8rr;
+    OpSUB = X86::SUB8rr;
+    break;
+  case 16:
+    OpADC = X86::ADC16rr;
+    OpADD = X86::ADD16rr;
+    OpSBB = X86::SBB16rr;
+    OpSUB = X86::SUB16rr;
+    break;
+  case 32:
+    OpADC = X86::ADC32rr;
+    OpADD = X86::ADD32rr;
+    OpSBB = X86::SBB32rr;
+    OpSUB = X86::SUB32rr;
+    break;
+  case 64:
+    OpADC = X86::ADC64rr;
+    OpADD = X86::ADD64rr;
+    OpSBB = X86::SBB64rr;
+    OpSUB = X86::SUB64rr;
+    break;
+  default:
+    llvm_unreachable("Can't select G_UADDE/G_USUBE, unsupported type.");
+  }
+
+  const RegisterBank &DstRB = *RBI.getRegBank(DstReg, MRI, TRI);
+  const TargetRegisterClass *DstRC = getRegClass(DstTy, DstRB);
 
   // find CarryIn def instruction.
   MachineInstr *Def = MRI.getVRegDef(CarryInReg);
@@ -1092,27 +1128,27 @@ bool X86InstructionSelector::selectUadde(MachineInstr &I,
     Def = MRI.getVRegDef(CarryInReg);
   }
 
-  unsigned Opcode;
-  if (Def->getOpcode() == TargetOpcode::G_UADDE) {
-    // carry set by prev ADD.
+  unsigned Opcode = 0;
+  if (Def->getOpcode() == I.getOpcode()) {
+    // carry set by prev ADD/SUB.
 
     BuildMI(*I.getParent(), I, I.getDebugLoc(), TII.get(X86::COPY), X86::EFLAGS)
         .addReg(CarryInReg);
 
-    if (!RBI.constrainGenericRegister(CarryInReg, X86::GR32RegClass, MRI))
+    if (!RBI.constrainGenericRegister(CarryInReg, *DstRC, MRI))
       return false;
 
-    Opcode = X86::ADC32rr;
+    Opcode = IsSub ? OpSBB : OpADC;
   } else if (auto val = getIConstantVRegVal(CarryInReg, MRI)) {
     // carry is constant, support only 0.
     if (*val != 0)
       return false;
 
-    Opcode = X86::ADD32rr;
+    Opcode = IsSub ? OpSUB : OpADD;
   } else
     return false;
 
-  MachineInstr &AddInst =
+  MachineInstr &Inst =
       *BuildMI(*I.getParent(), I, I.getDebugLoc(), TII.get(Opcode), DstReg)
            .addReg(Op0Reg)
            .addReg(Op1Reg);
@@ -1120,8 +1156,8 @@ bool X86InstructionSelector::selectUadde(MachineInstr &I,
   BuildMI(*I.getParent(), I, I.getDebugLoc(), TII.get(X86::COPY), CarryOutReg)
       .addReg(X86::EFLAGS);
 
-  if (!constrainSelectedInstRegOperands(AddInst, TII, TRI, RBI) ||
-      !RBI.constrainGenericRegister(CarryOutReg, X86::GR32RegClass, MRI))
+  if (!constrainSelectedInstRegOperands(Inst, TII, TRI, RBI) ||
+      !RBI.constrainGenericRegister(CarryOutReg, *DstRC, MRI))
     return false;
 
   I.eraseFromParent();
