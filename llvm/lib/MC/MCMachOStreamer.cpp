@@ -100,6 +100,8 @@ public:
   void emitDarwinTargetVariantBuildVersion(unsigned Platform, unsigned Major,
                                            unsigned Minor, unsigned Update,
                                            VersionTuple SDKVersion) override;
+  void EmitPtrAuthABIVersion(unsigned PtrAuthABIVersion,
+                             bool PtrAuthKernelABIVersion) override;
   void emitThumbFunc(MCSymbol *Func) override;
   bool emitSymbolAttribute(MCSymbol *Symbol, MCSymbolAttr Attribute) override;
   void emitSymbolDesc(MCSymbol *Symbol, unsigned DescValue) override;
@@ -309,6 +311,12 @@ void MCMachOStreamer::emitDarwinTargetVariantBuildVersion(
     VersionTuple SDKVersion) {
   getAssembler().setDarwinTargetVariantBuildVersion(
       (MachO::PlatformType)Platform, Major, Minor, Update, SDKVersion);
+}
+
+void MCMachOStreamer::EmitPtrAuthABIVersion(unsigned PtrAuthABIVersion,
+                                            bool PtrAuthKernelABIVersion) {
+  getAssembler().setPtrAuthABIVersion(PtrAuthABIVersion);
+  getAssembler().setPtrAuthKernelABIVersion(PtrAuthKernelABIVersion);
 }
 
 void MCMachOStreamer::emitThumbFunc(MCSymbol *Symbol) {
