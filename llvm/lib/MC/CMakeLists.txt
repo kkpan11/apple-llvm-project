@@ -66,7 +66,6 @@ add_llvm_component_library(LLVMMC
   MachOCASWriter.cpp
   SPIRVObjectWriter.cpp
   StringTableBuilder.cpp
-  SubtargetFeature.cpp
   TargetRegistry.cpp
   WasmObjectWriter.cpp
   WinCOFFObjectWriter.cpp
