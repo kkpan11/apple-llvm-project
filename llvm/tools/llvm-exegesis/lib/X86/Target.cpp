@@ -46,8 +46,6 @@
 namespace llvm {
 namespace exegesis {
 
-static constexpr const intptr_t VAddressSpaceCeiling = 0x0000800000000000;
-
 // If a positive value is specified, we are going to use the LBR in
 // latency-mode.
 //
@@ -983,6 +981,12 @@ std::vector<MCInst> ExegesisX86Target::setRegTo(const MCSubtargetInfo &STI,
 
 #ifdef __linux__
 
+#ifdef __arm__
+static constexpr const intptr_t VAddressSpaceCeiling = 0xC0000000;
+#else
+static constexpr const intptr_t VAddressSpaceCeiling = 0x0000800000000000;
+#endif
+
 void generateSyscall(long SyscallNumber, std::vector<MCInst> &GeneratedCode) {
   GeneratedCode.push_back(
       loadImmediate(X86::RAX, 64, APInt(64, SyscallNumber)));
@@ -1071,6 +1075,21 @@ ExegesisX86Target::generateExitSyscall(unsigned ExitCode) const {
   generateSyscall(SYS_exit, ExitCallCode);
   return ExitCallCode;
 }
+
+// Before kernel 4.17, Linux did not support MAP_FIXED_NOREPLACE, so if it is
+// not available, simplfy define it as MAP_FIXED which performs the same
+// function but does not guarantee existing mappings won't get clobbered.
+#ifndef MAP_FIXED_NOREPLACE
+#define MAP_FIXED_NOREPLACE MAP_FIXED
+#endif
+
+// 32 bit ARM doesn't have mmap and uses mmap2 instead. The only difference
+// between the two syscalls is that mmap2's offset parameter is in terms 4096
+// byte offsets rather than individual bytes, so for our purposes they are
+// effectively the same as all ofsets here are set to 0.
+#ifdef __arm__
+#define SYS_mmap SYS_mmap2
+#endif
 
 std::vector<MCInst>
 ExegesisX86Target::generateMmap(intptr_t Address, size_t Length,

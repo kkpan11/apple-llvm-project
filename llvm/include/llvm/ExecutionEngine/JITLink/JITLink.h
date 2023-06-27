@@ -29,6 +29,7 @@
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/TargetParser/SubtargetFeature.h"
 #include "llvm/TargetParser/Triple.h"
 #include <optional>
 
@@ -1006,9 +1007,7 @@ public:
 
   using GetEdgeKindNameFunction = const char *(*)(Edge::Kind);
 
-  using FeatureVector = std::vector<std::string>;
-
-  LinkGraph(std::string Name, const Triple &TT, FeatureVector Features,
+  LinkGraph(std::string Name, const Triple &TT, SubtargetFeatures Features,
             unsigned PointerSize, support::endianness Endianness,
             GetEdgeKindNameFunction GetEdgeKindName)
       : Name(std::move(Name)), TT(TT), Features(std::move(Features)),
@@ -1018,8 +1017,8 @@ public:
   LinkGraph(std::string Name, const Triple &TT, unsigned PointerSize,
             support::endianness Endianness,
             GetEdgeKindNameFunction GetEdgeKindName)
-      : LinkGraph(std::move(Name), TT, FeatureVector(), PointerSize, Endianness,
-                  GetEdgeKindName) {}
+      : LinkGraph(std::move(Name), TT, SubtargetFeatures(), PointerSize,
+                  Endianness, GetEdgeKindName) {}
 
   LinkGraph(const LinkGraph &) = delete;
   LinkGraph &operator=(const LinkGraph &) = delete;
@@ -1034,7 +1033,7 @@ public:
   const Triple &getTargetTriple() const { return TT; }
 
   /// Return the subtarget features for this Graph.
-  const FeatureVector &getFeatures() const { return Features; }
+  const SubtargetFeatures &getFeatures() const { return Features; }
 
   /// Returns the pointer size for use in this graph.
   unsigned getPointerSize() const { return PointerSize; }
@@ -1579,7 +1578,7 @@ private:
 
   std::string Name;
   Triple TT;
-  FeatureVector Features;
+  SubtargetFeatures Features;
   unsigned PointerSize;
   support::endianness Endianness;
   GetEdgeKindNameFunction GetEdgeKindName = nullptr;

@@ -14,22 +14,18 @@
 
 #define DEBUG_TYPE "dataflow"
 
-namespace clang {
-namespace dataflow {
-
-void copyRecord(AggregateStorageLocation &Src, AggregateStorageLocation &Dst,
-                Environment &Env) {
-  QualType Type = Src.getType();
-
+void clang::dataflow::copyRecord(AggregateStorageLocation &Src,
+                                 AggregateStorageLocation &Dst,
+                                 Environment &Env) {
   LLVM_DEBUG({
     if (Dst.getType().getCanonicalType().getUnqualifiedType() !=
-        Type.getCanonicalType().getUnqualifiedType()) {
-      llvm::dbgs() << "Source type " << Type << "\n";
+        Src.getType().getCanonicalType().getUnqualifiedType()) {
+      llvm::dbgs() << "Source type " << Src.getType() << "\n";
       llvm::dbgs() << "Destination type " << Dst.getType() << "\n";
     }
   });
   assert(Dst.getType().getCanonicalType().getUnqualifiedType() ==
-         Type.getCanonicalType().getUnqualifiedType());
+         Src.getType().getCanonicalType().getUnqualifiedType());
 
   for (auto [Field, SrcFieldLoc] : Src.children()) {
     assert(SrcFieldLoc != nullptr);
@@ -64,9 +60,10 @@ void copyRecord(AggregateStorageLocation &Src, AggregateStorageLocation &Dst,
   }
 }
 
-bool recordsEqual(const AggregateStorageLocation &Loc1, const Environment &Env1,
-                  const AggregateStorageLocation &Loc2,
-                  const Environment &Env2) {
+bool clang::dataflow::recordsEqual(const AggregateStorageLocation &Loc1,
+                                   const Environment &Env1,
+                                   const AggregateStorageLocation &Loc2,
+                                   const Environment &Env2) {
   LLVM_DEBUG({
     if (Loc2.getType().getCanonicalType().getUnqualifiedType() !=
         Loc1.getType().getCanonicalType().getUnqualifiedType()) {
@@ -126,6 +123,3 @@ bool recordsEqual(const AggregateStorageLocation &Loc1, const Environment &Env1,
 
   return true;
 }
-
-} // namespace dataflow
-} // namespace clang

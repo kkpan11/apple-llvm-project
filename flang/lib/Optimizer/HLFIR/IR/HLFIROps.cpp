@@ -47,6 +47,9 @@ mlir::LogicalResult hlfir::AssignOp::verify() {
         hlfir::getFortranElementType(lhsType).isa<fir::CharacterType>()))
     return emitOpError("`realloc` must be set and lhs must be a character "
                        "allocatable when `keep_lhs_length_if_realloc` is set");
+  if (mustKeepLhsLengthInAllocatableAssignment() && isTemporaryLHS())
+    return emitOpError("`keep_lhs_length_if_realloc` does not make sense "
+                       "for `temporary_lhs` assignments");
   return mlir::success();
 }
 
@@ -1040,6 +1043,10 @@ void hlfir::ElementalOp::build(mlir::OpBuilder &builder,
   }
 }
 
+mlir::Value hlfir::ElementalOp::getElementEntity() {
+  return mlir::cast<hlfir::YieldElementOp>(getBody()->back()).getElementValue();
+}
+
 //===----------------------------------------------------------------------===//
 // ApplyOp
 //===----------------------------------------------------------------------===//
@@ -1292,6 +1299,15 @@ hlfir::YieldOp hlfir::ElementalAddrOp::getYieldOp() {
       mlir::dyn_cast_or_null<hlfir::YieldOp>(getTerminator(getBody()));
   assert(yieldOp && "element_addr is ill-formed");
   return yieldOp;
+}
+
+mlir::Value hlfir::ElementalAddrOp::getElementEntity() {
+  return getYieldOp().getEntity();
+}
+
+mlir::Region *hlfir::ElementalAddrOp::getElementCleanup() {
+  mlir::Region *cleanup = &getYieldOp().getCleanup();
+  return cleanup->empty() ? nullptr : cleanup;
 }
 
 //===----------------------------------------------------------------------===//

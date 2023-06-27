@@ -4,6 +4,7 @@ set(LLVM_LINK_COMPONENTS
   CASObjectFormats
   Core
   Object
+  Option
   Support
   TargetParser
   TextAPI
@@ -11,8 +12,15 @@ set(LLVM_LINK_COMPONENTS
   ${LLVM_TARGETS_TO_BUILD}
   )
 
+set(LLVM_TARGET_DEFINITIONS Opts.td)
+tablegen(LLVM Opts.inc -gen-opt-parser-defs)
+add_public_tablegen_target(LibtoolDarwinOptsTableGen)
+
 add_llvm_tool(llvm-libtool-darwin
   llvm-libtool-darwin.cpp
+
+  DEPENDS
+  LibtoolDarwinOptsTableGen
 )
 
 if(LLVM_INSTALL_CCTOOLS_SYMLINKS)

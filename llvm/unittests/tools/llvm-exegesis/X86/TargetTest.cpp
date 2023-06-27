@@ -85,9 +85,11 @@ Matcher<MCInst> IsMovImmediate(unsigned Opcode, int64_t Reg, int64_t Value) {
   return AllOf(OpcodeIs(Opcode), ElementsAre(IsReg(Reg), IsImm(Value)));
 }
 
+#ifdef __linux__
 Matcher<MCInst> IsMovRegToReg(unsigned Opcode, int64_t Reg1, int64_t Reg2) {
   return AllOf(OpcodeIs(Opcode), ElementsAre(IsReg(Reg1), IsReg(Reg2)));
 }
+#endif
 
 Matcher<MCInst> IsMovValueToStack(unsigned Opcode, int64_t Value,
                                   size_t Offset) {
@@ -598,6 +600,12 @@ TEST_F(X86Core2TargetTest, GenerateLowerMunmapTest) {
                           OpcodeIs(X86::SYSCALL)));
 }
 
+#ifdef __arm__
+static constexpr const intptr_t VAddressSpaceCeiling = 0xC0000000;
+#else
+static constexpr const intptr_t VAddressSpaceCeiling = 0x0000800000000000;
+#endif
+
 TEST_F(X86Core2TargetTest, GenerateUpperMunmapTest) {
   std::vector<MCInst> GeneratedCode;
   State.getExegesisTarget().generateUpperMunmap(GeneratedCode);
@@ -607,7 +615,7 @@ TEST_F(X86Core2TargetTest, GenerateUpperMunmapTest) {
                         OpcodeIs(X86::ADD64rr), OpcodeIs(X86::SHR64ri),
                         OpcodeIs(X86::SHL64ri), OpcodeIs(X86::ADD64ri32),
                         IsMovImmediate(X86::MOV64ri, X86::RSI,
-                                       0x0000800000000000 - getpagesize()),
+                                       VAddressSpaceCeiling - getpagesize()),
                         OpcodeIs(X86::SUB64rr),
                         IsMovImmediate(X86::MOV64ri, X86::RAX, SYS_munmap),
                         OpcodeIs(X86::SYSCALL)}));
@@ -619,6 +627,21 @@ TEST_F(X86Core2TargetTest, GenerateExitSyscallTest) {
                           IsMovImmediate(X86::MOV64ri, X86::RAX, SYS_exit),
                           OpcodeIs(X86::SYSCALL)));
 }
+
+// Before kernel 4.17, Linux did not support MAP_FIXED_NOREPLACE, so if it is
+// not available, simplfy define it as MAP_FIXED which performs the same
+// function but does not guarantee existing mappings won't get clobbered.
+#ifndef MAP_FIXED_NOREPLACE
+#define MAP_FIXED_NOREPLACE MAP_FIXED
+#endif
+
+// 32 bit ARM doesn't have mmap and uses mmap2 instead. The only difference
+// between the two syscalls is that mmap2's offset parameter is in terms 4096
+// byte offsets rather than individual bytes, so for our purposes they are
+// effectively the same as all ofsets here are set to 0.
+#ifdef __arm__
+#define SYS_mmap SYS_mmap2
+#endif
 
 TEST_F(X86Core2TargetTest, GenerateMmapTest) {
   EXPECT_THAT(State.getExegesisTarget().generateMmap(0x1000, 4096, 0x2000),
