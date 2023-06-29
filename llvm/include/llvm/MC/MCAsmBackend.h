@@ -49,8 +49,8 @@ class ObjectStore;
 /// Generic interface to target specific assembler backends.
 class MCAsmBackend {
 protected: // Can only create subclasses.
-
-  MCAsmBackend(support::endianness Endian);
+  MCAsmBackend(support::endianness Endian,
+               unsigned RelaxFixupKind = MaxFixupKind);
 
 public:
   MCAsmBackend(const MCAsmBackend &) = delete;
@@ -58,6 +58,9 @@ public:
   virtual ~MCAsmBackend();
 
   const support::endianness Endian;
+
+  /// Fixup kind used for linker relaxation. Currently only used by RISC-V.
+  const unsigned RelaxFixupKind;
 
   /// Return true if this target might automatically pad instructions and thus
   /// need to emit padding enable/disable directives around sensative code.
