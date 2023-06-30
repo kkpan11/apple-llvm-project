@@ -1080,8 +1080,6 @@ static bool doesNotNeedToSchedule(ArrayRef<Value *> VL) {
 }
 
 static FixedVectorType *makeScalarTyToVectorTy(Type *ScalarTy, unsigned VF) {
-  assert(isValidElementType(ScalarTy) &&
-         "ScalarTy is not a valid element type.");
   return FixedVectorType::get(ScalarTy, VF);
 }
 
