@@ -77,12 +77,14 @@ public:
 };
 
 TEST_F(ReparseWorkingDirTest, ReparseWorkingDir) {
-  // Setup the working directory path. We use '//root/' to allow the path to be
-  // valid on both Windows and Unix. We need the trailing slash for the path
-  // to be treated as absolute.
+  // Setup the working directory path.
   SmallString<16> WorkingDir;
-  llvm::sys::path::append(WorkingDir, "//root",
-                          llvm::sys::path::get_separator());
+#ifdef _WIN32
+  WorkingDir = "C:\\";
+#else
+  WorkingDir = "/";
+#endif
+  llvm::sys::path::append(WorkingDir, "root");
   setWorkingDirectory(WorkingDir);
 
   SmallString<32> Header;
