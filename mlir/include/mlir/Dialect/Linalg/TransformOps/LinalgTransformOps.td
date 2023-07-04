@@ -83,49 +83,51 @@ def BufferizeToAllocationOp : Op<Transform_Dialect,
      DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
      ReportTrackingListenerFailuresOpTrait]> {
   let description = [{
-    This transform materializes an allocation for the targeted tensor value. It
-    replaces all original uses of the target with the newly allocated buffer,
-    wrapped in a `bufferization.to_tensor` op. It returns a handle to the newly
-    allocated buffer. Furthermore, it returns a handle to the result of the
-    `to_tensor` op.
+    This transform bufferizes the targeted operation and materializes the
+    result in a new allocation. It replaces all original uses of the target
+    result with the newly allocated buffer, wrapped in a
+    `bufferization.to_tensor` op. It returns a handle to the newly allocated
+    buffer. Furthermore, it returns a handle to the result of the `to_tensor`
+    op.
 
-    Example:
-    ```
-    %0 = "some_op"() : () -> (tensor<10xf32>)
-    "some_use"(%0) : (tensor<10xf32>) -> ()
-    ```
+    Only bufferizable ops are that bufferize to a memory write or have an
+    aliasing OpOperand (and do not themselves bufferize to an allocation) are
+    supported. They are bufferized using their BufferizableOpInterface
+    implementation. E.g.:
 
-    Is rewritten to:
     ```
-    %0 = "some_op"() : () -> (tensor<10xf32>)
-    %1 = memref.alloc() : memref<10xf32>
-    memref.tensor_store %0, %1 : memref<10xf32>
-    %2 = bufferization.to_tensor %1 restrict writable : memref<10xf32>
-    "some_use"(%2) : (tensor<10xf32>) -> ()
+    %0 = tensor.insert %f into %dest[%pos] : tensor<10xf32>
     ```
 
-    This transform has optimized lowerings for certain targets that are results
-    of non-DPS ops. For such targets, not only a buffer allocation is emitted
-    but also the defining op is bufferized. This is to avoid a second
-    allocation for the missing destination of the non-DPS op (when subsequently
-    running a bufferization pass/transform). Currently supported ops with
-    optimized lowerings:
-    - tensor.pad
+    Is bufferized to:
+
+    ```
+    %alloc = memref.alloc() : memref<10xf32>
+    memref.tensor_store %dest, %alloc : memref<10xf32>
+    memref.store %f, %alloc[%pos] : memref<10xf32>
+    %0 = bufferization.to_tensor %alloc restrict writable : memref<10xf32>
+    ```
+
+    Selected ops that bufferize to an allocation (or need special handling) are
+    also supported:
+    - `tensor.pad` is lowered to an allocation, followed by a `linalg.fill` and
+      and a buffer copy (all on memrefs).
+    - `vector.mask` is bufferized together with its region. The allocation is
+      placed in front of the `vector.mask` op.
 
     An optional memory space attribute can be specified for the materialized
     buffer allocation.
 
     #### Return modes
 
-    This operation consumes the `target` handle and produces the `replacement`
-    and `allocated_buffer` handles. It always succeeds.
+    This operation consumes the `target` handle and produces the
+    `allocated_buffer` handle. It always succeeds.
   }];
 
-  let arguments = (ins Transform_AnyValue:$target,
+  let arguments = (ins TransformHandleTypeInterface:$target,
                        OptionalAttr<AnyAttr>:$memory_space);
-  let results = (outs Transform_AnyValue:$allocated_buffer,
-                      Transform_AnyValue:$replacement);
-  let assemblyFormat = "$target attr-dict";
+  let results = (outs Transform_AnyValue:$allocated_buffer);
+  let assemblyFormat = "$target attr-dict `:` type($target)";
 }
 
 //===----------------------------------------------------------------------===//
