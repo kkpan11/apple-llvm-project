@@ -1886,7 +1886,7 @@ void SwiftLanguageRuntimeImpl::WillStartExecutingUserExpression(
   if (!type_system_or_err) {
     LLDB_LOG_ERROR(
         log, type_system_or_err.takeError(),
-        "SwiftLanguageRuntime: Unable to get pointer to type system");
+        "SwiftLanguageRuntime: Unable to get pointer to type system: {0}");
     return;
   }
 
@@ -1961,7 +1961,7 @@ void SwiftLanguageRuntimeImpl::DidFinishExecutingUserExpression(
   if (!type_system_or_err) {
     LLDB_LOG_ERROR(
         log, type_system_or_err.takeError(),
-        "SwiftLanguageRuntime: Unable to get pointer to type system");
+        "SwiftLanguageRuntime: Unable to get pointer to type system: {0}");
     return;
   }
 
