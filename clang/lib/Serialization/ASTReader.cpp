@@ -5583,7 +5583,7 @@ llvm::Error ASTReader::ReadSubmoduleBlock(ModuleFile &F,
       // Factor this out into a separate constant to make it easier to resolve
       // merge conflicts.
       static const unsigned NUM_SWIFT_SPECIFIC_FIELDS = 1;
-      if (Record.size() < 12 + NUM_SWIFT_SPECIFIC_FIELDS)
+      if (Record.size() < 13 + NUM_SWIFT_SPECIFIC_FIELDS)
         return llvm::createStringError(std::errc::illegal_byte_sequence,
                                        "malformed module definition");
 
@@ -5592,6 +5592,7 @@ llvm::Error ASTReader::ReadSubmoduleBlock(ModuleFile &F,
       SubmoduleID GlobalID = getGlobalSubmoduleID(F, Record[Idx++]);
       SubmoduleID Parent = getGlobalSubmoduleID(F, Record[Idx++]);
       Module::ModuleKind Kind = (Module::ModuleKind)Record[Idx++];
+      SourceLocation DefinitionLoc = ReadSourceLocation(F, Record[Idx++]);
 
       // SWIFT-SPECIFIC FIELDS HERE. Handling them separately helps avoid merge
       // conflicts. See also NUM_SWIFT_SPECIFIC_FIELDS above.
@@ -5617,8 +5618,7 @@ llvm::Error ASTReader::ReadSubmoduleBlock(ModuleFile &F,
           ModMap.findOrCreateModule(Name, ParentModule, IsFramework, IsExplicit)
               .first;
 
-      // FIXME: set the definition loc for CurrentModule, or call
-      // ModMap.setInferredModuleAllowedBy()
+      // FIXME: Call ModMap.setInferredModuleAllowedBy()
 
       SubmoduleID GlobalIndex = GlobalID - NUM_PREDEF_SUBMODULE_IDS;
       if (GlobalIndex >= SubmodulesLoaded.size() ||
@@ -5649,6 +5649,7 @@ llvm::Error ASTReader::ReadSubmoduleBlock(ModuleFile &F,
       }
 
       CurrentModule->Kind = Kind;
+      CurrentModule->DefinitionLoc = DefinitionLoc;
       CurrentModule->Signature = F.Signature;
       CurrentModule->IsFromModuleFile = true;
       CurrentModule->IsSystem = IsSystem || CurrentModule->IsSystem;
