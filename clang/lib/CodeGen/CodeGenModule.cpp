@@ -863,6 +863,11 @@ void CodeGenModule::Release() {
   if (LangOpts.HLSL)
     getHLSLRuntime().finishCodeGen();
 
+  if (LangOpts.PointerAuthABIVersionEncoded)
+    TheModule.setPtrAuthABIVersion(
+        {static_cast<int>(LangOpts.PointerAuthABIVersion),
+         static_cast<bool>(LangOpts.PointerAuthKernelABIVersion)});
+
   if (uint32_t PLevel = Context.getLangOpts().PICLevel) {
     assert(PLevel < 3 && "Invalid PIC Level");
     getModule().setPICLevel(static_cast<llvm::PICLevel::Level>(PLevel));
