@@ -15,8 +15,8 @@
 ; DWARF:             format: DWARF32
 ; DWARF:            version: 4
 ; DWARF:    prologue_length: 0x000000{{[0-9a-f]+}}
-; DWARF: 0x0000000000000000      3      3      1   0             0  is_stmt prologue_end
-; DWARF: 0x0000000000000008      3      3      1   0             0  is_stmt end_sequence
+; DWARF: 0x0000000000000000      3      3      1   0             0       0  is_stmt prologue_end
+; DWARF: 0x0000000000000008      3      3      1   0             0       0  is_stmt end_sequence
 
 ; CHECK: CASID File Name: {{.+}}
 ; CHECK-NEXT:      mc:assembler  llvmcas://{{.*}}

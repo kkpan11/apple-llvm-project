@@ -6,27 +6,27 @@
 ; CHECK: debug_line[0x{{[0-9a-z]+}}]
 ; CHECK-NEXT: Line table prologue:
 
-; CHECK: Address            Line   Column File   ISA Discriminator Flags
-; CHECK-NEXT: ------------------ ------ ------ ------ --- ------------- -------------
-; CHECK-NEXT: 0x{{[0-9a-z]+}}      1      0      1   0             0  is_stmt
-; CHECK-NEXT: 0x{{[0-9a-z]+}}      2      9      1   0             0  is_stmt prologue_end
-; CHECK-NEXT: 0x{{[0-9a-z]+}}      2     10      1   0             0 
-; CHECK-NEXT: 0x{{[0-9a-z]+}}      2      2      1   0             0 
-; CHECK-NEXT: 0x{{[0-9a-z]+}}      2      2      1   0             0  end_sequence
-; CHECK-NEXT: 0x{{[0-9a-z]+}}      5      0      1   0             0  is_stmt
-; CHECK-NEXT: 0x{{[0-9a-z]+}}      6     11      1   0             0  is_stmt prologue_end
-; CHECK-NEXT: 0x{{[0-9a-z]+}}      6     10      1   0             0 
-; CHECK-NEXT: 0x{{[0-9a-z]+}}      6      2      1   0             0 
-; CHECK-NEXT: 0x{{[0-9a-z]+}}      6      2      1   0             0  end_sequence
-; CHECK-NEXT: 0x{{[0-9a-z]+}}      9      0      1   0             0  is_stmt
-; CHECK-NEXT: 0x{{[0-9a-z]+}}     10     13      1   0             0  is_stmt prologue_end
-; CHECK-NEXT: 0x{{[0-9a-z]+}}     10      9      1   0             0 
-; CHECK-NEXT: 0x{{[0-9a-z]+}}     10     25      1   0             0 
-; CHECK-NEXT: 0x{{[0-9a-z]+}}     10     21      1   0             0 
-; CHECK-NEXT: 0x{{[0-9a-z]+}}     10     19      1   0             0 
-; CHECK-NEXT: 0x{{[0-9a-z]+}}     10      2      1   0             0 
-; CHECK-NEXT: 0x{{[0-9a-z]+}}     10      2      1   0             0  epilogue_begin
-; CHECK-NEXT: 0x{{[0-9a-z]+}}     10      2      1   0             0  end_sequence
+; CHECK: Address            Line   Column File   ISA Discriminator OpIndex Flags
+; CHECK-NEXT: ------------------ ------ ------ ------ --- ------------- ------- -------------
+; CHECK-NEXT: 0x{{[a-z0-9]+}}      1      0      1   0             0       0  is_stmt
+; CHECK-NEXT: 0x{{[a-z0-9]+}}      2      9      1   0             0       0  is_stmt prologue_end
+; CHECK-NEXT: 0x{{[a-z0-9]+}}      2     10      1   0             0       0 
+; CHECK-NEXT: 0x{{[a-z0-9]+}}      2      2      1   0             0       0 
+; CHECK-NEXT: 0x{{[a-z0-9]+}}      2      2      1   0             0       0  end_sequence
+; CHECK-NEXT: 0x{{[a-z0-9]+}}      5      0      1   0             0       0  is_stmt
+; CHECK-NEXT: 0x{{[a-z0-9]+}}      6     11      1   0             0       0  is_stmt prologue_end
+; CHECK-NEXT: 0x{{[a-z0-9]+}}      6     10      1   0             0       0 
+; CHECK-NEXT: 0x{{[a-z0-9]+}}      6      2      1   0             0       0 
+; CHECK-NEXT: 0x{{[a-z0-9]+}}      6      2      1   0             0       0  end_sequence
+; CHECK-NEXT: 0x{{[a-z0-9]+}}      9      0      1   0             0       0  is_stmt
+; CHECK-NEXT: 0x{{[a-z0-9]+}}     10     13      1   0             0       0  is_stmt prologue_end
+; CHECK-NEXT: 0x{{[a-z0-9]+}}     10      9      1   0             0       0 
+; CHECK-NEXT: 0x{{[a-z0-9]+}}     10     25      1   0             0       0 
+; CHECK-NEXT: 0x{{[a-z0-9]+}}     10     21      1   0             0       0 
+; CHECK-NEXT: 0x{{[a-z0-9]+}}     10     19      1   0             0       0 
+; CHECK-NEXT: 0x{{[a-z0-9]+}}     10      2      1   0             0       0 
+; CHECK-NEXT: 0x{{[a-z0-9]+}}     10      2      1   0             0       0  epilogue_begin
+; CHECK-NEXT: 0x{{[a-z0-9]+}}     10      2      1   0             0       0  end_sequence
 
 ; ModuleID = './test.c'
 source_filename = "./test.c"
