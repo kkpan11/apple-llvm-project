@@ -274,6 +274,9 @@ Bug Fixes
 - Fix assert that fails when the expression causing the this pointer to be
   captured by a block is part of a constexpr if statement's branch and
   instantiation of the enclosing method causes the branch to be discarded.
+- Fix crash when emitting diagnostic for out of order designated initializers
+  in C++.
+  (`#63605 <https://github.com/llvm/llvm-project/issues/63605>`_)
 
 Improvements to Clang's diagnostics
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
