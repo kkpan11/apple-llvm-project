@@ -10,6 +10,7 @@
 #define LLVM_CLANG_TOOLS_DRIVER_CC1DEPSCANPROTOCOL_H
 
 #include "clang/Basic/LLVM.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/StringSaver.h"

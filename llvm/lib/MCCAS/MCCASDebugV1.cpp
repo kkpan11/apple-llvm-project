@@ -8,6 +8,7 @@
 
 #include "llvm/MCCAS/MCCASDebugV1.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/DebugInfo/DWARF/DWARFDataExtractor.h"
 
 using namespace llvm;
