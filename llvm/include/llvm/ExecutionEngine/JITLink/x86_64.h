@@ -16,8 +16,6 @@
 #include "llvm/ExecutionEngine/JITLink/JITLink.h"
 #include "llvm/ExecutionEngine/JITLink/TableManager.h"
 
-#include <limits>
-
 namespace llvm {
 namespace jitlink {
 namespace x86_64 {
@@ -392,17 +390,6 @@ enum EdgeKind_x86_64 : Edge::Kind {
 /// only.
 const char *getEdgeKindName(Edge::Kind K);
 
-/// Returns true if the given uint64_t value is in range for a uint32_t.
-inline bool isInRangeForImmU32(uint64_t Value) {
-  return Value <= std::numeric_limits<uint32_t>::max();
-}
-
-/// Returns true if the given int64_t value is in range for an int32_t.
-inline bool isInRangeForImmS32(int64_t Value) {
-  return (Value >= std::numeric_limits<int32_t>::min() &&
-          Value <= std::numeric_limits<int32_t>::max());
-}
-
 /// Write an operand for a fixup expression. Can be used to zero out fixups.
 inline Error writeOperand(const Edge::Kind &K, uint64_t OperandValue,
                           char *FixupPtr) {
@@ -416,14 +403,14 @@ inline Error writeOperand(const Edge::Kind &K, uint64_t OperandValue,
   }
 
   case Pointer32: {
-    if (LLVM_LIKELY(isInRangeForImmU32(OperandValue))) {
+    if (LLVM_LIKELY(isUInt<32>(OperandValue))) {
       *(ulittle32_t *)FixupPtr = OperandValue;
       break;
     }
     return createStringError(inconvertibleErrorCode(), "invalid fixup");
   }
   case Pointer32Signed: {
-    if (LLVM_LIKELY(isInRangeForImmS32(OperandValue))) {
+    if (LLVM_LIKELY(isInt<32>(OperandValue))) {
       *(little32_t *)FixupPtr = OperandValue;
       break;
     }
@@ -458,7 +445,7 @@ inline Error writeOperand(const Edge::Kind &K, uint64_t OperandValue,
   case PCRel32GOTLoadRelaxable:
   case PCRel32GOTLoadREXRelaxable:
   case PCRel32TLVPLoadREXRelaxable: {
-    if (LLVM_LIKELY(isInRangeForImmS32(OperandValue))) {
+    if (LLVM_LIKELY(isInt<32>(OperandValue))) {
       *(little32_t *)FixupPtr = OperandValue;
       break;
     }
@@ -474,7 +461,7 @@ inline Error writeOperand(const Edge::Kind &K, uint64_t OperandValue,
     // FIXME: Whether to error on this could be client-dependent. Some clients
     // just want to zero it out though.
   case Delta32: {
-    if (LLVM_LIKELY(isInRangeForImmS32(OperandValue))) {
+    if (LLVM_LIKELY(isInt<32>(OperandValue))) {
       *(little32_t *)FixupPtr = OperandValue;
       break;
     }
@@ -487,7 +474,7 @@ inline Error writeOperand(const Edge::Kind &K, uint64_t OperandValue,
   }
 
   case NegDelta32: {
-    if (LLVM_LIKELY(isInRangeForImmS32(OperandValue))) {
+    if (LLVM_LIKELY(isInt<32>(OperandValue))) {
       *(little32_t *)FixupPtr = OperandValue;
       break;
     }
