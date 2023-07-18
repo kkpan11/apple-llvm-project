@@ -681,11 +681,7 @@ RISCVTargetLowering::RISCVTargetLowering(const TargetMachine &TM,
 
       setOperationAction({ISD::ROTL, ISD::ROTR}, VT, Expand);
 
-      setOperationAction({ISD::VP_BSWAP, ISD::VP_BITREVERSE}, VT, Expand);
       setOperationAction({ISD::VP_FSHL, ISD::VP_FSHR}, VT, Expand);
-      setOperationAction({ISD::VP_CTLZ, ISD::VP_CTLZ_ZERO_UNDEF, ISD::VP_CTTZ,
-                          ISD::VP_CTTZ_ZERO_UNDEF, ISD::VP_CTPOP},
-                         VT, Expand);
 
       // Custom-lower extensions and truncations from/to mask types.
       setOperationAction({ISD::ANY_EXTEND, ISD::SIGN_EXTEND, ISD::ZERO_EXTEND},
@@ -753,9 +749,17 @@ RISCVTargetLowering::RISCVTargetLowering(const TargetMachine &TM,
 
       if (Subtarget.hasStdExtZvbb()) {
         setOperationAction({ISD::BITREVERSE, ISD::BSWAP}, VT, Legal);
+        setOperationAction({ISD::VP_BITREVERSE, ISD::VP_BSWAP}, VT, Custom);
+        setOperationAction({ISD::VP_CTLZ, ISD::VP_CTLZ_ZERO_UNDEF, ISD::VP_CTTZ,
+                            ISD::VP_CTTZ_ZERO_UNDEF, ISD::VP_CTPOP},
+                           VT, Custom);
       } else {
         setOperationAction({ISD::BITREVERSE, ISD::BSWAP}, VT, Expand);
-        setOperationAction({ISD::CTTZ, ISD::CTLZ, ISD::CTPOP}, VT, Expand);
+        setOperationAction({ISD::VP_BITREVERSE, ISD::VP_BSWAP}, VT, Expand);
+        setOperationAction({ISD::CTLZ, ISD::CTTZ, ISD::CTPOP}, VT, Expand);
+        setOperationAction({ISD::VP_CTLZ, ISD::VP_CTLZ_ZERO_UNDEF, ISD::VP_CTTZ,
+                            ISD::VP_CTTZ_ZERO_UNDEF, ISD::VP_CTPOP},
+                           VT, Expand);
 
         // Lower CTLZ_ZERO_UNDEF and CTTZ_ZERO_UNDEF if element of VT in the
         // range of f32.
@@ -5430,6 +5434,18 @@ SDValue RISCVTargetLowering::LowerOperation(SDValue Op,
     return lowerVPOp(Op, DAG, RISCVISD::UMIN_VL, /*HasMergeOp*/ true);
   case ISD::VP_UMAX:
     return lowerVPOp(Op, DAG, RISCVISD::UMAX_VL, /*HasMergeOp*/ true);
+  case ISD::VP_BITREVERSE:
+    return lowerVPOp(Op, DAG, RISCVISD::BITREVERSE_VL, /*HasMergeOp*/ true);
+  case ISD::VP_BSWAP:
+    return lowerVPOp(Op, DAG, RISCVISD::BSWAP_VL, /*HasMergeOp*/ true);
+  case ISD::VP_CTLZ:
+  case ISD::VP_CTLZ_ZERO_UNDEF:
+    return lowerVPOp(Op, DAG, RISCVISD::CTLZ_VL, /*HasMergeOp*/ true);
+  case ISD::VP_CTTZ:
+  case ISD::VP_CTTZ_ZERO_UNDEF:
+    return lowerVPOp(Op, DAG, RISCVISD::CTTZ_VL, /*HasMergeOp*/ true);
+  case ISD::VP_CTPOP:
+    return lowerVPOp(Op, DAG, RISCVISD::CTPOP_VL, /*HasMergeOp*/ true);
   case ISD::EXPERIMENTAL_VP_STRIDED_LOAD:
     return lowerVPStridedLoad(Op, DAG);
   case ISD::EXPERIMENTAL_VP_STRIDED_STORE:
@@ -5767,31 +5783,29 @@ static SDValue combineSelectToBinOp(SDNode *N, SelectionDAG &DAG,
 /// seteq/setne into something that can be compared with 0.
 /// Based on RISCVDAGToDAGISel::selectSETCC but modified to produce
 /// target-independent SelectionDAG nodes rather than machine nodes.
-static bool selectSETCC(SDValue N, ISD::CondCode ExpectedCCVal, SDValue &Val,
-                        SelectionDAG &DAG) {
+static SDValue selectSETCC(SDValue N, ISD::CondCode ExpectedCCVal,
+                           SelectionDAG &DAG) {
   assert(ISD::isIntEqualitySetCC(ExpectedCCVal) &&
          "Unexpected condition code!");
 
   // We're looking for a setcc.
   if (N->getOpcode() != ISD::SETCC)
-    return false;
+    return SDValue();
 
   // Must be an equality comparison.
   ISD::CondCode CCVal = cast<CondCodeSDNode>(N->getOperand(2))->get();
   if (CCVal != ExpectedCCVal)
-    return false;
+    return SDValue();
 
   SDValue LHS = N->getOperand(0);
   SDValue RHS = N->getOperand(1);
 
   if (!LHS.getValueType().isScalarInteger())
-    return false;
+    return SDValue();
 
   // If the RHS side is 0, we don't need any extra instructions, return the LHS.
-  if (isNullConstant(RHS)) {
-    Val = LHS;
-    return true;
-  }
+  if (isNullConstant(RHS))
+    return LHS;
 
   SDLoc DL(N);
 
@@ -5799,24 +5813,19 @@ static bool selectSETCC(SDValue N, ISD::CondCode ExpectedCCVal, SDValue &Val,
     int64_t CVal = C->getSExtValue();
     // If the RHS is -2048, we can use xori to produce 0 if the LHS is -2048 and
     // non-zero otherwise.
-    if (CVal == -2048) {
-      Val = DAG.getNode(ISD::XOR, DL, N->getValueType(0), LHS,
-                        DAG.getConstant(CVal, DL, N->getValueType(0)));
-      return true;
-    }
+    if (CVal == -2048)
+      return DAG.getNode(ISD::XOR, DL, N->getValueType(0), LHS,
+                         DAG.getConstant(CVal, DL, N->getValueType(0)));
     // If the RHS is [-2047,2048], we can use addi with -RHS to produce 0 if the
     // LHS is equal to the RHS and non-zero otherwise.
-    if (isInt<12>(CVal) || CVal == 2048) {
-      Val = DAG.getNode(ISD::ADD, DL, N->getValueType(0), LHS,
-                        DAG.getConstant(-CVal, DL, N->getValueType(0)));
-      return true;
-    }
+    if (isInt<12>(CVal) || CVal == 2048)
+      return DAG.getNode(ISD::ADD, DL, N->getValueType(0), LHS,
+                         DAG.getConstant(-CVal, DL, N->getValueType(0)));
   }
 
   // If nothing else we can XOR the LHS and RHS to produce zero if they are
   // equal and a non-zero value if they aren't.
-  Val = DAG.getNode(ISD::XOR, DL, N->getValueType(0), LHS, RHS);
-  return true;
+  return DAG.getNode(ISD::XOR, DL, N->getValueType(0), LHS, RHS);
 }
 
 // Transform `binOp (select cond, x, c0), c1` where `c0` and `c1` are constants
@@ -5905,13 +5914,12 @@ SDValue RISCVTargetLowering::lowerSELECT(SDValue Op, SelectionDAG &DAG) const {
   // when CZERO_{EQZ/NEZ} are used vs another branchless sequence or
   // RISCVISD::SELECT_CC node (branch-based select).
   if (Subtarget.hasStdExtZicond() && VT.isScalarInteger()) {
-    SDValue NewCondV;
-    if (selectSETCC(CondV, ISD::SETNE, NewCondV, DAG)) {
+    if (SDValue NewCondV = selectSETCC(CondV, ISD::SETNE, DAG)) {
+      // (select (riscv_setne c), t, 0) -> (czero_eqz t, c)
       if (isNullConstant(FalseV))
-        // (select (riscv_setne c), t, 0) -> (czero_eqz t, c)
         return DAG.getNode(RISCVISD::CZERO_EQZ, DL, VT, TrueV, NewCondV);
+      // (select (riscv_setne c), 0, f) -> (czero_nez f, c)
       if (isNullConstant(TrueV))
-        // (select (riscv_setne c), 0, f) -> (czero_nez f, c)
         return DAG.getNode(RISCVISD::CZERO_NEZ, DL, VT, FalseV, NewCondV);
       // (select (riscv_setne c), t, f) -> (or (czero_eqz t, c), (czero_nez f,
       // c)
@@ -5920,12 +5928,12 @@ SDValue RISCVTargetLowering::lowerSELECT(SDValue Op, SelectionDAG &DAG) const {
           DAG.getNode(RISCVISD::CZERO_EQZ, DL, VT, TrueV, NewCondV),
           DAG.getNode(RISCVISD::CZERO_NEZ, DL, VT, FalseV, NewCondV));
     }
-    if (selectSETCC(CondV, ISD::SETEQ, NewCondV, DAG)) {
+    if (SDValue NewCondV =  selectSETCC(CondV, ISD::SETEQ, DAG)) {
+      // (select (riscv_seteq c), t, 0) -> (czero_nez t, c)
       if (isNullConstant(FalseV))
-        // (select (riscv_seteq c), t, 0) -> (czero_nez t, c)
         return DAG.getNode(RISCVISD::CZERO_NEZ, DL, VT, TrueV, NewCondV);
+      // (select (riscv_seteq c), 0, f) -> (czero_eqz f, c)
       if (isNullConstant(TrueV))
-        // (select (riscv_seteq c), 0, f) -> (czero_eqz f, c)
         return DAG.getNode(RISCVISD::CZERO_EQZ, DL, VT, FalseV, NewCondV);
       // (select (riscv_seteq c), t, f) -> (or (czero_eqz f, c), (czero_nez t,
       // c)
@@ -5934,28 +5942,27 @@ SDValue RISCVTargetLowering::lowerSELECT(SDValue Op, SelectionDAG &DAG) const {
           DAG.getNode(RISCVISD::CZERO_EQZ, DL, VT, FalseV, NewCondV),
           DAG.getNode(RISCVISD::CZERO_NEZ, DL, VT, TrueV, NewCondV));
     }
-    if (isNullConstant(FalseV)) {
-      // (select c, t, 0) -> (czero_eqz t, c)
+
+    // (select c, t, 0) -> (czero_eqz t, c)
+    if (isNullConstant(FalseV))
       return DAG.getNode(RISCVISD::CZERO_EQZ, DL, VT, TrueV, CondV);
-    }
-    if (isNullConstant(TrueV)) {
-      // (select c, 0, f) -> (czero_nez f, c)
+    // (select c, 0, f) -> (czero_nez f, c)
+    if (isNullConstant(TrueV))
       return DAG.getNode(RISCVISD::CZERO_NEZ, DL, VT, FalseV, CondV);
-    }
+
+    // (select c, (and f, x), f) -> (or (and f, x), (czero_nez f, c))
     if (TrueV.getOpcode() == ISD::AND &&
-        (TrueV.getOperand(0) == FalseV || TrueV.getOperand(1) == FalseV)) {
-      // (select c, (and f, x), f) -> (or (and f, x), (czero_nez f, c))
+        (TrueV.getOperand(0) == FalseV || TrueV.getOperand(1) == FalseV))
       return DAG.getNode(
           ISD::OR, DL, VT, TrueV,
           DAG.getNode(RISCVISD::CZERO_NEZ, DL, VT, FalseV, CondV));
-    }
+    // (select c, t, (and t, x)) -> (or (czero_eqz t, c), (and t, x))
     if (FalseV.getOpcode() == ISD::AND &&
-        (FalseV.getOperand(0) == TrueV || FalseV.getOperand(1) == TrueV)) {
-      // (select c, t, (and t, x)) -> (or (czero_eqz t, c), (and t, x))
+        (FalseV.getOperand(0) == TrueV || FalseV.getOperand(1) == TrueV))
       return DAG.getNode(
           ISD::OR, DL, VT, FalseV,
           DAG.getNode(RISCVISD::CZERO_EQZ, DL, VT, TrueV, CondV));
-    }
+
     // (select c, t, f) -> (or (czero_eqz t, c), (czero_nez f, c))
     return DAG.getNode(ISD::OR, DL, VT,
                        DAG.getNode(RISCVISD::CZERO_EQZ, DL, VT, TrueV, CondV),
@@ -7085,10 +7092,33 @@ SDValue RISCVTargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op,
     return DAG.getRegister(RISCV::X4, PtrVT);
   }
   case Intrinsic::riscv_orc_b:
-  case Intrinsic::riscv_brev8: {
-    unsigned Opc =
-        IntNo == Intrinsic::riscv_brev8 ? RISCVISD::BREV8 : RISCVISD::ORC_B;
+  case Intrinsic::riscv_brev8:
+  case Intrinsic::riscv_sha256sig0:
+  case Intrinsic::riscv_sha256sig1:
+  case Intrinsic::riscv_sha256sum0:
+  case Intrinsic::riscv_sha256sum1:
+  case Intrinsic::riscv_sm3p0:
+  case Intrinsic::riscv_sm3p1: {
+    unsigned Opc;
+    switch (IntNo) {
+    case Intrinsic::riscv_orc_b:      Opc = RISCVISD::ORC_B;      break;
+    case Intrinsic::riscv_brev8:      Opc = RISCVISD::BREV8;      break;
+    case Intrinsic::riscv_sha256sig0: Opc = RISCVISD::SHA256SIG0; break;
+    case Intrinsic::riscv_sha256sig1: Opc = RISCVISD::SHA256SIG1; break;
+    case Intrinsic::riscv_sha256sum0: Opc = RISCVISD::SHA256SUM0; break;
+    case Intrinsic::riscv_sha256sum1: Opc = RISCVISD::SHA256SUM1; break;
+    case Intrinsic::riscv_sm3p0:      Opc = RISCVISD::SM3P0;      break;
+    case Intrinsic::riscv_sm3p1:      Opc = RISCVISD::SM3P1;      break;
+    }
+
     return DAG.getNode(Opc, DL, XLenVT, Op.getOperand(1));
+  }
+  case Intrinsic::riscv_sm4ks:
+  case Intrinsic::riscv_sm4ed: {
+    unsigned Opc =
+        IntNo == Intrinsic::riscv_sm4ks ? RISCVISD::SM4KS : RISCVISD::SM4ED;
+    return DAG.getNode(Opc, DL, XLenVT, Op.getOperand(1), Op.getOperand(2),
+                       Op.getOperand(3));
   }
   case Intrinsic::riscv_zip:
   case Intrinsic::riscv_unzip: {
@@ -9967,14 +9997,43 @@ void RISCVTargetLowering::ReplaceNodeResults(SDNode *N,
       return;
     }
     case Intrinsic::riscv_orc_b:
-    case Intrinsic::riscv_brev8: {
+    case Intrinsic::riscv_brev8:
+    case Intrinsic::riscv_sha256sig0:
+    case Intrinsic::riscv_sha256sig1:
+    case Intrinsic::riscv_sha256sum0:
+    case Intrinsic::riscv_sha256sum1:
+    case Intrinsic::riscv_sm3p0:
+    case Intrinsic::riscv_sm3p1: {
       if (!Subtarget.is64Bit() || N->getValueType(0) != MVT::i32)
         return;
-      unsigned Opc =
-          IntNo == Intrinsic::riscv_brev8 ? RISCVISD::BREV8 : RISCVISD::ORC_B;
+      unsigned Opc;
+      switch (IntNo) {
+      case Intrinsic::riscv_orc_b:      Opc = RISCVISD::ORC_B;      break;
+      case Intrinsic::riscv_brev8:      Opc = RISCVISD::BREV8;      break;
+      case Intrinsic::riscv_sha256sig0: Opc = RISCVISD::SHA256SIG0; break;
+      case Intrinsic::riscv_sha256sig1: Opc = RISCVISD::SHA256SIG1; break;
+      case Intrinsic::riscv_sha256sum0: Opc = RISCVISD::SHA256SUM0; break;
+      case Intrinsic::riscv_sha256sum1: Opc = RISCVISD::SHA256SUM1; break;
+      case Intrinsic::riscv_sm3p0:      Opc = RISCVISD::SM3P0;      break;
+      case Intrinsic::riscv_sm3p1:      Opc = RISCVISD::SM3P1;      break;
+      }
+
       SDValue NewOp =
           DAG.getNode(ISD::ANY_EXTEND, DL, MVT::i64, N->getOperand(1));
       SDValue Res = DAG.getNode(Opc, DL, MVT::i64, NewOp);
+      Results.push_back(DAG.getNode(ISD::TRUNCATE, DL, MVT::i32, Res));
+      return;
+    }
+    case Intrinsic::riscv_sm4ks:
+    case Intrinsic::riscv_sm4ed: {
+      unsigned Opc =
+          IntNo == Intrinsic::riscv_sm4ks ? RISCVISD::SM4KS : RISCVISD::SM4ED;
+      SDValue NewOp0 =
+          DAG.getNode(ISD::ANY_EXTEND, DL, MVT::i64, N->getOperand(1));
+      SDValue NewOp1 =
+          DAG.getNode(ISD::ANY_EXTEND, DL, MVT::i64, N->getOperand(2));
+      SDValue Res =
+          DAG.getNode(Opc, DL, MVT::i64, NewOp0, NewOp1, N->getOperand(3));
       Results.push_back(DAG.getNode(ISD::TRUNCATE, DL, MVT::i32, Res));
       return;
     }
@@ -15991,6 +16050,14 @@ const char *RISCVTargetLowering::getTargetNodeName(unsigned Opcode) const {
   NODE_NAME_CASE(CLMUL)
   NODE_NAME_CASE(CLMULH)
   NODE_NAME_CASE(CLMULR)
+  NODE_NAME_CASE(SHA256SIG0)
+  NODE_NAME_CASE(SHA256SIG1)
+  NODE_NAME_CASE(SHA256SUM0)
+  NODE_NAME_CASE(SHA256SUM1)
+  NODE_NAME_CASE(SM4KS)
+  NODE_NAME_CASE(SM4ED)
+  NODE_NAME_CASE(SM3P0)
+  NODE_NAME_CASE(SM3P1)
   NODE_NAME_CASE(TH_LWD)
   NODE_NAME_CASE(TH_LWUD)
   NODE_NAME_CASE(TH_LDD)
@@ -16063,6 +16130,11 @@ const char *RISCVTargetLowering::getTargetNodeName(unsigned Opcode) const {
   NODE_NAME_CASE(SMAX_VL)
   NODE_NAME_CASE(UMIN_VL)
   NODE_NAME_CASE(UMAX_VL)
+  NODE_NAME_CASE(BITREVERSE_VL)
+  NODE_NAME_CASE(BSWAP_VL)
+  NODE_NAME_CASE(CTLZ_VL)
+  NODE_NAME_CASE(CTTZ_VL)
+  NODE_NAME_CASE(CTPOP_VL)
   NODE_NAME_CASE(FMINNUM_VL)
   NODE_NAME_CASE(FMAXNUM_VL)
   NODE_NAME_CASE(MULHS_VL)
