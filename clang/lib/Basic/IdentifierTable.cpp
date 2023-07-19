@@ -399,6 +399,19 @@ IdentifierInfo::isReserved(const LangOptions &LangOpts) const {
 
 namespace clang {
 
+ReservedLiteralSuffixIdStatus
+IdentifierInfo::isReservedLiteralSuffixId() const {
+  StringRef Name = getName();
+
+  if (Name[0] != '_')
+    return ReservedLiteralSuffixIdStatus::NotStartsWithUnderscore;
+
+  if (Name.contains("__"))
+    return ReservedLiteralSuffixIdStatus::ContainsDoubleUnderscore;
+
+  return ReservedLiteralSuffixIdStatus::NotReserved;
+}
+
 StringRef IdentifierInfo::deuglifiedName() const {
   StringRef Name = getName();
   if (Name.size() >= 2 && Name.front() == '_' &&
