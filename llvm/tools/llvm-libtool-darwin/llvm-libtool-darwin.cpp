@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "DependencyInfo.h"
+#include "llvm/ADT/MapVector.h"
 #include "llvm/BinaryFormat/Magic.h"
 #include "llvm/CAS/ObjectStore.h"
 #include "llvm/CASUtil/Utils.h"
@@ -643,7 +644,7 @@ checkForDuplicates(const MembersPerArchitectureMap &MembersPerArch) {
   for (const auto &M : MembersPerArch) {
     ArrayRef<NewArchiveMember> Members = M.second.getMembers();
     ArrayRef<StringRef> Files = M.second.getFiles();
-    StringMap<std::vector<StringRef>> MembersToFiles;
+    MapVector<StringRef, SmallVector<StringRef, 1>> MembersToFiles;
     for (auto Iterators = std::make_pair(Members.begin(), Files.begin());
          Iterators.first != Members.end();
          ++Iterators.first, ++Iterators.second) {
@@ -654,12 +655,11 @@ checkForDuplicates(const MembersPerArchitectureMap &MembersPerArch) {
 
     std::string ErrorData;
     raw_string_ostream ErrorStream(ErrorData);
-    for (const auto &MemberToFile : MembersToFiles) {
-      if (MemberToFile.getValue().size() > 1) {
-        ErrorStream << "file '" << MemberToFile.getKey().str()
-                    << "' was specified multiple times.\n";
+    for (const auto &[Key, Value] : MembersToFiles) {
+      if (Value.size() > 1) {
+        ErrorStream << "file '" << Key << "' was specified multiple times.\n";
 
-        for (StringRef OriginalFile : MemberToFile.getValue())
+        for (StringRef OriginalFile : Value)
           ErrorStream << "in: " << OriginalFile.str() << '\n';
 
         ErrorStream << '\n';

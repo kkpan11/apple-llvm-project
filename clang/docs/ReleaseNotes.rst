@@ -137,6 +137,7 @@ C++2c Feature Support
 - Implemented `P2738R1: constexpr cast from void* <https://wg21.link/P2738R1>`_.
 - Partially implemented `P2361R6: Unevaluated strings <https://wg21.link/P2361R6>`_.
   The changes to attributes declarations are not part of this release.
+- Implemented `P2741R3: user-generated static_assert messages  <https://wg21.link/P2741R3>`_.
 
 Resolutions to C++ Defect Reports
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -441,6 +442,9 @@ Improvements to Clang's diagnostics
 - ``-Wformat`` will no longer suggest a no-op fix-it for fixing scoped enum format
   warnings. Instead, it will suggest casting the enum object to the type specified
   in the format string.
+- Clang now emits ``-Wconstant-logical-operand`` warning even when constant logical
+  operand is on left side.
+  (`#37919 <https://github.com/llvm/llvm-project/issues/37919>`_)
 
 Bug Fixes in This Version
 -------------------------
@@ -725,6 +729,50 @@ Bug Fixes to C++ Support
 - Fix crash when emitting diagnostic for out of order designated initializers
   in C++.
   (`#63605 <https://github.com/llvm/llvm-project/issues/63605>`_)
+- Fix crash when using standard C++ modules with OpenMP.
+  (`#62359 <https://github.com/llvm/llvm-project/issues/62359>`_)
+- Fix crash when using consteval non static data member initialization in
+  standard C++ modules.
+  (`#60275 <https://github.com/llvm/llvm-project/issues/60275>`_)
+- Fix handling of ADL for dependent expressions in standard C++ modules.
+  (`#60488 <https://github.com/llvm/llvm-project/issues/60488>`_)
+- Fix crash when combining `-ftime-trace` within standard C++ modules.
+  (`#60544 <https://github.com/llvm/llvm-project/issues/60544>`_)
+- Don't generate template specializations when importing standard C++ modules.
+  (`#60693 <https://github.com/llvm/llvm-project/issues/60693>`_)
+- Fix the visibility of `initializer list` in the importer of standard C++
+  modules. This addresses
+  (`#60775 <https://github.com/llvm/llvm-project/issues/60775>`_)
+- Allow the use of constrained friend in standard C++ modules.
+  (`#60890 <https://github.com/llvm/llvm-project/issues/60890>`_)
+- Don't evaluate initializer of used variables in every importer of standard
+  C++ modules.
+  (`#61040 <https://github.com/llvm/llvm-project/issues/61040>`_)
+- Fix the issue that the default `operator==` in standard C++ modules will
+  cause duplicate symbol linker error.
+  (`#61067 <https://github.com/llvm/llvm-project/issues/61067>`_)
+- Fix the false positive ODR check for template names. This addresses the issue
+  that we can't include `<ranges>` in multiple module units.
+  (`#61317 <https://github.com/llvm/llvm-project/issues/61317>`_)
+- Fix crash for inconsistent exported declarations in standard C++ modules.
+  (`#61321 <https://github.com/llvm/llvm-project/issues/61321>`_)
+- Fix ignoring `#pragma comment` and `#pragma detect_mismatch` directives in
+  standard C++ modules.
+  (`#61733 <https://github.com/llvm/llvm-project/issues/61733>`_)
+- Don't generate virtual tables if the class is defined in another module units
+  for Itanium ABI.
+  (`#61940 <https://github.com/llvm/llvm-project/issues/61940>`_)
+- Fix false postive check for constrained satisfaction in standard C++ modules.
+  (`#62589 <https://github.com/llvm/llvm-project/issues/62589>`_)
+- Serialize the evaluated constant values for variable declarations in standard
+  C++ modules.
+  (`#62796 <https://github.com/llvm/llvm-project/issues/62796>`_)
+- Merge lambdas in require expressions in standard C++ modules.
+  (`#63544 <https://github.com/llvm/llvm-project/issues/63544>`_)
+
+- Fix location of default member initialization in parenthesized aggregate
+  initialization.
+  (`#63903 <https://github.com/llvm/llvm-project/issues/63903>`_)
 
 Bug Fixes to AST Handling
 ^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -766,6 +814,21 @@ X86 Support
 
 - Add ISA of ``AMX-COMPLEX`` which supports ``tcmmimfp16ps`` and
   ``tcmmrlfp16ps``.
+- Support ISA of ``SHA512``.
+  * Support intrinsic of ``_mm256_sha512msg1_epi64``.
+  * Support intrinsic of ``_mm256_sha512msg2_epi64``.
+  * Support intrinsic of ``_mm256_sha512rnds2_epi64``.
+- Support ISA of ``SM3``.
+  * Support intrinsic of ``_mm_sm3msg1_epi32``.
+  * Support intrinsic of ``_mm_sm3msg2_epi32``.
+  * Support intrinsic of ``_mm_sm3rnds2_epi32``.
+- Support ISA of ``SM4``.
+  * Support intrinsic of ``_mm(256)_sm4key4_epi32``.
+  * Support intrinsic of ``_mm(256)_sm4rnds4_epi32``.
+- Support ISA of ``AVX-VNNI-INT16``.
+  * Support intrinsic of ``_mm(256)_dpwsud(s)_epi32``.
+  * Support intrinsic of ``_mm(256)_dpwusd(s)_epi32``.
+  * Support intrinsic of ``_mm(256)_dpwuud(s)_epi32``.
 
 Arm and AArch64 Support
 ^^^^^^^^^^^^^^^^^^^^^^^
@@ -823,6 +886,9 @@ RISC-V Support
 
 CUDA/HIP Language Changes
 ^^^^^^^^^^^^^^^^^^^^^^^^^
+- Clang has been updated to align its default language standard for CUDA/HIP with
+  that of C++. The standard has now been enhanced to gnu++17, supplanting the
+  previously used c++14.
 
 CUDA Support
 ^^^^^^^^^^^^
