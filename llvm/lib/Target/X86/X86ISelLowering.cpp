@@ -1240,9 +1240,11 @@ X86TargetLowering::X86TargetLowering(const X86TargetMachine &TM,
     setOperationAction(ISD::TRUNCATE,    MVT::v2i8,  Custom);
     setOperationAction(ISD::TRUNCATE,    MVT::v2i16, Custom);
     setOperationAction(ISD::TRUNCATE,    MVT::v2i32, Custom);
+    setOperationAction(ISD::TRUNCATE,    MVT::v2i64, Custom);
     setOperationAction(ISD::TRUNCATE,    MVT::v4i8,  Custom);
     setOperationAction(ISD::TRUNCATE,    MVT::v4i16, Custom);
     setOperationAction(ISD::TRUNCATE,    MVT::v4i32, Custom);
+    setOperationAction(ISD::TRUNCATE,    MVT::v4i64, Custom);
     setOperationAction(ISD::TRUNCATE,    MVT::v8i8,  Custom);
     setOperationAction(ISD::TRUNCATE,    MVT::v8i16, Custom);
     setOperationAction(ISD::TRUNCATE,    MVT::v8i32, Custom);
@@ -2276,9 +2278,10 @@ X86TargetLowering::X86TargetLowering(const X86TargetMachine &TM,
     addRegisterClass(MVT::v8bf16, &X86::VR128XRegClass);
     addRegisterClass(MVT::v16bf16, &X86::VR256XRegClass);
     // We set the type action of bf16 to TypeSoftPromoteHalf, but we don't
-    // provide the method to promote BUILD_VECTOR. Set the operation action
-    // Custom to do the customization later.
+    // provide the method to promote BUILD_VECTOR and INSERT_VECTOR_ELT.
+    // Set the operation action Custom to do the customization later.
     setOperationAction(ISD::BUILD_VECTOR, MVT::bf16, Custom);
+    setOperationAction(ISD::INSERT_VECTOR_ELT, MVT::bf16, Custom);
     for (auto VT : {MVT::v8bf16, MVT::v16bf16}) {
       setF16Action(VT, Expand);
       setOperationAction(ISD::FADD, VT, Expand);
@@ -20751,6 +20754,14 @@ SDValue X86TargetLowering::LowerINSERT_VECTOR_ELT(SDValue Op,
   SDValue N2 = Op.getOperand(2);
   auto *N2C = dyn_cast<ConstantSDNode>(N2);
 
+  if (EltVT == MVT::bf16) {
+    MVT IVT = VT.changeVectorElementTypeToInteger();
+    SDValue Res = DAG.getNode(ISD::INSERT_VECTOR_ELT, dl, IVT,
+                              DAG.getBitcast(IVT, N0),
+                              DAG.getBitcast(MVT::i16, N1), N2);
+    return DAG.getBitcast(VT, Res);
+  }
+
   if (!N2C) {
     // Variable insertion indices, usually we're better off spilling to stack,
     // but AVX512 can use a variable compare+select by comparing against all
@@ -22948,6 +22959,13 @@ static SDValue LowerTruncateVecPackWithSignBits(MVT DstVT, SDValue In,
   // Don't lower with PACK nodes on AVX512 targets if we'd need more than one.
   if (Subtarget.hasAVX512() &&
       SrcSVT.getSizeInBits() > (DstSVT.getSizeInBits() * 2))
+    return SDValue();
+
+  // Prefer to lower v4i64 -> v4i32 as a shuffle unless we can cheaply
+  // split this for packing.
+  if (SrcVT == MVT::v4i64 && DstVT == MVT::v4i32 &&
+      !isFreeToSplitVector(In.getNode(), DAG) &&
+      (!Subtarget.hasInt256() || DAG.ComputeNumSignBits(In) != 64))
     return SDValue();
 
   // If the upper half of the source is undef, then attempt to split and
