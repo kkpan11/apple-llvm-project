@@ -30777,7 +30777,7 @@ static SDValue LowerFMINIMUM_FMAXIMUM(SDValue Op, const X86Subtarget &Subtarget,
   bool IgnoreNaN = DAG.getTarget().Options.NoNaNsFPMath ||
                    Op->getFlags().hasNoNaNs() || (IsXNeverNaN && IsYNeverNaN);
 
-  // If we did no ordering operands for singed zero handling and we need
+  // If we did no ordering operands for signed zero handling and we need
   // to process NaN and we know that the second operand is not NaN then put
   // it in first operand and we will not need to post handle NaN after max/min.
   if (IgnoreSignedZero && !IgnoreNaN && DAG.isKnownNeverNaN(NewY))
@@ -32489,8 +32489,18 @@ static SDValue LowerRotate(SDValue Op, const X86Subtarget &Subtarget,
   }
 
   // Rotate by an uniform constant - expand back to shifts.
-  if (IsCstSplat)
-    return SDValue();
+  // TODO: Can't use generic expansion as UNDEF amt elements can be converted
+  // to other values when folded to shift amounts, losing the splat.
+  if (IsCstSplat) {
+    uint64_t RotAmt = CstSplatValue.urem(EltSizeInBits);
+    uint64_t ShlAmt = IsROTL ? RotAmt : (EltSizeInBits - RotAmt);
+    uint64_t SrlAmt = IsROTL ? (EltSizeInBits - RotAmt) : RotAmt;
+    SDValue Shl = DAG.getNode(ISD::SHL, DL, VT, R,
+                              DAG.getShiftAmountConstant(ShlAmt, VT, DL));
+    SDValue Srl = DAG.getNode(ISD::SRL, DL, VT, R,
+                              DAG.getShiftAmountConstant(SrlAmt, VT, DL));
+    return DAG.getNode(ISD::OR, DL, VT, Shl, Srl);
+  }
 
   // Split 512-bit integers on non 512-bit BWI targets.
   if (VT.is512BitVector() && !Subtarget.useBWIRegs())
