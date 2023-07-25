@@ -79,6 +79,7 @@ llvm_config.feature_config(
                 "ARM": "arm",
                 "AVR": "avr",
                 "Hexagon": "hexagon",
+                "LoongArch": "loongarch",
                 "Mips": "mips",
                 "MSP430": "msp430",
                 "PowerPC": "ppc",
