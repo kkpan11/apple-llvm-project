@@ -979,6 +979,8 @@ eArgTypeStopHookID = _lldb.eArgTypeStopHookID
 
 eArgTypeBindGenTypeParamValue = _lldb.eArgTypeBindGenTypeParamValue
 
+eArgTypeCompletionType = _lldb.eArgTypeCompletionType
+
 eArgTypeLastArg = _lldb.eArgTypeLastArg
 
 eSymbolTypeAny = _lldb.eSymbolTypeAny
@@ -1656,6 +1658,60 @@ eWatchPointValueKindInvalid = _lldb.eWatchPointValueKindInvalid
 eWatchPointValueKindVariable = _lldb.eWatchPointValueKindVariable
 
 eWatchPointValueKindExpression = _lldb.eWatchPointValueKindExpression
+
+eNoCompletion = _lldb.eNoCompletion
+
+eSourceFileCompletion = _lldb.eSourceFileCompletion
+
+eDiskFileCompletion = _lldb.eDiskFileCompletion
+
+eDiskDirectoryCompletion = _lldb.eDiskDirectoryCompletion
+
+eSymbolCompletion = _lldb.eSymbolCompletion
+
+eModuleCompletion = _lldb.eModuleCompletion
+
+eSettingsNameCompletion = _lldb.eSettingsNameCompletion
+
+ePlatformPluginCompletion = _lldb.ePlatformPluginCompletion
+
+eArchitectureCompletion = _lldb.eArchitectureCompletion
+
+eVariablePathCompletion = _lldb.eVariablePathCompletion
+
+eRegisterCompletion = _lldb.eRegisterCompletion
+
+eBreakpointCompletion = _lldb.eBreakpointCompletion
+
+eProcessPluginCompletion = _lldb.eProcessPluginCompletion
+
+eDisassemblyFlavorCompletion = _lldb.eDisassemblyFlavorCompletion
+
+eTypeLanguageCompletion = _lldb.eTypeLanguageCompletion
+
+eFrameIndexCompletion = _lldb.eFrameIndexCompletion
+
+eModuleUUIDCompletion = _lldb.eModuleUUIDCompletion
+
+eStopHookIDCompletion = _lldb.eStopHookIDCompletion
+
+eThreadIndexCompletion = _lldb.eThreadIndexCompletion
+
+eWatchpointIDCompletion = _lldb.eWatchpointIDCompletion
+
+eBreakpointNameCompletion = _lldb.eBreakpointNameCompletion
+
+eProcessIDCompletion = _lldb.eProcessIDCompletion
+
+eProcessNameCompletion = _lldb.eProcessNameCompletion
+
+eRemoteDiskFileCompletion = _lldb.eRemoteDiskFileCompletion
+
+eRemoteDiskDirectoryCompletion = _lldb.eRemoteDiskDirectoryCompletion
+
+eTypeCategoryNameCompletion = _lldb.eTypeCategoryNameCompletion
+
+eCustomCompletion = _lldb.eCustomCompletion
 
 class SBAddress(object):
     r"""
@@ -9124,6 +9180,52 @@ class SBReproducer(object):
 
 # Register SBReproducer in _lldb:
 _lldb.SBReproducer_swigregister(SBReproducer)
+class SBScriptObject(object):
+    r"""Proxy of C++ lldb::SBScriptObject class."""
+
+    thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
+    __repr__ = _swig_repr
+
+    def __init__(self, *args):
+        r"""
+        __init__(SBScriptObject self, lldb::ScriptObjectPtr const ptr, lldb::ScriptLanguage lang) -> SBScriptObject
+        __init__(SBScriptObject self, SBScriptObject rhs) -> SBScriptObject
+        """
+        _lldb.SBScriptObject_swiginit(self, _lldb.new_SBScriptObject(*args))
+    __swig_destroy__ = _lldb.delete_SBScriptObject
+
+    def __nonzero__(self):
+        return _lldb.SBScriptObject___nonzero__(self)
+    __bool__ = __nonzero__
+
+
+
+    def __ne__(self, rhs):
+        r"""__ne__(SBScriptObject self, SBScriptObject rhs) -> bool"""
+        return _lldb.SBScriptObject___ne__(self, rhs)
+
+    def IsValid(self):
+        r"""IsValid(SBScriptObject self) -> bool"""
+        return _lldb.SBScriptObject_IsValid(self)
+
+    def GetPointer(self):
+        r"""GetPointer(SBScriptObject self) -> lldb::ScriptObjectPtr"""
+        return _lldb.SBScriptObject_GetPointer(self)
+
+    def GetLanguage(self):
+        r"""GetLanguage(SBScriptObject self) -> lldb::ScriptLanguage"""
+        return _lldb.SBScriptObject_GetLanguage(self)
+
+    def __eq__(self, other):
+      return not self.__ne__(other)
+
+
+    ptr = property(GetPointer, None, doc='''A read only property that returns the underlying script object.''')
+    lang = property(GetLanguage, None, doc='''A read only property that returns the script language associated with with this script object.''')
+
+
+# Register SBScriptObject in _lldb:
+_lldb.SBScriptObject_swigregister(SBScriptObject)
 class SBSection(object):
     r"""
     Represents an executable image section.
@@ -9525,6 +9627,7 @@ class SBStructuredData(object):
         __init__(SBStructuredData self) -> SBStructuredData
         __init__(SBStructuredData self, SBStructuredData rhs) -> SBStructuredData
         __init__(SBStructuredData self, lldb::EventSP const & event_sp) -> SBStructuredData
+        __init__(SBStructuredData self, SBScriptObject obj, SBDebugger debugger) -> SBStructuredData
         """
         _lldb.SBStructuredData_swiginit(self, _lldb.new_SBStructuredData(*args))
     __swig_destroy__ = _lldb.delete_SBStructuredData
@@ -9578,6 +9681,10 @@ class SBStructuredData(object):
     def GetStringValue(self, dst):
         r"""GetStringValue(SBStructuredData self, char * dst) -> size_t"""
         return _lldb.SBStructuredData_GetStringValue(self, dst)
+
+    def GetGenericValue(self):
+        r"""GetGenericValue(SBStructuredData self) -> SBScriptObject"""
+        return _lldb.SBStructuredData_GetGenericValue(self)
 
     def GetAsJSON(self, stream):
         r"""GetAsJSON(SBStructuredData self, SBStream stream) -> SBError"""
