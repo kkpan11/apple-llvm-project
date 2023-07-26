@@ -353,7 +353,7 @@ public:
     %feature("autodoc", "
     Returns the implementation object of the process plugin if available. None
     otherwise.") GetScriptedImplementation;
-    ScriptedObject
+    lldb::SBScriptObject
     GetScriptedImplementation();
 
     %feature("autodoc", "

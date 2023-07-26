@@ -21,6 +21,7 @@
 #include "lldb/Core/StreamFile.h"
 #include "lldb/Core/ThreadedCommunication.h"
 #include "lldb/Host/PseudoTerminal.h"
+#include "lldb/Interpreter/ScriptObject.h"
 #include "lldb/Interpreter/ScriptedProcessInterface.h"
 #include "lldb/Utility/Broadcaster.h"
 #include "lldb/Utility/Status.h"
@@ -572,6 +573,10 @@ public:
 
   virtual lldb::ScriptedProcessInterfaceUP CreateScriptedProcessInterface() {
     return std::make_unique<ScriptedProcessInterface>();
+  }
+  virtual StructuredData::ObjectSP
+  CreateStructuredDataFromScriptObject(ScriptObject obj) {
+    return {};
   }
 
   lldb::DataExtractorSP

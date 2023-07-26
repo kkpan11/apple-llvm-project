@@ -73,10 +73,12 @@ class LLDB_API SBMemoryRegionInfoList;
 class LLDB_API SBModule;
 class LLDB_API SBModuleSpec;
 class LLDB_API SBModuleSpecList;
+class LLDB_API SBPlatform;
 class LLDB_API SBProcess;
 class LLDB_API SBProcessInfo;
 class LLDB_API SBQueue;
 class LLDB_API SBQueueItem;
+class LLDB_API SBScriptObject;
 class LLDB_API SBSection;
 class LLDB_API SBSourceManager;
 class LLDB_API SBStream;
@@ -112,7 +114,6 @@ class LLDB_API SBUnixSignals;
 typedef bool (*SBBreakpointHitCallback)(void *baton, SBProcess &process,
                                         SBThread &thread,
                                         lldb::SBBreakpointLocation &location);
-typedef void *ScriptedObject;
 }
 
 #endif // LLDB_API_SBDEFINES_H
