@@ -979,6 +979,8 @@ eArgTypeStopHookID = _lldb.eArgTypeStopHookID
 
 eArgTypeBindGenTypeParamValue = _lldb.eArgTypeBindGenTypeParamValue
 
+eArgTypeCompletionType = _lldb.eArgTypeCompletionType
+
 eArgTypeLastArg = _lldb.eArgTypeLastArg
 
 eSymbolTypeAny = _lldb.eSymbolTypeAny
@@ -1274,6 +1276,10 @@ eStructuredDataTypeBoolean = _lldb.eStructuredDataTypeBoolean
 eStructuredDataTypeString = _lldb.eStructuredDataTypeString
 
 eStructuredDataTypeDictionary = _lldb.eStructuredDataTypeDictionary
+
+eStructuredDataTypeSignedInteger = _lldb.eStructuredDataTypeSignedInteger
+
+eStructuredDataTypeUnsignedInteger = _lldb.eStructuredDataTypeUnsignedInteger
 
 eTypeClassInvalid = _lldb.eTypeClassInvalid
 
@@ -1656,6 +1662,60 @@ eWatchPointValueKindInvalid = _lldb.eWatchPointValueKindInvalid
 eWatchPointValueKindVariable = _lldb.eWatchPointValueKindVariable
 
 eWatchPointValueKindExpression = _lldb.eWatchPointValueKindExpression
+
+eNoCompletion = _lldb.eNoCompletion
+
+eSourceFileCompletion = _lldb.eSourceFileCompletion
+
+eDiskFileCompletion = _lldb.eDiskFileCompletion
+
+eDiskDirectoryCompletion = _lldb.eDiskDirectoryCompletion
+
+eSymbolCompletion = _lldb.eSymbolCompletion
+
+eModuleCompletion = _lldb.eModuleCompletion
+
+eSettingsNameCompletion = _lldb.eSettingsNameCompletion
+
+ePlatformPluginCompletion = _lldb.ePlatformPluginCompletion
+
+eArchitectureCompletion = _lldb.eArchitectureCompletion
+
+eVariablePathCompletion = _lldb.eVariablePathCompletion
+
+eRegisterCompletion = _lldb.eRegisterCompletion
+
+eBreakpointCompletion = _lldb.eBreakpointCompletion
+
+eProcessPluginCompletion = _lldb.eProcessPluginCompletion
+
+eDisassemblyFlavorCompletion = _lldb.eDisassemblyFlavorCompletion
+
+eTypeLanguageCompletion = _lldb.eTypeLanguageCompletion
+
+eFrameIndexCompletion = _lldb.eFrameIndexCompletion
+
+eModuleUUIDCompletion = _lldb.eModuleUUIDCompletion
+
+eStopHookIDCompletion = _lldb.eStopHookIDCompletion
+
+eThreadIndexCompletion = _lldb.eThreadIndexCompletion
+
+eWatchpointIDCompletion = _lldb.eWatchpointIDCompletion
+
+eBreakpointNameCompletion = _lldb.eBreakpointNameCompletion
+
+eProcessIDCompletion = _lldb.eProcessIDCompletion
+
+eProcessNameCompletion = _lldb.eProcessNameCompletion
+
+eRemoteDiskFileCompletion = _lldb.eRemoteDiskFileCompletion
+
+eRemoteDiskDirectoryCompletion = _lldb.eRemoteDiskDirectoryCompletion
+
+eTypeCategoryNameCompletion = _lldb.eTypeCategoryNameCompletion
+
+eCustomCompletion = _lldb.eCustomCompletion
 
 class SBAddress(object):
     r"""
@@ -4618,6 +4678,10 @@ class SBDebugger(object):
     def SetLoggingCallback(self, log_callback):
         r"""SetLoggingCallback(SBDebugger self, lldb::LogOutputCallback log_callback)"""
         return _lldb.SBDebugger_SetLoggingCallback(self, log_callback)
+
+    def SetDestroyCallback(self, destroy_callback):
+        r"""SetDestroyCallback(SBDebugger self, lldb::SBDebuggerDestroyCallback destroy_callback)"""
+        return _lldb.SBDebugger_SetDestroyCallback(self, destroy_callback)
 
     def DispatchInput(self, data):
         r"""DispatchInput(SBDebugger self, void const * data)"""
@@ -9030,7 +9094,6 @@ class SBQueue(object):
     def __init__(self, *args):
         r"""
         __init__(SBQueue self) -> SBQueue
-        __init__(SBQueue self, lldb::QueueSP const & queue_sp) -> SBQueue
         __init__(SBQueue self, SBQueue rhs) -> SBQueue
         """
         _lldb.SBQueue_swiginit(self, _lldb.new_SBQueue(*args))
@@ -9109,12 +9172,9 @@ class SBQueueItem(object):
     thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
     __repr__ = _swig_repr
 
-    def __init__(self, *args):
-        r"""
-        __init__(SBQueueItem self) -> SBQueueItem
-        __init__(SBQueueItem self, lldb::QueueItemSP const & queue_item_sp) -> SBQueueItem
-        """
-        _lldb.SBQueueItem_swiginit(self, _lldb.new_SBQueueItem(*args))
+    def __init__(self):
+        r"""__init__(SBQueueItem self) -> SBQueueItem"""
+        _lldb.SBQueueItem_swiginit(self, _lldb.new_SBQueueItem())
     __swig_destroy__ = _lldb.delete_SBQueueItem
 
     def __nonzero__(self):
@@ -9146,10 +9206,6 @@ class SBQueueItem(object):
     def SetAddress(self, addr):
         r"""SetAddress(SBQueueItem self, SBAddress addr)"""
         return _lldb.SBQueueItem_SetAddress(self, addr)
-
-    def SetQueueItem(self, queue_item_sp):
-        r"""SetQueueItem(SBQueueItem self, lldb::QueueItemSP const & queue_item_sp)"""
-        return _lldb.SBQueueItem_SetQueueItem(self, queue_item_sp)
 
     def GetExtendedBacktraceThread(self, type):
         r"""GetExtendedBacktraceThread(SBQueueItem self, char const * type) -> SBThread"""
@@ -9597,7 +9653,6 @@ class SBStructuredData(object):
         r"""
         __init__(SBStructuredData self) -> SBStructuredData
         __init__(SBStructuredData self, SBStructuredData rhs) -> SBStructuredData
-        __init__(SBStructuredData self, lldb::EventSP const & event_sp) -> SBStructuredData
         """
         _lldb.SBStructuredData_swiginit(self, _lldb.new_SBStructuredData(*args))
     __swig_destroy__ = _lldb.delete_SBStructuredData
@@ -9650,6 +9705,14 @@ class SBStructuredData(object):
     def GetItemAtIndex(self, idx):
         r"""GetItemAtIndex(SBStructuredData self, size_t idx) -> SBStructuredData"""
         return _lldb.SBStructuredData_GetItemAtIndex(self, idx)
+
+    def GetUnsignedIntegerValue(self, fail_value=0):
+        r"""GetUnsignedIntegerValue(SBStructuredData self, uint64_t fail_value=0) -> uint64_t"""
+        return _lldb.SBStructuredData_GetUnsignedIntegerValue(self, fail_value)
+
+    def GetSignedIntegerValue(self, fail_value=0):
+        r"""GetSignedIntegerValue(SBStructuredData self, int64_t fail_value=0) -> int64_t"""
+        return _lldb.SBStructuredData_GetSignedIntegerValue(self, fail_value)
 
     def GetIntegerValue(self, fail_value=0):
         r"""GetIntegerValue(SBStructuredData self, uint64_t fail_value=0) -> uint64_t"""
@@ -11798,7 +11861,6 @@ class SBThreadPlan(object):
         r"""
         __init__(SBThreadPlan self) -> SBThreadPlan
         __init__(SBThreadPlan self, SBThreadPlan threadPlan) -> SBThreadPlan
-        __init__(SBThreadPlan self, lldb::ThreadPlanSP const & lldb_object_sp) -> SBThreadPlan
         __init__(SBThreadPlan self, SBThread thread, char const * class_name) -> SBThreadPlan
         __init__(SBThreadPlan self, SBThread thread, char const * class_name, SBStructuredData args_data) -> SBThreadPlan
         """
@@ -11993,12 +12055,9 @@ class SBTraceCursor(object):
     thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
     __repr__ = _swig_repr
 
-    def __init__(self, *args):
-        r"""
-        __init__(SBTraceCursor self) -> SBTraceCursor
-        __init__(SBTraceCursor self, lldb::TraceCursorSP trace_cursor_sp) -> SBTraceCursor
-        """
-        _lldb.SBTraceCursor_swiginit(self, _lldb.new_SBTraceCursor(*args))
+    def __init__(self):
+        r"""__init__(SBTraceCursor self) -> SBTraceCursor"""
+        _lldb.SBTraceCursor_swiginit(self, _lldb.new_SBTraceCursor())
 
     def SetForwards(self, forwards):
         r"""SetForwards(SBTraceCursor self, bool forwards)"""
