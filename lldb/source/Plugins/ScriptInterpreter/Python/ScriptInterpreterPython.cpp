@@ -411,8 +411,6 @@ ScriptInterpreterPythonImpl::ScriptInterpreterPythonImpl(Debugger &debugger)
       m_active_io_handler(eIOHandlerNone), m_session_is_active(false),
       m_pty_secondary_is_open(false), m_valid_session(true), m_lock_count(0),
       m_command_thread_state(nullptr) {
-  m_scripted_process_interface_up =
-      std::make_unique<ScriptedProcessPythonInterface>(*this);
   m_scripted_platform_interface_up =
       std::make_unique<ScriptedPlatformPythonInterface>(*this);
 
