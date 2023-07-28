@@ -2629,7 +2629,7 @@ size_t GDBRemoteCommunicationClient::QueryGDBServer(
     uint16_t port = 0;
     if (StructuredData::ObjectSP port_osp =
             element->GetValueForKey(llvm::StringRef("port")))
-      port = port_osp->GetIntegerValue(0);
+      port = port_osp->GetUnsignedIntegerValue(0);
 
     std::string socket_name;
     if (StructuredData::ObjectSP socket_name_osp =

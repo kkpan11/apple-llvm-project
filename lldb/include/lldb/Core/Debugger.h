@@ -479,6 +479,10 @@ public:
 
   static void ReportSymbolChange(const ModuleSpec &module_spec);
 
+  void
+  SetDestroyCallback(lldb_private::DebuggerDestroyCallback destroy_callback,
+                     void *baton);
+
 protected:
   friend class CommandInterpreter;
   friend class SwiftREPL;
@@ -523,6 +527,8 @@ protected:
                                    std::string message,
                                    llvm::Optional<lldb::user_id_t> debugger_id,
                                    std::once_flag *once);
+
+  void HandleDestroyCallback();
 
   void PrintProgress(const ProgressEventData &data);
 
@@ -626,6 +632,9 @@ protected:
   lldb::ListenerSP m_forward_listener_sp;
   llvm::once_flag m_clear_once;
   lldb::TargetSP m_dummy_target_sp;
+
+  lldb_private::DebuggerDestroyCallback m_destroy_callback = nullptr;
+  void *m_destroy_callback_baton = nullptr;
 
   uint32_t m_interrupt_requested = 0; ///< Tracks interrupt requests
   std::mutex m_interrupt_mutex;
