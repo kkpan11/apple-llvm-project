@@ -681,8 +681,7 @@ private:
     mutable size_t InputIndex;
 
     bool operator==(const IndexedModuleID &Other) const {
-      return std::tie(ID.ModuleName, ID.ContextHash) ==
-             std::tie(Other.ID.ModuleName, Other.ID.ContextHash);
+      return ID == Other.ID;
     }
 
     bool operator<(const IndexedModuleID &Other) const {
@@ -702,7 +701,7 @@ private:
 
     struct Hasher {
       std::size_t operator()(const IndexedModuleID &IMID) const {
-        return llvm::hash_combine(IMID.ID.ModuleName, IMID.ID.ContextHash);
+        return llvm::hash_value(IMID.ID);
       }
     };
   };
@@ -973,7 +972,7 @@ int main(int argc, const char **argv) {
   for (unsigned I = 0; I < Pool.getThreadCount(); ++I) {
     Pool.async([I, &CAS, &Lock, &Index, &Inputs, &TreeResults,
                 &HadErrors, &FD, &WorkerTools, &DependencyOS, &Errs]() {
-      llvm::StringSet<> AlreadySeenModules;
+      llvm::DenseSet<ModuleID> AlreadySeenModules;
       while (true) {
         const tooling::CompileCommand *Input;
         std::string Filename;
