@@ -212,6 +212,10 @@ public:
     ClangModuleDeps[MD.ID] = std::move(MD);
   }
 
+  void handleDirectModuleDependency(ModuleID ID) override {
+    DirectModuleDeps.push_back(ID);
+  }
+
   void handleContextHash(std::string Hash) override {
     ContextHash = std::move(Hash);
   }
@@ -231,6 +235,7 @@ private:
   std::vector<std::string> Dependencies;
   std::vector<PrebuiltModuleDep> PrebuiltModuleDeps;
   llvm::MapVector<ModuleID, ModuleDeps> ClangModuleDeps;
+  std::vector<ModuleID> DirectModuleDeps;
   std::vector<Command> Commands;
   std::string ContextHash;
   Optional<std::string> CASFileSystemRootID;
