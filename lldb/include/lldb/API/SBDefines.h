@@ -87,6 +87,7 @@ class LLDB_API SBProcess;
 class LLDB_API SBProcessInfo;
 class LLDB_API SBQueue;
 class LLDB_API SBQueueItem;
+class LLDB_API SBScriptObject;
 class LLDB_API SBSection;
 class LLDB_API SBSourceManager;
 class LLDB_API SBStream;
@@ -126,7 +127,6 @@ typedef bool (*SBBreakpointHitCallback)(void *baton, SBProcess &process,
 typedef void (*SBDebuggerDestroyCallback)(lldb::user_id_t debugger_id,
                                           void *baton);
 
-typedef void *ScriptedObject;
-}
+} // namespace lldb
 
 #endif // LLDB_API_SBDEFINES_H
