@@ -167,6 +167,25 @@ TEST_F(TestSwiftASTContext, ApplyWorkingDir) {
   EXPECT_EQ(dot_dot_path, llvm::SmallString<128>("-iquote."));
 }
 
+TEST_F(TestSwiftASTContext, PluginPath) {
+  llvm::StringRef path(
+      "/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/"
+      "lib/swift/host/plugins/libFoo.dylib");
+  llvm::StringRef local_path(
+      "/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/"
+      "local/lib/swift/host/plugins/libFoo.dylib");
+  std::string server("/Xcode.app/Contents/Developer/Toolchains/"
+                     "XcodeDefault.xctoolchain/usr/bin/swift-plugin-server");
+  EXPECT_EQ(SwiftASTContext::GetPluginServer(path), server);
+  EXPECT_EQ(
+      SwiftASTContext::GetPluginServer(llvm::sys::path::parent_path(path)),
+      server);
+  EXPECT_EQ(SwiftASTContext::GetPluginServer(local_path), server);
+  EXPECT_EQ(
+      SwiftASTContext::GetPluginServer(llvm::sys::path::parent_path(local_path)),
+      server);
+}
+
 namespace {
 const std::vector<std::string> duplicated_flags = {
     "-DMACRO1",
