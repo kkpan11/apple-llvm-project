@@ -1686,9 +1686,9 @@ bool AArch64DAGToDAGISel::tryAuthLoad(SDNode *N) {
   assert(LD->getExtensionType() == ISD::NON_EXTLOAD && "invalid 64bit extload");
 
   ISD::MemIndexedMode AM = LD->getAddressingMode();
-  bool isPre = AM == ISD::PRE_INC;
-  if (!isPre && AM != ISD::UNINDEXED)
+  if (AM != ISD::PRE_INC && AM != ISD::UNINDEXED)
     return false;
+  bool IsPre = AM == ISD::PRE_INC;
 
   SDValue Chain = LD->getChain();
   SDValue Ptr = LD->getBasePtr();
@@ -1696,7 +1696,7 @@ bool AArch64DAGToDAGISel::tryAuthLoad(SDNode *N) {
   SDValue Base = Ptr;
 
   int64_t OffsetVal = 0;
-  if (isPre) {
+  if (IsPre) {
     OffsetVal = cast<ConstantSDNode>(LD->getOffset())->getSExtValue();
   } else if (CurDAG->isBaseWithConstantOffset(Base)) {
     // We support both 'base' and 'base + constant offset' modes.
@@ -1707,33 +1707,30 @@ bool AArch64DAGToDAGISel::tryAuthLoad(SDNode *N) {
     Base = Base.getOperand(0);
   }
 
-  if (!isShiftedInt<10, 3>(OffsetVal))
-    return false;
-
   // The base must be of the form:
-  //   (int_ptrauth_auth <signedbase>, da/db, 0)
+  //   (int_ptrauth_auth <signedbase>, <key>, <disc>)
+  // with disc being either a constant int, or:
+  //   (int_ptrauth_blend <addrdisc>, <const int disc>)
   if (Base.getOpcode() != ISD::INTRINSIC_WO_CHAIN)
     return false;
 
   unsigned IntID = cast<ConstantSDNode>(Base.getOperand(0))->getZExtValue();
   if (IntID != Intrinsic::ptrauth_auth)
     return false;
-  unsigned IntKey = cast<ConstantSDNode>(Base.getOperand(2))->getZExtValue();
-  if (!isNullConstant(Base.getOperand(3)))
-    return false;
 
-  // If the pointer is an address computation based on an intermediate auth
-  // that's used more than once, it's not worth folding the auth, as we can't
-  // writeback just the auth result (without the address computation).
-  //
-  // FIXME: we can turn it into an unchecked auth though.
-  if (OffsetVal && !Base.hasOneUse())
-    return false;
+  unsigned KeyC = cast<ConstantSDNode>(Base.getOperand(2))->getZExtValue();
+  bool IsDKey = KeyC == AArch64PACKey::DA || KeyC == AArch64PACKey::DB;
+  SDValue Disc = Base.getOperand(3);
 
   Base = Base.getOperand(1);
 
+  bool ZeroDisc = isNullConstant(Disc);
+  SDValue IntDisc, AddrDisc;
+  std::tie(IntDisc, AddrDisc) =
+    extractPtrauthBlendDiscriminators(Disc, CurDAG);
+
   // If this is an indexed pre-inc load, we obviously need the writeback form.
-  bool needsWriteback = isPre;
+  bool needsWriteback = IsPre;
   // If not, but the base authenticated pointer has any other use, it's
   // beneficial to use the writeback form, to "writeback" the auth, even if
   // there is no base+offset addition.
@@ -1761,45 +1758,78 @@ bool AArch64DAGToDAGISel::tryAuthLoad(SDNode *N) {
         return false;
   }
 
-  unsigned Opc = 0;
-  switch (IntKey) {
-  case AArch64PACKey::DA:
-    Opc = needsWriteback ? AArch64::LDRAAwriteback : AArch64::LDRAAindexed;
-    break;
-  case AArch64PACKey::DB:
-    Opc = needsWriteback ? AArch64::LDRABwriteback : AArch64::LDRABindexed;
-    break;
-  default:
-    return false;
+  // We have 2 main isel alternatives:
+  // - LDRAA/LDRAB, writeback or indexed.  Zero disc, small offsets, D key.
+  // - LDRA/LDRApre.  Pointer needs to be in X16.
+  SDLoc DL(N);
+  MachineSDNode *Res = nullptr;
+  SDValue Writeback, ResVal, OutChain;
+
+  // If the discriminator is zero and the offset fits, we can use LDRAA/LDRAB.
+  // Do that here to avoid needlessly constraining regalloc into using X16.
+  if (ZeroDisc && isShiftedInt<10, 3>(OffsetVal) && IsDKey) {
+    unsigned Opc = 0;
+    switch (KeyC) {
+    case AArch64PACKey::DA:
+      Opc = needsWriteback ? AArch64::LDRAAwriteback : AArch64::LDRAAindexed;
+      break;
+    case AArch64PACKey::DB:
+      Opc = needsWriteback ? AArch64::LDRABwriteback : AArch64::LDRABindexed;
+      break;
+    default:
+      llvm_unreachable("Invalid key for LDRAA/LDRAB");
+    }
+    // The offset is encoded as scaled, for an element size of 8 bytes.
+    SDValue Offset = CurDAG->getTargetConstant(OffsetVal / 8, DL, MVT::i64);
+    SDValue Ops[] = {Base, Offset, Chain};
+    Res = needsWriteback ?
+      CurDAG->getMachineNode(Opc, DL, MVT::i64, MVT::i64, MVT::Other, Ops) :
+      CurDAG->getMachineNode(Opc, DL, MVT::i64, MVT::Other, Ops);
+    if (needsWriteback) {
+      Writeback = SDValue(Res, 0);
+      ResVal = SDValue(Res, 1);
+      OutChain = SDValue(Res, 2);
+    } else {
+      ResVal = SDValue(Res, 0);
+      OutChain = SDValue(Res, 1);
+    }
+  } else {
+    // Otherwise, use the generalized LDRA pseudos.
+    unsigned Opc = needsWriteback ? AArch64::LDRApre : AArch64::LDRA;
+
+    SDValue X16Copy = CurDAG->getCopyToReg(Chain, DL, AArch64::X16,
+                                           Base, SDValue());
+    SDValue Offset = CurDAG->getTargetConstant(OffsetVal, DL, MVT::i64);
+    SDValue Key = CurDAG->getTargetConstant(KeyC, DL, MVT::i32);
+    SDValue Ops[] = {Offset, Key, IntDisc, AddrDisc, X16Copy.getValue(1)};
+    Res = CurDAG->getMachineNode(Opc, DL, MVT::i64, MVT::Other, MVT::Glue, Ops);
+    if (needsWriteback)
+      Writeback = CurDAG->getCopyFromReg(SDValue(Res, 1), DL, AArch64::X16,
+                                         MVT::i64, SDValue(Res, 2));
+    ResVal = SDValue(Res, 0);
+    OutChain = SDValue(Res, 1);
   }
 
-  SDLoc DL(N);
-  // The offset is encoded as scaled, for an element size of 8 bytes.
-  SDValue Offset = CurDAG->getTargetConstant(OffsetVal / 8, DL, MVT::i64);
-  SDValue Ops[] = { Base, Offset, Chain };
-  SDNode *Res = needsWriteback ?
-    CurDAG->getMachineNode(Opc, DL, MVT::i64, MVT::i64, MVT::Other, Ops) :
-    CurDAG->getMachineNode(Opc, DL, MVT::i64, MVT::Other, Ops);
-
-  if (isPre) {
+  if (IsPre) {
     // If the original load was pre-inc, the resulting LDRA is writeback.
     assert(needsWriteback && "preinc loads can't be selected into non-wb ldra");
-    ReplaceUses(SDValue(N, 1), SDValue(Res, 0)); // writeback
-    ReplaceUses(SDValue(N, 0), SDValue(Res, 1)); // loaded value
-    ReplaceUses(SDValue(N, 2), SDValue(Res, 2)); // chain
+    ReplaceUses(SDValue(N, 1), Writeback); // writeback
+    ReplaceUses(SDValue(N, 0), ResVal); // loaded value
+    ReplaceUses(SDValue(N, 2), OutChain); // chain
   } else if (needsWriteback) {
     // If the original load was unindexed, but we emitted a writeback form,
     // we need to replace the uses of the original auth(signedbase)[+offset]
     // computation.
-    ReplaceUses(Ptr,           SDValue(Res, 0)); // writeback
-    ReplaceUses(SDValue(N, 0), SDValue(Res, 1)); // loaded value
-    ReplaceUses(SDValue(N, 1), SDValue(Res, 2)); // chain
+    ReplaceUses(Ptr,           Writeback); // writeback
+    ReplaceUses(SDValue(N, 0), ResVal); // loaded value
+    ReplaceUses(SDValue(N, 1), OutChain); // chain
   } else {
     // Otherwise, we selected a simple load to a simple non-wb ldra.
     assert(Ptr.hasOneUse() && "reused auth ptr should be folded into ldra");
-    ReplaceUses(SDValue(N, 0), SDValue(Res, 0)); // loaded value
-    ReplaceUses(SDValue(N, 1), SDValue(Res, 1)); // chain
+    ReplaceUses(SDValue(N, 0), ResVal); // loaded value
+    ReplaceUses(SDValue(N, 1), OutChain); // chain
   }
+
   CurDAG->RemoveDeadNode(N);
   return true;
 }

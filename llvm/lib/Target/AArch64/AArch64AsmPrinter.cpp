@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "AArch64.h"
+#include "AArch64ExpandImm.h"
 #include "AArch64MCInstLower.h"
 #include "AArch64MachineFunctionInfo.h"
 #include "AArch64RegisterInfo.h"
@@ -166,6 +167,9 @@ public:
   // Emit the sequence for LOADgotPAC/MOVaddrPAC (either GOT adrp-ldr or
   // adrp-add followed by PAC sign)
   void LowerMOVaddrPAC(const MachineInstr &MI);
+
+  // Emit the sequence for LDRA (auth + load from authenticated base).
+  void LowerPtrauthAuthLoad(const MachineInstr &MI);
 
   /// tblgen'erated driver function for lowering simple MI->MC
   /// pseudo instructions.
@@ -2119,6 +2123,141 @@ void AArch64AsmPrinter::emitPtrauthAuthResign(const MachineInstr *MI) {
     OutStreamer->emitLabel(EndSym);
 }
 
+void AArch64AsmPrinter::LowerPtrauthAuthLoad(const MachineInstr &MI) {
+  unsigned InstsEmitted = 0;
+  bool IsPre = MI.getOpcode() == AArch64::LDRApre;
+
+  unsigned DstReg = MI.getOperand(0).getReg();
+  int64_t Offset = MI.getOperand(1).getImm();
+  auto Key = (AArch64PACKey::ID)MI.getOperand(2).getImm();
+  uint64_t Disc = MI.getOperand(3).getImm();
+  unsigned AddrDisc = MI.getOperand(4).getReg();
+
+  unsigned DiscReg = AddrDisc;
+  if (Disc) {
+    assert(isUInt<16>(Disc) && "Integer discriminator is too wide");
+
+    // FIXME: consider using emitPtrauthDiscriminator()
+    if (AddrDisc != AArch64::XZR) {
+      EmitToStreamer(*OutStreamer, MCInstBuilder(AArch64::ORRXrs)
+                                       .addReg(AArch64::X17)
+                                       .addReg(AArch64::XZR)
+                                       .addReg(AddrDisc)
+                                       .addImm(0));
+      ++InstsEmitted;
+      EmitToStreamer(*OutStreamer, MCInstBuilder(AArch64::MOVKXi)
+                                       .addReg(AArch64::X17)
+                                       .addReg(AArch64::X17)
+                                       .addImm(Disc)
+                                       .addImm(/*shift=*/48));
+      ++InstsEmitted;
+    } else {
+      EmitToStreamer(*OutStreamer, MCInstBuilder(AArch64::MOVZXi)
+                                       .addReg(AArch64::X17)
+                                       .addImm(Disc)
+                                       .addImm(/*shift=*/0));
+      ++InstsEmitted;
+    }
+    DiscReg = AArch64::X17;
+  }
+
+  unsigned AUTOpc = getAUTOpcodeForKey(Key, DiscReg == AArch64::XZR);
+  auto MIB = MCInstBuilder(AUTOpc)
+    .addReg(AArch64::X16)
+    .addReg(AArch64::X16);
+  if (DiscReg != AArch64::XZR)
+    MIB.addReg(DiscReg);
+
+  EmitToStreamer(*OutStreamer, MIB);
+  ++InstsEmitted;
+
+  // We have a few options for offset folding:
+  // - 0 offset: LDRXui
+  // - no wb, uimm12s8 offset: LDRXui
+  // - no wb, simm9 offset: LDURXi
+  // - wb, simm9 offset: LDRXpre
+  // - no wb, any offset: expanded MOVImm + LDRXroX
+  // - wb, any offset: expanded MOVImm + ADD + LDRXui
+  if (!Offset || (!IsPre && isShiftedUInt<12, 3>(Offset))) {
+    EmitToStreamer(*OutStreamer, MCInstBuilder(AArch64::LDRXui)
+                                     .addReg(DstReg)
+                                     .addReg(AArch64::X16)
+                                     .addImm(Offset / 8));
+    ++InstsEmitted;
+  } else if (!IsPre && Offset && isInt<9>(Offset)) {
+    EmitToStreamer(*OutStreamer, MCInstBuilder(AArch64::LDURXi)
+                                     .addReg(DstReg)
+                                     .addReg(AArch64::X16)
+                                     .addImm(Offset));
+    ++InstsEmitted;
+  } else if (IsPre && Offset && isInt<9>(Offset)) {
+    EmitToStreamer(*OutStreamer, MCInstBuilder(AArch64::LDRXpre)
+                                     .addReg(AArch64::X16)
+                                     .addReg(DstReg)
+                                     .addReg(AArch64::X16)
+                                     .addImm(Offset));
+    ++InstsEmitted;
+  } else {
+    SmallVector<AArch64_IMM::ImmInsnModel, 4> ImmInsns;
+    AArch64_IMM::expandMOVImm(Offset, 64, ImmInsns);
+
+    // X17 is dead at this point, use it as the offset register
+    for (auto &ImmI : ImmInsns) {
+      switch (ImmI.Opcode) {
+      default: llvm_unreachable("invalid ldra imm expansion opc!"); break;
+
+      case AArch64::ORRXri:
+        EmitToStreamer(*OutStreamer, MCInstBuilder(ImmI.Opcode)
+                                         .addReg(AArch64::X17)
+                                         .addReg(AArch64::XZR)
+                                         .addImm(ImmI.Op2));
+        ++InstsEmitted;
+        break;
+      case AArch64::MOVNXi:
+      case AArch64::MOVZXi:
+        EmitToStreamer(*OutStreamer, MCInstBuilder(ImmI.Opcode)
+                                         .addReg(AArch64::X17)
+                                         .addImm(ImmI.Op1)
+                                         .addImm(ImmI.Op2));
+        ++InstsEmitted;
+        break;
+      case AArch64::MOVKXi:
+        EmitToStreamer(*OutStreamer, MCInstBuilder(ImmI.Opcode)
+                                         .addReg(AArch64::X17)
+                                         .addReg(AArch64::X17)
+                                         .addImm(ImmI.Op1)
+                                         .addImm(ImmI.Op2));
+        ++InstsEmitted;
+        break;
+      }
+    }
+
+    if (IsPre) {
+      EmitToStreamer(*OutStreamer, MCInstBuilder(AArch64::ADDXrs)
+                                       .addReg(AArch64::X16)
+                                       .addReg(AArch64::X16)
+                                       .addReg(AArch64::X17)
+                                       .addImm(0));
+      ++InstsEmitted;
+      EmitToStreamer(*OutStreamer, MCInstBuilder(AArch64::LDRXui)
+                                       .addReg(DstReg)
+                                       .addReg(AArch64::X16)
+                                       .addImm(/*Offset=*/0));
+      ++InstsEmitted;
+    } else {
+      EmitToStreamer(*OutStreamer, MCInstBuilder(AArch64::LDRXroX)
+                                       .addReg(DstReg)
+                                       .addReg(AArch64::X16)
+                                       .addReg(AArch64::X17)
+                                       .addImm(0)
+                                       .addImm(0));
+      ++InstsEmitted;
+    }
+  }
+
+  assert(STI->getInstrInfo()->getInstSizeInBytes(MI) >= InstsEmitted * 4);
+}
+
 const MCExpr *
 AArch64AsmPrinter::lowerPtrAuthGlobalConstant(const GlobalPtrAuthInfo &PAI) {
   MCContext &Ctx = OutContext;
@@ -2579,6 +2718,11 @@ void AArch64AsmPrinter::emitInstruction(const MachineInstr *MI) {
   case AArch64::AUT:
   case AArch64::AUTPAC:
     emitPtrauthAuthResign(MI);
+    return;
+
+  case AArch64::LDRA:
+  case AArch64::LDRApre:
+    LowerPtrauthAuthLoad(*MI);
     return;
 
   case AArch64::BLRA:
