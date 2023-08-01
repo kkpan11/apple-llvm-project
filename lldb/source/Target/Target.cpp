@@ -2426,12 +2426,12 @@ Target::GetScratchTypeSystemForLanguage(lldb::LanguageType language,
       if (swift_ast_ctx && (swift_ast_ctx->CheckProcessChanged() ||
                             swift_ast_ctx->HasFatalErrors())) {
         // If it is safe to replace the scratch context, do so. If
-        // try_lock() fails, then higher stack frame (or another
+        // try_lock() fails, then a higher stack frame (or another
         // thread) is holding a read lock to the scratch context and
         // replacing it could cause a use-after-free later on.
-        if (GetSwiftScratchContextLock().try_lock()) {
-          auto unlock = llvm::make_scope_exit(
-              [this] { GetSwiftScratchContextLock().unlock(); });
+        auto &lock = GetSwiftScratchContextLock();
+        if (lock.try_lock()) {
+          auto unlock = llvm::make_scope_exit([&lock] { lock.unlock(); });
           if (m_use_scratch_typesystem_per_module)
             DisplayFallbackSwiftContextErrors(swift_ast_ctx);
           else if (StreamSP errs = GetDebugger().GetAsyncErrorStream()) {
@@ -2758,14 +2758,13 @@ llvm::Optional<SwiftScratchContextReader> Target::GetSwiftScratchContext(
       return nullptr;
     }
 
-    if (!GetSwiftScratchContextLock().try_lock()) {
+    auto &lock = GetSwiftScratchContextLock();
+    if (!lock.try_lock()) {
       if (log)
         log->Printf("couldn't acquire scratch context lock\n");
       return nullptr;
     }
-
-    auto unlock = llvm::make_scope_exit(
-        [this] { GetSwiftScratchContextLock().unlock(); });
+    auto unlock = llvm::make_scope_exit([&lock] { lock.unlock(); });
 
     // With the lock held, get the current scratch type system. This ensures the
     // current instance is used even in the unlikely event it was changed during
@@ -2824,7 +2823,7 @@ llvm::Optional<SwiftScratchContextReader> Target::GetSwiftScratchContext(
                                    *swift_scratch_ctx);
 }
 
-static SharedMutex *
+static std::shared_mutex *
 GetSwiftScratchContextMutex(const ExecutionContext *exe_ctx) {
   if (!exe_ctx)
     return nullptr;
@@ -2834,11 +2833,19 @@ GetSwiftScratchContextMutex(const ExecutionContext *exe_ctx) {
   return nullptr;
 }
 
-SwiftScratchContextLock::SwiftScratchContextLock(
-    const ExecutionContext *exe_ctx)
-    : ScopedSharedMutexReader(GetSwiftScratchContextMutex(exe_ctx)) {}
+SwiftScratchContextReader::SwiftScratchContextReader(
+    std::shared_mutex &mutex, TypeSystemSwiftTypeRefForExpressions &ts)
+    : m_lock(mutex), m_ts(&ts) {}
 
-static SharedMutex *
+SwiftScratchContextLock::SwiftScratchContextLock(
+    const ExecutionContext *exe_ctx) {
+  if (auto *mutex = GetSwiftScratchContextMutex(exe_ctx)) {
+    std::shared_lock<std::shared_mutex> tmp(*mutex);
+    lock.swap(tmp);
+  }
+}
+
+static std::shared_mutex *
 GetSwiftScratchContextMutex(const ExecutionContextRef *exe_ctx_ref) {
   if (!exe_ctx_ref)
     return nullptr;
@@ -2847,8 +2854,12 @@ GetSwiftScratchContextMutex(const ExecutionContextRef *exe_ctx_ref) {
 }
 
 SwiftScratchContextLock::SwiftScratchContextLock(
-    const ExecutionContextRef *exe_ctx_ref)
-    : ScopedSharedMutexReader(GetSwiftScratchContextMutex(exe_ctx_ref)) {}
+    const ExecutionContextRef *exe_ctx_ref) {
+  if (auto *mutex = GetSwiftScratchContextMutex(exe_ctx_ref)) {
+    std::shared_lock<std::shared_mutex> tmp(*mutex);
+    lock.swap(tmp);
+  }
+}
 
 void Target::DisplayFallbackSwiftContextErrors(
     SwiftASTContextForExpressions *swift_ast_ctx) {
