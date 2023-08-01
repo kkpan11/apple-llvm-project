@@ -1318,6 +1318,47 @@ Instruction *InstCombinerImpl::FoldOpIntoSelect(Instruction &Op, SelectInst *SI,
   return SelectInst::Create(SI->getCondition(), NewTV, NewFV, "", nullptr, SI);
 }
 
+static Value *simplifyInstructionWithPHI(Instruction &I, PHINode *PN,
+                                         Value *InValue, BasicBlock *InBB,
+                                         const DataLayout &DL,
+                                         const SimplifyQuery SQ) {
+  // NB: It is a precondition of this transform that the operands be
+  // phi translatable! This is usually trivially satisfied by limiting it
+  // to constant ops, and for selects we do a more sophisticated check.
+  SmallVector<Value *> Ops;
+  for (Value *Op : I.operands()) {
+    if (Op == PN)
+      Ops.push_back(InValue);
+    else
+      Ops.push_back(Op->DoPHITranslation(PN->getParent(), InBB));
+  }
+
+  // Don't consider the simplification successful if we get back a constant
+  // expression. That's just an instruction in hiding.
+  // Also reject the case where we simplify back to the phi node. We wouldn't
+  // be able to remove it in that case.
+  Value *NewVal = simplifyInstructionWithOperands(
+      &I, Ops, SQ.getWithInstruction(InBB->getTerminator()));
+  if (NewVal && NewVal != PN && !match(NewVal, m_ConstantExpr()))
+    return NewVal;
+
+  // Check if incoming PHI value can be replaced with constant
+  // based on implied condition.
+  BranchInst *TerminatorBI = dyn_cast<BranchInst>(InBB->getTerminator());
+  const ICmpInst *ICmp = dyn_cast<ICmpInst>(&I);
+  if (TerminatorBI && TerminatorBI->isConditional() &&
+      TerminatorBI->getSuccessor(0) != TerminatorBI->getSuccessor(1) && ICmp) {
+    bool LHSIsTrue = TerminatorBI->getSuccessor(0) == PN->getParent();
+    std::optional<bool> ImpliedCond =
+        isImpliedCondition(TerminatorBI->getCondition(), ICmp->getPredicate(),
+                           Ops[0], Ops[1], DL, LHSIsTrue);
+    if (ImpliedCond)
+      return ConstantInt::getBool(I.getType(), ImpliedCond.value());
+  }
+
+  return nullptr;
+}
+
 Instruction *InstCombinerImpl::foldOpIntoPhi(Instruction &I, PHINode *PN) {
   unsigned NumPHIValues = PN->getNumIncomingValues();
   if (NumPHIValues == 0)
@@ -1346,24 +1387,7 @@ Instruction *InstCombinerImpl::foldOpIntoPhi(Instruction &I, PHINode *PN) {
     Value *InVal = PN->getIncomingValue(i);
     BasicBlock *InBB = PN->getIncomingBlock(i);
 
-    // NB: It is a precondition of this transform that the operands be
-    // phi translatable! This is usually trivially satisfied by limiting it
-    // to constant ops, and for selects we do a more sophisticated check.
-    SmallVector<Value *> Ops;
-    for (Value *Op : I.operands()) {
-      if (Op == PN)
-        Ops.push_back(InVal);
-      else
-        Ops.push_back(Op->DoPHITranslation(PN->getParent(), InBB));
-    }
-
-    // Don't consider the simplification successful if we get back a constant
-    // expression. That's just an instruction in hiding.
-    // Also reject the case where we simplify back to the phi node. We wouldn't
-    // be able to remove it in that case.
-    Value *NewVal = simplifyInstructionWithOperands(
-        &I, Ops, SQ.getWithInstruction(InBB->getTerminator()));
-    if (NewVal && NewVal != PN && !match(NewVal, m_ConstantExpr())) {
+    if (auto *NewVal = simplifyInstructionWithPHI(I, PN, InVal, InBB, DL, SQ)) {
       NewPhiValues.push_back(NewVal);
       continue;
     }
@@ -2749,22 +2773,21 @@ Instruction *InstCombinerImpl::visitUnconditionalBranchInst(BranchInst &BI) {
 }
 
 // Under the assumption that I is unreachable, remove it and following
-// instructions.
-bool InstCombinerImpl::handleUnreachableFrom(
+// instructions. Changes are reported directly to MadeIRChange.
+void InstCombinerImpl::handleUnreachableFrom(
     Instruction *I, SmallVectorImpl<BasicBlock *> &Worklist) {
-  bool Changed = false;
   BasicBlock *BB = I->getParent();
   for (Instruction &Inst : make_early_inc_range(
            make_range(std::next(BB->getTerminator()->getReverseIterator()),
                       std::next(I->getReverseIterator())))) {
     if (!Inst.use_empty() && !Inst.getType()->isTokenTy()) {
       replaceInstUsesWith(Inst, PoisonValue::get(Inst.getType()));
-      Changed = true;
+      MadeIRChange = true;
     }
     if (Inst.isEHPad() || Inst.getType()->isTokenTy())
       continue;
     eraseInstFromFunction(Inst);
-    Changed = true;
+    MadeIRChange = true;
   }
 
   // Replace phi node operands in successor blocks with poison.
@@ -2774,19 +2797,17 @@ bool InstCombinerImpl::handleUnreachableFrom(
         if (PN.getIncomingBlock(U) == BB && !isa<PoisonValue>(U)) {
           replaceUse(U, PoisonValue::get(PN.getType()));
           addToWorklist(&PN);
-          Changed = true;
+          MadeIRChange = true;
         }
 
   // Handle potentially dead successors.
   for (BasicBlock *Succ : successors(BB))
     if (DeadEdges.insert({BB, Succ}).second)
       Worklist.push_back(Succ);
-  return Changed;
 }
 
-bool InstCombinerImpl::handlePotentiallyDeadBlocks(
+void InstCombinerImpl::handlePotentiallyDeadBlocks(
     SmallVectorImpl<BasicBlock *> &Worklist) {
-  bool Changed = false;
   while (!Worklist.empty()) {
     BasicBlock *BB = Worklist.pop_back_val();
     if (!all_of(predecessors(BB), [&](BasicBlock *Pred) {
@@ -2794,12 +2815,11 @@ bool InstCombinerImpl::handlePotentiallyDeadBlocks(
         }))
       continue;
 
-    Changed |= handleUnreachableFrom(&BB->front(), Worklist);
+    handleUnreachableFrom(&BB->front(), Worklist);
   }
-  return Changed;
 }
 
-bool InstCombinerImpl::handlePotentiallyDeadSuccessors(BasicBlock *BB,
+void InstCombinerImpl::handlePotentiallyDeadSuccessors(BasicBlock *BB,
                                                        BasicBlock *LiveSucc) {
   SmallVector<BasicBlock *> Worklist;
   for (BasicBlock *Succ : successors(BB)) {
@@ -2811,7 +2831,7 @@ bool InstCombinerImpl::handlePotentiallyDeadSuccessors(BasicBlock *BB,
       Worklist.push_back(Succ);
   }
 
-  return handlePotentiallyDeadBlocks(Worklist);
+  handlePotentiallyDeadBlocks(Worklist);
 }
 
 Instruction *InstCombinerImpl::visitBranchInst(BranchInst &BI) {
@@ -2857,13 +2877,15 @@ Instruction *InstCombinerImpl::visitBranchInst(BranchInst &BI) {
     return &BI;
   }
 
-  if (isa<UndefValue>(Cond) &&
-      handlePotentiallyDeadSuccessors(BI.getParent(), /*LiveSucc*/ nullptr))
-    return &BI;
-  if (auto *CI = dyn_cast<ConstantInt>(Cond))
-    if (handlePotentiallyDeadSuccessors(BI.getParent(),
-                                        BI.getSuccessor(!CI->getZExtValue())))
-      return &BI;
+  if (isa<UndefValue>(Cond)) {
+    handlePotentiallyDeadSuccessors(BI.getParent(), /*LiveSucc*/ nullptr);
+    return nullptr;
+  }
+  if (auto *CI = dyn_cast<ConstantInt>(Cond)) {
+    handlePotentiallyDeadSuccessors(BI.getParent(),
+                                    BI.getSuccessor(!CI->getZExtValue()));
+    return nullptr;
+  }
 
   return nullptr;
 }
@@ -2882,14 +2904,6 @@ Instruction *InstCombinerImpl::visitSwitchInst(SwitchInst &SI) {
     }
     return replaceOperand(SI, 0, Op0);
   }
-
-  if (isa<UndefValue>(Cond) &&
-      handlePotentiallyDeadSuccessors(SI.getParent(), /*LiveSucc*/ nullptr))
-    return &SI;
-  if (auto *CI = dyn_cast<ConstantInt>(Cond))
-    if (handlePotentiallyDeadSuccessors(
-            SI.getParent(), SI.findCaseValue(CI)->getCaseSuccessor()))
-      return &SI;
 
   KnownBits Known = computeKnownBits(Cond, 0, &SI);
   unsigned LeadingKnownZeros = Known.countMinLeadingZeros();
@@ -2921,6 +2935,16 @@ Instruction *InstCombinerImpl::visitSwitchInst(SwitchInst &SI) {
       Case.setValue(ConstantInt::get(SI.getContext(), TruncatedCase));
     }
     return replaceOperand(SI, 0, NewCond);
+  }
+
+  if (isa<UndefValue>(Cond)) {
+    handlePotentiallyDeadSuccessors(SI.getParent(), /*LiveSucc*/ nullptr);
+    return nullptr;
+  }
+  if (auto *CI = dyn_cast<ConstantInt>(Cond)) {
+    handlePotentiallyDeadSuccessors(SI.getParent(),
+                                    SI.findCaseValue(CI)->getCaseSuccessor());
+    return nullptr;
   }
 
   return nullptr;

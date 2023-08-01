@@ -476,6 +476,8 @@ bool ByteCodeExprGen<Emitter>::VisitInitListExpr(const InitListExpr *E) {
 template <class Emitter>
 bool ByteCodeExprGen<Emitter>::VisitSubstNonTypeTemplateParmExpr(
     const SubstNonTypeTemplateParmExpr *E) {
+  if (DiscardResult)
+    return this->discard(E->getReplacement());
   return this->visit(E->getReplacement());
 }
 
@@ -562,18 +564,18 @@ bool ByteCodeExprGen<Emitter>::VisitUnaryExprOrTypeTraitExpr(
 
 template <class Emitter>
 bool ByteCodeExprGen<Emitter>::VisitMemberExpr(const MemberExpr *E) {
-  if (DiscardResult)
-    return true;
-
   // 'Base.Member'
   const Expr *Base = E->getBase();
-  const ValueDecl *Member = E->getMemberDecl();
+
+  if (DiscardResult)
+    return this->discard(Base);
 
   if (!this->visit(Base))
     return false;
 
   // Base above gives us a pointer on the stack.
   // TODO: Implement non-FieldDecl members.
+  const ValueDecl *Member = E->getMemberDecl();
   if (const auto *FD = dyn_cast<FieldDecl>(Member)) {
     const RecordDecl *RD = FD->getParent();
     const Record *R = getRecord(RD);
@@ -865,6 +867,11 @@ bool ByteCodeExprGen<Emitter>::VisitMaterializeTemporaryExpr(
   const Expr *SubExpr = E->getSubExpr();
   std::optional<PrimType> SubExprT = classify(SubExpr);
 
+  // If we don't end up using the materialized temporary anyway, don't
+  // bother creating it.
+  if (DiscardResult)
+    return this->discard(SubExpr);
+
   if (E->getStorageDuration() == SD_Static) {
     if (std::optional<unsigned> GlobalIndex = P.createGlobal(E)) {
       const LifetimeExtendedTemporaryDecl *TempDecl =
@@ -951,6 +958,8 @@ bool ByteCodeExprGen<Emitter>::VisitCompoundLiteralExpr(
 
 template <class Emitter>
 bool ByteCodeExprGen<Emitter>::VisitTypeTraitExpr(const TypeTraitExpr *E) {
+  if (DiscardResult)
+    return true;
   return this->emitConstBool(E->getValue(), E);
 }
 
