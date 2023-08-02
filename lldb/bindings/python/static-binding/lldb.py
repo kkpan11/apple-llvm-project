@@ -10594,6 +10594,14 @@ class SBTarget(object):
         r"""GetABIName(SBTarget self) -> char const *"""
         return _lldb.SBTarget_GetABIName(self)
 
+    def GetLabel(self):
+        r"""GetLabel(SBTarget self) -> char const *"""
+        return _lldb.SBTarget_GetLabel(self)
+
+    def SetLabel(self, label):
+        r"""SetLabel(SBTarget self, char const * label) -> SBError"""
+        return _lldb.SBTarget_SetLabel(self, label)
+
     def GetDataByteSize(self):
         r"""
         GetDataByteSize(SBTarget self) -> uint32_t

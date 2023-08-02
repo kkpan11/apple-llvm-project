@@ -60815,6 +60815,70 @@ fail:
 }
 
 
+SWIGINTERN PyObject *_wrap_SBTarget_GetLabel(PyObject *self, PyObject *args) {
+  PyObject *resultobj = 0;
+  lldb::SBTarget *arg1 = (lldb::SBTarget *) 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  PyObject *swig_obj[1] ;
+  char *result = 0 ;
+  
+  if (!args) SWIG_fail;
+  swig_obj[0] = args;
+  res1 = SWIG_ConvertPtr(swig_obj[0], &argp1,SWIGTYPE_p_lldb__SBTarget, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "SBTarget_GetLabel" "', argument " "1"" of type '" "lldb::SBTarget const *""'"); 
+  }
+  arg1 = reinterpret_cast< lldb::SBTarget * >(argp1);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (char *)((lldb::SBTarget const *)arg1)->GetLabel();
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
+  resultobj = SWIG_FromCharPtr((const char *)result);
+  return resultobj;
+fail:
+  return NULL;
+}
+
+
+SWIGINTERN PyObject *_wrap_SBTarget_SetLabel(PyObject *self, PyObject *args) {
+  PyObject *resultobj = 0;
+  lldb::SBTarget *arg1 = (lldb::SBTarget *) 0 ;
+  char *arg2 = (char *) 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  int res2 ;
+  char *buf2 = 0 ;
+  int alloc2 = 0 ;
+  PyObject *swig_obj[2] ;
+  lldb::SBError result;
+  
+  if (!SWIG_Python_UnpackTuple(args, "SBTarget_SetLabel", 2, 2, swig_obj)) SWIG_fail;
+  res1 = SWIG_ConvertPtr(swig_obj[0], &argp1,SWIGTYPE_p_lldb__SBTarget, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "SBTarget_SetLabel" "', argument " "1"" of type '" "lldb::SBTarget *""'"); 
+  }
+  arg1 = reinterpret_cast< lldb::SBTarget * >(argp1);
+  res2 = SWIG_AsCharPtrAndSize(swig_obj[1], &buf2, NULL, &alloc2);
+  if (!SWIG_IsOK(res2)) {
+    SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "SBTarget_SetLabel" "', argument " "2"" of type '" "char const *""'");
+  }
+  arg2 = reinterpret_cast< char * >(buf2);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (arg1)->SetLabel((char const *)arg2);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
+  resultobj = SWIG_NewPointerObj((new lldb::SBError(result)), SWIGTYPE_p_lldb__SBError, SWIG_POINTER_OWN |  0 );
+  if (alloc2 == SWIG_NEWOBJ) delete[] buf2;
+  return resultobj;
+fail:
+  if (alloc2 == SWIG_NEWOBJ) delete[] buf2;
+  return NULL;
+}
+
+
 SWIGINTERN PyObject *_wrap_SBTarget_GetDataByteSize(PyObject *self, PyObject *args) {
   PyObject *resultobj = 0;
   lldb::SBTarget *arg1 = (lldb::SBTarget *) 0 ;
@@ -90469,6 +90533,8 @@ static PyMethodDef SwigMethods[] = {
 	 { "SBTarget_GetAddressByteSize", _wrap_SBTarget_GetAddressByteSize, METH_O, "SBTarget_GetAddressByteSize(SBTarget self) -> uint32_t"},
 	 { "SBTarget_GetTriple", _wrap_SBTarget_GetTriple, METH_O, "SBTarget_GetTriple(SBTarget self) -> char const *"},
 	 { "SBTarget_GetABIName", _wrap_SBTarget_GetABIName, METH_O, "SBTarget_GetABIName(SBTarget self) -> char const *"},
+	 { "SBTarget_GetLabel", _wrap_SBTarget_GetLabel, METH_O, "SBTarget_GetLabel(SBTarget self) -> char const *"},
+	 { "SBTarget_SetLabel", _wrap_SBTarget_SetLabel, METH_VARARGS, "SBTarget_SetLabel(SBTarget self, char const * label) -> SBError"},
 	 { "SBTarget_GetDataByteSize", _wrap_SBTarget_GetDataByteSize, METH_O, "\n"
 		"SBTarget_GetDataByteSize(SBTarget self) -> uint32_t\n"
 		"\n"
