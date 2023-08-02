@@ -26,6 +26,7 @@
 #include "llvm/Option/Option.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/InitLLVM.h"
+#include "llvm/Support/LLVMDriver.h"
 #include "llvm/Support/LineIterator.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/VirtualFileSystem.h"
@@ -33,6 +34,7 @@
 #include "llvm/Support/YAMLTraits.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TextAPI/Architecture.h"
+#include <cstdlib>
 #include <map>
 #include <type_traits>
 
@@ -848,7 +850,7 @@ static Expected<Config> parseCommandLine(int Argc, char **Argv) {
   return std::move(C);
 }
 
-int main(int Argc, char **Argv) {
+int llvm_libtool_darwin_main(int Argc, char **Argv, const llvm::ToolContext &) {
   InitLLVM X(Argc, Argv);
   Expected<Config> ConfigOrErr = parseCommandLine(Argc, Argv);
   if (!ConfigOrErr) {
@@ -875,4 +877,5 @@ int main(int Argc, char **Argv) {
     }
     break;
   }
+  return EXIT_SUCCESS;
 }
