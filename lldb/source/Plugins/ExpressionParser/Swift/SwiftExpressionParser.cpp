@@ -1835,6 +1835,7 @@ SwiftExpressionParser::Parse(DiagnosticManager &diagnostic_manager,
           new SwiftASTManipulatorBase::VariableMetadataPersistent(
               persistent_variable));
 
+      // This is only exercised by the PlaygroundsREPL tests.
       persistent_state->RegisterSwiftPersistentDecl(decl);
     }
 
