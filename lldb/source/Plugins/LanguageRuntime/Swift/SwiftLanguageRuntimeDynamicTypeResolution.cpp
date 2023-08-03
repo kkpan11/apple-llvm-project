@@ -453,7 +453,8 @@ SwiftLanguageRuntimeImpl::GetMemoryReader() {
   if (!m_memory_reader_sp) {
     m_memory_reader_sp.reset(new LLDBMemoryReader(
         m_process, [&](swift::remote::RemoteAbsolutePointer pointer) {
-          auto *reflection_context = GetReflectionContext();
+          ThreadSafeReflectionContext reflection_context =
+              GetReflectionContext();
           return reflection_context->stripSignedPointer(pointer);
         }));
   }
@@ -1104,7 +1105,7 @@ SwiftLanguageRuntimeImpl::GetNumChildren(CompilerType type,
     if (!tr)
       return {};
 
-    auto *reflection_ctx = GetReflectionContext();
+    ThreadSafeReflectionContext reflection_ctx = GetReflectionContext();
     auto &builder = reflection_ctx->getBuilder();
     auto tc = swift::reflection::TypeConverter(builder);
     LLDBTypeInfoProvider tip(*this, *ts);
@@ -1331,7 +1332,7 @@ SwiftLanguageRuntimeImpl::GetIndexOfChildMemberWithName(
                                            exe_ctx, omit_empty_base_classes,
                                            child_indexes);
     case ReferenceKind::Strong: {
-      auto *reflection_ctx = GetReflectionContext();
+      ThreadSafeReflectionContext reflection_ctx = GetReflectionContext();
       auto &builder = reflection_ctx->getBuilder();
       TypeConverter tc(builder);
       LLDBTypeInfoProvider tip(*this, *ts);
@@ -1511,7 +1512,7 @@ CompilerType SwiftLanguageRuntimeImpl::GetChildCompilerTypeAtIndex(
     llvm::StringRef type_name = TypeSystemSwiftTypeRef::GetBaseName(
         ts->CanonicalizeSugar(dem, type_node));
 
-    auto *reflection_ctx = GetReflectionContext();
+    ThreadSafeReflectionContext reflection_ctx = GetReflectionContext();
     if (!reflection_ctx)
       return {};
     CompilerType instance_type = valobj->GetCompilerType();
@@ -1625,7 +1626,7 @@ CompilerType SwiftLanguageRuntimeImpl::GetChildCompilerTypeAtIndex(
 
 bool SwiftLanguageRuntimeImpl::ForEachSuperClassType(
     ValueObject &instance, std::function<bool(SuperClassType)> fn) {
-  auto *reflection_ctx = GetReflectionContext();
+  ThreadSafeReflectionContext reflection_ctx = GetReflectionContext();
   if (!reflection_ctx)
     return false;
   CompilerType instance_type = instance.GetCompilerType();
@@ -1692,7 +1693,7 @@ bool SwiftLanguageRuntimeImpl::GetDynamicTypeAndAddress_Pack(
     lldb::DynamicValueType use_dynamic, TypeAndOrName &pack_type_or_name,
     Address &address, Value::ValueType &value_type) {
   Log *log(GetLog(LLDBLog::Types));
-  auto *reflection_ctx = GetReflectionContext();
+  ThreadSafeReflectionContext reflection_ctx = GetReflectionContext();
   if (!reflection_ctx)
     return false;
   
@@ -2011,7 +2012,7 @@ bool SwiftLanguageRuntimeImpl::GetDynamicTypeAndAddress_Class(
       return false;
     }
   Log *log(GetLog(LLDBLog::Types));
-  auto *reflection_ctx = GetReflectionContext();
+  ThreadSafeReflectionContext reflection_ctx = GetReflectionContext();
   const auto *typeref = reflection_ctx->readTypeFromInstance(instance_ptr);
   if (!typeref) {
     LLDB_LOGF(log,
@@ -2234,7 +2235,7 @@ bool SwiftLanguageRuntimeImpl::GetDynamicTypeAndAddress_Protocol(
 
   swift::remote::RemoteAddress remote_existential(existential_address);
 
-  auto *reflection_ctx = GetReflectionContext();
+  ThreadSafeReflectionContext reflection_ctx = GetReflectionContext();
   auto pair = reflection_ctx->projectExistentialAndUnwrapClass(
       remote_existential, *protocol_typeref);
   if (use_local_buffer)
@@ -2365,7 +2366,7 @@ CompilerType SwiftLanguageRuntimeImpl::BindGenericTypeParameters(
   auto ts =
       unbound_type.GetTypeSystem().dyn_cast_or_null<TypeSystemSwift>();
   Status error;
-  auto *reflection_ctx = GetReflectionContext();
+  ThreadSafeReflectionContext reflection_ctx = GetReflectionContext();
   if (!reflection_ctx) {
     LLDB_LOG(GetLog(LLDBLog::Types),
              "No reflection context available.");
@@ -2433,7 +2434,7 @@ SwiftLanguageRuntimeImpl::BindGenericTypeParameters(StackFrame &stack_frame,
   using namespace swift::Demangle;
 
   Status error;
-  auto *reflection_ctx = GetReflectionContext();
+  ThreadSafeReflectionContext reflection_ctx = GetReflectionContext();
   if (!reflection_ctx) {
     LLDB_LOG(GetLog(LLDBLog::Expressions | LLDBLog::Types),
              "No reflection context available.");
@@ -2893,7 +2894,7 @@ SwiftLanguageRuntimeImpl::GetValueType(ValueObject &in_value,
       // Read the value witness table and check if the data is inlined in
       // the existential container or not.
       swift::remote::RemoteAddress remote_existential(existential_address);
-      auto *reflection_ctx = GetReflectionContext();
+      ThreadSafeReflectionContext reflection_ctx = GetReflectionContext();
       llvm::Optional<bool> is_inlined =
           reflection_ctx->isValueInlinedInExistentialContainer(
               remote_existential);
@@ -3372,7 +3373,7 @@ SwiftLanguageRuntimeImpl::GetTypeRef(CompilerType type,
     return nullptr;
 
   // Build a TypeRef.
-  auto *reflection_ctx = GetReflectionContext();
+  ThreadSafeReflectionContext reflection_ctx = GetReflectionContext();
   if (!reflection_ctx)
     return nullptr;
 
@@ -3447,7 +3448,7 @@ SwiftLanguageRuntimeImpl::GetSwiftRuntimeTypeInfo(
   if (out_tr)
     *out_tr = type_ref;
 
-  auto *reflection_ctx = GetReflectionContext();
+  ThreadSafeReflectionContext reflection_ctx = GetReflectionContext();
   if (!reflection_ctx)
     return nullptr;
 
