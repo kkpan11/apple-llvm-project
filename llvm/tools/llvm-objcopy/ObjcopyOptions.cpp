@@ -30,9 +30,7 @@ using namespace llvm::objcopy;
 namespace {
 enum ObjcopyID {
   OBJCOPY_INVALID = 0, // This is not an option ID.
-#define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS, PARAM,  \
-               HELPTEXT, METAVAR, VALUES)                                      \
-  OBJCOPY_##ID,
+#define OPTION(...) LLVM_MAKE_OPT_ID_WITH_ID_PREFIX(OBJCOPY_, __VA_ARGS__),
 #include "ObjcopyOpts.inc"
 #undef OPTION
 };
@@ -42,20 +40,8 @@ enum ObjcopyID {
 #undef PREFIX
 
 const opt::OptTable::Info ObjcopyInfoTable[] = {
-#define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS, PARAM,  \
-               HELPTEXT, METAVAR, VALUES)                                      \
-  {OBJCOPY_##PREFIX,                                                           \
-   NAME,                                                                       \
-   HELPTEXT,                                                                   \
-   METAVAR,                                                                    \
-   OBJCOPY_##ID,                                                               \
-   opt::Option::KIND##Class,                                                   \
-   PARAM,                                                                      \
-   FLAGS,                                                                      \
-   OBJCOPY_##GROUP,                                                            \
-   OBJCOPY_##ALIAS,                                                            \
-   ALIASARGS,                                                                  \
-   VALUES},
+#define OPTION(...)                                                            \
+  LLVM_CONSTRUCT_OPT_INFO_WITH_ID_PREFIX(OBJCOPY_, __VA_ARGS__),
 #include "ObjcopyOpts.inc"
 #undef OPTION
 };
@@ -69,9 +55,8 @@ public:
 
 enum InstallNameToolID {
   INSTALL_NAME_TOOL_INVALID = 0, // This is not an option ID.
-#define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS, PARAM,  \
-               HELPTEXT, METAVAR, VALUES)                                      \
-  INSTALL_NAME_TOOL_##ID,
+#define OPTION(...)                                                            \
+  LLVM_MAKE_OPT_ID_WITH_ID_PREFIX(INSTALL_NAME_TOOL_, __VA_ARGS__),
 #include "InstallNameToolOpts.inc"
 #undef OPTION
 };
@@ -82,20 +67,8 @@ enum InstallNameToolID {
 #undef PREFIX
 
 const opt::OptTable::Info InstallNameToolInfoTable[] = {
-#define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS, PARAM,  \
-               HELPTEXT, METAVAR, VALUES)                                      \
-  {INSTALL_NAME_TOOL_##PREFIX,                                                 \
-   NAME,                                                                       \
-   HELPTEXT,                                                                   \
-   METAVAR,                                                                    \
-   INSTALL_NAME_TOOL_##ID,                                                     \
-   opt::Option::KIND##Class,                                                   \
-   PARAM,                                                                      \
-   FLAGS,                                                                      \
-   INSTALL_NAME_TOOL_##GROUP,                                                  \
-   INSTALL_NAME_TOOL_##ALIAS,                                                  \
-   ALIASARGS,                                                                  \
-   VALUES},
+#define OPTION(...)                                                            \
+  LLVM_CONSTRUCT_OPT_INFO_WITH_ID_PREFIX(INSTALL_NAME_TOOL_, __VA_ARGS__),
 #include "InstallNameToolOpts.inc"
 #undef OPTION
 };
@@ -107,9 +80,8 @@ public:
 
 enum BitcodeStripID {
   BITCODE_STRIP_INVALID = 0, // This is not an option ID.
-#define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS, PARAM,  \
-               HELPTEXT, METAVAR, VALUES)                                      \
-  BITCODE_STRIP_##ID,
+#define OPTION(...)                                                            \
+  LLVM_MAKE_OPT_ID_WITH_ID_PREFIX(BITCODE_STRIP_, __VA_ARGS__),
 #include "BitcodeStripOpts.inc"
 #undef OPTION
 };
@@ -119,20 +91,8 @@ enum BitcodeStripID {
 #undef PREFIX
 
 const opt::OptTable::Info BitcodeStripInfoTable[] = {
-#define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS, PARAM,  \
-               HELPTEXT, METAVAR, VALUES)                                      \
-  {BITCODE_STRIP_##PREFIX,                                                     \
-   NAME,                                                                       \
-   HELPTEXT,                                                                   \
-   METAVAR,                                                                    \
-   BITCODE_STRIP_##ID,                                                         \
-   opt::Option::KIND##Class,                                                   \
-   PARAM,                                                                      \
-   FLAGS,                                                                      \
-   BITCODE_STRIP_##GROUP,                                                      \
-   BITCODE_STRIP_##ALIAS,                                                      \
-   ALIASARGS,                                                                  \
-   VALUES},
+#define OPTION(...)                                                            \
+  LLVM_CONSTRUCT_OPT_INFO_WITH_ID_PREFIX(BITCODE_STRIP_, __VA_ARGS__),
 #include "BitcodeStripOpts.inc"
 #undef OPTION
 };
@@ -144,9 +104,7 @@ public:
 
 enum StripID {
   STRIP_INVALID = 0, // This is not an option ID.
-#define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS, PARAM,  \
-               HELPTEXT, METAVAR, VALUES)                                      \
-  STRIP_##ID,
+#define OPTION(...) LLVM_MAKE_OPT_ID_WITH_ID_PREFIX(STRIP_, __VA_ARGS__),
 #include "StripOpts.inc"
 #undef OPTION
 };
@@ -156,12 +114,7 @@ enum StripID {
 #undef PREFIX
 
 const opt::OptTable::Info StripInfoTable[] = {
-#define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS, PARAM,  \
-               HELPTEXT, METAVAR, VALUES)                                      \
-  {STRIP_##PREFIX, NAME,       HELPTEXT,                                       \
-   METAVAR,        STRIP_##ID, opt::Option::KIND##Class,                       \
-   PARAM,          FLAGS,      STRIP_##GROUP,                                  \
-   STRIP_##ALIAS,  ALIASARGS,  VALUES},
+#define OPTION(...) LLVM_CONSTRUCT_OPT_INFO_WITH_ID_PREFIX(STRIP_, __VA_ARGS__),
 #include "StripOpts.inc"
 #undef OPTION
 };
