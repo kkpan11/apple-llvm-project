@@ -148,6 +148,9 @@ protected:
 
   InputFile(Kind, const llvm::MachO::InterfaceFile &);
 
+  // If true, this input's arch is compatiable with target.
+  bool compatArch = true;
+
 private:
   const Kind fileKind;
   const StringRef name;
@@ -165,13 +168,13 @@ struct FDE {
 class ObjFile final : public InputFile {
 public:
   ObjFile(MemoryBufferRef mb, uint32_t modTime, StringRef archiveName,
-          bool lazy = false, bool forceHidden = false);
+          bool lazy = false, bool forceHidden = false, bool compatArch = true);
   ArrayRef<llvm::MachO::data_in_code_entry> getDataInCode() const;
   ArrayRef<uint8_t> getOptimizationHints() const;
   template <class LP> void parse();
 
   ObjFile(MemoryBufferRef mb, llvm::cas::ObjectRef ID, StringRef archiveName,
-          bool lazy = false, bool forceHidden = false);
+          bool lazy = false, bool forceHidden = false, bool compatArch = true);
   static bool classof(const InputFile *f) { return f->kind() == ObjKind; }
 
   std::string sourceFile() const;
@@ -193,7 +196,7 @@ public:
   static void parseLCLinkerOptions(MemoryBufferRef mb);
 
 private:
-  void init(StringRef archiveName);
+  void init(StringRef archiveName, bool compatArch);
   llvm::once_flag initDwarf;
   template <class LP> void parseLazy();
   template <class SectionHeader> void parseSections(ArrayRef<SectionHeader>);
@@ -326,7 +329,7 @@ class BitcodeFile final : public InputFile {
 public:
   explicit BitcodeFile(MemoryBufferRef mb, StringRef archiveName,
                        uint64_t offsetInArchive, bool lazy = false,
-                       bool forceHidden = false);
+                       bool forceHidden = false, bool compatArch = true);
   static bool classof(const InputFile *f) { return f->kind() == BitcodeKind; }
   void parse();
 
