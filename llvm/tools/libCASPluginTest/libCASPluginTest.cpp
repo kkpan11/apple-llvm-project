@@ -115,12 +115,6 @@ struct CASWrapper {
   /// Load the object, potentially "downloading" it from upstream.
   Expected<std::optional<ondisk::ObjectHandle>> loadObject(ObjectID ID);
 
-  /// "Uploads" the full object node graph.
-  Expected<ObjectID> upstreamNode(ObjectID Node);
-  /// "Downloads" only a single object node. The rest of the nodes in the graph
-  /// will be "downloaded" lazily as they are visited.
-  Expected<ObjectID> downstreamNode(ObjectID Node);
-
   /// "Uploads" a key the associated full node graph.
   Error upstreamKey(ArrayRef<uint8_t> Key, ObjectID Value);
   /// "Downloads" the single root node that is associated with the key. The rest
@@ -133,6 +127,13 @@ struct CASWrapper {
     Fn(errs());
     errs().flush();
   }
+
+private:
+  /// "Uploads" the full object node graph.
+  Expected<ObjectID> upstreamNode(ObjectID Node);
+  /// "Downloads" only a single object node. The rest of the nodes in the graph
+  /// will be "downloaded" lazily as they are visited.
+  Expected<ObjectID> downstreamNode(ObjectID Node);
 };
 
 DEFINE_SIMPLE_CONVERSION_FUNCTIONS(CASWrapper, llcas_cas_t)
@@ -208,6 +209,8 @@ Expected<ObjectID> CASWrapper::downstreamNode(ObjectID Node) {
 }
 
 Error CASWrapper::upstreamKey(ArrayRef<uint8_t> Key, ObjectID Value) {
+  if (!UpstreamDB)
+    return Error::success();
   Expected<ObjectID> UpstreamVal = upstreamNode(Value);
   if (!UpstreamVal)
     return UpstreamVal.takeError();
@@ -220,6 +223,8 @@ Error CASWrapper::upstreamKey(ArrayRef<uint8_t> Key, ObjectID Value) {
 
 Expected<std::optional<ObjectID>>
 CASWrapper::downstreamKey(ArrayRef<uint8_t> Key) {
+  if (!UpstreamDB)
+    return std::nullopt;
   std::optional<ObjectID> UpstreamValue;
   if (Error E = UpstreamDB->KVGet(Key).moveInto(UpstreamValue))
     return std::move(E);
@@ -485,6 +490,19 @@ llcas_actioncache_get_for_digest(llcas_cas_t c_cas, llcas_digest_t c_key,
   return LLCAS_LOOKUP_RESULT_SUCCESS;
 }
 
+void llcas_actioncache_get_for_digest_async(llcas_cas_t c_cas,
+                                            llcas_digest_t c_key, bool globally,
+                                            void *ctx_cb,
+                                            llcas_actioncache_get_cb cb) {
+  unwrap(c_cas)->Pool.async([=] {
+    llcas_objectid_t c_value;
+    char *c_err;
+    llcas_lookup_result_t result = llcas_actioncache_get_for_digest(
+        c_cas, c_key, &c_value, globally, &c_err);
+    cb(ctx_cb, result, c_value, c_err);
+  });
+}
+
 bool llcas_actioncache_put_for_digest(llcas_cas_t c_cas, llcas_digest_t c_key,
                                       llcas_objectid_t c_value, bool globally,
                                       char **error) {
@@ -506,4 +524,17 @@ bool llcas_actioncache_put_for_digest(llcas_cas_t c_cas, llcas_digest_t c_key,
   }
 
   return false;
+}
+
+void llcas_actioncache_put_for_digest_async(llcas_cas_t c_cas,
+                                            llcas_digest_t c_key,
+                                            llcas_objectid_t c_value,
+                                            bool globally, void *ctx_cb,
+                                            llcas_actioncache_put_cb cb) {
+  unwrap(c_cas)->Pool.async([=] {
+    char *c_err;
+    bool failed = llcas_actioncache_put_for_digest(c_cas, c_key, c_value,
+                                                   globally, &c_err);
+    cb(ctx_cb, failed, c_err);
+  });
 }

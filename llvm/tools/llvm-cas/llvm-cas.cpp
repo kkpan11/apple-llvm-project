@@ -67,6 +67,11 @@ int main(int Argc, char **Argv) {
   cl::list<std::string> Objects(cl::Positional, cl::desc("<object>..."));
   cl::opt<std::string> CASPath("cas", cl::desc("Path to CAS on disk."),
                                cl::value_desc("path"));
+  cl::opt<std::string> CASPluginPath("fcas-plugin-path",
+                                     cl::desc("Path to plugin CAS library"),
+                                     cl::value_desc("path"));
+  cl::list<std::string> CASPluginOpts("fcas-plugin-option",
+                                      cl::desc("Plugin CAS Options"));
   cl::opt<std::string> UpstreamCASPath(
       "upstream-cas", cl::desc("Path to another CAS."), cl::value_desc("path"));
   cl::opt<std::string> DataPath("data",
@@ -132,18 +137,28 @@ int main(int Argc, char **Argv) {
     ExitOnErr(
         createStringError(inconvertibleErrorCode(), "missing --cas=<path>"));
 
-  std::unique_ptr<ObjectStore> CAS;
-  std::unique_ptr<ActionCache> AC;
+  std::shared_ptr<ObjectStore> CAS;
+  std::shared_ptr<ActionCache> AC;
   std::optional<StringRef> CASFilePath;
   if (sys::path::is_absolute(CASPath)) {
     CASFilePath = CASPath;
-    std::tie(CAS, AC) = ExitOnErr(createOnDiskUnifiedCASDatabases(CASPath));
+    if (!CASPluginPath.empty()) {
+      SmallVector<std::pair<std::string, std::string>> PluginOptions;
+      for (const auto &PluginOpt : CASPluginOpts) {
+        auto [Name, Val] = StringRef(PluginOpt).split('=');
+        PluginOptions.push_back({std::string(Name), std::string(Val)});
+      }
+      std::tie(CAS, AC) = ExitOnErr(
+          createPluginCASDatabases(CASPluginPath, CASPath, PluginOptions));
+    } else {
+      std::tie(CAS, AC) = ExitOnErr(createOnDiskUnifiedCASDatabases(CASPath));
+    }
   } else {
     CAS = ExitOnErr(createCASFromIdentifier(CASPath));
   }
   assert(CAS);
 
-  std::unique_ptr<ObjectStore> UpstreamCAS;
+  std::shared_ptr<ObjectStore> UpstreamCAS;
   if (!UpstreamCASPath.empty())
     UpstreamCAS = ExitOnErr(createCASFromIdentifier(UpstreamCASPath));
 
@@ -426,16 +441,31 @@ int traverseGraph(ObjectStore &CAS, const CASID &ID) {
   return 0;
 }
 
-static Error recursiveAccess(CachingOnDiskFileSystem &FS, StringRef Path) {
+static Error
+recursiveAccess(CachingOnDiskFileSystem &FS, StringRef Path,
+                llvm::DenseSet<llvm::sys::fs::UniqueID> &SeenDirectories) {
   auto ST = FS.status(Path);
+
+  // Ignore missing entries, which can be a symlink to a missing file, which is
+  // not an error in the filesystem itself.
+  // FIXME: add status(follow=false) to VFS instead, which would let us detect
+  // this case directly.
+  if (ST.getError() == llvm::errc::no_such_file_or_directory)
+    return Error::success();
+
   if (!ST)
     return createFileError(Path, ST.getError());
 
-  if (ST->isDirectory()) {
+  // Check that this is the first time we see the directory to prevent infinite
+  // recursion into symlinks. The status() above will ensure all symlinks are
+  // ingested.
+  // FIXME: add status(follow=false) to VFS instead, and then only traverse
+  // a directory and not a symlink to a directory.
+  if (ST->isDirectory() && SeenDirectories.insert(ST->getUniqueID()).second) {
     std::error_code EC;
     for (llvm::vfs::directory_iterator I = FS.dir_begin(Path, EC), IE;
          !EC && I != IE; I.increment(EC)) {
-      auto Err = recursiveAccess(FS, I->path());
+      auto Err = recursiveAccess(FS, I->path(), SeenDirectories);
       if (Err)
         return Err;
     }
@@ -460,7 +490,8 @@ static Expected<ObjectProxy> ingestFileSystemImpl(ObjectStore &CAS,
 
   (*FS)->trackNewAccesses();
 
-  if (Error E = recursiveAccess(**FS, Path))
+  llvm::DenseSet<llvm::sys::fs::UniqueID> SeenDirectories;
+  if (Error E = recursiveAccess(**FS, Path, SeenDirectories))
     return std::move(E);
 
   return (*FS)->createTreeFromNewAccesses(

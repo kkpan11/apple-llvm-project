@@ -1091,8 +1091,10 @@ bool CompilerInstance::ExecuteAction(FrontendAction &Act) {
   noteBottomOfStack();
 
   auto FinishDiagnosticClient = llvm::make_scope_exit([&]() {
-    // Notify the diagnostic client that all files were processed.
-    getDiagnosticClient().finish();
+    if (!getFrontendOpts().MayEmitDiagnosticsAfterProcessingSourceFiles) {
+      // Notify the diagnostic client that all files were processed.
+      getDiagnosticClient().finish();
+    }
   });
 
   raw_ostream &OS = getVerboseOutputStream();
@@ -1292,6 +1294,7 @@ compileModuleImpl(CompilerInstance &ImportingInstance, SourceLocation ImportLoc,
   // Force implicitly-built modules to hash the content of the module file.
   HSOpts.ModulesHashContent = true;
   FrontendOpts.Inputs = {Input};
+  FrontendOpts.MayEmitDiagnosticsAfterProcessingSourceFiles = false;
 
   // Don't free the remapped file buffers; they are owned by our caller.
   PPOpts.RetainRemappedFileBuffers = true;
@@ -2466,7 +2469,7 @@ static bool addCachedModuleFileToInMemoryCache(
     llvm::report_fatal_error("missing main output");
   // FIXME: We wait to materialize each module file before proceeding, which
   // introduces latency for a network CAS. Instead we should collect all the
-  // module keys and materialize them concurrently using \c getProxyAsync, for
+  // module keys and materialize them concurrently using \c getProxyFuture, for
   // better network utilization.
   auto OutputProxy = CAS.getProxy(Output->Object);
   if (!OutputProxy) {

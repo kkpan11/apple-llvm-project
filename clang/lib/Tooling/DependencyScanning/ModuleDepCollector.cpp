@@ -297,6 +297,8 @@ static std::string getModuleContextHash(const ModuleDeps &MD,
       MutableCI.getFileSystemOpts().CASFileSystemRootID, "");
   llvm::SaveAndRestore<std::vector<std::string>> RestorePrefixMappings(
       MutableCI.getFrontendOpts().PathPrefixMappings, {});
+  llvm::SaveAndRestore<CASOptions> RestoreCASOptions(
+      MutableCI.getCASOpts(), {});
 
   // Hash the BuildInvocation without any input files.
   SmallVector<const char *, 32> Args;
@@ -629,7 +631,7 @@ bool ModuleDepCollector::isPrebuiltModule(const Module *M) {
   if (PrebuiltModuleFileIt == PrebuiltModuleFiles.end())
     return false;
   assert("Prebuilt module came from the expected AST file" &&
-         PrebuiltModuleFileIt->second == M->getASTFile()->getName());
+         PrebuiltModuleFileIt->second == M->getASTFile()->getNameAsRequested());
   return true;
 }
 

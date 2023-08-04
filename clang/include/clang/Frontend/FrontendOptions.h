@@ -375,6 +375,10 @@ public:
   /// caching of compilation outputs. This is used for testing purposes.
   unsigned DisableCachedCompileJobReplay : 1;
 
+  /// Keep the diagnostic client open for receiving diagnostics after the source
+  /// files have been processed.
+  unsigned MayEmitDiagnosticsAfterProcessingSourceFiles : 1;
+
   /// Output (and read) PCM files regardless of compiler errors.
   unsigned AllowPCMWithCompilerErrors : 1;
 
@@ -570,7 +574,9 @@ public:
         ASTDumpLookups(false), BuildingImplicitModule(false),
         BuildingImplicitModuleUsesLock(true), ModulesEmbedAllFiles(false),
         IncludeTimestamps(true), UseTemporary(true), CacheCompileJob(false),
-        DisableCachedCompileJobReplay(false), AllowPCMWithCompilerErrors(false),
+        DisableCachedCompileJobReplay(false),
+        MayEmitDiagnosticsAfterProcessingSourceFiles(false),
+        AllowPCMWithCompilerErrors(false),
         ModulesShareFileManager(true), TimeTraceGranularity(500) {}
 
   /// getInputKindForExtension - Return the appropriate input kind for a file
