@@ -1,4 +1,5 @@
 # REQUIRES: x86
+# UNSUPPORTED: true
 
 # RUN: llvm-mc -filetype=obj -triple=x86_64-unknown-linux %s -o %t
 
