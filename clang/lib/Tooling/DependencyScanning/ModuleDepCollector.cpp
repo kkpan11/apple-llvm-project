@@ -189,14 +189,6 @@ ModuleDepCollector::makeInvocationForModuleBuildWithoutOutputs(
 
   Optimize(CI);
 
-  // The original invocation probably didn't have strict context hash enabled.
-  // We will use the context hash of this invocation to distinguish between
-  // multiple incompatible versions of the same module and will use it when
-  // reporting dependencies to the clients. Let's make sure we're using
-  // **strict** context hash in order to prevent accidental sharing of
-  // incompatible modules (e.g. with differences in search paths).
-  CI.getHeaderSearchOpts().ModulesStrictContextHash = true;
-
   return CI;
 }
 
@@ -272,7 +264,7 @@ void ModuleDepCollector::applyDiscoveredDependencies(CompilerInvocation &CI) {
 
     SmallVector<ModuleID> DirectDeps;
     for (const auto &KV : ModularDeps)
-      if (KV.second->ImportedByMainFile)
+      if (DirectModularDeps.contains(KV.first))
         DirectDeps.push_back(KV.second->ID);
 
     // TODO: Report module maps the same way it's done for modular dependencies.
@@ -397,7 +389,7 @@ void ModuleDepCollectorPP::handleImport(const Module *Imported) {
     MDC.DirectPrebuiltModularDeps.insert(
         {TopLevelModule, PrebuiltModuleDep{TopLevelModule}});
   else
-    DirectModularDeps.insert(TopLevelModule);
+    MDC.DirectModularDeps.insert(TopLevelModule);
 }
 
 void ModuleDepCollectorPP::EndOfMainFile() {
@@ -412,15 +404,22 @@ void ModuleDepCollectorPP::EndOfMainFile() {
   for (const Module *M :
        MDC.ScanInstance.getPreprocessor().getAffectingModules())
     if (!MDC.isPrebuiltModule(M))
-      DirectModularDeps.insert(M);
+      MDC.DirectModularDeps.insert(M);
 
-  for (const Module *M : DirectModularDeps)
+  for (const Module *M : MDC.DirectModularDeps)
     handleTopLevelModule(M);
 
   MDC.Consumer.handleDependencyOutputOpts(*MDC.Opts);
 
   for (auto &&I : MDC.ModularDeps)
     MDC.Consumer.handleModuleDependency(*I.second);
+
+  for (const Module *M : MDC.DirectModularDeps) {
+    auto It = MDC.ModularDeps.find(M);
+    // Only report direct dependencies that were successfully handled.
+    if (It != MDC.ModularDeps.end())
+      MDC.Consumer.handleDirectModuleDependency(MDC.ModularDeps[M]->ID);
+  }
 
   for (auto &&I : MDC.FileDeps)
     MDC.Consumer.handleFileDependency(I);
@@ -449,8 +448,6 @@ ModuleDepCollectorPP::handleTopLevelModule(const Module *M) {
   ModuleDeps &MD = *ModI.first->second;
 
   MD.ID.ModuleName = M->getFullModuleName();
-  MD.ImportedByMainFile = DirectModularDeps.contains(M);
-  MD.ImplicitModulePCMPath = std::string(M->getASTFile()->getName());
   MD.IsSystem = M->IsSystem;
 
   ModuleMap &ModMapInfo =

@@ -513,11 +513,10 @@ static llvm::json::Array toJSONSorted(const llvm::StringSet<> &Set) {
   return llvm::json::Array(Strings);
 }
 
+// Technically, we don't need to sort the dependency list to get determinism.
+// Leaving these be will simply preserve the import order.
 static llvm::json::Array toJSONSorted(std::vector<ModuleID> V) {
-  llvm::sort(V, [](const ModuleID &A, const ModuleID &B) {
-    return std::tie(A.ModuleName, A.ContextHash) <
-           std::tie(B.ModuleName, B.ContextHash);
-  });
+  llvm::sort(V);
 
   llvm::json::Array Ret;
   for (const ModuleID &MID : V)
@@ -595,11 +594,7 @@ public:
     std::vector<IndexedModuleID> ModuleIDs;
     for (auto &&M : Modules)
       ModuleIDs.push_back(M.first);
-    llvm::sort(ModuleIDs,
-               [](const IndexedModuleID &A, const IndexedModuleID &B) {
-                 return std::tie(A.ID.ModuleName, A.InputIndex) <
-                        std::tie(B.ID.ModuleName, B.InputIndex);
-               });
+    llvm::sort(ModuleIDs);
 
     llvm::sort(Inputs, [](const InputDeps &A, const InputDeps &B) {
       return A.FileName < B.FileName;
@@ -679,20 +674,36 @@ public:
 private:
   struct IndexedModuleID {
     ModuleID ID;
+
+    // FIXME: This is mutable so that it can still be updated after insertion
+    //  into an unordered associative container. This is "fine", since this
+    //  field doesn't contribute to the hash, but it's a brittle hack.
     mutable size_t InputIndex;
 
     bool operator==(const IndexedModuleID &Other) const {
-      return ID.ModuleName == Other.ID.ModuleName &&
-             ID.ContextHash == Other.ID.ContextHash;
+      return ID == Other.ID;
     }
-  };
 
-  struct IndexedModuleIDHasher {
-    std::size_t operator()(const IndexedModuleID &IMID) const {
-      using llvm::hash_combine;
-
-      return hash_combine(IMID.ID.ModuleName, IMID.ID.ContextHash);
+    bool operator<(const IndexedModuleID &Other) const {
+      /// We need the output of clang-scan-deps to be deterministic. However,
+      /// the dependency graph may contain two modules with the same name. How
+      /// do we decide which one to print first? If we made that decision based
+      /// on the context hash, the ordering would be deterministic, but
+      /// different across machines. This can happen for example when the inputs
+      /// or the SDKs (which both contribute to the "context" hash) live in
+      /// different absolute locations. We solve that by tracking the index of
+      /// the first input TU that (transitively) imports the dependency, which
+      /// is always the same for the same input, resulting in deterministic
+      /// sorting that's also reproducible across machines.
+      return std::tie(ID.ModuleName, InputIndex) <
+             std::tie(Other.ID.ModuleName, Other.InputIndex);
     }
+
+    struct Hasher {
+      std::size_t operator()(const IndexedModuleID &IMID) const {
+        return llvm::hash_value(IMID.ID);
+      }
+    };
   };
 
   struct InputDeps {
@@ -707,7 +718,7 @@ private:
   };
 
   std::mutex Lock;
-  std::unordered_map<IndexedModuleID, ModuleDeps, IndexedModuleIDHasher>
+  std::unordered_map<IndexedModuleID, ModuleDeps, IndexedModuleID::Hasher>
       Modules;
   std::vector<InputDeps> Inputs;
 };
@@ -961,7 +972,7 @@ int main(int argc, const char **argv) {
   for (unsigned I = 0; I < Pool.getThreadCount(); ++I) {
     Pool.async([I, &CAS, &Lock, &Index, &Inputs, &TreeResults,
                 &HadErrors, &FD, &WorkerTools, &DependencyOS, &Errs]() {
-      llvm::StringSet<> AlreadySeenModules;
+      llvm::DenseSet<ModuleID> AlreadySeenModules;
       while (true) {
         const tooling::CompileCommand *Input;
         std::string Filename;
