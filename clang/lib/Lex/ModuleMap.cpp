@@ -1265,6 +1265,20 @@ void ModuleMap::resolveHeaderDirectives(
   Mod->UnresolvedHeaders.swap(NewHeaders);
 }
 
+// FIXME: duplicates code in PPDirectives
+static bool isForModuleBuilding(const Module *M, StringRef CurrentModule,
+                                StringRef ModuleName) {
+  StringRef TopLevelName = M->getTopLevelModuleName();
+
+  // When building framework Foo, we wanna make sure that Foo *and* Foo_Private
+  // are textually included and no modules are built for both.
+  if (M->getTopLevelModule()->IsFramework && CurrentModule == ModuleName &&
+      !CurrentModule.endswith("_Private") && TopLevelName.endswith("_Private"))
+    TopLevelName = TopLevelName.drop_back(8);
+
+  return TopLevelName == CurrentModule;
+}
+
 void ModuleMap::addHeader(Module *Mod, Module::Header Header,
                           ModuleHeaderRole Role, bool Imported) {
   KnownHeader KH(Mod, Role);
@@ -1280,7 +1294,7 @@ void ModuleMap::addHeader(Module *Mod, Module::Header Header,
   Mod->Headers[headerRoleToKind(Role)].push_back(Header);
 
   bool isCompilingModuleHeader =
-      LangOpts.isCompilingModule() && Mod->getTopLevelModule() == SourceModule;
+      isForModuleBuilding(Mod, LangOpts.CurrentModule, LangOpts.ModuleName);
   if (!Imported || isCompilingModuleHeader) {
     // When we import HeaderFileInfo, the external source is expected to
     // set the isModuleHeader flag itself.
