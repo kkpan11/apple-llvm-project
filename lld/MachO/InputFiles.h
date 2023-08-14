@@ -172,6 +172,8 @@ public:
   ArrayRef<llvm::MachO::data_in_code_entry> getDataInCode() const;
   ArrayRef<uint8_t> getOptimizationHints() const;
   template <class LP> void parse();
+  template <class LP>
+  void parseLinkerOptions(llvm::SmallVectorImpl<StringRef> &LinkerOptions);
 
   ObjFile(MemoryBufferRef mb, llvm::cas::ObjectRef ID, StringRef archiveName,
           bool lazy = false, bool forceHidden = false, bool compatArch = true);
@@ -342,6 +344,7 @@ private:
 
 extern llvm::SetVector<InputFile *> inputFiles;
 extern llvm::DenseMap<llvm::CachedHashStringRef, MemoryBufferRef> cachedReads;
+extern llvm::SmallVector<StringRef> unprocessedLCLinkerOptions;
 
 std::optional<MemoryBufferRef> readFile(StringRef path);
 

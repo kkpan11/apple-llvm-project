@@ -963,10 +963,12 @@ OpaqueFile::OpaqueFile(MemoryBufferRef mb, StringRef segName,
 template <class LP> static void parseLCLinkerOptionsImpl(MemoryBufferRef mb) {
   using Header = typename LP::mach_header;
   auto *hdr = reinterpret_cast<const Header *>(mb.getBufferStart());
+  SmallVector<StringRef, 4> LCLinkerOptions;
   for (auto *cmd : findCommands<linker_option_command>(hdr, LC_LINKER_OPTION)) {
     StringRef data{reinterpret_cast<const char *>(cmd + 1),
                    cmd->cmdsize - sizeof(linker_option_command)};
-    parseLCLinkerOption(mb.getBufferIdentifier(), cmd->count, data);
+    parseLCLinkerOption(LCLinkerOptions, mb.getBufferIdentifier(), cmd->count,
+                        data);
   }
 }
 
@@ -977,6 +979,19 @@ void ObjFile::parseLCLinkerOptions(MemoryBufferRef mb) {
     parseLCLinkerOptionsImpl<ILP32>(std::move(mb));
 }
 
+template <class LP>
+void ObjFile::parseLinkerOptions(SmallVectorImpl<StringRef> &LCLinkerOptions) {
+  using Header = typename LP::mach_header;
+  auto *hdr = reinterpret_cast<const Header *>(mb.getBufferStart());
+
+  for (auto *cmd : findCommands<linker_option_command>(hdr, LC_LINKER_OPTION)) {
+    StringRef data{reinterpret_cast<const char *>(cmd + 1),
+                   cmd->cmdsize - sizeof(linker_option_command)};
+    parseLCLinkerOption(LCLinkerOptions, this->getName(), cmd->count, data, this);
+  }
+}
+
+SmallVector<StringRef> macho::unprocessedLCLinkerOptions;
 ObjFile::ObjFile(MemoryBufferRef mb, uint32_t modTime, StringRef archiveName,
                  bool lazy, bool forceHidden, bool compatArch)
     : InputFile(ObjKind, mb, lazy), modTime(modTime), forceHidden(forceHidden) {
@@ -1022,11 +1037,11 @@ template <class LP> void ObjFile::parse() {
   if (!(compatArch = compatWithTargetArch(this, hdr)))
     return;
 
-  for (auto *cmd : findCommands<linker_option_command>(hdr, LC_LINKER_OPTION)) {
-    StringRef data{reinterpret_cast<const char *>(cmd + 1),
-                   cmd->cmdsize - sizeof(linker_option_command)};
-    parseLCLinkerOption(toString(this), cmd->count, data, this);
-  }
+  // We will resolve LC linker options once all native objects are loaded after
+  // LTO is finished.
+  SmallVector<StringRef, 4> LCLinkerOptions;
+  parseLinkerOptions<LP>(LCLinkerOptions);
+  unprocessedLCLinkerOptions.append(LCLinkerOptions);
 
   ArrayRef<SectionHeader> sectionHeaders;
   if (const load_command *cmd = findCommand(hdr, LP::segmentLCType)) {
