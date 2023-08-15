@@ -1531,13 +1531,29 @@ lldb::SBModule SBTarget::AddModule(const char *path, const char *triple,
   else
     module_spec.GetArchitecture() = target_sp->GetArchitecture();
 
-  if (symfile)
+  if (symfile) {
     module_spec.GetSymbolFileSpec().SetFile(symfile, FileSpec::Style::native);
 
-  SBModuleSpec sb_modulespec(module_spec);
-
-  return AddModule(sb_modulespec);
-}
+    SBModule sb_module;
+    sb_module.SetSP(
+        target_sp->GetOrCreateModule(module_spec, true /* notify */));
+    if (!sb_module.IsValid() && module_spec.GetUUID().IsValid()) {
+      Status error;
+      if (Symbols::DownloadObjectAndSymbolFile(module_spec, error,
+                                               /* force_lookup */ true)) {
+        if (FileSystem::Instance().Exists(module_spec.GetFileSpec())) {
+          sb_module.SetSP(
+              target_sp->GetOrCreateModule(module_spec, true /* notify */));
+        }
+      }
+    }
+    // If the target hasn't initialized any architecture yet, use the
+    // binary's architecture.
+    if (sb_module.IsValid() && !target_sp->GetArchitecture().IsValid() &&
+        sb_module.GetSP()->GetArchitecture().IsValid())
+      target_sp->SetArchitecture(sb_module.GetSP()->GetArchitecture());
+    return sb_module;
+  }
 
 lldb::SBModule SBTarget::AddModule(const SBModuleSpec &module_spec) {
   LLDB_INSTRUMENT_VA(this, module_spec);
