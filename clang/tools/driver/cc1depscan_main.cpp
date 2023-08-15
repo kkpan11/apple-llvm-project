@@ -580,8 +580,9 @@ int cc1depscan_main(ArrayRef<const char *> Argv, const char *Argv0,
   std::optional<llvm::cas::CASID> RootID;
 
   CASOptions CASOpts;
-  auto ParsedCC1Args =
-      Opts.ParseArgs(CC1Args->getValues(), MissingArgIndex, MissingArgCount);
+  llvm::opt::Visibility VisibilityMask(clang::driver::options::CC1Option);
+  auto ParsedCC1Args = Opts.ParseArgs(CC1Args->getValues(), MissingArgIndex,
+                                      MissingArgCount, VisibilityMask);
   CompilerInvocation::ParseCASArgs(CASOpts, ParsedCC1Args, Diags);
   CASOpts.ensurePersistentCAS();
 

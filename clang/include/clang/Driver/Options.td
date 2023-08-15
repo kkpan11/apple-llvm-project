@@ -3998,7 +3998,7 @@ def gvms : Joined<["-"], "gvms">, Group<g_Group>, Flags<[Unsupported]>;
 def gtoggle : Flag<["-"], "gtoggle">, Group<g_flags_Group>, Flags<[Unsupported]>;
 defm reproducible : BoolOption<"g", "reproducible",
   CodeGenOpts<"ReproducibleDebugInfo">, DefaultFalse,
-  PosFlag<SetTrue, [CC1Option], "Tune debug info to be reproducible.">,
+  PosFlag<SetTrue, [], [CC1Option], "Tune debug info to be reproducible.">,
   NegFlag<SetFalse>>, Group<g_flags_Group>;
 def grecord_command_line : Flag<["-"], "grecord-command-line">,
   Group<g_flags_Group>;
@@ -7617,7 +7617,7 @@ def fdepscan_include_tree : Flag<["-"], "fdepscan-include-tree">,
 //
 // FIXME: Add DepscanOption flag.
 def fdepscan_prefix_map_EQ : Joined<["-"], "fdepscan-prefix-map=">,
-    Group<f_Group>, Flags<[CC1Option]>, MetaVarName<"<old>=<new>">,
+    Group<f_Group>, Visibility<[CC1Option, ClangOption]>, MetaVarName<"<old>=<new>">,
     HelpText<"With -fdepscan, seamlessly filter the CAS filesystem to"
              " apply the given prefix, updating the command-line to match.">,
     MarshallingInfoStringVector<FrontendOpts<"PathPrefixMappings">>;
@@ -7645,7 +7645,7 @@ def dump_depscan_tree_EQ : Option<["-"], "dump-depscan-tree=", KIND_JOINED>,
 // read only from -fcas-fs if specified, in which case the -fdepscan
 // should scan to prune the CAS filesystem. Also, -fdepscan shouldn't
 // override -fcas / etc., it should just add those if not already specified.
-let Flags = [CC1Option, NoDriverOption] in {
+let Visibility = [CC1Option] in {
 
 // FIXME: Add to driver once it's supported by (not clobbered by) -fdepscan.
 //
@@ -7690,18 +7690,18 @@ def fcas_include_tree : Separate<["-"], "fcas-include-tree">,
 // FIXME: Add to driver under -fexperimental-cache=compile-job.
 defm cache_compile_job : BoolFOption<"cache-compile-job",
     FrontendOpts<"CacheCompileJob">, DefaultFalse,
-    PosFlag<SetTrue, [], "Try to cache full compilation job (-cc1). Ignored"
-                         " (for now) without -fcas-fs.">,
+    PosFlag<SetTrue, [], [], "Try to cache full compilation job (-cc1). Ignored"
+                             " (for now) without -fcas-fs.">,
     NegFlag<SetFalse>>;
 
 defm cache_disable_replay : BoolFOption<"cache-disable-replay",
     FrontendOpts<"DisableCachedCompileJobReplay">, DefaultFalse,
-    PosFlag<SetTrue, [], "Disable replaying a cached compile job">,
+    PosFlag<SetTrue, [], [], "Disable replaying a cached compile job">,
     NegFlag<SetFalse>>;
 
 defm modules_skip_diagnostic_options : BoolFOption<"modules-skip-diagnostic-options",
     HeaderSearchOpts<"ModulesSkipDiagnosticOptions">, DefaultFalse,
-    PosFlag<SetTrue, [], "Disable writing diagnostic options">,
+    PosFlag<SetTrue, [], [], "Disable writing diagnostic options">,
     NegFlag<SetFalse>>;
 
 def fcompilation_caching_service_path : Separate<["-"], "fcompilation-caching-service-path">,
@@ -7712,7 +7712,7 @@ def fcompilation_caching_service_path : Separate<["-"], "fcompilation-caching-se
 // FIXME: Add to driver under -fexperimental-cache=raw-lex.
 defm cache_raw_lex : BoolFOption<"cache-raw-lex",
     PreprocessorOpts<"CacheRawLex">, DefaultFalse,
-    PosFlag<SetTrue, [], "When reading from a CAS, cache raw lexing.">,
+    PosFlag<SetTrue, [], [], "When reading from a CAS, cache raw lexing.">,
     NegFlag<SetFalse>>;
 
 // FIXME: Remove once -fexperimental-cache is in the driver and we don't
@@ -7724,13 +7724,13 @@ def fcas_token_cache : Flag<["-"], "fcas-token-cache">,
 
 defm casid_output : BoolFOption<"casid-output",
     FrontendOpts<"WriteOutputAsCASID">, DefaultFalse,
-    PosFlag<SetTrue, [], "When using -fexperimental-cache-compile,"
-                         " write a CASID for the output file.">,
+    PosFlag<SetTrue, [], [], "When using -fexperimental-cache-compile,"
+                             " write a CASID for the output file.">,
     NegFlag<SetFalse>>;
 
 defm cas_backend : BoolFOption<"cas-backend",
     CodeGenOpts<"UseCASBackend">, DefaultFalse,
-    PosFlag<SetTrue, [], "Enable using CASBackend for object file output">,
+    PosFlag<SetTrue, [], [], "Enable using CASBackend for object file output">,
     NegFlag<SetFalse>>;
 
 def fcas_backend_mode : Joined<["-"], "fcas-backend-mode=">,
@@ -7740,7 +7740,7 @@ def fcas_backend_mode : Joined<["-"], "fcas-backend-mode=">,
     NormalizedValues<["Native", "CASID", "Verify"]>,
     MarshallingInfoEnum<CodeGenOpts<"CASObjMode">, "Native">;
 
-} // let Flags = [CC1Option, NoDriverOption]
+} // let Visibility = [CC1Option]
 
 def sycl_std_EQ : Joined<["-"], "sycl-std=">, Group<sycl_Group>,
   Flags<[NoArgumentUnused]>,
