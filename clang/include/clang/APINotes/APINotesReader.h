@@ -213,7 +213,9 @@ public:
   /// \param name The name of the class we're looking for.
   ///
   /// \returns The ID, if known.
-  llvm::Optional<ContextID> lookupNamespaceID(llvm::StringRef name);
+  llvm::Optional<ContextID>
+  lookupNamespaceID(llvm::Optional<ContextID> parentNamespaceID,
+                    llvm::StringRef name);
 };
 
 } // end namespace api_notes

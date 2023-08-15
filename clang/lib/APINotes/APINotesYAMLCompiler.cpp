@@ -920,7 +920,8 @@ namespace {
                             mInfo, swiftVersion);
     }
 
-    void convertContext(const Class &cl, ContextKind contextKind,
+    void convertContext(std::optional<ContextID> parentContextID,
+                        const Class &cl, ContextKind contextKind,
                         VersionTuple swiftVersion) {
       // Write the class.
       ObjCContextInfo cInfo;
@@ -935,8 +936,8 @@ namespace {
       if (cl.SwiftObjCMembers)
         cInfo.setSwiftObjCMembers(*cl.SwiftObjCMembers);
 
-      ContextID clID = Writer->addObjCContext(cl.Name, contextKind, cInfo,
-                                              swiftVersion);
+      ContextID clID = Writer->addObjCContext(parentContextID, cl.Name,
+                                              contextKind, cInfo, swiftVersion);
 
       // Write all methods.
       llvm::StringMap<std::pair<bool, bool>> knownMethods;
@@ -997,7 +998,8 @@ namespace {
       }
     }
 
-    void convertNamespaceContext(const Namespace &ns,
+    void convertNamespaceContext(std::optional<ContextID> parentContextID,
+                                 const Namespace &ns,
                                  VersionTuple swiftVersion) {
       // Write the namespace.
       ObjCContextInfo cInfo;
@@ -1005,8 +1007,9 @@ namespace {
       if (convertCommon(ns, cInfo, ns.Name))
         return;
 
-      ContextID clID = Writer->addObjCContext(ns.Name, ContextKind::Namespace,
-                                              cInfo, swiftVersion);
+      ContextID clID =
+          Writer->addObjCContext(parentContextID, ns.Name,
+                                 ContextKind::Namespace, cInfo, swiftVersion);
 
       convertTopLevelItems(Context(clID, ContextKind::Namespace), ns.Items,
                            swiftVersion);
@@ -1015,6 +1018,9 @@ namespace {
     void convertTopLevelItems(std::optional<Context> context,
                               const TopLevelItems &items,
                               VersionTuple swiftVersion) {
+      std::optional<ContextID> contextID =
+          context ? std::optional(context->id) : std::nullopt;
+
       // Write all classes.
       llvm::StringSet<> knownClasses;
       for (const auto &cl : items.Classes) {
@@ -1024,7 +1030,7 @@ namespace {
           continue;
         }
 
-        convertContext(cl, ContextKind::ObjCClass, swiftVersion);
+        convertContext(contextID, cl, ContextKind::ObjCClass, swiftVersion);
       }
 
       // Write all protocols.
@@ -1036,7 +1042,7 @@ namespace {
           continue;
         }
 
-        convertContext(pr, ContextKind::ObjCProtocol, swiftVersion);
+        convertContext(contextID, pr, ContextKind::ObjCProtocol, swiftVersion);
       }
 
       // Write all namespaces.
@@ -1048,7 +1054,7 @@ namespace {
           continue;
         }
 
-        convertNamespaceContext(ns, swiftVersion);
+        convertNamespaceContext(contextID, ns, swiftVersion);
       }
 
       // Write all global variables.

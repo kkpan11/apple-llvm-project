@@ -187,8 +187,8 @@ namespace {
   /// Used to deserialize the on-disk Objective-C class table.
   class ObjCContextIDTableInfo {
   public:
-    // identifier ID, context kind
-    using internal_key_type = std::pair<unsigned, char>;
+    // parent context ID, context kind, identifier ID
+    using internal_key_type = std::tuple<uint32_t, uint8_t, uint32_t>;
     using external_key_type = internal_key_type;
     using data_type = unsigned;
     using hash_value_type = size_t;
@@ -218,10 +218,11 @@ namespace {
     }
     
     static internal_key_type ReadKey(const uint8_t *data, unsigned length) {
-      auto nameID
-        = endian::readNext<uint32_t, little, unaligned>(data);
+      auto parentContextID =
+          endian::readNext<uint32_t, little, unaligned>(data);
       auto contextKind = endian::readNext<uint8_t, little, unaligned>(data);
-      return { nameID, contextKind };
+      auto nameID = endian::readNext<uint32_t, little, unaligned>(data);
+      return {parentContextID, contextKind, nameID};
     }
     
     static data_type ReadData(internal_key_type key, const uint8_t *data,
@@ -1829,8 +1830,10 @@ auto APINotesReader::lookupObjCClassID(StringRef name) -> Optional<ContextID> {
   if (!classID)
     return None;
 
-  auto knownID =
-      Impl.ObjCContextIDTable->find({*classID, (uint8_t)ContextKind::ObjCClass});
+  // TODO: Can ObjC classes be declared in C++ namespaces? If so, we should pass
+  // the parent context and use it instead of -1.
+  auto knownID = Impl.ObjCContextIDTable->find(
+      {-1, (uint8_t)ContextKind::ObjCClass, *classID});
   if (knownID == Impl.ObjCContextIDTable->end())
     return None;
 
@@ -1862,8 +1865,10 @@ auto APINotesReader::lookupObjCProtocolID(StringRef name)
    if (!classID)
      return None;
 
+  // TODO: Can ObjC classes be declared in C++ namespaces? If so, we should pass
+  // the parent context and use it instead of -1.
   auto knownID = Impl.ObjCContextIDTable->find(
-      {*classID, (uint8_t)ContextKind::ObjCProtocol});
+      {-1, (uint8_t)ContextKind::ObjCProtocol, *classID});
   if (knownID == Impl.ObjCContextIDTable->end())
     return None;
 
@@ -2022,7 +2027,8 @@ auto APINotesReader::lookupTypedef(std::optional<Context> context,
   return { Impl.SwiftVersion, *known };
 }
 
-auto APINotesReader::lookupNamespaceID(StringRef name)
+auto APINotesReader::lookupNamespaceID(
+    Optional<ContextID> parentNamespaceID, StringRef name)
     -> Optional<ContextID> {
   if (!Impl.ObjCContextIDTable)
     return None;
@@ -2031,8 +2037,10 @@ auto APINotesReader::lookupNamespaceID(StringRef name)
   if (!namespaceID)
     return None;
 
+  uint32_t rawParentNamespaceID =
+      parentNamespaceID ? parentNamespaceID->Value : -1;
   auto knownID = Impl.ObjCContextIDTable->find(
-      {*namespaceID, (char)ContextKind::Namespace});
+      {rawParentNamespaceID, (char)ContextKind::Namespace, *namespaceID});
   if (knownID == Impl.ObjCContextIDTable->end())
     return None;
 
