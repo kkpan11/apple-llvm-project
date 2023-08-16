@@ -33,7 +33,7 @@
 #include "ProcessMachCore.h"
 #include "Plugins/Process/Utility/StopInfoMachException.h"
 #include "ThreadMachCore.h"
-#include "Utility/AppleUuidCompatibility.h"
+#include "Utility/UuidCompatibility.h"
 
 // Needed for the plug-in names for the dynamic loaders.
 #include "lldb/Host/SafeMachO.h"
