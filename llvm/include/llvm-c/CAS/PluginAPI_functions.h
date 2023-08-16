@@ -164,6 +164,9 @@ LLCAS_PUBLIC llcas_digest_t llcas_objectid_get_digest(llcas_cas_t,
 /**
  * Checks whether a \c llcas_objectid_t points to an existing object.
  *
+ * \param globally if true it is a hint to the underlying implementation that
+ * the check should be done on a distributed caching level, not just locally,
+ * for implementations that have this kind of distinction.
  * \param error optional pointer to receive an error message if an error
  * occurred. If set, the memory it points to needs to be released via
  * \c llcas_string_dispose.
@@ -171,6 +174,7 @@ LLCAS_PUBLIC llcas_digest_t llcas_objectid_get_digest(llcas_cas_t,
  */
 LLCAS_PUBLIC llcas_lookup_result_t llcas_cas_contains_object(llcas_cas_t,
                                                              llcas_objectid_t,
+                                                             bool globally,
                                                              char **error);
 
 /**
