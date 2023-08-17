@@ -36,7 +36,10 @@ namespace {
 
 enum {
   OPT_INVALID = 0,
-#define OPTION(...) LLVM_MAKE_OPT_ID(__VA_ARGS__),
+#define OPTION(PREFIX, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS,       \
+               FLAGS, PARAM, HELP, METAVAR, VALUES)                            \
+  LLVM_MAKE_OPT_ID(PREFIX, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS,   \
+                   FLAGS, PARAM, HELP, METAVAR, VALUES),
 #include "Options.inc"
 #undef OPTION
 };
@@ -46,7 +49,10 @@ enum {
 #undef PREFIX
 
 static const opt::OptTable::Info InfoTable[] = {
-#define OPTION(...) LLVM_CONSTRUCT_OPT_INFO(__VA_ARGS__),
+#define OPTION(PREFIX, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS,       \
+               FLAGS, PARAM, HELP, METAVAR, VALUES)                            \
+  LLVM_CONSTRUCT_OPT_INFO(PREFIX, PREFIXED_NAME, ID, KIND, GROUP, ALIAS,       \
+                          ALIASARGS, FLAGS, PARAM, HELP, METAVAR, VALUES),
 #include "Options.inc"
 #undef OPTION
 };

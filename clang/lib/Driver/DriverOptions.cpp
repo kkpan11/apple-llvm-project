@@ -21,7 +21,10 @@ using namespace llvm::opt;
 #undef PREFIX
 
 static const OptTable::Info InfoTable[] = {
-#define OPTION(...) LLVM_CONSTRUCT_OPT_INFO(__VA_ARGS__),
+#define OPTION(PREFIX, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS,       \
+               FLAGS, PARAM, HELP, METAVAR, VALUES)                            \
+  LLVM_CONSTRUCT_OPT_INFO(PREFIX, PREFIXED_NAME, ID, KIND, GROUP, ALIAS,       \
+                          ALIASARGS, FLAGS, PARAM, HELP, METAVAR, VALUES),
 #include "clang/Driver/Options.inc"
 #undef OPTION
 };

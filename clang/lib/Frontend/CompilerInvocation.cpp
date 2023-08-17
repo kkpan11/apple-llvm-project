@@ -884,8 +884,16 @@ static void GenerateAnalyzerArgs(AnalyzerOptions &Opts,
                                  ArgumentConsumer Consumer) {
   const AnalyzerOptions *AnalyzerOpts = &Opts;
 
-#define ANALYZER_OPTION_WITH_MARSHALLING(...)                                  \
-  GENERATE_OPTION_WITH_MARSHALLING(Consumer, __VA_ARGS__)
+#define ANALYZER_OPTION_WITH_MARSHALLING(                                      \
+    PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS,      \
+    PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT, KEYPATH,      \
+    DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER, DENORMALIZER,     \
+    MERGER, EXTRACTOR, TABLE_INDEX)                                            \
+  GENERATE_OPTION_WITH_MARSHALLING(                                            \
+      Consumer, PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, \
+      FLAGS, PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT,      \
+      KEYPATH, DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER,        \
+      DENORMALIZER, MERGER, EXTRACTOR, TABLE_INDEX)
 #include "clang/Driver/Options.inc"
 #undef ANALYZER_OPTION_WITH_MARSHALLING
 
@@ -971,8 +979,16 @@ static bool ParseAnalyzerArgs(AnalyzerOptions &Opts, ArgList &Args,
 
   AnalyzerOptions *AnalyzerOpts = &Opts;
 
-#define ANALYZER_OPTION_WITH_MARSHALLING(...)                                  \
-  PARSE_OPTION_WITH_MARSHALLING(Args, Diags, __VA_ARGS__)
+#define ANALYZER_OPTION_WITH_MARSHALLING(                                      \
+    PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS,      \
+    PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT, KEYPATH,      \
+    DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER, DENORMALIZER,     \
+    MERGER, EXTRACTOR, TABLE_INDEX)                                            \
+  PARSE_OPTION_WITH_MARSHALLING(                                               \
+      Args, Diags, PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS,         \
+      ALIASARGS, FLAGS, PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE,        \
+      ALWAYS_EMIT, KEYPATH, DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE,       \
+      NORMALIZER, DENORMALIZER, MERGER, EXTRACTOR, TABLE_INDEX)
 #include "clang/Driver/Options.inc"
 #undef ANALYZER_OPTION_WITH_MARSHALLING
 
@@ -1577,8 +1593,16 @@ void CompilerInvocation::GenerateCodeGenArgs(const CodeGenOptions &Opts,
   else
     GenerateArg(Consumer, OPT_O, Twine(Opts.OptimizationLevel));
 
-#define CODEGEN_OPTION_WITH_MARSHALLING(...)                                   \
-  GENERATE_OPTION_WITH_MARSHALLING(Consumer, __VA_ARGS__)
+#define CODEGEN_OPTION_WITH_MARSHALLING(                                       \
+    PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS,      \
+    PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT, KEYPATH,      \
+    DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER, DENORMALIZER,     \
+    MERGER, EXTRACTOR, TABLE_INDEX)                                            \
+  GENERATE_OPTION_WITH_MARSHALLING(                                            \
+      Consumer, PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, \
+      FLAGS, PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT,      \
+      KEYPATH, DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER,        \
+      DENORMALIZER, MERGER, EXTRACTOR, TABLE_INDEX)
 #include "clang/Driver/Options.inc"
 #undef CODEGEN_OPTION_WITH_MARSHALLING
 
@@ -1842,8 +1866,16 @@ bool CompilerInvocation::ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args,
   // variable name and type.
   const LangOptions *LangOpts = &LangOptsRef;
 
-#define CODEGEN_OPTION_WITH_MARSHALLING(...)                                   \
-  PARSE_OPTION_WITH_MARSHALLING(Args, Diags, __VA_ARGS__)
+#define CODEGEN_OPTION_WITH_MARSHALLING(                                       \
+    PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS,      \
+    PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT, KEYPATH,      \
+    DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER, DENORMALIZER,     \
+    MERGER, EXTRACTOR, TABLE_INDEX)                                            \
+  PARSE_OPTION_WITH_MARSHALLING(                                               \
+      Args, Diags, PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS,         \
+      ALIASARGS, FLAGS, PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE,        \
+      ALWAYS_EMIT, KEYPATH, DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE,       \
+      NORMALIZER, DENORMALIZER, MERGER, EXTRACTOR, TABLE_INDEX)
 #include "clang/Driver/Options.inc"
 #undef CODEGEN_OPTION_WITH_MARSHALLING
 
@@ -2299,8 +2331,16 @@ bool CompilerInvocation::ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args,
 static void GenerateDependencyOutputArgs(const DependencyOutputOptions &Opts,
                                          ArgumentConsumer Consumer) {
   const DependencyOutputOptions &DependencyOutputOpts = Opts;
-#define DEPENDENCY_OUTPUT_OPTION_WITH_MARSHALLING(...)                         \
-  GENERATE_OPTION_WITH_MARSHALLING(Consumer, __VA_ARGS__)
+#define DEPENDENCY_OUTPUT_OPTION_WITH_MARSHALLING(                             \
+    PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS,      \
+    PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT, KEYPATH,      \
+    DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER, DENORMALIZER,     \
+    MERGER, EXTRACTOR, TABLE_INDEX)                                            \
+  GENERATE_OPTION_WITH_MARSHALLING(                                            \
+      Consumer, PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, \
+      FLAGS, PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT,      \
+      KEYPATH, DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER,        \
+      DENORMALIZER, MERGER, EXTRACTOR, TABLE_INDEX)
 #include "clang/Driver/Options.inc"
 #undef DEPENDENCY_OUTPUT_OPTION_WITH_MARSHALLING
 
@@ -2334,8 +2374,16 @@ static bool ParseDependencyOutputArgs(DependencyOutputOptions &Opts,
   unsigned NumErrorsBefore = Diags.getNumErrors();
 
   DependencyOutputOptions &DependencyOutputOpts = Opts;
-#define DEPENDENCY_OUTPUT_OPTION_WITH_MARSHALLING(...)                         \
-  PARSE_OPTION_WITH_MARSHALLING(Args, Diags, __VA_ARGS__)
+#define DEPENDENCY_OUTPUT_OPTION_WITH_MARSHALLING(                             \
+    PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS,      \
+    PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT, KEYPATH,      \
+    DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER, DENORMALIZER,     \
+    MERGER, EXTRACTOR, TABLE_INDEX)                                            \
+  PARSE_OPTION_WITH_MARSHALLING(                                               \
+      Args, Diags, PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS,         \
+      ALIASARGS, FLAGS, PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE,        \
+      ALWAYS_EMIT, KEYPATH, DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE,       \
+      NORMALIZER, DENORMALIZER, MERGER, EXTRACTOR, TABLE_INDEX)
 #include "clang/Driver/Options.inc"
 #undef DEPENDENCY_OUTPUT_OPTION_WITH_MARSHALLING
 
@@ -2450,8 +2498,16 @@ void CompilerInvocation::GenerateCASArgs(const CASOptions &Opts,
                                          ArgumentConsumer Consumer) {
   const CASOptions &CASOpts = Opts;
 
-#define CAS_OPTION_WITH_MARSHALLING(...)                                       \
-  GENERATE_OPTION_WITH_MARSHALLING(Consumer, __VA_ARGS__)
+#define CAS_OPTION_WITH_MARSHALLING(                                           \
+    PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS,      \
+    PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT, KEYPATH,      \
+    DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER, DENORMALIZER,     \
+    MERGER, EXTRACTOR, TABLE_INDEX)                                            \
+  GENERATE_OPTION_WITH_MARSHALLING(                                            \
+      Consumer, PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, \
+      FLAGS, PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT,      \
+      KEYPATH, DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER,        \
+      DENORMALIZER, MERGER, EXTRACTOR, TABLE_INDEX)
 #include "clang/Driver/Options.inc"
 #undef CAS_OPTION_WITH_MARSHALLING
 }
@@ -2461,8 +2517,16 @@ bool CompilerInvocation::ParseCASArgs(CASOptions &Opts, const ArgList &Args,
   CASOptions &CASOpts = Opts;
   bool Success = true;
 
-#define CAS_OPTION_WITH_MARSHALLING(...)                                       \
-  PARSE_OPTION_WITH_MARSHALLING(Args, Diags, __VA_ARGS__)
+#define CAS_OPTION_WITH_MARSHALLING(                                           \
+    PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS,      \
+    PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT, KEYPATH,      \
+    DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER, DENORMALIZER,     \
+    MERGER, EXTRACTOR, TABLE_INDEX)                                            \
+  PARSE_OPTION_WITH_MARSHALLING(                                               \
+      Args, Diags, PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS,         \
+      ALIASARGS, FLAGS, PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE,        \
+      ALWAYS_EMIT, KEYPATH, DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE,       \
+      NORMALIZER, DENORMALIZER, MERGER, EXTRACTOR, TABLE_INDEX)
 #include "clang/Driver/Options.inc"
 #undef CAS_OPTION_WITH_MARSHALLING
 
@@ -2473,8 +2537,16 @@ static void GenerateFileSystemArgs(const FileSystemOptions &Opts,
                                    ArgumentConsumer Consumer) {
   const FileSystemOptions &FileSystemOpts = Opts;
 
-#define FILE_SYSTEM_OPTION_WITH_MARSHALLING(...)                               \
-  GENERATE_OPTION_WITH_MARSHALLING(Consumer, __VA_ARGS__)
+#define FILE_SYSTEM_OPTION_WITH_MARSHALLING(                                   \
+    PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS,      \
+    PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT, KEYPATH,      \
+    DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER, DENORMALIZER,     \
+    MERGER, EXTRACTOR, TABLE_INDEX)                                            \
+  GENERATE_OPTION_WITH_MARSHALLING(                                            \
+      Consumer, PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, \
+      FLAGS, PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT,      \
+      KEYPATH, DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER,        \
+      DENORMALIZER, MERGER, EXTRACTOR, TABLE_INDEX)
 #include "clang/Driver/Options.inc"
 #undef FILE_SYSTEM_OPTION_WITH_MARSHALLING
 }
@@ -2485,8 +2557,16 @@ static bool ParseFileSystemArgs(FileSystemOptions &Opts, const ArgList &Args,
 
   FileSystemOptions &FileSystemOpts = Opts;
 
-#define FILE_SYSTEM_OPTION_WITH_MARSHALLING(...)                               \
-  PARSE_OPTION_WITH_MARSHALLING(Args, Diags, __VA_ARGS__)
+#define FILE_SYSTEM_OPTION_WITH_MARSHALLING(                                   \
+    PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS,      \
+    PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT, KEYPATH,      \
+    DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER, DENORMALIZER,     \
+    MERGER, EXTRACTOR, TABLE_INDEX)                                            \
+  PARSE_OPTION_WITH_MARSHALLING(                                               \
+      Args, Diags, PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS,         \
+      ALIASARGS, FLAGS, PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE,        \
+      ALWAYS_EMIT, KEYPATH, DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE,       \
+      NORMALIZER, DENORMALIZER, MERGER, EXTRACTOR, TABLE_INDEX)
 #include "clang/Driver/Options.inc"
 #undef FILE_SYSTEM_OPTION_WITH_MARSHALLING
 
@@ -2496,8 +2576,16 @@ static bool ParseFileSystemArgs(FileSystemOptions &Opts, const ArgList &Args,
 static void GenerateMigratorArgs(const MigratorOptions &Opts,
                                  ArgumentConsumer Consumer) {
   const MigratorOptions &MigratorOpts = Opts;
-#define MIGRATOR_OPTION_WITH_MARSHALLING(...)                                  \
-  GENERATE_OPTION_WITH_MARSHALLING(Consumer, __VA_ARGS__)
+#define MIGRATOR_OPTION_WITH_MARSHALLING(                                      \
+    PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS,      \
+    PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT, KEYPATH,      \
+    DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER, DENORMALIZER,     \
+    MERGER, EXTRACTOR, TABLE_INDEX)                                            \
+  GENERATE_OPTION_WITH_MARSHALLING(                                            \
+      Consumer, PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, \
+      FLAGS, PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT,      \
+      KEYPATH, DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER,        \
+      DENORMALIZER, MERGER, EXTRACTOR, TABLE_INDEX)
 #include "clang/Driver/Options.inc"
 #undef MIGRATOR_OPTION_WITH_MARSHALLING
 }
@@ -2508,8 +2596,16 @@ static bool ParseMigratorArgs(MigratorOptions &Opts, const ArgList &Args,
 
   MigratorOptions &MigratorOpts = Opts;
 
-#define MIGRATOR_OPTION_WITH_MARSHALLING(...)                                  \
-  PARSE_OPTION_WITH_MARSHALLING(Args, Diags, __VA_ARGS__)
+#define MIGRATOR_OPTION_WITH_MARSHALLING(                                      \
+    PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS,      \
+    PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT, KEYPATH,      \
+    DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER, DENORMALIZER,     \
+    MERGER, EXTRACTOR, TABLE_INDEX)                                            \
+  PARSE_OPTION_WITH_MARSHALLING(                                               \
+      Args, Diags, PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS,         \
+      ALIASARGS, FLAGS, PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE,        \
+      ALWAYS_EMIT, KEYPATH, DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE,       \
+      NORMALIZER, DENORMALIZER, MERGER, EXTRACTOR, TABLE_INDEX)
 #include "clang/Driver/Options.inc"
 #undef MIGRATOR_OPTION_WITH_MARSHALLING
 
@@ -2520,8 +2616,16 @@ void CompilerInvocation::GenerateDiagnosticArgs(const DiagnosticOptions &Opts,
                                                 ArgumentConsumer Consumer,
                                                 bool DefaultDiagColor) {
   const DiagnosticOptions *DiagnosticOpts = &Opts;
-#define DIAG_OPTION_WITH_MARSHALLING(...)                                      \
-  GENERATE_OPTION_WITH_MARSHALLING(Consumer, __VA_ARGS__)
+#define DIAG_OPTION_WITH_MARSHALLING(                                          \
+    PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS,      \
+    PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT, KEYPATH,      \
+    DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER, DENORMALIZER,     \
+    MERGER, EXTRACTOR, TABLE_INDEX)                                            \
+  GENERATE_OPTION_WITH_MARSHALLING(                                            \
+      Consumer, PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, \
+      FLAGS, PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT,      \
+      KEYPATH, DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER,        \
+      DENORMALIZER, MERGER, EXTRACTOR, TABLE_INDEX)
 #include "clang/Driver/Options.inc"
 #undef DIAG_OPTION_WITH_MARSHALLING
 
@@ -2605,8 +2709,16 @@ bool clang::ParseDiagnosticArgs(DiagnosticOptions &Opts, ArgList &Args,
   // "DiagnosticOpts->". Let's provide the expected variable name and type.
   DiagnosticOptions *DiagnosticOpts = &Opts;
 
-#define DIAG_OPTION_WITH_MARSHALLING(...)                                      \
-  PARSE_OPTION_WITH_MARSHALLING(Args, *Diags, __VA_ARGS__)
+#define DIAG_OPTION_WITH_MARSHALLING(                                          \
+    PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS,      \
+    PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT, KEYPATH,      \
+    DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER, DENORMALIZER,     \
+    MERGER, EXTRACTOR, TABLE_INDEX)                                            \
+  PARSE_OPTION_WITH_MARSHALLING(                                               \
+      Args, *Diags, PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS,        \
+      ALIASARGS, FLAGS, PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE,        \
+      ALWAYS_EMIT, KEYPATH, DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE,       \
+      NORMALIZER, DENORMALIZER, MERGER, EXTRACTOR, TABLE_INDEX)
 #include "clang/Driver/Options.inc"
 #undef DIAG_OPTION_WITH_MARSHALLING
 
@@ -2750,8 +2862,16 @@ getProgramActionOpt(frontend::ActionKind ProgramAction) {
 static void GenerateFrontendArgs(const FrontendOptions &Opts,
                                  ArgumentConsumer Consumer, bool IsHeader) {
   const FrontendOptions &FrontendOpts = Opts;
-#define FRONTEND_OPTION_WITH_MARSHALLING(...)                                  \
-  GENERATE_OPTION_WITH_MARSHALLING(Consumer, __VA_ARGS__)
+#define FRONTEND_OPTION_WITH_MARSHALLING(                                      \
+    PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS,      \
+    PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT, KEYPATH,      \
+    DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER, DENORMALIZER,     \
+    MERGER, EXTRACTOR, TABLE_INDEX)                                            \
+  GENERATE_OPTION_WITH_MARSHALLING(                                            \
+      Consumer, PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, \
+      FLAGS, PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT,      \
+      KEYPATH, DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER,        \
+      DENORMALIZER, MERGER, EXTRACTOR, TABLE_INDEX)
 #include "clang/Driver/Options.inc"
 #undef FRONTEND_OPTION_WITH_MARSHALLING
 
@@ -2968,8 +3088,16 @@ static bool ParseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
 
   FrontendOptions &FrontendOpts = Opts;
 
-#define FRONTEND_OPTION_WITH_MARSHALLING(...)                                  \
-  PARSE_OPTION_WITH_MARSHALLING(Args, Diags, __VA_ARGS__)
+#define FRONTEND_OPTION_WITH_MARSHALLING(                                      \
+    PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS,      \
+    PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT, KEYPATH,      \
+    DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER, DENORMALIZER,     \
+    MERGER, EXTRACTOR, TABLE_INDEX)                                            \
+  PARSE_OPTION_WITH_MARSHALLING(                                               \
+      Args, Diags, PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS,         \
+      ALIASARGS, FLAGS, PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE,        \
+      ALWAYS_EMIT, KEYPATH, DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE,       \
+      NORMALIZER, DENORMALIZER, MERGER, EXTRACTOR, TABLE_INDEX)
 #include "clang/Driver/Options.inc"
 #undef FRONTEND_OPTION_WITH_MARSHALLING
 
@@ -3253,8 +3381,16 @@ std::string CompilerInvocation::GetResourcesPath(const char *Argv0,
 static void GenerateHeaderSearchArgs(HeaderSearchOptions &Opts,
                                      ArgumentConsumer Consumer) {
   const HeaderSearchOptions *HeaderSearchOpts = &Opts;
-#define HEADER_SEARCH_OPTION_WITH_MARSHALLING(...)                             \
-  GENERATE_OPTION_WITH_MARSHALLING(Consumer, __VA_ARGS__)
+#define HEADER_SEARCH_OPTION_WITH_MARSHALLING(                                 \
+    PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS,      \
+    PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT, KEYPATH,      \
+    DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER, DENORMALIZER,     \
+    MERGER, EXTRACTOR, TABLE_INDEX)                                            \
+  GENERATE_OPTION_WITH_MARSHALLING(                                            \
+      Consumer, PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, \
+      FLAGS, PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT,      \
+      KEYPATH, DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER,        \
+      DENORMALIZER, MERGER, EXTRACTOR, TABLE_INDEX)
 #include "clang/Driver/Options.inc"
 #undef HEADER_SEARCH_OPTION_WITH_MARSHALLING
 
@@ -3376,8 +3512,16 @@ static bool ParseHeaderSearchArgs(HeaderSearchOptions &Opts, ArgList &Args,
 
   HeaderSearchOptions *HeaderSearchOpts = &Opts;
 
-#define HEADER_SEARCH_OPTION_WITH_MARSHALLING(...)                             \
-  PARSE_OPTION_WITH_MARSHALLING(Args, Diags, __VA_ARGS__)
+#define HEADER_SEARCH_OPTION_WITH_MARSHALLING(                                 \
+    PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS,      \
+    PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT, KEYPATH,      \
+    DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER, DENORMALIZER,     \
+    MERGER, EXTRACTOR, TABLE_INDEX)                                            \
+  PARSE_OPTION_WITH_MARSHALLING(                                               \
+      Args, Diags, PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS,         \
+      ALIASARGS, FLAGS, PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE,        \
+      ALWAYS_EMIT, KEYPATH, DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE,       \
+      NORMALIZER, DENORMALIZER, MERGER, EXTRACTOR, TABLE_INDEX)
 #include "clang/Driver/Options.inc"
 #undef HEADER_SEARCH_OPTION_WITH_MARSHALLING
 
@@ -3689,8 +3833,16 @@ void CompilerInvocation::GenerateLangArgs(const LangOptions &Opts,
 
   const LangOptions *LangOpts = &Opts;
 
-#define LANG_OPTION_WITH_MARSHALLING(...)                                      \
-  GENERATE_OPTION_WITH_MARSHALLING(Consumer, __VA_ARGS__)
+#define LANG_OPTION_WITH_MARSHALLING(                                          \
+    PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS,      \
+    PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT, KEYPATH,      \
+    DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER, DENORMALIZER,     \
+    MERGER, EXTRACTOR, TABLE_INDEX)                                            \
+  GENERATE_OPTION_WITH_MARSHALLING(                                            \
+      Consumer, PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, \
+      FLAGS, PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT,      \
+      KEYPATH, DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER,        \
+      DENORMALIZER, MERGER, EXTRACTOR, TABLE_INDEX)
 #include "clang/Driver/Options.inc"
 #undef LANG_OPTION_WITH_MARSHALLING
 
@@ -4009,8 +4161,16 @@ bool CompilerInvocation::ParseLangArgs(LangOptions &Opts, ArgList &Args,
   // "LangOpts->". Let's provide the expected variable name and type.
   LangOptions *LangOpts = &Opts;
 
-#define LANG_OPTION_WITH_MARSHALLING(...)                                      \
-  PARSE_OPTION_WITH_MARSHALLING(Args, Diags, __VA_ARGS__)
+#define LANG_OPTION_WITH_MARSHALLING(                                          \
+    PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS,      \
+    PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT, KEYPATH,      \
+    DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER, DENORMALIZER,     \
+    MERGER, EXTRACTOR, TABLE_INDEX)                                            \
+  PARSE_OPTION_WITH_MARSHALLING(                                               \
+      Args, Diags, PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS,         \
+      ALIASARGS, FLAGS, PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE,        \
+      ALWAYS_EMIT, KEYPATH, DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE,       \
+      NORMALIZER, DENORMALIZER, MERGER, EXTRACTOR, TABLE_INDEX)
 #include "clang/Driver/Options.inc"
 #undef LANG_OPTION_WITH_MARSHALLING
 
@@ -4517,8 +4677,16 @@ static void GeneratePreprocessorArgs(PreprocessorOptions &Opts,
                                      const CodeGenOptions &CodeGenOpts) {
   PreprocessorOptions *PreprocessorOpts = &Opts;
 
-#define PREPROCESSOR_OPTION_WITH_MARSHALLING(...)                              \
-  GENERATE_OPTION_WITH_MARSHALLING(Consumer, __VA_ARGS__)
+#define PREPROCESSOR_OPTION_WITH_MARSHALLING(                                  \
+    PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS,      \
+    PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT, KEYPATH,      \
+    DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER, DENORMALIZER,     \
+    MERGER, EXTRACTOR, TABLE_INDEX)                                            \
+  GENERATE_OPTION_WITH_MARSHALLING(                                            \
+      Consumer, PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, \
+      FLAGS, PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT,      \
+      KEYPATH, DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER,        \
+      DENORMALIZER, MERGER, EXTRACTOR, TABLE_INDEX)
 #include "clang/Driver/Options.inc"
 #undef PREPROCESSOR_OPTION_WITH_MARSHALLING
 
@@ -4585,8 +4753,16 @@ static bool ParsePreprocessorArgs(PreprocessorOptions &Opts, ArgList &Args,
 
   PreprocessorOptions *PreprocessorOpts = &Opts;
 
-#define PREPROCESSOR_OPTION_WITH_MARSHALLING(...)                              \
-  PARSE_OPTION_WITH_MARSHALLING(Args, Diags, __VA_ARGS__)
+#define PREPROCESSOR_OPTION_WITH_MARSHALLING(                                  \
+    PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS,      \
+    PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT, KEYPATH,      \
+    DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER, DENORMALIZER,     \
+    MERGER, EXTRACTOR, TABLE_INDEX)                                            \
+  PARSE_OPTION_WITH_MARSHALLING(                                               \
+      Args, Diags, PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS,         \
+      ALIASARGS, FLAGS, PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE,        \
+      ALWAYS_EMIT, KEYPATH, DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE,       \
+      NORMALIZER, DENORMALIZER, MERGER, EXTRACTOR, TABLE_INDEX)
 #include "clang/Driver/Options.inc"
 #undef PREPROCESSOR_OPTION_WITH_MARSHALLING
 
@@ -4680,8 +4856,16 @@ GeneratePreprocessorOutputArgs(const PreprocessorOutputOptions &Opts,
                                frontend::ActionKind Action) {
   const PreprocessorOutputOptions &PreprocessorOutputOpts = Opts;
 
-#define PREPROCESSOR_OUTPUT_OPTION_WITH_MARSHALLING(...)                       \
-  GENERATE_OPTION_WITH_MARSHALLING(Consumer, __VA_ARGS__)
+#define PREPROCESSOR_OUTPUT_OPTION_WITH_MARSHALLING(                           \
+    PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS,      \
+    PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT, KEYPATH,      \
+    DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER, DENORMALIZER,     \
+    MERGER, EXTRACTOR, TABLE_INDEX)                                            \
+  GENERATE_OPTION_WITH_MARSHALLING(                                            \
+      Consumer, PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, \
+      FLAGS, PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT,      \
+      KEYPATH, DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER,        \
+      DENORMALIZER, MERGER, EXTRACTOR, TABLE_INDEX)
 #include "clang/Driver/Options.inc"
 #undef PREPROCESSOR_OUTPUT_OPTION_WITH_MARSHALLING
 
@@ -4701,8 +4885,16 @@ static bool ParsePreprocessorOutputArgs(PreprocessorOutputOptions &Opts,
 
   PreprocessorOutputOptions &PreprocessorOutputOpts = Opts;
 
-#define PREPROCESSOR_OUTPUT_OPTION_WITH_MARSHALLING(...)                       \
-  PARSE_OPTION_WITH_MARSHALLING(Args, Diags, __VA_ARGS__)
+#define PREPROCESSOR_OUTPUT_OPTION_WITH_MARSHALLING(                           \
+    PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS,      \
+    PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT, KEYPATH,      \
+    DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER, DENORMALIZER,     \
+    MERGER, EXTRACTOR, TABLE_INDEX)                                            \
+  PARSE_OPTION_WITH_MARSHALLING(                                               \
+      Args, Diags, PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS,         \
+      ALIASARGS, FLAGS, PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE,        \
+      ALWAYS_EMIT, KEYPATH, DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE,       \
+      NORMALIZER, DENORMALIZER, MERGER, EXTRACTOR, TABLE_INDEX)
 #include "clang/Driver/Options.inc"
 #undef PREPROCESSOR_OUTPUT_OPTION_WITH_MARSHALLING
 
@@ -4716,8 +4908,16 @@ static bool ParsePreprocessorOutputArgs(PreprocessorOutputOptions &Opts,
 static void GenerateTargetArgs(const TargetOptions &Opts,
                                ArgumentConsumer Consumer) {
   const TargetOptions *TargetOpts = &Opts;
-#define TARGET_OPTION_WITH_MARSHALLING(...)                                    \
-  GENERATE_OPTION_WITH_MARSHALLING(Consumer, __VA_ARGS__)
+#define TARGET_OPTION_WITH_MARSHALLING(                                        \
+    PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS,      \
+    PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT, KEYPATH,      \
+    DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER, DENORMALIZER,     \
+    MERGER, EXTRACTOR, TABLE_INDEX)                                            \
+  GENERATE_OPTION_WITH_MARSHALLING(                                            \
+      Consumer, PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, \
+      FLAGS, PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT,      \
+      KEYPATH, DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER,        \
+      DENORMALIZER, MERGER, EXTRACTOR, TABLE_INDEX)
 #include "clang/Driver/Options.inc"
 #undef TARGET_OPTION_WITH_MARSHALLING
 
@@ -4735,8 +4935,16 @@ static bool ParseTargetArgs(TargetOptions &Opts, ArgList &Args,
 
   TargetOptions *TargetOpts = &Opts;
 
-#define TARGET_OPTION_WITH_MARSHALLING(...)                                    \
-  PARSE_OPTION_WITH_MARSHALLING(Args, Diags, __VA_ARGS__)
+#define TARGET_OPTION_WITH_MARSHALLING(                                        \
+    PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS,      \
+    PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE, ALWAYS_EMIT, KEYPATH,      \
+    DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER, DENORMALIZER,     \
+    MERGER, EXTRACTOR, TABLE_INDEX)                                            \
+  PARSE_OPTION_WITH_MARSHALLING(                                               \
+      Args, Diags, PREFIX_TYPE, PREFIXED_NAME, ID, KIND, GROUP, ALIAS,         \
+      ALIASARGS, FLAGS, PARAM, HELPTEXT, METAVAR, VALUES, SHOULD_PARSE,        \
+      ALWAYS_EMIT, KEYPATH, DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE,       \
+      NORMALIZER, DENORMALIZER, MERGER, EXTRACTOR, TABLE_INDEX)
 #include "clang/Driver/Options.inc"
 #undef TARGET_OPTION_WITH_MARSHALLING
 

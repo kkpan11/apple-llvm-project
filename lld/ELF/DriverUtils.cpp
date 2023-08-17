@@ -40,7 +40,10 @@ using namespace lld::elf;
 
 // Create table mapping all options defined in Options.td
 static const opt::OptTable::Info optInfo[] = {
-#define OPTION(...) LLVM_CONSTRUCT_OPT_INFO(__VA_ARGS__),
+#define OPTION(PREFIX, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS,       \
+               FLAGS, PARAM, HELP, METAVAR, VALUES)                            \
+  LLVM_CONSTRUCT_OPT_INFO(PREFIX, PREFIXED_NAME, ID, KIND, GROUP, ALIAS,       \
+                          ALIASARGS, FLAGS, PARAM, HELP, METAVAR, VALUES),
 #include "Options.inc"
 #undef OPTION
 };

@@ -73,7 +73,10 @@ using namespace lldb_vscode;
 namespace {
 enum ID {
   OPT_INVALID = 0, // This is not an option ID.
-#define OPTION(...) LLVM_MAKE_OPT_ID(__VA_ARGS__),
+#define OPTION(PREFIX, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS,       \
+               FLAGS, PARAM, HELP, METAVAR, VALUES)                            \
+  LLVM_MAKE_OPT_ID(PREFIX, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS,   \
+                   FLAGS, PARAM, HELP, METAVAR, VALUES),
 #include "Options.inc"
 #undef OPTION
 };
@@ -83,7 +86,10 @@ enum ID {
 #undef PREFIX
 
 static const llvm::opt::OptTable::Info InfoTable[] = {
-#define OPTION(...) LLVM_CONSTRUCT_OPT_INFO(__VA_ARGS__),
+#define OPTION(PREFIX, PREFIXED_NAME, ID, KIND, GROUP, ALIAS, ALIASARGS,       \
+               FLAGS, PARAM, HELP, METAVAR, VALUES)                            \
+  LLVM_CONSTRUCT_OPT_INFO(PREFIX, PREFIXED_NAME, ID, KIND, GROUP, ALIAS,       \
+                          ALIASARGS, FLAGS, PARAM, HELP, METAVAR, VALUES),
 #include "Options.inc"
 #undef OPTION
 };

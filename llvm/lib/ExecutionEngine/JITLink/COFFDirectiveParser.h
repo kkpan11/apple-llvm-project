@@ -26,7 +26,11 @@ namespace jitlink {
 
 enum {
   COFF_OPT_INVALID = 0,
-#define OPTION(...) LLVM_MAKE_OPT_ID_WITH_ID_PREFIX(COFF_OPT_, __VA_ARGS__),
+#define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS, PARAM,  \
+               HELPTEXT, METAVAR, VALUES)                                      \
+  LLVM_MAKE_OPT_ID_WITH_ID_PREFIX(COFF_OPT_, PREFIX, NAME, ID, KIND, GROUP,    \
+                                  ALIAS, ALIASARGS, FLAGS, PARAM, HELPTEXT,    \
+                                  METAVAR, VALUES),
 #include "COFFOptions.inc"
 #undef OPTION
 };

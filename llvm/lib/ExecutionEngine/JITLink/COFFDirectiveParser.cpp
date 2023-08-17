@@ -24,8 +24,11 @@ using namespace jitlink;
 
 // Create table mapping all options defined in COFFOptions.td
 static const opt::OptTable::Info infoTable[] = {
-#define OPTION(...)                                                            \
-  LLVM_CONSTRUCT_OPT_INFO_WITH_ID_PREFIX(COFF_OPT_, __VA_ARGS__),
+#define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS, PARAM,  \
+               HELPTEXT, METAVAR, VALUES)                                      \
+  LLVM_CONSTRUCT_OPT_INFO_WITH_ID_PREFIX(COFF_OPT_, PREFIX, NAME, ID, KIND,    \
+                                         GROUP, ALIAS, ALIASARGS, FLAGS,       \
+                                         PARAM, HELPTEXT, METAVAR, VALUES),
 #include "COFFOptions.inc"
 #undef OPTION
 };

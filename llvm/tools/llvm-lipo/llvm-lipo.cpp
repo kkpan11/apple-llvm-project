@@ -65,7 +65,11 @@ static const StringRef ToolName = "llvm-lipo";
 namespace {
 enum LipoID {
   LIPO_INVALID = 0, // This is not an option ID.
-#define OPTION(...) LLVM_MAKE_OPT_ID_WITH_ID_PREFIX(LIPO_, __VA_ARGS__),
+#define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS, PARAM,  \
+               HELPTEXT, METAVAR, VALUES)                                      \
+  LLVM_MAKE_OPT_ID_WITH_ID_PREFIX(LIPO_, PREFIX, NAME, ID, KIND, GROUP, ALIAS, \
+                                  ALIASARGS, FLAGS, PARAM, HELPTEXT, METAVAR,  \
+                                  VALUES),
 #include "LipoOpts.inc"
 #undef OPTION
 };
@@ -77,7 +81,11 @@ const char *const *LIPO_nullptr = nullptr;
 #undef PREFIX
 
 const opt::OptTable::Info LipoInfoTable[] = {
-#define OPTION(...) LLVM_CONSTRUCT_OPT_INFO_WITH_ID_PREFIX(LIPO_, __VA_ARGS__),
+#define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS, PARAM,  \
+               HELPTEXT, METAVAR, VALUES)                                      \
+  LLVM_CONSTRUCT_OPT_INFO_WITH_ID_PREFIX(LIPO_, PREFIX, NAME, ID, KIND, GROUP, \
+                                         ALIAS, ALIASARGS, FLAGS, PARAM,       \
+                                         HELPTEXT, METAVAR, VALUES),
 #include "LipoOpts.inc"
 #undef OPTION
 };

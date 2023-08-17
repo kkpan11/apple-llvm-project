@@ -126,8 +126,11 @@ private:
 
 static constexpr opt::OptTable::Info ObjdumpInfoTable[] = {
 #define OBJDUMP_nullptr nullptr
-#define OPTION(...)                                                            \
-  LLVM_CONSTRUCT_OPT_INFO_WITH_ID_PREFIX(OBJDUMP_, __VA_ARGS__),
+#define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS, PARAM,  \
+               HELPTEXT, METAVAR, VALUES)                                      \
+  LLVM_CONSTRUCT_OPT_INFO_WITH_ID_PREFIX(OBJDUMP_, PREFIX, NAME, ID, KIND,     \
+                                         GROUP, ALIAS, ALIASARGS, FLAGS,       \
+                                         PARAM, HELPTEXT, METAVAR, VALUES),
 #include "ObjdumpOpts.inc"
 #undef OPTION
 #undef OBJDUMP_nullptr
@@ -142,7 +145,11 @@ public:
 
 enum OtoolOptID {
   OTOOL_INVALID = 0, // This is not an option ID.
-#define OPTION(...) LLVM_MAKE_OPT_ID_WITH_ID_PREFIX(OTOOL_, __VA_ARGS__),
+#define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS, PARAM,  \
+               HELPTEXT, METAVAR, VALUES)                                      \
+  LLVM_MAKE_OPT_ID_WITH_ID_PREFIX(OTOOL_, PREFIX, NAME, ID, KIND, GROUP,       \
+                                  ALIAS, ALIASARGS, FLAGS, PARAM, HELPTEXT,    \
+                                  METAVAR, VALUES),
 #include "OtoolOpts.inc"
 #undef OPTION
 };
@@ -153,7 +160,11 @@ enum OtoolOptID {
 
 static constexpr opt::OptTable::Info OtoolInfoTable[] = {
 #define OTOOL_nullptr nullptr
-#define OPTION(...) LLVM_CONSTRUCT_OPT_INFO_WITH_ID_PREFIX(OTOOL_, __VA_ARGS__),
+#define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS, PARAM,  \
+               HELPTEXT, METAVAR, VALUES)                                      \
+  LLVM_CONSTRUCT_OPT_INFO_WITH_ID_PREFIX(OTOOL_, PREFIX, NAME, ID, KIND,       \
+                                         GROUP, ALIAS, ALIASARGS, FLAGS,       \
+                                         PARAM, HELPTEXT, METAVAR, VALUES),
 #include "OtoolOpts.inc"
 #undef OPTION
 #undef OTOOL_nullptr
