@@ -121,7 +121,7 @@ public:
 
   std::string GetIdentifierString() override;
 
-  bool GetAddressableBits(lldb_private::AddressableBits &address_bits) override;
+  lldb_private::AddressableBits GetAddressableBits() override;
 
   bool GetCorefileMainBinaryInfo(lldb::addr_t &value, bool &value_is_offset,
                                  lldb_private::UUID &uuid,
