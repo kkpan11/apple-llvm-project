@@ -16454,7 +16454,7 @@ static SDValue performMulCombine(SDNode *N, SelectionDAG &DAG,
     } else if (SCVPlus1.isPowerOf2()) {
       ShiftAmt = SCVPlus1.logBase2() + TrailingZeroes;
       return Sub(Shl(N0, ShiftAmt), Shl(N0, TrailingZeroes));
-    } else if (Subtarget->hasLSLFast() &&
+    } else if (Subtarget->hasALULSLFast() &&
                isPowPlusPlusConst(ConstValue, CVM, CVN)) {
       APInt CVMMinus1 = CVM - 1;
       APInt CVNMinus1 = CVN - 1;
@@ -23531,7 +23531,6 @@ static void CustomNonLegalBITCASTResults(SDNode *N,
   SDValue IdxZero = DAG.getVectorIdxConstant(0, DL);
   Results.push_back(
       DAG.getNode(ISD::EXTRACT_SUBVECTOR, DL, VT, CastVal, IdxZero));
-  return;
 }
 
 void AArch64TargetLowering::ReplaceBITCASTResults(

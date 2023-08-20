@@ -31,7 +31,7 @@ public:
   /// together in one step.
   ///
   /// `Var` must be a variable that needs fix (so it must be in a group).
-  virtual VarGrpRef getGroupOfVar(const VarDecl *Var) const;
+  virtual VarGrpRef getGroupOfVar(const VarDecl *Var) const =0;
 };
 
 /// The interface that lets the caller handle unsafe buffer usage analysis
