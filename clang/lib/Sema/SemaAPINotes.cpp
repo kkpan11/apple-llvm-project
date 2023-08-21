@@ -824,7 +824,8 @@ void Sema::ProcessAPINotes(Decl *D) {
         {
           auto CurrentNamespace = NamespaceContext;
           while (CurrentNamespace) {
-            NamespaceStack.push(CurrentNamespace);
+            if (!CurrentNamespace->isInlineNamespace())
+              NamespaceStack.push(CurrentNamespace);
             CurrentNamespace =
                 dyn_cast<NamespaceDecl>(CurrentNamespace->getParent());
           }
