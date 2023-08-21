@@ -39,9 +39,17 @@ public:
 
     getDerived()->traverseClassTemplatePartialSpecializationRecords();
 
+    getDerived()->traverseCXXInstanceMethods();
+
+    getDerived()->traverseCXXStaticMethods();
+
     getDerived()->traverseCXXMethodTemplates();
 
     getDerived()->traverseCXXMethodTemplateSpecializations();
+
+    getDerived()->traverseCXXFields();
+
+    getDerived()->traverseCXXFieldTemplates();
 
     getDerived()->traverseConcepts();
 
@@ -127,6 +135,26 @@ public:
          API.getClassTemplatePartialSpecializations())
       getDerived()->visitClassTemplatePartialSpecializationRecord(
           *ClassTemplatePartialSpecialization.second);
+  }
+
+  void traverseCXXInstanceMethods() {
+    for (const auto &InstanceMethod : API.getCXXInstanceMethods())
+      getDerived()->visitCXXInstanceMethodRecord(*InstanceMethod.second);
+  }
+
+  void traverseCXXStaticMethods() {
+    for (const auto &InstanceMethod : API.getCXXStaticMethods())
+      getDerived()->visitCXXStaticMethodRecord(*InstanceMethod.second);
+  }
+
+  void traverseCXXFields() {
+    for (const auto &CXXField : API.getCXXFields())
+      getDerived()->visitCXXFieldRecord(*CXXField.second);
+  }
+
+  void traverseCXXFieldTemplates() {
+    for (const auto &CXXFieldTemplate : API.getCXXFieldTemplates())
+      getDerived()->visitCXXFieldTemplateRecord(*CXXFieldTemplate.second);
   }
 
   void traverseGlobalVariableTemplateRecords() {
@@ -216,10 +244,16 @@ public:
   void visitClassTemplatePartialSpecializationRecord(
       const ClassTemplatePartialSpecializationRecord &Record){};
 
+  void visitCXXInstanceRecord(const CXXInstanceMethodRecord &Record){};
+
+  void visitCXXStaticRecord(const CXXStaticMethodRecord &Record){};
+
   void visitMethodTemplateRecord(const CXXMethodTemplateRecord &Record){};
 
   void visitMethodTemplateSpecializationRecord(
       const CXXMethodTemplateSpecializationRecord &Record){};
+
+  void visitCXXFieldTemplateRecord(const CXXFieldTemplateRecord &Record){};
 
   void visitGlobalVariableTemplateRecord(
       const GlobalVariableTemplateRecord &Record) {}
