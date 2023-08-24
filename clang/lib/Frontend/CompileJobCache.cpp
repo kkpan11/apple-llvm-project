@@ -12,7 +12,9 @@
 #include "clang/Frontend/CASDependencyCollector.h"
 #include "clang/Frontend/CompileJobCacheKey.h"
 #include "clang/Frontend/CompilerInstance.h"
+#include "clang/Frontend/TextDiagnosticPrinter.h"
 #include "clang/Lex/PreprocessorOptions.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/CAS/ActionCache.h"
 #include "llvm/CAS/CASOutputBackend.h"
 #include "llvm/RemoteCachingService/Client.h"
@@ -78,6 +80,11 @@ public:
         Cache(std::move(Cache)) {
     CASOutputs = llvm::makeIntrusiveRefCnt<llvm::cas::CASOutputBackend>(*CAS);
   }
+
+  Expected<std::optional<int>>
+  replayCachedResult(const llvm::cas::CASID &ResultCacheKey,
+                     clang::cas::CompileJobCacheResult &Result,
+                     bool JustComputedResult);
 
 private:
   Expected<bool>
@@ -482,6 +489,49 @@ bool CompileJobCache::finishComputedResult(CompilerInstance &Clang,
   return true;
 }
 
+Expected<std::optional<int>> CompileJobCache::replayCachedResult(
+    std::shared_ptr<CompilerInvocation> Invok, const llvm::cas::CASID &CacheKey,
+    cas::CompileJobCacheResult &CachedResult, SmallVectorImpl<char> &DiagText) {
+  CompilerInstance Clang;
+  Clang.setInvocation(std::move(Invok));
+  llvm::raw_svector_ostream DiagOS(DiagText);
+  Clang.createDiagnostics(
+      new TextDiagnosticPrinter(DiagOS, &Clang.getDiagnosticOpts()));
+  Clang.setVerboseOutputStream(DiagOS);
+
+  auto FinishDiagnosticClient =
+      llvm::make_scope_exit([&]() { Clang.getDiagnosticClient().finish(); });
+
+  llvm::PrefixMapper PrefixMapper;
+  llvm::SmallVector<llvm::MappedPrefix> Split;
+  llvm::MappedPrefix::transformJoinedIfValid(
+      Clang.getFrontendOpts().PathPrefixMappings, Split);
+  for (const auto &MappedPrefix : Split) {
+    // We use the inverse mapping because the \p PrefixMapper will be used for
+    // de-canonicalization of paths.
+    PrefixMapper.add(MappedPrefix.getInverse());
+  }
+
+  assert(!Clang.getDiagnostics().hasErrorOccurred());
+
+  ObjectStoreCachingOutputs CachingOutputs(Clang, std::move(PrefixMapper),
+                                           /*CAS*/ nullptr, /*Cache*/ nullptr);
+
+  std::optional<int> Ret;
+  if (Error E = CachingOutputs
+                    .replayCachedResult(CacheKey, CachedResult,
+                                        /*JustComputedResult*/ false)
+                    .moveInto(Ret))
+    return E;
+
+  if (Clang.getDiagnostics().hasErrorOccurred())
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "error diagnostic during replay: " +
+                                       DiagOS.str());
+
+  return Ret;
+}
+
 Expected<llvm::cas::ObjectRef> ObjectStoreCachingOutputs::writeOutputs(
     const llvm::cas::CASID &ResultCacheKey) {
   DiagnosticsEngine &Diags = Clang.getDiagnostics();
@@ -554,6 +604,22 @@ std::optional<int> ObjectStoreCachingOutputs::replayCachedResult(
   if (Error E = Schema.load(ResultID).moveInto(Result))
     llvm::report_fatal_error(std::move(E));
 
+  std::optional<int> Ret;
+  // FIXME: Stop calling report_fatal_error().
+  if (Error E = replayCachedResult(ResultCacheKey, *Result, JustComputedResult)
+                    .moveInto(Ret))
+    llvm::report_fatal_error(std::move(E));
+
+  return Ret;
+}
+
+Expected<std::optional<int>> ObjectStoreCachingOutputs::replayCachedResult(
+    const llvm::cas::CASID &ResultCacheKey,
+    clang::cas::CompileJobCacheResult &Result, bool JustComputedResult) {
+  if (JustComputedResult)
+    return std::nullopt;
+
+  llvm::cas::ObjectStore &CAS = Result.getCAS();
   DiagnosticsEngine &Diags = Clang.getDiagnostics();
   bool HasMissingOutput = false;
   std::optional<llvm::cas::ObjectProxy> SerialDiags;
@@ -563,7 +629,7 @@ std::optional<int> ObjectStoreCachingOutputs::replayCachedResult(
     if (!Obj.has_value()) {
       Diags.Report(diag::remark_compile_job_cache_backend_output_not_found)
           << clang::cas::CompileJobCacheResult::getOutputKindName(O.Kind)
-          << ResultCacheKey.toString() << CAS->getID(O.Object).toString();
+          << ResultCacheKey.toString() << CAS.getID(O.Object).toString();
       HasMissingOutput = true;
       return Error::success();
     }
@@ -593,7 +659,7 @@ std::optional<int> ObjectStoreCachingOutputs::replayCachedResult(
     if (O.Kind == OutputKind::Dependencies) {
       llvm::raw_svector_ostream OS(ContentsStorage);
       if (auto E = CASDependencyCollector::replay(
-              Clang.getDependencyOutputOpts(), *CAS, *Obj, OS))
+              Clang.getDependencyOutputOpts(), CAS, *Obj, OS))
         return E;
       Contents = ContentsStorage;
     } else {
@@ -608,9 +674,8 @@ std::optional<int> ObjectStoreCachingOutputs::replayCachedResult(
     return Output->commit();
   };
 
-  // FIXME: Stop calling report_fatal_error().
-  if (auto Err = Result->forEachLoadedOutput(processOutput))
-    llvm::report_fatal_error(std::move(Err));
+  if (auto Err = Result.forEachLoadedOutput(processOutput))
+    return std::move(Err);
 
   if (HasMissingOutput) {
     Diags.Report(diag::remark_compile_job_cache_miss)
@@ -620,12 +685,11 @@ std::optional<int> ObjectStoreCachingOutputs::replayCachedResult(
 
   if (!JustComputedResult) {
     Diags.Report(diag::remark_compile_job_cache_hit)
-        << ResultCacheKey.toString() << CAS->getID(ResultID).toString();
+        << ResultCacheKey.toString() << Result.getID().toString();
 
     if (SerialDiags) {
-      // FIXME: Stop calling report_fatal_error().
       if (Error E = replayCachedDiagnostics(SerialDiags->getData()))
-        llvm::report_fatal_error(std::move(E));
+        return std::move(E);
     }
   }
 
