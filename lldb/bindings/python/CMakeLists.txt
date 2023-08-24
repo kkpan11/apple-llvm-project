@@ -195,12 +195,11 @@ function(finish_swig_python swig_target lldb_python_bindings_dir lldb_python_tar
 endfunction()
 
 if(NOT ${LLDB_USE_STATIC_BINDINGS})
-  set(SOURCE_STATIC_BINDING ${CMAKE_CURRENT_SOURCE_DIR}/static-binding/lldb.py)
-  set(BINARY_STATIC_BINDING ${CMAKE_CURRENT_BINARY_DIR}/lldb.py)
-  set(COPY_STATIC_BINDING ${LLDB_SOURCE_DIR}/scripts/copy-static-bindings.py)
+  set(SOURCE_STATIC_BINDING ${CMAKE_CURRENT_SOURCE_DIR}/static-binding/LLDBWrapPython.cpp)
+  set(BINARY_STATIC_BINDING ${CMAKE_CURRENT_BINARY_DIR}/LLDBWrapPython.cpp)
 
   add_custom_command(TARGET swig_wrapper_python POST_BUILD VERBATIM
-    COMMAND diff -q ${SOURCE_STATIC_BINDING} ${BINARY_STATIC_BINDING} || ${CMAKE_COMMAND} -E cmake_echo_color --red "Update the static bindings by running the following command: ${COPY_STATIC_BINDING} ${CMAKE_BINARY_DIR}"
-    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/lldb.py
-    COMMENT "Diff the static bindings")
+    COMMAND diff -q ${SOURCE_STATIC_BINDING} ${BINARY_STATIC_BINDING}
+    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/LLDBWrapPython.cpp
+    COMMENT "Diff the Python static bindings")
 endif()

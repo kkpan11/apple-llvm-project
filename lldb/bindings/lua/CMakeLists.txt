@@ -77,3 +77,13 @@ function(finish_swig_lua swig_target lldb_lua_bindings_dir lldb_lua_target_dir)
                             DEPENDS ${lldb_lua_library_target})
   endif()
 endfunction()
+
+if(NOT ${LLDB_USE_STATIC_BINDINGS})
+  set(SOURCE_STATIC_BINDING ${CMAKE_CURRENT_SOURCE_DIR}/static-binding/LLDBWrapLua.cpp)
+  set(BINARY_STATIC_BINDING ${CMAKE_CURRENT_BINARY_DIR}/LLDBWrapLua.cpp)
+
+  add_custom_command(TARGET swig_wrapper_python POST_BUILD VERBATIM
+    COMMAND diff -q ${SOURCE_STATIC_BINDING} ${BINARY_STATIC_BINDING}
+    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/LLDBWrapPython.cpp
+    COMMENT "Diff the Lua static bindings")
+endif()
