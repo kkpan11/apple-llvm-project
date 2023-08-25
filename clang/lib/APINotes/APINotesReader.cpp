@@ -1961,8 +1961,8 @@ auto APINotesReader::lookupObjCMethod(
   return { Impl.SwiftVersion, *known };
 }
 
-auto APINotesReader::lookupGlobalVariable(std::optional<Context> context,
-                                          StringRef name)
+auto APINotesReader::lookupGlobalVariable(StringRef name,
+                                          std::optional<Context> context)
     -> VersionedInfo<GlobalVariableInfo> {
   if (!Impl.GlobalVariableTable)
     return None;
@@ -1980,8 +1980,8 @@ auto APINotesReader::lookupGlobalVariable(std::optional<Context> context,
   return { Impl.SwiftVersion, *known };
 }
 
-auto APINotesReader::lookupGlobalFunction(std::optional<Context> context,
-                                          StringRef name)
+auto APINotesReader::lookupGlobalFunction(StringRef name,
+                                          std::optional<Context> context)
     -> VersionedInfo<GlobalFunctionInfo> {
   if (!Impl.GlobalFunctionTable)
     return None;
@@ -2015,7 +2015,7 @@ auto APINotesReader::lookupEnumConstant(StringRef name)
   return { Impl.SwiftVersion, *known };
 }
 
-auto APINotesReader::lookupTag(std::optional<Context> context, StringRef name)
+auto APINotesReader::lookupTag(StringRef name, std::optional<Context> context)
     -> VersionedInfo<TagInfo> {
   if (!Impl.TagTable)
     return None;
@@ -2033,8 +2033,8 @@ auto APINotesReader::lookupTag(std::optional<Context> context, StringRef name)
   return { Impl.SwiftVersion, *known };
 }
 
-auto APINotesReader::lookupTypedef(std::optional<Context> context,
-                                   StringRef name)
+auto APINotesReader::lookupTypedef(StringRef name,
+                                   std::optional<Context> context)
     -> VersionedInfo<TypedefInfo> {
   if (!Impl.TypedefTable)
     return None;
@@ -2053,7 +2053,7 @@ auto APINotesReader::lookupTypedef(std::optional<Context> context,
 }
 
 auto APINotesReader::lookupNamespaceID(
-    Optional<ContextID> parentNamespaceID, StringRef name)
+    StringRef name, Optional<ContextID> parentNamespaceID)
     -> Optional<ContextID> {
   if (!Impl.ObjCContextIDTable)
     return None;
