@@ -61056,12 +61056,12 @@ SWIGINTERN PyObject *_wrap_SBTarget_SetModuleLoadAddress(PyObject *self, PyObjec
   PyObject *resultobj = 0;
   lldb::SBTarget *arg1 = (lldb::SBTarget *) 0 ;
   lldb::SBModule arg2 ;
-  int64_t arg3 ;
+  uint64_t arg3 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   void *argp2 ;
   int res2 = 0 ;
-  long long val3 ;
+  unsigned long long val3 ;
   int ecode3 = 0 ;
   PyObject *swig_obj[3] ;
   lldb::SBError result;
@@ -61085,11 +61085,11 @@ SWIGINTERN PyObject *_wrap_SBTarget_SetModuleLoadAddress(PyObject *self, PyObjec
       if (SWIG_IsNewObj(res2)) delete temp;
     }
   }
-  ecode3 = SWIG_AsVal_long_SS_long(swig_obj[2], &val3);
+  ecode3 = SWIG_AsVal_unsigned_SS_long_SS_long(swig_obj[2], &val3);
   if (!SWIG_IsOK(ecode3)) {
-    SWIG_exception_fail(SWIG_ArgError(ecode3), "in method '" "SBTarget_SetModuleLoadAddress" "', argument " "3"" of type '" "int64_t""'");
+    SWIG_exception_fail(SWIG_ArgError(ecode3), "in method '" "SBTarget_SetModuleLoadAddress" "', argument " "3"" of type '" "uint64_t""'");
   } 
-  arg3 = static_cast< int64_t >(val3);
+  arg3 = static_cast< uint64_t >(val3);
   {
     SWIG_PYTHON_THREAD_BEGIN_ALLOW;
     result = (arg1)->SetModuleLoadAddress(arg2,arg3);
@@ -90556,7 +90556,7 @@ static PyMethodDef SwigMethods[] = {
 	 { "SBTarget_GetMaximumNumberOfChildrenToDisplay", _wrap_SBTarget_GetMaximumNumberOfChildrenToDisplay, METH_O, "SBTarget_GetMaximumNumberOfChildrenToDisplay(SBTarget self) -> uint32_t"},
 	 { "SBTarget_SetSectionLoadAddress", _wrap_SBTarget_SetSectionLoadAddress, METH_VARARGS, "SBTarget_SetSectionLoadAddress(SBTarget self, SBSection section, lldb::addr_t section_base_addr) -> SBError"},
 	 { "SBTarget_ClearSectionLoadAddress", _wrap_SBTarget_ClearSectionLoadAddress, METH_VARARGS, "SBTarget_ClearSectionLoadAddress(SBTarget self, SBSection section) -> SBError"},
-	 { "SBTarget_SetModuleLoadAddress", _wrap_SBTarget_SetModuleLoadAddress, METH_VARARGS, "SBTarget_SetModuleLoadAddress(SBTarget self, SBModule module, int64_t sections_offset) -> SBError"},
+	 { "SBTarget_SetModuleLoadAddress", _wrap_SBTarget_SetModuleLoadAddress, METH_VARARGS, "SBTarget_SetModuleLoadAddress(SBTarget self, SBModule module, uint64_t sections_offset) -> SBError"},
 	 { "SBTarget_ClearModuleLoadAddress", _wrap_SBTarget_ClearModuleLoadAddress, METH_VARARGS, "SBTarget_ClearModuleLoadAddress(SBTarget self, SBModule module) -> SBError"},
 	 { "SBTarget_FindFunctions", _wrap_SBTarget_FindFunctions, METH_VARARGS, "\n"
 		"SBTarget_FindFunctions(SBTarget self, char const * name, uint32_t name_type_mask=eFunctionNameTypeAny) -> SBSymbolContextList\n"
