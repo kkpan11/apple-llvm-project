@@ -195,17 +195,24 @@ function(add_properties_for_swift_modules target reldir)
       target_link_libraries(${target} PRIVATE swiftCore-linux-${arch})
       string(TOLOWER ${CMAKE_SYSTEM_NAME} platform)
       set(SWIFT_BUILD_RPATH "${LLDB_SWIFT_LIBS}/${platform}")
-      set(SWIFT_INSTALL_RPATH "$ORIGIN/swift/${platform}")
+      set(SWIFT_INSTALL_RPATH "$ORIGIN/${reldir}lib/swift/${platform}")
     endif()
 
     set_property(TARGET ${target} APPEND PROPERTY BUILD_RPATH "${SWIFT_BUILD_RPATH}")
     set_property(TARGET ${target} APPEND PROPERTY INSTALL_RPATH "${SWIFT_INSTALL_RPATH}")
 
     if (SWIFT_SWIFT_PARSER)
-      set_property(TARGET ${target}
-        APPEND PROPERTY BUILD_RPATH "@loader_path/${build_reldir}lib/swift/host")
-      set_property(TARGET ${target}
-        APPEND PROPERTY INSTALL_RPATH "@loader_path/${reldir}lib/swift/host")
+      if (CMAKE_SYSTEM_NAME MATCHES "Darwin")
+        set_property(TARGET ${target}
+          APPEND PROPERTY BUILD_RPATH "@loader_path/${build_reldir}lib/swift/host")
+        set_property(TARGET ${target}
+          APPEND PROPERTY INSTALL_RPATH "@loader_path/${reldir}lib/swift/host")
+      elseif (CMAKE_SYSTEM_NAME MATCHES "Linux|Android|OpenBSD|FreeBSD")
+        set_property(TARGET ${target}
+          APPEND PROPERTY BUILD_RPATH "$ORIGIN/${build_reldir}lib/swift/host")
+        set_property(TARGET ${target}
+          APPEND PROPERTY INSTALL_RPATH "$ORIGIN/${reldir}lib/swift/host")
+      endif()
     endif()
   endif()
 endfunction()
