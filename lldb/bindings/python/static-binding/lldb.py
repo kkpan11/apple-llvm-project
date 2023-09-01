@@ -10639,7 +10639,7 @@ class SBTarget(object):
         return _lldb.SBTarget_ClearSectionLoadAddress(self, section)
 
     def SetModuleLoadAddress(self, module, sections_offset):
-        r"""SetModuleLoadAddress(SBTarget self, SBModule module, int64_t sections_offset) -> SBError"""
+        r"""SetModuleLoadAddress(SBTarget self, SBModule module, uint64_t sections_offset) -> SBError"""
         return _lldb.SBTarget_SetModuleLoadAddress(self, module, sections_offset)
 
     def ClearModuleLoadAddress(self, module):
