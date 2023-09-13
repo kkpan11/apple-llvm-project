@@ -1527,6 +1527,11 @@ CompilerType SwiftLanguageRuntimeImpl::GetChildCompilerTypeAtIndex(
     lldb::addr_t pointer = valobj->GetPointerValue();
     reflection_ctx->ForEachSuperClassType(
         &tip, pointer, [&](SuperClassType sc) -> bool {
+          // If the typeref is invalid, we don't want to process it (for
+          // example, this could be an artifical ObjC class).
+          if (!sc.get_typeref())
+            return false;
+
           if (!found_start) {
             // The ValueObject always points to the same class instance,
             // even when querying base classes. Drop base classes until we
@@ -2013,7 +2018,8 @@ bool SwiftLanguageRuntimeImpl::GetDynamicTypeAndAddress_Class(
     }
   Log *log(GetLog(LLDBLog::Types));
   ThreadSafeReflectionContext reflection_ctx = GetReflectionContext();
-  const auto *typeref = reflection_ctx->readTypeFromInstance(instance_ptr);
+  const auto *typeref =
+      reflection_ctx->readTypeFromInstance(instance_ptr, true);
   if (!typeref) {
     LLDB_LOGF(log,
               "could not read typeref for type: %s (instance_ptr = 0x%" PRIx64
