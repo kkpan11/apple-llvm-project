@@ -483,6 +483,7 @@ private:
   friend class SBProcess;
   friend class SBSourceManager;
   friend class SBStructuredData;
+  friend class SBPlatform;
   friend class SBTarget;
   friend class SBTrace;
 
