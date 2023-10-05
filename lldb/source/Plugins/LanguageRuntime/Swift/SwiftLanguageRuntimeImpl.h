@@ -322,6 +322,11 @@ protected:
                                          TypeAndOrName &class_type_or_name,
                                          Address &address);
 
+  bool GetDynamicTypeAndAddress_ExistentialMetatype(
+      ValueObject &in_value, CompilerType meta_type,
+      lldb::DynamicValueType use_dynamic, TypeAndOrName &class_type_or_name,
+      Address &address);
+
   bool GetDynamicTypeAndAddress_Value(ValueObject &in_value,
                                       CompilerType &bound_type,
                                       lldb::DynamicValueType use_dynamic,
