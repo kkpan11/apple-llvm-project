@@ -472,14 +472,14 @@ void SwiftLanguageRuntimeImpl::PopLocalBuffer() {
   ((LLDBMemoryReader *)GetMemoryReader().get())->popLocalBuffer();
 }
 
-SwiftLanguageRuntime::MetadataPromise::MetadataPromise(
+SwiftLanguageRuntimeImpl::MetadataPromise::MetadataPromise(
     ValueObject &for_object, SwiftLanguageRuntimeImpl &runtime,
     lldb::addr_t location)
     : m_for_object_sp(for_object.GetSP()), m_swift_runtime(runtime),
       m_metadata_location(location) {}
 
 CompilerType
-SwiftLanguageRuntime::MetadataPromise::FulfillTypePromise(Status *error) {
+SwiftLanguageRuntimeImpl::MetadataPromise::FulfillTypePromise(Status *error) {
   if (error)
     error->Clear();
 
@@ -532,7 +532,7 @@ SwiftLanguageRuntime::MetadataPromise::FulfillTypePromise(Status *error) {
   }
 }
 
-SwiftLanguageRuntime::MetadataPromiseSP
+SwiftLanguageRuntimeImpl::MetadataPromiseSP
 SwiftLanguageRuntimeImpl::GetMetadataPromise(lldb::addr_t addr,
                                              ValueObject &for_object) {
   llvm::Optional<SwiftScratchContextReader> maybe_swift_scratch_ctx =
@@ -555,8 +555,8 @@ SwiftLanguageRuntimeImpl::GetMetadataPromise(lldb::addr_t addr,
   if (iter != m_promises_map.end())
     return iter->second;
 
-  SwiftLanguageRuntime::MetadataPromiseSP promise_sp(
-      new SwiftLanguageRuntime::MetadataPromise(for_object, *this, addr));
+  SwiftLanguageRuntimeImpl::MetadataPromiseSP promise_sp(
+      new SwiftLanguageRuntimeImpl::MetadataPromise(for_object, *this, addr));
   m_promises_map.insert({key, promise_sp});
   return promise_sp;
 }
@@ -2284,6 +2284,65 @@ bool SwiftLanguageRuntimeImpl::GetDynamicTypeAndAddress_Protocol(
   return true;
 }
 
+bool SwiftLanguageRuntimeImpl::GetDynamicTypeAndAddress_ExistentialMetatype(
+    ValueObject &in_value, CompilerType meta_type,
+    lldb::DynamicValueType use_dynamic, TypeAndOrName &class_type_or_name,
+    Address &address) {
+  // Resolve the dynamic type of the metatype.
+  AddressType address_type;
+  lldb::addr_t ptr = in_value.GetPointerValue(&address_type);
+  if (ptr == LLDB_INVALID_ADDRESS || ptr == 0)
+    return false;
+
+  ThreadSafeReflectionContext reflection_ctx = GetReflectionContext();
+  if (!reflection_ctx)
+    return false;
+
+  const swift::reflection::TypeRef *type_ref =
+      reflection_ctx->readTypeFromMetadata(ptr);
+
+  auto tss = meta_type.GetTypeSystem().dyn_cast_or_null<TypeSystemSwift>();
+  if (!tss)
+    return false;
+  auto &ts = tss->GetTypeSystemSwiftTypeRef();
+
+  using namespace swift::Demangle;
+  Demangler dem;
+  NodePointer node = type_ref->getDemangling(dem);
+  // Wrap the resolved type in a metatype again for the data formatter to
+  // recognize.
+  if (!node || node->getKind() != Node::Kind::Type)
+    return false;
+  NodePointer wrapped = dem.createNode(Node::Kind::Type);
+  NodePointer meta = dem.createNode(Node::Kind::Metatype);
+  meta->addChild(node, dem);
+  wrapped->addChild(meta,dem);
+
+  meta_type = ts.GetTypeSystemSwiftTypeRef().RemangleAsType(dem, wrapped);
+  class_type_or_name.SetCompilerType(meta_type);
+  address.SetRawAddress(ptr);
+  return true;
+}
+
+CompilerType SwiftLanguageRuntimeImpl::GetTypeFromMetadata(TypeSystemSwift &ts,
+                                                           Address address) {
+  lldb::addr_t ptr = address.GetLoadAddress(&GetProcess().GetTarget());
+  if (ptr == LLDB_INVALID_ADDRESS)
+    return {};
+
+  ThreadSafeReflectionContext reflection_ctx = GetReflectionContext();
+  if (!reflection_ctx)
+    return {};
+
+  const swift::reflection::TypeRef *type_ref =
+      reflection_ctx->readTypeFromMetadata(ptr);
+
+  using namespace swift::Demangle;
+  Demangler dem;
+  NodePointer node = type_ref->getDemangling(dem);
+  return ts.GetTypeSystemSwiftTypeRef().RemangleAsType(dem, node);
+}
+
 llvm::Optional<lldb::addr_t>
 SwiftLanguageRuntimeImpl::GetTypeMetadataForTypeNameAndFrame(
     StringRef mdvar_name, StackFrame &frame) {
@@ -2308,7 +2367,7 @@ SwiftLanguageRuntimeImpl::GetTypeMetadataForTypeNameAndFrame(
   return metadata_location;
 }
 
-  SwiftLanguageRuntime::MetadataPromiseSP
+SwiftLanguageRuntimeImpl::MetadataPromiseSP
 SwiftLanguageRuntimeImpl::GetPromiseForTypeNameAndFrame(const char *type_name,
                                                         StackFrame *frame) {
   if (!frame || !type_name || !type_name[0])
@@ -3161,11 +3220,16 @@ bool SwiftLanguageRuntimeImpl::GetDynamicTypeAndAddress(
         in_value, use_dynamic, class_type_or_name, address, static_value_type);
   else if (type_info.AnySet(eTypeIsPack))
     success = GetDynamicTypeAndAddress_Pack(in_value, val_type, use_dynamic,
-                                           class_type_or_name, address, static_value_type);
+                                            class_type_or_name, address,
+                                            static_value_type);
   else if (type_info.AnySet(eTypeIsClass) ||
            type_info.AllSet(eTypeIsBuiltIn | eTypeIsPointer | eTypeHasValue))
     success = GetDynamicTypeAndAddress_Class(in_value, val_type, use_dynamic,
-                                             class_type_or_name, address, static_value_type);
+                                             class_type_or_name, address,
+                                             static_value_type);
+  else if (type_info.AllSet(eTypeIsMetatype | eTypeIsProtocol))
+    success = GetDynamicTypeAndAddress_ExistentialMetatype(
+        in_value, val_type, use_dynamic, class_type_or_name, address);
   else if (type_info.AnySet(eTypeIsProtocol))
     success = GetDynamicTypeAndAddress_Protocol(in_value, val_type, use_dynamic,
                                                 class_type_or_name, address);
@@ -3498,7 +3562,7 @@ SwiftLanguageRuntimeImpl::GetConcreteType(ExecutionContextScope *exe_scope,
   if (!frame)
     return CompilerType();
 
-  SwiftLanguageRuntime::MetadataPromiseSP promise_sp(
+  SwiftLanguageRuntimeImpl::MetadataPromiseSP promise_sp(
       GetPromiseForTypeNameAndFrame(abstract_type_name.GetCString(), frame));
   if (!promise_sp)
     return CompilerType();
