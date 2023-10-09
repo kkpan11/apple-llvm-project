@@ -8325,6 +8325,14 @@ class SBPlatform(object):
         r"""Launch(SBPlatform self, SBLaunchInfo launch_info) -> SBError"""
         return _lldb.SBPlatform_Launch(self, launch_info)
 
+    def Attach(self, attach_info, debugger, target, error):
+        r"""Attach(SBPlatform self, SBAttachInfo attach_info, SBDebugger debugger, SBTarget target, SBError error) -> SBProcess"""
+        return _lldb.SBPlatform_Attach(self, attach_info, debugger, target, error)
+
+    def GetAllProcesses(self, error):
+        r"""GetAllProcesses(SBPlatform self, SBError error) -> SBProcessInfoList"""
+        return _lldb.SBPlatform_GetAllProcesses(self, error)
+
     def Kill(self, pid):
         r"""Kill(SBPlatform self, lldb::pid_t const pid) -> SBError"""
         return _lldb.SBPlatform_Kill(self, pid)
@@ -9085,6 +9093,43 @@ class SBProcessInfo(object):
 
 # Register SBProcessInfo in _lldb:
 _lldb.SBProcessInfo_swigregister(SBProcessInfo)
+class SBProcessInfoList(object):
+    r"""Proxy of C++ lldb::SBProcessInfoList class."""
+
+    thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
+    __repr__ = _swig_repr
+    __swig_destroy__ = _lldb.delete_SBProcessInfoList
+
+    def __init__(self, *args):
+        r"""
+        __init__(SBProcessInfoList self) -> SBProcessInfoList
+        __init__(SBProcessInfoList self, SBProcessInfoList rhs) -> SBProcessInfoList
+        """
+        _lldb.SBProcessInfoList_swiginit(self, _lldb.new_SBProcessInfoList(*args))
+
+    def GetSize(self):
+        r"""GetSize(SBProcessInfoList self) -> uint32_t"""
+        return _lldb.SBProcessInfoList_GetSize(self)
+
+    def GetProcessInfoAtIndex(self, idx, info):
+        r"""GetProcessInfoAtIndex(SBProcessInfoList self, uint32_t idx, SBProcessInfo info) -> bool"""
+        return _lldb.SBProcessInfoList_GetProcessInfoAtIndex(self, idx, info)
+
+    def Clear(self):
+        r"""Clear(SBProcessInfoList self)"""
+        return _lldb.SBProcessInfoList_Clear(self)
+
+    def __len__(self):
+      '''Return the number of process info in a lldb.SBProcessInfoListExtensions object.'''
+      return self.GetSize()
+
+    def __iter__(self):
+      '''Iterate over all the process info in a lldb.SBProcessInfoListExtensions object.'''
+      return lldb_iter(self, 'GetSize', 'GetProcessInfoAtIndex')
+
+
+# Register SBProcessInfoList in _lldb:
+_lldb.SBProcessInfoList_swigregister(SBProcessInfoList)
 class SBQueue(object):
     r"""Represents a libdispatch queue in the process."""
 
