@@ -1295,8 +1295,6 @@ TypeSystemSwiftTypeRef::CollectTypeInfo(swift::Demangle::Demangler &dem,
       break;
 
     case Node::Kind::ExistentialMetatype:
-      swift_flags |= eTypeIsProtocol;
-      LLVM_FALLTHROUGH;
     case Node::Kind::Metatype:
       swift_flags |= eTypeIsMetatype | eTypeHasValue;
       break;
@@ -3363,7 +3361,6 @@ bool TypeSystemSwiftTypeRef::IsExistentialType(
   if (!node || node->getNumChildren() != 1)
     return false;
   switch (node->getKind()) {
-  case Node::Kind::ExistentialMetatype:
   case Node::Kind::Protocol:
   case Node::Kind::ProtocolList:
     return true;

@@ -705,7 +705,6 @@ std::string SwiftLanguageRuntime::DemangleSymbolAsString(
     options.ShowPrivateDiscriminators = false;
     options.DisplayExtensionContexts = false;
     options.DisplayLocalNameContexts = false;
-    options.ShowFunctionArgumentTypes = true;
     break;
   case eDisplayTypeName:
     options = swift::Demangle::DemangleOptions::SimplifiedUIDemangleOptions();
@@ -715,7 +714,6 @@ std::string SwiftLanguageRuntime::DemangleSymbolAsString(
     options.DisplayModuleNames = true;
     options.DisplayLocalNameContexts = false;
     options.DisplayDebuggerGeneratedModule = false;
-    options.ShowFunctionArgumentTypes = true;
     break;    
   }
 
