@@ -25,4 +25,7 @@ class TestSwiftBridgedMetatype(TestBase):
         )
 
         var_k = self.frame().FindVariable("k")
-        lldbutil.check_variable(self, var_k, False, "@thick NSString.Type")
+        if sys.platform.startswith("linux"):
+            lldbutil.check_variable(self, var_k, False, "Foundation.NSString")
+        else:
+            lldbutil.check_variable(self, var_k, False, "NSString")
