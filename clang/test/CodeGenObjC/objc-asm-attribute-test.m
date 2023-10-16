@@ -65,7 +65,7 @@ id Test16877359(void) {
 
 // CHECK: @OBJC_PROP_NAME_ATTR_ = private unnamed_addr constant [13 x i8] c"optionalProp\00"
 // CHECK-NEXT: @OBJC_PROP_NAME_ATTR_.11 = private unnamed_addr constant [7 x i8] c"T@,?,&\00"
-// CHECK: @"_OBJC_$_PROP_LIST_MySecretNamespace.Protocol2" ={{.*}} [%struct._prop_t { ptr @OBJC_PROP_NAME_ATTR_, ptr @OBJC_PROP_NAME_ATTR_.11 }]
+// CHECK: @"_OBJC_$_PROP_LIST_MySecretNamespace.Protocol2" ={{.*}} [%struct._prop_t { i8* getelementptr inbounds ([13 x i8], [13 x i8]* @OBJC_PROP_NAME_ATTR_, i32 0, i32 0), i8* getelementptr inbounds ([7 x i8], [7 x i8]* @OBJC_PROP_NAME_ATTR_.11, i32 0, i32 0) }]
 
 // CHECK: private unnamed_addr constant [42 x i8] c"T@\22MySecretNamespace.Message\22,&,V_msgProp\00"
 // CHECK: private unnamed_addr constant [76 x i8] c"T@\22MySecretNamespace.Message<MySecretNamespace.Protocol3>\22,&,V_msgProtoProp\00"
