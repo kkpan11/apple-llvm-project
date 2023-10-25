@@ -500,6 +500,10 @@ Improvements to Clang's diagnostics
   warnings. Instead, it will suggest casting the enum object based on its
   underlying type.
 
+- ``-Wzero-as-null-pointer-constant`` diagnostic is no longer emitted when using ``__null``
+  (or, more commonly, ``NULL`` when the platform defines it as ``__null``) to be more consistent
+  with GCC.
+
 Bug Fixes in This Version
 -------------------------
 - Fixed an issue where a class template specialization whose declaration is
