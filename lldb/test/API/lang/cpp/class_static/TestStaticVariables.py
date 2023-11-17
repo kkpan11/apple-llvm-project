@@ -120,6 +120,7 @@ class StaticVariableTestCase(TestBase):
 
         return value_check
 
+    @skipUnlessDarwin
     @expectedFailureAll(
         compiler=["gcc"], bugnumber="Compiler emits incomplete debug info"
     )
