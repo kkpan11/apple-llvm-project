@@ -83,14 +83,14 @@ SwiftLanguageRuntimeImpl::GetMemberVariableOffsetRemoteAST(
     llvm::StringRef member_name) {
   auto scratch_ctx =
       instance_type.GetTypeSystem().dyn_cast_or_null<SwiftASTContext>();
-  if (scratch_ctx == nullptr || scratch_ctx->HasFatalErrors())
+  if (!scratch_ctx || scratch_ctx->HasFatalErrors())
     return {};
 
   auto *remote_ast = &GetRemoteASTContext(*scratch_ctx);
   // Check whether we've already cached this offset.
   swift::TypeBase *swift_type =
       GetCanonicalSwiftType(instance_type).getPointer();
-  if (swift_type == nullptr)
+  if (!swift_type)
     return {};
 
   // Perform the cache lookup.
@@ -141,6 +141,9 @@ SwiftLanguageRuntimeImpl::GetMemberVariableOffsetRemoteAST(
             return it->second;
         }
   }
+
+  if (!swift_type)
+    return {};
 
   // Try to determine whether it is safe to use RemoteAST.  RemoteAST
   // is faster than RemoteMirrors, but can't do dynamic types (checked
