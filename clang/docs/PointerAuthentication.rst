@@ -182,7 +182,9 @@ Discriminators
 A discriminator is arbitrary extra data which alters the signature calculated
 for a pointer.  When two pointers are signed differently --- either with
 different keys or with different discriminators --- an attacker cannot simply
-replace one pointer with the other.
+replace one pointer with the other.  For more information on why discriminators
+are important and how to use them effectively, see the section on `Substitution
+attacks`_.
 
 To use standard cryptographic terminology, a discriminator acts as a
 `salt <https://en.wikipedia.org/wiki/Salt_(cryptography)>`_ in the signing of a
@@ -256,10 +258,6 @@ and authentication sites.  Preferably, the schema should be hard-coded
 everywhere it is needed, but at the very least, it must not be derived by
 inspecting information stored along with the pointer.  See the section on
 `Attacks on pointer authentication`_ for more information.
-
-
-
-
 
 Language Features
 -----------------
@@ -711,289 +709,6 @@ unstable or implementation-specific.
 
 
 
-
-
-Theory of Operation
--------------------
-
-The threat model of pointer authentication is as follows:
-
-- The attacker has the ability to read and write to a certain range of addresses, possibly the entire address space.  However, they are constrained by the normal rules of the process: for example, they cannot write to memory that is mapped read-only, and if they access unmapped memory it will trigger a trap.
-
-- The attacker has no ability to add arbitrary executable code to the program.  For example, the program does not include malicious code to begin with, and the attacker cannot alter existing instructions, load a malicious shared library, or remap writable pages as executable.  If the attacker wants to get the process to perform a specific sequence of actions, they must somehow subvert the normal control flow of the process.
-
-In both of the above paragraphs, it is merely assumed that the attacker's *current* capabilities are restricted; that is, their current exploit does not directly give them the power to do these things.  The attacker's immediate goal may well be to leverage their exploit to gain these capabilities, e.g. to load a malicious dynamic library into the process, even though the process does not directly contain code to do so.
-
-Note that any bug that fits the above threat model can be immediately exploited as a denial-of-service attack by simply performing an illegal access and crashing the program.  Pointer authentication cannot protect against this.  While denial-of-service attacks are unfortunate, they are also unquestionably the best possible result of a bug this severe. Therefore, pointer authentication enthusiastically embraces the idea of halting the program on a pointer authentication failure rather than continuing in a possibly-compromised state.
-
-Pointer authentication is a form of control-flow integrity (CFI) enforcement. The basic security hypothesis behind CFI enforcement is that many bugs can only be usefully exploited (other than as a denial-of-service) by leveraging them to subvert the control flow of the program.  If this is true, then by inhibiting or limiting that subversion, it may be possible to largely mitigate the security consequences of those bugs by rendering them impractical (or, ideally, impossible) to exploit.
-
-Every indirect branch in a program has a purpose.  Using human intelligence, a programmer can describe where a particular branch *should* go according to this purpose: a ``return`` in ``printf`` should return to the call site, a particular call in ``qsort`` should call the comparator that was passed in as an argument, and so on.  But for CFI to enforce that every branch in a program goes where it *should* in this sense would require CFI to perfectly enforce every semantic rule of the program's abstract machine; that is, it would require making the programming environment perfectly sound.  That is out of scope.  Instead, the goal of CFI is merely to catch attempts to make a branch go somewhere that its obviously *shouldn't* for its purpose: for example, to stop a call from branching into the middle of a function rather than its beginning.  As the information available to CFI gets better about the purpose of the branch, CFI can enforce tighter and tighter restrictions on where the branch is permitted to go.  Still, ultimately CFI cannot make the program sound.  This may help explain why pointer authentication makes some of the choices it does: for example, to sign and authenticate mostly code pointers rather than every pointer in the program.  Preventing attackers from redirecting branches is both particularly important and particularly approachable as a goal.  Detecting corruption more broadly is infeasible with these techniques, and the attempt would have far higher cost.
-
-Attacks on pointer authentication
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Pointer authentication works as follows.  Every indirect branch in a program has a purpose.  For every purpose, the implementation chooses a :ref:`signing schema<Signing schemas>`.  At some place where a pointer is known to be correct for its purpose, it is signed according to the purpose's schema.  At every place where the pointer is needed for its purpose, it is authenticated according to the purpose's schema.  If that authentication fails, the program is halted.
-
-There are a variety of ways to attack this.
-
-Attacks of interest to programmers
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-These attacks arise from weaknesses in the default protections offered by pointer authentication.  They can be addressed by using attributes or intrinsics to opt in to stronger protection.
-
-Substitution attacks
-++++++++++++++++++++
-
-An attacker can simply overwrite a pointer intended for one purpose with a pointer intended for another purpose if both purposes use the same signing schema and that schema does not use address diversity.
-
-The most common source of this weakness is when code relies on using the default language rules for C function pointers.  The current implementation uses the exact same signing schema for all C function pointers, even for functions of substantially different type.  While efforts are ongoing to improve constant diversity for C function pointers of different type, there are necessary limits to this.  The C standard requires function pointers to be copyable with ``memcpy``, which means that function pointers can never use address diversity.  Furthermore, even if a function pointer can only be replaced with another function of the exact same type, that can still be useful to an attacker, as in the following example of a hand-rolled "v-table":
-
-.. code-block:: c
-
-  struct ObjectOperations {
-    void (*retain)(Object *);
-    void (*release)(Object *);
-    void (*deallocate)(Object *);
-    void (*logStatus)(Object *);
-  };
-
-This weakness can be mitigated by using a more specific signing schema for each purpose.  For example, in this example, the ``__ptrauth`` qualifier can be used with a different constant discriminator for each field.  Since there's no particular reason it's important for this v-table to be copyable with ``memcpy``, the functions can also be signed with address diversity:
-
-.. code-block:: c
-
-  #if __has_feature(ptrauth_calls)
-  #define objectOperation(discriminator) \
-    __ptrauth(ptrauth_key_function_pointer, 1, discriminator)
-  #else
-  #define objectOperation(discriminator)
-  #endif
-
-  struct ObjectOperations {
-    void (*objectOperation(0xf017) retain)(Object *);
-    void (*objectOperation(0x2639) release)(Object *);
-    void (*objectOperation(0x8bb0) deallocate)(Object *);
-    void (*objectOperation(0xc5d4) logStatus)(Object *);
-  };
-
-This weakness can also sometimes be mitigated by simply keeping the signed pointer in constant memory, but this is less effective than using better signing diversity.
-
-.. _Access path attacks:
-
-Access path attacks
-+++++++++++++++++++
-
-If a signed pointer is often accessed indirectly (that is, by first loading the address of the object where the signed pointer is stored), an attacker can affect uses of it by overwriting the intermediate pointer in the access path.
-
-The most common scenario exhibiting this weakness is an object with a pointer to a "v-table" (a structure holding many function pointers). An attacker does not need to replace a signed function pointer in the v-table if they can instead simply replace the v-table pointer in the object with their own pointer --- perhaps to memory where they've constructed their own v-table, or to existing memory that coincidentally happens to contain a signed pointer at the right offset that's been signed with the right signing schema.
-
-This attack arises because data pointers are not signed by default. It works even if the signed pointer uses address diversity: address diversity merely means that each pointer is signed with its own storage address, which (by design) is invariant to changes in the accessing pointer.
-
-Using sufficiently diverse signing schemas within the v-table can provide reasonably strong mitigation against this weakness.  Always use address diversity in v-tables to prevent attackers from assembling their own v-table.  Avoid re-using constant discriminators to prevent attackers from replacing a v-table pointer with a pointer to totally unrelated memory that just happens to contain an similarly-signed pointer.
-
-Further mitigation can be attained by signing pointers to v-tables. Any signature at all should prevent attackers from forging v-table pointers; they will need to somehow harvest an existing signed pointer from elsewhere in memory.  Using a meaningful constant discriminator will force this to be harvested from an object with similar structure (e.g. a different implementation of the same interface).  Using address diversity will prevent such harvesting entirely.  However, care must be taken when sourcing the v-table pointer originally; do not blindly sign a pointer that is not :ref:`safely derived<Safe derivation>`.
-
-.. _Signing oracles:
-
-Signing oracles
-+++++++++++++++
-
-A signing oracle is a bit of code which can be exploited by an attacker to sign an arbitrary pointer in a way that can later be recovered.  Such oracles can be used by attackers to forge signatures matching the oracle's signing schema, which is likely to cause a total compromise of pointer authentication's effectiveness.
-
-This attack only affects ordinary programmers if they are using certain treacherous patterns of code.  Currently this includes:
-
-- all uses of the ``__ptrauth_sign_unauthenticated`` intrinsic and
-- assigning data pointers to ``__ptrauth``-qualified l-values.
-
-Care must be taken in these situations to ensure that the pointer being signed has been :ref:`safely derived<Safe derivation>` or is otherwise not possible to attack.  (In some cases, this may be challenging without compiler support.)
-
-A diagnostic will be added in the future for implicitly dangerous patterns of code, such as assigning a non-safely-derived data pointer to a ``__ptrauth``-qualified l-value.
-
-.. _Authentication oracles:
-
-Authentication oracles
-++++++++++++++++++++++
-
-An authentication oracle is a bit of code which can be exploited by an attacker to leak whether a signed pointer is validly signed without halting the program if it isn't.  Such oracles can be used to forge signatures matching the oracle's signing schema if the attacker can repeatedly invoke the oracle for different candidate signed pointers. This is likely to cause a total compromise of pointer authentication's effectiveness.
-
-There should be no way for an ordinary programmer to create an authentication oracle using the current set of operations. However, implementation flaws in the past have occasionally given rise to authentication oracles due to a failure to immediately trap on authentication failure.
-
-The likelihood of creating an authentication oracle is why there is currently no intrinsic which queries whether a signed pointer is validly signed.
-
-
-Attacks of interest to implementors
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-These attacks are not inherent to the model; they arise from mistakes in either implementing or using the `sign` and `auth` operations. Avoiding these mistakes requires careful work throughout the system.
-
-Failure to trap on authentication failure
-+++++++++++++++++++++++++++++++++++++++++
-
-Any failure to halt the program on an authentication failure is likely to be exploitable by attackers to create an :ref:`authentication oracle<Authentication oracles>`.
-
-There are several different ways to introduce this problem:
-
-- The implementation might try to halt the program in some way that can be intercepted.
-
-  For example, the ``auth`` instruction in ARMv8.3 does not directly trap; instead it corrupts its result so that it is always an invalid pointer. If the program subsequently attempts to use that pointer, that will be a bad memory access, and it will trap into the kernel.  However, kernels do not usually immediately halt programs that trigger traps due to bad memory accesses; instead they notify the process to give it an opportunity to recover.  If this happens with an ``auth`` failure, the attacker may be able to exploit the recovery path in a way that creates an oracle. Kernels should ensure that these sorts of traps are not recoverable.
-
-- A compiler might use an intermediate representation (IR) for ``sign`` and ``auth`` operations that cannot make adequate correctness guarantees.
-
-  For example, suppose that an IR uses ARMv8.3-like semantics for ``auth``: the operation merely corrupts its result on failure instead of promising the trap.  A frontend might emit patterns of IR that always follow an ``auth`` with a memory access, thinking that this ensures correctness. But if the IR can be transformed to insert code between the ``auth`` and the access, or if the ``auth`` can be speculated, then this potentially creates an oracle.  It is better for ``auth`` to semantically guarantee to trap, potentially requiring an explicit check in the generated code. An ARMv8.3-like target can avoid this explicit check in the common case by recognizing the pattern of an ``auth`` followed immediately by an access.
-
-Attackable code sequences
-+++++++++++++++++++++++++
-
-If code that is part of a pointer authentication operation is interleaved with code that may itself be vulnerable to attacks, an attacker may be able to use this to create a :ref:`signing<Signing oracles>` or :ref:`authentication<Authentication oracles>` oracle.
-
-For example, suppose that the compiler is generating a call to a function and passing two arguments: a signed constant pointer and a value derived from a call.  In ARMv8.3, this code might look like so:
-
-.. code-block:: asm
-
-  adr x19, _callback.        ; compute &_callback
-  paciza x19                 ; sign it with a constant discriminator of 0
-  blr _argGenerator          ; call _argGenerator() (returns in x0)
-  mov x1, x0                 ; move call result to second arg register
-  mov x0, x19                ; move signed &_callback to first arg register
-  blr _function              ; call _function
-
-This code is correct, as would be a sequencing that does *both* the ``adr`` and the ``paciza`` after the call to ``_argGenerator``.  But a sequence that computes the address of ``_callback`` but leaves it as a raw pointer in a register during the call to ``_argGenerator`` would be vulnerable:
-
-.. code-block:: asm
-
-  adr x19, _callback.        ; compute &_callback
-  blr _argGenerator          ; call _argGenerator() (returns in x0)
-  mov x1, x0                 ; move call result to second arg register
-  paciza x19                 ; sign &_callback
-  mov x0, x19                ; move signed &_callback to first arg register
-  blr _function              ; call _function
-
-If ``_argGenerator`` spills ``x19`` (a callee-save register), and if the attacker can perform a write during this call, then the attacker can overwrite the spill slot with an arbitrary pointer that will eventually be unconditionally signed after the function returns.  This would be a signing oracle.
-
-The implementation can avoid this by obeying two basic rules:
-
-- The compiler's intermediate representations (IR) should not provide operations that expose intermediate raw pointers.  This may require providing extra operations that perform useful combinations of operations.
-
-  For example, there should be an "atomic" auth-and-resign operation that should be used instead of emitting an ``auth`` operation whose result is fed into a ``sign``.
-
-  Similarly, if a pointer should be authenticated as part of doing a memory access or a call, then the access or call should be decorated with enough information to perform the authentication; there should not be a separate ``auth`` whose result is used as the pointer operand for the access or call.  (In LLVM IR, we do this for calls, but not yet for loads or stores.)
-
-  "Operations" includes things like materializing a signed pointer to a known function or global variable.  The compiler must be able to recognize and emit this as a unified operation, rather than potentially splitting it up as in the example above.
-
-- The compiler backend should not be too aggressive about scheduling instructions that are part of a pointer authentication operation.  This may require custom code-generation of these operations in some cases.
-
-Register clobbering
-+++++++++++++++++++
-
-As a refinement of the section on `Attackable code sequences`_, if the attacker has the ability to modify arbitrary *register* state at arbitrary points in the program, then special care must be taken.
-
-For example, ARMv8.3 might materialize a signed function pointer like so:
-
-.. code-block:: asm
-
-  adr x0, _callback.        ; compute &_callback
-  paciza x0                 ; sign it with a constant discriminator of 0
-
-If an attacker has the ability to overwrite ``x0`` between these two instructions, this code sequence is vulnerable to becoming a signing oracle.
-
-For the most part, this sort of attack is not possible: it is a basic element of the design of modern computation that register state is private and inviolable.  However, in systems that support asynchronous interrupts, this property requires the cooperation of the interrupt-handling code. If that code saves register state to memory, and that memory can be overwritten by an attacker, then essentially the attack can overwrite arbitrary register state at an arbitrary point.  This could be a concern if the threat model includes attacks on the kernel or if the program uses user-space preemptive multitasking.
-
-(Readers might object that an attacker cannot rely on asynchronous interrupts triggering at an exact instruction boundary.  In fact, researchers have had some success in doing exactly that.  Even ignoring that, though, we should aim to protect against lucky attackers just as much as good ones.)
-
-To protect against this, saved register state must be at least partially signed (using something like `ptrauth_sign_generic_data`_).  This is required for correctness anyway because saved thread states include security-critical registers such as SP, FP, PC, and LR (where applicable).  Ideally, this signature would cover all the registers, but since saving and restoring registers can be very performance-sensitive, that may not be acceptable. It is sufficient to set aside a small number of scratch registers that will be guaranteed to be preserved correctly; the compiler can then be careful to only store critical values like intermediate raw pointers in those registers.
-
-``setjmp`` and ``longjmp`` should sign and authenticate the core registers (SP, FP, PC, and LR), but they do not need to worry about intermediate values because ``setjmp`` can only be called synchronously, and the compiler should never schedule pointer-authentication operations interleaved with arbitrary calls.
-
-.. _Relative addresses:
-
-Attacks on relative addressing
-++++++++++++++++++++++++++++++
-
-Relative addressing is a technique used to compress and reduce the load-time cost of infrequently-used global data.  The pointer authentication system is unlikely to support signing or authenticating a relative address, and in most cases it would defeat the point to do so: it would take additional storage space, and applying the signature would take extra work at load time.
-
-Relative addressing is not precluded by the use of pointer authentication, but it does take extra considerations to make it secure:
-
-- Relative addresses must only be stored in read-only memory.  A writable relative address can be overwritten to point nearly anywhere, making it inherently insecure; this danger can only be compensated for with techniques for protecting arbitrary data like `ptrauth_sign_generic_data`_.
-
-- Relative addresses must only be accessed through signed pointers with adequate diversity.  If an attacker can perform an `access path attack` to replace the pointer through which the relative address is accessed, they can easily cause the relative address to point wherever they want.
-
-Signature forging
-+++++++++++++++++
-
-If an attacker can exactly reproduce the behavior of the signing algorithm, and they know all the correct inputs to it, then they can perfectly forge a signature on an arbitrary pointer.
-
-There are three components to avoiding this mistake:
-
-- The abstract signing algorithm should be good: it should not have glaring flaws which would allow attackers to predict its result with better than random accuracy without knowing all the inputs (like the key values).
-
-- The key values should be kept secret.  If at all possible, they should never be stored in accessible memory, or perhaps only stored encrypted.
-
-- Contexts that are meant to be independently protected should use different key values.  For example, the kernel should not use the same keys as user processes.  Different user processes should also use different keys from each other as much as possible, although this may pose its own technical challenges.
-
-Remapping
-+++++++++
-
-If an attacker can change the memory protections on certain pages of the program's memory, that can substantially weaken the protections afforded by pointer authentication.
-
-- If an attacker can inject their own executable code, they can also certainly inject code that can be used as a :ref:`signing oracle<Signing Oracles>`.  The same is true if they can write to the instruction stream.
-
-- If an attacker can remap read-only program sections to be writable, then any use of :ref:`relative addresses` in global data becomes insecure.
-
-- If an attacker can remap read-only program sections to be writable, then it is unsafe to use unsigned pointers in `global offset tables`_.
-
-Remapping memory in this way often requires the attacker to have already substantively subverted the control flow of the process.  Nonetheless, if the operating system has a mechanism for mapping pages in a way that cannot be remapped, this should be used wherever possible.
-
-
-
-.. _Safe Derivation:
-
-Safe derivation
-~~~~~~~~~~~~~~~
-
-Whether a data pointer is stored, even briefly, as a raw pointer can affect the security-correctness of a program.  (Function pointers are never implicitly stored as raw pointers; raw pointers to functions can only be produced with the ``<ptrauth.h>`` intrinsics.)  Repeated re-signing can also impact performance.  Clang makes a modest set of guarantees in this area:
-
-- An expression of pointer type is said to be **safely derived** if:
-
-  - it takes the address of a global variable or function, or
-
-  - it is a load from a gl-value of ``__ptrauth``-qualified type.
-
-- If a value that is safely derived is assigned to a ``__ptrauth``-qualified object, including by initialization, then the value will be directly signed as appropriate for the target qualifier and will not be stored as a raw pointer.
-
-- If the function expression of a call is a gl-value of ``__ptrauth``-qualified type, then the call will be authenticated directly according to the source qualifier and will not be resigned to the default rule for a function pointer of its type.
-
-These guarantees are known to be inadequate for data pointer security. In particular, Clang should be enhanced to make the following guarantees:
-
-- A pointer should additionally be considered safely derived if it is:
-
-  - the address of a gl-value that is safely derived,
-
-  - the result of pointer arithmetic on a pointer that is safely derived (with some restrictions on the integer operand),
-
-  - the result of a comma operator where the second operand is safely derived,
-
-  - the result of a conditional operator where the selected operand is safely derived, or
-
-  - the result of loading from a safely derived gl-value.
-
-- A gl-value should be considered safely derived if it is:
-
-  - a dereference of a safely derived pointer,
-
-  - a member access into a safely derived gl-value, or
-
-  - a reference to a variable.
-
-- An access to a safely derived gl-value should be guaranteed to not allow replacement of any of the safely-derived component values at any point in the access.  "Access" should include loading a function pointer.
-
-- Assignments should include pointer-arithmetic operators like ``+=``.
-
-Making these guarantees will require further work, including significant new support in LLVM IR.
-
-Furthermore, Clang should implement a warning when assigning a data pointer that is not safely derived to a ``__ptrauth``-qualified gl-value.
-
-
-
 Language ABI
 ------------
 
@@ -1156,6 +871,520 @@ Swift coroutines
 Resumption functions for Swift coroutines are signed using the ``IA`` key without address diversity and with a constant discriminator derived from the yield type of the coroutine.  Resumption functions cannot be signed with address diversity as they are returned directly in registers from the coroutine.
 
 
+
+
+
+Theory of Operation
+-------------------
+
+The threat model of pointer authentication is as follows:
+
+- The attacker has the ability to read and write to a certain range of
+  addresses, possibly the entire address space.  However, they are constrained
+  by the normal rules of the process: for example, they cannot write to memory
+  that is mapped read-only, and if they access unmapped memory it will trigger
+  a trap.
+
+- The attacker has no ability to add arbitrary executable code to the program.
+  For example, the program does not include malicious code to begin with, and
+  the attacker cannot alter existing instructions, load a malicious shared
+  library, or remap writable pages as executable.  If the attacker wants to get
+  the process to perform a specific sequence of actions, they must somehow
+  subvert the normal control flow of the process.
+
+In both of the above paragraphs, it is merely assumed that the attacker's
+*current* capabilities are restricted; that is, their current exploit does not
+directly give them the power to do these things.  The attacker's immediate goal
+may well be to leverage their exploit to gain these capabilities, e.g. to load
+a malicious dynamic library into the process, even though the process does not
+directly contain code to do so.
+
+Note that any bug that fits the above threat model can be immediately exploited
+as a denial-of-service attack by simply performing an illegal access and
+crashing the program.  Pointer authentication cannot protect against this.
+While denial-of-service attacks are unfortunate, they are also unquestionably
+the best possible result of a bug this severe. Therefore, pointer
+authentication enthusiastically embraces the idea of halting the program on
+a pointer authentication failure rather than continuing in a possibly
+compromised state.
+
+Pointer authentication is a form of control-flow integrity (CFI) enforcement.
+The basic security hypothesis behind CFI enforcement is that many bugs can only
+be usefully exploited (other than as a denial-of-service) by leveraging them to
+subvert the control flow of the program.  If this is true, then by inhibiting
+or limiting that subversion, it may be possible to largely mitigate the
+security consequences of those bugs by rendering them impractical (or, ideally,
+impossible) to exploit.
+
+Every indirect branch in a program has a purpose.  Using human intelligence,
+a programmer can describe where a particular branch *should* go according to
+this purpose: a ``return`` in ``printf`` should return to the call site,
+a particular call in ``qsort`` should call the comparator that was passed in as
+an argument, and so on.  But for CFI to enforce that every branch in a program
+goes where it *should* in this sense would require CFI to perfectly enforce
+every semantic rule of the program's abstract machine; that is, it would
+require making the programming environment perfectly sound.  That is out of
+scope.  Instead, the goal of CFI is merely to catch attempts to make a branch
+go somewhere that it obviously *shouldn't* for its purpose: for example, to
+stop a call from branching into the middle of a function rather than its
+beginning.  As the information available to CFI gets better about the purpose
+of the branch, CFI can enforce tighter and tighter restrictions on where the
+branch is permitted to go.  Still, ultimately CFI cannot make the program
+sound.  This may help explain why pointer authentication makes some of the
+choices it does: for example, to sign and authenticate mostly code pointers
+rather than every pointer in the program.  Preventing attackers from
+redirecting branches is both particularly important and particularly
+approachable as a goal.  Detecting corruption more broadly is infeasible with
+these techniques, and the attempt would have far higher cost.
+
+Attacks on Pointer Authentication
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Pointer authentication works as follows.  Every indirect branch in a program
+has a purpose.  For every purpose, the implementation chooses a :ref:`signing
+schema<Signing schemas>`.  At some place where a pointer is known to be correct
+for its purpose, it is signed according to the purpose's schema.  At every
+place where the pointer is needed for its purpose, it is authenticated
+according to the purpose's schema.  If that authentication fails, the program
+is halted.
+
+There are a variety of ways to attack this.
+
+Attacks of Interest to Programmers
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+These attacks arise from weaknesses in the default protections offered by
+pointer authentication.  They can be addressed by using attributes or
+intrinsics to opt in to stronger protection.
+
+Substitution Attacks
+++++++++++++++++++++
+
+An attacker can simply overwrite a pointer intended for one purpose with
+a pointer intended for another purpose if both purposes use the same signing
+schema and that schema does not use address diversity.
+
+The most common source of this weakness is when code relies on using the
+default language rules for C function pointers.  The current implementation
+uses the exact same signing schema for all C function pointers, even for
+functions of substantially different type.  While efforts are ongoing to
+improve constant diversity for C function pointers of different type, there are
+necessary limits to this.  The C standard requires function pointers to be
+copyable with ``memcpy``, which means that function pointers can never use
+address diversity.  Furthermore, even if a function pointer can only be
+replaced with another function of the exact same type, that can still be useful
+to an attacker, as in the following example of a hand-rolled "v-table":
+
+.. code-block:: c
+
+  struct ObjectOperations {
+    void (*retain)(Object *);
+    void (*release)(Object *);
+    void (*deallocate)(Object *);
+    void (*logStatus)(Object *);
+  };
+
+This weakness can be mitigated by using a more specific signing schema for each
+purpose.  For example, in this example, the ``__ptrauth`` qualifier can be used
+with a different constant discriminator for each field.  Since there's no
+particular reason it's important for this v-table to be copyable with
+``memcpy``, the functions can also be signed with address diversity:
+
+.. code-block:: c
+
+  #if __has_feature(ptrauth_calls)
+  #define objectOperation(discriminator) \
+    __ptrauth(ptrauth_key_function_pointer, 1, discriminator)
+  #else
+  #define objectOperation(discriminator)
+  #endif
+
+  struct ObjectOperations {
+    void (*objectOperation(0xf017) retain)(Object *);
+    void (*objectOperation(0x2639) release)(Object *);
+    void (*objectOperation(0x8bb0) deallocate)(Object *);
+    void (*objectOperation(0xc5d4) logStatus)(Object *);
+  };
+
+This weakness can also sometimes be mitigated by simply keeping the signed
+pointer in constant memory, but this is less effective than using better
+signing diversity.
+
+.. _Access path attacks:
+
+Access Path Attacks
++++++++++++++++++++
+
+If a signed pointer is often accessed indirectly (that is, by first loading the
+address of the object where the signed pointer is stored), an attacker can
+affect uses of it by overwriting the intermediate pointer in the access path.
+
+The most common scenario exhibiting this weakness is an object with a pointer
+to a "v-table" (a structure holding many function pointers). An attacker does
+not need to replace a signed function pointer in the v-table if they can
+instead simply replace the v-table pointer in the object with their own pointer
+--- perhaps to memory where they've constructed their own v-table, or to
+existing memory that coincidentally happens to contain a signed pointer at the
+right offset that's been signed with the right signing schema.
+
+This attack arises because data pointers are not signed by default. It works
+even if the signed pointer uses address diversity: address diversity merely
+means that each pointer is signed with its own storage address, which (by
+design) is invariant to changes in the accessing pointer.
+
+Using sufficiently diverse signing schemas within the v-table can provide
+reasonably strong mitigation against this weakness.  Always use address
+diversity in v-tables to prevent attackers from assembling their own v-table.
+Avoid re-using constant discriminators to prevent attackers from replacing
+a v-table pointer with a pointer to totally unrelated memory that just happens
+to contain an similarly-signed pointer.
+
+Further mitigation can be attained by signing pointers to v-tables. Any
+signature at all should prevent attackers from forging v-table pointers; they
+will need to somehow harvest an existing signed pointer from elsewhere in
+memory.  Using a meaningful constant discriminator will force this to be
+harvested from an object with similar structure (e.g. a different
+implementation of the same interface).  Using address diversity will prevent
+such harvesting entirely.  However, care must be taken when sourcing the
+v-table pointer originally; do not blindly sign a pointer that is not
+:ref:`safely derived<Safe derivation>`.
+
+.. _Signing oracles:
+
+Signing oracles
++++++++++++++++
+
+A signing oracle is a code sequence which can be exploited by an attacker to
+sign an arbitrary pointer in a way that can later be recovered.  Such oracles
+can be used by attackers to forge signatures matching the oracle's signing
+schema, which is likely to cause a total compromise of pointer authentication's
+effectiveness.
+
+This attack only affects ordinary programmers if they are using certain
+treacherous patterns of code.  Currently this includes:
+
+- all uses of the ``__ptrauth_sign_unauthenticated`` intrinsic and
+- assigning data pointers to ``__ptrauth``-qualified l-values.
+
+Care must be taken in these situations to ensure that the pointer being signed
+has been :ref:`safely derived<Safe derivation>` or is otherwise not possible to
+attack.  (In some cases, this may be challenging without compiler support.)
+
+A diagnostic will be added in the future for implicitly dangerous patterns of
+code, such as assigning a non-safely-derived data pointer to
+a ``__ptrauth``-qualified l-value.
+
+.. _Authentication oracles:
+
+Authentication Oracles
+++++++++++++++++++++++
+
+An authentication oracle is a code sequence which can be exploited by an
+attacker to leak whether a signed pointer is validly signed without halting the
+program if it isn't.  Such oracles can be used to forge signatures matching the
+oracle's signing schema if the attacker can repeatedly invoke the oracle for
+different candidate signed pointers. This is likely to cause a total compromise
+of pointer authentication's effectiveness.
+
+There should be no way for an ordinary programmer to create an authentication
+oracle using the current set of operations. However, implementation flaws in
+the past have occasionally given rise to authentication oracles due to
+a failure to immediately trap on authentication failure.
+
+The likelihood of creating an authentication oracle is why there is currently
+no intrinsic which queries whether a signed pointer is validly signed.
+
+
+Attacks of Interest to Implementors
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+These attacks are not inherent to the model; they arise from mistakes in either
+implementing or using the `sign` and `auth` operations. Avoiding these mistakes
+requires careful work throughout the system.
+
+Failure to Trap on Authentication Failure
++++++++++++++++++++++++++++++++++++++++++
+
+Any failure to halt the program on an authentication failure is likely to be
+exploitable by attackers to create an :ref:`authentication
+oracle<Authentication oracles>`.
+
+There are several different ways to introduce this problem:
+
+- The implementation might try to halt the program in some way that can be
+  intercepted.
+
+  For example, the ``auth`` instruction in Armv8.3 does not directly trap;
+  instead it corrupts its result so that it is always an invalid pointer. If
+  the program subsequently attempts to use that pointer, that will be a bad
+  memory access, and it will trap into the kernel.  However, kernels do not
+  usually immediately halt programs that trigger traps due to bad memory
+  accesses; instead they notify the process to give it an opportunity to
+  recover.  If this happens with an ``auth`` failure, the attacker may be able
+  to exploit the recovery path in a way that creates an oracle. Kernels should
+  ensure that these sorts of traps are not recoverable.
+
+- A compiler might use an intermediate representation (IR) for ``sign`` and
+  ``auth`` operations that cannot make adequate correctness guarantees.
+
+  For example, suppose that an IR uses Armv8.3-like semantics for ``auth``: the
+  operation merely corrupts its result on failure instead of promising the
+  trap.  A frontend might emit patterns of IR that always follow an ``auth``
+  with a memory access, thinking that this ensures correctness. But if the IR
+  can be transformed to insert code between the ``auth`` and the access, or if
+  the ``auth`` can be speculated, then this potentially creates an oracle.  It
+  is better for ``auth`` to semantically guarantee to trap, potentially
+  requiring an explicit check in the generated code. An Armv8.3-like target can
+  avoid this explicit check in the common case by recognizing the pattern of an
+  ``auth`` followed immediately by an access.
+
+Attackable Code Sequences
++++++++++++++++++++++++++
+
+If code that is part of a pointer authentication operation is interleaved with
+code that may itself be vulnerable to attacks, an attacker may be able to use
+this to create a :ref:`signing<Signing oracles>` or
+:ref:`authentication<Authentication oracles>` oracle.
+
+For example, suppose that the compiler is generating a call to a function and
+passing two arguments: a signed constant pointer and a value derived from
+a call.  In Armv8.3, this code might look like so:
+
+.. code-block:: asm
+
+  adr x19, _callback.        ; compute &_callback
+  paciza x19                 ; sign it with a constant discriminator of 0
+  blr _argGenerator          ; call _argGenerator() (returns in x0)
+  mov x1, x0                 ; move call result to second arg register
+  mov x0, x19                ; move signed &_callback to first arg register
+  blr _function              ; call _function
+
+This code is correct, as would be a sequencing that does *both* the ``adr`` and
+the ``paciza`` after the call to ``_argGenerator``.  But a sequence that
+computes the address of ``_callback`` but leaves it as a raw pointer in
+a register during the call to ``_argGenerator`` would be vulnerable:
+
+.. code-block:: asm
+
+  adr x19, _callback.        ; compute &_callback
+  blr _argGenerator          ; call _argGenerator() (returns in x0)
+  mov x1, x0                 ; move call result to second arg register
+  paciza x19                 ; sign &_callback
+  mov x0, x19                ; move signed &_callback to first arg register
+  blr _function              ; call _function
+
+If ``_argGenerator`` spills ``x19`` (a callee-save register), and if the
+attacker can perform a write during this call, then the attacker can overwrite
+the spill slot with an arbitrary pointer that will eventually be
+unconditionally signed after the function returns.  This would be a signing
+oracle.
+
+The implementation can avoid this by obeying two basic rules:
+
+- The compiler's intermediate representations (IR) should not provide
+  operations that expose intermediate raw pointers.  This may require providing
+  extra operations that perform useful combinations of operations.
+
+  For example, there should be an "atomic" auth-and-resign operation that
+  should be used instead of emitting an ``auth`` operation whose result is fed
+  into a ``sign``.
+
+  Similarly, if a pointer should be authenticated as part of doing a memory
+  access or a call, then the access or call should be decorated with enough
+  information to perform the authentication; there should not be a separate
+  ``auth`` whose result is used as the pointer operand for the access or call.
+  (In LLVM IR, we do this for calls, but not yet for loads or stores.)
+
+  "Operations" includes things like materializing a signed pointer to a known
+  function or global variable.  The compiler must be able to recognize and emit
+  this as a unified operation, rather than potentially splitting it up as in
+  the example above.
+
+- The compiler backend should not be too aggressive about scheduling
+  instructions that are part of a pointer authentication operation.  This may
+  require custom code-generation of these operations in some cases.
+
+Register Clobbering
++++++++++++++++++++
+
+As a refinement of the section on `Attackable code sequences`_, if the attacker
+has the ability to modify arbitrary *register* state at arbitrary points in the
+program, then special care must be taken.
+
+For example, Armv8.3 might materialize a signed function pointer like so:
+
+.. code-block:: asm
+
+  adr x0, _callback.        ; compute &_callback
+  paciza x0                 ; sign it with a constant discriminator of 0
+
+If an attacker has the ability to overwrite ``x0`` between these two
+instructions, this code sequence is vulnerable to becoming a signing oracle.
+
+For the most part, this sort of attack is not possible: it is a basic element
+of the design of modern computation that register state is private and
+inviolable.  However, in systems that support asynchronous interrupts, this
+property requires the cooperation of the interrupt-handling code. If that code
+saves register state to memory, and that memory can be overwritten by an
+attacker, then essentially the attack can overwrite arbitrary register state at
+an arbitrary point.  This could be a concern if the threat model includes
+attacks on the kernel or if the program uses user-space preemptive
+multitasking.
+
+(Readers might object that an attacker cannot rely on asynchronous interrupts
+triggering at an exact instruction boundary.  In fact, researchers have had
+some success in doing exactly that.  Even ignoring that, though, we should aim
+to protect against lucky attackers just as much as good ones.)
+
+To protect against this, saved register state must be at least partially signed
+(using something like `ptrauth_sign_generic_data`_).  This is required for
+correctness anyway because saved thread states include security-critical
+registers such as SP, FP, PC, and LR (where applicable).  Ideally, this
+signature would cover all the registers, but since saving and restoring
+registers can be very performance-sensitive, that may not be acceptable. It is
+sufficient to set aside a small number of scratch registers that will be
+guaranteed to be preserved correctly; the compiler can then be careful to only
+store critical values like intermediate raw pointers in those registers.
+
+``setjmp`` and ``longjmp`` should sign and authenticate the core registers (SP,
+FP, PC, and LR), but they do not need to worry about intermediate values
+because ``setjmp`` can only be called synchronously, and the compiler should
+never schedule pointer-authentication operations interleaved with arbitrary
+calls.
+
+.. _Relative addresses:
+
+Attacks on Relative Addressing
+++++++++++++++++++++++++++++++
+
+Relative addressing is a technique used to compress and reduce the load-time
+cost of infrequently-used global data.  The pointer authentication system is
+unlikely to support signing or authenticating a relative address, and in most
+cases it would defeat the point to do so: it would take additional storage
+space, and applying the signature would take extra work at load time.
+
+Relative addressing is not precluded by the use of pointer authentication, but
+it does take extra considerations to make it secure:
+
+- Relative addresses must only be stored in read-only memory.  A writable
+  relative address can be overwritten to point nearly anywhere, making it
+  inherently insecure; this danger can only be compensated for with techniques
+  for protecting arbitrary data like `ptrauth_sign_generic_data`_.
+
+- Relative addresses must only be accessed through signed pointers with
+  adequate diversity.  If an attacker can perform an `access path attack` to
+  replace the pointer through which the relative address is accessed, they can
+  easily cause the relative address to point wherever they want.
+
+Signature Forging
++++++++++++++++++
+
+If an attacker can exactly reproduce the behavior of the signing algorithm, and
+they know all the correct inputs to it, then they can perfectly forge
+a signature on an arbitrary pointer.
+
+There are three components to avoiding this mistake:
+
+- The abstract signing algorithm should be good: it should not have glaring
+  flaws which would allow attackers to predict its result with better than
+  random accuracy without knowing all the inputs (like the key values).
+
+- The key values should be kept secret.  If at all possible, they should never
+  be stored in accessible memory, or perhaps only stored encrypted.
+
+- Contexts that are meant to be independently protected should use different
+  key values.  For example, the kernel should not use the same keys as user
+  processes.  Different user processes should also use different keys from each
+  other as much as possible, although this may pose its own technical
+  challenges.
+
+Remapping
++++++++++
+
+If an attacker can change the memory protections on certain pages of the
+program's memory, that can substantially weaken the protections afforded by
+pointer authentication.
+
+- If an attacker can inject their own executable code, they can also certainly
+  inject code that can be used as a :ref:`signing oracle<Signing Oracles>`.
+  The same is true if they can write to the instruction stream.
+
+- If an attacker can remap read-only program sections to be writable, then any
+  use of :ref:`relative addresses` in global data becomes insecure.
+
+- If an attacker can remap read-only program sections to be writable, then it
+  is unsafe to use unsigned pointers in global offset tables.
+
+Remapping memory in this way often requires the attacker to have already
+substantively subverted the control flow of the process.  Nonetheless, if the
+operating system has a mechanism for mapping pages in a way that cannot be
+remapped, this should be used wherever possible.
+
+
+
+.. _Safe Derivation:
+
+Safe Derivation
+~~~~~~~~~~~~~~~
+
+Whether a data pointer is stored, even briefly, as a raw pointer can affect the
+security-correctness of a program.  (Function pointers are never implicitly
+stored as raw pointers; raw pointers to functions can only be produced with the
+``<ptrauth.h>`` intrinsics.)  Repeated re-signing can also impact performance.
+Clang makes a modest set of guarantees in this area:
+
+- An expression of pointer type is said to be **safely derived** if:
+
+  - it takes the address of a global variable or function, or
+
+  - it is a load from a gl-value of ``__ptrauth``-qualified type.
+
+- If a value that is safely derived is assigned to a ``__ptrauth``-qualified
+  object, including by initialization, then the value will be directly signed
+  as appropriate for the target qualifier and will not be stored as a raw
+  pointer.
+
+- If the function expression of a call is a gl-value of ``__ptrauth``-qualified
+  type, then the call will be authenticated directly according to the source
+  qualifier and will not be resigned to the default rule for a function pointer
+  of its type.
+
+These guarantees are known to be inadequate for data pointer security. In
+particular, Clang should be enhanced to make the following guarantees:
+
+- A pointer should additionally be considered safely derived if it is:
+
+  - the address of a gl-value that is safely derived,
+
+  - the result of pointer arithmetic on a pointer that is safely derived (with
+    some restrictions on the integer operand),
+
+  - the result of a comma operator where the second operand is safely derived,
+
+  - the result of a conditional operator where the selected operand is safely
+    derived, or
+
+  - the result of loading from a safely derived gl-value.
+
+- A gl-value should be considered safely derived if it is:
+
+  - a dereference of a safely derived pointer,
+
+  - a member access into a safely derived gl-value, or
+
+  - a reference to a variable.
+
+- An access to a safely derived gl-value should be guaranteed to not allow
+  replacement of any of the safely-derived component values at any point in the
+  access.  "Access" should include loading a function pointer.
+
+- Assignments should include pointer-arithmetic operators like ``+=``.
+
+Making these guarantees will require further work, including significant new
+support in LLVM IR.
+
+Furthermore, Clang should implement a warning when assigning a data pointer
+that is not safely derived to a ``__ptrauth``-qualified gl-value.
 
 
 
