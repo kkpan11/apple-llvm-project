@@ -23,6 +23,7 @@
 #include "llvm/RemoteCachingService/RemoteCachingService.h"
 #include "llvm/Support/CachePruning.h"
 #include "llvm/Support/CodeGen.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Target/TargetOptions.h"
@@ -53,13 +54,21 @@ public:
   // Access the path to this entry in the cache.
   virtual std::string getEntryPath() = 0;
 
-  virtual ErrorOr<std::unique_ptr<MemoryBuffer>> tryLoadingBuffer() = 0;
+  /// Try loading the buffer for this cache entry.
+  ///
+  /// \returns The buffer on cache hit, null on cache miss, or an error when
+  /// unable to load the cache contents.
+  virtual Expected<std::unique_ptr<MemoryBuffer>> tryLoadingBuffer() = 0;
+
   virtual void write(const MemoryBuffer &OutputBuffer) = 0;
+
   virtual Error writeObject(const MemoryBuffer &OutputBuffer,
                             StringRef OutputPath);
-  virtual std::optional<std::unique_ptr<MemoryBuffer>> getMappedBuffer() {
-    return std::nullopt;
-  }
+
+  /// Get the cached mmap-ed buffer for this cache entry.
+  ///
+  /// \returns The buffer if it exists, null if it doesn't.
+  virtual std::unique_ptr<MemoryBuffer> getMappedBuffer() { return nullptr; }
 
   virtual ~ModuleCacheEntry() {}
 

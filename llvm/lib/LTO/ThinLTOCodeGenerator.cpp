@@ -389,8 +389,8 @@ std::unique_ptr<MemoryBuffer> codegenModule(Module &TheModule,
 
 struct NullModuleCacheEntry : ModuleCacheEntry {
   std::string getEntryPath() override { return "<null>"; }
-  ErrorOr<std::unique_ptr<MemoryBuffer>> tryLoadingBuffer() override {
-    return std::error_code();
+  Expected<std::unique_ptr<MemoryBuffer>> tryLoadingBuffer() override {
+    return nullptr;
   }
   void write(const MemoryBuffer &OutputBuffer) override {}
 };
@@ -416,9 +416,10 @@ public:
 
   std::string getEntryPath() final { return EntryPath.str().str(); }
 
-  // Try loading the buffer for this cache entry.
-  ErrorOr<std::unique_ptr<MemoryBuffer>> tryLoadingBuffer() final {
-    return MemoryBuffer::getFile(EntryPath);
+  Expected<std::unique_ptr<MemoryBuffer>> tryLoadingBuffer() final {
+    if (!sys::fs::exists(EntryPath))
+      return nullptr;
+    return errorOrToExpected(MemoryBuffer::getFile(EntryPath));
   }
 
   // Cache the Produced object file
@@ -454,14 +455,14 @@ public:
     return ModuleCacheEntry::writeObject(OutputBuffer, OutputPath);
   }
 
-  std::optional<std::unique_ptr<MemoryBuffer>> getMappedBuffer() final {
-    auto ReloadedBufferOrErr = tryLoadingBuffer();
-    if (auto EC = ReloadedBufferOrErr.getError()) {
+  std::unique_ptr<MemoryBuffer> getMappedBuffer() final {
+    std::unique_ptr<MemoryBuffer> MappedBuffer;
+    if (auto Err = tryLoadingBuffer().moveInto(MappedBuffer)) {
       // On error, keep the preexisting buffer and print a diagnostic.
       errs() << "remark: can't reload cached file '" << getEntryPath()
-             << "': " << EC.message() << "\n";
+             << "': " << toString(std::move(Err)) << "\n";
     }
-    return std::move(*ReloadedBufferOrErr);
+    return MappedBuffer;
   }
 
 private:
@@ -513,8 +514,7 @@ public:
     return ID.toString();
   }
 
-  // Try loading the buffer for this cache entry.
-  ErrorOr<std::unique_ptr<MemoryBuffer>> tryLoadingBuffer() final {
+  Expected<std::unique_ptr<MemoryBuffer>> tryLoadingBuffer() final {
     std::optional<cas::CASID> MaybeKeyID;
     {
       ScopedDurationTimer ScopedTime([&](double Seconds) {
@@ -529,12 +529,12 @@ public:
       if (Error E = Cache.get(ID, /*Globally=*/true).moveInto(MaybeKeyID)) {
         handleCASError(std::move(E), Logger);
         // If handleCASError didn't abort, treat as miss.
-        return std::error_code();
+        return nullptr;
       }
     }
 
     if (!MaybeKeyID)
-      return std::error_code();
+      return nullptr;
 
     ScopedDurationTimer ScopedTime([&](double Seconds) {
       if (Logger) {
@@ -549,7 +549,7 @@ public:
     if (!MaybeObject) {
       handleCASError(MaybeObject.takeError(), Logger);
       // If handleCASError didn't abort, treat as miss.
-      return std::error_code();
+      return nullptr;
     }
 
     return MaybeObject->getMemoryBuffer("", /*NullTerminated=*/true);
@@ -607,8 +607,7 @@ public:
 
   std::string getEntryPath() final { return ID; }
 
-  // Try loading the buffer for this cache entry.
-  ErrorOr<std::unique_ptr<MemoryBuffer>> tryLoadingBuffer() final {
+  Expected<std::unique_ptr<MemoryBuffer>> tryLoadingBuffer() final {
     // Lookup the output value from KVDB.
     std::optional<cas::remote::KeyValueDBClient::ValueTy> GetResponse;
     {
@@ -624,18 +623,18 @@ public:
       if (Error E = Service.KVDB->getValueSync(ID).moveInto(GetResponse)) {
         handleCASError(std::move(E), Logger);
         // If handleCASError didn't abort, treat as miss.
-        return std::error_code();
+        return nullptr;
       }
     }
 
     // Cache Miss.
     if (!GetResponse)
-      return std::error_code();
+      return nullptr;
 
     // Malformed output. Error.
     auto Result = GetResponse->find("Output");
     if (Result == GetResponse->end())
-      return std::make_error_code(std::errc::message_size);
+      return errorCodeToError(std::make_error_code(std::errc::message_size));
 
     if (DeterministicCheck)
       PresumedOutput = Result->getValue();
@@ -654,15 +653,15 @@ public:
     if (!LoadResponse) {
       handleCASError(LoadResponse.takeError(), Logger);
       // If handleCASError didn't abort, treat as miss.
-      return std::error_code();
+      return nullptr;
     }
 
     // Object not found. Treat it as a miss.
     if (LoadResponse->KeyNotFound)
-      return std::error_code();
+      return nullptr;
 
     ProducedOutput = true;
-    return MemoryBuffer::getFile(OutputPath);
+    return errorOrToExpected(MemoryBuffer::getFile(OutputPath));
   }
 
   // Cache the Produced object file
@@ -716,14 +715,14 @@ public:
     return Error::success();
   }
 
-  std::optional<std::unique_ptr<MemoryBuffer>> getMappedBuffer() final {
+  std::unique_ptr<MemoryBuffer> getMappedBuffer() final {
     if (!ProducedOutput)
-      return std::nullopt;
+      return nullptr;
 
     ErrorOr<std::unique_ptr<MemoryBuffer>> MBOrErr =
         MemoryBuffer::getFile(OutputPath);
     if (!MBOrErr)
-      return std::nullopt;
+      return nullptr;
 
     return std::move(*MBOrErr);
   }
@@ -1607,24 +1606,28 @@ void ThinLTOCodeGenerator::run() {
               OS << "Look up cache entry for " << ModuleIdentifier << "\n";
             });
 
-          auto ErrOrBuffer = CacheEntry->tryLoadingBuffer();
-          LLVM_DEBUG(dbgs() << "Cache " << (ErrOrBuffer ? "hit" : "miss")
+          std::unique_ptr<MemoryBuffer> MaybeBuffer;
+          if (auto E = CacheEntry->tryLoadingBuffer().moveInto(MaybeBuffer)) {
+            errs() << "remark: can't read cached file '" << CacheEntryPath
+                   << "': " << toString(std::move(E)) << "\n";
+          }
+          LLVM_DEBUG(dbgs() << "Cache " << (MaybeBuffer ? "hit" : "miss")
                             << " '" << CacheEntryPath << "' for buffer "
                             << count << " " << ModuleIdentifier << "\n");
           if (CacheLogging)
             CacheLogOS.applyLocked([&](raw_ostream &OS) {
-              OS << "Cache " << (ErrOrBuffer ? "hit" : "miss") << " '"
+              OS << "Cache " << (MaybeBuffer ? "hit" : "miss") << " '"
                  << CacheEntryPath << "' for buffer " << count << " "
                  << ModuleIdentifier << "\n";
             });
 
-          if (ErrOrBuffer) {
+          if (MaybeBuffer) {
             // Cache Hit!
             if (UseBufferAPI)
-              ProducedBinaries[count] = std::move(ErrOrBuffer.get());
+              ProducedBinaries[count] = std::move(MaybeBuffer);
             else
               ProducedBinaryFiles[count] = writeGeneratedObject(
-                  OutputPath, CacheEntry.get(), *ErrOrBuffer.get());
+                  OutputPath, CacheEntry.get(), *MaybeBuffer);
 
             if (!DeterministicCheck)
               return;
@@ -1668,7 +1671,7 @@ void ThinLTOCodeGenerator::run() {
         CacheEntry->write(*OutputBuffer);
 
         if (UseBufferAPI) {
-          // We need to generated a memory buffer for the linker.
+          // We need to generate a memory buffer for the linker.
           auto ReloadedBuffer = CacheEntry->getMappedBuffer();
           // When cache is enabled, reload from the cache if possible.
           // Releasing the buffer from the heap and reloading it from the
@@ -1677,7 +1680,7 @@ void ThinLTOCodeGenerator::run() {
           // The final binary link will read from the VFS cache (hopefully!)
           // or from disk (if the memory pressure was too high).
           if (ReloadedBuffer)
-            OutputBuffer = std::move(*ReloadedBuffer);
+            OutputBuffer = std::move(ReloadedBuffer);
 
           ProducedBinaries[count] = std::move(OutputBuffer);
           return;
