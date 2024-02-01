@@ -15,7 +15,7 @@ jobs:
     - name: repo-sync
       uses: repo-sync/github-sync@v2
       with:
-        source_repo: "llvm/llvm-project"
+        source_repo: "apple/llvm-project"
         source_branch: "*"
         destination_branch: "*"
         sync_tags: "true"
