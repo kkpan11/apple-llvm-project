@@ -2922,7 +2922,7 @@ Target::CreateUtilityFunction(std::string expression, std::string name,
 }
 
 #ifdef LLDB_ENABLE_SWIFT
-llvm::Optional<SwiftScratchContextReader> Target::GetSwiftScratchContext(
+std::optional<SwiftScratchContextReader> Target::GetSwiftScratchContext(
     Status &error, ExecutionContextScope &exe_scope, bool create_on_demand) {
   Log *log = GetLog(LLDBLog::Target | LLDBLog::Types | LLDBLog::Expressions);
   LLDB_SCOPED_TIMER();
@@ -3051,7 +3051,7 @@ llvm::Optional<SwiftScratchContextReader> Target::GetSwiftScratchContext(
     return;
   };
 
-  llvm::Optional<SwiftScratchContextReader> reader;
+  std::optional<SwiftScratchContextReader> reader;
   if (lldb_module && m_use_scratch_typesystem_per_module) {
     maybe_create_fallback_context();
     std::shared_lock<std::shared_mutex> lock(GetSwiftScratchContextLock());
