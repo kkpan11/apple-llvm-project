@@ -10,4 +10,6 @@ class TestCase(TestBase):
         self.build()
         lldbutil.run_to_source_breakpoint(self, "break here", lldb.SBFileSpec("main.c"))
         self.expect("v player", substrs=['"Dirk" (41)'])
+        self.runCmd("type summary list")
+        self.runCmd("type summary info layer")
         self.expect("v layer", substrs=['"crust" (3)'])
