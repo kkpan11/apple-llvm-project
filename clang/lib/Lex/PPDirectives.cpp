@@ -2342,7 +2342,6 @@ Preprocessor::ImportAction Preprocessor::HandleHeaderIncludeOrImport(
       UsableHeaderUnit = true;
     else if (!IsImportDecl) {
       // This is a Header Unit that we do not include-translate
-      SuggestedModule = ModuleMap::KnownHeader();
       SM = nullptr;
     }
   }
@@ -2359,12 +2358,11 @@ Preprocessor::ImportAction Preprocessor::HandleHeaderIncludeOrImport(
     // unavailable, diagnose the situation and bail out.
     // FIXME: Remove this; loadModule does the same check (but produces
     // slightly worse diagnostics).
-    if (checkModuleIsAvailable(getLangOpts(), getTargetInfo(),
-                               *SuggestedModule.getModule(),
+    if (checkModuleIsAvailable(getLangOpts(), getTargetInfo(), *SM,
                                getDiagnostics())) {
       Diag(FilenameTok.getLocation(),
            diag::note_implicit_top_level_module_import_here)
-          << SuggestedModule.getModule()->getTopLevelModuleName();
+          << SM->getTopLevelModuleName();
       return {ImportAction::None};
     }
 
@@ -2383,12 +2381,12 @@ Preprocessor::ImportAction Preprocessor::HandleHeaderIncludeOrImport(
 
     // Load the module to import its macros. We'll make the declarations
     // visible when the parser gets here.
-    // FIXME: Pass SuggestedModule in here rather than converting it to a path
-    // and making the module loader convert it back again.
+    // FIXME: Pass SM in here rather than converting it to a path and making the
+    // module loader convert it back again.
     ModuleLoadResult Imported = TheModuleLoader.loadModule(
         IncludeTok.getLocation(), Path, Module::Hidden,
         /*IsInclusionDirective=*/true);
-    assert((Imported == nullptr || Imported == SuggestedModule.getModule()) &&
+    assert((Imported == nullptr || Imported == SM) &&
            "the imported module is different than the suggested one");
 
     if (Imported) {
@@ -2400,7 +2398,6 @@ Preprocessor::ImportAction Preprocessor::HandleHeaderIncludeOrImport(
       // was in the directory of an umbrella header, for instance), but no
       // actual module containing it exists (because the umbrella header is
       // incomplete).  Treat this as a textual inclusion.
-      SuggestedModule = ModuleMap::KnownHeader();
       SM = nullptr;
     } else if (Imported.isConfigMismatch()) {
       // On a configuration mismatch, enter the header textually. We still know
@@ -2457,7 +2454,7 @@ Preprocessor::ImportAction Preprocessor::HandleHeaderIncludeOrImport(
     if (UsableHeaderUnit && !getLangOpts().CompilingPCH)
       Action = TrackGMFState.inGMF() ? Import : Skip;
     else
-      Action = (SuggestedModule && !getLangOpts().CompilingPCH) ? Import : Skip;
+      Action = (SM && !getLangOpts().CompilingPCH) ? Import : Skip;
   }
 
   // Check for circular inclusion of the main file.
@@ -2477,8 +2474,7 @@ Preprocessor::ImportAction Preprocessor::HandleHeaderIncludeOrImport(
     // FIXME: Use a different callback for a pp-import?
     Callbacks->InclusionDirective(HashLoc, IncludeTok, LookupFilename, isAngled,
                                   FilenameRange, File, SearchPath, RelativePath,
-                                  Action == Import ? SuggestedModule.getModule()
-                                                   : nullptr,
+                                  SuggestedModule.getModule(), Action == Import,
                                   FileCharacter);
     if (Action == Skip && File)
       Callbacks->FileSkipped(*File, FilenameTok, FileCharacter);
@@ -2489,7 +2485,7 @@ Preprocessor::ImportAction Preprocessor::HandleHeaderIncludeOrImport(
 
   // If this is a C++20 pp-import declaration, diagnose if we didn't find any
   // module corresponding to the named header.
-  if (IsImportDecl && !SuggestedModule) {
+  if (IsImportDecl && !SM) {
     Diag(FilenameTok, diag::err_header_import_not_header_unit)
       << OriginalFilename << File->getName();
     return {ImportAction::None};
