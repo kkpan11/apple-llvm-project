@@ -402,11 +402,8 @@ struct CallCoroEnd final : public EHScopeStack::Cleanup {
     llvm::Function *CoroEndFn = CGM.getIntrinsic(llvm::Intrinsic::coro_end);
     // See if we have a funclet bundle to associate coro.end with. (WinEH)
     auto Bundles = getBundlesForCoroEnd(CGF);
-    auto *CoroEnd =
-      CGF.Builder.CreateCall(CoroEndFn,
-                             {NullPtr, CGF.Builder.getTrue(),
-                              llvm::ConstantTokenNone::get(CoroEndFn->getContext())},
-                             Bundles);
+    auto *CoroEnd = CGF.Builder.CreateCall(
+        CoroEndFn, {NullPtr, CGF.Builder.getTrue()}, Bundles);
     if (Bundles.empty()) {
       // Otherwise, (landingpad model), create a conditional branch that leads
       // either to a cleanup block or a block with EH resume instruction.
@@ -757,9 +754,7 @@ void CodeGenFunction::EmitCoroutineBody(const CoroutineBodyStmt &S) {
   // Emit coro.end before getReturnStmt (and parameter destructors), since
   // resume and destroy parts of the coroutine should not include them.
   llvm::Function *CoroEnd = CGM.getIntrinsic(llvm::Intrinsic::coro_end);
-  Builder.CreateCall(CoroEnd,
-                     {NullPtr, Builder.getFalse(),
-                      llvm::ConstantTokenNone::get(CoroEnd->getContext())});
+  Builder.CreateCall(CoroEnd, {NullPtr, Builder.getFalse()});
 
   if (Stmt *Ret = S.getReturnStmt()) {
     // Since we already emitted the return value above, so we shouldn't
@@ -828,11 +823,7 @@ RValue CodeGenFunction::EmitCoroutineIntrinsic(const CallExpr *E,
   }
   for (const Expr *Arg : E->arguments())
     Args.push_back(EmitScalarExpr(Arg));
-  // @llvm.coro.end takes a token parameter. Add token 'none' as the last
-  // argument.
-  if (IID == llvm::Intrinsic::coro_end)
-    Args.push_back(llvm::ConstantTokenNone::get(getLLVMContext()));
-  
+
   llvm::Function *F = CGM.getIntrinsic(IID);
   llvm::CallInst *Call = Builder.CreateCall(F, Args);
 
