@@ -40,7 +40,8 @@ public:
                           StringRef SpelledFilename, bool IsAngled,
                           CharSourceRange FilenameRange,
                           OptionalFileEntryRef File, StringRef SearchPath,
-                          StringRef RelativePath, const Module *,
+                          StringRef RelativePath, const Module *SuggestedModule,
+                          bool ModuleImported,
                           SrcMgr::CharacteristicKind) override {
     if (!Active)
       return;
@@ -188,7 +189,8 @@ public:
                           OptionalFileEntryRef File,
                           llvm::StringRef /*SearchPath*/,
                           llvm::StringRef /*RelativePath*/,
-                          const clang::Module * /*Imported*/,
+                          const clang::Module * /*SuggestedModule*/,
+                          bool /*ModuleImported*/,
                           SrcMgr::CharacteristicKind FileKind) override {
     FileID HashFID = SM.getFileID(HashLoc);
     int HashLine = SM.getLineNumber(HashFID, SM.getFileOffset(HashLoc));
