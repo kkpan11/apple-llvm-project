@@ -758,6 +758,11 @@ static void LoadLibCxxFormatters(lldb::TypeCategoryImplSP cpp_category_sp) {
       "^std::__[[:alnum:]]+::vector<.+>(( )?&)?$", stl_deref_flags, true);
   AddCXXSynthetic(
       cpp_category_sp,
+      lldb_private::formatters::LibcxxStdValarraySyntheticFrontEndCreator,
+      "libc++ std::valarray synthetic children",
+      "^std::__[[:alnum:]]+::valarray<.+>$", stl_deref_flags, true);
+  AddCXXSynthetic(
+      cpp_category_sp,
       lldb_private::formatters::LibcxxStdForwardListSyntheticFrontEndCreator,
       "libc++ std::forward_list synthetic children",
       "^std::__[[:alnum:]]+::forward_list<.+>(( )?&)?$", stl_synth_flags, true);
@@ -887,6 +892,10 @@ static void LoadLibCxxFormatters(lldb::TypeCategoryImplSP cpp_category_sp) {
                 "libc++ std::list summary provider",
                 "^std::__[[:alnum:]]+::forward_list<.+>(( )?&)?$",
                 stl_summary_flags, true);
+  AddCXXSummary(cpp_category_sp,
+                lldb_private::formatters::LibcxxContainerSummaryProvider,
+                "libc++ std::valarray summary provider",
+                "^std::__[[:alnum:]]+::valarray<.+>$", stl_summary_flags, true);
   AddCXXSummary(
       cpp_category_sp, lldb_private::formatters::LibcxxContainerSummaryProvider,
       "libc++ std::list summary provider",
