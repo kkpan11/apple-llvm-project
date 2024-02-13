@@ -277,6 +277,7 @@ public:
     return {};
   }
 
+  void SymbolsDidLoad(const ModuleList &module_list) {}
   void ModulesDidLoad(const ModuleList &module_list) {}
 
   bool IsStoredInlineInBuffer(CompilerType type) {
@@ -2357,6 +2358,10 @@ SwiftLanguageRuntime::GetReflectionContext() {
   if (m_impl)
     return m_impl->GetReflectionContext();
   return m_stub->GetReflectionContext();
+}
+
+void SwiftLanguageRuntime::SymbolsDidLoad(const ModuleList &module_list) {
+  FORWARD(SymbolsDidLoad, module_list);
 }
 
 bool SwiftLanguageRuntime::GetDynamicTypeAndAddress(
