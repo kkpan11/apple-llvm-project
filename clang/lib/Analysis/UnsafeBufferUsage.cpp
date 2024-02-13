@@ -1870,6 +1870,7 @@ std::optional<FixItList>
 UPCStandalonePointerGadget::getFixits(const FixitStrategy &S) const {
   const auto VD = cast<VarDecl>(Node->getDecl());
   switch (S.lookup(VD)) {
+  case FixitStrategy::Kind::Array:
   case FixitStrategy::Kind::Span: {
     ASTContext &Ctx = VD->getASTContext();
     SourceManager &SM = Ctx.getSourceManager();
@@ -1884,7 +1885,6 @@ UPCStandalonePointerGadget::getFixits(const FixitStrategy &S) const {
   }
   case FixitStrategy::Kind::Wontfix:
   case FixitStrategy::Kind::Iterator:
-  case FixitStrategy::Kind::Array:
     return std::nullopt;
   case FixitStrategy::Kind::Vector:
     llvm_unreachable("unsupported strategies for FixableGadgets");
