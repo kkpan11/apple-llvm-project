@@ -334,6 +334,9 @@ public:
       DIEToClangType;
   typedef llvm::DenseMap<lldb::opaque_compiler_type_t, DIERef> ClangTypeToDIE;
 
+  /// Returns the DWARFIndex for this symbol, if it exists.
+  DWARFIndex *getIndex() { return m_index.get(); }
+
   SymbolFileDWARF(const SymbolFileDWARF &) = delete;
   const SymbolFileDWARF &operator=(const SymbolFileDWARF &) = delete;
 
