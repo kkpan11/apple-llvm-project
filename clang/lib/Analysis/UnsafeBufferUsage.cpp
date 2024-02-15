@@ -282,11 +282,13 @@ isInUnspecifiedPointerContext(internal::Matcher<Stmt> InnerMatcher) {
   // 4. the operand of a pointer subtraction operation
   //    (i.e., computing the distance between two pointers); or ...
 
-  auto CallArgMatcher =
-      callExpr(forEachArgumentWithParam(
-                   InnerMatcher,
-                   hasPointerType() /* array also decays to pointer type*/),
-               unless(callee(functionDecl(hasAttr(attr::UnsafeBufferUsage)))));
+  // clang-format off
+  auto CallArgMatcher = callExpr(
+    forEachArgumentWithParamType(
+      InnerMatcher, 
+      isAnyPointer() /* array also decays to pointer type*/),
+    unless(callee(
+      functionDecl(hasAttr(attr::UnsafeBufferUsage)))));
 
   auto CastOperandMatcher =
       castExpr(anyOf(hasCastKind(CastKind::CK_PointerToIntegral),
@@ -301,11 +303,14 @@ isInUnspecifiedPointerContext(internal::Matcher<Stmt> InnerMatcher) {
   // A matcher that matches pointer subtractions:
   auto PtrSubtractionMatcher =
       binaryOperator(hasOperatorName("-"),
-                     // Note that here we need both LHS and RHS to be
-                     // pointer. Then the inner matcher can match any of
-                     // them:
-                     allOf(hasLHS(hasPointerType()), hasRHS(hasPointerType())),
-                     eachOf(hasLHS(InnerMatcher), hasRHS(InnerMatcher)));
+		     // Note that here we need both LHS and RHS to be
+		     // pointer. Then the inner matcher can match any of
+		     // them:
+		     allOf(hasLHS(hasPointerType()),
+			   hasRHS(hasPointerType())),
+		     eachOf(hasLHS(InnerMatcher),
+			    hasRHS(InnerMatcher)));
+  // clang-format on
 
   return stmt(anyOf(CallArgMatcher, CastOperandMatcher, CompOperandMatcher,
                     PtrSubtractionMatcher));
