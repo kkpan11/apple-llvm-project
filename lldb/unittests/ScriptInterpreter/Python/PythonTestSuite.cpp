@@ -329,3 +329,8 @@ python::PythonObject
 lldb_private::python::SWIGBridge::ToSWIGWrapper(lldb::DataExtractorSP) {
   return python::PythonObject();
 }
+
+python::PythonObject
+lldb_private::python::SWIGBridge::ToSWIGWrapper(lldb::ExecutionContextRefSP) {
+  return python::PythonObject();
+}
