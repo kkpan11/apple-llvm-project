@@ -35,12 +35,10 @@ define void @load_store_units_critical(ptr %arg, ptr noundef %arg1, i64 noundef 
 ; CHECK-NEXT:    fmadd s0, s5, s0, s1
 ; CHECK-NEXT:    fadd s1, s4, s2
 ; CHECK-NEXT:    fadd s5, s0, s3
-; CHECK-NEXT:    str s1, [x8]
-; CHECK-NEXT:    str s5, [x8, #4]
+; CHECK-NEXT:    stp s1, s5, [x8]
 ; CHECK-NEXT:    fsub s2, s2, s4
 ; CHECK-NEXT:    fsub s0, s3, s0
-; CHECK-NEXT:    str s2, [x8, #8]
-; CHECK-NEXT:    str s0, [x8, #12]
+; CHECK-NEXT:    stp s2, s0, [x8, #8]
 ; CHECK-NEXT:    ldr x9, [x0, #8]
 ; CHECK-NEXT:    ldp s3, s4, [x9]
 ; CHECK-NEXT:    ldp s6, s7, [x8, #16]
@@ -51,12 +49,10 @@ define void @load_store_units_critical(ptr %arg, ptr noundef %arg1, i64 noundef 
 ; CHECK-NEXT:    fmadd s3, s17, s3, s4
 ; CHECK-NEXT:    fadd s4, s16, s6
 ; CHECK-NEXT:    fadd s17, s3, s7
-; CHECK-NEXT:    str s4, [x8, #16]
-; CHECK-NEXT:    str s17, [x8, #20]
+; CHECK-NEXT:    stp s4, s17, [x8, #16]
 ; CHECK-NEXT:    fsub s6, s6, s16
 ; CHECK-NEXT:    fsub s3, s7, s3
-; CHECK-NEXT:    str s6, [x8, #24]
-; CHECK-NEXT:    str s3, [x8, #28]
+; CHECK-NEXT:    stp s6, s3, [x8, #24]
 ; CHECK-NEXT:    ldr x9, [x0, #8]
 ; CHECK-NEXT:    ldp s7, s16, [x9]
 ; CHECK-NEXT:    fmul s18, s16, s17
@@ -65,12 +61,10 @@ define void @load_store_units_critical(ptr %arg, ptr noundef %arg1, i64 noundef 
 ; CHECK-NEXT:    fmadd s4, s16, s4, s17
 ; CHECK-NEXT:    fadd s16, s7, s1
 ; CHECK-NEXT:    fadd s17, s4, s5
-; CHECK-NEXT:    str s16, [x8]
-; CHECK-NEXT:    str s17, [x8, #4]
+; CHECK-NEXT:    stp s16, s17, [x8]
 ; CHECK-NEXT:    fsub s1, s1, s7
 ; CHECK-NEXT:    fsub s4, s5, s4
-; CHECK-NEXT:    str s1, [x8, #16]
-; CHECK-NEXT:    str s4, [x8, #20]
+; CHECK-NEXT:    stp s1, s4, [x8, #16]
 ; CHECK-NEXT:    ldr x10, [x0, #8]
 ; CHECK-NEXT:    lsl x9, x3, #4
 ; CHECK-NEXT:    add x10, x10, x9
@@ -81,12 +75,10 @@ define void @load_store_units_critical(ptr %arg, ptr noundef %arg1, i64 noundef 
 ; CHECK-NEXT:    fmadd s3, s4, s6, s3
 ; CHECK-NEXT:    fadd s4, s1, s2
 ; CHECK-NEXT:    fadd s5, s3, s0
-; CHECK-NEXT:    str s4, [x8, #8]
-; CHECK-NEXT:    str s5, [x8, #12]
+; CHECK-NEXT:    stp s4, s5, [x8, #8]
 ; CHECK-NEXT:    fsub s1, s2, s1
 ; CHECK-NEXT:    fsub s0, s0, s3
-; CHECK-NEXT:    str s1, [x8, #24]
-; CHECK-NEXT:    str s0, [x8, #28]
+; CHECK-NEXT:    stp s1, s0, [x8, #24]
 ; CHECK-NEXT:    ldr x10, [x0, #8]
 ; CHECK-NEXT:    ldp s0, s1, [x10]
 ; CHECK-NEXT:    ldp s2, s3, [x8, #32]
@@ -97,12 +89,10 @@ define void @load_store_units_critical(ptr %arg, ptr noundef %arg1, i64 noundef 
 ; CHECK-NEXT:    fmadd s0, s5, s0, s1
 ; CHECK-NEXT:    fadd s1, s4, s2
 ; CHECK-NEXT:    fadd s5, s0, s3
-; CHECK-NEXT:    str s1, [x8, #32]
-; CHECK-NEXT:    str s5, [x8, #36]
+; CHECK-NEXT:    stp s1, s5, [x8, #32]
 ; CHECK-NEXT:    fsub s4, s2, s4
 ; CHECK-NEXT:    fsub s6, s3, s0
-; CHECK-NEXT:    str s4, [x8, #40]
-; CHECK-NEXT:    str s6, [x8, #44]
+; CHECK-NEXT:    stp s4, s6, [x8, #40]
 ; CHECK-NEXT:    ldr x10, [x0, #8]
 ; CHECK-NEXT:    ldp s0, s2, [x10]
 ; CHECK-NEXT:    ldp s3, s7, [x8, #48]
@@ -113,12 +103,10 @@ define void @load_store_units_critical(ptr %arg, ptr noundef %arg1, i64 noundef 
 ; CHECK-NEXT:    fmadd s0, s17, s0, s2
 ; CHECK-NEXT:    fadd s2, s16, s3
 ; CHECK-NEXT:    fadd s17, s0, s7
-; CHECK-NEXT:    str s2, [x8, #48]
-; CHECK-NEXT:    str s17, [x8, #52]
+; CHECK-NEXT:    stp s2, s17, [x8, #48]
 ; CHECK-NEXT:    fsub s16, s3, s16
 ; CHECK-NEXT:    fsub s0, s7, s0
-; CHECK-NEXT:    str s16, [x8, #56]
-; CHECK-NEXT:    str s0, [x8, #60]
+; CHECK-NEXT:    stp s16, s0, [x8, #56]
 ; CHECK-NEXT:    ldr x10, [x0, #8]
 ; CHECK-NEXT:    ldp s3, s7, [x10]
 ; CHECK-NEXT:    fmul s18, s7, s17
@@ -127,12 +115,10 @@ define void @load_store_units_critical(ptr %arg, ptr noundef %arg1, i64 noundef 
 ; CHECK-NEXT:    fmadd s7, s7, s2, s17
 ; CHECK-NEXT:    fadd s17, s3, s1
 ; CHECK-NEXT:    fadd s18, s7, s5
-; CHECK-NEXT:    str s17, [x8, #32]
-; CHECK-NEXT:    str s18, [x8, #36]
+; CHECK-NEXT:    stp s17, s18, [x8, #32]
 ; CHECK-NEXT:    fsub s2, s1, s3
 ; CHECK-NEXT:    fsub s3, s5, s7
-; CHECK-NEXT:    str s2, [x8, #48]
-; CHECK-NEXT:    str s3, [x8, #52]
+; CHECK-NEXT:    stp s2, s3, [x8, #48]
 ; CHECK-NEXT:    ldr x10, [x0, #8]
 ; CHECK-NEXT:    add x9, x10, x9
 ; CHECK-NEXT:    ldp s1, s5, [x9]
@@ -142,12 +128,10 @@ define void @load_store_units_critical(ptr %arg, ptr noundef %arg1, i64 noundef 
 ; CHECK-NEXT:    fmadd s5, s5, s16, s0
 ; CHECK-NEXT:    fadd s7, s1, s4
 ; CHECK-NEXT:    fadd s16, s5, s6
-; CHECK-NEXT:    str s7, [x8, #40]
-; CHECK-NEXT:    str s16, [x8, #44]
+; CHECK-NEXT:    stp s7, s16, [x8, #40]
 ; CHECK-NEXT:    fsub s0, s4, s1
 ; CHECK-NEXT:    fsub s1, s6, s5
-; CHECK-NEXT:    str s0, [x8, #56]
-; CHECK-NEXT:    str s1, [x8, #60]
+; CHECK-NEXT:    stp s0, s1, [x8, #56]
 ; CHECK-NEXT:    ldr x9, [x0, #8]
 ; CHECK-NEXT:    ldp s4, s5, [x9]
 ; CHECK-NEXT:    ldp s6, s19, [x8]
@@ -157,12 +141,10 @@ define void @load_store_units_critical(ptr %arg, ptr noundef %arg1, i64 noundef 
 ; CHECK-NEXT:    fmadd s4, s18, s4, s5
 ; CHECK-NEXT:    fadd s5, s17, s6
 ; CHECK-NEXT:    fadd s18, s4, s19
-; CHECK-NEXT:    str s5, [x8]
-; CHECK-NEXT:    str s18, [x8, #4]
+; CHECK-NEXT:    stp s5, s18, [x8]
 ; CHECK-NEXT:    fsub s5, s6, s17
 ; CHECK-NEXT:    fsub s4, s19, s4
-; CHECK-NEXT:    str s5, [x8, #32]
-; CHECK-NEXT:    str s4, [x8, #36]
+; CHECK-NEXT:    stp s5, s4, [x8, #32]
 ; CHECK-NEXT:    lsl x9, x3, #32
 ; CHECK-NEXT:    ldr x10, [x0, #8]
 ; CHECK-NEXT:    add x9, x10, x9, asr #29
@@ -174,12 +156,10 @@ define void @load_store_units_critical(ptr %arg, ptr noundef %arg1, i64 noundef 
 ; CHECK-NEXT:    fmadd s4, s16, s4, s5
 ; CHECK-NEXT:    fadd s5, s7, s6
 ; CHECK-NEXT:    fadd s16, s4, s17
-; CHECK-NEXT:    str s5, [x8, #8]
-; CHECK-NEXT:    str s16, [x8, #12]
+; CHECK-NEXT:    stp s5, s16, [x8, #8]
 ; CHECK-NEXT:    fsub s5, s6, s7
 ; CHECK-NEXT:    fsub s4, s17, s4
-; CHECK-NEXT:    str s5, [x8, #40]
-; CHECK-NEXT:    str s4, [x8, #44]
+; CHECK-NEXT:    stp s5, s4, [x8, #40]
 ; CHECK-NEXT:    lsl x9, x3, #33
 ; CHECK-NEXT:    ldr x10, [x0, #8]
 ; CHECK-NEXT:    add x9, x10, x9, asr #29
@@ -191,12 +171,10 @@ define void @load_store_units_critical(ptr %arg, ptr noundef %arg1, i64 noundef 
 ; CHECK-NEXT:    fmadd s3, s3, s4, s5
 ; CHECK-NEXT:    fadd s4, s2, s6
 ; CHECK-NEXT:    fadd s5, s3, s7
-; CHECK-NEXT:    str s4, [x8, #16]
-; CHECK-NEXT:    str s5, [x8, #20]
+; CHECK-NEXT:    stp s4, s5, [x8, #16]
 ; CHECK-NEXT:    fsub s2, s6, s2
 ; CHECK-NEXT:    fsub s3, s7, s3
-; CHECK-NEXT:    str s2, [x8, #48]
-; CHECK-NEXT:    str s3, [x8, #52]
+; CHECK-NEXT:    stp s2, s3, [x8, #48]
 ; CHECK-NEXT:    add w9, w3, w3, lsl #1
 ; CHECK-NEXT:    lsl x9, x9, #32
 ; CHECK-NEXT:    ldr x10, [x0, #8]
@@ -209,12 +187,10 @@ define void @load_store_units_critical(ptr %arg, ptr noundef %arg1, i64 noundef 
 ; CHECK-NEXT:    fmadd s1, s1, s2, s3
 ; CHECK-NEXT:    fadd s2, s0, s4
 ; CHECK-NEXT:    fadd s3, s1, s5
-; CHECK-NEXT:    str s2, [x8, #24]
-; CHECK-NEXT:    str s3, [x8, #28]
+; CHECK-NEXT:    stp s2, s3, [x8, #24]
 ; CHECK-NEXT:    fsub s0, s4, s0
 ; CHECK-NEXT:    fsub s1, s5, s1
-; CHECK-NEXT:    str s0, [x8, #56]
-; CHECK-NEXT:    str s1, [x8, #60]
+; CHECK-NEXT:    stp s0, s1, [x8, #56]
 ; CHECK-NEXT:    ret
 bb:
   %shl = shl i64 %arg3, 1
