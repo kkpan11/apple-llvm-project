@@ -1332,6 +1332,12 @@ enum CompletionType {
   eCustomCompletion = (1u << 25)
 };
 
+enum SymbolDownload {
+  eSymbolDownloadOff = 0,
+  eSymbolDownloadBackground = 1,
+  eSymbolDownloadForeground = 2,
+};
+
 /// Specifies if children need to be re-computed
 /// after a call to \ref SyntheticChildrenFrontEnd::Update.
 enum class ChildCacheState {

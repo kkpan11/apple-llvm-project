@@ -1,4 +1,4 @@
-//===-- LocateSymbolFile.h --------------------------------------*- C++ -*-===//
+//===-- SymbolLocator.h -----------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,24 +6,18 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SYMBOL_LOCATESYMBOLFILE_H
-#define LLDB_SYMBOL_LOCATESYMBOLFILE_H
+#ifndef LLDB_SYMBOL_SYMBOLLOCATOR_H
+#define LLDB_SYMBOL_SYMBOLLOCATOR_H
 
-#include <cstdint>
-
-#include "lldb/Utility/FileSpec.h"
-#include "lldb/Utility/FileSpecList.h"
-#include "lldb/Utility/Status.h"
-#include "lldb/lldb-forward.h"
+#include "lldb/Core/PluginInterface.h"
+#include "lldb/Utility/UUID.h"
 
 namespace lldb_private {
 
-class ArchSpec;
-class ModuleSpec;
-class UUID;
-
-class Symbols {
+class SymbolLocator : public PluginInterface {
 public:
+  SymbolLocator() = default;
+
   /// Locate the symbol file for the given UUID on a background thread. This
   /// function returns immediately. Under the hood it uses the debugger's
   /// thread pool to call DownloadObjectAndSymbolFile. If a symbol file is
@@ -34,4 +28,4 @@ public:
 
 } // namespace lldb_private
 
-#endif // LLDB_SYMBOL_LOCATESYMBOLFILE_H
+#endif // LLDB_SYMBOL_SYMBOLFILELOCATOR_H

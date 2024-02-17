@@ -1,11 +1,3 @@
-set(LLVM_OPTIONAL_SOURCES LocateSymbolFileMacOSX.cpp)
-
-if (CMAKE_SYSTEM_NAME MATCHES "Darwin")
-  set(PLATFORM_SOURCES
-    LocateSymbolFileMacOSX.cpp
-    )
-endif()
-
 set(SWIFT_LIBS
     swiftAST
     swiftASTSectionImporter
@@ -41,7 +33,6 @@ add_lldb_library(lldbSymbol ${PLUGIN_DEPENDENCY_ARG}
   Function.cpp
   LineEntry.cpp
   LineTable.cpp
-  LocateSymbolFile.cpp
   ObjectContainer.cpp
   ObjectFile.cpp
   PostfixExpression.cpp
@@ -49,6 +40,7 @@ add_lldb_library(lldbSymbol ${PLUGIN_DEPENDENCY_ARG}
   SymbolContext.cpp
   SymbolFile.cpp
   SymbolFileOnDemand.cpp
+  SymbolLocator.cpp
   SymbolVendor.cpp
   Symtab.cpp
   Type.cpp
@@ -61,7 +53,6 @@ add_lldb_library(lldbSymbol ${PLUGIN_DEPENDENCY_ARG}
   VariableList.cpp
 
   ${SWIFT_SOURCES}
-  ${PLATFORM_SOURCES}
 
   LINK_LIBS
     clangAST
