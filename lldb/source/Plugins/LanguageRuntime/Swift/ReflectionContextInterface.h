@@ -19,7 +19,7 @@
 #include "swift/ABI/ObjectFile.h"
 #include "swift/Remote/RemoteAddress.h"
 #include "swift/RemoteInspection/TypeRef.h"
-#include "llvm/ADT/Optional.h"
+#include <optional>
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -68,17 +68,17 @@ public:
 
   virtual ~ReflectionContextInterface() = default;
 
-  virtual llvm::Optional<uint32_t> AddImage(
+  virtual std::optional<uint32_t> AddImage(
       llvm::function_ref<std::pair<swift::remote::RemoteRef<void>, uint64_t>(
           swift::ReflectionSectionKind)>
           find_section,
       llvm::SmallVector<llvm::StringRef, 1> likely_module_names = {}) = 0;
-  virtual llvm::Optional<uint32_t>
+  virtual std::optional<uint32_t>
   AddImage(swift::remote::RemoteAddress image_start,
            llvm::SmallVector<llvm::StringRef, 1> likely_module_names = {}) = 0;
-  virtual llvm::Optional<uint32_t>
+  virtual std::optional<uint32_t>
   ReadELF(swift::remote::RemoteAddress ImageStart,
-          llvm::Optional<llvm::sys::MemoryBlock> FileBuffer,
+          std::optional<llvm::sys::MemoryBlock> FileBuffer,
           llvm::SmallVector<llvm::StringRef, 1> likely_module_names = {}) = 0;
   virtual const swift::reflection::TypeRef *GetTypeRefOrNull(
       llvm::StringRef mangled_type_name,
@@ -90,10 +90,10 @@ public:
       const swift::reflection::TypeRef *type_ref,
       swift::remote::TypeInfoProvider *provider,
       swift::reflection::DescriptorFinder *descriptor_finder) = 0;
-  virtual const swift::reflection::TypeInfo *GetTypeInfo(
-      const swift::reflection::TypeRef *type_ref,
-      swift::remote::TypeInfoProvider *provider,
-      swift::reflection::DescriptorFinder *descriptor_finder) = 0;
+  virtual const swift::reflection::TypeInfo *
+  GetTypeInfo(const swift::reflection::TypeRef *type_ref,
+              swift::remote::TypeInfoProvider *provider,
+              swift::reflection::DescriptorFinder *descriptor_finder) = 0;
   virtual const swift::reflection::TypeInfo *GetTypeInfoFromInstance(
       lldb::addr_t instance, swift::remote::TypeInfoProvider *provider,
       swift::reflection::DescriptorFinder *descriptor_finder) = 0;
@@ -101,17 +101,29 @@ public:
   virtual const swift::reflection::TypeRef *LookupSuperclass(
       const swift::reflection::TypeRef *tr,
       swift::reflection::DescriptorFinder *descriptor_finder) = 0;
-  virtual bool ForEachSuperClassType(
-      swift::remote::TypeInfoProvider *tip,
-      swift::reflection::DescriptorFinder *descriptor_finder,
-      lldb::addr_t pointer, std::function<bool(SuperClassType)> fn) = 0;
-  virtual llvm::Optional<std::pair<const swift::reflection::TypeRef *,
-                                   swift::remote::RemoteAddress>>
+  virtual bool
+  ForEachSuperClassType(swift::remote::TypeInfoProvider *tip,
+                        swift::reflection::DescriptorFinder *descriptor_finder,
+                        lldb::addr_t pointer,
+                        std::function<bool(SuperClassType)> fn) = 0;
+
+  /// Traverses the superclass hierarchy using the typeref, as opposed to the
+  /// other version of the function that uses the instance's pointer. This
+  /// version is useful when reflection metadata has been stripped from the
+  /// binary (for example, when debugging embedded Swift programs).
+  virtual bool
+  ForEachSuperClassType(swift::remote::TypeInfoProvider *tip,
+                        swift::reflection::DescriptorFinder *descriptor_finder,
+                        const swift::reflection::TypeRef *tr,
+                        std::function<bool(SuperClassType)> fn) = 0;
+
+  virtual std::optional<std::pair<const swift::reflection::TypeRef *,
+                                  swift::remote::RemoteAddress>>
   ProjectExistentialAndUnwrapClass(
       swift::remote::RemoteAddress existential_addess,
       const swift::reflection::TypeRef &existential_tr,
       swift::reflection::DescriptorFinder *descriptor_finder) = 0;
-  virtual llvm::Optional<int32_t> ProjectEnumValue(
+  virtual std::optional<int32_t> ProjectEnumValue(
       swift::remote::RemoteAddress enum_addr,
       const swift::reflection::TypeRef *enum_type_ref,
       swift::remote::TypeInfoProvider *provider,
@@ -124,7 +136,7 @@ public:
       lldb::addr_t instance_address,
       swift::reflection::DescriptorFinder *descriptor_finder,
       bool skip_artificial_subclasses = false) = 0;
-  virtual llvm::Optional<bool> IsValueInlinedInExistentialContainer(
+  virtual std::optional<bool> IsValueInlinedInExistentialContainer(
       swift::remote::RemoteAddress existential_address) = 0;
   virtual const swift::reflection::TypeRef *ApplySubstitutions(
       const swift::reflection::TypeRef *type_ref,

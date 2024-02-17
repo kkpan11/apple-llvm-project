@@ -346,9 +346,9 @@ public:
   ///
   /// \returns true if the .debug_line verifies successfully, false otherwise.
   bool handleDebugStrOffsets();
-  bool verifyDebugStrOffsets(
-      StringRef SectionName, const DWARFSection &Section, StringRef StrData,
-      void (DWARFObject::*)(function_ref<void(const DWARFSection &)>) const);
+  bool verifyDebugStrOffsets(std::optional<dwarf::DwarfFormat> LegacyFormat,
+                             StringRef SectionName, const DWARFSection &Section,
+                             StringRef StrData);
 };
 
 static inline bool operator<(const DWARFVerifier::DieRangeInfo &LHS,

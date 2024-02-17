@@ -258,27 +258,44 @@ void SwiftLanguageRuntimeImpl::PopLocalBuffer() {
 
 class LLDBTypeInfoProvider : public swift::remote::TypeInfoProvider {
   SwiftLanguageRuntimeImpl &m_runtime;
-  TypeSystemSwift &m_typesystem;
+  Status m_error;
+  std::optional<SwiftScratchContextReader> m_reader;
 
 public:
   LLDBTypeInfoProvider(SwiftLanguageRuntimeImpl &runtime,
-                       TypeSystemSwift &typesystem)
+                       ExecutionContextScope *exe_scope)
       : m_runtime(runtime),
-        // Always use the typeref type system so we have fewer cache
-        // invalidations.
-        m_typesystem(typesystem.GetTypeSystemSwiftTypeRef()) {}
+        m_reader(m_runtime.GetProcess().GetTarget().GetSwiftScratchContext(
+            m_error,
+            exe_scope ? *exe_scope : m_runtime.GetProcess().GetTarget())) {}
+  LLDBTypeInfoProvider(SwiftLanguageRuntimeImpl &runtime,
+                       ExecutionContext *exe_ctx)
+      : m_runtime(runtime),
+        m_reader(m_runtime.GetProcess().GetTarget().GetSwiftScratchContext(
+            m_error, exe_ctx ? *exe_ctx->GetBestExecutionContextScope()
+                             : m_runtime.GetProcess().GetTarget())) {}
 
   swift::remote::TypeInfoProvider::IdType getId() override {
-    return (void *)&m_typesystem;
+    if (m_reader)
+      return (void *)((char *)m_reader->get() +
+                      m_reader->get()->GetGeneration() +
+                      m_runtime.GetGeneration());
+    return (void *)0;
   }
 
   const swift::reflection::TypeInfo *
   getTypeInfo(llvm::StringRef mangledName) override {
     // TODO: Should we cache the mangled name -> compiler type lookup, too?
-    Log *log(GetLog(LLDBLog::Types));
-    if (log)
-      LLDB_LOG(log, "[LLDBTypeInfoProvider] Looking up debug type info for {0}",
-               mangledName);
+    LLDB_LOG(GetLog(LLDBLog::Types),
+             "[LLDBTypeInfoProvider] Looking up debug type info for {0}",
+             mangledName);
+
+    if (!m_reader) {
+      LLDB_LOG(GetLog(LLDBLog::Types),
+               "[LLDBTypeInfoProvider] no scratch context");
+      return nullptr;
+    }
+    TypeSystemSwiftTypeRef &typesystem = *m_reader->get();
 
     // Materialize a Clang type from the debug info.
     assert(swift::Demangle::getManglingPrefixLength(mangledName) == 0);
@@ -303,7 +320,7 @@ public:
     }
 #endif
     ConstString mangled(wrapped);
-    CompilerType swift_type = m_typesystem.GetTypeFromMangledTypename(mangled);
+    CompilerType swift_type = typesystem.GetTypeFromMangledTypename(mangled);
     auto ts = swift_type.GetTypeSystem().dyn_cast_or_null<TypeSystemSwift>();
     if (!ts)
       return nullptr;
@@ -311,10 +328,10 @@ public:
     bool is_imported =
         ts->IsImportedType(swift_type.GetOpaqueQualType(), &clang_type);
     if (!is_imported || !clang_type) {
-      if (log)
-        LLDB_LOG(log,
-                 "[LLDBTypeInfoProvider] Could not find clang debug type info for {0}",
-                 mangledName);
+      LLDB_LOG(GetLog(LLDBLog::Types),
+               "[LLDBTypeInfoProvider] Could not find clang debug type info "
+               "for {0}",
+               mangledName);
       return nullptr;
     }
 
@@ -344,10 +361,9 @@ public:
         CompilerType field_type = clang_type.GetFieldAtIndex(
             i, name, &bit_offset_ptr, &bitfield_bit_size_ptr, &is_bitfield_ptr);
         if (is_bitfield_ptr) {
-          Log *log(GetLog(LLDBLog::Types));
-          if (log)
-            log->Printf("[LLDBTypeInfoProvider] bitfield support is not yet "
-                        "implemented");
+          LLDB_LOG(
+              GetLog(LLDBLog::Types),
+              "[LLDBTypeInfoProvider] bitfield support is not yet implemented");
           continue;
         }
         swift::reflection::FieldInfo field_info = {
@@ -360,7 +376,7 @@ public:
   }
 };
 
-llvm::Optional<const swift::reflection::TypeInfo *>
+std::optional<const swift::reflection::TypeInfo *>
 SwiftLanguageRuntimeImpl::lookupClangTypeInfo(CompilerType clang_type) {
   std::lock_guard<std::recursive_mutex> locker(m_clang_type_info_mutex);
   {
@@ -384,12 +400,12 @@ SwiftLanguageRuntimeImpl::lookupClangTypeInfo(CompilerType clang_type) {
 
 const swift::reflection::TypeInfo *
 SwiftLanguageRuntimeImpl::emplaceClangTypeInfo(
-    CompilerType clang_type, llvm::Optional<uint64_t> byte_size,
-    llvm::Optional<size_t> bit_align,
+    CompilerType clang_type, std::optional<uint64_t> byte_size,
+    std::optional<size_t> bit_align,
     llvm::ArrayRef<swift::reflection::FieldInfo> fields) {
   const std::lock_guard<std::recursive_mutex> locker(m_clang_type_info_mutex);
   if (!byte_size || !bit_align) {
-    m_clang_type_info.insert({clang_type.GetOpaqueQualType(), llvm::None});
+    m_clang_type_info.insert({clang_type.GetOpaqueQualType(), std::nullopt});
     return nullptr;
   }
   assert(*bit_align % 8 == 0 && "Bit alignment no a multiple of 8!");
@@ -416,7 +432,7 @@ SwiftLanguageRuntimeImpl::emplaceClangTypeInfo(
   return &*it_b.first->second;
 }
 
-llvm::Optional<uint64_t>
+std::optional<uint64_t>
 SwiftLanguageRuntimeImpl::GetMemberVariableOffsetRemoteMirrors(
     CompilerType instance_type, ValueObject *instance,
     llvm::StringRef member_name, Status *error) {
@@ -455,7 +471,7 @@ SwiftLanguageRuntimeImpl::GetMemberVariableOffsetRemoteMirrors(
   }
 
   // Try the instance type metadata.
-  llvm::Optional<uint64_t> result;
+  std::optional<uint64_t> result;
   if (!instance)
     return result;
   ForEachSuperClassType(*instance, [&](SuperClassType super_class) -> bool {
@@ -473,11 +489,11 @@ SwiftLanguageRuntimeImpl::GetMemberVariableOffsetRemoteMirrors(
   return result;
 }
 
-llvm::Optional<uint64_t> SwiftLanguageRuntimeImpl::GetMemberVariableOffset(
+std::optional<uint64_t> SwiftLanguageRuntimeImpl::GetMemberVariableOffset(
     CompilerType instance_type, ValueObject *instance,
     llvm::StringRef member_name, Status *error) {
   LLDB_SCOPED_TIMER();
-  llvm::Optional<uint64_t> offset;
+  std::optional<uint64_t> offset;
 
   if (!instance_type.IsValid())
     return {};
@@ -626,7 +642,7 @@ void LogUnimplementedTypeKind(const char *function, CompilerType type) {
 
 } // namespace
 
-llvm::Optional<unsigned>
+std::optional<unsigned>
 SwiftLanguageRuntimeImpl::GetNumChildren(CompilerType type,
                                          ExecutionContextScope *exe_scope) {
   LLDB_SCOPED_TIMER();
@@ -724,7 +740,7 @@ SwiftLanguageRuntimeImpl::GetNumChildren(CompilerType type,
     if (!reflection_ctx)
       return {};
 
-    LLDBTypeInfoProvider tip(*this, *ts);
+    LLDBTypeInfoProvider tip(*this, exe_scope);
     auto *cti = reflection_ctx->GetClassInstanceTypeInfo(
         tr, &tip, ts->GetDescriptorFinder());
     if (auto *rti =
@@ -747,7 +763,7 @@ SwiftLanguageRuntimeImpl::GetNumChildren(CompilerType type,
   return {};
 }
 
-llvm::Optional<unsigned>
+std::optional<unsigned>
 SwiftLanguageRuntimeImpl::GetNumFields(CompilerType type,
                                        ExecutionContext *exe_ctx) {
   auto ts = type.GetTypeSystem().dyn_cast_or_null<TypeSystemSwiftTypeRef>();
@@ -801,7 +817,7 @@ SwiftLanguageRuntimeImpl::GetNumFields(CompilerType type,
       if (!reflection_ctx)
         return {};
 
-      LLDBTypeInfoProvider tip(*this, *ts);
+      LLDBTypeInfoProvider tip(*this, exe_ctx);
       auto *cti = reflection_ctx->GetClassInstanceTypeInfo(
           tr, &tip, ts->GetDescriptorFinder());
       if (auto *rti = llvm::dyn_cast_or_null<RecordTypeInfo>(cti)) {
@@ -817,7 +833,7 @@ SwiftLanguageRuntimeImpl::GetNumFields(CompilerType type,
   }
 }
 
-static std::pair<SwiftLanguageRuntime::LookupResult, llvm::Optional<size_t>>
+static std::pair<SwiftLanguageRuntime::LookupResult, std::optional<size_t>>
 findFieldWithName(const std::vector<swift::reflection::FieldInfo> &fields,
                   const swift::reflection::TypeRef *tr, llvm::StringRef name,
                   bool is_enum, std::vector<uint32_t> &child_indexes,
@@ -862,7 +878,7 @@ findFieldWithName(const std::vector<swift::reflection::FieldInfo> &fields,
   return {SwiftLanguageRuntime::eFound, child_indexes.size()};
 }
 
-llvm::Optional<std::string> SwiftLanguageRuntimeImpl::GetEnumCaseName(
+std::optional<std::string> SwiftLanguageRuntimeImpl::GetEnumCaseName(
     CompilerType type, const DataExtractor &data, ExecutionContext *exe_ctx) {
   using namespace swift::reflection;
   using namespace swift::remote;
@@ -889,7 +905,7 @@ llvm::Optional<std::string> SwiftLanguageRuntimeImpl::GetEnumCaseName(
   return {};
 }
 
-std::pair<SwiftLanguageRuntime::LookupResult, llvm::Optional<size_t>>
+std::pair<SwiftLanguageRuntime::LookupResult, std::optional<size_t>>
 SwiftLanguageRuntimeImpl::GetIndexOfChildMemberWithName(
     CompilerType type, llvm::StringRef name, ExecutionContext *exe_ctx,
     bool omit_empty_base_classes, std::vector<uint32_t> &child_indexes) {
@@ -964,7 +980,7 @@ SwiftLanguageRuntimeImpl::GetIndexOfChildMemberWithName(
         ++idx;
       }
 
-      LLDBTypeInfoProvider tip(*this, *ts);
+      LLDBTypeInfoProvider tip(*this, exe_ctx);
       // `current_tr` iterates the class hierarchy, from the current class, each
       // superclass, and ends on null.
       auto *current_tr = tr;
@@ -1053,7 +1069,7 @@ CompilerType SwiftLanguageRuntimeImpl::GetChildCompilerTypeAtIndex(
   // The actual conversion from the FieldInfo record.
   auto get_from_field_info =
       [&](const swift::reflection::FieldInfo &field,
-          llvm::Optional<TypeSystemSwift::TupleElement> tuple,
+          std::optional<TypeSystemSwift::TupleElement> tuple,
           bool hide_existentials) -> CompilerType {
     bool is_indirect_enum =
         !field.Offset && field.TR &&
@@ -1083,7 +1099,7 @@ CompilerType SwiftLanguageRuntimeImpl::GetChildCompilerTypeAtIndex(
       if (!reflection_ctx)
         return {};
       // The indirect enum field should point to a closure context.
-      LLDBTypeInfoProvider tip(*this, *ts);
+      LLDBTypeInfoProvider tip(*this, &exe_ctx);
       lldb::addr_t instance = MaskMaybeBridgedPointer(m_process, pointer);
       auto *ti = reflection_ctx->GetTypeInfoFromInstance(
           instance, &tip, ts->GetDescriptorFinder());
@@ -1120,7 +1136,7 @@ CompilerType SwiftLanguageRuntimeImpl::GetChildCompilerTypeAtIndex(
     if (idx >= rti->getNumFields())
       LLDB_LOGF(GetLog(LLDBLog::Types), "index %zu is out of bounds (%d)", idx,
                 rti->getNumFields());
-    llvm::Optional<TypeSystemSwift::TupleElement> tuple;
+    std::optional<TypeSystemSwift::TupleElement> tuple;
     if (rti->getRecordKind() == swift::reflection::RecordKind::Tuple)
       tuple = ts->GetTupleElement(type.GetOpaqueQualType(), idx);
     if (rti->getRecordKind() ==
@@ -1196,59 +1212,6 @@ CompilerType SwiftLanguageRuntimeImpl::GetChildCompilerTypeAtIndex(
     }
 
     // Objects.
-    // Try the instance type metadata.
-    if (!valobj)
-      return {};
-    bool found_start = false;
-    using namespace swift::Demangle;
-    Demangler dem;
-    auto mangled = type.GetMangledTypeName().GetStringRef();
-    NodePointer type_node = dem.demangleSymbol(mangled);
-    llvm::StringRef type_name = TypeSystemSwiftTypeRef::GetBaseName(
-        ts->CanonicalizeSugar(dem, type_node));
-
-    ThreadSafeReflectionContext reflection_ctx = GetReflectionContext();
-    if (!reflection_ctx)
-      return {};
-    CompilerType instance_type = valobj->GetCompilerType();
-    auto instance_ts =
-        instance_type.GetTypeSystem().dyn_cast_or_null<TypeSystemSwift>();
-    if (!instance_ts)
-      return {};
-
-    // LLDBTypeInfoProvider needs to be kept alive while supers gets accessed.
-    llvm::SmallVector<SuperClassType, 2> supers;
-    LLDBTypeInfoProvider tip(*this, *instance_ts);
-    reflection_ctx->ForEachSuperClassType(
-        &tip, ts->GetDescriptorFinder(), pointer,
-        [&](SuperClassType sc) -> bool {
-          // If the typeref is invalid, we don't want to process it (for
-          // example, this could be an artifical ObjC class).
-          if (!sc.get_typeref())
-            return false;
-
-          if (!found_start) {
-            // The ValueObject always points to the same class instance,
-            // even when querying base classes. Drop base classes until we
-            // reach the requested type.
-            if (auto *tr = sc.get_typeref()) {
-              NodePointer base_class = tr->getDemangling(dem);
-              if (TypeSystemSwiftTypeRef::GetBaseName(base_class) != type_name)
-                return false;
-              found_start = true;
-            }
-          }
-          supers.push_back(sc);
-          return supers.size() >= 2;
-        });
-
-    if (supers.size() == 0) {
-      LLDB_LOG(GetLog(LLDBLog::Types),
-               "Couldn't find the type metadata for {0} in instance",
-               type.GetTypeName());
-      return {};
-    }
-
     switch (rti->getReferenceKind()) {
     case swift::reflection::ReferenceKind::Weak:
     case swift::reflection::ReferenceKind::Unowned:
@@ -1270,6 +1233,79 @@ CompilerType SwiftLanguageRuntimeImpl::GetChildCompilerTypeAtIndex(
       break;
     default:
       break;
+    }
+
+    // Try the instance type metadata.
+    if (!valobj)
+      return {};
+    bool found_start = false;
+    using namespace swift::Demangle;
+    Demangler dem;
+    auto mangled = type.GetMangledTypeName().GetStringRef();
+    NodePointer type_node = dem.demangleSymbol(mangled);
+    llvm::StringRef type_name = TypeSystemSwiftTypeRef::GetBaseName(
+        ts->CanonicalizeSugar(dem, type_node));
+
+    ThreadSafeReflectionContext reflection_ctx = GetReflectionContext();
+    if (!reflection_ctx)
+      return {};
+    CompilerType instance_type = valobj->GetCompilerType();
+    auto instance_ts =
+        instance_type.GetTypeSystem().dyn_cast_or_null<TypeSystemSwift>();
+    if (!instance_ts)
+      return {};
+    // LLDBTypeInfoProvider needs to be kept alive while supers gets accessed.
+    llvm::SmallVector<SuperClassType, 2> supers;
+    auto superclass_finder = [&](SuperClassType sc) -> bool {
+      // If the typeref is invalid, we don't want to process it (for
+      // example, this could be an artifical ObjC class).
+      if (!sc.get_typeref())
+        return false;
+
+      if (!found_start) {
+        // The ValueObject always points to the same class instance,
+        // even when querying base classes. Drop base classes until we
+        // reach the requested type.
+        if (auto *tr = sc.get_typeref()) {
+          NodePointer base_class = tr->getDemangling(dem);
+          if (TypeSystemSwiftTypeRef::GetBaseName(base_class) != type_name)
+            return false;
+          found_start = true;
+        }
+      }
+      supers.push_back(sc);
+      return supers.size() >= 2;
+    };
+
+    LLDBTypeInfoProvider tip(*this, &exe_ctx);
+    // Try out the instance pointer based super class traversal first, as its
+    // usually faster.
+    reflection_ctx->ForEachSuperClassType(&tip, ts->GetDescriptorFinder(),
+                                          pointer, superclass_finder);
+
+    if (supers.empty())
+      // If the pointer based super class traversal failed (this may happen
+      // when metadata is not present in the binary, for example: embedded
+      // Swift), try the typeref based one next.
+      reflection_ctx->ForEachSuperClassType(&tip, ts->GetDescriptorFinder(), tr,
+                                            superclass_finder);
+
+    if (supers.empty()) {
+      LLDB_LOG(GetLog(LLDBLog::Types),
+               "Couldn't find the type metadata for {0} in instance",
+               type.GetTypeName());
+
+      auto *cti = reflection_ctx->GetClassInstanceTypeInfo(
+          tr, &tip, ts->GetDescriptorFinder());
+      if (auto *rti =
+              llvm::dyn_cast_or_null<swift::reflection::RecordTypeInfo>(cti)) {
+        auto fields = rti->getFields();
+        if (idx < fields.size()) {
+          std::optional<TypeSystemSwift::TupleElement> tuple;
+          return get_from_field_info(fields[idx], tuple, true);
+        }
+      }
+      return {};
     }
 
     // Handle the artificial base class fields.
@@ -1339,7 +1375,8 @@ bool SwiftLanguageRuntimeImpl::ForEachSuperClassType(
   if (!ts)
     return false;
 
-  LLDBTypeInfoProvider tip(*this, *ts);
+  ExecutionContext exe_ctx(instance.GetExecutionContextRef());
+  LLDBTypeInfoProvider tip(*this, &exe_ctx);
   lldb::addr_t pointer = instance.GetPointerValue();
   return reflection_ctx->ForEachSuperClassType(
       &tip, ts->GetTypeSystemSwiftTypeRef().GetDescriptorFinder(),
@@ -1460,7 +1497,7 @@ bool SwiftLanguageRuntimeImpl::GetDynamicTypeAndAddress_Pack(
     llvm::raw_svector_ostream os(buf);
     os << "$pack_count_" << signature->GetCountForValuePack(i);
     StringRef count_var = os.str();
-    llvm::Optional<lldb::addr_t> count =
+    std::optional<lldb::addr_t> count =
         GetTypeMetadataForTypeNameAndFrame(count_var, *frame);
     if (!count) {
       LLDB_LOG(log,
@@ -1490,7 +1527,7 @@ bool SwiftLanguageRuntimeImpl::GetDynamicTypeAndAddress_Pack(
           llvm::raw_svector_ostream os(buf);
           os << u8"$\u03C4_" << shape.depth << '_' << shape.index;
           StringRef mds_var = os.str();
-          llvm::Optional<lldb::addr_t> mds_ptr =
+          std::optional<lldb::addr_t> mds_ptr =
               GetTypeMetadataForTypeNameAndFrame(mds_var, *frame);
           if (!mds_ptr) {
             LLDB_LOG(log,
@@ -1722,6 +1759,14 @@ bool SwiftLanguageRuntimeImpl::GetDynamicTypeAndAddress_Class(
 
   const auto *typeref = reflection_ctx->ReadTypeFromInstance(
       instance_ptr, ts.GetDescriptorFinder(), true);
+
+  // If we couldn't find the typeref from the instance, the best we can do is
+  // use the static type. This is a valid use case when the binary doesn't
+  // contain any metadata (for example, embedded Swift).
+  if (!typeref) 
+    typeref = reflection_ctx->GetTypeRefOrNull(class_type.GetMangledTypeName(),
+                                               ts.GetDescriptorFinder());
+
   if (!typeref) {
     LLDB_LOGF(log,
               "could not read typeref for type: %s (instance_ptr = 0x%" PRIx64
@@ -1978,7 +2023,7 @@ CompilerType SwiftLanguageRuntimeImpl::GetTypeFromMetadata(TypeSystemSwift &ts,
   return ts.GetTypeSystemSwiftTypeRef().RemangleAsType(dem, node);
 }
 
-llvm::Optional<lldb::addr_t>
+std::optional<lldb::addr_t>
 SwiftLanguageRuntimeImpl::GetTypeMetadataForTypeNameAndFrame(
     StringRef mdvar_name, StackFrame &frame) {
   VariableList *var_list = frame.GetVariableList(false, nullptr);
@@ -2125,7 +2170,7 @@ SwiftLanguageRuntimeImpl::BindGenericTypeParameters(StackFrame &stack_frame,
     StreamString mdvar_name;
     mdvar_name.Printf(u8"$\u03C4_%d_%d", depth, index);
 
-    llvm::Optional<lldb::addr_t> metadata_location =
+    std::optional<lldb::addr_t> metadata_location =
         GetTypeMetadataForTypeNameAndFrame(mdvar_name.GetString(), stack_frame);
     if (!metadata_location)
       return;
@@ -2216,7 +2261,7 @@ bool SwiftLanguageRuntimeImpl::GetDynamicTypeAndAddress_Value(
   class_type_or_name.SetCompilerType(bound_type);
 
   ExecutionContext exe_ctx = in_value.GetExecutionContextRef().Lock(true);
-  llvm::Optional<uint64_t> size =
+  std::optional<uint64_t> size =
       bound_type.GetByteSize(exe_ctx.GetBestExecutionContextScope());
   if (!size)
     return false;
@@ -2339,7 +2384,7 @@ SwiftLanguageRuntimeImpl::GetValueType(ValueObject &in_value,
       // the existential container or not.
       swift::remote::RemoteAddress remote_existential(existential_address);
       if (ThreadSafeReflectionContext reflection_ctx = GetReflectionContext()) {
-        llvm::Optional<bool> is_inlined =
+        std::optional<bool> is_inlined =
             reflection_ctx->IsValueInlinedInExistentialContainer(
                 remote_existential);
 
@@ -2541,7 +2586,7 @@ bool SwiftLanguageRuntimeImpl::GetDynamicTypeAndAddress_ClangType(
   // Import the remangled dynamic name into the scratch context.
   assert(IsScratchContextLocked(in_value.GetTargetSP()) &&
          "Swift scratch context not locked ahead of dynamic type resolution");
-  llvm::Optional<SwiftScratchContextReader> maybe_scratch_ctx =
+  std::optional<SwiftScratchContextReader> maybe_scratch_ctx =
       in_value.GetSwiftScratchContext();
   if (!maybe_scratch_ctx)
     return false;
@@ -2887,7 +2932,7 @@ SwiftLanguageRuntimeImpl::GetSwiftRuntimeTypeInfo(
   if (!reflection_ctx)
     return nullptr;
 
-  LLDBTypeInfoProvider provider(*this, *ts);
+  LLDBTypeInfoProvider provider(*this, exe_scope);
   return reflection_ctx->GetTypeInfo(
       type_ref, &provider,
       ts->GetTypeSystemSwiftTypeRef().GetDescriptorFinder());
@@ -2899,7 +2944,7 @@ bool SwiftLanguageRuntimeImpl::IsStoredInlineInBuffer(CompilerType type) {
   return true;
 }
 
-llvm::Optional<uint64_t>
+std::optional<uint64_t>
 SwiftLanguageRuntimeImpl::GetBitSize(CompilerType type,
                                      ExecutionContextScope *exe_scope) {
   if (auto *type_info = GetSwiftRuntimeTypeInfo(type, exe_scope))
@@ -2907,14 +2952,14 @@ SwiftLanguageRuntimeImpl::GetBitSize(CompilerType type,
   return {};
 }
 
-llvm::Optional<uint64_t>
+std::optional<uint64_t>
 SwiftLanguageRuntimeImpl::GetByteStride(CompilerType type) {
   if (auto *type_info = GetSwiftRuntimeTypeInfo(type, nullptr))
     return type_info->getStride();
   return {};
 }
 
-llvm::Optional<size_t>
+std::optional<size_t>
 SwiftLanguageRuntimeImpl::GetBitAlignment(CompilerType type,
                                           ExecutionContextScope *exe_scope) {
   if (auto *type_info = GetSwiftRuntimeTypeInfo(type, exe_scope))

@@ -32,6 +32,7 @@ class SBStream;
 class SBStructuredData;
 class SBFileSpec;
 class SBModuleSpec;
+class SBStringList;
 } // namespace lldb
 
 namespace lldb_private {
@@ -216,6 +217,12 @@ public:
   static bool
   LLDBSwigPythonCallCommandObject(PyObject *implementor,
                                   lldb::DebuggerSP debugger, const char *args,
+                                  lldb_private::CommandReturnObject &cmd_retobj,
+                                  lldb::ExecutionContextRefSP exe_ctx_ref_sp);
+  static bool
+  LLDBSwigPythonCallParsedCommandObject(PyObject *implementor,
+                                  lldb::DebuggerSP debugger,  
+                                  StructuredDataImpl &args_impl,
                                   lldb_private::CommandReturnObject &cmd_retobj,
                                   lldb::ExecutionContextRefSP exe_ctx_ref_sp);
 

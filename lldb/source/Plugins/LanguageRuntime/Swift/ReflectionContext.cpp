@@ -71,7 +71,7 @@ public:
       : m_reflection_ctx(reader, swift_metadata_cache, &m_forwader),
         m_type_converter(m_reflection_ctx.getBuilder()) {}
 
-  llvm::Optional<uint32_t> AddImage(
+  std::optional<uint32_t> AddImage(
       llvm::function_ref<std::pair<swift::remote::RemoteRef<void>, uint64_t>(
           swift::ReflectionSectionKind)>
           find_section,
@@ -79,15 +79,15 @@ public:
     return m_reflection_ctx.addImage(find_section, likely_module_names);
   }
 
-  llvm::Optional<uint32_t>
+  std::optional<uint32_t>
   AddImage(swift::remote::RemoteAddress image_start,
            llvm::SmallVector<llvm::StringRef, 1> likely_module_names) override {
     return m_reflection_ctx.addImage(image_start, likely_module_names);
   }
 
-  llvm::Optional<uint32_t> ReadELF(
+  std::optional<uint32_t> ReadELF(
       swift::remote::RemoteAddress ImageStart,
-      llvm::Optional<llvm::sys::MemoryBlock> FileBuffer,
+      std::optional<llvm::sys::MemoryBlock> FileBuffer,
       llvm::SmallVector<llvm::StringRef, 1> likely_module_names = {}) override {
     return m_reflection_ctx.readELF(ImageStart, FileBuffer,
                                     likely_module_names);
@@ -129,14 +129,28 @@ public:
     return type_ref_or_err.getType();
   }
 
-  const swift::reflection::TypeInfo *GetClassInstanceTypeInfo(
+  const swift::reflection::RecordTypeInfo *GetClassInstanceTypeInfo(
       const swift::reflection::TypeRef *type_ref,
       swift::remote::TypeInfoProvider *provider,
       swift::reflection::DescriptorFinder *descriptor_finder) override {
     auto on_exit = SetDescriptorFinderAndClearOnExit(descriptor_finder);
     if (!type_ref)
       return nullptr;
-    return m_type_converter.getClassInstanceTypeInfo(type_ref, 0, provider);
+
+    auto start =
+        m_reflection_ctx.computeUnalignedFieldStartOffset(type_ref);
+    if (!start) {
+      if (auto *log = GetLog(LLDBLog::Types)) {
+        std::stringstream ss;
+        type_ref->dump(ss);
+        LLDB_LOG(log, "Could not compute start field offset for typeref: ",
+                 ss.str());
+      }
+      return nullptr;
+    }
+
+    return m_type_converter.getClassInstanceTypeInfo(type_ref, *start,
+                                                     provider);
   }
 
   const swift::reflection::TypeInfo *
@@ -198,6 +212,23 @@ public:
   bool
   ForEachSuperClassType(swift::remote::TypeInfoProvider *tip,
                         swift::reflection::DescriptorFinder *descriptor_finder,
+                        const swift::reflection::TypeRef *tr,
+                        std::function<bool(SuperClassType)> fn) override {
+    while (tr) {
+      if (fn({[=]() -> const swift::reflection::RecordTypeInfo * {
+                return GetRecordTypeInfo(tr, tip, descriptor_finder);
+              },
+              [=]() -> const swift::reflection::TypeRef * { return tr; }}))
+        return true;
+
+      tr = LookupSuperclass(tr, descriptor_finder);
+    }
+    return false;
+  }
+
+  bool
+  ForEachSuperClassType(swift::remote::TypeInfoProvider *tip,
+                        swift::reflection::DescriptorFinder *descriptor_finder,
                         lldb::addr_t pointer,
                         std::function<bool(SuperClassType)> fn) override {
     auto on_exit = SetDescriptorFinderAndClearOnExit(descriptor_finder);
@@ -230,7 +261,7 @@ public:
     return false;
   }
 
-  llvm::Optional<int32_t> ProjectEnumValue(
+  std::optional<int32_t> ProjectEnumValue(
       swift::remote::RemoteAddress enum_addr,
       const swift::reflection::TypeRef *enum_type_ref,
       swift::remote::TypeInfoProvider *provider,
@@ -243,7 +274,7 @@ public:
     return {};
   }
 
-  llvm::Optional<std::pair<const swift::reflection::TypeRef *,
+  std::optional<std::pair<const swift::reflection::TypeRef *,
                            swift::reflection::RemoteAddress>>
   ProjectExistentialAndUnwrapClass(
       swift::reflection::RemoteAddress existential_address,
@@ -281,7 +312,7 @@ public:
                                                  skip_artificial_subclasses);
   }
 
-  llvm::Optional<bool> IsValueInlinedInExistentialContainer(
+  std::optional<bool> IsValueInlinedInExistentialContainer(
       swift::remote::RemoteAddress existential_address) override {
     return m_reflection_ctx.isValueInlinedInExistentialContainer(
         existential_address);
@@ -299,8 +330,29 @@ public:
   StripSignedPointer(swift::remote::RemoteAbsolutePointer pointer) override {
     return m_reflection_ctx.stripSignedPointer(pointer);
   }
-};
 
+private:
+  /// Return a description of the layout of the record (classes, structs and
+  /// tuples) type given its typeref.
+  const swift::reflection::RecordTypeInfo *
+  GetRecordTypeInfo(const swift::reflection::TypeRef *type_ref,
+                    swift::remote::TypeInfoProvider *tip,
+                    swift::reflection::DescriptorFinder *descriptor_finder) {
+    auto *type_info = GetTypeInfo(type_ref, tip, descriptor_finder);
+    if (auto record_type_info =
+            llvm::dyn_cast_or_null<swift::reflection::RecordTypeInfo>(
+                type_info))
+      return record_type_info;
+    if (llvm::isa_and_nonnull<swift::reflection::ReferenceTypeInfo>(type_info))
+      return GetClassInstanceTypeInfo(type_ref, tip, descriptor_finder);
+    if (auto *log = GetLog(LLDBLog::Types)) {
+      std::stringstream ss;
+      type_ref->dump(ss);
+      LLDB_LOG(log, "Could not get record type info for typeref: ", ss.str());
+    }
+    return nullptr;
+  }
+};
 } // namespace
 
 namespace lldb_private {

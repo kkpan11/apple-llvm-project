@@ -71,6 +71,7 @@ public:
         m_compiler_invocation.getSearchPathOptions(),
         m_compiler_invocation.getClangImporterOptions(),
         m_compiler_invocation.getSymbolGraphOptions(),
+        m_compiler_invocation.getCASOptions(),
         m_source_manager, m_diagnostic_engine));
 
     m_clang_importer = swift::ClangImporter::create(*m_ast_context, "", {}, {});
@@ -431,7 +432,7 @@ TypeSystemSwiftTypeRef::GetClangTypeNode(CompilerType clang_type,
 }
 
 /// Return a pair of modulename, type name for the outermost nominal type.
-static llvm::Optional<std::pair<StringRef, StringRef>>
+static std::optional<std::pair<StringRef, StringRef>>
 GetNominal(swift::Demangle::Demangler &dem, swift::Demangle::NodePointer node) {
   if (!node)
     return {};
@@ -474,8 +475,19 @@ GetNominal(swift::Demangle::Demangler &dem, swift::Demangle::NodePointer node) {
   return {};
 }
 
+bool 
+TypeSystemSwiftTypeRef::IsBuiltinType(CompilerType type) {
+  assert(type.GetTypeSystem().isa_and_nonnull<TypeSystemSwift>() &&
+         "Unexpected type system!");
+  Demangler dem;
+  auto *node = GetDemangledType(dem, type.GetMangledTypeName());
+  if (!node)
+    return false;
+  return node->getKind() == Node::Kind::BuiltinTypeName;
+}
+
 /// Return a pair of module name and type name, given a mangled name.
-static llvm::Optional<std::pair<StringRef, StringRef>>
+static std::optional<std::pair<StringRef, StringRef>>
 GetNominal(llvm::StringRef mangled_name, swift::Demangle::Demangler &dem) {
   auto *node = GetDemangledType(dem, mangled_name);
   /// Builtin names belong to the builtin module, and are stored only with their
@@ -531,7 +543,7 @@ IsClangImportedType(NodePointer node,
   case Node::Kind::Enum:
   case Node::Kind::TypeAlias:
     if (!IsClangImportedType(node->getFirstChild(), decl_context))
-    return false;
+      return false;
 
     // When C++ interop is enabled, Swift enums represent Swift namespaces.
     decl_context.push_back({node->getKind() == Node::Kind::Enum
@@ -656,7 +668,7 @@ TypeSystemSwiftTypeRef::ResolveTypeAlias(swift::Demangle::Demangler &dem,
   return {n, {}};
 }
 
-llvm::Optional<TypeSystemSwift::TupleElement>
+std::optional<TypeSystemSwift::TupleElement>
 TypeSystemSwiftTypeRef::GetTupleElement(lldb::opaque_compiler_type_t type,
                                         size_t idx) {
   TupleElement result;
@@ -1478,6 +1490,7 @@ void TypeSystemSwiftTypeRef::NotifyAllTypeSystems(
 
 void TypeSystemSwiftTypeRefForExpressions::ModulesDidLoad(
     ModuleList &module_list) {
+  ++m_generation;
   NotifyAllTypeSystems([&](TypeSystemSP ts_sp) {
     if (auto swift_ast_ctx =
             llvm::dyn_cast_or_null<SwiftASTContextForExpressions>(ts_sp.get()))
@@ -1617,6 +1630,8 @@ SwiftASTContext *TypeSystemSwiftTypeRefForExpressions::GetSwiftASTContext(
       // clients holding on to the old context via a CompilerType will keep its
       // shared_ptr alive.
       m_swift_ast_context_map.erase(key);
+      LLDB_LOGF(GetLog(LLDBLog::Types),
+                "Recreating SwiftASTContext due to fatal errors.");
     }
 
     // Create a new SwiftASTContextForExpressions.
@@ -1830,7 +1845,8 @@ TypeSystemSwiftTypeRef::FindTypeInModule(opaque_compiler_type_t opaque_type) {
   ConstString module(module_type->first);
   ConstString type(module_type->second);
   llvm::SmallVector<CompilerContext, 2> decl_context;
-  decl_context.push_back({CompilerContextKind::Module, module});
+  if (!module.IsEmpty())
+    decl_context.push_back({CompilerContextKind::Module, module});
   decl_context.push_back({CompilerContextKind::AnyType, type});
 
   TypeQuery query(decl_context, TypeQueryOptions::e_find_one |
@@ -2085,7 +2101,7 @@ template <> bool Equivalent<ConstString>(ConstString l, ConstString r) {
 
 /// Version tailored to GetBitSize & friends.
 template <typename T>
-bool Equivalent(llvm::Optional<T> l, llvm::Optional<T> r) {
+bool Equivalent(std::optional<T> l, std::optional<T> r) {
   if (l == r)
     return true;
   // There are situations where SwiftASTContext incorrectly returns
@@ -2101,8 +2117,8 @@ bool Equivalent(llvm::Optional<T> l, llvm::Optional<T> r) {
 }
 
 // Introduced for `GetNumChildren`.
-template <typename T> bool Equivalent(llvm::Optional<T> l, T r) {
-  return Equivalent(l, llvm::Optional<T>(r));
+template <typename T> bool Equivalent(std::optional<T> l, T r) {
+  return Equivalent(l, std::optional<T>(r));
 }
 
 } // namespace
@@ -2131,7 +2147,7 @@ constexpr ExecutionContextScope *g_no_exe_ctx = nullptr;
       return result;                                                           \
     if (!GetSwiftASTContext(nullptr))                                          \
       return result;                                                           \
-    assert((result == GetSwiftASTContext(nullptr)->REFERENCE()) &&             \
+    assert(Equivalent(result, GetSwiftASTContext(nullptr)->REFERENCE()) &&     \
            "TypeSystemSwiftTypeRef diverges from SwiftASTContext");            \
     return result;                                                             \
   } while (0)
@@ -2151,6 +2167,11 @@ constexpr ExecutionContextScope *g_no_exe_ctx = nullptr;
     if ((TYPE) && !ReconstructType(TYPE))                                      \
       return result;                                                           \
     ExecutionContext _exe_ctx(EXE_CTX);                                        \
+    /* When in the error backstop the sc will point into the stdlib. */        \
+    if (auto *frame = _exe_ctx.GetFramePtr())                                  \
+      if (frame->GetSymbolContext(eSymbolContextFunction).GetFunctionName() == \
+          SwiftLanguageRuntime::GetErrorBackstopName())                        \
+        return result;                                                         \
     auto swift_scratch_ctx_lock = SwiftScratchContextLock(                     \
         _exe_ctx == ExecutionContext() ? nullptr : &_exe_ctx);                 \
     bool equivalent =                                                          \
@@ -2783,12 +2804,12 @@ CompilerType TypeSystemSwiftTypeRef::GetVoidFunctionType() {
 }
 
 // Exploring the type
-llvm::Optional<uint64_t>
+std::optional<uint64_t>
 TypeSystemSwiftTypeRef::GetBitSize(opaque_compiler_type_t type,
                                    ExecutionContextScope *exe_scope) {
   LLDB_SCOPED_TIMER();
-  auto impl = [&]() -> llvm::Optional<uint64_t> {
-    auto get_static_size = [&](bool cached_only) -> llvm::Optional<uint64_t> {
+  auto impl = [&]() -> std::optional<uint64_t> {
+    auto get_static_size = [&](bool cached_only) -> std::optional<uint64_t> {
       if (IsMeaninglessWithoutDynamicResolution(type))
         return {};
 
@@ -2801,7 +2822,7 @@ TypeSystemSwiftTypeRef::GetBitSize(opaque_compiler_type_t type,
       struct SwiftType : public Type {
         /// Avoid a potential infinite recursion because
         /// Type::GetByteSize() may call into this function again.
-        llvm::Optional<uint64_t> GetStaticByteSize() {
+        std::optional<uint64_t> GetStaticByteSize() {
           if (m_byte_size_has_value)
             return uint64_t(m_byte_size);
           return {};
@@ -2883,11 +2904,11 @@ TypeSystemSwiftTypeRef::GetBitSize(opaque_compiler_type_t type,
     return impl();
 }
 
-llvm::Optional<uint64_t>
+std::optional<uint64_t>
 TypeSystemSwiftTypeRef::GetByteStride(opaque_compiler_type_t type,
                                       ExecutionContextScope *exe_scope) {
   LLDB_SCOPED_TIMER();
-  auto impl = [&]() -> llvm::Optional<uint64_t> {
+  auto impl = [&]() -> std::optional<uint64_t> {
     if (auto *runtime =
             SwiftLanguageRuntime::Get(exe_scope->CalculateProcess())) {
       if (auto stride = runtime->GetByteStride(GetCanonicalType(type)))
@@ -2991,7 +3012,7 @@ TypeSystemSwiftTypeRef::GetNumChildren(opaque_compiler_type_t type,
   FALLBACK(GetNumChildren,
            (ReconstructType(type, exe_ctx), omit_empty_base_classes, exe_ctx));
 
-  auto impl = [&]() -> llvm::Optional<uint32_t> {
+  auto impl = [&]() -> std::optional<uint32_t> {
     if (exe_ctx)
       if (auto *exe_scope = exe_ctx->GetBestExecutionContextScope())
         if (auto *runtime =
@@ -3007,10 +3028,10 @@ TypeSystemSwiftTypeRef::GetNumChildren(opaque_compiler_type_t type,
     }
     return {};
   };
-  if (llvm::Optional<uint32_t> num_children = impl())
+  if (std::optional<uint32_t> num_children = impl())
     // Use a lambda to intercept and unwrap the `Optional` return value.
     // Optional<uint32_t> uses more lax equivalency function.
-    return [&]() -> llvm::Optional<uint32_t> {
+    return [&]() -> std::optional<uint32_t> {
       auto impl = [&]() { return num_children; };
       ExecutionContext exe_ctx_obj;
       if (exe_ctx)
@@ -3037,7 +3058,7 @@ uint32_t TypeSystemSwiftTypeRef::GetNumFields(opaque_compiler_type_t type,
   LLDB_SCOPED_TIMER();
   FALLBACK(GetNumFields, (ReconstructType(type, exe_ctx), exe_ctx));
 
-  auto impl = [&]() -> llvm::Optional<uint32_t> {
+  auto impl = [&]() -> std::optional<uint32_t> {
     if (exe_ctx)
       if (auto *runtime = SwiftLanguageRuntime::Get(exe_ctx->GetProcessSP()))
         if (auto num_fields =
@@ -3067,7 +3088,7 @@ uint32_t TypeSystemSwiftTypeRef::GetNumFields(opaque_compiler_type_t type,
   if (auto num_fields = impl()) {
     // Use a lambda to intercept and unwrap the `Optional` return value.
     // Optional<uint32_t> uses more lax equivalency function.
-    return [&]() -> llvm::Optional<uint32_t> {
+    return [&]() -> std::optional<uint32_t> {
       auto impl = [&]() { return num_fields; };
       ExecutionContext exe_ctx_obj;
       if (exe_ctx)
@@ -3151,9 +3172,9 @@ CompilerType TypeSystemSwiftTypeRef::GetChildCompilerTypeAtIndex(
   child_is_deref_of_parent = false;
   language_flags = 0;
   auto fallback = [&]() -> CompilerType {
-    LLDB_LOGF(GetLog(LLDBLog::Types),
-              "Had to engage SwiftASTContext fallback for type %s.",
-              AsMangledName(type));
+    LLDB_LOG(GetLog(LLDBLog::Types),
+             "Had to engage SwiftASTContext fallback for type {0}, field #{1}.",
+             AsMangledName(type), idx);
     if (auto *swift_ast_context =
             GetSwiftASTContextFromExecutionContext(exe_ctx))
       return swift_ast_context->GetChildCompilerTypeAtIndex(
@@ -3170,7 +3191,7 @@ CompilerType TypeSystemSwiftTypeRef::GetChildCompilerTypeAtIndex(
             child_byte_size, child_byte_offset, child_bitfield_bit_size,
             child_bitfield_bit_offset, child_is_base_class,
             child_is_deref_of_parent, valobj, language_flags));
-  llvm::Optional<unsigned> ast_num_children;
+  std::optional<unsigned> ast_num_children;
   auto get_ast_num_children = [&]() {
     if (ast_num_children)
       return *ast_num_children;
@@ -3329,6 +3350,12 @@ CompilerType TypeSystemSwiftTypeRef::GetChildCompilerTypeAtIndex(
     return impl();
 #ifndef NDEBUG
   auto result = impl();
+  if (ShouldSkipValidation(type))
+    return result;
+
+  if (!ModuleList::GetGlobalModuleListProperties().GetSwiftValidateTypeSystem())
+    return result;
+
   // FIXME:
   // No point comparing the results if the reflection data has more
   // information.  There's a nasty chicken & egg problem buried here:
@@ -3338,8 +3365,6 @@ CompilerType TypeSystemSwiftTypeRef::GetChildCompilerTypeAtIndex(
   if (get_ast_num_children() <
       runtime->GetNumChildren({weak_from_this(), type}, exe_scope)
           .value_or(0))
-    return result;
-  if (ShouldSkipValidation(type))
     return result;
   // When the child compiler type is an anonymous clang type,
   // GetChildCompilerTypeAtIndex will return the clang type directly. In this
@@ -3359,9 +3384,6 @@ CompilerType TypeSystemSwiftTypeRef::GetChildCompilerTypeAtIndex(
   bool ast_child_is_deref_of_parent = false;
   uint64_t ast_language_flags = 0;
   auto defer = llvm::make_scope_exit([&] {
-    if (!ModuleList::GetGlobalModuleListProperties()
-             .GetSwiftValidateTypeSystem())
-      return;
     // Ignore if SwiftASTContext got no result.
     if (ast_child_name.empty())
       return;
@@ -3372,10 +3394,10 @@ CompilerType TypeSystemSwiftTypeRef::GetChildCompilerTypeAtIndex(
             llvm::StringRef(ast_child_name).contains('.') ||
             Equivalent(child_name, ast_child_name)));
     assert(ast_language_flags ||
-           (Equivalent(llvm::Optional<uint64_t>(child_byte_size),
-                       llvm::Optional<uint64_t>(ast_child_byte_size))));
-    assert(Equivalent(llvm::Optional<uint64_t>(child_byte_offset),
-                      llvm::Optional<uint64_t>(ast_child_byte_offset)));
+           (Equivalent(std::optional<uint64_t>(child_byte_size),
+                       std::optional<uint64_t>(ast_child_byte_size))));
+    assert(Equivalent(std::optional<uint64_t>(child_byte_offset),
+                      std::optional<uint64_t>(ast_child_byte_offset)));
     assert(
         Equivalent(child_bitfield_bit_offset, ast_child_bitfield_bit_offset));
     assert(Equivalent(child_bitfield_bit_size, ast_child_bitfield_bit_size));
@@ -3806,7 +3828,7 @@ CompilerType TypeSystemSwiftTypeRef::CreateSILPackType(CompilerType type,
   return RemangleAsType(dem, type_node);
 }
 
-static llvm::Optional<TypeSystemSwiftTypeRef::PackTypeInfo>
+static std::optional<TypeSystemSwiftTypeRef::PackTypeInfo>
 decodeSILPackType(swift::Demangle::Demangler &dem, CompilerType type,
                   swift::Demangle::NodePointer &node) {
   TypeSystemSwiftTypeRef::PackTypeInfo info;
@@ -3835,7 +3857,7 @@ decodeSILPackType(swift::Demangle::Demangler &dem, CompilerType type,
   return info;
 }
 
-llvm::Optional<TypeSystemSwiftTypeRef::PackTypeInfo>
+std::optional<TypeSystemSwiftTypeRef::PackTypeInfo>
 TypeSystemSwiftTypeRef::IsSILPackType(CompilerType type) {
   NodePointer node;
   swift::Demangle::Demangler dem;
@@ -3939,11 +3961,11 @@ bool TypeSystemSwiftTypeRef::IsTupleType(lldb::opaque_compiler_type_t type) {
                       (ReconstructType(type)), (ReconstructType(type)));
 }
 
-llvm::Optional<TypeSystemSwift::NonTriviallyManagedReferenceKind>
+std::optional<TypeSystemSwift::NonTriviallyManagedReferenceKind>
 TypeSystemSwiftTypeRef::GetNonTriviallyManagedReferenceKind(
     lldb::opaque_compiler_type_t type) {
   auto impl = [&]()
-      -> llvm::Optional<TypeSystemSwift::NonTriviallyManagedReferenceKind> {
+      -> std::optional<TypeSystemSwift::NonTriviallyManagedReferenceKind> {
     using namespace swift::Demangle;
     Demangler dem;
     NodePointer node = GetDemangledType(dem, AsMangledName(type));
@@ -4207,7 +4229,13 @@ bool TypeSystemSwiftTypeRef::DumpTypeValue(
                       ConstString(((StreamString *)&s)->GetString())) &&
            "TypeSystemSwiftTypeRef diverges from SwiftASTContext");
   });
+
+  // SwiftASTContext fails here, details explained in RemoteASTImport.test
+  if (StringRef(AsMangledName(type)) == "$s15RemoteASTImport14FromMainModuleCD")
+    return impl();
+
 #endif
+
   VALIDATE_AND_RETURN(impl, DumpTypeValue, type, exe_scope,
                       (ReconstructType(type, exe_scope), ast_s, format, data,
                        data_offset, data_byte_size, bitfield_bit_size,
@@ -4227,7 +4255,7 @@ bool TypeSystemSwiftTypeRef::IsPointerOrReferenceType(
                       (ReconstructType(type), nullptr),
                       (ReconstructType(type), pointee_type));
 }
-llvm::Optional<size_t>
+std::optional<size_t>
 TypeSystemSwiftTypeRef::GetTypeBitAlign(opaque_compiler_type_t type,
                                         ExecutionContextScope *exe_scope) {
   LLDB_SCOPED_TIMER();
