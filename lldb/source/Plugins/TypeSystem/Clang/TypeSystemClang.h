@@ -149,6 +149,8 @@ public:
   static LanguageSet GetSupportedLanguagesForTypes();
   static LanguageSet GetSupportedLanguagesForExpressions();
 
+  static void DebuggerInitialize(Debugger &debugger);
+
   static void Initialize();
 
   static void Terminate();
@@ -247,7 +249,7 @@ public:
 
   CompilerType GetTypeForDecl(clang::TagDecl *decl);
 
-  CompilerType GetTypeForDecl(clang::ObjCInterfaceDecl *objc_decl);
+  CompilerType GetTypeForDecl(const clang::ObjCInterfaceDecl *objc_decl);
 
   template <typename RecordDeclType>
   CompilerType
@@ -327,6 +329,14 @@ public:
                                 ClangASTMetadata *metadata = nullptr,
                                 bool exports_symbols = false);
 
+  clang::NamedDecl *CreateRecordDecl(clang::DeclContext *decl_ctx,
+                                     OptionalClangModuleID owning_module,
+                                     lldb::AccessType access_type,
+                                     llvm::StringRef name, int kind,
+                                     lldb::LanguageType language,
+                                     ClangASTMetadata *metadata = nullptr,
+                                     bool exports_symbols = false);
+
   class TemplateParameterInfos {
   public:
     TemplateParameterInfos() = default;
@@ -336,10 +346,27 @@ public:
       assert(names.size() == args_in.size());
     }
 
-    TemplateParameterInfos(TemplateParameterInfos const &) = delete;
     TemplateParameterInfos(TemplateParameterInfos &&) = delete;
 
-    TemplateParameterInfos &operator=(TemplateParameterInfos const &) = delete;
+    TemplateParameterInfos(const TemplateParameterInfos &o)
+        : names(o.names), args(o.args), pack_name(o.pack_name) {
+      if (o.packed_args)
+        packed_args = std::make_unique<TemplateParameterInfos>(*o.packed_args);
+    }
+
+    TemplateParameterInfos &operator=(const TemplateParameterInfos &o) {
+      auto tmp = TemplateParameterInfos(o);
+      swap(tmp);
+      return *this;
+    }
+
+    void swap(TemplateParameterInfos &other) noexcept {
+      std::swap(names, other.names);
+      std::swap(args, other.args);
+      std::swap(pack_name, other.pack_name);
+      std::swap(packed_args, other.packed_args);
+    }
+
     TemplateParameterInfos &operator=(TemplateParameterInfos &&) = delete;
 
     ~TemplateParameterInfos() = default;
@@ -347,7 +374,7 @@ public:
     bool IsValid() const {
       // Having a pack name but no packed args doesn't make sense, so mark
       // these template parameters as invalid.
-      if (pack_name && !packed_args)
+      if (HasPackName() && !packed_args)
         return false;
       return args.size() == names.size() &&
              (!packed_args || !packed_args->packed_args);
@@ -388,14 +415,14 @@ public:
       return packed_args->GetArgs();
     }
 
-    bool HasPackName() const { return pack_name && pack_name[0]; }
+    bool HasPackName() const { return pack_name.has_value(); }
 
     llvm::StringRef GetPackName() const {
       assert(HasPackName());
-      return pack_name;
+      return pack_name.value();
     }
 
-    void SetPackName(char const *name) { pack_name = name; }
+    void SetPackName(char const *name) { pack_name.emplace(name); }
 
     void SetParameterPack(std::unique_ptr<TemplateParameterInfos> args) {
       packed_args = std::move(args);
@@ -407,7 +434,7 @@ public:
     llvm::SmallVector<const char *, 2> names;
     llvm::SmallVector<clang::TemplateArgument, 2> args;
 
-    const char * pack_name = nullptr;
+    std::optional<std::string> pack_name;
     std::unique_ptr<TemplateParameterInfos> packed_args;
   };
 
@@ -453,7 +480,16 @@ public:
                                clang::DeclContext *decl_ctx,
                                OptionalClangModuleID owning_module,
                                bool isForwardDecl, bool isInternal,
-                               ClangASTMetadata *metadata = nullptr);
+                               ClangASTMetadata *metadata = nullptr) {
+    clang::ObjCInterfaceDecl *d = CreateObjCDecl(
+        name, decl_ctx, owning_module, isForwardDecl, isInternal, metadata);
+    return GetTypeForDecl(d);
+  }
+
+  clang::ObjCInterfaceDecl *
+  CreateObjCDecl(llvm::StringRef name, clang::DeclContext *decl_ctx,
+                 OptionalClangModuleID owning_module, bool isForwardDecl,
+                 bool isInternal, ClangASTMetadata *metadata = nullptr);
 
   // Returns a mask containing bits from the TypeSystemClang::eTypeXXX
   // enumerations
@@ -495,12 +531,23 @@ public:
                                size_t element_count, bool is_vector);
 
   // Enumeration Types
+  clang::EnumDecl *CreateEnumerationDecl(llvm::StringRef name,
+                                         clang::DeclContext *decl_ctx,
+                                         OptionalClangModuleID owning_module,
+                                         const Declaration &decl,
+                                         const CompilerType &integer_qual_type,
+                                         bool is_scoped);
+
   CompilerType CreateEnumerationType(llvm::StringRef name,
                                      clang::DeclContext *decl_ctx,
                                      OptionalClangModuleID owning_module,
                                      const Declaration &decl,
                                      const CompilerType &integer_qual_type,
-                                     bool is_scoped);
+                                     bool is_scoped) {
+    clang::EnumDecl *enum_decl = CreateEnumerationDecl(
+        name, decl_ctx, owning_module, decl, integer_qual_type, is_scoped);
+    return GetType(getASTContext().getTagDeclType(enum_decl));
+  }
 
   // Integer type functions
 
@@ -518,10 +565,27 @@ public:
   PDBASTParser *GetPDBParser() override;
   npdb::PdbAstBuilder *GetNativePDBParser() override;
 
+  /// If true, then declarations are completed by completing their redeclaration
+  /// chain.
+  ///
+  /// Initially declarations might just be forward declared in an AST but have a
+  /// defining redeclaration (that might be lazily added to the AST via the
+  /// ExternalASTSource).
+  static bool UseRedeclCompletion();
+
   // TypeSystemClang callbacks for external source lookups.
   void CompleteTagDecl(clang::TagDecl *);
 
   void CompleteObjCInterfaceDecl(clang::ObjCInterfaceDecl *);
+
+  /// Creates a redeclaration for the declaration specified by the given type.
+  /// The redeclaration will be at the end of the redeclaration chain. The
+  /// passed declaration has to be created via a TypeSystemClang interface.
+  ///
+  /// \param type The type which declaration should be redeclared. Has to be
+  /// an Objective-C interface type (or Objective-C type), RecordType or
+  /// EnumType.
+  CompilerType CreateRedeclaration(CompilerType ct);
 
   bool LayoutRecordType(
       const clang::RecordDecl *record_decl, uint64_t &size, uint64_t &alignment,
@@ -998,8 +1062,8 @@ public:
       const char *name, // the full symbol name as seen in the symbol table
                         // (lldb::opaque_compiler_type_t type, "-[NString
                         // stringWithCString:]")
-      const CompilerType &method_compiler_type, lldb::AccessType access,
-      bool is_artificial, bool is_variadic, bool is_objc_direct_call);
+      const CompilerType &method_compiler_type, bool is_artificial,
+      bool is_variadic, bool is_objc_direct_call);
 
   static bool SetHasExternalStorage(lldb::opaque_compiler_type_t type,
                                     bool has_extern);
@@ -1207,6 +1271,18 @@ private:
   /// Maps CXXRecordDecl to their most recent added method/field's
   /// AccessSpecifier.
   CXXRecordDeclAccessMap m_cxx_record_decl_access;
+
+  /// The information we need to redeclare a class template but that we can't
+  /// gather from the forward declaration.
+  struct ClassTemplateRedeclInfo {
+    TemplateParameterInfos m_template_args;
+  };
+  typedef llvm::DenseMap<const clang::Decl *, ClassTemplateRedeclInfo>
+      ClassTemplateRedeclInfoMap;
+  // FIXME: This is in theory redundant. Instead we should change the way we
+  // create ClassTemplateSpecializationDecls in TypeSystemClang so that we can
+  // just pass the data from the forward declaration.
+  ClassTemplateRedeclInfoMap m_class_template_redecl_infos;
 
   /// The sema associated that is currently used to build this ASTContext.
   /// May be null if we are already done parsing this ASTContext or the

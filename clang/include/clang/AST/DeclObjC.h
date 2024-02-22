@@ -1238,7 +1238,8 @@ class ObjCInterfaceDecl : public ObjCContainerDecl
   /// which will be NULL if this class has not yet been defined.
   ///
   /// The bit indicates when we don't need to check for out-of-date
-  /// declarations. It will be set unless modules are enabled.
+  /// declarations. It will be set unless there is an ExternalASTSource that
+  /// could provide a definition.
   llvm::PointerIntPair<DefinitionData *, 1, bool> Data;
 
   ObjCInterfaceDecl(const ASTContext &C, DeclContext *DC, SourceLocation AtLoc,
@@ -1527,7 +1528,7 @@ public:
     // If the name of this class is out-of-date, bring it up-to-date, which
     // might bring in a definition.
     // Note: a null value indicates that we don't have a definition and that
-    // modules are enabled.
+    // there is a ExternalASTSource that could provide a definition.
     if (!Data.getOpaqueValue())
       getMostRecentDecl();
 
@@ -2095,7 +2096,8 @@ class ObjCProtocolDecl : public ObjCContainerDecl,
   /// which will be NULL if this class has not yet been defined.
   ///
   /// The bit indicates when we don't need to check for out-of-date
-  /// declarations. It will be set unless modules are enabled.
+  /// declarations. It will be set unless there is an ExternalASTSource that
+  /// could provide a definition.
   llvm::PointerIntPair<DefinitionData *, 1, bool> Data;
 
   ObjCProtocolDecl(ASTContext &C, DeclContext *DC, IdentifierInfo *Id,
@@ -2232,7 +2234,7 @@ public:
     // If the name of this protocol is out-of-date, bring it up-to-date, which
     // might bring in a definition.
     // Note: a null value indicates that we don't have a definition and that
-    // modules are enabled.
+    // there is a ExternalASTSource that could provide a definition.
     if (!Data.getOpaqueValue())
       getMostRecentDecl();
 
