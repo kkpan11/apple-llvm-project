@@ -25,6 +25,7 @@ class TestSwiftRewriteClangPaths(TestBase):
     @skipUnlessDarwin
     @swiftTest
     @skipIf(debug_info=no_match(["dsym"]))
+    @expectedFailureAll(setting=('plugin.typesystem.clang.experimental-redecl-completion', 'true'))
     def testWithRemap(self):
         self.dotest(True)
 
