@@ -452,6 +452,12 @@ void IncludeTreeBuilder::exitedInclude(Preprocessor &PP, FileID IncludedBy,
   SourceManager &SM = PP.getSourceManager();
   std::pair<FileID, unsigned> LocInfo = SM.getDecomposedExpansionLoc(ExitLoc);
 
+  // If the exited header belongs to a sub-module that's marked as missing from
+  // the umbrella, we must've first loaded its PCM file to find that out.
+  // We need to match this behavior with include-tree. Let's mark this as
+  // spurious import. For this node, Clang will load the top-level module, emit
+  // the appropriate diagnostics and then fall back to textual inclusion of the
+  // header itself.
   if (auto FE = PP.getSourceManager().getFileEntryRefForID(Include)) {
     ModuleMap &ModMap = PP.getHeaderSearchInfo().getModuleMap();
     Module *M = ModMap.findModuleForHeader(*FE).getModule();
