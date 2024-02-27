@@ -1650,8 +1650,12 @@ bool Target::SetArchitecture(const ArchSpec &arch_spec, bool set_platform,
         // what the process is. This can be deleted at some point in
         // the future.
         if (!m_arch.GetSpec().GetMachOCPUSubType() &&
-            other.GetMachOCPUSubType() == llvm::MachO::CPU_SUBTYPE_ARM64E)
+            other.GetMachOCPUSubType() == llvm::MachO::CPU_SUBTYPE_ARM64E) {
+          other = m_arch.GetSpec();
+          other.GetTriple().setArch(m_arch.GetSpec().GetTriple().getArch(),
+                                    llvm::Triple::AArch64SubArch_arm64e);
           replace_local_arch = true;
+        }
       }
     }
   }
