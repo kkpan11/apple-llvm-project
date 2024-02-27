@@ -35,7 +35,6 @@
 #include "lldb/Expression/UtilityFunction.h"
 #include "lldb/Host/Host.h"
 #include "lldb/Host/PosixApi.h"
-#include "lldb/Host/SafeMachO.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
 #include "lldb/Interpreter/OptionGroupWatchpoint.h"
@@ -1645,17 +1644,6 @@ bool Target::SetArchitecture(const ArchSpec &arch_spec, bool set_platform,
 
         if (m_arch.GetSpec().GetTriple() == other.GetTriple())
           replace_local_arch = false;
-        // Workaround for for pre-2024 debugserver, which always
-        // returns arm64e on arm64e-capable hardware regardless of
-        // what the process is. This can be deleted at some point in
-        // the future.
-        if (!m_arch.GetSpec().GetMachOCPUSubType() &&
-            other.GetMachOCPUSubType() == llvm::MachO::CPU_SUBTYPE_ARM64E) {
-          other = m_arch.GetSpec();
-          other.GetTriple().setArch(m_arch.GetSpec().GetTriple().getArch(),
-                                    llvm::Triple::AArch64SubArch_arm64e);
-          replace_local_arch = true;
-        }
       }
     }
   }
