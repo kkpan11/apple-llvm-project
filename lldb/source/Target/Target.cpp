@@ -4877,7 +4877,7 @@ void TargetProperties::UpdateLaunchInfoFromProperties() {
 std::optional<bool> TargetProperties::GetExperimentalPropertyValue(
     size_t idx, ExecutionContext *exe_ctx) const {
   const Property *exp_property =
-      m_collection_sp->GetPropertyAtIndex(ePropertyExperimental);
+      m_collection_sp->GetPropertyAtIndex(ePropertyExperimental, exe_ctx);
   OptionValueProperties *exp_values =
       exp_property->GetValue()->GetAsProperties();
   if (exp_values)
