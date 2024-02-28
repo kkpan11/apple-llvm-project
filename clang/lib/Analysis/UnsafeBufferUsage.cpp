@@ -3087,20 +3087,20 @@ void clang::checkUnsafeBufferUsage(const Decl *D,
                                   it->first->getNameAsString() +
                                   "' : has a reference type"));
 #endif
-        it = FixablesForAllVars.byVar.erase(it);
-      } else if (Tracker.hasUnclaimedUses(it->first)) {
-        it = FixablesForAllVars.byVar.erase(it);
-      } else if (it->first->isInitCapture()) {
+      it = FixablesForAllVars.byVar.erase(it);
+    } else if (Tracker.hasUnclaimedUses(it->first)) {
+      it = FixablesForAllVars.byVar.erase(it);
+    } else if (it->first->isInitCapture()) {
 #ifndef NDEBUG
       Handler.addDebugNoteForVar(it->first, it->first->getBeginLoc(),
                                  ("failed to produce fixit for '" +
                                   it->first->getNameAsString() +
                                   "' : init capture"));
 #endif
-        it = FixablesForAllVars.byVar.erase(it);
-      } else {
-        ++it;
-      }
+      it = FixablesForAllVars.byVar.erase(it);
+    } else {
+      ++it;
+    }
   }
 
 #ifndef NDEBUG
