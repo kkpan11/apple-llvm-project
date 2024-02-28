@@ -8,6 +8,8 @@
 
 #include "ABIInfoImpl.h"
 #include "TargetInfo.h"
+#include "clang/Basic/DiagnosticFrontend.h"
+#include "llvm/TargetParser/AArch64TargetParser.h"
 
 using namespace clang;
 using namespace clang::CodeGen;
@@ -74,6 +76,12 @@ private:
   bool allowBFloatArgsAndRet() const override {
     return getTarget().hasBFloat16Type();
   }
+
+  using ABIInfo::appendAttributeMangling;
+  void appendAttributeMangling(TargetClonesAttr *Attr, unsigned Index,
+                               raw_ostream &Out) const override;
+  void appendAttributeMangling(StringRef AttrStr,
+                               raw_ostream &Out) const override;
 };
 
 class AArch64SwiftABIInfo : public SwiftABIInfo {
@@ -809,6 +817,39 @@ Address AArch64ABIInfo::EmitMSVAArg(CodeGenFunction &CGF, Address VAListAddr,
                           CGF.getContext().getTypeInfoInChars(Ty),
                           CharUnits::fromQuantity(8),
                           /*allowHigherAlign*/ false);
+}
+
+void AArch64ABIInfo::appendAttributeMangling(TargetClonesAttr *Attr,
+                                             unsigned Index,
+                                             raw_ostream &Out) const {
+  appendAttributeMangling(Attr->getFeatureStr(Index), Out);
+}
+
+void AArch64ABIInfo::appendAttributeMangling(StringRef AttrStr,
+                                             raw_ostream &Out) const {
+  if (AttrStr == "default") {
+    Out << ".default";
+    return;
+  }
+
+  Out << "._";
+  SmallVector<StringRef, 8> Features;
+  AttrStr.split(Features, "+");
+  for (auto &Feat : Features)
+    Feat = Feat.trim();
+
+  // FIXME: It was brought up in #79316 that sorting the features which are
+  // used for mangling based on their multiversion priority is not a good
+  // practice. Changing the feature priorities will break the ABI. Perhaps
+  // it would be preferable to perform a lexicographical sort instead.
+  const TargetInfo &TI = CGT.getTarget();
+  llvm::sort(Features, [&TI](const StringRef LHS, const StringRef RHS) {
+    return TI.multiVersionSortPriority(LHS) < TI.multiVersionSortPriority(RHS);
+  });
+
+  for (auto &Feat : Features)
+    if (auto Ext = llvm::AArch64::parseArchExtension(Feat))
+      Out << 'M' << Ext->Name;
 }
 
 std::unique_ptr<TargetCodeGenInfo>
