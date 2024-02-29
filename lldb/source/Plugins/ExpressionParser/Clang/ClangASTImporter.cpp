@@ -777,7 +777,6 @@ bool ClangASTImporter::LayoutRecordType(
 
   RecordDeclToLayoutMap::iterator pos =
       m_record_decl_to_layout_map.find(record_decl);
-  bool success = false;
   base_offsets.clear();
   vbase_offsets.clear();
   if (pos != m_record_decl_to_layout_map.end()) {
@@ -786,13 +785,22 @@ bool ClangASTImporter::LayoutRecordType(
     field_offsets.swap(pos->second.field_offsets);
     base_offsets.swap(pos->second.base_offsets);
     vbase_offsets.swap(pos->second.vbase_offsets);
-    success = true;
-  } else {
-    bit_size = 0;
-    alignment = 0;
-    field_offsets.clear();
   }
-  return success;
+
+  // It's possible that we calculated the layout in a different
+  // ClangASTImporter instance. Try to import such layout if
+  // our decl has an origin.
+  if (auto origin = GetDeclOrigin(record_decl); origin.Valid())
+    if (importRecordLayoutFromOrigin(record_decl, bit_size, alignment,
+                                     field_offsets, base_offsets,
+                                     vbase_offsets))
+      return true;
+
+  bit_size = 0;
+  alignment = 0;
+  field_offsets.clear();
+
+  return false;
 }
 
 void ClangASTImporter::SetRecordLayout(clang::RecordDecl *decl,
