@@ -10,9 +10,6 @@ class TestSwiftExplicitModules(lldbtest.TestBase):
     @swiftTest
     def test_any_type(self):
         """Test explicit Swift modules"""
-        self.runCmd(
-            "settings set target.experimental.swift-allow-explicit-modules true"
-        )
         self.build()
         target, process, thread, bkpt = lldbutil.run_to_source_breakpoint(
             self, 'Set breakpoint here', lldb.SBFileSpec('main.swift'))
