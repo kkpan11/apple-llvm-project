@@ -785,6 +785,7 @@ bool ClangASTImporter::LayoutRecordType(
     field_offsets.swap(pos->second.field_offsets);
     base_offsets.swap(pos->second.base_offsets);
     vbase_offsets.swap(pos->second.vbase_offsets);
+    return true;
   }
 
   // It's possible that we calculated the layout in a different
