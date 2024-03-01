@@ -3781,52 +3781,6 @@ bool Target::SetSectionUnloaded(const lldb::SectionSP &section_sp,
 
 void Target::ClearAllLoadedSections() { m_section_load_history.Clear(); }
 
-lldb::addr_t Target::FindLoadAddrForNameInSymbolsAndPersistentVariables(
-    ConstString name_const_str, SymbolType symbol_type) {
-  lldb::addr_t symbol_addr = LLDB_INVALID_ADDRESS;
-  SymbolContextList sc_list;
-
-  GetImages().FindSymbolsWithNameAndType(name_const_str, symbol_type, sc_list);
-  if (!sc_list.IsEmpty()) {
-    SymbolContext desired_symbol;
-
-    if (sc_list.GetSize() == 1 &&
-        sc_list.GetContextAtIndex(0, desired_symbol)) {
-      if (desired_symbol.symbol) {
-        symbol_addr = desired_symbol.symbol->GetAddress().GetLoadAddress(this);
-      }
-    } else if (sc_list.GetSize() > 1) {
-      for (size_t i = 0; i < sc_list.GetSize(); i++) {
-        if (sc_list.GetContextAtIndex(i, desired_symbol)) {
-          if (desired_symbol.symbol) {
-            symbol_addr =
-                desired_symbol.symbol->GetAddress().GetLoadAddress(this);
-            if (symbol_addr != LLDB_INVALID_ADDRESS)
-              break;
-          }
-        }
-      }
-    }
-  }
-
-  if (symbol_addr == LLDB_INVALID_ADDRESS) {
-    // If we didn't find it in the symbols, check the ClangPersistentVariables,
-    // 'cause we may have
-    // made it by hand.
-    ConstString mangled_const_str;
-    if (name_const_str.GetMangledCounterpart(mangled_const_str))
-      symbol_addr = GetPersistentSymbol(mangled_const_str);
-  }
-
-  if (symbol_addr == LLDB_INVALID_ADDRESS) {
-    // Let's try looking for the name passed-in itself, as it might be a mangled
-    // name
-    symbol_addr = GetPersistentSymbol(name_const_str);
-  }
-
-  return symbol_addr;
-}
-
 void Target::SaveScriptedLaunchInfo(lldb_private::ProcessInfo &process_info) {
   if (process_info.IsScriptedProcess()) {
     // Only copy scripted process launch options.
