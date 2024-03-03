@@ -505,7 +505,7 @@ namespace llvm {
     /// \param UniqueIdentifier A unique identifier for the union.
     /// \param OffsetInBits The offset of the variant payload in the variant
     /// type.
-    /// \param SpareBitMask A mask of spare bits of the payload, spare bits are
+    /// \param SpareBitsMask A mask of spare bits of the payload, spare bits are
     /// bits that aren't used in any of the variant's cases.
     DICompositeType *
     createVariantPart(DIScope *Scope, StringRef Name, DIFile *File,
