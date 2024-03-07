@@ -172,10 +172,10 @@ typedef enum SwiftModuleLoadingMode {
 } SwiftModuleLoadingMode;
 
 // BEGIN SWIFT
-enum EnableSwiftCxxInterop {
-  eAutoDetectSwiftCxxInterop,
-  eEnableSwiftCxxInterop,
-  eDisableSwiftCxxInterop
+enum class AutoBool {
+  Auto,
+  True,
+  False
 };
 // END SWIFT
 
