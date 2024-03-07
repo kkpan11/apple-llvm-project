@@ -1620,13 +1620,11 @@ bool HasNonexistentExplicitModule(const std::vector<std::string> &args) {
 }
 
 void RemoveExplicitModules(std::vector<std::string> &args) {
-  // TODO: Should module map file arguments also be removed? Or is there a
-  // benefit to keeping "-fmodule-map-file=" options?
   llvm::erase_if(args, [](const std::string &arg) {
-    // TODO: Maybe also "-fno-implicit-module-maps"
-    if (arg == "-fno-implicit-modules")
+    if (arg == "-fno-implicit-modules" || arg == "-fno-implicit-module-maps")
       return true;
-    if (StringRef s = arg; s.starts_with("-fmodule-file="))
+    StringRef s = arg;
+    if (s.starts_with("-fmodule-file=") || s.starts_with("-fmodule-map-file="))
       return true;
 
     return false;
