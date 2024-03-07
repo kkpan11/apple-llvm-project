@@ -1600,17 +1600,19 @@ namespace {
 
 bool HasNonexistentExplicitModule(const std::vector<std::string> &args) {
   for (const auto &arg : args) {
-    StringRef val = arg;
-    if (!val.consume_front("-fmodule-file="))
+    StringRef value = arg;
+    if (!value.consume_front("-fmodule-file="))
       continue;
-    // The value's format is 'ModuleName=ModulePath'. Drop the prefix up to the
-    // first '=' character to obtain the path.
-    size_t eq = val.find('=');
-    assert(eq != std::string::npos);
-    if (eq == std::string::npos)
-      continue;
-    StringRef path = val.drop_front(eq + 1);
-    if (!llvm::sys::fs::exists(path)) {
+    StringRef path = value;
+    size_t eq = value.find('=');
+    // The value that follows is in one of two formats:
+    //   1. ModuleName=ModulePath
+    //   2. ModulePath
+    if (eq != std::string::npos)
+      // The value appears to be in ModuleName=ModulePath forat.
+      path = value.drop_front(eq + 1);
+    // Check both path and value. This is to handle paths containing '='.
+    if (!llvm::sys::fs::exists(path) && !llvm::sys::fs::exists(value)) {
       std::string m_description;
       HEALTH_LOG_PRINTF("Nonexistent explicit module file %s", path.data());
       return true;
