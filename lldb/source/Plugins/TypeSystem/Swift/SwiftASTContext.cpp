@@ -57,6 +57,7 @@
 #include "clang/Driver/Driver.h"
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
@@ -64,6 +65,7 @@
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/MC/TargetRegistry.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/TargetSelect.h"
@@ -1594,9 +1596,50 @@ void SwiftASTContext::AddExtraClangArgs(const std::vector<std::string> &source,
   }
 }
 
+namespace {
+
+bool HasNonexistentExplicitModule(const std::vector<std::string> &args) {
+  for (const auto &arg : args) {
+    StringRef val = arg;
+    if (!val.consume_front("-fmodule-file="))
+      continue;
+    // The value's format is 'ModuleName=ModulePath'. Drop the prefix up to the
+    // first '=' character to obtain the path.
+    size_t eq = val.find('=');
+    assert(eq != std::string::npos);
+    if (eq == std::string::npos)
+      continue;
+    StringRef path = val.drop_front(eq + 1);
+    if (!llvm::sys::fs::exists(path)) {
+      std::string m_description;
+      HEALTH_LOG_PRINTF("Nonexistent explicit module file %s", path.data());
+      return true;
+    }
+  }
+  return false;
+}
+
+void RemoveExplicitModules(std::vector<std::string> &args) {
+  // TODO: Should module map file arguments also be removed? Or is there a
+  // benefit to keeping "-fmodule-map-file=" options?
+  llvm::erase_if(args, [](const std::string &arg) {
+    // TODO: Maybe also "-fno-implicit-module-maps"
+    if (arg == "-fno-implicit-modules")
+      return true;
+    if (StringRef s = arg; s.starts_with("-fmodule-file="))
+      return true;
+
+    return false;
+  });
+}
+
+} // namespace
+
 void SwiftASTContext::AddExtraClangArgs(const std::vector<std::string> &ExtraArgs) {
   swift::ClangImporterOptions &importer_options = GetClangImporterOptions();
   AddExtraClangArgs(ExtraArgs, importer_options.ExtraArgs);
+  if (HasNonexistentExplicitModule(importer_options.ExtraArgs))
+    RemoveExplicitModules(importer_options.ExtraArgs);
 }
 
 void SwiftASTContext::AddUserClangArgs(TargetProperties &props) {
