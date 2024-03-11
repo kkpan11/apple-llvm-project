@@ -13,8 +13,6 @@ from typing import List, Optional
 
 log = logging.getLogger()
 
-REMOTE = 'git@github.com:apple/llvm-project.git'
-
 class GitError(Exception):
     """
     An exception thrown if the git command failed.
@@ -50,7 +48,7 @@ def invoke(*cmd, git_dir: Optional[str] = None,
            stdout=None,
            stderr=subprocess.PIPE,
            strip: bool = True, ignore_error: bool = False,
-           timeout: Optional[int] = None):
+           timeout: Optional[int] = None) -> Optional[str]:
     """ Invokes a git subprocess with the passed string arguments and return
         the stdout of the git command as a string if text otherwise a file
         handle.
@@ -85,7 +83,7 @@ def invoke(*cmd, git_dir: Optional[str] = None,
     raise GitError(all_args, p.returncode, out, err)
 
 
-def git(*cmd, **kwargs):
+def git(*cmd, **kwargs) -> Optional[str]:
     """ Invokes a git subprocess with the passed string arguments and return
         the stdout of the git command.
     """
@@ -341,5 +339,18 @@ def main():
         log.info(f'Successfully pushed `{merge_commit}`.')
 
 
+def establish_remote():
+    remotes = git("remote", "-v")
+    for remote in (
+        "git@github.com:apple/llvm-project.git",
+        "https://github.com/apple/llvm-project.git",
+    ):
+        if remote in remotes:
+            global REMOTE
+            REMOTE = remote
+            break
+
+
 if __name__ == '__main__':
+    establish_remote()
     sys.exit(main())
