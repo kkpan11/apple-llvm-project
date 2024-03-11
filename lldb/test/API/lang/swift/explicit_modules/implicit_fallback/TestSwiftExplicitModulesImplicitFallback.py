@@ -27,3 +27,4 @@ class TestCase(lldbtest.TestBase):
 
         self.filecheck(f"platform shell cat {log}", __file__)
         # CHECK: Nonexistent explicit module file
+        # CHECK: loaded module {{.*}} loaded: {{.*}}module-cache-lldb
