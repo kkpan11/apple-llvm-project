@@ -1614,7 +1614,7 @@ bool HasNonexistentExplicitModule(const std::vector<std::string> &args) {
     // Check both path and value. This is to handle paths containing '='.
     if (!llvm::sys::fs::exists(path) && !llvm::sys::fs::exists(value)) {
       std::string m_description;
-      HEALTH_LOG_PRINTF("Nonexistent explicit module file %s", path.data());
+      HEALTH_LOG_PRINTF("Nonexistent explicit module file %s", arg.data());
       return true;
     }
   }
