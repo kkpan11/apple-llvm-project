@@ -1599,7 +1599,7 @@ void SwiftASTContext::AddExtraClangArgs(const std::vector<std::string> &source,
 namespace {
 
 bool HasNonexistentExplicitModule(const std::vector<std::string> &args) {
-  for (const auto &arg : args) {
+  for (const std::string &arg : args) {
     StringRef value = arg;
     if (!value.consume_front("-fmodule-file="))
       continue;
