@@ -214,7 +214,6 @@ class ValueAPITestCase(TestBase):
             33,
             "Got the right value",
         )
->>>>>>> 3707c540d23a (Make ValueObject::Cast work for casts from smaller to larger structs in the cases where this currently can work. (#84588))
 
         # Check that lldb.value implements truth testing.
         self.assertFalse(lldb.value(frame0.FindVariable("bogus")))
