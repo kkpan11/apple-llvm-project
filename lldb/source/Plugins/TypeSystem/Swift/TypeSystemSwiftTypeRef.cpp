@@ -2124,7 +2124,9 @@ template <typename T> bool Equivalent(std::optional<T> l, T r) {
 } // namespace
 #endif
 
+#ifndef NDEBUG
 constexpr ExecutionContextScope *g_no_exe_ctx = nullptr;
+#endif
 
 // This can be removed once the transition is complete.
 #define FALLBACK(REFERENCE, ARGS, DEFAULT)                                     \
@@ -2222,11 +2224,15 @@ constexpr ExecutionContextScope *g_no_exe_ctx = nullptr;
 
 #else
 #define VALIDATE_AND_RETURN_STATIC(IMPL, REFERENCE)                            \
-  FALLBACK(REFERENCE, ());                                                     \
+  FALLBACK(REFERENCE, (), {});                                                 \
   return IMPL()
 #define VALIDATE_AND_RETURN(IMPL, REFERENCE, TYPE, EXE_CTX, ARGS,              \
                             FALLBACK_ARGS)                                     \
-  FALLBACK(REFERENCE, FALLBACK_ARGS);                                          \
+  FALLBACK(REFERENCE, FALLBACK_ARGS, {});                                      \
+  return IMPL();
+#define VALIDATE_AND_RETURN_EXPECTED(IMPL, REFERENCE, TYPE, EXE_CTX, ARGS,     \
+                                     FALLBACK_ARGS, DEFAULT)                   \
+  FALLBACK(REFERENCE, FALLBACK_ARGS, DEFAULT);                                 \
   return IMPL();
 #endif
 
