@@ -384,6 +384,9 @@ protected:
     } else {
         Builder.defineMacro("__gnu_linux__");
     }
+
+    if (Triple.isMusl())
+      Builder.defineMacro("__musl__", "1");
     if (Opts.POSIXThreads)
       Builder.defineMacro("_REENTRANT");
     if (Opts.CPlusPlus)
