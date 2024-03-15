@@ -371,6 +371,13 @@ Attribute Changes in Clang
   supports but that are never the result of default argument promotion, such as
   ``float``. (`#59824: <https://github.com/llvm/llvm-project/issues/59824>`_)
 
+- The ``swiftasynccc`` attribute is now considered to be a Clang extension
+  rather than a language standard feature. Please use
+  ``__has_extension(swiftasynccc)`` to check the availability of this attribute
+  for the target platform instead of ``__has_feature(swiftasynccc)``. Also,
+  added a new extension query ``__has_extension(swiftcc)`` corresponding to the
+  ``__attribute__((swiftcc))`` attribute.
+
 Improvements to Clang's diagnostics
 -----------------------------------
 - We now generate a diagnostic for signed integer overflow due to unary minus
