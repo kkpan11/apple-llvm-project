@@ -24,9 +24,10 @@ using namespace clang;
 using namespace CodeGen;
 
 // FIXME: Temporarily allow both ConstantPtrAuth and llvm.ptrauth emission.
-static llvm::cl::opt<bool> PtrauthEmitWrapperGlobals(
-    "ptrauth-emit-wrapper-globals", llvm::cl::init(true), llvm::cl::Hidden,
-    llvm::cl::desc("Emit llvm.ptrauth globals rather than ptrauth Constants"));
+// Defined in llvm AutoUpgrade.cpp.
+namespace llvm {
+extern cl::opt<bool> PtrauthEmitWrapperGlobals;
+}
 
 /// Given a pointer-authentication schema, return a concrete "other"
 /// discriminator for it.
@@ -615,7 +616,7 @@ llvm::Constant *
 CodeGenModule::getConstantSignedPointer(llvm::Constant *Pointer, unsigned Key,
                                         llvm::Constant *StorageAddress,
                                         llvm::ConstantInt *OtherDiscriminator) {
-  if (PtrauthEmitWrapperGlobals) {
+  if (llvm::PtrauthEmitWrapperGlobals) {
     // Unique based on the underlying value, not a signing of it.
     auto stripped = Pointer->stripPointerCasts();
 
