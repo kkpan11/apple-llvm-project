@@ -184,8 +184,8 @@ public:
   // Implicitly convert \class ConstString instances to \class StringRef.
   operator llvm::StringRef() const { return GetStringRef(); }
 
-  // Implicitly convert \class ConstString instances to \class std::string_view.
-  operator std::string_view() const {
+  // Explicitly convert \class ConstString instances to \class std::string_view.
+  explicit operator std::string_view() const {
     return std::string_view(m_string, GetLength());
   }
 
@@ -434,6 +434,11 @@ protected:
 
 /// Stream the string value \a str to the stream \a s
 Stream &operator<<(Stream &s, ConstString str);
+
+inline std::string &operator+=(std::string &str, const lldb_private::ConstString &s) {
+  str += llvm::StringRef(s).str();
+  return str;
+}
 
 } // namespace lldb_private
 
