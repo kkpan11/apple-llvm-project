@@ -4912,8 +4912,7 @@ swift::PrintOptions SwiftASTContext::GetUserVisibleTypePrintingOptions(
   print_options.FullyQualifiedTypesIfAmbiguous = true;
   print_options.FullyQualifiedTypes = true;
   print_options.ExplodePatternBindingDecls = false;
-  print_options.PrintDocumentationComments =
-      print_options.PrintRegularClangComments = print_help_if_available;
+  print_options.PrintDocumentationComments = print_help_if_available;
   return print_options;
 }
 
