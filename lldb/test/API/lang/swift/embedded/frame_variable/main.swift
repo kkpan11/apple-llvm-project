@@ -1,5 +1,5 @@
 struct A {
-  let field = 4.2
+  let field = 4.5
 }
 
 struct B {
@@ -62,6 +62,27 @@ class SubSub: Sub {
   var subSubField = A()
 }
 
+
+struct GenericStructPair<T, U> {
+  let t: T
+  let u: U
+}
+
+class GenericClassPair<T, U> {
+  let t: T
+  let u: U
+
+  init(t: T, u: U) {
+    self.t = t
+    self.u = u
+  }
+}
+
+enum Either<Left, Right> {
+  case left(Left)
+  case right(Right)
+}
+
 let varB = B()
 let tuple = (A(), B())
 let trivial = TrivialEnum.theCase
@@ -78,13 +99,19 @@ let e3 = Sup()
 e3.supField = 44
 let bigMultipayloadEnum1 = BigMultipayloadEnum.one(e1, e2, e3)
 let fullMultipayloadEnum1 = FullMultipayloadEnum.one(120)
-let fullMultipayloadEnum2 = FullMultipayloadEnum.two(9.21)
+let fullMultipayloadEnum2 = FullMultipayloadEnum.two(9.5)
 let bigFullMultipayloadEnum1 = BigFullMultipayloadEnum.one(209, 315)
-let bigFullMultipayloadEnum2 = BigFullMultipayloadEnum.two(452.2, 753.9)
+let bigFullMultipayloadEnum2 = BigFullMultipayloadEnum.two(452.5, 753.5)
 let sup = Sup()
 let sub = Sub()
 let subSub = SubSub()
 let sup2: Sup = SubSub()
+let gsp = GenericStructPair(t: 42, u: 94.5)
+let gsp2 = GenericStructPair(t: Sup(), u: B())
+let gsp3 = GenericStructPair(t: bigFullMultipayloadEnum1, u: smallMultipayloadEnum2)
+let gcp = GenericClassPair(t: 43.8, u: 9348)
+let either = Either<Int, Double>.left(1234)
+let either2 = Either<Sup, _>.right(gsp3)
 
 // Dummy statement to set breakpoint print can't be used in embedded Swift for now.
 let dummy = A() // break here

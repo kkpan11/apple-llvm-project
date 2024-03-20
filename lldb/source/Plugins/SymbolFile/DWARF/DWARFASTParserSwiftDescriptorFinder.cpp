@@ -32,6 +32,29 @@ using namespace lldb_private;
 using namespace lldb_private::dwarf;
 using namespace lldb_private::plugin::dwarf;
 
+/// Given a die to a substituted generic Swift type, return the analogous
+/// unsubstituted version.
+///
+/// Given a generic type (for example, a generic Pair), the compiler will emit
+/// full debug information for the unsubstituted type (Pair<T, U>), and opaque
+/// debug information for each every specialization (for example, Pair<Int,
+/// Double>), with a link back to the unsubstituted type. When looking up one of
+/// the specialized generics, return the unsubstituted version instead.
+static std::optional<std::pair<CompilerType, DWARFDIE>>
+findUnsubstitutedGenericTypeAndDIE(TypeSystemSwiftTypeRef &ts,
+                                   const DWARFDIE &die) {
+  auto unsubstituted_die =
+      die.GetAttributeValueAsReferenceDIE(llvm::dwarf::DW_AT_specification);
+  if (!unsubstituted_die)
+    return {};
+
+  const auto *mangled_name = unsubstituted_die.GetAttributeValueAsString(
+      llvm::dwarf::DW_AT_linkage_name, nullptr);
+  assert(mangled_name);
+  auto unsubstituted_type =
+      ts.GetTypeFromMangledTypename(ConstString(mangled_name));
+  return {{unsubstituted_type, unsubstituted_die}};
+}
 /// Given a type system and a typeref, return the compiler type and die of the
 /// type that matches that mangled name, looking up the in the type system's
 /// module's debug information.
@@ -62,6 +85,10 @@ getTypeAndDie(TypeSystemSwiftTypeRef &ts,
     return {};
   }
   auto die = dwarf->GetDIE(lldb_type->GetID());
+
+  if (auto unsubstituted_pair = findUnsubstitutedGenericTypeAndDIE(ts, die))
+    return unsubstituted_pair;
+
   return {{type, die}};
 }
 
