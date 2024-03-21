@@ -135,6 +135,10 @@ if(NOT APPLE_EMBEDDED)
   )
 
   if(LLDB_FRAMEWORK_COPY_SWIFT_RESOURCES)
+    # To run the LLDB test suite, we need to be able to find some of the Swift
+    # compiler resources. When part of a toolchain, LLDB knows where to find
+    # those. For at-desk builds, it copies over the resources from the Swift
+    # build directory into LLDB.framework.
     set(RESOURCE_DIRS "clang;embedded;macosx;shims;swiftToCxx")
     foreach(DIR ${RESOURCE_DIRS})
       add_custom_command(TARGET liblldb POST_BUILD
