@@ -7,6 +7,7 @@ import unittest2
 
 class SwiftAddressExpressionTest(TestBase):
     @swiftTest
+    @skipIfLinux # rdar://125497260
     def test(self):
         """Test that you can use register names in image lookup in a swift frame."""
         self.build()
