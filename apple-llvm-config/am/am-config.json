@@ -9,7 +9,7 @@
 },
 {
   "target": "stable/20230725",
-  "upstream": "llvm.org/release/17.x"
+  "upstream": "swift/release/6.0"
 },
 {
   "target": "stable/20211026",
