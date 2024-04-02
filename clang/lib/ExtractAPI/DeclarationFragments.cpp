@@ -14,14 +14,11 @@
 #include "clang/ExtractAPI/DeclarationFragments.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclCXX.h"
-#include "clang/AST/QualTypeNames.h"
 #include "clang/AST/Type.h"
 #include "clang/AST/TypeLoc.h"
-#include "clang/Basic/OperatorKinds.h"
 #include "clang/ExtractAPI/TypedefUnderlyingTypeResolver.h"
 #include "clang/Index/USRGeneration.h"
 #include "llvm/ADT/StringSwitch.h"
-#include <typeinfo>
 
 using namespace clang::extractapi;
 using namespace llvm;
@@ -573,11 +570,9 @@ DeclarationFragmentsBuilder::getFragmentsForVarTemplate(const VarDecl *Var) {
   DeclarationFragments After;
   DeclarationFragments ArgumentFragment =
       getFragmentsForType(T, Var->getASTContext(), After);
-  if (ArgumentFragment.begin()->Spelling.substr(0, 14).compare(
-          "type-parameter") == 0) {
-    std::string ProperArgName = getNameForTemplateArgument(
-        Var->getDescribedVarTemplate()->getTemplateParameters()->asArray(),
-        ArgumentFragment.begin()->Spelling);
+  if (StringRef(ArgumentFragment.begin()->Spelling)
+          .starts_with("type-parameter")) {
+    std::string ProperArgName = T.getAsString();
     ArgumentFragment.begin()->Spelling.swap(ProperArgName);
   }
   Fragments.append(std::move(ArgumentFragment))
@@ -608,14 +603,9 @@ DeclarationFragmentsBuilder::getFragmentsForParam(const ParmVarDecl *Param) {
   else
     TypeFragments.append(getFragmentsForType(T, Param->getASTContext(), After));
 
-  if (TypeFragments.begin()->Spelling.substr(0, 14).compare("type-parameter") ==
-      0) {
-    std::string ProperArgName = getNameForTemplateArgument(
-        dyn_cast<FunctionDecl>(Param->getDeclContext())
-            ->getDescribedFunctionTemplate()
-            ->getTemplateParameters()
-            ->asArray(),
-        TypeFragments.begin()->Spelling);
+  if (StringRef(TypeFragments.begin()->Spelling)
+          .starts_with("type-parameter")) {
+    std::string ProperArgName = Param->getOriginalType().getAsString();
     TypeFragments.begin()->Spelling.swap(ProperArgName);
   }
 
@@ -706,13 +696,9 @@ DeclarationFragmentsBuilder::getFragmentsForFunction(const FunctionDecl *Func) {
   DeclarationFragments After;
   auto ReturnValueFragment =
       getFragmentsForType(Func->getReturnType(), Func->getASTContext(), After);
-  if (ReturnValueFragment.begin()->Spelling.substr(0, 14).compare(
-          "type-parameter") == 0) {
-    std::string ProperArgName =
-        getNameForTemplateArgument(Func->getDescribedFunctionTemplate()
-                                       ->getTemplateParameters()
-                                       ->asArray(),
-                                   ReturnValueFragment.begin()->Spelling);
+  if (StringRef(ReturnValueFragment.begin()->Spelling)
+          .starts_with("type-parameter")) {
+    std::string ProperArgName = Func->getReturnType().getAsString();
     ReturnValueFragment.begin()->Spelling.swap(ProperArgName);
   }
 
@@ -1001,25 +987,6 @@ DeclarationFragmentsBuilder::getFragmentsForTemplateParameters(
   return Fragments;
 }
 
-// Find the name of a template argument from the template's parameters.
-std::string DeclarationFragmentsBuilder::getNameForTemplateArgument(
-    const ArrayRef<NamedDecl *> TemplateParameters, std::string TypeParameter) {
-  // The arg is a generic parameter from a partial spec, e.g.
-  // T in template<typename T> Foo<T, int>.
-  //
-  // Those names appear as "type-parameter-<index>-<depth>", so we must find its
-  // name from the template's parameter list.
-  for (unsigned i = 0; i < TemplateParameters.size(); ++i) {
-    const auto *Parameter =
-        dyn_cast<TemplateTypeParmDecl>(TemplateParameters[i]);
-    if (TypeParameter.compare("type-parameter-" +
-                              std::to_string(Parameter->getDepth()) + "-" +
-                              std::to_string(Parameter->getIndex())) == 0)
-      return std::string(TemplateParameters[i]->getName());
-  }
-  llvm_unreachable("Could not find the name of a template argument.");
-}
-
 // Get fragments for template arguments, e.g. int in template<typename T>
 // Foo<int>;
 //
@@ -1029,7 +996,7 @@ std::string DeclarationFragmentsBuilder::getNameForTemplateArgument(
 DeclarationFragments
 DeclarationFragmentsBuilder::getFragmentsForTemplateArguments(
     const ArrayRef<TemplateArgument> TemplateArguments, ASTContext &Context,
-    const std::optional<ArrayRef<NamedDecl *>> TemplateParameters) {
+    const std::optional<ArrayRef<TemplateArgumentLoc>> TemplateArgumentLocs) {
   DeclarationFragments Fragments;
   for (unsigned i = 0, end = TemplateArguments.size(); i != end; ++i) {
     if (i)
@@ -1041,10 +1008,12 @@ DeclarationFragmentsBuilder::getFragmentsForTemplateArguments(
     DeclarationFragments ArgumentFragment =
         getFragmentsForType(TemplateArguments[i].getAsType(), Context, After);
 
-    if (ArgumentFragment.begin()->Spelling.substr(0, 14).compare(
-            "type-parameter") == 0) {
-      std::string ProperArgName = getNameForTemplateArgument(
-          TemplateParameters.value(), ArgumentFragment.begin()->Spelling);
+    if (StringRef(ArgumentFragment.begin()->Spelling)
+            .starts_with("type-parameter")) {
+      std::string ProperArgName = TemplateArgumentLocs.value()[i]
+                                      .getTypeSourceInfo()
+                                      ->getType()
+                                      .getAsString();
       ArgumentFragment.begin()->Spelling.swap(ProperArgName);
     }
     Fragments.append(std::move(ArgumentFragment));
@@ -1129,7 +1098,7 @@ DeclarationFragmentsBuilder::getFragmentsForClassTemplatePartialSpecialization(
       .append("<", DeclarationFragments::FragmentKind::Text)
       .append(getFragmentsForTemplateArguments(
           Decl->getTemplateArgs().asArray(), Decl->getASTContext(),
-          Decl->getTemplateParameters()->asArray()))
+          Decl->getTemplateArgsAsWritten()->arguments()))
       .append(">", DeclarationFragments::FragmentKind::Text)
       .append(";", DeclarationFragments::FragmentKind::Text);
 }
@@ -1170,7 +1139,7 @@ DeclarationFragmentsBuilder::getFragmentsForVarTemplatePartialSpecialization(
       .append("<", DeclarationFragments::FragmentKind::Text)
       .append(getFragmentsForTemplateArguments(
           Decl->getTemplateArgs().asArray(), Decl->getASTContext(),
-          Decl->getTemplateParameters()->asArray()))
+          Decl->getTemplateArgsAsWritten()->arguments()))
       .append(">", DeclarationFragments::FragmentKind::Text)
       .append(";", DeclarationFragments::FragmentKind::Text);
 }
