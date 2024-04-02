@@ -1223,13 +1223,30 @@ def extract_api : Flag<["-"], "extract-api">, Flags<[CC1Option]>, Group<Action_G
   HelpText<"Extract API information">;
 def product_name_EQ: Joined<["--"], "product-name=">, Flags<[CC1Option]>,
   MarshallingInfoString<FrontendOpts<"ProductName">>;
-def emit_symbol_graph_EQ: JoinedOrSeparate<["--"], "emit-symbol-graph=">, Flags<[CC1Option]>,
-    HelpText<"Generate Extract API information as a side effect of compilation.">,
-    MarshallingInfoString<FrontendOpts<"SymbolGraphOutputDir">>;
-def extract_api_ignores_EQ: CommaJoined<["--"], "extract-api-ignores=">, Flags<[CC1Option]>,
-    HelpText<"Comma separated list of files containing a new line separated list of API symbols to ignore when extracting API information.">,
-    MarshallingInfoStringVector<FrontendOpts<"ExtractAPIIgnoresFileList">>;
-def e : JoinedOrSeparate<["-"], "e">, Flags<[LinkerInput]>, Group<Link_Group>;
+def emit_symbol_graph: Flag<["-"], "emit-symbol-graph">,
+  Flags<[CC1Option]>,
+  HelpText<"Generate Extract API information as a side effect of compilation.">,
+  MarshallingInfoFlag<FrontendOpts<"EmitSymbolGraph">>;
+def emit_extension_symbol_graphs: Flag<["--"], "emit-extension-symbol-graphs">,
+  Flags<[CC1Option]>,
+  HelpText<"Generate additional symbol graphs for extended modules.">,
+  MarshallingInfoFlag<FrontendOpts<"EmitExtensionSymbolGraphs">>;
+def extract_api_ignores_EQ: CommaJoined<["--"], "extract-api-ignores=">,
+  Flags<[CC1Option]>,
+  HelpText<"Comma separated list of files containing a new line separated list of API symbols to ignore when extracting API information.">,
+  MarshallingInfoStringVector<FrontendOpts<"ExtractAPIIgnoresFileList">>;
+def symbol_graph_dir_EQ: Joined<["--"], "symbol-graph-dir=">,
+   Flags<[CC1Option]>,
+   HelpText<"Directory in which to emit symbol graphs.">,
+   MarshallingInfoString<FrontendOpts<"SymbolGraphOutputDir">>;
+def emit_pretty_sgf: Flag<["--"], "pretty-sgf">,
+    Flags<[CC1Option]>,
+    HelpText<"Emit pretty printed symbol graphs">,
+    MarshallingInfoFlag<FrontendOpts<"EmitPrettySymbolGraphs">>;
+def emit_sgf_symbol_labels_for_testing: Flag<["--"], "emit-sgf-symbol-labels-for-testing">,
+   Flags<[CC1Option]>,
+   MarshallingInfoFlag<FrontendOpts<"EmitSymbolGraphSymbolLabelsForTesting">>;
+def e : Separate<["-"], "e">, Flags<[LinkerInput]>, Group<Link_Group>;
 def fmax_tokens_EQ : Joined<["-"], "fmax-tokens=">, Group<f_Group>, Flags<[CC1Option]>,
   HelpText<"Max total number of preprocessed tokens for -Wmax-tokens.">,
   MarshallingInfoInt<LangOpts<"MaxTokens">>;

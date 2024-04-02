@@ -391,6 +391,18 @@ public:
   /// Whether to share the FileManager when building modules.
   unsigned ModulesShareFileManager : 1;
 
+  /// Whether to emit symbol graph files as a side effect of compilation.
+  unsigned EmitSymbolGraph : 1;
+
+  /// Whether to emit additional symbol graphs for extended modules.
+  unsigned EmitExtensionSymbolGraphs : 1;
+
+  /// Whether to emit symbol labels for testing in generated symbol graphs
+  unsigned EmitSymbolGraphSymbolLabelsForTesting : 1;
+
+  /// Whether to emit symbol labels for testing in generated symbol graphs
+  unsigned EmitPrettySymbolGraphs : 1;
+
   CodeCompleteOptions CodeCompleteOpts;
 
   /// Specifies the output format of the AST.
@@ -514,10 +526,8 @@ public:
   // ignore when extracting documentation.
   std::vector<std::string> ExtractAPIIgnoresFileList;
 
-  // Currently this is only used as part of the `-emit-symbol-graph`
-  // action.
   // Location of output directory where symbol graph information would
-  // be dumped
+  // be dumped. This overrides regular -o output file specification
   std::string SymbolGraphOutputDir;
 
   /// Args to pass to the plugins
