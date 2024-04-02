@@ -5859,8 +5859,7 @@ const char *Driver::GetNamedOutputPath(Compilation &C, const JobAction &JA,
   if (JA.getType() == types::TY_API_INFO &&
       C.getArgs().hasArg(options::OPT_emit_extension_symbol_graphs) &&
       C.getArgs().hasArg(options::OPT_o))
-    Diag(clang::diag::err_drv_unexpected_symbol_graph_output)
-        << C.getArgs().getLastArgValue(options::OPT_o);
+    ;
 
   bool SpecifiedModuleOutput =
       C.getArgs().hasArg(options::OPT_fmodule_output) ||
