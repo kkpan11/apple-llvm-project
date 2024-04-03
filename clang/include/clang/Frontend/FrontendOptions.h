@@ -526,10 +526,8 @@ public:
   // ignore when extracting documentation.
   std::vector<std::string> ExtractAPIIgnoresFileList;
 
-  // Currently this is only used as part of the `-emit-symbol-graph`
-  // action.
   // Location of output directory where symbol graph information would
-  // be dumped
+  // be dumped. This overrides regular -o output file specification
   std::string SymbolGraphOutputDir;
 
   /// Args to pass to the plugins
