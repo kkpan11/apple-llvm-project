@@ -1272,7 +1272,6 @@ static bool DeserializeAllCompilerFlags(swift::CompilerInvocation &invocation,
     for (; !buf.empty(); buf = buf.substr(info.bytes)) {
       llvm::SmallVector<swift::serialization::SearchPath> searchPaths;
       swift::serialization::ExtendedValidationInfo extended_validation_info;
-      auto &langOpts = invocation.getLangOptions();
       info = swift::serialization::validateSerializedAST(
           buf, invocation.getSILOptions().EnableOSSAModules,
           /*requiredSDK*/ StringRef(), &extended_validation_info,
