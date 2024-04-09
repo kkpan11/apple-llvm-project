@@ -506,6 +506,9 @@ Improvements to Clang's diagnostics
 
 Bug Fixes in This Version
 -------------------------
+- Clang's ``-Wundefined-func-template`` no longer warns on pure virtual
+  functions.
+  (`#74016 <https://github.com/llvm/llvm-project/issues/74016>`_)
 - Fixed an issue where a class template specialization whose declaration is
   instantiated in one module and whose definition is instantiated in another
   module may end up with members associated with the wrong declaration of the
