@@ -58,6 +58,9 @@ void tooling::dependencies::configureInvocationForCaching(
     HSOpts.ResourceDir = std::move(OriginalHSOpts.ResourceDir);
     // Preserve fmodule-file options.
     HSOpts.PrebuiltModuleFiles = std::move(OriginalHSOpts.PrebuiltModuleFiles);
+    // Preserve -gmodules (see below for caveats).
+    HSOpts.ModuleFormat = OriginalHSOpts.ModuleFormat;
+
     auto &PPOpts = CI.getPreprocessorOpts();
     // We don't need this because we save the contents of the PCH file in the
     // include tree root.
@@ -72,12 +75,13 @@ void tooling::dependencies::configureInvocationForCaching(
       PPOpts.MacroIncludes.clear();
       PPOpts.Includes.clear();
     }
-    // Disable `-gmodules` to avoid debug info referencing a non-existent PCH
-    // filename.
-    // NOTE: We'd have to preserve \p HeaderSearchOptions::ModuleFormat (code
-    // above resets \p HeaderSearchOptions) when properly supporting
-    // `-gmodules`.
-    CI.getCodeGenOpts().DebugTypeExtRefs = false;
+    if (!FrontendOpts.IncludeTreePreservePCHPath) {
+      // Disable `-gmodules` to avoid debug info referencing a non-existent PCH
+      // filename.
+      // FIXME: we should also allow -gmodules if there is no PCH involved.
+      CI.getCodeGenOpts().DebugTypeExtRefs = false;
+      HSOpts.ModuleFormat = "raw";
+    }
     // Clear APINotes options.
     CI.getAPINotesOpts().ModuleSearchPaths = {};
   } else {
