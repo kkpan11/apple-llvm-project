@@ -7285,45 +7285,45 @@ class SBMemoryRegionInfo(object):
 
     def HasDirtyMemoryPageList(self):
         r"""
+        HasDirtyMemoryPageList(SBMemoryRegionInfo self) -> bool
 
-        GetRegionEnd(SBMemoryRegionInfo self) -> lldb::addr_t
-        Returns whether this memory region has a list of modified (dirty)
-        pages available or not.  When calling GetNumDirtyPages(), you will
-        have 0 returned for both "dirty page list is not known" and 
-        "empty dirty page list" (that is, no modified pages in this
-        memory region).  You must use this method to disambiguate.
+                Returns whether this memory region has a list of modified (dirty)
+                pages available or not.  When calling GetNumDirtyPages(), you will
+                have 0 returned for both "dirty page list is not known" and 
+                "empty dirty page list" (that is, no modified pages in this
+                memory region).  You must use this method to disambiguate.
         """
         return _lldb.SBMemoryRegionInfo_HasDirtyMemoryPageList(self)
 
     def GetNumDirtyPages(self):
         r"""
-
         GetNumDirtyPages(SBMemoryRegionInfo self) -> uint32_t
-        Return the number of dirty (modified) memory pages in this
-        memory region, if available.  You must use the 
-        SBMemoryRegionInfo::HasDirtyMemoryPageList() method to
-        determine if a dirty memory list is available; it will depend
-        on the target system can provide this information.
+
+                Return the number of dirty (modified) memory pages in this
+                memory region, if available.  You must use the 
+                SBMemoryRegionInfo::HasDirtyMemoryPageList() method to
+                determine if a dirty memory list is available; it will depend
+                on the target system can provide this information.
         """
         return _lldb.SBMemoryRegionInfo_GetNumDirtyPages(self)
 
     def GetDirtyPageAddressAtIndex(self, idx):
         r"""
-
         GetDirtyPageAddressAtIndex(SBMemoryRegionInfo self, uint32_t idx) -> lldb::addr_t
-        Return the address of a modified, or dirty, page of memory.
-        If the provided index is out of range, or this memory region 
-        does not have dirty page information, LLDB_INVALID_ADDRESS 
-        is returned.
+
+                Return the address of a modified, or dirty, page of memory.
+                If the provided index is out of range, or this memory region 
+                does not have dirty page information, LLDB_INVALID_ADDRESS 
+                is returned.
         """
         return _lldb.SBMemoryRegionInfo_GetDirtyPageAddressAtIndex(self, idx)
 
     def GetPageSize(self):
         r"""
-
         GetPageSize(SBMemoryRegionInfo self) -> int
-        Return the size of pages in this memory region.  0 will be returned
-        if this information was unavailable.
+
+                Return the size of pages in this memory region.  0 will be returned
+                if this information was unavailable.
         """
         return _lldb.SBMemoryRegionInfo_GetPageSize(self)
 
@@ -8550,27 +8550,30 @@ class SBProcess(object):
 
     def PutSTDIN(self, src):
         r"""
+        PutSTDIN(SBProcess self, char const * src) -> size_t
 
-        Writes data into the current process's stdin. API client specifies a Python
-        string as the only argument.
+            Writes data into the current process's stdin. API client specifies a Python
+            string as the only argument.
         """
         return _lldb.SBProcess_PutSTDIN(self, src)
 
     def GetSTDOUT(self, dst):
         r"""
+        GetSTDOUT(SBProcess self, char * dst) -> size_t
 
-        Reads data from the current process's stdout stream. API client specifies
-        the size of the buffer to read data into. It returns the byte buffer in a
-        Python string.
+            Reads data from the current process's stdout stream. API client specifies
+            the size of the buffer to read data into. It returns the byte buffer in a
+            Python string.
         """
         return _lldb.SBProcess_GetSTDOUT(self, dst)
 
     def GetSTDERR(self, dst):
         r"""
+        GetSTDERR(SBProcess self, char * dst) -> size_t
 
-        Reads data from the current process's stderr stream. API client specifies
-        the size of the buffer to read data into. It returns the byte buffer in a
-        Python string.
+            Reads data from the current process's stderr stream. API client specifies
+            the size of the buffer to read data into. It returns the byte buffer in a
+            Python string.
         """
         return _lldb.SBProcess_GetSTDERR(self, dst)
 
@@ -8612,39 +8615,44 @@ class SBProcess(object):
 
     def GetThreadAtIndex(self, index):
         r"""
+        GetThreadAtIndex(SBProcess self, size_t index) -> SBThread
 
-        Returns the INDEX'th thread from the list of current threads.  The index
-        of a thread is only valid for the current stop.  For a persistent thread
-        identifier use either the thread ID or the IndexID.  See help on SBThread
-        for more details.
+            Returns the INDEX'th thread from the list of current threads.  The index
+            of a thread is only valid for the current stop.  For a persistent thread
+            identifier use either the thread ID or the IndexID.  See help on SBThread
+            for more details.
         """
         return _lldb.SBProcess_GetThreadAtIndex(self, index)
 
     def GetThreadByID(self, sb_thread_id):
         r"""
+        GetThreadByID(SBProcess self, lldb::tid_t sb_thread_id) -> SBThread
 
-        Returns the thread with the given thread ID.
+            Returns the thread with the given thread ID.
         """
         return _lldb.SBProcess_GetThreadByID(self, sb_thread_id)
 
     def GetThreadByIndexID(self, index_id):
         r"""
+        GetThreadByIndexID(SBProcess self, uint32_t index_id) -> SBThread
 
-        Returns the thread with the given thread IndexID.
+            Returns the thread with the given thread IndexID.
         """
         return _lldb.SBProcess_GetThreadByIndexID(self, index_id)
 
     def GetSelectedThread(self):
         r"""
+        GetSelectedThread(SBProcess self) -> SBThread
 
-        Returns the currently selected thread.
+            Returns the currently selected thread.
         """
         return _lldb.SBProcess_GetSelectedThread(self)
 
     def CreateOSPluginThread(self, tid, context):
         r"""
+        CreateOSPluginThread(SBProcess self, lldb::tid_t tid, lldb::addr_t context) -> SBThread
 
-        Lazily create a thread on demand through the current OperatingSystem plug-in, if the current OperatingSystem plug-in supports it.
+            Lazily create a thread on demand through the current OperatingSystem plug-in, if the current OperatingSystem plug-in supports it.
         """
         return _lldb.SBProcess_CreateOSPluginThread(self, tid, context)
 
@@ -8682,15 +8690,17 @@ class SBProcess(object):
 
     def GetProcessID(self):
         r"""
+        GetProcessID(SBProcess self) -> lldb::pid_t
 
-        Returns the process ID of the process.
+            Returns the process ID of the process.
         """
         return _lldb.SBProcess_GetProcessID(self)
 
     def GetUniqueID(self):
         r"""
+        GetUniqueID(SBProcess self) -> uint32_t
 
-        Returns an integer ID that is guaranteed to be unique across all process instances. This is not the process ID, just a unique integer for comparison and caching purposes.
+            Returns an integer ID that is guaranteed to be unique across all process instances. This is not the process ID, just a unique integer for comparison and caching purposes.
         """
         return _lldb.SBProcess_GetUniqueID(self)
 
@@ -8766,76 +8776,81 @@ class SBProcess(object):
 
     def ReadMemory(self, addr, buf, error):
         r"""
+        ReadMemory(SBProcess self, lldb::addr_t addr, void * buf, SBError error) -> size_t
 
-        Reads memory from the current process's address space and removes any
-        traps that may have been inserted into the memory. It returns the byte
-        buffer in a Python string. Example: ::
+            Reads memory from the current process's address space and removes any
+            traps that may have been inserted into the memory. It returns the byte
+            buffer in a Python string. Example: ::
 
-            # Read 4 bytes from address 'addr' and assume error.Success() is True.
-            content = process.ReadMemory(addr, 4, error)
-            new_bytes = bytearray(content)
+                # Read 4 bytes from address 'addr' and assume error.Success() is True.
+                content = process.ReadMemory(addr, 4, error)
+                new_bytes = bytearray(content)
         """
         return _lldb.SBProcess_ReadMemory(self, addr, buf, error)
 
     def WriteMemory(self, addr, buf, error):
         r"""
+        WriteMemory(SBProcess self, lldb::addr_t addr, void const * buf, SBError error) -> size_t
 
-        Writes memory to the current process's address space and maintains any
-        traps that might be present due to software breakpoints. Example: ::
+            Writes memory to the current process's address space and maintains any
+            traps that might be present due to software breakpoints. Example: ::
 
-            # Create a Python string from the byte array.
-            new_value = str(bytes)
-            result = process.WriteMemory(addr, new_value, error)
-            if not error.Success() or result != len(bytes):
-                print('SBProcess.WriteMemory() failed!')
+                # Create a Python string from the byte array.
+                new_value = str(bytes)
+                result = process.WriteMemory(addr, new_value, error)
+                if not error.Success() or result != len(bytes):
+                    print('SBProcess.WriteMemory() failed!')
         """
         return _lldb.SBProcess_WriteMemory(self, addr, buf, error)
 
     def ReadCStringFromMemory(self, addr, char_buf, error):
         r"""
+        ReadCStringFromMemory(SBProcess self, lldb::addr_t addr, void * char_buf, SBError error) -> size_t
 
-        Reads a NULL terminated C string from the current process's address space.
-        It returns a python string of the exact length, or truncates the string if
-        the maximum character limit is reached. Example: ::
+            Reads a NUL terminated C string from the current process's address space.
+            It returns a python string of the exact length, or truncates the string if
+            the maximum character limit is reached. Example: ::
 
-            # Read a C string of at most 256 bytes from address '0x1000'
-            error = lldb.SBError()
-            cstring = process.ReadCStringFromMemory(0x1000, 256, error)
-            if error.Success():
-                print('cstring: ', cstring)
-            else
-                print('error: ', error)
+                # Read a C string of at most 256 bytes from address '0x1000'
+                error = lldb.SBError()
+                cstring = process.ReadCStringFromMemory(0x1000, 256, error)
+                if error.Success():
+                    print('cstring: ', cstring)
+                else
+                    print('error: ', error)
         """
         return _lldb.SBProcess_ReadCStringFromMemory(self, addr, char_buf, error)
 
     def ReadUnsignedFromMemory(self, addr, byte_size, error):
         r"""
+        ReadUnsignedFromMemory(SBProcess self, lldb::addr_t addr, uint32_t byte_size, SBError error) -> uint64_t
 
-        Reads an unsigned integer from memory given a byte size and an address.
-        Returns the unsigned integer that was read. Example: ::
+            Reads an unsigned integer from memory given a byte size and an address.
+            Returns the unsigned integer that was read. Example: ::
 
-            # Read a 4 byte unsigned integer from address 0x1000
-            error = lldb.SBError()
-            uint = ReadUnsignedFromMemory(0x1000, 4, error)
-            if error.Success():
-                print('integer: %u' % uint)
-            else
-                print('error: ', error)
+                # Read a 4 byte unsigned integer from address 0x1000
+                error = lldb.SBError()
+                uint = ReadUnsignedFromMemory(0x1000, 4, error)
+                if error.Success():
+                    print('integer: %u' % uint)
+                else
+                    print('error: ', error)
         """
         return _lldb.SBProcess_ReadUnsignedFromMemory(self, addr, byte_size, error)
 
     def ReadPointerFromMemory(self, addr, error):
         r"""
+        ReadPointerFromMemory(SBProcess self, lldb::addr_t addr, SBError error) -> lldb::addr_t
 
-        Reads a pointer from memory from an address and returns the value. Example: ::
+            Reads a pointer from memory from an address and returns the value. Example: ::
 
-            # Read a pointer from address 0x1000
-            error = lldb.SBError()
-            ptr = ReadPointerFromMemory(0x1000, error)
-            if error.Success():
-                print('pointer: 0x%x' % ptr)
-            else
-                print('error: ', error)
+                # Read a pointer from address 0x1000
+                error = lldb.SBError()
+                ptr = ReadPointerFromMemory(0x1000, error)
+                if error.Success():
+                    print('pointer: 0x%x' % ptr)
+                else
+                    print('error: ', error)
         """
         return _lldb.SBProcess_ReadPointerFromMemory(self, addr, error)
 
@@ -8890,7 +8905,10 @@ class SBProcess(object):
 
     @staticmethod
     def GetBroadcasterClass():
-        r"""GetBroadcasterClass() -> char const *"""
+        r"""
+        GetBroadcasterClass() -> char const *
+        Get default process broadcaster class name (lldb.process).
+        """
         return _lldb.SBProcess_GetBroadcasterClass()
 
     def GetDescription(self, description):
@@ -8899,8 +8917,9 @@ class SBProcess(object):
 
     def GetExtendedCrashInformation(self):
         r"""
+        GetExtendedCrashInformation(SBProcess self) -> SBStructuredData
 
-        Returns the process' extended crash information.
+            Returns the process' extended crash information.
         """
         return _lldb.SBProcess_GetExtendedCrashInformation(self)
 
@@ -8917,12 +8936,13 @@ class SBProcess(object):
 
     def LoadImageUsingPaths(self, image_spec, paths, loaded_path, error):
         r"""
+        LoadImageUsingPaths(SBProcess self, SBFileSpec image_spec, SBStringList paths, SBFileSpec loaded_path, SBError error) -> uint32_t
 
-        Load the library whose filename is given by image_spec looking in all the
-        paths supplied in the paths argument.  If successful, return a token that
-        can be passed to UnloadImage and fill loaded_path with the path that was
-        successfully loaded.  On failure, return
-        lldb.LLDB_INVALID_IMAGE_TOKEN.
+            Load the library whose filename is given by image_spec looking in all the
+            paths supplied in the paths argument.  If successful, return a token that
+            can be passed to UnloadImage and fill loaded_path with the path that was
+            successfully loaded.  On failure, return
+            lldb.LLDB_INVALID_IMAGE_TOKEN.
         """
         return _lldb.SBProcess_LoadImageUsingPaths(self, image_spec, paths, loaded_path, error)
 
@@ -8936,21 +8956,23 @@ class SBProcess(object):
 
     def GetNumExtendedBacktraceTypes(self):
         r"""
+        GetNumExtendedBacktraceTypes(SBProcess self) -> uint32_t
 
-        Return the number of different thread-origin extended backtraces
-        this process can support as a uint32_t.
-        When the process is stopped and you have an SBThread, lldb may be
-        able to show a backtrace of when that thread was originally created,
-        or the work item was enqueued to it (in the case of a libdispatch
-        queue).
+            Return the number of different thread-origin extended backtraces
+            this process can support as a uint32_t.
+            When the process is stopped and you have an SBThread, lldb may be
+            able to show a backtrace of when that thread was originally created,
+            or the work item was enqueued to it (in the case of a libdispatch
+            queue).
         """
         return _lldb.SBProcess_GetNumExtendedBacktraceTypes(self)
 
     def GetExtendedBacktraceTypeAtIndex(self, idx):
         r"""
+        GetExtendedBacktraceTypeAtIndex(SBProcess self, uint32_t idx) -> char const *
 
-        Takes an index argument, returns the name of one of the thread-origin
-        extended backtrace methods as a str.
+            Takes an index argument, returns the name of one of the thread-origin
+            extended backtrace methods as a str.
         """
         return _lldb.SBProcess_GetExtendedBacktraceTypeAtIndex(self, idx)
 
@@ -8979,14 +9001,15 @@ class SBProcess(object):
 
     def GetProcessInfo(self):
         r"""
+        GetProcessInfo(SBProcess self) -> SBProcessInfo
 
-        Get information about the process.
-        Valid process info will only be returned when the process is alive,
-        use IsValid() to check if the info returned is valid. ::
+            Get information about the process.
+            Valid process info will only be returned when the process is alive,
+            use IsValid() to check if the info returned is valid. ::
 
-            process_info = process.GetProcessInfo()
-            if process_info.IsValid():
-                process_info.GetProcessID()
+                process_info = process.GetProcessInfo()
+                if process_info.IsValid():
+                    process_info.GetProcessID()
         """
         return _lldb.SBProcess_GetProcessInfo(self)
 
@@ -8995,47 +9018,91 @@ class SBProcess(object):
         return _lldb.SBProcess_GetCoreFile(self)
 
     def GetAddressMask(self, *args):
-        r"""GetAddressMask(SBProcess self, lldb::AddressMaskType type, lldb::AddressMaskRange addr_range=eAddressMaskRangeLow) -> lldb::addr_t"""
+        r"""
+        GetAddressMask(SBProcess self, lldb::AddressMaskType type, lldb::AddressMaskRange addr_range=eAddressMaskRangeLow) -> lldb::addr_t
+
+            Get the current address mask in this Process of a given type.
+            There are lldb.eAddressMaskTypeCode and lldb.eAddressMaskTypeData address
+            masks, and on most Targets, the the Data address mask is more general
+            because there are no alignment restrictions, as there can be with Code
+            addresses.
+            lldb.eAddressMaskTypeAny may be used to get the most general mask.
+            The bits which are not used for addressing are set to 1 in the returned
+            mask.
+            In an unusual environment with different address masks for high and low
+            memory, this may also be specified.  This is uncommon, default is
+            lldb.eAddressMaskRangeLow.
+        """
         return _lldb.SBProcess_GetAddressMask(self, *args)
 
     def SetAddressMask(self, *args):
-        r"""SetAddressMask(SBProcess self, lldb::AddressMaskType type, lldb::addr_t mask, lldb::AddressMaskRange addr_range=eAddressMaskRangeLow)"""
+        r"""
+        SetAddressMask(SBProcess self, lldb::AddressMaskType type, lldb::addr_t mask, lldb::AddressMaskRange addr_range=eAddressMaskRangeLow)
+
+            Set the current address mask in this Process for a given type,
+            lldb.eAddressMaskTypeCode or lldb.eAddressMaskTypeData.  Bits that are not
+            used for addressing should be set to 1 in the mask.
+            When setting all masks, lldb.eAddressMaskTypeAll may be specified.
+            In an unusual environment with different address masks for high and low
+            memory, this may also be specified.  This is uncommon, default is
+            lldb.eAddressMaskRangeLow.
+        """
         return _lldb.SBProcess_SetAddressMask(self, *args)
 
     def SetAddressableBits(self, *args):
-        r"""SetAddressableBits(SBProcess self, lldb::AddressMaskType type, uint32_t num_bits, lldb::AddressMaskRange addr_range=eAddressMaskRangeLow)"""
+        r"""
+        SetAddressableBits(SBProcess self, lldb::AddressMaskType type, uint32_t num_bits, lldb::AddressMaskRange addr_range=eAddressMaskRangeLow)
+
+            Set the number of low bits relevant for addressing in this Process 
+            for a given type, lldb.eAddressMaskTypeCode or lldb.eAddressMaskTypeData.
+            When setting all masks, lldb.eAddressMaskTypeAll may be specified.
+            In an unusual environment with different address masks for high and low
+            memory, the address range  may also be specified.  This is uncommon, 
+            default is lldb.eAddressMaskRangeLow.
+        """
         return _lldb.SBProcess_SetAddressableBits(self, *args)
 
     def FixAddress(self, *args):
-        r"""FixAddress(SBProcess self, lldb::addr_t addr, lldb::AddressMaskType type=eAddressMaskTypeAny) -> lldb::addr_t"""
+        r"""
+        FixAddress(SBProcess self, lldb::addr_t addr, lldb::AddressMaskType type=eAddressMaskTypeAny) -> lldb::addr_t
+
+            Given a virtual address, clear the bits that are not used for addressing
+            (and may be used for metadata, memory tagging, point authentication, etc).
+            By default the most general mask, lldb.eAddressMaskTypeAny is used to 
+            process the address, but lldb.eAddressMaskTypeData and 
+            lldb.eAddressMaskTypeCode may be specified if the type of address is known.
+        """
         return _lldb.SBProcess_FixAddress(self, *args)
 
     def AllocateMemory(self, size, permissions, error):
         r"""
+        AllocateMemory(SBProcess self, size_t size, uint32_t permissions, SBError error) -> lldb::addr_t
 
-        Allocates a block of memory within the process, with size and
-        access permissions specified in the arguments. The permissions
-        argument is an or-combination of zero or more of
-        lldb.ePermissionsWritable, lldb.ePermissionsReadable, and
-        lldb.ePermissionsExecutable. Returns the address
-        of the allocated buffer in the process, or
-        lldb.LLDB_INVALID_ADDRESS if the allocation failed.
+            Allocates a block of memory within the process, with size and
+            access permissions specified in the arguments. The permissions
+            argument is an or-combination of zero or more of
+            lldb.ePermissionsWritable, lldb.ePermissionsReadable, and
+            lldb.ePermissionsExecutable. Returns the address
+            of the allocated buffer in the process, or
+            lldb.LLDB_INVALID_ADDRESS if the allocation failed.
         """
         return _lldb.SBProcess_AllocateMemory(self, size, permissions, error)
 
     def DeallocateMemory(self, ptr):
         r"""
+        DeallocateMemory(SBProcess self, lldb::addr_t ptr) -> SBError
 
-        Deallocates the block of memory (previously allocated using
-        AllocateMemory) given in the argument.
+            Deallocates the block of memory (previously allocated using
+            AllocateMemory) given in the argument.
         """
         return _lldb.SBProcess_DeallocateMemory(self, ptr)
 
     def GetScriptedImplementation(self):
         r"""
+        GetScriptedImplementation(SBProcess self) -> SBScriptObject
 
-        Returns the implementation object of the process plugin if available. None
-        otherwise.
+            Returns the implementation object of the process plugin if available. None
+            otherwise.
         """
         return _lldb.SBProcess_GetScriptedImplementation(self)
 
@@ -9256,11 +9323,12 @@ class SBQueue(object):
 
     def GetQueueID(self):
         r"""
+        GetQueueID(SBQueue self) -> lldb::queue_id_t
 
-        Returns an lldb::queue_id_t type unique identifier number for this
-        queue that will not be used by any other queue during this process'
-        execution.  These ID numbers often start at 1 with the first
-        system-created queues and increment from there.
+            Returns an lldb::queue_id_t type unique identifier number for this
+            queue that will not be used by any other queue during this process'
+            execution.  These ID numbers often start at 1 with the first
+            system-created queues and increment from there.
         """
         return _lldb.SBQueue_GetQueueID(self)
 
@@ -9294,10 +9362,11 @@ class SBQueue(object):
 
     def GetKind(self):
         r"""
+        GetKind(SBQueue self) -> lldb::QueueKind
 
-        Returns an lldb::QueueKind enumerated value (e.g. eQueueKindUnknown,
-        eQueueKindSerial, eQueueKindConcurrent) describing the type of this
-        queue.
+            Returns an lldb::QueueKind enumerated value (e.g. eQueueKindUnknown,
+            eQueueKindSerial, eQueueKindConcurrent) describing the type of this
+            queue.
         """
         return _lldb.SBQueue_GetKind(self)
 
@@ -10359,6 +10428,8 @@ class SBTarget(object):
     eBroadcastBitWatchpointChanged = _lldb.SBTarget_eBroadcastBitWatchpointChanged
     
     eBroadcastBitSymbolsLoaded = _lldb.SBTarget_eBroadcastBitSymbolsLoaded
+    
+    eBroadcastBitSymbolsChanged = _lldb.SBTarget_eBroadcastBitSymbolsChanged
     
 
     def __init__(self, *args):
@@ -11529,14 +11600,15 @@ class SBThread(object):
 
     def GetQueue(self):
         r"""
+        GetQueue(SBThread self) -> SBQueue
 
-        Return the SBQueue for this thread.  If this thread is not currently associated
-        with a libdispatch queue, the SBQueue object's IsValid() method will return false.
-        If this SBThread is actually a HistoryThread, we may be able to provide QueueID
-        and QueueName, but not provide an SBQueue.  Those individual attributes may have
-        been saved for the HistoryThread without enough information to reconstitute the
-        entire SBQueue at that time.
-        This method takes no arguments, returns an SBQueue.
+            Return the SBQueue for this thread.  If this thread is not currently associated
+            with a libdispatch queue, the SBQueue object's IsValid() method will return false.
+            If this SBThread is actually a HistoryThread, we may be able to provide QueueID
+            and QueueName, but not provide an SBQueue.  Those individual attributes may have
+            been saved for the HistoryThread without enough information to reconstitute the
+            entire SBQueue at that time.
+            This method takes no arguments, returns an SBQueue.
         """
         return _lldb.SBThread_GetQueue(self)
 
@@ -11595,27 +11667,30 @@ class SBThread(object):
 
     def GetStopReasonExtendedInfoAsJSON(self, stream):
         r"""
+        GetStopReasonExtendedInfoAsJSON(SBThread self, SBStream stream) -> bool
 
-        Collects a thread's stop reason extended information dictionary and prints it
-        into the SBStream in a JSON format. The format of this JSON dictionary depends
-        on the stop reason and is currently used only for instrumentation plugins.
+            Collects a thread's stop reason extended information dictionary and prints it
+            into the SBStream in a JSON format. The format of this JSON dictionary depends
+            on the stop reason and is currently used only for instrumentation plugins.
         """
         return _lldb.SBThread_GetStopReasonExtendedInfoAsJSON(self, stream)
 
     def GetStopReasonExtendedBacktraces(self, type):
         r"""
+        GetStopReasonExtendedBacktraces(SBThread self, lldb::InstrumentationRuntimeType type) -> SBThreadCollection
 
-        Returns a collection of historical stack traces that are significant to the
-        current stop reason. Used by ThreadSanitizer, where we provide various stack
-        traces that were involved in a data race or other type of detected issue.
+            Returns a collection of historical stack traces that are significant to the
+            current stop reason. Used by ThreadSanitizer, where we provide various stack
+            traces that were involved in a data race or other type of detected issue.
         """
         return _lldb.SBThread_GetStopReasonExtendedBacktraces(self, type)
 
     def GetStopDescription(self, dst_or_null):
         r"""
+        GetStopDescription(SBThread self, char * dst_or_null) -> size_t
 
-        Pass only an (int)length and expect to get a Python string describing the
-        stop reason.
+            Pass only an (int)length and expect to get a Python string describing the
+            stop reason.
         """
         return _lldb.SBThread_GetStopDescription(self, dst_or_null)
 
@@ -11633,26 +11708,28 @@ class SBThread(object):
 
     def GetThreadID(self):
         r"""
+        GetThreadID(SBThread self) -> lldb::tid_t
 
-        Returns a unique thread identifier (type lldb::tid_t, typically a 64-bit type)
-        for the current SBThread that will remain constant throughout the thread's
-        lifetime in this process and will not be reused by another thread during this
-        process lifetime.  On Mac OS X systems, this is a system-wide unique thread
-        identifier; this identifier is also used by other tools like sample which helps
-        to associate data from those tools with lldb.  See related GetIndexID.
+            Returns a unique thread identifier (type lldb::tid_t, typically a 64-bit type)
+            for the current SBThread that will remain constant throughout the thread's
+            lifetime in this process and will not be reused by another thread during this
+            process lifetime.  On Mac OS X systems, this is a system-wide unique thread
+            identifier; this identifier is also used by other tools like sample which helps
+            to associate data from those tools with lldb.  See related GetIndexID.
         """
         return _lldb.SBThread_GetThreadID(self)
 
     def GetIndexID(self):
         r"""
+        GetIndexID(SBThread self) -> uint32_t
 
-        Return the index number for this SBThread.  The index number is the same thing
-        that a user gives as an argument to 'thread select' in the command line lldb.
-        These numbers start at 1 (for the first thread lldb sees in a debug session)
-        and increments up throughout the process lifetime.  An index number will not be
-        reused for a different thread later in a process - thread 1 will always be
-        associated with the same thread.  See related GetThreadID.
-        This method returns a uint32_t index number, takes no arguments.
+            Return the index number for this SBThread.  The index number is the same thing
+            that a user gives as an argument to 'thread select' in the command line lldb.
+            These numbers start at 1 (for the first thread lldb sees in a debug session)
+            and increments up throughout the process lifetime.  An index number will not be
+            reused for a different thread later in a process - thread 1 will always be
+            associated with the same thread.  See related GetThreadID.
+            This method returns a uint32_t index number, takes no arguments.
         """
         return _lldb.SBThread_GetIndexID(self)
 
@@ -11662,17 +11739,19 @@ class SBThread(object):
 
     def GetQueueName(self):
         r"""
+        GetQueueName(SBThread self) -> char const *
 
-        Return the queue name associated with this thread, if any, as a str.
-        For example, with a libdispatch (aka Grand Central Dispatch) queue.
+            Return the queue name associated with this thread, if any, as a str.
+            For example, with a libdispatch (aka Grand Central Dispatch) queue.
         """
         return _lldb.SBThread_GetQueueName(self)
 
     def GetQueueID(self):
         r"""
+        GetQueueID(SBThread self) -> lldb::queue_id_t
 
-        Return the dispatch_queue_id for this thread, if any, as a lldb::queue_id_t.
-        For example, with a libdispatch (aka Grand Central Dispatch) queue.
+            Return the dispatch_queue_id for this thread, if any, as a lldb::queue_id_t.
+            For example, with a libdispatch (aka Grand Central Dispatch) queue.
         """
         return _lldb.SBThread_GetQueueID(self)
 
@@ -11757,19 +11836,21 @@ class SBThread(object):
 
     def ReturnFromFrame(self, frame, return_value):
         r"""
+        ReturnFromFrame(SBThread self, SBFrame frame, SBValue return_value) -> SBError
 
-        Force a return from the frame passed in (and any frames younger than it)
-        without executing any more code in those frames.  If return_value contains
-        a valid SBValue, that will be set as the return value from frame.  Note, at
-        present only scalar return values are supported.
+            Force a return from the frame passed in (and any frames younger than it)
+            without executing any more code in those frames.  If return_value contains
+            a valid SBValue, that will be set as the return value from frame.  Note, at
+            present only scalar return values are supported.
         """
         return _lldb.SBThread_ReturnFromFrame(self, frame, return_value)
 
     def UnwindInnermostExpression(self):
         r"""
+        UnwindInnermostExpression(SBThread self) -> SBError
 
-        Unwind the stack frames from the innermost expression evaluation.
-        This API is equivalent to 'thread return -x'.
+            Unwind the stack frames from the innermost expression evaluation.
+            This API is equivalent to 'thread return -x'.
         """
         return _lldb.SBThread_UnwindInnermostExpression(self)
 
@@ -11879,66 +11960,70 @@ class SBThread(object):
 
     def GetExtendedBacktraceThread(self, type):
         r"""
+        GetExtendedBacktraceThread(SBThread self, char const * type) -> SBThread
 
-        Given an argument of str to specify the type of thread-origin extended
-        backtrace to retrieve, query whether the origin of this thread is
-        available.  An SBThread is retured; SBThread.IsValid will return true
-        if an extended backtrace was available.  The returned SBThread is not
-        a part of the SBProcess' thread list and it cannot be manipulated like
-        normal threads -- you cannot step or resume it, for instance -- it is
-        intended to used primarily for generating a backtrace.  You may request
-        the returned thread's own thread origin in turn.
+            Given an argument of str to specify the type of thread-origin extended
+            backtrace to retrieve, query whether the origin of this thread is
+            available.  An SBThread is retured; SBThread.IsValid will return true
+            if an extended backtrace was available.  The returned SBThread is not
+            a part of the SBProcess' thread list and it cannot be manipulated like
+            normal threads -- you cannot step or resume it, for instance -- it is
+            intended to used primarily for generating a backtrace.  You may request
+            the returned thread's own thread origin in turn.
         """
         return _lldb.SBThread_GetExtendedBacktraceThread(self, type)
 
     def GetExtendedBacktraceOriginatingIndexID(self):
         r"""
+        GetExtendedBacktraceOriginatingIndexID(SBThread self) -> uint32_t
 
-        Takes no arguments, returns a uint32_t.
-        If this SBThread is an ExtendedBacktrace thread, get the IndexID of the
-        original thread that this ExtendedBacktrace thread represents, if
-        available.  The thread that was running this backtrace in the past may
-        not have been registered with lldb's thread index (if it was created,
-        did its work, and was destroyed without lldb ever stopping execution).
-        In that case, this ExtendedBacktrace thread's IndexID will be returned.
+            If this SBThread is an ExtendedBacktrace thread, get the IndexID of the
+            original thread that this ExtendedBacktrace thread represents, if
+            available.  The thread that was running this backtrace in the past may
+            not have been registered with lldb's thread index (if it was created,
+            did its work, and was destroyed without lldb ever stopping execution).
+            In that case, this ExtendedBacktrace thread's IndexID will be returned.
         """
         return _lldb.SBThread_GetExtendedBacktraceOriginatingIndexID(self)
 
     def GetCurrentException(self):
         r"""
+        GetCurrentException(SBThread self) -> SBValue
 
-        Returns an SBValue object represeting the current exception for the thread,
-        if there is any. Currently, this works for Obj-C code and returns an SBValue
-        representing the NSException object at the throw site or that's currently
-        being processes.
+            Returns an SBValue object represeting the current exception for the thread,
+            if there is any. Currently, this works for Obj-C code and returns an SBValue
+            representing the NSException object at the throw site or that's currently
+            being processes.
         """
         return _lldb.SBThread_GetCurrentException(self)
 
     def GetCurrentExceptionBacktrace(self):
         r"""
+        GetCurrentExceptionBacktrace(SBThread self) -> SBThread
 
-        Returns a historical (fake) SBThread representing the stack trace of an
-        exception, if there is one for the thread. Currently, this works for Obj-C
-        code, and can retrieve the throw-site backtrace of an NSException object
-        even when the program is no longer at the throw site.
+            Returns a historical (fake) SBThread representing the stack trace of an
+            exception, if there is one for the thread. Currently, this works for Obj-C
+            code, and can retrieve the throw-site backtrace of an NSException object
+            even when the program is no longer at the throw site.
         """
         return _lldb.SBThread_GetCurrentExceptionBacktrace(self)
 
     def SafeToCallFunctions(self):
         r"""
+        SafeToCallFunctions(SBThread self) -> bool
 
-        Takes no arguments, returns a bool.
-        lldb may be able to detect that function calls should not be executed
-        on a given thread at a particular point in time.  It is recommended that
-        this is checked before performing an inferior function call on a given
-        thread.
+            lldb may be able to detect that function calls should not be executed
+            on a given thread at a particular point in time.  It is recommended that
+            this is checked before performing an inferior function call on a given
+            thread.
         """
         return _lldb.SBThread_SafeToCallFunctions(self)
 
     def GetSiginfo(self):
         r"""
+        GetSiginfo(SBThread self) -> SBValue
 
-        Retruns a SBValue object representing the siginfo for the current signal.
+            Returns a SBValue object representing the siginfo for the current signal.
 
         """
         return _lldb.SBThread_GetSiginfo(self)
