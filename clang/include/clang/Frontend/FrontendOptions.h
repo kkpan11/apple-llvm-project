@@ -372,6 +372,11 @@ public:
   /// caching of compilation outputs. This is used for testing purposes.
   unsigned DisableCachedCompileJobReplay : 1;
 
+  /// Whether to preserve the original PCH path in the include-tree, or to
+  /// canonicalize it to a fixed value. Setting this to \c true allows the use
+  /// of gmodules with PCH and include tree.
+  unsigned IncludeTreePreservePCHPath : 1;
+
   /// Keep the diagnostic client open for receiving diagnostics after the source
   /// files have been processed.
   unsigned MayEmitDiagnosticsAfterProcessingSourceFiles : 1;
@@ -593,6 +598,7 @@ public:
         BuildingImplicitModuleUsesLock(true), ModulesEmbedAllFiles(false),
         IncludeTimestamps(true), UseTemporary(true), CacheCompileJob(false),
         ForIncludeTreeScan(false), DisableCachedCompileJobReplay(false),
+        IncludeTreePreservePCHPath(false),
         MayEmitDiagnosticsAfterProcessingSourceFiles(false),
         WriteOutputAsCASID(false), AllowPCMWithCompilerErrors(false),
         ModulesShareFileManager(true), EmitSymbolGraph(false),
