@@ -319,7 +319,7 @@ public:
   /// symlinks. For real file system, this uses `llvm::sys::fs::real_path`.
   /// This returns errc::operation_not_permitted if not implemented by subclass.
   virtual std::error_code getRealPath(const Twine &Path,
-                                      SmallVectorImpl<char> &Output) const;
+                                      SmallVectorImpl<char> &Output);
 
   /// Gets access to the directory entry for \p Path. Among other things, this
   /// exposes the filesystem tree's actual path to \p Path.
@@ -459,7 +459,7 @@ public:
   std::error_code setCurrentWorkingDirectory(const Twine &Path) override;
   std::error_code isLocal(const Twine &Path, bool &Result) override;
   std::error_code getRealPath(const Twine &Path,
-                              SmallVectorImpl<char> &Output) const override;
+                              SmallVectorImpl<char> &Output) override;
 
   using iterator = FileSystemList::reverse_iterator;
   using const_iterator = FileSystemList::const_reverse_iterator;
@@ -520,7 +520,7 @@ public:
     return FS->setCurrentWorkingDirectory(Path);
   }
   std::error_code getRealPath(const Twine &Path,
-                              SmallVectorImpl<char> &Output) const override {
+                              SmallVectorImpl<char> &Output) override {
     return FS->getRealPath(Path, Output);
   }
   std::error_code isLocal(const Twine &Path, bool &Result) override {
@@ -689,7 +689,7 @@ public:
   /// This doesn't resolve symlinks as they are not supported in in-memory file
   /// system.
   std::error_code getRealPath(const Twine &Path,
-                              SmallVectorImpl<char> &Output) const override;
+                              SmallVectorImpl<char> &Output) override;
   std::error_code isLocal(const Twine &Path, bool &Result) override;
   std::error_code setCurrentWorkingDirectory(const Twine &Path) override;
 
@@ -1120,7 +1120,7 @@ public:
   ErrorOr<std::unique_ptr<File>> openFileForRead(const Twine &Path) override;
 
   std::error_code getRealPath(const Twine &Path,
-                              SmallVectorImpl<char> &Output) const override;
+                              SmallVectorImpl<char> &Output) override;
 
   llvm::ErrorOr<std::string> getCurrentWorkingDirectory() const override;
 
