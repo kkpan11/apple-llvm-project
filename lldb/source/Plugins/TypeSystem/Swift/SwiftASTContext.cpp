@@ -1571,7 +1571,7 @@ void SwiftASTContext::AddExtraClangArgs(const std::vector<std::string> &source,
       continue;
     }
     // Drop -Werror; it would only cause trouble in the debugger.
-    if (clang_argument.startswith("-Werror"))
+    if (clang_argument.starts_with("-Werror"))
       continue;
 
     // Drop `--`. This might be coming from the user-provided setting
