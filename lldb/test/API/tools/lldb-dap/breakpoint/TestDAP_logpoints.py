@@ -34,7 +34,7 @@ class TestDAP_logpoints(lldbdap_testcase.DAPTestCaseBase):
         before_loop_breakpoint_ids = self.set_source_breakpoints(
             self.main_path, [before_loop_line]
         )
-        self.assertEquals(len(before_loop_breakpoint_ids), 1, "expect one breakpoint")
+        self.assertEqual(len(before_loop_breakpoint_ids), 1, "expect one breakpoint")
 
         self.dap_server.request_continue()
 
@@ -92,7 +92,7 @@ class TestDAP_logpoints(lldbdap_testcase.DAPTestCaseBase):
         before_loop_breakpoint_ids = self.set_source_breakpoints(
             self.main_path, [before_loop_line]
         )
-        self.assertEquals(len(before_loop_breakpoint_ids), 1, "expect one breakpoint")
+        self.assertEqual(len(before_loop_breakpoint_ids), 1, "expect one breakpoint")
 
         self.dap_server.request_continue()
 
@@ -155,7 +155,7 @@ class TestDAP_logpoints(lldbdap_testcase.DAPTestCaseBase):
         before_loop_breakpoint_ids = self.set_source_breakpoints(
             self.main_path, [before_loop_line]
         )
-        self.assertEquals(len(before_loop_breakpoint_ids), 1, "expect one breakpoint")
+        self.assertEqual(len(before_loop_breakpoint_ids), 1, "expect one breakpoint")
 
         self.dap_server.request_continue()
 
@@ -220,7 +220,7 @@ class TestDAP_logpoints(lldbdap_testcase.DAPTestCaseBase):
         before_loop_breakpoint_ids = self.set_source_breakpoints(
             self.main_path, [before_loop_line]
         )
-        self.assertEquals(len(before_loop_breakpoint_ids), 1, "expect one breakpoint")
+        self.assertEqual(len(before_loop_breakpoint_ids), 1, "expect one breakpoint")
 
         self.dap_server.request_continue()
 

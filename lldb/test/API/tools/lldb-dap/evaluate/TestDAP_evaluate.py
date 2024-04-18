@@ -12,7 +12,7 @@ from lldbsuite.test.lldbtest import *
 
 class TestDAP_variables(lldbdap_testcase.DAPTestCaseBase):
     def assertEvaluate(self, expression, regex):
-        self.assertRegexpMatches(
+        self.assertRegex(
             self.dap_server.request_evaluate(expression, context=self.context)["body"][
                 "result"
             ],
