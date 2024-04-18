@@ -107,7 +107,7 @@ public:
   Status IsCompatible() override;
 
   void DiagnoseWarnings(Process &process, Module &module) const override;
-  DWARFASTParser *GetDWARFParser() override;
+  plugin::dwarf::DWARFASTParser *GetDWARFParser() override;
   // CompilerDecl functions
   ConstString DeclGetName(void *opaque_decl) override {
     return ConstString("");
@@ -488,7 +488,7 @@ protected:
   mutable std::unique_ptr<SwiftDWARFImporterForClangTypes>
       m_dwarf_importer_for_clang_types_up;
   mutable std::unique_ptr<ClangNameImporter> m_name_importer_up;
-  std::unique_ptr<DWARFASTParser> m_dwarf_ast_parser_up;
+  std::unique_ptr<plugin::dwarf::DWARFASTParser> m_dwarf_ast_parser_up;
 
   /// The APINotesManager responsible for each Clang module.
   llvm::DenseMap<clang::Module *,
