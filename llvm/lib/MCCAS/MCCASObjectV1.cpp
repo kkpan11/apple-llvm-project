@@ -864,6 +864,20 @@ DebugNamesSectionRef::create(MCCASBuilder &MB,
   return get(B->build());
 }
 
+Expected<AppleNamesSectionRef>
+AppleNamesSectionRef::create(MCCASBuilder &MB,
+                             ArrayRef<cas::ObjectRef> Fragments) {
+  Expected<Builder> B = Builder::startNode(MB.Schema, KindString);
+  if (!B)
+    return B.takeError();
+
+  if (auto E = createGenericDebugSection<AppleNamesSectionRef>(
+          MB, Fragments, B->Data, B->Refs))
+    return E;
+
+  return get(B->build());
+}
+
 Expected<uint64_t> SectionRef::materialize(MCCASReader &Reader,
                                            raw_ostream *Stream) const {
   // Start a new section for relocations.
@@ -1366,6 +1380,14 @@ DebugNamesSectionRef::materialize(MCCASReader &Reader,
                                                               *this);
 }
 
+Expected<uint64_t>
+AppleNamesSectionRef::materialize(MCCASReader &Reader,
+                                  raw_ostream *Stream) const {
+  StringRef Remaining = getData();
+  return materializeGenericDebugSection<AppleNamesSectionRef>(Reader, Remaining,
+                                                              *this);
+}
+
 Expected<AtomRef> AtomRef::create(MCCASBuilder &MB,
                                   ArrayRef<cas::ObjectRef> Fragments) {
   Expected<Builder> B = Builder::startNode(MB.Schema, KindString);
@@ -1701,7 +1723,8 @@ DwarfSectionsCache mccasformats::v1::getDwarfSections(MCAssembler &Asm) {
       Asm.getContext().getObjectFileInfo()->getDwarfRangesSection(),
       Asm.getContext().getObjectFileInfo()->getDwarfRnglistsSection(),
       Asm.getContext().getObjectFileInfo()->getDwarfLineStrSection(),
-      Asm.getContext().getObjectFileInfo()->getDwarfDebugNamesSection()};
+      Asm.getContext().getObjectFileInfo()->getDwarfDebugNamesSection(),
+      Asm.getContext().getObjectFileInfo()->getDwarfAccelNamesSection()};
 }
 
 Error MCCASBuilder::prepare() {
@@ -2640,6 +2663,23 @@ Error MCCASBuilder::createDebugNamesSection() {
   return finalizeSection<DebugNamesSectionRef>();
 }
 
+Error MCCASBuilder::createAppleNamesSection() {
+
+  auto MaybeAppleNamesRef =
+      createGenericDebugRef<AppleNamesRef>(DwarfSections.AppleNames);
+  if (!MaybeAppleNamesRef)
+    return Error::success();
+
+  if (!*MaybeAppleNamesRef)
+    return MaybeAppleNamesRef->takeError();
+
+  startSection(DwarfSections.AppleNames);
+  addNode(**MaybeAppleNamesRef);
+  if (auto E = createPaddingRef(DwarfSections.AppleNames))
+    return E;
+  return finalizeSection<AppleNamesSectionRef>();
+}
+
 static ArrayRef<char> getFragmentContents(const MCFragment &Fragment) {
   switch (Fragment.getKind()) {
 #define MCFRAGMENT_NODE_REF(MCFragmentName, MCEnumName, MCEnumIdentifier)      \
@@ -2820,6 +2860,13 @@ Error MCCASBuilder::buildFragments() {
       continue;
     }
 
+    // Handle Debug AppleNames sections separately.
+    if (&Sec == DwarfSections.AppleNames) {
+      if (auto E = createAppleNamesSection())
+        return E;
+      continue;
+    }
+
     // Start Subsection for one section.
     startSection(&Sec);
 
@@ -2982,7 +3029,7 @@ void MCCASBuilder::startSection(const MCSection *Sec) {
           Sec != DwarfSections.Abbrev && Sec != DwarfSections.StrOffsets &&
           Sec != DwarfSections.Loclists && Sec != DwarfSections.Ranges &&
           Sec != DwarfSections.Rangelists && Sec != DwarfSections.LineStr &&
-          Sec != DwarfSections.Names)
+          Sec != DwarfSections.Names && Sec != DwarfSections.AppleNames)
         RelMap[R.F].push_back(R.MRE);
       else
         // If the fragment is nullptr, it should a section with only relocation
@@ -3199,6 +3246,8 @@ Expected<uint64_t> MCCASReader::materializeGroup(cas::ObjectRef ID) {
     return F->materialize(*this);
   if (auto F = DebugNamesSectionRef::Cast(*Node))
     return F->materialize(*this);
+  if (auto F = AppleNamesSectionRef::Cast(*Node))
+    return F->materialize(*this);
   if (auto F = CStringRef::Cast(*Node)) {
     auto Size = F->materialize(OS);
     if (!Size)
@@ -3276,6 +3325,8 @@ Expected<uint64_t> MCCASReader::materializeSection(cas::ObjectRef ID,
   if (auto F = DebugLineStrRef::Cast(*Node))
     return F->materialize(*Stream);
   if (auto F = DebugNamesRef::Cast(*Node))
+    return F->materialize(*Stream);
+  if (auto F = AppleNamesRef::Cast(*Node))
     return F->materialize(*Stream);
   if (auto F = AddendsRef::Cast(*Node))
     // AddendsRef is already handled when materializing Atoms, skip.
