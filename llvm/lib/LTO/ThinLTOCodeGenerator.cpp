@@ -1920,7 +1920,7 @@ void ThinLTOCodeGenerator::run() {
 
     // Parallel optimizer + codegen
     {
-      DefaultThreadPool Pool(heavyweight_hardware_concurrency(ThreadCount));
+      ThreadPool Pool(heavyweight_hardware_concurrency(ThreadCount));
       for (auto count : ModulesOrdering) {
         auto ModuleEntryPath = Infos[count].Entry->getEntryPath();
         Pool.async([&, count, ModuleEntryPath, GetCancelTok] {
