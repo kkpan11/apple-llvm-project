@@ -98821,6 +98821,10 @@ SWIG_init(void) {
   SWIG_Python_SetConstant(d, "eAddressMaskRangeAll",SWIG_From_int(static_cast< int >(lldb::eAddressMaskRangeAll)));
   SWIG_Python_SetConstant(d, "ChildCacheState_eRefetch",SWIG_From_int(static_cast< int >(lldb::ChildCacheState::eRefetch)));
   SWIG_Python_SetConstant(d, "ChildCacheState_eReuse",SWIG_From_int(static_cast< int >(lldb::ChildCacheState::eReuse)));
+  SWIG_Python_SetConstant(d, "eBroadcastBitProgress",SWIG_From_int(static_cast< int >(lldb::eBroadcastBitProgress)));
+  SWIG_Python_SetConstant(d, "eBroadcastBitWarning",SWIG_From_int(static_cast< int >(lldb::eBroadcastBitWarning)));
+  SWIG_Python_SetConstant(d, "eBroadcastBitError",SWIG_From_int(static_cast< int >(lldb::eBroadcastBitError)));
+  SWIG_Python_SetConstant(d, "eBroadcastBitProgressCategory",SWIG_From_int(static_cast< int >(lldb::eBroadcastBitProgressCategory)));
   SWIG_Python_SetConstant(d, "SBCommandInterpreter_eBroadcastBitThreadShouldExit",SWIG_From_int(static_cast< int >(lldb::SBCommandInterpreter::eBroadcastBitThreadShouldExit)));
   SWIG_Python_SetConstant(d, "SBCommandInterpreter_eBroadcastBitResetPrompt",SWIG_From_int(static_cast< int >(lldb::SBCommandInterpreter::eBroadcastBitResetPrompt)));
   SWIG_Python_SetConstant(d, "SBCommandInterpreter_eBroadcastBitQuitCommandReceived",SWIG_From_int(static_cast< int >(lldb::SBCommandInterpreter::eBroadcastBitQuitCommandReceived)));
@@ -98832,10 +98836,6 @@ SWIG_init(void) {
   SWIG_Python_SetConstant(d, "SBCommunication_eBroadcastBitReadThreadShouldExit",SWIG_From_int(static_cast< int >(lldb::SBCommunication::eBroadcastBitReadThreadShouldExit)));
   SWIG_Python_SetConstant(d, "SBCommunication_eBroadcastBitPacketAvailable",SWIG_From_int(static_cast< int >(lldb::SBCommunication::eBroadcastBitPacketAvailable)));
   SWIG_Python_SetConstant(d, "SBCommunication_eAllEventBits",SWIG_From_int(static_cast< int >(lldb::SBCommunication::eAllEventBits)));
-  SWIG_Python_SetConstant(d, "SBDebugger_eBroadcastBitProgress",SWIG_From_int(static_cast< int >(lldb::SBDebugger::eBroadcastBitProgress)));
-  SWIG_Python_SetConstant(d, "SBDebugger_eBroadcastBitWarning",SWIG_From_int(static_cast< int >(lldb::SBDebugger::eBroadcastBitWarning)));
-  SWIG_Python_SetConstant(d, "SBDebugger_eBroadcastBitError",SWIG_From_int(static_cast< int >(lldb::SBDebugger::eBroadcastBitError)));
-  SWIG_Python_SetConstant(d, "SBDebugger_eBroadcastBitProgressCategory",SWIG_From_int(static_cast< int >(lldb::SBDebugger::eBroadcastBitProgressCategory)));
   SWIG_Python_SetConstant(d, "SBProcess_eBroadcastBitStateChanged",SWIG_From_int(static_cast< int >(lldb::SBProcess::eBroadcastBitStateChanged)));
   SWIG_Python_SetConstant(d, "SBProcess_eBroadcastBitInterrupt",SWIG_From_int(static_cast< int >(lldb::SBProcess::eBroadcastBitInterrupt)));
   SWIG_Python_SetConstant(d, "SBProcess_eBroadcastBitSTDOUT",SWIG_From_int(static_cast< int >(lldb::SBProcess::eBroadcastBitSTDOUT)));
