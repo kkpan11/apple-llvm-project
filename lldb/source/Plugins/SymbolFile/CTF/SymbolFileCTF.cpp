@@ -925,18 +925,23 @@ lldb_private::Type *SymbolFileCTF::ResolveTypeUID(lldb::user_id_t type_uid) {
   return GetTypeForUID(type_uid).get();
 }
 
-void SymbolFileCTF::FindTypes(const lldb_private::TypeQuery &match,
-                              lldb_private::TypeResults &results) {
-  // Make sure we haven't already searched this SymbolFile before.
-  if (results.AlreadySearched(this))
-    return;
+void SymbolFileCTF::FindTypes(
+    lldb_private::ConstString name,
+    const lldb_private::CompilerDeclContext &parent_decl_ctx,
+    uint32_t max_matches,
+    llvm::DenseSet<lldb_private::SymbolFile *> &searched_symbol_files,
+    lldb_private::TypeMap &types) {
 
-  ConstString name = match.GetTypeBasename();
-  for (TypeSP type_sp : GetTypeList().Types()) {
+  searched_symbol_files.clear();
+  searched_symbol_files.insert(this);
+
+  size_t matches = 0;
+  for (TypeSP type_sp : m_types) {
+    if (matches == max_matches)
+      break;
     if (type_sp && type_sp->GetName() == name) {
-      results.InsertUnique(type_sp);
-      if (results.Done(match))
-        return;
+      types.Insert(type_sp);
+      matches++;
     }
   }
 }
