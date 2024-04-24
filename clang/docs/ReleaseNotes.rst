@@ -672,11 +672,6 @@ Bug Fixes in This Version
   (`#50244 <https://github.com/llvm/llvm-project/issues/50244>`_).
 - Apply ``-fmacro-prefix-map`` to anonymous tags in template arguments
   (`#63219 <https://github.com/llvm/llvm-project/issues/63219>`_).
-- Clang now properly diagnoses format string mismatches involving scoped
-  enumeration types. A scoped enumeration type is not promoted to an integer
-  type by the default argument promotions, and thus this is UB. Clang's
-  behavior now matches GCC's behavior in C++.
-  (`#38717 <https://github.com/llvm/llvm-project/issues/38717>`_).
 - Fixed a failing assertion when implicitly defining a function within a GNU
   statement expression that appears outside of a function block scope. The
   assertion was benign outside of asserts builds and would only fire in C.

@@ -11500,18 +11500,12 @@ CheckPrintfHandler::checkFormatExpr(const analyze_printf::PrintfSpecifier &FS,
       ImplicitMatch == ArgType::NoMatchTypeConfusion)
     Match = ImplicitMatch;
   assert(Match != ArgType::MatchPromotion);
-  // Look through unscoped enums to their underlying type.
+  // Look through enums to their underlying type.
   bool IsEnum = false;
   bool IsScopedEnum = false;
   if (auto EnumTy = ExprTy->getAs<EnumType>()) {
-    if (EnumTy->isUnscopedEnumerationType()) {
-      ExprTy = EnumTy->getDecl()->getIntegerType();
-      // This controls whether we're talking about the underlying type or not,
-      // which we only want to do when it's an unscoped enum.
-      IsEnum = true;
-    } else {
-      IsScopedEnum = true;
-    }
+    ExprTy = EnumTy->getDecl()->getIntegerType();
+    IsEnum = true;
   }
 
   // %C in an Objective-C context prints a unichar, not a wchar_t.
