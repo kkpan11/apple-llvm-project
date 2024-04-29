@@ -1777,14 +1777,6 @@ ChildCacheState_eRefetch = _lldb.ChildCacheState_eRefetch
 
 ChildCacheState_eReuse = _lldb.ChildCacheState_eReuse
 
-eBroadcastBitProgress = _lldb.eBroadcastBitProgress
-
-eBroadcastBitWarning = _lldb.eBroadcastBitWarning
-
-eBroadcastBitError = _lldb.eBroadcastBitError
-
-eBroadcastBitProgressCategory = _lldb.eBroadcastBitProgressCategory
-
 class SBAddress(object):
     r"""
     A section + offset based address class.
@@ -4377,6 +4369,14 @@ class SBDebugger(object):
     """
 
     thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
+    eBroadcastBitProgress = _lldb.SBDebugger_eBroadcastBitProgress
+    
+    eBroadcastBitWarning = _lldb.SBDebugger_eBroadcastBitWarning
+    
+    eBroadcastBitError = _lldb.SBDebugger_eBroadcastBitError
+    
+    eBroadcastBitProgressCategory = _lldb.SBDebugger_eBroadcastBitProgressCategory
+    
 
     def __init__(self, *args):
         r"""
