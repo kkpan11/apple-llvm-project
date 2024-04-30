@@ -1210,8 +1210,6 @@ ClangASTImporter::ASTImporterDelegate::ImportImpl(Decl *From) {
     DeclContext::lookup_result lr = dc->lookup(*dn_or_err);
     for (clang::Decl *candidate : lr) {
       if (candidate->getKind() == From->getKind()) {
-        RegisterImportedDecl(From, candidate);
-
         // If we're dealing with redecl chains. We want to find the definition,
         // so skip if the decl is actually just a forwad decl.
         if (TypeSystemClang::UseRedeclCompletion())
@@ -1219,6 +1217,7 @@ ClangASTImporter::ASTImporterDelegate::ImportImpl(Decl *From) {
               !tag_decl || !tag_decl->getDefinition())
             continue;
 
+        RegisterImportedDecl(From, candidate);
         m_decls_to_ignore.insert(candidate);
         return candidate;
       }
