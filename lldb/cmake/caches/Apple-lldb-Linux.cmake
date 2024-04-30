@@ -4,6 +4,7 @@ set(LLVM_DISTRIBUTION_COMPONENTS
   lldb
   liblldb
   lldb-argdumper
+  lldb-dap
   lldb-server
   lldb-python-scripts
   repl_swift
