@@ -13,7 +13,7 @@ class TestSwiftProgressReporting(TestBase):
         TestBase.setUp(self)
         self.broadcaster = self.dbg.GetBroadcaster()
         self.listener = lldbutil.start_listening_from(self.broadcaster,
-                                        lldb.eBroadcastBitProgress)
+                                        lldb.SBDebugger.eBroadcastBitProgress)
 
     @skipIf(setting=('plugin.typesystem.clang.experimental-redecl-completion', 'true'))
     # Don't run ClangImporter tests if Clangimporter is disabled.
