@@ -3335,6 +3335,13 @@ def PointerAuth : TypeAttr {
   let Documentation = [PtrAuthDocs];
 }
 
+def PointerAuthStruct : InheritableAttr {
+  let Spellings = [Clang<"ptrauth_struct">];
+  let Args = [ExprArgument<"Key">, ExprArgument<"Discriminator">];
+  let Subjects = SubjectList<[Record]>;
+  let Documentation = [PointerAuthStructDocs];
+}
+
 def Unused : InheritableAttr {
   let Spellings = [CXX11<"", "maybe_unused", 201603>, GCC<"unused">,
                    C23<"", "maybe_unused", 202106>];

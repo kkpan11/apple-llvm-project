@@ -970,11 +970,12 @@ def err_ptrauth_qualifier_signed_pointer_type : Error<
 def err_ptrauth_qualifier_bad_arg_count : Error<
   "%0 qualifier must take between 1 and 4 arguments">;
 def err_ptrauth_arg_not_ice : Error<
-  "argument to __ptrauth must be an integer constant expression">;
+  "argument to %select{__ptrauth|ptrauth_struct}0 must be an integer constant "
+  "expression">;
 def err_ptrauth_address_discrimination_invalid : Error<
   "address discrimination flag for __ptrauth must be 0 or 1; value is %0">;
 def err_ptrauth_extra_discriminator_invalid : Error<
-  "extra discriminator for __ptrauth must be between "
+  "extra discriminator for %select{__ptrauth|ptrauth_struct}2 must be between "
   "0 and %1; value is %0">;
 def note_ptrauth_evaluating_options : Note<
   "options parameter evaluated to '%0'">;
@@ -998,6 +999,16 @@ def err_ptrauth_invalid_authenticated_null_global : Error<
   "%select{static locals|globals}0 with authenticated null values are currently unsupported"
 >;
 
+// ptrauth_struct attribute.
+def err_ptrauth_struct_key_disc_not_record : Error<
+  "attribute ptrauth_struct can only be used on a record type">;
+def err_ptrauth_struct_signing_mismatch : Error<
+  "%0 is signed differently from the previous declaration">;
+def note_previous_ptrauth_struct_declaration : Note<
+  "previous declaration of %0 is here">;
+def err_ptrauth_invalid_struct_attr_dynamic_class : Error<
+  "attribute ptrauth_struct cannot be used on class %0 or its subclasses "
+  "because it is a dynamic class">;
 
 /// main()
 // static main() is not an error in C, just in C++.

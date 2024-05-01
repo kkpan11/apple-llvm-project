@@ -63,4 +63,18 @@ void f3() {
   // expected-note@-1{{in instantiation of template class 'Indirect<void *__ptrauth(ptrauth_key_none,0,1235)>' requested here}}
 }
 
+
+template <typename P> struct __attribute__((ptrauth_struct(0,1236))) AuthenticatedStruct  {
+  P ptr;
+};
+
+void f4(void* __attribute__((nonnull)) v) {
+  AuthenticatedStruct<void*> no_ptrauth;
+  AuthenticatedStruct<void* __ptrauth(0,0,1237)> basic_auth;
+  AuthenticatedStruct<void* __ptrauth(-1,0,1238)> explicit_null_auth;
+  no_ptrauth.ptr=v;
+  basic_auth.ptr=v;
+  explicit_null_auth.ptr=v;
+}
+
 #endif

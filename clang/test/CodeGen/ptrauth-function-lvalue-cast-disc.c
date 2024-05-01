@@ -5,6 +5,9 @@ typedef void (*fptr_t)(void);
 char *cptr;
 void (*fptr)(void);
 
+typedef struct __attribute__((ptrauth_struct(0,42))) S {} S;
+S *sptr;
+
 // CHECK-LABEL: define void @test1
 void test1() {
   // CHECK: [[LOAD:%.*]] = load ptr, ptr @cptr
@@ -24,6 +27,16 @@ char test2() {
 
   // CHECK: [[TOINT:%.*]] = ptrtoint ptr [[LOAD]] to i64
   // CHECK: call i64 @llvm.ptrauth.resign(i64 [[TOINT]], i32 0, i64 18983, i32 0, i64 0)
+}
+
+// CHECK-LABEL: define void @test3
+void test3() {
+  (S *)fptr;
+  // CHECK: [[LOAD:%.*]] = load ptr, ptr @fptr
+  // CHECK: [[CMP:%.*]] = icmp ne ptr [[LOAD]], null
+
+  // CHECK: [[TOINT:%.*]] = ptrtoint ptr [[LOAD]] to i64
+  // CHECK: call i64 @llvm.ptrauth.resign(i64 [[TOINT]], i32 0, i64 18983, i32 0, i64 42)
 }
 
 // CHECK-LABEL: define void @test4

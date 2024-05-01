@@ -3006,6 +3006,8 @@ void ItaniumCXXABI::registerGlobalDtor(CodeGenFunction &CGF, const VarDecl &D,
   if (D.isNoDestroy(CGM.getContext()))
     return;
 
+  addr = CGM.getConstantSignedPointer(addr, D.getType());
+
   // OpenMP offloading supports C++ constructors and destructors but we do not
   // always have 'atexit' available. Instead lower these to use the LLVM global
   // destructors which we can handle directly in the runtime. Note that this is
@@ -4881,16 +4883,18 @@ static void InitCatchParam(CodeGenFunction &CGF,
         llvm::Type *PtrTy = CGF.ConvertTypeForMem(CaughtType);
 
         // Create the temporary and write the adjusted pointer into it.
-        Address ExnPtrTmp =
-          CGF.CreateTempAlloca(PtrTy, CGF.getPointerAlign(), "exn.byref.tmp");
+        RawAddress ExnPtrTmp =
+            CGF.CreateTempAlloca(PtrTy, CGF.getPointerAlign(), "exn.byref.tmp");
+        AdjustedExn = CGF.EmitPointerAuthSign(PointeeType, AdjustedExn);
         llvm::Value *Casted = CGF.Builder.CreateBitCast(AdjustedExn, PtrTy);
         CGF.Builder.CreateStore(Casted, ExnPtrTmp);
 
         // Bind the reference to the temporary.
-        AdjustedExn = ExnPtrTmp.emitRawPointer(CGF);
+        AdjustedExn = ExnPtrTmp.getPointer();
       }
     }
 
+    AdjustedExn = CGF.EmitPointerAuthSign(CaughtType, AdjustedExn);
     llvm::Value *ExnCast =
       CGF.Builder.CreateBitCast(AdjustedExn, LLVMCatchTy, "exn.byref");
     CGF.Builder.CreateStore(ExnCast, ParamAddr);

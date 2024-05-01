@@ -3407,6 +3407,62 @@ uint16_t ASTContext::getPointerAuthTypeDiscriminator(QualType T) {
   return llvm::getPointerAuthStableSipHash(Str);
 }
 
+std::pair<bool, unsigned>
+ASTContext::getPointerAuthStructKey(const RecordDecl *RD) const {
+  if (auto *Attr = RD->getAttr<PointerAuthStructAttr>()) {
+    Expr *E = Attr->getKey();
+    if (E->isValueDependent())
+      return {false, 0};
+    std::optional<llvm::APSInt> V = E->getIntegerConstantExpr(*this);
+    return {true, static_cast<unsigned>(V->getExtValue())};
+  }
+
+  return {true, PointerAuthKeyNone};
+}
+
+std::pair<bool, unsigned>
+ASTContext::getPointerAuthStructDisc(const RecordDecl *RD) const {
+  if (auto *Attr = RD->getAttr<PointerAuthStructAttr>()) {
+    Expr *E = Attr->getDiscriminator();
+    if (E->isValueDependent())
+      return {false, 0};
+    std::optional<llvm::APSInt> V = E->getIntegerConstantExpr(*this);
+    return {true, V->getExtValue()};
+  }
+
+  return {true, 0};
+}
+
+bool ASTContext::hasPointerAuthStructMismatch(const RecordDecl *RD0,
+                                              const RecordDecl *RD1) const {
+  if (RD0 == RD1)
+    return true;
+
+  unsigned Key0, Key1;
+  unsigned Disc0, Disc1;
+  bool Known0, Known1;
+  std::tie(Known0, Key0) = getPointerAuthStructKey(RD0);
+  std::tie(Known1, Key1) = getPointerAuthStructKey(RD1);
+
+  if (!Known0 || !Known1)
+    return false;
+
+  if (Key0 != Key1)
+    return true;
+
+  // If the key is none, skip checking the discriminators.
+  if (Key0 == PointerAuthKeyNone)
+    return false;
+
+  std::tie(Known0, Disc0) = getPointerAuthStructDisc(RD0);
+  std::tie(Known1, Disc1) = getPointerAuthStructDisc(RD1);
+
+  if (!Known0 || !Known1)
+    return false;
+
+  return Disc0 != Disc1;
+}
+
 std::optional<bool>
 ASTContext::tryTypeContainsAuthenticatedNull(QualType T) const {
   if (!LangOpts.PointerAuthIntrinsics)

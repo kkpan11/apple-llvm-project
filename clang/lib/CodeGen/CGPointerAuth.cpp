@@ -70,6 +70,33 @@ uint16_t CodeGen::getPointerAuthDeclDiscriminator(CodeGenModule &CGM,
   return CGM.getPointerAuthDeclDiscriminator(Declaration);
 }
 
+CGPointerAuthInfo CodeGenModule::EmitPointerAuthInfo(const RecordDecl *RD) {
+  assert(RD && "null RecordDecl passed");
+  auto *Attr = RD->getAttr<PointerAuthStructAttr>();
+
+  if (!Attr)
+    return CGPointerAuthInfo();
+
+  Expr::EvalResult Result;
+  bool Succeeded = Attr->getKey()->EvaluateAsRValue(Result, getContext());
+  assert(Succeeded);
+  (void)Succeeded;
+  int Key = Result.Val.getInt().getExtValue();
+
+  if (static_cast<unsigned>(Key) == PointerAuthKeyNone)
+    return CGPointerAuthInfo();
+
+  Succeeded = Attr->getDiscriminator()->EvaluateAsRValue(Result, getContext());
+  assert(Succeeded);
+  (void)Succeeded;
+  unsigned DiscVal = Result.Val.getInt().getExtValue();
+
+  auto *Discriminator = llvm::ConstantInt::get(IntPtrTy, DiscVal);
+  return CGPointerAuthInfo(Key, PointerAuthenticationMode::SignAndAuth,
+                           /* isIsaPointer */ false,
+                           /* authenticatesNullValues */ false, Discriminator);
+}
+
 /// Return the "other" decl-specific discriminator for the given decl.
 uint16_t
 CodeGenModule::getPointerAuthDeclDiscriminator(GlobalDecl Declaration) {
@@ -145,6 +172,12 @@ getPointerAuthInfoForPointeeType(CodeGenModule &CGM, QualType PointeeType) {
   // Function pointers use the function-pointer schema by default.
   if (PointeeType->isFunctionType())
     return CGM.getFunctionPointerAuthInfo(PointeeType);
+
+  // Records pointers may have the ptrauth_struct attribute.
+  if (auto RecordTy = PointeeType->getAs<RecordType>())
+    if (CGPointerAuthInfo AuthInfo =
+            CGM.EmitPointerAuthInfo(RecordTy->getDecl()))
+      return AuthInfo;
 
   // Normal data pointers never use direct pointer authentication by default.
   return CGPointerAuthInfo();
