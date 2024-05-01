@@ -497,8 +497,10 @@ Improvements to Clang's diagnostics
 - ``-Wformat`` cast fix-its will now suggest ``static_cast`` instead of C-style casts
   for C++ code.
 - ``-Wformat`` will no longer suggest a no-op fix-it for fixing scoped enum format
-  warnings. Instead, it will suggest casting the enum object based on its
-  underlying type.
+  warnings. Instead, it will suggest casting the enum object to the type specified
+  in the format string.
+- Clang contexpr evaluator now displays notes as well as an error when a constructor
+  of a base class is not called in the constructor of its derived class.
 
 - ``-Wzero-as-null-pointer-constant`` diagnostic is no longer emitted when using ``__null``
   (or, more commonly, ``NULL`` when the platform defines it as ``__null``) to be more consistent
@@ -670,11 +672,6 @@ Bug Fixes in This Version
   (`#50244 <https://github.com/llvm/llvm-project/issues/50244>`_).
 - Apply ``-fmacro-prefix-map`` to anonymous tags in template arguments
   (`#63219 <https://github.com/llvm/llvm-project/issues/63219>`_).
-- Clang now properly diagnoses format string mismatches involving scoped
-  enumeration types. A scoped enumeration type is not promoted to an integer
-  type by the default argument promotions, and thus this is UB. Clang's
-  behavior now matches GCC's behavior in C++.
-  (`#38717 <https://github.com/llvm/llvm-project/issues/38717>`_).
 - Fixed a failing assertion when implicitly defining a function within a GNU
   statement expression that appears outside of a function block scope. The
   assertion was benign outside of asserts builds and would only fire in C.
