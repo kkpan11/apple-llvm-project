@@ -2303,6 +2303,8 @@ public:
                               const ObjCPropertyImplDecl *propImpl,
                               llvm::Constant *AtomicHelperFn);
 
+  llvm::Value *getObjCIsaMask();
+
   //===--------------------------------------------------------------------===//
   //                                  Block Bits
   //===--------------------------------------------------------------------===//

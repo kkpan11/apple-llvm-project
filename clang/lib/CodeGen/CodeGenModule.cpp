@@ -7743,3 +7743,11 @@ void CodeGenModule::moveLazyEmissionStates(CodeGenModule *NewBuilder) {
 
   NewBuilder->ABI->MangleCtx = std::move(ABI->MangleCtx);
 }
+
+llvm::Constant *CodeGenModule::getObjCIsaMaskAddress() {
+  if (!ObjCIsaMaskAddress) {
+    ObjCIsaMaskAddress = GetOrCreateLLVMGlobal(
+        "objc_absolute_packed_isa_class_mask", Int8Ty, LangAS::Default, nullptr);
+  }
+  return ObjCIsaMaskAddress;
+}

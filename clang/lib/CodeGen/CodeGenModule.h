@@ -621,6 +621,8 @@ private:
   std::optional<PointerAuthQualifier>
   computeVTPointerAuthentication(const CXXRecordDecl *ThisClass);
 
+  llvm::Constant *ObjCIsaMaskAddress = nullptr;
+
 public:
   CodeGenModule(ASTContext &C, IntrusiveRefCntPtr<llvm::vfs::FileSystem> FS,
                 const HeaderSearchOptions &headersearchopts,
@@ -1015,6 +1017,8 @@ public:
                                       const Expr *Discriminator);
 
   CGPointerAuthInfo EmitPointerAuthInfo(const RecordDecl *RD);
+
+  llvm::Constant *getObjCIsaMaskAddress();
 
   // Return whether RTTI information should be emitted for this target.
   bool shouldEmitRTTI(bool ForEH = false) {

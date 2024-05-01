@@ -4275,6 +4275,8 @@ defm ptrauth_function_pointer_type_discrimination : OptInCC1FFlag<"ptrauth-funct
   "Enable type discrimination on C function pointers">;
 defm ptrauth_block_descriptor_pointers : OptInCC1FFlag<"ptrauth-block-descriptor-pointers",
   "Enable signing block descriptor pointers">;
+defm ptrauth_objc_isa_masking : OptInCC1FFlag<"ptrauth-objc-isa-masking",
+  "Enable pre- and post-authentication masking mode of Objective-c isa pointers">;
 }
 
 let Group = f_Group in {
