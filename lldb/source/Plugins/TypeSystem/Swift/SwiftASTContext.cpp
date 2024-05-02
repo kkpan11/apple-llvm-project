@@ -1730,8 +1730,8 @@ static void applyOverrideOptions(std::vector<std::string> &args,
   for (const char *arg : raw_args)
     new_args.emplace_back(arg);
 
-  // Only now that `raw_args` has been copied into `new_args`, can `args` be
-  // overwritten. This is because `args` owns the data pointed to by `raw_args`.
+  // Only now that `raw_args` has been copied into `new_args`, it's safe to
+  // overwrite `args` (which owns the data pointed to by `raw_args`).
   args = new_args;
 }
 
