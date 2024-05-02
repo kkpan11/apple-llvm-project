@@ -228,6 +228,9 @@ public:
   /// Primarily used to speed up deserialization during dependency scanning.
   unsigned ModulesSkipPragmaDiagnosticMappings : 1;
 
+  /// Whether to prune non-affecting module map files from PCM files.
+  unsigned ModulesPruneNonAffectingModuleMaps : 1;
+
   unsigned ModulesHashContent : 1;
 
   /// Whether we should include all things that could impact the module in the
@@ -252,7 +255,8 @@ public:
         ModulesValidateDiagnosticOptions(true),
         ModulesSkipDiagnosticOptions(false),
         ModulesSkipHeaderSearchPaths(false),
-        ModulesSkipPragmaDiagnosticMappings(false), ModulesHashContent(false),
+        ModulesSkipPragmaDiagnosticMappings(false),
+        ModulesPruneNonAffectingModuleMaps(true), ModulesHashContent(false),
         ModulesStrictContextHash(false), ModulesIncludeVFSUsage(false) {}
 
   /// AddPath - Add the \p Path path to the specified \p Group list.
