@@ -29,6 +29,7 @@
 #include "swift/AST/ASTContext.h"
 #include "swift/AST/NameLookup.h"
 #include "swift/ClangImporter/ClangImporter.h"
+#include "llvm/BinaryFormat/Dwarf.h"
 #endif // LLDB_ENABLE_SWIFT
 
 #include <memory>
@@ -226,7 +227,7 @@ InstrumentationRuntimeMainThreadChecker::RetrieveReportData(
 
 #ifdef LLDB_ENABLE_SWIFT
   if (responsible_frame) {
-    if (responsible_frame->GetLanguage() == eLanguageTypeSwift) {
+    if (responsible_frame->GetLanguage().name == llvm::dwarf::DW_LNAME_Swift) {
       std::string swiftApiName =
           TranslateObjCNameToSwiftName(className, selector, responsible_frame);
       if (swiftApiName != "")

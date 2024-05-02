@@ -16,10 +16,12 @@
 #include "lldb/Target/Target.h"
 #include "lldb/Utility/StreamString.h"
 
-#include "llvm/ADT/StringRef.h"
 #include "swift/Basic/LangOptions.h"
 #include "swift/Demangling/Demangle.h"
 #include "swift/Demangling/Demangler.h"
+
+#include "llvm/ADT/StringRef.h"
+#include "llvm/BinaryFormat/Dwarf.h"
 
 using namespace lldb;
 using namespace lldb_private;
@@ -554,8 +556,8 @@ uint32_t SwiftExpressionSourceCode::GetNumBodyLines() {
 }
 
 Status SwiftExpressionSourceCode::GetText(
-    std::string &text, lldb::LanguageType wrapping_language,
-    bool needs_object_ptr, bool static_method, bool is_class, bool weak_self,
+    std::string &text, SourceLanguage wrapping_language, bool needs_object_ptr,
+    bool static_method, bool is_class, bool weak_self,
     const EvaluateExpressionOptions &options,
     const std::optional<SwiftLanguageRuntime::GenericSignature> &generic_sig,
     ExecutionContext &exe_ctx, uint32_t &first_body_line,
@@ -570,7 +572,7 @@ Status SwiftExpressionSourceCode::GetText(
     const uint32_t pound_line = options.GetPoundLineLine();
     StreamString pound_body;
     if (pound_file && pound_line) {
-      if (wrapping_language == eLanguageTypeSwift) {
+      if (wrapping_language.name == llvm::dwarf::DW_LNAME_Swift) {
         pound_body.Printf("#sourceLocation(file: \"%s\", line: %u)\n%s",
                           pound_file, pound_line, body);
       } else {
@@ -579,7 +581,7 @@ Status SwiftExpressionSourceCode::GetText(
       body = pound_body.GetString().data();
     }
 
-    if (wrapping_language != eLanguageTypeSwift) {
+    if (wrapping_language.name != llvm::dwarf::DW_LNAME_Swift) {
       status.SetErrorString("language is not Swift");
       return status;
     }

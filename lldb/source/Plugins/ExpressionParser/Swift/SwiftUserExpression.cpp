@@ -44,6 +44,7 @@
 #include "swift/AST/ASTContext.h"
 #include "swift/Demangling/Demangler.h"
 #include "swift/AST/GenericEnvironment.h"
+#include "llvm/BinaryFormat/Dwarf.h"
 
 #include <map>
 #include <string>
@@ -56,8 +57,8 @@ char SwiftUserExpression::ID;
 
 SwiftUserExpression::SwiftUserExpression(
     ExecutionContextScope &exe_scope, llvm::StringRef expr,
-    llvm::StringRef prefix, lldb::LanguageType language,
-    ResultType desired_type, const EvaluateExpressionOptions &options)
+    llvm::StringRef prefix, SourceLanguage language, ResultType desired_type,
+    const EvaluateExpressionOptions &options)
     : LLVMUserExpression(exe_scope, expr, prefix, language, desired_type,
                          options),
       m_type_system_helper(*m_target_wp.lock().get()),
@@ -96,11 +97,12 @@ void SwiftUserExpression::DidFinishExecuting() {
 /// when we have to guess from a mangled name.
 static bool isSwiftLanguageSymbolContext(const SwiftUserExpression &expr,
                                          const SymbolContext &sym_ctx) {
-  if (sym_ctx.comp_unit && (expr.Language() == lldb::eLanguageTypeUnknown ||
-                            expr.Language() == lldb::eLanguageTypeSwift)) {
+  if (sym_ctx.comp_unit &&
+      (!expr.Language() ||
+       expr.Language().name == llvm::dwarf::DW_LNAME_Swift)) {
     if (sym_ctx.comp_unit->GetLanguage() == lldb::eLanguageTypeSwift)
       return true;
-  } else if (sym_ctx.symbol && expr.Language() == lldb::eLanguageTypeUnknown) {
+  } else if (sym_ctx.symbol && !expr.Language()) {
     if (sym_ctx.symbol->GetMangled().GuessLanguage() ==
         lldb::eLanguageTypeSwift)
       return true;
