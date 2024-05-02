@@ -56,6 +56,11 @@ class TargetInfo;
 /// The preprocessor keeps track of this information for each
 /// file that is \#included.
 struct HeaderFileInfo {
+  // TODO: Whether the file was included is not a property of the file itself.
+  // It's a preprocessor state, move it there.
+  /// True if this file has been included (or imported) **locally**.
+  unsigned IsLocallyIncluded : 1;
+
   // TODO: Whether the file was imported is not a property of the file itself.
   // It's a preprocessor state, move it there.
   /// True if this is a \#import'd file.
@@ -125,10 +130,10 @@ struct HeaderFileInfo {
   StringRef Framework;
 
   HeaderFileInfo()
-      : isImport(false), isPragmaOnce(false), DirInfo(SrcMgr::C_User),
-        External(false), isModuleHeader(false), isTextualModuleHeader(false),
-        isCompilingModuleHeader(false), Resolved(false),
-        IndexHeaderMapHeader(false), IsValid(false) {}
+      : IsLocallyIncluded(false), isImport(false), isPragmaOnce(false),
+        DirInfo(SrcMgr::C_User), External(false), isModuleHeader(false),
+        isTextualModuleHeader(false), isCompilingModuleHeader(false),
+        Resolved(false), IndexHeaderMapHeader(false), IsValid(false) {}
 
   /// Retrieve the controlling macro for this header file, if
   /// any.
