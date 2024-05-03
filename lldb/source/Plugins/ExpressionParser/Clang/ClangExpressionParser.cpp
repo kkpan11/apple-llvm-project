@@ -208,20 +208,20 @@ public:
     m_passthrough->HandleDiagnostic(DiagLevel, Info);
     m_os->flush();
 
-    lldb_private::DiagnosticSeverity severity;
+    lldb::Severity severity;
     bool make_new_diagnostic = true;
 
     switch (DiagLevel) {
     case DiagnosticsEngine::Level::Fatal:
     case DiagnosticsEngine::Level::Error:
-      severity = eDiagnosticSeverityError;
+      severity = lldb::eSeverityError;
       break;
     case DiagnosticsEngine::Level::Warning:
-      severity = eDiagnosticSeverityWarning;
+      severity = lldb::eSeverityWarning;
       break;
     case DiagnosticsEngine::Level::Remark:
     case DiagnosticsEngine::Level::Ignored:
-      severity = eDiagnosticSeverityRemark;
+      severity = lldb::eSeverityInfo;
       break;
     case DiagnosticsEngine::Level::Note:
       m_manager->AppendMessageToDiagnostic(m_output);
@@ -239,7 +239,7 @@ public:
       if (!clang_diag || clang_diag->HasFixIts())
         break;
       // Ignore all Fix-Its that are not associated with an error.
-      if (clang_diag->GetSeverity() != eDiagnosticSeverityError)
+      if (clang_diag->GetSeverity() != lldb::eSeverityError)
         break;
       AddAllFixIts(clang_diag, Info);
       break;
@@ -257,7 +257,7 @@ public:
       // enough context in an expression for the warning to be useful.
       // FIXME: Should we try to filter out FixIts that apply to our generated
       // code, and not the user's expression?
-      if (severity == eDiagnosticSeverityError)
+      if (severity == lldb::eSeverityError)
         AddAllFixIts(new_diagnostic.get(), Info);
 
       m_manager->AddDiagnostic(std::move(new_diagnostic));
@@ -1161,7 +1161,7 @@ ClangExpressionParser::ParseInternal(DiagnosticManager &diagnostic_manager,
 
   if (m_pp_callbacks && m_pp_callbacks->hasErrors()) {
     num_errors++;
-    diagnostic_manager.PutString(eDiagnosticSeverityError,
+    diagnostic_manager.PutString(lldb::eSeverityError,
                                  "while importing modules:");
     diagnostic_manager.AppendMessageToDiagnostic(
         m_pp_callbacks->getErrorString());
