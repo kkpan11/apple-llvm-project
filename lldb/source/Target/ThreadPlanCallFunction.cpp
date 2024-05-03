@@ -30,7 +30,8 @@
 #ifdef LLDB_ENABLE_SWIFT
 #include "Plugins/LanguageRuntime/Swift/SwiftLanguageRuntime.h"
 #include "Plugins/ExpressionParser/Swift/SwiftPersistentExpressionState.h"
-#endif //LLDB_ENABLE_SWIFT
+#include "llvm/BinaryFormat/Dwarf.h"
+#endif // LLDB_ENABLE_SWIFT
 
 using namespace lldb;
 using namespace lldb_private;
@@ -427,7 +428,7 @@ void ThreadPlanCallFunction::SetBreakpoints() {
     }
   }
 #ifdef LLDB_ENABLE_SWIFT
-  if (GetExpressionLanguage() == eLanguageTypeSwift) {
+  if (GetExpressionLanguage().name == llvm::dwarf::DW_LNAME_Swift) {
     auto *swift_runtime 
         = SwiftLanguageRuntime::Get(m_process.shared_from_this());
     if (swift_runtime) {

@@ -21,6 +21,7 @@
 #include "lldb/Utility/Scalar.h"
 #include "lldb/Utility/Status.h"
 #include "lldb/lldb-types.h"
+#include "llvm/BinaryFormat/Dwarf.h"
 
 #include <cstring>
 #include <optional>
@@ -167,8 +168,8 @@ bool ValueObjectDynamicValue::UpdateValue() {
 #ifdef LLDB_ENABLE_SWIFT
   // An Objective-C object inside a Swift frame.
   if (known_type == eLanguageTypeObjC)
-    if ((exe_ctx.GetFramePtr() &&
-         exe_ctx.GetFramePtr()->GetLanguage() == lldb::eLanguageTypeSwift) ||
+    if ((exe_ctx.GetFramePtr() && exe_ctx.GetFramePtr()->GetLanguage().name ==
+                                      llvm::dwarf::DW_LNAME_Swift) ||
         (exe_ctx.GetTargetPtr() && exe_ctx.GetTargetPtr()->IsSwiftREPL())) {
       runtime = process->GetLanguageRuntime(lldb::eLanguageTypeSwift);
       if (runtime)
