@@ -4878,7 +4878,7 @@ Process::RunThreadPlan(ExecutionContext &exe_ctx,
     if (log)
       log->Printf("RunThreadPlan could not acquire the RunThreadPlan lock.");
     diagnostic_manager.PutString(
-        eDiagnosticSeverityError,
+        eSeverityError,
         "RunThreadPlan could not acquire the RunThreadPlan lock.");
     return eExpressionSetupError;
   }
@@ -4888,27 +4888,26 @@ Process::RunThreadPlan(ExecutionContext &exe_ctx,
 
   if (!thread_plan_sp) {
     diagnostic_manager.PutString(
-        eDiagnosticSeverityError,
-        "RunThreadPlan called with empty thread plan.");
+        lldb::eSeverityError, "RunThreadPlan called with empty thread plan.");
     return eExpressionSetupError;
   }
 
   if (!thread_plan_sp->ValidatePlan(nullptr)) {
     diagnostic_manager.PutString(
-        eDiagnosticSeverityError,
+        lldb::eSeverityError,
         "RunThreadPlan called with an invalid thread plan.");
     return eExpressionSetupError;
   }
 
   if (exe_ctx.GetProcessPtr() != this) {
-    diagnostic_manager.PutString(eDiagnosticSeverityError,
+    diagnostic_manager.PutString(lldb::eSeverityError,
                                  "RunThreadPlan called on wrong process.");
     return eExpressionSetupError;
   }
 
   Thread *thread = exe_ctx.GetThreadPtr();
   if (thread == nullptr) {
-    diagnostic_manager.PutString(eDiagnosticSeverityError,
+    diagnostic_manager.PutString(lldb::eSeverityError,
                                  "RunThreadPlan called with invalid thread.");
     return eExpressionSetupError;
   }
@@ -4943,7 +4942,7 @@ Process::RunThreadPlan(ExecutionContext &exe_ctx,
 
   if (m_private_state.GetValue() != eStateStopped) {
     diagnostic_manager.PutString(
-        eDiagnosticSeverityError,
+        lldb::eSeverityError,
         "RunThreadPlan called while the private state was not stopped.");
     return eExpressionSetupError;
   }
@@ -4957,7 +4956,7 @@ Process::RunThreadPlan(ExecutionContext &exe_ctx,
     selected_frame_sp = thread->GetSelectedFrame(DoNoSelectMostRelevantFrame);
     if (!selected_frame_sp) {
       diagnostic_manager.Printf(
-          eDiagnosticSeverityError,
+          lldb::eSeverityError,
           "RunThreadPlan called without a selected frame on thread %d",
           thread_idx_id);
       return eExpressionSetupError;
@@ -4968,7 +4967,7 @@ Process::RunThreadPlan(ExecutionContext &exe_ctx,
   // be smaller than the overall timeout.
   if (options.GetOneThreadTimeout() && options.GetTimeout() &&
       *options.GetTimeout() < *options.GetOneThreadTimeout()) {
-    diagnostic_manager.PutString(eDiagnosticSeverityError,
+    diagnostic_manager.PutString(lldb::eSeverityError,
                                  "RunThreadPlan called with one thread "
                                  "timeout greater than total timeout");
     return eExpressionSetupError;
@@ -5097,7 +5096,7 @@ Process::RunThreadPlan(ExecutionContext &exe_ctx,
     Event *other_events = listener_sp->PeekAtNextEvent();
     if (other_events != nullptr) {
       diagnostic_manager.PutString(
-          eDiagnosticSeverityError,
+          lldb::eSeverityError,
           "RunThreadPlan called with pending events on the queue.");
       return eExpressionSetupError;
     }
@@ -5140,7 +5139,7 @@ Process::RunThreadPlan(ExecutionContext &exe_ctx,
           Status resume_error = PrivateResume();
           if (!resume_error.Success()) {
             diagnostic_manager.Printf(
-                eDiagnosticSeverityError,
+                lldb::eSeverityError,
                 "couldn't resume inferior the %d time: \"%s\".", num_resumes,
                 resume_error.AsCString());
             return_value = eExpressionSetupError;
@@ -5156,7 +5155,7 @@ Process::RunThreadPlan(ExecutionContext &exe_ctx,
                     "resume %" PRIu32 ", exiting.",
                     num_resumes);
 
-          diagnostic_manager.Printf(eDiagnosticSeverityError,
+          diagnostic_manager.Printf(lldb::eSeverityError,
                                     "didn't get any event after resume %" PRIu32
                                     ", exiting.",
                                     num_resumes);
@@ -5192,7 +5191,7 @@ Process::RunThreadPlan(ExecutionContext &exe_ctx,
           }
 
           diagnostic_manager.Printf(
-              eDiagnosticSeverityError,
+              lldb::eSeverityError,
               "didn't get running event after initial resume, got %s instead.",
               StateAsCString(stop_state));
           return_value = eExpressionSetupError;
@@ -5250,7 +5249,7 @@ Process::RunThreadPlan(ExecutionContext &exe_ctx,
             const bool use_run_lock = false;
             Halt(clear_thread_plans, use_run_lock);
             return_value = eExpressionInterrupted;
-            diagnostic_manager.PutString(eDiagnosticSeverityRemark,
+            diagnostic_manager.PutString(lldb::eSeverityInfo,
                                          "execution halted by user interrupt.");
             LLDB_LOGF(log, "Process::RunThreadPlan(): Got  interrupted by "
                            "eBroadcastBitInterrupted, exiting.");
@@ -5303,7 +5302,7 @@ Process::RunThreadPlan(ExecutionContext &exe_ctx,
                 event_to_broadcast_sp = event_sp;
 
               diagnostic_manager.PutString(
-                  eDiagnosticSeverityError,
+                  lldb::eSeverityError,
                   "execution stopped with unexpected state.");
               return_value = eExpressionInterrupted;
               break;
