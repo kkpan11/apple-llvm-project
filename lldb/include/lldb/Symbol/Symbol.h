@@ -130,7 +130,7 @@ public:
 
   ConstString GetNameNoArguments() const;
 
-  ConstString GetDisplayName() const;
+  ConstString GetDisplayName(const SymbolContext *sc = nullptr) const;
 
   uint32_t GetID() const { return m_uid; }
 
