@@ -1777,6 +1777,14 @@ ChildCacheState_eRefetch = _lldb.ChildCacheState_eRefetch
 
 ChildCacheState_eReuse = _lldb.ChildCacheState_eReuse
 
+eBroadcastBitProgress = _lldb.eBroadcastBitProgress
+
+eBroadcastBitWarning = _lldb.eBroadcastBitWarning
+
+eBroadcastBitError = _lldb.eBroadcastBitError
+
+eBroadcastBitProgressCategory = _lldb.eBroadcastBitProgressCategory
+
 class SBAddress(object):
     r"""
     A section + offset based address class.
