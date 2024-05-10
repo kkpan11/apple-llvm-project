@@ -774,9 +774,8 @@ static void ResolveSpecialNames(
   }
 }
 
-ThreadSafeASTContext SwiftExpressionParser::GetASTContext(
-    DiagnosticManager &diagnostic_manager,
-    std::function<bool()> disable_objc_runtime, bool repl, bool playground) {
+ThreadSafeASTContext
+SwiftExpressionParser::GetASTContext(DiagnosticManager &diagnostic_manager) {
   llvm::call_once(m_ast_init_once_flag, [&] {
     // Lazily get the clang importer if we can to make sure it exists in
     // case we need it.
@@ -810,6 +809,8 @@ ThreadSafeASTContext SwiftExpressionParser::GetASTContext(
       return;
     }
 
+    bool repl = m_options.GetREPLEnabled();
+    bool playground = m_options.GetPlaygroundTransformEnabled();
     // TODO: Find a way to get contraint-solver output sent to a stream
     //       so we can log it.
     // swift_ast_context.GetLanguageOptions().DebugConstraintSolver = true;
@@ -820,7 +821,16 @@ ThreadSafeASTContext SwiftExpressionParser::GetASTContext(
         (repl || playground);
     m_swift_ast_ctx.GetLanguageOptions().EnableTargetOSChecking = false;
 
-    if (disable_objc_runtime())
+    auto should_disable_objc_runtime = [&]() {
+      lldb::StackFrameSP this_frame_sp(m_stack_frame_wp.lock());
+      if (!this_frame_sp)
+        return false;
+      lldb::ProcessSP process_sp(this_frame_sp->CalculateProcess());
+      if (!process_sp)
+        return false;
+      return !ObjCLanguageRuntime::Get(*process_sp);
+    };
+    if (should_disable_objc_runtime())
       m_swift_ast_ctx.GetLanguageOptions().EnableObjCInterop = false;
 
     m_swift_ast_ctx.GetLanguageOptions().Playground = repl || playground;
@@ -1245,25 +1255,16 @@ llvm::Expected<SwiftExpressionParser::ParsedExpression>
 SwiftExpressionParser::ParseAndImport(
     SwiftASTContext::ScopedDiagnostics &expr_diagnostics,
     SwiftExpressionParser::SILVariableMap &variable_map, unsigned &buffer_id,
-    DiagnosticManager &diagnostic_manager, bool repl, bool playground) {
+    DiagnosticManager &diagnostic_manager) {
   Log *log = GetLog(LLDBLog::Expressions);
   LLDB_SCOPED_TIMER();
 
-  auto should_disable_objc_runtime = [&]() {
-    lldb::StackFrameSP this_frame_sp(m_stack_frame_wp.lock());
-    if (!this_frame_sp)
-      return false;
-    lldb::ProcessSP process_sp(this_frame_sp->CalculateProcess());
-    if (!process_sp)
-      return false;
-    return !ObjCLanguageRuntime::Get(*process_sp);
-  };
-
-  ThreadSafeASTContext ast_context = GetASTContext(
-      diagnostic_manager, should_disable_objc_runtime, repl, playground);
+  ThreadSafeASTContext ast_context = GetASTContext(diagnostic_manager);
   if (!ast_context)
     return make_error<SwiftASTContextError>();
 
+  bool repl = m_options.GetREPLEnabled();
+  bool playground = m_options.GetPlaygroundTransformEnabled();
   // If we are using the playground, hand import the necessary
   // modules.
   //
@@ -1705,9 +1706,8 @@ SwiftExpressionParser::Parse(DiagnosticManager &diagnostic_manager,
     return ParseResult::unrecoverable_error;
 
   // Parse the expression and import all nececssary swift modules.
-  auto parsed_expr = ParseAndImport(
-      *expr_diagnostics,  variable_map, buffer_id,
-      diagnostic_manager, repl, playground);
+  auto parsed_expr = ParseAndImport(*expr_diagnostics, variable_map, buffer_id,
+                                    diagnostic_manager);
 
   if (!parsed_expr) {
     bool retry = false;
