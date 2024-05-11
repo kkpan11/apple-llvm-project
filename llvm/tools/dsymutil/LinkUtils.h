@@ -40,6 +40,9 @@ struct LinkOptions {
   /// Verbosity
   bool Verbose = false;
 
+  /// Quiet
+  bool Quiet = false;
+
   /// Statistics
   bool Statistics = false;
 
