@@ -1,5 +1,8 @@
 // REQUIRES: swift
 
+// rdar://127673408
+// UNSUPPORTED: system-linux && target-aarch64
+
 // RUN: %lldb --repl < %s | FileCheck %s
 
 class C
