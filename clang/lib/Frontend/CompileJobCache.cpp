@@ -545,7 +545,7 @@ Expected<std::optional<int>> CompileJobCache::replayCachedResult(
                     .replayCachedResult(CacheKey, CachedResult,
                                         /*JustComputedResult*/ false)
                     .moveInto(Ret))
-    return E;
+    return std::move(E);
 
   if (Clang.getDiagnostics().hasErrorOccurred())
     return llvm::createStringError(llvm::inconvertibleErrorCode(),
