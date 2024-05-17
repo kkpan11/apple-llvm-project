@@ -1783,7 +1783,15 @@ eBroadcastBitWarning = _lldb.eBroadcastBitWarning
 
 eBroadcastBitError = _lldb.eBroadcastBitError
 
+eBroadcastSymbolChange = _lldb.eBroadcastSymbolChange
+
 eBroadcastBitProgressCategory = _lldb.eBroadcastBitProgressCategory
+
+eSeverityError = _lldb.eSeverityError
+
+eSeverityWarning = _lldb.eSeverityWarning
+
+eSeverityInfo = _lldb.eSeverityInfo
 
 class SBAddress(object):
     r"""
@@ -5560,12 +5568,13 @@ class SBExpressionOptions(object):
         """
         return _lldb.SBExpressionOptions_SetTrapExceptions(self, trap_exceptions)
 
-    def SetLanguage(self, language):
+    def SetLanguage(self, *args):
         r"""
         SetLanguage(SBExpressionOptions self, lldb::LanguageType language)
+        SetLanguage(SBExpressionOptions self, SBSourceLanguageName name, uint32_t version)
         Sets the language that LLDB should assume the expression is written in
         """
-        return _lldb.SBExpressionOptions_SetLanguage(self, language)
+        return _lldb.SBExpressionOptions_SetLanguage(self, *args)
 
     def GetPlaygroundTransformEnabled(self):
         r"""GetPlaygroundTransformEnabled(SBExpressionOptions self) -> bool"""
@@ -6808,6 +6817,86 @@ class SBInstructionList(object):
 
 # Register SBInstructionList in _lldb:
 _lldb.SBInstructionList_swigregister(SBInstructionList)
+eLanguageNameAda = _lldb.eLanguageNameAda
+
+eLanguageNameBLISS = _lldb.eLanguageNameBLISS
+
+eLanguageNameC = _lldb.eLanguageNameC
+
+eLanguageNameC_plus_plus = _lldb.eLanguageNameC_plus_plus
+
+eLanguageNameCobol = _lldb.eLanguageNameCobol
+
+eLanguageNameCrystal = _lldb.eLanguageNameCrystal
+
+eLanguageNameD = _lldb.eLanguageNameD
+
+eLanguageNameDylan = _lldb.eLanguageNameDylan
+
+eLanguageNameFortran = _lldb.eLanguageNameFortran
+
+eLanguageNameGo = _lldb.eLanguageNameGo
+
+eLanguageNameHaskell = _lldb.eLanguageNameHaskell
+
+eLanguageNameJava = _lldb.eLanguageNameJava
+
+eLanguageNameJulia = _lldb.eLanguageNameJulia
+
+eLanguageNameKotlin = _lldb.eLanguageNameKotlin
+
+eLanguageNameModula2 = _lldb.eLanguageNameModula2
+
+eLanguageNameModula3 = _lldb.eLanguageNameModula3
+
+eLanguageNameObjC = _lldb.eLanguageNameObjC
+
+eLanguageNameObjC_plus_plus = _lldb.eLanguageNameObjC_plus_plus
+
+eLanguageNameOCaml = _lldb.eLanguageNameOCaml
+
+eLanguageNameOpenCL_C = _lldb.eLanguageNameOpenCL_C
+
+eLanguageNamePascal = _lldb.eLanguageNamePascal
+
+eLanguageNamePLI = _lldb.eLanguageNamePLI
+
+eLanguageNamePython = _lldb.eLanguageNamePython
+
+eLanguageNameRenderScript = _lldb.eLanguageNameRenderScript
+
+eLanguageNameRust = _lldb.eLanguageNameRust
+
+eLanguageNameSwift = _lldb.eLanguageNameSwift
+
+eLanguageNameUPC = _lldb.eLanguageNameUPC
+
+eLanguageNameZig = _lldb.eLanguageNameZig
+
+eLanguageNameAssembly = _lldb.eLanguageNameAssembly
+
+eLanguageNameC_sharp = _lldb.eLanguageNameC_sharp
+
+eLanguageNameMojo = _lldb.eLanguageNameMojo
+
+eLanguageNameGLSL = _lldb.eLanguageNameGLSL
+
+eLanguageNameGLSL_ES = _lldb.eLanguageNameGLSL_ES
+
+eLanguageNameHLSL = _lldb.eLanguageNameHLSL
+
+eLanguageNameOpenCL_CPP = _lldb.eLanguageNameOpenCL_CPP
+
+eLanguageNameCPP_for_OpenCL = _lldb.eLanguageNameCPP_for_OpenCL
+
+eLanguageNameSYCL = _lldb.eLanguageNameSYCL
+
+eLanguageNameRuby = _lldb.eLanguageNameRuby
+
+eLanguageNameMove = _lldb.eLanguageNameMove
+
+eLanguageNameHylo = _lldb.eLanguageNameHylo
+
 class SBLanguageRuntime(object):
     r"""Utility functions for :ref:`LanguageType`"""
 
