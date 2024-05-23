@@ -362,7 +362,7 @@ public:
   GetVirtualBaseClassAtIndex(lldb::opaque_compiler_type_t type, size_t idx,
                              uint32_t *bit_offset_ptr) = 0;
 
-  virtual CompilerType GetChildCompilerTypeAtIndex(
+  virtual llvm::Expected<CompilerType> GetChildCompilerTypeAtIndex(
       lldb::opaque_compiler_type_t type, ExecutionContext *exe_ctx, size_t idx,
       bool transparent_pointers, bool omit_empty_base_classes,
       bool ignore_array_bounds, std::string &child_name,
