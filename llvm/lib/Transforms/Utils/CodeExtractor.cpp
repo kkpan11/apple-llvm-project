@@ -1619,6 +1619,8 @@ static void fixupDebugInfoPostExtraction(Function &OldFunc, Function &NewFunc,
       return MD;
     };
     updateLoopMetadataDebugLocations(I, updateLoopInfoLoc);
+    if (auto *ID = I.getMetadata(LLVMContext::MD_DIAssignID))
+      I.setMetadata(LLVMContext::MD_DIAssignID, nullptr);
   }
   if (!TheCall.getDebugLoc())
     TheCall.setDebugLoc(DILocation::get(Ctx, 0, 0, OldSP));
