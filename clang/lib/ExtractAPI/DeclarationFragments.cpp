@@ -1206,7 +1206,7 @@ DeclarationFragmentsBuilder::getFragmentsForClassTemplateSpecialization(
       .append("<", DeclarationFragments::FragmentKind::Text)
       .append(getFragmentsForTemplateArguments(
           Decl->getTemplateArgs().asArray(), Decl->getASTContext(),
-          Decl->getTemplateArgsAsWritten()->arguments()))
+          std::nullopt))
       .append(">", DeclarationFragments::FragmentKind::Text)
       .appendSemicolon();
 }
@@ -1249,7 +1249,7 @@ DeclarationFragmentsBuilder::getFragmentsForVarTemplateSpecialization(
       .append("<", DeclarationFragments::FragmentKind::Text)
       .append(getFragmentsForTemplateArguments(
           Decl->getTemplateArgs().asArray(), Decl->getASTContext(),
-          Decl->getTemplateArgsAsWritten()->arguments()))
+          std::nullopt))
       .append(">", DeclarationFragments::FragmentKind::Text)
       .appendSemicolon();
 }
