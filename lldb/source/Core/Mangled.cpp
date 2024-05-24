@@ -340,7 +340,8 @@ ConstString Mangled::GetDisplayDemangledName(
 #endif // LLDB_ENABLE_SWIFT
 // END SWIFT
   if (Language *lang = Language::FindPlugin(GuessLanguage()))
-    return lang->GetDisplayDemangledName(*this);
+    if (ConstString display_name = lang->GetDisplayDemangledName(*this))
+      return display_name;
   return GetDemangledName();
 }
 
