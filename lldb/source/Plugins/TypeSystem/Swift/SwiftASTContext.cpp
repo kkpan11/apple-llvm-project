@@ -7527,7 +7527,7 @@ GetInstanceVariableOffset(ValueObject *valobj, ExecutionContext *exe_ctx,
                                             ivar_name, ivar_type);
 }
 
-CompilerType SwiftASTContext::GetChildCompilerTypeAtIndex(
+llvm::Expected<CompilerType> SwiftASTContext::GetChildCompilerTypeAtIndex(
     opaque_compiler_type_t type, ExecutionContext *exe_ctx, size_t idx,
     bool transparent_pointers, bool omit_empty_base_classes,
     bool ignore_array_bounds, std::string &child_name,
@@ -7614,7 +7614,9 @@ CompilerType SwiftASTContext::GetChildCompilerTypeAtIndex(
           cached_enum_info->GetElementWithPayloadAtIndex(idx);
       child_name.assign(element_info->name.GetCString());
       if (!get_type_size(child_byte_size, element_info->payload_type))
-        return {};
+        return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                       "could not get size for enum element " +
+                                           llvm::Twine(idx));
       child_byte_offset = 0;
       child_bitfield_bit_size = 0;
       child_bitfield_bit_offset = 0;
@@ -7642,7 +7644,9 @@ CompilerType SwiftASTContext::GetChildCompilerTypeAtIndex(
 
     CompilerType child_type = ToCompilerType(child.getType().getPointer());
     if (!get_type_size(child_byte_size, child_type))
-      return {};
+      return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                     "could not get size of tuple element " +
+                                         child_name);
     child_is_base_class = false;
     child_is_deref_of_parent = false;
 
@@ -7650,7 +7654,9 @@ CompilerType SwiftASTContext::GetChildCompilerTypeAtIndex(
     std::optional<uint64_t> offset = GetInstanceVariableOffset(
         valobj, exe_ctx, compiler_type, printed_idx.c_str(), child_type);
     if (!offset)
-      return {};
+      return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                     "could not get offset for tuple element " +
+                                         child_name);
 
     child_byte_offset = *offset;
     child_bitfield_bit_size = 0;
@@ -7671,7 +7677,8 @@ CompilerType SwiftASTContext::GetChildCompilerTypeAtIndex(
 
         child_name = GetSuperclassName(superclass_type);
         if (!get_type_size(child_byte_size, superclass_type))
-          return {};
+          return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                         "could not get size of super class");
         child_is_base_class = true;
         child_is_deref_of_parent = false;
 
@@ -7711,7 +7718,10 @@ CompilerType SwiftASTContext::GetChildCompilerTypeAtIndex(
                 ToCompilerType(VD->getTypeInContext().getPointer());
             child_name = VD->getNameStr().str();
             if (!get_type_size(child_byte_size, child_type))
-              return {};
+              return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                             "could not get size of field " +
+                                                 child_name);
+
             child_is_base_class = false;
             child_is_deref_of_parent = false;
             child_byte_offset = 0;
@@ -7719,7 +7729,9 @@ CompilerType SwiftASTContext::GetChildCompilerTypeAtIndex(
             child_bitfield_bit_offset = 0;
             return child_type;
           }
-          return {};
+          return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                         "could not get size of field " +
+                                             child_name);
         }
 
     auto stored_properties = GetStoredProperties(nominal);
@@ -7734,7 +7746,9 @@ CompilerType SwiftASTContext::GetChildCompilerTypeAtIndex(
     CompilerType child_type = ToCompilerType(child_swift_type.getPointer());
     child_name = property->getBaseName().userFacingName().str();
     if (!get_type_size(child_byte_size, child_type))
-      return {};
+      return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                     "could not get size of field " +
+                                         child_name);
     child_is_base_class = false;
     child_is_deref_of_parent = false;
 
@@ -7742,8 +7756,9 @@ CompilerType SwiftASTContext::GetChildCompilerTypeAtIndex(
     std::optional<uint64_t> offset = GetInstanceVariableOffset(
         valobj, exe_ctx, compiler_type, child_name.c_str(), child_type);
     if (!offset)
-      return {};
-
+      return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                     "could not get offset of field " +
+                                         child_name);
     child_byte_offset = *offset;
     child_bitfield_bit_size = 0;
     child_bitfield_bit_offset = 0;
@@ -7763,11 +7778,15 @@ CompilerType SwiftASTContext::GetChildCompilerTypeAtIndex(
     CompilerType compiler_type = ToCompilerType(GetSwiftType(type));
     CompilerType child_type;
     if (!ast_ctx)
-      return {};
+      return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                     "no ast context");
+
     std::tie(child_type, child_name) = GetExistentialTypeChild(
         *this, **ast_ctx, compiler_type, protocol_info, idx);
     if (!get_type_size(child_byte_size, child_type))
-      return {};
+      return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                     "could not get size of field " +
+                                         llvm::Twine(idx));
     child_byte_offset = idx * child_byte_size;
     child_bitfield_bit_size = 0;
     child_bitfield_bit_offset = 0;
@@ -7804,7 +7823,8 @@ CompilerType SwiftASTContext::GetChildCompilerTypeAtIndex(
       // We have a pointer to a simple type
       if (idx == 0) {
         if (!get_type_size(child_byte_size, pointee_clang_type))
-          return {};
+          return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                         "could not get size of lvalue");
         child_byte_offset = 0;
         return pointee_clang_type;
       }
