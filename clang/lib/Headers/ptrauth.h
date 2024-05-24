@@ -203,6 +203,24 @@ typedef __UINTPTR_TYPE__ ptrauth_generic_signature_t;
   ptrauth_auth_and_resign(__value, __old_key, __old_data,                      \
                           ptrauth_key_function_pointer, 0)
 
+/* Cast a pointer to the given type without changing any signature.
+
+   The type must be a pointer type.
+   The value must be an expression of function pointer type, and will be
+   converted to an rvalue prior to the cast.
+   The result has type given by the first argument.
+
+   The result has an identical bit-pattern to the input pointer. */
+#define ptrauth_nop_cast(__type, __value)                                      \
+  ({                                                                           \
+    union {                                                                    \
+      typeof(*(__value)) *__fptr;                                              \
+      typeof(__type) __opaque;                                                 \
+    } __storage;                                                               \
+    __storage.__fptr = (__value);                                              \
+    __storage.__opaque;                                                        \
+  })
+
 /* Authenticate a data pointer.
 
    The value must be an expression of non-function pointer type.
@@ -369,6 +387,8 @@ typedef __UINTPTR_TYPE__ ptrauth_generic_signature_t;
     (void)__old_data;                                                          \
     __value;                                                                   \
   })
+
+#define ptrauth_nop_cast(__type, __value) (__type)(__value)
 
 #define ptrauth_auth_data(__value, __old_key, __old_data)                      \
   ({                                                                           \
