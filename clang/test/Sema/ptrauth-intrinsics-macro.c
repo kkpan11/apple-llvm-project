@@ -77,3 +77,10 @@ void test_type_discriminator(int *dp) {
 void test_sign_constant(int *dp) {
   dp = ptrauth_sign_constant(&dv, VALID_DATA_KEY, 0);
 }
+
+void test_function_pointer(int *dp, int (*fp)(int), int value) {
+  dp = ptrauth_sign_constant(&dv, VALID_DATA_KEY, 0);
+  fp = ptrauth_auth_function(fp, VALID_CODE_KEY, 0);
+  ptrauth_extra_data_t t0 = ptrauth_function_pointer_type_discriminator(int (*)(int));
+  (void)t0;
+}
