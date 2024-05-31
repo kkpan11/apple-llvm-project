@@ -20,6 +20,9 @@ At the IR level, it is represented using:
   (to sign globals)
 * a [signed pointer constant](#constant) (to sign globals)
 * a [call operand bundle](#operand-bundle) (to authenticate called pointers)
+* a [set of function attributes](#function-attributes) (to describe what
+  pointers are signed and how, to control implicit codegen in the backend, as
+  well as preserve invariants in the mid-level optimizer)
 
 The current implementation leverages the
 [Armv8.3-A PAuth/Pointer Authentication Code](#armv8-3-a-pauth-pointer-authentication-code)
