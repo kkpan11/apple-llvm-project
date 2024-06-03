@@ -1010,6 +1010,10 @@ public:
   std::optional<PointerAuthQualifier>
   getVTablePointerAuthentication(const CXXRecordDecl *thisClass);
 
+  bool isFunctionPointerAuthenticated(QualType FunctionPointerTy,
+                                      const Expr *Key,
+                                      const Expr *Discriminator);
+
   CGPointerAuthInfo EmitPointerAuthInfo(const RecordDecl *RD);
 
   // Return whether RTTI information should be emitted for this target.

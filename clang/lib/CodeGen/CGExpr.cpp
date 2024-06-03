@@ -5588,40 +5588,48 @@ static CGCallee EmitDirectCallee(CodeGenFunction &CGF, GlobalDecl GD) {
 }
 
 static unsigned getPointerAuthKeyValue(const ASTContext &Context,
-                                       const Expr *key) {
-  Expr::EvalResult result;
-  bool success = key->EvaluateAsInt(result, Context);
-  assert(success && "pointer auth key wasn't a constant?"); (void) success;
-  return result.Val.getInt().getZExtValue();
+                                       const Expr *Key) {
+  Expr::EvalResult Result;
+  bool Success = Key->EvaluateAsInt(Result, Context);
+  assert(Success && "pointer auth key wasn't a constant?");
+  (void)Success;
+  return Result.Val.getInt().getZExtValue();
 }
 
-static bool isFunctionPointerAuth(CodeGenModule &CGM, const Expr *key,
-                                  const Expr *discriminator) {
+/// Whether a function pointer of type FPT is authenticated using key and
+/// discriminator in the normal ABI rules.
+bool CodeGenModule::isFunctionPointerAuthenticated(QualType FPT,
+                                                   const Expr *Key,
+                                                   const Expr *Discriminator) {
   // Verify that the ABI uses function-pointer signing at all.
-  auto &authSchema = CGM.getCodeGenOpts().PointerAuth.FunctionPointers;
-  if (!authSchema.isEnabled())
+  auto &Schema = getCodeGenOpts().PointerAuth.FunctionPointers;
+  if (!Schema.isEnabled())
     return false;
 
   // Verify that the key matches the ABI's key.
-  if (authSchema.getKey() != getPointerAuthKeyValue(CGM.getContext(), key))
+  if (Schema.getKey() != getPointerAuthKeyValue(getContext(), Key))
     return false;
 
-  // If the ABI uses weird discrimination for function pointers, just give up.
-  assert(!authSchema.isAddressDiscriminated());
-  if (authSchema.getOtherDiscrimination()
-        != PointerAuthSchema::Discrimination::None) {
-    return false;
+  assert(!Schema.isAddressDiscriminated());
+
+  uint16_t DiscVal = 0;
+  if (Schema.hasOtherDiscrimination()) {
+    if (FPT->isFunctionPointerType() || FPT->isFunctionReferenceType())
+      FPT = FPT->getPointeeType();
+    if (FPT->isFunctionType())
+      DiscVal = getContext().getPointerAuthTypeDiscriminator(FPT);
   }
 
-  if (discriminator->getType()->isPointerType()) {
-    return discriminator->isNullPointerConstant(CGM.getContext(),
-                                                Expr::NPC_NeverValueDependent);
-  } else {
-    assert(discriminator->getType()->isIntegerType());
-    Expr::EvalResult result;
-    return (discriminator->EvaluateAsInt(result, CGM.getContext()) &&
-            result.Val.getInt() == 0);
-  }
+  if (Discriminator->getType()->isPointerType())
+    return DiscVal == 0 && Discriminator->isNullPointerConstant(
+                               getContext(), Expr::NPC_NeverValueDependent);
+
+  if (!Discriminator->getType()->isIntegerType())
+    return false;
+
+  Expr::EvalResult Result;
+  return Discriminator->EvaluateAsInt(Result, getContext()) &&
+    Result.Val.getInt() == DiscVal;
 }
 
 /// Given an expression for a function pointer that's been signed with
@@ -5629,25 +5637,25 @@ static bool isFunctionPointerAuth(CodeGenModule &CGM, const Expr *key,
 /// and an expression for the discriminator, produce a callee for the
 /// function pointer using that scheme.
 static CGCallee EmitSignedFunctionPointerCallee(CodeGenFunction &CGF,
-                                          const Expr *functionPointerExpr,
-                                          const Expr *keyExpr,
-                                          const Expr *discriminatorExpr) {
-  llvm::Value *calleePtr = CGF.EmitScalarExpr(functionPointerExpr);
-  auto key = getPointerAuthKeyValue(CGF.getContext(), keyExpr);
-  auto discriminator = CGF.EmitScalarExpr(discriminatorExpr);
+                                                const Expr *FunctionPointerExpr,
+                                                const Expr *KeyExpr,
+                                                const Expr *DiscriminatorExpr) {
+  llvm::Value *CalleePtr = CGF.EmitScalarExpr(FunctionPointerExpr);
+  unsigned Key = getPointerAuthKeyValue(CGF.getContext(), KeyExpr);
+  llvm::Value *Discriminator = CGF.EmitScalarExpr(DiscriminatorExpr);
 
-  if (discriminator->getType()->isPointerTy())
-    discriminator = CGF.Builder.CreatePtrToInt(discriminator, CGF.IntPtrTy);
+  if (Discriminator->getType()->isPointerTy())
+    Discriminator = CGF.Builder.CreatePtrToInt(Discriminator, CGF.IntPtrTy);
 
-  auto functionType =
-    functionPointerExpr->getType()->castAs<PointerType>()->getPointeeType();
-  CGCalleeInfo calleeInfo(functionType->getAs<FunctionProtoType>());
-  CGPointerAuthInfo pointerAuth(key, PointerAuthenticationMode::SignAndAuth,
-                                /* isaIsaPointer */ false,
-                                /* authenticatesNullValues */ false,
-                                discriminator);
-  CGCallee callee(calleeInfo, calleePtr, pointerAuth);
-  return callee;
+  QualType FTy =
+      FunctionPointerExpr->getType()->castAs<PointerType>()->getPointeeType();
+  CGCalleeInfo CalleeInfo(FTy->getAs<FunctionProtoType>());
+  CGPointerAuthInfo PointerAuth(Key, PointerAuthenticationMode::SignAndAuth,
+                                /* IsIsaPointer */ false,
+                                /* AuthenticatesNullValues */ false,
+                                Discriminator);
+  CGCallee Callee(CalleeInfo, CalleePtr, PointerAuth);
+  return Callee;
 }
 
 CGCallee CodeGenFunction::EmitCallee(const Expr *E) {
@@ -5700,34 +5708,35 @@ CGCallee CodeGenFunction::EmitCallee(const Expr *E) {
   } else if (auto PDE = dyn_cast<CXXPseudoDestructorExpr>(E)) {
     return CGCallee::forPseudoDestructor(PDE);
 
-  // Peephole specific builtin calls.
+    // Peephole specific builtin calls.
   } else if (auto CE = dyn_cast<CallExpr>(E)) {
-    if (unsigned builtin = CE->getBuiltinCallee()) {
+    if (unsigned Builtin = CE->getBuiltinCallee()) {
       // If the callee is a __builtin_ptrauth_sign_unauthenticated to the
       // ABI function-pointer signing schema, perform an unauthenticated call.
-      if (builtin == Builtin::BI__builtin_ptrauth_sign_unauthenticated &&
-          isFunctionPointerAuth(CGM, CE->getArg(1), CE->getArg(2))) {
-        CGCallee callee = EmitCallee(CE->getArg(0));
-        if (callee.isOrdinary())
-          callee.setPointerAuthInfo(CGPointerAuthInfo());
-        return callee;
+      if (Builtin == Builtin::BI__builtin_ptrauth_sign_unauthenticated &&
+          CGM.isFunctionPointerAuthenticated(CE->getArg(0)->getType(),
+                                             CE->getArg(1), CE->getArg(2))) {
+        CGCallee Callee = EmitCallee(CE->getArg(0));
+        if (Callee.isOrdinary())
+          Callee.setPointerAuthInfo(CGPointerAuthInfo());
+        return Callee;
       }
 
       // If the callee is a __builtin_ptrauth_auth_and_resign to the
       // ABI function-pointer signing schema, avoid the intermediate resign.
-      if (builtin == Builtin::BI__builtin_ptrauth_auth_and_resign &&
-          isFunctionPointerAuth(CGM, CE->getArg(3), CE->getArg(4))) {
+      if (Builtin == Builtin::BI__builtin_ptrauth_auth_and_resign &&
+          CGM.isFunctionPointerAuthenticated(CE->getArg(0)->getType(),
+                                             CE->getArg(3), CE->getArg(4)))
         return EmitSignedFunctionPointerCallee(*this, CE->getArg(0),
                                                CE->getArg(1), CE->getArg(2));
 
       // If the callee is a __builtin_ptrauth_auth when ABI function pointer
       // signing is disabled, we need to promise to use the unattackable
       // OperandBundle code pattern.
-      } else if (builtin == Builtin::BI__builtin_ptrauth_auth &&
-            !CGM.getCodeGenOpts().PointerAuth.FunctionPointers.isEnabled()) {
+      if (Builtin == Builtin::BI__builtin_ptrauth_auth &&
+          !CGM.getCodeGenOpts().PointerAuth.FunctionPointers.isEnabled())
         return EmitSignedFunctionPointerCallee(*this, CE->getArg(0),
                                                CE->getArg(1), CE->getArg(2));
-      }
     }
   }
 
