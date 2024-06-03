@@ -1388,6 +1388,319 @@ that is not safely derived to a ``__ptrauth``-qualified gl-value.
 
 
 
+
+Language ABI
+------------
+
+This section describes the pointer-authentication ABI currently implemented in
+Clang for the Apple arm64e target.  As other targets adopt pointer
+authentication, this section should be generalized to express their ABIs as
+well.
+
+Key Assignments
+~~~~~~~~~~~~~~~
+
+Armv8.3 provides four abstract signing keys: ``IA``, ``IB``, ``DA``, and
+``DB``. The architecture designates ``IA`` and ``IB`` for signing code pointers
+and ``DA`` and ``DB`` for signing data pointers; this is reinforced by two
+properties:
+
+- The ISA provides instructions that perform combined auth+call and auth+load
+  operations; these instructions can only use the ``I`` keys and ``D`` keys,
+  respectively.
+
+- AArch64's TBI feature can be separately enabled for code pointers
+  (controlling whether indirect-branch instructions ignore those bits) and data
+  pointers (controlling whether memory-access instructions) ignore those bits.
+  If TBI is enabled for a kind of pointer, the sign and auth operations
+  preserve the TBI bits when signing with an associated keys (at the cost of
+  shrinking the number of available signing bits by 8).
+
+arm64e then further subdivides the keys as follows:
+
+- The ``A`` keys are used for primarily "global" purposes like signing v-tables
+  and function pointers.  These keys are sometimes called *process-independent*
+  or *cross-process* because on existing OSes they are not changed when
+  changing processes, although this is not a platform guarantee.
+
+- The ``B`` keys are used for primarily "local" purposes like signing return
+  addresses and frame pointers.  These keys are sometimes called
+  *process-specific* because they are typically different between processes.
+  However, they are in fact shared across processes in one situation: systems
+  which provide ``fork`` cannot change these keys in the child process; they
+  can only be changed during ``exec``.
+
+Implementation-defined Algorithms and Quantities
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The cryptographic hash algorithm used to compute signatures in Armv8.3 is
+a private detail of the hardware implementation.
+
+arm64e restricts constant discriminators (used in ``__ptrauth`` and
+``ptrauth_blend_discriminator``) to the range from 0 to 65535, inclusive.
+A 0 discriminator generally signifies that no blending is required; see the
+documentation for ``ptrauth_blend_discriminator``.  This range is somewhat
+narrow but has two advantages:
+
+- The AArch64 ISA allows an arbitrary 16-bit immediate to be written over the
+  top 16 bits of a register in a single instruction:
+
+  .. code-block:: asm
+
+    movk xN, #0x4849, LSL 48
+
+  This is ideal for the discriminator blending operation because it adds
+  minimal code-size overhead and avoids overwriting any interesting bits from
+  the pointer.  Blending in a wider constant discriminator would either clobber
+  interesting bits (e.g. if it was loaded with ``movk xN, #0x4c4f, LSL 32``) or
+  require significantly more code (e.g. if the discriminator was loaded with
+  a ``mov+bfi`` sequence).
+
+- It is possible to pack a 16-bit discriminator into loader metadata with
+  minimal compromises, whereas a wider discriminator would require extra
+  metadata storage and therefore significantly impact load times.
+
+The string hash used by ``ptrauth_string_discriminator`` is a 64-bit
+SipHash-2-4 using the constant seed ``b5d4c9eb79104a796fec8b1b428781d4``
+(big-endian), with the result reduced by modulo to the range of non-zero
+discriminators (i.e. ``(rawHash % 65535) + 1``).
+
+Return Addresses
+~~~~~~~~~~~~~~~~
+
+The kernel must ensure that attackers cannot replace LR due to an asynchronous
+exception; see `Register clobbering`_.  If this is done by generally protecting
+LR, then functions which don't spill LR to the stack can avoid signing it
+entirely.  Otherwise, the return address must be signed; on arm64e it is signed
+with the ``IB`` key using the stack pointer on entry as the discriminator.
+
+Protecting return addresses is of such particular importance that the ``IB``
+key is almost entirely reserved for this purpose.
+
+Global Offset Tables
+~~~~~~~~~~~~~~~~~~~~
+
+The global offset table (GOT) is not ABI, but it is a common implementation
+technique for dynamic linking which deserves special discussion here.
+
+Whenever possible, signed pointers should be materialized directly in code
+rather than via the GOT, e.g. using an ``adrp+add+pac`` sequence on Armv8.3.
+This decreases the amount of work necessary at load time to initialize the GOT,
+but more importantly, it defines away the potential for several attacks:
+
+- Attackers cannot change instructions, so there is no way to cause this code
+  sequence to materialize a different pointer, whereas an access via the GOT
+  always has *at minimum* a probabilistic chance to be the target of successful
+  `substitution attacks`_.
+
+- The GOT is a dense pool of fixed pointers at a fixed offset relative to code;
+  attackers can search this pool for useful pointers that can be used in
+  `substitution attacks`_, whereas pointers that are only materialized directly
+  are not so easily available.
+
+- Similarly, attackers can use `access path attacks`_ to replace a pointer to
+  a signed pointer with a pointer to the GOT if the signing schema used within
+  the GOT happens to be the same as the original pointer.  This kind of
+  collision becomes much less likely to be useful the fewer pointers are in the
+  GOT in the first place.
+
+If this can be done for a symbol, then the compiler need only ensure that it
+materializes the signed pointer using registers that are safe against `register
+clobbering`_.
+
+However, many symbols can only be accessed via the GOT, e.g. because they
+resolve to definitions outside of the current image.  In this case, care must
+be taken to ensure that using the GOT does not introduce weaknesses.
+
+- If the entire GOT can be mapped read-only after loading, then no signing is
+  required within the GOT.  In fact, not signing pointers in the GOT is
+  preferable in this case because it makes the GOT useless for the harvesting
+  and access-path attacks above.  Storing raw pointers in this way is usually
+  extremely unsafe, but for the special case of an immutable GOT entry it's
+  fine because the GOT is always accessed via an address that is directly
+  materialized in code and thus provably unattackable.  (But see `Remapping`_.)
+
+- Otherwise, GOT entries which are used for producing a signed pointer constant
+  must be signed.  The signing schema used in the GOT need not match the target
+  signing schema for the signed constant.  To counteract the threats of
+  substitution attacks, it's best if GOT entries can be signed with address
+  diversity.  Using a good constant discriminator as well (perhaps derived from
+  the symbol name) can make it less useful to use a pointer to the GOT as the
+  replacement in an :ref:`access path attack<Access path attacks>`.
+
+In either case, the compiler must ensure that materializing the address of
+a GOT entry as part of producing a signed pointer constant is not vulnerable to
+`register clobbering`_.  If the linker also generates code for this, e.g. for
+call stubs, this generated code must take the same precautions.
+
+C Function Pointers
+~~~~~~~~~~~~~~~~~~~
+
+On arm64e, C function pointers are currently signed with the ``IA`` key without
+address diversity and with a constant discriminator of 0.
+
+The C and C++ standards do not permit C function pointers to be signed with
+address diversity by default: in C++ terms, function pointer types are required
+to be trivially copyable, which means they must be copyable with ``memcpy``.
+
+The use of a uniform constant discriminator is seen as a serious defect which
+should be remedied, and improving this is under investigation.
+
+C++ Virtual Tables
+~~~~~~~~~~~~~~~~~~
+
+The pointer to a C++ virtual table is currently signed with the ``DA`` key, no
+address diversity, and a constant discriminator of 0.  The use of no address
+diversity, as well as the uniform constant discriminator, are seen as
+weaknesses.  Not using address diversity allows attackers to simply copy valid
+v-table pointers from one object to another.  However, using a uniform
+discriminator of 0 does have positive performance and code-size implications on
+Armv8.3, and diversity for the most important v-table access pattern (virtual
+dispatch) is already better assured by the signing schemas used on the virtual
+functions.  It is also known that some code in practice copies objects
+containing v-tables with ``memcpy``, and while this is not permitted formally,
+it is something that may be invasive to eliminate.
+
+Virtual functions in a C++ virtual table are signed with the ``IA`` key,
+address diversity, and a constant discriminator equal to the string hash (see
+`ptrauth_string_discriminator`_) of the mangled name of the function which
+originally gave rise to the v-table slot.
+
+C++ Member Function Pointers
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A member function pointer is signed with the ``IA`` key, no address diversity,
+and a constant discriminator equal to the string hash (see
+`ptrauth_string_discriminator`_) of the member pointer type.  Address diversity
+is not permitted by C++ for member function pointers because they must be
+trivially-copyable types.
+
+The Itanium C++ ABI specifies that member function pointers to virtual
+functions simply store an offset to the correct v-table slot.  This ABI cannot
+be used securely with pointer authentication because there is no safe place to
+store the constant discriminator for the target v-table slot: if it's stored
+with the offset, an attacker can simply overwrite it with the right
+discriminator for the offset.  Even if the programmer never uses pointers to
+virtual functions, the existence of this code path makes all member function
+pointer dereferences insecure.
+
+arm64e changes this ABI so that virtual function pointers are stored using
+dispatch thunks with vague linkage.  Because arm64e supports interoperation
+with ``arm64`` code when pointer authentication is disabled, an arm64e member
+function pointer dereference still recognizes the virtual-function
+representation but uses an bogus discriminator on that path that should always
+trap if pointer authentication is enabled dynamically.
+
+The use of dispatch thunks means that ``==`` on member function pointers is no
+longer reliable for virtual functions, but this is acceptable because the
+standard makes no guarantees about it in the first place.
+
+The use of dispatch thunks also potentially enables v-tables to be signed using
+a declaration-specific constant discriminator in the future; otherwise this
+discriminator would also need to be stored in the member pointer.
+
+Blocks
+~~~~~~
+
+Block pointers are data pointers which must interoperate with the ObjC `id`
+type and therefore cannot be signed themselves.
+
+The invocation pointer in a block is signed with the ``IA`` key using address
+diversity and a constant dicriminator of 0.  Using a uniform discriminator is
+seen as a weakness to be potentially improved, but this is tricky due to the
+subtype polymorphism directly permitted for blocks.
+
+Block descriptors and ``__block`` variables can contain pointers to functions
+that can be used to copy or destroy the object.  These functions are signed
+with the ``IA`` key, address diversity, and a constant discriminator of 0.  The
+structure of block descriptors is under consideration for improvement.
+
+Objective-C Methods
+~~~~~~~~~~~~~~~~~~~
+
+Objective-C method lists sign methods with the ``IA`` key using address
+diversity and a constant discriminator of 0.  Using a uniform constant
+discriminator is believed to be acceptable because these tables are only
+accessed internally to the Objective-C runtime.
+
+The Objective-C runtime provides additional protection to methods that have
+been loaded into the Objective-C method cache; this protection is private to
+the runtime.
+
+Swift Class Methods
+~~~~~~~~~~~~~~~~~~~
+
+Class methods in Swift are signed in the class object with the ``IA`` key using
+address diversity and a constant discriminator equal to the string hash (see
+`ptrauth_string_discriminator`_) of the mangling of the original overridable
+method.
+
+Resilient class-method lookup relies on passing a method descriptor; this
+method descriptor should be signed but currently isn't.  The lookup function
+returns a function pointer that is signed using ``IA`` without address
+diversity and with the correct constant discriminator for the looked-up method.
+
+Swift Heap Destructors
+~~~~~~~~~~~~~~~~~~~~~~
+
+Objects that are retained and released with Swift's native reference-counting
+system, including both native classes and temporary "box" allocations, must
+provide a destructor function in their metadata.  This destructor function is
+signed with the ``IA`` key using address diversity and a constant discriminator
+of ``0xbbbf``.
+
+Swift Protocol Requirements
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Protocol function requirements are signed in the protocol witness table with
+the ``IA`` key using address diversity and a constant discriminator equal to
+the string hash (see `ptrauth_string_discriminator`_) of the mangling of the
+protocol requirement.
+
+Swift Function Types
+~~~~~~~~~~~~~~~~~~~~
+
+The invocation pointers of Swift function values are signed using the ``IA``
+key without address diversity and with a constant discriminator derived loosely
+from the function type.
+
+Address diversity cannot be used by default for function values because
+function types are intended to be a "loadable" type which can be held and
+passed in registers.
+
+The constant discriminator currently accounts for potential abstraction in the
+function signature in ways that decrease the diversity of signatures; improving
+this is under investigation.
+
+Swift Metadata
+~~~~~~~~~~~~~~
+
+Type metadata pointers in Swift are not signed.
+
+Type context descriptors must be signed because they frequently contain
+`relative addresses`_.  Type context descriptors are signed with the ``DA`` key
+without address diversity (except when stored in type metadata) and with
+a constant discriminator of ``0xae86``.
+
+Swift Value Witnesses
+~~~~~~~~~~~~~~~~~~~~~
+
+Value witness functions in Swift are signed in the value witness table using
+the ``IA`` key with address diversity and an operation-specific constant
+discriminator which can be found in the Swift project headers.
+
+Swift Coroutines
+~~~~~~~~~~~~~~~~
+
+Resumption functions for Swift coroutines are signed using the ``IA`` key
+without address diversity and with a constant discriminator derived from the
+yield type of the coroutine.  Resumption functions cannot be signed with
+address diversity as they are returned directly in registers from the
+coroutine.
+
+
+
+
 Alternative Implementations
 ---------------------------
 
