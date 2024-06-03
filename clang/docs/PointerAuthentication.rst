@@ -281,7 +281,7 @@ There are three levels of the pointer authentication language feature:
   manually signing and authenticating pointers in code.  These can be used in
   circumstances where very specific behavior is required.
 
-Language implementation
+Language Implementation
 ~~~~~~~~~~~~~~~~~~~~~~~
 
 For the most part, pointer authentication is an unobserved detail of the
@@ -305,7 +305,7 @@ For more information about this, see the `Language ABI`_ section.
 However, some aspects of the implementation are observable by the programmer or
 otherwise require special notice.
 
-C data pointers
+C Data Pointers
 ^^^^^^^^^^^^^^^
 
 The current implementation in Clang does not sign pointers to ordinary data by
@@ -316,7 +316,7 @@ A specific data pointer which is more security-sensitive than most can be
 signed using the `__ptrauth qualifier`_ or using the ``<ptrauth.h>``
 intrinsics.
 
-C function pointers
+C Function Pointers
 ^^^^^^^^^^^^^^^^^^^
 
 The C standard imposes restrictions on the representation and semantics of
@@ -335,7 +335,7 @@ relational comparisons and hashes will vary according to the exact signature
 value, which is likely to change between executions of a program.  In some
 implementations, it may also vary based on the exact function pointer type.
 
-Null pointers
+Null Pointers
 ^^^^^^^^^^^^^
 
 In principle, an implementation could derive the signed null pointer value
@@ -353,7 +353,7 @@ representation.  On AArch64, this requires additional code when working with
 possibly-null pointers, such as when copying a pointer field that has been
 signed with address diversity.
 
-Return addresses and frame pointers
+Return Addresses and Frame Pointers
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The current implementation in Clang implicitly signs both return addresses and
@@ -365,7 +365,7 @@ correctly account for pointer authentication, either by stripping signatures
 trace during a crash) or properly authenticating them.  More information about
 how these values are signed is available in the `Language ABI`_ section.
 
-C++ virtual functions
+C++ Virtual Functions
 ^^^^^^^^^^^^^^^^^^^^^
 
 The current implementation in Clang signs virtual function pointers with
@@ -400,6 +400,7 @@ a number of different tests.
 
 Clang provides several other tests only for historical purposes; for current
 purposes they are all equivalent to ``ptrauth_calls``.
+
 
 __ptrauth qualifier
 ^^^^^^^^^^^^^^^^^^^
@@ -1313,7 +1314,7 @@ pointer authentication.
   use of :ref:`relative addresses` in global data becomes insecure.
 
 - If an attacker can remap read-only program sections to be writable, then it
-  is unsafe to use unsigned pointers in global offset tables.
+  is unsafe to use unsigned pointers in `global offset tables`_.
 
 Remapping memory in this way often requires the attacker to have already
 substantively subverted the control flow of the process.  Nonetheless, if the
