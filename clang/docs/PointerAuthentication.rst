@@ -741,7 +741,7 @@ type.  Implementations are not required to make all bits of the result equally
 significant; in particular, some implementations are known to not leave
 meaningful data in the low bits.
 
-Standard ``__ptrauth`` qualifiers
+Standard ``__ptrauth`` Qualifiers
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 ``<ptrauth.h>`` additionally provides several macros which expand to
