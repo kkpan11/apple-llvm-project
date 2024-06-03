@@ -233,6 +233,31 @@ not significantly weaken the mitigation, since collisions remain uncommon.
 The algorithm for blending a constant discriminator with a storage address is
 implementation-defined.
 
+.. _Authentication Options:
+
+Authentication Options
+~~~~~~~~~~~~~~~~~~~~~~
+
+It is possible to tweak the behaviour of pointer authentication using the
+`options` argument to the ``__ptrauth`` attribute. These options are specified
+through a string literal containing a comma-separated list of options. Current
+options are
+
+- authentication mode: ``strip``, ``sign-and-strip``, ``sign-and-auth``. These
+  control whether authentication codes are ignored completely (``strip``),
+  whether values are signed but not authenticated (``sign-and-strip``), or the
+  default of full authentication (``sign-and-auth``).
+
+- ``authenticates-null-values``: Enables full signing and authentication of
+  null values. The default behaviour of pointer authentication is to not sign
+  or authenticate null values. This option ensures that all values, including
+  null values, will always be signed and authenticated.
+
+- ``isa-pointer``: This is used to indicate that the target value is an
+  Objective-C isa pointer, and needs to mask out objective-c tag bits prior to
+  signing or authenticating the value.
+
+
 .. _Signing schemas:
 
 Signing Schemas
@@ -401,13 +426,12 @@ a number of different tests.
 Clang provides several other tests only for historical purposes; for current
 purposes they are all equivalent to ``ptrauth_calls``.
 
-
-__ptrauth qualifier
+__ptrauth Qualifier
 ^^^^^^^^^^^^^^^^^^^
 
-``__ptrauth(key, address, discriminator)`` is an extended type qualifier which
-causes so-qualified objects to hold pointers signed using the specified schema
-rather than the default schema for such types.
+``__ptrauth(key, address, discriminator [, options] )`` is an extended type
+qualifier which causes so-qualified objects to hold pointers signed using the
+specified schema rather than the default schema for such types.
 
 In the current implementation in Clang, the qualified type must be a C pointer
 type, either to a function or to an object.  It currently cannot be an
@@ -429,7 +453,13 @@ The qualifier's operands are as follows:
 
 - ``discriminator`` - a constant discriminator; must be a constant expression
 
+- ``options`` - an optional list of authentication behaviour options; must be
+  a string literal
+
 See `Discriminators`_ for more information about discriminators.
+
+See :ref:`authentication options<Authentication options>` for more information
+about options.
 
 Currently the operands must be constant-evaluable even within templates. In the
 future this restriction may be lifted to allow value-dependent expressions as
@@ -453,7 +483,22 @@ a discriminator determined as follows:
   is ``ptrauth_blend_discriminator(&x, discriminator)``; see
   `ptrauth_blend_discriminator`_.
 
-Non-triviality from address diversity
+__ptrauth_restricted_intptr Qualifier
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+This is a variant of the ``__ptrauth`` qualifier, that applies to pointer sized
+integers.  See the documentation for ``__ptrauth qualifier``.
+
+This feature exists to support older APIs that use [u]intptrs to hold opaque
+pointer types.
+
+Care must be taken to avoid using the signature bit components of the signed
+integers or subsequent authentication of the signed value may fail.
+
+Note: When applied to a global initialiser a signed uintptr can only be
+initialised with the value 0 or a global address.
+
+Non-triviality From Address Diversity
 +++++++++++++++++++++++++++++++++++++
 
 Address diversity must impose additional restrictions in order to allow the
