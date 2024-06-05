@@ -1770,10 +1770,11 @@ SwiftExpressionParser::Parse(DiagnosticManager &diagnostic_manager,
     LLDB_LOG(log, "\n{0}\n\n{1}\n", msg, s);
   };
 
+  swift::bindExtensions(parsed_expr->module);
+
   if (log)
     dumpModule("Module before type checking:");
 
-  swift::bindExtensions(parsed_expr->module);
   swift::performTypeChecking(parsed_expr->source_file);
 
   if (log)
