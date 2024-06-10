@@ -284,7 +284,9 @@ class CrashLog(symbolication.Symbolicator):
         """Class that represents a binary images in a darwin crash log"""
 
         dsymForUUIDBinary = "/usr/local/bin/dsymForUUID"
-        if not os.path.exists(dsymForUUIDBinary):
+        if "LLDB_APPLE_DSYMFORUUID_EXECUTABLE" in os.environ:
+            dsymForUUIDBinary = os.environ["LLDB_APPLE_DSYMFORUUID_EXECUTABLE"]
+        elif not os.path.exists(dsymForUUIDBinary):
             try:
                 dsymForUUIDBinary = (
                     subprocess.check_output("which dsymForUUID", shell=True)
@@ -551,11 +553,15 @@ class CrashLog(symbolication.Symbolicator):
 
         futures = []
         with tempfile.TemporaryDirectory() as obj_dir:
-            with concurrent.futures.ThreadPoolExecutor() as executor:
 
-                def add_module(image, target, obj_dir):
-                    return image, image.add_module(target, obj_dir)
+            def add_module(image, target, obj_dir):
+                return image, image.add_module(target, obj_dir)
 
+            max_worker = None
+            if options.no_parallel_image_loading:
+                max_worker = 1
+
+            with concurrent.futures.ThreadPoolExecutor(max_worker) as executor:
                 for image in images_to_load:
                     if image not in loaded_images:
                         if image.uuid == uuid.UUID(int=0):
@@ -1524,6 +1530,7 @@ def load_crashlog_in_scripted_process(debugger, crashlog_path, options, result):
                 "file_path": crashlog_path,
                 "load_all_images": options.load_all_images,
                 "crashed_only": options.crashed_only,
+                "no_parallel_image_loading": options.no_parallel_image_loading,
             }
         )
     )
@@ -1716,6 +1723,13 @@ def CreateSymbolicateCrashLogOptions(
         help="show source for all threads, not just the crashed thread",
         default=False,
     )
+    arg_parser.add_argument(
+        "--no-parallel-image-loading",
+        dest="no_parallel_image_loading",
+        action="store_true",
+        help=argparse.SUPPRESS,
+        default=False,
+    )
     if add_interactive_options:
         arg_parser.add_argument(
             "-i",
@@ -1793,6 +1807,9 @@ def SymbolicateCrashLogs(debugger, command_args, result, is_command):
                 ],
             )
         )
+
+    if "NO_PARALLEL_IMG_LOADING" in os.environ:
+        options.no_parallel_image_loading = True
 
     if options.version:
         print(debugger.GetVersionString())
