@@ -3392,6 +3392,10 @@ class SBCommandInterpreter(object):
         r"""InterruptCommand(SBCommandInterpreter self) -> bool"""
         return _lldb.SBCommandInterpreter_InterruptCommand(self)
 
+    def SetCommandOverrideCallback(self, command_name, callback):
+        r"""SetCommandOverrideCallback(SBCommandInterpreter self, char const * command_name, lldb::CommandOverrideCallback callback) -> bool"""
+        return _lldb.SBCommandInterpreter_SetCommandOverrideCallback(self, command_name, callback)
+
     def IsActive(self):
         r"""IsActive(SBCommandInterpreter self) -> bool"""
         return _lldb.SBCommandInterpreter_IsActive(self)
