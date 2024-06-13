@@ -5947,6 +5947,28 @@ static void LLDBSwigPythonCallPythonSBDebuggerTerminateCallback(lldb::user_id_t 
   }
 }
 
+static bool LLDBSwigPythonCallPythonSBCommandInterpreterSetCommandOverrideCallback(void *baton, const char **argv) {
+  bool ret_val = false;
+  if (baton != Py_None) {
+    SWIG_PYTHON_THREAD_BEGIN_BLOCK;
+    // Create a PyList of items since we're going to pass it to the callback as a tuple
+    // of arguments.
+    PyObject *py_argv = PyList_New(0);
+    for (const char **arg = argv; arg && *arg; arg++) {
+      std::string arg_string = *arg;
+      PyObject *py_string = PyUnicode_FromStringAndSize(arg_string.c_str(), arg_string.size());
+      PyList_Append(py_argv, py_string);
+    }
+
+    PyObject *result = PyObject_CallObject(
+        reinterpret_cast<PyObject *>(baton), PyList_AsTuple(py_argv));
+    ret_val = result ? PyObject_IsTrue(result) : false;
+    Py_XDECREF(result);
+    SWIG_PYTHON_THREAD_END_BLOCK;
+  }
+  return ret_val;
+}
+
 static SBError LLDBSwigPythonCallLocateModuleCallback(
     void *callback_baton, const SBModuleSpec &module_spec_sb,
     SBFileSpec &module_file_spec_sb, SBFileSpec &symbol_file_spec_sb) {
@@ -16507,6 +16529,58 @@ SWIGINTERN PyObject *_wrap_SBCommandInterpreter_InterruptCommand(PyObject *self,
   resultobj = SWIG_From_bool(static_cast< bool >(result));
   return resultobj;
 fail:
+  return NULL;
+}
+
+
+SWIGINTERN PyObject *_wrap_SBCommandInterpreter_SetCommandOverrideCallback(PyObject *self, PyObject *args) {
+  PyObject *resultobj = 0;
+  lldb::SBCommandInterpreter *arg1 = (lldb::SBCommandInterpreter *) 0 ;
+  char *arg2 = (char *) 0 ;
+  lldb::CommandOverrideCallback arg3 = (lldb::CommandOverrideCallback) 0 ;
+  void *arg4 = (void *) 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  int res2 ;
+  char *buf2 = 0 ;
+  int alloc2 = 0 ;
+  PyObject *swig_obj[3] ;
+  bool result;
+  
+  (void)self;
+  if (!SWIG_Python_UnpackTuple(args, "SBCommandInterpreter_SetCommandOverrideCallback", 3, 3, swig_obj)) SWIG_fail;
+  res1 = SWIG_ConvertPtr(swig_obj[0], &argp1,SWIGTYPE_p_lldb__SBCommandInterpreter, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "SBCommandInterpreter_SetCommandOverrideCallback" "', argument " "1"" of type '" "lldb::SBCommandInterpreter *""'"); 
+  }
+  arg1 = reinterpret_cast< lldb::SBCommandInterpreter * >(argp1);
+  res2 = SWIG_AsCharPtrAndSize(swig_obj[1], &buf2, NULL, &alloc2);
+  if (!SWIG_IsOK(res2)) {
+    SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "SBCommandInterpreter_SetCommandOverrideCallback" "', argument " "2"" of type '" "char const *""'");
+  }
+  arg2 = reinterpret_cast< char * >(buf2);
+  {
+    if (!(swig_obj[2] == Py_None ||
+        PyCallable_Check(reinterpret_cast<PyObject *>(swig_obj[2])))) {
+      PyErr_SetString(PyExc_TypeError, "Need a callable object or None!");
+      SWIG_fail;
+    }
+    
+    // Don't lose the callback reference.
+    Py_INCREF(swig_obj[2]);
+    arg3 = LLDBSwigPythonCallPythonSBCommandInterpreterSetCommandOverrideCallback;
+    arg4 = swig_obj[2];
+  }
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (bool)(arg1)->SetCommandOverrideCallback((char const *)arg2,arg3,arg4);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
+  resultobj = SWIG_From_bool(static_cast< bool >(result));
+  if (alloc2 == SWIG_NEWOBJ) delete[] buf2;
+  return resultobj;
+fail:
+  if (alloc2 == SWIG_NEWOBJ) delete[] buf2;
   return NULL;
 }
 
@@ -92259,6 +92333,7 @@ static PyMethodDef SwigMethods[] = {
 	 { "SBCommandInterpreter_HandleCompletionWithDescriptions", _wrap_SBCommandInterpreter_HandleCompletionWithDescriptions, METH_VARARGS, "SBCommandInterpreter_HandleCompletionWithDescriptions(SBCommandInterpreter self, char const * current_line, uint32_t cursor_pos, int match_start_point, int max_return_elements, SBStringList matches, SBStringList descriptions) -> int"},
 	 { "SBCommandInterpreter_WasInterrupted", _wrap_SBCommandInterpreter_WasInterrupted, METH_O, "SBCommandInterpreter_WasInterrupted(SBCommandInterpreter self) -> bool"},
 	 { "SBCommandInterpreter_InterruptCommand", _wrap_SBCommandInterpreter_InterruptCommand, METH_O, "SBCommandInterpreter_InterruptCommand(SBCommandInterpreter self) -> bool"},
+	 { "SBCommandInterpreter_SetCommandOverrideCallback", _wrap_SBCommandInterpreter_SetCommandOverrideCallback, METH_VARARGS, "SBCommandInterpreter_SetCommandOverrideCallback(SBCommandInterpreter self, char const * command_name, lldb::CommandOverrideCallback callback) -> bool"},
 	 { "SBCommandInterpreter_IsActive", _wrap_SBCommandInterpreter_IsActive, METH_O, "SBCommandInterpreter_IsActive(SBCommandInterpreter self) -> bool"},
 	 { "SBCommandInterpreter_GetIOHandlerControlSequence", _wrap_SBCommandInterpreter_GetIOHandlerControlSequence, METH_VARARGS, "SBCommandInterpreter_GetIOHandlerControlSequence(SBCommandInterpreter self, char ch) -> char const *"},
 	 { "SBCommandInterpreter_GetPromptOnQuit", _wrap_SBCommandInterpreter_GetPromptOnQuit, METH_O, "SBCommandInterpreter_GetPromptOnQuit(SBCommandInterpreter self) -> bool"},
