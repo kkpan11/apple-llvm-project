@@ -8,6 +8,7 @@ from lldbsuite.test import lldbutil
 class TestSBCommandReturnObject(TestBase):
     NO_DEBUG_INFO_TESTCASE = True
 
+    @skipIfAsan
     @skipIfNoSBHeaders
     @expectedFailureAll(
         oslist=["windows"], archs=["i[3-6]86", "x86_64"], bugnumber="llvm.org/pr43570"
