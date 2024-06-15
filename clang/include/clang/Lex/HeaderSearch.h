@@ -84,7 +84,9 @@ struct HeaderFileInfo {
   /// `ModuleMap::isModular()`).
   unsigned isModuleHeader : 1;
 
-  /// Whether this header is a `textual header` in a module.
+  /// Whether this header is a `textual header` in a module. If a header is
+  /// textual in one module and normal in another module, this bit will not be
+  /// set, only `isModuleHeader`.
   unsigned isTextualModuleHeader : 1;
 
   /// Whether this header is part of the module that we are building, even if it
