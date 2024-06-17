@@ -657,9 +657,9 @@ public:
 
   virtual SymbolContextScope *GetSymbolContextScope();
 
-  void Dump(Stream &s);
+  llvm::Error Dump(Stream &s);
 
-  void Dump(Stream &s, const DumpValueObjectOptions &options);
+  llvm::Error Dump(Stream &s, const DumpValueObjectOptions &options);
 
   static lldb::ValueObjectSP
   CreateValueObjectFromExpression(llvm::StringRef name,

@@ -1210,11 +1210,14 @@ bool SBValue::GetDescription(SBStream &description) {
 
   ValueLocker locker;
   lldb::ValueObjectSP value_sp(GetSP(locker));
-  if (value_sp)
-    value_sp->Dump(strm);
-  else
+  if (value_sp) {
+    if (llvm::Error error = value_sp->Dump(strm)) {
+      strm << "error: " << toString(std::move(error));
+      return false;
+    }
+  } else {
     strm.PutCString("No value");
-
+  }
   return true;
 }
 

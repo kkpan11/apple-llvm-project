@@ -301,7 +301,9 @@ bool Watchpoint::DumpSnapshots(Stream *s, const char *prefix) const {
             .SetHideRootType(true)
             .SetHideRootName(true)
             .SetHideName(true);
-        m_old_value_sp->Dump(strm, options);
+        if (llvm::Error error = m_old_value_sp->Dump(strm, options))
+          strm << "error: " << toString(std::move(error));
+
         if (strm.GetData())
           values_ss.Printf("old value: %s", strm.GetData());
       }
@@ -324,7 +326,9 @@ bool Watchpoint::DumpSnapshots(Stream *s, const char *prefix) const {
             .SetHideRootType(true)
             .SetHideRootName(true)
             .SetHideName(true);
-        m_new_value_sp->Dump(strm, options);
+        if (llvm::Error error = m_new_value_sp->Dump(strm, options))
+          strm << "error: " << toString(std::move(error));
+
         if (strm.GetData())
           values_ss.Printf("new value: %s", strm.GetData());
       }
