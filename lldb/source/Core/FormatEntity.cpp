@@ -1346,17 +1346,17 @@ bool FormatEntity::Format(const Entry &entry, Stream &s,
           bool is_swift_error_return = false;
           ValueObjectSP return_valobj_sp = StopInfo::GetReturnValueObject(
               stop_info_sp, is_swift_error_return);
+          // END SWIFT
           if (return_valobj_sp) {
             DumpValueObjectOptions options;
             if (return_valobj_sp->IsDynamic())
               options.SetUseDynamicType(eDynamicCanRunTarget);
             if (return_valobj_sp->DoesProvideSyntheticValue())
               options.SetUseSyntheticValue(true);
-            return_valobj_sp->Dump(s, options);
-            return true;
-          }
-          // END SWIFT
-          if (return_valobj_sp) {
+            if (llvm::Error error = return_valobj_sp->Dump(s)) {
+              s << "error: " << toString(std::move(error));
+              return false;
+            }
             return true;
           }
         }
@@ -1373,7 +1373,11 @@ bool FormatEntity::Format(const Entry &entry, Stream &s,
           ExpressionVariableSP expression_var_sp =
               StopInfo::GetExpressionVariable(stop_info_sp);
           if (expression_var_sp && expression_var_sp->GetValueObject()) {
-            expression_var_sp->GetValueObject()->Dump(s);
+            if (llvm::Error error =
+                    expression_var_sp->GetValueObject()->Dump(s)) {
+              s << "error: " << toString(std::move(error));
+              return false;
+            }
             return true;
           }
         }
