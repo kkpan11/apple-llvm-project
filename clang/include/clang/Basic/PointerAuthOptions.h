@@ -25,6 +25,10 @@ namespace clang {
 
 constexpr unsigned PointerAuthKeyNone = -1;
 
+/// Constant discriminator to be used with block descriptor pointers. The value
+/// is ptrauth_string_discriminator("block_descriptor")
+constexpr uint16_t BlockDescriptorConstantDiscriminator = 0xC0BB;
+
 class PointerAuthSchema {
 public:
   enum class Kind : unsigned {
@@ -245,6 +249,9 @@ struct PointerAuthOptions {
 
   /// The ABI for __block variable copy/destroy function pointers.
   PointerAuthSchema BlockByrefHelperFunctionPointers;
+
+  /// The ABI for pointers to block descriptors.
+  PointerAuthSchema BlockDescriptorPointers;
 
   /// The ABI for Objective-C method lists.
   PointerAuthSchema ObjCMethodListFunctionPointers;

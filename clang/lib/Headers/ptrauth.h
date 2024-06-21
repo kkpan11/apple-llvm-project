@@ -45,6 +45,10 @@ typedef enum {
      (or, in other words, the value of the stack pointer on function entry) */
   ptrauth_key_frame_pointer = ptrauth_key_process_dependent_data,
 
+  /* The key used to sign C++ v-table pointers.
+     The extra data is always 0. */
+  ptrauth_key_cxx_vtable_pointer = ptrauth_key_process_independent_data,
+
   /* The key used to sign block function pointers, including:
        invocation functions,
        block object copy functions,
@@ -56,11 +60,10 @@ typedef enum {
 
      Note that block object pointers themselves (i.e. the direct
      representations of values of block-pointer type) are not signed. */
-  ptrauth_key_block_function = ptrauth_key_asia,
+  ptrauth_key_block_function = ptrauth_key_process_independent_code,
 
-  /* The key used to sign C++ v-table pointers.
-     The extra data is always 0. */
-  ptrauth_key_cxx_vtable_pointer = ptrauth_key_process_independent_data,
+  /* The key used to sign block descriptor pointers. */
+  ptrauth_key_block_descriptor_pointer = ptrauth_key_process_independent_data,
 
   /* Other pointers signed under the ABI use private ABI rules. */
 

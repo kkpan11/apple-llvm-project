@@ -1666,6 +1666,10 @@ void CompilerInvocation::setDefaultPointerAuthOptions(
         PointerAuthSchema(Key::ASIA, true, Discrimination::None);
     Opts.BlockByrefHelperFunctionPointers =
         PointerAuthSchema(Key::ASIA, true, Discrimination::None);
+    if (LangOpts.PointerAuthBlockDescriptorPointers)
+      Opts.BlockDescriptorPointers =
+          PointerAuthSchema(Key::ASDA, true, Discrimination::Constant,
+                            BlockDescriptorConstantDiscriminator);
 
     Opts.ObjCMethodListFunctionPointers =
         PointerAuthSchema(Key::ASIA, true, Discrimination::None);
@@ -3726,6 +3730,8 @@ static void GeneratePointerAuthArgs(const LangOptions &Opts,
     GenerateArg(Consumer, OPT_fptrauth_init_fini);
   if (Opts.PointerAuthFunctionTypeDiscrimination)
     GenerateArg(Consumer, OPT_fptrauth_function_pointer_type_discrimination);
+  if (Opts.PointerAuthBlockDescriptorPointers)
+    GenerateArg(Consumer, OPT_fptrauth_block_descriptor_pointers);
 
   if (Opts.PointerAuthIndirectGotos)
     GenerateArg(Consumer, OPT_fptrauth_indirect_gotos);
@@ -3754,6 +3760,8 @@ static void ParsePointerAuthArgs(LangOptions &Opts, ArgList &Args,
   Opts.PointerAuthInitFini = Args.hasArg(OPT_fptrauth_init_fini);
   Opts.PointerAuthFunctionTypeDiscrimination =
       Args.hasArg(OPT_fptrauth_function_pointer_type_discrimination);
+  Opts.PointerAuthBlockDescriptorPointers =
+      Args.hasArg(OPT_fptrauth_block_descriptor_pointers);
 
   Opts.PointerAuthIndirectGotos = Args.hasArg(OPT_fptrauth_indirect_gotos);
   Opts.SoftPointerAuth = Args.hasArg(OPT_fptrauth_soft);

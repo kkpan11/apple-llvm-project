@@ -173,6 +173,7 @@ LANGOPT(PointerAuthVTPtrTypeDiscrimination, 1, 0, "incorporate type discriminati
 LANGOPT(PointerAuthInitFini, 1, 0, "sign function pointers in init/fini arrays")
 BENIGN_LANGOPT(PointerAuthFunctionTypeDiscrimination, 1, 0,
                "Use type discrimination when signing function pointers")
+LANGOPT(PointerAuthBlockDescriptorPointers, 1, 0, "enable signed block descriptors")
 LANGOPT(SoftPointerAuth   , 1, 0, "software emulation of pointer authentication")
 
 VALUE_LANGOPT(PointerAuthABIVersion, 32, 0, "pointer authentication ABI version")
