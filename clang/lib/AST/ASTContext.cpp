@@ -3396,9 +3396,9 @@ uint16_t ASTContext::getPointerAuthTypeDiscriminator(QualType T) {
   if (T->isFunctionPointerType() || T->isFunctionReferenceType())
     T = T->getPointeeType();
 
-  if (T->isFunctionType())
+  if (T->isFunctionType()) {
     encodeTypeForFunctionPointerAuth(*this, Out, T);
-  else {
+  } else {
     T = T.getUnqualifiedType();
     std::unique_ptr<MangleContext> MC(createMangleContext());
     MC->mangleCanonicalTypeName(T, Out);

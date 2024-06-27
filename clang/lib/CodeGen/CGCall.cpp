@@ -4140,8 +4140,8 @@ static bool isProvablyNull(llvm::Value *addr) {
 }
 
 static bool isProvablyNonNull(Address Addr, CodeGenFunction &CGF) {
-  return llvm::isKnownNonZero(Addr.getUnsignedPointer(),
-                              CGF.CGM.getDataLayout());
+  return !Addr.isSigned() && llvm::isKnownNonZero(Addr.getUnsignedPointer(),
+                                                  CGF.CGM.getDataLayout());
 }
 
 /// Emit the actual writing-back of a writeback.
@@ -5110,7 +5110,7 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
       SRetPtr = Address(CurFn->arg_begin() + IRFunctionArgs.getSRetArgNo(),
                         ConvertTypeForMem(RetTy), CharUnits::fromQuantity(1));
     } else if (!ReturnValue.isNull()) {
-      SRetPtr = ReturnValue.getAddress();
+      SRetPtr = ReturnValue.getValue();
     } else {
       SRetPtr = CreateMemTemp(RetTy, "tmp", &SRetAlloca);
       if (HaveInsertPoint() && ReturnValue.isUnused()) {
