@@ -37,6 +37,7 @@ module Clang_Basic {
   umbrella "clang/Basic"
 
   textual header "clang/Basic/AArch64SVEACLETypes.def"
+  textual header "clang/Basic/AMDGPUTypes.def"
   textual header "clang/Basic/BuiltinsAArch64.def"
   textual header "clang/Basic/BuiltinsAMDGPU.def"
   textual header "clang/Basic/BuiltinsAArch64NeonSVEBridge.def"
