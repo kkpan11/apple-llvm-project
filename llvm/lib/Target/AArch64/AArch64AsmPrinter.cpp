@@ -26,6 +26,7 @@
 #include "Utils/AArch64BaseInfo.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/BinaryFormat/MachO.h"
@@ -109,6 +110,8 @@ public:
   lowerPtrAuthGlobalConstant(const GlobalPtrAuthInfo &PAI) override;
 
   const MCExpr *lowerConstantPtrAuth(const ConstantPtrAuth &CPA) override;
+
+  void authLRBeforeTailCall(const MachineFunction &MF, unsigned ScratchReg);
 
   void emitStartOfAsmFile(Module &M) override;
   void emitJumpTableInfo() override;
@@ -1642,6 +1645,56 @@ void AArch64AsmPrinter::emitFMov0(const MachineInstr &MI) {
   }
 }
 
+// We need to verify the return address authenticated correctly or we create a
+// signing oracle when the callee simply PACIBSPs it.
+void AArch64AsmPrinter::authLRBeforeTailCall(const MachineFunction &MF,
+                                             unsigned ScratchReg) {
+  const Function &Fn = MF.getFunction();
+  if (!Fn.hasFnAttribute("ptrauth-auth-traps") ||
+      !Fn.hasFnAttribute("ptrauth-returns"))
+    return;
+
+  // If there's no stack frame then there's no AUTIBSP, and so no reason to
+  // check for the particular form of invalid LR that produces.
+  if (!MF.getInfo<AArch64FunctionInfo>()->hasStackFrame())
+    return;
+
+  // We know TBI is disabled for instruction keys on Darwin, so bits 62 and 61
+  // or LR will be different if and only if authentication failed.
+  if (!STI->isTargetMachO() || STI->hasFPAC())
+    return;
+
+  // We want:
+  //     eor x9, lr, lr, lsl #1
+  //     tbz x9, #62, Lgoodsig
+  //     brk #0xc471
+  //  Lgoodsig:
+  //      <normal tail call branch>
+  MCInst EOR;
+  EOR.setOpcode(AArch64::EORXrs);
+  EOR.addOperand(MCOperand::createReg(ScratchReg));
+  EOR.addOperand(MCOperand::createReg(AArch64::LR));
+  EOR.addOperand(MCOperand::createReg(AArch64::LR));
+  EOR.addOperand(MCOperand::createImm(1));
+  EmitToStreamer(*OutStreamer, EOR);
+
+  MCContext &Ctx = OutStreamer->getContext();
+  MCSymbol *GoodSigSym = Ctx.createTempSymbol();
+  const MCExpr *GoodSig = MCSymbolRefExpr::create(GoodSigSym, Ctx);
+  MCInst TBZ;
+  TBZ.setOpcode(AArch64::TBZX);
+  TBZ.addOperand(MCOperand::createReg(ScratchReg));
+  TBZ.addOperand(MCOperand::createImm(62));
+  TBZ.addOperand(MCOperand::createExpr(GoodSig));
+  EmitToStreamer(*OutStreamer, TBZ);
+
+  MCInst BRK;
+  BRK.setOpcode(AArch64::BRK);
+  BRK.addOperand(MCOperand::createImm(0xc471));
+  EmitToStreamer(*OutStreamer, BRK);
+
+  OutStreamer->emitLabel(GoodSigSym);
+}
 
 unsigned AArch64AsmPrinter::emitPtrauthDiscriminator(uint16_t Disc,
                                                      unsigned AddrDisc,
@@ -2415,6 +2468,8 @@ void AArch64AsmPrinter::emitInstruction(const MachineInstr *MI) {
                               ? AArch64::X17
                               : AArch64::X16;
 
+    authLRBeforeTailCall(*MI->getParent()->getParent(), ScratchReg);
+
     unsigned DiscReg = AddrDisc;
     if (Disc) {
       if (AddrDisc != AArch64::NoRegister) {
@@ -2455,6 +2510,11 @@ void AArch64AsmPrinter::emitInstruction(const MachineInstr *MI) {
   case AArch64::TCRETURNrix17:
   case AArch64::TCRETURNrinotx16:
   case AArch64::TCRETURNriALL: {
+    authLRBeforeTailCall(*MI->getParent()->getParent(),
+                         MI->getOperand(0).getReg() == AArch64::X16
+                             ? AArch64::X17
+                             : AArch64::X16);
+
     MCInst TmpInst;
     TmpInst.setOpcode(AArch64::BR);
     TmpInst.addOperand(MCOperand::createReg(MI->getOperand(0).getReg()));
@@ -2462,6 +2522,8 @@ void AArch64AsmPrinter::emitInstruction(const MachineInstr *MI) {
     return;
   }
   case AArch64::TCRETURNdi: {
+    authLRBeforeTailCall(*MI->getParent()->getParent(), AArch64::X16);
+
     MCOperand Dest;
     MCInstLowering.lowerOperand(MI->getOperand(0), Dest);
     MCInst TmpInst;

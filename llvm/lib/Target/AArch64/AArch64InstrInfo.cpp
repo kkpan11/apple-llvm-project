@@ -120,6 +120,24 @@ unsigned AArch64InstrInfo::getInstSizeInBytes(const MachineInstr &MI) const {
     // 4-byte insn.
     NumBytes = 4;
     break;
+  case AArch64::TCRETURNdi:
+  case AArch64::TCRETURNri:
+  case AArch64::TCRETURNriALL:
+  case AArch64::TCRETURNrix16x17:
+  case AArch64::TCRETURNrix17:
+  case AArch64::TCRETURNrinotx16:
+  case AArch64::AUTH_TCRETURN:
+  case AArch64::AUTH_TCRETURN_BTI: {
+    NumBytes = Desc.getSize() ? Desc.getSize() : 4;
+    // In some cases we prepend these with an LR auth-failure check, to
+    // emulate FPAC.  This adds size overhead of 2 insts.
+    const AArch64Subtarget &STI = MF->getSubtarget<AArch64Subtarget>();
+    if ((F.hasFnAttribute("ptrauth-auth-traps") ||
+         F.hasFnAttribute("ptrauth-returns")) &&
+        !STI.hasFPAC())
+      NumBytes += 8;
+    break;
+  }
   case TargetOpcode::STACKMAP:
     // The upper bound for a stackmap intrinsic is the full length of its shadow
     NumBytes = StackMapOpers(&MI).getNumPatchBytes();
