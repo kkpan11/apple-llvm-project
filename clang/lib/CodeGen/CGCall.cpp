@@ -4541,7 +4541,8 @@ void CodeGenFunction::EmitCallArgs(
   // evaluation, and in those cases we consider the evaluation order requirement
   // to trump the "destruction order is reverse construction order" guarantee.
   bool LeftToRight =
-      CGM.getTarget().getCXXABI().areArgsDestroyedLeftToRightInCallee()
+      (CGM.getTarget().getCXXABI().areArgsDestroyedLeftToRightInCallee() ||
+       CGM.getCodeGenOpts().EvalArgsRightToLeft)
           ? Order == EvaluationOrder::ForceLeftToRight
           : Order != EvaluationOrder::ForceRightToLeft;
 

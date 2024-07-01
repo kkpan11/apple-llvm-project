@@ -1450,6 +1450,11 @@ defm hip_fp32_correctly_rounded_divide_sqrt : BoolFOption<"hip-fp32-correctly-ro
   BothFlags<[], [ClangOption], " that single precision floating-point divide and sqrt used in "
   "the program source are correctly rounded (HIP device compilation only)">>,
   ShouldParseIf<hip.KeyPath>;
+defm eval_args_right_to_left : BoolFOption<"eval-args-right-to-left",
+  CodeGenOpts<"EvalArgsRightToLeft">, DefaultFalse,
+  PosFlag<SetTrue, [], [CC1Option], "Evaluate">,
+  NegFlag<SetFalse, [], [CC1Option], "Don't evaluate">,
+  BothFlags<[], [CC1Option], " arguments right to left)">>;
 defm hip_kernel_arg_name : BoolFOption<"hip-kernel-arg-name",
   CodeGenOpts<"HIPSaveKernelArgName">, DefaultFalse,
   PosFlag<SetTrue, [], [ClangOption, CC1Option], "Specify">,
