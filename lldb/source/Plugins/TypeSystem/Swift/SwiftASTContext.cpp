@@ -2909,20 +2909,32 @@ lldb::TypeSystemSP SwiftASTContext::CreateInstance(
       return exe_module_sp->GetArchitecture().GetTriple();
     };
 
-    llvm::Triple computed_triple;
-    llvm::Triple target_triple = target.GetArchitecture().GetTriple();
+    ArchSpec active_arch;
+    llvm::Triple active_triple;
+    if (sc.module_sp) {
+      active_arch = sc.module_sp->GetArchitecture();
+      active_triple = active_arch.GetTriple();
+    }
 
-    if (target.GetArchitecture().IsFullySpecifiedTriple()) {
+    // When no module triple, fallback to the target triple.
+    if (!active_arch || active_triple == llvm::Triple()) {
+      active_arch = target.GetArchitecture();
+      active_triple = active_arch.GetTriple();
+    }
+
+    llvm::Triple computed_triple;
+
+    if (active_arch.IsFullySpecifiedTriple()) {
       // If a fully specified triple was passed in, for example
       // through CreateTargetWithFileAndTargetTriple(), prefer that.
       LOG_PRINTF(GetLog(LLDBLog::Types), "Fully specified target triple %s.",
-                 target_triple.str().c_str());
-      computed_triple = target_triple;
+                 active_triple.str().c_str());
+      computed_triple = active_arch.GetTriple();
     } else {
       // Underspecified means that one or more of vendor, os, or os
       // version (Darwin only) is missing.
       LOG_PRINTF(GetLog(LLDBLog::Types), "Underspecified target triple %s.",
-                 target_triple.str().c_str());
+                 active_triple.str().c_str());
       llvm::VersionTuple platform_version;
       PlatformSP platform_sp(target.GetPlatform());
       if (platform_sp)
@@ -2940,15 +2952,15 @@ lldb::TypeSystemSP SwiftASTContext::CreateInstance(
       // plaform (e.g., ios-macabi runs on the macOS, but uses iOS
       // version numbers).
       if (!platform_version.empty() &&
-          target_triple.getEnvironment() == llvm::Triple::UnknownEnvironment) {
+          active_triple.getEnvironment() == llvm::Triple::UnknownEnvironment) {
         LOG_PRINTF(GetLog(LLDBLog::Types), "Completing triple based on platform.");
 
         llvm::SmallString<32> buffer;
         {
           llvm::raw_svector_ostream os(buffer);
-          os << target_triple.getArchName() << '-';
-          os << target_triple.getVendorName() << '-';
-          os << llvm::Triple::getOSTypeName(target_triple.getOS());
+          os << active_triple.getArchName() << '-';
+          os << active_triple.getVendorName() << '-';
+          os << llvm::Triple::getOSTypeName(active_triple.getOS());
           os << platform_version.getAsString();
         }
         computed_triple = llvm::Triple(buffer);
