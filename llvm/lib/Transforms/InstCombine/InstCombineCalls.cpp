@@ -3691,7 +3691,7 @@ static IntrinsicInst *findInitTrampoline(Value *Callee) {
   return nullptr;
 }
 
-Instruction *InstCombinerImpl::tryCombinePtrAuthCall(CallBase &Call) {
+Instruction *InstCombinerImpl::foldPtrAuthIntrinsicCallee(CallBase &Call) {
   Value *Callee = Call.getCalledOperand();
   auto *IPC = dyn_cast<IntToPtrInst>(Callee);
   if (!IPC || !IPC->isNoopCast(DL))
@@ -3701,24 +3701,28 @@ Instruction *InstCombinerImpl::tryCombinePtrAuthCall(CallBase &Call) {
   if (!II)
     return nullptr;
 
-  auto PtrAuthBundleOrNone = Call.getOperandBundle(LLVMContext::OB_ptrauth);
-  assert(Call.getNumOperandBundles() <= 1 &&
-         "unimplemented support for ptrauth and other bundle");
+  // Isolate the ptrauth bundle from the others.
+  std::optional<OperandBundleUse> PtrAuthBundleOrNone;
+  SmallVector<OperandBundleDef, 2> NewBundles;
+  for (unsigned BI = 0, BE = Call.getNumOperandBundles(); BI != BE; ++BI) {
+    OperandBundleUse Bundle = Call.getOperandBundleAt(BI);
+    if (Bundle.getTagID() == LLVMContext::OB_ptrauth)
+      PtrAuthBundleOrNone = Bundle;
+    else
+      NewBundles.emplace_back(Bundle);
+  }
 
   Value *NewCallee = nullptr;
-  SmallVector<OperandBundleDef, 1> NewBundles;
   switch (II->getIntrinsicID()) {
   default:
     return nullptr;
 
-  // call(ptrauth_resign(p)), ["ptrauth"()] ->  call p, ["ptrauth"()]
+  // call(ptrauth.resign(p)), ["ptrauth"()] ->  call p, ["ptrauth"()]
   // assuming the call bundle and the sign operands match.
   case Intrinsic::ptrauth_resign: {
-    if (!PtrAuthBundleOrNone)
-      return nullptr;
-    auto PtrAuthBundle = *PtrAuthBundleOrNone;
-    if (II->getOperand(3) != PtrAuthBundle.Inputs[0] ||
-        II->getOperand(4) != PtrAuthBundle.Inputs[1])
+    if (!PtrAuthBundleOrNone ||
+        II->getOperand(3) != PtrAuthBundleOrNone->Inputs[0] ||
+        II->getOperand(4) != PtrAuthBundleOrNone->Inputs[1])
       return nullptr;
 
     Value *NewBundleOps[] = {II->getOperand(1), II->getOperand(2)};
@@ -3727,20 +3731,19 @@ Instruction *InstCombinerImpl::tryCombinePtrAuthCall(CallBase &Call) {
     break;
   }
 
-  // call(ptrauth_sign(p)), ["ptrauth"()] ->  call p
+  // call(ptrauth.sign(p)), ["ptrauth"()] ->  call p
   // assuming the call bundle and the sign operands match.
+  // Non-ptrauth indirect calls are undesirable, but so is ptrauth.sign.
   case Intrinsic::ptrauth_sign: {
-    if (!PtrAuthBundleOrNone)
-      return nullptr;
-    auto PtrAuthBundle = *PtrAuthBundleOrNone;
-    if (II->getOperand(1) != PtrAuthBundle.Inputs[0] ||
-        II->getOperand(2) != PtrAuthBundle.Inputs[1])
+    if (!PtrAuthBundleOrNone ||
+        II->getOperand(1) != PtrAuthBundleOrNone->Inputs[0] ||
+        II->getOperand(2) != PtrAuthBundleOrNone->Inputs[1])
       return nullptr;
     NewCallee = II->getOperand(0);
     break;
   }
 
-  // call(ptrauth_auth(p)) ->  call p, ["ptrauth"()]
+  // call(ptrauth.auth(p)) ->  call p, ["ptrauth"()]
   case Intrinsic::ptrauth_auth: {
     if (PtrAuthBundleOrNone)
       return nullptr;
@@ -3913,8 +3916,8 @@ Instruction *InstCombinerImpl::visitCallBase(CallBase &Call) {
   if (IntrinsicInst *II = findInitTrampoline(Callee))
     return transformCallThroughTrampoline(Call, *II);
 
-  // Combine calls involving pointer authentication
-  if (Instruction *NewCall = tryCombinePtrAuthCall(Call))
+  // Combine calls involving pointer authentication intrinsics.
+  if (Instruction *NewCall = foldPtrAuthIntrinsicCallee(Call))
     return NewCall;
 
   if (isa<InlineAsm>(Callee) && !Call.doesNotThrow()) {
