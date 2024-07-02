@@ -2909,32 +2909,39 @@ lldb::TypeSystemSP SwiftASTContext::CreateInstance(
       return exe_module_sp->GetArchitecture().GetTriple();
     };
 
-    ArchSpec active_arch;
-    llvm::Triple active_triple;
+    ArchSpec module_arch;
+    llvm::Triple module_triple;
     if (sc.module_sp) {
-      active_arch = sc.module_sp->GetArchitecture();
-      active_triple = active_arch.GetTriple();
+      module_arch = sc.module_sp->GetArchitecture();
+      module_triple = module_arch.GetTriple();
     }
 
-    // When no module triple, fallback to the target triple.
-    if (!active_arch || active_triple == llvm::Triple()) {
-      active_arch = target.GetArchitecture();
-      active_triple = active_arch.GetTriple();
+    ArchSpec target_arch = target.GetArchitecture();
+    llvm::Triple target_triple = target_arch.GetTriple();
+
+    ArchSpec preferred_arch;
+    llvm::Triple preferred_triple;
+    if (module_arch && module_triple != llvm::Triple()) {
+      preferred_arch = module_arch;
+      preferred_triple = module_triple;
+    } else {
+      // When no module triple, fallback to the target triple.
+      preferred_arch = target_arch;
+      preferred_triple = target_triple;
     }
 
     llvm::Triple computed_triple;
-
-    if (active_arch.IsFullySpecifiedTriple()) {
+    if (preferred_arch.IsFullySpecifiedTriple()) {
       // If a fully specified triple was passed in, for example
       // through CreateTargetWithFileAndTargetTriple(), prefer that.
       LOG_PRINTF(GetLog(LLDBLog::Types), "Fully specified target triple %s.",
-                 active_triple.str().c_str());
-      computed_triple = active_arch.GetTriple();
+                 preferred_triple.str().c_str());
+      computed_triple = preferred_triple;
     } else {
       // Underspecified means that one or more of vendor, os, or os
       // version (Darwin only) is missing.
       LOG_PRINTF(GetLog(LLDBLog::Types), "Underspecified target triple %s.",
-                 active_triple.str().c_str());
+                 preferred_triple.str().c_str());
       llvm::VersionTuple platform_version;
       PlatformSP platform_sp(target.GetPlatform());
       if (platform_sp)
@@ -2951,16 +2958,16 @@ lldb::TypeSystemSP SwiftASTContext::CreateInstance(
       // present, since there might be some ambiguity about the
       // plaform (e.g., ios-macabi runs on the macOS, but uses iOS
       // version numbers).
-      if (!platform_version.empty() &&
-          active_triple.getEnvironment() == llvm::Triple::UnknownEnvironment) {
+      if (!platform_version.empty() && preferred_triple.getEnvironment() ==
+                                           llvm::Triple::UnknownEnvironment) {
         LOG_PRINTF(GetLog(LLDBLog::Types), "Completing triple based on platform.");
 
         llvm::SmallString<32> buffer;
         {
           llvm::raw_svector_ostream os(buffer);
-          os << active_triple.getArchName() << '-';
-          os << active_triple.getVendorName() << '-';
-          os << llvm::Triple::getOSTypeName(active_triple.getOS());
+          os << preferred_triple.getArchName() << '-';
+          os << preferred_triple.getVendorName() << '-';
+          os << llvm::Triple::getOSTypeName(preferred_triple.getOS());
           os << platform_version.getAsString();
         }
         computed_triple = llvm::Triple(buffer);
