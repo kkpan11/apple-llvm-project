@@ -14,7 +14,6 @@
 #include "CodeGenFunction.h"
 #include "CodeGenModule.h"
 #include "CGCall.h"
-#include "clang/AST/StableHash.h"
 #include "clang/CodeGen/CodeGenABITypes.h"
 #include "clang/CodeGen/ConstantInitBuilder.h"
 #include "llvm/Analysis/ValueTracking.h"
