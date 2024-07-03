@@ -6334,11 +6334,20 @@ llvm::GlobalVariable * CGObjCNonFragileABIMac::BuildClassRoTInitializer(
         methods.push_back(MD);
   }
 
-  values.add(emitMethodList(ID->getObjCRuntimeNameAsString(),
-                            (flags & NonFragileABI_Class_Meta)
-                               ? MethodListType::ClassMethods
-                               : MethodListType::InstanceMethods,
-                            methods));
+  llvm::Constant *MethListPtr = emitMethodList(
+      ID->getObjCRuntimeNameAsString(),
+      (flags & NonFragileABI_Class_Meta) ? MethodListType::ClassMethods
+                                         : MethodListType::InstanceMethods,
+      methods);
+
+  const auto &MethListSchema =
+      CGM.getCodeGenOpts().PointerAuth.ObjCMethodListPointer;
+  if (MethListSchema && !MethListPtr->isNullValue()) {
+    values.addSignedPointer(MethListPtr, MethListSchema, GlobalDecl(),
+                            QualType());
+  } else {
+    values.add(MethListPtr);
+  }
 
   const ObjCInterfaceDecl *OID = ID->getClassInterface();
   assert(OID && "CGObjCNonFragileABIMac::BuildClassRoTInitializer");
@@ -6659,12 +6668,27 @@ void CGObjCNonFragileABIMac::GenerateCategory(const ObjCCategoryImplDecl *OCD) {
     }
   }
 
-  auto instanceMethodList = emitMethodList(
+  llvm::Constant *instanceMethodList = emitMethodList(
       listName, MethodListType::CategoryInstanceMethods, instanceMethods);
-  auto classMethodList = emitMethodList(
+  llvm::Constant *classMethodList = emitMethodList(
       listName, MethodListType::CategoryClassMethods, classMethods);
-  values.add(instanceMethodList);
-  values.add(classMethodList);
+
+  const auto &MethListSchema =
+      CGM.getCodeGenOpts().PointerAuth.ObjCMethodListPointer;
+  if (MethListSchema && !instanceMethodList->isNullValue()) {
+    values.addSignedPointer(instanceMethodList, MethListSchema, GlobalDecl(),
+                            QualType());
+  } else {
+    values.add(instanceMethodList);
+  }
+
+  if (MethListSchema && !classMethodList->isNullValue()) {
+    values.addSignedPointer(classMethodList, MethListSchema,
+                            GlobalDecl(), QualType());
+  } else {
+    values.add(classMethodList);
+  }
+
   // Keep track of whether we have actual metadata to emit.
   bool isEmptyCategory =
       instanceMethodList->isNullValue() && classMethodList->isNullValue();
@@ -6736,21 +6760,23 @@ void CGObjCNonFragileABIMac::emitMethodConstant(ConstantArrayBuilder &builder,
                                                 const ObjCMethodDecl *MD,
                                                 bool forProtocol) {
   auto method = builder.beginStruct(ObjCTypes.MethodTy);
-  method.add(GetMethodVarName(MD->getSelector()));
-  method.add(GetMethodVarType(MD));
+
+  llvm::Constant *MVN = GetMethodVarName(MD->getSelector());
+  llvm::Constant *MVT = GetMethodVarType(MD);
+  llvm::Function *fn = GetMethodDefinition(MD);
+
+  method.add(MVN);
+  method.add(MVT);
 
   if (forProtocol) {
     // Protocol methods have no implementation. So, this entry is always NULL.
     method.addNullPointer(ObjCTypes.Int8PtrProgramASTy);
   } else {
-    llvm::Function *fn = GetMethodDefinition(MD);
     assert(fn && "no definition for method?");
 
     if (const auto &schema =
             CGM.getCodeGenOpts().PointerAuth.ObjCMethodListFunctionPointers) {
-      auto *bitcast =
-          llvm::ConstantExpr::getBitCast(fn, ObjCTypes.Int8PtrProgramASTy);
-      method.addSignedPointer(bitcast, schema, GlobalDecl(), QualType());
+      method.addSignedPointer(fn, schema, GlobalDecl(), QualType());
     } else {
       method.add(fn);
     }
@@ -6816,7 +6842,8 @@ CGObjCNonFragileABIMac::emitMethodList(Twine name, MethodListType kind,
   auto values = builder.beginStruct();
 
   // sizeof(struct _objc_method)
-  unsigned Size = CGM.getDataLayout().getTypeAllocSize(ObjCTypes.MethodTy);
+  uint32_t Size = CGM.getDataLayout().getTypeAllocSize(ObjCTypes.MethodTy);
+
   values.addInt(ObjCTypes.IntTy, Size);
   // method_count
   values.addInt(ObjCTypes.IntTy, methods.size());

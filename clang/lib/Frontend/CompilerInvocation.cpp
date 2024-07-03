@@ -1673,6 +1673,9 @@ void CompilerInvocation::setDefaultPointerAuthOptions(
 
     Opts.ObjCMethodListFunctionPointers =
         PointerAuthSchema(Key::ASIA, true, Discrimination::None);
+    Opts.ObjCMethodListPointer =
+        PointerAuthSchema(Key::ASDA, true, Discrimination::Constant,
+                          MethodListPointerConstantDiscriminator);
   }
   Opts.IndirectGotos = LangOpts.PointerAuthIndirectGotos;
   Opts.ReturnAddresses = LangOpts.PointerAuthReturns;

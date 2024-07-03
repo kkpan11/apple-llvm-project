@@ -65,6 +65,9 @@ typedef enum {
   /* The key used to sign block descriptor pointers. */
   ptrauth_key_block_descriptor_pointer = ptrauth_key_process_independent_data,
 
+  /* The key used to sign metadata pointers to Objective-C method-lists. */
+  ptrauth_key_method_list_pointer = ptrauth_key_process_independent_data,
+
   /* Other pointers signed under the ABI use private ABI rules. */
 
 } ptrauth_key;
