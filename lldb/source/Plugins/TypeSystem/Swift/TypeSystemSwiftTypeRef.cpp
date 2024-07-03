@@ -1818,8 +1818,7 @@ SwiftASTContext *TypeSystemSwiftTypeRef::GetSwiftASTContextFromExecutionContext(
 }
 
 SwiftASTContext *
-TypeSystemSwiftTypeRef::GetSwiftASTContext(const SymbolContext *sc,
-                                           bool for_playground) const {
+TypeSystemSwiftTypeRef::GetSwiftASTContext(const SymbolContext *sc) const {
   std::lock_guard<std::mutex> guard(m_swift_ast_context_lock);
   // There is only one per-module context.
   const char *key = nullptr;
@@ -1844,16 +1843,12 @@ TypeSystemSwiftTypeRef::GetSwiftASTContext(const SymbolContext *sc,
 }
 
 SwiftASTContext *TypeSystemSwiftTypeRefForExpressions::GetSwiftASTContext(
-    const SymbolContext *sc, bool for_playground) const {
+    const SymbolContext *sc) const {
   bool precise = false;
   // Compute the cache key.
   const char *key = nullptr;
-  // Disable precise compiler invocations for playground expression evaluation.
-  // For playgrounds, the target triple should be used for expression
-  // evaluation, not the current module.
-  if (!for_playground && sc &&
-      ModuleList::GetGlobalModuleListProperties()
-          .GetUseSwiftPreciseCompilerInvocation()) {
+  if (sc && ModuleList::GetGlobalModuleListProperties()
+                .GetUseSwiftPreciseCompilerInvocation()) {
     ConstString module = GetSwiftModuleFor(sc);
     key = module.GetCString();
     precise = true;
