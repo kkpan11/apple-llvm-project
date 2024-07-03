@@ -733,7 +733,8 @@ exe_scope = exe_ctx.GetBestExecutionContextScope();
 
   const SymbolContext *sc =
       &frame->GetSymbolContext(lldb::eSymbolContextFunction);
-  auto *swift_ast_ctx = m_swift_scratch_ctx->get()->GetSwiftASTContext(sc);
+  auto *swift_ast_ctx =
+      m_swift_scratch_ctx->get()->GetSwiftASTContext(sc, true);
   m_swift_ast_ctx =
       llvm::dyn_cast_or_null<SwiftASTContextForExpressions>(swift_ast_ctx);
 

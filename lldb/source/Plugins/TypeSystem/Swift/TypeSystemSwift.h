@@ -115,7 +115,9 @@ public:
 
   const std::string &GetDescription() const { return m_description; }
   static LanguageSet GetSupportedLanguagesForTypes();
-  virtual SwiftASTContext *GetSwiftASTContext(const SymbolContext *sc) const = 0;
+  virtual SwiftASTContext *
+  GetSwiftASTContext(const SymbolContext *sc,
+                     bool for_playground = false) const = 0;
   virtual TypeSystemSwiftTypeRef &GetTypeSystemSwiftTypeRef() = 0;
   virtual const TypeSystemSwiftTypeRef &GetTypeSystemSwiftTypeRef() const = 0;
   virtual void SetTriple(const llvm::Triple triple) = 0;
