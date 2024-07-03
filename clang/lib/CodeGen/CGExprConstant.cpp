@@ -1922,6 +1922,11 @@ llvm::Constant *ConstantEmitter::tryEmitPrivate(const Expr *E,
                                                 QualType destType) {
   assert(!destType->isVoidType() && "can't emit a void constant");
 
+  // We don't yet support constant initializers for values with authenticated
+  // null values.
+  if (CGM.getContext().typeContainsAuthenticatedNull(destType))
+    return nullptr;
+
   if (!destType->isReferenceType())
     if (llvm::Constant *C = ConstExprEmitter(*this).Visit(E, destType))
       return C;
@@ -2029,6 +2034,12 @@ private:
 
 }
 
+static bool shouldSignPointer(const PointerAuthQualifier &qualifier) {
+  auto authenticationMode = qualifier.getAuthenticationMode();
+  return authenticationMode == PointerAuthenticationMode::SignAndStrip ||
+	authenticationMode == PointerAuthenticationMode::SignAndAuth;
+}
+
 llvm::Constant *ConstantLValueEmitter::tryEmit() {
   const APValue::LValueBase &base = Value.getLValueBase();
 
@@ -2045,6 +2056,9 @@ llvm::Constant *ConstantLValueEmitter::tryEmit() {
   // If there's no base at all, this is a null or absolute pointer,
   // possibly cast back to an integer type.
   if (!base) {
+    if (DestType.getPointerAuth().withoutKeyNone() &&
+        DestType.getPointerAuth().authenticatesNullValues())
+      return nullptr;
     return tryEmitAbsolute(destTy);
   }
 
@@ -2062,8 +2076,8 @@ llvm::Constant *ConstantLValueEmitter::tryEmit() {
 
   // Apply pointer-auth signing from the destination type.
   if (auto pointerAuth = DestType.getPointerAuth()) {
-    if (!result.HasDestPointerAuth) {
-      value = tryEmitConstantSignedPointer(value, pointerAuth);
+    if (!result.HasDestPointerAuth && shouldSignPointer(pointerAuth)) {
+      value = Emitter.tryEmitConstantSignedPointer(value, pointerAuth);
       if (!value) return nullptr;
     }
   }
@@ -2128,7 +2142,8 @@ ConstantLValueEmitter::tryEmitBase(const APValue::LValueBase &base) {
           DestType = CGM.getContext().getPointerType(RT->getPointeeType());
         // Don't emit a signed pointer if the destination is a function pointer
         // type.
-        if (DestType->isSignableType() && !DestType->isFunctionPointerType())
+        if (DestType->isSignableType(CGM.getContext()) &&
+            !DestType->isFunctionPointerType())
           AuthInfo = CGM.getPointerAuthInfoForType(DestType);
       }
 
@@ -2140,7 +2155,7 @@ ConstantLValueEmitter::tryEmitBase(const APValue::LValueBase &base) {
         C = CGM.getConstantSignedPointer(
             C, AuthInfo.getKey(), nullptr,
             cast_or_null<llvm::ConstantInt>(AuthInfo.getDiscriminator()));
-        return ConstantLValue(C, /*applied offset*/ true);
+        return ConstantLValue(C, /*applied offset*/ true, /*signed*/ true);
       }
 
       return ConstantLValue(C);
@@ -2153,11 +2168,12 @@ ConstantLValueEmitter::tryEmitBase(const APValue::LValueBase &base) {
       // We can never refer to a variable with local storage.
       if (!VD->hasLocalStorage()) {
         if (VD->isFileVarDecl() || VD->hasExternalStorage())
-          return CGM.GetAddrOfGlobalVar(VD);
+          return PtrAuthSign(CGM.GetAddrOfGlobalVar(VD), false);
 
         if (VD->isLocalVarDecl()) {
-          return CGM.getOrCreateStaticVarDecl(
+          llvm::Constant *C = CGM.getOrCreateStaticVarDecl(
               *VD, CGM.getLLVMLinkageVarDefinition(VD));
+          return PtrAuthSign(C, false);
         }
       }
     }
@@ -2390,6 +2406,9 @@ llvm::Constant *ConstantEmitter::tryEmitPrivate(const APValue &Value,
   case APValue::LValue:
     return ConstantLValueEmitter(*this, Value, DestType).tryEmit();
   case APValue::Int:
+    if (DestType.getPointerAuth().withoutKeyNone() && Value.getInt() != 0) {
+      return nullptr;
+    }
     return llvm::ConstantInt::get(CGM.getLLVMContext(), Value.getInt());
   case APValue::FixedPoint:
     return llvm::ConstantInt::get(CGM.getLLVMContext(),

@@ -4692,7 +4692,8 @@ LValue CodeGenFunction::EmitMemberExpr(const MemberExpr *E) {
     if (IsBaseCXXThis)
       SkippedChecks.set(SanitizerKind::Alignment, true);
     if (IsBaseCXXThis || isa<DeclRefExpr>(BaseExpr) ||
-        isa<llvm::ConstantPointerNull>(Addr.emitRawPointer(*this)))
+        llvm::isa_and_nonnull<llvm::ConstantPointerNull>(
+            Addr.getPointerIfNotSigned()))
       SkippedChecks.set(SanitizerKind::Null, true);
     EmitTypeCheck(TCK_MemberAccess, E->getExprLoc(), Addr, PtrTy,
                   /*Alignment=*/CharUnits::Zero(), SkippedChecks);

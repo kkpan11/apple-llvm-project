@@ -3026,7 +3026,8 @@ public:
   /// null, If the type contains data member pointers, they will be initialized
   /// to -1 in accordance with the Itanium C++ ABI.
   void EmitNullInitialization(Address DestPtr, QualType Ty);
-
+  void EmitNullInitializersForAuthenticatedNullFields(Address storageAddress,
+                                                      QualType Ty);
   /// Emits a call to an LLVM variable-argument intrinsic, either
   /// \c llvm.va_start or \c llvm.va_end.
   /// \param ArgValue A reference to the \c va_list as emitted by either

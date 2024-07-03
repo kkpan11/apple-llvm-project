@@ -1072,7 +1072,7 @@ void CXXRecordDecl::addedMember(Decl *D) {
     // If a class has an address-discriminated signed pointer member, it is a
     // non-POD type and its copy constructor, move constructor, copy assignment
     // operator, move assignment operator are non-trivial.
-    if (PointerAuthQualifier Q = T.getPointerAuth()) {
+    if (PointerAuthQualifier Q = T.getPointerAuth().withoutKeyNone()) {
       if (Q.isAddressDiscriminated()) {
         struct DefinitionData &Data = data();
         Data.PlainOldData = false;

@@ -1612,6 +1612,13 @@ void AggExprEmitter::EmitNullInitializationToLValue(LValue lv) {
       CGF.EmitStoreThroughBitfieldLValue(RValue::get(null), lv);
     } else {
       assert(lv.isSimple());
+      if (auto auth = lv.getType().getPointerAuth()) {
+        if (auth.authenticatesNullValues()) {
+          auto authInfo = CGF.EmitPointerAuthInfo(auth, lv.getAddress());
+          null = CGF.EmitPointerAuthSign(authInfo, null);
+        }
+      }
+
       CGF.EmitStoreOfScalar(null, lv, /* isInitialization */ true);
     }
   } else {

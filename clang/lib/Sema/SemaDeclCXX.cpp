@@ -9423,20 +9423,20 @@ bool SpecialMemberDeletionInfo::shouldDeleteForVariantPtrAuthMember(
     FieldDecl *FD, QualType FieldType) {
   // Copy/move constructors/assignment operators are deleted if the field has an
   // address-discriminated ptrauth qualifier.
-  PointerAuthQualifier Q = FieldType.getPointerAuth();
+  PointerAuthQualifier Q = FieldType.getPointerAuth().withoutKeyNone();
 
   if (!Q || !Q.isAddressDiscriminated())
     return false;
 
-  if (CSM == CXXSpecialMemberKind::DefaultConstructor || CSM == CXXSpecialMemberKind::Destructor)
+  if (CSM == CXXSpecialMemberKind::DefaultConstructor ||
+      CSM == CXXSpecialMemberKind::Destructor)
     return false;
 
   if (Diagnose) {
     auto *ParentClass = cast<CXXRecordDecl>(FD->getParent());
-    S.Diag(FD->getLocation(),
-           diag::note_deleted_special_member_class_subobject)
-        << llvm::to_underlying(getEffectiveCSM()) << ParentClass << /*IsField*/true
-        << FD << 4 << /*IsDtorCallInCtor*/false << 2;
+    S.Diag(FD->getLocation(), diag::note_deleted_special_member_class_subobject)
+        << llvm::to_underlying(getEffectiveCSM()) << ParentClass
+        << /*IsField*/ true << FD << 4 << /*IsDtorCallInCtor*/ false << 2;
   }
 
   return true;

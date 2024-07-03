@@ -1760,6 +1760,7 @@ Also see the documentation for `@available
 
 def PtrAuthDocs : Documentation {
   let Category = DocCatVariable;
+  let Heading = "__ptrauth, __ptrauth_restricted_intptr";
   let Content = [{
 The ``__ptrauth`` qualifier allows the programmer to directly control
 how pointers are signed when they are stored in a particular variable.

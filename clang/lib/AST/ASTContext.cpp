@@ -3407,6 +3407,63 @@ uint16_t ASTContext::getPointerAuthTypeDiscriminator(QualType T) {
   return llvm::getPointerAuthStableSipHash(Str);
 }
 
+std::optional<bool>
+ASTContext::tryTypeContainsAuthenticatedNull(QualType T) const {
+  if (!LangOpts.PointerAuthIntrinsics)
+    return false;
+
+  auto Existing = ContainsAuthenticatedNullTypes.find(T);
+  if (Existing != ContainsAuthenticatedNullTypes.end())
+    return Existing->second;
+  if (T->isPointerType() || T->isIntegerType()) {
+    auto Auth = T.getPointerAuth().withoutKeyNone();
+    bool Result = Auth && Auth.authenticatesNullValues();
+    ContainsAuthenticatedNullTypes[T] = Result;
+    return Result;
+  }
+  if (auto recordType = T->getAsRecordDecl()) {
+    if (!recordType->getDefinition() || recordType->isInvalidDecl())
+      return std::nullopt;
+    for (auto field : recordType->fields()) {
+      auto Result = tryTypeContainsAuthenticatedNull(field->getType());
+      if (Result && *Result) {
+        ContainsAuthenticatedNullTypes[T] = true;
+        return true;
+      }
+      if (!Result)
+        return std::nullopt;
+    }
+  }
+
+  if (const auto *CXXRecord = T->getAsCXXRecordDecl()) {
+    for (const auto &Base : CXXRecord->bases()) {
+      auto Result = tryTypeContainsAuthenticatedNull(Base.getType());
+      if (Result && *Result) {
+        ContainsAuthenticatedNullTypes[T] = true;
+        return true;
+      }
+      if (!Result)
+        return std::nullopt;
+    }
+  }
+
+  if (auto *ArrayTy = dyn_cast_or_null<ArrayType>(T.getTypePtr())) {
+    bool Result = typeContainsAuthenticatedNull(ArrayTy->getElementType());
+    ContainsAuthenticatedNullTypes[T] = Result;
+    return Result;
+  }
+  ContainsAuthenticatedNullTypes[T] = false;
+  return false;
+}
+
+bool ASTContext::typeContainsAuthenticatedNull(QualType T) const {
+  return *tryTypeContainsAuthenticatedNull(T);
+}
+
+bool ASTContext::typeContainsAuthenticatedNull(const Type *Ty) const {
+  return typeContainsAuthenticatedNull(QualType(Ty, 0));
+}
+
 QualType ASTContext::getObjCGCQualType(QualType T,
                                        Qualifiers::GC GCAttr) const {
   QualType CanT = getCanonicalType(T);
@@ -11055,7 +11112,7 @@ QualType ASTContext::mergeTypes(QualType LHS, QualType RHS, bool OfBlockPointer,
     if (LQuals.getCVRQualifiers() != RQuals.getCVRQualifiers() ||
         LQuals.getAddressSpace() != RQuals.getAddressSpace() ||
         LQuals.getObjCLifetime() != RQuals.getObjCLifetime() ||
-        LQuals.getPointerAuth() != RQuals.getPointerAuth() ||
+        !LQuals.getPointerAuth().isEquivalent(RQuals.getPointerAuth()) ||
         LQuals.hasUnaligned() != RQuals.hasUnaligned())
       return {};
 

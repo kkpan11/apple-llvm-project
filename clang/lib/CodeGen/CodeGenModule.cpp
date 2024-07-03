@@ -5418,7 +5418,11 @@ void CodeGenModule::EmitGlobalVarDefinition(const VarDecl *D,
     // exists. A use may still exists, however, so we still may need
     // to do a RAUW.
     assert(!ASTTy->isIncompleteType() && "Unexpected incomplete type");
-    Init = EmitNullConstant(D->getType());
+    auto type = D->getType();
+    auto pointerAuth = type.getPointerAuth();
+    if (pointerAuth && pointerAuth.authenticatesNullValues())
+      ErrorUnsupported(D, "static initializer with authenticated null values");
+    Init = EmitNullConstant(type);
   } else {
     initializedGlobalDecl = GlobalDecl(D);
     emitter.emplace(*this);

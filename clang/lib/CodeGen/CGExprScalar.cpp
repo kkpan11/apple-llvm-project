@@ -2222,7 +2222,7 @@ static bool isLValueKnownNonNull(CodeGenFunction &CGF, const Expr *E) {
 }
 
 bool CodeGenFunction::isPointerKnownNonNull(const Expr *E) {
-  assert(E->getType()->isPointerType());
+  assert(E->getType()->isSignableType(getContext()));
 
   E = E->IgnoreParens();
 
