@@ -55,21 +55,6 @@ CodeGenModule::getPointerAuthOtherDiscriminator(const PointerAuthSchema &Schema,
   llvm_unreachable("bad discrimination kind");
 }
 
-uint16_t CodeGen::getPointerAuthTypeDiscriminator(CodeGenModule &CGM,
-                                                  QualType FunctionType) {
-  return CGM.getContext().getPointerAuthTypeDiscriminator(FunctionType);
-}
-
-/// Compute an ABI-stable hash of the given string.
-uint64_t CodeGen::computeStableStringHash(StringRef string) {
-  return clang::getStableStringHash(string);
-}
-
-uint16_t CodeGen::getPointerAuthDeclDiscriminator(CodeGenModule &CGM,
-                                                  GlobalDecl Declaration) {
-  return CGM.getPointerAuthDeclDiscriminator(Declaration);
-}
-
 CGPointerAuthInfo CodeGenModule::EmitPointerAuthInfo(const RecordDecl *RD) {
   assert(RD && "null RecordDecl passed");
   auto *Attr = RD->getAttr<PointerAuthStructAttr>();
@@ -700,15 +685,6 @@ llvm::Constant *CodeGenModule::getConstantSignedPointer(
 
   return getConstantSignedPointer(Pointer, Schema.getKey(), StorageAddress,
                                   OtherDiscriminator);
-}
-
-llvm::Constant *
-CodeGen::getConstantSignedPointer(CodeGenModule &CGM,
-                                  llvm::Constant *pointer, unsigned key,
-                                  llvm::Constant *storageAddress,
-                                  llvm::ConstantInt *otherDiscriminator) {
-  return CGM.getConstantSignedPointer(pointer, key, storageAddress,
-                                      otherDiscriminator);
 }
 
 void CodeGenModule::destroyConstantSignedPointerCaches() {
