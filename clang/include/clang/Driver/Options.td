@@ -4251,14 +4251,6 @@ defm strict_return : BoolFOption<"strict-return",
             " of a non-void function as unreachable">,
   PosFlag<SetTrue>>;
 
-let Group = f_Group in {
-  let Visibility = [ClangOption, CC1Option] in {
-    def fptrauth_soft : Flag<["-"], "fptrauth-soft">,
-      HelpText<"Enable software lowering of pointer authentication">;
-  }
-  def fno_ptrauth_soft : Flag<["-"], "fno-ptrauth-soft">;
-}
-
 let Flags = [TargetSpecific] in {
 defm ptrauth_intrinsics : OptInCC1FFlag<"ptrauth-intrinsics", "Enable pointer authentication intrinsics">;
 defm ptrauth_calls : OptInCC1FFlag<"ptrauth-calls", "Enable signing and authentication of all indirect calls">;
@@ -4301,6 +4293,11 @@ let Group = f_Group in {
     HelpText<"Enable Pointer Authentication kernel ABI version">;
   def fno_ptrauth_kernel_abi_version : Flag<["-"], "fno-ptrauth-kernel-abi-version">,
     HelpText<"Disable Pointer Authentication kernel ABI versioning">;
+
+  def fptrauth_soft : Flag<["-"], "fptrauth-soft">,
+      Visibility<[ClangOption, CC1Option, CC1AsOption]>,
+      HelpText<"Enable software lowering of pointer authentication">;
+  def fno_ptrauth_soft : Flag<["-"], "fno-ptrauth-soft">;
 }
 
 def fenable_matrix : Flag<["-"], "fenable-matrix">, Group<f_Group>,

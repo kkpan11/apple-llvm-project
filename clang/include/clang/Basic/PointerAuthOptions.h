@@ -59,6 +59,9 @@ public:
     CXXVTablePointers = 4,
     CXXVirtualFunctionPointers = 5,
     CXXMemberFunctionPointers = 6,
+    ObjCMethodListPointer = 7,
+    ObjCIsaPointer = 8,
+    BlockDescriptorPointers = 9,
   };
 
   /// Hardware pointer-signing keys in ARM8.3.
@@ -154,7 +157,6 @@ public:
                           PointerAuthenticationMode::SignAndAuth,
                           OtherDiscrimination, ConstantDiscriminatorOrNone,
                           IsIsaPointer, AuthenticatesNullValues) {}
-
 
   Kind getKind() const { return TheKind; }
 
