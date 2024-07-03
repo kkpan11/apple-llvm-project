@@ -1673,6 +1673,12 @@ The Objective-C runtime provides additional protection to methods that have
 been loaded into the Objective-C method cache; this protection is private to
 the runtime.
 
+Objective-C ``isa`` and ``super`` Pointers
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Objective-C ``isa`` and ``super`` pointers are both signed with the ``DA`` key
+with constant discriminators of 0x6AE1 and 0x25DA respectively.
+
 Swift Class Methods
 ~~~~~~~~~~~~~~~~~~~
 

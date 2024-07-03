@@ -125,6 +125,10 @@ FEATURE(ptrauth_member_function_pointer_type_discrimination, LangOpts.PointerAut
 FEATURE(ptrauth_init_fini, LangOpts.PointerAuthInitFini)
 FEATURE(ptrauth_function_pointer_type_discrimination, LangOpts.PointerAuthFunctionTypeDiscrimination)
 FEATURE(ptrauth_signed_block_descriptors, LangOpts.PointerAuthBlockDescriptorPointers)
+FEATURE(ptrauth_objc_isa, LangOpts.getPointerAuthObjcIsaAuthentication() == PointerAuthenticationMode::SignAndStrip || LangOpts.getPointerAuthObjcIsaAuthentication() == PointerAuthenticationMode::SignAndAuth)
+FEATURE(ptrauth_objc_isa_strips, LangOpts.getPointerAuthObjcIsaAuthentication() == PointerAuthenticationMode::Strip || LangOpts.getPointerAuthObjcIsaAuthentication() == PointerAuthenticationMode::SignAndStrip)
+FEATURE(ptrauth_objc_isa_signs, LangOpts.getPointerAuthObjcIsaAuthentication() == PointerAuthenticationMode::SignAndStrip || LangOpts.getPointerAuthObjcIsaAuthentication() == PointerAuthenticationMode::SignAndAuth)
+FEATURE(ptrauth_objc_isa_authenticates, LangOpts.getPointerAuthObjcIsaAuthentication() == PointerAuthenticationMode::SignAndAuth)
 FEATURE(ptrauth_objc_isa_masking, LangOpts.PointerAuthObjcIsaMasking)
 EXTENSION(swiftcc,
   PP.getTargetInfo().checkCallingConvention(CC_Swift) ==

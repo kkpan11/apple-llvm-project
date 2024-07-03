@@ -62,6 +62,10 @@ typedef enum {
      representations of values of block-pointer type) are not signed. */
   ptrauth_key_block_function = ptrauth_key_process_independent_code,
 
+  /* The key used to sign Objective-C isa and super pointers. */
+  ptrauth_key_objc_isa_pointer = ptrauth_key_process_independent_data,
+  ptrauth_key_objc_super_pointer = ptrauth_key_process_independent_data,
+
   /* The key used to sign block descriptor pointers. */
   ptrauth_key_block_descriptor_pointer = ptrauth_key_process_independent_data,
 

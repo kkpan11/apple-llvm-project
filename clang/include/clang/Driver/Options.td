@@ -4275,11 +4275,17 @@ defm ptrauth_function_pointer_type_discrimination : OptInCC1FFlag<"ptrauth-funct
   "Enable type discrimination on C function pointers">;
 defm ptrauth_block_descriptor_pointers : OptInCC1FFlag<"ptrauth-block-descriptor-pointers",
   "Enable signing block descriptor pointers">;
+defm ptrauth_objc_isa : OptInCC1FFlag<"ptrauth-objc-isa",
+  "Enable signing and authentication of Objective-C object's 'isa' field">;
 defm ptrauth_objc_isa_masking : OptInCC1FFlag<"ptrauth-objc-isa-masking",
   "Enable pre- and post-authentication masking mode of Objective-c isa pointers">;
 }
 
 let Group = f_Group in {
+  def fptrauth_objc_isa_mode : Joined<["-"], "fptrauth-objc-isa-mode=">,
+      Visibility<[ClangOption, CC1Option, CC1AsOption]>,
+      HelpText<"Authentication mode for ObjC isa field. Full auth if unspecified">, Values<"strip,sign-and-strip,sign-and-auth">;
+
   def fptrauth_abi_version_EQ : Joined<["-"], "fptrauth-abi-version=">,
     Visibility<[ClangOption, CC1Option, CC1AsOption]>,
     HelpText<"Pointer Authentication ABI version">;

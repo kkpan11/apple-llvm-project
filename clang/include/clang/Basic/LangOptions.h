@@ -84,6 +84,7 @@ class LangOptionsBase {
 public:
   using Visibility = clang::Visibility;
   using RoundingMode = llvm::RoundingMode;
+  using PointerAuthenticationMode = clang::PointerAuthenticationMode;
 
   enum GCMode { NonGC, GCOnly, HybridGC };
   enum StackProtectorMode { SSPOff, SSPOn, SSPStrong, SSPReq };

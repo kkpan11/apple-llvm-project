@@ -867,7 +867,9 @@ llvm::Value *CodeGenFunction::EmitBlockLiteral(const CGBlockInfo &blockInfo) {
     };
 
     if (!IsOpenCL) {
-      addHeaderField(isa, getPointerSize(), "block.isa");
+      addSignedHeaderField(
+          isa, CGM.getCodeGenOpts().PointerAuth.ObjCIsaPointers, GlobalDecl(),
+          QualType(), getPointerSize(), "block.isa");
       addHeaderField(llvm::ConstantInt::get(IntTy, flags.getBitMask()),
                      getIntSize(), "block.flags");
       addHeaderField(llvm::ConstantInt::get(IntTy, 0), getIntSize(),
@@ -1348,8 +1350,14 @@ static llvm::Constant *buildGlobalBlock(CodeGenModule &CGM,
     // isa
     if (IsWindows)
       fields.addNullPointer(CGM.Int8PtrPtrTy);
-    else
-      fields.add(CGM.getNSConcreteGlobalBlock());
+    else {
+      if (auto authentication =
+              CGM.getCodeGenOpts().PointerAuth.ObjCIsaPointers) {
+        fields.addSignedPointer(CGM.getNSConcreteGlobalBlock(), authentication,
+                                GlobalDecl(), QualType());
+      } else
+        fields.add(CGM.getNSConcreteGlobalBlock());
+    }
 
     fields.addInt(CGM.IntTy, flags.getBitMask());
 

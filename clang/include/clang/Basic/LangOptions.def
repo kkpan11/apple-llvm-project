@@ -174,6 +174,8 @@ LANGOPT(PointerAuthInitFini, 1, 0, "sign function pointers in init/fini arrays")
 BENIGN_LANGOPT(PointerAuthFunctionTypeDiscrimination, 1, 0,
                "Use type discrimination when signing function pointers")
 LANGOPT(PointerAuthBlockDescriptorPointers, 1, 0, "enable signed block descriptors")
+ENUM_LANGOPT(PointerAuthObjcIsaAuthentication, PointerAuthenticationMode, 2,
+             PointerAuthenticationMode::None, "authentication mode for objc isa")
 LANGOPT(PointerAuthObjcIsaMasking, 1, 0, "pre- and post-authentication masking for Objective-C isa pointer")
 LANGOPT(SoftPointerAuth   , 1, 0, "software emulation of pointer authentication")
 

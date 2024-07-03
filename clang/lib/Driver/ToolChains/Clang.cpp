@@ -1800,6 +1800,10 @@ void Clang::AddAArch64TargetArgs(const ArgList &Args,
       CmdArgs, options::OPT_fptrauth_function_pointer_type_discrimination,
       options::OPT_fno_ptrauth_function_pointer_type_discrimination);
 
+  if (Args.hasFlag(options::OPT_fptrauth_objc_isa,
+                   options::OPT_fno_ptrauth_objc_isa, false))
+    CmdArgs.push_back("-fptrauth-objc-isa-mode=sign-and-auth");
+
   Args.addOptInFlag(CmdArgs, options::OPT_fptrauth_block_descriptor_pointers,
                     options::OPT_fno_ptrauth_block_descriptor_pointers);
 

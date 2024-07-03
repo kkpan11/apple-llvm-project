@@ -2007,7 +2007,9 @@ CGObjCCommonMac::GenerateConstantNSString(const StringLiteral *Literal) {
   auto Fields = Builder.beginStruct(NSConstantStringType);
 
   // Class pointer.
-  Fields.add(Class);
+  Fields.addSignedPointer(
+      Class, CGM.getCodeGenOpts().PointerAuth.ObjCIsaPointers, GlobalDecl(),
+      QualType());
 
   // String pointer.
   llvm::Constant *C =
@@ -6398,9 +6400,14 @@ CGObjCNonFragileABIMac::BuildClassObject(const ObjCInterfaceDecl *CI,
                                          bool HiddenVisibility) {
   ConstantInitBuilder builder(CGM);
   auto values = builder.beginStruct(ObjCTypes.ClassnfABITy);
-  values.add(IsAGV);
+  values.addSignedPointer(
+      IsAGV, CGM.getCodeGenOpts().PointerAuth.ObjCIsaPointers, GlobalDecl(),
+      QualType());
   if (SuperClassGV) {
-    values.add(SuperClassGV);
+    values.addSignedPointer(
+        SuperClassGV,
+        CGM.getCodeGenOpts().PointerAuth.ObjCSuperPointers, GlobalDecl(),
+        QualType());
   } else {
     values.addNullPointer(ObjCTypes.ClassnfABIPtrTy);
   }
