@@ -203,10 +203,6 @@ public:
 };
 
 struct PointerAuthOptions {
-  /// Do member function pointers to virtual functions need to be built
-  /// as thunks?
-  bool ThunkCXXVirtualMemberPointers = false;
-
   /// Should return addresses be authenticated?
   bool ReturnAddresses = false;
 

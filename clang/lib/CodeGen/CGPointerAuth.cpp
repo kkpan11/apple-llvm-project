@@ -765,8 +765,7 @@ CGPointerAuthInfo CodeGenModule::getMemberFunctionPointerAuthInfo(QualType FT) {
 }
 
 llvm::Constant *CodeGenModule::getMemberFunctionPointer(llvm::Constant *Pointer,
-                                                        QualType FT,
-                                                        const FunctionDecl *) {
+                                                        QualType FT) {
   if (CGPointerAuthInfo PointerAuth = getMemberFunctionPointerAuthInfo(FT))
     return getConstantSignedPointer(
         Pointer, PointerAuth.getKey(), nullptr,
@@ -782,7 +781,6 @@ llvm::Constant *CodeGenModule::getMemberFunctionPointer(const FunctionDecl *FD,
       FT, cast<CXXMethodDecl>(FD)->getParent()->getTypeForDecl());
   return getMemberFunctionPointer(getRawFunctionPointer(FD, Ty), FT);
 }
-
 
 std::optional<PointerAuthQualifier>
 CodeGenModule::computeVTPointerAuthentication(const CXXRecordDecl *ThisClass) {

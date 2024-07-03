@@ -140,6 +140,15 @@ void has_ptrauth_qualifier() {}
 void no_ptrauth_qualifier() {}
 #endif
 
+// This is always enabled when ptrauth_calls is enabled, on new enough clangs.
+#if __has_feature(ptrauth_member_function_pointer_type_discrimination)
+// CALLS: has_ptrauth_member_function_pointer_type_discrimination
+void has_ptrauth_member_function_pointer_type_discrimination() {}
+#else
+// NOCALLS: no_ptrauth_member_function_pointer_type_discrimination
+void no_ptrauth_member_function_pointer_type_discrimination() {}
+#endif
+
 #include <ptrauth.h>
 
 #if __has_feature(ptrauth_function_pointer_type_discrimination)

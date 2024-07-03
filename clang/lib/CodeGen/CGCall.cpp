@@ -5107,10 +5107,11 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
   llvm::Value *UnusedReturnSizePtr = nullptr;
   if (RetAI.isIndirect() || RetAI.isInAlloca() || RetAI.isCoerceAndExpand()) {
     if (IsVirtualFunctionPointerThunk && RetAI.isIndirect()) {
-      SRetPtr = Address(CurFn->arg_begin() + IRFunctionArgs.getSRetArgNo(),
-                        ConvertTypeForMem(RetTy), CharUnits::fromQuantity(1));
+      SRetPtr = makeNaturalAddressForPointer(CurFn->arg_begin() +
+                                                 IRFunctionArgs.getSRetArgNo(),
+                                             RetTy, CharUnits::fromQuantity(1));
     } else if (!ReturnValue.isNull()) {
-      SRetPtr = ReturnValue.getValue();
+      SRetPtr = ReturnValue.getAddress();
     } else {
       SRetPtr = CreateMemTemp(RetTy, "tmp", &SRetAlloca);
       if (HaveInsertPoint() && ReturnValue.isUnused()) {
