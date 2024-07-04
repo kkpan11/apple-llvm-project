@@ -969,7 +969,7 @@ ASTSelectorLookupTrait::ReadKey(const unsigned char* d, unsigned) {
   SelectorTable &SelTable = Reader.getContext().Selectors;
   unsigned N = endian::readNext<uint16_t, llvm::endianness::little>(d);
   const IdentifierInfo *FirstII = Reader.getLocalIdentifier(
-      F, endian::readNext<IdentifierID, llvm::endianness::little>(d));
+      F, endian::readNext<uint32_t, llvm::endianness::little>(d));
   if (N == 0)
     return SelTable.getNullarySelector(FirstII);
   else if (N == 1)
@@ -979,7 +979,7 @@ ASTSelectorLookupTrait::ReadKey(const unsigned char* d, unsigned) {
   Args.push_back(FirstII);
   for (unsigned I = 1; I != N; ++I)
     Args.push_back(Reader.getLocalIdentifier(
-        F, endian::readNext<IdentifierID, llvm::endianness::little>(d)));
+        F, endian::readNext<uint32_t, llvm::endianness::little>(d)));
 
   return SelTable.getSelector(N, Args.data());
 }
@@ -1062,8 +1062,7 @@ static bool readBit(unsigned &Bits) {
 IdentifierID ASTIdentifierLookupTrait::ReadIdentifierID(const unsigned char *d) {
   using namespace llvm::support;
 
-  IdentifierID RawID =
-      endian::readNext<IdentifierID, llvm::endianness::little>(d);
+  unsigned RawID = endian::readNext<uint32_t, llvm::endianness::little>(d);
   return Reader.getGlobalIdentifierID(F, RawID >> 1);
 }
 
@@ -1081,11 +1080,8 @@ IdentifierInfo *ASTIdentifierLookupTrait::ReadData(const internal_key_type& k,
                                                    unsigned DataLen) {
   using namespace llvm::support;
 
-  IdentifierID RawID =
-      endian::readNext<IdentifierID, llvm::endianness::little>(d);
+  unsigned RawID = endian::readNext<uint32_t, llvm::endianness::little>(d);
   bool IsInteresting = RawID & 0x01;
-
-  DataLen -= sizeof(IdentifierID);
 
   // Wipe out the "is interesting" bit.
   RawID = RawID >> 1;
@@ -1117,7 +1113,7 @@ IdentifierInfo *ASTIdentifierLookupTrait::ReadData(const internal_key_type& k,
   bool HadMacroDefinition = readBit(Bits);
 
   assert(Bits == 0 && "Extra bits in the identifier?");
-  DataLen -= sizeof(uint16_t) * 2;
+  DataLen -= 8;
 
   // Set or check the various bits in the IdentifierInfo structure.
   // Token IDs are read-only.
@@ -1244,7 +1240,7 @@ ASTDeclContextNameLookupTrait::ReadKey(const unsigned char *d, unsigned) {
   case DeclarationName::CXXLiteralOperatorName:
   case DeclarationName::CXXDeductionGuideName:
     Data = (uint64_t)Reader.getLocalIdentifier(
-        F, endian::readNext<IdentifierID, llvm::endianness::little>(d));
+        F, endian::readNext<uint32_t, llvm::endianness::little>(d));
     break;
   case DeclarationName::ObjCZeroArgSelector:
   case DeclarationName::ObjCOneArgSelector:
@@ -2115,7 +2111,7 @@ HeaderFileInfoTrait::ReadData(internal_key_ref key, const unsigned char *d,
   HFI.DirInfo = (Flags >> 1) & 0x07;
   HFI.IndexHeaderMapHeader = Flags & 0x01;
   HFI.LazyControllingMacro = Reader.getGlobalIdentifierID(
-      M, endian::readNext<IdentifierID, llvm::endianness::little>(d));
+      M, endian::readNext<uint32_t, llvm::endianness::little>(d));
   if (unsigned FrameworkOffset =
           endian::readNext<uint32_t, llvm::endianness::little>(d)) {
     // The framework offset is 1 greater than the actual offset,
@@ -3513,11 +3509,24 @@ llvm::Error ASTReader::ReadASTBlock(ModuleFile &F,
             "duplicate IDENTIFIER_OFFSET record in AST file");
       F.IdentifierOffsets = (const uint32_t *)Blob.data();
       F.LocalNumIdentifiers = Record[0];
+      unsigned LocalBaseIdentifierID = Record[1];
       F.BaseIdentifierID = getTotalNumIdentifiers();
 
-      if (F.LocalNumIdentifiers > 0)
+      if (F.LocalNumIdentifiers > 0) {
+        // Introduce the global -> local mapping for identifiers within this
+        // module.
+        GlobalIdentifierMap.insert(std::make_pair(getTotalNumIdentifiers() + 1,
+                                                  &F));
+
+        // Introduce the local -> global mapping for identifiers within this
+        // module.
+        F.IdentifierRemap.insertOrReplace(
+          std::make_pair(LocalBaseIdentifierID,
+                         F.BaseIdentifierID - LocalBaseIdentifierID));
+
         IdentifiersLoaded.resize(IdentifiersLoaded.size()
                                  + F.LocalNumIdentifiers);
+      }
       break;
     }
 
@@ -4104,6 +4113,7 @@ void ASTReader::ReadModuleOffsetMap(ModuleFile &F) const {
   F.ModuleOffsetMap = StringRef();
 
   using RemapBuilder = ContinuousRangeMap<uint32_t, int, 2>::Builder;
+  RemapBuilder IdentifierRemap(F.IdentifierRemap);
   RemapBuilder MacroRemap(F.MacroRemap);
   RemapBuilder PreprocessedEntityRemap(F.PreprocessedEntityRemap);
   RemapBuilder SubmoduleRemap(F.SubmoduleRemap);
@@ -4135,6 +4145,8 @@ void ASTReader::ReadModuleOffsetMap(ModuleFile &F) const {
 
     ImportedModuleVector.push_back(OM);
 
+    uint32_t IdentifierIDOffset =
+        endian::readNext<uint32_t, llvm::endianness::little>(Data);
     uint32_t MacroIDOffset =
         endian::readNext<uint32_t, llvm::endianness::little>(Data);
     uint32_t PreprocessedEntityIDOffset =
@@ -4152,6 +4164,7 @@ void ASTReader::ReadModuleOffsetMap(ModuleFile &F) const {
                                     static_cast<int>(BaseOffset - Offset)));
     };
 
+    mapOffset(IdentifierIDOffset, OM->BaseIdentifierID, IdentifierRemap);
     mapOffset(MacroIDOffset, OM->BaseMacroID, MacroRemap);
     mapOffset(PreprocessedEntityIDOffset, OM->BasePreprocessedEntityID,
               PreprocessedEntityRemap);
@@ -8289,6 +8302,7 @@ LLVM_DUMP_METHOD void ASTReader::dump() {
   llvm::errs() << "*** PCH/ModuleFile Remappings:\n";
   dumpModuleIDMap("Global bit offset map", GlobalBitOffsetsMap);
   dumpModuleIDMap("Global source location entry map", GlobalSLocEntryMap);
+  dumpModuleIDMap("Global identifier map", GlobalIdentifierMap);
   dumpModuleIDMap("Global macro map", GlobalMacroMap);
   dumpModuleIDMap("Global submodule map", GlobalSubmoduleMap);
   dumpModuleIDMap("Global selector map", GlobalSelectorMap);
@@ -8928,9 +8942,8 @@ void ASTReader::LoadSelector(Selector Sel) {
 
 void ASTReader::SetIdentifierInfo(IdentifierID ID, IdentifierInfo *II) {
   assert(ID && "Non-zero identifier ID required");
-  unsigned Index = translateIdentifierIDToIndex(ID).second;
-  assert(Index < IdentifiersLoaded.size() && "identifier ID out of range");
-  IdentifiersLoaded[Index] = II;
+  assert(ID <= IdentifiersLoaded.size() && "identifier ID out of range");
+  IdentifiersLoaded[ID - 1] = II;
   if (DeserializationListener)
     DeserializationListener->IdentifierRead(ID, II);
 }
@@ -8983,22 +8996,6 @@ void ASTReader::SetGloballyVisibleDecls(
   }
 }
 
-std::pair<ModuleFile *, unsigned>
-ASTReader::translateIdentifierIDToIndex(IdentifierID ID) const {
-  if (ID == 0)
-    return {nullptr, 0};
-
-  unsigned ModuleFileIndex = ID >> 32;
-  unsigned LocalID = ID & llvm::maskTrailingOnes<IdentifierID>(32);
-
-  assert(ModuleFileIndex && "not translating loaded IdentifierID?");
-  assert(getModuleManager().size() > ModuleFileIndex - 1);
-
-  ModuleFile &MF = getModuleManager()[ModuleFileIndex - 1];
-  assert(LocalID < MF.LocalNumIdentifiers);
-  return {&MF, MF.BaseIdentifierID + LocalID};
-}
-
 IdentifierInfo *ASTReader::DecodeIdentifierInfo(IdentifierID ID) {
   if (ID == 0)
     return nullptr;
@@ -9008,48 +9005,45 @@ IdentifierInfo *ASTReader::DecodeIdentifierInfo(IdentifierID ID) {
     return nullptr;
   }
 
-  auto [M, Index] = translateIdentifierIDToIndex(ID);
-  if (!IdentifiersLoaded[Index]) {
-    assert(M != nullptr && "Untranslated Identifier ID?");
-    assert(Index >= M->BaseIdentifierID);
-    unsigned LocalIndex = Index - M->BaseIdentifierID;
+  ID -= 1;
+  if (!IdentifiersLoaded[ID]) {
+    GlobalIdentifierMapType::iterator I = GlobalIdentifierMap.find(ID + 1);
+    assert(I != GlobalIdentifierMap.end() && "Corrupted global identifier map");
+    ModuleFile *M = I->second;
+    unsigned Index = ID - M->BaseIdentifierID;
     const unsigned char *Data =
-        M->IdentifierTableData + M->IdentifierOffsets[LocalIndex];
+        M->IdentifierTableData + M->IdentifierOffsets[Index];
 
     ASTIdentifierLookupTrait Trait(*this, *M);
     auto KeyDataLen = Trait.ReadKeyDataLength(Data);
     auto Key = Trait.ReadKey(Data, KeyDataLen.first);
     auto &II = PP.getIdentifierTable().get(Key);
-    IdentifiersLoaded[Index] = &II;
+    IdentifiersLoaded[ID] = &II;
     markIdentifierFromAST(*this,  II);
     if (DeserializationListener)
-      DeserializationListener->IdentifierRead(ID, &II);
+      DeserializationListener->IdentifierRead(ID + 1, &II);
   }
 
-  return IdentifiersLoaded[Index];
+  return IdentifiersLoaded[ID];
 }
 
-IdentifierInfo *ASTReader::getLocalIdentifier(ModuleFile &M, uint64_t LocalID) {
+IdentifierInfo *ASTReader::getLocalIdentifier(ModuleFile &M, unsigned LocalID) {
   return DecodeIdentifierInfo(getGlobalIdentifierID(M, LocalID));
 }
 
-IdentifierID ASTReader::getGlobalIdentifierID(ModuleFile &M, uint64_t LocalID) {
+IdentifierID ASTReader::getGlobalIdentifierID(ModuleFile &M, unsigned LocalID) {
   if (LocalID < NUM_PREDEF_IDENT_IDS)
     return LocalID;
 
   if (!M.ModuleOffsetMap.empty())
     ReadModuleOffsetMap(M);
 
-  unsigned ModuleFileIndex = LocalID >> 32;
-  LocalID &= llvm::maskTrailingOnes<IdentifierID>(32);
-  ModuleFile *MF =
-      ModuleFileIndex ? M.TransitiveImports[ModuleFileIndex - 1] : &M;
-  assert(MF && "malformed identifier ID encoding?");
+  ContinuousRangeMap<uint32_t, int, 2>::iterator I
+    = M.IdentifierRemap.find(LocalID - NUM_PREDEF_IDENT_IDS);
+  assert(I != M.IdentifierRemap.end()
+         && "Invalid index into identifier index remap");
 
-  if (!ModuleFileIndex)
-    LocalID -= NUM_PREDEF_IDENT_IDS;
-
-  return ((IdentifierID)(MF->Index + 1) << 32) | LocalID;
+  return LocalID + I->second;
 }
 
 MacroInfo *ASTReader::getMacro(MacroID ID) {

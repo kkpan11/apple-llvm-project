@@ -62,6 +62,7 @@ LLVM_DUMP_METHOD void ModuleFile::dump() {
 
   llvm::errs() << "  Base identifier ID: " << BaseIdentifierID << '\n'
                << "  Number of identifiers: " << LocalNumIdentifiers << '\n';
+  dumpLocalRemap("Identifier ID local -> global map", IdentifierRemap);
 
   llvm::errs() << "  Base macro ID: " << BaseMacroID << '\n'
                << "  Number of macros: " << LocalNumMacros << '\n';
