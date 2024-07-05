@@ -1,3 +1,5 @@
+import re
+import sys
 import lldb
 from lldbsuite.test.decorators import *
 import lldbsuite.test.lldbtest as lldbtest
@@ -17,6 +19,15 @@ class TestSwiftModuleImport(lldbtest.TestBase):
 
         log = self.getBuildArtifact("types.log")
         self.runCmd('log enable lldb types -f "%s"' % log)
-        self.expect("expression -- 0")
+        self.runCmd("expression -- 0")
+        did_fail = False
+        with open(log) as f:
+            pat = re.compile("-linux-|target|triple")
+            for line in f.readlines():
+                if pat.match(line):
+                    print(line)
+                    print(line, file=sys.stderr)
+                    did_fail = True
+        self.assertFalse(did_fail)
         self.filecheck('platform shell cat "%s"' % log, __file__)
 #       CHECK: SwiftASTContextForExpressions{{.*}}Module import remark: loaded module 'a'
