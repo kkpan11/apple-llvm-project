@@ -22,7 +22,7 @@ class TestSwiftModuleImport(lldbtest.TestBase):
         self.runCmd("expression -- 0", check=False)
         did_fail = False
         with open(log) as f:
-            pat = re.compile("-linux-|target|triple")
+            pat = re.compile("-linux|target|triple|x86_64-")
             for line in f.readlines():
                 if pat.match(line):
                     print(line)
