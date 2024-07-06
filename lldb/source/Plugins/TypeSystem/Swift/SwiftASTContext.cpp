@@ -2922,6 +2922,9 @@ lldb::TypeSystemSP SwiftASTContext::CreateInstance(
     ArchSpec preferred_arch;
     llvm::Triple preferred_triple;
     if (module_arch && module_triple != llvm::Triple()) {
+      LOG_PRINTF(GetLog(LLDBLog::Types),
+                 "Preferring module triple %s over target triple %s.",
+                 module_triple.str().c_str(), target_triple.str().c_str());
       preferred_arch = module_arch;
       preferred_triple = module_triple;
     } else {
@@ -2931,7 +2934,8 @@ lldb::TypeSystemSP SwiftASTContext::CreateInstance(
     }
 
     llvm::Triple computed_triple;
-    if (preferred_arch.IsFullySpecifiedTriple()) {
+    if (preferred_arch.IsFullySpecifiedTriple() ||
+        !preferred_triple.isOSDarwin()) {
       // If a fully specified triple was passed in, for example
       // through CreateTargetWithFileAndTargetTriple(), prefer that.
       LOG_PRINTF(GetLog(LLDBLog::Types), "Fully specified target triple %s.",
