@@ -602,7 +602,6 @@ public:
     LOG_PRINTF(GetLog(LLDBLog::Types), "tag_bits = %s",
                Dump(m_tag_bits).c_str());
 
-    auto module_ctx = enum_decl->getModuleContext();
     const bool has_payload = true;
     for (auto enum_case : elements_with_payload) {
       ConstString case_name(enum_case.decl->getBaseIdentifier().str());
@@ -613,7 +612,7 @@ public:
       CompilerType case_type;
       if (arg_type) {
         case_type = ToCompilerType(
-            {swift_can_type->getTypeOfMember(module_ctx, case_decl, arg_type)
+            {swift_can_type->getTypeOfMember(case_decl, arg_type)
                  ->getCanonicalType()
                  .getPointer()});
       }
@@ -7314,7 +7313,7 @@ CompilerType SwiftASTContext::GetFieldAtIndex(opaque_compiler_type_t type,
       *is_bitfield_ptr = false;
 
     swift::Type child_swift_type = swift_can_type->getTypeOfMember(
-        nominal->getModuleContext(), property);
+        property);
     return ToCompilerType(child_swift_type.getPointer());
   }
 
@@ -7728,7 +7727,7 @@ llvm::Expected<CompilerType> SwiftASTContext::GetChildCompilerTypeAtIndex(
     // Find the stored property with this index.
     auto property = stored_properties[idx];
     swift::Type child_swift_type = swift_can_type->getTypeOfMember(
-        nominal->getModuleContext(), property);
+        property);
 
     CompilerType child_type = ToCompilerType(child_swift_type.getPointer());
     child_name = property->getBaseName().userFacingName().str();
