@@ -18,16 +18,6 @@ class TestSwiftModuleImport(lldbtest.TestBase):
 
         log = self.getBuildArtifact("types.log")
         self.runCmd('log enable lldb types -f "%s"' % log)
-        self.runCmd("expression -- 0", check=False)
-        with open(log) as f:
-            lines = f.readlines()
-            if lines:
-                for line in lines:
-                    print(line)
-                    print(line, file=sys.stderr)
-            else:
-                print("### NO LOGS ###")
-                print("### NO LOGS ###", file=sys.stderr)
-        self.assertTrue(False)
+        self.expect("expression -- 0")
         self.filecheck('platform shell cat "%s"' % log, __file__)
 #       CHECK: SwiftASTContextForExpressions{{.*}}Module import remark: loaded module 'a'

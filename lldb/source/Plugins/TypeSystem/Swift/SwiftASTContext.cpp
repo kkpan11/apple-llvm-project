@@ -2921,21 +2921,20 @@ lldb::TypeSystemSP SwiftASTContext::CreateInstance(
 
     ArchSpec preferred_arch;
     llvm::Triple preferred_triple;
-    if (module_arch && module_triple != llvm::Triple()) {
+    if (module_arch && module_arch.IsFullySpecifiedTriple()) {
       LOG_PRINTF(GetLog(LLDBLog::Types),
                  "Preferring module triple %s over target triple %s.",
                  module_triple.str().c_str(), target_triple.str().c_str());
       preferred_arch = module_arch;
       preferred_triple = module_triple;
     } else {
-      // When no module triple, fallback to the target triple.
+      // When no viable module triple, fallback to the target triple.
       preferred_arch = target_arch;
       preferred_triple = target_triple;
     }
 
     llvm::Triple computed_triple;
-    if (preferred_arch.IsFullySpecifiedTriple() ||
-        !preferred_triple.isOSDarwin()) {
+    if (preferred_arch.IsFullySpecifiedTriple()) {
       // If a fully specified triple was passed in, for example
       // through CreateTargetWithFileAndTargetTriple(), prefer that.
       LOG_PRINTF(GetLog(LLDBLog::Types), "Fully specified target triple %s.",
