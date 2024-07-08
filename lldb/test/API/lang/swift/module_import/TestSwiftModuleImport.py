@@ -1,4 +1,3 @@
-import sys
 import lldb
 from lldbsuite.test.decorators import *
 import lldbsuite.test.lldbtest as lldbtest
