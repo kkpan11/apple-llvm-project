@@ -313,6 +313,7 @@ struct Configuration {
   bool pseudoRelocs = false;
   bool stdcallFixup = false;
   bool writeCheckSum = false;
+  bool allowDuplicateWeak = false;
 };
 
 } // namespace lld::coff
