@@ -318,6 +318,11 @@ New Compiler Flags
   similarly to ``-pg`` by writing profile information, but targets the ``prof``
   tool as opposed to the ``gprof`` tool.
 
+- ``-fdisable-block-signature-string`` instructs clang not to emit the signature
+  string for blocks. Disabling the string can potentially break existing code
+  that relies on it. Users should carefully consider this possibiilty when using
+  the flag.
+
 Deprecated Compiler Flags
 -------------------------
 
