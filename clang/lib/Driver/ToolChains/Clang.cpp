@@ -5657,6 +5657,9 @@ void Clang::ConstructJob(Compilation &C, const JobAction &Job,
   Args.AddLastArg(CmdArgs, options::OPT_fexperimental_relative_cxx_abi_vtables,
                   options::OPT_fno_experimental_relative_cxx_abi_vtables);
 
+  Args.AddLastArg(CmdArgs, options::OPT_fdisable_block_signature_string,
+                  options::OPT_fno_disable_block_signature_string);
+
   // Handle segmented stacks.
   Args.addOptInFlag(CmdArgs, options::OPT_fsplit_stack,
                     options::OPT_fno_split_stack);

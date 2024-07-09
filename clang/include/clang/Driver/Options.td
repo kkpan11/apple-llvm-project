@@ -2844,6 +2844,11 @@ defm objc_avoid_heapify_local_blocks : BoolFOption<"objc-avoid-heapify-local-blo
   PosFlag<SetTrue, [], "Try">,
   NegFlag<SetFalse, [], "Don't try">,
   BothFlags<[CC1Option, NoDriverOption], " to avoid heapifying local blocks">>;
+defm disable_block_signature_string : BoolFOption<"disable-block-signature-string",
+  CodeGenOpts<"DisableBlockSignatureString">, DefaultFalse,
+  PosFlag<SetTrue, [], "Disable">,
+  NegFlag<SetFalse, [], "Don't disable">,
+  BothFlags<[CC1Option], " block signature string)">>;
 
 def fomit_frame_pointer : Flag<["-"], "fomit-frame-pointer">, Group<f_Group>,
   HelpText<"Omit the frame pointer from functions that don't need it. "
