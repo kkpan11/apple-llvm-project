@@ -98,7 +98,9 @@ std::optional<ObjectRef> OnDiskCAS::getReference(const CASID &ID) const {
 }
 
 Expected<bool> OnDiskCAS::isMaterialized(ObjectRef ExternalRef) const {
-  return DB->containsObject(convertRef(ExternalRef));
+  // FIXME: Make it possible to request checking materialization of only the
+  // root node instead of the entire graph.
+  return DB->isGraphMaterialized(convertRef(ExternalRef));
 }
 
 ArrayRef<char> OnDiskCAS::getDataConst(ObjectHandle Node) const {

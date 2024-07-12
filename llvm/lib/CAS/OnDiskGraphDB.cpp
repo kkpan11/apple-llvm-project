@@ -1004,14 +1004,34 @@ InternalRefArrayRef OnDiskGraphDB::getInternalRefs(ObjectHandle Node) const {
   return std::nullopt;
 }
 
+Expected<bool> OnDiskGraphDB::isGraphMaterialized(ObjectID ObjID) {
+  auto HandleOrErr = load(ObjID, /*CheckUpstream=*/false);
+  if (!HandleOrErr)
+    return HandleOrErr.takeError();
+
+  auto MaybeHandle = *HandleOrErr;
+  if (!MaybeHandle) {
+    if (UpstreamDB)
+      return UpstreamDB->isGraphMaterialized(
+          UpstreamDB->getReference(getDigest(ObjID)));
+    return false;
+  }
+
+  for (ondisk::ObjectID RefID : getObjectRefs(*MaybeHandle))
+    if (auto RefMat = isGraphMaterialized(RefID); !RefMat || !*RefMat)
+      return RefMat;
+
+  return true;
+}
+
 Expected<std::optional<ObjectHandle>>
-OnDiskGraphDB::load(ObjectID ExternalRef) {
+OnDiskGraphDB::load(ObjectID ExternalRef, bool CheckUpstream) {
   InternalRef Ref = getInternalRef(ExternalRef);
   IndexProxy I = getIndexProxyFromRef(Ref);
   TrieRecord::Data Object = I.Ref.load();
 
   if (Object.SK == TrieRecord::StorageKind::Unknown) {
-    if (!UpstreamDB)
+    if (!UpstreamDB || !CheckUpstream)
       return std::nullopt;
     return faultInFromUpstream(ExternalRef);
   }

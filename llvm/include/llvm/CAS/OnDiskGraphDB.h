@@ -262,7 +262,8 @@ public:
   Error store(ObjectID ID, ArrayRef<ObjectID> Refs, ArrayRef<char> Data);
 
   /// \returns \p nullopt if the object associated with \p Ref does not exist.
-  Expected<std::optional<ObjectHandle>> load(ObjectID Ref);
+  Expected<std::optional<ObjectHandle>> load(ObjectID Ref,
+                                             bool CheckUpstream = true);
 
   /// \returns the hash bytes digest for the object reference.
   ArrayRef<uint8_t> getDigest(ObjectID Ref) const {
@@ -277,6 +278,9 @@ public:
   ///
   /// Returns \p nullopt if the object is not stored in this CAS.
   std::optional<ObjectID> getExistingReference(ArrayRef<uint8_t> Digest);
+
+  /// \returns true if the entire object graph is available.
+  Expected<bool> isGraphMaterialized(ObjectID Ref);
 
   /// \returns true if the object associated with \p Ref is stored in the CAS.
   bool containsObject(ObjectID Ref) const {
