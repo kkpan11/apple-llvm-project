@@ -285,6 +285,20 @@ CINDEX_LINKAGE void clang_experimental_cas_CachedCompilation_makeGlobal(
     CXCASCancellationToken *OutToken);
 
 /**
+ * Looks up the cache key and returns true if all of the associated compilation
+ * outputs are materialized.
+ *
+ * \param CacheKey The printed compilation cache key string.
+ * \param[out] OutError The error object to pass back to client (if any).
+ * If non-null the object must be disposed using \c clang_Error_dispose.
+ *
+ * \returns whether the compilation is present in the cache and its outputs are
+ * materialized in the database.
+ */
+CINDEX_LINKAGE bool clang_experimental_cas_isCachedCompilationMaterialized(
+    CXCASDatabases, const char *CacheKey, CXError *OutError);
+
+/**
  * Replays a cached compilation by writing the cached outputs to the filesystem
  * and/or stderr based on the given compilation arguments.
  *

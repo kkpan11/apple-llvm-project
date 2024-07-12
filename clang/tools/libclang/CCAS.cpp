@@ -511,6 +511,41 @@ void clang_experimental_cas_CachedCompilation_makeGlobal(
   }
 }
 
+bool clang_experimental_cas_isCachedCompilationMaterialized(
+    CXCASDatabases CDBs, const char *CacheKey, CXError *OutError) {
+  WrappedCASDatabases &DBs = *unwrap(CDBs);
+
+  if (OutError)
+    *OutError = nullptr;
+
+  auto Failure = [OutError](Error &&E) {
+    passAsCXError(std::move(E), OutError);
+    return false;
+  };
+
+  Expected<CASID> KeyID = DBs.CAS->parseID(CacheKey);
+  if (!KeyID)
+    return Failure(KeyID.takeError());
+
+  auto CacheValueOrErr = DBs.Cache->get(*KeyID);
+  if (!CacheValueOrErr)
+    return Failure(CacheValueOrErr.takeError());
+
+  auto MaybeCacheValue = *CacheValueOrErr;
+  if (!MaybeCacheValue)
+    return false;
+
+  auto MaybeRef = DBs.CAS->getReference(*MaybeCacheValue);
+  if (!MaybeRef)
+    return false;
+
+  auto ResultOrErr = DBs.CAS->isMaterialized(*MaybeRef);
+  if (!ResultOrErr)
+    return Failure(ResultOrErr.takeError());
+
+  return *ResultOrErr;
+}
+
 CXCASReplayResult clang_experimental_cas_replayCompilation(
     CXCASCachedCompilation CComp, int argc, const char *const *argv,
     const char *WorkingDirectory, void * /*reserved*/, CXError *OutError) {
