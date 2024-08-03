@@ -26,6 +26,9 @@ let Definition = "target_experimental" in {
   def SwiftAllowExplicitModules: Property<"swift-allow-explicit-modules", "Boolean">,
     DefaultTrue,
     Desc<"Allows explicit module flags to be passed through to ClangImporter.">;
+  def SwiftDisablePCMValidation: Property<"swift-disable-pcm-validation", "Boolean">,
+    DefaultFalse,
+    Desc<"Disable validation when loading Clang PCM files (-fno-validate-pch).">;
 }
 
 let Definition = "target" in {

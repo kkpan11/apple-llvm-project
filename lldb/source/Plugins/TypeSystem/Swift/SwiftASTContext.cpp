@@ -57,7 +57,9 @@
 #include "clang/Basic/TargetOptions.h"
 #include "clang/Driver/Driver.h"
 #include "clang/Frontend/CompilerInstance.h"
+#include "clang/Lex/Preprocessor.h"
 
+#include "clang/Lex/PreprocessorOptions.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
@@ -3748,6 +3750,12 @@ ThreadSafeASTContext SwiftASTContext::GetASTContext() {
   // 4. Install the clang importer.
   if (clang_importer_ap) {
     m_clangimporter = (swift::ClangImporter *)clang_importer_ap.get();
+    TargetSP target_sp = GetTargetWP().lock();
+    if (target_sp && target_sp->GetSwiftDisablePCMValidation())
+      m_clangimporter->getClangPreprocessor()
+          .getPreprocessorOpts()
+          .DisablePCHOrModuleValidation =
+          clang::DisableValidationForModuleKind::Module;
     m_ast_context_ap->addModuleLoader(std::move(clang_importer_ap),
                                       /*isClang=*/true);
     m_clangimporter_typesystem = std::make_shared<TypeSystemClang>(
