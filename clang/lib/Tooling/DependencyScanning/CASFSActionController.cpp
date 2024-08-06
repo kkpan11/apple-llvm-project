@@ -133,8 +133,8 @@ Error CASFSActionController::finalize(CompilerInstance &ScanInstance,
 
   configureInvocationForCaching(NewInvocation, CASOpts,
                                 CASFileSystemRootID->getID().toString(),
-                                CacheFS.getCurrentWorkingDirectory().get(),
-                                /*ProduceIncludeTree=*/false);
+                                CachingInputKind::FileSystemRoot,
+                                CacheFS.getCurrentWorkingDirectory().get());
 
   if (Mapper)
     DepscanPrefixMapping::remapInvocationPaths(NewInvocation, *Mapper);
@@ -185,8 +185,8 @@ Error CASFSActionController::finalizeModuleInvocation(
 
   if (auto ID = MD.CASFileSystemRootID) {
     configureInvocationForCaching(CI, CASOpts, ID->toString(),
-                                  CacheFS.getCurrentWorkingDirectory().get(),
-                                  /*ProduceIncludeTree=*/false);
+                                  CachingInputKind::FileSystemRoot,
+                                  CacheFS.getCurrentWorkingDirectory().get());
   }
 
   if (Mapper)

@@ -30,6 +30,11 @@ class CompilerInvocation;
 class CowCompilerInvocation;
 class DiagnosticsEngine;
 
+enum class CachingInputKind {
+  IncludeTree,
+  FileSystemRoot,
+};
+
 /// Caching-related options for a given \c CompilerInvocation that are
 /// canonicalized away by the cache key.  See \c canonicalizeAndCreateCacheKey.
 struct CompileJobCachingOptions {

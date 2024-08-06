@@ -23,10 +23,9 @@ using namespace clang::cas;
 using namespace llvm;
 using namespace llvm::cas;
 
-static llvm::cas::CASID
-createCompileJobCacheKeyForArgs(ObjectStore &CAS,
-                                ArrayRef<const char *> CC1Args,
-                                ObjectRef RootRef, bool IsIncludeTree) {
+static llvm::cas::CASID createCompileJobCacheKeyForArgs(
+    ObjectStore &CAS, ArrayRef<const char *> CC1Args, ObjectRef InputRef,
+    CachingInputKind InputKind) {
   assert(!CC1Args.empty() && StringRef(CC1Args[0]) == "-cc1");
   SmallString<256> CommandLine;
   for (StringRef Arg : CC1Args) {
@@ -35,10 +34,13 @@ createCompileJobCacheKeyForArgs(ObjectStore &CAS,
   }
 
   llvm::cas::HierarchicalTreeBuilder Builder;
-  if (IsIncludeTree) {
-    Builder.push(RootRef, llvm::cas::TreeEntry::Regular, "include-tree");
-  } else {
-    Builder.push(RootRef, llvm::cas::TreeEntry::Tree, "filesystem");
+  switch (InputKind) {
+  case CachingInputKind::IncludeTree:
+    Builder.push(InputRef, llvm::cas::TreeEntry::Regular, "include-tree");
+    break;
+  case CachingInputKind::FileSystemRoot:
+    Builder.push(InputRef, llvm::cas::TreeEntry::Tree, "filesystem");
+    break;
   }
   Builder.push(
       llvm::cantFail(CAS.storeFromString(std::nullopt, CommandLine)),
@@ -133,26 +135,34 @@ createCompileJobCacheKeyImpl(ObjectStore &CAS, DiagnosticsEngine &Diags,
   CI.generateCC1CommandLine(
       Argv, [&Saver](const llvm::Twine &T) { return Saver.save(T).data(); });
 
-  bool IsIncludeTree = !CI.getFrontendOpts().CASIncludeTreeID.empty();
-
   // FIXME: currently correct since the main executable is always in the root
   // from scanning, but we should probably make it explicit here...
-  StringRef RootIDString = IsIncludeTree
-                               ? CI.getFrontendOpts().CASIncludeTreeID
-                               : CI.getFileSystemOpts().CASFileSystemRootID;
-  Expected<llvm::cas::CASID> RootID = CAS.parseID(RootIDString);
-  if (!RootID) {
-    llvm::consumeError(RootID.takeError());
-    Diags.Report(diag::err_cas_cannot_parse_root_id) << RootIDString;
-    return std::nullopt;
-  }
-  std::optional<llvm::cas::ObjectRef> RootRef = CAS.getReference(*RootID);
-  if (!RootRef) {
-    Diags.Report(diag::err_cas_missing_root_id) << RootIDString;
+  StringRef InputIDString;
+  CachingInputKind InputKind;
+  if (!CI.getFrontendOpts().CASIncludeTreeID.empty()) {
+    InputIDString = CI.getFrontendOpts().CASIncludeTreeID;
+    InputKind = CachingInputKind::IncludeTree;
+  } else if (!CI.getFileSystemOpts().CASFileSystemRootID.empty()) {
+    InputIDString = CI.getFileSystemOpts().CASFileSystemRootID;
+    InputKind = CachingInputKind::FileSystemRoot;
+  } else {
+    Diags.Report(diag::err_cas_cannot_parse_root_id) << "";
     return std::nullopt;
   }
 
-  return createCompileJobCacheKeyForArgs(CAS, Argv, *RootRef, IsIncludeTree);
+  Expected<llvm::cas::CASID> InputID = CAS.parseID(InputIDString);
+  if (!InputID) {
+    llvm::consumeError(InputID.takeError());
+    Diags.Report(diag::err_cas_cannot_parse_root_id) << InputIDString;
+    return std::nullopt;
+  }
+  std::optional<llvm::cas::ObjectRef> InputRef = CAS.getReference(*InputID);
+  if (!InputRef) {
+    Diags.Report(diag::err_cas_missing_root_id) << InputIDString;
+    return std::nullopt;
+  }
+
+  return createCompileJobCacheKeyForArgs(CAS, Argv, *InputRef, InputKind);
 }
 
 static CompileJobCachingOptions

@@ -348,9 +348,9 @@ Error IncludeTreeActionController::finalize(CompilerInstance &ScanInstance,
 
   configureInvocationForCaching(NewInvocation, CASOpts,
                                 IncludeTreeResult->getID().toString(),
+                                CachingInputKind::IncludeTree,
                                 // FIXME: working dir?
-                                /*CASFSWorkingDir=*/"",
-                                /*ProduceIncludeTree=*/true);
+                                /*CASFSWorkingDir=*/"");
 
   DepscanPrefixMapping::remapInvocationPaths(NewInvocation, PrefixMapper);
 
@@ -408,8 +408,8 @@ Error IncludeTreeActionController::finalizeModuleInvocation(
   CompilerInvocation CI(CowCI);
 
   configureInvocationForCaching(CI, CASOpts, *MD.IncludeTreeID,
-                                /*CASFSWorkingDir=*/"",
-                                /*ProduceIncludeTree=*/true);
+                                CachingInputKind::IncludeTree,
+                                /*CASFSWorkingDir=*/"");
 
   DepscanPrefixMapping::remapInvocationPaths(CI, PrefixMapper);
 
