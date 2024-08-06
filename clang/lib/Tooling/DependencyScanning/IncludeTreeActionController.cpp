@@ -37,6 +37,8 @@ private:
                    CompilerInvocation &NewInvocation) override;
   Error finalize(CompilerInstance &ScanInstance,
                  CompilerInvocation &NewInvocation) override;
+  std::optional<std::string>
+  getCacheKey(const clang::CompilerInvocation &NewInvocation) override;
 
   Error initializeModuleBuild(CompilerInstance &ModuleScanInstance) override;
   Error finalizeModuleBuild(CompilerInstance &ModuleScanInstance) override;
@@ -57,6 +59,7 @@ private:
   // pointer so the builder cannot move when resizing.
   SmallVector<std::unique_ptr<IncludeTreeBuilder>> BuilderStack;
   std::optional<cas::IncludeTreeRoot> IncludeTreeResult;
+  llvm::StringMap<std::string> OutputToCacheKey;
 };
 
 /// Callbacks for building an include-tree for a given translation unit or
@@ -338,23 +341,56 @@ Error IncludeTreeActionController::initialize(
 
 Error IncludeTreeActionController::finalize(CompilerInstance &ScanInstance,
                                             CompilerInvocation &NewInvocation) {
-  assert(!IncludeTreeResult);
-  assert(BuilderStack.size() == 1);
-  auto Builder = BuilderStack.pop_back_val();
-  Error E = Builder->finishIncludeTree(ScanInstance, NewInvocation)
-                .moveInto(IncludeTreeResult);
-  if (E)
-    return E;
+  auto GetInputCacheKey = [&]() -> std::optional<StringRef> {
+    if (NewInvocation.getFrontendOpts().Inputs.size() != 1)
+      return {};
+    const auto &FIF = NewInvocation.getFrontendOpts().Inputs.front();
+    if (!FIF.isFile())
+      return {};
+    auto It = OutputToCacheKey.find(FIF.getFile());
+    if (It == OutputToCacheKey.end())
+      return {};
 
-  configureInvocationForCaching(NewInvocation, CASOpts,
-                                IncludeTreeResult->getID().toString(),
-                                CachingInputKind::IncludeTree,
+    return It->second;
+  };
+
+  std::string InputID;
+  CachingInputKind InputKind;
+  if (auto InputCacheKey = GetInputCacheKey()) {
+    InputID = InputCacheKey->str();
+    InputKind = CachingInputKind::CachedCompilation;
+  } else {
+    assert(!IncludeTreeResult);
+    assert(BuilderStack.size() == 1);
+    auto Builder = BuilderStack.pop_back_val();
+    Error E = Builder->finishIncludeTree(ScanInstance, NewInvocation)
+                  .moveInto(IncludeTreeResult);
+    if (E)
+      return E;
+    InputID = IncludeTreeResult->getID().toString();
+    InputKind = CachingInputKind::IncludeTree;
+  }
+
+  configureInvocationForCaching(NewInvocation, CASOpts, InputID, InputKind,
                                 // FIXME: working dir?
                                 /*CASFSWorkingDir=*/"");
 
   DepscanPrefixMapping::remapInvocationPaths(NewInvocation, PrefixMapper);
 
+  auto &CAS = ScanInstance.getOrCreateObjectStore();
+  auto Key = createCompileJobCacheKey(CAS, ScanInstance.getDiagnostics(),
+                                      NewInvocation);
+  assert(Key && "Cannot create compile job cache key for include-tree compile");
+  OutputToCacheKey[NewInvocation.getFrontendOpts().OutputFile] = Key->toString();
+
   return Error::success();
+}
+
+std::optional<std::string> IncludeTreeActionController::getCacheKey(
+    const clang::CompilerInvocation &NewInvocation) {
+  auto It = OutputToCacheKey.find(NewInvocation.getFrontendOpts().OutputFile);
+  assert(It != OutputToCacheKey.end());
+  return It->second;
 }
 
 Error IncludeTreeActionController::initializeModuleBuild(
