@@ -99,6 +99,12 @@ void tooling::dependencies::configureInvocationForCaching(
     FileSystemOpts.CASFileSystemWorkingDirectory = std::move(WorkingDir);
     break;
   }
+  case CachingInputKind::CachedCompilation: {
+    FrontendOpts.Inputs.clear();
+    FrontendOpts.CASInputFileCacheKey = std::move(InputID);
+    FileSystemOpts.CASFileSystemWorkingDirectory = std::move(WorkingDir);
+    break;
+  }
   }
 }
 
