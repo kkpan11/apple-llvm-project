@@ -555,6 +555,9 @@ public:
   /// Use the main output of the provided compilation cache key as the input.
   std::string CASInputFileCacheKey;
 
+  /// Use the blob in the CAS object as the input.
+  std::string CASInputFileID;
+
   /// When the input is a module map, the original module map file from which
   /// that map was inferred, if any (for umbrella modules).
   std::string OriginalModuleMap;

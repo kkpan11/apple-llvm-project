@@ -3086,7 +3086,7 @@ static void GenerateFrontendArgs(const FrontendOptions &Opts,
       Consumer(Input.getFile());
 }
 
-static llvm::Error
+static llvm::Expected<std::string>
 determineInputFromCacheKey(StringRef CacheKey, CASOptions &CASOpts,
                            DiagnosticsEngine &Diags,
                            std::optional<llvm::MemoryBufferRef> &Buffer) {
@@ -3125,7 +3125,7 @@ determineInputFromCacheKey(StringRef CacheKey, CASOptions &CASOpts,
     return OutProxy.takeError();
 
   Buffer = llvm::MemoryBufferRef(OutProxy->getData(), "<input>");
-  return llvm::Error::success();
+  return OutProxy->getID().toString();
 }
 
 static bool ParseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
@@ -3428,7 +3428,8 @@ static bool ParseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
   if (!Opts.CASInputFileCacheKey.empty()) {
     std::optional<llvm::MemoryBufferRef> Buff;
     if (llvm::Error E = determineInputFromCacheKey(Opts.CASInputFileCacheKey,
-                                                   CASOpts, Diags, Buff)) {
+                                                   CASOpts, Diags, Buff)
+                            .moveInto(Opts.CASInputFileID)) {
       Diags.Report(diag::err_fe_unable_to_load_input_cache_key)
           << Opts.CASInputFileCacheKey << llvm::toString(std::move(E));
     } else {

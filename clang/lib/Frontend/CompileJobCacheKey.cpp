@@ -45,6 +45,10 @@ static llvm::cas::CASID createCompileJobCacheKeyForArgs(
     // TODO: Pass a "ref" tree entry kind.
     Builder.push(InputRef, llvm::cas::TreeEntry::Tree, "cache-key");
     break;
+  case CachingInputKind::Object:
+    // TODO: Pass a "ref" tree entry kind.
+    Builder.push(InputRef, llvm::cas::TreeEntry::Tree, "object");
+    break;
   }
   Builder.push(
       llvm::cantFail(CAS.storeFromString(std::nullopt, CommandLine)),
@@ -152,6 +156,9 @@ createCompileJobCacheKeyImpl(ObjectStore &CAS, DiagnosticsEngine &Diags,
   } else if (!CI.getFrontendOpts().CASInputFileCacheKey.empty()) {
     InputIDString = CI.getFrontendOpts().CASInputFileCacheKey;
     InputKind = CachingInputKind::CachedCompilation;
+  } else if (!CI.getFrontendOpts().CASInputFileID.empty()) {
+    InputIDString = CI.getFrontendOpts().CASInputFileID;
+    InputKind = CachingInputKind::Object;
   } else {
     Diags.Report(diag::err_cas_cannot_parse_root_id) << "";
     return std::nullopt;

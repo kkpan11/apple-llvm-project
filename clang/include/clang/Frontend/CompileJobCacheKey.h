@@ -34,6 +34,7 @@ enum class CachingInputKind {
   IncludeTree,
   FileSystemRoot,
   CachedCompilation,
+  Object,
 };
 
 /// Caching-related options for a given \c CompilerInvocation that are

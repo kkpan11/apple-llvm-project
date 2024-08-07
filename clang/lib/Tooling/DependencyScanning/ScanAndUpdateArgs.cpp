@@ -104,6 +104,9 @@ void tooling::dependencies::configureInvocationForCaching(
     FrontendOpts.CASInputFileCacheKey = std::move(InputID);
     FileSystemOpts.CASFileSystemWorkingDirectory = std::move(WorkingDir);
     break;
+  case CachingInputKind::Object: {
+    assert(false && "Object should not be available during scanning");
+  }
   }
   }
 }
