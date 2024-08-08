@@ -300,6 +300,9 @@ std::optional<int> CompileJobCache::initialize(CompilerInstance &Clang) {
   if (!CAS || !Cache)
     return 1; // Exit with error!
 
+  CompilerInvocation DummyInvocation = Invocation;
+  CompileJobCachingOptions DummyCacheOpts;
+
   std::string CASInputFileID;
   std::swap(CASInputFileID, Invocation.getFrontendOpts().CASInputFileID);
   CompileJobCachingOptions CacheOpts;
@@ -310,12 +313,14 @@ std::optional<int> CompileJobCache::initialize(CompilerInstance &Clang) {
   std::swap(CASInputFileID, Invocation.getFrontendOpts().CASInputFileID);
 
   std::string CASInputFileCacheKey;
-  std::swap(CASInputFileCacheKey, Invocation.getFrontendOpts().CASInputFileCacheKey);
-  ResultCacheKeyWithInputCacheKeysResolved =
-      canonicalizeAndCreateCacheKey(*CAS, Diags, Invocation, CacheOpts);
+  std::swap(CASInputFileCacheKey,
+            DummyInvocation.getFrontendOpts().CASInputFileCacheKey);
+  ResultCacheKeyWithInputCacheKeysResolved = canonicalizeAndCreateCacheKey(
+      *CAS, Diags, DummyInvocation, DummyCacheOpts);
   if (!ResultCacheKeyWithInputCacheKeysResolved)
     return 1; // Exit with error!
-  std::swap(CASInputFileCacheKey, Invocation.getFrontendOpts().CASInputFileCacheKey);
+  std::swap(CASInputFileCacheKey,
+            DummyInvocation.getFrontendOpts().CASInputFileCacheKey);
 
   switch (FrontendOpts.ProgramAction) {
   case frontend::GenerateModule:
