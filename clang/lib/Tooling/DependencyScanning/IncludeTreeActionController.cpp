@@ -59,7 +59,7 @@ private:
   // pointer so the builder cannot move when resizing.
   SmallVector<std::unique_ptr<IncludeTreeBuilder>> BuilderStack;
   std::optional<cas::IncludeTreeRoot> IncludeTreeResult;
-  llvm::StringMap<std::string> OutputToCacheKey;
+  llvm::StringMap<std::optional<std::string>> OutputToCacheKey;
 };
 
 /// Callbacks for building an include-tree for a given translation unit or
@@ -380,8 +380,8 @@ Error IncludeTreeActionController::finalize(CompilerInstance &ScanInstance,
   auto &CAS = ScanInstance.getOrCreateObjectStore();
   auto Key = createCompileJobCacheKey(CAS, ScanInstance.getDiagnostics(),
                                       NewInvocation);
-  assert(Key && "Cannot create compile job cache key for include-tree compile");
-  OutputToCacheKey[NewInvocation.getFrontendOpts().OutputFile] = Key->toString();
+  OutputToCacheKey[NewInvocation.getFrontendOpts().OutputFile] =
+      Key ? std::make_optional(Key->toString()) : std::nullopt;
 
   return Error::success();
 }
