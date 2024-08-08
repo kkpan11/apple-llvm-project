@@ -11,6 +11,7 @@
 #include "clang/AST/ExternalASTSource.h"
 #include "clang/AST/PrettyPrinter.h"
 #include "clang/Basic/Builtins.h"
+#include "clang/Basic/DarwinSDKInfo.h"
 #include "clang/Basic/DiagnosticIDs.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/TargetInfo.h"
@@ -352,6 +353,73 @@ static void SetupDefaultClangDiagnostics(CompilerInstance &compiler) {
   }
 }
 
+// NOTE: should be kept in sync with sdkSupportsBuiltinModules in
+// Toolchains/Darwin.cpp
+static bool
+sdkSupportsBuiltinModulesImpl(const llvm::Triple &triple,
+                              const std::optional<DarwinSDKInfo> &SDKInfo) {
+  if (!SDKInfo)
+    return false;
+
+  VersionTuple SDKVersion = SDKInfo->getVersion();
+  switch (triple.getOS()) {
+  case Triple::OSType::MacOSX:
+    return SDKVersion >= VersionTuple(15U);
+  case Triple::OSType::IOS:
+    return SDKVersion >= VersionTuple(18U);
+  case Triple::OSType::TvOS:
+    return SDKVersion >= VersionTuple(18U);
+  case Triple::OSType::WatchOS:
+    return SDKVersion >= VersionTuple(11U);
+  case Triple::OSType::XROS:
+    return SDKVersion >= VersionTuple(2U);
+  default:
+    // New SDKs support builtin modules from the start.
+    return true;
+  }
+}
+
+/// Returns true if the SDK for the specified triple supports
+/// builtin modules in system headers. This is used to decide
+/// whether to pass -fbuiltin-headers-in-system-modules to
+/// the compiler instance when compiling the `std` module.
+///
+/// This function assumes one of the directories in \ref include_dirs
+/// is an SDK path that exists on the host. The SDK version is
+/// read from the SDKSettings.json in that directory.
+///
+/// \param[in] triple The target triple.
+/// \param[in] include_dirs The include directories the compiler will use
+///                         during header search.
+///
+static bool
+sdkSupportsBuiltinModules(llvm::Triple const &triple,
+                          std::vector<std::string> const &include_dirs) {
+  // Find an SDK directory.
+  static constexpr std::string_view s_sdk_suffix = ".sdk";
+  auto it = llvm::find_if(include_dirs, [](std::string const &path) {
+    return path.find(s_sdk_suffix) != std::string::npos;
+  });
+  if (it == include_dirs.end())
+    return false;
+
+  auto VFS = FileSystem::Instance().GetVirtualFileSystem();
+  if (!VFS)
+    return false;
+
+  // Extract: /path/to/some.sdk
+  size_t suffix = it->find(s_sdk_suffix);
+  assert(suffix != std::string::npos);
+  std::string sdk_path = it->substr(0, suffix + s_sdk_suffix.size());
+
+  // Extract SDK version from the /path/to/some.sdk/SDKSettings.json
+  auto parsed = clang::parseDarwinSDKInfo(*VFS, sdk_path);
+  if (!parsed)
+    return false;
+
+  return sdkSupportsBuiltinModulesImpl(triple, *parsed);
+}
+
 //===----------------------------------------------------------------------===//
 // Implementation of ClangExpressionParser
 //===----------------------------------------------------------------------===//
@@ -576,7 +644,8 @@ ClangExpressionParser::ClangExpressionParser(
     lang_opts.GNUMode = true;
     lang_opts.GNUKeywords = true;
     lang_opts.CPlusPlus11 = true;
-    lang_opts.BuiltinHeadersInSystemModules = true;
+    lang_opts.BuiltinHeadersInSystemModules = !sdkSupportsBuiltinModules(
+        target_sp->GetArchitecture().GetTriple(), m_include_directories);
 
     // The Darwin libc expects this macro to be set.
     lang_opts.GNUCVersion = 40201;
