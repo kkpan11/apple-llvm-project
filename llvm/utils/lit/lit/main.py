@@ -41,6 +41,7 @@ def main(builtin_params={}):
         params=params,
         config_prefix=opts.configPrefix,
         echo_all_commands=opts.echoAllCommands,
+        gtest_sharding=opts.gtest_sharding,
     )
 
     discovered_tests = lit.discovery.find_tests_for_inputs(

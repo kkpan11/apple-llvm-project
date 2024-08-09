@@ -37,6 +37,7 @@ class LitConfig(object):
         maxIndividualTestTime=0,
         parallelism_groups={},
         echo_all_commands=False,
+        gtest_sharding=True,
     ):
         # The name of the test runner.
         self.progname = progname
@@ -87,6 +88,7 @@ class LitConfig(object):
         self.maxIndividualTestTime = maxIndividualTestTime
         self.parallelism_groups = parallelism_groups
         self.echo_all_commands = echo_all_commands
+        self.gtest_sharding = bool(gtest_sharding)
 
     @property
     def maxIndividualTestTime(self):
