@@ -102,9 +102,14 @@
 // CHECK:                "-fmodule-file-cache-key"
 // CHECK-NEXT:           "[[PREFIX]]/modules/{{.*}}/Mod-{{.*}}.pcm"
 // CHECK-NEXT:           "[[M_CACHE_KEY]]"
+// CHECK:                "-x"
+// CHECK-NEXT:           "c"
+// CHECK-NOT:            "{{.*}}tu.c"
 // CHECK:                "-fmodule-file={{.*}}[[PREFIX]]/modules/{{.*}}/Mod-{{.*}}.pcm"
-// CHECK:                "[[PREFIX]]/tu.c"
 // CHECK:              ]
+// CHECK:              "file-deps": [
+// CHECK-NEXT:           "[[PREFIX]]/tu.c"
+// CHECK-NEXT:         ]
 // CHECK:              "input-file": "[[PREFIX]]/tu.c"
 // CHECK-NEXT:       }
 // CHECK-NEXT:       {
