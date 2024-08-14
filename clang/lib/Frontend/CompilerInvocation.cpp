@@ -3429,7 +3429,7 @@ static bool ParseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
     std::optional<llvm::MemoryBufferRef> Buff;
     if (llvm::Error E = determineInputFromCacheKey(Opts.CASInputFileCacheKey,
                                                    CASOpts, Diags, Buff)
-                            .moveInto(Opts.CASInputFileID)) {
+                            .moveInto(Opts.CASInputFileCASID)) {
       Diags.Report(diag::err_fe_unable_to_load_input_cache_key)
           << Opts.CASInputFileCacheKey << llvm::toString(std::move(E));
     } else {

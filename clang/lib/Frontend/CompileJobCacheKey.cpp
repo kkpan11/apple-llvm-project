@@ -156,8 +156,8 @@ createCompileJobCacheKeyImpl(ObjectStore &CAS, DiagnosticsEngine &Diags,
   } else if (!CI.getFrontendOpts().CASInputFileCacheKey.empty()) {
     InputIDString = CI.getFrontendOpts().CASInputFileCacheKey;
     InputKind = CachingInputKind::CachedCompilation;
-  } else if (!CI.getFrontendOpts().CASInputFileID.empty()) {
-    InputIDString = CI.getFrontendOpts().CASInputFileID;
+  } else if (!CI.getFrontendOpts().CASInputFileCASID.empty()) {
+    InputIDString = CI.getFrontendOpts().CASInputFileCASID;
     InputKind = CachingInputKind::Object;
   } else {
     Diags.Report(diag::err_cas_cannot_parse_root_id) << "";

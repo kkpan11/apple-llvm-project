@@ -303,14 +303,14 @@ std::optional<int> CompileJobCache::initialize(CompilerInstance &Clang) {
   CompilerInvocation DummyInvocation = Invocation;
   CompileJobCachingOptions DummyCacheOpts;
 
-  std::string CASInputFileID;
-  std::swap(CASInputFileID, Invocation.getFrontendOpts().CASInputFileID);
+  std::string CASInputFileCASID;
+  std::swap(CASInputFileCASID, Invocation.getFrontendOpts().CASInputFileCASID);
   CompileJobCachingOptions CacheOpts;
   ResultCacheKey =
       canonicalizeAndCreateCacheKey(*CAS, Diags, Invocation, CacheOpts);
   if (!ResultCacheKey)
     return 1; // Exit with error!
-  std::swap(CASInputFileID, Invocation.getFrontendOpts().CASInputFileID);
+  std::swap(CASInputFileCASID, Invocation.getFrontendOpts().CASInputFileCASID);
 
   std::string CASInputFileCacheKey;
   std::swap(CASInputFileCacheKey,

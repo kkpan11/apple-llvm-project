@@ -8456,13 +8456,13 @@ def fcas_include_tree : Separate<["-"], "fcas-include-tree">,
     HelpText<"Configure the frontend to use a CAS include tree.">,
     MarshallingInfoString<FrontendOpts<"CASIncludeTreeID">>;
 
-def finput_file_cache_key : Separate<["-"], "finput-file-cache-key">,
+def fcas_input_file_cache_key : Separate<["-"], "fcas-input-file-cache-key">,
     Group<f_Group>, MetaVarName<"<key>">,
     MarshallingInfoString<FrontendOpts<"CASInputFileCacheKey">>;
 
-def finput_file_id : Separate<["-"], "finput-file-id">,
+def fcas_input_file_id : Separate<["-"], "fcas-input-file-casid">,
     Group<f_Group>, MetaVarName<"<ID>">,
-    MarshallingInfoString<FrontendOpts<"CASInputFileID">>;
+    MarshallingInfoString<FrontendOpts<"CASInputFileCASID">>;
 
 // FIXME: Add to driver under -fexperimental-cache=compile-job.
 defm cache_compile_job : BoolFOption<"cache-compile-job",

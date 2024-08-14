@@ -556,7 +556,7 @@ public:
   std::string CASInputFileCacheKey;
 
   /// Use the blob in the CAS object as the input.
-  std::string CASInputFileID;
+  std::string CASInputFileCASID;
 
   /// When the input is a module map, the original module map file from which
   /// that map was inferred, if any (for umbrella modules).
