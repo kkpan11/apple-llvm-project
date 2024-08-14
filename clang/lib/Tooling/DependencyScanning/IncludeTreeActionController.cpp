@@ -38,7 +38,7 @@ private:
   Error finalize(CompilerInstance &ScanInstance,
                  CompilerInvocation &NewInvocation) override;
   std::optional<std::string>
-  getCacheKey(const clang::CompilerInvocation &NewInvocation) override;
+  getCacheKey(const CompilerInvocation &NewInvocation) override;
 
   Error initializeModuleBuild(CompilerInstance &ModuleScanInstance) override;
   Error finalizeModuleBuild(CompilerInstance &ModuleScanInstance) override;
@@ -387,7 +387,7 @@ Error IncludeTreeActionController::finalize(CompilerInstance &ScanInstance,
 }
 
 std::optional<std::string> IncludeTreeActionController::getCacheKey(
-    const clang::CompilerInvocation &NewInvocation) {
+    const CompilerInvocation &NewInvocation) {
   auto It = OutputToCacheKey.find(NewInvocation.getFrontendOpts().OutputFile);
   assert(It != OutputToCacheKey.end());
   return It->second;
