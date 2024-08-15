@@ -41,6 +41,7 @@
 #include "lldb/Utility/Args.h"
 #include "lldb/Utility/Broadcaster.h"
 #include "lldb/Utility/LLDBAssert.h"
+#include "lldb/Utility/RealpathPrefixes.h"
 #include "lldb/Utility/Timeout.h"
 #include "lldb/lldb-public.h"
 
@@ -137,6 +138,8 @@ public:
   const char *GetDisassemblyFeatures() const;
 
   InlineStrategy GetInlineStrategy() const;
+
+  RealpathPrefixes GetSourceRealpathPrefixes() const;
 
   llvm::StringRef GetArg0() const;
 
