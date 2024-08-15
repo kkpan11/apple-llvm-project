@@ -144,45 +144,50 @@ bool lldb_private::formatters::swift::IndexPath_SummaryProvider(
 
 bool lldb_private::formatters::swift::Measurement_SummaryProvider(
     ValueObject &valobj, Stream &stream, const TypeSummaryOptions &options) {
-  static ConstString g_value("value");
-  static ConstString g_unit("unit");
-  static ConstString g__symbol("_symbol");
+  ValueObjectSP value_sp, symbol_sp;
+  value_sp = valobj.GetChildMemberWithName("value");
+  if (value_sp) {
+    // Measurement structure prior to macOS 14.
+    ValueObjectSP unit_sp(valobj.GetChildMemberWithName("unit"));
+    if (!unit_sp)
+      return false;
 
-  ValueObjectSP value_sp(valobj.GetChildAtNamePath({g_value}));
-  if (!value_sp)
-    return false;
+    ProcessSP process_sp(valobj.GetProcessSP());
+    if (!process_sp)
+      return false;
 
-  ValueObjectSP unit_sp(valobj.GetChildAtNamePath({g_unit}));
-  if (!unit_sp)
-    return false;
+    ObjCLanguageRuntime *objc_runtime = ObjCLanguageRuntime::Get(*process_sp);
+    if (!objc_runtime)
+      return false;
 
-  ProcessSP process_sp(valobj.GetProcessSP());
-  if (!process_sp)
-    return false;
+    auto descriptor_sp(objc_runtime->GetClassDescriptor(*unit_sp));
+    if (!descriptor_sp)
+      return false;
 
-  ObjCLanguageRuntime *objc_runtime =
-      ObjCLanguageRuntime::Get(*process_sp);
-  if (!objc_runtime)
-    return false;
+    if (descriptor_sp->GetNumIVars() == 0)
+      return false;
 
-  auto descriptor_sp(objc_runtime->GetClassDescriptor(*unit_sp));
-  if (!descriptor_sp)
-    return false;
+    auto ivar = descriptor_sp->GetIVarAtIndex(0);
+    if (!ivar.m_type.IsValid())
+      return false;
 
-  if (descriptor_sp->GetNumIVars() == 0)
-    return false;
+    symbol_sp =
+        unit_sp->GetSyntheticChildAtOffset(ivar.m_offset, ivar.m_type, true);
+    if (!symbol_sp)
+      return false;
 
-  auto ivar = descriptor_sp->GetIVarAtIndex(0);
-  if (!ivar.m_type.IsValid())
-    return false;
+    symbol_sp = symbol_sp->GetQualifiedRepresentationIfAvailable(
+        lldb::eDynamicDontRunTarget, true);
+  } else {
+    // Measurement structure as of macOS 14+.
+    auto value_sp = valobj.GetChildMemberWithName("_doubleValue");
+    if (!value_sp)
+      return false;
 
-  ValueObjectSP symbol_sp(
-      unit_sp->GetSyntheticChildAtOffset(ivar.m_offset, ivar.m_type, true));
-  if (!symbol_sp)
-    return false;
-
-  symbol_sp = symbol_sp->GetQualifiedRepresentationIfAvailable(
-      lldb::eDynamicDontRunTarget, true);
+    auto symbol_sp = valobj.GetValueForExpressionPath("->_unit->_symbol");
+    if (!symbol_sp)
+      return false;
+  }
 
   DataExtractor data_extractor;
   Status error;
