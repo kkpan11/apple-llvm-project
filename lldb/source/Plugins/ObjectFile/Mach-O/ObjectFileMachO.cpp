@@ -5226,10 +5226,10 @@ uint32_t ObjectFileMachO::GetDependentModules(FileSpecList &files) {
       for (auto &rpath : rpath_paths) {
         if (llvm::StringRef(rpath).startswith(loader_path)) {
           rpath.erase(0, loader_path.size());
-          rpath.insert(0, this_file_spec.GetDirectory().GetCString());
+          rpath.insert(0, this_file_spec.GetDirectory().AsCString(""));
         } else if (llvm::StringRef(rpath).startswith(executable_path)) {
           rpath.erase(0, executable_path.size());
-          rpath.insert(0, this_file_spec.GetDirectory().GetCString());
+          rpath.insert(0, this_file_spec.GetDirectory().AsCString(""));
         }
       }
 
