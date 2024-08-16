@@ -145,6 +145,7 @@ bool lldb_private::formatters::swift::IndexPath_SummaryProvider(
 bool lldb_private::formatters::swift::Measurement_SummaryProvider(
     ValueObject &valobj, Stream &stream, const TypeSummaryOptions &options) {
   ValueObjectSP value_sp, symbol_sp;
+
   value_sp = valobj.GetChildMemberWithName("value");
   if (value_sp) {
     // Measurement structure prior to macOS 14.
@@ -180,14 +181,12 @@ bool lldb_private::formatters::swift::Measurement_SummaryProvider(
         lldb::eDynamicDontRunTarget, true);
   } else {
     // Measurement structure as of macOS 14+.
-    auto value_sp = valobj.GetChildMemberWithName("_doubleValue");
-    if (!value_sp)
-      return false;
-
-    auto symbol_sp = valobj.GetValueForExpressionPath("->_unit->_symbol");
-    if (!symbol_sp)
-      return false;
+    value_sp = valobj.GetChildMemberWithName("_doubleValue");
+    symbol_sp = valobj.GetChildAtNamePath({"_unit", "_symbol"});
   }
+
+  if (!value_sp || !symbol_sp)
+    return false;
 
   DataExtractor data_extractor;
   Status error;
