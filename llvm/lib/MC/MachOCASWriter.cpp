@@ -78,6 +78,7 @@ uint64_t MachOCASWriter::writeObject(MCAssembler &Asm,
           inconvertibleErrorCode(),
           "CASBackend output round-trip verification error");
 
+    OS << ObjectBuffer;
     return Error::success();
   };
 
@@ -87,11 +88,6 @@ uint64_t MachOCASWriter::writeObject(MCAssembler &Asm,
   // If there is a callback, then just hand off the result through callback.
   if (ResultCallBack) {
     cantFail((*ResultCallBack)(CASObj.getID()));
-    if (Mode == CASBackendMode::Verify) {
-      if (auto E = VerifyObject())
-        report_fatal_error(std::move(E));
-    }
-    return 0;
   }
 
   switch (Mode) {
@@ -105,17 +101,8 @@ uint64_t MachOCASWriter::writeObject(MCAssembler &Asm,
     break;
   }
   case CASBackendMode::Verify: {
-    SmallString<512> ObjectBuffer;
-    raw_svector_ostream ObjectOS(ObjectBuffer);
-    auto E = SerializeObjectFile(CASObj, CAS, ObjectOS);
-    if (E)
+    if (auto E = VerifyObject())
       report_fatal_error(std::move(E));
-
-    if (!ObjectBuffer.equals(InternalBuffer))
-      report_fatal_error("CASBackend output round-trip verification error");
-
-    OS << ObjectBuffer;
-    break;
   }
   }
 
