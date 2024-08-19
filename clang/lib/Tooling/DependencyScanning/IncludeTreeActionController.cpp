@@ -59,7 +59,7 @@ private:
   // pointer so the builder cannot move when resizing.
   SmallVector<std::unique_ptr<IncludeTreeBuilder>> BuilderStack;
   std::optional<cas::IncludeTreeRoot> IncludeTreeResult;
-  llvm::StringMap<std::optional<std::string>> OutputToCacheKey;
+  llvm::StringMap<std::string> OutputToCacheKey;
 };
 
 /// Callbacks for building an include-tree for a given translation unit or
@@ -378,18 +378,21 @@ Error IncludeTreeActionController::finalize(CompilerInstance &ScanInstance,
   DepscanPrefixMapping::remapInvocationPaths(NewInvocation, PrefixMapper);
 
   auto &CAS = ScanInstance.getOrCreateObjectStore();
+  // FIXME: Make this return an error and propagate it up.
   auto Key = createCompileJobCacheKey(CAS, ScanInstance.getDiagnostics(),
                                       NewInvocation);
-  OutputToCacheKey[NewInvocation.getFrontendOpts().OutputFile] =
-      Key ? std::make_optional(Key->toString()) : std::nullopt;
-
+  if (Key)
+    OutputToCacheKey[NewInvocation.getFrontendOpts().OutputFile] =
+        Key->toString();
   return Error::success();
 }
 
 std::optional<std::string> IncludeTreeActionController::getCacheKey(
     const CompilerInvocation &NewInvocation) {
   auto It = OutputToCacheKey.find(NewInvocation.getFrontendOpts().OutputFile);
-  assert(It != OutputToCacheKey.end());
+  // FIXME: Assert this does not happen.
+  if (It == OutputToCacheKey.end())
+    return std::nullopt;
   return It->second;
 }
 
