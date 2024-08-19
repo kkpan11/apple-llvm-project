@@ -15,6 +15,7 @@
 #include "llvm/CAS/ObjectStore.h"
 #include "llvm/CAS/TreeSchema.h"
 #include "llvm/CAS/Utils.h"
+#include "llvm/Support/SaveAndRestore.h"
 #include "llvm/Support/StringSaver.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -215,11 +216,38 @@ canonicalizeForCaching(llvm::cas::ObjectStore &CAS, DiagnosticsEngine &Diags,
   return Opts;
 }
 
-std::optional<llvm::cas::CASID> clang::canonicalizeAndCreateCacheKey(
-    llvm::cas::ObjectStore &CAS, DiagnosticsEngine &Diags,
-    CompilerInvocation &Invocation, CompileJobCachingOptions &Opts) {
-  Opts = canonicalizeForCaching(CAS, Diags, Invocation);
-  return createCompileJobCacheKeyImpl(CAS, Diags, Invocation);
+std::optional<std::pair<llvm::cas::CASID, llvm::cas::CASID>>
+clang::canonicalizeAndCreateCacheKeys(ObjectStore &CAS,
+                                      DiagnosticsEngine &Diags,
+                                      CompilerInvocation &CI,
+                                      CompileJobCachingOptions &Opts) {
+  if (!CI.getFrontendOpts().CASInputFileCacheKey.empty() &&
+      !CI.getFrontendOpts().CASInputFileCASID.empty()) {
+    auto CacheKey = [&] {
+      SaveAndRestore X(CI.getFrontendOpts().CASInputFileCASID, {});
+      Opts = canonicalizeForCaching(CAS, Diags, CI);
+      return createCompileJobCacheKeyImpl(CAS, Diags, CI);
+    }();
+    if (!CacheKey)
+      return std::nullopt;
+
+    auto CanonicalCacheKey = [&] {
+      CompilerInvocation CICopy = CI;
+      SaveAndRestore X(CICopy.getFrontendOpts().CASInputFileCacheKey, {});
+      (void)canonicalizeForCaching(CAS, Diags, CICopy);
+      return createCompileJobCacheKeyImpl(CAS, Diags, CICopy);
+    }();
+    if (!CanonicalCacheKey)
+      return std::nullopt;
+
+    return std::make_pair(*CacheKey, *CanonicalCacheKey);
+  }
+
+  Opts = canonicalizeForCaching(CAS, Diags, CI);
+  auto CacheKey = createCompileJobCacheKeyImpl(CAS, Diags, CI);
+  if (!CacheKey)
+    return std::nullopt;
+  return std::make_pair(*CacheKey, *CacheKey);
 }
 
 std::optional<llvm::cas::CASID>

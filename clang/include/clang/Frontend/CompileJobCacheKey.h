@@ -62,10 +62,14 @@ createCompileJobCacheKey(llvm::cas::ObjectStore &CAS, DiagnosticsEngine &Diags,
 
 /// Perform any destructive changes needed to canonicalize \p Invocation for
 /// caching, extracting the settings that affect compilation even if they do not
-/// affect caching, and return the resulting cache key as a \c CASID.
-std::optional<llvm::cas::CASID> canonicalizeAndCreateCacheKey(
-    llvm::cas::ObjectStore &CAS, DiagnosticsEngine &Diags,
-    CompilerInvocation &Invocation, CompileJobCachingOptions &Opts);
+/// affect caching.
+/// Returns the resulting cache key as the first \c CASID. The second \c CASID
+/// is a cache key for the invocation input cache key resolved to object CASIDs.
+std::optional<std::pair<llvm::cas::CASID, llvm::cas::CASID>>
+canonicalizeAndCreateCacheKeys(llvm::cas::ObjectStore &CAS,
+                               DiagnosticsEngine &Diags,
+                               CompilerInvocation &Invocation,
+                               CompileJobCachingOptions &Opts);
 
 /// Print the structure of the cache key given by \p Key to \p OS. Returns an
 /// error if the key object does not exist in \p CAS, or is malformed.
