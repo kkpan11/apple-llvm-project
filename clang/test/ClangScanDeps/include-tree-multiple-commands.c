@@ -17,6 +17,13 @@
 
 // RUN: cat %t/deps.0.json | sed 's:\\\\\?:/:g' | FileCheck %s -DPREFIX=%/t
 
+// RUN: c-index-test core -scan-deps -working-dir %t -cas-path %t/cas -output-dir %t/modules -- \
+// RUN:   %clang -target x86_64-apple-darwin -c %t/tu.c -save-temps=obj -o %t/tu.o \
+// RUN:   -fmodules -fimplicit-modules -fimplicit-module-maps -fmodules-cache-path=%t/cache \
+// RUN:   > %t/deps.txt
+
+// RUN: cat %t/deps.txt | sed 's:\\\\\?:/:g' | FileCheck %s -DPREFIX=%/t -check-prefix=CHECK-LIBCLANG
+
 // RUN: %deps-to-rsp %t/deps.0.json --module-name=Mod             > %t/Mod.0.rsp
 // RUN: %deps-to-rsp %t/deps.0.json --tu-index 0 --tu-cmd-index 0 > %t/tu-cpp.0.rsp
 // RUN: %deps-to-rsp %t/deps.0.json --tu-index 0 --tu-cmd-index 1 > %t/tu-emit-ir.0.rsp
@@ -187,6 +194,65 @@
 // CHECK-NEXT:     ]
 // CHECK-NEXT:   }
 // CHECK-NEXT: ]
+
+// CHECK-LIBCLANG:      modules:
+// CHECK-LIBCLANG-NEXT:   module:
+// CHECK-LIBCLANG-NEXT:     name: Mod
+// CHECK-LIBCLANG-NEXT:     context-hash: {{.*}}
+// CHECK-LIBCLANG-NEXT:     module-map-path: [[PREFIX]]/module.modulemap
+// CHECK-LIBCLANG-NEXT:     include-tree-id: [[M_INCLUDE_TREE:llvmcas://[[:xdigit:]]+]]
+// CHECK-LIBCLANG-NEXT:     cache-key: [[M_CACHE_KEY:llvmcas://[[:xdigit:]]+]]
+// CHECK-LIBCLANG-NEXT:     module-deps:
+// CHECK-LIBCLANG-NEXT:     file-deps:
+// CHECK-LIBCLANG-NEXT:       [[PREFIX]]/module.h
+// CHECK-LIBCLANG-NEXT:       [[PREFIX]]/module.modulemap
+// CHECK-LIBCLANG-NEXT:     build-args: -cc1 {{.*}} -fcas-include-tree [[M_INCLUDE_TREE]]
+// CHECK-LIBCLANG-NEXT: dependencies:
+// CHECK-LIBCLANG-NEXT:   command 0:
+// CHECK-LIBCLANG-NEXT:     context-hash: {{.*}}
+// CHECK-LIBCLANG-NEXT:     include-tree-id: [[CPP_INCLUDE_TREE:llvmcas://[[:xdigit:]]+]]
+// CHECK-LIBCLANG-NEXT:     cache-key: [[CPP_CACHE_KEY:llvmcas://[[:xdigit:]]+]]
+// CHECK-LIBCLANG-NEXT:     module-deps:
+// CHECK-LIBCLANG-NEXT:       Mod:{{.*}}
+// CHECK-LIBCLANG-NEXT:     file-deps:
+// CHECK-LIBCLANG-NEXT:       [[PREFIX]]/tu.c
+// CHECK-LIBCLANG-NOT:             -fcas-input-file-cache-key
+// CHECK-LIBCLANG-NOT:             {{.*}}tu.c
+// CHECK-LIBCLANG-NEXT:     build-args: -cc1 {{.*}} -o [[PREFIX]]/tu.i {{.*}} -E -fmodule-file-cache-key {{.*}} [[M_CACHE_KEY]] -x c {{.*}} -fmodule-file={{.*}}[[PREFIX]]/modules/Mod_{{.*}}.pcm
+// CHECK-LIBCLANG-NEXT:   command 1:
+// CHECK-LIBCLANG-NEXT:     context-hash: {{.*}}
+// FIXME: This should be empty.
+// CHECK-LIBCLANG-NEXT:     include-tree-id: {{.*}}
+// CHECK-LIBCLANG-NEXT:     cache-key: [[COMPILER_CACHE_KEY:llvmcas://[[:xdigit:]]+]]
+// CHECK-LIBCLANG-NEXT:     module-deps:
+// CHECK-LIBCLANG-NEXT:       Mod:{{.*}}
+// CHECK-LIBCLANG-NEXT:     file-deps:
+// CHECK-LIBCLANG-NEXT:       [[PREFIX]]/tu.c
+// CHECK-LIBCLANG-NOT:                  -fcas-include-tree
+// CHECK-LIBCLANG-NOT:                  {{.*}}tu.i
+// CHECK-LIBCLANG-NEXT:     build-args: -cc1 {{.*}} -o [[PREFIX]]/tu.bc {{.*}} -fcas-input-file-cache-key [[CPP_CACHE_KEY]] {{.*}} -emit-llvm-bc -fmodule-file-cache-key {{.*}} [[M_CACHE_KEY]] -x c-cpp-output {{.*}} -fmodule-file={{.*}}[[PREFIX]]/modules/Mod_{{.*}}.pcm
+// CHECK-LIBCLANG-NEXT:   command 2:
+// CHECK-LIBCLANG-NEXT:     context-hash: {{.*}}
+// FIXME: This should be empty.
+// CHECK-LIBCLANG-NEXT:     include-tree-id: {{.*}}
+// CHECK-LIBCLANG-NEXT:     cache-key: [[BACKEND_CACHE_KEY:llvmcas://[[:xdigit:]]+]]
+// FIXME: This should be empty.
+// CHECK-LIBCLANG-NEXT:     module-deps:
+// CHECK-LIBCLANG-NEXT:       Mod:{{.*}}
+// CHECK-LIBCLANG-NEXT:     file-deps:
+// CHECK-LIBCLANG-NEXT:       [[PREFIX]]/tu.c
+// CHECK-LIBCLANG-NEXT:     build-args: -cc1 {{.*}} -o [[PREFIX]]/tu.s {{.*}} -fcas-input-file-cache-key [[COMPILER_CACHE_KEY]] {{.*}} -S -x ir
+// CHECK-LIBCLANG-NEXT:   command 3:
+// CHECK-LIBCLANG-NEXT:     context-hash: {{.*}}
+// FIXME: This should be empty.
+// CHECK-LIBCLANG-NEXT:     include-tree-id: {{.*}}
+// FIXME: This should be empty.
+// CHECK-LIBCLANG-NEXT:     module-deps:
+// CHECK-LIBCLANG-NEXT:       Mod:{{.*}}
+// CHECK-LIBCLANG-NEXT:     file-deps:
+// CHECK-LIBCLANG-NEXT:       [[PREFIX]]/tu.c
+// FIXME: The integrated assembler should support caching too.
+// CHECK-LIBCLANG-NEXT:     build-args: -cc1as {{.*}} -o [[PREFIX]]/tu.o [[PREFIX]]/tu.s
 
 //--- module.h
 void bar(void);
