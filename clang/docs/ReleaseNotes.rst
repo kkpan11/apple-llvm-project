@@ -173,6 +173,9 @@ sections with improvements to Clang's support for those languages.
 Major New Features
 ------------------
 
+- Implemented `CWG2518 <https://wg21.link/CWG2518>`_ which allows ``static_assert(false)``
+  to not be ill-formed when its condition is evaluated in the context of a template definition.
+
 Bug Fixes
 ---------
 - ``stdatomic.h`` will use the internal declarations when targeting pre-C++-23
