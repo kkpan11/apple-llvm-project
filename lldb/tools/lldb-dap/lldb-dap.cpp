@@ -1988,6 +1988,8 @@ void request_initialize(const llvm::json::Object &request) {
   body.try_emplace("supportsDataBreakpoints", true);
   // The debug adapter supports the `readMemory` request.
   body.try_emplace("supportsReadMemoryRequest", true);
+  // The debug adapter support for instruction breakpoint.
+  body.try_emplace("supportsInstructionBreakpoints", true);
 
   // Put in non-DAP specification lldb specific information.
   llvm::json::Object lldb_json;
@@ -4843,6 +4845,7 @@ void RegisterRequestCallbacks() {
   g_dap.RegisterRequestCallback("locations", request_locations);
   g_dap.RegisterRequestCallback("disassemble", request_disassemble);
   g_dap.RegisterRequestCallback("readMemory", request_readMemory);
+  // Instruction breakpoint request
   g_dap.RegisterRequestCallback("setInstructionBreakpoints",
                                 request_setInstructionBreakpoints);
   // Custom requests
