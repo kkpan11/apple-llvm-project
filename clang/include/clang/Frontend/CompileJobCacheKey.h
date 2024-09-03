@@ -19,8 +19,9 @@
 
 namespace llvm {
 namespace cas {
+class ActionCache;
 class ObjectStore;
-}
+} // namespace cas
 class raw_ostream;
 } // namespace llvm
 
@@ -67,6 +68,7 @@ createCompileJobCacheKey(llvm::cas::ObjectStore &CAS, DiagnosticsEngine &Diags,
 /// is a cache key for the invocation input cache key resolved to object CASIDs.
 std::optional<std::pair<llvm::cas::CASID, llvm::cas::CASID>>
 canonicalizeAndCreateCacheKeys(llvm::cas::ObjectStore &CAS,
+                               llvm::cas::ActionCache &Cache,
                                DiagnosticsEngine &Diags,
                                CompilerInvocation &Invocation,
                                CompileJobCachingOptions &Opts);

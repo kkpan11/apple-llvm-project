@@ -304,8 +304,8 @@ std::optional<int> CompileJobCache::initialize(CompilerInstance &Clang) {
   CompileJobCachingOptions DummyCacheOpts;
 
   CompileJobCachingOptions CacheOpts;
-  auto Keys =
-      canonicalizeAndCreateCacheKeys(*CAS, Diags, Invocation, CacheOpts);
+  auto Keys = canonicalizeAndCreateCacheKeys(*CAS, *Cache, Diags, Invocation,
+                                             CacheOpts);
   if (!Keys)
     return 1; // Exit with error!
   std::tie(ResultCacheKey, ResultCacheKeyWithInputCacheKeysResolved) = *Keys;
