@@ -13,14 +13,19 @@
 
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/DiagnosticOptions.h"
+#include "clang/CAS/CASOptions.h"
 #include "clang/Driver/DriverDiagnostic.h"
 #include "clang/Driver/Options.h"
+#include "clang/Frontend/CompilerInvocation.h"
 #include "clang/Frontend/FrontendDiagnostic.h"
 #include "clang/Frontend/TextDiagnosticPrinter.h"
 #include "clang/Frontend/Utils.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSwitch.h"
+#include "llvm/CAS/ActionCache.h"
+#include "llvm/CAS/CASOutputBackend.h"
+#include "llvm/CAS/ObjectStore.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/MC/MCAsmBackend.h"
 #include "llvm/MC/MCAsmInfo.h"
@@ -40,10 +45,13 @@
 #include "llvm/Option/Arg.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
+#include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/FormattedStream.h"
+#include "llvm/Support/HashBuilder.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Process.h"
@@ -51,6 +59,8 @@
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/Timer.h"
+#include "llvm/Support/VirtualOutputBackend.h"
+#include "llvm/Support/VirtualOutputBackends.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/Host.h"
 #include "llvm/TargetParser/Triple.h"
@@ -112,8 +122,9 @@ struct AssemblerInvocation {
   /// @{
 
   std::string InputFile;
+  std::string CASInputFileCacheKey;
   std::vector<std::string> LLVMArgs;
-  std::string OutputPath;
+  std::string OutputPath = "-";
   enum FileType {
     FT_Asm,  ///< Assembly (.s) output, transliterate mode.
     FT_Null, ///< No output, for timing purposes.
@@ -226,13 +237,15 @@ public:
   }
 
   static bool CreateFromArgs(AssemblerInvocation &Res,
+                             CASOptions &CASOpts,
                              ArrayRef<const char *> Argv,
                              DiagnosticsEngine &Diags);
 };
 
-}
+} // namespace
 
 bool AssemblerInvocation::CreateFromArgs(AssemblerInvocation &Opts,
+                                         CASOptions &CASOpts,
                                          ArrayRef<const char *> Argv,
                                          DiagnosticsEngine &Diags) {
   bool Success = true;
@@ -332,8 +345,11 @@ bool AssemblerInvocation::CreateFromArgs(AssemblerInvocation &Opts,
       }
     }
   }
+  Opts.CASInputFileCacheKey =
+      Args.getLastArgValue(OPT_fcas_input_file_cache_key);
   Opts.LLVMArgs = Args.getAllArgValues(OPT_mllvm);
-  Opts.OutputPath = std::string(Args.getLastArgValue(OPT_o));
+  if (Arg *A = Args.getLastArg(OPT_o))
+    Opts.OutputPath = std::string(A->getValue());
   Opts.SplitDwarfOutput =
       std::string(Args.getLastArgValue(OPT_split_dwarf_output));
   if (Arg *A = Args.getLastArg(OPT_filetype)) {
@@ -406,6 +422,8 @@ bool AssemblerInvocation::CreateFromArgs(AssemblerInvocation &Opts,
 
   Opts.AsSecureLogFile = Args.getLastArgValue(OPT_as_secure_log_file);
 
+  Success &= CompilerInvocation::ParseCASArgs(CASOpts, Args, Diags);
+
   return Success;
 }
 
@@ -428,25 +446,19 @@ getOutputStream(StringRef Path, DiagnosticsEngine &Diags, bool Binary) {
 }
 
 static bool ExecuteAssemblerImpl(AssemblerInvocation &Opts,
-                                 DiagnosticsEngine &Diags) {
+                                 DiagnosticsEngine &Diags,
+                                 std::unique_ptr<MemoryBuffer> Buffer,
+                                 llvm::vfs::OutputBackend &OutputBackend) {
   // Get the target specific parser.
   std::string Error;
   const Target *TheTarget = TargetRegistry::lookupTarget(Opts.Triple, Error);
   if (!TheTarget)
     return Diags.Report(diag::err_target_unknown_triple) << Opts.Triple;
 
-  ErrorOr<std::unique_ptr<MemoryBuffer>> Buffer =
-      MemoryBuffer::getFileOrSTDIN(Opts.InputFile, /*IsText=*/true);
-
-  if (std::error_code EC = Buffer.getError()) {
-    return Diags.Report(diag::err_fe_error_reading)
-           << Opts.InputFile << EC.message();
-  }
-
   SourceMgr SrcMgr;
 
   // Tell SrcMgr about this buffer, which is what the parser will pick up.
-  unsigned BufferIndex = SrcMgr.AddNewSourceBuffer(std::move(*Buffer), SMLoc());
+  unsigned BufferIndex = SrcMgr.AddNewSourceBuffer(std::move(Buffer), SMLoc());
 
   // Record the location of the include directories so that the lexer can find
   // it later.
@@ -476,15 +488,23 @@ static bool ExecuteAssemblerImpl(AssemblerInvocation &Opts,
 
 
   bool IsBinary = Opts.OutputType == AssemblerInvocation::FT_Obj;
-  if (Opts.OutputPath.empty())
-    Opts.OutputPath = "-";
-  std::unique_ptr<raw_fd_ostream> FDOS =
-      getOutputStream(Opts.OutputPath, Diags, IsBinary);
-  if (!FDOS)
-    return true;
-  std::unique_ptr<raw_fd_ostream> DwoOS;
-  if (!Opts.SplitDwarfOutput.empty())
-    DwoOS = getOutputStream(Opts.SplitDwarfOutput, Diags, IsBinary);
+  auto OutputFile = OutputBackend.createFile(Opts.OutputPath);
+  if (!OutputFile) {
+    llvm::errs() << toString(OutputFile.takeError()) << "\n";
+    return 1;
+  }
+  auto X = llvm::make_scope_exit([&]() { llvm::cantFail(OutputFile->keep()); });
+  raw_pwrite_stream &FDOS = OutputFile->getOS();
+  std::optional<llvm::vfs::OutputFile> DwoFile;
+  raw_pwrite_stream *DwoOS = nullptr;
+  if (!Opts.SplitDwarfOutput.empty()) {
+    if (llvm::Error Err = OutputBackend.createFile(Opts.SplitDwarfOutput)
+                              .moveInto(DwoFile)) {
+      llvm::consumeError(std::move(Err));
+      return 1;
+    }
+    DwoOS = &DwoFile->getOS();
+  }
 
   // Build up the feature string from the target feature list.
   std::string FS = llvm::join(Opts.Features, ",");
@@ -543,7 +563,7 @@ static bool ExecuteAssemblerImpl(AssemblerInvocation &Opts,
   std::unique_ptr<MCInstrInfo> MCII(TheTarget->createMCInstrInfo());
   assert(MCII && "Unable to create instruction info!");
 
-  raw_pwrite_stream *Out = FDOS.get();
+  raw_pwrite_stream *Out = &FDOS;
   std::unique_ptr<buffer_ostream> BOS;
 
   MCOptions.MCNoWarn = Opts.NoWarn;
@@ -573,10 +593,8 @@ static bool ExecuteAssemblerImpl(AssemblerInvocation &Opts,
   } else {
     assert(Opts.OutputType == AssemblerInvocation::FT_Obj &&
            "Invalid file type!");
-    if (!FDOS->supportsSeeking()) {
-      BOS = std::make_unique<buffer_ostream>(*FDOS);
-      Out = BOS.get();
-    }
+    BOS = std::make_unique<buffer_ostream>(FDOS);
+    Out = BOS.get();
 
     std::unique_ptr<MCCodeEmitter> CE(
         TheTarget->createMCCodeEmitter(*MCII, Ctx));
@@ -646,8 +664,11 @@ static bool ExecuteAssemblerImpl(AssemblerInvocation &Opts,
 }
 
 static bool ExecuteAssembler(AssemblerInvocation &Opts,
-                             DiagnosticsEngine &Diags) {
-  bool Failed = ExecuteAssemblerImpl(Opts, Diags);
+                             DiagnosticsEngine &Diags,
+                             std::unique_ptr<MemoryBuffer> Buffer,
+                             llvm::vfs::OutputBackend &OutputBackend) {
+  bool Failed =
+      ExecuteAssemblerImpl(Opts, Diags, std::move(Buffer), OutputBackend);
 
   // Delete output file if there were errors.
   if (Failed) {
@@ -691,7 +712,8 @@ int cc1as_main(ArrayRef<const char *> Argv, const char *Argv0, void *MainAddr) {
 
   // Parse the arguments.
   AssemblerInvocation Asm;
-  if (!AssemblerInvocation::CreateFromArgs(Asm, Argv, Diags))
+  CASOptions CASOpts;
+  if (!AssemblerInvocation::CreateFromArgs(Asm, CASOpts, Argv, Diags))
     return 1;
 
   if (Asm.ShowHelp) {
@@ -699,7 +721,7 @@ int cc1as_main(ArrayRef<const char *> Argv, const char *Argv0, void *MainAddr) {
         llvm::outs(), "clang -cc1as [options] file...",
         "Clang Integrated Assembler", /*ShowHidden=*/false,
         /*ShowAllAliases=*/false,
-        llvm::opt::Visibility(driver::options::CC1AsOption));
+        llvm::opt::Visibility(clang::driver::options::CC1AsOption));
 
     return 0;
   }
@@ -725,8 +747,115 @@ int cc1as_main(ArrayRef<const char *> Argv, const char *Argv0, void *MainAddr) {
     llvm::cl::ParseCommandLineOptions(NumArgs + 1, Args.get());
   }
 
+  if (!Asm.CASInputFileCacheKey.empty()) {
+    std::optional<llvm::cas::CASID> CASInputFileID;
+
+    auto ReportError = [](llvm::Error Err) {
+      llvm::errs() << toString(std::move(Err)) << "\n";
+      return 1;
+    };
+
+    auto [CAS, Cache] = CASOpts.getOrCreateDatabases(Diags);
+    if (!CAS || !Cache)
+      return 1;
+    auto InputCacheKeyID = CAS->parseID(Asm.CASInputFileCacheKey);
+    if (!InputCacheKeyID)
+      return ReportError(InputCacheKeyID.takeError());
+    auto InputCacheKeyEntry = Cache->get(*InputCacheKeyID);
+    if (!InputCacheKeyEntry)
+      return ReportError(InputCacheKeyEntry.takeError());
+    if (!*InputCacheKeyEntry)
+      return 1;
+    CASInputFileID = **InputCacheKeyEntry;
+
+    llvm::HashBuilder<llvm::TruncatedBLAKE3<16>, llvm::endianness::native>
+        HashBuilder;
+    for (auto It = Argv.begin(); It != Argv.end(); ++It) {
+      if (StringRef(*It) == "-fcas-input-file-cache-key") {
+        HashBuilder.add("-fcas-input-file-casid");
+        continue;
+      }
+
+      if (StringRef(*It) == Asm.CASInputFileCacheKey) {
+        HashBuilder.add(CASInputFileID->toString());
+        continue;
+      }
+
+      HashBuilder.add(*It);
+    }
+
+    auto FormatHash = [&](llvm::BLAKE3Result<16> Hash) {
+      std::array<uint64_t, 2> Words;
+      static_assert(sizeof(Hash) == sizeof(Words), "Hash must match Words");
+      std::memcpy(Words.data(), Hash.data(), sizeof(Hash));
+      return toString(llvm::APInt(sizeof(Words) * 8, Words), 36,
+                      /*Signed=*/false);
+    };
+
+    std::string CacheKeyStr = FormatHash(HashBuilder.result());
+    llvm::errs() << "CacheKeyStr=" << CacheKeyStr << "\n";
+    auto CacheKey = CAS->store({}, {CacheKeyStr.data(), CacheKeyStr.length()});
+    if (!CacheKey)
+      return ReportError(CacheKey.takeError());
+
+    auto ResultEntry = Cache->get(CAS->getID(*CacheKey));
+    if (!ResultEntry)
+      return ReportError(ResultEntry.takeError());
+    if (!*ResultEntry) {
+      auto CASInputFileRef = CAS->getReference(*CASInputFileID);
+      if (!CASInputFileRef)
+        return 1;
+      auto CASInputFileProxy = CAS->getProxy(*CASInputFileRef);
+      if (!CASInputFileProxy)
+        return 1;
+      StringRef Data = CASInputFileProxy->getData();
+
+      auto OutputBackend =
+          llvm::makeIntrusiveRefCnt<llvm::cas::CASOutputBackend>(CAS);
+
+      ExecuteAssembler(Asm, Diags, MemoryBuffer::getMemBuffer(Data),
+                       *OutputBackend);
+
+      auto Outputs = OutputBackend->takeOutputs();
+      assert(Outputs.size() == 1);
+      auto CacheKeyID = CAS->getID(*CacheKey);
+      if (Error Err = Cache->put(CacheKeyID, CAS->getID(Outputs[0].Object)))
+        return 1;
+
+      ResultEntry = Cache->get(CacheKeyID);
+      assert(ResultEntry && *ResultEntry);
+      llvm::errs() << "remark: compile job cache miss\n";
+    } else {
+      llvm::errs() << "remark: compile job cache hit\n";
+    }
+
+    // REPLAY
+    auto ResultProxy = CAS->getProxy(**ResultEntry);
+    if (!ResultProxy)
+      return ReportError(ResultProxy.takeError());
+
+    std::error_code EC;
+    llvm::raw_fd_ostream OS(Asm.OutputPath, EC);
+    if (EC != std::error_code())
+      return 1;
+    OS << ResultProxy->getData();
+    return 0;
+  }
+
+  auto Buffer = MemoryBuffer::getFileOrSTDIN(Asm.InputFile, /*IsText=*/true);
+
+  if (std::error_code EC = Buffer.getError()) {
+    return Diags.Report(diag::err_fe_error_reading)
+           << Asm.InputFile << EC.message();
+  }
+
+  auto OutputBackend =
+      llvm::makeIntrusiveRefCnt<llvm::vfs::OnDiskOutputBackend>();
+
   // Execute the invocation, unless there were parsing errors.
-  bool Failed = Diags.hasErrorOccurred() || ExecuteAssembler(Asm, Diags);
+  bool Failed =
+      Diags.hasErrorOccurred() ||
+      ExecuteAssembler(Asm, Diags, std::move(*Buffer), *OutputBackend);
 
   // If any timers were active but haven't been destroyed yet, print their
   // results now.

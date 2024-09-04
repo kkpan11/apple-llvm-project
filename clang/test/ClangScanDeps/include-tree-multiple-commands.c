@@ -33,7 +33,7 @@
 // RUN: %clang @%t/tu-cpp.0.rsp      -Rcompile-job-cache 2>&1 | FileCheck %s -check-prefix=CACHE-MISS
 // RUN: %clang @%t/tu-emit-ir.0.rsp  -Rcompile-job-cache 2>&1 | FileCheck %s -check-prefix=CACHE-MISS
 // RUN: %clang @%t/tu-emit-asm.0.rsp -Rcompile-job-cache 2>&1 | FileCheck %s -check-prefix=CACHE-MISS
-// RUN: %clang @%t/tu-cc1as.0.rsp
+// RUN: %clang @%t/tu-cc1as.0.rsp                        2>&1 | FileCheck %s -check-prefix=CACHE-MISS
 // RUN: mv %t/tu.i  %t/tu.0.i
 // RUN: mv %t/tu.bc %t/tu.0.bc
 // RUN: mv %t/tu.s  %t/tu.0.s
@@ -58,7 +58,7 @@
 // RUN: %clang @%t/tu-cpp.1.rsp      -Rcompile-job-cache 2>&1 | FileCheck %s -check-prefix=CACHE-MISS
 // RUN: %clang @%t/tu-emit-ir.1.rsp  -Rcompile-job-cache 2>&1 | FileCheck %s -check-prefix=CACHE-HIT
 // RUN: %clang @%t/tu-emit-asm.1.rsp -Rcompile-job-cache 2>&1 | FileCheck %s -check-prefix=CACHE-HIT
-// RUN: %clang @%t/tu-cc1as.1.rsp
+// RUN: %clang @%t/tu-cc1as.1.rsp                        2>&1 | FileCheck %s -check-prefix=CACHE-HIT
 // RUN: mv %t/tu.i  %t/tu.1.i
 // RUN: mv %t/tu.bc %t/tu.1.bc
 // RUN: mv %t/tu.s  %t/tu.1.s
@@ -186,8 +186,9 @@
 // CHECK-NEXT:           "-cc1as"
 // CHECK:                "-o"
 // CHECK-NEXT:           "[[PREFIX]]/tu.o"
-// FIXME: The integrated assembler should support caching too.
-// CHECK:                "[[PREFIX]]/tu.s"
+// CHECK-NOT:            "[[PREFIX]]/tu.s"
+// CHECK:                "-fcas-input-file-cache-key"
+// CHECK-NEXT:           "[[BACKEND_CACHE_KEY]]"
 // CHECK:              ]
 // CHECK:              "input-file": "[[PREFIX]]/tu.c"
 // CHECK-NEXT:       }
@@ -251,8 +252,7 @@
 // CHECK-LIBCLANG-NEXT:       Mod:{{.*}}
 // CHECK-LIBCLANG-NEXT:     file-deps:
 // CHECK-LIBCLANG-NEXT:       [[PREFIX]]/tu.c
-// FIXME: The integrated assembler should support caching too.
-// CHECK-LIBCLANG-NEXT:     build-args: -cc1as {{.*}} -o [[PREFIX]]/tu.o [[PREFIX]]/tu.s
+// CHECK-LIBCLANG-NEXT:     build-args: -cc1as {{.*}} -o [[PREFIX]]/tu.o -fcas-input-file-cache-key [[BACKEND_CACHE_KEY]]
 
 //--- module.h
 void bar(void);

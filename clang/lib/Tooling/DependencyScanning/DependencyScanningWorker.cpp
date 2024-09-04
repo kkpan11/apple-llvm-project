@@ -669,10 +669,8 @@ public:
     return Result;
   }
 
-  std::optional<std::string> takeLastCC1CacheKey() {
-    std::optional<std::string> Result;
-    std::swap(Result, LastCC1CacheKey);
-    return Result;
+  std::optional<std::string> getLastCC1CacheKey() {
+    return LastCC1CacheKey;
   }
 
   IntrusiveRefCntPtr<llvm::vfs::FileSystem> getDepScanFS() {
@@ -829,7 +827,7 @@ static bool createAndRunToolInvocation(
     return false;
 
   std::vector<std::string> Args = Action.takeLastCC1Arguments();
-  std::optional<std::string> CacheKey = Action.takeLastCC1CacheKey();
+  std::optional<std::string> CacheKey = Action.getLastCC1CacheKey();
   Consumer.handleBuildCommand(
       {std::move(Executable), std::move(Args), std::move(CacheKey)});
   return true;
@@ -915,6 +913,24 @@ bool DependencyScanningWorker::computeDependencies(
   } else {
     Success = forEachDriverJob(
         FinalCommandLine, *Diags, *FileMgr, [&](const driver::Command &Cmd) {
+          if (StringRef(Cmd.getCreator().getName()) == "clang::as") {
+            if (auto Key = Action.getLastCC1CacheKey()) {
+              std::vector<std::string> Args;
+              llvm::for_each(Cmd.getArguments(), [&Args](StringRef Arg) {
+                Args.emplace_back(Arg);
+              });
+              Args.pop_back();
+              Args.push_back("-fcas-input-file-cache-key");
+              Args.push_back(*Key);
+
+              Args.push_back("-fcas-path");
+              Args.push_back(CASOpts.CASPath);
+
+              Consumer.handleBuildCommand({Cmd.getExecutable(), Args, {}});
+              return true;
+            }
+          }
+
           if (StringRef(Cmd.getCreator().getName()) != "clang") {
             // Non-clang command. Just pass through to the dependency
             // consumer.

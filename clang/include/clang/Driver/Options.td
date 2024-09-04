@@ -8416,6 +8416,8 @@ def dump_depscan_tree_EQ : Option<["-"], "dump-depscan-tree=", KIND_JOINED>,
 // override -fcas / etc., it should just add those if not already specified.
 let Visibility = [CC1Option] in {
 
+} // let Visibility = [CC1Option]
+
 // FIXME: Add to driver once it's supported by (not clobbered by) -fdepscan.
 //
 // The driver should also have:
@@ -8425,16 +8427,21 @@ def fcas_path : Separate<["-"], "fcas-path">,
     Group<f_Group>, MetaVarName<"<dir>|auto">,
     HelpText<"Path to a persistent on-disk backing store for the builtin CAS."
              " '-fcas-path=auto' chooses a path in the user's system cache.">,
+    Visibility<[CC1Option, CC1AsOption]>,
     MarshallingInfoString<CASOpts<"CASPath">>;
+
+let Visibility = [CC1Option] in {
 
 def fcas_plugin_path : Separate<["-"], "fcas-plugin-path">,
     Group<f_Group>, MetaVarName<"<pathname>">,
     HelpText<"Path to a shared library implementing the LLVM CAS plugin API.">,
+    Visibility<[CC1Option, CC1AsOption]>,
     MarshallingInfoString<CASOpts<"PluginPath">>;
 
 def fcas_plugin_option : Separate<["-"], "fcas-plugin-option">,
     Group<f_Group>, MetaVarName<"<name>=<value>">,
     HelpText<"Option to pass to the CAS plugin.">,
+    Visibility<[CC1Option, CC1AsOption]>,
     MarshallingInfoStringPairVector<CASOpts<"PluginOptions">>;
 
 // FIXME: Add to driver once it's supported by -fdepscan.
@@ -8442,6 +8449,7 @@ def fcas_fs : Separate<["-"], "fcas-fs">,
     Group<f_Group>, MetaVarName<"<tree>">,
     HelpText<"Configure the filesystem to read from the provided CAS tree."
              " See also -fcas-builtin-path for loading a tree.">,
+    Visibility<[CC1Option, CC1AsOption]>,
     MarshallingInfoString<FileSystemOpts<"CASFileSystemRootID">>;
 
 // FIXME: Remove / merge with -fworking-directory?
@@ -8456,12 +8464,18 @@ def fcas_include_tree : Separate<["-"], "fcas-include-tree">,
     HelpText<"Configure the frontend to use a CAS include tree.">,
     MarshallingInfoString<FrontendOpts<"CASIncludeTreeID">>;
 
+} // let Visibility = [CC1Option]
+
 def fcas_input_file_cache_key : Separate<["-"], "fcas-input-file-cache-key">,
     Group<f_Group>, MetaVarName<"<key>">,
+    Visibility<[CC1Option, CC1AsOption]>,
     MarshallingInfoString<FrontendOpts<"CASInputFileCacheKey">>;
+
+let Visibility = [CC1Option] in {
 
 def fcas_input_file_id : Separate<["-"], "fcas-input-file-casid">,
     Group<f_Group>, MetaVarName<"<ID>">,
+    Visibility<[CC1Option, CC1AsOption]>,
     MarshallingInfoString<FrontendOpts<"CASInputFileCASID">>;
 
 // FIXME: Add to driver under -fexperimental-cache=compile-job.
@@ -8469,12 +8483,12 @@ defm cache_compile_job : BoolFOption<"cache-compile-job",
     FrontendOpts<"CacheCompileJob">, DefaultFalse,
     PosFlag<SetTrue, [], [ClangOption], "Try to cache full compilation job (-cc1). Ignored"
                          " (for now) without -fcas-fs.">,
-    NegFlag<SetFalse>>;
+    NegFlag<SetFalse>, BothFlags<[], [CC1Option, CC1AsOption]>>;
 
 defm cache_disable_replay : BoolFOption<"cache-disable-replay",
     FrontendOpts<"DisableCachedCompileJobReplay">, DefaultFalse,
     PosFlag<SetTrue, [], [ClangOption], "Disable replaying a cached compile job">,
-    NegFlag<SetFalse>>;
+    NegFlag<SetFalse>, BothFlags<[], [CC1Option, CC1AsOption]>>;
 
 def fcompilation_caching_service_path : Separate<["-"], "fcompilation-caching-service-path">,
     Group<f_Group>, MetaVarName<"<pathname>">,
