@@ -26,6 +26,7 @@ def stderr_print(line):
 
 class TestSwiftConsumeOperatorAsyncType(TestBase):
     @swiftTest
+    @skipIf(bugnumber="rdar://133849022", oslist=['linux'])
     def test_swift_consume_operator_async(self):
         """Check that we properly show variables at various points of the CFG while
         stepping with the consume operator.
