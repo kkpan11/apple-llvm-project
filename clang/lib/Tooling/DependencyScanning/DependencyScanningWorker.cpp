@@ -428,6 +428,19 @@ public:
     if (any(OptimizeArgs & ScanningOptimizations::Macros))
       canonicalizeDefines(OriginalInvocation.getPreprocessorOpts());
 
+    auto InputCacheKey = [&]() -> std::optional<std::string> {
+      if (OriginalInvocation.getFrontendOpts().Inputs.size() != 1)
+        return {};
+      const auto &FIF = OriginalInvocation.getFrontendOpts().Inputs.front();
+      if (!FIF.isFile())
+        return {};
+      auto It = OutputToCacheKey.find(FIF.getFile());
+      if (It == OutputToCacheKey.end())
+        return {};
+
+      return It->second;
+    }();
+
     if (Scanned) {
       CompilerInstance &ScanInstance = *ScanInstanceStorage;
       auto reportError = [&ScanInstance](Error &&E) -> bool {
@@ -443,11 +456,16 @@ public:
       if (MDC)
         MDC->applyDiscoveredDependencies(OriginalInvocation);
 
-      if (Error E = Controller.finalize(ScanInstance, OriginalInvocation))
+      std::optional<std::string> OutputCacheKey;
+      auto MaybeOutputCacheKey =
+          Controller.finalize(ScanInstance, OriginalInvocation, InputCacheKey);
+      if (Error E = std::move(MaybeOutputCacheKey).moveInto(OutputCacheKey))
         return reportError(std::move(E));
 
       LastCC1Arguments = OriginalInvocation.getCC1CommandLine();
-      LastCC1CacheKey = Controller.getCacheKey(OriginalInvocation);
+      OutputToCacheKey[OriginalInvocation.getFrontendOpts().OutputFile] =
+          *OutputCacheKey;
+      LastCC1CacheKey = OutputCacheKey;
       return true;
     }
 
@@ -640,7 +658,10 @@ public:
     if (MDC)
       MDC->applyDiscoveredDependencies(OriginalInvocation);
 
-    if (Error E = Controller.finalize(ScanInstance, OriginalInvocation))
+    std::optional<std::string> OutputCacheKey;
+    auto MaybeOutputCacheKey =
+        Controller.finalize(ScanInstance, OriginalInvocation, InputCacheKey);
+    if (Error E = std::move(MaybeOutputCacheKey).moveInto(OutputCacheKey))
       return reportError(std::move(E));
 
     // Forward any CAS results to consumer.
@@ -652,7 +673,9 @@ public:
       Consumer.handleIncludeTreeID(std::move(ID));
 
     LastCC1Arguments = OriginalInvocation.getCC1CommandLine();
-    LastCC1CacheKey = Controller.getCacheKey(OriginalInvocation);
+    OutputToCacheKey[OriginalInvocation.getFrontendOpts().OutputFile] =
+        *OutputCacheKey;
+    LastCC1CacheKey = OutputCacheKey;
 
     // Propagate the statistics to the parent FileManager.
     DriverFileMgr->AddStats(ScanInstance.getFileManager());
@@ -708,6 +731,7 @@ private:
   std::shared_ptr<ModuleDepCollector> MDC;
   std::vector<std::string> LastCC1Arguments;
   std::optional<std::string> LastCC1CacheKey;
+  llvm::StringMap<std::string> OutputToCacheKey;
   bool Scanned = false;
   raw_ostream *VerboseOS;
 };

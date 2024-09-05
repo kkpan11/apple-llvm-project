@@ -26,10 +26,9 @@ public:
 
   llvm::Error initialize(CompilerInstance &ScanInstance,
                          CompilerInvocation &NewInvocation) override;
-  llvm::Error finalize(CompilerInstance &ScanInstance,
-                       CompilerInvocation &NewInvocation) override;
-  std::optional<std::string>
-  getCacheKey(const CompilerInvocation &NewInvocation) override;
+  llvm::Expected<std::optional<std::string>>
+  finalize(CompilerInstance &ScanInstance, CompilerInvocation &NewInvocation,
+           std::optional<std::string> InputCacheKey) override;
   llvm::Error
   initializeModuleBuild(CompilerInstance &ModuleScanInstance) override;
   llvm::Error
@@ -41,7 +40,6 @@ private:
   llvm::cas::CachingOnDiskFileSystem &CacheFS;
   std::optional<llvm::TreePathPrefixMapper> Mapper;
   CASOptions CASOpts;
-  std::optional<std::string> FirstCacheKey;
 };
 } // anonymous namespace
 
@@ -117,48 +115,47 @@ static void trackFilesCommon(CompilerInstance &CI,
   }
 }
 
-Error CASFSActionController::finalize(CompilerInstance &ScanInstance,
-                                      CompilerInvocation &NewInvocation) {
+Expected<std::optional<std::string>>
+CASFSActionController::finalize(CompilerInstance &ScanInstance,
+                                CompilerInvocation &NewInvocation,
+                                std::optional<std::string> InputCacheKey) {
   // Handle profile mappings.
   (void)CacheFS.status(NewInvocation.getCodeGenOpts().ProfileInstrumentUsePath);
   (void)CacheFS.status(NewInvocation.getCodeGenOpts().SampleProfileFile);
   (void)CacheFS.status(NewInvocation.getCodeGenOpts().ProfileRemappingFile);
 
-  trackFilesCommon(ScanInstance, CacheFS);
+  std::string InputID;
+  CachingInputKind InputKind;
 
-  auto CASFileSystemRootID = CacheFS.createTreeFromNewAccesses(
-      [&](const llvm::vfs::CachedDirectoryEntry &Entry,
-          SmallVectorImpl<char> &Storage) {
-        return Mapper->mapDirEntry(Entry, Storage);
-      });
-  if (!CASFileSystemRootID)
-    return CASFileSystemRootID.takeError();
+  if (InputCacheKey) {
+    InputID = *InputCacheKey;
+    InputKind = CachingInputKind::CachedCompilation;
+  } else {
+    trackFilesCommon(ScanInstance, CacheFS);
 
-  configureInvocationForCaching(NewInvocation, CASOpts,
-                                CASFileSystemRootID->getID().toString(),
-                                CachingInputKind::FileSystemRoot,
+    auto CASFileSystemRootID = CacheFS.createTreeFromNewAccesses(
+        [&](const llvm::vfs::CachedDirectoryEntry &Entry,
+            SmallVectorImpl<char> &Storage) {
+          return Mapper->mapDirEntry(Entry, Storage);
+        });
+    if (!CASFileSystemRootID)
+      return CASFileSystemRootID.takeError();
+    InputID = CASFileSystemRootID->getID().toString();
+    InputKind = CachingInputKind::FileSystemRoot;
+  }
+
+  configureInvocationForCaching(NewInvocation, CASOpts, InputID, InputKind,
                                 CacheFS.getCurrentWorkingDirectory().get());
 
   if (Mapper)
     DepscanPrefixMapping::remapInvocationPaths(NewInvocation, *Mapper);
 
-  // FIXME: This is here just to satisfy existing tests. To support -save-temps
-  // with CASFS, we need to reimplement the same thing we did for include-tree.
-  if (!FirstCacheKey) {
-    auto &CAS = ScanInstance.getOrCreateObjectStore();
-    auto Key = createCompileJobCacheKey(CAS, ScanInstance.getDiagnostics(),
-                                        NewInvocation);
-    assert(Key && "Cannot create compile job cache key for CASFS compile");
-    FirstCacheKey = Key->toString();
-  }
-
-  return Error::success();
-}
-
-std::optional<std::string>
-CASFSActionController::getCacheKey(const CompilerInvocation &NewInvocation) {
-  assert(FirstCacheKey);
-  return FirstCacheKey;
+  auto &CAS = ScanInstance.getOrCreateObjectStore();
+  auto Key = createCompileJobCacheKey(CAS, ScanInstance.getDiagnostics(),
+                                      NewInvocation);
+  if (Key)
+    return Key->toString();
+  return std::nullopt;
 }
 
 Error CASFSActionController::initializeModuleBuild(
