@@ -35,9 +35,10 @@ public:
 private:
   Error initialize(CompilerInstance &ScanInstance,
                    CompilerInvocation &NewInvocation) override;
-  llvm::Expected<std::optional<std::string>>
-  finalize(CompilerInstance &ScanInstance, CompilerInvocation &NewInvocation,
-           std::optional<std::string> InputCacheKey) override;
+  Error finalize(CompilerInstance &ScanInstance,
+                 CompilerInvocation &NewInvocation) override;
+  std::optional<std::string>
+  getCacheKey(const CompilerInvocation &NewInvocation) override;
 
   Error initializeModuleBuild(CompilerInstance &ModuleScanInstance) override;
   Error finalizeModuleBuild(CompilerInstance &ModuleScanInstance) override;
@@ -58,6 +59,7 @@ private:
   // pointer so the builder cannot move when resizing.
   SmallVector<std::unique_ptr<IncludeTreeBuilder>> BuilderStack;
   std::optional<cas::IncludeTreeRoot> IncludeTreeResult;
+  llvm::StringMap<std::string> OutputToCacheKey;
 };
 
 /// Callbacks for building an include-tree for a given translation unit or
@@ -337,14 +339,25 @@ Error IncludeTreeActionController::initialize(
   return Error::success();
 }
 
-llvm::Expected<std::optional<std::string>>
-IncludeTreeActionController::finalize(
-    CompilerInstance &ScanInstance, CompilerInvocation &NewInvocation,
-    std::optional<std::string> InputCacheKey) {
+Error IncludeTreeActionController::finalize(CompilerInstance &ScanInstance,
+                                            CompilerInvocation &NewInvocation) {
+  auto GetInputCacheKey = [&]() -> std::optional<StringRef> {
+    if (NewInvocation.getFrontendOpts().Inputs.size() != 1)
+      return {};
+    const auto &FIF = NewInvocation.getFrontendOpts().Inputs.front();
+    if (!FIF.isFile())
+      return {};
+    auto It = OutputToCacheKey.find(FIF.getFile());
+    if (It == OutputToCacheKey.end())
+      return {};
+
+    return It->second;
+  };
+
   std::string InputID;
   CachingInputKind InputKind;
-  if (InputCacheKey) {
-    InputID = *InputCacheKey;
+  if (auto InputCacheKey = GetInputCacheKey()) {
+    InputID = InputCacheKey->str();
     InputKind = CachingInputKind::CachedCompilation;
   } else {
     assert(!IncludeTreeResult);
@@ -369,8 +382,18 @@ IncludeTreeActionController::finalize(
   auto Key = createCompileJobCacheKey(CAS, ScanInstance.getDiagnostics(),
                                       NewInvocation);
   if (Key)
-    return Key->toString();
-  return std::nullopt;
+    OutputToCacheKey[NewInvocation.getFrontendOpts().OutputFile] =
+        Key->toString();
+  return Error::success();
+}
+
+std::optional<std::string> IncludeTreeActionController::getCacheKey(
+    const CompilerInvocation &NewInvocation) {
+  auto It = OutputToCacheKey.find(NewInvocation.getFrontendOpts().OutputFile);
+  // FIXME: Assert this does not happen.
+  if (It == OutputToCacheKey.end())
+    return std::nullopt;
+  return It->second;
 }
 
 Error IncludeTreeActionController::initializeModuleBuild(

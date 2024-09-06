@@ -86,9 +86,13 @@ public:
     return llvm::Error::success();
   }
 
-  virtual llvm::Expected<std::optional<std::string>>
-  finalize(CompilerInstance &ScanInstance, CompilerInvocation &NewInvocation,
-           std::optional<std::string> InputCacheKey) {
+  virtual llvm::Error finalize(CompilerInstance &ScanInstance,
+                               CompilerInvocation &NewInvocation) {
+    return llvm::Error::success();
+  }
+
+  virtual std::optional<std::string>
+  getCacheKey(const CompilerInvocation &NewInvocation) {
     return std::nullopt;
   }
 

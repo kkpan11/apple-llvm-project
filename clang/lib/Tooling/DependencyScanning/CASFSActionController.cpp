@@ -26,9 +26,10 @@ public:
 
   llvm::Error initialize(CompilerInstance &ScanInstance,
                          CompilerInvocation &NewInvocation) override;
-  llvm::Expected<std::optional<std::string>>
-  finalize(CompilerInstance &ScanInstance, CompilerInvocation &NewInvocation,
-           std::optional<std::string> InputCacheKey) override;
+  llvm::Error finalize(CompilerInstance &ScanInstance,
+                       CompilerInvocation &NewInvocation) override;
+  std::optional<std::string>
+  getCacheKey(const CompilerInvocation &NewInvocation) override;
   llvm::Error
   initializeModuleBuild(CompilerInstance &ModuleScanInstance) override;
   llvm::Error
@@ -40,6 +41,7 @@ private:
   llvm::cas::CachingOnDiskFileSystem &CacheFS;
   std::optional<llvm::TreePathPrefixMapper> Mapper;
   CASOptions CASOpts;
+  llvm::StringMap<std::string> OutputToCacheKey;
 };
 } // anonymous namespace
 
@@ -115,20 +117,31 @@ static void trackFilesCommon(CompilerInstance &CI,
   }
 }
 
-Expected<std::optional<std::string>>
-CASFSActionController::finalize(CompilerInstance &ScanInstance,
-                                CompilerInvocation &NewInvocation,
-                                std::optional<std::string> InputCacheKey) {
+Error CASFSActionController::finalize(CompilerInstance &ScanInstance,
+                                      CompilerInvocation &NewInvocation) {
   // Handle profile mappings.
   (void)CacheFS.status(NewInvocation.getCodeGenOpts().ProfileInstrumentUsePath);
   (void)CacheFS.status(NewInvocation.getCodeGenOpts().SampleProfileFile);
   (void)CacheFS.status(NewInvocation.getCodeGenOpts().ProfileRemappingFile);
 
+  auto GetInputCacheKey = [&]() -> std::optional<StringRef> {
+    if (NewInvocation.getFrontendOpts().Inputs.size() != 1)
+      return {};
+    const auto &FIF = NewInvocation.getFrontendOpts().Inputs.front();
+    if (!FIF.isFile())
+      return {};
+    auto It = OutputToCacheKey.find(FIF.getFile());
+    if (It == OutputToCacheKey.end())
+      return {};
+
+    return It->second;
+  };
+
   std::string InputID;
   CachingInputKind InputKind;
 
-  if (InputCacheKey) {
-    InputID = *InputCacheKey;
+  if (auto InputCacheKey = GetInputCacheKey()) {
+    InputID = InputCacheKey->str();
     InputKind = CachingInputKind::CachedCompilation;
   } else {
     trackFilesCommon(ScanInstance, CacheFS);
@@ -154,8 +167,18 @@ CASFSActionController::finalize(CompilerInstance &ScanInstance,
   auto Key = createCompileJobCacheKey(CAS, ScanInstance.getDiagnostics(),
                                       NewInvocation);
   if (Key)
-    return Key->toString();
-  return std::nullopt;
+    OutputToCacheKey[NewInvocation.getFrontendOpts().OutputFile] =
+        Key->toString();
+  return Error::success();
+}
+
+std::optional<std::string>
+CASFSActionController::getCacheKey(const CompilerInvocation &NewInvocation) {
+  auto It = OutputToCacheKey.find(NewInvocation.getFrontendOpts().OutputFile);
+  // FIXME: Assert this does not happen.
+  if (It == OutputToCacheKey.end())
+    return std::nullopt;
+  return It->second;
 }
 
 Error CASFSActionController::initializeModuleBuild(
