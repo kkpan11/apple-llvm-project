@@ -223,7 +223,7 @@ Error CASFSActionController::finalizeModuleInvocation(
   CompilerInvocation CI(CowCI);
 
   if (auto ID = MD.CASFileSystemRootID) {
-    configureInvocationForCaching(CI, CASOpts, ID->toString(),
+    configureInvocationForCaching(CI, CASOpts, *ID,
                                   CachingInputKind::FileSystemRoot,
                                   CacheFS.getCurrentWorkingDirectory().get());
   }
