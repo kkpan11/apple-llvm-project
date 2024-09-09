@@ -9,10 +9,12 @@ class TestSwiftImportSearchPaths(lldbtest.TestBase):
     NO_DEBUG_INFO_TESTCASE = True
     mydir = lldbtest.TestBase.compute_mydir(__file__)
 
+    @skipIf(bugnumber='rdar://135553659')
     @swiftTest
     def test_positive(self):
         self.do_test('true')
 
+    @skipIf(bugnumber='rdar://135553659')
     @swiftTest
     def test_negative(self):
         self.do_test('false')
