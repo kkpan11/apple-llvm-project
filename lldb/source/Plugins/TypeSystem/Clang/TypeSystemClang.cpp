@@ -9,7 +9,8 @@
 #include "TypeSystemClang.h"
 
 #include "clang/AST/DeclBase.h"
-#include "llvm/ADT/STLForwardCompat.h"
+#include "clang/AST/DeclCXX.h"
+#include "clang/AST/ExprCXX.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/FormatAdapters.h"
 #include "llvm/Support/FormatVariadic.h"
@@ -3640,6 +3641,15 @@ bool TypeSystemClang::IsPolymorphicClass(lldb::opaque_compiler_type_t type) {
   return false;
 }
 
+/// Returns 'true' if \ref decl has been allocated a definition
+/// *and* the definition was marked as completed. There are currently
+/// situations in which LLDB marks a definition as `isCompleteDefinition`
+/// while no definition was allocated. This function guards against those
+/// situations.
+static bool HasCompleteDefinition(clang::CXXRecordDecl *decl) {
+  return decl && decl->hasDefinition() && decl->isCompleteDefinition();
+}
+
 bool TypeSystemClang::IsPossibleDynamicType(lldb::opaque_compiler_type_t type,
                                             CompilerType *dynamic_pointee_type,
                                             bool check_cplusplus,
@@ -3722,8 +3732,9 @@ bool TypeSystemClang::IsPossibleDynamicType(lldb::opaque_compiler_type_t type,
         if (check_cplusplus) {
           clang::CXXRecordDecl *cxx_record_decl =
               pointee_qual_type->getAsCXXRecordDecl();
+
           if (cxx_record_decl) {
-            bool is_complete = cxx_record_decl->isCompleteDefinition();
+            bool is_complete = HasCompleteDefinition(cxx_record_decl);
 
             if (is_complete)
               success = cxx_record_decl->isDynamicClass();
@@ -3732,7 +3743,9 @@ bool TypeSystemClang::IsPossibleDynamicType(lldb::opaque_compiler_type_t type,
               if (metadata)
                 success = metadata->GetIsDynamicCXXType();
               else {
-                is_complete = GetType(pointee_qual_type).GetCompleteType();
+                // Make sure completion has actually completed the type.
+                is_complete = GetType(pointee_qual_type).GetCompleteType() &&
+                              HasCompleteDefinition(cxx_record_decl);
                 if (is_complete)
                   success = cxx_record_decl->isDynamicClass();
                 else
@@ -5428,8 +5441,12 @@ TypeSystemClang::GetNumChildren(lldb::opaque_compiler_type_t type,
           llvm::cast<clang::RecordType>(qual_type.getTypePtr());
       const clang::RecordDecl *record_decl = record_type->getDecl();
       assert(record_decl);
+
+      // CXXBaseSpecifiers are stored on the definition. If we don't have
+      // one at this point that means we "completed" the type without actually
+      // having allocated a definition.
       const clang::CXXRecordDecl *cxx_record_decl =
-          llvm::dyn_cast<clang::CXXRecordDecl>(record_decl);
+          llvm::dyn_cast<clang::CXXRecordDecl>(record_decl)->getDefinition();
       if (cxx_record_decl) {
         if (omit_empty_base_classes) {
           // Check each base classes to see if it or any of its base classes
