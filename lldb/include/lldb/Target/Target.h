@@ -1330,6 +1330,10 @@ public:
 
   void ClearAllLoadedSections();
 
+  lldb_private::SummaryStatisticsSP GetSummaryStatisticsSPForProviderName(
+      lldb_private::TypeSummaryImpl &summary_provider);
+  lldb_private::SummaryStatisticsCache &GetSummaryStatisticsCache();
+
   /// Set the \a Trace object containing processor trace information of this
   /// target.
   ///
@@ -1664,6 +1668,7 @@ protected:
   std::string m_label;
   ModuleList m_images; ///< The list of images for this process (shared
                        /// libraries and anything dynamically loaded).
+  SummaryStatisticsCache m_summary_statistics_cache;
   SectionLoadHistory m_section_load_history;
   BreakpointList m_breakpoint_list;
   BreakpointList m_internal_breakpoint_list;
