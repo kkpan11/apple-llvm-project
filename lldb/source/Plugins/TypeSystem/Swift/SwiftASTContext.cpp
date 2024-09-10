@@ -1890,8 +1890,7 @@ void SwiftASTContext::ApplyWorkingDir(
 
 void SwiftASTContext::ApplyDiagnosticOptions() {
   const auto &opts = GetCompilerInvocation().getDiagnosticOptions();
-  if (opts.PrintDiagnosticNames)
-    GetDiagnosticEngine().setPrintDiagnosticNames(true);
+  GetDiagnosticEngine().setPrintDiagnosticNamesMode(opts.PrintDiagnosticNames);
 
   if (!opts.DiagnosticDocumentationPath.empty())
     GetDiagnosticEngine().setDiagnosticDocumentationPath(
