@@ -111,6 +111,7 @@
 // CHECK:              ]
 // CHECK:              "file-deps": [
 // CHECK-NEXT:           "[[SRC]]/tu.c"
+// CHECK-NEXT:           "[[SRC]]/header.h"
 // CHECK-NEXT:         ]
 // CHECK:              "input-file": "[[SRC]]/tu.c"
 // CHECK-NEXT:       }
@@ -211,6 +212,7 @@
 // CHECK-LIBCLANG-NEXT:       Mod:{{.*}}
 // CHECK-LIBCLANG-NEXT:     file-deps:
 // CHECK-LIBCLANG-NEXT:       [[SRC]]/tu.c
+// CHECK-LIBCLANG-NEXT:       [[SRC]]/header.h
 // CHECK-LIBCLANG-NOT:             -fcas-input-file-cache-key
 // CHECK-LIBCLANG-NOT:             {{.*}}tu.c
 // CHECK-LIBCLANG-NEXT:     build-args: -cc1 {{.*}} -o [[DST]]/tu.i {{.*}} -E -fmodule-file-cache-key {{.*}} [[M_CACHE_KEY]] -x c {{.*}} -fmodule-file={{.*}}[[PREFIX]]/modules/Mod_{{.*}}.pcm
@@ -223,6 +225,7 @@
 // CHECK-LIBCLANG-NEXT:       Mod:{{.*}}
 // CHECK-LIBCLANG-NEXT:     file-deps:
 // CHECK-LIBCLANG-NEXT:       [[SRC]]/tu.c
+// CHECK-LIBCLANG-NEXT:       [[SRC]]/header.h
 // CHECK-LIBCLANG-NOT:                  -fcas-include-tree
 // CHECK-LIBCLANG-NOT:                  {{.*}}tu.i
 // CHECK-LIBCLANG-NEXT:     build-args: -cc1 {{.*}} -o [[DST]]/tu.bc {{.*}} -fcas-input-file-cache-key [[CPP_CACHE_KEY]] {{.*}} -emit-llvm-bc -fmodule-file-cache-key {{.*}} [[M_CACHE_KEY]] -x c-cpp-output {{.*}} -fmodule-file={{.*}}[[PREFIX]]/modules/Mod_{{.*}}.pcm
@@ -236,6 +239,7 @@
 // CHECK-LIBCLANG-NEXT:       Mod:{{.*}}
 // CHECK-LIBCLANG-NEXT:     file-deps:
 // CHECK-LIBCLANG-NEXT:       [[SRC]]/tu.c
+// CHECK-LIBCLANG-NEXT:       [[SRC]]/header.h
 // CHECK-LIBCLANG-NEXT:     build-args: -cc1 {{.*}} -o [[DST]]/tu.s {{.*}} -fcas-input-file-cache-key [[COMPILER_CACHE_KEY]] {{.*}} -S -x ir
 // CHECK-LIBCLANG-NEXT:   command 3:
 // CHECK-LIBCLANG-NEXT:     context-hash: {{.*}}
@@ -246,6 +250,7 @@
 // CHECK-LIBCLANG-NEXT:       Mod:{{.*}}
 // CHECK-LIBCLANG-NEXT:     file-deps:
 // CHECK-LIBCLANG-NEXT:       [[SRC]]/tu.c
+// CHECK-LIBCLANG-NEXT:       [[SRC]]/header.h
 // FIXME: The integrated assembler should support caching too.
 // CHECK-LIBCLANG-NEXT:     build-args: -cc1as {{.*}} -o [[DST]]/tu.o [[DST]]/tu.s
 
@@ -255,12 +260,16 @@ void bar(void);
 //--- include/module.modulemap
 module Mod { header "module.h" }
 
+//--- src0/header.h
 //--- src0/tu.c
 #include "module.h"
+#include "header.h"
 #define FOO 0
 void tu_save_temps(void) { bar(); }
 
+//--- src1/header.h
 //--- src1/tu.c
 #include "module.h"
+#include "header.h"
 #define FOO 1
 void tu_save_temps(void) { bar(); }
