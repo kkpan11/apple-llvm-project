@@ -11,7 +11,7 @@
 
 // RUN: clang-scan-deps -format experimental-include-tree-full -cas-path %t/cas -module-files-dir %t/modules \
 // RUN:   -- %clang -target x86_64-apple-darwin -c %t/src0/tu.c -save-temps=obj -o %t/dst0/tu.o -I %t/include \
-// RUN:     -fdepscan-prefix-map=%t/src0=^src \
+// RUN:     -fdepscan-prefix-map=%t/src0=^src -fdepscan-prefix-map=%t/include=^include \
 // RUN:     -fmodules -fimplicit-modules -fimplicit-module-maps -fmodules-cache-path=%t/cache \
 // RUN:   > %t/deps.0.json
 
@@ -39,7 +39,7 @@
 
 // RUN: clang-scan-deps -format experimental-include-tree-full -cas-path %t/cas -module-files-dir %t/modules \
 // RUN:   -- %clang -target x86_64-apple-darwin -c %t/src1/tu.c -save-temps=obj -o %t/dst1/tu.o -I %t/include \
-// RUN:     -fdepscan-prefix-map=%t/src1=^src \
+// RUN:     -fdepscan-prefix-map=%t/src1=^src -fdepscan-prefix-map=%t/include=^include \
 // RUN:     -fmodules -fimplicit-modules -fimplicit-module-maps -fmodules-cache-path=%t/cache \
 // RUN:   > %t/deps.1.json
 
