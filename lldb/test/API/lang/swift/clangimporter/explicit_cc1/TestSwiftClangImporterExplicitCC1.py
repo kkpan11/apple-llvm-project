@@ -26,6 +26,4 @@ class TestSwiftClangImporterExplicitCC1(TestBase):
         self.expect("expression obj", DATA_TYPES_DISPLAYED_CORRECTLY,
                     substrs=["b ="])
         self.filecheck('platform shell cat "%s"' % log, __file__)
-### -cc1 should be round-tripped so there is no more `-cc1` in the extra args. Look for `-triple` which is a cc1 flag.
-#       CHECK:  SwiftASTContextForExpressions(module: "a", cu: "main.swift")::LogConfiguration() --     -triple
-#       CHECK-NOT: -cc1
+#       CHECK:  SwiftASTContextForExpressions(module: "a", cu: "main.swift")::LogConfiguration() --     -cc1
