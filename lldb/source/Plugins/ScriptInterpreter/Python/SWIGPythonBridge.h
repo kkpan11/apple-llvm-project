@@ -88,7 +88,7 @@ public:
   static PythonObject ToSWIGWrapper(lldb::ProcessSP process_sp);
   static PythonObject ToSWIGWrapper(lldb::ThreadPlanSP thread_plan_sp);
   static PythonObject ToSWIGWrapper(lldb::BreakpointSP breakpoint_sp);
-  static PythonObject ToSWIGWrapper(Status status);
+  static PythonObject ToSWIGWrapper(Status &&status);
   static PythonObject ToSWIGWrapper(const StructuredDataImpl &data_impl);
   static PythonObject ToSWIGWrapper(lldb::ThreadSP thread_sp);
   static PythonObject ToSWIGWrapper(lldb::StackFrameSP frame_sp);
@@ -158,16 +158,6 @@ public:
   LLDBSwigPythonCallBreakpointResolver(void *implementor,
                                        const char *method_name,
                                        lldb_private::SymbolContext *sym_ctx);
-
-  static python::PythonObject LLDBSwigPythonCreateScriptedStopHook(
-      lldb::TargetSP target_sp, const char *python_class_name,
-      const char *session_dictionary_name, const StructuredDataImpl &args,
-      lldb_private::Status &error);
-
-  static bool
-  LLDBSwigPythonStopHookCallHandleStop(void *implementor,
-                                       lldb::ExecutionContextRefSP exc_ctx,
-                                       lldb::StreamSP stream);
 
   static size_t LLDBSwigPython_CalculateNumChildren(PyObject *implementor,
                                                     uint32_t max);
@@ -281,6 +271,7 @@ void *LLDBSWIGPython_CastPyObjectToSBEvent(PyObject *data);
 void *LLDBSWIGPython_CastPyObjectToSBStream(PyObject *data);
 void *LLDBSWIGPython_CastPyObjectToSBValue(PyObject *data);
 void *LLDBSWIGPython_CastPyObjectToSBMemoryRegionInfo(PyObject *data);
+void *LLDBSWIGPython_CastPyObjectToSBExecutionContext(PyObject *data);
 } // namespace python
 
 } // namespace lldb_private
