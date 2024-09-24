@@ -12,12 +12,10 @@
 
 #include "ReflectionContextInterface.h"
 #include "SwiftLanguageRuntimeImpl.h"
-#include "lldb/Symbol/CompilerType.h"
 #include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
 #include "swift/Demangling/Demangle.h"
 #include "swift/RemoteInspection/DescriptorFinder.h"
-#include <_types/_uint64_t.h>
 
 using namespace lldb;
 using namespace lldb_private;
