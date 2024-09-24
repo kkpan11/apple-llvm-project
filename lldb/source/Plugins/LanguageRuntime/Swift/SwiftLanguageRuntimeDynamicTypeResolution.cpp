@@ -317,11 +317,38 @@ public:
     std::string wrapped;
     // The mangled name passed in is bare. Add global prefix ($s) and type (D).
     llvm::raw_string_ostream(wrapped) << "$s" << mangledName << 'D';
+    swift::Demangle::Demangler dem;
+    auto *node = dem.demangleSymbol(wrapped);
+    if (!node) {
+      // Try `mangledName` as plain ObjC class name.
+      auto *global = dem.createNode(Node::Kind::Global);
+      auto *typeMangling = dem.createNode(Node::Kind::TypeMangling);
+      global->addChild(typeMangling, dem);
+      auto *type = dem.createNode(Node::Kind::Type);
+      typeMangling->addChild(type, dem);
+      auto *classNode = dem.createNode(Node::Kind::Class);
+      type->addChild(classNode, dem);
+      auto *module =
+          dem.createNode(Node::Kind::Module, swift::MANGLING_MODULE_OBJC);
+      auto *identifier = dem.createNode(Node::Kind::Identifier, mangledName);
+      classNode->addChild(module, dem);
+      classNode->addChild(identifier, dem);
+      auto maybeMangled = mangleNode(global);
+      if (!maybeMangled.isSuccess()) {
+        LLDB_LOG(GetLog(LLDBLog::Types),
+                 "[LLDBTypeInfoProvider] invalid mangled name: {0}",
+                 mangledName);
+        return nullptr;
+      }
+      wrapped = maybeMangled.result();
+      LLDB_LOG(GetLog(LLDBLog::Types),
+               "[LLDBTypeInfoProvider] using mangled ObjC class name: {0}",
+               wrapped);
+    }
+
 #ifndef NDEBUG
     {
       // Check that our hardcoded mangling wrapper is still up-to-date.
-      swift::Demangle::Context dem;
-      auto node = dem.demangleSymbolAsNode(wrapped);
       assert(node && node->getKind() == swift::Demangle::Node::Kind::Global);
       assert(node->getNumChildren() == 1);
       node = node->getChild(0);
