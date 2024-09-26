@@ -336,7 +336,7 @@ public:
     } else {
 #ifndef NDEBUG
       // Check that our hardcoded mangling wrapper is still up-to-date.
-      assert(node && node->getKind() == swift::Demangle::Node::Kind::Global);
+      assert(node->getKind() == swift::Demangle::Node::Kind::Global);
       assert(node->getNumChildren() == 1);
       node = node->getChild(0);
       assert(node->getKind() == swift::Demangle::Node::Kind::TypeMangling);
