@@ -182,7 +182,7 @@ bool lldb_private::formatters::swift::Measurement_SummaryProvider(
   } else {
     // Measurement structure as of macOS 14+.
     value_sp = valobj.GetChildMemberWithName("_doubleValue");
-    symbol_sp = valobj.GetChildAtNamePath({"_unit", "_symbol"});
+    symbol_sp = valobj.GetChildAtNamePath({"unit", "_symbol"});
   }
 
   if (!value_sp || !symbol_sp)
