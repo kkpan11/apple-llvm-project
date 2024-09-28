@@ -18,9 +18,5 @@ lldbinline.MakeInlineTest(
     decorators=[
         swiftTest,
         skipUnlessDarwin,
-        expectedFailureAll(
-            bugnumber="rdar://60396797",
-            setting=("symbols.use-swift-clangimporter", "false"),
-        ),
     ],
 )
