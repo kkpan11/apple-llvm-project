@@ -36,5 +36,14 @@ class TestCase(TestBase):
         lldbutil.run_to_source_breakpoint(
             self, "break here", lldb.SBFileSpec("main.swift")
         )
+
+        # This setting is to test that measurements can be printed using
+        # TypeSystemSwiftTypeRef only. If the SwiftASTContext fallback were
+        # enabled, it can have the unwatned effect of suppressing failures
+        # within the TypeRef type system.
         self.runCmd("settings set symbols.swift-enable-ast-context false")
+        self.addTearDownHook(
+            lambda: self.runCmd("settings set symbols.swift-enable-ast-context true")
+        )
+
         self.expect("frame variable measurement", substrs=["1.25 m"])
