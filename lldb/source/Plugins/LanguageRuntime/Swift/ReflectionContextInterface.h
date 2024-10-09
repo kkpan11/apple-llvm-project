@@ -18,6 +18,7 @@
 #include "lldb/lldb-types.h"
 #include "swift/ABI/ObjectFile.h"
 #include "swift/Remote/RemoteAddress.h"
+#include "swift/RemoteInspection/ReflectionContext.h"
 #include "swift/RemoteInspection/TypeRef.h"
 #include <optional>
 #include "llvm/ADT/STLFunctionalExtras.h"
@@ -145,6 +146,23 @@ public:
       swift::reflection::DescriptorFinder *descriptor_finder) = 0;
   virtual swift::remote::RemoteAbsolutePointer
   StripSignedPointer(swift::remote::RemoteAbsolutePointer pointer) = 0;
+  struct AsyncTaskInfo {
+    bool isChildTask;
+    bool isFuture;
+    bool isGroupChildTask;
+    bool isAsyncLetTask;
+    bool isCancelled;
+    bool isStatusRecordLocked;
+    bool isEscalated;
+    // If false, the IsRunning flag is not valid.
+    bool hasIsRunning;
+    bool isRunning;
+    bool isEnqueued;
+  };
+  // The default limits are copied from swift-inspect.
+  virtual std::pair<std::optional<std::string>, AsyncTaskInfo>
+  asyncTaskInfo(lldb::addr_t AsyncTaskPtr, unsigned ChildTaskLimit = 1000000,
+                unsigned AsyncBacktraceLimit = 1000) = 0;
 };
 
 using ThreadSafeReflectionContext = LockGuarded<ReflectionContextInterface>;
