@@ -56,9 +56,8 @@ void foo(
 // CHECK: |   | `-PointerType {{.+}} 'void *__single'
 // CHECK: |   |   `-BuiltinType {{.+}} 'void'
 // CHECK: |   `-DynamicRangePointerType {{.+}} 'void *__single /* __started_by(start) */ ' sugar
-// CHECK: |     `-AttributedType {{.+}} 'void *__single' sugar
-// CHECK: |       `-PointerType {{.+}} 'void *__single'
-// CHECK: |         `-BuiltinType {{.+}} 'void'
+// CHECK: |     `-PointerType {{.+}} 'void *__single'
+// CHECK: |       `-BuiltinType {{.+}} 'void'
 // CHECK: |-TypedefDecl {{.+}} cb_ptr_t 'void (*)(int *__single __counted_by(count), int)'
 // CHECK: | `-PointerType {{.+}} 'void (*)(int *__single __counted_by(count), int)'
 // CHECK: |   `-ParenType {{.+}} 'void (int *__single __counted_by(count), int)' sugar
@@ -86,9 +85,8 @@ void foo(
 // CHECK: |       | `-PointerType {{.+}} 'void *__single'
 // CHECK: |       |   `-BuiltinType {{.+}} 'void'
 // CHECK: |       `-DynamicRangePointerType {{.+}} 'void *__single /* __started_by(start) */ ' sugar
-// CHECK: |         `-AttributedType {{.+}} 'void *__single' sugar
-// CHECK: |           `-PointerType {{.+}} 'void *__single'
-// CHECK: |             `-BuiltinType {{.+}} 'void'
+// CHECK: |         `-PointerType {{.+}} 'void *__single'
+// CHECK: |           `-BuiltinType {{.+}} 'void'
 // CHECK: |-VarDecl {{.+}} g_cb_ptr 'void (*__single)(int *__single __counted_by(count), int)'
 // CHECK: |-VarDecl {{.+}} g_sb_ptr 'void (*__single)(void *__single __sized_by(size), int)'
 // CHECK: |-VarDecl {{.+}} g_eb_ptr 'void (*__single)(void *__single __ended_by(end), void *__single /* __started_by(start) */ )'
