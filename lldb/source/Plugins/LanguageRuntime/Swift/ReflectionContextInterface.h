@@ -147,20 +147,20 @@ public:
   virtual swift::remote::RemoteAbsolutePointer
   StripSignedPointer(swift::remote::RemoteAbsolutePointer pointer) = 0;
   struct AsyncTaskInfo {
-    bool isChildTask;
-    bool isFuture;
-    bool isGroupChildTask;
-    bool isAsyncLetTask;
-    bool isCancelled;
-    bool isStatusRecordLocked;
-    bool isEscalated;
-    // If false, the IsRunning flag is not valid.
-    bool hasIsRunning;
-    bool isRunning;
-    bool isEnqueued;
+    bool isChildTask = false;
+    bool isFuture = false;
+    bool isGroupChildTask = false;
+    bool isAsyncLetTask = false;
+    bool isCancelled = false;
+    bool isStatusRecordLocked = false;
+    bool isEscalated = false;
+    /// If false, the IsRunning flag is not valid.
+    bool hasIsRunning = false;
+    bool isRunning = false;
+    bool isEnqueued = false;
   };
   // The default limits are copied from swift-inspect.
-  virtual std::pair<std::optional<std::string>, AsyncTaskInfo>
+  virtual llvm::Expected<AsyncTaskInfo>
   asyncTaskInfo(lldb::addr_t AsyncTaskPtr, unsigned ChildTaskLimit = 1000000,
                 unsigned AsyncBacktraceLimit = 1000) = 0;
 };

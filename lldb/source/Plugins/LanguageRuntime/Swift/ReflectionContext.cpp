@@ -369,13 +369,13 @@ public:
     return m_reflection_ctx.stripSignedPointer(pointer);
   }
 
-  std::pair<std::optional<std::string>, AsyncTaskInfo>
+  llvm::Expected<AsyncTaskInfo>
   asyncTaskInfo(lldb::addr_t AsyncTaskPtr, unsigned ChildTaskLimit,
                 unsigned AsyncBacktraceLimit) override {
     auto [error, task_info] = m_reflection_ctx.asyncTaskInfo(
         AsyncTaskPtr, ChildTaskLimit, AsyncBacktraceLimit);
     if (error)
-      return {error, {}};
+      return llvm::createStringError(*error);
 
     AsyncTaskInfo result;
     result.isChildTask = task_info.IsChildTask;
@@ -388,7 +388,7 @@ public:
     result.hasIsRunning = task_info.HasIsRunning;
     result.isRunning = task_info.IsRunning;
     result.isEnqueued = task_info.IsEnqueued;
-    return {{}, result};
+    return result;
   }
 
 private:

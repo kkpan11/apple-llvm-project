@@ -30,6 +30,8 @@
 #include "swift/Demangling/ManglingMacros.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/FormatAdapters.h"
+#include "llvm/Support/raw_ostream.h"
 #include <optional>
 
 // FIXME: we should not need this
@@ -742,6 +744,12 @@ private:
   size_t m_child_index;
 };
 
+/// Synthetic provider for `Swift.Task`.
+///
+/// As seen by lldb, a `Task` instance is an opaque pointer, with neither type
+/// metadata nor an AST to describe it. To implement this synthetic provider, a
+/// `Task`'s state is retrieved from a `ReflectionContext`, and that data is
+/// used to manually construct `ValueObject` children.
 class TaskSyntheticFrontEnd : public SyntheticChildrenFrontEnd {
 public:
   TaskSyntheticFrontEnd(lldb::ValueObjectSP valobj_sp)
@@ -794,17 +802,19 @@ public:
 
   lldb::ChildCacheState Update() override {
     if (auto *runtime = SwiftLanguageRuntime::Get(m_backend.GetProcessSP())) {
-      auto reflection_ctx = runtime->GetReflectionContext();
-      auto task_obj_sp = m_backend.GetChildMemberWithName("_task");
-      auto task_ptr = task_obj_sp->GetValueAsUnsigned(LLDB_INVALID_ADDRESS);
+      ThreadSafeReflectionContext reflection_ctx =
+          runtime->GetReflectionContext();
+      ValueObjectSP task_obj_sp = m_backend.GetChildMemberWithName("_task");
+      uint64_t task_ptr = task_obj_sp->GetValueAsUnsigned(LLDB_INVALID_ADDRESS);
       if (task_ptr != LLDB_INVALID_ADDRESS) {
-        auto [error, task_info] = reflection_ctx->asyncTaskInfo(task_ptr);
-        if (error) {
-          LLDB_LOG(GetLog(LLDBLog::Types),
+        llvm::Expected<ReflectionContextInterface::AsyncTaskInfo> task_info =
+            reflection_ctx->asyncTaskInfo(task_ptr);
+        if (auto err = task_info.takeError()) {
+          LLDB_LOG(GetLog(LLDBLog::DataFormatters | LLDBLog::Types),
                    "could not get info for async task {0:x}: {1}", task_ptr,
-                   *error);
+                   fmt_consume(std::move(err)));
         } else {
-          m_task_info = task_info;
+          m_task_info = *task_info;
           for (auto child :
                {m_is_child_task_sp, m_is_future_sp, m_is_group_child_task_sp,
                 m_is_async_let_task_sp, m_is_cancelled_sp,
