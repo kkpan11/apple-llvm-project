@@ -195,34 +195,6 @@ QualType APValue::LValuePathSerializationHelper::getType() {
   return QualType::getFromOpaquePtr(Ty);
 }
 
-namespace {
-  struct LVBase {
-    APValue::LValueBase Base;
-    CharUnits Offset;
-    // BoundsSafety : While the base also holds a corresponding constant array type
-    // for forged pointer, we still keep track of forged size because the array
-    // size will be different from the actual forged size if it is not a multiple
-    // of element type size after a bitcast. The codegen doesn't round up/down
-    // the bounds to be a type-size multiple, we should keep it the same for
-    // constant emission. Once __builtin_forge_* has a type as an argument, we
-    // may consider round down the size with the element type size.
-    CharUnits ForgedSize;
-    // While 'Offset' is the offset within the LValue, 'ForgedOffset' is the
-    // offset of the base pointer of __builtin_unsafe_forge*. For example, in
-    // the following,
-    // '__bidi_indexable_unsafe_forge_bidi_indexable(base + N) + M'
-    // 'N' should be 'ForgedOffset' and 'M' should be 'Offset'. This way, the
-    // forged pointer itself becomes an LValue starting at base + 'ForgedOffset'.
-    CharUnits ForgedOffset;
-    unsigned PathLength;
-    bool IsNullPtr : 1;
-    bool IsOnePastTheEnd : 1;
-    bool IsForgeBidi : 1;
-    bool IsForgeSingle : 1;
-    bool IsForgeTerminatedBy : 1;
-  };
-}
-
 void *APValue::LValueBase::getOpaqueValue() const {
   return Ptr.getOpaqueValue();
 }
@@ -274,6 +246,7 @@ bool llvm::DenseMapInfo<clang::APValue::LValueBase>::isEqual(
 }
 
 struct APValue::LV : LVBase {
+  static_assert(DataSize >= sizeof(LVBase) && "LVBase too big");
   static const unsigned InlinePathSpace =
       (DataSize - sizeof(LVBase)) / sizeof(LValuePathEntry);
 

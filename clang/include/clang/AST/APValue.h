@@ -13,6 +13,7 @@
 #ifndef LLVM_CLANG_AST_APVALUE_H
 #define LLVM_CLANG_AST_APVALUE_H
 
+#include "clang/AST/CharUnits.h"
 #include "clang/Basic/LLVM.h"
 #include "llvm/ADT/APFixedPoint.h"
 #include "llvm/ADT/APFloat.h"
@@ -29,7 +30,6 @@ template <typename T> class BasicReaderBase;
 
   class AddrLabelExpr;
   class ASTContext;
-  class CharUnits;
   class CXXRecordDecl;
   class Decl;
   class DiagnosticBuilder;
@@ -419,10 +419,41 @@ private:
   };
   struct MemberPointerData;
 
+  struct LVBase {
+    APValue::LValueBase Base;
+    CharUnits Offset;
+    // Firebloom : While the base also holds a corresponding constant array type
+    // for forged pointer, we still keep track of forged size because the array
+    // size will be different from the actual forged size if it is not a multiple
+    // of element type size after a bitcast. The codegen doesn't round up/down
+    // the bounds to be a type-size multiple, we should keep it the same for
+    // constant emission. Once __builtin_forge_* has a type as an argument, we
+    // may consider round down the size with the element type size.
+    CharUnits ForgedSize;
+    // While 'Offset' is the offset within the LValue, 'ForgedOffset' is the
+    // offset of the base pointer of __builtin_unsafe_forge*. For example, in
+    // the following,
+    // '__bidi_indexable_unsafe_forge_bidi_indexable(base + N) + M'
+    // 'N' should be 'ForgedOffset' and 'M' should be 'Offset'. This way, the
+    // forged pointer itself becomes an LValue starting at base + 'ForgedOffset'.
+    CharUnits ForgedOffset;
+    unsigned PathLength;
+    bool IsNullPtr : 1;
+    bool IsOnePastTheEnd : 1;
+    bool IsForgeBidi : 1;
+    bool IsForgeSingle : 1;
+    bool IsForgeTerminatedBy : 1;
+  };
+
+  struct LVPlaceHolder {
+    LVBase Base;
+    LValuePathEntry Path[1];
+  };
+
   // We ensure elsewhere that Data is big enough for LV and MemberPointerData.
   typedef llvm::AlignedCharArrayUnion<void *, APSInt, APFloat, ComplexAPSInt,
                                       ComplexAPFloat, Vec, Arr, StructData,
-                                      UnionData, AddrLabelDiffData> DataType;
+                                      UnionData, AddrLabelDiffData, LVPlaceHolder> DataType;
   static const size_t DataSize = sizeof(DataType);
 
   DataType Data;
