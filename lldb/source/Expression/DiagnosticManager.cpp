@@ -10,6 +10,7 @@
 
 #include "llvm/Support/ErrorHandling.h"
 
+#include "lldb/Utility/ErrorMessages.h"
 #include "lldb/Utility/Log.h"
 #include "lldb/Utility/StreamString.h"
 
@@ -22,8 +23,7 @@ class ExpressionCategory : public std::error_category {
     return "LLDBExpressionCategory";
   }
   std::string message(int __ev) const override {
-    return ExpressionResultAsCString(
-        static_cast<lldb::ExpressionResults>(__ev));
+    return toString(static_cast<lldb::ExpressionResults>(__ev));
   };
 };
 ExpressionCategory &expression_category() {
@@ -37,7 +37,7 @@ ExpressionError::ExpressionError(lldb::ExpressionResults result,
     : ErrorInfo(std::error_code(result, expression_category())), m_message(msg),
       m_details(details) {}
 
-static const char *StringForSeverity(lldb::Severity severity) {
+static llvm::StringRef StringForSeverity(lldb::Severity severity) {
   switch (severity) {
   // this should be exhaustive
   case lldb::eSeverityError:

@@ -3755,6 +3755,10 @@ class SBCommandReturnObject(object):
         r"""IsValid(SBCommandReturnObject self) -> bool"""
         return _lldb.SBCommandReturnObject_IsValid(self)
 
+    def GetErrorData(self):
+        r"""GetErrorData(SBCommandReturnObject self) -> SBStructuredData"""
+        return _lldb.SBCommandReturnObject_GetErrorData(self)
+
     def PutOutput(self, *args):
         r"""
         PutOutput(SBCommandReturnObject self, SBFile file) -> size_t
@@ -4967,6 +4971,10 @@ class SBDebugger(object):
     def GetUseColor(self):
         r"""GetUseColor(SBDebugger self) -> bool"""
         return _lldb.SBDebugger_GetUseColor(self)
+
+    def SetShowInlineDiagnostics(self, arg2):
+        r"""SetShowInlineDiagnostics(SBDebugger self, bool arg2) -> bool"""
+        return _lldb.SBDebugger_SetShowInlineDiagnostics(self, arg2)
 
     def SetUseSourceCache(self, use_source_cache):
         r"""SetUseSourceCache(SBDebugger self, bool use_source_cache) -> bool"""
