@@ -1172,15 +1172,16 @@ class DICompositeType : public DIType {
   friend class MDNode;
 
   unsigned RuntimeLang;
+  llvm::APInt SpareBitsMask;
 
   DICompositeType(LLVMContext &C, StorageType Storage, unsigned Tag,
                   unsigned Line, unsigned RuntimeLang, uint64_t SizeInBits,
                   uint32_t AlignInBits, uint64_t OffsetInBits,
-                  uint32_t NumExtraInhabitants, DIFlags Flags,
-                  ArrayRef<Metadata *> Ops)
+                  uint32_t NumExtraInhabitants, APInt SpareBitsMask,
+                  DIFlags Flags, ArrayRef<Metadata *> Ops)
       : DIType(C, DICompositeTypeKind, Storage, Tag, Line, SizeInBits,
                AlignInBits, OffsetInBits, NumExtraInhabitants, Flags, Ops),
-        RuntimeLang(RuntimeLang) {}
+        RuntimeLang(RuntimeLang), SpareBitsMask(SpareBitsMask) {}
   ~DICompositeType() = default;
 
   /// Change fields in place.
@@ -1198,20 +1199,20 @@ class DICompositeType : public DIType {
   getImpl(LLVMContext &Context, unsigned Tag, StringRef Name, Metadata *File,
           unsigned Line, DIScope *Scope, DIType *BaseType, uint64_t SizeInBits,
           uint32_t AlignInBits, uint64_t OffsetInBits, DIType *SpecificationOf,
-          uint32_t NumExtraInhabitants, DIFlags Flags, DINodeArray Elements,
-          unsigned RuntimeLang, DIType *VTableHolder,
+          uint32_t NumExtraInhabitants, APInt SpareBitsMask, DIFlags Flags,
+          DINodeArray Elements, unsigned RuntimeLang, DIType *VTableHolder,
           DITemplateParameterArray TemplateParams, StringRef Identifier,
           DIDerivedType *Discriminator, Metadata *DataLocation,
           Metadata *Associated, Metadata *Allocated, Metadata *Rank,
           DINodeArray Annotations, StorageType Storage,
           bool ShouldCreate = true) {
-    return getImpl(Context, Tag, getCanonicalMDString(Context, Name), File,
-                   Line, Scope, BaseType, SizeInBits, AlignInBits, OffsetInBits,
-                   Flags, Elements.get(), RuntimeLang, VTableHolder,
-                   TemplateParams.get(),
-                   getCanonicalMDString(Context, Identifier), Discriminator,
-                   DataLocation, Associated, Allocated, Rank, Annotations.get(),
-                   SpecificationOf, NumExtraInhabitants, Storage, ShouldCreate);
+    return getImpl(
+        Context, Tag, getCanonicalMDString(Context, Name), File, Line, Scope,
+        BaseType, SizeInBits, AlignInBits, OffsetInBits, Flags, Elements.get(),
+        RuntimeLang, VTableHolder, TemplateParams.get(),
+        getCanonicalMDString(Context, Identifier), Discriminator, DataLocation,
+        Associated, Allocated, Rank, Annotations.get(), SpecificationOf,
+        NumExtraInhabitants, SpareBitsMask, Storage, ShouldCreate);
   }
   static DICompositeType *
   getImpl(LLVMContext &Context, unsigned Tag, MDString *Name, Metadata *File,
@@ -1222,8 +1223,8 @@ class DICompositeType : public DIType {
           MDString *Identifier, Metadata *Discriminator, Metadata *DataLocation,
           Metadata *Associated, Metadata *Allocated, Metadata *Rank,
           Metadata *Annotations, Metadata *SpecificationOf,
-          uint32_t NumExtraInhabitants, StorageType Storage,
-          bool ShouldCreate = true);
+          uint32_t NumExtraInhabitants, APInt SpareBitsMask,
+          StorageType Storage, bool ShouldCreate = true);
 
   TempDICompositeType cloneImpl() const {
     return getTemporary(
@@ -1233,7 +1234,7 @@ class DICompositeType : public DIType {
         getTemplateParams(), getIdentifier(), getDiscriminator(),
         getRawDataLocation(), getRawAssociated(), getRawAllocated(),
         getRawRank(), getAnnotations(), getSpecificationOf(),
-        getNumExtraInhabitants());
+        getNumExtraInhabitants(), getSpareBitsMask());
   }
 
 public:
@@ -1248,11 +1249,11 @@ public:
        Metadata *DataLocation = nullptr, Metadata *Associated = nullptr,
        Metadata *Allocated = nullptr, Metadata *Rank = nullptr,
        DINodeArray Annotations = nullptr, DIType *SpecificationOf = nullptr,
-       uint32_t NumExtraInhabitants = 0),
+       uint32_t NumExtraInhabitants = 0, APInt SpareBitsMask = APInt()),
       (Tag, Name, File, Line, Scope, BaseType, SizeInBits, AlignInBits,
-       OffsetInBits, SpecificationOf, NumExtraInhabitants, Flags, Elements,
-       RuntimeLang, VTableHolder, TemplateParams, Identifier, Discriminator,
-       DataLocation, Associated, Allocated, Rank, Annotations))
+       OffsetInBits, SpecificationOf, NumExtraInhabitants, SpareBitsMask, Flags,
+       Elements, RuntimeLang, VTableHolder, TemplateParams, Identifier,
+       Discriminator, DataLocation, Associated, Allocated, Rank, Annotations))
   DEFINE_MDNODE_GET(
       DICompositeType,
       (unsigned Tag, MDString *Name, Metadata *File, unsigned Line,
@@ -1263,11 +1264,12 @@ public:
        Metadata *Discriminator = nullptr, Metadata *DataLocation = nullptr,
        Metadata *Associated = nullptr, Metadata *Allocated = nullptr,
        Metadata *Rank = nullptr, Metadata *Annotations = nullptr,
-       Metadata *SpecificationOf = nullptr, uint32_t NumExtraInhabitants = 0),
+       Metadata *SpecificationOf = nullptr, uint32_t NumExtraInhabitants = 0,
+       APInt SpareBitsMask = APInt()),
       (Tag, Name, File, Line, Scope, BaseType, SizeInBits, AlignInBits,
        OffsetInBits, Flags, Elements, RuntimeLang, VTableHolder, TemplateParams,
        Identifier, Discriminator, DataLocation, Associated, Allocated, Rank,
-       Annotations, SpecificationOf, NumExtraInhabitants))
+       Annotations, SpecificationOf, NumExtraInhabitants, SpareBitsMask))
 
   TempDICompositeType clone() const { return cloneImpl(); }
 
@@ -1283,7 +1285,7 @@ public:
              MDString *Name, Metadata *File, unsigned Line, Metadata *Scope,
              Metadata *BaseType, uint64_t SizeInBits, uint32_t AlignInBits,
              uint64_t OffsetInBits, Metadata *SpecificationOf,
-             uint32_t NumExtraInhabitants,  DIFlags Flags,
+             uint32_t NumExtraInhabitants, APInt SpareBitsMask, DIFlags Flags,
              Metadata *Elements, unsigned RuntimeLang, Metadata *VTableHolder,
              Metadata *TemplateParams, Metadata *Discriminator,
              Metadata *DataLocation, Metadata *Associated, Metadata *Allocated,
@@ -1305,8 +1307,8 @@ public:
                MDString *Name, Metadata *File, unsigned Line, Metadata *Scope,
                Metadata *BaseType, uint64_t SizeInBits, uint32_t AlignInBits,
                uint64_t OffsetInBits, Metadata *SpecificationOf,
-               uint32_t NumExtraInhabitants, DIFlags Flags, Metadata *Elements,
-               unsigned RuntimeLang, Metadata *VTableHolder,
+               uint32_t NumExtraInhabitants, APInt SpareBitsMask, DIFlags Flags,
+               Metadata *Elements, unsigned RuntimeLang, Metadata *VTableHolder,
                Metadata *TemplateParams, Metadata *Discriminator,
                Metadata *DataLocation, Metadata *Associated,
                Metadata *Allocated, Metadata *Rank, Metadata *Annotations);
@@ -1323,6 +1325,7 @@ public:
   }
   StringRef getIdentifier() const { return getStringOperand(7); }
   unsigned getRuntimeLang() const { return RuntimeLang; }
+  const APInt &getSpareBitsMask() const { return SpareBitsMask; }
 
   Metadata *getRawBaseType() const { return getOperand(3); }
   Metadata *getRawElements() const { return getOperand(4); }
