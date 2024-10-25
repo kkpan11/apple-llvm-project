@@ -18,9 +18,6 @@
 #include "lldb/Core/Address.h"
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/StructuredDataImpl.h"
-#include "lldb/Core/ValueObjectRegister.h"
-#include "lldb/Core/ValueObjectVariable.h"
-#include "lldb/Core/ValueObjectConstResult.h"
 #include "lldb/Expression/ExpressionVariable.h"
 #include "lldb/Expression/UserExpression.h"
 #include "lldb/Host/Host.h"
@@ -42,6 +39,9 @@
 #include "lldb/Utility/Instrumentation.h"
 #include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Stream.h"
+#include "lldb/ValueObject/ValueObjectConstResult.h"
+#include "lldb/ValueObject/ValueObjectRegister.h"
+#include "lldb/ValueObject/ValueObjectVariable.h"
 
 #include "lldb/API/SBAddress.h"
 #include "lldb/API/SBDebugger.h"
@@ -611,7 +611,7 @@ SBValue SBFrame::FindValue(const char *name, ValueType value_type,
                 stop_if_block_is_inlined_function,
                 [frame](Variable *v) { return v->IsInScope(frame); },
                 &variable_list);
-          if (value_type == eValueTypeVariableGlobal 
+          if (value_type == eValueTypeVariableGlobal
               || value_type == eValueTypeVariableStatic) {
             const bool get_file_globals = true;
             VariableList *frame_vars = frame->GetVariableList(get_file_globals,
@@ -824,7 +824,7 @@ SBValueList SBFrame::GetVariables(const lldb::SBVariablesOptions &options) {
           if (num_variables) {
             size_t num_produced = 0;
             for (const VariableSP &variable_sp : *variable_list) {
-              if (INTERRUPT_REQUESTED(dbg, 
+              if (INTERRUPT_REQUESTED(dbg,
                     "Interrupted getting frame variables with {0} of {1} "
                     "produced.", num_produced, num_variables))
                 return {};
@@ -1268,7 +1268,7 @@ lldb::SBStructuredData SBFrame::GetLanguageSpecificData() const {
 bool SBFrame::IsSwiftThunk() const {
   std::unique_lock<std::recursive_mutex> lock;
   ExecutionContext exe_ctx(m_opaque_sp.get(), lock);
-  
+
   StackFrame *frame = nullptr;
   Target *target = exe_ctx.GetTargetPtr();
   Process *process = exe_ctx.GetProcessPtr();
