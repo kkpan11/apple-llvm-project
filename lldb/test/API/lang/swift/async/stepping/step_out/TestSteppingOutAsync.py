@@ -5,6 +5,7 @@ import lldbsuite.test.lldbutil as lldbutil
 import re
 
 
+@skipIfAsan # rdar://138777205
 class TestCase(lldbtest.TestBase):
 
     def check_and_get_frame_names(self, process):
