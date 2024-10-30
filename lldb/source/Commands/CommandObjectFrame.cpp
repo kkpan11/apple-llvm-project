@@ -899,8 +899,7 @@ void CommandObjectFrameRecognizerAdd::DoExecute(Args &command,
     auto func =
         RegularExpressionSP(new RegularExpression(m_options.m_symbols.front()));
     GetTarget().GetFrameRecognizerManager().AddRecognizer(
-        recognizer_sp, module, func, Mangled::NamePreference::ePreferDemangled,
-        m_options.m_first_instruction_only);
+        recognizer_sp, module, func, m_options.m_first_instruction_only);
   } else {
     auto module = ConstString(m_options.m_module);
     std::vector<ConstString> symbols(m_options.m_symbols.begin(),
@@ -928,32 +927,6 @@ protected:
   }
 };
 
-static void
-PrintRecognizerDetails(Stream &strm, const std::string &module,
-                       llvm::ArrayRef<lldb_private::ConstString> symbols,
-                       Mangled::NamePreference preference, bool regexp) {
-  if (!module.empty())
-    strm << ", module " << module;
-  for (auto &symbol : symbols) {
-    strm << ", ";
-    if (!regexp)
-      strm << "symbol";
-    else
-      switch (preference) {
-      case Mangled::NamePreference ::ePreferMangled:
-        strm << "mangled symbol regexp";
-        break;
-      case Mangled::NamePreference ::ePreferDemangled:
-        strm << "demangled symbol regexp";
-        break;
-      case Mangled::NamePreference ::ePreferDemangledWithoutArguments:
-        strm << "demangled (no args) symbol regexp";
-        break;
-      }
-    strm << " " << symbol;
-  }
-}
-
 class CommandObjectFrameRecognizerDelete : public CommandObjectParsed {
 public:
   CommandObjectFrameRecognizerDelete(CommandInterpreter &interpreter)
@@ -974,13 +947,19 @@ public:
     GetTarget().GetFrameRecognizerManager().ForEach(
         [&request](uint32_t rid, std::string rname, std::string module,
                    llvm::ArrayRef<lldb_private::ConstString> symbols,
-                   Mangled::NamePreference preference, bool regexp) {
+                   bool regexp) {
           StreamString strm;
           if (rname.empty())
             rname = "(internal)";
 
           strm << rname;
-          PrintRecognizerDetails(strm, module, symbols, preference, regexp);
+          if (!module.empty())
+            strm << ", module " << module;
+          if (!symbols.empty())
+            for (auto &symbol : symbols)
+              strm << ", symbol " << symbol;
+          if (regexp)
+            strm << " (regexp)";
 
           request.TryCompleteCurrentArg(std::to_string(rid), strm.GetString());
         });
@@ -1037,17 +1016,22 @@ protected:
   void DoExecute(Args &command, CommandReturnObject &result) override {
     bool any_printed = false;
     GetTarget().GetFrameRecognizerManager().ForEach(
-        [&result,
-         &any_printed](uint32_t recognizer_id, std::string name,
-                       std::string module, llvm::ArrayRef<ConstString> symbols,
-                       Mangled::NamePreference preference, bool regexp) {
+        [&result, &any_printed](
+            uint32_t recognizer_id, std::string name, std::string module,
+            llvm::ArrayRef<ConstString> symbols, bool regexp) {
           Stream &stream = result.GetOutputStream();
 
           if (name.empty())
             name = "(internal)";
 
           stream << std::to_string(recognizer_id) << ": " << name;
-          PrintRecognizerDetails(stream, module, symbols, preference, regexp);
+          if (!module.empty())
+            stream << ", module " << module;
+          if (!symbols.empty())
+            for (auto &symbol : symbols)
+              stream << ", symbol " << symbol;
+          if (regexp)
+            stream << " (regexp)";
 
           stream.EOL();
           stream.Flush();
