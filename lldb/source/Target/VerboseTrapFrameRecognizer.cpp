@@ -156,7 +156,7 @@ void RegisterVerboseTrapFrameRecognizer(Process &process) {
 
   process.GetTarget().GetFrameRecognizerManager().AddRecognizer(
       srf_recognizer_sp, module_regex_sp, symbol_regex_sp,
-      Mangled::ePreferMangled, false);
+      Mangled::ePreferDemangled, false);
 }
 
 } // namespace lldb_private

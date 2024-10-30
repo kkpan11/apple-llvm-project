@@ -72,7 +72,7 @@ TEST_F(StackFrameRecognizerTest, NullModuleRegex) {
   manager.ForEach([&any_printed](uint32_t recognizer_id, std::string name,
                                  std::string function,
                                  llvm::ArrayRef<ConstString> symbols,
-                                 Mangled::NamePreference preference,
+                                 Mangled::NamePreference symbol_mangling,
                                  bool regexp) { any_printed = true; });
 
   EXPECT_TRUE(any_printed);

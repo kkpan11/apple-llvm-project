@@ -62,11 +62,12 @@ void StackFrameRecognizerManager::BumpGeneration() {
 
 void StackFrameRecognizerManager::AddRecognizer(
     StackFrameRecognizerSP recognizer, ConstString module,
-    llvm::ArrayRef<ConstString> symbols, bool first_instruction_only) {
-  m_recognizers.push_front(
-      {(uint32_t)m_recognizers.size(), recognizer, false, module,
-       RegularExpressionSP(), symbols, RegularExpressionSP(),
-       Mangled::NamePreference::ePreferMangled, first_instruction_only});
+    llvm::ArrayRef<ConstString> symbols,
+    Mangled::NamePreference symbol_mangling, bool first_instruction_only) {
+  m_recognizers.push_front({(uint32_t)m_recognizers.size(), recognizer, false,
+                            module, RegularExpressionSP(), symbols,
+                            RegularExpressionSP(), symbol_mangling,
+                            first_instruction_only});
   BumpGeneration();
 }
 
@@ -81,10 +82,10 @@ void StackFrameRecognizerManager::AddRecognizer(
 }
 
 void StackFrameRecognizerManager::ForEach(
-    const std::function<void(uint32_t, std::string, std::string,
-                             llvm::ArrayRef<ConstString>,
-                             Mangled::NamePreference, bool)> &callback) {
-  for (const auto &entry : m_recognizers) {
+    const std::function<
+        void(uint32_t, std::string, std::string, llvm::ArrayRef<ConstString>,
+             Mangled::NamePreference name_reference, bool)> &callback) {
+  for (auto entry : m_recognizers) {
     if (entry.is_regexp) {
       std::string module_name;
       std::string symbol_name;
@@ -130,7 +131,6 @@ StackFrameRecognizerSP
 StackFrameRecognizerManager::GetRecognizerForFrame(StackFrameSP frame) {
   const SymbolContext &symctx = frame->GetSymbolContext(
       eSymbolContextModule | eSymbolContextFunction | eSymbolContextSymbol);
-  ConstString function_name = symctx.GetFunctionName();
   ModuleSP module_sp = symctx.module_sp;
   if (!module_sp)
     return StackFrameRecognizerSP();
@@ -150,13 +150,14 @@ StackFrameRecognizerManager::GetRecognizerForFrame(StackFrameSP frame) {
       if (!entry.module_regexp->Execute(module_name.GetStringRef()))
         continue;
 
+    ConstString function_name = symctx.GetFunctionName(entry.symbol_mangling);
+
     if (!entry.symbols.empty())
       if (!llvm::is_contained(entry.symbols, function_name))
         continue;
 
     if (entry.symbol_regexp)
-      if (!entry.symbol_regexp->Execute(
-              symctx.GetFunctionName(entry.symbol_mangling)))
+      if (!entry.symbol_regexp->Execute(function_name.GetStringRef()))
         continue;
 
     if (entry.first_instruction_only)

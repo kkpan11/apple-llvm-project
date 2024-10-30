@@ -168,8 +168,7 @@ protected:
     // We've already handled the case where the value object sp is null, so
     // this is just to make sure future changes don't skip that:
     assert(valobj_sp.get() && "Must have a valid ValueObject to print");
-    ValueObjectPrinter printer(*valobj_sp, &result.GetOutputStream(),
-                               options);
+    ValueObjectPrinter printer(*valobj_sp, &result.GetOutputStream(), options);
     if (llvm::Error error = printer.PrintValueObject())
       result.AppendError(toString(std::move(error)));
   }
@@ -906,7 +905,9 @@ void CommandObjectFrameRecognizerAdd::DoExecute(Args &command,
     std::vector<ConstString> symbols(m_options.m_symbols.begin(),
                                      m_options.m_symbols.end());
     GetTarget().GetFrameRecognizerManager().AddRecognizer(
-        recognizer_sp, module, symbols, m_options.m_first_instruction_only);
+        recognizer_sp, module, symbols,
+        Mangled::NamePreference::ePreferDemangled,
+        m_options.m_first_instruction_only);
   }
 #endif
 
@@ -929,29 +930,31 @@ protected:
 };
 
 static void
-PrintRecognizerDetails(Stream &strm, const std::string &module,
+PrintRecognizerDetails(Stream &strm, const std::string &name,
+                       const std::string &module,
                        llvm::ArrayRef<lldb_private::ConstString> symbols,
-                       Mangled::NamePreference preference, bool regexp) {
+                       Mangled::NamePreference symbol_mangling, bool regexp) {
+  strm << name << ", ";
+
   if (!module.empty())
-    strm << ", module " << module;
-  for (auto &symbol : symbols) {
-    strm << ", ";
-    if (!regexp)
-      strm << "symbol";
-    else
-      switch (preference) {
-      case Mangled::NamePreference ::ePreferMangled:
-        strm << "mangled symbol regexp";
-        break;
-      case Mangled::NamePreference ::ePreferDemangled:
-        strm << "demangled symbol regexp";
-        break;
-      case Mangled::NamePreference ::ePreferDemangledWithoutArguments:
-        strm << "demangled (no args) symbol regexp";
-        break;
-      }
-    strm << " " << symbol;
+    strm << "module " << module << ", ";
+
+  switch (symbol_mangling) {
+  case Mangled::NamePreference ::ePreferMangled:
+    strm << "mangled symbol ";
+    break;
+  case Mangled::NamePreference ::ePreferDemangled:
+    strm << "demangled symbol ";
+    break;
+  case Mangled::NamePreference ::ePreferDemangledWithoutArguments:
+    strm << "demangled (no args) symbol ";
+    break;
   }
+
+  if (regexp)
+    strm << "regex ";
+
+  llvm::interleaveComma(symbols, strm);
 }
 
 class CommandObjectFrameRecognizerDelete : public CommandObjectParsed {
@@ -974,13 +977,13 @@ public:
     GetTarget().GetFrameRecognizerManager().ForEach(
         [&request](uint32_t rid, std::string rname, std::string module,
                    llvm::ArrayRef<lldb_private::ConstString> symbols,
-                   Mangled::NamePreference preference, bool regexp) {
+                   Mangled::NamePreference symbol_mangling, bool regexp) {
           StreamString strm;
           if (rname.empty())
             rname = "(internal)";
 
-          strm << rname;
-          PrintRecognizerDetails(strm, module, symbols, preference, regexp);
+          PrintRecognizerDetails(strm, rname, module, symbols, symbol_mangling,
+                                 regexp);
 
           request.TryCompleteCurrentArg(std::to_string(rid), strm.GetString());
         });
@@ -1040,14 +1043,15 @@ protected:
         [&result,
          &any_printed](uint32_t recognizer_id, std::string name,
                        std::string module, llvm::ArrayRef<ConstString> symbols,
-                       Mangled::NamePreference preference, bool regexp) {
+                       Mangled::NamePreference symbol_mangling, bool regexp) {
           Stream &stream = result.GetOutputStream();
 
           if (name.empty())
             name = "(internal)";
 
-          stream << std::to_string(recognizer_id) << ": " << name;
-          PrintRecognizerDetails(stream, module, symbols, preference, regexp);
+          stream << std::to_string(recognizer_id) << ": ";
+          PrintRecognizerDetails(stream, name, module, symbols, symbol_mangling,
+                                 regexp);
 
           stream.EOL();
           stream.Flush();

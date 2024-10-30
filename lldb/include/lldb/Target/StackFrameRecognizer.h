@@ -105,8 +105,13 @@ private:
 /// Class that provides a registry of known stack frame recognizers.
 class StackFrameRecognizerManager {
 public:
+  /// Add a new recognizer that triggers on a given symbol name.
+  ///
+  /// \param symbol_mangling controls whether the symbol name should be
+  /// compared to the mangled or demangled name.
   void AddRecognizer(lldb::StackFrameRecognizerSP recognizer,
                      ConstString module, llvm::ArrayRef<ConstString> symbols,
+                     Mangled::NamePreference symbol_mangling,
                      bool first_instruction_only = true);
 
   /// Add a new recognizer that triggers on a symbol regex.
