@@ -9,7 +9,9 @@ from lldbsuite.test.decorators import *
 import lldbdap_testcase
 from lldbsuite.test.lldbtest import *
 
-
+# The Linux bots are not yet building libcxx, which this test requires for the
+# frame recognizers to identify some frames as "subtle"
+@skipIfLinux
 class TestDAP_subtleFrames(lldbdap_testcase.DAPTestCaseBase):
     @add_test_categories(["libc++"])
     def test_subtleFrames(self):
