@@ -65,15 +65,16 @@ public:
       : m_source_manager(FileSystem::Instance().GetVirtualFileSystem()),
         m_diagnostic_engine(m_source_manager) {
     m_compiler_invocation.getLangOptions() = lang_opts;
-    m_ast_context.reset(swift::ASTContext::get(
-        m_compiler_invocation.getLangOptions(),
-        m_compiler_invocation.getTypeCheckerOptions(),
-        m_compiler_invocation.getSILOptions(),
-        m_compiler_invocation.getSearchPathOptions(),
-        m_compiler_invocation.getClangImporterOptions(),
-        m_compiler_invocation.getSymbolGraphOptions(),
-        m_compiler_invocation.getCASOptions(),
-        m_source_manager, m_diagnostic_engine));
+    m_ast_context.reset(
+        swift::ASTContext::get(m_compiler_invocation.getLangOptions(),
+                               m_compiler_invocation.getTypeCheckerOptions(),
+                               m_compiler_invocation.getSILOptions(),
+                               m_compiler_invocation.getSearchPathOptions(),
+                               m_compiler_invocation.getClangImporterOptions(),
+                               m_compiler_invocation.getSymbolGraphOptions(),
+                               m_compiler_invocation.getCASOptions(),
+                               m_compiler_invocation.getSerializationOptions(),
+                               m_source_manager, m_diagnostic_engine));
 
     m_clang_importer = swift::ClangImporter::create(*m_ast_context, "", {}, {});
   }
