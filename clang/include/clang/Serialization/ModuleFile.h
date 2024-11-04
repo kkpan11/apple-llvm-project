@@ -15,7 +15,6 @@
 #define LLVM_CLANG_SERIALIZATION_MODULEFILE_H
 
 #include "clang/Basic/FileManager.h"
-#include "clang/Basic/LLVM.h"
 #include "clang/Basic/Module.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Serialization/ASTBitCodes.h"
@@ -156,8 +155,8 @@ public:
   /// The base directory of the module.
   std::string BaseDirectory;
 
-  static std::string getTimestampFilename(StringRef FileName) {
-    return (FileName + ".timestamp").str();
+  std::string getTimestampFilename() const {
+    return FileName + ".timestamp";
   }
 
   /// The original source file name that was used to build the
