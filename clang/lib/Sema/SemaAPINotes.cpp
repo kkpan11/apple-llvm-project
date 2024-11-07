@@ -10,10 +10,13 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "CheckExprLifetime.h"
+#include "TypeLocBuilder.h"
 #include "clang/APINotes/APINotesReader.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclObjC.h"
+#include "clang/AST/TypeLoc.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Lex/Lexer.h"
 #include "clang/Sema/SemaInternal.h"
@@ -567,6 +570,21 @@ static void ProcessAPINotes(Sema &S, FunctionOrMethod AnyFunc,
 static void ProcessAPINotes(Sema &S, CXXMethodDecl *Method,
                             const api_notes::CXXMethodInfo &Info,
                             VersionedInfoMetadata Metadata) {
+  if (Info.This && Info.This->isLifetimebound() &&
+      !sema::implicitObjectParamIsLifetimeBound(Method)) {
+    auto MethodType = Method->getType();
+    auto *attr = ::new (S.Context)
+        LifetimeBoundAttr(S.Context, getPlaceholderAttrInfo());
+    QualType AttributedType =
+        S.Context.getAttributedType(attr, MethodType, MethodType);
+    TypeLocBuilder TLB;
+    TLB.pushFullCopy(Method->getTypeSourceInfo()->getTypeLoc());
+    AttributedTypeLoc TyLoc = TLB.push<AttributedTypeLoc>(AttributedType);
+    TyLoc.setAttr(attr);
+    Method->setType(AttributedType);
+    Method->setTypeSourceInfo(TLB.getTypeSourceInfo(S.Context, AttributedType));
+  }
+
   ProcessAPINotes(S, (FunctionOrMethod)Method, Info, Metadata);
 }
 
