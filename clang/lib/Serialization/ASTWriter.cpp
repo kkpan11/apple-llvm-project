@@ -276,8 +276,8 @@ class ASTTypeWriter {
   ASTRecordWriter BasicWriter;
 
 public:
-  ASTTypeWriter(ASTWriter &Writer)
-    : Writer(Writer), BasicWriter(Writer, Record) {}
+  ASTTypeWriter(ASTContext &Context, ASTWriter &Writer)
+      : Writer(Writer), BasicWriter(Context, Writer, Record) {}
 
   uint64_t write(QualType T) {
     if (T.hasLocalNonFastQualifiers()) {
@@ -1404,7 +1404,8 @@ void ASTWriter::writeUnhashedControlBlock(Preprocessor &PP) {
 }
 
 /// Write the control block.
-void ASTWriter::WriteControlBlock(Preprocessor &PP, StringRef isysroot) {
+void ASTWriter::WriteControlBlock(ASTContext &Context, Preprocessor &PP,
+                                  StringRef isysroot) {
   using namespace llvm;
 
   SourceManager &SourceMgr = PP.getSourceManager();
@@ -1531,7 +1532,7 @@ void ASTWriter::WriteControlBlock(Preprocessor &PP, StringRef isysroot) {
   }
 
   // CAS include-tree id, for the scanner.
-  if (auto ID = Context->getCASIncludeTreeID()) {
+  if (auto ID = Context.getCASIncludeTreeID()) {
     auto Abbrev = std::make_shared<BitCodeAbbrev>();
     Abbrev->Add(BitCodeAbbrevOp(CAS_INCLUDE_TREE_ID));
     Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Blob));
@@ -1540,7 +1541,7 @@ void ASTWriter::WriteControlBlock(Preprocessor &PP, StringRef isysroot) {
     Stream.EmitRecordWithBlob(AbbrevCode, Record, *ID);
   }
   // CAS filesystem root id, for the scanner.
-  if (auto ID = Context->getCASFileSystemRootID()) {
+  if (auto ID = Context.getCASFileSystemRootID()) {
     auto Abbrev = std::make_shared<BitCodeAbbrev>();
     Abbrev->Add(BitCodeAbbrevOp(CASFS_ROOT_ID));
     Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Blob));
@@ -2881,7 +2882,7 @@ static unsigned getNumberOfModules(Module *Mod) {
   return ChildModules + 1;
 }
 
-void ASTWriter::WriteSubmodules(Module *WritingModule) {
+void ASTWriter::WriteSubmodules(Module *WritingModule, ASTContext &Context) {
   // Enter the submodule description block.
   Stream.EnterSubblock(SUBMODULE_BLOCK_ID, /*bits for abbreviations*/5);
 
@@ -3144,7 +3145,7 @@ void ASTWriter::WriteSubmodules(Module *WritingModule) {
     // Emit the reachable initializers.
     // The initializer may only be unreachable in reduced BMI.
     RecordData Inits;
-    for (Decl *D : Context->getModuleInitializers(Mod))
+    for (Decl *D : Context.getModuleInitializers(Mod))
       if (wasDeclEmitted(D))
         AddDeclRef(D, Inits);
     if (!Inits.empty())
@@ -3279,7 +3280,7 @@ void ASTWriter::WritePragmaDiagnosticMappings(const DiagnosticsEngine &Diag,
 //===----------------------------------------------------------------------===//
 
 /// Write the representation of a type to the AST stream.
-void ASTWriter::WriteType(QualType T) {
+void ASTWriter::WriteType(ASTContext &Context, QualType T) {
   TypeIdx &IdxRef = TypeIdxs[T];
   if (IdxRef.getValue() == 0) // we haven't seen this type before.
     IdxRef = TypeIdx(0, NextTypeID++);
@@ -3289,7 +3290,8 @@ void ASTWriter::WriteType(QualType T) {
   assert(Idx.getValue() >= FirstTypeID && "Writing predefined type");
 
   // Emit the type's representation.
-  uint64_t Offset = ASTTypeWriter(*this).write(T) - DeclTypesBlockStartOffset;
+  uint64_t Offset =
+      ASTTypeWriter(Context, *this).write(T) - DeclTypesBlockStartOffset;
 
   // Record the offset for this type.
   uint64_t Index = Idx.getValue() - FirstTypeID;
@@ -3413,7 +3415,7 @@ void ASTWriter::WriteFileDeclIDsMap() {
   Stream.EmitRecordWithBlob(AbbrevCode, Record, bytes(FileGroupedDeclIDs));
 }
 
-void ASTWriter::WriteComments() {
+void ASTWriter::WriteComments(ASTContext &Context) {
   Stream.EnterSubblock(COMMENTS_BLOCK_ID, 3);
   auto _ = llvm::make_scope_exit([this] { Stream.ExitBlock(); });
   if (!PP->getPreprocessorOpts().WriteCommentListToPCH)
@@ -3426,7 +3428,7 @@ void ASTWriter::WriteComments() {
     return;
 
   RecordData Record;
-  for (const auto &FO : Context->Comments.OrderedComments) {
+  for (const auto &FO : Context.Comments.OrderedComments) {
     for (const auto &OC : FO.second) {
       const RawComment *I = OC.second;
       Record.clear();
@@ -3676,7 +3678,7 @@ void ASTWriter::WriteReferencedSelectorsPool(Sema &SemaRef) {
     return;
 
   RecordData Record;
-  ASTRecordWriter Writer(*this, Record);
+  ASTRecordWriter Writer(SemaRef.Context, *this, Record);
 
   // Note: this writes out all references even for a dependent AST. But it is
   // very tricky to fix, and given that @selector shouldn't really appear in
@@ -4153,9 +4155,9 @@ static bool isLookupResultNotInteresting(ASTWriter &Writer,
   return true;
 }
 
-void
-ASTWriter::GenerateNameLookupTable(const DeclContext *ConstDC,
-                                   llvm::SmallVectorImpl<char> &LookupTable) {
+void ASTWriter::GenerateNameLookupTable(
+    ASTContext &Context, const DeclContext *ConstDC,
+    llvm::SmallVectorImpl<char> &LookupTable) {
   assert(!ConstDC->hasLazyLocalLexicalLookups() &&
          !ConstDC->hasLazyExternalLexicalLookups() &&
          "must call buildLookups first");
@@ -4404,7 +4406,7 @@ uint64_t ASTWriter::WriteDeclContextVisibleBlock(ASTContext &Context,
 
   // Create the on-disk hash table in a buffer.
   SmallString<4096> LookupTable;
-  GenerateNameLookupTable(DC, LookupTable);
+  GenerateNameLookupTable(Context, DC, LookupTable);
 
   // Write the lookup table
   RecordData::value_type Record[] = {DECL_CONTEXT_VISIBLE};
@@ -4420,14 +4422,15 @@ uint64_t ASTWriter::WriteDeclContextVisibleBlock(ASTContext &Context,
 /// DeclContext in a dependent AST file. As such, they only exist for the TU
 /// (in C++), for namespaces, and for classes with forward-declared unscoped
 /// enumeration members (in C++11).
-void ASTWriter::WriteDeclContextVisibleUpdate(const DeclContext *DC) {
+void ASTWriter::WriteDeclContextVisibleUpdate(ASTContext &Context,
+                                              const DeclContext *DC) {
   StoredDeclsMap *Map = DC->getLookupPtr();
   if (!Map || Map->empty())
     return;
 
   // Create the on-disk hash table in a buffer.
   SmallString<4096> LookupTable;
-  GenerateNameLookupTable(DC, LookupTable);
+  GenerateNameLookupTable(Context, DC, LookupTable);
 
   // If we're updating a namespace, select a key declaration as the key for the
   // update record; those are the only ones that will be checked on reload.
@@ -4741,15 +4744,14 @@ void ASTWriter::AddString(StringRef Str, RecordDataImpl &Record) {
 }
 
 bool ASTWriter::PreparePathForOutput(SmallVectorImpl<char> &Path) {
-  assert(Context && "should have context when outputting path");
+  assert(WritingAST && "can't prepare path for output when not writing AST");
 
   // Leave special file names as they are.
   StringRef PathStr(Path.data(), Path.size());
   if (PathStr == "<built-in>" || PathStr == "<command line>")
     return false;
 
-  bool Changed =
-      cleanPathForOutput(Context->getSourceManager().getFileManager(), Path);
+  bool Changed = cleanPathForOutput(PP->getFileManager(), Path);
 
   // Remove a prefix to make the path relative, if relevant.
   const char *PathBegin = Path.data();
@@ -4838,7 +4840,7 @@ ASTWriter::~ASTWriter() = default;
 
 const LangOptions &ASTWriter::getLangOpts() const {
   assert(WritingAST && "can't determine lang opts when not writing AST");
-  return Context->getLangOpts();
+  return PP->getLangOpts();
 }
 
 time_t ASTWriter::getTimestampForOutput(const FileEntry *E) const {
@@ -4862,11 +4864,9 @@ ASTFileSignature ASTWriter::WriteAST(Sema &SemaRef, StringRef OutputFile,
 
   WriteBlockInfoBlock();
 
-  Context = &SemaRef.Context;
   PP = &SemaRef.PP;
   this->WritingModule = WritingModule;
   ASTFileSignature Signature = WriteASTCore(SemaRef, isysroot, WritingModule);
-  Context = nullptr;
   PP = nullptr;
   this->WritingModule = nullptr;
   this->BaseDirectory.clear();
@@ -5404,19 +5404,19 @@ ASTFileSignature ASTWriter::WriteASTCore(Sema &SemaRef, StringRef isysroot,
 
   // Form the record of special types.
   RecordData SpecialTypes;
-  AddTypeRef(Context.getRawCFConstantStringType(), SpecialTypes);
-  AddTypeRef(Context.getFILEType(), SpecialTypes);
-  AddTypeRef(Context.getjmp_bufType(), SpecialTypes);
-  AddTypeRef(Context.getsigjmp_bufType(), SpecialTypes);
-  AddTypeRef(Context.ObjCIdRedefinitionType, SpecialTypes);
-  AddTypeRef(Context.ObjCClassRedefinitionType, SpecialTypes);
-  AddTypeRef(Context.ObjCSelRedefinitionType, SpecialTypes);
-  AddTypeRef(Context.getucontext_tType(), SpecialTypes);
+  AddTypeRef(Context, Context.getRawCFConstantStringType(), SpecialTypes);
+  AddTypeRef(Context, Context.getFILEType(), SpecialTypes);
+  AddTypeRef(Context, Context.getjmp_bufType(), SpecialTypes);
+  AddTypeRef(Context, Context.getsigjmp_bufType(), SpecialTypes);
+  AddTypeRef(Context, Context.ObjCIdRedefinitionType, SpecialTypes);
+  AddTypeRef(Context, Context.ObjCClassRedefinitionType, SpecialTypes);
+  AddTypeRef(Context, Context.ObjCSelRedefinitionType, SpecialTypes);
+  AddTypeRef(Context, Context.getucontext_tType(), SpecialTypes);
 
   PrepareWritingSpecialDecls(SemaRef);
 
   // Write the control block
-  WriteControlBlock(PP, isysroot);
+  WriteControlBlock(Context, PP, isysroot);
 
   // Write the remaining AST contents.
   Stream.FlushToWord();
@@ -5510,7 +5510,7 @@ ASTFileSignature ASTWriter::WriteASTCore(Sema &SemaRef, StringRef isysroot,
 
   WriteFileDeclIDsMap();
   WriteSourceManagerBlock(PP.getSourceManager());
-  WriteComments();
+  WriteComments(Context);
   WritePreprocessor(PP, isModule);
   WriteHeaderSearch(PP.getHeaderSearchInfo());
   WriteSelectors(SemaRef);
@@ -5523,7 +5523,7 @@ ASTFileSignature ASTWriter::WriteASTCore(Sema &SemaRef, StringRef isysroot,
 
   // If we're emitting a module, write out the submodule information.
   if (WritingModule)
-    WriteSubmodules(WritingModule);
+    WriteSubmodules(WritingModule, SemaRef.Context);
 
   Stream.EmitRecord(SPECIAL_TYPES, SpecialTypes);
 
@@ -5643,12 +5643,12 @@ void ASTWriter::WriteDeclAndTypes(ASTContext &Context) {
   WriteTypeAbbrevs();
   WriteDeclAbbrevs();
   do {
-    WriteDeclUpdatesBlocks(DeclUpdatesOffsetsRecord);
+    WriteDeclUpdatesBlocks(Context, DeclUpdatesOffsetsRecord);
     while (!DeclTypesToEmit.empty()) {
       DeclOrType DOT = DeclTypesToEmit.front();
       DeclTypesToEmit.pop();
       if (DOT.isType())
-        WriteType(DOT.getType());
+        WriteType(Context, DOT.getType());
       else
         WriteDecl(Context, DOT.getDecl());
     }
@@ -5724,18 +5724,19 @@ void ASTWriter::WriteDeclAndTypes(ASTContext &Context) {
   UpdateVisibleAbbrev = Stream.EmitAbbrev(std::move(Abv));
 
   // And a visible updates block for the translation unit.
-  WriteDeclContextVisibleUpdate(TU);
+  WriteDeclContextVisibleUpdate(Context, TU);
 
   // If we have any extern "C" names, write out a visible update for them.
   if (Context.ExternCContext)
-    WriteDeclContextVisibleUpdate(Context.ExternCContext);
+    WriteDeclContextVisibleUpdate(Context, Context.ExternCContext);
 
   // Write the visible updates to DeclContexts.
   for (auto *DC : UpdatedDeclContexts)
-    WriteDeclContextVisibleUpdate(DC);
+    WriteDeclContextVisibleUpdate(Context, DC);
 }
 
-void ASTWriter::WriteDeclUpdatesBlocks(RecordDataImpl &OffsetsRecord) {
+void ASTWriter::WriteDeclUpdatesBlocks(ASTContext &Context,
+                                       RecordDataImpl &OffsetsRecord) {
   if (DeclUpdates.empty())
     return;
 
@@ -5748,7 +5749,7 @@ void ASTWriter::WriteDeclUpdatesBlocks(RecordDataImpl &OffsetsRecord) {
     bool HasUpdatedBody = false;
     bool HasAddedVarDefinition = false;
     RecordData RecordData;
-    ASTRecordWriter Record(*this, RecordData);
+    ASTRecordWriter Record(Context, *this, RecordData);
     for (auto &Update : DeclUpdate.second) {
       DeclUpdateKind Kind = (DeclUpdateKind)Update.getKind();
 
@@ -5794,7 +5795,7 @@ void ASTWriter::WriteDeclUpdatesBlocks(RecordDataImpl &OffsetsRecord) {
         Record.push_back(RD->isParamDestroyedInCallee());
         Record.push_back(llvm::to_underlying(RD->getArgPassingRestrictions()));
         Record.AddCXXDefinitionData(RD);
-        Record.AddOffset(WriteDeclContextLexicalBlock(*Context, RD));
+        Record.AddOffset(WriteDeclContextLexicalBlock(Context, RD));
 
         // This state is sometimes updated by template instantiation, when we
         // switch from the specialization referring to the template declaration
@@ -5847,7 +5848,7 @@ void ASTWriter::WriteDeclUpdatesBlocks(RecordDataImpl &OffsetsRecord) {
       }
 
       case UPD_CXX_DEDUCED_RETURN_TYPE:
-        Record.push_back(GetOrCreateTypeID(Update.getType()));
+        Record.push_back(GetOrCreateTypeID(Context, Update.getType()));
         break;
 
       case UPD_DECL_MARKED_USED:
@@ -5989,8 +5990,7 @@ ASTWriter::getRawSourceLocationEncoding(SourceLocation Loc, LocSeq *Seq) {
   unsigned ModuleFileIndex = 0;
 
   // See SourceLocationEncoding.h for the encoding details.
-  if (Context->getSourceManager().isLoadedSourceLocation(Loc) &&
-      Loc.isValid()) {
+  if (PP->getSourceManager().isLoadedSourceLocation(Loc) && Loc.isValid()) {
     assert(getChain());
     auto SLocMapI = getChain()->GlobalSLocOffsetMap.find(
         SourceManager::MaxLoadedOffset - Loc.getOffset() - 1);
@@ -6151,8 +6151,9 @@ void ASTRecordWriter::AddTypeLoc(TypeLoc TL, LocSeq *OuterSeq) {
     TLW.Visit(TL);
 }
 
-void ASTWriter::AddTypeRef(QualType T, RecordDataImpl &Record) {
-  Record.push_back(GetOrCreateTypeID(T));
+void ASTWriter::AddTypeRef(ASTContext &Context, QualType T,
+                           RecordDataImpl &Record) {
+  Record.push_back(GetOrCreateTypeID(Context, T));
 }
 
 template <typename IdxForTypeTy>
@@ -6180,9 +6181,8 @@ static TypeID MakeTypeID(ASTContext &Context, QualType T,
   return IdxForType(T).asTypeID(FastQuals);
 }
 
-TypeID ASTWriter::GetOrCreateTypeID(QualType T) {
-  assert(Context);
-  return MakeTypeID(*Context, T, [&](QualType T) -> TypeIdx {
+TypeID ASTWriter::GetOrCreateTypeID(ASTContext &Context, QualType T) {
+  return MakeTypeID(Context, T, [&](QualType T) -> TypeIdx {
     if (T.isNull())
       return TypeIdx();
     assert(!T.getLocalFastQualifiers());
@@ -6302,7 +6302,7 @@ void ASTWriter::associateDeclWithFile(const Decl *D, LocalDeclID ID) {
   if (isa<ParmVarDecl, TemplateTemplateParmDecl>(D))
     return;
 
-  SourceManager &SM = Context->getSourceManager();
+  SourceManager &SM = PP->getSourceManager();
   SourceLocation FileLoc = SM.getFileLoc(Loc);
   assert(SM.isLocalSourceLocation(FileLoc));
   FileID FID;
@@ -6497,10 +6497,10 @@ void ASTRecordWriter::AddCXXBaseSpecifier(const CXXBaseSpecifier &Base) {
                                           : SourceLocation());
 }
 
-static uint64_t EmitCXXBaseSpecifiers(ASTWriter &W,
+static uint64_t EmitCXXBaseSpecifiers(ASTContext &Context, ASTWriter &W,
                                       ArrayRef<CXXBaseSpecifier> Bases) {
   ASTWriter::RecordData Record;
-  ASTRecordWriter Writer(W, Record);
+  ASTRecordWriter Writer(Context, W, Record);
   Writer.push_back(Bases.size());
 
   for (auto &Base : Bases)
@@ -6511,14 +6511,14 @@ static uint64_t EmitCXXBaseSpecifiers(ASTWriter &W,
 
 // FIXME: Move this out of the main ASTRecordWriter interface.
 void ASTRecordWriter::AddCXXBaseSpecifiers(ArrayRef<CXXBaseSpecifier> Bases) {
-  AddOffset(EmitCXXBaseSpecifiers(*Writer, Bases));
+  AddOffset(EmitCXXBaseSpecifiers(getASTContext(), *Writer, Bases));
 }
 
 static uint64_t
-EmitCXXCtorInitializers(ASTWriter &W,
+EmitCXXCtorInitializers(ASTContext &Context, ASTWriter &W,
                         ArrayRef<CXXCtorInitializer *> CtorInits) {
   ASTWriter::RecordData Record;
-  ASTRecordWriter Writer(W, Record);
+  ASTRecordWriter Writer(Context, W, Record);
   Writer.push_back(CtorInits.size());
 
   for (auto *Init : CtorInits) {
@@ -6552,7 +6552,7 @@ EmitCXXCtorInitializers(ASTWriter &W,
 // FIXME: Move this out of the main ASTRecordWriter interface.
 void ASTRecordWriter::AddCXXCtorInitializers(
     ArrayRef<CXXCtorInitializer *> CtorInits) {
-  AddOffset(EmitCXXCtorInitializers(*Writer, CtorInits));
+  AddOffset(EmitCXXCtorInitializers(getASTContext(), *Writer, CtorInits));
 }
 
 void ASTRecordWriter::AddCXXDefinitionData(const CXXRecordDecl *D) {
@@ -6580,18 +6580,17 @@ void ASTRecordWriter::AddCXXDefinitionData(const CXXRecordDecl *D) {
 
   bool ModulesCodegen =
       !D->isDependentType() &&
-     (Writer->Context->getLangOpts().ModulesDebugInfo ||
-      D->isInNamedModule());
+      (Writer->getLangOpts().ModulesDebugInfo || D->isInNamedModule());
   Record->push_back(ModulesCodegen);
   if (ModulesCodegen)
     Writer->AddDeclRef(D, Writer->ModularCodegenDecls);
 
   // IsLambda bit is already saved.
 
-  AddUnresolvedSet(Data.Conversions.get(*Writer->Context));
+  AddUnresolvedSet(Data.Conversions.get(getASTContext()));
   Record->push_back(Data.ComputedVisibleConversions);
   if (Data.ComputedVisibleConversions)
-    AddUnresolvedSet(Data.VisibleConversions.get(*Writer->Context));
+    AddUnresolvedSet(Data.VisibleConversions.get(getASTContext()));
   // Data.Definition is the owning decl, no need to write it.
 
   if (!Data.IsLambda) {
