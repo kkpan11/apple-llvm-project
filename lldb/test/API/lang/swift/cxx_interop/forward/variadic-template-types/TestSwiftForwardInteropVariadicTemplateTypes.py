@@ -17,7 +17,7 @@ class TestSwiftForwardInteropVariadicTemplateTypes(TestBase):
 
         self.expect('frame var pair', substrs=['Pair', 'Tuple<OtherCxxClass>', '_t', 
             'v = false', '_t', 'a1', '10', 'a2', '20', 'a3', '30'])
-        self.expect('expr pair', substrs=['Pair', 'Tuple<OtherCxxClass>', '_t', 
+        self.expect('expr pair', substrs=['Pair', 'Tuple<OtherCxxClass, CxxClass>', '_t', 
             'v = false', '_t', 'a1', '10', 'a2', '20', 'a3', '30'])
 
         # rdar://106459037 (Swift/C++ interop: Variadic templates aren't displayed correctly)
