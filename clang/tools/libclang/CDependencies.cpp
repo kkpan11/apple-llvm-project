@@ -268,7 +268,9 @@ static CXErrorCode getFullDependencies(DependencyScanningWorker *Worker,
       M.Name = cxstring::createDup(MD.ID.ModuleName);
       M.ContextHash = cxstring::createDup(MD.ID.ContextHash);
       M.ModuleMapPath = cxstring::createDup(MD.ClangModuleMapFile);
-      M.FileDeps = cxstring::createSet(MD.FileDeps);
+      std::vector<std::string> FileDeps;
+      MD.forEachFileDep([&](StringRef File) { FileDeps.emplace_back(File); });
+      M.FileDeps = cxstring::createSet(FileDeps);
       std::vector<std::string> Modules;
       for (ModuleID &MID : MD.ClangModuleDeps)
         Modules.push_back(MID.ModuleName + ":" + MID.ContextHash);
