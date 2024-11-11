@@ -2358,7 +2358,7 @@ bool ASTUnit::Save(StringRef File) {
 
 static bool serializeUnit(ASTWriter &Writer, SmallVectorImpl<char> &Buffer,
                           Sema &S, raw_ostream &OS) {
-  Writer.WriteAST(S, std::string(), nullptr, "");
+  Writer.WriteAST(&S, std::string(), nullptr, "");
 
   // Write the generated bitstream to "Out".
   if (!Buffer.empty())
