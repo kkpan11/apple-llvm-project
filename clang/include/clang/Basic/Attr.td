@@ -1057,7 +1057,8 @@ def Availability : InheritableAttr {
               VersionArgument<"deprecated">, VersionArgument<"obsoleted">,
               BoolArgument<"unavailable">, StringArgument<"message">,
               BoolArgument<"strict">, StringArgument<"replacement">,
-              IntArgument<"priority">, IdentifierArgument<"environment">];
+              IntArgument<"priority">, IdentifierArgument<"environment">,
+              StringArgument<"domain", 1>];
   let AdditionalMembers =
 [{static llvm::StringRef getPrettyPlatformName(llvm::StringRef Platform) {
     return llvm::StringSwitch<llvm::StringRef>(Platform)
@@ -1167,11 +1168,23 @@ static llvm::Triple::EnvironmentType getEnvironmentType(llvm::StringRef Environm
              .Case("library", llvm::Triple::Library)
              .Default(llvm::Triple::UnknownEnvironment);
 }
+static AvailabilityAttr *getDomainAvailability(StringRef DomainName, bool IsUnavailable, const AttributeCommonInfo &CI, ASTContext &Ctx) {
+  return ::new (Ctx) AvailabilityAttr(
+        Ctx, CI, nullptr, VersionTuple(), VersionTuple(), VersionTuple(), IsUnavailable,
+        {}, false, {}, 0, nullptr, DomainName);
+}
 }];
   let HasCustomParsing = 1;
   let InheritEvenIfAlreadyPresent = 1;
   let Subjects = SubjectList<[Named]>;
   let Documentation = [AvailabilityDocs];
+}
+
+def AvailabilityDomain : InheritableAttr {
+  let Spellings = [Clang<"availability_domain">];
+  let Args = [IdentifierArgument<"name">];
+  let Subjects = SubjectList<[Var]>;
+  let Documentation = [Undocumented];
 }
 
 def ExternalSourceSymbol : InheritableAttr {

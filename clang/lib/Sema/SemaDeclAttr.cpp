@@ -2104,6 +2104,9 @@ static bool checkAvailabilityAttr(Sema &S, SourceRange Range,
                                   VersionTuple Introduced,
                                   VersionTuple Deprecated,
                                   VersionTuple Obsoleted) {
+  if (!Platform)
+    return false;
+
   StringRef PlatformName
     = AvailabilityAttr::getPrettyPlatformName(Platform->getName());
   if (PlatformName.empty())
@@ -2154,6 +2157,14 @@ static bool versionsMatch(const VersionTuple &X, const VersionTuple &Y,
     return true;
 
   return false;
+}
+
+AvailabilityAttr *Sema::mergeFeatureAvailabilityAttr(NamedDecl *D,
+                                                     const AvailabilityAttr &AA,
+                                                     StringRef DomainName) {
+  auto *NewAttr = AA.clone(getASTContext());
+  NewAttr->setInherited(true);
+  return NewAttr;
 }
 
 AvailabilityAttr *Sema::mergeAvailabilityAttr(
@@ -2326,7 +2337,33 @@ AvailabilityAttr *Sema::mergeAvailabilityAttr(
   return nullptr;
 }
 
+static void handleFeatureAvailabilityAttr(Sema &S, Decl *D,
+                                          const ParsedAttr &AL) {
+  if (S.getLangOpts().CPlusPlus) {
+    S.Diag(AL.getLoc(), diag::warn_attribute_ignored) << AL;
+    return;
+  }
+
+  if (!AL.isArgIdent(0)) {
+    S.Diag(AL.getLoc(), diag::err_attribute_argument_n_type)
+        << AL << 0 << AANT_ArgumentIdentifier;
+    return;
+  }
+
+  // FIXME: error checking
+  IdentifierInfo *II = AL.getArgAsIdent(0)->Ident;
+  std::optional<llvm::APSInt> IsUnavailable =
+      AL.getArgAsExpr(1)->getIntegerConstantExpr(S.Context);
+  D->addAttr(AvailabilityAttr::getDomainAvailability(
+      II->getName(), IsUnavailable->getExtValue(), AL, S.Context));
+}
+
 static void handleAvailabilityAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
+  if (!AL.isAvailabilityAttribute()) {
+    handleFeatureAvailabilityAttr(S, D, AL);
+    return;
+  }
+
   if (isa<UsingDecl, UnresolvedUsingTypenameDecl, UnresolvedUsingValueDecl>(
           D)) {
     S.Diag(AL.getRange().getBegin(), diag::warn_deprecated_ignored_on_using)
@@ -2597,6 +2634,12 @@ static void handleAvailabilityAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
       }
     }
   }
+}
+
+static void handleAvailabilityDomainAttr(Sema &S, Decl *D,
+                                         const ParsedAttr &AL) {
+  IdentifierInfo *II = AL.getArgAsIdent(0)->Ident;
+  D->addAttr(::new (S.Context) AvailabilityDomainAttr(S.Context, AL, II));
 }
 
 static void handleExternalSourceSymbolAttr(Sema &S, Decl *D,
@@ -8679,6 +8722,10 @@ ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D, const ParsedAttr &AL,
     handleSimpleAttribute<ArmLocallyStreamingAttr>(S, D, AL);
     break;
 
+  case ParsedAttr::AT_AvailabilityDomain:
+    handleAvailabilityDomainAttr(S, D, AL);
+    break;
+
   case ParsedAttr::AT_ArmNew:
     S.ARM().handleNewAttr(D, AL);
     break;
@@ -9117,6 +9164,12 @@ void Sema::PopParsingDeclaration(ParsingDeclState state, Decl *decl) {
         // the decl is invalid.
         if (!decl->isInvalidDecl())
           handleDelayedAvailabilityCheck(diag, decl);
+        break;
+
+      case DelayedDiagnostic::FeatureAvailability:
+        // Don't bother giving diagnostics if the decl is invalid.
+        if (!decl->isInvalidDecl())
+          handleDelayedFeatureAvailabilityCheck(diag, decl);
         break;
 
       case DelayedDiagnostic::Access:

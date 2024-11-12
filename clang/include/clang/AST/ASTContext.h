@@ -822,6 +822,28 @@ public:
     return DiagAllocator;
   }
 
+  enum FeatureAvailKind { On, Off, Dynamic };
+
+  void inheritFeatureAvailability(Decl *Dst, Decl *Src);
+
+  SmallVector<AvailabilityAttr *, 2>
+  getFeatureAvailabilityAttrs(const Decl *D) const;
+
+  struct AvailabilityDomainInfo {
+    FeatureAvailKind Kind;
+    ImplicitCastExpr *Call;
+  };
+
+  std::map<std::string, AvailabilityDomainInfo> AvailabilityDomainMap;
+
+  void addAvailabilityDomainMap(StringRef Name, AvailabilityDomainInfo Info) {
+    AvailabilityDomainMap[Name.str()] = Info;
+  }
+
+  AvailabilityDomainInfo getFeatureAvailInfo(StringRef FeatureName) const;
+
+  bool hasUnavailableFeature(const Decl *D) const;
+
   const TargetInfo &getTargetInfo() const { return *Target; }
   const TargetInfo *getAuxTargetInfo() const { return AuxTarget; }
 

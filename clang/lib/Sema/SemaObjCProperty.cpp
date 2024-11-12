@@ -1300,6 +1300,7 @@ Decl *SemaObjC::ActOnPropertyImplDecl(
                                   PropertyIvarType, /*TInfo=*/nullptr,
                                   ObjCIvarDecl::Private,
                                   (Expr *)nullptr, true);
+      Context.inheritFeatureAvailability(Ivar, property);
       if (SemaRef.RequireNonAbstractType(PropertyIvarLoc, PropertyIvarType,
                                          diag::err_abstract_type_in_decl,
                                          Sema::AbstractSynthesizedIvarType)) {

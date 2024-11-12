@@ -582,6 +582,13 @@ public:
   }
 
   Value *VisitObjCAvailabilityCheckExpr(ObjCAvailabilityCheckExpr *E) {
+    auto DomainName = E->getDomainName();
+    if (!DomainName.empty()) {
+      ASTContext::AvailabilityDomainInfo Info =
+          CGF.getContext().getFeatureAvailInfo(DomainName);
+      return CGF.EmitScalarExpr(Info.Call);
+    }
+
     VersionTuple Version = E->getVersionAsWritten();
 
     // If we're checking for a platform older than our minimum deployment
@@ -590,6 +597,13 @@ public:
       return llvm::ConstantInt::get(Builder.getInt1Ty(), 1);
 
     return CGF.EmitBuiltinAvailable(Version);
+  }
+
+  Value *VisitObjCFeatureCheckExpr(ObjCFeatureCheckExpr *E) {
+    auto FeatureName = E->getFeatureName()->getName();
+    ASTContext::AvailabilityDomainInfo Info =
+        CGF.getContext().getFeatureAvailInfo(FeatureName);
+    return CGF.EmitScalarExpr(Info.Call);
   }
 
   Value *VisitArraySubscriptExpr(ArraySubscriptExpr *E);

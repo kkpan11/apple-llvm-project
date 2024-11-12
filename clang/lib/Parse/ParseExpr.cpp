@@ -1393,6 +1393,9 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
   case tok::kw___builtin_available:
     Res = ParseAvailabilityCheckExpr(Tok.getLocation());
     break;
+  case tok::kw___builtin_feature:
+    Res = ParseFeatureCheckExpr(Tok.getLocation());
+    break;
   case tok::kw___builtin_va_arg:
   case tok::kw___builtin_offsetof:
   case tok::kw___builtin_choose_expr:
@@ -3952,6 +3955,12 @@ static bool CheckAvailabilitySpecList(Parser &P,
   bool HasOtherPlatformSpec = false;
   bool Valid = true;
   for (const auto &Spec : AvailSpecs) {
+    if (Spec.isDomainName()) {
+      if (AvailSpecs.size() != 1) {
+      }
+      return Valid;
+    }
+
     if (Spec.isOtherPlatformSpec()) {
       if (HasOtherPlatformSpec) {
         P.Diag(Spec.getBeginLoc(), diag::err_availability_query_repeated_star);
@@ -3999,6 +4008,23 @@ std::optional<AvailabilitySpec> Parser::ParseAvailabilitySpec() {
       Actions.CodeCompletion().CodeCompleteAvailabilityPlatformName();
       return std::nullopt;
     }
+
+    if (Tok.is(tok::identifier) && GetLookAheadToken(1).is(tok::equal)) {
+      if (ParseIdentifierLoc()->Ident->getName() != "domain") {
+        return std::nullopt;
+      }
+
+      ConsumeToken(); // equal
+
+      if (Tok.isNot(tok::identifier)) {
+        return std::nullopt;
+      }
+
+      IdentifierLoc *DomainIdentifier = ParseIdentifierLoc();
+      return AvailabilitySpec(DomainIdentifier->Ident->getName(),
+                              DomainIdentifier->Loc);
+    }
+
     if (Tok.isNot(tok::identifier)) {
       Diag(Tok, diag::err_avail_query_expected_platform_name);
       return std::nullopt;
@@ -4250,3 +4276,30 @@ ExprResult Parser::ParseUnsafeTerminatedByFromIndexable() {
       T.getCloseLocation());
 }
 /* TO_UPSTREAM(BoundsSafety) OFF*/
+
+ExprResult Parser::ParseFeatureCheckExpr(SourceLocation BeginLoc) {
+  assert(Tok.is(tok::kw___builtin_feature) ||
+         Tok.isObjCAtKeyword(tok::objc_feature));
+
+  if (getLangOpts().CPlusPlus) {
+    Diag(BeginLoc, diag::err_feature_unavailable_cxx);
+    return ExprError();
+  }
+
+  // Eat the feature or __builtin_feature.
+  ConsumeToken();
+
+  BalancedDelimiterTracker Parens(*this, tok::l_paren);
+
+  if (Parens.expectAndConsume())
+    return ExprError();
+
+  IdentifierLoc *FeatureIdentifier = ParseIdentifierLoc();
+  IdentifierInfo *FeatureName = FeatureIdentifier->Ident;
+
+  if (Parens.consumeClose())
+    return ExprError();
+
+  return Actions.ObjC().ActOnObjCFeatureCheckExpr(FeatureName, BeginLoc,
+                                                  Parens.getCloseLocation());
+}

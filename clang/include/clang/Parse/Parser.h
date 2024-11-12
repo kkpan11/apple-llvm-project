@@ -3138,6 +3138,12 @@ private:
   void ParseHLSLQualifiers(ParsedAttributes &Attrs);
 
   VersionTuple ParseVersionTuple(SourceRange &Range);
+  void ParseFeatureAvailabilityAttribute(
+      IdentifierInfo &Availability, SourceLocation AvailabilityLoc,
+      ParsedAttributes &attrs, SourceLocation *endLoc,
+      IdentifierInfo *ScopeName, SourceLocation ScopeLoc, ParsedAttr::Form Form,
+      BalancedDelimiterTracker &T);
+
   void ParseAvailabilityAttribute(IdentifierInfo &Availability,
                                   SourceLocation AvailabilityLoc,
                                   ParsedAttributes &attrs,
@@ -3148,6 +3154,7 @@ private:
 
   std::optional<AvailabilitySpec> ParseAvailabilitySpec();
   ExprResult ParseAvailabilityCheckExpr(SourceLocation StartLoc);
+  ExprResult ParseFeatureCheckExpr(SourceLocation StartLoc);
 
   void ParseExternalSourceSymbolAttribute(IdentifierInfo &ExternalSourceSymbol,
                                           SourceLocation Loc,

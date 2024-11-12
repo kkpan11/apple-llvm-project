@@ -12318,6 +12318,28 @@ public:
     return Success(E->getValue(), E);
   }
 
+  bool VisitObjCAvailabilityCheckExpr(const ObjCAvailabilityCheckExpr *E) {
+    auto FeatureName = E->getDomainName();
+    if (FeatureName.empty())
+      return false;
+    auto FeatureInfo = Info.Ctx.getFeatureAvailInfo(FeatureName);
+    unsigned ResultInt;
+
+    switch (FeatureInfo.Kind) {
+    case ASTContext::FeatureAvailKind::On:
+      ResultInt = 1;
+      break;
+    case ASTContext::FeatureAvailKind::Off:
+      ResultInt = 0;
+      break;
+    case ASTContext::FeatureAvailKind::Dynamic:
+      return false;
+    }
+
+    return Success(APSInt(APInt(Info.Ctx.getIntWidth(E->getType()), ResultInt)),
+                   E);
+  }
+
   bool CheckReferencedDecl(const Expr *E, const Decl *D);
   bool VisitDeclRefExpr(const DeclRefExpr *E) {
     if (CheckReferencedDecl(E, E->getDecl()))
