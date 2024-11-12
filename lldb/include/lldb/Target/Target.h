@@ -130,6 +130,10 @@ public:
 
   const char *GetDisassemblyFlavor() const;
 
+  const char *GetDisassemblyCPU() const;
+
+  const char *GetDisassemblyFeatures() const;
+
   InlineStrategy GetInlineStrategy() const;
 
   llvm::StringRef GetArg0() const;
