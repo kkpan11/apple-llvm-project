@@ -469,7 +469,11 @@ public:
 
     ScanInstance.getFrontendOpts().GenerateGlobalModuleIndex = false;
     ScanInstance.getFrontendOpts().UseGlobalModuleIndex = false;
-    ScanInstance.getFrontendOpts().ModulesShareFileManager = false;
+    // This will prevent us compiling individual modules asynchronously since
+    // FileManager is not thread-safe, but it does improve performance for now.
+    ScanInstance.getFrontendOpts().ModulesShareFileManager = true;
+    if (DepCASFS)
+      ScanInstance.getFrontendOpts().ModulesShareFileManager = false;
     ScanInstance.getHeaderSearchOpts().ModuleFormat = "raw";
     ScanInstance.getHeaderSearchOpts().ModulesIncludeVFSUsage =
         any(OptimizeArgs & ScanningOptimizations::VFS);
@@ -589,6 +593,7 @@ public:
     // TODO: Implement diagnostic bucketing to reduce the impact of strict
     // context hashing.
     ScanInstance.getHeaderSearchOpts().ModulesStrictContextHash = true;
+    ScanInstance.getHeaderSearchOpts().ModulesSerializeOnlyPreprocessor = true;
     ScanInstance.getHeaderSearchOpts().ModulesSkipDiagnosticOptions = true;
     ScanInstance.getHeaderSearchOpts().ModulesSkipHeaderSearchPaths = true;
     ScanInstance.getHeaderSearchOpts().ModulesSkipPragmaDiagnosticMappings =
