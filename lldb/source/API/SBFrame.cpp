@@ -56,13 +56,6 @@
 
 #include "llvm/Support/PrettyStackTrace.h"
 
-// BEGIN SWIFT
-#include "lldb/Target/LanguageRuntime.h"
-#ifdef LLDB_ENABLE_SWIFT
-#include "Plugins/LanguageRuntime/Swift/SwiftLanguageRuntime.h"
-#endif
-// END SWIFT
-
 using namespace lldb;
 using namespace lldb_private;
 
@@ -1249,13 +1242,10 @@ lldb::LanguageType SBFrame::GuessLanguage() const {
 lldb::SBStructuredData SBFrame::GetLanguageSpecificData() const {
   std::unique_lock<std::recursive_mutex> lock;
   ExecutionContext exe_ctx(m_opaque_sp.get(), lock);
-  auto *process = exe_ctx.GetProcessPtr();
   auto *frame = exe_ctx.GetFramePtr();
-  if (process && frame)
-    if (auto *runtime = process->GetLanguageRuntime(
-            frame->GuessLanguage().AsLanguageType()))
-      if (auto *data = runtime->GetLanguageSpecificData(*frame))
-        return SBStructuredData(*data);
+  if (frame)
+    if (StructuredDataImpl *data = frame->GetLanguageSpecificData())
+      return SBStructuredData(*data);
 
   return {};
 }
@@ -1276,14 +1266,7 @@ bool SBFrame::IsSwiftThunk() const {
   frame = exe_ctx.GetFramePtr();
   if (!frame)
     return false;
-  SymbolContext sc;
-  sc = frame->GetSymbolContext(eSymbolContextSymbol);
-  if (!sc.symbol)
-    return false;
-  auto *runtime = process->GetLanguageRuntime(eLanguageTypeSwift);
-  if (!runtime)
-    return false;
-  return runtime->IsSymbolARuntimeThunk(*sc.symbol);
+  return frame->IsSwiftThunk();
 }
 // END SWIFT
 
