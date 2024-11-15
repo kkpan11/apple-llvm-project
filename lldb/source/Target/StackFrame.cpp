@@ -1224,7 +1224,8 @@ const char *StackFrame::GetFunctionName() {
     if (inlined_block) {
       const InlineFunctionInfo *inlined_info =
           inlined_block->GetInlinedFunctionInfo();
-      name = inlined_info->GetName().AsCString();
+      if (inlined_info)
+        name = inlined_info->GetName().AsCString();
     }
   }
 
@@ -1250,7 +1251,8 @@ const char *StackFrame::GetDisplayFunctionName() {
     if (inlined_block) {
       const InlineFunctionInfo *inlined_info =
           inlined_block->GetInlinedFunctionInfo();
-      name = inlined_info->GetDisplayName().AsCString();
+      if (inlined_info)
+        name = inlined_info->GetDisplayName().AsCString();
     }
   }
 
