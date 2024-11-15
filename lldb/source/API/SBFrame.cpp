@@ -56,13 +56,6 @@
 
 #include "llvm/Support/PrettyStackTrace.h"
 
-// BEGIN SWIFT
-#include "lldb/Target/LanguageRuntime.h"
-#ifdef LLDB_ENABLE_SWIFT
-#include "Plugins/LanguageRuntime/Swift/SwiftLanguageRuntime.h"
-#endif
-// END SWIFT
-
 using namespace lldb;
 using namespace lldb_private;
 
@@ -1182,12 +1175,8 @@ bool SBFrame::IsInlined() const {
     Process::StopLocker stop_locker;
     if (stop_locker.TryLock(&process->GetRunLock())) {
       frame = exe_ctx.GetFramePtr();
-      if (frame) {
-
-        Block *block = frame->GetSymbolContext(eSymbolContextBlock).block;
-        if (block)
-          return block->GetContainingInlinedBlock() != nullptr;
-      }
+      if (frame)
+        return frame->IsInlined();
     }
   }
   return false;
@@ -1253,13 +1242,10 @@ lldb::LanguageType SBFrame::GuessLanguage() const {
 lldb::SBStructuredData SBFrame::GetLanguageSpecificData() const {
   std::unique_lock<std::recursive_mutex> lock;
   ExecutionContext exe_ctx(m_opaque_sp.get(), lock);
-  auto *process = exe_ctx.GetProcessPtr();
   auto *frame = exe_ctx.GetFramePtr();
-  if (process && frame)
-    if (auto *runtime = process->GetLanguageRuntime(
-            frame->GuessLanguage().AsLanguageType()))
-      if (auto *data = runtime->GetLanguageSpecificData(*frame))
-        return SBStructuredData(*data);
+  if (frame)
+    if (StructuredDataImpl *data = frame->GetLanguageSpecificData())
+      return SBStructuredData(*data);
 
   return {};
 }
@@ -1280,14 +1266,7 @@ bool SBFrame::IsSwiftThunk() const {
   frame = exe_ctx.GetFramePtr();
   if (!frame)
     return false;
-  SymbolContext sc;
-  sc = frame->GetSymbolContext(eSymbolContextSymbol);
-  if (!sc.symbol)
-    return false;
-  auto *runtime = process->GetLanguageRuntime(eLanguageTypeSwift);
-  if (!runtime)
-    return false;
-  return runtime->IsSymbolARuntimeThunk(*sc.symbol);
+  return frame->IsSwiftThunk();
 }
 // END SWIFT
 
@@ -1305,29 +1284,8 @@ const char *SBFrame::GetFunctionName() const {
     Process::StopLocker stop_locker;
     if (stop_locker.TryLock(&process->GetRunLock())) {
       frame = exe_ctx.GetFramePtr();
-      if (frame) {
-        SymbolContext sc(frame->GetSymbolContext(eSymbolContextFunction |
-                                                 eSymbolContextBlock |
-                                                 eSymbolContextSymbol));
-        if (sc.block) {
-          Block *inlined_block = sc.block->GetContainingInlinedBlock();
-          if (inlined_block) {
-            const InlineFunctionInfo *inlined_info =
-                inlined_block->GetInlinedFunctionInfo();
-            name = inlined_info->GetName().AsCString();
-          }
-        }
-
-        if (name == nullptr) {
-          if (sc.function)
-            name = sc.function->GetName().GetCString();
-        }
-
-        if (name == nullptr) {
-          if (sc.symbol)
-            name = sc.symbol->GetName().GetCString();
-        }
-      }
+      if (frame)
+        return frame->GetFunctionName();
     }
   }
   return name;
@@ -1348,29 +1306,8 @@ const char *SBFrame::GetDisplayFunctionName() {
     Process::StopLocker stop_locker;
     if (stop_locker.TryLock(&process->GetRunLock())) {
       frame = exe_ctx.GetFramePtr();
-      if (frame) {
-        SymbolContext sc(frame->GetSymbolContext(eSymbolContextFunction |
-                                                 eSymbolContextBlock |
-                                                 eSymbolContextSymbol));
-        if (sc.block) {
-          Block *inlined_block = sc.block->GetContainingInlinedBlock();
-          if (inlined_block) {
-            const InlineFunctionInfo *inlined_info =
-                inlined_block->GetInlinedFunctionInfo();
-            name = inlined_info->GetDisplayName().AsCString();
-          }
-        }
-
-        if (name == nullptr) {
-          if (sc.function)
-            name = sc.function->GetDisplayName().GetCString();
-        }
-
-        if (name == nullptr) {
-          if (sc.symbol)
-            name = sc.symbol->GetDisplayName().GetCString();
-        }
-      }
+      if (frame)
+        return frame->GetDisplayFunctionName();
     }
   }
   return name;

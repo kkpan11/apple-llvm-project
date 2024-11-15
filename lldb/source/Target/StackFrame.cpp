@@ -34,6 +34,11 @@
 #include "lldb/ValueObject/ValueObjectMemory.h"
 #include "lldb/ValueObject/ValueObjectVariable.h"
 
+#include "lldb/Target/LanguageRuntime.h"
+#ifdef LLDB_ENABLE_SWIFT
+#include "Plugins/LanguageRuntime/Swift/SwiftLanguageRuntime.h"
+#endif
+
 #include "lldb/lldb-enumerations.h"
 
 #include <memory>
@@ -1213,6 +1218,91 @@ bool StackFrame::IsHidden() {
   if (auto recognized_frame_sp = GetRecognizedFrame())
     return recognized_frame_sp->ShouldHide();
   return false;
+}
+
+bool StackFrame::IsSwiftThunk() {
+  ThreadSP thread_sp = GetThread();
+  if (!thread_sp)
+    return false;
+  ProcessSP process_sp = thread_sp->GetProcess();
+  if (!process_sp)
+    return false;
+
+  SymbolContext sc = GetSymbolContext(eSymbolContextSymbol);
+  if (!sc.symbol)
+    return false;
+  auto *runtime = process_sp->GetLanguageRuntime(eLanguageTypeSwift);
+  if (!runtime)
+    return false;
+  return runtime->IsSymbolARuntimeThunk(*sc.symbol);
+}
+
+StructuredDataImpl *StackFrame::GetLanguageSpecificData() {
+  ThreadSP thread_sp = GetThread();
+  if (!thread_sp)
+    return {};
+  ProcessSP process_sp = thread_sp->GetProcess();
+  if (!process_sp)
+    return {};
+
+  if (auto *runtime =
+          process_sp->GetLanguageRuntime(GuessLanguage().AsLanguageType()))
+    if (auto *data = runtime->GetLanguageSpecificData(*this))
+      return data;
+  return {};
+}
+
+const char *StackFrame::GetFunctionName() {
+  const char *name = nullptr;
+  SymbolContext sc = GetSymbolContext(
+      eSymbolContextFunction | eSymbolContextBlock | eSymbolContextSymbol);
+  if (sc.block) {
+    Block *inlined_block = sc.block->GetContainingInlinedBlock();
+    if (inlined_block) {
+      const InlineFunctionInfo *inlined_info =
+          inlined_block->GetInlinedFunctionInfo();
+      if (inlined_info)
+        name = inlined_info->GetName().AsCString();
+    }
+  }
+
+  if (name == nullptr) {
+    if (sc.function)
+      name = sc.function->GetName().GetCString();
+  }
+
+  if (name == nullptr) {
+    if (sc.symbol)
+      name = sc.symbol->GetName().GetCString();
+  }
+
+  return name;
+}
+
+const char *StackFrame::GetDisplayFunctionName() {
+  const char *name = nullptr;
+  SymbolContext sc = GetSymbolContext(
+      eSymbolContextFunction | eSymbolContextBlock | eSymbolContextSymbol);
+  if (sc.block) {
+    Block *inlined_block = sc.block->GetContainingInlinedBlock();
+    if (inlined_block) {
+      const InlineFunctionInfo *inlined_info =
+          inlined_block->GetInlinedFunctionInfo();
+      if (inlined_info)
+        name = inlined_info->GetDisplayName().AsCString();
+    }
+  }
+
+  if (name == nullptr) {
+    if (sc.function)
+      name = sc.function->GetDisplayName().GetCString();
+  }
+
+  if (name == nullptr) {
+    if (sc.symbol)
+      name = sc.symbol->GetDisplayName().GetCString();
+  }
+  return name;
 }
 
 SourceLanguage StackFrame::GetLanguage() {

@@ -412,6 +412,28 @@ public:
   /// system implementation details this way.
   bool IsHidden();
 
+  /// Query whether this frame is a Swift Thunk.
+  bool IsSwiftThunk();
+
+  /// Get this frame language specific data.
+  ///
+  /// \return
+  ///   The StructuredDataImpl object containing the language specific data. Can
+  ///   be null.
+  StructuredDataImpl *GetLanguageSpecificData();
+
+  /// Get the frame's demangled name.
+  ///
+  ///  /// \return
+  ///   A C-String containing the function demangled name. Can be null.
+  const char *GetFunctionName();
+
+  /// Get the frame's demangled display name.
+  ///
+  ///  /// \return
+  ///   A C-String containing the function demangled display name. Can be null.
+  const char *GetDisplayFunctionName();
+
   /// Query this frame to find what frame it is in this Thread's
   /// StackFrameList.
   ///
