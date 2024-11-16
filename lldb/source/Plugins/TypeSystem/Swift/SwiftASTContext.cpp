@@ -3834,8 +3834,14 @@ swift::ModuleDecl *SwiftASTContext::GetCachedModule(std::string module_name) {
 }
 
 llvm::Expected<swift::ModuleDecl &>
-SwiftASTContext::CreateModule(std::string module_name,
-                              swift::ImplicitImportInfo importInfo) {
+SwiftASTContext::CreateEmptyModule(std::string module_name) {
+  return CreateModule(module_name, /*importInfo*/ {},
+                      /*populateFiles*/ [](auto, auto) {});
+}
+
+llvm::Expected<swift::ModuleDecl &> SwiftASTContext::CreateModule(
+    std::string module_name, swift::ImplicitImportInfo importInfo,
+    swift::ModuleDecl::PopulateFilesFn populateFiles) {
   VALID_OR_RETURN(llvm::createStringError("no context"));
   if (module_name.empty())
     return llvm::createStringError("invalid module name (empty)");
@@ -3849,7 +3855,8 @@ SwiftASTContext::CreateModule(std::string module_name,
     return llvm::createStringError("invalid swift AST (nullptr)");
 
   swift::Identifier module_id(ast->getIdentifier(module_name));
-  auto *module_decl = swift::ModuleDecl::create(module_id, **ast, importInfo);
+  auto *module_decl =
+      swift::ModuleDecl::create(module_id, **ast, importInfo, populateFiles);
   if (!module_decl)
     return llvm::createStringError("failed to create module for \"{0}\"",
                                    module_name.c_str());
@@ -5130,9 +5137,8 @@ swift::ModuleDecl *SwiftASTContext::GetScratchModule() {
 
   if (m_scratch_module == nullptr) {
     ThreadSafeASTContext ast_ctx = GetASTContext();
-    m_scratch_module = swift::ModuleDecl::create(
-        GetASTContext()->getIdentifier("__lldb_scratch_module"),
-        **ast_ctx);
+    m_scratch_module = swift::ModuleDecl::createEmpty(
+        GetASTContext()->getIdentifier("__lldb_scratch_module"), **ast_ctx);
   }
   return m_scratch_module;
 }
