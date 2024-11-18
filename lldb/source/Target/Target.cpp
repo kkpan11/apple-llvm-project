@@ -5389,3 +5389,5 @@ llvm::json::Value
 Target::ReportStatistics(const lldb_private::StatisticsOptions &options) {
   return m_stats.ToJSON(*this, options);
 }
+
+void Target::ResetStatistics() { m_stats.Reset(*this); }
