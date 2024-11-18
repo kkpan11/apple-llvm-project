@@ -758,6 +758,8 @@ public:
 
   /// Add a string to the given record.
   void AddString(StringRef Str, RecordDataImpl &Record);
+  void AddStringBlob(StringRef Str, RecordDataImpl &Record,
+                     SmallVectorImpl<char> &Blob);
 
   /// Convert a path from this build process into one that is appropriate
   /// for emission in the module file.
@@ -765,6 +767,8 @@ public:
 
   /// Add a path to the given record.
   void AddPath(StringRef Path, RecordDataImpl &Record);
+  void AddPathBlob(StringRef Str, RecordDataImpl &Record,
+                   SmallVectorImpl<char> &Blob);
 
   /// Emit the current record with the given path as a blob.
   void EmitRecordWithPath(unsigned Abbrev, RecordDataRef Record,
