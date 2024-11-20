@@ -1156,7 +1156,7 @@ lldb::SBValue SBFrame::EvaluateExpression(const char *expr,
   return expr_result;
 }
 
-SBStructuredData SBFrame::GetLanguageInfo() {
+SBStructuredData SBFrame::GetLanguageSpecificData() {
   LLDB_INSTRUMENT_VA(this);
 
   SBStructuredData sb_data;
@@ -1166,7 +1166,7 @@ SBStructuredData SBFrame::GetLanguageInfo() {
   if (!frame)
     return sb_data;
 
-  StructuredData::ObjectSP data(frame->GetLanguageInfo());
+  StructuredData::ObjectSP data(frame->GetLanguageSpecificData());
   sb_data.m_impl_up->SetObjectSP(data);
   return sb_data;
 }
@@ -1252,17 +1252,6 @@ lldb::LanguageType SBFrame::GuessLanguage() const {
     }
   }
   return eLanguageTypeUnknown;
-}
-
-lldb::SBStructuredData SBFrame::GetLanguageSpecificData() const {
-  std::unique_lock<std::recursive_mutex> lock;
-  ExecutionContext exe_ctx(m_opaque_sp.get(), lock);
-  auto *frame = exe_ctx.GetFramePtr();
-  if (frame)
-    if (StructuredDataImpl *data = frame->GetLanguageSpecificData())
-      return SBStructuredData(*data);
-
-  return {};
 }
 
 // BEGIN SWIFT
