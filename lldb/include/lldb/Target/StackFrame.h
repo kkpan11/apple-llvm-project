@@ -413,6 +413,7 @@ public:
   bool IsHidden();
 
   /// Query whether this frame is a Swift Thunk.
+  LLDB_DEPRECATED("Use IsHidden() instead.")
   bool IsSwiftThunk();
 
   /// Get this frame language specific data.
