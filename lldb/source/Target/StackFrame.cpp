@@ -22,6 +22,7 @@
 #include "lldb/Symbol/VariableList.h"
 #include "lldb/Target/ABI.h"
 #include "lldb/Target/ExecutionContext.h"
+#include "lldb/Target/LanguageRuntime.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/RegisterContext.h"
 #include "lldb/Target/StackFrameRecognizer.h"
@@ -1237,18 +1238,15 @@ bool StackFrame::IsSwiftThunk() {
   return runtime->IsSymbolARuntimeThunk(*sc.symbol);
 }
 
-StructuredDataImpl *StackFrame::GetLanguageSpecificData() {
-  ThreadSP thread_sp = GetThread();
-  if (!thread_sp)
+StructuredData::ObjectSP StackFrame::GetLanguageSpecificData() {
+  auto process_sp = CalculateProcess();
+  SourceLanguage language = GetLanguage();
+  if (!language)
     return {};
-  ProcessSP process_sp = thread_sp->GetProcess();
-  if (!process_sp)
-    return {};
-
-  if (auto *runtime =
-          process_sp->GetLanguageRuntime(GuessLanguage().AsLanguageType()))
-    if (auto *data = runtime->GetLanguageSpecificData(*this))
-      return data;
+  if (auto runtime_sp =
+          process_sp->GetLanguageRuntime(language.AsLanguageType()))
+    return runtime_sp->GetLanguageSpecificData(
+        GetSymbolContext(eSymbolContextFunction));
   return {};
 }
 
