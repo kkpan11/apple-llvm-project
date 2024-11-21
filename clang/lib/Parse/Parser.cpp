@@ -1154,8 +1154,13 @@ Parser::DeclGroupPtrTy Parser::ParseDeclOrFunctionDefInternal(
   ParsedTemplateInfo TemplateInfo;
   MaybeParseMicrosoftAttributes(DS.getAttributes());
   // Parse the common declaration-specifiers piece.
+  /* TO_UPSTREAM(BoundsSafety) ON */
+  LateParsedAttrList BoundsSafetyLateAttrs(
+      /*PSoon=*/true, /*LateAttrParseExperimentalExtOnly=*/true);
   ParseDeclarationSpecifiers(DS, TemplateInfo, AS,
-                             DeclSpecContext::DSC_top_level);
+                             DeclSpecContext::DSC_top_level,
+                             &BoundsSafetyLateAttrs);
+  /* TO_UPSTREAM(BoundsSafety) OFF */
 
   // If we had a free-standing type definition with a missing semicolon, we
   // may get this far before the problem becomes obvious.
@@ -1250,7 +1255,11 @@ Parser::DeclGroupPtrTy Parser::ParseDeclOrFunctionDefInternal(
     return Actions.ConvertDeclToDeclGroup(TheDecl);
   }
 
-  return ParseDeclGroup(DS, DeclaratorContext::File, Attrs, TemplateInfo);
+  return ParseDeclGroup(DS, DeclaratorContext::File, Attrs, TemplateInfo,
+                        /*DeclEnd=*/nullptr,
+                        /*FRI=*/nullptr,
+                        // TO_UPSTREAM(BoundsSafety)
+                        &BoundsSafetyLateAttrs);
 }
 
 Parser::DeclGroupPtrTy Parser::ParseDeclarationOrFunctionDefinition(
@@ -1292,7 +1301,9 @@ Parser::DeclGroupPtrTy Parser::ParseDeclarationOrFunctionDefinition(
 ///
 Decl *Parser::ParseFunctionDefinition(ParsingDeclarator &D,
                                       const ParsedTemplateInfo &TemplateInfo,
-                                      LateParsedAttrList *LateParsedAttrs) {
+                                      LateParsedAttrList *LateParsedAttrs,
+                                      // TO_UPSTREAM(BoundsSafety)
+                                      LateParsedAttrList *BoundsSafetyLateAttrs) {
   llvm::TimeTraceScope TimeScope("ParseFunctionDefinition", [&]() {
     return Actions.GetNameForDeclarator(D).getName().getAsString();
   });
@@ -1522,7 +1533,16 @@ Decl *Parser::ParseFunctionDefinition(ParsingDeclarator &D,
   } else
     Actions.ActOnDefaultCtorInitializers(Res);
 
+  /*TO_UPSTREAM(BoundsSafety) ON*/
   // Late attributes are parsed in the same scope as the function body.
+  LateParsedAttrList BoundsSafetyAttrList(true);
+  if (!BoundsSafetyLateAttrs)
+    BoundsSafetyLateAttrs = &BoundsSafetyAttrList;
+  DistributeCLateParsedAttrs(D, Res, BoundsSafetyLateAttrs);
+  if (BoundsSafetyLateAttrs->size() > 0)
+    ParseLexedCAttributeList(*BoundsSafetyLateAttrs, false);
+  /*TO_UPSTREAM(BoundsSafety) OFF*/
+
   if (LateParsedAttrs)
     ParseLexedAttributeList(*LateParsedAttrs, Res, false, true);
 

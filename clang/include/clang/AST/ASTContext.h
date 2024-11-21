@@ -256,6 +256,14 @@ class ASTContext : public RefCountedBase<ASTContext> {
 
   mutable llvm::FoldingSet<CountAttributedType> CountAttributedTypes;
 
+  /* TO_UPSTREAM(BoundsSafety) ON */
+  mutable llvm::FoldingSet<DynamicRangePointerType>
+      DynamicRangePointerTypes;
+
+  mutable llvm::ContextualFoldingSet<ValueTerminatedType, ASTContext &>
+      ValueTerminatedTypes;
+  /* TO_UPSTREAM(BoundsSafety) OFF */
+
   mutable llvm::FoldingSet<QualifiedTemplateName> QualifiedTemplateNames;
   mutable llvm::FoldingSet<DependentTemplateName> DependentTemplateNames;
   mutable llvm::FoldingSet<SubstTemplateTemplateParmStorage>
@@ -1404,15 +1412,45 @@ public:
 
   /// Return the uniqued reference to the type for a pointer to
   /// the specified type.
-  QualType getPointerType(QualType T) const;
-  CanQualType getPointerType(CanQualType T) const {
-    return CanQualType::CreateUnsafe(getPointerType((QualType) T));
+  QualType getPointerType(QualType T, BoundsSafetyPointerAttributes A =
+                                          BoundsSafetyPointerAttributes()) const;
+  CanQualType getPointerType(
+      CanQualType T,
+      BoundsSafetyPointerAttributes A = BoundsSafetyPointerAttributes()) const {
+    return CanQualType::CreateUnsafe(getPointerType((QualType)T, A));
   }
 
   QualType
   getCountAttributedType(QualType T, Expr *CountExpr, bool CountInBytes,
                          bool OrNull,
                          ArrayRef<TypeCoupledDeclRefInfo> DependentDecls) const;
+
+  /* TO_UPSTREAM(BoundsSafety) ON */
+  QualType getDynamicRangePointerType(
+      QualType T, Expr *StartPtr, Expr *EndPtr,
+      ArrayRef<TypeCoupledDeclRefInfo> StartPtrDecls,
+      ArrayRef<TypeCoupledDeclRefInfo> EndPtrDecls) const;
+
+  QualType getValueTerminatedType(QualType T, Expr *TerminatorExpr) const;
+
+  /// Return a new pointer type with the -fbounds-safety pointer attribute with
+  /// preserving existing AttributedTypes and qualifiers.
+  QualType getBoundsSafetyPointerType(QualType PointerTy,
+                                   BoundsSafetyPointerAttributes);
+
+  /// Return a result type of merging -fbounds-safety pointer attributes of \p SrcTy
+  /// to \p DstTy, while preserving existing AttributedTypes and qualifiers of
+  /// \p DstTy. The type merging is performed recursively in nested pointers.
+  /// The caller should provide \p MergeFunctor to create a merged pointer type
+  /// using the recursively merged pointee type.
+  QualType mergeBoundsSafetyPointerTypes(
+      QualType DstTy, QualType SrcTy,
+      std::function<QualType(QualType, QualType, QualType)> &MergeFunctor);
+
+  QualType getBoundsSafetyAutoPointerType(QualType T,
+                                       BoundsSafetyPointerAttributes AbiFAttr,
+                                       bool ShouldAutoBound);
+  /* TO_UPSTREAM(BoundsSafety) OFF */
 
   /// Return the uniqued reference to a type adjusted from the original
   /// type to a new type.
@@ -2409,6 +2447,14 @@ public:
   uint64_t getTypeSize(QualType T) const { return getTypeInfo(T).Width; }
   uint64_t getTypeSize(const Type *T) const { return getTypeInfo(T).Width; }
 
+  /*TO_UPSTREAM(BoundsSafety) ON*/
+  uint64_t getTypeSizeOrNull(QualType T) const {
+    if (T->isIncompleteOrSizelessType())
+      return 0;
+    return getTypeSize(T);
+  }
+  /*TO_UPSTREAM(BoundsSafety) OFF*/
+
   /// Return the size of the character type, in bits.
   uint64_t getCharWidth() const {
     return getTypeSize(CharTy);
@@ -2663,6 +2709,37 @@ public:
     return getCanonicalType(T1) == getCanonicalType(T2);
   }
 
+  /* TO_UPSTREAM(BoundsSafety) ON*/
+  /// These enum values (other than CanMerge) are aligned with the options for
+  /// the third parameter in
+  /// diag::err_cond_expr_nested_bounds_safety_pointer_attribute_mismatch
+  enum BoundsSafePointerTypeMergeKind {
+    BSPTMK_NestedBoundsMismatch,
+    BSPTMK_FunctionTypeMismatch,
+    BSPTMK_TerminatedByMismatch,
+    BSPTMK_CanMerge,
+  };
+  /// Given two pointer types that can be unified without losing type safety,
+  /// check whether they can be merged without losing bounds safety.
+  /// In practice this means checking whether their inner pointer type bounds
+  /// sugar nodes match (if any exist). Non-nested pointer types can always be
+  /// unified, potentially requiring dynamic checks.
+  BoundsSafePointerTypeMergeKind canMergeTypeBounds(QualType LHSTy,
+                                                    QualType RHSTy) const;
+
+  /// Given two pointer types, check whether either of them if is a
+  /// ValueTerminatedType, and if so, that the other is a ValueTerminatedType
+  /// with the same terminator. Does not check pointee type!
+  BoundsSafePointerTypeMergeKind
+  checkTerminatedByMismatch(QualType LHSTy, QualType RHSTy) const;
+  BoundsSafePointerTypeMergeKind canMergeInnerTypeBounds(QualType LHSTy,
+                                                         QualType RHSTy) const;
+  BoundsSafePointerTypeMergeKind
+  canMergeFunctionTypeBounds(const FunctionProtoType *LHSTy,
+                             const FunctionProtoType *RHSTy) const;
+
+  /* TO_UPSTREAM(BoundsSafety) OFF*/
+
   /// Determine whether the given expressions \p X and \p Y are equivalent.
   bool hasSameExpr(const Expr *X, const Expr *Y) const;
 
@@ -2739,6 +2816,16 @@ public:
 
   /// Determine if two types are similar, ignoring only CVR qualifiers.
   bool hasCvrSimilarType(QualType T1, QualType T2);
+
+  /* TO_UPSTREAM(BoundsSafety) ON */
+  /// Determine if two types have same -fbounds-safety pointer layouts, recursively.
+  bool hasSameBoundsSafetyPointerLayout(QualType T1, QualType T2);
+
+  /// Determine if two types have compatible -fbounds-safety pointer layouts,
+  /// recursively.
+  bool hasCompatibleBoundsSafetyPointerLayout(QualType T1, QualType T2,
+                                           bool ExactCheck = false);
+  /* TO_UPSTREAM(BoundsSafety) OFF */
 
   /// Retrieves the "canonical" nested name specifier for a
   /// given nested name specifier.
