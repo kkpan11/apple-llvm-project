@@ -22,6 +22,7 @@
 #include "lldb/Utility/Scalar.h"
 #include "lldb/Utility/Status.h"
 #include "lldb/Utility/StreamString.h"
+#include "lldb/Utility/StructuredData.h"
 #include "lldb/Utility/UserID.h"
 #include "lldb/ValueObject/ValueObjectList.h"
 
@@ -413,14 +414,13 @@ public:
   bool IsHidden();
 
   /// Query whether this frame is a Swift Thunk.
+  LLDB_DEPRECATED("Use IsHidden() instead.")
   bool IsSwiftThunk();
 
-  /// Get this frame language specific data.
-  ///
-  /// \return
-  ///   The StructuredDataImpl object containing the language specific data. Can
-  ///   be null.
-  StructuredDataImpl *GetLanguageSpecificData();
+  /// Language plugins can use this API to report language-specific
+  /// runtime information about this compile unit, such as additional
+  /// language version details or feature flags.
+  StructuredData::ObjectSP GetLanguageSpecificData();
 
   /// Get the frame's demangled name.
   ///
