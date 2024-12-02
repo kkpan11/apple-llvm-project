@@ -6,10 +6,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "clang/Analysis/Analyses/BoundsSafetySuggestions.h"
 #include "clang/AST/Attr.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/StmtVisitor.h"
+// TO_UPSTREAM(BoundsSafety)
+#include "clang/Sema/BoundsSafetySuggestions.h"
 #include "clang/Sema/DynamicCountPointerAssignmentAnalysisExported.h"
 #include "clang/Sema/Sema.h"
 #include "llvm/ADT/SmallPtrSet.h"

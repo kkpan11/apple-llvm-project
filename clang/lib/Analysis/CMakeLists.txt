@@ -6,7 +6,6 @@ set(LLVM_LINK_COMPONENTS
 add_clang_library(clangAnalysis
   AnalysisDeclContext.cpp
   BodyFarm.cpp
-  BoundsSafetySuggestions.cpp
   CalledOnceCheck.cpp
   CFG.cpp
   CFGReachabilityAnalysis.cpp

@@ -13,6 +13,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/Sema/AnalysisBasedWarnings.h"
+// TO_UPSTREAM(BoundsSafety)
+#include "clang/Sema/BoundsSafetySuggestions.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclObjC.h"
@@ -27,8 +29,6 @@
 #include "clang/AST/StmtObjC.h"
 #include "clang/AST/StmtVisitor.h"
 #include "clang/AST/Type.h"
-// TO_UPSTREAM(BoundsSafety)
-#include "clang/Analysis/Analyses/BoundsSafetySuggestions.h"
 #include "clang/Analysis/Analyses/CFGReachabilityAnalysis.h"
 #include "clang/Analysis/Analyses/CalledOnceCheck.h"
 #include "clang/Analysis/Analyses/Consumed.h"

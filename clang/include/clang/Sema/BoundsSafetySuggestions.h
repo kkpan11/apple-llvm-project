@@ -12,8 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_ANALYSIS_ANALYSES_BOUNDSSAFETYSUGGESTIONS_H
-#define LLVM_CLANG_ANALYSIS_ANALYSES_BOUNDSSAFETYSUGGESTIONS_H
+#ifndef LLVM_CLANG_SEMA_BOUNDSSAFETYSUGGESTIONS_H
+#define LLVM_CLANG_SEMA_BOUNDSSAFETYSUGGESTIONS_H
 
 #include "clang/AST/Type.h"
 #include "clang/Basic/Diagnostic.h"
@@ -143,5 +143,5 @@ operator<<(const StreamingDiagnostic &PD,
 
 } // namespace clang
 
-#endif /* LLVM_CLANG_ANALYSIS_ANALYSES_BOUNDSSAFETYSUGGESTIONS_H */
+#endif /* LLVM_CLANG_SEMA_BOUNDSSAFETYSUGGESTIONS_H */
 /* TO_UPSTREAM(BoundsSafety) OFF */
