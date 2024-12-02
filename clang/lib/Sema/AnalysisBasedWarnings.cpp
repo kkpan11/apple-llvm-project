@@ -2524,6 +2524,7 @@ private:
     case WillTrapKind::TrapIffPtrNull:
       return 4;
     }
+    llvm_unreachable("Unhandled WillTrapKind");
   }
 
   int PtrArithOOBKindSelectIndex(PtrArithOOBKind Kind) {
@@ -2544,6 +2545,7 @@ private:
     case PtrArithOOBKind::NEVER_OOB:
       llvm_unreachable("Should not emit diagnostic with this kind");
     }
+    llvm_unreachable("Unhandled PtrArithOOBKind");
   }
 
   int AssignmentExprToSelectIndex(const Expr *AssignmentExpr) {

@@ -22,12 +22,8 @@ llvm::StringRef GetBoundsSafetyOptRemarkString(BoundsSafetyOptRemarkKind kind) {
     return ANNOTATION_STR;
 #include "BoundsSafetyOptRemarks.def"
 #undef BOUNDS_SAFETY_OR
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wcovered-switch-default"
-  default:
-    llvm_unreachable("Unhandled BoundsSafetyOptRemarkKind");
-#pragma clang diagnostic pop
   }
+  llvm_unreachable("Unhandled BoundsSafetyOptRemarkKind");
 }
 
 BoundsSafetyOptRemarkKind GetBoundsSafetyOptRemarkForTrap(BoundsSafetyTrapKind kind) {
@@ -43,12 +39,8 @@ BoundsSafetyOptRemarkKind GetBoundsSafetyOptRemarkForTrap(BoundsSafetyTrapKind k
 #include "BoundsSafetyTraps.def"
 #undef BOUNDS_SAFETY_TRAP
 #undef BOUNDS_SAFETY_TRAP_CTX
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wcovered-switch-default"
-  default:
-    llvm_unreachable("Unhandled BoundsSafetyTrapKind");
-#pragma clang diagnostic pop
   }
+  llvm_unreachable("Unhandled BoundsSafetyTrapKind");
 }
 
 } // namespace CodeGen

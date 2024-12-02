@@ -4715,7 +4715,7 @@ Address CodeGenFunction::EmitArrayToWidePointerDecay(
     Count = llvm::ConstantInt::get(getLLVMContext(), CAT->getSize());
   else if (auto VAT = dyn_cast<VariableArrayType>(SrcTy))
     Count = getVLASize(VAT).NumElts;
-  else if (auto IAT = dyn_cast<IncompleteArrayType>(SrcTy)) {
+  else if (isa<IncompleteArrayType>(SrcTy)) {
     if (const auto *DCPTy = OrigSrcTy->getAs<CountAttributedType>()) {
       const Expr *CountExpr = DCPTy->getCountExpr();
       assert(!isa<MemberExpr>(E->IgnoreParenCasts()));

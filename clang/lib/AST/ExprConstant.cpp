@@ -9735,7 +9735,7 @@ bool PointerExprEvaluator::VisitCastExpr(const CastExpr *E) {
       return Result.IsNullPtr || SubObj.isValidSubobject();
     }
 
-    if (auto DRP = E->getType()->getAs<DynamicRangePointerType>()) {
+    if (E->getType()->isDynamicRangePointerType()) {
       // rdar://81135826
       return false;
     }

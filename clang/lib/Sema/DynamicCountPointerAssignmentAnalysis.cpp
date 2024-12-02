@@ -168,7 +168,7 @@ bool isSinglePtrToStructWithFam(Sema &S, QualType Ty) {
 /// reference from assignment expression and variable declaration statement.
 void analyzeAssignedDeclCommon(Sema &S, ValueDecl *VD, QualType Ty,
                                AssignedDeclRefResult &Result) {
-  if (auto *DCPTy = Ty->getAs<CountAttributedType>()) {
+  if (Ty->isCountAttributedType()) {
     Result.ThisVD = VD;
     Result.IsTrackedVar = 1;
     Result.IsCountPtrVar = 1;
@@ -837,10 +837,10 @@ public:
     // needs to be done due to dynamic-bound pointer types.
     ExprResult Result;
     if (const auto *DBPTy = Ty->getAs<BoundsAttributedType>()) {
-      if (const auto *DCPTy = Ty->getAs<CountAttributedType>()) {
+      if (const auto *DCPTy = dyn_cast<CountAttributedType>(DBPTy)) {
         Result = build(DCPTy, WidePtr);
       } else {
-        const auto *DRPTy = Ty->getAs<DynamicRangePointerType>();
+        const auto *DRPTy = dyn_cast<DynamicRangePointerType>(DBPTy);
         if (DRPTy->getEndPointer())
           Result = build(DRPTy, WidePtr);
       }
@@ -2390,7 +2390,7 @@ bool diagnoseRecordInitsImpl(
     SmallVectorImpl<Expr *> &InitializersWithSideEffects) {
   bool HadError = false;
 
-  if (auto *AT = SemaRef.Context.getAsArrayType(IL->getType())) {
+  if (SemaRef.Context.getAsArrayType(IL->getType())) {
     for (unsigned i = 0; i < IL->getNumInits(); ++i) {
       if (auto SubIL = dyn_cast<InitListExpr>(IL->getInit(i))) {
         HadError |= diagnoseRecordInitsImpl(SemaRef, SubIL, NeedPreCheck,
@@ -2614,7 +2614,7 @@ Expr *CheckCountAttributedDeclAssignments::HandleInitListExpr(
         if (!(Init = InitRes.get()))
           return nullptr;
         Builder.insertDeclToNewValue(FD, Init);
-      } else if (auto *OrigDCPTy = FD->getType()->getAs<CountAttributedType>()) {
+      } else if (FD->getType()->isCountAttributedType()) {
         Expr *PtrExpr = findSourceExpr(Init);
         auto PtrExprRes =
             Builder.getMaterializedValueIfNot(PtrExpr, &MateredExprs);
@@ -2651,7 +2651,7 @@ Expr *CheckCountAttributedDeclAssignments::HandleInitListExpr(
     return nullptr;
   }
 
-  if (auto *AT = SemaRef.Context.getAsArrayType(IL->getType())) {
+  if (SemaRef.Context.getAsArrayType(IL->getType())) {
     for (unsigned i = 0; i < IL->getNumInits(); ++i) {
       if (auto SubIL = dyn_cast<InitListExpr>(IL->getInit(i))) {
         if (auto *NewSubIL = HandleInitListExpr(SubIL, Builder))

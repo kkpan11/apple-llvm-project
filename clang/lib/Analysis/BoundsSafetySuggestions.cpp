@@ -445,9 +445,9 @@ bool UnsafeOperationVisitor::FindSingleEntity(
     if (const auto *Param = dyn_cast<ParmVarDecl>(SingleVarDecl)) {
       // Variable definition is from a __single parameter
       BoundsSafetySuggestionHandler::SingleEntity Entity = {
-          .Entity = Param,
           .Kind =
               BoundsSafetySuggestionHandler::AssignmentSourceKind::Parameter,
+          .Entity = Param,
           .AssignmentExpr = AssignmentExpr,
           .SinglePointeeTy = SinglePointeeTy};
       SingleEntities.emplace_back(Entity);
@@ -457,9 +457,9 @@ bool UnsafeOperationVisitor::FindSingleEntity(
     if (SingleVarDecl->hasGlobalStorage() && !SingleVarDecl->isStaticLocal()) {
       // Variable definition is from a __single global
       BoundsSafetySuggestionHandler::SingleEntity Entity = {
-          .Entity = SingleVarDecl,
           .Kind =
               BoundsSafetySuggestionHandler::AssignmentSourceKind::GlobalVar,
+          .Entity = SingleVarDecl,
           .AssignmentExpr = AssignmentExpr,
           .SinglePointeeTy = SinglePointeeTy};
       SingleEntities.emplace_back(Entity);
@@ -470,8 +470,8 @@ bool UnsafeOperationVisitor::FindSingleEntity(
       // Variable definition is from a local __single or a
       // "locally scoped" static __single.
       BoundsSafetySuggestionHandler::SingleEntity Entity = {
-          .Entity = SingleVarDecl,
           .Kind = BoundsSafetySuggestionHandler::AssignmentSourceKind::LocalVar,
+          .Entity = SingleVarDecl,
           .AssignmentExpr = AssignmentExpr,
           .SinglePointeeTy = SinglePointeeTy};
       SingleEntities.emplace_back(Entity);
@@ -508,9 +508,9 @@ bool UnsafeOperationVisitor::FindSingleEntity(
     assert(IsReallySinglePtr(DirectCallDecl->getReturnType()));
 
     BoundsSafetySuggestionHandler::SingleEntity Entity = {
-        .Entity = DirectCallDecl,
         .Kind = BoundsSafetySuggestionHandler::AssignmentSourceKind::
             FunctionCallReturnValue,
+        .Entity = DirectCallDecl,
         .AssignmentExpr = AssignmentExpr,
         .SinglePointeeTy = SinglePointeeTy};
     SingleEntities.emplace_back(Entity);
@@ -531,8 +531,8 @@ bool UnsafeOperationVisitor::FindSingleEntity(
         }
 
         BoundsSafetySuggestionHandler::SingleEntity Entity = {
-            .Entity = FD,
             .Kind = AssignmentKind,
+            .Entity = FD,
             .AssignmentExpr = AssignmentExpr,
             .SinglePointeeTy = SinglePointeeTy};
         SingleEntities.emplace_back(Entity);
@@ -553,9 +553,9 @@ bool UnsafeOperationVisitor::FindSingleEntity(
     if (const auto *DRE = dyn_cast<DeclRefExpr>(BaseExpr)) {
       if (const auto *ArrayDecl = dyn_cast<VarDecl>(DRE->getDecl())) {
         BoundsSafetySuggestionHandler::SingleEntity Entity = {
-            .Entity = ArrayDecl,
             .Kind = BoundsSafetySuggestionHandler::AssignmentSourceKind::
                 ArrayElement,
+            .Entity = ArrayDecl,
             .AssignmentExpr = AssignmentExpr,
             .SinglePointeeTy = SinglePointeeTy};
         SingleEntities.emplace_back(Entity);

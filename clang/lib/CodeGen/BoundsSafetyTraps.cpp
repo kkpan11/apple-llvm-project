@@ -34,7 +34,7 @@ GetBoundsSafetyTrapMessageSuffixWithContext(BoundsSafetyTrapKind kind,
       return "Pointer to struct below bounds while taking address of struct "
              "member";
     case BoundsSafetyTrapCtx::TERMINATED_BY_FROM_INDEXABLE:
-    case BoundsSafetyTrapCtx::UNKNOWN:
+    default:
       llvm_unreachable("Invalid TrapCtx");
     }
   case BNS_TRAP_PTR_GT_UPPER_BOUND:
@@ -52,7 +52,7 @@ GetBoundsSafetyTrapMessageSuffixWithContext(BoundsSafetyTrapKind kind,
     case BoundsSafetyTrapCtx::TERMINATED_BY_FROM_INDEXABLE:
       return "Pointer above bounds while converting __indexable to "
              "__terminated_by";
-    case BoundsSafetyTrapCtx::UNKNOWN:
+    default:
       llvm_unreachable("Invalid TrapCtx");
     }
   default:
@@ -74,12 +74,8 @@ llvm::StringRef GetBoundsSafetyTrapMessageSuffix(BoundsSafetyTrapKind kind,
 #include "BoundsSafetyTraps.def"
 #undef BOUNDS_SAFETY_TRAP
 #undef BOUNDS_SAFETY_TRAP_CTX
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wcovered-switch-default"
-  default:
-    llvm_unreachable("Unhandled BoundsSafetyTrapKind");
-#pragma clang diagnostic pop
   }
+  llvm_unreachable("Unhandled BoundsSafetyTrapKind");
 }
 
 } // namespace CodeGen

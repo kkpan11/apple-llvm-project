@@ -2298,6 +2298,7 @@ StringRef PredefinedBoundsCheckExpr::getKindName() const {
   case BoundsCheckKind::FlexibleArrayCountAssign:
     return "FlexibleArrayCountAssign(BasePtr, FamPtr, Count)";
   }
+  llvm_unreachable("Unexpected PredefinedBoundsCheckKind");
 }
 
 BoundsCheckExpr::BoundsCheckExpr(Expr *GuardedExpr, Expr *Cond,
@@ -3757,7 +3758,7 @@ bool Expr::isConstantInitializer(ASTContext &Ctx, bool IsForRef,
           } else {
             // BoundsSafety : Check if a static initializer for RecordType with
             // dynamic count fields can be statically evaluated without runtime checks.
-            if (auto *DCPTy = Field->getType()->getAs<CountAttributedType>()) {
+            if (Field->getType()->isCountAttributedType()) {
               auto Dcl = getUnderlyingDecl(Ctx, Elt);
               if (Dcl && Dcl->getType()->isConstantArrayType()) {
                 if (Ctx.getTypeSizeInCharsIfKnown(Dcl->getType()).has_value()) {

@@ -12142,6 +12142,7 @@ bool Sema::isCompatibleBoundsUnsafeAssignment(
   case Compatible:
     return false;
   }
+  llvm_unreachable("Unhandled Sema::AssignConvertType");
 }
 
 bool Sema::allowBoundsUnsafeFunctionArg(const CallExpr *CallE,

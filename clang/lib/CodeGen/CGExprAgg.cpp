@@ -503,7 +503,7 @@ VisitBoundsSafetyPointerPromotionExpr(BoundsSafetyPointerPromotionExpr *E) {
 
   llvm::Value *Lower;
   if (auto *LowerE = E->getLowerBound()) {
-    RValue LowerRV = CGF.EmitAnyExpr(E->getLowerBound());
+    RValue LowerRV = CGF.EmitAnyExpr(LowerE);
     if (LowerRV.isScalar())
       Lower = LowerRV.getScalarVal();
     else {

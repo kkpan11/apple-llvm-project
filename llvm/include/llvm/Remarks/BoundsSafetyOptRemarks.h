@@ -29,11 +29,8 @@ inline void annotate(Instruction *I, BoundsSafetyOptRemarkKind Kind) {
     return I->addAnnotationMetadata({ANNOTATION_STR, ACTIONABLE_STR});
 #include "BoundsSafetyOptRemarks.def"
 #undef BOUNDS_SAFETY_MISSED_REMARK
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wcovered-switch-default"
-  default:
-    llvm_unreachable("Unhandled BoundsSafetyOptRemarkKind");
   }
+  llvm_unreachable("Unhandled BoundsSafetyOptRemarkKind");
 }
 /// Return the list of runtime checks associated with instruction I.
 SmallVector<Instruction *> getBoundsSafetyRuntimeChecks(Instruction *I);
