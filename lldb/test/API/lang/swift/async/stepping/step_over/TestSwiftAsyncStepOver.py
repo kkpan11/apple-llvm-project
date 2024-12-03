@@ -4,6 +4,7 @@ import lldbsuite.test.lldbtest as lldbtest
 import lldbsuite.test.lldbutil as lldbutil
 
 
+@skipIfAsan  # rdar://138777205
 class TestCase(lldbtest.TestBase):
 
     def check_is_in_line(self, thread, linenum):
