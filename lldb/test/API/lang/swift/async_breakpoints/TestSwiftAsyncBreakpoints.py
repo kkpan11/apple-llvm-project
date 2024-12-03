@@ -4,6 +4,7 @@ import lldbsuite.test.lldbtest as lldbtest
 import lldbsuite.test.lldbutil as lldbutil
 
 
+@skipIfAsan # rdar://138777205
 class TestSwiftAsyncBreakpoints(lldbtest.TestBase):
     @swiftTest
     @skipIfWindows
