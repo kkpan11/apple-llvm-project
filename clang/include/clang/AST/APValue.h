@@ -419,10 +419,11 @@ private:
   };
   struct MemberPointerData;
 
+  /* TO_UPSTREAM(BoundsSafety) ON */
   struct LVBase {
     APValue::LValueBase Base;
     CharUnits Offset;
-    // Firebloom : While the base also holds a corresponding constant array type
+    // BoundsSafety : While the base also holds a corresponding constant array type
     // for forged pointer, we still keep track of forged size because the array
     // size will be different from the actual forged size if it is not a multiple
     // of element type size after a bitcast. The codegen doesn't round up/down
@@ -449,11 +450,14 @@ private:
     LVBase Base;
     LValuePathEntry Path[1];
   };
+  /* TO_UPSTREAM(BoundsSafety) OFF */
 
   // We ensure elsewhere that Data is big enough for LV and MemberPointerData.
   typedef llvm::AlignedCharArrayUnion<void *, APSInt, APFloat, ComplexAPSInt,
                                       ComplexAPFloat, Vec, Arr, StructData,
-                                      UnionData, AddrLabelDiffData, LVPlaceHolder> DataType;
+                                      UnionData, AddrLabelDiffData,
+                                      // TO_UPSTREAM(BoundsSafety)
+                                      LVPlaceHolder> DataType;
   static const size_t DataSize = sizeof(DataType);
 
   DataType Data;
