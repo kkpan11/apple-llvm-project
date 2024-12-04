@@ -446,11 +446,11 @@ bool UnsafeOperationVisitor::FindSingleEntity(
     if (const auto *Param = dyn_cast<ParmVarDecl>(SingleVarDecl)) {
       // Variable definition is from a __single parameter
       BoundsSafetySuggestionHandler::SingleEntity Entity = {
-          .Kind =
-              BoundsSafetySuggestionHandler::AssignmentSourceKind::Parameter,
-          .Entity = Param,
-          .AssignmentExpr = AssignmentExpr,
-          .SinglePointeeTy = SinglePointeeTy};
+          /*Kind*/ BoundsSafetySuggestionHandler::AssignmentSourceKind::
+              Parameter,
+          /*Entity*/ Param,
+          /*AssignmentExpr*/ AssignmentExpr,
+          /*SinglePointeeTy*/ SinglePointeeTy};
       SingleEntities.emplace_back(Entity);
       return true;
     }
@@ -458,11 +458,11 @@ bool UnsafeOperationVisitor::FindSingleEntity(
     if (SingleVarDecl->hasGlobalStorage() && !SingleVarDecl->isStaticLocal()) {
       // Variable definition is from a __single global
       BoundsSafetySuggestionHandler::SingleEntity Entity = {
-          .Kind =
-              BoundsSafetySuggestionHandler::AssignmentSourceKind::GlobalVar,
-          .Entity = SingleVarDecl,
-          .AssignmentExpr = AssignmentExpr,
-          .SinglePointeeTy = SinglePointeeTy};
+          /*Kind*/ BoundsSafetySuggestionHandler::AssignmentSourceKind::
+              GlobalVar,
+          /*Entity*/ SingleVarDecl,
+          /*AssignmentExpr*/ AssignmentExpr,
+          /*SinglePointeeTy*/ SinglePointeeTy};
       SingleEntities.emplace_back(Entity);
       return true;
     }
@@ -471,10 +471,11 @@ bool UnsafeOperationVisitor::FindSingleEntity(
       // Variable definition is from a local __single or a
       // "locally scoped" static __single.
       BoundsSafetySuggestionHandler::SingleEntity Entity = {
-          .Kind = BoundsSafetySuggestionHandler::AssignmentSourceKind::LocalVar,
-          .Entity = SingleVarDecl,
-          .AssignmentExpr = AssignmentExpr,
-          .SinglePointeeTy = SinglePointeeTy};
+          /*Kind*/ BoundsSafetySuggestionHandler::AssignmentSourceKind::
+              LocalVar,
+          /*Entity*/ SingleVarDecl,
+          /*AssignmentExpr*/ AssignmentExpr,
+          /*SinglePointeeTy*/ SinglePointeeTy};
       SingleEntities.emplace_back(Entity);
       return true;
     }
@@ -509,11 +510,11 @@ bool UnsafeOperationVisitor::FindSingleEntity(
     assert(IsReallySinglePtr(DirectCallDecl->getReturnType()));
 
     BoundsSafetySuggestionHandler::SingleEntity Entity = {
-        .Kind = BoundsSafetySuggestionHandler::AssignmentSourceKind::
+        /*Kind*/ BoundsSafetySuggestionHandler::AssignmentSourceKind::
             FunctionCallReturnValue,
-        .Entity = DirectCallDecl,
-        .AssignmentExpr = AssignmentExpr,
-        .SinglePointeeTy = SinglePointeeTy};
+        /*Entity*/ DirectCallDecl,
+        /*AssignmentExpr*/ AssignmentExpr,
+        /*SinglePointeeTy*/ SinglePointeeTy};
     SingleEntities.emplace_back(Entity);
     return true;
   }
@@ -532,10 +533,10 @@ bool UnsafeOperationVisitor::FindSingleEntity(
         }
 
         BoundsSafetySuggestionHandler::SingleEntity Entity = {
-            .Kind = AssignmentKind,
-            .Entity = FD,
-            .AssignmentExpr = AssignmentExpr,
-            .SinglePointeeTy = SinglePointeeTy};
+            /*Kind*/ AssignmentKind,
+            /*Entity*/ FD,
+            /*AssignmentExpr*/ AssignmentExpr,
+            /*SinglePointeeTy*/ SinglePointeeTy};
         SingleEntities.emplace_back(Entity);
         return true;
       }
@@ -554,11 +555,11 @@ bool UnsafeOperationVisitor::FindSingleEntity(
     if (const auto *DRE = dyn_cast<DeclRefExpr>(BaseExpr)) {
       if (const auto *ArrayDecl = dyn_cast<VarDecl>(DRE->getDecl())) {
         BoundsSafetySuggestionHandler::SingleEntity Entity = {
-            .Kind = BoundsSafetySuggestionHandler::AssignmentSourceKind::
+            /*Kind*/ BoundsSafetySuggestionHandler::AssignmentSourceKind::
                 ArrayElement,
-            .Entity = ArrayDecl,
-            .AssignmentExpr = AssignmentExpr,
-            .SinglePointeeTy = SinglePointeeTy};
+            /*Entity*/ ArrayDecl,
+            /*AssignmentExpr*/ AssignmentExpr,
+            /*SinglePointeeTy*/ SinglePointeeTy};
         SingleEntities.emplace_back(Entity);
         return true;
       }
