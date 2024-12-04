@@ -182,7 +182,7 @@ public:
 protected:
   // Constructors and destructors
   SwiftASTContext(std::string description,
-                  TypeSystemSwiftTypeRef &typeref_typesystem);
+                  TypeSystemSwiftTypeRefSP typeref_typesystem);
 
 public:
 
@@ -219,19 +219,20 @@ public:
   bool SupportsLanguage(lldb::LanguageType language) override;
 
   SwiftASTContextSP GetSwiftASTContext(const SymbolContext &sc) const override {
-    return GetTypeSystemSwiftTypeRef().GetSwiftASTContext(sc);
+    if (auto ts = GetTypeSystemSwiftTypeRef())
+      return ts->GetSwiftASTContext(sc);
+    return {};
   }
 
-  TypeSystemSwiftTypeRef &GetTypeSystemSwiftTypeRef() override {
-    // Always non-null outside of unit tests.
-    return *m_typeref_typesystem;
+  TypeSystemSwiftTypeRefSP GetTypeSystemSwiftTypeRef() override {
+    return m_typeref_typesystem.lock();
   }
 
-  const TypeSystemSwiftTypeRef &GetTypeSystemSwiftTypeRef() const override {
-    // Always non-null outside of unit tests.
-    return *m_typeref_typesystem;
+  std::shared_ptr<const TypeSystemSwiftTypeRef>
+  GetTypeSystemSwiftTypeRef() const override {
+    return m_typeref_typesystem.lock();
   }
-  
+
   Status IsCompatible() override;
 
   swift::SourceManager &GetSourceManager();
@@ -906,8 +907,7 @@ protected:
 
   /// Data members.
   /// @{
-  // Always non-null outside of unit tests.
-  TypeSystemSwiftTypeRef *m_typeref_typesystem;
+  std::weak_ptr<TypeSystemSwiftTypeRef> m_typeref_typesystem;
   std::unique_ptr<swift::CompilerInvocation> m_compiler_invocation_ap;
   std::unique_ptr<swift::SourceManager> m_source_manager_up;
   std::unique_ptr<swift::DiagnosticEngine> m_diagnostic_engine_ap;
@@ -1016,7 +1016,7 @@ public:
   /// \}
 
   SwiftASTContextForModule(std::string description,
-                           TypeSystemSwiftTypeRef &typeref_typesystem)
+                           TypeSystemSwiftTypeRefSP typeref_typesystem)
       : SwiftASTContext(description, typeref_typesystem) {}
   virtual ~SwiftASTContextForModule();
 };
@@ -1035,9 +1035,8 @@ public:
   /// \}
 
   SwiftASTContextForExpressions(std::string description,
-                                TypeSystemSwiftTypeRef &typeref_typesystem);
+                                TypeSystemSwiftTypeRefSP typeref_typesystem);
   virtual ~SwiftASTContextForExpressions();
-  lldb::TargetWP GetTargetWP() const override;
 
   UserExpression *GetUserExpression(llvm::StringRef expr,
                                     llvm::StringRef prefix,
@@ -1045,8 +1044,10 @@ public:
                                     Expression::ResultType desired_type,
                                     const EvaluateExpressionOptions &options,
                                     ValueObject *ctx_obj) override {
-    return m_typeref_typesystem->GetUserExpression(
-        expr, prefix, language, desired_type, options, ctx_obj);
+    if (auto ts = m_typeref_typesystem.lock())
+      return ts->GetUserExpression(expr, prefix, language, desired_type,
+                                   options, ctx_obj);
+    return nullptr;
   }
 
   PersistentExpressionState *GetPersistentExpressionState() override;
