@@ -85,11 +85,10 @@ static std::optional<OOBInfo> GetOOBInfo(lldb::addr_t ptr,
     elt_size = 1;
   }
 
-  lldb::addr_t ptr_upper_bound = ptr;
+  lldb::addr_t ptr_upper_bound = ptr + elt_size;
   // We consider an access that would overflow the address space also
   // out-of-bounds.
-  bool overflow = __builtin_add_overflow(ptr, elt_size, &ptr_upper_bound);
-  if (overflow)
+  if (ptr_upper_bound < ptr)
     return OOBInfo{LLDB_INVALID_ADDRESS, OOBKind::Overflow};
 
   // Note `ptr_upper_bound == upper_bound` is ok because that corresponds
