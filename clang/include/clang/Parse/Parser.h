@@ -3419,13 +3419,10 @@ private:
   DeclGroupPtrTy ParseCXXClassMemberDeclaration(
       AccessSpecifier AS, ParsedAttributes &Attr,
       ParsedTemplateInfo &TemplateInfo,
-      ParsingDeclRAIIObject *DiagsFromTParams = nullptr,
-      // TO_UPSTREAM(BoundsSafety)
-      LateParsedAttrList *LateMemberAttrs = nullptr);
+      ParsingDeclRAIIObject *DiagsFromTParams = nullptr);
   DeclGroupPtrTy ParseCXXClassMemberDeclarationWithPragmas(
       AccessSpecifier &AS, ParsedAttributes &AccessAttrs, DeclSpec::TST TagType,
-      Decl *Tag,
-      /*TO_UPSTREAM(BoundsSafety)*/LateParsedAttrList *LateMemberAttrs = nullptr);
+      Decl *Tag);
   void ParseConstructorInitializer(Decl *ConstructorDecl);
   MemInitResult ParseMemInitializer(Decl *ConstructorDecl);
   void HandleMemberFunctionDeclDelays(Declarator& DeclaratorInfo,

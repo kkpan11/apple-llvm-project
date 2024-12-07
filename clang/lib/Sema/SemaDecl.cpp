@@ -3946,8 +3946,21 @@ struct RebuildDynamicBoundsExpr
     DeclarationNameInfo NewNameInfo;
     NewNameInfo.setName(NewParm->getDeclName());
     assert(!E->hasExplicitTemplateArgs());
-    return RebuildDeclRefExpr(NewParm->getQualifierLoc(), NewParm, NewNameInfo,
-                              NewParm, nullptr);
+
+    // Temporarily put parameter variables in the translation unit, not the
+    // enclosing context. This is what Sema::ActOnParamDeclarator() already
+    // does when declaring a function. In BoundsSafety, we do it to allow
+    // creating references to the parameters when rebuilding the count
+    // expression.  Otherwise, creating such references triggers an error.
+    // TODO: Check how this works for C++ methods and such.
+    DeclContext *DC = NewParm->getDeclContext();
+    if (isa<FunctionDecl>(DC))
+      NewParm->setDeclContext(SemaRef.Context.getTranslationUnitDecl());
+    ExprResult Res = RebuildDeclRefExpr(NewParm->getQualifierLoc(), NewParm,
+                                        NewNameInfo, NewParm, nullptr);
+    NewParm->setDeclContext(DC);
+
+    return Res;
   }
 };
 
@@ -3963,14 +3976,26 @@ static bool mergeFunctionDeclBoundsAttributes(FunctionDecl *New,
     return false;
 
   RebuildDynamicBoundsExpr ExprBuilder(Self, New);
-  std::function<QualType(QualType, QualType, QualType)> mergeBoundsAttributes;
+  std::function<QualType(QualType, QualType, QualType, QualType)>
+      mergeBoundsAttributes;
   mergeBoundsAttributes = [&](QualType NewTy, QualType OldTy,
-                              QualType MergePointeeTy) -> QualType {
+                              QualType MergePointeeTy,
+                              QualType OrigNewTy) -> QualType {
     if (OldTy.isNull())
       return QualType();
     if (MergePointeeTy.isNull())
       return QualType();
     if (NewTy->isBoundsAttributedType() || NewTy->isValueTerminatedType())
+      return QualType();
+
+    // mergeBoundsSafetyPointerTypes removes any AttributedTypes from NewTy,
+    // calls mergeBoundsAttributes to merge the attributes at each level, and
+    // then reapplies the AttributedTypes to the merged type. OrigNewTy is the
+    // same as NewTy but without dropping the AttributedTypes. This allows us
+    // to check if the pointer has any attributes at all (such as __single
+    // applied using AttributedType).
+    if (Self.getLangOpts().isBoundsSafetyAttributeOnlyMode() &&
+        !OrigNewTy->isUnspecifiedPointerType())
       return QualType();
 
     BoundsSafetyPointerAttributes Attributes;
@@ -4069,9 +4094,10 @@ static bool mergeFunctionDeclTerminatedByAttribute(FunctionDecl *New,
     Self.Diag(OldLoc, diag::note_previous_declaration);
   };
 
-  std::function<QualType(QualType, QualType, QualType)>
-  mergeTerminatedByAttributes = [&](QualType NewTy, QualType OldTy,
-                                    QualType MergePointeeTy) -> QualType {
+  std::function<QualType(QualType, QualType, QualType, QualType)>
+      mergeTerminatedByAttributes = [&](QualType NewTy, QualType OldTy,
+                                        QualType MergePointeeTy,
+                                        QualType OrigNewTy) -> QualType {
     if (OldTy.isNull())
       return QualType();
     if (MergePointeeTy.isNull())
@@ -4465,11 +4491,7 @@ bool Sema::MergeFunctionDecl(FunctionDecl *New, NamedDecl *&OldD, Scope *S,
         !getSourceManager().isInSystemHeader(Old->getLocation())) {
       if (!diagnoseFunctionConflictWithDynamicBoundTypes(New, Old, *this))
         return true;
-    } else if (getLangOpts().BoundsSafety &&
-               mergeFunctionDeclBoundsAttributes(New, Old, *this)) {
-      // TODO: Merge __counted_by() attributes in system headers in
-      // attribute-only mode.
-      // rdar://137984764
+    } else if (mergeFunctionDeclBoundsAttributes(New, Old, *this)) {
       NewQType = New->getType();
     }
   }

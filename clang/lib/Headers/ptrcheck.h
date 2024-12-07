@@ -67,6 +67,18 @@
  * values of N. */
 #define __sized_by_or_null(N) __attribute__((__sized_by_or_null__(N)))
 
+/* An attribute that modifies a pointer type such that it has the ABI of a
+   regular C pointer, but it implicitly converts to a __bidi_indexable pointer
+   with bounds that assume that E is one-past-the-end of the original object.
+   Implicitly, referencing E in the same scope will create a pointer that
+   converts to a __bidi_indexable pointer one-past-the-end of the original
+   object, but with a lower bound set to the value of the pointer that is
+   attributed. */
+
+/* Assignments to the pointer object must be accompanied with an assignment to
+   E if it is assignable. */
+#define __ended_by(E) __attribute__((__ended_by__(E)))
+
 /* The __terminated_by(T) attribute can be applied to arrays and pointers. The
    argument T specifies the terminator and must be an integer constant
    expression. Even though T has to be an integer constant, __terminated_by(T)
@@ -146,6 +158,7 @@
 #define __counted_by_or_null(N)
 #define __sized_by(N)
 #define __sized_by_or_null(N)
+#define __ended_by(E)
 
 /* We intentionally define the terminated_by attributes to nothing. */
 #define __terminated_by(T)
@@ -190,18 +203,6 @@
    as __bidi_indexable pointers, __indexable pointers are bounds-checked when
    dereferenced or converted to another representation. */
 #define __indexable __attribute__((__indexable__))
-
-/* An attribute that modifies a pointer type such that it has the ABI of a
-   regular C pointer, but it implicitly converts to a __bidi_indexable pointer
-   with bounds that assume that E is one-past-the-end of the original object.
-   Implicitly, referencing E in the same scope will create a pointer that
-   converts to a __bidi_indexable pointer one-past-the-end of the original
-   object, but with a lower bound set to the value of the pointer that is
-   attributed. */
-
-/* Assignments to the pointer object must be accompanied with an assignment to
-   E if it is assignable. */
-#define __ended_by(E) __attribute__((__ended_by__(E)))
 
 /* Directives that tells the compiler to assume that subsequent pointer types
    have the ABI specified by the ABI parameter, which may be one of single,
@@ -302,8 +303,6 @@
       "unavailable with -fbounds-safety. Use " #REPLACEMENT " instead.")))
 
 #else
-
-#define __ended_by(E)
 
 /* We intentionally define to nothing pointer attributes which do not have an
    impact on the ABI. __indexable and __bidi_indexable are not defined because

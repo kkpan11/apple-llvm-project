@@ -3601,9 +3601,15 @@ static QualType assureMandatorySugarTypesRemain(ASTContext &Ctx,
 
 QualType ASTContext::mergeBoundsSafetyPointerTypes(
     QualType DstTy, QualType SrcTy,
-    std::function<QualType(QualType, QualType, QualType)> &MergeFunctor) {
+    std::function<QualType(QualType /* DstTy */, QualType /* SrcTy */,
+                           QualType /* MergePointeeTy */,
+                           QualType /* OrigDstTy */)> &MergeFunctor,
+    QualType OrigDstTy) {
   if (!DstTy->isPointerType())
     return DstTy;
+
+  if (OrigDstTy.isNull())
+    OrigDstTy = DstTy;
 
   // FIXME: a brittle hack to avoid skipping ValueTerminatedType outside
   // this PtrAutoAttr AttributedType.
@@ -3617,12 +3623,12 @@ QualType ASTContext::mergeBoundsSafetyPointerTypes(
 
   const auto *AT = DstTy->getAs<AttributedType>();
   if (AT && !RecoverPtrAuto) {
-    auto ModifiedTy =
-        mergeBoundsSafetyPointerTypes(AT->getModifiedType(), SrcTy, MergeFunctor);
+    auto ModifiedTy = mergeBoundsSafetyPointerTypes(
+        AT->getModifiedType(), SrcTy, MergeFunctor, OrigDstTy);
     if (ModifiedTy.isNull())
       return QualType();
-    auto EquivalentTy = mergeBoundsSafetyPointerTypes(AT->getEquivalentType(),
-                                                   SrcTy, MergeFunctor);
+    auto EquivalentTy = mergeBoundsSafetyPointerTypes(
+        AT->getEquivalentType(), SrcTy, MergeFunctor, OrigDstTy);
 
     auto QualsOnT = DstTy.getQualifiers();
     auto QualsOnModifTy = AT->getModifiedType().getQualifiers();
@@ -3644,7 +3650,7 @@ QualType ASTContext::mergeBoundsSafetyPointerTypes(
       !SrcTy.isNull() ? SrcTy->getPointeeType() : QualType();
   QualType MergePointeeTy =
       mergeBoundsSafetyPointerTypes(DstPointeeTy, SrcPointeeTy, MergeFunctor);
-  QualType MergeTy = MergeFunctor(DstTy, SrcTy, MergePointeeTy);
+  QualType MergeTy = MergeFunctor(DstTy, SrcTy, MergePointeeTy, OrigDstTy);
   if (DstTy != MergeTy && !MergeTy.isNull()) {
     if (RecoverPtrAuto) {
       MergeTy = getAttributedType(attr::PtrAutoAttr, MergeTy, MergeTy);

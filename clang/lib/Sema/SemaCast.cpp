@@ -415,8 +415,10 @@ Sema::deduceCastPointerAttributes(QualType ResultType, QualType SrcType) {
   //  int *val2 = (int*)val;
   // If the source is not a pointer, the cast type inherits the default ABI
   // visible pointer attribute.
-  std::function<QualType(QualType, QualType, QualType)> applyAttrToDestTy =
-      [&](QualType DstTy, QualType SrcTy, QualType MergePointeeTy) -> QualType {
+  std::function<QualType(QualType, QualType, QualType, QualType)>
+      applyAttrToDestTy = [&](QualType DstTy, QualType SrcTy,
+                              QualType MergePointeeTy,
+                              QualType OrigDstTy) -> QualType {
     const auto *DPTy = DstTy->getAs<PointerType>();
     if (DPTy->isUnspecified() || MergePointeeTy != DstTy->getPointeeType()) {
       const auto *DVTT = DstTy->getAs<ValueTerminatedType>();

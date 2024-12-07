@@ -7526,9 +7526,10 @@ QualType TreeTransform<Derived>::TransformDynamicRangePointerType(
   QualType Result = TL.getType();
   if (getDerived().AlwaysRebuild() || PointerTy != OldTy->desugar() ||
       OldStartPtr != NewStartPtr || OldEndPtr != NewEndPtr) {
-    // XXX: We should also rebuild Decls.
-    Result = SemaRef.Context.getDynamicRangePointerType(PointerTy,
-        NewStartPtr, NewEndPtr, OldTy->getStartPtrDecls(), OldTy->getEndPtrDecls());
+    Result =
+        SemaRef.BuildDynamicRangePointerType(PointerTy, NewStartPtr, NewEndPtr);
+    if (Result.isNull())
+      return QualType();
   }
 
   TLB.push<DynamicRangePointerTypeLoc>(Result);

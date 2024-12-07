@@ -10753,63 +10753,125 @@ public:
   }
 };
 
-class RangeArgChecker : public StmtVisitor<RangeArgChecker, bool> {
-  using DeclList = llvm::SmallVector<TypeCoupledDeclRefInfo, 1>;
-  using DeclSet = llvm::SmallSet<Decl *, 1>;
-  Sema &SemaRef;
-  DeclList &Dependees;
-  DeclSet Visited;
+/// RangeArgChecker - performs sanity checks for an argument in '__ended_by()'.
+/// Moreover, this checker extracts the dependent decl in the 'end' expression
+/// of '__ended_by(end)'.
+class RangeArgChecker : public TreeTransform<RangeArgChecker> {
+  using BaseTransform = TreeTransform<RangeArgChecker>;
+  std::optional<TypeCoupledDeclRefInfo> DependeeInfo;
   bool ScopeCheck;
   bool InDeref = false;
 
-public:
-  RangeArgChecker(Sema &SemaRef, DeclList &Dependees, bool ScopeCheck)
-      : SemaRef(SemaRef), Dependees(Dependees), ScopeCheck(ScopeCheck) {}
+  void setDependeeInfo(ValueDecl *VD, bool Deref) {
+    assert(!DependeeInfo.has_value());
+    DependeeInfo = TypeCoupledDeclRefInfo(VD, Deref);
+  }
 
-  bool VisitExpr(Expr *E) {
+public:
+  explicit RangeArgChecker(Sema &SemaRef, bool ScopeCheck)
+      : BaseTransform(SemaRef), ScopeCheck(ScopeCheck) {}
+
+  ExprResult TransformExpr(Expr *E) {
+    switch (E->getStmtClass()) {
+
+#define TRANSFORM_EXPR(Node)                                                   \
+  case Stmt::Node##Class:                                                      \
+    return Transform##Node(cast<Node>(E));
+
+      TRANSFORM_EXPR(ImplicitCastExpr)
+      TRANSFORM_EXPR(ParenExpr)
+      TRANSFORM_EXPR(UnaryOperator)
+      TRANSFORM_EXPR(DeclRefExpr)
+      TRANSFORM_EXPR(MemberExpr)
+
+#undef TRANSFORM_EXPR
+    default:
+      break;
+    }
+
+    return HandleInvalidExpr(E);
+  }
+
+  ExprResult HandleInvalidExpr(Expr *E) {
     SemaRef.Diag(
         E->getExprLoc(),
         diag::
             err_attribute_invalid_argument_expression_for_pointer_bounds_attribute);
-    return false;
-  }
-  bool VisitImplicitCastExpr(ImplicitCastExpr *E) {
-    return Visit(E->getSubExpr());
+    return ExprError();
   }
 
-  /// Add support for UO_Deref in particular to support out parameters.
-  /// e.g., 'void foo(int *__counted_by(len)* out_buf, int len)'
-  bool VisitUnaryOperator(UnaryOperator *E) {
+  ExprResult TransformImplicitCastExpr(ImplicitCastExpr *E) {
+    return BaseTransform::TransformImplicitCastExpr(E);
+  }
+
+  ExprResult TransformParenExpr(ParenExpr *E) {
+    return BaseTransform::TransformParenExpr(E);
+  }
+
+  ExprResult TransformUnaryOperator(UnaryOperator *E) {
     Expr *UnwrappedExpr = UnwrapDerefAddrOfPairs(E);
     E = dyn_cast<UnaryOperator>(UnwrappedExpr);
     if (!E)
-      return Visit(UnwrappedExpr);
+      return TransformExpr(UnwrappedExpr);
 
-    if (ScopeCheck)
-      return VisitExpr(E);
-
+    // No support for unary operators other than UO_Deref nor multiple UO_Deref.
     if (E->getOpcode() != UO_Deref || InDeref)
-      return VisitExpr(E);
+      return HandleInvalidExpr(E);
+
+    if (ScopeCheck) {
+      // We support deref operator for parameters, check if the `end` decl is
+      // also a parameter.
+      const auto *DRE =
+          dyn_cast<DeclRefExpr>(E->getSubExpr()->IgnoreParenCasts());
+      if (!DRE || !isa<ParmVarDecl>(DRE->getDecl())) {
+        SemaRef.Diag(E->getExprLoc(),
+                     diag::err_deref_in_bounds_safety_count_non_parm_decl)
+            << 4 /* __ended_by */;
+        // Return ExprError() instead of calling HandleInvalidExpr(E) to avoid
+        // emitting another error.
+        return ExprError();
+      }
+    }
 
     SaveAndRestore<bool> InDerefLocal(InDeref, true);
-    return Visit(E->getSubExpr());
+    return BaseTransform::TransformUnaryOperator(E);
   }
 
-  bool VisitDeclRefExpr(DeclRefExpr *E) {
-    // If the end pointer is not __single because of our implicit pointer annotation,
-    // we fix that during rebuilding the type of the end pointer.
-    if (!E->getType()->isSinglePointerType() &&
-        !E->getType()->isUnspecifiedPointerType() &&
-        !E->getType()->hasAttr(attr::PtrAutoAttr)) {
+  ExprResult TransformDeclRefExpr(DeclRefExpr *E) {
+    // If the end pointer is not __single because of our implicit pointer
+    // annotation, we fix that during rebuilding the type of the end pointer.
+    QualType Ty = E->getType();
+    if (!Ty->isSinglePointerType() && !Ty->isUnspecifiedPointerType() &&
+        !Ty->isDynamicRangePointerType() && !Ty->hasAttr(attr::PtrAutoAttr)) {
       SemaRef.Diag(E->getExprLoc(), diag::err_bounds_safety_end_pointer_single);
-      return false;
+      return ExprError();
     }
-    ValueDecl *VD = E->getDecl();
-    bool IsNewVD = Visited.insert(VD).second;
-    if (IsNewVD) {
-      Dependees.push_back(TypeCoupledDeclRefInfo(E->getDecl(), InDeref));
-    }
-    return true;
+
+    setDependeeInfo(E->getDecl(), InDeref);
+    return E;
+  }
+
+  ExprResult TransformMemberExpr(MemberExpr *E) {
+    // Using `__ended_by(end)` annotation on a struct/class member where `end`
+    // refers to another member creates a MemberExpr with an implicit this in
+    // C++. We don't support MemberExpr in general, so here we replace the
+    // MemberExpr with an implicit this by a DeclRefExpr to the field in order
+    // to have the same representation as in C.
+
+    if (!E->isImplicitAccess())
+      return HandleInvalidExpr(E);
+
+    ValueDecl *VD = E->getMemberDecl();
+    setDependeeInfo(VD, InDeref);
+    Expr *DRE = DeclRefExpr::Create(
+        SemaRef.Context, NestedNameSpecifierLoc{}, SourceLocation{}, VD, false,
+        DeclarationNameInfo{VD->getDeclName(), VD->getLocation()},
+        VD->getType(), VK_LValue);
+    return DRE;
+  }
+
+  TypeCoupledDeclRefInfo getDependeeInfo() const {
+    return DependeeInfo.value();
   }
 };
 
@@ -10831,13 +10893,10 @@ QualType Sema::BuildCountAttributedType(QualType PointerTy, Expr *CountExpr,
   if (!R.isInvalid())
     CountExpr = R.get();
 
-  bool IsAttributeOnlyMode =
-      getLangOpts().BoundsSafetyAttributes && !getLangOpts().BoundsSafety;
-
-  if (!IsAttributeOnlyMode && !PointerTy->isSinglePointerType()) {
-    BoundsSafetyPointerAttributes SingleAttr;
-    SingleAttr.setSingle();
-    PointerTy = Context.getBoundsSafetyPointerType(PointerTy, SingleAttr);
+  if (!getLangOpts().isBoundsSafetyAttributeOnlyMode() &&
+      !PointerTy->isSinglePointerType()) {
+    PointerTy = Context.getBoundsSafetyPointerType(
+        PointerTy, BoundsSafetyPointerAttributes::single());
   }
 
   return Context.getCountAttributedType(
@@ -10876,44 +10935,51 @@ QualType DropAutoNullTerminated(ASTContext &Ctx, QualType T) {
 
 QualType Sema::BuildDynamicRangePointerType(QualType PointerTy, Expr *StartPtr,
                                             Expr *EndPtr, bool ScopeCheck) {
-  llvm::SmallVector<TypeCoupledDeclRefInfo, 1> StartPtrDecls;
-  llvm::SmallVector<TypeCoupledDeclRefInfo, 1> EndPtrDecls;
-  bool Invalid = false;
+  std::optional<TypeCoupledDeclRefInfo> StartDecl, EndDecl;
+
   if (StartPtr) {
-    if (!RangeArgChecker(*this, StartPtrDecls, ScopeCheck).Visit(StartPtr))
-      Invalid = true;
+    RangeArgChecker RAC(*this, ScopeCheck);
+    ExprResult Res = RAC.TransformExpr(StartPtr);
+    if (Res.isInvalid())
+      return QualType();
+    StartPtr = Res.get();
+    StartDecl = RAC.getDependeeInfo();
   }
+
   if (EndPtr) {
-    if (!RangeArgChecker(*this, EndPtrDecls, ScopeCheck).Visit(EndPtr))
-      Invalid = true;
+    RangeArgChecker RAC(*this, ScopeCheck);
+    ExprResult Res = RAC.TransformExpr(EndPtr);
+    if (Res.isInvalid())
+      return QualType();
+    EndPtr = Res.get();
+    EndDecl = RAC.getDependeeInfo();
   }
 
-  if (Invalid)
-    return QualType();
-
-  if (!PointerTy->isSinglePointerType()) {
-    BoundsSafetyPointerAttributes SingleAttr;
-    SingleAttr.setSingle();
-    PointerTy = Context.getBoundsSafetyPointerType(PointerTy, SingleAttr);
+  if (!getLangOpts().isBoundsSafetyAttributeOnlyMode() &&
+      !PointerTy->isSinglePointerType()) {
+    PointerTy = Context.getBoundsSafetyPointerType(
+        PointerTy, BoundsSafetyPointerAttributes::single());
   }
 
-  for (auto &Ref : EndPtrDecls) {
-    auto *Decl = Ref.getDecl();
-    QualType Ty = Decl->getType();
+  if (EndDecl.has_value()) {
+    ValueDecl *VD = EndDecl->getDecl();
+    QualType Ty = VD->getType();
     if (Ty->hasAttr(attr::PtrAutoNullTerminatedAttr) &&
         Ty->isValueTerminatedType()) {
       assert(Ty->getAs<ValueTerminatedType>()
                  ->getTerminatorValue(Context)
                  .isZero());
       QualType NewTy = DropAutoNullTerminated(Context, Ty);
-      Decl->setType(NewTy);
+      VD->setType(NewTy);
     }
   }
 
   return Context.getDynamicRangePointerType(
       PointerTy, StartPtr, EndPtr,
-      llvm::ArrayRef(StartPtrDecls.begin(), StartPtrDecls.end()),
-      llvm::ArrayRef(EndPtrDecls.begin(), EndPtrDecls.end()));
+      StartDecl.has_value() ? ArrayRef(*StartDecl)
+                            : ArrayRef<TypeCoupledDeclRefInfo>(),
+      EndDecl.has_value() ? ArrayRef(*EndDecl)
+                          : ArrayRef<TypeCoupledDeclRefInfo>());
 }
 /* TO_UPSTREAM(BoundsSafety) OFF */
 

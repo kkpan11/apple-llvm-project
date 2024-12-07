@@ -70,9 +70,6 @@ struct S {
     int l;
 };
 
-// FIXME: Add support for __ended_by() in attribute-only mode
-// rdar://136158013
-#if __has_ptrcheck
 struct T {
     unsigned n;
     int * end;
@@ -99,7 +96,6 @@ void end2(int *__ended_by(b) a, int *__ended_by(c) b, int *c); // OK
 void end2(int *__ended_by(b) a, int *__ended_by(c) b, int *c) {} // OK definition over declaration
 
 void end2(int *__ended_by(b) a, int *__ended_by(c) b, int *__ended_by(a) c); // expected-error{{conflicting '__ended_by' attribute with the previous function declaration}}
-#endif
 
 #ifdef __started_by
 // this is not currently compiled; it's meant to break if/when __started_by

@@ -2850,9 +2850,7 @@ void Parser::MaybeParseAndDiagnoseDeclSpecAfterCXX11VirtSpecifierSeq(
 ///
 Parser::DeclGroupPtrTy Parser::ParseCXXClassMemberDeclaration(
     AccessSpecifier AS, ParsedAttributes &AccessAttrs,
-    ParsedTemplateInfo &TemplateInfo, ParsingDeclRAIIObject *TemplateDiags,
-    // TO_UPSTREAM(BoundsSafety)
-    LateParsedAttrList *LateMemberAttrs) {
+    ParsedTemplateInfo &TemplateInfo, ParsingDeclRAIIObject *TemplateDiags) {
   assert(getLangOpts().CPlusPlus &&
          "ParseCXXClassMemberDeclaration should only be called in C++ mode");
   if (Tok.is(tok::at)) {
@@ -2951,9 +2949,7 @@ Parser::DeclGroupPtrTy Parser::ParseCXXClassMemberDeclaration(
     ExtensionRAIIObject O(Diags); // Use RAII to do this.
     ConsumeToken();
     return ParseCXXClassMemberDeclaration(AS, AccessAttrs, TemplateInfo,
-                                          TemplateDiags,
-                                          // TO_UPSTREAM(BoundsSafety)
-                                          LateMemberAttrs);
+                                          TemplateDiags);
   }
 
   ParsedAttributes DeclAttrs(AttrFactory);
@@ -3262,9 +3258,6 @@ Parser::DeclGroupPtrTy Parser::ParseCXXClassMemberDeclaration(
       if (ThisDecl) {
         Actions.ProcessDeclAttributeList(getCurScope(), ThisDecl, AccessAttrs);
         Actions.ProcessAPINotes(ThisDecl);
-        /* TO_UPSTREAM(BoundsSafety) ON */
-        DistributeCLateParsedAttrs(DeclaratorInfo, ThisDecl, LateMemberAttrs);
-        /* TO_UPSTREAM(BoundsSafety) OFF */
       }
     }
 
@@ -3330,6 +3323,12 @@ Parser::DeclGroupPtrTy Parser::ParseCXXClassMemberDeclaration(
 
         for (unsigned i = 0, ni = LateParsedAttrs.size(); i < ni; ++i)
           LateParsedAttrs[i]->addDecl(ThisDecl);
+
+        LateParsedAttrList LateCAttrs;
+
+        DistributeCLateParsedAttrs(DeclaratorInfo, ThisDecl, &LateCAttrs);
+        for (auto *LCA : LateCAttrs)
+          getCurrentClass().LateParsedDeclarations.push_back(LCA);
       }
       Actions.FinalizeDeclaration(ThisDecl);
       DeclsInGroup.push_back(ThisDecl);
@@ -3533,8 +3532,7 @@ void Parser::SkipCXXMemberSpecification(SourceLocation RecordLoc,
 
 Parser::DeclGroupPtrTy Parser::ParseCXXClassMemberDeclarationWithPragmas(
     AccessSpecifier &AS, ParsedAttributes &AccessAttrs, DeclSpec::TST TagType,
-    Decl *TagDecl,
-    /*TO_UPSTREAM(BoundsSafety)*/LateParsedAttrList *LateMemberAttrs) {
+    Decl *TagDecl) {
   ParenBraceBracketBalancer BalancerRAIIObj(*this);
 
   switch (Tok.getKind()) {
@@ -3640,9 +3638,7 @@ Parser::DeclGroupPtrTy Parser::ParseCXXClassMemberDeclarationWithPragmas(
     }
     ParsedTemplateInfo TemplateInfo;
     return ParseCXXClassMemberDeclaration(AS, AccessAttrs, TemplateInfo,
-                                          /*TemplateDiags=*/nullptr,
-                                          // TO_UPSTREAM(BoundsSAfety)
-                                          LateMemberAttrs);
+                                          /*TemplateDiags=*/nullptr);
   }
 }
 
@@ -3841,22 +3837,13 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
     CurAS = AS_public;
   ParsedAttributes AccessAttrs(AttrFactory);
 
-  /* TO_UPSTREAM(BoundsSafety) ON*/
-  // Late attrs that should be parsed after parsing member declarations (e.g.,
-  // __counted_by()).
-  LateParsedAttrList LateMemberAttrs(/*PSoon=*/true,
-                                     /*LateAttrParseExperimentalExtOnly=*/true);
-  /* TO_UPSTREAM(BoundsSafety) OFF*/
-
   if (TagDecl) {
     // While we still have something to read, read the member-declarations.
     while (!tryParseMisplacedModuleImport() && Tok.isNot(tok::r_brace) &&
            Tok.isNot(tok::eof)) {
       // Each iteration of this loop reads one member-declaration.
       ParseCXXClassMemberDeclarationWithPragmas(
-          CurAS, AccessAttrs, static_cast<DeclSpec::TST>(TagType), TagDecl,
-          // TO_UPSTREAM(BoundsSafety)
-          &LateMemberAttrs);
+          CurAS, AccessAttrs, static_cast<DeclSpec::TST>(TagType), TagDecl);
       MaybeDestroyTemplateIds();
     }
     T.consumeClose();
@@ -3872,17 +3859,6 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
     Actions.ActOnFinishCXXMemberSpecification(getCurScope(), RecordLoc, TagDecl,
                                               T.getOpenLocation(),
                                               T.getCloseLocation(), attrs);
-
-  /* TO_UPSTREAM(BoundsSafety) ON*/
-  // Parse late member attrs after handling member declarations to ensure that
-  // such attributes can use offsetof()/sizeof(), since those require a complete
-  // type.
-  for (auto *LateAttr : LateMemberAttrs) {
-    LateAttr->ParseLexedAttributes();
-    delete LateAttr;
-  }
-  /* TO_UPSTREAM(BoundsSafety) OFF*/
-
   // C++11 [class.mem]p2:
   //   Within the class member-specification, the class is regarded as complete
   //   within function bodies, default arguments, exception-specifications, and

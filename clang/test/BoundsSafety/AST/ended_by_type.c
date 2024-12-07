@@ -1,22 +1,31 @@
-
-// RUN: %clang_cc1 -fbounds-safety -ast-dump %s 2>&1 | FileCheck %s
-// RUN: %clang_cc1 -fbounds-safety -x objective-c -fbounds-attributes-objc-experimental -ast-dump %s 2>&1 | FileCheck %s
+// RUN: %clang_cc1 -fbounds-safety -ast-dump %s 2>&1 | FileCheck --check-prefix=BS %s
+// RUN: %clang_cc1 -fbounds-safety -fbounds-attributes-objc-experimental -x objective-c -ast-dump %s 2>&1 | FileCheck --check-prefix=BS %s
+// RUN: %clang_cc1 -fbounds-safety -fbounds-attributes-cxx-experimental -x c++ -ast-dump %s 2>&1 | FileCheck --check-prefix=BS %s
+// RUN: %clang_cc1 -fexperimental-bounds-safety-attributes -x c -ast-dump %s 2>&1 | FileCheck --check-prefix=BSA %s
+// RUN: %clang_cc1 -fexperimental-bounds-safety-attributes -x c++ -ast-dump %s 2>&1 | FileCheck --check-prefix=BSA %s
+// RUN: %clang_cc1 -fexperimental-bounds-safety-attributes -x objective-c -ast-dump %s 2>&1 | FileCheck --check-prefix=BSA %s
+// RUN: %clang_cc1 -fexperimental-bounds-safety-attributes -x objective-c++ -ast-dump %s 2>&1 | FileCheck --check-prefix=BSA %s
 
 #include <ptrcheck.h>
 
-// CHECK: VarDecl {{.+}} func_ptr_dd 'void (*__single)(void *__single __ended_by(end), void *__single /* __started_by(start) */ )'
+// BS: VarDecl {{.+}} func_ptr_dd 'void (*__single)(void *__single __ended_by(end), void *__single /* __started_by(start) */ )'
+// BSA: VarDecl {{.+}} func_ptr_dd 'void (*)(void * __ended_by(end), void * /* __started_by(start) */ )'
 void (*func_ptr_dd)(void *__ended_by(end) start, void *end);
 
-// CHECK: VarDecl {{.+}} func_ptr_di 'void (*__single)(void *__single __ended_by(*end), void *__single /* __started_by(start) */ *__single)'
+// BS: VarDecl {{.+}} func_ptr_di 'void (*__single)(void *__single __ended_by(*end), void *__single /* __started_by(start) */ *__single)'
+// BSA: VarDecl {{.+}} func_ptr_di 'void (*)(void * __ended_by(*end), void * /* __started_by(start) */ *)'
 void (*func_ptr_di)(void *__ended_by(*end) start, void **end);
 
-// CHECK: VarDecl {{.+}} func_ptr_id 'void (*__single)(void *__single __ended_by(end)*__single, void *__single /* __started_by(*start) */ )'
+// BS: VarDecl {{.+}} func_ptr_id 'void (*__single)(void *__single __ended_by(end)*__single, void *__single /* __started_by(*start) */ )'
+// BSA: VarDecl {{.+}} func_ptr_id 'void (*)(void * __ended_by(end)*, void * /* __started_by(*start) */ )'
 void (*func_ptr_id)(void *__ended_by(end) *start, void *end);
 
-// CHECK: VarDecl {{.+}} func_ptr_ii 'void (*__single)(void *__single __ended_by(*end)*__single, void *__single /* __started_by(*start) */ *__single)'
+// BS: VarDecl {{.+}} func_ptr_ii 'void (*__single)(void *__single __ended_by(*end)*__single, void *__single /* __started_by(*start) */ *__single)'
+// BSA: VarDecl {{.+}} func_ptr_ii 'void (*)(void * __ended_by(*end)*, void * /* __started_by(*start) */ *)'
 void (*func_ptr_ii)(void *__ended_by(*end) *start, void **end);
 
 void foo(void) {
-  // CHECK: CStyleCastExpr {{.+}} 'void (*)(void *__single __ended_by(end), void *__single /* __started_by(start) */ )'
+  // BS: CStyleCastExpr {{.+}} 'void (*)(void *__single __ended_by(end), void *__single /* __started_by(start) */ )'
+  // BSA: CStyleCastExpr {{.+}} 'void (*)(void * __ended_by(end), void * /* __started_by(start) */ )'
   (void (*)(void *__ended_by(end) start, void *end))0;
 }

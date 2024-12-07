@@ -5884,10 +5884,9 @@ public:
 
       QualType Ty = EndPtrDecl->getType();
       assert(Ty->isSinglePointerType() || Ty->isUnspecifiedPointerType() ||
-             Ty->hasAttr(attr::PtrAutoAttr));
-      bool IsAttributeOnlyMode = S.getLangOpts().BoundsSafetyAttributes &&
-                                 !S.getLangOpts().BoundsSafety;
-      if (!IsAttributeOnlyMode && !Ty->isSinglePointerType()) {
+             Ty->isDynamicRangePointerType() || Ty->hasAttr(attr::PtrAutoAttr));
+      if (!S.getLangOpts().isBoundsSafetyAttributeOnlyMode() &&
+          !Ty->isSinglePointerType()) {
         Ty = S.Context.getBoundsSafetyPointerType(
             Ty, BoundsSafetyPointerAttributes::single());
       }
@@ -6055,11 +6054,6 @@ void Sema::AttachDependerDeclsAttr(
   for (const TypeCoupledDeclRefInfo &DepDeclInfo :
        NewDependerCountTy->dependent_decls()) {
     Decl *Dependee = DepDeclInfo.getDecl();
-    // DependerDeclsAttr is used to track updates to the declaration in the
-    // later analysis, so we skip it for const and __unsafe_late_const
-    // variables.
-    if (Level == 0 && clang::IsConstOrLateConst(Dependee))
-      continue;
     llvm::SmallVector<Decl *, 2> DependerDecls;
     llvm::SmallVector<unsigned, 2> DependerLevels;
 

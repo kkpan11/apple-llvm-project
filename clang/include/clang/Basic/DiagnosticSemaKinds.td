@@ -12719,7 +12719,7 @@ def err_bounds_safety_cannot_pass_read_only_dependent_param_in_return : Error<
   "'%select{__counted_by|__sized_by|__counted_by_or_null|__sized_by_or_null|__ended_by}1' "
   "attribute in the return type of '%2' (%3)">;
 def err_deref_in_bounds_safety_count_non_parm_decl : Error<
-  "dereference operator in '%select{__counted_by|__sized_by|__counted_by_or_null|__sized_by_or_null}0' is only allowed for function parameters">;
+  "dereference operator in '%select{__counted_by|__sized_by|__counted_by_or_null|__sized_by_or_null|__ended_by}0' is only allowed for function parameters">;
 def err_bounds_safety_dynamic_bound_arg_different_scope : Error<
   "argument of '%select{__counted_by|__sized_by|__counted_by_or_null|__sized_by_or_null|__ended_by}0' attribute cannot "
   "refer to declaration from a different scope">;

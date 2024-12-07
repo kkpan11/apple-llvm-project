@@ -438,8 +438,10 @@ void TypePrinter::printPointerBefore(const PointerType *T, raw_ostream &OS) {
   printBefore(T->getPointeeType(), OS);
   // Handle things like 'int (*A)[4];' correctly.
   // FIXME: this should include vectors, but vectors use attributes I guess.
-  // TO_UPSTREAM(BoundsSafety)
+  /* TO_UPSTREAM(BoundsSafety) ON */
+  // It checks `isa<ArrayType>(T->getPointeeType())` in upstream.
   if (shouldPrintParenForPointer(T))
+  /* TO_UPSTREAM(BoundsSafety) OFF */
     OS << '(';
   OS << '*';
 

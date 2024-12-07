@@ -1590,7 +1590,7 @@ protected:
       return;
     }
 
-    if (SemaRef.hasUncompilableErrorOccurred())
+    if (SemaRef.getDiagnostics().hasUnrecoverableErrorOccurred())
       return;
 
     const auto &FirstExprInfo = getFirstAssignExprInfoUnsafe();
@@ -1774,12 +1774,34 @@ public:
       if (!KeyDecls.insert(VD).second)
         return;
 
-      if (auto *Att = VD->getAttr<DependerDeclsAttr>()) {
-        for (const auto *D : Att->dependerDecls()) {
-          // XXX: We could've just make it ValueDecl.
-          assert(isa<ValueDecl>(D));
-          const auto *DepVD = cast<ValueDecl>(D);
-          AddDependentDecls(DepVD);
+      // Skip adding decls that use a const/late const. E.g.:
+      //
+      // ```
+      // extern const unsigned extern_const_global_count;
+      //
+      // void fun_extern_const_global_count(
+      //    int *__counted_by(extern_const_global_count) arg);
+      //
+      // void test_local_extern_const_global_count() {
+      //   int *__counted_by(extern_const_global_count) local;
+      // }
+      // ```
+      //
+      // For the case above the loop below is going over the dependent decls
+      // of `extern_const_global_count` when we are running DCPAA on
+      // `test_local_extern_const_global_count`. We don't want to add
+      // all other uses of the count outside of function (i.e. `arg` in this
+      // example) otherwise we will emit an incorrect diagnostic (`local
+      // variable arg must be declared right next to its dependent decl`) which
+      // doesn't make sense because `arg` isn't in the function being analyzed.
+      if (!clang::IsConstOrLateConst(VD)) {
+        if (auto *Att = VD->getAttr<DependerDeclsAttr>()) {
+          for (const auto *D : Att->dependerDecls()) {
+            // XXX: We could've just make it ValueDecl.
+            assert(isa<ValueDecl>(D));
+            const auto *DepVD = cast<ValueDecl>(D);
+            AddDependentDecls(DepVD);
+          }
         }
       }
 

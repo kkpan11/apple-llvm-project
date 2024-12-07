@@ -8487,7 +8487,7 @@ void Parser::ParseBracketDeclarator(Declarator &D) {
   // Type qualifiers in an array subscript are a C99 feature.
   DeclSpec DS(AttrFactory);
   /* TO_UPSTREAM(BoundsSafety) ON */
-  LateParsedAttrList LateAttrs(/*PSoon=*/false,
+  LateParsedAttrList LateAttrs(/*PSoon=*/true,
                                /*LateAttrParseExperimentalExtOnly=*/true);
   LateParsedAttrList *LateAttrsPtr =
       enableTypeAttrLateParsing(getLangOpts()) ? &LateAttrs : nullptr;

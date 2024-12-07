@@ -226,7 +226,6 @@ static auto hasPointerType() {
 
 static auto hasArrayType() { return hasType(hasCanonicalType(arrayType())); }
 
-
 AST_MATCHER(QualType, isCountAttributedType) {
   return Node->isCountAttributedType();
 }
@@ -422,8 +421,10 @@ bool isSameMemberBase(const Expr *Self, const Expr *Other) {
 
     const auto *SelfICE = dyn_cast<ImplicitCastExpr>(Self);
     const auto *OtherICE = dyn_cast<ImplicitCastExpr>(Other);
-    if (SelfICE && OtherICE && SelfICE->getCastKind() == CK_LValueToRValue &&
-        OtherICE->getCastKind() == CK_LValueToRValue) {
+    if (SelfICE && OtherICE &&
+        SelfICE->getCastKind() == OtherICE->getCastKind() &&
+        (SelfICE->getCastKind() == CK_LValueToRValue ||
+         SelfICE->getCastKind() == CK_UncheckedDerivedToBase)) {
       Self = SelfICE->getSubExpr();
       Other = OtherICE->getSubExpr();
     }
@@ -432,6 +433,12 @@ bool isSameMemberBase(const Expr *Self, const Expr *Other) {
     const auto *OtherDRE = dyn_cast<DeclRefExpr>(Other);
     if (SelfDRE && OtherDRE)
       return SelfDRE->getDecl() == OtherDRE->getDecl();
+
+    if (isa<CXXThisExpr>(Self) && isa<CXXThisExpr>(Other)) {
+      // `Self` and `Other` should be evaluated at the same state so `this` must
+      // mean the same thing for both:
+      return true;
+    }
 
     const auto *SelfME = dyn_cast<MemberExpr>(Self);
     const auto *OtherME = dyn_cast<MemberExpr>(Other);
@@ -445,17 +452,21 @@ bool isSameMemberBase(const Expr *Self, const Expr *Other) {
   }
 }
 
+// Impl of `isCompatibleWithCountExpr`.  See `isCompatibleWithCountExpr` for
+// document.
 struct CompatibleCountExprVisitor
     : public ConstStmtVisitor<CompatibleCountExprVisitor, bool, const Expr *> {
   using BaseVisitor =
       ConstStmtVisitor<CompatibleCountExprVisitor, bool, const Expr *>;
 
-  const Expr *SelfMemberBase;
+  const Expr *MemberBase;
   const DependentValuesTy *DependentValues;
+  ASTContext &Ctx;
 
-  explicit CompatibleCountExprVisitor(const Expr *SelfMemberBase,
-                                      const DependentValuesTy *DependentValues)
-      : SelfMemberBase(SelfMemberBase), DependentValues(DependentValues) {}
+  explicit CompatibleCountExprVisitor(const Expr *MemberBase,
+                                      const DependentValuesTy *DependentValues,
+                                      ASTContext &Ctx)
+      : MemberBase(MemberBase), DependentValues(DependentValues), Ctx(Ctx) {}
 
   bool VisitStmt(const Stmt *S, const Expr *E) { return false; }
 
@@ -477,6 +488,24 @@ struct CompatibleCountExprVisitor
     return false;
   }
 
+  bool VisitUnaryExprOrTypeTraitExpr(const UnaryExprOrTypeTraitExpr *Self,
+                                     const Expr *Other) {
+    // If `Self` is a `sizeof` expression, try to evaluate and compare the two
+    // expressions as constants:
+    if (Self->getKind() == UnaryExprOrTypeTrait::UETT_SizeOf) {
+      Expr::EvalResult ER;
+
+      if (Self->EvaluateAsConstantExpr(ER, Ctx)) {
+        APInt SelfVal = ER.Val.getInt();
+
+        if (Other->getType()->isIntegerType())
+          if (Other->EvaluateAsConstantExpr(ER, Ctx))
+            return APInt::isSameValue(SelfVal, ER.Val.getInt());
+      }
+    }
+    return false;
+  }
+
   bool VisitDeclRefExpr(const DeclRefExpr *SelfDRE, const Expr *Other) {
     const ValueDecl *SelfVD = SelfDRE->getDecl();
 
@@ -488,15 +517,30 @@ struct CompatibleCountExprVisitor
 
     const auto *O = Other->IgnoreParenImpCasts();
 
-    if (const auto *OtherDRE = dyn_cast<DeclRefExpr>(O))
-      return OtherDRE->getDecl() == SelfVD;
-
-    const auto *OtherME = dyn_cast<MemberExpr>(O);
-    if (SelfMemberBase && OtherME) {
-      return OtherME->getMemberDecl() == SelfVD &&
-             isSameMemberBase(OtherME->getBase(), SelfMemberBase);
+    if (const auto *OtherDRE = dyn_cast<DeclRefExpr>(O)) {
+      // Both SelfDRE and OtherDRE can be transformed from member expressions:
+      if (OtherDRE->getDecl() == SelfVD)
+        return true;
+      return false;
     }
 
+    const auto *OtherME = dyn_cast<MemberExpr>(O);
+    if (MemberBase && OtherME) {
+      return OtherME->getMemberDecl() == SelfVD &&
+             isSameMemberBase(OtherME->getBase(), MemberBase);
+    }
+
+    return false;
+  }
+
+  bool VisitMemberExpr(const MemberExpr *Self, const Expr *Other) {
+    // Even though we don't support member expression in counted-by, actual
+    // arguments can be member expressions.
+    if (Self == Other)
+      return true;
+    if (const auto *DRE = dyn_cast<DeclRefExpr>(Other->IgnoreParenImpCasts()))
+      return MemberBase && Self->getMemberDecl() == DRE->getDecl() &&
+             isSameMemberBase(Self->getBase(), MemberBase);
     return false;
   }
 
@@ -512,19 +556,46 @@ struct CompatibleCountExprVisitor
   }
 };
 
-// Checks if `E` is the same as `CountExpr` modulo implicit casts and parens.
-// `MemberBase` denotes the base that each `MemberExpr` must have.
-// `DependentValues` denotes substitutions of `DeclRefExpr`s in `CountExpr`.
-// For example,
-//  CountExpr: a*b
-//  DependentValues: { a->3-x, b->x+42 }
-//  E: (3-x)*(x+42)
-//  are compatible.
-bool isCompatibleWithCountExpr(const Expr *E, const Expr *CountExpr,
+// TL'DR:
+// Checks if `E` is the same as `ExpectedCountExpr` modulo implicit casts and
+// parens.
+//
+// Lengthy description:
+// `E`:                 represents the actual count/size associated to a
+//                      pointer.
+// `ExpectedCountExpr`: represents the counted-by expression of a counted-by
+//                      type attribute.
+// `MemberBase`:        represents "this" member base.  A MemberExpr
+//                      representing `this->f` in both `E` and
+//                      `ExpectedCountExpr` may be transformed to a DRE
+//                      representing just `f`.  Therefore we need to keep track
+//                      of the base for them in that case.
+// `DependentValues`:   is a mapping from parameter DREs to actual argument
+//                      expressions.  It serves as a "state" where
+//                      `ExpectedCountExpr` is "interpreted".
+//
+// This function then checks for a pointer with a known count `E` that `E` is
+// equivalent to the count `ExpectedCountExpr` of a counted-by type attribute at
+// the state `DependentValues`.
+//
+// For example, suppose there is a call to a function `foo(int *__counted_by(n)
+// p, size_t n)`:
+//
+//    foo(x, y+z);
+//
+// We check that the count associated to the pointer 'x' is same as the
+// expected count expression 'n' with the mapping (state) '{n -> y+z}'.  The
+// count of 'x' is determined by pre-defined knowledge, e.g., if 'x' has the
+// form of 'span.data()', its' count is 'span.size()', etc.  At this point, we
+// already know that `E` is the count of 'x'.  So we just need to compare `E`
+// to 'n' with 'n' being interpreted under '{n -> y+z}'.  That is, this function
+// will return true iff `E` is same as 'y+z'.
+bool isCompatibleWithCountExpr(const Expr *E, const Expr *ExpectedCountExpr,
                                const Expr *MemberBase,
-                               const DependentValuesTy *DependentValues) {
-  CompatibleCountExprVisitor Visitor(MemberBase, DependentValues);
-  return Visitor.Visit(CountExpr, E);
+                               const DependentValuesTy *DependentValues,
+                               ASTContext &Ctx) {
+  CompatibleCountExprVisitor Visitor(MemberBase, DependentValues, Ctx);
+  return Visitor.Visit(ExpectedCountExpr, E);
 }
 
 // Returns if a pair of expressions contain method calls to .data()/.c_str() and
@@ -607,14 +678,32 @@ const Expr *extractExtentFromSubviewDataCall(ASTContext &Context,
       match(expr(ignoringParenImpCasts(SpanDataMatcher)), *E, Context));
 }
 
+// Returns true iff `E` evaluates to `Val`.
+static bool hasIntegeralConstant(const Expr *E, uint64_t Val, ASTContext &Ctx) {
+  Expr::EvalResult ER;
+
+  if (E->EvaluateAsConstantExpr(ER, Ctx)) {
+    APInt Eval = ER.Val.getInt();
+
+    return APInt::isSameValue(Eval, APInt(Eval.getBitWidth(), Val));
+  }
+  return false;
+}
+
 // Checks if the argument passed to count-attributed pointer is one of the
 // following forms:
-// 1. `sp.data()` if the argument to dependent count is `sp.size()`.
-// 2. `sp.first(extent).data()` if `extent` is compatible with the `count`.
-// 3. `constant-array` if the argument to dependent count is the size of
-//    `constant-array`.
-// 4. `p` if `p` is __counted_by(c) pointer and `c` is compatible with the
+// 0. `NULL/nullptr`, if the argument to dependent count/size is `0`.
+// 1. `&var`, if `var` is a variable identifier and the dependent count is `1`.
+// 2. `&var`, if `var` is a variable identifier and the dependent size is
+//     equivalent to `sizeof(var)`.
+// 3. `sp.data()` if the argument to dependent count is `sp.size()`.
+// 4. `sp.first(extent).data()` if `extent` is compatible with the `count`.
+// 5. `p` if `p` is __counted_by(c) pointer and `c` is compatible with the
 //    `count` of the param type.
+// 6. `constant-array` if the argument to dependent count is the length of
+//    `constant-array`.
+// 7. `(T*) constant-array` if the size of `T` equals to one byte and the
+//    argument to dependent size is equivalent to `sizeof(constant-array)`.
 bool isCountAttributedPointerArgumentSafe(ASTContext &Context,
                                           const CountAttributedType *CAT,
                                           const CallExpr *Call,
@@ -624,6 +713,30 @@ bool isCountAttributedPointerArgumentSafe(ASTContext &Context,
     return true;
 
   const Expr *ArgNoImp = Arg->IgnoreParenImpCasts();
+
+  // check form 0:
+  if (ArgNoImp->getType()->isNullPtrType()) {
+    if (const auto *CountArg = findCountArg(CAT->getCountExpr(), Call))
+      return hasIntegeralConstant(CountArg, 0, Context);
+    return false;
+  }
+
+  // check form 1-2:
+  auto AddressofDRE = expr(unaryOperator(
+      hasOperatorName("&"),
+      hasUnaryOperand(ignoringParenImpCasts(declRefExpr().bind("VarIdent")))));
+
+  if (auto *DRE = selectFirst<const DeclRefExpr>(
+          "VarIdent", match(AddressofDRE, *ArgNoImp, Context))) {
+    if (const auto *CountArg = findCountArg(CAT->getCountExpr(), Call)) {
+      if (!CAT->isCountInBytes()) // form 1:
+        return hasIntegeralConstant(CountArg, 1, Context);
+      // form 2:
+      if (auto TySize = Context.getTypeSizeInCharsIfKnown(DRE->getType()))
+        return hasIntegeralConstant(CountArg, TySize->getQuantity(), Context);
+    }
+    return false;
+  }
 
   auto getTypeSize = [&](QualType Ty) -> std::optional<CharUnits> {
     if (Context.hasSameUnqualifiedType(Ty, Context.VoidTy))
@@ -639,13 +752,13 @@ bool isCountAttributedPointerArgumentSafe(ASTContext &Context,
   bool ParamInBytes = CAT->isCountInBytes() ||
                       (ParamTypeSize.has_value() && ParamTypeSize->isOne());
 
-  // If there is only one dependent count, check for the form 1.
+  // If there is only one dependent count, check for the form 3.
   if (const auto *CountArg = findCountArg(CAT->getCountExpr(), Call)) {
     if (isValidContainerRange(Context, Arg, CountArg, ArgInBytes, ParamInBytes))
       return true;
   }
 
-  // Check forms 2-4.
+  // Check forms 4-7.
 
   if (ArgInBytes != ParamInBytes)
     return false;
@@ -655,27 +768,43 @@ bool isCountAttributedPointerArgumentSafe(ASTContext &Context,
     return false;
 
   const Expr *ArgCount = nullptr;
+  const Expr *MemberBase = nullptr;
+
+  if (const auto *ME = dyn_cast<MemberExpr>(ArgNoImp))
+    MemberBase = ME->getBase();
 
   if (const Expr *ExtentExpr = extractExtentFromSubviewDataCall(Context, Arg)) {
-    // Form 2.
+    // Form 4.
     ArgCount = ExtentExpr;
-  } else if (const auto *ATy =
-                 Context.getAsConstantArrayType(ArgNoImp->getType())) {
-    // Form 3.
-    ArgCount = IntegerLiteral::Create(Context, ATy->getSize(),
-                                      Context.getSizeType(), SourceLocation());
   } else if (const auto *ArgCAT =
                  ArgNoImp->getType()->getAs<CountAttributedType>()) {
-    // Form 4.
+    // Form 5.
     if (ArgCAT->isOrNull() == CAT->isOrNull())
       ArgCount = ArgCAT->getCountExpr();
-  }
+  } else {
+    // Form 6-7.
+    const Expr *ArrArg = ArgNoImp;
 
+    if (ArgInBytes)
+      if (auto *CE = dyn_cast<CastExpr>(ArrArg))
+        // In case of ArgInBytes, we know the destination type is a pointer to
+        // char:
+        ArrArg = CE->getSubExpr()->IgnoreParenImpCasts();
+    if (const auto *ATy = Context.getAsConstantArrayType(ArrArg->getType())) {
+      APInt TySize = ATy->getSize();
+
+      if (CAT->isCountInBytes())
+        if (auto TySizeInChar = Context.getTypeSizeInCharsIfKnown(ATy))
+          TySize = APInt(TySize.getBitWidth(), TySizeInChar->getQuantity());
+      ArgCount = IntegerLiteral::Create(Context, TySize, Context.getSizeType(),
+                                        SourceLocation());
+    }
+  }
   if (!ArgCount)
     return false;
 
-  return isCompatibleWithCountExpr(ArgCount, CAT->getCountExpr(),
-                                   /*MemberBase=*/nullptr, &*ValuesOpt);
+  return isCompatibleWithCountExpr(ArgCount, CAT->getCountExpr(), MemberBase,
+                                   &*ValuesOpt, Context);
 }
 
 } // namespace
@@ -771,11 +900,12 @@ AST_MATCHER(CXXConstructExpr, isSafeSpanTwoParamConstruct) {
       if (!ValuesOpt.has_value())
         return false;
       return isCompatibleWithCountExpr(Arg1, CAT->getCountExpr(), MemberBase,
-                                       &*ValuesOpt);
+                                       &*ValuesOpt, Finder->getASTContext());
     }
 
     return isCompatibleWithCountExpr(Arg1, CAT->getCountExpr(), MemberBase,
-                                     /*DependentValues=*/nullptr);
+                                     /*DependentValues=*/nullptr,
+                                     Finder->getASTContext());
   }
 
   return false;

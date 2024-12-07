@@ -1443,9 +1443,18 @@ public:
   /// \p DstTy. The type merging is performed recursively in nested pointers.
   /// The caller should provide \p MergeFunctor to create a merged pointer type
   /// using the recursively merged pointee type.
+  /// mergeBoundsSafetyPointerTypes removes any AttributedType(s) from \p
+  /// DstTy, calls \p MergeFunctor to merge the attributes at each level, and
+  /// then reapplies the AttributedType(s) to the merged type. \p OrigDstTy is
+  /// the same as \p DstTy but without dropping the AttributedType(s). This
+  /// allows us to check any AttributedType(s) in \p MergeFunctor in order to
+  /// make decision about the merged type.
   QualType mergeBoundsSafetyPointerTypes(
       QualType DstTy, QualType SrcTy,
-      std::function<QualType(QualType, QualType, QualType)> &MergeFunctor);
+      std::function<QualType(QualType /* DstTy */, QualType /* SrcTy */,
+                             QualType /* MergePointeeTy */,
+                             QualType /* OrigDstTy */)> &MergeFunctor,
+      QualType OrigDstTy = QualType());
 
   QualType getBoundsSafetyAutoPointerType(QualType T,
                                        BoundsSafetyPointerAttributes AbiFAttr,
