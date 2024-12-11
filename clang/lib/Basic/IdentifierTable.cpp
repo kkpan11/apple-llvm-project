@@ -115,7 +115,8 @@ namespace {
     KEYALLCXX = KEYCXX | KEYCXX11 | KEYCXX20,
     KEYALL = (KEYMAX | (KEYMAX-1)) & ~KEYNOMS18 &
              ~KEYNOOPENCL // KEYNOMS18 and KEYNOOPENCL are used to exclude.
-             & ~KEYBOUNDSSAFETY & ~KEYBOUNDSSAFETYATTRIBUTES // APPLE-INTERNAL: exclude bounds-safety
+             // Exclude bounds-safety.
+             & ~KEYBOUNDSSAFETY & ~KEYBOUNDSSAFETYATTRIBUTES
   };
 
   /// How a keyword is treated in the selected standard. This enum is ordered
