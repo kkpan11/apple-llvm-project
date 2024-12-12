@@ -14517,6 +14517,7 @@ static auto unwrapSugar(SplitQualType &T, Qualifiers &QTotal) {
   return R;
 }
 
+/* TO_UPSTREAM(BoundsSafety) ON */
 ASTContext::BoundsSafePointerTypeMergeKind
 ASTContext::canMergeFunctionTypeBounds(const FunctionProtoType *LHSTy,
                                        const FunctionProtoType *RHSTy) const{
@@ -14670,6 +14671,7 @@ ASTContext::canMergeTypeBounds(QualType LHSTy, QualType RHSTy) const {
 
   return canMergeInnerTypeBounds(LHSTy, RHSTy);
 }
+/* TO_UPSTREAM(BoundsSafety) OFF */
 
 QualType ASTContext::getCommonSugaredType(QualType X, QualType Y,
                                           bool Unqualified) {

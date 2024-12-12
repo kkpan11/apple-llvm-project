@@ -1,4 +1,3 @@
-// REQUIRES: apple-disclosure-ios
 // RUN: %clang_cc1 -std=c++20 -Wno-all -Wunsafe-buffer-usage-in-container -fexperimental-bounds-safety-attributes -verify %s
 
 #include <ptrcheck.h>
