@@ -12,7 +12,6 @@ add_lldb_library(lldbTarget
   AssertFrameRecognizer.cpp
   DynamicRegisterInfo.cpp
   ExecutionContext.cpp
-  BoundsSafetyTrapFrameRecognizer.cpp
   InstrumentationRuntime.cpp
   InstrumentationRuntimeStopInfo.cpp
   JITLoader.cpp

@@ -80,13 +80,10 @@ class TestOutOfBoundsPointer(TestBase):
     def overflow_oob(self, type_name):
         return self.get_idx_var_regex(oob_kind=OOBKind.Overflow, type_name=type_name)
 
-    def setUp(self):
-        TestBase.setUp(self)
-        if _get_bool_config("ios_disclosed", fail_value=False):
-            self.build()
-
     @skipIf(bugnumber="rdar://141363609")
     def test_bidi_known_type_size(self):
+        self.build()
+
         (_, self.process, _, bkpt) = lldbutil.run_to_source_breakpoint(
             self, r"// break here:.+", lldb.SBFileSpec("bidi_check_known_type_size.c")
         )
@@ -156,6 +153,8 @@ class TestOutOfBoundsPointer(TestBase):
 
     @skipIf(bugnumber="rdar://141363609")
     def test_bidi_unknown_type_size(self):
+        self.build()
+
         (_, self.process, _, bkpt) = lldbutil.run_to_source_breakpoint(
             self, r"// break here:.+", lldb.SBFileSpec("bidi_check_unknown_type_size.c")
         )
@@ -206,6 +205,8 @@ class TestOutOfBoundsPointer(TestBase):
 
     @skipIf(bugnumber="rdar://141363609")
     def test_idx_known_type_size(self):
+        self.build()
+
         (_, self.process, _, bkpt) = lldbutil.run_to_source_breakpoint(
             self, r"// break here:.+", lldb.SBFileSpec("idx_check_known_type_size.c")
         )
@@ -256,6 +257,8 @@ class TestOutOfBoundsPointer(TestBase):
 
     @skipIf(bugnumber="rdar://141363609")
     def test_idx_unknown_type_size(self):
+        self.build()
+
         (_, self.process, _, bkpt) = lldbutil.run_to_source_breakpoint(
             self, r"// break here:.+", lldb.SBFileSpec("idx_check_unknown_type_size.c")
         )
