@@ -257,6 +257,8 @@ static bool makeStringGutsSummary(
   │ Immortal, Small     ║  1  │ASCII│  1  │  0  │
   ├─────────────────────╫─────┼─────┼─────┼─────┤
   │ Immortal, Large     ║  1  │  0  │  0  │  0  │
+  ├─────────────────────╫─────┼─────┼─────┼─────┤
+  │ Immortal, Bridged   ║  1  │  1  │  0  │  0  │
   ╞═════════════════════╬═════╪═════╪═════╪═════╡
   │ Native              ║  0  │  0  │  0  │  0  │
   ├─────────────────────╫─────┼─────┼─────┼─────┤
@@ -373,7 +375,7 @@ static bool makeStringGutsSummary(
   if ((discriminator & 0b0111'0000) == 0)
     return error("unexpected discriminator");
 
-  if ((discriminator & 0b1110'0000) == 0b0100'0000) { // 010xxxxx: Bridged
+  if ((discriminator & 0b0110'0000) == 0b0100'0000) { // x10xxxxx: Bridged
     TypeSystemClangSP clang_ts_sp =
         ScratchTypeSystemClang::GetForTarget(process->GetTarget());
     if (!clang_ts_sp)
@@ -805,6 +807,8 @@ public:
       ThreadSafeReflectionContext reflection_ctx =
           runtime->GetReflectionContext();
       ValueObjectSP task_obj_sp = m_backend.GetChildMemberWithName("_task");
+      if (!task_obj_sp)
+        return ChildCacheState::eRefetch;
       uint64_t task_ptr = task_obj_sp->GetValueAsUnsigned(LLDB_INVALID_ADDRESS);
       if (task_ptr != LLDB_INVALID_ADDRESS) {
         llvm::Expected<ReflectionContextInterface::AsyncTaskInfo> task_info =
