@@ -338,6 +338,12 @@ def note_constexpr_new_placement : Note<
   "%select{|before C++2c}0">;
 def note_constexpr_placement_new_wrong_type : Note<
   "placement new would change type of storage from %0 to %1">;
+def note_constexpr_new_wrong_type : Note<
+  "operator new returned an object with storage of type %0 instead of %1">;
+def note_constexpr_operator_non_array_type : Note<
+  "constexpr operator new[] must return an array of type %0 (returned %1)">;
+def note_constexpr_operator_new_array_non_array_head : Note<
+  "constexpr operator new[] must return a pointer to the head of an array of type %0 (returned %1)">;
 def note_constexpr_new_negative : Note<
   "cannot allocate array; evaluated array bound %0 is negative">;
 def note_constexpr_new_too_large : Note<

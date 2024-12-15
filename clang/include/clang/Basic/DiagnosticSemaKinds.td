@@ -2973,6 +2973,13 @@ def warn_cxx17_compat_constexpr_function_try_block : Warning<
   "incompatible with C++ standards before C++20">,
   InGroup<CXXPre20Compat>, DefaultIgnore;
 
+def err_constexpr_operator_new_incorrect_type : Error<
+  "constexpr %0 should have returned an allocation of type %1 but returned %2">;
+def err_constexpr_operator_new_invalid_allocation : Error<
+  "constexpr %0 must return a pointer to the start of a dynamic allocation">;
+def note_constexpr_operator_new_declared_here : Note<"constexpr %0 declared here">;
+def note_constexpr_operator_new_non_lvalue_result : Note<"returned %0">;
+
 def ext_constexpr_union_ctor_no_init : ExtWarn<
   "constexpr union constructor that does not initialize any member "
   "is a C++20 extension">, InGroup<CXX20>;

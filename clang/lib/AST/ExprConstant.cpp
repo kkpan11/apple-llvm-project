@@ -66,6 +66,7 @@
 #include <cstring>
 #include <functional>
 #include <optional>
+#include <tuple>
 
 #define DEBUG_TYPE "exprconstant"
 
@@ -1129,33 +1130,70 @@ namespace {
     }
 
     /// Information about a stack frame for std::allocator<T>::[de]allocate.
-    struct StdAllocatorCaller {
+    struct SafeAllocatorCaller {
+      DynAlloc::Kind Kind;
+      const Expr *CallExpr;
       unsigned FrameIndex;
       QualType ElemType;
       explicit operator bool() const { return FrameIndex != 0; };
     };
 
-    StdAllocatorCaller getStdAllocatorCaller(StringRef FnName) const {
-      for (const CallStackFrame *Call = CurrentCall; Call != &BottomFrame;
-           Call = Call->Caller) {
-        const auto *MD = dyn_cast_or_null<CXXMethodDecl>(Call->Callee);
+    enum class AllocatorMode { Alloc, Dealloc };
+    SafeAllocatorCaller getSafeAllocatorCaller(AllocatorMode Mode) const {
+      auto TypeFromAllocationOperator = [Mode](const Expr *Call,
+                                               const FunctionDecl *Decl) {
+        auto DeclName = Decl->getDeclName().getCXXOverloadedOperator();
+        DynAlloc::Kind Kind;
+        if (DeclName == OO_Array_New || DeclName == OO_Array_Delete)
+          Kind = DynAlloc::Kind::ArrayNew;
+        else
+          Kind = DynAlloc::Kind::New;
+        if (Mode == AllocatorMode::Alloc) {
+          if (!(DeclName == OO_New || DeclName == OO_Array_New))
+            return std::make_pair(QualType(), Kind);
+        } else if (!(DeclName == OO_Delete || DeclName == OO_Array_Delete))
+          return std::make_pair(QualType(), Kind);
+
+        QualType AllocType;
+        if (auto *NewExpr = dyn_cast<CXXNewExpr>(Call)) {
+          AllocType = NewExpr->getAllocatedType();
+        } else if (auto *DeleteExpr = dyn_cast<CXXDeleteExpr>(Call)) {
+          AllocType = DeleteExpr->getDestroyedType();
+        }
+        return std::make_pair(AllocType, Kind);
+      };
+
+      auto TypeFromStdAllocateMethod = [Mode](const FunctionDecl *Decl) {
+        const char *FnName =
+            Mode == AllocatorMode::Alloc ? "allocate" : "deallocate";
+        const auto *MD = dyn_cast_or_null<CXXMethodDecl>(Decl);
         if (!MD)
-          continue;
+          return QualType();
         const IdentifierInfo *FnII = MD->getIdentifier();
         if (!FnII || !FnII->isStr(FnName))
-          continue;
-
+          return QualType();
         const auto *CTSD =
             dyn_cast<ClassTemplateSpecializationDecl>(MD->getParent());
         if (!CTSD)
-          continue;
-
+          return QualType();
         const IdentifierInfo *ClassII = CTSD->getIdentifier();
         const TemplateArgumentList &TAL = CTSD->getTemplateArgs();
         if (CTSD->isInStdNamespace() && ClassII &&
             ClassII->isStr("allocator") && TAL.size() >= 1 &&
             TAL[0].getKind() == TemplateArgument::Type)
-          return {Call->Index, TAL[0].getAsType()};
+          return TAL[0].getAsType();
+        return QualType();
+      };
+      for (const CallStackFrame *Call = CurrentCall; Call != &BottomFrame;
+           Call = Call->Caller) {
+        if (auto [Type, Kind] =
+                TypeFromAllocationOperator(Call->CallExpr, Call->Callee);
+            !Type.isNull())
+          return {Kind, Call->CallExpr, Call->Index, Type};
+        if (QualType Type = TypeFromStdAllocateMethod(Call->Callee);
+            !Type.isNull())
+          return {DynAlloc::Kind::StdAllocator, Call->CallExpr, Call->Index,
+                  Type};
       }
 
       return {};
@@ -1656,6 +1694,14 @@ namespace {
       Offset = V.getLValueOffset();
       InvalidBase = false;
       Designator = SubobjectDesignator(Ctx, V);
+      IsNullPtr = V.isNullPointer();
+    }
+    void setFrom(ASTContext &Ctx, const APValue &V, QualType AsType) {
+      assert(V.isLValue() && "Setting LValue from a non-LValue?");
+      Base = V.getLValueBase();
+      Offset = V.getLValueOffset();
+      InvalidBase = false;
+      Designator = SubobjectDesignator(AsType);
       IsNullPtr = V.isNullPointer();
     }
 
@@ -6984,7 +7030,7 @@ static bool HandleOperatorNewCall(EvalInfo &Info, const CallExpr *E,
     return false;
 
   // This is permitted only within a call to std::allocator<T>::allocate.
-  auto Caller = Info.getStdAllocatorCaller("allocate");
+  auto Caller = Info.getSafeAllocatorCaller(EvalInfo::AllocatorMode::Alloc);
   if (!Caller) {
     Info.FFDiag(E->getExprLoc(), Info.getLangOpts().CPlusPlus20
                                      ? diag::note_constexpr_new_untyped
@@ -7012,6 +7058,23 @@ static bool HandleOperatorNewCall(EvalInfo &Info, const CallExpr *E,
   CharUnits ElemSize;
   if (!HandleSizeof(Info, E->getExprLoc(), ElemType, ElemSize))
     return false;
+
+  if (Caller.Kind == DynAlloc::New) {
+    if (ByteSize != ElemSize.getQuantity()) {
+      Info.FFDiag(E->getArg(0), diag::note_constexpr_operator_new_bad_size)
+          << ByteSize << ElemSize.getQuantity() << ElemType;
+      return false;
+    }
+    auto NewExpr = dyn_cast<CXXNewExpr>(Caller.CallExpr);
+    if (!NewExpr) {
+      Info.FFDiag(E->getArg(0), diag::note_constexpr_operator_new_bad_size)
+          << ByteSize << ElemSize.getQuantity() << ElemType;
+      return false;
+    }
+    Info.createHeapAlloc(Caller.CallExpr, ElemType, Result);
+    return true;
+  }
+
   APInt Size, Remainder;
   APInt ElemSizeAP(ByteSize.getBitWidth(), ElemSize.getQuantity());
   APInt::udivrem(ByteSize, ElemSizeAP, Size, Remainder);
@@ -7033,7 +7096,9 @@ static bool HandleOperatorNewCall(EvalInfo &Info, const CallExpr *E,
 
   QualType AllocType = Info.Ctx.getConstantArrayType(
       ElemType, Size, nullptr, ArraySizeModifier::Normal, 0);
-  APValue *Val = Info.createHeapAlloc(E, AllocType, Result);
+  APValue *Val = Info.createHeapAlloc(
+      Caller.Kind == DynAlloc::ArrayNew ? Caller.CallExpr : E, AllocType,
+      Result);
   *Val = APValue(APValue::UninitArray(), 0, Size.getZExtValue());
   Result.addArray(Info, E, cast<ConstantArrayType>(AllocType));
   return true;
@@ -7112,7 +7177,9 @@ static bool HandleOperatorDeleteCall(EvalInfo &Info, const CallExpr *E) {
     return false;
 
   // This is permitted only within a call to std::allocator<T>::deallocate.
-  if (!Info.getStdAllocatorCaller("deallocate")) {
+  auto DeallocInfo =
+      Info.getSafeAllocatorCaller(EvalInfo::AllocatorMode::Dealloc);
+  if (!DeallocInfo) {
     Info.FFDiag(E->getExprLoc());
     return true;
   }
@@ -7133,7 +7200,7 @@ static bool HandleOperatorDeleteCall(EvalInfo &Info, const CallExpr *E) {
     return true;
   }
 
-  if (!CheckDeleteKind(Info, E, Pointer, DynAlloc::StdAllocator))
+  if (!CheckDeleteKind(Info, E, Pointer, DeallocInfo.Kind))
     return false;
 
   Info.HeapAllocs.erase(Pointer.Base.get<DynamicAllocLValue>());
@@ -8132,6 +8199,121 @@ public:
     if (!handleCallExpr(E, Result, nullptr))
       return false;
     return DerivedSuccess(Result, E);
+  }
+
+  bool handleAllocationCall(const Expr *E, const FunctionDecl *Callee,
+                            QualType AllocType,
+                            TypeAwareAllocationMode PassTypeIdentity,
+                            LValue *address, bool IsDestroyingDelete,
+                            SizedDeallocationMode PassSize,
+                            AlignedAllocationMode PassAlign,
+                            ArrayRef<const Expr *> PlacementArgs,
+                            APValue &Result) {
+    CallScopeRAII CallScope(Info);
+    CallRef Call = Info.CurrentCall->createCall(Callee);
+    unsigned ImplicitArgCount = 0;
+    if (isTypeAwareAllocation(PassTypeIdentity)) {
+      if (ImplicitArgCount >= Callee->getNumParams())
+        return false;
+      const ParmVarDecl *PVD = Callee->getParamDecl(ImplicitArgCount);
+      const QualType ParamType = PVD->getType();
+      if (!ParamType->isTypeIdentitySpecialization())
+        return false;
+      LValue LV;
+      APValue &V = Info.CurrentCall->createParam(Call, PVD, LV);
+      if (!handleDefaultInitValue(ParamType, V))
+        return false;
+      ImplicitArgCount++;
+    }
+
+    if (address) {
+      if (ImplicitArgCount >= Callee->getNumParams())
+        return false;
+      const ParmVarDecl *PVD = Callee->getParamDecl(ImplicitArgCount);
+      const QualType ParamType = PVD->getType();
+      if (!ParamType->isPointerType())
+        return false;
+      LValue LV;
+      APValue &V = Info.CurrentCall->createParam(Call, PVD, LV);
+      address->moveInto(V);
+      ImplicitArgCount++;
+    }
+
+    if (IsDestroyingDelete) {
+      const ParmVarDecl *PVD = Callee->getParamDecl(ImplicitArgCount);
+      const QualType ParamType = PVD->getType();
+      LValue LV;
+      APValue &V = Info.CurrentCall->createParam(Call, PVD, LV);
+      if (!handleDefaultInitValue(ParamType, V))
+        return false;
+      ImplicitArgCount++;
+    }
+
+    if (isSizedDeallocation(PassSize)) {
+      if (ImplicitArgCount >= Callee->getNumParams())
+        return false;
+      const ParmVarDecl *PVD = Callee->getParamDecl(ImplicitArgCount);
+      const QualType ParamType = PVD->getType();
+      if (!ParamType->isIntegerType())
+        return false;
+      const unsigned ParamWidth = Info.Ctx.getIntWidth(ParamType);
+
+      LValue LV;
+      APValue &V = Info.CurrentCall->createParam(Call, PVD, LV);
+
+      CharUnits TypeSize = Info.Ctx.getTypeSizeInChars(AllocType);
+      auto SizeArg = APSInt(APInt(ParamWidth, TypeSize.getQuantity()),
+                            ParamType->isUnsignedIntegerOrEnumerationType());
+      V = APValue(std::move(SizeArg));
+      ImplicitArgCount++;
+    }
+    if (isAlignedAllocation(PassAlign)) {
+      if (ImplicitArgCount >= Callee->getNumParams())
+        return false;
+      const ParmVarDecl *PVD = Callee->getParamDecl(ImplicitArgCount);
+      const QualType ParamType = PVD->getType();
+      if (!ParamType->isAlignValT())
+        return false;
+      const unsigned ParamWidth = Info.Ctx.getIntWidth(ParamType);
+
+      LValue LV;
+      APValue &V = Info.CurrentCall->createParam(Call, PVD, LV);
+      CharUnits TypeAlign =
+          Info.Ctx.toCharUnitsFromBits(Info.Ctx.getTypeAlignIfKnown(
+              AllocType, true /* NeedsPreferredAlignment */));
+      auto Align = APSInt(APInt(ParamWidth, TypeAlign.getQuantity()),
+                          ParamType->isUnsignedIntegerOrEnumerationType());
+      V = APValue(std::move(Align));
+      ImplicitArgCount++;
+    }
+
+    bool Success = true;
+    for (unsigned Idx = 0; Idx < PlacementArgs.size(); Idx++) {
+      unsigned TrueIdx = Idx + ImplicitArgCount;
+      const ParmVarDecl *PVD = TrueIdx < Callee->getNumParams()
+                                   ? Callee->getParamDecl(TrueIdx)
+                                   : nullptr;
+      if (!EvaluateCallArg(PVD, PlacementArgs[Idx], Call, Info)) {
+        // If we're checking for a potential constant expression, evaluate all
+        // initializers even if some of them fail.
+        if (!Info.noteFailure())
+          return false;
+        Success = false;
+      }
+    }
+    if (!Success)
+      return false;
+
+    const FunctionDecl *Definition = nullptr;
+    Stmt *Body = Callee->getBody(Definition);
+
+    if (!CheckConstexprFunction(Info, E->getExprLoc(), Callee, Definition,
+                                Body) ||
+        !HandleFunctionCall(E->getExprLoc(), Definition, nullptr, E, {}, Call,
+                            Body, Info, Result, nullptr))
+      return false;
+
+    return CallScope.destroy();
   }
 
   bool handleCallExpr(const CallExpr *E, APValue &Result,
@@ -9537,7 +9719,8 @@ bool PointerExprEvaluator::VisitCastExpr(const CastExpr *E) {
       //    implementation had a parameter of type `void*`, and casts from
       //    that back to `const __impl*` in its body.
       if (VoidPtrCastMaybeOK &&
-          (Info.getStdAllocatorCaller("allocate") ||
+          (Info.getSafeAllocatorCaller(EvalInfo::AllocatorMode::Alloc) ||
+           Info.getSafeAllocatorCaller(EvalInfo::AllocatorMode::Dealloc) ||
            IsDeclSourceLocationCurrent(Info.CurrentCall->Callee) ||
            Info.getLangOpts().CPlusPlus26)) {
         // Permitted.
@@ -10154,6 +10337,7 @@ bool PointerExprEvaluator::VisitCXXNewExpr(const CXXNewExpr *E) {
 
   bool IsNothrow = false;
   bool IsPlacement = false;
+  bool IsConstExpr = false;
 
   if (E->getNumPlacementArgs() == 1 &&
       E->getPlacementArg(0)->getType()->isNothrowT()) {
@@ -10186,6 +10370,8 @@ bool PointerExprEvaluator::VisitCXXNewExpr(const CXXNewExpr *E) {
           << /*C++26 feature*/ 1 << E->getSourceRange();
       return false;
     }
+  } else if (OperatorNew->isConstexpr()) {
+    IsConstExpr = true;
   } else if (E->getNumPlacementArgs()) {
     Info.FFDiag(E, diag::note_constexpr_new_placement)
         << /*Unsupported*/ 0 << E->getSourceRange();
@@ -10201,6 +10387,8 @@ bool PointerExprEvaluator::VisitCXXNewExpr(const CXXNewExpr *E) {
   const InitListExpr *ResizedArrayILE = nullptr;
   const CXXConstructExpr *ResizedArrayCCE = nullptr;
   bool ValueInit = false;
+  bool IsArrayAlloc = false;
+  APInt ArrayElementSize;
 
   if (std::optional<const Expr *> ArraySize = E->getArraySize()) {
     const Expr *Stripped = *ArraySize;
@@ -10272,7 +10460,7 @@ bool PointerExprEvaluator::VisitCXXNewExpr(const CXXNewExpr *E) {
       if (InitBound != AllocBound)
         ResizedArrayILE = cast<InitListExpr>(Init);
     }
-
+    IsArrayAlloc = true;
     AllocType = Info.Ctx.getConstantArrayType(AllocType, ArrayBound, nullptr,
                                               ArraySizeModifier::Normal, 0);
   } else {
@@ -10280,6 +10468,8 @@ bool PointerExprEvaluator::VisitCXXNewExpr(const CXXNewExpr *E) {
            "array allocation with non-array new");
   }
 
+  APValue Wat;
+  APValue CustomAllocResult;
   APValue *Val;
   if (IsPlacement) {
     AccessKinds AK = AK_Construct;
@@ -10332,6 +10522,78 @@ bool PointerExprEvaluator::VisitCXXNewExpr(const CXXNewExpr *E) {
     //   which the object occupies is [...] reused by an object that is not
     //   nested within o (6.6.2).
     *Val = APValue();
+  } else if (IsConstExpr) {
+    LValue LV;
+    APValue AllocResult;
+    ImplicitAllocationParameters IAP = E->implicitAllocationParameters();
+    if (!handleAllocationCall(E, OperatorNew, AllocType, IAP.PassTypeIdentity,
+                              nullptr, false, SizedDeallocationMode::Yes,
+                              IAP.PassAlignment, E->getPlacementArgs(),
+                              AllocResult))
+      return false;
+    Val = nullptr;
+    auto OperatorName = OperatorNew->getDeclName();
+    if (!AllocResult.isLValue()) {
+      Info.FFDiag(E, diag::err_constexpr_operator_new_invalid_allocation)
+          << OperatorName;
+      Info.Note(OperatorNew->getLocation(),
+                diag::note_constexpr_operator_new_declared_here)
+          << OperatorName;
+      Info.Note(E->getExprLoc(),
+                diag::note_constexpr_operator_new_non_lvalue_result)
+          << AllocResult.getAsString(Info.Ctx, AllocType);
+      return false;
+    }
+    auto Base = AllocResult.getLValueBase();
+    DynamicAllocLValue DA = Base.dyn_cast<DynamicAllocLValue>();
+    if (!DA) {
+      Info.FFDiag(E, diag::err_constexpr_operator_new_invalid_allocation)
+          << OperatorName;
+      Info.Note(OperatorNew->getLocation(),
+                diag::note_constexpr_operator_new_declared_here)
+          << OperatorName;
+      NoteLValueLocation(Info, Base);
+      return false;
+    }
+    std::optional<DynAlloc *> Alloc = Info.lookupDynamicAlloc(DA);
+    if (!Alloc) {
+      Info.FFDiag(E, diag::note_constexpr_access_deleted_object)
+          << AK_Construct;
+      NoteLValueLocation(Info, Base);
+      return false;
+    }
+
+    auto AllocatedType = Base.getDynamicAllocType();
+    if (AllocatedType != AllocType) {
+      Info.FFDiag(E, diag::err_constexpr_operator_new_incorrect_type)
+          << OperatorName << AllocType << AllocatedType;
+      Info.Note((*Alloc)->AllocExpr->getExprLoc(),
+                diag::note_constexpr_dynamic_alloc_here);
+      Info.Note(OperatorNew->getLocation(),
+                diag::note_constexpr_operator_new_declared_here)
+          << OperatorName;
+      NoteLValueLocation(Info, Base);
+      return false;
+    }
+
+    auto Path = AllocResult.getLValuePath();
+    bool InvalidAllocation = false;
+    if (IsArrayAlloc)
+      InvalidAllocation = Path.size() != 1 || Path[0].getAsArrayIndex() != 0;
+    else
+      InvalidAllocation = Path.size() != 0;
+    InvalidAllocation |= !AllocResult.getLValueOffset().isZero();
+
+    if (InvalidAllocation) {
+      Info.FFDiag(E->getExprLoc(),
+                  diag::err_constexpr_operator_new_invalid_allocation)
+          << OperatorName;
+      NoteLValueLocation(Info, Base);
+      return false;
+    }
+
+    Result.set(APValue::LValueBase::getDynamicAlloc(DA, AllocatedType));
+    Val = &(*Alloc)->Value;
   } else {
     // Perform the allocation and obtain a pointer to the resulting object.
     Val = Info.createHeapAlloc(E, AllocType, Result);
@@ -16309,7 +16571,9 @@ bool VoidExprEvaluator::VisitCXXDeleteExpr(const CXXDeleteExpr *E) {
     return false;
 
   FunctionDecl *OperatorDelete = E->getOperatorDelete();
-  if (!OperatorDelete->isConstEvalSafeOrReplaceableGlobalAllocationFunction()) {
+  if (!(OperatorDelete
+            ->isConstEvalSafeOrReplaceableGlobalAllocationFunction() ||
+        OperatorDelete->isConstexpr())) {
     Info.FFDiag(E, diag::note_constexpr_new_non_replaceable)
         << isa<CXXMethodDecl>(OperatorDelete) << OperatorDelete;
     return false;
@@ -16353,8 +16617,9 @@ bool VoidExprEvaluator::VisitCXXDeleteExpr(const CXXDeleteExpr *E) {
   if (!E->isArrayForm() && !E->isGlobalDelete()) {
     const FunctionDecl *VirtualDelete = getVirtualOperatorDelete(AllocType);
     if (VirtualDelete &&
-        !VirtualDelete
-             ->isConstEvalSafeOrReplaceableGlobalAllocationFunction()) {
+        !(VirtualDelete
+              ->isConstEvalSafeOrReplaceableGlobalAllocationFunction() ||
+          VirtualDelete->isConstexpr())) {
       Info.FFDiag(E, diag::note_constexpr_new_non_replaceable)
           << isa<CXXMethodDecl>(VirtualDelete) << VirtualDelete;
       return false;
@@ -16364,6 +16629,40 @@ bool VoidExprEvaluator::VisitCXXDeleteExpr(const CXXDeleteExpr *E) {
   if (!HandleDestruction(Info, E->getExprLoc(), Pointer.getLValueBase(),
                          (*Alloc)->Value, AllocType))
     return false;
+
+  if (OperatorDelete->isConstexpr()) {
+    unsigned NumBaseParams = 1; // There's always the address
+    auto PassType = TypeAwareAllocationMode::No;
+    if (OperatorDelete->isTypeAwareOperatorNewOrDelete()) {
+      PassType = TypeAwareAllocationMode::Yes;
+      NumBaseParams++;
+    }
+    bool Destroying = false;
+    if (OperatorDelete->isDestroyingOperatorDelete()) {
+      Destroying = true;
+      ++NumBaseParams;
+    }
+
+    auto PassSize = SizedDeallocationMode::No;
+    if (NumBaseParams < OperatorDelete->getNumParams() &&
+        Info.Ctx.hasSameUnqualifiedType(
+            OperatorDelete->getParamDecl(NumBaseParams)->getType(),
+            Info.Ctx.getSizeType())) {
+      ++NumBaseParams;
+      PassSize = SizedDeallocationMode::Yes;
+    }
+    auto PassAlignment = AlignedAllocationMode::No;
+    if (NumBaseParams < OperatorDelete->getNumParams() &&
+        OperatorDelete->getParamDecl(NumBaseParams)->getType()->isAlignValT()) {
+      ++NumBaseParams;
+      PassAlignment = AlignedAllocationMode::Yes;
+    }
+
+    APValue Result;
+    return handleAllocationCall(E, OperatorDelete, AllocType, PassType,
+                                &Pointer, Destroying, PassSize, PassAlignment,
+                                {}, Result);
+  }
 
   if (!Info.HeapAllocs.erase(Pointer.Base.dyn_cast<DynamicAllocLValue>())) {
     // The element was already erased. This means the destructor call also

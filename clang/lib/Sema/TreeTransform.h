@@ -13828,9 +13828,9 @@ TreeTransform<Derived>::TransformCXXNewExpr(CXXNewExpr *E) {
   // Transform the placement arguments (if any).
   bool ArgumentChanged = false;
   SmallVector<Expr*, 8> PlacementArgs;
-  if (getDerived().TransformExprs(E->getPlacementArgs(),
-                                  E->getNumPlacementArgs(), true,
-                                  PlacementArgs, &ArgumentChanged))
+  if (getDerived().TransformExprs(E->getPlacementArgs().data(),
+                                  E->getNumPlacementArgs(), true, PlacementArgs,
+                                  &ArgumentChanged))
     return ExprError();
 
   // Transform the initializer (if any).

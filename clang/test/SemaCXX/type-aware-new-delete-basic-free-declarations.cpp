@@ -96,6 +96,20 @@ template <typename T> void *operator new(typename S<T>::type_identity, size_t);
 // expected-error@-1 {{'operator new' cannot take a dependent type as first parameter}}
 
 #if !defined(NO_TAA)
+template <typename T> void *operator new(std::type_identity<int>, size_t);
+template <typename T> void *operator new(std::type_identity<int>, size_t, int);
+template <typename T> void *operator new(size_t, int);
+template <typename T> void *operator new(size_t);
+// expected-error@-1 {{'operator new' template must have at least two parameters}}
+
+template <typename T> void *operator new[](std::type_identity<int>, size_t);
+template <typename T> void *operator new[](std::type_identity<int>, size_t, int);
+template <typename T> void *operator new[](size_t, int);
+template <typename T> void *operator new[](size_t);
+// expected-error@-1 {{'operator new[]' template must have at least two parameters}}
+#endif
+
+#if !defined(NO_TAA)
 template <typename U> void *operator new(std::type_identity<int>, U);
 // expected-error@-1 {{type aware 'operator new' cannot take a dependent type as second parameter}}
 template <typename U> void operator delete(std::type_identity<int>, U);

@@ -2450,9 +2450,16 @@ public:
     return CXXNewExprBits.NumPlacementArgs;
   }
 
-  Expr **getPlacementArgs() {
-    return reinterpret_cast<Expr **>(getTrailingObjects<Stmt *>() +
-                                     placementNewArgsOffset());
+  ArrayRef<Expr *> getPlacementArgs() {
+    return ArrayRef(reinterpret_cast<Expr **>(getTrailingObjects<Stmt *>() +
+                                              placementNewArgsOffset()),
+                    getNumPlacementArgs());
+  }
+  ArrayRef<const Expr *> getPlacementArgs() const {
+    return ArrayRef(
+        reinterpret_cast<const Expr *const *>(getTrailingObjects<Stmt *>() +
+                                              placementNewArgsOffset()),
+        getNumPlacementArgs());
   }
 
   Expr *getPlacementArg(unsigned I) {
