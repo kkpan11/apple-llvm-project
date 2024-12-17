@@ -33,7 +33,6 @@ enum DWARFProducer {
   eProducerInvalid = 0,
   eProducerClang,
   eProducerGCC,
-  eProducerLLVMGCC,
   eProducerSwift,
   eProducerOther
 };
