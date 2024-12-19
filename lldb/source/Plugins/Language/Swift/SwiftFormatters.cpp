@@ -14,6 +14,7 @@
 #include "Plugins/Language/Swift/SwiftStringIndex.h"
 #include "Plugins/LanguageRuntime/Swift/ReflectionContextInterface.h"
 #include "Plugins/LanguageRuntime/Swift/SwiftLanguageRuntime.h"
+#include "Plugins/LanguageRuntime/Swift/SwiftTask.h"
 #include "Plugins/TypeSystem/Clang/TypeSystemClang.h"
 #include "lldb/DataFormatters/FormattersHelpers.h"
 #include "lldb/DataFormatters/StringPrinter.h"
@@ -23,6 +24,7 @@
 #include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
 #include "lldb/Utility/Status.h"
+#include "lldb/Utility/StreamString.h"
 #include "lldb/Utility/Timer.h"
 #include "lldb/ValueObject/ValueObject.h"
 #include "lldb/lldb-enumerations.h"
@@ -818,6 +820,16 @@ public:
                    "could not get info for async task {0:x}: {1}", task_ptr,
                    fmt_consume(std::move(err)));
         } else {
+
+          // Print a backtrace of the Task to stdout.
+          ExecutionContext exe_ctx{m_backend.GetExecutionContextRef()};
+          auto tt = std::make_shared<ThreadTask>(
+              3000, task_info->resumeAsyncContext, exe_ctx);
+          StreamString ss;
+          tt->GetStatus(ss, 0, 100, 0, false, true);
+          auto desc = ss.GetString();
+          printf("%.*s\n", (int)desc.size(), desc.data());
+
           m_task_info = *task_info;
           for (auto child :
                {m_is_child_task_sp, m_is_future_sp, m_is_group_child_task_sp,
