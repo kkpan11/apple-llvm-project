@@ -43,6 +43,7 @@
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FormatAdapters.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/TargetParser/Triple.h"
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -762,64 +763,48 @@ private:
 class RegisterContextTask : public RegisterContext {
 public:
   RegisterContextTask(Thread &thread, uint32_t concrete_frame_idx,
-                      lldb::addr_t pc, lldb::addr_t async_ctx)
-      : RegisterContext(thread, concrete_frame_idx), m_pc(pc),
-        m_async_ctx(async_ctx) {}
+                      RegisterContextSP concrete_reg_ctx_sp, lldb::addr_t pc,
+                      lldb::addr_t async_ctx)
+      : RegisterContext(thread, concrete_frame_idx),
+        m_concrete_reg_ctx_sp(concrete_reg_ctx_sp), m_pc(pc),
+        m_async_ctx(async_ctx) {
+    auto triple =
+        concrete_reg_ctx_sp->CalculateTarget()->GetArchitecture().GetTriple();
+    if (triple.isAArch64())
+      m_async_ctx_lldb_regnum = 22;
+    else if (triple.getArch() == Triple::x86_64)
+      m_async_ctx_lldb_regnum = 14;
+  }
 
   void InvalidateAllRegisters() override {}
 
-  size_t GetRegisterCount() override { return 34; }
-
-  const RegisterInfo *GetRegisterInfoAtIndex(size_t idx) override {
-    if (idx == 32) {
-      static RegisterInfo pc;
-      pc.name = "pc";
-      pc.byte_size = 8;
-      pc.encoding = eEncodingUint;
-      pc.kinds[eRegisterKindGeneric] = LLDB_REGNUM_GENERIC_PC;
-      pc.kinds[eRegisterKindDWARF] = 32;
-      pc.kinds[eRegisterKindLLDB] = 32;
-      return &pc;
-    }
-    if (idx == 22) { // || idx == 31) {
-      static RegisterInfo async_ctx;
-      async_ctx.name = "x22";
-      async_ctx.byte_size = 8;
-      async_ctx.encoding = eEncodingUint;
-      // 14 is one bigger than the last generic register
-      // (LLDB_REGNUM_GENERIC_TP: 13)
-      async_ctx.kinds[eRegisterKindGeneric] = 14;
-      // arm64: 22, x86_64: 14
-      async_ctx.kinds[eRegisterKindDWARF] = 22;
-      async_ctx.kinds[eRegisterKindLLDB] = 22;
-      return &async_ctx;
-    }
-    static RegisterInfo empty;
-    empty.name = "";
-    empty.alt_name = "";
-    empty.kinds[eRegisterKindEHFrame] = LLDB_INVALID_REGNUM;
-    empty.kinds[eRegisterKindDWARF] = LLDB_INVALID_REGNUM;
-    empty.kinds[eRegisterKindGeneric] = LLDB_INVALID_REGNUM;
-    empty.kinds[eRegisterKindProcessPlugin] = LLDB_INVALID_REGNUM;
-    empty.kinds[eRegisterKindLLDB] = LLDB_INVALID_REGNUM;
-    empty.invalidate_regs = nullptr;
-    empty.value_regs = nullptr;
-    return &empty;
+  size_t GetRegisterCount() override {
+    return m_concrete_reg_ctx_sp->GetRegisterCount();
   }
 
-  size_t GetRegisterSetCount() override { return 0; }
+  const RegisterInfo *GetRegisterInfoAtIndex(size_t idx) override {
+    return m_concrete_reg_ctx_sp->GetRegisterInfoAtIndex(idx);
+  }
 
-  const RegisterSet *GetRegisterSet(size_t reg_set) override { return nullptr; }
+  size_t GetRegisterSetCount() override {
+    return m_concrete_reg_ctx_sp->GetRegisterSetCount();
+  }
 
-  lldb::ByteOrder GetByteOrder() override { return lldb::eByteOrderLittle; }
+  const RegisterSet *GetRegisterSet(size_t reg_set) override {
+    return m_concrete_reg_ctx_sp->GetRegisterSet(reg_set);
+  }
+
+  lldb::ByteOrder GetByteOrder() override {
+    return m_concrete_reg_ctx_sp->GetByteOrder();
+  }
 
   bool ReadRegister(const RegisterInfo *reg_info,
                     RegisterValue &reg_value) override {
-    if (reg_info->kinds[eRegisterKindLLDB] == 32) {
+    if (reg_info->kinds[eRegisterKindGeneric] == LLDB_REGNUM_GENERIC_PC) {
       reg_value = m_pc;
       return true;
     }
-    if (reg_info->kinds[eRegisterKindLLDB] == 22) {
+    if (reg_info->kinds[eRegisterKindLLDB] == m_async_ctx_lldb_regnum) {
       reg_value = m_async_ctx;
       return true;
     }
@@ -832,68 +817,21 @@ public:
   }
 
 private:
+  RegisterContextSP m_concrete_reg_ctx_sp;
   RegisterValue m_pc;
+  uint32_t m_async_ctx_lldb_regnum = LLDB_INVALID_REGNUM;
   RegisterValue m_async_ctx;
-};
-
-class UnwindTask : public Unwind {
-public:
-  UnwindTask(Thread &thread, lldb::addr_t resumeAsyncContext)
-      : Unwind(thread), m_resume_async_context(resumeAsyncContext) {}
-
-private:
-  lldb::addr_t m_resume_async_context;
-
-  void DoClear() override {}
-
-  uint32_t DoGetFrameCount() override { return 1; }
-
-  bool DoGetFrameInfoAtIndex(uint32_t frame_idx, lldb::addr_t &cfa,
-                             lldb::addr_t &pc,
-                             bool &behaves_like_zeroth_frame) override {
-    Status status;
-    auto process_sp = m_thread.GetProcess();
-    auto current_ctx = m_resume_async_context;
-
-    uint32_t current_idx = 1;
-    while (current_ctx != 0 && current_idx <= frame_idx) {
-      current_ctx = process_sp->ReadPointerFromMemory(current_ctx, status);
-      ++current_idx;
-    }
-
-    cfa = current_ctx;
-    pc = process_sp->ReadPointerFromMemory(current_ctx + 8, status);
-    behaves_like_zeroth_frame = frame_idx == 0;
-    return true;
-
-    // if (frame_idx == 0) {
-    //   Status status;
-    //   auto process_sp = m_thread.GetProcess();
-    //   cfa = m_resume_async_context;
-    //   pc =
-    //       process_sp->ReadPointerFromMemory(m_resume_async_context + 8,
-    //       status);
-    //   return true;
-    // }
-    // return false;
-  }
-
-  lldb::RegisterContextSP
-  DoCreateRegisterContextForFrame(StackFrame *frame) override {
-    return {};
-  }
 };
 
 class ThreadTask : public Thread {
 public:
-  ThreadTask(Process &process, lldb::addr_t resume_async_context)
-      : Thread(process, 3000, true) {
-    // m_unwinder_up = std::make_unique<UnwindTask>(*this, resumeAsyncContext);
+  ThreadTask(Process &process, RegisterContextSP concrete_reg_ctx_sp,
+             lldb::addr_t async_ctx)
+      : Thread(process, 3000, true),
+        m_concrete_reg_ctx_sp(concrete_reg_ctx_sp) {
+    m_async_ctx = async_ctx;
     Status status;
-    // m_async_ctx = process.ReadPointerFromMemory(resume_async_context,
-    // status);
-    m_async_ctx = resume_async_context;
-    m_pc = process.ReadPointerFromMemory(resume_async_context + 8, status);
+    m_pc = process.ReadPointerFromMemory(async_ctx + 8, status);
   }
 
   ~ThreadTask() override { DestroyThread(); }
@@ -902,8 +840,8 @@ public:
 
   lldb::RegisterContextSP GetRegisterContext() override {
     if (!m_reg_ctx_sp)
-      m_reg_ctx_sp =
-          std::make_shared<RegisterContextTask>(*this, 0, m_pc, m_async_ctx);
+      m_reg_ctx_sp = std::make_shared<RegisterContextTask>(
+          *this, 0, m_concrete_reg_ctx_sp, m_pc, m_async_ctx);
     return m_reg_ctx_sp;
   }
 
@@ -915,10 +853,10 @@ public:
   bool CalculateStopInfo() override { return false; }
 
 private:
-  // lldb::addr_t m_resume_async_context;
-  lldb::addr_t m_pc;
-  lldb::addr_t m_async_ctx;
-  lldb::RegisterContextSP m_reg_ctx_sp;
+  RegisterContextSP m_concrete_reg_ctx_sp;
+  addr_t m_pc = LLDB_INVALID_ADDRESS;
+  addr_t m_async_ctx = LLDB_INVALID_ADDRESS;
+  RegisterContextSP m_reg_ctx_sp;
 };
 
 /// Synthetic provider for `Swift.Task`.
@@ -993,10 +931,12 @@ public:
                    "could not get info for async task {0:x}: {1}", task_ptr,
                    fmt_consume(std::move(err)));
         } else {
-          auto tt = std::make_shared<ThreadTask>(*m_backend.GetProcessSP(),
-                                                 task_info->resumeAsyncContext);
+          auto tt = std::make_shared<ThreadTask>(
+              *m_backend.GetProcessSP(),
+              m_backend.GetFrameSP()->GetRegisterContext(),
+              task_info->resumeAsyncContext);
           StreamString ss;
-          tt->GetStatus(ss, 0, 3, 0, false, true);
+          tt->GetStatus(ss, 0, 100, 0, false, true);
           // tt->GetDescription(ss, eDescriptionLevelFull, false, false);
           auto desc = ss.GetString();
           printf("%.*s\n", (int)desc.size(), desc.data());
