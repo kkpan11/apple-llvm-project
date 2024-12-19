@@ -15,17 +15,18 @@
 
 #include <mutex>
 
+#include "LockGuarded.h"
+#include "lldb/lldb-defines.h"
 #include "lldb/lldb-types.h"
 #include "swift/ABI/ObjectFile.h"
 #include "swift/Remote/RemoteAddress.h"
 #include "swift/RemoteInspection/ReflectionContext.h"
 #include "swift/RemoteInspection/TypeRef.h"
-#include <optional>
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Memory.h"
-#include "LockGuarded.h"
+#include <optional>
 
 namespace swift {
 namespace Demangle {
@@ -158,6 +159,7 @@ public:
     bool hasIsRunning = false;
     bool isRunning = false;
     bool isEnqueued = false;
+    lldb::addr_t resumeAsyncContext = LLDB_INVALID_ADDRESS;
   };
   // The default limits are copied from swift-inspect.
   virtual llvm::Expected<AsyncTaskInfo>
