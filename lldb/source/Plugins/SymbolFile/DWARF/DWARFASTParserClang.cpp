@@ -565,8 +565,7 @@ TypeSP DWARFASTParserClang::ParseTypeFromDWARF(const SymbolContext &sc,
     while (!m_to_complete.empty()) {
       TypeToComplete to_complete = m_to_complete.back();
       m_to_complete.pop_back();
-      CompleteRecordType(to_complete.die, to_complete.type.get(),
-                         to_complete.clang_type);
+      CompleteRecordType(to_complete.die, to_complete.clang_type);
     }
   }
 
@@ -2226,7 +2225,6 @@ bool DWARFASTParserClang::ParseTemplateParameterInfos(
 }
 
 bool DWARFASTParserClang::CompleteRecordType(const DWARFDIE &die,
-                                             lldb_private::Type *type,
                                              CompilerType &clang_type) {
   if (TypeSystemClang::UseRedeclCompletion())
     if (!m_currently_parsed_record_dies.insert(die.GetDIE()).second)
@@ -2409,7 +2407,7 @@ bool DWARFASTParserClang::CompleteTypeFromDWARF(const DWARFDIE &die,
   case DW_TAG_structure_type:
   case DW_TAG_union_type:
   case DW_TAG_class_type:
-    CompleteRecordType(die, type, clang_type);
+    CompleteRecordType(die, clang_type);
     break;
   case DW_TAG_enumeration_type:
     CompleteEnumType(die, type, clang_type);
