@@ -15,6 +15,7 @@
 
 #include <mutex>
 
+#include "lldb/lldb-defines.h"
 #include "lldb/lldb-types.h"
 #include "swift/ABI/ObjectFile.h"
 #include "swift/Remote/RemoteAddress.h"
