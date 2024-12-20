@@ -14,6 +14,7 @@
 #include "Plugins/Language/Swift/SwiftStringIndex.h"
 #include "Plugins/LanguageRuntime/Swift/ReflectionContextInterface.h"
 #include "Plugins/LanguageRuntime/Swift/SwiftLanguageRuntime.h"
+#include "Plugins/LanguageRuntime/Swift/SwiftTask.h"
 #include "Plugins/TypeSystem/Clang/TypeSystemClang.h"
 #include "lldb/DataFormatters/FormattersHelpers.h"
 #include "lldb/DataFormatters/StringPrinter.h"
@@ -758,105 +759,6 @@ private:
   ExecutionContextRef m_exe_ctx_ref;
   ConstString m_element_name;
   size_t m_child_index;
-};
-
-class RegisterContextTask : public RegisterContext {
-public:
-  RegisterContextTask(Thread &thread, uint32_t concrete_frame_idx,
-                      RegisterContextSP concrete_reg_ctx_sp, lldb::addr_t pc,
-                      lldb::addr_t async_ctx)
-      : RegisterContext(thread, concrete_frame_idx),
-        m_concrete_reg_ctx_sp(concrete_reg_ctx_sp), m_pc(pc),
-        m_async_ctx(async_ctx) {
-    auto triple =
-        concrete_reg_ctx_sp->CalculateTarget()->GetArchitecture().GetTriple();
-    if (triple.isAArch64())
-      m_async_ctx_lldb_regnum = 22;
-    else if (triple.getArch() == Triple::x86_64)
-      m_async_ctx_lldb_regnum = 14;
-  }
-
-  void InvalidateAllRegisters() override {}
-
-  size_t GetRegisterCount() override {
-    return m_concrete_reg_ctx_sp->GetRegisterCount();
-  }
-
-  const RegisterInfo *GetRegisterInfoAtIndex(size_t idx) override {
-    return m_concrete_reg_ctx_sp->GetRegisterInfoAtIndex(idx);
-  }
-
-  size_t GetRegisterSetCount() override {
-    return m_concrete_reg_ctx_sp->GetRegisterSetCount();
-  }
-
-  const RegisterSet *GetRegisterSet(size_t reg_set) override {
-    return m_concrete_reg_ctx_sp->GetRegisterSet(reg_set);
-  }
-
-  lldb::ByteOrder GetByteOrder() override {
-    return m_concrete_reg_ctx_sp->GetByteOrder();
-  }
-
-  bool ReadRegister(const RegisterInfo *reg_info,
-                    RegisterValue &reg_value) override {
-    if (reg_info->kinds[eRegisterKindGeneric] == LLDB_REGNUM_GENERIC_PC) {
-      reg_value = m_pc;
-      return true;
-    }
-    if (reg_info->kinds[eRegisterKindLLDB] == m_async_ctx_lldb_regnum) {
-      reg_value = m_async_ctx;
-      return true;
-    }
-    return false;
-  }
-
-  bool WriteRegister(const RegisterInfo *reg_info,
-                     const RegisterValue &reg_value) override {
-    return false;
-  }
-
-private:
-  RegisterContextSP m_concrete_reg_ctx_sp;
-  RegisterValue m_pc;
-  uint32_t m_async_ctx_lldb_regnum = LLDB_INVALID_REGNUM;
-  RegisterValue m_async_ctx;
-};
-
-class ThreadTask : public Thread {
-public:
-  ThreadTask(Process &process, RegisterContextSP concrete_reg_ctx_sp,
-             lldb::addr_t async_ctx)
-      : Thread(process, 3000, true),
-        m_concrete_reg_ctx_sp(concrete_reg_ctx_sp) {
-    m_async_ctx = async_ctx;
-    Status status;
-    m_pc = process.ReadPointerFromMemory(async_ctx + 8, status);
-  }
-
-  ~ThreadTask() override { DestroyThread(); }
-
-  void RefreshStateAfterStop() override {}
-
-  lldb::RegisterContextSP GetRegisterContext() override {
-    if (!m_reg_ctx_sp)
-      m_reg_ctx_sp = std::make_shared<RegisterContextTask>(
-          *this, 0, m_concrete_reg_ctx_sp, m_pc, m_async_ctx);
-    return m_reg_ctx_sp;
-  }
-
-  lldb::RegisterContextSP
-  CreateRegisterContextForFrame(StackFrame *frame) override {
-    return {};
-  }
-
-  bool CalculateStopInfo() override { return false; }
-
-private:
-  RegisterContextSP m_concrete_reg_ctx_sp;
-  addr_t m_pc = LLDB_INVALID_ADDRESS;
-  addr_t m_async_ctx = LLDB_INVALID_ADDRESS;
-  RegisterContextSP m_reg_ctx_sp;
 };
 
 /// Synthetic provider for `Swift.Task`.
