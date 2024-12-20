@@ -388,7 +388,6 @@ public:
     result.hasIsRunning = task_info.HasIsRunning;
     result.isRunning = task_info.IsRunning;
     result.isEnqueued = task_info.IsEnqueued;
-    // result.id = task_info.Id;
     result.resumeAsyncContext = task_info.ResumeAsyncContext;
     return result;
   }

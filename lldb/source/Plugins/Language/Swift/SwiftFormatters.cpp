@@ -19,34 +19,21 @@
 #include "lldb/DataFormatters/FormattersHelpers.h"
 #include "lldb/DataFormatters/StringPrinter.h"
 #include "lldb/Target/Process.h"
-#include "lldb/Target/RegisterContext.h"
-#include "lldb/Target/Thread.h"
-#include "lldb/Target/Unwind.h"
 #include "lldb/Utility/ConstString.h"
 #include "lldb/Utility/DataBufferHeap.h"
-#include "lldb/Utility/DataExtractor.h"
 #include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
 #include "lldb/Utility/Status.h"
 #include "lldb/Utility/StreamString.h"
 #include "lldb/Utility/Timer.h"
 #include "lldb/ValueObject/ValueObject.h"
-#include "lldb/lldb-defines.h"
 #include "lldb/lldb-enumerations.h"
-#include "lldb/lldb-forward.h"
-#include "lldb/lldb-private-types.h"
-#include "lldb/lldb-types.h"
 #include "swift/AST/Types.h"
 #include "swift/Demangling/ManglingMacros.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/Support/CBindingWrapping.h"
-#include "llvm/Support/Error.h"
 #include "llvm/Support/FormatAdapters.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/TargetParser/Triple.h"
-#include <cstdint>
-#include <memory>
 #include <optional>
 
 // FIXME: we should not need this
@@ -834,6 +821,7 @@ public:
                    fmt_consume(std::move(err)));
         } else {
 
+          // Print a backtrace of the Task to stdout.
           ExecutionContext exe_ctx{m_backend.GetExecutionContextRef()};
           auto tt = std::make_shared<ThreadTask>(
               3000, task_info->resumeAsyncContext, exe_ctx);
