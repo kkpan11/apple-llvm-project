@@ -32,7 +32,6 @@ add_lldb_library(lldbSymbol ${PLUGIN_DEPENDENCY_ARG}
   DeclVendor.cpp
   FuncUnwinders.cpp
   Function.cpp
-  ImportedDeclaration.cpp
   LineEntry.cpp
   LineTable.cpp
   ObjectContainer.cpp
