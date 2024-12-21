@@ -1017,6 +1017,10 @@ eArgTypeRemoteFilename = _lldb.eArgTypeRemoteFilename
 
 eArgTypeModule = _lldb.eArgTypeModule
 
+eArgTypeCPUName = _lldb.eArgTypeCPUName
+
+eArgTypeCPUFeatures = _lldb.eArgTypeCPUFeatures
+
 eArgTypeLastArg = _lldb.eArgTypeLastArg
 
 eSymbolTypeAny = _lldb.eSymbolTypeAny
@@ -5425,6 +5429,10 @@ class SBError(object):
         r"""GetError(SBError self) -> uint32_t"""
         return _lldb.SBError_GetError(self)
 
+    def GetErrorData(self):
+        r"""GetErrorData(SBError self) -> SBStructuredData"""
+        return _lldb.SBError_GetErrorData(self)
+
     def GetType(self):
         r"""GetType(SBError self) -> lldb::ErrorType"""
         return _lldb.SBError_GetType(self)
@@ -6435,10 +6443,6 @@ class SBFrame(object):
         r"""IsSwiftThunk(SBFrame self) -> bool"""
         return _lldb.SBFrame_IsSwiftThunk(self)
 
-    def GetLanguageSpecificData(self):
-        r"""GetLanguageSpecificData(SBFrame self) -> SBStructuredData"""
-        return _lldb.SBFrame_GetLanguageSpecificData(self)
-
     def IsInlined(self, *args):
         r"""
         IsInlined(SBFrame self) -> bool
@@ -6476,6 +6480,10 @@ class SBFrame(object):
             target's default.
         """
         return _lldb.SBFrame_EvaluateExpression(self, *args)
+
+    def GetLanguageSpecificData(self):
+        r"""GetLanguageSpecificData(SBFrame self) -> SBStructuredData"""
+        return _lldb.SBFrame_GetLanguageSpecificData(self)
 
     def GetFrameBlock(self):
         r"""

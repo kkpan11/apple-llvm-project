@@ -30287,6 +30287,34 @@ fail:
 }
 
 
+SWIGINTERN PyObject *_wrap_SBError_GetErrorData(PyObject *self, PyObject *args) {
+  PyObject *resultobj = 0;
+  lldb::SBError *arg1 = (lldb::SBError *) 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  PyObject *swig_obj[1] ;
+  lldb::SBStructuredData result;
+  
+  (void)self;
+  if (!args) SWIG_fail;
+  swig_obj[0] = args;
+  res1 = SWIG_ConvertPtr(swig_obj[0], &argp1,SWIGTYPE_p_lldb__SBError, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "SBError_GetErrorData" "', argument " "1"" of type '" "lldb::SBError const *""'"); 
+  }
+  arg1 = reinterpret_cast< lldb::SBError * >(argp1);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = ((lldb::SBError const *)arg1)->GetErrorData();
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
+  resultobj = SWIG_NewPointerObj((new lldb::SBStructuredData(result)), SWIGTYPE_p_lldb__SBStructuredData, SWIG_POINTER_OWN |  0 );
+  return resultobj;
+fail:
+  return NULL;
+}
+
+
 SWIGINTERN PyObject *_wrap_SBError_GetType(PyObject *self, PyObject *args) {
   PyObject *resultobj = 0;
   lldb::SBError *arg1 = (lldb::SBError *) 0 ;
@@ -37422,34 +37450,6 @@ fail:
 }
 
 
-SWIGINTERN PyObject *_wrap_SBFrame_GetLanguageSpecificData(PyObject *self, PyObject *args) {
-  PyObject *resultobj = 0;
-  lldb::SBFrame *arg1 = (lldb::SBFrame *) 0 ;
-  void *argp1 = 0 ;
-  int res1 = 0 ;
-  PyObject *swig_obj[1] ;
-  lldb::SBStructuredData result;
-  
-  (void)self;
-  if (!args) SWIG_fail;
-  swig_obj[0] = args;
-  res1 = SWIG_ConvertPtr(swig_obj[0], &argp1,SWIGTYPE_p_lldb__SBFrame, 0 |  0 );
-  if (!SWIG_IsOK(res1)) {
-    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "SBFrame_GetLanguageSpecificData" "', argument " "1"" of type '" "lldb::SBFrame const *""'"); 
-  }
-  arg1 = reinterpret_cast< lldb::SBFrame * >(argp1);
-  {
-    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
-    result = ((lldb::SBFrame const *)arg1)->GetLanguageSpecificData();
-    SWIG_PYTHON_THREAD_END_ALLOW;
-  }
-  resultobj = SWIG_NewPointerObj((new lldb::SBStructuredData(result)), SWIGTYPE_p_lldb__SBStructuredData, SWIG_POINTER_OWN |  0 );
-  return resultobj;
-fail:
-  return NULL;
-}
-
-
 SWIGINTERN PyObject *_wrap_SBFrame_IsInlined__SWIG_0(PyObject *self, Py_ssize_t nobjs, PyObject **swig_obj) {
   PyObject *resultobj = 0;
   lldb::SBFrame *arg1 = (lldb::SBFrame *) 0 ;
@@ -37928,6 +37928,34 @@ fail:
     "    lldb::SBFrame::EvaluateExpression(char const *,lldb::DynamicValueType,bool)\n"
     "    lldb::SBFrame::EvaluateExpression(char const *,lldb::SBExpressionOptions const &)\n");
   return 0;
+}
+
+
+SWIGINTERN PyObject *_wrap_SBFrame_GetLanguageSpecificData(PyObject *self, PyObject *args) {
+  PyObject *resultobj = 0;
+  lldb::SBFrame *arg1 = (lldb::SBFrame *) 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  PyObject *swig_obj[1] ;
+  lldb::SBStructuredData result;
+  
+  (void)self;
+  if (!args) SWIG_fail;
+  swig_obj[0] = args;
+  res1 = SWIG_ConvertPtr(swig_obj[0], &argp1,SWIGTYPE_p_lldb__SBFrame, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "SBFrame_GetLanguageSpecificData" "', argument " "1"" of type '" "lldb::SBFrame const *""'"); 
+  }
+  arg1 = reinterpret_cast< lldb::SBFrame * >(argp1);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = ((lldb::SBFrame const *)arg1)->GetLanguageSpecificData();
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
+  resultobj = SWIG_NewPointerObj((new lldb::SBStructuredData(result)), SWIGTYPE_p_lldb__SBStructuredData, SWIG_POINTER_OWN |  0 );
+  return resultobj;
+fail:
+  return NULL;
 }
 
 
@@ -96340,6 +96368,7 @@ static PyMethodDef SwigMethods[] = {
 	 { "SBError_Fail", _wrap_SBError_Fail, METH_O, "SBError_Fail(SBError self) -> bool"},
 	 { "SBError_Success", _wrap_SBError_Success, METH_O, "SBError_Success(SBError self) -> bool"},
 	 { "SBError_GetError", _wrap_SBError_GetError, METH_O, "SBError_GetError(SBError self) -> uint32_t"},
+	 { "SBError_GetErrorData", _wrap_SBError_GetErrorData, METH_O, "SBError_GetErrorData(SBError self) -> SBStructuredData"},
 	 { "SBError_GetType", _wrap_SBError_GetType, METH_O, "SBError_GetType(SBError self) -> lldb::ErrorType"},
 	 { "SBError_SetError", _wrap_SBError_SetError, METH_VARARGS, "SBError_SetError(SBError self, uint32_t err, lldb::ErrorType type)"},
 	 { "SBError_SetErrorToErrno", _wrap_SBError_SetErrorToErrno, METH_O, "SBError_SetErrorToErrno(SBError self)"},
@@ -96654,7 +96683,6 @@ static PyMethodDef SwigMethods[] = {
 		"    .\n"
 		""},
 	 { "SBFrame_IsSwiftThunk", _wrap_SBFrame_IsSwiftThunk, METH_O, "SBFrame_IsSwiftThunk(SBFrame self) -> bool"},
-	 { "SBFrame_GetLanguageSpecificData", _wrap_SBFrame_GetLanguageSpecificData, METH_O, "SBFrame_GetLanguageSpecificData(SBFrame self) -> SBStructuredData"},
 	 { "SBFrame_IsInlined", _wrap_SBFrame_IsInlined, METH_VARARGS, "\n"
 		"SBFrame_IsInlined(SBFrame self) -> bool\n"
 		"SBFrame_IsInlined(SBFrame self) -> bool\n"
@@ -96681,6 +96709,7 @@ static PyMethodDef SwigMethods[] = {
 		"    The version that doesn't supply a 'use_dynamic' value will use the\n"
 		"    target's default.\n"
 		""},
+	 { "SBFrame_GetLanguageSpecificData", _wrap_SBFrame_GetLanguageSpecificData, METH_O, "SBFrame_GetLanguageSpecificData(SBFrame self) -> SBStructuredData"},
 	 { "SBFrame_GetFrameBlock", _wrap_SBFrame_GetFrameBlock, METH_O, "\n"
 		"SBFrame_GetFrameBlock(SBFrame self) -> SBBlock\n"
 		"\n"
@@ -102332,6 +102361,8 @@ SWIG_init(void) {
   SWIG_Python_SetConstant(d, "eArgTypeRemotePath",SWIG_From_int(static_cast< int >(lldb::eArgTypeRemotePath)));
   SWIG_Python_SetConstant(d, "eArgTypeRemoteFilename",SWIG_From_int(static_cast< int >(lldb::eArgTypeRemoteFilename)));
   SWIG_Python_SetConstant(d, "eArgTypeModule",SWIG_From_int(static_cast< int >(lldb::eArgTypeModule)));
+  SWIG_Python_SetConstant(d, "eArgTypeCPUName",SWIG_From_int(static_cast< int >(lldb::eArgTypeCPUName)));
+  SWIG_Python_SetConstant(d, "eArgTypeCPUFeatures",SWIG_From_int(static_cast< int >(lldb::eArgTypeCPUFeatures)));
   SWIG_Python_SetConstant(d, "eArgTypeLastArg",SWIG_From_int(static_cast< int >(lldb::eArgTypeLastArg)));
   SWIG_Python_SetConstant(d, "eSymbolTypeAny",SWIG_From_int(static_cast< int >(lldb::eSymbolTypeAny)));
   SWIG_Python_SetConstant(d, "eSymbolTypeInvalid",SWIG_From_int(static_cast< int >(lldb::eSymbolTypeInvalid)));
