@@ -34,21 +34,21 @@ public:
 
 private:
   /// A register context that is the source of `RegisterInfo` data.
-  RegisterContextSP m_concrete_reg_ctx_sp;
+  RegisterContextSP m_reg_info_sp;
   /// Lazily initialized `RegisterContextTask`.
   RegisterContextSP m_async_reg_ctx_sp;
   /// The Task's async context.
   addr_t m_async_ctx = LLDB_INVALID_ADDRESS;
   /// The address of the async context's resume function.
-  addr_t m_pc = LLDB_INVALID_ADDRESS;
+  addr_t m_resume_fn = LLDB_INVALID_ADDRESS;
 };
 
 /// A Swift Task specific register context. Supporting class for `ThreadTask`,
 /// see its documentation for details.
 class RegisterContextTask : public RegisterContext {
 public:
-  RegisterContextTask(Thread &thread, RegisterContextSP reg_info_sp, addr_t pc,
-                      addr_t async_ctx);
+  RegisterContextTask(Thread &thread, RegisterContextSP reg_info_sp,
+                      addr_t resume_fn, addr_t async_ctx);
 
   /// RegisterContextTask supports readonly from only two (necessary)
   /// registers. Namely, the pc and the async context registers.
@@ -87,7 +87,7 @@ private:
   /// The Task's async context.
   RegisterValue m_async_ctx;
   /// The address of the async context's resume function.
-  RegisterValue m_pc;
+  RegisterValue m_resume_fn;
 };
 
 } // namespace lldb_private
