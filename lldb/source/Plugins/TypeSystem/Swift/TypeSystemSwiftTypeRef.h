@@ -438,6 +438,10 @@ protected:
   /// Cast \p opaque_type as a mangled name.
   static const char *AsMangledName(lldb::opaque_compiler_type_t type);
 
+  /// Helper function that canonicalizes node, but doesn't look at its
+  /// children.
+  swift::Demangle::NodePointer Canonicalize(swift::Demangle::Demangler &dem,
+                                            swift::Demangle::NodePointer node);
 
   /// Demangle the mangled name of the canonical type of \p type and
   /// drill into the Global(TypeMangling(Type())).
@@ -446,6 +450,15 @@ protected:
   swift::Demangle::NodePointer
   DemangleCanonicalType(swift::Demangle::Demangler &dem,
                         lldb::opaque_compiler_type_t type);
+
+  /// Demangle the mangled name of \p type after canonicalizing its
+  /// outermost type node and drill into the
+  /// Global(TypeMangling(Type())).
+  ///
+  /// \return the child of Type or a nullptr.
+  swift::Demangle::NodePointer
+  DemangleCanonicalOutermostType(swift::Demangle::Demangler &dem,
+                                 lldb::opaque_compiler_type_t type);
 
   /// If \p node is a Struct/Class/Typedef in the __C module, return a
   /// Swiftified node by looking up the name in the corresponding APINotes and
