@@ -150,11 +150,11 @@ void p2struct2(struct S2 *ptr) {
   // COMMON:         [[PTR_ADDR:%.+]] = alloca ptr, align 8
   // ENABLED-NEXT:   store ptr [[PTR]], ptr [[PTR_ADDR]], align 8, !tbaa [[P1S2_TAG:!.+]]
   // ENABLED-NEXT:   [[BASE:%.+]] = load ptr, ptr [[PTR_ADDR]], align 8, !tbaa [[P1S2_TAG]]
-  // ENABLED-NEXT:   [[S:%.+]] = getelementptr inbounds nuw %struct.S2, ptr [[BASE]], i32 0, i32 0
+  // ENABLED-NEXT:   [[S:%.+]] = getelementptr inbounds %struct.S2, ptr [[BASE]], i32 0, i32 0
   // ENABLED-NEXT:   store ptr null, ptr [[S]], align 8, !tbaa [[S2_S_TAG:!.+]]
   // DEFAULT-NEXT:   store ptr [[PTR]], ptr [[PTR_ADDR]], align 8, !tbaa [[ANYPTR]]
   // DEFAULT-NEXT:   [[BASE:%.+]] = load ptr, ptr [[PTR_ADDR]], align 8, !tbaa [[ANYPTR]]
-  // DEFAULT-NEXT:   [[S:%.+]] = getelementptr inbounds nuw %struct.S2, ptr [[BASE]], i32 0, i32 0
+  // DEFAULT-NEXT:   [[S:%.+]] = getelementptr inbounds %struct.S2, ptr [[BASE]], i32 0, i32 0
   // DEFAULT-NEXT:   store ptr null, ptr [[S]], align 8, !tbaa [[S2_S_TAG:!.+]]
   // COMMON-NEXT:    ret void
     ptr->s = 0;
@@ -199,7 +199,7 @@ void unamed_struct_typedef(TypedefS *ptr) {
 // DEFAULT-NEXT:  [[L0:%.+]] = load ptr, ptr  [[PTR_ADDR]], align 8, !tbaa  [[ANYPTR]]
 // ENABLED-NEXT:  store ptr %ptr, ptr [[PTR_ADDR]], align 8, !tbaa [[P1TYPEDEF:!.+]]
 // ENABLED-NEXT:  [[L0:%.+]] = load ptr, ptr [[PTR_ADDR]], align 8, !tbaa  [[P1TYPEDEF]]
-// COMMON-NEXT:   [[GEP:%.+]]  = getelementptr inbounds nuw %struct.TypedefS, ptr [[L0]], i32 0, i32 0
+// COMMON-NEXT:   [[GEP:%.+]]  = getelementptr inbounds %struct.TypedefS, ptr [[L0]], i32 0, i32 0
 // COMMON-NEXT:   store i32 0, ptr [[GEP]], align 4
 // COMMON-NEXT:   ret void
 
