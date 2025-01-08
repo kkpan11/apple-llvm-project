@@ -565,8 +565,7 @@ TypeSP DWARFASTParserClang::ParseTypeFromDWARF(const SymbolContext &sc,
     while (!m_to_complete.empty()) {
       TypeToComplete to_complete = m_to_complete.back();
       m_to_complete.pop_back();
-      CompleteRecordType(to_complete.die, to_complete.type.get(),
-                         to_complete.clang_type);
+      CompleteRecordType(to_complete.die, to_complete.clang_type);
     }
   }
 
@@ -1810,20 +1809,6 @@ DWARFASTParserClang::ParseStructureLikeDIE(const SymbolContext &sc,
   ConstString unique_typename(attrs.name);
   Declaration unique_decl(attrs.decl);
   uint64_t byte_size = attrs.byte_size.value_or(0);
-  if (attrs.byte_size && *attrs.byte_size == 0 && attrs.name &&
-      !die.HasChildren() && cu_language == eLanguageTypeObjC) {
-    // Work around an issue with clang at the moment where forward
-    // declarations for objective C classes are emitted as:
-    //  DW_TAG_structure_type [2]
-    //  DW_AT_name( "ForwardObjcClass" )
-    //  DW_AT_byte_size( 0x00 )
-    //  DW_AT_decl_file( "..." )
-    //  DW_AT_decl_line( 1 )
-    //
-    // Note that there is no DW_AT_declaration and there are no children,
-    // and the byte size is zero.
-    attrs.is_forward_declaration = true;
-  }
 
   if (attrs.name) {
     GetUniqueTypeNameAndDeclaration(die, cu_language, unique_typename,
@@ -1873,8 +1858,7 @@ DWARFASTParserClang::ParseStructureLikeDIE(const SymbolContext &sc,
 
   if ((attrs.class_language == eLanguageTypeObjC ||
        attrs.class_language == eLanguageTypeObjC_plus_plus) &&
-      !attrs.is_complete_objc_class &&
-      die.Supports_DW_AT_APPLE_objc_complete_type()) {
+      !attrs.is_complete_objc_class) {
     // We have a valid eSymbolTypeObjCClass class symbol whose name
     // matches the current objective C class that we are trying to find
     // and this DIE isn't the complete definition (we checked
@@ -2241,7 +2225,6 @@ bool DWARFASTParserClang::ParseTemplateParameterInfos(
 }
 
 bool DWARFASTParserClang::CompleteRecordType(const DWARFDIE &die,
-                                             lldb_private::Type *type,
                                              CompilerType &clang_type) {
   if (TypeSystemClang::UseRedeclCompletion())
     if (!m_currently_parsed_record_dies.insert(die.GetDIE()).second)
@@ -2424,7 +2407,7 @@ bool DWARFASTParserClang::CompleteTypeFromDWARF(const DWARFDIE &die,
   case DW_TAG_structure_type:
   case DW_TAG_union_type:
   case DW_TAG_class_type:
-    CompleteRecordType(die, type, clang_type);
+    CompleteRecordType(die, clang_type);
     break;
   case DW_TAG_enumeration_type:
     CompleteEnumType(die, type, clang_type);
@@ -3909,8 +3892,7 @@ bool DWARFASTParserClang::CopyUniqueClassMethodTypes(
       static_cast<DWARFASTParserClang *>(
           SymbolFileDWARF::GetDWARFParser(*dst_class_die.GetCU()));
   auto link = [&](DWARFDIE src, DWARFDIE dst) {
-    SymbolFileDWARF::DIEToTypePtr &die_to_type =
-        dst_class_die.GetDWARF()->GetDIEToType();
+    auto &die_to_type = dst_class_die.GetDWARF()->GetDIEToType();
     clang::DeclContext *dst_decl_ctx =
         dst_dwarf_ast_parser->m_die_to_decl_ctx[dst.GetDIE()];
     if (dst_decl_ctx)
