@@ -322,6 +322,44 @@ public:
   }
 };
 
+BoundsSafetyInfo::BoundsSafetyKind readKindFlag(uint8_t kind) {
+  switch (kind) {
+  case 0x00:
+    return BoundsSafetyInfo::BoundsSafetyKind::CountedBy;
+  case 0x01:
+    return BoundsSafetyInfo::BoundsSafetyKind::CountedByOrNull;
+  case 0x02:
+    return BoundsSafetyInfo::BoundsSafetyKind::SizedBy;
+  case 0x03:
+    return BoundsSafetyInfo::BoundsSafetyKind::SizedByOrNull;
+  case 0x04:
+    return BoundsSafetyInfo::BoundsSafetyKind::EndedBy;
+  default:
+    llvm_unreachable("invalid bounds safety kind");
+  }
+}
+
+/// Read serialized BoundsSafetyInfo.
+void ReadBoundsSafetyInfo(const uint8_t *&Data, BoundsSafetyInfo &Info) {
+  uint8_t Payload = endian::readNext<uint8_t, llvm::endianness::little>(Data);
+
+  if (Payload & 0x01) {
+    uint8_t Level = (Payload >> 1) & 0x7;
+    Info.setLevelAudited(Level);
+  }
+  Payload >>= 4;
+
+  if (Payload & 0x01) {
+    uint8_t Kind = (Payload >> 1) & 0x7;
+    Info.setKindAudited(readKindFlag(Kind));
+  }
+
+  uint16_t ExternalBoundsLen =
+      endian::readNext<uint16_t, llvm::endianness::little>(Data);
+  Info.ExternalBounds = std::string(Data, Data + ExternalBoundsLen);
+  Data += ExternalBoundsLen;
+}
+
 /// Read serialized ParamInfo.
 void ReadParamInfo(const uint8_t *&Data, ParamInfo &Info) {
   ReadVariableInfo(Data, Info);
@@ -338,7 +376,11 @@ void ReadParamInfo(const uint8_t *&Data, ParamInfo &Info) {
   if (Payload & 0x01)
     Info.setNoEscape(Payload & 0x02);
   Payload >>= 2;
-  assert(Payload == 0 && "Bad API notes");
+  if (Payload & 0x01) {
+    BoundsSafetyInfo BSI;
+    ReadBoundsSafetyInfo(Data, BSI);
+    Info.BoundsSafety = BSI;
+  }
 }
 
 /// Read serialized FunctionInfo.

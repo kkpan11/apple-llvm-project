@@ -150,6 +150,31 @@ enum class APIAvailability {
 };
 } // namespace
 
+namespace {
+struct BoundsSafety {
+  BoundsSafetyInfo::BoundsSafetyKind Kind;
+  unsigned Level = 0;
+  StringRef BoundsExpr = "";
+};
+} // namespace
+
+namespace llvm {
+namespace yaml {
+template <> struct ScalarEnumerationTraits<BoundsSafetyInfo::BoundsSafetyKind> {
+  static void enumeration(IO &IO, BoundsSafetyInfo::BoundsSafetyKind &AA) {
+    IO.enumCase(AA, "counted_by",
+                BoundsSafetyInfo::BoundsSafetyKind::CountedBy);
+    IO.enumCase(AA, "counted_by_or_null",
+                BoundsSafetyInfo::BoundsSafetyKind::CountedByOrNull);
+    IO.enumCase(AA, "sized_by", BoundsSafetyInfo::BoundsSafetyKind::SizedBy);
+    IO.enumCase(AA, "sized_by_or_null",
+                BoundsSafetyInfo::BoundsSafetyKind::SizedByOrNull);
+    IO.enumCase(AA, "ended_by", BoundsSafetyInfo::BoundsSafetyKind::EndedBy);
+  }
+};
+} // namespace yaml
+} // namespace llvm
+
 namespace llvm {
 namespace yaml {
 template <> struct ScalarEnumerationTraits<APIAvailability> {
@@ -188,6 +213,7 @@ struct Param {
   std::optional<NullabilityKind> Nullability;
   std::optional<RetainCountConventionKind> RetainCountConvention;
   StringRef Type;
+  BoundsSafety BoundsSafety;
 };
 
 typedef std::vector<Param> ParamsSeq;
@@ -238,6 +264,15 @@ template <> struct MappingTraits<Param> {
     IO.mapOptional("NoEscape", P.NoEscape);
     IO.mapOptional("Lifetimebound", P.Lifetimebound);
     IO.mapOptional("Type", P.Type, StringRef(""));
+    IO.mapOptional("BoundsSafety", P.BoundsSafety);
+  }
+};
+
+template <> struct MappingTraits<BoundsSafety> {
+  static void mapping(IO &IO, BoundsSafety &BS) {
+    IO.mapRequired("Kind", BS.Kind);
+    IO.mapRequired("BoundedBy", BS.BoundsExpr);
+    IO.mapOptional("Level", BS.Level, 0);
   }
 };
 } // namespace yaml
@@ -862,6 +897,11 @@ public:
       PI.setLifetimebound(P.Lifetimebound);
       PI.setType(std::string(P.Type));
       PI.setRetainCountConvention(P.RetainCountConvention);
+      BoundsSafetyInfo BSI;
+      BSI.setKindAudited(P.BoundsSafety.Kind);
+      BSI.setLevelAudited(P.BoundsSafety.Level);
+      BSI.ExternalBounds = P.BoundsSafety.BoundsExpr.str();
+      PI.BoundsSafety = BSI;
       if (static_cast<int>(OutInfo.Params.size()) <= P.Position)
         OutInfo.Params.resize(P.Position + 1);
       if (P.Position == -1)

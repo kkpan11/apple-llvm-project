@@ -1075,14 +1075,58 @@ void APINotesWriter::Implementation::writeGlobalVariableBlock(
 }
 
 namespace {
+uint8_t getKindFlag(BoundsSafetyInfo::BoundsSafetyKind kind) {
+  switch (kind) {
+  case BoundsSafetyInfo::BoundsSafetyKind::CountedBy:
+    return 0x00;
+  case BoundsSafetyInfo::BoundsSafetyKind::CountedByOrNull:
+    return 0x01;
+  case BoundsSafetyInfo::BoundsSafetyKind::SizedBy:
+    return 0x02;
+  case BoundsSafetyInfo::BoundsSafetyKind::SizedByOrNull:
+    return 0x03;
+  case BoundsSafetyInfo::BoundsSafetyKind::EndedBy:
+    return 0x04;
+  }
+}
+
+void emitBoundsSafetyInfo(raw_ostream &OS, const BoundsSafetyInfo &BSI) {
+  llvm::support::endian::Writer writer(OS, llvm::endianness::little);
+  uint8_t flags = 0;
+  if (auto kind = BSI.getKind()) {
+    flags |= 0x01;                    // 1 bit
+    flags |= getKindFlag(*kind) << 1; // 3 bits
+  }
+  flags <<= 4;
+  if (auto level = BSI.getLevel()) {
+    flags |= 0x01;        // 1 bit
+    flags |= *level << 1; // 3 bits
+  }
+
+  writer.write<uint8_t>(flags);
+  writer.write<uint16_t>(BSI.ExternalBounds.size());
+  writer.write(
+      ArrayRef<char>{BSI.ExternalBounds.data(), BSI.ExternalBounds.size()});
+}
+
+unsigned getBoundsSafetyInfoSize(const BoundsSafetyInfo &BSI) {
+  return 1 + sizeof(uint16_t) + BSI.ExternalBounds.size();
+}
+
 unsigned getParamInfoSize(const ParamInfo &PI) {
-  return getVariableInfoSize(PI) + 1;
+  unsigned BSISize = 0;
+  if (auto BSI = PI.BoundsSafety)
+    BSISize = getBoundsSafetyInfoSize(*BSI);
+  return getVariableInfoSize(PI) + 1 + BSISize;
 }
 
 void emitParamInfo(raw_ostream &OS, const ParamInfo &PI) {
   emitVariableInfo(OS, PI);
 
   uint8_t flags = 0;
+  if (PI.BoundsSafety)
+    flags |= 0x01;
+  flags <<= 2;
   if (auto noescape = PI.isNoEscape()) {
     flags |= 0x01;
     if (*noescape)
@@ -1100,6 +1144,8 @@ void emitParamInfo(raw_ostream &OS, const ParamInfo &PI) {
 
   llvm::support::endian::Writer writer(OS, llvm::endianness::little);
   writer.write<uint8_t>(flags);
+  if (auto BSI = PI.BoundsSafety)
+    emitBoundsSafetyInfo(OS, *PI.BoundsSafety);
 }
 
 /// Retrieve the serialized size of the given FunctionInfo, for use in on-disk

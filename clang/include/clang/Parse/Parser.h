@@ -3924,6 +3924,10 @@ private:
   /// \param IncludeLoc The location at which this parse was triggered.
   TypeResult ParseTypeFromString(StringRef TypeStr, StringRef Context,
                                  SourceLocation IncludeLoc);
+  ExprResult ParseBoundsAttributeArgFromString(StringRef ExprStr,
+                                               StringRef Context,
+                                               Decl *ParentDecl,
+                                               SourceLocation IncludeLoc);
 
   //===--------------------------------------------------------------------===//
   // Modules

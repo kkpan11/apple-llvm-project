@@ -300,6 +300,68 @@ inline bool operator!=(const ContextInfo &LHS, const ContextInfo &RHS) {
   return !(LHS == RHS);
 }
 
+class BoundsSafetyInfo {
+public:
+  enum class BoundsSafetyKind {
+    CountedBy,
+    CountedByOrNull,
+    SizedBy,
+    SizedByOrNull,
+    EndedBy,
+  };
+
+private:
+  /// Whether this property has been audited for nullability.
+  LLVM_PREFERRED_TYPE(bool)
+  unsigned KindAudited : 1;
+
+  /// The kind of nullability for this property. Only valid if the nullability
+  /// has been audited.
+  LLVM_PREFERRED_TYPE(BoundsSafetyKind)
+  unsigned Kind : 3;
+
+  LLVM_PREFERRED_TYPE(bool)
+  unsigned LevelAudited : 1;
+
+  unsigned Level : 3;
+
+public:
+  std::string ExternalBounds;
+
+  BoundsSafetyInfo()
+      : KindAudited(false), Kind(0), LevelAudited(false), Level(0),
+        ExternalBounds("") {}
+
+  std::optional<BoundsSafetyKind> getKind() const {
+    return KindAudited ? std::optional<BoundsSafetyKind>(
+                             static_cast<BoundsSafetyKind>(Kind))
+                       : std::nullopt;
+  }
+
+  void setKindAudited(BoundsSafetyKind kind) {
+    KindAudited = true;
+    Kind = static_cast<unsigned>(kind);
+  }
+
+  std::optional<unsigned> getLevel() const {
+    return LevelAudited ? std::optional<unsigned>(Level) : std::nullopt;
+  }
+
+  void setLevelAudited(unsigned level) {
+    LevelAudited = true;
+    Level = level;
+  }
+
+  friend bool operator==(const BoundsSafetyInfo &, const BoundsSafetyInfo &);
+};
+
+inline bool operator==(const BoundsSafetyInfo &LHS,
+                       const BoundsSafetyInfo &RHS) {
+  return LHS.KindAudited == RHS.KindAudited && LHS.Kind == RHS.Kind &&
+         LHS.LevelAudited == RHS.LevelAudited && LHS.Level == RHS.Level &&
+         LHS.ExternalBounds == RHS.ExternalBounds;
+}
+
 /// API notes for a variable/property.
 class VariableInfo : public CommonEntityInfo {
   /// Whether this property has been audited for nullability.
@@ -439,10 +501,12 @@ class ParamInfo : public VariableInfo {
   unsigned RawRetainCountConvention : 3;
 
 public:
+  std::optional<BoundsSafetyInfo> BoundsSafety;
+
   ParamInfo()
       : NoEscapeSpecified(false), NoEscape(false),
         LifetimeboundSpecified(false), Lifetimebound(false),
-        RawRetainCountConvention() {}
+        RawRetainCountConvention(), BoundsSafety(std::nullopt) {}
 
   std::optional<bool> isNoEscape() const {
     return NoEscapeSpecified ? std::optional<bool>(NoEscape) : std::nullopt;
@@ -488,6 +552,9 @@ public:
     if (!RawRetainCountConvention)
       RawRetainCountConvention = RHS.RawRetainCountConvention;
 
+    if (!BoundsSafety)
+      BoundsSafety = RHS.BoundsSafety;
+
     return *this;
   }
 
@@ -502,7 +569,8 @@ inline bool operator==(const ParamInfo &LHS, const ParamInfo &RHS) {
          LHS.NoEscape == RHS.NoEscape &&
          LHS.LifetimeboundSpecified == RHS.LifetimeboundSpecified &&
          LHS.Lifetimebound == RHS.Lifetimebound &&
-         LHS.RawRetainCountConvention == RHS.RawRetainCountConvention;
+         LHS.RawRetainCountConvention == RHS.RawRetainCountConvention &&
+         LHS.BoundsSafety == RHS.BoundsSafety;
 }
 
 inline bool operator!=(const ParamInfo &LHS, const ParamInfo &RHS) {

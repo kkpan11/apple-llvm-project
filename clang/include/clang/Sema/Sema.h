@@ -1131,6 +1131,10 @@ public:
   std::function<TypeResult(StringRef, StringRef, SourceLocation)>
       ParseTypeFromStringCallback;
 
+  /// Callback to the parser to parse a type expressed as a string.
+  std::function<ExprResult(StringRef, StringRef, Decl *, SourceLocation)>
+      ParseBoundsAttributeArgFromStringCallback;
+
   /// VAListTagName - The declaration name corresponding to __va_list_tag.
   /// This is used as part of a hack to omit that class from ADL results.
   DeclarationName VAListTagName;
@@ -15503,6 +15507,11 @@ public:
       FieldDecl *FD, Expr *E,
       llvm::SmallVectorImpl<TypeCoupledDeclRefInfo> &Decls, bool CountInBytes,
       bool OrNull);
+
+  void applyPtrCountedByEndedByAttr(Decl *D, unsigned Level,
+                                    AttributeCommonInfo::Kind Kind,
+                                    Expr *AttrArg, SourceLocation Loc,
+                                    SourceRange Range, StringRef DiagName);
 
   /* TO_UPSTREAM(BoundsSafety) ON*/
   /// Perform Bounds Safety Semantic checks for assigning to a `__counted_by` or
