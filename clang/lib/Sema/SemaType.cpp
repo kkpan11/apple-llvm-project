@@ -4242,6 +4242,25 @@ static Attr *createNullabilityAttr(ASTContext &Ctx, ParsedAttr &Attr,
   llvm_unreachable("unknown NullabilityKind");
 }
 
+Attr *Sema::CreateBoundsAttr(ASTContext &Ctx, ParsedAttr &AL) {
+  switch(AL.getKind()) {
+  case ParsedAttr::AT_CountedBy:
+    return createSimpleAttr<CountedByAttr>(Ctx, AL);
+  case ParsedAttr::AT_SizedBy:
+    return createSimpleAttr<SizedByAttr>(Ctx, AL);
+  case ParsedAttr::AT_CountedByOrNull:
+    return createSimpleAttr<CountedByOrNullAttr>(Ctx, AL);
+  case ParsedAttr::AT_SizedByOrNull:
+    return createSimpleAttr<AT_SizedByOrNullAttr>(Ctx, AL);
+  case ParsedAttr::AT_EndedBy:
+    return createSimpleAttr<AT_EndedByAttr>(Ctx, AL);
+  case ParsedAttr::AT_StartedBy:
+    return createSimpleAttr<AT_StartedByAttr>(Ctx, AL);
+  default:
+    return nullptr;
+  }
+}
+
 // Diagnose whether this is a case with the multiple addr spaces.
 // Returns true if this is an invalid case.
 // ISO/IEC TR 18037 S5.3 (amending C99 6.7.3): "No type shall be qualified
@@ -8998,7 +9017,8 @@ public:
 
     return Ctx.getCountAttributedType(
         InnerTy, DCPT->getCountExpr(), DCPT->isCountInBytes(), DCPT->isOrNull(),
-        DCPT->getCoupledDecls());
+        DCPT->getCoupledDecls(),
+        DCPT->getAttr());
   }
 
   QualType
@@ -9016,7 +9036,8 @@ public:
     const DynamicRangePointerType *DRPT = TL.getTypePtr();
     return Ctx.getDynamicRangePointerType(
         InnerTy, DRPT->getStartPointer(), DRPT->getEndPointer(),
-        DRPT->getStartPtrDecls(), DRPT->getEndPtrDecls());
+        DRPT->getStartPtrDecls(), DRPT->getEndPtrDecls(),
+        DRPT->getAttr());
   }
 
   QualType VisitMacroQualifiedTypeLoc(const MacroQualifiedTypeLoc TL) {
@@ -10877,7 +10898,7 @@ public:
 
 } // end anonymous namespace
 
-QualType Sema::BuildCountAttributedType(QualType PointerTy, Expr *CountExpr,
+QualType Sema::BuildCountAttributedType(QualType PointerTy, Expr *CountExpr, const Attr *Attribute,
                                         bool CountInBytes, bool OrNull,
                                         bool ScopeCheck) {
 
@@ -10901,7 +10922,7 @@ QualType Sema::BuildCountAttributedType(QualType PointerTy, Expr *CountExpr,
 
   return Context.getCountAttributedType(
       PointerTy, CountExpr, CountInBytes, OrNull,
-      llvm::ArrayRef(Decls.begin(), Decls.end()));
+      llvm::ArrayRef(Decls.begin(), Decls.end()), Attribute);
 }
 
 namespace {
@@ -10934,7 +10955,7 @@ QualType DropAutoNullTerminated(ASTContext &Ctx, QualType T) {
 } // namespace
 
 QualType Sema::BuildDynamicRangePointerType(QualType PointerTy, Expr *StartPtr,
-                                            Expr *EndPtr, bool ScopeCheck) {
+                                            Expr *EndPtr, const Attr *Attribute, bool ScopeCheck) {
   std::optional<TypeCoupledDeclRefInfo> StartDecl, EndDecl;
 
   if (StartPtr) {
@@ -10979,7 +11000,8 @@ QualType Sema::BuildDynamicRangePointerType(QualType PointerTy, Expr *StartPtr,
       StartDecl.has_value() ? ArrayRef(*StartDecl)
                             : ArrayRef<TypeCoupledDeclRefInfo>(),
       EndDecl.has_value() ? ArrayRef(*EndDecl)
-                          : ArrayRef<TypeCoupledDeclRefInfo>());
+                          : ArrayRef<TypeCoupledDeclRefInfo>(),
+                          Attribute);
 }
 /* TO_UPSTREAM(BoundsSafety) OFF */
 
@@ -10993,6 +11015,7 @@ BuildTypeCoupledDecls(Expr *E,
 
 QualType Sema::BuildCountAttributedArrayOrPointerType(QualType WrappedTy,
                                                       Expr *CountExpr,
+                                                      const Attr * Attribute,
                                                       bool CountInBytes,
                                                       bool OrNull) {
   assert(WrappedTy->isIncompleteArrayType() || WrappedTy->isPointerType());
@@ -11002,7 +11025,7 @@ QualType Sema::BuildCountAttributedArrayOrPointerType(QualType WrappedTy,
   /// When the resulting expression is invalid, we still create the AST using
   /// the original count expression for the sake of AST dump.
   return Context.getCountAttributedType(WrappedTy, CountExpr, CountInBytes,
-                                        OrNull, Decls);
+                                        OrNull, Decls, Attribute);
 }
 
 /// getDecltypeForExpr - Given an expr, will return the decltype for

@@ -1565,7 +1565,8 @@ ASTNodeImporter::VisitCountAttributedType(const CountAttributedType *T) {
 
   return Importer.getToContext().getCountAttributedType(
       *ToWrappedTypeOrErr, CountExpr, T->isCountInBytes(), T->isOrNull(),
-      ArrayRef(CoupledDecls.data(), CoupledDecls.size()));
+      ArrayRef(CoupledDecls.data(), CoupledDecls.size()),
+      T->getAttr());
 }
 
 /* TO_UPSTREAM(BoundsSafety) ON */

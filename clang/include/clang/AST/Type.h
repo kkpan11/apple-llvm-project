@@ -3558,11 +3558,13 @@ public:
 
 class BoundsAttributedType : public Type, public llvm::FoldingSetNode {
   QualType WrappedTy;
+  const Attr *Attribute;
 
 protected:
   ArrayRef<TypeCoupledDeclRefInfo> Decls; // stored in trailing objects
 
-  BoundsAttributedType(TypeClass TC, QualType Wrapped, QualType Canon);
+  BoundsAttributedType(TypeClass TC, QualType Wrapped, QualType Canon,
+                       const Attr *Attribute);
 
 public:
   /* TO_UPSTREAM(BoundsSafety) ON*/
@@ -3593,6 +3595,8 @@ public:
   ArrayRef<TypeCoupledDeclRefInfo> getCoupledDecls() const {
     return {dependent_decl_begin(), dependent_decl_end()};
   }
+
+  const Attr *getAttr() const { return Attribute; }
 
   bool referencesFieldDecls() const;
 
@@ -3629,7 +3633,8 @@ class CountAttributedType final
   /// for the bounds information.
   CountAttributedType(QualType Wrapped, QualType Canon, Expr *CountExpr,
                       bool CountInBytes, bool OrNull,
-                      ArrayRef<TypeCoupledDeclRefInfo> CoupledDecls);
+                      ArrayRef<TypeCoupledDeclRefInfo> CoupledDecls,
+                      const Attr *Attribute);
 
   unsigned numTrailingObjects(OverloadToken<TypeCoupledDeclRefInfo>) const {
     return CountAttributedTypeBits.NumCoupledDecls;
@@ -3678,7 +3683,8 @@ class DynamicRangePointerType final
   DynamicRangePointerType(QualType PointerTy, QualType CanPointerTy,
                           Expr *StartPtr, Expr *EndPtr,
                           ArrayRef<TypeCoupledDeclRefInfo> StartPtrDecls,
-                          ArrayRef<TypeCoupledDeclRefInfo> EndPtrDecls);
+                          ArrayRef<TypeCoupledDeclRefInfo> EndPtrDecls,
+                          const Attr *Attribute);
 
   unsigned numTrailingObjects(OverloadToken<TypeCoupledDeclRefInfo>) const {
     return DynamicRangePointerTypeBits.NumEndPtrDecls +

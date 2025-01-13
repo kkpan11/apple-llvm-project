@@ -4673,6 +4673,8 @@ public:
   void AddAllocAlignAttr(Decl *D, const AttributeCommonInfo &CI,
                          Expr *ParamExpr);
 
+  Attr *CreateBoundsAttr(ASTContext &Ctx, ParsedAttr &Attr);
+
   bool CheckAttrTarget(const ParsedAttr &CurrAttr);
   bool CheckAttrNoArgs(const ParsedAttr &CurrAttr);
 
@@ -14982,6 +14984,7 @@ public:
 
   QualType BuildCountAttributedArrayOrPointerType(QualType WrappedTy,
                                                   Expr *CountExpr,
+                                                  const Attr *Attribute,
                                                   bool CountInBytes,
                                                   bool OrNull);
 
@@ -15277,12 +15280,14 @@ public:
                                unsigned Level);
 
   QualType BuildCountAttributedType(QualType PointerTy, Expr *CountExpr,
+                                    const Attr *Attribute,
                                     bool CountInBytes = false,
                                     bool OrNull = false,
                                     bool ScopeCheck = false);
 
   QualType BuildDynamicRangePointerType(QualType PointerTy, Expr *StartPtr,
-                                        Expr *EndPtr, bool ScopeCheck = false);
+                                        Expr *EndPtr, const Attr *Attribute,
+                                        bool ScopeCheck = false);
   /* TO_UPSTREAM(BoundsSafety) OFF*/
 
   /// Ensure that the type T is a literal type.

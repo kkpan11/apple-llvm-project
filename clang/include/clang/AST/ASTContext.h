@@ -1423,13 +1423,15 @@ public:
   QualType
   getCountAttributedType(QualType T, Expr *CountExpr, bool CountInBytes,
                          bool OrNull,
-                         ArrayRef<TypeCoupledDeclRefInfo> DependentDecls) const;
+                         ArrayRef<TypeCoupledDeclRefInfo> DependentDecls,
+                         const Attr *Attribute = nullptr) const;
 
   /* TO_UPSTREAM(BoundsSafety) ON */
   QualType getDynamicRangePointerType(
       QualType T, Expr *StartPtr, Expr *EndPtr,
       ArrayRef<TypeCoupledDeclRefInfo> StartPtrDecls,
-      ArrayRef<TypeCoupledDeclRefInfo> EndPtrDecls) const;
+      ArrayRef<TypeCoupledDeclRefInfo> EndPtrDecls,
+      const Attr *Attribute = nullptr) const;
 
   QualType getValueTerminatedType(QualType T, Expr *TerminatorExpr) const;
 

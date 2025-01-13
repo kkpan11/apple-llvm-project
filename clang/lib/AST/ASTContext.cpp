@@ -3480,7 +3480,7 @@ QualType ASTContext::getObjCGCQualType(QualType T,
 QualType ASTContext::getDynamicRangePointerType(
     QualType PointerTy, Expr *StartPtr, Expr *EndPtr,
     ArrayRef<TypeCoupledDeclRefInfo> StartPtrDecls,
-    ArrayRef<TypeCoupledDeclRefInfo> EndPtrDecls) const {
+    ArrayRef<TypeCoupledDeclRefInfo> EndPtrDecls, const Attr *Attribute) const {
   assert(PointerTy->isPointerType());
 
   llvm::FoldingSetNodeID ID;
@@ -3499,7 +3499,7 @@ QualType ASTContext::getDynamicRangePointerType(
           EndPtrDecls.size() + StartPtrDecls.size());
   DRPTy = (DynamicRangePointerType *)Allocate(Size, TypeAlignment);
   new (DRPTy) DynamicRangePointerType(PointerTy, CanonPTy, StartPtr, EndPtr,
-                                      StartPtrDecls, EndPtrDecls);
+                                      StartPtrDecls, EndPtrDecls, Attribute);
   Types.push_back(DRPTy);
   DynamicRangePointerTypes.InsertNode(DRPTy, InsertPos);
 
@@ -3586,13 +3586,14 @@ static QualType assureMandatorySugarTypesRemain(ASTContext &Ctx,
     if (!DestTy->getAs<CountAttributedType>()) {
       return Ctx.getCountAttributedType(DestTy, DCPT->getCountExpr(),
                                             DCPT->isCountInBytes(), DCPT->isOrNull(),
-                                            DCPT->getCoupledDecls());
+                                            DCPT->getCoupledDecls(),
+                                            DCPT->getAttr());
     }
   } else if (auto DRPT = SrcTy->getAs<DynamicRangePointerType>()) {
     if (!DestTy->getAs<DynamicRangePointerType>()) {
       return Ctx.getDynamicRangePointerType(
           DestTy, DRPT->getStartPointer(), DRPT->getEndPointer(),
-          DRPT->getStartPtrDecls(), DRPT->getEndPtrDecls());
+          DRPT->getStartPtrDecls(), DRPT->getEndPtrDecls(), DRPT->getAttr());
     }
   }
 
@@ -3902,7 +3903,7 @@ public:
     } else if (const auto *DRPT = dyn_cast<DynamicRangePointerType>(T)) {
       NewTy = Ctx.getDynamicRangePointerType(
           PtrTy, DRPT->getStartPointer(), DRPT->getEndPointer(),
-          DRPT->getStartPtrDecls(), DRPT->getEndPtrDecls());
+          DRPT->getStartPtrDecls(), DRPT->getEndPtrDecls(), DRPT->getAttr());
     } else {
       llvm_unreachable("Unknown BoundsAttributedType");
     }
@@ -3974,7 +3975,7 @@ QualType ASTContext::removePtrSizeAddrSpace(QualType T) const {
 
 QualType ASTContext::getCountAttributedType(
     QualType WrappedTy, Expr *CountExpr, bool CountInBytes, bool OrNull,
-    ArrayRef<TypeCoupledDeclRefInfo> DependentDecls) const {
+    ArrayRef<TypeCoupledDeclRefInfo> DependentDecls, const Attr *Attribute) const {
   assert(WrappedTy->isPointerType() || WrappedTy->isArrayType());
 
   llvm::FoldingSetNodeID ID;
@@ -3990,7 +3991,7 @@ QualType ASTContext::getCountAttributedType(
   size_t Size = CountAttributedType::totalSizeToAlloc<TypeCoupledDeclRefInfo>(
       DependentDecls.size());
   CATy = (CountAttributedType *)Allocate(Size, TypeAlignment);
-  new (CATy) CountAttributedType(WrappedTy, CanonTy, CountExpr, CountInBytes,
+  new (CATy) CountAttributedType(WrappedTy, CanonTy, CountExpr, Attribute, CountInBytes,
                                  OrNull, DependentDecls);
   Types.push_back(CATy);
   CountAttributedTypes.InsertNode(CATy, InsertPos);
@@ -14458,7 +14459,8 @@ static QualType getCommonSugarTypeNode(ASTContext &Ctx, const Type *X,
     if (Ctx.hasSameExpr(CEX, CEY))
       return Ctx.getCountAttributedType(Ctx.getQualifiedType(Underlying), CEX,
                                         DX->isCountInBytes(), DX->isOrNull(),
-                                        CDX);
+                                        CDX,
+                                        DX->getAttr());
     /* TO_UPSTREAM(BoundsSafety) ON */
     if (!CEX->isIntegerConstantExpr(Ctx) || !CEY->isIntegerConstantExpr(Ctx))
       llvm_unreachable("this should have been caught by canMergeTypeBounds");
@@ -14475,7 +14477,8 @@ static QualType getCommonSugarTypeNode(ASTContext &Ctx, const Type *X,
 
     return Ctx.getCountAttributedType(Ctx.getQualifiedType(Underlying), CEX,
                                       DX->isCountInBytes(), DX->isOrNull(),
-                                      CDX);
+                                      CDX,
+                                      DX->getAttr());
   }
   /* TO_UPSTREAM(BoundsSafety) ON */
   case Type::DynamicRangePointer: {
@@ -14488,7 +14491,7 @@ static QualType getCommonSugarTypeNode(ASTContext &Ctx, const Type *X,
     assert(DX->getNumEndPtrDecls() == DY->getNumEndPtrDecls());
     return Ctx.getDynamicRangePointerType(
         Ctx.getQualifiedType(Underlying), DX->getStartPointer(),
-        DX->getEndPointer(), DX->getStartPtrDecls(), DX->getEndPtrDecls());
+        DX->getEndPointer(), DX->getStartPtrDecls(), DX->getEndPtrDecls(), DX->getAttr());
   }
   case Type::ValueTerminated: {
     const auto *VX = cast<ValueTerminatedType>(X),

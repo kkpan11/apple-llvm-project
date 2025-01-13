@@ -2346,7 +2346,7 @@ FunctionDecl *Sema::CreateBuiltin(IdentifierInfo *II, QualType Type,
       auto BuildNewDynamicSizeType = [&](QualType Ty) {
         auto NewSizeRef = DeclRefExpr::Create(Context, Params[2]->getQualifierLoc(),
             SourceLocation(), Params[2], true, SourceLocation(), Params[2]->getType(), VK_LValue, Params[2]);
-        return BuildCountAttributedType(Ty, NewSizeRef, /*CountInBytes*/true);
+        return BuildCountAttributedType(Ty, NewSizeRef, /*attribute*/nullptr, /*CountInBytes*/true);
       };
       if (NeedReturnSize || NeedDestSize || NeedSrcSize) {
         assert(FT->getNumParams() >= 3);
@@ -4011,6 +4011,7 @@ static bool mergeFunctionDeclBoundsAttributes(FunctionDecl *New,
       if (NewCount.isInvalid())
         return QualType();
       return Self.BuildCountAttributedType(MergeTy, NewCount.get(),
+                                           OldDCPTy->getAttr(),
                                                OldDCPTy->isCountInBytes(),
                                                OldDCPTy->isOrNull());
     }
@@ -4030,7 +4031,7 @@ static bool mergeFunctionDeclBoundsAttributes(FunctionDecl *New,
           return QualType();
         EndPtr = NewEnd.get();
       }
-      return Self.BuildDynamicRangePointerType(MergeTy, StartPtr, EndPtr);
+      return Self.BuildDynamicRangePointerType(MergeTy, StartPtr, EndPtr, OldDRPTy->getAttr());
     }
     return MergeTy;
   };
@@ -16021,7 +16022,7 @@ ParmVarDecl *Sema::CheckParameter(DeclContext *DC, SourceLocation StartLoc,
         }
       }
       if (Count) {
-        Adjusted = BuildCountAttributedType(Adjusted, Count, false);
+        Adjusted = BuildCountAttributedType(Adjusted, Count, /*attribute*/nullptr, false);
       }
     }
 

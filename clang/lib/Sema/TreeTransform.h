@@ -7465,18 +7465,24 @@ QualType TreeTransform<Derived>::TransformCountAttributedType(
     NewCount = CountResult.get();
   }
 
+  // oldAttr can be null if we started with a QualType rather than a TypeLoc.
+  const Attr *oldAttr = TL.getAttr();
+  const Attr *newAttr = oldAttr ? getDerived().TransformAttr(oldAttr) : nullptr;
+  if (oldAttr && !newAttr)
+    return QualType();
+
   QualType Result = TL.getType();
   if (getDerived().AlwaysRebuild() || InnerTy != OldTy->desugar() ||
       OldCount != NewCount) {
     /* TO_UPSTREAM(BoundsSafety) ON */
     if (SemaRef.getLangOpts().hasBoundsSafety()) {
       Result = SemaRef.BuildCountAttributedType(
-          InnerTy, NewCount, OldTy->isCountInBytes(), OldTy->isOrNull());
+          InnerTy, NewCount, newAttr, OldTy->isCountInBytes(), OldTy->isOrNull());
     } else {
     /* TO_UPSTREAM(BoundsSafety) OFF */
       // Currently, CountAttributedType can only wrap incomplete array types.
       Result = SemaRef.BuildCountAttributedArrayOrPointerType(
-          InnerTy, NewCount, OldTy->isCountInBytes(), OldTy->isOrNull());
+          InnerTy, NewCount, oldAttr, OldTy->isCountInBytes(), OldTy->isOrNull());
     }
   }
 
@@ -7523,11 +7529,17 @@ QualType TreeTransform<Derived>::TransformDynamicRangePointerType(
     NewEndPtr = EndPtrResult.get();
   }
 
+  // oldAttr can be null if we started with a QualType rather than a TypeLoc.
+  const Attr *oldAttr = TL.getAttr();
+  const Attr *newAttr = oldAttr ? getDerived().TransformAttr(oldAttr) : nullptr;
+  if (oldAttr && !newAttr)
+    return QualType();
+
   QualType Result = TL.getType();
   if (getDerived().AlwaysRebuild() || PointerTy != OldTy->desugar() ||
       OldStartPtr != NewStartPtr || OldEndPtr != NewEndPtr) {
     Result =
-        SemaRef.BuildDynamicRangePointerType(PointerTy, NewStartPtr, NewEndPtr);
+        SemaRef.BuildDynamicRangePointerType(PointerTy, NewStartPtr, NewEndPtr, newAttr);
     if (Result.isNull())
       return QualType();
   }

@@ -1127,6 +1127,13 @@ class BoundsAttributedTypeLoc
 public:
   TypeLoc getInnerLoc() const { return getInnerTypeLoc(); }
   QualType getInnerType() const { return getTypePtr()->desugar(); }
+
+  const Attr *getAttr() const { return getTypePtr()->getAttr(); }
+
+  template <typename T> T *getAttrAs() {
+    return dyn_cast_or_null<T>(getAttr());
+  }
+
   void initializeLocal(ASTContext &Context, SourceLocation Loc) {
     // nothing to do
   }

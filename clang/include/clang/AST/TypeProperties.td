@@ -47,7 +47,10 @@ let Class = CountAttributedType in {
   def : Property<"CoupledDecls", Array<TypeCoupledDeclRefInfo>> {
     let Read = [{ node->getCoupledDecls() }];
   }
-  def : Creator<[{ return ctx.getCountAttributedType(WrappedTy, CountExpr, CountInBytes, OrNull, CoupledDecls); }]>;
+  def : Property<"attribute", Attr> {
+    let Read = [{ node->getAttr() }];
+  }
+  def : Creator<[{ return ctx.getCountAttributedType(WrappedTy, CountExpr, CountInBytes, OrNull, CoupledDecls, attribute); }]>;
 }
 
 // TO_UPSTREAM(BoundsSafety) ON
@@ -67,8 +70,11 @@ let Class = DynamicRangePointerType in {
   def : Property<"EndPtrDecls", Array<TypeCoupledDeclRefInfo>> {
     let Read = [{ node->getEndPtrDecls() }];
   }
+  def : Property<"attribute", Attr> {
+    let Read = [{ node->getAttr() }];
+  }
   def : Creator<[{ return ctx.getDynamicRangePointerType(PointerTy, StartPtr, EndPtr,
-                                                         StartPtrDecls, EndPtrDecls); }]>;
+                                                         StartPtrDecls, EndPtrDecls, attribute); }]>;
 }
 
 let Class = ValueTerminatedType in {

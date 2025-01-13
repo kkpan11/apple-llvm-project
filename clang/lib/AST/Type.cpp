@@ -3979,13 +3979,14 @@ void TypeCoupledDeclRefInfo::setFromOpaqueValue(void *V) {
 }
 
 BoundsAttributedType::BoundsAttributedType(TypeClass TC, QualType Wrapped,
-                                           QualType Canon)
-    : Type(TC, Canon, Wrapped->getDependence()), WrappedTy(Wrapped) {}
+                                           QualType Canon,
+                                           const Attr *Attribute)
+    : Type(TC, Canon, Wrapped->getDependence()), WrappedTy(Wrapped), Attribute(Attribute) {}
 
 CountAttributedType::CountAttributedType(
     QualType Wrapped, QualType Canon, Expr *CountExpr, bool CountInBytes,
-    bool OrNull, ArrayRef<TypeCoupledDeclRefInfo> CoupledDecls)
-    : BoundsAttributedType(CountAttributed, Wrapped, Canon),
+    bool OrNull, ArrayRef<TypeCoupledDeclRefInfo> CoupledDecls, const Attr *Attribute)
+    : BoundsAttributedType(CountAttributed, Wrapped, Canon, Attribute),
       CountExpr(CountExpr) {
   CountAttributedTypeBits.NumCoupledDecls = CoupledDecls.size();
   CountAttributedTypeBits.CountInBytes = CountInBytes;
@@ -4021,8 +4022,9 @@ StringRef CountAttributedType::GetAttributeName(bool WithMacroPrefix) const {
 DynamicRangePointerType::DynamicRangePointerType(
     QualType PointerTy, QualType CanPointerTy, Expr *StartPtr, Expr *EndPtr,
     ArrayRef<TypeCoupledDeclRefInfo> StartPtrDecls,
-    ArrayRef<TypeCoupledDeclRefInfo> EndPtrDecls)
-    : BoundsAttributedType(DynamicRangePointer, PointerTy, CanPointerTy),
+    ArrayRef<TypeCoupledDeclRefInfo> EndPtrDecls,
+    const Attr *Attribute)
+    : BoundsAttributedType(DynamicRangePointer, PointerTy, CanPointerTy, Attribute),
       StartPtr(StartPtr), EndPtr(EndPtr) {
   assert(EndPtrDecls.size() < (1 << 16));
   assert(StartPtrDecls.size() < (1 << 16));

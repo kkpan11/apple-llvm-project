@@ -5493,7 +5493,7 @@ public:
     if (PointerTy != T->desugar()) {
       return S.Context.getCountAttributedType(
           PointerTy, T->getCountExpr(), T->isCountInBytes(), T->isOrNull(),
-          T->getCoupledDecls());
+          T->getCoupledDecls(), T->getAttr());
     }
     return QualType(T, 0);
   }
@@ -5511,7 +5511,8 @@ public:
       return S.Context.getDynamicRangePointerType(PointerTy, T->getStartPointer(),
                                                   T->getEndPointer(),
                                                   T->getStartPtrDecls(),
-                                                  T->getEndPtrDecls());
+                                                  T->getEndPtrDecls(),
+                                                  T->getAttr());
     }
     return QualType(T, 0);
   }
@@ -5627,7 +5628,7 @@ public:
         CountInBytes = true;
       }
     }
-    QualType Ty = S.BuildCountAttributedType(CanonTy, ArgExpr, CountInBytes,
+    QualType Ty = S.BuildCountAttributedType(CanonTy, ArgExpr, S.CreateBoundsAttr(S.Context, attr), CountInBytes,
                                              OrNull, ScopeCheck);
     assert(ConstructedType == nullptr);
     ConstructedType = Ty->getAs<CountAttributedType>();
@@ -5811,7 +5812,7 @@ public:
 
     QualType NewTy = SemaRef.Context.getDynamicRangePointerType(
         InnerTy, StartPtr, OldTy->getEndPointer(), NewStartPtrDecls,
-        OldTy->getEndPtrDecls());
+        OldTy->getEndPtrDecls(), OldTy->getAttr());
     TLB.push<DynamicRangePointerTypeLoc>(NewTy);
     return NewTy;
   }
@@ -5842,7 +5843,8 @@ public:
 
   QualType BuildDynamicBoundType(QualType CanonTy) {
     QualType Ty =
-        S.BuildDynamicRangePointerType(CanonTy, nullptr, ArgExpr, ScopeCheck);
+        S.BuildDynamicRangePointerType(CanonTy, nullptr, ArgExpr,
+        S.CreateBoundsAttr(S.Context, AL), ScopeCheck);
     if (Ty.isNull())
       return QualType();
 
@@ -5897,7 +5899,8 @@ public:
       // Reconstruct DRPT by merging started_by and ended_by.
       assert(ConstructedType == DRPT);
       QualType RetTy = S.Context.getDynamicRangePointerType(
-          DRPT->desugar(), StartPtr, EndPtr, StartPtrDecls, EndPtrDecls);
+          DRPT->desugar(), StartPtr, EndPtr, StartPtrDecls, EndPtrDecls,
+          DRPT->getAttr());
       ConstructedType = RetTy->getAs<BoundsAttributedType>();
       return RetTy;
     }
@@ -7276,7 +7279,7 @@ static void handleCountedByAttrField(Sema &S, Decl *D, const ParsedAttr &AL) {
     return;
 
   QualType CAT = S.BuildCountAttributedArrayOrPointerType(
-      FD->getType(), CountExpr, CountInBytes, OrNull);
+      FD->getType(), S.CreateBoundsAttr(S.Context, AL), CountExpr, CountInBytes, OrNull);
   FD->setType(CAT);
 }
 
