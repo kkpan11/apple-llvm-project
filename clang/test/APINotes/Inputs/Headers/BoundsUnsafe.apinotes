@@ -57,6 +57,21 @@ Functions:
             Kind: counted_by
             Level: 0
             BoundedBy: 7
+  - Name:             asdf_counted_nullable
+    Parameters:
+      - Position:      1
+        BoundsSafety:
+            Kind: counted_by
+            Level: 0
+            BoundedBy: len
+  - Name:              asdf_counted_noescape
+    Parameters:
+      - Position:      0
+        NoEscape:      true
+        BoundsSafety:
+            Kind: counted_by
+            Level: 0
+            BoundedBy: len
   - Name:              asdf_nterm
     Parameters:
       - Position:      0

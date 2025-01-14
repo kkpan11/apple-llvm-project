@@ -43,6 +43,13 @@
 // CHECK-LABEL: asdf_counted_const
 // CHECK: buf 'int * __counted_by(7)':'int *'
 
+// CHECK-LABEL: asdf_counted_nullable
+// CHECK: buf 'int * __counted_by(len) _Nullable':'int *'
+
+// CHECK-LABEL: asdf_counted_noescape
+// CHECK: buf 'int * __counted_by(len)':'int *'
+// CHECK-NEXT: NoEscapeAttr
+
 // CHECK-LABEL: asdf_nterm
 // CHECK: buf 'int * __terminated_by(0)':'int *'
 

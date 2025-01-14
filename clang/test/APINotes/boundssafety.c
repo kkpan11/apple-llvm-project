@@ -28,6 +28,13 @@
 // CHECK: asdf_counted_const 'void (int * __counted_by(7))'
 // CHECK: buf 'int * __counted_by(7)':'int *'
 
+// CHECK: asdf_counted_nullable 'void (int, int * __counted_by(len) _Nullable)'
+// CHECK: buf 'int * __counted_by(len) _Nullable':'int *'
+
+// CHECK: asdf_counted_noescape 'void (int * __counted_by(len), int)'
+// CHECK: buf 'int * __counted_by(len)':'int *'
+// CHECK-NEXT: NoEscapeAttr
+
 // CHECK: asdf_nterm 'void (int * __terminated_by(0))'
 // CHECK: buf 'int * __terminated_by(0)':'int *'
 

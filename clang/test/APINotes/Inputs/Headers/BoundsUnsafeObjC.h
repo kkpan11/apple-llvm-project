@@ -8,6 +8,8 @@
 - (void) asdf_sized_mul: (int *)buf size:(int)size count:(int)count;
 - (void) asdf_counted_out: (int **)buf len:(int *)len;
 - (void) asdf_counted_const: (int *)buf;
+- (void) asdf_counted_nullable: (int)len buf:(int * _Nullable)buf;
+- (void) asdf_counted_noescape: (int *)buf len: (int)len;
 
 - (void) asdf_nterm: (char *) buf;
 @end

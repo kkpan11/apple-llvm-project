@@ -67,6 +67,23 @@ Classes:
                 Kind: counted_by
                 Level: 0
                 BoundedBy: 7
+      - Selector:             "asdf_counted_nullable:buf:"
+        MethodKind: Instance
+        Parameters:
+          - Position:      1
+            BoundsSafety:
+                Kind: counted_by
+                Level: 0
+                BoundedBy: len
+      - Selector:              "asdf_counted_noescape:len:"
+        MethodKind: Instance
+        Parameters:
+          - Position:      0
+            NoEscape:      true
+            BoundsSafety:
+                Kind: counted_by
+                Level: 0
+                BoundedBy: len
       - Selector:              "asdf_nterm:"
         MethodKind: Instance
         Parameters:

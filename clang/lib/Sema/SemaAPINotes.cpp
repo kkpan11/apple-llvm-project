@@ -451,7 +451,8 @@ static void applyBoundsSafety(Sema &S, ValueDecl *D,
     }
 
     S.applyPtrCountedByEndedByAttr(D, *Info.getLevel(), Kind, ParsedExpr.get(),
-                                   SourceLocation(), SourceRange(), AttrName);
+                                   D->getLocation(), D->getSourceRange(),
+                                   AttrName);
   }
 }
 /* TO_UPSTREAM(BoundsSafety) OFF */
