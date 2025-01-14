@@ -16,6 +16,7 @@
 #include "SwiftMetadataCache.h"
 
 #include "Plugins/ExpressionParser/Swift/SwiftPersistentExpressionState.h"
+#include "Plugins/LanguageRuntime/Swift/SwiftTask.h"
 #include "Plugins/Process/Utility/RegisterContext_x86.h"
 #include "Plugins/TypeSystem/Clang/TypeSystemClang.h"
 #include "Plugins/TypeSystem/Swift/SwiftDemangle.h"
@@ -47,6 +48,7 @@
 #include "lldb/ValueObject/ValueObjectCast.h"
 #include "lldb/ValueObject/ValueObjectConstResult.h"
 #include "lldb/ValueObject/ValueObjectVariable.h"
+#include "llvm/Support/FormatAdapters.h"
 
 #include "lldb/lldb-enumerations.h"
 #include "swift/AST/ASTMangler.h"
@@ -2083,6 +2085,84 @@ protected:
   }
 };
 
+class CommandObjectLanguageSwiftTaskBacktrace final
+    : public CommandObjectParsed {
+public:
+  CommandObjectLanguageSwiftTaskBacktrace(CommandInterpreter &interpreter)
+      : CommandObjectParsed(interpreter, "backtrace",
+                            "Show the backtrace of Swift tasks. See `thread "
+                            "backtrace` for customizing backtrace output.",
+                            "language swift task backtrace <variable-name>") {
+    AddSimpleArgumentList(eArgTypeVarName);
+  }
+
+private:
+  void DoExecute(Args &command, CommandReturnObject &result) override {
+    if (!m_exe_ctx.GetFramePtr()) {
+      result.AppendError("no active frame selected");
+      return;
+    }
+
+    if (command[0].ref().empty()) {
+      result.AppendError("no task variable");
+      return;
+    }
+
+    StackFrame &frame = m_exe_ctx.GetFrameRef();
+    uint32_t path_options =
+        StackFrame::eExpressionPathOptionsAllowDirectIVarAccess;
+    VariableSP var_sp;
+    Status status;
+    ValueObjectSP valobj_sp = frame.GetValueForVariableExpressionPath(
+        command[0].c_str(), eDynamicDontRunTarget, path_options, var_sp,
+        status);
+    if (!valobj_sp)
+      return;
+
+    ValueObjectSP task_obj_sp = valobj_sp->GetChildMemberWithName("_task");
+    if (!task_obj_sp)
+      return;
+    uint64_t task_ptr = task_obj_sp->GetValueAsUnsigned(LLDB_INVALID_ADDRESS);
+    if (task_ptr == LLDB_INVALID_ADDRESS)
+      return;
+    auto *runtime = SwiftLanguageRuntime::Get(m_exe_ctx.GetProcessSP());
+    if (!runtime)
+      return;
+    ThreadSafeReflectionContext reflection_ctx =
+        runtime->GetReflectionContext();
+    llvm::Expected<ReflectionContextInterface::AsyncTaskInfo> task_info =
+        reflection_ctx->asyncTaskInfo(task_ptr);
+    if (auto err = task_info.takeError()) {
+      LLDB_LOG(GetLog(LLDBLog::DataFormatters | LLDBLog::Types),
+               "could not get info for async task {0:x}: {1}", task_ptr,
+               fmt_consume(std::move(err)));
+      return;
+    }
+
+    auto thread_task = ThreadTask::Create(
+        task_info->id, task_info->resumeAsyncContext, m_exe_ctx);
+    if (auto error = thread_task.takeError()) {
+      result.AppendError(toString(std::move(error)));
+      return;
+    }
+    thread_task.get()->GetStatus(result.GetOutputStream(), 0, UINT32_MAX, 0,
+                                 false, false);
+    result.SetStatus(lldb::eReturnStatusSuccessFinishResult);
+  }
+};
+
+class CommandObjectLanguageSwiftTask final : public CommandObjectMultiword {
+public:
+  CommandObjectLanguageSwiftTask(CommandInterpreter &interpreter)
+      : CommandObjectMultiword(
+            interpreter, "task", "Commands for inspecting Swift Tasks.",
+            "language swift task <subcommand> [<subcommand-options>]") {
+    LoadSubCommand("backtrace",
+                   CommandObjectSP(new CommandObjectLanguageSwiftTaskBacktrace(
+                       interpreter)));
+  }
+};
+
 class CommandObjectMultiwordSwift : public CommandObjectMultiword {
 public:
   CommandObjectMultiwordSwift(CommandInterpreter &interpreter)
@@ -2094,6 +2174,8 @@ public:
                                    interpreter)));
     LoadSubCommand("refcount", CommandObjectSP(new CommandObjectSwift_RefCount(
                                    interpreter)));
+    LoadSubCommand("task", CommandObjectSP(new CommandObjectLanguageSwiftTask(
+                               interpreter)));
   }
 
   virtual ~CommandObjectMultiwordSwift() {}

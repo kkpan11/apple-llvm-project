@@ -15,9 +15,13 @@ using namespace lldb;
 /// Task's "async context" (instead of the stack).
 ///
 /// See `Task<Success, Failure>` and `UnsafeCurrentTask`
-class ThreadTask : public Thread {
+class ThreadTask final : public Thread {
 public:
-  ThreadTask(tid_t tid, addr_t async_ctx, ExecutionContext &exe_ctx);
+  ThreadTask(tid_t tid, addr_t async_ctx, addr_t resume_fn,
+             ExecutionContext &exe_ctx);
+
+  static llvm::Expected<std::shared_ptr<ThreadTask>>
+  Create(tid_t tid, addr_t async_ctx, ExecutionContext &exe_ctx);
 
   /// Returns a Task specific register context (RegisterContextTask).
   RegisterContextSP GetRegisterContext() override;
@@ -45,7 +49,7 @@ private:
 
 /// A Swift Task specific register context. Supporting class for `ThreadTask`,
 /// see its documentation for details.
-class RegisterContextTask : public RegisterContext {
+class RegisterContextTask final : public RegisterContext {
 public:
   RegisterContextTask(Thread &thread, RegisterContextSP reg_info_sp,
                       addr_t resume_fn, addr_t async_ctx);

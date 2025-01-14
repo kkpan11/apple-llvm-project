@@ -820,16 +820,6 @@ public:
                    "could not get info for async task {0:x}: {1}", task_ptr,
                    fmt_consume(std::move(err)));
         } else {
-
-          // Print a backtrace of the Task to stdout.
-          ExecutionContext exe_ctx{m_backend.GetExecutionContextRef()};
-          auto tt = std::make_shared<ThreadTask>(
-              3000, task_info->resumeAsyncContext, exe_ctx);
-          StreamString ss;
-          tt->GetStatus(ss, 0, 100, 0, false, true);
-          auto desc = ss.GetString();
-          printf("%.*s\n", (int)desc.size(), desc.data());
-
           m_task_info = *task_info;
           for (auto child :
                {m_is_child_task_sp, m_is_future_sp, m_is_group_child_task_sp,

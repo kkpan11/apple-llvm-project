@@ -164,6 +164,7 @@ public:
     bool hasIsRunning = false;
     bool isRunning = false;
     bool isEnqueued = false;
+    uint64_t id = 0;
     lldb::addr_t resumeAsyncContext = LLDB_INVALID_ADDRESS;
   };
   // The default limits are copied from swift-inspect.
