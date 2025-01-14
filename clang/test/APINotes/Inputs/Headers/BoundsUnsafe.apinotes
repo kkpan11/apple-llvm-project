@@ -72,6 +72,12 @@ Functions:
             Kind: counted_by
             Level: 0
             BoundedBy: len
+  - Name:              asdf_counted_default_level
+    Parameters:
+      - Position:      0
+        BoundsSafety:
+            Kind: counted_by
+            BoundedBy: len
   - Name:              asdf_nterm
     Parameters:
       - Position:      0

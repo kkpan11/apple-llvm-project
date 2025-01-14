@@ -35,6 +35,9 @@
 // CHECK: buf 'int * __counted_by(len)':'int *'
 // CHECK-NEXT: NoEscapeAttr
 
+// CHECK: asdf_counted_default_level 'void (int * __counted_by(len), int)'
+// CHECK: buf 'int * __counted_by(len)':'int *'
+
 // CHECK: asdf_nterm 'void (int * __terminated_by(0))'
 // CHECK: buf 'int * __terminated_by(0)':'int *'
 

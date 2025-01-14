@@ -214,10 +214,10 @@ struct Param {
   std::optional<bool> Lifetimebound = false;
   std::optional<NullabilityKind> Nullability;
   std::optional<RetainCountConventionKind> RetainCountConvention;
-  StringRef Type;
   /* TO_UPSTREAM(BoundsSafety) ON */
-  BoundsSafety BoundsSafety;
+  std::optional<BoundsSafety> BoundsSafety;
   /* TO_UPSTREAM(BoundsSafety) OFF */
+  StringRef Type;
 };
 
 typedef std::vector<Param> ParamsSeq;
@@ -907,9 +907,11 @@ public:
       PI.setRetainCountConvention(P.RetainCountConvention);
       BoundsSafetyInfo BSI;
       /* TO_UPSTREAM(BoundsSafety) ON */
-      BSI.setKindAudited(P.BoundsSafety.Kind);
-      BSI.setLevelAudited(P.BoundsSafety.Level);
-      BSI.ExternalBounds = P.BoundsSafety.BoundsExpr.str();
+      if (P.BoundsSafety) {
+        BSI.setKindAudited(P.BoundsSafety->Kind);
+        BSI.setLevelAudited(P.BoundsSafety->Level);
+        BSI.ExternalBounds = P.BoundsSafety->BoundsExpr.str();
+      }
       PI.BoundsSafety = BSI;
       /* TO_UPSTREAM(BoundsSafety) OFF */
       if (static_cast<int>(OutInfo.Params.size()) <= P.Position)
