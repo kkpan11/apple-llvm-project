@@ -76,12 +76,14 @@ Parser::Parser(Preprocessor &pp, Sema &actions, bool skipFunctionBodies)
       [this](StringRef TypeStr, StringRef Context, SourceLocation IncludeLoc) {
         return this->ParseTypeFromString(TypeStr, Context, IncludeLoc);
       };
+  /* TO_UPSTREAM(BoundsSafety) ON */
   Actions.ParseBoundsAttributeArgFromStringCallback =
       [this](StringRef ExprStr, StringRef Context, Decl *Parent,
              SourceLocation IncludeLoc) {
         return this->ParseBoundsAttributeArgFromString(ExprStr, Context, Parent,
                                                        IncludeLoc);
       };
+  /* TO_UPSTREAM(BoundsSafety) OFF */
 }
 
 DiagnosticBuilder Parser::Diag(SourceLocation Loc, unsigned DiagID) {

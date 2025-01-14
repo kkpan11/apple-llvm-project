@@ -150,6 +150,7 @@ enum class APIAvailability {
 };
 } // namespace
 
+/* TO_UPSTREAM(BoundsSafety) ON */
 namespace {
 struct BoundsSafety {
   BoundsSafetyInfo::BoundsSafetyKind Kind;
@@ -174,6 +175,7 @@ template <> struct ScalarEnumerationTraits<BoundsSafetyInfo::BoundsSafetyKind> {
 };
 } // namespace yaml
 } // namespace llvm
+/* TO_UPSTREAM(BoundsSafety) OFF */
 
 namespace llvm {
 namespace yaml {
@@ -213,7 +215,9 @@ struct Param {
   std::optional<NullabilityKind> Nullability;
   std::optional<RetainCountConventionKind> RetainCountConvention;
   StringRef Type;
+  /* TO_UPSTREAM(BoundsSafety) ON */
   BoundsSafety BoundsSafety;
+  /* TO_UPSTREAM(BoundsSafety) OFF */
 };
 
 typedef std::vector<Param> ParamsSeq;
@@ -264,10 +268,13 @@ template <> struct MappingTraits<Param> {
     IO.mapOptional("NoEscape", P.NoEscape);
     IO.mapOptional("Lifetimebound", P.Lifetimebound);
     IO.mapOptional("Type", P.Type, StringRef(""));
+    /* TO_UPSTREAM(BoundsSafety) ON */
     IO.mapOptional("BoundsSafety", P.BoundsSafety);
+    /* TO_UPSTREAM(BoundsSafety) OFF */
   }
 };
 
+/* TO_UPSTREAM(BoundsSafety) ON */
 template <> struct MappingTraits<BoundsSafety> {
   static void mapping(IO &IO, BoundsSafety &BS) {
     IO.mapRequired("Kind", BS.Kind);
@@ -275,6 +282,7 @@ template <> struct MappingTraits<BoundsSafety> {
     IO.mapOptional("Level", BS.Level, 0);
   }
 };
+/* TO_UPSTREAM(BoundsSafety) OFF */
 } // namespace yaml
 } // namespace llvm
 
@@ -898,10 +906,12 @@ public:
       PI.setType(std::string(P.Type));
       PI.setRetainCountConvention(P.RetainCountConvention);
       BoundsSafetyInfo BSI;
+      /* TO_UPSTREAM(BoundsSafety) ON */
       BSI.setKindAudited(P.BoundsSafety.Kind);
       BSI.setLevelAudited(P.BoundsSafety.Level);
       BSI.ExternalBounds = P.BoundsSafety.BoundsExpr.str();
       PI.BoundsSafety = BSI;
+      /* TO_UPSTREAM(BoundsSafety) OFF */
       if (static_cast<int>(OutInfo.Params.size()) <= P.Position)
         OutInfo.Params.resize(P.Position + 1);
       if (P.Position == -1)

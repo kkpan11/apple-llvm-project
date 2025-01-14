@@ -322,6 +322,7 @@ public:
   }
 };
 
+/* TO_UPSTREAM(BoundsSafety) ON */
 BoundsSafetyInfo::BoundsSafetyKind readKindFlag(uint8_t kind) {
   switch (kind) {
   case 0x00:
@@ -359,6 +360,7 @@ void ReadBoundsSafetyInfo(const uint8_t *&Data, BoundsSafetyInfo &Info) {
   Info.ExternalBounds = std::string(Data, Data + ExternalBoundsLen);
   Data += ExternalBoundsLen;
 }
+/* TO_UPSTREAM(BoundsSafety) OFF */
 
 /// Read serialized ParamInfo.
 void ReadParamInfo(const uint8_t *&Data, ParamInfo &Info) {
@@ -376,11 +378,13 @@ void ReadParamInfo(const uint8_t *&Data, ParamInfo &Info) {
   if (Payload & 0x01)
     Info.setNoEscape(Payload & 0x02);
   Payload >>= 2;
+  /* TO_UPSTREAM(BoundsSafety) ON */
   if (Payload & 0x01) {
     BoundsSafetyInfo BSI;
     ReadBoundsSafetyInfo(Data, BSI);
     Info.BoundsSafety = BSI;
   }
+  /* TO_UPSTREAM(BoundsSafety) OFF */
 }
 
 /// Read serialized FunctionInfo.

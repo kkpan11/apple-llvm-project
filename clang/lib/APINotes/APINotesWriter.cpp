@@ -1074,6 +1074,7 @@ void APINotesWriter::Implementation::writeGlobalVariableBlock(
   }
 }
 
+/* TO_UPSTREAM(BoundsSafety) ON */
 namespace {
 uint8_t getKindFlag(BoundsSafetyInfo::BoundsSafetyKind kind) {
   switch (kind) {
@@ -1112,11 +1113,14 @@ void emitBoundsSafetyInfo(raw_ostream &OS, const BoundsSafetyInfo &BSI) {
 unsigned getBoundsSafetyInfoSize(const BoundsSafetyInfo &BSI) {
   return 1 + sizeof(uint16_t) + BSI.ExternalBounds.size();
 }
+/* TO_UPSTREAM(BoundsSafety) OFF */
 
 unsigned getParamInfoSize(const ParamInfo &PI) {
   unsigned BSISize = 0;
+  /* TO_UPSTREAM(BoundsSafety) ON */
   if (auto BSI = PI.BoundsSafety)
     BSISize = getBoundsSafetyInfoSize(*BSI);
+  /* TO_UPSTREAM(BoundsSafety) OFF */
   return getVariableInfoSize(PI) + 1 + BSISize;
 }
 
@@ -1144,8 +1148,10 @@ void emitParamInfo(raw_ostream &OS, const ParamInfo &PI) {
 
   llvm::support::endian::Writer writer(OS, llvm::endianness::little);
   writer.write<uint8_t>(flags);
+  /* TO_UPSTREAM(BoundsSafety) ON */
   if (auto BSI = PI.BoundsSafety)
     emitBoundsSafetyInfo(OS, *PI.BoundsSafety);
+  /* TO_UPSTREAM(BoundsSafety) OFF */
 }
 
 /// Retrieve the serialized size of the given FunctionInfo, for use in on-disk

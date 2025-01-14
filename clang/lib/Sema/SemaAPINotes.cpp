@@ -409,6 +409,7 @@ static void ProcessAPINotes(Sema &S, Decl *D,
                   Metadata);
 }
 
+/* TO_UPSTREAM(BoundsSafety) ON */
 static void applyBoundsSafety(Sema &S, ValueDecl *D,
                               const api_notes::BoundsSafetyInfo &Info,
                               VersionedInfoMetadata Metadata) {
@@ -453,6 +454,7 @@ static void applyBoundsSafety(Sema &S, ValueDecl *D,
                                    SourceLocation(), SourceRange(), AttrName);
   }
 }
+/* TO_UPSTREAM(BoundsSafety) OFF */
 
 /// Process API notes for a parameter.
 static void ProcessAPINotes(Sema &S, ParmVarDecl *D,
@@ -471,8 +473,10 @@ static void ProcessAPINotes(Sema &S, ParmVarDecl *D,
               LifetimeBoundAttr(S.Context, getPlaceholderAttrInfo());
         });
 
+  /* TO_UPSTREAM(BoundsSafety) ON */
   if (Info.BoundsSafety.has_value())
     applyBoundsSafety(S, D, *Info.BoundsSafety, Metadata);
+  /* TO_UPSTREAM(BoundsSafety) OFF */
 
   // Retain count convention
   handleAPINotedRetainCountConvention(S, D, Metadata,

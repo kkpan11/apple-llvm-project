@@ -300,6 +300,7 @@ inline bool operator!=(const ContextInfo &LHS, const ContextInfo &RHS) {
   return !(LHS == RHS);
 }
 
+/* TO_UPSTREAM(BoundsSafety) ON */
 class BoundsSafetyInfo {
 public:
   enum class BoundsSafetyKind {
@@ -361,6 +362,7 @@ inline bool operator==(const BoundsSafetyInfo &LHS,
          LHS.LevelAudited == RHS.LevelAudited && LHS.Level == RHS.Level &&
          LHS.ExternalBounds == RHS.ExternalBounds;
 }
+/* TO_UPSTREAM(BoundsSafety) OFF */
 
 /// API notes for a variable/property.
 class VariableInfo : public CommonEntityInfo {
@@ -501,7 +503,9 @@ class ParamInfo : public VariableInfo {
   unsigned RawRetainCountConvention : 3;
 
 public:
+  /* TO_UPSTREAM(BoundsSafety) ON */
   std::optional<BoundsSafetyInfo> BoundsSafety;
+  /* TO_UPSTREAM(BoundsSafety) OFF */
 
   ParamInfo()
       : NoEscapeSpecified(false), NoEscape(false),
@@ -552,8 +556,10 @@ public:
     if (!RawRetainCountConvention)
       RawRetainCountConvention = RHS.RawRetainCountConvention;
 
+    /* TO_UPSTREAM(BoundsSafety) ON */
     if (!BoundsSafety)
       BoundsSafety = RHS.BoundsSafety;
+    /* TO_UPSTREAM(BoundsSafety) OFF */
 
     return *this;
   }
@@ -570,7 +576,9 @@ inline bool operator==(const ParamInfo &LHS, const ParamInfo &RHS) {
          LHS.LifetimeboundSpecified == RHS.LifetimeboundSpecified &&
          LHS.Lifetimebound == RHS.Lifetimebound &&
          LHS.RawRetainCountConvention == RHS.RawRetainCountConvention &&
+         /* TO_UPSTREAM(BoundsSafety) ON */
          LHS.BoundsSafety == RHS.BoundsSafety;
+  /* TO_UPSTREAM(BoundsSafety) OFF */
 }
 
 inline bool operator!=(const ParamInfo &LHS, const ParamInfo &RHS) {

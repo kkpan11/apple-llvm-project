@@ -8941,6 +8941,7 @@ TypeResult Parser::ParseTypeFromString(StringRef TypeStr, StringRef Context,
   return Result;
 }
 
+/* TO_UPSTREAM(BoundsSafety) ON */
 ExprResult
 Parser::ParseBoundsAttributeArgFromString(StringRef ExprStr, StringRef Context,
                                           Decl *ParentDecl,
@@ -9022,6 +9023,7 @@ Parser::ParseBoundsAttributeArgFromString(StringRef ExprStr, StringRef Context,
     Actions.ActOnExitFunctionContext();
   return Result;
 }
+/* TO_UPSTREAM(BoundsSafety) OFF */
 
 void Parser::DiagnoseBitIntUse(const Token &Tok) {
   // If the token is for _ExtInt, diagnose it as being deprecated. Otherwise,
