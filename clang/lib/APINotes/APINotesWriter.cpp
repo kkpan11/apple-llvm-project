@@ -1076,27 +1076,12 @@ void APINotesWriter::Implementation::writeGlobalVariableBlock(
 
 /* TO_UPSTREAM(BoundsSafety) ON */
 namespace {
-uint8_t getKindFlag(BoundsSafetyInfo::BoundsSafetyKind kind) {
-  switch (kind) {
-  case BoundsSafetyInfo::BoundsSafetyKind::CountedBy:
-    return 0x00;
-  case BoundsSafetyInfo::BoundsSafetyKind::CountedByOrNull:
-    return 0x01;
-  case BoundsSafetyInfo::BoundsSafetyKind::SizedBy:
-    return 0x02;
-  case BoundsSafetyInfo::BoundsSafetyKind::SizedByOrNull:
-    return 0x03;
-  case BoundsSafetyInfo::BoundsSafetyKind::EndedBy:
-    return 0x04;
-  }
-}
-
 void emitBoundsSafetyInfo(raw_ostream &OS, const BoundsSafetyInfo &BSI) {
   llvm::support::endian::Writer writer(OS, llvm::endianness::little);
   uint8_t flags = 0;
   if (auto kind = BSI.getKind()) {
     flags |= 0x01;                    // 1 bit
-    flags |= getKindFlag(*kind) << 1; // 3 bits
+    flags |= (uint8_t)*kind << 1;     // 3 bits
   }
   flags <<= 4;
   if (auto level = BSI.getLevel()) {

@@ -304,7 +304,7 @@ inline bool operator!=(const ContextInfo &LHS, const ContextInfo &RHS) {
 class BoundsSafetyInfo {
 public:
   enum class BoundsSafetyKind {
-    CountedBy,
+    CountedBy = 0,
     CountedByOrNull,
     SizedBy,
     SizedByOrNull,
@@ -354,6 +354,8 @@ public:
   }
 
   friend bool operator==(const BoundsSafetyInfo &, const BoundsSafetyInfo &);
+
+  LLVM_DUMP_METHOD void dump(llvm::raw_ostream &OS) const;
 };
 
 inline bool operator==(const BoundsSafetyInfo &LHS,

@@ -427,6 +427,8 @@ static void applyBoundsSafety(Sema &S, ValueDecl *D,
 
     std::string AttrName;
     AttributeCommonInfo::Kind Kind;
+    assert(*Info.getKind() >= BoundsSafetyKind::CountedBy);
+    assert(*Info.getKind() <= BoundsSafetyKind::EndedBy);
     switch (*Info.getKind()) {
     case BoundsSafetyKind::CountedBy:
       AttrName = "__counted_by";

@@ -323,23 +323,6 @@ public:
 };
 
 /* TO_UPSTREAM(BoundsSafety) ON */
-BoundsSafetyInfo::BoundsSafetyKind readKindFlag(uint8_t kind) {
-  switch (kind) {
-  case 0x00:
-    return BoundsSafetyInfo::BoundsSafetyKind::CountedBy;
-  case 0x01:
-    return BoundsSafetyInfo::BoundsSafetyKind::CountedByOrNull;
-  case 0x02:
-    return BoundsSafetyInfo::BoundsSafetyKind::SizedBy;
-  case 0x03:
-    return BoundsSafetyInfo::BoundsSafetyKind::SizedByOrNull;
-  case 0x04:
-    return BoundsSafetyInfo::BoundsSafetyKind::EndedBy;
-  default:
-    llvm_unreachable("invalid bounds safety kind");
-  }
-}
-
 /// Read serialized BoundsSafetyInfo.
 void ReadBoundsSafetyInfo(const uint8_t *&Data, BoundsSafetyInfo &Info) {
   uint8_t Payload = endian::readNext<uint8_t, llvm::endianness::little>(Data);
@@ -352,7 +335,9 @@ void ReadBoundsSafetyInfo(const uint8_t *&Data, BoundsSafetyInfo &Info) {
 
   if (Payload & 0x01) {
     uint8_t Kind = (Payload >> 1) & 0x7;
-    Info.setKindAudited(readKindFlag(Kind));
+    assert(Kind >= (uint8_t)BoundsSafetyInfo::BoundsSafetyKind::CountedBy);
+    assert(Kind <= (uint8_t)BoundsSafetyInfo::BoundsSafetyKind::EndedBy);
+    Info.setKindAudited((BoundsSafetyInfo::BoundsSafetyKind)Kind);
   }
 
   uint16_t ExternalBoundsLen =
