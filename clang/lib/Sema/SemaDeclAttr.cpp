@@ -5589,11 +5589,11 @@ class ConstructCountAttributedType :
 
 public:
   explicit ConstructCountAttributedType(Sema &S, unsigned Level,
-                                        const StringRef DiagName, Expr *ArgExpr,
+                                        const StringRef DiagName, Expr *ArgE,
                                         SourceLocation Loc, bool CountInBytes,
                                         bool OrNull, bool AllowRedecl,
                                         bool ScopeCheck = false)
-      : ConstructDynamicBoundType(S, Level, DiagName, ArgExpr, Loc, ScopeCheck,
+      : ConstructDynamicBoundType(S, Level, DiagName, ArgE, Loc, ScopeCheck,
                                   AllowRedecl),
         CountInBytes(CountInBytes), OrNull(OrNull) {
     if (!ArgExpr->getType()->isIntegralOrEnumerationType()) {
