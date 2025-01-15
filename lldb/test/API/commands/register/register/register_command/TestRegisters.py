@@ -41,6 +41,11 @@ class RegisterCommandsTestCase(TestBase):
 
     @skipIfiOSSimulator
     @skipIf(archs=no_match(["amd64", "arm", "i386", "x86_64"]))
+    # This test assumes Xcode 16.2 or newer is being used, or
+    # the in-tree debugserver is being used.  Some CI bots
+    # are still using an earlier Xcode, and the test will fail.
+    # Skip this test on Intel systems, on release/6.1 branch only.
+    @skipIf(oslist=["macosx"], archs=["x86_64"])
     @expectedFailureAll(oslist=["freebsd", "netbsd"], bugnumber="llvm.org/pr48371")
     def test_register_commands(self):
         """Test commands related to registers, in particular vector registers."""
