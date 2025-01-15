@@ -48,7 +48,6 @@
 #include "lldb/ValueObject/ValueObjectCast.h"
 #include "lldb/ValueObject/ValueObjectConstResult.h"
 #include "lldb/ValueObject/ValueObjectVariable.h"
-#include "llvm/Support/FormatAdapters.h"
 
 #include "lldb/lldb-enumerations.h"
 #include "swift/AST/ASTMangler.h"
@@ -2103,7 +2102,7 @@ private:
       return;
     }
 
-    if (command[0].ref().empty()) {
+    if (command.empty() || command[0].ref().empty()) {
       result.AppendError("no task variable");
       return;
     }
@@ -2116,26 +2115,29 @@ private:
     ValueObjectSP valobj_sp = frame.GetValueForVariableExpressionPath(
         command[0].c_str(), eDynamicDontRunTarget, path_options, var_sp,
         status);
-    if (!valobj_sp)
+    if (!valobj_sp) {
+      result.AppendError(status.AsCString());
       return;
+    }
 
-    ValueObjectSP task_obj_sp = valobj_sp->GetChildMemberWithName("_task");
-    if (!task_obj_sp)
+    addr_t task_ptr = LLDB_INVALID_ADDRESS;
+    ThreadSafeReflectionContext reflection_ctx;
+    if (ValueObjectSP task_obj_sp =
+            valobj_sp->GetChildMemberWithName("_task")) {
+      task_ptr = task_obj_sp->GetValueAsUnsigned(LLDB_INVALID_ADDRESS);
+      if (task_ptr != LLDB_INVALID_ADDRESS)
+        if (auto *runtime = SwiftLanguageRuntime::Get(m_exe_ctx.GetProcessSP()))
+          reflection_ctx = runtime->GetReflectionContext();
+    }
+    if (task_ptr == LLDB_INVALID_ADDRESS || !reflection_ctx) {
+      result.AppendError("failed to access Task data from runtime");
       return;
-    uint64_t task_ptr = task_obj_sp->GetValueAsUnsigned(LLDB_INVALID_ADDRESS);
-    if (task_ptr == LLDB_INVALID_ADDRESS)
-      return;
-    auto *runtime = SwiftLanguageRuntime::Get(m_exe_ctx.GetProcessSP());
-    if (!runtime)
-      return;
-    ThreadSafeReflectionContext reflection_ctx =
-        runtime->GetReflectionContext();
+    }
+
     llvm::Expected<ReflectionContextInterface::AsyncTaskInfo> task_info =
         reflection_ctx->asyncTaskInfo(task_ptr);
-    if (auto err = task_info.takeError()) {
-      LLDB_LOG(GetLog(LLDBLog::DataFormatters | LLDBLog::Types),
-               "could not get info for async task {0:x}: {1}", task_ptr,
-               fmt_consume(std::move(err)));
+    if (auto error = task_info.takeError()) {
+      result.AppendError(toString(std::move(error)));
       return;
     }
 
@@ -2145,8 +2147,10 @@ private:
       result.AppendError(toString(std::move(error)));
       return;
     }
+
+    // GetStatus prints the backtrace.
     thread_task.get()->GetStatus(result.GetOutputStream(), 0, UINT32_MAX, 0,
-                                 false, false);
+                                 false, true);
     result.SetStatus(lldb::eReturnStatusSuccessFinishResult);
   }
 };
