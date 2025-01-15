@@ -15,7 +15,7 @@
 // CHECK: asdf_sized_n 'void (int * __sized_by_or_null(size), int)'
 // CHECK: buf 'int * __sized_by_or_null(size)':'int *'
 
-// CHECK: asdf_ended  'void (int * __ended_by(end), int * /* __started_by(buf) */ )'
+// CHECK: asdf_ended 'void (int * __ended_by(end), int * /* __started_by(buf) */ )'
 // CHECK: buf 'int * __ended_by(end)':'int *'
 // CHECK: end 'int * /* __started_by(buf) */ ':'int *'
 
@@ -38,6 +38,32 @@
 // CHECK: asdf_counted_default_level 'void (int * __counted_by(len), int)'
 // CHECK: buf 'int * __counted_by(len)':'int *'
 
+// CHECK: asdf_counted_redundant 'void (int * __counted_by(len), int)'
+// CHECK: buf 'int * __counted_by(len)':'int *'
+
+// CHECK: asdf_ended_chained 'void (int * __ended_by(mid), int * __ended_by(end) /* __started_by(buf) */ , int * /* __started_by(mid) */ )'
+// CHECK: buf 'int * __ended_by(mid)':'int *'
+// CHECK: mid 'int * __ended_by(end) /* __started_by(buf) */ ':'int *'
+// CHECK: end 'int * /* __started_by(mid) */ ':'int *'
+
+// CHECK: asdf_ended_chained_reverse 'void (int * __ended_by(mid), int * __ended_by(end) /* __started_by(buf) */ , int * /* __started_by(mid) */ )'
+// CHECK: buf 'int * __ended_by(mid)':'int *'
+// CHECK: mid 'int * __ended_by(end) /* __started_by(buf) */ ':'int *'
+// CHECK: end 'int * /* __started_by(mid) */ ':'int *'
+
+// CHECK: asdf_ended_already_started 'void (int * __ended_by(mid), int * __ended_by(end) /* __started_by(buf) */ , int * /* __started_by(mid) */ )'
+// CHECK: buf 'int * __ended_by(mid)':'int *'
+// CHECK: mid 'int * __ended_by(end) /* __started_by(buf) */ ':'int *'
+// CHECK: end 'int * /* __started_by(mid) */ ':'int *'
+
+// CHECK: asdf_ended_already_ended 'void (int * __ended_by(mid), int * __ended_by(end) /* __started_by(buf) */ , int * /* __started_by(mid) */ )'
+// CHECK: buf 'int * __ended_by(mid)':'int *'
+// CHECK: mid 'int * __ended_by(end) /* __started_by(buf) */ ':'int *'
+// CHECK: end 'int * /* __started_by(mid) */ ':'int *'
+
+// CHECK: asdf_ended_redundant 'void (int * __ended_by(end), int * /* __started_by(buf) */ )'
+// CHECK: buf 'int * __ended_by(end)':'int *'
+// CHECK: end 'int * /* __started_by(buf) */ ':'int *'
+
 // CHECK: asdf_nterm 'void (int * __terminated_by(0))'
 // CHECK: buf 'int * __terminated_by(0)':'int *'
-

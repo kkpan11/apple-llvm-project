@@ -55,6 +55,20 @@ Functions:
             Kind: counted_by
             Level: 0
             BoundedBy: static_len
+  - Name:              mismatching_count
+    Parameters:
+      - Position:      0
+        BoundsSafety:
+            Kind: counted_by
+            Level: 0
+            BoundedBy: apinote_len
+  - Name:              mismatching_end
+    Parameters:
+      - Position:      0
+        BoundsSafety:
+            Kind: ended_by
+            Level: 0
+            BoundedBy: apinote_end
 //--- SemaErrors.h
 // CHECK: SemaErrors.h:{{.*}}:{{.*}}: error: __counted_by attribute only applies to pointer arguments
 // CHECK-NEXT: oob_level
@@ -73,6 +87,12 @@ void wrong_name(int * buf, int len2);
 // CHECK-NEXT: wrong_scope
 int static_len = 5;
 void wrong_scope(int * buf);
+// CHECK: SemaErrors.h:{{.*}}:{{.*}}: error: pointer cannot have more than one count attribute
+// CHECK-NEXT: mismatching_count
+void mismatching_count(int * __attribute__((__counted_by__(header_len))) buf, int apinote_len, int header_len);
+// CHECK: SemaErrors.h:{{.*}}:{{.*}}: error: pointer cannot have more than one end attribute
+// CHECK-NEXT: mismatching_end
+void mismatching_end(int * __attribute__((__ended_by__(header_end))) buf, int * apinote_end, int * header_end);
 // CHECK: SemaErrors.c:{{.*}}:{{.*}}: fatal error: could not build module 'SemaErrors'
 
 

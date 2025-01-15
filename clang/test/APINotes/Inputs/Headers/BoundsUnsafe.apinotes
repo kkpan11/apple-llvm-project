@@ -78,8 +78,58 @@ Functions:
         BoundsSafety:
             Kind: counted_by
             BoundedBy: len
+  - Name:              asdf_counted_redundant
+    Parameters:
+      - Position:      0
+        BoundsSafety:
+            Kind: counted_by
+            BoundedBy: len
+  - Name:              asdf_ended_chained
+    Parameters:
+      - Position:      0
+        BoundsSafety:
+            Kind: ended_by
+            Level: 0
+            BoundedBy: mid
+      - Position:      1
+        BoundsSafety:
+            Kind: ended_by
+            Level: 0
+            BoundedBy: end
+  - Name:              asdf_ended_chained_reverse
+    Parameters:
+      - Position:      1
+        BoundsSafety:
+            Kind: ended_by
+            Level: 0
+            BoundedBy: end
+      - Position:      0
+        BoundsSafety:
+            Kind: ended_by
+            Level: 0
+            BoundedBy: mid
+  - Name:              asdf_ended_already_started
+    Parameters:
+      - Position:      1
+        BoundsSafety:
+            Kind: ended_by
+            Level: 0
+            BoundedBy: end
+  - Name:              asdf_ended_already_ended
+    Parameters:
+      - Position:      0
+        BoundsSafety:
+            Kind: ended_by
+            Level: 0
+            BoundedBy: mid
+  - Name:              asdf_ended_redundant
+    Parameters:
+      - Position:      0
+        BoundsSafety:
+            Kind: ended_by
+            Level: 0
+            BoundedBy: end
   - Name:              asdf_nterm
     Parameters:
       - Position:      0
         Type: "int * __attribute__((__terminated_by__(0)))"
-

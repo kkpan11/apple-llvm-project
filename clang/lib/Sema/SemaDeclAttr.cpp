@@ -5411,16 +5411,17 @@ protected:
   const BoundsAttributedType *ConstructedType = nullptr;
   unsigned Level;
   bool ScopeCheck;
+  bool AllowRedecl;
   bool AutoPtrAttributed = false;
-  bool AllowCountRedecl = false;
   bool AtomicErrorEmitted = false;
 
 public:
   explicit ConstructDynamicBoundType(Sema &S, unsigned Level,
                                      const StringRef DiagName, Expr *ArgExpr,
-                                     SourceLocation Loc, bool ScopeCheck)
+                                     SourceLocation Loc, bool ScopeCheck,
+                                     bool AllowRedecl)
       : S(S), DiagName(DiagName), ArgExpr(ArgExpr), Loc(Loc), Level(Level),
-        ScopeCheck(ScopeCheck) {}
+        ScopeCheck(ScopeCheck), AllowRedecl(AllowRedecl) {}
 
   QualType Visit(QualType T) {
     SplitQualType SQT = T.split();
@@ -5449,7 +5450,6 @@ public:
 
   QualType VisitFunctionProtoType(const FunctionProtoType *FPT) {
     // The attribute applies to the return type.
-    SaveAndRestore<bool> AllowCountRedeclLocal(AllowCountRedecl, true);
     QualType QT = Visit(FPT->getReturnType());
     if (QT.isNull())
       return QualType();
@@ -5461,7 +5461,6 @@ public:
 
   QualType VisitFunctionNoProtoType(const FunctionNoProtoType *FPT) {
     // The attribute applies to the return type.
-    SaveAndRestore<bool> AllowCountRedeclLocal(AllowCountRedecl, true);
     QualType QT = Visit(FPT->getReturnType());
     if (QT.isNull())
       return QualType();
@@ -5592,8 +5591,10 @@ public:
   explicit ConstructCountAttributedType(Sema &S, unsigned Level,
                                         const StringRef DiagName, Expr *ArgExpr,
                                         SourceLocation Loc, bool CountInBytes,
-                                        bool OrNull, bool ScopeCheck = false)
-      : ConstructDynamicBoundType(S, Level, DiagName, ArgExpr, Loc, ScopeCheck),
+                                        bool OrNull, bool AllowRedecl,
+                                        bool ScopeCheck = false)
+      : ConstructDynamicBoundType(S, Level, DiagName, ArgExpr, Loc, ScopeCheck,
+                                  AllowRedecl),
         CountInBytes(CountInBytes), OrNull(OrNull) {
     if (!ArgExpr->getType()->isIntegralOrEnumerationType()) {
       S.Diag(Loc, diag::err_attribute_argument_type_for_bounds_safety_count)
@@ -5661,7 +5662,7 @@ public:
   }
 
   QualType DiagnoseConflictingType(const CountAttributedType *T) {
-    if (AllowCountRedecl) {
+    if (AllowRedecl) {
       QualType NewTy = BuildDynamicBoundType(T->desugar());
       const auto *NewDCPTy = NewTy->getAs<CountAttributedType>();
       // We don't have a way to distinguish if '__counted_by' is conflicting or has been
@@ -5682,6 +5683,16 @@ public:
     S.Diag(Loc, diag::err_bounds_safety_conflicting_pointer_attributes)
         << /* pointer */ T->isPointerType() << /* count */ 2;
     return QualType();
+  }
+
+  QualType VisitFunctionProtoType(const FunctionProtoType *FPT) {
+    SaveAndRestore<bool> AllowRedeclLocal(AllowRedecl, true);
+    return ConstructDynamicBoundType::VisitFunctionProtoType(FPT);
+  }
+
+  QualType VisitFunctionNoProtoType(const FunctionNoProtoType *FPT) {
+    SaveAndRestore<bool> AllowRedeclLocal(AllowRedecl, true);
+    return ConstructDynamicBoundType::VisitFunctionNoProtoType(FPT);
   }
 
   QualType DiagnoseConflictingType(const DynamicRangePointerType *T) {
@@ -5858,9 +5869,10 @@ class ConstructDynamicRangePointerType :
 public:
   explicit ConstructDynamicRangePointerType(
       Sema &S, unsigned Level, const StringRef DiagName, Expr *ArgExpr,
-      SourceLocation Loc, bool ScopeCheck = false,
+      SourceLocation Loc, bool AllowRedecl, bool ScopeCheck = false,
       std::optional<TypeCoupledDeclRefInfo> StartPtrInfo = std::nullopt)
-      : ConstructDynamicBoundType(S, Level, DiagName, ArgExpr, Loc, ScopeCheck),
+      : ConstructDynamicBoundType(S, Level, DiagName, ArgExpr, Loc, ScopeCheck,
+                                  AllowRedecl),
         StartPtrInfo(StartPtrInfo) {
     assert(ArgExpr->getType()->isPointerType());
   }
@@ -5900,11 +5912,11 @@ public:
   }
 
   QualType VisitDynamicRangePointerType(const DynamicRangePointerType *T) {
-    if (Level == 0 && T->getEndPointer() == nullptr) {
-      // T is a started_by() pointer type.
+    if (Level == 0 && (AllowRedecl || T->getEndPointer() == nullptr)) {
+      // T could be a started_by() pointer type.
       Expr *StartPtr = T->getStartPointer();
       auto StartPtrDecls = T->getStartPtrDecls();
-      assert(StartPtr);
+      assert(StartPtr || AllowRedecl);
 
       assert(ConstructedType == nullptr);
       // Construct an ended_by() pointer type.
@@ -5917,6 +5929,20 @@ public:
       Expr *EndPtr = DRPT->getEndPointer();
       auto EndPtrDecls = DRPT->getEndPtrDecls();
       assert(EndPtr);
+      if (auto OldEndPtr = T->getEndPointer()) {
+        assert(AllowRedecl);
+        llvm::FoldingSetNodeID NewID;
+        llvm::FoldingSetNodeID OldID;
+        EndPtr->Profile(NewID, S.Context, /*Canonical*/ true);
+        OldEndPtr->Profile(OldID, S.Context, /*Canonical*/ true);
+
+        if (NewID != OldID) {
+          S.Diag(Loc, diag::err_bounds_safety_conflicting_pointer_attributes)
+              << /* pointer */ 1 << /* end */ 3;
+          ConstructedType = nullptr;
+          return QualType();
+        }
+      }
 
       // ConstructType was already set while visiting the nested PointerType.
       // Reconstruct DRPT by merging started_by and ended_by.
@@ -6383,7 +6409,8 @@ diagnoseRangeDependentDecls(Sema &S, const ValueDecl *TheDepender,
 void Sema::applyPtrCountedByEndedByAttr(Decl *D, unsigned Level,
                                         AttributeCommonInfo::Kind Kind,
                                         Expr *AttrArg, SourceLocation Loc,
-                                        SourceRange Range, StringRef DiagName) {
+                                        SourceRange Range, StringRef DiagName,
+                                        bool OriginatesInAPINotes) {
   // If the decl is invalid, the indirection Level might not exist in the type,
   // since the type may have not been constructed correctly. Example:
   // 'int (*param)[__counted_by_or_null(10)][]'
@@ -6571,13 +6598,15 @@ void Sema::applyPtrCountedByEndedByAttr(Decl *D, unsigned Level,
     }
 
     auto TypeConstructor = ConstructDynamicRangePointerType(
-        *this, Level, DiagName, AttrArg, Loc, ScopeCheck, StartPtrInfo);
+        *this, Level, DiagName, AttrArg, Loc, OriginatesInAPINotes, ScopeCheck,
+        StartPtrInfo);
     NewDeclTy = TypeConstructor.Visit(DeclTy);
     HadAtomicError = TypeConstructor.hadAtomicError();
     ConstructedType = TypeConstructor.getConstructedType();
   } else {
     auto TypeConstructor = ConstructCountAttributedType(
-        *this, Level, DiagName, AttrArg, Loc, CountInBytes, OrNull, ScopeCheck);
+        *this, Level, DiagName, AttrArg, Loc, CountInBytes, OrNull,
+        OriginatesInAPINotes, ScopeCheck);
     NewDeclTy = TypeConstructor.Visit(DeclTy);
     HadAtomicError = TypeConstructor.hadAtomicError();
     ConstructedType = TypeConstructor.getConstructedType();

@@ -452,9 +452,9 @@ static void applyBoundsSafety(Sema &S, ValueDecl *D,
       break;
     }
 
-    S.applyPtrCountedByEndedByAttr(D, *Info.getLevel(), Kind, ParsedExpr.get(),
-                                   D->getLocation(), D->getSourceRange(),
-                                   AttrName);
+    S.applyPtrCountedByEndedByAttr(
+        D, *Info.getLevel(), Kind, ParsedExpr.get(), D->getLocation(),
+        D->getSourceRange(), AttrName, /* originates in API notes */ true);
   }
 }
 /* TO_UPSTREAM(BoundsSafety) OFF */

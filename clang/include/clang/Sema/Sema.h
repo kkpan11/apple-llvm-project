@@ -15514,7 +15514,8 @@ public:
   void applyPtrCountedByEndedByAttr(Decl *D, unsigned Level,
                                     AttributeCommonInfo::Kind Kind,
                                     Expr *AttrArg, SourceLocation Loc,
-                                    SourceRange Range, StringRef DiagName);
+                                    SourceRange Range, StringRef DiagName,
+                                    bool OriginatesInAPINotes = false);
 
   /// Perform Bounds Safety Semantic checks for assigning to a `__counted_by` or
   /// `__counted_by_or_null` pointer type \param LHSTy.
