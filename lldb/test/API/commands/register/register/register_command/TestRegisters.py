@@ -41,6 +41,11 @@ class RegisterCommandsTestCase(TestBase):
 
     @skipIfiOSSimulator
     @skipIf(archs=no_match(["amd64", "arm", "i386", "x86_64"]))
+    # This test assumes Xcode 16.2 or newer is being used, or
+    # the in-tree debugserver is being used.  Some CI bots
+    # are still using an earlier Xcode, and the test will fail.
+    # Skip this test on Intel systems, on release/6.1 branch only.
+    @skipIf(oslist=["macosx"], archs=["x86_64"])
     @expectedFailureAll(oslist=["freebsd", "netbsd"], bugnumber="llvm.org/pr48371")
     def test_register_commands(self):
         """Test commands related to registers, in particular vector registers."""
@@ -56,6 +61,13 @@ class RegisterCommandsTestCase(TestBase):
             # registers when not in Streaming SVE Mode/SME, so
             # `register read -a` will report that some registers
             # could not be read.  This is expected.
+            error_str_matched = True
+
+        if self.getArchitecture() == "x86_64" and self.platformIsDarwin():
+            # debugserver on x86 will provide ds/es/ss/gsbase when the
+            # kernel provides them, but most of the time they will be
+            # unavailable.  So "register read -a" will report that
+            # 4 registers were unavailable, it is expected.
             error_str_matched = True
 
         self.expect(
