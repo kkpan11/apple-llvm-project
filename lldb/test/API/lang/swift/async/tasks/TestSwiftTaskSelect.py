@@ -34,7 +34,7 @@ class TestCase(TestBase):
             "thread list",
             substrs=[
                 "* thread #4294967295: tid = ",
-                "libswift_Concurrency.dylib",
+                "libswift_Concurrency.",
                 "._sleep(",
             ],
         )
