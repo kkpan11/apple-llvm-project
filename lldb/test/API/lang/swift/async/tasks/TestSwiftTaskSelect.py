@@ -39,7 +39,7 @@ class TestCase(TestBase):
             ],
         )
 
-        frame_index = 0
+        frame_index = -1
         for frame in process.selected_thread:
             if "`second()" in str(frame):
                 frame_index = frame.idx
