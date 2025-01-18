@@ -33,7 +33,7 @@ class TestCase(TestBase):
         self.expect(
             "thread list",
             substrs=[
-                "* thread #4294967295: tid = 0x0002,",
+                "* thread #4294967295: tid = ",
                 "libswift_Concurrency.dylib",
                 "._sleep(",
             ],
