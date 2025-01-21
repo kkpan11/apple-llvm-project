@@ -3990,7 +3990,7 @@ class DIArgList : public Metadata, ReplaceableMetadataImpl {
 
   DIArgList(LLVMContext &Context, ArrayRef<ValueAsMetadata *> Args)
       : Metadata(DIArgListKind, Uniqued), ReplaceableMetadataImpl(Context),
-        Args(Args.begin(), Args.end()) {
+        Args(Args) {
     track();
   }
   ~DIArgList() { untrack(); }
