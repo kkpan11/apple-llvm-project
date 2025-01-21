@@ -24,7 +24,6 @@ class TestCase(TestBase):
 
     def test_navigate_selected_task_stack(self):
         self.build()
-        # target, process, thread, bkpt
         _, process, _, _ = lldbutil.run_to_source_breakpoint(
             self, "break here", lldb.SBFileSpec("main.swift")
         )
