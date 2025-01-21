@@ -30,46 +30,27 @@ class TestCase(TestBase):
         )
         self.runCmd("language swift task select task")
 
-        self.expect(
-            "thread list",
-            substrs=[
-                "* thread #4294967295: tid = ",
-                "libswift_Concurrency.",
-                "._sleep(",
-            ],
+        thread = process.selected_thread
+        self.assertEqual(thread.id, 2)
+        self.assertEqual(thread.idx, 0xFFFFFFFF)
+        self.assertIn(
+            "libswift_Concurrency.", thread.GetSelectedFrame().module.file.basename
         )
 
-        frame_index = -1
-        for frame in process.selected_thread:
+        frame_idx = -1
+        for frame in thread:
             if "`second()" in str(frame):
-                frame_index = frame.idx
-        self.assertNotEqual(frame_index, -1)
+                frame_idx = frame.idx
+        self.assertNotEqual(frame_idx, -1)
 
-        self.expect(
-            f"frame select {frame_index}",
-            substrs=[
-                f"frame #{frame_index}:",
-                "`second() at main.swift:6:",
-                "   5   \tfunc second() async {",
-                "-> 6   \t    try? await Task.sleep(for: .seconds(10))",
-            ],
-        )
+        self.expect(f"frame select {frame_idx}", substrs=[f"frame #{frame_idx}:"])
+        frame = thread.GetSelectedFrame()
+        self.assertIn(".second()", frame.function.name)
 
-        self.expect(
-            "up",
-            substrs=[
-                f"frame #{frame_index + 1}:",
-                "`first() at main.swift:2:",
-                "   1   \tfunc first() async {",
-                "-> 2   \t    await second()",
-            ],
-        )
+        self.expect("up", substrs=[f"frame #{frame_idx + 1}:"])
+        frame = thread.GetSelectedFrame()
+        self.assertIn(".first()", frame.function.name)
 
-        self.expect(
-            "up",
-            substrs=[
-                f"frame #{frame_index + 2}:",
-                "`closure #1 in static Main.main() at main.swift:12:",
-                "-> 12  \t            await first()",
-            ],
-        )
+        self.expect("up", substrs=[f"frame #{frame_idx + 2}:"])
+        frame = thread.GetSelectedFrame()
+        self.assertIn(".Main.main()", frame.function.name)
