@@ -1807,6 +1807,10 @@ eBroadcastSymbolChange = _lldb.eBroadcastSymbolChange
 
 eBroadcastBitProgressCategory = _lldb.eBroadcastBitProgressCategory
 
+eBroadcastBitExternalProgress = _lldb.eBroadcastBitExternalProgress
+
+eBroadcastBitExternalProgressCategory = _lldb.eBroadcastBitExternalProgressCategory
+
 eSeverityError = _lldb.eSeverityError
 
 eSeverityWarning = _lldb.eSeverityWarning
@@ -4651,6 +4655,10 @@ class SBDebugger(object):
     eBroadcastBitError = _lldb.SBDebugger_eBroadcastBitError
     
     eBroadcastBitProgressCategory = _lldb.SBDebugger_eBroadcastBitProgressCategory
+    
+    eBroadcastBitExternalProgress = _lldb.SBDebugger_eBroadcastBitExternalProgress
+    
+    eBroadcastBitExternalProgressCategory = _lldb.SBDebugger_eBroadcastBitExternalProgressCategory
     
 
     def __init__(self, *args):
@@ -9885,6 +9893,40 @@ class SBProcessInfoList(object):
 
 # Register SBProcessInfoList in _lldb:
 _lldb.SBProcessInfoList_swigregister(SBProcessInfoList)
+class SBProgress(object):
+    r"""
+    A Progress indicator helper class.
+
+    Any potentially long running sections of code in LLDB should report
+    progress so that clients are aware of delays that might appear during
+    debugging. Delays commonly include indexing debug information, parsing
+    symbol tables for object files, downloading symbols from remote
+    repositories, and many more things.
+
+    The Progress class helps make sure that progress is correctly reported
+    and will always send an initial progress update, updates when
+    Progress::Increment() is called, and also will make sure that a progress
+    completed update is reported even if the user doesn't explicitly cause one
+    to be sent.
+    """
+
+    thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
+    __repr__ = _swig_repr
+
+    def __init__(self, *args):
+        r"""
+        __init__(SBProgress self, char const * title, char const * details, SBDebugger debugger) -> SBProgress
+        __init__(SBProgress self, char const * title, char const * details, uint64_t total_units, SBDebugger debugger) -> SBProgress
+        """
+        _lldb.SBProgress_swiginit(self, _lldb.new_SBProgress(*args))
+    __swig_destroy__ = _lldb.delete_SBProgress
+
+    def Increment(self, amount, description=None):
+        r"""Increment(SBProgress self, uint64_t amount, char const * description=None)"""
+        return _lldb.SBProgress_Increment(self, amount, description)
+
+# Register SBProgress in _lldb:
+_lldb.SBProgress_swigregister(SBProgress)
 class SBQueue(object):
     r"""Represents a libdispatch queue in the process."""
 
