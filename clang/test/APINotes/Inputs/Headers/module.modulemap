@@ -1,15 +1,3 @@
-module BoundsUnsafe {
-  header "BoundsUnsafe.h"
-}
-
-module BoundsUnsafeErrors {
-  header "BoundsUnsafeErrors.h"
-}
-
-module BoundsUnsafeObjC {
-  header "BoundsUnsafeObjC.h"
-}
-
 module ExternCtx {
   header "ExternCtx.h"
 }
