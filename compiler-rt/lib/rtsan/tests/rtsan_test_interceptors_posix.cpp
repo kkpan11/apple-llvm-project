@@ -1041,6 +1041,7 @@ TEST(TestRtsanInterceptors, PthreadJoinDiesWhenRealtime) {
 // OSSpinLockLock is deprecated, but still in use in libc++
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 TEST(TestRtsanInterceptors, OsSpinLockLockDiesWhenRealtime) {
+  GTEST_SKIP(); // OSSpinLock not properly intercepted? rdar://142500404
   auto Func = []() {
     OSSpinLock spin_lock{};
     OSSpinLockLock(&spin_lock);

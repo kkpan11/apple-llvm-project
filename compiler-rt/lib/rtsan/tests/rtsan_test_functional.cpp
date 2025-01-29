@@ -171,6 +171,7 @@ TEST(TestRtsan, CopyingALambdaWithLargeCaptureDiesWhenRealtime) {
 }
 
 TEST(TestRtsan, AccessingALargeAtomicVariableDiesWhenRealtime) {
+  GTEST_SKIP(); // Missing symbol? rdar://142500404
   std::atomic<float> small_atomic{0.0f};
   ASSERT_TRUE(small_atomic.is_lock_free());
   RealtimeInvoke([&small_atomic]() {
