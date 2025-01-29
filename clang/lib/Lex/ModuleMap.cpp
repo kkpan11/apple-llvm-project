@@ -1331,6 +1331,72 @@ void ModuleMap::addHeader(Module *Mod, Module::Header Header,
     Cb->moduleMapAddHeader(HeaderEntry.getName());
 }
 
+bool ModuleMap::preParseModuleMapFile(clang::FileEntryRef File, bool IsSystem,
+                                      clang::DirectoryEntryRef Dir,
+                                      clang::FileID ID,
+                                      SourceLocation ExternModuleLoc) {
+  llvm::DenseMap<const FileEntry *, bool>::iterator Known
+    = PreParsedModuleMap.find(File);
+  if (Known != PreParsedModuleMap.end())
+    return Known->second;
+
+  // If the module map file wasn't already entered, do so now.
+  if (ID.isInvalid()) {
+    auto FileCharacter =
+        IsSystem ? SrcMgr::C_System_ModuleMap : SrcMgr::C_User_ModuleMap;
+    ID = SourceMgr.createFileID(File, ExternModuleLoc, FileCharacter);
+  }
+
+  std::optional<llvm::MemoryBufferRef> Buffer = SourceMgr.getBufferOrNone(ID);
+  if (!Buffer)
+    return PreParsedModuleMap[File] = true;
+
+  Diags.Report(diag::remark_mmap_preparse) << File.getName();
+  std::optional<modulemap::ModuleMapFile> MaybeMMF =
+      modulemap::parseModuleMap(File, Dir, SourceMgr, Diags, IsSystem, nullptr);
+
+  if (!MaybeMMF)
+    return PreParsedModuleMap[File] = true;
+
+  PreParsedModuleMaps.push_back(
+      std::make_unique<modulemap::ModuleMapFile>(std::move(*MaybeMMF)));
+  modulemap::ModuleMapFile &MMF = *PreParsedModuleMaps.back();
+  std::vector<const modulemap::ExternModuleDecl *> PendingExternalModuleMaps;
+  for (const auto &Decl : MMF.Decls) {
+    std::visit(
+        llvm::makeVisitor(
+            [&](const modulemap::ModuleDecl &MD) {
+                     if (PreParsedModules
+                             .insert(std::pair(StringRef(MD.Id.front().first),
+                                               std::pair(&MMF, &MD)))
+                             .second) {
+                // TODO: A module with this name already existed. This is bad.
+              }
+            },
+            [&](const modulemap::ExternModuleDecl &EMD) {
+              PendingExternalModuleMaps.push_back(&EMD);
+            }),
+        Decl);
+  }
+
+  for (const modulemap::ExternModuleDecl *EMD : PendingExternalModuleMaps) {
+    StringRef FileNameRef = EMD->Path;
+    SmallString<128> ModuleMapFileName;
+    if (llvm::sys::path::is_relative(FileNameRef)) {
+      ModuleMapFileName += Dir.getName();
+      llvm::sys::path::append(ModuleMapFileName, EMD->Path);
+      FileNameRef = ModuleMapFileName;
+    }
+    if (auto EFile =
+            SourceMgr.getFileManager().getOptionalFileRef(FileNameRef)) {
+      preParseModuleMapFile(*EFile, IsSystem, EFile->getDir(), ID,
+                            ExternModuleLoc);
+    }
+  }
+
+  return PreParsedModuleMap[File] = false;
+}
+
 FileID ModuleMap::getContainingModuleMapFileID(const Module *Module) const {
   if (Module->DefinitionLoc.isInvalid())
     return {};
@@ -1469,7 +1535,6 @@ bool ModuleMap::resolveConflicts(Module *Mod, bool Complain) {
 
 namespace clang {
   class ModuleMapParser {
-    modulemap::ModuleMapFile &MMF;
     SourceManager &SourceMgr;
 
     DiagnosticsEngine &Diags;
@@ -1526,14 +1591,16 @@ namespace clang {
     using Attributes = ModuleMap::Attributes;
 
   public:
-    ModuleMapParser(modulemap::ModuleMapFile &MMF,
-                    SourceManager &SourceMgr, DiagnosticsEngine &Diags,
+    ModuleMapParser(SourceManager &SourceMgr, DiagnosticsEngine &Diags,
                     ModuleMap &Map, FileID ModuleMapFID,
                     DirectoryEntryRef Directory, bool IsSystem)
-        : MMF(MMF), SourceMgr(SourceMgr), Diags(Diags), Map(Map),
-          ModuleMapFID(ModuleMapFID), Directory(Directory), IsSystem(IsSystem) {}
+        : SourceMgr(SourceMgr), Diags(Diags), Map(Map),
+          ModuleMapFID(ModuleMapFID), Directory(Directory), IsSystem(IsSystem) {
+    }
 
-    bool parseModuleMapFile();
+    bool parseModuleDecl(const modulemap::ModuleDecl &MD);
+    bool parseExternModuleDecl(const modulemap::ExternModuleDecl &EMD);
+    bool parseModuleMapFile(const modulemap::ModuleMapFile &MMF);
   };
 
 } // namespace clang
@@ -2113,7 +2180,18 @@ void ModuleMapParser::handleInferredModuleDecl(
   }
 }
 
-bool ModuleMapParser::parseModuleMapFile() {
+bool ModuleMapParser::parseModuleDecl(const modulemap::ModuleDecl &MD) {
+  handleModuleDecl(MD);
+  return HadError;
+}
+
+bool ModuleMapParser::parseExternModuleDecl(
+    const modulemap::ExternModuleDecl &EMD) {
+  handleExternModuleDecl(EMD);
+  return HadError;
+}
+
+bool ModuleMapParser::parseModuleMapFile(const modulemap::ModuleMapFile &MMF) {
   for (const auto &Decl : MMF.Decls) {
     std::visit(
         llvm::makeVisitor(
@@ -2124,6 +2202,29 @@ bool ModuleMapParser::parseModuleMapFile() {
         Decl);
   }
   return HadError;
+}
+
+Module *ModuleMap::findOrLoadModule(StringRef Name) {
+  llvm::StringMap<Module *>::const_iterator Known = Modules.find(Name);
+  if (Known != Modules.end())
+    return Known->getValue();
+
+  auto PreParsedMod = PreParsedModules.find(Name);
+  if (PreParsedMod == PreParsedModules.end())
+    return nullptr;
+
+  const modulemap::ModuleMapFile &MMF = *PreParsedMod->second.first;
+  auto FileCharacter =
+    MMF.IsSystem ? SrcMgr::C_System_ModuleMap : SrcMgr::C_User_ModuleMap;
+  FileID ID = SourceMgr.createFileID(*MMF.File, SourceLocation(), FileCharacter);
+  ModuleMapParser Parser(SourceMgr, Diags, const_cast<ModuleMap &>(*this), ID,
+                         *MMF.Dir, MMF.IsSystem);
+  if (Parser.parseModuleDecl(*PreParsedMod->second.second))
+    return nullptr;
+
+  Diags.Report(diag::remark_mmap_load_module) << Name;
+
+  return findModule(Name);
 }
 
 bool ModuleMap::parseModuleMapFile(FileEntryRef File, bool IsSystem,
@@ -2151,11 +2252,12 @@ bool ModuleMap::parseModuleMapFile(FileEntryRef File, bool IsSystem,
          "invalid buffer offset");
 
   std::optional<modulemap::ModuleMapFile> MMF =
-      modulemap::parseModuleMap(File, SourceMgr, Diags, IsSystem, Offset);
+      modulemap::parseModuleMap(File, Dir, SourceMgr, Diags, IsSystem, Offset);
   bool Result = false;
   if (MMF) {
-    ModuleMapParser Parser(*MMF, SourceMgr, Diags, *this, ID, Dir, IsSystem);
-    Result = Parser.parseModuleMapFile();
+    Diags.Report(diag::remark_mmap_ingesting) << File.getName();
+    ModuleMapParser Parser(SourceMgr, Diags, *this, ID, Dir, IsSystem);
+    Result = Parser.parseModuleMapFile(*MMF);
   }
   ParsedModuleMap[File] = Result;
 

@@ -152,11 +152,10 @@ std::string formatModuleId(const ModuleId &Id) {
 }
 } // end anonymous namespace
 
-std::optional<ModuleMapFile> modulemap::parseModuleMap(FileEntryRef File,
-                                                       SourceManager &SM,
-                                                       DiagnosticsEngine &Diags,
-                                                       bool IsSystem,
-                                                       unsigned *Offset) {
+std::optional<ModuleMapFile>
+modulemap::parseModuleMap(FileEntryRef File, clang::DirectoryEntryRef Dir,
+                          SourceManager &SM, DiagnosticsEngine &Diags,
+                          bool IsSystem, unsigned *Offset) {
   auto FileCharacter =
       IsSystem ? SrcMgr::C_System_ModuleMap : SrcMgr::C_User_ModuleMap;
   FileID ID = SM.getOrCreateFileID(File, FileCharacter);
@@ -178,6 +177,9 @@ std::optional<ModuleMapFile> modulemap::parseModuleMap(FileEntryRef File,
 
   if (Failed)
     return std::nullopt;
+  Parser.MMF.File = File;
+  Parser.MMF.Dir = Dir;
+  Parser.MMF.IsSystem = IsSystem;
   return std::move(Parser.MMF);
 }
 

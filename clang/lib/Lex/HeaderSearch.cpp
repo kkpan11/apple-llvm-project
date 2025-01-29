@@ -296,7 +296,7 @@ Module *HeaderSearch::lookupModule(StringRef ModuleName,
                                    SourceLocation ImportLoc, bool AllowSearch,
                                    bool AllowExtraModuleMapSearch) {
   // Look in the module map to determine if there is a module by this name.
-  Module *Module = ModMap.findModule(ModuleName);
+  Module *Module = ModMap.findOrLoadModule(ModuleName);
   if (Module || !AllowSearch || !HSOpts->ImplicitModuleMaps)
     return Module;
 
@@ -356,11 +356,11 @@ Module *HeaderSearch::lookupModule(StringRef ModuleName, StringRef SearchName,
     // checked
     DirectoryEntryRef NormalDir = *Dir.getDirRef();
     // Search for a module map file in this directory.
-    if (loadModuleMapFile(NormalDir, IsSystem,
+    if (parseModuleMapFile(NormalDir, IsSystem,
                           /*IsFramework*/false) == LMM_NewlyLoaded) {
       // We just loaded a module map file; check whether the module is
       // available now.
-      Module = ModMap.findModule(ModuleName);
+      Module = ModMap.findOrLoadModule(ModuleName);
       if (Module)
         break;
     }
@@ -370,10 +370,10 @@ Module *HeaderSearch::lookupModule(StringRef ModuleName, StringRef SearchName,
     SmallString<128> NestedModuleMapDirName;
     NestedModuleMapDirName = Dir.getDirRef()->getName();
     llvm::sys::path::append(NestedModuleMapDirName, ModuleName);
-    if (loadModuleMapFile(NestedModuleMapDirName, IsSystem,
+    if (parseModuleMapFile(NestedModuleMapDirName, IsSystem,
                           /*IsFramework*/false) == LMM_NewlyLoaded){
       // If we just loaded a module map file, look for the module again.
-      Module = ModMap.findModule(ModuleName);
+      Module = ModMap.findOrLoadModule(ModuleName);
       if (Module)
         break;
     }
@@ -389,7 +389,7 @@ Module *HeaderSearch::lookupModule(StringRef ModuleName, StringRef SearchName,
       loadSubdirectoryModuleMaps(Dir);
 
     // Look again for the module.
-    Module = ModMap.findModule(ModuleName);
+    Module = ModMap.findOrLoadModule(ModuleName);
     if (Module)
       break;
   }
@@ -1577,7 +1577,7 @@ bool HeaderSearch::hasModuleMap(StringRef FileName,
       // Success. All of the directories we stepped through inherit this module
       // map file.
       for (unsigned I = 0, N = FixUpDirectories.size(); I != N; ++I)
-        DirectoryHasModuleMap[FixUpDirectories[I]] = true;
+        DirectoryHasModuleMap[FixUpDirectories[I]] = MMDS_Loaded;
       return true;
 
     case LMM_NoDirectory:
@@ -1795,6 +1795,33 @@ HeaderSearch::loadModuleMapFileImpl(FileEntryRef File, bool IsSystem,
   return LMM_NewlyLoaded;
 }
 
+HeaderSearch::LoadModuleMapResult
+HeaderSearch::parseModuleMapFileImpl(FileEntryRef File, bool IsSystem,
+                                     DirectoryEntryRef Dir, FileID ID) {
+  // Check whether we've already parsed this module map, and mark it as being
+  // parsed in case we recursively try to parse it from itself.
+  auto AddResult = PreParsedModuleMaps.insert(std::make_pair(File, true));
+  if (!AddResult.second)
+    return AddResult.first->second ? LMM_AlreadyLoaded : LMM_InvalidModuleMap;
+
+  if (ModMap.preParseModuleMapFile(File, IsSystem, Dir, ID)) {
+    PreParsedModuleMaps[File] = false;
+    return LMM_InvalidModuleMap;
+  }
+
+  // Try to load a corresponding private module map.
+  if (OptionalFileEntryRef PMMFile =
+          getPrivateModuleMap(File, FileMgr, Diags)) {
+    if (ModMap.preParseModuleMapFile(*PMMFile, IsSystem, Dir)) {
+      PreParsedModuleMaps[File] = false;
+      return LMM_InvalidModuleMap;
+    }
+  }
+
+  // This directory has a module map.
+  return LMM_NewlyLoaded;
+}
+
 OptionalFileEntryRef
 HeaderSearch::lookupModuleMapFile(DirectoryEntryRef Dir, bool IsFramework) {
   if (!HSOpts->ImplicitModuleMaps)
@@ -1847,7 +1874,7 @@ Module *HeaderSearch::loadFrameworkModule(StringRef Name, DirectoryEntryRef Dir,
     break;
   }
 
-  return ModMap.findModule(Name);
+  return ModMap.findOrLoadModule(Name);
 }
 
 HeaderSearch::LoadModuleMapResult
@@ -1863,8 +1890,19 @@ HeaderSearch::LoadModuleMapResult
 HeaderSearch::loadModuleMapFile(DirectoryEntryRef Dir, bool IsSystem,
                                 bool IsFramework) {
   auto KnownDir = DirectoryHasModuleMap.find(Dir);
-  if (KnownDir != DirectoryHasModuleMap.end())
-    return KnownDir->second ? LMM_AlreadyLoaded : LMM_InvalidModuleMap;
+  if (KnownDir != DirectoryHasModuleMap.end()) {
+    switch (KnownDir->second) {
+    case MMDS_Parsed:
+      break;
+    case MMDS_Loaded:
+      return LMM_AlreadyLoaded;
+    case MMDS_Invalid:
+      return LMM_InvalidModuleMap;
+    };
+
+    // The module map has been parsed but not fully loaded. Do so here.
+    // TODO:
+  }
 
   if (OptionalFileEntryRef ModuleMapFile =
           lookupModuleMapFile(Dir, IsFramework)) {
@@ -1874,9 +1912,49 @@ HeaderSearch::loadModuleMapFile(DirectoryEntryRef Dir, bool IsSystem,
     // E.g. Foo.framework/Modules/module.modulemap
     //      ^Dir                  ^ModuleMapFile
     if (Result == LMM_NewlyLoaded)
-      DirectoryHasModuleMap[Dir] = true;
+      DirectoryHasModuleMap[Dir] = MMDS_Loaded;
     else if (Result == LMM_InvalidModuleMap)
-      DirectoryHasModuleMap[Dir] = false;
+      DirectoryHasModuleMap[Dir] = MMDS_Invalid;
+    return Result;
+  }
+  return LMM_InvalidModuleMap;
+}
+
+HeaderSearch::LoadModuleMapResult
+HeaderSearch::parseModuleMapFile(StringRef DirName, bool IsSystem,
+                                 bool IsFramework) {
+  if (auto Dir = FileMgr.getOptionalDirectoryRef(DirName))
+    return parseModuleMapFile(*Dir, IsSystem, IsFramework);
+
+  return LMM_NoDirectory;
+}
+
+HeaderSearch::LoadModuleMapResult
+HeaderSearch::parseModuleMapFile(DirectoryEntryRef Dir, bool IsSystem,
+                                 bool IsFramework) {
+  // Check if this modulemap has already been fully loaded, if so skip it.
+  auto KnownDir = DirectoryHasModuleMap.find(Dir);
+  if (KnownDir != DirectoryHasModuleMap.end()) {
+    switch (KnownDir->second) {
+    case MMDS_Parsed:
+    case MMDS_Loaded:
+      return LMM_AlreadyLoaded;
+    case MMDS_Invalid:
+      return LMM_InvalidModuleMap;
+    };
+  }
+
+  if (OptionalFileEntryRef ModuleMapFile =
+          lookupModuleMapFile(Dir, IsFramework)) {
+    LoadModuleMapResult Result =
+        parseModuleMapFileImpl(*ModuleMapFile, IsSystem, Dir);
+    // Add Dir explicitly in case ModuleMapFile is in a subdirectory.
+    // E.g. Foo.framework/Modules/module.modulemap
+    //      ^Dir                  ^ModuleMapFile
+    if (Result == LMM_NewlyLoaded)
+      DirectoryHasModuleMap[Dir] = MMDS_Parsed;
+    else if (Result == LMM_InvalidModuleMap)
+      DirectoryHasModuleMap[Dir] = MMDS_Invalid;
     return Result;
   }
   return LMM_InvalidModuleMap;

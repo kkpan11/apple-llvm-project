@@ -332,12 +332,23 @@ class HeaderSearch {
   /// The mapping between modules and headers.
   mutable ModuleMap ModMap;
 
+  enum ModuleMapDirectoryState {
+    MMDS_Parsed,
+    MMDS_Loaded,
+    MMDS_Invalid,
+  };
+
   /// Describes whether a given directory has a module map in it.
-  llvm::DenseMap<const DirectoryEntry *, bool> DirectoryHasModuleMap;
+  llvm::DenseMap<const DirectoryEntry *, ModuleMapDirectoryState>
+      DirectoryHasModuleMap;
 
   /// Set of module map files we've already loaded, and a flag indicating
   /// whether they were valid or not.
   llvm::DenseMap<const FileEntry *, bool> LoadedModuleMaps;
+
+  /// Set of module map files we've already pre-parsed, and a flag indicating
+  /// whether they were valid or not.
+  llvm::DenseMap<const FileEntry *, bool> PreParsedModuleMaps;
 
   // A map of discovered headers with their associated include file name.
   llvm::DenseMap<const FileEntry *, llvm::SmallString<64>> IncludeNames;
@@ -435,7 +446,7 @@ public:
 
   /// Consider modules when including files from this directory.
   void setDirectoryHasModuleMap(const DirectoryEntry* Dir) {
-    DirectoryHasModuleMap[Dir] = true;
+    DirectoryHasModuleMap[Dir] = MMDS_Loaded;
   }
 
   /// Forget everything we know about headers so far.
@@ -717,6 +728,23 @@ public:
                          unsigned *Offset = nullptr,
                          StringRef OriginalModuleMapFile = StringRef());
 
+  /// Read the contents of the given module map file.
+  ///
+  /// \param File The module map file.
+  /// \param IsSystem Whether this file is in a system header directory.
+  /// \param ID If the module map file is already mapped (perhaps as part of
+  ///        processing a preprocessed module), the ID of the file.
+  /// \param Offset [inout] An offset within ID to start parsing. On exit,
+  ///        filled by the end of the parsed contents (either EOF or the
+  ///        location of an end-of-module-map pragma).
+  /// \param OriginalModuleMapFile The original path to the module map file,
+  ///        used to resolve paths within the module (this is required when
+  ///        building the module from preprocessed source).
+  /// \returns true if an error occurred, false otherwise.
+  bool preLoadModuleMapFile(FileEntryRef File, bool IsSystem,
+                            FileID ID = FileID(),
+                            StringRef OriginalModuleMapFile = StringRef());
+
   /// Collect the set of all known, top-level modules.
   ///
   /// \param Modules Will be filled with the set of known, top-level modules.
@@ -936,6 +964,10 @@ private:
                                             FileID ID = FileID(),
                                             unsigned *Offset = nullptr);
 
+  LoadModuleMapResult parseModuleMapFileImpl(FileEntryRef File, bool IsSystem,
+                                             DirectoryEntryRef Dir,
+                                             FileID ID = FileID());
+
   /// Try to load the module map file in the given directory.
   ///
   /// \param DirName The name of the directory where we will look for a module
@@ -958,6 +990,11 @@ private:
   /// named directory.
   LoadModuleMapResult loadModuleMapFile(DirectoryEntryRef Dir, bool IsSystem,
                                         bool IsFramework);
+
+  LoadModuleMapResult parseModuleMapFile(StringRef DirName, bool IsSystem,
+                                         bool IsFramework);
+  LoadModuleMapResult parseModuleMapFile(DirectoryEntryRef Dir, bool IsSystem,
+                                         bool IsFramework);
 };
 
 /// Apply the header search options to get given HeaderSearch object.

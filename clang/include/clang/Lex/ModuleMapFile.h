@@ -26,6 +26,8 @@ class SourceManager;
 
 namespace modulemap {
 
+struct ExportDecl;
+
 using Decl =
     std::variant<struct RequiresDecl, struct HeaderDecl, struct UmbrellaDirDecl,
                  struct ModuleDecl, struct ExcludeDecl, struct ExportDecl,
@@ -126,10 +128,14 @@ struct ConflictDecl {
 using TopLevelDecl = std::variant<ModuleDecl, ExternModuleDecl>;
 
 struct ModuleMapFile {
+  OptionalFileEntryRef File;
+  OptionalDirectoryEntryRef Dir;
+  bool IsSystem;
   std::vector<TopLevelDecl> Decls;
 };
 
 std::optional<ModuleMapFile> parseModuleMap(FileEntryRef File,
+                                            clang::DirectoryEntryRef Dir,
                                             SourceManager &SM,
                                             DiagnosticsEngine &Diags,
                                             bool IsSystem, unsigned *Offset);

@@ -18,6 +18,7 @@
 #include "clang/Basic/LangOptions.h"
 #include "clang/Basic/Module.h"
 #include "clang/Basic/SourceLocation.h"
+#include "clang/Lex/ModuleMapFile.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
@@ -275,6 +276,12 @@ private:
   /// Describes whether we haved parsed a particular file as a module
   /// map.
   llvm::DenseMap<const FileEntry *, bool> ParsedModuleMap;
+  llvm::DenseMap<const FileEntry *, bool> PreParsedModuleMap;
+
+  std::vector<std::unique_ptr<modulemap::ModuleMapFile>> PreParsedModuleMaps;
+  llvm::StringMap<std::pair<const modulemap::ModuleMapFile *,
+                            const modulemap::ModuleDecl *>>
+      PreParsedModules;
 
   /// Resolve the given export declaration into an actual export
   /// declaration.
@@ -491,6 +498,8 @@ public:
   /// \returns The named module, if known; otherwise, returns null.
   Module *findModule(StringRef Name) const;
 
+  Module *findOrLoadModule(StringRef Name);
+
   Module *findOrInferSubmodule(Module *Parent, StringRef Name);
 
   /// Retrieve a module with the given name using lexical name lookup,
@@ -705,6 +714,11 @@ public:
   /// \param Role The role of the header wrt the module.
   void addHeader(Module *Mod, Module::Header Header,
                  ModuleHeaderRole Role, bool Imported = false);
+
+  /// Parse a module map without creating `clang::Module` instances.
+  bool preParseModuleMapFile(FileEntryRef File, bool IsSystem,
+                             DirectoryEntryRef Dir, FileID ID = FileID(),
+                             SourceLocation ExternModuleLoc = SourceLocation());
 
   /// Parse the given module map file, and record any modules we
   /// encounter.
