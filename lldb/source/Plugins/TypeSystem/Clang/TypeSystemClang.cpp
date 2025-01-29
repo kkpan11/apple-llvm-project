@@ -2409,7 +2409,7 @@ CompilerType TypeSystemClang::GetOrCreateStructForIdentifier(
 clang::EnumDecl *TypeSystemClang::CreateEnumerationDecl(
     llvm::StringRef name, clang::DeclContext *decl_ctx,
     OptionalClangModuleID owning_module, const Declaration &decl,
-    const CompilerType &integer_clang_type, bool is_scoped) {
+    const CompilerType &integer_clang_type, bool is_scoped, std::optional<clang::EnumExtensibilityAttr::Kind> enum_kind) {
   // TODO: Do something intelligent with the Declaration object passed in
   // like maybe filling in the SourceLocation with it...
   ASTContext &ast = getASTContext();
@@ -2431,6 +2431,9 @@ clang::EnumDecl *TypeSystemClang::CreateEnumerationDecl(
   enum_decl->setIntegerType(ClangUtil::GetQualType(integer_clang_type));
 
   enum_decl->setAccess(AS_public); // TODO respect what's in the debug info
+
+  if (enum_kind)
+    enum_decl->addAttr(clang::EnumExtensibilityAttr::CreateImplicit(getASTContext(), *enum_kind));
 
   return enum_decl;
 }

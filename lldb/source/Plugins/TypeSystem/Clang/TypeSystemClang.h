@@ -20,6 +20,7 @@
 #include <utility>
 #include <vector>
 
+#include "clang/AST/Attr.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/ASTFwd.h"
 #include "clang/AST/Decl.h"
@@ -544,16 +545,16 @@ public:
                                          OptionalClangModuleID owning_module,
                                          const Declaration &decl,
                                          const CompilerType &integer_qual_type,
-                                         bool is_scoped);
+                                         bool is_scoped, std::optional<clang::EnumExtensibilityAttr::Kind> = std::nullopt);
 
   CompilerType CreateEnumerationType(llvm::StringRef name,
                                      clang::DeclContext *decl_ctx,
                                      OptionalClangModuleID owning_module,
                                      const Declaration &decl,
                                      const CompilerType &integer_qual_type,
-                                     bool is_scoped) {
+                                     bool is_scoped, std::optional<clang::EnumExtensibilityAttr::Kind> enum_kind = std::nullopt) {
     clang::EnumDecl *enum_decl = CreateEnumerationDecl(
-        name, decl_ctx, owning_module, decl, integer_qual_type, is_scoped);
+        name, decl_ctx, owning_module, decl, integer_qual_type, is_scoped, enum_kind);
     return GetType(getASTContext().getTagDeclType(enum_decl));
   }
 

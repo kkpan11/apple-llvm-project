@@ -9,6 +9,7 @@
 #ifndef LLDB_SOURCE_PLUGINS_SYMBOLFILE_DWARF_DWARFASTPARSERCLANG_H
 #define LLDB_SOURCE_PLUGINS_SYMBOLFILE_DWARF_DWARFASTPARSERCLANG_H
 
+#include "clang/AST/Attr.h"
 #include "clang/AST/CharUnits.h"
 #include "clang/AST/Type.h"
 #include "llvm/ADT/DenseMap.h"
@@ -538,6 +539,7 @@ struct ParsedDWARFTypeAttributes {
       clang::RQ_None; ///< Indicates ref-qualifier of
                       ///< C++ member function if present.
                       ///< Is RQ_None otherwise.
+  std::optional<clang::EnumExtensibilityAttr::Kind> enum_kind;
 };
 
 #endif // LLDB_SOURCE_PLUGINS_SYMBOLFILE_DWARF_DWARFASTPARSERCLANG_H
