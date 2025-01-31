@@ -276,7 +276,9 @@ private:
   /// Describes whether we haved parsed a particular file as a module
   /// map.
   llvm::DenseMap<const FileEntry *, bool> ParsedModuleMap;
-  llvm::DenseMap<const FileEntry *, bool> PreParsedModuleMap;
+  llvm::DenseMap<const FileEntry *, const modulemap::ModuleMapFile *>
+      PreParsedModuleMap;
+  llvm::DenseSet<const modulemap::ModuleDecl *> LoadedModuleDecls;
 
   std::vector<std::unique_ptr<modulemap::ModuleMapFile>> PreParsedModuleMaps;
   llvm::StringMap<std::pair<const modulemap::ModuleMapFile *,
