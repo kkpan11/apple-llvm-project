@@ -849,6 +849,10 @@ struct AsyncUnwindRegisterNumbers {
 
 std::optional<AsyncUnwindRegisterNumbers>
 GetAsyncUnwindRegisterNumbers(llvm::Triple::ArchType triple);
+
+/// Inspects thread local storage to find the address of the currently executing
+/// task.
+llvm::Expected<lldb::addr_t> GetTaskAddrFromThreadLocalStorage(Thread &thread);
 } // namespace lldb_private
 
 #endif // liblldb_SwiftLanguageRuntime_h_
