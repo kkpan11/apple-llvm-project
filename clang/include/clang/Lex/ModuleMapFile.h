@@ -129,12 +129,14 @@ using TopLevelDecl = std::variant<ModuleDecl, ExternModuleDecl>;
 
 struct ModuleMapFile {
   OptionalFileEntryRef File;
+  FileID ID;
   OptionalDirectoryEntryRef Dir;
   bool IsSystem;
   std::vector<TopLevelDecl> Decls;
 };
 
 std::optional<ModuleMapFile> parseModuleMap(FileEntryRef File,
+                                            FileID ID,
                                             clang::DirectoryEntryRef Dir,
                                             SourceManager &SM,
                                             DiagnosticsEngine &Diags,

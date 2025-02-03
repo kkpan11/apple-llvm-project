@@ -722,6 +722,8 @@ public:
                              DirectoryEntryRef Dir, FileID ID = FileID(),
                              SourceLocation ExternModuleLoc = SourceLocation());
 
+  bool parseRemainingFromModuleMapFile(FileEntryRef File);
+
   /// Parse the given module map file, and record any modules we
   /// encounter.
   ///

@@ -1342,9 +1342,12 @@ bool ModuleMap::preParseModuleMapFile(clang::FileEntryRef File, bool IsSystem,
 
   // If the module map file wasn't already entered, do so now.
   if (ID.isInvalid()) {
-    auto FileCharacter =
-        IsSystem ? SrcMgr::C_System_ModuleMap : SrcMgr::C_User_ModuleMap;
-    ID = SourceMgr.createFileID(File, ExternModuleLoc, FileCharacter);
+    ID = SourceMgr.translateFile(File);
+    if (ID.isInvalid()) {
+      auto FileCharacter =
+          IsSystem ? SrcMgr::C_System_ModuleMap : SrcMgr::C_User_ModuleMap;
+      ID = SourceMgr.createFileID(File, ExternModuleLoc, FileCharacter);
+    }
   }
 
   std::optional<llvm::MemoryBufferRef> Buffer = SourceMgr.getBufferOrNone(ID);
@@ -1354,8 +1357,8 @@ bool ModuleMap::preParseModuleMapFile(clang::FileEntryRef File, bool IsSystem,
   }
 
   Diags.Report(diag::remark_mmap_preparse) << File.getName();
-  std::optional<modulemap::ModuleMapFile> MaybeMMF =
-      modulemap::parseModuleMap(File, Dir, SourceMgr, Diags, IsSystem, nullptr);
+  std::optional<modulemap::ModuleMapFile> MaybeMMF = modulemap::parseModuleMap(
+      File, ID, Dir, SourceMgr, Diags, IsSystem, nullptr);
 
   if (!MaybeMMF) {
     PreParsedModuleMap[File] = nullptr;
@@ -1393,7 +1396,7 @@ bool ModuleMap::preParseModuleMapFile(clang::FileEntryRef File, bool IsSystem,
     }
     if (auto EFile =
             SourceMgr.getFileManager().getOptionalFileRef(FileNameRef)) {
-      preParseModuleMapFile(*EFile, IsSystem, EFile->getDir(), ID,
+      preParseModuleMapFile(*EFile, IsSystem, EFile->getDir(), FileID(),
                             ExternModuleLoc);
     }
   }
@@ -1743,7 +1746,11 @@ void ModuleMapParser::handleModuleDecl(const modulemap::ModuleDecl &MD) {
         Map.LangOpts.CurrentModule == ModuleName &&
         SourceMgr.getDecomposedLoc(ModuleNameLoc).first !=
             SourceMgr.getDecomposedLoc(Existing->DefinitionLoc).first;
-    if (LoadedFromASTFile || Inferred || PartOfFramework || ParsedAsMainInput) {
+    // FIXME: This is a temporary check until we can avoid parsing module maps
+    //        multiple times.
+    bool SameModuleDecl = ModuleNameLoc == Existing->DefinitionLoc;
+    if (LoadedFromASTFile || Inferred || PartOfFramework || ParsedAsMainInput ||
+        SameModuleDecl) {
       ActiveModule = PreviousActiveModule;
       // Skip the module definition.
       return;
@@ -2219,11 +2226,8 @@ Module *ModuleMap::findOrLoadModule(StringRef Name) {
     return nullptr;
 
   const modulemap::ModuleMapFile &MMF = *PreParsedMod->second.first;
-  auto FileCharacter =
-    MMF.IsSystem ? SrcMgr::C_System_ModuleMap : SrcMgr::C_User_ModuleMap;
-  FileID ID = SourceMgr.createFileID(*MMF.File, SourceLocation(), FileCharacter);
-  ModuleMapParser Parser(SourceMgr, Diags, const_cast<ModuleMap &>(*this), ID,
-                         *MMF.Dir, MMF.IsSystem);
+  ModuleMapParser Parser(SourceMgr, Diags, const_cast<ModuleMap &>(*this),
+                         MMF.ID, *MMF.Dir, MMF.IsSystem);
   LoadedModuleDecls.insert(PreParsedMod->second.second);
   if (Parser.parseModuleDecl(*PreParsedMod->second.second))
     return nullptr;
@@ -2231,6 +2235,46 @@ Module *ModuleMap::findOrLoadModule(StringRef Name) {
   Diags.Report(diag::remark_mmap_load_module) << Name;
 
   return findModule(Name);
+}
+
+bool ModuleMap::parseRemainingFromModuleMapFile(FileEntryRef File) {
+  // Load all remaining module decls if it has already been pre-parsed.
+  auto PreParsed = PreParsedModuleMap.find(File);
+  if (PreParsed != PreParsedModuleMap.end()) {
+    Diags.Report(diag::remark_mmap_load_module) << File.getNameAsRequested();
+    const modulemap::ModuleMapFile &MMF = *PreParsed->second;
+    ModuleMapParser Parser(SourceMgr, Diags, *this, MMF.ID, *MMF.Dir,
+                           MMF.IsSystem);
+    for (const modulemap::TopLevelDecl &TLD : MMF.Decls) {
+      if (std::visit(
+              llvm::makeVisitor(
+                  [&](const modulemap::ModuleDecl &MD) {
+                    if (!LoadedModuleDecls.insert(&MD).second) {
+                      return Parser.parseModuleDecl(MD);
+                    }
+                    return false;
+                  },
+                  [&](const modulemap::ExternModuleDecl &EMD) {
+                    StringRef FileNameRef = EMD.Path;
+                    SmallString<128> ModuleMapFileName;
+                    if (llvm::sys::path::is_relative(FileNameRef)) {
+                      ModuleMapFileName += MMF.Dir->getName();
+                      llvm::sys::path::append(ModuleMapFileName, EMD.Path);
+                      FileNameRef = ModuleMapFileName;
+                    }
+
+                    if (auto EFile =
+                            SourceMgr.getFileManager().getOptionalFileRef(
+                                FileNameRef)) {
+                      return parseRemainingFromModuleMapFile(*EFile);
+                    }
+                    return false;
+                  }),
+              TLD))
+        return true;
+    }
+  }
+  return false;
 }
 
 bool ModuleMap::parseModuleMapFile(FileEntryRef File, bool IsSystem,
@@ -2244,34 +2288,20 @@ bool ModuleMap::parseModuleMapFile(FileEntryRef File, bool IsSystem,
     return Known->second;
 
   // Load all remaining module decls if it has already been pre-parsed.
-  auto PreParsed = PreParsedModuleMap.find(File);
+  // TODO: This doesn't work yet.
+  /*auto PreParsed = PreParsedModuleMap.find(File);
   if (PreParsed != PreParsedModuleMap.end()) {
-    Diags.Report(diag::remark_mmap_load_module) << File.getNameAsRequested();
-    const modulemap::ModuleMapFile &MMF = *PreParsed->second;
-    ModuleMapParser Parser(SourceMgr, Diags, const_cast<ModuleMap &>(*this), ID,
-                           Dir, IsSystem);
-    for (const modulemap::TopLevelDecl &TLD : MMF.Decls) {
-      if (std::visit(
-              llvm::makeVisitor(
-                  [&](const modulemap::ModuleDecl &MD) {
-                    if (!LoadedModuleDecls.insert(&MD).second) {
-                      return Parser.parseModuleDecl(MD);
-                    }
-                    return false;
-                  },
-                  [&](const modulemap::ExternModuleDecl &MD) { return false; }),
-              TLD))
-        return true;
-    }
-
-    return false;
-  }
+    // return parseRemainingFromModuleMapFile(File);
+  }*/
 
   // If the module map file wasn't already entered, do so now.
   if (ID.isInvalid()) {
-    auto FileCharacter =
-        IsSystem ? SrcMgr::C_System_ModuleMap : SrcMgr::C_User_ModuleMap;
-    ID = SourceMgr.createFileID(File, ExternModuleLoc, FileCharacter);
+    ID = SourceMgr.translateFile(File);
+    if (ID.isInvalid()) {
+      auto FileCharacter =
+          IsSystem ? SrcMgr::C_System_ModuleMap : SrcMgr::C_User_ModuleMap;
+      ID = SourceMgr.createFileID(File, ExternModuleLoc, FileCharacter);
+    }
   }
 
   assert(Target && "Missing target information");
@@ -2281,8 +2311,8 @@ bool ModuleMap::parseModuleMapFile(FileEntryRef File, bool IsSystem,
   assert((!Offset || *Offset <= Buffer->getBufferSize()) &&
          "invalid buffer offset");
 
-  std::optional<modulemap::ModuleMapFile> MMF =
-      modulemap::parseModuleMap(File, Dir, SourceMgr, Diags, IsSystem, Offset);
+  std::optional<modulemap::ModuleMapFile> MMF = modulemap::parseModuleMap(
+      File, ID, Dir, SourceMgr, Diags, IsSystem, Offset);
   bool Result = false;
   if (MMF) {
     Diags.Report(diag::remark_mmap_ingesting) << File.getName();
