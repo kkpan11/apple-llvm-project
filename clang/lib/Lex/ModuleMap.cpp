@@ -1343,7 +1343,7 @@ bool ModuleMap::preParseModuleMapFile(clang::FileEntryRef File, bool IsSystem,
   // If the module map file wasn't already entered, do so now.
   if (ID.isInvalid()) {
     ID = SourceMgr.translateFile(File);
-    if (ID.isInvalid()) {
+    if (ID.isInvalid() || SourceMgr.isLoadedFileID(ID)) {
       auto FileCharacter =
           IsSystem ? SrcMgr::C_System_ModuleMap : SrcMgr::C_User_ModuleMap;
       ID = SourceMgr.createFileID(File, ExternModuleLoc, FileCharacter);
@@ -1402,6 +1402,10 @@ bool ModuleMap::preParseModuleMapFile(clang::FileEntryRef File, bool IsSystem,
   }
 
   PreParsedModuleMap[File] = &MMF;
+
+  for (const auto &Cb : Callbacks)
+    Cb->moduleMapFileRead(SourceLocation(), File, IsSystem);
+
   return false;
 }
 
@@ -2297,7 +2301,7 @@ bool ModuleMap::parseModuleMapFile(FileEntryRef File, bool IsSystem,
   // If the module map file wasn't already entered, do so now.
   if (ID.isInvalid()) {
     ID = SourceMgr.translateFile(File);
-    if (ID.isInvalid()) {
+    if (ID.isInvalid() || SourceMgr.isLoadedFileID(ID)) {
       auto FileCharacter =
           IsSystem ? SrcMgr::C_System_ModuleMap : SrcMgr::C_User_ModuleMap;
       ID = SourceMgr.createFileID(File, ExternModuleLoc, FileCharacter);
