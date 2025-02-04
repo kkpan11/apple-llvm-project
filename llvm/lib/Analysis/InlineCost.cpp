@@ -2363,6 +2363,7 @@ bool CallAnalyzer::visitCallBase(CallBase &Call) {
       return false;
     case Intrinsic::icall_branch_funnel:
     case Intrinsic::localescape:
+    case Intrinsic::ret_popless:
       HasUninlineableIntrinsic = true;
       return false;
     case Intrinsic::vastart:
