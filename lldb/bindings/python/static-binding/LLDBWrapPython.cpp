@@ -5652,7 +5652,7 @@ bool lldb_private::python::SWIGBridge::LLDBSwigPythonCallParsedCommandObject(
   auto pfunc = self.ResolveName<PythonCallable>("__call__");
 
   if (!pfunc.IsAllocated()) {
-    cmd_retobj.AppendError("Could not find '__call__' method in implementation class"); 
+    cmd_retobj.AppendError("Could not find '__call__' method in implementation class");
     return false;
   }
 
@@ -5909,6 +5909,26 @@ static void LLDBSwigPythonCallPythonLogOutputCallback(const char *str,
     Py_XDECREF(result);
     SWIG_PYTHON_THREAD_END_BLOCK;
   }
+}
+
+// For CommandPrintCallback functions
+static CommandReturnObjectCallbackResult LLDBSwigPythonCallPythonCommandPrintCallback(SBCommandReturnObject& result, void *callback_baton) {
+  SWIG_Python_Thread_Block swig_thread_block;
+
+  PyErr_Cleaner py_err_cleaner(true);
+
+  PythonObject result_arg = SWIGBridge::ToSWIGWrapper(
+      std::make_unique<SBCommandReturnObject>(result));
+  PythonCallable callable =
+      Retain<PythonCallable>(reinterpret_cast<PyObject *>(callback_baton));
+
+  if (!callable.IsValid())
+    return eCommandReturnObjectPrintCallbackSkipped;
+
+  PythonObject callback_result = callable(result_arg);
+
+  long long ret_val = unwrapOrSetPythonException(As<long long>(callback_result));
+  return (CommandReturnObjectCallbackResult)ret_val;
 }
 
 // For DebuggerTerminateCallback functions
@@ -17699,6 +17719,46 @@ fail:
 }
 
 
+SWIGINTERN PyObject *_wrap_SBCommandInterpreter_SetPrintCallback(PyObject *self, PyObject *args) {
+  PyObject *resultobj = 0;
+  lldb::SBCommandInterpreter *arg1 = (lldb::SBCommandInterpreter *) 0 ;
+  lldb::SBCommandPrintCallback arg2 = (lldb::SBCommandPrintCallback) 0 ;
+  void *arg3 = (void *) 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  PyObject *swig_obj[2] ;
+  
+  (void)self;
+  if (!SWIG_Python_UnpackTuple(args, "SBCommandInterpreter_SetPrintCallback", 2, 2, swig_obj)) SWIG_fail;
+  res1 = SWIG_ConvertPtr(swig_obj[0], &argp1,SWIGTYPE_p_lldb__SBCommandInterpreter, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "SBCommandInterpreter_SetPrintCallback" "', argument " "1"" of type '" "lldb::SBCommandInterpreter *""'"); 
+  }
+  arg1 = reinterpret_cast< lldb::SBCommandInterpreter * >(argp1);
+  {
+    if (!(swig_obj[1] == Py_None ||
+        PyCallable_Check(reinterpret_cast<PyObject *>(swig_obj[1])))) {
+      PyErr_SetString(PyExc_TypeError, "Need a callable object or None!");
+      SWIG_fail;
+    }
+    
+    // Don't lose the callback reference.
+    Py_INCREF(swig_obj[1]);
+    arg2 = LLDBSwigPythonCallPythonCommandPrintCallback;
+    arg3 = swig_obj[1];
+  }
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    (arg1)->SetPrintCallback(arg2,arg3);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
+  resultobj = SWIG_Py_Void();
+  return resultobj;
+fail:
+  return NULL;
+}
+
+
 SWIGINTERN PyObject *SBCommandInterpreter_swigregister(PyObject *SWIGUNUSEDPARM(self), PyObject *args) {
   PyObject *obj = NULL;
   if (!SWIG_Python_UnpackTuple(args, "swigregister", 1, 1, &obj)) return NULL;
@@ -18659,6 +18719,34 @@ SWIGINTERN PyObject *_wrap_SBCommandReturnObject_IsValid(PyObject *self, PyObjec
     SWIG_PYTHON_THREAD_END_ALLOW;
   }
   resultobj = SWIG_From_bool(static_cast< bool >(result));
+  return resultobj;
+fail:
+  return NULL;
+}
+
+
+SWIGINTERN PyObject *_wrap_SBCommandReturnObject_GetCommand(PyObject *self, PyObject *args) {
+  PyObject *resultobj = 0;
+  lldb::SBCommandReturnObject *arg1 = (lldb::SBCommandReturnObject *) 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  PyObject *swig_obj[1] ;
+  char *result = 0 ;
+  
+  (void)self;
+  if (!args) SWIG_fail;
+  swig_obj[0] = args;
+  res1 = SWIG_ConvertPtr(swig_obj[0], &argp1,SWIGTYPE_p_lldb__SBCommandReturnObject, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "SBCommandReturnObject_GetCommand" "', argument " "1"" of type '" "lldb::SBCommandReturnObject *""'"); 
+  }
+  arg1 = reinterpret_cast< lldb::SBCommandReturnObject * >(argp1);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (char *)(arg1)->GetCommand();
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
+  resultobj = SWIG_FromCharPtr((const char *)result);
   return resultobj;
 fail:
   return NULL;
@@ -29189,6 +29277,33 @@ SWIGINTERN PyObject *_wrap_SBDebugger_GetSyntheticForType(PyObject *self, PyObje
     SWIG_PYTHON_THREAD_END_ALLOW;
   }
   resultobj = SWIG_NewPointerObj((new lldb::SBTypeSynthetic(result)), SWIGTYPE_p_lldb__SBTypeSynthetic, SWIG_POINTER_OWN |  0 );
+  return resultobj;
+fail:
+  return NULL;
+}
+
+
+SWIGINTERN PyObject *_wrap_SBDebugger_ResetStatistics(PyObject *self, PyObject *args) {
+  PyObject *resultobj = 0;
+  lldb::SBDebugger *arg1 = (lldb::SBDebugger *) 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  PyObject *swig_obj[1] ;
+  
+  (void)self;
+  if (!args) SWIG_fail;
+  swig_obj[0] = args;
+  res1 = SWIG_ConvertPtr(swig_obj[0], &argp1,SWIGTYPE_p_lldb__SBDebugger, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "SBDebugger_ResetStatistics" "', argument " "1"" of type '" "lldb::SBDebugger *""'"); 
+  }
+  arg1 = reinterpret_cast< lldb::SBDebugger * >(argp1);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    (arg1)->ResetStatistics();
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
+  resultobj = SWIG_Py_Void();
   return resultobj;
 fail:
   return NULL;
@@ -65557,6 +65672,33 @@ fail:
 }
 
 
+SWIGINTERN PyObject *_wrap_SBTarget_ResetStatistics(PyObject *self, PyObject *args) {
+  PyObject *resultobj = 0;
+  lldb::SBTarget *arg1 = (lldb::SBTarget *) 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  PyObject *swig_obj[1] ;
+  
+  (void)self;
+  if (!args) SWIG_fail;
+  swig_obj[0] = args;
+  res1 = SWIG_ConvertPtr(swig_obj[0], &argp1,SWIGTYPE_p_lldb__SBTarget, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "SBTarget_ResetStatistics" "', argument " "1"" of type '" "lldb::SBTarget *""'"); 
+  }
+  arg1 = reinterpret_cast< lldb::SBTarget * >(argp1);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    (arg1)->ResetStatistics();
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
+  resultobj = SWIG_Py_Void();
+  return resultobj;
+fail:
+  return NULL;
+}
+
+
 SWIGINTERN PyObject *_wrap_SBTarget_GetPlatform(PyObject *self, PyObject *args) {
   PyObject *resultobj = 0;
   lldb::SBTarget *arg1 = (lldb::SBTarget *) 0 ;
@@ -96323,6 +96465,7 @@ static PyMethodDef SwigMethods[] = {
 	 { "SBCommandInterpreter_ResolveCommand", _wrap_SBCommandInterpreter_ResolveCommand, METH_VARARGS, "SBCommandInterpreter_ResolveCommand(SBCommandInterpreter self, char const * command_line, SBCommandReturnObject result)"},
 	 { "SBCommandInterpreter_GetStatistics", _wrap_SBCommandInterpreter_GetStatistics, METH_O, "SBCommandInterpreter_GetStatistics(SBCommandInterpreter self) -> SBStructuredData"},
 	 { "SBCommandInterpreter_GetTranscript", _wrap_SBCommandInterpreter_GetTranscript, METH_O, "SBCommandInterpreter_GetTranscript(SBCommandInterpreter self) -> SBStructuredData"},
+	 { "SBCommandInterpreter_SetPrintCallback", _wrap_SBCommandInterpreter_SetPrintCallback, METH_VARARGS, "SBCommandInterpreter_SetPrintCallback(SBCommandInterpreter self, lldb::SBCommandPrintCallback callback)"},
 	 { "SBCommandInterpreter_swigregister", SBCommandInterpreter_swigregister, METH_O, NULL},
 	 { "SBCommandInterpreter_swiginit", SBCommandInterpreter_swiginit, METH_VARARGS, NULL},
 	 { "new_SBCommandInterpreterRunOptions", _wrap_new_SBCommandInterpreterRunOptions, METH_VARARGS, "\n"
@@ -96361,6 +96504,7 @@ static PyMethodDef SwigMethods[] = {
 	 { "delete_SBCommandReturnObject", _wrap_delete_SBCommandReturnObject, METH_O, "delete_SBCommandReturnObject(SBCommandReturnObject self)"},
 	 { "SBCommandReturnObject___nonzero__", _wrap_SBCommandReturnObject___nonzero__, METH_O, "SBCommandReturnObject___nonzero__(SBCommandReturnObject self) -> bool"},
 	 { "SBCommandReturnObject_IsValid", _wrap_SBCommandReturnObject_IsValid, METH_O, "SBCommandReturnObject_IsValid(SBCommandReturnObject self) -> bool"},
+	 { "SBCommandReturnObject_GetCommand", _wrap_SBCommandReturnObject_GetCommand, METH_O, "SBCommandReturnObject_GetCommand(SBCommandReturnObject self) -> char const *"},
 	 { "SBCommandReturnObject_GetErrorData", _wrap_SBCommandReturnObject_GetErrorData, METH_O, "SBCommandReturnObject_GetErrorData(SBCommandReturnObject self) -> SBStructuredData"},
 	 { "SBCommandReturnObject_PutOutput", _wrap_SBCommandReturnObject_PutOutput, METH_VARARGS, "\n"
 		"SBCommandReturnObject_PutOutput(SBCommandReturnObject self, SBFile file) -> size_t\n"
@@ -96712,6 +96856,7 @@ static PyMethodDef SwigMethods[] = {
 	 { "SBDebugger_GetSummaryForType", _wrap_SBDebugger_GetSummaryForType, METH_VARARGS, "SBDebugger_GetSummaryForType(SBDebugger self, SBTypeNameSpecifier arg2) -> SBTypeSummary"},
 	 { "SBDebugger_GetFilterForType", _wrap_SBDebugger_GetFilterForType, METH_VARARGS, "SBDebugger_GetFilterForType(SBDebugger self, SBTypeNameSpecifier arg2) -> SBTypeFilter"},
 	 { "SBDebugger_GetSyntheticForType", _wrap_SBDebugger_GetSyntheticForType, METH_VARARGS, "SBDebugger_GetSyntheticForType(SBDebugger self, SBTypeNameSpecifier arg2) -> SBTypeSynthetic"},
+	 { "SBDebugger_ResetStatistics", _wrap_SBDebugger_ResetStatistics, METH_O, "SBDebugger_ResetStatistics(SBDebugger self)"},
 	 { "SBDebugger_RunCommandInterpreter", _wrap_SBDebugger_RunCommandInterpreter, METH_VARARGS, "\n"
 		"SBDebugger_RunCommandInterpreter(SBDebugger self, bool auto_handle_events, bool spawn_thread, SBCommandInterpreterRunOptions options, int & num_errors, bool & quit_requested, bool & stopped_for_crash)\n"
 		"Launch a command interpreter session. Commands are read from standard input or\n"
@@ -98526,6 +98671,7 @@ static PyMethodDef SwigMethods[] = {
 		"SBTarget_GetStatistics(SBTarget self) -> SBStructuredData\n"
 		"SBTarget_GetStatistics(SBTarget self, SBStatisticsOptions options) -> SBStructuredData\n"
 		""},
+	 { "SBTarget_ResetStatistics", _wrap_SBTarget_ResetStatistics, METH_O, "SBTarget_ResetStatistics(SBTarget self)"},
 	 { "SBTarget_GetPlatform", _wrap_SBTarget_GetPlatform, METH_O, "\n"
 		"SBTarget_GetPlatform(SBTarget self) -> SBPlatform\n"
 		"\n"
@@ -102876,6 +103022,7 @@ SWIG_init(void) {
   SWIG_Python_SetConstant(d, "eSectionTypeDWARFDebugTuIndex",SWIG_From_int(static_cast< int >(lldb::eSectionTypeDWARFDebugTuIndex)));
   SWIG_Python_SetConstant(d, "eSectionTypeCTF",SWIG_From_int(static_cast< int >(lldb::eSectionTypeCTF)));
   SWIG_Python_SetConstant(d, "eSectionTypeLLDBTypeSummaries",SWIG_From_int(static_cast< int >(lldb::eSectionTypeLLDBTypeSummaries)));
+  SWIG_Python_SetConstant(d, "eSectionTypeLLDBFormatters",SWIG_From_int(static_cast< int >(lldb::eSectionTypeLLDBFormatters)));
   SWIG_Python_SetConstant(d, "eSectionTypeSwiftModules",SWIG_From_int(static_cast< int >(lldb::eSectionTypeSwiftModules)));
   SWIG_Python_SetConstant(d, "eEmulateInstructionOptionNone",SWIG_From_int(static_cast< int >(lldb::eEmulateInstructionOptionNone)));
   SWIG_Python_SetConstant(d, "eEmulateInstructionOptionAutoAdvancePC",SWIG_From_int(static_cast< int >(lldb::eEmulateInstructionOptionAutoAdvancePC)));
@@ -103180,6 +103327,8 @@ SWIG_init(void) {
   SWIG_Python_SetConstant(d, "eSeverityError",SWIG_From_int(static_cast< int >(lldb::eSeverityError)));
   SWIG_Python_SetConstant(d, "eSeverityWarning",SWIG_From_int(static_cast< int >(lldb::eSeverityWarning)));
   SWIG_Python_SetConstant(d, "eSeverityInfo",SWIG_From_int(static_cast< int >(lldb::eSeverityInfo)));
+  SWIG_Python_SetConstant(d, "eCommandReturnObjectPrintCallbackSkipped",SWIG_From_int(static_cast< int >(lldb::eCommandReturnObjectPrintCallbackSkipped)));
+  SWIG_Python_SetConstant(d, "eCommandReturnObjectPrintCallbackHandled",SWIG_From_int(static_cast< int >(lldb::eCommandReturnObjectPrintCallbackHandled)));
   SWIG_Python_SetConstant(d, "SBCommandInterpreter_eBroadcastBitThreadShouldExit",SWIG_From_int(static_cast< int >(lldb::SBCommandInterpreter::eBroadcastBitThreadShouldExit)));
   SWIG_Python_SetConstant(d, "SBCommandInterpreter_eBroadcastBitResetPrompt",SWIG_From_int(static_cast< int >(lldb::SBCommandInterpreter::eBroadcastBitResetPrompt)));
   SWIG_Python_SetConstant(d, "SBCommandInterpreter_eBroadcastBitQuitCommandReceived",SWIG_From_int(static_cast< int >(lldb::SBCommandInterpreter::eBroadcastBitQuitCommandReceived)));
