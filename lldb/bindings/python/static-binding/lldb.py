@@ -1209,6 +1209,8 @@ eSectionTypeCTF = _lldb.eSectionTypeCTF
 
 eSectionTypeLLDBTypeSummaries = _lldb.eSectionTypeLLDBTypeSummaries
 
+eSectionTypeLLDBFormatters = _lldb.eSectionTypeLLDBFormatters
+
 eSectionTypeSwiftModules = _lldb.eSectionTypeSwiftModules
 
 eEmulateInstructionOptionNone = _lldb.eEmulateInstructionOptionNone
@@ -1816,6 +1818,10 @@ eSeverityError = _lldb.eSeverityError
 eSeverityWarning = _lldb.eSeverityWarning
 
 eSeverityInfo = _lldb.eSeverityInfo
+
+eCommandReturnObjectPrintCallbackSkipped = _lldb.eCommandReturnObjectPrintCallbackSkipped
+
+eCommandReturnObjectPrintCallbackHandled = _lldb.eCommandReturnObjectPrintCallbackHandled
 
 class SBAddress(object):
     r"""
@@ -3609,6 +3615,10 @@ class SBCommandInterpreter(object):
         r"""GetTranscript(SBCommandInterpreter self) -> SBStructuredData"""
         return _lldb.SBCommandInterpreter_GetTranscript(self)
 
+    def SetPrintCallback(self, callback):
+        r"""SetPrintCallback(SBCommandInterpreter self, lldb::SBCommandPrintCallback callback)"""
+        return _lldb.SBCommandInterpreter_SetPrintCallback(self, callback)
+
 # Register SBCommandInterpreter in _lldb:
 _lldb.SBCommandInterpreter_swigregister(SBCommandInterpreter)
 class SBCommandInterpreterRunOptions(object):
@@ -3760,6 +3770,10 @@ class SBCommandReturnObject(object):
     def IsValid(self):
         r"""IsValid(SBCommandReturnObject self) -> bool"""
         return _lldb.SBCommandReturnObject_IsValid(self)
+
+    def GetCommand(self):
+        r"""GetCommand(SBCommandReturnObject self) -> char const *"""
+        return _lldb.SBCommandReturnObject_GetCommand(self)
 
     def GetErrorData(self):
         r"""GetErrorData(SBCommandReturnObject self) -> SBStructuredData"""
@@ -5186,6 +5200,10 @@ class SBDebugger(object):
     def GetSyntheticForType(self, arg2):
         r"""GetSyntheticForType(SBDebugger self, SBTypeNameSpecifier arg2) -> SBTypeSynthetic"""
         return _lldb.SBDebugger_GetSyntheticForType(self, arg2)
+
+    def ResetStatistics(self):
+        r"""ResetStatistics(SBDebugger self)"""
+        return _lldb.SBDebugger_ResetStatistics(self)
 
     def RunCommandInterpreter(self, auto_handle_events, spawn_thread, options, num_errors, quit_requested, stopped_for_crash):
         r"""
@@ -11242,6 +11260,10 @@ class SBTarget(object):
         GetStatistics(SBTarget self, SBStatisticsOptions options) -> SBStructuredData
         """
         return _lldb.SBTarget_GetStatistics(self, *args)
+
+    def ResetStatistics(self):
+        r"""ResetStatistics(SBTarget self)"""
+        return _lldb.SBTarget_ResetStatistics(self)
 
     def GetPlatform(self):
         r"""
