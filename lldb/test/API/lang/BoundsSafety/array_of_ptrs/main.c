@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <ptrcheck.h>
 
 int *__bidi_indexable array_of_bounds_safety_pointers[2];
 
