@@ -233,7 +233,7 @@ public:
 /// This represents either the llvm.coro.id.retcon or
 /// llvm.coro.id.retcon.once instruction.
 class LLVM_LIBRARY_VISIBILITY AnyCoroIdRetconInst : public AnyCoroIdInst {
-  enum { SizeArg, AlignArg, StorageArg, PrototypeArg, AllocArg, DeallocArg };
+  enum { SizeArg, AlignArg, StorageArg, PrototypeArg, AllocArg, DeallocArg, TypeIdArg};
 
 public:
   void checkWellFormed() const;
@@ -260,6 +260,17 @@ public:
   /// Return the function to use for allocating memory.
   Function *getAllocFunction() const {
     return cast<Function>(getArgOperand(AllocArg)->stripPointerCasts());
+  }
+
+  ConstantInt *getTypeId() const {
+   if (arg_size() <= TypeIdArg)
+      return nullptr;
+    assert(hasTypeId() && "Invalid number of arguments");
+    return cast<ConstantInt>(getArgOperand(TypeIdArg));
+  }
+
+  bool hasTypeId() const {
+    return arg_size() == TypeIdArg + 1;
   }
 
   /// Return the function to use for deallocating memory.
