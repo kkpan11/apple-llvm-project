@@ -97,42 +97,6 @@ using llvm::StringSwitch;
 LLDB_PLUGIN_DEFINE(TypeSystemClang)
 
 namespace {
-
-#define LLDB_PROPERTIES_typesystemclang
-#include "TypeSystemClangProperties.inc"
-
-enum {
-#define LLDB_PROPERTIES_typesystemclang
-#include "TypeSystemClangPropertiesEnum.inc"
-};
-
-class PluginProperties : public Properties {
-public:
-  static ConstString GetSettingName() {
-    return ConstString(TypeSystemClang::GetPluginNameStatic());
-  }
-
-  PluginProperties() {
-    m_collection_sp = std::make_shared<OptionValueProperties>(GetSettingName());
-    m_collection_sp->Initialize(g_typesystemclang_properties);
-  }
-
-  bool UseRedeclCompletion() const {
-    const auto ret = m_collection_sp->GetPropertyAtIndexAs<bool>(
-        ePropertyRedeclCompletion, nullptr);
-
-    return ret && *ret;
-  }
-};
-
-static PluginProperties &GetGlobalPluginProperties() {
-  static PluginProperties g_settings;
-  return g_settings;
-}
-
-} // namespace
-
-namespace {
 static void VerifyDecl(clang::Decl *decl) {
   assert(decl && "VerifyDecl called with nullptr?");
 #ifndef NDEBUG
@@ -627,22 +591,10 @@ LanguageSet TypeSystemClang::GetSupportedLanguagesForExpressions() {
   return languages;
 }
 
-void TypeSystemClang::DebuggerInitialize(Debugger &debugger) {
-  if (PluginManager::GetSettingForTypeSystemPlugin(
-          debugger, PluginProperties::GetSettingName()))
-    return;
-  const bool is_global_setting = true;
-  PluginManager::CreateSettingForTypeSystemPlugin(
-      debugger, GetGlobalPluginProperties().GetValueProperties(),
-      ConstString("Properties for the Clang type system plug-in."),
-      is_global_setting);
-}
-
 void TypeSystemClang::Initialize() {
   PluginManager::RegisterPlugin(
       GetPluginNameStatic(), "clang base AST context plug-in", CreateInstance,
-      DebuggerInitialize, GetSupportedLanguagesForTypes(),
-      GetSupportedLanguagesForExpressions());
+      GetSupportedLanguagesForTypes(), GetSupportedLanguagesForExpressions());
 }
 
 void TypeSystemClang::Terminate() {
@@ -1759,8 +1711,6 @@ TypeSystemClang::CreateClassTemplateSpecializationDecl(
       static_cast<TagDecl::TagKind>(kind));
   class_template_specialization_decl->setDeclContext(decl_ctx);
   class_template_specialization_decl->setInstantiationOf(class_template_decl);
-  if (TypeSystemClang::UseRedeclCompletion())
-    ast.getTypeDeclType(class_template_specialization_decl, nullptr);
   class_template_specialization_decl->setTemplateArgs(
       TemplateArgumentList::CreateCopy(ast, args));
   class_template_specialization_decl->setDeclName(
@@ -2540,7 +2490,7 @@ bool TypeSystemClang::GetCompleteDecl(clang::ASTContext *ast,
     if (tag_decl->isCompleteDefinition())
       return true;
 
-    if (!UseRedeclCompletion() && !tag_decl->hasExternalLexicalStorage())
+    if (!tag_decl->hasExternalLexicalStorage())
       return false;
 
     ast_source->CompleteType(tag_decl);
@@ -2553,8 +2503,7 @@ bool TypeSystemClang::GetCompleteDecl(clang::ASTContext *ast,
     if (objc_interface_decl->getDefinition())
       return true;
 
-    if (!UseRedeclCompletion() &&
-        !objc_interface_decl->hasExternalLexicalStorage())
+    if (!objc_interface_decl->hasExternalLexicalStorage())
       return false;
 
     ast_source->CompleteType(objc_interface_decl);
@@ -2713,12 +2662,6 @@ static const clang::Type *GetCompleteRecordType(clang::ASTContext *ast,
   const auto *tag_type = llvm::cast<clang::RecordType>(qual_type.getTypePtr());
 
   clang::CXXRecordDecl *cxx_record_decl = qual_type->getAsCXXRecordDecl();
-  if (TypeSystemClang::UseRedeclCompletion() && cxx_record_decl) {
-    clang::CXXRecordDecl *def = cxx_record_decl->getDefinition();
-    if (!def)
-      return nullptr;
-    return def->getTypeForDecl();
-  }
 
   // RecordType with no way of completing it, return the plain
   // TagType.
@@ -2769,13 +2712,6 @@ static const clang::Type *GetCompleteEnumType(clang::ASTContext *ast,
   auto *tag_decl = enum_type->getAsTagDecl();
   assert(tag_decl);
 
-  if (TypeSystemClang::UseRedeclCompletion()) {
-    if (clang::TagDecl *def = tag_decl->getDefinition())
-      return def->getTypeForDecl();
-
-    return tag_decl->getTypeForDecl();
-  }
-
   // Already completed, nothing to be done.
   if (tag_decl->getDefinition())
     return enum_type;
@@ -2817,8 +2753,7 @@ GetCompleteObjCObjectType(clang::ASTContext *ast, QualType qual_type,
     return objc_class_type;
 
   if (auto *def = class_interface_decl->getDefinition())
-    return TypeSystemClang::UseRedeclCompletion() ? def->getTypeForDecl()
-                                                  : objc_class_type;
+    return objc_class_type;
 
   if (!allow_completion)
     return nullptr;
@@ -2855,14 +2790,14 @@ static bool GetCompleteQualType(clang::ASTContext *ast,
   case clang::Type::Record: {
     if (const auto *RT =
             GetCompleteRecordType(ast, qual_type, allow_completion))
-      return TypeSystemClang::UseRedeclCompletion() || !RT->isIncompleteType();
+      return !RT->isIncompleteType();
 
     return false;
   } break;
 
   case clang::Type::Enum: {
     if (const auto *ET = GetCompleteEnumType(ast, qual_type, allow_completion))
-      return TypeSystemClang::UseRedeclCompletion() || !ET->isIncompleteType();
+      return !ET->isIncompleteType();
 
     return false;
   } break;
@@ -2870,7 +2805,7 @@ static bool GetCompleteQualType(clang::ASTContext *ast,
   case clang::Type::ObjCInterface: {
     if (const auto *OT =
             GetCompleteObjCObjectType(ast, qual_type, allow_completion))
-      return TypeSystemClang::UseRedeclCompletion() || !OT->isIncompleteType();
+      return !OT->isIncompleteType();
 
     return false;
   } break;
@@ -3602,9 +3537,7 @@ bool TypeSystemClang::IsDefined(lldb::opaque_compiler_type_t type) {
   if (tag_type) {
     clang::TagDecl *tag_decl = tag_type->getDecl();
     if (tag_decl)
-      return TypeSystemClang::UseRedeclCompletion()
-                 ? tag_decl->getDefinition() != nullptr
-                 : tag_decl->isCompleteDefinition();
+      return tag_decl->isCompleteDefinition();
     return false;
   } else {
     const clang::ObjCObjectType *objc_class_type =
@@ -5656,11 +5589,6 @@ TypeSystemClang::GetNumChildren(lldb::opaque_compiler_type_t type,
             objc_class_type->getInterface();
 
         if (class_interface_decl) {
-          if (TypeSystemClang::UseRedeclCompletion()) {
-            auto *def = class_interface_decl->getDefinition();
-            class_interface_decl = def;
-          }
-
           clang::ObjCInterfaceDecl *superclass_interface_decl =
               class_interface_decl->getSuperClass();
           if (superclass_interface_decl) {
@@ -8719,11 +8647,9 @@ bool TypeSystemClang::CompleteTagDeclarationDefinition(
       if (!cxx_record_decl->isCompleteDefinition())
         cxx_record_decl->completeDefinition();
 
-      if (!TypeSystemClang::UseRedeclCompletion()) {
-        cxx_record_decl->setHasLoadedFieldsFromExternalStorage(true);
-        cxx_record_decl->setHasExternalLexicalStorage(false);
-        cxx_record_decl->setHasExternalVisibleStorage(false);
-      }
+      cxx_record_decl->setHasLoadedFieldsFromExternalStorage(true);
+      cxx_record_decl->setHasExternalLexicalStorage(false);
+      cxx_record_decl->setHasExternalVisibleStorage(false);
 
       lldb_ast->SetCXXRecordDeclAccess(cxx_record_decl,
                                        clang::AccessSpecifier::AS_none);
@@ -9450,10 +9376,6 @@ npdb::PdbAstBuilder *TypeSystemClang::GetNativePDBParser() {
   if (!m_native_pdb_ast_parser_up)
     m_native_pdb_ast_parser_up = std::make_unique<npdb::PdbAstBuilder>(*this);
   return m_native_pdb_ast_parser_up.get();
-}
-
-bool TypeSystemClang::UseRedeclCompletion() {
-  return GetGlobalPluginProperties().UseRedeclCompletion();
 }
 
 bool TypeSystemClang::LayoutRecordType(

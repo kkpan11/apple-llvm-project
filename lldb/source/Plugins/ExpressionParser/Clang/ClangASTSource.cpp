@@ -328,45 +328,6 @@ void ClangASTSource::CompleteType(clang::ObjCInterfaceDecl *interface_decl) {
   LLDB_LOG(log, "      [COID] {0}", ClangUtil::DumpDecl(interface_decl));
 }
 
-void ClangASTSource::CompleteRedeclChain(const Decl *d) {
-  if (!TypeSystemClang::UseRedeclCompletion())
-    return;
-
-  if (const clang::TagDecl *td = llvm::dyn_cast<TagDecl>(d)) {
-    if (td->isBeingDefined())
-      return;
-
-    if (td->getDefinition())
-      return;
-
-    m_ast_importer_sp->CompleteTagDecl(const_cast<clang::TagDecl *>(td));
-    if (!td->getDefinition() && m_ast_importer_sp->GetDeclOrigin(td).Valid()) {
-      if (TagDecl *alternate = FindCompleteType(td))
-        m_ast_importer_sp->CompleteTagDeclWithOrigin(
-            const_cast<clang::TagDecl *>(td), alternate);
-    }
-  }
-  if (const auto *od = llvm::dyn_cast<ObjCInterfaceDecl>(d)) {
-    ClangASTImporter::DeclOrigin original =
-        m_ast_importer_sp->GetDeclOrigin(od);
-    if (ObjCInterfaceDecl *orig =
-            dyn_cast_or_null<ObjCInterfaceDecl>(original.decl)) {
-      if (ObjCInterfaceDecl *i = GetCompleteObjCInterface(orig)) {
-        if (i != orig) {
-          m_ast_importer_sp->SetDeclOrigin(d, i);
-          m_ast_importer_sp->CompleteObjCInterfaceDecl(
-              const_cast<clang::ObjCInterfaceDecl *>(od));
-          return;
-        }
-      }
-    }
-    if (od->getDefinition())
-      return;
-    m_ast_importer_sp->CompleteObjCInterfaceDecl(
-        const_cast<clang::ObjCInterfaceDecl *>(od));
-  }
-}
-
 clang::ObjCInterfaceDecl *ClangASTSource::GetCompleteObjCInterface(
     const clang::ObjCInterfaceDecl *interface_decl) {
   lldb::ProcessSP process(m_target->GetProcessSP());
@@ -615,26 +576,6 @@ bool ClangASTSource::IgnoreName(const ConstString name,
   return name_string_ref.empty() ||
          (ignore_all_dollar_names && name_string_ref.starts_with("$")) ||
          name_string_ref.starts_with("_$");
-}
-
-bool ClangASTSource::FindExternalVisibleMethodsByName(
-    const clang::DeclContext *DC, clang::DeclarationName Name) {
-  if (!TypeSystemClang::UseRedeclCompletion())
-    return true;
-
-  SmallVector<clang::NamedDecl *> decls;
-  NameSearchContext context(*m_clang_ast_context, decls, Name, DC);
-  FindExternalVisibleMethods(context);
-
-  return true;
-}
-
-void ClangASTSource::FindExternalVisibleMethods(NameSearchContext &context) {
-  assert(m_ast_context);
-
-  const ConstString name(context.m_decl_name.getAsString().c_str());
-  CompilerDeclContext namespace_decl;
-  FindExternalVisibleMethods(context, lldb::ModuleSP(), namespace_decl);
 }
 
 bool ClangASTSource::CompilerDeclContextsMatch(
