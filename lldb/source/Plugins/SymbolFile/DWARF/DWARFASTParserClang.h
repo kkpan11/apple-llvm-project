@@ -538,6 +538,10 @@ struct ParsedDWARFTypeAttributes {
       clang::RQ_None; ///< Indicates ref-qualifier of
                       ///< C++ member function if present.
                       ///< Is RQ_None otherwise.
+
+  ///< Has a value if this DIE represents an enum that was declared
+  ///< with enum_extensibility.
+  std::optional<clang::EnumExtensibilityAttr::Kind> enum_kind;
 };
 
 #endif // LLDB_SOURCE_PLUGINS_SYMBOLFILE_DWARF_DWARFASTPARSERCLANG_H

@@ -22,6 +22,7 @@
 
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/ASTFwd.h"
+#include "clang/AST/Attr.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/TemplateBase.h"
 #include "clang/AST/Type.h"
@@ -539,21 +540,22 @@ public:
                                size_t element_count, bool is_vector);
 
   // Enumeration Types
-  clang::EnumDecl *CreateEnumerationDecl(llvm::StringRef name,
-                                         clang::DeclContext *decl_ctx,
-                                         OptionalClangModuleID owning_module,
-                                         const Declaration &decl,
-                                         const CompilerType &integer_qual_type,
-                                         bool is_scoped);
+  clang::EnumDecl *CreateEnumerationDecl(
+      llvm::StringRef name, clang::DeclContext *decl_ctx,
+      OptionalClangModuleID owning_module, const Declaration &decl,
+      const CompilerType &integer_qual_type, bool is_scoped,
+      std::optional<clang::EnumExtensibilityAttr::Kind> enum_kind =
+          std::nullopt);
 
-  CompilerType CreateEnumerationType(llvm::StringRef name,
-                                     clang::DeclContext *decl_ctx,
-                                     OptionalClangModuleID owning_module,
-                                     const Declaration &decl,
-                                     const CompilerType &integer_qual_type,
-                                     bool is_scoped) {
-    clang::EnumDecl *enum_decl = CreateEnumerationDecl(
-        name, decl_ctx, owning_module, decl, integer_qual_type, is_scoped);
+  CompilerType CreateEnumerationType(
+      llvm::StringRef name, clang::DeclContext *decl_ctx,
+      OptionalClangModuleID owning_module, const Declaration &decl,
+      const CompilerType &integer_qual_type, bool is_scoped,
+      std::optional<clang::EnumExtensibilityAttr::Kind> enum_kind =
+          std::nullopt) {
+    clang::EnumDecl *enum_decl =
+        CreateEnumerationDecl(name, decl_ctx, owning_module, decl,
+                              integer_qual_type, is_scoped, enum_kind);
     return GetType(getASTContext().getTagDeclType(enum_decl));
   }
 
