@@ -1174,10 +1174,8 @@ Desugar(swift::Demangle::Demangler &dem, swift::Demangle::NodePointer node,
   return desugared;
 }
 
-swift::Demangle::NodePointer
-TypeSystemSwiftTypeRef::Canonicalize(swift::Demangle::Demangler &dem,
-                                     swift::Demangle::NodePointer node,
-                                     swift::Mangle::ManglingFlavor flavor) {
+static swift::Demangle::NodePointer Desugar(swift::Demangle::Demangler &dem,
+                                            swift::Demangle::NodePointer node) {
   assert(node);
   auto kind = node->getKind();
   switch (kind) {
@@ -1207,7 +1205,27 @@ TypeSystemSwiftTypeRef::Canonicalize(swift::Demangle::Demangler &dem,
     if (node->getNumChildren() != 1)
       return node;
     return node->getFirstChild();
+  default:
+    return node;
+  }
+}
 
+swift::Demangle::NodePointer
+TypeSystemSwiftTypeRef::DesugarNode(swift::Demangle::Demangler &dem,
+                                    swift::Demangle::NodePointer node) {
+  using namespace swift::Demangle;
+  return TypeSystemSwiftTypeRef::Transform(
+      dem, node, [&](NodePointer node) { return Desugar(dem, node); });
+}
+
+swift::Demangle::NodePointer
+TypeSystemSwiftTypeRef::Canonicalize(swift::Demangle::Demangler &dem,
+                                     swift::Demangle::NodePointer node,
+                                     swift::Mangle::ManglingFlavor flavor) {
+  assert(node);
+  node = Desugar(dem, node);
+  auto kind = node->getKind();
+  switch (kind) {
   case Node::Kind::BoundGenericTypeAlias:
   case Node::Kind::TypeAlias: {
     // Safeguard against cyclic aliases.
