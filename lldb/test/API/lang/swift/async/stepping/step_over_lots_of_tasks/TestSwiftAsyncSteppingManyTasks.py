@@ -5,6 +5,7 @@ import lldbsuite.test.lldbutil as lldbutil
 
 
 @skipIfAsan  # rdar://138777205
+@skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
 class TestCase(lldbtest.TestBase):
 
     def check_is_in_line(self, thread, expected_linenum, expected_tid):
