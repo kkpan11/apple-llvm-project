@@ -14028,6 +14028,10 @@ class SBType(object):
         """
         return _lldb.SBType_GetTemplateArgumentType(self, idx)
 
+    def GetTemplateArgumentValue(self, target, idx):
+        r"""GetTemplateArgumentValue(SBType self, SBTarget target, uint32_t idx) -> SBValue"""
+        return _lldb.SBType_GetTemplateArgumentValue(self, target, idx)
+
     def GetTemplateArgumentKind(self, idx):
         r"""
         GetTemplateArgumentKind(SBType self, uint32_t idx) -> lldb::TemplateArgumentKind
