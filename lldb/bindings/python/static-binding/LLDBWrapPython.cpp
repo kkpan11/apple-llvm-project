@@ -81870,6 +81870,57 @@ fail:
 }
 
 
+SWIGINTERN PyObject *_wrap_SBType_GetTemplateArgumentValue(PyObject *self, PyObject *args) {
+  PyObject *resultobj = 0;
+  lldb::SBType *arg1 = (lldb::SBType *) 0 ;
+  lldb::SBTarget arg2 ;
+  uint32_t arg3 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  void *argp2 ;
+  int res2 = 0 ;
+  unsigned int val3 ;
+  int ecode3 = 0 ;
+  PyObject *swig_obj[3] ;
+  lldb::SBValue result;
+  
+  (void)self;
+  if (!SWIG_Python_UnpackTuple(args, "SBType_GetTemplateArgumentValue", 3, 3, swig_obj)) SWIG_fail;
+  res1 = SWIG_ConvertPtr(swig_obj[0], &argp1,SWIGTYPE_p_lldb__SBType, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "SBType_GetTemplateArgumentValue" "', argument " "1"" of type '" "lldb::SBType *""'"); 
+  }
+  arg1 = reinterpret_cast< lldb::SBType * >(argp1);
+  {
+    res2 = SWIG_ConvertPtr(swig_obj[1], &argp2, SWIGTYPE_p_lldb__SBTarget,  0  | 0);
+    if (!SWIG_IsOK(res2)) {
+      SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "SBType_GetTemplateArgumentValue" "', argument " "2"" of type '" "lldb::SBTarget""'"); 
+    }  
+    if (!argp2) {
+      SWIG_exception_fail(SWIG_NullReferenceError, "invalid null reference " "in method '" "SBType_GetTemplateArgumentValue" "', argument " "2"" of type '" "lldb::SBTarget""'");
+    } else {
+      lldb::SBTarget * temp = reinterpret_cast< lldb::SBTarget * >(argp2);
+      arg2 = *temp;
+      if (SWIG_IsNewObj(res2)) delete temp;
+    }
+  }
+  ecode3 = SWIG_AsVal_unsigned_SS_int(swig_obj[2], &val3);
+  if (!SWIG_IsOK(ecode3)) {
+    SWIG_exception_fail(SWIG_ArgError(ecode3), "in method '" "SBType_GetTemplateArgumentValue" "', argument " "3"" of type '" "uint32_t""'");
+  } 
+  arg3 = static_cast< uint32_t >(val3);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (arg1)->GetTemplateArgumentValue(SWIG_STD_MOVE(arg2),arg3);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
+  resultobj = SWIG_NewPointerObj((new lldb::SBValue(result)), SWIGTYPE_p_lldb__SBValue, SWIG_POINTER_OWN |  0 );
+  return resultobj;
+fail:
+  return NULL;
+}
+
+
 SWIGINTERN PyObject *_wrap_SBType_GetTemplateArgumentKind(PyObject *self, PyObject *args) {
   PyObject *resultobj = 0;
   lldb::SBType *arg1 = (lldb::SBType *) 0 ;
@@ -100016,6 +100067,7 @@ static PyMethodDef SwigMethods[] = {
 		"    * Objective-C: Always returns an invalid SBType.\n"
 		"\n"
 		""},
+	 { "SBType_GetTemplateArgumentValue", _wrap_SBType_GetTemplateArgumentValue, METH_VARARGS, "SBType_GetTemplateArgumentValue(SBType self, SBTarget target, uint32_t idx) -> SBValue"},
 	 { "SBType_GetTemplateArgumentKind", _wrap_SBType_GetTemplateArgumentKind, METH_VARARGS, "\n"
 		"SBType_GetTemplateArgumentKind(SBType self, uint32_t idx) -> lldb::TemplateArgumentKind\n"
 		"Returns the kind of the template argument with the given index.\n"
