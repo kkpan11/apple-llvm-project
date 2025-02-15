@@ -28,6 +28,7 @@ class AsanSwiftTestCase(lldbtest.TestBase):
     @swiftTest
     @skipIfLinux
     @skipUnlessSwiftAddressSanitizer
+    @skipIf(macos_version=["<", "15.3"])
     def test_asan_swift(self):
         self.build(make_targets=["asan"])
         self.do_test_asan()
