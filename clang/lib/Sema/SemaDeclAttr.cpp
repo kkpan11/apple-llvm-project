@@ -5838,6 +5838,7 @@ public:
 
   QualType TransformPointerType(TypeLocBuilder &TLB, PointerTypeLoc TL) {
     llvm::SaveAndRestore<unsigned> LevelLocal(Level);
+    llvm::SaveAndRestore<bool> DoneLocal(Done);
     if (!Done && Level == 0) {
       Expr *StartPtr = BuildStartPtrExpr();
       if (!StartPtr)
