@@ -5816,14 +5816,24 @@ public:
     return NewTy;
   }
 
-  QualType TransformAttributedType(TypeLocBuilder &TLB, AttributedTypeLoc TL) {
+  using TransformModifiedFnTy =
+      std::function<QualType(TypeLocBuilder &TLB, TypeLoc TL)>;
+  QualType TransformAttributedType(TypeLocBuilder &TLB, AttributedTypeLoc TL,
+                                   TransformModifiedFnTy TransformModifiedTypeFn) {
     // Strip attr::PtrAutoAttr because the pointer is now marked __started_by
     // as it is referred to by __ended_by.
     const AttributedType *oldType = TL.getTypePtr();
     if (oldType->getAttrKind() == attr::PtrAutoAttr && Level == 0 && !Done) {
-      return TransformType(TLB, TL.getModifiedLoc());
+      return TransformModifiedTypeFn(TLB, TL.getModifiedLoc());
     }
-    return BaseClass::TransformAttributedType(TLB, TL);
+    return BaseClass::TransformAttributedType(TLB, TL, TransformModifiedTypeFn);
+  }
+
+  QualType TransformAttributedType(TypeLocBuilder &TLB, AttributedTypeLoc TL) {
+    return TransformAttributedType(
+        TLB, TL, [&](TypeLocBuilder &TLB, TypeLoc ModifiedLoc) -> QualType {
+          return TransformType(TLB, ModifiedLoc);
+        });
   }
 
   QualType TransformPointerType(TypeLocBuilder &TLB, PointerTypeLoc TL) {
