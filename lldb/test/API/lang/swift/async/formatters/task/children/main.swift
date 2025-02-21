@@ -1,4 +1,5 @@
 func f() async -> Int {
+    try? await Task.sleep(for: .seconds(300))
     return 30
 }
 
