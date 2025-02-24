@@ -131,45 +131,59 @@ bool runOnToolAndCheckLangOptions(const std::vector<std::string> &Args,
   return Result;
 }
 
-struct ChkPair {
+struct ChkDesc {
   const char *arg;
   unsigned Mask;
+  unsigned batch;
 };
 
-ChkPair Pairs[] = {
-    {"access_size", LangOptions::BS_CHK_AccessSize},
-    {"indirect_count_update", LangOptions::BS_CHK_IndirectCountUpdate},
-    {"return_size", LangOptions::BS_CHK_ReturnSize},
-    {"ended_by_lower_bound", LangOptions::BS_CHK_EndedByLowerBound},
-    {"compound_literal_init", LangOptions::BS_CHK_CompoundLiteralInit},
-    {"libc_attributes", LangOptions::BS_CHK_LibCAttributes},
-    {"array_subscript_agg", LangOptions::BS_CHK_ArraySubscriptAgg}};
-const size_t NumPairs = sizeof(Pairs) / sizeof(Pairs[0]);
-static_assert(NumPairs == 7, "Unexpected value");
+ChkDesc CheckKinds[] = {
+    {"access_size", LangOptions::BS_CHK_AccessSize, 0},
+    {"indirect_count_update", LangOptions::BS_CHK_IndirectCountUpdate, 0},
+    {"return_size", LangOptions::BS_CHK_ReturnSize, 0},
+    {"ended_by_lower_bound", LangOptions::BS_CHK_EndedByLowerBound, 0},
+    {"compound_literal_init", LangOptions::BS_CHK_CompoundLiteralInit, 0},
+    {"libc_attributes", LangOptions::BS_CHK_LibCAttributes, 0},
+    {"array_subscript_agg", LangOptions::BS_CHK_ArraySubscriptAgg, 0}};
+const size_t NumChkDescs = sizeof(CheckKinds) / sizeof(CheckKinds[0]);
+static_assert(NumChkDescs == 7, "Unexpected value");
 
 // Check that `Pairs` is in sync with the `BoundsSafetyNewChecksMask`
-// enum.
+// enum and that the special "all" group contains all the checks
 TEST(BoundsSafetyBringUpMissingChecks, ChkPairInSync) {
   unsigned ComputedMask = 0;
   static_assert(LangOptions::BS_CHK_None == 0, "expected 0");
-  for (size_t Idx = 0; Idx < NumPairs; ++Idx) {
-    ComputedMask |= Pairs[Idx].Mask;
+  for (size_t Idx = 0; Idx < NumChkDescs; ++Idx) {
+    ComputedMask |= CheckKinds[Idx].Mask;
   }
-  ASSERT_EQ(ComputedMask, LangOptions::BS_CHK_All);
+  ASSERT_EQ(ComputedMask,
+            LangOptions::getBoundsSafetyNewChecksMaskForGroup("all"));
+}
+
+// Check that the "batch_0" group contains the right checks
+TEST(BoundsSafetyBringUpMissingChecks, ChkPairInSyncBatch0) {
+  unsigned ComputedMask = 0;
+  static_assert(LangOptions::BS_CHK_None == 0, "expected 0");
+  for (size_t Idx = 0; Idx < NumChkDescs; ++Idx) {
+    if (CheckKinds[Idx].batch == 0)
+      ComputedMask |= CheckKinds[Idx].Mask;
+  }
+  ASSERT_EQ(ComputedMask,
+            LangOptions::getBoundsSafetyNewChecksMaskForGroup("batch_0"));
 }
 
 TEST(BoundsSafetyBringUpMissingChecks, ChkPairValidMask) {
   unsigned SeenBits = 0;
   static_assert(LangOptions::BS_CHK_None == 0, "expected 0");
-  for (size_t Idx = 0; Idx < NumPairs; ++Idx) {
-    unsigned CurrentMask = Pairs[Idx].Mask;
+  for (size_t Idx = 0; Idx < NumChkDescs; ++Idx) {
+    unsigned CurrentMask = CheckKinds[Idx].Mask;
     EXPECT_EQ(__builtin_popcount(CurrentMask), 1); // Check is a power of 2
     EXPECT_EQ(SeenBits & CurrentMask,
               0U); // Doesn't overlap with a previously seen value
     SeenBits |= CurrentMask;
     EXPECT_NE(SeenBits, 0U);
   }
-  ASSERT_EQ(SeenBits, LangOptions::BS_CHK_All);
+  ASSERT_EQ(SeenBits, LangOptions::getBoundsSafetyNewChecksMaskForGroup("all"));
 }
 
 #if 1
@@ -185,8 +199,8 @@ TEST(BoundsSafetyBringUpMissingChecks, ChkPairValidMask) {
 TEST(BoundsSafetyBringUpMissingChecks, DefaultWithBoundsSafety) {
   bool Result = runOnToolAndCheckLangOptions(
       {NEED_CC1_ARG "-fbounds-safety"}, [](LangOptions &LO) {
-        EXPECT_EQ(LO.getBoundsSafetyBringUpMissingChecks(),
-                  LangOptions::BS_CHK_Default);
+        EXPECT_EQ(LO.BoundsSafetyBringUpMissingChecks,
+                  LangOptions::getDefaultBoundsSafetyNewChecksMask());
       });
   ASSERT_TRUE(Result);
 }
@@ -194,13 +208,13 @@ TEST(BoundsSafetyBringUpMissingChecks, DefaultWithBoundsSafety) {
 TEST(BoundsSafetyBringUpMissingChecks, DefaultWithoutBoundsSafety) {
   bool Result = runOnToolAndCheckLangOptions(
       {NEED_CC1_ARG "-fno-bounds-safety"}, [](LangOptions &LO) {
-        EXPECT_EQ(LO.getBoundsSafetyBringUpMissingChecks(),
-                  LangOptions::BS_CHK_Default);
+        EXPECT_EQ(LO.BoundsSafetyBringUpMissingChecks,
+                  LangOptions::getDefaultBoundsSafetyNewChecksMask());
       });
   ASSERT_TRUE(Result);
   bool Result2 = runOnToolAndCheckLangOptions({""}, [](LangOptions &LO) {
-    EXPECT_EQ(LO.getBoundsSafetyBringUpMissingChecks(),
-              LangOptions::BS_CHK_Default);
+    EXPECT_EQ(LO.BoundsSafetyBringUpMissingChecks,
+              LangOptions::getDefaultBoundsSafetyNewChecksMask());
   });
   ASSERT_TRUE(Result2);
 }
@@ -210,8 +224,8 @@ TEST(BoundsSafetyBringUpMissingChecks,
   bool Result = runOnToolAndCheckLangOptions(
       {NEED_CC1_ARG "-fexperimental-bounds-safety-attributes"},
       [](LangOptions &LO) {
-        EXPECT_EQ(LO.getBoundsSafetyBringUpMissingChecks(),
-                  LangOptions::BS_CHK_Default);
+        EXPECT_EQ(LO.BoundsSafetyBringUpMissingChecks,
+                  LangOptions::getDefaultBoundsSafetyNewChecksMask());
       });
   ASSERT_TRUE(Result);
 }
@@ -225,12 +239,11 @@ TEST(BoundsSafetyBringUpMissingChecks, all_eq) {
       {NEED_CC1_ARG "-fbounds-safety",
        NEED_CC1_ARG "-fbounds-safety-bringup-missing-checks=all"},
       [](LangOptions &LO) {
-        EXPECT_EQ(LO.getBoundsSafetyBringUpMissingChecks(),
-                  LangOptions::BS_CHK_All);
+        EXPECT_EQ(LO.BoundsSafetyBringUpMissingChecks,
+                  LangOptions::getBoundsSafetyNewChecksMaskForGroup("all"));
 
-        for (size_t ChkIdx = 0; ChkIdx < NumPairs; ++ChkIdx) {
-          EXPECT_TRUE(LO.hasNewBoundsSafetyCheck(
-              (LangOptions::BoundsSafetyNewChecksMask)Pairs[ChkIdx].Mask));
+        for (size_t ChkIdx = 0; ChkIdx < NumChkDescs; ++ChkIdx) {
+          EXPECT_TRUE(LO.hasNewBoundsSafetyCheck(CheckKinds[ChkIdx].Mask));
         }
       });
   ASSERT_TRUE(Result);
@@ -241,12 +254,31 @@ TEST(BoundsSafetyBringUpMissingChecks, all) {
       {NEED_CC1_ARG "-fbounds-safety",
        NEED_CC1_ARG "-fbounds-safety-bringup-missing-checks"},
       [](LangOptions &LO) {
-        EXPECT_EQ(LO.getBoundsSafetyBringUpMissingChecks(),
-                  LangOptions::BS_CHK_All);
+        EXPECT_EQ(LO.BoundsSafetyBringUpMissingChecks,
+                  LangOptions::getBoundsSafetyNewChecksMaskForGroup("all"));
 
-        for (size_t ChkIdx = 0; ChkIdx < NumPairs; ++ChkIdx) {
-          EXPECT_TRUE(LO.hasNewBoundsSafetyCheck(
-              (LangOptions::BoundsSafetyNewChecksMask)Pairs[ChkIdx].Mask));
+        for (size_t ChkIdx = 0; ChkIdx < NumChkDescs; ++ChkIdx) {
+          EXPECT_TRUE(LO.hasNewBoundsSafetyCheck(CheckKinds[ChkIdx].Mask));
+        }
+      });
+  ASSERT_TRUE(Result);
+}
+
+// =============================================================================
+// batch_0 checks enabled
+// =============================================================================
+
+TEST(BoundsSafetyBringUpMissingChecks, batch_0) {
+  bool Result = runOnToolAndCheckLangOptions(
+      {NEED_CC1_ARG "-fbounds-safety",
+       NEED_CC1_ARG "-fbounds-safety-bringup-missing-checks=batch_0"},
+      [](LangOptions &LO) {
+        EXPECT_EQ(LO.BoundsSafetyBringUpMissingChecks,
+                  LangOptions::getBoundsSafetyNewChecksMaskForGroup("batch_0"));
+
+        for (size_t ChkIdx = 0; ChkIdx < NumChkDescs; ++ChkIdx) {
+          if (CheckKinds[ChkIdx].batch == 0)
+            EXPECT_TRUE(LO.hasNewBoundsSafetyCheck(CheckKinds[ChkIdx].Mask));
         }
       });
   ASSERT_TRUE(Result);
@@ -257,25 +289,23 @@ TEST(BoundsSafetyBringUpMissingChecks, all) {
 // =============================================================================
 
 TEST(BoundsSafetyBringUpMissingChecks, only_one_check) {
-  for (size_t ChkIdx = 0; ChkIdx < NumPairs; ++ChkIdx) {
-    ChkPair Chk = Pairs[ChkIdx];
+  for (size_t ChkIdx = 0; ChkIdx < NumChkDescs; ++ChkIdx) {
+    ChkDesc Chk = CheckKinds[ChkIdx];
     std::vector<std::string> Args = {NEED_CC1_ARG "-fbounds-safety",
                                      NEED_CC1_ARG
                                      "-fbounds-safety-bringup-missing-checks="};
     Args[Args.size() - 1].append(Chk.arg);
 
     bool Result = runOnToolAndCheckLangOptions(Args, [&Chk](LangOptions &LO) {
-      EXPECT_EQ(LO.getBoundsSafetyBringUpMissingChecks(), Chk.Mask);
+      EXPECT_EQ(LO.BoundsSafetyBringUpMissingChecks, Chk.Mask);
 
       // Check helper
-      for (size_t OtherChkIdx = 0; OtherChkIdx < NumPairs; ++OtherChkIdx) {
-        ChkPair OtherChk = Pairs[OtherChkIdx];
+      for (size_t OtherChkIdx = 0; OtherChkIdx < NumChkDescs; ++OtherChkIdx) {
+        ChkDesc OtherChk = CheckKinds[OtherChkIdx];
         if (OtherChk.Mask == Chk.Mask) {
-          EXPECT_TRUE(LO.hasNewBoundsSafetyCheck(
-              (LangOptions::BoundsSafetyNewChecksMask)OtherChk.Mask));
+          EXPECT_TRUE(LO.hasNewBoundsSafetyCheck(OtherChk.Mask));
         } else {
-          EXPECT_FALSE(LO.hasNewBoundsSafetyCheck(
-              (LangOptions::BoundsSafetyNewChecksMask)OtherChk.Mask));
+          EXPECT_FALSE(LO.hasNewBoundsSafetyCheck(OtherChk.Mask));
         }
       }
     });
@@ -289,11 +319,12 @@ TEST(BoundsSafetyBringUpMissingChecks, only_one_check) {
 
 TEST(BoundsSafetyBringUpMissingChecks, all_pairs) {
   // Construct all distinct pairs and test
-  for (size_t firstIdx = 0; firstIdx < NumPairs; ++firstIdx) {
-    for (size_t secondIdx = firstIdx + 1; secondIdx < NumPairs; ++secondIdx) {
+  for (size_t firstIdx = 0; firstIdx < NumChkDescs; ++firstIdx) {
+    for (size_t secondIdx = firstIdx + 1; secondIdx < NumChkDescs;
+         ++secondIdx) {
       ASSERT_NE(firstIdx, secondIdx);
-      ChkPair First = Pairs[firstIdx];
-      auto Second = Pairs[secondIdx];
+      ChkDesc First = CheckKinds[firstIdx];
+      auto Second = CheckKinds[secondIdx];
       std::vector<std::string> Args = {
           NEED_CC1_ARG "-fbounds-safety",
           NEED_CC1_ARG "-fbounds-safety-bringup-missing-checks="};
@@ -305,17 +336,15 @@ TEST(BoundsSafetyBringUpMissingChecks, all_pairs) {
       bool Result = runOnToolAndCheckLangOptions(
           Args, [&First, &Second](LangOptions &LO) {
             unsigned ExpectedMask = First.Mask | Second.Mask;
-            EXPECT_EQ(LO.getBoundsSafetyBringUpMissingChecks(), ExpectedMask);
+            EXPECT_EQ(LO.BoundsSafetyBringUpMissingChecks, ExpectedMask);
 
             // Check helper
-            for (size_t ChkIdx = 0; ChkIdx < NumPairs; ++ChkIdx) {
-              unsigned ChkToTest = Pairs[ChkIdx].Mask;
+            for (size_t ChkIdx = 0; ChkIdx < NumChkDescs; ++ChkIdx) {
+              unsigned ChkToTest = CheckKinds[ChkIdx].Mask;
               if (ChkToTest == First.Mask || ChkToTest == Second.Mask) {
-                EXPECT_TRUE(LO.hasNewBoundsSafetyCheck(
-                    (LangOptions::BoundsSafetyNewChecksMask)ChkToTest));
+                EXPECT_TRUE(LO.hasNewBoundsSafetyCheck(ChkToTest));
               } else {
-                EXPECT_FALSE(LO.hasNewBoundsSafetyCheck(
-                    (LangOptions::BoundsSafetyNewChecksMask)ChkToTest));
+                EXPECT_FALSE(LO.hasNewBoundsSafetyCheck(ChkToTest));
               }
             }
           });
@@ -329,8 +358,8 @@ TEST(BoundsSafetyBringUpMissingChecks, all_pairs) {
 // =============================================================================
 
 TEST(BoundsSafetyBringUpMissingChecks, all_with_one_removed) {
-  for (size_t ChkIdx = 0; ChkIdx < NumPairs; ++ChkIdx) {
-    ChkPair Chk = Pairs[ChkIdx];
+  for (size_t ChkIdx = 0; ChkIdx < NumChkDescs; ++ChkIdx) {
+    ChkDesc Chk = CheckKinds[ChkIdx];
     std::vector<std::string> Args = {
         NEED_CC1_ARG "-fbounds-safety",
         NEED_CC1_ARG "-fbounds-safety-bringup-missing-checks=all",
@@ -338,18 +367,52 @@ TEST(BoundsSafetyBringUpMissingChecks, all_with_one_removed) {
     Args[Args.size() - 1].append(Chk.arg);
 
     bool Result = runOnToolAndCheckLangOptions(Args, [&Chk](LangOptions &LO) {
-      unsigned ExpectedMask = LangOptions::BS_CHK_All & (~Chk.Mask);
-      EXPECT_EQ(LO.getBoundsSafetyBringUpMissingChecks(), ExpectedMask);
+      unsigned ExpectedMask =
+          LangOptions::getBoundsSafetyNewChecksMaskForGroup("all") &
+          (~Chk.Mask);
+      EXPECT_EQ(LO.BoundsSafetyBringUpMissingChecks, ExpectedMask);
 
       // Check helper
-      for (size_t OtherChkIdx = 0; OtherChkIdx < NumPairs; ++OtherChkIdx) {
-        ChkPair OtherChk = Pairs[OtherChkIdx];
+      for (size_t OtherChkIdx = 0; OtherChkIdx < NumChkDescs; ++OtherChkIdx) {
+        ChkDesc OtherChk = CheckKinds[OtherChkIdx];
         if (OtherChk.Mask == Chk.Mask) {
-          EXPECT_FALSE(LO.hasNewBoundsSafetyCheck(
-              (LangOptions::BoundsSafetyNewChecksMask)OtherChk.Mask));
+          EXPECT_FALSE(LO.hasNewBoundsSafetyCheck(OtherChk.Mask));
         } else {
-          EXPECT_TRUE(LO.hasNewBoundsSafetyCheck(
-              (LangOptions::BoundsSafetyNewChecksMask)OtherChk.Mask));
+          EXPECT_TRUE(LO.hasNewBoundsSafetyCheck(OtherChk.Mask));
+        }
+      }
+    });
+    ASSERT_TRUE(Result);
+  }
+}
+
+TEST(BoundsSafetyBringUpMissingChecks, batch_0_with_one_removed) {
+  for (size_t ChkIdx = 0; ChkIdx < NumChkDescs; ++ChkIdx) {
+    ChkDesc Chk = CheckKinds[ChkIdx];
+    if (Chk.batch != 0)
+      continue;
+
+    std::vector<std::string> Args = {
+        NEED_CC1_ARG "-fbounds-safety",
+        NEED_CC1_ARG "-fbounds-safety-bringup-missing-checks=batch_0",
+        NEED_CC1_ARG "-fno-bounds-safety-bringup-missing-checks="};
+    Args[Args.size() - 1].append(Chk.arg);
+
+    bool Result = runOnToolAndCheckLangOptions(Args, [&Chk](LangOptions &LO) {
+      unsigned ExpectedMask =
+          LangOptions::getBoundsSafetyNewChecksMaskForGroup("batch_0") &
+          (~Chk.Mask);
+      EXPECT_EQ(LO.BoundsSafetyBringUpMissingChecks, ExpectedMask);
+
+      // Check helper
+      for (size_t OtherChkIdx = 0; OtherChkIdx < NumChkDescs; ++OtherChkIdx) {
+        ChkDesc OtherChk = CheckKinds[OtherChkIdx];
+        if (OtherChk.batch != 0)
+          continue;
+        if (OtherChk.Mask == Chk.Mask) {
+          EXPECT_FALSE(LO.hasNewBoundsSafetyCheck(OtherChk.Mask));
+        } else {
+          EXPECT_TRUE(LO.hasNewBoundsSafetyCheck(OtherChk.Mask));
         }
       }
     });
@@ -366,7 +429,7 @@ TEST(BoundsSafetyBringUpMissingChecks, all_disabled) {
       {NEED_CC1_ARG "-fbounds-safety",
        NEED_CC1_ARG "-fno-bounds-safety-bringup-missing-checks"},
       [](LangOptions &LO) {
-        EXPECT_EQ(LO.getBoundsSafetyBringUpMissingChecks(),
+        EXPECT_EQ(LO.BoundsSafetyBringUpMissingChecks,
                   LangOptions::BS_CHK_None);
       });
   ASSERT_TRUE(Result);
@@ -378,7 +441,7 @@ TEST(BoundsSafetyBringUpMissingChecks, all_enable_then_disable) {
        NEED_CC1_ARG "-fbounds-safety-bringup-missing-checks",
        NEED_CC1_ARG "-fno-bounds-safety-bringup-missing-checks"},
       [](LangOptions &LO) {
-        EXPECT_EQ(LO.getBoundsSafetyBringUpMissingChecks(),
+        EXPECT_EQ(LO.BoundsSafetyBringUpMissingChecks,
                   LangOptions::BS_CHK_None);
       });
   ASSERT_TRUE(Result);
@@ -389,8 +452,8 @@ TEST(BoundsSafetyBringUpMissingChecks, all_enable_then_disable) {
 // =============================================================================
 
 TEST(BoundsSafetyBringUpMissingChecks, all_disabled_then_enable_one) {
-  for (size_t ChkIdx = 0; ChkIdx < NumPairs; ++ChkIdx) {
-    ChkPair Chk = Pairs[ChkIdx];
+  for (size_t ChkIdx = 0; ChkIdx < NumChkDescs; ++ChkIdx) {
+    ChkDesc Chk = CheckKinds[ChkIdx];
     std::vector<std::string> Args = {
         NEED_CC1_ARG "-fbounds-safety",
         NEED_CC1_ARG "-fno-bounds-safety-bringup-missing-checks",
@@ -398,17 +461,15 @@ TEST(BoundsSafetyBringUpMissingChecks, all_disabled_then_enable_one) {
     Args[Args.size() - 1].append(Chk.arg);
 
     bool Result = runOnToolAndCheckLangOptions(Args, [&Chk](LangOptions &LO) {
-      EXPECT_EQ(LO.getBoundsSafetyBringUpMissingChecks(), Chk.Mask);
+      EXPECT_EQ(LO.BoundsSafetyBringUpMissingChecks, Chk.Mask);
 
       // Check helper
-      for (size_t OtherChkIdx = 0; OtherChkIdx < NumPairs; ++OtherChkIdx) {
-        ChkPair OtherChk = Pairs[OtherChkIdx];
+      for (size_t OtherChkIdx = 0; OtherChkIdx < NumChkDescs; ++OtherChkIdx) {
+        ChkDesc OtherChk = CheckKinds[OtherChkIdx];
         if (OtherChk.Mask == Chk.Mask) {
-          EXPECT_TRUE(LO.hasNewBoundsSafetyCheck(
-              (LangOptions::BoundsSafetyNewChecksMask)OtherChk.Mask));
+          EXPECT_TRUE(LO.hasNewBoundsSafetyCheck(OtherChk.Mask));
         } else {
-          EXPECT_FALSE(LO.hasNewBoundsSafetyCheck(
-              (LangOptions::BoundsSafetyNewChecksMask)OtherChk.Mask));
+          EXPECT_FALSE(LO.hasNewBoundsSafetyCheck(OtherChk.Mask));
         }
       }
     });
