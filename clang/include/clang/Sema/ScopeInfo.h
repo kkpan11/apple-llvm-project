@@ -397,11 +397,11 @@ public:
         HasDroppedStmt(false), HasOMPDeclareReductionCombiner(false),
         HasFallthroughStmt(false), UsesFPIntrin(false),
         HasPotentialAvailabilityViolations(false),
-        HasPotentialFeatureAvailabilityViolations(false),
-        ObjCShouldCallSuper(false), ObjCIsDesignatedInit(false),
-        ObjCWarnForNoDesignatedInitChain(false), ObjCIsSecondaryInit(false),
-        ObjCWarnForNoInitDelegation(false), NeedsCoroutineSuspends(true),
-        FoundImmediateEscalatingExpression(false), ErrorTrap(Diag) {}
+        HasPotentialFeatureAvailabilityViolations(false), ObjCShouldCallSuper(false),
+        ObjCIsDesignatedInit(false), ObjCWarnForNoDesignatedInitChain(false),
+        ObjCIsSecondaryInit(false), ObjCWarnForNoInitDelegation(false),
+        NeedsCoroutineSuspends(true), FoundImmediateEscalatingExpression(false),
+        ErrorTrap(Diag) {}
 
   virtual ~FunctionScopeInfo();
 

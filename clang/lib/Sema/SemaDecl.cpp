@@ -15640,7 +15640,7 @@ void Sema::FinalizeDeclaration(Decl *ThisDecl) {
     auto Name = Attr->getName()->getName();
     auto *Init = cast<InitListExpr>(VD->getInit());
     Expr::EvalResult Result;
-    ASTContext::FeatureAvailKind Kind;
+    FeatureAvailKind Kind;
     ASTContext &Ctx = getASTContext();
 
     if (Init->getInit(0)->IgnoreParenImpCasts()->EvaluateAsInt(Result, Ctx)) {
@@ -15648,13 +15648,13 @@ void Sema::FinalizeDeclaration(Decl *ThisDecl) {
       unsigned Val = Res.getExtValue();
       switch (Val) {
       case 0:
-        Kind = ASTContext::FeatureAvailKind::Available;
+        Kind = FeatureAvailKind::Available;
         break;
       case 1:
-        Kind = ASTContext::FeatureAvailKind::Unavailable;
+        Kind = FeatureAvailKind::Unavailable;
         break;
       case 2:
-        Kind = ASTContext::FeatureAvailKind::Dynamic;
+        Kind = FeatureAvailKind::Dynamic;
         break;
       default:
         llvm_unreachable("invalid feature kind");
@@ -15664,7 +15664,7 @@ void Sema::FinalizeDeclaration(Decl *ThisDecl) {
 
     ASTContext::AvailabilityDomainInfo Info{Kind, nullptr};
 
-    if (Kind == ASTContext::FeatureAvailKind::Dynamic) {
+    if (Kind == FeatureAvailKind::Dynamic) {
       Expr *FnExpr = Init->getInit(1);
       auto *Call = CallExpr::Create(Ctx, FnExpr, {}, Ctx.IntTy, VK_PRValue,
                                     SourceLocation(), FPOptionsOverride());

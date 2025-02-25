@@ -12326,15 +12326,15 @@ public:
     unsigned ResultInt;
 
     switch (FeatureInfo.Kind) {
-    case ASTContext::FeatureAvailKind::Available:
+    case FeatureAvailKind::Available:
       ResultInt = 1;
       break;
-    case ASTContext::FeatureAvailKind::Unavailable:
+    case FeatureAvailKind::Unavailable:
       ResultInt = 0;
       break;
-    case ASTContext::FeatureAvailKind::Dynamic:
+    case FeatureAvailKind::Dynamic:
       return false;
-    case ASTContext::FeatureAvailKind::None:
+    case FeatureAvailKind::None:
       llvm_unreachable("unexpected feature kind");
     }
 

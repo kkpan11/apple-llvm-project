@@ -1711,11 +1711,6 @@ private:
     ObjCAvailabilityCheckExprBits.HasDomainName = V;
   }
 
-  explicit ObjCAvailabilityCheckExpr(EmptyShell Shell)
-      : Expr(ObjCAvailabilityCheckExprClass, Shell) {
-    setHasDomainName(false);
-  }
-
   ObjCAvailabilityCheckExpr(SourceLocation AtLoc, SourceLocation RParen,
                             QualType Ty, StringRef DomainName)
       : Expr(ObjCAvailabilityCheckExprClass, Ty, VK_PRValue, OK_Ordinary),
@@ -1739,6 +1734,11 @@ public:
   CreateAvailabilityFeatureCheck(SourceLocation AtLoc, SourceLocation RParen,
                                  QualType Ty, StringRef DomainName,
                                  const ASTContext &C);
+
+  explicit ObjCAvailabilityCheckExpr(EmptyShell Shell)
+      : Expr(ObjCAvailabilityCheckExprClass, Shell) {
+    setHasDomainName(false);
+  }
 
   static ObjCAvailabilityCheckExpr *
   CreateEmpty(const ASTContext &C, Stmt::EmptyShell Empty, size_t FeaturesLen);

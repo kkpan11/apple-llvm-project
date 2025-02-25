@@ -26,6 +26,7 @@
 #include "clang/AST/SYCLKernelInfo.h"
 #include "clang/AST/TemplateName.h"
 #include "clang/Basic/LLVM.h"
+#include "clang/Basic/LangOptions.h"
 #include "clang/Basic/PartialDiagnostic.h"
 #include "clang/Basic/SourceLocation.h"
 #include "llvm/ADT/DenseMap.h"
@@ -822,11 +823,9 @@ public:
     return DiagAllocator;
   }
 
-  enum class FeatureAvailKind { None, Available, Unavailable, Dynamic };
-
   struct AvailabilityDomainInfo {
     FeatureAvailKind Kind = FeatureAvailKind::None;
-    ImplicitCastExpr *Call;
+    ImplicitCastExpr *Call = nullptr;
     bool isInvalid() const { return Kind == FeatureAvailKind::None; }
   };
 

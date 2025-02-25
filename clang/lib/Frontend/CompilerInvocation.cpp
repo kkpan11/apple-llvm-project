@@ -4246,6 +4246,34 @@ void CompilerInvocationBase::GenerateLangArgs(const LangOptions &Opts,
     GenerateArg(Consumer, OPT_frandomize_layout_seed_EQ, Opts.RandstructSeed);
 }
 
+static bool parseFeatureAvailability(const Arg *A, LangOptions &Opts,
+                                     DiagnosticsEngine &Diags) {
+  llvm::StringRef ArgRef(A->getValue());
+  auto Split = ArgRef.split(':');
+  llvm::StringRef Feature = Split.first;
+  llvm::StringRef StateStr = Split.second;
+
+  if (Feature.empty() || StateStr.empty()) {
+    Diags.Report(clang::diag::err_feature_availability_flag_invalid_value)
+        << ArgRef;
+    return false;
+  }
+
+  FeatureAvailKind State;
+  if (StateStr == "on") {
+    State = FeatureAvailKind::Available;
+  } else if (StateStr == "off") {
+    State = FeatureAvailKind::Unavailable;
+  } else {
+    Diags.Report(clang::diag::err_feature_availability_flag_invalid_value)
+        << ArgRef;
+    return false;
+  }
+
+  Opts.setFeatureAvailability(Feature, State);
+  return true;
+}
+
 bool CompilerInvocation::ParseLangArgs(LangOptions &Opts, ArgList &Args,
                                        InputKind IK, const llvm::Triple &T,
                                        std::vector<std::string> &Includes,
@@ -4269,6 +4297,9 @@ bool CompilerInvocation::ParseLangArgs(LangOptions &Opts, ArgList &Args,
 
     return Diags.getNumErrors() == NumErrorsBefore;
   }
+
+  for (const Arg *A : Args.filtered(OPT_ffeature_availability_EQ))
+    parseFeatureAvailability(A, Opts, Diags);
 
   // Other LangOpts are only initialized when the input is not AST or LLVM IR.
   // FIXME: Should we really be parsing this for an Language::Asm input?

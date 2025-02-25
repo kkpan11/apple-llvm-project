@@ -10,7 +10,7 @@
 #ifndef __FEATURE_AVAILABILITY_H
 #define __FEATURE_AVAILABILITY_H
 
-#include <stdint.h>>
+#include <stdint.h>
 
 /// The possible availability domain states. These values are hardcoded in the
 /// compiler and reproduced here for convenience when defining domains.

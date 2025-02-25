@@ -280,7 +280,7 @@ AvailabilityAttr *AvailabilityAttr::getDomainAvailability(
 
 std::string AvailabilityAttr::getFeatureAttributeStr() const {
   assert(!getDomain().empty() && "cannot be called if domain is empty");
-  std::string S = "__attribute__((availability(domain=";
+  std::string S = "__attribute__((availability(domain:";
   S += getDomain().str() + ", " + (getUnavailable() ? '1' : '0') + ")))";
   return S;
 }

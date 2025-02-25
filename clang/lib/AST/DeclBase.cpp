@@ -862,7 +862,7 @@ bool Decl::isWeakImported() const {
 
       if (!DomainName.empty()) {
         auto FeatureInfo = getASTContext().getFeatureAvailInfo(DomainName);
-        if (FeatureInfo.Kind == ASTContext::FeatureAvailKind::Dynamic)
+        if (FeatureInfo.Kind == FeatureAvailKind::Dynamic)
           return true;
         continue;
       }

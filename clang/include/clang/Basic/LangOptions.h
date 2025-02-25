@@ -65,6 +65,8 @@ enum class PointerAuthenticationMode : unsigned {
   SignAndAuth
 };
 
+enum class FeatureAvailKind { None, Available, Unavailable, Dynamic };
+
 /// Bitfields of LangOptions, split out from LangOptions in order to ensure that
 /// this large collection of bitfields is a trivial class type.
 class LangOptionsBase {
@@ -597,6 +599,16 @@ public:
   /// Name of the IR file that contains the result of the OpenMP target
   /// host code generation.
   std::string OMPHostIRFile;
+
+  llvm::StringMap<FeatureAvailKind> FeatureAvailabilityMap;
+
+  void setFeatureAvailability(StringRef Feature, FeatureAvailKind Kind) {
+    FeatureAvailabilityMap[Feature] = Kind;
+  }
+
+  FeatureAvailKind getFeatureAvailability(StringRef Feature) const {
+    return FeatureAvailabilityMap.lookup(Feature);
+  }
 
   /// The user provided compilation unit ID, if non-empty. This is used to
   /// externalize static variables which is needed to support accessing static

@@ -1335,8 +1335,8 @@ void Parser::ParseFeatureAvailabilityAttribute(
     SourceLocation ScopeLoc, ParsedAttr::Form Form,
     BalancedDelimiterTracker &T) {
 
-  if (Tok.isNot(tok::equal)) {
-    Diag(Tok, diag::err_expected) << tok::equal;
+  if (Tok.isNot(tok::colon)) {
+    Diag(Tok, diag::err_expected) << tok::colon;
     SkipUntil(tok::r_paren, StopAtSemi);
     return;
   }

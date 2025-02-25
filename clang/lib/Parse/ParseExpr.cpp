@@ -4009,12 +4009,12 @@ std::optional<AvailabilitySpec> Parser::ParseAvailabilitySpec() {
       return std::nullopt;
     }
 
-    if (Tok.is(tok::identifier) && GetLookAheadToken(1).is(tok::equal)) {
+    if (Tok.is(tok::identifier) && GetLookAheadToken(1).is(tok::colon)) {
       if (ParseIdentifierLoc()->Ident->getName() != "domain") {
         return std::nullopt;
       }
 
-      ConsumeToken(); // equal
+      ConsumeToken(); // colon
 
       if (Tok.isNot(tok::identifier)) {
         return std::nullopt;

@@ -944,28 +944,10 @@ ASTContext::ASTContext(LangOptions &LOpts, SourceManager &SM,
 
 ASTContext::AvailabilityDomainInfo
 ASTContext::getFeatureAvailInfo(StringRef FeatureName) const {
-  AvailabilityDomainInfo Info;
+  FeatureAvailKind Kind = getLangOpts().getFeatureAvailability(FeatureName);
 
-  for (auto &V : getLangOpts().FeatureAvailability) {
-    unsigned EndOfKey = V.find(':');
-    std::string Key = V.substr(0, EndOfKey);
-
-    if (Key != FeatureName)
-      continue;
-
-    unsigned EndOfKind = V.find(':', EndOfKey + 1);
-    std::string Kind = V.substr(EndOfKey + 1, EndOfKind - (EndOfKey + 1));
-
-    if (Kind == "on")
-      Info.Kind = FeatureAvailKind::Available;
-    else if (Kind == "off")
-      Info.Kind = FeatureAvailKind::Unavailable;
-    else if (Kind == "dyn") {
-      llvm_unreachable("dyn not supported");
-    } else
-      llvm_unreachable("invalid FeatureAvailKind");
-    return Info;
-  }
+  if (Kind != FeatureAvailKind::None)
+    return {Kind};
 
   auto I = AvailabilityDomainMap.find(FeatureName);
   if (I != AvailabilityDomainMap.end())
