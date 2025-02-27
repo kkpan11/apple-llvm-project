@@ -22,9 +22,9 @@
 using namespace clang;
 using namespace sema;
 
-static bool isFeatureUseGuarded(const AvailabilityAttr *AA,
+static bool isFeatureUseGuarded(const DomainAvailabilityAttr *AA,
                                 const Decl *ContextDecl, ASTContext &Ctx) {
-  for (auto *Attr : Ctx.getFeatureAvailabilityAttrs(ContextDecl))
+  for (auto *Attr : ContextDecl->specific_attrs<DomainAvailabilityAttr>())
     if (AA->getDomain() == Attr->getDomain())
       return AA->getUnavailable() == Attr->getUnavailable();
   return false;
@@ -33,7 +33,7 @@ static bool isFeatureUseGuarded(const AvailabilityAttr *AA,
 static void diagnoseDeclFeatureAvailability(const NamedDecl *D,
                                             SourceLocation Loc,
                                             Decl *ContextDecl, Sema &S) {
-  for (auto *Attr : S.Context.getFeatureAvailabilityAttrs(D))
+  for (auto *Attr : D->specific_attrs<DomainAvailabilityAttr>())
     if (!isFeatureUseGuarded(Attr, ContextDecl, S.Context))
       S.Diag(Loc, diag::err_unguarded_feature)
           << D << Attr->getDomain().str() << Attr->getUnavailable();
@@ -54,7 +54,7 @@ class DiagnoseUnguardedFeatureAvailability
 
   SmallVector<FeatureAvailInfo, 4> FeatureStack;
 
-  bool isFeatureUseGuarded(const AvailabilityAttr *Attr) const;
+  bool isFeatureUseGuarded(const DomainAvailabilityAttr *Attr) const;
 
   bool isConditionallyGuardedByFeature() const;
 
@@ -154,7 +154,7 @@ bool DiagnoseUnguardedFeatureAvailability::TraverseIfStmt(IfStmt *If) {
 }
 
 bool DiagnoseUnguardedFeatureAvailability::isFeatureUseGuarded(
-    const AvailabilityAttr *Attr) const {
+    const DomainAvailabilityAttr *Attr) const {
   auto Domain = Attr->getDomain();
   for (auto &Info : FeatureStack)
     if (Info.Domain == Domain && Info.Unavailable == Attr->getUnavailable())
@@ -164,7 +164,7 @@ bool DiagnoseUnguardedFeatureAvailability::isFeatureUseGuarded(
 
 void DiagnoseUnguardedFeatureAvailability::diagnoseDeclFeatureAvailability(
     const NamedDecl *D, SourceLocation Loc) {
-  for (auto *Attr : SemaRef.Context.getFeatureAvailabilityAttrs(D)) {
+  for (auto *Attr : D->specific_attrs<DomainAvailabilityAttr>()) {
     std::string FeatureUse = Attr->getDomain().str();
     if (!isFeatureUseGuarded(Attr))
       SemaRef.Diag(Loc, diag::err_unguarded_feature)

@@ -956,20 +956,12 @@ ASTContext::getFeatureAvailInfo(StringRef FeatureName) const {
   return {};
 }
 
-llvm::iterator_range<specific_attr_iterator<AvailabilityAttr>>
-ASTContext::getFeatureAvailabilityAttrs(const Decl *D) const {
-  auto Fn = [](const AvailabilityAttr *AA) { return !AA->getDomain().empty(); };
-  return llvm::make_range(
-      specific_attr_iterator<AvailabilityAttr>(D->attr_begin(), Fn),
-      specific_attr_iterator<AvailabilityAttr>(D->attr_end(), Fn));
-}
-
-std::pair<AvailabilityAttr *, bool>
+std::pair<DomainAvailabilityAttr *, bool>
 ASTContext::checkNewFeatureAvailability(Decl *D, StringRef NewDomainName,
                                         bool NewUnavailable) {
   assert(!NewDomainName.empty());
 
-  for (auto *AA : getFeatureAvailabilityAttrs(D)) {
+  for (auto *AA : D->specific_attrs<DomainAvailabilityAttr>()) {
     if (AA->getDomain() != NewDomainName)
       continue;
     if (AA->getUnavailable() == NewUnavailable)
@@ -981,19 +973,18 @@ ASTContext::checkNewFeatureAvailability(Decl *D, StringRef NewDomainName,
 }
 
 bool ASTContext::hasFeatureAvailabilityAttr(const Decl *D) const {
-  return !getFeatureAvailabilityAttrs(D).empty();
+  return !D->specific_attrs<DomainAvailabilityAttr>().empty();
 }
 
 bool ASTContext::hasUnavailableFeature(const Decl *D) const {
-  if (D->hasAttrs())
-    for (auto *AA : getFeatureAvailabilityAttrs(D)) {
-      auto FeatureName = AA->getDomain();
-      auto FeatureInfo = getFeatureAvailInfo(FeatureName);
-      if (FeatureInfo.Kind == (AA->getUnavailable()
-                                   ? FeatureAvailKind::Available
-                                   : FeatureAvailKind::Unavailable))
-        return true;
-    }
+  for (auto *AA : D->specific_attrs<DomainAvailabilityAttr>()) {
+    auto FeatureName = AA->getDomain();
+    auto FeatureInfo = getFeatureAvailInfo(FeatureName);
+    if (FeatureInfo.Kind == (AA->getUnavailable()
+                                 ? FeatureAvailKind::Available
+                                 : FeatureAvailKind::Unavailable))
+      return true;
+  }
 
   return false;
 }

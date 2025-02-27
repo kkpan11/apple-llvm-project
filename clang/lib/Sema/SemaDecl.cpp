@@ -2855,15 +2855,13 @@ static bool mergeDeclAttribute(Sema &S, NamedDecl *D,
   // previous decl", for example if the attribute needs to be consistent
   // between redeclarations, you need to call a custom merge function here.
   InheritableAttr *NewAttr = nullptr;
-  if (const auto *AA = dyn_cast<AvailabilityAttr>(Attr)) {
-    StringRef Domain = AA->getDomain();
-    if (Domain.empty())
-      NewAttr = S.mergeAvailabilityAttr(
-          D, *AA, AA->getPlatform(), AA->isImplicit(), AA->getIntroduced(),
-          AA->getDeprecated(), AA->getObsoleted(), AA->getUnavailable(),
-          AA->getMessage(), AA->getStrict(), AA->getReplacement(), AMK,
-          AA->getPriority(), AA->getEnvironment());
-  } else if (const auto *VA = dyn_cast<VisibilityAttr>(Attr))
+  if (const auto *AA = dyn_cast<AvailabilityAttr>(Attr))
+    NewAttr = S.mergeAvailabilityAttr(
+        D, *AA, AA->getPlatform(), AA->isImplicit(), AA->getIntroduced(),
+        AA->getDeprecated(), AA->getObsoleted(), AA->getUnavailable(),
+        AA->getMessage(), AA->getStrict(), AA->getReplacement(), AMK,
+        AA->getPriority(), AA->getEnvironment());
+  else if (const auto *VA = dyn_cast<VisibilityAttr>(Attr))
     NewAttr = S.mergeVisibilityAttr(D, *VA, VA->getVisibility());
   else if (const auto *VA = dyn_cast<TypeVisibilityAttr>(Attr))
     NewAttr = S.mergeTypeVisibilityAttr(D, *VA, VA->getVisibility());

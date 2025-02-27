@@ -61,13 +61,13 @@ __attribute__((availability(domain:feature1, AVAIL), // expected-note {{is incom
 @interface Derived3 : Base7<Base0 *> // expected-error {{use of 'Base0' requires feature 'feature1' to be available}}
 @end
 
-__attribute__((availability(domain:feature1, AVAIL))) // expected-note {{is incompatible with __attribute__((availability(domain:feature1, 0)))}}
+__attribute__((availability(domain:feature1, AVAIL))) // expected-note {{is incompatible with __attribute__((availability(domain:feature1, 0)))}} expected-note 2 {{feature attribute __attribute__((availability(domain:feature1, 0)))}}
 @interface Derived0 : Base0 {
   struct S1 *ivar4;
 }
 @property struct S1 *p0;
 @property int p1 __attribute__((availability(domain:feature1, AVAIL)));
-@property int prop0_derived0 __attribute__((availability(domain:feature1, UNAVAIL))); // expected-error {{cannot merge incompatible feature attribute to this decl}} expected-note {{feature attribute __attribute__((availability(domain:feature1, 1)))}}
+@property int prop0_derived0 __attribute__((availability(domain:feature1, UNAVAIL))); // expected-error 3 {{cannot merge incompatible feature attribute to this decl}} expected-note {{feature attribute __attribute__((availability(domain:feature1, 1)))}} expected-note 2 {{is incompatible with __attribute__((availability(domain:feature1, 1)))}}
 @end
 
 @interface Derived0()

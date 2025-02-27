@@ -835,11 +835,8 @@ public:
     AvailabilityDomainMap[Name] = Info;
   }
 
-  std::pair<AvailabilityAttr *, bool>
+  std::pair<DomainAvailabilityAttr *, bool>
   checkNewFeatureAvailability(Decl *D, StringRef DomainName, bool Unavailable);
-
-  llvm::iterator_range<specific_attr_iterator<AvailabilityAttr>>
-  getFeatureAvailabilityAttrs(const Decl *D) const;
 
   bool hasFeatureAvailabilityAttr(const Decl *D) const;
 

@@ -2104,9 +2104,6 @@ static bool checkAvailabilityAttr(Sema &S, SourceRange Range,
                                   VersionTuple Introduced,
                                   VersionTuple Deprecated,
                                   VersionTuple Obsoleted) {
-  if (!Platform)
-    return false;
-
   StringRef PlatformName
     = AvailabilityAttr::getPrettyPlatformName(Platform->getName());
   if (PlatformName.empty())
@@ -2377,16 +2374,16 @@ static void handleFeatureAvailabilityAttr(Sema &S, Decl *D,
   auto p =
       S.Context.checkNewFeatureAvailability(D, II->getName(), IsUnavailable);
   if (!p.second) {
-    auto *AA = AvailabilityAttr::getDomainAvailability(
-        II->getName(), IsUnavailable, AL, S.Context);
+    auto *AA = DomainAvailabilityAttr::Create(S.Context, II->getName(),
+                                              IsUnavailable, AL);
     S.Diag(D->getBeginLoc(), diag::err_feature_invalid_added);
     S.Diag(AL.getLoc(), diag::note_feature_incompatible0)
         << AA->getFeatureAttributeStr();
     S.Diag(p.first->getLocation(), diag::note_feature_incompatible1)
         << p.first->getFeatureAttributeStr();
   } else if (!p.first)
-    D->addAttr(AvailabilityAttr::getDomainAvailability(
-        II->getName(), IsUnavailable, AL, S.Context));
+    D->addAttr(DomainAvailabilityAttr::Create(S.Context, II->getName(),
+                                              IsUnavailable, AL));
 }
 
 static void handleAvailabilityAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
@@ -3767,7 +3764,7 @@ void Sema::copyFeatureAvailability(Decl *Dst, Decl *Src) {
   if (Dst->isInvalidDecl())
     return;
 
-  for (auto *AA : Context.getFeatureAvailabilityAttrs(Src)) {
+  for (auto *AA : Src->specific_attrs<DomainAvailabilityAttr>()) {
     auto *NewAttr = AA->clone(Context);
     NewAttr->setInherited(true);
     Dst->addAttr(NewAttr);
@@ -3779,12 +3776,12 @@ void Sema::copyFeatureAvailabilityCheck(Decl *Dst, NamedDecl *Src,
   if (Dst->isInvalidDecl())
     return;
 
-  llvm::SmallDenseMap<StringRef, AvailabilityAttr *> DstToAttr;
+  llvm::SmallDenseMap<StringRef, DomainAvailabilityAttr *> DstToAttr;
 
-  for (auto *AA : Context.getFeatureAvailabilityAttrs(Dst))
+  for (auto *AA : Dst->specific_attrs<DomainAvailabilityAttr>())
     DstToAttr[AA->getDomain()] = AA;
 
-  for (auto *AA : Context.getFeatureAvailabilityAttrs(Src)) {
+  for (auto *AA : Src->specific_attrs<DomainAvailabilityAttr>()) {
     auto I = DstToAttr.find(AA->getDomain());
     if (I == DstToAttr.end()) {
       auto *NewAttr = AA->clone(Context);

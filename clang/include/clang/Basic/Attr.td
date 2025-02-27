@@ -1057,8 +1057,7 @@ def Availability : InheritableAttr {
               VersionArgument<"deprecated">, VersionArgument<"obsoleted">,
               BoolArgument<"unavailable">, StringArgument<"message">,
               BoolArgument<"strict">, StringArgument<"replacement">,
-              IntArgument<"priority">, IdentifierArgument<"environment">,
-              StringArgument<"domain", 1>];
+              IntArgument<"priority">, IdentifierArgument<"environment">];
   let AdditionalMembers =
 [{static llvm::StringRef getPrettyPlatformName(llvm::StringRef Platform) {
     return llvm::StringSwitch<llvm::StringRef>(Platform)
@@ -1168,13 +1167,20 @@ static llvm::Triple::EnvironmentType getEnvironmentType(llvm::StringRef Environm
              .Case("library", llvm::Triple::Library)
              .Default(llvm::Triple::UnknownEnvironment);
 }
-static AvailabilityAttr *getDomainAvailability(StringRef DomainName, bool IsUnavailable, const AttributeCommonInfo &CI, ASTContext &Ctx);
-std::string getFeatureAttributeStr() const;
 }];
   let HasCustomParsing = 1;
   let InheritEvenIfAlreadyPresent = 1;
   let Subjects = SubjectList<[Named]>;
   let Documentation = [AvailabilityDocs];
+}
+
+def DomainAvailability : InheritableAttr {
+  let Spellings = [Clang<"domain_availability">];
+  let Args = [StringArgument<"domain">, BoolArgument<"unavailable">];
+  let AdditionalMembers = [{
+    std::string getFeatureAttributeStr() const;
+  }];
+  let Documentation = [Undocumented];
 }
 
 def AvailabilityDomain : InheritableAttr {
