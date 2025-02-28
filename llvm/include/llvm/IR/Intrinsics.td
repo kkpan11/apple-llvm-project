@@ -1809,6 +1809,10 @@ def int_coro_await_suspend_handle : Intrinsic<[],
                                               [llvm_ptr_ty, llvm_ptr_ty, llvm_ptr_ty],
                                               [Throws]>;
 
+// FIXME: enforce musttail
+// XXX: attrs;  not throws, wb DefaultAttrsIntrinsic
+def int_coro_return : Intrinsic<[llvm_any_ty], [LLVMMatchType<0>], []>;
+
 // Coroutine Lowering Intrinsics. Used internally by coroutine passes.
 
 def int_coro_subfn_addr : DefaultAttrsIntrinsic<
