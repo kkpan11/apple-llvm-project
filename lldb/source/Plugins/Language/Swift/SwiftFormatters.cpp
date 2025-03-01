@@ -16,9 +16,11 @@
 #include "Plugins/LanguageRuntime/Swift/SwiftLanguageRuntime.h"
 #include "Plugins/TypeSystem/Clang/TypeSystemClang.h"
 #include "Plugins/TypeSystem/Swift/SwiftDemangle.h"
+#include "Plugins/TypeSystem/Swift/TypeSystemSwiftTypeRef.h"
 #include "lldb/DataFormatters/FormattersHelpers.h"
 #include "lldb/DataFormatters/StringPrinter.h"
 #include "lldb/Symbol/CompilerType.h"
+#include "lldb/Target/ExecutionContext.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Utility/ConstString.h"
 #include "lldb/Utility/DataBufferHeap.h"
@@ -28,11 +30,13 @@
 #include "lldb/Utility/Timer.h"
 #include "lldb/ValueObject/ValueObject.h"
 #include "lldb/lldb-enumerations.h"
+#include "swift/ABI/Task.h"
 #include "swift/AST/Types.h"
 #include "swift/Demangling/Demangle.h"
 #include "swift/Demangling/ManglingMacros.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/FormatAdapters.h"
 #include "llvm/Support/raw_ostream.h"
 #include <optional>
@@ -950,6 +954,135 @@ private:
   ValueObjectSP m_child_tasks_sp;
   ValueObjectSP m_is_running_sp;
 };
+
+class TaskGroupSyntheticFrontEnd : public SyntheticChildrenFrontEnd {
+public:
+  TaskGroupSyntheticFrontEnd(lldb::ValueObjectSP valobj_sp)
+      : SyntheticChildrenFrontEnd(*valobj_sp.get()) {}
+
+  llvm::Expected<uint32_t> CalculateNumChildren() override {
+    return m_group_tasks.size();
+  }
+
+  bool MightHaveChildren() override { return true; }
+
+  lldb::ValueObjectSP GetChildAtIndex(uint32_t idx) override {
+    if (!m_ts || idx >= m_group_tasks.size())
+      return {};
+
+    if (auto valobj_sp = m_children[idx])
+      return valobj_sp;
+
+    // TypeMangling for "Swift.UnsafeCurrentTask"
+    CompilerType task_type =
+        m_ts->GetTypeFromMangledTypename(ConstString("$sSctD"));
+
+    addr_t task_addr = m_group_tasks[idx];
+    auto task_sp = ValueObject::CreateValueObjectFromAddress(
+        "current_task", task_addr, m_backend.GetExecutionContextRef(),
+        task_type, false);
+    if (auto synthetic_sp = task_sp->GetSyntheticValue())
+      task_sp = synthetic_sp;
+
+    task_sp->SetName(ConstString(("[" + Twine(idx) + "]").str()));
+
+    m_children[idx] = task_sp;
+    return task_sp;
+  }
+
+  size_t GetIndexOfChildWithName(ConstString name) override {
+    StringRef buf = name.GetStringRef();
+    size_t idx = 0;
+    if (buf.consume_front("[") && buf.consumeInteger(10, idx))
+      return idx;
+    return SIZE_T_MAX;
+  }
+
+  lldb::ChildCacheState Update() override {
+    // Get the (opaque) pointer to the `TaskGroupBase`.
+    auto opaque_group_ptr_sp = m_backend.GetChildMemberWithName("_group");
+    addr_t task_group_ptr =
+        opaque_group_ptr_sp->GetValueAsUnsigned(LLDB_INVALID_ADDRESS);
+    ProcessSP process_sp = m_backend.GetProcessSP();
+    TaskGroupBase task_group{process_sp, task_group_ptr};
+    m_group_tasks.clear();
+    m_children.clear();
+    auto current_task = task_group.getFirstChild();
+    while (current_task) {
+      m_group_tasks.push_back(current_task.addr);
+      current_task = current_task.getNextTask();
+    }
+    m_children.resize(m_group_tasks.size());
+
+    ExecutionContext exe_ctx{m_backend.GetExecutionContextRef()};
+    auto ts_or_err = exe_ctx.GetTargetRef().GetScratchTypeSystemForLanguage(
+        eLanguageTypeSwift);
+    if (auto error = ts_or_err.takeError()) {
+      // TODO: Log the error.
+      consumeError(std::move(error));
+      return ChildCacheState::eRefetch;
+    }
+
+    m_ts = llvm::dyn_cast_or_null<TypeSystemSwiftTypeRef>(ts_or_err->get());
+    return ChildCacheState::eRefetch;
+  }
+
+private:
+  struct Task {
+    ProcessSP process_sp;
+    addr_t addr;
+
+    operator bool() const { return addr && addr != LLDB_INVALID_ADDRESS; }
+
+    static constexpr offset_t JobFlagsOffset = 0x20;
+    static constexpr size_t JobFlagsSize = sizeof(uint32_t);
+    static constexpr uint32_t IsChildTaskMask = 1ULL << 26;
+
+    bool isChildTask() {
+      Status status;
+      auto flags = process_sp->ReadUnsignedIntegerFromMemory(
+          addr + JobFlagsOffset, JobFlagsSize, 0, status);
+      if (status.Success())
+        return flags & IsChildTaskMask;
+      return false;
+    }
+
+    static constexpr offset_t AsyncTaskSize = sizeof(::swift::AsyncTask);
+    static constexpr offset_t ChildFragmentOffset = AsyncTaskSize;
+    static constexpr offset_t NextChildOffset = ChildFragmentOffset + 0x8;
+
+    Task getNextTask() {
+      Status status;
+      auto next_task =
+          process_sp->ReadPointerFromMemory(addr + NextChildOffset, status);
+      if (status.Success())
+        return {process_sp, next_task};
+      return {process_sp, LLDB_INVALID_ADDRESS};
+    }
+  };
+
+  struct TaskGroupBase {
+    ProcessSP process_sp;
+    addr_t addr;
+
+    // FirstChild offset for a TaskGroupBase instance.
+    static constexpr offset_t FirstChildOffset = 0x18;
+
+    Task getFirstChild() {
+      Status status;
+      auto first_child =
+          process_sp->ReadPointerFromMemory(addr + FirstChildOffset, status);
+      if (status.Success())
+        return {process_sp, first_child};
+      return {process_sp, LLDB_INVALID_PROCESS};
+    }
+  };
+
+private:
+  TypeSystemSwiftTypeRef *m_ts;
+  std::vector<addr_t> m_group_tasks;
+  std::vector<ValueObjectSP> m_children;
+};
 }
 }
 }
@@ -1014,6 +1147,14 @@ lldb_private::formatters::swift::TaskSyntheticFrontEndCreator(
   if (!valobj_sp)
     return NULL;
   return new TaskSyntheticFrontEnd(valobj_sp);
+}
+
+SyntheticChildrenFrontEnd *
+lldb_private::formatters::swift::TaskGroupSyntheticFrontEndCreator(
+    CXXSyntheticChildren *, lldb::ValueObjectSP valobj_sp) {
+  if (!valobj_sp)
+    return NULL;
+  return new TaskGroupSyntheticFrontEnd(valobj_sp);
 }
 
 bool lldb_private::formatters::swift::ObjC_Selector_SummaryProvider(
