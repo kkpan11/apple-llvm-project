@@ -958,129 +958,175 @@ private:
 class TaskGroupSyntheticFrontEnd : public SyntheticChildrenFrontEnd {
 public:
   TaskGroupSyntheticFrontEnd(lldb::ValueObjectSP valobj_sp)
-      : SyntheticChildrenFrontEnd(*valobj_sp.get()) {}
+      : SyntheticChildrenFrontEnd(*valobj_sp.get()) {
+    if (auto process_sp = m_backend.GetProcessSP())
+      m_concurrency_version =
+          SwiftLanguageRuntime::FindConcurrencyDebugVersion(*process_sp);
+  }
 
   llvm::Expected<uint32_t> CalculateNumChildren() override {
-    return m_group_tasks.size();
+    if (m_concurrency_version.value_or(0) != 1)
+      return m_backend.GetNumChildren();
+
+    return m_task_addrs.size();
   }
 
   bool MightHaveChildren() override { return true; }
 
   lldb::ValueObjectSP GetChildAtIndex(uint32_t idx) override {
-    if (!m_ts || idx >= m_group_tasks.size())
+    if (m_concurrency_version.value_or(0) != 1)
+      return m_backend.GetChildAtIndex(idx);
+
+    if (!m_task_type || idx >= m_task_addrs.size())
       return {};
 
     if (auto valobj_sp = m_children[idx])
       return valobj_sp;
 
-    // TypeMangling for "Swift.UnsafeCurrentTask"
-    CompilerType task_type =
-        m_ts->GetTypeFromMangledTypename(ConstString("$sSctD"));
-
-    addr_t task_addr = m_group_tasks[idx];
+    addr_t task_addr = m_task_addrs[idx];
+    auto child_name = ("[" + Twine(idx) + "]").str();
     auto task_sp = ValueObject::CreateValueObjectFromAddress(
-        "current_task", task_addr, m_backend.GetExecutionContextRef(),
-        task_type, false);
+        child_name, task_addr, m_backend.GetExecutionContextRef(), m_task_type,
+        false);
     if (auto synthetic_sp = task_sp->GetSyntheticValue())
       task_sp = synthetic_sp;
-
-    task_sp->SetName(ConstString(("[" + Twine(idx) + "]").str()));
 
     m_children[idx] = task_sp;
     return task_sp;
   }
 
   size_t GetIndexOfChildWithName(ConstString name) override {
+    if (m_concurrency_version.value_or(0) != 1)
+      return m_backend.GetIndexOfChildWithName(name);
+
     StringRef buf = name.GetStringRef();
     size_t idx = 0;
-    if (buf.consume_front("[") && buf.consumeInteger(10, idx))
+    if (buf.consume_front("[") && buf.consumeInteger(10, idx) && buf == "]")
       return idx;
-    return SIZE_T_MAX;
+    return UINT32_MAX;
   }
 
   lldb::ChildCacheState Update() override {
-    // Get the (opaque) pointer to the `TaskGroupBase`.
-    auto opaque_group_ptr_sp = m_backend.GetChildMemberWithName("_group");
-    addr_t task_group_ptr =
-        opaque_group_ptr_sp->GetValueAsUnsigned(LLDB_INVALID_ADDRESS);
-    ProcessSP process_sp = m_backend.GetProcessSP();
-    TaskGroupBase task_group{process_sp, task_group_ptr};
-    m_group_tasks.clear();
+    if (m_concurrency_version.value_or(0) != 1)
+      return ChildCacheState::eReuse;
+
+    m_task_addrs.clear();
     m_children.clear();
-    auto current_task = task_group.getFirstChild();
+
+    if (!m_task_type)
+      if (auto target_sp = m_backend.GetTargetSP()) {
+        if (auto ts_or_err = target_sp->GetScratchTypeSystemForLanguage(
+                eLanguageTypeSwift)) {
+          if (auto *ts = llvm::dyn_cast_or_null<TypeSystemSwiftTypeRef>(
+                  ts_or_err->get()))
+            // TypeMangling for "Swift.UnsafeCurrentTask"
+            m_task_type = ts->GetTypeFromMangledTypename(ConstString("$sSctD"));
+        } else {
+          LLDB_LOG_ERROR(GetLog(LLDBLog::DataFormatters | LLDBLog::Types),
+                         ts_or_err.takeError(),
+                         "could not get Swift type system for Task synthetic "
+                         "provider: {0}");
+          return ChildCacheState::eReuse;
+        }
+      }
+
+    if (!m_task_type)
+      return ChildCacheState::eReuse;
+
+    // Get the (opaque) pointer to the `TaskGroupBase`.
+    addr_t task_group_ptr = LLDB_INVALID_ADDRESS;
+    if (auto opaque_group_ptr_sp = m_backend.GetChildMemberWithName("_group"))
+      task_group_ptr =
+          opaque_group_ptr_sp->GetValueAsUnsigned(LLDB_INVALID_ADDRESS);
+
+    TaskGroupBase task_group{m_backend.GetProcessSP(), task_group_ptr};
+
+    // Get the TaskGroup's child tasks by getting all tasks in the range
+    // [FirstChild, LastChild].
+    //
+    // Child tasks are connected together using ChildFragment::NextChild.
+    Status status;
+    auto current_task = task_group.getFirstChild(status);
+    auto last_task = task_group.getLastChild(status);
     while (current_task) {
-      m_group_tasks.push_back(current_task.addr);
-      current_task = current_task.getNextTask();
-    }
-    m_children.resize(m_group_tasks.size());
-
-    ExecutionContext exe_ctx{m_backend.GetExecutionContextRef()};
-    auto ts_or_err = exe_ctx.GetTargetRef().GetScratchTypeSystemForLanguage(
-        eLanguageTypeSwift);
-    if (auto error = ts_or_err.takeError()) {
-      // TODO: Log the error.
-      consumeError(std::move(error));
-      return ChildCacheState::eRefetch;
+      m_task_addrs.push_back(current_task.addr);
+      if (current_task == last_task)
+        break;
+      current_task = current_task.getNextChild(status);
     }
 
-    m_ts = llvm::dyn_cast_or_null<TypeSystemSwiftTypeRef>(ts_or_err->get());
+    // Populate the child cache with null values.
+    m_children.resize(m_task_addrs.size());
+
+    if (status.Fail()) {
+      LLDB_LOG(GetLog(LLDBLog::DataFormatters | LLDBLog::Types),
+               "could not read TaskGroup's child task pointers: {0}",
+               status.AsCString());
+      return ChildCacheState::eReuse;
+    }
+
     return ChildCacheState::eRefetch;
   }
 
 private:
+  /// Lightweight Task pointer wrapper, for the purpose of traversing to the
+  /// Task's next sibling (via `ChildFragment::NextChild`).
   struct Task {
     ProcessSP process_sp;
     addr_t addr;
 
     operator bool() const { return addr && addr != LLDB_INVALID_ADDRESS; }
 
-    static constexpr offset_t JobFlagsOffset = 0x20;
-    static constexpr size_t JobFlagsSize = sizeof(uint32_t);
-    static constexpr uint32_t IsChildTaskMask = 1ULL << 26;
-
-    bool isChildTask() {
-      Status status;
-      auto flags = process_sp->ReadUnsignedIntegerFromMemory(
-          addr + JobFlagsOffset, JobFlagsSize, 0, status);
-      if (status.Success())
-        return flags & IsChildTaskMask;
-      return false;
-    }
+    bool operator==(const Task &other) const { return addr == other.addr; }
+    bool operator!=(const Task &other) const { return !(*this == other); }
 
     static constexpr offset_t AsyncTaskSize = sizeof(::swift::AsyncTask);
     static constexpr offset_t ChildFragmentOffset = AsyncTaskSize;
     static constexpr offset_t NextChildOffset = ChildFragmentOffset + 0x8;
 
-    Task getNextTask() {
-      Status status;
-      auto next_task =
-          process_sp->ReadPointerFromMemory(addr + NextChildOffset, status);
+    Task getNextChild(Status &status) {
+      addr_t next_task = LLDB_INVALID_ADDRESS;
       if (status.Success())
-        return {process_sp, next_task};
-      return {process_sp, LLDB_INVALID_ADDRESS};
+        next_task =
+            process_sp->ReadPointerFromMemory(addr + NextChildOffset, status);
+      return {process_sp, next_task};
     }
   };
 
+  /// Lightweight wrapper around TaskGroup opaque pointers (`TaskGroupBase`),
+  /// for the purpose of traversing its child tasks.
   struct TaskGroupBase {
     ProcessSP process_sp;
     addr_t addr;
 
     // FirstChild offset for a TaskGroupBase instance.
     static constexpr offset_t FirstChildOffset = 0x18;
+    static constexpr offset_t LastChildOffset = 0x20;
 
-    Task getFirstChild() {
-      Status status;
-      auto first_child =
-          process_sp->ReadPointerFromMemory(addr + FirstChildOffset, status);
+    Task getFirstChild(Status &status) {
+      addr_t first_child = LLDB_INVALID_ADDRESS;
       if (status.Success())
-        return {process_sp, first_child};
-      return {process_sp, LLDB_INVALID_PROCESS};
+        first_child =
+            process_sp->ReadPointerFromMemory(addr + FirstChildOffset, status);
+      return {process_sp, first_child};
+    }
+
+    Task getLastChild(Status &status) {
+      addr_t last_child = LLDB_INVALID_ADDRESS;
+      if (status.Success())
+        last_child =
+            process_sp->ReadPointerFromMemory(addr + LastChildOffset, status);
+      return {process_sp, last_child};
     }
   };
 
 private:
-  TypeSystemSwiftTypeRef *m_ts;
-  std::vector<addr_t> m_group_tasks;
+  std::optional<uint32_t> m_concurrency_version;
+  // Type for Swift.UnsafeCurrentTask.
+  CompilerType m_task_type;
+  // The TaskGroup's list of child task addresses.
+  std::vector<addr_t> m_task_addrs;
+  // Cache and storage of constructed child values.
   std::vector<ValueObjectSP> m_children;
 };
 }
