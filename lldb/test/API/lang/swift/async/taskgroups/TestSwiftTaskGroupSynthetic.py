@@ -7,7 +7,7 @@ from lldbsuite.test import lldbutil
 class TestCase(TestBase):
 
     @swiftTest
-    def test(self):
+    def test_value_printing(self):
         """Print a TaskGroup and verify its children."""
         self.build()
         lldbutil.run_to_source_breakpoint(
@@ -24,3 +24,20 @@ class TestCase(TestBase):
                 "isGroupChildTask = true",
             ],
         )
+
+    @swiftTest
+    def test_value_api(self):
+        """Verify a TaskGroup contains its expected children."""
+        self.build()
+        _, process, _, _ = lldbutil.run_to_source_breakpoint(
+            self, "break here", lldb.SBFileSpec("main.swift")
+        )
+        thread = process.GetSelectedThread()
+        frame = thread.GetSelectedFrame()
+        group = frame.FindVariable("group")
+        self.assertEqual(group.num_children, 3)
+        for task in group:
+            self.assertEqual(str(task), str(group.GetChildMemberWithName(task.name)))
+            self.assertEqual(
+                task.GetChildMemberWithName("isGroupChildTask").summary, "true"
+            )
