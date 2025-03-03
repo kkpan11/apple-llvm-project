@@ -959,13 +959,20 @@ class TaskGroupSyntheticFrontEnd : public SyntheticChildrenFrontEnd {
 public:
   TaskGroupSyntheticFrontEnd(lldb::ValueObjectSP valobj_sp)
       : SyntheticChildrenFrontEnd(*valobj_sp.get()) {
+    bool is_64bit = false;
+    if (auto target_sp = m_backend.GetTargetSP())
+      is_64bit = target_sp->GetArchitecture().GetTriple().isArch64Bit();
+
+    std::optional<uint32_t> concurrency_version;
     if (auto process_sp = m_backend.GetProcessSP())
-      m_concurrency_version =
+      concurrency_version =
           SwiftLanguageRuntime::FindConcurrencyDebugVersion(*process_sp);
+
+    m_is_supported_target = is_64bit && concurrency_version.value_or(0) == 1;
   }
 
   llvm::Expected<uint32_t> CalculateNumChildren() override {
-    if (m_concurrency_version.value_or(0) != 1)
+    if (!m_is_supported_target)
       return m_backend.GetNumChildren();
 
     return m_task_addrs.size();
@@ -974,7 +981,7 @@ public:
   bool MightHaveChildren() override { return true; }
 
   lldb::ValueObjectSP GetChildAtIndex(uint32_t idx) override {
-    if (m_concurrency_version.value_or(0) != 1)
+    if (!m_is_supported_target)
       return m_backend.GetChildAtIndex(idx);
 
     if (!m_task_type || idx >= m_task_addrs.size())
@@ -996,7 +1003,7 @@ public:
   }
 
   size_t GetIndexOfChildWithName(ConstString name) override {
-    if (m_concurrency_version.value_or(0) != 1)
+    if (!m_is_supported_target)
       return m_backend.GetIndexOfChildWithName(name);
 
     StringRef buf = name.GetStringRef();
@@ -1007,7 +1014,7 @@ public:
   }
 
   lldb::ChildCacheState Update() override {
-    if (m_concurrency_version.value_or(0) != 1)
+    if (!m_is_supported_target)
       return ChildCacheState::eReuse;
 
     m_task_addrs.clear();
@@ -1121,7 +1128,7 @@ private:
   };
 
 private:
-  std::optional<uint32_t> m_concurrency_version;
+  bool m_is_supported_target = false;
   // Type for Swift.UnsafeCurrentTask.
   CompilerType m_task_type;
   // The TaskGroup's list of child task addresses.
