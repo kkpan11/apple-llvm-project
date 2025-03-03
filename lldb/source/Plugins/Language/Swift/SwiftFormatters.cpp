@@ -1007,8 +1007,8 @@ public:
       return m_backend.GetIndexOfChildWithName(name);
 
     StringRef buf = name.GetStringRef();
-    size_t idx = 0;
-    if (buf.consume_front("[") && buf.consumeInteger(10, idx) && buf == "]")
+    size_t idx = UINT32_MAX;
+    if (buf.consume_front("[") && !buf.consumeInteger(10, idx) && buf == "]")
       return idx;
     return UINT32_MAX;
   }
