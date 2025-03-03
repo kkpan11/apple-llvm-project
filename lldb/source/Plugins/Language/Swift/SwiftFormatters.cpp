@@ -1199,7 +1199,7 @@ SyntheticChildrenFrontEnd *
 lldb_private::formatters::swift::TaskGroupSyntheticFrontEndCreator(
     CXXSyntheticChildren *, lldb::ValueObjectSP valobj_sp) {
   if (!valobj_sp)
-    return NULL;
+    return nullptr;
   return new TaskGroupSyntheticFrontEnd(valobj_sp);
 }
 
