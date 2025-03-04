@@ -270,6 +270,10 @@ namespace CallingConv {
     /// Preserve X1-X15, X19-X29, SP, Z0-Z31, P0-P15.
     AArch64_SME_ABI_Support_Routines_PreserveMost_From_X1 = 111,
 
+    /// This follows the Swift calling convention in how arguments are passed
+    /// but doesn't clean up the stack on a return.
+    SwiftCoro = 124,
+
     /// The highest possible ID. Must be some 2^k - 1.
     MaxID = 1023
   };
