@@ -10860,6 +10860,7 @@ TargetLowering::LowerCallTo(TargetLowering::CallLoweringInfo &CLI) const {
     Entry.IsSwiftSelf = false;
     Entry.IsSwiftAsync = false;
     Entry.IsSwiftError = false;
+    Entry.IsSwiftCoro = false;
     Entry.IsCFGuardTarget = false;
     Entry.Alignment = Alignment;
     CLI.getArgs().insert(CLI.getArgs().begin(), Entry);
@@ -10977,6 +10978,8 @@ TargetLowering::LowerCallTo(TargetLowering::CallLoweringInfo &CLI) const {
         Flags.setSwiftAsync();
       if (Args[i].IsSwiftError)
         Flags.setSwiftError();
+      if (Args[i].IsSwiftCoro)
+        Flags.setSwiftCoro();
       if (Args[i].IsCFGuardTarget)
         Flags.setCFGuardTarget();
       if (Args[i].IsByVal)
@@ -11522,6 +11525,8 @@ void SelectionDAGISel::LowerArguments(const Function &F) {
         Flags.setSwiftAsync();
       if (Arg.hasAttribute(Attribute::SwiftError))
         Flags.setSwiftError();
+      if (Arg.hasAttribute(Attribute::SwiftCoro))
+        Flags.setSwiftCoro();
       if (Arg.hasAttribute(Attribute::ByVal))
         Flags.setByVal();
       if (Arg.hasAttribute(Attribute::ByRef))

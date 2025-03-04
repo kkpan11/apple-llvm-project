@@ -315,6 +315,9 @@ def SwiftSelf : EnumAttr<"swiftself", [ParamAttr]>;
 /// Argument is swift async context.
 def SwiftAsync : EnumAttr<"swiftasync", [ParamAttr]>;
 
+/// Argument is swift coro allocator.
+def SwiftCoro : EnumAttr<"swiftcoro", [ParamAttr]>;
+
 /// Function must be in a unwind table.
 def UWTable : IntAttr<"uwtable", [FnAttr]>;
 

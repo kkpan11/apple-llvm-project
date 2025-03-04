@@ -2930,6 +2930,7 @@ bool AArch64FastISel::fastLowerArguments() {
         Arg.hasAttribute(Attribute::SwiftSelf) ||
         Arg.hasAttribute(Attribute::SwiftAsync) ||
         Arg.hasAttribute(Attribute::SwiftError) ||
+        Arg.hasAttribute(Attribute::SwiftCoro) ||
         Arg.hasAttribute(Attribute::Nest))
       return false;
 
@@ -3197,6 +3198,7 @@ bool AArch64FastISel::fastLowerCall(CallLoweringInfo &CLI) {
 
   for (auto Flag : CLI.OutFlags)
     if (Flag.isInReg() || Flag.isSRet() || Flag.isNest() || Flag.isByVal() ||
+        Flag.isSwiftCoro() ||
         Flag.isSwiftSelf() || Flag.isSwiftAsync() || Flag.isSwiftError())
       return false;
 

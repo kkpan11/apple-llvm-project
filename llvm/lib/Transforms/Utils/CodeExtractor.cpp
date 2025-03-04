@@ -995,6 +995,7 @@ Function *CodeExtractor::constructFunction(const ValueSet &inputs,
       case Attribute::SwiftError:
       case Attribute::SwiftSelf:
       case Attribute::SwiftAsync:
+      case Attribute::SwiftCoro:
       case Attribute::ZExt:
       case Attribute::ImmArg:
       case Attribute::ByRef:
