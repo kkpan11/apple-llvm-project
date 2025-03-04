@@ -7205,6 +7205,7 @@ CCAssignFn *AArch64TargetLowering::CCAssignFnForCall(CallingConv::ID CC,
   case CallingConv::CXX_FAST_TLS:
   case CallingConv::Swift:
   case CallingConv::SwiftTail:
+  case CallingConv::SwiftCoro:
   case CallingConv::Tail:
   case CallingConv::GRAAL:
     if (Subtarget->isTargetWindows()) {
@@ -8316,6 +8317,9 @@ AArch64TargetLowering::LowerCall(CallLoweringInfo &CLI,
     if (any_of(RVLocs, HasSVERegLoc) || any_of(ArgLocs, HasSVERegLoc))
       CallConv = CallingConv::AArch64_SVE_VectorCall;
   }
+
+  if (CallConv == CallingConv::SwiftCoro)
+    MF.getFrameInfo().setHasPoplessCall();
 
   if (IsTailCall) {
     // Check if it's really possible to do a tail call.
