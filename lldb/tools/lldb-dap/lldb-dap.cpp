@@ -530,7 +530,8 @@ void EventThreadFunction(DAP &dap) {
           // of wether the locations were added or removed, the breakpoint
           // ins't going away, so we the reason is always "changed".
           if ((event_type & lldb::eBreakpointEventTypeLocationsAdded ||
-               event_type & lldb::eBreakpointEventTypeLocationsRemoved) &&
+               event_type & lldb::eBreakpointEventTypeLocationsRemoved ||
+               event_type & lldb::eBreakpointEventTypeLocationsResolved) &&
               bp.MatchesName(BreakpointBase::GetBreakpointLabel())) {
             auto bp_event = CreateEventObject("breakpoint");
             llvm::json::Object body;
