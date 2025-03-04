@@ -2225,6 +2225,7 @@ void Verifier::verifyFunctionAttrs(FunctionType *FT, AttributeList Attrs,
   bool SawSwiftSelf = false;
   bool SawSwiftAsync = false;
   bool SawSwiftError = false;
+  bool SawSwiftCoro = false;
 
   // Verify return value attributes.
   AttributeSet RetAttrs = Attrs.getRetAttrs();
@@ -2299,6 +2300,11 @@ void Verifier::verifyFunctionAttrs(FunctionType *FT, AttributeList Attrs,
     if (ArgAttrs.hasAttribute(Attribute::SwiftError)) {
       Check(!SawSwiftError, "Cannot have multiple 'swifterror' parameters!", V);
       SawSwiftError = true;
+    }
+
+    if (ArgAttrs.hasAttribute(Attribute::SwiftCoro)) {
+      Check(!SawSwiftCoro, "Cannot have multiple 'swiftcoro' parameters!", V);
+      SawSwiftCoro = true;
     }
 
     if (ArgAttrs.hasAttribute(Attribute::InAlloca)) {
@@ -3945,6 +3951,7 @@ static AttrBuilder getParameterABIAttributes(LLVMContext& C, unsigned I, Attribu
   static const Attribute::AttrKind ABIAttrs[] = {
       Attribute::StructRet,  Attribute::ByVal,          Attribute::InAlloca,
       Attribute::InReg,      Attribute::StackAlignment, Attribute::SwiftSelf,
+      Attribute::SwiftCoro,
       Attribute::SwiftAsync, Attribute::SwiftError,     Attribute::Preallocated,
       Attribute::ByRef};
   AttrBuilder Copy(C);
