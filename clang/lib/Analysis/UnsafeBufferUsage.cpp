@@ -1185,6 +1185,18 @@ AST_MATCHER_P(CallExpr, hasNumArgs, unsigned, Num) {
   return Node.getNumArgs() == Num;
 }
 
+// Matches a function declaration if any parameter type or return type has
+// bounds attributes.
+AST_MATCHER(FunctionDecl, hasAnyBoundsAttributes) {
+  bool RetTyHasBoundsAttr = Node.getReturnType()->isBoundsAttributedType() ||
+                            Node.getReturnType()->isValueTerminatedType();
+  return RetTyHasBoundsAttr ||
+         llvm::any_of(Node.parameters(), [](const ParmVarDecl *PVD) {
+           return PVD->getType()->isBoundsAttributedType() ||
+                  PVD->getType()->isValueTerminatedType();
+         });
+}
+
 namespace libc_func_matchers {
 // Under `libc_func_matchers`, define a set of matchers that match unsafe
 // functions in libc and unsafe calls to them.
@@ -1230,9 +1242,11 @@ struct LibcFunNamePrefixSuffixParser {
   }
 };
 
-// A pointer type expression is known to be null-terminated, if it has the
-// form: E.c_str(), for any expression E of `std::string` type.
-static bool isNullTermPointer(const Expr *Ptr) {
+// A pointer type expression is known to be null-terminated, if
+//  1. it is a string literal or `PredefinedExpr` (e.g., `__func__`);
+//  2. it has the form: E.c_str(), for any expression E of `std::string` type;
+//  3. it has `__null_terminated` type
+static bool isNullTermPointer(const Expr *Ptr, ASTContext &Ctx) {
   if (isa<StringLiteral>(Ptr->IgnoreParenImpCasts()))
     return true;
   if (isa<PredefinedExpr>(Ptr->IgnoreParenImpCasts()))
@@ -1244,6 +1258,9 @@ static bool isNullTermPointer(const Expr *Ptr) {
     if (MD && RD && RD->isInStdNamespace())
       if (MD->getName() == "c_str" && RD->getName() == "basic_string")
         return true;
+  }
+  if (auto *VTT = Ptr->getType().getTypePtr()->getAs<ValueTerminatedType>()) {
+    return VTT->getTerminatorValue(Ctx).isZero();
   }
   return false;
 }
@@ -1264,11 +1281,12 @@ static bool hasUnsafeFormatOrSArg(const CallExpr *Call, const Expr *&UnsafeArg,
     const CallExpr *Call;
     unsigned FmtArgIdx;
     const Expr *&UnsafeArg;
+    ASTContext &Ctx;
 
   public:
     StringFormatStringHandler(const CallExpr *Call, unsigned FmtArgIdx,
-                              const Expr *&UnsafeArg)
-        : Call(Call), FmtArgIdx(FmtArgIdx), UnsafeArg(UnsafeArg) {}
+                              const Expr *&UnsafeArg, ASTContext &Ctx)
+        : Call(Call), FmtArgIdx(FmtArgIdx), UnsafeArg(UnsafeArg), Ctx(Ctx) {}
 
     bool HandlePrintfSpecifier(const analyze_printf::PrintfSpecifier &FS,
                                const char *startSpecifier,
@@ -1279,7 +1297,7 @@ static bool hasUnsafeFormatOrSArg(const CallExpr *Call, const Expr *&UnsafeArg,
         unsigned ArgIdx = FS.getPositionalArgIndex() + FmtArgIdx;
 
         if (0 < ArgIdx && ArgIdx < Call->getNumArgs())
-          if (!isNullTermPointer(Call->getArg(ArgIdx))) {
+          if (!isNullTermPointer(Call->getArg(ArgIdx), Ctx)) {
             UnsafeArg = Call->getArg(ArgIdx); // output
             // returning false stops parsing immediately
             return false;
@@ -1301,7 +1319,7 @@ static bool hasUnsafeFormatOrSArg(const CallExpr *Call, const Expr *&UnsafeArg,
     else
       goto CHECK_UNSAFE_PTR;
 
-    StringFormatStringHandler Handler(Call, FmtArgIdx, UnsafeArg);
+    StringFormatStringHandler Handler(Call, FmtArgIdx, UnsafeArg, Ctx);
 
     return analyze_format_string::ParsePrintfString(
         Handler, FmtStr.begin(), FmtStr.end(), Ctx.getLangOpts(),
@@ -1313,8 +1331,8 @@ CHECK_UNSAFE_PTR:
   // (including the format argument) is unsafe pointer.
   return llvm::any_of(
       llvm::make_range(Call->arg_begin() + FmtArgIdx, Call->arg_end()),
-      [&UnsafeArg](const Expr *Arg) -> bool {
-        if (Arg->getType()->isPointerType() && !isNullTermPointer(Arg)) {
+      [&UnsafeArg, &Ctx](const Expr *Arg) -> bool {
+        if (Arg->getType()->isPointerType() && !isNullTermPointer(Arg, Ctx)) {
           UnsafeArg = Arg;
           return true;
         }
@@ -1561,8 +1579,8 @@ AST_MATCHER_P(CallExpr, hasUnsafePrintfStringArg,
   }
   // We don't really recognize this "normal" printf, the only thing we
   // can do is to require all pointers to be null-terminated:
-  for (auto Arg : Node.arguments())
-    if (Arg->getType()->isPointerType() && !isNullTermPointer(Arg))
+  for (auto *Arg : Node.arguments())
+    if (Arg->getType()->isPointerType() && !isNullTermPointer(Arg, Ctx))
       if (UnsafeStringArgMatcher.matches(*Arg, Finder, Builder))
         return true;
   return false;
@@ -2292,13 +2310,21 @@ public:
   }
 
   static Matcher matcher(const UnsafeBufferUsageHandler *Handler) {
+    // When this warning interops with bounds attributes, we suppress the
+    // warning for most of the libc functions except for
+    // 1. "normal printf" (see `libc_func_matchers::isNormalPrintfFunc`),
+    //    because we still can check its string arguments and take advantage of
+    //    the '__null_terminated' attribute;
+    // 2. `v*printf/sprintf` functions because these functions cannot be
+    //    completely safe even with bounds attributes
     return stmt(unless(ignoreUnsafeLibcCall(Handler)),
       anyOf(
         callExpr(
             callee(functionDecl(anyOf(
                 // Match a predefined unsafe libc
                 // function:
-                functionDecl(libc_func_matchers::isPredefinedUnsafeLibcFunc()),
+                functionDecl(unless(hasAnyBoundsAttributes()),
+                  libc_func_matchers::isPredefinedUnsafeLibcFunc()),
                 // Match a call to one of the `v*printf` functions
                 // taking va-list, which cannot be checked at
                 // compile-time:
@@ -2318,7 +2344,10 @@ public:
         // Match a call to an `snprintf` function. And first two
         // arguments of the call (that describe a buffer) are not in
         // safe patterns:
-        callExpr(callee(functionDecl(libc_func_matchers::isNormalPrintfFunc())),
+        callExpr(callee(functionDecl(
+           // we do not warn about the write buffer of snprintf if it has bounds attributes:
+          unless(hasAnyBoundsAttributes()),
+          libc_func_matchers::isNormalPrintfFunc())),
                  libc_func_matchers::hasUnsafeSnprintfBuffer())
             .bind(UnsafeSizedByTag),
         // Match a call to a `printf` function, which can be safe if
