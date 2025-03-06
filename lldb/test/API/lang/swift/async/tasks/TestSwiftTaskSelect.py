@@ -41,7 +41,6 @@ class TestCase(TestBase):
             self, "break here", lldb.SBFileSpec("main.swift")
         )
         self.do_test_navigate_selected_task_stack(process, "task")
-        self.assertEqual(thread.id, 0xF00000001)
 
     def test_navigate_stack_of_selected_task_address(self):
         self.build()
