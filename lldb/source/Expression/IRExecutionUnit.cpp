@@ -56,7 +56,7 @@ IRExecutionUnit::IRExecutionUnit(std::unique_ptr<llvm::LLVMContext> &context_up,
       m_sym_ctx(sym_ctx), m_did_jit(false),
       m_function_load_addr(LLDB_INVALID_ADDRESS),
       m_function_end_load_addr(LLDB_INVALID_ADDRESS),
-      m_reported_allocations(false) {}
+      m_reported_allocations(false), m_preferred_modules() {}
 
 IRExecutionUnit::~IRExecutionUnit() {
   std::lock_guard<std::recursive_mutex> global_context_locker(
@@ -818,8 +818,12 @@ IRExecutionUnit::FindInSymbols(const std::vector<ConstString> &names,
   }
 
   ModuleList non_local_images = target->GetImages();
-  // We'll process module_sp separately, before the other modules.
+  // We'll process module_sp and any preferred modules separately, before the
+  // other modules.
   non_local_images.Remove(sc.module_sp);
+  for (size_t i = 0; i < m_preferred_modules.GetSize(); ++i)
+    non_local_images.Remove(m_preferred_modules.GetModuleAtIndex(i));
+
   // BEGIN SWIFT
   if (m_in_populate_symtab)
     if (lldb::ModuleSP module_sp = m_jit_module_wp.lock())
@@ -835,14 +839,24 @@ IRExecutionUnit::FindInSymbols(const std::vector<ConstString> &names,
   for (const ConstString &name : names) {
     // The lookup order here is as follows:
     // 1) Functions in `sc.module_sp`
-    // 2) Functions in the other modules
-    // 3) Symbols in `sc.module_sp`
-    // 4) Symbols in the other modules
+    // 2) Functions in the preferred modules list
+    // 3) Functions in the other modules
+    // 4) Symbols in `sc.module_sp`
+    // 5) Symbols in the preferred modules list
+    // 6) Symbols in the other modules
     if (sc.module_sp) {
       SymbolContextList sc_list;
       sc.module_sp->FindFunctions(name, CompilerDeclContext(),
                                   lldb::eFunctionNameTypeFull, function_options,
                                   sc_list);
+      if (auto load_addr = resolver.Resolve(sc_list))
+        return *load_addr;
+    }
+
+    {
+      SymbolContextList sc_list;
+      m_preferred_modules.FindFunctions(name, lldb::eFunctionNameTypeFull,
+                                        function_options, sc_list);
       if (auto load_addr = resolver.Resolve(sc_list))
         return *load_addr;
     }
@@ -859,6 +873,14 @@ IRExecutionUnit::FindInSymbols(const std::vector<ConstString> &names,
       SymbolContextList sc_list;
       sc.module_sp->FindSymbolsWithNameAndType(name, lldb::eSymbolTypeAny,
                                                sc_list);
+      if (auto load_addr = resolver.Resolve(sc_list))
+        return *load_addr;
+    }
+
+    {
+      SymbolContextList sc_list;
+      m_preferred_modules.FindSymbolsWithNameAndType(name, lldb::eSymbolTypeAny,
+                                                     sc_list);
       if (auto load_addr = resolver.Resolve(sc_list))
         return *load_addr;
     }
