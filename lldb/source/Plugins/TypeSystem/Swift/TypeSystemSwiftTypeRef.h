@@ -421,14 +421,14 @@ public:
   /// Search the debug info for a non-nested Clang type with the specified name
   /// and cache the result. Users should prefer the version that takes in the
   /// decl_context.
-  lldb::TypeSP LookupClangType(llvm::StringRef name_ref);
+  lldb::TypeSP LookupClangType(llvm::StringRef name_ref, SymbolContext sc = {});
 
   /// Search the debug info for a Clang type with the specified name and decl
   /// context.
   virtual lldb::TypeSP
   LookupClangType(llvm::StringRef name_ref,
                   llvm::ArrayRef<CompilerContext> decl_context,
-                  ExecutionContext *exe_ctx = nullptr);
+                  SymbolContext sc = {});
 
   /// Attempts to convert a Clang type into a Swift type.
   /// For example, int is converted to Int32.
@@ -648,11 +648,9 @@ public:
   unsigned GetGeneration() const { return m_generation; }
   /// Performs a target-wide search.
   /// \param exe_ctx is a hint for where to look first.
-  lldb::TypeSP
-  LookupClangType(llvm::StringRef name_ref,
-                  llvm::ArrayRef<CompilerContext> decl_context,
-                  ExecutionContext *exe_ctx) override;
-
+  lldb::TypeSP LookupClangType(llvm::StringRef name_ref,
+                               llvm::ArrayRef<CompilerContext> decl_context,
+                               SymbolContext sc = {}) override;
 
   friend class SwiftASTContextForExpressions;
 protected:
