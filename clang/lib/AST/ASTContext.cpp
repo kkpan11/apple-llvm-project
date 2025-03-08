@@ -910,7 +910,7 @@ ASTContext::getFeatureAvailInfo(StringRef FeatureName) const {
 
   auto I = AvailabilityDomainMap.find(FeatureName);
   if (I != AvailabilityDomainMap.end())
-    return I->second;
+    return getFeatureAvailInfo(I->second).second;
 
   return {};
 }
