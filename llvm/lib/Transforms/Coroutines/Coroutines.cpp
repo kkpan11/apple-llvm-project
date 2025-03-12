@@ -481,7 +481,7 @@ static void addCallToCallGraph(CallGraph *CG, CallInst *Call, Function *Callee){
 }
 
 Value *coro::Shape::emitAlloc(IRBuilder<> &Builder, Value *Size,
-                              CallGraph *CG) const {
+                              CallGraph *CG, const DebugLoc DbgLoc) const {
   unsigned sizeParamIndex = UINT_MAX;
   switch (ABI) {
   case coro::ABI::Switch:
@@ -512,6 +512,7 @@ Value *coro::Shape::emitAlloc(IRBuilder<> &Builder, Value *Size,
       Args.push_back(TypeId);
   }
   auto *Call = Builder.CreateCall(Alloc, Args);
+  Call->setDebugLoc(DbgLoc);
   propagateCallAttrsFromCallee(Call, Alloc);
   addCallToCallGraph(CG, Call, Alloc);
   return Call;

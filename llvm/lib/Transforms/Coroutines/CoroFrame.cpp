@@ -2544,7 +2544,8 @@ static Instruction *lowerNonLocalAlloca(CoroAllocaAllocInst *AI,
                                         coro::Shape &Shape,
                                    SmallVectorImpl<Instruction*> &DeadInsts) {
   IRBuilder<> Builder(AI);
-  auto Alloc = Shape.emitAlloc(Builder, AI->getSize(), nullptr);
+  auto Alloc = Shape.emitAlloc(Builder, AI->getSize(), nullptr,
+                               AI->getDebugLoc());
 
   for (User *U : AI->users()) {
     if (isa<CoroAllocaGetInst>(U)) {

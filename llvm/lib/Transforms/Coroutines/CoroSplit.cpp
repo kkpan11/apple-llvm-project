@@ -1886,7 +1886,8 @@ static void splitRetconCoroutine(Function &F, coro::Shape &Shape,
     // Allocate.  We don't need to update the call graph node because we're
     // going to recompute it from scratch after splitting.
     // FIXME: pass the required alignment
-    RawFramePtr = Shape.emitAlloc(Builder, Builder.getInt64(Size), nullptr);
+    RawFramePtr = Shape.emitAlloc(Builder, Builder.getInt64(Size), nullptr,
+                                  Id->getDebugLoc());
     RawFramePtr =
         Builder.CreateBitCast(RawFramePtr, Shape.CoroBegin->getType());
 
