@@ -503,7 +503,7 @@ static void addCallToCallGraph(CallGraph *CG, CallInst *Call, Function *Callee){
 }
 
 Value *coro::Shape::emitAlloc(IRBuilder<> &Builder, Value *Size,
-                              CallGraph *CG) const {
+                              CallGraph *CG, const DebugLoc DbgLoc) const {
   switch (ABI) {
   case coro::ABI::Switch:
     llvm_unreachable("can't allocate memory in coro switch-lowering");
@@ -520,6 +520,7 @@ Value *coro::Shape::emitAlloc(IRBuilder<> &Builder, Value *Size,
       Call = Builder.CreateCall(Alloc, Size);
     else
       Call = Builder.CreateCall(Alloc, {Size, TypeId});
+    Call->setDebugLoc(DbgLoc);
     propagateCallAttrsFromCallee(Call, Alloc);
     addCallToCallGraph(CG, Call, Alloc);
     return Call;

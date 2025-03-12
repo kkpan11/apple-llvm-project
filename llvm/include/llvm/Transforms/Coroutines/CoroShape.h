@@ -255,7 +255,8 @@ struct Shape {
   /// Allocate memory according to the rules of the active lowering.
   ///
   /// \param CG - if non-null, will be updated for the new call
-  Value *emitAlloc(IRBuilder<> &Builder, Value *Size, CallGraph *CG) const;
+  Value *emitAlloc(IRBuilder<> &Builder, Value *Size, CallGraph *CG,
+                   const DebugLoc DbgLoc=nullptr) const;
 
   /// Deallocate memory according to the rules of the active lowering.
   ///
