@@ -782,7 +782,7 @@ public:
       // clang-format off
       "address",
       "id",
-      "enqueuPriority",
+      "enqueuePriority",
       "children",
 
       // Children below this point are hidden.
@@ -1659,11 +1659,11 @@ static const std::pair<const char *, const char *> TASK_FLAGS[] = {
 
 bool lldb_private::formatters::swift::Task_SummaryProvider(
     ValueObject &valobj, Stream &stream, const TypeSummaryOptions &options) {
-  auto get_member = [&valobj](StringRef name) {
+  auto get_member = [&valobj](StringRef name) -> uint64_t {
     if (auto member_sp = valobj.GetChildMemberWithName(name))
       if (auto synthetic_sp = member_sp->GetSyntheticValue())
         return synthetic_sp->GetValueAsUnsigned(0);
-    return 0ULL;
+    return 0;
   };
 
   stream.Format("id:{0}", get_member("id"));
