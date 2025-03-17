@@ -24,7 +24,7 @@ class TestCase(TestBase):
         self.do_backtrace_selected_task(task_addr)
 
     def do_backtrace_selected_task(self, arg):
-        self.runCmd(f"language swift task select {arg}")
+        self.runCmd(f"task select {arg}")
         self.expect(
             "thread backtrace",
             substrs=[
@@ -53,7 +53,7 @@ class TestCase(TestBase):
         self.do_test_navigate_selected_task_stack(process, task_addr)
 
     def do_test_navigate_selected_task_stack(self, process, arg):
-        self.runCmd(f"language swift task select {arg}")
+        self.runCmd(f"task select {arg}")
         thread = process.GetSelectedThread()
 
         self.assertIn(

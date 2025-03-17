@@ -23,7 +23,7 @@ class TestCase(TestBase):
         )
         self.runCmd("frame variable task")
         frame_variable_output = self.res.GetOutput()
-        self.runCmd("language swift task info")
+        self.runCmd("task info")
         task_info_output = self.res.GetOutput()
         self.assertEqual(_tail(task_info_output), _tail(frame_variable_output))
 
@@ -41,6 +41,6 @@ class TestCase(TestBase):
 
         self.runCmd("frame variable task")
         frame_variable_output = self.res.GetOutput()
-        self.runCmd(f"language swift task info {task_addr}")
+        self.runCmd(f"task info {task_addr}")
         task_info_output = self.res.GetOutput()
         self.assertEqual(_tail(task_info_output), _tail(frame_variable_output))

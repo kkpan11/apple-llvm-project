@@ -468,6 +468,11 @@ void CommandInterpreter::Initialize() {
 #endif
   }
 
+#ifdef LLDB_ENABLE_SWIFT
+  cmd_obj_sp = GetCommandSPExact("language swift task");
+  AddAlias("task", cmd_obj_sp);
+#endif
+
   cmd_obj_sp = GetCommandSPExact("platform shell");
   if (cmd_obj_sp) {
     CommandAlias *shell_alias = AddAlias("shell", cmd_obj_sp, " --host --");
