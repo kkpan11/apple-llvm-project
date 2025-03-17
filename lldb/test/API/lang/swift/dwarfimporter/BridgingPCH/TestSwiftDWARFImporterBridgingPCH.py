@@ -53,12 +53,15 @@ class TestSwiftDWARFImporterBridgingHeader(lldbtest.TestBase):
         lldbutil.check_variable(self,
                                 target.FindFirstGlobalVariable("point"),
                                 typename='bridging-header.h.Point', num_children=2)
-        self.expect("ta v -d no-dyn point", substrs=["x = 1", "y = 2"])
-        self.expect("ta v -d no-dyn swiftStructCMember",
-                    substrs=[
-                        # FIXME: This doesn't even work with the original bridging header!
-                        #"point", "x = 3", "y = 4",
-                        "swift struct c member"])
+        self.expect("target v -d no-dyn point", substrs=["x = 1", "y = 2"])
+        self.expect(
+            "target v -d no-dyn swiftStructCMember",
+            substrs=[
+                # FIXME: This doesn't even work with the original bridging header!
+                # "point", "x = 3", "y = 4",
+                "swift struct c member"
+            ],
+        )
         process.Clear()
         target.Clear()
         lldb.SBDebugger.MemoryPressureDetected()

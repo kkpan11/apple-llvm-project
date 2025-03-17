@@ -28,7 +28,7 @@ class BuiltinDebugTrapTestCase(TestBase):
         if self.TraceOn():
             self.runCmd("f")
             self.runCmd("bt")
-            self.runCmd("ta v global")
+            self.runCmd("target v global")
 
         self.assertEqual(
             process.GetSelectedThread().GetStopReason(), lldb.eStopReasonException
@@ -46,7 +46,7 @@ class BuiltinDebugTrapTestCase(TestBase):
         if self.TraceOn():
             self.runCmd("f")
             self.runCmd("bt")
-            self.runCmd("ta v global")
+            self.runCmd("target v global")
 
         self.assertEqual(
             process.GetSelectedThread().GetStopReason(), lldb.eStopReasonException
@@ -61,7 +61,7 @@ class BuiltinDebugTrapTestCase(TestBase):
         if self.TraceOn():
             self.runCmd("f")
             self.runCmd("bt")
-            self.runCmd("ta v global")
+            self.runCmd("target v global")
 
         self.assertEqual(
             process.GetSelectedThread().GetStopReason(), lldb.eStopReasonException
