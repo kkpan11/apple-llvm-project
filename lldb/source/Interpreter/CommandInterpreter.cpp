@@ -470,7 +470,8 @@ void CommandInterpreter::Initialize() {
 
 #ifdef LLDB_ENABLE_SWIFT
   cmd_obj_sp = GetCommandSPExact("language swift task");
-  AddAlias("task", cmd_obj_sp);
+  if (cmd_obj_sp)
+    AddAlias("task", cmd_obj_sp);
 #endif
 
   cmd_obj_sp = GetCommandSPExact("platform shell");

@@ -25,7 +25,7 @@ class TestCase(TestBase):
 
     def do_backtrace(self, arg):
         self.expect(
-            f"language swift task backtrace {arg}",
+            f"task backtrace {arg}",
             substrs=[
                 ".sleep(",
                 "`second() at main.swift:6",
