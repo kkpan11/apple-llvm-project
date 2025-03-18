@@ -69,7 +69,7 @@ static struct __AvailabilityDomain feature3 __attribute__((availability_domain(f
 // CHECK-NEXT: @"_OBJC_$_PROP_LIST_C2" = internal global { i32, i32, [3 x %struct._prop_t] } { i32 16, i32 3, [3 x %struct._prop_t] [%struct._prop_t { ptr @OBJC_PROP_NAME_ATTR_.24, ptr @OBJC_PROP_NAME_ATTR_.25 }, %struct._prop_t { ptr @OBJC_PROP_NAME_ATTR_.26, ptr @OBJC_PROP_NAME_ATTR_.27 }, %struct._prop_t { ptr @OBJC_PROP_NAME_ATTR_.28, ptr @OBJC_PROP_NAME_ATTR_.29 }] }, section "__DATA, __objc_const", align 8
 // CHECK-NEXT: @"_OBJC_CLASS_RO_$_C2" = internal global %struct._class_ro_t { i32 0, i32 8, i32 32, ptr null, ptr @OBJC_CLASS_NAME_.11, ptr @"_OBJC_$_INSTANCE_METHODS_C2", ptr null, ptr @"_OBJC_$_INSTANCE_VARIABLES_C2", ptr null, ptr @"_OBJC_$_PROP_LIST_C2" }, section "__DATA, __objc_const", align 8
 // CHECK-NEXT: @"OBJC_CLASS_$_C2" = global %struct._class_t { ptr @"OBJC_METACLASS_$_C2", ptr @"OBJC_CLASS_$_NSObject", ptr @_objc_empty_cache, ptr @_objc_empty_vtable, ptr @"_OBJC_CLASS_RO_$_C2" }, section "__DATA, __objc_data", align 8
-// CHECK-NEXT: @"OBJC_LABEL_CLASS_$" = private global [2 x ptr] [ptr @"OBJC_CLASS_$_C0", ptr @"OBJC_CLASS_$_C2"], section "__DATA,__objc_classlist,regular,no_dead_strip", align 8
+// CHECK: @"OBJC_LABEL_CLASS_$" = private global [3 x ptr] [ptr @"OBJC_CLASS_$_C0", ptr @"OBJC_CLASS_$_C2", ptr @"OBJC_CLASS_$_C3"], section "__DATA,__objc_classlist,regular,no_dead_strip", align 8
 
 @interface NSObject {
   id a;
@@ -171,4 +171,11 @@ __attribute__((availability(domain:feature2, AVAIL)))
 // CHECK: ret ptr %[[V1]]
 
 @implementation C2
+@end
+
+@interface C3 : NSObject
+@property id prop0 __attribute__((availability(domain:feature2, AVAIL)));
+@end
+
+@implementation C3
 @end

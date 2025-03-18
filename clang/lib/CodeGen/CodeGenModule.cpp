@@ -6759,9 +6759,12 @@ void CodeGenModule::EmitObjCPropertyImplementations(const
 static bool needsDestructMethod(ObjCImplementationDecl *impl) {
   const ObjCInterfaceDecl *iface = impl->getClassInterface();
   for (const ObjCIvarDecl *ivar = iface->all_declared_ivar_begin();
-       ivar; ivar = ivar->getNextIvar())
+       ivar; ivar = ivar->getNextIvar()) {
+    if (impl->getASTContext().hasUnavailableFeature(ivar))
+      continue;
     if (ivar->getType().isDestructedType())
       return true;
+  }
 
   return false;
 }

@@ -5308,6 +5308,9 @@ void IvarLayoutBuilder::visitAggregate(Iterator begin, Iterator end,
   for (; begin != end; ++begin) {
     auto field = *begin;
 
+    if (CGM.getContext().hasUnavailableFeature(field))
+      continue;
+
     // Skip over bitfields.
     if (field->isBitField()) {
       continue;
