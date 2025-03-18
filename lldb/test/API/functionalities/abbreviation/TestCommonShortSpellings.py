@@ -22,10 +22,10 @@ class CommonShortSpellingsTestCase(TestBase):
             ("disp", "_regexp-display"),  # a.k.a., 'display'
             ("di", "disassemble"),
             ("dis", "disassemble"),
-            ("ta st a", "target stop-hook add"),
+            ("tar st a", "target stop-hook add"),
             ("fr v", "frame variable"),
             ("f 1", "frame select 1"),
-            ("ta st li", "target stop-hook list"),
+            ("tar st li", "target stop-hook list"),
         ]
 
         for short_val, long_val in abbrevs:
