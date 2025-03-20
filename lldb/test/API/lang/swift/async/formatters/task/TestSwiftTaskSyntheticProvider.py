@@ -45,7 +45,7 @@ class TestCase(TestBase):
             patterns=[
                 textwrap.dedent(
                     r"""
-                    \(UnsafeCurrentTask\) currentTask = id:(\d+) flags:(?:running\|)?(?:enqueued\)?asyncLetTask|childTask|future \{
+                    \(UnsafeCurrentTask\) currentTask = id:(\d+) flags:(?:running\|)?(?:enqueued\|)?asyncLetTask|childTask|future \{
                       address = 0x[0-9a-f]+
                       id = \1
                       enqueuePriority = \.medium
