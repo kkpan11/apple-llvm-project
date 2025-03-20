@@ -106,4 +106,22 @@ void test4(void) {
 
 #endif
 
+// CHECK-LABEL: define void @test5()
+// CHECK: br label %[[L1:.*]]
+// CHECK: [[L1]]:
+// CHECK-NEXT: call i32 @func0()
+// CHECK-NEXT: ret void
+
+void test5(void) {
+  if (__builtin_available(domain:feature1)) {
+    goto L1;
+L1:
+    func0();
+  } else {
+    goto L2;
+L2:
+    func2();
+  }
+}
+
 #endif /* HEADER */

@@ -556,6 +556,8 @@ public:
       auto DomainName = E->getDomainName();
       ASTContext::AvailabilityDomainInfo Info =
           CGF.getContext().getFeatureAvailInfo(DomainName);
+      assert((Info.Kind == FeatureAvailKind::Dynamic && Info.Call) &&
+             "ObjCAvailabilityCheckExpr should have been constant evaluated");
       return CGF.EmitScalarExpr(Info.Call);
     }
 
