@@ -738,6 +738,9 @@ enum ASTRecordTypes {
   /// Record code for Sema's vector of functions/blocks with effects to
   /// be verified.
   DECLS_WITH_EFFECTS_TO_VERIFY = 72,
+
+  /// Record code for availability domain table.
+  AVAILABILITY_DOMAIN_TABLE = 73,
 };
 
 /// Record types used within a source manager block.

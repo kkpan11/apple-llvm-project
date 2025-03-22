@@ -4,6 +4,9 @@
 // RUN: %clang_cc1 -triple arm64-apple-macosx -fblocks -ffeature-availability=feature1:on -ffeature-availability=feature2:off -emit-pch -o %t %s
 // RUN: %clang_cc1 -triple arm64-apple-macosx -fblocks -ffeature-availability=feature1:on -ffeature-availability=feature2:off -include-pch %t -emit-llvm -o - %s | FileCheck %s
 
+// RUN: %clang_cc1 -triple arm64-apple-macosx -fblocks -emit-pch -o %t -DUSE_DOMAIN %s
+// RUN: %clang_cc1 -triple arm64-apple-macosx -fblocks -include-pch %t -emit-llvm -o - -DUSE_DOMAIN %s | FileCheck --check-prefixes=CHECK,DOMAIN %s
+
 // CHECK: %[[STRUCT_S0:.*]] = type { i32 }
 // CHECK: @g0 = external global i32, align 4
 // CHECK-NOT: @g1
