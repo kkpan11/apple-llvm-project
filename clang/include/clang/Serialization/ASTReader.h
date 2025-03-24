@@ -88,7 +88,7 @@ struct HeaderFileInfo;
 class HeaderSearchOptions;
 class LangOptions;
 class MacroInfo;
-class InMemoryModuleCache;
+class ModuleCache;
 class NamedDecl;
 class NamespaceDecl;
 class ObjCCategoryDecl;
@@ -1641,8 +1641,8 @@ public:
   ///
   /// \param ReadTimer If non-null, a timer used to track the time spent
   /// deserializing.
-  ASTReader(Preprocessor &PP, InMemoryModuleCache &ModuleCache,
-            ASTContext *Context, const PCHContainerReader &PCHContainerRdr,
+  ASTReader(Preprocessor &PP, ModuleCache &ModCache, ASTContext *Context,
+            const PCHContainerReader &PCHContainerRdr,
             ArrayRef<std::shared_ptr<ModuleFileExtension>> Extensions,
             StringRef isysroot = "",
             DisableValidationForModuleKind DisableValidationKind =
@@ -1853,8 +1853,7 @@ public:
   ///
   /// \returns true if an error occurred, false otherwise.
   static bool readASTFileControlBlock(
-      StringRef Filename, FileManager &FileMgr,
-      const InMemoryModuleCache &ModuleCache,
+      StringRef Filename, FileManager &FileMgr, const ModuleCache &ModCache,
       const PCHContainerReader &PCHContainerRdr, bool FindModuleFileExtensions,
       ASTReaderListener &Listener, bool ValidateDiagnosticOptions,
       unsigned ClientLoadCapabilities = ARR_ConfigurationMismatch |
@@ -1863,7 +1862,7 @@ public:
   /// Determine whether the given AST file is acceptable to load into a
   /// translation unit with the given language and target options.
   static bool isAcceptableASTFile(StringRef Filename, FileManager &FileMgr,
-                                  const InMemoryModuleCache &ModuleCache,
+                                  const ModuleCache &ModCache,
                                   const PCHContainerReader &PCHContainerRdr,
                                   const LangOptions &LangOpts,
                                   const TargetOptions &TargetOpts,

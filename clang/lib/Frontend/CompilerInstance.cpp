@@ -46,17 +46,18 @@
 #include "clang/Serialization/ASTReader.h"
 #include "clang/Serialization/GlobalModuleIndex.h"
 #include "clang/Serialization/InMemoryModuleCache.h"
+#include "clang/Serialization/ModuleCache.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/CAS/ActionCache.h"
 #include "llvm/CAS/ObjectStore.h"
 #include "llvm/Config/llvm-config.h"
+#include "llvm/Support/AdvisoryLock.h"
 #include "llvm/Support/BuryPointer.h"
 #include "llvm/Support/CrashRecoveryContext.h"
 #include "llvm/Support/Errc.h"
 #include "llvm/Support/FileSystem.h"
-#include "llvm/Support/LockFileManager.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Program.h"
@@ -75,11 +76,10 @@ using namespace clang;
 
 CompilerInstance::CompilerInstance(
     std::shared_ptr<PCHContainerOperations> PCHContainerOps,
-    InMemoryModuleCache *SharedModuleCache)
-    : ModuleLoader(/* BuildingModule = */ SharedModuleCache),
+    ModuleCache *ModCache)
+    : ModuleLoader(/*BuildingModule=*/ModCache),
       Invocation(new CompilerInvocation()),
-      ModuleCache(SharedModuleCache ? SharedModuleCache
-                                    : new InMemoryModuleCache),
+      ModCache(ModCache ? ModCache : createCrossProcessModuleCache()),
       ThePCHContainerOperations(std::move(PCHContainerOps)) {}
 
 CompilerInstance::~CompilerInstance() {
@@ -219,7 +219,7 @@ IntrusiveRefCntPtr<ASTReader> CompilerInstance::getASTReader() const {
   return TheASTReader;
 }
 void CompilerInstance::setASTReader(IntrusiveRefCntPtr<ASTReader> Reader) {
-  assert(ModuleCache.get() == &Reader->getModuleManager().getModuleCache() &&
+  assert(ModCache.get() == &Reader->getModuleManager().getModuleCache() &&
          "Expected ASTReader to use the same PCM cache");
   TheASTReader = std::move(Reader);
 }
@@ -633,9 +633,8 @@ struct ReadModuleNames : ASTReaderListener {
 class CompileCacheASTReaderHelper : public ASTReaderListener {
 public:
   CompileCacheASTReaderHelper(cas::ObjectStore &CAS, cas::ActionCache &Cache,
-                              InMemoryModuleCache &ModuleCache,
-                              DiagnosticsEngine &Diags)
-      : CAS(CAS), Cache(Cache), ModuleCache(ModuleCache), Diags(Diags) {}
+                              ModuleCache &ModCache, DiagnosticsEngine &Diags)
+      : CAS(CAS), Cache(Cache), ModCache(ModCache), Diags(Diags) {}
 
   bool readCASFileSystemRootID(StringRef RootID, bool Complain) override;
   bool readIncludeTreeID(StringRef ID, bool Complain) override;
@@ -648,7 +647,7 @@ private:
 
   cas::ObjectStore &CAS;
   cas::ActionCache &Cache;
-  InMemoryModuleCache &ModuleCache;
+  ModuleCache &ModCache;
   DiagnosticsEngine &Diags;
 };
 } // namespace
@@ -673,9 +672,8 @@ void CompilerInstance::createPCHExternalASTSource(
 IntrusiveRefCntPtr<ASTReader> CompilerInstance::createPCHExternalASTSource(
     StringRef Path, StringRef Sysroot,
     DisableValidationForModuleKind DisableValidation,
-    bool AllowPCHWithCompilerErrors, Preprocessor &PP,
-    InMemoryModuleCache &ModuleCache, ASTContext &Context,
-    const PCHContainerReader &PCHContainerRdr,
+    bool AllowPCHWithCompilerErrors, Preprocessor &PP, ModuleCache &ModCache,
+    ASTContext &Context, const PCHContainerReader &PCHContainerRdr,
     ArrayRef<std::shared_ptr<ModuleFileExtension>> Extensions,
     ArrayRef<std::shared_ptr<DependencyCollector>> DependencyCollectors,
     void *DeserializationListener, bool OwnDeserializationListener,
@@ -685,7 +683,7 @@ IntrusiveRefCntPtr<ASTReader> CompilerInstance::createPCHExternalASTSource(
   HeaderSearchOptions &HSOpts = PP.getHeaderSearchInfo().getHeaderSearchOpts();
 
   IntrusiveRefCntPtr<ASTReader> Reader(new ASTReader(
-      PP, ModuleCache, &Context, PCHContainerRdr, Extensions,
+      PP, ModCache, &Context, PCHContainerRdr, Extensions,
       Sysroot.empty() ? "" : Sysroot.data(), DisableValidation,
       AllowPCHWithCompilerErrors, /*AllowConfigurationMismatch*/ false,
       HSOpts.ModulesValidateSystemHeaders, HSOpts.ValidateASTInputFilesContent,
@@ -704,7 +702,7 @@ IntrusiveRefCntPtr<ASTReader> CompilerInstance::createPCHExternalASTSource(
 
   if (!ignoreCAS)
     Reader->addListener(std::make_unique<CompileCacheASTReaderHelper>(
-        CAS, Cache, ModuleCache, PP.getDiagnostics()));
+        CAS, Cache, ModCache, PP.getDiagnostics()));
 
   auto Listener = std::make_unique<ReadModuleNames>(PP);
   auto &ListenerRef = *Listener;
@@ -1302,7 +1300,8 @@ compileModuleImpl(CompilerInstance &ImportingInstance, SourceLocation ImportLoc,
 
   // Never compile a module that's already finalized - this would cause the
   // existing module to be freed, causing crashes if it is later referenced
-  if (ImportingInstance.getModuleCache().isPCMFinal(ModuleFileName)) {
+  if (ImportingInstance.getModuleCache().getInMemoryModuleCache().isPCMFinal(
+          ModuleFileName)) {
     ImportingInstance.getDiagnostics().Report(
         ImportLoc, diag::err_module_rebuild_finalized)
         << ModuleName;
@@ -1557,7 +1556,7 @@ static bool readASTAfterCompileModule(CompilerInstance &ImportingInstance,
                                       SourceLocation ImportLoc,
                                       SourceLocation ModuleNameLoc,
                                       Module *Module, StringRef ModuleFileName,
-                                      bool *OutOfDate) {
+                                      bool *OutOfDate, bool *Missing) {
   DiagnosticsEngine &Diags = ImportingInstance.getDiagnostics();
 
   unsigned ModuleLoadCapabilities = ASTReader::ARR_Missing;
@@ -1575,6 +1574,12 @@ static bool readASTAfterCompileModule(CompilerInstance &ImportingInstance,
   // The caller wants to handle out-of-date failures.
   if (OutOfDate && ReadResult == ASTReader::OutOfDate) {
     *OutOfDate = true;
+    return false;
+  }
+
+  // The caller wants to handle missing module files.
+  if (Missing && ReadResult == ASTReader::Missing) {
+    *Missing = true;
     return false;
   }
 
@@ -1603,7 +1608,7 @@ static bool compileModuleAndReadASTImpl(CompilerInstance &ImportingInstance,
 
   return readASTAfterCompileModule(ImportingInstance, ImportLoc, ModuleNameLoc,
                                    Module, ModuleFileName,
-                                   /*OutOfDate=*/nullptr);
+                                   /*OutOfDate=*/nullptr, /*Missing=*/nullptr);
 }
 
 /// Compile a module in a separate compiler instance and read the AST,
@@ -1622,61 +1627,58 @@ static bool compileModuleAndReadASTBehindLock(
   Diags.Report(ModuleNameLoc, diag::remark_module_lock)
       << ModuleFileName << Module->Name;
 
-  // FIXME: have LockFileManager return an error_code so that we can
-  // avoid the mkdir when the directory already exists.
-  StringRef Dir = llvm::sys::path::parent_path(ModuleFileName);
-  llvm::sys::fs::create_directories(Dir);
+  auto &ModuleCache = ImportingInstance.getModuleCache();
+  ModuleCache.prepareForGetLock(ModuleFileName);
 
   while (true) {
-    llvm::LockFileManager Locked(ModuleFileName);
-    switch (Locked) {
-    case llvm::LockFileManager::LFS_Error:
+    auto Lock = ModuleCache.getLock(ModuleFileName);
+    bool Owned;
+    if (llvm::Error Err = Lock->tryLock().moveInto(Owned)) {
       // ModuleCache takes care of correctness and locks are only necessary for
       // performance. Fallback to building the module in case of any lock
       // related errors.
       Diags.Report(ModuleNameLoc, diag::remark_module_lock_failure)
-          << Module->Name << Locked.getErrorMessage();
-      // Clear out any potential leftover.
-      Locked.unsafeRemoveLockFile();
-      [[fallthrough]];
-    case llvm::LockFileManager::LFS_Owned:
+          << Module->Name << toString(std::move(Err));
+      return compileModuleAndReadASTImpl(ImportingInstance, ImportLoc,
+                                         ModuleNameLoc, Module, ModuleFileName);
+    }
+    if (Owned) {
       // We're responsible for building the module ourselves.
       return compileModuleAndReadASTImpl(ImportingInstance, ImportLoc,
                                          ModuleNameLoc, Module, ModuleFileName);
-
-    case llvm::LockFileManager::LFS_Shared:
-      break; // The interesting case.
     }
 
     // Someone else is responsible for building the module. Wait for them to
     // finish.
-    switch (Locked.waitForUnlock()) {
-    case llvm::LockFileManager::Res_Success:
+    switch (Lock->waitForUnlockFor(std::chrono::seconds(90))) {
+    case llvm::WaitForUnlockResult::Success:
       break; // The interesting case.
-    case llvm::LockFileManager::Res_OwnerDied:
+    case llvm::WaitForUnlockResult::OwnerDied:
       continue; // try again to get the lock.
-    case llvm::LockFileManager::Res_Timeout:
-      // Since ModuleCache takes care of correctness, we try waiting for
-      // another process to complete the build so clang does not do it done
-      // twice. If case of timeout, build it ourselves.
+    case llvm::WaitForUnlockResult::Timeout:
+      // Since the InMemoryModuleCache takes care of correctness, we try waiting
+      // for someone else to complete the build so that it does not happen
+      // twice. In case of timeout, build it ourselves.
       Diags.Report(ModuleNameLoc, diag::remark_module_lock_timeout)
           << Module->Name;
       // Clear the lock file so that future invocations can make progress.
-      Locked.unsafeRemoveLockFile();
+      Lock->unsafeMaybeUnlock();
       continue;
     }
 
     // Read the module that was just written by someone else.
     bool OutOfDate = false;
+    bool Missing = false;
     if (readASTAfterCompileModule(ImportingInstance, ImportLoc, ModuleNameLoc,
-                                  Module, ModuleFileName, &OutOfDate))
+                                  Module, ModuleFileName, &OutOfDate, &Missing))
       return true;
-    if (!OutOfDate)
+    if (!OutOfDate && !Missing)
       return false;
 
-    // The module may be out of date in the presence of file system races,
-    // or if one of its imports depends on header search paths that are not
-    // consistent with this ImportingInstance.  Try again...
+    // The module may be missing or out of date in the presence of file system
+    // races. It may also be out of date if one of its imports depends on header
+    // search paths that are not consistent with this ImportingInstance.
+    // Try again...
   }
 }
 
@@ -2526,10 +2528,10 @@ void CompilerInstance::setExternalSemaSource(
 
 static bool addCachedModuleFileToInMemoryCache(
     StringRef Path, StringRef CacheKey, StringRef Provider,
-    cas::ObjectStore &CAS, cas::ActionCache &Cache,
-    InMemoryModuleCache &ModuleCache, DiagnosticsEngine &Diags) {
+    cas::ObjectStore &CAS, cas::ActionCache &Cache, ModuleCache &ModCache,
+    DiagnosticsEngine &Diags) {
 
-  if (ModuleCache.lookupPCM(Path))
+  if (ModCache.getInMemoryModuleCache().lookupPCM(Path))
     return false;
 
   auto ID = CAS.parseID(CacheKey);
@@ -2585,7 +2587,8 @@ static bool addCachedModuleFileToInMemoryCache(
     return true;
   }
 
-  ModuleCache.addPCM(Path, OutputProxy->getMemoryBuffer());
+  ModCache.getInMemoryModuleCache().addPCM(Path,
+                                           OutputProxy->getMemoryBuffer());
   return false;
 }
 
@@ -2601,7 +2604,7 @@ bool CompileCacheASTReaderHelper::readModuleCacheKey(StringRef ModuleName,
                                                      StringRef CacheKey) {
   // FIXME: add name/path of the importing module?
   return addCachedModuleFileToInMemoryCache(
-      Filename, CacheKey, "imported module", CAS, Cache, ModuleCache, Diags);
+      Filename, CacheKey, "imported module", CAS, Cache, ModCache, Diags);
 }
 
 /// Verify that ID is in the CAS. Otherwise the module cache probably was
