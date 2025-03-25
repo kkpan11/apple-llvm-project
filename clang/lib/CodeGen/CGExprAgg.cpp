@@ -591,13 +591,7 @@ void AggExprEmitter::VisitPredefinedBoundsCheckExpr(
 void AggExprEmitter::VisitMaterializeSequenceExpr(MaterializeSequenceExpr *MSE) {
   if (MSE->isBinding()) {
     for (auto *OVE : MSE->opaquevalues()) {
-      if (CodeGenFunction::OpaqueValueMappingData::shouldBindAsLValue(OVE)) {
-        RValue PtrRV = CGF.EmitAnyExpr(OVE->getSourceExpr());
-        LValue LV = CGF.MakeAddrLValue(PtrRV.getAggregateAddress(), OVE->getType());
-        CodeGenFunction::OpaqueValueMappingData::bind(CGF, OVE, LV);
-      } else {
-        CodeGenFunction::OpaqueValueMappingData::bind(CGF, OVE, OVE->getSourceExpr());
-      }
+      CodeGenFunction::OpaqueValueMappingData::bind(CGF, OVE, OVE->getSourceExpr());
     }
   }
 
