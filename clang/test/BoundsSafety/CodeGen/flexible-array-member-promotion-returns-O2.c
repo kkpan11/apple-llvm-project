@@ -14,7 +14,7 @@ inline flex_t *return_flex(int *__counted_by(11) buf) {
 }
 
 // CHECK-LABEL: @pointer_assign_good(
-// CHECK-NEXT:  cont47:
+// CHECK-NEXT:  {{.*}}:
 // CHECK-NEXT:    ret void
 //
 void pointer_assign_good() {
@@ -24,7 +24,7 @@ void pointer_assign_good() {
 }
 
 // CHECK-LABEL: @pointer_assign_good2(
-// CHECK-NEXT:  cont47:
+// CHECK-NEXT:  {{.*}}:
 // CHECK-NEXT:    ret void
 //
 void pointer_assign_good2() {
@@ -34,7 +34,7 @@ void pointer_assign_good2() {
 }
 
 // CHECK-LABEL: @pointer_init_good(
-// CHECK-NEXT:  cont47:
+// CHECK-NEXT:  {{.*}}:
 // CHECK-NEXT:    ret void
 //
 void pointer_init_good() {
@@ -43,7 +43,7 @@ void pointer_init_good() {
 }
 
 // CHECK-LABEL: @pointer_init_good2(
-// CHECK-NEXT:  cont47:
+// CHECK-NEXT:  {{.*}}:
 // CHECK-NEXT:    ret void
 //
 void pointer_init_good2() {
@@ -96,7 +96,7 @@ void pointer_count_init_good() {
 }
 
 // CHECK-LABEL: @elem_access_good(
-// CHECK-NEXT:  cont69:
+// CHECK-NEXT:  {{.*}}:
 // CHECK-NEXT:    ret void
 //
 void elem_access_good() {
@@ -107,7 +107,7 @@ void elem_access_good() {
 }
 
 // CHECK-LABEL: @elem_access_trap(
-// CHECK-NEXT:  cont47:
+// CHECK-NEXT:  {{.*}}:
 // CHECK-NEXT:    [[ARR:%.*]] = alloca [11 x i32], align 4
 // CHECK-NEXT:    call void @llvm.lifetime.start.p0(i64 44, ptr nonnull [[ARR]]) #[[ATTR7:[0-9]+]]
 // CHECK-NEXT:    [[TMP0:%.*]] = getelementptr inbounds i8, ptr [[ARR]], i64 4
@@ -123,7 +123,7 @@ void elem_access_good() {
 // CHECK:       trap:
 // CHECK-NEXT:    call void @llvm.ubsantrap(i8 25) #[[ATTR6]], {{!annotation ![0-9]+}}
 // CHECK-NEXT:    unreachable, {{!annotation ![0-9]+}}
-// CHECK:       cont69:
+// CHECK:       {{.*}}:
 // CHECK-NEXT:    call void @llvm.lifetime.end.p0(i64 44, ptr nonnull [[ARR]]) #[[ATTR7]]
 // CHECK-NEXT:    ret void
 //

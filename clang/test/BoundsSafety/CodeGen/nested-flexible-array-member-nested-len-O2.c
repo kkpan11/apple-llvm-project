@@ -23,10 +23,10 @@ void use(void *__unsafe_indexable);
 // CHECK-SAME: ptr noundef [[FRAME:%.*]], i32 noundef [[FRAME_SIZE:%.*]]) local_unnamed_addr #[[ATTR0:[0-9]+]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[IDX_EXT:%.*]] = zext i32 [[FRAME_SIZE]] to i64
-// CHECK-NEXT:    [[ADD_PTR:%.*]] = getelementptr inbounds nuw i8, ptr [[FRAME]], i64 [[IDX_EXT]]
+// CHECK-NEXT:    [[ADD_PTR:%.*]] = getelementptr inbounds i8, ptr [[FRAME]], i64 [[IDX_EXT]]
 // CHECK-NEXT:    [[TMP0:%.*]] = getelementptr i8, ptr [[FRAME]], i64 4
 // CHECK-NEXT:    [[DOTNOT:%.*]] = icmp ugt ptr [[TMP0]], [[ADD_PTR]], !annotation [[META2:![0-9]+]]
-// CHECK-NEXT:    br i1 [[DOTNOT]], label %[[TRAP:.*]], label %[[CONT10:.*]], !prof [[PROF3:![0-9]+]], !annotation [[META2]]
+// CHECK-NEXT:    br i1 [[DOTNOT]], label %[[TRAP:.*]], label %[[CONT10:.*]], !annotation [[META2]]
 // CHECK:       [[TRAP]]:
 // CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR3:[0-9]+]], !annotation [[META4:![0-9]+]]
 // CHECK-NEXT:    unreachable, !annotation [[META4]]
@@ -44,6 +44,5 @@ void process_frame(char *__counted_by(frame_size) frame, unsigned frame_size) {
 }
 //.
 // CHECK: [[META2]] = !{!"bounds-safety-check-ptr-lt-upper-bound"}
-// CHECK: [[PROF3]] = !{!"branch_weights", i32 8191, i32 -8192}
 // CHECK: [[META4]] = !{!"bounds-safety-check-ptr-lt-upper-bound", !"bounds-safety-check-ptr-ge-lower-bound"}
 //.

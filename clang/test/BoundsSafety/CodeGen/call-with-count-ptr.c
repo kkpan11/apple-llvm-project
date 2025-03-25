@@ -240,7 +240,7 @@ int arr[] = {0, 1, 2, 3, 4, 5};
 // CHECK_X64_O0-NEXT:    br label [[LAND_END]]
 // CHECK_X64_O0:       land.end:
 // CHECK_X64_O0-NEXT:    [[TMP38:%.*]] = phi i1 [ false, [[LAND_LHS_TRUE]] ], [ false, [[CONT]] ], [ [[CMP116]], [[LAND_RHS]] ], {{!annotation ![0-9]+}}
-// CHECK_X64_O0-NEXT:    br i1 [[TMP38]], label %[[CONT118:.*]], label %[[TRAP117:.*]], {{!prof ![0-9]+}}, {{!annotation ![0-9]+}}
+// CHECK_X64_O0-NEXT:    br i1 [[TMP38]], label %[[CONT118:.*]], label %[[TRAP117:.*]], {{!annotation ![0-9]+}}
 // CHECK_X64_O0:       [[TRAP117]]:
 // CHECK_X64_O0-NEXT:    call void @llvm.ubsantrap(i8 25) #[[ATTR5]], {{!annotation ![0-9]+}}
 // CHECK_X64_O0-NEXT:    unreachable
@@ -490,7 +490,7 @@ int arr[] = {0, 1, 2, 3, 4, 5};
 // CHECK_ARM64_O0-NEXT:    br label [[LAND_END]]
 // CHECK_ARM64_O0:       land.end:
 // CHECK_ARM64_O0-NEXT:    [[TMP38:%.*]] = phi i1 [ false, [[LAND_LHS_TRUE]] ], [ false, [[CONT]] ], [ [[CMP116]], [[LAND_RHS]] ], {{!annotation ![0-9]+}}
-// CHECK_ARM64_O0-NEXT:    br i1 [[TMP38]], label %[[CONT118:.*]], label %[[TRAP117:.*]], {{!prof ![0-9]+}}, {{!annotation ![0-9]+}}
+// CHECK_ARM64_O0-NEXT:    br i1 [[TMP38]], label %[[CONT118:.*]], label %[[TRAP117:.*]], {{!annotation ![0-9]+}}
 // CHECK_ARM64_O0:       [[TRAP117]]:
 // CHECK_ARM64_O0-NEXT:    call void @llvm.ubsantrap(i8 25) #[[ATTR5]], {{!annotation ![0-9]+}}
 // CHECK_ARM64_O0-NEXT:    unreachable

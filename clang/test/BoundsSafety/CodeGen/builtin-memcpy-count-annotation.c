@@ -249,7 +249,7 @@
 // CHECK-NEXT:    br label %[[LAND_END144]]
 // CHECK:       [[LAND_END144]]: {{.*}}
 // CHECK-NEXT:    [[TMP25:%.*]] = phi i1 [ false, %[[LAND_LHS_TRUE91]] ], [ false, [[CONT]] ], [ [[CMP143]], %[[LAND_RHS109]] ], {{!annotation ![0-9]+}}
-// CHECK-NEXT:    br i1 [[TMP25]], label %[[CONT146:.*]], label %[[TRAP145:.*]], {{!prof ![0-9]+}}, {{!annotation ![0-9]+}}
+// CHECK-NEXT:    br i1 [[TMP25]], label %[[CONT146:.*]], label %[[TRAP145:.*]], {{!annotation ![0-9]+}}
 // CHECK:       [[TRAP145]]:
 // CHECK-NEXT:    call void @llvm.ubsantrap(i8 25) #[[ATTR5]], {{!annotation ![0-9]+}}
 // CHECK-NEXT:    unreachable

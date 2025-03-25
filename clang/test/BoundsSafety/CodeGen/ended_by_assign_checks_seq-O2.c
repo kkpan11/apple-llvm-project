@@ -68,7 +68,7 @@ void TestRangeOK4(void) {
 // CHECK-NEXT:    [[CMP80_NOT:%.*]] = icmp ugt ptr [[BOUND_PTR_ARITH60]], [[BOUND_PTR_ARITH8]], {{!annotation ![0-9]+}}
 // CHECK-NEXT:    [[CMP95_NOT:%.*]] = icmp ugt ptr [[ARR]], [[BOUND_PTR_ARITH60]], {{!annotation ![0-9]+}}
 // CHECK-NEXT:    [[OR_COND:%.*]] = or i1 [[CMP80_NOT]], [[CMP95_NOT]], {{!annotation ![0-9]+}}
-// CHECK-NEXT:    br i1 [[OR_COND]], label %[[TRAP:.*]], label %[[CONT96:.*]], {{!prof ![0-9]+}}, {{!annotation ![0-9]+}}
+// CHECK-NEXT:    br i1 [[OR_COND]], label %[[TRAP:.*]], label %[[CONT96:.*]], {{!annotation ![0-9]+}}
 // CHECK:       [[TRAP]]:
 // CHECK-NEXT:    call void @llvm.ubsantrap(i8 25) #[[ATTR7:[0-9]+]], {{!annotation ![0-9]+}}
 // CHECK-NEXT:    unreachable, {{!annotation ![0-9]+}}
