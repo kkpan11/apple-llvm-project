@@ -31,11 +31,11 @@ void bar(struct s *p);
 // CHECK:       trap:
 // CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR3:[0-9]+]], {{!annotation ![0-9]+}}
 // CHECK-NEXT:    unreachable, {{!annotation ![0-9]+}}
-// CHECK:       cont27:
+// CHECK:       cont26:
 // CHECK-NEXT:    [[TMP2:%.*]] = load i32, ptr [[BUF]], align 4, {{!tbaa ![0-9]+}}
 // CHECK-NEXT:    [[FLEX_COUNT_MINUS:%.*]] = icmp sgt i32 [[TMP2]], -1, {{!annotation ![0-9]+}}
 // CHECK-NEXT:    br i1 [[FLEX_COUNT_MINUS]], label [[CONT30:%.*]], label [[TRAP]], {{!annotation ![0-9]+}}
-// CHECK:       cont30:
+// CHECK:       cont29:
 // CHECK-NEXT:    [[GEPDIFF:%.*]] = add nsw i64 [[IDX_EXT]], -4, {{!annotation ![0-9]+}}
 // CHECK-NEXT:    [[FLEX_AVAIL_COUNT_DIV:%.*]] = ashr exact i64 [[GEPDIFF]], 2, {{!annotation ![0-9]+}}
 // CHECK-NEXT:    [[FLEX_COUNT_INTPTR:%.*]] = zext nneg i32 [[TMP2]] to i64, {{!annotation ![0-9]+}}
@@ -43,7 +43,7 @@ void bar(struct s *p);
 // CHECK-NEXT:    [[DOTNOT50:%.*]] = icmp eq i32 [[SIZE]], 0, {{!annotation ![0-9]+}}
 // CHECK-NEXT:    [[OR_COND52:%.*]] = or i1 [[DOTNOT50]], [[FLEX_COUNT_CHECK_NOT]], {{!annotation ![0-9]+}}
 // CHECK-NEXT:    br i1 [[OR_COND52]], label [[TRAP]], label [[CONT40]], {{!annotation ![0-9]+}}
-// CHECK:       cont40:
+// CHECK:       cont39:
 // CHECK-NEXT:    tail call void @bar(ptr noundef [[BUF]]) #[[ATTR4:[0-9]+]]
 // CHECK-NEXT:    ret void
 //

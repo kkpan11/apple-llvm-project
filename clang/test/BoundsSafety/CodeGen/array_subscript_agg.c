@@ -814,17 +814,15 @@ struct HasFAM {
 // NEW-NEXT:    [[IDX_ADDR:%.*]] = alloca i32, align 4
 // NEW-NEXT:    [[AGG_TEMP:%.*]] = alloca %"__bounds_safety::wide_ptr.bidi_indexable", align 8
 // NEW-NEXT:    [[AGG_TEMP1:%.*]] = alloca %"__bounds_safety::wide_ptr.bidi_indexable.0", align 8
-// NEW-NEXT:    [[AGG_TEMP2:%.*]] = alloca %"__bounds_safety::wide_ptr.bidi_indexable.0", align 8
-// NEW-NEXT:    [[AGG_TEMP5:%.*]] = alloca %"__bounds_safety::wide_ptr.bidi_indexable.0", align 8
+// NEW-NEXT:    [[AGG_TEMP4:%.*]] = alloca %"__bounds_safety::wide_ptr.bidi_indexable.0", align 8
 // NEW-NEXT:    store ptr [[HAS_FAM]], ptr [[HAS_FAM_INDIRECT_ADDR]], align 8
 // NEW-NEXT:    store i32 [[IDX]], ptr [[IDX_ADDR]], align 4
 // NEW-NEXT:    call void @llvm.memcpy.p0.p0.i64(ptr align 8 [[AGG_TEMP1]], ptr align 8 [[HAS_FAM]], i64 24, i1 false)
-// NEW-NEXT:    call void @llvm.memcpy.p0.p0.i64(ptr align 8 [[AGG_TEMP2]], ptr align 8 [[AGG_TEMP1]], i64 24, i1 false)
-// NEW-NEXT:    [[WIDE_PTR_PTR_ADDR:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable.0", ptr [[AGG_TEMP2]], i32 0, i32 0
+// NEW-NEXT:    [[WIDE_PTR_PTR_ADDR:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable.0", ptr [[AGG_TEMP1]], i32 0, i32 0
 // NEW-NEXT:    [[WIDE_PTR_PTR:%.*]] = load ptr, ptr [[WIDE_PTR_PTR_ADDR]], align 8
-// NEW-NEXT:    [[WIDE_PTR_UB_ADDR:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable.0", ptr [[AGG_TEMP2]], i32 0, i32 1
+// NEW-NEXT:    [[WIDE_PTR_UB_ADDR:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable.0", ptr [[AGG_TEMP1]], i32 0, i32 1
 // NEW-NEXT:    [[WIDE_PTR_UB:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR]], align 8
-// NEW-NEXT:    [[WIDE_PTR_LB_ADDR:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable.0", ptr [[AGG_TEMP2]], i32 0, i32 2
+// NEW-NEXT:    [[WIDE_PTR_LB_ADDR:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable.0", ptr [[AGG_TEMP1]], i32 0, i32 2
 // NEW-NEXT:    [[WIDE_PTR_LB:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR]], align 8
 // NEW-NEXT:    [[TMP0:%.*]] = getelementptr [[STRUCT_HASFAM:%.*]], ptr [[WIDE_PTR_PTR]], i64 1
 // NEW-NEXT:    [[TMP1:%.*]] = icmp ule ptr [[TMP0]], [[WIDE_PTR_UB]], !annotation [[META5:![0-9]+]]
@@ -834,54 +832,54 @@ struct HasFAM {
 // NEW-NEXT:    unreachable, !annotation [[META5]]
 // NEW:       [[CONT]]:
 // NEW-NEXT:    [[TMP2:%.*]] = icmp ule ptr [[WIDE_PTR_LB]], [[WIDE_PTR_PTR]], !annotation [[META3]]
-// NEW-NEXT:    br i1 [[TMP2]], label %[[CONT4:.*]], label %[[TRAP3:.*]], !annotation [[META3]]
-// NEW:       [[TRAP3]]:
+// NEW-NEXT:    br i1 [[TMP2]], label %[[CONT3:.*]], label %[[TRAP2:.*]], !annotation [[META3]]
+// NEW:       [[TRAP2]]:
 // NEW-NEXT:    call void @llvm.ubsantrap(i8 25) #[[ATTR3]], !annotation [[META3]]
 // NEW-NEXT:    unreachable, !annotation [[META3]]
-// NEW:       [[CONT4]]:
+// NEW:       [[CONT3]]:
 // NEW-NEXT:    [[FAM:%.*]] = getelementptr inbounds nuw [[STRUCT_HASFAM]], ptr [[WIDE_PTR_PTR]], i32 0, i32 1
 // NEW-NEXT:    [[ARRAYDECAY:%.*]] = getelementptr inbounds [0 x %struct.Foo], ptr [[FAM]], i64 0, i64 0
-// NEW-NEXT:    call void @llvm.memcpy.p0.p0.i64(ptr align 8 [[AGG_TEMP5]], ptr align 8 [[AGG_TEMP1]], i64 24, i1 false)
-// NEW-NEXT:    [[WIDE_PTR_UB_ADDR6:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable.0", ptr [[AGG_TEMP5]], i32 0, i32 1
-// NEW-NEXT:    [[WIDE_PTR_UB7:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR6]], align 8
-// NEW-NEXT:    [[TMP3:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable.0", ptr [[AGG_TEMP5]], i32 0, i32 0
-// NEW-NEXT:    store ptr [[WIDE_PTR_UB7]], ptr [[TMP3]], align 8
-// NEW-NEXT:    [[WIDE_PTR_PTR_ADDR8:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable.0", ptr [[AGG_TEMP5]], i32 0, i32 0
-// NEW-NEXT:    [[WIDE_PTR_PTR9:%.*]] = load ptr, ptr [[WIDE_PTR_PTR_ADDR8]], align 8
+// NEW-NEXT:    call void @llvm.memcpy.p0.p0.i64(ptr align 8 [[AGG_TEMP4]], ptr align 8 [[HAS_FAM]], i64 24, i1 false)
+// NEW-NEXT:    [[WIDE_PTR_UB_ADDR5:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable.0", ptr [[AGG_TEMP4]], i32 0, i32 1
+// NEW-NEXT:    [[WIDE_PTR_UB6:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR5]], align 8
+// NEW-NEXT:    [[TMP3:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable.0", ptr [[AGG_TEMP4]], i32 0, i32 0
+// NEW-NEXT:    store ptr [[WIDE_PTR_UB6]], ptr [[TMP3]], align 8
+// NEW-NEXT:    [[WIDE_PTR_PTR_ADDR7:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable.0", ptr [[AGG_TEMP4]], i32 0, i32 0
+// NEW-NEXT:    [[WIDE_PTR_PTR8:%.*]] = load ptr, ptr [[WIDE_PTR_PTR_ADDR7]], align 8
 // NEW-NEXT:    [[TMP4:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP]], i32 0, i32 0
 // NEW-NEXT:    store ptr [[ARRAYDECAY]], ptr [[TMP4]], align 8
 // NEW-NEXT:    [[TMP5:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP]], i32 0, i32 1
-// NEW-NEXT:    store ptr [[WIDE_PTR_PTR9]], ptr [[TMP5]], align 8
+// NEW-NEXT:    store ptr [[WIDE_PTR_PTR8]], ptr [[TMP5]], align 8
 // NEW-NEXT:    [[TMP6:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP]], i32 0, i32 2
 // NEW-NEXT:    store ptr [[ARRAYDECAY]], ptr [[TMP6]], align 8
-// NEW-NEXT:    [[WIDE_PTR_PTR_ADDR10:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP]], i32 0, i32 0
-// NEW-NEXT:    [[WIDE_PTR_PTR11:%.*]] = load ptr, ptr [[WIDE_PTR_PTR_ADDR10]], align 8
+// NEW-NEXT:    [[WIDE_PTR_PTR_ADDR9:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP]], i32 0, i32 0
+// NEW-NEXT:    [[WIDE_PTR_PTR10:%.*]] = load ptr, ptr [[WIDE_PTR_PTR_ADDR9]], align 8
 // NEW-NEXT:    [[TMP7:%.*]] = load i32, ptr [[IDX_ADDR]], align 4
 // NEW-NEXT:    [[IDXPROM:%.*]] = sext i32 [[TMP7]] to i64
-// NEW-NEXT:    [[ARRAYIDX:%.*]] = getelementptr [[STRUCT_FOO]], ptr [[WIDE_PTR_PTR11]], i64 [[IDXPROM]]
-// NEW-NEXT:    [[WIDE_PTR_UB_ADDR12:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP]], i32 0, i32 1
-// NEW-NEXT:    [[WIDE_PTR_UB13:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR12]], align 8
-// NEW-NEXT:    [[WIDE_PTR_LB_ADDR14:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP]], i32 0, i32 2
-// NEW-NEXT:    [[WIDE_PTR_LB15:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR14]], align 8
+// NEW-NEXT:    [[ARRAYIDX:%.*]] = getelementptr [[STRUCT_FOO]], ptr [[WIDE_PTR_PTR10]], i64 [[IDXPROM]]
+// NEW-NEXT:    [[WIDE_PTR_UB_ADDR11:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP]], i32 0, i32 1
+// NEW-NEXT:    [[WIDE_PTR_UB12:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR11]], align 8
+// NEW-NEXT:    [[WIDE_PTR_LB_ADDR13:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP]], i32 0, i32 2
+// NEW-NEXT:    [[WIDE_PTR_LB14:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR13]], align 8
 // NEW-NEXT:    [[TMP8:%.*]] = getelementptr [[STRUCT_FOO]], ptr [[ARRAYIDX]], i64 1, !annotation [[META2]]
-// NEW-NEXT:    [[TMP9:%.*]] = icmp ule ptr [[TMP8]], [[WIDE_PTR_UB13]], !annotation [[META2]]
-// NEW-NEXT:    br i1 [[TMP9]], label %[[CONT17:.*]], label %[[TRAP16:.*]], !annotation [[META2]]
-// NEW:       [[TRAP16]]:
+// NEW-NEXT:    [[TMP9:%.*]] = icmp ule ptr [[TMP8]], [[WIDE_PTR_UB12]], !annotation [[META2]]
+// NEW-NEXT:    br i1 [[TMP9]], label %[[CONT16:.*]], label %[[TRAP15:.*]], !annotation [[META2]]
+// NEW:       [[TRAP15]]:
 // NEW-NEXT:    call void @llvm.ubsantrap(i8 25) #[[ATTR3]], !annotation [[META2]]
 // NEW-NEXT:    unreachable, !annotation [[META2]]
-// NEW:       [[CONT17]]:
+// NEW:       [[CONT16]]:
 // NEW-NEXT:    [[TMP10:%.*]] = icmp ule ptr [[ARRAYIDX]], [[TMP8]], !annotation [[META2]]
-// NEW-NEXT:    br i1 [[TMP10]], label %[[CONT19:.*]], label %[[TRAP18:.*]], !annotation [[META2]]
-// NEW:       [[TRAP18]]:
+// NEW-NEXT:    br i1 [[TMP10]], label %[[CONT18:.*]], label %[[TRAP17:.*]], !annotation [[META2]]
+// NEW:       [[TRAP17]]:
 // NEW-NEXT:    call void @llvm.ubsantrap(i8 25) #[[ATTR3]], !annotation [[META2]]
 // NEW-NEXT:    unreachable, !annotation [[META2]]
-// NEW:       [[CONT19]]:
-// NEW-NEXT:    [[TMP11:%.*]] = icmp uge ptr [[ARRAYIDX]], [[WIDE_PTR_LB15]], !annotation [[META3]]
-// NEW-NEXT:    br i1 [[TMP11]], label %[[CONT21:.*]], label %[[TRAP20:.*]], !annotation [[META3]]
-// NEW:       [[TRAP20]]:
+// NEW:       [[CONT18]]:
+// NEW-NEXT:    [[TMP11:%.*]] = icmp uge ptr [[ARRAYIDX]], [[WIDE_PTR_LB14]], !annotation [[META3]]
+// NEW-NEXT:    br i1 [[TMP11]], label %[[CONT20:.*]], label %[[TRAP19:.*]], !annotation [[META3]]
+// NEW:       [[TRAP19]]:
 // NEW-NEXT:    call void @llvm.ubsantrap(i8 25) #[[ATTR3]], !annotation [[META3]]
 // NEW-NEXT:    unreachable, !annotation [[META3]]
-// NEW:       [[CONT21]]:
+// NEW:       [[CONT20]]:
 // NEW-NEXT:    call void @llvm.memcpy.p0.p0.i64(ptr align 4 [[RETVAL]], ptr align 4 [[ARRAYIDX]], i64 8, i1 false)
 // NEW-NEXT:    [[TMP12:%.*]] = load i64, ptr [[RETVAL]], align 4
 // NEW-NEXT:    ret i64 [[TMP12]]
@@ -894,17 +892,15 @@ struct HasFAM {
 // LEGACY-NEXT:    [[IDX_ADDR:%.*]] = alloca i32, align 4
 // LEGACY-NEXT:    [[AGG_TEMP:%.*]] = alloca %"__bounds_safety::wide_ptr.bidi_indexable", align 8
 // LEGACY-NEXT:    [[AGG_TEMP1:%.*]] = alloca %"__bounds_safety::wide_ptr.bidi_indexable.0", align 8
-// LEGACY-NEXT:    [[AGG_TEMP2:%.*]] = alloca %"__bounds_safety::wide_ptr.bidi_indexable.0", align 8
-// LEGACY-NEXT:    [[AGG_TEMP5:%.*]] = alloca %"__bounds_safety::wide_ptr.bidi_indexable.0", align 8
+// LEGACY-NEXT:    [[AGG_TEMP4:%.*]] = alloca %"__bounds_safety::wide_ptr.bidi_indexable.0", align 8
 // LEGACY-NEXT:    store ptr [[HAS_FAM]], ptr [[HAS_FAM_INDIRECT_ADDR]], align 8
 // LEGACY-NEXT:    store i32 [[IDX]], ptr [[IDX_ADDR]], align 4
 // LEGACY-NEXT:    call void @llvm.memcpy.p0.p0.i64(ptr align 8 [[AGG_TEMP1]], ptr align 8 [[HAS_FAM]], i64 24, i1 false)
-// LEGACY-NEXT:    call void @llvm.memcpy.p0.p0.i64(ptr align 8 [[AGG_TEMP2]], ptr align 8 [[AGG_TEMP1]], i64 24, i1 false)
-// LEGACY-NEXT:    [[WIDE_PTR_PTR_ADDR:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable.0", ptr [[AGG_TEMP2]], i32 0, i32 0
+// LEGACY-NEXT:    [[WIDE_PTR_PTR_ADDR:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable.0", ptr [[AGG_TEMP1]], i32 0, i32 0
 // LEGACY-NEXT:    [[WIDE_PTR_PTR:%.*]] = load ptr, ptr [[WIDE_PTR_PTR_ADDR]], align 8
-// LEGACY-NEXT:    [[WIDE_PTR_UB_ADDR:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable.0", ptr [[AGG_TEMP2]], i32 0, i32 1
+// LEGACY-NEXT:    [[WIDE_PTR_UB_ADDR:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable.0", ptr [[AGG_TEMP1]], i32 0, i32 1
 // LEGACY-NEXT:    [[WIDE_PTR_UB:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR]], align 8
-// LEGACY-NEXT:    [[WIDE_PTR_LB_ADDR:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable.0", ptr [[AGG_TEMP2]], i32 0, i32 2
+// LEGACY-NEXT:    [[WIDE_PTR_LB_ADDR:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable.0", ptr [[AGG_TEMP1]], i32 0, i32 2
 // LEGACY-NEXT:    [[WIDE_PTR_LB:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR]], align 8
 // LEGACY-NEXT:    [[TMP0:%.*]] = getelementptr [[STRUCT_HASFAM:%.*]], ptr [[WIDE_PTR_PTR]], i64 1
 // LEGACY-NEXT:    [[TMP1:%.*]] = icmp ule ptr [[TMP0]], [[WIDE_PTR_UB]], !annotation [[META3:![0-9]+]]
@@ -914,31 +910,31 @@ struct HasFAM {
 // LEGACY-NEXT:    unreachable, !annotation [[META3]]
 // LEGACY:       [[CONT]]:
 // LEGACY-NEXT:    [[TMP2:%.*]] = icmp ule ptr [[WIDE_PTR_LB]], [[WIDE_PTR_PTR]], !annotation [[META4:![0-9]+]]
-// LEGACY-NEXT:    br i1 [[TMP2]], label %[[CONT4:.*]], label %[[TRAP3:.*]], !annotation [[META4]]
-// LEGACY:       [[TRAP3]]:
+// LEGACY-NEXT:    br i1 [[TMP2]], label %[[CONT3:.*]], label %[[TRAP2:.*]], !annotation [[META4]]
+// LEGACY:       [[TRAP2]]:
 // LEGACY-NEXT:    call void @llvm.ubsantrap(i8 25) #[[ATTR3]], !annotation [[META4]]
 // LEGACY-NEXT:    unreachable, !annotation [[META4]]
-// LEGACY:       [[CONT4]]:
+// LEGACY:       [[CONT3]]:
 // LEGACY-NEXT:    [[FAM:%.*]] = getelementptr inbounds nuw [[STRUCT_HASFAM]], ptr [[WIDE_PTR_PTR]], i32 0, i32 1
 // LEGACY-NEXT:    [[ARRAYDECAY:%.*]] = getelementptr inbounds [0 x %struct.Foo], ptr [[FAM]], i64 0, i64 0
-// LEGACY-NEXT:    call void @llvm.memcpy.p0.p0.i64(ptr align 8 [[AGG_TEMP5]], ptr align 8 [[AGG_TEMP1]], i64 24, i1 false)
-// LEGACY-NEXT:    [[WIDE_PTR_UB_ADDR6:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable.0", ptr [[AGG_TEMP5]], i32 0, i32 1
-// LEGACY-NEXT:    [[WIDE_PTR_UB7:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR6]], align 8
-// LEGACY-NEXT:    [[TMP3:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable.0", ptr [[AGG_TEMP5]], i32 0, i32 0
-// LEGACY-NEXT:    store ptr [[WIDE_PTR_UB7]], ptr [[TMP3]], align 8
-// LEGACY-NEXT:    [[WIDE_PTR_PTR_ADDR8:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable.0", ptr [[AGG_TEMP5]], i32 0, i32 0
-// LEGACY-NEXT:    [[WIDE_PTR_PTR9:%.*]] = load ptr, ptr [[WIDE_PTR_PTR_ADDR8]], align 8
+// LEGACY-NEXT:    call void @llvm.memcpy.p0.p0.i64(ptr align 8 [[AGG_TEMP4]], ptr align 8 [[HAS_FAM]], i64 24, i1 false)
+// LEGACY-NEXT:    [[WIDE_PTR_UB_ADDR5:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable.0", ptr [[AGG_TEMP4]], i32 0, i32 1
+// LEGACY-NEXT:    [[WIDE_PTR_UB6:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR5]], align 8
+// LEGACY-NEXT:    [[TMP3:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable.0", ptr [[AGG_TEMP4]], i32 0, i32 0
+// LEGACY-NEXT:    store ptr [[WIDE_PTR_UB6]], ptr [[TMP3]], align 8
+// LEGACY-NEXT:    [[WIDE_PTR_PTR_ADDR7:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable.0", ptr [[AGG_TEMP4]], i32 0, i32 0
+// LEGACY-NEXT:    [[WIDE_PTR_PTR8:%.*]] = load ptr, ptr [[WIDE_PTR_PTR_ADDR7]], align 8
 // LEGACY-NEXT:    [[TMP4:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP]], i32 0, i32 0
 // LEGACY-NEXT:    store ptr [[ARRAYDECAY]], ptr [[TMP4]], align 8
 // LEGACY-NEXT:    [[TMP5:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP]], i32 0, i32 1
-// LEGACY-NEXT:    store ptr [[WIDE_PTR_PTR9]], ptr [[TMP5]], align 8
+// LEGACY-NEXT:    store ptr [[WIDE_PTR_PTR8]], ptr [[TMP5]], align 8
 // LEGACY-NEXT:    [[TMP6:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP]], i32 0, i32 2
 // LEGACY-NEXT:    store ptr [[ARRAYDECAY]], ptr [[TMP6]], align 8
-// LEGACY-NEXT:    [[WIDE_PTR_PTR_ADDR10:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP]], i32 0, i32 0
-// LEGACY-NEXT:    [[WIDE_PTR_PTR11:%.*]] = load ptr, ptr [[WIDE_PTR_PTR_ADDR10]], align 8
+// LEGACY-NEXT:    [[WIDE_PTR_PTR_ADDR9:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP]], i32 0, i32 0
+// LEGACY-NEXT:    [[WIDE_PTR_PTR10:%.*]] = load ptr, ptr [[WIDE_PTR_PTR_ADDR9]], align 8
 // LEGACY-NEXT:    [[TMP7:%.*]] = load i32, ptr [[IDX_ADDR]], align 4
 // LEGACY-NEXT:    [[IDXPROM:%.*]] = sext i32 [[TMP7]] to i64
-// LEGACY-NEXT:    [[ARRAYIDX:%.*]] = getelementptr [[STRUCT_FOO]], ptr [[WIDE_PTR_PTR11]], i64 [[IDXPROM]]
+// LEGACY-NEXT:    [[ARRAYIDX:%.*]] = getelementptr [[STRUCT_FOO]], ptr [[WIDE_PTR_PTR10]], i64 [[IDXPROM]]
 // LEGACY-NEXT:    call void @llvm.memcpy.p0.p0.i64(ptr align 4 [[RETVAL]], ptr align 4 [[ARRAYIDX]], i64 8, i1 false)
 // LEGACY-NEXT:    [[TMP8:%.*]] = load i64, ptr [[RETVAL]], align 4
 // LEGACY-NEXT:    ret i64 [[TMP8]]
