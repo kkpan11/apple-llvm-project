@@ -1226,6 +1226,10 @@ DeclarationFragments
 DeclarationFragmentsBuilder::getFragmentsForClassTemplateSpecialization(
     const ClassTemplateSpecializationDecl *Decl) {
   DeclarationFragments Fragments;
+  std::optional<ArrayRef<TemplateArgumentLoc>> TemplateArgumentLocs = {};
+  if (auto *TemplateArgs = Decl->getTemplateArgsAsWritten()) {
+    TemplateArgumentLocs = TemplateArgs->arguments();
+  }
   return Fragments
       .append("template", DeclarationFragments::FragmentKind::Keyword)
       .appendSpace()
@@ -1238,7 +1242,7 @@ DeclarationFragmentsBuilder::getFragmentsForClassTemplateSpecialization(
       .append("<", DeclarationFragments::FragmentKind::Text)
       .append(getFragmentsForTemplateArguments(
           Decl->getTemplateArgs().asArray(), Decl->getASTContext(),
-          Decl->getTemplateArgsAsWritten()->arguments()))
+          TemplateArgumentLocs))
       .append(">", DeclarationFragments::FragmentKind::Text)
       .appendSemicolon();
 }
