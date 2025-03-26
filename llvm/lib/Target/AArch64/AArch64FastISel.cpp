@@ -3867,6 +3867,9 @@ bool AArch64FastISel::selectRet(const Instruction *I) {
   if (TLI.supportSplitCSR(FuncInfo.MF))
     return false;
 
+  if (I->getParent()->getTerminatingMustTailCall())
+    return false;
+
   // Build a list of return value registers.
   SmallVector<unsigned, 4> RetRegs;
 
