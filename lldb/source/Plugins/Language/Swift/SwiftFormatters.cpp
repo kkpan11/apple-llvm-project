@@ -1659,8 +1659,6 @@ static const std::pair<StringRef, StringRef> TASK_FLAGS[] = {
     {"isEnqueued", "enqueued"},
     {"isGroupChildTask", "groupChildTask"},
     {"isAsyncLetTask", "asyncLetTask"},
-    {"isChildTask", "childTask"},
-    {"isFuture", "future"},
     {"isStatusRecordLocked", "statusRecordLocked"},
 };
 
