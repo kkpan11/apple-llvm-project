@@ -9,12 +9,13 @@ class TestCase(TestBase):
     @swiftTest
     @skipUnlessFoundation
     def test_actor_unprioritised_jobs(self):
-        """Verify that an exposes its unprioritised jobs (queue)."""
+        """Verify that an actor exposes its unprioritised jobs (queue)."""
         self.build()
         _, _, thread, _ = lldbutil.run_to_source_breakpoint(
             self, "break here", lldb.SBFileSpec("main.swift")
         )
         frame = thread.GetSelectedFrame()
+        self.expect("v a", substrs=["just show me the output"])
         unprioritised_jobs = frame.var("a.$defaultActor.unprioritised_jobs")
         # There are 4 child tasks (async let), the first one occupies the actor
         # with a sleep, the next 3 go on to the queue.
