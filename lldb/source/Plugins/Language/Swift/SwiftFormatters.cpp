@@ -1879,13 +1879,19 @@ bool lldb_private::formatters::swift::Actor_SummaryProvider(
   Status status;
   uint64_t flags = 0;
   if (auto process_sp = valobj.GetProcessSP())
-    flags = process_sp->ReadUnsignedIntegerFromMemory(flags_addr, 4, UINT32_MAX,
-                                                      status);
+    flags = process_sp->ReadUnsignedIntegerFromMemory(flags_addr, 4, 0, status);
+
+  if (status.Fail()) {
+    stream.PutCString("<could not read actor state>");
+    return true;
+  }
 
   using namespace ::swift::concurrency::ActorFlagConstants;
   uint8_t state = flags & ActorStateMask;
-  if (state > Zombie_ReadyForDeallocation)
-    return false;
+  if (state > Zombie_ReadyForDeallocation) {
+    stream << "<unknown actor state: " << Twine(state).str() << ">";
+    return true;
+  }
 
   static const StringRef states[] = {"idle", "scheduled", "running", "zombie"};
   stream.PutCString(states[state]);
