@@ -1,10 +1,9 @@
-import Foundation
-
 actor Actor {
     var data: Int = 15
 
     func occupy() async {
-        Thread.sleep(forTimeInterval: 100)
+        // Block on input that will never be received.
+        _ = readLine()
     }
 
     func work() async -> Int {
@@ -21,6 +20,11 @@ actor Actor {
         async let _ = a.work()
         async let _ = a.work()
         async let _ = a.work()
+
+        // Yield to fully prepare the queue used to run the actor. Without this,
+        // the test can sometimes fail.
+        try? await Task.sleep(for: .seconds(2))
+
         print("break here")
     }
 }
