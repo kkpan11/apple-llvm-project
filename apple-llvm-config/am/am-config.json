@@ -13,6 +13,6 @@
 },
 {
   "target": "stable/20240723",
-  "upstream": "swift/release/6.1"
+  "upstream": "swift/release/6.2"
 }
 ]
