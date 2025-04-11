@@ -5356,6 +5356,9 @@ void CodeGenModule::EmitTentativeDefinition(const VarDecl *D) {
       return;
   }
 
+  if (Context.hasUnavailableFeature(D))
+    return;
+
   // The tentative definition is the only definition.
   EmitGlobalVarDefinition(D);
 }
@@ -6878,6 +6881,9 @@ ConstantAddress CodeGenModule::GetAddrOfGlobalTemporary(
 void CodeGenModule::EmitObjCPropertyImplementations(const
                                                     ObjCImplementationDecl *D) {
   for (const auto *PID : D->property_impls()) {
+    if (Context.hasUnavailableFeature(PID->getPropertyDecl()))
+      continue;
+
     // Dynamic is just for type-checking.
     if (PID->getPropertyImplementation() == ObjCPropertyImplDecl::Synthesize) {
       ObjCPropertyDecl *PD = PID->getPropertyDecl();
@@ -6902,9 +6908,12 @@ void CodeGenModule::EmitObjCPropertyImplementations(const
 static bool needsDestructMethod(ObjCImplementationDecl *impl) {
   const ObjCInterfaceDecl *iface = impl->getClassInterface();
   for (const ObjCIvarDecl *ivar = iface->all_declared_ivar_begin();
-       ivar; ivar = ivar->getNextIvar())
+       ivar; ivar = ivar->getNextIvar()) {
+    if (impl->getASTContext().hasUnavailableFeature(ivar))
+      continue;
     if (ivar->getType().isDestructedType())
       return true;
+  }
 
   return false;
 }
@@ -7034,6 +7043,9 @@ void CodeGenModule::EmitTopLevelDecl(Decl *D) {
 
   // Consteval function shouldn't be emitted.
   if (auto *FD = dyn_cast<FunctionDecl>(D); FD && FD->isImmediateFunction())
+    return;
+
+  if (Context.hasUnavailableFeature(D))
     return;
 
   switch (D->getKind()) {
@@ -7166,6 +7178,8 @@ void CodeGenModule::EmitTopLevelDecl(Decl *D) {
   }
   case Decl::ObjCMethod: {
     auto *OMD = cast<ObjCMethodDecl>(D);
+    if (Context.hasUnavailableFeature(OMD->getClassInterface()))
+      break;
     // If this is not a prototype, emit the body.
     if (OMD->getBody())
       CodeGenFunction(*this).GenerateObjCMethod(OMD);
