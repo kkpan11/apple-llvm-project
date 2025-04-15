@@ -1,10 +1,8 @@
-import Foundation
-
 actor Actor {
     var data: Int = 15
 
     func occupy() async {
-        Thread.sleep(forTimeInterval: 100)
+        _ = readLine()
     }
 
     func work() async -> Int {
