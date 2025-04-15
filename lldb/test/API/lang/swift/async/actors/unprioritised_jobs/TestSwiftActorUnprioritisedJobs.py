@@ -18,6 +18,8 @@ class TestCase(TestBase):
         unprioritised_jobs = defaultActor.GetChildMemberWithName("unprioritised_jobs")
         # There are 4 child tasks (async let), the first one occupies the actor
         # with a sleep, the next 3 go on to the queue.
+        if unprioritised_jobs.num_children != 3:
+            self.expect("bt all", substrs=["abcdefghijklmnopqrstuvwxyz"])
         self.assertEqual(unprioritised_jobs.num_children, 3)
         self.assertEqual(defaultActor.summary, "running")
         for job in unprioritised_jobs:
