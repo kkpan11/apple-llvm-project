@@ -31,6 +31,8 @@ class TestCase(TestBase):
         # with a sleep, the next 3 go on to the queue.
         if unprioritised_jobs.num_children != 3:
             with _managed_async(self.dbg):
+                # Suspend the current thread.
+                thread.Suspend()
                 # Continue - other threads only.
                 self.dbg.SetAsync(True)
                 process.Continue()
