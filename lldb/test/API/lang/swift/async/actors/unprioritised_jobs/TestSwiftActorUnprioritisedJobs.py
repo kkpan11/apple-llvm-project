@@ -25,28 +25,28 @@ class TestCase(TestBase):
             self, "break here", lldb.SBFileSpec("main.swift")
         )
         frame = thread.GetSelectedFrame()
+
+        with _managed_async(self.dbg):
+            # Suspend the current thread.
+            thread.Suspend()
+            # Continue - other threads only.
+            self.dbg.SetAsync(True)
+            process.Continue()
+            # Wait - allowing other threads to run.
+            time.sleep(2)
+            # Stop the threads.
+            self.dbg.SetAsync(False)
+            self.dbg.HandleCommand("process interrupt")
+            # Note: After a single interrupt, lldb reports the process as
+            # running, but two interrupt calls results in a stopped process.
+            # Also, using `process.Stop()` instead of `"process interrupt"`
+            # did not work.
+            self.dbg.HandleCommand("process interrupt")
+
         defaultActor = frame.var("a.$defaultActor")
         unprioritised_jobs = defaultActor.GetChildMemberWithName("unprioritised_jobs")
         # There are 4 child tasks (async let), the first one occupies the actor
         # with a sleep, the next 3 go on to the queue.
-        if unprioritised_jobs.num_children != 3:
-            with _managed_async(self.dbg):
-                # Suspend the current thread.
-                thread.Suspend()
-                # Continue - other threads only.
-                self.dbg.SetAsync(True)
-                process.Continue()
-                # Wait - allow the other threads to work.
-                time.sleep(2)
-                # Stop the threads.
-                # Notes: After a single interrupt, lldb reports the process as
-                # running, but two interrupt calls results in a stopped process.
-                # Also, using `process.Stop()` instead of `"process interrupt"`
-                # did not work.
-                self.dbg.SetAsync(False)
-                self.dbg.HandleCommand("process interrupt")
-                self.dbg.HandleCommand("process interrupt")
-            self.expect("bt all", substrs=["abcdefghijklmnopqrstuvwxyz"])
         self.assertEqual(unprioritised_jobs.num_children, 3)
         self.assertEqual(defaultActor.summary, "running")
         for job in unprioritised_jobs:
