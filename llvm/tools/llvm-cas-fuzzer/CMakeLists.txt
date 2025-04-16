@@ -1,0 +1,9 @@
+set(LLVM_LINK_COMPONENTS
+    CAS
+    FuzzerCLI
+    FuzzMutate
+    Support
+)
+add_llvm_fuzzer(llvm-cas-fuzzer
+  llvm-cas-fuzzer.cpp
+  )
