@@ -33,7 +33,7 @@ class TestCase(TestBase):
             self.dbg.SetAsync(True)
             process.Continue()
             # Wait - allowing other threads to run.
-            time.sleep(2)
+            time.sleep(5)
             # Stop the threads.
             self.dbg.SetAsync(False)
             self.dbg.HandleCommand("process interrupt")
