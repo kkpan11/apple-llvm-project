@@ -1059,7 +1059,7 @@ llvm::DIType *CGDebugInfo::CreateQualifiedType(QualType Ty,
   // additional ones.
   llvm::dwarf::Tag Tag = getNextQualifier(Qc);
   if (!Tag) {
-    if (Qc.getPointerAuth()) {
+    if (Qc.getPointerAuth().withoutKeyNone()) {
       unsigned Key = Qc.getPointerAuth().getKey();
       bool IsDiscr = Qc.getPointerAuth().isAddressDiscriminated();
       unsigned ExtraDiscr = Qc.getPointerAuth().getExtraDiscriminator();

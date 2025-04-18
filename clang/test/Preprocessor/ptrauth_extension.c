@@ -5,9 +5,10 @@
 // RUN:   FileCheck %s --check-prefixes=NOINTRIN
 
 #if __has_extension(ptrauth_qualifier)
-// INTRIN: has_ptrauth_qualifier
 void has_ptrauth_qualifier() {}
 #else
-// NOINTRIN: no_ptrauth_qualifier
 void no_ptrauth_qualifier() {}
 #endif
+
+// INTRIN: has_ptrauth_qualifier
+// NOINTRIN: no_ptrauth_qualifier

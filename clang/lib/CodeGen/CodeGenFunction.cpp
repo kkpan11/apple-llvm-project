@@ -18,6 +18,7 @@
 #include "CGDebugInfo.h"
 #include "CGHLSLRuntime.h"
 #include "CGOpenMPRuntime.h"
+#include "CGRecordLayout.h"
 #include "CodeGenModule.h"
 #include "CodeGenPGO.h"
 #include "TargetInfo.h"
@@ -2206,6 +2207,89 @@ static void emitNonZeroVLAInit(CodeGenFunction &CGF, QualType baseType,
   CGF.EmitBlock(contBB);
 }
 
+void CodeGenFunction::EmitNullInitializersForAuthenticatedNullFields(
+    Address StorageAddress, QualType Ty) {
+  assert(getContext().typeContainsAuthenticatedNull(Ty));
+  if (const ArrayType *arrayType = getContext().getAsArrayType(Ty)) {
+    QualType ElementType = arrayType->getElementType();
+    llvm::ArrayType *LLVMArrayType =
+        cast<llvm::ArrayType>(StorageAddress.getElementType());
+    CharUnits ElementSize = getContext().getTypeSizeInChars(ElementType);
+    CharUnits ElementAlign =
+        StorageAddress.getAlignment().alignmentOfArrayElement(ElementSize);
+    llvm::Value *Zero = llvm::ConstantInt::get(SizeTy, 0);
+    llvm::Value *Indices[] = {Zero, Zero};
+    llvm::Value *One = llvm::ConstantInt::get(SizeTy, 1);
+    llvm::Value *Count =
+        llvm::ConstantInt::get(SizeTy, LLVMArrayType->getNumElements());
+    llvm::Value *Ptr = StorageAddress.emitRawPointer(*this);
+    llvm::Value *Element = Builder.CreateInBoundsGEP(
+        LLVMArrayType, Ptr, Indices, "array_authenticated_null_init.start");
+    llvm::Value *End =
+        Builder.CreateInBoundsGEP(LLVMArrayType->getElementType(), Element,
+                                  Count, "array_authenticated_null_init.end");
+
+    llvm::BasicBlock *EntryBB = Builder.GetInsertBlock();
+    llvm::BasicBlock *BodyBB =
+        createBasicBlock("array_authenticated_null_init.body");
+    EmitBlock(BodyBB);
+    llvm::PHINode *CurrentElement = Builder.CreatePHI(
+        Element->getType(), 2, "array_authenticated_null_init.cur");
+    CurrentElement->addIncoming(Element, EntryBB);
+    Address ElementAddress =
+        Address(CurrentElement, LLVMArrayType->getElementType(), ElementAlign);
+    EmitNullInitializersForAuthenticatedNullFields(ElementAddress, ElementType);
+    llvm::Value *NextElement = Builder.CreateInBoundsGEP(
+        LLVMArrayType->getElementType(), CurrentElement, One,
+        "array_authenticated_null_init.next");
+    llvm::Value *Done = Builder.CreateICmpEQ(
+        NextElement, End, "array_authenticated_null_init.done");
+    llvm::BasicBlock *EndBB =
+        createBasicBlock("array_authenticated_null_init.end");
+    Builder.CreateCondBr(Done, EndBB, BodyBB);
+    CurrentElement->addIncoming(NextElement, Builder.GetInsertBlock());
+
+    EmitBlock(EndBB);
+    return;
+  }
+  auto Record = Ty->getAs<RecordType>();
+  if (!Record) {
+    assert(Ty.getPointerAuth().authenticatesNullValues() &&
+           "Incorrectly selected non-null-signed field");
+    assert((Ty->isPointerType() || Ty->isIntegerType()) &&
+           "Invalid type for ptrauth");
+    CGPointerAuthInfo Info = EmitPointerAuthInfo(
+        Ty.getPointerAuth().withoutKeyNone(), StorageAddress);
+    llvm::Constant *NullConstant = CGM.EmitNullConstant(Ty);
+    llvm::Value *SignedValue = EmitPointerAuthSign(Info, NullConstant);
+    EmitStoreOfScalar(SignedValue, StorageAddress, false, Ty);
+    return;
+  }
+  auto &Layout = CGM.getTypes().getCGRecordLayout(Record->getDecl());
+  if (auto RD = Record->getAsCXXRecordDecl()) {
+    for (const auto &Base : RD->bases()) {
+      auto BaseType = Base.getType();
+      if (!getContext().typeContainsAuthenticatedNull(BaseType))
+        continue;
+      const CXXRecordDecl *BaseRecord =
+          cast<CXXRecordDecl>(BaseType->castAs<RecordType>()->getDecl());
+      auto BaseIndex = Base.isVirtual()
+                           ? Layout.getVirtualBaseIndex(BaseRecord)
+                           : Layout.getNonVirtualBaseLLVMFieldNo(BaseRecord);
+      auto BaseAddress = Builder.CreateStructGEP(StorageAddress, BaseIndex);
+      EmitNullInitializersForAuthenticatedNullFields(BaseAddress, BaseType);
+    }
+  }
+  for (auto Field : Record->getDecl()->fields()) {
+    auto FieldType = Field->getType();
+    if (!getContext().typeContainsAuthenticatedNull(FieldType))
+      continue;
+    auto FieldIndex = Layout.getLLVMFieldNo(Field);
+    auto FieldAddress = Builder.CreateStructGEP(StorageAddress, FieldIndex);
+    EmitNullInitializersForAuthenticatedNullFields(FieldAddress, FieldType);
+  }
+}
+
 void
 CodeGenFunction::EmitNullInitialization(Address DestPtr, QualType Ty) {
   // Ignore empty classes in C++.
@@ -2216,6 +2300,7 @@ CodeGenFunction::EmitNullInitialization(Address DestPtr, QualType Ty) {
     }
   }
 
+  auto originalDestPtr = DestPtr;
   if (DestPtr.getElementType() != Int8Ty)
     DestPtr = DestPtr.withElementType(Int8Ty);
 
@@ -2268,6 +2353,10 @@ CodeGenFunction::EmitNullInitialization(Address DestPtr, QualType Ty) {
 
     // Get and call the appropriate llvm.memcpy overload.
     Builder.CreateMemCpy(DestPtr, SrcPtr, SizeVal, false);
+
+    if (getContext().typeContainsAuthenticatedNull(Ty))
+      EmitNullInitializersForAuthenticatedNullFields(originalDestPtr, Ty);
+
     return;
   }
 

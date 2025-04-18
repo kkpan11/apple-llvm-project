@@ -1015,20 +1015,51 @@ def err_ptrauth_indirect_goto_addrlabel_arithmetic : Error<
   "supported with ptrauth indirect gotos">;
 
 // __ptrauth qualifier
-def err_ptrauth_qualifier_invalid : Error<
-  "%select{return type|parameter type|property}1 may not be qualified with '__ptrauth'; type is %0">;
-def err_ptrauth_qualifier_cast : Error<
-  "cannot cast to '__ptrauth'-qualified type %0">;
-def err_ptrauth_qualifier_nonpointer : Error<
-  "'__ptrauth' qualifier only applies to pointer types; %0 is invalid">;
+def err_ptrauth_qualifier_invalid
+    : Error<
+          "%select{return type|parameter type|property}0 may not be qualified "
+          "with '%select{__ptrauth_restricted_intptr|__ptrauth}1'; type is %2">;
+def err_ptrauth_qualifier_cast : Error<"cannot cast to "
+                                       "'%select{__ptrauth_restricted_intptr|__"
+                                       "ptrauth}0'-qualified type %1">;
+def err_ptrauth_qualifier_invalid_target
+    : Error<"'%select{__ptrauth_restricted_intptr|__ptrauth}0' qualifier only "
+            "applies to %select{pointer sized integer|pointer}0 types; %1 is "
+            "invalid">;
 def err_ptrauth_qualifier_redundant : Error<
   "type %0 is already %1-qualified">;
-def err_ptrauth_arg_not_ice : Error<
-  "argument to '__ptrauth' must be an integer constant expression">;
-def err_ptrauth_address_discrimination_invalid : Error<
-  "invalid address discrimination flag '%0'; '__ptrauth' requires '0' or '1'">;
-def err_ptrauth_extra_discriminator_invalid : Error<
-  "invalid extra discriminator flag '%0'; '__ptrauth' requires a value between '0' and '%1'">;
+def err_ptrauth_arg_not_ice
+    : Error<"argument to '%0' must be an integer constant expression">;
+def err_ptrauth_address_discrimination_invalid
+    : Error<
+          "invalid address discrimination flag '%0'; '%1' requires '0' or '1'">;
+def err_ptrauth_extra_discriminator_invalid
+    : Error<"invalid extra discriminator flag '%0'; '%1' requires a value "
+            "between '0' and '%2'">;
+
+def err_ptrauth_qualifier_signed_pointer_type
+    : Error<"signed pointer types may not be qualified with "
+            "'__ptrauth(ptrauth_key_none)'; type is %0">;
+def note_ptrauth_evaluating_options
+    : Note<"options parameter evaluated to '%0'">;
+
+def err_ptrauth_non_string_authentication_option
+    : Error<"'%0' options must be a string of comma separated flags, found %1">;
+def err_ptrauth_unknown_authentication_option
+    : Error<"unknown '%0' authentication option '%1'">;
+def err_ptrauth_repeated_authentication_option
+    : Error<"repeated '%0' authentication %select{mode|option}1">;
+def note_ptrauth_previous_authentication_option
+    : Note<"previous '%0' authentication %select{mode|option}1">;
+def err_ptrauth_unexpected_option_end
+    : Error<"unexpected end of options parameter for %0">;
+def err_ptrauth_option_unexpected_token
+    : Error<"unexpected %select{character|identifier}0 '%1' in '%2' options">;
+def err_ptrauth_option_missing_comma
+    : Error<"missing comma between '%0' options">;
+def err_ptrauth_invalid_authenticated_null_global
+    : Error<"%select{static locals|globals}0 with authenticated null values "
+            "are currently unsupported">;
 
 /// main()
 // static main() is not an error in C, just in C++.

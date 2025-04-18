@@ -5291,11 +5291,24 @@ QualType TreeTransform<Derived>::RebuildQualifiedType(QualType T,
   if (LocalPointerAuth.isPresent()) {
     if (T.getPointerAuth().isPresent()) {
       SemaRef.Diag(Loc, diag::err_ptrauth_qualifier_redundant)
-          << TL.getType() << "__ptrauth";
+          << TL.getType()
+          << (LocalPointerAuth.isRestrictedIntegral()
+                  ? "__ptrauth_restricted_intptr"
+                  : "__ptrauth");
       return QualType();
-    } else if (!T->isSignableType() && !T->isDependentType()) {
-      SemaRef.Diag(Loc, diag::err_ptrauth_qualifier_nonpointer) << T;
-      return QualType();
+    }
+    if (!T->isDependentType()) {
+      if (Quals.getPointerAuth().isRestrictedIntegral()) {
+        if (!T->isSignableIntegerType(SemaRef.getASTContext())) {
+          SemaRef.Diag(Loc, diag::err_ptrauth_qualifier_invalid_target)
+              << /*IsPtrauth=*/0 << T;
+          return QualType();
+        }
+      } else if (!T->isSignablePointerType()) {
+        SemaRef.Diag(Loc, diag::err_ptrauth_qualifier_invalid_target)
+            << /*IsPtrauth=*/1 << T;
+        return QualType();
+      }
     }
   }
   // C++ [dcl.fct]p7:

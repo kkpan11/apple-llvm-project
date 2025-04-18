@@ -3403,9 +3403,11 @@ void Parser::DistributeCLateParsedAttrs(Decl *Dcl,
 /// type-qualifier:
 ///    ('__ptrauth') '(' constant-expression
 ///                   (',' constant-expression)[opt]
+///                   (',' constant-expression)[opt]
 ///                   (',' constant-expression)[opt] ')'
 void Parser::ParsePtrauthQualifier(ParsedAttributes &Attrs) {
-  assert(Tok.is(tok::kw___ptrauth));
+  assert(Tok.is(tok::kw___ptrauth) ||
+         Tok.is(tok::kw___ptrauth_restricted_intptr));
 
   IdentifierInfo *KwName = Tok.getIdentifierInfo();
   SourceLocation KwLoc = ConsumeToken();
@@ -3427,7 +3429,7 @@ void Parser::ParsePtrauthQualifier(ParsedAttributes &Attrs) {
   T.consumeClose();
   SourceLocation EndLoc = T.getCloseLocation();
 
-  if (ArgExprs.empty() || ArgExprs.size() > 3) {
+  if (ArgExprs.empty() || ArgExprs.size() > 4) {
     Diag(KwLoc, diag::err_ptrauth_qualifier_bad_arg_count);
     return;
   }
@@ -4308,6 +4310,7 @@ void Parser::ParseDeclarationSpecifiers(
 
     // __ptrauth qualifier.
     case tok::kw___ptrauth:
+    case tok::kw___ptrauth_restricted_intptr:
       ParsePtrauthQualifier(DS.getAttributes());
       continue;
 
@@ -6025,6 +6028,7 @@ bool Parser::isTypeSpecifierQualifier() {
   case tok::kw___pascal:
   case tok::kw___unaligned:
   case tok::kw___ptrauth:
+  case tok::kw___ptrauth_restricted_intptr:
 
   case tok::kw__Nonnull:
   case tok::kw__Nullable:
@@ -6315,6 +6319,7 @@ bool Parser::isDeclarationSpecifier(
   case tok::kw___pascal:
   case tok::kw___unaligned:
   case tok::kw___ptrauth:
+  case tok::kw___ptrauth_restricted_intptr:
 
   case tok::kw__Nonnull:
   case tok::kw__Nullable:
@@ -6581,6 +6586,7 @@ void Parser::ParseTypeQualifierListOpt(
 
     // __ptrauth qualifier.
     case tok::kw___ptrauth:
+    case tok::kw___ptrauth_restricted_intptr:
       ParsePtrauthQualifier(DS.getAttributes());
       EndLoc = PrevTokLocation;
       continue;

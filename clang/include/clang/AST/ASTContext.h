@@ -489,6 +489,8 @@ class ASTContext : public RefCountedBase<ASTContext> {
   llvm::StringMap<const Module *> PrimaryModuleNameMap;
   llvm::DenseMap<const Module *, const Module *> SameModuleLookupSet;
 
+  mutable llvm::DenseMap<QualType, bool> ContainsAuthenticatedNullTypes;
+
   static constexpr unsigned ConstantArrayTypesLog2InitSize = 8;
   static constexpr unsigned GeneralTypesLog2InitSize = 9;
   static constexpr unsigned FunctionProtoTypesLog2InitSize = 12;
@@ -1343,6 +1345,25 @@ public:
 
   /// Return the "other" type-specific discriminator for the given type.
   uint16_t getPointerAuthTypeDiscriminator(QualType T);
+
+  // Determine whether the type can have qualifier __ptrauth with key
+  // ptrauth_key_none.
+  bool canQualifyWithPtrAuthKeyNone(QualType T) const {
+    QualType PointeeType = T->getPointeeType();
+
+    if (PointeeType.isNull())
+      return true;
+
+    // Disallow the qualifier on function pointers.
+    if (PointeeType->isFunctionType())
+      return false;
+
+    return true;
+  }
+
+  bool typeContainsAuthenticatedNull(QualType) const;
+  bool typeContainsAuthenticatedNull(const Type *) const;
+  std::optional<bool> tryTypeContainsAuthenticatedNull(QualType) const;
 
   /// Apply Objective-C protocol qualifiers to the given type.
   /// \param allowOnPointerType specifies if we can apply protocol

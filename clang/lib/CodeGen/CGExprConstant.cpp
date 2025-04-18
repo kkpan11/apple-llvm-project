@@ -2020,6 +2020,11 @@ llvm::Constant *ConstantEmitter::tryEmitPrivate(const Expr *E,
                                                 QualType destType) {
   assert(!destType->isVoidType() && "can't emit a void constant");
 
+  // We don't yet support constant initializers for values with authenticated
+  // null values.
+  if (CGM.getContext().typeContainsAuthenticatedNull(destType))
+    return nullptr;
+
   if (!destType->isReferenceType())
     if (llvm::Constant *C = ConstExprEmitter(*this).Visit(E, destType))
       return C;
@@ -2129,6 +2134,15 @@ private:
 
 }
 
+static bool shouldSignPointer(const PointerAuthQualifier &Qualifier) {
+  if (Qualifier.hasKeyNone())
+    return false;
+  PointerAuthenticationMode AuthenticationMode =
+      Qualifier.getAuthenticationMode();
+  return AuthenticationMode == PointerAuthenticationMode::SignAndStrip ||
+         AuthenticationMode == PointerAuthenticationMode::SignAndAuth;
+}
+
 llvm::Constant *ConstantLValueEmitter::tryEmit() {
   const APValue::LValueBase &base = Value.getLValueBase();
 
@@ -2145,6 +2159,9 @@ llvm::Constant *ConstantLValueEmitter::tryEmit() {
   // If there's no base at all, this is a null or absolute pointer,
   // possibly cast back to an integer type.
   if (!base) {
+    if (DestType.getPointerAuth().withoutKeyNone() &&
+        DestType.getPointerAuth().authenticatesNullValues())
+      return nullptr;
     return tryEmitAbsolute(destTy);
   }
 
@@ -2162,7 +2179,8 @@ llvm::Constant *ConstantLValueEmitter::tryEmit() {
 
   // Apply pointer-auth signing from the destination type.
   if (PointerAuthQualifier PointerAuth = DestType.getPointerAuth();
-      PointerAuth && !result.HasDestPointerAuth) {
+      PointerAuth && !result.HasDestPointerAuth &&
+      shouldSignPointer(PointerAuth)) {
     value = Emitter.tryEmitConstantSignedPointer(value, PointerAuth);
     if (!value)
       return nullptr;
@@ -2210,8 +2228,9 @@ ConstantLValueEmitter::tryEmitBase(const APValue::LValueBase &base) {
     if (D->hasAttr<WeakRefAttr>())
       return CGM.GetWeakRefReference(D).getPointer();
 
-    auto PtrAuthSign = [&](llvm::Constant *C) {
-      if (PointerAuthQualifier PointerAuth = DestType.getPointerAuth()) {
+    auto PtrAuthSign = [&](llvm::Constant *C, bool IsFunction) {
+      PointerAuthQualifier PointerAuth = DestType.getPointerAuth();
+      if (PointerAuth && shouldSignPointer(PointerAuth)) {
         C = applyOffset(C);
         C = Emitter.tryEmitConstantSignedPointer(C, PointerAuth);
         return ConstantLValue(C, /*applied offset*/ true, /*signed*/ true);
@@ -2219,8 +2238,19 @@ ConstantLValueEmitter::tryEmitBase(const APValue::LValueBase &base) {
 
       CGPointerAuthInfo AuthInfo;
 
-      if (EnablePtrAuthFunctionTypeDiscrimination)
+      if (IsFunction && EnablePtrAuthFunctionTypeDiscrimination)
         AuthInfo = CGM.getFunctionPointerAuthInfo(DestType);
+      else {
+        // FIXME: getPointerAuthInfoForType should be able to return the pointer
+        //        auth info of reference types.
+        if (auto *RT = DestType->getAs<ReferenceType>())
+          DestType = CGM.getContext().getPointerType(RT->getPointeeType());
+        // Don't emit a signed pointer if the destination is a function pointer
+        // type.
+        if (DestType->isSignableType(CGM.getContext()) &&
+            !DestType->isFunctionPointerType())
+          AuthInfo = CGM.getPointerAuthInfoForType(DestType);
+      }
 
       if (AuthInfo) {
         if (hasNonZeroOffset())
@@ -2237,13 +2267,13 @@ ConstantLValueEmitter::tryEmitBase(const APValue::LValueBase &base) {
     };
 
     if (const auto *FD = dyn_cast<FunctionDecl>(D))
-      return PtrAuthSign(CGM.getRawFunctionPointer(FD));
+      return PtrAuthSign(CGM.getRawFunctionPointer(FD), /*IsFunction=*/true);
 
     if (const auto *VD = dyn_cast<VarDecl>(D)) {
       // We can never refer to a variable with local storage.
       if (!VD->hasLocalStorage()) {
         if (VD->isFileVarDecl() || VD->hasExternalStorage())
-          return CGM.GetAddrOfGlobalVar(VD);
+          return PtrAuthSign(CGM.GetAddrOfGlobalVar(VD), /*IsFunction=*/false);
 
         if (VD->isLocalVarDecl()) {
           return CGM.getOrCreateStaticVarDecl(
@@ -2444,6 +2474,8 @@ ConstantEmitter::tryEmitPrivate(const APValue &Value, QualType DestType,
                                  EnablePtrAuthFunctionTypeDiscrimination)
         .tryEmit();
   case APValue::Int:
+    if (DestType.getPointerAuth().withoutKeyNone() && Value.getInt() != 0)
+      return nullptr;
     return llvm::ConstantInt::get(CGM.getLLVMContext(), Value.getInt());
   case APValue::FixedPoint:
     return llvm::ConstantInt::get(CGM.getLLVMContext(),

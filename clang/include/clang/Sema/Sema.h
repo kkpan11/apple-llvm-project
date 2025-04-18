@@ -3545,7 +3545,7 @@ public:
 
   bool checkPointerAuthEnabled(SourceLocation Loc, SourceRange Range);
 
-  bool checkConstantPointerAuthKey(Expr *keyExpr, unsigned &key);
+  bool checkConstantPointerAuthKey(Expr *keyExpr, int &key);
 
   enum PointerAuthDiscArgKind {
     // Address discrimination argument of __ptrauth.
@@ -3555,7 +3555,8 @@ public:
     PADAK_ExtraDiscPtrAuth,
   };
 
-  bool checkPointerAuthDiscriminatorArg(Expr *Arg, PointerAuthDiscArgKind Kind,
+  bool checkPointerAuthDiscriminatorArg(const AttributeCommonInfo &AttrInfo,
+                                        Expr *Arg, PointerAuthDiscArgKind Kind,
                                         unsigned &IntVal);
 
   /// Diagnose function specifiers on a declaration of an identifier that

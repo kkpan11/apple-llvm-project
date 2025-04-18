@@ -9646,7 +9646,7 @@ bool SpecialMemberDeletionInfo::shouldDeleteForVariantPtrAuthMember(
   QualType FieldType = S.Context.getBaseElementType(FD->getType());
   // Copy/move constructors/assignment operators are deleted if the field has an
   // address-discriminated ptrauth qualifier.
-  PointerAuthQualifier Q = FieldType.getPointerAuth();
+  PointerAuthQualifier Q = FieldType.getPointerAuth().withoutKeyNone();
 
   if (!Q || !Q.isAddressDiscriminated())
     return false;

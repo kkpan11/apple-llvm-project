@@ -2249,7 +2249,7 @@ RValue CodeGenFunction::EmitLoadOfLValue(LValue LV, SourceLocation Loc) {
     llvm::Value *Value = EmitLoadOfLValue(LV, Loc).getScalarVal();
     return RValue::get(EmitPointerAuthUnqualify(PtrAuth, Value, LV.getType(),
                                                 LV.getAddress(),
-                                                /*known nonnull*/ false));
+                                                /*KnownNonNull=*/false));
   }
 
   if (LV.isObjCWeak()) {
@@ -2511,7 +2511,7 @@ void CodeGenFunction::EmitStoreThroughLValue(RValue Src, LValue Dst,
   if (PointerAuthQualifier PointerAuth = Dst.getQuals().getPointerAuth()) {
     Src = RValue::get(EmitPointerAuthQualify(PointerAuth, Src.getScalarVal(),
                                              Dst.getType(), Dst.getAddress(),
-                                             /*known nonnull*/ false));
+                                             /*KnownNonNull=*/false));
   }
 
   // There's special magic for assigning into an ARC-qualified l-value.
@@ -4851,7 +4851,9 @@ LValue CodeGenFunction::EmitMemberExpr(const MemberExpr *E) {
     bool IsBaseCXXThis = IsWrappedCXXThis(BaseExpr);
     if (IsBaseCXXThis)
       SkippedChecks.set(SanitizerKind::Alignment, true);
-    if (IsBaseCXXThis || isa<DeclRefExpr>(BaseExpr))
+    if (IsBaseCXXThis || isa<DeclRefExpr>(BaseExpr) ||
+        llvm::isa_and_nonnull<llvm::ConstantPointerNull>(
+            Addr.getPointerIfNotSigned()))
       SkippedChecks.set(SanitizerKind::Null, true);
     EmitTypeCheck(TCK_MemberAccess, E->getExprLoc(), Addr, PtrTy,
                   /*Alignment=*/CharUnits::Zero(), SkippedChecks);
@@ -5859,15 +5861,13 @@ CGCallee CodeGenFunction::EmitCallee(const Expr *E) {
 
   // Resolve direct calls.
   } else if (auto DRE = dyn_cast<DeclRefExpr>(E)) {
-    if (auto FD = dyn_cast<FunctionDecl>(DRE->getDecl())) {
+    if (auto FD = dyn_cast<FunctionDecl>(DRE->getDecl()))
       return EmitDirectCallee(*this, getGlobalDeclForDirectCall(FD));
-    }
   } else if (auto ME = dyn_cast<MemberExpr>(E)) {
     if (auto FD = dyn_cast<FunctionDecl>(ME->getMemberDecl())) {
       EmitIgnoredExpr(ME->getBase());
       return EmitDirectCallee(*this, FD);
     }
-
   // Look through template substitutions.
   } else if (auto NTTP = dyn_cast<SubstNonTypeTemplateParmExpr>(E)) {
     return EmitCallee(NTTP->getReplacement());

@@ -1520,11 +1520,11 @@ static bool checkPointerAuthKey(Sema &S, Expr *&Arg) {
   if (Arg->isValueDependent())
     return false;
 
-  unsigned KeyValue;
+  int KeyValue;
   return S.checkConstantPointerAuthKey(Arg, KeyValue);
 }
 
-bool Sema::checkConstantPointerAuthKey(Expr *Arg, unsigned &Result) {
+bool Sema::checkConstantPointerAuthKey(Expr *Arg, int &Result) {
   // Attempt to constant-evaluate the expression.
   std::optional<llvm::APSInt> KeyValue = Arg->getIntegerConstantExpr(Context);
   if (!KeyValue) {
@@ -1534,7 +1534,8 @@ bool Sema::checkConstantPointerAuthKey(Expr *Arg, unsigned &Result) {
   }
 
   // Ask the target to validate the key parameter.
-  if (!Context.getTargetInfo().validatePointerAuthKey(*KeyValue)) {
+  if (static_cast<unsigned>(KeyValue->getExtValue()) != PointerAuthKeyNone &&
+      !Context.getTargetInfo().validatePointerAuthKey(*KeyValue)) {
     llvm::SmallString<32> Value;
     {
       llvm::raw_svector_ostream Str(Value);
@@ -1546,11 +1547,12 @@ bool Sema::checkConstantPointerAuthKey(Expr *Arg, unsigned &Result) {
     return true;
   }
 
-  Result = KeyValue->getZExtValue();
+  Result = KeyValue->getExtValue();
   return false;
 }
 
-bool Sema::checkPointerAuthDiscriminatorArg(Expr *Arg,
+bool Sema::checkPointerAuthDiscriminatorArg(const AttributeCommonInfo &AttrInfo,
+                                            Expr *Arg,
                                             PointerAuthDiscArgKind Kind,
                                             unsigned &IntVal) {
   if (!Arg) {
@@ -1560,7 +1562,8 @@ bool Sema::checkPointerAuthDiscriminatorArg(Expr *Arg,
 
   std::optional<llvm::APSInt> Result = Arg->getIntegerConstantExpr(Context);
   if (!Result) {
-    Diag(Arg->getExprLoc(), diag::err_ptrauth_arg_not_ice);
+    Diag(Arg->getExprLoc(), diag::err_ptrauth_arg_not_ice)
+        << AttrInfo.getAttrName()->getName();
     return false;
   }
 
@@ -1580,10 +1583,10 @@ bool Sema::checkPointerAuthDiscriminatorArg(Expr *Arg,
   if (*Result < 0 || *Result > Max) {
     if (IsAddrDiscArg)
       Diag(Arg->getExprLoc(), diag::err_ptrauth_address_discrimination_invalid)
-          << Result->getExtValue();
+          << Result->getExtValue() << AttrInfo.getAttrName()->getName();
     else
       Diag(Arg->getExprLoc(), diag::err_ptrauth_extra_discriminator_invalid)
-          << Result->getExtValue() << Max;
+          << Result->getExtValue() << AttrInfo.getAttrName()->getName() << Max;
 
     return false;
   };
@@ -3999,7 +4002,7 @@ ExprResult Sema::BuildAtomicExpr(SourceRange CallRange, SourceRange ExprRange,
     ValType = AtomTy;
   }
 
-  PointerAuthQualifier PointerAuth = AtomTy.getPointerAuth();
+  PointerAuthQualifier PointerAuth = AtomTy.getPointerAuth().withoutKeyNone();
   if (PointerAuth && PointerAuth.isAddressDiscriminated()) {
     Diag(ExprRange.getBegin(),
          diag::err_atomic_op_needs_non_address_discriminated_pointer)
@@ -4379,7 +4382,8 @@ ExprResult Sema::BuiltinAtomicOverloaded(ExprResult TheCallResult) {
         << FirstArg->getType() << 0 << FirstArg->getSourceRange();
     return ExprError();
   }
-  PointerAuthQualifier PointerAuth = ValType.getPointerAuth();
+
+  PointerAuthQualifier PointerAuth = ValType.getPointerAuth().withoutKeyNone();
   if (PointerAuth && PointerAuth.isAddressDiscriminated()) {
     Diag(FirstArg->getBeginLoc(),
          diag::err_atomic_op_needs_non_address_discriminated_pointer)
@@ -9441,6 +9445,9 @@ struct SearchNonTrivialToCopyField
     S.DiagRuntimeBehavior(SL, E, S.PDiag(diag::note_nontrivial_field) << 0);
   }
   void visitARCWeak(QualType FT, SourceLocation SL) {
+    S.DiagRuntimeBehavior(SL, E, S.PDiag(diag::note_nontrivial_field) << 0);
+  }
+  void visitPtrAuth(QualType FT, SourceLocation SL) {
     S.DiagRuntimeBehavior(SL, E, S.PDiag(diag::note_nontrivial_field) << 0);
   }
   void visitStruct(QualType FT, SourceLocation SL) {

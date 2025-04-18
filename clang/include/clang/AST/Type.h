@@ -168,8 +168,13 @@ class PointerAuthQualifier {
     AuthenticatesNullValuesBits = 1,
     AuthenticatesNullValuesMask = ((1 << AuthenticatesNullValuesBits) - 1)
                                   << AuthenticatesNullValuesShift,
-    KeyShift = AuthenticatesNullValuesShift + AuthenticatesNullValuesBits,
-    KeyBits = 10,
+    RestrictedIntegralShift =
+        AuthenticatesNullValuesShift + AuthenticatesNullValuesBits,
+    RestrictedIntegralBits = 1,
+    RestrictedIntegralMask = ((1 << RestrictedIntegralBits) - 1)
+                             << RestrictedIntegralShift,
+    KeyShift = RestrictedIntegralShift + RestrictedIntegralBits,
+    KeyBits = 9,
     KeyMask = ((1 << KeyBits) - 1) << KeyShift,
     DiscriminatorShift = KeyShift + KeyBits,
     DiscriminatorBits = 16,
@@ -178,32 +183,33 @@ class PointerAuthQualifier {
 
   // bits:     |0      |1      |2..3              |4          |
   //           |Enabled|Address|AuthenticationMode|ISA pointer|
-  // bits:     |5                |6..15|   16...31   |
-  //           |AuthenticatesNull|Key  |Discriminator|
+  // bits:     |5                |6                 |7..15|   16...31   |
+  //           |AuthenticatesNull|RestrictedIntegral|Key  |Discriminator|
   uint32_t Data = 0;
 
   // The following static assertions check that each of the 32 bits is present
   // exactly in one of the constants.
   static_assert((EnabledBits + AddressDiscriminatedBits +
                  AuthenticationModeBits + IsaPointerBits +
-                 AuthenticatesNullValuesBits + KeyBits + DiscriminatorBits) ==
-                    32,
+                 AuthenticatesNullValuesBits + RestrictedIntegralBits +
+                 KeyBits + DiscriminatorBits) == 32,
                 "PointerAuthQualifier should be exactly 32 bits");
   static_assert((EnabledMask + AddressDiscriminatedMask +
                  AuthenticationModeMask + IsaPointerMask +
-                 AuthenticatesNullValuesMask + KeyMask + DiscriminatorMask) ==
-                    0xFFFFFFFF,
+                 AuthenticatesNullValuesMask + RestrictedIntegralMask +
+                 KeyMask + DiscriminatorMask) == 0xFFFFFFFF,
                 "All masks should cover the entire bits");
   static_assert((EnabledMask ^ AddressDiscriminatedMask ^
                  AuthenticationModeMask ^ IsaPointerMask ^
-                 AuthenticatesNullValuesMask ^ KeyMask ^ DiscriminatorMask) ==
-                    0xFFFFFFFF,
+                 AuthenticatesNullValuesMask ^ RestrictedIntegralMask ^
+                 KeyMask ^ DiscriminatorMask) == 0xFFFFFFFF,
                 "All masks should cover the entire bits");
 
   PointerAuthQualifier(unsigned Key, bool IsAddressDiscriminated,
                        unsigned ExtraDiscriminator,
                        PointerAuthenticationMode AuthenticationMode,
-                       bool IsIsaPointer, bool AuthenticatesNullValues)
+                       bool IsIsaPointer, bool AuthenticatesNullValues,
+                       bool IsRestrictedIntegral)
       : Data(EnabledMask |
              (IsAddressDiscriminated
                   ? llvm::to_underlying(AddressDiscriminatedMask)
@@ -213,7 +219,8 @@ class PointerAuthQualifier {
               << AuthenticationModeShift) |
              (ExtraDiscriminator << DiscriminatorShift) |
              (IsIsaPointer << IsaPointerShift) |
-             (AuthenticatesNullValues << AuthenticatesNullValuesShift)) {
+             (AuthenticatesNullValues << AuthenticatesNullValuesShift) |
+             (IsRestrictedIntegral << RestrictedIntegralShift)) {
     assert(Key <= KeyNoneInternal);
     assert(ExtraDiscriminator <= MaxDiscriminator);
     assert((Data == 0) ==
@@ -237,13 +244,13 @@ public:
   static PointerAuthQualifier
   Create(unsigned Key, bool IsAddressDiscriminated, unsigned ExtraDiscriminator,
          PointerAuthenticationMode AuthenticationMode, bool IsIsaPointer,
-         bool AuthenticatesNullValues) {
+         bool AuthenticatesNullValues, bool IsRestrictedIntegral) {
     if (Key == PointerAuthKeyNone)
       Key = KeyNoneInternal;
     assert(Key <= KeyNoneInternal && "out-of-range key value");
     return PointerAuthQualifier(Key, IsAddressDiscriminated, ExtraDiscriminator,
                                 AuthenticationMode, IsIsaPointer,
-                                AuthenticatesNullValues);
+                                AuthenticatesNullValues, IsRestrictedIntegral);
   }
 
   bool isPresent() const {
@@ -263,11 +270,13 @@ public:
 
   bool isAddressDiscriminated() const {
     assert(isPresent());
+    assert(!hasKeyNone());
     return (Data & AddressDiscriminatedMask) >> AddressDiscriminatedShift;
   }
 
   unsigned getExtraDiscriminator() const {
     assert(isPresent());
+    assert(!hasKeyNone());
     return (Data >> DiscriminatorShift);
   }
 
@@ -278,16 +287,22 @@ public:
 
   bool isIsaPointer() const {
     assert(isPresent());
+    assert(!hasKeyNone());
     return (Data & IsaPointerMask) >> IsaPointerShift;
   }
 
   bool authenticatesNullValues() const {
     assert(isPresent());
+    assert(!hasKeyNone());
     return (Data & AuthenticatesNullValuesMask) >> AuthenticatesNullValuesShift;
   }
 
   PointerAuthQualifier withoutKeyNone() const {
     return hasKeyNone() ? PointerAuthQualifier() : *this;
+  }
+
+  bool isRestrictedIntegral() const {
+    return (Data & RestrictedIntegralMask) >> RestrictedIntegralShift;
   }
 
   friend bool operator==(PointerAuthQualifier Lhs, PointerAuthQualifier Rhs) {
@@ -1507,6 +1522,9 @@ public:
     /// with the ARC __weak qualifier.
     PCK_ARCWeak,
 
+    /// The type is an address-discriminated signed pointer type.
+    PCK_PtrAuth,
+
     /// The type is a struct containing a field whose type is neither
     /// PCK_Trivial nor PCK_VolatileTrivial.
     /// Note that a C++ struct type does not necessarily match this; C++ copying
@@ -2540,7 +2558,9 @@ public:
   bool isFunctionProtoType() const { return getAs<FunctionProtoType>(); }
   bool isPointerType() const;
   bool isPointerOrReferenceType() const;
-  bool isSignableType() const;
+  bool isSignableType(const ASTContext &Ctx) const;
+  bool isSignablePointerType() const;
+  bool isSignableIntegerType(const ASTContext &Ctx) const;
   bool isAnyPointerType() const;   // Any C pointer or ObjC object pointer
   bool isCountAttributedType() const;
   bool isBlockPointerType() const;
@@ -8190,7 +8210,13 @@ inline bool Type::isAnyPointerType() const {
   return isPointerType() || isObjCObjectPointerType();
 }
 
-inline bool Type::isSignableType() const { return isPointerType(); }
+inline bool Type::isSignableType(const ASTContext &Ctx) const {
+  return isSignablePointerType() || isSignableIntegerType(Ctx);
+}
+
+inline bool Type::isSignablePointerType() const {
+  return isPointerType() || isObjCClassType() || isObjCQualifiedClassType();
+}
 
 inline bool Type::isBlockPointerType() const {
   return isa<BlockPointerType>(CanonicalType);

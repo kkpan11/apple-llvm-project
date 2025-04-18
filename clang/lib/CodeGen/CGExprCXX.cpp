@@ -516,6 +516,7 @@ static void EmitNullBaseClassInitialization(CodeGenFunction &CGF,
   if (Base->isEmpty())
     return;
 
+  auto OriginalPtr = DestPtr;
   DestPtr = DestPtr.withElementType(CGF.Int8Ty);
 
   const ASTRecordLayout &Layout = CGF.getContext().getASTRecordLayout(Base);
@@ -595,6 +596,9 @@ static void EmitNullBaseClassInitialization(CodeGenFunction &CGF,
           CGF.Builder.getInt8(0), StoreSizeVal);
     }
   }
+  QualType Type = QualType(Base->getTypeForDecl(), 0);
+  if (CGF.getContext().typeContainsAuthenticatedNull(Type))
+    CGF.EmitNullInitializersForAuthenticatedNullFields(OriginalPtr, Type);
 }
 
 void

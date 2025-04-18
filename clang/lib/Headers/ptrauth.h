@@ -11,6 +11,7 @@
 #define __PTRAUTH_H
 
 typedef enum {
+  ptrauth_key_none = -1,
   ptrauth_key_asia = 0,
   ptrauth_key_asib = 1,
   ptrauth_key_asda = 2,

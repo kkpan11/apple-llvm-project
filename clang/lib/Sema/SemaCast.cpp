@@ -76,7 +76,8 @@ namespace {
       // __ptrauth-qualified type as an error instead of implicitly ignoring
       // the qualifier.
       if (!S.Context.getLangOpts().ObjC && !DestType->isRecordType() &&
-          !DestType->isArrayType() && !DestType.getPointerAuth()) {
+          !DestType->isArrayType() &&
+          !DestType.getPointerAuth().withoutKeyNone()) {
         DestType = DestType.getAtomicUnqualifiedType();
       }
 
@@ -172,10 +173,10 @@ namespace {
     }
 
     void checkQualifiedDestType() {
-      // Destination type may not be qualified with __ptrauth.
+      // Destination type may not be qualified with '__ptrauth'.
       if (DestType.getPointerAuth()) {
         Self.Diag(DestRange.getBegin(), diag::err_ptrauth_qualifier_cast)
-            << DestType << DestRange;
+            << DestType->isSignablePointerType() << DestType << DestRange;
       }
     }
 

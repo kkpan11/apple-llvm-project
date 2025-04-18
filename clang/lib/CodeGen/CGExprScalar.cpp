@@ -2287,7 +2287,7 @@ static bool isLValueKnownNonNull(CodeGenFunction &CGF, const Expr *E) {
 }
 
 bool CodeGenFunction::isPointerKnownNonNull(const Expr *E) {
-  assert(E->getType()->isSignableType());
+  assert(E->getType()->isSignableType(getContext()));
 
   E = E->IgnoreParens();
 
@@ -5043,7 +5043,7 @@ Value *ScalarExprEmitter::VisitBinAssign(const BinaryOperator *E) {
     if (Ignore)
       return nullptr;
     RV = CGF.EmitPointerAuthUnqualify(PtrAuth, RV, LV.getType(),
-                                      LV.getAddress(), /*nonnull*/ false);
+                                      LV.getAddress(), /*KnownNonNull=*/false);
     return RV;
   }
 

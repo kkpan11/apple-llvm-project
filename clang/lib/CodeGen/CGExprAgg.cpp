@@ -1716,14 +1716,21 @@ void AggExprEmitter::EmitNullInitializationToLValue(LValue lv) {
 
   if (CGF.hasScalarEvaluationKind(type)) {
     // For non-aggregates, we can store the appropriate null constant.
-    llvm::Value *null = CGF.CGM.EmitNullConstant(type);
+    llvm::Value *NullValue = CGF.CGM.EmitNullConstant(type);
     // Note that the following is not equivalent to
     // EmitStoreThroughBitfieldLValue for ARC types.
-    if (lv.isBitField()) {
-      CGF.EmitStoreThroughBitfieldLValue(RValue::get(null), lv);
-    } else {
+    if (lv.isBitField())
+      CGF.EmitStoreThroughBitfieldLValue(RValue::get(NullValue), lv);
+    else {
       assert(lv.isSimple());
-      CGF.EmitStoreOfScalar(null, lv, /* isInitialization */ true);
+      if (PointerAuthQualifier PointerAuth = lv.getType().getPointerAuth()) {
+        if (PointerAuth.authenticatesNullValues()) {
+          CGPointerAuthInfo AuthInfo =
+              CGF.EmitPointerAuthInfo(PointerAuth, lv.getAddress());
+          NullValue = CGF.EmitPointerAuthSign(AuthInfo, NullValue);
+        }
+      }
+      CGF.EmitStoreOfScalar(NullValue, lv, /*isInitialization=*/true);
     }
   } else {
     // There's a potential optimization opportunity in combining

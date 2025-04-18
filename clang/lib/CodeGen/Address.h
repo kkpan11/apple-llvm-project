@@ -223,6 +223,10 @@ public:
   }
 
   bool isSigned() const { return PtrAuthInfo.isSigned(); }
+  llvm::Value *getPointerIfNotSigned() const {
+    assert(isValid() && "pointer isn't valid");
+    return !isSigned() ? Pointer.getPointer() : nullptr;
+  }
 
   /// Whether the pointer is known not to be null.
   KnownNonNull_t isKnownNonNull() const {

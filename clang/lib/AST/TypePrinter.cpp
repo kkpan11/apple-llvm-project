@@ -2534,10 +2534,61 @@ void PointerAuthQualifier::print(raw_ostream &OS,
   if (!isPresent())
     return;
 
-  OS << "__ptrauth(";
-  OS << getKey();
+  if (isRestrictedIntegral())
+    OS << "__ptrauth_restricted_intptr(";
+  else
+    OS << "__ptrauth(";
+  if (getKey() == KeyNoneInternal)
+    OS << "ptrauth_key_none";
+  else
+    OS << getKey();
+
+  if (hasKeyNone()) {
+    OS << ")";
+    return;
+  }
+
+  SmallString<128> Buf;
+  llvm::raw_svector_ostream StrOS(Buf);
+  StrOS << ",\"";
+  bool HasOptions = false;
+  switch (getAuthenticationMode()) {
+  case PointerAuthenticationMode::None:
+    return;
+  case PointerAuthenticationMode::Strip:
+    StrOS << PointerAuthenticationOptionStrip;
+    HasOptions = true;
+    break;
+  case PointerAuthenticationMode::SignAndStrip:
+    StrOS << PointerAuthenticationOptionSignAndStrip;
+    HasOptions = true;
+    break;
+  default:
+    break;
+  }
+
+  if (isIsaPointer()) {
+    if (HasOptions)
+      StrOS << ",";
+    StrOS << PointerAuthenticationOptionIsaPointer;
+    HasOptions = true;
+  }
+
+  if (authenticatesNullValues()) {
+    if (HasOptions)
+      StrOS << ",";
+    StrOS << PointerAuthenticationOptionAuthenticatesNullValues;
+    HasOptions = true;
+  }
+
+  StringRef OptionString;
+  if (HasOptions) {
+    StrOS << "\"";
+    OptionString = StrOS.str();
+  }
+
   OS << "," << unsigned(isAddressDiscriminated()) << ","
-     << getExtraDiscriminator() << ")";
+     << getExtraDiscriminator() << OptionString << ")";
 }
 
 std::string Qualifiers::getAsString() const {
