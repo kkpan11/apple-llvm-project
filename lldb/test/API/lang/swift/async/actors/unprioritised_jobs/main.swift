@@ -2,7 +2,7 @@ actor Actor {
     var data: Int = 15
 
     func occupy() async {
-        _ = readLine()
+        print("break here")
     }
 
     func work() async -> Int {
@@ -16,7 +16,7 @@ actor Actor {
     static func main() async {
         let a = Actor()
 
-        // Execute through Swift Concurrency threads
+        // Cause execution to pass through Swift Concurrency's threads.
         await a.work()
 
         async let _ = a.occupy()
