@@ -15,6 +15,10 @@ actor Actor {
 @main struct Entry {
     static func main() async {
         let a = Actor()
+
+        // Execute through Swift Concurrency threads
+        await a.work()
+
         async let _ = a.occupy()
         async let _ = a.work()
         async let _ = a.work()
