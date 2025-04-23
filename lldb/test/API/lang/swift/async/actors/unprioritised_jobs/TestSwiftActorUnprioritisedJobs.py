@@ -22,25 +22,25 @@ class TestCase(TestBase):
         """Verify that an actor exposes its unprioritised jobs (queue)."""
         self.build()
         _, process, thread, _ = lldbutil.run_to_source_breakpoint(
-            self,
-            "break here",
-            lldb.SBFileSpec("main.swift"),
-            only_one_thread=False,
+            self, "break here", lldb.SBFileSpec("main.swift")
         )
 
-        stopped_threads = [
-            t for t in process.threads if t.stop_reason == lldb.eStopReasonBreakpoint
-        ]
-
-        # If only one breakpoint has hit, run the other threads to reach the
-        # state where both breakpoints have hit.
-        if len(stopped_threads) == 1:
-            with _managed_async(self.dbg):
-                # Suspend the current thread.
-                thread.Suspend()
-                # Run the other threads until the second breakpoint hits.
-                self.dbg.SetAsync(False)
-                process.Continue()
+        with _managed_async(self.dbg):
+            # Suspend the current thread.
+            thread.Suspend()
+            # Continue - other threads only.
+            self.dbg.SetAsync(True)
+            process.Continue()
+            # Wait - allowing other threads to run.
+            time.sleep(5)
+            # Stop the threads.
+            self.dbg.SetAsync(False)
+            self.dbg.HandleCommand("process interrupt")
+            # Note: After a single interrupt, lldb reports the process as
+            # running, but two interrupt calls results in a stopped process.
+            # Also, using `process.Stop()` instead of `"process interrupt"`
+            # did not work.
+            self.dbg.HandleCommand("process interrupt")
 
         # Get the frame for the the breakpoint hit in `main()`.
         frame = lldb.SBFrame()

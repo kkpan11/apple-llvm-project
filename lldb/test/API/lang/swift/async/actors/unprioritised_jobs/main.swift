@@ -2,7 +2,7 @@ actor Actor {
     var data: Int = 15
 
     func occupy() async {
-        print("break here")
+        _ = readLine()
     }
 
     func work() async -> Int {
