@@ -49,9 +49,11 @@ class TestCase(TestBase):
                 if "Entry.main()" in t.frame[0].name:
                     frame = t.frame[0]
                     break
+        self.assertTrue(frame.IsValid())
 
         defaultActor = frame.var("a.$defaultActor")
         unprioritised_jobs = defaultActor.GetChildMemberWithName("unprioritised_jobs")
+        self.assertTrue(unprioritised_jobs.IsValid())
 
         # There are 4 child tasks (async let), the first one occupies the actor
         # with a sleep, the next 3 go on to the queue.
