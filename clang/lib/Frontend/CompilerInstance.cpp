@@ -1419,7 +1419,11 @@ std::unique_ptr<CompilerInstance> CompilerInstance::cloneForModuleCompileImpl(
   // Share an output manager.
   assert(hasOutputBackend() &&
          "Expected an output manager to already be set up");
-  Instance.setOutputBackend(&getOutputBackend());
+  if (ThreadSafeConfig) {
+    Instance.setOutputBackend(getOutputBackend().clone());
+  } else {
+    Instance.setOutputBackend(&getOutputBackend());
+  }
 
   // If we're collecting module dependencies, we need to share a collector
   // between all of the module CompilerInstances. Other than that, we don't
