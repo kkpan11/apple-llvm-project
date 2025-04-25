@@ -1350,7 +1350,7 @@ static bool isNullTermPointer(const Expr *Ptr, ASTContext &Ctx) {
     const CXXMethodDecl *MD = MCE->getMethodDecl();
     const CXXRecordDecl *RD = MCE->getRecordDecl()->getCanonicalDecl();
 
-    if (MD && RD && RD->isInStdNamespace())
+    if (MD && RD && RD->isInStdNamespace() && MD->getIdentifier())
       if (MD->getName() == "c_str" && RD->getName() == "basic_string")
         return true;
   }
