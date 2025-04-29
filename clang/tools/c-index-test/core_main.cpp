@@ -914,14 +914,17 @@ static int scanDeps(ArrayRef<const char *> Args, std::string WorkingDirectory,
 }
 
 static int generateDepsReproducer(ArrayRef<const char *> Args,
-                                  std::string WorkingDirectory) {
+                                  std::string WorkingDirectory,
+                                  std::string ReproLocation) {
   CXString MessageString;
   auto DisposeMessageString = llvm::make_scope_exit([&]() {
     clang_disposeString(MessageString);
   });
   CXErrorCode ExitCode =
       clang_experimental_DependencyScanner_generateReproducer(
-          Args.size(), Args.data(), WorkingDirectory.c_str(), &MessageString);
+          Args.size(), Args.data(), WorkingDirectory.c_str(),
+          ReproLocation.empty() ? nullptr : ReproLocation.c_str(),
+          /*UseUniqueReproducerName=*/ReproLocation.empty(), &MessageString);
   if (ExitCode == CXError_Success) {
     llvm::outs() << clang_getCString(MessageString) << "\n";
   } else {
@@ -1560,7 +1563,8 @@ int indextest_core_main(int argc, const char **argv) {
       errs() << "error: missing -working-dir\n";
       return 1;
     }
-    return generateDepsReproducer(CompArgs, options::WorkingDir);
+    return generateDepsReproducer(CompArgs, options::WorkingDir,
+                                  options::OutputFile);
   }
 
   if (options::Action == ActionType::UploadCachedJob) {

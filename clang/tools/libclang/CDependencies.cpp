@@ -340,6 +340,7 @@ public:
 
 enum CXErrorCode clang_experimental_DependencyScanner_generateReproducer(
     int argc, const char *const *argv, const char *WorkingDirectory,
+    const char *ReproducerLocation, bool UseUniqueReproducerName,
     CXString *messageOut) {
   auto report = [messageOut](CXErrorCode errorCode) -> MessageEmitter {
     return MessageEmitter(errorCode, messageOut);
@@ -352,6 +353,9 @@ enum CXErrorCode clang_experimental_DependencyScanner_generateReproducer(
     return report(CXError_InvalidArguments) << "missing compilation command";
   if (!WorkingDirectory)
     return report(CXError_InvalidArguments) << "missing working directory";
+  if (!UseUniqueReproducerName && !ReproducerLocation)
+    return report(CXError_InvalidArguments)
+           << "non-unique reproducer is allowed only in a custom location";
 
   CASOptions CASOpts;
   IntrusiveRefCntPtr<llvm::cas::CachingOnDiskFileSystem> FS;
@@ -362,9 +366,26 @@ enum CXErrorCode clang_experimental_DependencyScanner_generateReproducer(
 
   llvm::SmallString<128> ReproScriptPath;
   int ScriptFD;
-  if (auto EC = llvm::sys::fs::createTemporaryFile("reproducer", "sh", ScriptFD,
-                                                   ReproScriptPath)) {
-    return reportFailure() << "failed to create a reproducer script file";
+  if (ReproducerLocation) {
+    if (!llvm::sys::fs::exists(ReproducerLocation)) {
+      if (auto EC = llvm::sys::fs::create_directories(ReproducerLocation))
+        return reportFailure() << "failed to create a reproducer location '"
+                               << ReproducerLocation << "'\n"
+                               << EC.message();
+    }
+    SmallString<128> Path(ReproducerLocation);
+    llvm::sys::path::append(Path, "reproducer");
+    const char *UniqueSuffix = UseUniqueReproducerName ? "-%%%%%%" : "";
+    if (auto EC = llvm::sys::fs::createUniqueFile(Path + UniqueSuffix + ".sh",
+                                                  ScriptFD, ReproScriptPath))
+      return reportFailure() << "failed to create a reproducer script file\n"
+                             << EC.message();
+  } else {
+    if (auto EC = llvm::sys::fs::createTemporaryFile(
+            "reproducer", "sh", ScriptFD, ReproScriptPath)) {
+      return reportFailure() << "failed to create a reproducer script file\n"
+                             << EC.message();
+    }
   }
   SmallString<128> FileCachePath = ReproScriptPath;
   llvm::sys::path::replace_extension(FileCachePath, ".cache");

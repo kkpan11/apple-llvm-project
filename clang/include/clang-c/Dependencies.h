@@ -328,6 +328,7 @@ CINDEX_LINKAGE void
 CINDEX_LINKAGE enum CXErrorCode
 clang_experimental_DependencyScanner_generateReproducer(
     int argc, const char *const *argv, const char *WorkingDirectory,
+    const char *ReproducerLocation, bool UseUniqueReproducerName,
     CXString *messageOut);
 
 /**
