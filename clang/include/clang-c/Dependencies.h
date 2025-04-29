@@ -325,6 +325,11 @@ CINDEX_LINKAGE void
     clang_experimental_DependencyScannerWorkerScanSettings_dispose(
         CXDependencyScannerWorkerScanSettings);
 
+CINDEX_LINKAGE enum CXErrorCode
+clang_experimental_DependencyScanner_generateReproducer(
+    int argc, const char *const *argv, const char *WorkingDirectory,
+    CXString *messageOut);
+
 /**
  * Produces the dependency graph for a particular compiler invocation.
  *

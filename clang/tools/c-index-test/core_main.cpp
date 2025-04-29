@@ -59,6 +59,7 @@ enum class ActionType {
   AggregateAsJSON,
   ScanDeps,
   ScanDepsByModuleName,
+  GenerateDepsReproducer,
   UploadCachedJob,
   MaterializeCachedJob,
   ReplayCachedJob,
@@ -87,6 +88,8 @@ Action(cl::desc("Action:"), cl::init(ActionType::None),
                      "Get file dependencies"),
           clEnumValN(ActionType::ScanDepsByModuleName, "scan-deps-by-mod-name",
                      "Get file dependencies by module name alone"),
+          clEnumValN(ActionType::GenerateDepsReproducer, "gen-deps-reproducer",
+                     "Generate a reproducer for the file"),
           clEnumValN(ActionType::UploadCachedJob, "upload-cached-job",
                      "Upload cached compilation data to upstream CAS"),
           clEnumValN(ActionType::MaterializeCachedJob, "materialize-cached-job",
@@ -910,6 +913,23 @@ static int scanDeps(ArrayRef<const char *> Args, std::string WorkingDirectory,
   return 1;
 }
 
+static int generateDepsReproducer(ArrayRef<const char *> Args,
+                                  std::string WorkingDirectory) {
+  CXString MessageString;
+  auto DisposeMessageString = llvm::make_scope_exit([&]() {
+    clang_disposeString(MessageString);
+  });
+  CXErrorCode ExitCode =
+      clang_experimental_DependencyScanner_generateReproducer(
+          Args.size(), Args.data(), WorkingDirectory.c_str(), &MessageString);
+  if (ExitCode == CXError_Success) {
+    llvm::outs() << clang_getCString(MessageString) << "\n";
+  } else {
+    llvm::errs() << "error: " << clang_getCString(MessageString) << "\n";
+  }
+  return (ExitCode == CXError_Success) ? 0 : 1;
+}
+
 static int uploadCachedJob(std::string CacheKey, CXCASDatabases DBs) {
   CXError Err = nullptr;
   CXCASCachedCompilation CComp = clang_experimental_cas_getCachedCompilation(
@@ -1533,6 +1553,14 @@ int indextest_core_main(int argc, const char **argv) {
     return scanDeps(CompArgs, options::WorkingDir, options::SerializeDiags,
                     options::DependencyFile, options::DependencyTargets,
                     options::OutputDir, DBs, options::ModuleName);
+  }
+
+  if (options::Action == ActionType::GenerateDepsReproducer) {
+    if (options::WorkingDir.empty()) {
+      errs() << "error: missing -working-dir\n";
+      return 1;
+    }
+    return generateDepsReproducer(CompArgs, options::WorkingDir);
   }
 
   if (options::Action == ActionType::UploadCachedJob) {
