@@ -841,7 +841,7 @@ ExtractSwiftTypeNameFromCxxInteropType(CompilerType type) {
   }
 
   const clang::RecordDecl *record_decl = record_type->getDecl();
-  auto *metadata = tsc->GetMetadata(record_decl);
+  auto metadata = tsc->GetMetadata(record_decl);
   if (metadata && !metadata->GetIsPotentiallySwiftInteropType())
     return {};
 
