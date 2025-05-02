@@ -4871,7 +4871,7 @@ static CompilerType ValueDeclToType(swift::ValueDecl *decl) {
       swift::TypeAliasDecl *alias_decl =
           swift::cast<swift::TypeAliasDecl>(decl);
       swift::Type swift_type = swift::TypeAliasType::get(
-          alias_decl, swift::Type(), swift::SubstitutionMap(),
+          alias_decl, swift::Type(), llvm::ArrayRef<swift::Type>(),
           alias_decl->getUnderlyingType());
       return ToCompilerType({swift_type.getPointer()});
     }
@@ -4930,7 +4930,7 @@ static SwiftASTContext::TypeOrDecl DeclToTypeOrDecl(swift::Decl *decl) {
       swift::TypeAliasDecl *alias_decl =
           swift::cast<swift::TypeAliasDecl>(decl);
       swift::Type swift_type = swift::TypeAliasType::get(
-          alias_decl, swift::Type(), swift::SubstitutionMap(),
+          alias_decl, swift::Type(), llvm::ArrayRef<swift::Type>(),
           alias_decl->getUnderlyingType());
       return ToCompilerType(swift_type.getPointer());
     }
@@ -4959,7 +4959,6 @@ static SwiftASTContext::TypeOrDecl DeclToTypeOrDecl(swift::Decl *decl) {
       break;
 
     case swift::DeclKind::Accessor:
-    case swift::DeclKind::PoundDiagnostic:
       break;
     }
   }
@@ -5289,7 +5288,7 @@ swift::irgen::IRGenModule &SwiftASTContext::GetIRGenModule() {
             PSPs.MainInputFilenameForDebugInfo, ""));
         llvm::Module *llvm_module = m_ir_gen_module_ap->getModule();
         llvm_module->setDataLayout(data_layout.getStringRepresentation());
-        llvm_module->setTargetTriple(llvm_triple.str());
+        llvm_module->setTargetTriple(llvm_triple);
       }
     }
   });
