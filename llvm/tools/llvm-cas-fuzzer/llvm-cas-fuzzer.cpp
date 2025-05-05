@@ -1,3 +1,4 @@
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/CAS/ActionCache.h"
 #include "llvm/CAS/BuiltinUnifiedCASDatabases.h"
 #include "llvm/CAS/ObjectStore.h"
@@ -16,6 +17,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
   SmallString<128> Path;
   if (sys::fs::createUniqueDirectory("CAS", Path) != std::error_code())
     return 1;
+
+  ExitOnErr.setBanner(("llvm-cas-fuzzer using '" + Path + "':").str());
 
   size_t NumShards = std::max(uint8_t(1), std::min(Data[0], uint8_t(32)));
   ++Data;
@@ -78,6 +81,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
   }
 
   ThreadPool.wait();
+
+  sys::fs::remove_directories(Path);
 
   return 0;
 }
