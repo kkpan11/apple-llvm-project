@@ -1011,12 +1011,6 @@ void mapped_file_region::unmapImpl() {
 
 void mapped_file_region::dontNeedImpl() {}
 
-std::error_code mapped_file_region::sync() const {
-  if (::FlushViewOfFile(Mapping, 0))
-    return std::error_code();
-  return mapWindowsError(::GetLastError());
-}
-
 int mapped_file_region::alignment() {
   SYSTEM_INFO SysInfo;
   ::GetSystemInfo(&SysInfo);
