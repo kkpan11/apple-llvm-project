@@ -3507,6 +3507,29 @@ ASTReader::ReadControlBlock(ModuleFile &F,
           return OutOfDate;
       }
       break;
+
+    case SDK_SETTINGS_JSON_TIMESTAMP: {
+      time_t ExpectedModTime = Record[0];
+      time_t ActualModTime = 0;
+      StringRef Sysroot =
+          PP.getHeaderSearchInfo().getHeaderSearchOpts().Sysroot;
+      if (!Sysroot.empty()) {
+        SmallString<128> SDKSettingsJSON = Sysroot;
+        llvm::sys::path::append(SDKSettingsJSON, "SDKSettings.json");
+        if (auto FE = PP.getFileManager().getOptionalFileRef(SDKSettingsJSON))
+          ActualModTime = FE->getModificationTime();
+      }
+      if (ActualModTime && ExpectedModTime &&
+          ActualModTime != ExpectedModTime) {
+        if (!canRecoverFromOutOfDate(F.FileName, ClientLoadCapabilities))
+          Diag(diag::err_fe_ast_file_modified)
+              << "SDKSettings.json" << moduleKindForDiagnostic(F.Kind)
+              << F.FileName << 1 << 1 << llvm::itostr(ExpectedModTime)
+              << llvm::itostr(ActualModTime);
+        return OutOfDate;
+      }
+      break;
+    }
     }
   }
 }
