@@ -917,7 +917,6 @@ void ASTWriter::WriteBlockInfoBlock() {
   RECORD(MODULE_CACHE_KEY);
   RECORD(CASFS_ROOT_ID);
   RECORD(CAS_INCLUDE_TREE_ID);
-  RECORD(SDK_SETTINGS_JSON_TIMESTAMP);
 
   BLOCK(OPTIONS_BLOCK);
   RECORD(LANGUAGE_OPTIONS);
@@ -1614,20 +1613,6 @@ void ASTWriter::WriteControlBlock(Preprocessor &PP, StringRef isysroot) {
     unsigned AbbrevCode = Stream.EmitAbbrev(std::move(Abbrev));
     RecordData::value_type Record[] = {CASFS_ROOT_ID};
     Stream.EmitRecordWithBlob(AbbrevCode, Record, *ID);
-  }
-
-  time_t SDKSettingsModTime = 0;
-  StringRef Sysroot = PP.getHeaderSearchInfo().getHeaderSearchOpts().Sysroot;
-  if (!Sysroot.empty()) {
-    SmallString<128> SDKSettingsJSON = Sysroot;
-    llvm::sys::path::append(SDKSettingsJSON, "SDKSettings.json");
-    if (auto FE = PP.getFileManager().getOptionalFileRef(SDKSettingsJSON))
-      SDKSettingsModTime = FE->getModificationTime();
-  }
-  if (SDKSettingsModTime) {
-    Record.clear();
-    Record.push_back(SDKSettingsModTime);
-    Stream.EmitRecord(SDK_SETTINGS_JSON_TIMESTAMP, Record);
   }
 
   // Imports
@@ -5964,6 +5949,18 @@ ASTFileSignature ASTWriter::WriteASTCore(Sema *SemaPtr, StringRef isysroot,
   // Make sure that the AST reader knows to finalize itself.
   if (Chain)
     Chain->finalizeForWriting();
+
+  // FIXME: This is here because the include-tree file list refers to this file
+  // and we need to validate it's up-to-date when reading the AST file. Make
+  // this more generic and include the remaining files.
+  StringRef Sysroot = PP->getHeaderSearchInfo().getHeaderSearchOpts().Sysroot;
+  if (!Sysroot.empty()) {
+    SmallString<128> SDKSettingsJSON = Sysroot;
+    llvm::sys::path::append(SDKSettingsJSON, "SDKSettings.json");
+    if (auto FE = PP->getFileManager().getOptionalFileRef(SDKSettingsJSON))
+      PP->getSourceManager().createFileID(*FE, SourceLocation(),
+                                          SrcMgr::C_System);
+  }
 
   // This needs to be done very early, since everything that writes
   // SourceLocations or FileIDs depends on it.

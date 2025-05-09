@@ -3134,6 +3134,8 @@ ASTReader::ReadControlBlock(ModuleFile &F,
         for (unsigned I = 0; I < N; ++I) {
           bool IsSystem = I >= NumUserInputs;
           InputFileInfo FI = getInputFileInfo(F, I + 1);
+          if (FI.UnresolvedImportedFilename.ends_with("SDKSettings.json"))
+            continue;
           auto FilenameAsRequested = ResolveImportedPath(
               PathBuf, FI.UnresolvedImportedFilenameAsRequested, F);
           Listener->visitInputFile(
@@ -3507,29 +3509,6 @@ ASTReader::ReadControlBlock(ModuleFile &F,
           return OutOfDate;
       }
       break;
-
-    case SDK_SETTINGS_JSON_TIMESTAMP: {
-      time_t ExpectedModTime = Record[0];
-      time_t ActualModTime = 0;
-      StringRef Sysroot =
-          PP.getHeaderSearchInfo().getHeaderSearchOpts().Sysroot;
-      if (!Sysroot.empty()) {
-        SmallString<128> SDKSettingsJSON = Sysroot;
-        llvm::sys::path::append(SDKSettingsJSON, "SDKSettings.json");
-        if (auto FE = PP.getFileManager().getOptionalFileRef(SDKSettingsJSON))
-          ActualModTime = FE->getModificationTime();
-      }
-      if (ActualModTime && ExpectedModTime &&
-          ActualModTime != ExpectedModTime) {
-        if (!canRecoverFromOutOfDate(F.FileName, ClientLoadCapabilities))
-          Diag(diag::err_fe_ast_file_modified)
-              << "SDKSettings.json" << moduleKindForDiagnostic(F.Kind)
-              << F.FileName << 1 << 1 << llvm::itostr(ExpectedModTime)
-              << llvm::itostr(ActualModTime);
-        return OutOfDate;
-      }
-      break;
-    }
     }
   }
 }
@@ -10369,6 +10348,8 @@ void ASTReader::visitInputFileInfos(
   for (unsigned I = 0; I < N; ++I) {
     bool IsSystem = I >= NumUserInputs;
     InputFileInfo IFI = getInputFileInfo(MF, I+1);
+    if (IFI.UnresolvedImportedFilename.ends_with("SDKSettings.json"))
+      continue;
     Visitor(IFI, IsSystem);
   }
 }
@@ -10384,6 +10365,8 @@ void ASTReader::visitInputFiles(serialization::ModuleFile &MF,
   for (unsigned I = 0; I < N; ++I) {
     bool IsSystem = I >= NumUserInputs;
     InputFile IF = getInputFile(MF, I+1, Complain);
+    if (IF.getFile() && IF.getFile()->getName().ends_with("SDKSettings.json"))
+      continue;
     Visitor(IF, IsSystem);
   }
 }

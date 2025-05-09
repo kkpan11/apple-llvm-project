@@ -54,7 +54,7 @@ const unsigned VERSION_MAJOR = 34;
 /// for the previous version could still support reading the new
 /// version by ignoring new kinds of subblocks), this number
 /// should be increased.
-const unsigned VERSION_MINOR = 1;
+const unsigned VERSION_MINOR = 0;
 
 /// An ID number that refers to an identifier in an AST file.
 ///
@@ -386,10 +386,6 @@ enum ControlRecordTypes {
   /// Record code for the (optional) include-tree ID for implicit modules
   /// built with the dependency scanner.
   CAS_INCLUDE_TREE_ID,
-
-  /// Record code for the (optional) modification timestamp of the
-  /// SDKSettings.json file.
-  SDK_SETTINGS_JSON_TIMESTAMP,
 };
 
 /// Record types that occur within the options block inside
