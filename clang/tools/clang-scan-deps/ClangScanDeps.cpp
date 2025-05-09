@@ -601,7 +601,8 @@ template <typename Container>
 static auto toJSONStrings(llvm::json::OStream &JOS, Container &&Strings) {
   return [&JOS, Strings = std::forward<Container>(Strings)] {
     for (StringRef Str : Strings)
-      JOS.value(Str);
+      if (!Str.ends_with("SDKSettings.json"))
+        JOS.value(Str);
   };
 }
 
@@ -764,7 +765,10 @@ public:
                                toJSONStrings(JOS, MD.getBuildArguments()));
             JOS.attribute("context-hash", StringRef(MD.ID.ContextHash));
             JOS.attributeArray("file-deps", [&] {
-              MD.forEachFileDep([&](StringRef FileDep) { JOS.value(FileDep); });
+              MD.forEachFileDep([&](StringRef FileDep) {
+                if (!FileDep.ends_with("SDKSettings.json"))
+                  JOS.value(FileDep);
+              });
             });
             JOS.attributeArray("link-libraries",
                                toJSONSorted(JOS, MD.LinkLibraries));

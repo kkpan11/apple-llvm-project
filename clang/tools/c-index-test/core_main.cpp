@@ -861,7 +861,8 @@ static int scanDeps(ArrayRef<const char *> Args, std::string WorkingDirectory,
         llvm::outs() << "      " << ModuleName << "\n";
       llvm::outs() << "    file-deps:\n";
       for (const auto &FileName : ArrayRef(FileDeps.Strings, FileDeps.Count))
-        llvm::outs() << "      " << FileName << "\n";
+        if (!StringRef(FileName).ends_with("SDKSettings.json"))
+          llvm::outs() << "      " << FileName << "\n";
       llvm::outs() << "    build-args:";
       for (const auto &Arg :
            ArrayRef(BuildArguments.Strings, BuildArguments.Count))

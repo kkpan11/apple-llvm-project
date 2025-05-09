@@ -919,6 +919,8 @@ public:
           // undesirable dependency on an intermediate build byproduct.
           if (FE->getName().ends_with("module.modulemap"))
             return;
+          if (FE->getName().ends_with("SDKSettings.json"))
+            return;
 
           visitor(*FE, isSystem);
         });

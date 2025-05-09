@@ -3134,8 +3134,6 @@ ASTReader::ReadControlBlock(ModuleFile &F,
         for (unsigned I = 0; I < N; ++I) {
           bool IsSystem = I >= NumUserInputs;
           InputFileInfo FI = getInputFileInfo(F, I + 1);
-          if (FI.UnresolvedImportedFilename.ends_with("SDKSettings.json"))
-            continue;
           auto FilenameAsRequested = ResolveImportedPath(
               PathBuf, FI.UnresolvedImportedFilenameAsRequested, F);
           Listener->visitInputFile(
@@ -10348,8 +10346,6 @@ void ASTReader::visitInputFileInfos(
   for (unsigned I = 0; I < N; ++I) {
     bool IsSystem = I >= NumUserInputs;
     InputFileInfo IFI = getInputFileInfo(MF, I+1);
-    if (IFI.UnresolvedImportedFilename.ends_with("SDKSettings.json"))
-      continue;
     Visitor(IFI, IsSystem);
   }
 }
@@ -10365,8 +10361,6 @@ void ASTReader::visitInputFiles(serialization::ModuleFile &MF,
   for (unsigned I = 0; I < N; ++I) {
     bool IsSystem = I >= NumUserInputs;
     InputFile IF = getInputFile(MF, I+1, Complain);
-    if (IF.getFile() && IF.getFile()->getName().ends_with("SDKSettings.json"))
-      continue;
     Visitor(IF, IsSystem);
   }
 }
