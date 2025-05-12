@@ -1824,6 +1824,27 @@ struct InputFileEntry {
   uint32_t ContentHash[2];
 
   InputFileEntry(FileEntryRef File) : File(File) {}
+
+  void trySetContentHash(Preprocessor &PP,
+                         std::optional<llvm::MemoryBufferRef> MemBuff) {
+    if (!PP.getHeaderSearchInfo()
+             .getHeaderSearchOpts()
+             .ValidateASTInputFilesContent) {
+      ContentHash[0] = 0;
+      ContentHash[1] = 0;
+      return;
+    }
+
+    if (!MemBuff) {
+      PP.Diag(SourceLocation(), diag::err_module_unable_to_hash_content)
+          << File.getName();
+      return;
+    }
+
+    uint64_t Hash = xxh3_64bits(MemBuff->getBuffer());
+    ContentHash[0] = uint32_t(Hash);
+    ContentHash[1] = uint32_t(Hash >> 32);
+  }
 };
 
 } // namespace
@@ -1898,23 +1919,34 @@ void ASTWriter::WriteInputFiles(SourceManager &SourceMgr) {
                        !IsSLocFileEntryAffecting[IncludeFileID.ID];
     Entry.IsModuleMap = isModuleMap(File.getFileCharacteristic());
 
-    uint64_t ContentHash = 0;
-    if (PP->getHeaderSearchInfo()
-            .getHeaderSearchOpts()
-            .ValidateASTInputFilesContent) {
-      auto MemBuff = Cache->getBufferIfLoaded();
-      if (MemBuff)
-        ContentHash = xxh3_64bits(MemBuff->getBuffer());
-      else
-        PP->Diag(SourceLocation(), diag::err_module_unable_to_hash_content)
-            << Entry.File.getName();
-    }
-    Entry.ContentHash[0] = uint32_t(ContentHash);
-    Entry.ContentHash[1] = uint32_t(ContentHash >> 32);
+    Entry.trySetContentHash(*PP, Cache->getBufferIfLoaded());
+
     if (Entry.IsSystemFile)
       SystemFiles.push_back(Entry);
     else
       UserFiles.push_back(Entry);
+  }
+
+  // FIXME: This is here because the include-tree file list refers to this file
+  // and we need to validate it's up-to-date when reading the AST file. Make
+  // this more generic and include the remaining files.
+  StringRef Sysroot = PP->getHeaderSearchInfo().getHeaderSearchOpts().Sysroot;
+  if (!Sysroot.empty()) {
+    SmallString<128> SDKSettingsJSON = Sysroot;
+    llvm::sys::path::append(SDKSettingsJSON, "SDKSettings.json");
+    if (auto FE = PP->getFileManager().getOptionalFileRef(SDKSettingsJSON)) {
+      InputFileEntry Entry(*FE);
+      Entry.IsSystemFile = true;
+      Entry.IsTransient = false;
+      Entry.BufferOverridden = false;
+      Entry.IsTopLevel = true;
+      Entry.IsModuleMap = false;
+      if (auto BuffOrErr = PP->getFileManager().getBufferForFile(Entry.File))
+        Entry.trySetContentHash(*PP, (*BuffOrErr)->getMemBufferRef());
+      else
+        Entry.trySetContentHash(*PP, {});
+      SystemFiles.push_back(Entry);
+    }
   }
 
   // User files go at the front, system files at the back.
@@ -5949,18 +5981,6 @@ ASTFileSignature ASTWriter::WriteASTCore(Sema *SemaPtr, StringRef isysroot,
   // Make sure that the AST reader knows to finalize itself.
   if (Chain)
     Chain->finalizeForWriting();
-
-  // FIXME: This is here because the include-tree file list refers to this file
-  // and we need to validate it's up-to-date when reading the AST file. Make
-  // this more generic and include the remaining files.
-  StringRef Sysroot = PP->getHeaderSearchInfo().getHeaderSearchOpts().Sysroot;
-  if (!Sysroot.empty()) {
-    SmallString<128> SDKSettingsJSON = Sysroot;
-    llvm::sys::path::append(SDKSettingsJSON, "SDKSettings.json");
-    if (auto FE = PP->getFileManager().getOptionalFileRef(SDKSettingsJSON))
-      PP->getSourceManager().createFileID(*FE, SourceLocation(),
-                                          SrcMgr::C_System);
-  }
 
   // This needs to be done very early, since everything that writes
   // SourceLocations or FileIDs depends on it.
