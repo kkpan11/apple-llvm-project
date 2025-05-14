@@ -1869,6 +1869,16 @@ bool lldb_private::formatters::swift::Task_SummaryProvider(
     return 0;
   };
 
+  addr_t task_addr = get_member("address");
+  if (auto name_or_err = GetTaskName(task_addr, valobj.GetProcessSP().get())) {
+    if (auto maybe_name = *name_or_err)
+      stream.Format("\"{0}\" ", *maybe_name);
+  } else {
+    LLDB_LOG_ERROR(GetLog(LLDBLog::DataFormatters | LLDBLog::Types),
+                   name_or_err.takeError(),
+                   "failed to determine name of task {1:x}: {0}", task_addr);
+  }
+
   stream.Format("id:{0}", get_member("id"));
 
   std::vector<StringRef> flags;

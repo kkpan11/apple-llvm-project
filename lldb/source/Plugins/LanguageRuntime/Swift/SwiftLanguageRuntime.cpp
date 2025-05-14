@@ -41,10 +41,12 @@
 #include "lldb/Symbol/VariableList.h"
 #include "lldb/Target/RegisterContext.h"
 #include "lldb/Target/UnwindLLDB.h"
+#include "lldb/Utility/ConstString.h"
 #include "lldb/Utility/ErrorMessages.h"
 #include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
 #include "lldb/Utility/OptionParsing.h"
+#include "lldb/Utility/Status.h"
 #include "lldb/Utility/StructuredData.h"
 #include "lldb/Utility/Timer.h"
 #include "lldb/ValueObject/ValueObject.h"
@@ -68,6 +70,7 @@
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FormatAdapters.h"
 #include "llvm/Support/Memory.h"
+#include <optional>
 
 // FIXME: we should not need this
 #include "Plugins/Language/Swift/SwiftFormatters.h"
@@ -2937,4 +2940,87 @@ llvm::Expected<lldb::addr_t> GetTaskAddrFromThreadLocalStorage(Thread &thread) {
   return task_addr;
 #endif
 }
+
+namespace {
+
+struct TaskStatusRecord {
+  Process *process;
+  addr_t addr;
+
+  operator bool() const { return addr && addr != LLDB_INVALID_ADDRESS; }
+
+  static constexpr offset_t FlagsOffset = 0x0;
+  static constexpr offset_t ParentOffset = 0x8;
+  static constexpr offset_t TaskNameOffset = 0x10;
+
+  enum Kind : uint64_t {
+    TaskName = 6,
+  };
+
+  uint64_t getKind(Status &status) {
+    if (status.Success())
+      return process->ReadUnsignedIntegerFromMemory(
+          addr + FlagsOffset, sizeof(uint64_t), UINT64_MAX, status);
+    return UINT64_MAX;
+  }
+
+  std::optional<std::string> getName(Status &status) {
+    if (getKind(status) != Kind::TaskName)
+      return {};
+
+    addr_t name_addr =
+        process->ReadPointerFromMemory(addr + TaskNameOffset, status);
+    if (!status.Success())
+      return {};
+
+    std::string name;
+    process->ReadCStringFromMemory(name_addr, name, status);
+    if (status.Success())
+      return name;
+
+    return {};
+  }
+
+  TaskStatusRecord getParent(Status &status) {
+    addr_t parent = LLDB_INVALID_ADDRESS;
+    if (*this && status.Success())
+      parent = process->ReadPointerFromMemory(addr + ParentOffset, status);
+    return {process, parent};
+  }
+};
+
+struct Task {
+  Process *process;
+  addr_t addr;
+
+  operator bool() const { return addr && addr != LLDB_INVALID_ADDRESS; }
+
+  static constexpr offset_t ActiveTaskStatusRecordOffset = 0x8 * 13;
+
+  TaskStatusRecord getActiveTaskStatusRecord(Status &status) {
+    addr_t status_record = LLDB_INVALID_ADDRESS;
+    if (status.Success())
+      status_record = process->ReadPointerFromMemory(
+          addr + ActiveTaskStatusRecordOffset, status);
+    return {process, status_record};
+  }
+};
+
+}; // namespace
+
+llvm::Expected<std::optional<std::string>> GetTaskName(lldb::addr_t task_addr,
+                                                       Process *process) {
+  Status status;
+  Task task{process, task_addr};
+  auto status_record = task.getActiveTaskStatusRecord(status);
+  while (status_record) {
+    if (auto name = status_record.getName(status))
+      return *name;
+    status_record = status_record.getParent(status);
+  }
+  if (status.Success())
+    return std::nullopt;
+  return status.takeError();
+}
+
 } // namespace lldb_private

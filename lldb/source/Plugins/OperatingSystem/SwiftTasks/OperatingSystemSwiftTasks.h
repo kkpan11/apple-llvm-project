@@ -9,6 +9,7 @@
 #ifndef liblldb_OperatingSystemSwiftTasks_h_
 #define liblldb_OperatingSystemSwiftTasks_h_
 
+#include "lldb/Target/Process.h"
 #if LLDB_ENABLE_SWIFT
 
 #include "lldb/Target/OperatingSystem.h"
@@ -49,10 +50,18 @@ private:
   /// If a thread for task_id had been created in the last stop, return it.
   /// Otherwise, create a new MemoryThread for it.
   lldb::ThreadSP FindOrCreateSwiftThread(ThreadList &old_thread_list,
-                                         uint64_t task_id);
+                                         uint64_t task_id,
+                                         std::optional<std::string> task_name);
 
-  /// Find the Task ID of the task being executed by `thread`, if any.
-  std::optional<uint64_t> FindTaskId(Thread &thread);
+  /// Find the address of the Task being executed by `thread`, if any.
+  std::optional<lldb::addr_t> FindTaskAddress(Thread &thread);
+
+  /// Find the ID of the Task at the given address, if any.
+  std::optional<uint64_t> FindTaskId(lldb::addr_t task_addr);
+
+  /// Find the (optional) name of the Task at the given address, if any.
+  std::optional<std::string> FindTaskName(lldb::addr_t task_addr,
+                                          Process *process);
 
   /// The offset of the Job ID inside a Task data structure.
   size_t m_job_id_offset;
