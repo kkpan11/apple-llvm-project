@@ -53,7 +53,7 @@ private:
                                          std::optional<std::string> task_name);
 
   /// Find the ID of the Task at the given address, if any.
-  std::optional<uint64_t> FindTaskId(std::optional<lldb::addr_t> task_addr);
+  std::optional<uint64_t> FindTaskId(lldb::addr_t task_addr);
 
   /// The offset of the Job ID inside a Task data structure.
   size_t m_job_id_offset;

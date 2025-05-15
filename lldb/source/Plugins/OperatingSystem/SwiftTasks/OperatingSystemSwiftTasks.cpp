@@ -113,19 +113,18 @@ static std::optional<addr_t> FindTaskAddress(Thread &thread) {
                    "thread local storage: {0}");
     return {};
   }
+  if (*task_addr == 0 || *task_addr == LLDB_INVALID_ADDRESS)
+    return std::nullopt;
   return *task_addr;
 }
 
 std::optional<uint64_t>
-OperatingSystemSwiftTasks::FindTaskId(std::optional<addr_t> task_addr) {
-  if (!task_addr || *task_addr == LLDB_INVALID_ADDRESS)
-    return {};
-
+OperatingSystemSwiftTasks::FindTaskId(addr_t task_addr) {
   Status error;
   // The Task ID is at offset m_job_id_offset from the Task pointer.
   constexpr uint32_t num_bytes_task_id = 4;
   auto task_id = m_process->ReadUnsignedIntegerFromMemory(
-      *task_addr + m_job_id_offset, num_bytes_task_id, LLDB_INVALID_ADDRESS,
+      task_addr + m_job_id_offset, num_bytes_task_id, LLDB_INVALID_ADDRESS,
       error);
   if (error.Fail())
     return {};
@@ -164,7 +163,7 @@ bool OperatingSystemSwiftTasks::UpdateThreadList(ThreadList &old_thread_list,
       continue;
     }
 
-    std::optional<uint64_t> task_id = FindTaskId(task_addr);
+    std::optional<uint64_t> task_id = FindTaskId(*task_addr);
     if (!task_id) {
       LLDB_LOG(log, "OperatingSystemSwiftTasks: could not get ID of Task {0:x}",
                *task_addr);
