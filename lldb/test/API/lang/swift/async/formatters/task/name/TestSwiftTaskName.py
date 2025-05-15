@@ -18,7 +18,7 @@ class TestCase(TestBase):
     @swiftTest
     def test_thread_contains_name(self):
         self.build()
-        lldbutil.run_to_source_breakpoint(
+        _, _, thread, _ = lldbutil.run_to_source_breakpoint(
             self, "break inside", lldb.SBFileSpec("main.swift")
         )
-        self.expect("thread info", patterns=[r"Chore \(Task [1-9]\d*\)"])
+        self.assertRegex(thread.name, r"Chore \(Task [1-9]\d*\)")
