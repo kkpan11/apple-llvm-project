@@ -2963,9 +2963,9 @@ struct TaskStatusRecord {
 
   // The offset of TaskStatusRecord members. The unit is pointers, and must be
   // converted to bytes based on the target's address size.
-  static constexpr offset_t FlagsPointerOffset = 0;
-  static constexpr offset_t ParentPointerOffset = 1;
-  static constexpr offset_t TaskNamePointerOffset = 2;
+  static constexpr unsigned FlagsPointerOffset = 0;
+  static constexpr unsigned ParentPointerOffset = 1;
+  static constexpr unsigned TaskNamePointerOffset = 2;
 
   enum Kind : uint64_t {
     TaskName = 6,
