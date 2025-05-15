@@ -133,11 +133,8 @@ OperatingSystemSwiftTasks::FindTaskId(std::optional<addr_t> task_addr) {
 }
 
 static std::optional<std::string> FindTaskName(addr_t task_addr,
-                                               Process *process) {
-  if (!process)
-    return {};
-
-  auto task_name_or_err = GetTaskName(task_addr, *process);
+                                               Process &process) {
+  auto task_name_or_err = GetTaskName(task_addr, process);
   if (auto err = task_name_or_err.takeError()) {
     LLDB_LOG_ERROR(GetLog(LLDBLog::OS), std::move(err),
                    "OperatingSystemSwiftTasks: failed while looking for name "
@@ -174,8 +171,9 @@ bool OperatingSystemSwiftTasks::UpdateThreadList(ThreadList &old_thread_list,
       continue;
     }
 
+    assert(m_process != nullptr);
     ThreadSP swift_thread = FindOrCreateSwiftThread(
-        old_thread_list, *task_id, FindTaskName(*task_addr, m_process));
+        old_thread_list, *task_id, FindTaskName(*task_addr, *m_process));
     swift_thread->SetBackingThread(real_thread);
     new_thread_list.AddThread(swift_thread);
     LLDB_LOGF(log,

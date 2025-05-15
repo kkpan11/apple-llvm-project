@@ -3002,13 +3002,17 @@ struct Task {
 
   operator bool() const { return addr && addr != LLDB_INVALID_ADDRESS; }
 
-  static constexpr offset_t ActiveTaskStatusRecordOffset = 0x8 * 13;
+  // The offset of the active TaskStatusRecord pointer. The unit is pointers,
+  // and must be converted to bytes based on the target's address size.
+  static constexpr unsigned ActiveTaskStatusRecordPointerOffset = 13;
 
   TaskStatusRecord getActiveTaskStatusRecord(Status &status) {
+    const offset_t activeTaskStatusRecordByteOffset =
+        ActiveTaskStatusRecordPointerOffset * process.GetAddressByteSize();
     addr_t status_record = LLDB_INVALID_ADDRESS;
     if (status.Success())
       status_record = process.ReadPointerFromMemory(
-          addr + ActiveTaskStatusRecordOffset, status);
+          addr + activeTaskStatusRecordByteOffset, status);
     return {process, status_record};
   }
 };
