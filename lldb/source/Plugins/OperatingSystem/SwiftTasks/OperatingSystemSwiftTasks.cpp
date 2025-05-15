@@ -76,12 +76,7 @@ OperatingSystemSwiftTasks::~OperatingSystemSwiftTasks() = default;
 
 OperatingSystemSwiftTasks::OperatingSystemSwiftTasks(
     lldb_private::Process &process)
-    : OperatingSystem(&process) {
-  size_t ptr_size = process.GetAddressByteSize();
-  // Offset of a Task ID inside a Task data structure, guaranteed by the ABI.
-  // See Job in swift/RemoteInspection/RuntimeInternals.h.
-  m_job_id_offset = 4 * ptr_size + 4;
-}
+    : OperatingSystem(&process) {}
 
 ThreadSP OperatingSystemSwiftTasks::FindOrCreateSwiftThread(
     ThreadList &old_thread_list, uint64_t task_id,
@@ -118,13 +113,17 @@ static std::optional<addr_t> FindTaskAddress(Thread &thread) {
   return *task_addr;
 }
 
-std::optional<uint64_t>
-OperatingSystemSwiftTasks::FindTaskId(addr_t task_addr) {
+static std::optional<uint64_t> FindTaskId(addr_t task_addr, Process &process) {
+  size_t ptr_size = process.GetAddressByteSize();
+  // Offset of a Task ID inside a Task data structure, guaranteed by the ABI.
+  // See Job in swift/RemoteInspection/RuntimeInternals.h.
+  const offset_t job_id_offset = 4 * ptr_size + 4;
+
   Status error;
-  // The Task ID is at offset m_job_id_offset from the Task pointer.
+  // The Task ID is at offset job_id_offset from the Task pointer.
   constexpr uint32_t num_bytes_task_id = 4;
-  auto task_id = m_process->ReadUnsignedIntegerFromMemory(
-      task_addr + m_job_id_offset, num_bytes_task_id, LLDB_INVALID_ADDRESS,
+  auto task_id = process.ReadUnsignedIntegerFromMemory(
+      task_addr + job_id_offset, num_bytes_task_id, LLDB_INVALID_ADDRESS,
       error);
   if (error.Fail())
     return {};
@@ -163,14 +162,14 @@ bool OperatingSystemSwiftTasks::UpdateThreadList(ThreadList &old_thread_list,
       continue;
     }
 
-    std::optional<uint64_t> task_id = FindTaskId(*task_addr);
+    assert(m_process != nullptr);
+    std::optional<uint64_t> task_id = FindTaskId(*task_addr, *m_process);
     if (!task_id) {
       LLDB_LOG(log, "OperatingSystemSwiftTasks: could not get ID of Task {0:x}",
                *task_addr);
       continue;
     }
 
-    assert(m_process != nullptr);
     ThreadSP swift_thread = FindOrCreateSwiftThread(
         old_thread_list, *task_id, FindTaskName(*task_addr, *m_process));
     swift_thread->SetBackingThread(real_thread);

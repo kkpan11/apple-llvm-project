@@ -51,12 +51,6 @@ private:
   lldb::ThreadSP FindOrCreateSwiftThread(ThreadList &old_thread_list,
                                          uint64_t task_id,
                                          std::optional<std::string> task_name);
-
-  /// Find the ID of the Task at the given address, if any.
-  std::optional<uint64_t> FindTaskId(lldb::addr_t task_addr);
-
-  /// The offset of the Job ID inside a Task data structure.
-  size_t m_job_id_offset;
 };
 } // namespace lldb_private
 
