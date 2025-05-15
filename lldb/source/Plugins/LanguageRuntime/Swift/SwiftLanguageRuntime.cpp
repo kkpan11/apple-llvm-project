@@ -39,6 +39,7 @@
 #include "lldb/Symbol/FuncUnwinders.h"
 #include "lldb/Symbol/Function.h"
 #include "lldb/Symbol/VariableList.h"
+#include "lldb/Target/Process.h"
 #include "lldb/Target/RegisterContext.h"
 #include "lldb/Target/UnwindLLDB.h"
 #include "lldb/Utility/ConstString.h"
@@ -2951,21 +2952,30 @@ namespace {
 struct TaskStatusRecord {
   Process &process;
   addr_t addr;
+  size_t addr_size;
+
+  TaskStatusRecord(Process &process, addr_t addr)
+      : process(process), addr(addr) {
+    addr_size = process.GetAddressByteSize();
+  }
 
   operator bool() const { return addr && addr != LLDB_INVALID_ADDRESS; }
 
-  static constexpr offset_t FlagsOffset = 0x0;
-  static constexpr offset_t ParentOffset = 0x8;
-  static constexpr offset_t TaskNameOffset = 0x10;
+  // The offset of TaskStatusRecord members. The unit is pointers, and must be
+  // converted to bytes based on the target's address size.
+  static constexpr offset_t FlagsPointerOffset = 0;
+  static constexpr offset_t ParentPointerOffset = 1;
+  static constexpr offset_t TaskNamePointerOffset = 2;
 
   enum Kind : uint64_t {
     TaskName = 6,
   };
 
   uint64_t getKind(Status &status) {
+    const offset_t flagsByteOffset = FlagsPointerOffset * addr_size;
     if (status.Success())
       return process.ReadUnsignedIntegerFromMemory(
-          addr + FlagsOffset, sizeof(uint64_t), UINT64_MAX, status);
+          addr + flagsByteOffset, addr_size, UINT64_MAX, status);
     return UINT64_MAX;
   }
 
@@ -2973,8 +2983,9 @@ struct TaskStatusRecord {
     if (getKind(status) != Kind::TaskName)
       return {};
 
+    const offset_t taskNameByteOffset = TaskNamePointerOffset * addr_size;
     addr_t name_addr =
-        process.ReadPointerFromMemory(addr + TaskNameOffset, status);
+        process.ReadPointerFromMemory(addr + taskNameByteOffset, status);
     if (!status.Success())
       return {};
 
@@ -2987,9 +2998,10 @@ struct TaskStatusRecord {
   }
 
   addr_t getParent(Status &status) {
+    const offset_t parentByteOffset = ParentPointerOffset * addr_size;
     addr_t parent = LLDB_INVALID_ADDRESS;
     if (*this && status.Success())
-      parent = process.ReadPointerFromMemory(addr + ParentOffset, status);
+      parent = process.ReadPointerFromMemory(addr + parentByteOffset, status);
     return parent;
   }
 };

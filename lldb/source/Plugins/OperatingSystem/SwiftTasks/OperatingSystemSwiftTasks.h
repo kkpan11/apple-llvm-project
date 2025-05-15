@@ -9,7 +9,6 @@
 #ifndef liblldb_OperatingSystemSwiftTasks_h_
 #define liblldb_OperatingSystemSwiftTasks_h_
 
-#include "lldb/Target/Process.h"
 #if LLDB_ENABLE_SWIFT
 
 #include "lldb/Target/OperatingSystem.h"
