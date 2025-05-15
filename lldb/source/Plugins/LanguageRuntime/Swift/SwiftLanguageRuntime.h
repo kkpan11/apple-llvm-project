@@ -904,7 +904,7 @@ GetAsyncUnwindRegisterNumbers(llvm::Triple::ArchType triple);
 llvm::Expected<lldb::addr_t> GetTaskAddrFromThreadLocalStorage(Thread &thread);
 
 llvm::Expected<std::optional<std::string>> GetTaskName(lldb::addr_t task,
-                                                       Process *process);
+                                                       Process &process);
 
 } // namespace lldb_private
 

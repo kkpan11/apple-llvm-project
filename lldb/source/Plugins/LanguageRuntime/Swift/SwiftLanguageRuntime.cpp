@@ -2943,8 +2943,13 @@ llvm::Expected<lldb::addr_t> GetTaskAddrFromThreadLocalStorage(Thread &thread) {
 
 namespace {
 
+/// Lightweight wrapper around TaskStatusRecord pointers, providing:
+///   * traversal over the embedded linnked list of status records
+///   * information contained within records
+///
+/// Currently supports TaskNameStatusRecord. See swift/ABI/TaskStatus.h
 struct TaskStatusRecord {
-  Process *process;
+  Process &process;
   addr_t addr;
 
   operator bool() const { return addr && addr != LLDB_INVALID_ADDRESS; }
@@ -2959,7 +2964,7 @@ struct TaskStatusRecord {
 
   uint64_t getKind(Status &status) {
     if (status.Success())
-      return process->ReadUnsignedIntegerFromMemory(
+      return process.ReadUnsignedIntegerFromMemory(
           addr + FlagsOffset, sizeof(uint64_t), UINT64_MAX, status);
     return UINT64_MAX;
   }
@@ -2969,28 +2974,30 @@ struct TaskStatusRecord {
       return {};
 
     addr_t name_addr =
-        process->ReadPointerFromMemory(addr + TaskNameOffset, status);
+        process.ReadPointerFromMemory(addr + TaskNameOffset, status);
     if (!status.Success())
       return {};
 
     std::string name;
-    process->ReadCStringFromMemory(name_addr, name, status);
+    process.ReadCStringFromMemory(name_addr, name, status);
     if (status.Success())
       return name;
 
     return {};
   }
 
-  TaskStatusRecord getParent(Status &status) {
+  addr_t getParent(Status &status) {
     addr_t parent = LLDB_INVALID_ADDRESS;
     if (*this && status.Success())
-      parent = process->ReadPointerFromMemory(addr + ParentOffset, status);
-    return {process, parent};
+      parent = process.ReadPointerFromMemory(addr + ParentOffset, status);
+    return parent;
   }
 };
 
+/// Lightweight wrapper around Task pointers, providing access to a Task's
+/// active status record. See swift/ABI/Task.h
 struct Task {
-  Process *process;
+  Process &process;
   addr_t addr;
 
   operator bool() const { return addr && addr != LLDB_INVALID_ADDRESS; }
@@ -3000,7 +3007,7 @@ struct Task {
   TaskStatusRecord getActiveTaskStatusRecord(Status &status) {
     addr_t status_record = LLDB_INVALID_ADDRESS;
     if (status.Success())
-      status_record = process->ReadPointerFromMemory(
+      status_record = process.ReadPointerFromMemory(
           addr + ActiveTaskStatusRecordOffset, status);
     return {process, status_record};
   }
@@ -3009,14 +3016,14 @@ struct Task {
 }; // namespace
 
 llvm::Expected<std::optional<std::string>> GetTaskName(lldb::addr_t task_addr,
-                                                       Process *process) {
+                                                       Process &process) {
   Status status;
   Task task{process, task_addr};
   auto status_record = task.getActiveTaskStatusRecord(status);
   while (status_record) {
     if (auto name = status_record.getName(status))
       return *name;
-    status_record = status_record.getParent(status);
+    status_record.addr = status_record.getParent(status);
   }
   if (status.Success())
     return std::nullopt;

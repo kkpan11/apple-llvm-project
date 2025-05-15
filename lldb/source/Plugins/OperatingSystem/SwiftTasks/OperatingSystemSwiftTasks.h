@@ -53,15 +53,8 @@ private:
                                          uint64_t task_id,
                                          std::optional<std::string> task_name);
 
-  /// Find the address of the Task being executed by `thread`, if any.
-  std::optional<lldb::addr_t> FindTaskAddress(Thread &thread);
-
   /// Find the ID of the Task at the given address, if any.
-  std::optional<uint64_t> FindTaskId(lldb::addr_t task_addr);
-
-  /// Find the (optional) name of the Task at the given address, if any.
-  std::optional<std::string> FindTaskName(lldb::addr_t task_addr,
-                                          Process *process);
+  std::optional<uint64_t> FindTaskId(std::optional<lldb::addr_t> task_addr);
 
   /// The offset of the Job ID inside a Task data structure.
   size_t m_job_id_offset;
