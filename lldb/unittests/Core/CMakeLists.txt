@@ -1,5 +1,4 @@
 add_lldb_unittest(LLDBCoreTests
-  DebuggerTest.cpp
   CommunicationTest.cpp
   DiagnosticEventTest.cpp
   DumpDataExtractorTest.cpp

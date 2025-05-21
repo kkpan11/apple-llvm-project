@@ -311,7 +311,6 @@ public:
   bool GetShowStatusline() const;
 
   const FormatEntity::Entry *GetStatuslineFormat() const;
-  bool SetStatuslineFormat(const FormatEntity::Entry &format);
 
   llvm::StringRef GetSeparator() const;
   bool SetSeparator(llvm::StringRef s);
