@@ -647,6 +647,8 @@ struct DependencyScannerReproducerOptions {
   const char *const *argv;
   const char *ModuleName;
   const char *WorkingDirectory;
+  const char *ReproducerLocation;
+  bool UseUniqueReproducerName;
 };
 
 // Helper class to capture a returnable error code and to return a formatted
@@ -680,9 +682,11 @@ DEFINE_SIMPLE_CONVERSION_FUNCTIONS(DependencyScannerReproducerOptions,
 CXDependencyScannerReproducerOptions
 clang_experimental_DependencyScannerReproducerOptions_create(
     int argc, const char *const *argv, const char *ModuleName,
-    const char *WorkingDirectory) {
-  return wrap(new DependencyScannerReproducerOptions{argc, argv, ModuleName,
-                                                     WorkingDirectory});
+    const char *WorkingDirectory, const char *ReproducerLocation,
+    bool UseUniqueReproducerName) {
+  return wrap(new DependencyScannerReproducerOptions{
+      argc, argv, ModuleName, WorkingDirectory, ReproducerLocation,
+      UseUniqueReproducerName});
 }
 
 void clang_experimental_DependencyScannerReproducerOptions_dispose(
@@ -702,10 +706,14 @@ enum CXErrorCode clang_experimental_DependencyScanner_generateReproducer(
   DependencyScannerReproducerOptions &Opts = *unwrap(CXOptions);
   int argc = Opts.argc;
   const char *const *argv = Opts.argv;
+  const char *ReproducerLocation = Opts.ReproducerLocation;
   if (argc < 2 || !argv)
     return Report(CXError_InvalidArguments) << "missing compilation command";
   if (!Opts.WorkingDirectory)
     return Report(CXError_InvalidArguments) << "missing working directory";
+  if (!Opts.UseUniqueReproducerName && !ReproducerLocation)
+    return Report(CXError_InvalidArguments)
+           << "non-unique reproducer is allowed only in a custom location";
 
   CASOptions CASOpts;
   IntrusiveRefCntPtr<llvm::cas::CachingOnDiskFileSystem> FS;
@@ -716,9 +724,24 @@ enum CXErrorCode clang_experimental_DependencyScanner_generateReproducer(
 
   llvm::SmallString<128> ReproScriptPath;
   int ScriptFD;
-  if (auto EC = llvm::sys::fs::createTemporaryFile("reproducer", "sh", ScriptFD,
-                                                   ReproScriptPath)) {
-    return ReportFailure() << "failed to create a reproducer script file";
+  if (ReproducerLocation) {
+    if (auto EC = llvm::sys::fs::create_directories(ReproducerLocation))
+      return ReportFailure() << "failed to create a reproducer location '"
+                             << ReproducerLocation << "'\n"
+                             << EC.message();
+    SmallString<128> Path(ReproducerLocation);
+    llvm::sys::path::append(Path, "reproducer");
+    const char *UniqueSuffix = Opts.UseUniqueReproducerName ? "-%%%%%%" : "";
+    if (auto EC = llvm::sys::fs::createUniqueFile(Path + UniqueSuffix + ".sh",
+                                                  ScriptFD, ReproScriptPath))
+      return ReportFailure() << "failed to create a reproducer script file\n"
+                             << EC.message();
+  } else {
+    if (auto EC = llvm::sys::fs::createTemporaryFile(
+            "reproducer", "sh", ScriptFD, ReproScriptPath)) {
+      return ReportFailure() << "failed to create a reproducer script file\n"
+                             << EC.message();
+    }
   }
   SmallString<128> FileCachePath = ReproScriptPath;
   llvm::sys::path::replace_extension(FileCachePath, ".cache");
