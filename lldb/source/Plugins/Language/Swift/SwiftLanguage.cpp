@@ -1724,7 +1724,7 @@ bool SwiftLanguage::GetFunctionDisplayName(
     if (sc.function->GetLanguage() != eLanguageTypeSwift)
       return false;
     std::string display_name = SwiftLanguageRuntime::DemangleSymbolAsString(
-        sc.function->GetMangled().GetMangledName().GetStringRef(),
+        sc.GetPossiblyInlinedFunctionName().GetMangledName(),
         SwiftLanguageRuntime::eSimplified, &sc, exe_ctx);
     if (display_name.empty())
       return false;
@@ -1747,12 +1747,6 @@ bool SwiftLanguage::GetFunctionDisplayName(
     if (get_function_vars) {
       variable_list_sp =
           sc.function->GetBlock(true).GetBlockVariableList(true);
-    }
-
-    if (inline_info) {
-      s << display_name;
-      s.PutCString(" [inlined] ");
-      display_name = inline_info->GetName().GetString();
     }
 
     VariableList args;
@@ -1864,8 +1858,7 @@ SwiftLanguage::GetDemangledFunctionNameWithoutArguments(Mangled mangled) const {
   ConstString mangled_name = mangled.GetMangledName();
   ConstString demangled_name = mangled.GetDemangledName();
   if (demangled_name && mangled_name) {
-    if (SwiftLanguageRuntime::IsSwiftMangledName(
-            demangled_name.GetStringRef())) {
+    if (SwiftLanguageRuntime::IsSwiftMangledName(mangled_name.GetStringRef())) {
       lldb_private::ConstString basename;
       bool is_method = false;
       if (SwiftLanguageRuntime::MethodName::ExtractFunctionBasenameFromMangled(
