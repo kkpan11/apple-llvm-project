@@ -140,6 +140,7 @@ public:
         XRayFunctionIndex(true), DebugStrictDwarf(false), Hotpatch(false),
         PPCGenScalarMASSEntries(false), JMCInstrument(false),
         EnableCFIFixup(false), MisExpect(false), XCOFFReadOnlyPointers(false),
+        SupportIndirectSymViaGOTPCRel_AArch64_ELF(true),
         VerifyArgABICompliance(true) {}
 
   /// DisableFramePointerElim - This returns true if frame pointer elimination
@@ -349,6 +350,12 @@ public:
   /// When set to true, const objects with relocatable address values are put
   /// into the RO data section.
   unsigned XCOFFReadOnlyPointers : 1;
+
+  /// When set to true, enables indirect symbol replacement with GOTPCREL for
+  /// AArch64/ELF. The default is `true`.
+  ///
+  /// rdar://184832003
+  unsigned SupportIndirectSymViaGOTPCRel_AArch64_ELF : 1;
 
   /// When set to true, call/return argument extensions of narrow integers
   /// are verified in the target backend if it cares about them. This is
