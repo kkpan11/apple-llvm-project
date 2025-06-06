@@ -1977,3 +1977,14 @@ Type *llvm::getTypeForLLT(LLT Ty, LLVMContext &C) {
                            Ty.getElementCount());
   return IntegerType::get(C, Ty.getSizeInBits());
 }
+
+bool llvm::isAssertMI(const MachineInstr &MI) {
+  switch (MI.getOpcode()) {
+  default:
+    return false;
+  case TargetOpcode::G_ASSERT_ALIGN:
+  case TargetOpcode::G_ASSERT_SEXT:
+  case TargetOpcode::G_ASSERT_ZEXT:
+    return true;
+  }
+}

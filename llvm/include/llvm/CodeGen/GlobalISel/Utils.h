@@ -589,5 +589,9 @@ bool isGuaranteedNotToBeUndef(Register Reg, const MachineRegisterInfo &MRI,
 /// estimate of the type.
 Type *getTypeForLLT(LLT Ty, LLVMContext &C);
 
+/// Returns true if the instruction \p MI is one of the assert
+/// instructions.
+bool isAssertMI(const MachineInstr &MI);
+
 } // End namespace llvm.
 #endif
