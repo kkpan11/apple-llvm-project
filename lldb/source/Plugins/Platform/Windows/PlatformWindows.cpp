@@ -808,3 +808,22 @@ extern "C" {
 
   return Status();
 }
+
+llvm::Expected<std::pair<XcodeSDK, bool>>
+PlatformWindows::GetSDKPathFromDebugInfo(Module &module) {
+  auto sdk_root_or_err = HostInfoWindows::GetSDKRoot(HostInfo::SDKOptions());
+  if (!sdk_root_or_err) {
+    return llvm::createStringError("Could not get SDK's root.");
+  }
+  return std::pair{
+      XcodeSDK(std::string("Windows.sdk"), FileSpec(*sdk_root_or_err)), false};
+}
+
+llvm::Expected<XcodeSDK>
+PlatformWindows::GetSDKPathFromDebugInfo(CompileUnit &unit) {
+  auto sdk_root_or_err = HostInfoWindows::GetSDKRoot(HostInfo::SDKOptions());
+  if (!sdk_root_or_err) {
+    return llvm::createStringError("Could not get SDK's root.");
+  }
+  return XcodeSDK(std::string("Windows.sdk"), FileSpec(*sdk_root_or_err));
+}

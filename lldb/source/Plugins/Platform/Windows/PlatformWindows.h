@@ -82,6 +82,11 @@ public:
 
   std::vector<ArchSpec> m_supported_architectures;
 
+  llvm::Expected<std::pair<XcodeSDK, bool>>
+  GetSDKPathFromDebugInfo(Module &module) override;
+
+  llvm::Expected<XcodeSDK> GetSDKPathFromDebugInfo(CompileUnit &unit) override;
+
 private:
   std::unique_ptr<lldb_private::UtilityFunction>
   MakeLoadImageUtilityFunction(lldb_private::ExecutionContext &context,
