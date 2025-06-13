@@ -366,8 +366,8 @@ void Symtab::InitNameIndexes() {
                 else
                   basename_to_index.Append(basename, value);
               }
-              continue;
             }
+            continue;
           }
 #endif // LLDB_ENABLE_SWIFT
         }
