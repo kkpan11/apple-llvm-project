@@ -373,6 +373,11 @@ void Symtab::InitNameIndexes() {
         }
       }
 
+#ifdef LLDB_ENABLE_SWIFT
+      if (SwiftLanguageRuntime::IsSwiftMangledName(mangled.GetMangledName()))
+        continue;
+#endif
+
       // Symbol name strings that didn't match a Mangled::ManglingScheme, are
       // stored in the demangled field.
       SymbolContext sc;
