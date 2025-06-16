@@ -366,14 +366,18 @@ void Symtab::InitNameIndexes() {
                 else
                   basename_to_index.Append(basename, value);
               }
+              continue;
             }
-            continue;
           }
 #endif // LLDB_ENABLE_SWIFT
         }
       }
 
 #ifdef LLDB_ENABLE_SWIFT
+      // Skip demangling of remaining Swift symbols. The preceeding block
+      // demangles Swift symbols into node trees, to extract method names. The
+      // subsequent block demangles symbols into strings, and for Swift this
+      // serves no purpose.
       if (SwiftLanguageRuntime::IsSwiftMangledName(mangled.GetMangledName()))
         continue;
 #endif
