@@ -2077,10 +2077,11 @@ CompilerType SwiftLanguageRuntime::GetDynamicTypeAndAddress_EmbeddedClass(
   if (!pointer)
     return {};
   llvm::StringRef symbol_name;
-  if (pointer->isResolved()) {
+  if (pointer->getSymbol().empty() || pointer->getOffset()) {
     // Find the symbol name at this address.
     Address address;
-    address.SetLoadAddress(pointer->getOffset(), &GetProcess().GetTarget());
+    address.SetLoadAddress(pointer->getResolvedAddress().getAddressData(),
+                           &GetProcess().GetTarget());
     Symbol *symbol = address.CalculateSymbolContextSymbol();
     if (!symbol)
       return {};
@@ -2377,8 +2378,9 @@ bool SwiftLanguageRuntime::GetDynamicTypeAndAddress_Existential(
       return false;
 
     uint64_t address = 0;
-    if (maybe_addr_or_symbol->isResolved()) {
-      address = maybe_addr_or_symbol->getOffset();
+    if (maybe_addr_or_symbol->getSymbol().empty() &&
+        maybe_addr_or_symbol->getOffset() == 0) {
+      address = maybe_addr_or_symbol->getResolvedAddress().getAddressData();
     } else {
       SymbolContextList sc_list;
       auto &module_list = GetProcess().GetTarget().GetImages();
@@ -2397,7 +2399,7 @@ bool SwiftLanguageRuntime::GetDynamicTypeAndAddress_Existential(
         GetDynamicTypeAndAddress_EmbeddedClass(address, existential_type);
     if (!dynamic_type)
       return false;
-    dynamic_address = maybe_addr_or_symbol->getOffset();
+    dynamic_address = maybe_addr_or_symbol->getResolvedAddress().getAddressData();
   }
   if (use_local_buffer)
     PopLocalBuffer();
