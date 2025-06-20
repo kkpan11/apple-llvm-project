@@ -73,6 +73,11 @@ public:
     ProtocolUnixAbstract
   };
 
+  enum SocketMode {
+    ModeAccept,
+    ModeConnect,
+  };
+
   struct HostAndPort {
     std::string hostname;
     uint16_t port;
@@ -81,6 +86,10 @@ public:
       return port == R.port && hostname == R.hostname;
     }
   };
+
+  using ProtocolModePair = std::pair<SocketProtocol, SocketMode>;
+  static std::optional<ProtocolModePair>
+  GetProtocolAndMode(llvm::StringRef scheme);
 
   static const NativeSocket kInvalidSocketValue;
 
