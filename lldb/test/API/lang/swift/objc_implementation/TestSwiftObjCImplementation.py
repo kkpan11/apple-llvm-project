@@ -17,10 +17,12 @@ class TestCase(TestBase):
             "frame var g",
             substrs=[
                 "integer = 15",
-                "boolean = true",
                 "object = some",
                 'stringObject = "Joker"',
             ],
+            # On x86_64, BOOL types have an objc encoding of 'c', which is a
+            # signed char. The result is in an output of '\x01'.
+            patterns=[r"boolean = (true|'\x01')"],
         )
         # Swift types that are not representable in ObjC (bridged types such as
         # String) are not currently listed in the children. rdar://154046212
