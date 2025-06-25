@@ -12,17 +12,19 @@ actor Actor {
     }
 }
 
+func breakHere<T>(_ x: T) {}
+
 @main struct Entry {
     static func main() async {
         let a = Actor()
-
-        // Cause execution to pass through Swift Concurrency's threads.
-        await a.work()
-
-        async let _ = a.occupy()
-        async let _ = a.work()
-        async let _ = a.work()
-        async let _ = a.work()
-        print("break here")
+        async let w: Void = a.occupy()
+        async let x = a.work()
+        async let y = a.work()
+        async let z = a.work()
+        // Allow the global concurrent executor to kick off of the async let
+        // tasks, which in turn enqueus jobs on the actor.
+        try? await Task.sleep(for: .seconds(2))
+        breakHere(a)
+        await print(w, x, y, z)
     }
 }

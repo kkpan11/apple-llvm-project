@@ -21,44 +21,20 @@ class TestCase(TestBase):
     def test_actor_unprioritised_jobs(self):
         """Verify that an actor exposes its unprioritised jobs (queue)."""
         self.build()
-        _, process, thread, _ = lldbutil.run_to_source_breakpoint(
-            self, "break here", lldb.SBFileSpec("main.swift")
-        )
+        _, _, thread, _ = lldbutil.run_to_name_breakpoint(self, "breakHere")
 
-        with _managed_async(self.dbg):
-            # Suspend the current thread.
-            thread.Suspend()
-            # Continue - other threads only.
-            self.dbg.SetAsync(True)
-            process.Continue()
-            # Wait - allowing other threads to run.
-            time.sleep(5)
-            # Stop the threads.
-            self.dbg.SetAsync(False)
-            self.dbg.HandleCommand("process interrupt")
-            # Note: After a single interrupt, lldb reports the process as
-            # running, but two interrupt calls results in a stopped process.
-            # Also, using `process.Stop()` instead of `"process interrupt"`
-            # did not work.
-            self.dbg.HandleCommand("process interrupt")
+        # Use the caller frame.
+        frame = thread.frames[1]
 
-        # Get the frame for the the breakpoint hit in `main()`.
-        frame = lldb.SBFrame()
-        for t in process.threads:
-            if t.stop_reason == lldb.eStopReasonBreakpoint:
-                if "Entry.main()" in t.frame[0].name:
-                    frame = t.frame[0]
-                    break
-        self.assertTrue(frame.IsValid())
+        self.assertEqual(frame.var("a.data").value, "15")
 
         defaultActor = frame.var("a.$defaultActor")
-        unprioritised_jobs = defaultActor.GetChildMemberWithName("unprioritised_jobs")
-        self.assertTrue(unprioritised_jobs.IsValid())
-
-        # There are 4 child tasks (async let), the first one occupies the actor
-        # with a sleep, the next 3 go on to the queue.
-        self.assertEqual(unprioritised_jobs.num_children, 3)
         self.assertEqual(defaultActor.summary, "running")
+
+        unprioritised_jobs = defaultActor.GetChildMemberWithName("unprioritised_jobs")
+        # There are 4 child tasks (async let), the first one occupies the actor
+        # with a call to readLine, the next 3 go on the queue.
+        self.assertEqual(unprioritised_jobs.num_children, 3)
         for job in unprioritised_jobs:
             self.assertRegex(job.name, r"^\d+")
             self.assertRegex(job.summary, r"^id:[1-9]\d* flags:\S+")
