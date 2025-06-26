@@ -1,31 +1,97 @@
-import time
-from contextlib import contextmanager
 import lldb
 from lldbsuite.test.decorators import *
 from lldbsuite.test.lldbtest import *
 from lldbsuite.test import lldbutil
 
 
-@contextmanager
-def _managed_async(dbg):
-    async_state = dbg.GetAsync()
-    try:
-        yield
-    finally:
-        dbg.SetAsync(async_state)
-
-
 class TestCase(TestBase):
 
     @swiftTest
-    def test_actor_unprioritised_jobs(self):
+    def test_actor_unprioritised_jobs01(self):
+        self._do_test()
+
+    @swiftTest
+    def test_actor_unprioritised_jobs02(self):
+        self._do_test()
+
+    @swiftTest
+    def test_actor_unprioritised_jobs03(self):
+        self._do_test()
+
+    @swiftTest
+    def test_actor_unprioritised_jobs04(self):
+        self._do_test()
+
+    @swiftTest
+    def test_actor_unprioritised_jobs05(self):
+        self._do_test()
+
+    @swiftTest
+    def test_actor_unprioritised_jobs06(self):
+        self._do_test()
+
+    @swiftTest
+    def test_actor_unprioritised_jobs07(self):
+        self._do_test()
+
+    @swiftTest
+    def test_actor_unprioritised_jobs08(self):
+        self._do_test()
+
+    @swiftTest
+    def test_actor_unprioritised_jobs09(self):
+        self._do_test()
+
+    @swiftTest
+    def test_actor_unprioritised_jobs10(self):
+        self._do_test()
+
+    @swiftTest
+    def test_actor_unprioritised_jobs11(self):
+        self._do_test()
+
+    @swiftTest
+    def test_actor_unprioritised_jobs12(self):
+        self._do_test()
+
+    @swiftTest
+    def test_actor_unprioritised_jobs13(self):
+        self._do_test()
+
+    @swiftTest
+    def test_actor_unprioritised_jobs14(self):
+        self._do_test()
+
+    @swiftTest
+    def test_actor_unprioritised_jobs15(self):
+        self._do_test()
+
+    @swiftTest
+    def test_actor_unprioritised_jobs16(self):
+        self._do_test()
+
+    @swiftTest
+    def test_actor_unprioritised_jobs17(self):
+        self._do_test()
+
+    @swiftTest
+    def test_actor_unprioritised_jobs18(self):
+        self._do_test()
+
+    @swiftTest
+    def test_actor_unprioritised_jobs19(self):
+        self._do_test()
+
+    @swiftTest
+    def test_actor_unprioritised_jobs20(self):
+        self._do_test()
+
+    def _do_test(self):
         """Verify that an actor exposes its unprioritised jobs (queue)."""
         self.build()
         _, _, thread, _ = lldbutil.run_to_name_breakpoint(self, "breakHere")
 
-        # Use the caller frame.
-        frame = thread.frames[1]
-
+        frame = thread.frames[0]
         self.assertEqual(frame.var("a.data").value, "15")
 
         defaultActor = frame.var("a.$defaultActor")

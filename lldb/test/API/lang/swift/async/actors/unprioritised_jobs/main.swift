@@ -12,7 +12,7 @@ actor Actor {
     }
 }
 
-func breakHere<T>(_ x: T) {}
+func breakHere(_ a: Actor) {}
 
 @main struct Entry {
     static func main() async {
