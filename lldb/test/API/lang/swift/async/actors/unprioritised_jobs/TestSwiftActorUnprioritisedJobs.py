@@ -92,7 +92,7 @@ class TestCase(TestBase):
         _, _, thread, _ = lldbutil.run_to_name_breakpoint(self, "breakHere")
 
         frame = thread.frames[0]
-        self.assertEqual(frame.var("a.data").value, "15")
+        self.assertEqual(frame.var("a.data").unsigned, 15)
 
         defaultActor = frame.var("a.$defaultActor")
         self.assertEqual(defaultActor.summary, "running")
