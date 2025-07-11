@@ -55,8 +55,7 @@ public:
   lldb::ValueObjectSP GetSyntheticValue() override;
 
 private:
-  bool m_is_none;
-  bool m_children;
+  bool m_is_none = false;
   lldb::ValueObjectSP m_some;
 
   bool IsEmpty() const;

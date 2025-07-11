@@ -16,8 +16,8 @@
 #include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
 
-#include "llvm/Support/MathExtras.h"
 #include "swift/Demangling/Demangle.h"
+#include "llvm/Support/MathExtras.h"
 
 using namespace lldb;
 using namespace lldb_private;
@@ -84,7 +84,7 @@ swift::remote::RemoteAddress
 LLDBMemoryReader::getSymbolAddress(const std::string &name) {
   lldbassert(!name.empty());
   if (name.empty())
-    return swift::remote::RemoteAddress(nullptr);
+    return swift::remote::RemoteAddress();
 
   Log *log = GetLog(LLDBLog::Types);
 
@@ -97,7 +97,7 @@ LLDBMemoryReader::getSymbolAddress(const std::string &name) {
       name_cs, lldb::eSymbolTypeAny, sc_list);
   if (!sc_list.GetSize()) {
     LLDB_LOGV(log, "[MemoryReader] symbol resolution failed {0}", name);
-    return swift::remote::RemoteAddress(nullptr);
+    return swift::remote::RemoteAddress();
   }
 
   SymbolContext sym_ctx;
@@ -118,14 +118,15 @@ LLDBMemoryReader::getSymbolAddress(const std::string &name) {
     if (sym_ctx.symbol) {
       auto load_addr = sym_ctx.symbol->GetLoadAddress(&m_process.GetTarget());
       LLDB_LOGV(log, "[MemoryReader] symbol resolved to {0:x}", load_addr);
-      return swift::remote::RemoteAddress(load_addr);
+      return swift::remote::RemoteAddress(
+          load_addr, swift::remote::RemoteAddress::DefaultAddressSpace);
     }
   }
 
   // Empty list, resolution failed.
   if (sc_list.GetSize() == 0) {
     LLDB_LOGV(log, "[MemoryReader] symbol resolution failed {0}", name);
-    return swift::remote::RemoteAddress(nullptr);
+    return swift::remote::RemoteAddress();
   }
 
   // If there's a single symbol, then we're golden. If there's more than
@@ -140,11 +141,12 @@ LLDBMemoryReader::getSymbolAddress(const std::string &name) {
             load_addr, m_process.GetAddressByteSize(), 0, error, true);
     if (sym_value != other_sym_value) {
       LLDB_LOGV(log, "[MemoryReader] symbol resolution failed {0}", name);
-      return swift::remote::RemoteAddress(nullptr);
+      return swift::remote::RemoteAddress();
     }
   }
   LLDB_LOGV(log, "[MemoryReader] symbol resolved to {0}", load_addr);
-  return swift::remote::RemoteAddress(load_addr);
+  return swift::remote::RemoteAddress(
+      load_addr, swift::remote::RemoteAddress::DefaultAddressSpace);
 }
 
 static std::unique_ptr<swift::SwiftObjectFileFormat>
@@ -180,7 +182,7 @@ LLDBMemoryReader::resolvePointerAsSymbol(swift::remote::RemoteAddress address) {
     return {};
 
   std::optional<Address> maybeAddr =
-      resolveRemoteAddress(address.getAddressData());
+      resolveRemoteAddress(address.getRawAddress());
   // This is not an assert, but should never happen.
   if (!maybeAddr)
     return {};
@@ -191,7 +193,7 @@ LLDBMemoryReader::resolvePointerAsSymbol(swift::remote::RemoteAddress address) {
     addr = *maybeAddr;
   } else {
     // `address` is a real load address.
-    if (!target.ResolveLoadAddress(address.getAddressData(), addr))
+    if (!target.ResolveLoadAddress(address.getRawAddress(), addr))
       return {};
   }
 
@@ -229,7 +231,8 @@ LLDBMemoryReader::resolvePointer(swift::remote::RemoteAddress address,
   // to a tagged address so further memory reads originating from it benefit
   // from the file-cache optimization.
   swift::remote::RemoteAbsolutePointer process_pointer{
-      swift::remote::RemoteAddress{readValue}};
+      swift::remote::RemoteAddress{
+          readValue, swift::remote::RemoteAddress::DefaultAddressSpace}};
 
   if (!readMetadataFromFileCacheEnabled())
     return process_pointer;
@@ -237,7 +240,7 @@ LLDBMemoryReader::resolvePointer(swift::remote::RemoteAddress address,
   // Try to strip the pointer before checking if we have it mapped.
   auto strippedPointer = signedPointerStripper(process_pointer);
   if (auto resolved = strippedPointer.getResolvedAddress())
-    readValue = resolved.getAddressData();
+    readValue = resolved.getRawAddress();
 
   auto &target = m_process.GetTarget();
   Address addr;
@@ -245,7 +248,7 @@ LLDBMemoryReader::resolvePointer(swift::remote::RemoteAddress address,
     LLDB_LOGV(log,
               "[MemoryReader] Could not resolve load address of pointer {0:x} "
               "read from {1:x}.",
-              readValue, address.getAddressData());
+              readValue, address.getRawAddress());
     return process_pointer;
   }
 
@@ -263,7 +266,7 @@ LLDBMemoryReader::resolvePointer(swift::remote::RemoteAddress address,
     LLDB_LOG(log,
              "[MemoryReader] Could not resolve find module containing pointer "
              "{0:x} read from {1:x}.",
-             readValue, address.getAddressData());
+             readValue, address.getRawAddress());
     return process_pointer;
   }
 
@@ -276,8 +279,7 @@ LLDBMemoryReader::resolvePointer(swift::remote::RemoteAddress address,
 
   auto *section_list = module_containing_pointer->GetSectionList();
   if (section_list->GetSize() == 0) {
-    LLDB_LOG(log,
-             "[MemoryReader] Module with empty section list.");
+    LLDB_LOG(log, "[MemoryReader] Module with empty section list.");
     return {};
   }
 
@@ -291,16 +293,17 @@ LLDBMemoryReader::resolvePointer(swift::remote::RemoteAddress address,
     LLDB_LOG(log,
              "[MemoryReader] Pointer {0:x} read from {1:x} resolved to tagged "
              "address {2:x}, which is outside its image address space.",
-             readValue, address.getAddressData(), tagged_address);
+             readValue, address.getRawAddress(), tagged_address);
     return process_pointer;
   }
 
   swift::remote::RemoteAbsolutePointer tagged_pointer{
-      swift::remote::RemoteAddress{tagged_address}};
+      swift::remote::RemoteAddress{
+          tagged_address, swift::remote::RemoteAddress::DefaultAddressSpace}};
 
   if (tagged_address != (uint64_t)signedPointerStripper(tagged_pointer)
                             .getResolvedAddress()
-                            .getAddressData()) {
+                            .getRawAddress()) {
     lldbassert(false &&
                "Tagged pointer runs into pointer authentication mask!");
     return process_pointer;
@@ -309,7 +312,7 @@ LLDBMemoryReader::resolvePointer(swift::remote::RemoteAddress address,
   LLDB_LOGV(log,
             "[MemoryReader] Successfully resolved pointer {0:x} read from "
             "{1:x} to tagged address {2:x}.",
-            readValue, address.getAddressData(), tagged_address);
+            readValue, address.getRawAddress(), tagged_address);
   return tagged_pointer;
 }
 
@@ -318,7 +321,7 @@ bool LLDBMemoryReader::readBytes(swift::remote::RemoteAddress address,
   Log *log = GetLog(LLDBLog::Types);
   if (m_local_buffer) {
     bool overflow = false;
-    auto addr = address.getAddressData();
+    auto addr = address.getRawAddress();
     auto end = llvm::SaturatingAdd(addr, size, &overflow);
     if (overflow) {
       LLDB_LOGV(log, "[MemoryReader] address {0:x} + size {1} overflows", addr,
@@ -336,16 +339,16 @@ bool LLDBMemoryReader::readBytes(swift::remote::RemoteAddress address,
   }
 
   LLDB_LOGV(log, "[MemoryReader] asked to read {0} bytes at address {1:x}",
-            size, address.getAddressData());
+            size, address.getRawAddress());
   std::optional<Address> maybeAddr =
-      resolveRemoteAddressFromSymbolObjectFile(address.getAddressData());
+      resolveRemoteAddressFromSymbolObjectFile(address.getRawAddress());
 
   if (!maybeAddr)
-    maybeAddr = resolveRemoteAddress(address.getAddressData());
+    maybeAddr = resolveRemoteAddress(address.getRawAddress());
 
   if (!maybeAddr) {
     LLDB_LOGV(log, "[MemoryReader] could not resolve address {0:x}",
-              address.getAddressData());
+              address.getRawAddress());
     return false;
   }
   auto addr = *maybeAddr;
@@ -412,17 +415,17 @@ bool LLDBMemoryReader::readString(swift::remote::RemoteAddress address,
     return std::string(stream.GetData());
   };
   LLDB_LOGV(log, "[MemoryReader] asked to read string data at address {0:x}",
-            address.getAddressData());
+            address.getRawAddress());
 
   std::optional<Address> maybeAddr =
-      resolveRemoteAddressFromSymbolObjectFile(address.getAddressData());
+      resolveRemoteAddressFromSymbolObjectFile(address.getRawAddress());
 
   if (!maybeAddr)
-    maybeAddr = resolveRemoteAddress(address.getAddressData());
+    maybeAddr = resolveRemoteAddress(address.getRawAddress());
 
   if (!maybeAddr) {
     LLDB_LOGV(log, "[MemoryReader] could not resolve address {0:x}",
-              address.getAddressData());
+              address.getRawAddress());
     return false;
   }
   auto addr = *maybeAddr;
@@ -456,11 +459,18 @@ bool LLDBMemoryReader::readString(swift::remote::RemoteAddress address,
   return false;
 }
 
-void LLDBMemoryReader::pushLocalBuffer(uint64_t local_buffer,
-                                       uint64_t local_buffer_size) {
+MemoryReaderLocalBufferHolder::~MemoryReaderLocalBufferHolder() {
+  if (m_memory_reader)
+  m_memory_reader->popLocalBuffer();
+}
+
+MemoryReaderLocalBufferHolder
+LLDBMemoryReader::pushLocalBuffer(uint64_t local_buffer,
+                                  uint64_t local_buffer_size) {
   lldbassert(!m_local_buffer);
   m_local_buffer = local_buffer;
   m_local_buffer_size = local_buffer_size;
+  return MemoryReaderLocalBufferHolder(this);
 }
 
 void LLDBMemoryReader::popLocalBuffer() {
@@ -533,10 +543,11 @@ LLDBMemoryReader::addModuleToAddressMap(ModuleSP module,
 
   if (module_end_address !=
       signedPointerStripper(
-          swift::remote::RemoteAbsolutePointer{
-              swift::remote::RemoteAddress{module_end_address}})
+          swift::remote::RemoteAbsolutePointer{swift::remote::RemoteAddress{
+              module_end_address,
+              swift::reflection::RemoteAddress::DefaultAddressSpace}})
           .getResolvedAddress()
-          .getAddressData()) {
+          .getRawAddress()) {
     LLDB_LOG(GetLog(LLDBLog::Types),
              "[MemoryReader] module to address map ran into pointer "
              "authentication mask!");
@@ -585,8 +596,7 @@ LLDBMemoryReader::getFileAddressAndModuleForTaggedAddress(
   ModuleSP module = pair_iterator->second;
   auto *section_list = module->GetSectionList();
   if (section_list->GetSize() == 0) {
-    LLDB_LOG(log,
-             "[MemoryReader] Module with empty section list.");
+    LLDB_LOG(log, "[MemoryReader] Module with empty section list.");
     return {};
   }
   uint64_t file_address;
@@ -604,6 +614,19 @@ LLDBMemoryReader::getFileAddressAndModuleForTaggedAddress(
   // building the range to module map.
   file_address += section_list->GetSectionAtIndex(0)->GetFileAddress();
   return {{file_address, module}};
+}
+
+std::optional<swift::reflection::RemoteAddress>
+LLDBMemoryReader::resolveRemoteAddress(
+    swift::reflection::RemoteAddress address) const {
+  std::optional<Address> lldb_address =
+      LLDBMemoryReader::resolveRemoteAddress(address.getRawAddress());
+  if (!lldb_address)
+    return {};
+  lldb::addr_t addr = lldb_address->GetLoadAddress(&m_process.GetTarget());
+  if (addr != LLDB_INVALID_ADDRESS)
+    return swift::reflection::RemoteAddress(addr, swift::reflection::RemoteAddress::DefaultAddressSpace);
+  return {};
 }
 
 std::optional<Address>
@@ -626,8 +649,8 @@ LLDBMemoryReader::resolveRemoteAddress(uint64_t address) const {
   Address resolved(file_address, object_file->GetSectionList());
 
   // If the address doesn't have a section it means we couldn't find a section
-  // that contains that file address, and the "resolved" instance is wrong. 
-  // Calculate the virtual address by finding out the slide of the associated 
+  // that contains that file address, and the "resolved" instance is wrong.
+  // Calculate the virtual address by finding out the slide of the associated
   // module, and adding that to the file address.
   if (resolved.GetSection()) {
     LLDB_LOGV(log,

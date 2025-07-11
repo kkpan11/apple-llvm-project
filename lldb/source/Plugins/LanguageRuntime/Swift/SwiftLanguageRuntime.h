@@ -63,6 +63,7 @@ class SwiftLanguageRuntimeStub;
 class SwiftLanguageRuntimeImpl;
 class ReflectionContextInterface;
 class LLDBMemoryReader;
+class MemoryReaderLocalBufferHolder;
 struct SuperClassType;
 
 using ThreadSafeReflectionContext = LockGuarded<ReflectionContextInterface>;
@@ -401,6 +402,10 @@ public:
                                               const DataExtractor &data,
                                               ExecutionContext *exe_ctx);
 
+  /// Determine the payload type if any and whether it is an indrect case.
+  /// This is performed using Swift reflection.
+  llvm::Expected<lldb::ValueObjectSP> ProjectEnum(ValueObject &valobj);
+
   enum LookupResult {
     /// Failed due to missing reflection meatadata or unimplemented
     /// functionality. Should retry with SwiftASTContext.
@@ -476,6 +481,8 @@ public:
   /// \return true if this is a Swift tagged pointer (as opposed to an
   /// Objective-C tagged pointer).
   bool IsTaggedPointer(lldb::addr_t addr, CompilerType type);
+  /// \return true if this is an Objective-C object.
+  bool IsObjCInstance(ValueObject &instance);
   std::pair<lldb::addr_t, bool> FixupPointerValue(lldb::addr_t addr,
                                                   CompilerType type) override;
   lldb::addr_t FixupAddress(lldb::addr_t addr, CompilerType type,
@@ -645,11 +652,6 @@ protected:
                                       Value::ValueType &value_type,
                                       llvm::ArrayRef<uint8_t> &local_buffer);
 
-  bool GetDynamicTypeAndAddress_IndirectEnumCase(
-      ValueObject &in_value, lldb::DynamicValueType use_dynamic,
-      TypeAndOrName &class_type_or_name, Address &address,
-      Value::ValueType &value_type, llvm::ArrayRef<uint8_t> &local_buffer);
-
   bool GetDynamicTypeAndAddress_ClangType(
       ValueObject &in_value, lldb::DynamicValueType use_dynamic,
       TypeAndOrName &class_type_or_name, Address &address,
@@ -668,7 +670,6 @@ protected:
   Value::ValueType GetValueType(ValueObject &in_value,
                                 CompilerType dynamic_type,
                                 Value::ValueType static_value_type,
-                                bool is_indirect_enum_case,
                                 llvm::ArrayRef<uint8_t> &local_buffer);
 
   lldb::UnwindPlanSP
@@ -726,9 +727,8 @@ protected:
 
   std::shared_ptr<LLDBMemoryReader> GetMemoryReader();
 
-  void PushLocalBuffer(uint64_t local_buffer, uint64_t local_buffer_size);
-
-  void PopLocalBuffer();
+  MemoryReaderLocalBufferHolder PushLocalBuffer(uint64_t local_buffer,
+                                                uint64_t local_buffer_size);
 
   // These are the helper functions for GetObjectDescription for various
   // types of swift objects.
