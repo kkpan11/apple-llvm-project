@@ -4,6 +4,10 @@
   "upstream": "llvm.org/main"
 },
 {
+  "target": "stable/21.x",
+  "upstream": "llvm.org/release/21.x"
+},
+{
   "target": "stable/20240123",
   "upstream": "llvm.org/release/18.x"
 },
