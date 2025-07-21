@@ -4077,12 +4077,9 @@ bool NewGVN::eliminateInstructions(Function &F) {
                 if (!match(DefI, m_Intrinsic<Intrinsic::ssa_copy>()))
                   patchReplacementInstruction(DefI, DominatingLeader);
 
-                SmallVector<DbgVariableIntrinsic *> DbgUsers;
                 SmallVector<DbgVariableRecord *> DVRUsers;
-                findDbgUsers(DbgUsers, DefI, &DVRUsers);
+                findDbgUsers(DefI, DVRUsers);
 
-                for (auto *DVI : DbgUsers)
-                  DVI->replaceVariableLocationOp(DefI, DominatingLeader);
                 for (auto *DVR : DVRUsers)
                   DVR->replaceVariableLocationOp(DefI, DominatingLeader);
 
