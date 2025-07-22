@@ -465,29 +465,32 @@ getDependentValuesFromCall(const CountAttributedType *CAT,
 //   form `f(...)` is not supported.
 struct CompatibleCountExprVisitor
     : public ConstStmtVisitor<CompatibleCountExprVisitor, bool, const Expr *,
-                              bool> {
-  // The third 'bool' type parameter for each visit method indicates whether the
-  // current visiting expression is the result of the formal parameter to actual
-  // argument substitution.  Since the argument expression may contain DREs
-  // referencing to back to those parameters (in cases of recursive calls), the
-  // analysis may hit an infinite loop if not knowing whether the substitution
-  // has happened.  A typical example that could introduce infinite loop without
-  // this knowledge is shown below.
+                              bool, bool> {
+  // The third and forth 'bool' type parameters for each visit method indicates
+  // whether the current visiting expression is the result of the formal
+  // parameter to actual argument substitution (for `Self` and `Other` resp.).
+  // Since the argument expression may contain DREs referencing to back to those
+  // parameters (in cases of recursive calls), the analysis may hit an infinite
+  // loop if not knowing whether the substitution has happened.  A typical
+  // example that could introduce infinite loop without this knowledge is shown
+  // below.
   // ```
   //  void f(int * __counted_by(n) p, size_t n) {
   //    f(p, n);
   //  }
   // ```
-  using BaseVisitor =
-      ConstStmtVisitor<CompatibleCountExprVisitor, bool, const Expr *, bool>;
+  using BaseVisitor = ConstStmtVisitor<CompatibleCountExprVisitor, bool,
+                                       const Expr *, bool, bool>;
 
   const Expr *MemberBase;
-  const DependentValuesTy *DependentValues;
+  const DependentValuesTy *DependentValuesSelf, *DependentValuesOther;
   ASTContext &Ctx;
 
   // If `Deref` has the form `*&e`, return `e`; otherwise return nullptr.
-  const Expr *trySimplifyDerefAddressof(const UnaryOperator *Deref,
-                                        bool hasBeenSubstituted) {
+  const Expr *trySimplifyDerefAddressof(
+      const UnaryOperator *Deref,
+      const DependentValuesTy *DependentValues, // Deref may need subsitution
+      bool &hasBeenSubstituted) {
     const Expr *DerefOperand = Deref->getSubExpr()->IgnoreParenImpCasts();
 
     if (const auto *UO = dyn_cast<UnaryOperator>(DerefOperand))
@@ -501,33 +504,69 @@ struct CompatibleCountExprVisitor
 
       if (I != DependentValues->end())
         if (const auto *UO = dyn_cast<UnaryOperator>(I->getSecond()))
-          if (UO->getOpcode() == UO_AddrOf)
+          if (UO->getOpcode() == UO_AddrOf) {
+            hasBeenSubstituted = true;
             return UO->getSubExpr();
+          }
     }
     return nullptr;
   }
 
-  explicit CompatibleCountExprVisitor(const Expr *MemberBase,
-                                      const DependentValuesTy *DependentValues,
-                                      ASTContext &Ctx)
-      : MemberBase(MemberBase), DependentValues(DependentValues), Ctx(Ctx) {}
+  inline const std::pair<const Expr *, bool>
+  trySubstitute(const Expr *E, const DependentValuesTy *DependentValues) {
+    if (auto DRE = dyn_cast<DeclRefExpr>(E->IgnoreParenImpCasts());
+        DRE && DependentValues) {
+      auto It = DependentValues->find(DRE->getDecl());
 
-  bool VisitStmt(const Stmt *S, const Expr *E, bool hasBeenSubstituted) {
+      if (It != DependentValues->end()) {
+        return {It->second, true};
+      }
+    }
+    if (auto UO = dyn_cast<UnaryOperator>(E->IgnoreParenImpCasts())) {
+      if (UO->getOpcode() == UnaryOperator::Opcode::UO_Deref) {
+        bool hasBeenSubstituted = false;
+        const Expr *NewE =
+            trySimplifyDerefAddressof(UO, DependentValues, hasBeenSubstituted);
+
+        if (NewE &&NewE != E) {
+          return {NewE, hasBeenSubstituted};
+        }
+      }
+    }
+    return {E, false};
+  }
+
+  explicit CompatibleCountExprVisitor(
+      const Expr *MemberBase, const DependentValuesTy *DependentValuesSelf,
+      const DependentValuesTy *DependentValuesOther, ASTContext &Ctx)
+      : MemberBase(MemberBase), DependentValuesSelf(DependentValuesSelf),
+        DependentValuesOther(DependentValuesOther), Ctx(Ctx) {}
+
+  bool VisitStmt(const Stmt *Self, const Expr *Other,
+                 bool hasSelfBeenSubstituted, bool hasOtherBeenSubstituted) {
     return false;
   }
 
   bool VisitImplicitCastExpr(const ImplicitCastExpr *SelfICE, const Expr *Other,
-                             bool hasBeenSubstituted) {
-    return Visit(SelfICE->getSubExpr(), Other, hasBeenSubstituted);
+                             bool hasSelfBeenSubstituted,
+                             bool hasOtherBeenSubstituted) {
+    return Visit(SelfICE->getSubExpr(), Other, hasSelfBeenSubstituted,
+                 hasOtherBeenSubstituted);
   }
 
   bool VisitParenExpr(const ParenExpr *SelfPE, const Expr *Other,
-                      bool hasBeenSubstituted) {
-    return Visit(SelfPE->getSubExpr(), Other, hasBeenSubstituted);
+                      bool hasSelfBeenSubstituted,
+                      bool hasOtherBeenSubstituted) {
+    return Visit(SelfPE->getSubExpr(), Other, hasSelfBeenSubstituted,
+                 hasOtherBeenSubstituted);
   }
 
   bool VisitIntegerLiteral(const IntegerLiteral *SelfIL, const Expr *Other,
-                           bool hasBeenSubstituted) {
+                           bool hasSelfBeenSubstituted,
+                           bool hasOtherBeenSubstituted) {
+    if (!hasOtherBeenSubstituted)
+      std::tie(Other, hasOtherBeenSubstituted) =
+          trySubstitute(Other, DependentValuesOther);
     if (const auto *IntLit =
             dyn_cast<IntegerLiteral>(Other->IgnoreParenImpCasts())) {
       return SelfIL == IntLit ||
@@ -538,7 +577,12 @@ struct CompatibleCountExprVisitor
 
   bool VisitUnaryExprOrTypeTraitExpr(const UnaryExprOrTypeTraitExpr *Self,
                                      const Expr *Other,
-                                     bool hasBeenSubstituted) {
+                                     bool hasSelfBeenSubstituted,
+                                     bool hasOtherBeenSubstituted) {
+    if (!hasOtherBeenSubstituted)
+      std::tie(Other, hasOtherBeenSubstituted) =
+          trySubstitute(Other, DependentValuesOther);
+
     // If `Self` is a `sizeof` expression, try to evaluate and compare the two
     // expressions as constants:
     if (Self->getKind() == UnaryExprOrTypeTrait::UETT_SizeOf) {
@@ -556,19 +600,27 @@ struct CompatibleCountExprVisitor
   }
 
   bool VisitCXXThisExpr(const CXXThisExpr *SelfThis, const Expr *Other,
-                        bool hasBeenSubstituted) {
+                        bool hasSelfBeenSubstituted,
+                        bool hasOtherBeenSubstituted) {
+    if (!hasOtherBeenSubstituted)
+      std::tie(Other, hasOtherBeenSubstituted) =
+          trySubstitute(Other, DependentValuesOther);
     return isa<CXXThisExpr>(Other->IgnoreParenImpCasts());
   }
 
   bool VisitDeclRefExpr(const DeclRefExpr *SelfDRE, const Expr *Other,
-                        bool hasBeenSubstituted) {
+                        bool hasSelfBeenSubstituted,
+                        bool hasOtherBeenSubstituted) {
     const ValueDecl *SelfVD = SelfDRE->getDecl();
 
-    if (DependentValues && !hasBeenSubstituted) {
-      const auto It = DependentValues->find(SelfVD);
-      if (It != DependentValues->end())
-        return Visit(It->second, Other, true);
+    if (DependentValuesSelf && !hasSelfBeenSubstituted) {
+      const auto It = DependentValuesSelf->find(SelfVD);
+      if (It != DependentValuesSelf->end())
+        return Visit(It->second, Other, true, hasOtherBeenSubstituted);
     }
+    if (!hasOtherBeenSubstituted)
+      std::tie(Other, hasOtherBeenSubstituted) =
+          trySubstitute(Other, DependentValuesOther);
 
     const auto *O = Other->IgnoreParenImpCasts();
 
@@ -582,31 +634,42 @@ struct CompatibleCountExprVisitor
     const auto *OtherME = dyn_cast<MemberExpr>(O);
     if (MemberBase && OtherME) {
       return OtherME->getMemberDecl() == SelfVD &&
-             Visit(OtherME->getBase(), MemberBase, hasBeenSubstituted);
+             Visit(OtherME->getBase(), MemberBase, hasSelfBeenSubstituted,
+                   hasOtherBeenSubstituted);
     }
 
     return false;
   }
 
   bool VisitMemberExpr(const MemberExpr *Self, const Expr *Other,
-                       bool hasBeenSubstituted) {
+                       bool hasSelfBeenSubstituted,
+                       bool hasOtherBeenSubstituted) {
+    if (!hasOtherBeenSubstituted)
+      std::tie(Other, hasOtherBeenSubstituted) =
+          trySubstitute(Other, DependentValuesOther);
     // Even though we don't support member expression in counted-by, actual
     // arguments can be member expressions.
     if (Self == Other)
       return true;
     if (const auto *DRE = dyn_cast<DeclRefExpr>(Other->IgnoreParenImpCasts()))
       return MemberBase && Self->getMemberDecl() == DRE->getDecl() &&
-             Visit(Self->getBase(), MemberBase, hasBeenSubstituted);
+             Visit(Self->getBase(), MemberBase, hasSelfBeenSubstituted,
+                   hasOtherBeenSubstituted);
     if (const auto *OtherME =
             dyn_cast<MemberExpr>(Other->IgnoreParenImpCasts())) {
       return Self->getMemberDecl() == OtherME->getMemberDecl() &&
-             Visit(Self->getBase(), OtherME->getBase(), hasBeenSubstituted);
+             Visit(Self->getBase(), OtherME->getBase(), hasSelfBeenSubstituted,
+                   hasOtherBeenSubstituted);
     }
     return false;
   }
 
   bool VisitUnaryOperator(const UnaryOperator *SelfUO, const Expr *Other,
-                          bool hasBeenSubstituted) {
+                          bool hasSelfBeenSubstituted,
+                          bool hasOtherBeenSubstituted) {
+    if (!hasOtherBeenSubstituted)
+      std::tie(Other, hasOtherBeenSubstituted) =
+          trySubstitute(Other, DependentValuesOther);
     if (SelfUO->getOpcode() != UO_Deref)
       return false; // We don't support any other unary operator
 
@@ -614,23 +677,31 @@ struct CompatibleCountExprVisitor
             dyn_cast<UnaryOperator>(Other->IgnoreParenImpCasts())) {
       if (SelfUO->getOpcode() == OtherUO->getOpcode())
         return Visit(SelfUO->getSubExpr(), OtherUO->getSubExpr(),
-                     hasBeenSubstituted);
+                     hasSelfBeenSubstituted, hasOtherBeenSubstituted);
     }
     // If `Other` is not a dereference expression, try to simplify `SelfUO`:
-    if (const auto *SimplifiedSelf =
-            trySimplifyDerefAddressof(SelfUO, hasBeenSubstituted)) {
-      return Visit(SimplifiedSelf, Other, hasBeenSubstituted);
+    if (const auto *SimplifiedSelf = trySimplifyDerefAddressof(
+            SelfUO, DependentValuesSelf, hasSelfBeenSubstituted)) {
+      return Visit(SimplifiedSelf, Other, hasSelfBeenSubstituted,
+                   hasOtherBeenSubstituted);
     }
     return false;
   }
 
   bool VisitBinaryOperator(const BinaryOperator *SelfBO, const Expr *Other,
-                           bool hasBeenSubstituted) {
+                           bool hasSelfBeenSubstituted,
+                           bool hasOtherBeenSubstituted) {
+    if (!hasOtherBeenSubstituted)
+      std::tie(Other, hasOtherBeenSubstituted) =
+          trySubstitute(Other, DependentValuesOther);
+
     const auto *OtherBO =
         dyn_cast<BinaryOperator>(Other->IgnoreParenImpCasts());
     if (OtherBO && OtherBO->getOpcode() == SelfBO->getOpcode()) {
-      return Visit(SelfBO->getLHS(), OtherBO->getLHS(), hasBeenSubstituted) &&
-             Visit(SelfBO->getRHS(), OtherBO->getRHS(), hasBeenSubstituted);
+      return Visit(SelfBO->getLHS(), OtherBO->getLHS(), hasSelfBeenSubstituted,
+                   hasOtherBeenSubstituted) &&
+             Visit(SelfBO->getRHS(), OtherBO->getRHS(), hasSelfBeenSubstituted,
+                   hasOtherBeenSubstituted);
     }
 
     return false;
@@ -638,7 +709,8 @@ struct CompatibleCountExprVisitor
 
   // Support any overloaded operator[] so long as it is a const method.
   bool VisitCXXOperatorCallExpr(const CXXOperatorCallExpr *SelfOpCall,
-                                const Expr *Other, bool hasBeenSubstituted) {
+                                const Expr *Other, bool hasSelfBeenSubstituted,
+                                bool hasOtherBeenSubstituted) {
     if (SelfOpCall->getOperator() != OverloadedOperatorKind::OO_Subscript)
       return false;
 
@@ -646,13 +718,16 @@ struct CompatibleCountExprVisitor
 
     if (!MD || !MD->isConst())
       return false;
+    if (!hasOtherBeenSubstituted)
+      std::tie(Other, hasOtherBeenSubstituted) =
+          trySubstitute(Other, DependentValuesOther);
     if (const auto *OtherOpCall =
             dyn_cast<CXXOperatorCallExpr>(Other->IgnoreParenImpCasts()))
       if (SelfOpCall->getOperator() == OtherOpCall->getOperator()) {
         return Visit(SelfOpCall->getArg(0), OtherOpCall->getArg(0),
-                     hasBeenSubstituted) &&
+                     hasSelfBeenSubstituted, hasOtherBeenSubstituted) &&
                Visit(SelfOpCall->getArg(1), OtherOpCall->getArg(1),
-                     hasBeenSubstituted);
+                     hasSelfBeenSubstituted, hasOtherBeenSubstituted);
       }
     return false;
   }
@@ -661,19 +736,29 @@ struct CompatibleCountExprVisitor
   // considered unsafe, they can be safely used on constant arrays with
   // known-safe literal indexes.
   bool VisitArraySubscriptExpr(const ArraySubscriptExpr *SelfAS,
-                               const Expr *Other, bool hasBeenSubstituted) {
+                               const Expr *Other, bool hasSelfBeenSubstituted,
+                               bool hasOtherBeenSubstituted) {
+    if (!hasOtherBeenSubstituted)
+      std::tie(Other, hasOtherBeenSubstituted) =
+          trySubstitute(Other, DependentValuesOther);
     if (const auto *OtherAS =
             dyn_cast<ArraySubscriptExpr>(Other->IgnoreParenImpCasts()))
-      return Visit(SelfAS->getLHS(), OtherAS->getLHS(), hasBeenSubstituted) &&
-             Visit(SelfAS->getRHS(), OtherAS->getRHS(), hasBeenSubstituted);
+      return Visit(SelfAS->getLHS(), OtherAS->getLHS(), hasSelfBeenSubstituted,
+                   hasOtherBeenSubstituted) &&
+             Visit(SelfAS->getRHS(), OtherAS->getRHS(), hasSelfBeenSubstituted,
+                   hasOtherBeenSubstituted);
     return false;
   }
 
   // Support non-static member call:
   bool VisitCXXMemberCallExpr(const CXXMemberCallExpr *SelfCall,
-                              const Expr *Other, bool hasBeenSubstituted) {
+                              const Expr *Other, bool hasSelfBeenSubstituted,
+                              bool hasOtherBeenSubstituted) {
     const CXXMethodDecl *MD = SelfCall->getMethodDecl();
 
+    if (!hasOtherBeenSubstituted)
+      std::tie(Other, hasOtherBeenSubstituted) =
+          trySubstitute(Other, DependentValuesOther);
     // The callee member function must be a const function with no parameter:
     if (MD->isConst() && MD->param_empty()) {
       if (auto *OtherCall =
@@ -681,7 +766,7 @@ struct CompatibleCountExprVisitor
         return OtherCall->getMethodDecl() == MD &&
                Visit(SelfCall->getImplicitObjectArgument(),
                      OtherCall->getImplicitObjectArgument(),
-                     hasBeenSubstituted);
+                     hasSelfBeenSubstituted, hasOtherBeenSubstituted);
       }
     }
     return false;
@@ -702,13 +787,17 @@ struct CompatibleCountExprVisitor
 //                      `ExpectedCountExpr` may be transformed to a DRE
 //                      representing just `f`.  Therefore we need to keep track
 //                      of the base for them in that case.
-// `DependentValues`:   is a mapping from parameter DREs to actual argument
-//                      expressions.  It serves as a "state" where
-//                      `ExpectedCountExpr` is "interpreted".
+// `DependentValues`:   is a mapping from parameters to arguments,
+//                      serving as a "state" where `E` is "interpreted".
+// `DependentValuesExpectedCount`:
+//                      is a mapping from parameters to arguments, serving as a
+//                      "state" where `ExpectedCountExpr` is "interpreted".
 //
-// This function then checks for a pointer with a known count `E` that `E` is
-// equivalent to the count `ExpectedCountExpr` of a counted-by type attribute at
-// the state `DependentValues`.
+//
+// This function checks for a pointer with a known count `E` that `E`,
+// interpreted at the state `DependentValues`, is equivalent to the expected
+// count `ExpectedCountExpr`, which is interpreted at the state
+// `DependentValuesExpectedCount`.
 //
 // For example, suppose there is a call to a function `foo(int *__counted_by(n)
 // p, size_t n)`:
@@ -722,12 +811,17 @@ struct CompatibleCountExprVisitor
 // already know that `E` is the count of 'x'.  So we just need to compare `E`
 // to 'n' with 'n' being interpreted under '{n -> y+z}'.  That is, this function
 // will return true iff `E` is same as 'y+z'.
-bool isCompatibleWithCountExpr(const Expr *E, const Expr *ExpectedCountExpr,
-                               const Expr *MemberBase,
-                               const DependentValuesTy *DependentValues,
-                               ASTContext &Ctx) {
-  CompatibleCountExprVisitor Visitor(MemberBase, DependentValues, Ctx);
-  return Visitor.Visit(ExpectedCountExpr, E, /* hasBeenSubstituted*/ false);
+// (Note that if `x` has the form of a function call, a mapping (i.e.,
+// `DependentValues` for `E`) for `x` is needed as well.)
+bool isCompatibleWithCountExpr(
+    ASTContext &Ctx, const Expr *E, const Expr *ExpectedCountExpr,
+    const Expr *MemberBase = nullptr,
+    const DependentValuesTy *DependentValuesActualCount = nullptr,
+    const DependentValuesTy *DependentValuesExpectedCount = nullptr) {
+  CompatibleCountExprVisitor Visitor(MemberBase, DependentValuesExpectedCount,
+                                     DependentValuesActualCount, Ctx);
+  return Visitor.Visit(ExpectedCountExpr, E, /* hasBeenSubstituted*/ false,
+                       false);
 }
 
 // Returns true iff `C` is a C++ nclass method call to the function
@@ -990,6 +1084,15 @@ static bool isCountAttributedPointerArgumentSafeImpl(
   // the actual count of the pointer inferred through patterns below:
   const Expr *ActualCount = nullptr;
   const Expr *MemberBase = nullptr;
+  // While `DependentValueMap` maps formal parameters to actual arguments of the
+  // call being checked, when the pointer argument is another call expression
+  // 'c',  `DependentValueMapForActual` is the map for 'c':
+  std::optional<DependentValuesTy> DependentValueMapForActual = std::nullopt;
+
+  // Handle `PtrArgNoImp` has the form of `(char *) p` and `p` is a sized_by
+  // pointer.  This will be of pattern 5 after stripping the cast:
+  if (const auto *CastE = dyn_cast<CastExpr>(PtrArgNoImp); CastE && isSizedBy)
+    PtrArgNoImp = CastE->getSubExpr();
 
   if (const auto *ME = dyn_cast<MemberExpr>(PtrArgNoImp))
     MemberBase = ME->getBase();
@@ -1006,6 +1109,11 @@ static bool isCountAttributedPointerArgumentSafeImpl(
 
     if (ArgCAT->isOrNull() == isOrNull && areBoundsAttributesCompatible)
       ActualCount = ArgCAT->getCountExpr();
+    // In case `PtrArgNoImp` is a function call expression of counted_by type
+    // (i.e., return type is a CAT), create a map for the call:
+    if (auto *PtrArgCall = dyn_cast<CallExpr>(PtrArgNoImp))
+      DependentValueMapForActual =
+          getDependentValuesFromCall(ArgCAT, PtrArgCall);
   } else {
     // Form 6-7.
     const Expr *ArrArg = PtrArgNoImp;
@@ -1031,8 +1139,11 @@ static bool isCountAttributedPointerArgumentSafeImpl(
     // In case (b), the actual count of the pointer must match the argument
     // passed to the parameter representing the count:
     CountedByExpr = CountArg;
-  return isCompatibleWithCountExpr(ActualCount, CountedByExpr, MemberBase,
-                                   DependentValueMap, Context);
+  return isCompatibleWithCountExpr(
+      Context, ActualCount, CountedByExpr, MemberBase,
+      (DependentValueMapForActual.has_value() ? &*DependentValueMapForActual
+                                              : nullptr),
+      DependentValueMap);
 }
 
 // Checks if the argument passed to a count-attributed pointer is safe.  This
@@ -1303,12 +1414,12 @@ static bool isPtrBufferSafe(const Expr *Ptr, const Expr *Size,
       auto ValuesOpt = getDependentValuesFromCall(CAT, Call);
       if (!ValuesOpt.has_value())
         return false;
-      return isCompatibleWithCountExpr(Size, CAT->getCountExpr(), MemberBase,
-                                       &*ValuesOpt, Ctx);
+      return isCompatibleWithCountExpr(Ctx, Size, CAT->getCountExpr(),
+                                       MemberBase, nullptr, &*ValuesOpt);
     }
 
-    return isCompatibleWithCountExpr(Size, CAT->getCountExpr(), MemberBase,
-                                     /*DependentValues=*/nullptr, Ctx);
+    return isCompatibleWithCountExpr(Ctx, Size, CAT->getCountExpr(),
+                                     MemberBase);
   }
   /* TO_UPSTREAM(BoundsSafetyInterop) OFF */
   return false;
