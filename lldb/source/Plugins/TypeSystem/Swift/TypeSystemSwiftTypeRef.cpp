@@ -422,28 +422,33 @@ TypeSP TypeSystemSwiftTypeRef::LookupClangType(
 TypeSP TypeSystemSwiftTypeRefForExpressions::LookupClangType(
     StringRef name_ref, llvm::ArrayRef<CompilerContext> decl_context,
     SymbolContext sc) {
+  std::unique_lock<std::recursive_mutex> lock(m_clang_type_cache_mutex);
+  // Build up the cache key (the concatenation of the name and the stringified
+  // decl context).
+  StreamString stream;
+  stream << name_ref;
+  for (auto &context : decl_context)
+    context.Dump(stream);
+
   // Check the cache first. Negative results are also cached.
+  auto key = stream.GetString();
+  auto it = m_clang_type_cache.find(key);
+  if (it != m_clang_type_cache.end())
+    return it->second;
+
   TypeSP result;
-  ConstString name(name_ref);
-  if (m_clang_type_cache.Lookup(name.AsCString(), result))
-    return result;
-
-  ModuleSP cur_module = sc.module_sp;
   auto lookup = [&](const ModuleSP &m) -> bool {
-    // Already visited this.
-    if (m == cur_module)
-      return true;
-
     // Don't recursively call into LookupClangTypes() to avoid filling
     // hundreds of image caches with negative results.
     result = ::LookupClangType(const_cast<Module &>(*m), decl_context);
     // Cache it in the expression context.
     if (result)
-      m_clang_type_cache.Insert(name.AsCString(), result);
+      m_clang_type_cache.insert({key, result});
     return !result;
   };
 
   // Visit the current module first as a performance optimization heuristic.
+  ModuleSP cur_module = sc.module_sp;
   if (cur_module)
     if (!lookup(cur_module))
       return result;
@@ -451,6 +456,10 @@ TypeSP TypeSystemSwiftTypeRefForExpressions::LookupClangType(
   if (TargetSP target_sp = GetTargetWP().lock())
     target_sp->GetImages().ForEach(lookup);
 
+  /// Cache the negative result. This is safe to do because ModulesDidLoad will
+  /// clear the cache.
+  if (!result)
+    m_clang_type_cache.insert({key, result});
   return result;
 }
 
@@ -2021,7 +2030,10 @@ void TypeSystemSwiftTypeRef::NotifyAllTypeSystems(
 void TypeSystemSwiftTypeRefForExpressions::ModulesDidLoad(
     ModuleList &module_list) {
   ++m_generation;
-  m_clang_type_cache.Clear();
+  {
+    std::unique_lock<std::recursive_mutex> lock(m_clang_type_cache_mutex);
+    m_clang_type_cache.clear();
+  }
   NotifyAllTypeSystems([&](TypeSystemSP ts_sp) {
     if (auto swift_ast_ctx =
             llvm::dyn_cast_or_null<SwiftASTContextForExpressions>(ts_sp.get()))

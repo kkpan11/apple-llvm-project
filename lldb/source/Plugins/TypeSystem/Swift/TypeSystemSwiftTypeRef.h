@@ -686,8 +686,10 @@ protected:
   /// Perform all the implicit imports for the current frame.
   mutable std::unique_ptr<SymbolContext> m_initial_symbol_context_up;
   std::unique_ptr<SwiftPersistentExpressionState> m_persistent_state_up;
-  /// Map ConstString Clang type identifiers to Clang types.
-  ThreadSafeDenseMap<const char *, lldb::TypeSP> m_clang_type_cache;
+  /// Map ConstString Clang type identifiers and the concatenation of the
+  /// compiler context used to find them to Clang types.
+  llvm::StringMap<lldb::TypeSP> m_clang_type_cache;
+  std::recursive_mutex m_clang_type_cache_mutex;
 };
 
 } // namespace lldb_private
