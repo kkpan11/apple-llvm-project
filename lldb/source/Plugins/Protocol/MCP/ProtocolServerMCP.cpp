@@ -148,7 +148,7 @@ llvm::Error ProtocolServerMCP::Start(ProtocolServer::Connection connection) {
     return llvm::createStringError("server already running");
 
   Status status;
-  m_listener = Socket::Create(connection.protocol, status);
+  m_listener = Socket::Create(connection.protocol, false, status);
   if (status.Fail())
     return status.takeError();
 

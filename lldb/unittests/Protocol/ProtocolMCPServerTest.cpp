@@ -120,7 +120,7 @@ public:
     ASSERT_THAT_ERROR(m_server_up->Start(connection), llvm::Succeeded());
 
     // Connect to the server over a TCP socket.
-    auto connect_socket_up = std::make_unique<TCPSocket>(true);
+    auto connect_socket_up = std::make_unique<TCPSocket>(true, false);
     ASSERT_THAT_ERROR(connect_socket_up
                           ->Connect(llvm::formatv("{0}:{1}", k_localhost,
                                                   static_cast<TCPSocket *>(
