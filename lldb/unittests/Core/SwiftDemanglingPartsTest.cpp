@@ -6,14 +6,16 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Plugins/Language/Swift/SwiftMangled.h"
-#include "Plugins/LanguageRuntime/Swift/SwiftLanguageRuntime.h"
 #include "TestingSupport/TestUtilities.h"
-
 #include "lldb/Core/DemangledNameInfo.h"
 #include "lldb/Core/Mangled.h"
-
+#include "lldb/Host/Config.h"
 #include "gtest/gtest.h"
+
+#ifdef LLDB_ENABLE_SWIFT
+
+#include "Plugins/Language/Swift/SwiftMangled.h"
+#include "Plugins/LanguageRuntime/Swift/SwiftLanguageRuntime.h"
 
 using namespace lldb;
 using namespace lldb_private;
@@ -1604,3 +1606,5 @@ TEST_P(SwiftDemanglingPartsTestFixture, SwiftDemanglingParts) {
 INSTANTIATE_TEST_SUITE_P(
     SwiftDemanglingPartsTests, SwiftDemanglingPartsTestFixture,
     ::testing::ValuesIn(g_swift_demangling_parts_test_cases));
+
+#endif
