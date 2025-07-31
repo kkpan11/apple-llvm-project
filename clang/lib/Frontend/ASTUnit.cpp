@@ -1786,7 +1786,7 @@ std::unique_ptr<ASTUnit> ASTUnit::LoadFromCompilerInvocation(
 
   if (AST->LoadFromCompilerInvocation(std::move(PCHContainerOps),
                                       PrecompilePreambleAfterNParses,
-                                      &AST->FileMgr->getVirtualFileSystem()))
+                                      AST->FileMgr->getVirtualFileSystemPtr()))
     return nullptr;
   return AST;
 }
@@ -1915,7 +1915,7 @@ bool ASTUnit::Reparse(std::shared_ptr<PCHContainerOperations> PCHContainerOps,
 
   if (!VFS) {
     assert(FileMgr && "FileMgr is null on Reparse call");
-    VFS = &FileMgr->getVirtualFileSystem();
+    VFS = FileMgr->getVirtualFileSystemPtr();
   }
 
   clearFileLevelDecls();
