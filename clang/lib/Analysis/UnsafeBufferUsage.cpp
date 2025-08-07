@@ -2984,6 +2984,15 @@ public:
 
     if (!CalleeDecl)
       return false;
+
+    bool IsGlobalAndNotInAnyNamespace =
+        CalleeDecl->isGlobal() &&
+        !CalleeDecl->getEnclosingNamespaceContext()->isNamespace();
+
+    // A libc function must either be in the std:: namespace or a global
+    // function that is not in any namespace:
+    if (!CalleeDecl->isInStdNamespace() && !IsGlobalAndNotInAnyNamespace)
+      return false;
     // If the call has a sole null-terminated argument, e.g., strlen,
     //  printf, atoi, we consider it safe:
     if (hasNumArgs(Call, 1) && isNullTermPointer(Call->getArg(0), Ctx))

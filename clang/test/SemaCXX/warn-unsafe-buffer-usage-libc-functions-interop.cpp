@@ -1,5 +1,10 @@
-// RUN: %clang_cc1 -std=c++20 -Wno-all -Wunsafe-buffer-usage -Wno-error=bounds-safety-strict-terminated-by-cast\
-// RUN:            -verify -fexperimental-bounds-safety-attributes %s
+// RUN: split-file %s %t
+// RUN: %clang_cc1 -std=c++20 -Wno-all -Wunsafe-buffer-usage -Wno-error=bounds-safety-strict-terminated-by-cast	\
+// RUN:            -verify -fexperimental-bounds-safety-attributes %t/annotated.cpp
+// RUN: %clang_cc1 -std=c++20 -Wno-all -Wunsafe-buffer-usage -Wno-error=bounds-safety-strict-terminated-by-cast	\
+// RUN:            -verify -fexperimental-bounds-safety-attributes %t/unannotated.cpp
+
+//--- common.h
 #include <ptrcheck.h>
 #include <stddef.h>
 
@@ -31,7 +36,10 @@ namespace std {
   typedef basic_string<wchar_t> wstring;
 }
 
-namespace annotated_libc {
+//--- annotated.cpp
+#include "common.h"
+
+namespace std {
   // For libc functions that have annotations,
   // `-Wunsafe-buffer-usage-in-libc-call` yields to the interoperation
   // warnings.
@@ -92,9 +100,12 @@ void test_wchar(wchar_t * p, wchar_t * q, const wchar_t * wstr,
   snwprintf(sizedby_p, n, L"%ls", safe_wstr); // expected-warning{{unsafe assignment to function parameter of count-attributed type}}
   snwprintf(safe_p, n, L"%ls", wstr); // expected-warning{{function 'snwprintf' is unsafe}} expected-note{{string argument is not guaranteed to be null-terminated}}
 }
-} // namespace annotated_libc
+} // namespace std
 
-namespace unannotated_libc {
+//--- unannotated.cpp
+#include "common.h"
+
+namespace std {
   // The -Wunsafe-buffer-usage analysis considers some printf
   // functions safe, arguments are correctly annotated. Because these
   // functions are harder to be changed to C++ equivalents.
@@ -142,4 +153,4 @@ void test_wchar(const wchar_t * unsafe_wstr,
   snwprintf(safe_wp, n, unsafe_wstr); // expected-warning{{function 'snwprintf' is unsafe}} expected-note{{string argument is not guaranteed to be null-terminated}}
 
 }
-} // namespace unannotated_libc
+} // namespace std
