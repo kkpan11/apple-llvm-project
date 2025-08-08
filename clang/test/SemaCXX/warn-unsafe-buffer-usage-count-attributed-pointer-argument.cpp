@@ -654,19 +654,20 @@ int *__counted_by(a + b) fn_cb_plus(size_t a, size_t b);
 int *__counted_by(*p) fn_cb_deref(size_t *p);
 
 struct T {
-  size_t size();
+  size_t size() const;
   size_t n;
 };
 
 void test1(size_t n, size_t n2, size_t *p, T * t) {
   cb_int(fn_cb(n), n);
   //cb_int(fn_cb(*&n), n);
-  cb_int(fn_cb(n), *&n); 
+  //cb_int(fn_cb(*&n), *&n);
+  cb_int(fn_cb(n), *&n);
   cb_int(fn_cb(n), 42);    // expected-warning {{unsafe assignment to function parameter of count-attributed type}}
   cb_int(fn_cb(n2), n);   // expected-warning {{unsafe assignment to function parameter of count-attributed type}}
   cb_int(fn_cb(n), n + 1); // expected-warning {{unsafe assignment to function parameter of count-attributed type}}
 
-  //cb_int(fn_cb(t->size()), t->size());
+  cb_int(fn_cb(t->size()), t->size());
   cb_int(fn_cb(t->n), t->n);
   cb_int(fn_cb(t->size()), t->n); // expected-warning {{unsafe assignment to function parameter of count-attributed type}}
   cb_int(fn_cb(t->n), t->size()); // expected-warning {{unsafe assignment to function parameter of count-attributed type}}
@@ -683,6 +684,7 @@ void test1(size_t n, size_t n2, size_t *p, T * t) {
 
   cb_int(fn_cb_deref(p), *p);
   cb_int(fn_cb_deref(&n), n);
+  cb_int(fn_cb_deref(&n), *&n);
   cb_int(fn_cb_deref(p), n);    // expected-warning {{unsafe assignment to function parameter of count-attributed type}}
   cb_int(fn_cb_deref(&n), *p);  // expected-warning {{unsafe assignment to function parameter of count-attributed type}}
 }
