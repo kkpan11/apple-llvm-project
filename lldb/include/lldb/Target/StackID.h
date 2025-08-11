@@ -14,12 +14,17 @@
 
 namespace lldb_private {
 
+class Process;
+
 class StackID {
 public:
   // Constructors and Destructors
   StackID() = default;
 
   StackID(const StackID &rhs) = default;
+
+  explicit StackID(lldb::addr_t pc, lldb::addr_t cfa,
+                   SymbolContextScope *symbol_scope, Process *process);
 
   ~StackID() = default;
 
@@ -68,11 +73,8 @@ public:
 protected:
   friend class StackFrame;
 
-  explicit StackID(lldb::addr_t pc, lldb::addr_t cfa) : m_pc(pc), m_cfa(cfa) {}
-
-  void SetPC(lldb::addr_t pc) { m_pc = pc; }
-
-  void SetCFA(lldb::addr_t cfa) { m_cfa = cfa; }
+  void SetPC(lldb::addr_t pc, Process *process);
+  void SetCFA(lldb::addr_t cfa, Process *process);
 
   lldb::addr_t m_pc =
       LLDB_INVALID_ADDRESS; // The pc value for the function/symbol for this
