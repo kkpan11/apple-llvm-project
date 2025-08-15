@@ -18,5 +18,9 @@
 {
   "target": "stable/20240723",
   "upstream": "swift/release/6.2"
+},
+{
+  "target": "swift/release/6.2.1",
+  "upstream": "swift/release/6.2.0"
 }
 ]
