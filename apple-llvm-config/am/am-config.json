@@ -22,5 +22,9 @@
 {
   "target": "swift/release/6.2.1",
   "upstream": "swift/release/6.2.0"
+},
+{
+  "target": "swift/release/6.2",
+  "upstream": "swift/release/6.2.1"
 }
 ]
