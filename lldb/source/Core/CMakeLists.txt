@@ -48,6 +48,7 @@ add_lldb_library(lldbCore
   Opcode.cpp
   PluginManager.cpp
   Progress.cpp
+  ProtocolServer.cpp
   Statusline.cpp
   RichManglingContext.cpp
   SearchFilter.cpp

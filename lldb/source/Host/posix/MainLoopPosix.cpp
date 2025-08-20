@@ -404,9 +404,5 @@ void MainLoopPosix::TriggerPendingCallbacks() {
     return;
 
   char c = '.';
-  size_t bytes_written;
-  Status error = m_trigger_pipe.Write(&c, 1, bytes_written);
-  assert(error.Success());
-  UNUSED_IF_ASSERT_DISABLED(error);
-  assert(bytes_written == 1);
+  cantFail(m_trigger_pipe.Write(&c, 1));
 }

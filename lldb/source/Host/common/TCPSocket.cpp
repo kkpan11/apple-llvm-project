@@ -137,6 +137,14 @@ std::string TCPSocket::GetRemoteConnectionURI() const {
   return "";
 }
 
+std::vector<std::string> TCPSocket::GetListeningConnectionURI() const {
+  std::vector<std::string> URIs;
+  for (const auto &[fd, addr] : m_listen_sockets)
+    URIs.emplace_back(llvm::formatv("connection://[{0}]:{1}",
+                                    addr.GetIPAddress(), addr.GetPort()));
+  return URIs;
+}
+
 Status TCPSocket::CreateSocket(int domain) {
   Status error;
   if (IsValid())
@@ -255,9 +263,9 @@ void TCPSocket::CloseListenSockets() {
   m_listen_sockets.clear();
 }
 
-llvm::Expected<std::vector<MainLoopBase::ReadHandleUP>> TCPSocket::Accept(
-    MainLoopBase &loop,
-    std::function<void(std::unique_ptr<TCPSocket> socket)> sock_cb) {
+llvm::Expected<std::vector<MainLoopBase::ReadHandleUP>>
+TCPSocket::Accept(MainLoopBase &loop,
+                  std::function<void(std::unique_ptr<Socket> socket)> sock_cb) {
   if (m_listen_sockets.size() == 0)
     return llvm::createStringError("No open listening sockets!");
 
@@ -299,19 +307,6 @@ llvm::Expected<std::vector<MainLoopBase::ReadHandleUP>> TCPSocket::Accept(
   }
 
   return handles;
-}
-
-Status TCPSocket::Accept(Socket *&conn_socket) {
-  MainLoop accept_loop;
-  llvm::Expected<std::vector<MainLoopBase::ReadHandleUP>> expected_handles =
-      Accept(accept_loop,
-             [&accept_loop, &conn_socket](std::unique_ptr<TCPSocket> sock) {
-               conn_socket = sock.release();
-               accept_loop.RequestTermination();
-             });
-  if (!expected_handles)
-    return Status::FromError(expected_handles.takeError());
-  return accept_loop.Run();
 }
 
 int TCPSocket::SetOptionNoDelay() {
