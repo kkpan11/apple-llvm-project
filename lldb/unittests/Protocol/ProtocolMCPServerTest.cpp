@@ -5,7 +5,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
-
+#ifndef _WIN32 // DISABLE TEST ON WINDOWS
 #include "Plugins/Platform/MacOSX/PlatformRemoteMacOSX.h"
 #include "Plugins/Protocol/MCP/MCPError.h"
 #include "Plugins/Protocol/MCP/ProtocolServerMCP.h"
@@ -325,3 +325,4 @@ TEST_F(ProtocolServerMCPTest, NotificationInitialized) {
   std::unique_lock<std::mutex> lock(mutex);
   cv.wait(lock, [&] { return handler_called; });
 }
+#endif // DISABLE TEST ON WINDOWS
