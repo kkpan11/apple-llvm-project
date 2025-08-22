@@ -253,10 +253,6 @@ Expected<std::unique_ptr<ObjectStore>> cas::createOnDiskCAS(const Twine &Path) {
   Path.toVector(AbsPath);
   sys::fs::make_absolute(AbsPath);
 
-  // FIXME: Remove this and update clients to do this logic.
-  if (AbsPath == getDefaultOnDiskCASStableID())
-    AbsPath = StringRef(getDefaultOnDiskCASPath());
-
   return OnDiskCAS::open(AbsPath);
 #else
   return createStringError(inconvertibleErrorCode(), "OnDiskCAS is disabled");
@@ -271,26 +267,16 @@ cas::builtin::createObjectStoreFromUnifiedOnDiskCache(
 
 static constexpr StringLiteral DefaultName = "cas";
 
-void cas::getDefaultOnDiskCASStableID(SmallVectorImpl<char> &Path) {
-  Path.assign(DefaultDirProxy.begin(), DefaultDirProxy.end());
-  llvm::sys::path::append(Path, DefaultDir, DefaultName);
-}
-
-std::string cas::getDefaultOnDiskCASStableID() {
-  SmallString<128> Path;
-  getDefaultOnDiskCASStableID(Path);
-  return Path.str().str();
-}
-
-void cas::getDefaultOnDiskCASPath(SmallVectorImpl<char> &Path) {
-  // FIXME: Should this return 'Error' instead of hard-failing?
+Error cas::getDefaultOnDiskCASPath(SmallVectorImpl<char> &Path) {
   if (!llvm::sys::path::cache_directory(Path))
-    report_fatal_error("cannot get default cache directory");
+    return createStringError("cache directory is not available");
   llvm::sys::path::append(Path, DefaultDir, DefaultName);
+  return Error::success();
 }
 
-std::string cas::getDefaultOnDiskCASPath() {
+Expected<std::string> cas::getDefaultOnDiskCASPath() {
   SmallString<128> Path;
-  getDefaultOnDiskCASPath(Path);
+  if (auto E = getDefaultOnDiskCASPath(Path))
+    return std::move(E);
   return Path.str().str();
 }

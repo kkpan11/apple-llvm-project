@@ -350,10 +350,7 @@ static std::unique_ptr<ToolOutputFile> GetOutputStream(Triple::OSType OS) {
 static std::shared_ptr<cas::ObjectStore> getCAS() {
   if (CASPath.empty())
     return cas::createInMemoryCAS();
-  auto MaybeCAS =
-      CASPath == "auto"
-          ? cas::createCASFromIdentifier(cas::getDefaultOnDiskCASPath())
-          : cas::createCASFromIdentifier(CASPath);
+  auto MaybeCAS = cas::createCASFromIdentifier(CASPath);
   if (MaybeCAS)
     return std::move(*MaybeCAS);
   reportError(toString(MaybeCAS.takeError()));
