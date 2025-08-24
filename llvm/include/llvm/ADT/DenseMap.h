@@ -256,13 +256,12 @@ public:
   std::pair<iterator, bool> try_emplace(KeyT &&Key, Ts &&...Args) {
     BucketT *TheBucket;
     if (LookupBucketFor(Key, TheBucket))
-      return std::make_pair(makeInsertIterator(TheBucket),
-                            false); // Already in map.
+      return {makeInsertIterator(TheBucket), false}; // Already in map.
 
     // Otherwise, insert the new element.
     TheBucket =
         InsertIntoBucket(TheBucket, std::move(Key), std::forward<Ts>(Args)...);
-    return std::make_pair(makeInsertIterator(TheBucket), true);
+    return {makeInsertIterator(TheBucket), true};
   }
 
   // Inserts key,value pair into the map if the key isn't already in the map.
@@ -272,12 +271,11 @@ public:
   std::pair<iterator, bool> try_emplace(const KeyT &Key, Ts &&...Args) {
     BucketT *TheBucket;
     if (LookupBucketFor(Key, TheBucket))
-      return std::make_pair(makeInsertIterator(TheBucket),
-                            false); // Already in map.
+      return {makeInsertIterator(TheBucket), false}; // Already in map.
 
     // Otherwise, insert the new element.
     TheBucket = InsertIntoBucket(TheBucket, Key, std::forward<Ts>(Args)...);
-    return std::make_pair(makeInsertIterator(TheBucket), true);
+    return {makeInsertIterator(TheBucket), true};
   }
 
   /// Alternate version of insert() which allows a different, and possibly
@@ -290,13 +288,12 @@ public:
                                       const LookupKeyT &Val) {
     BucketT *TheBucket;
     if (LookupBucketFor(Val, TheBucket))
-      return std::make_pair(makeInsertIterator(TheBucket),
-                            false); // Already in map.
+      return {makeInsertIterator(TheBucket), false}; // Already in map.
 
     // Otherwise, insert the new element.
     TheBucket = InsertIntoBucketWithLookup(TheBucket, std::move(KV.first),
                                            std::move(KV.second), Val);
-    return std::make_pair(makeInsertIterator(TheBucket), true);
+    return {makeInsertIterator(TheBucket), true};
   }
 
   /// insert - Range insertion of pairs.
