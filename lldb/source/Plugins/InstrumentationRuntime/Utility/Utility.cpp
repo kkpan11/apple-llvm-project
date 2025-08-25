@@ -17,7 +17,13 @@ namespace lldb_private {
 ///< compiler-rt, and we should prefer it in favour of the system sanitizers.
 ///< This helper searches the target for such a dylib. Returns nullptr if no
 ///< such dylib was found.
-lldb::ModuleSP GetPreferredAsanModule(const Target &target) {
+std::tuple<lldb::ModuleSP, HistoryPCType>
+GetPreferredAsanModule(const Target &target) {
+  // Currently only Darwin provides ASan runtime support as part of the OS
+  // (libsanitizers).
+  if (!target.GetArchitecture().GetTriple().isOSDarwin())
+    return {nullptr, HistoryPCType::Calls};
+
   lldb::ModuleSP module;
   llvm::Regex pattern(R"(libclang_rt\.asan_.*_dynamic\.dylib)");
   target.GetImages().ForEach([&](const lldb::ModuleSP &m) {
@@ -29,7 +35,16 @@ lldb::ModuleSP GetPreferredAsanModule(const Target &target) {
     return true;
   });
 
-  return module;
+  // `Calls` - The ASan compiler-rt runtime already massages the return
+  //   addresses into call addresses, so we don't want LLDB's unwinder to try to
+  //   locate the previous instruction again as this might lead to us reporting
+  //   a different line.
+  // `ReturnsNoZerothFrame` - Darwin, but not ASan compiler-rt implies
+  //   libsanitizers which collects return addresses.  It also discards a few
+  //   non-user frames at the top of the stack.
+  auto pc_type =
+      (module ? HistoryPCType::Calls : HistoryPCType::ReturnsNoZerothFrame);
+  return {module, pc_type};
 }
 
 } // namespace lldb_private

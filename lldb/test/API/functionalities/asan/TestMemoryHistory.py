@@ -36,7 +36,6 @@ class AsanTestCase(TestBase):
         self.line_free = line_number("main.c", "// free line")
         self.line_breakpoint = line_number("main.c", "// break line")
 
-    # Test line numbers: rdar://126237493
     def libsanitizer_tests(self):
         target = self.createTestTarget()
 
@@ -59,10 +58,10 @@ class AsanTestCase(TestBase):
             substrs=[
                 "Memory deallocated by Thread",
                 "a.out`f2",
-                "main.c",
+                f"main.c:{self.line_free}",
                 "Memory allocated by Thread",
                 "a.out`f1",
-                "main.c",
+                f"main.c:{self.line_malloc}",
             ],
         )
 
