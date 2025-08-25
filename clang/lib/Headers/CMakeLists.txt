@@ -37,6 +37,7 @@ set(core_files
   unwind.h
   varargs.h
   feature-availability.h
+  availability_domain.h
   )
 
 set(arm_common_files
