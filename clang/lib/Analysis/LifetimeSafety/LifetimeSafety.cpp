@@ -14,7 +14,7 @@
 #include "clang/Analysis/Analyses/LifetimeSafety/LifetimeSafety.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/Expr.h"
-#include "clang/AST/TypeBase.h"
+#include "clang/AST/Type.h"
 #include "clang/Analysis/Analyses/LifetimeSafety/Checker.h"
 #include "clang/Analysis/Analyses/LifetimeSafety/Facts.h"
 #include "clang/Analysis/Analyses/LifetimeSafety/FactsGenerator.h"

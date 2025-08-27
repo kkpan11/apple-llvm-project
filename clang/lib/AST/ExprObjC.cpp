@@ -14,7 +14,7 @@
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/ComputeDependence.h"
 #include "clang/AST/SelectorLocationsKind.h"
-#include "clang/AST/TypeBase.h"
+#include "clang/AST/Type.h"
 #include "clang/AST/TypeLoc.h"
 #include "llvm/Support/ErrorHandling.h"
 #include <cassert>

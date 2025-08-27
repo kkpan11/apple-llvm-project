@@ -14,7 +14,7 @@
 #ifndef LLVM_CLANG_ANALYSIS_ANALYSES_LIFETIMESAFETY_LIFETIMESTATS_H
 #define LLVM_CLANG_ANALYSIS_ANALYSES_LIFETIMESAFETY_LIFETIMESTATS_H
 
-#include "clang/AST/TypeBase.h"
+#include "clang/AST/Type.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/StringMap.h"
 

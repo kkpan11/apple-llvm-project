@@ -12,7 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/Analysis/Analyses/LifetimeSafety/LifetimeStats.h"
-#include "clang/AST/TypeBase.h"
+#include "clang/AST/Type.h"
 #include "llvm/Support/raw_ostream.h"
 
 namespace clang::lifetimes {

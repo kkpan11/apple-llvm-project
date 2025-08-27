@@ -14,7 +14,7 @@
 #include "clang/AST/ASTStructuralEquivalence.h"
 #include "clang/AST/Attr.h"
 #include "clang/AST/Expr.h"
-#include "clang/AST/TypeBase.h"
+#include "clang/AST/Type.h"
 #include <optional>
 #include <type_traits>
 using namespace clang;
