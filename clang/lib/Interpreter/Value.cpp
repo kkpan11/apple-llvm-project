@@ -13,7 +13,7 @@
 
 #include "clang/Interpreter/Value.h"
 #include "clang/AST/ASTContext.h"
-#include "clang/AST/Type.h"
+#include "clang/AST/TypeBase.h"
 #include "clang/AST/ASTConsumer.h"
 #include "clang/Interpreter/Interpreter.h"
 #include "llvm/ADT/StringExtras.h"
