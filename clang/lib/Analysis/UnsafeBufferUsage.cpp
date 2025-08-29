@@ -12,7 +12,6 @@
 #include "clang/AST/ASTTypeTraits.h"
 #include "clang/AST/Attr.h"
 #include "clang/AST/Decl.h"
-#include "clang/AST/DeclBase.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DynamicRecursiveASTVisitor.h"
 #include "clang/AST/Expr.h"
@@ -25,31 +24,20 @@
 #include "clang/AST/Type.h"
 #include "clang/ASTMatchers/LowLevelHelpers.h"
 #include "clang/Analysis/Support/FixitUtil.h"
-#include "clang/Basic/Module.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Lex/Lexer.h"
 #include "clang/Lex/Preprocessor.h"
-#include "llvm/ADT/APInt.h"
 #include "llvm/ADT/APSInt.h"
-#include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/Support/Casting.h"
-#include "llvm/Support/Error.h"
-#include "llvm/Support/raw_ostream.h"
 #include <cstddef>
-#include <functional>
 #include <initializer_list>
-#include <iterator>
-#include <memory>
 #include <numeric>
 #include <optional>
 #include <queue>
 #include <set>
 #include <sstream>
-#include <string>
 
 using namespace clang;
 
