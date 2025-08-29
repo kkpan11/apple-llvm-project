@@ -661,7 +661,7 @@ struct T {
 void test1(size_t n, size_t n2, size_t *p, T * t) {
   cb_int(fn_cb(n), n);
   cb_int(fn_cb(*&n), n);
-  //cb_int(fn_cb(*&n), *&n);  
+  cb_int(fn_cb(*&n), *&n);
   cb_int(fn_cb(n), *&n); 
   cb_int(fn_cb(n), 42);    // expected-warning {{unsafe assignment to function parameter of count-attributed type}}
   cb_int(fn_cb(n2), n);   // expected-warning {{unsafe assignment to function parameter of count-attributed type}}
