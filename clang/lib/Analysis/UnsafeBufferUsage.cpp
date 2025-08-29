@@ -489,20 +489,19 @@ struct CompatibleCountExprVisitor
   // Attempts to perform substitution on E and simplify the result, if the
   // result has the form "*&e".
   //
-  //  This function will be repeatedly called on the "Other" Expr. Because the
+  //  This function will be repeatedly called on the "Other" Expr, because the
   //  kind of "Other" stays unknown during the traversal.
-  const std::pair<const Expr *, bool>
-  trySubstituteAndSimplify(const Expr *E,
-                           const DependentValuesTy *DependentValues) {
+  const Expr *
+  trySubstituteAndSimplify(const Expr *E, bool &hasBeenSubstituted,
+                           const DependentValuesTy *DependentValues) const {
     // Attempts to simplify `E`: if `E` has the form `*&e`, return `e`;
-    // otherwise
-    // return `E` without change.
+    // return `E` without change otherwise:
     auto trySimplifyDerefAddressof =
         [](const Expr *E,
            const DependentValuesTy
                *DependentValues, // Deref may need subsitution
            bool &hasBeenSubstituted) -> const Expr * {
-      auto *Deref = dyn_cast<UnaryOperator>(E->IgnoreParenImpCasts());
+      const auto *Deref = dyn_cast<UnaryOperator>(E->IgnoreParenImpCasts());
 
       if (!Deref || Deref->getOpcode() != UO_Deref)
         return E;
@@ -516,10 +515,10 @@ struct CompatibleCountExprVisitor
         if (!DependentValues || hasBeenSubstituted)
           return E;
 
-        auto I = DependentValues->find(DRE->getDecl());
-
-        if (I != DependentValues->end())
-          if (const auto *UO = dyn_cast<UnaryOperator>(I->getSecond()))
+        if (auto I = DependentValues->find(DRE->getDecl());
+            I != DependentValues->end())
+          if (const auto *UO = dyn_cast<UnaryOperator>(
+                  I->getSecond()->IgnoreParenImpCasts()))
             if (UO->getOpcode() == UO_AddrOf) {
               hasBeenSubstituted = true;
               return UO->getSubExpr();
@@ -528,21 +527,17 @@ struct CompatibleCountExprVisitor
       return E;
     };
 
-    if (auto *DRE = dyn_cast<DeclRefExpr>(E->IgnoreParenImpCasts());
-        DRE && DependentValues) {
-      auto It = DependentValues->find(DRE->getDecl());
-
-      if (It != DependentValues->end()) {
-        bool Ignore;
-        return {trySimplifyDerefAddressof(It->second, nullptr, Ignore), true};
+    if (!hasBeenSubstituted && DependentValues) {
+      if (const auto *DRE = dyn_cast<DeclRefExpr>(E->IgnoreParenImpCasts())) {
+        if (auto It = DependentValues->find(DRE->getDecl());
+            It != DependentValues->end()) {
+          hasBeenSubstituted = true;
+          return trySimplifyDerefAddressof(It->second, nullptr,
+                                           hasBeenSubstituted);
+        }
       }
     }
-
-    bool hasBeenSubstituted = false;
-    const Expr *NewE =
-        trySimplifyDerefAddressof(E, DependentValues, hasBeenSubstituted);
-
-    return {NewE, hasBeenSubstituted};
+    return trySimplifyDerefAddressof(E, DependentValues, hasBeenSubstituted);
   }
 
   explicit CompatibleCountExprVisitor(
@@ -573,9 +568,8 @@ struct CompatibleCountExprVisitor
   bool VisitIntegerLiteral(const IntegerLiteral *SelfIL, const Expr *Other,
                            bool hasSelfBeenSubstituted,
                            bool hasOtherBeenSubstituted) {
-    if (!hasOtherBeenSubstituted)
-      std::tie(Other, hasOtherBeenSubstituted) =
-          trySubstituteAndSimplify(Other, DependentValuesOther);
+    Other = trySubstituteAndSimplify(Other, hasOtherBeenSubstituted,
+                                     DependentValuesOther);
     if (const auto *IntLit =
             dyn_cast<IntegerLiteral>(Other->IgnoreParenImpCasts())) {
       return SelfIL == IntLit ||
@@ -588,10 +582,8 @@ struct CompatibleCountExprVisitor
                                      const Expr *Other,
                                      bool hasSelfBeenSubstituted,
                                      bool hasOtherBeenSubstituted) {
-    if (!hasOtherBeenSubstituted)
-      std::tie(Other, hasOtherBeenSubstituted) =
-          trySubstituteAndSimplify(Other, DependentValuesOther);
-
+    Other = trySubstituteAndSimplify(Other, hasOtherBeenSubstituted,
+                                     DependentValuesOther);
     // If `Self` is a `sizeof` expression, try to evaluate and compare the two
     // expressions as constants:
     if (Self->getKind() == UnaryExprOrTypeTrait::UETT_SizeOf) {
@@ -611,38 +603,35 @@ struct CompatibleCountExprVisitor
   bool VisitCXXThisExpr(const CXXThisExpr *SelfThis, const Expr *Other,
                         bool hasSelfBeenSubstituted,
                         bool hasOtherBeenSubstituted) {
-    if (!hasOtherBeenSubstituted)
-      std::tie(Other, hasOtherBeenSubstituted) =
-          trySubstituteAndSimplify(Other, DependentValuesOther);
+    Other = trySubstituteAndSimplify(Other, hasSelfBeenSubstituted,
+                                     DependentValuesOther);
     return isa<CXXThisExpr>(Other->IgnoreParenImpCasts());
   }
 
   bool VisitDeclRefExpr(const DeclRefExpr *SelfDRE, const Expr *Other,
                         bool hasSelfBeenSubstituted,
                         bool hasOtherBeenSubstituted) {
-    const ValueDecl *SelfVD = SelfDRE->getDecl();
+    const auto *SubstSelf = trySubstituteAndSimplify(SelfDRE, hasSelfBeenSubstituted,
+                                               DependentValuesSelf);
 
-    if (DependentValuesSelf && !hasSelfBeenSubstituted) {
-      const auto It = DependentValuesSelf->find(SelfVD);
-      if (It != DependentValuesSelf->end())
-        return Visit(It->second, Other, true, hasOtherBeenSubstituted);
-    }
-    if (!hasOtherBeenSubstituted)
-      std::tie(Other, hasOtherBeenSubstituted) =
-          trySubstituteAndSimplify(Other, DependentValuesOther);
+    if (SubstSelf != SelfDRE)
+      return Visit(SubstSelf, Other, hasSelfBeenSubstituted,
+                   hasOtherBeenSubstituted);
+    Other = trySubstituteAndSimplify(Other, hasOtherBeenSubstituted,
+                                     DependentValuesOther);
 
     const auto *O = Other->IgnoreParenImpCasts();
 
     if (const auto *OtherDRE = dyn_cast<DeclRefExpr>(O)) {
       // Both SelfDRE and OtherDRE can be transformed from member expressions:
-      if (OtherDRE->getDecl() == SelfVD)
+      if (OtherDRE->getDecl() == SelfDRE->getDecl())
         return true;
       return false;
     }
 
     const auto *OtherME = dyn_cast<MemberExpr>(O);
     if (MemberBase && OtherME) {
-      return OtherME->getMemberDecl() == SelfVD &&
+      return OtherME->getMemberDecl() == SelfDRE->getDecl() &&
              Visit(OtherME->getBase(), MemberBase, hasSelfBeenSubstituted,
                    hasOtherBeenSubstituted);
     }
@@ -653,9 +642,8 @@ struct CompatibleCountExprVisitor
   bool VisitMemberExpr(const MemberExpr *Self, const Expr *Other,
                        bool hasSelfBeenSubstituted,
                        bool hasOtherBeenSubstituted) {
-    if (!hasOtherBeenSubstituted)
-      std::tie(Other, hasOtherBeenSubstituted) =
-          trySubstituteAndSimplify(Other, DependentValuesOther);
+    Other = trySubstituteAndSimplify(Other, hasOtherBeenSubstituted,
+                                     DependentValuesOther);
     // Even though we don't support member expression in counted-by, actual
     // arguments can be member expressions.
     if (Self == Other)
@@ -676,12 +664,10 @@ struct CompatibleCountExprVisitor
   bool VisitUnaryOperator(const UnaryOperator *SelfUO, const Expr *Other,
                           bool hasSelfBeenSubstituted,
                           bool hasOtherBeenSubstituted) {
-    if (!hasOtherBeenSubstituted)
-      std::tie(Other, hasOtherBeenSubstituted) =
-          trySubstituteAndSimplify(Other, DependentValuesOther);
     if (SelfUO->getOpcode() != UO_Deref)
       return false; // We don't support any other unary operator
-
+    Other = trySubstituteAndSimplify(Other, hasOtherBeenSubstituted,
+                                     DependentValuesOther);
     if (const auto *OtherUO =
             dyn_cast<UnaryOperator>(Other->IgnoreParenImpCasts())) {
       if (SelfUO->getOpcode() == OtherUO->getOpcode())
@@ -689,20 +675,20 @@ struct CompatibleCountExprVisitor
                      hasSelfBeenSubstituted, hasOtherBeenSubstituted);
     }
     // If `Other` is not a dereference expression, try to simplify `SelfUO`:
-    auto [SimplifiedSelf, HasSubst] = trySubstituteAndSimplify(
-        SelfUO, hasSelfBeenSubstituted ? nullptr : DependentValuesSelf);
+    const auto *SimplifiedSelf = trySubstituteAndSimplify(
+        SelfUO, hasSelfBeenSubstituted, DependentValuesSelf);
 
     if (SimplifiedSelf != SelfUO)
-      return Visit(SimplifiedSelf, Other, HasSubst, hasOtherBeenSubstituted);
+      return Visit(SimplifiedSelf, Other, hasSelfBeenSubstituted,
+                   hasOtherBeenSubstituted);
     return false;
   }
 
   bool VisitBinaryOperator(const BinaryOperator *SelfBO, const Expr *Other,
                            bool hasSelfBeenSubstituted,
                            bool hasOtherBeenSubstituted) {
-    if (!hasOtherBeenSubstituted)
-      std::tie(Other, hasOtherBeenSubstituted) =
-          trySubstituteAndSimplify(Other, DependentValuesOther);
+    Other = trySubstituteAndSimplify(Other, hasOtherBeenSubstituted,
+                                     DependentValuesOther);
 
     const auto *OtherBO =
         dyn_cast<BinaryOperator>(Other->IgnoreParenImpCasts());
@@ -727,9 +713,8 @@ struct CompatibleCountExprVisitor
 
     if (!MD || !MD->isConst())
       return false;
-    if (!hasOtherBeenSubstituted)
-      std::tie(Other, hasOtherBeenSubstituted) =
-          trySubstituteAndSimplify(Other, DependentValuesOther);
+    Other = trySubstituteAndSimplify(Other, hasOtherBeenSubstituted,
+                                     DependentValuesOther);
     if (const auto *OtherOpCall =
             dyn_cast<CXXOperatorCallExpr>(Other->IgnoreParenImpCasts()))
       if (SelfOpCall->getOperator() == OtherOpCall->getOperator()) {
@@ -747,9 +732,8 @@ struct CompatibleCountExprVisitor
   bool VisitArraySubscriptExpr(const ArraySubscriptExpr *SelfAS,
                                const Expr *Other, bool hasSelfBeenSubstituted,
                                bool hasOtherBeenSubstituted) {
-    if (!hasOtherBeenSubstituted)
-      std::tie(Other, hasOtherBeenSubstituted) =
-          trySubstituteAndSimplify(Other, DependentValuesOther);
+    Other = trySubstituteAndSimplify(Other, hasOtherBeenSubstituted,
+                                     DependentValuesOther);
     if (const auto *OtherAS =
             dyn_cast<ArraySubscriptExpr>(Other->IgnoreParenImpCasts()))
       return Visit(SelfAS->getLHS(), OtherAS->getLHS(), hasSelfBeenSubstituted,
@@ -765,9 +749,8 @@ struct CompatibleCountExprVisitor
                               bool hasOtherBeenSubstituted) {
     const CXXMethodDecl *MD = SelfCall->getMethodDecl();
 
-    if (!hasOtherBeenSubstituted)
-      std::tie(Other, hasOtherBeenSubstituted) =
-          trySubstituteAndSimplify(Other, DependentValuesOther);
+    Other = trySubstituteAndSimplify(Other, hasOtherBeenSubstituted,
+                                     DependentValuesOther);
     // The callee member function must be a const function with no parameter:
     if (MD->isConst() && MD->param_empty()) {
       if (auto *OtherCall =
