@@ -244,6 +244,7 @@ public:
     LiteOS,
     Serenity,
     Vulkan, // Vulkan SPIR-V
+    CheriotRTOS,
     Firmware,
     LastOSType = Firmware
   };
