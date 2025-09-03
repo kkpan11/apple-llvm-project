@@ -5,7 +5,6 @@ import lldbsuite.test.lldbutil as lldbutil
 
 class TestCase(TestBase):
 
-    @skipIf(bugnumber="rdar://159531040")
     @swiftTest
     def test_backtrace_task_variable(self):
         self.build()
@@ -14,7 +13,6 @@ class TestCase(TestBase):
         )
         self.do_backtrace("task")
 
-    @skipIf(bugnumber="rdar://159531040")
     @swiftTest
     def test_backtrace_task_address(self):
         self.build()

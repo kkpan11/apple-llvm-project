@@ -3,7 +3,6 @@ from lldbsuite.test.decorators import *
 from lldbsuite.test.lldbtest import TestBase
 import lldbsuite.test.lldbutil as lldbutil
 
-@skipIf(bugnumber="rdar://159531153")
 class TestCase(TestBase):
 
     @swiftTest
