@@ -1580,6 +1580,11 @@ ScriptInterpreterPythonImpl::CreateScriptedThreadInterface() {
   return std::make_shared<ScriptedThreadPythonInterface>(*this);
 }
 
+ScriptedFrameInterfaceSP
+ScriptInterpreterPythonImpl::CreateScriptedFrameInterface() {
+  return std::make_shared<ScriptedFramePythonInterface>(*this);
+}
+
 ScriptedThreadPlanInterfaceSP
 ScriptInterpreterPythonImpl::CreateScriptedThreadPlanInterface() {
   return std::make_shared<ScriptedThreadPlanPythonInterface>(*this);
