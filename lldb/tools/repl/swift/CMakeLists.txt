@@ -20,17 +20,18 @@ target_link_libraries(repl_swift PRIVATE ${CMAKE_DL_LIBS})
 if(CMAKE_SYSTEM_NAME STREQUAL Windows)
   set_target_properties(repl_swift PROPERTIES
     WIN32_EXECUTABLE TRUE)
-elseif(CMAKE_SYSTEM_NAME STREQUAL Linux)
+elseif(CMAKE_SYSTEM_NAME MATCHES "Linux|Android|OpenBSD|FreeBSD")
+  string(TOLOWER "${CMAKE_SYSTEM_NAME}" platform)
   if(CMAKE_SYSTEM_PROCESSOR MATCHES ppc64le)
     set_target_properties(repl_swift PROPERTIES
-      BUILD_RPATH ${SWIFT_LIBRARY_DIR}/swift/linux/powerpc64le)
+      BUILD_RPATH "${SWIFT_LIBRARY_DIR}/swift/${platform}/powerpc64le")
   else()
     set_target_properties(repl_swift PROPERTIES
-      BUILD_RPATH ${SWIFT_LIBRARY_DIR}/swift/linux)
+      BUILD_RPATH "${SWIFT_LIBRARY_DIR}/swift/${platform}")
   endif()
   set_target_properties(repl_swift PROPERTIES
     BUILD_WITH_INSTALL_RPATH NO
-    INSTALL_RPATH "$ORIGIN/../lib/swift/linux")
+    INSTALL_RPATH "$ORIGIN/../lib/swift/${platform}")
 endif()
 
 # The dummy repl executable is a C program, but we always look for a mangled
