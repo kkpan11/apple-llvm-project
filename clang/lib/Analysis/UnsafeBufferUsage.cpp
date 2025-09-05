@@ -603,7 +603,7 @@ struct CompatibleCountExprVisitor
   bool VisitCXXThisExpr(const CXXThisExpr *SelfThis, const Expr *Other,
                         bool hasSelfBeenSubstituted,
                         bool hasOtherBeenSubstituted) {
-    Other = trySubstituteAndSimplify(Other, hasSelfBeenSubstituted,
+    Other = trySubstituteAndSimplify(Other, hasOtherBeenSubstituted,
                                      DependentValuesOther);
     return isa<CXXThisExpr>(Other->IgnoreParenImpCasts());
   }
@@ -611,8 +611,8 @@ struct CompatibleCountExprVisitor
   bool VisitDeclRefExpr(const DeclRefExpr *SelfDRE, const Expr *Other,
                         bool hasSelfBeenSubstituted,
                         bool hasOtherBeenSubstituted) {
-    const auto *SubstSelf = trySubstituteAndSimplify(SelfDRE, hasSelfBeenSubstituted,
-                                               DependentValuesSelf);
+    const auto *SubstSelf = trySubstituteAndSimplify(
+        SelfDRE, hasSelfBeenSubstituted, DependentValuesSelf);
 
     if (SubstSelf != SelfDRE)
       return Visit(SubstSelf, Other, hasSelfBeenSubstituted,
@@ -766,54 +766,38 @@ struct CompatibleCountExprVisitor
 };
 
 // TL'DR:
-// Checks if `E` is the same as `ExpectedCountExpr` modulo implicit casts and
+// Checks if `Self` is the same as `Other` modulo implicit casts and
 // parens.
 //
 // Lengthy description:
-// `E`:                 represents the actual count/size associated to a
-//                      pointer.
-// `ExpectedCountExpr`: represents the counted-by expression of a counted-by
-//                      type attribute.
+// `Self`:              an expression, one of the comparands
+// `Other`:             an expression, the other comparands
 // `MemberBase`:        represents "this" member base.  A MemberExpr
-//                      representing `this->f` in both `E` and
-//                      `ExpectedCountExpr` may be transformed to a DRE
+//                      representing `this->f` in either `Self` and
+//                      `Other` may be transformed to a DRE
 //                      representing just `f`.  Therefore we need to keep track
-//                      of the base for them in that case.
-// `DependentValues`:   is a mapping from parameters to arguments,
-//                      serving as a "state" where `E` is "interpreted".
-// `DependentValuesExpectedCount`:
-//                      is a mapping from parameters to arguments, serving as a
-//                      "state" where `ExpectedCountExpr` is "interpreted".
+//                      of the base for them in that case.  The two comparands
+//                      must share a member base if it exists.
+// `DependentValuesSelf`:
+//                      a mapping from parameters to arguments for the parameter
+//                      references appearing in `Self`.
+// `DependentValuesOther`:
+//                      a mapping from parameters to arguments for the parameter
+//                      references appearing in `Other`.
 //
-//
-// This function checks for a pointer with a known count `E` that `E`,
-// interpreted at the state `DependentValues`, is equivalent to the expected
-// count `ExpectedCountExpr`, which is interpreted at the state
-// `DependentValuesExpectedCount`.
-//
-// For example, suppose there is a call to a function `foo(int *__counted_by(n)
-// p, size_t n)`:
-//
-//    foo(x, y+z);
-//
-// We check that the count associated to the pointer 'x' is same as the
-// expected count expression 'n' with the mapping (state) '{n -> y+z}'.  The
-// count of 'x' is determined by pre-defined knowledge, e.g., if 'x' has the
-// form of 'span.data()', its' count is 'span.size()', etc.  At this point, we
-// already know that `E` is the count of 'x'.  So we just need to compare `E`
-// to 'n' with 'n' being interpreted under '{n -> y+z}'.  That is, this function
-// will return true iff `E` is same as 'y+z'.
-// (Note that if `x` has the form of a function call, a mapping (i.e.,
-// `DependentValues` for `E`) for `x` is needed as well.)
+// The comparison is on the two expressions `Self` and `Other` with the
+// substitution maps  `DependentValuesSelf` and `DependentValuesOther` being
+// applied to them, respectively.
 bool isCompatibleWithCountExpr(
-    ASTContext &Ctx, const Expr *E, const Expr *ExpectedCountExpr,
+    ASTContext &Ctx, const Expr *Self, const Expr *Other,
     const Expr *MemberBase = nullptr,
-    const DependentValuesTy *DependentValuesActualCount = nullptr,
-    const DependentValuesTy *DependentValuesExpectedCount = nullptr) {
-  CompatibleCountExprVisitor Visitor(MemberBase, DependentValuesExpectedCount,
-                                     DependentValuesActualCount, Ctx);
-  return Visitor.Visit(ExpectedCountExpr, E, /* hasBeenSubstituted*/ false,
-                       false);
+    const DependentValuesTy *DependentValuesSelf = nullptr,
+    const DependentValuesTy *DependentValuesOther = nullptr) {
+  CompatibleCountExprVisitor Visitor(MemberBase, DependentValuesSelf,
+                                     DependentValuesOther, Ctx);
+  return Visitor.Visit(Self, Other,
+                       /* hasSelfBeenSubstituted */ false,
+                       /* hasOtherBeenSubstituted */ false);
 }
 
 // Returns true iff `C` is a C++ nclass method call to the function
@@ -1080,11 +1064,6 @@ static bool isCountAttributedPointerArgumentSafeImpl(
   // call being checked, when the pointer argument is another call expression
   // 'c',  `DependentValueMapForActual` is the map for 'c':
   std::optional<DependentValuesTy> DependentValueMapForActual = std::nullopt;
-
-  // // Handle `PtrArgNoImp` has the form of `(char *) p` and `p` is a sized_by
-  // // pointer.  This will be of pattern 5 after stripping the cast:
-  // if (const auto *CastE = dyn_cast<CastExpr>(PtrArgNoImp); CastE && isSizedBy)
-  //   PtrArgNoImp = CastE->getSubExpr();
 
   if (const auto *ME = dyn_cast<MemberExpr>(PtrArgNoImp))
     MemberBase = ME->getBase();
