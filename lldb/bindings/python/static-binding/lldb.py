@@ -6499,6 +6499,10 @@ class SBFrame(object):
         """
         return _lldb.SBFrame_IsArtificial(self, *args)
 
+    def IsSynthetic(self):
+        r"""IsSynthetic(SBFrame self) -> bool"""
+        return _lldb.SBFrame_IsSynthetic(self)
+
     def IsHidden(self):
         r"""IsHidden(SBFrame self) -> bool"""
         return _lldb.SBFrame_IsHidden(self)
