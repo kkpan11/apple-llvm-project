@@ -11995,6 +11995,7 @@ public:
 
     switch (FeatureInfo.Kind) {
     case FeatureAvailKind::Available:
+    case FeatureAvailKind::AlwaysAvailable:
       ResultInt = 1;
       break;
     case FeatureAvailKind::Unavailable:
