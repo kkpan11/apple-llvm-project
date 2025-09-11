@@ -6194,6 +6194,7 @@ public:
 
   QualType VisitCountAttributedType(const CountAttributedType *T) {
     if (Level == 0) {
+      assert(AllowRedecl);
       return getDerived()->DiagnoseConflictingType(T);
     }
 
@@ -6297,50 +6298,9 @@ public:
   QualType BuildDynamicBoundType(QualType CanonTy) {
     if (!CountInBytes && CanonTy->isPointerType()) {
       auto PointeeTy = CanonTy->getPointeeType();
-      // NOTE: We don't error for incomplete types that might be later completed
-      // (e.g. a struct forward declaration). Instead for those
-      // completable-incomplete types we delay checking until the type is used
-      // see `HasCountedByAttrOnIncompletePointee()`. This allows the counted_by
-      // attribute to be used on code that prefers to keep its pointees
-      // incomplete until they need to be used.
-      if (PointeeTy->isAlwaysIncompleteType() || PointeeTy->isFunctionType() ||
-          PointeeTy->isSizelessType() ||
-          PointeeTy->isStructureTypeWithFlexibleArrayMember()) {
-        // Use unspecified pointer attributes for diagnostic purposes.
-        QualType Unsp = S.Context.getBoundsSafetyPointerType(
-            CanonTy, BoundsSafetyPointerAttributes::unspecified());
-
-        auto PD = S.PDiag(diag::err_bounds_safety_counted_by_without_size);
-        PD << Unsp << Unsp->getPointeeType() << OrNull;
-        // Suggest `__sized_by` if the`__counted_by` macro was used.
-        // We intentionally don't suggest a fixit if the attribute is used
-        // directly (i.e. without the macro) because it is not expected that
-        // users will use it.
-        int SuggestFixIt = 0; // Default don't suggest __sized_by
-        if (Loc.isMacroID()) {
-          // FIXME(dliew): Use `AL.MacroII` to get the name. Unfortunately
-          // `AL.MacroII` is not set so we can't simply check the macro name is
-          // what we expect. So instead we have the lexer tell us the contents
-          // of the token and check against that.
-          // rdar://100631458
-          auto MacroName =
-              Lexer::getImmediateMacroName(Loc, S.SourceMgr, S.LangOpts);
-          if (MacroName == "__counted_by") {
-            SuggestFixIt = 1; // Emit text to suggest __sized_by
-            auto MacroLoc = S.SourceMgr.getExpansionLoc(Loc);
-            PD << FixItHint::CreateReplacement(MacroLoc, "__sized_by");
-          } else if (MacroName == "__counted_by_or_null") {
-            SuggestFixIt = 1; // Emit text to suggest __sized_by_or_null
-            auto MacroLoc = S.SourceMgr.getExpansionLoc(Loc);
-            PD << FixItHint::CreateReplacement(MacroLoc, "__sized_by_or_null");
-          }
-        }
-        PD << SuggestFixIt;
-        S.Diag(Loc, PD);
-
-        // Recover by assuming a byte count.
-        CountInBytes = true;
-      }
+      assert(!PointeeTy->isIncompletableIncompleteType() &&
+             !PointeeTy->isFunctionType() && !PointeeTy->isSizelessType() ||
+             !PointeeTy->isStructureTypeWithFlexibleArrayMember());
     }
     QualType Ty = S.BuildCountAttributedType(CanonTy, ArgExpr, CountInBytes,
                                              OrNull, ScopeCheck);
@@ -6350,27 +6310,8 @@ public:
   }
 
   QualType DiagnoseConflictingType(const CountAttributedType *T) {
-    if (AllowRedecl) {
-      QualType NewTy = BuildDynamicBoundType(T->desugar());
-      const auto *NewDCPTy = NewTy->getAs<CountAttributedType>();
-      // We don't have a way to distinguish if '__counted_by' is conflicting or has been
-      // actually inherited from function declaration. Thus, we are now permitting
-      // redundant '__counted_by' as long as the resulting count expressions are equivalent
-      // and picking up the later one.
-      llvm::FoldingSetNodeID NewID;
-      llvm::FoldingSetNodeID OldID;
-      if (const auto *NewCnt = NewDCPTy->getCountExpr())
-        NewCnt->Profile(NewID, S.Context, /*Canonical*/ true);
-      if (const auto *OldCnt = T->getCountExpr())
-        OldCnt->Profile(OldID, S.Context, /*Canonical*/ true);
-
-      if (NewID == OldID)
-        return NewTy;
-    }
-
-    S.Diag(Loc, diag::err_bounds_safety_conflicting_pointer_attributes)
-        << /* pointer */ T->isPointerType() << /* count */ 2;
-    return QualType();
+    assert(AllowRedecl);
+    return BuildDynamicBoundType(T->desugar());
   }
 
   QualType VisitFunctionProtoType(const FunctionProtoType *FPT) {
@@ -7176,6 +7117,7 @@ public:
   QualType Ty;
   unsigned EffectiveLevel;
   bool IsFPtr;
+  bool AttrForFuncRetTy;
   Sema::LifetimeCheckKind LifetimeCheck = Sema::LifetimeCheckKind::None;
   bool ScopeCheck;
 
@@ -7187,12 +7129,25 @@ public:
     IsFPtr = false;
     EffectiveLevel = Level;
     Ty = DeclTy;
+    AttrForFuncRetTy = false;
+
+    if (const auto *FTy = DeclTy->getAs<FunctionType>()) {
+      Ty = FTy->getReturnType();
+      AttrForFuncRetTy = true;
+    }
+
     for (unsigned i = 0; i != Level; ++i) {
+      // Unwrap AtomicType
+      if (auto *AT = Ty->getAs<AtomicType>()) {
+        Ty = AT->getValueType();
+      }
+
       if (!Ty->isPointerType())
         break;
       Ty = Ty->getPointeeType();
       if (Ty->isFunctionType()) {
         IsFPtr = true;
+        AttrForFuncRetTy = true;
         EffectiveLevel = Level - i - 1;
         break;
       }
@@ -7372,6 +7327,9 @@ void Sema::applyPtrCountedByEndedByAttr(Decl *D, unsigned Level,
       return;
     }
 
+    if (CheckEndedByAttr(Info.Ty, Loc))
+      return;
+
     // Make started_by() pointers if VD is a field or variable. We don't want to
     // create started_by(X) pointers where X is a function etc.
     std::optional<TypeCoupledDeclRefInfo> StartPtrInfo;
@@ -7387,6 +7345,9 @@ void Sema::applyPtrCountedByEndedByAttr(Decl *D, unsigned Level,
     HadAtomicError = TypeConstructor.hadAtomicError();
     ConstructedType = TypeConstructor.getConstructedType();
   } else {
+    if (CheckCountedByAttr(Info.Ty, AttrArg, Loc, CountInBytes, OrNull, Info.AttrForFuncRetTy))
+      return;
+
     auto TypeConstructor = ConstructCountAttributedType(
         *this, Level, DiagName, AttrArg, Loc, CountInBytes, OrNull,
         OriginatesInAPINotes, Info.ScopeCheck);

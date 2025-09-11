@@ -100,6 +100,59 @@ enum class CountedByInvalidPointeeTypeKind {
   VALID,
 };
 
+// TODO
+// 1) Merge this with `CheckCountedByAttrOnField`
+// 2) Move more counted_by attribute checks into this function
+bool Sema::CheckCountedByAttr(QualType Ty, Expr *CountExpr, SourceLocation AttrLoc, bool CountInBytes, bool OrNull, bool AttrForFuncRetTy) {
+  Expr *E = CountExpr;
+
+  if (const auto *CAT = Ty->getAs<CountAttributedType>()) {
+    bool ShouldDiag = true;
+    if (AttrForFuncRetTy) { // Is function return type
+      // We don't have a way to distinguish if '__counted_by' is conflicting or has been
+      // actually inherited from function declaration. Thus, we are now permitting
+      // redundant '__counted_by' as long as the resulting count expressions are equivalent
+      // and picking up the later one.
+      llvm::FoldingSetNodeID NewID;
+      llvm::FoldingSetNodeID OldID;
+      if (const auto *NewCnt = E)
+        NewCnt->Profile(NewID, Context, /*Canonical*/ true);
+      if (const auto *OldCnt = CAT->getCountExpr()->IgnoreImpCasts())
+        OldCnt->Profile(OldID, Context, /*Canonical*/ true);
+
+      if (NewID == OldID && OrNull == CAT->isOrNull() && CountInBytes == CAT->isCountInBytes())
+        ShouldDiag = false;
+    }
+    if (ShouldDiag) {
+      // count vs count
+      Diag(AttrLoc, diag::err_bounds_safety_conflicting_pointer_attributes)
+        << /* pointer */ CAT->isPointerType() << /* count */ 2;
+      return true;
+    }
+  } else if (Ty->getAs<DynamicRangePointerType>()) {
+    Diag(AttrLoc,
+         diag::err_bounds_safety_conflicting_count_range_attributes);
+    return true;
+  }
+  return false;
+}
+
+bool Sema::CheckEndedByAttr(QualType Ty, SourceLocation AttrLoc) {
+  if (const auto *DRPT = Ty->getAs<DynamicRangePointerType>()) {
+    // T is a started_by() pointer type.
+    if (DRPT->getEndPointer() != nullptr) {
+      Diag(AttrLoc, diag::err_bounds_safety_conflicting_pointer_attributes)
+        << /* pointer */ 1 << /* end */ 3;
+      return true;
+    }
+  } else if (Ty->getAs<CountAttributedType>()) {
+    Diag(AttrLoc,
+          diag::err_bounds_safety_conflicting_count_range_attributes);
+    return true;
+  }
+  return false;
+}
+
 bool Sema::CheckCountedByAttrOnField(FieldDecl *FD, Expr *E, bool CountInBytes,
                                      bool OrNull) {
   // Check the context the attribute is used in

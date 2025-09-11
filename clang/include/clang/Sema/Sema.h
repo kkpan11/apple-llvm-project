@@ -2702,6 +2702,11 @@ public:
   bool CheckCountedByAttrOnField(FieldDecl *FD, Expr *E, bool CountInBytes,
                                  bool OrNull);
 
+  bool CheckCountedByAttr(QualType Ty, Expr *CountExpr, SourceLocation AttrLoc,
+                          bool CountInBytes, bool OrNull, bool AttrForFuncRetTy);
+
+  bool CheckEndedByAttr(QualType Ty, SourceLocation AttrLoc);
+
   /// Perform Bounds Safety Semantic checks for assigning to a `__counted_by` or
   /// `__counted_by_or_null` pointer type \param LHSTy.
   ///
