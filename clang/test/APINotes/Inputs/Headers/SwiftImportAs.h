@@ -32,3 +32,14 @@ struct NoncopyableWithDestroyType {
 };
 
 void NCDDestroy(NoncopyableWithDestroyType instance);
+
+void ImportAsUnsafe();
+struct ImportAsUnsafeStruct {
+};
+struct StructWithUnsafeMethod {
+    void ImportAsUnsafeMethod();
+    void ImportAsUnsafeMethodActuallySafe();
+};
+
+void ImportAsUnsafeAlreadyAnnotated() __attribute__((swift_attr("unsafe")));
+void ImportAsUnsafeVersioned();
