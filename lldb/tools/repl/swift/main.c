@@ -15,7 +15,7 @@
 #include <dlfcn.h>
 #endif
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(__FreeBSD__)
 #include <dlfcn.h>
 #endif
 
@@ -60,7 +60,7 @@ int main() {
   // We load the system's libswiftCore, but this is overriden on tests to 
   // use the just built one by setting DYLD_LIBRARY_PATH.
   dlopen("/usr/lib/swift/libswiftCore.dylib", RTLD_LAZY);
-#elif defined(__linux__)
+#elif defined(__linux__) || defined(__FreeBSD__)
   dlopen("libswiftCore.so", RTLD_LAZY);
 #elif defined(_WIN32)
   HMODULE hModule = LoadLibraryW(L"swiftCore.dll");
