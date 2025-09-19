@@ -4603,6 +4603,7 @@ public:
   LValue EmitBoundsSafetyPointerPromotionExprLValue(
                                         const BoundsSafetyPointerPromotionExpr *E);
   LValue EmitForgePtrExprLValue(const ForgePtrExpr *E);
+  LValue EmitTerminatedByToIndexableExprLValue(const TerminatedByToIndexableExpr *E);
   LValue EmitAssumptionExprLValue(const AssumptionExpr *E);
   /*TO_UPSTREAM(BoundsSafety) OFF*/
 
