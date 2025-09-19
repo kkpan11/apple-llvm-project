@@ -165,6 +165,12 @@ void DiagnoseUnguardedFeatureAvailability::diagnoseDeclFeatureAvailability(
     const NamedDecl *D, SourceLocation Loc) {
   for (auto *Attr : D->specific_attrs<DomainAvailabilityAttr>()) {
     std::string FeatureUse = Attr->getDomain().str();
+    // Skip checking if the feature is always enabled.
+    if (!Attr->getUnavailable() &&
+        SemaRef.Context.getFeatureAvailInfo(FeatureUse).Kind ==
+            FeatureAvailKind::AlwaysAvailable)
+      continue;
+
     if (!isFeatureUseGuarded(Attr))
       SemaRef.Diag(Loc, diag::err_unguarded_feature)
           << D << FeatureUse << Attr->getUnavailable();
