@@ -257,7 +257,6 @@ void test7(void) {
 
 #ifdef USE_DOMAIN
 void test8(void) {
-  // FIXME: Use of 'func21()' should not be diagnosed because feature5 is always available.
   func21();
   func22(); // expected-error {{cannot use 'func22' because feature 'feature5' is available in this context}}
 
