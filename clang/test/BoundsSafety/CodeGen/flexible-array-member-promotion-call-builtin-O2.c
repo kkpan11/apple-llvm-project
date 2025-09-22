@@ -75,13 +75,13 @@ void *set(flex_t *flex, unsigned size) {
 // CHECK-NEXT:    [[CMP83_NOT:%.*]] = icmp ult i64 [[SUB_PTR_SUB]], [[CONV]], {{!annotation ![0-9]+}}
 // CHECK-NEXT:    [[OR_COND:%.*]] = or i1 [[CMP_NOT]], [[CMP83_NOT]], {{!annotation ![0-9]+}}
 // CHECK-NEXT:    [[CMP101_NOT:%.*]] = icmp ugt ptr [[DEST]], [[AGG_TEMP1_SROA_3_0]], {{!annotation ![0-9]+}}
-// CHECK-NEXT:    [[OR_COND190:%.*]] = select i1 [[OR_COND]], i1 true, i1 [[CMP101_NOT]], {{!annotation ![0-9]+}}
+// CHECK-NEXT:    [[OR_COND190:%.*]] = select i1 [[OR_COND]], i1 true, i1 [[CMP101_NOT]], !prof [[PROF14:![0-9]+]], {{!annotation ![0-9]+}}
 // CHECK-NEXT:    [[SUB_PTR_LHS_CAST153:%.*]] = ptrtoint ptr [[AGG_TEMP1_SROA_3_0]] to i64, {{!annotation ![0-9]+}}
 // CHECK-NEXT:    [[SUB_PTR_RHS_CAST154:%.*]] = ptrtoint ptr [[DEST]] to i64, {{!annotation ![0-9]+}}
 // CHECK-NEXT:    [[SUB_PTR_SUB155:%.*]] = sub i64 [[SUB_PTR_LHS_CAST153]], [[SUB_PTR_RHS_CAST154]], {{!annotation ![0-9]+}}
 // CHECK-NEXT:    [[CMP156_NOT:%.*]] = icmp ult i64 [[SUB_PTR_SUB155]], [[CONV]], {{!annotation ![0-9]+}}
-// CHECK-NEXT:    [[OR_COND191:%.*]] = select i1 [[OR_COND190]], i1 true, i1 [[CMP156_NOT]], {{!annotation ![0-9]+}}
-// CHECK-NEXT:    br i1 [[OR_COND191]], label [[TRAP:%.*]], label [[CONT159:%.*]], {{!annotation ![0-9]+}}
+// CHECK-NEXT:    [[OR_COND191:%.*]] = select i1 [[OR_COND190]], i1 true, i1 [[CMP156_NOT]], !prof [[PROF15:![0-9]+]], {{!annotation ![0-9]+}}
+// CHECK-NEXT:    br i1 [[OR_COND191]], label [[TRAP:%.*]], label [[CONT159:%.*]], !prof [[PROF15]], {{!annotation ![0-9]+}}
 // CHECK:       trap:
 // CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR4]], {{!annotation ![0-9]+}}
 // CHECK-NEXT:    unreachable, {{!annotation ![0-9]+}}
@@ -177,12 +177,12 @@ void *__unsafe_indexable pcpy(flex_t *dest, const flex_t *src, unsigned size) {
 // CHECK-NEXT:    [[CMP83_NOT:%.*]] = icmp ult i64 [[SUB_PTR_SUB]], [[CONV]], {{!annotation ![0-9]+}}
 // CHECK-NEXT:    [[OR_COND:%.*]] = or i1 [[CMP_NOT]], [[CMP83_NOT]], {{!annotation ![0-9]+}}
 // CHECK-NEXT:    [[CMP101_NOT:%.*]] = icmp ugt ptr [[DEST]], [[AGG_TEMP1_SROA_3_0]], {{!annotation ![0-9]+}}
-// CHECK-NEXT:    [[OR_COND190:%.*]] = select i1 [[OR_COND]], i1 true, i1 [[CMP101_NOT]], {{!annotation ![0-9]+}}
+// CHECK-NEXT:    [[OR_COND190:%.*]] = select i1 [[OR_COND]], i1 true, i1 [[CMP101_NOT]], !prof [[PROF14:![0-9]+]], {{!annotation ![0-9]+}}
 // CHECK-NEXT:    [[SUB_PTR_LHS_CAST153:%.*]] = ptrtoint ptr [[AGG_TEMP1_SROA_3_0]] to i64, {{!annotation ![0-9]+}}
 // CHECK-NEXT:    [[SUB_PTR_RHS_CAST154:%.*]] = ptrtoint ptr [[DEST]] to i64, {{!annotation ![0-9]+}}
 // CHECK-NEXT:    [[SUB_PTR_SUB155:%.*]] = sub i64 [[SUB_PTR_LHS_CAST153]], [[SUB_PTR_RHS_CAST154]], {{!annotation ![0-9]+}}
 // CHECK-NEXT:    [[CMP156_NOT:%.*]] = icmp ult i64 [[SUB_PTR_SUB155]], [[CONV]], {{!annotation ![0-9]+}}
-// CHECK-NEXT:    [[OR_COND191:%.*]] = select i1 [[OR_COND190]], i1 true, i1 [[CMP156_NOT]], {{!annotation ![0-9]+}}
+// CHECK-NEXT:    [[OR_COND191:%.*]] = select i1 [[OR_COND190]], i1 true, i1 [[CMP156_NOT]], !prof [[PROF15:![0-9]+]], {{!annotation ![0-9]+}}
 // CHECK-NEXT:    br i1 [[OR_COND191]], label [[TRAP:%.*]], label [[CONT159:%.*]], {{!annotation ![0-9]+}}
 // CHECK:       trap:
 // CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR4]], {{!annotation ![0-9]+}}
