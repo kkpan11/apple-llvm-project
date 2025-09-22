@@ -17,11 +17,14 @@ class TestCase(lldbtest.TestBase):
 
     # Check that the CFA chain is correctly built
     def check_cfas(self, async_frames, process):
-        async_cfas = list(map(lambda frame: frame.GetCFA(), async_frames))
+        async_cfas = list(
+            map(lambda frame: process.FixAddress(frame.GetCFA()), async_frames)
+        )
         expected_cfas = [async_cfas[0]]
         # The CFA chain ends in nullptr.
         while expected_cfas[-1] != 0:
-            expected_cfas.append(self.read_ptr_from_memory(process, expected_cfas[-1]))
+            indirect_ctx = self.read_ptr_from_memory(process, expected_cfas[-1])
+            expected_cfas.append(process.FixAddress(indirect_ctx))
 
         self.assertEqual(async_cfas, expected_cfas[:-1])
 
@@ -36,20 +39,20 @@ class TestCase(lldbtest.TestBase):
             # with the funclet's prologue skipped.
             parent_frame = async_frames[idx + 1]
             prologue_to_skip = parent_frame.GetFunction().GetPrologueByteSize()
-            self.assertEqual(continuation_ptr + prologue_to_skip, parent_frame.GetPC())
+            self.assertEqual(
+                process.FixAddress(continuation_ptr) + prologue_to_skip,
+                parent_frame.GetPC(),
+            )
 
     def check_async_regs_one_frame(self, frame, process):
         async_reg_name = "r14" if self.getArchitecture() == "x86_64" else "x22"
 
         cfa = frame.GetCFA()
         is_indirect = "await resume" in frame.GetFunctionName()
-        async_register = frame.FindRegister(async_reg_name).GetValueAsUnsigned()
-
+        async_ctx = frame.FindRegister(async_reg_name).GetValueAsUnsigned()
         if is_indirect:
-            deref_async_reg = self.read_ptr_from_memory(process, async_register)
-            self.assertEqual(deref_async_reg, cfa)
-        else:
-            self.assertEqual(async_register, cfa)
+            async_ctx = self.read_ptr_from_memory(process, async_ctx)
+        self.assertEqual(process.FixAddress(async_ctx), process.FixAddress(cfa))
 
     def check_async_regs(self, async_frames, process):
         for frame in async_frames:
