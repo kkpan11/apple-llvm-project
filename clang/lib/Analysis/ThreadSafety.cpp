@@ -1616,13 +1616,13 @@ void ThreadSafetyAnalyzer::getEdgeLockset(FactSet& Result,
   const CFGBlockInfo *PredBlockInfo = &BlockInfo[PredBlock->getBlockID()];
   const LocalVarContext &LVarCtx = PredBlockInfo->ExitContext;
 
-  // Temporarily set the lookup context for SExprBuilder.
-  SxBuilder.setLookupLocalVarExpr([&](const NamedDecl *D) -> const Expr * {
-    if (!Handler.issueBetaWarnings())
-      return nullptr;
-    auto Ctx = LVarCtx;
-    return LocalVarMap.lookupExpr(D, Ctx);
-  });
+  if (Handler.issueBetaWarnings()) {
+    // Temporarily set the lookup context for SExprBuilder.
+    SxBuilder.setLookupLocalVarExpr(
+        [this, Ctx = LVarCtx](const NamedDecl *D) mutable -> const Expr * {
+          return LocalVarMap.lookupExpr(D, Ctx);
+        });
+  }
   auto Cleanup = llvm::make_scope_exit(
       [this] { SxBuilder.setLookupLocalVarExpr(nullptr); });
 
@@ -1670,6 +1670,19 @@ class BuildLockset : public ConstStmtVisitor<BuildLockset> {
   LocalVariableMap::Context LVarCtx;
   unsigned CtxIndex;
 
+  // To update and adjust the context.
+  void updateLocalVarMapCtx(const Stmt *S) {
+    if (S)
+      LVarCtx = Analyzer->LocalVarMap.getNextContext(CtxIndex, S, LVarCtx);
+    if (!Analyzer->Handler.issueBetaWarnings())
+      return;
+    // The lookup closure needs to be reconstructed with the refreshed LVarCtx.
+    Analyzer->SxBuilder.setLookupLocalVarExpr(
+        [this, Ctx = LVarCtx](const NamedDecl *D) mutable -> const Expr * {
+          return Analyzer->LocalVarMap.lookupExpr(D, Ctx);
+        });
+  }
+
   // helper functions
 
   void checkAccess(const Expr *Exp, AccessKind AK,
@@ -1695,13 +1708,7 @@ public:
       : ConstStmtVisitor<BuildLockset>(), Analyzer(Anlzr), FSet(Info.EntrySet),
         FunctionExitFSet(FunctionExitFSet), LVarCtx(Info.EntryContext),
         CtxIndex(Info.EntryIndex) {
-    Analyzer->SxBuilder.setLookupLocalVarExpr(
-        [this](const NamedDecl *D) -> const Expr * {
-          if (!Analyzer->Handler.issueBetaWarnings())
-            return nullptr;
-          auto Ctx = LVarCtx;
-          return Analyzer->LocalVarMap.lookupExpr(D, Ctx);
-        });
+    updateLocalVarMapCtx(nullptr);
   }
 
   ~BuildLockset() { Analyzer->SxBuilder.setLookupLocalVarExpr(nullptr); }
@@ -2202,9 +2209,7 @@ void BuildLockset::VisitBinaryOperator(const BinaryOperator *BO) {
   if (!BO->isAssignmentOp())
     return;
 
-  // adjust the context
-  LVarCtx = Analyzer->LocalVarMap.getNextContext(CtxIndex, BO, LVarCtx);
-
+  updateLocalVarMapCtx(BO);
   checkAccess(BO->getLHS(), AK_Written);
 }
 
@@ -2250,8 +2255,7 @@ void BuildLockset::examineArguments(const FunctionDecl *FD,
 }
 
 void BuildLockset::VisitCallExpr(const CallExpr *Exp) {
-  // adjust the context
-  LVarCtx = Analyzer->LocalVarMap.getNextContext(CtxIndex, Exp, LVarCtx);
+  updateLocalVarMapCtx(Exp);
 
   if (const auto *CE = dyn_cast<CXXMemberCallExpr>(Exp)) {
     const auto *ME = dyn_cast<MemberExpr>(CE->getCallee());
@@ -2347,8 +2351,7 @@ static const Expr *UnpackConstruction(const Expr *E) {
 }
 
 void BuildLockset::VisitDeclStmt(const DeclStmt *S) {
-  // adjust the context
-  LVarCtx = Analyzer->LocalVarMap.getNextContext(CtxIndex, S, LVarCtx);
+  updateLocalVarMapCtx(S);
 
   for (auto *D : S->getDeclGroup()) {
     if (auto *VD = dyn_cast_or_null<VarDecl>(D)) {
