@@ -3,7 +3,6 @@ from lldbsuite.test.lldbtest import *
 from lldbsuite.test.decorators import *
 import lldbsuite.test.lldbutil as lldbutil
 
-@skipIf(bugnumber = "rdar://159531308")
 class TestSwiftEmbeddedFrameVariable(TestBase):
     @skipUnlessDarwin
     @swiftTest
