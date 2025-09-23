@@ -7218,8 +7218,6 @@ LValue CodeGenFunction::EmitForgePtrExprLValue(const ForgePtrExpr *E) {
 }
 
 LValue CodeGenFunction::EmitTerminatedByToIndexableExprLValue(const TerminatedByToIndexableExpr *E) {
-  if (!E->getType()->isPointerTypeWithBounds())
-    return EmitUnsupportedLValue(E, "l-value expression");
   return EmitAggExprToLValue(E);
 }
 
