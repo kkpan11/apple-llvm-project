@@ -240,3 +240,17 @@ void Sema::DiagnoseFeatureAvailabilityOfDecl(NamedDecl *D,
   Decl *Ctx = cast<Decl>(getCurLexicalContext());
   diagnoseDeclFeatureAvailability(D, Locs.front(), Ctx, *this);
 }
+
+void Sema::diagnoseDeprecatedAvailabilityDomain(StringRef DomainName,
+                                                SourceLocation AtLoc,
+                                                SourceLocation DomainLoc,
+                                                bool IsDecl) {
+  ASTContext::AvailabilityDomainInfo Info =
+      Context.getFeatureAvailInfo(DomainName);
+  if (Info.IsDeprecated) {
+    Diag(DomainLoc, diag::warn_deprecated_availability_domain) << DomainName;
+    if (Info.Kind == FeatureAvailKind::AlwaysAvailable)
+      Diag(AtLoc, diag::warn_permanently_available_domain)
+          << DomainName << IsDecl;
+  }
+}

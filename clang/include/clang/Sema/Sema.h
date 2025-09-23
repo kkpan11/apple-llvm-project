@@ -2670,6 +2670,11 @@ public:
   void DiagnoseFeatureAvailabilityOfDecl(NamedDecl *D,
                                          ArrayRef<SourceLocation> Locs);
 
+  void diagnoseDeprecatedAvailabilityDomain(StringRef DomainName,
+                                            SourceLocation AtLoc,
+                                            SourceLocation DomainLoc,
+                                            bool IsDecl);
+
   /// Retrieve the current function, if any, that should be analyzed for
   /// potential availability violations.
   sema::FunctionScopeInfo *getCurFunctionAvailabilityContext();

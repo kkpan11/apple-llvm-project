@@ -1018,7 +1018,8 @@ ASTContext::getFeatureAvailInfo(Decl *D) const {
     llvm_unreachable("invalid feature kind");
   }
 
-  ASTContext::AvailabilityDomainInfo Info{Kind, D, nullptr};
+  ASTContext::AvailabilityDomainInfo Info{Kind, D, nullptr,
+                                          D->hasAttr<DeprecatedAttr>()};
 
   if (Kind == FeatureAvailKind::Dynamic) {
     Expr *FnExpr = Init->getInit(1);

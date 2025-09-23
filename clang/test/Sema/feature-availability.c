@@ -14,6 +14,10 @@ CLANG_DISABLED_AVAILABILITY_DOMAIN(feature2);
 CLANG_ENABLED_AVAILABILITY_DOMAIN(feature3);
 CLANG_DYNAMIC_AVAILABILITY_DOMAIN(feature4, pred1);
 CLANG_ALWAYS_ENABLED_AVAILABILITY_DOMAIN(feature5);
+__attribute__((deprecated))
+CLANG_ALWAYS_ENABLED_AVAILABILITY_DOMAIN(deprecated_feature1);
+__attribute__((deprecated))
+CLANG_ENABLED_AVAILABILITY_DOMAIN(deprecated_feature2);
 #endif
 
 #pragma clang attribute push (__attribute__((availability(domain:feature1, AVAIL))), apply_to=any(function))
@@ -37,6 +41,14 @@ __attribute__((availability(domain:feature4, AVAIL))) int g4;
 __attribute__((availability(domain:feature4, UNAVAIL))) int g5;
 __attribute__((availability(domain:feature5, AVAIL))) void func21(void);
 __attribute__((availability(domain:feature5, UNAVAIL))) void func22(void);
+__attribute__((availability(domain:deprecated_feature1, AVAIL))) void func23(void);
+// expected-warning@-1 {{availability domain 'deprecated_feature1' is deprecated}}
+// expected-warning@-2 {{attribute has no effect because 'deprecated_feature1' is always available}}
+__attribute__((availability(domain:deprecated_feature1, UNAVAIL))) void func24(void);
+// expected-warning@-1 {{availability domain 'deprecated_feature1' is deprecated}}
+// expected-warning@-2 {{attribute has no effect because 'deprecated_feature1' is always available}}
+__attribute__((availability(domain:deprecated_feature2, AVAIL))) void func25(void);
+// expected-warning@-1 {{availability domain 'deprecated_feature2' is deprecated}}
 #endif
 
 void test_unreachable_code(void) {
@@ -267,5 +279,21 @@ void test8(void) {
     func21();
     func22();
   }
+}
+
+void test_deprecated_feature(void) {
+  if (__builtin_available(domain:deprecated_feature1))
+    // expected-warning@-1 {{availability domain 'deprecated_feature1' is deprecated}}
+    // expected-warning@-2 {{unnecessary check for 'deprecated_feature1'; this expression will always evaluate to true}}
+    ;
+
+  if (!__builtin_available(domain:deprecated_feature1))
+    // expected-warning@-1 {{availability domain 'deprecated_feature1' is deprecated}}
+    // expected-warning@-2 {{unnecessary check for 'deprecated_feature1'; this expression will always evaluate to true}}
+    ;
+
+  if (__builtin_available(domain:deprecated_feature2))
+    // expected-warning@-1 {{availability domain 'deprecated_feature2' is deprecated}}
+    ;
 }
 #endif
