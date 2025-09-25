@@ -1250,6 +1250,11 @@ struct DeclaratorChunk {
                                 SourceLocation AttrNameLoc)
         : Toks(Toks), AttrName(AttrName), MacroII(MacroII), AttrNameLoc(AttrNameLoc) {}
   };
+
+  SmallVector<LateParsedAttrInfo *, 1> LateParsedAttrInfoList;
+  ArrayRef<LateParsedAttrInfo *> getLateParsedAttrInfoList() const {
+    return LateParsedAttrInfoList;
+  }
   /* TO_UPSTREAM(BoundsSafety) OFF */
 
   struct PointerTypeInfo {
@@ -1272,26 +1277,8 @@ struct DeclaratorChunk {
     /// The location of the __unaligned-qualifier, if any.
     SourceLocation UnalignedQualLoc;
 
-    /* TO_UPSTREAM(BoundsSafety) ON */
-    // LateParsedAttrInfo objects and their count.
-    unsigned NumLateParsedAttrs;
-    LateParsedAttrInfo **LateAttrInfos;
-    /* TO_UPSTREAM(BoundsSafety) OFF */
-
     void destroy() {
-      /* TO_UPSTREAM(BoundsSafety) ON */
-      for (unsigned i = 0; i < NumLateParsedAttrs; ++i)
-        delete LateAttrInfos[i];
-      if (NumLateParsedAttrs != 0)
-        delete[] LateAttrInfos;
-      /* TO_UPSTREAM(BoundsSafety) OFF */
     }
-
-    /* TO_UPSTREAM(BoundsSafety) ON */
-    ArrayRef<LateParsedAttrInfo *> getLateParsedAttrInfos() const {
-      return {LateAttrInfos, NumLateParsedAttrs};
-    }
-    /* TO_UPSTREAM(BoundsSafety) OFF */
   };
 
   struct ReferenceTypeInfo {
@@ -1322,26 +1309,8 @@ struct DeclaratorChunk {
     /// expression class on all clients, NumElts is untyped.
     Expr *NumElts;
 
-    /* TO_UPSTREAM(BoundsSafety) ON */
-    // LateParsedAttrInfo objects and their count.
-    unsigned NumLateParsedAttrs;
-    LateParsedAttrInfo **LateAttrInfos;
-    /* TO_UPSTREAM(BoundsSafety) OFF */
-
     void destroy() {
-      /* TO_UPSTREAM(BoundsSafety) ON */
-      for (unsigned i = 0; i < NumLateParsedAttrs; ++i)
-        delete LateAttrInfos[i];
-      if (NumLateParsedAttrs != 0)
-        delete[] LateAttrInfos;
-      /* TO_UPSTREAM(BoundsSafety) OFF */
     }
-
-    /* TO_UPSTREAM(BoundsSafety) ON */
-    ArrayRef<LateParsedAttrInfo *> getLateParsedAttrInfos() const {
-      return {LateAttrInfos, NumLateParsedAttrs};
-    }
-    /* TO_UPSTREAM(BoundsSafety) OFF */
   };
 
   /// ParamInfo - An array of paraminfo objects is allocated whenever a function
@@ -1667,6 +1636,11 @@ struct DeclaratorChunk {
   };
 
   void destroy() {
+    /* TO_UPSTREAM(BoundsSafety) ON */
+    for (auto *LateAttrs: LateParsedAttrInfoList)
+      delete LateAttrs;
+    /* TO_UPSTREAM(BoundsSafety) OFF */
+
     switch (Kind) {
     case DeclaratorChunk::Function:      return Fun.destroy();
     case DeclaratorChunk::Pointer:       return Ptr.destroy();
@@ -1703,13 +1677,10 @@ struct DeclaratorChunk {
     I.Ptr.RestrictQualLoc = RestrictQualLoc;
     I.Ptr.AtomicQualLoc   = AtomicQualLoc;
     I.Ptr.UnalignedQualLoc = UnalignedQualLoc;
+
     /* TO_UPSTREAM(BoundsSafety) ON */
-    I.Ptr.NumLateParsedAttrs = LateAttrInfos.size();
-    if (!LateAttrInfos.empty()) {
-      I.Ptr.LateAttrInfos = new LateParsedAttrInfo *[LateAttrInfos.size()];
-      for (size_t J = 0; J < LateAttrInfos.size(); ++J)
-        I.Ptr.LateAttrInfos[J] = LateAttrInfos[J];
-    }
+    for (auto *LateAttrs: LateAttrInfos)
+      I.LateParsedAttrInfoList.push_back(std::move(LateAttrs));
     /* TO_UPSTREAM(BoundsSafety) OFF */
     return I;
   }
@@ -1740,12 +1711,8 @@ struct DeclaratorChunk {
     I.Arr.isStar    = isStar;
     I.Arr.NumElts   = NumElts;
     /* TO_UPSTREAM(BoundsSafety) ON */
-    I.Arr.NumLateParsedAttrs = LateAttrInfos.size();
-    if (!LateAttrInfos.empty()) {
-      I.Arr.LateAttrInfos = new LateParsedAttrInfo *[LateAttrInfos.size()];
-      for (size_t J = 0; J < LateAttrInfos.size(); ++J)
-        I.Arr.LateAttrInfos[J] = LateAttrInfos[J];
-    }
+    for (auto *LateAttrs: LateAttrInfos)
+      I.LateParsedAttrInfoList.push_back(std::move(LateAttrs));
     /* TO_UPSTREAM(BoundsSafety) OFF */
     return I;
   }

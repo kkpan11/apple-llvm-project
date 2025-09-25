@@ -3287,10 +3287,10 @@ void Parser::DistributeCLateParsedAttrs(Declarator &D, Decl *Dcl,
     ArrayRef<DeclaratorChunk::LateParsedAttrInfo *> LPAI;
     switch (DC.Kind) {
     case DeclaratorChunk::Pointer:
-      LPAI = DC.Ptr.getLateParsedAttrInfos();
+      LPAI = DC.getLateParsedAttrInfoList();
       break;
     case DeclaratorChunk::Array:
-      LPAI = DC.Arr.getLateParsedAttrInfos();
+      LPAI = DC.getLateParsedAttrInfoList();
       break;
     case DeclaratorChunk::Function:
       FuncInfo.Index = i;
