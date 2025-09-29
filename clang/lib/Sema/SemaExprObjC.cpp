@@ -5164,8 +5164,7 @@ ExprResult SemaObjC::ActOnObjCAvailabilityCheckExpr(
     auto Spec = AvailSpecs.front();
 
     SemaRef.diagnoseDeprecatedAvailabilityDomain(Spec.getDomainName(), AtLoc,
-                                                 Spec.getBeginLoc(),
-                                                 /*IsDecl=*/false);
+                                                 Spec.getBeginLoc());
 
     return ObjCAvailabilityCheckExpr::CreateAvailabilityFeatureCheck(
         AtLoc, RParen, Context.BoolTy, Spec.getDomainName(), Context);

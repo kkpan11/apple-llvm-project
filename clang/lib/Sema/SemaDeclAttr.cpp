@@ -2485,12 +2485,12 @@ static void handleFeatureAvailabilityAttr(Sema &S, Decl *D,
     return;
   }
 
-  S.diagnoseDeprecatedAvailabilityDomain(II->getName(), AL.getLoc(),
-                                         AL.getArgAsIdent(0)->getLoc(),
-                                         /*IsDecl=*/true);
-
   int IsUnavailable =
       AL.getArgAsExpr(1)->getIntegerConstantExpr(S.Context)->getExtValue();
+
+  S.diagnoseDeprecatedAvailabilityDomain(II->getName(), AL.getLoc(),
+                                         AL.getArgAsIdent(0)->getLoc(),
+                                         IsUnavailable, &AL);
 
   if (IsUnavailable != 0 && IsUnavailable != 1) {
     S.Diag(AL.getArgAsExpr(1)->getExprLoc(), diag::err_features_invalid__arg)

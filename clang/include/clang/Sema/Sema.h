@@ -2671,9 +2671,10 @@ public:
                                          ArrayRef<SourceLocation> Locs);
 
   void diagnoseDeprecatedAvailabilityDomain(StringRef DomainName,
-                                            SourceLocation AtLoc,
+                                            SourceLocation AvailLoc,
                                             SourceLocation DomainLoc,
-                                            bool IsDecl);
+                                            bool IsUnavailable = false,
+                                            const ParsedAttr *PA = nullptr);
 
   /// Retrieve the current function, if any, that should be analyzed for
   /// potential availability violations.

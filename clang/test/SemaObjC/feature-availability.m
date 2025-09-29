@@ -222,7 +222,7 @@ __attribute__((availability(domain:deprecated_feature1, AVAIL)))
 
 __attribute__((availability(domain:deprecated_feature1, UNAVAIL)))
 // expected-warning@-1 {{availability domain 'deprecated_feature1' is deprecated}}
-// expected-warning@-2 {{attribute has no effect because 'deprecated_feature1' is always available}}
+// expected-warning@-2 {{declaration is permanently unavailable because 'deprecated_feature1' is always available}}
 @interface DeprecatedC2
 @end
 
