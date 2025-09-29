@@ -2723,9 +2723,8 @@ bool ASTNodeImporter::IsStructuralMatch(Decl *From, Decl *To, bool Complain,
   }
 
   StructuralEquivalenceContext Ctx(
-      Importer.getToContext().getLangOpts(), Importer.getFromContext(),
-      Importer.getToContext(), Importer.getNonEquivalentDecls(),
-      getStructuralEquivalenceKind(Importer),
+      Importer.getFromContext(), Importer.getToContext(),
+      Importer.getNonEquivalentDecls(), getStructuralEquivalenceKind(Importer),
       /*StrictTypeSpelling=*/false, Complain, /*ErrorOnTagTypeMismatch=*/false,
       IgnoreTemplateParmDepth);
   return Ctx.IsEquivalent(From, To);
@@ -4587,8 +4586,7 @@ static bool IsEquivalentFriend(ASTImporter &Importer, FriendDecl *FD1,
 
   ASTImporter::NonEquivalentDeclSet NonEquivalentDecls;
   StructuralEquivalenceContext Ctx(
-      Importer.getToContext().getLangOpts(), FD1->getASTContext(),
-      FD2->getASTContext(), NonEquivalentDecls,
+      FD1->getASTContext(), FD2->getASTContext(), NonEquivalentDecls,
       StructuralEquivalenceKind::Default,
       /* StrictTypeSpelling = */ false, /* Complain = */ false);
   return Ctx.IsEquivalent(FD1, FD2);
@@ -10885,8 +10883,8 @@ bool ASTImporter::IsStructurallyEquivalent(QualType From, QualType To,
     }
   }
 
-  StructuralEquivalenceContext Ctx(
-      getToContext().getLangOpts(), FromContext, ToContext, NonEquivalentDecls,
-      getStructuralEquivalenceKind(*this), false, Complain);
+  StructuralEquivalenceContext Ctx(FromContext, ToContext, NonEquivalentDecls,
+                                   getStructuralEquivalenceKind(*this), false,
+                                   Complain);
   return Ctx.IsEquivalent(From, To);
 }

@@ -1964,21 +1964,6 @@ private:
                           const ParsedTemplateInfo &TemplateInfo,
                           AccessSpecifier AS, DeclSpecContext DSC);
 
-  /// ParseEnumBody - Parse a {} enclosed enumerator-list.
-  /// \verbatim
-  ///       enumerator-list:
-  ///         enumerator
-  ///         enumerator-list ',' enumerator
-  ///       enumerator:
-  ///         enumeration-constant attributes[opt]
-  ///         enumeration-constant attributes[opt] '=' constant-expression
-  ///       enumeration-constant:
-  ///         identifier
-  /// \endverbatim
-  ///
-  void ParseEnumBody(SourceLocation StartLoc, Decl *TagDecl,
-                     SkipBodyInfo *SkipBody = nullptr);
-
   /// ParseStructUnionBody
   /// \verbatim
   ///       struct-contents:
@@ -1991,6 +1976,7 @@ private:
   /// [OBC]   '@' 'defs' '(' class-name ')'
   /// \endverbatim
   ///
+  void ParseEnumBody(SourceLocation StartLoc, Decl *TagDecl);
   void ParseStructUnionBody(SourceLocation StartLoc, DeclSpec::TST TagType,
                             RecordDecl *TagDecl);
 

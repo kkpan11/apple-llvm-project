@@ -3354,7 +3354,6 @@ public:
   QualType mergeTransparentUnionType(QualType, QualType,
                                      bool OfBlockPointer=false,
                                      bool Unqualified = false);
-  QualType mergeTagDefinitions(QualType, QualType);
 
   QualType mergeObjCGCQualifiers(QualType, QualType);
 
