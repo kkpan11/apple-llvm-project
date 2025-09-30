@@ -364,6 +364,8 @@ protected:
       return;
     }
 
+    ExecutionContextScope *exe_scope = m_exe_ctx.GetBestExecutionContextScope();
+
     CompilerType compiler_type;
     Status error;
 
@@ -460,6 +462,13 @@ protected:
       TypeResults results;
       target->GetImages().FindTypes(search_first.get(), query, results);
       TypeSP type_sp = results.GetFirstType();
+      if (!type_sp) {
+        // Retry, searching for typename as a mangled name.
+        query.SetSearchByMangledName(true);
+        TypeResults results;
+        target->GetImages().FindTypes(search_first.get(), query, results);
+        type_sp = results.GetFirstType();
+      }
 
       if (!type_sp && lookup_type_name.GetCString()) {
         LanguageType language_for_type =
@@ -519,7 +528,7 @@ protected:
         --pointer_count;
       }
 
-      auto size_or_err = compiler_type.GetByteSize(nullptr);
+      auto size_or_err = compiler_type.GetByteSize(exe_scope);
       if (!size_or_err) {
         result.AppendErrorWithFormat(
             "unable to get the byte size of the type '%s'\n%s",
@@ -639,7 +648,7 @@ protected:
       if (!m_format_options.GetFormatValue().OptionWasSet())
         m_format_options.GetFormatValue().SetCurrentValue(eFormatDefault);
 
-      auto size_or_err = compiler_type.GetByteSize(nullptr);
+      auto size_or_err = compiler_type.GetByteSize(exe_scope);
       if (!size_or_err) {
         result.AppendError(llvm::toString(size_or_err.takeError()));
         return;
@@ -799,7 +808,6 @@ protected:
       output_stream_p = &result.GetOutputStream();
     }
 
-    ExecutionContextScope *exe_scope = m_exe_ctx.GetBestExecutionContextScope();
     if (compiler_type.GetOpaqueQualType()) {
       for (uint32_t i = 0; i < item_count; ++i) {
         addr_t item_addr = addr + (i * item_byte_size);
