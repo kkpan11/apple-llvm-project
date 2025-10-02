@@ -11,11 +11,27 @@
 #define FEATURE_AVAILABLE(domain_name) \
   __attribute__((availability(domain : domain_name, AVAIL)))
 
-#define MY_FEATURE_AVAILABLE(domain_name) \
-  __attribute__((availability(domain : domain_name, AVAIL)))
-
 #define FEATURE_UNAVAILABLE(domain_name) \
   __attribute__((availability(domain : domain_name, UNAVAIL)))
+
+#define MY_FEATURE_AVAILABLE(domain_name) \
+  /* abc */ __attribute__((availability(domain /*abc*/ : domain_name, 0))) // comment.
+
+#define VISIBILITY
+#define MY_FEATURE_AVAILABLE2(domain_name) \
+  VISIBILITY __attribute__((availability(domain : domain_name, 0)))
+
+#define MY_FEATURE_AVAILABLE3(domain_name) FEATURE_AVAILABLE(domain_name)
+
+#define AVAIL_ARGS domain: deprecated_feature1, 0
+#define MY_FEATURE_AVAILABLE4(domain_name) \
+  __attribute__((availability(AVAIL_ARGS)))
+
+#define MY_FEATURE_AVAILABLE5(domain_name, function) \
+  FEATURE_AVAILABLE(domain_name) \
+  function
+
+#define DEPRECATED_FEATURE1_UNAVAILABLE __attribute__((availability(domain: deprecated_feature1, 1)))
 
 #ifdef USE_DOMAIN
 int pred1(void);
@@ -78,9 +94,32 @@ void deprecated_feature1_avail_func4(void);
 // CHECK: fix-it:"{{.*}}feature-availability.c":{[[@LINE-4]]:1-[[@LINE-4]]:39}:""
 
 MY_FEATURE_AVAILABLE(deprecated_feature1)
-void deprecated_feature1_avail_func4(void);
+void deprecated_feature1_avail_func5(void);
 // expected-warning@-2 {{availability domain 'deprecated_feature1' is deprecated}}
 // expected-warning@-3 {{attribute has no effect because 'deprecated_feature1' is always available}}
+// CHECK: fix-it:"{{.*}}feature-availability.c":{[[@LINE-4]]:1-[[@LINE-4]]:42}:""
+
+MY_FEATURE_AVAILABLE2(deprecated_feature1)
+void deprecated_feature1_avail_func6(void);
+// expected-warning@-2 {{availability domain 'deprecated_feature1' is deprecated}}
+// expected-warning@-3 {{attribute has no effect because 'deprecated_feature1' is always available}}
+// CHECK-NOT: fix-it:
+
+MY_FEATURE_AVAILABLE3(deprecated_feature1)
+void deprecated_feature1_avail_func7(void);
+// expected-warning@-2 {{availability domain 'deprecated_feature1' is deprecated}}
+// expected-warning@-3 {{attribute has no effect because 'deprecated_feature1' is always available}}
+// CHECK-NOT: fix-it:
+
+MY_FEATURE_AVAILABLE4(deprecated_feature1)
+void deprecated_feature1_avail_func8(void);
+// expected-warning@-2 {{availability domain 'deprecated_feature1' is deprecated}}
+// expected-warning@-3 {{attribute has no effect because 'deprecated_feature1' is always available}}
+// CHECK-NOT: fix-it:
+
+MY_FEATURE_AVAILABLE5(deprecated_feature1, void deprecated_feature1_avail_func9(void);)
+// expected-warning@-1 {{availability domain 'deprecated_feature1' is deprecated}}
+// expected-warning@-2 {{attribute has no effect because 'deprecated_feature1' is always available}}
 // CHECK-NOT: fix-it:
 
 __attribute__((visibility("hidden")))
@@ -107,6 +146,12 @@ void deprecated_feature1_unavail_func4(void);
 // expected-warning@-2 {{availability domain 'deprecated_feature1' is deprecated}}
 // expected-warning@-3 {{declaration is permanently unavailable because 'deprecated_feature1' is always available}}
 // CHECK: fix-it:"{{.*}}feature-availability.c":{[[@LINE-4]]:1-[[@LINE-4]]:41}:"__attribute__((unavailable))"
+
+DEPRECATED_FEATURE1_UNAVAILABLE
+void deprecated_feature1_unavail_func5(void);
+// expected-warning@-2 {{availability domain 'deprecated_feature1' is deprecated}}
+// expected-warning@-3 {{declaration is permanently unavailable because 'deprecated_feature1' is always available}}
+// CHECK: fix-it:"{{.*}}feature-availability.c":{[[@LINE-4]]:1-[[@LINE-4]]:32}:"__attribute__((unavailable))"
 
 __attribute__((availability(domain:deprecated_feature2, AVAIL)))
 void deprecated_feature2_unavail_func1(void);

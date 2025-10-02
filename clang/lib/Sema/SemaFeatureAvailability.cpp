@@ -244,19 +244,69 @@ void Sema::DiagnoseFeatureAvailabilityOfDecl(NamedDecl *D,
   diagnoseDeclFeatureAvailability(D, Locs.front(), Ctx, *this);
 }
 
+static bool isSimpleFeatureAvailabiltyMacro(MacroInfo *Info) {
+  // Must match:
+  // __attribute__((availability(domain : id, id/numeric_constant)))
+  if (Info->getNumTokens() != 13)
+    return false;
+
+  if (!Info->getReplacementToken(0).is(tok::kw___attribute) ||
+      !Info->getReplacementToken(1).is(tok::l_paren) ||
+      !Info->getReplacementToken(2).is(tok::l_paren))
+    return false;
+
+  if (const Token &Tk = Info->getReplacementToken(3);
+      !Tk.is(tok::identifier) ||
+      Tk.getIdentifierInfo()->getName() != "availability")
+    return false;
+
+  if (!Info->getReplacementToken(4).is(tok::l_paren))
+    return false;
+
+  if (const Token &Tk = Info->getReplacementToken(5);
+      !Tk.is(tok::identifier) || Tk.getIdentifierInfo()->getName() != "domain")
+    return false;
+
+  if (!Info->getReplacementToken(6).is(tok::colon))
+    return false;
+
+  if (const Token &Tk = Info->getReplacementToken(7); !Tk.is(tok::identifier))
+    return false;
+
+  if (!Info->getReplacementToken(8).is(tok::comma))
+    return false;
+
+  if (const Token &Tk = Info->getReplacementToken(9);
+      !Tk.is(tok::identifier) && !Tk.is(tok::numeric_constant))
+    return false;
+
+  if (!Info->getReplacementToken(10).is(tok::r_paren) ||
+      !Info->getReplacementToken(11).is(tok::r_paren) ||
+      !Info->getReplacementToken(12).is(tok::r_paren))
+    return false;
+
+  return true;
+}
+
 void Sema::diagnoseDeprecatedAvailabilityDomain(StringRef DomainName,
                                                 SourceLocation AvailLoc,
                                                 SourceLocation DomainLoc,
                                                 bool IsUnavailable,
                                                 const ParsedAttr *PA) {
   auto CreateFixIt = [&]() {
-    if (auto *MacroII = PA->getMacroIdentifier()) {
-      StringRef MacroName = MacroII->getName();
-      if (MacroName != "FEATURE_AVAILABLE" &&
-          MacroName != "FEATURE_UNAVAILABLE")
+    if (PA->getRange().getBegin().isMacroID()) {
+      auto *MacroII = PA->getMacroIdentifier();
+
+      // Macro identifier isn't always set.
+      if (!MacroII)
         return FixItHint{};
 
-      // FIXME: Check the file that defines the macros too.
+      MacroDefinition MD = PP.getMacroDefinition(MacroII);
+      MacroInfo *Info = MD.getMacroInfo();
+
+      if (!isSimpleFeatureAvailabiltyMacro(Info))
+        return FixItHint{};
+
       FileID FID = SourceMgr.getFileID(AvailLoc);
       const SrcMgr::ExpansionInfo *EI =
           &SourceMgr.getSLocEntry(FID).getExpansion();
