@@ -315,7 +315,6 @@ private:
   std::vector<Command> Commands;
   std::string ContextHash;
   std::optional<std::string> IncludeTreeID;
-  std::vector<std::string> OutputPaths;
   const llvm::DenseSet<ModuleID> &AlreadySeen;
 };
 
