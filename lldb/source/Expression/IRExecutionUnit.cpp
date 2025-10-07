@@ -839,15 +839,6 @@ IRExecutionUnit::FindInSymbols(const std::vector<ConstString> &names,
         return *load_addr;
     }
 
-    if (sc.target_sp) {
-      ModuleList images = sc.target_sp->GetImages();
-      // BEGIN SWIFT
-      if (m_in_populate_symtab)
-        if (lldb::ModuleSP module_sp = m_jit_module_wp.lock())
-          images.Remove(module_sp);
-      // END SWIFT
-    }
-
     {
       SymbolContextList sc_list;
       m_preferred_modules.FindFunctions(name, lldb::eFunctionNameTypeFull,
