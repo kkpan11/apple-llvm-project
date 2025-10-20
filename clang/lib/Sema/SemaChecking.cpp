@@ -6686,11 +6686,11 @@ StringRef Sema::GetFormatStringTypeName(FormatStringType FST) {
 FormatStringType Sema::GetFormatStringType(StringRef Flavor) {
   return llvm::StringSwitch<FormatStringType>(Flavor)
       .Case("scanf", FormatStringType::Scanf)
-      .Cases("printf", "printf0", "syslog", FormatStringType::Printf)
-      .Cases("NSString", "CFString", FormatStringType::NSString)
+      .Cases({"printf", "printf0", "syslog"}, FormatStringType::Printf)
+      .Cases({"NSString", "CFString"}, FormatStringType::NSString)
       .Case("strftime", FormatStringType::Strftime)
       .Case("strfmon", FormatStringType::Strfmon)
-      .Cases("kprintf", "cmn_err", "vcmn_err", "zcmn_err",
+      .Cases({"kprintf", "cmn_err", "vcmn_err", "zcmn_err"},
              FormatStringType::Kprintf)
       .Case("freebsd_kprintf", FormatStringType::FreeBSDKPrintf)
       .Case("os_trace", FormatStringType::OSLog)
