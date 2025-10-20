@@ -100,11 +100,13 @@ public:
     return CasesImpl({S0, S1, S2}, Value);
   }
 
+  [[deprecated("Pass cases in std::initializer_list instead")]]
   StringSwitch &Cases(StringLiteral S0, StringLiteral S1, StringLiteral S2,
                       StringLiteral S3, T Value) {
     return CasesImpl({S0, S1, S2, S3}, Value);
   }
 
+  [[deprecated("Pass cases in std::initializer_list instead")]]
   StringSwitch &Cases(StringLiteral S0, StringLiteral S1, StringLiteral S2,
                       StringLiteral S3, StringLiteral S4, T Value) {
     return CasesImpl({S0, S1, S2, S3, S4}, Value);
@@ -181,11 +183,13 @@ public:
     return CasesLowerImpl({S0, S1, S2}, Value);
   }
 
+  [[deprecated("Pass cases in std::initializer_list instead")]]
   StringSwitch &CasesLower(StringLiteral S0, StringLiteral S1, StringLiteral S2,
                            StringLiteral S3, T Value) {
     return CasesLowerImpl({S0, S1, S2, S3}, Value);
   }
 
+  [[deprecated("Pass cases in std::initializer_list instead")]]
   StringSwitch &CasesLower(StringLiteral S0, StringLiteral S1, StringLiteral S2,
                            StringLiteral S3, StringLiteral S4, T Value) {
     return CasesLowerImpl({S0, S1, S2, S3, S4}, Value);
