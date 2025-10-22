@@ -6630,6 +6630,9 @@ bool ASTReader::ParseHeaderSearchPaths(const RecordData &Record, bool Complain,
     HSOpts.VFSOverlayFiles.emplace_back(std::move(VFSOverlayFile));
   }
 
+  std::string Blah = ReadString(Record, Idx);
+  (void)Blah;
+
   return Listener.ReadHeaderSearchPaths(HSOpts, Complain);
 }
 

@@ -1421,6 +1421,8 @@ void ASTWriter::writeUnhashedControlBlock(Preprocessor &PP) {
     for (StringRef VFSOverlayFile : HSOpts.VFSOverlayFiles)
       AddString(VFSOverlayFile, Record);
 
+    AddString("Blah", Record);
+
     Stream.EmitRecord(HEADER_SEARCH_PATHS, Record);
   }
 
