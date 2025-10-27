@@ -14,8 +14,10 @@
 #include "AArch64Subtarget.h"
 #include "llvm/CodeGen/CFIInstBuilder.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
+#include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
+#include "llvm/IR/CallingConv.h"
 
 using namespace llvm;
 using namespace llvm::AArch64PAuth;
@@ -133,8 +135,7 @@ void AArch64PointerAuth::signLR(MachineFunction &MF,
   if (MFnI.branchProtectionPAuthLR() && Subtarget->hasPAuthLR()) {
     emitPACCFI(MBB, MBBI, MachineInstr::FrameSetup, EmitCFI);
     BuildMI(MBB, MBBI, DL,
-            TII->get(MFnI.shouldSignWithBKey() ? AArch64::PACIBSPPC
-                                               : AArch64::PACIASPPC))
+            TII->get(UseBKey ? AArch64::PACIBSPPC : AArch64::PACIASPPC))
         .setMIFlag(MachineInstr::FrameSetup)
         ->setPreInstrSymbol(MF, MFnI.getSigningInstrLabel());
   } else {
@@ -142,8 +143,7 @@ void AArch64PointerAuth::signLR(MachineFunction &MF,
     if (MFnI.branchProtectionPAuthLR())
       emitPACCFI(MBB, MBBI, MachineInstr::FrameSetup, EmitCFI);
     BuildMI(MBB, MBBI, DL,
-            TII->get(MFnI.shouldSignWithBKey() ? AArch64::PACIBSP
-                                               : AArch64::PACIASP))
+            TII->get(UseBKey ? AArch64::PACIBSP : AArch64::PACIASP))
         .setMIFlag(MachineInstr::FrameSetup)
         ->setPreInstrSymbol(MF, MFnI.getSigningInstrLabel());
     if (!MFnI.branchProtectionPAuthLR())
@@ -181,6 +181,17 @@ void AArch64PointerAuth::authenticateLR(
       TI != MBB.end() && TI->getOpcode() == AArch64::RET;
   MCSymbol *PACSym = MFnI->getSigningInstrLabel();
 
+  const MachineFrameInfo &MFI = MF.getFrameInfo();
+  bool IsLRSpilled =
+      llvm::any_of(MFI.getCalleeSavedInfo(), [](const CalleeSavedInfo &Info) {
+        return Info.getReg() == AArch64::LR;
+      });
+
+  MachineBasicBlock::iterator EpilogueEndI = MBB.getLastNonDebugInstr();
+  bool IsSwiftCoroPartialReturn =
+      MBB.end() != EpilogueEndI &&
+      EpilogueEndI->getOpcode() == AArch64::RET_POPLESS;
+
   if (Subtarget->hasPAuth() && TerminatorIsCombinable && !NeedsWinCFI &&
       !MF.getFunction().hasFnAttribute(Attribute::ShadowCallStack)) {
     if (MFnI->branchProtectionPAuthLR() && Subtarget->hasPAuthLR()) {
@@ -198,6 +209,29 @@ void AArch64PointerAuth::authenticateLR(
           .setMIFlag(MachineInstr::FrameDestroy);
     }
     MBB.erase(TI);
+  } else if (IsLRSpilled && IsSwiftCoroPartialReturn) {
+    const auto *TRI = Subtarget->getRegisterInfo();
+
+    MachineBasicBlock::iterator EpilogStartI = MBB.getFirstTerminator();
+    MachineBasicBlock::iterator Begin = MBB.begin();
+    while (EpilogStartI != Begin) {
+      --EpilogStartI;
+      if (!EpilogStartI->getFlag(MachineInstr::FrameDestroy)) {
+        ++EpilogStartI;
+        break;
+      }
+      if (EpilogStartI->readsRegister(AArch64::X16, TRI) ||
+          EpilogStartI->modifiesRegister(AArch64::X16, TRI))
+        report_fatal_error("unable to use x16 for popless ret LR auth");
+    }
+
+    emitFrameOffset(MBB, EpilogStartI, DL, AArch64::X16, AArch64::FP,
+                    StackOffset::getFixed(16), TII, MachineInstr::FrameDestroy);
+    emitPACCFI(MBB, MBBI, MachineInstr::FrameDestroy, EmitAsyncCFI);
+    BuildMI(MBB, TI, DL, TII->get(AArch64::AUTIB), AArch64::LR)
+        .addUse(AArch64::LR)
+        .addUse(AArch64::X16)
+        .setMIFlag(MachineInstr::FrameDestroy);
   } else {
     if (MFnI->branchProtectionPAuthLR() && Subtarget->hasPAuthLR()) {
       assert(PACSym && "No PAC instruction to refer to");

@@ -10,7 +10,9 @@ declare i64 @g(ptr, ptr)
 define i64 @test_call_to_swiftcoro() #0 {
 ; CHECK-LABEL: test_call_to_swiftcoro:
 ; CHECK:       ; %bb.0:
+; CHECK-NEXT:    .cfi_b_key_frame
 ; CHECK-NEXT:    pacibsp
+; CHECK-NEXT:    .cfi_negate_ra_state
 ; CHECK-NEXT:    stp x26, x25, [sp, #-32]! ; 16-byte Folded Spill
 ; CHECK-NEXT:    stp x29, x30, [sp, #16] ; 16-byte Folded Spill
 ; CHECK-NEXT:    add x29, sp, #16
@@ -41,7 +43,9 @@ define i64 @test_call_to_swiftcoro() #0 {
 define i64 @test_call_to_normal() #0 {
 ; CHECK-LABEL: test_call_to_normal:
 ; CHECK:       ; %bb.0:
+; CHECK-NEXT:    .cfi_b_key_frame
 ; CHECK-NEXT:    pacibsp
+; CHECK-NEXT:    .cfi_negate_ra_state
 ; CHECK-NEXT:    sub sp, sp, #48
 ; CHECK-NEXT:    stp x26, x25, [sp, #16] ; 16-byte Folded Spill
 ; CHECK-NEXT:    stp x29, x30, [sp, #32] ; 16-byte Folded Spill
@@ -71,7 +75,9 @@ define i64 @test_call_to_normal() #0 {
 define swiftcorocc i64 @test_call() #0 {
 ; CHECK-LABEL: test_call:
 ; CHECK:       ; %bb.0:
+; CHECK-NEXT:    .cfi_b_key_frame
 ; CHECK-NEXT:    pacibsp
+; CHECK-NEXT:    .cfi_negate_ra_state
 ; CHECK-NEXT:    sub sp, sp, #48
 ; CHECK-NEXT:    stp x26, x25, [sp, #16] ; 16-byte Folded Spill
 ; CHECK-NEXT:    stp x29, x30, [sp, #32] ; 16-byte Folded Spill
@@ -99,7 +105,9 @@ define swiftcorocc i64 @test_call() #0 {
 define i64 @test_call_normal() #0 {
 ; CHECK-LABEL: test_call_normal:
 ; CHECK:       ; %bb.0:
+; CHECK-NEXT:    .cfi_b_key_frame
 ; CHECK-NEXT:    pacibsp
+; CHECK-NEXT:    .cfi_negate_ra_state
 ; CHECK-NEXT:    sub sp, sp, #48
 ; CHECK-NEXT:    stp x26, x25, [sp, #16] ; 16-byte Folded Spill
 ; CHECK-NEXT:    stp x29, x30, [sp, #32] ; 16-byte Folded Spill

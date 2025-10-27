@@ -7,16 +7,16 @@ declare i64 @g(ptr, ptr)
 define swiftcorocc i64 @test_intrin_basic() #0 {
 ; CHECK-LABEL: test_intrin_basic:
 ; CHECK:       ; %bb.0:
+; CHECK-NEXT:    .cfi_b_key_frame
 ; CHECK-NEXT:    pacibsp
+; CHECK-NEXT:    .cfi_negate_ra_state
 ; CHECK-NEXT:    stp x29, x30, [sp, #-16]! ; 16-byte Folded Spill
 ; CHECK-NEXT:    mov x29, sp
 ; CHECK-NEXT:    .cfi_def_cfa w29, 16
 ; CHECK-NEXT:    .cfi_offset w30, -8
 ; CHECK-NEXT:    .cfi_offset w29, -16
-; CHECK-NEXT:    add x16, x29, #16
 ; CHECK-NEXT:    ldp x29, x30, [x29] ; 16-byte Folded Reload
-; CHECK-NEXT:    autib x30, x16
-; CHECK-NEXT:    ret
+; CHECK-NEXT:    retab
   musttail call void @llvm.ret.popless()
   ret i64 0
 }
@@ -24,7 +24,9 @@ define swiftcorocc i64 @test_intrin_basic() #0 {
 define swiftcorocc i64 @test_intrin() #0 {
 ; CHECK-LABEL: test_intrin:
 ; CHECK:       ; %bb.0:
+; CHECK-NEXT:    .cfi_b_key_frame
 ; CHECK-NEXT:    pacibsp
+; CHECK-NEXT:    .cfi_negate_ra_state
 ; CHECK-NEXT:    sub sp, sp, #48
 ; CHECK-NEXT:    stp x26, x25, [sp, #16] ; 16-byte Folded Spill
 ; CHECK-NEXT:    stp x29, x30, [sp, #32] ; 16-byte Folded Spill
@@ -41,11 +43,9 @@ define swiftcorocc i64 @test_intrin() #0 {
 ; CHECK-NEXT:    bl _g
 ; CHECK-NEXT:    cbz x0, LBB1_2
 ; CHECK-NEXT:  ; %bb.1: ; %else
-; CHECK-NEXT:    add x16, x29, #16
 ; CHECK-NEXT:    ldp x26, x25, [x29, #-16] ; 16-byte Folded Reload
 ; CHECK-NEXT:    ldp x29, x30, [x29] ; 16-byte Folded Reload
-; CHECK-NEXT:    autib x30, x16
-; CHECK-NEXT:    ret
+; CHECK-NEXT:    retab
 ; CHECK-NEXT:  LBB1_2: ; %then
 ; CHECK-NEXT:    add sp, sp, #16
 ; CHECK-NEXT:    ldp x29, x30, [sp, #16] ; 16-byte Folded Reload
@@ -67,7 +67,9 @@ else:
 define swiftcorocc i64 @test_vla(i32 %n) #0 {
 ; SDISEL-LABEL: test_vla:
 ; SDISEL:       ; %bb.0:
+; SDISEL-NEXT:    .cfi_b_key_frame
 ; SDISEL-NEXT:    pacibsp
+; SDISEL-NEXT:    .cfi_negate_ra_state
 ; SDISEL-NEXT:    stp x26, x25, [sp, #-32]! ; 16-byte Folded Spill
 ; SDISEL-NEXT:    stp x29, x30, [sp, #16] ; 16-byte Folded Spill
 ; SDISEL-NEXT:    add x29, sp, #16
@@ -91,11 +93,9 @@ define swiftcorocc i64 @test_vla(i32 %n) #0 {
 ; SDISEL-NEXT:    bl _g
 ; SDISEL-NEXT:    cbz x0, LBB2_2
 ; SDISEL-NEXT:  ; %bb.1: ; %else
-; SDISEL-NEXT:    add x16, x29, #16
 ; SDISEL-NEXT:    ldp x26, x25, [x29, #-16] ; 16-byte Folded Reload
 ; SDISEL-NEXT:    ldp x29, x30, [x29] ; 16-byte Folded Reload
-; SDISEL-NEXT:    autib x30, x16
-; SDISEL-NEXT:    ret
+; SDISEL-NEXT:    retab
 ; SDISEL-NEXT:  LBB2_2: ; %then
 ; SDISEL-NEXT:    sub sp, x29, #16
 ; SDISEL-NEXT:    ldp x29, x30, [sp, #16] ; 16-byte Folded Reload
@@ -104,7 +104,9 @@ define swiftcorocc i64 @test_vla(i32 %n) #0 {
 ;
 ; GISEL-LABEL: test_vla:
 ; GISEL:       ; %bb.0:
+; GISEL-NEXT:    .cfi_b_key_frame
 ; GISEL-NEXT:    pacibsp
+; GISEL-NEXT:    .cfi_negate_ra_state
 ; GISEL-NEXT:    stp x26, x25, [sp, #-32]! ; 16-byte Folded Spill
 ; GISEL-NEXT:    stp x29, x30, [sp, #16] ; 16-byte Folded Spill
 ; GISEL-NEXT:    add x29, sp, #16
@@ -128,11 +130,9 @@ define swiftcorocc i64 @test_vla(i32 %n) #0 {
 ; GISEL-NEXT:    bl _g
 ; GISEL-NEXT:    cbz x0, LBB2_2
 ; GISEL-NEXT:  ; %bb.1: ; %else
-; GISEL-NEXT:    add x16, x29, #16
 ; GISEL-NEXT:    ldp x26, x25, [x29, #-16] ; 16-byte Folded Reload
 ; GISEL-NEXT:    ldp x29, x30, [x29] ; 16-byte Folded Reload
-; GISEL-NEXT:    autib x30, x16
-; GISEL-NEXT:    ret
+; GISEL-NEXT:    retab
 ; GISEL-NEXT:  LBB2_2: ; %then
 ; GISEL-NEXT:    sub sp, x29, #16
 ; GISEL-NEXT:    ldp x29, x30, [sp, #16] ; 16-byte Folded Reload

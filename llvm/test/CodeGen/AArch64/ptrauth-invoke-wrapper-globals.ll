@@ -7,7 +7,9 @@
 ; CHECK-NEXT:  .cfi_personality 155, ___gxx_personality_v0
 ; CHECK-NEXT:  .cfi_lsda 16, [[EXCEPT:Lexception[0-9]+]]
 ; CHECK-NEXT: ; %bb.0:
+; CHECK-NEXT:  .cfi_b_key_frame
 ; CHECK-NEXT:  pacibsp
+; CHECK-NEXT:  .cfi_negate_ra_state
 ; CHECK-NEXT:  stp x20, x19, [sp, #-32]!
 ; CHECK-NEXT:  stp x29, x30, [sp, #16]
 ; CHECK-NEXT:  .cfi_def_cfa_offset 32
@@ -57,7 +59,9 @@ continuebb:
 ; CHECK-NEXT:  .cfi_personality 155, ___gxx_personality_v0
 ; CHECK-NEXT:  .cfi_lsda 16, [[EXCEPT:Lexception[0-9]+]]
 ; CHECK-NEXT: ; %bb.0:
+; CHECK-NEXT:  .cfi_b_key_frame
 ; CHECK-NEXT:  pacibsp
+; CHECK-NEXT:  .cfi_negate_ra_state
 ; CHECK-NEXT:  stp x20, x19, [sp, #-32]!
 ; CHECK-NEXT:  stp x29, x30, [sp, #16]
 ; CHECK-NEXT:  .cfi_def_cfa_offset 32
@@ -112,7 +116,9 @@ continuebb:
 ; CHECK-NEXT:         .cfi_personality 155, ___gxx_personality_v0
 ; CHECK-NEXT:         .cfi_lsda 16, [[EXCEPT:Lexception[0-9]+]]
 ; CHECK-NEXT: ; %bb.0:
+; CHECK-NEXT:         .cfi_b_key_frame
 ; CHECK-NEXT:         pacibsp
+; CHECK-NEXT:         .cfi_negate_ra_state
 ; CHECK-NEXT:         stp x20, x19, [sp, #-32]!
 ; CHECK-NEXT:         stp x29, x30, [sp, #16]
 ; CHECK-NEXT:         .cfi_def_cfa_offset 32
