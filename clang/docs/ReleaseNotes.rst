@@ -987,6 +987,8 @@ Bug Fixes to Compiler Builtins
 
 Bug Fixes to Attribute Support
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+- Fix handling of parameter indexes when an attribute is applied to a C++23 explicit object member function.
  - Fixed crash when a parameter to the ``clang::annotate`` attribute evaluates to ``void``. See #GH119125
 
 - Clang now emits a warning instead of an error when using the one or two
