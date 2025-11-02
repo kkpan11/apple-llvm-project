@@ -633,8 +633,10 @@ tgtok::TokKind TGLexer::LexExclaim() {
           .Case("instances", tgtok::XInstances)
           .Case("substr", tgtok::XSubstr)
           .Case("find", tgtok::XFind)
-          .Cases("setdagop", "setop", tgtok::XSetDagOp) // !setop is deprecated.
-          .Cases("getdagop", "getop", tgtok::XGetDagOp) // !getop is deprecated.
+          .Cases({"setdagop", "setop"},
+                 tgtok::XSetDagOp) // !setop is deprecated.
+          .Cases({"getdagop", "getop"},
+                 tgtok::XGetDagOp) // !getop is deprecated.
           .Case("getdagarg", tgtok::XGetDagArg)
           .Case("getdagname", tgtok::XGetDagName)
           .Case("setdagarg", tgtok::XSetDagArg)
