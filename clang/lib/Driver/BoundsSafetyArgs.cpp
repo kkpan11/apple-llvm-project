@@ -8,13 +8,13 @@
 #include "clang/Driver/BoundsSafetyArgs.h"
 #include "clang/Basic/DiagnosticDriver.h"
 #include "clang/Basic/DiagnosticFrontend.h"
-#include "clang/Driver/Options.h"
+#include "clang/Options/Options.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/bit.h"
 #include <array>
 
 using namespace llvm::opt;
-using namespace clang::driver::options;
+using namespace clang::options;
 
 namespace clang {
 

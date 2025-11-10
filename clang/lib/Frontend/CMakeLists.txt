@@ -62,6 +62,7 @@ add_clang_library(clangFrontend
   clangAST
   clangBasic
   clangDriver
+  clangOptions
   clangEdit
   clangLex
   clangParse
