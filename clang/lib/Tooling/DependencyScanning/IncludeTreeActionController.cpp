@@ -12,6 +12,8 @@
 #include "clang/CAS/IncludeTree.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Lex/Preprocessor.h"
+#include "llvm/CAS/CASFileSystem.h"
+#include "llvm/CAS/CASProvidingFileSystem.h"
 #include "llvm/CAS/ObjectStore.h"
 #include "llvm/Support/PrefixMapper.h"
 #include "llvm/Support/PrefixMappingFileSystem.h"
@@ -33,6 +35,7 @@ public:
   Expected<cas::IncludeTreeRoot> getIncludeTree();
 
 private:
+  bool hasResult(const CompilerInvocation &ScanInvocation,llvm::vfs::FileSystem &VFS) override;
   Error initialize(CompilerInstance &ScanInstance,
                    CompilerInvocation &NewInvocation) override;
   Error finalize(CompilerInstance &ScanInstance,
@@ -295,6 +298,25 @@ Expected<cas::IncludeTreeRoot> IncludeTreeActionController::getIncludeTree() {
     return *IncludeTreeResult;
   return llvm::createStringError(llvm::inconvertibleErrorCode(),
                                  "failed to produce include-tree");
+}
+
+bool IncludeTreeActionController::hasResult(
+    const CompilerInvocation &ScanInvocation, llvm::vfs::FileSystem &VFS) {
+  llvm::cas::CASBackedFileSystem *OurFS;
+  VFS.visit([&](llvm::vfs::FileSystem &VFS) {
+    if (auto *CASFS = dyn_cast<llvm::cas::CASBackedFileSystem>(&VFS)) {
+      OurFS = CASFS;
+    }
+  });
+  assert(OurFS && "IncludeTree scan without CAS-backed VFS");
+  ScanInvocation.visitPaths([&](StringRef Path) {
+    OurFS->getObjectRefForFileContent(Path);
+    OurFS->status(Path);
+    return false;
+  });
+  auto X = FS.createTreeFromAllAccesses();
+  int y = 0;
+  llvm::errs() << "HERE\n";
 }
 
 Error IncludeTreeActionController::initialize(

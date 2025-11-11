@@ -814,6 +814,10 @@ bool DependencyScanningAction::runInvocation(
   // Make a deep copy of the original Clang invocation.
   CompilerInvocation OriginalInvocation(*Invocation);
 
+  if (Controller.hasResult(*Invocation, *FS)) {
+    // blah
+  }
+
   if (Scanned) {
     CompilerInstance &ScanInstance = *ScanInstanceStorage;
     auto reportError = [&ScanInstance](Error &&E) -> bool {

@@ -75,6 +75,10 @@ class DependencyActionController {
 public:
   virtual ~DependencyActionController();
 
+  virtual bool hasResult(const CompilerInvocation &ScanInvocation, llvm::vfs::FileSystem &VFS) {
+    return false;
+  }
+
   virtual std::string lookupModuleOutput(const ModuleDeps &MD,
                                          ModuleOutputKind Kind) = 0;
 
