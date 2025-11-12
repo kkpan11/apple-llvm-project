@@ -207,11 +207,6 @@ public:
   const CASOptions &getCASOpts() const { return CASOpts; }
   std::shared_ptr<cas::ObjectStore> getCAS() const { return CAS; }
 
-  /// If \p DependencyScanningService enabled sharing of \p FileManager this
-  /// will return the same instance, otherwise it will create a new one for
-  /// each invocation.
-  llvm::IntrusiveRefCntPtr<FileManager> getOrCreateFileManager() const;
-
   llvm::vfs::FileSystem &getVFS() const { return *BaseFS; }
 
 private:

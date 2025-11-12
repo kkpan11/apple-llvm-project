@@ -45,11 +45,6 @@ DependencyScanningWorker::DependencyScanningWorker(
   }
 }
 
-llvm::IntrusiveRefCntPtr<FileManager>
-DependencyScanningWorker::getOrCreateFileManager() const {
-  return new FileManager(FileSystemOptions(), BaseFS);
-}
-
 DependencyScanningWorker::~DependencyScanningWorker() = default;
 DependencyActionController::~DependencyActionController() = default;
 

@@ -238,13 +238,6 @@ public:
 
   const CASOptions &getCASOpts() const { return Worker.getCASOpts(); }
 
-  /// If \p DependencyScanningService enabled sharing of \p FileManager this
-  /// will return the same instance, otherwise it will create a new one for
-  /// each invocation.
-  llvm::IntrusiveRefCntPtr<FileManager> getOrCreateFileManager() const {
-    return Worker.getOrCreateFileManager();
-  }
-
   static std::unique_ptr<DependencyActionController>
   createActionController(DependencyScanningWorker &Worker,
                          LookupModuleOutputCallback LookupModuleOutput);
