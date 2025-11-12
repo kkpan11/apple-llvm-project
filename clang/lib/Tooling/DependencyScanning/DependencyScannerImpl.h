@@ -59,8 +59,6 @@ public:
 
   std::optional<std::string> takeLastCC1CacheKey();
 
-  IntrusiveRefCntPtr<llvm::vfs::FileSystem> getDepScanFS();
-
 private:
   DependencyScanningService &Service;
   StringRef WorkingDirectory;

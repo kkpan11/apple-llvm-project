@@ -924,11 +924,6 @@ std::optional<std::string> DependencyScanningAction::takeLastCC1CacheKey() {
   return Result;
 }
 
-IntrusiveRefCntPtr<llvm::vfs::FileSystem>
-DependencyScanningAction::getDepScanFS() {
-  return DepFS;
-}
-
 bool CompilerInstanceWithContext::initialize(DiagnosticConsumer *DC) {
   if (DC) {
     DiagConsumer = DC;
