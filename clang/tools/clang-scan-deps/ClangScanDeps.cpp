@@ -22,7 +22,6 @@
 #include "llvm/ADT/Twine.h"
 #include "llvm/CAS/ActionCache.h"
 #include "llvm/CAS/CASProvidingFileSystem.h"
-#include "llvm/CAS/CachingOnDiskFileSystem.h"
 #include "llvm/CAS/ObjectStore.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FileUtilities.h"
@@ -162,10 +161,10 @@ static void ParseArgs(int argc, char **argv) {
         llvm::StringSwitch<std::optional<ScanningOutputFormat>>(A->getValue())
             .Case("make", ScanningOutputFormat::Make)
             .Case("p1689", ScanningOutputFormat::P1689)
-            .Case("experimental-tree", ScanningOutputFormat::Tree)
-            .Case("experimental-tree-full", ScanningOutputFormat::FullTree)
-            .Case("experimental-include-tree", ScanningOutputFormat::IncludeTree)
-            .Case("experimental-include-tree-full", ScanningOutputFormat::FullIncludeTree)
+            .Case("experimental-include-tree",
+                  ScanningOutputFormat::IncludeTree)
+            .Case("experimental-include-tree-full",
+                  ScanningOutputFormat::FullIncludeTree)
             .Case("experimental-full", ScanningOutputFormat::Full)
             .Default(std::nullopt);
     if (!FormatType) {
@@ -534,25 +533,6 @@ handleMakeDependencyToolResult(const std::string &Input,
   return false;
 }
 
-static bool handleTreeDependencyToolResult(
-    llvm::cas::ObjectStore &CAS, const std::string &Input,
-    llvm::Expected<llvm::cas::ObjectProxy> &MaybeTree, llvm::raw_ostream &OS,
-    SharedStream &Errs) {
-  if (!MaybeTree) {
-    llvm::handleAllErrors(
-        MaybeTree.takeError(), [&Input, &Errs](llvm::StringError &Err) {
-          Errs.applyLocked([&](raw_ostream &OS) {
-            OS << "Error while scanning dependencies for " << Input << ":\n";
-            OS << Err.getMessage();
-            OS << "\n";
-          });
-        });
-    return true;
-  }
-  OS << "tree " << MaybeTree->getID() << " for '" << Input << "'\n";
-  return false;
-}
-
 static bool
 handleIncludeTreeToolResult(llvm::cas::ObjectStore &CAS,
                             const std::string &Input,
@@ -589,13 +569,11 @@ handleIncludeTreeToolResult(llvm::cas::ObjectStore &CAS,
 
 static bool outputFormatRequiresCAS() {
   switch (Format) {
-    case ScanningOutputFormat::Tree:
-    case ScanningOutputFormat::FullTree:
-    case ScanningOutputFormat::IncludeTree:
-    case ScanningOutputFormat::FullIncludeTree:
-      return true;
-    default:
-      return false;
+  case ScanningOutputFormat::IncludeTree:
+  case ScanningOutputFormat::FullIncludeTree:
+    return true;
+  default:
+    return false;
   }
 }
 
@@ -662,7 +640,6 @@ public:
     ID.FileName = std::string(Input);
     ID.ContextHash = std::move(TUDeps.ID.ContextHash);
     ID.FileDeps = std::move(TUDeps.FileDeps);
-    ID.CASFileSystemRootID = std::move(TUDeps.CASFileSystemRootID);
     ID.IncludeTreeID = std::move(TUDeps.IncludeTreeID);
     ID.NamedModule = std::move(TUDeps.ID.ModuleName);
     ID.NamedModuleDeps = std::move(TUDeps.NamedModuleDeps);
@@ -753,9 +730,6 @@ public:
             if (MD.IncludeTreeID)
               JOS.attribute("cas-include-tree-id",
                             StringRef(*MD.IncludeTreeID));
-            if (MD.CASFileSystemRootID)
-              JOS.attribute("casfs-root-id",
-                            StringRef(*MD.CASFileSystemRootID));
 
             if (MD.IsInStableDirectories)
               JOS.attribute("is-in-stable-directories",
@@ -794,9 +768,6 @@ public:
                     if (I.IncludeTreeID)
                       JOS.attribute("cas-include-tree-id",
                                     StringRef(*I.IncludeTreeID));
-                    if (I.CASFileSystemRootID)
-                      JOS.attribute("casfs-root-id",
-                                    StringRef(*I.CASFileSystemRootID));
 
                     JOS.attribute("clang-context-hash",
                                   StringRef(I.ContextHash));
@@ -822,9 +793,6 @@ public:
                 }
               } else {
                 JOS.object([&] {
-                  if (I.CASFileSystemRootID)
-                    JOS.attribute("casfs-root-id",
-                                  StringRef(*I.CASFileSystemRootID));
                   if (I.IncludeTreeID)
                     JOS.attribute("cas-include-tree-id",
                                   StringRef(*I.IncludeTreeID));
@@ -896,7 +864,6 @@ private:
     std::string FileName;
     std::string ContextHash;
     std::vector<std::string> FileDeps;
-    std::optional<std::string> CASFileSystemRootID;
     std::optional<std::string> IncludeTreeID;
     std::string NamedModule;
     std::vector<std::string> NamedModuleDeps;
@@ -1309,7 +1276,6 @@ int clang_scan_deps_main(int argc, char **argv, const llvm::ToolContext &) {
 
   std::shared_ptr<llvm::cas::ObjectStore> CAS;
   std::shared_ptr<llvm::cas::ActionCache> Cache;
-  IntrusiveRefCntPtr<llvm::cas::CachingOnDiskFileSystem> FS;
   if (useCAS()) {
     if (!InMemoryCAS)
       CASOpts.ensurePersistentCAS();
@@ -1317,8 +1283,6 @@ int clang_scan_deps_main(int argc, char **argv, const llvm::ToolContext &) {
     std::tie(CAS, Cache) = CASOpts.getOrCreateDatabases(Diags);
     if (!CAS)
       return 1;
-    if (Format != ScanningOutputFormat::IncludeTree && Format != ScanningOutputFormat::FullIncludeTree)
-      FS = llvm::cantFail(llvm::cas::createCachingOnDiskFileSystem(*CAS));
   }
 
   if (EmitCASCompDB) {
@@ -1326,7 +1290,7 @@ int clang_scan_deps_main(int argc, char **argv, const llvm::ToolContext &) {
       llvm::errs() << "'-emit-cas-compdb' needs CAS setup\n";
       return 1;
     }
-    DependencyScanningService Service(ScanMode, Format, CASOpts, CAS, Cache, FS,
+    DependencyScanningService Service(ScanMode, Format, CASOpts, CAS, Cache,
                                       OptimizeArgs, EagerLoadModules);
     llvm::DefaultThreadPool Pool(llvm::hardware_concurrency(NumThreads));
     return emitCompilationDBWithCASTreeArguments(
@@ -1351,7 +1315,6 @@ int clang_scan_deps_main(int argc, char **argv, const llvm::ToolContext &) {
   };
 
   if (Format == ScanningOutputFormat::Full ||
-      Format == ScanningOutputFormat::FullTree ||
       Format == ScanningOutputFormat::FullIncludeTree)
     FD.emplace(!ModuleNames ? Inputs.size() : 0);
 
@@ -1371,10 +1334,6 @@ int clang_scan_deps_main(int argc, char **argv, const llvm::ToolContext &) {
           MaybeIncludeTree(std::move(Tree)) {}
   };
   SmallVector<DepTreeResult> TreeResults;
-
-  if (Format == ScanningOutputFormat::Full ||
-      Format == ScanningOutputFormat::FullTree)
-    FD.emplace(!ModuleNames ? Inputs.size() : 0);
 
   std::atomic<size_t> NumStatusCalls = 0;
   std::atomic<size_t> NumOpenFileForReadCalls = 0;
@@ -1409,11 +1368,6 @@ int clang_scan_deps_main(int argc, char **argv, const llvm::ToolContext &) {
         if (handleMakeDependencyToolResult(Filename, MaybeFile, DependencyOS,
                                            Errs))
           HadErrors = true;
-      } else if (Format == ScanningOutputFormat::Tree) {
-        auto MaybeTree = WorkerTool.getDependencyTree(Input->CommandLine, CWD);
-        std::unique_lock<std::mutex> LockGuard(Lock);
-        TreeResults.emplace_back(LocalIndex, std::move(Filename),
-                                 std::move(MaybeTree));
       } else if (Format == ScanningOutputFormat::IncludeTree) {
         auto MaybeTree = WorkerTool.getIncludeTree(
             *CAS, Input->CommandLine, CWD, LookupOutput);
@@ -1541,9 +1495,9 @@ int clang_scan_deps_main(int argc, char **argv, const llvm::ToolContext &) {
     });
   };
 
-  DependencyScanningService Service(ScanMode, Format, CASOpts, CAS, Cache, FS, OptimizeArgs,
-                                    EagerLoadModules,
-      /*TraceVFS=*/Verbose);
+  DependencyScanningService Service(ScanMode, Format, CASOpts, CAS, Cache,
+                                    OptimizeArgs, EagerLoadModules,
+                                    /*TraceVFS=*/Verbose);
 
   llvm::Timer T;
   T.startTimer();
@@ -1593,14 +1547,7 @@ int clang_scan_deps_main(int argc, char **argv, const llvm::ToolContext &) {
             [](const DepTreeResult &LHS, const DepTreeResult &RHS) -> bool {
               return LHS.Index < RHS.Index;
             });
-  if (Format == ScanningOutputFormat::Tree) {
-    for (auto &TreeResult : TreeResults) {
-      if (handleTreeDependencyToolResult(*CAS, TreeResult.Filename,
-                                         *TreeResult.MaybeTree,
-                                         ThreadUnsafeDependencyOS, Errs))
-        HadErrors = true;
-    }
-  } else if (Format == ScanningOutputFormat::IncludeTree) {
+  if (Format == ScanningOutputFormat::IncludeTree) {
     for (auto &TreeResult : TreeResults) {
       if (handleIncludeTreeToolResult(*CAS, TreeResult.Filename,
                                       *TreeResult.MaybeIncludeTree,
@@ -1608,7 +1555,6 @@ int clang_scan_deps_main(int argc, char **argv, const llvm::ToolContext &) {
         HadErrors = true;
     }
   } else if (Format == ScanningOutputFormat::Full ||
-             Format == ScanningOutputFormat::FullTree ||
              Format == ScanningOutputFormat::FullIncludeTree) {
     FD->printFullOutput(ThreadUnsafeDependencyOS);
   } else if (Format == ScanningOutputFormat::P1689)

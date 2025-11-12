@@ -18,8 +18,8 @@
 #include "clang/Tooling/DependencyScanning/DependencyScanningWorker.h"
 #include "clang/Tooling/Tooling.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/CAS/CASFileSystem.h"
 #include "llvm/CAS/CASProvidingFileSystem.h"
-#include "llvm/CAS/CachingOnDiskFileSystem.h"
 #include "llvm/CAS/ObjectStore.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/FormatVariadic.h"
@@ -237,7 +237,7 @@ TEST(DependencyScanner, ScanDepsWithFS) {
 
   DependencyScanningService Service(ScanningMode::DependencyDirectivesScan,
                                     ScanningOutputFormat::Make, CASOptions(),
-                                    nullptr, nullptr, nullptr);
+                                    nullptr, nullptr);
   DependencyScanningTool ScanTool(Service, VFS);
 
   std::string DepFile;
@@ -261,7 +261,7 @@ TEST(DependencyScanner, DepScanFSWithCASProvider) {
 
   DependencyScanningService Service(ScanningMode::DependencyDirectivesScan,
                                     ScanningOutputFormat::Make, CASOptions(),
-                                    nullptr, nullptr, nullptr);
+                                    nullptr, nullptr);
   {
     DependencyScanningWorkerFilesystem DepFS(Service.getSharedCache(),
                                              std::move(CASFS));
@@ -350,7 +350,7 @@ TEST(DependencyScanner, ScanDepsWithModuleLookup) {
 
   DependencyScanningService Service(ScanningMode::DependencyDirectivesScan,
                                     ScanningOutputFormat::Make, CASOptions(),
-                                    nullptr, nullptr, nullptr);
+                                    nullptr, nullptr);
   DependencyScanningTool ScanTool(Service, InterceptFS);
 
   // This will fail with "fatal error: module 'Foo' not found" but it doesn't
@@ -383,7 +383,7 @@ TEST(DependencyScanner, ScanDepsWithDiagConsumer) {
 
   DependencyScanningService Service(ScanningMode::DependencyDirectivesScan,
                                     ScanningOutputFormat::Make, CASOptions(),
-                                    nullptr, nullptr, nullptr);
+                                    nullptr, nullptr);
   DependencyScanningWorker Worker(Service, VFS);
 
   llvm::DenseSet<ModuleID> AlreadySeen;

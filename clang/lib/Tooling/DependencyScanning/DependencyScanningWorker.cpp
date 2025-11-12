@@ -32,13 +32,6 @@ DependencyScanningWorker::DependencyScanningWorker(
   if (Service.shouldTraceVFS())
     FS = llvm::makeIntrusiveRefCnt<llvm::vfs::TracingFileSystem>(std::move(FS));
 
-  if (Service.useCASFS()) {
-    CacheFS = Service.getSharedFS().createProxyFS();
-    DepCASFS = new DependencyScanningCASFilesystem(CacheFS, *Service.getCache());
-    BaseFS = DepCASFS;
-    return;
-  }
-
   switch (Service.getMode()) {
   case ScanningMode::DependencyDirectivesScan:
     DepFS = llvm::makeIntrusiveRefCnt<DependencyScanningWorkerFilesystem>(
@@ -121,7 +114,7 @@ bool DependencyScanningWorker::scanDependencies(
     llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> FS) {
   DignosticsEngineWithDiagOpts DiagEngineWithCmdAndOpts(CommandLine, FS, DC);
   DependencyScanningAction Action(
-      Service, WorkingDirectory, Consumer, Controller, DepFS, DepCASFS, CacheFS,
+      Service, WorkingDirectory, Consumer, Controller, DepFS,
       /*EmitDependencyFile=*/false,
       /*DiagGenerationAsCompilation=*/false, getCASOpts());
   bool Success = false;
@@ -176,7 +169,7 @@ bool DependencyScanningWorker::computeDependencies(
     DiagnosticConsumer &DC, std::optional<llvm::MemoryBufferRef> TUBuffer) {
   if (TUBuffer) {
     auto [FinalFS, FinalCommandLine] = initVFSForTUBuferScanning(
-        BaseFS, CommandLine, WorkingDirectory, *TUBuffer, CAS, DepCASFS);
+        BaseFS, CommandLine, WorkingDirectory, *TUBuffer, CAS);
     return scanDependencies(WorkingDirectory, FinalCommandLine, Consumer,
                             Controller, DC, FinalFS);
   } else {
@@ -216,7 +209,7 @@ void DependencyScanningWorker::computeDependenciesFromCompilerInvocation(
   // FIXME: EmitDependencyFile should only be set when it's for a real
   // compilation.
   DependencyScanningAction Action(Service, WorkingDirectory, DepsConsumer,
-                                  Controller, DepFS, DepCASFS, CacheFS,
+                                  Controller, DepFS,
                                   /*EmitDependencyFile=*/!DepFile.empty(),
                                   DiagGenerationAsCompilation, getCASOpts(),
                                   /*ModuleName=*/std::nullopt, VerboseOS);
