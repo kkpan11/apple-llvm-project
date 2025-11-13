@@ -1177,10 +1177,7 @@ int clang_scan_deps_main(int argc, char **argv, const llvm::ToolContext &) {
   std::atomic<size_t> NumIsLocalCalls = 0;
 
   auto ScanningTask = [&](DependencyScanningService &Service) {
-    std::unique_ptr<llvm::vfs::FileSystem> FS = llvm::vfs::createPhysicalFileSystem();
-    if (CAS)
-      FS = llvm::cas::createCASProvidingFileSystem(CAS, std::move(FS));
-    DependencyScanningTool WorkerTool(Service, std::move(FS));
+    DependencyScanningTool WorkerTool(Service, llvm::vfs::createPhysicalFileSystem());
 
     llvm::DenseSet<ModuleID> AlreadySeenModules;
     while (auto MaybeInputIndex = GetNextInputIndex()) {
@@ -1204,7 +1201,7 @@ int clang_scan_deps_main(int argc, char **argv, const llvm::ToolContext &) {
           HadErrors = true;
       } else if (Format == ScanningOutputFormat::IncludeTree) {
         auto MaybeTree = WorkerTool.getIncludeTree(
-            *CAS, Input->CommandLine, CWD, LookupOutput);
+            CAS, Input->CommandLine, CWD, LookupOutput);
         std::unique_lock<std::mutex> LockGuard(Lock);
         TreeResults.emplace_back(LocalIndex, std::move(Filename),
                                  std::move(MaybeTree));

@@ -564,15 +564,7 @@ initVFSForTUBuferScanning(IntrusiveRefCntPtr<llvm::vfs::FileSystem> BaseFS,
   auto InputPath = TUBuffer.getBufferIdentifier();
   InMemoryFS->addFile(
       InputPath, 0, llvm::MemoryBuffer::getMemBufferCopy(TUBuffer.getBuffer()));
-  IntrusiveRefCntPtr<llvm::vfs::FileSystem> InMemoryOverlay = InMemoryFS;
-
-  // If we are using a CAS, we need to provide the fake input file in a
-  // CASProvidingFS for include-tree.
-  if (CAS)
-    InMemoryOverlay =
-        llvm::cas::createCASProvidingFileSystem(CAS, std::move(InMemoryFS));
-
-  OverlayFS->pushOverlay(InMemoryOverlay);
+  OverlayFS->pushOverlay(std::move(InMemoryFS));
   ModifiedFS = OverlayFS;
   std::vector<std::string> ModifiedCommandLine(CommandLine);
   ModifiedCommandLine.emplace_back(InputPath);
@@ -601,15 +593,7 @@ initVFSForByNameScanning(IntrusiveRefCntPtr<llvm::vfs::FileSystem> BaseFS,
   llvm::sys::fs::createUniquePath(ModuleName + "-%%%%%%%%.input", FakeInputPath,
                                   /*MakeAbsolute=*/false);
   InMemoryFS->addFile(FakeInputPath, 0, llvm::MemoryBuffer::getMemBuffer(""));
-  IntrusiveRefCntPtr<llvm::vfs::FileSystem> InMemoryOverlay = InMemoryFS;
-
-  // If we are using a CAS, we need to provide the fake input file in a
-  // CASProvidingFS for include-tree.
-  if (CAS)
-    InMemoryOverlay =
-        llvm::cas::createCASProvidingFileSystem(CAS, std::move(InMemoryFS));
-
-  OverlayFS->pushOverlay(InMemoryOverlay);
+  OverlayFS->pushOverlay(std::move(InMemoryFS));
 
   std::vector<std::string> ModifiedCommandLine(CommandLine);
   ModifiedCommandLine.emplace_back(FakeInputPath);

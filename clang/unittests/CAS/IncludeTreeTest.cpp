@@ -65,7 +65,7 @@ TEST(IncludeTree, IncludeTreeScan) {
                                           "t.cpp.o"};
   std::optional<IncludeTreeRoot> Root;
   ASSERT_THAT_ERROR(
-      ScanTool.getIncludeTree(*DB, CommandLine, /*CWD*/ "", nullptr)
+      ScanTool.getIncludeTree(DB, CommandLine, /*CWD*/ "", nullptr)
           .moveInto(Root),
       llvm::Succeeded());
 

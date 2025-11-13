@@ -198,16 +198,7 @@ void clang_experimental_DependencyScannerService_dispose_v0(
 
 CXDependencyScannerWorker clang_experimental_DependencyScannerWorker_create_v0(
     CXDependencyScannerService S) {
-  ScanningOutputFormat Format = unwrap(S)->getFormat();
-  bool IsIncludeTreeOutput = Format == ScanningOutputFormat::IncludeTree ||
-                             Format == ScanningOutputFormat::FullIncludeTree;
-  llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> FS =
-      llvm::vfs::createPhysicalFileSystem();
-  if (IsIncludeTreeOutput)
-    FS = llvm::cas::createCASProvidingFileSystem(unwrap(S)->getCAS(),
-                                                 std::move(FS));
-
-  return wrap(new DependencyScanningWorker(*unwrap(S), FS));
+  return wrap(new DependencyScanningWorker(*unwrap(S), llvm::vfs::createPhysicalFileSystem()));
 }
 
 void clang_experimental_DependencyScannerWorker_dispose_v0(

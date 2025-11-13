@@ -371,7 +371,7 @@ static Expected<llvm::cas::CASID> scanAndUpdateCC1InlineWithTool(
     tooling::dependencies::DependencyScanningTool &Tool,
     DiagnosticConsumer &DiagsConsumer, raw_ostream *VerboseOS, const char *Exec,
     ArrayRef<const char *> InputArgs, StringRef WorkingDirectory,
-    SmallVectorImpl<const char *> &OutputArgs, llvm::cas::ObjectStore &DB,
+    SmallVectorImpl<const char *> &OutputArgs, std::shared_ptr<llvm::cas::ObjectStore> DB,
     llvm::function_ref<const char *(const Twine &)> SaveArg);
 
 #ifdef LLVM_ON_UNIX
@@ -978,13 +978,8 @@ int ScanServer::listen() {
 
       // Is this safe to reuse? Or does DependendencyScanningWorkerFileSystem
       // make some bad assumptions about relative paths?
-      if (!Tool) {
-        llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> UnderlyingFS =
-            llvm::vfs::createPhysicalFileSystem();
-        UnderlyingFS = llvm::cas::createCASProvidingFileSystem(
-            CAS, std::move(UnderlyingFS));
-        Tool.emplace(Service, std::move(UnderlyingFS));
-      }
+      if (!Tool)
+        Tool.emplace(Service, llvm::vfs::createPhysicalFileSystem());
 
       std::unique_ptr<DiagnosticOptions> DiagOpts =
           CreateAndPopulateDiagOpts(Args);
@@ -997,7 +992,7 @@ int ScanServer::listen() {
       SmallVector<const char *> NewArgs;
       auto RootID = scanAndUpdateCC1InlineWithTool(
           *Tool, *DiagsConsumer, &DiagsOS, Argv0, Args, WorkingDirectory,
-          NewArgs, *CAS, [&](const Twine &T) { return Saver.save(T).data(); });
+          NewArgs, CAS, [&](const Twine &T) { return Saver.save(T).data(); });
       if (!RootID) {
         consumeError(Comms.putScanResultFailed(toString(RootID.takeError()),
                                                DiagsOS.str()));
@@ -1081,7 +1076,7 @@ static Expected<llvm::cas::CASID> scanAndUpdateCC1InlineWithTool(
     tooling::dependencies::DependencyScanningTool &Tool,
     DiagnosticConsumer &DiagsConsumer, raw_ostream *VerboseOS, const char *Exec,
     ArrayRef<const char *> InputArgs, StringRef WorkingDirectory,
-    SmallVectorImpl<const char *> &OutputArgs, llvm::cas::ObjectStore &DB,
+    SmallVectorImpl<const char *> &OutputArgs, std::shared_ptr<llvm::cas::ObjectStore> DB,
     llvm::function_ref<const char *(const Twine &)> SaveArg) {
   DiagnosticOptions DiagOpts;
   DiagnosticsEngine Diags(new DiagnosticIDs(), DiagOpts);
@@ -1117,12 +1112,8 @@ scanAndUpdateCC1Inline(const char *Exec, ArrayRef<const char *> InputArgs,
       tooling::dependencies::ScanningMode::DependencyDirectivesScan,
       tooling::dependencies::ScanningOutputFormat::IncludeTree, CASOpts, DB,
       Cache);
-  llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> UnderlyingFS =
-      llvm::vfs::createPhysicalFileSystem();
-  UnderlyingFS =
-      llvm::cas::createCASProvidingFileSystem(DB, std::move(UnderlyingFS));
   tooling::dependencies::DependencyScanningTool Tool(Service,
-                                                     std::move(UnderlyingFS));
+                                                     llvm::vfs::createPhysicalFileSystem());
 
   std::unique_ptr<DiagnosticOptions> DiagOpts =
       CreateAndPopulateDiagOpts(InputArgs);
@@ -1131,7 +1122,7 @@ scanAndUpdateCC1Inline(const char *Exec, ArrayRef<const char *> InputArgs,
 
   auto E = scanAndUpdateCC1InlineWithTool(
                Tool, *DiagsConsumer, /*VerboseOS*/ nullptr, Exec, InputArgs,
-               WorkingDirectory, OutputArgs, *DB, SaveArg)
+               WorkingDirectory, OutputArgs, DB, SaveArg)
                .moveInto(RootID);
   if (E) {
     Diag.Report(diag::err_cas_depscan_failed) << std::move(E);

@@ -12,6 +12,7 @@
 #include "clang/CAS/IncludeTree.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Lex/Preprocessor.h"
+#include "llvm/CAS/CASProvidingFileSystem.h"
 #include "llvm/CAS/ObjectStore.h"
 #include "llvm/Support/PrefixMapper.h"
 #include "llvm/Support/PrefixMappingFileSystem.h"
@@ -26,9 +27,9 @@ class IncludeTreeBuilder;
 
 class IncludeTreeActionController : public CallbackActionController {
 public:
-  IncludeTreeActionController(cas::ObjectStore &DB,
+  IncludeTreeActionController(std::shared_ptr<cas::ObjectStore> DB,
                               LookupModuleOutputCallback LookupOutput)
-      : CallbackActionController(LookupOutput), DB(DB) {}
+      : CallbackActionController(LookupOutput), DB(std::move(DB)) {}
 
   Expected<cas::IncludeTreeRoot> getIncludeTree();
 
@@ -52,7 +53,7 @@ private:
   }
 
 private:
-  cas::ObjectStore &DB;
+  std::shared_ptr<cas::ObjectStore> DB;
   CASOptions CASOpts;
   llvm::PrefixMapper PrefixMapper;
   // IncludeTreePPCallbacks keeps a pointer to the current builder, so use a
@@ -274,22 +275,6 @@ private:
 };
 } // namespace
 
-/// The PCH recorded file paths with canonical paths, create a VFS that
-/// allows remapping back to the non-canonical source paths so that they are
-/// found during dep-scanning.
-void dependencies::addReversePrefixMappingFileSystem(
-    const llvm::PrefixMapper &PrefixMapper, CompilerInstance &ScanInstance) {
-  llvm::PrefixMapper ReverseMapper;
-  ReverseMapper.addInverseRange(PrefixMapper.getMappings());
-  ReverseMapper.sort();
-  IntrusiveRefCntPtr<llvm::vfs::FileSystem> FS =
-      llvm::vfs::createPrefixMappingFileSystem(
-          std::move(ReverseMapper), &ScanInstance.getVirtualFileSystem());
-
-  ScanInstance.setVirtualFileSystem(FS);
-  ScanInstance.getFileManager().setVirtualFileSystem(std::move(FS));
-}
-
 Expected<cas::IncludeTreeRoot> IncludeTreeActionController::getIncludeTree() {
   if (IncludeTreeResult)
     return *IncludeTreeResult;
@@ -301,25 +286,35 @@ Error IncludeTreeActionController::initialize(
     CompilerInstance &ScanInstance, CompilerInvocation &NewInvocation) {
   DepscanPrefixMapping::configurePrefixMapper(NewInvocation, PrefixMapper);
 
-  auto ensurePathRemapping = [&]() {
-    if (PrefixMapper.empty())
-      return;
-
+  IntrusiveRefCntPtr<llvm::vfs::FileSystem> FS =
+      ScanInstance.getVirtualFileSystemPtr();
+  FS = llvm::cas::createCASProvidingFileSystem(DB, std::move(FS));
+  if (!PrefixMapper.empty()) {
     PreprocessorOptions &PPOpts = ScanInstance.getPreprocessorOpts();
-    if (PPOpts.Includes.empty() && PPOpts.ImplicitPCHInclude.empty() &&
-        !ScanInstance.getLangOpts().Modules)
-      return;
+    if (!PPOpts.Includes.empty() || !PPOpts.ImplicitPCHInclude.empty() ||
+        ScanInstance.getLangOpts().Modules) {
 
-    addReversePrefixMappingFileSystem(PrefixMapper, ScanInstance);
+      /// The PCH recorded file paths with canonical paths, create a VFS that
+      /// allows remapping back to the non-canonical source paths so that they
+      /// are found during dep-scanning.
+      llvm::PrefixMapper ReverseMapper;
+      ReverseMapper.addInverseRange(PrefixMapper.getMappings());
+      ReverseMapper.sort();
+
+      FS = llvm::vfs::createPrefixMappingFileSystem(std::move(ReverseMapper),
+                                                    std::move(FS));
+    }
 
     // These are written in the predefines buffer, so we need to remap them.
     for (std::string &Include : PPOpts.Includes)
       PrefixMapper.mapInPlace(Include);
-  };
-  ensurePathRemapping();
+  }
+
+  ScanInstance.setVirtualFileSystem(FS);
+  ScanInstance.getFileManager().setVirtualFileSystem(std::move(FS));
 
   BuilderStack.push_back(
-      std::make_unique<IncludeTreeBuilder>(DB, PrefixMapper));
+      std::make_unique<IncludeTreeBuilder>(*DB, PrefixMapper));
 
   // Attach callbacks for the IncludeTree of the TU. The preprocessor
   // does not exist yet, so we need to indirect this via DependencyCollector.
@@ -400,7 +395,7 @@ std::optional<std::string> IncludeTreeActionController::getCacheKey(
 Error IncludeTreeActionController::initializeModuleBuild(
     CompilerInstance &ModuleScanInstance) {
   BuilderStack.push_back(
-      std::make_unique<IncludeTreeBuilder>(DB, PrefixMapper));
+      std::make_unique<IncludeTreeBuilder>(*DB, PrefixMapper));
 
   // Attach callbacks for the IncludeTree of the module. The preprocessor
   // does not exist yet, so we need to indirect this via DependencyCollector.
@@ -942,6 +937,6 @@ IncludeTreeBuilder::createIncludeFile(StringRef Filename,
 
 std::unique_ptr<DependencyActionController>
 dependencies::createIncludeTreeActionController(
-    LookupModuleOutputCallback LookupModuleOutput, cas::ObjectStore &DB) {
-  return std::make_unique<IncludeTreeActionController>(DB, LookupModuleOutput);
+    LookupModuleOutputCallback LookupModuleOutput, std::shared_ptr<cas::ObjectStore> DB) {
+  return std::make_unique<IncludeTreeActionController>(std::move(DB), LookupModuleOutput);
 }

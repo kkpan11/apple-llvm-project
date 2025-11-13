@@ -62,7 +62,7 @@ Expected<llvm::cas::CASID> scanAndUpdateCC1InlineWithTool(
     tooling::dependencies::DependencyScanningTool &Tool,
     DiagnosticConsumer &DiagsConsumer, raw_ostream *VerboseOS,
     CompilerInvocation &Invocation, StringRef WorkingDirectory,
-    llvm::cas::ObjectStore &DB);
+    std::shared_ptr<llvm::cas::ObjectStore> DB);
 
 } // end namespace clang
 

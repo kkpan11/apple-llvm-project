@@ -137,9 +137,9 @@ private:
 }
 
 Expected<cas::IncludeTreeRoot> DependencyScanningTool::getIncludeTree(
-    cas::ObjectStore &DB, const std::vector<std::string> &CommandLine,
+    std::shared_ptr<cas::ObjectStore> DB, const std::vector<std::string> &CommandLine,
     StringRef CWD, LookupModuleOutputCallback LookupModuleOutput) {
-  GetIncludeTree Consumer(DB);
+  GetIncludeTree Consumer(*DB);
   auto Controller = createIncludeTreeActionController(LookupModuleOutput, DB);
   llvm::Error Result =
       Worker.computeDependencies(CWD, CommandLine, Consumer, *Controller);
@@ -150,11 +150,11 @@ Expected<cas::IncludeTreeRoot> DependencyScanningTool::getIncludeTree(
 
 Expected<cas::IncludeTreeRoot>
 DependencyScanningTool::getIncludeTreeFromCompilerInvocation(
-    cas::ObjectStore &DB, std::shared_ptr<CompilerInvocation> Invocation,
+    std::shared_ptr<cas::ObjectStore> DB, std::shared_ptr<CompilerInvocation> Invocation,
     StringRef CWD, LookupModuleOutputCallback LookupModuleOutput,
     DiagnosticConsumer &DiagsConsumer, raw_ostream *VerboseOS,
     bool DiagGenerationAsCompilation) {
-  GetIncludeTree Consumer(DB);
+  GetIncludeTree Consumer(*DB);
   auto Controller = createIncludeTreeActionController(LookupModuleOutput, DB);
   Worker.computeDependenciesFromCompilerInvocation(
       std::move(Invocation), CWD, Consumer, *Controller, DiagsConsumer,
@@ -311,7 +311,7 @@ DependencyScanningTool::createActionController(
     LookupModuleOutputCallback LookupModuleOutput) {
   if (Worker.getScanningFormat() == ScanningOutputFormat::FullIncludeTree)
     return createIncludeTreeActionController(LookupModuleOutput,
-                                             *Worker.getCAS());
+                                             Worker.getCAS());
   return std::make_unique<CallbackActionController>(LookupModuleOutput);
 }
 
