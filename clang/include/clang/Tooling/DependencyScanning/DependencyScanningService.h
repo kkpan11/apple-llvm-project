@@ -88,6 +88,12 @@ enum class ScanningOptimizations {
 
 #undef DSS_LAST_BITMASK_ENUM
 
+bool shouldCacheNegativeStatsDefault();
+
+/// \return true if failed stats for files with this name should be cached,
+///         false otherwise.
+bool shouldCacheNegativeStatsForPath(StringRef Path);
+
 /// The dependency scanning service contains shared configuration and state that
 /// is used by the individual dependency scanning workers.
 class DependencyScanningService {
@@ -99,7 +105,8 @@ public:
       ScanningOptimizations OptimizeArgs = ScanningOptimizations::Default,
       bool EagerLoadModules = false, bool TraceVFS = false,
       std::time_t BuildSessionTimestamp =
-          llvm::sys::toTimeT(std::chrono::system_clock::now()));
+          llvm::sys::toTimeT(std::chrono::system_clock::now()),
+      bool CacheNegativeStats = shouldCacheNegativeStatsDefault());
 
   ScanningMode getMode() const { return Mode; }
 
@@ -110,6 +117,8 @@ public:
   bool shouldEagerLoadModules() const { return EagerLoadModules; }
 
   bool shouldTraceVFS() const { return TraceVFS; }
+
+  bool shouldCacheNegativeStats() const { return CacheNegativeStats; }
 
   DependencyScanningFilesystemSharedCache &getSharedCache() {
     return SharedCache;
@@ -136,6 +145,7 @@ private:
   const bool EagerLoadModules;
   /// Whether to trace VFS accesses.
   const bool TraceVFS;
+  const bool CacheNegativeStats;
   /// The global file system cache.
   DependencyScanningFilesystemSharedCache SharedCache;
   /// The global module cache entries.

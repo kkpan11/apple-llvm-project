@@ -42,19 +42,19 @@
 // UNOPT-NEXT:    [[TMP2:%.*]] = icmp ule ptr [[TMP1]], [[WIDE_PTR_UB]], !annotation [[META2]]
 // UNOPT-NEXT:    br i1 [[TMP2]], label %[[CONT:.*]], label %[[TRAP:.*]], !prof [[PROF3:![0-9]+]], !annotation [[META2]]
 // UNOPT:       [[TRAP]]:
-// UNOPT-NEXT:    call void @custom_func(ptr @trap.reason) #[[ATTR2:[0-9]+]], !annotation [[META2]]
+// UNOPT-NEXT:    call preserve_allcc void @custom_func(ptr @trap.reason) #[[ATTR2:[0-9]+]], !annotation [[META2]]
 // UNOPT-NEXT:    br label %[[CONT]], !annotation [[META2]]
 // UNOPT:       [[CONT]]:
 // UNOPT-NEXT:    [[TMP3:%.*]] = icmp ule ptr [[ARRAYIDX]], [[TMP1]], !annotation [[META2]]
 // UNOPT-NEXT:    br i1 [[TMP3]], label %[[CONT2:.*]], label %[[TRAP1:.*]], !prof [[PROF3]], !annotation [[META2]]
 // UNOPT:       [[TRAP1]]:
-// UNOPT-NEXT:    call void @custom_func(ptr @trap.reason.1) #[[ATTR2]], !annotation [[META2]]
+// UNOPT-NEXT:    call preserve_allcc void @custom_func(ptr @trap.reason.1) #[[ATTR2]], !annotation [[META2]]
 // UNOPT-NEXT:    br label %[[CONT2]], !annotation [[META2]]
 // UNOPT:       [[CONT2]]:
 // UNOPT-NEXT:    [[TMP4:%.*]] = icmp uge ptr [[ARRAYIDX]], [[WIDE_PTR_LB]], !annotation [[META4:![0-9]+]]
 // UNOPT-NEXT:    br i1 [[TMP4]], label %[[CONT4:.*]], label %[[TRAP3:.*]], !prof [[PROF3]], !annotation [[META4]]
 // UNOPT:       [[TRAP3]]:
-// UNOPT-NEXT:    call void @custom_func(ptr @trap.reason.2) #[[ATTR2]], !annotation [[META4]]
+// UNOPT-NEXT:    call preserve_allcc void @custom_func(ptr @trap.reason.2) #[[ATTR2]], !annotation [[META4]]
 // UNOPT-NEXT:    br label %[[CONT4]], !annotation [[META4]]
 // UNOPT:       [[CONT4]]:
 // UNOPT-NEXT:    [[TMP5:%.*]] = load i32, ptr [[ARRAYIDX]], align 4
@@ -74,19 +74,19 @@
 // OPT-NEXT:    [[DOTNOT:%.*]] = icmp ugt ptr [[TMP0]], [[AGG_TEMP_SROA_2_0_COPYLOAD]], !annotation [[META9]]
 // OPT-NEXT:    br i1 [[DOTNOT]], label %[[TRAP:.*]], label %[[CONT:.*]], !prof [[PROF10:![0-9]+]], !annotation [[META9]]
 // OPT:       [[TRAP]]:
-// OPT-NEXT:    tail call void @custom_func(ptr nonnull @trap.reason) #[[ATTR1:[0-9]+]], !annotation [[META9]]
+// OPT-NEXT:    tail call preserve_allcc void @custom_func(ptr nonnull @trap.reason) #[[ATTR1:[0-9]+]], !annotation [[META9]]
 // OPT-NEXT:    br label %[[CONT]], !annotation [[META9]]
 // OPT:       [[CONT]]:
 // OPT-NEXT:    [[DOTNOT5:%.*]] = icmp ugt ptr [[ARRAYIDX]], [[TMP0]], !annotation [[META9]]
 // OPT-NEXT:    br i1 [[DOTNOT5]], label %[[TRAP1:.*]], label %[[CONT2:.*]], !prof [[PROF10]], !annotation [[META9]]
 // OPT:       [[TRAP1]]:
-// OPT-NEXT:    tail call void @custom_func(ptr nonnull @trap.reason.1) #[[ATTR1]], !annotation [[META9]]
+// OPT-NEXT:    tail call preserve_allcc void @custom_func(ptr nonnull @trap.reason.1) #[[ATTR1]], !annotation [[META9]]
 // OPT-NEXT:    br label %[[CONT2]], !annotation [[META9]]
 // OPT:       [[CONT2]]:
 // OPT-NEXT:    [[DOTNOT6:%.*]] = icmp ult ptr [[ARRAYIDX]], [[AGG_TEMP_SROA_3_0_COPYLOAD]], !annotation [[META11:![0-9]+]]
 // OPT-NEXT:    br i1 [[DOTNOT6]], label %[[TRAP3:.*]], label %[[CONT4:.*]], !prof [[PROF10]], !annotation [[META11]]
 // OPT:       [[TRAP3]]:
-// OPT-NEXT:    tail call void @custom_func(ptr nonnull @trap.reason.2) #[[ATTR1]], !annotation [[META11]]
+// OPT-NEXT:    tail call preserve_allcc void @custom_func(ptr nonnull @trap.reason.2) #[[ATTR1]], !annotation [[META11]]
 // OPT-NEXT:    br label %[[CONT4]], !annotation [[META11]]
 // OPT:       [[CONT4]]:
 // OPT-NEXT:    [[TMP1:%.*]] = load i32, ptr [[ARRAYIDX]], align 4, !tbaa [[INT_TBAA2:![0-9]+]]
@@ -98,10 +98,10 @@ int read(int* __bidi_indexable ptr, int idx) {
 //.
 // UNOPT: attributes #[[ATTR0]] = { noinline nounwind optnone "no-trapping-math"="true" "stack-protector-buffer-size"="8" }
 // UNOPT: attributes #[[ATTR1:[0-9]+]] = { nocallback nofree nounwind willreturn memory(argmem: readwrite) }
-// UNOPT: attributes #[[ATTR2]] = { nounwind }
+// UNOPT: attributes #[[ATTR2]] = { nomerge nounwind }
 //.
 // OPT: attributes #[[ATTR0]] = { nounwind "no-trapping-math"="true" "stack-protector-buffer-size"="8" }
-// OPT: attributes #[[ATTR1]] = { nounwind }
+// OPT: attributes #[[ATTR1]] = { nomerge nounwind }
 //.
 // UNOPT: [[META0:![0-9]+]] = !{i32 1, !"wchar_size", i32 4}
 // UNOPT: [[META1:![0-9]+]] = !{!"{{.*}}clang version {{.*}}"}

@@ -2081,17 +2081,18 @@ def fbounds_safety_soft_traps_EQ
     HelpText<"Enables soft traps which causes the compiler to emit a non-fatal "
       "instruction sequence when a bounds check fails. After this instruction "
       "sequence execution resumes as if the bounds check had succeeded."
-      "For `call-with-*` modes see 'bounds_safety_soft_traps.h' for the runtime"
+      "For `call-*` modes see 'bounds_safety_soft_traps.h' for the runtime"
       " function interface. This option supports the following modes: "
       "`none` - No soft traps, i.e. use hard traps (default)."
       "`call-with-str` - Emit a call to a runtime function that receives the "
       "trap reason as a string."
-      "`call-with-code` - Emit a call to a runtime function that receives an "
-      "integer describing the trap reason. This is better for codesize than "
-      "`call-with-str` but is harder to debug if debug info is missing.">,
-    Values<"none,call-with-str,call-with-code">,
+      "`call-minimal` - Emit a call to a runtime function that takes no "
+      "arguments and uses a custom calling convention if possible. This is "
+      "better for codesize than `call-with-str` but is harder to debug if debug"
+      " info is missing.">,
+    Values<"none,call-with-str,call-minimal">,
     NormalizedValuesScope<"CodeGenOptions::BoundsSafetyTrapModeKind">,
-    NormalizedValues<["Hard", "SoftCallWithTrapString", "SoftCallWithTrapCode"]>,
+    NormalizedValues<["Hard", "SoftCallWithTrapString", "SoftCallMinimal"]>,
     MarshallingInfoEnum<CodeGenOpts<"BoundsSafetyTrapMode">, "Hard">;
 
 def fbounds_safety_soft_trap_function_EQ : Joined<["-"],
@@ -5878,6 +5879,9 @@ def mno_warn_nonportable_cfstrings : Flag<["-"], "mno-warn-nonportable-cfstrings
 def mno_omit_leaf_frame_pointer : Flag<["-"], "mno-omit-leaf-frame-pointer">, Group<m_Group>;
 def momit_leaf_frame_pointer : Flag<["-"], "momit-leaf-frame-pointer">, Group<m_Group>,
   HelpText<"Omit frame pointer setup for leaf functions">;
+def mno_reserve_frame_pointer_reg : Flag<["-"], "mno-reserve-frame-pointer-reg">, Group<m_Group>;
+def mreserve_frame_pointer_reg : Flag<["-"], "mreserve-frame-pointer-reg">, Group<m_Group>,
+  HelpText<"Reserve the frame pointer register even if the function doesn't have a frame">;
 def moslib_EQ : Joined<["-"], "moslib=">, Group<m_Group>;
 def mpascal_strings : Flag<["-"], "mpascal-strings">, Alias<fpascal_strings>;
 def mred_zone : Flag<["-"], "mred-zone">, Group<m_Group>;
@@ -8723,8 +8727,8 @@ def pic_is_pie : Flag<["-"], "pic-is-pie">,
   MarshallingInfoFlag<LangOpts<"PIE">>;
 
 def mframe_pointer_EQ : Joined<["-"], "mframe-pointer=">,
-  HelpText<"Specify which frame pointers to retain.">, Values<"all,non-leaf,reserved,none">,
-  NormalizedValuesScope<"CodeGenOptions::FramePointerKind">, NormalizedValues<["All", "NonLeaf", "Reserved", "None"]>,
+  HelpText<"Specify which frame pointers to retain.">, Values<"all,non-leaf,non-leaf-no-reserve,reserved,none">,
+  NormalizedValuesScope<"CodeGenOptions::FramePointerKind">, NormalizedValues<["All", "NonLeaf", "NonLeafNoReserve", "Reserved", "None"]>,
   MarshallingInfoEnum<CodeGenOpts<"FramePointer">, "None">;
 
 

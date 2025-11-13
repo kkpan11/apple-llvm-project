@@ -37,6 +37,7 @@ struct DependencyScannerServiceOptions {
   ScanningOptimizations OptimizeArgs = ScanningOptimizations::Default;
   std::shared_ptr<cas::ObjectStore> CAS;
   std::shared_ptr<cas::ActionCache> Cache;
+  std::optional<bool> CacheNegativeStats;
 
   ScanningOutputFormat getFormat() const;
 };
@@ -160,6 +161,11 @@ void clang_experimental_DependencyScannerServiceOptions_setActionCache(
   unwrap(Opts)->CASOpts.CASPath = cas::unwrap(Cache)->CachePath;
 }
 
+void clang_experimental_DependencyScannerServiceOptions_setCacheNegativeStats(
+    CXDependencyScannerServiceOptions Opts, bool CacheNegativeStats) {
+  unwrap(Opts)->CacheNegativeStats = CacheNegativeStats;
+}
+
 CXDependencyScannerService
 clang_experimental_DependencyScannerService_create_v0(CXDependencyMode Format) {
   // FIXME: Pass default CASOpts now.
@@ -186,9 +192,11 @@ clang_experimental_DependencyScannerService_create_v1(
   std::shared_ptr<llvm::cas::ObjectStore> CAS = unwrap(Opts)->CAS;
   std::shared_ptr<llvm::cas::ActionCache> Cache = unwrap(Opts)->Cache;
   return wrap(new DependencyScanningService(
-      ScanningMode::DependencyDirectivesScan, unwrap(Opts)->getFormat(),
-      unwrap(Opts)->CASOpts, std::move(CAS), std::move(Cache),
-      unwrap(Opts)->OptimizeArgs));
+      ScanningMode::DependencyDirectivesScan, unwrap(Opts)->getFormat(), unwrap(Opts)->CASOpts,
+      std::move(CAS), std::move(Cache), unwrap(Opts)->OptimizeArgs, /*EagerLoadModules=*/false,
+      /*TraceVFS=*/false, llvm::sys::toTimeT(std::chrono::system_clock::now()),
+      unwrap(Opts)->CacheNegativeStats ? *unwrap(Opts)->CacheNegativeStats
+                                       : shouldCacheNegativeStatsDefault()));
 }
 
 void clang_experimental_DependencyScannerService_dispose_v0(

@@ -52,9 +52,6 @@
 #include "lldb/Host/windows/PosixApi.h"
 #endif
 
-#include "Plugins/Language/CPlusPlus/CPlusPlusLanguage.h"
-#include "Plugins/Language/ObjC/ObjCLanguage.h"
-
 #ifdef LLDB_ENABLE_SWIFT
 #include "Plugins/LanguageRuntime/Swift/SwiftLanguageRuntime.h"
 #include "Plugins/TypeSystem/Swift/SwiftASTContext.h"

@@ -5526,7 +5526,7 @@ TemplateDeclInstantiator::InitMethodInstantiation(CXXMethodDecl *New,
 bool TemplateDeclInstantiator::SubstDefaultedFunction(FunctionDecl *New,
                                                       FunctionDecl *Tmpl) {
   // Transfer across any unqualified lookups.
-  if (auto *DFI = Tmpl->getDefalutedOrDeletedInfo()) {
+  if (auto *DFI = Tmpl->getDefaultedOrDeletedInfo()) {
     SmallVector<DeclAccessPair, 32> Lookups;
     Lookups.reserve(DFI->getUnqualifiedLookups().size());
     bool AnyChanged = false;
@@ -6259,6 +6259,10 @@ void Sema::InstantiateVariableInitializer(
   currentEvaluationContext().RebuildDefaultArgOrDefaultInit =
       parentEvaluationContext().RebuildDefaultArgOrDefaultInit;
 
+  // Set DeclForInitializer for this variable so DiagIfReachable can properly
+  // suppress runtime diagnostics for constexpr/static member variables
+  currentEvaluationContext().DeclForInitializer = Var;
+
   if (OldVar->getInit()) {
     // Instantiate the initializer.
     ExprResult Init =
@@ -6528,6 +6532,8 @@ void Sema::InstantiateVariableDefinition(SourceLocation PointOfInstantiation,
     PassToConsumerRAII.Var = Var;
     Var->setTemplateSpecializationKind(OldVar->getTemplateSpecializationKind(),
                                        OldVar->getPointOfInstantiation());
+    // Emit any deferred warnings for the variable's initializer
+    AnalysisWarnings.issueWarningsForRegisteredVarDecl(Var);
   }
 
   // This variable may have local implicit instantiations that need to be

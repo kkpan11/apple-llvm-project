@@ -102,19 +102,19 @@
 // UNOPT-NEXT:    [[TMP8:%.*]] = icmp ule ptr [[TMP7]], [[WIDE_PTR_UB]], !annotation [[META4]]
 // UNOPT-NEXT:    br i1 [[TMP8]], label %[[CONT2:.*]], label %[[TRAP1:.*]], !prof [[PROF3]], !annotation [[META4]]
 // UNOPT:       [[TRAP1]]:
-// UNOPT-NEXT:    call void @__bounds_safety_soft_trap_s(ptr @trap.reason) #[[ATTR6:[0-9]+]], !annotation [[META4]]
+// UNOPT-NEXT:    call preserve_allcc void @__bounds_safety_soft_trap_s(ptr @trap.reason) #[[ATTR6:[0-9]+]], !annotation [[META4]]
 // UNOPT-NEXT:    br label %[[CONT2]], !annotation [[META4]]
 // UNOPT:       [[CONT2]]:
 // UNOPT-NEXT:    [[TMP9:%.*]] = icmp ule ptr [[ARRAYIDX]], [[TMP7]], !annotation [[META4]]
 // UNOPT-NEXT:    br i1 [[TMP9]], label %[[CONT4:.*]], label %[[TRAP3:.*]], !prof [[PROF3]], !annotation [[META4]]
 // UNOPT:       [[TRAP3]]:
-// UNOPT-NEXT:    call void @__bounds_safety_soft_trap_s(ptr @trap.reason.1) #[[ATTR6]], !annotation [[META4]]
+// UNOPT-NEXT:    call preserve_allcc void @__bounds_safety_soft_trap_s(ptr @trap.reason.1) #[[ATTR6]], !annotation [[META4]]
 // UNOPT-NEXT:    br label %[[CONT4]], !annotation [[META4]]
 // UNOPT:       [[CONT4]]:
 // UNOPT-NEXT:    [[TMP10:%.*]] = icmp uge ptr [[ARRAYIDX]], [[WIDE_PTR_LB]], !annotation [[META5:![0-9]+]]
 // UNOPT-NEXT:    br i1 [[TMP10]], label %[[CONT6:.*]], label %[[TRAP5:.*]], !prof [[PROF3]], !annotation [[META5]]
 // UNOPT:       [[TRAP5]]:
-// UNOPT-NEXT:    call void @__bounds_safety_soft_trap_s(ptr @trap.reason.2) #[[ATTR6]], !annotation [[META5]]
+// UNOPT-NEXT:    call preserve_allcc void @__bounds_safety_soft_trap_s(ptr @trap.reason.2) #[[ATTR6]], !annotation [[META5]]
 // UNOPT-NEXT:    br label %[[CONT6]], !annotation [[META5]]
 // UNOPT:       [[CONT6]]:
 // UNOPT-NEXT:    [[TMP11:%.*]] = load i32, ptr [[ARRAYIDX]], align 4
@@ -157,19 +157,19 @@
 // UNOPT-TF-NEXT:    [[TMP8:%.*]] = icmp ule ptr [[TMP7]], [[WIDE_PTR_UB]], !annotation [[META4]]
 // UNOPT-TF-NEXT:    br i1 [[TMP8]], label %[[CONT2:.*]], label %[[TRAP1:.*]], !prof [[PROF3]], !annotation [[META4]]
 // UNOPT-TF:       [[TRAP1]]:
-// UNOPT-TF-NEXT:    call void @__bounds_safety_soft_trap_s(ptr @trap.reason) #[[ATTR6:[0-9]+]], !annotation [[META4]]
+// UNOPT-TF-NEXT:    call preserve_allcc void @__bounds_safety_soft_trap_s(ptr @trap.reason) #[[ATTR6:[0-9]+]], !annotation [[META4]]
 // UNOPT-TF-NEXT:    br label %[[CONT2]], !annotation [[META4]]
 // UNOPT-TF:       [[CONT2]]:
 // UNOPT-TF-NEXT:    [[TMP9:%.*]] = icmp ule ptr [[ARRAYIDX]], [[TMP7]], !annotation [[META4]]
 // UNOPT-TF-NEXT:    br i1 [[TMP9]], label %[[CONT4:.*]], label %[[TRAP3:.*]], !prof [[PROF3]], !annotation [[META4]]
 // UNOPT-TF:       [[TRAP3]]:
-// UNOPT-TF-NEXT:    call void @__bounds_safety_soft_trap_s(ptr @trap.reason.1) #[[ATTR6]], !annotation [[META4]]
+// UNOPT-TF-NEXT:    call preserve_allcc void @__bounds_safety_soft_trap_s(ptr @trap.reason.1) #[[ATTR6]], !annotation [[META4]]
 // UNOPT-TF-NEXT:    br label %[[CONT4]], !annotation [[META4]]
 // UNOPT-TF:       [[CONT4]]:
 // UNOPT-TF-NEXT:    [[TMP10:%.*]] = icmp uge ptr [[ARRAYIDX]], [[WIDE_PTR_LB]], !annotation [[META5:![0-9]+]]
 // UNOPT-TF-NEXT:    br i1 [[TMP10]], label %[[CONT6:.*]], label %[[TRAP5:.*]], !prof [[PROF3]], !annotation [[META5]]
 // UNOPT-TF:       [[TRAP5]]:
-// UNOPT-TF-NEXT:    call void @__bounds_safety_soft_trap_s(ptr @trap.reason.2) #[[ATTR6]], !annotation [[META5]]
+// UNOPT-TF-NEXT:    call preserve_allcc void @__bounds_safety_soft_trap_s(ptr @trap.reason.2) #[[ATTR6]], !annotation [[META5]]
 // UNOPT-TF-NEXT:    br label %[[CONT6]], !annotation [[META5]]
 // UNOPT-TF:       [[CONT6]]:
 // UNOPT-TF-NEXT:    [[TMP11:%.*]] = load i32, ptr [[ARRAYIDX]], align 4
@@ -212,19 +212,19 @@
 // UNOPT-TFR-NEXT:    [[TMP8:%.*]] = icmp ule ptr [[TMP7]], [[WIDE_PTR_UB]], !annotation [[META4]]
 // UNOPT-TFR-NEXT:    br i1 [[TMP8]], label %[[CONT2:.*]], label %[[TRAP1:.*]], !prof [[PROF3]], !annotation [[META4]]
 // UNOPT-TFR:       [[TRAP1]]:
-// UNOPT-TFR-NEXT:    call void @__bounds_safety_soft_trap_s(ptr @trap.reason) #[[ATTR4]], !annotation [[META4]]
+// UNOPT-TFR-NEXT:    call preserve_allcc void @__bounds_safety_soft_trap_s(ptr @trap.reason) #[[ATTR5:[0-9]+]], !annotation [[META4]]
 // UNOPT-TFR-NEXT:    br label %[[CONT2]], !annotation [[META4]]
 // UNOPT-TFR:       [[CONT2]]:
 // UNOPT-TFR-NEXT:    [[TMP9:%.*]] = icmp ule ptr [[ARRAYIDX]], [[TMP7]], !annotation [[META4]]
 // UNOPT-TFR-NEXT:    br i1 [[TMP9]], label %[[CONT4:.*]], label %[[TRAP3:.*]], !prof [[PROF3]], !annotation [[META4]]
 // UNOPT-TFR:       [[TRAP3]]:
-// UNOPT-TFR-NEXT:    call void @__bounds_safety_soft_trap_s(ptr @trap.reason.1) #[[ATTR4]], !annotation [[META4]]
+// UNOPT-TFR-NEXT:    call preserve_allcc void @__bounds_safety_soft_trap_s(ptr @trap.reason.1) #[[ATTR5]], !annotation [[META4]]
 // UNOPT-TFR-NEXT:    br label %[[CONT4]], !annotation [[META4]]
 // UNOPT-TFR:       [[CONT4]]:
 // UNOPT-TFR-NEXT:    [[TMP10:%.*]] = icmp uge ptr [[ARRAYIDX]], [[WIDE_PTR_LB]], !annotation [[META5:![0-9]+]]
 // UNOPT-TFR-NEXT:    br i1 [[TMP10]], label %[[CONT6:.*]], label %[[TRAP5:.*]], !prof [[PROF3]], !annotation [[META5]]
 // UNOPT-TFR:       [[TRAP5]]:
-// UNOPT-TFR-NEXT:    call void @__bounds_safety_soft_trap_s(ptr @trap.reason.2) #[[ATTR4]], !annotation [[META5]]
+// UNOPT-TFR-NEXT:    call preserve_allcc void @__bounds_safety_soft_trap_s(ptr @trap.reason.2) #[[ATTR5]], !annotation [[META5]]
 // UNOPT-TFR-NEXT:    br label %[[CONT6]], !annotation [[META5]]
 // UNOPT-TFR:       [[CONT6]]:
 // UNOPT-TFR-NEXT:    [[TMP11:%.*]] = load i32, ptr [[ARRAYIDX]], align 4
@@ -252,19 +252,19 @@
 // OPT-NEXT:    [[DOTNOT:%.*]] = icmp ugt ptr [[TMP3]], [[AGG_TEMP_SROA_2_0_COPYLOAD]], !annotation [[META11]]
 // OPT-NEXT:    br i1 [[DOTNOT]], label %[[TRAP1:.*]], label %[[CONT2:.*]], !prof [[PROF7]], !annotation [[META11]]
 // OPT:       [[TRAP1]]:
-// OPT-NEXT:    tail call void @__bounds_safety_soft_trap_s(ptr nonnull @trap.reason) #[[ATTR5:[0-9]+]], !annotation [[META11]]
+// OPT-NEXT:    tail call preserve_allcc void @__bounds_safety_soft_trap_s(ptr nonnull @trap.reason) #[[ATTR5:[0-9]+]], !annotation [[META11]]
 // OPT-NEXT:    br label %[[CONT2]], !annotation [[META11]]
 // OPT:       [[CONT2]]:
 // OPT-NEXT:    [[DOTNOT7:%.*]] = icmp ugt ptr [[ARRAYIDX]], [[TMP3]], !annotation [[META11]]
 // OPT-NEXT:    br i1 [[DOTNOT7]], label %[[TRAP3:.*]], label %[[CONT4:.*]], !prof [[PROF7]], !annotation [[META11]]
 // OPT:       [[TRAP3]]:
-// OPT-NEXT:    tail call void @__bounds_safety_soft_trap_s(ptr nonnull @trap.reason.1) #[[ATTR5]], !annotation [[META11]]
+// OPT-NEXT:    tail call preserve_allcc void @__bounds_safety_soft_trap_s(ptr nonnull @trap.reason.1) #[[ATTR5]], !annotation [[META11]]
 // OPT-NEXT:    br label %[[CONT4]], !annotation [[META11]]
 // OPT:       [[CONT4]]:
 // OPT-NEXT:    [[DOTNOT8:%.*]] = icmp ult ptr [[ARRAYIDX]], [[AGG_TEMP_SROA_3_0_COPYLOAD]], !annotation [[META12:![0-9]+]]
 // OPT-NEXT:    br i1 [[DOTNOT8]], label %[[TRAP5:.*]], label %[[CONT6:.*]], !prof [[PROF7]], !annotation [[META12]]
 // OPT:       [[TRAP5]]:
-// OPT-NEXT:    tail call void @__bounds_safety_soft_trap_s(ptr nonnull @trap.reason.2) #[[ATTR5]], !annotation [[META12]]
+// OPT-NEXT:    tail call preserve_allcc void @__bounds_safety_soft_trap_s(ptr nonnull @trap.reason.2) #[[ATTR5]], !annotation [[META12]]
 // OPT-NEXT:    br label %[[CONT6]], !annotation [[META12]]
 // OPT:       [[CONT6]]:
 // OPT-NEXT:    [[TMP4:%.*]] = load i32, ptr [[ARRAYIDX]], align 4, !tbaa [[INT_TBAA2:![0-9]+]]
@@ -395,7 +395,7 @@ void receive_cb(int*__counted_by(count) ptr, int count);
 // UNOPT-NEXT:    [[TMP16:%.*]] = phi i1 [ false, %[[LAND_LHS_TRUE]] ], [ false, %[[CONT]] ], [ [[TMP15]], %[[LAND_END]] ], !annotation [[META6]]
 // UNOPT-NEXT:    br i1 [[TMP16]], label %[[CONT51:.*]], label %[[TRAP50:.*]], !prof [[PROF3]], !annotation [[META6]]
 // UNOPT:       [[TRAP50]]:
-// UNOPT-NEXT:    call void @__bounds_safety_soft_trap_s(ptr null) #[[ATTR6]], !annotation [[META6]]
+// UNOPT-NEXT:    call preserve_allcc void @__bounds_safety_soft_trap_s(ptr null) #[[ATTR6]], !annotation [[META6]]
 // UNOPT-NEXT:    br label %[[CONT51]], !annotation [[META6]]
 // UNOPT:       [[CONT51]]:
 // UNOPT-NEXT:    call void @llvm.memcpy.p0.p0.i64(ptr align 8 [[AGG_TEMP52]], ptr align 8 [[AGG_TEMP]], i64 24, i1 false)
@@ -527,7 +527,7 @@ void receive_cb(int*__counted_by(count) ptr, int count);
 // UNOPT-TF-NEXT:    [[TMP16:%.*]] = phi i1 [ false, %[[LAND_LHS_TRUE]] ], [ false, %[[CONT]] ], [ [[TMP15]], %[[LAND_END]] ], !annotation [[META6]]
 // UNOPT-TF-NEXT:    br i1 [[TMP16]], label %[[CONT51:.*]], label %[[TRAP50:.*]], !prof [[PROF3]], !annotation [[META6]]
 // UNOPT-TF:       [[TRAP50]]:
-// UNOPT-TF-NEXT:    call void @__bounds_safety_soft_trap_s(ptr null) #[[ATTR6]], !annotation [[META6]]
+// UNOPT-TF-NEXT:    call preserve_allcc void @__bounds_safety_soft_trap_s(ptr null) #[[ATTR6]], !annotation [[META6]]
 // UNOPT-TF-NEXT:    br label %[[CONT51]], !annotation [[META6]]
 // UNOPT-TF:       [[CONT51]]:
 // UNOPT-TF-NEXT:    call void @llvm.memcpy.p0.p0.i64(ptr align 8 [[AGG_TEMP52]], ptr align 8 [[AGG_TEMP]], i64 24, i1 false)
@@ -659,7 +659,7 @@ void receive_cb(int*__counted_by(count) ptr, int count);
 // UNOPT-TFR-NEXT:    [[TMP16:%.*]] = phi i1 [ false, %[[LAND_LHS_TRUE]] ], [ false, %[[CONT]] ], [ [[TMP15]], %[[LAND_END]] ], !annotation [[META6]]
 // UNOPT-TFR-NEXT:    br i1 [[TMP16]], label %[[CONT51:.*]], label %[[TRAP50:.*]], !prof [[PROF3]], !annotation [[META6]]
 // UNOPT-TFR:       [[TRAP50]]:
-// UNOPT-TFR-NEXT:    call void @__bounds_safety_soft_trap_s(ptr null) #[[ATTR4]], !annotation [[META6]]
+// UNOPT-TFR-NEXT:    call preserve_allcc void @__bounds_safety_soft_trap_s(ptr null) #[[ATTR5]], !annotation [[META6]]
 // UNOPT-TFR-NEXT:    br label %[[CONT51]], !annotation [[META6]]
 // UNOPT-TFR:       [[CONT51]]:
 // UNOPT-TFR-NEXT:    call void @llvm.memcpy.p0.p0.i64(ptr align 8 [[AGG_TEMP52]], ptr align 8 [[AGG_TEMP]], i64 24, i1 false)
@@ -669,7 +669,7 @@ void receive_cb(int*__counted_by(count) ptr, int count);
 // UNOPT-TFR-NEXT:    [[WIDE_PTR_UB56:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR55]], align 8
 // UNOPT-TFR-NEXT:    [[WIDE_PTR_LB_ADDR57:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP52]], i32 0, i32 2
 // UNOPT-TFR-NEXT:    [[WIDE_PTR_LB58:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR57]], align 8
-// UNOPT-TFR-NEXT:    call void @receive_cb(ptr noundef [[WIDE_PTR_PTR54]], i32 noundef [[TMP11]]) #[[ATTR5:[0-9]+]]
+// UNOPT-TFR-NEXT:    call void @receive_cb(ptr noundef [[WIDE_PTR_PTR54]], i32 noundef [[TMP11]]) #[[ATTR6:[0-9]+]]
 // UNOPT-TFR-NEXT:    [[TMP17:%.*]] = load i32, ptr [[TMP]], align 4
 // UNOPT-TFR-NEXT:    ret i32 [[TMP17]]
 //
@@ -686,11 +686,11 @@ void receive_cb(int*__counted_by(count) ptr, int count);
 // OPT-NEXT:    [[CMP_NOT:%.*]] = icmp slt i32 [[COUNT]], 0, !annotation [[META13:![0-9]+]]
 // OPT-NEXT:    br i1 [[CMP_NOT]], label %[[TRAP50:.*]], label %[[CONT51:.*]], !annotation [[META13]]
 // OPT:       [[TRAP50]]:
-// OPT-NEXT:    tail call void @__bounds_safety_soft_trap_s(ptr null) #[[ATTR5]], !annotation [[META13]]
+// OPT-NEXT:    tail call preserve_allcc void @__bounds_safety_soft_trap_s(ptr null) #[[ATTR5]], !annotation [[META13]]
 // OPT-NEXT:    br label %[[CONT51]], !annotation [[META13]]
 // OPT:       [[CONT51]]:
 // OPT-NEXT:    [[TMP2:%.*]] = extractvalue { i32, i1 } [[TMP0]], 0, !nosanitize [[META6]]
-// OPT-NEXT:    tail call void @receive_cb(ptr noundef [[PTR]], i32 noundef [[COUNT]]) #[[ATTR5]]
+// OPT-NEXT:    tail call void @receive_cb(ptr noundef [[PTR]], i32 noundef [[COUNT]]) #[[ATTR6:[0-9]+]]
 // OPT-NEXT:    ret i32 [[TMP2]]
 //
 int read_cb(int*__counted_by(count) ptr, int count, int other) {
@@ -705,7 +705,7 @@ int read_cb(int*__counted_by(count) ptr, int count, int other) {
 // UNOPT: attributes #[[ATTR3:[0-9]+]] = { nocallback nofree nounwind willreturn memory(argmem: readwrite) }
 // UNOPT: attributes #[[ATTR4:[0-9]+]] = { "no-trapping-math"="true" "stack-protector-buffer-size"="8" }
 // UNOPT: attributes #[[ATTR5]] = { nomerge noreturn nounwind }
-// UNOPT: attributes #[[ATTR6]] = { nounwind }
+// UNOPT: attributes #[[ATTR6]] = { nomerge nounwind }
 //.
 // UNOPT-TF: attributes #[[ATTR0]] = { noinline nounwind optnone "no-trapping-math"="true" "stack-protector-buffer-size"="8" }
 // UNOPT-TF: attributes #[[ATTR1:[0-9]+]] = { nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none) }
@@ -713,7 +713,7 @@ int read_cb(int*__counted_by(count) ptr, int count, int other) {
 // UNOPT-TF: attributes #[[ATTR3:[0-9]+]] = { nocallback nofree nounwind willreturn memory(argmem: readwrite) }
 // UNOPT-TF: attributes #[[ATTR4:[0-9]+]] = { "no-trapping-math"="true" "stack-protector-buffer-size"="8" }
 // UNOPT-TF: attributes #[[ATTR5]] = { nomerge noreturn nounwind "trap-func-name"="ubsan_handler" }
-// UNOPT-TF: attributes #[[ATTR6]] = { nounwind }
+// UNOPT-TF: attributes #[[ATTR6]] = { nomerge nounwind }
 // UNOPT-TF: attributes #[[ATTR7]] = { "trap-func-name"="ubsan_handler" }
 //.
 // UNOPT-TFR: attributes #[[ATTR0]] = { noinline nounwind optnone "no-trapping-math"="true" "stack-protector-buffer-size"="8" }
@@ -721,14 +721,16 @@ int read_cb(int*__counted_by(count) ptr, int count, int other) {
 // UNOPT-TFR: attributes #[[ATTR2:[0-9]+]] = { nocallback nofree nounwind willreturn memory(argmem: readwrite) }
 // UNOPT-TFR: attributes #[[ATTR3:[0-9]+]] = { "no-trapping-math"="true" "stack-protector-buffer-size"="8" }
 // UNOPT-TFR: attributes #[[ATTR4]] = { nounwind }
-// UNOPT-TFR: attributes #[[ATTR5]] = { "trap-func-name"="ubsan_handler" }
+// UNOPT-TFR: attributes #[[ATTR5]] = { nomerge nounwind }
+// UNOPT-TFR: attributes #[[ATTR6]] = { "trap-func-name"="ubsan_handler" }
 //.
 // OPT: attributes #[[ATTR0]] = { nounwind "no-trapping-math"="true" "stack-protector-buffer-size"="8" }
 // OPT: attributes #[[ATTR1:[0-9]+]] = { mustprogress nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none) }
 // OPT: attributes #[[ATTR2:[0-9]+]] = { cold noreturn nounwind memory(inaccessiblemem: write) }
 // OPT: attributes #[[ATTR3:[0-9]+]] = { "no-trapping-math"="true" "stack-protector-buffer-size"="8" }
 // OPT: attributes #[[ATTR4]] = { nomerge noreturn nounwind }
-// OPT: attributes #[[ATTR5]] = { nounwind }
+// OPT: attributes #[[ATTR5]] = { nomerge nounwind }
+// OPT: attributes #[[ATTR6]] = { nounwind }
 //.
 // UNOPT: [[META0:![0-9]+]] = !{i32 1, !"wchar_size", i32 4}
 // UNOPT: [[META1:![0-9]+]] = !{!"{{.*}}clang version {{.*}}"}
