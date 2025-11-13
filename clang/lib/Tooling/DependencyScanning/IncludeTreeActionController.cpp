@@ -14,6 +14,8 @@
 #include "clang/Lex/Preprocessor.h"
 #include "llvm/CAS/CASFileSystem.h"
 #include "llvm/CAS/CASProvidingFileSystem.h"
+#include "llvm/CAS/HierarchicalTreeBuilder.h"
+#include "llvm/CAS/CachingOnDiskFileSystem.h"
 #include "llvm/CAS/ObjectStore.h"
 #include "llvm/Support/PrefixMapper.h"
 #include "llvm/Support/PrefixMappingFileSystem.h"
@@ -300,14 +302,77 @@ Expected<cas::IncludeTreeRoot> IncludeTreeActionController::getIncludeTree() {
                                  "failed to produce include-tree");
 }
 
+static Error
+recursiveAccess(llvm::vfs::FileSystem &FS, StringRef Path,
+                llvm::DenseSet<llvm::sys::fs::UniqueID> &SeenDirectories) {
+  auto ST = FS.status(Path);
+
+  // Ignore missing entries, which can be a symlink to a missing file, which is
+  // not an error in the filesystem itself.
+  // FIXME: add status(follow=false) to VFS instead, which would let us detect
+  // this case directly.
+  if (ST.getError() == llvm::errc::no_such_file_or_directory)
+    return Error::success();
+
+  if (!ST)
+    return createFileError(Path, ST.getError());
+
+  // Check that this is the first time we see the directory to prevent infinite
+  // recursion into symlinks. The status() above will ensure all symlinks are
+  // ingested.
+  // FIXME: add status(follow=false) to VFS instead, and then only traverse
+  // a directory and not a symlink to a directory.
+  if (ST->isDirectory() && SeenDirectories.insert(ST->getUniqueID()).second) {
+    std::error_code EC;
+    for (llvm::vfs::directory_iterator I = FS.dir_begin(Path, EC), IE;
+         !EC && I != IE; I.increment(EC)) {
+      auto Err = recursiveAccess(FS, I->path(), SeenDirectories);
+      if (Err)
+        return Err;
+    }
+  }
+
+  return Error::success();
+}
+
+static Expected<llvm::cas::ObjectProxy>
+ingestFileSystemImpl(llvm::cas::ObjectStore &CAS, ArrayRef<std::string> Paths,
+                     ArrayRef<std::string> PrefixMapPaths) {
+  auto FS = createCachingOnDiskFileSystem(CAS);
+  if (!FS)
+    return FS.takeError();
+
+  llvm::TreePathPrefixMapper Mapper(*FS);
+  SmallVector<llvm::MappedPrefix> Split;
+  if (!PrefixMapPaths.empty()) {
+    llvm::MappedPrefix::transformJoinedIfValid(PrefixMapPaths, Split);
+    Mapper.addRange(Split);
+    Mapper.sort();
+  }
+
+  (*FS)->trackNewAccesses();
+
+  llvm::DenseSet<llvm::sys::fs::UniqueID> SeenDirectories;
+  for (auto &Path : Paths)
+    if (Error E = recursiveAccess(**FS, Path, SeenDirectories))
+      return E;
+
+  return (*FS)->createTreeFromNewAccesses(
+      [&](const llvm::vfs::CachedDirectoryEntry &Entry,
+          SmallVectorImpl<char> &Storage) {
+        return Mapper.mapDirEntry(Entry, Storage);
+      });
+}
+
 bool IncludeTreeActionController::hasResult(
     const CompilerInvocation &ScanInvocation, llvm::vfs::FileSystem &VFS) {
-  llvm::cas::CASBackedFileSystem *OurFS;
+  llvm::cas::CachingOnDiskFileSystem *OurFS;
   VFS.visit([&](llvm::vfs::FileSystem &VFS) {
     if (auto *CASFS = dyn_cast<llvm::cas::CASBackedFileSystem>(&VFS)) {
       OurFS = CASFS;
     }
   });
+  OurFS->getBufferAndObjectRefForFile(const Twine &Name)
   assert(OurFS && "IncludeTree scan without CAS-backed VFS");
   ScanInvocation.visitPaths([&](StringRef Path) {
     OurFS->getObjectRefForFileContent(Path);
