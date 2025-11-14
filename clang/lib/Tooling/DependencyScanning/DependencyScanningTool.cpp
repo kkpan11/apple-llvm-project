@@ -137,10 +137,12 @@ private:
 }
 
 Expected<cas::IncludeTreeRoot> DependencyScanningTool::getIncludeTree(
-    cas::ObjectStore &DB, const std::vector<std::string> &CommandLine,
-    StringRef CWD, LookupModuleOutputCallback LookupModuleOutput) {
+    cas::ObjectStore &DB, cas::ActionCache &Cache,
+    const std::vector<std::string> &CommandLine, StringRef CWD,
+    LookupModuleOutputCallback LookupModuleOutput) {
   GetIncludeTree Consumer(DB);
-  auto Controller = createIncludeTreeActionController(LookupModuleOutput, DB);
+  auto Controller =
+      createIncludeTreeActionController(LookupModuleOutput, DB, Cache);
   llvm::Error Result =
       Worker.computeDependencies(CWD, CommandLine, Consumer, *Controller);
   if (Result)
@@ -150,12 +152,14 @@ Expected<cas::IncludeTreeRoot> DependencyScanningTool::getIncludeTree(
 
 Expected<cas::IncludeTreeRoot>
 DependencyScanningTool::getIncludeTreeFromCompilerInvocation(
-    cas::ObjectStore &DB, std::shared_ptr<CompilerInvocation> Invocation,
-    StringRef CWD, LookupModuleOutputCallback LookupModuleOutput,
+    cas::ObjectStore &DB, cas::ActionCache &Cache,
+    std::shared_ptr<CompilerInvocation> Invocation, StringRef CWD,
+    LookupModuleOutputCallback LookupModuleOutput,
     DiagnosticConsumer &DiagsConsumer, raw_ostream *VerboseOS,
     bool DiagGenerationAsCompilation) {
   GetIncludeTree Consumer(DB);
-  auto Controller = createIncludeTreeActionController(LookupModuleOutput, DB);
+  auto Controller =
+      createIncludeTreeActionController(LookupModuleOutput, DB, Cache);
   Worker.computeDependenciesFromCompilerInvocation(
       std::move(Invocation), CWD, Consumer, *Controller, DiagsConsumer,
       VerboseOS, DiagGenerationAsCompilation);
@@ -310,8 +314,8 @@ DependencyScanningTool::createActionController(
     DependencyScanningWorker &Worker,
     LookupModuleOutputCallback LookupModuleOutput) {
   if (Worker.getScanningFormat() == ScanningOutputFormat::FullIncludeTree)
-    return createIncludeTreeActionController(LookupModuleOutput,
-                                             *Worker.getCAS());
+    return createIncludeTreeActionController(
+        LookupModuleOutput, *Worker.getCAS(), *Worker.getCache());
   return std::make_unique<CallbackActionController>(LookupModuleOutput);
 }
 

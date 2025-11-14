@@ -16,7 +16,8 @@ namespace clang::tooling::dependencies {
 
 std::unique_ptr<DependencyActionController>
 createIncludeTreeActionController(LookupModuleOutputCallback LookupModuleOutput,
-                                  cas::ObjectStore &DB);
+                                  cas::ObjectStore &DB,
+                                  cas::ActionCache &Cache);
 
 /// The PCH recorded file paths with canonical paths, create a VFS that
 /// allows remapping back to the non-canonical source paths so that they are

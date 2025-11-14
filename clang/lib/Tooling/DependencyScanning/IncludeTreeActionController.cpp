@@ -14,7 +14,6 @@
 #include "clang/Lex/Preprocessor.h"
 #include "llvm/CAS/CASFileSystem.h"
 #include "llvm/CAS/CASProvidingFileSystem.h"
-#include "llvm/CAS/HierarchicalTreeBuilder.h"
 #include "llvm/CAS/CachingOnDiskFileSystem.h"
 #include "llvm/CAS/ObjectStore.h"
 #include "llvm/Support/PrefixMapper.h"
@@ -30,14 +29,14 @@ class IncludeTreeBuilder;
 
 class IncludeTreeActionController : public CallbackActionController {
 public:
-  IncludeTreeActionController(cas::ObjectStore &DB,
+  IncludeTreeActionController(cas::ObjectStore &DB, cas::ActionCache &Cache,
                               LookupModuleOutputCallback LookupOutput)
-      : CallbackActionController(LookupOutput), DB(DB) {}
+      : CallbackActionController(LookupOutput), DB(DB), Cache(Cache) {}
 
   Expected<cas::IncludeTreeRoot> getIncludeTree();
 
 private:
-  bool hasResult(const CompilerInvocation &ScanInvocation,llvm::vfs::FileSystem &VFS) override;
+  bool hasResult(const CompilerInvocation &ScanInvocation) override;
   Error initialize(CompilerInstance &ScanInstance,
                    CompilerInvocation &NewInvocation) override;
   Error finalize(CompilerInstance &ScanInstance,
@@ -58,6 +57,7 @@ private:
 
 private:
   cas::ObjectStore &DB;
+  cas::ActionCache &Cache;
   CASOptions CASOpts;
   llvm::PrefixMapper PrefixMapper;
   // IncludeTreePPCallbacks keeps a pointer to the current builder, so use a
@@ -302,86 +302,90 @@ Expected<cas::IncludeTreeRoot> IncludeTreeActionController::getIncludeTree() {
                                  "failed to produce include-tree");
 }
 
-static Error
-recursiveAccess(llvm::vfs::FileSystem &FS, StringRef Path,
-                llvm::DenseSet<llvm::sys::fs::UniqueID> &SeenDirectories) {
-  auto ST = FS.status(Path);
-
-  // Ignore missing entries, which can be a symlink to a missing file, which is
-  // not an error in the filesystem itself.
-  // FIXME: add status(follow=false) to VFS instead, which would let us detect
-  // this case directly.
-  if (ST.getError() == llvm::errc::no_such_file_or_directory)
-    return Error::success();
-
-  if (!ST)
-    return createFileError(Path, ST.getError());
-
-  // Check that this is the first time we see the directory to prevent infinite
-  // recursion into symlinks. The status() above will ensure all symlinks are
-  // ingested.
-  // FIXME: add status(follow=false) to VFS instead, and then only traverse
-  // a directory and not a symlink to a directory.
-  if (ST->isDirectory() && SeenDirectories.insert(ST->getUniqueID()).second) {
-    std::error_code EC;
-    for (llvm::vfs::directory_iterator I = FS.dir_begin(Path, EC), IE;
-         !EC && I != IE; I.increment(EC)) {
-      auto Err = recursiveAccess(FS, I->path(), SeenDirectories);
-      if (Err)
-        return Err;
-    }
-  }
-
-  return Error::success();
-}
-
-static Expected<llvm::cas::ObjectProxy>
-ingestFileSystemImpl(llvm::cas::ObjectStore &CAS, ArrayRef<std::string> Paths,
-                     ArrayRef<std::string> PrefixMapPaths) {
-  auto FS = createCachingOnDiskFileSystem(CAS);
-  if (!FS)
-    return FS.takeError();
-
-  llvm::TreePathPrefixMapper Mapper(*FS);
-  SmallVector<llvm::MappedPrefix> Split;
-  if (!PrefixMapPaths.empty()) {
-    llvm::MappedPrefix::transformJoinedIfValid(PrefixMapPaths, Split);
-    Mapper.addRange(Split);
-    Mapper.sort();
-  }
-
-  (*FS)->trackNewAccesses();
-
-  llvm::DenseSet<llvm::sys::fs::UniqueID> SeenDirectories;
-  for (auto &Path : Paths)
-    if (Error E = recursiveAccess(**FS, Path, SeenDirectories))
-      return E;
-
-  return (*FS)->createTreeFromNewAccesses(
-      [&](const llvm::vfs::CachedDirectoryEntry &Entry,
-          SmallVectorImpl<char> &Storage) {
-        return Mapper.mapDirEntry(Entry, Storage);
-      });
-}
-
 bool IncludeTreeActionController::hasResult(
-    const CompilerInvocation &ScanInvocation, llvm::vfs::FileSystem &VFS) {
-  llvm::cas::CachingOnDiskFileSystem *OurFS;
-  VFS.visit([&](llvm::vfs::FileSystem &VFS) {
-    if (auto *CASFS = dyn_cast<llvm::cas::CASBackedFileSystem>(&VFS)) {
-      OurFS = CASFS;
+    const CompilerInvocation &ScanInvocation) {
+  IntrusiveRefCntPtr<llvm::cas::CachingOnDiskFileSystem> BaseFS;
+  if (llvm::Error Err =
+          llvm::cas::createCachingOnDiskFileSystem(DB).moveInto(BaseFS)) {
+    llvm::handleAllErrors(std::move(Err),
+                          [](const llvm::ErrorInfoBase &Base) {});
+    llvm::errs() << "could not create CachingOnDiskFileSystem\n";
+    return false;
+  }
+
+  DiagnosticOptions DiagOpts;
+  DiagnosticsEngine Diags(DiagnosticIDs::create(), DiagOpts);
+  auto VFS =
+      createVFSFromCompilerInvocation(ScanInvocation, Diags, BaseFS, nullptr);
+
+  ScanInvocation.visitPaths([&VFS](StringRef Path) {
+    if (Path.empty()) {
+      return false;
     }
-  });
-  OurFS->getBufferAndObjectRefForFile(const Twine &Name)
-  assert(OurFS && "IncludeTree scan without CAS-backed VFS");
-  ScanInvocation.visitPaths([&](StringRef Path) {
-    OurFS->getObjectRefForFileContent(Path);
-    OurFS->status(Path);
+
+    llvm::errs() << "visiting " << Path << "\n";
+
+    if (Path.starts_with("/System") || Path.starts_with("/Library") ||
+        Path.contains("Xcode.app")) {
+      llvm::errs() << "  skipping " << Path << "\n";
+      return false;
+    }
+
+    std::error_code EC;
+    for (llvm::vfs::recursive_directory_iterator It(*VFS, Path, EC), End;
+         It != End && !EC; It.increment(EC)) {
+      llvm::errs() << "  opening " << It->path() << "\n";
+
+      (void)VFS->openFileForRead(It->path());
+    }
     return false;
   });
-  auto X = FS.createTreeFromAllAccesses();
-  int y = 0;
-  llvm::errs() << "HERE\n";
+
+  std::optional<llvm::cas::ObjectProxy> InputsID;
+  if (llvm::Error Err =
+          BaseFS->createTreeFromAllAccesses().moveInto(InputsID)) {
+    llvm::handleAllErrors(std::move(Err),
+                          [](const llvm::ErrorInfoBase &Base) {});
+    llvm::errs() << "failed to createTreeFromAllAccesses\n";
+    return false;
+  }
+
+  std::optional<llvm::cas::CASID> ResultID;
+  if (llvm::Error Err = Cache.get(*InputsID).moveInto(ResultID)) {
+    llvm::handleAllErrors(std::move(Err),
+                          [](const llvm::ErrorInfoBase &Base) {});
+    llvm::errs() << "failed to query the action cache\n";
+    return false;
+  }
+
+  if (ResultID) {
+    llvm::errs() << "Scanning cache hit for key "
+                 << InputsID->getID().toString() << " with value "
+                 << ResultID->toString() << "\n";
+    return false;
+  }
+
+  llvm::errs() << "action cache has no entries\n";
+
+  std::optional<llvm::cas::ObjectRef> Data;
+  if (llvm::Error Err = DB.storeFromString({}, "data").moveInto(Data)) {
+    llvm::handleAllErrors(std::move(Err),
+                          [](const llvm::ErrorInfoBase &Base) {});
+    llvm::errs() << "failed to store the result in DB\n";
+    return false;
+  }
+
+  if (llvm::Error Err = Cache.put(*InputsID, DB.getID(*Data))) {
+    llvm::handleAllErrors(std::move(Err),
+                          [](const llvm::ErrorInfoBase &Base) {});
+    llvm::errs() << "failed to store the entry in action cache\n";
+    return false;
+  }
+
+  llvm::errs() << "Scanning cache store for key "
+               << InputsID->getID().toString() << " with value "
+               << DB.getID(*Data).toString() << "\n";
+  return true;
 }
 
 Error IncludeTreeActionController::initialize(
@@ -851,8 +855,8 @@ IncludeTreeBuilder::finishIncludeTree(CompilerInstance &ScanInstance,
       if (Module *M = MMap.findModule(ScanInstance.getLangOpts().CurrentModule))
         if (Error E = AddModule(M))
           return std::move(E);
-      if (Module *PM =
-          MMap.findModule(ScanInstance.getLangOpts().ModuleName + "_Private"))
+      if (Module *PM = MMap.findModule(ScanInstance.getLangOpts().ModuleName +
+                                       "_Private"))
         if (Error E = AddModule(PM))
           return std::move(E);
     }
@@ -1029,6 +1033,8 @@ IncludeTreeBuilder::createIncludeFile(StringRef Filename,
 
 std::unique_ptr<DependencyActionController>
 dependencies::createIncludeTreeActionController(
-    LookupModuleOutputCallback LookupModuleOutput, cas::ObjectStore &DB) {
-  return std::make_unique<IncludeTreeActionController>(DB, LookupModuleOutput);
+    LookupModuleOutputCallback LookupModuleOutput, cas::ObjectStore &DB,
+    cas::ActionCache &Cache) {
+  return std::make_unique<IncludeTreeActionController>(DB, Cache,
+                                                       LookupModuleOutput);
 }

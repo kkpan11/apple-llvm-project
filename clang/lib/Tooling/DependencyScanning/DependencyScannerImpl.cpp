@@ -814,7 +814,7 @@ bool DependencyScanningAction::runInvocation(
   // Make a deep copy of the original Clang invocation.
   CompilerInvocation OriginalInvocation(*Invocation);
 
-  if (Controller.hasResult(*Invocation, *FS)) {
+  if (Controller.hasResult(*Invocation)) {
     // blah
   }
 

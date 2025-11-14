@@ -144,7 +144,7 @@ public:
   }
 
   Expected<cas::IncludeTreeRoot>
-  getIncludeTree(cas::ObjectStore &DB,
+  getIncludeTree(cas::ObjectStore &DB, cas::ActionCache &Cache,
                  const std::vector<std::string> &CommandLine, StringRef CWD,
                  LookupModuleOutputCallback LookupModuleOutput);
 
@@ -153,8 +153,9 @@ public:
   /// message and the serialized diagnostics file emitted if the
   /// \p DiagOpts.DiagnosticSerializationFile setting is set for the invocation.
   Expected<cas::IncludeTreeRoot> getIncludeTreeFromCompilerInvocation(
-      cas::ObjectStore &DB, std::shared_ptr<CompilerInvocation> Invocation,
-      StringRef CWD, LookupModuleOutputCallback LookupModuleOutput,
+      cas::ObjectStore &DB, cas::ActionCache &Cache,
+      std::shared_ptr<CompilerInvocation> Invocation, StringRef CWD,
+      LookupModuleOutputCallback LookupModuleOutput,
       DiagnosticConsumer &DiagsConsumer, raw_ostream *VerboseOS,
       bool DiagGenerationAsCompilation);
 

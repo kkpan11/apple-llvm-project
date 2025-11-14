@@ -1131,7 +1131,7 @@ int clang_scan_deps_main(int argc, char **argv, const llvm::ToolContext &) {
       CASOpts.ensurePersistentCAS();
 
     std::tie(CAS, Cache) = CASOpts.getOrCreateDatabases(Diags);
-    if (!CAS)
+    if (!CAS || !Cache)
       return 1;
   }
 
@@ -1207,7 +1207,7 @@ int clang_scan_deps_main(int argc, char **argv, const llvm::ToolContext &) {
           HadErrors = true;
       } else if (Format == ScanningOutputFormat::IncludeTree) {
         auto MaybeTree = WorkerTool.getIncludeTree(
-            *CAS, Input->CommandLine, CWD, LookupOutput);
+            *CAS, *Cache, Input->CommandLine, CWD, LookupOutput);
         std::unique_lock<std::mutex> LockGuard(Lock);
         TreeResults.emplace_back(LocalIndex, std::move(Filename),
                                  std::move(MaybeTree));

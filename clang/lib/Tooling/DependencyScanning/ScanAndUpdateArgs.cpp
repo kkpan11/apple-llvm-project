@@ -249,7 +249,8 @@ void DepscanPrefixMapping::configurePrefixMapper(
 Expected<llvm::cas::CASID> clang::scanAndUpdateCC1InlineWithTool(
     DependencyScanningTool &Tool, DiagnosticConsumer &DiagsConsumer,
     raw_ostream *VerboseOS, CompilerInvocation &Invocation,
-    StringRef WorkingDirectory, llvm::cas::ObjectStore &DB) {
+    StringRef WorkingDirectory, llvm::cas::ObjectStore &DB,
+    llvm::cas::ActionCache &Cache) {
   // Override the CASOptions. They may match (the caller having sniffed them
   // out of InputArgs) but if they have been overridden we want the new ones.
   Invocation.getCASOpts() = Tool.getCASOpts();
@@ -267,7 +268,7 @@ Expected<llvm::cas::CASID> clang::scanAndUpdateCC1InlineWithTool(
   std::optional<llvm::cas::CASID> Root;
   if (Error E =
           Tool.getIncludeTreeFromCompilerInvocation(
-                  DB, std::move(ScanInvocation), WorkingDirectory,
+                  DB, Cache, std::move(ScanInvocation), WorkingDirectory,
                   /*LookupModuleOutput=*/nullptr, DiagsConsumer, VerboseOS,
                   /*DiagGenerationAsCompilation*/ true)
               .moveInto(Root))

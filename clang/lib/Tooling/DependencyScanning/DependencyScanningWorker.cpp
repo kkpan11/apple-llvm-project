@@ -20,8 +20,8 @@ using llvm::Error;
 DependencyScanningWorker::DependencyScanningWorker(
     DependencyScanningService &Service,
     llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> FS)
-    : Service(Service),
-      CASOpts(Service.getCASOpts()), CAS(Service.getCAS()) {
+    : Service(Service), CASOpts(Service.getCASOpts()), CAS(Service.getCAS()),
+      Cache(Service.getCache()) {
   PCHContainerOps = std::make_shared<PCHContainerOperations>();
   // We need to read object files from PCH built outside the scanner.
   PCHContainerOps->registerReader(

@@ -75,7 +75,7 @@ class DependencyActionController {
 public:
   virtual ~DependencyActionController();
 
-  virtual bool hasResult(const CompilerInvocation &ScanInvocation, llvm::vfs::FileSystem &VFS) {
+  virtual bool hasResult(const CompilerInvocation &ScanInvocation) {
     return false;
   }
 
@@ -210,6 +210,7 @@ public:
 
   const CASOptions &getCASOpts() const { return CASOpts; }
   std::shared_ptr<cas::ObjectStore> getCAS() const { return CAS; }
+  std::shared_ptr<cas::ActionCache> getCache() const { return Cache; }
 
   llvm::vfs::FileSystem &getVFS() const { return *BaseFS; }
 
@@ -228,6 +229,7 @@ private:
 
   CASOptions CASOpts;
   std::shared_ptr<cas::ObjectStore> CAS;
+  std::shared_ptr<cas::ActionCache> Cache;
 
   friend CompilerInstanceWithContext;
   std::unique_ptr<CompilerInstanceWithContext> CIWithContext;

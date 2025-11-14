@@ -18,6 +18,7 @@ using namespace dependencies;
 TEST(IncludeTree, IncludeTreeScan) {
   StringRef PathSep = llvm::sys::path::get_separator();
   std::shared_ptr<ObjectStore> DB = llvm::cas::createInMemoryCAS();
+  std::shared_ptr<ActionCache> Cache = llvm::cas::createInMemoryActionCache();
   auto FS = llvm::makeIntrusiveRefCnt<llvm::vfs::InMemoryFileSystem>();
   FS->setCurrentWorkingDirectory("/root");
   auto add = [&](StringRef Path, StringRef Contents) {
@@ -65,7 +66,7 @@ TEST(IncludeTree, IncludeTreeScan) {
                                           "t.cpp.o"};
   std::optional<IncludeTreeRoot> Root;
   ASSERT_THAT_ERROR(
-      ScanTool.getIncludeTree(*DB, CommandLine, /*CWD*/ "", nullptr)
+      ScanTool.getIncludeTree(*DB, *Cache, CommandLine, /*CWD*/ "", nullptr)
           .moveInto(Root),
       llvm::Succeeded());
 
