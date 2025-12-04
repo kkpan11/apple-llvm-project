@@ -1,3 +1,0 @@
-import OtherArch
-
-foo()
