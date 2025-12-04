@@ -1,4 +1,4 @@
-//===- DependencyScanningFilesystem.h - clang-scan-deps fs ===---*- C++ -*-===//
+//===----------------------------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_TOOLING_DEPENDENCYSCANNING_DEPENDENCYSCANNINGFILESYSTEM_H
-#define LLVM_CLANG_TOOLING_DEPENDENCYSCANNING_DEPENDENCYSCANNINGFILESYSTEM_H
+#ifndef LLVM_CLANG_DEPENDENCYSCANNING_DEPENDENCYSCANNINGFILESYSTEM_H
+#define LLVM_CLANG_DEPENDENCYSCANNING_DEPENDENCYSCANNINGFILESYSTEM_H
 
 #include "clang/Basic/LLVM.h"
 #include "clang/Lex/DependencyDirectivesScanner.h"
@@ -24,7 +24,6 @@
 #include <variant>
 
 namespace clang {
-namespace tooling {
 namespace dependencies {
 
 class DependencyScanningService;
@@ -461,7 +460,6 @@ private:
 };
 
 } // end namespace dependencies
-} // end namespace tooling
 } // end namespace clang
 
-#endif // LLVM_CLANG_TOOLING_DEPENDENCYSCANNING_DEPENDENCYSCANNINGFILESYSTEM_H
+#endif // LLVM_CLANG_DEPENDENCYSCANNING_DEPENDENCYSCANNINGFILESYSTEM_H

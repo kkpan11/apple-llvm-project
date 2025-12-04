@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_TOOLING_DEPENDENCYSCANNING_INPROCESSMODULECACHE_H
-#define LLVM_CLANG_TOOLING_DEPENDENCYSCANNING_INPROCESSMODULECACHE_H
+#ifndef LLVM_CLANG_DEPENDENCYSCANNING_INPROCESSMODULECACHE_H
+#define LLVM_CLANG_DEPENDENCYSCANNING_INPROCESSMODULECACHE_H
 
 #include "clang/Serialization/ModuleCache.h"
 #include "llvm/ADT/StringMap.h"
@@ -17,8 +17,8 @@
 #include <mutex>
 
 namespace clang {
-namespace tooling {
 namespace dependencies {
+
 struct ModuleCacheEntry {
   std::mutex Mutex;
   std::condition_variable CondVar;
@@ -35,8 +35,8 @@ struct ModuleCacheEntries {
 
 IntrusiveRefCntPtr<ModuleCache>
 makeInProcessModuleCache(ModuleCacheEntries &Entries);
+
 } // namespace dependencies
-} // namespace tooling
 } // namespace clang
 
-#endif
+#endif // LLVM_CLANG_DEPENDENCYSCANNING_INPROCESSMODULECACHE_H
