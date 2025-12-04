@@ -8,11 +8,15 @@
 
 #include "clang/APINotes/APINotesManager.h"
 #include "clang/APINotes/APINotesReader.h"
+#include "clang/Basic/DiagnosticCAS.h"
 #include "clang/CAS/IncludeTree.h"
 #include "clang/DependencyScanning/CachingActions.h"
 #include "clang/DependencyScanning/ScanAndUpdateArgs.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Lex/Preprocessor.h"
+#include "llvm/CAS/CASFileSystem.h"
+#include "llvm/CAS/CASProvidingFileSystem.h"
+#include "llvm/CAS/CachingOnDiskFileSystem.h"
 #include "llvm/CAS/ObjectStore.h"
 #include "llvm/Support/PrefixMapper.h"
 #include "llvm/Support/PrefixMappingFileSystem.h"
@@ -21,18 +25,501 @@ using namespace clang;
 using namespace dependencies;
 using llvm::Error;
 
+#define PROPAGATE_FALSE(EXPR)                                                  \
+  if (!(EXPR))                                                                 \
+    return false;
+
+static void writeBool(bool Val, SmallString<128> &Data) {
+  Data += Val ? '\1' : '\0';
+}
+
+static bool readBool(bool &Val, StringRef Data) {
+  if (Data.empty())
+    return false;
+  if (Data[0] == '\1')
+    Val = true;
+  else if (Data[0] == '\0')
+    Val = false;
+  else
+    return false;
+  return true;
+}
+
+static void writeString(StringRef Str, SmallString<128> &Data) {
+  Data += Str;
+  Data += '\0';
+}
+
+static bool readString(std::string &Str, StringRef &Data) {
+  size_t StrEnd = Data.find('\0');
+  if (StrEnd == StringRef::npos || StrEnd == 0)
+    return false;
+  Str = Data.substr(0, StrEnd);
+  Data = Data.substr(StrEnd + 1);
+  return true;
+}
+
+static void writeNull(SmallString<128> &Data) { Data += '\0'; }
+
+static bool readNull(StringRef &Data) {
+  if (Data.empty() || Data[0] != '\0')
+    return false;
+  Data = Data.substr(1);
+  return true;
+}
+
+static void writeP1689ModuleInfo(const P1689ModuleInfo &Info,
+                                 SmallString<128> &Data) {
+  writeString(Info.ModuleName, Data);
+  writeString(Info.SourcePath, Data);
+  writeBool(Info.IsStdCXXModuleInterface, Data);
+}
+
+static bool readP1689ModuleInfo(P1689ModuleInfo &Info, StringRef &Data) {
+  PROPAGATE_FALSE(readString(Info.ModuleName, Data));
+  PROPAGATE_FALSE(readString(Info.SourcePath, Data));
+  PROPAGATE_FALSE(readBool(Info.IsStdCXXModuleInterface, Data));
+  return true;
+}
+
+static void writeProvidedAndRequiredStdCXXModules(
+    const std::optional<P1689ModuleInfo> &Provided,
+    const std::vector<P1689ModuleInfo> &Requires, SmallString<128> &Data) {
+  writeBool(Provided.has_value(), Data);
+  if (Provided.has_value())
+    writeP1689ModuleInfo(*Provided, Data);
+  for (const P1689ModuleInfo &Req : Requires)
+    writeP1689ModuleInfo(Req, Data);
+  writeNull(Data);
+}
+
+static bool
+parseAndHandleProvidedAndRequiredStdCXXModules(DependencyConsumer &Underlying,
+                                               StringRef &Data) {
+  bool HasProvided;
+  std::optional<P1689ModuleInfo> Provided;
+  std::vector<P1689ModuleInfo> Requires;
+
+  PROPAGATE_FALSE(readBool(HasProvided, Data));
+  if (HasProvided)
+    PROPAGATE_FALSE(readP1689ModuleInfo(Provided.emplace(), Data));
+  while (!Data.empty() && Data[0] != '\0')
+    PROPAGATE_FALSE(readP1689ModuleInfo(Requires.emplace_back(), Data));
+  PROPAGATE_FALSE(readNull(Data));
+
+  Underlying.handleProvidedAndRequiredStdCXXModules(std::move(Provided),
+                                                    std::move(Requires));
+  return true;
+}
+
+static void writeBuildCommand(const Command &Cmd, SmallString<128> &Data) {
+  writeString(Cmd.Executable, Data);
+  writeBool(Cmd.TUCacheKey.has_value(), Data);
+  if (Cmd.TUCacheKey.has_value())
+    writeString(*Cmd.TUCacheKey, Data);
+  for (StringRef Arg : Cmd.Arguments)
+    writeString(Arg, Data);
+  writeNull(Data);
+}
+
+static bool parseAndHandleBuildCommand(DependencyConsumer &Underlying,
+                                       StringRef &Data) {
+  Command Cmd;
+  bool HasTUCacheKey;
+
+  PROPAGATE_FALSE(readString(Cmd.Executable, Data));
+  PROPAGATE_FALSE(readBool(HasTUCacheKey, Data));
+  if (HasTUCacheKey)
+    PROPAGATE_FALSE(readString(Cmd.TUCacheKey.emplace(), Data));
+  while (!Data.empty() && Data[0] != '\0')
+    PROPAGATE_FALSE(readString(Cmd.Arguments.emplace_back(), Data));
+  PROPAGATE_FALSE(readNull(Data));
+
+  Underlying.handleBuildCommand(std::move(Cmd));
+  return true;
+}
+
+static bool parseAndHandleDependencyOutputOpts(DependencyConsumer &Underlying,
+                                               StringRef &Data) {
+  DependencyOutputOptions Opts;
+  // TODO: Parse from \c Data.
+  Underlying.handleDependencyOutputOpts(Opts);
+  return true;
+}
+
+static void writeFileDependency(StringRef Filename, SmallString<128> &Data) {
+  writeString(Filename, Data);
+}
+
+static bool parseAndHandleFileDependency(DependencyConsumer &Underlying,
+                                         StringRef &Data) {
+  std::string Filename;
+
+  PROPAGATE_FALSE(readString(Filename, Data));
+
+  Underlying.handleFileDependency(Filename);
+  return true;
+}
+
+static void writePrebuiltModuleDep(const PrebuiltModuleDep &PMD,
+                                   SmallString<128> &Data) {
+  writeString(PMD.ModuleName, Data);
+  writeString(PMD.PCMFile, Data);
+  writeString(PMD.ModuleMapFile, Data);
+  writeBool(PMD.ModuleCacheKey.has_value(), Data);
+  if (PMD.ModuleCacheKey.has_value())
+    writeString(*PMD.ModuleCacheKey, Data);
+}
+
+static bool readPrebuiltModuleDep(PrebuiltModuleDep &PMD, StringRef &Data) {
+  bool HasModuleCacheKey;
+
+  PROPAGATE_FALSE(readString(PMD.ModuleName, Data));
+  PROPAGATE_FALSE(readString(PMD.PCMFile, Data));
+  PROPAGATE_FALSE(readString(PMD.ModuleMapFile, Data));
+  PROPAGATE_FALSE(readBool(HasModuleCacheKey, Data));
+  if (HasModuleCacheKey)
+    PROPAGATE_FALSE(readString(PMD.ModuleCacheKey.emplace(), Data));
+
+  return true;
+}
+
+static bool
+parseAndHandlePrebuiltModuleDependency(DependencyConsumer &Underlying,
+                                       StringRef &Data) {
+  PrebuiltModuleDep PMD;
+
+  PROPAGATE_FALSE(readPrebuiltModuleDep(PMD, Data));
+
+  Underlying.handlePrebuiltModuleDependency(std::move(PMD));
+  return true;
+}
+
+static void writeModuleID(const ModuleID &ID, SmallString<128> &Data) {
+  writeString(ID.ModuleName, Data);
+  writeString(ID.ContextHash, Data);
+}
+
+static bool readModuleID(ModuleID &ID, StringRef &Data) {
+  PROPAGATE_FALSE(readString(ID.ModuleName, Data));
+  PROPAGATE_FALSE(readString(ID.ContextHash, Data));
+  return true;
+}
+
+static void writeModuleDependency(const ModuleDeps &MD,
+                                  SmallString<128> &Data) {
+  writeModuleID(MD.ID, Data);
+  writeBool(MD.IsSystem, Data);
+  writeBool(MD.IgnoreCWD, Data);
+  writeBool(MD.IsInStableDirectories, Data);
+  writeString(MD.ClangModuleMapFile, Data);
+  for (StringRef ModMap : MD.ModuleMapFileDeps)
+    writeString(ModMap, Data);
+  writeNull(Data);
+  for (const PrebuiltModuleDep &PMD : MD.PrebuiltModuleDeps)
+    writePrebuiltModuleDep(PMD, Data);
+  writeNull(Data);
+  for (const ModuleID &Dep : MD.ClangModuleDeps)
+    writeModuleID(Dep, Data);
+  writeNull(Data);
+  writeBool(MD.IncludeTreeID.has_value(), Data);
+  if (MD.IncludeTreeID.has_value())
+    writeString(*MD.IncludeTreeID, Data);
+  writeBool(MD.ModuleCacheKey.has_value(), Data);
+  if (MD.ModuleCacheKey.has_value())
+    writeString(*MD.ModuleCacheKey, Data);
+  for (const Module::LinkLibrary &Link : MD.LinkLibraries) {
+    writeString(Link.Library, Data);
+    writeBool(Link.IsFramework, Data);
+  }
+  writeNull(Data);
+  MD.forEachFileDep([&](StringRef File) { writeString(File, Data); });
+  writeNull(Data);
+  for (StringRef Arg : MD.getBuildArguments())
+    writeString(Arg, Data);
+  writeNull(Data);
+}
+
+static bool parseAndHandleModuleDependency(DependencyConsumer &Underlying,
+                                           StringRef &Data) {
+  ModuleDeps MD;
+  bool HasIncludeTreeID;
+  bool HasModuleCacheKey;
+  // TODO: Propagate this to MD.
+  std::vector<std::string> FileDeps;
+  // TODO: Propagate this to MD.
+  std::vector<std::string> BuildArguments;
+
+  PROPAGATE_FALSE(readModuleID(MD.ID, Data));
+  PROPAGATE_FALSE(readBool(MD.IsSystem, Data));
+  PROPAGATE_FALSE(readBool(MD.IgnoreCWD, Data));
+  PROPAGATE_FALSE(readBool(MD.IsInStableDirectories, Data));
+  PROPAGATE_FALSE(readString(MD.ClangModuleMapFile, Data));
+  while (!Data.empty() && Data[0] != '\0')
+    PROPAGATE_FALSE(readString(MD.ModuleMapFileDeps.emplace_back(), Data));
+  PROPAGATE_FALSE(readNull(Data));
+  while (!Data.empty() && Data[0] != '\0')
+    PROPAGATE_FALSE(
+        readPrebuiltModuleDep(MD.PrebuiltModuleDeps.emplace_back(), Data));
+  PROPAGATE_FALSE(readNull(Data));
+  while (!Data.empty() && Data[0] != '\0')
+    PROPAGATE_FALSE(readModuleID(MD.ClangModuleDeps.emplace_back(), Data));
+  PROPAGATE_FALSE(readNull(Data));
+  PROPAGATE_FALSE(readBool(HasIncludeTreeID, Data));
+  if (HasIncludeTreeID)
+    PROPAGATE_FALSE(readString(MD.IncludeTreeID.emplace(), Data));
+  PROPAGATE_FALSE(readBool(HasModuleCacheKey, Data));
+  if (HasModuleCacheKey)
+    PROPAGATE_FALSE(readString(MD.ModuleCacheKey.emplace(), Data));
+  while (!Data.empty() && Data[0] != '\0') {
+    Module::LinkLibrary &Link = MD.LinkLibraries.emplace_back();
+    PROPAGATE_FALSE(readString(Link.Library, Data));
+    PROPAGATE_FALSE(readBool(Link.IsFramework, Data));
+  }
+  PROPAGATE_FALSE(readNull(Data));
+  while (!Data.empty() && Data[0] != '\0')
+    PROPAGATE_FALSE(readString(FileDeps.emplace_back(), Data));
+  PROPAGATE_FALSE(readNull(Data));
+  while (!Data.empty() && Data[0] != '\0')
+    PROPAGATE_FALSE(readString(BuildArguments.emplace_back(), Data));
+  PROPAGATE_FALSE(readNull(Data));
+
+  Underlying.handleModuleDependency(std::move(MD));
+  return true;
+}
+
+static void writeDirectModuleDependency(const ModuleID &MID,
+                                        SmallString<128> &Data) {
+  writeModuleID(MID, Data);
+}
+
+static bool parseAndHandleDirectModuleDependency(DependencyConsumer &Underlying,
+                                                 StringRef &Data) {
+  ModuleID MD;
+
+  PROPAGATE_FALSE(readModuleID(MD, Data));
+
+  Underlying.handleDirectModuleDependency(std::move(MD));
+  return true;
+}
+
+static void writeVisibleModule(StringRef ModuleName, SmallString<128> &Data) {
+  writeString(ModuleName, Data);
+}
+
+static bool parseAndHandleVisibleModule(DependencyConsumer &Underlying,
+                                        StringRef &Data) {
+  std::string ModuleName;
+
+  PROPAGATE_FALSE(readString(ModuleName, Data));
+
+  Underlying.handleVisibleModule(std::move(ModuleName));
+  return true;
+}
+
+static void writeContextHash(StringRef Hash, SmallString<128> &Data) {
+  writeString(Hash, Data);
+}
+
+static bool parseAndHandleContextHash(DependencyConsumer &Underlying,
+                                      StringRef &Data) {
+  std::string Hash;
+
+  PROPAGATE_FALSE(readString(Hash, Data));
+
+  Underlying.handleContextHash(std::move(Hash));
+  return true;
+}
+
+static void writeIncludeTreeID(StringRef ID, SmallString<128> &Data) {
+  writeString(ID, Data);
+}
+
+static bool parseAndHandleIncludeTreeID(DependencyConsumer &Underlying,
+                                        StringRef &Data) {
+  std::string ID;
+
+  PROPAGATE_FALSE(readString(ID, Data));
+
+  Underlying.handleIncludeTreeID(std::move(ID));
+  return true;
+}
+
+static bool returnFalse(DependencyConsumer &Underlying, StringRef &Data) {
+  llvm::dbgs() << "could not decode item name\n";
+  return false;
+}
+
 namespace {
 class IncludeTreeBuilder;
 
+class CASStoringConsumer : public DependencyConsumer {
+  cas::ObjectStore &DB;
+  DependencyConsumer &Underlying;
+  std::vector<cas::ObjectRef> Refs;
+
+public:
+  CASStoringConsumer(cas::ObjectStore &DB, DependencyConsumer &Underlying)
+      : DB(DB), Underlying(Underlying) {}
+
+  Expected<cas::ObjectRef> getResult() {
+    auto Ref = DB.store(Refs, "");
+    if (Error Err = Ref.takeError()) {
+      // TODO: Report up.
+    }
+    return *Ref;
+  }
+
+  void handleProvidedAndRequiredStdCXXModules(
+      std::optional<P1689ModuleInfo> Provided,
+      std::vector<P1689ModuleInfo> Requires) override {
+    SmallString<128> Data;
+    writeString("P1689", Data);
+    writeProvidedAndRequiredStdCXXModules(Provided, Requires, Data);
+
+    auto Ref = DB.store({}, Data);
+    if (Error Err = Ref.takeError()) {
+      // TODO: Report up.
+    } else {
+      Refs.push_back(*Ref);
+    }
+    Underlying.handleProvidedAndRequiredStdCXXModules(std::move(Provided),
+                                                      std::move(Requires));
+  }
+
+  void handleBuildCommand(Command Cmd) override {
+    SmallString<128> Data;
+    writeString("Build", Data);
+    writeBuildCommand(Cmd, Data);
+
+    auto Ref = DB.store({}, Data);
+    if (Error Err = Ref.takeError()) {
+      // TODO: Report up.
+    } else {
+      Refs.push_back(*Ref);
+    }
+    Underlying.handleBuildCommand(std::move(Cmd));
+  }
+
+  void
+  handleDependencyOutputOpts(const DependencyOutputOptions &Opts) override {
+    // TODO: Store into \c DB.
+    Underlying.handleDependencyOutputOpts(Opts);
+  }
+
+  void handleFileDependency(StringRef Filename) override {
+    SmallString<128> Data;
+    writeString("File", Data);
+    writeFileDependency(Filename, Data);
+
+    auto Ref = DB.store({}, Data);
+    if (Error Err = Ref.takeError()) {
+      // TODO: Report up.
+    } else {
+      Refs.push_back(*Ref);
+    }
+    Underlying.handleFileDependency(Filename);
+  }
+
+  void handlePrebuiltModuleDependency(PrebuiltModuleDep PMD) override {
+    SmallString<128> Data;
+    writeString("Prebuilt", Data);
+    writePrebuiltModuleDep(PMD, Data);
+
+    auto Ref = DB.store({}, Data);
+    if (Error Err = Ref.takeError()) {
+      // TODO: Report up.
+    } else {
+      Refs.push_back(*Ref);
+    }
+    Underlying.handlePrebuiltModuleDependency(std::move(PMD));
+  }
+
+  void handleModuleDependency(ModuleDeps MD) override {
+    SmallString<128> Data;
+    writeString("ModDep", Data);
+    writeModuleDependency(MD, Data);
+
+    auto Ref = DB.store({}, Data);
+    if (Error Err = Ref.takeError()) {
+      // TODO: Report up.
+    } else {
+      Refs.push_back(*Ref);
+    }
+    Underlying.handleModuleDependency(std::move(MD));
+  }
+
+  void handleDirectModuleDependency(ModuleID MD) override {
+    SmallString<128> Data;
+    writeString("ModID", Data);
+    writeDirectModuleDependency(MD, Data);
+
+    auto Ref = DB.store({}, Data);
+    if (Error Err = Ref.takeError()) {
+      // TODO: Report up.
+    } else {
+      Refs.push_back(*Ref);
+    }
+    Underlying.handleDirectModuleDependency(std::move(MD));
+  }
+
+  void handleVisibleModule(std::string ModuleName) override {
+    SmallString<128> Data;
+    writeString("VisMod", Data);
+    writeVisibleModule(ModuleName, Data);
+
+    auto Ref = DB.store({}, Data);
+    if (Error Err = Ref.takeError()) {
+      // TODO: Report up.
+    } else {
+      Refs.push_back(*Ref);
+    }
+    Underlying.handleVisibleModule(std::move(ModuleName));
+  }
+
+  void handleContextHash(std::string Hash) override {
+    SmallString<128> Data;
+    writeString("Hash", Data);
+    writeContextHash(Hash, Data);
+
+    auto Ref = DB.store({}, Data);
+    if (Error Err = Ref.takeError()) {
+      // TODO: Report up.
+    } else {
+      Refs.push_back(*Ref);
+    }
+    Underlying.handleContextHash(std::move(Hash));
+  }
+
+  void handleIncludeTreeID(std::string ID) override {
+    SmallString<128> Data;
+    writeString("IncTree", Data);
+    writeIncludeTreeID(ID, Data);
+
+    auto Ref = DB.store({}, Data);
+    if (Error Err = Ref.takeError()) {
+      // TODO: Report up.
+    } else {
+      Refs.push_back(*Ref);
+    }
+    Underlying.handleIncludeTreeID(std::move(ID));
+  }
+};
+
 class IncludeTreeActionController : public CallbackActionController {
 public:
-  IncludeTreeActionController(cas::ObjectStore &DB,
+  IncludeTreeActionController(cas::ObjectStore &DB, cas::ActionCache &Cache,
                               LookupModuleOutputCallback LookupOutput)
-      : CallbackActionController(LookupOutput), DB(DB) {}
+      : CallbackActionController(LookupOutput), DB(DB), Cache(Cache) {}
 
   Expected<cas::IncludeTreeRoot> getIncludeTree();
 
 private:
+  bool tryReplayResult(const CompilerInvocation &ScanInvocation,
+                       DependencyConsumer *&Consumer,
+                       DiagnosticConsumer &DiagsConsumer) override;
+  bool trySaveResult() override;
+
   Error initialize(CompilerInstance &ScanInstance,
                    CompilerInvocation &NewInvocation) override;
   Error finalize(CompilerInstance &ScanInstance,
@@ -53,6 +540,7 @@ private:
 
 private:
   cas::ObjectStore &DB;
+  cas::ActionCache &Cache;
   CASOptions CASOpts;
   llvm::PrefixMapper PrefixMapper;
   // IncludeTreePPCallbacks keeps a pointer to the current builder, so use a
@@ -60,6 +548,8 @@ private:
   SmallVector<std::unique_ptr<IncludeTreeBuilder>> BuilderStack;
   std::optional<cas::IncludeTreeRoot> IncludeTreeResult;
   llvm::StringMap<std::string> OutputToCacheKey;
+  std::optional<llvm::cas::ObjectProxy> Input;
+  std::unique_ptr<CASStoringConsumer> CapturingConsumer;
 };
 
 /// Callbacks for building an include-tree for a given translation unit or
@@ -297,6 +787,159 @@ Expected<cas::IncludeTreeRoot> IncludeTreeActionController::getIncludeTree() {
                                  "failed to produce include-tree");
 }
 
+bool IncludeTreeActionController::tryReplayResult(
+    const CompilerInvocation &ScanInvocation, DependencyConsumer *&Consumer,
+    DiagnosticConsumer &DiagsConsumer) {
+  // FIXME: This unfortunately bypasses scanner's VFS with the in-memory cache.
+  //
+  // Let's create a VFS that uses scanner's VFS to open files, passes them into
+  // the VFS that constructs the CAS FS tree, and then returns them. This means
+  // that we access each file at most once (thanks to scanner's VFS), we build
+  // the CAS FS tree that allows us to skip scans, and the real files reach the
+  // compiler, meaning include-once, hardlinks and case-insensitivity work as
+  // expected and we can construct include-tree correctly.
+  IntrusiveRefCntPtr<llvm::cas::CachingOnDiskFileSystem> BaseFS;
+  if (Error Err =
+          llvm::cas::createCachingOnDiskFileSystem(DB).moveInto(BaseFS)) {
+    llvm::handleAllErrors(std::move(Err), [](const llvm::ErrorInfoBase &) {});
+    llvm::dbgs() << "could not create CachingOnDiskFileSystem\n";
+    return false;
+  }
+
+  DiagnosticOptions DiagOpts;
+  DiagOpts.Remarks.push_back("compile-job-cache-miss");
+  DiagOpts.Remarks.push_back("compile-job-cache-hit");
+  IntrusiveRefCntPtr<llvm::vfs::FileSystem> VFS;
+  {
+    DiagnosticsEngine Diags(DiagnosticIDs::create(), DiagOpts, &DiagsConsumer,
+                            false);
+    VFS =
+        createVFSFromCompilerInvocation(ScanInvocation, Diags, BaseFS, nullptr);
+  }
+
+  auto Diags =
+      CompilerInstance::createDiagnostics(*VFS, DiagOpts, &DiagsConsumer,
+                                          /*ShouldOwnClient=*/false);
+
+  std::function<bool(StringRef)> Visit = [&](StringRef Path) {
+    if (Path.contains("Xcode.app") && !Path.contains("0~"))
+      return true;
+    auto Stat = VFS->status(Path);
+    if (!Stat)
+      return false;
+    if (!Stat->isDirectory())
+      return false;
+    std::error_code EC;
+    for (llvm::vfs::directory_iterator It = VFS->dir_begin(Path, EC), End;
+         It != End && !EC; It.increment(EC))
+      if (Visit(It->path()))
+        return true;
+    return false;
+  };
+
+  for (const auto &SearchPath :
+       ScanInvocation.getHeaderSearchOpts().UserEntries) {
+    StringRef SearchPathPath = SearchPath.Path;
+    std::string WithSysRoot;
+    if (!SearchPath.IgnoreSysRoot) {
+      WithSysRoot =
+          ScanInvocation.getHeaderSearchOpts().Sysroot + SearchPath.Path;
+      SearchPathPath = WithSysRoot;
+    }
+    if (Visit(SearchPathPath)) {
+      /*
+      llvm::dbgs() << "cannot cache invocation '" << SearchPathPath << "'\n";
+      */
+      return false;
+    }
+  }
+
+  for (const auto &InvocationInput : ScanInvocation.getFrontendOpts().Inputs)
+    if (InvocationInput.isFile())
+      if (Visit(llvm::sys::path::parent_path(InvocationInput.getFile()))) {
+        /*
+        llvm::dbgs() << "cannot cache invocation '" << InvocationInput.getFile()
+                     << "'\n";
+        */
+        return false;
+      }
+
+  if (Error Err = BaseFS->createTreeFromAllAccesses().moveInto(Input)) {
+    llvm::handleAllErrors(std::move(Err), [](const llvm::ErrorInfoBase &) {});
+    llvm::dbgs() << "failed to createTreeFromAllAccesses\n";
+    return false;
+  }
+
+  std::optional<cas::CASID> ResultID;
+  if (Error Err = Cache.get(*Input).moveInto(ResultID)) {
+    llvm::handleAllErrors(std::move(Err), [](const llvm::ErrorInfoBase &) {});
+    llvm::dbgs() << "failed to query the action cache\n";
+    return false;
+  }
+
+  if (ResultID) {
+    llvm::dbgs() << "cache hit for '" << Input->getID().toString() << "' -> '"
+                 << ResultID->toString() << "'\n";
+    Diags->Report(diag::remark_scan_job_cache_hit)
+        << Input->getID().toString() << ResultID->toString();
+
+    std::optional<cas::ObjectProxy> Proxy;
+    if (Error Err = DB.getProxy(*ResultID).moveInto(Proxy)) {
+      llvm::handleAllErrors(std::move(Err), [](const llvm::ErrorInfoBase &) {});
+      llvm::dbgs() << "failed to get proxy of the cached result\n";
+      return false;
+    }
+
+    for (unsigned I = 0, E = Proxy->getNumReferences(); I != E; ++I) {
+      cas::ObjectRef Item = Proxy->getReference(I);
+      std::optional<cas::ObjectProxy> Proxy;
+      if (Error Err = DB.getProxy(Item).moveInto(Proxy)) {
+        llvm::handleAllErrors(std::move(Err),
+                              [](const llvm::ErrorInfoBase &) {});
+        llvm::dbgs() << "failed to get proxy of the cached result sub-object\n";
+        return false;
+      }
+
+      StringRef Data = Proxy->getData();
+      StringRef Kind, Content;
+      std::tie(Kind, Content) = Data.split('\0');
+      if (Content.empty()) {
+        llvm::dbgs() << "failed to extract the content of an item\n";
+        return false;
+      }
+
+      auto HandleItem =
+          llvm::StringSwitch<bool (*)(DependencyConsumer &, StringRef &)>(Kind)
+              .Case("P1689", &parseAndHandleProvidedAndRequiredStdCXXModules)
+              .Case("Build", &parseAndHandleBuildCommand)
+              .Case("<TBD>", &parseAndHandleDependencyOutputOpts)
+              .Case("File", &parseAndHandleFileDependency)
+              .Case("Prebuilt", &parseAndHandlePrebuiltModuleDependency)
+              .Case("ModDep", &parseAndHandleModuleDependency)
+              .Case("ModID", &parseAndHandleDirectModuleDependency)
+              .Case("VisMod", &parseAndHandleVisibleModule)
+              .Case("Hash", &parseAndHandleContextHash)
+              .Case("IncTree", &parseAndHandleIncludeTreeID)
+              .Default(&returnFalse);
+
+      if (!HandleItem(*Consumer, Data))
+        return false;
+    }
+
+    return true;
+  }
+
+  llvm::dbgs() << "cache miss for '" << Input->getID().toString() << "'\n";
+  Diags->Report(diag::remark_scan_job_cache_miss) << Input->getID().toString();
+
+  // Interpose our custom consumer that will store incoming information into CAS
+  // (for replay) and forward then to the original consumer.
+  CapturingConsumer = std::make_unique<CASStoringConsumer>(DB, *Consumer);
+  Consumer = CapturingConsumer.get();
+
+  return false;
+}
+
 Error IncludeTreeActionController::initialize(
     CompilerInstance &ScanInstance, CompilerInvocation &NewInvocation) {
   DepscanPrefixMapping::configurePrefixMapper(NewInvocation, PrefixMapper);
@@ -388,6 +1031,31 @@ Error IncludeTreeActionController::finalize(CompilerInstance &ScanInstance,
     OutputToCacheKey[NewInvocation.getFrontendOpts().OutputFile] =
         Key->toString();
   return Error::success();
+}
+
+bool IncludeTreeActionController::trySaveResult() {
+  if (CapturingConsumer) {
+    auto Data = CapturingConsumer->getResult();
+    if (Error Err = Data.takeError()) {
+      llvm::handleAllErrors(std::move(Err), [](llvm::ErrorInfoBase &) {});
+      return false;
+    }
+
+    assert(Input);
+
+    if (Error Err = Cache.put(*Input, DB.getID(*Data))) {
+      llvm::handleAllErrors(std::move(Err), [](llvm::ErrorInfoBase &) {});
+      llvm::dbgs() << "failed to store the entry in action cache\n";
+      return false;
+    }
+
+    llvm::dbgs() << "Scanning cache store for key " << Input->getID().toString()
+                 << " with value " << DB.getID(*Data).toString() << "\n";
+
+    return true;
+  }
+
+  return true;
 }
 
 std::optional<std::string> IncludeTreeActionController::getCacheKey(
@@ -944,6 +1612,8 @@ IncludeTreeBuilder::createIncludeFile(StringRef Filename,
 
 std::unique_ptr<DependencyActionController>
 dependencies::createIncludeTreeActionController(
-    LookupModuleOutputCallback LookupModuleOutput, cas::ObjectStore &DB) {
-  return std::make_unique<IncludeTreeActionController>(DB, LookupModuleOutput);
+    LookupModuleOutputCallback LookupModuleOutput, cas::ObjectStore &DB,
+    cas::ActionCache &Cache) {
+  return std::make_unique<IncludeTreeActionController>(DB, Cache,
+                                                       LookupModuleOutput);
 }

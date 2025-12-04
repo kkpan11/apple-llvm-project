@@ -731,23 +731,6 @@ private:
   std::vector<InputDeps> Inputs;
 };
 
-static bool handleTranslationUnitResult(
-    StringRef Input, llvm::Expected<TranslationUnitDeps> &MaybeTUDeps,
-    FullDeps &FD, size_t InputIndex, SharedStream &OS, SharedStream &Errs) {
-  if (!MaybeTUDeps) {
-    llvm::handleAllErrors(
-        MaybeTUDeps.takeError(), [&Input, &Errs](llvm::StringError &Err) {
-          Errs.applyLocked([&](raw_ostream &OS) {
-            OS << "Error while scanning dependencies for " << Input << ":\n";
-            OS << Err.getMessage();
-          });
-        });
-    return true;
-  }
-  FD.mergeDeps(Input, std::move(*MaybeTUDeps), InputIndex);
-  return false;
-}
-
 static bool handleModuleResult(StringRef ModuleName,
                                llvm::Expected<TranslationUnitDeps> &MaybeTUDeps,
                                FullDeps &FD, size_t InputIndex,
@@ -1130,7 +1113,7 @@ int clang_scan_deps_main(int argc, char **argv, const llvm::ToolContext &) {
       CASOpts.ensurePersistentCAS();
 
     std::tie(CAS, Cache) = CASOpts.getOrCreateDatabases(Diags);
-    if (!CAS)
+    if (!CAS || !Cache)
       return 1;
   }
 
@@ -1183,6 +1166,10 @@ int clang_scan_deps_main(int argc, char **argv, const llvm::ToolContext &) {
     if (CAS)
       FS = llvm::cas::createCASProvidingFileSystem(CAS, std::move(FS));
     DependencyScanningTool WorkerTool(Service, std::move(FS));
+    std::unique_ptr<llvm::vfs::FileSystem> FS2 = llvm::vfs::createPhysicalFileSystem();
+    if (CAS)
+      FS2 = llvm::cas::createCASProvidingFileSystem(CAS, std::move(FS2));
+    DependencyScanningWorker Worker(Service, std::move(FS2));
 
     llvm::DenseSet<ModuleID> AlreadySeenModules;
     while (auto MaybeInputIndex = GetNextInputIndex()) {
@@ -1206,7 +1193,7 @@ int clang_scan_deps_main(int argc, char **argv, const llvm::ToolContext &) {
           HadErrors = true;
       } else if (Format == ScanningOutputFormat::IncludeTree) {
         auto MaybeTree = WorkerTool.getIncludeTree(
-            *CAS, Input->CommandLine, CWD, LookupOutput);
+            *CAS, *Cache, Input->CommandLine, CWD, LookupOutput);
         std::unique_lock<std::mutex> LockGuard(Lock);
         TreeResults.emplace_back(LocalIndex, std::move(Filename),
                                  std::move(MaybeTree));
@@ -1310,11 +1297,14 @@ int clang_scan_deps_main(int argc, char **argv, const llvm::ToolContext &) {
           TUBuffer = TU->getMemBufferRef();
           Filename = TU->getBufferIdentifier();
         }
-        auto MaybeTUDeps = WorkerTool.getTranslationUnitDependencies(
-            Input->CommandLine, CWD, AlreadySeenModules, LookupOutput,
-            TUBuffer);
-        if (handleTranslationUnitResult(Filename, MaybeTUDeps, *FD, LocalIndex,
-                                        DependencyOS, Errs))
+        FullDependencyConsumer Consumer(AlreadySeenModules);
+        auto Controller = DependencyScanningTool::createActionController(
+            Worker, LookupOutput);
+        if (Worker.computeDependencies(CWD, Input->CommandLine, Consumer,
+                                       *Controller, *DiagsConsumer, TUBuffer))
+          FD->mergeDeps(Filename, Consumer.takeTranslationUnitDeps(),
+                        LocalIndex);
+        else
           HadErrors = true;
       }
     }

@@ -19,8 +19,8 @@
 // RUN:   -c %t/tu2.m -o %t/tu2.o
 // RUN: FileCheck --input-file=%t/errs %s
 
-// CHECK:      fatal error: module 'A' is defined in both '{{.*}}.pcm' and '{{.*}}.pcm'
-// CHECK-NEXT: note: compiled from '{{.*}}frameworks1{{.*}}' and '{{.*}}frameworks2{{.*}}'
+// CHECK: fatal error: module 'A' is defined in both '{{.*}}.pcm' and '{{.*}}.pcm'
+// CHECK: note: compiled from '{{.*}}frameworks1{{.*}}' and '{{.*}}frameworks2{{.*}}'
 
 //--- frameworks2/A.framework/Modules/module.modulemap
 framework module A { header "A.h" }

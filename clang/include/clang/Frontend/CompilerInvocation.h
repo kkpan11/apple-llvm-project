@@ -324,6 +324,8 @@ public:
   /// short-circuit the visitation, or return false to continue visiting. This
   /// is allowed to mutate the visited paths.
   void visitPaths(llvm::function_ref<bool(std::string &)> Callback);
+
+  using CompilerInvocationBase::visitPaths;
   /// @}
 
   /// Create a compiler invocation from a list of input options.

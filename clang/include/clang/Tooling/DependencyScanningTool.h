@@ -92,8 +92,8 @@ public:
   }
 
   Expected<cas::IncludeTreeRoot> getIncludeTree(
-      cas::ObjectStore &DB, const std::vector<std::string> &CommandLine,
-      StringRef CWD,
+      cas::ObjectStore &DB, cas::ActionCache &Cache,
+      const std::vector<std::string> &CommandLine, StringRef CWD,
       clang::dependencies::LookupModuleOutputCallback LookupModuleOutput);
 
   /// If \p DiagGenerationAsCompilation is true it will generate error
@@ -101,35 +101,11 @@ public:
   /// message and the serialized diagnostics file emitted if the
   /// \p DiagOpts.DiagnosticSerializationFile setting is set for the invocation.
   Expected<cas::IncludeTreeRoot> getIncludeTreeFromCompilerInvocation(
-      cas::ObjectStore &DB, std::shared_ptr<CompilerInvocation> Invocation,
-      StringRef CWD,
+      cas::ObjectStore &DB, cas::ActionCache &Cache,
+      std::shared_ptr<CompilerInvocation> Invocation, StringRef CWD,
       clang::dependencies::LookupModuleOutputCallback LookupModuleOutput,
       DiagnosticConsumer &DiagsConsumer, raw_ostream *VerboseOS,
       bool DiagGenerationAsCompilation);
-
-  /// Given a Clang driver command-line for a translation unit, gather the
-  /// modular dependencies and return the information needed for explicit build.
-  ///
-  /// \param AlreadySeen This stores modules which have previously been
-  ///                    reported. Use the same instance for all calls to this
-  ///                    function for a single \c DependencyScanningTool in a
-  ///                    single build. Use a different one for different tools,
-  ///                    and clear it between builds.
-  /// \param LookupModuleOutput This function is called to fill in
-  ///                           "-fmodule-file=", "-o" and other output
-  ///                           arguments for dependencies.
-  /// \param TUBuffer Optional memory buffer for translation unit input. If
-  ///                 TUBuffer is nullopt, the input should be included in the
-  ///                 Commandline already.
-  ///
-  /// \returns a \c StringError with the diagnostic output if clang errors
-  /// occurred, \c TranslationUnitDeps otherwise.
-  llvm::Expected<clang::dependencies::TranslationUnitDeps>
-  getTranslationUnitDependencies(
-      const std::vector<std::string> &CommandLine, StringRef CWD,
-      const llvm::DenseSet<clang::dependencies::ModuleID> &AlreadySeen,
-      clang::dependencies::LookupModuleOutputCallback LookupModuleOutput,
-      std::optional<llvm::MemoryBufferRef> TUBuffer = std::nullopt);
 
   /// Given a compilation context specified via the Clang driver command-line,
   /// gather modular dependencies of module with the given name, and return the
@@ -215,7 +191,7 @@ Expected<llvm::cas::CASID> scanAndUpdateCC1InlineWithTool(
     tooling::dependencies::DependencyScanningTool &Tool,
     DiagnosticConsumer &DiagsConsumer, raw_ostream *VerboseOS,
     CompilerInvocation &Invocation, StringRef WorkingDirectory,
-    llvm::cas::ObjectStore &DB);
+    llvm::cas::ObjectStore &DB, llvm::cas::ActionCache &Cache);
 
 } // end namespace clang
 

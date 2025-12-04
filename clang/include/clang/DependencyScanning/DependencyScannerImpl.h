@@ -40,7 +40,7 @@ public:
       std::optional<StringRef> ModuleName = std::nullopt,
       raw_ostream *VerboseOS = nullptr)
       : Service(Service), WorkingDirectory(WorkingDirectory),
-        Consumer(Consumer), Controller(Controller), DepFS(std::move(DepFS)),
+        Consumer(&Consumer), Controller(Controller), DepFS(std::move(DepFS)),
         CASOpts(CASOpts), EmitDependencyFile(EmitDependencyFile),
         DiagGenerationAsCompilation(DiagGenerationAsCompilation),
         VerboseOS(VerboseOS) {}
@@ -56,7 +56,7 @@ public:
 private:
   DependencyScanningService &Service;
   StringRef WorkingDirectory;
-  DependencyConsumer &Consumer;
+  DependencyConsumer *Consumer;
   DependencyActionController &Controller;
   llvm::IntrusiveRefCntPtr<DependencyScanningWorkerFilesystem> DepFS;
   const CASOptions &CASOpts;

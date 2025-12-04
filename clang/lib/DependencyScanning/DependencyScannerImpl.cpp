@@ -833,9 +833,9 @@ bool DependencyScanningAction::runInvocation(
     std::optional<std::string> CacheKey =
         Controller.getCacheKey(OriginalInvocation);
 
-    Consumer.handleBuildCommand({Executable,
-                                 OriginalInvocation.getCC1CommandLine(),
-                                 std::move(CacheKey)});
+    Consumer->handleBuildCommand({Executable,
+                                  OriginalInvocation.getCC1CommandLine(),
+                                  std::move(CacheKey)});
     return true;
   }
 
@@ -864,7 +864,7 @@ bool DependencyScanningAction::runInvocation(
       ScanInstance, Service.getFormat() == ScanningOutputFormat::Make);
 
   MDC = initializeScanInstanceDependencyCollector(
-      ScanInstance, std::move(DepOutputOpts), WorkingDirectory, Consumer,
+      ScanInstance, std::move(DepOutputOpts), WorkingDirectory, *Consumer,
       Service, OriginalInvocation, Controller, *MaybePrebuiltModulesASTMap,
       StableDirs, EmitDependencyFile);
 
@@ -888,6 +888,9 @@ bool DependencyScanningAction::runInvocation(
   if (Error E = Controller.initialize(ScanInstance, OriginalInvocation))
     return reportError(std::move(E));
 
+  if (Controller.tryReplayResult(OriginalInvocation, Consumer, *DiagConsumer))
+    return true;
+
   if (ScanInstance.getDiagnostics().hasErrorOccurred())
     return false;
 
@@ -906,14 +909,16 @@ bool DependencyScanningAction::runInvocation(
     // Forward any CAS results to consumer.
     std::string ID = OriginalInvocation.getFrontendOpts().CASIncludeTreeID;
     if (!ID.empty())
-      Consumer.handleIncludeTreeID(std::move(ID));
+      Consumer->handleIncludeTreeID(std::move(ID));
 
     std::optional<std::string> CacheKey =
         Controller.getCacheKey(OriginalInvocation);
 
-    Consumer.handleBuildCommand({Executable,
-                                 OriginalInvocation.getCC1CommandLine(),
-                                 std::move(CacheKey)});
+    Consumer->handleBuildCommand({Executable,
+                                  OriginalInvocation.getCC1CommandLine(),
+                                  std::move(CacheKey)});
+
+    Controller.trySaveResult();
   }
 
   return Result;
@@ -1099,6 +1104,8 @@ bool CompilerInstanceWithContext::computeDependencies(
 
   Consumer.handleBuildCommand({CommandLine[0], std::move(LastCC1Arguments),
                                std::move(LastCC1CacheKey)});
+
+  Controller.trySaveResult();
 
   return true;
 }

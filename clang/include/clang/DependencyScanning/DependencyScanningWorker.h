@@ -74,6 +74,14 @@ class DependencyActionController {
 public:
   virtual ~DependencyActionController();
 
+  virtual bool tryReplayResult(const CompilerInvocation &ScanInvocation,
+                               DependencyConsumer *&Consumer,
+                               DiagnosticConsumer &DiagsConsumer) {
+    return false;
+  }
+
+  virtual bool trySaveResult() { return false; }
+
   virtual std::string lookupModuleOutput(const ModuleDeps &MD,
                                          ModuleOutputKind Kind) = 0;
 
@@ -205,6 +213,7 @@ public:
 
   const CASOptions &getCASOpts() const { return CASOpts; }
   std::shared_ptr<cas::ObjectStore> getCAS() const { return CAS; }
+  std::shared_ptr<cas::ActionCache> getCache() const { return Cache; }
 
   llvm::vfs::FileSystem &getVFS() const { return *DepFS; }
 
@@ -218,6 +227,7 @@ private:
 
   CASOptions CASOpts;
   std::shared_ptr<cas::ObjectStore> CAS;
+  std::shared_ptr<cas::ActionCache> Cache;
 
   friend CompilerInstanceWithContext;
   std::unique_ptr<CompilerInstanceWithContext> CIWithContext;

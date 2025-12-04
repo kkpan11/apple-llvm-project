@@ -137,10 +137,12 @@ private:
 } // namespace
 
 Expected<cas::IncludeTreeRoot> DependencyScanningTool::getIncludeTree(
-    cas::ObjectStore &DB, const std::vector<std::string> &CommandLine,
-    StringRef CWD, LookupModuleOutputCallback LookupModuleOutput) {
+    cas::ObjectStore &DB, cas::ActionCache &Cache,
+    const std::vector<std::string> &CommandLine, StringRef CWD,
+    LookupModuleOutputCallback LookupModuleOutput) {
   GetIncludeTree Consumer(DB);
-  auto Controller = createIncludeTreeActionController(LookupModuleOutput, DB);
+  auto Controller =
+      createIncludeTreeActionController(LookupModuleOutput, DB, Cache);
   llvm::Error Result =
       Worker.computeDependencies(CWD, CommandLine, Consumer, *Controller);
   if (Result)
@@ -150,12 +152,14 @@ Expected<cas::IncludeTreeRoot> DependencyScanningTool::getIncludeTree(
 
 Expected<cas::IncludeTreeRoot>
 DependencyScanningTool::getIncludeTreeFromCompilerInvocation(
-    cas::ObjectStore &DB, std::shared_ptr<CompilerInvocation> Invocation,
-    StringRef CWD, LookupModuleOutputCallback LookupModuleOutput,
+    cas::ObjectStore &DB, cas::ActionCache &Cache,
+    std::shared_ptr<CompilerInvocation> Invocation, StringRef CWD,
+    LookupModuleOutputCallback LookupModuleOutput,
     DiagnosticConsumer &DiagsConsumer, raw_ostream *VerboseOS,
     bool DiagGenerationAsCompilation) {
   GetIncludeTree Consumer(DB);
-  auto Controller = createIncludeTreeActionController(LookupModuleOutput, DB);
+  auto Controller =
+      createIncludeTreeActionController(LookupModuleOutput, DB, Cache);
   Worker.computeDependenciesFromCompilerInvocation(
       std::move(Invocation), CWD, Consumer, *Controller, DiagsConsumer,
       VerboseOS, DiagGenerationAsCompilation);
@@ -218,21 +222,6 @@ llvm::Expected<P1689Rule> DependencyScanningTool::getP1689ModuleDependencyFile(
 }
 
 llvm::Expected<TranslationUnitDeps>
-DependencyScanningTool::getTranslationUnitDependencies(
-    const std::vector<std::string> &CommandLine, StringRef CWD,
-    const llvm::DenseSet<ModuleID> &AlreadySeen,
-    LookupModuleOutputCallback LookupModuleOutput,
-    std::optional<llvm::MemoryBufferRef> TUBuffer) {
-  FullDependencyConsumer Consumer(AlreadySeen);
-  auto Controller = createActionController(LookupModuleOutput);
-  llvm::Error Result = Worker.computeDependencies(CWD, CommandLine, Consumer,
-                                                  *Controller, TUBuffer);
-  if (Result)
-    return std::move(Result);
-  return Consumer.takeTranslationUnitDeps();
-}
-
-llvm::Expected<TranslationUnitDeps>
 DependencyScanningTool::getModuleDependencies(
     StringRef ModuleName, const std::vector<std::string> &CommandLine,
     StringRef CWD, const llvm::DenseSet<ModuleID> &AlreadySeen,
@@ -283,8 +272,8 @@ DependencyScanningTool::createActionController(
     DependencyScanningWorker &Worker,
     LookupModuleOutputCallback LookupModuleOutput) {
   if (Worker.getScanningFormat() == ScanningOutputFormat::FullIncludeTree)
-    return createIncludeTreeActionController(LookupModuleOutput,
-                                             *Worker.getCAS());
+    return createIncludeTreeActionController(
+        LookupModuleOutput, *Worker.getCAS(), *Worker.getCache());
   return std::make_unique<CallbackActionController>(LookupModuleOutput);
 }
 
@@ -297,7 +286,8 @@ DependencyScanningTool::createActionController(
 Expected<llvm::cas::CASID> clang::scanAndUpdateCC1InlineWithTool(
     DependencyScanningTool &Tool, DiagnosticConsumer &DiagsConsumer,
     raw_ostream *VerboseOS, CompilerInvocation &Invocation,
-    StringRef WorkingDirectory, llvm::cas::ObjectStore &DB) {
+    StringRef WorkingDirectory, llvm::cas::ObjectStore &DB,
+    llvm::cas::ActionCache &Cache) {
   // Override the CASOptions. They may match (the caller having sniffed them
   // out of InputArgs) but if they have been overridden we want the new ones.
   Invocation.getCASOpts() = Tool.getCASOpts();
@@ -315,7 +305,7 @@ Expected<llvm::cas::CASID> clang::scanAndUpdateCC1InlineWithTool(
   std::optional<llvm::cas::CASID> Root;
   if (Error E =
           Tool.getIncludeTreeFromCompilerInvocation(
-                  DB, std::move(ScanInvocation), WorkingDirectory,
+                  DB, Cache, std::move(ScanInvocation), WorkingDirectory,
                   /*LookupModuleOutput=*/nullptr, DiagsConsumer, VerboseOS,
                   /*DiagGenerationAsCompilation*/ true)
               .moveInto(Root))

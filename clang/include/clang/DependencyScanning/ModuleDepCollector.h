@@ -47,6 +47,8 @@ struct PrebuiltModuleDep {
         PCMFile(M->getASTFile()->getName()),
         ModuleMapFile(M->PresumedModuleMapFile),
         ModuleCacheKey(M->getModuleCacheKey()) {}
+
+  PrebuiltModuleDep() = default;
 };
 
 /// Attributes loaded from AST files of prebuilt modules collected prior to

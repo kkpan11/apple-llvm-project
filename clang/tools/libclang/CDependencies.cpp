@@ -22,6 +22,7 @@
 #include "clang/DependencyScanning/DependencyScanningWorker.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/SerializedDiagnosticPrinter.h"
+#include "clang/Frontend/TextDiagnosticBuffer.h"
 #include "clang/Options/Options.h"
 #include "clang/Tooling/DependencyScanningTool.h"
 #include "llvm/ADT/STLExtras.h"
@@ -777,7 +778,8 @@ enum CXErrorCode clang_experimental_DependencyScanner_generateReproducer(
   DependencyScanningService DepsService(
       ScanningMode::DependencyDirectivesScan, ScanningOutputFormat::Full,
       CASOpts, /*CAS=*/nullptr, /*ActionCache=*/nullptr);
-  DependencyScanningTool DepsTool(DepsService);
+  DependencyScanningWorker DepsWorker(DepsService,
+                                      llvm::vfs::createPhysicalFileSystem());
 
   llvm::SmallString<128> ReproScriptPath;
   int ScriptFD;
@@ -812,15 +814,21 @@ enum CXErrorCode clang_experimental_DependencyScanner_generateReproducer(
            MD.ID.ModuleName + "-" + MD.ID.ContextHash + ".pcm";
   };
 
+  std::string S;
+  DiagnosticOptions DiagOpts;
+  llvm::raw_string_ostream OS(S);
+  TextDiagnosticPrinter DiagConsumer(OS, DiagOpts);
   llvm::DenseSet<ModuleID> AlreadySeen;
-  auto TUDepsOrErr = DepsTool.getTranslationUnitDependencies(
-      Opts.BuildArgs, *Opts.WorkingDirectory, AlreadySeen,
-      std::move(LookupOutput));
-  if (!TUDepsOrErr)
-    return ReportFailure() << "failed to generate a reproducer\n"
-                           << toString(TUDepsOrErr.takeError());
+  FullDependencyConsumer Consumer(AlreadySeen);
+  auto Controller =
+      DependencyScanningTool::createActionController(DepsWorker, LookupOutput);
+  auto Success =
+      DepsWorker.computeDependencies(*Opts.WorkingDirectory, Opts.BuildArgs,
+                                     Consumer, *Controller, DiagConsumer);
+  if (!Success)
+    return ReportFailure() << "failed to generate a reproducer\n" << S;
 
-  TranslationUnitDeps TU = *TUDepsOrErr;
+  TranslationUnitDeps TU = Consumer.takeTranslationUnitDeps();
   llvm::raw_fd_ostream ScriptOS(ScriptFD, /*shouldClose=*/true);
   ScriptOS << "# Original command:\n#";
   for (StringRef Arg : Opts.BuildArgs)

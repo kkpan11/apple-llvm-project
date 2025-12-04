@@ -61,6 +61,10 @@ def err_caching_backend_fail: Error<
 def err_caching_output_non_deterministic: Error<
   "caching failed because the output can be non-deterministic">;
 
+def remark_scan_job_cache_hit : Remark<
+  "scan job cache hit for '%0' => '%1'">, InGroup<CompileJobCacheHit>;
+def remark_scan_job_cache_miss : Remark<
+  "scan job cache miss for '%0'">, InGroup<CompileJobCacheMiss>;
 def remark_compile_job_cache_hit : Remark<
   "compile job cache hit for '%0' => '%1'">, InGroup<CompileJobCacheHit>;
 def remark_compile_job_cache_miss : Remark<

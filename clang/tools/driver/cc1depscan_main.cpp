@@ -372,6 +372,7 @@ static Expected<llvm::cas::CASID> scanAndUpdateCC1InlineWithTool(
     DiagnosticConsumer &DiagsConsumer, raw_ostream *VerboseOS, const char *Exec,
     ArrayRef<const char *> InputArgs, StringRef WorkingDirectory,
     SmallVectorImpl<const char *> &OutputArgs, llvm::cas::ObjectStore &DB,
+    llvm::cas::ActionCache &Cache,
     llvm::function_ref<const char *(const Twine &)> SaveArg);
 
 #ifdef LLVM_ON_UNIX
@@ -909,7 +910,7 @@ int ScanServer::listen() {
 
   SharedStream SharedOS(llvm::errs());
 
-  auto ServiceLoop = [this, &CAS, &Service, &NumRunning, &Start,
+  auto ServiceLoop = [this, &CAS, &Cache, &Service, &NumRunning, &Start,
                       &SecondsSinceLastClose, &SharedOS](unsigned I) {
     std::optional<tooling::dependencies::DependencyScanningTool> Tool;
     SmallString<256> Message;
@@ -999,7 +1000,8 @@ int ScanServer::listen() {
       SmallVector<const char *> NewArgs;
       auto RootID = scanAndUpdateCC1InlineWithTool(
           *Tool, *DiagsConsumer, &DiagsOS, Argv0, Args, WorkingDirectory,
-          NewArgs, *CAS, [&](const Twine &T) { return Saver.save(T).data(); });
+          NewArgs, *CAS, *Cache,
+          [&](const Twine &T) { return Saver.save(T).data(); });
       if (!RootID) {
         consumeError(Comms.putScanResultFailed(toString(RootID.takeError()),
                                                DiagsOS.str()));
@@ -1084,6 +1086,7 @@ static Expected<llvm::cas::CASID> scanAndUpdateCC1InlineWithTool(
     DiagnosticConsumer &DiagsConsumer, raw_ostream *VerboseOS, const char *Exec,
     ArrayRef<const char *> InputArgs, StringRef WorkingDirectory,
     SmallVectorImpl<const char *> &OutputArgs, llvm::cas::ObjectStore &DB,
+    llvm::cas::ActionCache &Cache,
     llvm::function_ref<const char *(const Twine &)> SaveArg) {
   DiagnosticOptions DiagOpts;
   DiagnosticsEngine Diags(new DiagnosticIDs(), DiagOpts);
@@ -1094,7 +1097,7 @@ static Expected<llvm::cas::CASID> scanAndUpdateCC1InlineWithTool(
                                    "failed to create compiler invocation");
 
   Expected<llvm::cas::CASID> Root = scanAndUpdateCC1InlineWithTool(
-      Tool, DiagsConsumer, VerboseOS, *Invocation, WorkingDirectory, DB);
+      Tool, DiagsConsumer, VerboseOS, *Invocation, WorkingDirectory, DB, Cache);
   if (!Root)
     return Root;
 
@@ -1132,7 +1135,7 @@ scanAndUpdateCC1Inline(const char *Exec, ArrayRef<const char *> InputArgs,
 
   auto E = scanAndUpdateCC1InlineWithTool(
                Tool, *DiagsConsumer, /*VerboseOS*/ nullptr, Exec, InputArgs,
-               WorkingDirectory, OutputArgs, *DB, SaveArg)
+               WorkingDirectory, OutputArgs, *DB, *Cache, SaveArg)
                .moveInto(RootID);
   if (E) {
     Diag.Report(diag::err_cas_depscan_failed) << std::move(E);
