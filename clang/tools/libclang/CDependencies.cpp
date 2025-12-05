@@ -33,7 +33,7 @@
 
 using namespace clang;
 using namespace clang::dependencies;
-using namespace clang::tooling::dependencies;
+using namespace clang::tooling;
 
 namespace {
 struct DependencyScannerServiceOptions {
