@@ -6764,8 +6764,19 @@ static bool CheckMissingFormatAttribute(
   unsigned NumCallerParams = getFunctionOrMethodNumParams(Caller);
 
   // Find the offset to convert between attribute and parameter indexes.
-  unsigned CallerArgumentIndexOffset =
-      hasImplicitObjectParameter(Caller) ? 2 : 1;
+
+  // Conflict note: this is equivalent to:
+  //
+  //   hasImplicitObjectParameter(Caller) ? 2 : 1
+  //
+  // hasImplicitObjectParameter needed to be dropped because it was
+  // introduced by another change that is too large to take in.
+  unsigned CallerArgumentIndexOffset = 1;
+  if (const auto *MethodDecl = dyn_cast<CXXMethodDecl>(Caller)) {
+    if (MethodDecl->isImplicitObjectMemberFunction()) {
+      CallerArgumentIndexOffset = 2;
+    }
+  }
 
   unsigned FirstArgumentIndex = -1;
   switch (APK) {
