@@ -621,7 +621,7 @@ dependencies::initVFSForByNameScanning(
   return std::make_pair(OverlayFS, ModifiedCommandLine);
 }
 
-bool dependencies::initializeScanCompilerInstance(
+void dependencies::initializeScanCompilerInstance(
     CompilerInstance &ScanInstance,
     IntrusiveRefCntPtr<llvm::vfs::FileSystem> FS,
     DiagnosticConsumer *DiagConsumer, DependencyScanningService &Service,
@@ -641,8 +641,6 @@ bool dependencies::initializeScanCompilerInstance(
     sanitizeDiagOpts(ScanInstance.getDiagnosticOpts());
 
   ScanInstance.createDiagnostics(DiagConsumer, /*ShouldOwnClient=*/false);
-  if (!ScanInstance.hasDiagnostics())
-    return false;
   if (VerboseOS)
     ScanInstance.setVerboseOutputStream(*VerboseOS);
 
@@ -698,8 +696,6 @@ bool dependencies::initializeScanCompilerInstance(
 
   // Avoid some checks and module map parsing when loading PCM files.
   ScanInstance.getPreprocessorOpts().ModulesCheckRelocated = false;
-
-  return true;
 }
 
 llvm::SmallVector<StringRef>
@@ -859,10 +855,9 @@ bool DependencyScanningAction::runInvocation(
   ScanInstance.getInvocation().getCASOpts() = CASOpts;
 
   assert(!DiagConsumerFinished && "attempt to reuse finished consumer");
-  if (!initializeScanCompilerInstance(ScanInstance, FS, DiagConsumer, Service,
-                                      DepFS, DiagGenerationAsCompilation,
-                                      VerboseOS))
-    return false;
+  initializeScanCompilerInstance(ScanInstance, FS, DiagConsumer, Service,
+                                 DepFS, DiagGenerationAsCompilation,
+                                      VerboseOS);
 
   llvm::SmallVector<StringRef> StableDirs = getInitialStableDirs(ScanInstance);
   auto MaybePrebuiltModulesASTMap =
@@ -979,10 +974,9 @@ bool CompilerInstanceWithContext::initialize(DiagnosticConsumer *DC) {
   auto &CI = *CIPtr;
 
   CI.getInvocation().getCASOpts() = Worker.CASOpts;
-  if (!initializeScanCompilerInstance(
-          CI, OverlayFS, DiagEngineWithCmdAndOpts->DiagEngine->getClient(),
-          Worker.Service, Worker.DepFS, false, nullptr))
-    return false;
+  initializeScanCompilerInstance(
+      CI, OverlayFS, DiagEngineWithCmdAndOpts->DiagEngine->getClient(),
+      Worker.Service, Worker.DepFS, false, nullptr);
 
   StableDirs = getInitialStableDirs(CI);
   auto MaybePrebuiltModulesASTMap =
