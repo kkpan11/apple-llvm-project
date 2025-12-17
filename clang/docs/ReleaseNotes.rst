@@ -848,6 +848,7 @@ Bug Fixes in This Version
   nested scopes. (#GH147495)
 - Fixed a crash in `clang-scan-deps` when a module with the same name is found
   in different locations (#GH134404, #GH146976).
+- Fix a crash caused by invalid format string in printf-like functions with ``-Wunsafe-buffer-usage-in-libc-call`` option enabled. (#GH170496)
 
 Bug Fixes to Compiler Builtins
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
