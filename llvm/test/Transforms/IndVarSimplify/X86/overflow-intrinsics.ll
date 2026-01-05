@@ -44,10 +44,10 @@ define void @f_sadd_overflow(ptr %a) {
 ; CHECK-NEXT:    [[INDVARS_IV:%.*]] = phi i64 [ [[INDVARS_IV_NEXT:%.*]], %[[CONT:.*]] ], [ 2147483645, %[[ENTRY]] ]
 ; CHECK-NEXT:    [[ARRAYIDX:%.*]] = getelementptr inbounds i8, ptr [[A]], i64 [[INDVARS_IV]]
 ; CHECK-NEXT:    store i8 0, ptr [[ARRAYIDX]], align 1
-; CHECK-NEXT:    br i1 true, label %[[TRAP:.*]], label %[[CONT]], !nosanitize [[META0]]
+; CHECK-NEXT:    br i1 true, label %[[TRAP:.*]], label %[[CONT]], !nosanitize
 ; CHECK:       [[TRAP]]:
-; CHECK-NEXT:    tail call void @llvm.trap(), !nosanitize [[META0]]
-; CHECK-NEXT:    unreachable, !nosanitize [[META0]]
+; CHECK-NEXT:    tail call void @llvm.trap(), !nosanitize 
+; CHECK-NEXT:    unreachable, !nosanitize 
 ; CHECK:       [[CONT]]:
 ; CHECK-NEXT:    [[INDVARS_IV_NEXT]] = add nuw nsw i64 [[INDVARS_IV]], 1
 ; CHECK-NEXT:    br i1 true, label %[[FOR_BODY]], label %[[FOR_COND_CLEANUP]]
@@ -118,10 +118,10 @@ define void @f_uadd_overflow(ptr %a) {
 ; CHECK-NEXT:    [[INDVARS_IV:%.*]] = phi i64 [ [[INDVARS_IV_NEXT:%.*]], %[[CONT:.*]] ], [ -6, %[[ENTRY]] ]
 ; CHECK-NEXT:    [[ARRAYIDX:%.*]] = getelementptr inbounds i8, ptr [[A]], i64 [[INDVARS_IV]]
 ; CHECK-NEXT:    store i8 0, ptr [[ARRAYIDX]], align 1
-; CHECK-NEXT:    br i1 true, label %[[TRAP:.*]], label %[[CONT]], !nosanitize [[META0]]
+; CHECK-NEXT:    br i1 true, label %[[TRAP:.*]], label %[[CONT]], !nosanitize 
 ; CHECK:       [[TRAP]]:
-; CHECK-NEXT:    tail call void @llvm.trap(), !nosanitize [[META0]]
-; CHECK-NEXT:    unreachable, !nosanitize [[META0]]
+; CHECK-NEXT:    tail call void @llvm.trap(), !nosanitize 
+; CHECK-NEXT:    unreachable, !nosanitize 
 ; CHECK:       [[CONT]]:
 ; CHECK-NEXT:    [[INDVARS_IV_NEXT]] = add nsw i64 [[INDVARS_IV]], 1
 ; CHECK-NEXT:    br i1 true, label %[[FOR_BODY]], label %[[FOR_COND_CLEANUP]]
@@ -195,10 +195,10 @@ define void @f_ssub_overflow(ptr nocapture %a) {
 ; CHECK-NEXT:    [[INDVARS_IV:%.*]] = phi i64 [ [[INDVARS_IV_NEXT:%.*]], %[[CONT:.*]] ], [ -2147483642, %[[ENTRY]] ]
 ; CHECK-NEXT:    [[ARRAYIDX:%.*]] = getelementptr inbounds i8, ptr [[A]], i64 [[INDVARS_IV]]
 ; CHECK-NEXT:    store i8 0, ptr [[ARRAYIDX]], align 1
-; CHECK-NEXT:    br i1 true, label %[[TRAP:.*]], label %[[CONT]], !nosanitize [[META0]]
+; CHECK-NEXT:    br i1 true, label %[[TRAP:.*]], label %[[CONT]], !nosanitize 
 ; CHECK:       [[TRAP]]:
-; CHECK-NEXT:    tail call void @llvm.trap(), !nosanitize [[META0]]
-; CHECK-NEXT:    unreachable, !nosanitize [[META0]]
+; CHECK-NEXT:    tail call void @llvm.trap(), !nosanitize 
+; CHECK-NEXT:    unreachable, !nosanitize 
 ; CHECK:       [[CONT]]:
 ; CHECK-NEXT:    [[INDVARS_IV_NEXT]] = add nsw i64 [[INDVARS_IV]], -1
 ; CHECK-NEXT:    br i1 true, label %[[FOR_BODY]], label %[[FOR_COND_CLEANUP]]
@@ -270,10 +270,10 @@ define void @f_usub_overflow(ptr nocapture %a) {
 ; CHECK-NEXT:    [[INDVARS_IV:%.*]] = phi i64 [ [[INDVARS_IV_NEXT:%.*]], %[[CONT:.*]] ], [ 15, %[[ENTRY]] ]
 ; CHECK-NEXT:    [[ARRAYIDX:%.*]] = getelementptr inbounds i8, ptr [[A]], i64 [[INDVARS_IV]]
 ; CHECK-NEXT:    store i8 0, ptr [[ARRAYIDX]], align 1
-; CHECK-NEXT:    br i1 true, label %[[TRAP:.*]], label %[[CONT]], !nosanitize [[META0]]
+; CHECK-NEXT:    br i1 true, label %[[TRAP:.*]], label %[[CONT]], !nosanitize 
 ; CHECK:       [[TRAP]]:
-; CHECK-NEXT:    tail call void @llvm.trap(), !nosanitize [[META0]]
-; CHECK-NEXT:    unreachable, !nosanitize [[META0]]
+; CHECK-NEXT:    tail call void @llvm.trap(), !nosanitize 
+; CHECK-NEXT:    unreachable, !nosanitize 
 ; CHECK:       [[CONT]]:
 ; CHECK-NEXT:    [[INDVARS_IV_NEXT]] = add nsw i64 [[INDVARS_IV]], -1
 ; CHECK-NEXT:    br i1 true, label %[[FOR_BODY]], label %[[FOR_COND_CLEANUP]]
