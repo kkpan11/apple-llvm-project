@@ -100,6 +100,10 @@ DEBUGOPT(ReproducibleDebugInfo, 1, 0, Affecting)
 /// Whether to generate macro debug info.
 DEBUGOPT(MacroDebugInfo, 1, 0, Affecting)
 
+/// Whether to use expansion location for debug info.
+/// TODO: #175249: Remove once testing is complete for sample pgo users.
+DEBUGOPT(DebugInfoMacroExpansionLoc, 1, 0, Compatible)
+
 /// Tune the debug info for this debugger.
 ENUM_DEBUGOPT(DebuggerTuning, llvm::DebuggerKind, 3,
               llvm::DebuggerKind::Default, Affecting)
