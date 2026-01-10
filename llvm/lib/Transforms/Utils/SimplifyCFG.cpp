@@ -5757,7 +5757,8 @@ bool SimplifyCFGOpt::turnSwitchRangeIntoICmp(SwitchInst *SI,
 
   Constant *Offset = ConstantExpr::getNeg(ContiguousCases->back());
   Constant *NumCases =
-      ConstantInt::get(Offset->getType(), ContiguousCases->size());
+      ConstantInt::get(Offset->getType(), ContiguousCases->size(),
+                       /*IsSigned=*/false, /*ImplicitTrunc*/ true);
 
   Value *Sub = SI->getCondition();
   if (!Offset->isNullValue())
