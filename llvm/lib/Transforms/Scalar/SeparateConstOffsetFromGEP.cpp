@@ -216,7 +216,7 @@ public:
   /// Looks for a constant offset from the given GEP index without extracting
   /// it. It returns the numeric value of the extracted constant offset (0 if
   /// failed). The meaning of the arguments are the same as Extract.
-  static int64_t Find(Value *Idx, GetElementPtrInst *GEP);
+  static APInt Find(Value *Idx, GetElementPtrInst *GEP);
 
 private:
   ConstantOffsetExtractor(BasicBlock::iterator InsertionPt)
@@ -379,14 +379,14 @@ private:
   /// \p Variadic                  The variadic part of the original GEP.
   /// \p AccumulativeByteOffset    The constant offset.
   void lowerToSingleIndexGEPs(GetElementPtrInst *Variadic,
-                              int64_t AccumulativeByteOffset);
+                              const APInt &AccumulativeByteOffset);
 
   /// Finds the constant offset within each index and accumulates them. If
   /// LowerGEP is true, it finds in indices of both sequential and structure
   /// types, otherwise it only finds in sequential indices. The output
   /// NeedsExtraction indicates whether we successfully find a non-zero constant
   /// offset.
-  int64_t accumulateByteOffset(GetElementPtrInst *GEP, bool &NeedsExtraction);
+  APInt accumulateByteOffset(GetElementPtrInst *GEP, bool &NeedsExtraction);
 
   /// Canonicalize array indices to pointer-size integers. This helps to
   /// simplify the logic of splitting a GEP. For example, if a + b is a
@@ -788,12 +788,11 @@ Value *ConstantOffsetExtractor::Extract(Value *Idx, GetElementPtrInst *GEP,
   return IdxWithoutConstOffset;
 }
 
-int64_t ConstantOffsetExtractor::Find(Value *Idx, GetElementPtrInst *GEP) {
+APInt ConstantOffsetExtractor::Find(Value *Idx, GetElementPtrInst *GEP) {
   // If Idx is an index of an inbound GEP, Idx is guaranteed to be non-negative.
   return ConstantOffsetExtractor(GEP->getIterator())
       .find(Idx, /* SignExtended */ false, /* ZeroExtended */ false,
-            GEP->isInBounds())
-      .getSExtValue();
+            GEP->isInBounds());
 }
 
 bool SeparateConstOffsetFromGEP::canonicalizeArrayIndicesToIndexSize(
@@ -815,11 +814,11 @@ bool SeparateConstOffsetFromGEP::canonicalizeArrayIndicesToIndexSize(
   return Changed;
 }
 
-int64_t
-SeparateConstOffsetFromGEP::accumulateByteOffset(GetElementPtrInst *GEP,
-                                                 bool &NeedsExtraction) {
+APInt SeparateConstOffsetFromGEP::accumulateByteOffset(GetElementPtrInst *GEP,
+                                                       bool &NeedsExtraction) {
   NeedsExtraction = false;
-  int64_t AccumulativeByteOffset = 0;
+  unsigned IdxWidth = DL->getIndexTypeSizeInBits(GEP->getType());
+  APInt AccumulativeByteOffset(IdxWidth, 0);
   gep_type_iterator GTI = gep_type_begin(*GEP);
   for (unsigned I = 1, E = GEP->getNumOperands(); I != E; ++I, ++GTI) {
     if (GTI.isSequential()) {
@@ -828,15 +827,18 @@ SeparateConstOffsetFromGEP::accumulateByteOffset(GetElementPtrInst *GEP,
         continue;
 
       // Tries to extract a constant offset from this GEP index.
-      int64_t ConstantOffset =
-          ConstantOffsetExtractor::Find(GEP->getOperand(I), GEP);
+      APInt ConstantOffset =
+          ConstantOffsetExtractor::Find(GEP->getOperand(I), GEP)
+              .sextOrTrunc(IdxWidth);
       if (ConstantOffset != 0) {
         NeedsExtraction = true;
         // A GEP may have multiple indices.  We accumulate the extracted
         // constant offset to a byte offset, and later offset the remainder of
         // the original GEP with this byte offset.
         AccumulativeByteOffset +=
-            ConstantOffset * GTI.getSequentialElementStride(*DL);
+            ConstantOffset * APInt(IdxWidth,
+                                   GTI.getSequentialElementStride(*DL),
+                                   /*IsSigned=*/true, /*ImplicitTrunc=*/true);
       }
     } else if (LowerGEP) {
       StructType *StTy = GTI.getStructType();
@@ -845,7 +847,8 @@ SeparateConstOffsetFromGEP::accumulateByteOffset(GetElementPtrInst *GEP,
       if (Field != 0) {
         NeedsExtraction = true;
         AccumulativeByteOffset +=
-            DL->getStructLayout(StTy)->getElementOffset(Field);
+            APInt(IdxWidth, DL->getStructLayout(StTy)->getElementOffset(Field),
+                  /*IsSigned=*/true, /*ImplicitTrunc=*/true);
       }
     }
   }
@@ -853,7 +856,7 @@ SeparateConstOffsetFromGEP::accumulateByteOffset(GetElementPtrInst *GEP,
 }
 
 void SeparateConstOffsetFromGEP::lowerToSingleIndexGEPs(
-    GetElementPtrInst *Variadic, int64_t AccumulativeByteOffset) {
+    GetElementPtrInst *Variadic, const APInt &AccumulativeByteOffset) {
   IRBuilder<> Builder(Variadic);
   Type *PtrIndexTy = DL->getIndexType(Variadic->getType());
 
@@ -897,11 +900,7 @@ void SeparateConstOffsetFromGEP::lowerToSingleIndexGEPs(
 
   // Create a GEP with the constant offset index.
   if (AccumulativeByteOffset != 0) {
-    // TODO: GEP indices have sext-or-trunc semantics, so implicit truncation
-    // is fine here. However, we should really be doing this in APInt,
-    // otherwise there may be signed integer overflow.
-    Value *Offset = ConstantInt::getSigned(PtrIndexTy, AccumulativeByteOffset,
-                                           /*ImplicitTrunc=*/true);
+    Value *Offset = ConstantInt::get(PtrIndexTy, AccumulativeByteOffset);
     ResultPtr = Builder.CreatePtrAdd(ResultPtr, Offset, "uglygep");
   } else
     isSwapCandidate = false;
@@ -925,14 +924,14 @@ bool SeparateConstOffsetFromGEP::reorderGEP(GetElementPtrInst *GEP,
     return false;
 
   bool NestedNeedsExtraction;
-  int64_t NestedByteOffset =
-      accumulateByteOffset(PtrGEP, NestedNeedsExtraction);
+  APInt NestedByteOffset = accumulateByteOffset(PtrGEP, NestedNeedsExtraction);
   if (!NestedNeedsExtraction)
     return false;
 
   unsigned AddrSpace = PtrGEP->getPointerAddressSpace();
   if (!TTI.isLegalAddressingMode(GEP->getResultElementType(),
-                                 /*BaseGV=*/nullptr, NestedByteOffset,
+                                 /*BaseGV=*/nullptr,
+                                 NestedByteOffset.getSExtValue(),
                                  /*HasBaseReg=*/true, /*Scale=*/0, AddrSpace))
     return false;
 
@@ -974,7 +973,7 @@ bool SeparateConstOffsetFromGEP::splitGEP(GetElementPtrInst *GEP) {
   bool Changed = canonicalizeArrayIndicesToIndexSize(GEP);
 
   bool NeedsExtraction;
-  int64_t AccumulativeByteOffset = accumulateByteOffset(GEP, NeedsExtraction);
+  APInt AccumulativeByteOffset = accumulateByteOffset(GEP, NeedsExtraction);
 
   TargetTransformInfo &TTI = GetTTI(*GEP->getFunction());
 
@@ -992,16 +991,16 @@ bool SeparateConstOffsetFromGEP::splitGEP(GetElementPtrInst *GEP) {
   // case.
   if (!LowerGEP) {
     unsigned AddrSpace = GEP->getPointerAddressSpace();
-    if (!TTI.isLegalAddressingMode(GEP->getResultElementType(),
-                                   /*BaseGV=*/nullptr, AccumulativeByteOffset,
-                                   /*HasBaseReg=*/true, /*Scale=*/0,
-                                   AddrSpace)) {
+    if (!TTI.isLegalAddressingMode(
+            GEP->getResultElementType(),
+            /*BaseGV=*/nullptr, AccumulativeByteOffset.getSExtValue(),
+            /*HasBaseReg=*/true, /*Scale=*/0, AddrSpace)) {
       return Changed;
     }
   }
 
   // Track information for preserving GEP flags.
-  bool AllOffsetsNonNegative = AccumulativeByteOffset >= 0;
+  bool AllOffsetsNonNegative = AccumulativeByteOffset.isNonNegative();
   bool AllNUWPreserved = true;
 
   // Remove the constant offset in each sequential index. The resultant GEP
@@ -1118,7 +1117,7 @@ bool SeparateConstOffsetFromGEP::splitGEP(GetElementPtrInst *GEP) {
   Type *PtrIdxTy = DL->getIndexType(GEP->getType());
   IRBuilder<> Builder(GEP);
   NewGEP = cast<Instruction>(Builder.CreatePtrAdd(
-      NewGEP, ConstantInt::get(PtrIdxTy, AccumulativeByteOffset, true),
+      NewGEP, ConstantInt::get(PtrIdxTy, AccumulativeByteOffset),
       GEP->getName(), NewGEPFlags));
   NewGEP->copyMetadata(*GEP);
 
