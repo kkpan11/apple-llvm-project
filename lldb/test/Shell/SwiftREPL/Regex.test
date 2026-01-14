@@ -2,7 +2,7 @@
 // REQUIRES: swift
 
 // Disabling until we can test with an updated toolchain
-// XFAIL: *
+// REQUIRES: rdar168153424
 
 // RUN: %lldb --repl < %s | FileCheck %s
 
