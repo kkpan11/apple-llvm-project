@@ -3,6 +3,7 @@
 
 @str = constant [5 x i8] c"01\002\00", align 1
 @str_long = constant [8 x i8] c"0123456\00", align 1
+@str_hi = constant [3 x i8] c"\80\81\00"
 
 declare ptr @memchr(ptr, i32, i64)
 
@@ -172,5 +173,32 @@ define ptr @test_memchr_non_constant_length2(i32 %x, i64 %len) {
 ;
 entry:
   %memchr = call ptr @memchr(ptr @str, i32 %x, i64 %len)
+  ret ptr %memchr
+}
+
+define ptr @test_memchr_high_bytes(i32 %c) {
+; CHECK-LABEL: define ptr @test_memchr_high_bytes(
+; CHECK-SAME: i32 [[C:%.*]]) {
+; CHECK-NEXT:    [[TMP1:%.*]] = trunc i32 [[C]] to i8
+; CHECK-NEXT:    switch i8 [[TMP1]], [[DOTSPLIT:label %.*]] [
+; CHECK-NEXT:      i8 -128, label %[[MEMCHR_CASE:.*]]
+; CHECK-NEXT:      i8 -127, label %[[MEMCHR_CASE1:.*]]
+; CHECK-NEXT:      i8 0, label %[[MEMCHR_CASE2:.*]]
+; CHECK-NEXT:    ]
+; CHECK:       [[MEMCHR_CASE]]:
+; CHECK-NEXT:    br label %[[MEMCHR_SUCCESS:.*]]
+; CHECK:       [[MEMCHR_CASE1]]:
+; CHECK-NEXT:    br label %[[MEMCHR_SUCCESS]]
+; CHECK:       [[MEMCHR_CASE2]]:
+; CHECK-NEXT:    br label %[[MEMCHR_SUCCESS]]
+; CHECK:       [[MEMCHR_SUCCESS]]:
+; CHECK-NEXT:    [[MEMCHR_IDX:%.*]] = phi i64 [ 0, %[[MEMCHR_CASE]] ], [ 1, %[[MEMCHR_CASE1]] ], [ 2, %[[MEMCHR_CASE2]] ]
+; CHECK-NEXT:    [[TMP2:%.*]] = getelementptr inbounds i8, ptr @str_hi, i64 [[MEMCHR_IDX]]
+; CHECK-NEXT:    br [[DOTSPLIT]]
+; CHECK:       [[_SPLIT:.*:]]
+; CHECK-NEXT:    [[MEMCHR3:%.*]] = phi ptr [ null, [[TMP0:%.*]] ], [ [[TMP2]], %[[MEMCHR_SUCCESS]] ]
+; CHECK-NEXT:    ret ptr [[MEMCHR3]]
+;
+  %memchr = call ptr @memchr(ptr @str_hi, i32 %c, i64 3)
   ret ptr %memchr
 }
