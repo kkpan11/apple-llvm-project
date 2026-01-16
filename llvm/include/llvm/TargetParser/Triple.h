@@ -245,6 +245,7 @@ public:
     Serenity,
     Vulkan, // Vulkan SPIR-V
     CheriotRTOS,
+    ChipStar,
     Firmware,
     LastOSType = Firmware
   };
