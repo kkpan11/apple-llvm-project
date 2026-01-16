@@ -43,19 +43,19 @@
 // To workaround this these lines have been manually patched.
 
 //.
-// UNOPT: @.src = private unnamed_addr constant [{{[0-9]+}} x i8] c"{{.+}}", align 1
+// UNOPT: @.src = private unnamed_addr constant [{{[0-9]+}} x i8] c"{{.*}}clang/test/BoundsSafety/CodeGen/soft-traps/call_with_str_with_ubsan.c\00", align 1
 // UNOPT: @[[GLOB0:[0-9]+]] = private unnamed_addr constant { i16, i16, [6 x i8] } { i16 0, i16 11, [6 x i8] c"'int'\00" }
 // UNOPT: @trap.reason = private unnamed_addr constant [41 x i8] c"indexing above upper bound in 'ptr[tmp]'\00", align 4
 // UNOPT: @trap.reason.1 = private unnamed_addr constant [47 x i8] c"indexing overflows address space in 'ptr[tmp]'\00", align 4
 // UNOPT: @trap.reason.2 = private unnamed_addr constant [41 x i8] c"indexing below lower bound in 'ptr[tmp]'\00", align 4
 //.
-// UNOPT-TF: @.src = private unnamed_addr constant [{{[0-9]+}} x i8] c"{{.+}}", align 1
+// UNOPT-TF: @.src = private unnamed_addr constant [{{[0-9]+}} x i8] c"{{.*}}clang/test/BoundsSafety/CodeGen/soft-traps/call_with_str_with_ubsan.c\00", align 1
 // UNOPT-TF: @[[GLOB0:[0-9]+]] = private unnamed_addr constant { i16, i16, [6 x i8] } { i16 0, i16 11, [6 x i8] c"'int'\00" }
 // UNOPT-TF: @trap.reason = private unnamed_addr constant [41 x i8] c"indexing above upper bound in 'ptr[tmp]'\00", align 4
 // UNOPT-TF: @trap.reason.1 = private unnamed_addr constant [47 x i8] c"indexing overflows address space in 'ptr[tmp]'\00", align 4
 // UNOPT-TF: @trap.reason.2 = private unnamed_addr constant [41 x i8] c"indexing below lower bound in 'ptr[tmp]'\00", align 4
 //.
-// UNOPT-TFR: @.src = private unnamed_addr constant [{{[0-9]+}} x i8] c"{{.+}}", align 1
+// UNOPT-TFR: @.src = private unnamed_addr constant [{{[0-9]+}} x i8] c"{{.*}}clang/test/BoundsSafety/CodeGen/soft-traps/call_with_str_with_ubsan.c\00", align 1
 // UNOPT-TFR: @[[GLOB0:[0-9]+]] = private unnamed_addr constant { i16, i16, [6 x i8] } { i16 0, i16 11, [6 x i8] c"'int'\00" }
 // UNOPT-TFR: @trap.reason = private unnamed_addr constant [41 x i8] c"indexing above upper bound in 'ptr[tmp]'\00", align 4
 // UNOPT-TFR: @trap.reason.1 = private unnamed_addr constant [47 x i8] c"indexing overflows address space in 'ptr[tmp]'\00", align 4
@@ -701,7 +701,7 @@ int read_cb(int*__counted_by(count) ptr, int count, int other) {
 //.
 // UNOPT: attributes #[[ATTR0]] = { noinline nounwind optnone "no-trapping-math"="true" "stack-protector-buffer-size"="8" }
 // UNOPT: attributes #[[ATTR1:[0-9]+]] = { nocallback nofree nosync nounwind speculatable willreturn memory(none) }
-// UNOPT: attributes #[[ATTR2:[0-9]+]] = { cold noreturn nounwind }
+// UNOPT: attributes #[[ATTR2:[0-9]+]] = { cold noreturn nounwind memory(inaccessiblemem: write) }
 // UNOPT: attributes #[[ATTR3:[0-9]+]] = { nocallback nofree nounwind willreturn memory(argmem: readwrite) }
 // UNOPT: attributes #[[ATTR4:[0-9]+]] = { "no-trapping-math"="true" "stack-protector-buffer-size"="8" }
 // UNOPT: attributes #[[ATTR5]] = { nomerge noreturn nounwind }
@@ -709,7 +709,7 @@ int read_cb(int*__counted_by(count) ptr, int count, int other) {
 //.
 // UNOPT-TF: attributes #[[ATTR0]] = { noinline nounwind optnone "no-trapping-math"="true" "stack-protector-buffer-size"="8" }
 // UNOPT-TF: attributes #[[ATTR1:[0-9]+]] = { nocallback nofree nosync nounwind speculatable willreturn memory(none) }
-// UNOPT-TF: attributes #[[ATTR2:[0-9]+]] = { cold noreturn nounwind }
+// UNOPT-TF: attributes #[[ATTR2:[0-9]+]] = { cold noreturn nounwind memory(inaccessiblemem: write) }
 // UNOPT-TF: attributes #[[ATTR3:[0-9]+]] = { nocallback nofree nounwind willreturn memory(argmem: readwrite) }
 // UNOPT-TF: attributes #[[ATTR4:[0-9]+]] = { "no-trapping-math"="true" "stack-protector-buffer-size"="8" }
 // UNOPT-TF: attributes #[[ATTR5]] = { nomerge noreturn nounwind "trap-func-name"="ubsan_handler" }
@@ -726,7 +726,7 @@ int read_cb(int*__counted_by(count) ptr, int count, int other) {
 //.
 // OPT: attributes #[[ATTR0]] = { nounwind "no-trapping-math"="true" "stack-protector-buffer-size"="8" }
 // OPT: attributes #[[ATTR1:[0-9]+]] = { mustprogress nocallback nofree nosync nounwind speculatable willreturn memory(none) }
-// OPT: attributes #[[ATTR2:[0-9]+]] = { cold noreturn nounwind }
+// OPT: attributes #[[ATTR2:[0-9]+]] = { cold noreturn nounwind memory(inaccessiblemem: write) }
 // OPT: attributes #[[ATTR3:[0-9]+]] = { "no-trapping-math"="true" "stack-protector-buffer-size"="8" }
 // OPT: attributes #[[ATTR4]] = { nomerge noreturn nounwind }
 // OPT: attributes #[[ATTR5]] = { nomerge nounwind }

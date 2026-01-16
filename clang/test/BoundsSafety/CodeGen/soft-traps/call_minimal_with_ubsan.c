@@ -43,13 +43,13 @@
 // To workaround this these lines have been manually patched.
 
 //.
-// UNOPT: @.src = private unnamed_addr constant [{{[0-9]+}} x i8] c"{{.+}}", align 1
+// UNOPT: @.src = private unnamed_addr constant [{{[0-9]+}} x i8] c"{{.*}}clang/test/BoundsSafety/CodeGen/soft-traps/call_minimal_with_ubsan.c\00", align 1
 // UNOPT: @[[GLOB0:[0-9]+]] = private unnamed_addr constant { i16, i16, [6 x i8] } { i16 0, i16 11, [6 x i8] c"'int'\00" }
 //.
-// UNOPT-TF: @.src = private unnamed_addr constant [{{[0-9]+}} x i8] c"{{.+}}", align 1
+// UNOPT-TF: @.src = private unnamed_addr constant [{{[0-9]+}} x i8] c"{{.*}}clang/test/BoundsSafety/CodeGen/soft-traps/call_minimal_with_ubsan.c\00", align 1
 // UNOPT-TF: @[[GLOB0:[0-9]+]] = private unnamed_addr constant { i16, i16, [6 x i8] } { i16 0, i16 11, [6 x i8] c"'int'\00" }
 //.
-// UNOPT-TFR: @.src = private unnamed_addr constant [{{[0-9]+}} x i8] c"{{.+}}", align 1
+// UNOPT-TFR: @.src = private unnamed_addr constant [{{[0-9]+}} x i8] c"{{.*}}clang/test/BoundsSafety/CodeGen/soft-traps/call_minimal_with_ubsan.c\00", align 1
 // UNOPT-TFR: @[[GLOB0:[0-9]+]] = private unnamed_addr constant { i16, i16, [6 x i8] } { i16 0, i16 11, [6 x i8] c"'int'\00" }
 //.
 // UNOPT-LABEL: define dso_local i32 @read(
@@ -265,14 +265,14 @@ int read(int* __bidi_indexable ptr, int idx, int other) {
 //.
 // UNOPT: attributes #[[ATTR0]] = { noinline nounwind optnone "no-trapping-math"="true" "stack-protector-buffer-size"="8" }
 // UNOPT: attributes #[[ATTR1:[0-9]+]] = { nocallback nofree nosync nounwind speculatable willreturn memory(none) }
-// UNOPT: attributes #[[ATTR2:[0-9]+]] = { cold noreturn nounwind }
+// UNOPT: attributes #[[ATTR2:[0-9]+]] = { cold noreturn nounwind memory(inaccessiblemem: write) }
 // UNOPT: attributes #[[ATTR3:[0-9]+]] = { nocallback nofree nounwind willreturn memory(argmem: readwrite) }
 // UNOPT: attributes #[[ATTR4]] = { nomerge noreturn nounwind }
 // UNOPT: attributes #[[ATTR5]] = { nomerge nounwind }
 //.
 // UNOPT-TF: attributes #[[ATTR0]] = { noinline nounwind optnone "no-trapping-math"="true" "stack-protector-buffer-size"="8" }
 // UNOPT-TF: attributes #[[ATTR1:[0-9]+]] = { nocallback nofree nosync nounwind speculatable willreturn memory(none) }
-// UNOPT-TF: attributes #[[ATTR2:[0-9]+]] = { cold noreturn nounwind }
+// UNOPT-TF: attributes #[[ATTR2:[0-9]+]] = { cold noreturn nounwind memory(inaccessiblemem: write) }
 // UNOPT-TF: attributes #[[ATTR3:[0-9]+]] = { nocallback nofree nounwind willreturn memory(argmem: readwrite) }
 // UNOPT-TF: attributes #[[ATTR4]] = { nomerge noreturn nounwind "trap-func-name"="ubsan_handler" }
 // UNOPT-TF: attributes #[[ATTR5]] = { nomerge nounwind }
@@ -285,7 +285,7 @@ int read(int* __bidi_indexable ptr, int idx, int other) {
 //.
 // OPT: attributes #[[ATTR0]] = { nounwind "no-trapping-math"="true" "stack-protector-buffer-size"="8" }
 // OPT: attributes #[[ATTR1:[0-9]+]] = { mustprogress nocallback nofree nosync nounwind speculatable willreturn memory(none) }
-// OPT: attributes #[[ATTR2:[0-9]+]] = { cold noreturn nounwind }
+// OPT: attributes #[[ATTR2:[0-9]+]] = { cold noreturn nounwind memory(inaccessiblemem: write) }
 // OPT: attributes #[[ATTR3]] = { nomerge noreturn nounwind }
 // OPT: attributes #[[ATTR4]] = { nomerge nounwind }
 //.

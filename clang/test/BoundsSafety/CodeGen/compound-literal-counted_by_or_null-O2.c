@@ -83,7 +83,7 @@ void receive_transparent_union(union TransparentUnion);
 // CHECK-NEXT:    [[SPEC_SELECT:%.*]] = and i1 [[CMP35]], [[CMP32]]
 // CHECK-NEXT:    br i1 [[SPEC_SELECT]], label %[[CONT]], label %[[TRAP]], !prof [[PROF10:![0-9]+]], !annotation [[META2]]
 // CHECK:       [[TRAP]]:
-// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR6:[0-9]+]], !annotation [[META2]]
+// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR10:[0-9]+]], !annotation [[META2]]
 // CHECK-NEXT:    unreachable, !annotation [[META2]]
 // CHECK:       [[CONT]]:
 // CHECK-NEXT:    store i32 [[NEW_COUNT]], ptr [[PTR]], align 8, !tbaa [[TBAA11:![0-9]+]]
@@ -102,7 +102,7 @@ void assign_via_ptr(struct cbon* ptr, int new_count,
 }
 
 // CHECK-LABEL: define dso_local void @assign_operator(
-// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef readonly captures(none) [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef readonly captures(none) [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR3:[0-9]+]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[AGG_TEMP_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[NEW_PTR]], align 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_2_0_NEW_PTR_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[NEW_PTR]], i64 8
@@ -127,7 +127,7 @@ void assign_via_ptr(struct cbon* ptr, int new_count,
 // CHECK-NEXT:    [[SPEC_SELECT:%.*]] = and i1 [[CMP35]], [[CMP32]]
 // CHECK-NEXT:    br i1 [[SPEC_SELECT]], label %[[CONT]], label %[[TRAP]], !prof [[PROF10]], !annotation [[META2]]
 // CHECK:       [[TRAP]]:
-// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR6]], !annotation [[META2]]
+// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR10]], !annotation [[META2]]
 // CHECK-NEXT:    unreachable, !annotation [[META2]]
 // CHECK:       [[CONT]]:
 // CHECK-NEXT:    ret void
@@ -142,7 +142,7 @@ void assign_operator(int new_count, char* __bidi_indexable new_ptr) {
 
 
 // CHECK-LABEL: define dso_local void @local_var_init(
-// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef readonly captures(none) [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef readonly captures(none) [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR3]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[AGG_TEMP_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[NEW_PTR]], align 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_2_0_NEW_PTR_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[NEW_PTR]], i64 8
@@ -167,7 +167,7 @@ void assign_operator(int new_count, char* __bidi_indexable new_ptr) {
 // CHECK-NEXT:    [[SPEC_SELECT:%.*]] = and i1 [[CMP35]], [[CMP32]]
 // CHECK-NEXT:    br i1 [[SPEC_SELECT]], label %[[CONT]], label %[[TRAP]], !prof [[PROF10]], !annotation [[META2]]
 // CHECK:       [[TRAP]]:
-// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR6]], !annotation [[META2]]
+// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR10]], !annotation [[META2]]
 // CHECK-NEXT:    unreachable, !annotation [[META2]]
 // CHECK:       [[CONT]]:
 // CHECK-NEXT:    ret void
@@ -180,7 +180,7 @@ void local_var_init(int new_count, char* __bidi_indexable new_ptr) {
 }
 
 // CHECK-LABEL: define dso_local void @call_arg(
-// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef readonly captures(none) [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef readonly captures(none) [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR5:[0-9]+]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[AGG_TEMP_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[NEW_PTR]], align 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_2_0_NEW_PTR_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[NEW_PTR]], i64 8
@@ -208,14 +208,14 @@ void local_var_init(int new_count, char* __bidi_indexable new_ptr) {
 // CHECK-NEXT:    [[SPEC_SELECT:%.*]] = and i1 [[CMP35]], [[CMP32]]
 // CHECK-NEXT:    br i1 [[SPEC_SELECT]], label %[[CONT]], label %[[TRAP]], !prof [[PROF10]], !annotation [[META2]]
 // CHECK:       [[TRAP]]:
-// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR6]], !annotation [[META2]]
+// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR10]], !annotation [[META2]]
 // CHECK-NEXT:    unreachable, !annotation [[META2]]
 // CHECK:       [[CONT]]:
 // CHECK-NEXT:    [[DOTPRE_PHI:%.*]] = phi i64 [ [[DOTPRE]], %[[LAND_RHS_CONT_CRIT_EDGE]] ], [ [[SUB_PTR_RHS_CAST]], %[[LOR_RHS]] ]
 // CHECK-NEXT:    [[DOTCOMPOUNDLITERAL_SROA_0_0_INSERT_EXT:%.*]] = zext i32 [[NEW_COUNT]] to i64
 // CHECK-NEXT:    [[DOTFCA_0_INSERT:%.*]] = insertvalue [2 x i64] poison, i64 [[DOTCOMPOUNDLITERAL_SROA_0_0_INSERT_EXT]], 0
 // CHECK-NEXT:    [[DOTFCA_1_INSERT:%.*]] = insertvalue [2 x i64] [[DOTFCA_0_INSERT]], i64 [[DOTPRE_PHI]], 1
-// CHECK-NEXT:    tail call void @consume_cbon([2 x i64] [[DOTFCA_1_INSERT]]) #[[ATTR7:[0-9]+]]
+// CHECK-NEXT:    tail call void @consume_cbon([2 x i64] [[DOTFCA_1_INSERT]]) #[[ATTR11:[0-9]+]]
 // CHECK-NEXT:    ret void
 //
 void call_arg(int new_count, char* __bidi_indexable new_ptr) {
@@ -226,7 +226,7 @@ void call_arg(int new_count, char* __bidi_indexable new_ptr) {
 }
 
 // CHECK-LABEL: define dso_local [2 x i64] @return_cbon(
-// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef readonly captures(none) [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef readonly captures(none) [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR3]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[AGG_TEMP_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[NEW_PTR]], align 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_2_0_NEW_PTR_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[NEW_PTR]], i64 8
@@ -254,7 +254,7 @@ void call_arg(int new_count, char* __bidi_indexable new_ptr) {
 // CHECK-NEXT:    [[SPEC_SELECT:%.*]] = and i1 [[CMP35]], [[CMP32]]
 // CHECK-NEXT:    br i1 [[SPEC_SELECT]], label %[[CONT]], label %[[TRAP]], !prof [[PROF10]], !annotation [[META2]]
 // CHECK:       [[TRAP]]:
-// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR6]], !annotation [[META2]]
+// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR10]], !annotation [[META2]]
 // CHECK-NEXT:    unreachable, !annotation [[META2]]
 // CHECK:       [[CONT]]:
 // CHECK-NEXT:    [[DOTPRE_PHI:%.*]] = phi i64 [ [[DOTPRE]], %[[LAND_RHS_CONT_CRIT_EDGE]] ], [ [[SUB_PTR_RHS_CAST]], %[[LOR_RHS]] ]
@@ -271,7 +271,7 @@ struct cbon return_cbon(int new_count, char* __bidi_indexable new_ptr) {
 }
 
 // CHECK-LABEL: define dso_local void @construct_not_used(
-// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef readonly captures(none) [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef readonly captures(none) [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR3]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[AGG_TEMP_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[NEW_PTR]], align 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_2_0_NEW_PTR_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[NEW_PTR]], i64 8
@@ -296,7 +296,7 @@ struct cbon return_cbon(int new_count, char* __bidi_indexable new_ptr) {
 // CHECK-NEXT:    [[SPEC_SELECT:%.*]] = and i1 [[CMP35]], [[CMP32]]
 // CHECK-NEXT:    br i1 [[SPEC_SELECT]], label %[[CONT]], label %[[TRAP]], !prof [[PROF10]], !annotation [[META2]]
 // CHECK:       [[TRAP]]:
-// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR6]], !annotation [[META2]]
+// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR10]], !annotation [[META2]]
 // CHECK-NEXT:    unreachable, !annotation [[META2]]
 // CHECK:       [[CONT]]:
 // CHECK-NEXT:    ret void
@@ -309,7 +309,7 @@ void construct_not_used(int new_count, char* __bidi_indexable new_ptr) {
 }
 
 // CHECK-LABEL: define dso_local void @assign_via_ptr_nullptr(
-// CHECK-SAME: ptr noundef writeonly captures(none) initializes((0, 16)) [[PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]]) local_unnamed_addr #[[ATTR5:[0-9]+]] {
+// CHECK-SAME: ptr noundef writeonly captures(none) initializes((0, 16)) [[PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]]) local_unnamed_addr #[[ATTR7:[0-9]+]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    store i32 [[NEW_COUNT]], ptr [[PTR]], align 8, !tbaa [[TBAA11]]
 // CHECK-NEXT:    [[DOTCOMPOUNDLITERAL_SROA_2_0__SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[PTR]], i64 4
@@ -351,7 +351,7 @@ void assign_via_ptr_nullptr(struct cbon* ptr, int new_count) {
 // CHECK-NEXT:    [[SPEC_SELECT:%.*]] = and i1 [[CMP35]], [[CMP32]]
 // CHECK-NEXT:    br i1 [[SPEC_SELECT]], label %[[CONT]], label %[[TRAP]], !prof [[PROF10]], !annotation [[META2]]
 // CHECK:       [[TRAP]]:
-// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR6]], !annotation [[META2]]
+// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR10]], !annotation [[META2]]
 // CHECK-NEXT:    unreachable, !annotation [[META2]]
 // CHECK:       [[CONT]]:
 // CHECK-NEXT:    store i32 [[NEW_COUNT]], ptr [[PTR]], align 8, !tbaa [[TBAA11]]
@@ -400,7 +400,7 @@ void assign_via_ptr_nested(struct nested_cbon* ptr,
 // CHECK-NEXT:    [[SPEC_SELECT:%.*]] = and i1 [[CMP35]], [[CMP32]]
 // CHECK-NEXT:    br i1 [[SPEC_SELECT]], label %[[CONT]], label %[[TRAP]], !prof [[PROF10]], !annotation [[META2]]
 // CHECK:       [[TRAP]]:
-// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR6]], !annotation [[META2]]
+// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR10]], !annotation [[META2]]
 // CHECK-NEXT:    unreachable, !annotation [[META2]]
 // CHECK:       [[CONT]]:
 // CHECK-NEXT:    store i32 [[NEW_COUNT]], ptr [[PTR]], align 8, !tbaa [[TBAA11]]
@@ -449,7 +449,7 @@ void assign_via_ptr_nested_v2(struct nested_cbon* ptr,
 // CHECK-NEXT:    [[SPEC_SELECT:%.*]] = and i1 [[CMP35]], [[CMP32]]
 // CHECK-NEXT:    br i1 [[SPEC_SELECT]], label %[[CONT95]], label %[[TRAP]], !prof [[PROF14:![0-9]+]], !annotation [[META2]]
 // CHECK:       [[TRAP]]:
-// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR6]], !annotation [[META2]]
+// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR10]], !annotation [[META2]]
 // CHECK-NEXT:    unreachable, !annotation [[META2]]
 // CHECK:       [[CONT95]]:
 // CHECK-NEXT:    store i32 [[NEW_COUNT]], ptr [[PTR]], align 8, !tbaa [[TBAA11]]
@@ -477,10 +477,10 @@ void assign_via_ptr_nested_v3(struct nested_and_outer_cbon* ptr,
 }
 
 // CHECK-LABEL: define dso_local void @array_of_struct_init(
-// CHECK-SAME: ptr noundef readonly captures(none) [[NEW_PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// CHECK-SAME: ptr noundef readonly captures(none) [[NEW_PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]]) local_unnamed_addr #[[ATTR5]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[ARR:%.*]] = alloca [2 x %struct.cbon], align 8
-// CHECK-NEXT:    call void @llvm.lifetime.start.p0(i64 32, ptr nonnull [[ARR]]) #[[ATTR7]]
+// CHECK-NEXT:    call void @llvm.lifetime.start.p0(i64 32, ptr nonnull [[ARR]]) #[[ATTR11]]
 // CHECK-NEXT:    [[AGG_TEMP_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[NEW_PTR]], align 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_2_0_NEW_PTR_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[NEW_PTR]], i64 8
 // CHECK-NEXT:    [[AGG_TEMP1_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_NEW_PTR_SROA_IDX]], align 8
@@ -504,7 +504,7 @@ void assign_via_ptr_nested_v3(struct nested_and_outer_cbon* ptr,
 // CHECK-NEXT:    [[SPEC_SELECT:%.*]] = and i1 [[CMP35]], [[CMP32]]
 // CHECK-NEXT:    br i1 [[SPEC_SELECT]], label %[[CONT]], label %[[TRAP]], !prof [[PROF10]], !annotation [[META2]]
 // CHECK:       [[TRAP]]:
-// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR6]], !annotation [[META15:![0-9]+]]
+// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR10]], !annotation [[META15:![0-9]+]]
 // CHECK-NEXT:    unreachable, !annotation [[META15]]
 // CHECK:       [[CONT]]:
 // CHECK-NEXT:    store i32 [[NEW_COUNT]], ptr [[ARR]], align 8, !tbaa [[TBAA16:![0-9]+]]
@@ -514,8 +514,8 @@ void assign_via_ptr_nested_v3(struct nested_and_outer_cbon* ptr,
 // CHECK-NEXT:    store ptr [[AGG_TEMP_SROA_0_0_COPYLOAD]], ptr [[BUF]], align 8, !tbaa [[TBAA18:![0-9]+]]
 // CHECK-NEXT:    [[ARRAYINIT_ELEMENT:%.*]] = getelementptr inbounds nuw i8, ptr [[ARR]], i64 16
 // CHECK-NEXT:    call void @llvm.memset.p0.i64(ptr noundef nonnull align 8 dereferenceable(16) [[ARRAYINIT_ELEMENT]], i8 0, i64 16, i1 false)
-// CHECK-NEXT:    call void @consume_cbon_arr(ptr noundef nonnull [[ARR]]) #[[ATTR7]]
-// CHECK-NEXT:    call void @llvm.lifetime.end.p0(i64 32, ptr nonnull [[ARR]]) #[[ATTR7]]
+// CHECK-NEXT:    call void @consume_cbon_arr(ptr noundef nonnull [[ARR]]) #[[ATTR11]]
+// CHECK-NEXT:    call void @llvm.lifetime.end.p0(i64 32, ptr nonnull [[ARR]]) #[[ATTR11]]
 // CHECK-NEXT:    ret void
 //
 void array_of_struct_init(char* __bidi_indexable new_ptr,
@@ -529,7 +529,7 @@ void array_of_struct_init(char* __bidi_indexable new_ptr,
 
 
 // CHECK-LABEL: define dso_local void @assign_via_ptr_other_data_side_effect(
-// CHECK-SAME: ptr noundef writeonly captures(none) [[PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]], ptr noundef readonly captures(none) [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// CHECK-SAME: ptr noundef writeonly captures(none) [[PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]], ptr noundef readonly captures(none) [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR5]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[AGG_TEMP_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[NEW_PTR]], align 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_2_0_NEW_PTR_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[NEW_PTR]], i64 8
@@ -554,10 +554,10 @@ void array_of_struct_init(char* __bidi_indexable new_ptr,
 // CHECK-NEXT:    [[SPEC_SELECT:%.*]] = and i1 [[CMP35]], [[CMP32]]
 // CHECK-NEXT:    br i1 [[SPEC_SELECT]], label %[[CONT]], label %[[TRAP]], !prof [[PROF10]], !annotation [[META2]]
 // CHECK:       [[TRAP]]:
-// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR6]], !annotation [[META2]]
+// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR10]], !annotation [[META2]]
 // CHECK-NEXT:    unreachable, !annotation [[META2]]
 // CHECK:       [[CONT]]:
-// CHECK-NEXT:    [[CALL:%.*]] = tail call i32 @get_int() #[[ATTR7]]
+// CHECK-NEXT:    [[CALL:%.*]] = tail call i32 @get_int() #[[ATTR11]]
 // CHECK-NEXT:    store i32 [[NEW_COUNT]], ptr [[PTR]], align 8, !tbaa [[TBAA11]]
 // CHECK-NEXT:    [[DOTCOMPOUNDLITERAL_SROA_2_0__SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[PTR]], i64 4
 // CHECK-NEXT:    store i32 0, ptr [[DOTCOMPOUNDLITERAL_SROA_2_0__SROA_IDX]], align 4
@@ -581,9 +581,9 @@ void assign_via_ptr_other_data_side_effect(struct cbon_with_other_data* ptr,
 }
 
 // CHECK-LABEL: define dso_local void @assign_via_ptr_other_data_side_effect_zero_ptr(
-// CHECK-SAME: ptr noundef writeonly captures(none) initializes((0, 24)) [[PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]], ptr noundef readnone captures(none) [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// CHECK-SAME: ptr noundef writeonly captures(none) initializes((0, 24)) [[PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]], ptr noundef readnone captures(none) [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR5]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
-// CHECK-NEXT:    [[CALL:%.*]] = tail call i32 @get_int() #[[ATTR7]]
+// CHECK-NEXT:    [[CALL:%.*]] = tail call i32 @get_int() #[[ATTR11]]
 // CHECK-NEXT:    store i32 [[NEW_COUNT]], ptr [[PTR]], align 8, !tbaa [[TBAA11]]
 // CHECK-NEXT:    [[DOTCOMPOUNDLITERAL_SROA_2_0__SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[PTR]], i64 4
 // CHECK-NEXT:    store i32 0, ptr [[DOTCOMPOUNDLITERAL_SROA_2_0__SROA_IDX]], align 4
@@ -607,7 +607,7 @@ void assign_via_ptr_other_data_side_effect_zero_ptr(struct cbon_with_other_data*
 }
 
 // CHECK-LABEL: define dso_local void @call_arg_transparent_union(
-// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef readonly captures(none) [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef readonly captures(none) [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR5]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[AGG_TMP:%.*]] = alloca [[UNION_TRANSPARENTUNION:%.*]], align 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[NEW_PTR]], align 8
@@ -633,7 +633,7 @@ void assign_via_ptr_other_data_side_effect_zero_ptr(struct cbon_with_other_data*
 // CHECK-NEXT:    [[SPEC_SELECT:%.*]] = and i1 [[CMP35]], [[CMP32]]
 // CHECK-NEXT:    br i1 [[SPEC_SELECT]], label %[[CONT]], label %[[TRAP]], !prof [[PROF10]], !annotation [[META2]]
 // CHECK:       [[TRAP]]:
-// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR6]], !annotation [[META2]]
+// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR10]], !annotation [[META2]]
 // CHECK-NEXT:    unreachable, !annotation [[META2]]
 // CHECK:       [[CONT]]:
 // CHECK-NEXT:    store i32 [[NEW_COUNT]], ptr [[AGG_TMP]], align 8, !tbaa [[TBAA19:![0-9]+]]
@@ -645,7 +645,7 @@ void assign_via_ptr_other_data_side_effect_zero_ptr(struct cbon_with_other_data*
 // CHECK-NEXT:    store i32 0, ptr [[OTHER]], align 8, !tbaa [[TBAA22:![0-9]+]]
 // CHECK-NEXT:    [[TMP1:%.*]] = getelementptr inbounds nuw i8, ptr [[AGG_TMP]], i64 20
 // CHECK-NEXT:    store i32 0, ptr [[TMP1]], align 4
-// CHECK-NEXT:    call void @receive_transparent_union(ptr noundef nonnull [[AGG_TMP]]) #[[ATTR7]]
+// CHECK-NEXT:    call void @receive_transparent_union(ptr noundef nonnull [[AGG_TMP]]) #[[ATTR11]]
 // CHECK-NEXT:    ret void
 //
 void call_arg_transparent_union(int new_count,
@@ -660,7 +660,7 @@ void call_arg_transparent_union(int new_count,
 }
 
 // CHECK-LABEL: define dso_local void @call_arg_transparent_union_untransparently(
-// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef readonly captures(none) [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef readonly captures(none) [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR5]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[BYVAL_TEMP:%.*]] = alloca [[UNION_TRANSPARENTUNION:%.*]], align 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[NEW_PTR]], align 8
@@ -686,10 +686,10 @@ void call_arg_transparent_union(int new_count,
 // CHECK-NEXT:    [[SPEC_SELECT:%.*]] = and i1 [[CMP35]], [[CMP32]]
 // CHECK-NEXT:    br i1 [[SPEC_SELECT]], label %[[CONT]], label %[[TRAP]], !prof [[PROF10]], !annotation [[META2]]
 // CHECK:       [[TRAP]]:
-// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR6]], !annotation [[META2]]
+// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR10]], !annotation [[META2]]
 // CHECK-NEXT:    unreachable, !annotation [[META2]]
 // CHECK:       [[CONT]]:
-// CHECK-NEXT:    call void @llvm.lifetime.start.p0(i64 24, ptr nonnull [[BYVAL_TEMP]]) #[[ATTR7]]
+// CHECK-NEXT:    call void @llvm.lifetime.start.p0(i64 24, ptr nonnull [[BYVAL_TEMP]]) #[[ATTR11]]
 // CHECK-NEXT:    store i32 [[NEW_COUNT]], ptr [[BYVAL_TEMP]], align 8
 // CHECK-NEXT:    [[DOTCOMPOUNDLITERAL_SROA_2_0_BYVAL_TEMP_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[BYVAL_TEMP]], i64 4
 // CHECK-NEXT:    store i32 0, ptr [[DOTCOMPOUNDLITERAL_SROA_2_0_BYVAL_TEMP_SROA_IDX]], align 4
@@ -699,8 +699,8 @@ void call_arg_transparent_union(int new_count,
 // CHECK-NEXT:    store i32 0, ptr [[DOTCOMPOUNDLITERAL_SROA_4_0_BYVAL_TEMP_SROA_IDX]], align 8
 // CHECK-NEXT:    [[DOTCOMPOUNDLITERAL_SROA_5_0_BYVAL_TEMP_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[BYVAL_TEMP]], i64 20
 // CHECK-NEXT:    store i32 0, ptr [[DOTCOMPOUNDLITERAL_SROA_5_0_BYVAL_TEMP_SROA_IDX]], align 4, !tbaa [[TBAA23:![0-9]+]]
-// CHECK-NEXT:    call void @receive_transparent_union(ptr noundef nonnull [[BYVAL_TEMP]]) #[[ATTR7]]
-// CHECK-NEXT:    call void @llvm.lifetime.end.p0(i64 24, ptr nonnull [[BYVAL_TEMP]]) #[[ATTR7]]
+// CHECK-NEXT:    call void @receive_transparent_union(ptr noundef nonnull [[BYVAL_TEMP]]) #[[ATTR11]]
+// CHECK-NEXT:    call void @llvm.lifetime.end.p0(i64 24, ptr nonnull [[BYVAL_TEMP]]) #[[ATTR11]]
 // CHECK-NEXT:    ret void
 //
 void call_arg_transparent_union_untransparently(int new_count,
@@ -731,7 +731,7 @@ void call_arg_transparent_union_untransparently(int new_count,
 // CHECK-NEXT:    [[CMP_NOT:%.*]] = select i1 [[DOTNOT]], i1 [[CMP_NOT50]], i1 false, !annotation [[META2]]
 // CHECK-NEXT:    br i1 [[CMP_NOT]], label %[[TRAP:.*]], label %[[CONT:.*]], !annotation [[META2]]
 // CHECK:       [[TRAP]]:
-// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR6]], !annotation [[META2]]
+// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR10]], !annotation [[META2]]
 // CHECK-NEXT:    unreachable, !annotation [[META2]]
 // CHECK:       [[CONT]]:
 // CHECK-NEXT:    [[DOTCOMPOUNDLITERAL_SROA_2_0__SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[PTR]], i64 4
@@ -746,14 +746,14 @@ void assign_via_ptr_from_ptr(struct cbon* ptr) {
 }
 
 // CHECK-LABEL: define dso_local void @assign_via_ptr_from_cbon(
-// CHECK-SAME: ptr noundef writeonly captures(none) [[PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]], ptr noundef [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// CHECK-SAME: ptr noundef writeonly captures(none) [[PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]], ptr noundef [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR8:[0-9]+]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[DOTNOT:%.*]] = icmp ne ptr [[NEW_PTR]], null, !annotation [[META24]]
 // CHECK-NEXT:    [[CMP_NOT46:%.*]] = icmp slt i32 [[NEW_COUNT]], 0
 // CHECK-NEXT:    [[CMP_NOT:%.*]] = and i1 [[CMP_NOT46]], [[DOTNOT]], !annotation [[META2]]
 // CHECK-NEXT:    br i1 [[CMP_NOT]], label %[[TRAP:.*]], label %[[CONT:.*]], !annotation [[META2]]
 // CHECK:       [[TRAP]]:
-// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR6]], !annotation [[META2]]
+// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR10]], !annotation [[META2]]
 // CHECK-NEXT:    unreachable, !annotation [[META2]]
 // CHECK:       [[CONT]]:
 // CHECK-NEXT:    store i32 [[NEW_COUNT]], ptr [[PTR]], align 8, !tbaa [[TBAA11]]
@@ -772,14 +772,14 @@ void assign_via_ptr_from_cbon(struct cbon* ptr, int new_count,
 }
 
 // CHECK-LABEL: define dso_local void @assign_operator_from_cbon(
-// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef readnone captures(address_is_null) [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef readnone captures(address_is_null) [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR9:[0-9]+]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[DOTNOT:%.*]] = icmp ne ptr [[NEW_PTR]], null, !annotation [[META24]]
 // CHECK-NEXT:    [[CMP_NOT48:%.*]] = icmp slt i32 [[NEW_COUNT]], 0
 // CHECK-NEXT:    [[CMP_NOT:%.*]] = and i1 [[CMP_NOT48]], [[DOTNOT]], !annotation [[META2]]
 // CHECK-NEXT:    br i1 [[CMP_NOT]], label %[[TRAP:.*]], label %[[CONT:.*]], !annotation [[META2]]
 // CHECK:       [[TRAP]]:
-// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR6]], !annotation [[META2]]
+// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR10]], !annotation [[META2]]
 // CHECK-NEXT:    unreachable, !annotation [[META2]]
 // CHECK:       [[CONT]]:
 // CHECK-NEXT:    ret void
@@ -795,14 +795,14 @@ void assign_operator_from_cbon(int new_count,
 
 
 // CHECK-LABEL: define dso_local void @local_var_init_from_cbon(
-// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef readnone captures(address_is_null) [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef readnone captures(address_is_null) [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR9]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[DOTNOT:%.*]] = icmp ne ptr [[NEW_PTR]], null, !annotation [[META24]]
 // CHECK-NEXT:    [[CMP_NOT46:%.*]] = icmp slt i32 [[NEW_COUNT]], 0
 // CHECK-NEXT:    [[CMP_NOT:%.*]] = and i1 [[CMP_NOT46]], [[DOTNOT]], !annotation [[META2]]
 // CHECK-NEXT:    br i1 [[CMP_NOT]], label %[[TRAP:.*]], label %[[CONT:.*]], !annotation [[META2]]
 // CHECK:       [[TRAP]]:
-// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR6]], !annotation [[META2]]
+// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR10]], !annotation [[META2]]
 // CHECK-NEXT:    unreachable, !annotation [[META2]]
 // CHECK:       [[CONT]]:
 // CHECK-NEXT:    ret void
@@ -816,21 +816,21 @@ void local_var_init_from_cbon(int new_count,
 }
 
 // CHECK-LABEL: define dso_local void @call_arg_from_cbon(
-// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR5]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[DOTNOT:%.*]] = icmp ne ptr [[NEW_PTR]], null, !annotation [[META24]]
 // CHECK-NEXT:    [[CMP_NOT46:%.*]] = icmp slt i32 [[NEW_COUNT]], 0
 // CHECK-NEXT:    [[CMP_NOT:%.*]] = and i1 [[CMP_NOT46]], [[DOTNOT]], !annotation [[META2]]
 // CHECK-NEXT:    br i1 [[CMP_NOT]], label %[[TRAP:.*]], label %[[CONT:.*]], !annotation [[META2]]
 // CHECK:       [[TRAP]]:
-// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR6]], !annotation [[META2]]
+// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR10]], !annotation [[META2]]
 // CHECK-NEXT:    unreachable, !annotation [[META2]]
 // CHECK:       [[CONT]]:
 // CHECK-NEXT:    [[DOTCOMPOUNDLITERAL_SROA_0_0_INSERT_EXT:%.*]] = zext i32 [[NEW_COUNT]] to i64
 // CHECK-NEXT:    [[DOTFCA_0_INSERT:%.*]] = insertvalue [2 x i64] poison, i64 [[DOTCOMPOUNDLITERAL_SROA_0_0_INSERT_EXT]], 0
 // CHECK-NEXT:    [[TMP0:%.*]] = ptrtoint ptr [[NEW_PTR]] to i64
 // CHECK-NEXT:    [[DOTFCA_1_INSERT:%.*]] = insertvalue [2 x i64] [[DOTFCA_0_INSERT]], i64 [[TMP0]], 1
-// CHECK-NEXT:    tail call void @consume_cbon([2 x i64] [[DOTFCA_1_INSERT]]) #[[ATTR7]]
+// CHECK-NEXT:    tail call void @consume_cbon([2 x i64] [[DOTFCA_1_INSERT]]) #[[ATTR11]]
 // CHECK-NEXT:    ret void
 //
 void call_arg_from_cbon(int new_count,
@@ -842,14 +842,14 @@ void call_arg_from_cbon(int new_count,
 }
 
 // CHECK-LABEL: define dso_local [2 x i64] @return_cbon_from_cbon(
-// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR9]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[DOTNOT:%.*]] = icmp ne ptr [[NEW_PTR]], null, !annotation [[META24]]
 // CHECK-NEXT:    [[CMP_NOT46:%.*]] = icmp slt i32 [[NEW_COUNT]], 0
 // CHECK-NEXT:    [[CMP_NOT:%.*]] = and i1 [[CMP_NOT46]], [[DOTNOT]], !annotation [[META2]]
 // CHECK-NEXT:    br i1 [[CMP_NOT]], label %[[TRAP:.*]], label %[[CONT:.*]], !annotation [[META2]]
 // CHECK:       [[TRAP]]:
-// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR6]], !annotation [[META2]]
+// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR10]], !annotation [[META2]]
 // CHECK-NEXT:    unreachable, !annotation [[META2]]
 // CHECK:       [[CONT]]:
 // CHECK-NEXT:    [[RETVAL_SROA_0_0_INSERT_EXT:%.*]] = zext i32 [[NEW_COUNT]] to i64
@@ -867,14 +867,14 @@ struct cbon return_cbon_from_cbon(int new_count,
 }
 
 // CHECK-LABEL: define dso_local void @construct_not_used_from_cbon(
-// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef readnone captures(address_is_null) [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef readnone captures(address_is_null) [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR9]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[DOTNOT:%.*]] = icmp ne ptr [[NEW_PTR]], null, !annotation [[META24]]
 // CHECK-NEXT:    [[CMP_NOT46:%.*]] = icmp slt i32 [[NEW_COUNT]], 0
 // CHECK-NEXT:    [[CMP_NOT:%.*]] = and i1 [[CMP_NOT46]], [[DOTNOT]], !annotation [[META2]]
 // CHECK-NEXT:    br i1 [[CMP_NOT]], label %[[TRAP:.*]], label %[[CONT:.*]], !annotation [[META2]]
 // CHECK:       [[TRAP]]:
-// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR6]], !annotation [[META2]]
+// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR10]], !annotation [[META2]]
 // CHECK-NEXT:    unreachable, !annotation [[META2]]
 // CHECK:       [[CONT]]:
 // CHECK-NEXT:    ret void
@@ -888,14 +888,14 @@ void construct_not_used_from_cbon(int new_count,
 }
 
 // CHECK-LABEL: define dso_local void @assign_via_ptr_nested_from_cbon(
-// CHECK-SAME: ptr noundef writeonly captures(none) [[PTR:%.*]], ptr noundef [[NEW_PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// CHECK-SAME: ptr noundef writeonly captures(none) [[PTR:%.*]], ptr noundef [[NEW_PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]]) local_unnamed_addr #[[ATTR8]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[DOTNOT:%.*]] = icmp ne ptr [[NEW_PTR]], null, !annotation [[META24]]
 // CHECK-NEXT:    [[CMP_NOT46:%.*]] = icmp slt i32 [[NEW_COUNT]], 0
 // CHECK-NEXT:    [[CMP_NOT:%.*]] = and i1 [[DOTNOT]], [[CMP_NOT46]], !annotation [[META2]]
 // CHECK-NEXT:    br i1 [[CMP_NOT]], label %[[TRAP:.*]], label %[[CONT:.*]], !annotation [[META2]]
 // CHECK:       [[TRAP]]:
-// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR6]], !annotation [[META2]]
+// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR10]], !annotation [[META2]]
 // CHECK-NEXT:    unreachable, !annotation [[META2]]
 // CHECK:       [[CONT]]:
 // CHECK-NEXT:    store i32 [[NEW_COUNT]], ptr [[PTR]], align 8, !tbaa [[TBAA11]]
@@ -919,14 +919,14 @@ void assign_via_ptr_nested_from_cbon(struct nested_cbon* ptr,
 }
 
 // CHECK-LABEL: define dso_local void @assign_via_ptr_nested_v2_from_cbon(
-// CHECK-SAME: ptr noundef writeonly captures(none) [[PTR:%.*]], ptr noundef [[NEW_PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// CHECK-SAME: ptr noundef writeonly captures(none) [[PTR:%.*]], ptr noundef [[NEW_PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]]) local_unnamed_addr #[[ATTR8]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[DOTNOT:%.*]] = icmp ne ptr [[NEW_PTR]], null, !annotation [[META24]]
 // CHECK-NEXT:    [[CMP_NOT46:%.*]] = icmp slt i32 [[NEW_COUNT]], 0
 // CHECK-NEXT:    [[CMP_NOT:%.*]] = and i1 [[DOTNOT]], [[CMP_NOT46]], !annotation [[META2]]
 // CHECK-NEXT:    br i1 [[CMP_NOT]], label %[[TRAP:.*]], label %[[CONT:.*]], !annotation [[META2]]
 // CHECK:       [[TRAP]]:
-// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR6]], !annotation [[META2]]
+// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR10]], !annotation [[META2]]
 // CHECK-NEXT:    unreachable, !annotation [[META2]]
 // CHECK:       [[CONT]]:
 // CHECK-NEXT:    store i32 [[NEW_COUNT]], ptr [[PTR]], align 8, !tbaa [[TBAA11]]
@@ -950,16 +950,16 @@ void assign_via_ptr_nested_v2_from_cbon(struct nested_cbon* ptr,
 }
 
 // CHECK-LABEL: define dso_local void @array_of_struct_init_from_cbon(
-// CHECK-SAME: ptr noundef [[NEW_PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// CHECK-SAME: ptr noundef [[NEW_PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]]) local_unnamed_addr #[[ATTR5]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[ARR:%.*]] = alloca [2 x %struct.cbon], align 8
-// CHECK-NEXT:    call void @llvm.lifetime.start.p0(i64 32, ptr nonnull [[ARR]]) #[[ATTR7]]
+// CHECK-NEXT:    call void @llvm.lifetime.start.p0(i64 32, ptr nonnull [[ARR]]) #[[ATTR11]]
 // CHECK-NEXT:    [[DOTNOT:%.*]] = icmp ne ptr [[NEW_PTR]], null, !annotation [[META24]]
 // CHECK-NEXT:    [[CMP_NOT65:%.*]] = icmp slt i32 [[NEW_COUNT]], 0
 // CHECK-NEXT:    [[CMP_NOT:%.*]] = and i1 [[DOTNOT]], [[CMP_NOT65]], !annotation [[META2]]
 // CHECK-NEXT:    br i1 [[CMP_NOT]], label %[[TRAP:.*]], label %[[CONT:.*]], !annotation [[META2]]
 // CHECK:       [[TRAP]]:
-// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR6]], !annotation [[META15]]
+// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR10]], !annotation [[META15]]
 // CHECK-NEXT:    unreachable, !annotation [[META15]]
 // CHECK:       [[CONT]]:
 // CHECK-NEXT:    store i32 [[NEW_COUNT]], ptr [[ARR]], align 8, !tbaa [[TBAA16]]
@@ -969,8 +969,8 @@ void assign_via_ptr_nested_v2_from_cbon(struct nested_cbon* ptr,
 // CHECK-NEXT:    store ptr [[NEW_PTR]], ptr [[BUF]], align 8, !tbaa [[TBAA18]]
 // CHECK-NEXT:    [[ARRAYINIT_ELEMENT:%.*]] = getelementptr inbounds nuw i8, ptr [[ARR]], i64 16
 // CHECK-NEXT:    call void @llvm.memset.p0.i64(ptr noundef nonnull align 8 dereferenceable(16) [[ARRAYINIT_ELEMENT]], i8 0, i64 16, i1 false)
-// CHECK-NEXT:    call void @consume_cbon_arr(ptr noundef nonnull [[ARR]]) #[[ATTR7]]
-// CHECK-NEXT:    call void @llvm.lifetime.end.p0(i64 32, ptr nonnull [[ARR]]) #[[ATTR7]]
+// CHECK-NEXT:    call void @consume_cbon_arr(ptr noundef nonnull [[ARR]]) #[[ATTR11]]
+// CHECK-NEXT:    call void @llvm.lifetime.end.p0(i64 32, ptr nonnull [[ARR]]) #[[ATTR11]]
 // CHECK-NEXT:    ret void
 //
 void array_of_struct_init_from_cbon(char* __counted_by_or_null(new_count) new_ptr,
@@ -983,17 +983,17 @@ void array_of_struct_init_from_cbon(char* __counted_by_or_null(new_count) new_pt
 }
 
 // CHECK-LABEL: define dso_local void @assign_via_ptr_other_data_side_effect_from_cbon(
-// CHECK-SAME: ptr noundef writeonly captures(none) [[PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]], ptr noundef [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// CHECK-SAME: ptr noundef writeonly captures(none) [[PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]], ptr noundef [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR5]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[DOTNOT:%.*]] = icmp ne ptr [[NEW_PTR]], null, !annotation [[META24]]
 // CHECK-NEXT:    [[CMP_NOT46:%.*]] = icmp slt i32 [[NEW_COUNT]], 0
 // CHECK-NEXT:    [[CMP_NOT:%.*]] = and i1 [[CMP_NOT46]], [[DOTNOT]], !annotation [[META2]]
 // CHECK-NEXT:    br i1 [[CMP_NOT]], label %[[TRAP:.*]], label %[[CONT:.*]], !annotation [[META2]]
 // CHECK:       [[TRAP]]:
-// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR6]], !annotation [[META2]]
+// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR10]], !annotation [[META2]]
 // CHECK-NEXT:    unreachable, !annotation [[META2]]
 // CHECK:       [[CONT]]:
-// CHECK-NEXT:    [[CALL:%.*]] = tail call i32 @get_int() #[[ATTR7]]
+// CHECK-NEXT:    [[CALL:%.*]] = tail call i32 @get_int() #[[ATTR11]]
 // CHECK-NEXT:    store i32 [[NEW_COUNT]], ptr [[PTR]], align 8, !tbaa [[TBAA11]]
 // CHECK-NEXT:    [[DOTCOMPOUNDLITERAL_SROA_2_0__SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[PTR]], i64 4
 // CHECK-NEXT:    store i32 0, ptr [[DOTCOMPOUNDLITERAL_SROA_2_0__SROA_IDX]], align 4
@@ -1017,9 +1017,9 @@ void assign_via_ptr_other_data_side_effect_from_cbon(struct cbon_with_other_data
 }
 
 // CHECK-LABEL: define dso_local void @assign_via_ptr_other_data_side_effect_zero_ptr_from_cbon(
-// CHECK-SAME: ptr noundef writeonly captures(none) initializes((0, 24)) [[PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]], ptr noundef readnone captures(none) [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// CHECK-SAME: ptr noundef writeonly captures(none) initializes((0, 24)) [[PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]], ptr noundef readnone captures(none) [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR5]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
-// CHECK-NEXT:    [[CALL:%.*]] = tail call i32 @get_int() #[[ATTR7]]
+// CHECK-NEXT:    [[CALL:%.*]] = tail call i32 @get_int() #[[ATTR11]]
 // CHECK-NEXT:    store i32 [[NEW_COUNT]], ptr [[PTR]], align 8, !tbaa [[TBAA11]]
 // CHECK-NEXT:    [[DOTCOMPOUNDLITERAL_SROA_2_0__SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[PTR]], i64 4
 // CHECK-NEXT:    store i32 0, ptr [[DOTCOMPOUNDLITERAL_SROA_2_0__SROA_IDX]], align 4
@@ -1043,7 +1043,7 @@ void assign_via_ptr_other_data_side_effect_zero_ptr_from_cbon(struct cbon_with_o
 }
 
 // CHECK-LABEL: define dso_local void @call_arg_transparent_union_from_cbon(
-// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef readonly captures(none) [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef readonly captures(none) [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR5]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[AGG_TMP:%.*]] = alloca [[UNION_TRANSPARENTUNION:%.*]], align 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[NEW_PTR]], align 8
@@ -1069,7 +1069,7 @@ void assign_via_ptr_other_data_side_effect_zero_ptr_from_cbon(struct cbon_with_o
 // CHECK-NEXT:    [[SPEC_SELECT:%.*]] = and i1 [[CMP35]], [[CMP32]]
 // CHECK-NEXT:    br i1 [[SPEC_SELECT]], label %[[CONT]], label %[[TRAP]], !prof [[PROF10]], !annotation [[META2]]
 // CHECK:       [[TRAP]]:
-// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR6]], !annotation [[META2]]
+// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR10]], !annotation [[META2]]
 // CHECK-NEXT:    unreachable, !annotation [[META2]]
 // CHECK:       [[CONT]]:
 // CHECK-NEXT:    store i32 [[NEW_COUNT]], ptr [[AGG_TMP]], align 8, !tbaa [[TBAA19]]
@@ -1081,7 +1081,7 @@ void assign_via_ptr_other_data_side_effect_zero_ptr_from_cbon(struct cbon_with_o
 // CHECK-NEXT:    store i32 0, ptr [[OTHER]], align 8, !tbaa [[TBAA22]]
 // CHECK-NEXT:    [[TMP1:%.*]] = getelementptr inbounds nuw i8, ptr [[AGG_TMP]], i64 20
 // CHECK-NEXT:    store i32 0, ptr [[TMP1]], align 4
-// CHECK-NEXT:    call void @receive_transparent_union(ptr noundef nonnull [[AGG_TMP]]) #[[ATTR7]]
+// CHECK-NEXT:    call void @receive_transparent_union(ptr noundef nonnull [[AGG_TMP]]) #[[ATTR11]]
 // CHECK-NEXT:    ret void
 //
 void call_arg_transparent_union_from_cbon(int new_count,
@@ -1097,7 +1097,7 @@ void call_arg_transparent_union_from_cbon(int new_count,
 
 
 // CHECK-LABEL: define dso_local void @call_arg_transparent_union_untransparently_from_cbon(
-// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef readonly captures(none) [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef readonly captures(none) [[NEW_PTR:%.*]]) local_unnamed_addr #[[ATTR5]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[BYVAL_TEMP:%.*]] = alloca [[UNION_TRANSPARENTUNION:%.*]], align 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[NEW_PTR]], align 8
@@ -1123,10 +1123,10 @@ void call_arg_transparent_union_from_cbon(int new_count,
 // CHECK-NEXT:    [[SPEC_SELECT:%.*]] = and i1 [[CMP35]], [[CMP32]]
 // CHECK-NEXT:    br i1 [[SPEC_SELECT]], label %[[CONT]], label %[[TRAP]], !prof [[PROF10]], !annotation [[META2]]
 // CHECK:       [[TRAP]]:
-// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR6]], !annotation [[META2]]
+// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR10]], !annotation [[META2]]
 // CHECK-NEXT:    unreachable, !annotation [[META2]]
 // CHECK:       [[CONT]]:
-// CHECK-NEXT:    call void @llvm.lifetime.start.p0(i64 24, ptr nonnull [[BYVAL_TEMP]]) #[[ATTR7]]
+// CHECK-NEXT:    call void @llvm.lifetime.start.p0(i64 24, ptr nonnull [[BYVAL_TEMP]]) #[[ATTR11]]
 // CHECK-NEXT:    store i32 [[NEW_COUNT]], ptr [[BYVAL_TEMP]], align 8
 // CHECK-NEXT:    [[DOTCOMPOUNDLITERAL_SROA_2_0_BYVAL_TEMP_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[BYVAL_TEMP]], i64 4
 // CHECK-NEXT:    store i32 0, ptr [[DOTCOMPOUNDLITERAL_SROA_2_0_BYVAL_TEMP_SROA_IDX]], align 4
@@ -1136,8 +1136,8 @@ void call_arg_transparent_union_from_cbon(int new_count,
 // CHECK-NEXT:    store i32 0, ptr [[DOTCOMPOUNDLITERAL_SROA_4_0_BYVAL_TEMP_SROA_IDX]], align 8
 // CHECK-NEXT:    [[DOTCOMPOUNDLITERAL_SROA_5_0_BYVAL_TEMP_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[BYVAL_TEMP]], i64 20
 // CHECK-NEXT:    store i32 0, ptr [[DOTCOMPOUNDLITERAL_SROA_5_0_BYVAL_TEMP_SROA_IDX]], align 4, !tbaa [[TBAA23]]
-// CHECK-NEXT:    call void @receive_transparent_union(ptr noundef nonnull [[BYVAL_TEMP]]) #[[ATTR7]]
-// CHECK-NEXT:    call void @llvm.lifetime.end.p0(i64 24, ptr nonnull [[BYVAL_TEMP]]) #[[ATTR7]]
+// CHECK-NEXT:    call void @receive_transparent_union(ptr noundef nonnull [[BYVAL_TEMP]]) #[[ATTR11]]
+// CHECK-NEXT:    call void @llvm.lifetime.end.p0(i64 24, ptr nonnull [[BYVAL_TEMP]]) #[[ATTR11]]
 // CHECK-NEXT:    ret void
 //
 void call_arg_transparent_union_untransparently_from_cbon(int new_count,
