@@ -14140,6 +14140,8 @@ def warn_unsafe_single_pointer_argument : Warning<
   InGroup<UnsafeBufferUsage>, DefaultIgnore;
 def warn_unsafe_buffer_usage_unique_ptr_array_access : Warning<"direct access using operator[] on std::unique_ptr<T[]> is unsafe due to lack of bounds checking">,
   InGroup<UnsafeBufferUsageInUniquePtrArrayAccess>, DefaultIgnore;
+def warn_unsafe_buffer_usage_in_static_sized_array : Warning<"direct access on T[N] is unsafe due to the lack of bounds checking">,
+  InGroup<UnsafeBufferUsageInStaticSizedArray>, DefaultIgnore;  
 def warn_unsafe_single_pointer_assignment : Warning<
   "unsafe assignment to __single pointer type">,
   InGroup<UnsafeBufferUsage>, DefaultIgnore;
