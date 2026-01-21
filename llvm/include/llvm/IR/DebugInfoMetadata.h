@@ -72,8 +72,6 @@ class DbgVariableRecord;
 
 LLVM_ABI extern cl::opt<bool> EnableFSDiscriminator;
 
-using DITypeRefArray = DITypeArray;
-
 /// Tagged DWARF-like metadata node.
 ///
 /// A metadata node with a DWARF tag (i.e., a constant named \c DW_TAG_*,
@@ -1900,7 +1898,7 @@ class DISubroutineType : public DIType {
   ~DISubroutineType() = default;
 
   static DISubroutineType *getImpl(LLVMContext &Context, DIFlags Flags,
-                                   uint8_t CC, DITypeRefArray TypeArray,
+                                   uint8_t CC, DITypeArray TypeArray,
                                    StorageType Storage,
                                    bool ShouldCreate = true) {
     return getImpl(Context, Flags, CC, TypeArray.get(), Storage, ShouldCreate);
@@ -1916,7 +1914,7 @@ class DISubroutineType : public DIType {
 
 public:
   DEFINE_MDNODE_GET(DISubroutineType,
-                    (DIFlags Flags, uint8_t CC, DITypeRefArray TypeArray),
+                    (DIFlags Flags, uint8_t CC, DITypeArray TypeArray),
                     (Flags, CC, TypeArray))
   DEFINE_MDNODE_GET(DISubroutineType,
                     (DIFlags Flags, uint8_t CC, Metadata *TypeArray),
@@ -1932,7 +1930,7 @@ public:
 
   uint8_t getCC() const { return CC; }
 
-  DITypeRefArray getTypeArray() const {
+  DITypeArray getTypeArray() const {
     return cast_or_null<MDTuple>(getRawTypeArray());
   }
 
