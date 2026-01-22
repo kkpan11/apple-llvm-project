@@ -117,7 +117,7 @@ ModuleManager::addModule(StringRef FileName, ModuleKind Type,
 
   uint64_t InputFilesValidationTimestamp = 0;
   if (Type == MK_ImplicitModule)
-    InputFilesValidationTimestamp = ModCache.getModuleTimestamp(FileName);
+    InputFilesValidationTimestamp = ModCache->getModuleTimestamp(FileName);
 
   // Look for the file entry. This only fails if the expected size or
   // modification time differ.
