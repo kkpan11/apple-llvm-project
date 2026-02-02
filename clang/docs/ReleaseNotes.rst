@@ -1069,6 +1069,7 @@ Bug Fixes to AST Handling
 
 Miscellaneous Bug Fixes
 ^^^^^^^^^^^^^^^^^^^^^^^
+- Fixed the arguments of the format attribute on ``__builtin_os_log_format``.  Previously, they were off by 1.
 
 - HTML tags in comments that span multiple lines are now parsed correctly by Clang's comment parser. (#GH120843)
 
