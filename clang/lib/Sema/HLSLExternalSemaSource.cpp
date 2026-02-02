@@ -407,4 +407,5 @@ void HLSLExternalSemaSource::CompleteType(TagDecl *Tag) {
   if (It == Completions.end())
     return;
   It->second(Record);
+  Completions.erase(It);
 }
