@@ -1388,12 +1388,16 @@ std::unique_ptr<CompilerInstance> CompilerInstance::cloneForModuleCompileImpl(
          Invocation->getModuleHash(getDiagnostics()) &&
          "Module hash mismatch!");
 
-  // Construct a compiler instance that will be used to actually create the
-  // module.  Since we're sharing an in-memory module cache,
-  // CompilerInstance::CompilerInstance is responsible for finalizing the
-  // buffers to prevent use-after-frees.
+  IntrusiveRefCntPtr<ModuleCache> ModCache;
+  if (ThreadSafeConfig) {
+    ModCache = ThreadSafeConfig->getModuleCache();
+  } else {
+    ModCache = this->ModCache;
+  }
+
+  // Construct a compiler instance that will be used to create the module.
   auto InstancePtr = std::make_unique<CompilerInstance>(
-      std::move(Invocation), getPCHContainerOperations(), &getModuleCache());
+      std::move(Invocation), getPCHContainerOperations(), ModCache.get());
   auto &Instance = *InstancePtr;
 
   auto &Inv = Instance.getInvocation();
