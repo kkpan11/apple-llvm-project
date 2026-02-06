@@ -172,6 +172,8 @@ private:
   VersionInfoType VersionInfo{};
   VersionInfoType TargetVariantVersionInfo{};
 
+  std::optional<std::string> TargetTriple;
+
   std::optional<unsigned> PtrAuthABIVersion = std::nullopt;
   bool PtrAuthKernelABIVersion = false;
 
@@ -263,6 +265,8 @@ public:
     TargetVariantVersionInfo.Update = Update;
     TargetVariantVersionInfo.SDKVersion = SDKVersion;
   }
+
+  void setTargetTriple(StringRef Triple) { TargetTriple = Triple; }
 
   std::optional<unsigned> getPtrAuthABIVersion() const {
     return PtrAuthABIVersion;

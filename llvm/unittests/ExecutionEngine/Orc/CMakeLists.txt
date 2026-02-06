@@ -26,6 +26,7 @@ add_llvm_unittest(OrcJITTests
   JITTargetMachineBuilderTest.cpp
   LazyCallThroughAndReexportsTest.cpp
   LookupAndRecordAddrsTest.cpp
+  MachOBuilderTest.cpp
   MachOPlatformTest.cpp
   MapperJITLinkMemoryManagerTest.cpp
   MemoryFlagsTest.cpp

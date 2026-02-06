@@ -87,6 +87,8 @@ public:
     std::vector<std::string> RPaths;
     /// List of LC_BUILD_VERSIONs.
     std::vector<BuildVersionOpts> BuildVersions;
+    /// Optional LC_TARGET_TRIPLE.
+    std::optional<std::string> TargetTriple;
 
     HeaderOptions() = default;
     HeaderOptions(Dylib D) : IDDylib(std::move(D)) {}

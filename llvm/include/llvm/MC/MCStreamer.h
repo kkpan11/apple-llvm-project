@@ -512,6 +512,8 @@ public:
                                                    unsigned Update,
                                                    VersionTuple SDKVersion) {}
 
+  virtual void emitTargetTriple(StringRef TargetTriple) {}
+
   void emitVersionForTarget(const Triple &Target,
                             const VersionTuple &SDKVersion,
                             const Triple *DarwinTargetVariantTriple,
