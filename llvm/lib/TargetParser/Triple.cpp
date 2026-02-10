@@ -325,6 +325,8 @@ StringRef Triple::getOSTypeName(OSType Kind) {
   case Vulkan: return "vulkan";
   case CheriotRTOS:
     return "cheriotrtos";
+  case OpenCL:
+    return "opencl";
   case ChipStar:
     return "chipstar";
   case Firmware:
@@ -387,8 +389,6 @@ StringRef Triple::getEnvironmentTypeName(EnvironmentType Kind) {
   case Callable: return "callable";
   case Mesh: return "mesh";
   case Amplification: return "amplification";
-  case OpenCL:
-    return "opencl";
   case OpenHOS: return "ohos";
   case PAuthTest:
     return "pauthtest";
@@ -726,6 +726,7 @@ static Triple::OSType parseOS(StringRef OSName) {
       .StartsWith("serenity", Triple::Serenity)
       .StartsWith("vulkan", Triple::Vulkan)
       .StartsWith("cheriotrtos", Triple::CheriotRTOS)
+      .StartsWith("opencl", Triple::OpenCL)
       .StartsWith("chipstar", Triple::ChipStar)
       .StartsWith("firmware", Triple::Firmware)
       .Default(Triple::UnknownOS);
@@ -779,7 +780,6 @@ static Triple::EnvironmentType parseEnvironment(StringRef EnvironmentName) {
       .StartsWith("callable", Triple::Callable)
       .StartsWith("mesh", Triple::Mesh)
       .StartsWith("amplification", Triple::Amplification)
-      .StartsWith("opencl", Triple::OpenCL)
       .StartsWith("ohos", Triple::OpenHOS)
       .StartsWith("pauthtest", Triple::PAuthTest)
       .StartsWith("llvm", Triple::LLVM)

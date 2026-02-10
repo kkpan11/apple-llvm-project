@@ -245,6 +245,7 @@ public:
     Serenity,
     Vulkan, // Vulkan SPIR-V
     CheriotRTOS,
+    OpenCL,
     ChipStar,
     Firmware,
     LastOSType = Firmware
@@ -305,7 +306,6 @@ public:
     Callable,
     Mesh,
     Amplification,
-    OpenCL,
     OpenHOS,
     Mlibc,
 
