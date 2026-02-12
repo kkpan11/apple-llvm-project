@@ -106,7 +106,8 @@ public:
       bool EagerLoadModules = false, bool TraceVFS = false,
       std::time_t BuildSessionTimestamp =
           llvm::sys::toTimeT(std::chrono::system_clock::now()),
-      bool CacheNegativeStats = shouldCacheNegativeStatsDefault());
+      bool CacheNegativeStats = shouldCacheNegativeStatsDefault(),
+      bool AsyncScanModules = false);
 
   ScanningMode getMode() const { return Mode; }
 
@@ -119,6 +120,8 @@ public:
   bool shouldTraceVFS() const { return TraceVFS; }
 
   bool shouldCacheNegativeStats() const { return CacheNegativeStats; }
+
+  bool shouldScanModulesAsynchronously() const { return AsyncScanModules; }
 
   DependencyScanningFilesystemSharedCache &getSharedCache() {
     return SharedCache;
@@ -146,6 +149,8 @@ private:
   /// Whether to trace VFS accesses.
   const bool TraceVFS;
   const bool CacheNegativeStats;
+  /// Whether to scan modules asynchronously.
+  const bool AsyncScanModules;
   /// The global file system cache.
   DependencyScanningFilesystemSharedCache SharedCache;
   /// The global module cache entries.
