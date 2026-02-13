@@ -139,7 +139,8 @@ public:
   /// \c DiagConsumer), true otherwise.
   bool computeDependencies(
       StringRef WorkingDirectory, ArrayRef<std::string> CommandLine,
-      DependencyConsumer &DepConsumer, DependencyActionController &Controller,
+      DependencyConsumer &DepConsumer,
+      MakeDependencyActionController MakeController,
       DiagnosticConsumer &DiagConsumer,
       llvm::IntrusiveRefCntPtr<llvm::vfs::OverlayFileSystem> OverlayFS =
           nullptr);
@@ -156,7 +157,8 @@ public:
   /// \c DiagConsumer), true otherwise.
   bool computeDependencies(
       StringRef WorkingDirectory, ArrayRef<ArrayRef<std::string>> CommandLines,
-      DependencyConsumer &DepConsumer, DependencyActionController &Controller,
+      DependencyConsumer &DepConsumer,
+      MakeDependencyActionController MakeController,
       DiagnosticConsumer &DiagConsumer,
       llvm::IntrusiveRefCntPtr<llvm::vfs::OverlayFileSystem> OverlayFS =
           nullptr);
@@ -212,8 +214,9 @@ public:
   void computeDependenciesFromCompilerInvocation(
       std::shared_ptr<CompilerInvocation> Invocation,
       StringRef WorkingDirectory, DependencyConsumer &Consumer,
-      DependencyActionController &Controller, DiagnosticConsumer &DiagsConsumer,
-      raw_ostream *VerboseOS, bool DiagGenerationAsCompilation);
+      MakeDependencyActionController MakeController,
+      DiagnosticConsumer &DiagsConsumer, raw_ostream *VerboseOS,
+      bool DiagGenerationAsCompilation);
 
   ScanningOutputFormat getScanningFormat() const {
     return Service.getOpts().Format;
