@@ -344,10 +344,8 @@ enum CXErrorCode clang_experimental_DependencyScannerWorker_getDepGraph(
 
   llvm::DenseSet<ModuleID> AlreadySeen;
   FullDependencyConsumer DepConsumer(AlreadySeen);
-  auto MakeController = [&] {
-    return DependencyScanningTool::createActionController(
-        *Worker, std::move(LookupOutputs));
-  };
+  auto Controller = DependencyScanningTool::createActionController(
+      *Worker, std::move(LookupOutputs));
 
   bool Result = false;
   if (ModuleName) {
@@ -360,7 +358,7 @@ enum CXErrorCode clang_experimental_DependencyScannerWorker_getDepGraph(
       return CXError_Failure;
     }
     Result = Worker->computeDependenciesByNameWithContext(
-        StringRef(ModuleName), DepConsumer, *MakeController());
+        StringRef(ModuleName), DepConsumer, *Controller);
     if (!Result) {
       Worker->finalizeCompilerInstanceWithContext();
       return CXError_Failure;
@@ -370,7 +368,7 @@ enum CXErrorCode clang_experimental_DependencyScannerWorker_getDepGraph(
       return CXError_Failure;
   } else {
     Result = clang::tooling::computeDependencies(
-        *Worker, WorkingDirectory, Compilation, DepConsumer, MakeController,
+        *Worker, WorkingDirectory, Compilation, DepConsumer, *Controller,
         *SerialDiagConsumer);
   }
 

@@ -76,6 +76,8 @@ class DependencyActionController {
 public:
   virtual ~DependencyActionController();
 
+  virtual std::unique_ptr<DependencyActionController> clone() const = 0;
+
   virtual std::string lookupModuleOutput(const ModuleDeps &MD,
                                          ModuleOutputKind Kind) = 0;
 
@@ -139,8 +141,7 @@ public:
   /// \c DiagConsumer), true otherwise.
   bool computeDependencies(
       StringRef WorkingDirectory, ArrayRef<std::string> CommandLine,
-      DependencyConsumer &DepConsumer,
-      MakeDependencyActionController MakeController,
+      DependencyConsumer &DepConsumer, DependencyActionController &Controller,
       DiagnosticConsumer &DiagConsumer,
       llvm::IntrusiveRefCntPtr<llvm::vfs::OverlayFileSystem> OverlayFS =
           nullptr);
@@ -157,8 +158,7 @@ public:
   /// \c DiagConsumer), true otherwise.
   bool computeDependencies(
       StringRef WorkingDirectory, ArrayRef<ArrayRef<std::string>> CommandLines,
-      DependencyConsumer &DepConsumer,
-      MakeDependencyActionController MakeController,
+      DependencyConsumer &DepConsumer, DependencyActionController &Controller,
       DiagnosticConsumer &DiagConsumer,
       llvm::IntrusiveRefCntPtr<llvm::vfs::OverlayFileSystem> OverlayFS =
           nullptr);
@@ -214,9 +214,8 @@ public:
   void computeDependenciesFromCompilerInvocation(
       std::shared_ptr<CompilerInvocation> Invocation,
       StringRef WorkingDirectory, DependencyConsumer &Consumer,
-      MakeDependencyActionController MakeController,
-      DiagnosticConsumer &DiagsConsumer, raw_ostream *VerboseOS,
-      bool DiagGenerationAsCompilation);
+      DependencyActionController &Controller, DiagnosticConsumer &DiagsConsumer,
+      raw_ostream *VerboseOS, bool DiagGenerationAsCompilation);
 
   ScanningOutputFormat getScanningFormat() const {
     return Service.getOpts().Format;
