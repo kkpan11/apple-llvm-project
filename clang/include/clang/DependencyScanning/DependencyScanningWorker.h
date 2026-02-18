@@ -217,12 +217,7 @@ public:
       DependencyActionController &Controller, DiagnosticConsumer &DiagsConsumer,
       raw_ostream *VerboseOS, bool DiagGenerationAsCompilation);
 
-  ScanningOutputFormat getScanningFormat() const {
-    return Service.getOpts().Format;
-  }
-
-  const CASOptions &getCASOpts() const { return CASOpts; }
-  std::shared_ptr<cas::ObjectStore> getCAS() const { return CAS; }
+  const DependencyScanningService &getService() const { return Service; }
 
   llvm::vfs::FileSystem &getVFS() const { return *DepFS; }
 
@@ -233,9 +228,6 @@ private:
   /// This is the caching (and optionally dependency-directives-providing) VFS
   /// overlaid on top of the base VFS passed in the constructor.
   IntrusiveRefCntPtr<DependencyScanningWorkerFilesystem> DepFS;
-
-  CASOptions CASOpts;
-  std::shared_ptr<cas::ObjectStore> CAS;
 
   friend CompilerInstanceWithContext;
   std::unique_ptr<CompilerInstanceWithContext> CIWithContext;

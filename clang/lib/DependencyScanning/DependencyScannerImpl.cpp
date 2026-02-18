@@ -1031,7 +1031,9 @@ bool CompilerInstanceWithContext::initialize(
       Worker.PCHContainerOps, std::move(ModCache));
   auto &CI = *CIPtr;
 
-  CI.getInvocation().getCASOpts() = Worker.CASOpts;
+  if (auto *IncludeTree = std::get_if<IncludeTreeCompilation>(
+          &Worker.getService().getOpts().Compilation))
+    CI.getInvocation().getCASOpts() = IncludeTree->CASOpts;
   initializeScanCompilerInstance(
       CI, OverlayFS, DiagEngineWithCmdAndOpts->DiagEngine->getClient(),
       Worker.Service, Worker.DepFS);

@@ -23,8 +23,7 @@ using llvm::Error;
 
 DependencyScanningWorker::DependencyScanningWorker(
     DependencyScanningService &Service)
-    : Service(Service), CASOpts(Service.getOpts().CASOpts),
-      CAS(Service.getOpts().CAS) {
+    : Service(Service) {
   PCHContainerOps = std::make_shared<PCHContainerOperations>();
   // We need to read object files from PCH built outside the scanner.
   PCHContainerOps->registerReader(
@@ -88,10 +87,14 @@ bool DependencyScanningWorker::computeDependencies(
     FS->setCurrentWorkingDirectory(WorkingDirectory);
   }
 
+  CASOptions CASOpts;
+  if (auto *IncludeTree =
+          std::get_if<IncludeTreeCompilation>(&Service.getOpts().Compilation))
+    CASOpts = IncludeTree->CASOpts;
   DependencyScanningAction Action(
       Service, WorkingDirectory, DepConsumer, Controller, DepFS,
       /*EmitDependencyFile=*/false,
-      /*DiagGenerationAsCompilation=*/false, getCASOpts());
+      /*DiagGenerationAsCompilation=*/false, CASOpts);
 
   const bool Success = llvm::all_of(CommandLines, [&](const auto &Cmd) {
     if (StringRef(Cmd[1]) != "-cc1") {
@@ -145,12 +148,16 @@ void DependencyScanningWorker::computeDependenciesFromCompilerInvocation(
     DepFile = Path.str().str();
   }
 
+  CASOptions CASOpts;
+  if (auto *IncludeTree =
+          std::get_if<IncludeTreeCompilation>(&Service.getOpts().Compilation))
+    CASOpts = IncludeTree->CASOpts;
   // FIXME: EmitDependencyFile should only be set when it's for a real
   // compilation.
   DependencyScanningAction Action(Service, WorkingDirectory, DepsConsumer,
                                   Controller, DepFS,
                                   /*EmitDependencyFile=*/!DepFile.empty(),
-                                  DiagGenerationAsCompilation, getCASOpts(),
+                                  DiagGenerationAsCompilation, CASOpts,
                                   /*ModuleName=*/std::nullopt, VerboseOS);
 
   // Ignore result; we're just collecting dependencies.
@@ -162,6 +169,10 @@ void DependencyScanningWorker::computeDependenciesFromCompilerInvocation(
 
 bool DependencyScanningWorker::initializeCompilerInstanceWithContext(
     StringRef CWD, ArrayRef<std::string> CommandLine, DiagnosticConsumer &DC) {
+  std::shared_ptr<cas::ObjectStore> CAS;
+  if (auto *IncludeTree =
+          std::get_if<IncludeTreeCompilation>(&Service.getOpts().Compilation))
+    CAS = IncludeTree->CAS;
   auto [OverlayFS, ModifiedCommandLine] =
       initVFSForByNameScanning(DepFS, CommandLine, CWD, "ScanningByName", CAS);
   auto DiagEngineWithCmdAndOpts =
