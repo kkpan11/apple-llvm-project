@@ -860,7 +860,7 @@ def AbiTag : Attr {
 def AddressSpace : TypeAttr {
   let Spellings = [Clang<"address_space">];
   let Args = [IntArgument<"AddressSpace">];
-  let Documentation = [Undocumented];
+  let Documentation = [AddressSpaceDocs];
 }
 
 def Alias : Attr {
