@@ -889,13 +889,13 @@ bool DependencyScanningAction::runInvocation(
   if (any(Service.getOpts().OptimizeArgs & ScanningOptimizations::Macros))
     canonicalizeDefines(OriginalInvocation->getPreprocessorOpts());
 
+  auto ReportError = [&](DiagnosticsEngine &Diags, Error &&E) -> bool {
+    Diags.Report(diag::err_cas_depscan_failed) << std::move(E);
+    return false;
+  };
+
   if (Scanned) {
     CompilerInstance &ScanInstance = *ScanInstanceStorage;
-    auto reportError = [&ScanInstance](Error &&E) -> bool {
-      ScanInstance.getDiagnostics().Report(diag::err_cas_depscan_failed)
-          << std::move(E);
-      return false;
-    };
 
     // Scanning runs once for the first -cc1 invocation in a chain of driver
     // jobs. For any dependent jobs, reuse the scanning result and just
@@ -905,7 +905,7 @@ bool DependencyScanningAction::runInvocation(
       MDC->applyDiscoveredDependencies(*OriginalInvocation);
 
     if (Error E = Controller.finalize(ScanInstance, *OriginalInvocation))
-      return reportError(std::move(E));
+      return ReportError(ScanInstance.getDiagnostics(), std::move(E));
 
     std::optional<std::string> CacheKey =
         Controller.getCacheKey(*OriginalInvocation);
@@ -947,6 +947,9 @@ bool DependencyScanningAction::runInvocation(
     if (ScanInstance.getFrontendOpts().ProgramAction == frontend::GeneratePCH)
       ScanInstance.getLangOpts().CompilingPCH = true;
 
+    if (Error E = Controller.initialize(ScanInstance, *OriginalInvocation))
+      return ReportError(ScanInstance.getDiagnostics(), std::move(E));
+
     AsyncCompiles.emplace();
     SingleTUWithAsyncModuleCompiles Action(Service, Controller, *AsyncCompiles);
     (void)ScanInstance.ExecuteAction(Action);
@@ -985,14 +988,8 @@ bool DependencyScanningAction::runInvocation(
   if (ScanInstance.getFrontendOpts().ProgramAction == frontend::GeneratePCH)
     ScanInstance.getLangOpts().CompilingPCH = true;
 
-  auto reportError = [&ScanInstance](Error &&E) -> bool {
-    ScanInstance.getDiagnostics().Report(diag::err_cas_depscan_failed)
-        << std::move(E);
-    return false;
-  };
-
   if (Error E = Controller.initialize(ScanInstance, *OriginalInvocation))
-    return reportError(std::move(E));
+    return ReportError(ScanInstance.getDiagnostics(), std::move(E));
 
   if (ScanInstance.getDiagnostics().hasErrorOccurred())
     return false;
@@ -1007,7 +1004,7 @@ bool DependencyScanningAction::runInvocation(
       MDC->applyDiscoveredDependencies(*OriginalInvocation);
 
     if (Error E = Controller.finalize(ScanInstance, *OriginalInvocation))
-      return reportError(std::move(E));
+      return ReportError(ScanInstance.getDiagnostics(), std::move(E));
 
     // Forward any CAS results to consumer.
     std::string ID = OriginalInvocation->getFrontendOpts().CASIncludeTreeID;
