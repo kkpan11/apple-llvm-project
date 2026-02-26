@@ -162,6 +162,7 @@ public:
   // The three methods below returns false when they fail, with the detail
   // accumulated in \c DiagEngineWithDiagOpts's diagnostic consumer.
   bool initialize(
+      DependencyActionController &Controller,
       std::unique_ptr<DiagnosticsEngineWithDiagOpts> DiagEngineWithDiagOpts,
       IntrusiveRefCntPtr<llvm::vfs::OverlayFileSystem> OverlayFS);
   bool computeDependencies(StringRef ModuleName, DependencyConsumer &Consumer,
