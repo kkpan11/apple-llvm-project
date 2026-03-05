@@ -399,7 +399,7 @@ private:
 
   /// Compute the context hash for \p Deps, and create the mapping
   /// \c ModuleDepsByID[Deps.ID] = &Deps.
-  void associateWithContextHash(const CowCompilerInvocation &CI, bool IgnoreCWD,
+  void associateWithContextHash(const CowCompilerInvocation &CI,
                                 ModuleDeps &Deps);
 };
 
