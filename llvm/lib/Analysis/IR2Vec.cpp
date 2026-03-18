@@ -184,7 +184,11 @@ void SymbolicEmbedder::computeEmbeddings(const BasicBlock &BB) const {
   Embedding BBVector(Dimension, 0);
 
   // We consider only the non-debug and non-pseudo instructions
-  for (const auto &I : BB.instructionsWithoutDebug()) {
+  for (const auto &I : BB) {
+    if (I.isDebugOrPseudoInst()) {
+      continue;
+    }
+
     Embedding ArgEmb(Dimension, 0);
     for (const auto &Op : I.operands())
       ArgEmb += Vocab[Op];

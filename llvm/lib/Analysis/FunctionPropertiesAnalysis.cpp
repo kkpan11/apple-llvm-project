@@ -86,7 +86,7 @@ void FunctionPropertiesInfo::updateForBB(const BasicBlock &BB,
       StoreInstCount += Direction;
     }
   }
-  TotalInstructionCount += Direction * BB.sizeWithoutDebug();
+  TotalInstructionCount += Direction * BB.size();
 
   if (EnableDetailedFunctionProperties) {
     unsigned SuccessorCount = succ_size(&BB);
@@ -129,7 +129,7 @@ void FunctionPropertiesInfo::updateForBB(const BasicBlock &BB,
         UnconditionalBranchCount += Direction;
     }
 
-    for (const Instruction &I : BB.instructionsWithoutDebug()) {
+    for (const Instruction &I : BB) {
       if (I.isCast())
         CastInstructionCount += Direction;
 

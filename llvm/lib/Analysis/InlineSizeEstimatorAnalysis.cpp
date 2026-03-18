@@ -174,7 +174,7 @@ IRToNativeSizeLearning::getFunctionFeatures(Function &F,
 
   // We don't want debug calls, because they'd just add noise.
   for (const auto &BB : F) {
-    for (const auto &I : BB.instructionsWithoutDebug()) {
+    for (const auto &I : BB) {
       auto ID = I.getOpcode();
 
       ++FF.InstructionHistogram[ID];
