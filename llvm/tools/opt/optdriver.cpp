@@ -653,7 +653,7 @@ extern "C" int optMain(
 
   // Override function attributes based on CPUStr, FeaturesStr, and command line
   // flags.
-  codegen::setFunctionAttributes(CPUStr, FeaturesStr, *M);
+  codegen::setFunctionAttributes(*M, CPUStr, FeaturesStr);
 
   // If the output is set to be emitted to standard out, and standard out is a
   // console, print out a warning message and refuse to do it.  We don't

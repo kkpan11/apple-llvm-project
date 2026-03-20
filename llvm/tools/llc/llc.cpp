@@ -501,7 +501,7 @@ static int compileModule(char **argv, LLVMContext &Context,
 
   // Set attributes on functions as loaded from MIR from command line arguments.
   auto setMIRFunctionAttributes = [&CPUStr, &FeaturesStr](Function &F) {
-    codegen::setFunctionAttributes(CPUStr, FeaturesStr, F);
+    codegen::setFunctionAttributes(F, CPUStr, FeaturesStr);
   };
 
   auto MAttrs = codegen::getMAttrs();
@@ -722,7 +722,7 @@ static int compileModule(char **argv, LLVMContext &Context,
 
   // Override function attributes based on CPUStr, FeaturesStr, and command line
   // flags.
-  codegen::setFunctionAttributes(CPUStr, FeaturesStr, *M);
+  codegen::setFunctionAttributes(*M, CPUStr, FeaturesStr);
 
   if (mc::getExplicitRelaxAll() &&
       codegen::getFileType() != CodeGenFileType::ObjectFile)
