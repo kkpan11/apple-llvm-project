@@ -340,6 +340,17 @@ C11 Feature Support
   C99 semantics will never be implemented (it would require dynamic allocations
   of memory which leaks, which users would not appreciate).
 
+Objective-C Language Changes
+-----------------------------
+
+- Clang now emits Objective-C number, array, and dictionary literals as
+  compile-time constant data structures rather than runtime ``objc_msgSend``
+  calls on targets whose runtime supports constant literal classes. The
+  feature can be disabled altogether with ``-fno-objc-constant-literals``,
+  or selectively per literal kind with ``-fno-constant-nsnumber-literals``,
+  ``-fno-constant-nsarray-literals``, and
+  ``-fno-constant-nsdictionary-literals``.
+
 Non-comprehensive list of changes in this release
 -------------------------------------------------
 
