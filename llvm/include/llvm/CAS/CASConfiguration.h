@@ -58,10 +58,10 @@ public:
   createDatabases() const;
 
   /// Write CAS configuration file.
-  void writeConfigurationFile(raw_ostream &OS) const;
+  LLVM_ABI void writeConfigurationFile(raw_ostream &OS) const;
 
   /// Create CASConfiguration from config file content.
-  static llvm::Expected<CASConfiguration>
+  LLVM_ABI static llvm::Expected<CASConfiguration>
   createFromConfig(llvm::StringRef Content);
 
   /// Create CASConfiguration from recurively search config file from a path.
@@ -75,7 +75,7 @@ public:
       llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> VFS = nullptr);
 
   /// Get resolved CASPath.
-  Error getResolvedCASPath(llvm::SmallVectorImpl<char> &Result) const;
+  LLVM_ABI Error getResolvedCASPath(llvm::SmallVectorImpl<char> &Result) const;
 
   /// DenseMap support \{
   static cas::CASConfiguration getDenseMapEmptyKey() { return {}; }

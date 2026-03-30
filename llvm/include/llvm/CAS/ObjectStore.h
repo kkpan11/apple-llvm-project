@@ -455,7 +455,8 @@ LLVM_ABI llvm::Expected<std::string> getDefaultOnDiskCASPath();
 /// on-disk directory that the plugin should use, otherwise the default
 /// OnDiskCAS location will be used.
 /// FIXME: Need to implement proper URL encoding scheme that allows "%".
-Expected<std::shared_ptr<ObjectStore>> createCASFromIdentifier(StringRef Path);
+LLVM_ABI Expected<std::shared_ptr<ObjectStore>>
+createCASFromIdentifier(StringRef Path);
 
 /// Register a URL scheme to CAS Identifier.
 using ObjectStoreCreateFuncTy =
