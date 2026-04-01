@@ -14,6 +14,7 @@ add_lldb_library(lldbPluginSwiftLanguage PLUGIN
   ObjCRuntimeSyntheticProvider.cpp
   SwiftArray.cpp
   SwiftBasicTypes.cpp
+  SwiftUIFormatters.cpp
   SwiftDictionary.cpp
   SwiftFormatters.cpp
   SwiftHashedContainer.cpp
