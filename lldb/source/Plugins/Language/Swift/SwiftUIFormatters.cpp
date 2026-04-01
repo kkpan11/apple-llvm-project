@@ -27,7 +27,7 @@ using namespace lldb_private;
 
 namespace {
 
-/// Synthetic children provider for SwiftUI(Core).AtomicBuffer<T>.
+/// Synthetic children provider for SwiftUI.AtomicBuffer<T>.
 ///
 /// Exposes two children:
 ///   [0] lock  - the lock which is the header of the Memory... header
