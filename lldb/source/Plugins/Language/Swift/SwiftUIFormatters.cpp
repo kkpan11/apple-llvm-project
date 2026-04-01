@@ -30,7 +30,7 @@ namespace {
 /// Synthetic children provider for SwiftUI.AtomicBuffer<T>.
 ///
 /// Exposes two children:
-///   [0] lock  - the lock which is the header of the Memory... header
+///   [0] lock  - the lock that is the header of a ManagedBufferPointer
 ///   [1] value - generic value stored immediately after the lock
 class AtomicBufferSyntheticFrontEnd : public SyntheticChildrenFrontEnd {
 public:
