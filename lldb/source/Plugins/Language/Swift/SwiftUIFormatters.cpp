@@ -164,11 +164,11 @@ public:
 
     ValueObjectSP location_synth_sp = location_sp->GetSyntheticValue();
     if (!location_synth_sp)
-      location_synth_sp = location_sp;
+      return ChildCacheState::eRefetch;
 
     bool use_value_property = false;
-    llvm::StringRef location_value = location_synth_sp->GetValueAsCString();
-    if (location_value == "nil") {
+    bool has_location = location_synth_sp->MightHaveChildren();
+    if (!has_location) {
       use_value_property = true;
     } else {
       // This logic is a proxy for calling GraphHost.isUpdating. During a call
