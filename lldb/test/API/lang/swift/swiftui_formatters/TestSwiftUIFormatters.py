@@ -8,18 +8,49 @@ class TestCase(TestBase):
 
     @skipUnlessDarwin
     @swiftTest
-    def test(self):
+    def test_before(self):
         self.build()
-        _, _, thread, _ = lldbutil.run_to_source_breakpoint(
-            self, "break here", lldb.SBFileSpec("main.swift")
+        _, _, self.thread, _ = lldbutil.run_to_source_breakpoint(
+            self, "break before", lldb.SBFileSpec("main.swift")
         )
+        self._do_test("view._count", 41, is_graph_update=False)
 
-        frame = thread.selected_frame
+    @skipUnlessDarwin
+    @swiftTest
+    def test_body(self):
+        self.build()
+        _, _, self.thread, _ = lldbutil.run_to_source_breakpoint(
+            self, "break body", lldb.SBFileSpec("main.swift")
+        )
+        self._do_test("self._count", 41, is_graph_update=True)
 
-        int_state = frame.var("intState")
-        self.assertEqual(int_state.GetNumChildren(), 1)
-        self.assertEqual(int_state.member["wrappedValue"].unsigned, 42)
-        self.assertIn(int_state.summary, "42")
+    @skipUnlessDarwin
+    @swiftTest
+    def test_after(self):
+        self.build()
+        _, _, self.thread, _ = lldbutil.run_to_source_breakpoint(
+            self, "break after", lldb.SBFileSpec("main.swift")
+        )
+        self._do_test("self._count", 15, is_graph_update=False)
 
-        str_state = frame.var("strState")
-        self.assertEqual(str_state.summary, '"hello"')
+    @skipUnlessDarwin
+    @swiftTest
+    def test_after(self):
+        self.build()
+        _, _, self.thread, _ = lldbutil.run_to_source_breakpoint(
+            self, "break final", lldb.SBFileSpec("main.swift")
+        )
+        self._do_test("self._count", 23, is_graph_update=False)
+
+    def _do_test(self, var_name: str, value: int, *, is_graph_update: bool):
+        symbol = "AG::Graph::UpdateStack::update()"
+        if is_graph_update:
+            self.assertIn(symbol, (f.name for f in self.thread))
+        else:
+            self.assertNotIn(symbol, (f.name for f in self.thread))
+
+        frame = self.thread.selected_frame
+        count = frame.var(var_name)
+        self.assertEqual(count.GetNumChildren(), 1)
+        self.assertEqual(count.member["wrappedValue"].unsigned, value)
+        self.assertEqual(count.summary, str(value))

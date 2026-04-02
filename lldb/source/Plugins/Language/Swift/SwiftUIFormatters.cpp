@@ -13,14 +13,15 @@
 #include "SwiftUIFormatters.h"
 
 #include "lldb/DataFormatters/FormattersHelpers.h"
-#include "lldb/Target/ExecutionContext.h"
 #include "lldb/Target/StackFrame.h"
 #include "lldb/Target/Thread.h"
 #include "lldb/Utility/ConstString.h"
+#include "lldb/Utility/Log.h"
 #include "lldb/ValueObject/ValueObject.h"
 #include "lldb/lldb-enumerations.h"
 #include "lldb/lldb-forward.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/MathExtras.h"
 
 using namespace lldb;
 using namespace lldb_private;
@@ -69,29 +70,41 @@ public:
 
     m_lock_sp = header_sp->Clone(ConstString("lock"));
 
-    CompilerType generic_type =
-        m_backend.GetCompilerType().GetTypeTemplateArgument(0);
-    if (generic_type) {
-      // The generic value comes after the header (the lock). To determine the
-      // offset of the value, first try the lock's stride, then try it's size.
-      uint32_t offset;
-      auto lock_type = m_lock_sp->GetCompilerType();
-      auto *target = m_backend.GetTargetSP().get();
-      std::optional<uint64_t> maybe_lock_size = lock_type.GetByteStride(target);
-      if (maybe_lock_size) {
-        offset = *maybe_lock_size;
-      } else {
-        if (auto byte_size_or_err = lock_type.GetByteSize(target)) {
-          offset = *byte_size_or_err;
-        } else {
-          llvm::consumeError(byte_size_or_err.takeError());
-          return ChildCacheState::eRefetch;
-        }
-      }
-
-      m_value_sp = header_sp->GetSyntheticChildAtOffset(
-          offset, generic_type, true, ConstString("value"));
+    auto lock_type = m_lock_sp->GetCompilerType();
+    auto generic_type = m_backend.GetCompilerType().GetTypeTemplateArgument(0);
+    if (!lock_type || !generic_type) {
+      LLDB_LOG(GetLog(LLDBLog::DataFormatters),
+               "could not retrieve field types of {0}",
+               m_backend.GetTypeName());
+      return ChildCacheState::eRefetch;
     }
+
+    auto *target = m_backend.GetTargetSP().get();
+
+    // The generic value comes after the lock. To calculate the offset of the
+    // value, the calculation needs the lock's size, and the value's alignment.
+
+    auto lock_size_or_err = lock_type.GetByteSize(target);
+    if (!lock_size_or_err) {
+      LLDB_LOG_ERROR(
+          GetLog(LLDBLog::DataFormatters), lock_size_or_err.takeError(),
+          "could not determine size of {1}: {0}", m_lock_sp->GetTypeName());
+      return ChildCacheState::eRefetch;
+    }
+
+    auto maybe_value_bit_align = generic_type.GetTypeBitAlign(target);
+    if (!maybe_value_bit_align) {
+      LLDB_LOG(GetLog(LLDBLog::DataFormatters),
+               "could not determine alignment of {0}",
+               generic_type.GetTypeName());
+      return ChildCacheState::eRefetch;
+    }
+
+    auto lock_size = *lock_size_or_err;
+    auto value_align = *maybe_value_bit_align / 8;
+    uint32_t value_offset = llvm::alignTo(lock_size, value_align);
+    m_value_sp = header_sp->GetSyntheticChildAtOffset(
+        value_offset, generic_type, true, ConstString("value"));
 
     return ChildCacheState::eReuse;
   }
@@ -161,8 +174,7 @@ public:
       // This logic is a proxy for calling GraphHost.isUpdating. During a call
       // to AG::Graph::UpdateStack::update(), the State's active value will be
       // found in the _value property (not within the _location.)
-      ThreadSP thread_sp =
-          m_backend.GetExecutionContextRef().GetThreadSP();
+      ThreadSP thread_sp = m_backend.GetThreadSP();
       if (thread_sp) {
         uint32_t num_frames = thread_sp->GetStackFrameCount();
         static constexpr uint32_t k_frame_search_limit = 50;
