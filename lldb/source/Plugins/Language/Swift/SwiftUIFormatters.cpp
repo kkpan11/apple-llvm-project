@@ -56,8 +56,8 @@ public:
       return 0;
     if (name == "value")
       return 1;
-    return llvm::createStringError("Type has no child named '%s'",
-                                   name.AsCString());
+    return llvm::createStringError(
+        llvm::formatv("Type has no child named '{0}'", name));
   }
 
   lldb::ChildCacheState Update() override {
@@ -151,8 +151,8 @@ public:
   llvm::Expected<size_t> GetIndexOfChildWithName(ConstString name) override {
     if (name == "wrappedValue")
       return 0;
-    return llvm::createStringError("Type has no child named '%s'",
-                                   name.AsCString());
+    return llvm::createStringError(
+        llvm::formatv("Type has no child named '{0}'", name));
   }
 
   lldb::ChildCacheState Update() override {
