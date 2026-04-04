@@ -43,7 +43,7 @@ class TestCase(TestBase):
 
     @skipUnlessDarwin
     @swiftTest
-    def test_after(self):
+    def test_final(self):
         self.build()
         _, _, self.thread, _ = lldbutil.run_to_source_breakpoint(
             self, "break final", lldb.SBFileSpec("main.swift")
