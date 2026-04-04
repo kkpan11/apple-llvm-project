@@ -6,6 +6,14 @@ from lldbsuite.test import lldbutil
 
 class TestCase(TestBase):
 
+    def setUp(self):
+        super().setUp()
+        # In some environments (specifically seen in PR CI), TypeSystemSwiftTypeRef
+        # fails to retrieve the entirety of SwiftUI.State<T>. In those environments,
+        # fallback to the compiler is needed, and validation needs to be disabled.
+        self.runCmd("settings set symbols.swift-validate-typesystem false")
+        self.runCmd("settings set symbols.swift-typesystem-compiler-fallback true")
+
     @skipUnlessDarwin
     @swiftTest
     def test_before(self):

@@ -71,8 +71,8 @@ public:
     m_lock_sp = header_sp->Clone(ConstString("lock"));
 
     auto lock_type = m_lock_sp->GetCompilerType();
-    auto generic_type = m_backend.GetCompilerType().GetTypeTemplateArgument(0);
-    if (!lock_type || !generic_type) {
+    auto value_type = m_backend.GetCompilerType().GetTypeTemplateArgument(0);
+    if (!lock_type || !value_type) {
       LLDB_LOG(GetLog(LLDBLog::DataFormatters),
                "could not retrieve field types of {0}",
                m_backend.GetTypeName());
@@ -92,11 +92,11 @@ public:
       return ChildCacheState::eRefetch;
     }
 
-    auto maybe_value_bit_align = generic_type.GetTypeBitAlign(target);
+    auto maybe_value_bit_align = value_type.GetTypeBitAlign(target);
     if (!maybe_value_bit_align) {
       LLDB_LOG(GetLog(LLDBLog::DataFormatters),
                "could not determine alignment of {0}",
-               generic_type.GetTypeName());
+               value_type.GetTypeName());
       return ChildCacheState::eRefetch;
     }
 
@@ -104,7 +104,7 @@ public:
     auto value_align = *maybe_value_bit_align / 8;
     uint32_t value_offset = llvm::alignTo(lock_size, value_align);
     m_value_sp = header_sp->GetSyntheticChildAtOffset(
-        value_offset, generic_type, true, ConstString("value"));
+        value_offset, value_type, true, ConstString("value"));
 
     return ChildCacheState::eReuse;
   }
