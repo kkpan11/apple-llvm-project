@@ -43,7 +43,7 @@ class TestCase(TestBase):
         count_raw = count.GetNonSyntheticValue()
         value = count_raw.member["_value"].GetSyntheticValue()
         location = count_raw.member["_location"].GetSyntheticValue()
-        self.expectTrue(False, f"value={value} -- location={location}")
+        self.assertTrue(False, f"value={value} -- location={location}")
         self._do_test("self._count", 15, is_graph_update=False)
 
     @skipUnlessDarwin
@@ -57,7 +57,7 @@ class TestCase(TestBase):
         count_raw = count.GetNonSyntheticValue()
         value = count_raw.member["_value"].GetSyntheticValue()
         location = count_raw.member["_location"].GetSyntheticValue()
-        self.expectTrue(False, f"value={value} -- location={location}")
+        self.assertTrue(False, f"value={value} -- location={location}")
         self._do_test("self._count", 23, is_graph_update=False)
 
     def _do_test(self, var_name: str, value: int, *, is_graph_update: bool):
