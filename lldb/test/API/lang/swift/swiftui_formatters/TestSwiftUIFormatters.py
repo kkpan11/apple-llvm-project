@@ -34,11 +34,16 @@ class TestCase(TestBase):
 
     @skipUnlessDarwin
     @swiftTest
-    def disabled_test_after(self):
+    def test_after(self):
         self.build()
         _, _, self.thread, _ = lldbutil.run_to_source_breakpoint(
             self, "break after", lldb.SBFileSpec("main.swift")
         )
+        count = self.thread.selected_frame.var("self._count")
+        count_raw = count.GetNonSyntheticValue()
+        value = count_raw.member["_value"].GetSyntheticValue()
+        location = count_raw.member["_location"].GetSyntheticValue()
+        self.expectTrue(False, f"value={value} -- location={location}")
         self._do_test("self._count", 15, is_graph_update=False)
 
     @skipUnlessDarwin
@@ -48,6 +53,11 @@ class TestCase(TestBase):
         _, _, self.thread, _ = lldbutil.run_to_source_breakpoint(
             self, "break final", lldb.SBFileSpec("main.swift")
         )
+        count = self.thread.selected_frame.var("self._count")
+        count_raw = count.GetNonSyntheticValue()
+        value = count_raw.member["_value"].GetSyntheticValue()
+        location = count_raw.member["_location"].GetSyntheticValue()
+        self.expectTrue(False, f"value={value} -- location={location}")
         self._do_test("self._count", 23, is_graph_update=False)
 
     def _do_test(self, var_name: str, value: int, *, is_graph_update: bool):
