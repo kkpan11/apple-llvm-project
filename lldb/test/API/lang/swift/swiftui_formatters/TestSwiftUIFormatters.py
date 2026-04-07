@@ -36,6 +36,8 @@ class TestCase(TestBase):
     @swiftTest
     def test_after(self):
         self.build()
+        log = self.getBuildArtifact("types.log")
+        self.expect(f"log enable lldb types -f {log}")
         _, _, self.thread, _ = lldbutil.run_to_source_breakpoint(
             self, "break after", lldb.SBFileSpec("main.swift")
         )
@@ -43,13 +45,17 @@ class TestCase(TestBase):
         count_raw = count.GetNonSyntheticValue()
         value = count_raw.member["_value"].GetSyntheticValue()
         location = count_raw.member["_location"].GetSyntheticValue()
-        self.assertTrue(False, f"value={value} -- location={location}")
+        debug = f"{value} -- location={location}"
+        self.runCmd(f"grep SwiftUI {log}")
+        self.assertTrue(False, debug)
         self._do_test("self._count", 15, is_graph_update=False)
 
     @skipUnlessDarwin
     @swiftTest
     def test_final(self):
         self.build()
+        log = self.getBuildArtifact("types.log")
+        self.expect(f"log enable lldb types -f {log}")
         _, _, self.thread, _ = lldbutil.run_to_source_breakpoint(
             self, "break final", lldb.SBFileSpec("main.swift")
         )
@@ -57,7 +63,9 @@ class TestCase(TestBase):
         count_raw = count.GetNonSyntheticValue()
         value = count_raw.member["_value"].GetSyntheticValue()
         location = count_raw.member["_location"].GetSyntheticValue()
-        self.assertTrue(False, f"value={value} -- location={location}")
+        debug = f"{value} -- location={location}"
+        self.runCmd(f"grep SwiftUI {log}")
+        self.assertTrue(False, debug)
         self._do_test("self._count", 23, is_graph_update=False)
 
     def _do_test(self, var_name: str, value: int, *, is_graph_update: bool):
