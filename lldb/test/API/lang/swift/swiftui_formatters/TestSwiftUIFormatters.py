@@ -46,7 +46,7 @@ class TestCase(TestBase):
         value = count_raw.member["_value"].GetSyntheticValue()
         location = count_raw.member["_location"].GetSyntheticValue()
         debug = f"{value} -- location={location}"
-        self.runCmd(f"grep SwiftUI {log}")
+        self._grep("SwiftUI", log)
         self.assertTrue(False, debug)
         self._do_test("self._count", 15, is_graph_update=False)
 
@@ -64,7 +64,7 @@ class TestCase(TestBase):
         value = count_raw.member["_value"].GetSyntheticValue()
         location = count_raw.member["_location"].GetSyntheticValue()
         debug = f"{value} -- location={location}"
-        self.runCmd(f"grep SwiftUI {log}")
+        self._grep("SwiftUI", log)
         self.assertTrue(False, debug)
         self._do_test("self._count", 23, is_graph_update=False)
 
@@ -80,3 +80,10 @@ class TestCase(TestBase):
         self.assertEqual(count.GetNumChildren(), 1)
         self.assertEqual(count.member["wrappedValue"].unsigned, value)
         self.assertEqual(count.summary, str(value))
+
+    def _grep(self, pattern: str, log: str) -> None:
+        with open(log) as f:
+            log_lines = f.readlines()
+        for line in log_lines:
+            if pattern in line:
+                print(line, end="")
