@@ -1,3 +1,4 @@
+import sys
 import lldb
 from lldbsuite.test.decorators import *
 from lldbsuite.test.lldbtest import *
@@ -37,7 +38,7 @@ class TestCase(TestBase):
     def test_after(self):
         self.build()
         log = self.getBuildArtifact("types.log")
-        self.expect(f"log enable lldb types -f {log}")
+        self.expect(f"log enable lldb types -v -f {log}")
         _, _, self.thread, _ = lldbutil.run_to_source_breakpoint(
             self, "break after", lldb.SBFileSpec("main.swift")
         )
@@ -46,7 +47,7 @@ class TestCase(TestBase):
         value = count_raw.member["_value"].GetSyntheticValue()
         location = count_raw.member["_location"].GetSyntheticValue()
         debug = f"{value} -- location={location}"
-        self._grep("SwiftUI", log)
+        self._cat(log)
         self.assertTrue(False, debug)
         self._do_test("self._count", 15, is_graph_update=False)
 
@@ -55,7 +56,7 @@ class TestCase(TestBase):
     def test_final(self):
         self.build()
         log = self.getBuildArtifact("types.log")
-        self.expect(f"log enable lldb types -f {log}")
+        self.expect(f"log enable lldb types -v -f {log}")
         _, _, self.thread, _ = lldbutil.run_to_source_breakpoint(
             self, "break final", lldb.SBFileSpec("main.swift")
         )
@@ -64,7 +65,7 @@ class TestCase(TestBase):
         value = count_raw.member["_value"].GetSyntheticValue()
         location = count_raw.member["_location"].GetSyntheticValue()
         debug = f"{value} -- location={location}"
-        self._grep("SwiftUI", log)
+        self._cat(log)
         self.assertTrue(False, debug)
         self._do_test("self._count", 23, is_graph_update=False)
 
@@ -81,9 +82,7 @@ class TestCase(TestBase):
         self.assertEqual(count.member["wrappedValue"].unsigned, value)
         self.assertEqual(count.summary, str(value))
 
-    def _grep(self, pattern: str, log: str) -> None:
+    def _cat(self, log: str) -> None:
         with open(log) as f:
             log_lines = f.readlines()
-        for line in log_lines:
-            if pattern in line:
-                print(line, end="")
+            sys.stdout.writelines(log_lines)
