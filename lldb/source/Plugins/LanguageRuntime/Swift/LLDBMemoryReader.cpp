@@ -359,49 +359,11 @@ LLDBMemoryReader::resolveIndirectAddressAtOffset(
 
   Address lldb_offset_address = *maybeAddr;
   if (!lldb_offset_address.IsSectionOffset()) {
-    LLDB_LOG(
+    LLDB_LOGV(
         log,
         "[MemoryReader::resolveAddressAtOffset] lldb offset address has no "
-        "section {0:x} -- returning stale file-cached value. "
-        "IsSectionOffset={1}, address space={2}",
-        offset_address.getRawAddress(),
-        lldb_offset_address.IsSectionOffset(),
-        offset_address.getAddressSpace());
-
-    // DIAGNOSTIC: Show what live memory would give us for this address.
-    {
-      std::optional<Address> diag_lldb_addr =
-          resolveRemoteAddressFromSymbolObjectFile(address);
-      if (!diag_lldb_addr)
-        diag_lldb_addr = remoteAddressToLLDBAddress(address);
-      if (diag_lldb_addr) {
-        Target &target(m_process.GetTarget());
-        Status error;
-        const bool force_live_memory = true;
-        bool did_read_live_memory = false;
-        uint32_t live_offset = 0;
-        size_t size = sizeof(live_offset);
-        if (size ==
-            target.ReadMemory(*diag_lldb_addr, &live_offset, size, error,
-                              force_live_memory, /*load_addr_ptr=*/nullptr,
-                              &did_read_live_memory)) {
-          if (directnessEncodedInOffset)
-            live_offset &= ~1u;
-          addr_t live_address =
-              diag_lldb_addr->GetLoadAddress(&target);
-          LLDB_LOG(log,
-                   "[MemoryReader::resolveAddressAtOffset] DIAGNOSTIC: "
-                   "live re-read from base {0:x} gives offset {1:x}, "
-                   "would resolve to {2:x} (live_read={3}). "
-                   "File-cached result was {4:x}.",
-                   live_address, live_offset,
-                   live_address + live_offset,
-                   did_read_live_memory,
-                   offset_address.getRawAddress());
-        }
-      }
-    }
-
+        "section {0:x}",
+        offset_address.getRawAddress());
     return offset_address;
   }
 
