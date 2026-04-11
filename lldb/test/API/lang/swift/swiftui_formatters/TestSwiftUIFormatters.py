@@ -14,7 +14,7 @@ class TestCase(TestBase):
         # fallback to the compiler is needed, and validation needs to be disabled.
         self.runCmd("settings set symbols.swift-validate-typesystem false")
         self.runCmd("settings set symbols.swift-typesystem-compiler-fallback true")
-        self.runCmd("settings set symbols.enable-swift-metadata-cache false")
+        # self.runCmd("settings set symbols.enable-swift-metadata-cache false")
 
     @skipUnlessDarwin
     @swiftTest
