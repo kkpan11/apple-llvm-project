@@ -373,13 +373,6 @@ LLDBMemoryReader::resolveIndirectAddressAtOffset(
     return offset_address;
 
   SectionSP section = lldb_offset_address.GetSection();
-  LLDB_LOG(log,
-           "[MemoryReader::resolveAddressAtOffset] offset address {0:x} "
-           "resolved to section \"{1},{2}\" (IsGOT={3})",
-           offset_address.getRawAddress(),
-           section->GetParent() ? section->GetParent()->GetName()
-                                : ConstString("<none>"),
-           section->GetName(), section->IsGOTSection());
   if (!section->IsGOTSection())
     return offset_address;
 
