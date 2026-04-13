@@ -358,34 +358,22 @@ LLDBMemoryReader::resolveIndirectAddressAtOffset(
   }
 
   Address lldb_offset_address = *maybeAddr;
-  bool needs_live_reread = false;
-
-  if (lldb_offset_address.IsSectionOffset()) {
-    // This is only necessary on Apple platforms.
-    ObjectFile *obj_file = lldb_offset_address.GetModule()->GetObjectFile();
-    if (!obj_file || !obj_file->GetArchitecture().GetTriple().isOSDarwin())
-      return offset_address;
-
-    SectionSP section = lldb_offset_address.GetSection();
-    needs_live_reread = section->IsGOTSection();
-  } else {
+  if (!lldb_offset_address.IsSectionOffset()) {
     LLDB_LOGV(
         log,
         "[MemoryReader::resolveAddressAtOffset] lldb offset address has no "
         "section {0:x}",
         offset_address.getRawAddress());
-    // The offset address falls in a region with no section coverage.
-    // On Darwin, this can happen when the shared cache splits segments
-    // across non-contiguous address ranges. Since we can't determine
-    // whether this is a GOT entry, conservatively assume it might be
-    // and attempt the live re-read.
-    needs_live_reread = m_process.GetTarget()
-                            .GetArchitecture()
-                            .GetTriple()
-                            .isOSDarwin();
+    return offset_address;
   }
 
-  if (!needs_live_reread)
+  // This is only necessary on Apple platforms.
+  ObjectFile *obj_file = lldb_offset_address.GetModule()->GetObjectFile();
+  if (!obj_file || !obj_file->GetArchitecture().GetTriple().isOSDarwin())
+    return offset_address;
+
+  SectionSP section = lldb_offset_address.GetSection();
+  if (!section->IsGOTSection())
     return offset_address;
 
   // offset_address is in a GOT section. Re-read the offset from the base
