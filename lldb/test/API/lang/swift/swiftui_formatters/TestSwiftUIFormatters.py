@@ -15,6 +15,9 @@ class TestCase(TestBase):
         self.runCmd("settings set symbols.swift-validate-typesystem false")
         self.runCmd("settings set symbols.swift-typesystem-compiler-fallback true")
         # self.runCmd("settings set symbols.enable-swift-metadata-cache false")
+        self.runCmd(
+            "settings set target.experimental.swift-read-metadata-from-file-cache false"
+        )
 
     @skipUnlessDarwin
     @swiftTest
