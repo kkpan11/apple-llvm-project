@@ -198,14 +198,13 @@ public:
       return std::nullopt;
     }
 
-    auto *superTI =
-        self.getBuilder().getTypeConverter().getClassInstanceTypeInfo(
-            superclass, *superclassStart, ExternalTypeInfo);
+    auto &TC = self.getBuilder().getTypeConverter();
+    auto *superTI = TC.getClassInstanceTypeInfo(superclass, *superclassStart,
+                                                ExternalTypeInfo);
     if (!superTI) {
-      std::stringstream ss;
-      superclass->dump(ss);
       LLDB_LOG(GetLog(LLDBLog::Types),
-               "Could not get class instance type info: TR={0}", ss.str());
+               "Could not get class instance type info; error: {0}",
+               TC.takeLastError());
       return std::nullopt;
     }
 
