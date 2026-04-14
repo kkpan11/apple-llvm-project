@@ -50,6 +50,7 @@ namespace clang {
   class Declarator;
   class OverflowBehaviorType;
   struct TemplateIdAnnotation;
+  struct LateParsedAttribute;
 
 /// Represents a C++ nested-name-specifier or a global scope specifier.
 ///
@@ -1248,6 +1249,26 @@ public:
 
 /// A set of tokens that has been cached for later parsing.
 typedef SmallVector<Token, 4> CachedTokens;
+
+// A list of late-parsed attributes.  Used by ParseGNUAttributes.
+class LateParsedAttrList : public SmallVector<LateParsedAttribute *, 2> {
+public:
+  LateParsedAttrList(bool PSoon = false,
+                     bool LateAttrParseExperimentalExtOnly = false)
+      : ParseSoon(PSoon),
+        LateAttrParseExperimentalExtOnly(LateAttrParseExperimentalExtOnly) {}
+
+  bool parseSoon() { return ParseSoon; }
+  /// returns true iff the attribute to be parsed should only be late parsed
+  /// if it is annotated with `LateAttrParseExperimentalExt`
+  bool lateAttrParseExperimentalExtOnly() {
+    return LateAttrParseExperimentalExtOnly;
+  }
+
+private:
+  bool ParseSoon; // Are we planning to parse these shortly after creation?
+  bool LateAttrParseExperimentalExtOnly;
+};
 
 /// One instance of this struct is used for each type in a
 /// declarator that is parsed.
