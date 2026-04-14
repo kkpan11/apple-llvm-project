@@ -17,7 +17,6 @@
 #include "lldb/Utility/Log.h"
 #include "swift/Demangling/Demangle.h"
 #include "swift/RemoteInspection/DescriptorFinder.h"
-#include <sstream>
 
 using namespace lldb;
 using namespace lldb_private;
@@ -165,65 +164,14 @@ public:
     return *tr;
   }
 
-  static std::optional<unsigned> custom_computeUnalignedFieldStartOffset(
-      ReflectionContext &self, const swift::reflection::TypeRef *TR,
-      swift::remote::TypeInfoProvider *ExternalTypeInfo) {
-    size_t isaAndRetainCountSize = /*sizeof(StoredSize)*/ 8 + sizeof(long long);
-
-    const auto *superclass = self.getBuilder().lookupSuperclass(TR);
-    if (!superclass) {
-      // If there is no superclass the stat of the instance's field is right
-      // after the isa and retain fields.
-      std::stringstream ss;
-      TR->dump(ss);
-      LLDB_LOG(GetLog(LLDBLog::Types), "Could not lookup superclass: TR={0}",
-               ss.str());
-      return isaAndRetainCountSize;
-    }
-
-    // `ObjCClassTypeRef` instances represent classes in the ObjC module
-    // ("__C"). These will never have Swift type metadata.
-    if (auto *objcSuper =
-            llvm::dyn_cast<swift::reflection::ObjCClassTypeRef>(superclass))
-      if (auto *superTI = ExternalTypeInfo->getTypeInfo(objcSuper->getName()))
-        return superTI->getSize();
-
-    auto superclassStart = custom_computeUnalignedFieldStartOffset(
-        self, superclass, ExternalTypeInfo);
-    if (!superclassStart) {
-      std::stringstream ss;
-      superclass->dump(ss);
-      LLDB_LOG(GetLog(LLDBLog::Types),
-               "Could not compute superclass start: TR={0}", ss.str());
-      return std::nullopt;
-    }
-
-    auto &TC = self.getBuilder().getTypeConverter();
-    auto *superTI = TC.getClassInstanceTypeInfo(superclass, *superclassStart,
-                                                ExternalTypeInfo);
-    if (!superTI) {
-      LLDB_LOG(GetLog(LLDBLog::Types),
-               "Could not get class instance type info; error: {0}",
-               TC.takeLastError());
-      return std::nullopt;
-    }
-
-    // The start of the subclass's fields is right after the super class's ones.
-    size_t start = superTI->getSize();
-    return start;
-  }
-
   llvm::Expected<const swift::reflection::RecordTypeInfo &>
   GetClassInstanceTypeInfo(
       const swift::reflection::TypeRef &type_ref,
       swift::remote::TypeInfoProvider *provider,
       swift::reflection::DescriptorFinder *descriptor_finder) override {
     auto on_exit = PushDescriptorFinderAndPopOnExit(descriptor_finder);
-    // auto start =
-    //     m_reflection_ctx.computeUnalignedFieldStartOffset(&type_ref,
-    //     provider);
-    auto start = custom_computeUnalignedFieldStartOffset(m_reflection_ctx,
-                                                         &type_ref, provider);
+    auto start =
+        m_reflection_ctx.computeUnalignedFieldStartOffset(&type_ref, provider);
     if (!start) {
       std::stringstream ss;
       type_ref.dump(ss);
