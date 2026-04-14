@@ -7720,7 +7720,7 @@ void Sema::applyPtrCountedByEndedByAttr(Decl *D, unsigned Level,
   if (!IsEndedBy) {
     // Nullability as indicated by _Nonnull or _Nullable. Does not impact
     // semantics, only warnings.
-    std::optional<NullabilityKind> AttrNullability = Info.Ty->getNullability();
+    NullabilityKindOrNone AttrNullability = Info.Ty->getNullability();
     if (OrNull) {
       // Function parameter/return value attribute that *does* impact semantics,
       // letting the compiler elide null checks. This could remove bounds safety
