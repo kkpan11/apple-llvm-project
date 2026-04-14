@@ -173,7 +173,7 @@ public:
     } else {
       // This logic is a proxy for calling GraphHost.isUpdating. During a call
       // to AG::Graph::UpdateStack::update(), the State's active value will be
-      // found in the _value property (not within the _location.)
+      // found in the _value property (not within _location).
       ThreadSP thread_sp = m_backend.GetThreadSP();
       if (thread_sp) {
         uint32_t num_frames = thread_sp->GetStackFrameCount();
