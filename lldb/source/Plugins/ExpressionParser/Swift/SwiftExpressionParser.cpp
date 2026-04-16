@@ -1081,13 +1081,11 @@ MaterializeVariable(SwiftASTManipulatorBase::VariableInfo &variable,
                                      "couldn't add variable to struct: %s.\n",
                                      error.AsCString());
 
-    LLDB_LOGF(log,
-              "Added persistent variable {0} with flags {1:x} to struct at "
-              "offset {2}",
-              variable_metadata->m_persistent_variable_sp->GetName(),
-              (unsigned long long)
-                  variable_metadata->m_persistent_variable_sp->m_flags,
-              (unsigned long long)offset);
+    LLDB_LOG(log,
+             "Added persistent variable {0} with flags {1:x} to struct at "
+             "offset {2}",
+             variable_metadata->m_persistent_variable_sp->GetName(),
+             variable_metadata->m_persistent_variable_sp->m_flags, offset);
   }
 
   bool unowned_self = false;
