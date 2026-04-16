@@ -4,7 +4,6 @@ from lldbsuite.test.lldbtest import *
 from lldbsuite.test import lldbutil
 
 
-@skip(bugnumber="rdar://174869708")
 @skipIf(archs=["x86_64"], bugnumber="rdar://174750739")
 class TestCase(TestBase):
 
@@ -26,6 +25,7 @@ class TestCase(TestBase):
         )
         self._do_test("self._count", 41, is_graph_update=True)
 
+    @skip(bugnumber="rdar://174869708")
     @skipUnlessDarwin
     @swiftTest
     def test_after(self):
