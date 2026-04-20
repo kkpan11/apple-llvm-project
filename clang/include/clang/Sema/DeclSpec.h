@@ -1275,7 +1275,7 @@ private:
 ///
 /// This is intended to be a small value object.
 struct DeclaratorChunk {
-  DeclaratorChunk() {};
+  DeclaratorChunk() : LateAttrList(/*ParseSoon*/true, /*LateAttrParseExperimentalExtOnly*/true) {};
 
   enum {
     Pointer, Reference, Array, Function, BlockPointer, MemberPointer, Paren, Pipe
@@ -1293,20 +1293,7 @@ struct DeclaratorChunk {
   }
 
   ParsedAttributesView AttrList;
-
-  /* TO_UPSTREAM(BoundsSafety) ON */
-  struct LateParsedAttrInfo {
-    CachedTokens Toks;
-    IdentifierInfo &AttrName;
-    IdentifierInfo *MacroII = nullptr;
-    SourceLocation AttrNameLoc;
-
-    explicit LateParsedAttrInfo(CachedTokens Toks, IdentifierInfo &AttrName,
-                                IdentifierInfo *MacroII,
-                                SourceLocation AttrNameLoc)
-        : Toks(Toks), AttrName(AttrName), MacroII(MacroII), AttrNameLoc(AttrNameLoc) {}
-  };
-  /* TO_UPSTREAM(BoundsSafety) OFF */
+  LateParsedAttrList LateAttrList;
 
   struct PointerTypeInfo {
     /// The type qualifiers: const/volatile/restrict/unaligned/atomic.
@@ -1336,26 +1323,8 @@ struct DeclaratorChunk {
     LLVM_PREFERRED_TYPE(bool)
     unsigned OverflowBehaviorIsWrap : 1;
 
-    /* TO_UPSTREAM(BoundsSafety) ON */
-    // LateParsedAttrInfo objects and their count.
-    unsigned NumLateParsedAttrs;
-    LateParsedAttrInfo **LateAttrInfos;
-    /* TO_UPSTREAM(BoundsSafety) OFF */
-
     void destroy() {
-      /* TO_UPSTREAM(BoundsSafety) ON */
-      for (unsigned i = 0; i < NumLateParsedAttrs; ++i)
-        delete LateAttrInfos[i];
-      if (NumLateParsedAttrs != 0)
-        delete[] LateAttrInfos;
-      /* TO_UPSTREAM(BoundsSafety) OFF */
     }
-
-    /* TO_UPSTREAM(BoundsSafety) ON */
-    ArrayRef<LateParsedAttrInfo *> getLateParsedAttrInfos() const {
-      return {LateAttrInfos, NumLateParsedAttrs};
-    }
-    /* TO_UPSTREAM(BoundsSafety) OFF */
   };
 
   struct ReferenceTypeInfo {
@@ -1386,26 +1355,7 @@ struct DeclaratorChunk {
     /// expression class on all clients, NumElts is untyped.
     Expr *NumElts;
 
-    /* TO_UPSTREAM(BoundsSafety) ON */
-    // LateParsedAttrInfo objects and their count.
-    unsigned NumLateParsedAttrs;
-    LateParsedAttrInfo **LateAttrInfos;
-    /* TO_UPSTREAM(BoundsSafety) OFF */
-
-    void destroy() {
-      /* TO_UPSTREAM(BoundsSafety) ON */
-      for (unsigned i = 0; i < NumLateParsedAttrs; ++i)
-        delete LateAttrInfos[i];
-      if (NumLateParsedAttrs != 0)
-        delete[] LateAttrInfos;
-      /* TO_UPSTREAM(BoundsSafety) OFF */
-    }
-
-    /* TO_UPSTREAM(BoundsSafety) ON */
-    ArrayRef<LateParsedAttrInfo *> getLateParsedAttrInfos() const {
-      return {LateAttrInfos, NumLateParsedAttrs};
-    }
-    /* TO_UPSTREAM(BoundsSafety) OFF */
+    void destroy() {}
   };
 
   /// ParamInfo - An array of paraminfo objects is allocated whenever a function
@@ -1756,9 +1706,7 @@ struct DeclaratorChunk {
                                     SourceLocation AtomicQualLoc,
                                     SourceLocation UnalignedQualLoc,
                                     SourceLocation OverflowBehaviorLoc = {},
-                                    bool OverflowBehaviorIsWrap = false,
-                                    // TO_UPSTREAM(BoundsSafety)
-                                    ArrayRef<LateParsedAttrInfo*> LateAttrInfos = {}) {
+                                    bool OverflowBehaviorIsWrap = false) {
     DeclaratorChunk I;
     I.Kind                = Pointer;
     I.Loc                 = Loc;
@@ -1771,14 +1719,6 @@ struct DeclaratorChunk {
     I.Ptr.UnalignedQualLoc = UnalignedQualLoc;
     I.Ptr.OverflowBehaviorLoc = OverflowBehaviorLoc;
     I.Ptr.OverflowBehaviorIsWrap = OverflowBehaviorIsWrap;
-    /* TO_UPSTREAM(BoundsSafety) ON */
-    I.Ptr.NumLateParsedAttrs = LateAttrInfos.size();
-    if (!LateAttrInfos.empty()) {
-      I.Ptr.LateAttrInfos = new LateParsedAttrInfo *[LateAttrInfos.size()];
-      for (size_t J = 0; J < LateAttrInfos.size(); ++J)
-        I.Ptr.LateAttrInfos[J] = LateAttrInfos[J];
-    }
-    /* TO_UPSTREAM(BoundsSafety) OFF */
     return I;
   }
 
@@ -1796,9 +1736,7 @@ struct DeclaratorChunk {
   /// Return a DeclaratorChunk for an array.
   static DeclaratorChunk getArray(unsigned TypeQuals,
                                   bool isStatic, bool isStar, Expr *NumElts,
-                                  SourceLocation LBLoc, SourceLocation RBLoc,
-                                  // TO_UPSTREAM(BoundsSafety)
-                                  ArrayRef<LateParsedAttrInfo*> LateAttrInfos = {}) {
+                                  SourceLocation LBLoc, SourceLocation RBLoc) {
     DeclaratorChunk I;
     I.Kind          = Array;
     I.Loc           = LBLoc;
@@ -1807,14 +1745,6 @@ struct DeclaratorChunk {
     I.Arr.hasStatic = isStatic;
     I.Arr.isStar    = isStar;
     I.Arr.NumElts   = NumElts;
-    /* TO_UPSTREAM(BoundsSafety) ON */
-    I.Arr.NumLateParsedAttrs = LateAttrInfos.size();
-    if (!LateAttrInfos.empty()) {
-      I.Arr.LateAttrInfos = new LateParsedAttrInfo *[LateAttrInfos.size()];
-      for (size_t J = 0; J < LateAttrInfos.size(); ++J)
-        I.Arr.LateAttrInfos[J] = LateAttrInfos[J];
-    }
-    /* TO_UPSTREAM(BoundsSafety) OFF */
     return I;
   }
 
@@ -2464,13 +2394,16 @@ public:
   /// This function takes attrs by R-Value reference because it takes ownership
   /// of those attributes from the parameter.
   void AddTypeInfo(const DeclaratorChunk &TI, ParsedAttributes &&attrs,
-                   SourceLocation EndLoc) {
+                   SourceLocation EndLoc,
+                   const LateParsedAttrList &LateAttrs = {}) {
     DeclTypeInfo.push_back(TI);
     DeclTypeInfo.back().getAttrs().prepend(attrs.begin(), attrs.end());
     getAttributePool().takeAllFrom(attrs.getPool());
 
     if (!EndLoc.isInvalid())
       SetRangeEnd(EndLoc);
+
+    DeclTypeInfo.back().LateAttrList.append(LateAttrs);
   }
 
   /// AddTypeInfo - Add a chunk to this declarator. Also extend the range to
@@ -2516,21 +2449,6 @@ public:
     assert(i < DeclTypeInfo.size() && "Invalid type chunk");
     return DeclTypeInfo[i];
   }
-
-  /*TO_UPSTREAM(BoundsSafety) ON*/
-  /// Add all DeclaratorChunks from Other to the end of this declarator, and
-  /// remove them from Other. This transfers ownership of the DeclaratorChunks
-  /// and their attributes to this object.
-  void TakeTypeObjects(Declarator &Other) {
-    DeclTypeInfo.append(Other.DeclTypeInfo); // Keep the ordering
-    while (!Other.DeclTypeInfo.empty()) {
-      // Remove without calling destroy(), so it won't be destroyed when
-      // calling the destructor on Other
-      DeclaratorChunk Removed = Other.DeclTypeInfo.pop_back_val();
-      getAttributePool().takeFrom(Removed.getAttrs(), Other.getAttributePool());
-    }
-  }
-  /*TO_UPSTREAM(BoundsSafety) OFF*/
 
   typedef SmallVectorImpl<DeclaratorChunk>::const_iterator type_object_iterator;
   typedef llvm::iterator_range<type_object_iterator> type_object_range;
