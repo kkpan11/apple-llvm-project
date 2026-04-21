@@ -2316,7 +2316,9 @@ CGObjCCommonMac::GenerateConstantNSNumber(const llvm::APSInt &Value,
   auto Fields = Builder.beginStruct(NSConstantIntegerNumberType);
 
   // Class pointer.
-  Fields.add(Class);
+  Fields.addSignedPointer(Class,
+                          CGM.getCodeGenOpts().PointerAuth.ObjCIsaPointers,
+                          GlobalDecl(), QualType());
 
   // add the @encode.
   Fields.add(CGM.GetAddrOfConstantCString(ObjCEncodingType).getPointer());
@@ -2394,7 +2396,9 @@ CGObjCCommonMac::GenerateConstantNSNumber(const llvm::APFloat &Value,
     auto Fields = Builder.beginStruct(NSConstantFloatNumberType);
 
     // Class pointer.
-    Fields.add(Class);
+    Fields.addSignedPointer(Class,
+                            CGM.getCodeGenOpts().PointerAuth.ObjCIsaPointers,
+                            GlobalDecl(), QualType());
 
     // add the value stored.
     llvm::Constant *FV = llvm::ConstantFP::get(CGM.FloatTy, Value);
@@ -2428,7 +2432,9 @@ CGObjCCommonMac::GenerateConstantNSNumber(const llvm::APFloat &Value,
   auto Fields = Builder.beginStruct(NSConstantDoubleNumberType);
 
   // Class pointer.
-  Fields.add(Class);
+  Fields.addSignedPointer(Class,
+                          CGM.getCodeGenOpts().PointerAuth.ObjCIsaPointers,
+                          GlobalDecl(), QualType());
 
   // add the value stored.
   llvm::Constant *DV = llvm::ConstantFP::get(CGM.DoubleTy, Value);
@@ -2505,7 +2511,9 @@ ConstantAddress CGObjCCommonMac::GenerateConstantNSArray(
   auto Fields = Builder.beginStruct(NSConstantArrayType);
 
   // Class pointer.
-  Fields.add(Class);
+  Fields.addSignedPointer(Class,
+                          CGM.getCodeGenOpts().PointerAuth.ObjCIsaPointers,
+                          GlobalDecl(), QualType());
 
   // count.
   uint64_t ObjectCount = Objects.size();
@@ -2573,7 +2581,9 @@ ConstantAddress CGObjCCommonMac::GenerateConstantNSDictionary(
   auto Fields = Builder.beginStruct(NSConstantDictionaryType);
 
   // Class pointer.
-  Fields.add(Class);
+  Fields.addSignedPointer(Class,
+                          CGM.getCodeGenOpts().PointerAuth.ObjCIsaPointers,
+                          GlobalDecl(), QualType());
 
   // Use the hashing helper to manage the keys and sorting.
   auto HashOpts(NSDictionaryBuilder::Options::Sorted);
