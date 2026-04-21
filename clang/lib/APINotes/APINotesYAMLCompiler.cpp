@@ -481,6 +481,7 @@ struct Function {
   std::optional<BoundsSafetyNotes> ReturnBoundsSafety;
   /* TO_UPSTREAM(BoundsSafety) OFF */
   SwiftSafetyKind SafetyKind = SwiftSafetyKind::None;
+  bool UnsafeBufferUsage = false;
 };
 
 typedef std::vector<Function> FunctionsSeq;
@@ -509,6 +510,7 @@ template <> struct MappingTraits<Function> {
     IO.mapOptional("BoundsSafety", F.ReturnBoundsSafety);
     /* TO_UPSTREAM(BoundsSafety) OFF */
     IO.mapOptional("SwiftSafety", F.SafetyKind, SwiftSafetyKind::None);
+    IO.mapOptional("UnsafeBufferUsage", F.UnsafeBufferUsage, false);
   }
 };
 } // namespace yaml
@@ -1189,6 +1191,7 @@ public:
     FI.ResultType = std::string(Function.ResultType);
     FI.SwiftReturnOwnership = std::string(Function.SwiftReturnOwnership);
     FI.setRetainCountConvention(Function.RetainCountConvention);
+    FI.UnsafeBufferUsage = Function.UnsafeBufferUsage;
   }
 
   void convertTagContext(std::optional<Context> ParentContext, const Tag &T,
