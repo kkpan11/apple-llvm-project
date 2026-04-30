@@ -14,7 +14,7 @@ define void @shift1(i256 %x, i256 %a, ptr nocapture %r) nounwind readnone {
 ; CHECK-NEXT:    pushl %esi
 ; CHECK-NEXT:    andl $-16, %esp
 ; CHECK-NEXT:    subl $112, %esp
-; CHECK-NEXT:    movl 40(%ebp), %ecx
+; CHECK-NEXT:    movzbl 40(%ebp), %ecx
 ; CHECK-NEXT:    movl 8(%ebp), %eax
 ; CHECK-NEXT:    movl 12(%ebp), %edx
 ; CHECK-NEXT:    movl 16(%ebp), %esi
@@ -64,7 +64,6 @@ define void @shift1(i256 %x, i256 %a, ptr nocapture %r) nounwind readnone {
 ; CHECK-NEXT:    shrdl %cl, %eax, %edx
 ; CHECK-NEXT:    movl {{[-0-9]+}}(%e{{[sb]}}p), %edi # 4-byte Reload
 ; CHECK-NEXT:    shrdl %cl, %edi, {{[-0-9]+}}(%e{{[sb]}}p) # 4-byte Folded Spill
-; CHECK-NEXT:    # kill: def $cl killed $cl killed $ecx
 ; CHECK-NEXT:    sarl %cl, %eax
 ; CHECK-NEXT:    movl 72(%ebp), %ecx
 ; CHECK-NEXT:    movl %eax, 28(%ecx)
@@ -172,7 +171,7 @@ define i256 @shift2(i256 %c) nounwind
 ; CHECK-NEXT:    pushl %esi
 ; CHECK-NEXT:    andl $-16, %esp
 ; CHECK-NEXT:    subl $112, %esp
-; CHECK-NEXT:    movl 12(%ebp), %ecx
+; CHECK-NEXT:    movzbl 12(%ebp), %ecx
 ; CHECK-NEXT:    movl $0, {{[0-9]+}}(%esp)
 ; CHECK-NEXT:    movl $0, {{[0-9]+}}(%esp)
 ; CHECK-NEXT:    movl $0, {{[0-9]+}}(%esp)
@@ -231,7 +230,6 @@ define i256 @shift2(i256 %c) nounwind
 ; CHECK-NEXT:    movl {{[-0-9]+}}(%e{{[sb]}}p), %edi # 4-byte Reload
 ; CHECK-NEXT:    movl %edi, %edx
 ; CHECK-NEXT:    shll %cl, %edx
-; CHECK-NEXT:    # kill: def $cl killed $cl killed $ecx
 ; CHECK-NEXT:    movl {{[-0-9]+}}(%e{{[sb]}}p), %esi # 4-byte Reload
 ; CHECK-NEXT:    shldl %cl, %edi, %esi
 ; CHECK-NEXT:    movl %esi, 4(%eax)
