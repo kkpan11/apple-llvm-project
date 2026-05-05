@@ -1060,7 +1060,6 @@ static bool ParseGlobal(const swift::Demangle::NodePointer &node,
                         StreamString &identifier,
                         swift::Demangle::Node::Kind &parent_kind,
                         swift::Demangle::Node::Kind &kind) {
-  using Kind = swift::Demangle::Node::Kind;
   for (auto *child : *node) {
     if (child) {
       kind = child->getKind();
