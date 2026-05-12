@@ -136,7 +136,7 @@ public:
 
   bool SymbolNameFitsToLanguage(const Mangled &mangled) const override;
 
-  llvm::StringRef GetInstanceVariableName() override { return "self"; }
+  llvm::StringRef GetInstanceName() override { return "self"; }
 
   bool HandleFrameFormatVariable(const SymbolContext &sc,
                                  const ExecutionContext *exe_ctx,
