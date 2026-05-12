@@ -213,12 +213,8 @@ ifeq "$(USESWIFTDRIVER)" "1"
 ifeq "$(DYLIB_NAME)" ""
 MODULENAME?=$(shell basename $(EXE) .out)
 # Compile with -parse-as-library when main.swift contains "@main".
-ifneq ($(findstring cmd.exe,$(SHELL)),)
-ifneq "$(findstring @main,$(file < $(VPATH)/main.swift))" ""
-PARSE_AS_LIBRARY = -parse-as-library
-endif
-else
-ifneq "$(shell grep -w '@main' $(VPATH)/main.swift 2>/dev/null)" ""
+ifneq "$(wildcard $(VPATH)/main.swift)" ""
+ifneq "$(shell git grep --no-index -w '@main' $(VPATH)/main.swift)" ""
 PARSE_AS_LIBRARY = -parse-as-library
 endif
 endif
