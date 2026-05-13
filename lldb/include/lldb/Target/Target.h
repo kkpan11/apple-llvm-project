@@ -55,11 +55,13 @@
 namespace lldb_private {
 
 class ClangModulesDeclVendor;
+// BEGIN SWIFT
 class SwiftPersistentExpressionState;
 class SharedMutex;
 class TypeSystemSwiftTypeRefForExpressions;
 typedef std::shared_ptr<TypeSystemSwiftTypeRefForExpressions>
     TypeSystemSwiftTypeRefForExpressionsSP;
+// END SWIFT
 
 
 OptionEnumValues GetDynamicValueTypes();
@@ -189,6 +191,7 @@ public:
 
   FileSpecList GetClangModuleSearchPaths();
 
+  // BEGIN SWIFT  
   FileSpecList GetSwiftFrameworkSearchPaths();
 
   FileSpecList GetSwiftModuleSearchPaths();
@@ -234,6 +237,7 @@ public:
   bool GetUseAllCompilerFlags() const;
 
   void SetUseAllCompilerFlags(bool b);
+  // END SWIFT  
 
   ImportStdModule GetImportStdModule() const;
 
@@ -521,19 +525,14 @@ public:
 
   void SetREPLEnabled(bool b) { m_repl = b; }
 
+  // BEGIN SWIFT
   bool GetPlaygroundTransformEnabled() const { return m_playground; }
 
   void SetPlaygroundTransformEnabled(bool b) {
     m_playground = b;
   }
 
-  lldb::BindGenericTypes GetBindGenericTypes() const {
-    return m_bind_generic_types;
-  }
-
-  void SetBindGenericTypes(lldb::BindGenericTypes b) {
-    m_bind_generic_types = b;
-  }
+  lldb::BindGenericTypes GetSwiftBindGenericTypes() const;
 
   bool GetPlaygroundTransformHighPerformance() const {
     return m_playground_transforms_hp;
@@ -542,6 +541,7 @@ public:
   void SetPlaygroundTransformHighPerformance(bool b) {
     m_playground_transforms_hp = b;
   }
+  // END SWIFT
 
   void SetCancelCallback(lldb::ExpressionCancelCallback callback, void *baton) {
     m_cancel_callback_baton = baton;
@@ -648,8 +648,6 @@ private:
   /// True if the executed code should be treated as utility code that is only
   /// used by LLDB internally.
   bool m_running_utility_expression = false;
-
-  lldb::BindGenericTypes m_bind_generic_types = lldb::eBindAuto;
 
   lldb::DynamicValueType m_use_dynamic = lldb::eNoDynamicValues;
   Timeout<std::micro> m_timeout = default_timeout;

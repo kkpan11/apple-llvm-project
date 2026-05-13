@@ -259,7 +259,9 @@ CommandObjectExpression::CommandOptions::GetEvaluateExpressionOptions(
     options.SetTimeout(std::nullopt);
 
   // BEGIN SWIFT
-  options.SetBindGenericTypes(bind_generic_types);
+  if (bind_generic_types != eBindAuto)
+    llvm::cantFail(options.SetBooleanLanguageOption(
+        "swift-bind-generic-types", bind_generic_types == eBind));
   // END SWIFT
   return options;
 }

@@ -1,7 +1,7 @@
 class State {
   init(x: Int) {
     number = x
-    print("in class") // break here
+    print("breakpoint 1")
   }
 
   var number : Int
@@ -10,8 +10,16 @@ class State {
 struct S { var properties: Bool = true }
 
 func f(_ strct : S) {
-  print("in function") // break here
+  print("breakpoint 2")
 }
 
-f(S())
+class C<T> {
+  func g(_ t : T) {
+    print("breakpoint 3")
+  }
+}
+
+let s = S()
+f(s)
 State(x: 20)
+C<S>().g(s)

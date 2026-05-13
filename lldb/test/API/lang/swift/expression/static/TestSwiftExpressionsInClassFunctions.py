@@ -33,9 +33,9 @@ class TestSwiftExpressionsInClassFunctions(TestBase):
             breakpoints.append(
                 target.BreakpointCreateBySourceRegex(
                     "breakpoint " + str(i), lldb.SBFileSpec('main.swift')))
-            self.assertTrue(
-                breakpoints[i].GetNumLocations() > 0,
-                "Didn't get valid breakpoint for %s" % (str(i)))
+            self.assertGreater(
+                breakpoints[i].GetNumLocations(), 0,
+                "Didn't get valid breakpoint for %d"%i)
 
         # Launch the process, and do not stop at the entry point.
         process = target.LaunchSimple(None, None, os.getcwd())

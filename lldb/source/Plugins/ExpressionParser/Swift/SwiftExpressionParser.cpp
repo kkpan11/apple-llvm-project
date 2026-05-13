@@ -1436,7 +1436,7 @@ SwiftExpressionParser::ParseAndImport(
   if (repl || !playground) {
     code_manipulator = std::make_unique<SwiftASTManipulator>(
         m_swift_ast_ctx, *source_file, m_sc, repl,
-        m_options.GetBindGenericTypes());
+        m_options.GetSwiftBindGenericTypes());
 
     if (!playground) {
       code_manipulator->RewriteResult();
@@ -1458,7 +1458,7 @@ SwiftExpressionParser::ParseAndImport(
       if (local_context_is_swift) {
         llvm::Error error = AddRequiredAliases(
             m_sc.block, stack_frame_sp, m_swift_ast_ctx, *code_manipulator,
-            m_options.GetUseDynamic(), m_options.GetBindGenericTypes());
+            m_options.GetUseDynamic(), m_options.GetSwiftBindGenericTypes());
         if (error)
           return error;
       }
@@ -1750,9 +1750,10 @@ SwiftExpressionParser::Parse(DiagnosticManager &diagnostic_manager,
 
   // The result in case parsing the expression fails. If the option is auto
   // expression evaluation should retry by binding the generic types.
-  auto parse_result_failure = m_options.GetBindGenericTypes() == lldb::eBindAuto
-                                  ? ParseResult::retry_bind_generic_params
-                                  : ParseResult::unrecoverable_error;
+  auto parse_result_failure =
+      m_options.GetSwiftBindGenericTypes() == lldb::eBindAuto
+          ? ParseResult::retry_bind_generic_params
+          : ParseResult::unrecoverable_error;
   // Helper function to diagnose errors in m_swift_scratch_context.
   unsigned buffer_id = UINT32_MAX;
   auto DiagnoseSwiftASTContextError = [&]() {
@@ -2181,7 +2182,7 @@ SwiftExpressionParser::Parse(DiagnosticManager &diagnostic_manager,
 
   if (ThreadSafeASTContext ast_ctx = m_swift_ast_ctx.GetASTContext()) {
     if (!SwiftASTManipulator::ShouldBindGenericTypes(
-            m_options.GetBindGenericTypes()) &&
+            m_options.GetSwiftBindGenericTypes()) &&
         !RedirectCallFromSinkToTrampolineFunction(
             *m_module.get(), *parsed_expr->code_manipulator.get(), **ast_ctx)) {
       diagnostic_manager.Printf(

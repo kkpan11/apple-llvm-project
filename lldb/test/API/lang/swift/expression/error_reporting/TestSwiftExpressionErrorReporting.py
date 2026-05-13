@@ -10,14 +10,14 @@ class TestSwiftExpressionErrorReporting(TestBase):
     def test_missing_location(self):
         self.build()
         target, process, thread, bkpt = lldbutil.run_to_source_breakpoint(
-            self, "break here", lldb.SBFileSpec("main.swift")
+            self, "breakpoint 1", lldb.SBFileSpec("main.swift")
         )
-        process.Continue()
         self.ci.HandleCommand(
-            "settings set symbols.testing.inject-variable-location-error true", self.res
+            "settings set testing.inject-variable-location-error true", self.res
         )
         if not self.res.Succeeded():
             # This test needs assertions.
+            self.skipTest("LLDB compiled without assertions")
             return
 
         options = lldb.SBExpressionOptions()
@@ -28,10 +28,7 @@ class TestSwiftExpressionErrorReporting(TestBase):
         diags = data.GetValueForKey("errors").GetItemAtIndex(0)
         details = diags.GetValueForKey("details")
         all_messages = [str(detail.GetValueForKey("message")) for detail in details]
-        self.assertIn(
-            'Missing debug information for variable "self": variable not available',
-            all_messages,
-        )
+        self.assertIn("no location for 'self' in debug info", all_messages)
 
     @swiftTest
     def test_missing_var(self):
@@ -39,7 +36,7 @@ class TestSwiftExpressionErrorReporting(TestBase):
         only diagnostics in user code"""
         self.build()
         target, process, thread, bkpt = lldbutil.run_to_source_breakpoint(
-            self, 'break here', lldb.SBFileSpec('main.swift'))
+            self, 'breakpoint ', lldb.SBFileSpec('main.swift'))
 
         # This produces two errors:
         #   error: <EXPR>:8:1: initializers may only be declared within a type
@@ -93,7 +90,7 @@ class TestSwiftExpressionErrorReporting(TestBase):
         only diagnostics in user code"""
         self.build(dictionary={'HIDE_SWIFTMODULE': 'YES'})
         target, process, thread, bkpt = lldbutil.run_to_source_breakpoint(
-            self, 'break here', lldb.SBFileSpec('main.swift'))
+            self, 'breakpoint', lldb.SBFileSpec('main.swift'))
 
         options = lldb.SBExpressionOptions()
         value = self.frame().EvaluateExpression("strct", options)
@@ -116,3 +113,17 @@ class TestSwiftExpressionErrorReporting(TestBase):
         process.Continue()
         self.expect('expression -O -- number', error=True,
                     substrs=['self', 'not', 'found'])
+
+    @swiftTest
+    def test_syntax(self):
+        """Test syntax errors are being diagnosed"""
+        self.build()
+        target, process, thread, bkpt = lldbutil.run_to_source_breakpoint(
+            self, 'breakpoint 3', lldb.SBFileSpec('main.swift'))
+
+        options = lldb.SBExpressionOptions()
+        options.SetBooleanLanguageOption("swift-bind-generic-types", False)
+        value = self.frame().EvaluateExpression("t!", options)
+        self.assertIn(
+            "cannot force unwrap value of non-optional type 'T'",
+            str(value.GetError()))

@@ -442,7 +442,7 @@ do {
 
     // The expression text is inserted into the body of $__lldb_user_expr_%u.
     if (!SwiftASTManipulator::ShouldBindGenericTypes(
-            options.GetBindGenericTypes())) {
+            options.GetSwiftBindGenericTypes())) {
       // A Swift program can't have types with non-bound generic type parameters
       // inside a non generic function. For example, the following program would
       // not compile as T is not part of foo's signature.
@@ -546,7 +546,7 @@ func $__lldb_expr(_ $__lldb_arg : UnsafeMutablePointer<Any>) {
                             current_counter);
     }
   } else if (!SwiftASTManipulator::ShouldBindGenericTypes(
-                 options.GetBindGenericTypes())) {
+                 options.GetSwiftBindGenericTypes())) {
     auto c = MakeGenericSignaturesAndCalls(local_variables, generic_sig,
                                            needs_object_ptr);
     if (!c) {

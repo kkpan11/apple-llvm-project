@@ -338,7 +338,7 @@ public:
     if (!m_num_clang_errors || m_num_swift_errors)
       for (const RawDiagnostic &diagnostic : m_raw_swift_diagnostics)
         diagnostic_manager.AddDiagnostic(std::make_unique<Diagnostic>(
-            eDiagnosticOriginClang, 0, diagnostic.detail));
+            eDiagnosticOriginSwift, 0, diagnostic.detail));
   }
   void AddDiagnostic(std::unique_ptr<Diagnostic> diagnostic) {
     if (diagnostic)

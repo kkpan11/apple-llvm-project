@@ -148,8 +148,8 @@ private:
   /// environment.
   //------------------------------------------------------------------
 
-  void ScanContext(ExecutionContext &exe_ctx,
-                   lldb_private::Status &err) override;
+  bool ScanContext(DiagnosticManager &diagnostic_manager,
+                   ExecutionContext &exe_ctx);
 
   bool AddArguments(ExecutionContext &exe_ctx, std::vector<lldb::addr_t> &args,
                     lldb::addr_t struct_address,
