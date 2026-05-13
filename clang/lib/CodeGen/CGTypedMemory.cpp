@@ -88,11 +88,10 @@ RValue CodeGenFunction::EmitTypedMemoryCall(const CallExpr *E,
   auto *InferredParameter = E->getArg(InferredParamIndex);
 
   TypedMemoryDescriptorBits Descriptor;
-  if (auto InferredInfo = Context.getInferredInfoForCall(E);
-      InferredInfo && InferredInfo->Type) {
-    if (auto PrimaryType = InferredInfo->Type->primaryType()) {
+  if (InferredTypeInfo Info = Context.getInferredInfoForCall(E); Info.Type) {
+    if (auto PrimaryType = Info.Type->primaryType()) {
       auto TypeDescriptor = Context.getTypedMemoryDescriptor(
-          *PrimaryType, OO_None, InferredInfo->InferredCallsiteFlags);
+          *PrimaryType, OO_None, Info.InferredCallsiteFlags);
       Descriptor = TypeDescriptor.asBits();
     }
   } else {

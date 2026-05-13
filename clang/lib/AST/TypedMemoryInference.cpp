@@ -286,8 +286,8 @@ void TypedMemoryInference::setInferredInfoForCall(const CallExpr *Call,
 }
 
 std::optional<InferredTypeInfo>
-TypedMemoryInference::getInferredInfoForCall(const ASTContext &Ctx,
-                                             const CallExpr *Call) const {
+TypedMemoryInference::lookupInferredInfoForCall(const ASTContext &Ctx,
+                                                const CallExpr *Call) const {
   if (!Ctx.getLangOpts().TypedMemoryOperations)
     return std::nullopt;
   if (Call->getDependence() != ExprDependence::None)
@@ -296,31 +296,6 @@ TypedMemoryInference::getInferredInfoForCall(const ASTContext &Ctx,
   if (auto Found = InferredTMOCallTypes.find(Call);
       Found != InferredTMOCallTypes.end())
     return Found->second;
-
-#ifndef NDEBUG
-  // If we get here something has gone wrong: either we've failed to perform
-  // inference on a call that we should have, or the caller has incorrectly
-  // called us on an inappropriate function. Either case is wrong so we assert
-  // in debug/relassert builds and warn in release.
-  //
-  // We're currently going to be forgiving as we don't want to break builds
-  // with error diagnostics until we're sure this does not actually fire in
-  // practice.
-  DiagnosticsEngine &Diags = Ctx.getDiagnostics();
-  const FunctionDecl *Callee = Call->getDirectCallee();
-  if (!Callee || !Callee->getAttr<TypedMemoryAttr>()) {
-    unsigned DiagID = Diags.getCustomDiagID(
-        DiagnosticsEngine::Warning,
-        "Requesting TMO inference result for non-TMO applicable call %0");
-    Diags.Report(Call->getBeginLoc(), DiagID) << Call << Call->getSourceRange();
-    return std::nullopt;
-  }
-
-  unsigned DiagID =
-      Diags.getCustomDiagID(DiagnosticsEngine::Warning,
-                            "Requesting inference result for %0 but not found");
-  Diags.Report(Call->getBeginLoc(), DiagID) << Call << Call->getSourceRange();
-#endif
 
   return std::nullopt;
 }
@@ -720,8 +695,13 @@ void ASTContext::setInferredInfoForCall(const CallExpr *Call,
 }
 
 std::optional<InferredTypeInfo>
+ASTContext::tryGetInferredInfoForCall(const CallExpr *Call) const {
+  return getTMOInference().lookupInferredInfoForCall(*this, Call);
+}
+
+InferredTypeInfo
 ASTContext::getInferredInfoForCall(const CallExpr *Call) const {
-  return getTMOInference().getInferredInfoForCall(*this, Call);
+  return *getTMOInference().lookupInferredInfoForCall(*this, Call);
 }
 
 InferredTypeInfo

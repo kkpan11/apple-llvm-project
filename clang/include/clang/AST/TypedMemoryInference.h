@@ -252,7 +252,7 @@ public:
   StringRef getTypeSummaryDescription(TypedMemorySummary Summary);
   void setInferredInfoForCall(const CallExpr *Call, InferredTypeInfo Info);
   std::optional<InferredTypeInfo>
-  getInferredInfoForCall(const ASTContext &Ctx, const CallExpr *Call) const;
+  lookupInferredInfoForCall(const ASTContext &Ctx, const CallExpr *Call) const;
   InferredTypeInfo inferType(const ASTContext &Ctx, const CallExpr *Call,
                              const Expr &SizeArg,
                              const CastExpr *ContainingCastExpr);
