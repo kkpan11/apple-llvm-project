@@ -6646,6 +6646,7 @@ SwiftASTContext::GetTypeInfo(opaque_compiler_type_t type,
   case swift::TypeKind::ElementArchetype:
   case swift::TypeKind::Error:
   case swift::TypeKind::ErrorUnion:
+  case swift::TypeKind::Hidden:
   case swift::TypeKind::InOut:
   case swift::TypeKind::Integer:
   case swift::TypeKind::Locatable:
@@ -6897,6 +6898,7 @@ lldb::TypeClass SwiftASTContext::GetTypeClass(opaque_compiler_type_t type) {
   case swift::TypeKind::GenericFunction:
   case swift::TypeKind::SILFunction:
     return lldb::eTypeClassFunction;
+  case swift::TypeKind::Hidden:
   case swift::TypeKind::InOut:
   case swift::TypeKind::LValue:
     return lldb::eTypeClassReference;
@@ -7336,6 +7338,7 @@ lldb::Encoding SwiftASTContext::GetEncoding(opaque_compiler_type_t type) {
   case swift::TypeKind::BuiltinRawUnsafeContinuation:
   case swift::TypeKind::BuiltinImplicitActor:
   case swift::TypeKind::Error:
+  case swift::TypeKind::Hidden:
   case swift::TypeKind::InOut:
   case swift::TypeKind::Locatable:
   case swift::TypeKind::Module:
@@ -7465,6 +7468,7 @@ SwiftASTContext::GetNumChildren(opaque_compiler_type_t type,
   case swift::TypeKind::Function:
   case swift::TypeKind::GenericFunction:
   case swift::TypeKind::GenericTypeParam:
+  case swift::TypeKind::Hidden:
   case swift::TypeKind::InOut:
   case swift::TypeKind::Integer:
   case swift::TypeKind::Locatable:
@@ -7601,6 +7605,7 @@ uint32_t SwiftASTContext::GetNumFields(opaque_compiler_type_t type,
   case swift::TypeKind::BuiltinImplicitActor:
   case swift::TypeKind::Error:
   case swift::TypeKind::ErrorUnion:
+  case swift::TypeKind::Hidden:
   case swift::TypeKind::InOut:
   case swift::TypeKind::Integer:
   case swift::TypeKind::Locatable:
@@ -7833,6 +7838,7 @@ CompilerType SwiftASTContext::GetFieldAtIndex(opaque_compiler_type_t type,
   case swift::TypeKind::BuiltinImplicitActor:
   case swift::TypeKind::Error:
   case swift::TypeKind::ErrorUnion:
+  case swift::TypeKind::Hidden:
   case swift::TypeKind::InOut:
   case swift::TypeKind::Integer:
   case swift::TypeKind::Locatable:
@@ -8047,6 +8053,7 @@ uint32_t SwiftASTContext::GetNumPointeeChildren(opaque_compiler_type_t type) {
   case swift::TypeKind::Function:
   case swift::TypeKind::GenericFunction:
   case swift::TypeKind::GenericTypeParam:
+  case swift::TypeKind::Hidden:
   case swift::TypeKind::InOut:
   case swift::TypeKind::Integer:
   case swift::TypeKind::Locatable:
@@ -8206,6 +8213,7 @@ llvm::Expected<CompilerType> SwiftASTContext::GetChildCompilerTypeAtIndex(
   case swift::TypeKind::Function:
   case swift::TypeKind::GenericFunction:
   case swift::TypeKind::GenericTypeParam:
+  case swift::TypeKind::Hidden:
   case swift::TypeKind::InOut:
   case swift::TypeKind::Integer:
   case swift::TypeKind::Locatable:
@@ -8605,6 +8613,7 @@ size_t SwiftASTContext::GetIndexOfChildMemberWithName(
     case swift::TypeKind::ExistentialMetatype:
     case swift::TypeKind::Function:
     case swift::TypeKind::GenericFunction:
+    case swift::TypeKind::Hidden:
     case swift::TypeKind::InOut:
     case swift::TypeKind::Integer:
     case swift::TypeKind::Locatable:
@@ -9024,6 +9033,7 @@ bool SwiftASTContext::DumpTypeValue(
   case swift::TypeKind::Error:
   case swift::TypeKind::ErrorUnion:
   case swift::TypeKind::Existential:
+  case swift::TypeKind::Hidden:
   case swift::TypeKind::InOut:
   case swift::TypeKind::Integer:
   case swift::TypeKind::Locatable:
