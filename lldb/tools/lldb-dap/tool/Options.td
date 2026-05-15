@@ -65,3 +65,26 @@ def pre_init_command: S<"pre-init-command">,
 def: Separate<["-"], "c">,
   Alias<pre_init_command>,
   HelpText<"Alias for --pre-init-command">;
+
+def list_processes
+    : F<"list-processes">,
+      HelpText<
+          "List the processes visible to LLDB's platform as JSON on stdout, "
+          "then exit. Use --platform and --platform-url to select a non-host "
+          "platform. The emitted array contains objects with the keys 'pid', "
+          "'name', 'triple', 'user', and 'executable'.">;
+
+def platform_name
+    : S<"platform">,
+      MetaVarName<"<name>">,
+      HelpText<
+          "The name of the LLDB platform to select (e.g. 'host', "
+          "'remote-linux'). Used in combination with non-session modes such as "
+          "--list-processes.">;
+
+def platform_url
+    : S<"platform-url">,
+      MetaVarName<"<url>">,
+      HelpText<
+          "Connect the selected platform to the given URL before performing "
+          "the requested operation. Requires --platform.">;
