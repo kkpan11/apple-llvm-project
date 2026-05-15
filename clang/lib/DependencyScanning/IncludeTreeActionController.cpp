@@ -497,18 +497,20 @@ void IncludeTreeBuilder::enteredInclude(Preprocessor &PP, FileID FID) {
   if (!StartedEnteringIncludes) {
     StartedEnteringIncludes = true;
 
-    SmallVector<OptionalFileEntryRef> UIDToFE;
-    PP.getFileManager().GetUniqueIDMapping(UIDToFE);
+    if (!PP.getIncludedFiles().empty()) {
+      SmallVector<OptionalFileEntryRef> UIDToFE;
+      PP.getFileManager().GetUniqueIDMapping(UIDToFE);
 
-    // Get the included files (coming from a PCH), and keep track of the
-    // filenames that were recorded in the PCH.
-    for (const FileEntry *FE : PP.getIncludedFiles()) {
-      unsigned UID = FE->getUID();
-      if (UID >= PreIncludedFileNames.size())
-        PreIncludedFileNames.resize(UID + 1);
-      OptionalFileEntryRef FERef = UIDToFE[FE->getUID()];
-      assert(FERef && "No FileEntryRef with given UID");
-      PreIncludedFileNames[UID] = FERef->getName();
+      // Get the included files (coming from a PCH), and keep track of the
+      // filenames that were recorded in the PCH.
+      for (const FileEntry *FE : PP.getIncludedFiles()) {
+        unsigned UID = FE->getUID();
+        if (UID >= PreIncludedFileNames.size())
+          PreIncludedFileNames.resize(UID + 1);
+        OptionalFileEntryRef FERef = UIDToFE[FE->getUID()];
+        assert(FERef && "No FileEntryRef with given UID");
+        PreIncludedFileNames[UID] = FERef->getName();
+      }
     }
   }
 
