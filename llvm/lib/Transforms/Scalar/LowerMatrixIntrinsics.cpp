@@ -185,7 +185,7 @@ Value *computeVectorAddr(Value *BasePtr, Value *VecIdx, Value *Stride,
   if (isa<ConstantInt>(VecStart) && cast<ConstantInt>(VecStart)->isZero())
     VecStart = BasePtr;
   else
-    VecStart = Builder.CreateGEP(EltType, BasePtr, VecStart, "vec.gep");
+    VecStart = Builder.CreateInBoundsGEP(EltType, BasePtr, VecStart, "vec.gep");
 
   return VecStart;
 }
@@ -1365,7 +1365,7 @@ public:
     Value *Offset = Builder.CreateAdd(
         Builder.CreateMul(J, getIndex(MatrixPtr, MatrixShape.getStride())), I);
 
-    Value *TileStart = Builder.CreateGEP(EltTy, MatrixPtr, Offset);
+    Value *TileStart = Builder.CreateInBoundsGEP(EltTy, MatrixPtr, Offset);
     auto *TileTy = FixedVectorType::get(EltTy, ResultShape.NumRows *
                                                    ResultShape.NumColumns);
 
@@ -1403,7 +1403,7 @@ public:
     Value *Offset = Builder.CreateAdd(
         Builder.CreateMul(J, getIndex(MatrixPtr, MatrixShape.getStride())), I);
 
-    Value *TileStart = Builder.CreateGEP(EltTy, MatrixPtr, Offset);
+    Value *TileStart = Builder.CreateInBoundsGEP(EltTy, MatrixPtr, Offset);
     auto *TileTy = FixedVectorType::get(EltTy, StoreVal.getNumRows() *
                                                    StoreVal.getNumColumns());
 
