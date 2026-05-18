@@ -14,18 +14,13 @@
 
 #if LLDB_ENABLE_PYTHON
 
-// clang-format off
-// LLDB Python header must be included first
 #include "../lldb-python.h"
-
 #include "../SWIGPythonBridge.h"
 #include "../ScriptInterpreterPythonImpl.h"
 #include "ScriptedThreadPythonInterface.h"
 #include "ScriptedProcessPythonInterface.h"
 
-// Included in this position to prevent redefinition of pid_t on Windows.
 #include "lldb/Target/Process.h"
-//clang-format off
 
 #include <optional>
 
