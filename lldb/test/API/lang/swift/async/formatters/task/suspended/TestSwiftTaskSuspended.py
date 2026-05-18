@@ -8,7 +8,6 @@ from lldbsuite.test import lldbutil
 class TestCase(TestBase):
 
     @swiftTest
-    @skipIfWindows # rdar://176009590
     def test(self):
         self.build()
         lldbutil.run_to_source_breakpoint(

@@ -8,7 +8,6 @@ from lldbsuite.test import lldbutil
 class TestCase(TestBase):
 
     @swiftTest
-    @skipIfWindows # rdar://176009590
     def test_top_level_task(self):
         """Test Task synthetic child provider for top-level Task."""
         self.build()
@@ -35,7 +34,6 @@ class TestCase(TestBase):
         )
 
     @swiftTest
-    @skipIfWindows # rdar://176009590
     @skipIfLinux
     def test_current_task(self):
         """Test Task synthetic child for UnsafeCurrentTask (from an async let)."""

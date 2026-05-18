@@ -213,8 +213,15 @@ ifeq "$(USESWIFTDRIVER)" "1"
 ifeq "$(DYLIB_NAME)" ""
 MODULENAME?=$(shell basename $(EXE) .out)
 # Compile with -parse-as-library when main.swift contains "@main".
+# $(file ...) requires GNU Make 4.0+, unavailable on macOS (ships with 3.81).
+ifeq "$(OS)" "Windows_NT"
+ifneq "$(findstring @main,$(file <$(VPATH)/main.swift))" ""
+PARSE_AS_LIBRARY = -parse-as-library
+endif
+else
 ifneq "$(shell grep -w '@main' $(VPATH)/main.swift 2>/dev/null)" ""
 PARSE_AS_LIBRARY = -parse-as-library
+endif
 endif
 else
 EXE = $(DYLIB_FILENAME)

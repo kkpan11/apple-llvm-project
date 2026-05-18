@@ -7,7 +7,6 @@ from lldbsuite.test import lldbutil
 class TestCase(TestBase):
 
     @swiftTest
-    @skipIfWindows # rdar://176009590
     def test(self):
         """Test summary formatter for TaskPriority."""
         self.build()

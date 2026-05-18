@@ -6,7 +6,6 @@ import lldbsuite.test.lldbutil as lldbutil
 
 class TestSwiftArrayUninitialized(lldbtest.TestBase):
     @swiftTest
-    @skipIfWindows # rdar://176009590
     def test(self):
         """Test unitialized global arrays"""
         self.build()
