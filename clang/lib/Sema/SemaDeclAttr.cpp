@@ -2629,11 +2629,6 @@ AvailabilityAttr *Sema::mergeAvailabilityAttr(
 
 static void handleFeatureAvailabilityAttr(Sema &S, Decl *D,
                                           const ParsedAttr &AL) {
-  if (S.getLangOpts().CPlusPlus) {
-    S.Diag(AL.getLoc(), diag::warn_attribute_ignored) << AL;
-    return;
-  }
-
   if (!AL.isArgIdent(0)) {
     S.Diag(AL.getLoc(), diag::err_attribute_argument_n_type)
         << AL << 0 << AANT_ArgumentIdentifier;
@@ -2649,6 +2644,9 @@ static void handleFeatureAvailabilityAttr(Sema &S, Decl *D,
   else if (auto *FD = dyn_cast<FieldDecl>(D)) {
     if (FD->getParent())
       InvalidDecl = "struct members";
+  } else if (auto *MD = dyn_cast<CXXMethodDecl>(D)) {
+    if (MD->isVirtual())
+      InvalidDecl = "virtual functions";
   }
 
   if (!InvalidDecl.empty()) {

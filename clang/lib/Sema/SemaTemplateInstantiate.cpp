@@ -4145,6 +4145,9 @@ bool Sema::InstantiateClassTemplateSpecialization(
            TSK_Undeclared);
     DiagnoseAvailabilityOfDecl(ClassTemplateSpec, PointOfInstantiation);
   }
+  if (!Err)
+    DiagnoseFeatureAvailabilityOfDecl(ClassTemplateSpec,
+                                      {PointOfInstantiation});
   return Err;
 }
 

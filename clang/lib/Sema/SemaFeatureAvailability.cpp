@@ -28,6 +28,14 @@ using namespace sema;
 
 static bool isFeatureUseGuardedLocally(const DomainAvailabilityAttr *AA,
                                        const Decl *ContextDecl) {
+  // Feature availability attributes are placed on the templated decl, not on
+  // the template wrapper. Redirect so the attribute lookup walks the right
+  // decl when the lexical context is a template (e.g. when checking a
+  // function template's trailing requires-clause).
+  if (auto *FTD = dyn_cast<FunctionTemplateDecl>(ContextDecl))
+    ContextDecl = FTD->getTemplatedDecl();
+  else if (auto *CTD = dyn_cast<ClassTemplateDecl>(ContextDecl))
+    ContextDecl = CTD->getTemplatedDecl();
   for (auto *Attr : ContextDecl->specific_attrs<DomainAvailabilityAttr>())
     if (AA->getDomain() == Attr->getDomain())
       return AA->getUnavailable() == Attr->getUnavailable();
@@ -156,6 +164,12 @@ public:
     return true;
   }
 
+  bool VisitCXXConstructExpr(CXXConstructExpr *CE) {
+    if (auto *Ctor = CE->getConstructor())
+      diagnoseDeclFeatureAvailability(Ctor, CE->getSourceRange());
+    return true;
+  }
+
   bool VisitTypeLoc(TypeLoc Ty);
 
   bool TraverseDecl(Decl *D) {
@@ -170,6 +184,11 @@ public:
 
   void IssueDiagnostics(const Decl *D) {
     ContextStackScope Scope(this, D);
+
+    if (auto *Ctor = dyn_cast<CXXConstructorDecl>(D))
+      for (auto *Init : Ctor->inits())
+        if (Init->isWritten())
+          TraverseStmt(Init->getInit());
 
     if (auto *FD = dyn_cast<FunctionDecl>(D))
       TraverseStmt(FD->getBody());
