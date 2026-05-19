@@ -216,7 +216,18 @@ def _skipForVariant(variant_name, expected_fn, bugnumber=None):
         if isinstance(func, type) and issubclass(func, unittest.TestCase):
             raise Exception("Decorator can only be used to decorate a test method")
         skip_dict = getattr(func, "__variant_skip__", {})
-        skip_dict[variant_name] = expected_fn
+        existing_fn = skip_dict.get(variant_name)
+        if existing_fn:
+            # Chain the decorator with the existing one.
+            def chained_fn(**kwargs):
+                reason = expected_fn(**kwargs)
+                if reason:
+                    return reason
+                return existing_fn(**kwargs)
+
+            skip_dict[variant_name] = chained_fn
+        else:
+            skip_dict[variant_name] = expected_fn
         func.__variant_skip__ = skip_dict
         return func
 
@@ -984,6 +995,33 @@ def swiftTest(func):
 
     return skipTestIfFn(is_not_swift_compatible)(func)
 
+def skipEmbeddedSwift(func):
+    def skip_fn(swift_embedded=None, **kwargs):
+        if swift_embedded == "swift_embedded":
+            return "not supported in embedded Swift"
+        return None
+    return _skipForVariant("swift_embedded", skip_fn, func)
+
+def skipEmbeddedSwiftOnLinux(func):
+    def skip_fn(swift_embedded=None, **kwargs):
+        if swift_embedded == "swift_embedded" and lldbplatformutil.getPlatform() == "linux":
+            return "not supported in embedded Swift on Linux"
+        return None
+    return _skipForVariant("swift_embedded", skip_fn, func)
+
+def skipEmbeddedSwiftOnWindows(func):
+    def skip_fn(swift_embedded=None, **kwargs):
+        if swift_embedded == "swift_embedded" and lldbplatformutil.getPlatform() == "windows":
+            return "not supported in embedded Swift on Windows"
+        return None
+    return _skipForVariant("swift_embedded", skip_fn, func)
+
+def skipUnlessEmbeddedSwift(func):
+    def skip_fn(swift_embedded=None, **kwargs):
+        if swift_embedded != "swift_embedded":
+            return "Only supported in embedded Swift"
+        return None
+    return _skipForVariant("swift_embedded", skip_fn, func)
 
 def skipIfHostIncompatibleWithTarget(func):
     """Decorate the item to skip tests when the host and target are incompatible."""
