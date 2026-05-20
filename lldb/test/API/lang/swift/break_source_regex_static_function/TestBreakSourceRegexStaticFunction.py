@@ -9,6 +9,7 @@ import lldbsuite.test.lldbutil as lldbutil
 
 
 class TestCase(TestBase):
+    @skipEmbeddedSwiftOnWindows
     @swiftTest
     def test_source_regex_with_static_function_filter(self):
         self.build()
@@ -19,6 +20,7 @@ class TestCase(TestBase):
         self.assertEqual(bp.GetNumResolvedLocations(), 1)
         self.assertIn("Scope.first", str(bp.location[0]))
 
+    @skipEmbeddedSwiftOnWindows
     @swiftTest
     def test_source_regex_with_static_function_filter_and_file(self):
         self.build()
