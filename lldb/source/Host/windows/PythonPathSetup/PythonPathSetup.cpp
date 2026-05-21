@@ -39,7 +39,7 @@ static std::string GetModulePath(HMODULE module) {
 }
 
 /// Returns the full path to the lldb.exe executable.
-static std::string GetPathToExecutable() { return GetModulePath(NULL); }
+static std::string GetPathToExecutable() { return GetModulePath(nullptr); }
 
 bool AddPythonDLLToSearchPath() {
   std::string path_str = GetPathToExecutable();
