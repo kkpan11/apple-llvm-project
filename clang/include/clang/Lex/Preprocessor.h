@@ -1337,7 +1337,7 @@ public:
                                                 std::move(Callbacks));
     Callbacks = std::move(C);
   }
-  void removePPCallbacks() { Callbacks.reset(); }
+  void removePPCallbacks();
   /// \}
 
   PPCachedActions *getPPCachedActions() const { return CachedActions.get(); }
