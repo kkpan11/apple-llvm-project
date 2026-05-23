@@ -7389,6 +7389,8 @@ public:
     IsFPtr = false;
     EffectiveLevel = Level;
     Ty = DeclTy;
+    if (const auto *FD = dyn_cast<FunctionDecl>(D))
+      Ty = FD->getReturnType();
     for (unsigned i = 0; i != Level; ++i) {
       if (!Ty->isPointerType())
         break;
