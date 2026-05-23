@@ -8,7 +8,7 @@ from lldbsuite.test.decorators import *
 
 class TestCxxForwardInteropNestedClasses(TestBase):
 
-    @skipIf(swift_module_importer="dwarfimporter")
+    @skipIf(swift_module_importer="noclang")
     @swiftTest
     @skipIfWindows
     def test(self):

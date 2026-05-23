@@ -272,17 +272,17 @@ def _decorateTest(
         key, val = setting[0], setting[1]
         if key == "symbols.use-swift-clangimporter":
             if _is_setting_disabled(val):
-                swift_module_importer = ["dwarfimporter"]
+                swift_module_importer = ["noclang"]
                 setting = None
             elif _is_setting_enabled(val):
-                swift_module_importer = ["clangimporter"]
+                swift_module_importer = ["clang"]
                 setting = None
         elif key == "symbols.use-swift-dwarfimporter":
             if _is_setting_disabled(val):
-                swift_module_importer = ["clangimporter"]
+                swift_module_importer = ["clang"]
                 setting = None
             elif _is_setting_enabled(val):
-                swift_module_importer = ["dwarfimporter"]
+                swift_module_importer = ["noclang"]
                 setting = None
 
     def fn(**actual_variants):
@@ -997,28 +997,28 @@ def swiftTest(func):
 
 def skipEmbeddedSwift(func):
     def skip_fn(swift_embedded=None, **kwargs):
-        if swift_embedded == "swift_embedded":
+        if swift_embedded == "swiftembed":
             return "not supported in embedded Swift"
         return None
     return _skipForVariant("swift_embedded", skip_fn, func)
 
 def skipEmbeddedSwiftOnLinux(func):
     def skip_fn(swift_embedded=None, **kwargs):
-        if swift_embedded == "swift_embedded" and lldbplatformutil.getPlatform() == "linux":
+        if swift_embedded == "swiftembed" and lldbplatformutil.getPlatform() == "linux":
             return "not supported in embedded Swift on Linux"
         return None
     return _skipForVariant("swift_embedded", skip_fn, func)
 
 def skipEmbeddedSwiftOnWindows(func):
     def skip_fn(swift_embedded=None, **kwargs):
-        if swift_embedded == "swift_embedded" and lldbplatformutil.getPlatform() == "windows":
+        if swift_embedded == "swiftembed" and lldbplatformutil.getPlatform() == "windows":
             return "not supported in embedded Swift on Windows"
         return None
     return _skipForVariant("swift_embedded", skip_fn, func)
 
 def skipUnlessEmbeddedSwift(func):
     def skip_fn(swift_embedded=None, **kwargs):
-        if swift_embedded != "swift_embedded":
+        if swift_embedded != "swiftembed":
             return "Only supported in embedded Swift"
         return None
     return _skipForVariant("swift_embedded", skip_fn, func)

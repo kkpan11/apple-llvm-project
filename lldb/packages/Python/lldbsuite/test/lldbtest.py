@@ -1822,7 +1822,7 @@ class TestVariant:
     Test variants multiply test methods by different configurations.
     Each variant adds a new dimension to the test matrix, creating copies
     of test methods for each category in the variant. For example, Swift
-    tests are run with both 'clangimporter' and 'dwarfimporter' settings.
+    tests are run with both 'clang' and 'noclang' settings.
 
     When a variant is registered in `_test_variants`, the `LLDBTestCaseFactory`
     metaclass iterates over every `test*` method and, for each method that
@@ -1958,13 +1958,13 @@ def _expand_test_variants(attrname, methods, variant, xfail_fns, skip_fns):
 
 
 def _swift_module_importer_setup(test_instance, variant_value):
-    if variant_value == "dwarfimporter":
+    if variant_value == "noclang":
         test_instance.runCmd("settings set symbols.use-swift-clangimporter false")
-    elif variant_value == "clangimporter":
+    elif variant_value == "clang":
         test_instance.runCmd("settings set symbols.use-swift-clangimporter true")
 
 def _embedded_swift_setup(test_instance, variant_value):
-    if variant_value == "swift_embedded":
+    if variant_value == "swiftembed":
         test_instance.extra_make_flags["SWIFT_EMBEDDED_MODE"] = "1"
     elif variant_value == "swift":
         test_instance.extra_make_flags["SWIFT_EMBEDDED_MODE"] = "0"
@@ -2069,7 +2069,7 @@ class LLDBTestCaseFactory(type):
                     # NO_DEBUG_INFO_TESTCASE — put method in newattrs for variant expansion
                     newattrs[attrname] = attrvalue
 
-                # Expand test variants (e.g. swift clangimporter/dwarfimporter)
+                # Expand test variants (e.g. swift clang/noclang)
                 for variant in _test_variants:
                     if variant.should_expand(attrvalue):
                         xfail_fns = getattr(attrvalue, "__variant_xfail__", {})
@@ -2200,7 +2200,7 @@ class TestBase(Base, metaclass=LLDBTestCaseFactory):
         # And the result object.
         self.res = lldb.SBCommandReturnObject()
 
-        # Apply variant-specific settings (e.g. swift clangimporter/dwarfimporter).
+        # Apply variant-specific settings (e.g. swift clang/noclang).
         for variant in _test_variants:
             variant_value = self.getVariant(variant.name)
             if variant_value is not None:
