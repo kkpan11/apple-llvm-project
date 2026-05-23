@@ -1259,6 +1259,7 @@ SwiftASTContext::GetPluginServer(llvm::StringRef plugin_library_path) {
 }
 
 static std::string GetPluginServerForSDK(llvm::StringRef sdk_path) {
+  Progress progress("Looking for swift-plugin-server in SDK", sdk_path.str());
   XcodeSDK sdk(std::string(llvm::sys::path::filename(sdk_path)));
   auto server_or_err = HostInfo::FindSDKTool(sdk, "swift-plugin-server");
   if (!server_or_err)
@@ -2309,6 +2310,7 @@ static std::optional<StringRef> GetDSYMBundle(Module &module) {
 }
 
 static std::string GetSDKPath(std::string m_description, XcodeSDK sdk) {
+  Progress progress("Looking for Xcode SDK", sdk.GetString().str());
   auto sdk_path_or_err = HostInfo::GetSDKRoot(HostInfo::SDKOptions{sdk});
   if (!sdk_path_or_err) {
     Debugger::ReportError("Error while searching for SDK: " +

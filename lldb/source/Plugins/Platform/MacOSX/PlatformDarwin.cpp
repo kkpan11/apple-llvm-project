@@ -21,6 +21,7 @@
 #include "lldb/Core/Module.h"
 #include "lldb/Core/ModuleSpec.h"
 #include "lldb/Core/PluginManager.h"
+#include "lldb/Core/Progress.h"
 #include "lldb/Core/Section.h"
 #include "lldb/Host/Host.h"
 #include "lldb/Host/HostInfo.h"
@@ -1133,6 +1134,7 @@ ResolveSDKPathFromDebugInfo(lldb_private::Target *target) {
   if (FileSystem::Instance().Exists(sdk_path)) {
     return sdk_path;
   }
+  Progress progress("Looking for Xcode SDK", merged_sdk.GetString().str());
   auto path_or_err = HostInfo::GetSDKRoot(HostInfo::SDKOptions{merged_sdk});
   if (!path_or_err)
     return llvm::createStringError(
@@ -1508,6 +1510,7 @@ PlatformDarwin::ResolveSDKPathFromDebugInfo(Module &module) {
   if (FileSystem::Instance().Exists(sdk.GetSysroot()))
     return sdk.GetSysroot().GetPath();
 
+  Progress progress("Looking for Xcode SDK", sdk.GetString().str());
   auto path_or_err = HostInfo::GetSDKRoot(HostInfo::SDKOptions{sdk});
   if (!path_or_err)
     return llvm::createStringError(
@@ -1544,6 +1547,7 @@ PlatformDarwin::ResolveSDKPathFromDebugInfo(CompileUnit &unit) {
 
   auto sdk = std::move(*sdk_or_err);
 
+  Progress progress("Looking for Xcode SDK", sdk.GetString().str());
   auto path_or_err = HostInfo::GetSDKRoot(HostInfo::SDKOptions{sdk});
   if (!path_or_err)
     return llvm::createStringError(
