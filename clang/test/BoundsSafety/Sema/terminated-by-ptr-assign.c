@@ -47,11 +47,11 @@ const char *__null_terminated const_arr_stringlit(int x) {
 const char *__null_terminated const_arr_stringlit_arit(int x) {
   const char const_arr_stringlit[] = "hello";
 
-  const char *__null_terminated p = const_arr_stringlit + 3;         // ok
-  p = const_arr_stringlit + 3;                                       // ok
-  nul(const_arr_stringlit + 3);                                      // ok
-  (void)((const char *__null_terminated)( const_arr_stringlit + 3)); // ok
-  return const_arr_stringlit + 3;                                    // ok
+  const char *__null_terminated p = const_arr_stringlit + 3;         // ubu-warning{{unsafe pointer arithmetic}}
+  p = const_arr_stringlit + 3;                                       // ubu-warning{{unsafe pointer arithmetic}}
+  nul(const_arr_stringlit + 3);                                      // ubu-warning{{unsafe pointer arithmetic}}
+  (void)((const char *__null_terminated)( const_arr_stringlit + 3)); // ubu-warning{{unsafe pointer arithmetic}}
+  return const_arr_stringlit + 3;                                    // ubu-warning{{unsafe pointer arithmetic}}
 }
 
 const char *__null_terminated const_arr_stringlit_arit_end(int x) {
@@ -61,27 +61,27 @@ const char *__null_terminated const_arr_stringlit_arit_end(int x) {
   // bs-error@+3{{initializing 'const char *__single __terminated_by(0)' (aka 'const char *__single') with an expression of incompatible type 'const char *__bidi_indexable' is an unsafe operation}}
   // bs-note@+2{{consider using '__unsafe_null_terminated_from_indexable()' to perform this conversion. Note this performs a linear scan of memory to find the null terminator}}
   // bs-note@+1{{consider using '__unsafe_null_terminated_from_indexable()' with a pointer to the null terminator to perform this conversion. Note this performs the conversion in constant time}}
-  const char *__null_terminated p = const_arr_stringlit + 6;
+  const char *__null_terminated p = const_arr_stringlit + 6; // ubu-warning{{unsafe pointer arithmetic}}
   // ubu-warning@+4{{assigning to 'const char * __terminated_by(0)' (aka 'const char *') from incompatible type 'const char *' is an unsafe operation}}
   // bs-error@+3{{assigning to 'const char *__single __terminated_by(0)' (aka 'const char *__single') from incompatible type 'const char *__bidi_indexable' is an unsafe operation}}
   // bs-note@+2{{consider using '__unsafe_null_terminated_from_indexable()' to perform this conversion. Note this performs a linear scan of memory to find the null terminator}}
   // bs-note@+1{{consider using '__unsafe_null_terminated_from_indexable()' with a pointer to the null terminator to perform this conversion. Note this performs the conversion in constant time}}
-  p = const_arr_stringlit + 6;
+  p = const_arr_stringlit + 6; // ubu-warning{{unsafe pointer arithmetic}}
   // ubu-warning@+4{{passing 'const char *' to parameter of incompatible type 'const char * __terminated_by(0)' (aka 'const char *') is an unsafe operation}}
   // bs-error@+3{{passing 'const char *__bidi_indexable' to parameter of incompatible type 'const char *__single __terminated_by(0)' (aka 'const char *__single') is an unsafe operation}}
   // bs-note@+2{{consider using '__unsafe_null_terminated_from_indexable()' to perform this conversion. Note this performs a linear scan of memory to find the null terminator}}
   // bs-note@+1{{consider using '__unsafe_null_terminated_from_indexable()' with a pointer to the null terminator to perform this conversion. Note this performs the conversion in constant time}}
-  nul(const_arr_stringlit + 6);
+  nul(const_arr_stringlit + 6); // ubu-warning{{unsafe pointer arithmetic}}
   // ubu-warning@+4{{casting 'const char *' to incompatible type 'const char * __terminated_by(0)' (aka 'const char *') is an unsafe operation}}
   // bs-error@+3{{casting 'const char *__bidi_indexable' to incompatible type 'const char * __terminated_by(0)' (aka 'const char *') is an unsafe operation; use '__unsafe_null_terminated_from_indexable()' or '__unsafe_forge_null_terminated()' to perform this conversion}}
   // bs-note@+2{{consider using '__unsafe_null_terminated_from_indexable()' to perform this conversion. Note this performs a linear scan of memory to find the null terminator}}
   // bs-note@+1{{consider using '__unsafe_null_terminated_from_indexable()' with a pointer to the null terminator to perform this conversion. Note this performs the conversion in constant time}}
-  (void)((const char *__null_terminated)( const_arr_stringlit + 6));
+  (void)((const char *__null_terminated)( const_arr_stringlit + 6)); // ubu-warning{{unsafe pointer arithmetic}}
   // ubu-warning@+4{{returning 'const char *' from a function with incompatible result type 'const char * __terminated_by(0)' (aka 'const char *') is an unsafe operation}}
   // bs-error@+3{{returning 'const char *__bidi_indexable' from a function with incompatible result type 'const char *__single __terminated_by(0)' (aka 'const char *__single') is an unsafe operation}}
   // bs-note@+2{{consider using '__unsafe_null_terminated_from_indexable()' to perform this conversion. Note this performs a linear scan of memory to find the null terminator}}
   // bs-note@+1{{consider using '__unsafe_null_terminated_from_indexable()' with a pointer to the null terminator to perform this conversion. Note this performs the conversion in constant time}}
-  return const_arr_stringlit + 6;
+  return const_arr_stringlit + 6; // ubu-warning{{unsafe pointer arithmetic}}
 }
 
 const char *__null_terminated const_arr_stringlit_arit_pastend(int x) {
@@ -91,27 +91,27 @@ const char *__null_terminated const_arr_stringlit_arit_pastend(int x) {
   // bs-error@+3{{initializing 'const char *__single __terminated_by(0)' (aka 'const char *__single') with an expression of incompatible type 'const char *__bidi_indexable' is an unsafe operation}}
   // bs-note@+2{{consider using '__unsafe_null_terminated_from_indexable()' to perform this conversion. Note this performs a linear scan of memory to find the null terminator}}
   // bs-note@+1{{consider using '__unsafe_null_terminated_from_indexable()' with a pointer to the null terminator to perform this conversion. Note this performs the conversion in constant time}}
-  const char *__null_terminated p = const_arr_stringlit + 7;
+  const char *__null_terminated p = const_arr_stringlit + 7; // ubu-warning{{unsafe pointer arithmetic}}
   // ubu-warning@+4{{assigning to 'const char * __terminated_by(0)' (aka 'const char *') from incompatible type 'const char *' is an unsafe operation}}
   // bs-error@+3{{assigning to 'const char *__single __terminated_by(0)' (aka 'const char *__single') from incompatible type 'const char *__bidi_indexable' is an unsafe operation}}
   // bs-note@+2{{consider using '__unsafe_null_terminated_from_indexable()' to perform this conversion. Note this performs a linear scan of memory to find the null terminator}}
   // bs-note@+1{{consider using '__unsafe_null_terminated_from_indexable()' with a pointer to the null terminator to perform this conversion. Note this performs the conversion in constant time}}
-  p = const_arr_stringlit + 7;
+  p = const_arr_stringlit + 7; // ubu-warning{{unsafe pointer arithmetic}}
   // ubu-warning@+4{{passing 'const char *' to parameter of incompatible type 'const char * __terminated_by(0)' (aka 'const char *') is an unsafe operation}}
   // bs-error@+3{{passing 'const char *__bidi_indexable' to parameter of incompatible type 'const char *__single __terminated_by(0)' (aka 'const char *__single') is an unsafe operation}}
   // bs-note@+2{{consider using '__unsafe_null_terminated_from_indexable()' to perform this conversion. Note this performs a linear scan of memory to find the null terminator}}
   // bs-note@+1{{consider using '__unsafe_null_terminated_from_indexable()' with a pointer to the null terminator to perform this conversion. Note this performs the conversion in constant time}}
-  nul(const_arr_stringlit + 7);
+  nul(const_arr_stringlit + 7); // ubu-warning{{unsafe pointer arithmetic}}
   // ubu-warning@+4{{casting 'const char *' to incompatible type 'const char * __terminated_by(0)' (aka 'const char *') is an unsafe operation}}
   // bs-error@+3{{casting 'const char *__bidi_indexable' to incompatible type 'const char * __terminated_by(0)' (aka 'const char *') is an unsafe operation; use '__unsafe_null_terminated_from_indexable()' or '__unsafe_forge_null_terminated()' to perform this conversion}}
   // bs-note@+2{{consider using '__unsafe_null_terminated_from_indexable()' to perform this conversion. Note this performs a linear scan of memory to find the null terminator}}
   // bs-note@+1{{consider using '__unsafe_null_terminated_from_indexable()' with a pointer to the null terminator to perform this conversion. Note this performs the conversion in constant time}}
-  (void)((const char *__null_terminated)( const_arr_stringlit + 7));
+  (void)((const char *__null_terminated)( const_arr_stringlit + 7)); // ubu-warning{{unsafe pointer arithmetic}}
   // ubu-warning@+4{{returning 'const char *' from a function with incompatible result type 'const char * __terminated_by(0)' (aka 'const char *') is an unsafe operation}}
   // bs-error@+3{{returning 'const char *__bidi_indexable' from a function with incompatible result type 'const char *__single __terminated_by(0)' (aka 'const char *__single') is an unsafe operation}}
   // bs-note@+2{{consider using '__unsafe_null_terminated_from_indexable()' to perform this conversion. Note this performs a linear scan of memory to find the null terminator}}
   // bs-note@+1{{consider using '__unsafe_null_terminated_from_indexable()' with a pointer to the null terminator to perform this conversion. Note this performs the conversion in constant time}}
-  return const_arr_stringlit + 7;
+  return const_arr_stringlit + 7; // ubu-warning{{unsafe pointer arithmetic}}
 }
 
 const char *__null_terminated const_arr_braced(int x) {

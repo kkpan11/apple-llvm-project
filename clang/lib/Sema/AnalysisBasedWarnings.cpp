@@ -3715,7 +3715,8 @@ void clang::sema::AnalysisBasedWarnings::IssueWarnings(
       // Perform unsafe buffer usage analysis:
       if (shouldRunUnsafeBufferUsageAnalysis(S, Node->getBeginLoc())) {
         clang::checkUnsafeBufferUsage(Node, R,
-                                      /*EmitSuggestion =*/true);
+                                      /*EmitSuggestion =*/true,
+                                      S.getLangOpts().BoundsSafetyAttributes);
       }
 
       // More analysis ...
@@ -4034,7 +4035,8 @@ void clang::sema::AnalysisBasedWarnings::IssueWarnings(
     // Perform unsafe buffer usage analysis:
     if (shouldRunUnsafeBufferUsageAnalysis(S, D->getBeginLoc())) {
       clang::checkUnsafeBufferUsage(
-          D, R, /*UnsafeBufferUsageShouldEmitSuggestions=*/false);
+          D, R, /*UnsafeBufferUsageShouldEmitSuggestions=*/false,
+          S.getLangOpts().BoundsSafetyAttributes);
     }
   }
 }
