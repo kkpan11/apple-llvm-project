@@ -304,6 +304,7 @@ public:
     if (!TheBucket)
       return false; // not in map.
 
+    incrementEpoch();
     TheBucket->getSecond().~ValueT();
     TheBucket->getFirst() = getTombstoneKey();
     decrementNumEntries();
@@ -312,6 +313,7 @@ public:
   }
   void erase(iterator I) {
     BucketT *TheBucket = &*I;
+    incrementEpoch();
     TheBucket->getSecond().~ValueT();
     TheBucket->getFirst() = getTombstoneKey();
     decrementNumEntries();
