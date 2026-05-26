@@ -447,6 +447,11 @@ Modified Compiler Flags
   reducing performance slightly while reducing the number of optimized-out
   variables. (#GH118026)
 
+- Slightly changed hash id generation to get the unique linkage symbols names 
+  by ``-unique-internal-linkage-names`` option. Now it uses a path that
+  normalized in favor of the target system (same as the preprocessor does
+  for the file macros) and allows the reproducable IDs on any build system.
+
 Removed Compiler Flags
 -------------------------
 
