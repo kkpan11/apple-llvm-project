@@ -25,6 +25,7 @@
 # FRAMEWORK := "Foo"
 # FRAMEWORK_HEADERS := "Foo.h"
 # FRAMEWORK_MODULES := "module.modulemap"
+# FRAMEWORK_PRIVATE_HEADERS := "Foo_Private.h"
 #
 # Also might be of interest:
 # FRAMEWORK_INCLUDES (Darwin only) :=
@@ -632,6 +633,11 @@ ifneq "$(FRAMEWORK_MODULES)" ""
 endif
 ifneq "$(FRAMEWORK_HEADERS)" ""
 	cp -r $(FRAMEWORK_HEADERS) $(FRAMEWORK).framework/Versions/A/Headers
+endif
+ifneq "$(FRAMEWORK_PRIVATE_HEADERS)" ""
+	mkdir -p $(FRAMEWORK).framework/Versions/A/PrivateHeaders
+	cp -r $(FRAMEWORK_PRIVATE_HEADERS) $(FRAMEWORK).framework/Versions/A/PrivateHeaders
+	(cd $(FRAMEWORK).framework/; ln -sf Versions/A/PrivateHeaders PrivateHeaders)
 endif
 	(cd $(FRAMEWORK).framework/Versions; ln -sf A Current)
 	(cd $(FRAMEWORK).framework/; ln -sf Versions/A/Headers Headers)

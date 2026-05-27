@@ -324,6 +324,17 @@ ifneq "$(FRAMEWORK)" ""
 	$(call MKDIR_P,$(FRAMEWORK).framework/Versions/A/Headers)
 	$(call MKDIR_P,$(FRAMEWORK).framework/Versions/A/Modules)
 	$(call MKDIR_P,$(FRAMEWORK).framework/Versions/A/Resources)
+ifneq "$(FRAMEWORK_HEADERS)" ""
+	$(call CP_R,$(FRAMEWORK_HEADERS),$(FRAMEWORK).framework/Versions/A/Headers)
+endif
+ifneq "$(FRAMEWORK_MODULES)" ""
+	$(call CP_R,$(FRAMEWORK_MODULES),$(FRAMEWORK).framework/Versions/A/Modules)
+endif
+ifneq "$(FRAMEWORK_PRIVATE_HEADERS)" ""
+	$(call MKDIR_P,$(FRAMEWORK).framework/Versions/A/PrivateHeaders)
+	$(call CP_R,$(FRAMEWORK_PRIVATE_HEADERS),$(FRAMEWORK).framework/Versions/A/PrivateHeaders)
+	cd $(FRAMEWORK).framework && $(call LN_SF,Versions/A/PrivateHeaders,PrivateHeaders)
+endif
 ifeq "$(DYLIB_HIDE_SWIFTMODULE)" ""
 ifneq "$(MODULENAME)" ""
 	$(call MKDIR_P,$(FRAMEWORK).framework/Versions/A/Modules/$(MODULENAME).swiftmodule)

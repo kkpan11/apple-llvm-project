@@ -10028,6 +10028,30 @@ llvm::Error SwiftASTContext::GetCompileUnitImportsImpl(
     // If EBM is enabled, disable implicit modules during contextual imports.
     DisableImplicitImportsRAII no_implicit_imports_raii(*this);
 
+    // Skip Clang modules that are private companions of another
+    // module. They will get imported when the other module is
+    // imported; importing the private module first will pull
+    // declarations from the main module into the private module,
+    // causing redeclaration errors.
+    llvm::StringMap<llvm::StringRef> search_paths;
+    for (const SourceModule &module : cu_imports)
+      if (module.path.size())
+        search_paths.insert({module.path.front().GetStringRef(),
+                             module.search_path.GetStringRef()});
+
+    auto is_private_module = [&](const SourceModule &module) {
+      if (module.path.size() != 1 || module.search_path.IsEmpty())
+        return false;
+      llvm::StringRef name = module.path.front().GetStringRef();
+      if (!name.consume_back("_Private"))
+        return false;
+      auto main_module = search_paths.find(name);
+      if (main_module == search_paths.end())
+        return false;
+      // Both modules must come from the same framework bundle.
+      return module.search_path.GetStringRef() == main_module->second;
+    };
+
     // Even though all modules are ostensibly dependencies of the main
     // module, importing the main module will not give access to,
     // e.g., a private import. So we import all modules individually.
@@ -10042,6 +10066,15 @@ llvm::Error SwiftASTContext::GetCompileUnitImportsImpl(
               .Cases("SwiftShims", "Builtin", "std", true)
               .Default(false))
         continue;
+
+      if (is_private_module(module)) {
+        LOG_PRINTF(GetLog(LLDBLog::Types),
+                   "Skipping private Clang module %s "
+                   "(primary module %s will automatically imported it)",
+                   module.path.front().AsCString(""),
+                   module.search_path.AsCString(""));
+        continue;
+      }
 
       auto loaded_module = LoadOneModule(module, *this, process_sp,
                                          /*import_dylibs=*/false);
