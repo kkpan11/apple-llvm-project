@@ -276,6 +276,11 @@ public:
     return Kind.getHeaderUnitKind();
   }
 
+  std::string &getFile() {
+    assert(isFile());
+    return File;
+  }
+
   StringRef getFile() const {
     assert(isFile());
     return File;

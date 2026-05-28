@@ -162,13 +162,6 @@ public:
   }
   /// @}
 
-  /// Visitation.
-  /// @{
-  /// Visits paths stored in the invocation. The callback may return true to
-  /// short-circuit the visitation, or return false to continue visiting.
-  void visitPaths(llvm::function_ref<bool(StringRef)> Callback) const;
-  /// @}
-
   /// Command line generation.
   /// @{
   using StringAllocator = llvm::function_ref<const char *(const Twine &)>;
@@ -202,12 +195,6 @@ public:
   ///
   /// This is a (less-efficient) wrapper over generateCC1CommandLine().
   std::vector<std::string> getCC1CommandLine() const;
-
-protected:
-  /// Visits paths stored in the invocation. This is generally unsafe to call
-  /// directly, and each sub-class need to ensure calling this doesn't violate
-  /// its invariants.
-  void visitPathsImpl(llvm::function_ref<bool(std::string &)> Predicate);
 
 private:
   /// Generate command line options from DiagnosticOptions.
@@ -324,6 +311,7 @@ public:
   /// short-circuit the visitation, or return false to continue visiting. This
   /// is allowed to mutate the visited paths.
   void visitPaths(llvm::function_ref<bool(std::string &)> Callback);
+  void visitPaths(llvm::function_ref<bool(StringRef)> Callback) const;
   /// @}
 
   /// Create a compiler invocation from a list of input options.
@@ -402,6 +390,8 @@ private:
                                const CASOptions &CASOpts);
 };
 
+class PathVisitor;
+
 /// Same as \c CompilerInvocation, but with copy-on-write optimization.
 class CowCompilerInvocation : public CompilerInvocationBase {
 public:
@@ -425,6 +415,9 @@ public:
   CowCompilerInvocation(CompilerInvocation &&X)
       : CompilerInvocationBase(std::move(X)) {}
 
+  void visitPaths(llvm::function_ref<bool(std::string &)> Callback);
+  void visitPaths(llvm::function_ref<bool(StringRef)> Callback) const;
+
   // Const getters are inherited from the base class.
 
   /// Mutable getters.
@@ -443,6 +436,31 @@ public:
   FrontendOptions &getMutFrontendOpts();
   DependencyOutputOptions &getMutDependencyOutputOpts();
   PreprocessorOutputOptions &getMutPreprocessorOutputOpts();
+  /// @}
+
+private:
+  /// Mutable getters.
+  /// @{
+  friend PathVisitor;
+
+  LangOptions &getLangOpts() { return *LangOpts; }
+  TargetOptions &getTargetOpts() { return *TargetOpts; }
+  DiagnosticOptions &getDiagnosticOpts() { return *DiagnosticOpts; }
+  HeaderSearchOptions &getHeaderSearchOpts() { return *HSOpts; }
+  PreprocessorOptions &getPreprocessorOpts() { return *PPOpts; }
+  AnalyzerOptions &getAnalyzerOpts() { return *AnalyzerOpts; }
+  MigratorOptions &getMigratorOpts() { return *MigratorOpts; }
+  APINotesOptions &getAPINotesOpts() { return *APINotesOpts; }
+  CASOptions &getCASOpts() { return *CASOpts; }
+  CodeGenOptions &getCodeGenOpts() { return *CodeGenOpts; }
+  FileSystemOptions &getFileSystemOpts() { return *FSOpts; }
+  FrontendOptions &getFrontendOpts() { return *FrontendOpts; }
+  DependencyOutputOptions &getDependencyOutputOpts() {
+    return *DependencyOutputOpts;
+  }
+  PreprocessorOutputOptions &getPreprocessorOutputOpts() {
+    return *PreprocessorOutputOpts;
+  }
   /// @}
 };
 

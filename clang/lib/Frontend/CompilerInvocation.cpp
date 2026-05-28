@@ -5838,96 +5838,102 @@ CompilerInvocation::computeContextHash(DiagnosticsEngine &Diags) const {
   return toString(llvm::APInt(64, Hash), 36, /*Signed=*/false);
 }
 
-void CompilerInvocationBase::visitPathsImpl(
-    llvm::function_ref<bool(std::string &)> Predicate) {
+namespace clang {
+class PathVisitor {
+public:
+  template <class Self, class Arg>
+  static void visit(Self &&self, llvm::function_ref<bool(Arg)> Predicate) {
 #define RETURN_IF(PATH)                                                        \
-  do {                                                                         \
-    if (Predicate(PATH))                                                       \
-      return;                                                                  \
-  } while (0)
+do {                                                                         \
+if (Predicate(PATH))                                                       \
+return;                                                                  \
+} while (0)
 
 #define RETURN_IF_MANY(PATHS)                                                  \
-  do {                                                                         \
-    if (llvm::any_of(PATHS, Predicate))                                        \
-      return;                                                                  \
-  } while (0)
+do {                                                                         \
+if (llvm::any_of(PATHS, Predicate))                                        \
+return;                                                                  \
+} while (0)
 
-  auto &HeaderSearchOpts = *this->HSOpts;
-  // Header search paths.
-  RETURN_IF(HeaderSearchOpts.Sysroot);
-  for (auto &Entry : HeaderSearchOpts.UserEntries)
-    if (Entry.IgnoreSysRoot)
-      RETURN_IF(Entry.Path);
-  // TODO: Consider upstreaming this.
-  for (auto &Prefix : HeaderSearchOpts.SystemHeaderPrefixes)
-    RETURN_IF(Prefix.Prefix);
-  RETURN_IF(HeaderSearchOpts.ResourceDir);
-  RETURN_IF(HeaderSearchOpts.ModuleCachePath);
-  RETURN_IF(HeaderSearchOpts.ModuleUserBuildPath);
-  for (auto &[Name, File] : HeaderSearchOpts.PrebuiltModuleFiles)
-    RETURN_IF(File);
-  RETURN_IF_MANY(HeaderSearchOpts.PrebuiltModulePaths);
-  RETURN_IF_MANY(HeaderSearchOpts.VFSOverlayFiles);
+    auto &HeaderSearchOpts = std::forward<Self>(self).getHeaderSearchOpts();
+    // Header search paths.
+    RETURN_IF(HeaderSearchOpts.Sysroot);
+    for (auto &Entry : HeaderSearchOpts.UserEntries)
+      if (Entry.IgnoreSysRoot)
+        RETURN_IF(Entry.Path);
+    // TODO: Consider upstreaming this.
+    for (auto &Prefix : HeaderSearchOpts.SystemHeaderPrefixes)
+      RETURN_IF(Prefix.Prefix);
+    RETURN_IF(HeaderSearchOpts.ResourceDir);
+    RETURN_IF(HeaderSearchOpts.ModuleCachePath);
+    RETURN_IF(HeaderSearchOpts.ModuleUserBuildPath);
+    for (auto &[Name, File] : HeaderSearchOpts.PrebuiltModuleFiles)
+      RETURN_IF(File);
+    RETURN_IF_MANY(HeaderSearchOpts.PrebuiltModulePaths);
+    RETURN_IF_MANY(HeaderSearchOpts.VFSOverlayFiles);
 
-  // Preprocessor options.
-  auto &PPOpts = *this->PPOpts;
-  RETURN_IF_MANY(PPOpts.MacroIncludes);
-  RETURN_IF_MANY(PPOpts.Includes);
-  RETURN_IF(PPOpts.ImplicitPCHInclude);
+    // Preprocessor options.
+    auto &PPOpts = self.getPreprocessorOpts();
+    RETURN_IF_MANY(PPOpts.MacroIncludes);
+    RETURN_IF_MANY(PPOpts.Includes);
+    RETURN_IF(PPOpts.ImplicitPCHInclude);
 
-  // Frontend options.
-  auto &FrontendOpts = *this->FrontendOpts;
-  for (auto &Input : FrontendOpts.Inputs) {
-    if (Input.isBuffer())
-      continue;
+    // Frontend options.
+    auto &FrontendOpts = self.getFrontendOpts();
+    for (auto &Input : FrontendOpts.Inputs) {
+      if (Input.isBuffer())
+        continue;
 
-    RETURN_IF(Input.File);
+      RETURN_IF(Input.getFile());
+    }
+    // TODO: Also report output files such as FrontendOpts.OutputFile;
+    RETURN_IF(FrontendOpts.CodeCompletionAt.FileName);
+    RETURN_IF_MANY(FrontendOpts.ModuleMapFiles);
+    RETURN_IF_MANY(FrontendOpts.ModuleFiles);
+    RETURN_IF_MANY(FrontendOpts.ModulesEmbedFiles);
+    RETURN_IF_MANY(FrontendOpts.ASTMergeFiles);
+    RETURN_IF(FrontendOpts.OverrideRecordLayoutsFile);
+    RETURN_IF(FrontendOpts.StatsFile);
+
+    // Filesystem options.
+    auto &FileSystemOpts = self.getFileSystemOpts();
+    RETURN_IF(FileSystemOpts.WorkingDir);
+
+    // Codegen options.
+    auto &CodeGenOpts = self.getCodeGenOpts();
+    RETURN_IF(CodeGenOpts.DebugCompilationDir);
+    RETURN_IF(CodeGenOpts.CoverageCompilationDir);
+
+    // Sanitizer options.
+    RETURN_IF_MANY(self.getLangOpts().NoSanitizeFiles);
+
+    // Coverage mappings.
+    RETURN_IF(CodeGenOpts.ProfileInstrumentUsePath);
+    RETURN_IF(CodeGenOpts.SampleProfileFile);
+    RETURN_IF(CodeGenOpts.ProfileRemappingFile);
+
+    // Dependency output options.
+    for (auto &ExtraDep : self.getDependencyOutputOpts().ExtraDeps)
+      RETURN_IF(ExtraDep.first);
   }
-  // TODO: Also report output files such as FrontendOpts.OutputFile;
-  RETURN_IF(FrontendOpts.CodeCompletionAt.FileName);
-  RETURN_IF_MANY(FrontendOpts.ModuleMapFiles);
-  RETURN_IF_MANY(FrontendOpts.ModuleFiles);
-  RETURN_IF_MANY(FrontendOpts.ModulesEmbedFiles);
-  RETURN_IF_MANY(FrontendOpts.ASTMergeFiles);
-  RETURN_IF(FrontendOpts.OverrideRecordLayoutsFile);
-  RETURN_IF(FrontendOpts.StatsFile);
-
-  // Filesystem options.
-  auto &FileSystemOpts = *this->FSOpts;
-  RETURN_IF(FileSystemOpts.WorkingDir);
-
-  // Codegen options.
-  auto &CodeGenOpts = *this->CodeGenOpts;
-  RETURN_IF(CodeGenOpts.DebugCompilationDir);
-  RETURN_IF(CodeGenOpts.CoverageCompilationDir);
-
-  // Sanitizer options.
-  RETURN_IF_MANY(LangOpts->NoSanitizeFiles);
-
-  // Coverage mappings.
-  RETURN_IF(CodeGenOpts.ProfileInstrumentUsePath);
-  RETURN_IF(CodeGenOpts.SampleProfileFile);
-  RETURN_IF(CodeGenOpts.ProfileRemappingFile);
-
-  // Dependency output options.
-  for (auto &ExtraDep : DependencyOutputOpts->ExtraDeps)
-    RETURN_IF(ExtraDep.first);
-}
-
-void CompilerInvocationBase::visitPaths(
-    llvm::function_ref<bool(StringRef)> Callback) const {
-  // The const_cast here is OK, because visitPathsImpl() itself doesn't modify
-  // the invocation, and our callback takes immutable StringRefs.
-  return const_cast<CompilerInvocationBase *>(this)->visitPathsImpl(
-      [&Callback](std::string &Path) { return Callback(StringRef(Path)); });
+};
 }
 
 void CompilerInvocation::visitPaths(
-    llvm::function_ref<bool(std::string &)> Callback) {
-  // Unlike the copy-on-write variant (and therefore potentially also the base
-  // class), regular CompilerInvocation does not share the option objects with
-  // anyone else. This makes the potential mutation in the callback safe.
-  visitPathsImpl(Callback);
+    llvm::function_ref<bool(StringRef)> Callback) const {
+  return PathVisitor::visit<const CompilerInvocationBase &>(*this, Callback);
+}
+
+void CompilerInvocation::visitPaths(llvm::function_ref<bool(std::string &)> Callback) {
+  return PathVisitor::visit(*this, Callback);
+}
+
+void CowCompilerInvocation::visitPaths(llvm::function_ref<bool(StringRef)> Callback) const {
+  return PathVisitor::visit<const CompilerInvocationBase &>(*this, Callback);
+}
+
+void CowCompilerInvocation::visitPaths(llvm::function_ref<bool(std::string &)> Callback) {
+  return PathVisitor::visit(*this, Callback);
 }
 
 void CompilerInvocationBase::generateCC1CommandLine(

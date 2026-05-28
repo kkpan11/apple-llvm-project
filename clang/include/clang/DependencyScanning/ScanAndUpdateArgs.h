@@ -31,10 +31,10 @@ namespace dependencies {
 
 /// Apply CAS inputs for compilation caching to the given invocation, if
 /// enabled.
-void configureInvocationForCaching(CompilerInvocation &CI, CASOptions CASOpts,
+void configureInvocationForCaching(CowCompilerInvocation &CI, CASOptions CASOpts,
                                    std::string InputID,
                                    CachingInputKind InputKind,
-                                   std::string WorkingDir);
+                                   std::string WorkingDir, bool Seen);
 
 struct DepscanPrefixMapping {
   /// Add path mappings to the \p Mapper.
@@ -47,7 +47,7 @@ struct DepscanPrefixMapping {
       llvm::PrefixMapper &Mapper);
 
   /// Apply the mappings from \p Mapper to \p Invocation.
-  static void remapInvocationPaths(CompilerInvocation &Invocation,
+  static void remapInvocationPaths(CowCompilerInvocation &Invocation,
                                    llvm::PrefixMapper &Mapper);
 };
 } // namespace dependencies
