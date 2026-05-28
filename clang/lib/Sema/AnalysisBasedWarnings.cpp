@@ -3718,8 +3718,6 @@ void clang::sema::AnalysisBasedWarnings::IssueWarnings(
                                       /*EmitSuggestion =*/true,
                                       S.getLangOpts().BoundsSafetyAttributes);
       }
-
-      // More analysis ...
     };
     // Emit per-function analysis-based warnings that require the whole-TU
     // reasoning. Check if any of them is enabled at all before scanning the
