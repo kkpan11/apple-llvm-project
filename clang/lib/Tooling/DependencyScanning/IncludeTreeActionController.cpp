@@ -717,7 +717,7 @@ IncludeTreeBuilder::finishIncludeTree(CompilerInstance &ScanInstance,
     llvm::ErrorOr<cas::ObjectRef> CASContents =
         FM.getObjectRefForFileContent(PPOpts.ImplicitPCHInclude);
     if (!CASContents)
-      return llvm::errorCodeToError(CASContents.getError());
+      return llvm::createFileError(PPOpts.ImplicitPCHInclude, CASContents.getError());
 
     auto PCHFile = cas::IncludeTree::File::create(DB, "<PCH>", *CASContents);
     if (!PCHFile)
@@ -909,7 +909,7 @@ Expected<cas::ObjectRef> IncludeTreeBuilder::addToFileList(FileManager &FM,
   llvm::ErrorOr<cas::ObjectRef> CASContents =
       FM.getObjectRefForFileContent(Filename);
   if (!CASContents)
-    return llvm::errorCodeToError(CASContents.getError());
+    return llvm::createFileError(Filename, CASContents.getError());
 
   auto addFile = [&](StringRef Filename) -> Expected<cas::ObjectRef> {
     assert(!Filename.empty());

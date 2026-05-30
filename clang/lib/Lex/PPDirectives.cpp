@@ -1105,9 +1105,8 @@ Preprocessor::LookupEmbedFile(StringRef Filename, bool isAngled, bool OpenFile,
   FileManager &FM = this->getFileManager();
   if (llvm::sys::path::is_absolute(Filename)) {
     // lookup path or immediately fail
-    llvm::Expected<FileEntryRef> ShouldBeEntry = FM.getFileRef(
-        Filename, OpenFile, /*CacheFailure=*/true, /*IsText=*/false);
-    return llvm::expectedToOptional(std::move(ShouldBeEntry));
+    return FM.getOptionalFileRef(Filename, OpenFile, /*CacheFailure=*/true,
+                                 /*IsText=*/false);
   }
 
   auto SeparateComponents = [](SmallVectorImpl<char> &LookupPath,
@@ -1132,27 +1131,25 @@ Preprocessor::LookupEmbedFile(StringRef Filename, bool isAngled, bool OpenFile,
       StringRef FullFileDir = LookupFromFile->tryGetRealPathName();
       if (!FullFileDir.empty()) {
         SeparateComponents(LookupPath, FullFileDir, Filename, true);
-        llvm::Expected<FileEntryRef> ShouldBeEntry = FM.getFileRef(
+        OptionalFileEntryRef ShouldBeEntry = FM.getOptionalFileRef(
             LookupPath, OpenFile, /*CacheFailure=*/true, /*IsText=*/false);
         if (ShouldBeEntry)
-          return llvm::expectedToOptional(std::move(ShouldBeEntry));
-        llvm::consumeError(ShouldBeEntry.takeError());
+          return ShouldBeEntry;
       }
     }
 
     // Otherwise, do working directory lookup.
     LookupPath.clear();
-    auto MaybeWorkingDirEntry = FM.getDirectoryRef(".");
+    auto MaybeWorkingDirEntry = FM.getOptionalDirectoryRef(".");
     if (MaybeWorkingDirEntry) {
       DirectoryEntryRef WorkingDirEntry = *MaybeWorkingDirEntry;
       StringRef WorkingDir = WorkingDirEntry.getName();
       if (!WorkingDir.empty()) {
         SeparateComponents(LookupPath, WorkingDir, Filename, false);
-        llvm::Expected<FileEntryRef> ShouldBeEntry = FM.getFileRef(
+        OptionalFileEntryRef ShouldBeEntry = FM.getOptionalFileRef(
             LookupPath, OpenFile, /*CacheFailure=*/true, /*IsText=*/false);
         if (ShouldBeEntry)
-          return llvm::expectedToOptional(std::move(ShouldBeEntry));
-        llvm::consumeError(ShouldBeEntry.takeError());
+          return ShouldBeEntry;
       }
     }
   }
@@ -1160,11 +1157,10 @@ Preprocessor::LookupEmbedFile(StringRef Filename, bool isAngled, bool OpenFile,
   for (const auto &Entry : PPOpts.EmbedEntries) {
     LookupPath.clear();
     SeparateComponents(LookupPath, Entry, Filename, false);
-    llvm::Expected<FileEntryRef> ShouldBeEntry = FM.getFileRef(
+    OptionalFileEntryRef ShouldBeEntry = FM.getOptionalFileRef(
         LookupPath, OpenFile, /*CacheFailure=*/true, /*IsText=*/false);
     if (ShouldBeEntry)
-      return llvm::expectedToOptional(std::move(ShouldBeEntry));
-    llvm::consumeError(ShouldBeEntry.takeError());
+      return ShouldBeEntry;
   }
   return std::nullopt;
 }
