@@ -8564,6 +8564,10 @@ CheckPrintfHandler::checkFormatExpr(const analyze_printf::PrintfSpecifier &FS,
     // was deferred until now, we emit a warning for non-POD
     // arguments here.
     bool EmitTypeMismatch = false;
+    // Record and complex type arguments cannot be code generated for os_log
+    // and would crash CodeGen, so they are rejected with a hard error emitted
+    // after the switch below.
+    bool EmitOSLogError = false;
     switch (S.isValidVarArgType(ExprTy)) {
     case VarArgKind::Valid:
     case VarArgKind::ValidInCXX11: {
@@ -8581,22 +8585,26 @@ CheckPrintfHandler::checkFormatExpr(const analyze_printf::PrintfSpecifier &FS,
         Diag = diag::warn_format_conversion_argument_type_mismatch_confusion;
         break;
       case ArgType::NoMatch:
-        Diag = isInvalidOSLogArgTypeForCodeGen(FSType, ExprTy)
-                   ? diag::err_format_conversion_argument_type_mismatch
-                   : diag::warn_format_conversion_argument_type_mismatch;
+        EmitOSLogError = isInvalidOSLogArgTypeForCodeGen(FSType, ExprTy);
+        Diag = diag::warn_format_conversion_argument_type_mismatch;
         break;
       }
 
-      EmitFormatDiagnostic(
-          S.PDiag(Diag) << AT.getRepresentativeTypeName(S.Context) << ExprTy
-                        << IsEnum << CSR << E->getSourceRange(),
-          E->getBeginLoc(), /*IsStringLocation*/ false, CSR);
+      if (!EmitOSLogError)
+        EmitFormatDiagnostic(
+            S.PDiag(Diag) << AT.getRepresentativeTypeName(S.Context) << ExprTy
+                          << IsEnum << CSR << E->getSourceRange(),
+            E->getBeginLoc(), /*IsStringLocation*/ false, CSR);
       break;
     }
     case VarArgKind::Undefined:
     case VarArgKind::MSVCUndefined:
       if (CallType == VariadicCallType::DoesNotApply) {
         EmitTypeMismatch = true;
+      } else if (isInvalidOSLogArgTypeForCodeGen(FSType, ExprTy)) {
+        // Emit a hard error rather than the -Wnon-pod-varargs warning, which
+        // does not stop compilation.
+        EmitOSLogError = true;
       } else {
         EmitFormatDiagnostic(
             S.PDiag(diag::warn_non_pod_vararg_with_format_string)
@@ -8626,6 +8634,13 @@ CheckPrintfHandler::checkFormatExpr(const analyze_printf::PrintfSpecifier &FS,
             << AT.getRepresentativeTypeName(S.Context) << E->getSourceRange();
       break;
     }
+
+    if (EmitOSLogError)
+      EmitFormatDiagnostic(
+          S.PDiag(diag::err_format_conversion_argument_type_mismatch)
+              << AT.getRepresentativeTypeName(S.Context) << ExprTy << IsEnum
+              << CSR << E->getSourceRange(),
+          E->getBeginLoc(), /*IsStringLocation*/ false, CSR);
 
     if (EmitTypeMismatch) {
       // The function is not variadic, so we do not generate warnings about
