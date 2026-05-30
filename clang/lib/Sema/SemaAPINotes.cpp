@@ -18,6 +18,7 @@
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/TypeLoc.h"
 #include "clang/Analysis/Analyses/LifetimeSafety/LifetimeAnnotations.h"
+#include "clang/Basic/IdentifierTable.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Lex/Lexer.h"
 #include "clang/Sema/SemaObjC.h"
@@ -414,6 +415,15 @@ void Sema::ApplyAPINotesType(Decl *D, StringRef TypeString) {
       }
     }
   }
+}
+
+std::optional<api_notes::GlobalVariableInfo>
+Sema::ProcessAPINotes(const Module *M, const IdentifierInfo *II,
+                      SourceLocation Loc) {
+  if (!II || Loc.isInvalid())
+    return std::nullopt;
+
+  return APINotes.lookupGlobalVariable(M, II->getName(), Loc);
 }
 
 void Sema::ApplyNullability(Decl *D, NullabilityKind Nullability) {

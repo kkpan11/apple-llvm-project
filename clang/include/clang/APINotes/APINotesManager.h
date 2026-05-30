@@ -9,13 +9,16 @@
 #ifndef LLVM_CLANG_APINOTES_APINOTESMANAGER_H
 #define LLVM_CLANG_APINOTES_APINOTESMANAGER_H
 
+#include "clang/APINotes/Types.h"
 #include "clang/Basic/SourceLocation.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/PointerUnion.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/VersionTuple.h"
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace clang {
@@ -77,12 +80,18 @@ class APINotesManager {
   /// reader for this directory.
   llvm::DenseMap<const DirectoryEntry *, ReaderEntry> Readers;
 
+  /// A mapping from API notes files to loaded readers.
+  llvm::DenseMap<FileEntryRef, APINotesReader *> FileReaders;
+
   /// Load the API notes associated with the given file, whether it is
   /// the binary or source form of API notes.
   ///
   /// \returns the API notes reader for this file, or null if there is
   /// a failure.
   std::unique_ptr<APINotesReader> loadAPINotes(FileEntryRef APINotesFile);
+
+  /// Load or retrieve a cached reader for the given API notes file.
+  APINotesReader *getAPINotesReader(FileEntryRef APINotesFile);
 
   /// Load the API notes associated with the given buffer, whether it is
   /// the binary or source form of API notes.
@@ -174,6 +183,11 @@ public:
 
   /// Find the API notes readers that correspond to the given source location.
   llvm::SmallVector<APINotesReader *, 2> findAPINotes(SourceLocation Loc);
+
+  /// Lookup global variable API notes for the given module or source location.
+  std::optional<GlobalVariableInfo> lookupGlobalVariable(const Module *M,
+                                                         StringRef Name,
+                                                         SourceLocation Loc);
 
   bool captureVersionIndependentSwift() { return VersionIndependentSwift; }
 };
