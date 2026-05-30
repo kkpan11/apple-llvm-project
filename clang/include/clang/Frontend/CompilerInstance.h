@@ -117,8 +117,8 @@ class CompilerInstance : public ModuleLoader {
   /// The file manager.
   IntrusiveRefCntPtr<FileManager> FileMgr;
 
-  /// The output context.
-  IntrusiveRefCntPtr<llvm::vfs::OutputBackend> TheOutputBackend;
+  /// The output manager.
+  IntrusiveRefCntPtr<llvm::vfs::OutputBackend> OutputMgr;
 
   /// The source manager.
   IntrusiveRefCntPtr<SourceManager> SourceMgr;
@@ -512,15 +512,20 @@ public:
   /// @{
 
   /// Set the output manager.
-  void setOutputBackend(IntrusiveRefCntPtr<llvm::vfs::OutputBackend> NewOutputs);
+  void
+  setOutputManager(IntrusiveRefCntPtr<llvm::vfs::OutputBackend> NewOutputs);
 
   /// Create an output manager.
-  void createOutputBackend();
+  void createOutputManager();
 
-  bool hasOutputBackend() const { return bool(TheOutputBackend); }
+  bool hasOutputManager() const { return bool(OutputMgr); }
 
-  llvm::vfs::OutputBackend &getOutputBackend();
-  llvm::vfs::OutputBackend &getOrCreateOutputBackend();
+  llvm::vfs::OutputBackend &getOutputManager();
+  llvm::vfs::OutputBackend &getOrCreateOutputManager();
+
+  /// @}
+  /// @name CAS
+  /// @{
 
   /// Get the CAS, or create it using the configuration in CompilerInvocation.
   llvm::cas::ObjectStore &getOrCreateObjectStore();
