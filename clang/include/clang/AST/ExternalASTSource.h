@@ -535,7 +535,7 @@ struct PointerLikeTypeTraits<
   static Ptr getFromVoidPointer(void *P) { return Ptr::getFromOpaqueValue(P); }
 
   static constexpr int NumLowBitsAvailable =
-      PointerLikeTypeTraits<T>::NumLowBitsAvailable - 1;
+      PointerLikeTypeTraits<typename Ptr::ValueType>::NumLowBitsAvailable;
 };
 
 } // namespace llvm
