@@ -176,8 +176,9 @@ ModuleSP DynamicLoaderDarwin::FindTargetModuleForImageInfo(
   // We'll call Target::ModulesDidLoad after all the modules have been
   // added to the target, don't let it be called for every one.
   if (!module_sp || module_sp->GetObjectFile() == nullptr)
-    module_sp = m_process->ReadModuleFromMemory(image_info.file_spec,
-                                                image_info.address);
+    module_sp = m_process->ReadModuleFromMemory(
+        image_info.file_spec, image_info.address,
+        image_info.mh_and_load_cmd_size);
 
   if (did_create_ptr)
     *did_create_ptr = (bool)module_sp;
@@ -438,6 +439,10 @@ bool DynamicLoaderDarwin::JSONImageInformationIntoImageInfo(
         mh->GetValueForKey("cpusubtype")->GetUnsignedIntegerValue();
     image_infos[i].header.filetype =
         mh->GetValueForKey("filetype")->GetUnsignedIntegerValue();
+    if (mh->HasKey("sizeof_mh_and_loadcmds"))
+      image_infos[i].mh_and_load_cmd_size =
+          mh->GetValueForKey("sizeof_mh_and_loadcmds")
+              ->GetUnsignedIntegerValue();
 
     if (image->HasKey("min_version_os_name")) {
       std::string os_name =
