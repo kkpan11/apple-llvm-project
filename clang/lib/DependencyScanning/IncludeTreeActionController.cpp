@@ -132,7 +132,6 @@ private:
   // When a PCH is used this lists the filenames of the included files as they
   // are recorded in the PCH, ordered by \p FileEntry::UID index.
   SmallVector<StringRef> PreIncludedFileNames;
-  llvm::BitVector SeenIncludeFiles;
   SmallVector<cas::IncludeTree::FileList::FileEntry> IncludedFiles;
   SmallVector<cas::ObjectRef> IncludedFileLists;
   std::optional<cas::ObjectRef> PredefinesBufferRef;
@@ -897,12 +896,6 @@ IncludeTreeBuilder::getObjectForFileNonCached(FileManager &FM,
                                               const SrcMgr::FileInfo &FI) {
   OptionalFileEntryRef FE = FI.getContentCache().OrigEntry;
   assert(FE);
-
-  // Mark the include as already seen.
-  if (FE->getUID() >= SeenIncludeFiles.size())
-    SeenIncludeFiles.resize(FE->getUID() + 1);
-  SeenIncludeFiles.set(FE->getUID());
-
   return addToFileList(FM, *FE);
 }
 
