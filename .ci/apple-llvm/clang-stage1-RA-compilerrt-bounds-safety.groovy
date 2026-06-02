@@ -28,6 +28,7 @@ clangPipeline(
             "-DLLVM_TARGETS_TO_BUILD=X86;ARM;AArch64",
             "-DLLDB_ENABLE_SWIFT_SUPPORT=OFF",
             "-DLLDB_INCLUDE_TESTS=OFF",
+            "-DLLDB_ENABLE_LZMA=OFF",
             "-DCOMPILER_RT_INCLUDE_TESTS=ON",
             "-DCOMPILER_RT_ENABLE_TEST_SUITES=builtins;bounds_safety",
             "-DCOMPILER_RT_BOUNDS_SAFETY_USE_LLDB=ON"
