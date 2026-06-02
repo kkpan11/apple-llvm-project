@@ -46,6 +46,9 @@ Potentially Breaking Changes
   ``endbr64`` instruction at the labels named as possible branch
   destinations, so it is not safe to use a register-controlled branch
   instruction to branch to one. (In line with gcc.)
+- Downstream projects that previously linked only against ``clangDriver`` may
+  now (also) need to link against the new ``clangOptions`` library, since
+  options-related code has been moved out of the Driver into a separate library.
 
 C/C++ Language Potentially Breaking Changes
 -------------------------------------------

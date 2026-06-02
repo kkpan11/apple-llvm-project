@@ -11,7 +11,7 @@
 
 #include "clang/Basic/CodeGenOptions.h"
 #include "clang/Driver/CommonArgs.h"
-#include "clang/Driver/Options.h"
+#include "clang/Options/Options.h"
 #include "llvm/Frontend/Debug/Options.h"
 #include "llvm/Support/Path.h"
 #include "llvm/TargetParser/Host.h"

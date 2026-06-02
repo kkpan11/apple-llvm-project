@@ -44,8 +44,8 @@
 
 #include "clang/Basic/LangStandard.h"
 #include "clang/Driver/Driver.h"
-#include "clang/Driver/Options.h"
 #include "clang/Driver/Types.h"
+#include "clang/Options/Options.h"
 #include "clang/Tooling/CompilationDatabase.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
@@ -155,11 +155,11 @@ struct TransferableCommand {
     // We parse each argument individually so that we can retain the exact
     // spelling of each argument; re-rendering is lossy for aliased flags.
     // E.g. in CL mode, /W4 maps to -Wall.
-    auto &OptTable = clang::driver::getDriverOptTable();
+    auto &OptTable = getDriverOptTable();
     if (!OldArgs.empty())
       Cmd.CommandLine.emplace_back(OldArgs.front());
     for (unsigned Pos = 1; Pos < OldArgs.size();) {
-      using namespace driver::options;
+      using namespace options;
 
       const unsigned OldPos = Pos;
       std::unique_ptr<llvm::opt::Arg> Arg(OptTable.ParseOneArg(
@@ -280,14 +280,14 @@ private:
   // Try to interpret the argument as a type specifier, e.g. '-x'.
   std::optional<types::ID> tryParseTypeArg(const llvm::opt::Arg &Arg) {
     const llvm::opt::Option &Opt = Arg.getOption();
-    using namespace driver::options;
+    using namespace options;
     if (ClangCLMode) {
       if (Opt.matches(OPT__SLASH_TC) || Opt.matches(OPT__SLASH_Tc))
         return types::TY_C;
       if (Opt.matches(OPT__SLASH_TP) || Opt.matches(OPT__SLASH_Tp))
         return types::TY_CXX;
     } else {
-      if (Opt.matches(driver::options::OPT_x))
+      if (Opt.matches(options::OPT_x))
         return types::lookupTypeForTypeSpecifier(Arg.getValue());
     }
     return std::nullopt;
@@ -295,7 +295,7 @@ private:
 
   // Try to interpret the argument as '-std='.
   std::optional<LangStandard::Kind> tryParseStdArg(const llvm::opt::Arg &Arg) {
-    using namespace driver::options;
+    using namespace options;
     if (Arg.getOption().matches(ClangCLMode ? OPT__SLASH_std : OPT_std_EQ))
       return LangStandard::getLangKind(Arg.getValue());
     return std::nullopt;

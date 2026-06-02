@@ -18,9 +18,9 @@
 
 #include "clang-c/Dependencies.h"
 
-#include "clang/Driver/Options.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/SerializedDiagnosticPrinter.h"
+#include "clang/Options/Options.h"
 #include "clang/Tooling/DependencyScanning/DependencyScanningService.h"
 #include "clang/Tooling/DependencyScanning/DependencyScanningTool.h"
 #include "clang/Tooling/DependencyScanning/DependencyScanningWorker.h"
@@ -774,7 +774,6 @@ void clang_experimental_DependencyScannerReproducerOptions_dispose(
 
 enum CXErrorCode clang_experimental_DependencyScanner_generateReproducer(
     CXDependencyScannerReproducerOptions CXOptions, CXString *MessageOut) {
-  using namespace clang::driver;
   auto Report = [MessageOut](CXErrorCode ErrorCode) -> MessageEmitter {
     return MessageEmitter(ErrorCode, MessageOut);
   };
