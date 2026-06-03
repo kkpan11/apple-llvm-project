@@ -1318,7 +1318,7 @@ bool SwiftASTManipulator::SaveExpressionTextToTempFile(
   llvm::Twine prefix = llvm::Twine(file_prefix).concat(llvm::Twine(expr_number));
 
   llvm::StringRef suffix;
-  switch (options.GetLanguage()) {
+  switch (options.GetLanguage().AsLanguageType()) {
   default:
     suffix = ".cpp";
     break;

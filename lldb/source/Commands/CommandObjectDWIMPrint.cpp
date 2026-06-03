@@ -97,9 +97,9 @@ void CommandObjectDWIMPrint::DoExecute(StringRef command,
   StackFrame *frame = m_exe_ctx.GetFramePtr();
 
   // Either the language was explicitly specified, or we check the frame.
-  lldb::LanguageType language = m_expr_options.language;
-  if (language == lldb::eLanguageTypeUnknown && frame)
-    language = frame->GuessLanguage().AsLanguageType();
+  SourceLanguage language{m_expr_options.language};
+  if (!language && frame)
+    language = frame->GuessLanguage();
 
   // Add a hint if object description was requested, but no description
   // function was implemented.
@@ -112,23 +112,23 @@ void CommandObjectDWIMPrint::DoExecute(StringRef command,
     // Objective-C
     // "<Name: 0x...>. The regex is:
     // - Start with "<".
-    // - Followed by 1 or more non-whitespace characters.
+    // - Capture 1 or more non-whitespace characters (the class name).
     // - Followed by ": 0x".
     // - Followed by 5 or more hex digits.
     // - Followed by ">".
     // - End with zero or more whitespace characters.
     static const std::regex swift_class_regex(
-        "^<\\S+: 0x[[:xdigit:]]{5,}>\\s*$");
+        "^<(\\S+): 0x[[:xdigit:]]{5,}>\\s*$");
 
-    if (GetDebugger().GetShowDontUsePoHint() && target_ptr &&
-        (language == lldb::eLanguageTypeSwift ||
-         language == lldb::eLanguageTypeObjC) &&
-        std::regex_match(output.data(), swift_class_regex)) {
+    std::cmatch match;
+    if (GetDebugger().GetShowDontUsePoHint() && !target.IsDummyTarget() &&
+        (language.AsLanguageType() == lldb::eLanguageTypeSwift ||
+         language.IsObjC()) &&
+        std::regex_match(output.data(), match, swift_class_regex)) {
 
-      result.AppendNote(
-          "object description requested, but type doesn't implement "
-          "a custom object description. Consider using \"p\" instead of "
-          "\"po\" (this note will only be shown once per debug session).\n");
+      result.AppendNoteWithFormatv(
+          "{0} has no custom object description, use \"p\" to see its children",
+          match[1].str());
       note_shown = true;
     }
   };
@@ -177,7 +177,7 @@ void CommandObjectDWIMPrint::DoExecute(StringRef command,
   //   2. Verify the isa pointer is a known class
   //   3. Require addresses to be on the heap
   std::string modified_expr_storage;
-  bool is_swift = language == lldb::eLanguageTypeSwift;
+  bool is_swift = language.AsLanguageType() == lldb::eLanguageTypeSwift;
   if (is_swift && is_po) {
     lldb::addr_t addr;
     bool is_integer = !expr.getAsInteger(0, addr);
@@ -233,7 +233,8 @@ void CommandObjectDWIMPrint::DoExecute(StringRef command,
 
   // Second, try `expr` as a persistent variable.
   if (expr.starts_with("$"))
-    if (auto *state = target.GetPersistentExpressionStateForLanguage(language))
+    if (auto *state = target.GetPersistentExpressionStateForLanguage(
+            language.AsLanguageType()))
       if (auto var_sp = state->GetVariable(expr))
         if (auto valobj_sp = var_sp->GetValueObject()) {
           dump_val_object(*valobj_sp);
