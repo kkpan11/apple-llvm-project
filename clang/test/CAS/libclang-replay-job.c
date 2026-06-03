@@ -97,6 +97,18 @@
 // ABS_DIAG: remark: compile job cache hit for
 // ABS_DIAG: libclang-replay-job.c.tmp{{.}}main.c:1:2: warning:
 
+// Check with a bad include-tree ID.
+// RUN: sed "s|llvmcas://[[:xdigit:]]*|llvmcas://bad|" %t/cc1.rsp > %t/cc1.bad.rsp
+// RUN: not c-index-test core -replay-cached-job -cas-path %t/cas @%t/cache-key \
+// RUN:   -fcas-plugin-path %llvmshlibdir/libCASPluginTest%pluginext \
+// RUN:   -fcas-plugin-option no-logging \
+// RUN:   -working-dir %t \
+// RUN: -- @%t/cc1.bad.rsp \
+// RUN:   -serialize-diagnostic-file %t/t4.dia -Rcompile-job-cache-hit \
+// RUN:   -dependency-file %t/t4.d -o %t/output4.o 2> %t/output4.txt
+// RUN: FileCheck %s --input-file=%t/output4.txt -check-prefix=ERR_DIAG
+// ERR_DIAG: error diagnostic during replay: fatal error: CAS cannot parse root-id 'llvmcas://bad' specified by '-fcas-*' options
+
 // Use relative path to inputs and outputs.
 //--- cdb.json.template
 [{
