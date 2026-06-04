@@ -429,28 +429,16 @@ LLVM_ABI std::unique_ptr<ObjectStore> createInMemoryCAS();
 bool isOnDiskCASEnabled();
 
 /// Gets or creates a persistent on-disk path at \p Path.
-///
-/// Deprecated: if \p Path resolves to \a getDefaultOnDiskCASStableID(),
-/// automatically opens \a getDefaultOnDiskCASPath() instead.
-///
-/// FIXME: Remove the special behaviour for getDefaultOnDiskCASStableID(). The
-/// client should handle this logic, if/when desired.
 LLVM_ABI Expected<std::unique_ptr<ObjectStore>>
 createOnDiskCAS(const Twine &Path);
 
 /// Set \p Path to a reasonable default on-disk path for a persistent CAS for
 /// the current user.
-LLVM_ABI void getDefaultOnDiskCASPath(SmallVectorImpl<char> &Path);
+LLVM_ABI Error getDefaultOnDiskCASPath(SmallVectorImpl<char> &Path);
 
 /// Get a reasonable default on-disk path for a persistent CAS for the current
 /// user.
-LLVM_ABI std::string getDefaultOnDiskCASPath();
-
-/// FIXME: Remove.
-void getDefaultOnDiskCASStableID(SmallVectorImpl<char> &Path);
-
-/// FIXME: Remove.
-std::string getDefaultOnDiskCASStableID();
+LLVM_ABI llvm::Expected<std::string> getDefaultOnDiskCASPath();
 
 /// Create ObjectStore from a string identifier.
 /// Currently the string identifier is using URL scheme with following supported
