@@ -1672,8 +1672,20 @@ loadModuleFromCAS(llvm::StringRef cas_id, llvm::StringRef name_for_diagnostics,
 
   auto id = cas->parseID(cas_id);
   if (!id) {
-    LLDB_LOG_ERROR(GetLog(LLDBLog::Modules), id.takeError(),
-                   "'{1}' is not valid CASID: {0}", cas_id);
+    // This function is also called for file paths that do not exist.
+    // An invalid CAS ID is not an error we need to surface to a user.
+    llvm::Error remaining = llvm::handleErrors(
+        id.takeError(),
+        [&](std::unique_ptr<llvm::StringError> SE) -> llvm::Error {
+          if (SE->convertToErrorCode() == std::errc::invalid_argument) {
+            LLDB_LOGV(GetLog(LLDBLog::Modules),
+                      "'{0}' is not a CAS id: {1}", cas_id, SE->getMessage());
+            return llvm::Error::success();
+          }
+          return llvm::Error(std::move(SE));
+        });
+    if (remaining)
+      return std::move(remaining);
     return ModuleSpec();
   }
 
