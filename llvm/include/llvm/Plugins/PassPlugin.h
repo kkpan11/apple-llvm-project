@@ -1,4 +1,4 @@
-//===- llvm/Passes/PassPlugin.h - Public Plugin API -----------------------===//
+//===----------------------------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -10,8 +10,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_PASSES_PASSPLUGIN_H
-#define LLVM_PASSES_PASSPLUGIN_H
+#ifndef LLVM_PLUGINS_PASSPLUGIN_H
+#define LLVM_PLUGINS_PASSPLUGIN_H
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Compiler.h"
@@ -91,7 +91,7 @@ private:
   sys::DynamicLibrary Library;
   PassPluginLibraryInfo Info;
 };
-}
+} // namespace llvm
 
 /// The public entry point for a pass plugin.
 ///
@@ -110,4 +110,4 @@ private:
 extern "C" ::llvm::PassPluginLibraryInfo LLVM_ATTRIBUTE_WEAK
 llvmGetPassPluginInfo();
 
-#endif /* LLVM_PASSES_PASSPLUGIN_H */
+#endif /* LLVM_PLUGINS_PASSPLUGIN_H */
