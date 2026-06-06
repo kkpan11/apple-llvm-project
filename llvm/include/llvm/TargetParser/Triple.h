@@ -238,14 +238,21 @@ public:
     AMDPAL,     // AMD PAL Runtime
     HermitCore, // HermitCore Unikernel/Multikernel
     Hurd,       // GNU/Hurd
-    WASI,       // Experimental WebAssembly OS
+    WASI,       // Deprecated alias of WASI 0.1; in the future will be WASI 1.0.
+    WASIp1,     // WASI 0.1
+    WASIp2,     // WASI 0.2
+    WASIp3,     // WASI 0.3
     Emscripten,
     ShaderModel, // DirectX ShaderModel
     LiteOS,
     Serenity,
     Vulkan, // Vulkan SPIR-V
+    CheriotRTOS,
+    OpenCL,
+    ChipStar,
     Firmware,
-    LastOSType = Firmware
+    QURT,
+    LastOSType = QURT
   };
   enum EnvironmentType {
     UnknownEnvironment,
@@ -303,7 +310,6 @@ public:
     Callable,
     Mesh,
     Amplification,
-    OpenCL,
     OpenHOS,
     Mlibc,
 
@@ -750,7 +756,8 @@ public:
 
   /// Tests whether the OS is WASI.
   bool isOSWASI() const {
-    return getOS() == Triple::WASI;
+    return getOS() == Triple::WASI || getOS() == Triple::WASIp1 ||
+           getOS() == Triple::WASIp2 || getOS() == Triple::WASIp3;
   }
 
   /// Tests whether the OS is Emscripten.
@@ -773,6 +780,9 @@ public:
   bool isOSSerenity() const {
     return getOS() == Triple::Serenity;
   }
+
+  /// Tests whether the OS is QURT.
+  bool isOSQurt() const { return getOS() == Triple::QURT; }
 
   /// Tests whether the OS uses the ELF binary format.
   bool isOSBinFormatELF() const {

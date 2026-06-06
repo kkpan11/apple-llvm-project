@@ -316,6 +316,12 @@ StringRef Triple::getOSTypeName(OSType Kind) {
   case TvOS: return "tvos";
   case UEFI: return "uefi";
   case WASI: return "wasi";
+  case WASIp1:
+    return "wasip1";
+  case WASIp2:
+    return "wasip2";
+  case WASIp3:
+    return "wasip3";
   case WatchOS: return "watchos";
   case Win32: return "windows";
   case ZOS: return "zos";
@@ -323,8 +329,16 @@ StringRef Triple::getOSTypeName(OSType Kind) {
   case LiteOS: return "liteos";
   case XROS: return "xros";
   case Vulkan: return "vulkan";
+  case CheriotRTOS:
+    return "cheriotrtos";
+  case OpenCL:
+    return "opencl";
+  case ChipStar:
+    return "chipstar";
   case Firmware:
     return "firmware";
+  case QURT:
+    return "qurt";
   }
 
   llvm_unreachable("Invalid OSType");
@@ -383,8 +397,6 @@ StringRef Triple::getEnvironmentTypeName(EnvironmentType Kind) {
   case Callable: return "callable";
   case Mesh: return "mesh";
   case Amplification: return "amplification";
-  case OpenCL:
-    return "opencl";
   case OpenHOS: return "ohos";
   case PAuthTest:
     return "pauthtest";
@@ -678,51 +690,58 @@ static Triple::VendorType parseVendor(StringRef VendorName) {
 
 static Triple::OSType parseOS(StringRef OSName) {
   return StringSwitch<Triple::OSType>(OSName)
-    .StartsWith("darwin", Triple::Darwin)
-    .StartsWith("dragonfly", Triple::DragonFly)
-    .StartsWith("freebsd", Triple::FreeBSD)
-    .StartsWith("fuchsia", Triple::Fuchsia)
-    .StartsWith("ios", Triple::IOS)
-    .StartsWith("kfreebsd", Triple::KFreeBSD)
-    .StartsWith("linux", Triple::Linux)
-    .StartsWith("lv2", Triple::Lv2)
-    .StartsWith("macos", Triple::MacOSX)
-    .StartsWith("managarm", Triple::Managarm)
-    .StartsWith("netbsd", Triple::NetBSD)
-    .StartsWith("openbsd", Triple::OpenBSD)
-    .StartsWith("solaris", Triple::Solaris)
-    .StartsWith("uefi", Triple::UEFI)
-    .StartsWith("win32", Triple::Win32)
-    .StartsWith("windows", Triple::Win32)
-    .StartsWith("zos", Triple::ZOS)
-    .StartsWith("haiku", Triple::Haiku)
-    .StartsWith("rtems", Triple::RTEMS)
-    .StartsWith("nacl", Triple::NaCl)
-    .StartsWith("aix", Triple::AIX)
-    .StartsWith("cuda", Triple::CUDA)
-    .StartsWith("nvcl", Triple::NVCL)
-    .StartsWith("amdhsa", Triple::AMDHSA)
-    .StartsWith("ps4", Triple::PS4)
-    .StartsWith("ps5", Triple::PS5)
-    .StartsWith("elfiamcu", Triple::ELFIAMCU)
-    .StartsWith("tvos", Triple::TvOS)
-    .StartsWith("watchos", Triple::WatchOS)
-    .StartsWith("bridgeos", Triple::BridgeOS)
-    .StartsWith("driverkit", Triple::DriverKit)
-    .StartsWith("xros", Triple::XROS)
-    .StartsWith("visionos", Triple::XROS)
-    .StartsWith("mesa3d", Triple::Mesa3D)
-    .StartsWith("amdpal", Triple::AMDPAL)
-    .StartsWith("hermit", Triple::HermitCore)
-    .StartsWith("hurd", Triple::Hurd)
-    .StartsWith("wasi", Triple::WASI)
-    .StartsWith("emscripten", Triple::Emscripten)
-    .StartsWith("shadermodel", Triple::ShaderModel)
-    .StartsWith("liteos", Triple::LiteOS)
-    .StartsWith("serenity", Triple::Serenity)
-    .StartsWith("vulkan", Triple::Vulkan)
-    .StartsWith("firmware", Triple::Firmware)
-    .Default(Triple::UnknownOS);
+      .StartsWith("darwin", Triple::Darwin)
+      .StartsWith("dragonfly", Triple::DragonFly)
+      .StartsWith("freebsd", Triple::FreeBSD)
+      .StartsWith("fuchsia", Triple::Fuchsia)
+      .StartsWith("ios", Triple::IOS)
+      .StartsWith("kfreebsd", Triple::KFreeBSD)
+      .StartsWith("linux", Triple::Linux)
+      .StartsWith("lv2", Triple::Lv2)
+      .StartsWith("macos", Triple::MacOSX)
+      .StartsWith("managarm", Triple::Managarm)
+      .StartsWith("netbsd", Triple::NetBSD)
+      .StartsWith("openbsd", Triple::OpenBSD)
+      .StartsWith("solaris", Triple::Solaris)
+      .StartsWith("uefi", Triple::UEFI)
+      .StartsWith("win32", Triple::Win32)
+      .StartsWith("windows", Triple::Win32)
+      .StartsWith("zos", Triple::ZOS)
+      .StartsWith("haiku", Triple::Haiku)
+      .StartsWith("rtems", Triple::RTEMS)
+      .StartsWith("nacl", Triple::NaCl)
+      .StartsWith("aix", Triple::AIX)
+      .StartsWith("cuda", Triple::CUDA)
+      .StartsWith("nvcl", Triple::NVCL)
+      .StartsWith("amdhsa", Triple::AMDHSA)
+      .StartsWith("ps4", Triple::PS4)
+      .StartsWith("ps5", Triple::PS5)
+      .StartsWith("elfiamcu", Triple::ELFIAMCU)
+      .StartsWith("tvos", Triple::TvOS)
+      .StartsWith("watchos", Triple::WatchOS)
+      .StartsWith("bridgeos", Triple::BridgeOS)
+      .StartsWith("driverkit", Triple::DriverKit)
+      .StartsWith("xros", Triple::XROS)
+      .StartsWith("visionos", Triple::XROS)
+      .StartsWith("mesa3d", Triple::Mesa3D)
+      .StartsWith("amdpal", Triple::AMDPAL)
+      .StartsWith("hermit", Triple::HermitCore)
+      .StartsWith("hurd", Triple::Hurd)
+      .StartsWith("wasip1", Triple::WASIp1)
+      .StartsWith("wasip2", Triple::WASIp2)
+      .StartsWith("wasip3", Triple::WASIp3)
+      .StartsWith("wasi", Triple::WASI)
+      .StartsWith("emscripten", Triple::Emscripten)
+      .StartsWith("shadermodel", Triple::ShaderModel)
+      .StartsWith("liteos", Triple::LiteOS)
+      .StartsWith("serenity", Triple::Serenity)
+      .StartsWith("vulkan", Triple::Vulkan)
+      .StartsWith("cheriotrtos", Triple::CheriotRTOS)
+      .StartsWith("opencl", Triple::OpenCL)
+      .StartsWith("chipstar", Triple::ChipStar)
+      .StartsWith("firmware", Triple::Firmware)
+      .StartsWith("qurt", Triple::QURT)
+      .Default(Triple::UnknownOS);
 }
 
 static Triple::EnvironmentType parseEnvironment(StringRef EnvironmentName) {
@@ -773,7 +792,6 @@ static Triple::EnvironmentType parseEnvironment(StringRef EnvironmentName) {
       .StartsWith("callable", Triple::Callable)
       .StartsWith("mesh", Triple::Mesh)
       .StartsWith("amplification", Triple::Amplification)
-      .StartsWith("opencl", Triple::OpenCL)
       .StartsWith("ohos", Triple::OpenHOS)
       .StartsWith("pauthtest", Triple::PAuthTest)
       .StartsWith("llvm", Triple::LLVM)
