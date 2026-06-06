@@ -2085,7 +2085,7 @@ static void addNoRecurseAttrs(const SCCNodeSet &SCCNodes,
   // is norecurse. This check also detects self-recursion as F is not currently
   // marked norecurse, so any called from F to F will not be marked norecurse.
   for (auto &BB : *F)
-    for (auto &I : BB.instructionsWithoutDebug())
+    for (auto &I : BB)
       if (auto *CB = dyn_cast<CallBase>(&I)) {
         Function *Callee = CB->getCalledFunction();
         if (!Callee || Callee == F ||

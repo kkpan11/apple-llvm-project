@@ -317,7 +317,7 @@ static BasicBlock *getCommonExitBlock(const SetVector<BasicBlock *> &Blocks) {
 
 CodeExtractorAnalysisCache::CodeExtractorAnalysisCache(Function &F) {
   for (BasicBlock &BB : F) {
-    for (Instruction &II : BB.instructionsWithoutDebug())
+    for (Instruction &II : BB)
       if (auto *AI = dyn_cast<AllocaInst>(&II))
         Allocas.push_back(AI);
 
@@ -326,7 +326,7 @@ CodeExtractorAnalysisCache::CodeExtractorAnalysisCache(Function &F) {
 }
 
 void CodeExtractorAnalysisCache::findSideEffectInfoForBlock(BasicBlock &BB) {
-  for (Instruction &II : BB.instructionsWithoutDebug()) {
+  for (Instruction &II : BB) {
     unsigned Opcode = II.getOpcode();
     Value *MemAddr = nullptr;
     switch (Opcode) {
@@ -353,7 +353,7 @@ void CodeExtractorAnalysisCache::findSideEffectInfoForBlock(BasicBlock &BB) {
     default: {
       IntrinsicInst *IntrInst = dyn_cast<IntrinsicInst>(&II);
       if (IntrInst) {
-        if (IntrInst->isLifetimeStartOrEnd())
+        if (IntrInst->isLifetimeStartOrEnd() || isa<PseudoProbeInst>(IntrInst))
           break;
         SideEffectingBlocks.insert(&BB);
         return;
