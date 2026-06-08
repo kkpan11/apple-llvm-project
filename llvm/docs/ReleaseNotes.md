@@ -79,10 +79,10 @@ Changes to the LLVM IR
 Changes to LLVM infrastructure
 ------------------------------
 
-* ``DenseMap`` and ``DenseSet`` ``erase`` now invalidates all iterators and
-  references into the container, not just the iterator for the erased element.
-  Use the new ``remove_if`` member to erase matching elements in a single pass
-  instead of erasing while iterating.
+* ``DenseMap``, ``DenseSet``, ``StringMap``, and ``StringSet`` ``erase`` now
+  invalidates all iterators and references into the container, not just the
+  iterator for the erased element. Use the new ``remove_if`` member to erase
+  matching elements in a single pass instead of erasing while iterating.
 
 * Removed support for target intrinsics being defined in the target directories
   themselves (i.e., the `TargetIntrinsicInfo` class).
