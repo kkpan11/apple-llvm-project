@@ -17,8 +17,11 @@
 #include "lldb/Utility/Log.h"
 
 #include "swift/Demangling/Demangle.h"
+#include "llvm/Support/Endian.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
+#include <algorithm>
+#include <cstdint>
 
 using namespace lldb;
 using namespace lldb_private;
@@ -312,6 +315,54 @@ LLDBMemoryReader::resolvePointer(swift::remote::RemoteAddress address,
   return tagged_pointer;
 }
 
+void LLDBMemoryReader::prefetchGOTSection(const lldb::SectionSP &section) {
+  if (!m_got_sections_prefetched.insert(section.get()).second)
+    return;
+
+  Log *log = GetLog(LLDBLog::Types);
+
+  Target &target = m_process.GetTarget();
+  // Avoid an unbounded memory read. For GOTs larger than 8KB, cache the first
+  // portion only.
+  const addr_t got_size = std::min((addr_t)(1024 * 8), section->GetByteSize());
+  const addr_t got_load_base = section->GetLoadBaseAddress(&target);
+  if (got_load_base == LLDB_INVALID_ADDRESS) {
+    LLDB_LOG(log, "[MemoryReader] No load addr for GOT at file addr {0:x}",
+             section->GetFileAddress());
+    return;
+  }
+
+  std::vector<uint8_t> buf(got_size);
+  Status err;
+  auto bytes_read =
+      target.ReadMemory(Address(section, 0), buf.data(), got_size, err,
+                        /*force_live_memory=*/true);
+  if (err.Fail()) {
+    LLDB_LOG(log, "[MemoryReader] Failed to read GOT at file addr {0:x}",
+             section->GetFileAddress());
+    return;
+  }
+  if (bytes_read != got_size)
+    LLDB_LOG(log, "[MemoryReader] Partial read of GOT at file addr {0:x}",
+             section->GetFileAddress());
+
+  const auto byte_order = m_process.GetByteOrder();
+  const auto endian = byte_order == eByteOrderLittle ? llvm::endianness::little
+                                                     : llvm::endianness::big;
+  const int ptr_size = m_process.GetAddressByteSize();
+  auto read_func = [&](uint64_t off) -> uint64_t {
+    if (ptr_size == 8)
+      return llvm::support::endian::read<uint64_t>(buf.data() + off, endian);
+    return llvm::support::endian::read<uint32_t>(buf.data() + off, endian);
+  };
+  for (uint64_t off = 0; off + ptr_size <= got_size; off += ptr_size) {
+    uint64_t got_entry = read_func(off);
+    // Non-zero: entry was not coalesced.
+    if (got_entry != 0)
+      m_got_entry_cache.try_emplace(got_load_base + off, got_load_base + off);
+  }
+}
+
 swift::reflection::RemoteAddress
 LLDBMemoryReader::resolveIndirectAddressAtOffset(
     swift::reflection::RemoteAddress address, uint64_t offset,
@@ -376,6 +427,19 @@ LLDBMemoryReader::resolveIndirectAddressAtOffset(
   if (!section->IsGOTSection())
     return offset_address;
 
+  prefetchGOTSection(section);
+
+  Target &target(m_process.GetTarget());
+  addr_t got_key = lldb_offset_address.GetLoadAddress(&target);
+  if (auto cache_it = m_got_entry_cache.find(got_key);
+      cache_it != m_got_entry_cache.end()) {
+    LLDB_LOGV(log,
+              "[MemoryReader::resolveAddressAtOffset] GOT cache hit for {0:x}",
+              got_key);
+    return swift::remote::RemoteAddress(
+        cache_it->second, swift::remote::RemoteAddress::DefaultAddressSpace);
+  }
+
   // offset_address is in a GOT section. Re-read the offset from the base
   // address in live memory, since the offset in live memory can have been
   // patched in the shared cache to point somewhere else.
@@ -394,7 +458,6 @@ LLDBMemoryReader::resolveIndirectAddressAtOffset(
   }
 
   auto lldb_addr = *maybe_lldb_addr;
-  Target &target(m_process.GetTarget());
   Status error;
   const bool force_live_memory = true;
   bool did_read_live_memory = false;
@@ -433,9 +496,10 @@ LLDBMemoryReader::resolveIndirectAddressAtOffset(
       "into live address {0:x} and offset {1:x} resulting in address {2:x}",
       live_address, live_offset, live_address + live_offset);
 
+  addr_t result = live_address + live_offset;
+  m_got_entry_cache.try_emplace(got_key, result);
   return swift::remote::RemoteAddress(
-      live_address + live_offset,
-      swift::remote::RemoteAddress::DefaultAddressSpace);
+      result, swift::remote::RemoteAddress::DefaultAddressSpace);
 }
 
 bool LLDBMemoryReader::readBytes(swift::remote::RemoteAddress address,
