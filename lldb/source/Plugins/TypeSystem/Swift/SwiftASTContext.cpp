@@ -9615,6 +9615,9 @@ static void DescribeFileUnit(Stream &s, const swift::FileUnit *file_unit) {
       case swift::SourceFileKind::DefaultArgument:
         s.PutCString("Default Argument");
         break;
+      case swift::SourceFileKind::SyntheticMacro:
+        s.PutCString("Synthetic Macro");
+        break;
       }
     }
   } break;
