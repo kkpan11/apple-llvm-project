@@ -257,6 +257,7 @@ bool ClassDescriptorV2::method_list_t::Read(Process *process,
   uint32_t entsize = extractor.GetU32_unchecked(&cursor);
   m_is_small = (entsize & 0x80000000) != 0;
   m_has_direct_selector = (entsize & 0x40000000) != 0;
+  m_has_relative_types = (entsize & 0x20000000) != 0;
   m_entsize = entsize & 0xfffc;
   m_count = extractor.GetU32_unchecked(&cursor);
   m_first_ptr = addr + cursor;
@@ -288,8 +289,9 @@ void ClassDescriptorV2::method_t::ReadNames(
 
 llvm::SmallVector<ClassDescriptorV2::method_t, 0>
 ClassDescriptorV2::ReadMethods(llvm::ArrayRef<lldb::addr_t> addresses,
-                               lldb::addr_t relative_selector_base_addr,
-                               bool is_small, bool has_direct_sel) const {
+                               lldb::addr_t relative_string_base_addr,
+                               bool is_small, bool has_direct_sel,
+                               bool has_relative_types) const {
   lldb_private::Process *process = m_runtime.GetProcess();
   if (!process)
     return {};
@@ -317,8 +319,8 @@ ClassDescriptorV2::ReadMethods(llvm::ArrayRef<lldb::addr_t> addresses,
     DataExtractor extractor(memory.data(), size, process->GetByteOrder(),
                             process->GetAddressByteSize());
     methods.push_back(method_t());
-    methods.back().Read(extractor, process, addr, relative_selector_base_addr,
-                        is_small, has_direct_sel);
+    methods.back().Read(extractor, process, addr, relative_string_base_addr,
+                        is_small, has_direct_sel, has_relative_types);
   }
 
   method_t::ReadNames(methods, *process);
@@ -327,8 +329,9 @@ ClassDescriptorV2::ReadMethods(llvm::ArrayRef<lldb::addr_t> addresses,
 
 bool ClassDescriptorV2::method_t::Read(DataExtractor &extractor,
                                        Process *process, lldb::addr_t addr,
-                                       lldb::addr_t relative_selector_base_addr,
-                                       bool is_small, bool has_direct_sel) {
+                                       lldb::addr_t relative_string_base_addr,
+                                       bool is_small, bool has_direct_sel,
+                                       bool has_relative_types) {
   lldb::offset_t cursor = 0;
 
   if (is_small) {
@@ -344,10 +347,13 @@ bool ClassDescriptorV2::method_t::Read(DataExtractor &extractor,
       m_name_ptr = process->ReadPointerFromMemory(m_name_ptr, error);
       if (error.Fail())
         return false;
-    } else if (relative_selector_base_addr != LLDB_INVALID_ADDRESS) {
-      m_name_ptr = relative_selector_base_addr + nameref_offset;
+    } else if (relative_string_base_addr != LLDB_INVALID_ADDRESS) {
+      m_name_ptr = relative_string_base_addr + nameref_offset;
     }
-    m_types_ptr = addr + 4 + types_offset;
+    if (has_relative_types)
+      m_types_ptr = relative_string_base_addr + types_offset;
+    else
+      m_types_ptr = addr + 4 + types_offset;
     m_imp_ptr = addr + 8 + imp_offset;
   } else {
     m_name_ptr = extractor.GetAddress_unchecked(&cursor);
@@ -496,7 +502,8 @@ bool ClassDescriptorV2::ProcessMethodList(
 
   llvm::SmallVector<method_t, 0> methods =
       ReadMethods(addresses, m_runtime.GetRelativeSelectorBaseAddr(),
-                  method_list.m_is_small, method_list.m_has_direct_selector);
+                  method_list.m_is_small, method_list.m_has_direct_selector,
+                  method_list.m_has_relative_types);
 
   for (const auto &method : methods)
     if (instance_method_func(method.m_name.c_str(), method.m_types.c_str()))
