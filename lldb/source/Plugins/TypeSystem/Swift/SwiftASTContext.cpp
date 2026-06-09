@@ -917,23 +917,34 @@ static std::string GetClangModulesCacheProperty() {
   return std::string(path);
 }
 
-void SwiftASTContext::ConfigureCASStorage(const SymbolContext &sc) {
-  llvm::Expected<ModuleList::CAS> cas =
-      ModuleList::GetOrCreateCAS(sc.module_sp);
-  if (!cas) {
-    HEALTH_LOG_PRINTF("Did not create CAS: %s",
-                      toString(cas.takeError()).c_str());
+void SwiftASTContext::ConfigureDefaultCASStorage(const ModuleSP &module_sp) {
+  llvm::ArrayRef<ModuleList::CAS> all_cas =
+      ModuleList::GetCASStorage(module_sp);
+  if (all_cas.empty()) {
+    HEALTH_LOG_PRINTF("Did not create CAS: no CAS associated with module");
     return;
   }
-  SetCASStorage(std::move(cas->object_store), std::move(cas->action_cache));
+  // Pick the first instantiated entry as the default.
+  for (const auto &entry : all_cas) {
+    if (entry.object_store) {
+      InitializeCASOptions(entry);
+      LOG_PRINTF(GetLog(LLDBLog::Types), "Bound default CAS at path: %s",
+                 entry.configuration.CASPath.c_str());
+      return;
+    }
+  }
+  HEALTH_LOG_PRINTF(
+      "Did not create CAS: config(s) found, but no CAS available");
+}
+
+void SwiftASTContext::InitializeCASOptions(ModuleList::CAS cas) {
+  m_cas = std::move(cas.object_store);
+  m_action_cache = std::move(cas.action_cache);
   swift::CASOptions &cas_options = GetCASOptions();
-  cas_options.Config.CASPath = cas->configuration.CASPath;
-  cas_options.Config.PluginPath = cas->configuration.PluginPath;
-  cas_options.Config.PluginOptions = cas->configuration.PluginOptions;
+  cas_options.Config.CASPath = std::move(cas.configuration.CASPath);
+  cas_options.Config.PluginPath = std::move(cas.configuration.PluginPath);
+  cas_options.Config.PluginOptions = std::move(cas.configuration.PluginOptions);
   m_cas_initialized = true;
-  LOG_PRINTF(GetLog(LLDBLog::Types),
-             "Setup CAS from module list properties with CAS path: %s",
-             cas->configuration.CASPath.c_str());
 }
 
 SwiftASTContext::ScopedDiagnostics::ScopedDiagnostics(
@@ -2716,7 +2727,7 @@ SwiftASTContext::CreateInstance(lldb::LanguageType language, Module &module,
 
   SymbolContext sc;
   module.CalculateSymbolContext(&sc);
-  swift_ast_sp->ConfigureCASStorage(sc);
+  swift_ast_sp->ConfigureDefaultCASStorage(sc.module_sp);
 
   // The serialized triple is the triple of the last binary
   // __swiftast section that was processed. Instead of relying on
@@ -2972,6 +2983,18 @@ bool SwiftASTContext::DiscoverExplicitMainModule(const SymbolContext &sc,
   const SourceModule &module = cu_imports.front();
   std::unique_ptr<llvm::MemoryBuffer> buffer;
   std::optional<std::string> moduleCacheKey;
+  // If a dSYM aggregates multiple CAS, pick the one that actually
+  // resolves this module's CASID — not just the first-instantiated
+  // entry ConfigureDefaultCASStorage picked.
+  if (auto matched = ModuleList::GetCASForID(
+          sc.module_sp, module.search_path.GetStringRef())) {
+    InitializeCASOptions(*matched);
+    LOG_PRINTF(GetLog(LLDBLog::Types),
+               "Re-bound CAS to match main module CASID: %s",
+               matched->configuration.CASPath.c_str());
+  } else {
+    consumeError(matched.takeError());
+  }
   if (auto E = GetModuleContentsFromCAS(module.search_path).moveInto(buffer)) {
     LLDB_LOG_ERROR(GetLog(LLDBLog::Types), std::move(E),
                    "Could not open {1}: {0}", module.search_path);
@@ -3422,7 +3445,8 @@ lldb::TypeSystemSP SwiftASTContext::CreateInstance(
     }
   }
 
-  swift_ast_sp->ConfigureCASStorage(sc);
+  // DiscoverExplicitMainModule may replace this with a more specific one.  
+  swift_ast_sp->ConfigureDefaultCASStorage(sc.module_sp);
 
   std::string resource_dir = HostInfo::GetSwiftResourceDir(
       triple, swift_ast_sp->GetPlatformSDKPath());

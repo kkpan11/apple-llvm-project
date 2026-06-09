@@ -1156,11 +1156,13 @@ protected:
 #endif
 
   // BEGIN CAS
-  /// CAS configuration associated with this module, if any.
-  std::optional<llvm::cas::CASConfiguration> m_cas_config;
-  /// Many modules may share the same CAS instance.
-  std::shared_ptr<llvm::cas::ObjectStore> m_cas_object_store;
-  std::shared_ptr<llvm::cas::ActionCache> m_cas_action_cache;
+
+  /// All CAS configurations (+instances) associated with this
+  /// module. An empty optional means uninitialized, an empty vector
+  /// means that this module has no CAS associated with it.
+  std::optional<std::vector<ModuleList::CAS>> m_cas;
+  mutable std::mutex m_cas_init_mutex;
+
   // END CAS
 
   /// A set of hashes of all warnings and errors, to avoid reporting them

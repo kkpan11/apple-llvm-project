@@ -327,12 +327,6 @@ public:
     m_platform_sdk_path = path.str();
   }
 
-  void SetCASStorage(std::shared_ptr<llvm::cas::ObjectStore> cas,
-                     std::shared_ptr<llvm::cas::ActionCache> action_cache) {
-    m_cas = std::move(cas);
-    m_action_cache = std::move(action_cache);
-  }
-
   /// \return the ExtraArgs of the ClangImporterOptions.
   const std::vector<std::string> &GetClangArguments();
 
@@ -913,9 +907,14 @@ public:
   swift::Mangle::ManglingFlavor GetManglingFlavor();
 
 protected:
-  /// This function implements various heuristics to find a CAS
-  /// configuration file.
-  void ConfigureCASStorage(const SymbolContext &sc);
+  /// Pick the default (position-based primary) CAS associated with
+  /// \c module_sp and bind it to this AST context.
+  void ConfigureDefaultCASStorage(const lldb::ModuleSP &module_sp);
+  /// Bind this AST context's CAS storage and CASOptions to \c cas.
+  /// Shared between ConfigureDefaultCASStorage and the precision bind
+  /// that DiscoverExplicitMainModule performs once it has the main
+  /// module's CASID.
+  void InitializeCASOptions(ModuleList::CAS cas);
   /// Extract the bridging PCH from debug info an set the ClangImporter option.
   void ConfigureBridgingHeader(const SymbolContext &sc);
 

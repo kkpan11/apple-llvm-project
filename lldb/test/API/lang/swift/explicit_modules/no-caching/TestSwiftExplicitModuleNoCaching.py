@@ -20,6 +20,6 @@ class TestSwiftExplicitModuleNoCaching(TestBase):
         self.expect('log enable lldb types symbols -f "%s"' % log)
         self.expect("expression 1+1")
         self.filecheck_log(log, __file__)
-        # CHECK: SwiftASTContextForExpressions(module: "a", cu: "main.swift")::ConfigureCASStorage() -- Setup CAS {{.*}}cas
+        # CHECK: SwiftASTContextForExpressions(module: "a", cu: "main.swift")::ConfigureDefaultCASStorage() -- Bound default CAS at path
         # CHECK: SwiftASTContextForExpressions(module: "a", cu: "main.swift")::LogConfiguration() -- Explicit module map entries
         # CHECK: SwiftASTContextForExpressions(module: "a", cu: "main.swift")::LogConfiguration() --     Swift

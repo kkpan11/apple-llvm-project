@@ -568,18 +568,26 @@ public:
                   llvm::SmallVectorImpl<lldb::ModuleSP> *old_modules,
                   bool *did_create_ptr, bool always_create = false);
 
-  // START CAS
-
+  // BEGIN CAS
   struct CAS {
     llvm::cas::CASConfiguration configuration;
     std::shared_ptr<llvm::cas::ObjectStore> object_store;
     std::shared_ptr<llvm::cas::ActionCache> action_cache;
   };
-  /// Search for a CAS configuration file near this module. This
-  /// operation does a lot of file system stat calls.
-  static llvm::Expected<CAS> GetOrCreateCAS(const lldb::ModuleSP &module_sp);
+  /// Find an initialize every CAS associated with \c module_sp.
+  static void ConfigureCASStorage(const lldb::ModuleSP &module_sp);
 
-  /// Check if a string is a CASID.
+  /// Return a list of all CAS associated with \c module_sp.
+  static llvm::ArrayRef<CAS> GetCASStorage(const lldb::ModuleSP &module_sp);
+
+  /// Return the first CAS associated with \c module_sp whose
+  /// ObjectStore resolves \c cas_id. Returns an error if no CAS
+  /// resolves the id.
+  static llvm::Expected<CAS> GetCASForID(const lldb::ModuleSP &module_sp,
+                                         llvm::StringRef cas_id);
+
+  /// Check if a \c id is a CASID for any of the CAS associated with
+  /// \c module_id.
   static bool IsCASID(const lldb::ModuleSP &module_sp, llvm::StringRef id);
 
   /// Gets the shared module from CAS. It works the same as `GetSharedModule`
@@ -662,6 +670,15 @@ private:
   static bool LoadScriptingResourceInTargetForModule(Module &module,
                                                      Target &target,
                                                      Status &error);
+
+  /// Try to load the module referenced by \c cas_id from one of the
+  /// CAS instances near \c nearby. Returns an empty ModuleSpec if no
+  /// CAS could resolve the id.
+  // BEGIN CAS
+  static llvm::Expected<ModuleSpec> LoadModuleFromCAS(
+      llvm::StringRef cas_id, llvm::StringRef name_for_diagnostics,
+      const lldb::ModuleSP &nearby, const UUID &uuid, const ArchSpec &arch);
+  // END CAS
 
 public:
   typedef LockingAdaptedIterable<std::recursive_mutex, collection>
