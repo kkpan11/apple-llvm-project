@@ -1854,6 +1854,15 @@ public:
   ///
   /// Triggered by declaration-attribute processing.
   void ProcessAPINotes(Decl *D);
+  /// Look up the API notes for a macro constant.
+  ///
+  /// Unlike declarations, macro constants do not have a Clang declaration that
+  /// APINotes can mutate in place. Return the raw global-variable API notes for
+  /// the macro (carrying 'Type:', 'SwiftName:', and the other Globals metadata)
+  /// so that an importer can apply them itself, or std::nullopt if none apply.
+  std::optional<api_notes::GlobalVariableInfo>
+  ProcessAPINotes(const Module *M, const IdentifierInfo *II,
+                  SourceLocation Loc);
   /// Apply the 'Nullability:' annotation to the specified declaration
   void ApplyNullability(Decl *D, NullabilityKind Nullability);
   /// Apply the 'Type:' annotation to the specified declaration

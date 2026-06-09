@@ -59,6 +59,9 @@ APINotesManager::~APINotesManager() {
       delete Reader;
   }
 
+  for (const auto &Entry : FileReaders)
+    delete Entry.second;
+
   delete CurrentModuleReaders[ReaderKind::Public];
   delete CurrentModuleReaders[ReaderKind::Private];
 }
@@ -121,6 +124,17 @@ APINotesManager::loadAPINotes(StringRef Buffer) {
   auto Reader = APINotesReader::Create(std::move(CompiledBuffer), SwiftVersion);
   assert(Reader && "Could not load the API notes we just generated?");
   return Reader;
+}
+
+APINotesReader *APINotesManager::getAPINotesReader(FileEntryRef APINotesFile) {
+  auto Known = FileReaders.find(APINotesFile);
+  if (Known != FileReaders.end())
+    return Known->second;
+
+  auto Reader = loadAPINotes(APINotesFile);
+  APINotesReader *Result = Reader.release();
+  FileReaders[APINotesFile] = Result;
+  return Result;
 }
 
 bool APINotesManager::loadAPINotes(const DirectoryEntry *HeaderDir,
@@ -460,4 +474,41 @@ APINotesManager::findAPINotes(SourceLocation Loc) {
     Readers[Visited] = Dir ? ReaderEntry(*Dir) : ReaderEntry();
 
   return Results;
+}
+
+std::optional<GlobalVariableInfo>
+APINotesManager::lookupGlobalVariable(const Module *M, StringRef Name,
+                                      SourceLocation Loc) {
+  auto Lookup =
+      [&](APINotesReader *Reader) -> std::optional<GlobalVariableInfo> {
+    auto Info = Reader->lookupGlobalVariable(Name);
+    auto Selected = Info.getSelected();
+    if (Selected)
+      return Info[*Selected].second;
+
+    return std::nullopt;
+  };
+
+  if (M) {
+    bool FoundModuleAPINotes = false;
+    for (auto File :
+         getCurrentModuleAPINotes(const_cast<Module *>(M->getTopLevelModule()),
+                                  /*LookInModule=*/true, {})) {
+      if (auto *Reader = getAPINotesReader(File)) {
+        FoundModuleAPINotes = true;
+        if (auto Info = Lookup(Reader))
+          return Info;
+      }
+    }
+
+    if (FoundModuleAPINotes)
+      return std::nullopt;
+  }
+
+  for (auto *Reader : findAPINotes(Loc)) {
+    if (auto Info = Lookup(Reader))
+      return Info;
+  }
+
+  return std::nullopt;
 }
