@@ -21,6 +21,7 @@
 #include "lldb/Target/LanguageRuntime.h"
 #include "lldb/Target/Process.h"
 #include "lldb/lldb-private.h"
+#include "swift/ABI/Task.h"
 #include "swift/Demangling/ManglingFlavor.h"
 
 #include "llvm/ADT/DenseSet.h"
@@ -117,6 +118,29 @@ public:
   /// Returns 0 for versions of the module prior to the introduction
   /// of versioning.
   static std::optional<uint32_t> FindConcurrencyDebugVersion(Process &process);
+
+  /// Returns the byte offset of `AsyncTask::NameFragment` from the start of an
+  /// async task.
+  static llvm::Expected<lldb::offset_t>
+  FindAsyncTaskNameOffset(Process &process);
+
+  /// Inclusive range of `_swift_concurrency_debug_internal_layout_version`
+  /// values that LLDB knows how to decode.
+  ///
+  ///   1 - the original layout
+  ///   2 - AsyncTask gained optional tail-allocated `NameFragment` ahead of its
+  ///       other fragments when the task has an initial name (ahead of the
+  ///       ChildFragment).
+  static constexpr uint32_t ConcurrencyDebugVersionBaseline = 1;
+  static constexpr uint32_t ConcurrencyDebugVersionLatest = 2;
+
+  /// True iff `version` is a concurrency runtime layout version this build
+  /// of LLDB supports. A missing version (`std::nullopt`) is never supported.
+  static constexpr bool
+  IsSupportedConcurrencyDebugVersion(std::optional<uint32_t> version) {
+    return version && *version >= ConcurrencyDebugVersionBaseline &&
+           *version <= ConcurrencyDebugVersionLatest;
+  }
   /// \}
 
   /// PluginInterface protocol.
@@ -962,7 +986,7 @@ public:
   GetTaskAddrFromThreadLocalStorage(llvm::ArrayRef<Thread *> threads);
 
 private:
-  /// For each thread in `threads`, return the location of the its task
+  /// For each thread in `threads`, return the location of its task
   /// pointer, if it exists.
   llvm::SmallVector<std::optional<lldb::addr_t>>
   GetTaskAddrLocations(llvm::ArrayRef<Thread *> threads);
@@ -975,6 +999,50 @@ private:
   llvm::DenseMap<uint64_t, lldb::addr_t> m_tid_to_task_addr_location;
 };
 
+/// Represents `swift::JobFlags` as defined in
+/// `include/swift/ABI/MetadataValues.h`.
+struct JobFlags {
+  uint32_t bits;
+
+  enum Bit : uint32_t {
+    // Only the flags actually consumed by LLDB are listed; add more as needed.
+    Task_HasInitialTaskName = 30,
+  };
+
+  bool hasFlag(Bit b) const { return (bits >> b) & 1U; }
+
+  /// True when the task was created with `Task(name:)` or similar.
+  bool hasInitialTaskName() const { return hasFlag(Task_HasInitialTaskName); }
+};
+
+/// The offset of ChildFragment, which is the first fragment of an AsyncTask.
+inline constexpr size_t AsyncTaskSize = sizeof(::swift::AsyncTask);
+
+/// Size of `AsyncTask::NameFragment` = `const char *Name` + `size_t Length`,
+/// i.e. two pointer-sized words. Tail-allocated immediately after the
+/// AsyncTask iff `JobFlags::hasInitialTaskName()` is set.
+inline size_t NameFragmentSize(Process &process) {
+  return 2 * process.GetAddressByteSize();
+}
+
+/// Read the `JobFlags` of an async task.
+llvm::Expected<JobFlags> GetAsyncJobFlags(Process &process,
+                                          lldb::addr_t task_addr);
+
+/// Returns the offset (in bytes) of `ChildFragment` from the start of an
+/// async task.
+llvm::Expected<lldb::offset_t> GetChildFragmentOffset(Process &process,
+                                                      lldb::addr_t task_addr);
+
+/// Returns the offset of `ChildFragment` from the start of an
+/// async task.
+///
+/// `flags` must come from the same task whose offset is being computed —
+/// they encode which fragments are available, which impacts the offset.
+lldb::offset_t GetChildFragmentOffset(Process &process, JobFlags flags);
+
+/// Get the name of a task.
+/// Names are immutable and specified with `Task(name:)` during initialization.
 llvm::Expected<std::optional<std::string>> GetTaskName(lldb::addr_t task,
                                                        Process &process);
 
