@@ -4,5 +4,5 @@ from lldbsuite.test.decorators import *
 lldbinline.MakeInlineTest(
     __file__,
     globals(),
-    decorators=[skipEmbeddedSwift, swiftTest, skipIfWindows],  # rdar://173243316
+    decorators=[skipEmbeddedSwift, swiftTest],
 )

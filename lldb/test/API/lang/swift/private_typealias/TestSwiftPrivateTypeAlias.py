@@ -22,7 +22,6 @@ import os
 class TestSwiftPrivateTypeAlias(TestBase):
     @skipEmbeddedSwift
     @swiftTest
-    @skipIfWindows # rdar://173243316
     def test_swift_private_typealias(self):
         """Test that we can correctly print variables whose types are private type aliases"""
         self.build()
