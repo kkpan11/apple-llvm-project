@@ -7,7 +7,6 @@ import lldbsuite.test.lldbutil as lldbutil
 class TestSwiftOpaqueReturnResilient(TestBase):
     @swiftTest
     @skipEmbeddedSwift
-    @skipIfWindows
     def test(self):
         self.build()
         self.runCmd("settings set symbols.swift-enable-ast-context false")
