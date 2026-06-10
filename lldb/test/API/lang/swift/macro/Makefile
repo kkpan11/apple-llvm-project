@@ -1,3 +1,4 @@
+export SWIFT_ENABLE_EXPLICIT_MODULES := NO
 SWIFTFLAGS_EXTRAS = -I.
 
 ifneq "$(SWIFT_SOURCES)" "empty.swift"

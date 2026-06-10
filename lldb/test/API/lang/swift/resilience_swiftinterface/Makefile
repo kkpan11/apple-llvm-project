@@ -1,3 +1,4 @@
+export SWIFT_ENABLE_EXPLICIT_MODULES := NO
 SWIFT_SOURCES := main.swift
 
 all: ImplA a.out Postprocess

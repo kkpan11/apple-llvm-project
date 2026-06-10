@@ -1,3 +1,4 @@
+export SWIFT_ENABLE_EXPLICIT_MODULES := NO
 EXE := main
 SWIFT_SOURCES := main.swift
 LD_EXTRAS = -L$(BUILDDIR) -lAA -lBB -lCC -Xlinker -rpath -Xlinker $(BUILDDIR)

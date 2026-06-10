@@ -1,3 +1,4 @@
+export SWIFT_ENABLE_EXPLICIT_MODULES := NO
 SWIFT_OBJC_INTEROP := 1
 
 include Makefile.rules
