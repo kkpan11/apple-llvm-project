@@ -8,7 +8,6 @@ class TestSwiftClassBaseClass(TestBase):
     NO_DEBUG_INFO_TESTCASE = True
     @skipEmbeddedSwift
     @swiftTest
-    @skipIfWindows # rdar://173245096
     def test(self):
         self.build()
         lldbutil.run_to_source_breakpoint(self, "break here",

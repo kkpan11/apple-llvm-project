@@ -10,7 +10,6 @@ import lldbsuite.test.lldbutil as lldbutil
 class TestCase(TestBase):
     @skipEmbeddedSwift
     @swiftTest
-    @skipIfWindows # rdar://173245096
     def test_swift_po_address(self):
         self.build()
         _, _, thread, _ = lldbutil.run_to_source_breakpoint(
@@ -24,7 +23,6 @@ class TestCase(TestBase):
 
     @skipEmbeddedSwift
     @swiftTest
-    @skipIfWindows # rdar://173245096
     def test_swift_po_non_address_hex(self):
         """No special handling of non-memory integer values."""
         self.build()
@@ -35,7 +33,6 @@ class TestCase(TestBase):
 
     @skipEmbeddedSwift
     @swiftTest
-    @skipIfWindows # rdar://173245096
     def test_print_swift_object_does_not_show_name(self):
         """Ensure that objects are printed without a name, and without the '='
         that would follow the name."""
