@@ -7,7 +7,7 @@ import lldbsuite.test.lldbutil as lldbutil
 class SwiftGenericClassNestedInFunctionTest(TestBase):
 
     @swiftTest
-    @skipIfWindows # rdar://173245096
+    @skipEmbeddedSwiftOnWindows
     def test(self):
         """Tests that a generic class type nested inside a function can be resolved correctly from the instance metadata"""
         self.build()

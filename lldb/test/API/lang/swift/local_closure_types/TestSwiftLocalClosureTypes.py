@@ -19,6 +19,6 @@ lldbinline.MakeInlineTest(
         swiftTest,
         skipEmbeddedSwiftOnLinux,
         skipIf(oslist=["macosx"], bugnumber="rdar://26051759"),
-        skipIfWindows # rdar://173245096
+        skipEmbeddedSwiftOnWindows 
     ],
 )

@@ -21,7 +21,7 @@ import os
 
 class TestSwiftStdlibSet(TestBase):
     @swiftTest
-    @skipIfWindows # rdar://173243316
+    @skipEmbeddedSwiftOnWindows
     @skipEmbeddedSwiftOnLinux # Linker failure with arc4random_buf
     def test_swift_stdlib_set(self):
         """Tests that we properly vend synthetic children for Swift.Set"""
