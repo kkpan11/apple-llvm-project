@@ -10,7 +10,7 @@ class TestCxxForwardInteropNestedClasses(TestBase):
 
     @skipIf(swift_module_importer="noclang")
     @swiftTest
-    @skipIfWindows
+    @skipEmbeddedSwiftOnWindows
     def test(self):
         self.build()
         
