@@ -32,7 +32,6 @@ class TestSwiftDeserializationFailure(TestBase):
 
     @skipEmbeddedSwift
     @swiftTest
-    @skipIf(oslist=['windows'])
     @skipIf(debug_info=no_match(["dwarf"]))
     def test_missing_module(self):
         """Test what happens when a .swiftmodule can't be loaded"""
@@ -42,7 +41,6 @@ class TestSwiftDeserializationFailure(TestBase):
 
     @skipEmbeddedSwift
     @swiftTest
-    @skipIf(oslist=['windows'])
     @skipIf(debug_info=no_match(["dwarf"]))
     def test_damaged_module(self):
         """Test what happens when a .swiftmodule can't be loaded"""

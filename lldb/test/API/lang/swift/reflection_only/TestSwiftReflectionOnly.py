@@ -11,7 +11,6 @@ class TestSwiftReflectionOnly(lldbtest.TestBase):
 
     @skipEmbeddedSwift
     @swiftTest
-    @skipIfWindows
     def test(self):
         """Test debugging a program without swiftmodules is functional"""
         self.build()

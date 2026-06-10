@@ -4,7 +4,6 @@ from lldbsuite.test.decorators import *
 import lldbsuite.test.lldbutil as lldbutil
 
 
-@skipIfWindows
 class TestArchetypeInConditionalBreakpoint(TestBase):
     @skipEmbeddedSwift
     @swiftTest

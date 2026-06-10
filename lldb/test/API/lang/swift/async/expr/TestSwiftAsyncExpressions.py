@@ -10,7 +10,6 @@ class TestSwiftAsyncExpressions(lldbtest.TestBase):
 
     @skipEmbeddedSwift
     @swiftTest
-    @skipIfWindows
     @skipIfLinux
     @skipIf(archs=no_match(["arm64", "arm64e", "arm64_32", "x86_64"]))
     def test_actor(self):
