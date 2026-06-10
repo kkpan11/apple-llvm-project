@@ -623,9 +623,13 @@ Expected<std::optional<int>> CompileJobCache::replayCachedResult(
     bool WriteOutputHashXAttr, std::optional<llvm::cas::CASID> *OutMCOutputID) {
   CompilerInstance Clang(std::move(Invok));
   llvm::raw_svector_ostream DiagOS(DiagText);
-  Clang.createVirtualFileSystem(llvm::vfs::getRealFileSystem());
-  Clang.createDiagnostics(
-      new TextDiagnosticPrinter(DiagOS, Clang.getDiagnosticOpts()));
+  TextDiagnosticPrinter DiagConsumer(DiagOS, Clang.getDiagnosticOpts());
+  Clang.createVirtualFileSystem(llvm::vfs::getRealFileSystem(), &DiagConsumer);
+  if (DiagConsumer.getNumErrors() != 0)
+    return llvm::createStringError(
+        llvm::inconvertibleErrorCode(),
+        "error constructing virtual filesystem for replay: " + DiagOS.str());
+  Clang.createDiagnostics(&DiagConsumer, /*ShouldOwnClient=*/false);
   Clang.setVerboseOutputStream(DiagOS);
 
   // FIXME: we should create an include-tree filesystem based on the cache key
