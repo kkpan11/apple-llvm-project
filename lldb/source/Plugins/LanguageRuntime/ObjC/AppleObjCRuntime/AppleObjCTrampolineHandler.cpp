@@ -761,7 +761,7 @@ AppleObjCTrampolineHandler::GetStepThroughDispatchPlan(Thread &thread,
   // implementation finder function, which looks up the SEL (you have to do this
   // in process) and passes that to the runtime lookup function.
   DispatchFunction sel_stub_dispatch = {"sel-specific-stub", false, false,
-                                        false, DispatchFunction::eFixUpNone};
+                                        false};
 
   // First step is to see if we're in a selector-specific dispatch stub.
   // Those are of the form _objc_msgSend$<SELECTOR>, so see if the current
