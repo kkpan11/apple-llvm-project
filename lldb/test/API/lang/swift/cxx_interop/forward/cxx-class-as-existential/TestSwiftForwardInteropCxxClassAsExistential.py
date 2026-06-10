@@ -10,7 +10,6 @@ class TestSwiftForwardInteropCxxClassAsExistential(TestBase):
 
     @skipEmbeddedSwift
     @swiftTest
-    @skipIfWindows
     def test(self):
         self.build()
         
