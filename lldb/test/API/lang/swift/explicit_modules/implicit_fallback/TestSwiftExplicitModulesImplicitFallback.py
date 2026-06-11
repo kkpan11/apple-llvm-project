@@ -9,7 +9,7 @@ class TestCase(lldbtest.TestBase):
     NO_DEBUG_INFO_TESTCASE = True
     @skipEmbeddedSwift
     @swiftTest
-    def test_missing_explicit_modules(self):
+    def test_missing(self):
         """Test missing explicit Swift modules and fallback to implicit modules."""
         self.build()
 
