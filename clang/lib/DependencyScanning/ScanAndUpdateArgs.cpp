@@ -29,20 +29,20 @@ static void updateRelativePath(std::string &Path,
   Path = PathStorage.str();
 }
 
-void dependencies::configureInvocationForCaching(CompilerInvocation &CI,
+void dependencies::configureInvocationForCaching(CowCompilerInvocation &CI,
                                                  CASOptions CASOpts,
                                                  std::string InputID,
                                                  CachingInputKind InputKind,
                                                  std::string WorkingDir) {
-  CI.getCASOpts() = std::move(CASOpts);
-  auto &FrontendOpts = CI.getFrontendOpts();
+  CI.getMutCASOpts() = std::move(CASOpts);
+  auto &FrontendOpts = CI.getMutFrontendOpts();
   FrontendOpts.CacheCompileJob = true;
   FrontendOpts.IncludeTimestamps = false;
 
   // Clear this otherwise it defeats the purpose of making the compilation key
   // independent of certain arguments.
-  auto &CodeGenOpts = CI.getCodeGenOpts();
-  if (CI.getFrontendOpts().ProgramAction != frontend::ActionKind::EmitObj) {
+  auto &CodeGenOpts = CI.getMutCodeGenOpts();
+  if (FrontendOpts.ProgramAction != frontend::ActionKind::EmitObj) {
     CodeGenOpts.UseCASBackend = false;
     CodeGenOpts.EmitCASIDFile = false;
     auto &LLVMArgs = FrontendOpts.LLVMArgs;
@@ -52,12 +52,12 @@ void dependencies::configureInvocationForCaching(CompilerInvocation &CI,
   resetBenignCodeGenOptions(FrontendOpts.ProgramAction, CI.getLangOpts(),
                             CodeGenOpts);
 
-  HeaderSearchOptions &HSOpts = CI.getHeaderSearchOpts();
+  HeaderSearchOptions &HSOpts = CI.getMutHeaderSearchOpts();
   // Avoid writing potentially volatile diagnostic options into pcms.
   HSOpts.ModulesSkipDiagnosticOptions = true;
 
   // "Fix" the CAS options.
-  auto &FileSystemOpts = CI.getFileSystemOpts();
+  auto &FileSystemOpts = CI.getMutFileSystemOpts();
   switch (InputKind) {
   case CachingInputKind::IncludeTree: {
     using llvm::sys::path::is_relative;
@@ -107,7 +107,7 @@ void dependencies::configureInvocationForCaching(CompilerInvocation &CI,
     HSOpts.UseStandardSystemIncludes = false;
     HSOpts.UseStandardCXXIncludes = false;
 
-    auto &PPOpts = CI.getPreprocessorOpts();
+    auto &PPOpts = CI.getMutPreprocessorOpts();
     // We don't need this because we save the contents of the PCH file in the
     // include tree root.
     PPOpts.ImplicitPCHInclude.clear();
@@ -122,7 +122,7 @@ void dependencies::configureInvocationForCaching(CompilerInvocation &CI,
       PPOpts.Includes.clear();
     }
     // Clear APINotes options.
-    CI.getAPINotesOpts().ModuleSearchPaths = {};
+    CI.getMutAPINotesOpts().ModuleSearchPaths = {};
 
     // Reset debug/coverage compilation directory if source paths are absolute.
     if (!HasRelativeIncludes) {
@@ -133,9 +133,10 @@ void dependencies::configureInvocationForCaching(CompilerInvocation &CI,
     // Update output paths, and clear working directory.
     auto CWD = FileSystemOpts.WorkingDir;
     updateRelativePath(FrontendOpts.OutputFile, CWD);
-    updateRelativePath(CI.getDiagnosticOpts().DiagnosticSerializationFile, CWD);
-    updateRelativePath(CI.getDiagnosticOpts().DiagnosticLogFile, CWD);
-    updateRelativePath(CI.getDependencyOutputOpts().OutputFile, CWD);
+    updateRelativePath(CI.getMutDiagnosticOpts().DiagnosticSerializationFile,
+                       CWD);
+    updateRelativePath(CI.getMutDiagnosticOpts().DiagnosticLogFile, CWD);
+    updateRelativePath(CI.getMutDependencyOutputOpts().OutputFile, CWD);
     FileSystemOpts.WorkingDir.clear();
     break;
   }
@@ -152,9 +153,21 @@ void dependencies::configureInvocationForCaching(CompilerInvocation &CI,
   }
 }
 
-void DepscanPrefixMapping::remapInvocationPaths(CompilerInvocation &Invocation,
-                                                llvm::PrefixMapper &Mapper) {
-  auto &FrontendOpts = Invocation.getFrontendOpts();
+void dependencies::configureInvocationForCaching(CompilerInvocation &CI,
+                                                 CASOptions CASOpts,
+                                                 std::string InputID,
+                                                 CachingInputKind InputKind,
+                                                 std::string WorkingDir) {
+  CI.withTempCow([&](CowCompilerInvocation CowCI) {
+    configureInvocationForCaching(CowCI, std::move(CASOpts), std::move(InputID),
+                                  InputKind, std::move(WorkingDir));
+    CI = std::move(CowCI);
+  });
+}
+
+void DepscanPrefixMapping::remapInvocationPaths(
+    CowCompilerInvocation &Invocation, llvm::PrefixMapper &Mapper) {
+  auto &FrontendOpts = Invocation.getMutFrontendOpts();
   FrontendOpts.PathPrefixMappings.clear();
 
   // If there are no mappings, we're done. Otherwise, continue and remap
@@ -179,6 +192,14 @@ void DepscanPrefixMapping::remapInvocationPaths(CompilerInvocation &Invocation,
   Invocation.visitPaths([&Mapper](std::string &Path) {
     Mapper.mapInPlace(Path);
     return false;
+  });
+}
+
+void DepscanPrefixMapping::remapInvocationPaths(CompilerInvocation &Invocation,
+                                                llvm::PrefixMapper &Mapper) {
+  Invocation.withTempCow([&](CowCompilerInvocation CowCI) {
+    remapInvocationPaths(CowCI, Mapper);
+    Invocation = std::move(CowCI);
   });
 }
 

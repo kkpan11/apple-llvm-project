@@ -472,16 +472,12 @@ bool IncludeTreeActionController::finalizeModuleInvocation(
     return false;
   }
 
-  // TODO: Avoid this copy.
-  CompilerInvocation CI(CowCI);
-
-  configureInvocationForCaching(CI, CASOpts, *MD.IncludeTreeID,
+  configureInvocationForCaching(CowCI, CASOpts, *MD.IncludeTreeID,
                                 CachingInputKind::IncludeTree,
                                 /*CASFSWorkingDir=*/"");
 
-  DepscanPrefixMapping::remapInvocationPaths(CI, PrefixMapper);
+  DepscanPrefixMapping::remapInvocationPaths(CowCI, PrefixMapper);
 
-  CowCI = CI;
   return true;
 }
 
