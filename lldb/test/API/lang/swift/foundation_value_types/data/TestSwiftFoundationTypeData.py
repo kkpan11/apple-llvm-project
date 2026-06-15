@@ -17,7 +17,8 @@ lldbinline.MakeInlineTest(
     globals(),
     decorators=[skipEmbeddedSwift,
         swiftTest,
-        skipIf(oslist=["linux"]),
+        skipUnlessFoundation,
+        skipIf(oslist=["windows"]),
         skipIf(
             bugnumber="rdar://60396797",  # should work but crashes.
             setting=("symbols.use-swift-clangimporter", "false"),
