@@ -197,10 +197,11 @@ static llvm::Expected<llvm::SmallVector<MetadataInfo>> CollectMetadataInfos(
 /// lldb_sink($__lldb_arg, [$__lldb_injected_self, [pack args, pack counts...]],
 ///           $τ_0_0, $τ_0_1, ..., $τ_0_n)
 static llvm::Expected<CallsAndArgs> MakeGenericSignaturesAndCalls(
+    llvm::ArrayRef<const SwiftASTManipulator::VariableInfo *>
+        metadata_variables,
     llvm::ArrayRef<SwiftASTManipulator::VariableInfo> local_variables,
     const std::optional<SwiftLanguageRuntime::GenericSignature> &generic_sig,
     bool needs_object_ptr) {
-  auto metadata_variables = CollectMetadataVariables(local_variables);
   // The number of metadata variables could be > if the function is in
   // a generic context.
   if (generic_sig &&
@@ -427,6 +428,8 @@ do {
                            GetUserCodeEndMarker(),
                            SwiftASTManipulator::GetErrorName());
 
+  auto metadata_variables = CollectMetadataVariables(local_variables);
+
   if (needs_object_ptr || static_method) {
     const char *func_decorator = "";
     if (static_method) {
@@ -442,7 +445,8 @@ do {
 
     // The expression text is inserted into the body of $__lldb_user_expr_%u.
     if (!SwiftASTManipulator::ShouldBindGenericTypes(
-            options.GetSwiftBindGenericTypes())) {
+            options.GetSwiftBindGenericTypes()) &&
+        !metadata_variables.empty()) {
       // A Swift program can't have types with non-bound generic type parameters
       // inside a non generic function. For example, the following program would
       // not compile as T is not part of foo's signature.
@@ -482,8 +486,8 @@ do {
       // FIXME: the current approach names the generic parameter "T", use the
       // user's name for the generic parameter, so they can refer to it in
       // their expression.
-      auto c = MakeGenericSignaturesAndCalls(local_variables, generic_sig,
-                                             needs_object_ptr);
+      auto c = MakeGenericSignaturesAndCalls(
+          metadata_variables, local_variables, generic_sig, needs_object_ptr);
       if (!c) {
         status = Status::FromError(c.takeError());
         return status;
@@ -546,9 +550,10 @@ func $__lldb_expr(_ $__lldb_arg : UnsafeMutablePointer<Any>) {
                             current_counter);
     }
   } else if (!SwiftASTManipulator::ShouldBindGenericTypes(
-                 options.GetSwiftBindGenericTypes())) {
-    auto c = MakeGenericSignaturesAndCalls(local_variables, generic_sig,
-                                           needs_object_ptr);
+                 options.GetSwiftBindGenericTypes()) &&
+             !metadata_variables.empty()) {
+    auto c = MakeGenericSignaturesAndCalls(metadata_variables, local_variables,
+                                           generic_sig, needs_object_ptr);
     if (!c) {
       status = Status::FromError(c.takeError());
       return status;
