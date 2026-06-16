@@ -303,6 +303,8 @@ bool SwiftUserExpression::ScanContext(DiagnosticManager &diagnostic_manager,
       m_is_weak_self = true;
     }
 
+  if (m_options.GetUseContextFreeSwiftPrintObject())
+    m_in_static_method = false;
   m_needs_object_ptr =
       !m_in_static_method && !m_options.GetUseContextFreeSwiftPrintObject();
   LLDB_LOGF(log, "  [SUE::SC] Expression captures self: %s",
