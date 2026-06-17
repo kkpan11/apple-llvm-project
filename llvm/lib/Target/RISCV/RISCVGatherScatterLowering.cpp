@@ -565,17 +565,18 @@ bool RISCVGatherScatterLowering::tryCreateStridedLoadStore(IntrinsicInst *II) {
   CallInst *Call;
 
   if (!StoreVal) {
-    Call = Builder.CreateIntrinsic(
+    Call = Builder.CreateIntrinsicWithoutFolding(
         Intrinsic::experimental_vp_strided_load,
         {DataType, BasePtr->getType(), Stride->getType()},
         {BasePtr, Stride, Mask, EVL});
 
     // Merge llvm.masked.gather's passthru
     if (II->getIntrinsicID() == Intrinsic::masked_gather)
-      Call = Builder.CreateIntrinsic(Intrinsic::vp_select, {DataType},
-                                     {Mask, Call, II->getArgOperand(3), EVL});
+      Call = Builder.CreateIntrinsicWithoutFolding(
+          Intrinsic::vp_select, {DataType},
+          {Mask, Call, II->getArgOperand(3), EVL});
   } else
-    Call = Builder.CreateIntrinsic(
+    Call = Builder.CreateIntrinsicWithoutFolding(
         Intrinsic::experimental_vp_strided_store,
         {DataType, BasePtr->getType(), Stride->getType()},
         {StoreVal, BasePtr, Stride, Mask, EVL});

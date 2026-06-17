@@ -382,7 +382,7 @@ void VPPartialReductionRecipe::execute(VPTransformState &State) {
 
   Type *RetTy = PhiVal->getType();
 
-  CallInst *V = Builder.CreateIntrinsic(
+  Value *V = Builder.CreateIntrinsic(
       RetTy, Intrinsic::experimental_vector_partial_reduce_add,
       {PhiVal, BinOpVal}, nullptr, "partial.reduce");
 
@@ -1728,9 +1728,9 @@ void VPHistogramRecipe::execute(VPTransformState &State) {
   else
     assert(Opcode == Instruction::Add && "only add or sub supported for now");
 
-  State.Builder.CreateIntrinsic(Intrinsic::experimental_vector_histogram_add,
-                                {VTy, IncAmt->getType()},
-                                {Address, IncAmt, Mask});
+  State.Builder.CreateIntrinsicWithoutFolding(
+      Intrinsic::experimental_vector_histogram_add, {VTy, IncAmt->getType()},
+      {Address, IncAmt, Mask});
 }
 
 InstructionCost VPHistogramRecipe::computeCost(ElementCount VF,
@@ -3433,8 +3433,9 @@ static Instruction *createReverseEVL(IRBuilderBase &Builder, Value *Operand,
   VectorType *ValTy = cast<VectorType>(Operand->getType());
   Value *AllTrueMask =
       Builder.CreateVectorSplat(ValTy->getElementCount(), Builder.getTrue());
-  return Builder.CreateIntrinsic(ValTy, Intrinsic::experimental_vp_reverse,
-                                 {Operand, AllTrueMask, EVL}, nullptr, Name);
+  return Builder.CreateIntrinsicWithoutFolding(
+      ValTy, Intrinsic::experimental_vp_reverse, {Operand, AllTrueMask, EVL},
+      nullptr, Name);
 }
 
 void VPWidenLoadEVLRecipe::execute(VPTransformState &State) {
@@ -3457,12 +3458,12 @@ void VPWidenLoadEVLRecipe::execute(VPTransformState &State) {
   }
 
   if (CreateGather) {
-    NewLI =
-        Builder.CreateIntrinsic(DataTy, Intrinsic::vp_gather, {Addr, Mask, EVL},
-                                nullptr, "wide.masked.gather");
+    NewLI = Builder.CreateIntrinsicWithoutFolding(DataTy, Intrinsic::vp_gather,
+                                                  {Addr, Mask, EVL}, nullptr,
+                                                  "wide.masked.gather");
   } else {
-    NewLI = Builder.CreateIntrinsic(DataTy, Intrinsic::vp_load,
-                                    {Addr, Mask, EVL}, nullptr, "vp.op.load");
+    NewLI = Builder.CreateIntrinsicWithoutFolding(
+        DataTy, Intrinsic::vp_load, {Addr, Mask, EVL}, nullptr, "vp.op.load");
   }
   NewLI->addParamAttr(
       0, Attribute::getWithAlignment(NewLI->getContext(), Alignment));
@@ -3571,13 +3572,13 @@ void VPWidenStoreEVLRecipe::execute(VPTransformState &State) {
   }
   Value *Addr = State.get(getAddr(), !CreateScatter);
   if (CreateScatter) {
-    NewSI = Builder.CreateIntrinsic(Type::getVoidTy(EVL->getContext()),
-                                    Intrinsic::vp_scatter,
-                                    {StoredVal, Addr, Mask, EVL});
+    NewSI = Builder.CreateIntrinsicWithoutFolding(
+        Type::getVoidTy(EVL->getContext()), Intrinsic::vp_scatter,
+        {StoredVal, Addr, Mask, EVL});
   } else {
-    NewSI = Builder.CreateIntrinsic(Type::getVoidTy(EVL->getContext()),
-                                    Intrinsic::vp_store,
-                                    {StoredVal, Addr, Mask, EVL});
+    NewSI = Builder.CreateIntrinsicWithoutFolding(
+        Type::getVoidTy(EVL->getContext()), Intrinsic::vp_store,
+        {StoredVal, Addr, Mask, EVL});
   }
   NewSI->addParamAttr(
       1, Attribute::getWithAlignment(NewSI->getContext(), Alignment));
@@ -3776,7 +3777,7 @@ void VPInterleaveRecipe::execute(VPTransformState &State) {
       // so must use intrinsics to deinterleave.
       assert(InterleaveFactor <= 8 &&
              "Unsupported deinterleave factor for scalable vectors");
-      Value *Deinterleave = State.Builder.CreateIntrinsic(
+      Value *Deinterleave = State.Builder.CreateIntrinsicWithoutFolding(
           getDeinterleaveIntrinsicID(InterleaveFactor), NewLoad->getType(),
           NewLoad,
           /*FMFSource=*/nullptr, "strided.vec");

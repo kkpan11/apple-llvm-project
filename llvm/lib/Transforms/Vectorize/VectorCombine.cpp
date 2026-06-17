@@ -1473,7 +1473,7 @@ bool VectorCombine::foldBinopOfReductions(Instruction &I) {
   else
     VectorBO = Builder.CreateBinOp(BinOpOpc, V0, V1);
 
-  Instruction *Rdx = Builder.CreateIntrinsic(ReductionIID, {VTy}, {VectorBO});
+  Value *Rdx = Builder.CreateIntrinsic(ReductionIID, {VTy}, {VectorBO});
   replaceValue(I, *Rdx);
   return true;
 }

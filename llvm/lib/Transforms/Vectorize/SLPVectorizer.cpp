@@ -18242,7 +18242,7 @@ Value *BoUpSLP::vectorizeTree(TreeEntry *E) {
                       static_cast<int>(DL->getTypeAllocSize(ScalarTy))));
         }
         Align CommonAlignment = computeCommonAlignment<LoadInst>(E->Scalars);
-        auto *Inst = Builder.CreateIntrinsic(
+        auto *Inst = Builder.CreateIntrinsicWithoutFolding(
             Intrinsic::experimental_vp_strided_load,
             {VecTy, PO->getType(), StrideTy},
             {PO, StrideVal, Builder.getAllOnesMask(VecTy->getElementCount()),
@@ -18312,7 +18312,7 @@ Value *BoUpSLP::vectorizeTree(TreeEntry *E) {
         }
         Align CommonAlignment = computeCommonAlignment<StoreInst>(E->Scalars);
         Type *StrideTy = DL->getIndexType(SI->getPointerOperandType());
-        auto *Inst = Builder.CreateIntrinsic(
+        auto *Inst = Builder.CreateIntrinsicWithoutFolding(
             Intrinsic::experimental_vp_strided_store,
             {VecTy, Ptr->getType(), StrideTy},
             {VecValue, Ptr,

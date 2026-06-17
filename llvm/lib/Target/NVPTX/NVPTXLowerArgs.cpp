@@ -515,10 +515,10 @@ void copyByValParam(Function &F, Argument &Arg) {
       Arg.getParamAlign().value_or(DL.getPrefTypeAlign(StructType)));
   Arg.replaceAllUsesWith(AllocA);
 
-  Value *ArgInParam =
-      IRB.CreateIntrinsic(Intrinsic::nvvm_internal_addrspace_wrap,
-                          {IRB.getPtrTy(ADDRESS_SPACE_PARAM), Arg.getType()},
-                          &Arg, {}, Arg.getName());
+  Value *ArgInParam = IRB.CreateIntrinsicWithoutFolding(
+      Intrinsic::nvvm_internal_addrspace_wrap,
+      {IRB.getPtrTy(ADDRESS_SPACE_PARAM), Arg.getType()}, &Arg, {},
+      Arg.getName());
 
   // Be sure to propagate alignment to this load; LLVM doesn't know that NVPTX
   // addrspacecast preserves alignment.  Since params are constant, this load
@@ -549,7 +549,7 @@ static void handleByValParam(const NVPTXTargetMachine &TM, Argument *Arg) {
     SmallVector<Use *, 16> UsesToUpdate(llvm::make_pointer_range(Arg->uses()));
 
     IRBuilder<> IRB(&*FirstInst);
-    Value *ArgInParamAS = IRB.CreateIntrinsic(
+    Value *ArgInParamAS = IRB.CreateIntrinsicWithoutFolding(
         Intrinsic::nvvm_internal_addrspace_wrap,
         {IRB.getPtrTy(ADDRESS_SPACE_PARAM), Arg->getType()}, {Arg});
 
@@ -581,10 +581,10 @@ static void handleByValParam(const NVPTXTargetMachine &TM, Argument *Arg) {
     // argument already in the param address space, we need to use the noop
     // intrinsic, this had the added benefit of preventing other optimizations
     // from folding away this pair of addrspacecasts.
-    auto *ParamSpaceArg =
-        IRB.CreateIntrinsic(Intrinsic::nvvm_internal_addrspace_wrap,
-                            {IRB.getPtrTy(ADDRESS_SPACE_PARAM), Arg->getType()},
-                            Arg, {}, Arg->getName() + ".param");
+    auto *ParamSpaceArg = IRB.CreateIntrinsicWithoutFolding(
+        Intrinsic::nvvm_internal_addrspace_wrap,
+        {IRB.getPtrTy(ADDRESS_SPACE_PARAM), Arg->getType()}, Arg, {},
+        Arg->getName() + ".param");
 
     // Cast param address to generic address space.
     Value *GenericArg = IRB.CreateAddrSpaceCast(

@@ -154,7 +154,7 @@ bool InsertIntrinsicCalls(ArrayRef<CallBrInst *> CBRs, DominatorTree &DT) {
       if (!Visited.insert(IndDest).second)
         continue;
       Builder.SetInsertPoint(&*IndDest->begin());
-      CallInst *Intrinsic = Builder.CreateIntrinsic(
+      CallInst *Intrinsic = Builder.CreateIntrinsicWithoutFolding(
           CBR->getType(), Intrinsic::callbr_landingpad, {CBR});
       SSAUpdate.AddAvailableValue(IndDest, Intrinsic);
       UpdateSSA(DT, CBR, Intrinsic, SSAUpdate);
