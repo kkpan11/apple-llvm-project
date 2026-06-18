@@ -293,7 +293,7 @@ else
   adb_pull /system/bin/app_process.wrap "$TMPDIROLD" || true
   adb_pull /system/bin/asanwrapper "$TMPDIROLD" || true
 fi
-cp -r "$TMPDIROLD" "$TMPDIR"
+cp -R "$TMPDIROLD" "$TMPDIR"
 
 if [[ -f "$TMPDIR/app_process.wrap" || -f "$TMPDIR/app_process64.real" ]]; then
     echo ">> Previous installation detected"

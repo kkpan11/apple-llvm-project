@@ -1,8 +1,8 @@
 // RUN: rm -rf %T/misc-header-include-cycle-headers
 // RUN: mkdir %T/misc-header-include-cycle-headers
-// RUN: cp -r %S/Inputs/header-include-cycle* %T/misc-header-include-cycle-headers/
+// RUN: cp -R %S/Inputs/header-include-cycle* %T/misc-header-include-cycle-headers/
 // RUN: mkdir %T/misc-header-include-cycle-headers/system
-// RUN: cp -r %S/Inputs/system/header-include-cycle* %T/misc-header-include-cycle-headers/system
+// RUN: cp -R %S/Inputs/system/header-include-cycle* %T/misc-header-include-cycle-headers/system
 // RUN: cp %s %T/header-include-cycle.cpp
 // RUN: clang-tidy %T%{fs-sep}header-include-cycle.cpp -checks='-*,misc-header-include-cycle' -header-filter=.* \
 // RUN: -config="{CheckOptions: {misc-header-include-cycle.IgnoredFilesList: 'header-include-cycle.self-e.hpp'}}" \

@@ -78,7 +78,7 @@ if [[ ! -d ${ZLIB_BUILD} ]]; then
   else
     ZLIB_SRC=$(readlink -f $ZLIB_SRC)
     mkdir -p ${ZLIB_BUILD}
-    cp -r ${ZLIB_SRC}/* ${ZLIB_BUILD}/
+    cp -R ${ZLIB_SRC}/* ${ZLIB_BUILD}/
   fi
 fi
 

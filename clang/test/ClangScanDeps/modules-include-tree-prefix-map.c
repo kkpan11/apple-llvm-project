@@ -3,7 +3,7 @@
 
 // RUN: rm -rf %t
 // RUN: split-file %s %t/dir1
-// RUN: cp -r %t/dir1 %t/dir2
+// RUN: cp -R %t/dir1 %t/dir2
 // RUN: sed -e "s|DIR|%/t/dir1|g" -e "s|CLANG|%/ncclang|g" %t/dir1/cdb.json.template > %t/cdb1.json
 // RUN: sed -e "s|DIR|%/t/dir2|g" -e "s|CLANG|%/ncclang|g" %t/dir1/cdb.json.template > %t/cdb2.json
 
