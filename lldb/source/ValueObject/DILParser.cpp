@@ -49,6 +49,10 @@ llvm::Expected<lldb::TypeSystemSP>
 GetTypeSystemFromCU(std::shared_ptr<StackFrame> ctx) {
   SymbolContext symbol_context =
       ctx->GetSymbolContext(lldb::eSymbolContextCompUnit);
+  if (!symbol_context.comp_unit)
+    return llvm::createStringErrorV("no compile unit for frame: {}",
+                                    ctx.GetFunctionName());
+
   lldb::LanguageType language = symbol_context.comp_unit->GetLanguage();
 
   symbol_context = ctx->GetSymbolContext(lldb::eSymbolContextModule);
