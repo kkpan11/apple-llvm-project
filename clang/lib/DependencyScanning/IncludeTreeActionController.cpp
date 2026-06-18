@@ -41,7 +41,7 @@ private:
   bool initialize(CompilerInstance &ScanInstance,
                   CompilerInvocation &NewInvocation) override;
   bool finalize(CompilerInstance &ScanInstance,
-                CompilerInvocation &NewInvocation) override;
+                CowCompilerInvocation &NewInvocation) override;
   std::optional<std::string>
   getCacheKey(const CompilerInvocation &NewInvocation) override;
 
@@ -78,7 +78,7 @@ public:
 
   Expected<cas::IncludeTreeRoot>
   finishIncludeTree(CompilerInstance &ScanInstance,
-                    CompilerInvocation &NewInvocation);
+                    const CompilerInvocationBase &NewInvocation);
 
   void enteredInclude(Preprocessor &PP, FileID FID);
 
@@ -352,8 +352,8 @@ bool IncludeTreeActionController::initialize(
   return true;
 }
 
-bool IncludeTreeActionController::finalize(CompilerInstance &ScanInstance,
-                                           CompilerInvocation &NewInvocation) {
+bool IncludeTreeActionController::finalize(
+    CompilerInstance &ScanInstance, CowCompilerInvocation &NewInvocation) {
   auto GetInputCacheKey = [&]() -> std::optional<StringRef> {
     if (NewInvocation.getFrontendOpts().Inputs.size() != 1)
       return {};
@@ -647,9 +647,9 @@ getIncludeTreeModule(cas::ObjectStore &DB, Module *M) {
                           ExportList, LinkLibraries, RequirementsList);
 }
 
-Expected<cas::IncludeTreeRoot>
-IncludeTreeBuilder::finishIncludeTree(CompilerInstance &ScanInstance,
-                                      CompilerInvocation &NewInvocation) {
+Expected<cas::IncludeTreeRoot> IncludeTreeBuilder::finishIncludeTree(
+    CompilerInstance &ScanInstance,
+    const CompilerInvocationBase &NewInvocation) {
   if (ErrorToReport)
     return std::move(*ErrorToReport);
 
@@ -709,7 +709,7 @@ IncludeTreeBuilder::finishIncludeTree(CompilerInstance &ScanInstance,
     if (Error E = addModuleInputs(*Reader))
       return E;
 
-    PreprocessorOptions &PPOpts = NewInvocation.getPreprocessorOpts();
+    const PreprocessorOptions &PPOpts = NewInvocation.getPreprocessorOpts();
     if (PPOpts.ImplicitPCHInclude.empty())
       return Error::success(); // no need for additional work.
 

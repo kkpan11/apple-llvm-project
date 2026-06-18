@@ -227,9 +227,10 @@ clang::canonicalizeAndCreateCacheKeys(ObjectStore &CAS, ActionCache &Cache,
                                       CompilerInvocation &CI,
                                       CompileJobCachingOptions &Opts) {
   Opts = canonicalizeForCaching(CAS, CI.getFrontendOpts(), CI.getCASOpts());
-  auto CacheKey = CI.withTempCow([&](CowCompilerInvocation CowCI) {
-    return createCompileJobCacheKeyImpl(CAS, Diags, std::move(CowCI));
-  });
+  auto CacheKey = CI.withCowRef<std::optional<CASID>>(
+      [&](const CowCompilerInvocation &CowCI) {
+        return createCompileJobCacheKeyImpl(CAS, Diags, std::move(CowCI));
+      });
   if (!CacheKey)
     return std::nullopt;
 
@@ -257,9 +258,10 @@ clang::canonicalizeAndCreateCacheKeys(ObjectStore &CAS, ActionCache &Cache,
   CI.getFrontendOpts().CASInputFileCASID = Value.get()->toString();
   CI.getFrontendOpts().CASInputFileCacheKey.clear();
 
-  auto CanonicalCacheKey = CI.withTempCow([&](CowCompilerInvocation CowCI) {
-    return createCompileJobCacheKeyImpl(CAS, Diags, std::move(CowCI));
-  });
+  auto CanonicalCacheKey = CI.withCowRef<std::optional<CASID>>(
+      [&](const CowCompilerInvocation &CowCI) {
+        return createCompileJobCacheKeyImpl(CAS, Diags, CowCI);
+      });
   if (!CanonicalCacheKey)
     return std::nullopt;
 
@@ -269,9 +271,10 @@ clang::canonicalizeAndCreateCacheKeys(ObjectStore &CAS, ActionCache &Cache,
 std::optional<llvm::cas::CASID>
 clang::createCompileJobCacheKey(ObjectStore &CAS, DiagnosticsEngine &Diags,
                                 const CompilerInvocation &OriginalCI) {
-  return OriginalCI.withTempCow([&](CowCompilerInvocation CowOriginalCI) {
-    return createCompileJobCacheKey(CAS, Diags, std::move(CowOriginalCI));
-  });
+  return OriginalCI.withCowRef<std::optional<CASID>>(
+      [&](const CowCompilerInvocation &CowOriginalCI) {
+        return createCompileJobCacheKey(CAS, Diags, CowOriginalCI);
+      });
 }
 
 std::optional<llvm::cas::CASID>

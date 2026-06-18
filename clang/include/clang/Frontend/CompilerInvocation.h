@@ -22,8 +22,10 @@
 #include "clang/Frontend/MigratorOptions.h"
 #include "clang/Frontend/PreprocessorOutputOptions.h"
 #include "clang/StaticAnalyzer/Core/AnalyzerOptions.h"
-#include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/IntrusiveRefCntPtr.h"
+#include "llvm/ADT/ScopeExit.h"
+
 #include <memory>
 #include <string>
 
@@ -330,10 +332,13 @@ public:
   }
   /// @}
 
-  /// Invokes the function with a temporary copy-on-write view of this instance.
-  /// The new invocation cannot escape \a Fn.
-  template <class F>
-  auto withTempCow(F &&Fn) const;
+  /// Invokes the \a Fn with CowCompilerInvocation representing \c this.
+  /// The \a Fn must not directly modify \c this.
+  /// The provided \c CowCompilerInvocation must not escape \a Fn.
+  template <class R>
+  R withCowRef(llvm::function_ref<R(CowCompilerInvocation &)> Fn);
+  template <class R>
+  R withCowRef(llvm::function_ref<R(const CowCompilerInvocation &)> Fn) const;
 
   /// Visitation.
   /// @{
@@ -482,9 +487,25 @@ public:
   using CompilerInvocationBase::visitPaths;
 };
 
-template <class F>
-auto CompilerInvocation::withTempCow(F &&Fn) const {
-  return Fn(CowCompilerInvocation(ShallowConstructor{}, *this));
+template <class R>
+R CompilerInvocation::withCowRef(
+    llvm::function_ref<R(CowCompilerInvocation &)> Fn) {
+  // We use moves to avoid bumping the ref-count of the shared_ptr that holds
+  // individual options. Since we expect \a Fn to actually modify \c CowRef,
+  // this prevents temporary copies.
+  CowCompilerInvocation CowRef = std::move(*this);
+  llvm::scope_exit Mutate([&]() { *this = std::move(CowRef); });
+  return Fn(CowRef);
+}
+
+template <class R>
+R CompilerInvocation::withCowRef(
+    llvm::function_ref<R(const CowCompilerInvocation &)> Fn) const {
+  // We use the shallow constructor. Since \a Fn cannot modify \c CowRef, no
+  // copies will be created, despite the bump to the ref-count of the shared_ptr
+  // that holds individual options.
+  CowCompilerInvocation CowRef(ShallowConstructor{}, *this);
+  return Fn(CowRef);
 }
 
 inline CompilerInvocation::CompilerInvocation(CowCompilerInvocation &&X)

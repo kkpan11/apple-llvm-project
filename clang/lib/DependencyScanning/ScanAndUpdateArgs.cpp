@@ -153,18 +153,6 @@ void dependencies::configureInvocationForCaching(CowCompilerInvocation &CI,
   }
 }
 
-void dependencies::configureInvocationForCaching(CompilerInvocation &CI,
-                                                 CASOptions CASOpts,
-                                                 std::string InputID,
-                                                 CachingInputKind InputKind,
-                                                 std::string WorkingDir) {
-  CI.withTempCow([&](CowCompilerInvocation CowCI) {
-    configureInvocationForCaching(CowCI, std::move(CASOpts), std::move(InputID),
-                                  InputKind, std::move(WorkingDir));
-    CI = std::move(CowCI);
-  });
-}
-
 void DepscanPrefixMapping::remapInvocationPaths(
     CowCompilerInvocation &Invocation, llvm::PrefixMapper &Mapper) {
   auto &FrontendOpts = Invocation.getMutFrontendOpts();
@@ -192,14 +180,6 @@ void DepscanPrefixMapping::remapInvocationPaths(
   Invocation.visitPaths([&Mapper](std::string &Path) {
     Mapper.mapInPlace(Path);
     return false;
-  });
-}
-
-void DepscanPrefixMapping::remapInvocationPaths(CompilerInvocation &Invocation,
-                                                llvm::PrefixMapper &Mapper) {
-  Invocation.withTempCow([&](CowCompilerInvocation CowCI) {
-    remapInvocationPaths(CowCI, Mapper);
-    Invocation = std::move(CowCI);
   });
 }
 
