@@ -182,9 +182,10 @@ public:
     if (Opt.EnableGlobalISelAbort)
       TM.Options.GlobalISelAbort = *Opt.EnableGlobalISelAbort;
 
-    if (Opt.OptimizeRegAlloc == cl::BOU_UNSET)
-      Opt.OptimizeRegAlloc =
-          getOptLevel() != CodeGenOptLevel::None ? cl::BOU_TRUE : cl::BOU_FALSE;
+    if (Opt.OptimizeRegAlloc == cl::boolOrDefault::BOU_UNSET)
+      Opt.OptimizeRegAlloc = getOptLevel() != CodeGenOptLevel::None
+                                 ? cl::boolOrDefault::BOU_TRUE
+                                 : cl::boolOrDefault::BOU_FALSE;
   }
 
   Error buildPipeline(ModulePassManager &MPM, raw_pwrite_stream &Out,
@@ -900,17 +901,18 @@ template <typename Derived, typename TargetMachineT>
 Error CodeGenPassBuilder<Derived, TargetMachineT>::addCoreISelPasses(
     AddMachinePass &addPass) const {
   // Enable FastISel with -fast-isel, but allow that to be overridden.
-  TM.setO0WantsFastISel(Opt.EnableFastISelOption != cl::BOU_FALSE);
+  TM.setO0WantsFastISel(Opt.EnableFastISelOption !=
+                        cl::boolOrDefault::BOU_FALSE);
 
   // Determine an instruction selector.
   enum class SelectorType { SelectionDAG, FastISel, GlobalISel };
   SelectorType Selector;
 
-  if (Opt.EnableFastISelOption == cl::BOU_TRUE)
+  if (Opt.EnableFastISelOption == cl::boolOrDefault::BOU_TRUE)
     Selector = SelectorType::FastISel;
-  else if (Opt.EnableGlobalISelOption == cl::BOU_TRUE ||
+  else if (Opt.EnableGlobalISelOption == cl::boolOrDefault::BOU_TRUE ||
            (TM.Options.EnableGlobalISel &&
-            Opt.EnableGlobalISelOption != cl::BOU_FALSE))
+            Opt.EnableGlobalISelOption != cl::boolOrDefault::BOU_FALSE))
     Selector = SelectorType::GlobalISel;
   else if (TM.getOptLevel() == CodeGenOptLevel::None && TM.getO0WantsFastISel())
     Selector = SelectorType::FastISel;
@@ -1008,7 +1010,7 @@ Error CodeGenPassBuilder<Derived, TargetMachineT>::addMachinePasses(
 
   // Run register allocation and passes that are tightly coupled with it,
   // including phi elimination and scheduling.
-  if (Opt.OptimizeRegAlloc == cl::BOU_TRUE) {
+  if (Opt.OptimizeRegAlloc == cl::boolOrDefault::BOU_TRUE) {
     derived().addOptimizedRegAlloc(addPass);
   } else {
     if (auto Err = derived().addFastRegAlloc(addPass))

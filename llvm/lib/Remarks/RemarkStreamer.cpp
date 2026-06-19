@@ -22,7 +22,7 @@ static cl::opt<cl::boolOrDefault> EnableRemarksSection(
     cl::desc(
         "Emit a section containing remark diagnostics metadata. By default, "
         "this is enabled for the following formats: bitstream."),
-    cl::init(cl::BOU_UNSET), cl::Hidden);
+    cl::init(cl::boolOrDefault::BOU_UNSET), cl::Hidden);
 
 RemarkStreamer::RemarkStreamer(
     std::unique_ptr<remarks::RemarkSerializer> RemarkSerializer,
@@ -49,13 +49,13 @@ bool RemarkStreamer::matchesFilter(StringRef Str) {
 }
 
 bool RemarkStreamer::needsSection() const {
-  if (EnableRemarksSection == cl::BOU_TRUE)
+  if (EnableRemarksSection == cl::boolOrDefault::BOU_TRUE)
     return true;
 
-  if (EnableRemarksSection == cl::BOU_FALSE)
+  if (EnableRemarksSection == cl::boolOrDefault::BOU_FALSE)
     return false;
 
-  assert(EnableRemarksSection == cl::BOU_UNSET);
+  assert(EnableRemarksSection == cl::boolOrDefault::BOU_UNSET);
 
   // We only need a section if we're in separate mode.
   if (RemarkSerializer->Mode != remarks::SerializerMode::Separate)
