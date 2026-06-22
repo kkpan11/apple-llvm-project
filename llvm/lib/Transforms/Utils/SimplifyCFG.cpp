@@ -1128,6 +1128,11 @@ static void cloneInstructionsIntoPredecessorBlockAndUpdateSSAUses(
     if (BonusInst.isTerminator())
       continue;
 
+    // Skip cloning pseudo probes into the predecessor, as it would overcount
+    // otherwise.
+    if (isa<PseudoProbeInst>(BonusInst))
+      continue;
+
     Instruction *NewBonusInst = BonusInst.clone();
 
     if (!NewBonusInst->getDebugLoc().isSameSourceLocation(PTI->getDebugLoc())) {
@@ -1481,6 +1486,9 @@ enum SkipFlags {
 };
 
 static unsigned skippedInstrFlags(Instruction *I) {
+  // Pseudo probes don't constrain reordering of other instructions.
+  if (isa<PseudoProbeInst>(I))
+    return 0;
   unsigned Flags = 0;
   if (I->mayReadFromMemory())
     Flags |= SkipReadMem;
@@ -4117,6 +4125,9 @@ bool llvm::foldBranchToCommonDest(BranchInst *BI, DomTreeUpdater *DTU,
       continue;
     // Ignore the terminator.
     if (isa<BranchInst>(I))
+      continue;
+    // Pseudo probes aren't speculatable but can be dropped on fold.
+    if (isa<PseudoProbeInst>(I))
       continue;
     // I must be safe to execute unconditionally.
     if (!isSafeToSpeculativelyExecute(&I))
