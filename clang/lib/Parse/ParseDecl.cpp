@@ -5354,8 +5354,24 @@ void Parser::ParseStructUnionBody(SourceLocation RecordLoc,
           // parsing now for non-anonymous records; anonymous struct/union
           // fields are handled as part of the enclosing record instead.
           if (RD && !RD->isAnonymousStructOrUnion()) {
+            std::optional<ParseScope> RecordReentryScope;
+            if (!getLangOpts().CPlusPlus) {
+              RecordReentryScope.emplace(this,
+                                         Scope::ClassScope | Scope::DeclScope);
+              Actions.EnterDeclaratorContext(getCurScope(), RD);
+              for (Decl *D : RD->decls()) {
+                if (auto *ND = dyn_cast<NamedDecl>(D)) {
+                  if (ND->getDeclName())
+                    Actions.PushOnScopeChains(ND, getCurScope(),
+                                              /*AddToContext=*/false);
+                }
+              }
+            }
+
             Actions.ProcessLateParsedTypeAttributes(
                 RD, ParseLateParsedTypeAttributeCallback);
+            if (RecordReentryScope)
+              Actions.ExitDeclaratorContext(getCurScope());
           }
         }
         // Report an error if a counted_by attribute refers to a field in a
