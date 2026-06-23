@@ -992,7 +992,7 @@ CodeGenAction::CreateASTConsumer(CompilerInstance &CI, StringRef InFile) {
         CI.getPreprocessor());
 
   std::unique_ptr<BackendConsumer> Result(new BackendConsumer(
-      CI, BA, &CI.getVirtualFileSystem(), *VMContext, std::move(LinkModules),
+      CI, BA, CI.getVirtualFileSystemPtr(), *VMContext, std::move(LinkModules),
       InFile, std::move(OS), CoverageInfo, std::move(CasIDOS)));
   BEConsumer = Result.get();
 
@@ -1011,7 +1011,7 @@ CodeGenAction::CreateASTConsumer(CompilerInstance &CI, StringRef InFile) {
     std::vector<std::unique_ptr<ASTConsumer>> Consumers(2);
     Consumers[0] = std::make_unique<ReducedBMIGenerator>(
         CI.getPreprocessor(), CI.getModuleCache(),
-        CI.getFrontendOpts().ModuleOutputPath);
+        CI.getFrontendOpts().ModuleOutputPath, CI.getCodeGenOpts());
     Consumers[1] = std::move(Result);
     return std::make_unique<MultiplexConsumer>(std::move(Consumers));
   }
@@ -1171,7 +1171,7 @@ void CodeGenAction::ExecuteAction() {
 
   // Set clang diagnostic handler. To do this we need to create a fake
   // BackendConsumer.
-  BackendConsumer Result(CI, BA, &CI.getVirtualFileSystem(), *VMContext,
+  BackendConsumer Result(CI, BA, CI.getVirtualFileSystemPtr(), *VMContext,
                          std::move(LinkModules), "", nullptr, nullptr,
                          nullptr, TheModule.get());
 

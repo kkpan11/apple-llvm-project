@@ -15,6 +15,7 @@
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/DiagnosticCAS.h"
 #include "clang/Basic/DiagnosticDriver.h"
+#include "clang/Basic/DiagnosticFrontend.h"
 #include "clang/Basic/DiagnosticOptions.h"
 #include "clang/Basic/FileSystemOptions.h"
 #include "clang/Basic/LLVM.h"
@@ -28,12 +29,9 @@
 #include "clang/Basic/XRayInstr.h"
 #include "clang/CAS/IncludeTree.h"
 #include "clang/Config/config.h"
-#include "clang/Driver/BoundsSafetyArgs.h"
-#include "clang/Driver/Driver.h"
 #include "clang/Frontend/CommandLineSourceLoc.h"
 #include "clang/Frontend/CompileJobCacheResult.h"
 #include "clang/Frontend/DependencyOutputOptions.h"
-#include "clang/Frontend/FrontendDiagnostic.h"
 #include "clang/Frontend/FrontendOptions.h"
 #include "clang/Frontend/MigratorOptions.h"
 #include "clang/Frontend/PreprocessorOutputOptions.h"
@@ -41,6 +39,7 @@
 #include "clang/Frontend/Utils.h"
 #include "clang/Lex/HeaderSearchOptions.h"
 #include "clang/Lex/PreprocessorOptions.h"
+#include "clang/Options/BoundsSafetyArgs.h" // TO_UPSTREAM(BoundsSafety)
 #include "clang/Options/Options.h"
 #include "clang/Serialization/ASTBitCodes.h"
 #include "clang/Serialization/ModuleFileExtension.h"
@@ -105,7 +104,6 @@
 #include <vector>
 
 using namespace clang;
-using namespace driver;
 using namespace options;
 using namespace llvm::opt;
 
@@ -3531,13 +3529,6 @@ static bool ParseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
   return Diags.getNumErrors() == NumErrorsBefore;
 }
 
-std::string CompilerInvocation::GetResourcesPath(const char *Argv0,
-                                                 void *MainAddr) {
-  std::string ClangExecutable =
-      llvm::sys::fs::getMainExecutable(Argv0, MainAddr);
-  return Driver::GetResourcesPath(ClangExecutable);
-}
-
 static void GenerateHeaderSearchArgs(const HeaderSearchOptions &Opts,
                                      ArgumentConsumer Consumer) {
   const HeaderSearchOptions *HeaderSearchOpts = &Opts;
@@ -4859,22 +4850,6 @@ bool CompilerInvocation::ParseLangArgs(LangOptions &Opts, ArgList &Args,
       Opts.OpenACCMacroOverride = A->getValue();
   }
 
-  // FIXME: Eliminate this dependency.
-  unsigned Opt = getOptimizationLevel(Args, IK, Diags),
-       OptSize = getOptimizationLevelSize(Args);
-  Opts.Optimize = Opt != 0;
-  Opts.OptimizeSize = OptSize != 0;
-
-  // This is the __NO_INLINE__ define, which just depends on things like the
-  // optimization level and -fno-inline, not actually whether the backend has
-  // inlining enabled.
-  Opts.NoInlineDefine = !Opts.Optimize;
-  if (Arg *InlineArg = Args.getLastArg(
-          options::OPT_finline_functions, options::OPT_finline_hint_functions,
-          options::OPT_fno_inline_functions, options::OPT_fno_inline))
-    if (InlineArg->getOption().matches(options::OPT_fno_inline))
-      Opts.NoInlineDefine = true;
-
   if (Arg *A = Args.getLastArg(OPT_ffp_contract)) {
     StringRef Val = A->getValue();
     if (Val == "fast")
@@ -5665,7 +5640,8 @@ static bool isExtHandlingFromDiagsError(DiagnosticsEngine &Diags) {
   return Ext >= diag::Severity::Error;
 }
 
-std::string CompilerInvocation::getModuleHash(DiagnosticsEngine &Diags) const {
+std::string
+CompilerInvocation::computeContextHash(DiagnosticsEngine &Diags) const {
   // FIXME: Consider using SHA1 instead of MD5.
   llvm::HashBuilder<llvm::MD5, llvm::endianness::native> HBuilder;
 
@@ -5759,6 +5735,21 @@ std::string CompilerInvocation::getModuleHash(DiagnosticsEngine &Diags) const {
       HBuilder.add(*Build);
   }
 
+  // Extend the signature with affecting codegen options.
+  {
+    using CK = CodeGenOptions::CompatibilityKind;
+#define CODEGENOPT(Name, Bits, Default, Compatibility)                         \
+  if constexpr (CK::Compatibility != CK::Benign)                               \
+    HBuilder.add(CodeGenOpts->Name);
+#define ENUM_CODEGENOPT(Name, Type, Bits, Default, Compatibility)              \
+  if constexpr (CK::Compatibility != CK::Benign)                               \
+    HBuilder.add(static_cast<unsigned>(CodeGenOpts->get##Name()));
+#define DEBUGOPT(Name, Bits, Default, Compatibility)
+#define VALUE_DEBUGOPT(Name, Bits, Default, Compatibility)
+#define ENUM_DEBUGOPT(Name, Type, Bits, Default, Compatibility)
+#include "clang/Basic/CodeGenOptions.def"
+  }
+
   // When compiling with -gmodules, also hash -fdebug-prefix-map as it
   // affects the debug info in the PCM.
   if (getCodeGenOpts().DebugTypeExtRefs)
@@ -5769,13 +5760,13 @@ std::string CompilerInvocation::getModuleHash(DiagnosticsEngine &Diags) const {
     // FIXME: Replace with C++20 `using enum CodeGenOptions::CompatibilityKind`.
     using CK = CodeGenOptions::CompatibilityKind;
 #define DEBUGOPT(Name, Bits, Default, Compatibility)                           \
-  if constexpr (CK::Compatibility == CK::Affecting)                            \
+  if constexpr (CK::Compatibility != CK::Benign)                               \
     HBuilder.add(CodeGenOpts->Name);
 #define VALUE_DEBUGOPT(Name, Bits, Default, Compatibility)                     \
-  if constexpr (CK::Compatibility == CK::Affecting)                            \
+  if constexpr (CK::Compatibility != CK::Benign)                               \
     HBuilder.add(CodeGenOpts->Name);
 #define ENUM_DEBUGOPT(Name, Type, Bits, Default, Compatibility)                \
-  if constexpr (CK::Compatibility == CK::Affecting)                            \
+  if constexpr (CK::Compatibility != CK::Benign)                               \
     HBuilder.add(static_cast<unsigned>(CodeGenOpts->get##Name()));
 #include "clang/Basic/DebugOptions.def"
   }

@@ -316,16 +316,6 @@ public:
                              DiagnosticsEngine &Diags,
                              const char *Argv0 = nullptr);
 
-  /// Get the directory where the compiler headers
-  /// reside, relative to the compiler binary (found by the passed in
-  /// arguments).
-  ///
-  /// \param Argv0 - The program path (from argv[0]), for finding the builtin
-  /// compiler path.
-  /// \param MainAddr - The address of main (or some other function in the main
-  /// executable), for finding the builtin compiler path.
-  static std::string GetResourcesPath(const char *Argv0, void *MainAddr);
-
   /// Populate \p Opts with the default set of pointer authentication-related
   /// options given \p LangOpts and \p Triple.
   ///
@@ -335,9 +325,11 @@ public:
                                            const LangOptions &LangOpts,
                                            const llvm::Triple &Triple);
 
-  /// Retrieve a module hash string that is suitable for uniquely
-  /// identifying the conditions under which the module was built.
-  std::string getModuleHash(DiagnosticsEngine &Diags) const;
+  /// Compute the context hash - a string that uniquely identifies compiler
+  /// settings.
+  /// This is currently used mainly for distinguishing different variants of the
+  /// same implicitly-built Clang module.
+  std::string computeContextHash(DiagnosticsEngine &Diags) const;
 
   /// Check that \p Args can be parsed and re-serialized without change,
   /// emiting diagnostics for any differences.

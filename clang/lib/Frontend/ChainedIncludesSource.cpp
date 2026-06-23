@@ -61,6 +61,7 @@ createASTReader(CompilerInstance &CI, StringRef pchFile,
   Preprocessor &PP = CI.getPreprocessor();
   auto Reader = llvm::makeIntrusiveRefCnt<ASTReader>(
       PP, CI.getModuleCache(), &CI.getASTContext(), CI.getPCHContainerReader(),
+      CI.getCodeGenOpts(),
       /*Extensions=*/ArrayRef<std::shared_ptr<ModuleFileExtension>>(),
       /*isysroot=*/"", DisableValidationForModuleKind::PCH);
   for (unsigned ti = 0; ti < bufNames.size(); ++ti) {
@@ -138,7 +139,8 @@ clang::createChainedIncludesSource(CompilerInstance &CI,
     ArrayRef<std::shared_ptr<ModuleFileExtension>> Extensions;
     auto consumer = std::make_unique<PCHGenerator>(
         Clang->getPreprocessor(), Clang->getModuleCache(), "-", /*isysroot=*/"",
-        Buffer, Extensions, /*AllowASTWithErrors=*/true);
+        Buffer, Clang->getCodeGenOpts(), Extensions,
+        /*AllowASTWithErrors=*/true);
     Clang->getASTContext().setASTMutationListener(
                                             consumer->GetASTMutationListener());
     Clang->setASTConsumer(std::move(consumer));

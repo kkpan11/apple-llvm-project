@@ -175,6 +175,15 @@ bool ChainedASTReaderListener::ReadLanguageOptions(
                                      AllowCompatibleDifferences);
 }
 
+bool ChainedASTReaderListener::ReadCodeGenOptions(
+    const CodeGenOptions &CGOpts, StringRef ModuleFilename, bool Complain,
+    bool AllowCompatibleDifferences) {
+  return First->ReadCodeGenOptions(CGOpts, ModuleFilename, Complain,
+                                   AllowCompatibleDifferences) ||
+         Second->ReadCodeGenOptions(CGOpts, ModuleFilename, Complain,
+                                    AllowCompatibleDifferences);
+}
+
 bool ChainedASTReaderListener::ReadTargetOptions(
     const TargetOptions &TargetOpts, StringRef ModuleFilename, bool Complain,
     bool AllowCompatibleDifferences) {
@@ -405,6 +414,68 @@ static bool checkLanguageOptions(const LangOptions &LangOpts,
   return false;
 }
 
+static bool checkCodegenOptions(const CodeGenOptions &CGOpts,
+                                const CodeGenOptions &ExistingCGOpts,
+                                StringRef ModuleFilename,
+                                DiagnosticsEngine *Diags,
+                                bool AllowCompatibleDifferences = true) {
+  // FIXME: Specify and print a description for each option instead of the name.
+  // FIXME: Replace with C++20 `using enum CodeGenOptions::CompatibilityKind`.
+  using CK = CodeGenOptions::CompatibilityKind;
+#define CODEGENOPT(Name, Bits, Default, Compatibility)                         \
+  if constexpr (CK::Compatibility != CK::Benign) {                             \
+    if ((CK::Compatibility == CK::NotCompatible) ||                            \
+        (CK::Compatibility == CK::Compatible &&                                \
+         !AllowCompatibleDifferences)) {                                       \
+      if (ExistingCGOpts.Name != CGOpts.Name) {                                \
+        if (Diags) {                                                           \
+          if (Bits == 1)                                                       \
+            Diags->Report(diag::err_ast_file_codegenopt_mismatch)              \
+                << #Name << CGOpts.Name << ExistingCGOpts.Name                 \
+                << ModuleFilename;                                             \
+          else                                                                 \
+            Diags->Report(diag::err_ast_file_codegenopt_value_mismatch)        \
+                << #Name << ModuleFilename;                                    \
+        }                                                                      \
+        return true;                                                           \
+      }                                                                        \
+    }                                                                          \
+  }
+
+#define VALUE_CODEGENOPT(Name, Bits, Default, Compatibility)                   \
+  if constexpr (CK::Compatibility != CK::Benign) {                             \
+    if ((CK::Compatibility == CK::NotCompatible) ||                            \
+        (CK::Compatibility == CK::Compatible &&                                \
+         !AllowCompatibleDifferences)) {                                       \
+      if (ExistingCGOpts.Name != CGOpts.Name) {                                \
+        if (Diags)                                                             \
+          Diags->Report(diag::err_ast_file_codegenopt_value_mismatch)          \
+              << #Name << ModuleFilename;                                      \
+        return true;                                                           \
+      }                                                                        \
+    }                                                                          \
+  }
+#define ENUM_CODEGENOPT(Name, Type, Bits, Default, Compatibility)              \
+  if constexpr (CK::Compatibility != CK::Benign) {                             \
+    if ((CK::Compatibility == CK::NotCompatible) ||                            \
+        (CK::Compatibility == CK::Compatible &&                                \
+         !AllowCompatibleDifferences)) {                                       \
+      if (ExistingCGOpts.get##Name() != CGOpts.get##Name()) {                  \
+        if (Diags)                                                             \
+          Diags->Report(diag::err_ast_file_codegenopt_value_mismatch)          \
+              << #Name << ModuleFilename;                                      \
+        return true;                                                           \
+      }                                                                        \
+    }                                                                          \
+  }
+#define DEBUGOPT(Name, Bits, Default, Compatibility)
+#define VALUE_DEBUGOPT(Name, Bits, Default, Compatibility)
+#define ENUM_DEBUGOPT(Name, Type, Bits, Default, Compatibility)
+#include "clang/Basic/CodeGenOptions.def"
+
+  return false;
+}
+
 /// Compare the given set of target options against an existing set of
 /// target options.
 ///
@@ -482,6 +553,15 @@ bool PCHValidator::ReadLanguageOptions(const LangOptions &LangOpts,
   return checkLanguageOptions(LangOpts, ExistingLangOpts, ModuleFilename,
                               Complain ? &Reader.Diags : nullptr,
                               AllowCompatibleDifferences);
+}
+
+bool PCHValidator::ReadCodeGenOptions(const CodeGenOptions &CGOpts,
+                                      StringRef ModuleFilename, bool Complain,
+                                      bool AllowCompatibleDifferences) {
+  const CodeGenOptions &ExistingCGOpts = Reader.getCodeGenOpts();
+  return checkCodegenOptions(ExistingCGOpts, CGOpts, ModuleFilename,
+                             Complain ? &Reader.Diags : nullptr,
+                             AllowCompatibleDifferences);
 }
 
 bool PCHValidator::ReadTargetOptions(const TargetOptions &TargetOpts,
@@ -886,15 +966,15 @@ bool SimpleASTReaderListener::ReadPreprocessorOptions(
 /// \returns true when the module cache paths differ.
 static bool checkModuleCachePath(
     llvm::vfs::FileSystem &VFS, StringRef SpecificModuleCachePath,
-    StringRef ExistingModuleCachePath, StringRef ASTFilename,
+    StringRef ExistingSpecificModuleCachePath, StringRef ASTFilename,
     DiagnosticsEngine *Diags, const LangOptions &LangOpts,
     const PreprocessorOptions &PPOpts, const HeaderSearchOptions &HSOpts,
     const HeaderSearchOptions &ASTFileHSOpts) {
   if (!LangOpts.Modules || PPOpts.AllowPCHWithDifferentModulesCachePath ||
-      SpecificModuleCachePath == ExistingModuleCachePath)
+      SpecificModuleCachePath == ExistingSpecificModuleCachePath)
     return false;
   auto EqualOrErr =
-      VFS.equivalent(SpecificModuleCachePath, ExistingModuleCachePath);
+      VFS.equivalent(SpecificModuleCachePath, ExistingSpecificModuleCachePath);
   if (EqualOrErr && *EqualOrErr)
     return false;
   if (Diags) {
@@ -907,7 +987,8 @@ static bool checkModuleCachePath(
       Diags->Report(clang::diag::warn_ast_file_config_mismatch) << ASTFilename;
     else
       Diags->Report(diag::err_ast_file_modulecache_mismatch)
-          << SpecificModuleCachePath << ExistingModuleCachePath << ASTFilename;
+          << SpecificModuleCachePath << ExistingSpecificModuleCachePath
+          << ASTFilename;
   }
   return true;
 }
@@ -919,7 +1000,7 @@ bool PCHValidator::ReadHeaderSearchOptions(const HeaderSearchOptions &HSOpts,
   const HeaderSearch &HeaderSearchInfo = PP.getHeaderSearchInfo();
   return checkModuleCachePath(
       Reader.getFileManager().getVirtualFileSystem(), SpecificModuleCachePath,
-      HeaderSearchInfo.getModuleCachePath(), ASTFilename,
+      HeaderSearchInfo.getSpecificModuleCachePath(), ASTFilename,
       Complain ? &Reader.Diags : nullptr, PP.getLangOpts(),
       PP.getPreprocessorOpts(), HeaderSearchInfo.getHeaderSearchOpts(), HSOpts);
 }
@@ -1570,9 +1651,9 @@ bool ASTReader::ReadSpecializations(ModuleFile &M, BitstreamCursor &Cursor,
 void ASTReader::Error(StringRef Msg) const {
   Error(diag::err_fe_ast_file_malformed, Msg);
   if (PP.getLangOpts().Modules &&
-      !PP.getHeaderSearchInfo().getModuleCachePath().empty()) {
+      !PP.getHeaderSearchInfo().getSpecificModuleCachePath().empty()) {
     Diag(diag::note_module_cache_path)
-      << PP.getHeaderSearchInfo().getModuleCachePath();
+        << PP.getHeaderSearchInfo().getSpecificModuleCachePath();
   }
 }
 
@@ -3020,6 +3101,14 @@ ASTReader::ASTReadResult ASTReader::ReadOptionsBlock(
       bool Complain = (ClientLoadCapabilities & ARR_ConfigurationMismatch) == 0;
       if (ParseLanguageOptions(Record, Filename, Complain, Listener,
                                AllowCompatibleConfigurationMismatch))
+        Result = ConfigurationMismatch;
+      break;
+    }
+
+    case CODEGEN_OPTIONS: {
+      bool Complain = (ClientLoadCapabilities & ARR_ConfigurationMismatch) == 0;
+      if (ParseCodeGenOptions(Record, Filename, Complain, Listener,
+                              AllowCompatibleConfigurationMismatch))
         Result = ConfigurationMismatch;
       break;
     }
@@ -4788,10 +4877,10 @@ bool ASTReader::loadGlobalIndex() {
 
   // Try to load the global index.
   TriedLoadingGlobalIndex = true;
-  StringRef ModuleCachePath
-    = getPreprocessor().getHeaderSearchInfo().getModuleCachePath();
+  StringRef SpecificModuleCachePath =
+      getPreprocessor().getHeaderSearchInfo().getSpecificModuleCachePath();
   std::pair<GlobalModuleIndex *, llvm::Error> Result =
-      GlobalModuleIndex::readIndex(ModuleCachePath);
+      GlobalModuleIndex::readIndex(SpecificModuleCachePath);
   if (llvm::Error Err = std::move(Result.second)) {
     assert(!Result.first);
     consumeError(std::move(Err)); // FIXME this drops errors on the floor.
@@ -5791,31 +5880,40 @@ namespace {
 
   class SimplePCHValidator : public ASTReaderListener {
     const LangOptions &ExistingLangOpts;
+    const CodeGenOptions &ExistingCGOpts;
     const TargetOptions &ExistingTargetOpts;
     const PreprocessorOptions &ExistingPPOpts;
     const HeaderSearchOptions &ExistingHSOpts;
-    std::string ExistingModuleCachePath;
+    std::string ExistingSpecificModuleCachePath;
     FileManager &FileMgr;
     bool StrictOptionMatches;
 
   public:
     SimplePCHValidator(const LangOptions &ExistingLangOpts,
+                       const CodeGenOptions &ExistingCGOpts,
                        const TargetOptions &ExistingTargetOpts,
                        const PreprocessorOptions &ExistingPPOpts,
                        const HeaderSearchOptions &ExistingHSOpts,
-                       StringRef ExistingModuleCachePath, FileManager &FileMgr,
-                       bool StrictOptionMatches)
-        : ExistingLangOpts(ExistingLangOpts),
+                       StringRef ExistingSpecificModuleCachePath,
+                       FileManager &FileMgr, bool StrictOptionMatches)
+        : ExistingLangOpts(ExistingLangOpts), ExistingCGOpts(ExistingCGOpts),
           ExistingTargetOpts(ExistingTargetOpts),
           ExistingPPOpts(ExistingPPOpts), ExistingHSOpts(ExistingHSOpts),
-          ExistingModuleCachePath(ExistingModuleCachePath), FileMgr(FileMgr),
-          StrictOptionMatches(StrictOptionMatches) {}
+          ExistingSpecificModuleCachePath(ExistingSpecificModuleCachePath),
+          FileMgr(FileMgr), StrictOptionMatches(StrictOptionMatches) {}
 
     bool ReadLanguageOptions(const LangOptions &LangOpts,
                              StringRef ModuleFilename, bool Complain,
                              bool AllowCompatibleDifferences) override {
       return checkLanguageOptions(ExistingLangOpts, LangOpts, ModuleFilename,
                                   nullptr, AllowCompatibleDifferences);
+    }
+
+    bool ReadCodeGenOptions(const CodeGenOptions &CGOpts,
+                            StringRef ModuleFilename, bool Complain,
+                            bool AllowCompatibleDifferences) override {
+      return checkCodegenOptions(ExistingCGOpts, CGOpts, ModuleFilename,
+                                 nullptr, AllowCompatibleDifferences);
     }
 
     bool ReadTargetOptions(const TargetOptions &TargetOpts,
@@ -5831,8 +5929,8 @@ namespace {
                                  bool Complain) override {
       return checkModuleCachePath(
           FileMgr.getVirtualFileSystem(), SpecificModuleCachePath,
-          ExistingModuleCachePath, ASTFilename, nullptr, ExistingLangOpts,
-          ExistingPPOpts, ExistingHSOpts, HSOpts);
+          ExistingSpecificModuleCachePath, ASTFilename, nullptr,
+          ExistingLangOpts, ExistingPPOpts, ExistingHSOpts, HSOpts);
     }
 
     bool ReadPreprocessorOptions(const PreprocessorOptions &PPOpts,
@@ -5865,7 +5963,13 @@ bool ASTReader::readASTFileControlBlock(
 
     // FIXME: This allows use of the VFS; we do not allow use of the
     // VFS when actually loading a module.
-    auto BufferOrErr = FileMgr.getBufferForFile(Filename);
+    auto Entry =
+        Filename == "-" ? FileMgr.getSTDIN() : FileMgr.getFileRef(Filename);
+    if (!Entry) {
+      llvm::consumeError(Entry.takeError());
+      return true;
+    }
+    auto BufferOrErr = FileMgr.getBufferForFile(*Entry);
     if (!BufferOrErr)
       return true;
     OwnedBuffer = std::move(*BufferOrErr);
@@ -6176,11 +6280,11 @@ bool ASTReader::readASTFileControlBlock(
 bool ASTReader::isAcceptableASTFile(
     StringRef Filename, FileManager &FileMgr, const ModuleCache &ModCache,
     const PCHContainerReader &PCHContainerRdr, const LangOptions &LangOpts,
-    const TargetOptions &TargetOpts, const PreprocessorOptions &PPOpts,
-    const HeaderSearchOptions &HSOpts, StringRef ExistingModuleCachePath,
-    bool RequireStrictOptionMatches) {
-  SimplePCHValidator validator(LangOpts, TargetOpts, PPOpts, HSOpts,
-                               ExistingModuleCachePath, FileMgr,
+    const CodeGenOptions &CGOpts, const TargetOptions &TargetOpts,
+    const PreprocessorOptions &PPOpts, const HeaderSearchOptions &HSOpts,
+    StringRef SpecificModuleCachePath, bool RequireStrictOptionMatches) {
+  SimplePCHValidator validator(LangOpts, CGOpts, TargetOpts, PPOpts, HSOpts,
+                               SpecificModuleCachePath, FileMgr,
                                RequireStrictOptionMatches);
   return !readASTFileControlBlock(Filename, FileMgr, ModCache, PCHContainerRdr,
                                   /*FindModuleFileExtensions=*/false, validator,
@@ -6586,6 +6690,28 @@ bool ASTReader::ParseLanguageOptions(const RecordData &Record,
 
   return Listener.ReadLanguageOptions(LangOpts, ModuleFilename, Complain,
                                       AllowCompatibleDifferences);
+}
+
+bool ASTReader::ParseCodeGenOptions(const RecordData &Record,
+                                    StringRef ModuleFilename, bool Complain,
+                                    ASTReaderListener &Listener,
+                                    bool AllowCompatibleDifferences) {
+  unsigned Idx = 0;
+  CodeGenOptions CGOpts;
+  using CK = CodeGenOptions::CompatibilityKind;
+#define CODEGENOPT(Name, Bits, Default, Compatibility)                         \
+  if constexpr (CK::Compatibility != CK::Benign)                               \
+    CGOpts.Name = static_cast<unsigned>(Record[Idx++]);
+#define ENUM_CODEGENOPT(Name, Type, Bits, Default, Compatibility)              \
+  if constexpr (CK::Compatibility != CK::Benign)                               \
+    CGOpts.set##Name(static_cast<clang::CodeGenOptions::Type>(Record[Idx++]));
+#define DEBUGOPT(Name, Bits, Default, Compatibility)
+#define VALUE_DEBUGOPT(Name, Bits, Default, Compatibility)
+#define ENUM_DEBUGOPT(Name, Type, Bits, Default, Compatibility)
+#include "clang/Basic/CodeGenOptions.def"
+
+  return Listener.ReadCodeGenOptions(CGOpts, ModuleFilename, Complain,
+                                     AllowCompatibleDifferences);
 }
 
 bool ASTReader::ParseTargetOptions(const RecordData &Record,
@@ -11247,6 +11373,7 @@ void ASTReader::pushExternalDeclIntoScope(NamedDecl *D, DeclarationName Name) {
 ASTReader::ASTReader(Preprocessor &PP, ModuleCache &ModCache,
                      ASTContext *Context,
                      const PCHContainerReader &PCHContainerRdr,
+                     const CodeGenOptions &CodeGenOpts,
                      ArrayRef<std::shared_ptr<ModuleFileExtension>> Extensions,
                      StringRef isysroot,
                      DisableValidationForModuleKind DisableValidationKind,
@@ -11261,6 +11388,7 @@ ASTReader::ASTReader(Preprocessor &PP, ModuleCache &ModCache,
       SourceMgr(PP.getSourceManager()), FileMgr(PP.getFileManager()),
       PCHContainerRdr(PCHContainerRdr), Diags(PP.getDiagnostics()),
       StackHandler(Diags), PP(PP), ContextObj(Context),
+      CodeGenOpts(CodeGenOpts),
       ModuleMgr(PP.getFileManager(), ModCache, PCHContainerRdr,
                 PP.getHeaderSearchInfo()),
       DummyIdResolver(PP), ReadTimer(std::move(ReadTimer)), isysroot(isysroot),

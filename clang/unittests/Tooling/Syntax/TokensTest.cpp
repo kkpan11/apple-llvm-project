@@ -20,6 +20,7 @@
 #include "clang/Basic/SourceManager.h"
 #include "clang/Basic/TokenKinds.def"
 #include "clang/Basic/TokenKinds.h"
+#include "clang/Driver/CreateInvocationFromArgs.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/FrontendAction.h"
 #include "clang/Frontend/Utils.h"
@@ -254,7 +255,7 @@ public:
       llvm::makeIntrusiveRefCnt<DiagnosticsEngine>(DiagnosticIDs::create(),
                                                    DiagOpts);
   IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> FS =
-      new llvm::vfs::InMemoryFileSystem;
+      llvm::makeIntrusiveRefCnt<llvm::vfs::InMemoryFileSystem>();
   llvm::IntrusiveRefCntPtr<FileManager> FileMgr =
       llvm::makeIntrusiveRefCnt<FileManager>(FileSystemOptions(), FS);
   llvm::IntrusiveRefCntPtr<SourceManager> SourceMgr =

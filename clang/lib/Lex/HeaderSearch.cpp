@@ -221,7 +221,7 @@ std::string HeaderSearch::getPrebuiltModuleFileName(StringRef ModuleName,
   // file.
   for (const std::string &Dir : HSOpts.PrebuiltModulePaths) {
     SmallString<256> Result(Dir);
-    llvm::sys::fs::make_absolute(Result);
+    FileMgr.makeAbsolutePath(Result);
     if (ModuleName.contains(':'))
       // The separator of C++20 modules partitions (':') is not good for file
       // systems, here clang and gcc choose '-' by default since it is not a
@@ -243,11 +243,11 @@ std::string HeaderSearch::getPrebuiltImplicitModuleFileName(Module *Module) {
       getModuleMap().getModuleMapFileForUniquing(Module);
   StringRef ModuleName = Module->Name;
   StringRef ModuleMapPath = ModuleMap->getName();
-  StringRef ModuleCacheHash = HSOpts.DisableModuleHash ? "" : getModuleHash();
+  StringRef ContextHash = HSOpts.DisableModuleHash ? "" : getContextHash();
   for (const std::string &Dir : HSOpts.PrebuiltModulePaths) {
     SmallString<256> CachePath(Dir);
-    llvm::sys::fs::make_absolute(CachePath);
-    llvm::sys::path::append(CachePath, ModuleCacheHash);
+    FileMgr.makeAbsolutePath(CachePath);
+    llvm::sys::path::append(CachePath, ContextHash);
     std::string FileName =
         getCachedModuleFileNameImpl(ModuleName, ModuleMapPath, CachePath);
     if (!FileName.empty() && getFileMgr().getOptionalFileRef(FileName))
@@ -259,7 +259,7 @@ std::string HeaderSearch::getPrebuiltImplicitModuleFileName(Module *Module) {
 std::string HeaderSearch::getCachedModuleFileName(StringRef ModuleName,
                                                   StringRef ModuleMapPath) {
   return getCachedModuleFileNameImpl(ModuleName, ModuleMapPath,
-                                     getModuleCachePath());
+                                     getSpecificModuleCachePath());
 }
 
 std::string HeaderSearch::getCachedModuleFileNameImpl(StringRef ModuleName,

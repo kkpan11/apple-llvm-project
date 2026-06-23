@@ -28,7 +28,8 @@ namespace {
 class HeaderSearchTest : public ::testing::Test {
 protected:
   HeaderSearchTest()
-      : VFS(new llvm::vfs::InMemoryFileSystem), FileMgr(FileMgrOpts, VFS),
+      : VFS(llvm::makeIntrusiveRefCnt<llvm::vfs::InMemoryFileSystem>()),
+        FileMgr(FileMgrOpts, VFS),
         Diags(DiagnosticIDs::create(), DiagOpts, new IgnoringDiagConsumer()),
         SourceMgr(Diags, FileMgr), TargetOpts(new TargetOptions),
         Search(HSOpts, SourceMgr, Diags, LangOpts, Target.get()) {

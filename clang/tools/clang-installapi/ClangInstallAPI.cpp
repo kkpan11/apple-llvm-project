@@ -84,10 +84,11 @@ static bool run(ArrayRef<const char *> Args, const char *ProgName) {
 
   // Create file manager for all file operations and holding in-memory generated
   // inputs.
-  llvm::IntrusiveRefCntPtr<llvm::vfs::OverlayFileSystem> OverlayFileSystem(
-      new llvm::vfs::OverlayFileSystem(llvm::vfs::getRealFileSystem()));
-  llvm::IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> InMemoryFileSystem(
-      new llvm::vfs::InMemoryFileSystem);
+  auto OverlayFileSystem =
+      llvm::makeIntrusiveRefCnt<llvm::vfs::OverlayFileSystem>(
+          llvm::vfs::getRealFileSystem());
+  auto InMemoryFileSystem =
+      llvm::makeIntrusiveRefCnt<llvm::vfs::InMemoryFileSystem>();
   OverlayFileSystem->pushOverlay(InMemoryFileSystem);
   IntrusiveRefCntPtr<clang::FileManager> FM =
       llvm::makeIntrusiveRefCnt<FileManager>(clang::FileSystemOptions(),
@@ -117,8 +118,6 @@ static bool run(ArrayRef<const char *> Args, const char *ProgName) {
   CI->setVirtualFileSystem(FM->getVirtualFileSystemPtr());
   CI->setFileManager(FM);
   CI->createDiagnostics();
-  if (!CI->hasDiagnostics())
-    return EXIT_FAILURE;
 
   // Execute, verify and gather AST results.
   // An invocation is ran for each unique target triple and for each header

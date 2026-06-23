@@ -45,7 +45,7 @@ protected:
       llvm::makeIntrusiveRefCnt<DiagnosticsEngine>(DiagnosticIDs::create(),
                                                    DiagOpts);
   IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> FS =
-      new llvm::vfs::InMemoryFileSystem;
+      llvm::makeIntrusiveRefCnt<llvm::vfs::InMemoryFileSystem>();
   IntrusiveRefCntPtr<FileManager> FileMgr =
       llvm::makeIntrusiveRefCnt<FileManager>(FileSystemOptions(), FS);
   IntrusiveRefCntPtr<SourceManager> SourceMgr =

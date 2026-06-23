@@ -50,9 +50,11 @@ class RewriterTestContext {
  public:
    RewriterTestContext()
        : Diagnostics(DiagnosticIDs::create(), DiagOpts),
-         InMemoryFileSystem(new llvm::vfs::InMemoryFileSystem),
+         InMemoryFileSystem(
+             llvm::makeIntrusiveRefCnt<llvm::vfs::InMemoryFileSystem>()),
          OverlayFileSystem(
-             new llvm::vfs::OverlayFileSystem(llvm::vfs::getRealFileSystem())),
+             llvm::makeIntrusiveRefCnt<llvm::vfs::OverlayFileSystem>(
+                 llvm::vfs::getRealFileSystem())),
          Files(FileSystemOptions(), OverlayFileSystem),
          Sources(Diagnostics, Files), Rewrite(Sources, Options) {
      Diagnostics.setClient(&DiagnosticPrinter, false);

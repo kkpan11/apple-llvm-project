@@ -11,6 +11,7 @@
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/DeclGroup.h"
 #include "clang/Basic/Builtins.h"
+#include "clang/Basic/DiagnosticFrontend.h"
 #include "clang/Basic/DiagnosticOptions.h"
 #include "clang/Basic/FileEntry.h"
 #include "clang/Basic/LangOptions.h"
@@ -23,7 +24,6 @@
 #include "clang/Basic/TokenKinds.h"
 #include "clang/Frontend/ASTUnit.h"
 #include "clang/Frontend/CompilerInstance.h"
-#include "clang/Frontend/FrontendDiagnostic.h"
 #include "clang/Frontend/FrontendPluginRegistry.h"
 #include "clang/Frontend/IncludeTreePPActions.h"
 #include "clang/Frontend/LayoutOverrideSource.h"
@@ -1103,8 +1103,9 @@ bool FrontendAction::BeginSourceFile(CompilerInstance &CI,
         if (ASTReader::isAcceptableASTFile(
                 Dir->path(), FileMgr, CI.getModuleCache(),
                 CI.getPCHContainerReader(), CI.getLangOpts(),
-                CI.getTargetOpts(), CI.getPreprocessorOpts(),
-                CI.getHeaderSearchOpts(), SpecificModuleCachePath,
+                CI.getCodeGenOpts(), CI.getTargetOpts(),
+                CI.getPreprocessorOpts(), CI.getHeaderSearchOpts(),
+                SpecificModuleCachePath,
                 /*RequireStrictOptionMatches=*/true)) {
           PPOpts.ImplicitPCHInclude = std::string(Dir->path());
           Found = true;
@@ -1465,7 +1466,7 @@ llvm::Error FrontendAction::Execute() {
   if (CI.shouldBuildGlobalModuleIndex() && CI.hasFileManager() &&
       CI.hasPreprocessor()) {
     StringRef Cache =
-        CI.getPreprocessor().getHeaderSearchInfo().getModuleCachePath();
+        CI.getPreprocessor().getHeaderSearchInfo().getSpecificModuleCachePath();
     if (!Cache.empty()) {
       if (llvm::Error Err = GlobalModuleIndex::writeIndex(
               CI.getFileManager(), CI.getPCHContainerReader(), Cache)) {

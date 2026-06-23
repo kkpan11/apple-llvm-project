@@ -8,6 +8,7 @@
 
 #include "CacheLauncherMode.h"
 #include "clang/Basic/DiagnosticCAS.h"
+#include "clang/Driver/CreateInvocationFromArgs.h"
 #include "clang/Driver/Driver.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/CompilerInvocation.h"

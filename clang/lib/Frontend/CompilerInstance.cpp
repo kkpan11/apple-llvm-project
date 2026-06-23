@@ -14,6 +14,7 @@
 #include "clang/Basic/CharInfo.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/DiagnosticCAS.h"
+#include "clang/Basic/DiagnosticFrontend.h"
 #include "clang/Basic/DiagnosticOptions.h"
 #include "clang/Basic/FileManager.h"
 #include "clang/Basic/LangStandard.h"
@@ -29,7 +30,6 @@
 #include "clang/Frontend/CompileJobCacheResult.h"
 #include "clang/Frontend/FrontendAction.h"
 #include "clang/Frontend/FrontendActions.h"
-#include "clang/Frontend/FrontendDiagnostic.h"
 #include "clang/Frontend/FrontendPluginRegistry.h"
 #include "clang/Frontend/LogDiagnosticPrinter.h"
 #include "clang/Frontend/SARIFDiagnosticPrinter.h"
@@ -80,10 +80,11 @@ using namespace clang;
 CompilerInstance::CompilerInstance(
     std::shared_ptr<CompilerInvocation> Invocation,
     std::shared_ptr<PCHContainerOperations> PCHContainerOps,
-    ModuleCache *ModCache)
-    : ModuleLoader(/*BuildingModule=*/ModCache),
+    std::shared_ptr<ModuleCache> ModCache)
+    : ModuleLoader(/*BuildingModule=*/ModCache != nullptr),
       Invocation(std::move(Invocation)),
-      ModCache(ModCache ? ModCache : createCrossProcessModuleCache()),
+      ModCache(ModCache ? std::move(ModCache)
+                        : createCrossProcessModuleCache()),
       ThePCHContainerOperations(std::move(PCHContainerOps)) {
   assert(this->Invocation && "Invocation must not be null");
 }
@@ -508,10 +509,11 @@ void CompilerInstance::createPreprocessor(TranslationUnitKind TUKind) {
   PP->setPreprocessedOutput(getPreprocessorOutputOpts().ShowCPP);
 
   if (PP->getLangOpts().Modules && PP->getLangOpts().ImplicitModules) {
-    std::string ModuleHash = getInvocation().getModuleHash(getDiagnostics());
-    PP->getHeaderSearchInfo().setModuleHash(ModuleHash);
-    PP->getHeaderSearchInfo().setModuleCachePath(
-        getSpecificModuleCachePath(ModuleHash));
+    std::string ContextHash =
+        getInvocation().computeContextHash(getDiagnostics());
+    PP->getHeaderSearchInfo().setContextHash(ContextHash);
+    PP->getHeaderSearchInfo().setSpecificModuleCachePath(
+        getSpecificModuleCachePath(ContextHash));
   }
 
   // Handle generating dependencies, if requested.
@@ -568,7 +570,8 @@ void CompilerInstance::createPreprocessor(TranslationUnitKind TUKind) {
     PP->setDependencyDirectivesGetter(*GetDependencyDirectives);
 }
 
-std::string CompilerInstance::getSpecificModuleCachePath(StringRef ModuleHash) {
+std::string
+CompilerInstance::getSpecificModuleCachePath(StringRef ContextHash) {
   assert(FileMgr && "Specific module cache path requires a FileManager");
 
   // Set up the module path, including the hash for the module-creation options.
@@ -576,7 +579,7 @@ std::string CompilerInstance::getSpecificModuleCachePath(StringRef ModuleHash) {
   normalizeModuleCachePath(*FileMgr, getHeaderSearchOpts().ModuleCachePath,
                            SpecificModuleCache);
   if (!SpecificModuleCache.empty() && !getHeaderSearchOpts().DisableModuleHash)
-    llvm::sys::path::append(SpecificModuleCache, ModuleHash);
+    llvm::sys::path::append(SpecificModuleCache, ContextHash);
   return std::string(SpecificModuleCache);
 }
 
@@ -673,7 +676,7 @@ void CompilerInstance::createPCHExternalASTSource(
   TheASTReader = createPCHExternalASTSource(
       Path, getHeaderSearchOpts().Sysroot, DisableValidation,
       AllowPCHWithCompilerErrors, getPreprocessor(), getModuleCache(),
-      getASTContext(), getPCHContainerReader(),
+      getASTContext(), getPCHContainerReader(), getCodeGenOpts(),
       getFrontendOpts().ModuleFileExtensions, DependencyCollectors,
       DeserializationListener, OwnDeserializationListener, Preamble,
       getFrontendOpts().UseGlobalModuleIndex, getOrCreateObjectStore(),
@@ -686,6 +689,7 @@ IntrusiveRefCntPtr<ASTReader> CompilerInstance::createPCHExternalASTSource(
     DisableValidationForModuleKind DisableValidation,
     bool AllowPCHWithCompilerErrors, Preprocessor &PP, ModuleCache &ModCache,
     ASTContext &Context, const PCHContainerReader &PCHContainerRdr,
+    const CodeGenOptions &CodeGenOpts,
     ArrayRef<std::shared_ptr<ModuleFileExtension>> Extensions,
     ArrayRef<std::shared_ptr<DependencyCollector>> DependencyCollectors,
     void *DeserializationListener, bool OwnDeserializationListener,
@@ -696,7 +700,7 @@ IntrusiveRefCntPtr<ASTReader> CompilerInstance::createPCHExternalASTSource(
       PP.getHeaderSearchInfo().getHeaderSearchOpts();
 
   auto Reader = llvm::makeIntrusiveRefCnt<ASTReader>(
-      PP, ModCache, &Context, PCHContainerRdr, Extensions,
+      PP, ModCache, &Context, PCHContainerRdr, CodeGenOpts, Extensions,
       Sysroot.empty() ? "" : Sysroot.data(), DisableValidation,
       AllowPCHWithCompilerErrors, /*AllowConfigurationMismatch*/ false,
       HSOpts.ModulesValidateSystemHeaders,
@@ -1403,8 +1407,8 @@ std::unique_ptr<CompilerInstance> CompilerInstance::cloneForModuleCompileImpl(
   DiagnosticOptions &DiagOpts = Invocation->getDiagnosticOpts();
 
   DiagOpts.VerifyDiagnostics = 0;
-  assert(getInvocation().getModuleHash(getDiagnostics()) ==
-         Invocation->getModuleHash(getDiagnostics()) &&
+  assert(getInvocation().computeContextHash(getDiagnostics()) ==
+             Invocation->computeContextHash(getDiagnostics()) &&
          "Module hash mismatch!");
 
   // Construct a compiler instance that will be used to actually create the
@@ -1412,7 +1416,7 @@ std::unique_ptr<CompilerInstance> CompilerInstance::cloneForModuleCompileImpl(
   // CompilerInstance::CompilerInstance is responsible for finalizing the
   // buffers to prevent use-after-frees.
   auto InstancePtr = std::make_unique<CompilerInstance>(
-      std::move(Invocation), getPCHContainerOperations(), &getModuleCache());
+      std::move(Invocation), getPCHContainerOperations(), ModCache);
   auto &Instance = *InstancePtr;
 
   auto &Inv = Instance.getInvocation();
@@ -1905,7 +1909,10 @@ void CompilerInstance::createASTReader() {
   // If we're implicitly building modules but not currently recursively
   // building a module, check whether we need to prune the module cache.
   if (getSourceManager().getModuleBuildStack().empty() &&
-      !getPreprocessor().getHeaderSearchInfo().getModuleCachePath().empty())
+      !getPreprocessor()
+           .getHeaderSearchInfo()
+           .getSpecificModuleCachePath()
+           .empty())
     ModCache->maybePrune(getHeaderSearchOpts().ModuleCachePath,
                          getHeaderSearchOpts().ModuleCachePruneInterval,
                          getHeaderSearchOpts().ModuleCachePruneAfter);
@@ -1921,7 +1928,8 @@ void CompilerInstance::createASTReader() {
                                               "Reading modules", *timerGroup);
   TheASTReader = llvm::makeIntrusiveRefCnt<ASTReader>(
       getPreprocessor(), getModuleCache(), &getASTContext(),
-      getPCHContainerReader(), getFrontendOpts().ModuleFileExtensions,
+      getPCHContainerReader(), getCodeGenOpts(),
+      getFrontendOpts().ModuleFileExtensions,
       Sysroot.empty() ? "" : Sysroot.c_str(),
       PPOpts.DisablePCHOrModuleValidation,
       /*AllowASTWithCompilerErrors=*/FEOpts.AllowPCMWithCompilerErrors,
@@ -2473,7 +2481,10 @@ void CompilerInstance::makeModuleVisible(Module *Mod,
 
 GlobalModuleIndex *CompilerInstance::loadGlobalModuleIndex(
     SourceLocation TriggerLoc) {
-  if (getPreprocessor().getHeaderSearchInfo().getModuleCachePath().empty())
+  if (getPreprocessor()
+          .getHeaderSearchInfo()
+          .getSpecificModuleCachePath()
+          .empty())
     return nullptr;
   if (!TheASTReader)
     createASTReader();
@@ -2488,10 +2499,12 @@ GlobalModuleIndex *CompilerInstance::loadGlobalModuleIndex(
   if (!GlobalIndex && shouldBuildGlobalModuleIndex() && hasFileManager() &&
       hasPreprocessor()) {
     llvm::sys::fs::create_directories(
-      getPreprocessor().getHeaderSearchInfo().getModuleCachePath());
+        getPreprocessor().getHeaderSearchInfo().getSpecificModuleCachePath());
     if (llvm::Error Err = GlobalModuleIndex::writeIndex(
             getFileManager(), getPCHContainerReader(),
-            getPreprocessor().getHeaderSearchInfo().getModuleCachePath())) {
+            getPreprocessor()
+                .getHeaderSearchInfo()
+                .getSpecificModuleCachePath())) {
       // FIXME this drops the error on the floor. This code is only used for
       // typo correction and drops more than just this one source of errors
       // (such as the directory creation failure above). It should handle the
@@ -2529,7 +2542,9 @@ GlobalModuleIndex *CompilerInstance::loadGlobalModuleIndex(
     if (RecreateIndex) {
       if (llvm::Error Err = GlobalModuleIndex::writeIndex(
               getFileManager(), getPCHContainerReader(),
-              getPreprocessor().getHeaderSearchInfo().getModuleCachePath())) {
+              getPreprocessor()
+                  .getHeaderSearchInfo()
+                  .getSpecificModuleCachePath())) {
         // FIXME As above, this drops the error on the floor.
         consumeError(std::move(Err));
         return nullptr;

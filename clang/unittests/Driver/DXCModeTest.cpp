@@ -15,6 +15,7 @@
 #include "clang/Basic/LLVM.h"
 #include "clang/Basic/TargetOptions.h"
 #include "clang/Driver/Compilation.h"
+#include "clang/Driver/CreateInvocationFromArgs.h"
 #include "clang/Driver/Driver.h"
 #include "clang/Driver/ToolChain.h"
 #include "clang/Frontend/CompilerInstance.h"
@@ -55,8 +56,8 @@ static void validateTargetProfile(
 }
 
 TEST(DxcModeTest, TargetProfileValidation) {
-  IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> InMemoryFileSystem(
-      new llvm::vfs::InMemoryFileSystem);
+  auto InMemoryFileSystem =
+      llvm::makeIntrusiveRefCnt<llvm::vfs::InMemoryFileSystem>();
 
   InMemoryFileSystem->addFile("foo.hlsl", 0,
                               llvm::MemoryBuffer::getMemBuffer("\n"));
@@ -103,8 +104,8 @@ TEST(DxcModeTest, TargetProfileValidation) {
 }
 
 TEST(DxcModeTest, ValidatorVersionValidation) {
-  IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> InMemoryFileSystem(
-      new llvm::vfs::InMemoryFileSystem);
+  auto InMemoryFileSystem =
+      llvm::makeIntrusiveRefCnt<llvm::vfs::InMemoryFileSystem>();
 
   InMemoryFileSystem->addFile("foo.hlsl", 0,
                               llvm::MemoryBuffer::getMemBuffer("\n"));
@@ -206,8 +207,8 @@ TEST(DxcModeTest, ValidatorVersionValidation) {
 }
 
 TEST(DxcModeTest, DefaultEntry) {
-  IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> InMemoryFileSystem(
-      new llvm::vfs::InMemoryFileSystem);
+  auto InMemoryFileSystem =
+      llvm::makeIntrusiveRefCnt<llvm::vfs::InMemoryFileSystem>();
 
   InMemoryFileSystem->addFile("foo.hlsl", 0,
                               llvm::MemoryBuffer::getMemBuffer("\n"));
