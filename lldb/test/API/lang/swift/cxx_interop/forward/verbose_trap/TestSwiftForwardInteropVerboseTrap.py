@@ -9,7 +9,7 @@ from lldbsuite.test.decorators import *
 class TestSwiftForwardInteropVerboseTrap(TestBase):
 
     @swiftTest
-    @@skipIf(bugnumber="rdar://179891399")
+    @skipIf(bugnumber="rdar://179891399")
     def test(self):
         self.build()
         target = self.dbg.CreateTarget(self.getBuildArtifact("a.out"))
