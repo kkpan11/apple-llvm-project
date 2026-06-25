@@ -79,6 +79,10 @@ public:
   swift::remote::RemoteAddress
   getSymbolAddress(const std::string &name) override;
 
+  swift::remote::RemoteAddress
+  getSymbolAddress(swift::remote::RemoteAddress image_start,
+                   const std::string &name) override;
+
   std::optional<swift::remote::RemoteAbsolutePointer>
   resolvePointerAsSymbol(swift::remote::RemoteAddress address) override;
 

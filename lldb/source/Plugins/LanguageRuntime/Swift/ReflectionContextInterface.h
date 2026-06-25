@@ -80,10 +80,6 @@ public:
   virtual std::optional<uint32_t>
   AddImage(swift::remote::RemoteAddress image_start,
            llvm::SmallVector<llvm::StringRef, 1> likely_module_names = {}) = 0;
-  virtual std::optional<uint32_t>
-  ReadELF(swift::remote::RemoteAddress ImageStart,
-          std::optional<llvm::sys::MemoryBlock> FileBuffer,
-          llvm::SmallVector<llvm::StringRef, 1> likely_module_names = {}) = 0;
   virtual llvm::Expected<const swift::reflection::TypeRef &>
   GetTypeRef(llvm::StringRef mangled_type_name) = 0;
   virtual llvm::Expected<const swift::reflection::TypeRef &>

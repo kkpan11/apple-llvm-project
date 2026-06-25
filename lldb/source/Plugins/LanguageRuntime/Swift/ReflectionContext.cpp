@@ -132,16 +132,6 @@ public:
     return id;
   }
 
-  std::optional<uint32_t> ReadELF(
-      swift::remote::RemoteAddress ImageStart,
-      std::optional<llvm::sys::MemoryBlock> FileBuffer,
-      llvm::SmallVector<llvm::StringRef, 1> likely_module_names = {}) override {
-    auto id = m_reflection_ctx.readELF(ImageStart, FileBuffer,
-                                    likely_module_names);
-    m_forwader.SetImageAdded(id.has_value());
-    return id;
-  }
-
   llvm::Expected<const swift::reflection::TypeRef &>
   GetTypeRef(StringRef mangled_type_name) override {
     swift::Demangle::Demangler dem;
