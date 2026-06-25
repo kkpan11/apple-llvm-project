@@ -140,15 +140,6 @@ class TargetReflectionContext : public ReflectionContextInterface {
       return id;
     }
 
-    std::optional<uint32_t>
-    ReadELF(swift::remote::RemoteAddress image_start,
-            llvm::SmallVector<llvm::StringRef, 1> likely_module_names) {
-      assert(!IsEmbedded() && "Embedded Swift has no reflection metadata");
-      auto id = m_reflection_ctx.readELF(image_start, likely_module_names);
-      m_forwader.SetImageAdded(id.has_value());
-      return id;
-    }
-
     /// Sets the descriptor finder, and on scope exit clears it out.
     auto PushDescriptorFinderAndPopOnExit(
         swift::reflection::DescriptorFinder *descriptor_finder) {
@@ -561,12 +552,6 @@ public:
   AddImage(swift::remote::RemoteAddress image_start,
            llvm::SmallVector<llvm::StringRef, 1> likely_module_names) override {
     return GetRegular().AddImage(image_start, likely_module_names);
-  }
-
-  std::optional<uint32_t> ReadELF(
-      swift::remote::RemoteAddress ImageStart,
-      llvm::SmallVector<llvm::StringRef, 1> likely_module_names = {}) override {
-    return GetRegular().ReadELF(ImageStart, likely_module_names);
   }
 
   llvm::Expected<const swift::reflection::TypeRef &>
