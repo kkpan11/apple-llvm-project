@@ -554,14 +554,6 @@ public:
     return GetRegular().AddImage(image_start, likely_module_names);
   }
 
-  std::optional<uint32_t> ReadELF(
-      swift::remote::RemoteAddress ImageStart,
-      llvm::SmallVector<llvm::StringRef, 1> likely_module_names = {}) override {
-    auto id = m_reflection_ctx.readELF(ImageStart, likely_module_names);
-    m_forwader.SetImageAdded(id.has_value());
-    return id;
-  }
-
   llvm::Expected<const swift::reflection::TypeRef &>
   GetTypeRef(StringRef mangled_type_name) override {
     swift::Demangle::Demangler dem;

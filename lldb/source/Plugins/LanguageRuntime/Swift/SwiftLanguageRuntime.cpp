@@ -910,13 +910,7 @@ bool SwiftLanguageRuntime::AddModuleToReflectionContext(
       GetMemoryReader()->readMetadataFromFileCacheEnabled();
 
   std::optional<uint32_t> info_id;
-  if (obj_file->GetPluginName() == "elf") {
-    info_id = m_reflection_ctx->ReadELF(
-        swift::remote::RemoteAddress(
-            load_ptr, swift::remote::RemoteAddress::DefaultAddressSpace),
-        likely_module_names);
-  } else if (read_from_file_cache &&
-             obj_file->GetPluginName() == "mach-o") {
+  if (read_from_file_cache && obj_file->GetPluginName() == "mach-o") {
     info_id = AddObjectFileToReflectionContext(module_sp, likely_module_names);
     if (!info_id)
       info_id = m_reflection_ctx->AddImage(
