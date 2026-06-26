@@ -14,16 +14,8 @@
 #include "Protocol/ProtocolEvents.h"
 #include "Protocol/ProtocolTypes.h"
 #include "lldb/API/SBFileSpec.h"
+#include "lldb/Host/PosixApi.h"
 #include "llvm/Support/Error.h"
-
-#if defined(_WIN32)
-#define NOMINMAX
-#include <windows.h>
-
-#ifndef PATH_MAX
-#define PATH_MAX MAX_PATH
-#endif
-#endif
 
 using namespace llvm;
 
