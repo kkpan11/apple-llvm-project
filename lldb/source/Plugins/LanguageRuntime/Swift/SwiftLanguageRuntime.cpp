@@ -1055,6 +1055,21 @@ static bool ContainsPrivateDeclName(swift::Demangle::NodePointer node) {
   return false;
 }
 
+static bool IsClass(ValueObjectSP valobj_sp) {
+  if (!valobj_sp)
+    return false;
+  Flags flags = valobj_sp->GetTypeInfo();
+  return flags.Test(eTypeIsClass);
+}
+
+static bool IsPrivate(ValueObjectSP valobj_sp) {
+  if (!valobj_sp)
+    return false;
+  swift::Demangle::Context ctx;
+  auto *node = ctx.demangleSymbolAsNode(valobj_sp->GetMangledTypeName());
+  return ContainsPrivateDeclName(node);
+}
+
 llvm::Error
 SwiftLanguageRuntime::PrintObjectViaPointer(Stream &strm, ValueObject &object,
                                             Process &process) const {
@@ -1076,42 +1091,33 @@ SwiftLanguageRuntime::PrintObjectViaPointer(Stream &strm, ValueObject &object,
   if (addr == 0 || addr == LLDB_INVALID_ADDRESS)
     return llvm::createStringError("invalid address 0x%x", addr);
 
-  StringRef mangled_type_name;
-  if (auto static_object = object.GetStaticValue()) {
-    // Dynamic types can expose private types. This causes problems when
-    // querying the Swift runtime for classes by mangled name. Use the static
-    // type instead.
-    //
-    // Private types include a discriminator which is usable in the context of
-    // Swift ASTs and debug info, but not usable in the context of Swift runtime
-    // lookups. An example of a mangled name for a private type is:
-    //   $s1b8Subclass33_8CC290D01A98D2866F487ABF00E545A7LLCN
-    // This discriminator (_8CC290D01A98D2866F487ABF00E545A7) is a hash based on
-    // the path of the source file. This info is not present in the runtime, and
-    // thus cannot be used to lookup a type.
-    if (static_object->GetObjectRuntimeLanguage() == lldb::eLanguageTypeObjC) {
-      AppleObjCRuntimeV2 *objc_runtime = GetObjCRuntime();
-      if (!objc_runtime)
-        return llvm::createStringError("no Objective-C runtime");
-      return objc_runtime->GetObjectDescription(strm, *static_object);
+  ValueObjectSP static_object_sp = object.GetStaticValue();
+  if (static_object_sp)
+    if (static_object_sp->GetObjectRuntimeLanguage() == eLanguageTypeObjC) {
+      if (AppleObjCRuntimeV2 *objc_runtime = GetObjCRuntime())
+        return objc_runtime->GetObjectDescription(strm, *static_object_sp);
+      return llvm::createStringError("no Objective-C runtime");
     }
 
-    // Use the static type only if the dynamic type contains a private
-    // discriminator, and only if the static type is not an existential.
-    swift::Demangle::Context ctx;
-    auto *node = ctx.demangleSymbolAsNode(object.GetMangledTypeName());
-    if (ContainsPrivateDeclName(node)) {
-      Flags static_flags(static_object->GetTypeInfo());
-      if (static_flags.Test(eTypeIsProtocol))
-        return llvm::createStringError("existential types are unsupported");
-      // Use non-private static type, because the dynamic type is private.
-      mangled_type_name = static_object->GetMangledTypeName();
-    } else {
-      // Use non-private dynamic type.
-      mangled_type_name = object.GetMangledTypeName();
-    }
-  } else {
-    mangled_type_name = object.GetMangledTypeName();
+  StringRef mangled_type_name = object.GetMangledTypeName();
+
+  // Avoid using the mangled name of a private classes, as the runtime does not
+  // resolve these.
+  //
+  // Private types include a discriminator which are usable in the context of
+  // Swift ASTs and debug info, but not usable in Swift runtime lookups.
+  // An example of a mangled name for a private type is:
+  //   $s1b8Subclass33_8CC290D01A98D2866F487ABF00E545A7LLCN
+  // This discriminator (_8CC290D01A98D2866F487ABF00E545A7) is a hash based on
+  // the path of the source file. This info is not present in the runtime, and
+  // thus cannot be used to lookup a type.
+  if (IsClass(object.GetSP()) && IsPrivate(object.GetSP())) {
+    if (IsClass(static_object_sp) && !IsPrivate(static_object_sp))
+      // Although the dynamic class is private, the static class is not.
+      mangled_type_name = static_object_sp->GetMangledTypeName();
+    else
+      // Fall back to AnyObject when neither dynamic nor static class is public.
+      mangled_type_name = "$syXlD";
   }
 
   // Swift APIs that receive mangled names require the prefix removed.
