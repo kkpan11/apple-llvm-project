@@ -826,6 +826,54 @@ TEST(CachingOnDiskFileSystemTest, getRealPath) {
 }
 #endif
 
+#ifndef _WIN32
+// Disabled on Windows. As the create_link uses a hard link on
+// Windows, TempLink will fail if the target doesn't exist.
+TEST(CachingOnDiskFileSystemTest, FollowSymlinkBehavior) {
+  TempDir TestDir("caching-on-disk-file-system-test", /*Unique=*/true);
+  IntrusiveRefCntPtr<cas::CachingOnDiskFileSystem> FS =
+      cantFail(cas::createCachingOnDiskFileSystem(cas::createInMemoryCAS()));
+  ASSERT_FALSE(FS->setCurrentWorkingDirectory(TestDir.path()));
+
+  TempLink _broken_symlink("no_such_file", TestDir.path("broken_symlink"));
+  TempDir _adir(TestDir.path("a"));
+  TempDir _bdir(_adir.path("b"));
+  TempLink _b_broken_symlink("no_such_file", _bdir.path("broken_symlink"));
+  TempLink _working_symlink("a", TestDir.path("working_symlink"));
+
+  std::optional<cas::CASID> FileID;
+  llvm::vfs::Status Stat;
+
+  ASSERT_THAT_ERROR(
+      errorOrToExpected(FS->statusAndFileID(_broken_symlink.path(), FileID,
+                                            /*FollowSymlinks=*/false))
+          .moveInto(Stat),
+      Succeeded());
+
+  ASSERT_THAT_ERROR(
+      errorOrToExpected(FS->statusAndFileID(_broken_symlink.path() + "/subpath",
+                                            FileID,
+                                            /*FollowSymlinks=*/false))
+          .moveInto(Stat),
+      Failed());
+
+  ASSERT_THAT_ERROR(
+      errorOrToExpected(FS->statusAndFileID(_broken_symlink.path(), FileID,
+                                            /*FollowSymlinks=*/true))
+          .moveInto(Stat),
+      Failed());
+
+  ASSERT_THAT_ERROR(
+      errorOrToExpected(
+          FS->statusAndFileID(_working_symlink.path() + "/b/broken_symlink",
+                              FileID,
+                              /*FollowSymlinks=*/false))
+          .moveInto(Stat),
+      Succeeded());
+  EXPECT_TRUE(Stat.isSymlink());
+}
+#endif
+
 TEST(CachingOnDiskFileSystemTest, caseSensitivityFile) {
   TempDir D("caching-on-disk-file-system-test", /*Unique=*/true);
   IntrusiveRefCntPtr<cas::CachingOnDiskFileSystem> FS =
