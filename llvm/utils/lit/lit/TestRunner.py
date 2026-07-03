@@ -573,6 +573,7 @@ def executeBuiltinRm(cmd, cmd_shenv):
                 else:
                     shutil.rmtree(path, onerror=on_rm_error if force else None)
             else:
+                path = lit.util.get_windows_extended_path(path)
                 if force and not os.access(path, os.W_OK):
                     os.chmod(path, stat.S_IMODE(os.stat(path).st_mode) | stat.S_IWRITE)
                 os.remove(path)
@@ -670,6 +671,7 @@ def processRedirects(cmd, stdin_source, cmd_shenv, opened_files):
             redir_filename = (
                 to_unicode(redir_filename) if kIsWindows else to_bytes(redir_filename)
             )
+            redir_filename = lit.util.get_windows_extended_path(redir_filename)
             fd = open(redir_filename, mode)
         # Workaround a Win32 and/or subprocess bug when appending.
         #

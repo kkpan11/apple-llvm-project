@@ -554,3 +554,27 @@ def killProcessAndChildren(pid):
             psutilProc.kill()
         except psutil.NoSuchProcess:
             pass
+
+def get_windows_extended_path(path: str) -> str:
+    """
+    Return *path* in Windows extended-length (``\\\\?\\``) form.
+
+    On non-Windows platforms the path is returned unchanged. On Windows,
+    the path is made absolute and given the ``\\\\?\\`` prefix so it can
+    exceed the Win32 ``MAX_PATH`` (260-character) limit. UNC paths
+    (those beginning with ``\\\\``) are converted to the ``\\\\?\\UNC\\``
+    form instead.
+
+    Args:
+        path: The filesystem path to normalize.
+
+    Returns:
+        The original path on non-Windows platforms, otherwise the
+        absolute path in extended-length form.
+    """
+    if not platform.system() == "Windows":
+        return path
+    path = os.path.abspath(path)
+    if path.startswith("\\\\"):
+        return "\\\\?\\UNC\\{0}".format(path[2:])
+    return "\\\\?\\{0}".format(path)
