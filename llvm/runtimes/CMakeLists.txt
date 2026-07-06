@@ -4,6 +4,18 @@
 # the two files.
 
 set(COMMON_CMAKE_ARGS "-DHAVE_LLVM_LIT=ON;-DCLANG_RESOURCE_DIR=${CLANG_RESOURCE_DIR}")
+
+set(INDEX_STORE_CMAKE_ARGS "")
+if(LLVM_ENABLE_INDEX_STORE AND NOT XCODE AND NOT MSVC_IDE)
+  # Propagate the index store for non-IDE generators (same check as
+  # HandleLLVMOptions). Pass INDEX_DATA_STORE_PATH to share the same
+  # content-addressed index store as the top-level build instead of
+  # defaulting to a new one in the sub-build's directory.
+  list(APPEND INDEX_STORE_CMAKE_ARGS
+    "-DLLVM_ENABLE_INDEX_STORE=ON"
+    "-DINDEX_DATA_STORE_PATH=${INDEX_DATA_STORE_PATH}")
+endif()
+
 foreach(proj ${LLVM_ENABLE_RUNTIMES})
   set(proj_dir "${CMAKE_CURRENT_SOURCE_DIR}/../../${proj}")
   if(IS_DIRECTORY ${proj_dir} AND EXISTS ${proj_dir}/CMakeLists.txt)
@@ -94,6 +106,7 @@ function(builtin_default_target compiler_rt_path)
                                       -DCMAKE_CXX_COMPILER_WORKS=ON
                                       -DCMAKE_ASM_COMPILER_WORKS=ON
                                       ${COMMON_CMAKE_ARGS}
+                                      ${INDEX_STORE_CMAKE_ARGS}
                                       ${BUILTINS_CMAKE_ARGS}
                            PASSTHROUGH_PREFIXES COMPILER_RT
                                                 DARWIN
@@ -136,6 +149,7 @@ function(builtin_register_target compiler_rt_path name)
                                       -DCMAKE_ASM_COMPILER_WORKS=ON
                                       -DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON
                                       ${COMMON_CMAKE_ARGS}
+                                      ${INDEX_STORE_CMAKE_ARGS}
                                       ${${name}_extra_args}
                            USE_TOOLCHAIN
                            FOLDER "Compiler-RT"
@@ -276,6 +290,7 @@ function(runtime_default_target)
                                       -DCMAKE_Fortran_COMPILER_WORKS=ON
                                       -DCMAKE_ASM_COMPILER_WORKS=ON
                                       ${COMMON_CMAKE_ARGS}
+                                      ${INDEX_STORE_CMAKE_ARGS}
                                       ${RUNTIMES_CMAKE_ARGS}
                                       ${ARG_CMAKE_ARGS}
                            PASSTHROUGH_PREFIXES LLVM_ENABLE_RUNTIMES
@@ -423,6 +438,7 @@ function(runtime_register_target name)
                                       -DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON
                                       -DLLVM_RUNTIMES_TARGET=${name}
                                       ${COMMON_CMAKE_ARGS}
+                                      ${INDEX_STORE_CMAKE_ARGS}
                                       ${${name}_extra_args}
                            EXTRA_TARGETS ${${name}_extra_targets}
                                          ${${name}_test_targets}
