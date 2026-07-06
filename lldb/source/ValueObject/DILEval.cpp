@@ -18,6 +18,7 @@
 #include "lldb/ValueObject/ValueObject.h"
 #include "lldb/ValueObject/ValueObjectRegister.h"
 #include "lldb/ValueObject/ValueObjectVariable.h"
+#include "lldb/lldb-enumerations.h"
 #include "llvm/Support/FormatAdapters.h"
 #include <memory>
 

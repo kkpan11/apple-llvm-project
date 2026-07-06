@@ -54,7 +54,14 @@ GetTypeSystemFromCU(std::shared_ptr<StackFrame> ctx) {
                                                  ctx->GetFunctionName()));
 
   lldb::LanguageType language = symbol_context.comp_unit->GetLanguage();
-
+  // BEGIN SWIFT
+  if (language == lldb::eLanguageTypeSwift) {
+    lldb::TargetSP target_sp = ctx->CalculateTarget();
+    if (!target_sp)
+      return llvm::createStringError("no target in this context");
+    return target_sp->GetScratchTypeSystemForLanguage(language);
+  }
+  // END SWIFT
   symbol_context = ctx->GetSymbolContext(lldb::eSymbolContextModule);
   return symbol_context.module_sp->GetTypeSystemForLanguage(language);
 }
