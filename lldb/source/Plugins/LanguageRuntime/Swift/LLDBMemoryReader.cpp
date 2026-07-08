@@ -148,6 +148,51 @@ LLDBMemoryReader::getSymbolAddress(const std::string &name) {
       load_addr, swift::remote::RemoteAddress::DefaultAddressSpace);
 }
 
+swift::remote::RemoteAddress
+LLDBMemoryReader::getSymbolAddress(swift::remote::RemoteAddress image_start,
+                                   const std::string &name) {
+  if (name.empty())
+    return swift::remote::RemoteAddress();
+  Log *log = GetLog(LLDBLog::Types);
+
+  Target &target = m_process.GetTarget();
+  Address image_addr;
+  if (!target.ResolveLoadAddress(image_start.getRawAddress(), image_addr)) {
+    LLDB_LOG(log, "[MemoryReader] could not resolve image start {0:x} for {1}",
+             image_start.getRawAddress(), name);
+    return swift::remote::RemoteAddress();
+  }
+
+  ModuleSP module_sp = image_addr.GetModule();
+  if (!module_sp) {
+    LLDB_LOG(log, "[MemoryReader] no module at image start {0:x} for {1}",
+             image_start.getRawAddress(), name);
+    return swift::remote::RemoteAddress();
+  }
+
+  ConstString name_cs(name.c_str(), name.size());
+  SymbolContextList sc_list;
+  module_sp->FindSymbolsWithNameAndType(name_cs, lldb::eSymbolTypeAny, sc_list);
+
+  SymbolContext sym_ctx;
+  for (size_t idx = 0, e = sc_list.GetSize(); idx < e; ++idx) {
+    if (!sc_list.GetContextAtIndex(idx, sym_ctx) || !sym_ctx.symbol)
+      continue;
+    if (sym_ctx.symbol->GetType() == lldb::eSymbolTypeUndefined)
+      continue;
+    auto load_addr = sym_ctx.symbol->GetLoadAddress(&target);
+    if (load_addr == LLDB_INVALID_ADDRESS)
+      continue;
+    LLDB_LOGV(log, "[MemoryReader] {0} resolved to {1:x} within image", name,
+              load_addr);
+    return swift::remote::RemoteAddress(
+        load_addr, swift::remote::RemoteAddress::DefaultAddressSpace);
+  }
+  LLDB_LOG(log, "[MemoryReader] symbol resolution failed for {0} in image",
+           name);
+  return swift::remote::RemoteAddress();
+}
+
 std::unique_ptr<swift::SwiftObjectFileFormat>
 GetSwiftObjectFileFormat(llvm::Triple::ObjectFormatType obj_format_type) {
   std::unique_ptr<swift::SwiftObjectFileFormat> obj_file_format;
