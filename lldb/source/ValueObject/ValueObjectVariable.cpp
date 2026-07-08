@@ -169,6 +169,7 @@ bool ValueObjectVariable::UpdateValue() {
     // constant bytes can't be edited - sorry
     m_resolved_value.SetContext(Value::ContextType::Invalid, nullptr);
     SetAddressTypeOfChildren(eAddressTypeInvalid);
+    m_resolved_value_is_implicit = true;
   } else {
     lldb::addr_t loclist_base_load_addr = LLDB_INVALID_ADDRESS;
     ExecutionContext exe_ctx(GetExecutionContextRef());
@@ -193,6 +194,8 @@ bool ValueObjectVariable::UpdateValue() {
     if (maybe_value) {
       m_value = *maybe_value;
       m_resolved_value = m_value;
+      m_resolved_value_is_implicit =
+          expr_list.IsImplicit(&exe_ctx, nullptr, loclist_base_load_addr);
       m_value.SetContext(Value::ContextType::Variable, variable);
 
       CompilerType compiler_type = GetCompilerType();
@@ -303,6 +306,7 @@ bool ValueObjectVariable::UpdateValue() {
       m_error = Status::FromError(maybe_value.takeError());
       // could not find location, won't allow editing
       m_resolved_value.SetContext(Value::ContextType::Invalid, nullptr);
+      m_resolved_value_is_implicit = true;
     }
   }
 
@@ -411,10 +415,21 @@ const char *ValueObjectVariable::GetLocationAsCString() {
     return ValueObject::GetLocationAsCString();
 }
 
+bool ValueObjectVariable::CanSetValue() {
+  // Refresh the resolved location so m_resolved_value_is_implicit is current.
+  UpdateValueIfNeeded();
+  return !m_resolved_value_is_implicit && ValueObject::CanSetValue();
+}
+
 bool ValueObjectVariable::SetValueFromCString(const char *value_str,
                                               Status &error) {
   if (!UpdateValueIfNeeded()) {
     error = Status::FromErrorString("unable to update value before writing");
+    return false;
+  }
+
+  if (m_resolved_value_is_implicit) {
+    error = Status::FromErrorString("Cannot change the value of a constant");
     return false;
   }
 
@@ -444,6 +459,11 @@ bool ValueObjectVariable::SetValueFromCString(const char *value_str,
 bool ValueObjectVariable::SetData(DataExtractor &data, Status &error) {
   if (!UpdateValueIfNeeded()) {
     error = Status::FromErrorString("unable to update value before writing");
+    return false;
+  }
+
+  if (m_resolved_value_is_implicit) {
+    error = Status::FromErrorString("Cannot change the value of a constant");
     return false;
   }
 
