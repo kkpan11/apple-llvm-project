@@ -93547,6 +93547,34 @@ fail:
 }
 
 
+SWIGINTERN PyObject *_wrap_SBValue_CanSetValue(PyObject *self, PyObject *args) {
+  PyObject *resultobj = 0;
+  lldb::SBValue *arg1 = 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  PyObject *swig_obj[1] ;
+  bool result;
+  
+  (void)self;
+  if (!args) SWIG_fail;
+  swig_obj[0] = args;
+  res1 = SWIG_ConvertPtr(swig_obj[0], &argp1,SWIGTYPE_p_lldb__SBValue, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "SBValue_CanSetValue" "', argument " "1"" of type '" "lldb::SBValue *""'"); 
+  }
+  arg1 = reinterpret_cast< lldb::SBValue * >(argp1);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (bool)(arg1)->CanSetValue();
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
+  resultobj = SWIG_From_bool(static_cast< bool >(result));
+  return resultobj;
+fail:
+  return NULL;
+}
+
+
 SWIGINTERN PyObject *_wrap_SBValue_GetTypeFormat(PyObject *self, PyObject *args) {
   PyObject *resultobj = 0;
   lldb::SBValue *arg1 = 0 ;
@@ -104702,6 +104730,17 @@ static PyMethodDef SwigMethods[] = {
 	 { "SBValue_SetValueFromCString", _wrap_SBValue_SetValueFromCString, METH_VARARGS, "\n"
 		"SBValue_SetValueFromCString(SBValue self, char const * value_str) -> bool\n"
 		"SBValue_SetValueFromCString(SBValue self, char const * value_str, SBError error) -> bool\n"
+		""},
+	 { "SBValue_CanSetValue", _wrap_SBValue_CanSetValue, METH_O, "\n"
+		"SBValue_CanSetValue(SBValue self) -> bool\n"
+		"\n"
+		"    Returns whether this value can be modified through SetValueFromCString()\n"
+		"    or SetData().\n"
+		"\n"
+		"    Returns False when the value is not writable. An example would be a\n"
+		"    variable values reconstructed from debug info via a computation or a constant.\n"
+		"    A True result does not guarantee a write will succeed; other\n"
+		"    runtime conditions may still prevent a successful write.\n"
 		""},
 	 { "SBValue_GetTypeFormat", _wrap_SBValue_GetTypeFormat, METH_O, "SBValue_GetTypeFormat(SBValue self) -> SBTypeFormat"},
 	 { "SBValue_GetTypeSummary", _wrap_SBValue_GetTypeSummary, METH_O, "SBValue_GetTypeSummary(SBValue self) -> SBTypeSummary"},
