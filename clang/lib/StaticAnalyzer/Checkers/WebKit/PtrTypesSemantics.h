@@ -79,7 +79,7 @@ std::optional<bool> isUnchecked(const clang::QualType T);
 /// An inter-procedural analysis facility that detects CF types with the
 /// underlying pointer type.
 class RetainTypeChecker {
-  llvm::DenseSet<const RecordType *> CFPointees;
+  llvm::DenseMap<const RecordType *, const TypedefDecl *> CFPointees;
   llvm::DenseSet<const Type *> RecordlessTypes;
   bool IsARCEnabled{false};
   bool DefaultSynthProperties{true};
@@ -90,6 +90,7 @@ public:
   bool isUnretained(const QualType, bool ignoreARC = false);
   bool isARCEnabled() const { return IsARCEnabled; }
   bool defaultSynthProperties() const { return DefaultSynthProperties; }
+  const TypedefDecl *getCanonicalDecl(QualType);
 };
 
 /// \returns true if \p Class is ref-countable AND not ref-counted, false if
