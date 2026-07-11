@@ -29,7 +29,6 @@ xfail lldb-shell :: SwiftREPL/SwiftInterface.test
 
 # https://github.com/swiftlang/llvm-project/issues/9539
 xfail lldb-shell :: SwiftREPL/ErrorReturn.test
-xfail lldb-shell :: SwiftREPL/GenericTypealias.test
 xfail lldb-shell :: SwiftREPL/Optional.test
 xfail lldb-shell :: SwiftREPL/RecursiveClass.test
 xfail lldb-shell :: SwiftREPL/Regex.test
