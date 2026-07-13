@@ -143,6 +143,8 @@ class InitializationKind;
 class InitializationSequence;
 class InitializedEntity;
 enum class LangAS : unsigned int;
+struct LateParsedAttribute;
+struct LateParsedTypeAttribute;
 class LocalInstantiationScope;
 class LookupResult;
 class MacroInfo;
@@ -1575,6 +1577,11 @@ public:
     LateTemplateParser = LTP;
     OpaqueParser = P;
   }
+
+  /// Callback type to parse and consume a LateParsedTypeAttribute. Used as an
+  /// argument to ProcessLateParsedTypeAttributes.
+  typedef void ParseLateParsedTypeAttributeCB(LateParsedTypeAttribute *LTA,
+                                              ParsedAttributes *OutAttrs);
 
   /// Callback to the parser to parse a type expressed as a string.
   std::function<TypeResult(StringRef, StringRef, SourceLocation)>
@@ -4880,6 +4887,13 @@ public:
   void ActOnFields(Scope *S, SourceLocation RecLoc, Decl *TagDecl,
                    ArrayRef<Decl *> Fields, SourceLocation LBrac,
                    SourceLocation RBrac, const ParsedAttributesView &AttrList);
+
+  /// Transform field types that contain late-parsed type attributes.
+  /// Called from two sites: once immediately after parsing a nested
+  /// non-anonymous record body, and once after ActOnFields for the outermost
+  /// record.
+  void ProcessLateParsedTypeAttributes(RecordDecl *EnclosingDecl,
+                                       ParseLateParsedTypeAttributeCB *ParseCB);
 
   /// ActOnTagStartDefinition - Invoked when we have entered the
   /// scope of a tag's definition (e.g., for an enumeration, class,
