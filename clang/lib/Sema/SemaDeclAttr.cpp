@@ -6363,7 +6363,7 @@ public:
   // into a function-prototype subwalk.
   //
   // Emits:
-  // - err_attribute_pointers_only
+  // - err_count_attr_not_on_ptr_or_flexible_array_member
   // - err_bounds_safety_atomic_unsupported_attribute
   // - err_bounds_safety_conflicting_pointer_attributes
   // - err_bounds_safety_conflicting_count_range_attributes
@@ -6521,15 +6521,21 @@ public:
           PT->getPointeeType(), CountInBytes, OrNull, AllowRedecl);
     }
 
-    // Fallback for pointers_only.
-    S.Diag(Loc, diag::err_attribute_pointers_only) << DiagName << 0;
+    // T isn't a pointer type.
+    unsigned DiagKind = CountInBytes
+                            ? (OrNull ? BoundsAttributedType::SizedByOrNull
+                                      : BoundsAttributedType::SizedBy)
+                            : (OrNull ? BoundsAttributedType::CountedByOrNull
+                                      : BoundsAttributedType::CountedBy);
+    S.Diag(Loc, diag::err_count_attr_not_on_ptr_or_flexible_array_member)
+        << DiagKind << 0;
     return false;
   }
 
   // Pre-check for ended-by.
   //
   // Emits:
-  // - err_attribute_pointers_only
+  // - err_count_attr_not_on_ptr_or_flexible_array_member
   // - err_bounds_safety_atomic_unsupported_attribute
   // - err_bounds_safety_conflicting_count_range_attributes
   // - err_bounds_safety_conflicting_pointer_attributes
@@ -6631,8 +6637,9 @@ public:
                                                   AllowRedecl);
     }
 
-    // Fallback for pointers_only.
-    S.Diag(Loc, diag::err_attribute_pointers_only) << DiagName << 0;
+    // T isn't a pointer type.
+    S.Diag(Loc, diag::err_count_attr_not_on_ptr_or_flexible_array_member)
+        << BoundsAttributedType::EndedBy << 0;
     return false;
   }
 };
@@ -7782,7 +7789,8 @@ void Sema::applyPtrCountedByEndedByAttr(Decl *D, unsigned Level,
     QualType TSITy = PVD->getTypeSourceInfo()->getType();
     if (IsEndedBy) {
       if (Level == 0 && TSITy->isArrayType()) {
-        Diag(Loc, diag::err_attribute_pointers_only) << DiagName << 0;
+        Diag(Loc, diag::err_count_attr_not_on_ptr_or_flexible_array_member)
+            << BoundsAttributedType::EndedBy << 0;
         return;
       }
     } else {
