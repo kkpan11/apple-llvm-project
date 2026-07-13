@@ -8953,7 +8953,7 @@ static void handleCountedByAttrField(Sema &S, Decl *D, const ParsedAttr &AL) {
   }
 
   FieldDecl *FD = cast<FieldDecl>(D);
-  if (S.CheckCountedByAttrOnField(FD, CountExpr, CountInBytes, OrNull))
+  if (S.CheckCountedByAttrOnFieldDecl(FD, CountExpr, CountInBytes, OrNull))
     return;
 
   QualType CAT = S.BuildCountAttributedArrayOrPointerType(

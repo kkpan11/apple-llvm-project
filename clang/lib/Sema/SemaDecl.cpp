@@ -21453,8 +21453,8 @@ void Sema::ProcessLateParsedTypeAttributes(
     }
 
     if (auto *CAT = FD->getType()->getAs<CountAttributedType>()) {
-      CheckCountedByAttrOnField(FD, CAT->getCountExpr(),
-                                CAT->isCountInBytes(), CAT->isOrNull());
+      CheckCountedByAttrOnFieldDecl(FD, CAT->getCountExpr(),
+                                    CAT->isCountInBytes(), CAT->isOrNull());
     }
   }
 }
