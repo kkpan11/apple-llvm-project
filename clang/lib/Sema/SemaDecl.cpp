@@ -21432,6 +21432,15 @@ struct RebuildTypeWithLateParsedAttr
 
 void Sema::ProcessLateParsedTypeAttributes(
     RecordDecl *EnclosingDecl, ParseLateParsedTypeAttributeCB *ParseCB) {
+  // Bounds-safety modes stay on the eager cached-token path. Skip the
+  // walker entirely — the parser dispatch above should already have
+  // prevented creation of any LateParsedAttrType placeholders under
+  // bounds-safety, but this is a safety net in case a placeholder slips
+  // through (e.g., attributes injected via APINotes or synthesized
+  // during template instantiation).
+  if (getLangOpts().hasBoundsSafetyAttributes())
+    return;
+
   for (auto *I : EnclosingDecl->decls()) {
     FieldDecl *FD = dyn_cast<FieldDecl>(I);
     IndirectFieldDecl *IFD = dyn_cast<IndirectFieldDecl>(I);

@@ -223,8 +223,14 @@ bool Parser::ParseSingleGNUAttribute(ParsedAttributes &Attrs,
 
   // Handle attributes with arguments that require late parsing.
   // Late parsing for type attributes isn't properly supported in C++ yet.
+  // Downstream (bounds-safety) mode also stays on the eager cached-token
+  // path — the new LateParsedAttrType mechanism is gated behind
+  // !hasBoundsSafetyAttributes() and restricted to Member context so
+  // bounds-safety-annotated code remains on the old path unchanged.
   LateParsedAttribute *LA = nullptr;
-  if (IsAttributeTypeAttr(AttrKind) && !getLangOpts().CPlusPlus)
+  if (IsAttributeTypeAttr(AttrKind) && !getLangOpts().CPlusPlus &&
+      !getLangOpts().hasBoundsSafetyAttributes() && D &&
+      D->getContext() == DeclaratorContext::Member)
     LA = new LateParsedTypeAttribute(this, *AttrName, AttrNameLoc);
   else
     LA = new LateParsedAttribute(this, *AttrName, AttrNameLoc);
