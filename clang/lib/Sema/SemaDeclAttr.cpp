@@ -6506,7 +6506,13 @@ public:
         return false;
       }
       if (Level == 0) {
-        S.DiagnoseCountedByPointeeType(DeclTy, Loc, CountInBytes, OrNull);
+        Sema::BoundsAttrFlags Flags;
+        Flags.CountInBytes = CountInBytes;
+        Flags.OrNull = OrNull;
+        if (!S.ValidateBoundsAttrTypeShape(DeclTy, Loc, SourceRange(Loc),
+                                           Flags))
+          return false;
+        CountInBytes = Flags.CountInBytes;
         return true;
       }
       --Level;
