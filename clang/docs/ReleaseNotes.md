@@ -265,6 +265,8 @@ latest release, please see the [Clang Web Site](https://clang.llvm.org) or the
 - Clang now has partial support for [P1306R5](https://wg21.link/P1306R5) Expansion Statements. Iterating expansion
   statements currently cannot be expanded and will result in a diagnostic, but other types of expansion statements work.
 
+- Clang now supports [P3533R2](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3533r2.html) (constexpr virtual inheritance).
+
 #### C++23 Feature Support
 
 - Partially implement Itanium mangling for pack indexing. Partially substituted packs are not yet supported. (#GH112003)
