@@ -476,6 +476,26 @@ TEST(DWARFExpression, DW_OP_stack_value) {
   EXPECT_THAT_EXPECTED(Evaluate({DW_OP_stack_value}), llvm::Failed());
 }
 
+TEST(DWARFExpression, IsImplicit) {
+  auto is_implicit = [](llvm::ArrayRef<uint8_t> expr) {
+    DataExtractor extractor(expr.data(), expr.size(), lldb::eByteOrderLittle,
+                            /*addr_size=*/4);
+    return DWARFExpression(extractor).IsImplicit(/*dwarf_cu=*/nullptr);
+  };
+
+  // Implicit and composite locations have no writable storage.
+  EXPECT_TRUE(is_implicit({DW_OP_lit1, DW_OP_stack_value}));
+  EXPECT_TRUE(is_implicit({DW_OP_implicit_value, 0x01, 0x11}));
+  EXPECT_TRUE(is_implicit({DW_OP_reg0, DW_OP_piece, 0x02}));
+  EXPECT_TRUE(is_implicit({DW_OP_reg0, DW_OP_bit_piece, 0x04, 0x00}));
+
+  // Memory and register locations are writable.
+  EXPECT_FALSE(is_implicit({DW_OP_addr, 0x10, 0x20, 0x30, 0x40}));
+  EXPECT_FALSE(is_implicit({DW_OP_reg0}));
+  EXPECT_FALSE(is_implicit({DW_OP_breg0, 0x00}));
+  EXPECT_FALSE(is_implicit({DW_OP_fbreg, 0x00}));
+}
+
 TEST(DWARFExpression, DW_OP_piece) {
   EXPECT_THAT_EXPECTED(Evaluate({DW_OP_const2u, 0x11, 0x22, DW_OP_piece, 2,
                                  DW_OP_const2u, 0x33, 0x44, DW_OP_piece, 2}),
