@@ -468,6 +468,21 @@ Interpreter::Visit(const IdentifierNode &node) {
   if (!identifier)
     identifier = LookupEnumValue(node.GetName(), m_stack_frame);
 
+  if (!identifier && node.GetName() == "nullptr") {
+    // If we got a "nullptr" identifier, and there is no defined variable with
+    // this name, resolve it as a null pointer.
+    llvm::Expected<lldb::TypeSystemSP> type_system =
+        GetTypeSystemFromCU(m_stack_frame);
+    if (!type_system)
+      return type_system.takeError();
+    type_system.get()->GetPointerByteSize();
+    llvm::APInt value(type_system.get()->GetPointerByteSize() * CHAR_BIT, 0);
+    Scalar scalar(value);
+    CompilerType type = GetBasicType(*type_system, lldb::eBasicTypeNullPtr);
+    return ValueObject::CreateValueObjectFromScalar(m_stack_frame, scalar, type,
+                                                    "result");
+  }
+
   if (!identifier) {
     // BEGIN SWIFT
     // Implement LanguageCPlusPlus::GetParentNameIfClosure and upstream this.
