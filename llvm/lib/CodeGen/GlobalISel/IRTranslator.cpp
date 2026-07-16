@@ -3908,7 +3908,7 @@ bool IRTranslator::translate(const Constant &C, Register Reg) {
   else if (isa<ConstantPointerNull>(C))
     EntryBuilder->buildConstant(Reg, 0);
   else if (auto GV = dyn_cast<GlobalValue>(&C)) {
-    auto GVB = dyn_cast<GlobalValue>(GV);
+    auto GVB = dyn_cast<GlobalVariable>(GV);
     if (!GVB || GVB->getSection() != "llvm.ptrauth")
       return EntryBuilder->buildGlobalValue(Reg, GV);
 
