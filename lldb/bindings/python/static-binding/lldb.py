@@ -18079,6 +18079,20 @@ class SBValue(object):
         """
         return _lldb.SBValue_SetValueFromCString(self, *args)
 
+    def CanSetValue(self):
+        r"""
+        CanSetValue(SBValue self) -> bool
+
+            Returns whether this value can be modified through SetValueFromCString()
+            or SetData().
+
+            Returns False when the value is not writable. An example would be a
+            variable values reconstructed from debug info via a computation or a constant.
+            A True result does not guarantee a write will succeed; other
+            runtime conditions may still prevent a successful write.
+        """
+        return _lldb.SBValue_CanSetValue(self)
+
     def GetTypeFormat(self):
         r"""GetTypeFormat(SBValue self) -> SBTypeFormat"""
         return _lldb.SBValue_GetTypeFormat(self)
