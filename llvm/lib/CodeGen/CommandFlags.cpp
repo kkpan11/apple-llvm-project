@@ -692,10 +692,8 @@ void codegen::renderBoolStringAttr(AttrBuilder &B, StringRef Name, bool Val) {
       renderBoolStringAttr(NewAttrs, AttrName, *CL);                           \
   } while (0)
 
-/// Set function attributes of function \p F based on CPU, Features, and command
-/// line flags.
-void codegen::setFunctionAttributes(StringRef CPU, StringRef Features,
-                                    Function &F) {
+void codegen::setFunctionAttributes(Function &F, StringRef CPU,
+                                    StringRef Features) {
   auto &Ctx = F.getContext();
   AttributeList Attrs = F.getAttributes();
   AttrBuilder NewAttrs(Ctx);
@@ -771,12 +769,10 @@ void codegen::setFunctionAttributes(StringRef CPU, StringRef Features,
   F.setAttributes(Attrs.addFnAttributes(Ctx, NewAttrs));
 }
 
-/// Set function attributes of functions in Module M based on CPU,
-/// Features, and command line flags.
-void codegen::setFunctionAttributes(StringRef CPU, StringRef Features,
-                                    Module &M) {
+void codegen::setFunctionAttributes(Module &M, StringRef CPU,
+                                    StringRef Features) {
   for (Function &F : M)
-    setFunctionAttributes(CPU, Features, F);
+    setFunctionAttributes(F, CPU, Features);
 }
 
 Expected<std::unique_ptr<TargetMachine>>
