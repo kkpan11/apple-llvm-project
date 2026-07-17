@@ -1070,9 +1070,9 @@ Error ThinLTOCodeGenerator::CachingOptions::startCache() {
   if (Type == CacheType::PluginCAS) {
     if (Path.empty()) {
       auto DefaultPath = cas::getDefaultOnDiskCASPath();
-      if (DefaultPath.empty())
-        return createStringError("CAS Path is not specified for plugin CAS");
-      Path = DefaultPath;
+      if (!DefaultPath)
+        return DefaultPath.takeError();
+      Path = *DefaultPath;
     }
     auto MaybeCAS = cas::createPluginCASDatabases(PluginPath, Path, PluginOpts);
     if (!MaybeCAS)
