@@ -78,7 +78,7 @@ ExprDependence clang::computeDependence(UnaryOperator *E,
       if (VD && VD->isTemplated()) {
         auto *VarD = dyn_cast<VarDecl>(VD);
         if (!VarD || !VarD->hasLocalStorage())
-          Dep |= ExprDependence::Value;
+          Dep |= ExprDependence::ValueInstantiation;
       }
     }
   }
