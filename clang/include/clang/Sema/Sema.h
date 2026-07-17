@@ -2855,6 +2855,8 @@ public:
     bool IsEndedBy = false;
   };
   static BoundsAttrFlags getBoundsAttrFlags(AttributeCommonInfo::Kind K);
+  static BoundsAttributedType::BoundsAttrKind
+  getBoundsAttrKind(const BoundsAttrFlags &);
 
   /// Validates that a type is eligible for a bounds-safety attribute
   /// (counted_by/sized_by/ended_by). Checks type eligibility (must be pointer
