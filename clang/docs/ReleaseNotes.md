@@ -191,6 +191,7 @@ latest release, please see the [Clang Web Site](https://clang.llvm.org) or the
   as support for coroutines on this target is incomplete.
   When using coroutines on this target a warning is emmitted to indicate the lack of full support.
   That warning can be disabled with `-Wno-coroutines-unsupported-target`. (see #GH59382)
+- Templight support has been removed.
 
 ### Clang Python Bindings Potentially Breaking Changes
 
