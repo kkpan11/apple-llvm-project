@@ -3067,7 +3067,6 @@ static const auto &getFrontendActionTable() {
       {frontend::VerifyPCH, OPT_verify_pch},
       {frontend::PrintPreamble, OPT_print_preamble},
       {frontend::PrintPreprocessedInput, OPT_E},
-      {frontend::TemplightDump, OPT_templight_dump},
       {frontend::RewriteMacros, OPT_rewrite_macros},
       {frontend::RewriteObjC, OPT_rewrite_objc},
       {frontend::RewriteTest, OPT_rewrite_test},
@@ -5181,7 +5180,6 @@ static bool isStrictlyPreprocessorAction(frontend::ActionKind Action) {
   case frontend::RewriteObjC:
   case frontend::RewriteTest:
   case frontend::RunAnalysis:
-  case frontend::TemplightDump:
     return false;
 
   case frontend::DumpCompilerOptions:
@@ -5228,7 +5226,6 @@ static bool isCodeGenAction(frontend::ActionKind Action) {
   case frontend::RewriteObjC:
   case frontend::RewriteTest:
   case frontend::RunAnalysis:
-  case frontend::TemplightDump:
   case frontend::DumpCompilerOptions:
   case frontend::DumpRawTokens:
   case frontend::DumpTokens:
