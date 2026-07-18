@@ -1831,6 +1831,11 @@ ToolChain::getSystemGPUArchs(const llvm::opt::ArgList &Args) const {
   return SmallVector<std::string>();
 }
 
+SanitizerMask ToolChain::getSupportedSanitizers() const {
+  return getSupportedSanitizers(
+      /*BoundArch=*/"", clang::driver::Action::OFK_None);
+}
+
 SanitizerMask
 ToolChain::getSupportedSanitizers(StringRef BoundArch,
                                   Action::OffloadKind DeviceOffloadKind) const {
