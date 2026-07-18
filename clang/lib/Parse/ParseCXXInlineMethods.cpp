@@ -102,7 +102,6 @@ NamedDecl *Parser::ParseCXXInlineMethodDef(
 
     bool Delete = false;
     SourceLocation KWLoc;
-    SourceLocation KWEndLoc = Tok.getEndLoc().getLocWithOffset(-1);
     if (TryConsumeToken(tok::kw_delete, KWLoc)) {
       Diag(KWLoc, getLangOpts().CPlusPlus11
                       ? diag::warn_cxx98_compat_defaulted_deleted_function
@@ -112,7 +111,7 @@ NamedDecl *Parser::ParseCXXInlineMethodDef(
       Actions.SetDeclDeleted(FnD, KWLoc, Message);
       Delete = true;
       if (auto *DeclAsFunction = dyn_cast<FunctionDecl>(FnD)) {
-        DeclAsFunction->setRangeEnd(KWEndLoc);
+        DeclAsFunction->setRangeEnd(PrevTokLocation);
       }
     } else if (TryConsumeToken(tok::kw_default, KWLoc)) {
       Diag(KWLoc, getLangOpts().CPlusPlus11
@@ -121,7 +120,7 @@ NamedDecl *Parser::ParseCXXInlineMethodDef(
         << 0 /* defaulted */;
       Actions.SetDeclDefaulted(FnD, KWLoc);
       if (auto *DeclAsFunction = dyn_cast<FunctionDecl>(FnD)) {
-        DeclAsFunction->setRangeEnd(KWEndLoc);
+        DeclAsFunction->setRangeEnd(PrevTokLocation);
       }
     } else {
       llvm_unreachable("function definition after = not 'delete' or 'default'");
