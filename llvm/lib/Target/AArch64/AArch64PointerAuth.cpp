@@ -312,7 +312,7 @@ void AArch64PointerAuthImpl::authenticateLR(
 
     emitFrameOffset(MBB, EpilogStartI, DL, AArch64::X16, AArch64::FP,
                     StackOffset::getFixed(16), TII, MachineInstr::FrameDestroy);
-    emitPACCFI(MBB, MBBI, MachineInstr::FrameDestroy, EmitAsyncCFI);
+    emitAUTCFI(MBB, MBBI, EmitAsyncCFI);
     BuildMI(MBB, TI, DL, TII->get(AArch64::AUTIB), AArch64::LR)
         .addUse(AArch64::LR)
         .addUse(AArch64::X16)
