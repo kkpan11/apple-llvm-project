@@ -81,11 +81,9 @@
 #include <utility>
 
 using namespace llvm;
+using namespace llvm::gvn;
 using namespace llvm::VNCoercion;
 using namespace PatternMatch;
-
-using AvailableValue = GVNPass::AvailableValue;
-using AvailableValueInBlock = GVNPass::AvailableValueInBlock;
 
 #define DEBUG_TYPE "gvn"
 
@@ -3835,7 +3833,7 @@ void GVNPass::assignValNumForDeadCode() {
   }
 }
 
-class llvm::GVNLegacyPass : public FunctionPass {
+class llvm::gvn::GVNLegacyPass : public FunctionPass {
 public:
   static char ID; // Pass identification, replacement for typeid.
 
