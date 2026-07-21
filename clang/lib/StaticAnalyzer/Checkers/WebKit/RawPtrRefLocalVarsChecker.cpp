@@ -449,6 +449,10 @@ public:
 
   void printPointerTypeAndType(llvm::raw_svector_ostream &Os,
                                QualType QT) const {
+    if (auto *ET = dyn_cast_or_null<ElaboratedType>(QT.getTypePtrOrNull())) {
+      if (ET->isSugared())
+        QT = ET->desugar();
+    }
     auto *VarType = QT.getTypePtr();
     if (RTC && isa<TypedefType>(VarType)) {
       Os << typeName() << " ";
