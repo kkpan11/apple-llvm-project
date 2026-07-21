@@ -1,14 +1,14 @@
 add_lldb_tool(lldb-mcp
   lldb-mcp.cpp
+  Multiplexer.cpp
 
   LINK_COMPONENTS
-    Option
     Support
   LINK_LIBS
     liblldb
-    lldbUtility
     lldbHost
     lldbProtocolMCP
+    lldbUtility
   )
 
 if(APPLE)

@@ -13,14 +13,20 @@
 #include "lldb/Host/MainLoop.h"
 #include "lldb/Host/Socket.h"
 #include "lldb/Protocol/MCP/Server.h"
-#include "lldb/Protocol/MCP/Transport.h"
-#include <map>
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Error.h"
+#include <cstddef>
 #include <memory>
+#include <mutex>
 #include <thread>
-#include <tuple>
 #include <vector>
 
 namespace lldb_private::mcp {
+
+/// Installs the standard LLDB tool and resource-provider set on \p server.
+/// Sharing one installer keeps every MCP server consistent, whether it runs in
+/// the plugin or is hosted in-process by an embedder.
+void PopulateServer(lldb_protocol::mcp::Server &server);
 
 class ProtocolServerMCP : public ProtocolServer {
 
