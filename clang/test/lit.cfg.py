@@ -411,7 +411,7 @@ if lit.util.isMacOSTriple(config.target_triple):
    config.available_features.add('darwin')
 
 # Features
-known_arches = ["x86_64", "mips64", "ppc64", "aarch64"]
+known_arches = ["x86_64", "mips64", "ppc64", "aarch64", "s390x"]
 if any(config.target_triple.startswith(x) for x in known_arches):
     config.available_features.add("clang-target-64-bits")
 
