@@ -554,6 +554,8 @@ LANGOPT(PreserveVec3Type, 1, 0, NotCompatible, "Preserve 3-component vector type
 LANGOPT(Reflection      , 1, 0, NotCompatible, "C++26 Reflection")
 LANGOPT(TypedMemoryOperations, 1, 0, NotCompatible, "Typed Memory Operations Callsite Rewriting")
 
+LANGOPT(StablePointerSubtraction, 1, 0, NotCompatible, "Make unaligned pointer subtraction stable")
+
 #undef LANGOPT
 #undef ENUM_LANGOPT
 #undef VALUE_LANGOPT
