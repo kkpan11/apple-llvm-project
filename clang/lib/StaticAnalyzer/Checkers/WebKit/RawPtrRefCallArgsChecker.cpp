@@ -409,10 +409,8 @@ public:
     auto *ArgType = QT.getTypePtr();
 
     if (auto *ET = dyn_cast_or_null<ElaboratedType>(ArgType)) {
-      if (ET->isSugared()) {
-        QT = ET->desugar();
-        ArgType = QT.getTypePtr();
-      }
+      QT = ET->desugar();
+      ArgType = QT.getTypePtr();
     }
     if (printPointer(Os, ArgType) == PrintDeclKind::Pointer) {
       assert(RTC);
