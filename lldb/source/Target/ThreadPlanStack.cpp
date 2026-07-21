@@ -466,7 +466,7 @@ void ThreadPlanStackMap::DumpPlans(Stream &strm,
         strm.Printf("thread #%u: tid = 0x%4.4" PRIx64 "\n", index_id, tid);
         strm.IndentMore();
         strm.Indent();
-        strm.Printf("No active thread plans\n");
+        strm.PutCString("No active thread plans\n");
         strm.IndentLess();
         return;
       }
@@ -509,7 +509,7 @@ bool ThreadPlanStackMap::DumpPlansForTID(Stream &strm, lldb::tid_t tid,
       strm.Printf("thread #%u: tid = 0x%4.4" PRIx64 "\n", index_id, tid);
       strm.IndentMore();
       strm.Indent();
-      strm.Printf("No active thread plans\n");
+      strm.PutCString("No active thread plans\n");
       strm.IndentLess();
       return true;
     }
