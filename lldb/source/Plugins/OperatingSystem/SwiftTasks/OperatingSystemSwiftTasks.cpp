@@ -264,9 +264,4 @@ RegisterContextSP OperatingSystemSwiftTasks::CreateRegisterContextForThread(
   return thread->GetRegisterContext();
 }
 
-StopInfoSP OperatingSystemSwiftTasks::CreateThreadStopReason(
-    lldb_private::Thread *thread) {
-  return thread->GetStopInfo();
-}
-
 #endif // #if LLDB_ENABLE_SWIFT
