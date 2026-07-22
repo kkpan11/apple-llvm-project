@@ -89,6 +89,7 @@ extern cl::opt<bool> RemarksWithHotness;
 extern cl::opt<std::optional<uint64_t>, false, remarks::HotnessThresholdParser>
     RemarksHotnessThreshold;
 extern cl::opt<std::string> RemarksFormat;
+extern cl::opt<std::string> SampleProfileFile;
 }
 
 // Default to using all available threads in the system, but using only one
@@ -275,6 +276,12 @@ static void optimizeModule(Module &TheModule, TargetMachine &TM,
                            unsigned OptLevel, bool Freestanding,
                            bool DebugPassManager, ModuleSummaryIndex *Index) {
   std::optional<PGOOptions> PGOOpt;
+  if (!SampleProfileFile.empty()) {
+    PGOOpt =
+        PGOOptions(SampleProfileFile, "", "",
+                   /*MemoryProfile=*/"", PGOOptions::SampleUse,
+                   PGOOptions::NoCSAction, PGOOptions::ColdFuncOpt::Default);
+  }
   LoopAnalysisManager LAM;
   FunctionAnalysisManager FAM;
   CGSCCAnalysisManager CGAM;

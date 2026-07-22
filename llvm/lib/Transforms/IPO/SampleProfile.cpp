@@ -118,9 +118,11 @@ STATISTIC(
 
 // Command line option to specify the file to read samples from. This is
 // mainly used for debugging.
-static cl::opt<std::string> SampleProfileFile(
+namespace llvm {
+cl::opt<std::string> SampleProfileFile(
     "sample-profile-file", cl::init(""), cl::value_desc("filename"),
     cl::desc("Profile file loaded by -sample-profile"), cl::Hidden);
+} // namespace llvm
 
 // The named file contains a set of transformations that may have been applied
 // to the symbol names between the program from which the sample data was

@@ -496,6 +496,12 @@ void darwin::Linker::AddLinkArgs(Compilation &C, const ArgList &Args,
           Args.MakeArgString(Twine("--codegen-data-generate-path=") +
                              CodeGenDataGenArg->getValue()));
   }
+
+  if (Arg *A = getLastProfileSampleUseArg(Args)) {
+    CmdArgs.push_back("-mllvm");
+    CmdArgs.push_back(
+        Args.MakeArgString(Twine("-sample-profile-file=") + A->getValue()));
+  }
 }
 
 /// Determine whether we are linking the ObjC runtime.
