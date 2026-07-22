@@ -293,6 +293,7 @@ LLVMUserExpression::DoExecute(DiagnosticManager &diagnostic_manager,
                                   function_stack_bottom,
                                   function_stack_top)) {
     return lldb::eExpressionCompleted;
+  }
 
   return lldb::eExpressionResultUnavailable;
 }
