@@ -61,22 +61,10 @@ static inline void TestEndFailImpl(int *__ended_by(*out_end) *out_start,
 }
 
 // CHECK-LABEL: define dso_local void @TestEndFail(
-// CHECK-SAME: ) local_unnamed_addr #[[ATTR3]] {
+// CHECK-SAME: ) local_unnamed_addr #[[ATTR4:[0-9]+]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
-// CHECK-NEXT:    [[ARR_I:%.*]] = alloca [10 x i32], align 16
-// CHECK-NEXT:    call void @llvm.lifetime.start.p0(ptr nonnull [[ARR_I]]) #[[ATTR5]]
-// CHECK-NEXT:    [[UPPER_I:%.*]] = getelementptr inbounds nuw i8, ptr [[ARR_I]], i64 40
-// CHECK-NEXT:    [[BOUND_PTR_ARITH_I:%.*]] = getelementptr i8, ptr [[ARR_I]], i64 44
-// CHECK-NEXT:    [[CMP_NOT_I:%.*]] = icmp ugt ptr [[BOUND_PTR_ARITH_I]], [[UPPER_I]], {{!annotation ![0-9]+}}
-// CHECK-NEXT:    [[CMP22_NOT_I:%.*]] = icmp ugt ptr [[ARR_I]], [[BOUND_PTR_ARITH_I]], {{!annotation ![0-9]+}}
-// CHECK-NEXT:    [[OR_COND_I:%.*]] = or i1 [[CMP_NOT_I]], [[CMP22_NOT_I]], {{!annotation ![0-9]+}}
-// CHECK-NEXT:    br i1 [[OR_COND_I]], label %[[TRAP_I:.*]], label %[[TESTENDFAILIMPL_EXIT:.*]], {{!annotation ![0-9]+}}
-// CHECK:       [[TRAP_I]]:
-// CHECK-NEXT:    call void @llvm.ubsantrap(i8 25) #[[ATTR6]], {{!annotation ![0-9]+}}
+// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR6]], {{!annotation ![0-9]+}}
 // CHECK-NEXT:    unreachable, {{!annotation ![0-9]+}}
-// CHECK:       [[TESTENDFAILIMPL_EXIT]]:
-// CHECK-NEXT:    call void @llvm.lifetime.end.p0(ptr nonnull [[ARR_I]]) #[[ATTR5]]
-// CHECK-NEXT:    ret void
 //
 void TestEndFail() {
   int *end;
@@ -92,7 +80,7 @@ static inline void TestRangeFailImpl(int *__ended_by(*out_end) *out_start,
 }
 
 // CHECK-LABEL: define dso_local void @TestRangeFail(
-// CHECK-SAME: ) local_unnamed_addr #[[ATTR4:[0-9]+]] {
+// CHECK-SAME: ) local_unnamed_addr #[[ATTR4]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR6]], {{!annotation ![0-9]+}}
 // CHECK-NEXT:    unreachable, {{!annotation ![0-9]+}}
