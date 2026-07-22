@@ -285,11 +285,11 @@ LLVMUserExpression::DoExecute(DiagnosticManager &diagnostic_manager,
     PersistentExpressionState *expression_state =
         target->GetPersistentExpressionStateForLanguage(LanguageType());
     if (expression_state)
-      result_sp = expression_state->CreatePersistentVariable(
+      result = expression_state->CreatePersistentVariable(
           error_backstop_result_sp);
 
     return lldb::eExpressionCompleted;
-  } else if (FinalizeJITExecution(diagnostic_manager, exe_ctx, result_sp,
+  } else if (FinalizeJITExecution(diagnostic_manager, exe_ctx, result,
                                   function_stack_bottom,
                                   function_stack_top)) {
     return lldb::eExpressionCompleted;
