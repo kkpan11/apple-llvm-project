@@ -1359,6 +1359,8 @@ bool Preprocessor::HandleModuleContextualKeyword(Token &Result) {
   } else if (!Result.isAtPhysicalStartOfLine())
     return false;
 
+  assert(CurPPLexer && "CurPPLexer must not be null");
+
   llvm::SaveAndRestore<bool> SavedParsingPreprocessorDirective(
       CurPPLexer->ParsingPreprocessorDirective, true);
 
