@@ -39,7 +39,7 @@
 ; CHECK:   br label %end
 
 ; CHECK: end:                                              ; preds = %resume, %entry
-; CHECK:   %0 = call i1 @llvm.coro.end(ptr %hdl, i1 false, token none)
+; CHECK:   call void @llvm.coro.end(ptr %hdl, i1 false, token none)
 ; CHECK:   unreachable
 ; CHECK: }
 
@@ -50,10 +50,10 @@
 ; CHECK: declare i1 @llvm.coro.suspend.retcon.i1(...) #1
 
 ; Function Attrs: nounwind
-; CHECK: declare i1 @llvm.coro.end(ptr, i1, token) #1
+; CHECK: declare token @llvm.coro.id.retcon.once(i32, i32, ptr, ptr, ptr, ptr, ...) #1
 
 ; Function Attrs: nounwind
-; CHECK: declare token @llvm.coro.id.retcon.once(i32, i32, ptr, ptr, ptr, ptr, ...) #1
+; CHECK: declare void @llvm.coro.end(ptr, i1, token) #1
 
 ; CHECK: attributes #0 = { presplitcoroutine }
 ; CHECK: attributes #1 = { nounwind }
