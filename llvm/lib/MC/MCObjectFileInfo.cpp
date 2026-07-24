@@ -23,6 +23,7 @@
 #include "llvm/MC/MCSectionSPIRV.h"
 #include "llvm/MC/MCSectionWasm.h"
 #include "llvm/MC/MCSectionXCOFF.h"
+#include "llvm/MC/SectionKind.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/TargetParser/Triple.h"
 
@@ -320,6 +321,17 @@ void MCObjectFileInfo::initMachOMCObjectFileInfo(const Triple &T) {
 
   RemarksSection = Ctx->getMachOSection(
       "__LLVM", "__remarks", MachO::S_ATTR_DEBUG, SectionKind::getMetadata());
+
+  // Emit the pseudoprobe sections in the __LLVM segment. Current ld ignores the
+  // __LLVM and __DWARF segment, so the probe metadata is dropped from the final
+  // linked image on every toolchain.
+  PseudoProbeSection = Ctx->getMachOSection(
+      "__LLVM", "__probes", MachO::S_ATTR_DEBUG | MachO::S_ATTR_NO_DEAD_STRIP,
+      SectionKind::getMetadata());
+  PseudoProbeDescSection =
+      Ctx->getMachOSection("__LLVM", "__probe_descs",
+                           MachO::S_ATTR_DEBUG | MachO::S_ATTR_NO_DEAD_STRIP,
+                           SectionKind::getMetadata());
 
   // The architecture of dsymutil makes it very difficult to copy the Swift
   // reflection metadata sections into the __TEXT segment, so dsymutil creates
