@@ -561,7 +561,7 @@ void assign_assign(char *__sized_by(len) p, unsigned long long len,
 // CHECK: |   |       `-ImplicitCastExpr {{.+}} 'unsigned long long' <IntegralCast>
 // CHECK: |   |         `-IntegerLiteral {{.+}} 0
 // CHECK: |   |-MaterializeSequenceExpr {{.+}} <Bind>
-// CHECK: |   | |-BoundsCheckExpr {{.+}} '(len = ilen , p = ip) <= __builtin_get_pointer_upper_bound((len = ilen , p = ip)) && __builtin_get_pointer_lower_bound((len = ilen , p = ip)) <= (len = ilen , p = ip) && 0 <= (char *)__builtin_get_pointer_upper_bound((len = ilen , p = ip)) - (char *__single)(len = ilen , p = ip)'
+// CHECK: |   | |-BoundsCheckExpr {{.+}} '(len = ilen, p = ip) <= __builtin_get_pointer_upper_bound((len = ilen, p = ip)) && __builtin_get_pointer_lower_bound((len = ilen, p = ip)) <= (len = ilen, p = ip) && 0 <= (char *)__builtin_get_pointer_upper_bound((len = ilen, p = ip)) - (char *__single)(len = ilen, p = ip)'
 // CHECK: |   | | |-BinaryOperator {{.+}} 'char *__single __sized_by(llen)':'char *__single' '='
 // CHECK: |   | | | |-DeclRefExpr {{.+}} [[var_lp_1]]
 // CHECK: |   | | | `-OpaqueValueExpr [[ove_32:0x[^ ]+]] {{.*}} 'char *__single __sized_by(len)':'char *__single'
