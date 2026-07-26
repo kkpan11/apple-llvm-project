@@ -52,6 +52,7 @@
 #include "lldb/Utility/Event.h"
 #include "lldb/Utility/Listener.h"
 #include "lldb/Utility/NameMatches.h"
+#include "lldb/Utility/Policy.h"
 #include "lldb/Utility/ProcessInfo.h"
 #include "lldb/Utility/Status.h"
 #include "lldb/Utility/StructuredData.h"
@@ -2682,10 +2683,6 @@ void PruneThreadPlans();
 
   ProcessRunLock &GetRunLock();
 
-  bool CurrentThreadIsPrivateStateThread();
-
-  bool CurrentThreadPosesAsPrivateStateThread();
-
   virtual Status SendEventData(const char *data) {
     return Status::FromErrorString(
         "Sending an event is not supported for this process.");
@@ -3265,11 +3262,20 @@ protected:
   /// private state thread that we spin up when we need to run an expression on
   /// the private state thread.
   struct PrivateStateThread {
+    /// Why this PST exists. RunPrivateStateThread reads this directly to
+    /// decide which Policy to push, rather than re-deriving it from a
+    /// generic "is this an override PST" flag. This is the same enum
+    /// Policy::CreatePrivateState()/PolicyStack::PushPrivateState() take, so
+    /// there's a single purpose value flowing from PST creation through to
+    /// the policy it pushes.
+    using Purpose = Policy::PrivateStatePurpose;
+
     PrivateStateThread(Process &process, lldb::StateType public_state,
                        lldb::StateType private_state,
-                       llvm::StringRef thread_name, bool is_override = false)
+                       llvm::StringRef thread_name,
+                       Purpose purpose = Purpose::Default)
         : m_process(process), m_public_state(public_state),
-          m_private_state(private_state), m_is_override(is_override),
+          m_private_state(private_state), m_purpose(purpose),
           m_thread_name(thread_name) {}
     // This returns false if we couldn't start up the thread.  If that happens,
     // you won't be doing any debugging today.
@@ -3288,7 +3294,7 @@ protected:
 
     bool IsRunning() { return m_is_running; }
 
-    bool IsOverride() const { return m_is_override; }
+    bool IsOverride() const { return m_purpose != Purpose::Default; }
 
     void SetThreadName(llvm::StringRef new_name) { m_thread_name = new_name; }
 
@@ -3334,12 +3340,7 @@ protected:
       return m_private_run_lock.SetStopped();
     }
 
-    ProcessRunLock &GetRunLock() {
-      if (IsOnThread(Host::GetCurrentThread()))
-        return m_private_run_lock;
-      else
-        return m_public_run_lock;
-    }
+    ProcessRunLock &GetRunLock();
 
     Process &m_process;
     ///< The process state that we show to client code.  This will often differ
@@ -3359,7 +3360,7 @@ protected:
     ProcessRunLock m_public_run_lock;
     ProcessRunLock m_private_run_lock;
     bool m_is_running = false;
-    bool m_is_override = false;
+    Purpose m_purpose;
     ///< This will be the thread name given to the Private State HostThread when
     ///< it gets spun up.
     std::string m_thread_name;
@@ -3619,7 +3620,8 @@ private:
   // Starts up the private state thread that will watch for events from the
   // debugee.
 
-  lldb::thread_result_t RunPrivateStateThread(bool is_override);
+  lldb::thread_result_t
+  RunPrivateStateThread(PrivateStateThread::Purpose purpose);
 
 protected:
   void HandlePrivateEvent(lldb::EventSP &event_sp);
@@ -3720,28 +3722,6 @@ public:
     if (m_process)
       m_process->SetRunningUtilityFunction(false);
   }
-};
-
-/// RAII guard that marks the current thread as a private state thread.
-///
-/// When RunThreadPlan detects it is running on the private state thread, it
-/// spins up an override thread and reassigns m_current_private_state_thread_sp
-/// to it. The original PST continues processing events via DoOnRemoval
-/// callbacks, but CurrentThreadIsPrivateStateThread() no longer recognizes it.
-/// This guard sets a thread_local flag so that GetStackFrameList can identify
-/// the original PST and return parent frames instead of provider-augmented
-/// frames.
-struct PrivateStateThreadGuard {
-  PrivateStateThreadGuard() { g_is_private_state_thread = true; }
-  ~PrivateStateThreadGuard() { g_is_private_state_thread = false; }
-  static bool IsPrivateStateThread() { return g_is_private_state_thread; }
-
-  // Non-copyable, non-movable.
-  PrivateStateThreadGuard(const PrivateStateThreadGuard &) = delete;
-  PrivateStateThreadGuard &operator=(const PrivateStateThreadGuard &) = delete;
-
-private:
-  static thread_local bool g_is_private_state_thread;
 };
 
 } // namespace lldb_private

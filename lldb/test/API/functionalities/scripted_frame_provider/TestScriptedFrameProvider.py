@@ -671,15 +671,15 @@ class ScriptedFrameProviderTestCase(TestBase):
         self.assertIn("unknown_function_2", output)
 
         # Should show PC addresses in hex format.
-        self.assertIn("0x0000000001234000", output)
-        self.assertIn("0x0000000005678000", output)
+        self.assertIn("1234000", output)
+        self.assertIn("5678000", output)
 
         # Verify PC and function name are properly separated by space.
-        self.assertIn("0x0000000001234000 unknown_function_1", output)
-        self.assertIn("0x0000000005678000 unknown_function_2", output)
+        self.assertIn("1234000 unknown_function_1", output)
+        self.assertIn("5678000 unknown_function_2", output)
 
         # Should NOT show invalid address.
-        self.assertNotIn("0xffffffffffffffff", output.lower())
+        self.assertNotIn("ffffff", output.lower())
 
         # Verify frame 2 is the original real frame 0.
         frame2 = thread.GetFrameAtIndex(2)
@@ -824,8 +824,43 @@ class ScriptedFrameProviderTestCase(TestBase):
         options = lldb.SBVariablesOptions()
         options.SetIncludeSynthetic(True)
         variables = frame0.GetVariables(options)
+        self.assertFalse(variables.IsValid())
+        self.assertEqual(variables.GetSize(), 0)
+
+        options.SetIncludeLocals(True)
+        variables = frame0.GetVariables(options)
         self.assertTrue(variables.IsValid())
-        self.assertTrue(variables.GetValueAtIndex(0).name == "_handler_one")
+        self.assertEqual(variables.GetSize(), 2)
+        self.assertEqual(variables.GetValueAtIndex(0).name, "variable_in_main")
+        self.assertEqual(variables.GetValueAtIndex(1).name, "_handler_one")
+
+        # Ensure that we get synthetic variables in the other overloads.
+        # (arguments, locals, statics, in_scope_only)
+        variables = frame0.GetVariables(False, False, False, False)
+        self.assertFalse(variables.IsValid())
+        self.assertEqual(variables.GetSize(), 0)
+        variables = frame0.GetVariables(False, True, False, False)
+        self.assertTrue(variables.IsValid())
+        self.assertEqual(variables.GetSize(), 2)
+        self.assertEqual(variables.GetValueAtIndex(0).name, "variable_in_main")
+        self.assertEqual(variables.GetValueAtIndex(1).name, "_handler_one")
+
+        # (arguments, locals, statics, in_scope_only, use_dynamic)
+        variables = frame0.GetVariables(
+            False, True, False, False, lldb.eNoDynamicValues
+        )
+        self.assertTrue(variables.IsValid())
+        self.assertEqual(variables.GetSize(), 2)
+        self.assertEqual(variables.GetValueAtIndex(0).name, "variable_in_main")
+        self.assertEqual(variables.GetValueAtIndex(1).name, "_handler_one")
+
+        # FIXME: Synthetic variables are never in scope.
+        variables = frame0.GetVariables(False, False, False, True)
+        self.assertFalse(variables.IsValid())
+        self.assertEqual(variables.GetSize(), 0)
+        variables = frame0.GetVariables(False, True, False, True)
+        self.assertFalse(variables.IsValid())
+        self.assertEqual(variables.GetSize(), 0)
 
         # Check the `frame variable` command(s) handle synthetic variables the
         # way we expect by printing them.

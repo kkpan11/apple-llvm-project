@@ -361,7 +361,8 @@ protected:
             command[0].c_str());
         m_options.GenerateOptionUsage(
             result.GetErrorStream(), *this,
-            GetCommandInterpreter().GetDebugger().GetTerminalWidth());
+            GetCommandInterpreter().GetDebugger().GetTerminalWidth(),
+            GetCommandInterpreter().GetDebugger().GetUseColor());
         return;
       }
 
@@ -566,6 +567,8 @@ protected:
       // modifiers above that should apply equally to synthetic and normal
       // variables, any other synthetic variable we should default to showing.
       return is_synthetic;
+    case eValueTypeSyntheticFlag:
+      llvm_unreachable("This flag was unset");
     }
     llvm_unreachable("Unexpected scope value");
   }

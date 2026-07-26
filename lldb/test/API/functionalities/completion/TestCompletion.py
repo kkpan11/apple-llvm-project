@@ -147,6 +147,12 @@ class CommandLineCompletionTestCase(TestBase):
         interp = self.dbg.GetCommandInterpreter()
         match_strings = lldb.SBStringList()
         num_matches = interp.HandleCompletion(input, len(input), 0, -1, match_strings)
+        if match_strings.GetSize() > 0:
+            self.assertEqual(match_strings[0], match_strings.GetStringAtIndex(0))
+            self.assertEqual(
+                match_strings[-1],
+                match_strings.GetStringAtIndex(match_strings.GetSize() - 1),
+            )
         found_needle = False
         for match in match_strings:
             if needle in match:
@@ -684,8 +690,8 @@ class CommandLineCompletionTestCase(TestBase):
         self.check_completion_with_desc(
             "breakpoint set -",
             [
-                ["-h", "Set the breakpoint on exception catcH."],
-                ["-w", "Set the breakpoint on exception throW."],
+                ["-h", "Set the breakpoint on exception catch."],
+                ["-w", "Set the breakpoint on exception throw."],
             ],
         )
 
@@ -693,8 +699,8 @@ class CommandLineCompletionTestCase(TestBase):
         self.check_completion_with_desc(
             "breakpoint set --",
             [
-                ["--on-catch", "Set the breakpoint on exception catcH."],
-                ["--on-throw", "Set the breakpoint on exception throW."],
+                ["--on-catch", "Set the breakpoint on exception catch."],
+                ["--on-throw", "Set the breakpoint on exception throw."],
             ],
         )
 
@@ -702,8 +708,8 @@ class CommandLineCompletionTestCase(TestBase):
         self.check_completion_with_desc(
             "breakpoint set --on-",
             [
-                ["--on-catch", "Set the breakpoint on exception catcH."],
-                ["--on-throw", "Set the breakpoint on exception throW."],
+                ["--on-catch", "Set the breakpoint on exception catch."],
+                ["--on-throw", "Set the breakpoint on exception throw."],
             ],
         )
 
