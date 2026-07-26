@@ -12,8 +12,7 @@ define i1 @retry_recovers_uge(i16 %x, i16 %y, i16 %z) {
 ; CHECK-NEXT:    [[ADD:%.*]] = add nsw i16 [[X]], [[Y]]
 ; CHECK-NEXT:    [[C:%.*]] = icmp ugt i16 [[ADD]], [[Z]]
 ; CHECK-NEXT:    call void @llvm.assume(i1 [[C]])
-; CHECK-NEXT:    [[T:%.*]] = icmp uge i16 [[ADD]], [[Z]]
-; CHECK-NEXT:    ret i1 [[T]]
+; CHECK-NEXT:    ret i1 true
 ;
 entry:
   %add = add nsw i16 %x, %y
