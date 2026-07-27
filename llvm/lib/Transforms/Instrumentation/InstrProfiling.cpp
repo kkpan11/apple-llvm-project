@@ -32,7 +32,6 @@
 #include "llvm/IR/DIBuilder.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/DiagnosticInfo.h"
-#include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GlobalAlias.h"
 #include "llvm/IR/GlobalValue.h"
@@ -972,8 +971,8 @@ void InstrLowerer::promoteCounterLoadStores(Function *F) {
   if (!isCounterPromotionEnabled())
     return;
 
-  DominatorTree DT(*F);
-  LoopInfo LI(DT);
+  LoopInfo LI;
+  LI.analyze(F);
   DenseMap<Loop *, SmallVector<LoadStorePair, 8>> LoopPromotionCandidates;
 
   std::unique_ptr<BlockFrequencyInfo> BFI;
