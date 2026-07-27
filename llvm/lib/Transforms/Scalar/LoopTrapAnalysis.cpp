@@ -11,6 +11,7 @@
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/OptimizationRemarkEmitter.h"
 #include "llvm/Analysis/ScalarEvolution.h"
+#include "llvm/IR/Instructions.h"
 #include "llvm/Remarks/BoundsSafetyOptRemarks.h"
 #include "llvm/Support/CommandLine.h"
 
@@ -47,9 +48,11 @@ static bool hasUnreachableInst(Loop *L) {
     if (any_of(predecessors(BB), [L](BasicBlock *PredB) {
           auto *TerminatorInst = PredB->getTerminator();
           return L->contains(PredB) &&
-                 (isa<BranchInst>(TerminatorInst) ||
+                 (isa<CondBrInst>(TerminatorInst) ||
+                  isa<UncondBrInst>(TerminatorInst) ||
                   isa<SwitchInst>(TerminatorInst)) &&
-                 (!BoundsSafetyTrapsOnly || isBoundsSafetyAnnotated(TerminatorInst));
+                 (!BoundsSafetyTrapsOnly ||
+                  isBoundsSafetyAnnotated(TerminatorInst));
         }))
       return true;
   }

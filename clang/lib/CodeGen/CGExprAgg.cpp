@@ -29,6 +29,7 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/Instruction.h"
+#include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Intrinsics.h"
 using namespace clang;
@@ -516,7 +517,7 @@ VisitBoundsSafetyPointerPromotionExpr(BoundsSafetyPointerPromotionExpr *E) {
     Ptr = CGF.GetWidePointerElement(PtrRV.getAggregateAddress(), WPIndex::Pointer);
   }
 
-  llvm::BranchInst *NullCheckBranch = nullptr;
+  llvm::CondBrInst *NullCheckBranch = nullptr;
   if (E->getNullCheck()) {
     // Test that the pointer is not NULL before testing that it's in bounds,
     // if AcceptNullPtr is specified.
