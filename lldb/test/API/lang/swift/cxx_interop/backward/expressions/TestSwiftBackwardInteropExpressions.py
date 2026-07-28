@@ -7,7 +7,7 @@ from lldbsuite.test.decorators import *
 
 class TestSwiftBackwardInteropExpressions(TestBase):
 
-    @skipEmbeddedSwift
+    @requireNotEmbeddedSwift
     @swiftTest
     def test_func_step_in(self):
         self.build()

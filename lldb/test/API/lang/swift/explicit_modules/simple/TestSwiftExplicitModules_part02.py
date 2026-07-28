@@ -6,7 +6,7 @@ import lldbsuite.test.lldbutil as lldbutil
 
 class TestSwiftExplicitModules(lldbtest.TestBase):
 
-    @skipEmbeddedSwift
+    @requireNotEmbeddedSwift
     @swiftTest
     @skipIfLinux
     def test_import(self):

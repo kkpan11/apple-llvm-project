@@ -9,7 +9,7 @@ class TestStepFromObjCToSwiftOverride(TestBase):
 
     @skipUnlessDarwin
     @swiftTest
-    @skipEmbeddedSwift
+    @requireNotEmbeddedSwift
     def test(self):
         self.build()
         (target, process, thread, breakpoint) = lldbutil.run_to_source_breakpoint(
