@@ -41,14 +41,19 @@ def KEYHLSL : TokenKey<0x8000000>;
 def KEYFIXEDPOINT : TokenKey<0x10000000>;
 def KEYDEFERTS : TokenKey<0x20000000>;
 def KEYNOHLSL : TokenKey<0x40000000>;
+// Exclude bounds-safety.
+def KEYBOUNDSSAFETY : TokenKey<0x80000000>;
+def KEYBOUNDSSAFETYATTRIBUTES : TokenKey<0x100000000>;
 
-def KEYMAX : TokenKey<KEYNOHLSL.Value>;
+def KEYMAX : TokenKey<KEYBOUNDSSAFETYATTRIBUTES.Value>;
 def KEYALLCXX : TokenKey<!or(KEYCXX.Value, KEYCXX11.Value, KEYCXX20.Value)>;
 def KEYALL : TokenKey<!and(!or(KEYMAX.Value, !sub(KEYMAX.Value, 1)),
                            !xor(KEYNOMS18.Value, -1),
                            !xor(KEYNOOPENCL.Value, -1),
                            !xor(KEYNOZOS.Value, -1),
-                           !xor(KEYNOHLSL.Value, -1))>;
+                           !xor(KEYNOHLSL.Value, -1),
+                           !xor(KEYBOUNDSSAFETY.Value, -1),
+                           !xor(KEYBOUNDSSAFETYATTRIBUTES.Value, -1))>;
 class Trait<string P> {
   string Prefix = P;
   string Spelling = "";
