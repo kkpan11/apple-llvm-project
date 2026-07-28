@@ -81,6 +81,19 @@ void test_under_base_fail() {
   flex_t *__single flex = (flex_t *)oob_ptr;
 }
 
+// CHECK-LABEL: define dso_local void @test_under_base_fail_bigger_value(
+// CHECK-SAME: ) local_unnamed_addr #[[ATTR6:[0-9]+]] {
+// CHECK-NEXT:  [[ENTRY:.*:]]
+// CHECK-NEXT:    [[CALL:%.*]] = tail call i8 @mystery_value() #[[ATTR11]]
+// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR10]], {{!annotation ![0-9]+}}
+// CHECK-NEXT:    unreachable, {{!annotation ![0-9]+}}
+//
+void test_under_base_fail_bigger_value() {
+  char arr[20] = {mystery_value()};
+  char *oob_ptr = arr - 4;
+  flex_t *__single flex = (flex_t *)oob_ptr;
+}
+
 // CHECK-LABEL: define dso_local void @test_under_base_ok(
 // CHECK-SAME: ) local_unnamed_addr #[[ATTR2]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
@@ -119,7 +132,7 @@ void test_under_base_fail2() {
 
 
 // CHECK-LABEL: define dso_local void @test_over_base_fail(
-// CHECK-SAME: ) local_unnamed_addr #[[ATTR6:[0-9]+]] {
+// CHECK-SAME: ) local_unnamed_addr #[[ATTR6]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[CALL:%.*]] = tail call i8 @mystery_value() #[[ATTR11]]
 // CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR10]], {{!annotation ![0-9]+}}

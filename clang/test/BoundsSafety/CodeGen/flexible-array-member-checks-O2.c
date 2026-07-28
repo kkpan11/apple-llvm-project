@@ -79,8 +79,20 @@ void test_under_base_fail() {
   flex_t *__single flex = (flex_t *)oob_ptr;
 }
 
-// CHECK-LABEL: define dso_local void @test_under_base_ok(
+// CHECK-LABEL: define dso_local void @test_under_base_fail_bigger_value(
 // CHECK-SAME: ) local_unnamed_addr #[[ATTR4:[0-9]+]] {
+// CHECK-NEXT:  [[ENTRY:.*:]]
+// CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR9]], {{!annotation ![0-9]+}}
+// CHECK-NEXT:    unreachable, {{!annotation ![0-9]+}}
+//
+void test_under_base_fail_bigger_value() {
+  char arr[20];
+  char *oob_ptr = arr - 4;
+  flex_t *__single flex = (flex_t *)oob_ptr;
+}
+
+// CHECK-LABEL: define dso_local void @test_under_base_ok(
+// CHECK-SAME: ) local_unnamed_addr #[[ATTR5:[0-9]+]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    ret void
 //
@@ -115,7 +127,7 @@ void test_under_base_fail2() {
 
 
 // CHECK-LABEL: define dso_local void @test_over_base_fail(
-// CHECK-SAME: ) local_unnamed_addr #[[ATTR5:[0-9]+]] {
+// CHECK-SAME: ) local_unnamed_addr #[[ATTR4]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR9]], {{!annotation ![0-9]+}}
 // CHECK-NEXT:    unreachable, {{!annotation ![0-9]+}}
@@ -127,7 +139,7 @@ void test_over_base_fail() {
 }
 
 // CHECK-LABEL: define dso_local void @test_over_base_ok(
-// CHECK-SAME: ) local_unnamed_addr #[[ATTR4]] {
+// CHECK-SAME: ) local_unnamed_addr #[[ATTR5]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    ret void
 //
@@ -161,7 +173,7 @@ void test_over_base_fail2() {
 }
 
 // CHECK-LABEL: define dso_local void @test_small_base_fail(
-// CHECK-SAME: ptr nofree noundef readnone captures(none) [[FLEX:%.*]]) local_unnamed_addr #[[ATTR5]] {
+// CHECK-SAME: ptr nofree noundef readnone captures(none) [[FLEX:%.*]]) local_unnamed_addr #[[ATTR4]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR9]], {{!annotation ![0-9]+}}
 // CHECK-NEXT:    unreachable, {{!annotation ![0-9]+}}
@@ -172,7 +184,7 @@ void test_small_base_fail(flex_t *flex) {
 }
 
 // CHECK-LABEL: define dso_local void @test_small_base_ok(
-// CHECK-SAME: ) local_unnamed_addr #[[ATTR4]] {
+// CHECK-SAME: ) local_unnamed_addr #[[ATTR5]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    ret void
 //
@@ -182,7 +194,7 @@ void test_small_base_ok() {
 }
 
 // CHECK-LABEL: define dso_local void @test_small_base_fail2(
-// CHECK-SAME: ) local_unnamed_addr #[[ATTR5]] {
+// CHECK-SAME: ) local_unnamed_addr #[[ATTR4]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR9]], {{!annotation ![0-9]+}}
 // CHECK-NEXT:    unreachable, {{!annotation ![0-9]+}}
@@ -194,7 +206,7 @@ void test_small_base_fail2() {
 }
 
 // CHECK-LABEL: define dso_local void @test_count_from_buf_ok(
-// CHECK-SAME: ) local_unnamed_addr #[[ATTR4]] {
+// CHECK-SAME: ) local_unnamed_addr #[[ATTR5]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    ret void
 //
@@ -204,7 +216,7 @@ void test_count_from_buf_ok() {
 }
 
 // CHECK-LABEL: define dso_local void @test_count_from_buf_ok2(
-// CHECK-SAME: ptr nofree noundef readnone captures(none) [[FLEX:%.*]]) local_unnamed_addr #[[ATTR4]] {
+// CHECK-SAME: ptr nofree noundef readnone captures(none) [[FLEX:%.*]]) local_unnamed_addr #[[ATTR5]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    ret void
 //
@@ -214,7 +226,7 @@ void test_count_from_buf_ok2(flex_t *flex) {
 }
 
 // CHECK-LABEL: define dso_local void @test_count_from_buf_fail(
-// CHECK-SAME: ) local_unnamed_addr #[[ATTR5]] {
+// CHECK-SAME: ) local_unnamed_addr #[[ATTR4]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR9]], {{!annotation ![0-9]+}}
 // CHECK-NEXT:    unreachable, {{!annotation ![0-9]+}}
@@ -225,7 +237,7 @@ void test_count_from_buf_fail() {
 }
 
 // CHECK-LABEL: define dso_local void @test_count_from_buf_fail2(
-// CHECK-SAME: ptr nofree noundef readnone captures(none) [[FLEX:%.*]]) local_unnamed_addr #[[ATTR5]] {
+// CHECK-SAME: ptr nofree noundef readnone captures(none) [[FLEX:%.*]]) local_unnamed_addr #[[ATTR4]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR9]], {{!annotation ![0-9]+}}
 // CHECK-NEXT:    unreachable, {{!annotation ![0-9]+}}
@@ -236,7 +248,7 @@ void test_count_from_buf_fail2(flex_t *flex) {
 }
 
 // CHECK-LABEL: define dso_local void @test_base_count_ok(
-// CHECK-SAME: ptr nofree noundef readnone captures(none) [[FLEX:%.*]]) local_unnamed_addr #[[ATTR4]] {
+// CHECK-SAME: ptr nofree noundef readnone captures(none) [[FLEX:%.*]]) local_unnamed_addr #[[ATTR5]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    ret void
 //
@@ -247,7 +259,7 @@ void test_base_count_ok(flex_t *__single flex) {
 }
 
 // CHECK-LABEL: define dso_local void @test_base_count_fail(
-// CHECK-SAME: ptr nofree noundef readnone captures(none) [[FLEX:%.*]]) local_unnamed_addr #[[ATTR5]] {
+// CHECK-SAME: ptr nofree noundef readnone captures(none) [[FLEX:%.*]]) local_unnamed_addr #[[ATTR4]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR9]], {{!annotation ![0-9]+}}
 // CHECK-NEXT:    unreachable, {{!annotation ![0-9]+}}
@@ -259,7 +271,7 @@ void test_base_count_fail(flex_t *__single flex) {
 }
 
 // CHECK-LABEL: define dso_local void @test_base_fam_access(
-// CHECK-SAME: ptr nofree noundef readnone captures(none) [[FLEX:%.*]]) local_unnamed_addr #[[ATTR4]] {
+// CHECK-SAME: ptr nofree noundef readnone captures(none) [[FLEX:%.*]]) local_unnamed_addr #[[ATTR5]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    ret void
 //
@@ -272,7 +284,7 @@ void test_base_fam_access(flex_t *__single flex) {
 }
 
 // CHECK-LABEL: define dso_local void @test_base_fam_access_fail(
-// CHECK-SAME: ptr nofree noundef readnone captures(none) [[FLEX:%.*]]) local_unnamed_addr #[[ATTR5]] {
+// CHECK-SAME: ptr nofree noundef readnone captures(none) [[FLEX:%.*]]) local_unnamed_addr #[[ATTR4]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR9]], {{!annotation ![0-9]+}}
 // CHECK-NEXT:    unreachable, {{!annotation ![0-9]+}}
@@ -286,7 +298,7 @@ void test_base_fam_access_fail(flex_t *__single flex) {
 }
 
 // CHECK-LABEL: define dso_local void @test_unsafe_base_fam_access(
-// CHECK-SAME: ptr nofree noundef readnone captures(none) [[FLEX:%.*]]) local_unnamed_addr #[[ATTR4]] {
+// CHECK-SAME: ptr nofree noundef readnone captures(none) [[FLEX:%.*]]) local_unnamed_addr #[[ATTR5]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    ret void
 //
@@ -299,7 +311,7 @@ void test_unsafe_base_fam_access(flex_t *__unsafe_indexable flex) {
 }
 
 // CHECK-LABEL: define dso_local void @test_unsafe_base_fam_access_fail(
-// CHECK-SAME: ptr nofree noundef readnone captures(none) [[FLEX:%.*]]) local_unnamed_addr #[[ATTR5]] {
+// CHECK-SAME: ptr nofree noundef readnone captures(none) [[FLEX:%.*]]) local_unnamed_addr #[[ATTR4]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR9]], {{!annotation ![0-9]+}}
 // CHECK-NEXT:    unreachable, {{!annotation ![0-9]+}}
@@ -324,7 +336,7 @@ void test_null_base_fail(flex_t *__single flex) {
 }
 
 // CHECK-LABEL: define dso_local void @test_null_base_ok(
-// CHECK-SAME: ptr nofree noundef readnone captures(none) [[FLEX:%.*]]) local_unnamed_addr #[[ATTR4]] {
+// CHECK-SAME: ptr nofree noundef readnone captures(none) [[FLEX:%.*]]) local_unnamed_addr #[[ATTR5]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    ret void
 //
@@ -333,7 +345,7 @@ void test_null_base_ok(flex_t *__single flex) {
 }
 
 // CHECK-LABEL: define dso_local void @test_null_base_fam_access_fail(
-// CHECK-SAME: ptr nofree noundef readnone captures(none) [[FLEX:%.*]]) local_unnamed_addr #[[ATTR5]] {
+// CHECK-SAME: ptr nofree noundef readnone captures(none) [[FLEX:%.*]]) local_unnamed_addr #[[ATTR4]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR9]], {{!annotation ![0-9]+}}
 // CHECK-NEXT:    unreachable, {{!annotation ![0-9]+}}
@@ -350,7 +362,7 @@ typedef struct {
 } flex_wrapper_t;
 
 // CHECK-LABEL: define dso_local void @test_flex_init_list_ok(
-// CHECK-SAME: ) local_unnamed_addr #[[ATTR4]] {
+// CHECK-SAME: ) local_unnamed_addr #[[ATTR5]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    ret void
 //
@@ -361,7 +373,7 @@ void test_flex_init_list_ok() {
 }
 
 // CHECK-LABEL: define dso_local void @test_flex_init_list_fail(
-// CHECK-SAME: ) local_unnamed_addr #[[ATTR5]] {
+// CHECK-SAME: ) local_unnamed_addr #[[ATTR4]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR9]], {{!annotation ![0-9]+}}
 // CHECK-NEXT:    unreachable, {{!annotation ![0-9]+}}
@@ -391,7 +403,7 @@ void test_flex_argument_ok() {
 }
 
 // CHECK-LABEL: define dso_local void @test_flex_argument_fail(
-// CHECK-SAME: ) local_unnamed_addr #[[ATTR5]] {
+// CHECK-SAME: ) local_unnamed_addr #[[ATTR4]] {
 // CHECK-NEXT:  [[TRAP:.*:]]
 // CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR9]], {{!annotation ![0-9]+}}
 // CHECK-NEXT:    unreachable, {{!annotation ![0-9]+}}
