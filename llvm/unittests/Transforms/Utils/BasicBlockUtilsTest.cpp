@@ -373,7 +373,7 @@ exit:
   LoopInfo LI(DT);
 
   EXPECT_TRUE(DT.verify());
-  LI.verify(DT);
+  LI.verify();
   auto *LoopBB = getBasicBlockByName(*F, "loop");
   DomTreeUpdater DTU(DT, DomTreeUpdater::UpdateStrategy::Eager);
   auto *New = splitBlockBefore(LoopBB, LoopBB->getFirstInsertionPt(), &DTU, &LI,
@@ -381,7 +381,7 @@ exit:
                                LoopBB->getName() + ".split");
 
   EXPECT_TRUE(DT.verify());
-  LI.verify(DT);
+  LI.verify();
   EXPECT_EQ(LI.getLoopFor(New)->getHeader(), New);
 }
 
@@ -488,12 +488,12 @@ exit:
   LoopInfo LI(DT);
 
   EXPECT_TRUE(DT.verify());
-  LI.verify(DT);
+  LI.verify();
   SplitBlockPredecessors(getBasicBlockByName(*F, "catch_dest"),
                          {getBasicBlockByName(*F, "loop")}, "", &DT, &LI);
 
   EXPECT_TRUE(DT.verify());
-  LI.verify(DT);
+  LI.verify();
   EXPECT_EQ(LI.getLoopFor(getBasicBlockByName(*F, "catch_dest")), nullptr);
 }
 
@@ -538,12 +538,12 @@ exit:
   LoopInfo LI(DT);
 
   EXPECT_TRUE(DT.verify());
-  LI.verify(DT);
+  LI.verify();
   SplitBlockPredecessors(getBasicBlockByName(*F, "catch_dest"),
                          {getBasicBlockByName(*F, "loop")}, "", &DT, &LI);
 
   EXPECT_TRUE(DT.verify());
-  LI.verify(DT);
+  LI.verify();
   EXPECT_EQ(LI.getLoopFor(getBasicBlockByName(*F, "catch_dest")),
             LI.getLoopFor(getBasicBlockByName(*F, "superloop")));
 }
