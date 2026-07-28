@@ -39,7 +39,7 @@ int opaque(int x) {
 // CHECK-NEXT:    ret i32 [[ADD_3]]
 //
 int read_from_global_array_can_remove_checks() {
-    int res = 0;
+  int res = 0;
   for (unsigned char i = 0; i < 4; i++) {
     res += a[i];
   }
@@ -79,7 +79,10 @@ int read_from_global_array_can_remove_checks() {
 // CHECK-NEXT:    br i1 [[CMP]], label %[[FOR_BODY]], label %[[FOR_COND_CLEANUP]], {{!llvm.loop ![0-9]+}}
 //
 int read_from_global_array_can_remove_checks_opaque() {
-    int res = 0;
+  // opaque bound: unlike the non-opaque version above, the trip count is not
+  // known at compile time, so the range checks are NOT removed and remain as
+  // a runtime-checked loop.
+  int res = 0;
   for (unsigned char i = 0; i < opaque(4); i++) {
     res += a[i];
   }
@@ -93,7 +96,7 @@ int read_from_global_array_can_remove_checks_opaque() {
 // CHECK-NEXT:    unreachable, {{!annotation ![0-9]+}}
 //
 int read_from_global_array_trap_last_iter() {
-    int res = 0;
+  int res = 0;
   for (unsigned char i = 0; i < 5; i++) {
     res += a[i];
   }
@@ -133,7 +136,11 @@ int read_from_global_array_trap_last_iter() {
 // CHECK-NEXT:    br i1 [[CMP]], label %[[FOR_BODY]], label %[[FOR_COND_CLEANUP]], {{!llvm.loop ![0-9]+}}
 //
 int read_from_global_array_trap_last_iter_opaque() {
-    int res = 0;
+  // opaque bound: unlike the non-opaque version above (which folds to an
+  // unconditional trap), the out-of-bounds access is not known at compile
+  // time, so this emits a runtime-checked loop that traps on the OOB
+  // iteration.
+  int res = 0;
   for (unsigned char i = 0; i < opaque(5); i++) {
     res += a[i];
   }
@@ -284,11 +291,11 @@ typedef struct {
 void concat_to_separate_clobals(hdr_t *p_buf) {
   uint8_t *params = p_buf->payload + 3;
   for (unsigned char i = 0; i < 4; i++) {
-    uint8_t *__counted_by(4) p = params;
-    a[i] = p[3]; // checks not removed for p[]
-    b[i] = p[1]; // checks not removed for b[] and p[]
-    c[i] = p[2]; // checks not removed for c[] and p[]
-    d[i] = p[0]; // checks not removed for d[]
+    uint8_t *__counted_by(4) p = params; // initial p check against FAM bounds here remains
+    a[i] = p[3]; // const bound: a[] check removed, p[] check removed
+    b[i] = p[1]; // const bound: b[] check removed, p[] check removed
+    c[i] = p[2]; // const bound: c[] check removed, p[] check removed
+    d[i] = p[0]; // const bound: d[] check removed, p[] check removed
     params += 4;
   }
 }
@@ -390,11 +397,11 @@ void concat_to_separate_clobals(hdr_t *p_buf) {
 void concat_to_separate_clobals_opaque(hdr_t *p_buf) {
   uint8_t *params = p_buf->payload + 3;
   for (unsigned char i = 0; i < opaque(4); i++) {
-    uint8_t *__counted_by(4) p = params;
-    a[i] = p[3]; // checks not removed for p[]
-    b[i] = p[1]; // checks not removed for b[] and p[]
-    c[i] = p[2]; // checks not removed for c[] and p[]
-    d[i] = p[0]; // checks not removed for d[]
+    uint8_t *__counted_by(4) p = params; // initial p check against FAM bounds here remains
+    a[i] = p[3]; // opaque bound: a[] check NOT removed, p[] check removed
+    b[i] = p[1]; // opaque bound: b[] check NOT removed, p[] check removed
+    c[i] = p[2]; // opaque bound: c[] check NOT removed, p[] check removed
+    d[i] = p[0]; // opaque bound: d[] check NOT removed, p[] check removed
     params += 4;
   }
 }
@@ -521,11 +528,11 @@ void concat_to_arrays_struct_can_remove_arrays_check(struct arrays *arrays, hdr_
   uint8_t *params = p_buf->payload + 3;
 
   for (unsigned char i = 0; i < 4; i++) {
-    uint8_t *__counted_by(4) p = params;
-    arrays->a[i] = p[3]; // checks not removed for p[]
-    arrays->b[i] = p[1]; // checks not removed for b[] and p[]
-    arrays->c[i] = p[2]; // checks not removed for c[] and p[]
-    arrays->d[i] = p[0]; // checks not removed for d[]
+    uint8_t *__counted_by(4) p = params; // initial p check against FAM bounds here remains
+    arrays->a[i] = p[3]; // const bound: a[] check removed, p[] check removed
+    arrays->b[i] = p[1]; // const bound: b[] check removed, p[] check removed
+    arrays->c[i] = p[2]; // const bound: c[] check removed, p[] check removed
+    arrays->d[i] = p[0]; // const bound: d[] check removed, p[] check removed
     params += 4;
   }
 }
@@ -628,11 +635,11 @@ void concat_to_arrays_struct_can_remove_arrays_check_opaque(struct arrays *array
   uint8_t *params = p_buf->payload + 3;
 
   for (unsigned char i = 0; i < opaque(4); i++) {
-    uint8_t *__counted_by(4) p = params;
-    arrays->a[i] = p[3]; // checks not removed for p[]
-    arrays->b[i] = p[1]; // checks not removed for b[] and p[]
-    arrays->c[i] = p[2]; // checks not removed for c[] and p[]
-    arrays->d[i] = p[0]; // checks not removed for d[]
+    uint8_t *__counted_by(4) p = params; // initial p check against FAM bounds here remains
+    arrays->a[i] = p[3]; // opaque bound: a[] check NOT removed, p[] check removed
+    arrays->b[i] = p[1]; // opaque bound: b[] check NOT removed, p[] check removed
+    arrays->c[i] = p[2]; // opaque bound: c[] check NOT removed, p[] check removed
+    arrays->d[i] = p[0]; // opaque bound: d[] check NOT removed, p[] check removed
     params += 4;
   }
 }
@@ -756,12 +763,14 @@ void concat_to_arrays_struct_can_remove_arrays_check_opaque(struct arrays *array
 void concat_to_arrays_struct_trap_on_last_iter(struct arrays *arrays, hdr_t *p_buf) {
   uint8_t *params = p_buf->payload + 3;
 
+  // const bound: i==4 is out of bounds for the [4] arrays, so this folds to a
+  // trap on the last iteration.
   for (unsigned char i = 0; i < 5; i++) {
-    uint8_t *__counted_by(4) p = params;
-    arrays->a[i] = p[3]; // checks not removed for p[]
-    arrays->b[i] = p[1]; // checks not removed for b[] and p[]
-    arrays->c[i] = p[2]; // checks not removed for c[] and p[]
-    arrays->d[i] = p[0]; // checks not removed for d[]
+    uint8_t *__counted_by(4) p = params; // initial p check against FAM bounds here remains
+    arrays->a[i] = p[3]; // const bound: a[] check removed, p[] check removed
+    arrays->b[i] = p[1]; // const bound: b[] check removed, p[] check removed
+    arrays->c[i] = p[2]; // const bound: c[] check removed, p[] check removed
+    arrays->d[i] = p[0]; // const bound: d[] check removed, p[] check removed
     params += 4;
   }
 }
@@ -864,11 +873,11 @@ void concat_to_arrays_struct_trap_on_last_iter_opaque(struct arrays *arrays, hdr
   uint8_t *params = p_buf->payload + 3;
 
   for (unsigned char i = 0; i < opaque(5); i++) {
-    uint8_t *__counted_by(4) p = params;
-    arrays->a[i] = p[3]; // checks not removed for p[]
-    arrays->b[i] = p[1]; // checks not removed for b[] and p[]
-    arrays->c[i] = p[2]; // checks not removed for c[] and p[]
-    arrays->d[i] = p[0]; // checks not removed for d[]
+    uint8_t *__counted_by(4) p = params; // initial p check against FAM bounds here remains
+    arrays->a[i] = p[3]; // opaque bound: a[] check NOT removed, p[] check removed
+    arrays->b[i] = p[1]; // opaque bound: b[] check NOT removed, p[] check removed
+    arrays->c[i] = p[2]; // opaque bound: c[] check NOT removed, p[] check removed
+    arrays->d[i] = p[0]; // opaque bound: d[] check NOT removed, p[] check removed
     params += 4;
   }
 }
@@ -969,11 +978,11 @@ void concat_to_arrays_struct_cannot_remove_arrays_check(struct arrays *arrays, h
   uint8_t *params = p_buf->payload + 3;
 
   for (unsigned char i = 0; i < n; i++) {
-    uint8_t *__counted_by(4) p = params;
-    arrays->a[i] = p[3]; // checks not removed for p[]
-    arrays->b[i] = p[1]; // checks not removed for b[] and p[]
-    arrays->c[i] = p[2]; // checks not removed for c[] and p[]
-    arrays->d[i] = p[0]; // checks not removed for d[]
+    uint8_t *__counted_by(4) p = params; // initial p check against FAM bounds here remains
+    arrays->a[i] = p[3]; // runtime bound: a[] check NOT removed, p[] check removed
+    arrays->b[i] = p[1]; // runtime bound: b[] check NOT removed, p[] check removed
+    arrays->c[i] = p[2]; // runtime bound: c[] check NOT removed, p[] check removed
+    arrays->d[i] = p[0]; // runtime bound: d[] check NOT removed, p[] check removed
     params += 4;
   }
 }
