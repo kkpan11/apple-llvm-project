@@ -698,7 +698,8 @@ public:
 
   /// ParseObjCSelectorExpression - Build selector expression for \@selector
   ExprResult ParseObjCSelectorExpression(Selector Sel, SourceLocation AtLoc,
-                                         SourceLocation SelLoc,
+                                         SourceLocation SelKWLoc,
+                                         SourceLocation SelNameLoc,
                                          SourceLocation LParenLoc,
                                          SourceLocation RParenLoc,
                                          bool WarnMultipleSelectors);
