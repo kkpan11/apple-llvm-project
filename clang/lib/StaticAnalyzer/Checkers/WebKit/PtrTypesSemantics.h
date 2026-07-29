@@ -9,6 +9,7 @@
 #ifndef LLVM_CLANG_ANALYZER_WEBKIT_PTRTYPESEMANTICS_H
 #define LLVM_CLANG_ANALYZER_WEBKIT_PTRTYPESEMANTICS_H
 
+#include "clang/AST/Stmt.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
