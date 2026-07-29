@@ -1631,6 +1631,17 @@ gentbl_cc_library(
 )
 
 gentbl_cc_library(
+    name = "AMDGPUTargetParserDefGen",
+    tbl_outs = {"include/llvm/TargetParser/AMDGPUTargetParserDef.inc": ["-gen-amdgpu-target-def"]},
+    tblgen = ":llvm-min-tblgen",
+    td_file = "lib/Target/AMDGPU/AMDGPU.td",
+    deps = [
+        ":AMDGPUTargetTdFiles",
+        ":CommonTargetTdFiles",
+    ],
+)
+
+gentbl_cc_library(
     name = "R600TargetParserDefGen",
     tbl_outs = {"include/llvm/TargetParser/R600TargetParserDef.inc": ["-gen-amdgpu-target-def"]},
     tblgen = ":llvm-min-tblgen",
@@ -1685,6 +1696,7 @@ cc_library(
         "include/llvm/TargetParser/AArch64CPUFeatures.inc",
         "include/llvm/TargetParser/AArch64FeatPriorities.inc",
         "include/llvm/TargetParser/AArch64TargetParserDef.inc",
+        "include/llvm/TargetParser/AMDGPUTargetParserDef.inc",
         "include/llvm/TargetParser/ARMTargetParserDef.inc",
         "include/llvm/TargetParser/RISCVTargetParserDef.inc",
         "include/llvm/TargetParser/R600TargetParserDef.inc",
