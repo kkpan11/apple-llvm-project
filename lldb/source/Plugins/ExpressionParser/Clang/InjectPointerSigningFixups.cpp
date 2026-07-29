@@ -159,8 +159,8 @@ struct PerGlobalUtils {
       if (&T == PtrForInsts->getType()) {
         for (auto &I : Entry)
           if (!isa<AllocaInst>(I)) {
-            auto *Load =
-                new LoadInst(Pointee->getType(), PtrForInsts, Twine(), &I);
+            auto *Load = new LoadInst(Pointee->getType(), PtrForInsts, Twine(),
+                                      I.getIterator());
             LI = LoadsForCaller.insert(std::make_pair(Key, Load)).first;
             break;
           }
