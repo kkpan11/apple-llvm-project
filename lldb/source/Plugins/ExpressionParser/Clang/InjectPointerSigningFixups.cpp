@@ -159,15 +159,16 @@ struct PerGlobalUtils {
       if (&T == PtrForInsts->getType()) {
         for (auto &I : Entry)
           if (!isa<AllocaInst>(I)) {
-            auto *Load =
-                new LoadInst(Pointee->getType(), PtrForInsts, Twine(), &I);
+            auto *Load = new LoadInst(Pointee->getType(), PtrForInsts, Twine(),
+                                      I.getIterator());
             LI = LoadsForCaller.insert(std::make_pair(Key, Load)).first;
             break;
           }
       } else {
         auto *OriginalLoad = getPtrLoadFor(F, *PtrForInsts->getType());
         auto *Cast = CastInst::CreateBitOrPointerCast(
-            OriginalLoad, &T, "", &*std::next(OriginalLoad->getIterator()));
+            OriginalLoad, &T, "",
+            std::next(OriginalLoad->getIterator())->getIterator());
         LI = LoadsForCaller.insert(std::make_pair(Key, Cast)).first;
       }
     }
