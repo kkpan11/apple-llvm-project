@@ -43,6 +43,11 @@ public:
 
   Opcode() = default;
 
+  /// The size in bytes of the fixed buffer used to store opcode bytes. It must
+  /// be big enough to hold the longest opcode of any supported target (x86
+  /// caps instructions at 15 bytes).
+  static constexpr size_t kMaxByteSize = 16;
+
   Opcode(uint8_t inst, lldb::ByteOrder order)
       : m_byte_order(order), m_type(eType8) {
     m_data.inst8 = inst;
@@ -211,7 +216,7 @@ public:
     if (bytes != nullptr && length > 0) {
       m_type = type;
       m_data.inst.length = length;
-      assert(length < sizeof(m_data.inst.bytes));
+      assert(length <= sizeof(m_data.inst.bytes));
       memcpy(m_data.inst.bytes, bytes, length);
       m_byte_order = order;
     } else {
@@ -292,8 +297,8 @@ protected:
     uint32_t inst32;
     uint64_t inst64;
     struct {
-      uint8_t bytes[16]; // This must be big enough to handle any opcode for any
-                         // supported target.
+      uint8_t bytes[kMaxByteSize]; // This must be big enough to handle any
+                                   // opcode for any supported target.
       uint8_t length;
     } inst;
   } m_data;
