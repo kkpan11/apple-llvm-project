@@ -196,6 +196,11 @@ if(TARGET llvm-remote-cache-test)
   set(LLVM_TEST_DEPENDS ${LLVM_TEST_DEPENDS} llvm-remote-cache-test)
 endif()
 
+# Only built when the AMDGPU target is enabled.
+if (TARGET llvm-calc-occupancy)
+  list(APPEND LLVM_TEST_DEPENDS llvm-calc-occupancy)
+endif ()
+
 if(LLVM_INCLUDE_EXAMPLES)
   list(APPEND LLVM_TEST_DEPENDS
     Kaleidoscope-Ch3
