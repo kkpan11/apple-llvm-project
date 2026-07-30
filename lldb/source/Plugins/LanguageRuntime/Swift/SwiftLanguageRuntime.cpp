@@ -1313,8 +1313,8 @@ llvm::Error SwiftLanguageRuntime::GetObjectDescription(Stream &str,
         "Failed to allocate memory for copy object.");
   }
 
-  auto cleanup = llvm::make_scope_exit(
-      [&]() { GetProcess().DeallocateMemory(copy_location); });
+  auto cleanup =
+      llvm::scope_exit([&]() { GetProcess().DeallocateMemory(copy_location); });
 
   if (expr_string.empty())
     return llvm::createStringError("no object description");

@@ -1729,7 +1729,7 @@ void SwiftASTContext::AddExtraClangArgs(const std::vector<std::string> &source,
     if (IsMultiArgClangFlag(clang_argument))
       continue;
 
-    auto clear_arg = llvm::make_scope_exit([&] { clang_argument.clear(); });
+    auto clear_arg = llvm::scope_exit([&] { clang_argument.clear(); });
 
     // Consume any -working-directory arguments.
     StringRef cwd(clang_argument);
@@ -1953,7 +1953,7 @@ void SwiftASTContext::AddExtraClangArgs(
     llvm::ArrayRef<std::pair<std::string, bool>> framework_search_paths,
     StringRef overrideOpts) {
   swift::ClangImporterOptions &importer_options = GetClangImporterOptions();
-  auto defer = llvm::make_scope_exit([&]() {
+  auto defer = llvm::scope_exit([&]() {
     // Detect explicitly-built modules.
     m_has_explicit_modules |=
         llvm::any_of(importer_options.ExtraArgs, [](const std::string &s) {
@@ -2285,7 +2285,7 @@ void SwiftASTContext::FilterClangImporterOptions(
       continue;
     }
     if (!ivfs_arg.empty()) {
-      auto clear_ivfs_arg = llvm::make_scope_exit([&] { ivfs_arg.clear(); });
+      auto clear_ivfs_arg = llvm::scope_exit([&] { ivfs_arg.clear(); });
       if (!IsModuleAvailable(arg)) {
         if (ctx) {
           std::string error;
@@ -2664,14 +2664,13 @@ SwiftASTContext::CreateInstance(lldb::LanguageType language, Module &module,
           m_description, module.shared_from_this(),
           typeref_typesystem.GetTypeSystemSwiftTypeRef())));
   bool suppress_config_log = false;
-  auto defer_log =
-      llvm::make_scope_exit([swift_ast_sp, &suppress_config_log] {
-        // To avoid spamming the log with useless info, we don't log the
-        // configuration if everything went fine and the current module
-        // doesn't have any Swift contents (i.e., the shared cache dylibs).
-        if (!suppress_config_log)
-          swift_ast_sp->LogConfiguration();
-      });
+  auto defer_log = llvm::scope_exit([swift_ast_sp, &suppress_config_log] {
+    // To avoid spamming the log with useless info, we don't log the
+    // configuration if everything went fine and the current module
+    // doesn't have any Swift contents (i.e., the shared cache dylibs).
+    if (!suppress_config_log)
+      swift_ast_sp->LogConfiguration();
+  });
 
   // This is a module AST context, mark it as such.
   swift_ast_sp->m_is_scratch_context = false;
@@ -2828,7 +2827,7 @@ SwiftASTContext::CreateInstance(lldb::LanguageType language, Module &module,
 
     // Clear the callback function on scope exit to prevent an out-of-scope
     // access of the progress local variable
-    auto on_exit = llvm::make_scope_exit([&]() {
+    auto on_exit = llvm::scope_exit([&]() {
       ast_context->SetPreModuleImportCallback(
           [](llvm::StringRef module_name,
              swift::ASTContext::ModuleImportKind kind) {});
@@ -3228,7 +3227,7 @@ lldb::TypeSystemSP SwiftASTContext::CreateInstance(
     if (ShouldEnableEmbeddedSwift(cu))
       lang_opts.enableFeature(swift::Feature::Embedded);
   }
-  auto defer_log = llvm::make_scope_exit([swift_ast_sp, repl, playground] {
+  auto defer_log = llvm::scope_exit([swift_ast_sp, repl, playground] {
     swift_ast_sp->LogConfiguration(repl, playground);
   });
 
@@ -3629,7 +3628,7 @@ lldb::TypeSystemSP SwiftASTContext::CreateInstance(
 
     // Clear the callback function on scope exit to prevent an out-of-scope
     // access of the progress local variable
-    auto on_exit = llvm::make_scope_exit([&]() {
+    auto on_exit = llvm::scope_exit([&]() {
       ast_context->SetPreModuleImportCallback(
           [](llvm::StringRef module_name,
              swift::ASTContext::ModuleImportKind kind) {});
