@@ -315,6 +315,8 @@ llvm::Expected<std::string> ScriptInterpreterPython::ExtensionToImportPath(
   case eScriptedExtensionScriptedCommand:
   case eScriptedExtensionParsedCommand:
     return "lldb.plugins.scripted_command";
+  case eScriptedExtensionScriptedStringSummary:
+    return "lldb.plugins.scripted_string_summary";
   case eScriptedExtensionInvalid:
     return llvm::createStringError("invalid extension name");
   }
@@ -2041,6 +2043,11 @@ ScriptInterpreterPythonImpl::CreateScriptedStackFrameRecognizerInterface() {
 ScriptedCommandInterfaceSP
 ScriptInterpreterPythonImpl::CreateScriptedCommandInterface() {
   return std::make_shared<ScriptedCommandPythonInterface>(*this);
+}
+
+ScriptedStringSummaryInterfaceSP
+ScriptInterpreterPythonImpl::CreateScriptedStringSummaryInterface() {
+  return std::make_shared<ScriptedStringSummaryPythonInterface>(*this);
 }
 
 ScriptedThreadInterfaceSP
