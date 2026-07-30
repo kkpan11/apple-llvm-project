@@ -83,6 +83,7 @@ Parser::Parser(Preprocessor &pp, Sema &actions, bool skipFunctionBodies)
       [this](StringRef TypeStr, StringRef Context, SourceLocation IncludeLoc) {
         return this->ParseTypeFromString(TypeStr, Context, IncludeLoc);
       };
+
   /* TO_UPSTREAM(BoundsSafety) ON */
   Actions.ParseBoundsAttributeArgFromStringCallback =
       [this](StringRef ExprStr, StringRef Context, Decl *Parent,
@@ -96,6 +97,8 @@ Parser::Parser(Preprocessor &pp, Sema &actions, bool skipFunctionBodies)
         this->ParseLexedFunctionReturnTypeBoundsAttrs(D, FD);
       };
   /* TO_UPSTREAM(BoundsSafety) OFF */
+
+  Initialize();
 }
 
 DiagnosticBuilder Parser::Diag(SourceLocation Loc, unsigned DiagID) {
@@ -596,9 +599,6 @@ void Parser::Initialize() {
   }
 
   Actions.Initialize();
-
-  // Prime the lexer look-ahead.
-  ConsumeToken();
 }
 
 void Parser::DestroyTemplateIds() {
