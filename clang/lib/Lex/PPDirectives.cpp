@@ -460,6 +460,9 @@ void Preprocessor::ReadMacroName(Token &MacroNameTok, MacroUse isDefineUndef,
 SourceLocation Preprocessor::CheckEndOfDirective(const char *DirType,
                                                  bool EnableMacros) {
   Token Tmp;
+  // Avoid use-of-uninitialized-memory for edge case(s) where there is no extra
+  // token to be parsed.
+  Tmp.startToken();
   // Lex unexpanded tokens for most directives: macros might expand to zero
   // tokens, causing us to miss diagnosing invalid lines.  Some directives (like
   // #line) allow empty macros.
