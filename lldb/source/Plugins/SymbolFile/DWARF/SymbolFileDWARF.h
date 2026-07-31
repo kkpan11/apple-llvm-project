@@ -105,6 +105,8 @@ public:
 
   static llvm::StringRef GetPluginDescriptionStatic();
 
+  static llvm::StringRef GetDwoDiagnosticSuffix();
+
   static SymbolFile *CreateInstance(lldb::ObjectFileSP objfile_sp);
 
   // Constructors and Destructors
