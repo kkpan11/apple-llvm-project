@@ -2297,7 +2297,7 @@ void ConstraintInfo::tightenBoundUsingNe(
 
     // Skip if there are any unknown variables.
     const auto &Value2Index = getValue2Index(IsSigned);
-    if (any_of(decompose(A, *this, IsSigned, DL).Vars,
+    if (any_of(decompose(A, *this, IsSigned, State).Vars,
                [&Value2Index](const DecompEntry &E) {
                  return !Value2Index.contains(E.Variable);
                }))
