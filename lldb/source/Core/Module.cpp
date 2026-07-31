@@ -1467,6 +1467,10 @@ void Module::FindSymbolsMatchingRegExAndType(
 
 void Module::PreloadSymbols() {
   std::lock_guard<std::recursive_mutex> guard(m_mutex);
+
+  if (m_did_preload_symbols.exchange(true))
+    return;
+
   SymbolFile *sym_file = GetSymbolFile();
   if (!sym_file)
     return;
@@ -1540,6 +1544,7 @@ void Module::SetSymbolFileFileSpec(const FileSpec &file) {
   m_symfile_spec = file;
   m_symfile_up.reset();
   m_did_load_symfile = false;
+  m_did_preload_symbols = false;
 }
 
 bool Module::IsExecutable() {
