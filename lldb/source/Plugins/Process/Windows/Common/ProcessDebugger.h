@@ -14,6 +14,10 @@
 #include "lldb/Utility/Status.h"
 #include "lldb/lldb-forward.h"
 #include "lldb/lldb-types.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/ErrorExtras.h"
 #include "llvm/Support/Mutex.h"
 
 #include "ForwardDecl.h"
@@ -61,6 +65,10 @@ public:
   virtual void OnUnloadDll(lldb::addr_t module_addr);
   virtual void OnDebugString(const std::string &string);
   virtual void OnDebuggerError(const Status &error, uint32_t type);
+
+  static bool IsSystemDLL(llvm::StringRef path);
+
+  bool IsSystemModuleAddress(lldb::addr_t addr);
 
 protected:
   Status DetachProcess();
