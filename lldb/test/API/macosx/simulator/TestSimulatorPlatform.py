@@ -116,7 +116,7 @@ class TestSimulatorPlatformLaunching(TestBase):
             )
 
     @skipIfAsan
-    @skipUnlessDarwin
+    @requireDarwin
     @skipIfDarwinEmbedded
     @apple_simulator_test("iphone")
     def test_ios(self):
@@ -131,7 +131,7 @@ class TestSimulatorPlatformLaunching(TestBase):
         )
 
     @skipIfAsan
-    @skipUnlessDarwin
+    @requireDarwin
     @skipIfDarwinEmbedded
     @apple_simulator_test("appletv")
     def test_tvos(self):

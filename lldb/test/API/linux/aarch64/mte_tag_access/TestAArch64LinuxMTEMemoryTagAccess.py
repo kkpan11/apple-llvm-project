@@ -44,7 +44,7 @@ class AArch64LinuxMTEMemoryTagAccessTestCase(TestBase):
         )
 
     @skipUnlessArch("aarch64")
-    @skipUnlessPlatform(["linux"])
+    @requireLinux
     @skipUnlessAArch64MTELinuxCompiler
     def test_mte_tag_read(self):
         self.setup_mte_test()
@@ -209,7 +209,7 @@ class AArch64LinuxMTEMemoryTagAccessTestCase(TestBase):
         )
 
     @skipUnlessArch("aarch64")
-    @skipUnlessPlatform(["linux"])
+    @requireLinux
     @skipUnlessAArch64MTELinuxCompiler
     def test_mte_tag_write(self):
         self.setup_mte_test()
@@ -431,7 +431,7 @@ class AArch64LinuxMTEMemoryTagAccessTestCase(TestBase):
         )
 
     @skipUnlessArch("aarch64")
-    @skipUnlessPlatform(["linux"])
+    @requireLinux
     @skipUnlessAArch64MTELinuxCompiler
     def test_mte_memory_read_tag_display(self):
         self.setup_mte_test()
@@ -588,7 +588,7 @@ class AArch64LinuxMTEMemoryTagAccessTestCase(TestBase):
         )
 
     @skipUnlessArch("aarch64")
-    @skipUnlessPlatform(["linux"])
+    @requireLinux
     @skipUnlessAArch64MTELinuxCompiler
     def test_mte_memory_read_tag_display_repeated(self):
         """Test that the --show-tags option is kept when repeating the memory read command."""
@@ -628,7 +628,7 @@ class AArch64LinuxMTEMemoryTagAccessTestCase(TestBase):
         )
 
     @skipUnlessArch("aarch64")
-    @skipUnlessPlatform(["linux"])
+    @requireLinux
     @skipUnlessAArch64MTELinuxCompiler
     def test_mte_memory_find(self):
         """Test the --show-tags option with memory find."""
