@@ -145,7 +145,6 @@ set(LLVM_TEST_DEPENDS
   llvm-reduce
   llvm-remarkutil
   llvm-rtdyld
-  llvm-sim
   llvm-size
   llvm-split
   llvm-stress
