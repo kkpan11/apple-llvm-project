@@ -1578,6 +1578,11 @@ Desugar(swift::Demangle::Demangler &dem, swift::Demangle::NodePointer node,
   assert(node->getNumChildren() >= 1 && node->getNumChildren() <= 2 &&
          "Sugared types should only have 1 or 2 children");
   for (NodePointer child : *node) {
+    // Don't wrap types in another type node.
+    if (child->getKind() == Node::Kind::Type) {
+      type_list->addChild(child, dem);
+      continue;
+    }
     NodePointer type = dem.createNode(Node::Kind::Type);
     type->addChild(child, dem);
     type_list->addChild(type, dem);
