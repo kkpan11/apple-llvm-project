@@ -485,6 +485,38 @@ eScriptLanguageUnknown = _lldb.eScriptLanguageUnknown
 
 eScriptLanguageDefault = _lldb.eScriptLanguageDefault
 
+eScriptedExtensionInvalid = _lldb.eScriptedExtensionInvalid
+
+eScriptedExtensionOperatingSystem = _lldb.eScriptedExtensionOperatingSystem
+
+eScriptedExtensionScriptedPlatform = _lldb.eScriptedExtensionScriptedPlatform
+
+eScriptedExtensionScriptedProcess = _lldb.eScriptedExtensionScriptedProcess
+
+eScriptedExtensionScriptedBreakpointResolver = _lldb.eScriptedExtensionScriptedBreakpointResolver
+
+eScriptedExtensionScriptedThreadPlan = _lldb.eScriptedExtensionScriptedThreadPlan
+
+eScriptedExtensionScriptedFrameProvider = _lldb.eScriptedExtensionScriptedFrameProvider
+
+eScriptedExtensionScriptedHook = _lldb.eScriptedExtensionScriptedHook
+
+eScriptedExtensionScriptedThread = _lldb.eScriptedExtensionScriptedThread
+
+eScriptedExtensionScriptedFrame = _lldb.eScriptedExtensionScriptedFrame
+
+eScriptedExtensionScriptedStackFrameRecognizer = _lldb.eScriptedExtensionScriptedStackFrameRecognizer
+
+eScriptedExtensionScriptedCommand = _lldb.eScriptedExtensionScriptedCommand
+
+eScriptedExtensionParsedCommand = _lldb.eScriptedExtensionParsedCommand
+
+eScriptedExtensionScriptedStringSummary = _lldb.eScriptedExtensionScriptedStringSummary
+
+eScriptedExtensionScriptedSyntheticChildren = _lldb.eScriptedExtensionScriptedSyntheticChildren
+
+kLastScriptedExtension = _lldb.kLastScriptedExtension
+
 eRegisterKindEHFrame = _lldb.eRegisterKindEHFrame
 r"""the register numbers seen in eh_frame"""
 eRegisterKindDWARF = _lldb.eRegisterKindDWARF
@@ -1162,6 +1194,8 @@ eArgTypePluginDomain = _lldb.eArgTypePluginDomain
 
 eArgTypeBreakpointResolverMask = _lldb.eArgTypeBreakpointResolverMask
 
+eArgTypeScriptedExtension = _lldb.eArgTypeScriptedExtension
+
 eArgTypeLastArg = _lldb.eArgTypeLastArg
 
 eSymbolTypeAny = _lldb.eSymbolTypeAny
@@ -1355,6 +1389,8 @@ eSectionTypeLLDBFormatters = _lldb.eSectionTypeLLDBFormatters
 eSectionTypeSwiftModules = _lldb.eSectionTypeSwiftModules
 
 eSectionTypeWasmName = _lldb.eSectionTypeWasmName
+
+eSectionTypeWasmGlobal = _lldb.eSectionTypeWasmGlobal
 
 eEmulateInstructionOptionNone = _lldb.eEmulateInstructionOptionNone
 
@@ -2032,6 +2068,8 @@ eCustomCompletion = _lldb.eCustomCompletion
 eThreadIDCompletion = _lldb.eThreadIDCompletion
 
 eManagedPluginCompletion = _lldb.eManagedPluginCompletion
+
+eScriptedExtensionCompletion = _lldb.eScriptedExtensionCompletion
 
 eTerminatorCompletion = _lldb.eTerminatorCompletion
 
@@ -8593,8 +8631,24 @@ eLanguageNameHylo = _lldb.eLanguageNameHylo
 r"""Hylo."""
 eLanguageNameHIP = _lldb.eLanguageNameHIP
 r"""HIP."""
+eLanguageNameOdin = _lldb.eLanguageNameOdin
+r"""Odin."""
+eLanguageNameP4 = _lldb.eLanguageNameP4
+r"""P4."""
 eLanguageNameMetal = _lldb.eLanguageNameMetal
 r"""Metal."""
+eLanguageNameV = _lldb.eLanguageNameV
+r"""V."""
+eLanguageNameAlgol68 = _lldb.eLanguageNameAlgol68
+r"""Algol 68."""
+eLanguageNameNim = _lldb.eLanguageNameNim
+r"""Nim."""
+eLanguageNameErlang = _lldb.eLanguageNameErlang
+r"""Erlang."""
+eLanguageNameElixir = _lldb.eLanguageNameElixir
+r"""Elixir."""
+eLanguageNameGleam = _lldb.eLanguageNameGleam
+r"""Gleam."""
 class SBLaunchInfo(object):
     r"""Describes how a target or program should be launched."""
 
@@ -11635,6 +11689,13 @@ class SBProcessInfo(object):
         r"""GetExecutableFile(SBProcessInfo self) -> SBFileSpec"""
         return _lldb.SBProcessInfo_GetExecutableFile(self)
 
+    def GetArg0(self):
+        r"""
+        If the process was laumched with a first argument that doesn't match
+        the executable file or name, this will return a valid string.
+        """
+        return _lldb.SBProcessInfo_GetArg0(self)
+
     def GetProcessID(self):
         r"""GetProcessID(SBProcessInfo self) -> lldb::pid_t"""
         return _lldb.SBProcessInfo_GetProcessID(self)
@@ -11884,6 +11945,63 @@ class SBProgress(object):
 
 # Register SBProgress in _lldb:
 _lldb.SBProgress_swigregister(SBProgress)
+class SBProtocolServer(object):
+    r"""
+    A server that speaks a debugging protocol.
+
+    Protocol servers are shared across debuggers. Creating a server for a
+    protocol that already has one hands back the existing server.
+    """
+
+    thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
+    __repr__ = _swig_repr
+
+    def __init__(self, *args):
+        r"""
+        __init__(SBProtocolServer self) -> SBProtocolServer
+        __init__(SBProtocolServer self, SBProtocolServer rhs) -> SBProtocolServer
+        """
+        _lldb.SBProtocolServer_swiginit(self, _lldb.new_SBProtocolServer(*args))
+    __swig_destroy__ = _lldb.delete_SBProtocolServer
+
+    @staticmethod
+    def Create(protocol, error):
+        r"""
+        Returns the protocol server for ``protocol``, creating it if this process
+        does not already have one. On failure ``error`` is set.
+        """
+        return _lldb.SBProtocolServer_Create(protocol, error)
+
+    def __nonzero__(self):
+        return _lldb.SBProtocolServer___nonzero__(self)
+    __bool__ = __nonzero__
+
+
+
+    def IsValid(self):
+        r"""IsValid(SBProtocolServer self) -> bool"""
+        return _lldb.SBProtocolServer_IsValid(self)
+
+    def Start(self, connection_uri):
+        r"""
+        Starts listening for clients on ``connection_uri``, which must be an
+        accepting URI such as "listen://[host]:port" or "accept:///path".
+        """
+        return _lldb.SBProtocolServer_Start(self, connection_uri)
+
+    def Stop(self):
+        r"""Stop(SBProtocolServer self) -> SBError"""
+        return _lldb.SBProtocolServer_Stop(self)
+
+    def GetConnectionURI(self):
+        r"""
+        Returns the URI clients can connect to, valid after a successful Start,
+        or nullptr if the server is not listening.
+        """
+        return _lldb.SBProtocolServer_GetConnectionURI(self)
+
+# Register SBProtocolServer in _lldb:
+_lldb.SBProtocolServer_swigregister(SBProtocolServer)
 class SBQueue(object):
     r"""Represents a libdispatch queue in the process."""
 
@@ -13427,7 +13545,7 @@ class SBTarget(object):
 
     produces: ::
 
-        Watchpoint 1: addr = 0x1034ca048 size = 4 state = enabled type = rw
+        Watchpoint 1: addr = 0x1034ca048, size = 4, state = enabled, type = rw
             declare @ '/Volumes/data/lldb/svn/trunk/test/python_api/watchpoint/main.c:12'
             hit_count = 2     ignore_count = 0
     """
@@ -18102,6 +18220,11 @@ class SBTypeSummary(object):
         r"""CreateWithScriptCode(char const * data, uint32_t options=0) -> SBTypeSummary"""
         return _lldb.SBTypeSummary_CreateWithScriptCode(data, options)
 
+    @staticmethod
+    def CreateWithClassName(data, options=0):
+        r"""CreateWithClassName(char const * data, uint32_t options=0) -> SBTypeSummary"""
+        return _lldb.SBTypeSummary_CreateWithClassName(data, options)
+
     def __init__(self, *args):
         r"""
         __init__(SBTypeSummary self) -> SBTypeSummary
@@ -18638,6 +18761,20 @@ class SBValue(object):
         """
         return _lldb.SBValue_SetValueFromCString(self, *args)
 
+    def CanSetValue(self):
+        r"""
+        CanSetValue(SBValue self) -> bool
+
+            Returns whether this value can be modified through SetValueFromCString()
+            or SetData().
+
+            Returns False when the value is not writable. An example would be a
+            variable value reconstructed from debug info via a computation or a constant.
+            A True result does not guarantee a write will succeed; other
+            runtime conditions may still prevent a successful write.
+        """
+        return _lldb.SBValue_CanSetValue(self)
+
     def GetTypeFormat(self):
         r"""GetTypeFormat(SBValue self) -> SBTypeFormat"""
         return _lldb.SBValue_GetTypeFormat(self)
@@ -18653,6 +18790,28 @@ class SBValue(object):
     def GetTypeSynthetic(self):
         r"""GetTypeSynthetic(SBValue self) -> SBTypeSynthetic"""
         return _lldb.SBValue_GetTypeSynthetic(self)
+
+    def SetTypeSynthetic(self, synthetic):
+        r"""
+        Override the `SBTypeSynthetic` chosen by the DataFormatter system for this
+        instance.
+
+        This can be used to great effect in scripted synthetic children providers
+        where a child's underlying type can only be figured out by inspecting the
+        containing object's other members.
+        """
+        return _lldb.SBValue_SetTypeSynthetic(self, synthetic)
+
+    def GetTypeSyntheticImplementation(self):
+        r"""
+        This function's primary use is to ease inspecting the internal state of
+        scripted synthetic children providers for debugging purposes.
+
+        An other alternative usecase is for parent synthetic children providers to
+        imbue their children's synthetic children providers with additional
+        context after creation.
+        """
+        return _lldb.SBValue_GetTypeSyntheticImplementation(self)
 
     def CreateChildAtOffset(self, name, offset, type):
         r"""CreateChildAtOffset(SBValue self, char const * name, uint32_t offset, SBType type) -> SBValue"""

@@ -265,8 +265,8 @@ Error processPtrAuthUsers(PerModuleUtils &MUtils, PerGlobalUtils &GUtils,
       Type *VExprType = VExpr->getType();
 
       // Check that the types line up for a pointer cast.
-      if (VExprType !=
-          PointerType::get(GUtils.PtrAuthInfo.getPointer()->getType(), 0))
+      if (VExprType != PointerType::get(
+                           GUtils.PtrAuthInfo.getPointer()->getContext(), 0))
         return makeStringError("Type mismatch while rewriting ptrauth use", V);
 
       // Check that all indexes are constant zero.
@@ -340,8 +340,7 @@ HandleLLVMPtrauthSection(llvm::Module &M,
   MUtils.B->CreateRetVoid();
 
   // Update the global ctor list to call the pointer fixup function first.
-  auto *UInt8PtrTy =
-      PointerType::getUnqual(llvm::Type::getInt8Ty(M.getContext()));
+  auto *UInt8PtrTy = PointerType::getUnqual(M.getContext());
   StructType *CtorType = StructType::get(
       M.getContext(),
       {MUtils.Int32Ty, MUtils.FixupFunction->getType(), UInt8PtrTy});
