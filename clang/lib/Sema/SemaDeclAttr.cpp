@@ -6945,6 +6945,12 @@ public:
     return S.Context.getMacroQualifiedType(NewTy, T->getMacroIdentifier());
   }
 
+  // FIXME: Would like to apply AttributedType(attr::CountedBy/SizedBy[OrNull])
+  // but this may trigger additional needed fixes.
+  QualType VisitTypedefType(const TypedefType *T) {
+    return Visit(T->desugar());
+  }
+
   QualType VisitArrayType(const ArrayType *T) {
     return VisitType(T);
   }
