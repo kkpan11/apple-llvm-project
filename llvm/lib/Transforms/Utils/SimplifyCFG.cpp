@@ -5757,7 +5757,8 @@ bool SimplifyCFGOpt::turnSwitchRangeIntoICmp(SwitchInst *SI,
 
   Constant *Offset = ConstantExpr::getNeg(ContiguousCases->back());
   Constant *NumCases =
-      ConstantInt::get(Offset->getType(), ContiguousCases->size());
+      ConstantInt::get(Offset->getType(), ContiguousCases->size(),
+                       /*IsSigned=*/false, /*ImplicitTrunc*/ true);
 
   Value *Sub = SI->getCondition();
   if (!Offset->isNullValue())
@@ -7230,7 +7231,7 @@ static bool reduceSwitchRange(SwitchInst *SI, IRBuilder<> &Builder,
   auto *Ty = cast<IntegerType>(SI->getCondition()->getType());
   Builder.SetInsertPoint(SI);
   Value *Sub =
-      Builder.CreateSub(SI->getCondition(), ConstantInt::get(Ty, Base));
+      Builder.CreateSub(SI->getCondition(), ConstantInt::getSigned(Ty, Base));
   Value *Rot = Builder.CreateIntrinsic(
       Ty, Intrinsic::fshl,
       {Sub, Sub, ConstantInt::get(Ty, Ty->getBitWidth() - Shift)});

@@ -508,7 +508,10 @@ public:
     return llvm::ConstantFP::get(VMContext, E->getValue());
   }
   Value *VisitCharacterLiteral(const CharacterLiteral *E) {
-    return llvm::ConstantInt::get(ConvertType(E->getType()), E->getValue());
+    // Character literals are always stored in an unsigned (even for signed
+    // char), so allow implicit truncation here.
+    return llvm::ConstantInt::get(ConvertType(E->getType()), E->getValue(),
+                                  /*IsSigned=*/false, /*ImplicitTrunc=*/true);
   }
   Value *VisitObjCBoolLiteralExpr(const ObjCBoolLiteralExpr *E) {
     return llvm::ConstantInt::get(ConvertType(E->getType()), E->getValue());
@@ -3378,7 +3381,10 @@ ScalarExprEmitter::EmitScalarPrePostIncDec(const UnaryOperator *E, LValue LV,
       value = EmitOverflowCheckedBinOp(createBinOpInfoFromIncDec(
           E, value, isInc, E->getFPFeaturesInEffect(CGF.getLangOpts())));
     } else {
-      llvm::Value *amt = llvm::ConstantInt::get(value->getType(), amount, true);
+      // Treat positive amount as unsigned to support inc of i1 (needed for
+      // unsigned _BitInt(1)).
+      llvm::Value *amt =
+          llvm::ConstantInt::get(value->getType(), amount, !isInc);
       value = Builder.CreateAdd(value, amt, isInc ? "inc" : "dec");
     }
 
@@ -3434,7 +3440,7 @@ ScalarExprEmitter::EmitScalarPrePostIncDec(const UnaryOperator *E, LValue LV,
   // Vector increment/decrement.
   } else if (type->isVectorType()) {
     if (type->hasIntegerRepresentation()) {
-      llvm::Value *amt = llvm::ConstantInt::get(value->getType(), amount);
+      llvm::Value *amt = llvm::ConstantInt::getSigned(value->getType(), amount);
 
       value = Builder.CreateAdd(value, amt, isInc ? "inc" : "dec");
     } else {
@@ -3534,7 +3540,7 @@ ScalarExprEmitter::EmitScalarPrePostIncDec(const UnaryOperator *E, LValue LV,
     CharUnits size = CGF.getContext().getTypeSizeInChars(OPT->getObjectType());
     if (!isInc) size = -size;
     llvm::Value *sizeValue =
-      llvm::ConstantInt::get(CGF.SizeTy, size.getQuantity());
+        llvm::ConstantInt::getSigned(CGF.SizeTy, size.getQuantity());
 
     if (CGF.getLangOpts().PointerOverflowDefined)
       value = Builder.CreateGEP(CGF.Int8Ty, value, sizeValue, "incdec.objptr");

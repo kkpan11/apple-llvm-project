@@ -467,7 +467,7 @@ static void expandIToFP(Instruction *IToFP) {
   Value *Sub24 = Builder.CreateAdd(
       FloatWidth == 128 ? Call : Cast,
       ConstantInt::getSigned(Builder.getIntNTy(BitWidthNew),
-                             -(BitWidth - FPMantissaWidth - 1)));
+                             -(int)(BitWidth - FPMantissaWidth - 1)));
   Value *ShProm25 = Builder.CreateZExt(Sub24, IntTy);
   Value *Shl26 = Builder.CreateShl(IsSigned ? Sub : IntVal,
                                    FloatWidth == 128 ? Sub24 : ShProm25);
@@ -509,7 +509,7 @@ static void expandIToFP(Instruction *IToFP) {
   } else {
     Value *Conv28 = Builder.CreateTrunc(Shr, Builder.getIntNTy(32));
     And29 = Builder.CreateAnd(
-        Conv28, ConstantInt::getSigned(Builder.getIntNTy(32), 0x80000000));
+        Conv28, ConstantInt::get(Builder.getContext(), APInt::getSignMask(32)));
   }
   unsigned TempMod = FPMantissaWidth % 32;
   Value *And34 = nullptr;

@@ -1990,7 +1990,8 @@ bool HexagonConstEvaluator::evaluate(const MachineInstr &MI,
         return false;
       IntegerType *Ty = (W == 32) ? Type::getInt32Ty(CX)
                                   : Type::getInt64Ty(CX);
-      const ConstantInt *CI = ConstantInt::get(Ty, V, true);
+      const ConstantInt *CI =
+          ConstantInt::get(Ty, V, /*IsSigned=*/true, /*ImplicitTrunc=*/true);
       LatticeCell RC = Outputs.get(DefR.Reg);
       RC.add(CI);
       Outputs.update(DefR.Reg, RC);
@@ -2247,7 +2248,8 @@ bool HexagonConstEvaluator::evaluate(const RegSubRegPair &R,
     int32_t V32;
     memcpy(&V32, &U32, sizeof V32);
     IntegerType *Ty = Type::getInt32Ty(CX);
-    const ConstantInt *C32 = ConstantInt::get(Ty, static_cast<int64_t>(V32));
+    const ConstantInt *C32 =
+        ConstantInt::getSigned(Ty, static_cast<int64_t>(V32));
     Result.add(C32);
   }
   return true;
