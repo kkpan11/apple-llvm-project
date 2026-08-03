@@ -253,7 +253,7 @@ public:
 
   /// Set the path to a directory where to save temporaries from the remote
   /// service.
-  void setRemoteServiceTempsDir(std::string Path);
+  LLVM_ABI void setRemoteServiceTempsDir(std::string Path);
 
   /// Set the path to a directory where to save generated object files. This
   /// path can be used by a linker to request on-disk files instead of in-memory
