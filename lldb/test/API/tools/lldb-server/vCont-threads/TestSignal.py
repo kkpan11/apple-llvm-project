@@ -53,7 +53,7 @@ class TestSignal(gdbremote_testcase.GdbRemoteTestCaseBase):
         procinfo = self.parse_process_info_response(context)
         return int(procinfo["pid"], 16)
 
-    @skipIfWindows
+    @requireNotWindows
     @skipIfDarwin
     @expectedFailureNetBSD
     @expectedFailureAll(
@@ -84,7 +84,7 @@ class TestSignal(gdbremote_testcase.GdbRemoteTestCaseBase):
             "C{0:x}:{1:x};c".format(lldbutil.get_signal_number("SIGUSR1")), threads[:1]
         )
 
-    @skipIfWindows
+    @requireNotWindows
     @skipIfDarwin
     @expectedFailureNetBSD
     @expectedFailureAll(
@@ -105,7 +105,7 @@ class TestSignal(gdbremote_testcase.GdbRemoteTestCaseBase):
             threads,
         )
 
-    @skipIfWindows
+    @requireNotWindows
     @expectedFailureNetBSD
     @expectedFailureAll(
         oslist=["freebsd"], bugnumber="github.com/llvm/llvm-project/issues/56086"
@@ -125,7 +125,7 @@ class TestSignal(gdbremote_testcase.GdbRemoteTestCaseBase):
             threads,
         )
 
-    @skipIfWindows
+    @requireNotWindows
     @expectedFailureNetBSD
     @expectedFailureAll(
         oslist=["freebsd"], bugnumber="github.com/llvm/llvm-project/issues/56086"
@@ -142,7 +142,7 @@ class TestSignal(gdbremote_testcase.GdbRemoteTestCaseBase):
             "C{0:x}:p-1".format(lldbutil.get_signal_number("SIGUSR1")), threads
         )
 
-    @skipIfWindows
+    @requireNotWindows
     @expectedFailureNetBSD
     @expectedFailureAll(
         oslist=["freebsd"], bugnumber="github.com/llvm/llvm-project/issues/56086"
@@ -158,7 +158,7 @@ class TestSignal(gdbremote_testcase.GdbRemoteTestCaseBase):
             "C{0:x}:-1".format(lldbutil.get_signal_number("SIGUSR1")), threads
         )
 
-    @skipIfWindows
+    @requireNotWindows
     @expectedFailureNetBSD
     @expectedFailureAll(
         oslist=["freebsd"], bugnumber="github.com/llvm/llvm-project/issues/56086"
@@ -179,7 +179,7 @@ class TestSignal(gdbremote_testcase.GdbRemoteTestCaseBase):
             threads,
         )
 
-    @skipIfWindows
+    @requireNotWindows
     @expectedFailureNetBSD
     @expectedFailureAll(
         oslist=["freebsd"], bugnumber="github.com/llvm/llvm-project/issues/56086"
@@ -199,7 +199,7 @@ class TestSignal(gdbremote_testcase.GdbRemoteTestCaseBase):
             threads,
         )
 
-    @skipIfWindows
+    @requireNotWindows
     @expectedFailureNetBSD
     @expectedFailureAll(
         oslist=["freebsd"], bugnumber="github.com/llvm/llvm-project/issues/56086"
