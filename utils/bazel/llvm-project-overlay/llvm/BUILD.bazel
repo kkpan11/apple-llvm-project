@@ -4394,6 +4394,16 @@ gentbl_cc_library(
 )
 
 cc_library(
+    name = "orc_headers",
+    hdrs = glob([
+        "include/llvm/ExecutionEngine/Orc/**/*.h",
+        "include/llvm/ExecutionEngine/JITLink/**/*.h",
+    ]),
+    copts = llvm_copts,
+    features = ["-parse_headers"],
+)
+
+cc_library(
     name = "JITLink",
     srcs = glob([
         "lib/ExecutionEngine/JITLink/*.cpp",
@@ -4484,6 +4494,7 @@ cc_library(
         ":TransformUtils",
         ":WindowsDriver",
         ":config",
+        ":orc_headers",
     ],
 )
 
@@ -4511,6 +4522,7 @@ cc_library(
         ":Support",
         ":Target",
         ":config",
+        ":orc_headers",
     ],
 )
 
@@ -4570,6 +4582,7 @@ cc_library(
         ":Target",
         ":TargetParser",
         ":config",
+        ":orc_headers",
     ],
 )
 
