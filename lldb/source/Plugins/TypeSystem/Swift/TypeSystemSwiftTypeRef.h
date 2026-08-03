@@ -529,6 +529,11 @@ public:
   /// Lookup a type in the debug info.
   lldb::TypeSP FindTypeInModule(lldb::opaque_compiler_type_t type);
 
+  /// Lookup a builtin type in the debug info by its mangled name. Unlike
+  /// FindTypeInModule(), this does not need the mangling to have a decl
+  /// context, which some of the special stdlib builtins do not have.
+  lldb::TypeSP FindBuiltinTypeInModule(ConstString mangled_name);
+
   /// Desugar a CompilerType and resolve type aliases by looking up
   /// their types in the debug info.
   CompilerType Canonicalize(CompilerType type);

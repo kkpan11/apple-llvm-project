@@ -3069,6 +3069,22 @@ TypeSystemSwiftTypeRef::FindTypeInModule(opaque_compiler_type_t opaque_type) {
   return FindTypeInModule(context, M, flavor);
 }
 
+TypeSP
+TypeSystemSwiftTypeRef::FindBuiltinTypeInModule(ConstString mangled_name) {
+  std::vector<CompilerContext> context = {
+      {CompilerContextKind::AnyType, mangled_name}};
+  TypeQuery query(context, TypeQueryOptions::e_find_one);
+  query.SetLanguages(TypeSystemSwift::GetSupportedLanguagesForTypes());
+
+  TypeResults results;
+  if (auto *M = GetModule())
+    M->FindTypes(query, results);
+
+  if (results.Done(query))
+    return results.GetFirstType();
+  return {};
+}
+
 // Tests
 
 #ifndef NDEBUG
