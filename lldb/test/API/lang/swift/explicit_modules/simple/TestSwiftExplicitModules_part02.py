@@ -9,6 +9,11 @@ class TestSwiftExplicitModules(lldbtest.TestBase):
     @skipEmbeddedSwift
     @swiftTest
     @skipIfLinux
+    # Not working correctly with DWARFImporter. NSData may get an
+    # incomplete definition that also isn't updated when Foundation is
+    # imported.
+    @skipIf(setting=("symbols.use-swift-clangimporter", "false"),
+            bugnumber="rdar://118337109")
     def test_import(self):
         """Test an implicit import inside an explicit build"""
         mod_cache = self.getBuildArtifact("my-clang-modules-cache")
@@ -27,4 +32,4 @@ class TestSwiftExplicitModules(lldbtest.TestBase):
                     error=True)
         self.expect("expression import Foundation")
         self.expect('expression Data([1, 2, 3])',
-                    substrs=["byte"])
+                    substrs=["3 bytes"])
