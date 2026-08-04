@@ -1168,7 +1168,7 @@ def executeScriptInternal(
     shenv.env["LIT_CURRENT_TESTCASE"] = test.getFullName()
 
     exitCode, timeoutInfo = executeShCmd(
-        cmd, shenv, results, timeout=litConfig.maxIndividualTestTime
+        cmd, shenv, results, timeout=test.config.maxIndividualTestTime
     )
 
     out = err = ""
@@ -1212,7 +1212,7 @@ def executeScriptInternal(
 
         # If nothing interesting happened, move on.
         if (
-            litConfig.maxIndividualTestTime == 0
+            test.config.maxIndividualTestTime == 0
             and result.exitCode == 0
             and not result.stdout.strip()
             and not result.stderr.strip()
@@ -1241,7 +1241,7 @@ def executeScriptInternal(
             else:
                 codeStr = str(result.exitCode)
             out += "# error: command failed with exit status: %s\n" % (codeStr,)
-        if litConfig.maxIndividualTestTime > 0 and result.timeoutReached:
+        if test.config.maxIndividualTestTime > 0 and result.timeoutReached:
             out += "# error: command reached timeout: %s\n" % (
                 str(result.timeoutReached),
             )
@@ -1373,7 +1373,7 @@ def executeScript(test, litConfig, tmpBase, commands, cwd):
             command,
             cwd=cwd,
             env=env,
-            timeout=litConfig.maxIndividualTestTime,
+            timeout=test.config.maxIndividualTestTime,
         )
         return (out, err, exitCode, None)
     except lit.util.ExecuteCommandTimeoutException as e:

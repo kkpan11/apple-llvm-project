@@ -697,11 +697,11 @@ bool AArch64PassConfig::addPreISel() {
   // Basically, the addressable offsets are up to 4095 * Ty.getSizeInBytes().
   // and the offset has to be a multiple of the related size in bytes.
   if ((TM->getOptLevel() != CodeGenOptLevel::None &&
-       EnableGlobalMerge == cl::BOU_UNSET) ||
-      EnableGlobalMerge == cl::BOU_TRUE) {
+       EnableGlobalMerge == cl::boolOrDefault::BOU_UNSET) ||
+      EnableGlobalMerge == cl::boolOrDefault::BOU_TRUE) {
     bool OnlyOptimizeForSize =
         (TM->getOptLevel() < CodeGenOptLevel::Aggressive) &&
-        (EnableGlobalMerge == cl::BOU_UNSET);
+        (EnableGlobalMerge == cl::boolOrDefault::BOU_UNSET);
 
     // Merging of extern globals is enabled by default on non-Mach-O as we
     // expect it to be generally either beneficial or harmless. On Mach-O it

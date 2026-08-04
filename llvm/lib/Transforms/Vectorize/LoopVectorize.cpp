@@ -1252,11 +1252,11 @@ public:
   bool isDivRemScalarWithPredication(InstructionCost ScalarCost,
                                      InstructionCost SafeDivisorCost) const {
     switch (ForceSafeDivisor) {
-    case cl::BOU_UNSET:
+    case cl::boolOrDefault::BOU_UNSET:
       return ScalarCost < SafeDivisorCost;
-    case cl::BOU_TRUE:
+    case cl::boolOrDefault::BOU_TRUE:
       return false;
-    case cl::BOU_FALSE:
+    case cl::boolOrDefault::BOU_FALSE:
       return true;
     }
     llvm_unreachable("impossible case value");

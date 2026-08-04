@@ -42,7 +42,7 @@ public:
 // Not one-on-one but mostly corresponding to commandline options in
 // TargetPassConfig.cpp.
 struct CGPassBuilderOption {
-  std::optional<bool> OptimizeRegAlloc;
+  cl::boolOrDefault OptimizeRegAlloc = cl::boolOrDefault::BOU_UNSET;
   std::optional<bool> EnableIPRA;
   bool DebugPM = false;
   bool DisableVerify = false;
@@ -76,11 +76,11 @@ struct CGPassBuilderOption {
   std::string FSProfileFile;
   std::string FSRemappingFile;
 
-  std::optional<bool> VerifyMachineCode;
-  std::optional<bool> EnableFastISelOption;
-  std::optional<bool> EnableGlobalISelOption;
-  std::optional<bool> DebugifyAndStripAll;
-  std::optional<bool> DebugifyCheckAndStripAll;
+  cl::boolOrDefault VerifyMachineCode = cl::boolOrDefault::BOU_UNSET;
+  cl::boolOrDefault EnableFastISelOption = cl::boolOrDefault::BOU_UNSET;
+  cl::boolOrDefault EnableGlobalISelOption = cl::boolOrDefault::BOU_UNSET;
+  cl::boolOrDefault DebugifyAndStripAll = cl::boolOrDefault::BOU_UNSET;
+  cl::boolOrDefault DebugifyCheckAndStripAll = cl::boolOrDefault::BOU_UNSET;
 };
 
 LLVM_ABI CGPassBuilderOption getCGPassBuilderOption();

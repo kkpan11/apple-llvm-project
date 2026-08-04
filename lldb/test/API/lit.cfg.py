@@ -232,7 +232,7 @@ lit_config.parallelism_groups["apple-simulator"] = 1
 # lit complains if the value is set but it is not supported.
 supported, errormsg = lit_config.maxIndividualTestTimeIsSupported
 if supported:
-    lit_config.maxIndividualTestTime = 600
+    config.maxIndividualTestTime = 600
 else:
     lit_config.warning("Could not set a default per-test timeout. " + errormsg)
 
