@@ -530,7 +530,7 @@ void ExprEngine::VisitCast(const CastExpr *CastE, const Expr *Ex,
         SVal CastedV =
             svalBuilder.evalCast(V, CastE->getType(), Ex->getType());
         state = state->BindExpr(CastE, SF, CastedV);
-        Bldr.generateNode(CastE, Pred, state);
+	Dst.insert(Engine.makePostStmtNode(CastE, state, Pred));
         continue;
       }
       /* TO_UPSTREAM(BoundsSafety) OFF*/
