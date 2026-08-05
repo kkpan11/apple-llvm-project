@@ -23,6 +23,7 @@
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/SerializedDiagnosticPrinter.h"
 #include "clang/Frontend/TextDiagnosticBuffer.h"
+#include "clang/Frontend/TextDiagnosticPrinter.h"
 #include "clang/Options/Options.h"
 #include "clang/Tooling/DependencyScanningTool.h"
 #include "llvm/ADT/STLExtras.h"
