@@ -1,4 +1,4 @@
-//===-- llvm/Support/HTTPClient.h - HTTP client library ---------*- C++ -*-===//
+//===----------------------------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -12,8 +12,8 @@
 ///
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_DEBUGINFOD_HTTPCLIENT_H
-#define LLVM_DEBUGINFOD_HTTPCLIENT_H
+#ifndef LLVM_HTTP_HTTPCLIENT_H
+#define LLVM_HTTP_HTTPCLIENT_H
 
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
@@ -21,6 +21,7 @@
 #include "llvm/Support/MemoryBuffer.h"
 
 #include <chrono>
+#include <optional>
 
 namespace llvm {
 
@@ -31,7 +32,10 @@ struct HTTPRequest {
   SmallString<128> Url;
   SmallVector<std::string, 0> Headers;
   HTTPMethod Method = HTTPMethod::GET;
+  // Follow redirects without security downgrades.
   bool FollowRedirects = true;
+  // Allow self-signed TLS certificates with this SHA-256 (WinHTTP only).
+  std::optional<std::string> PinnedCertFingerprint;
   HTTPRequest(StringRef Url);
 };
 
@@ -51,8 +55,8 @@ protected:
 
 /// A reusable client that can perform HTTPRequests through a network socket.
 class HTTPClient {
-#ifdef LLVM_ENABLE_CURL
-  void *Curl = nullptr;
+#if defined(LLVM_ENABLE_CURL) || defined(_WIN32)
+  void *Handle = nullptr;
 #endif
 
 public:
@@ -85,4 +89,4 @@ public:
 
 } // end namespace llvm
 
-#endif // LLVM_DEBUGINFOD_HTTPCLIENT_H
+#endif // LLVM_HTTP_HTTPCLIENT_H

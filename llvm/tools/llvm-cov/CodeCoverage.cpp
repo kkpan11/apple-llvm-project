@@ -24,7 +24,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Debuginfod/BuildIDFetcher.h"
 #include "llvm/Debuginfod/Debuginfod.h"
-#include "llvm/Debuginfod/HTTPClient.h"
+#include "llvm/HTTP/HTTPClient.h"
 #include "llvm/Object/BuildID.h"
 #include "llvm/ProfileData/Coverage/CoverageMapping.h"
 #include "llvm/ProfileData/InstrProfReader.h"

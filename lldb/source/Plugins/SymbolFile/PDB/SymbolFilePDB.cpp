@@ -153,7 +153,8 @@ uint32_t SymbolFilePDB::CalculateAbilities() {
 
   if (!m_session_up) {
     // Lazily load and match the PDB file, but only do this once.
-    std::string exePath = m_objfile_sp->GetFileSpec().GetPath();
+    std::string exePath =
+        m_objfile_sp->GetModule()->GetObjectFile()->GetFileSpec().GetPath();
     auto error = loadDataForEXE(PDB_ReaderType::DIA, llvm::StringRef(exePath),
                                 m_session_up);
     if (error) {
@@ -163,6 +164,10 @@ uint32_t SymbolFilePDB::CalculateAbilities() {
         return 0;
       // See if any symbol file is specified through `--symfile` option.
       FileSpec symfile = module_sp->GetSymbolFileFileSpec();
+      // If m_objfile_sp is a supplemental ObjectFilePDB (e.g. located via
+      // SymStore by SymbolVendorPECOFF), its file spec is the PDB path.
+      if (!symfile && m_objfile_sp.get() != module_sp->GetObjectFile())
+        symfile = m_objfile_sp->GetFileSpec();
       if (!symfile)
         return 0;
       error = loadDataForPDB(PDB_ReaderType::DIA,
@@ -201,8 +206,10 @@ uint32_t SymbolFilePDB::CalculateAbilities() {
 }
 
 void SymbolFilePDB::InitializeObject() {
-  lldb::addr_t obj_load_address =
-      m_objfile_sp->GetBaseAddress().GetFileAddress();
+  lldb::addr_t obj_load_address = m_objfile_sp->GetModule()
+                                      ->GetObjectFile()
+                                      ->GetBaseAddress()
+                                      .GetFileAddress();
   lldbassert(obj_load_address && obj_load_address != LLDB_INVALID_ADDRESS);
   m_session_up->setLoadAddress(obj_load_address);
   if (!m_global_scope_up)
@@ -1392,7 +1399,8 @@ void SymbolFilePDB::AddSymbols(lldb_private::Symtab &symtab) {
   if (!results)
     return;
 
-  auto section_list = m_objfile_sp->GetSectionList();
+  auto section_list =
+      m_objfile_sp->GetModule()->GetObjectFile()->GetSectionList();
   if (!section_list)
     return;
 
