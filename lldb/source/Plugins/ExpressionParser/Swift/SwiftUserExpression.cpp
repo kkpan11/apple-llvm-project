@@ -182,6 +182,15 @@ findSwiftSelf(StackFrame &frame, lldb::VariableSP self_var_sp) {
 
   if (!info.type.IsValid())
     return {};
+
+  // If `self`'s static type is meaningless without dynamic type resolution
+  // there's nothing we can do with it. This does not apply to metatypes (i.e.
+  // `self` in a static method): the expression evaluator can still bind their
+  // generic parameters directly, without relying on dynamic type resolution of
+  // an instance's metadata.
+  if (!info.is_metatype && info.type.IsMeaninglessWithoutDynamicResolution())
+    return {};
+
   return info;
 }
 
@@ -193,6 +202,11 @@ bool SwiftUserExpression::ScanContext(DiagnosticManager &diagnostic_manager,
   m_target = exe_ctx.GetTargetPtr();
   if (!m_target) {
     LLDB_LOG(log, "  [SUE::SC] Null target");
+    return true;
+  }
+
+  if (m_options.GetUseContextFreeSwiftPrintObject()) {
+    LLDB_LOG(log, "  [SUE::SC] Context-free expression, skipping scan");
     return true;
   }
 
@@ -303,8 +317,7 @@ bool SwiftUserExpression::ScanContext(DiagnosticManager &diagnostic_manager,
       m_is_weak_self = true;
     }
 
-  m_needs_object_ptr =
-      !m_in_static_method && !m_options.GetUseContextFreeSwiftPrintObject();
+  m_needs_object_ptr = !m_in_static_method;
   LLDB_LOGF(log, "  [SUE::SC] Expression captures self: %s",
             m_needs_object_ptr ? "true" : "false");
 
