@@ -525,6 +525,10 @@ static Type *DecodeFixedType(ArrayRef<Intrinsic::IITDescriptor> &Infos,
   case IITDescriptor::AArch64Svcount:
     return TargetExtType::get(Context, "aarch64.svcount");
 
+  case IITDescriptor::WasmExternref:
+    return TargetExtType::get(Context, "wasm.externref");
+  case IITDescriptor::WasmFuncref:
+    return TargetExtType::get(Context, "wasm.funcref");
   case IITDescriptor::Integer:
     return IntegerType::get(Context, D.IntegerWidth);
   case IITDescriptor::Vector:
