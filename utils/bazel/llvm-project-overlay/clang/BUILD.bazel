@@ -1511,6 +1511,7 @@ cc_library(
         ":cas",
         ":frontend",
         ":lex",
+        ":sema",
         ":serialization",
         "//llvm:Option",
         "//llvm:Support",
