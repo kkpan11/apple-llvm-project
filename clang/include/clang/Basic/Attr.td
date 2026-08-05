@@ -2747,8 +2747,8 @@ def CountedByOrNull : DeclOrTypeAttr {
   let Args = [ExprArgument<"Count">, IntArgument<"NestedLevel", 1>];
   let LateParsed = LateAttrParseExperimentalExt;
   let ParseArgumentsAsUnevaluated = 1;
-  let Documentation = [CountedByDocs];
-  let LangOpts = [CountedBySupported];
+  let Documentation = [CountedByOrNullDocs];
+  let LangOpts = [COnly];
   // TO_UPSTREAM(BoundsSafety) OFF
 }
 
@@ -2776,8 +2776,8 @@ def SizedBy : DeclOrTypeAttr {
   let Args = [ExprArgument<"Size">, IntArgument<"NestedLevel", 1>];
   let LateParsed = LateAttrParseExperimentalExt;
   let ParseArgumentsAsUnevaluated = 1;
-  let Documentation = [CountedByDocs];
-  let LangOpts = [CountedBySupported];
+  let Documentation = [SizedByDocs];
+  let LangOpts = [COnly];
   // TO_UPSTREAM(BoundsSafety) OFF
 }
 
@@ -2792,8 +2792,8 @@ def SizedByOrNull : DeclOrTypeAttr {
   let Args = [ExprArgument<"Size">, IntArgument<"NestedLevel", 1>];
   let LateParsed = LateAttrParseExperimentalExt;
   let ParseArgumentsAsUnevaluated = 1;
-  let Documentation = [CountedByDocs];
-  let LangOpts = [CountedBySupported];
+  let Documentation = [SizedByOrNullDocs];
+  let LangOpts = [COnly];
   // TO_UPSTREAM(BoundsSafety) OFF
 }
 
