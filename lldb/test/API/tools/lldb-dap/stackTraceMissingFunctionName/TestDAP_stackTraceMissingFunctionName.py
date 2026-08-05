@@ -11,6 +11,7 @@ class TestDAP_stackTraceMissingFunctionName(DAPTestCaseBase):
     @skipIfWindows
     # Jumping to address 0 will fail PAC signing before crashign on a bad frame.
     @skipIf(archs=["arm64e"])
+    @skipIfWasm  # a Wasm indirect call traps without transferring control to the callee
     def test_missingFunctionName(self):
         """
         Test that the stack frame without a function name is given its pc in the response.
