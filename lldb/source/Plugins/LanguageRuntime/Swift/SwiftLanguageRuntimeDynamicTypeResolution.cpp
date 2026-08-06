@@ -2375,32 +2375,41 @@ bool SwiftLanguageRuntime::GetDynamicTypeAndAddress_Pack(
   return true;
 }
 
-std::pair<CompilerType, bool>
-SwiftLanguageRuntime::GetTypeFromMetadataSymbol(llvm::StringRef symbol_name,
-                                                TypeSystemSwiftTypeRef &ts) {
+llvm::Expected<std::pair<CompilerType, bool>>
+SwiftLanguageRuntime::GetTypeFromMetadataSymbolEmbedded(
+    llvm::StringRef symbol_name, TypeSystemSwiftTypeRef &ts) {
   // The symbol name will be something like "type metadata for Class", extract
   // "Class" from that name.
-  return ts.GetTypeFromTypeMetadataNode(symbol_name);
+  auto [type, is_full_metadata] = ts.GetTypeFromTypeMetadataNode(symbol_name);
+  if (!type)
+    return llvm::createStringError("no type for metadata symbol " +
+                                   symbol_name);
+  return std::make_pair(type, is_full_metadata);
 }
 
-CompilerType
-SwiftLanguageRuntime::GetTypeFromMetadataAddress(lldb::addr_t metadata_addr,
-                                                 TypeSystemSwiftTypeRef &ts) {
+llvm::Expected<CompilerType>
+SwiftLanguageRuntime::GetTypeFromMetadataAddressEmbedded(
+    lldb::addr_t metadata_addr, TypeSystemSwiftTypeRef &ts) {
   // Embedded Swift emits no metadata records, but it does emit a symbol for
   // every type's metadata, so the type can be recovered from the symbol name.
   Address address;
   address.SetLoadAddress(metadata_addr, &GetProcess().GetTarget());
   Symbol *symbol = address.CalculateSymbolContextSymbol();
   if (!symbol)
-    return {};
+    return llvm::createStringError(
+        llvm::formatv("no symbol for metadata at {0:x}", metadata_addr).str());
   Mangled mangled = symbol->GetMangled();
   if (!mangled)
-    return {};
+    return llvm::createStringError(
+        llvm::formatv("symbol for metadata at {0:x} is not mangled",
+                      metadata_addr)
+            .str());
 
-  auto [type, is_full_metadata] =
-      GetTypeFromMetadataSymbol(mangled.GetMangledName().GetStringRef(), ts);
-  if (!type)
-    return {};
+  auto type_or_err = GetTypeFromMetadataSymbolEmbedded(
+      mangled.GetMangledName().GetStringRef(), ts);
+  if (!type_or_err)
+    return type_or_err.takeError();
+  auto [type, is_full_metadata] = *type_or_err;
 
   // Sanity check that the symbol's start address matches what we expect. This
   // depends on whether the symbol is full type metadata (one pointer sized
@@ -2409,18 +2418,17 @@ SwiftLanguageRuntime::GetTypeFromMetadataAddress(lldb::addr_t metadata_addr,
   uint64_t expected_offset =
       is_full_metadata ? GetProcess().GetAddressByteSize() : 0;
   if (symbol_addr == LLDB_INVALID_ADDRESS ||
-      metadata_addr - symbol_addr != expected_offset) {
-    LLDB_LOG(GetLog(LLDBLog::Types),
-             "[GetTypeFromMetadataAddress] metadata at {0:x} is {1} bytes into "
-             "{2}, not its address point",
-             metadata_addr, metadata_addr - symbol_addr,
-             mangled.GetMangledName());
-    return {};
-  }
+      metadata_addr - symbol_addr != expected_offset)
+    return llvm::createStringError(
+        llvm::formatv("metadata at {0:x} is {1} bytes into {2}, not its "
+                      "address point",
+                      metadata_addr, metadata_addr - symbol_addr,
+                      mangled.GetMangledName())
+            .str());
   return type;
 }
 
-std::optional<lldb::addr_t>
+llvm::Expected<lldb::addr_t>
 SwiftLanguageRuntime::UnwrapClassReferenceIfNeeded(CompilerType type,
                                                    lldb::addr_t addr) {
   // Only a class is stored as a reference; any other type is already the value.
@@ -2428,53 +2436,66 @@ SwiftLanguageRuntime::UnwrapClassReferenceIfNeeded(CompilerType type,
     return addr;
   auto reflection_ctx = GetReflectionContext();
   if (!reflection_ctx)
-    return std::nullopt;
+    return llvm::createStringError("no reflection context");
   std::optional<swift::remote::RemoteAbsolutePointer> instance =
       reflection_ctx->ReadPointer(addr);
   if (!instance)
-    return std::nullopt;
+    return llvm::createStringError(
+        llvm::formatv("could not read the class reference stored at {0:x}",
+                      addr)
+            .str());
   return instance->getResolvedAddress().getRawAddress();
 }
 
-CompilerType SwiftLanguageRuntime::GetDynamicTypeAndAddress_EmbeddedClass(
-    uint64_t instance_ptr, CompilerType class_type) {
+llvm::Expected<CompilerType>
+SwiftLanguageRuntime::GetTypeFromMetadataPointerEmbedded(
+    lldb::addr_t metadata_ptr_addr, CompilerType type_in_context) {
   ThreadSafeReflectionContext reflection_ctx = GetReflectionContext();
   if (!reflection_ctx)
-    return {};
-  auto tss = class_type.GetTypeSystem().dyn_cast_or_null<TypeSystemSwift>();
+    return llvm::createStringError("no reflection context");
+  auto tss =
+      type_in_context.GetTypeSystem().dyn_cast_or_null<TypeSystemSwift>();
   if (!tss)
-    return {};
+    return llvm::createStringError("not a Swift type system");
   TypeSystemSwiftTypeRefSP ts = tss->GetTypeSystemSwiftTypeRef();
   if (!ts)
-    return {};
+    return llvm::createStringError("no Swift typeref typesystem");
 
-  /// If this is an embedded Swift type, there is no metadata, and the
-  /// pointer points to the type's vtable. We can still resolve the type by
-  /// reading the vtable's symbol name.
   std::optional<swift::remote::RemoteAbsolutePointer> pointer =
-      reflection_ctx->ReadPointer(instance_ptr);
+      reflection_ctx->ReadPointer(metadata_ptr_addr);
   if (!pointer)
-    return {};
+    return llvm::createStringError(
+        llvm::formatv("could not read the metadata pointer at {0:x}",
+                      metadata_ptr_addr)
+            .str());
 
   // A RemoteAbsolutePointer can contain a symbol or an address. If we have the
   // symbol, we can extract the dynamic type from the symbol's mangled name.
-  if (!pointer->getSymbol().empty() && !pointer->getOffset())
-    return GetTypeFromMetadataSymbol(pointer->getSymbol(), *ts).first;
+  if (!pointer->getSymbol().empty() && !pointer->getOffset()) {
+    auto type_or_err =
+        GetTypeFromMetadataSymbolEmbedded(pointer->getSymbol(), *ts);
+    if (!type_or_err)
+      return type_or_err.takeError();
+    return type_or_err->first;
+  }
   // Otherwise, we need to look up which symbol matches the address.
-  return GetTypeFromMetadataAddress(
+  return GetTypeFromMetadataAddressEmbedded(
       pointer->getResolvedAddress().getRawAddress(), *ts);
 }
 
-std::optional<std::pair<CompilerType, uint64_t>> SwiftLanguageRuntime::
+llvm::Expected<std::pair<CompilerType, uint64_t>> SwiftLanguageRuntime::
     GetDynamicTypeAndAddress_ExistentialClassReferenceEmbedded(
         lldb::addr_t existential_address, CompilerType existential_type) {
   auto reflection_ctx = GetReflectionContext();
   if (!reflection_ctx)
-    return std::nullopt;
+    return llvm::createStringError("no reflection context");
 
   auto maybe_addr_or_symbol = reflection_ctx->ReadPointer(existential_address);
   if (!maybe_addr_or_symbol)
-    return std::nullopt;
+    return llvm::createStringError(
+        llvm::formatv("could not read the class reference stored at {0:x}",
+                      existential_address)
+            .str());
 
   uint64_t address = 0;
   if (maybe_addr_or_symbol->getSymbol().empty() &&
@@ -2487,101 +2508,103 @@ std::optional<std::pair<CompilerType, uint64_t>> SwiftLanguageRuntime::
         ConstString(maybe_addr_or_symbol->getSymbol()), eSymbolTypeAny,
         sc_list);
     if (sc_list.GetSize() != 1)
-      return std::nullopt;
+      return llvm::createStringError("no unique symbol named " +
+                                     maybe_addr_or_symbol->getSymbol());
 
     SymbolContext sc = sc_list[0];
     Symbol *symbol = sc.symbol;
     address = symbol->GetLoadAddress(&GetProcess().GetTarget());
   }
 
-  CompilerType dynamic_type =
-      GetDynamicTypeAndAddress_EmbeddedClass(address, existential_type);
-  if (!dynamic_type)
-    return std::nullopt;
+  auto dynamic_type_or_err =
+      GetTypeFromMetadataPointerEmbedded(address, existential_type);
+  if (!dynamic_type_or_err)
+    return dynamic_type_or_err.takeError();
+  CompilerType dynamic_type = *dynamic_type_or_err;
 
   // For a class-constrained existential this word is the instance reference, so
   // resolving it to anything else means there's something wrong.
-  if (!Flags(dynamic_type.GetTypeInfo()).AllSet(eTypeIsClass)) {
-    LLDB_LOG(GetLog(LLDBLog::Types),
-             "[GetDynamicTypeAndAddress_ExistentialClassReferenceEmbedded] {0} "
-             "is not a class",
-             dynamic_type.GetMangledTypeName());
-    return std::nullopt;
-  }
+  if (!Flags(dynamic_type.GetTypeInfo()).AllSet(eTypeIsClass))
+    return llvm::createStringError(
+        "class-constrained existential resolved to non-class type " +
+        dynamic_type.GetMangledTypeName().GetStringRef());
 
   return std::make_pair(
       dynamic_type, maybe_addr_or_symbol->getResolvedAddress().getRawAddress());
 }
 
-std::optional<std::pair<CompilerType, uint64_t>>
+llvm::Expected<std::pair<CompilerType, uint64_t>>
 SwiftLanguageRuntime::GetDynamicTypeAndAddress_ExistentialContainerEmbedded(
     lldb::addr_t existential_address, CompilerType existential_type) {
   auto reflection_ctx = GetReflectionContext();
   if (!reflection_ctx)
-    return std::nullopt;
+    return llvm::createStringError("no reflection context");
   auto tss =
       existential_type.GetTypeSystem().dyn_cast_or_null<TypeSystemSwift>();
   if (!tss)
-    return std::nullopt;
+    return llvm::createStringError("not a Swift type system");
   TypeSystemSwiftTypeRefSP ts = tss->GetTypeSystemSwiftTypeRef();
   if (!ts)
-    return std::nullopt;
+    return llvm::createStringError("no Swift typeref typesystem");
 
   auto existential_container =
       reflection_ctx->ReadMetadataAndValueOpaqueExistential(
           existential_address);
   if (!existential_container)
-    return std::nullopt;
+    return llvm::createStringError(
+        llvm::formatv("could not read the existential container at {0:x}",
+                      existential_address)
+            .str());
 
   lldb::addr_t metadata_addr =
       existential_container->MetadataAddress.getRawAddress();
   auto dynamic_address = existential_container->PayloadAddress.getRawAddress();
   if (dynamic_address == 0)
-    return std::nullopt;
+    return llvm::createStringError("existential container has no payload");
 
-  CompilerType dynamic_type = GetTypeFromMetadataAddress(metadata_addr, *ts);
-  if (!dynamic_type) {
-    LLDB_LOG(GetLog(LLDBLog::Types),
-             "[GetDynamicTypeAndAddress_ExistentialContainerEmbedded] no type "
-             "for metadata at {0:x}",
-             metadata_addr);
-    return std::nullopt;
-  }
+  auto dynamic_type_or_err =
+      GetTypeFromMetadataAddressEmbedded(metadata_addr, *ts);
+  if (!dynamic_type_or_err)
+    return dynamic_type_or_err.takeError();
+  CompilerType dynamic_type = *dynamic_type_or_err;
 
-  auto instance_addr =
+  auto instance_addr_or_err =
       UnwrapClassReferenceIfNeeded(dynamic_type, dynamic_address);
-  if (!instance_addr)
-    return std::nullopt;
+  if (!instance_addr_or_err)
+    return instance_addr_or_err.takeError();
 
-  return std::make_pair(dynamic_type, *instance_addr);
+  return std::make_pair(dynamic_type, *instance_addr_or_err);
 }
 
-std::optional<std::pair<CompilerType, uint64_t>>
+llvm::Expected<std::pair<CompilerType, uint64_t>>
 SwiftLanguageRuntime::GetDynamicTypeAndAddress_ErrorExistentialEmbedded(
     lldb::addr_t existential_address, CompilerType existential_type,
     ExecutionContextScope *exe_scope) {
   auto reflection_ctx = GetReflectionContext();
   if (!reflection_ctx)
-    return std::nullopt;
+    return llvm::createStringError("no reflection context");
 
   // An error existential is a pointer to a heap box laid out as [HeapObject,
-  // payload metadata, Error witness table, payload].
+  // payload metadata, Error witness table, payload]. This matches
+  // swift_allocError in the embedded runtime (EmbeddedRuntime.swift).
   auto box = reflection_ctx->ReadPointer(existential_address);
   if (!box)
-    return std::nullopt;
+    return llvm::createStringError(
+        llvm::formatv("could not read the error box pointer at {0:x}",
+                      existential_address)
+            .str());
   lldb::addr_t box_addr = box->getResolvedAddress().getRawAddress();
   if (box_addr == 0 || box_addr == LLDB_INVALID_ADDRESS)
-    return std::nullopt;
+    return llvm::createStringError("error existential has no box");
 
   uint32_t ptr_size = GetProcess().GetAddressByteSize();
 
-  // The payload's metadata follows the object header. Reading the metadata
-  // pointer at an address and resolving its symbol is what resolving an
-  // embedded class does, so reuse that.
-  CompilerType dynamic_type = GetDynamicTypeAndAddress_EmbeddedClass(
+  // The payload's metadata follows the object header.
+  auto dynamic_type_or_err = GetTypeFromMetadataPointerEmbedded(
       box_addr + 2 * ptr_size, existential_type);
-  if (!dynamic_type)
-    return std::nullopt;
+  if (!dynamic_type_or_err)
+    return dynamic_type_or_err.takeError();
+  CompilerType dynamic_type = *dynamic_type_or_err;
 
   // The payload follows the metadata and the witness table, rounded up to its
   // own alignment.
@@ -2595,10 +2618,11 @@ SwiftLanguageRuntime::GetDynamicTypeAndAddress_ErrorExistentialEmbedded(
   }
   lldb::addr_t payload_addr = llvm::alignTo(box_addr + 4 * ptr_size, alignment);
 
-  if (auto instance_addr =
-          UnwrapClassReferenceIfNeeded(dynamic_type, payload_addr))
-    return std::make_pair(dynamic_type, *instance_addr);
-  return std::nullopt;
+  auto instance_addr_or_err =
+      UnwrapClassReferenceIfNeeded(dynamic_type, payload_addr);
+  if (!instance_addr_or_err)
+    return instance_addr_or_err.takeError();
+  return std::make_pair(dynamic_type, *instance_addr_or_err);
 }
 
 llvm::Expected<std::pair<CompilerType, uint64_t>>
@@ -2618,26 +2642,16 @@ SwiftLanguageRuntime::GetDynamicTypeAndAddress_ExistentialEmbedded(
 
   switch (kind) {
   case swift::reflection::RecordKind::ErrorExistential:
-    if (auto result = GetDynamicTypeAndAddress_ErrorExistentialEmbedded(
-            existential_address, existential_type, exe_scope))
-      return *result;
-    return llvm::createStringError(
-        "failed to resolve dynamic type of embedded error existential");
+    return GetDynamicTypeAndAddress_ErrorExistentialEmbedded(
+        existential_address, existential_type, exe_scope);
 
   case swift::reflection::RecordKind::ClassExistential:
-    if (auto result =
-            GetDynamicTypeAndAddress_ExistentialClassReferenceEmbedded(
-                existential_address, existential_type))
-      return *result;
-    return llvm::createStringError("failed to resolve dynamic type of "
-                                   "class-constrained embedded existential");
+    return GetDynamicTypeAndAddress_ExistentialClassReferenceEmbedded(
+        existential_address, existential_type);
 
   case swift::reflection::RecordKind::OpaqueExistential:
-    if (auto result = GetDynamicTypeAndAddress_ExistentialContainerEmbedded(
-            existential_address, existential_type))
-      return *result;
-    return llvm::createStringError(
-        "failed to resolve dynamic type of opaque embedded existential");
+    return GetDynamicTypeAndAddress_ExistentialContainerEmbedded(
+        existential_address, existential_type);
 
   default:
     // No record layout for the existential, as a fallback try each one in turn.
@@ -2645,17 +2659,30 @@ SwiftLanguageRuntime::GetDynamicTypeAndAddress_ExistentialEmbedded(
              "[GetDynamicTypeAndAddress_ExistentialEmbedded] unknown "
              "representation of {0}, trying every layout",
              existential_type.GetMangledTypeName());
-    if (auto result = GetDynamicTypeAndAddress_ExistentialContainerEmbedded(
-            existential_address, existential_type))
+
+    auto try_layout =
+        [&](llvm::Expected<std::pair<CompilerType, uint64_t>> result)
+        -> std::optional<std::pair<CompilerType, uint64_t>> {
+      if (result)
+        return *result;
+      LLDB_LOG_ERROR(GetLog(LLDBLog::Types), result.takeError(),
+                     "[GetDynamicTypeAndAddress_ExistentialEmbedded] {0}");
+      return std::nullopt;
+    };
+
+    if (auto result =
+            try_layout(GetDynamicTypeAndAddress_ExistentialContainerEmbedded(
+                existential_address, existential_type)))
+      return *result;
+
+    if (auto result = try_layout(
+            GetDynamicTypeAndAddress_ExistentialClassReferenceEmbedded(
+                existential_address, existential_type)))
       return *result;
 
     if (auto result =
-            GetDynamicTypeAndAddress_ExistentialClassReferenceEmbedded(
-                existential_address, existential_type))
-      return *result;
-
-    if (auto result = GetDynamicTypeAndAddress_ErrorExistentialEmbedded(
-            existential_address, existential_type, exe_scope))
+            try_layout(GetDynamicTypeAndAddress_ErrorExistentialEmbedded(
+                existential_address, existential_type, exe_scope)))
       return *result;
 
     return llvm::createStringError(
@@ -2755,14 +2782,16 @@ bool SwiftLanguageRuntime::GetDynamicTypeAndAddress_Class(
           dynamic_type = class_type;
       }
     } else {
-      dynamic_type =
-          GetDynamicTypeAndAddress_EmbeddedClass(instance_ptr, class_type);
-      if (!dynamic_type) {
+      auto dynamic_type_or_err =
+          GetTypeFromMetadataPointerEmbedded(instance_ptr, class_type);
+      if (!dynamic_type_or_err) {
         HEALTH_LOG("could not resolve dynamic type of embedded swift class: "
-                   "{0} (instance_ptr = {1:x})",
-                   class_type.GetMangledTypeName(), instance_ptr);
+                   "{0} (instance_ptr = {1:x}): {2}",
+                   class_type.GetMangledTypeName(), instance_ptr,
+                   llvm::toString(dynamic_type_or_err.takeError()));
         return false;
       }
+      dynamic_type = *dynamic_type_or_err;
     }
     class_type_or_name.SetCompilerType(dynamic_type);
     LLDB_LOG(GetLog(LLDBLog::Types),

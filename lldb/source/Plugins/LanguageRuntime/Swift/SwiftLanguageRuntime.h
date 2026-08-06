@@ -753,42 +753,46 @@ protected:
       TypeAndOrName &class_type_or_name, Address &address,
       Value::ValueType &value_type, llvm::ArrayRef<uint8_t> &local_buffer);
 
-  /// Resolves the dynamic type of an embedded Swift class type.
-  CompilerType GetDynamicTypeAndAddress_EmbeddedClass(uint64_t instance_ptr,
-                                                      CompilerType class_type);
+  /// Resolves the type whose metadata the pointer stored at \p
+  /// metadata_ptr_addr points to. That word is a class instance's metadata
+  /// pointer, or an error box's payload metadata pointer. \p type_in_context is
+  /// only used to reach the type system the result is created in.
+  llvm::Expected<CompilerType>
+  GetTypeFromMetadataPointerEmbedded(lldb::addr_t metadata_ptr_addr,
+                                     CompilerType type_in_context);
 
   /// Resolves the type whose metadata symbol covers \p metadata_addr.
-  CompilerType GetTypeFromMetadataAddress(lldb::addr_t metadata_addr,
-                                          TypeSystemSwiftTypeRef &ts);
+  llvm::Expected<CompilerType>
+  GetTypeFromMetadataAddressEmbedded(lldb::addr_t metadata_addr,
+                                     TypeSystemSwiftTypeRef &ts);
 
   /// Resolves the type a "type metadata for T" symbol names, and whether the
   /// symbol names full metadata rather than type metadata.
-  std::pair<CompilerType, bool>
-  GetTypeFromMetadataSymbol(llvm::StringRef symbol_name,
-                            TypeSystemSwiftTypeRef &ts);
+  llvm::Expected<std::pair<CompilerType, bool>>
+  GetTypeFromMetadataSymbolEmbedded(llvm::StringRef symbol_name,
+                                    TypeSystemSwiftTypeRef &ts);
 
   /// If \p type is a class, returns the address of the instance \p addr holds a
   /// reference to, which is what callers of dynamic type resolution expect;
   /// any other type is already the value, so \p addr is returned unchanged.
-  /// Returns std::nullopt if the reference could not be read.
-  std::optional<lldb::addr_t> UnwrapClassReferenceIfNeeded(CompilerType type,
-                                                           lldb::addr_t addr);
+  llvm::Expected<lldb::addr_t> UnwrapClassReferenceIfNeeded(CompilerType type,
+                                                            lldb::addr_t addr);
 
   /// Resolves the dynamic type of the class reference an embedded Swift
-  /// class-constrained existential holds in its first word. Returns
-  /// std::nullopt if that word does not resolve to a class.
-  std::optional<std::pair<CompilerType, uint64_t>>
+  /// class-constrained existential holds in its first word. Fails if that word
+  /// does not resolve to a class.
+  llvm::Expected<std::pair<CompilerType, uint64_t>>
   GetDynamicTypeAndAddress_ExistentialClassReferenceEmbedded(
       lldb::addr_t existential_address, CompilerType existential_type);
 
   /// Resolves the dynamic type of an embedded Swift existential container.
-  std::optional<std::pair<CompilerType, uint64_t>>
+  llvm::Expected<std::pair<CompilerType, uint64_t>>
   GetDynamicTypeAndAddress_ExistentialContainerEmbedded(
       lldb::addr_t existential_address, CompilerType existential_type);
 
   /// Resolves the dynamic type of an embedded Swift error existential, which
   /// points to a heap box holding the payload's type metadata.
-  std::optional<std::pair<CompilerType, uint64_t>>
+  llvm::Expected<std::pair<CompilerType, uint64_t>>
   GetDynamicTypeAndAddress_ErrorExistentialEmbedded(
       lldb::addr_t existential_address, CompilerType existential_type,
       ExecutionContextScope *exe_scope);
