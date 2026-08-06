@@ -1601,6 +1601,13 @@ void ASTContext::InitBuiltinTypes(const TargetInfo &Target,
 #include "clang/Basic/AMDGPUTypes.def"
   }
 
+  if (Target.getTriple().isSPIRV() ||
+      (AuxTarget && AuxTarget->getTriple().isSPIRV())) {
+#define SPIRV_TYPE(Name, Id, SingletonId)                                      \
+  InitBuiltinType(SingletonId, BuiltinType::Id);
+#include "clang/Basic/SPIRVTypes.def"
+  }
+
   // Builtin type for __objc_yes and __objc_no
   ObjCBuiltinBoolTy = (Target.useSignedCharForObjCBool() ?
                        SignedCharTy : BoolTy);
@@ -2562,6 +2569,12 @@ TypeInfo ASTContext::getTypeInfoImpl(const Type *T) const {
       Width = Target->getPointerWidth(LangAS::Default);
       Align = Target->getPointerAlign(LangAS::Default);
       break;
+#define SPIRV_TYPE(Name, Id, SingletonId)                                      \
+  case BuiltinType::Id:                                                        \
+    Width = Target->getPointerWidth(LangAS::Default);                          \
+    Align = Target->getPointerAlign(LangAS::Default);                          \
+    break;
+#include "clang/Basic/SPIRVTypes.def"
     }
     break;
   case Type::ObjCObjectPointer:
@@ -3726,6 +3739,8 @@ static void encodeTypeForFunctionPointerAuth(const ASTContext &Ctx,
     case BuiltinType::WasmExternRef:
 #define RVV_TYPE(Name, Id, SingletonId) case BuiltinType::Id:
 #include "clang/Basic/RISCVVTypes.def"
+#define SPIRV_TYPE(Name, Id, SingletonId) case BuiltinType::Id:
+#include "clang/Basic/SPIRVTypes.def"
       llvm_unreachable("not yet implemented");
     }
     llvm_unreachable("should never get here");
@@ -9962,6 +9977,8 @@ static char getObjCEncodingForPrimitiveType(const ASTContext *C,
 #include "clang/Basic/WebAssemblyReferenceTypes.def"
 #define AMDGPU_TYPE(Name, Id, SingletonId, Width, Align) case BuiltinType::Id:
 #include "clang/Basic/AMDGPUTypes.def"
+#define SPIRV_TYPE(Name, Id, SingletonId) case BuiltinType::Id:
+#include "clang/Basic/SPIRVTypes.def"
       {
         DiagnosticsEngine &Diags = C->getDiagnostics();
         Diags.Report(diag::err_unsupported_objc_primitive_encoding)
