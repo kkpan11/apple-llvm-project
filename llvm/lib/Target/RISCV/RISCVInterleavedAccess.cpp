@@ -108,10 +108,10 @@ bool RISCVTargetLowering::lowerInterleavedLoad(
     Value *Mask = Builder.getAllOnesMask(VTy->getElementCount());
     Value *VL = Builder.getInt32(VTy->getNumElements());
 
-    CallInst *CI =
-        Builder.CreateIntrinsic(Intrinsic::experimental_vp_strided_load,
-                                {VTy, BasePtr->getType(), Stride->getType()},
-                                {BasePtr, Stride, Mask, VL});
+    CallInst *CI = Builder.CreateIntrinsicWithoutFolding(
+        Intrinsic::experimental_vp_strided_load,
+        {VTy, BasePtr->getType(), Stride->getType()},
+        {BasePtr, Stride, Mask, VL});
     CI->addParamAttr(
         0, Attribute::getWithAlignment(CI->getContext(), LI->getAlign()));
     Shuffles[0]->replaceAllUsesWith(CI);
@@ -120,9 +120,9 @@ bool RISCVTargetLowering::lowerInterleavedLoad(
 
   Value *VL = ConstantInt::get(XLenTy, VTy->getNumElements());
   Value *Mask = Builder.getAllOnesMask(VTy->getElementCount());
-  CallInst *VlsegN = Builder.CreateIntrinsic(
-      FixedVlsegIntrIds[Factor - 2], {VTy, PtrTy, XLenTy},
-      {LI->getPointerOperand(), Mask, VL});
+  Value *VlsegN = Builder.CreateIntrinsic(FixedVlsegIntrIds[Factor - 2],
+                                          {VTy, PtrTy, XLenTy},
+                                          {LI->getPointerOperand(), Mask, VL});
 
   for (unsigned i = 0; i < Shuffles.size(); i++) {
     Value *SubVec = Builder.CreateExtractValue(VlsegN, Indices[i]);
@@ -193,7 +193,7 @@ bool RISCVTargetLowering::lowerInterleavedStore(StoreInst *SI,
     Value *Mask = Builder.getAllOnesMask(DataVTy->getElementCount());
     Value *VL = Builder.getInt32(VTy->getNumElements());
 
-    CallInst *CI = Builder.CreateIntrinsic(
+    CallInst *CI = Builder.CreateIntrinsicWithoutFolding(
         Intrinsic::experimental_vp_strided_store,
         {Data->getType(), BasePtr->getType(), Stride->getType()},
         {Data, BasePtr, Stride, Mask, VL});

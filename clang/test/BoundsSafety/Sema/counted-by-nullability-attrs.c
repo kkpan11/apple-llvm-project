@@ -71,3 +71,28 @@ void paramType10(int * _Nullable __counted_by(4) p); // expected-warning{{combin
 void paramType11(int * _Nullable __counted_by_or_null(4) p);
 void paramType12(int * _Nullable __sized_by(4) p); // expected-warning{{combining '__sized_by' with non-zero size (which cannot be null) and '_Nullable'; did you mean '__sized_by_or_null' instead?}}
 
+void nestedParam1(const void * __sized_by_or_null(*size) _Nullable * _Nonnull p,
+                  int * _Nonnull size);
+void nestedParam2(const void * __sized_by(4) _Nullable * _Nonnull p, // expected-warning{{combining '__sized_by' with non-zero size (which cannot be null) and '_Nullable'; did you mean '__sized_by_or_null' instead?}}
+                  int * _Nonnull size);
+void nestedParam3(const void * __sized_by_or_null(*size) _Nonnull * _Nullable p, // expected-warning{{combining '__sized_by_or_null' and '_Nonnull'; did you mean '__sized_by' instead?}}
+                  int * _Nonnull size);
+void nestedParam4(const void * __sized_by(4) _Nonnull * _Nullable p,
+                  int * _Nonnull size);
+
+int * _Nonnull __counted_by_or_null(len) returnType1(int len); // expected-warning{{combining '__counted_by_or_null' and '_Nonnull'; did you mean '__counted_by' instead?}}
+int * __counted_by_or_null(len) _Nonnull returnType2(int len); // expected-warning{{combining '__counted_by_or_null' and '_Nonnull'; did you mean '__counted_by' instead?}}
+
+int * _Nonnull __sized_by_or_null(len) returnType3(int len); // expected-warning{{combining '__sized_by_or_null' and '_Nonnull'; did you mean '__sized_by' instead?}}
+int * __sized_by_or_null(len) _Nonnull returnType4(int len); // expected-warning{{combining '__sized_by_or_null' and '_Nonnull'; did you mean '__sized_by' instead?}}
+
+int * _Nonnull __counted_by(len) returnType5(int len);
+int * __counted_by(len) _Nonnull returnType6(int len);
+
+int * __counted_by(4) _Nullable returnType7(void); // expected-warning{{combining '__counted_by' with non-zero count (which cannot be null) and '_Nullable'; did you mean '__counted_by_or_null' instead?}}
+int * __counted_by_or_null(4) _Nullable returnType8(void);
+int * __sized_by(4) _Nullable returnType9(void); // expected-warning{{combining '__sized_by' with non-zero size (which cannot be null) and '_Nullable'; did you mean '__sized_by_or_null' instead?}}
+
+int * _Nullable __counted_by(4) returnType10(void); // expected-warning{{combining '__counted_by' with non-zero count (which cannot be null) and '_Nullable'; did you mean '__counted_by_or_null' instead?}}
+int * _Nullable __counted_by_or_null(4) returnType11(void);
+int * _Nullable __sized_by(4) returnType12(void); // expected-warning{{combining '__sized_by' with non-zero size (which cannot be null) and '_Nullable'; did you mean '__sized_by_or_null' instead?}}

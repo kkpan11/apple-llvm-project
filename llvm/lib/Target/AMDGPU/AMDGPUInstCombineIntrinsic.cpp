@@ -131,7 +131,8 @@ static std::optional<Instruction *> modifyIntrinsicCall(
   // Modify arguments and types
   Func(Args, ArgTys);
 
-  CallInst *NewCall = IC.Builder.CreateIntrinsic(NewIntr, ArgTys, Args);
+  CallInst *NewCall =
+      IC.Builder.CreateIntrinsicWithoutFolding(NewIntr, ArgTys, Args);
   NewCall->takeName(&OldIntr);
   NewCall->copyMetadata(OldIntr);
   if (isa<FPMathOperator>(NewCall))
@@ -1304,7 +1305,7 @@ GCNTTIImpl::instCombineIntrinsic(InstCombiner &IC, IntrinsicInst &II) const {
 
       Value *Args[] = {SrcLHS, SrcRHS,
                        ConstantInt::get(CC->getType(), SrcPred)};
-      CallInst *NewCall = IC.Builder.CreateIntrinsic(
+      Value *NewCall = IC.Builder.CreateIntrinsic(
           NewIID, {II.getType(), SrcLHS->getType()}, Args);
       NewCall->takeName(&II);
       return IC.replaceInstUsesWith(II, NewCall);
@@ -1690,7 +1691,7 @@ GCNTTIImpl::instCombineIntrinsic(InstCombiner &IC, IntrinsicInst &II) const {
     Args[0] = Src0;
     Args[1] = Src1;
 
-    CallInst *NewII = IC.Builder.CreateIntrinsic(
+    Value *NewII = IC.Builder.CreateIntrinsic(
         IID, {Src0->getType(), Src1->getType()}, Args, &II);
     NewII->takeName(&II);
     return IC.replaceInstUsesWith(II, NewII);
@@ -1839,8 +1840,8 @@ static Value *simplifyAMDGCNMemoryIntrinsicDemanded(InstCombiner &IC,
       Args[0] = IC.Builder.CreateShuffleVector(II.getOperand(0), EltMask);
   }
 
-  CallInst *NewCall =
-      IC.Builder.CreateIntrinsic(II.getIntrinsicID(), OverloadTys, Args);
+  CallInst *NewCall = IC.Builder.CreateIntrinsicWithoutFolding(
+      II.getIntrinsicID(), OverloadTys, Args);
   NewCall->takeName(&II);
   NewCall->copyMetadata(II);
 
