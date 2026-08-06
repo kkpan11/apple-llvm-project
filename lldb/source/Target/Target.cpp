@@ -2790,9 +2790,10 @@ const TypeSystemMap &Target::GetTypeSystemMap() {
   return m_scratch_type_system_map;
 }
 
-CompilerType Target::GetRegisterType(const std::string &name,
-                                     const lldb_private::RegisterFlags &flags,
-                                     uint32_t byte_size) {
+CompilerType
+Target::GetRegisterType(const std::string &name,
+                        const lldb_private::RegisterTypeFlags &flags,
+                        uint32_t byte_size) {
   if (!m_register_type_builder_sp)
     m_register_type_builder_sp = PluginManager::GetRegisterTypeBuilder(*this);
   assert(m_register_type_builder_sp);
