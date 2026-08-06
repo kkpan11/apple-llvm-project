@@ -2495,6 +2495,8 @@ bool Lexer::LexRawStringLiteral(Token &Result, const char *CurPtr,
 
 /// LexAngledStringLiteral - Lex the remainder of an angled string literal,
 /// after having lexed the '<' character.  This is used for #include filenames.
+/// Returns false if failed to lex the angled string literal; so the caller can
+/// lex the '<' normally.
 bool Lexer::LexAngledStringLiteral(Token &Result, const char *CurPtr) {
   // Does this string contain the \0 character?
   const char *NulCharacter = nullptr;
@@ -2508,10 +2510,8 @@ bool Lexer::LexAngledStringLiteral(Token &Result, const char *CurPtr) {
 
     if (isVerticalWhitespace(C) ||               // Newline.
         (C == 0 && (CurPtr - 1 == BufferEnd))) { // End of file.
-      // If the filename is unterminated, then it must just be a lone <
-      // character.  Return this as such.
-      FormTokenWithChars(Result, AfterLessPos, tok::less);
-      return true;
+      // If the filename is unterminated, let the caller lex the '<' normally.
+      return false;
     }
 
     if (C == 0) {
@@ -4377,9 +4377,10 @@ LexStart:
     break;
   case '<':
     Char = getCharAndSize(CurPtr, SizeTmp);
-    if (ParsingFilename) {
-      return LexAngledStringLiteral(Result, CurPtr);
-    } else if (Char == '<') {
+    if (ParsingFilename && LexAngledStringLiteral(Result, CurPtr))
+      return true;
+
+    if (Char == '<') {
       char After = getCharAndSize(CurPtr+SizeTmp, SizeTmp2);
       if (After == '=') {
         Kind = tok::lesslessequal;
@@ -4422,7 +4423,7 @@ LexStart:
       }
       CurPtr = ConsumeChar(CurPtr, SizeTmp, Result);
       Kind = tok::lessequal;
-    } else if (LangOpts.Digraphs && Char == ':') {     // '<:' -> '['
+    } else if (LangOpts.Digraphs && Char == ':') { // '<:' -> '['
       if (LangOpts.CPlusPlus11 &&
           getCharAndSize(CurPtr + SizeTmp, SizeTmp2) == ':') {
         // C++0x [lex.pptoken]p3:
@@ -4442,7 +4443,7 @@ LexStart:
 
       CurPtr = ConsumeChar(CurPtr, SizeTmp, Result);
       Kind = tok::l_square;
-    } else if (LangOpts.Digraphs && Char == '%') {     // '<%' -> '{'
+    } else if (LangOpts.Digraphs && Char == '%') { // '<%' -> '{'
       CurPtr = ConsumeChar(CurPtr, SizeTmp, Result);
       Kind = tok::l_brace;
     } else if (Char == '#' && /*Not a trigraph*/ SizeTmp == 1 &&
@@ -4724,12 +4725,20 @@ bool Lexer::LexDependencyDirectiveToken(Token &Result) {
     MIOpt.ReadToken();
   }
 
-  if (ParsingFilename && DDTok.is(tok::less)) {
-    BufferPtr = BufferStart + DDTok.Offset;
-    LexAngledStringLiteral(Result, BufferPtr + 1);
-    if (Result.isNot(tok::header_name))
+  const char *DDTokPtr = BufferStart + DDTok.Offset;
+  if (ParsingFilename && *DDTokPtr == '<') {
+    Result.startToken();
+    Result.setFlag((Token::TokenFlags)DDTok.Flags);
+    Result.clearFlag(Token::NeedsCleaning);
+    BufferPtr = DDTokPtr;
+    if (!LexAngledStringLiteral(Result, BufferPtr + 1)) {
+      convertDependencyDirectiveToken(DDTok, Result);
       return true;
+    }
+
     // Advance the index of lexed tokens.
+    // FIXME: This will skip too many tokens if the header-name ended in the
+    // middle of a token, such as in '<foo>='.
     while (true) {
       const dependency_directives_scan::Token &NextTok =
           DepDirectives.front().Tokens[NextDepDirectiveTokenIndex];
