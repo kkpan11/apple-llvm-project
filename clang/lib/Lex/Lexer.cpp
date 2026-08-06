@@ -4728,8 +4728,8 @@ bool Lexer::LexDependencyDirectiveToken(Token &Result) {
   const char *DDTokPtr = BufferStart + DDTok.Offset;
   if (ParsingFilename && *DDTokPtr == '<') {
     Result.startToken();
-    Result.setFlag((Token::TokenFlags)DDTok.Flags);
-    Result.clearFlag(Token::NeedsCleaning);
+    Result.setFlag((clang::Token::TokenFlags)DDTok.Flags);
+    Result.clearFlag(clang::Token::NeedsCleaning);
     BufferPtr = DDTokPtr;
     if (!LexAngledStringLiteral(Result, BufferPtr + 1)) {
       convertDependencyDirectiveToken(DDTok, Result);
