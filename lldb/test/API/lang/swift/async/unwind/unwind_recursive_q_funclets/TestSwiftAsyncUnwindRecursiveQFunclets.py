@@ -9,7 +9,7 @@ class TestCase(lldbtest.TestBase):
     mydir = lldbtest.TestBase.compute_mydir(__file__)
 
 
-    @skipEmbeddedSwift  # rdar://183960945 (Fix async tests running in embedded mode)
+    @skipEmbeddedSwiftOnLinux
     @swiftTest
     @skipIf(oslist=["windows",])
     @skipIf(archs=["arm64e"])
@@ -19,7 +19,7 @@ class TestCase(lldbtest.TestBase):
 
         source_file = lldb.SBFileSpec("main.swift")
         target, process, thread, bkpt = lldbutil.run_to_name_breakpoint(
-            self, "$s1a9factorialyS2iYaFTQ1_"
+            self, self.swiftMangledName("$s1a9factorialyS2iYaFTQ1_")
         )
 
         # Ensure we are on the last factorial call which recurses (n == 1).
