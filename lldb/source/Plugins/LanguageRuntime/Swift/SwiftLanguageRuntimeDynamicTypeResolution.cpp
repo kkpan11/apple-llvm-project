@@ -2436,6 +2436,18 @@ bool SwiftLanguageRuntime::GetDynamicTypeAndAddress_Pack(
   return true;
 }
 
+/// Returns the TypeSystemSwiftTypeRef \p type belongs to.
+static llvm::Expected<TypeSystemSwiftTypeRefSP>
+GetTypeSystemSwiftTypeRef(CompilerType type) {
+  auto tss = type.GetTypeSystem().dyn_cast_or_null<TypeSystemSwift>();
+  if (!tss)
+    return llvm::createStringError("not a Swift type");
+  TypeSystemSwiftTypeRefSP ts = tss->GetTypeSystemSwiftTypeRef();
+  if (!ts)
+    return llvm::createStringError("no Swift typeref typesystem");
+  return ts;
+}
+
 llvm::Expected<std::pair<CompilerType, bool>>
 SwiftLanguageRuntime::GetTypeFromMetadataSymbolEmbedded(
     llvm::StringRef symbol_name, TypeSystemSwiftTypeRef &ts) {
@@ -2510,17 +2522,10 @@ SwiftLanguageRuntime::UnwrapClassReferenceIfNeeded(CompilerType type,
 
 llvm::Expected<CompilerType>
 SwiftLanguageRuntime::GetTypeFromMetadataPointerEmbedded(
-    lldb::addr_t metadata_ptr_addr, CompilerType type_in_context) {
+    lldb::addr_t metadata_ptr_addr, TypeSystemSwiftTypeRef &ts) {
   ThreadSafeReflectionContext reflection_ctx = GetReflectionContext();
   if (!reflection_ctx)
     return llvm::createStringError("no reflection context");
-  auto tss =
-      type_in_context.GetTypeSystem().dyn_cast_or_null<TypeSystemSwift>();
-  if (!tss)
-    return llvm::createStringError("not a Swift type system");
-  TypeSystemSwiftTypeRefSP ts = tss->GetTypeSystemSwiftTypeRef();
-  if (!ts)
-    return llvm::createStringError("no Swift typeref typesystem");
 
   std::optional<swift::remote::RemoteAbsolutePointer> pointer =
       reflection_ctx->ReadPointer(metadata_ptr_addr);
@@ -2534,14 +2539,14 @@ SwiftLanguageRuntime::GetTypeFromMetadataPointerEmbedded(
   // symbol, we can extract the dynamic type from the symbol's mangled name.
   if (!pointer->getSymbol().empty() && !pointer->getOffset()) {
     auto type_or_err =
-        GetTypeFromMetadataSymbolEmbedded(pointer->getSymbol(), *ts);
+        GetTypeFromMetadataSymbolEmbedded(pointer->getSymbol(), ts);
     if (!type_or_err)
       return type_or_err.takeError();
     return type_or_err->first;
   }
   // Otherwise, we need to look up which symbol matches the address.
   return GetTypeFromMetadataAddressEmbedded(
-      pointer->getResolvedAddress().getRawAddress(), *ts);
+      pointer->getResolvedAddress().getRawAddress(), ts);
 }
 
 llvm::Expected<std::pair<CompilerType, uint64_t>> SwiftLanguageRuntime::
@@ -2550,6 +2555,9 @@ llvm::Expected<std::pair<CompilerType, uint64_t>> SwiftLanguageRuntime::
   auto reflection_ctx = GetReflectionContext();
   if (!reflection_ctx)
     return llvm::createStringError("no reflection context");
+  auto ts_or_err = GetTypeSystemSwiftTypeRef(existential_type);
+  if (!ts_or_err)
+    return ts_or_err.takeError();
 
   auto maybe_addr_or_symbol = reflection_ctx->ReadPointer(existential_address);
   if (!maybe_addr_or_symbol)
@@ -2578,7 +2586,7 @@ llvm::Expected<std::pair<CompilerType, uint64_t>> SwiftLanguageRuntime::
   }
 
   auto dynamic_type_or_err =
-      GetTypeFromMetadataPointerEmbedded(address, existential_type);
+      GetTypeFromMetadataPointerEmbedded(address, **ts_or_err);
   if (!dynamic_type_or_err)
     return dynamic_type_or_err.takeError();
   CompilerType dynamic_type = *dynamic_type_or_err;
@@ -2600,13 +2608,9 @@ SwiftLanguageRuntime::GetDynamicTypeAndAddress_ExistentialContainerEmbedded(
   auto reflection_ctx = GetReflectionContext();
   if (!reflection_ctx)
     return llvm::createStringError("no reflection context");
-  auto tss =
-      existential_type.GetTypeSystem().dyn_cast_or_null<TypeSystemSwift>();
-  if (!tss)
-    return llvm::createStringError("not a Swift type system");
-  TypeSystemSwiftTypeRefSP ts = tss->GetTypeSystemSwiftTypeRef();
-  if (!ts)
-    return llvm::createStringError("no Swift typeref typesystem");
+  auto ts_or_err = GetTypeSystemSwiftTypeRef(existential_type);
+  if (!ts_or_err)
+    return ts_or_err.takeError();
 
   auto existential_container =
       reflection_ctx->ReadMetadataAndValueOpaqueExistential(
@@ -2624,7 +2628,7 @@ SwiftLanguageRuntime::GetDynamicTypeAndAddress_ExistentialContainerEmbedded(
     return llvm::createStringError("existential container has no payload");
 
   auto dynamic_type_or_err =
-      GetTypeFromMetadataAddressEmbedded(metadata_addr, *ts);
+      GetTypeFromMetadataAddressEmbedded(metadata_addr, **ts_or_err);
   if (!dynamic_type_or_err)
     return dynamic_type_or_err.takeError();
   CompilerType dynamic_type = *dynamic_type_or_err;
@@ -2644,6 +2648,9 @@ SwiftLanguageRuntime::GetDynamicTypeAndAddress_ErrorExistentialEmbedded(
   auto reflection_ctx = GetReflectionContext();
   if (!reflection_ctx)
     return llvm::createStringError("no reflection context");
+  auto ts_or_err = GetTypeSystemSwiftTypeRef(existential_type);
+  if (!ts_or_err)
+    return ts_or_err.takeError();
 
   // An error existential is a pointer to a heap box laid out as [HeapObject,
   // payload metadata, Error witness table, payload]. This matches
@@ -2661,8 +2668,8 @@ SwiftLanguageRuntime::GetDynamicTypeAndAddress_ErrorExistentialEmbedded(
   uint32_t ptr_size = GetProcess().GetAddressByteSize();
 
   // The payload's metadata follows the object header.
-  auto dynamic_type_or_err = GetTypeFromMetadataPointerEmbedded(
-      box_addr + 2 * ptr_size, existential_type);
+  auto dynamic_type_or_err =
+      GetTypeFromMetadataPointerEmbedded(box_addr + 2 * ptr_size, **ts_or_err);
   if (!dynamic_type_or_err)
     return dynamic_type_or_err.takeError();
   CompilerType dynamic_type = *dynamic_type_or_err;
@@ -2844,7 +2851,7 @@ bool SwiftLanguageRuntime::GetDynamicTypeAndAddress_Class(
       }
     } else {
       auto dynamic_type_or_err =
-          GetTypeFromMetadataPointerEmbedded(instance_ptr, class_type);
+          GetTypeFromMetadataPointerEmbedded(instance_ptr, *ts);
       if (!dynamic_type_or_err) {
         HEALTH_LOG("could not resolve dynamic type of embedded swift class: "
                    "{0} (instance_ptr = {1:x}): {2}",
