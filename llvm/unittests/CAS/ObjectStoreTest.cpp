@@ -275,7 +275,7 @@ TEST_P(CASTest, NodesBig) {
 }
 
 TEST_P(CASTest, FileAPIs) {
-  auto CAS = createObjectStore();
+  std::shared_ptr<ObjectStore> CAS = createObjectStore();
 
   auto runCommonTests =
       [&CAS](function_ref<std::unique_ptr<unittest::TempFile>(char)>

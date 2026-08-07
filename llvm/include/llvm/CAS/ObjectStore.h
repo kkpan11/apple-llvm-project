@@ -31,6 +31,7 @@ namespace cas {
 
 class ObjectStore;
 class ObjectProxy;
+class ActionCache;
 
 using AsyncProxyValue = AsyncValue<ObjectProxy>;
 
@@ -431,7 +432,8 @@ void registerCASURLScheme(StringRef Prefix, ObjectStoreCreateFuncTy *Func);
 /// resources/caches.
 /// \param PluginArgs name/value pairs passed to the plugin as custom options;
 /// they are opaque to the client.
-Expected<std::pair<std::shared_ptr<ObjectStore>, std::shared_ptr<ActionCache>>>
+LLVM_ABI Expected<
+    std::pair<std::shared_ptr<ObjectStore>, std::shared_ptr<ActionCache>>>
 createPluginCASDatabases(
     StringRef PluginPath, StringRef OnDiskPath,
     ArrayRef<std::pair<std::string, std::string>> PluginArgs);
