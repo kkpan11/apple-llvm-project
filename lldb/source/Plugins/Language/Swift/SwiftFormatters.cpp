@@ -1047,7 +1047,7 @@ public:
     const auto *it = llvm::find(children, name);
     if (it == children.end())
       return llvm::createStringError("Type has no child named '%s'",
-                                     name.AsCString());
+                                     name.AsCString(nullptr));
     return std::distance(children.begin(), it);
   }
 
@@ -1128,7 +1128,7 @@ public:
       return 0;
 
     return llvm::createStringError("Type has no child named '%s'",
-                                   name.AsCString());
+                                   name.AsCString(nullptr));
   }
 
   lldb::ChildCacheState Update() override {
@@ -1213,7 +1213,7 @@ public:
       return 0;
 
     return llvm::createStringError("Type has no child named '%s'",
-                                   name.AsCString());
+                                   name.AsCString(nullptr));
   }
 
   lldb::ChildCacheState Update() override {
@@ -1299,7 +1299,7 @@ public:
     if (buf.consume_front("[") && !buf.consumeInteger(10, idx) && buf == "]")
       return idx;
     return llvm::createStringError("Type has no child named '%s'",
-                                   name.AsCString());
+                                   name.AsCString(nullptr));
   }
 
   lldb::ChildCacheState Update() override {
@@ -1511,7 +1511,7 @@ public:
     if (m_is_supported_target && name == "unprioritised_jobs")
       return 0;
     return llvm::createStringError("Type has no child named '%s'",
-                                   name.AsCString());
+                                   name.AsCString(nullptr));
   }
 
   lldb::ChildCacheState Update() override {
@@ -1697,7 +1697,7 @@ lldb_private::formatters::swift::EnumSyntheticFrontEnd::GetIndexOfChildWithName(
   if (m_projected && name == m_projected->GetName())
     return 0;
   return llvm::createStringError("Type has no child named '%s'",
-                                 name.AsCString());
+                                 name.AsCString(nullptr));
 }
 
 SyntheticChildrenFrontEnd *
