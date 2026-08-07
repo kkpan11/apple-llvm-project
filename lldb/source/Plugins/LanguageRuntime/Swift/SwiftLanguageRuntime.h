@@ -755,11 +755,10 @@ protected:
 
   /// Resolves the type whose metadata the pointer stored at \p
   /// metadata_ptr_addr points to. That word is a class instance's metadata
-  /// pointer, or an error box's payload metadata pointer. \p type_in_context is
-  /// only used to reach the type system the result is created in.
+  /// pointer, or an error box's payload metadata pointer.
   llvm::Expected<CompilerType>
   GetTypeFromMetadataPointerEmbedded(lldb::addr_t metadata_ptr_addr,
-                                     CompilerType type_in_context);
+                                     TypeSystemSwiftTypeRef &ts);
 
   /// Resolves the type whose metadata symbol covers \p metadata_addr.
   llvm::Expected<CompilerType>
