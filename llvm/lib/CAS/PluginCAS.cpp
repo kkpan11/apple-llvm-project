@@ -93,7 +93,7 @@ Expected<std::shared_ptr<PluginCASContext>> PluginCASContext::create(
 #undef CASPLUGINAPI_FUNCTION
 
   llcas_cas_options_t c_opts = Functions.cas_options_create();
-  llvm::scope_exit _([&]() { Functions.cas_options_dispose(c_opts); });
+  scope_exit DisposeOptions([&]() { Functions.cas_options_dispose(c_opts); });
 
   Functions.cas_options_set_client_version(c_opts, LLCAS_VERSION_MAJOR,
                                            LLCAS_VERSION_MINOR);
@@ -297,6 +297,7 @@ Expected<bool> PluginObjectStore::isMaterialized(ObjectRef Ref) const {
   case LLCAS_LOOKUP_RESULT_ERROR:
     return Ctx->errorAndDispose(c_err);
   }
+  llvm_unreachable("unknown llcas_lookup_result_t value");
 }
 
 Expected<std::optional<ObjectHandle>>
