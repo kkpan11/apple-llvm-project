@@ -2220,7 +2220,7 @@ SwiftLanguageRuntime::BindGenericPackType(StackFrame &frame,
         // Read the type metadata pointer.
         Status status;
         lldb::addr_t md = LLDB_INVALID_ADDRESS;
-        target.ReadMemory(md_ptr, &md, ptr_size, status, true);
+        target.ReadMemory(Address(md_ptr), &md, ptr_size, status, true);
         if (!status.Success())
           return llvm::createStringError(
                     "cannot decode pack_expansion type: failed to read type "
@@ -3846,7 +3846,7 @@ lldb::addr_t SwiftLanguageRuntime::FixupAddress(lldb::addr_t addr,
     Target &target = GetProcess().GetTarget();
     size_t ptr_size = GetProcess().GetAddressByteSize();
     lldb::addr_t refd_addr = LLDB_INVALID_ADDRESS;
-    target.ReadMemory(stripped_addr, &refd_addr, ptr_size, error, true);
+    target.ReadMemory(Address(stripped_addr), &refd_addr, ptr_size, error, true);
     return refd_addr;
   }
   return addr;
