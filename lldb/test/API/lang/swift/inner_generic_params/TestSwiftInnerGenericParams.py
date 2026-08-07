@@ -5,7 +5,7 @@ import lldbsuite.test.lldbutil as lldbutil
 
 
 class TestSwiftInnerGenericParams(TestBase):
-    @requireNotEmbeddedSwift
+    @skipEmbeddedSwift # 6.4.x. only
     @swiftTest
     def test_outermost_params(self):
         """Sanity check: a non-generic method works."""
@@ -15,7 +15,7 @@ class TestSwiftInnerGenericParams(TestBase):
         )
         self.expect("expression --bind-generic-types false -- value", substrs=["42"])
 
-    @requireNotEmbeddedSwift
+    @skipEmbeddedSwift # 6.4.x. only
     @swiftTest
     def test_inner_params_are_declined(self):
         """A generic method in a generic context is not supported."""
