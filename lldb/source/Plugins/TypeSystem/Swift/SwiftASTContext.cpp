@@ -2584,6 +2584,13 @@ ProcessModule(Module &module, std::string m_description,
   }
 }
 
+/// Set up \p swift_ast_ctx the same way the compiler sets up an embedded Swift
+/// compilation.
+static void EnableEmbeddedSwift(SwiftASTContext &swift_ast_ctx) {
+  swift_ast_ctx.GetCompilerInvocation().setCommonEmbeddedSwiftOptions(
+      swift::CompilerInvocation::EmbeddedSwiftContext::DebuggerExpression);
+}
+
 lldb::TypeSystemSP
 SwiftASTContext::CreateInstance(lldb::LanguageType language, Module &module,
                                 TypeSystemSwiftTypeRef &typeref_typesystem) {
@@ -2680,7 +2687,7 @@ SwiftASTContext::CreateInstance(lldb::LanguageType language, Module &module,
       module.IsSwiftCxxInteropEnabled();
 
   if (module.IsEmbeddedSwift())
-    swift_ast_sp->GetLanguageOptions().enableFeature(swift::Feature::Embedded);
+    EnableEmbeddedSwift(*swift_ast_sp);
 
   bool found_swift_modules = false;
   SymbolFile *sym_file = module.GetSymbolFile();
@@ -3209,7 +3216,7 @@ lldb::TypeSystemSP SwiftASTContext::CreateInstance(
     auto &lang_opts = swift_ast_sp->GetLanguageOptions();
     lang_opts.EnableCXXInterop = ShouldEnableCXXInterop(cu);
     if (ShouldEnableEmbeddedSwift(cu))
-      lang_opts.enableFeature(swift::Feature::Embedded);
+      EnableEmbeddedSwift(*swift_ast_sp);
   } else {
     // Typesystem fallback context.
     if (!module_sp) {
@@ -3226,7 +3233,7 @@ lldb::TypeSystemSP SwiftASTContext::CreateInstance(
     lang_opts.EnableAccessControl = false;
     lang_opts.EnableCXXInterop = ShouldEnableCXXInterop(cu);
     if (ShouldEnableEmbeddedSwift(cu))
-      lang_opts.enableFeature(swift::Feature::Embedded);
+      EnableEmbeddedSwift(*swift_ast_sp);
   }
   auto defer_log = llvm::make_scope_exit([swift_ast_sp, repl, playground] {
     swift_ast_sp->LogConfiguration(repl, playground);
