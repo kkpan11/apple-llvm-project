@@ -749,7 +749,7 @@ public:
     return ID;
 #include "URLComponents.def"
     return llvm::createStringError("Type has no child named '%s'",
-                                   name.AsCString(nullptr));
+                                   name.AsCString(""));
   }
 
 private:
