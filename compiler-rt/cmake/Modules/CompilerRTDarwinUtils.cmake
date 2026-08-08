@@ -111,6 +111,20 @@ function(darwin_test_archs os valid_archs)
   endif()
 
   set(archs ${ARGN})
+
+  # Disable building for i386 for macOS SDK >= 10.15. The SDK doesn't support
+  # linking for i386 and the corresponding OS doesn't allow running macOS i386
+  # binaries. Must run regardless of TEST_COMPILE_ONLY: `-arch i386` still
+  # compiles fine on modern SDKs, so the compile-only probe used by the
+  # builtins config would otherwise keep i386 in the arch list.
+  if ("${os}" STREQUAL "osx")
+    find_darwin_sdk_version(macosx_sdk_version "macosx")
+    if ("${macosx_sdk_version}" VERSION_GREATER 10.15 OR "${macosx_sdk_version}" VERSION_EQUAL 10.15)
+      message(STATUS "Disabling i386 slice for ${valid_archs}")
+      list(REMOVE_ITEM archs "i386")
+    endif()
+  endif()
+
   if(NOT TEST_COMPILE_ONLY)
     message(STATUS "Finding valid architectures for ${os}...")
     set(SIMPLE_C ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/src.c)
@@ -120,17 +134,6 @@ function(darwin_test_archs os valid_archs)
     foreach(flag ${DARWIN_${os}_LINK_FLAGS})
       set(os_linker_flags "${os_linker_flags} ${flag}")
     endforeach()
-
-    # Disable building for i386 for macOS SDK >= 10.15. The SDK doesn't support
-    # linking for i386 and the corresponding OS doesn't allow running macOS i386
-    # binaries.
-    if ("${os}" STREQUAL "osx")
-      find_darwin_sdk_version(macosx_sdk_version "macosx")
-      if ("${macosx_sdk_version}" VERSION_GREATER 10.15 OR "${macosx_sdk_version}" VERSION_EQUAL 10.15)
-        message(STATUS "Disabling i386 slice for ${valid_archs}")
-        list(REMOVE_ITEM archs "i386")
-      endif()
-    endif()
   endif()
 
   # The simple program will build for x86_64h on the simulator because it is
