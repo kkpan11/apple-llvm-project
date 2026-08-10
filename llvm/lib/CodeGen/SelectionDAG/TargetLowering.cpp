@@ -3438,7 +3438,9 @@ bool TargetLowering::SimplifyDemandedVectorElts(
             continue;
           for (unsigned SrcElt = 0; SrcElt != NumSrcElts; ++SrcElt) {
             unsigned Elt = Scale * SrcElt + SubElt;
-            if (DemandedElts[Elt])
+            // A wholly-undef source lane is reported as undef below; don't also
+            // flag it as zero, keeping the undef and zero sets disjoint.
+            if (DemandedElts[Elt] && !SrcUndef[SrcElt])
               KnownZero.setBit(Elt);
           }
         }
@@ -4005,6 +4007,7 @@ bool TargetLowering::SimplifyDemandedVectorElts(
     break;
   }
   }
+
   assert((KnownUndef & KnownZero) == 0 && "Elements flagged as undef AND zero");
 
   // Constant fold all undef cases.
