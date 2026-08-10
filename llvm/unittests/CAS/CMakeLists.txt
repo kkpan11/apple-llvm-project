@@ -12,9 +12,12 @@ set(ONDISK_CAS_TEST_SOURCES
   OnDiskDataAllocatorTest.cpp
   OnDiskKeyValueDBTest.cpp
   OnDiskTrieRawHashMapTest.cpp
-  PluginCASTest.cpp
   ProgramTest.cpp
   UnifiedOnDiskCacheTest.cpp
+  )
+
+set(PLUGIN_CAS_TEST_SOURCES
+  PluginCASTest.cpp
   )
 
 set(REMOTE_CACHE_TEST_SOURCES
@@ -23,11 +26,18 @@ set(REMOTE_CACHE_TEST_SOURCES
 
 set(LLVM_OPTIONAL_SOURCES
   ${ONDISK_CAS_TEST_SOURCES}
+  ${PLUGIN_CAS_TEST_SOURCES}
   ${REMOTE_CACHE_TEST_SOURCES}
   )
 
 if (NOT LLVM_ENABLE_ONDISK_CAS)
   unset(ONDISK_CAS_TEST_SOURCES)
+endif()
+
+# The plugin tests need the libCASPluginTest shared library, which is not
+# always built (it requires the on-disk CAS and PIC).
+if (NOT TARGET CASPluginTest)
+  unset(PLUGIN_CAS_TEST_SOURCES)
 endif()
 
 if (NOT LLVM_CAS_ENABLE_REMOTE_CACHE)
@@ -57,11 +67,12 @@ add_llvm_unittest(CASTests
   TreeSchemaTest.cpp
 
   ${ONDISK_CAS_TEST_SOURCES}
+  ${PLUGIN_CAS_TEST_SOURCES}
   ${REMOTE_CACHE_TEST_SOURCES}
   )
 
 target_link_libraries(CASTests PRIVATE LLVMTestingSupport)
 
-if (LLVM_ENABLE_ONDISK_CAS)
+if (TARGET CASPluginTest)
   add_dependencies(CASTests CASPluginTest)
 endif()
