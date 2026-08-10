@@ -6,9 +6,8 @@ from lldbsuite.test.decorators import *
 from lldbsuite.test.lldbtest import *
 import lldbdap_testcase
 
-
+@requireDarwin
 class TestDAP_exception_objc(lldbdap_testcase.DAPTestCaseBase):
-    @skipUnlessDarwin
     def test_stopped_description(self):
         """
         Test that exception description is shown correctly in stopped event.
@@ -25,7 +24,6 @@ class TestDAP_exception_objc(lldbdap_testcase.DAPTestCaseBase):
         self.assertRegex(exception_details["message"], "SomeReason")
         self.assertRegex(exception_details["stackTrace"], "main.m")
 
-    @skipUnlessDarwin
     def test_break_on_throw_and_catch(self):
         """
         Test that breakpoints on exceptions work as expected.
