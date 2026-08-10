@@ -102,7 +102,7 @@ ExtractSomeIfAny(ValueObject *optional,
     ptr = runtime->MaskMaybeBridgedPointer(ptr);
     auto exe_ctx = valobj.GetExecutionContextRef().Lock(true);
     return ValueObjectMemory::Create(exe_ctx.GetBestExecutionContextScope(),
-                                     g_some, ptr, projected_type, &valobj);
+                                     g_some, Address(ptr), projected_type, &valobj);
   };
 
   auto project_enum =
@@ -360,7 +360,7 @@ llvm::Expected<size_t> lldb_private::formatters::swift::
     SwiftOptionalSyntheticFrontEnd::GetIndexOfChildWithName(ConstString name) {
   if (IsEmpty())
     return llvm::createStringError("Type has no child named '%s'",
-                                   name.AsCString());
+                                   name.AsCString(""));
 
   return m_some->GetIndexOfChildWithName(name);
 }

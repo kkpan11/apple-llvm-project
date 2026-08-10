@@ -442,7 +442,7 @@ void SwiftLanguageRuntime::ProcessModulesToAdd() {
         if (module_sp) {
           AddModuleToReflectionContext(module_sp);
           progress.Increment(
-              ++completion, module_sp->GetFileSpec().GetFilename().GetString());
+              ++completion, module_sp->GetFileSpec().GetFilename().str());
         }
         return IterationAction::Continue;
       });
@@ -606,7 +606,7 @@ GetLikelySwiftImageNamesForModule(ModuleSP module) {
     return {};
 
   auto name =
-      module->GetFileSpec().GetFileNameStrippingExtension().GetStringRef();
+      module->GetFileSpec().GetFileNameStrippingExtension();
   if (name == "libswiftCore")
     name = "Swift";
   if (name.starts_with("libswift"))
@@ -635,7 +635,7 @@ bool SwiftLanguageRuntime::AddJitObjectFileToReflectionContext(
         // group suffix).
         for (auto section : *obj_file.GetSectionList()) {
           JITSection *jit_section = llvm::dyn_cast<JITSection>(section.get());
-          if (jit_section && section->GetName().AsCString() == section_name) {
+          if (jit_section && section->GetName().AsCString(nullptr) == section_name) {
             DataExtractor extractor;
             auto section_size = section->GetSectionData(extractor);
             if (!section_size) {
@@ -826,7 +826,7 @@ std::optional<uint32_t> SwiftLanguageRuntime::AddObjectFileToReflectionContext(
     for (auto section : segment->GetChildren()) {
       // Iterate over the sections until we find the reflection section we
       // need.
-      if (section->GetName().AsCString() == section_name) {
+      if (section->GetName().AsCString(nullptr) == section_name) {
         DataExtractor extractor;
         auto size = section->GetSectionData(extractor);
         auto data = extractor.GetData();
@@ -915,17 +915,10 @@ bool SwiftLanguageRuntime::AddModuleToReflectionContext(
       GetMemoryReader()->readMetadataFromFileCacheEnabled();
 
   std::optional<uint32_t> info_id;
-  // When dealing with ELF, we need to pass in the contents of the on-disk
-  // file, since the Section Header Table is not present in the child process
   if (obj_file->GetPluginName() == "elf") {
-    DataExtractorSP extractor_sp;
-    auto size = obj_file->GetData(0, obj_file->GetByteSize(), extractor_sp);
-    const uint8_t *file_data = extractor_sp->GetDataStart();
-    llvm::sys::MemoryBlock file_buffer((void *)file_data, size);
     info_id = m_reflection_ctx->ReadELF(
         swift::remote::RemoteAddress(
             load_ptr, swift::remote::RemoteAddress::DefaultAddressSpace),
-        std::optional<llvm::sys::MemoryBlock>(file_buffer),
         likely_module_names);
   } else if (read_from_file_cache &&
              obj_file->GetPluginName() == "mach-o") {
@@ -1630,7 +1623,7 @@ void SwiftLanguageRuntime::RegisterGlobalError(Target &target, ConstString name,
                      swift_ast_ctx->GetIdentifier(name.GetCString()),
                      module_decl);
   var_decl->setInterfaceType(
-      llvm::expectedToStdOptional(
+      llvm::expectedToOptional(
           swift_ast_ctx->GetSwiftType(
               swift_ast_ctx->GetErrorType(swift_ast_ctx->GetManglingFlavor())))
           .value_or(swift::Type()));
@@ -1703,7 +1696,7 @@ bool SwiftLanguageRuntime::SwiftExceptionPrecondition::EvaluatePrecondition(
     // This shouldn't fail, since at worst it will return me the object I just
     // successfully got.
     std::string full_error_name(
-        error_valobj_sp->GetCompilerType().GetTypeName().AsCString());
+        error_valobj_sp->GetCompilerType().GetTypeName().AsCString(nullptr));
     size_t last_dot_pos = full_error_name.rfind('.');
     std::string type_name_base;
     if (last_dot_pos == std::string::npos)
@@ -1880,7 +1873,7 @@ protected:
           return idx;
       }
       return llvm::createStringError("Type has no child named '%s'",
-                                     name.AsCString());
+                                     name.AsCString(""));
     }
 
     lldb::ChildCacheState Update() override {
@@ -1899,9 +1892,9 @@ protected:
   };
 
 public:
-  SyntheticChildrenFrontEnd::AutoPointer
+  SyntheticChildrenFrontEnd::UniquePointer
   GetFrontEnd(ValueObject &backend) override {
-    return SyntheticChildrenFrontEnd::AutoPointer(
+    return SyntheticChildrenFrontEnd::UniquePointer(
         new ProjectionFrontEndProvider(backend, m_projection));
   }
 };
@@ -1911,7 +1904,7 @@ SwiftLanguageRuntime::GetBridgedSyntheticChildProvider(ValueObject &valobj) {
   ConstString type_name = valobj.GetCompilerType().GetTypeName();
 
   if (!type_name.IsEmpty()) {
-    auto iter = m_bridged_synthetics_map.find(type_name.AsCString()),
+    auto iter = m_bridged_synthetics_map.find(type_name.AsCString(nullptr)),
          end = m_bridged_synthetics_map.end();
     if (iter != end)
       return iter->second;
@@ -1928,7 +1921,7 @@ SwiftLanguageRuntime::GetBridgedSyntheticChildProvider(ValueObject &valobj) {
     if (swift_type.IsValid()) {
       ExecutionContext exe_ctx(GetProcess());
       bool any_projected = false;
-      for (size_t idx = 0, e = llvm::expectedToStdOptional(
+      for (size_t idx = 0, e = llvm::expectedToOptional(
                                    swift_type.GetNumChildren(true, &exe_ctx))
                                    .value_or(0);
            idx < e; idx++) {
@@ -1946,7 +1939,7 @@ SwiftLanguageRuntime::GetBridgedSyntheticChildProvider(ValueObject &valobj) {
         SyntheticChildrenSP synth_sp =
             SyntheticChildrenSP(new ProjectionSyntheticChildren(
                 SyntheticChildren::Flags(), std::move(type_projection)));
-        m_bridged_synthetics_map.insert({type_name.AsCString(), synth_sp});
+        m_bridged_synthetics_map.insert({type_name.AsCString(nullptr), synth_sp});
         return synth_sp;
       }
     }
@@ -2436,8 +2429,8 @@ protected:
 
     std::string unavailable = "<unavailable>";
 
-    result.AppendMessageWithFormat(
-        "refcount data: (strong = %s, unowned = %s, weak = %s)\n",
+    result.AppendMessageWithFormatv(
+        "refcount data: (strong = {0}, unowned = {1}, weak = {2})\n",
         strong ? std::to_string(*strong).c_str() : unavailable.c_str(),
         unowned ? std::to_string(*unowned).c_str() : unavailable.c_str(),
         weak ? std::to_string(*weak).c_str() : unavailable.c_str());

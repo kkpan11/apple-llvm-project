@@ -365,7 +365,7 @@ bool lldb_private::formatters::swift::Data_SummaryProvider(
     if (!int_size)
       return false;
     const uint64_t slice_size =
-        slice_sp ? llvm::expectedToStdOptional(slice_sp->GetByteSize())
+        slice_sp ? llvm::expectedToOptional(slice_sp->GetByteSize())
                        .value_or(0)
                  : 0;
 
@@ -749,7 +749,7 @@ public:
     return ID;
 #include "URLComponents.def"
     return llvm::createStringError("Type has no child named '%s'",
-                                   name.AsCString());
+                                   name.AsCString(""));
   }
 
 private:
@@ -760,7 +760,7 @@ private:
   }
 #include "URLComponents.def"
 
-  SyntheticChildrenFrontEnd::AutoPointer m_synth_frontend_up;
+  SyntheticChildrenFrontEnd::UniquePointer m_synth_frontend_up;
   std::unique_ptr<ObjCRuntimeSyntheticProvider> m_synth_backend_up;
   bool m_valid = false;
 #define COMPONENT(Name, PrettyName, ID) ValueObject *m_##Name;
