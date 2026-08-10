@@ -1314,7 +1314,7 @@ void ClangASTSource::FindObjCPropertyAndIvarDecls(NameSearchContext &context) {
       break;
 
     LLDB_LOG(log,
-             "CAS::FOPD[{0:x}] trying module "
+             "CAS::FOPD trying module "
              "(ObjCInterfaceDecl*){0:x}/(ASTContext*){1:x}...",
              interface_decl_from_modules.decl,
              &interface_decl_from_modules->getASTContext());
@@ -1358,7 +1358,7 @@ void ClangASTSource::FindObjCPropertyAndIvarDecls(NameSearchContext &context) {
       break;
 
     LLDB_LOG(log,
-             "CAS::FOPD[{0:x}] trying runtime "
+             "CAS::FOPD trying runtime "
              "(ObjCInterfaceDecl*){0:x}/(ASTContext*){1:x}...",
              interface_decl_from_runtime.decl,
              &interface_decl_from_runtime->getASTContext());
@@ -1475,7 +1475,7 @@ void ClangASTSource::CompleteNamespaceMap(
       namespace_map->push_back(std::pair<lldb::ModuleSP, CompilerDeclContext>(
           image, found_namespace_decl));
 
-      LLDB_LOG(log, "  CMN[{0}] Found namespace {0} in module {1}", name,
+      LLDB_LOG(log, "  CMN Found namespace {0} in module {1}", name,
                image->GetFileSpec().GetFilename());
     }
   }
