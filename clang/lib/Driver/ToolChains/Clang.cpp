@@ -8631,9 +8631,6 @@ void Clang::ConstructJob(Compilation &C, const JobAction &Job,
   }
 
   if (IsCuda) {
-    if (Args.hasFlag(options::OPT_fcuda_short_ptr,
-                     options::OPT_fno_cuda_short_ptr, false))
-      CmdArgs.push_back("-fcuda-short-ptr");
     if (Args.hasArg(options::OPT_cuda_emit_nvcc_abi))
       CmdArgs.push_back("--cuda-emit-nvcc-abi");
   }
