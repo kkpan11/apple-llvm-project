@@ -655,7 +655,7 @@ class TestCase(TestBase):
         self.assertEqual(debug_stats["totalDwoFileCount"], 2)
         self.assertEqual(debug_stats["totalLoadedDwoFileCount"], 2)
 
-    @skipUnlessDarwin
+    @requireDarwin
     @no_debug_info_test
     def test_dsym_binary_has_symfile_in_stats(self):
         """
@@ -699,7 +699,7 @@ class TestCase(TestBase):
         # statistics.
         self.assertNotIn("symbolFileModuleIdentifiers", exe_stats)
 
-    @skipUnlessDarwin
+    @requireDarwin
     @no_debug_info_test
     def test_no_dsym_binary_has_symfile_identifiers_in_stats(self):
         """
@@ -758,7 +758,7 @@ class TestCase(TestBase):
             # Make sure each .o file has some debug info bytes.
             self.assertGreater(o_module["debugInfoByteSize"], 0)
 
-    @skipUnlessDarwin
+    @requireDarwin
     @no_debug_info_test
     def test_had_frame_variable_errors(self):
         """
