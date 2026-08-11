@@ -11,7 +11,7 @@ from lldbsuite.test.lldbtest import *
 from lldbsuite.test.decorators import *
 
 
-@skipUnlessDarwin
+@requireDarwin
 class TestdSYMModuleInit(TestBase):
     @no_debug_info_test
     def test_add_module(self):

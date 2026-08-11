@@ -7,7 +7,7 @@ import os
 
 class TestMacCatalyst(TestBase):
     @skipIf(macos_version=["<", "10.15"])
-    @skipUnlessDarwin
+    @requireDarwin
     @skipIfDarwinEmbedded
     def test_macabi(self):
         """Test the x86_64-apple-ios-macabi target linked against a macos dylib"""

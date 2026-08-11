@@ -10,7 +10,7 @@ class TestSMERegistersDarwin(TestBase):
     mydir = TestBase.compute_mydir(__file__)
 
     @skipIfRemote
-    @skipUnlessDarwin
+    @requireDarwin
     @skipUnlessFeature("hw.optional.arm.FEAT_SME")
     @skipUnlessFeature("hw.optional.arm.FEAT_SME2")
     # thread_set_state/thread_get_state only avail in macOS 15.4+

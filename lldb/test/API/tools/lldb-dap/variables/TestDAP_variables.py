@@ -769,7 +769,7 @@ class TestDAP_variables(lldbdap_testcase.DAPTestCaseBase):
                         self.assertIn("at main.cpp:", value)
 
     @no_debug_info_test
-    @skipUnlessDarwin
+    @requireDarwin
     def test_darwin_dwarf_missing_obj(self):
         """
         Test that if we build a binary with DWARF in .o files and we remove
@@ -783,7 +783,7 @@ class TestDAP_variables(lldbdap_testcase.DAPTestCaseBase):
         self.darwin_dwarf_missing_obj(None)
 
     @no_debug_info_test
-    @skipUnlessDarwin
+    @requireDarwin
     def test_darwin_dwarf_missing_obj_with_symbol_ondemand_enabled(self):
         """
         Test that if we build a binary with DWARF in .o files and we remove

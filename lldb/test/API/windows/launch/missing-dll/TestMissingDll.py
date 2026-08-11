@@ -5,7 +5,7 @@ from lldbsuite.test import lldbutil
 
 
 class MissingDllTestCase(TestBase):
-    @skipUnlessWindows
+    @requireWindows
     def test(self):
         """
         Test that lldb reports the application's exit code (STATUS_DLL_NOT_FOUND),

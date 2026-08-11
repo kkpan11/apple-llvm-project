@@ -61,7 +61,7 @@ class ConPTYTestCase(TestBase):
 
         return process.GetSTDOUT(1 << 20)
 
-    @skipUnlessWindows
+    @requireWindows
     @skipUnlessWindowsConPTY2022
     def test_stdout_delivery(self):
         """ConPTY delivers the inferior's stdout to LLDB."""
@@ -71,7 +71,7 @@ class ConPTYTestCase(TestBase):
         output = self._strip_output(output)
         self.assertIn("Hello from ConPTY\r\n", output)
 
-    @skipUnlessWindows
+    @requireWindows
     @skipUnlessWindowsConPTY2022
     def test_large_output(self):
         """ConPTY delivers all output lines when output spans multiple reads."""
@@ -88,7 +88,7 @@ class ConPTYTestCase(TestBase):
         for i, line in enumerate(output_lines):
             self.assertEqual("line %04d" % i, line)
 
-    @skipUnlessWindows
+    @requireWindows
     @skipUnlessWindowsConPTY
     def test_basic_output_without_vt_check(self):
         """ConPTY delivers the inferior's stdout on all supported Windows versions.
@@ -104,7 +104,7 @@ class ConPTYTestCase(TestBase):
         stripped = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", output)
         self.assertIn("Hello from ConPTY", stripped)
 
-    @skipUnlessWindows
+    @requireWindows
     @skipUnlessWindowsConPTY2022
     def test_no_screen_clear_on_init(self):
         """PSEUDOCONSOLE_INHERIT_CURSOR prevents ConPTY from emitting
