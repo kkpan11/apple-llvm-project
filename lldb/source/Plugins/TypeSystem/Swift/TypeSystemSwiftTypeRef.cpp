@@ -398,33 +398,24 @@ TypeSystemSwiftTypeRef::GetBaseName(lldb::opaque_compiler_type_t type) {
   return GetBaseName(node).str();
 }
 
-CompilerType TypeSystemSwiftTypeRef::GetTypeFromTypeMetadataNode(
+std::pair<CompilerType, bool>
+TypeSystemSwiftTypeRef::GetTypeFromTypeMetadataNode(
     llvm::StringRef mangled_name) {
   Demangler dem;
   NodePointer node = dem.demangleSymbol(mangled_name);
+  bool is_full_metadata = false;
   NodePointer type = swift_demangle::NodeAtPath(
       node, {Node::Kind::Global, Node::Kind::TypeMetadata, Node::Kind::Type});
-  if (!type)
+  if (!type) {
     type = swift_demangle::NodeAtPath(
         node,
         {Node::Kind::Global, Node::Kind::FullTypeMetadata, Node::Kind::Type});
+    is_full_metadata = type != nullptr;
+  }
   if (!type)
     return {};
   auto flavor = SwiftLanguageRuntime::GetManglingFlavor(mangled_name);
-  return RemangleAsType(dem, type, flavor);
-}
-
-CompilerType TypeSystemSwiftTypeRef::GetTypeFromValueWitnessTable(
-    llvm::StringRef mangled_name) {
-  Demangler dem;
-  NodePointer node = dem.demangleSymbol(mangled_name);
-  NodePointer type = swift_demangle::NodeAtPath(
-      node,
-      {Node::Kind::Global, Node::Kind::ValueWitnessTable, Node::Kind::Type});
-  if (!type)
-    return {};
-  auto flavor = SwiftLanguageRuntime::GetManglingFlavor(mangled_name);
-  return RemangleAsType(dem, type, flavor);
+  return {RemangleAsType(dem, type, flavor), is_full_metadata};
 }
 
 TypeSP TypeSystemSwiftTypeRef::LookupClangType(StringRef name_ref,
@@ -2813,27 +2804,6 @@ llvm::Triple TypeSystemSwiftTypeRef::GetTriple() const {
       GetLog(LLDBLog::Types),
       "Cannot determine triple when no Module or no Target is available.");
   return {};
-}
-
-bool TypeSystemSwiftTypeRef::IsEmbeddedSwift() {
-  llvm::call_once(m_is_embedded_swift_once_flag, [&]() {
-    Module *module = GetModule();
-    if (!module)
-      return;
-    // A Swift module is compiled either entirely as Embedded Swift or not at
-    // all, so the first Swift compile unit has the answer for all of them.
-    const size_t num_compile_units = module->GetNumCompileUnits();
-    for (size_t i = 0; i < num_compile_units; ++i) {
-      lldb::CompUnitSP cu_sp = module->GetCompileUnitAtIndex(i);
-      if (!cu_sp || cu_sp->GetLanguage() != lldb::eLanguageTypeSwift)
-        continue;
-      m_is_embedded_swift = ShouldEnableEmbeddedSwift(cu_sp.get());
-      LLDB_LOGF(GetLog(LLDBLog::Types), "%s::IsEmbeddedSwift() = %d",
-                m_description.c_str(), m_is_embedded_swift);
-      return;
-    }
-  });
-  return m_is_embedded_swift;
 }
 
 void TypeSystemSwiftTypeRef::SetTriple(const SymbolContext &sc,

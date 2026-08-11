@@ -6,7 +6,6 @@ import lldbsuite.test.lldbutil as lldbutil
 
 class TestSwiftObjCBlock(TestBase):
     @skipUnlessDarwin
-    @skipEmbeddedSwift
     @swiftTest
     def test(self):
         self.build()

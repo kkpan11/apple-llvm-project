@@ -27,7 +27,6 @@
 #include "clang/Basic/Module.h"
 
 #include "llvm/ADT/StringRef.h"
-#include "llvm/Support/Threading.h"
 
 namespace swift {
 class DWARFImporterDelegate;
@@ -115,12 +114,6 @@ public:
   SwiftDWARFImporterForClangTypes &GetSwiftDWARFImporterForClangTypes();
   ClangNameImporter *GetNameImporter() const;
   llvm::Triple GetTriple() const;
-  /// Returns true if the module this type system was created for was compiled
-  /// as Embedded Swift. This is deliberately a *per-module* property: one
-  /// target can mix embedded and non-embedded modules, so the answer cannot
-  /// come from the target or from a global setting. The result is cached,
-  /// because computing it walks the module's compile units.
-  bool IsEmbeddedSwift();
   void SetTriple(const SymbolContext &sc, const llvm::Triple triple) override;
   void ClearModuleDependentCaches() override;
   lldb::TargetWP GetTargetWP() const override { return {}; }
@@ -490,13 +483,10 @@ public:
   static llvm::StringRef GetBaseName(swift::Demangle::NodePointer node);
   std::string GetBaseName(lldb::opaque_compiler_type_t type);
 
-  /// Given a mangled name that mangles a "type metadata for Type", return a
-  /// CompilerType with that Type.
-  CompilerType GetTypeFromTypeMetadataNode(llvm::StringRef mangled_name);
-
-  /// Given a mangled name that mangles a "value witness table for Type",
-  /// return a CompilerType with that Type.
-  CompilerType GetTypeFromValueWitnessTable(llvm::StringRef mangled_name);
+  /// Given a mangled name that mangles a "type metadata for Type", return that
+  /// Type, and whether the name mangles full metadata.
+  std::pair<CompilerType, bool>
+  GetTypeFromTypeMetadataNode(llvm::StringRef mangled_name);
 
   /// Use API notes to determine the swiftified name of \p clang_decl.
   std::string GetSwiftName(const clang::Decl *clang_decl,
@@ -708,10 +698,6 @@ protected:
   /// mangled type name.
   mutable llvm::DenseSet<std::pair<const char *, const char *>>
       m_dangerous_types;
-
-  /// Lazily computed cache behind IsEmbeddedSwift().
-  llvm::once_flag m_is_embedded_swift_once_flag;
-  bool m_is_embedded_swift = false;
 
   mutable std::unique_ptr<SwiftDWARFImporterForClangTypes>
       m_dwarf_importer_for_clang_types_up;
