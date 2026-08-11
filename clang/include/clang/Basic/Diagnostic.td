@@ -269,6 +269,7 @@ multiclass C2yCompat<string message, bit ext_warn = false> : CompatWarning<messa
 // Definitions for Diagnostics.
 include "DiagnosticASTKinds.td"
 include "DiagnosticCASKinds.td"
+include "DiagnosticCodeGenKinds.td"
 include "DiagnosticCommentKinds.td"
 include "DiagnosticCommonKinds.td"
 include "DiagnosticCrossTUKinds.td"
