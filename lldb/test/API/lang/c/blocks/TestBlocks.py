@@ -52,7 +52,7 @@ class BlocksTestCase(TestBase):
 
         self.expect_expr("h(cg)", result_type="int", result_value="42")
 
-    @skipUnlessDarwin
+    @requireDarwin
     def test_define(self):
         self.launch_common()
 
