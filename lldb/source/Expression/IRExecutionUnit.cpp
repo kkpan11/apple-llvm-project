@@ -1382,6 +1382,7 @@ lldb::ModuleSP IRExecutionUnit::GetJITModule() {
   return m_jit_module_wp.lock();
 }
 
+// BEGIN SWIFT
 lldb::ModuleSP IRExecutionUnit::CreateJITModule(const char *name) {
   lldb::ModuleSP jit_module_sp(m_jit_module_wp.lock());
   if (jit_module_sp)
@@ -1406,8 +1407,6 @@ lldb::ModuleSP IRExecutionUnit::CreateJITModule(const char *name) {
       bool changed = false;
       jit_module_sp->SetLoadAddress(*target, 0, true, changed);
 
-      jit_module_sp->SetTypeSystemMap(target->GetTypeSystemMap());
-
       FileSpec jit_file;
       jit_file.SetFilename(name);
       jit_module_sp->SetFileSpecAndObjectName(jit_file, ConstString());
@@ -1418,6 +1417,7 @@ lldb::ModuleSP IRExecutionUnit::CreateJITModule(const char *name) {
   }
   return lldb::ModuleSP();
 }
+// END SWIFT
 
 std::recursive_mutex &IRExecutionUnit::GetLLVMGlobalContextMutex() {
   static std::recursive_mutex s_llvm_context_mutex;
