@@ -18,7 +18,7 @@ class MemoryHistoryTestCase(TestBase):
         self.build(make_targets=["compiler_rt-asan"])
         self.compiler_rt_asan_tests()
 
-    @skipUnlessDarwin
+    @requireDarwin
     @skipIf(bugnumber="rdar://109913184&143590169")
     def test_libsanitizers_asan(self):
         try:
@@ -27,7 +27,7 @@ class MemoryHistoryTestCase(TestBase):
             self.skipTest("failed to build with libsanitizers")
         self.libsanitizers_asan_tests()
 
-    @skipUnlessDarwin
+    @requireDarwin
     @skipIf(macos_version=["<", "15.5"])
     def test_libsanitizers_traces(self):
         self.build(make_targets=["libsanitizers-traces"])

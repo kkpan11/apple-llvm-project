@@ -13,7 +13,7 @@ from lldbsuite.test import lldbutil
 class TestDeletedExecutable(TestBase):
     NO_DEBUG_INFO_TESTCASE = True
 
-    @skipIfWindows  # cannot delete a running executable
+    @requireNotWindows  # cannot delete a running executable
     def test(self):
         self.build()
         exe = self.getBuildArtifact("a.out")
