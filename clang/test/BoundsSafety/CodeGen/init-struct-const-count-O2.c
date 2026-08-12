@@ -44,18 +44,17 @@ void init_list_cb(int count_param, int*__counted_by(count_param) ptr) {
 }
 
 // SAME-LABEL: define dso_local void @init_list_cb_bidi(
-// SAME-SAME: i32 noundef [[COUNT_PARAM:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return [[PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// SAME-SAME: i32 noundef [[COUNT_PARAM:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return dereferenceable(24) [[PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
 // SAME-NEXT:  [[ENTRY:.*:]]
 // SAME-NEXT:    [[AGG_TEMP_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[PTR]], align 8
 // SAME-NEXT:    [[AGG_TEMP_SROA_2_0_PTR_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[PTR]], i64 8
 // SAME-NEXT:    [[AGG_TEMP1_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_PTR_SROA_IDX]], align 8
 // SAME-NEXT:    [[CMP_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP_SROA_0_0_COPYLOAD]], [[AGG_TEMP1_SROA_1_0_COPYLOAD]], !annotation [[META5]]
-// SAME-NEXT:    br i1 [[CMP_NOT]], label %[[TRAP:.*]], label %[[LAND_LHS_TRUE:.*]], !annotation [[META5]]
-// SAME:       [[LAND_LHS_TRUE]]:
 // SAME-NEXT:    [[AGG_TEMP_SROA_3_0_PTR_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[PTR]], i64 16
-// SAME-NEXT:    [[AGG_TEMP4_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_3_0_PTR_SROA_IDX]], align 8, !tbaa [[TBAA6:![0-9]+]]
+// SAME-NEXT:    [[AGG_TEMP4_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_3_0_PTR_SROA_IDX]], align 8
 // SAME-NEXT:    [[CMP14_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP4_SROA_1_0_COPYLOAD]], [[AGG_TEMP_SROA_0_0_COPYLOAD]], !annotation [[META5]]
-// SAME-NEXT:    br i1 [[CMP14_NOT]], label %[[TRAP]], label %[[LAND_RHS:.*]], !annotation [[META5]]
+// SAME-NEXT:    [[OR_COND:%.*]] = select i1 [[CMP_NOT]], i1 true, i1 [[CMP14_NOT]], !annotation [[META5]]
+// SAME-NEXT:    br i1 [[OR_COND]], label %[[TRAP:.*]], label %[[LAND_RHS:.*]], !annotation [[META5]]
 // SAME:       [[LAND_RHS]]:
 // SAME-NEXT:    [[CONV:%.*]] = sext i32 [[COUNT_PARAM]] to i64, !annotation [[META5]]
 // SAME-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoint ptr [[AGG_TEMP1_SROA_1_0_COPYLOAD]] to i64, !annotation [[META5]]
@@ -115,7 +114,7 @@ void compound_literal_init_cb(int count_param, int*__counted_by(count_param) ptr
 }
 
 // LEGACY-LABEL: define dso_local void @compound_literal_init_cb_bidi(
-// LEGACY-SAME: i32 noundef [[COUNT_PARAM:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return [[PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// LEGACY-SAME: i32 noundef [[COUNT_PARAM:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return dereferenceable(24) [[PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
 // LEGACY-NEXT:  [[ENTRY:.*:]]
 // LEGACY-NEXT:    [[C_SROA_0_0_INSERT_EXT:%.*]] = zext i32 [[COUNT_PARAM]] to i64
 // LEGACY-NEXT:    [[AGG_TEMP_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[PTR]], align 8
@@ -126,18 +125,17 @@ void compound_literal_init_cb(int count_param, int*__counted_by(count_param) ptr
 // LEGACY-NEXT:    ret void
 //
 // NEW-LABEL: define dso_local void @compound_literal_init_cb_bidi(
-// NEW-SAME: i32 noundef [[COUNT_PARAM:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return [[PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// NEW-SAME: i32 noundef [[COUNT_PARAM:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return dereferenceable(24) [[PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
 // NEW-NEXT:  [[ENTRY:.*:]]
 // NEW-NEXT:    [[AGG_TEMP_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[PTR]], align 8
 // NEW-NEXT:    [[AGG_TEMP_SROA_2_0_PTR_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[PTR]], i64 8
 // NEW-NEXT:    [[AGG_TEMP1_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_PTR_SROA_IDX]], align 8
 // NEW-NEXT:    [[CMP_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP_SROA_0_0_COPYLOAD]], [[AGG_TEMP1_SROA_1_0_COPYLOAD]], !annotation [[META5]]
-// NEW-NEXT:    br i1 [[CMP_NOT]], label %[[TRAP:.*]], label %[[LAND_LHS_TRUE:.*]], !annotation [[META5]]
-// NEW:       [[LAND_LHS_TRUE]]:
 // NEW-NEXT:    [[AGG_TEMP_SROA_3_0_PTR_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[PTR]], i64 16
-// NEW-NEXT:    [[AGG_TEMP4_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_3_0_PTR_SROA_IDX]], align 8, !tbaa [[TBAA6:![0-9]+]]
+// NEW-NEXT:    [[AGG_TEMP4_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_3_0_PTR_SROA_IDX]], align 8
 // NEW-NEXT:    [[CMP14_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP4_SROA_1_0_COPYLOAD]], [[AGG_TEMP_SROA_0_0_COPYLOAD]], !annotation [[META5]]
-// NEW-NEXT:    br i1 [[CMP14_NOT]], label %[[TRAP]], label %[[LAND_RHS:.*]], !annotation [[META5]]
+// NEW-NEXT:    [[OR_COND:%.*]] = select i1 [[CMP_NOT]], i1 true, i1 [[CMP14_NOT]], !annotation [[META5]]
+// NEW-NEXT:    br i1 [[OR_COND]], label %[[TRAP:.*]], label %[[LAND_RHS:.*]], !annotation [[META5]]
 // NEW:       [[LAND_RHS]]:
 // NEW-NEXT:    [[CONV:%.*]] = sext i32 [[COUNT_PARAM]] to i64, !annotation [[META5]]
 // NEW-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoint ptr [[AGG_TEMP1_SROA_1_0_COPYLOAD]] to i64, !annotation [[META5]]
@@ -202,18 +200,17 @@ void init_list_cbon(int count_param, int*__counted_by_or_null(count_param) ptr) 
 }
 
 // SAME-LABEL: define dso_local void @init_list_cbon_bidi(
-// SAME-SAME: i32 noundef [[COUNT_PARAM:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return [[PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// SAME-SAME: i32 noundef [[COUNT_PARAM:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return dereferenceable(24) [[PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
 // SAME-NEXT:  [[ENTRY:.*:]]
 // SAME-NEXT:    [[AGG_TEMP_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[PTR]], align 8
 // SAME-NEXT:    [[AGG_TEMP_SROA_2_0_PTR_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[PTR]], i64 8
 // SAME-NEXT:    [[AGG_TEMP1_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_PTR_SROA_IDX]], align 8
 // SAME-NEXT:    [[CMP_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP_SROA_0_0_COPYLOAD]], [[AGG_TEMP1_SROA_1_0_COPYLOAD]], !annotation [[META5]]
-// SAME-NEXT:    br i1 [[CMP_NOT]], label %[[TRAP:.*]], label %[[LAND_LHS_TRUE:.*]], !annotation [[META5]]
-// SAME:       [[LAND_LHS_TRUE]]:
 // SAME-NEXT:    [[AGG_TEMP_SROA_3_0_PTR_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[PTR]], i64 16
-// SAME-NEXT:    [[AGG_TEMP4_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_3_0_PTR_SROA_IDX]], align 8, !tbaa [[TBAA6]]
+// SAME-NEXT:    [[AGG_TEMP4_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_3_0_PTR_SROA_IDX]], align 8
 // SAME-NEXT:    [[CMP14_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP4_SROA_1_0_COPYLOAD]], [[AGG_TEMP_SROA_0_0_COPYLOAD]], !annotation [[META5]]
-// SAME-NEXT:    br i1 [[CMP14_NOT]], label %[[TRAP]], label %[[LAND_RHS:.*]], !annotation [[META5]]
+// SAME-NEXT:    [[OR_COND:%.*]] = select i1 [[CMP_NOT]], i1 true, i1 [[CMP14_NOT]], !annotation [[META5]]
+// SAME-NEXT:    br i1 [[OR_COND]], label %[[TRAP:.*]], label %[[LAND_RHS:.*]], !annotation [[META5]]
 // SAME:       [[LAND_RHS]]:
 // SAME-NEXT:    [[TOBOOL_NOT:%.*]] = icmp eq ptr [[AGG_TEMP_SROA_0_0_COPYLOAD]], null, !annotation [[META5]]
 // SAME-NEXT:    br i1 [[TOBOOL_NOT]], label %[[CONT:.*]], label %[[LOR_RHS:.*]], !annotation [[META5]]
@@ -279,7 +276,7 @@ void compound_literal_init_cbon(int count_param, int*__counted_by_or_null(count_
 }
 
 // LEGACY-LABEL: define dso_local void @compound_literal_init_cbon_bidi(
-// LEGACY-SAME: i32 noundef [[COUNT_PARAM:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return [[PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// LEGACY-SAME: i32 noundef [[COUNT_PARAM:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return dereferenceable(24) [[PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
 // LEGACY-NEXT:  [[ENTRY:.*:]]
 // LEGACY-NEXT:    [[C_SROA_0_0_INSERT_EXT:%.*]] = zext i32 [[COUNT_PARAM]] to i64
 // LEGACY-NEXT:    [[AGG_TEMP_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[PTR]], align 8
@@ -290,18 +287,17 @@ void compound_literal_init_cbon(int count_param, int*__counted_by_or_null(count_
 // LEGACY-NEXT:    ret void
 //
 // NEW-LABEL: define dso_local void @compound_literal_init_cbon_bidi(
-// NEW-SAME: i32 noundef [[COUNT_PARAM:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return [[PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// NEW-SAME: i32 noundef [[COUNT_PARAM:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return dereferenceable(24) [[PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
 // NEW-NEXT:  [[ENTRY:.*:]]
 // NEW-NEXT:    [[AGG_TEMP_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[PTR]], align 8
 // NEW-NEXT:    [[AGG_TEMP_SROA_2_0_PTR_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[PTR]], i64 8
 // NEW-NEXT:    [[AGG_TEMP1_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_PTR_SROA_IDX]], align 8
 // NEW-NEXT:    [[CMP_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP_SROA_0_0_COPYLOAD]], [[AGG_TEMP1_SROA_1_0_COPYLOAD]], !annotation [[META5]]
-// NEW-NEXT:    br i1 [[CMP_NOT]], label %[[TRAP:.*]], label %[[LAND_LHS_TRUE:.*]], !annotation [[META5]]
-// NEW:       [[LAND_LHS_TRUE]]:
 // NEW-NEXT:    [[AGG_TEMP_SROA_3_0_PTR_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[PTR]], i64 16
-// NEW-NEXT:    [[AGG_TEMP4_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_3_0_PTR_SROA_IDX]], align 8, !tbaa [[TBAA6]]
+// NEW-NEXT:    [[AGG_TEMP4_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_3_0_PTR_SROA_IDX]], align 8
 // NEW-NEXT:    [[CMP14_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP4_SROA_1_0_COPYLOAD]], [[AGG_TEMP_SROA_0_0_COPYLOAD]], !annotation [[META5]]
-// NEW-NEXT:    br i1 [[CMP14_NOT]], label %[[TRAP]], label %[[LAND_RHS:.*]], !annotation [[META5]]
+// NEW-NEXT:    [[OR_COND:%.*]] = select i1 [[CMP_NOT]], i1 true, i1 [[CMP14_NOT]], !annotation [[META5]]
+// NEW-NEXT:    br i1 [[OR_COND]], label %[[TRAP:.*]], label %[[LAND_RHS:.*]], !annotation [[META5]]
 // NEW:       [[LAND_RHS]]:
 // NEW-NEXT:    [[TOBOOL_NOT:%.*]] = icmp eq ptr [[AGG_TEMP_SROA_0_0_COPYLOAD]], null, !annotation [[META5]]
 // NEW-NEXT:    br i1 [[TOBOOL_NOT]], label %[[CONT:.*]], label %[[LOR_RHS:.*]], !annotation [[META5]]
@@ -368,18 +364,17 @@ void init_list_sb(int count_param, char*__sized_by(count_param) ptr) {
 }
 
 // SAME-LABEL: define dso_local void @init_list_bidi(
-// SAME-SAME: i32 noundef [[COUNT_PARAM:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return [[PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// SAME-SAME: i32 noundef [[COUNT_PARAM:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return dereferenceable(24) [[PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
 // SAME-NEXT:  [[ENTRY:.*:]]
 // SAME-NEXT:    [[AGG_TEMP_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[PTR]], align 8
 // SAME-NEXT:    [[AGG_TEMP_SROA_2_0_PTR_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[PTR]], i64 8
 // SAME-NEXT:    [[AGG_TEMP1_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_PTR_SROA_IDX]], align 8
 // SAME-NEXT:    [[CMP_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP_SROA_0_0_COPYLOAD]], [[AGG_TEMP1_SROA_1_0_COPYLOAD]], !annotation [[META5]]
-// SAME-NEXT:    br i1 [[CMP_NOT]], label %[[TRAP:.*]], label %[[LAND_LHS_TRUE:.*]], !annotation [[META5]]
-// SAME:       [[LAND_LHS_TRUE]]:
 // SAME-NEXT:    [[AGG_TEMP_SROA_3_0_PTR_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[PTR]], i64 16
-// SAME-NEXT:    [[AGG_TEMP4_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_3_0_PTR_SROA_IDX]], align 8, !tbaa [[TBAA13:![0-9]+]]
+// SAME-NEXT:    [[AGG_TEMP4_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_3_0_PTR_SROA_IDX]], align 8
 // SAME-NEXT:    [[CMP14_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP4_SROA_1_0_COPYLOAD]], [[AGG_TEMP_SROA_0_0_COPYLOAD]], !annotation [[META5]]
-// SAME-NEXT:    br i1 [[CMP14_NOT]], label %[[TRAP]], label %[[LAND_RHS:.*]], !annotation [[META5]]
+// SAME-NEXT:    [[OR_COND:%.*]] = select i1 [[CMP_NOT]], i1 true, i1 [[CMP14_NOT]], !annotation [[META5]]
+// SAME-NEXT:    br i1 [[OR_COND]], label %[[TRAP:.*]], label %[[LAND_RHS:.*]], !annotation [[META5]]
 // SAME:       [[LAND_RHS]]:
 // SAME-NEXT:    [[CONV:%.*]] = sext i32 [[COUNT_PARAM]] to i64, !annotation [[META5]]
 // SAME-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoint ptr [[AGG_TEMP1_SROA_1_0_COPYLOAD]] to i64, !annotation [[META5]]
@@ -438,7 +433,7 @@ void compound_literal_init_sb(int count_param, char*__sized_by(count_param) ptr)
 }
 
 // LEGACY-LABEL: define dso_local void @compound_literal_init_sb_bidi(
-// LEGACY-SAME: i32 noundef [[COUNT_PARAM:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return [[PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// LEGACY-SAME: i32 noundef [[COUNT_PARAM:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return dereferenceable(24) [[PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
 // LEGACY-NEXT:  [[ENTRY:.*:]]
 // LEGACY-NEXT:    [[C_SROA_0_0_INSERT_EXT:%.*]] = zext i32 [[COUNT_PARAM]] to i64
 // LEGACY-NEXT:    [[AGG_TEMP_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[PTR]], align 8
@@ -449,18 +444,17 @@ void compound_literal_init_sb(int count_param, char*__sized_by(count_param) ptr)
 // LEGACY-NEXT:    ret void
 //
 // NEW-LABEL: define dso_local void @compound_literal_init_sb_bidi(
-// NEW-SAME: i32 noundef [[COUNT_PARAM:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return [[PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// NEW-SAME: i32 noundef [[COUNT_PARAM:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return dereferenceable(24) [[PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
 // NEW-NEXT:  [[ENTRY:.*:]]
 // NEW-NEXT:    [[AGG_TEMP_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[PTR]], align 8
 // NEW-NEXT:    [[AGG_TEMP_SROA_2_0_PTR_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[PTR]], i64 8
 // NEW-NEXT:    [[AGG_TEMP1_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_PTR_SROA_IDX]], align 8
 // NEW-NEXT:    [[CMP_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP_SROA_0_0_COPYLOAD]], [[AGG_TEMP1_SROA_1_0_COPYLOAD]], !annotation [[META5]]
-// NEW-NEXT:    br i1 [[CMP_NOT]], label %[[TRAP:.*]], label %[[LAND_LHS_TRUE:.*]], !annotation [[META5]]
-// NEW:       [[LAND_LHS_TRUE]]:
 // NEW-NEXT:    [[AGG_TEMP_SROA_3_0_PTR_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[PTR]], i64 16
-// NEW-NEXT:    [[AGG_TEMP4_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_3_0_PTR_SROA_IDX]], align 8, !tbaa [[TBAA13:![0-9]+]]
+// NEW-NEXT:    [[AGG_TEMP4_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_3_0_PTR_SROA_IDX]], align 8
 // NEW-NEXT:    [[CMP14_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP4_SROA_1_0_COPYLOAD]], [[AGG_TEMP_SROA_0_0_COPYLOAD]], !annotation [[META5]]
-// NEW-NEXT:    br i1 [[CMP14_NOT]], label %[[TRAP]], label %[[LAND_RHS:.*]], !annotation [[META5]]
+// NEW-NEXT:    [[OR_COND:%.*]] = select i1 [[CMP_NOT]], i1 true, i1 [[CMP14_NOT]], !annotation [[META5]]
+// NEW-NEXT:    br i1 [[OR_COND]], label %[[TRAP:.*]], label %[[LAND_RHS:.*]], !annotation [[META5]]
 // NEW:       [[LAND_RHS]]:
 // NEW-NEXT:    [[CONV:%.*]] = sext i32 [[COUNT_PARAM]] to i64, !annotation [[META5]]
 // NEW-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoint ptr [[AGG_TEMP1_SROA_1_0_COPYLOAD]] to i64, !annotation [[META5]]
@@ -524,18 +518,17 @@ void init_list_sbon(int count_param, char*__sized_by_or_null(count_param) ptr) {
 }
 
 // SAME-LABEL: define dso_local void @init_list_sbon_bidi(
-// SAME-SAME: i32 noundef [[COUNT_PARAM:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return [[PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// SAME-SAME: i32 noundef [[COUNT_PARAM:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return dereferenceable(24) [[PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
 // SAME-NEXT:  [[ENTRY:.*:]]
 // SAME-NEXT:    [[AGG_TEMP_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[PTR]], align 8
 // SAME-NEXT:    [[AGG_TEMP_SROA_2_0_PTR_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[PTR]], i64 8
 // SAME-NEXT:    [[AGG_TEMP1_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_PTR_SROA_IDX]], align 8
 // SAME-NEXT:    [[CMP_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP_SROA_0_0_COPYLOAD]], [[AGG_TEMP1_SROA_1_0_COPYLOAD]], !annotation [[META5]]
-// SAME-NEXT:    br i1 [[CMP_NOT]], label %[[TRAP:.*]], label %[[LAND_LHS_TRUE:.*]], !annotation [[META5]]
-// SAME:       [[LAND_LHS_TRUE]]:
 // SAME-NEXT:    [[AGG_TEMP_SROA_3_0_PTR_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[PTR]], i64 16
-// SAME-NEXT:    [[AGG_TEMP4_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_3_0_PTR_SROA_IDX]], align 8, !tbaa [[TBAA13]]
+// SAME-NEXT:    [[AGG_TEMP4_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_3_0_PTR_SROA_IDX]], align 8
 // SAME-NEXT:    [[CMP14_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP4_SROA_1_0_COPYLOAD]], [[AGG_TEMP_SROA_0_0_COPYLOAD]], !annotation [[META5]]
-// SAME-NEXT:    br i1 [[CMP14_NOT]], label %[[TRAP]], label %[[LAND_RHS:.*]], !annotation [[META5]]
+// SAME-NEXT:    [[OR_COND:%.*]] = select i1 [[CMP_NOT]], i1 true, i1 [[CMP14_NOT]], !annotation [[META5]]
+// SAME-NEXT:    br i1 [[OR_COND]], label %[[TRAP:.*]], label %[[LAND_RHS:.*]], !annotation [[META5]]
 // SAME:       [[LAND_RHS]]:
 // SAME-NEXT:    [[TOBOOL_NOT:%.*]] = icmp eq ptr [[AGG_TEMP_SROA_0_0_COPYLOAD]], null, !annotation [[META5]]
 // SAME-NEXT:    br i1 [[TOBOOL_NOT]], label %[[CONT:.*]], label %[[LOR_RHS:.*]], !annotation [[META5]]
@@ -600,7 +593,7 @@ void compound_literal_init_sbon(int count_param, char*__sized_by_or_null(count_p
 }
 
 // LEGACY-LABEL: define dso_local void @compound_literal_init_sbon_bidi(
-// LEGACY-SAME: i32 noundef [[COUNT_PARAM:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return [[PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// LEGACY-SAME: i32 noundef [[COUNT_PARAM:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return dereferenceable(24) [[PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
 // LEGACY-NEXT:  [[ENTRY:.*:]]
 // LEGACY-NEXT:    [[C_SROA_0_0_INSERT_EXT:%.*]] = zext i32 [[COUNT_PARAM]] to i64
 // LEGACY-NEXT:    [[AGG_TEMP_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[PTR]], align 8
@@ -611,18 +604,17 @@ void compound_literal_init_sbon(int count_param, char*__sized_by_or_null(count_p
 // LEGACY-NEXT:    ret void
 //
 // NEW-LABEL: define dso_local void @compound_literal_init_sbon_bidi(
-// NEW-SAME: i32 noundef [[COUNT_PARAM:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return [[PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// NEW-SAME: i32 noundef [[COUNT_PARAM:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return dereferenceable(24) [[PTR:%.*]]) local_unnamed_addr #[[ATTR0]] {
 // NEW-NEXT:  [[ENTRY:.*:]]
 // NEW-NEXT:    [[AGG_TEMP_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[PTR]], align 8
 // NEW-NEXT:    [[AGG_TEMP_SROA_2_0_PTR_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[PTR]], i64 8
 // NEW-NEXT:    [[AGG_TEMP1_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_PTR_SROA_IDX]], align 8
 // NEW-NEXT:    [[CMP_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP_SROA_0_0_COPYLOAD]], [[AGG_TEMP1_SROA_1_0_COPYLOAD]], !annotation [[META5]]
-// NEW-NEXT:    br i1 [[CMP_NOT]], label %[[TRAP:.*]], label %[[LAND_LHS_TRUE:.*]], !annotation [[META5]]
-// NEW:       [[LAND_LHS_TRUE]]:
 // NEW-NEXT:    [[AGG_TEMP_SROA_3_0_PTR_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[PTR]], i64 16
-// NEW-NEXT:    [[AGG_TEMP4_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_3_0_PTR_SROA_IDX]], align 8, !tbaa [[TBAA13]]
+// NEW-NEXT:    [[AGG_TEMP4_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_3_0_PTR_SROA_IDX]], align 8
 // NEW-NEXT:    [[CMP14_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP4_SROA_1_0_COPYLOAD]], [[AGG_TEMP_SROA_0_0_COPYLOAD]], !annotation [[META5]]
-// NEW-NEXT:    br i1 [[CMP14_NOT]], label %[[TRAP]], label %[[LAND_RHS:.*]], !annotation [[META5]]
+// NEW-NEXT:    [[OR_COND:%.*]] = select i1 [[CMP_NOT]], i1 true, i1 [[CMP14_NOT]], !annotation [[META5]]
+// NEW-NEXT:    br i1 [[OR_COND]], label %[[TRAP:.*]], label %[[LAND_RHS:.*]], !annotation [[META5]]
 // NEW:       [[LAND_RHS]]:
 // NEW-NEXT:    [[TOBOOL_NOT:%.*]] = icmp eq ptr [[AGG_TEMP_SROA_0_0_COPYLOAD]], null, !annotation [[META5]]
 // NEW-NEXT:    br i1 [[TOBOOL_NOT]], label %[[CONT:.*]], label %[[LOR_RHS:.*]], !annotation [[META5]]
@@ -653,27 +645,13 @@ void compound_literal_init_sbon_bidi(int count_param, char*__bidi_indexable ptr)
 
 #endif
 //.
-// SAME: [[META3:![0-9]+]] = !{!"omnipotent char", [[META4:![0-9]+]], i64 0}
-// SAME: [[META4]] = !{!"Simple C/C++ TBAA"}
 // SAME: [[META5]] = !{!"bounds-safety-generic"}
-// SAME: [[TBAA6]] = !{[[META7:![0-9]+]], [[META7]], i64 0}
-// SAME: [[META7]] = !{!"p1 int", [[META8:![0-9]+]], i64 0}
-// SAME: [[META8]] = !{!"any pointer", [[META3]], i64 0}
 // SAME: [[META9]] = !{!"bounds-safety-generic", [[META10:![0-9]+]]}
 // SAME: [[META10]] = !{!"bounds-safety-missed-optimization-nsw", !"Check can not be removed because the arithmetic operation might wrap in the signed sense. Optimize the check by adding conditions to check for overflow before doing the operation"}
 // SAME: [[META12]] = !{!"bounds-safety-check-ptr-neq-null"}
-// SAME: [[TBAA13]] = !{[[META14:![0-9]+]], [[META14]], i64 0}
-// SAME: [[META14]] = !{!"p1 omnipotent char", [[META8]], i64 0}
 //.
-// NEW: [[META3:![0-9]+]] = !{!"omnipotent char", [[META4:![0-9]+]], i64 0}
-// NEW: [[META4]] = !{!"Simple C/C++ TBAA"}
 // NEW: [[META5]] = !{!"bounds-safety-generic"}
-// NEW: [[TBAA6]] = !{[[META7:![0-9]+]], [[META7]], i64 0}
-// NEW: [[META7]] = !{!"p1 int", [[META8:![0-9]+]], i64 0}
-// NEW: [[META8]] = !{!"any pointer", [[META3]], i64 0}
 // NEW: [[META9]] = !{!"bounds-safety-generic", [[META10:![0-9]+]]}
 // NEW: [[META10]] = !{!"bounds-safety-missed-optimization-nsw", !"Check can not be removed because the arithmetic operation might wrap in the signed sense. Optimize the check by adding conditions to check for overflow before doing the operation"}
 // NEW: [[META12]] = !{!"bounds-safety-check-ptr-neq-null"}
-// NEW: [[TBAA13]] = !{[[META14:![0-9]+]], [[META14]], i64 0}
-// NEW: [[META14]] = !{!"p1 omnipotent char", [[META8]], i64 0}
 //.

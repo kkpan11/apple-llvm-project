@@ -58,26 +58,24 @@ void receive_transparent_union(union TransparentUnion);
 // =============================================================================
 
 // CHECK-LABEL: define dso_local void @assign_via_ptr(
-// CHECK-SAME: ptr nofree noundef writeonly captures(none) [[PTR:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) local_unnamed_addr #[[ATTR0:[0-9]+]] {
+// CHECK-SAME: ptr nofree noundef writeonly captures(none) [[PTR:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return dereferenceable(24) [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) local_unnamed_addr #[[ATTR0:[0-9]+]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[AGG_TEMP_SROA_1_0_NEW_START_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[NEW_START]], i64 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_1_0_NEW_START_SROA_IDX]], align 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[NEW_START]], i64 16
 // CHECK-NEXT:    [[CMP_NOT:%.*]] = icmp ugt ptr [[NEW_END]], [[AGG_TEMP_SROA_1_0_COPYLOAD]], !annotation [[META6:![0-9]+]]
-// CHECK-NEXT:    br i1 [[CMP_NOT]], label %[[TRAP:.*]], label %[[LAND_LHS_TRUE:.*]], !annotation [[META6]]
-// CHECK:       [[LAND_LHS_TRUE]]:
 // CHECK-NEXT:    [[AGG_TEMP1_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[NEW_START]], align 8
 // CHECK-NEXT:    [[CMP4_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP1_SROA_0_0_COPYLOAD]], [[NEW_END]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP4_NOT]], label %[[TRAP]], label %[[LAND_RHS:.*]], !annotation [[META6]]
-// CHECK:       [[LAND_RHS]]:
-// CHECK-NEXT:    [[AGG_TEMP5_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX]], align 8, !tbaa [[TBAA7:![0-9]+]]
+// CHECK-NEXT:    [[OR_COND:%.*]] = select i1 [[CMP_NOT]], i1 true, i1 [[CMP4_NOT]], !annotation [[META6]]
+// CHECK-NEXT:    [[AGG_TEMP5_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX]], align 8
 // CHECK-NEXT:    [[CMP15_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP5_SROA_1_0_COPYLOAD]], [[AGG_TEMP1_SROA_0_0_COPYLOAD]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP15_NOT]], label %[[TRAP]], label %[[CONT:.*]], {{!prof ![0-9]+}}, !annotation [[META6]]
+// CHECK-NEXT:    [[OR_COND24:%.*]] = select i1 [[OR_COND]], i1 true, i1 [[CMP15_NOT]], {{!prof ![0-9]+}}, !annotation [[META6]]
+// CHECK-NEXT:    br i1 [[OR_COND24]], label %[[TRAP:.*]], label %[[CONT:.*]], {{!prof ![0-9]+}}, !annotation [[META6]]
 // CHECK:       [[TRAP]]:
 // CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR9:[0-9]+]], !annotation [[META6]]
 // CHECK-NEXT:    unreachable, !annotation [[META6]]
 // CHECK:       [[CONT]]:
-// CHECK-NEXT:    store ptr [[AGG_TEMP1_SROA_0_0_COPYLOAD]], ptr [[PTR]], align 8, !tbaa [[TBAA7]]
+// CHECK-NEXT:    store ptr [[AGG_TEMP1_SROA_0_0_COPYLOAD]], ptr [[PTR]], align 8, !tbaa [[TBAA7:![0-9]+]]
 // CHECK-NEXT:    [[DOTCOMPOUNDLITERAL_SROA_2_0__SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[PTR]], i64 8
 // CHECK-NEXT:    store ptr [[NEW_END]], ptr [[DOTCOMPOUNDLITERAL_SROA_2_0__SROA_IDX]], align 8, !tbaa [[TBAA7]]
 // CHECK-NEXT:    ret void
@@ -91,21 +89,19 @@ void assign_via_ptr(struct eb* ptr,
 }
 
 // CHECK-LABEL: define dso_local void @assign_operator(
-// CHECK-SAME: ptr nofree noundef readonly align 8 captures(none) dead_on_return [[NEW_START:%.*]], ptr nofree noundef readnone captures(address) [[NEW_END:%.*]]) local_unnamed_addr #[[ATTR2:[0-9]+]] {
+// CHECK-SAME: ptr nofree noundef readonly align 8 captures(none) dead_on_return dereferenceable(24) [[NEW_START:%.*]], ptr nofree noundef readnone captures(address) [[NEW_END:%.*]]) local_unnamed_addr #[[ATTR2:[0-9]+]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[AGG_TEMP_SROA_1_0_NEW_START_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[NEW_START]], i64 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_1_0_NEW_START_SROA_IDX]], align 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[NEW_START]], i64 16
 // CHECK-NEXT:    [[CMP_NOT:%.*]] = icmp ugt ptr [[NEW_END]], [[AGG_TEMP_SROA_1_0_COPYLOAD]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP_NOT]], label %[[TRAP:.*]], label %[[LAND_LHS_TRUE:.*]], !annotation [[META6]]
-// CHECK:       [[LAND_LHS_TRUE]]:
 // CHECK-NEXT:    [[AGG_TEMP1_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[NEW_START]], align 8
 // CHECK-NEXT:    [[CMP4_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP1_SROA_0_0_COPYLOAD]], [[NEW_END]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP4_NOT]], label %[[TRAP]], label %[[LAND_RHS:.*]], !annotation [[META6]]
-// CHECK:       [[LAND_RHS]]:
-// CHECK-NEXT:    [[AGG_TEMP5_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX]], align 8, !tbaa [[TBAA7]]
+// CHECK-NEXT:    [[OR_COND:%.*]] = select i1 [[CMP_NOT]], i1 true, i1 [[CMP4_NOT]], !annotation [[META6]]
+// CHECK-NEXT:    [[AGG_TEMP5_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX]], align 8
 // CHECK-NEXT:    [[CMP15_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP5_SROA_1_0_COPYLOAD]], [[AGG_TEMP1_SROA_0_0_COPYLOAD]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP15_NOT]], label %[[TRAP]], label %[[CONT:.*]], {{!prof ![0-9]+}}, !annotation [[META6]]
+// CHECK-NEXT:    [[OR_COND26:%.*]] = select i1 [[OR_COND]], i1 true, i1 [[CMP15_NOT]], {{!prof ![0-9]+}}, !annotation [[META6]]
+// CHECK-NEXT:    br i1 [[OR_COND26]], label %[[TRAP:.*]], label %[[CONT:.*]], {{!prof ![0-9]+}}, !annotation [[META6]]
 // CHECK:       [[TRAP]]:
 // CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR9]], !annotation [[META6]]
 // CHECK-NEXT:    unreachable, !annotation [[META6]]
@@ -122,21 +118,19 @@ void assign_operator(char* __bidi_indexable new_start, char* new_end) {
 
 
 // CHECK-LABEL: define dso_local void @local_var_init(
-// CHECK-SAME: ptr nofree noundef readonly align 8 captures(none) dead_on_return [[NEW_START:%.*]], ptr nofree noundef readnone captures(address) [[NEW_END:%.*]]) local_unnamed_addr #[[ATTR2]] {
+// CHECK-SAME: ptr nofree noundef readonly align 8 captures(none) dead_on_return dereferenceable(24) [[NEW_START:%.*]], ptr nofree noundef readnone captures(address) [[NEW_END:%.*]]) local_unnamed_addr #[[ATTR2]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[AGG_TEMP_SROA_1_0_NEW_START_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[NEW_START]], i64 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_1_0_NEW_START_SROA_IDX]], align 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[NEW_START]], i64 16
 // CHECK-NEXT:    [[CMP_NOT:%.*]] = icmp ugt ptr [[NEW_END]], [[AGG_TEMP_SROA_1_0_COPYLOAD]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP_NOT]], label %[[TRAP:.*]], label %[[LAND_LHS_TRUE:.*]], !annotation [[META6]]
-// CHECK:       [[LAND_LHS_TRUE]]:
 // CHECK-NEXT:    [[AGG_TEMP1_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[NEW_START]], align 8
 // CHECK-NEXT:    [[CMP4_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP1_SROA_0_0_COPYLOAD]], [[NEW_END]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP4_NOT]], label %[[TRAP]], label %[[LAND_RHS:.*]], !annotation [[META6]]
-// CHECK:       [[LAND_RHS]]:
-// CHECK-NEXT:    [[AGG_TEMP5_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX]], align 8, !tbaa [[TBAA7]]
+// CHECK-NEXT:    [[OR_COND:%.*]] = select i1 [[CMP_NOT]], i1 true, i1 [[CMP4_NOT]], !annotation [[META6]]
+// CHECK-NEXT:    [[AGG_TEMP5_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX]], align 8
 // CHECK-NEXT:    [[CMP15_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP5_SROA_1_0_COPYLOAD]], [[AGG_TEMP1_SROA_0_0_COPYLOAD]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP15_NOT]], label %[[TRAP]], label %[[CONT:.*]], {{!prof ![0-9]+}}, !annotation [[META6]]
+// CHECK-NEXT:    [[OR_COND24:%.*]] = select i1 [[OR_COND]], i1 true, i1 [[CMP15_NOT]], {{!prof ![0-9]+}}, !annotation [[META6]]
+// CHECK-NEXT:    br i1 [[OR_COND24]], label %[[TRAP:.*]], label %[[CONT:.*]], {{!prof ![0-9]+}}, !annotation [[META6]]
 // CHECK:       [[TRAP]]:
 // CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR9]], !annotation [[META6]]
 // CHECK-NEXT:    unreachable, !annotation [[META6]]
@@ -151,21 +145,19 @@ void local_var_init(char* __bidi_indexable new_start, char* new_end) {
 }
 
 // CHECK-LABEL: define dso_local void @call_arg(
-// CHECK-SAME: ptr nofree noundef readonly align 8 captures(none) dead_on_return [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) local_unnamed_addr #[[ATTR4:[0-9]+]] {
+// CHECK-SAME: ptr nofree noundef readonly align 8 captures(none) dead_on_return dereferenceable(24) [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) local_unnamed_addr #[[ATTR4:[0-9]+]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[AGG_TEMP_SROA_1_0_NEW_START_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[NEW_START]], i64 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_1_0_NEW_START_SROA_IDX]], align 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[NEW_START]], i64 16
 // CHECK-NEXT:    [[CMP_NOT:%.*]] = icmp ugt ptr [[NEW_END]], [[AGG_TEMP_SROA_1_0_COPYLOAD]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP_NOT]], label %[[TRAP:.*]], label %[[LAND_LHS_TRUE:.*]], !annotation [[META6]]
-// CHECK:       [[LAND_LHS_TRUE]]:
 // CHECK-NEXT:    [[AGG_TEMP1_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[NEW_START]], align 8
 // CHECK-NEXT:    [[CMP4_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP1_SROA_0_0_COPYLOAD]], [[NEW_END]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP4_NOT]], label %[[TRAP]], label %[[LAND_RHS:.*]], !annotation [[META6]]
-// CHECK:       [[LAND_RHS]]:
-// CHECK-NEXT:    [[AGG_TEMP5_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX]], align 8, !tbaa [[TBAA7]]
+// CHECK-NEXT:    [[OR_COND:%.*]] = select i1 [[CMP_NOT]], i1 true, i1 [[CMP4_NOT]], !annotation [[META6]]
+// CHECK-NEXT:    [[AGG_TEMP5_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX]], align 8
 // CHECK-NEXT:    [[CMP15_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP5_SROA_1_0_COPYLOAD]], [[AGG_TEMP1_SROA_0_0_COPYLOAD]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP15_NOT]], label %[[TRAP]], label %[[CONT:.*]], {{!prof ![0-9]+}}, !annotation [[META6]]
+// CHECK-NEXT:    [[OR_COND24:%.*]] = select i1 [[OR_COND]], i1 true, i1 [[CMP15_NOT]], {{!prof ![0-9]+}}, !annotation [[META6]]
+// CHECK-NEXT:    br i1 [[OR_COND24]], label %[[TRAP:.*]], label %[[CONT:.*]], {{!prof ![0-9]+}}, !annotation [[META6]]
 // CHECK:       [[TRAP]]:
 // CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR9]], !annotation [[META6]]
 // CHECK-NEXT:    unreachable, !annotation [[META6]]
@@ -183,21 +175,19 @@ void call_arg(char* __bidi_indexable new_start, char* new_end) {
 }
 
 // CHECK-LABEL: define dso_local [2 x i64] @return_eb(
-// CHECK-SAME: ptr nofree noundef readonly align 8 captures(none) dead_on_return [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) local_unnamed_addr #[[ATTR2]] {
+// CHECK-SAME: ptr nofree noundef readonly align 8 captures(none) dead_on_return dereferenceable(24) [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) local_unnamed_addr #[[ATTR2]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[AGG_TEMP_SROA_1_0_NEW_START_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[NEW_START]], i64 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_1_0_NEW_START_SROA_IDX]], align 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[NEW_START]], i64 16
 // CHECK-NEXT:    [[CMP_NOT:%.*]] = icmp ugt ptr [[NEW_END]], [[AGG_TEMP_SROA_1_0_COPYLOAD]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP_NOT]], label %[[TRAP:.*]], label %[[LAND_LHS_TRUE:.*]], !annotation [[META6]]
-// CHECK:       [[LAND_LHS_TRUE]]:
 // CHECK-NEXT:    [[AGG_TEMP1_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[NEW_START]], align 8
 // CHECK-NEXT:    [[CMP4_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP1_SROA_0_0_COPYLOAD]], [[NEW_END]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP4_NOT]], label %[[TRAP]], label %[[LAND_RHS:.*]], !annotation [[META6]]
-// CHECK:       [[LAND_RHS]]:
-// CHECK-NEXT:    [[AGG_TEMP5_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX]], align 8, !tbaa [[TBAA7]]
+// CHECK-NEXT:    [[OR_COND:%.*]] = select i1 [[CMP_NOT]], i1 true, i1 [[CMP4_NOT]], !annotation [[META6]]
+// CHECK-NEXT:    [[AGG_TEMP5_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX]], align 8
 // CHECK-NEXT:    [[CMP15_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP5_SROA_1_0_COPYLOAD]], [[AGG_TEMP1_SROA_0_0_COPYLOAD]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP15_NOT]], label %[[TRAP]], label %[[CONT:.*]], {{!prof ![0-9]+}}, !annotation [[META6]]
+// CHECK-NEXT:    [[OR_COND24:%.*]] = select i1 [[OR_COND]], i1 true, i1 [[CMP15_NOT]], {{!prof ![0-9]+}}, !annotation [[META6]]
+// CHECK-NEXT:    br i1 [[OR_COND24]], label %[[TRAP:.*]], label %[[CONT:.*]], {{!prof ![0-9]+}}, !annotation [[META6]]
 // CHECK:       [[TRAP]]:
 // CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR9]], !annotation [[META6]]
 // CHECK-NEXT:    unreachable, !annotation [[META6]]
@@ -216,21 +206,19 @@ struct eb return_eb(char* __bidi_indexable new_start, char* new_end) {
 }
 
 // CHECK-LABEL: define dso_local void @construct_not_used(
-// CHECK-SAME: ptr nofree noundef readonly align 8 captures(none) dead_on_return [[NEW_START:%.*]], ptr nofree noundef readnone captures(address) [[NEW_END:%.*]]) local_unnamed_addr #[[ATTR2]] {
+// CHECK-SAME: ptr nofree noundef readonly align 8 captures(none) dead_on_return dereferenceable(24) [[NEW_START:%.*]], ptr nofree noundef readnone captures(address) [[NEW_END:%.*]]) local_unnamed_addr #[[ATTR2]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[AGG_TEMP_SROA_1_0_NEW_START_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[NEW_START]], i64 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_1_0_NEW_START_SROA_IDX]], align 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[NEW_START]], i64 16
 // CHECK-NEXT:    [[CMP_NOT:%.*]] = icmp ugt ptr [[NEW_END]], [[AGG_TEMP_SROA_1_0_COPYLOAD]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP_NOT]], label %[[TRAP:.*]], label %[[LAND_LHS_TRUE:.*]], !annotation [[META6]]
-// CHECK:       [[LAND_LHS_TRUE]]:
 // CHECK-NEXT:    [[AGG_TEMP1_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[NEW_START]], align 8
 // CHECK-NEXT:    [[CMP4_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP1_SROA_0_0_COPYLOAD]], [[NEW_END]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP4_NOT]], label %[[TRAP]], label %[[LAND_RHS:.*]], !annotation [[META6]]
-// CHECK:       [[LAND_RHS]]:
-// CHECK-NEXT:    [[AGG_TEMP5_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX]], align 8, !tbaa [[TBAA7]]
+// CHECK-NEXT:    [[OR_COND:%.*]] = select i1 [[CMP_NOT]], i1 true, i1 [[CMP4_NOT]], !annotation [[META6]]
+// CHECK-NEXT:    [[AGG_TEMP5_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX]], align 8
 // CHECK-NEXT:    [[CMP15_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP5_SROA_1_0_COPYLOAD]], [[AGG_TEMP1_SROA_0_0_COPYLOAD]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP15_NOT]], label %[[TRAP]], label %[[CONT:.*]], {{!prof ![0-9]+}}, !annotation [[META6]]
+// CHECK-NEXT:    [[OR_COND24:%.*]] = select i1 [[OR_COND]], i1 true, i1 [[CMP15_NOT]], {{!prof ![0-9]+}}, !annotation [[META6]]
+// CHECK-NEXT:    br i1 [[OR_COND24]], label %[[TRAP:.*]], label %[[CONT:.*]], {{!prof ![0-9]+}}, !annotation [[META6]]
 // CHECK:       [[TRAP]]:
 // CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR9]], !annotation [[META6]]
 // CHECK-NEXT:    unreachable, !annotation [[META6]]
@@ -267,21 +255,19 @@ void assign_via_ptr_nullptr(struct eb* ptr, char* new_end) {
 }
 
 // CHECK-LABEL: define dso_local void @assign_via_ptr_nested(
-// CHECK-SAME: ptr nofree noundef writeonly captures(none) [[PTR:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// CHECK-SAME: ptr nofree noundef writeonly captures(none) [[PTR:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return dereferenceable(24) [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) local_unnamed_addr #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[AGG_TEMP_SROA_1_0_NEW_START_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[NEW_START]], i64 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_1_0_NEW_START_SROA_IDX]], align 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[NEW_START]], i64 16
 // CHECK-NEXT:    [[CMP_NOT:%.*]] = icmp ugt ptr [[NEW_END]], [[AGG_TEMP_SROA_1_0_COPYLOAD]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP_NOT]], label %[[TRAP:.*]], label %[[LAND_LHS_TRUE:.*]], !annotation [[META6]]
-// CHECK:       [[LAND_LHS_TRUE]]:
 // CHECK-NEXT:    [[AGG_TEMP1_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[NEW_START]], align 8
 // CHECK-NEXT:    [[CMP4_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP1_SROA_0_0_COPYLOAD]], [[NEW_END]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP4_NOT]], label %[[TRAP]], label %[[LAND_RHS:.*]], !annotation [[META6]]
-// CHECK:       [[LAND_RHS]]:
-// CHECK-NEXT:    [[AGG_TEMP5_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX]], align 8, !tbaa [[TBAA7]]
+// CHECK-NEXT:    [[OR_COND:%.*]] = select i1 [[CMP_NOT]], i1 true, i1 [[CMP4_NOT]], !annotation [[META6]]
+// CHECK-NEXT:    [[AGG_TEMP5_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX]], align 8
 // CHECK-NEXT:    [[CMP15_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP5_SROA_1_0_COPYLOAD]], [[AGG_TEMP1_SROA_0_0_COPYLOAD]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP15_NOT]], label %[[TRAP]], label %[[CONT:.*]], {{!prof ![0-9]+}}, !annotation [[META6]]
+// CHECK-NEXT:    [[OR_COND24:%.*]] = select i1 [[OR_COND]], i1 true, i1 [[CMP15_NOT]], {{!prof ![0-9]+}}, !annotation [[META6]]
+// CHECK-NEXT:    br i1 [[OR_COND24]], label %[[TRAP:.*]], label %[[CONT:.*]], {{!prof ![0-9]+}}, !annotation [[META6]]
 // CHECK:       [[TRAP]]:
 // CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR9]], !annotation [[META6]]
 // CHECK-NEXT:    unreachable, !annotation [[META6]]
@@ -305,21 +291,19 @@ void assign_via_ptr_nested(struct nested_eb* ptr,
 }
 
 // CHECK-LABEL: define dso_local void @assign_via_ptr_nested_v2(
-// CHECK-SAME: ptr nofree noundef writeonly captures(none) [[PTR:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// CHECK-SAME: ptr nofree noundef writeonly captures(none) [[PTR:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return dereferenceable(24) [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) local_unnamed_addr #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[AGG_TEMP_SROA_1_0_NEW_START_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[NEW_START]], i64 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_1_0_NEW_START_SROA_IDX]], align 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[NEW_START]], i64 16
 // CHECK-NEXT:    [[CMP_NOT:%.*]] = icmp ugt ptr [[NEW_END]], [[AGG_TEMP_SROA_1_0_COPYLOAD]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP_NOT]], label %[[TRAP:.*]], label %[[LAND_LHS_TRUE:.*]], !annotation [[META6]]
-// CHECK:       [[LAND_LHS_TRUE]]:
 // CHECK-NEXT:    [[AGG_TEMP1_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[NEW_START]], align 8
 // CHECK-NEXT:    [[CMP4_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP1_SROA_0_0_COPYLOAD]], [[NEW_END]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP4_NOT]], label %[[TRAP]], label %[[LAND_RHS:.*]], !annotation [[META6]]
-// CHECK:       [[LAND_RHS]]:
-// CHECK-NEXT:    [[AGG_TEMP5_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX]], align 8, !tbaa [[TBAA7]]
+// CHECK-NEXT:    [[OR_COND:%.*]] = select i1 [[CMP_NOT]], i1 true, i1 [[CMP4_NOT]], !annotation [[META6]]
+// CHECK-NEXT:    [[AGG_TEMP5_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX]], align 8
 // CHECK-NEXT:    [[CMP15_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP5_SROA_1_0_COPYLOAD]], [[AGG_TEMP1_SROA_0_0_COPYLOAD]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP15_NOT]], label %[[TRAP]], label %[[CONT:.*]], {{!prof ![0-9]+}}, !annotation [[META6]]
+// CHECK-NEXT:    [[OR_COND24:%.*]] = select i1 [[OR_COND]], i1 true, i1 [[CMP15_NOT]], {{!prof ![0-9]+}}, !annotation [[META6]]
+// CHECK-NEXT:    br i1 [[OR_COND24]], label %[[TRAP:.*]], label %[[CONT:.*]], {{!prof ![0-9]+}}, !annotation [[META6]]
 // CHECK:       [[TRAP]]:
 // CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR9]], !annotation [[META6]]
 // CHECK-NEXT:    unreachable, !annotation [[META6]]
@@ -343,21 +327,19 @@ void assign_via_ptr_nested_v2(struct nested_eb* ptr,
 }
 
 // CHECK-LABEL: define dso_local void @assign_via_ptr_nested_v3(
-// CHECK-SAME: ptr nofree noundef writeonly captures(none) [[PTR:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) local_unnamed_addr #[[ATTR0]] {
+// CHECK-SAME: ptr nofree noundef writeonly captures(none) [[PTR:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return dereferenceable(24) [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) local_unnamed_addr #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[AGG_TEMP_SROA_1_0_NEW_START_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[NEW_START]], i64 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_1_0_NEW_START_SROA_IDX]], align 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[NEW_START]], i64 16
 // CHECK-NEXT:    [[CMP_NOT:%.*]] = icmp ugt ptr [[NEW_END]], [[AGG_TEMP_SROA_1_0_COPYLOAD]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP_NOT]], label %[[TRAP:.*]], label %[[LAND_LHS_TRUE:.*]], !annotation [[META6]]
-// CHECK:       [[LAND_LHS_TRUE]]:
 // CHECK-NEXT:    [[AGG_TEMP1_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[NEW_START]], align 8
 // CHECK-NEXT:    [[CMP4_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP1_SROA_0_0_COPYLOAD]], [[NEW_END]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP4_NOT]], label %[[TRAP]], label %[[LAND_RHS:.*]], !annotation [[META6]]
-// CHECK:       [[LAND_RHS]]:
-// CHECK-NEXT:    [[AGG_TEMP5_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX]], align 8, !tbaa [[TBAA7]]
+// CHECK-NEXT:    [[OR_COND:%.*]] = select i1 [[CMP_NOT]], i1 true, i1 [[CMP4_NOT]], !annotation [[META6]]
+// CHECK-NEXT:    [[AGG_TEMP5_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX]], align 8
 // CHECK-NEXT:    [[CMP15_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP5_SROA_1_0_COPYLOAD]], [[AGG_TEMP1_SROA_0_0_COPYLOAD]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP15_NOT]], label %[[TRAP]], label %[[CONT42:.*]], {{!prof ![0-9]+}}, !annotation [[META6]]
+// CHECK-NEXT:    [[OR_COND65:%.*]] = select i1 [[OR_COND]], i1 true, i1 [[CMP15_NOT]], {{!prof ![0-9]+}}, !annotation [[META6]]
+// CHECK-NEXT:    br i1 [[OR_COND65]], label %[[TRAP:.*]], label %[[CONT42:.*]], {{!prof ![0-9]+}}, !annotation [[META6]]
 // CHECK:       [[TRAP]]:
 // CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR9]], !annotation [[META6]]
 // CHECK-NEXT:    unreachable, !annotation [[META6]]
@@ -387,7 +369,7 @@ void assign_via_ptr_nested_v3(struct nested_and_outer_eb* ptr,
 }
 
 // CHECK-LABEL: define dso_local void @array_of_struct_init(
-// CHECK-SAME: ptr nofree noundef readonly align 8 captures(none) dead_on_return [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) local_unnamed_addr #[[ATTR4]] {
+// CHECK-SAME: ptr nofree noundef readonly align 8 captures(none) dead_on_return dereferenceable(24) [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) local_unnamed_addr #[[ATTR4]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[ARR:%.*]] = alloca [2 x [[STRUCT_EB:%.*]]], align 8
 // CHECK-NEXT:    call void @llvm.lifetime.start.p0(ptr nonnull [[ARR]]) #[[ATTR10]]
@@ -395,15 +377,13 @@ void assign_via_ptr_nested_v3(struct nested_and_outer_eb* ptr,
 // CHECK-NEXT:    [[AGG_TEMP_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_1_0_NEW_START_SROA_IDX]], align 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[NEW_START]], i64 16
 // CHECK-NEXT:    [[CMP_NOT:%.*]] = icmp ugt ptr [[NEW_END]], [[AGG_TEMP_SROA_1_0_COPYLOAD]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP_NOT]], label %[[TRAP:.*]], label %[[LAND_LHS_TRUE:.*]], !annotation [[META6]]
-// CHECK:       [[LAND_LHS_TRUE]]:
 // CHECK-NEXT:    [[AGG_TEMP1_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[NEW_START]], align 8
 // CHECK-NEXT:    [[CMP4_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP1_SROA_0_0_COPYLOAD]], [[NEW_END]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP4_NOT]], label %[[TRAP]], label %[[LAND_RHS:.*]], !annotation [[META6]]
-// CHECK:       [[LAND_RHS]]:
-// CHECK-NEXT:    [[AGG_TEMP5_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX]], align 8, !tbaa [[TBAA7]]
+// CHECK-NEXT:    [[OR_COND:%.*]] = select i1 [[CMP_NOT]], i1 true, i1 [[CMP4_NOT]], !annotation [[META6]]
+// CHECK-NEXT:    [[AGG_TEMP5_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX]], align 8
 // CHECK-NEXT:    [[CMP15_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP5_SROA_1_0_COPYLOAD]], [[AGG_TEMP1_SROA_0_0_COPYLOAD]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP15_NOT]], label %[[TRAP]], label %[[CONT:.*]], {{!prof ![0-9]+}}, !annotation [[META6]]
+// CHECK-NEXT:    [[OR_COND43:%.*]] = select i1 [[OR_COND]], i1 true, i1 [[CMP15_NOT]], {{!prof ![0-9]+}}, !annotation [[META6]]
+// CHECK-NEXT:    br i1 [[OR_COND43]], label %[[TRAP:.*]], label %[[CONT:.*]], {{!prof ![0-9]+}}, !annotation [[META6]]
 // CHECK:       [[TRAP]]:
 // CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR9]], !annotation [[META12:![0-9]+]]
 // CHECK-NEXT:    unreachable, !annotation [[META12]]
@@ -427,21 +407,19 @@ void array_of_struct_init(char* __bidi_indexable new_start, char* new_end) {
 
 
 // CHECK-LABEL: define dso_local void @assign_via_ptr_other_data_side_effect(
-// CHECK-SAME: ptr nofree noundef writeonly captures(none) [[PTR:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) local_unnamed_addr #[[ATTR4]] {
+// CHECK-SAME: ptr nofree noundef writeonly captures(none) [[PTR:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return dereferenceable(24) [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) local_unnamed_addr #[[ATTR4]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[AGG_TEMP_SROA_1_0_NEW_START_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[NEW_START]], i64 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_1_0_NEW_START_SROA_IDX]], align 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[NEW_START]], i64 16
 // CHECK-NEXT:    [[CMP_NOT:%.*]] = icmp ugt ptr [[NEW_END]], [[AGG_TEMP_SROA_1_0_COPYLOAD]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP_NOT]], label %[[TRAP:.*]], label %[[LAND_LHS_TRUE:.*]], !annotation [[META6]]
-// CHECK:       [[LAND_LHS_TRUE]]:
 // CHECK-NEXT:    [[AGG_TEMP1_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[NEW_START]], align 8
 // CHECK-NEXT:    [[CMP4_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP1_SROA_0_0_COPYLOAD]], [[NEW_END]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP4_NOT]], label %[[TRAP]], label %[[LAND_RHS:.*]], !annotation [[META6]]
-// CHECK:       [[LAND_RHS]]:
-// CHECK-NEXT:    [[AGG_TEMP5_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX]], align 8, !tbaa [[TBAA7]]
+// CHECK-NEXT:    [[OR_COND:%.*]] = select i1 [[CMP_NOT]], i1 true, i1 [[CMP4_NOT]], !annotation [[META6]]
+// CHECK-NEXT:    [[AGG_TEMP5_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX]], align 8
 // CHECK-NEXT:    [[CMP15_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP5_SROA_1_0_COPYLOAD]], [[AGG_TEMP1_SROA_0_0_COPYLOAD]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP15_NOT]], label %[[TRAP]], label %[[CONT:.*]], {{!prof ![0-9]+}}, !annotation [[META6]]
+// CHECK-NEXT:    [[OR_COND24:%.*]] = select i1 [[OR_COND]], i1 true, i1 [[CMP15_NOT]], {{!prof ![0-9]+}}, !annotation [[META6]]
+// CHECK-NEXT:    br i1 [[OR_COND24]], label %[[TRAP:.*]], label %[[CONT:.*]], {{!prof ![0-9]+}}, !annotation [[META6]]
 // CHECK:       [[TRAP]]:
 // CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR9]], !annotation [[META6]]
 // CHECK-NEXT:    unreachable, !annotation [[META6]]
@@ -497,22 +475,20 @@ void assign_via_ptr_other_data_side_effect_zero_ptr(struct eb_with_other_data* p
 }
 
 // CHECK-LABEL: define dso_local void @call_arg_transparent_union(
-// CHECK-SAME: ptr nofree noundef readonly align 8 captures(none) dead_on_return [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) local_unnamed_addr #[[ATTR4]] {
+// CHECK-SAME: ptr nofree noundef readonly align 8 captures(none) dead_on_return dereferenceable(24) [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) local_unnamed_addr #[[ATTR4]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[AGG_TMP:%.*]] = alloca [[UNION_TRANSPARENTUNION:%.*]], align 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_1_0_NEW_START_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[NEW_START]], i64 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_1_0_NEW_START_SROA_IDX]], align 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[NEW_START]], i64 16
 // CHECK-NEXT:    [[CMP_NOT:%.*]] = icmp ugt ptr [[NEW_END]], [[AGG_TEMP_SROA_1_0_COPYLOAD]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP_NOT]], label %[[TRAP:.*]], label %[[LAND_LHS_TRUE:.*]], !annotation [[META6]]
-// CHECK:       [[LAND_LHS_TRUE]]:
 // CHECK-NEXT:    [[AGG_TEMP1_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[NEW_START]], align 8
 // CHECK-NEXT:    [[CMP4_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP1_SROA_0_0_COPYLOAD]], [[NEW_END]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP4_NOT]], label %[[TRAP]], label %[[LAND_RHS:.*]], !annotation [[META6]]
-// CHECK:       [[LAND_RHS]]:
-// CHECK-NEXT:    [[AGG_TEMP5_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX]], align 8, !tbaa [[TBAA7]]
+// CHECK-NEXT:    [[OR_COND:%.*]] = select i1 [[CMP_NOT]], i1 true, i1 [[CMP4_NOT]], !annotation [[META6]]
+// CHECK-NEXT:    [[AGG_TEMP5_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX]], align 8
 // CHECK-NEXT:    [[CMP15_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP5_SROA_1_0_COPYLOAD]], [[AGG_TEMP1_SROA_0_0_COPYLOAD]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP15_NOT]], label %[[TRAP]], label %[[CONT:.*]], {{!prof ![0-9]+}}, !annotation [[META6]]
+// CHECK-NEXT:    [[OR_COND24:%.*]] = select i1 [[OR_COND]], i1 true, i1 [[CMP15_NOT]], {{!prof ![0-9]+}}, !annotation [[META6]]
+// CHECK-NEXT:    br i1 [[OR_COND24]], label %[[TRAP:.*]], label %[[CONT:.*]], {{!prof ![0-9]+}}, !annotation [[META6]]
 // CHECK:       [[TRAP]]:
 // CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR9]], !annotation [[META6]]
 // CHECK-NEXT:    unreachable, !annotation [[META6]]
@@ -524,7 +500,7 @@ void assign_via_ptr_other_data_side_effect_zero_ptr(struct eb_with_other_data* p
 // CHECK-NEXT:    store i32 0, ptr [[OTHER]], align 8, !tbaa [[TBAA19:![0-9]+]]
 // CHECK-NEXT:    [[TMP0:%.*]] = getelementptr inbounds nuw i8, ptr [[AGG_TMP]], i64 20
 // CHECK-NEXT:    store i32 0, ptr [[TMP0]], align 4
-// CHECK-NEXT:    call void @receive_transparent_union(ptr noundef nonnull align 8 dead_on_return [[AGG_TMP]]) #[[ATTR10]]
+// CHECK-NEXT:    call void @receive_transparent_union(ptr nofree noundef nonnull align 8 dead_on_return dereferenceable(24) [[AGG_TMP]]) #[[ATTR10]]
 // CHECK-NEXT:    ret void
 //
 void call_arg_transparent_union(char* __bidi_indexable new_start,
@@ -539,22 +515,20 @@ void call_arg_transparent_union(char* __bidi_indexable new_start,
 }
 
 // CHECK-LABEL: define dso_local void @call_arg_transparent_union_untransparently(
-// CHECK-SAME: ptr nofree noundef readonly align 8 captures(none) dead_on_return [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) local_unnamed_addr #[[ATTR4]] {
+// CHECK-SAME: ptr nofree noundef readonly align 8 captures(none) dead_on_return dereferenceable(24) [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) local_unnamed_addr #[[ATTR4]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[BYVAL_TEMP:%.*]] = alloca [[UNION_TRANSPARENTUNION:%.*]], align 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_1_0_NEW_START_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[NEW_START]], i64 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_1_0_NEW_START_SROA_IDX]], align 8
 // CHECK-NEXT:    [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[NEW_START]], i64 16
 // CHECK-NEXT:    [[CMP_NOT:%.*]] = icmp ugt ptr [[NEW_END]], [[AGG_TEMP_SROA_1_0_COPYLOAD]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP_NOT]], label %[[TRAP:.*]], label %[[LAND_LHS_TRUE:.*]], !annotation [[META6]]
-// CHECK:       [[LAND_LHS_TRUE]]:
 // CHECK-NEXT:    [[AGG_TEMP1_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[NEW_START]], align 8
 // CHECK-NEXT:    [[CMP4_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP1_SROA_0_0_COPYLOAD]], [[NEW_END]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP4_NOT]], label %[[TRAP]], label %[[LAND_RHS:.*]], !annotation [[META6]]
-// CHECK:       [[LAND_RHS]]:
-// CHECK-NEXT:    [[AGG_TEMP5_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX]], align 8, !tbaa [[TBAA7]]
+// CHECK-NEXT:    [[OR_COND:%.*]] = select i1 [[CMP_NOT]], i1 true, i1 [[CMP4_NOT]], !annotation [[META6]]
+// CHECK-NEXT:    [[AGG_TEMP5_SROA_1_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_NEW_START_SROA_IDX]], align 8
 // CHECK-NEXT:    [[CMP15_NOT:%.*]] = icmp ugt ptr [[AGG_TEMP5_SROA_1_0_COPYLOAD]], [[AGG_TEMP1_SROA_0_0_COPYLOAD]], !annotation [[META6]]
-// CHECK-NEXT:    br i1 [[CMP15_NOT]], label %[[TRAP]], label %[[CONT:.*]], {{!prof ![0-9]+}}, !annotation [[META6]]
+// CHECK-NEXT:    [[OR_COND24:%.*]] = select i1 [[OR_COND]], i1 true, i1 [[CMP15_NOT]], {{!prof ![0-9]+}}, !annotation [[META6]]
+// CHECK-NEXT:    br i1 [[OR_COND24]], label %[[TRAP:.*]], label %[[CONT:.*]], {{!prof ![0-9]+}}, !annotation [[META6]]
 // CHECK:       [[TRAP]]:
 // CHECK-NEXT:    tail call void @llvm.ubsantrap(i8 25) #[[ATTR9]], !annotation [[META6]]
 // CHECK-NEXT:    unreachable, !annotation [[META6]]
@@ -567,7 +541,7 @@ void call_arg_transparent_union(char* __bidi_indexable new_start,
 // CHECK-NEXT:    store i32 0, ptr [[DOTCOMPOUNDLITERAL_SROA_3_0_BYVAL_TEMP_SROA_IDX]], align 8
 // CHECK-NEXT:    [[DOTCOMPOUNDLITERAL_SROA_4_0_BYVAL_TEMP_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[BYVAL_TEMP]], i64 20
 // CHECK-NEXT:    store i32 0, ptr [[DOTCOMPOUNDLITERAL_SROA_4_0_BYVAL_TEMP_SROA_IDX]], align 4, !tbaa [[TBAA20:![0-9]+]]
-// CHECK-NEXT:    call void @receive_transparent_union(ptr noundef nonnull align 8 dead_on_return [[BYVAL_TEMP]]) #[[ATTR10]]
+// CHECK-NEXT:    call void @receive_transparent_union(ptr nofree noundef nonnull align 8 dead_on_return dereferenceable(24) [[BYVAL_TEMP]]) #[[ATTR10]]
 // CHECK-NEXT:    call void @llvm.lifetime.end.p0(ptr nonnull [[BYVAL_TEMP]]) #[[ATTR10]]
 // CHECK-NEXT:    ret void
 //
@@ -891,7 +865,7 @@ void assign_via_ptr_other_data_side_effect_zero_ptr_from_eb(struct eb_with_other
 // CHECK-NEXT:    store i32 0, ptr [[OTHER]], align 8, !tbaa [[TBAA19]]
 // CHECK-NEXT:    [[TMP0:%.*]] = getelementptr inbounds nuw i8, ptr [[AGG_TMP]], i64 20
 // CHECK-NEXT:    store i32 0, ptr [[TMP0]], align 4
-// CHECK-NEXT:    call void @receive_transparent_union(ptr noundef nonnull align 8 dead_on_return [[AGG_TMP]]) #[[ATTR10]]
+// CHECK-NEXT:    call void @receive_transparent_union(ptr nofree noundef nonnull align 8 dead_on_return dereferenceable(24) [[AGG_TMP]]) #[[ATTR10]]
 // CHECK-NEXT:    ret void
 //
 void call_arg_transparent_union_from_eb(char* __ended_by(new_end) new_start,
@@ -923,7 +897,7 @@ void call_arg_transparent_union_from_eb(char* __ended_by(new_end) new_start,
 // CHECK-NEXT:    store i32 0, ptr [[DOTCOMPOUNDLITERAL_SROA_3_0_BYVAL_TEMP_SROA_IDX]], align 8
 // CHECK-NEXT:    [[DOTCOMPOUNDLITERAL_SROA_4_0_BYVAL_TEMP_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[BYVAL_TEMP]], i64 20
 // CHECK-NEXT:    store i32 0, ptr [[DOTCOMPOUNDLITERAL_SROA_4_0_BYVAL_TEMP_SROA_IDX]], align 4, !tbaa [[TBAA20]]
-// CHECK-NEXT:    call void @receive_transparent_union(ptr noundef nonnull align 8 dead_on_return [[BYVAL_TEMP]]) #[[ATTR10]]
+// CHECK-NEXT:    call void @receive_transparent_union(ptr nofree noundef nonnull align 8 dead_on_return dereferenceable(24) [[BYVAL_TEMP]]) #[[ATTR10]]
 // CHECK-NEXT:    call void @llvm.lifetime.end.p0(ptr nonnull [[BYVAL_TEMP]]) #[[ATTR10]]
 // CHECK-NEXT:    ret void
 //

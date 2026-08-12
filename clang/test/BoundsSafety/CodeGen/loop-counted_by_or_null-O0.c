@@ -51,7 +51,7 @@ void use(int *__bidi_indexable q);
 // CHECK-NEXT:    br label %[[BOUNDSCHECK_CONT]]
 // CHECK:       [[BOUNDSCHECK_CONT]]:
 // CHECK-NEXT:    call void @llvm.memcpy.p0.p0.i64(ptr align 8 [[BYVAL_TEMP]], ptr align 8 [[Q]], i64 24, i1 false)
-// CHECK-NEXT:    call void @use(ptr noundef align 8 dead_on_return [[BYVAL_TEMP]])
+// CHECK-NEXT:    call void @use(ptr nofree noundef align 8 dead_on_return dereferenceable(24) [[BYVAL_TEMP]])
 // CHECK-NEXT:    br label %[[FOR_INC:.*]]
 // CHECK:       [[FOR_INC]]:
 // CHECK-NEXT:    [[TMP11:%.*]] = load i32, ptr [[I]], align 4
