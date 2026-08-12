@@ -1246,9 +1246,32 @@ def requireDarwin(func):
     return requirePlatform(lldbplatform.translate(lldbplatform.darwin_all))(func)
 
 
+def requireMacOS(func):
+    """Mark the item as inherently macOS-only, as opposed to other Darwin
+    platforms (iOS, tvOS, watchOS, ...). Non-macOS targets report
+    UNSUPPORTED."""
+    return requirePlatform(["macosx"])(func)
+
+
 def requireNotDarwin(func):
     """Mark the item as inherently inapplicable to Darwin targets."""
     return requireNotPlatform(lldbplatform.translate(lldbplatform.darwin_all))(func)
+
+
+def requireObjCFoundation(func):
+    """Mark the item as inherently Foundation-only.
+
+    Platforms which only have FoundationEssentials (Linux and Windows) cannot run these tests.
+
+    This is an alias for requireDarwin.
+    """
+    return requireDarwin(func)
+
+
+def requireSwiftObjCInterop(func):
+    """Mark the item as inherently ObjC-only. This is an alias for
+    requireDarwin."""
+    return requireDarwin(func)
 
 
 def requireLinux(func):
@@ -1292,6 +1315,11 @@ def requireMacOS(func):
     platforms (iOS, tvOS, watchOS, ...).
     """
     return requirePlatform(["macosx"])(func)
+
+
+def requireTSAN(func):
+    """Mark the item as requiring a platform which has TSAN."""
+    return requirePOSIX(func)
 
 
 def requireSignals(func):
