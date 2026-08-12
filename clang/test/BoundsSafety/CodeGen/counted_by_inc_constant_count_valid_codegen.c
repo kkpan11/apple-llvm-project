@@ -6,12 +6,12 @@
 
 
 // Now make sure the codegen is as expected and identical with and without the new bounds checks
-// RUN: %clang_cc1 -fbounds-safety -O0 -triple arm64-apple-iphoneos -emit-llvm -fbounds-safety-bringup-missing-checks=all -Wno-bounds-safety-externally-counted-ptr-arith-constant-count %s -o - | FileCheck %s
-// RUN: %clang_cc1 -fbounds-safety -O0 -triple arm64-apple-iphoneos -emit-llvm -fno-bounds-safety-bringup-missing-checks=all -Wno-bounds-safety-externally-counted-ptr-arith-constant-count %s -o - | FileCheck %s
+// RUN: %clang_cc1 -fbounds-safety -O0 -triple arm64-apple-ios -emit-llvm -fbounds-safety-bringup-missing-checks=all -Wno-bounds-safety-externally-counted-ptr-arith-constant-count %s -o - | FileCheck %s
+// RUN: %clang_cc1 -fbounds-safety -O0 -triple arm64-apple-ios -emit-llvm -fno-bounds-safety-bringup-missing-checks=all -Wno-bounds-safety-externally-counted-ptr-arith-constant-count %s -o - | FileCheck %s
 
 
 #include <ptrcheck.h>
-// CHECK-LABEL: define dso_local void @test_cb_const_inc(
+// CHECK-LABEL: define void @test_cb_const_inc(
 // CHECK-SAME: ptr noundef [[P:%.*]]) #[[ATTR0:[0-9]+]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[P_ADDR:%.*]] = alloca ptr, align 8

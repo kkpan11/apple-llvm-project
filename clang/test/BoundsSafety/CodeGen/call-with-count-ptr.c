@@ -3,9 +3,9 @@
 
 
 // RUN: %clang_cc1 -O0 -triple x86_64 -fbounds-safety -Wno-int-conversion -emit-llvm %s -o - | FileCheck %s --check-prefix=CHECK_X64_O0
-// RUN: %clang_cc1 -O0 -triple arm64-apple-iphoneos -fbounds-safety -Wno-int-conversion -emit-llvm %s -o - | FileCheck %s --check-prefix=CHECK_ARM64_O0
+// RUN: %clang_cc1 -O0 -triple arm64-apple-ios -fbounds-safety -Wno-int-conversion -emit-llvm %s -o - | FileCheck %s --check-prefix=CHECK_ARM64_O0
 // RUN: %clang_cc1 -O0 -triple x86_64 -fbounds-safety -x objective-c -fexperimental-bounds-safety-objc -Wno-int-conversion -emit-llvm %s -o - | FileCheck %s --check-prefix=CHECK_X64_O0
-// RUN: %clang_cc1 -O0 -triple arm64-apple-iphoneos -fbounds-safety -Wno-int-conversion -x objective-c -fexperimental-bounds-safety-objc -emit-llvm %s -o - | FileCheck %s --check-prefix=CHECK_ARM64_O0
+// RUN: %clang_cc1 -O0 -triple arm64-apple-ios -fbounds-safety -Wno-int-conversion -x objective-c -fexperimental-bounds-safety-objc -emit-llvm %s -o - | FileCheck %s --check-prefix=CHECK_ARM64_O0
 #include <ptrcheck.h>
 
 #define memmove_(b, ...) __builtin___memmove_chk(b, __VA_ARGS__, b)
@@ -266,7 +266,7 @@ int arr[] = {0, 1, 2, 3, 4, 5};
 // CHECK_X64_O0-NEXT:    [[ADD_PTR132:%.*]] = getelementptr inbounds nuw i8, ptr [[CALL]], i64 24
 // CHECK_X64_O0-NEXT:    ret i32 0
 //
-// CHECK_ARM64_O0-LABEL: define dso_local i32 @foo(
+// CHECK_ARM64_O0-LABEL: define i32 @foo(
 // CHECK_ARM64_O0-SAME: ptr noundef [[BUF:%.*]], ptr noundef [[LEN:%.*]]) #[[ATTR0:[0-9]+]] {
 // CHECK_ARM64_O0-NEXT:  [[ENTRY:.*:]]
 // CHECK_ARM64_O0-NEXT:    [[BUF_ADDR:%.*]] = alloca ptr, align 8

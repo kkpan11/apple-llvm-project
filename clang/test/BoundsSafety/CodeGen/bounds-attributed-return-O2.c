@@ -2,11 +2,11 @@
 
 
 
-// RUN: %clang_cc1 -O2 -triple arm64-apple-iphoneos -fbounds-safety -fbounds-safety-bringup-missing-checks=return_size -emit-llvm %s -o - | FileCheck %s
+// RUN: %clang_cc1 -O2 -triple arm64-apple-ios -fbounds-safety -fbounds-safety-bringup-missing-checks=return_size -emit-llvm %s -o - | FileCheck %s
 
 #include <ptrcheck.h>
 
-// CHECK-LABEL: define dso_local ptr @cb_in_from_bidi(
+// CHECK-LABEL: define ptr @cb_in_from_bidi(
 // CHECK-SAME: i32 noundef [[COUNT:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return dereferenceable(24) [[P:%.*]]) local_unnamed_addr #[[ATTR0:[0-9]+]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[AGG_TEMP_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[P]], align 8
@@ -38,7 +38,7 @@ int *__counted_by(count) cb_in_from_bidi(int count, int *__bidi_indexable p) {
   return p;
 }
 
-// CHECK-LABEL: define dso_local noundef ptr @cb_in_from_indexable(
+// CHECK-LABEL: define noundef ptr @cb_in_from_indexable(
 // CHECK-SAME: i32 noundef [[COUNT:%.*]], [2 x i64] noundef [[P_COERCE:%.*]]) local_unnamed_addr #[[ATTR2:[0-9]+]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[P_COERCE_FCA_0_EXTRACT:%.*]] = extractvalue [2 x i64] [[P_COERCE]], 0
@@ -64,7 +64,7 @@ int *__counted_by(count) cb_in_from_indexable(int count, int *__indexable p) {
   return p;
 }
 
-// CHECK-LABEL: define dso_local noundef ptr @cb_in_from_single(
+// CHECK-LABEL: define noundef ptr @cb_in_from_single(
 // CHECK-SAME: i32 noundef [[COUNT:%.*]], ptr nofree noundef readnone returned captures(ret: address, provenance) [[P:%.*]]) local_unnamed_addr #[[ATTR2]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[SPEC_SELECT:%.*]] = icmp ult i32 [[COUNT]], 2
@@ -79,7 +79,7 @@ int *__counted_by(count) cb_in_from_single(int count, int *__single p) {
   return p;
 }
 
-// CHECK-LABEL: define dso_local noundef ptr @cb_in_from_cb(
+// CHECK-LABEL: define noundef ptr @cb_in_from_cb(
 // CHECK-SAME: i32 noundef [[COUNT:%.*]], ptr nofree noundef readnone returned captures(ret: address, provenance) [[P:%.*]]) local_unnamed_addr #[[ATTR2]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[CMP_NOT:%.*]] = icmp slt i32 [[COUNT]], 0, !annotation [[META5]]
@@ -94,7 +94,7 @@ int *__counted_by(count) cb_in_from_cb(int count, int *__counted_by(count) p) {
   return p;
 }
 
-// CHECK-LABEL: define dso_local noundef ptr @cb_in_from_cb2(
+// CHECK-LABEL: define noundef ptr @cb_in_from_cb2(
 // CHECK-SAME: i32 noundef [[COUNT:%.*]], ptr nofree noundef readnone returned captures(ret: address, provenance) [[P:%.*]], i32 noundef [[LEN:%.*]]) local_unnamed_addr #[[ATTR2]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[CMP_NOT:%.*]] = icmp slt i32 [[LEN]], 0, !annotation [[META5]]
@@ -111,7 +111,7 @@ int *__counted_by(count) cb_in_from_cb2(int count, int *__counted_by(len) p, int
   return p;
 }
 
-// CHECK-LABEL: define dso_local noundef ptr @cb_in_from_cbn(
+// CHECK-LABEL: define noundef ptr @cb_in_from_cbn(
 // CHECK-SAME: i32 noundef [[COUNT:%.*]], ptr noundef returned [[P:%.*]]) local_unnamed_addr #[[ATTR2]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[DOTNOT:%.*]] = icmp eq ptr [[P]], null, !annotation [[META13:![0-9]+]]
@@ -139,7 +139,7 @@ int *__counted_by(count) cb_in_from_cbn(int count, int *__counted_by_or_null(cou
   return p;
 }
 
-// CHECK-LABEL: define dso_local noundef ptr @cb_in_from_cbn2(
+// CHECK-LABEL: define noundef ptr @cb_in_from_cbn2(
 // CHECK-SAME: i32 noundef [[COUNT:%.*]], ptr noundef returned [[P:%.*]], i32 noundef [[LEN:%.*]]) local_unnamed_addr #[[ATTR2]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[DOTNOT:%.*]] = icmp eq ptr [[P]], null, !annotation [[META13]]
@@ -168,7 +168,7 @@ int *__counted_by(count) cb_in_from_cbn2(int count, int *__counted_by_or_null(le
   return p;
 }
 
-// CHECK-LABEL: define dso_local noundef ptr @cb_out_from_single(
+// CHECK-LABEL: define noundef ptr @cb_out_from_single(
 // CHECK-SAME: ptr nofree noundef readonly captures(none) [[COUNT:%.*]], ptr nofree noundef readnone returned captures(ret: address, provenance) [[P:%.*]]) local_unnamed_addr #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[TMP0:%.*]] = load i32, ptr [[COUNT]], align 4, !tbaa [[TBAA1:![0-9]+]]
@@ -184,7 +184,7 @@ int *__counted_by(*count) cb_out_from_single(int *__single count, int *__single 
   return p;
 }
 
-// CHECK-LABEL: define dso_local noundef ptr @cbn_in_from_single(
+// CHECK-LABEL: define noundef ptr @cbn_in_from_single(
 // CHECK-SAME: i32 noundef [[COUNT:%.*]], ptr nofree noundef readnone returned captures(address_is_null, ret: address, provenance) [[P:%.*]]) local_unnamed_addr #[[ATTR2]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[TOBOOL_NOT:%.*]] = icmp eq ptr [[P]], null, !annotation [[META5]]
@@ -201,7 +201,7 @@ int *__counted_by_or_null(count) cbn_in_from_single(int count, int *__single p) 
   return p;
 }
 
-// CHECK-LABEL: define dso_local ptr @sb_in_from_bidi(
+// CHECK-LABEL: define ptr @sb_in_from_bidi(
 // CHECK-SAME: i32 noundef [[SIZE:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return dereferenceable(24) [[P:%.*]]) local_unnamed_addr #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[AGG_TEMP_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[P]], align 8
@@ -232,7 +232,7 @@ void *__sized_by(size) sb_in_from_bidi(int size, void *__bidi_indexable p) {
   return p;
 }
 
-// CHECK-LABEL: define dso_local noundef ptr @sb_in_from_single(
+// CHECK-LABEL: define noundef ptr @sb_in_from_single(
 // CHECK-SAME: i32 noundef [[SIZE:%.*]], ptr nofree noundef readnone returned captures(ret: address, provenance) [[P:%.*]]) local_unnamed_addr #[[ATTR2]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[SPEC_SELECT:%.*]] = icmp ult i32 [[SIZE]], 5
@@ -247,7 +247,7 @@ void *__sized_by(size) sb_in_from_single(int size, int *__single p) {
   return p;
 }
 
-// CHECK-LABEL: define dso_local ptr @eb_in_from_bidi(
+// CHECK-LABEL: define ptr @eb_in_from_bidi(
 // CHECK-SAME: ptr nofree noundef readnone captures(address) [[END:%.*]], ptr nofree noundef readonly align 8 captures(none) dead_on_return dereferenceable(24) [[P:%.*]]) local_unnamed_addr #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[AGG_TEMP_SROA_1_0_P_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[P]], i64 8
@@ -271,7 +271,7 @@ void *__ended_by(end) eb_in_from_bidi(void *__single end, void *__bidi_indexable
   return p;
 }
 
-// CHECK-LABEL: define dso_local noundef ptr @eb_in_from_single(
+// CHECK-LABEL: define noundef ptr @eb_in_from_single(
 // CHECK-SAME: ptr nofree noundef readnone captures(address) [[END:%.*]], ptr nofree noundef readnone returned captures(address, ret: address, provenance) [[P:%.*]]) local_unnamed_addr #[[ATTR2]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[UPPER:%.*]] = getelementptr inbounds nuw i8, ptr [[P]], i64 4, !annotation [[META5]]

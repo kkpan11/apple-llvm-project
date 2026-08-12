@@ -2,14 +2,14 @@
 // REQUIRES: system-darwin
 
 
-// RUN: %clang_cc1 -O0 -triple arm64e-apple-iphoneos -fbounds-safety -emit-llvm %s -o - | FileCheck %s --check-prefix=CHECK
-// RUN: %clang_cc1 -O0 -triple arm64e-apple-iphoneos -fbounds-safety -x objective-c -fexperimental-bounds-safety-objc -emit-llvm %s -o - | FileCheck %s --check-prefix=CHECK
+// RUN: %clang_cc1 -O0 -triple arm64e-apple-ios -fbounds-safety -emit-llvm %s -o - | FileCheck %s --check-prefix=CHECK
+// RUN: %clang_cc1 -O0 -triple arm64e-apple-ios -fbounds-safety -x objective-c -fexperimental-bounds-safety-objc -emit-llvm %s -o - | FileCheck %s --check-prefix=CHECK
 
 #include <ptrcheck.h>
 
 void bar(void *__sized_by(len) buf, int len);
 
-// CHECK-LABEL: define dso_local void @foo(
+// CHECK-LABEL: define void @foo(
 // CHECK-SAME: ptr noundef [[ELEMS:%.*]], i32 noundef [[LEN:%.*]], i32 noundef [[IDX:%.*]]) #[[ATTR0:[0-9]+]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[ELEMS_ADDR:%.*]] = alloca ptr, align 8

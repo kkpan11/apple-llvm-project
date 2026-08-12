@@ -2,8 +2,8 @@
 // REQUIRES: system-darwin
 
 // Note: Specifying the triple seems to be necessary for `update_cc_test_checks.py` to work
-// RUN: %clang_cc1 -O0 -triple arm64-apple-iphoneos -emit-llvm -fbounds-safety -fbounds-safety-bringup-missing-checks=compound_literal_init -Wno-bounds-attributes-init-list-side-effect -Wno-bounds-safety-init-list-partial-null -o - %s | FileCheck %s
-// RUN: %clang_cc1 -O0 -triple arm64-apple-iphoneos -emit-llvm -x objective-c -fexperimental-bounds-safety-objc -fbounds-safety -fbounds-safety-bringup-missing-checks=compound_literal_init -Wno-bounds-attributes-init-list-side-effect -Wno-bounds-safety-init-list-partial-null %s -o - | FileCheck %s
+// RUN: %clang_cc1 -O0 -triple arm64-apple-ios -emit-llvm -fbounds-safety -fbounds-safety-bringup-missing-checks=compound_literal_init -Wno-bounds-attributes-init-list-side-effect -Wno-bounds-safety-init-list-partial-null -o - %s | FileCheck %s
+// RUN: %clang_cc1 -O0 -triple arm64-apple-ios -emit-llvm -x objective-c -fexperimental-bounds-safety-objc -fbounds-safety -fbounds-safety-bringup-missing-checks=compound_literal_init -Wno-bounds-attributes-init-list-side-effect -Wno-bounds-safety-init-list-partial-null %s -o - | FileCheck %s
 
 #include <ptrcheck.h>
 
@@ -58,7 +58,7 @@ void receive_transparent_union(union TransparentUnion);
 // Tests with __bidi_indexable source ptr
 // =============================================================================
 
-// CHECK-LABEL: define dso_local void @assign_via_ptr(
+// CHECK-LABEL: define void @assign_via_ptr(
 // CHECK-SAME: ptr noundef [[PTR:%.*]], ptr nofree noundef align 8 dead_on_return dereferenceable(24) [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) #[[ATTR0:[0-9]+]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[PTR_ADDR:%.*]] = alloca ptr, align 8
@@ -133,7 +133,7 @@ void assign_via_ptr(struct eb* ptr,
   };
 }
 
-// CHECK-LABEL: define dso_local void @assign_operator(
+// CHECK-LABEL: define void @assign_operator(
 // CHECK-SAME: ptr nofree noundef align 8 dead_on_return dereferenceable(24) [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[NEW_START_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
@@ -211,7 +211,7 @@ void assign_operator(char* __bidi_indexable new_start, char* new_end) {
 }
 
 
-// CHECK-LABEL: define dso_local void @local_var_init(
+// CHECK-LABEL: define void @local_var_init(
 // CHECK-SAME: ptr nofree noundef align 8 dead_on_return dereferenceable(24) [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[NEW_START_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
@@ -281,7 +281,7 @@ void local_var_init(char* __bidi_indexable new_start, char* new_end) {
   };
 }
 
-// CHECK-LABEL: define dso_local void @call_arg(
+// CHECK-LABEL: define void @call_arg(
 // CHECK-SAME: ptr nofree noundef align 8 dead_on_return dereferenceable(24) [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[NEW_START_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
@@ -353,7 +353,7 @@ void call_arg(char* __bidi_indexable new_start, char* new_end) {
   });
 }
 
-// CHECK-LABEL: define dso_local [2 x i64] @return_eb(
+// CHECK-LABEL: define [2 x i64] @return_eb(
 // CHECK-SAME: ptr nofree noundef align 8 dead_on_return dereferenceable(24) [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[RETVAL:%.*]] = alloca [[STRUCT_EB:%.*]], align 8
@@ -424,7 +424,7 @@ struct eb return_eb(char* __bidi_indexable new_start, char* new_end) {
   };
 }
 
-// CHECK-LABEL: define dso_local void @construct_not_used(
+// CHECK-LABEL: define void @construct_not_used(
 // CHECK-SAME: ptr nofree noundef align 8 dead_on_return dereferenceable(24) [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[NEW_START_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
@@ -494,7 +494,7 @@ void construct_not_used(char* __bidi_indexable new_start, char* new_end) {
   };
 }
 
-// CHECK-LABEL: define dso_local void @assign_via_ptr_nullptr(
+// CHECK-LABEL: define void @assign_via_ptr_nullptr(
 // CHECK-SAME: ptr noundef [[PTR:%.*]], ptr noundef [[NEW_END:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[PTR_ADDR:%.*]] = alloca ptr, align 8
@@ -541,7 +541,7 @@ void assign_via_ptr_nullptr(struct eb* ptr, char* new_end) {
   };
 }
 
-// CHECK-LABEL: define dso_local void @assign_via_ptr_nested(
+// CHECK-LABEL: define void @assign_via_ptr_nested(
 // CHECK-SAME: ptr noundef [[PTR:%.*]], ptr nofree noundef align 8 dead_on_return dereferenceable(24) [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[PTR_ADDR:%.*]] = alloca ptr, align 8
@@ -622,7 +622,7 @@ void assign_via_ptr_nested(struct nested_eb* ptr,
   };
 }
 
-// CHECK-LABEL: define dso_local void @assign_via_ptr_nested_v2(
+// CHECK-LABEL: define void @assign_via_ptr_nested_v2(
 // CHECK-SAME: ptr noundef [[PTR:%.*]], ptr nofree noundef align 8 dead_on_return dereferenceable(24) [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[PTR_ADDR:%.*]] = alloca ptr, align 8
@@ -703,7 +703,7 @@ void assign_via_ptr_nested_v2(struct nested_eb* ptr,
   };
 }
 
-// CHECK-LABEL: define dso_local void @assign_via_ptr_nested_v3(
+// CHECK-LABEL: define void @assign_via_ptr_nested_v3(
 // CHECK-SAME: ptr noundef [[PTR:%.*]], ptr nofree noundef align 8 dead_on_return dereferenceable(24) [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[PTR_ADDR:%.*]] = alloca ptr, align 8
@@ -839,7 +839,7 @@ void assign_via_ptr_nested_v3(struct nested_and_outer_eb* ptr,
   };
 }
 
-// CHECK-LABEL: define dso_local void @array_of_struct_init(
+// CHECK-LABEL: define void @array_of_struct_init(
 // CHECK-SAME: ptr nofree noundef align 8 dead_on_return dereferenceable(24) [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[NEW_START_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
@@ -966,7 +966,7 @@ void array_of_struct_init(char* __bidi_indexable new_start, char* new_end) {
 }
 
 
-// CHECK-LABEL: define dso_local void @assign_via_ptr_other_data_side_effect(
+// CHECK-LABEL: define void @assign_via_ptr_other_data_side_effect(
 // CHECK-SAME: ptr noundef [[PTR:%.*]], ptr nofree noundef align 8 dead_on_return dereferenceable(24) [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[PTR_ADDR:%.*]] = alloca ptr, align 8
@@ -1049,7 +1049,7 @@ void assign_via_ptr_other_data_side_effect(struct eb_with_other_data* ptr,
   };
 }
 
-// CHECK-LABEL: define dso_local void @assign_via_ptr_other_data_side_effect_zero_ptr(
+// CHECK-LABEL: define void @assign_via_ptr_other_data_side_effect_zero_ptr(
 // CHECK-SAME: ptr noundef [[PTR:%.*]], ptr noundef [[NEW_END:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[PTR_ADDR:%.*]] = alloca ptr, align 8
@@ -1103,7 +1103,7 @@ void assign_via_ptr_other_data_side_effect_zero_ptr(struct eb_with_other_data* p
   };
 }
 
-// CHECK-LABEL: define dso_local void @call_arg_transparent_union(
+// CHECK-LABEL: define void @call_arg_transparent_union(
 // CHECK-SAME: ptr nofree noundef align 8 dead_on_return dereferenceable(24) [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[NEW_START_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
@@ -1182,7 +1182,7 @@ void call_arg_transparent_union(char* __bidi_indexable new_start,
   );
 }
 
-// CHECK-LABEL: define dso_local void @call_arg_transparent_union_untransparently(
+// CHECK-LABEL: define void @call_arg_transparent_union_untransparently(
 // CHECK-SAME: ptr nofree noundef align 8 dead_on_return dereferenceable(24) [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[NEW_START_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
@@ -1270,7 +1270,7 @@ void call_arg_transparent_union_untransparently(
 // Tests with __ended_by source ptr
 // =============================================================================
 
-// CHECK-LABEL: define dso_local void @assign_via_ptr_from_eb(
+// CHECK-LABEL: define void @assign_via_ptr_from_eb(
 // CHECK-SAME: ptr noundef [[PTR:%.*]], ptr noundef [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[PTR_ADDR:%.*]] = alloca ptr, align 8
@@ -1387,7 +1387,7 @@ void assign_via_ptr_from_eb(struct eb* ptr,
   };
 }
 
-// CHECK-LABEL: define dso_local void @assign_operator_from_eb(
+// CHECK-LABEL: define void @assign_operator_from_eb(
 // CHECK-SAME: ptr noundef [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[NEW_START_ADDR:%.*]] = alloca ptr, align 8
@@ -1507,7 +1507,7 @@ void assign_operator_from_eb(char* __ended_by(new_end) new_start, char* new_end)
 }
 
 
-// CHECK-LABEL: define dso_local void @local_var_init_from_eb(
+// CHECK-LABEL: define void @local_var_init_from_eb(
 // CHECK-SAME: ptr noundef [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[NEW_START_ADDR:%.*]] = alloca ptr, align 8
@@ -1619,7 +1619,7 @@ void local_var_init_from_eb(char* __ended_by(new_end) new_start, char* new_end) 
   };
 }
 
-// CHECK-LABEL: define dso_local void @call_arg_from_eb(
+// CHECK-LABEL: define void @call_arg_from_eb(
 // CHECK-SAME: ptr noundef [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[NEW_START_ADDR:%.*]] = alloca ptr, align 8
@@ -1733,7 +1733,7 @@ void call_arg_from_eb(char* __ended_by(new_end) new_start, char* new_end) {
   });
 }
 
-// CHECK-LABEL: define dso_local [2 x i64] @return_eb_from_eb(
+// CHECK-LABEL: define [2 x i64] @return_eb_from_eb(
 // CHECK-SAME: ptr noundef [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[RETVAL:%.*]] = alloca [[STRUCT_EB:%.*]], align 8
@@ -1846,7 +1846,7 @@ struct eb return_eb_from_eb(char* __ended_by(new_end) new_start, char* new_end) 
   };
 }
 
-// CHECK-LABEL: define dso_local void @construct_not_used_from_eb(
+// CHECK-LABEL: define void @construct_not_used_from_eb(
 // CHECK-SAME: ptr noundef [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[NEW_START_ADDR:%.*]] = alloca ptr, align 8
@@ -1958,7 +1958,7 @@ void construct_not_used_from_eb(char* __ended_by(new_end) new_start, char* new_e
   };
 }
 
-// CHECK-LABEL: define dso_local void @assign_via_ptr_nullptr_from_eb(
+// CHECK-LABEL: define void @assign_via_ptr_nullptr_from_eb(
 // CHECK-SAME: ptr noundef [[PTR:%.*]], ptr noundef [[NEW_END:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[PTR_ADDR:%.*]] = alloca ptr, align 8
@@ -2005,7 +2005,7 @@ void assign_via_ptr_nullptr_from_eb(struct eb* ptr, char* new_end) {
   };
 }
 
-// CHECK-LABEL: define dso_local void @assign_via_ptr_nested_from_eb(
+// CHECK-LABEL: define void @assign_via_ptr_nested_from_eb(
 // CHECK-SAME: ptr noundef [[PTR:%.*]], ptr noundef [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[PTR_ADDR:%.*]] = alloca ptr, align 8
@@ -2128,7 +2128,7 @@ void assign_via_ptr_nested_from_eb(struct nested_eb* ptr,
   };
 }
 
-// CHECK-LABEL: define dso_local void @assign_via_ptr_nested_v2_from_eb(
+// CHECK-LABEL: define void @assign_via_ptr_nested_v2_from_eb(
 // CHECK-SAME: ptr noundef [[PTR:%.*]], ptr noundef [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[PTR_ADDR:%.*]] = alloca ptr, align 8
@@ -2251,7 +2251,7 @@ void assign_via_ptr_nested_v2_from_eb(struct nested_eb* ptr,
   };
 }
 
-// CHECK-LABEL: define dso_local void @array_of_struct_init_from_eb(
+// CHECK-LABEL: define void @array_of_struct_init_from_eb(
 // CHECK-SAME: ptr noundef [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[NEW_START_ADDR:%.*]] = alloca ptr, align 8
@@ -2420,7 +2420,7 @@ void array_of_struct_init_from_eb(char* __ended_by(new_end) new_start, char* new
 }
 
 
-// CHECK-LABEL: define dso_local void @assign_via_ptr_other_data_side_effect_from_eb(
+// CHECK-LABEL: define void @assign_via_ptr_other_data_side_effect_from_eb(
 // CHECK-SAME: ptr noundef [[PTR:%.*]], ptr noundef [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[PTR_ADDR:%.*]] = alloca ptr, align 8
@@ -2545,7 +2545,7 @@ void assign_via_ptr_other_data_side_effect_from_eb(struct eb_with_other_data* pt
   };
 }
 
-// CHECK-LABEL: define dso_local void @assign_via_ptr_other_data_side_effect_zero_ptr_from_eb(
+// CHECK-LABEL: define void @assign_via_ptr_other_data_side_effect_zero_ptr_from_eb(
 // CHECK-SAME: ptr noundef [[PTR:%.*]], ptr noundef [[NEW_END:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[PTR_ADDR:%.*]] = alloca ptr, align 8
@@ -2599,7 +2599,7 @@ void assign_via_ptr_other_data_side_effect_zero_ptr_from_eb(struct eb_with_other
   };
 }
 
-// CHECK-LABEL: define dso_local void @call_arg_transparent_union_from_eb(
+// CHECK-LABEL: define void @call_arg_transparent_union_from_eb(
 // CHECK-SAME: ptr noundef [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[NEW_START_ADDR:%.*]] = alloca ptr, align 8
@@ -2720,7 +2720,7 @@ void call_arg_transparent_union_from_eb(char* __ended_by(new_end) new_start,
   );
 }
 
-// CHECK-LABEL: define dso_local void @call_arg_transparent_union_untransparently_from_eb(
+// CHECK-LABEL: define void @call_arg_transparent_union_untransparently_from_eb(
 // CHECK-SAME: ptr noundef [[NEW_START:%.*]], ptr noundef [[NEW_END:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[NEW_START_ADDR:%.*]] = alloca ptr, align 8
