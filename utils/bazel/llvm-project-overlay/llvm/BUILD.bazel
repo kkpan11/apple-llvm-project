@@ -2402,6 +2402,7 @@ cc_library(
         ":TransformUtils",
         ":asm_printer_defs",
         ":config",
+        ":runtime_libcalls_gen",
         ":vt_gen",
     ],
 )
