@@ -53,7 +53,7 @@
 // UNOPT-TFR: @[[GLOB0:[0-9]+]] = private unnamed_addr constant { i16, i16, [6 x i8] } { i16 0, i16 11, [6 x i8] c"'int'\00" }
 //.
 // UNOPT-LABEL: define dso_local i32 @read(
-// UNOPT-SAME: ptr noundef align 8 dead_on_return [[PTR:%.*]], i32 noundef [[IDX:%.*]], i32 noundef [[OTHER:%.*]]) #[[ATTR0:[0-9]+]] {
+// UNOPT-SAME: ptr nofree noundef align 8 dead_on_return dereferenceable(24) [[PTR:%.*]], i32 noundef [[IDX:%.*]], i32 noundef [[OTHER:%.*]]) #[[ATTR0:[0-9]+]] {
 // UNOPT-NEXT:  [[ENTRY:.*:]]
 // UNOPT-NEXT:    [[PTR_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
 // UNOPT-NEXT:    [[IDX_ADDR:%.*]] = alloca i32, align 4
@@ -108,7 +108,7 @@
 // UNOPT-NEXT:    ret i32 [[TMP11]]
 //
 // UNOPT-TF-LABEL: define dso_local i32 @read(
-// UNOPT-TF-SAME: ptr noundef align 8 dead_on_return [[PTR:%.*]], i32 noundef [[IDX:%.*]], i32 noundef [[OTHER:%.*]]) #[[ATTR0:[0-9]+]] {
+// UNOPT-TF-SAME: ptr nofree noundef align 8 dead_on_return dereferenceable(24) [[PTR:%.*]], i32 noundef [[IDX:%.*]], i32 noundef [[OTHER:%.*]]) #[[ATTR0:[0-9]+]] {
 // UNOPT-TF-NEXT:  [[ENTRY:.*:]]
 // UNOPT-TF-NEXT:    [[PTR_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
 // UNOPT-TF-NEXT:    [[IDX_ADDR:%.*]] = alloca i32, align 4
@@ -163,7 +163,7 @@
 // UNOPT-TF-NEXT:    ret i32 [[TMP11]]
 //
 // UNOPT-TFR-LABEL: define dso_local i32 @read(
-// UNOPT-TFR-SAME: ptr noundef align 8 dead_on_return [[PTR:%.*]], i32 noundef [[IDX:%.*]], i32 noundef [[OTHER:%.*]]) #[[ATTR0:[0-9]+]] {
+// UNOPT-TFR-SAME: ptr nofree noundef align 8 dead_on_return dereferenceable(24) [[PTR:%.*]], i32 noundef [[IDX:%.*]], i32 noundef [[OTHER:%.*]]) #[[ATTR0:[0-9]+]] {
 // UNOPT-TFR-NEXT:  [[ENTRY:.*:]]
 // UNOPT-TFR-NEXT:    [[PTR_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
 // UNOPT-TFR-NEXT:    [[IDX_ADDR:%.*]] = alloca i32, align 4
@@ -218,7 +218,7 @@
 // UNOPT-TFR-NEXT:    ret i32 [[TMP11]]
 //
 // OPT-LABEL: define dso_local i32 @read(
-// OPT-SAME: ptr nofree noundef readonly align 8 captures(none) dead_on_return [[PTR:%.*]], i32 noundef [[IDX:%.*]], i32 noundef [[OTHER:%.*]]) local_unnamed_addr #[[ATTR0:[0-9]+]] {
+// OPT-SAME: ptr nofree noundef readonly align 8 captures(none) dead_on_return dereferenceable(24) [[PTR:%.*]], i32 noundef [[IDX:%.*]], i32 noundef [[OTHER:%.*]]) local_unnamed_addr #[[ATTR0:[0-9]+]] {
 // OPT-NEXT:  [[ENTRY:.*:]]
 // OPT-NEXT:    [[TMP0:%.*]] = tail call { i32, i1 } @llvm.sadd.with.overflow.i32(i32 [[IDX]], i32 [[OTHER]]), !nosanitize [[META5:![0-9]+]]
 // OPT-NEXT:    [[TMP1:%.*]] = extractvalue { i32, i1 } [[TMP0]], 1, !nosanitize [[META5]]
@@ -289,36 +289,48 @@ int read(int* __bidi_indexable ptr, int idx, int other) {
 // OPT: attributes #[[ATTR3]] = { nomerge noreturn nounwind }
 // OPT: attributes #[[ATTR4]] = { nomerge nounwind }
 //.
+// UNOPT: [[META17:![0-9]+]] = !{i32 1, !"ptrauth-elf-got", i32 0}
+// UNOPT: [[META18:![0-9]+]] = !{i32 1, !"ptrauth-init-fini", i32 0}
+// UNOPT: [[META19:![0-9]+]] = !{i32 1, !"ptrauth-init-fini-address-discrimination", i32 0}
 // UNOPT: [[META0:![0-9]+]] = !{!"{{.*}}clang version {{.*}}"}
 // UNOPT: [[META1]] = !{}
 // UNOPT: [[META2:![0-9]+]] = !{!"branch_weights", i32 1048575, i32 1}
 // UNOPT: [[META3]] = !{!"bounds-safety-check-ptr-le-upper-bound"}
 // UNOPT: [[META4]] = !{!"bounds-safety-check-ptr-ge-lower-bound"}
 //.
+// UNOPT-TF: [[META17:![0-9]+]] = !{i32 1, !"ptrauth-elf-got", i32 0}
+// UNOPT-TF: [[META18:![0-9]+]] = !{i32 1, !"ptrauth-init-fini", i32 0}
+// UNOPT-TF: [[META19:![0-9]+]] = !{i32 1, !"ptrauth-init-fini-address-discrimination", i32 0}
 // UNOPT-TF: [[META0:![0-9]+]] = !{!"{{.*}}clang version {{.*}}"}
 // UNOPT-TF: [[META1]] = !{}
 // UNOPT-TF: [[META2:![0-9]+]] = !{!"branch_weights", i32 1048575, i32 1}
 // UNOPT-TF: [[META3]] = !{!"bounds-safety-check-ptr-le-upper-bound"}
 // UNOPT-TF: [[META4]] = !{!"bounds-safety-check-ptr-ge-lower-bound"}
 //.
+// UNOPT-TFR: [[META17:![0-9]+]] = !{i32 1, !"ptrauth-elf-got", i32 0}
+// UNOPT-TFR: [[META18:![0-9]+]] = !{i32 1, !"ptrauth-init-fini", i32 0}
+// UNOPT-TFR: [[META19:![0-9]+]] = !{i32 1, !"ptrauth-init-fini-address-discrimination", i32 0}
 // UNOPT-TFR: [[META0:![0-9]+]] = !{!"{{.*}}clang version {{.*}}"}
 // UNOPT-TFR: [[META1]] = !{}
 // UNOPT-TFR: [[META2:![0-9]+]] = !{!"branch_weights", i32 1048575, i32 1}
 // UNOPT-TFR: [[META3]] = !{!"bounds-safety-check-ptr-le-upper-bound"}
 // UNOPT-TFR: [[META4]] = !{!"bounds-safety-check-ptr-ge-lower-bound"}
 //.
+// OPT: [[META17:![0-9]+]] = !{i32 1, !"ptrauth-elf-got", i32 0}
+// OPT: [[META18:![0-9]+]] = !{i32 1, !"ptrauth-init-fini", i32 0}
+// OPT: [[META19:![0-9]+]] = !{i32 1, !"ptrauth-init-fini-address-discrimination", i32 0}
 // OPT: [[META0:![0-9]+]] = !{!"{{.*}}clang version {{.*}}"}
-// OPT: [[ERRNO_TBAA:![0-9]+]] = !{[[META_ERRNO:![0-9]+]], [[META2:![0-9]+]], i64 0}
-// OPT: [[META_ERRNO]] = !{!"__libc_errno", [[META2]], i64 0}
-// OPT: [[META2]] = !{!"int", [[META3:![0-9]+]], i64 0}
-// OPT: [[META3]] = !{!"omnipotent char", [[META4:![0-9]+]], i64 0}
-// OPT: [[META4]] = !{!"Simple C/C++ TBAA"}
+// OPT: [[META1:![0-9]+]] = !{[[META2:![0-9]+]], [[META3:![0-9]+]], i64 0}
+// OPT: [[META2]] = !{!"__libc_errno", [[META3]], i64 0}
+// OPT: [[META3]] = !{!"int", [[META4:![0-9]+]], i64 0}
+// OPT: [[META4]] = !{!"omnipotent char", [[META20:![0-9]+]], i64 0}
+// OPT: [[META20]] = !{!"Simple C/C++ TBAA"}
 // OPT: [[META5]] = !{}
 // OPT: [[META6:![0-9]+]] = !{!"branch_weights", i32 1, i32 1048575}
 // OPT: [[INTPTR_TBAA7]] = !{[[META8:![0-9]+]], [[META8]], i64 0}
 // OPT: [[META8]] = !{!"p1 int", [[META9:![0-9]+]], i64 0}
-// OPT: [[META9]] = !{!"any pointer", [[META3]], i64 0}
+// OPT: [[META9]] = !{!"any pointer", [[META4]], i64 0}
 // OPT: [[META10]] = !{!"bounds-safety-check-ptr-le-upper-bound"}
 // OPT: [[META11]] = !{!"bounds-safety-check-ptr-ge-lower-bound"}
-// OPT: [[INT_TBAA1]] = !{[[META2]], [[META2]], i64 0}
+// OPT: [[INT_TBAA1]] = !{[[META3]], [[META3]], i64 0}
 //.
