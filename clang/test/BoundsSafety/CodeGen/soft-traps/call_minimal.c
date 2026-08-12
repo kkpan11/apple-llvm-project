@@ -16,7 +16,7 @@
 #include <ptrcheck.h>
 
 // UNOPT-LABEL: define dso_local i32 @read(
-// UNOPT-SAME: ptr noundef align 8 dead_on_return [[PTR:%.*]], i32 noundef [[IDX:%.*]]) #[[ATTR0:[0-9]+]] {
+// UNOPT-SAME: ptr nofree noundef align 8 dead_on_return dereferenceable(24) [[PTR:%.*]], i32 noundef [[IDX:%.*]]) #[[ATTR0:[0-9]+]] {
 // UNOPT-NEXT:  [[ENTRY:.*:]]
 // UNOPT-NEXT:    [[PTR_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
 // UNOPT-NEXT:    [[IDX_ADDR:%.*]] = alloca i32, align 4
@@ -46,17 +46,17 @@
 // UNOPT-NEXT:    call preserve_allcc void @__bounds_safety_soft_trap() #[[ATTR2]], !annotation [[META1]]
 // UNOPT-NEXT:    br label %[[CONT2]], !annotation [[META1]]
 // UNOPT:       [[CONT2]]:
-// UNOPT-NEXT:    [[TMP4:%.*]] = icmp uge ptr [[ARRAYIDX]], [[WIDE_PTR_LB]], !annotation [[META3:![0-9]+]]
-// UNOPT-NEXT:    br i1 [[TMP4]], label %[[CONT4:.*]], label %[[TRAP3:.*]], !prof [[PROF2]], !annotation [[META3]]
+// UNOPT-NEXT:    [[TMP4:%.*]] = icmp uge ptr [[ARRAYIDX]], [[WIDE_PTR_LB]], !annotation [[META2:![0-9]+]]
+// UNOPT-NEXT:    br i1 [[TMP4]], label %[[CONT4:.*]], label %[[TRAP3:.*]], !prof [[PROF2]], !annotation [[META2]]
 // UNOPT:       [[TRAP3]]:
-// UNOPT-NEXT:    call preserve_allcc void @__bounds_safety_soft_trap() #[[ATTR2]], !annotation [[META3]]
-// UNOPT-NEXT:    br label %[[CONT4]], !annotation [[META3]]
+// UNOPT-NEXT:    call preserve_allcc void @__bounds_safety_soft_trap() #[[ATTR2]], !annotation [[META2]]
+// UNOPT-NEXT:    br label %[[CONT4]], !annotation [[META2]]
 // UNOPT:       [[CONT4]]:
 // UNOPT-NEXT:    [[TMP5:%.*]] = load i32, ptr [[ARRAYIDX]], align 4
 // UNOPT-NEXT:    ret i32 [[TMP5]]
 //
 // OPT-LABEL: define dso_local i32 @read(
-// OPT-SAME: ptr nofree noundef readonly align 8 captures(none) dead_on_return [[PTR:%.*]], i32 noundef [[IDX:%.*]]) local_unnamed_addr #[[ATTR0:[0-9]+]] {
+// OPT-SAME: ptr nofree noundef readonly align 8 captures(none) dead_on_return dereferenceable(24) [[PTR:%.*]], i32 noundef [[IDX:%.*]]) local_unnamed_addr #[[ATTR0:[0-9]+]] {
 // OPT-NEXT:  [[ENTRY:.*:]]
 // OPT-NEXT:    [[AGG_TEMP_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[PTR]], align 8
 // OPT-NEXT:    [[AGG_TEMP_SROA_2_0_PTR_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[PTR]], i64 8
@@ -102,13 +102,19 @@ int read(int* __bidi_indexable ptr, int idx) {
 // OPT: attributes #[[ATTR0]] = { nounwind "no-trapping-math"="true" "stack-protector-buffer-size"="8" }
 // OPT: attributes #[[ATTR1]] = { nomerge nounwind }
 //.
+// UNOPT: [[META16:![0-9]+]] = !{i32 1, !"ptrauth-elf-got", i32 0}
+// UNOPT: [[META17:![0-9]+]] = !{i32 1, !"ptrauth-init-fini", i32 0}
+// UNOPT: [[META18:![0-9]+]] = !{i32 1, !"ptrauth-init-fini-address-discrimination", i32 0}
 // UNOPT: [[META0:![0-9]+]] = !{!"{{.*}}clang version {{.*}}"}
 // UNOPT: [[META1]] = !{!"bounds-safety-check-ptr-le-upper-bound"}
 // UNOPT: [[PROF2]] = !{!"branch_weights", i32 1048575, i32 1}
-// UNOPT: [[META3]] = !{!"bounds-safety-check-ptr-ge-lower-bound"}
+// UNOPT: [[META2]] = !{!"bounds-safety-check-ptr-ge-lower-bound"}
 //.
+// OPT: [[META16:![0-9]+]] = !{i32 1, !"ptrauth-elf-got", i32 0}
+// OPT: [[META17:![0-9]+]] = !{i32 1, !"ptrauth-init-fini", i32 0}
+// OPT: [[META18:![0-9]+]] = !{i32 1, !"ptrauth-init-fini-address-discrimination", i32 0}
 // OPT: [[META0:![0-9]+]] = !{!"{{.*}}clang version {{.*}}"}
-// OPT: [[ERRNO_TBAA:![0-9]+]] = !{[[META_ERRNO:![0-9]+]], [[META2:![0-9]+]], i64 0}
+// OPT: [[META1:![0-9]+]] = !{[[META_ERRNO:![0-9]+]], [[META2:![0-9]+]], i64 0}
 // OPT: [[META_ERRNO]] = !{!"__libc_errno", [[META2]], i64 0}
 // OPT: [[META2]] = !{!"int", [[META3:![0-9]+]], i64 0}
 // OPT: [[META3]] = !{!"omnipotent char", [[META4:![0-9]+]], i64 0}

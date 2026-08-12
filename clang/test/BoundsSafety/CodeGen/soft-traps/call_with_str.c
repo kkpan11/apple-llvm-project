@@ -38,7 +38,7 @@
 // OPT: @trap.reason.2 = private unnamed_addr constant [41 x i8] c"indexing below lower bound in 'ptr[idx]'\00", align 4
 //.
 // UNOPT-LABEL: define dso_local i32 @read(
-// UNOPT-SAME: ptr noundef align 8 dead_on_return [[PTR:%.*]], i32 noundef [[IDX:%.*]]) #[[ATTR0:[0-9]+]] {
+// UNOPT-SAME: ptr nofree noundef align 8 dead_on_return dereferenceable(24) [[PTR:%.*]], i32 noundef [[IDX:%.*]]) #[[ATTR0:[0-9]+]] {
 // UNOPT-NEXT:  [[ENTRY:.*:]]
 // UNOPT-NEXT:    [[PTR_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
 // UNOPT-NEXT:    [[IDX_ADDR:%.*]] = alloca i32, align 4
@@ -78,7 +78,7 @@
 // UNOPT-NEXT:    ret i32 [[TMP5]]
 //
 // UNOPT-TF-LABEL: define dso_local i32 @read(
-// UNOPT-TF-SAME: ptr noundef align 8 dead_on_return [[PTR:%.*]], i32 noundef [[IDX:%.*]]) #[[ATTR0:[0-9]+]] {
+// UNOPT-TF-SAME: ptr nofree noundef align 8 dead_on_return dereferenceable(24) [[PTR:%.*]], i32 noundef [[IDX:%.*]]) #[[ATTR0:[0-9]+]] {
 // UNOPT-TF-NEXT:  [[ENTRY:.*:]]
 // UNOPT-TF-NEXT:    [[PTR_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
 // UNOPT-TF-NEXT:    [[IDX_ADDR:%.*]] = alloca i32, align 4
@@ -118,7 +118,7 @@
 // UNOPT-TF-NEXT:    ret i32 [[TMP5]]
 //
 // OPT-LABEL: define dso_local i32 @read(
-// OPT-SAME: ptr nofree noundef readonly align 8 captures(none) dead_on_return [[PTR:%.*]], i32 noundef [[IDX:%.*]]) local_unnamed_addr #[[ATTR0:[0-9]+]] {
+// OPT-SAME: ptr nofree noundef readonly align 8 captures(none) dead_on_return dereferenceable(24) [[PTR:%.*]], i32 noundef [[IDX:%.*]]) local_unnamed_addr #[[ATTR0:[0-9]+]] {
 // OPT-NEXT:  [[ENTRY:.*:]]
 // OPT-NEXT:    [[AGG_TEMP_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[PTR]], align 8
 // OPT-NEXT:    [[AGG_TEMP_SROA_2_0_PTR_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[PTR]], i64 8
@@ -420,30 +420,39 @@ int read_cb(int*__counted_by(count) ptr, int count) {
 // OPT: attributes #[[ATTR2]] = { nomerge nounwind }
 // OPT: attributes #[[ATTR3]] = { nounwind }
 //.
+// UNOPT: [[META17:![0-9]+]] = !{i32 1, !"ptrauth-elf-got", i32 0}
+// UNOPT: [[META18:![0-9]+]] = !{i32 1, !"ptrauth-init-fini", i32 0}
+// UNOPT: [[META2:![0-9]+]] = !{i32 1, !"ptrauth-init-fini-address-discrimination", i32 0}
 // UNOPT: [[META0:![0-9]+]] = !{!"{{.*}}clang version {{.*}}"}
 // UNOPT: [[META1]] = !{!"bounds-safety-check-ptr-le-upper-bound"}
-// UNOPT: [[META2:![0-9]+]] = !{!"branch_weights", i32 1048575, i32 1}
+// UNOPT: [[META_ERRNO:![0-9]+]] = !{!"branch_weights", i32 1048575, i32 1}
 // UNOPT: [[META3]] = !{!"bounds-safety-check-ptr-ge-lower-bound"}
 // UNOPT: [[META4]] = !{!"bounds-safety-generic"}
 //.
+// UNOPT-TF: [[META17:![0-9]+]] = !{i32 1, !"ptrauth-elf-got", i32 0}
+// UNOPT-TF: [[META18:![0-9]+]] = !{i32 1, !"ptrauth-init-fini", i32 0}
+// UNOPT-TF: [[META2:![0-9]+]] = !{i32 1, !"ptrauth-init-fini-address-discrimination", i32 0}
 // UNOPT-TF: [[META0:![0-9]+]] = !{!"{{.*}}clang version {{.*}}"}
 // UNOPT-TF: [[META1]] = !{!"bounds-safety-check-ptr-le-upper-bound"}
-// UNOPT-TF: [[META2:![0-9]+]] = !{!"branch_weights", i32 1048575, i32 1}
+// UNOPT-TF: [[META_ERRNO:![0-9]+]] = !{!"branch_weights", i32 1048575, i32 1}
 // UNOPT-TF: [[META3]] = !{!"bounds-safety-check-ptr-ge-lower-bound"}
 // UNOPT-TF: [[META4]] = !{!"bounds-safety-generic"}
 //.
+// OPT: [[META17:![0-9]+]] = !{i32 1, !"ptrauth-elf-got", i32 0}
+// OPT: [[META18:![0-9]+]] = !{i32 1, !"ptrauth-init-fini", i32 0}
+// OPT: [[META2:![0-9]+]] = !{i32 1, !"ptrauth-init-fini-address-discrimination", i32 0}
 // OPT: [[META0:![0-9]+]] = !{!"{{.*}}clang version {{.*}}"}
-// OPT: [[ERRNO_TBAA:![0-9]+]] = !{[[META_ERRNO:![0-9]+]], [[META2:![0-9]+]], i64 0}
-// OPT: [[META_ERRNO]] = !{!"__libc_errno", [[META2]], i64 0}
-// OPT: [[META2]] = !{!"int", [[META3:![0-9]+]], i64 0}
-// OPT: [[META3]] = !{!"omnipotent char", [[META4:![0-9]+]], i64 0}
-// OPT: [[META4]] = !{!"Simple C/C++ TBAA"}
+// OPT: [[META1:![0-9]+]] = !{[[META_ERRNO:![0-9]+]], [[META3:![0-9]+]], i64 0}
+// OPT: [[META_ERRNO]] = !{!"__libc_errno", [[META3]], i64 0}
+// OPT: [[META3]] = !{!"int", [[META4:![0-9]+]], i64 0}
+// OPT: [[META4]] = !{!"omnipotent char", [[META19:![0-9]+]], i64 0}
+// OPT: [[META19]] = !{!"Simple C/C++ TBAA"}
 // OPT: [[INTPTR_TBAA5]] = !{[[META6:![0-9]+]], [[META6]], i64 0}
 // OPT: [[META6]] = !{!"p1 int", [[META7:![0-9]+]], i64 0}
-// OPT: [[META7]] = !{!"any pointer", [[META3]], i64 0}
+// OPT: [[META7]] = !{!"any pointer", [[META4]], i64 0}
 // OPT: [[META8]] = !{!"bounds-safety-check-ptr-le-upper-bound"}
 // OPT: [[META9:![0-9]+]] = !{!"branch_weights", i32 1, i32 1048575}
 // OPT: [[META10]] = !{!"bounds-safety-check-ptr-ge-lower-bound"}
-// OPT: [[INT_TBAA1]] = !{[[META2]], [[META2]], i64 0}
+// OPT: [[INT_TBAA1]] = !{[[META3]], [[META3]], i64 0}
 // OPT: [[META11]] = !{!"bounds-safety-generic"}
 //.
