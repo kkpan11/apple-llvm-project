@@ -9,7 +9,7 @@
 #include <ptrcheck.h>
 
 // OPT0-LABEL: define i32 @consume(
-// OPT0-SAME: ptr noundef align 8 dead_on_return [[PTR:%.*]], i32 noundef [[IDX:%.*]]) #[[ATTR0:[0-9]+]] {
+// OPT0-SAME: ptr nofree noundef align 8 dead_on_return dereferenceable(24) [[PTR:%.*]], i32 noundef [[IDX:%.*]]) #[[ATTR0:[0-9]+]] {
 // OPT0-NEXT:  [[ENTRY:.*:]]
 // OPT0-NEXT:    [[PTR_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
 // OPT0-NEXT:    [[IDX_ADDR:%.*]] = alloca i32, align 4
@@ -39,17 +39,17 @@
 // OPT0-NEXT:    call void @llvm.ubsantrap(i8 25) #[[ATTR3]], !annotation [[META2]]
 // OPT0-NEXT:    unreachable, !annotation [[META2]]
 // OPT0:       [[CONT2]]:
-// OPT0-NEXT:    [[TMP4:%.*]] = icmp uge ptr [[ARRAYIDX]], [[WIDE_PTR_LB]], !annotation [[META4:![0-9]+]]
-// OPT0-NEXT:    br i1 [[TMP4]], label %[[CONT4:.*]], label %[[TRAP3:.*]], !prof [[PROF3]], !annotation [[META4]]
+// OPT0-NEXT:    [[TMP4:%.*]] = icmp uge ptr [[ARRAYIDX]], [[WIDE_PTR_LB]], !annotation [[META3:![0-9]+]]
+// OPT0-NEXT:    br i1 [[TMP4]], label %[[CONT4:.*]], label %[[TRAP3:.*]], !prof [[PROF3]], !annotation [[META3]]
 // OPT0:       [[TRAP3]]:
-// OPT0-NEXT:    call void @llvm.ubsantrap(i8 25) #[[ATTR3]], !annotation [[META4]]
-// OPT0-NEXT:    unreachable, !annotation [[META4]]
+// OPT0-NEXT:    call void @llvm.ubsantrap(i8 25) #[[ATTR3]], !annotation [[META3]]
+// OPT0-NEXT:    unreachable, !annotation [[META3]]
 // OPT0:       [[CONT4]]:
 // OPT0-NEXT:    [[TMP5:%.*]] = load i32, ptr [[ARRAYIDX]], align 4
 // OPT0-NEXT:    ret i32 [[TMP5]]
 //
 // OPT2-LABEL: define i32 @consume(
-// OPT2-SAME: ptr noundef align 8 dead_on_return [[PTR:%.*]], i32 noundef [[IDX:%.*]]) #[[ATTR0:[0-9]+]] {
+// OPT2-SAME: ptr nofree noundef align 8 dead_on_return dereferenceable(24) [[PTR:%.*]], i32 noundef [[IDX:%.*]]) #[[ATTR0:[0-9]+]] {
 // OPT2-NEXT:  [[ENTRY:.*:]]
 // OPT2-NEXT:    [[PTR_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
 // OPT2-NEXT:    [[IDX_ADDR:%.*]] = alloca i32, align 4
@@ -99,10 +99,10 @@ int consume(int* __bidi_indexable ptr, int idx) {
 // OPT0: [[META1:![0-9]+]] = !{!"{{.*}}clang version {{.*}}"}
 // OPT0: [[META2]] = !{!"bounds-safety-check-ptr-le-upper-bound"}
 // OPT0: [[PROF3]] = !{!"branch_weights", i32 1048575, i32 1}
-// OPT0: [[META4]] = !{!"bounds-safety-check-ptr-ge-lower-bound"}
+// OPT0: [[META3]] = !{!"bounds-safety-check-ptr-ge-lower-bound"}
 //.
 // OPT2: [[META1:![0-9]+]] = !{!"{{.*}}clang version {{.*}}"}
-// OPT2: [[ERRNO_TBAA:![0-9]+]] = !{[[META_ERRNO:![0-9]+]], [[META3:![0-9]+]], i64 0}
+// OPT2: [[META2:![0-9]+]] = !{[[META_ERRNO:![0-9]+]], [[META3:![0-9]+]], i64 0}
 // OPT2: [[META_ERRNO]] = !{!"__libc_errno", [[META3]], i64 0}
 // OPT2: [[META3]] = !{!"int", [[META4:![0-9]+]], i64 0}
 // OPT2: [[META4]] = !{!"omnipotent char", [[META5:![0-9]+]], i64 0}
