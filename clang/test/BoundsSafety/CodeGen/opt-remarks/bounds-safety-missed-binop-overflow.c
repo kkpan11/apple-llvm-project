@@ -1,6 +1,6 @@
 
 
-// RUN: %clang_cc1 -fbounds-safety -Os %s -triple arm64-apple-iphoneos -emit-llvm -o %t-Os.s -opt-record-file %t-Os.opt.yaml -opt-record-format yaml
+// RUN: %clang_cc1 -fbounds-safety -Os %s -triple arm64-apple-ios -emit-llvm -o %t-Os.s -opt-record-file %t-Os.opt.yaml -opt-record-format yaml
 // RUN: FileCheck --input-file %t-Os.opt.yaml --check-prefixes OPT-REM %s
 // XFAIL: true
 // FIXME: rdar://137714109

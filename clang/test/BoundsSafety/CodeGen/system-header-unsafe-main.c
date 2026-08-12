@@ -2,12 +2,12 @@
 
 #include "../AST/SystemHeaders/include/system-header-unsafe-sys.h"
 
-// RUN: %clang_cc1 -fbounds-safety  %s -O0 -triple arm64-apple-iphoneos -emit-llvm -o - | FileCheck %s
+// RUN: %clang_cc1 -fbounds-safety  %s -O0 -triple arm64-apple-ios -emit-llvm -o - | FileCheck %s
 
 void func(char * __unsafe_indexable ptr, char * __bidi_indexable bidi) {
   funcInSDK(ptr, bidi);
 }
-// CHECK-LABEL: define dso_local void @funcInSDK(
+// CHECK-LABEL: define void @funcInSDK(
 // CHECK-SAME: ptr noundef [[PTR:%.*]], ptr nofree noundef align 8 dead_on_return dereferenceable(24) [[BIDI:%.*]]) #[[ATTR0:[0-9]+]] {
 // CHECK-NEXT:  entry:
 // CHECK-NEXT:    [[PTR_ADDR:%.*]] = alloca ptr, align 8
@@ -112,7 +112,7 @@ void func(char * __unsafe_indexable ptr, char * __bidi_indexable bidi) {
 // CHECK-NEXT:    ret void
 //
 //
-// CHECK-LABEL: define dso_local void @func(
+// CHECK-LABEL: define void @func(
 // CHECK-SAME: ptr noundef [[PTR:%.*]], ptr nofree noundef align 8 dead_on_return dereferenceable(24) [[BIDI:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  entry:
 // CHECK-NEXT:    [[PTR_ADDR:%.*]] = alloca ptr, align 8

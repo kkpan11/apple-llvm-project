@@ -1,12 +1,12 @@
 
 
-// RUN: %clang_cc1 -triple arm64-apple-iphoneos -fbounds-safety -ast-dump %s 2>&1 | FileCheck %s
-// RUN: %clang_cc1 -triple arm64-apple-iphoneos -fbounds-safety -x c++ -fexperimental-bounds-safety-cxx -ast-dump %s 2>&1 | FileCheck %s
-// RUN: %clang_cc1 -triple arm64-apple-iphoneos -fbounds-safety -x objective-c -fexperimental-bounds-safety-objc -ast-dump %s 2>&1 | FileCheck %s
-// RUN: %clang_cc1 -triple arm64-apple-iphoneos -fexperimental-bounds-safety-attributes -x c -ast-dump %s 2>&1 | FileCheck %s
-// RUN: %clang_cc1 -triple arm64-apple-iphoneos -fexperimental-bounds-safety-attributes -x c++ -ast-dump %s 2>&1 | FileCheck %s
-// RUN: %clang_cc1 -triple arm64-apple-iphoneos -fexperimental-bounds-safety-attributes -x objective-c -ast-dump %s 2>&1 | FileCheck %s
-// RUN: %clang_cc1 -triple arm64-apple-iphoneos -fexperimental-bounds-safety-attributes -x objective-c++ -ast-dump %s 2>&1 | FileCheck %s
+// RUN: %clang_cc1 -triple arm64-apple-ios -fbounds-safety -ast-dump %s 2>&1 | FileCheck %s
+// RUN: %clang_cc1 -triple arm64-apple-ios -fbounds-safety -x c++ -fexperimental-bounds-safety-cxx -ast-dump %s 2>&1 | FileCheck %s
+// RUN: %clang_cc1 -triple arm64-apple-ios -fbounds-safety -x objective-c -fexperimental-bounds-safety-objc -ast-dump %s 2>&1 | FileCheck %s
+// RUN: %clang_cc1 -triple arm64-apple-ios -fexperimental-bounds-safety-attributes -x c -ast-dump %s 2>&1 | FileCheck %s
+// RUN: %clang_cc1 -triple arm64-apple-ios -fexperimental-bounds-safety-attributes -x c++ -ast-dump %s 2>&1 | FileCheck %s
+// RUN: %clang_cc1 -triple arm64-apple-ios -fexperimental-bounds-safety-attributes -x objective-c -ast-dump %s 2>&1 | FileCheck %s
+// RUN: %clang_cc1 -triple arm64-apple-ios -fexperimental-bounds-safety-attributes -x objective-c++ -ast-dump %s 2>&1 | FileCheck %s
 
 #include <ptrcheck.h>
 
