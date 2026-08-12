@@ -174,15 +174,16 @@ ThreadPlanSP ThreadPlanShouldStopHere::DefaultStepFromHereCallback(
     }
 
     if (!just_step_out) {
-      // If the current plan is a "Step In" plan we should use step in, otherwise
-      // just step over:
+      // If the current plan is a "Step In" plan we should use step in,
+      // otherwise just step over:
       if (current_plan->GetKind() == ThreadPlan::eKindStepInRange) {
-        LLDB_LOGF(log, "ThreadPlanShouldStopHere::DefaultStepFromHereCallback "
-                      "Queueing StepInRange plan to step through line 0 code.");
+        LLDB_LOGF(log,
+                  "ThreadPlanShouldStopHere::DefaultStepFromHereCallback "
+                  "Queueing StepInRange plan to step through line 0 code.");
         return_plan_sp =
             current_plan->GetThread().QueueThreadPlanForStepInRangeNoShouldStop(
-                false, range, sc, nullptr, eOnlyDuringStepping, status,
-                eLazyBoolCalculate, eLazyBoolNo);
+                false, range, sc, llvm::StringRef(), eOnlyDuringStepping,
+                status, eLazyBoolCalculate, eLazyBoolNo);
       } else {
         if (log)
           log->Printf(
