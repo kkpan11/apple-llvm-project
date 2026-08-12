@@ -1109,8 +1109,10 @@ State::createIndexExpression(APInt ConstantOffset,
     return nullptr;
   if (VariableOffsets.size() == 0)
     return ConstOffsetValue;
-  if (VariableOffsets.begin()->first->getType()->getScalarSizeInBits() >
-      BitWidth)
+  // The index expression is computed using scalar integer arithmetic. Bail out
+  // for GEPs with vector index operands, as their offsets are vectors.
+  Type *IdxTy = VariableOffsets.begin()->first->getType();
+  if (!IdxTy->isIntegerTy() || IdxTy->getIntegerBitWidth() > BitWidth)
     return nullptr;
 
   // Compute offset as VariableOffset * Scale + ConstantOffset.
