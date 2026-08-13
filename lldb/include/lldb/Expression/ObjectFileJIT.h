@@ -28,7 +28,8 @@ public:
   virtual void PopulateSectionList(lldb_private::ObjectFile *obj_file,
                                    lldb_private::SectionList &section_list) = 0;
   virtual ArchSpec GetArchitecture() = 0;
-  /// Returns the Target this JIT-compiled code was produced for.
+  /// Returns the Target this JIT-compiled code was produced for, or null
+  /// if the delegate that created this ObjectFile no longer exists.
   virtual lldb::TargetSP GetTargetSP() = 0;
 };
 
@@ -94,11 +95,11 @@ public:
 
   lldb_private::ArchSpec GetArchitecture() override;
 
-  lldb_private::UUID GetUUID() override;
-
   /// Returns the Target this JIT-compiled code was produced for, or null
   /// if the delegate that created this ObjectFile no longer exists.
   lldb::TargetSP GetTargetSP();
+
+  lldb_private::UUID GetUUID() override;
 
   uint32_t GetDependentModules(lldb_private::FileSpecList &files) override;
 
