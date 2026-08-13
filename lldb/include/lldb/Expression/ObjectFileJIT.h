@@ -101,10 +101,6 @@ public:
 
   lldb_private::UUID GetUUID() override;
 
-  /// Returns the Target this JIT-compiled code was produced for, or null
-  /// if the delegate that created this ObjectFile no longer exists.
-  lldb::TargetSP GetTargetSP();
-
   uint32_t GetDependentModules(lldb_private::FileSpecList &files) override;
 
   size_t ReadSectionData(lldb_private::Section *section,
