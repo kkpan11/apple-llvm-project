@@ -247,8 +247,7 @@ define void @pointer_induction_gep_nuw(ptr %p, i32 %n) {
 ; CHECK:       [[LOOP]]:
 ; CHECK-NEXT:    [[IV:%.*]] = phi i32 [ 0, %[[ENTRY]] ], [ [[IV_NEXT:%.*]], %[[LOOP]] ]
 ; CHECK-NEXT:    [[PTR_IV:%.*]] = phi ptr [ [[P]], %[[ENTRY]] ], [ [[PTR_IV_NEXT:%.*]], %[[LOOP]] ]
-; CHECK-NEXT:    [[T_1:%.*]] = icmp uge ptr [[PTR_IV]], [[P]]
-; CHECK-NEXT:    call void @use(i1 [[T_1]])
+; CHECK-NEXT:    call void @use(i1 true)
 ; CHECK-NEXT:    [[PTR_IV_NEXT]] = getelementptr nuw i32, ptr [[PTR_IV]], i64 1
 ; CHECK-NEXT:    [[IV_NEXT]] = add nuw nsw i32 [[IV]], 1
 ; CHECK-NEXT:    [[EC:%.*]] = icmp ult i32 [[IV_NEXT]], [[N]]
@@ -282,8 +281,7 @@ define void @pointer_induction_gep_nusw(ptr %p, i32 %n) {
 ; CHECK:       [[LOOP]]:
 ; CHECK-NEXT:    [[IV:%.*]] = phi i32 [ 0, %[[ENTRY]] ], [ [[IV_NEXT:%.*]], %[[LOOP]] ]
 ; CHECK-NEXT:    [[PTR_IV:%.*]] = phi ptr [ [[P]], %[[ENTRY]] ], [ [[PTR_IV_NEXT:%.*]], %[[LOOP]] ]
-; CHECK-NEXT:    [[T_1:%.*]] = icmp uge ptr [[PTR_IV]], [[P]]
-; CHECK-NEXT:    call void @use(i1 [[T_1]])
+; CHECK-NEXT:    call void @use(i1 true)
 ; CHECK-NEXT:    [[PTR_IV_NEXT]] = getelementptr nusw i32, ptr [[PTR_IV]], i64 1
 ; CHECK-NEXT:    [[IV_NEXT]] = add nuw nsw i32 [[IV]], 1
 ; CHECK-NEXT:    [[EC:%.*]] = icmp ult i32 [[IV_NEXT]], [[N]]
@@ -317,8 +315,7 @@ define void @pointer_induction_gep_no_flags(ptr %p, i32 %n) {
 ; CHECK:       [[LOOP]]:
 ; CHECK-NEXT:    [[IV:%.*]] = phi i32 [ 0, %[[ENTRY]] ], [ [[IV_NEXT:%.*]], %[[LOOP]] ]
 ; CHECK-NEXT:    [[PTR_IV:%.*]] = phi ptr [ [[P]], %[[ENTRY]] ], [ [[PTR_IV_NEXT:%.*]], %[[LOOP]] ]
-; CHECK-NEXT:    [[C_1:%.*]] = icmp uge ptr [[PTR_IV]], [[P]]
-; CHECK-NEXT:    call void @use(i1 [[C_1]])
+; CHECK-NEXT:    call void @use(i1 true)
 ; CHECK-NEXT:    [[PTR_IV_NEXT]] = getelementptr i32, ptr [[PTR_IV]], i64 1
 ; CHECK-NEXT:    [[IV_NEXT]] = add nuw nsw i32 [[IV]], 1
 ; CHECK-NEXT:    [[EC:%.*]] = icmp ult i32 [[IV_NEXT]], [[N]]
