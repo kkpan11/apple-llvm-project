@@ -8,6 +8,7 @@
 
 #include "PlatformWindows.h"
 
+#include <chrono>
 #include <cstdio>
 #include <optional>
 #if defined(_WIN32)
@@ -40,6 +41,12 @@ using namespace lldb_private;
 LLDB_PLUGIN_DEFINE(PlatformWindows)
 
 static uint32_t g_initialize_count = 0;
+
+// Upper bound on the timeout used when running a utility expression with
+// only one thread allowed to run.
+static std::chrono::microseconds GetLoaderOneThreadTimeout(Process *process) {
+  return std::chrono::microseconds(process->GetUtilityExpressionTimeout()) / 2;
+}
 
 PlatformSP PlatformWindows::CreateInstance(bool force,
                                            const lldb_private::ArchSpec *arch) {
@@ -378,6 +385,7 @@ uint32_t PlatformWindows::DoLoadImage(Process *process,
   // handle currently.
   options.SetTrapExceptions(false);
   options.SetTimeout(process->GetUtilityExpressionTimeout());
+  options.SetOneThreadTimeout(GetLoaderOneThreadTimeout(process));
   options.SetIsForUtilityExpr(true);
 
   ExpressionResults result =
@@ -838,6 +846,7 @@ extern "C" {
   // handle currently.
   options.SetTrapExceptions(false);
   options.SetTimeout(process->GetUtilityExpressionTimeout());
+  options.SetOneThreadTimeout(GetLoaderOneThreadTimeout(process));
 
   ExpressionResults result = UserExpression::Evaluate(
       context, options, expression, kLoaderDecls, value);
