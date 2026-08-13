@@ -9,7 +9,7 @@ from lldbsuite.test.lldbtest import *
 from lldbsuite.test import lldbutil
 
 
-@skipUnlessDarwin
+@requireDarwin
 class AddDsymCommandCase(TestBase):
     def setUp(self):
         TestBase.setUp(self)

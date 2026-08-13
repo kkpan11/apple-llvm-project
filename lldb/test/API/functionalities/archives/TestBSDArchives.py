@@ -93,7 +93,7 @@ class BSDArchivesTestCase(TestBase):
             )
 
     @skipIfRemote
-    @skipUnlessDarwin
+    @requireDarwin
     def test_frame_var_errors_when_archive_missing(self):
         """
         Break inside a() and remove libfoo.a to make sure we can't load
@@ -167,7 +167,7 @@ class BSDArchivesTestCase(TestBase):
         self.assertEqual(spec.GetObjectSize(), size_b, libfoothin_path)
 
     @skipIfRemote
-    @skipUnlessDarwin
+    @requireDarwin
     def test_frame_var_errors_when_thin_archive_malformed(self):
         """
         Create thin archive libfoo.a and make it malformed to make sure
@@ -221,7 +221,7 @@ class BSDArchivesTestCase(TestBase):
         )
 
     @skipIfRemote
-    @skipUnlessDarwin
+    @requireDarwin
     def test_frame_var_errors_when_mtime_mistmatch_for_object_in_archive(self):
         """
         Break inside a() and modify the modification time for "a.o" within

@@ -14,6 +14,7 @@ class TestObjCClassMethod(TestBase):
         self.main_source = "class.m"
         self.break_line = line_number(self.main_source, "// Set breakpoint here.")
 
+    @requireDarwin
     @add_test_categories(["pyapi"])
     def test_with_python_api(self):
         """Test calling functions in class methods."""
