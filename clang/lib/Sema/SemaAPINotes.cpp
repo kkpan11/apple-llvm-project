@@ -1090,13 +1090,6 @@ UnwindTagContext(TagDecl *DC, api_notes::APINotesManager &APINotes) {
   return std::nullopt;
 }
 
-static void stripAPINotesParameterNullability(QualType &ParamType) {
-  while (true) {
-    if (!AttributedType::stripOuterNullability(ParamType))
-      return;
-  }
-}
-
 namespace clang {
 struct APINotesParameterSelector {
   SmallVector<std::string, 4> Parameters;
@@ -1139,7 +1132,8 @@ static std::string getAPINotesParameterSelectorSpelling(
     ParamType = ParamType.getDesugaredType(Context);
 
   ParamType.removeLocalConst();
-  stripAPINotesParameterNullability(ParamType);
+  ParamType.removeLocalVolatile();
+  ParamType = ParamType.stripNullability(Context);
 
   return ParamType.getAsString(Policy);
 }
