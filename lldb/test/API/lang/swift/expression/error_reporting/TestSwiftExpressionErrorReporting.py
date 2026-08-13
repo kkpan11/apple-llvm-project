@@ -5,6 +5,7 @@ import lldbsuite.test.lldbutil as lldbutil
 
 class TestSwiftExpressionErrorReporting(TestBase):
     NO_DEBUG_INFO_TESTCASE = True
+    SHARED_BUILD_TESTCASE = False
 
     @swiftTest
     @skipEmbeddedSwiftOnWindows
@@ -87,7 +88,7 @@ class TestSwiftExpressionErrorReporting(TestBase):
         check(value)
 
     @swiftTest
-    @skipEmbeddedSwift
+    @skipEmbeddedSwiftOnWindows
     def test_missing_type(self):
         """Test error reporting in expressions reports
         only diagnostics in user code"""
@@ -105,17 +106,30 @@ class TestSwiftExpressionErrorReporting(TestBase):
 
         check(value)
 
-        # This succeeds using stringForPrintObject(_:mangledTypeName:), which
-        # doesn't require the type to be available.
+        # Printing the value must not surface a "Missing type" error.
         # Note: (?s)^(?!.*<pattern>) checks that the pattern is not found.
         self.expect(
             "dwim-print -O -- strct",
-            patterns=["(?s)^(?!.*error: Missing type)", "properties : true"],
+            patterns=["(?s)^(?!.*error: Missing type)"],
         )
 
         process.Continue()
         self.expect('expression -O -- number', error=True,
                     substrs=['self', 'not', 'found'])
+
+    # The `properties : true` rendering comes from Swift._DebuggerSupport, which
+    # the embedded stdlib does not have.    
+    @requireNotEmbeddedSwift
+    @swiftTest
+    def test_missing_type_object_description(self):
+        """Test that po describes a value whose type has no debug info"""
+        self.build(dictionary={'HIDE_SWIFTMODULE': 'YES'})
+        target, process, thread, bkpt = lldbutil.run_to_source_breakpoint(
+            self, 'breakpoint', lldb.SBFileSpec('main.swift'))
+
+        # This succeeds using stringForPrintObject(_:mangledTypeName:), which
+        # doesn't require the type to be available.
+        self.expect("dwim-print -O -- strct", patterns=["properties : true"])
 
     @swiftTest
     @requireNotEmbeddedSwift # embedded Swift monomorphizes every generic, so there is no archetype T left to diagnose
