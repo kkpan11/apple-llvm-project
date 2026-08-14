@@ -9,7 +9,7 @@ class TestSwiftNoncopyableFieldReflection(lldbtest.TestBase):
 
     mydir = lldbtest.TestBase.compute_mydir(__file__)
 
-    @skipUnlessDarwin
+    @requireDarwin
     @skipEmbeddedSwift
     @swiftTest
     def test(self):
