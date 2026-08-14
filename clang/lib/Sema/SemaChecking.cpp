@@ -5422,7 +5422,8 @@ ExprResult Sema::BuildAtomicExpr(SourceRange CallRange, SourceRange ExprRange,
       }
       // Non-arithmetic ops require a pointer to __unsafe_indexable or __single
       // pointer.
-      if (IsDBP || (PtrTy->isSafePointer() && !PtrTy->isSingle())) {
+      if (IsDBP ||
+          (PtrTy->isSafePointer() && !ValType->isSinglePointerType())) {
         unsigned DiagIndex;
         if (PtrTy->isIndexable())
           DiagIndex = 0;

@@ -398,7 +398,8 @@ namespace {
         }
 
         if (!SrcIsNull && DestPTy->isPointerTypeWithBounds() &&
-            SrcPTy->isSingle() && !SrcType->isBoundsAttributedType()) {
+            SrcType->isSinglePointerType() &&
+            !SrcType->isBoundsAttributedType()) {
           if (SrcPTy->getPointeeType()->isIncompleteOrSizelessType()) {
             Self.Diag(OpRange.getBegin(),
                       diag::err_bounds_safety_incomplete_single_to_indexable)

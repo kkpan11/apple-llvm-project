@@ -9745,7 +9745,7 @@ static bool HandlePtrTerminatedByTypeAttr(TypeProcessingState &state,
 
     // If the pointer is unspecified, we will add __single attribute later in
     // MakeAutoPointer.
-    if (!PT->isUnspecified() && !PT->isSingle()) {
+    if (!PT->isUnspecified() && !T->isSinglePointerType()) {
       S.Diag(PAttr.getLoc(),
              diag::err_bounds_safety_terminated_by_wrong_pointer_type);
       PAttr.setInvalid();
@@ -11929,7 +11929,7 @@ QualType Sema::BuildAtomicType(QualType T, SourceLocation Loc) {
         DiagIndex = 7;
       } else if (const auto *PT = T->getAs<PointerType>()) {
         BoundsSafetyPointerAttributes FAttr = PT->getPointerAttributes();
-        if (!FAttr.isUnspecified() && !FAttr.isSingle() &&
+        if (!FAttr.isUnspecified() && !T->isSinglePointerType() &&
             !FAttr.isUnsafeIndexable()) {
           assert(FAttr.isIndexable() || FAttr.isBidiIndexable());
           DiagIndex = FAttr.isIndexable() ? 0 : 1;
