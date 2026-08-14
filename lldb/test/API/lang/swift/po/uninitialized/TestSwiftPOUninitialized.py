@@ -20,8 +20,8 @@ from lldbsuite.test.decorators import *
 
 
 class TestCase(TestBase):
-    @skipEmbeddedSwiftOnWindows
     @swiftTest
+    @requireNotEmbeddedSwift
     def test_uninitialized(self):
         """po on a not-yet-assigned class reference reports <uninitialized>."""
         self.build()
