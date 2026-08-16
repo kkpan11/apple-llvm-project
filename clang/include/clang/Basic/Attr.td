@@ -2464,6 +2464,8 @@ def NoInline : DeclOrStmtAttr {
   let SimpleHandler = 1;
 }
 
+def : MutualExclusions<[AlwaysInline, NoInline]>;
+
 def NoOutline : DeclOrStmtAttr {
   let Spellings = [Clang<"no_outline">];
   let Subjects = SubjectList<[Function, ObjCMethod, Block], ErrorDiag>;
