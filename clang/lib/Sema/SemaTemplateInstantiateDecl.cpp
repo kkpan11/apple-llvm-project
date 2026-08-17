@@ -2879,7 +2879,8 @@ TemplateDeclInstantiator::VisitFunctionTemplateDecl(FunctionTemplateDecl *D) {
   if (!isFriend) {
     Owner->addDecl(InstTemplate);
   } else if (InstTemplate->getDeclContext()->isRecord() &&
-             !getPreviousDeclForInstantiation(D)) {
+             !getPreviousDeclForInstantiation(D) &&
+             isa<CXXMethodDecl>(InstTemplate->getTemplatedDecl())) {
     SemaRef.CheckFriendAccess(InstTemplate);
   }
 
