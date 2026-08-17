@@ -5945,7 +5945,7 @@ Sema::CreateBuiltinArraySubscriptExpr(Expr *Base, SourceLocation LLoc,
     // If the base of the array subscript expression is 'counted_by', it should
     // have been promoted to __bidi_indexable.
     assert(!Ty->isBoundsAttributedType());
-    if (PTy->isSingle()) {
+    if (Ty->isSinglePointerType()) {
       Expr::EvalResult RInt;
       if (!RHSExp->EvaluateAsInt(RInt, Context) || RInt.Val.getInt() != 0) {
         Diag(LLoc, diag::err_bounds_safety_pointer_subscript)
@@ -8291,8 +8291,8 @@ bool Sema::CheckDynamicCountSizeForAssignment(
     return true;
 
   Expr *CountExpr = LDCPTy->getCountExpr()->IgnoreParenCasts();
-	if (CountExpr->isValueDependent())
-		return false;
+  if (CountExpr->isValueDependent())
+    return false;
 
   auto *RHSPTy = RHSTy->getAs<PointerType>();
   auto FA =
@@ -8859,10 +8859,11 @@ static bool checkDynamicCountPointerAsParameter(Sema &S, FunctionDecl *FDecl,
               DiagTy = ArgDepInfo.getDecl()->getType();
             }
 
-	    S.Diag(Call->getExprLoc(),
-		   diag::err_bounds_safety_unsynchronized_indirect_param)
-              << ArgInfo.getDecl() << ArgInfo.isAddrOf() << ArgDepInfo.getDecl()
-              << !ArgDepInfo.isDeref() << IsDependent << DiagTy;
+            S.Diag(Call->getExprLoc(),
+                   diag::err_bounds_safety_unsynchronized_indirect_param)
+                << ArgInfo.getDecl() << ArgInfo.isAddrOf()
+                << ArgDepInfo.getDecl() << !ArgDepInfo.isDeref() << IsDependent
+                << DiagTy;
             return false;
           }
         }
@@ -12139,11 +12140,11 @@ AssignConvertType Sema::CheckAssignmentConstraints(QualType LHSType,
             !RHS.get()->getType()->isBoundsAttributedType() &&
             LHSType->isSafePointerType() &&
             !OrigLHSType->isValueTerminatedType()) {
-          return LHSPointer->isSingle()
+          return LHSType->isSinglePointerType()
                      ? AssignConvertType::IncompatibleUnsafeToSafePointer
                      : AssignConvertType::IncompatibleUnsafeToIndexablePointer;
         }
-        if (!IsSrcNull && RHSPointer->isSingle() &&
+        if (!IsSrcNull && RHSType->isSinglePointerType() &&
             LHSType->isPointerTypeWithBounds() &&
             !RHS.get()->getType()->isBoundsAttributedType()) {
           if (RHSPointer->getPointeeType()->isIncompleteOrSizelessType())
@@ -12179,7 +12180,7 @@ AssignConvertType Sema::CheckAssignmentConstraints(QualType LHSType,
         // cast logic above to be missed which would change the generated AST.
         bool IsSrcNull = RHS.get()->IgnoreParenCasts()->isNullPointerConstant(
             Context, Expr::NPC_ValueDependentIsNotNull);
-        if (!IsSrcNull && RHSPointer->isSingle() &&
+        if (!IsSrcNull && RHSType->isSinglePointerType() &&
             !RHS.get()->getType()->isBoundsAttributedType()) {
           bool IsExplicitlyBoundedPointer = LHSType->isPointerTypeWithBounds();
           if (OrigLHSType->hasAttr(attr::PtrAutoAttr)) {
@@ -12865,9 +12866,9 @@ bool Sema::allowBoundsUnsafePointerAssignment(
   // All safe pointers ABI compatible with unsafe pointers (and each other) are
   // __single pointers. Make no exception for ABI incompatible pointer type
   // mismatch.
-  if (!DestPtrTy->isSingle() && DestSafe)
+  if (!DestTy->isSinglePointerType() && DestSafe)
     return false;
-  if (!SourcePtrTy->isSingle() && SourceSafe)
+  if (!SourceValue->getType()->isSinglePointerType() && SourceSafe)
     return false;
 
   return allowBoundsUnsafeAssignment(AssignmentLoc);
@@ -14381,7 +14382,7 @@ static bool checkArithmeticBinOpBoundsSafetyPointer(Sema &S, Expr *Base,
     return false;
   }
 
-  if (PT->isSingle() && !BaseType->isBoundsAttributedType()) {
+  if (BaseType->isSinglePointerType() && !BaseType->isBoundsAttributedType()) {
     emitBoundsSafetySinglePointerArithmeticError(S, Base);
     return false;
   }
