@@ -1579,7 +1579,8 @@ static void createAndEmbedModuleForDynamicDebugging(
     // assertion failures if there's no registered backend which is why we
     // disable the feature if that's the case (see
     // warn_dyndbg_unable_to_create_target above).
-    AsmHelper.emitAssembly(Backend_EmitObj, std::move(UnoptOS), BC);
+    AsmHelper.emitAssembly(Backend_EmitObj, std::move(UnoptOS),
+                           /*CasIDOS=*/nullptr, BC);
     assert(!UnoptBuf.empty() && "Expected emitAssembly to fill UnoptBuf");
 
     // Inject the inner ELF into the outer module.
