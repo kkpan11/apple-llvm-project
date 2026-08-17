@@ -3828,6 +3828,8 @@ rnb_err_t RNBRemote::HandlePacket_qSupported(const char *p) {
 
   reply << "MultiMemRead+;";
   reply << "jMultiBreakpoint+;";
+  // The stopped thread's frame 0 stack memory is expedited in jThreadsInfo.
+  reply << "ExpediteStack+;";
   return SendPacket(reply.str().c_str());
 }
 
