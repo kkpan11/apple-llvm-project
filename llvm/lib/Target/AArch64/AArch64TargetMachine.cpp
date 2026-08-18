@@ -788,7 +788,7 @@ void AArch64PassConfig::addPreLegalizeMachineIR() {
 }
 
 bool AArch64PassConfig::addLegalizeMachineIR() {
-  addPass(new Legalizer());
+  addPass(new LegalizerLegacy());
   return false;
 }
 
