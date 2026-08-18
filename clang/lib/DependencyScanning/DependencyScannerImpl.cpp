@@ -765,9 +765,10 @@ struct AsyncModuleCompile : PPCallbacks {
     if (!LockErr && !Owned)
       return;
     // We should build the PCM.
+    // FIXME: Pass the correct BaseFS to the worker FS.
     IntrusiveRefCntPtr<llvm::vfs::FileSystem> VFS =
         llvm::makeIntrusiveRefCnt<DependencyScanningWorkerFilesystem>(
-            Service, Service.getOpts().MakeVFS());
+            Service, llvm::vfs::getRealFileSystem());
     VFS =
         createVFSFromCompilerInvocation(CI.getInvocation(), CI.getDiagnostics(),
                                         std::move(VFS), Service.getCAS());

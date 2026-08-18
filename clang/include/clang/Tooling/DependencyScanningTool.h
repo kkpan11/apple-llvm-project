@@ -48,8 +48,10 @@ public:
   /// Construct a dependency scanning tool.
   ///
   /// @param Service  The parent service. Must outlive the tool.
-  DependencyScanningTool(dependencies::DependencyScanningService &Service)
-      : Worker(Service) {}
+  /// @param FS The filesystem for the tool to use. Defaults to the physical FS.
+  DependencyScanningTool(dependencies::DependencyScanningService &Service,
+                         llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> FS =
+                             llvm::vfs::createPhysicalFileSystem());
 
   /// Print out the dependency information into a string using the dependency
   /// file format that is specified in the options (-MD is the default) and

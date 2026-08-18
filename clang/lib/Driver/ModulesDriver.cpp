@@ -31,6 +31,7 @@
 #include "llvm/ADT/SmallVectorExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/ADT/iterator_range.h"
+#include "llvm/CAS/CASProvidingFileSystem.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/GraphWriter.h"
@@ -280,9 +281,15 @@ private:
 
   /// A scanning worker with its associated context.
   struct WorkerBundle {
-    WorkerBundle(deps::DependencyScanningService &ScanningService)
-        : Worker(std::make_unique<deps::DependencyScanningWorker>(
-              ScanningService)) {}
+    WorkerBundle(deps::DependencyScanningService &ScanningService) {
+      IntrusiveRefCntPtr<llvm::vfs::FileSystem> FS =
+          llvm::vfs::createPhysicalFileSystem();
+      if (auto CAS = ScanningService.getCAS())
+        FS = llvm::cas::createCASProvidingFileSystem(CAS, std::move(FS));
+
+      Worker = std::make_unique<deps::DependencyScanningWorker>(
+          ScanningService, FS);
+    }
 
     std::unique_ptr<deps::DependencyScanningWorker> Worker;
     llvm::DenseSet<deps::ModuleID> SeenModules;

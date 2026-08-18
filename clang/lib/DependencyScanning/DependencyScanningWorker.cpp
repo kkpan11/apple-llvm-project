@@ -21,7 +21,8 @@ using namespace dependencies;
 using llvm::Error;
 
 DependencyScanningWorker::DependencyScanningWorker(
-    DependencyScanningService &Service)
+    DependencyScanningService &Service,
+    llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> BaseFS)
     : Service(Service) {
   PCHContainerOps = std::make_shared<PCHContainerOperations>();
   // We need to read object files from PCH built outside the scanner.
@@ -29,8 +30,6 @@ DependencyScanningWorker::DependencyScanningWorker(
       std::make_unique<ObjectFilePCHContainerReader>());
   // The scanner itself writes only raw ast files.
   PCHContainerOps->registerWriter(std::make_unique<RawPCHContainerWriter>());
-
-  auto BaseFS = Service.getOpts().MakeVFS();
 
   if (Service.getOpts().TraceVFS) {
     TracingFS = llvm::makeIntrusiveRefCnt<llvm::vfs::TracingFileSystem>(

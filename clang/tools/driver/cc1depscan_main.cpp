@@ -549,15 +549,15 @@ scanAndUpdateCC1Inline(const char *Exec, ArrayRef<const char *> InputArgs,
     return 1;
 
   dependencies::DependencyScanningServiceOptions Opts;
-  Opts.MakeVFS = [DB = DB] {
-    auto BypassSandbox = llvm::sys::sandbox::scopedDisable();
-    return llvm::cas::createCASProvidingFileSystem(
-        DB, llvm::vfs::createPhysicalFileSystem());
-  };
   Opts.Compilation = dependencies::IncludeTreeCompilation{CASOpts, DB, Cache};
   Opts.AsCompilation = true;
   dependencies::DependencyScanningService Service(std::move(Opts));
-  tooling::DependencyScanningTool Tool(Service);
+
+  llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> UnderlyingFS =
+      llvm::vfs::createPhysicalFileSystem();
+  UnderlyingFS =
+      llvm::cas::createCASProvidingFileSystem(DB, std::move(UnderlyingFS));
+  tooling::DependencyScanningTool Tool(Service, std::move(UnderlyingFS));
 
   std::unique_ptr<DiagnosticOptions> DiagOpts =
       CreateAndPopulateDiagOpts(InputArgs);

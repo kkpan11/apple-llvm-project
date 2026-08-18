@@ -233,9 +233,8 @@ TEST(DependencyScanner, ScanDepsWithFS) {
                llvm::MemoryBuffer::getMemBuffer("#include \"header.h\"\n"));
 
   DependencyScanningServiceOptions Opts;
-  Opts.MakeVFS = [&] { return VFS; };
   DependencyScanningService Service(std::move(Opts));
-  DependencyScanningTool ScanTool(Service);
+  DependencyScanningTool ScanTool(Service, VFS);
 
   TextDiagnosticBuffer DiagConsumer;
   std::optional<std::string> DepFile = ScanTool.getDependencyFile(
@@ -343,9 +342,8 @@ TEST(DependencyScanner, ScanDepsWithModuleLookup) {
   auto InterceptFS = llvm::makeIntrusiveRefCnt<InterceptorFS>(VFS);
 
   DependencyScanningServiceOptions Opts;
-  Opts.MakeVFS = [&] { return InterceptFS; };
   DependencyScanningService Service(std::move(Opts));
-  DependencyScanningTool ScanTool(Service);
+  DependencyScanningTool ScanTool(Service, InterceptFS);
 
   // This will fail with "fatal error: module 'Foo' not found" but it doesn't
   // matter, the point of the test is to check that files are not read

@@ -151,9 +151,8 @@ public:
   ModuleDependencyScanner(
       std::shared_ptr<const clang::tooling::CompilationDatabase> CDB,
       const ThreadsafeFS &TFS)
-      : CDB(CDB), Service([&TFS] {
+      : CDB(CDB), TFS(TFS), Service([] {
           dependencies::DependencyScanningServiceOptions Opts;
-          Opts.MakeVFS = [&] { return TFS.view(std::nullopt); };
           Opts.Mode = dependencies::ScanningMode::CanonicalPreprocessing;
           Opts.EmitWarnings = false;
           Opts.ReportAbsolutePaths = false;
@@ -197,6 +196,7 @@ public:
 
 private:
   std::shared_ptr<const clang::tooling::CompilationDatabase> CDB;
+  const ThreadsafeFS &TFS;
 
   // Whether the scanner has scanned the project globally.
   bool GlobalScanned = false;
@@ -218,7 +218,9 @@ ModuleDependencyScanner::scan(PathRef FilePath,
 
   using namespace clang::tooling;
 
-  DependencyScanningTool ScanningTool(Service);
+  llvm::SmallString<128> FilePathDir(FilePath);
+  llvm::sys::path::remove_filename(FilePathDir);
+  DependencyScanningTool ScanningTool(Service, TFS.view(FilePathDir));
 
   std::string S;
   llvm::raw_string_ostream OS(S);
