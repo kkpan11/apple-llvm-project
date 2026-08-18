@@ -2517,6 +2517,9 @@ private:
   const SCEV *getOrCreateAddRecExpr(ArrayRef<SCEVUse> Ops, const Loop *L,
                                     SCEV::NoWrapFlags Flags);
 
+  // Get UDiv expression already created or create a new one.
+  const SCEV *getOrCreateUDivExpr(SCEVUse LHS, SCEVUse RHS);
+
   /// Return x if \p Val is f(x) where f is a 1-1 function.
   const SCEV *stripInjectiveFunctions(const SCEV *Val) const;
 
