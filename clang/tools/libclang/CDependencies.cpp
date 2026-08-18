@@ -175,12 +175,6 @@ clang_experimental_DependencyScannerService_create_v1(
   if (CAS && Cache)
     Opts.Compilation =
         IncludeTreeCompilation{unwrap(WrappedOpts)->CASOpts, CAS, Cache};
-  Opts.MakeVFS = [CAS = CAS] {
-    auto FS = llvm::vfs::createPhysicalFileSystem();
-    if (CAS)
-      FS = llvm::cas::createCASProvidingFileSystem(CAS, std::move(FS));
-    return FS;
-  };
   Opts.OptimizeArgs = unwrap(WrappedOpts)->OptimizeArgs;
   if (unwrap(WrappedOpts)->CacheNegativeStats)
     Opts.CacheNegativeStats = *unwrap(WrappedOpts)->CacheNegativeStats;
@@ -196,7 +190,13 @@ void clang_experimental_DependencyScannerService_dispose_v0(
 
 CXDependencyScannerWorker clang_experimental_DependencyScannerWorker_create_v0(
     CXDependencyScannerService S) {
-  return wrap(new DependencyScanningWorker(*unwrap(S)));
+  auto CAS = unwrap(S)->getCAS();
+  llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> FS =
+      llvm::vfs::createPhysicalFileSystem();
+  if (CAS)
+    FS = llvm::cas::createCASProvidingFileSystem(CAS, std::move(FS));
+
+  return wrap(new DependencyScanningWorker(*unwrap(S), FS));
 }
 
 void clang_experimental_DependencyScannerWorker_dispose_v0(
@@ -769,15 +769,15 @@ enum CXErrorCode clang_experimental_DependencyScanner_generateReproducer(
   bool IsReproducerCASBased{UpstreamCAS};
   DependencyScanningServiceOptions ServiceOpts;
   if (IsReproducerCASBased) {
-    ServiceOpts.MakeVFS = [UpstreamCAS] {
-      return llvm::cas::createCASProvidingFileSystem(
-          UpstreamCAS, llvm::vfs::createPhysicalFileSystem());
-    };
     ServiceOpts.Compilation =
         IncludeTreeCompilation{Opts.CASOpts, Opts.CAS, Opts.Cache};
   }
   DependencyScanningService DepsService(std::move(ServiceOpts));
-  DependencyScanningTool DepsTool(DepsService);
+  IntrusiveRefCntPtr<llvm::vfs::FileSystem> FS =
+      llvm::vfs::createPhysicalFileSystem();
+  if (UpstreamCAS)
+    FS = llvm::cas::createCASProvidingFileSystem(UpstreamCAS, std::move(FS));
+  DependencyScanningTool DepsTool(DepsService, FS);
 
   llvm::SmallString<128> ReproScriptPath;
   int ScriptFD;

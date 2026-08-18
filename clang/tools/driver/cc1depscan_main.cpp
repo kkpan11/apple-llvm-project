@@ -1000,11 +1000,6 @@ int ScanServer::listen() {
     reportError("cannot create ActionCache");
 
   dependencies::DependencyScanningServiceOptions Opts;
-  Opts.MakeVFS = [CAS] {
-    auto BypassSandbox = llvm::sys::sandbox::scopedDisable();
-    return llvm::cas::createCASProvidingFileSystem(
-        CAS, llvm::vfs::createPhysicalFileSystem());
-  };
   Opts.Compilation = dependencies::IncludeTreeCompilation{CASOpts, CAS, Cache};
   Opts.AsCompilation = true;
   dependencies::DependencyScanningService Service(std::move(Opts));
@@ -1020,7 +1015,7 @@ int ScanServer::listen() {
 
   auto ServiceLoop = [this, &Service, &NumRunning, &Start,
                       &SecondsSinceLastClose, &SharedOS,
-                      &AcceptLock](unsigned I) {
+                      &AcceptLock, CAS](unsigned I) {
     std::optional<tooling::DependencyScanningTool> Tool;
     SmallString<256> Message;
     while (true) {
@@ -1109,8 +1104,17 @@ int ScanServer::listen() {
         OS << "\n";
       };
 
-      if (!Tool)
-        Tool.emplace(Service);
+      // Is this safe to reuse? Or does DependendencyScanningWorkerFileSystem
+      // make some bad assumptions about relative paths?
+      if (!Tool) {
+        auto UnderlyingFS = [] {
+          auto BypassSandbox = llvm::sys::sandbox::scopedDisable();
+          return llvm::vfs::createPhysicalFileSystem();
+        }();
+        UnderlyingFS = llvm::cas::createCASProvidingFileSystem(
+            CAS, std::move(UnderlyingFS));
+        Tool.emplace(Service, std::move(UnderlyingFS));
+      }
 
       std::unique_ptr<DiagnosticOptions> DiagOpts =
           CreateAndPopulateDiagOpts(Args);

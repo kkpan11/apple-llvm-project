@@ -48,14 +48,13 @@ TEST(IncludeTree, IncludeTreeScan) {
   add("sys/sys.h", "");
   add("sys_directive.h", SysDirectiveContents);
   add("sys_indirect.h", "");
+  std::unique_ptr<llvm::vfs::FileSystem> VFS =
+      llvm::cas::createCASProvidingFileSystem(DB, FS);
 
   DependencyScanningServiceOptions Opts;
-  Opts.MakeVFS = [DB = DB, FS] {
-    return llvm::cas::createCASProvidingFileSystem(DB, FS);
-  };
   Opts.Compilation = IncludeTreeCompilation{CASOpts, DB, Cache};
   DependencyScanningService Service(std::move(Opts));
-  DependencyScanningTool ScanTool(Service);
+  DependencyScanningTool ScanTool(Service, std::move(VFS));
 
   TextDiagnosticBuffer DiagConsumer;
 
