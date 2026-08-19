@@ -11,6 +11,7 @@ add_lldb_unittest(TargetTests
   PathMappingListTest.cpp
   RegisterFlagsTest.cpp
   RemoteAwarePlatformTest.cpp
+  StackFrameListTest.cpp
   StackFrameRecognizerTest.cpp
   SummaryStatisticsTest.cpp
   FindFileTest.cpp
@@ -25,12 +26,17 @@ add_lldb_unittest(TargetTests
       lldbPluginPlatformLinux
       lldbPluginPlatformMacOSX
       lldbPluginPlatformAndroid
+      lldbPluginProcessUtility
       lldbPluginSymbolFileBreakpad
+      lldbPluginSymbolFileDWARF
       lldbPluginSymbolFileSymtab
+      lldbPluginScriptInterpreterNone
+      lldbPluginTypeSystemClang
       lldbTarget
       lldbSymbol
       lldbUtility
       lldbUtilityHelpers
+      LLVMTestingSupport
   )
 
 set(test_inputs
@@ -38,5 +44,6 @@ set(test_inputs
   AndroidModule.so.sym
   AndroidModule.unstripped.so
   TestModule.so
+  inlined-function.yaml
   )
 add_unittest_inputs(TargetTests "${test_inputs}")
