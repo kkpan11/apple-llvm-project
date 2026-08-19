@@ -5320,7 +5320,7 @@ PreservedAnalyses IRTranslatorPass::run(MachineFunction &MF,
       [&]() { return &FAM.getResult<BranchProbabilityAnalysis>(F); },
       [&]() { return &FAM.getResult<AssumptionAnalysis>(F); },
       &FAM.getResult<TargetLibraryAnalysis>(F),
-      &MLLI->getLibcallLowering(Subtarget),
+      &getLibcallLowering(*MLLI, Subtarget),
       &FAM.getResult<SSPLayoutAnalysis>(F));
 
   return getMachineFunctionPassPreservedAnalyses();
