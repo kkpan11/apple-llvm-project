@@ -297,7 +297,126 @@ struct TrapCondShape {
 };
 static TrapCondShape classifyCondTrapEdges(Loop *L, ScalarEvolution &SE,
                                            const DominatorTree &DT) {
-  return TrapCondShape();
+  TrapCondShape S;
+  BasicBlock *Latch = L->getLoopLatch();
+  auto IsTrapBlock = [](BasicBlock *BB) {
+    return isTrapBlock(BB, BoundsSafetyTrapsOnly,
+                       LegacyTrapMatch::AnyUnreachable);
+  };
+  for (auto *BB : L->blocks()) {
+    auto *Term = BB->getTerminator();
+    auto *BI = dyn_cast<CondBrInst>(Term);
+    if (!BI)
+      continue;
+    bool HasTrapSucc = false;
+    for (BasicBlock *Succ : BI->successors()) {
+      if (L->contains(Succ))
+        continue;
+      if (IsTrapBlock(Succ)) {
+        HasTrapSucc = true;
+        break;
+      }
+    }
+    if (!HasTrapSucc)
+      continue;
+
+    // Dominance dimension: if the trap branch's parent BB dominates the latch,
+    // the cond evaluates every iteration; otherwise it's in a conditional arm
+    // and SCEV cannot compute trip counts past it.
+    bool DominatesLatch = Latch && DT.dominates(BB, Latch);
+    if (DominatesLatch)
+      ++S.DominatesLatch;
+    else
+      ++S.NotDominatingLatch;
+
+    Value *Cond = BI->getCondition();
+    if (L->isLoopInvariant(Cond)) {
+      ++S.Invariant;
+      if (DominatesLatch)
+        ++S.DLInvariant;
+      else
+        ++S.NDLInvariant;
+      continue;
+    }
+    auto *Cmp = dyn_cast<ICmpInst>(Cond);
+    bool FoundAddRec = false;
+    auto Inspect = [&](Value *V) {
+      if (L->isLoopInvariant(V))
+        return;
+      if (!SE.isSCEVable(V->getType()))
+        return;
+      const SCEV *SC = SE.getSCEV(V);
+      if (auto *AR = dyn_cast<SCEVAddRecExpr>(SC))
+        if (AR->getLoop() == L)
+          FoundAddRec = true;
+    };
+    if (Cmp) {
+      Inspect(Cmp->getOperand(0));
+      Inspect(Cmp->getOperand(1));
+    } else {
+      Inspect(Cond);
+    }
+    if (FoundAddRec) {
+      ++S.IVDerived;
+      if (DominatesLatch)
+        ++S.DLIVDerived;
+      else
+        ++S.NDLIVDerived;
+    } else {
+      ++S.NonIV;
+      if (DominatesLatch)
+        ++S.DLNonIV;
+      else
+        ++S.NDLNonIV;
+
+      // Sub-classify NonIV: walk the cond's operand chain (in-loop,
+      // depth-bounded) and tag which operand classes appear. Flags are
+      // non-exclusive. The walk is shallow (no header-phi recurrence) so it
+      // stays O(loop body) without chain explosion.
+      SmallPtrSet<const Value *, 32> Seen;
+      SmallVector<const Value *, 16> Stack;
+      auto Push = [&](Value *V) { Stack.push_back(V); };
+      if (Cmp) {
+        Push(Cmp->getOperand(0));
+        Push(Cmp->getOperand(1));
+      } else {
+        Push(Cond);
+      }
+      bool HasLoad = false, HasPhi = false, HasSelect = false, HasCall = false;
+      unsigned Steps = 0;
+      const unsigned StepLimit = 64;
+      while (!Stack.empty() && Steps++ < StepLimit) {
+        const Value *V = Stack.pop_back_val();
+        if (!Seen.insert(V).second)
+          continue;
+        const auto *I = dyn_cast<Instruction>(V);
+        if (!I || !L->contains(I->getParent()))
+          continue;
+        if (isa<LoadInst>(I))
+          HasLoad = true;
+        else if (isa<PHINode>(I))
+          HasPhi = true;
+        else if (isa<SelectInst>(I) || isa<FreezeInst>(I))
+          HasSelect = true;
+        else if (isa<CallInst>(I))
+          HasCall = true;
+        // Don't recurse through phi operands (avoids cycle chain explosion);
+        // 'phi' is already tagged. Recurse through anything else.
+        if (!isa<PHINode>(I))
+          for (const Use &U : I->operands())
+            Stack.push_back(U.get());
+      }
+      if (HasLoad)
+        ++S.NonIVLoadOp;
+      if (HasPhi)
+        ++S.NonIVPhiOp;
+      if (HasSelect)
+        ++S.NonIVSelectOp;
+      if (HasCall)
+        ++S.NonIVCallOp;
+    }
+  }
+  return S;
 }
 
 // Emit one or more side-effect tags identifying the *class* of instruction
@@ -340,7 +459,42 @@ static std::string bbLabel(const BasicBlock *BB) { return ""; }
 static void collectBoolLeafOperands(Value *V,
                                     SmallVectorImpl<Value *> &Operands,
                                     SmallPtrSetImpl<Value *> &Visited,
-                                    int Depth = 0) {}
+                                    int Depth = 0) {
+  if (!V || !Visited.insert(V).second || Depth > 8)
+    return;
+  if (auto *SI = dyn_cast<SelectInst>(V)) {
+    Value *T = SI->getTrueValue(), *FV = SI->getFalseValue();
+    if (auto *TC = dyn_cast<ConstantInt>(T))
+      if (TC->isOne()) {
+        collectBoolLeafOperands(SI->getCondition(), Operands, Visited,
+                                Depth + 1);
+        collectBoolLeafOperands(FV, Operands, Visited, Depth + 1);
+        return;
+      }
+    if (auto *FC = dyn_cast<ConstantInt>(FV))
+      if (FC->isZero()) {
+        collectBoolLeafOperands(SI->getCondition(), Operands, Visited,
+                                Depth + 1);
+        collectBoolLeafOperands(T, Operands, Visited, Depth + 1);
+        return;
+      }
+  }
+  if (auto *BO = dyn_cast<BinaryOperator>(V)) {
+    if (BO->getOpcode() == Instruction::Or ||
+        BO->getOpcode() == Instruction::And) {
+      collectBoolLeafOperands(BO->getOperand(0), Operands, Visited, Depth + 1);
+      collectBoolLeafOperands(BO->getOperand(1), Operands, Visited, Depth + 1);
+      return;
+    }
+  }
+  if (auto *Cmp = dyn_cast<CmpInst>(V)) {
+    Operands.push_back(Cmp->getOperand(0));
+    Operands.push_back(Cmp->getOperand(1));
+    return;
+  }
+  // Opaque — record as itself.
+  Operands.push_back(V);
+}
 
 /// SCEV traversal helper: collects every SCEVUnknown and SCEVAddRecExpr
 /// node reachable from a SCEV expression. We use the canonical
@@ -378,7 +532,29 @@ enum class TrapPredicateShape {
 };
 } // anonymous namespace
 
-static StringRef trapPredicateShapeName(TrapPredicateShape S) { return ""; }
+static StringRef trapPredicateShapeName(TrapPredicateShape S) {
+  switch (S) {
+  case TrapPredicateShape::Unknown:
+    return "Unknown";
+  case TrapPredicateShape::SingleICmp:
+    return "SingleICmp";
+  case TrapPredicateShape::OrBoundsCheckConstBound:
+    return "OrBoundsCheck-ConstBound";
+  case TrapPredicateShape::AndBoundsCheckConstBound:
+    return "AndBoundsCheck-ConstBound";
+  case TrapPredicateShape::OrBoundsCheckVarBound:
+    return "OrBoundsCheck-VarBound";
+  case TrapPredicateShape::AndBoundsCheckVarBound:
+    return "AndBoundsCheck-VarBound";
+  case TrapPredicateShape::OrTwoAddRecICmp:
+    return "OrTwoAddRecICmp";
+  case TrapPredicateShape::AndTwoAddRecICmp:
+    return "AndTwoAddRecICmp";
+  case TrapPredicateShape::OtherMulti:
+    return "OtherMulti";
+  }
+  llvm_unreachable("unhandled TrapPredicateShape");
+}
 
 /// Compute the count-ordered, descriptive trap-class name for one trap edge
 /// from its per-edge fields. Single source of truth for a classification
@@ -410,6 +586,41 @@ static bool matchBoundsCheckArmsImpl(Value *Arm1, Value *Arm2,
                                      ICmpInst::Predicate ArmAPred,
                                      ICmpInst::Predicate ArmBPred, bool VarK,
                                      ScalarEvolution &SE, Loop *L) {
+  using namespace PatternMatch;
+  for (int Try = 0; Try < 2; ++Try) {
+    Value *A = Try == 0 ? Arm1 : Arm2;
+    Value *B = Try == 0 ? Arm2 : Arm1;
+    auto *CmpA = dyn_cast<ICmpInst>(A);
+    auto *CmpB = dyn_cast<ICmpInst>(B);
+    if (!CmpA || !CmpB)
+      continue;
+    if (CmpA->getPredicate() != ArmAPred)
+      continue;
+    if (CmpB->getPredicate() != ArmBPred)
+      continue;
+    Value *X = CmpA->getOperand(0);
+    Value *Bound = CmpA->getOperand(1);
+    Value *SubV = CmpB->getOperand(0);
+    Value *K = CmpB->getOperand(1);
+    Value *BoundOfSub = nullptr, *XOfSub = nullptr;
+    if (!match(SubV, m_Sub(m_Value(BoundOfSub), m_Value(XOfSub))))
+      continue;
+    if (Bound != BoundOfSub || X != XOfSub)
+      continue;
+    if (VarK) {
+      if (!L)
+        continue;
+      if (!SE.isSCEVable(K->getType()))
+        continue;
+      const SCEV *KS = SE.getSCEV(K);
+      if (auto *AR = dyn_cast<SCEVAddRecExpr>(KS))
+        if (AR->getLoop() == L && AR->isAffine())
+          return true;
+      continue;
+    }
+    if (isa<ConstantInt>(K))
+      return true;
+  }
   return false;
 }
 
@@ -420,7 +631,23 @@ static bool matchBoundsCheckArmsImpl(Value *Arm1, Value *Arm2,
 /// operands).
 static bool matchTwoAddRecICmpImpl(Value *Arm1, Value *Arm2,
                                    ScalarEvolution &SE, Loop *L) {
-  return false;
+  if (!L)
+    return false;
+  auto HasLAddRec = [&](Value *V) -> bool {
+    auto *Cmp = dyn_cast<ICmpInst>(V);
+    if (!Cmp)
+      return false;
+    for (Value *Op : {Cmp->getOperand(0), Cmp->getOperand(1)}) {
+      if (!SE.isSCEVable(Op->getType()))
+        continue;
+      const SCEV *S = SE.getSCEV(Op);
+      if (auto *AR = dyn_cast<SCEVAddRecExpr>(S))
+        if (AR->getLoop() == L)
+          return true;
+    }
+    return false;
+  };
+  return HasLAddRec(Arm1) && HasLAddRec(Arm2);
 }
 
 /// Classify a trap branch's i1 predicate by structural shape.
@@ -436,15 +663,40 @@ static bool matchTwoAddRecICmpImpl(Value *Arm1, Value *Arm2,
 /// pipeline iterations.
 static TrapPredicateShape
 classifyTrapPredicateShape(Value *Cond, ScalarEvolution &SE, Loop *L) {
-  // Call-wiring: exercise the shape-matcher helpers so none is unused.
-  (void)matchBoundsCheckArmsImpl(Cond, Cond, ICmpInst::ICMP_UGE,
-                                 ICmpInst::ICMP_ULT, /*VarK=*/false, SE, L);
-  (void)matchTwoAddRecICmpImpl(Cond, Cond, SE, L);
-  (void)trapPredicateShapeName(TrapPredicateShape::Unknown);
-  SmallVector<Value *, 8> Operands;
-  SmallPtrSet<Value *, 16> Visited;
-  collectBoolLeafOperands(Cond, Operands, Visited);
-  return TrapPredicateShape::Unknown;
+  using namespace PatternMatch;
+  if (!Cond)
+    return TrapPredicateShape::Unknown;
+
+  if (isa<ICmpInst>(Cond))
+    return TrapPredicateShape::SingleICmp;
+
+  Value *L1 = nullptr, *L2 = nullptr;
+
+  if (match(Cond, m_LogicalOr(m_Value(L1), m_Value(L2)))) {
+    if (matchBoundsCheckArmsImpl(L1, L2, ICmpInst::ICMP_UGE, ICmpInst::ICMP_ULT,
+                                 /*VarK=*/false, SE, L))
+      return TrapPredicateShape::OrBoundsCheckConstBound;
+    if (matchBoundsCheckArmsImpl(L1, L2, ICmpInst::ICMP_UGE, ICmpInst::ICMP_ULT,
+                                 /*VarK=*/true, SE, L))
+      return TrapPredicateShape::OrBoundsCheckVarBound;
+    if (matchTwoAddRecICmpImpl(L1, L2, SE, L))
+      return TrapPredicateShape::OrTwoAddRecICmp;
+    return TrapPredicateShape::OtherMulti;
+  }
+
+  if (match(Cond, m_LogicalAnd(m_Value(L1), m_Value(L2)))) {
+    if (matchBoundsCheckArmsImpl(L1, L2, ICmpInst::ICMP_ULT, ICmpInst::ICMP_UGE,
+                                 /*VarK=*/false, SE, L))
+      return TrapPredicateShape::AndBoundsCheckConstBound;
+    if (matchBoundsCheckArmsImpl(L1, L2, ICmpInst::ICMP_ULT, ICmpInst::ICMP_UGE,
+                                 /*VarK=*/true, SE, L))
+      return TrapPredicateShape::AndBoundsCheckVarBound;
+    if (matchTwoAddRecICmpImpl(L1, L2, SE, L))
+      return TrapPredicateShape::AndTwoAddRecICmp;
+    return TrapPredicateShape::OtherMulti;
+  }
+
+  return TrapPredicateShape::OtherMulti;
 }
 
 /// HEURISTIC that estimates which trap checks are likely necessary validation
@@ -499,6 +751,7 @@ static void emitPerTrapEdgeSCEV(Function &F, LoopInfo &LI, ScalarEvolution &SE,
   SmallPtrSet<Value *, 16> Visited;
   collectBoolLeafOperands(nullptr, Operands, Visited);
   (void)classifyTrapPredicateShape(nullptr, SE, L);
+  (void)trapPredicateShapeName(TrapPredicateShape::Unknown);
   (void)computeTrapClass(false, TrapPredicateShape::Unknown, false, false,
                          false, false, false, false, false, false, false,
                          false, false, false, false, false, 0u, false, false,
