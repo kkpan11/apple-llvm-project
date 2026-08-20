@@ -673,23 +673,30 @@ static StringRef computeTrapClass(
                     Shape == TrapPredicateShape::AndBoundsCheckVarBound;
   const bool TwoAR = Shape == TrapPredicateShape::OrTwoAddRecICmp ||
                      Shape == TrapPredicateShape::AndTwoAddRecICmp;
+  // The leading token is the index-shape axis -- how well the compiler can
+  // model the trapping index: `Invariant-` = not inside any loop (one-shot /
+  // hoistable check); `Affine-` = the index is an affine AddRec over the loop
+  // IV (understood; eliminability turns on trip count / no-wrap); `Opaque-` =
+  // the index depends on an in-loop load / phi / call / opaque value SCEV can't
+  // model. `InLoop-NonExit` carries no index-shape axis. The rest of each name
+  // is unchanged.
   // Out-of-loop: classify by structural redundancy / predicate shape.
   if (!InLoop) {
     if (IsEntryProx)
-      return "OutsideLoop-EntryProximate";
+      return "Invariant-OutsideLoop-EntryProximate";
     if (DomByEquiv)
-      return "OutsideLoop-RedundantWithDominatingCheck";
+      return "Invariant-OutsideLoop-RedundantWithDominatingCheck";
     if (ConstK)
-      return "OutsideLoop-MultiComparison-ConstBound";
+      return "Invariant-OutsideLoop-MultiComparison-ConstBound";
     if (VarK)
-      return "OutsideLoop-MultiComparison-VarBound";
+      return "Invariant-OutsideLoop-MultiComparison-VarBound";
     if (Shape == TrapPredicateShape::SingleICmp)
-      return "OutsideLoop-SingleComparison";
+      return "Invariant-OutsideLoop-SingleComparison";
     if (Shape == TrapPredicateShape::OtherMulti)
-      return "OutsideLoop-MultiComparison-Other";
+      return "Invariant-OutsideLoop-MultiComparison-Other";
     if (TwoAR)
-      return "OutsideLoop-MultiComparison-Other";
-    return "OutsideLoop-Unclassifiable";
+      return "Invariant-OutsideLoop-MultiComparison-Other";
+    return "Invariant-OutsideLoop-Unclassifiable";
   }
   // In-loop, not a loop exit.
   if (!IsLoopExit)
@@ -703,31 +710,32 @@ static StringRef computeTrapClass(
   const bool HasBlocker = StoreReload || MemIReload || CallReload ||
                           InLoopPhi || UnaliasLoad || OtherUnk || OpaqueNoUnk;
   if (EdgeBTCComputable && (!LTAEmitExplain || !HasBlocker))
-    return LoopOtherUnk ? "InLoopExit-TripCountKnown-LoopBlockedElsewhere"
-                        : "InLoopExit-TripCountKnown";
+    return LoopOtherUnk
+               ? "Affine-InLoopExit-TripCountKnown-LoopBlockedElsewhere"
+               : "Affine-InLoopExit-TripCountKnown";
   const bool S = StoreReload || MemIReload;
   if (S && CallReload)
-    return "InLoopExit-TripCountUnknown-StoreAndCallReload";
+    return "Opaque-InLoopExit-TripCountUnknown-StoreAndCallReload";
   if (S)
-    return "InLoopExit-TripCountUnknown-StoreReload";
+    return "Opaque-InLoopExit-TripCountUnknown-StoreReload";
   if (CallReload)
-    return "InLoopExit-TripCountUnknown-CallReload";
+    return "Opaque-InLoopExit-TripCountUnknown-CallReload";
   if (InLoopPhi)
-    return "InLoopExit-TripCountUnknown-InLoopPhiOperand";
+    return "Opaque-InLoopExit-TripCountUnknown-InLoopPhiOperand";
   if (UnaliasLoad)
-    return "InLoopExit-TripCountUnknown-InLoopLoadOperand";
+    return "Opaque-InLoopExit-TripCountUnknown-InLoopLoadOperand";
   // The opaque-operand class split by opacity shape (freeze / select / other
   // in-loop unknown). InLoopFreeze / InLoopSelect are subsets of OtherUnk, so
   // test them first.
   if (OtherUnk) {
     if (InLoopFreeze)
-      return "InLoopExit-TripCountUnknown-OpaqueOperand-Freeze";
+      return "Opaque-InLoopExit-TripCountUnknown-OpaqueOperand-Freeze";
     if (InLoopSelect)
-      return "InLoopExit-TripCountUnknown-OpaqueOperand-Select";
-    return "InLoopExit-TripCountUnknown-OpaqueOperand-Other";
+      return "Opaque-InLoopExit-TripCountUnknown-OpaqueOperand-Select";
+    return "Opaque-InLoopExit-TripCountUnknown-OpaqueOperand-Other";
   }
   if (OpaqueNoUnk)
-    return "InLoopExit-TripCountUnknown-OpaqueOperand-NoInLoopUnknown";
+    return "Opaque-InLoopExit-TripCountUnknown-OpaqueOperand-NoInLoopUnknown";
   // The multi-comparison suffix is driven by the predicate SHAPE (one source of
   // truth), so the multi-comparison class can't disagree with the emitted
   // PredicateShape. Legacy (flag off) keeps the NumLeafOps>=4 gate for
@@ -737,17 +745,17 @@ static StringRef computeTrapClass(
                                    : (NumLeafOps >= 4);
   if (MultiShape) {
     if (ConstK)
-      return "InLoopExit-TripCountUnknown-NotProvenMonotonic-MultiComparison-"
-             "ConstBound";
+      return "Affine-InLoopExit-TripCountUnknown-NotProvenMonotonic-"
+             "MultiComparison-ConstBound";
     if (VarK)
-      return "InLoopExit-TripCountUnknown-NotProvenMonotonic-MultiComparison-"
-             "VarBound";
+      return "Affine-InLoopExit-TripCountUnknown-NotProvenMonotonic-"
+             "MultiComparison-VarBound";
     if (TwoAR)
-      return "InLoopExit-TripCountUnknown-NotProvenMonotonic-MultiComparison-"
-             "TwoAddRec";
+      return "Affine-InLoopExit-TripCountUnknown-NotProvenMonotonic-"
+             "MultiComparison-TwoAddRec";
     if (Shape == TrapPredicateShape::OtherMulti)
-      return "InLoopExit-TripCountUnknown-NotProvenMonotonic-MultiComparison-"
-             "Other";
+      return "Affine-InLoopExit-TripCountUnknown-NotProvenMonotonic-"
+             "MultiComparison-Other";
   }
   // Surface stride-fragility (the Has*StrideForLAddRec flags previously never
   // influenced the class) instead of lumping it into the bare weak-no-wrap
@@ -755,16 +763,19 @@ static StringRef computeTrapClass(
   // (byte-identical).
   if (LTAEmitExplain) {
     if (NonConstStride)
-      return "InLoopExit-TripCountUnknown-NotProvenMonotonic-NonConstantStride";
+      return "Affine-InLoopExit-TripCountUnknown-NotProvenMonotonic-"
+             "NonConstantStride";
     if (NonUnitStride)
-      return "InLoopExit-TripCountUnknown-NotProvenMonotonic-NonUnitStride";
+      return "Affine-InLoopExit-TripCountUnknown-NotProvenMonotonic-"
+             "NonUnitStride";
     if (NegStride)
-      return "InLoopExit-TripCountUnknown-NotProvenMonotonic-NegativeStride";
+      return "Affine-InLoopExit-TripCountUnknown-NotProvenMonotonic-"
+             "NegativeStride";
     if (NotProvenMonotonicOnly)
-      return "InLoopExit-TripCountUnknown-NotProvenMonotonic-"
+      return "Affine-InLoopExit-TripCountUnknown-NotProvenMonotonic-"
              "NotProvenMonotonicOnly";
   }
-  return "InLoopExit-TripCountUnknown-NotProvenMonotonic";
+  return "Affine-InLoopExit-TripCountUnknown-NotProvenMonotonic";
 }
 
 /// Match the bounded-iterator OR / AND shape:

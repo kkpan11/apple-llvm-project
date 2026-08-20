@@ -29,7 +29,7 @@ exit:
   ret void
 }
 ; CHECK: Function:{{ +}}counted_ubsantrap
-; CHECK: TrapClass:{{ +}}InLoopExit-TripCountKnown
+; CHECK: TrapClass:{{ +}}Affine-InLoopExit-TripCountKnown
 
 ; Counted loop whose trap exit calls @llvm.looptrap.
 define void @counted_looptrap(ptr %base, i32 %n) {
@@ -53,7 +53,7 @@ exit:
   ret void
 }
 ; CHECK: Function:{{ +}}counted_looptrap
-; CHECK: TrapClass:{{ +}}InLoopExit-TripCountKnown
+; CHECK: TrapClass:{{ +}}Affine-InLoopExit-TripCountKnown
 
 ; Counted loop whose trap exit calls @llvm.trap.
 define void @counted_trap(ptr %base, i32 %n) {
@@ -77,7 +77,7 @@ exit:
   ret void
 }
 ; CHECK: Function:{{ +}}counted_trap
-; CHECK: TrapClass:{{ +}}InLoopExit-TripCountKnown
+; CHECK: TrapClass:{{ +}}Affine-InLoopExit-TripCountKnown
 
 ; Trap exit driven by a pointer IV with a non-unit constant stride (i8, +2),
 ; so the trip count is not computable.
@@ -100,7 +100,7 @@ exit:
   ret void
 }
 ; CHECK: Function:{{ +}}stride_nonunit
-; CHECK: TrapClass:{{ +}}InLoopExit-TripCountUnknown-NotProvenMonotonic-NonUnitStride
+; CHECK: TrapClass:{{ +}}Affine-InLoopExit-TripCountUnknown-NotProvenMonotonic-NonUnitStride
 
 ; Trap exit driven by a pointer IV whose stride is a runtime (non-constant)
 ; value %s.
@@ -123,7 +123,7 @@ exit:
   ret void
 }
 ; CHECK: Function:{{ +}}stride_variable
-; CHECK: TrapClass:{{ +}}InLoopExit-TripCountUnknown-NotProvenMonotonic-NonConstantStride
+; CHECK: TrapClass:{{ +}}Affine-InLoopExit-TripCountUnknown-NotProvenMonotonic-NonConstantStride
 
 ; Trap check outside any loop, sitting directly on the function entry block.
 define void @entry_proximate(i32 %n) {
@@ -144,7 +144,7 @@ exit:
   ret void
 }
 ; CHECK: Function:{{ +}}entry_proximate
-; CHECK: TrapClass:{{ +}}OutsideLoop-EntryProximate
+; CHECK: TrapClass:{{ +}}Invariant-OutsideLoop-EntryProximate
 
 ; Trap check outside any loop, reached only after a long straight-line chain
 ; of blocks from entry (not adjacent to entry).
@@ -180,7 +180,7 @@ exit:
   ret void
 }
 ; CHECK: Function:{{ +}}out_single_cmp
-; CHECK: TrapClass:{{ +}}OutsideLoop-SingleComparison
+; CHECK: TrapClass:{{ +}}Invariant-OutsideLoop-SingleComparison
 
 ; In-loop trap exit whose condition reloads %p, which a same-loop store to %q
 ; could alias and modify.
@@ -204,7 +204,7 @@ exit:
   ret void
 }
 ; CHECK: Function:{{ +}}store_reload
-; CHECK: TrapClass:{{ +}}InLoopExit-TripCountUnknown-StoreReload
+; CHECK: TrapClass:{{ +}}Opaque-InLoopExit-TripCountUnknown-StoreReload
 
 ; In-loop trap exit whose condition depends on %acc, a non-IV phi updated only
 ; on some iterations (via a select).
@@ -231,7 +231,7 @@ exit:
   ret void
 }
 ; CHECK: Function:{{ +}}in_loop_phi_operand
-; CHECK: TrapClass:{{ +}}InLoopExit-TripCountUnknown-InLoopPhiOperand
+; CHECK: TrapClass:{{ +}}Opaque-InLoopExit-TripCountUnknown-InLoopPhiOperand
 
 ; In-loop trap exit whose condition operand is the result of @opaque(), which
 ; has no characterizable SCEV.
@@ -254,7 +254,7 @@ exit:
   ret void
 }
 ; CHECK: Function:{{ +}}opaque_other
-; CHECK: TrapClass:{{ +}}InLoopExit-TripCountUnknown-OpaqueOperand-Other
+; CHECK: TrapClass:{{ +}}Opaque-InLoopExit-TripCountUnknown-OpaqueOperand-Other
 
 ; In-loop trap exit on an accumulator (%acc += %iv) whose addrec is not proven
 ; monotonic (carries only a weak no-wrap flag).
@@ -278,4 +278,4 @@ exit:
   ret void
 }
 ; CHECK: Function:{{ +}}not_proven_monotonic
-; CHECK: TrapClass:{{ +}}InLoopExit-TripCountUnknown-NotProvenMonotonic
+; CHECK: TrapClass:{{ +}}Affine-InLoopExit-TripCountUnknown-NotProvenMonotonic

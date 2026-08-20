@@ -25,7 +25,7 @@ exit:
   ret void
 }
 ; CHECK: Function:{{ +}}single_loop
-; CHECK: TrapClass:{{ +}}InLoopExit-TripCountKnown
+; CHECK: TrapClass:{{ +}}Affine-InLoopExit-TripCountKnown
 
 ; Nested loops with the trap exit only in the INNER loop: exactly one edge,
 ; attributed at depth 2 (the outer loop is not double-counted).
@@ -55,7 +55,7 @@ exit:
 }
 ; CHECK: Function:{{ +}}nested_inner_trap
 ; CHECK: LoopDepth:{{ +}}'2'
-; CHECK: TrapClass:{{ +}}InLoopExit-TripCountKnown
+; CHECK: TrapClass:{{ +}}Affine-InLoopExit-TripCountKnown
 
 ; Loop with multiple exits: one trap exit plus one normal (non-trap) exit.
 define void @multi_exit(ptr %p, i32 %n) {
@@ -80,7 +80,7 @@ exit:
   ret void
 }
 ; CHECK: Function:{{ +}}multi_exit
-; CHECK: TrapClass:{{ +}}InLoopExit-TripCountKnown
+; CHECK: TrapClass:{{ +}}Affine-InLoopExit-TripCountKnown
 
 ; Nested loops with the trap exit in the OUTER loop: attributed at depth 1.
 define void @nested_outer_trap(i32 %n, i32 %m) {
@@ -107,7 +107,7 @@ exit:
 }
 ; CHECK: Function:{{ +}}nested_outer_trap
 ; CHECK: LoopDepth:{{ +}}'1'
-; CHECK: TrapClass:{{ +}}InLoopExit-TripCountKnown
+; CHECK: TrapClass:{{ +}}Affine-InLoopExit-TripCountKnown
 
 ; Rotated / guarded loop: a preheader guard dominates the loop body.
 define void @guarded_loop(ptr %base, i32 %n) {
@@ -133,4 +133,4 @@ exit:
   ret void
 }
 ; CHECK: Function:{{ +}}guarded_loop
-; CHECK: TrapClass:{{ +}}InLoopExit-TripCountKnown
+; CHECK: TrapClass:{{ +}}Affine-InLoopExit-TripCountKnown
