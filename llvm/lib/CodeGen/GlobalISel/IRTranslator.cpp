@@ -106,7 +106,7 @@ static cl::opt<bool>
                             cl::desc("Should enable CSE in irtranslator"),
                             cl::Optional, cl::init(false));
 
-namespace {
+namespace llvm {
 
 class IRTranslatorImpl {
   /// Interface used to lower the everything related to calls.
@@ -851,7 +851,7 @@ public:
                             SSPLayoutInfo *StackProtectorInfo);
 };
 
-} // namespace
+} // namespace llvm
 
 char IRTranslatorLegacy::ID = 0;
 
@@ -884,7 +884,10 @@ static void reportTranslationError(MachineFunction &MF,
 }
 
 IRTranslatorLegacy::IRTranslatorLegacy(CodeGenOptLevel OptLevel)
-    : MachineFunctionPass(ID), OptLevel(OptLevel) {}
+    : MachineFunctionPass(ID), OptLevel(OptLevel),
+      Impl(std::make_unique<IRTranslatorImpl>(OptLevel)) {}
+
+IRTranslatorLegacy::~IRTranslatorLegacy() = default;
 
 #ifndef NDEBUG
 namespace {
@@ -5270,12 +5273,11 @@ bool IRTranslatorImpl::runOnMachineFunction(
 }
 
 bool IRTranslatorLegacy::runOnMachineFunction(MachineFunction &MF) {
-  IRTranslatorImpl Impl(OptLevel);
   const TargetSubtargetInfo &Subtarget = MF.getSubtarget();
   Function &F = MF.getFunction();
 
   bool ShouldSkipOpts = skipFunction(MF.getFunction());
-  return Impl.runOnMachineFunction(
+  return Impl->runOnMachineFunction(
       MF,
       [&]() {
         TargetPassConfig &TPC = getAnalysis<TargetPassConfig>();
@@ -5298,9 +5300,14 @@ bool IRTranslatorLegacy::runOnMachineFunction(MachineFunction &MF) {
       &getAnalysis<StackProtector>().getLayoutInfo());
 }
 
+IRTranslatorPass::IRTranslatorPass(CodeGenOptLevel OptLevel)
+    : Impl(std::make_unique<IRTranslatorImpl>(OptLevel)) {}
+
+IRTranslatorPass::~IRTranslatorPass() = default;
+IRTranslatorPass::IRTranslatorPass(IRTranslatorPass &&) = default;
+
 PreservedAnalyses IRTranslatorPass::run(MachineFunction &MF,
                                         MachineFunctionAnalysisManager &MFAM) {
-  IRTranslatorImpl Impl(OptLevel);
   const TargetSubtargetInfo &Subtarget = MF.getSubtarget();
   Function &F = MF.getFunction();
 
@@ -5314,7 +5321,7 @@ PreservedAnalyses IRTranslatorPass::run(MachineFunction &MF,
   if (!MLLI)
     reportFatalUsageError(
         "LibcallLoweringModuleAnalysis must be available for IRTranslator");
-  Impl.runOnMachineFunction(
+  Impl->runOnMachineFunction(
       MF, [&]() { return MFAM.getResult<GISelCSEAnalysis>(MF).get(); },
       ShouldSkipOpts, [&]() { return &FAM.getResult<AAManager>(F); },
       [&]() { return &FAM.getResult<BranchProbabilityAnalysis>(F); },
