@@ -569,7 +569,104 @@ static StringRef computeTrapClass(
     bool UnaliasLoad, bool OtherUnk, bool OpaqueNoUnk, bool InLoopFreeze,
     bool InLoopSelect, unsigned NumLeafOps, bool NonUnitStride, bool NegStride,
     bool NonConstStride, bool NotProvenMonotonicOnly) {
-  return "";
+  const bool ConstK = Shape == TrapPredicateShape::OrBoundsCheckConstBound ||
+                      Shape == TrapPredicateShape::AndBoundsCheckConstBound;
+  const bool VarK = Shape == TrapPredicateShape::OrBoundsCheckVarBound ||
+                    Shape == TrapPredicateShape::AndBoundsCheckVarBound;
+  const bool TwoAR = Shape == TrapPredicateShape::OrTwoAddRecICmp ||
+                     Shape == TrapPredicateShape::AndTwoAddRecICmp;
+  // Out-of-loop: classify by structural redundancy / predicate shape.
+  if (!InLoop) {
+    if (IsEntryProx)
+      return "OutsideLoop-EntryProximate";
+    if (DomByEquiv)
+      return "OutsideLoop-RedundantWithDominatingCheck";
+    if (ConstK)
+      return "OutsideLoop-MultiComparison-ConstBound";
+    if (VarK)
+      return "OutsideLoop-MultiComparison-VarBound";
+    if (Shape == TrapPredicateShape::SingleICmp)
+      return "OutsideLoop-SingleComparison";
+    if (Shape == TrapPredicateShape::OtherMulti)
+      return "OutsideLoop-MultiComparison-Other";
+    if (TwoAR)
+      return "OutsideLoop-MultiComparison-Other";
+    return "OutsideLoop-Unclassifiable";
+  }
+  // In-loop, not a loop exit.
+  if (!IsLoopExit)
+    return "InLoop-NonExit";
+  // In-loop loop-exit.
+  // A BTC-computable edge whose predicate also has a reload/opaque blocker
+  // isn't cleanly eliminable via trip count, so under LTAEmitExplain it is NOT
+  // masked as a trip-count-known class -- it falls through to the blocker
+  // classes below. Legacy (flag off) keeps the trip-count-known classes for any
+  // BTC-computable edge (byte-identical).
+  const bool HasBlocker = StoreReload || MemIReload || CallReload ||
+                          InLoopPhi || UnaliasLoad || OtherUnk || OpaqueNoUnk;
+  if (EdgeBTCComputable && (!LTAEmitExplain || !HasBlocker))
+    return LoopOtherUnk ? "InLoopExit-TripCountKnown-LoopBlockedElsewhere"
+                        : "InLoopExit-TripCountKnown";
+  const bool S = StoreReload || MemIReload;
+  if (S && CallReload)
+    return "InLoopExit-TripCountUnknown-StoreAndCallReload";
+  if (S)
+    return "InLoopExit-TripCountUnknown-StoreReload";
+  if (CallReload)
+    return "InLoopExit-TripCountUnknown-CallReload";
+  if (InLoopPhi)
+    return "InLoopExit-TripCountUnknown-InLoopPhiOperand";
+  if (UnaliasLoad)
+    return "InLoopExit-TripCountUnknown-InLoopLoadOperand";
+  // The opaque-operand class split by opacity shape (freeze / select / other
+  // in-loop unknown). InLoopFreeze / InLoopSelect are subsets of OtherUnk, so
+  // test them first.
+  if (OtherUnk) {
+    if (InLoopFreeze)
+      return "InLoopExit-TripCountUnknown-OpaqueOperand-Freeze";
+    if (InLoopSelect)
+      return "InLoopExit-TripCountUnknown-OpaqueOperand-Select";
+    return "InLoopExit-TripCountUnknown-OpaqueOperand-Other";
+  }
+  if (OpaqueNoUnk)
+    return "InLoopExit-TripCountUnknown-OpaqueOperand-NoInLoopUnknown";
+  // The multi-comparison suffix is driven by the predicate SHAPE (one source of
+  // truth), so the multi-comparison class can't disagree with the emitted
+  // PredicateShape. Legacy (flag off) keeps the NumLeafOps>=4 gate for
+  // byte-identical output.
+  bool MultiShape = LTAEmitExplain ? (ConstK || VarK || TwoAR ||
+                                      Shape == TrapPredicateShape::OtherMulti)
+                                   : (NumLeafOps >= 4);
+  if (MultiShape) {
+    if (ConstK)
+      return "InLoopExit-TripCountUnknown-NotProvenMonotonic-MultiComparison-"
+             "ConstBound";
+    if (VarK)
+      return "InLoopExit-TripCountUnknown-NotProvenMonotonic-MultiComparison-"
+             "VarBound";
+    if (TwoAR)
+      return "InLoopExit-TripCountUnknown-NotProvenMonotonic-MultiComparison-"
+             "TwoAddRec";
+    if (Shape == TrapPredicateShape::OtherMulti)
+      return "InLoopExit-TripCountUnknown-NotProvenMonotonic-MultiComparison-"
+             "Other";
+  }
+  // Surface stride-fragility (the Has*StrideForLAddRec flags previously never
+  // influenced the class) instead of lumping it into the bare weak-no-wrap
+  // class. Legacy (flag off) returns the bare weak-no-wrap class
+  // (byte-identical).
+  if (LTAEmitExplain) {
+    if (NonConstStride)
+      return "InLoopExit-TripCountUnknown-NotProvenMonotonic-NonConstantStride";
+    if (NonUnitStride)
+      return "InLoopExit-TripCountUnknown-NotProvenMonotonic-NonUnitStride";
+    if (NegStride)
+      return "InLoopExit-TripCountUnknown-NotProvenMonotonic-NegativeStride";
+    if (NotProvenMonotonicOnly)
+      return "InLoopExit-TripCountUnknown-NotProvenMonotonic-"
+             "NotProvenMonotonicOnly";
+  }
+  return "InLoopExit-TripCountUnknown-NotProvenMonotonic";
 }
 
 /// Match the bounded-iterator OR / AND shape:
@@ -708,6 +805,29 @@ classifyTrapPredicateShape(Value *Cond, ScalarEvolution &SE, Loop *L) {
 /// by the loop body.
 static bool isEntryProximate(const Function &F, BasicBlock *BB,
                              const DominatorTree &DT, const LoopInfo &LI) {
+  if (!BB)
+    return false;
+  auto *N = DT.getNode(BB);
+  if (!N)
+    return false;
+  unsigned Depth = 0;
+  for (auto *Cur = N; Cur; Cur = Cur->getIDom()) {
+    BasicBlock *CurBB = Cur->getBlock();
+    // Function entry: classical entry-proximity boundary.
+    if (CurBB == &F.getEntryBlock())
+      return true;
+    // Loop preheader: also a validation boundary. It sits outside the loop,
+    // and trap edges at/above it run once per outer entry to the nest,
+    // regardless of inner-loop iteration counts.
+    if (BasicBlock *Succ = CurBB->getSingleSuccessor()) {
+      if (Loop *SuccL = LI.getLoopFor(Succ))
+        if (SuccL->getHeader() == Succ && SuccL->getLoopPreheader() == CurBB)
+          return true;
+    }
+    if (Depth >= EntryProximityDepth.getValue())
+      return false;
+    ++Depth;
+  }
   return false;
 }
 
@@ -719,6 +839,42 @@ static bool isEntryProximate(const Function &F, BasicBlock *BB,
 /// control reaches \p BB.
 static bool isDominatedByEquivalentCheck(BasicBlock *BB, Value *MyCond,
                                          const DominatorTree &DT) {
+  if (!BB || !MyCond)
+    return false;
+  auto *MyCmp = dyn_cast<ICmpInst>(MyCond);
+  auto *N = DT.getNode(BB);
+  if (!N)
+    return false;
+  // Walk strict dominators (skip BB itself), bounding cost on functions with
+  // very deep dominator chains.
+  const unsigned MaxDomChains = 16;
+  unsigned Steps = 0;
+  for (auto *Cur = N->getIDom(); Cur && Steps < MaxDomChains;
+       Cur = Cur->getIDom(), ++Steps) {
+    BasicBlock *Dom = Cur->getBlock();
+    auto *DomBI = dyn_cast<CondBrInst>(Dom->getTerminator());
+    if (!DomBI)
+      continue;
+    Value *DomCond = DomBI->getCondition();
+    bool Equivalent = (DomCond == MyCond);
+    if (!Equivalent && MyCmp)
+      if (auto *DomCmp = dyn_cast<ICmpInst>(DomCond))
+        Equivalent = DomCmp->getPredicate() == MyCmp->getPredicate() &&
+                     DomCmp->getOperand(0) == MyCmp->getOperand(0) &&
+                     DomCmp->getOperand(1) == MyCmp->getOperand(1);
+    if (!Equivalent)
+      continue;
+    if (!LTAEmitExplain)
+      return true;
+    // Require the dominating branch to actually DETERMINE the condition on the
+    // path to BB (one of its edges dominates BB). A same-condition dominator
+    // whose neither edge dominates BB proves nothing, so calling the trap
+    // "redundant" would be unsound.
+    BasicBlockEdge TrueEdge(Dom, DomBI->getSuccessor(0));
+    BasicBlockEdge FalseEdge(Dom, DomBI->getSuccessor(1));
+    if (DT.dominates(TrueEdge, BB) || DT.dominates(FalseEdge, BB))
+      return true;
+  }
   return false;
 }
 
@@ -735,6 +891,77 @@ static bool isDominatedByEquivalentCheck(BasicBlock *BB, Value *MyCond,
 /// Returns true vacuously when no header-phi is reached.
 static bool computeIVUpdateDominatesLatch(Value *Cond, Loop *L,
                                           const DominatorTree &DT) {
+  if (!L)
+    return true;
+  BasicBlock *Header = L->getHeader();
+  BasicBlock *Latch = L->getLoopLatch();
+  if (!Latch)
+    return true;
+  // Walk the recurrence chain reachable from a header phi's loop-carried
+  // incoming value, returning false if any reached in-loop Instruction sits in
+  // a BB that doesn't dominate the latch. Follows operands transitively through
+  // non-header (merge) phis and arithmetic, so the chain reaches the underlying
+  // add/sub even behind an inserted merge phi.
+  auto AllUpdatesDominate = [&](Value *Start) -> bool {
+    SmallPtrSet<const Value *, 32> Seen;
+    SmallVector<const Value *, 16> Stack;
+    Stack.push_back(Start);
+    unsigned Steps = 0;
+    const unsigned StepLimit = 64;
+    while (!Stack.empty() && Steps++ < StepLimit) {
+      const Value *V = Stack.pop_back_val();
+      if (!Seen.insert(V).second)
+        continue;
+      const auto *I = dyn_cast<Instruction>(V);
+      if (!I)
+        continue;
+      if (!L->contains(I->getParent()))
+        continue;
+      // The header phi's parent IS the header, which dominates the latch;
+      // don't recurse through it (recurrence already inspected at the call
+      // site).
+      if (isa<PHINode>(I) && I->getParent() == Header)
+        continue;
+      // Any other chain instruction must live in a BB dominating the latch;
+      // otherwise the update is control-dependent.
+      if (!DT.dominates(I->getParent(), Latch))
+        return false;
+      // Walk operands. For non-header (merge) phis this recurses into both
+      // arms — catching the `m += cond ? 1 : 0` shape where one arm's add sits
+      // in a non-dominating BB.
+      for (const Use &U : I->operands())
+        Stack.push_back(U.get());
+    }
+    return true;
+  };
+
+  SmallPtrSet<const Value *, 32> Seen;
+  SmallVector<const Value *, 16> Stack;
+  Stack.push_back(Cond);
+  unsigned Steps = 0;
+  const unsigned StepLimit = 64;
+  while (!Stack.empty() && Steps++ < StepLimit) {
+    const Value *V = Stack.pop_back_val();
+    if (!Seen.insert(V).second)
+      continue;
+    const auto *I = dyn_cast<Instruction>(V);
+    if (!I)
+      continue;
+    if (!L->contains(I->getParent()))
+      continue;
+    if (const auto *Phi = dyn_cast<PHINode>(I)) {
+      if (Phi->getParent() == Header) {
+        if (Value *In = Phi->getIncomingValueForBlock(Latch))
+          if (!AllUpdatesDominate(In))
+            return false;
+        // Don't recurse through phi operands — recurrence just inspected via
+        // the latch incoming.
+        continue;
+      }
+    }
+    for (const Use &U : I->operands())
+      Stack.push_back(U.get());
+  }
   return true;
 }
 
