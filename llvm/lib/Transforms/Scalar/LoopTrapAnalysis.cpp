@@ -90,15 +90,95 @@ enum class LegacyTrapMatch {
 /// change.
 static bool isTrapBlock(BasicBlock *BB, bool BoundsSafetyOnly,
                         LegacyTrapMatch Legacy) {
+  if (!BB || BB->empty())
+    return false;
+  Instruction *Term = BB->getTerminator();
+  if (!isa<UnreachableInst>(Term))
+    return false;
+  if (LTAEmitExplain) {
+    // Unified: bounds-safety filter + a trap-like terminating call, identified
+    // by its semantic property rather than an intrinsic allowlist: a
+    // `noreturn` call touching only inaccessible memory (the shared property of
+    // @llvm.trap / @llvm.ubsantrap / @llvm.looptrap and any future trap
+    // intrinsic).
+    if (BoundsSafetyOnly && !isBoundsSafetyAnnotated(Term))
+      return false;
+    if (Term == &BB->front())
+      return false;
+    if (auto *CI = dyn_cast<CallInst>(Term->getPrevNode()))
+      return CI->doesNotReturn() && CI->onlyAccessesInaccessibleMemory();
+    return false;
+  }
+  // Legacy: reproduce each caller's original predicate byte-for-byte.
+  switch (Legacy) {
+  case LegacyTrapMatch::AnyUnreachableBoundsSafety:
+    return !BoundsSafetyOnly || isBoundsSafetyAnnotated(Term);
+  case LegacyTrapMatch::AnyUnreachable:
+    return true;
+  case LegacyTrapMatch::TrapIntrinsic:
+    if (Term == &BB->front())
+      return false;
+    if (auto *CI = dyn_cast<CallInst>(Term->getPrevNode()))
+      if (Function *Callee = CI->getCalledFunction())
+        return Callee->getIntrinsicID() == Intrinsic::trap;
+    return false;
+  }
   return false;
 }
 
 /// Check for an unreachable instruction that has an edge to any of \p L basic
 /// blocks. if `--use-bounds-safety-traps-only` is used make sure that the trap and
 /// branch instructions have -fbounds-safety annotation.
-static bool hasUnreachableInst(Loop *L) { return false; }
+static bool hasUnreachableInst(Loop *L) {
+  SmallVector<BasicBlock *, 4> LoopExitBlocks;
+  L->getExitBlocks(LoopExitBlocks);
+  for (auto *BB : LoopExitBlocks) {
+    // Trap exit block (shared predicate, honoring
+    // --use-bounds-safety-traps-only).
+    if (!isTrapBlock(BB, BoundsSafetyTrapsOnly,
+                     LegacyTrapMatch::AnyUnreachableBoundsSafety))
+      continue;
+    if (any_of(predecessors(BB), [L](BasicBlock *PredB) {
+          auto *TerminatorInst = PredB->getTerminator();
+          return L->contains(PredB) &&
+                 (isa<CondBrInst>(TerminatorInst) ||
+                  isa<UncondBrInst>(TerminatorInst) ||
+                  isa<SwitchInst>(TerminatorInst)) &&
+                 (!BoundsSafetyTrapsOnly ||
+                  isBoundsSafetyAnnotated(TerminatorInst));
+        }))
+      return true;
+  }
+  return false;
+}
 
-static unsigned countTrapExits(Loop *L, LoopInfo &LI) { return 0u; }
+static unsigned countTrapExits(Loop *L, LoopInfo &LI) {
+  unsigned Count = 0;
+  SmallVector<BasicBlock *, 4> LoopExitBlocks;
+  L->getExitBlocks(LoopExitBlocks);
+  for (auto *BB : LoopExitBlocks) {
+    if (!isTrapBlock(BB, BoundsSafetyTrapsOnly,
+                     LegacyTrapMatch::AnyUnreachableBoundsSafety))
+      continue;
+    // Strict attribution: count this trap exit only if it has a predecessor
+    // whose immediate containing loop is L (not a nested sub-loop). Otherwise
+    // an inner trap's unreachable target -- in every enclosing loop's exit set
+    // -- would be counted at every nest level.
+    if (any_of(predecessors(BB), [L, &LI](BasicBlock *PredB) {
+          if (LI.getLoopFor(PredB) != L)
+            return false;
+          auto *TerminatorInst = PredB->getTerminator();
+          return L->contains(PredB) &&
+                 (isa<CondBrInst>(TerminatorInst) ||
+                  isa<UncondBrInst>(TerminatorInst) ||
+                  isa<SwitchInst>(TerminatorInst)) &&
+                 (!BoundsSafetyTrapsOnly ||
+                  isBoundsSafetyAnnotated(TerminatorInst));
+        }))
+      ++Count;
+  }
+  return Count;
+}
 
 /// Count conditional branches inside the loop body whose target is a trap
 /// block (BB ending in `unreachable`, optionally preceded by
@@ -108,12 +188,68 @@ static unsigned countTrapExits(Loop *L, LoopInfo &LI) { return 0u; }
 /// any sub-loop). Since `L->blocks()` transitively includes sub-loop blocks,
 /// without this filter an inner-loop trap would be double-counted by every
 /// enclosing loop's record.
-static unsigned countCondTrapEdges(Loop *L, LoopInfo &LI) { return 0u; }
+static unsigned countCondTrapEdges(Loop *L, LoopInfo &LI) {
+  unsigned Count = 0;
+  // Trap block: an unreachable BB whose only side effect is llvm.trap (or bare
+  // unreachable).
+  auto IsTrapBlock = [](BasicBlock *BB) {
+    return isTrapBlock(BB, BoundsSafetyTrapsOnly,
+                       LegacyTrapMatch::AnyUnreachableBoundsSafety);
+  };
+  for (auto *BB : L->blocks()) {
+    // Strict attribution: only edges whose source BB's immediate containing
+    // loop is L. Edges in nested sub-loops belong to those inner loops.
+    if (LI.getLoopFor(BB) != L)
+      continue;
+    auto *Term = BB->getTerminator();
+    auto *BI = dyn_cast<CondBrInst>(Term);
+    if (!BI)
+      continue;
+    for (BasicBlock *Succ : BI->successors()) {
+      if (L->contains(Succ))
+        continue;
+      if (IsTrapBlock(Succ)) {
+        if (BoundsSafetyTrapsOnly && !isBoundsSafetyAnnotated(Term))
+          continue;
+        ++Count;
+      }
+    }
+  }
+  return Count;
+}
 
 /// Count cond-trap edges whose condition is loop-invariant — i.e. LICM could
 /// hoist them out but hasn't. Estimates the residual hoisting opportunity.
 static unsigned countHoistableCondTrapEdges(Loop *L, LoopInfo &LI) {
-  return 0u;
+  unsigned Count = 0;
+  auto IsTrapBlock = [](BasicBlock *BB) {
+    return isTrapBlock(BB, BoundsSafetyTrapsOnly,
+                       LegacyTrapMatch::AnyUnreachable);
+  };
+  for (auto *BB : L->blocks()) {
+    // Strict attribution: only edges originating in L's own body. Same rule
+    // as countCondTrapEdges.
+    if (LI.getLoopFor(BB) != L)
+      continue;
+    auto *Term = BB->getTerminator();
+    auto *BI = dyn_cast<CondBrInst>(Term);
+    if (!BI)
+      continue;
+    bool HasTrapSucc = false;
+    for (BasicBlock *Succ : BI->successors()) {
+      if (L->contains(Succ))
+        continue;
+      if (IsTrapBlock(Succ)) {
+        HasTrapSucc = true;
+        break;
+      }
+    }
+    if (!HasTrapSucc)
+      continue;
+    if (L->isLoopInvariant(BI->getCondition()))
+      ++Count;
+  }
+  return Count;
 }
 
 /// Classify cond-trap edges by the shape of their controlling condition.
