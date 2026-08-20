@@ -943,9 +943,10 @@ ASTContext::ASTContext(LangOptions &LOpts, SourceManager &SM,
       DependentTypeOfExprTypes(this_()), DependentDecltypeTypes(this_()),
       DependentPackIndexingTypes(this_()), TemplateSpecializationTypes(this_()),
       AttributedTypes(this_()), DependentBitIntTypes(this_()),
-      ValueTerminatedTypes(this_()), SubstTemplateTemplateParmPacks(this_()),
-      DeducedTemplates(this_()), ArrayParameterTypes(this_()),
-      CanonTemplateTemplateParms(this_()), SourceMgr(SM), LangOpts(LOpts),
+      HLSLAttributedResourceTypes(this_()), ValueTerminatedTypes(this_()),
+      SubstTemplateTemplateParmPacks(this_()), DeducedTemplates(this_()),
+      ArrayParameterTypes(this_()), CanonTemplateTemplateParms(this_()),
+      SourceMgr(SM), LangOpts(LOpts),
       NoSanitizeL(new NoSanitizeList(LangOpts.NoSanitizeFiles, SM)),
       XRayFilter(new XRayFunctionFilter(LangOpts.XRayAlwaysInstrumentFiles,
                                         LangOpts.XRayNeverInstrumentFiles,
@@ -6510,7 +6511,7 @@ QualType ASTContext::getHLSLAttributedResourceType(
     const HLSLAttributedResourceType::Attributes &Attrs) {
 
   llvm::FoldingSetNodeID ID;
-  HLSLAttributedResourceType::Profile(ID, Wrapped, Contained, Attrs);
+  HLSLAttributedResourceType::Profile(ID, *this, Wrapped, Contained, Attrs);
 
   void *InsertPos = nullptr;
   HLSLAttributedResourceType *Ty =
