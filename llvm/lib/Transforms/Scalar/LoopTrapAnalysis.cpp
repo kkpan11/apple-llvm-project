@@ -831,6 +831,22 @@ static bool matchBoundsCheckArmsImpl(Value *Arm1, Value *Arm2,
   return false;
 }
 
+/// True when \p V is an icmp with an operand whose SCEV is an AddRec for \p L.
+static bool hasLAddRec(Value *V, ScalarEvolution &SE, Loop *L) {
+  auto *Cmp = dyn_cast<ICmpInst>(V);
+  if (!Cmp)
+    return false;
+  for (Value *Op : {Cmp->getOperand(0), Cmp->getOperand(1)}) {
+    if (!SE.isSCEVable(Op->getType()))
+      continue;
+    const SCEV *S = SE.getSCEV(Op);
+    if (auto *AR = dyn_cast<SCEVAddRecExpr>(S))
+      if (AR->getLoop() == L)
+        return true;
+  }
+  return false;
+}
+
 /// Match `or/and(icmp(X), icmp(Y))` where each arm has an operand whose SCEV is
 /// an L-AddRec -- the "two unrelated AddRec exits combined by one OR/AND" shape
 /// that SCEV's `computeExitLimit` does not fold to `min(BTC_a, BTC_b)`.
@@ -840,21 +856,7 @@ static bool matchTwoAddRecICmpImpl(Value *Arm1, Value *Arm2,
                                    ScalarEvolution &SE, Loop *L) {
   if (!L)
     return false;
-  auto HasLAddRec = [&](Value *V) -> bool {
-    auto *Cmp = dyn_cast<ICmpInst>(V);
-    if (!Cmp)
-      return false;
-    for (Value *Op : {Cmp->getOperand(0), Cmp->getOperand(1)}) {
-      if (!SE.isSCEVable(Op->getType()))
-        continue;
-      const SCEV *S = SE.getSCEV(Op);
-      if (auto *AR = dyn_cast<SCEVAddRecExpr>(S))
-        if (AR->getLoop() == L)
-          return true;
-    }
-    return false;
-  };
-  return HasLAddRec(Arm1) && HasLAddRec(Arm2);
+  return hasLAddRec(Arm1, SE, L) && hasLAddRec(Arm2, SE, L);
 }
 
 /// Classify a trap branch's i1 predicate by structural shape.
@@ -1042,6 +1044,45 @@ static bool isDominatedByEquivalentCheck(BasicBlock *BB, Value *MyCond,
 ///
 /// Plus loop-context fields (LoopHeader / Depth / IsInnermost) so downstream
 /// tooling can join against `LoopPrimitives<Tag>` records.
+/// Walk the recurrence chain reachable from a header phi's loop-carried
+/// incoming value, returning false if any reached in-loop Instruction sits in
+/// a BB that doesn't dominate the latch. Follows operands transitively through
+/// non-header (merge) phis and arithmetic, so the chain reaches the underlying
+/// add/sub even behind an inserted merge phi.
+static bool allUpdatesDominate(Value *Start, Loop *L, BasicBlock *Header,
+                               BasicBlock *Latch, const DominatorTree &DT) {
+  SmallPtrSet<const Value *, 32> Seen;
+  SmallVector<const Value *, 16> Stack;
+  Stack.push_back(Start);
+  unsigned Steps = 0;
+  const unsigned StepLimit = 64;
+  while (!Stack.empty() && Steps++ < StepLimit) {
+    const Value *V = Stack.pop_back_val();
+    if (!Seen.insert(V).second)
+      continue;
+    const auto *I = dyn_cast<Instruction>(V);
+    if (!I)
+      continue;
+    if (!L->contains(I->getParent()))
+      continue;
+    // The header phi's parent IS the header, which dominates the latch;
+    // don't recurse through it (recurrence already inspected at the call
+    // site).
+    if (isa<PHINode>(I) && I->getParent() == Header)
+      continue;
+    // Any other chain instruction must live in a BB dominating the latch;
+    // otherwise the update is control-dependent.
+    if (!DT.dominates(I->getParent(), Latch))
+      return false;
+    // Walk operands. For non-header (merge) phis this recurses into both
+    // arms — catching the `m += cond ? 1 : 0` shape where one arm's add sits
+    // in a non-dominating BB.
+    for (const Use &U : I->operands())
+      Stack.push_back(U.get());
+  }
+  return true;
+}
+
 /// Walk the def chain of \p Cond (bounded to instructions inside \p L) and
 /// answer Q2 of the trap-explanation tree: for every IV-shaped operand reached,
 /// does its update dominate the loop latch?
@@ -1061,44 +1102,6 @@ static bool computeIVUpdateDominatesLatch(Value *Cond, Loop *L,
   BasicBlock *Latch = L->getLoopLatch();
   if (!Latch)
     return true;
-  // Walk the recurrence chain reachable from a header phi's loop-carried
-  // incoming value, returning false if any reached in-loop Instruction sits in
-  // a BB that doesn't dominate the latch. Follows operands transitively through
-  // non-header (merge) phis and arithmetic, so the chain reaches the underlying
-  // add/sub even behind an inserted merge phi.
-  auto AllUpdatesDominate = [&](Value *Start) -> bool {
-    SmallPtrSet<const Value *, 32> Seen;
-    SmallVector<const Value *, 16> Stack;
-    Stack.push_back(Start);
-    unsigned Steps = 0;
-    const unsigned StepLimit = 64;
-    while (!Stack.empty() && Steps++ < StepLimit) {
-      const Value *V = Stack.pop_back_val();
-      if (!Seen.insert(V).second)
-        continue;
-      const auto *I = dyn_cast<Instruction>(V);
-      if (!I)
-        continue;
-      if (!L->contains(I->getParent()))
-        continue;
-      // The header phi's parent IS the header, which dominates the latch;
-      // don't recurse through it (recurrence already inspected at the call
-      // site).
-      if (isa<PHINode>(I) && I->getParent() == Header)
-        continue;
-      // Any other chain instruction must live in a BB dominating the latch;
-      // otherwise the update is control-dependent.
-      if (!DT.dominates(I->getParent(), Latch))
-        return false;
-      // Walk operands. For non-header (merge) phis this recurses into both
-      // arms — catching the `m += cond ? 1 : 0` shape where one arm's add sits
-      // in a non-dominating BB.
-      for (const Use &U : I->operands())
-        Stack.push_back(U.get());
-    }
-    return true;
-  };
-
   SmallPtrSet<const Value *, 32> Seen;
   SmallVector<const Value *, 16> Stack;
   Stack.push_back(Cond);
@@ -1116,7 +1119,7 @@ static bool computeIVUpdateDominatesLatch(Value *Cond, Loop *L,
     if (const auto *Phi = dyn_cast<PHINode>(I)) {
       if (Phi->getParent() == Header) {
         if (Value *In = Phi->getIncomingValueForBlock(Latch))
-          if (!AllUpdatesDominate(In))
+          if (!allUpdatesDominate(In, L, Header, Latch, DT))
             return false;
         // Don't recurse through phi operands — recurrence just inspected via
         // the latch incoming.
@@ -1127,6 +1130,132 @@ static bool computeIVUpdateDominatesLatch(Value *Cond, Loop *L,
       Stack.push_back(U.get());
   }
   return true;
+}
+
+// Per-load "do any in-loop instructions may-alias this load?" query, cached in
+// \p ReloadCache. Key: (Loop*, LoadInst*). Returns (StoreAlias,
+// MemIntrinsicAlias, CallAlias) tracked SEPARATELY so the consumer can bucket
+// scalar-store vs struct-copy (mem-intrinsic) aliasing (different levers).
+static std::tuple<bool, bool, bool> loadAliasFlags(
+    LoadInst *Load, Loop *L, AAResults &AA,
+    DenseMap<std::pair<Loop *, LoadInst *>, std::tuple<bool, bool, bool>>
+        &ReloadCache) {
+  auto Key = std::make_pair(L, Load);
+  auto It = ReloadCache.find(Key);
+  if (It != ReloadCache.end())
+    return It->second;
+  bool Store = false, MemI = false, Call = false;
+  MemoryLocation LoadLoc = MemoryLocation::get(Load);
+  for (BasicBlock *BB : L->blocks()) {
+    for (Instruction &I : *BB) {
+      if (&I == Load)
+        continue;
+      if (auto *SI = dyn_cast<StoreInst>(&I)) {
+        if (LTAEmitExplain ? isModSet(AA.getModRefInfo(SI, LoadLoc))
+                           : !AA.isNoAlias(MemoryLocation::get(SI), LoadLoc))
+          Store = true;
+      } else if (auto *MI = dyn_cast<MemIntrinsic>(&I)) {
+        if (isModSet(AA.getModRefInfo(MI, LoadLoc)))
+          MemI = true;
+      } else if (auto *CB = dyn_cast<CallBase>(&I)) {
+        if (CB->onlyReadsMemory() || CB->doesNotAccessMemory())
+          continue;
+        if (isModSet(AA.getModRefInfo(CB, LoadLoc)))
+          Call = true;
+      }
+      if (Store && MemI && Call)
+        break;
+    }
+    if (Store && MemI && Call)
+      break;
+  }
+  auto Out = std::make_tuple(Store, MemI, Call);
+  ReloadCache[Key] = Out;
+  return Out;
+}
+
+// For a load flagged store-may-cause-reload, return the FIRST in-loop
+// store / mem-intrinsic that may-alias it (per AA, which already folds in
+// TBAA). Lets the consumer point at the specific writer that blocks LICM.
+static Instruction *firstAliasingStore(LoadInst *Load, Loop *L, AAResults &AA) {
+  MemoryLocation LoadLoc = MemoryLocation::get(Load);
+  for (BasicBlock *BB : L->blocks())
+    for (Instruction &I : *BB) {
+      if (&I == Load)
+        continue;
+      if (auto *SI = dyn_cast<StoreInst>(&I)) {
+        if (LTAEmitExplain ? isModSet(AA.getModRefInfo(SI, LoadLoc))
+                           : !AA.isNoAlias(MemoryLocation::get(SI), LoadLoc))
+          return &I;
+      } else if (auto *MI = dyn_cast<MemIntrinsic>(&I)) {
+        if (isModSet(AA.getModRefInfo(MI, LoadLoc)))
+          return &I;
+      }
+    }
+  return nullptr;
+}
+
+// Extract a human-readable TBAA access-type name from an instruction's TBAA
+// metadata (struct-path tag: operand 1 is the access-type descriptor; scalar
+// tag: operand 0 is the type-name string). A memcpy / struct copy carries
+// !tbaa.struct instead — report "struct-copy". Empty if no TBAA.
+static StringRef tbaaTypeName(const Instruction *I) {
+  AAMDNodes AAMD = I->getAAMetadata();
+  if (const MDNode *TBAA = AAMD.TBAA) {
+    const MDNode *AccessType = TBAA;
+    if (TBAA->getNumOperands() >= 2)
+      if (auto *AT = dyn_cast<MDNode>(TBAA->getOperand(1)))
+        AccessType = AT;
+    if (AccessType->getNumOperands() >= 1)
+      if (auto *Name = dyn_cast<MDString>(AccessType->getOperand(0)))
+        return Name->getString();
+  }
+  if (AAMD.TBAAStruct)
+    return "struct-copy";
+  return "";
+}
+
+// Short kind tag for a reload-blocking writer.
+static StringRef writerKind(const Instruction *I) {
+  if (isa<MemCpyInst>(I))
+    return "memcpy";
+  if (isa<MemMoveInst>(I))
+    return "memmove";
+  if (isa<MemSetInst>(I))
+    return "memset";
+  if (isa<MemIntrinsic>(I))
+    return "mem-intrinsic";
+  if (isa<StoreInst>(I))
+    return "store";
+  if (isa<CallBase>(I))
+    return "call";
+  return "writer";
+}
+
+// Like firstAliasingStore but also considers side-effecting calls — used
+// by the flag-gated per-load alias annotation (LoopLoadAlias).
+static Instruction *firstAliasingWriter(LoadInst *Load, Loop *L,
+                                        AAResults &AA) {
+  MemoryLocation LoadLoc = MemoryLocation::get(Load);
+  for (BasicBlock *BB : L->blocks())
+    for (Instruction &I : *BB) {
+      if (&I == Load)
+        continue;
+      if (auto *SI = dyn_cast<StoreInst>(&I)) {
+        if (LTAEmitExplain ? isModSet(AA.getModRefInfo(SI, LoadLoc))
+                           : !AA.isNoAlias(MemoryLocation::get(SI), LoadLoc))
+          return &I;
+      } else if (auto *MI = dyn_cast<MemIntrinsic>(&I)) {
+        if (isModSet(AA.getModRefInfo(MI, LoadLoc)))
+          return &I;
+      } else if (auto *CB = dyn_cast<CallBase>(&I)) {
+        if (CB->onlyReadsMemory() || CB->doesNotAccessMemory())
+          continue;
+        if (isModSet(AA.getModRefInfo(CB, LoadLoc)))
+          return &I;
+      }
+    }
+  return nullptr;
 }
 
 static void emitPerTrapEdgeSCEV(Function &F, LoopInfo &LI, ScalarEvolution &SE,
@@ -1175,124 +1304,6 @@ static void emitPerTrapEdgeSCEV(Function &F, LoopInfo &LI, ScalarEvolution &SE,
   // scalar-store vs struct-copy (mem-intrinsic) aliasing (different levers).
   DenseMap<std::pair<Loop *, LoadInst *>, std::tuple<bool, bool, bool>>
       ReloadCache;
-  auto LoadAliasFlags = [&](LoadInst *Load,
-                            Loop *L) -> std::tuple<bool, bool, bool> {
-    auto Key = std::make_pair(L, Load);
-    auto It = ReloadCache.find(Key);
-    if (It != ReloadCache.end())
-      return It->second;
-    bool Store = false, MemI = false, Call = false;
-    MemoryLocation LoadLoc = MemoryLocation::get(Load);
-    for (BasicBlock *BB : L->blocks()) {
-      for (Instruction &I : *BB) {
-        if (&I == Load)
-          continue;
-        if (auto *SI = dyn_cast<StoreInst>(&I)) {
-          if (LTAEmitExplain ? isModSet(AA.getModRefInfo(SI, LoadLoc))
-                             : !AA.isNoAlias(MemoryLocation::get(SI), LoadLoc))
-            Store = true;
-        } else if (auto *MI = dyn_cast<MemIntrinsic>(&I)) {
-          if (isModSet(AA.getModRefInfo(MI, LoadLoc)))
-            MemI = true;
-        } else if (auto *CB = dyn_cast<CallBase>(&I)) {
-          if (CB->onlyReadsMemory() || CB->doesNotAccessMemory())
-            continue;
-          if (isModSet(AA.getModRefInfo(CB, LoadLoc)))
-            Call = true;
-        }
-        if (Store && MemI && Call)
-          break;
-      }
-      if (Store && MemI && Call)
-        break;
-    }
-    auto Out = std::make_tuple(Store, MemI, Call);
-    ReloadCache[Key] = Out;
-    return Out;
-  };
-
-  // For a load flagged store-may-cause-reload, return the FIRST in-loop
-  // store / mem-intrinsic that may-alias it (per AA, which already folds in
-  // TBAA). Lets the consumer point at the specific writer that blocks LICM.
-  auto FirstAliasingStore = [&](LoadInst *Load, Loop *L) -> Instruction * {
-    MemoryLocation LoadLoc = MemoryLocation::get(Load);
-    for (BasicBlock *BB : L->blocks())
-      for (Instruction &I : *BB) {
-        if (&I == Load)
-          continue;
-        if (auto *SI = dyn_cast<StoreInst>(&I)) {
-          if (LTAEmitExplain ? isModSet(AA.getModRefInfo(SI, LoadLoc))
-                             : !AA.isNoAlias(MemoryLocation::get(SI), LoadLoc))
-            return &I;
-        } else if (auto *MI = dyn_cast<MemIntrinsic>(&I)) {
-          if (isModSet(AA.getModRefInfo(MI, LoadLoc)))
-            return &I;
-        }
-      }
-    return nullptr;
-  };
-
-  // Extract a human-readable TBAA access-type name from an instruction's TBAA
-  // metadata (struct-path tag: operand 1 is the access-type descriptor; scalar
-  // tag: operand 0 is the type-name string). A memcpy / struct copy carries
-  // !tbaa.struct instead — report "struct-copy". Empty if no TBAA.
-  auto TBAATypeName = [](const Instruction *I) -> StringRef {
-    AAMDNodes AAMD = I->getAAMetadata();
-    if (const MDNode *TBAA = AAMD.TBAA) {
-      const MDNode *AccessType = TBAA;
-      if (TBAA->getNumOperands() >= 2)
-        if (auto *AT = dyn_cast<MDNode>(TBAA->getOperand(1)))
-          AccessType = AT;
-      if (AccessType->getNumOperands() >= 1)
-        if (auto *Name = dyn_cast<MDString>(AccessType->getOperand(0)))
-          return Name->getString();
-    }
-    if (AAMD.TBAAStruct)
-      return "struct-copy";
-    return "";
-  };
-
-  // Short kind tag for a reload-blocking writer.
-  auto WriterKind = [](const Instruction *I) -> StringRef {
-    if (isa<MemCpyInst>(I))
-      return "memcpy";
-    if (isa<MemMoveInst>(I))
-      return "memmove";
-    if (isa<MemSetInst>(I))
-      return "memset";
-    if (isa<MemIntrinsic>(I))
-      return "mem-intrinsic";
-    if (isa<StoreInst>(I))
-      return "store";
-    if (isa<CallBase>(I))
-      return "call";
-    return "writer";
-  };
-
-  // Like FirstAliasingStore but also considers side-effecting calls — used
-  // by the flag-gated per-load alias annotation (LoopLoadAlias).
-  auto FirstAliasingWriter = [&](LoadInst *Load, Loop *L) -> Instruction * {
-    MemoryLocation LoadLoc = MemoryLocation::get(Load);
-    for (BasicBlock *BB : L->blocks())
-      for (Instruction &I : *BB) {
-        if (&I == Load)
-          continue;
-        if (auto *SI = dyn_cast<StoreInst>(&I)) {
-          if (LTAEmitExplain ? isModSet(AA.getModRefInfo(SI, LoadLoc))
-                             : !AA.isNoAlias(MemoryLocation::get(SI), LoadLoc))
-            return &I;
-        } else if (auto *MI = dyn_cast<MemIntrinsic>(&I)) {
-          if (isModSet(AA.getModRefInfo(MI, LoadLoc)))
-            return &I;
-        } else if (auto *CB = dyn_cast<CallBase>(&I)) {
-          if (CB->onlyReadsMemory() || CB->doesNotAccessMemory())
-            continue;
-          if (isModSet(AA.getModRefInfo(CB, LoadLoc)))
-            return &I;
-        }
-      }
-    return nullptr;
-  };
 
   for (BasicBlock &BB : F) {
     auto *BI = dyn_cast<CondBrInst>(BB.getTerminator());
@@ -1478,7 +1489,8 @@ static void emitPerTrapEdgeSCEV(Function &F, LoopInfo &LI, ScalarEvolution &SE,
         if (Innermost && Innermost->contains(I->getParent())) {
           OpHasInLoopUnknown = true;
           if (auto *Load = dyn_cast<LoadInst>(I)) {
-            auto [SAlias, MAlias, CAlias] = LoadAliasFlags(Load, Innermost);
+            auto [SAlias, MAlias, CAlias] =
+                loadAliasFlags(Load, Innermost, AA, ReloadCache);
             if (SAlias)
               HasStoreReload = true;
             if (MAlias)
@@ -1488,7 +1500,7 @@ static void emitPerTrapEdgeSCEV(Function &F, LoopInfo &LI, ScalarEvolution &SE,
             // Point at the specific aliasing writer (first store / mem-
             // intrinsic wins) so the consumer sees WHERE the reload comes from.
             if ((SAlias || MAlias) && !ReloadStore) {
-              ReloadStore = FirstAliasingStore(Load, Innermost);
+              ReloadStore = firstAliasingStore(Load, Innermost, AA);
               ReloadLoad = Load;
             }
             // Load with no AA-detected writer (indirect / data-dependent;
@@ -1596,11 +1608,11 @@ static void emitPerTrapEdgeSCEV(Function &F, LoopInfo &LI, ScalarEvolution &SE,
     if (ReloadStore) {
       if (const DebugLoc &DL = ReloadStore->getDebugLoc())
         ReloadStoreLine = DL.getLine();
-      ReloadStoreTBAA = TBAATypeName(ReloadStore);
-      ReloadStoreKind = WriterKind(ReloadStore);
+      ReloadStoreTBAA = tbaaTypeName(ReloadStore);
+      ReloadStoreKind = writerKind(ReloadStore);
     }
     if (ReloadLoad) {
-      ReloadLoadTBAA = TBAATypeName(ReloadLoad);
+      ReloadLoadTBAA = tbaaTypeName(ReloadLoad);
       if (const DebugLoc &DL = ReloadLoad->getDebugLoc())
         ReloadLoadLine = DL.getLine();
       if (Value *Ptr = ReloadLoad->getPointerOperand())
@@ -1703,7 +1715,7 @@ static void emitPerTrapEdgeSCEV(Function &F, LoopInfo &LI, ScalarEvolution &SE,
           auto *Load = dyn_cast<LoadInst>(&I);
           if (!Load)
             continue;
-          Instruction *W = FirstAliasingWriter(Load, L);
+          Instruction *W = firstAliasingWriter(Load, L, AA);
           if (!W)
             continue; // hoistable — no in-loop writer may-aliases it
           unsigned LoadLine = 0, WLine = 0;
@@ -1718,15 +1730,139 @@ static void emitPerTrapEdgeSCEV(Function &F, LoopInfo &LI, ScalarEvolution &SE,
           Rem << "Function " << NV("Function", F.getName())
               << " load_name=" << NV("LoadName", LoadName)
               << " load_line=" << NV("LoadLine", LoadLine)
-              << " load_tbaa=" << NV("LoadTBAA", TBAATypeName(Load))
+              << " load_tbaa=" << NV("LoadTBAA", tbaaTypeName(Load))
               << " loop_header=" << NV("LoopHeader", bbLabel(L->getHeader()))
-              << " writer_kind=" << NV("WriterKind", WriterKind(W))
+              << " writer_kind=" << NV("WriterKind", writerKind(W))
               << " writer_line=" << NV("WriterLine", WLine)
-              << " writer_tbaa=" << NV("WriterTBAA", TBAATypeName(W));
+              << " writer_tbaa=" << NV("WriterTBAA", tbaaTypeName(W));
           ORE.emit(Rem);
         }
     }
   }
+}
+
+// 3-way reason for an unknown-BTC exit. Priority StoreReload > CallReload
+// > Other so buckets are exclusive and total to the unknown-BTC count.
+enum class ReloadReason { StoreReload, CallReload, Other };
+
+// Classify why an in-loop load blocks SCEV, caching the result per-load in
+// \p LoadCache: several leaf cmp operands (within and across exits in L) can
+// fan in from the same load; don't re-walk L each time.
+static ReloadReason
+loadReloadCause(LoadInst *Load, Loop *L, AAResults &AA,
+                DenseMap<LoadInst *, ReloadReason> &LoadCache) {
+  auto It = LoadCache.find(Load);
+  if (It != LoadCache.end())
+    return It->second;
+  MemoryLocation LoadLoc = MemoryLocation::get(Load);
+  bool SawCallMod = false;
+  ReloadReason Result = ReloadReason::Other;
+  for (BasicBlock *BB : L->blocks()) {
+    for (Instruction &I : *BB) {
+      if (&I == Load)
+        continue;
+      if (auto *SI = dyn_cast<StoreInst>(&I)) {
+        if (LTAEmitExplain ? isModSet(AA.getModRefInfo(SI, LoadLoc))
+                           : !AA.isNoAlias(MemoryLocation::get(SI), LoadLoc)) {
+          Result = ReloadReason::StoreReload;
+          goto done;
+        }
+        continue;
+      }
+      if (auto *MI = dyn_cast<MemIntrinsic>(&I)) {
+        if (isModSet(AA.getModRefInfo(MI, LoadLoc))) {
+          Result = ReloadReason::StoreReload;
+          goto done;
+        }
+        continue;
+      }
+      if (auto *CB = dyn_cast<CallBase>(&I)) {
+        if (CB->onlyReadsMemory() || CB->doesNotAccessMemory())
+          continue;
+        if (isModSet(AA.getModRefInfo(CB, LoadLoc)))
+          SawCallMod = true;
+      }
+    }
+  }
+  if (SawCallMod)
+    Result = ReloadReason::CallReload;
+done:
+  LoadCache[Load] = Result;
+  return Result;
+}
+
+// Walk a branch's leaf cmp operands. For each whose SCEV references an
+// in-loop SCEVUnknown, classify the blocker; the exit-level reason is the
+// strongest cause across operands.
+static ReloadReason
+classifyExit(CondBrInst *BI, Loop *L, ScalarEvolution &SE, AAResults &AA,
+             DenseMap<LoadInst *, ReloadReason> &LoadCache) {
+  SmallVector<Value *, 8> Operands;
+  SmallPtrSet<Value *, 16> Visited;
+  collectBoolLeafOperands(BI->getCondition(), Operands, Visited);
+  ReloadReason Best = ReloadReason::Other;
+  for (Value *V : Operands) {
+    if (!V || isa<Constant>(V))
+      continue;
+    if (!SE.isSCEVable(V->getType()))
+      continue;
+    const SCEV *SC = SE.getSCEV(V);
+    if (isa<SCEVCouldNotCompute>(SC))
+      continue;
+    if (SE.isLoopInvariant(SC, L))
+      continue;
+    if (auto *AR = dyn_cast<SCEVAddRecExpr>(SC))
+      if (AR->getLoop() == L)
+        continue;
+    SCEVNodeCollector Coll;
+    SCEVTraversal<SCEVNodeCollector>(Coll).visitAll(SC);
+    for (const SCEVUnknown *U : Coll.Unknowns) {
+      auto *I = dyn_cast_or_null<Instruction>(U->getValue());
+      if (!I || !L->contains(I->getParent()))
+        continue;
+      if (auto *Load = dyn_cast<LoadInst>(I)) {
+        ReloadReason R = loadReloadCause(Load, L, AA, LoadCache);
+        if (R == ReloadReason::StoreReload)
+          return R;
+        if (R == ReloadReason::CallReload && Best != ReloadReason::CallReload)
+          Best = R;
+      }
+      // Non-load in-loop SCEVUnknown → genuine varying. Stays Other
+      // unless another operand promotes us.
+    }
+  }
+  return Best;
+}
+
+// Legacy bool: did *any* leaf operand reference an in-loop SCEVUnknown?
+// (Superset of the reason buckets.) Kept for backwards-compat with
+// classify_unknown_btc.py and existing dashboards.
+static bool isBlockedByReload(CondBrInst *BI, Loop *L, ScalarEvolution &SE) {
+  SmallVector<Value *, 8> Operands;
+  SmallPtrSet<Value *, 16> Visited;
+  collectBoolLeafOperands(BI->getCondition(), Operands, Visited);
+  for (Value *V : Operands) {
+    if (!V || isa<Constant>(V))
+      continue;
+    if (!SE.isSCEVable(V->getType()))
+      continue;
+    const SCEV *SC = SE.getSCEV(V);
+    if (isa<SCEVCouldNotCompute>(SC))
+      continue;
+    if (SE.isLoopInvariant(SC, L))
+      continue;
+    if (auto *AR = dyn_cast<SCEVAddRecExpr>(SC))
+      if (AR->getLoop() == L)
+        continue;
+    SCEVNodeCollector Coll;
+    SCEVTraversal<SCEVNodeCollector>(Coll).visitAll(SC);
+    for (const SCEVUnknown *U : Coll.Unknowns) {
+      if (auto *I = dyn_cast_or_null<Instruction>(U->getValue()))
+        if (L->contains(I->getParent()))
+          return true;
+    }
+  }
+  return false;
 }
 
 /// Emit one machine-readable LoopPrimitives remark per loop in F, plus a
@@ -1863,127 +1999,9 @@ static void emitLoopPrimitives(Function &F, LoopInfo &LI,
                            LegacyTrapMatch::TrapIntrinsic);
       };
 
-      // 3-way reason for an unknown-BTC exit. Priority StoreReload > CallReload
-      // > Other so buckets are exclusive and total to the unknown-BTC count.
-      enum class Reason { StoreReload, CallReload, Other };
-
       // Cache per-load AA result: several leaf cmp operands (within and across
       // exits in L) can fan in from the same load; don't re-walk L each time.
-      DenseMap<LoadInst *, Reason> LoadCache;
-
-      auto LoadReloadCause = [&](LoadInst *Load) -> Reason {
-        auto It = LoadCache.find(Load);
-        if (It != LoadCache.end())
-          return It->second;
-        MemoryLocation LoadLoc = MemoryLocation::get(Load);
-        bool SawCallMod = false;
-        Reason Result = Reason::Other;
-        for (BasicBlock *BB : L->blocks()) {
-          for (Instruction &I : *BB) {
-            if (&I == Load)
-              continue;
-            if (auto *SI = dyn_cast<StoreInst>(&I)) {
-              if (LTAEmitExplain
-                      ? isModSet(AA.getModRefInfo(SI, LoadLoc))
-                      : !AA.isNoAlias(MemoryLocation::get(SI), LoadLoc)) {
-                Result = Reason::StoreReload;
-                goto done;
-              }
-              continue;
-            }
-            if (auto *MI = dyn_cast<MemIntrinsic>(&I)) {
-              if (isModSet(AA.getModRefInfo(MI, LoadLoc))) {
-                Result = Reason::StoreReload;
-                goto done;
-              }
-              continue;
-            }
-            if (auto *CB = dyn_cast<CallBase>(&I)) {
-              if (CB->onlyReadsMemory() || CB->doesNotAccessMemory())
-                continue;
-              if (isModSet(AA.getModRefInfo(CB, LoadLoc)))
-                SawCallMod = true;
-            }
-          }
-        }
-        if (SawCallMod)
-          Result = Reason::CallReload;
-      done:
-        LoadCache[Load] = Result;
-        return Result;
-      };
-
-      // Walk a branch's leaf cmp operands. For each whose SCEV references an
-      // in-loop SCEVUnknown, classify the blocker; the exit-level reason is the
-      // strongest cause across operands.
-      auto ClassifyExit = [&](CondBrInst *BI) -> Reason {
-        SmallVector<Value *, 8> Operands;
-        SmallPtrSet<Value *, 16> Visited;
-        collectBoolLeafOperands(BI->getCondition(), Operands, Visited);
-        Reason Best = Reason::Other;
-        for (Value *V : Operands) {
-          if (!V || isa<Constant>(V))
-            continue;
-          if (!SE.isSCEVable(V->getType()))
-            continue;
-          const SCEV *SC = SE.getSCEV(V);
-          if (isa<SCEVCouldNotCompute>(SC))
-            continue;
-          if (SE.isLoopInvariant(SC, L))
-            continue;
-          if (auto *AR = dyn_cast<SCEVAddRecExpr>(SC))
-            if (AR->getLoop() == L)
-              continue;
-          SCEVNodeCollector Coll;
-          SCEVTraversal<SCEVNodeCollector>(Coll).visitAll(SC);
-          for (const SCEVUnknown *U : Coll.Unknowns) {
-            auto *I = dyn_cast_or_null<Instruction>(U->getValue());
-            if (!I || !L->contains(I->getParent()))
-              continue;
-            if (auto *Load = dyn_cast<LoadInst>(I)) {
-              Reason R = LoadReloadCause(Load);
-              if (R == Reason::StoreReload)
-                return R;
-              if (R == Reason::CallReload && Best != Reason::CallReload)
-                Best = R;
-            }
-            // Non-load in-loop SCEVUnknown → genuine varying. Stays Other
-            // unless another operand promotes us.
-          }
-        }
-        return Best;
-      };
-
-      // Legacy bool: did *any* leaf operand reference an in-loop SCEVUnknown?
-      // (Superset of the reason buckets.) Kept for backwards-compat with
-      // classify_unknown_btc.py and existing dashboards.
-      auto IsBlockedByReload = [&](CondBrInst *BI) -> bool {
-        SmallVector<Value *, 8> Operands;
-        SmallPtrSet<Value *, 16> Visited;
-        collectBoolLeafOperands(BI->getCondition(), Operands, Visited);
-        for (Value *V : Operands) {
-          if (!V || isa<Constant>(V))
-            continue;
-          if (!SE.isSCEVable(V->getType()))
-            continue;
-          const SCEV *SC = SE.getSCEV(V);
-          if (isa<SCEVCouldNotCompute>(SC))
-            continue;
-          if (SE.isLoopInvariant(SC, L))
-            continue;
-          if (auto *AR = dyn_cast<SCEVAddRecExpr>(SC))
-            if (AR->getLoop() == L)
-              continue;
-          SCEVNodeCollector Coll;
-          SCEVTraversal<SCEVNodeCollector>(Coll).visitAll(SC);
-          for (const SCEVUnknown *U : Coll.Unknowns) {
-            if (auto *I = dyn_cast_or_null<Instruction>(U->getValue()))
-              if (L->contains(I->getParent()))
-                return true;
-          }
-        }
-        return false;
-      };
+      DenseMap<LoadInst *, ReloadReason> LoadCache;
 
       SmallVector<BasicBlock *, 4> ExitingBlocks;
       L->getExitingBlocks(ExitingBlocks);
@@ -2025,24 +2043,24 @@ static void emitLoopPrimitives(Function &F, LoopInfo &LI,
             ++NonTrapExitsSymbolicBTC;
           continue;
         }
-        bool ByReload = IsBlockedByReload(BI);
-        Reason R = ClassifyExit(BI);
+        bool ByReload = isBlockedByReload(BI, L, SE);
+        ReloadReason R = classifyExit(BI, L, SE, AA, LoadCache);
         if (IsTrap) {
           ++UnknownBTC["TrapExitsUnknownBTC"];
           ++UnknownBTC[ByReload ? "TrapExitsUnknownBTCDueToReload"
                                 : "TrapExitsUnknownBTCOtherReason"];
-          ++UnknownBTC[R == Reason::StoreReload
+          ++UnknownBTC[R == ReloadReason::StoreReload
                            ? "TrapExitsUnknownBTCStoreReload"
-                       : R == Reason::CallReload
+                       : R == ReloadReason::CallReload
                            ? "TrapExitsUnknownBTCCallReload"
                            : "TrapExitsUnknownBTCOtherBlocker"];
         } else {
           ++UnknownBTC["NonTrapExitsUnknownBTC"];
           ++UnknownBTC[ByReload ? "NonTrapExitsUnknownBTCDueToReload"
                                 : "NonTrapExitsUnknownBTCOtherReason"];
-          ++UnknownBTC[R == Reason::StoreReload
+          ++UnknownBTC[R == ReloadReason::StoreReload
                            ? "NonTrapExitsUnknownBTCStoreReload"
-                       : R == Reason::CallReload
+                       : R == ReloadReason::CallReload
                            ? "NonTrapExitsUnknownBTCCallReload"
                            : "NonTrapExitsUnknownBTCOtherBlocker"];
         }
