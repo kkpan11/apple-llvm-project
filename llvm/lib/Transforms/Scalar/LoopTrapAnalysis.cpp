@@ -711,7 +711,7 @@ static StringRef computeTrapClass(
                           InLoopPhi || UnaliasLoad || OtherUnk || OpaqueNoUnk;
   if (EdgeBTCComputable && (!LTAEmitExplain || !HasBlocker))
     return LoopOtherUnk
-               ? "Affine-InLoopExit-TripCountKnown-LoopBlockedElsewhere"
+               ? "Affine-InLoopExit-TripCountKnown-LoopBlockedOtherTrapExit"
                : "Affine-InLoopExit-TripCountKnown";
   const bool S = StoreReload || MemIReload;
   if (S && CallReload)
