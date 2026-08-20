@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Transforms/Scalar/LoopTrapAnalysis.h"
+#include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Analysis/AliasAnalysis.h"
@@ -1811,18 +1812,36 @@ static void emitLoopPrimitives(Function &F, LoopInfo &LI,
     //                      writer.
     // Sums: store_reload + call_reload + other_blocker = trap_exits_unknown_btc
     //       (same for non-trap).
-    unsigned TrapExitsUnknownBTC = 0;
-    unsigned NonTrapExitsUnknownBTC = 0;
-    unsigned TrapExitsUnknownBTCDueToReload = 0;
-    unsigned TrapExitsUnknownBTCOtherReason = 0;
-    unsigned NonTrapExitsUnknownBTCDueToReload = 0;
-    unsigned NonTrapExitsUnknownBTCOtherReason = 0;
-    unsigned TrapExitsUnknownBTCStoreReload = 0;
-    unsigned TrapExitsUnknownBTCCallReload = 0;
-    unsigned TrapExitsUnknownBTCOtherBlocker = 0;
-    unsigned NonTrapExitsUnknownBTCStoreReload = 0;
-    unsigned NonTrapExitsUnknownBTCCallReload = 0;
-    unsigned NonTrapExitsUnknownBTCOtherBlocker = 0;
+    // One ordered, tag-keyed table drives the unknown-BTC breakdown so the set
+    // generalizes: add a counter with a row here, not a local plus an NV line.
+    // Field is the remark tag consumers read; Label is the full inline text
+    // (leading space, trailing '='); the map is seeded in table order so
+    // emission stays deterministic.
+    static const std::pair<StringRef, StringRef> UnknownBTCCounters[] = {
+        {"TrapExitsUnknownBTC", " trap_exits_unknown_btc="},
+        {"TrapExitsUnknownBTCDueToReload", " trap_exits_unknown_btc_reload="},
+        {"TrapExitsUnknownBTCOtherReason", " trap_exits_unknown_btc_other="},
+        {"TrapExitsUnknownBTCStoreReload",
+         " trap_exits_unknown_btc_store_reload="},
+        {"TrapExitsUnknownBTCCallReload",
+         " trap_exits_unknown_btc_call_reload="},
+        {"TrapExitsUnknownBTCOtherBlocker",
+         " trap_exits_unknown_btc_other_blocker="},
+        {"NonTrapExitsUnknownBTC", " non_trap_exits_unknown_btc="},
+        {"NonTrapExitsUnknownBTCDueToReload",
+         " non_trap_exits_unknown_btc_reload="},
+        {"NonTrapExitsUnknownBTCOtherReason",
+         " non_trap_exits_unknown_btc_other="},
+        {"NonTrapExitsUnknownBTCStoreReload",
+         " non_trap_exits_unknown_btc_store_reload="},
+        {"NonTrapExitsUnknownBTCCallReload",
+         " non_trap_exits_unknown_btc_call_reload="},
+        {"NonTrapExitsUnknownBTCOtherBlocker",
+         " non_trap_exits_unknown_btc_other_blocker="},
+    };
+    MapVector<StringRef, unsigned> UnknownBTC;
+    for (const auto &KV : UnknownBTCCounters)
+      UnknownBTC[KV.first] = 0;
     // SCEV-computable counterparts: cond-trap edges whose per-exit BTC is
     // computable. These are the edges IndVars *could* fold via predication if
     // the other gates hold — they bound the achievable reduction from
@@ -2009,29 +2028,23 @@ static void emitLoopPrimitives(Function &F, LoopInfo &LI,
         bool ByReload = IsBlockedByReload(BI);
         Reason R = ClassifyExit(BI);
         if (IsTrap) {
-          ++TrapExitsUnknownBTC;
-          if (ByReload)
-            ++TrapExitsUnknownBTCDueToReload;
-          else
-            ++TrapExitsUnknownBTCOtherReason;
-          if (R == Reason::StoreReload)
-            ++TrapExitsUnknownBTCStoreReload;
-          else if (R == Reason::CallReload)
-            ++TrapExitsUnknownBTCCallReload;
-          else
-            ++TrapExitsUnknownBTCOtherBlocker;
+          ++UnknownBTC["TrapExitsUnknownBTC"];
+          ++UnknownBTC[ByReload ? "TrapExitsUnknownBTCDueToReload"
+                                : "TrapExitsUnknownBTCOtherReason"];
+          ++UnknownBTC[R == Reason::StoreReload
+                           ? "TrapExitsUnknownBTCStoreReload"
+                       : R == Reason::CallReload
+                           ? "TrapExitsUnknownBTCCallReload"
+                           : "TrapExitsUnknownBTCOtherBlocker"];
         } else {
-          ++NonTrapExitsUnknownBTC;
-          if (ByReload)
-            ++NonTrapExitsUnknownBTCDueToReload;
-          else
-            ++NonTrapExitsUnknownBTCOtherReason;
-          if (R == Reason::StoreReload)
-            ++NonTrapExitsUnknownBTCStoreReload;
-          else if (R == Reason::CallReload)
-            ++NonTrapExitsUnknownBTCCallReload;
-          else
-            ++NonTrapExitsUnknownBTCOtherBlocker;
+          ++UnknownBTC["NonTrapExitsUnknownBTC"];
+          ++UnknownBTC[ByReload ? "NonTrapExitsUnknownBTCDueToReload"
+                                : "NonTrapExitsUnknownBTCOtherReason"];
+          ++UnknownBTC[R == Reason::StoreReload
+                           ? "NonTrapExitsUnknownBTCStoreReload"
+                       : R == Reason::CallReload
+                           ? "NonTrapExitsUnknownBTCCallReload"
+                           : "NonTrapExitsUnknownBTCOtherBlocker"];
         }
       }
     }
@@ -2078,38 +2091,10 @@ static void emitLoopPrimitives(Function &F, LoopInfo &LI,
           << " trap_cond_non_iv_call_op="
           << NV("TrapCondNonIVCallOp", Shape.NonIVCallOp);
     }
-    Rem << " btc_known=" << NV("BTCKnown", BTCKnown)
-        << " trap_exits_unknown_btc="
-        << NV("TrapExitsUnknownBTC", TrapExitsUnknownBTC)
-        << " trap_exits_unknown_btc_reload="
-        << NV("TrapExitsUnknownBTCDueToReload", TrapExitsUnknownBTCDueToReload)
-        << " trap_exits_unknown_btc_other="
-        << NV("TrapExitsUnknownBTCOtherReason", TrapExitsUnknownBTCOtherReason)
-        << " trap_exits_unknown_btc_store_reload="
-        << NV("TrapExitsUnknownBTCStoreReload", TrapExitsUnknownBTCStoreReload)
-        << " trap_exits_unknown_btc_call_reload="
-        << NV("TrapExitsUnknownBTCCallReload", TrapExitsUnknownBTCCallReload)
-        << " trap_exits_unknown_btc_other_blocker="
-        << NV("TrapExitsUnknownBTCOtherBlocker",
-              TrapExitsUnknownBTCOtherBlocker)
-        << " non_trap_exits_unknown_btc="
-        << NV("NonTrapExitsUnknownBTC", NonTrapExitsUnknownBTC)
-        << " non_trap_exits_unknown_btc_reload="
-        << NV("NonTrapExitsUnknownBTCDueToReload",
-              NonTrapExitsUnknownBTCDueToReload)
-        << " non_trap_exits_unknown_btc_other="
-        << NV("NonTrapExitsUnknownBTCOtherReason",
-              NonTrapExitsUnknownBTCOtherReason)
-        << " non_trap_exits_unknown_btc_store_reload="
-        << NV("NonTrapExitsUnknownBTCStoreReload",
-              NonTrapExitsUnknownBTCStoreReload)
-        << " non_trap_exits_unknown_btc_call_reload="
-        << NV("NonTrapExitsUnknownBTCCallReload",
-              NonTrapExitsUnknownBTCCallReload)
-        << " non_trap_exits_unknown_btc_other_blocker="
-        << NV("NonTrapExitsUnknownBTCOtherBlocker",
-              NonTrapExitsUnknownBTCOtherBlocker)
-        << " trap_exits_computable_btc="
+    Rem << " btc_known=" << NV("BTCKnown", BTCKnown);
+    for (const auto &[Field, Label] : UnknownBTCCounters)
+      Rem << Label << NV(Field, UnknownBTC[Field]);
+    Rem << " trap_exits_computable_btc="
         << NV("TrapExitsComputableBTC", TrapExitsComputableBTC)
         << " non_trap_exits_computable_btc="
         << NV("NonTrapExitsComputableBTC", NonTrapExitsComputableBTC)
