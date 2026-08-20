@@ -431,7 +431,81 @@ static TrapCondShape classifyCondTrapEdges(Loop *L, ScalarEvolution &SE,
 // may-not-return}. Optional ": <callee>" disambiguates calls. Splitting by
 // class (vs the prior two opaque buckets) shows which lever -- TBAA,
 // function-attr annotations, per-intrinsic AA -- would unblock a given loop.
-static std::string getSideEffectReasons(const Instruction &I) { return ""; }
+static std::string getSideEffectReasons(const Instruction &I) {
+  std::string Buf;
+  raw_string_ostream OS(Buf);
+
+  // CallInst class: distinguish intrinsics from user calls, split by memory
+  // effect. AA models memcpy/memset ModRefInfo well; opaque user calls not.
+  if (const auto *CI = dyn_cast<CallInst>(&I)) {
+    StringRef CalleeName;
+    if (const Function *Callee = CI->getCalledFunction())
+      CalleeName = Callee->getName();
+    bool IsIntrinsic = CI->getIntrinsicID() != Intrinsic::not_intrinsic;
+    StringRef CategoryPrefix = IsIntrinsic ? "MemIntrinsic" : "Call";
+
+    // argmemonly memintrinsics (memcpy/memset/memmove) only touch their
+    // pointer arguments, which AA already models precisely, so a generic
+    // memory-effect tag would mis-suggest they are blockers. Skip the
+    // may-{write,read}-memory tags for them; throw / no-return still emit
+    // (orthogonal to memory).
+    bool SkipMemoryTags =
+        IsIntrinsic && CI->getMemoryEffects().onlyAccessesArgPointees();
+
+    if (CI->isVolatile())
+      OS << "VolatileCall.may-access-memory\n";
+    if (!SkipMemoryTags) {
+      if (I.mayWriteToMemory()) {
+        OS << CategoryPrefix << ".may-write-to-memory";
+        if (!CalleeName.empty())
+          OS << ": " << CalleeName;
+        OS << "\n";
+      } else if (I.mayReadFromMemory()) {
+        OS << CategoryPrefix << ".may-read-from-memory";
+        if (!CalleeName.empty())
+          OS << ": " << CalleeName;
+        OS << "\n";
+      }
+    }
+    if (I.mayThrow())
+      OS << CategoryPrefix << ".may-throw\n";
+    if (!I.willReturn())
+      OS << CategoryPrefix << ".may-not-return\n";
+    return Buf;
+  }
+
+  // Non-call instructions: split by opcode so the metric distinguishes
+  // a real store from atomic RMW / cmpxchg / fence / volatile load.
+  if (auto *SI = dyn_cast<StoreInst>(&I)) {
+    if (SI->isVolatile())
+      OS << "VolatileStore.may-write-to-memory\n";
+    else if (SI->isAtomic())
+      OS << "AtomicStore.may-write-to-memory\n";
+    else
+      OS << "Store.may-write-to-memory\n";
+  } else if (auto *LI = dyn_cast<LoadInst>(&I)) {
+    if (LI->isVolatile())
+      OS << "VolatileLoad.may-write-to-memory\n";
+    else if (LI->isAtomic())
+      OS << "AtomicLoad.may-write-to-memory\n";
+    // Plain load: mayWriteToMemory() is false — nothing to emit.
+  } else if (isa<AtomicRMWInst>(&I)) {
+    OS << "AtomicRMW.may-write-to-memory\n";
+  } else if (isa<AtomicCmpXchgInst>(&I)) {
+    OS << "AtomicCmpXchg.may-write-to-memory\n";
+  } else if (isa<FenceInst>(&I)) {
+    OS << "Fence.may-write-to-memory\n";
+  } else if (I.mayWriteToMemory()) {
+    // Catch-all for any other non-call write (rare).
+    OS << "Other.may-write-to-memory\n";
+  }
+
+  if (I.mayThrow())
+    OS << "Instruction.may-throw\n";
+  if (!I.willReturn())
+    OS << "Instruction.may-not-return\n";
+  return Buf;
+}
 
 /// Check if the loop preheader has ".hoisted" instructions, indicating
 /// successful hoisting of trap checks out of the loop.
@@ -902,6 +976,60 @@ static bool isDominatedByEquivalentCheck(BasicBlock *BB, Value *MyCond,
   return false;
 }
 
+/// For each conditional branch whose target is a trap block, emit one
+/// `LoopTrapEdge<Tag>` remark with per-edge classification fields.
+///
+/// SCEV / AA blockers (in-loop trap edges):
+///   SCEVComputed       — every leaf-operand has a non-CouldNotCompute SCEV
+///   SCEVLoopInvariant  — every leaf-operand SCEV is loop-invariant in the
+///                        *innermost* containing loop (standard
+///                        `SE.isLoopInvariant(SCEV, L)`; trivially true when
+///                        the source BB is outside any loop).
+///   HasAddRec          — at least one operand SCEV contains a SCEVAddRecExpr
+///   HasInLoopUnknown   — at least one operand SCEV contains a SCEVUnknown
+///                        whose Instruction is defined inside any containing
+///                        loop (true even when SCEVLoopInvariant w.r.t.
+///                        innermost holds — i.e. the load lives in an outer
+///                        loop).
+///   HasStoreReload     — at least one operand SCEV references a SCEVUnknown
+///                        that is a LoadInst in the innermost loop,
+///                        AA-may-aliased by some StoreInst / mem-intrinsic in
+///                        that loop.
+///   HasCallReload      — as HasStoreReload but for a may-modifying CallBase.
+///                        (Not exclusive: an edge can have both; downstream
+///                        treats that as a "both" bucket.)
+///   IsLoopExit         — the trap successor is outside the innermost loop
+///                        (loop-exit, not loop-internal). Required for the BTC
+///                        fields to be meaningful.
+///   EdgeBTCComputable  — the per-edge SCEV exit count for THIS trap edge's
+///                        source BB is known: `SE.getExitCount(Innermost,
+///                        sourceBB) != SCEVCouldNotCompute` (false if
+///                        !IsLoopExit). This is the exit count for this
+///                        specific exiting block, NOT the loop's overall
+///                        latch/backedge-taken count.
+///   LoopHasOtherUnknownBTCTrap — the innermost loop has another trap-exit
+///                        (excluding this edge) with SCEVCouldNotCompute exit
+///                        count ("this edge computable but loop's others
+///                        aren't, so we can't hoist any").
+///
+/// Predicate-tree shape (all trap edges):
+///   PredicateShape     — TrapPredicateShape enum name for the trap branch's
+///                        i1 predicate. Sizes the reach of shape-specific
+///                        levers (NUW propagation on bounds-check OR/AND forms,
+///                        their variable-bound extensions, and generic
+///                        OR-of-AddRec exit recognition).
+///
+/// Out-of-loop / structural-redundancy fields:
+///   IsEntryProximate   — source BB within `EntryProximityDepth` dominator
+///                        steps of the entry block OR a loop preheader; genuine
+///                        validation trap, NOT an elimination candidate.
+///   DominatedByEquivalentCheck — some dominator of source BB ends in a
+///                        cond-branch with the same predicate; already proven
+///                        earlier — a dominator-aware InstCombine / CVP fold
+///                        candidate.
+///
+/// Plus loop-context fields (LoopHeader / Depth / IsInnermost) so downstream
+/// tooling can join against `LoopPrimitives<Tag>` records.
 /// Walk the def chain of \p Cond (bounded to instructions inside \p L) and
 /// answer Q2 of the trap-explanation tree: for every IV-shaped operand reached,
 /// does its update dominate the loop latch?
@@ -2079,11 +2207,76 @@ static CheckLoopHoistType processLoops(Loop *L, ScalarEvolution &SE,
                                        LoopInfo &LI,
                                        OptimizationRemarkEmitter &ORE,
                                        StringRef Tag) {
-  // Call-wiring: exercise the per-loop hoist helpers so none is unused.
-  (void)hasUnreachableInst(L);
-  for (auto *BB : L->blocks())
-    (void)getSideEffectReasons(*BB->getTerminator());
-  return CheckLoopHoistType::SKIP;
+  CheckLoopHoistType HoistType;
+  bool SymbolicMaxBackEdgeComputable =
+      !isa<SCEVCouldNotCompute>(SE.getSymbolicMaxBackedgeTakenCount(L));
+  bool HasSideEffects = false;
+  if (!hasUnreachableInst(L))
+    return CheckLoopHoistType::SKIP;
+
+  unsigned TrapCount = countTrapExits(L, LI);
+
+  SmallVector<std::string, 4> InstructionsWithSideEffects;
+  SmallVector<std::string, 4> SideEffectReasons;
+  for (auto *BB : L->blocks()) {
+    if (any_of(*BB, [&InstructionsWithSideEffects,
+                     &SideEffectReasons](const Instruction &I) {
+          bool InstHasSideEffects = false;
+          // If a call instruction reads or writes to memory we don't know if
+          // the access is non-volatile so we asssume that the call instruction
+          // has side effects.
+          if (isa<CallInst>(I))
+            InstHasSideEffects =
+                I.mayHaveSideEffects() || I.mayReadFromMemory();
+          else if (LTAEmitExplain)
+            InstHasSideEffects = !I.willReturn() || I.mayThrow();
+          else
+            InstHasSideEffects = I.mayHaveSideEffects();
+          if (InstHasSideEffects) {
+            std::string Buf;
+            raw_string_ostream OS(Buf);
+            I.print(OS);
+            InstructionsWithSideEffects.push_back(Buf);
+            SideEffectReasons.push_back(getSideEffectReasons(I));
+          }
+          return InstHasSideEffects;
+        })) {
+
+      HasSideEffects = true;
+      break;
+    }
+  }
+
+  HoistType = !HasSideEffects && SymbolicMaxBackEdgeComputable
+                  ? CheckLoopHoistType::MAYBE_CAN_HOIST
+                  : CheckLoopHoistType::CANNOT_HOIST;
+  // Emit a remark for the loop.
+  // NB: `OptimizationRemarkAnalysis` stores its `RemarkName` as a `StringRef`.
+  // Passing `taggedName(...)` inline would create a temporary `std::string`
+  // destroyed at the end of the full expression, leaving the stored `StringRef`
+  // dangling and producing garbled `Name:` fields in YAML. Hold the name in a
+  // local that outlives the remark.
+  std::string TrapRemarkName = taggedName("LoopTrap", Tag);
+  auto ORA = OptimizationRemarkAnalysis(REMARK_PASS, TrapRemarkName,
+                                        &L->getHeader()->front());
+  ORA << "Loop: " << L->getName() << " "
+      << "TrapExits: " << NV("TrapExitCount", TrapCount) << " ";
+  if (HoistType == CheckLoopHoistType::CANNOT_HOIST) {
+    ORA << "cannot be hoisted: \n";
+    if (HasSideEffects) {
+      ORA << "\nThe following instructions have side effects:\n";
+      for (unsigned Idx = 0; Idx < InstructionsWithSideEffects.size(); Idx++) {
+        ORA << "\t" << InstructionsWithSideEffects[Idx] << "\n";
+        ORA << "Reason:\n";
+        ORA << SideEffectReasons[Idx];
+      }
+    }
+    if (!SymbolicMaxBackEdgeComputable)
+      ORA << "Backedge is not computable.\n";
+  } else
+    ORA << "can be hoisted\n";
+  ORE.emit(ORA);
+  return HoistType;
 }
 
 /// Collect info for hoistable loop checks for \p F and report remarks for
@@ -2091,13 +2284,46 @@ static CheckLoopHoistType processLoops(Loop *L, ScalarEvolution &SE,
 static void emitRemarks(Function &F, LoopInfo &LI,
                         OptimizationRemarkEmitter &ORE, ScalarEvolution &SE,
                         StringRef Tag) {
-  // Call-wiring: exercise processLoops and hasHoistedInPreheader so neither is
-  // unused.
+  unsigned TotalCanHoistLoops = 0;
+  unsigned TotalUnHoistableLoops = 0;
+  unsigned TotalHoistedLoops = 0;
   for (auto *L : LI.getLoopsInPreorder()) {
-    SmallVector<std::string, 4> Hoisted;
-    (void)hasHoistedInPreheader(L, Hoisted);
-    (void)processLoops(L, SE, LI, ORE, Tag);
+    // Check for .hoisted instructions in preheader (successfully hoisted)
+    SmallVector<std::string, 4> PreheaderHoisted;
+    if (hasHoistedInPreheader(L, PreheaderHoisted)) {
+      TotalHoistedLoops++;
+      // RemarkName must outlive the remark — see comment at the
+      // earlier LoopTrap remark for context.
+      std::string HoistRemarkName = taggedName("LoopTrapHoisted", Tag);
+      OptimizationRemarkAnalysis HoistRem(REMARK_PASS, HoistRemarkName,
+                                          &L->getHeader()->front());
+      HoistRem << "Loop: " << L->getName()
+               << " has trap check hoisted to preheader\n";
+      for (const auto &Inst : PreheaderHoisted)
+        HoistRem << "\t" << Inst << "\n";
+      ORE.emit(HoistRem);
+    }
+
+    CheckLoopHoistType Type = processLoops(L, SE, LI, ORE, Tag);
+    if (Type == CheckLoopHoistType::MAYBE_CAN_HOIST)
+      TotalCanHoistLoops++;
+    else if (Type == CheckLoopHoistType::CANNOT_HOIST)
+      TotalUnHoistableLoops++;
   }
+
+  // RemarkName must outlive the remark — see earlier comment.
+  std::string SummaryRemarkName = taggedName("LoopTrapSummary", Tag);
+  OptimizationRemarkAnalysis Rem(REMARK_PASS, SummaryRemarkName, &F);
+  Rem << "Trap checks results:\n";
+  Rem << "Total count of loops with traps "
+      << NV("TotalCount", TotalCanHoistLoops + TotalUnHoistableLoops) << "\n";
+  Rem << "Loops that maybe can be hoisted: "
+      << NV("CountHoist", TotalCanHoistLoops) << "\n";
+  Rem << "Loops that cannot be hoisted: "
+      << NV("CountCannotHoist", TotalUnHoistableLoops) << "\n";
+  Rem << "Loops with trap check hoisted to preheader: "
+      << NV("CountHoisted", TotalHoistedLoops) << "\n";
+  ORE.emit(Rem);
 }
 
 PreservedAnalyses LoopTrapAnalysisPass::run(Function &F,
