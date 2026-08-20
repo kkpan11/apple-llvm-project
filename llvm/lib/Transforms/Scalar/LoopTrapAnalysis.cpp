@@ -442,7 +442,11 @@ static bool hasHoistedInPreheader(Loop *L,
 
 /// Build a remark Name suffixed with the optional Tag (so the same pass can
 /// be invoked multiple times in a pipeline with distinguishable output).
-static std::string taggedName(StringRef Base, StringRef Tag) { return ""; }
+static std::string taggedName(StringRef Base, StringRef Tag) {
+  if (Tag.empty())
+    return Base.str();
+  return (Base + Tag).str();
+}
 
 /// Print a stable, non-empty label for \p BB, so remark args that identify
 /// BasicBlocks stay useful when the BB has no source-level name (numeric IR,
@@ -451,7 +455,16 @@ static std::string taggedName(StringRef Base, StringRef Tag) { return ""; }
 /// Preferred: `BB->getName()`. Fallback: `printAsOperand` slot-tracker form
 /// (`%5` etc.), which is parseable and unique within the function. Never
 /// returns empty.
-static std::string bbLabel(const BasicBlock *BB) { return ""; }
+static std::string bbLabel(const BasicBlock *BB) {
+  if (!BB)
+    return "<null>";
+  if (BB->hasName())
+    return BB->getName().str();
+  std::string S;
+  raw_string_ostream OS(S);
+  BB->printAsOperand(OS, /*PrintType=*/false);
+  return S.empty() ? std::string("<unnamed>") : S;
+}
 
 /// Recursively unfold a boolean expression chain (select-OR, select-AND,
 /// or/and) into the leaf comparison operands. Used to surface every
@@ -969,27 +982,600 @@ static void emitPerTrapEdgeSCEV(Function &F, LoopInfo &LI, ScalarEvolution &SE,
                                 AAResults &AA, DominatorTree &DT,
                                 OptimizationRemarkEmitter &ORE, StringRef Tag,
                                 unsigned InvocationSeq) {
-  // Call-wiring: exercise every per-edge helper so none is unused.
-  BasicBlock *BB = &F.getEntryBlock();
-  Loop *L = LI.getLoopFor(BB);
-  (void)taggedName("LoopTrapEdge", Tag);
-  (void)isTrapBlock(BB, BoundsSafetyTrapsOnly, LegacyTrapMatch::TrapIntrinsic);
-  SmallVector<Value *, 8> Operands;
-  SmallPtrSet<Value *, 16> Visited;
-  collectBoolLeafOperands(nullptr, Operands, Visited);
-  (void)classifyTrapPredicateShape(nullptr, SE, L);
-  (void)trapPredicateShapeName(TrapPredicateShape::Unknown);
-  (void)computeTrapClass(false, TrapPredicateShape::Unknown, false, false,
-                         false, false, false, false, false, false, false,
-                         false, false, false, false, false, 0u, false, false,
-                         false, false);
-  (void)isEntryProximate(F, BB, DT, LI);
-  (void)isDominatedByEquivalentCheck(BB, nullptr, DT);
-  (void)computeIVUpdateDominatesLatch(nullptr, L, DT);
-  (void)bbLabel(BB);
-  (void)InvocationSeq;
-  (void)ORE;
-  (void)AA;
+  std::string Name = taggedName("LoopTrapEdge", Tag);
+  // Same trap-block predicate as the rest of the pass: require `call
+  // @llvm.trap()` immediately before `unreachable`. Bare `unreachable` (after a
+  // noreturn call, or `__builtin_unreachable`) is NOT a trap.
+  auto IsTrapBlock = [](BasicBlock *BB) {
+    return isTrapBlock(BB, BoundsSafetyTrapsOnly,
+                       LegacyTrapMatch::TrapIntrinsic);
+  };
+
+  // Pre-pass: per innermost loop, count how many of its trap-exits have
+  // SCEVCouldNotCompute exit-counts. Used downstream to classify the
+  // "edge is computable but loop's other traps aren't" case.
+  DenseMap<Loop *, unsigned> UncomputableTrapExits;
+  for (Loop *L : LI.getLoopsInPreorder()) {
+    SmallVector<BasicBlock *, 4> Exiting;
+    L->getExitingBlocks(Exiting);
+    unsigned N = 0;
+    for (BasicBlock *EB : Exiting) {
+      auto *BI = dyn_cast<CondBrInst>(EB->getTerminator());
+      if (!BI)
+        continue;
+      BasicBlock *TrapSucc = nullptr;
+      for (BasicBlock *Succ : BI->successors())
+        if (!L->contains(Succ) && IsTrapBlock(Succ)) {
+          TrapSucc = Succ;
+          break;
+        }
+      if (!TrapSucc)
+        continue;
+      const SCEV *EC = SE.getExitCount(L, EB);
+      if (isa<SCEVCouldNotCompute>(EC))
+        ++N;
+    }
+    UncomputableTrapExits[L] = N;
+  }
+
+  // Per-loop cache of "do any in-loop instructions may-alias this load?",
+  // populated lazily. Key: (Loop*, LoadInst*). Returns (StoreAlias,
+  // MemIntrinsicAlias, CallAlias) tracked SEPARATELY so the consumer can bucket
+  // scalar-store vs struct-copy (mem-intrinsic) aliasing (different levers).
+  DenseMap<std::pair<Loop *, LoadInst *>, std::tuple<bool, bool, bool>>
+      ReloadCache;
+  auto LoadAliasFlags = [&](LoadInst *Load,
+                            Loop *L) -> std::tuple<bool, bool, bool> {
+    auto Key = std::make_pair(L, Load);
+    auto It = ReloadCache.find(Key);
+    if (It != ReloadCache.end())
+      return It->second;
+    bool Store = false, MemI = false, Call = false;
+    MemoryLocation LoadLoc = MemoryLocation::get(Load);
+    for (BasicBlock *BB : L->blocks()) {
+      for (Instruction &I : *BB) {
+        if (&I == Load)
+          continue;
+        if (auto *SI = dyn_cast<StoreInst>(&I)) {
+          if (LTAEmitExplain ? isModSet(AA.getModRefInfo(SI, LoadLoc))
+                             : !AA.isNoAlias(MemoryLocation::get(SI), LoadLoc))
+            Store = true;
+        } else if (auto *MI = dyn_cast<MemIntrinsic>(&I)) {
+          if (isModSet(AA.getModRefInfo(MI, LoadLoc)))
+            MemI = true;
+        } else if (auto *CB = dyn_cast<CallBase>(&I)) {
+          if (CB->onlyReadsMemory() || CB->doesNotAccessMemory())
+            continue;
+          if (isModSet(AA.getModRefInfo(CB, LoadLoc)))
+            Call = true;
+        }
+        if (Store && MemI && Call)
+          break;
+      }
+      if (Store && MemI && Call)
+        break;
+    }
+    auto Out = std::make_tuple(Store, MemI, Call);
+    ReloadCache[Key] = Out;
+    return Out;
+  };
+
+  // For a load flagged store-may-cause-reload, return the FIRST in-loop
+  // store / mem-intrinsic that may-alias it (per AA, which already folds in
+  // TBAA). Lets the consumer point at the specific writer that blocks LICM.
+  auto FirstAliasingStore = [&](LoadInst *Load, Loop *L) -> Instruction * {
+    MemoryLocation LoadLoc = MemoryLocation::get(Load);
+    for (BasicBlock *BB : L->blocks())
+      for (Instruction &I : *BB) {
+        if (&I == Load)
+          continue;
+        if (auto *SI = dyn_cast<StoreInst>(&I)) {
+          if (LTAEmitExplain ? isModSet(AA.getModRefInfo(SI, LoadLoc))
+                             : !AA.isNoAlias(MemoryLocation::get(SI), LoadLoc))
+            return &I;
+        } else if (auto *MI = dyn_cast<MemIntrinsic>(&I)) {
+          if (isModSet(AA.getModRefInfo(MI, LoadLoc)))
+            return &I;
+        }
+      }
+    return nullptr;
+  };
+
+  // Extract a human-readable TBAA access-type name from an instruction's TBAA
+  // metadata (struct-path tag: operand 1 is the access-type descriptor; scalar
+  // tag: operand 0 is the type-name string). A memcpy / struct copy carries
+  // !tbaa.struct instead — report "struct-copy". Empty if no TBAA.
+  auto TBAATypeName = [](const Instruction *I) -> StringRef {
+    AAMDNodes AAMD = I->getAAMetadata();
+    if (const MDNode *TBAA = AAMD.TBAA) {
+      const MDNode *AccessType = TBAA;
+      if (TBAA->getNumOperands() >= 2)
+        if (auto *AT = dyn_cast<MDNode>(TBAA->getOperand(1)))
+          AccessType = AT;
+      if (AccessType->getNumOperands() >= 1)
+        if (auto *Name = dyn_cast<MDString>(AccessType->getOperand(0)))
+          return Name->getString();
+    }
+    if (AAMD.TBAAStruct)
+      return "struct-copy";
+    return "";
+  };
+
+  // Short kind tag for a reload-blocking writer.
+  auto WriterKind = [](const Instruction *I) -> StringRef {
+    if (isa<MemCpyInst>(I))
+      return "memcpy";
+    if (isa<MemMoveInst>(I))
+      return "memmove";
+    if (isa<MemSetInst>(I))
+      return "memset";
+    if (isa<MemIntrinsic>(I))
+      return "mem-intrinsic";
+    if (isa<StoreInst>(I))
+      return "store";
+    if (isa<CallBase>(I))
+      return "call";
+    return "writer";
+  };
+
+  // Like FirstAliasingStore but also considers side-effecting calls — used
+  // by the flag-gated per-load alias annotation (LoopLoadAlias).
+  auto FirstAliasingWriter = [&](LoadInst *Load, Loop *L) -> Instruction * {
+    MemoryLocation LoadLoc = MemoryLocation::get(Load);
+    for (BasicBlock *BB : L->blocks())
+      for (Instruction &I : *BB) {
+        if (&I == Load)
+          continue;
+        if (auto *SI = dyn_cast<StoreInst>(&I)) {
+          if (LTAEmitExplain ? isModSet(AA.getModRefInfo(SI, LoadLoc))
+                             : !AA.isNoAlias(MemoryLocation::get(SI), LoadLoc))
+            return &I;
+        } else if (auto *MI = dyn_cast<MemIntrinsic>(&I)) {
+          if (isModSet(AA.getModRefInfo(MI, LoadLoc)))
+            return &I;
+        } else if (auto *CB = dyn_cast<CallBase>(&I)) {
+          if (CB->onlyReadsMemory() || CB->doesNotAccessMemory())
+            continue;
+          if (isModSet(AA.getModRefInfo(CB, LoadLoc)))
+            return &I;
+        }
+      }
+    return nullptr;
+  };
+
+  for (BasicBlock &BB : F) {
+    auto *BI = dyn_cast<CondBrInst>(BB.getTerminator());
+    if (!BI)
+      continue;
+    BasicBlock *TrapSucc = nullptr;
+    for (BasicBlock *Succ : BI->successors())
+      if (IsTrapBlock(Succ)) {
+        TrapSucc = Succ;
+        break;
+      }
+    if (!TrapSucc)
+      continue;
+
+    // Compute the chain of containing loops for the source BB.
+    Loop *Innermost = LI.getLoopFor(&BB);
+    SmallVector<Loop *, 4> ContainingLoops;
+    for (Loop *L = Innermost; L; L = L->getParentLoop())
+      ContainingLoops.push_back(L);
+
+    bool IsLoopExit = Innermost && !Innermost->contains(TrapSucc);
+
+    // Unfold the predicate into leaf operands.
+    SmallVector<Value *, 8> LeafOperands;
+    SmallPtrSet<Value *, 16> Visited;
+    collectBoolLeafOperands(BI->getCondition(), LeafOperands, Visited);
+
+    bool AllComputed = true;
+    bool LoopInvariantInInnermost = true; // trivially true if no loop
+    bool HasAddRec = false;
+    bool HasInLoopUnknown = false;
+    bool HasStoreReload = false;
+    bool HasMemIntrinsicReload = false;
+    bool HasCallReload = false;
+    // Trip-count-unknown sub-flavor flags (set when the operand SCEV is
+    // computable but non-AddRec / non-invariant for L AND the AA reload check
+    // didn't fire). Split the opaque-operand cases by what makes the operand
+    // opaque:
+    //   HasUnaliasedLoadOperand  — LoadInst in L with no may-aliased writer
+    //                              (data-dependent/indirect load).
+    //   HasInLoopPhiOperand      — non-IV PHINode in L (loop-carried
+    //                              state / conditional increments). IV phis
+    //                              fold to AddRecs and don't appear here.
+    //   HasOtherInLoopUnknownOperand — some other in-loop def: select / freeze
+    //                              / intrinsic-call result / etc.
+    //   HasOpaqueOperandNoInLoopUnknown — non-AddRec/non-invariant for L but no
+    //                              in-loop SCEVUnknown leaf (outer-loop
+    //                              AddRec, or non-unit modular stride).
+    bool HasUnaliasedLoadOperand = false;
+    bool HasInLoopPhiOperand = false;
+    bool HasInLoopFreezeOperand = false;
+    bool HasInLoopSelectOperand = false;
+    bool HasOtherInLoopUnknownOperand = false;
+    // The in-loop store / mem-intrinsic that blocks a reload, and the load it
+    // clobbers; null unless HasStoreReload fires.
+    Instruction *ReloadStore = nullptr;
+    LoadInst *ReloadLoad = nullptr;
+    bool HasOpaqueOperandNoInLoopUnknown = false;
+    // True when any operand SCEV contains an AddRec on a loop that is NOT the
+    // innermost. Splits the opaque / no-in-loop-unknown class into "via
+    // outer-loop AddRec" (attackable by teaching SCEV that an outer-loop AddRec
+    // is innermost-invariant) vs "via something else" (modular stride, etc.).
+    bool HasOuterLoopAddRecOperand = false;
+    // Weak-no-wrap-class sub-classifier flags. The weak-no-wrap class is
+    // "operands clean for L but getExitCount still CouldNotCompute"; these
+    // break it down:
+    //   HasNonUnitStrideForLAddRec  — an L-AddRec operand with |step| > 1.
+    //                                 SCEV's exit-count machinery has limited
+    //                                 non-unit-stride support (needs a
+    //                                 divisibility proof against the bound).
+    //   HasOnlyNotProvenMonotonicForLAddRec — an L-AddRec with FlagNW but
+    //   neither NUW
+    //                                 nor NSW; howMany{Less,Greater}Thans
+    //                                 typically need the stronger flag.
+    //   HasNegativeStrideForLAddRec — an L-AddRec with a negative step (hits
+    //                                 the independently fragile
+    //                                 howManyGreaterThans path).
+    // Note: no HasMultipleLeafOperands field — NumLeafOperands already exposes
+    // it; the Python aggregator treats NumLeafOperands>1 as the multi-leaf
+    // OR/AND-of-icmps case (the dominant weak-no-wrap-class shape).
+    bool HasNonUnitStrideForLAddRec = false;
+    bool HasOnlyNotProvenMonotonicForLAddRec = false;
+    bool HasNegativeStrideForLAddRec = false;
+    // True when some L-AddRec has a NON-CONSTANT (runtime) step. Distinct from
+    // constant-but-non-unit: closed-form trip count is essentially never
+    // computable for a non-constant step. Surfaced separately so consumers can
+    // split "stride!=±1 (gcd alignment maybe works)" from "stride is runtime".
+    bool HasNonConstantStrideForLAddRec = false;
+    unsigned NumLeafOps = 0;
+
+    for (Value *V : LeafOperands) {
+      ++NumLeafOps;
+      if (!V || isa<Constant>(V))
+        continue;
+      if (!SE.isSCEVable(V->getType())) {
+        AllComputed = false;
+        continue;
+      }
+      const SCEV *SC = SE.getSCEV(V);
+      if (isa<SCEVCouldNotCompute>(SC)) {
+        AllComputed = false;
+        continue;
+      }
+      // Walk the SCEV tree.
+      SCEVNodeCollector Coll;
+      SCEVTraversal<SCEVNodeCollector>(Coll).visitAll(SC);
+      if (!Coll.AddRecs.empty())
+        HasAddRec = true;
+      // Weak-no-wrap-class sub-classifier: for each AddRec on the innermost
+      // loop, inspect step
+      // constness, magnitude, and nowrap flags.
+      if (Innermost) {
+        for (const SCEVAddRecExpr *AR : Coll.AddRecs) {
+          if (AR->getLoop() != Innermost)
+            continue;
+          if (!AR->isAffine())
+            continue;
+          // FlagNW only (no NUW / NSW) — typical for AddRecs from
+          // `add invariant, mul(IV, const)` where the outer add lacks IR-level
+          // nowrap.
+          if (!AR->hasNoUnsignedWrap() && !AR->hasNoSignedWrap())
+            HasOnlyNotProvenMonotonicForLAddRec = true;
+          if (auto *StepC = dyn_cast<SCEVConstant>(AR->getStepRecurrence(SE))) {
+            const APInt &Step = StepC->getAPInt();
+            if (Step.isNegative())
+              HasNegativeStrideForLAddRec = true;
+            // |step| > 1 — non-unit stride, fragile for getExitCount.
+            APInt AbsStep = Step.isNegative() ? -Step : Step;
+            if (AbsStep.ugt(1))
+              HasNonUnitStrideForLAddRec = true;
+          } else {
+            // Non-constant (runtime) step: closed-form trip count essentially
+            // never computable. Tag both the umbrella non-unit flag and the
+            // specific non-constant-stride flag.
+            HasNonUnitStrideForLAddRec = true;
+            HasNonConstantStrideForLAddRec = true;
+          }
+        }
+      }
+      // Per-loop invariance: standard SE.isLoopInvariant against the
+      // *innermost* containing loop only (single canonical bool; caller can
+      // re-query outer loops via SE).
+      if (Innermost && !SE.isLoopInvariant(SC, Innermost))
+        LoopInvariantInInnermost = false;
+
+      // Is this operand "opaque w.r.t. L" — the kind that pushes the edge into
+      // a trip-count-unknown bucket because its SCEV isn't pinned to L's IV and
+      // isn't loop-invariant?
+      bool OpIsOpaqueForL = false;
+      if (Innermost) {
+        OpIsOpaqueForL = !SE.isLoopInvariant(SC, Innermost);
+        if (auto *AR = dyn_cast<SCEVAddRecExpr>(SC))
+          if (AR->getLoop() == Innermost)
+            OpIsOpaqueForL = false;
+      }
+      // Did we find any in-loop SCEVUnknown for THIS operand? Fires the
+      // opaque-operand / no-in-loop-unknown flavor when the SCEV is
+      // opaque-for-L but its leaves are all outside L.
+      bool OpHasInLoopUnknown = false;
+
+      // SCEVUnknowns defined in any containing loop — diagnostic for the "load
+      // lives in an outer containing loop" case (invariant in the innermost,
+      // but a load in some outer loop changes per-outer-iteration).
+      for (const SCEVUnknown *U : Coll.Unknowns) {
+        Value *UV = U->getValue();
+        auto *I = dyn_cast_or_null<Instruction>(UV);
+        if (!I)
+          continue;
+        Loop *DefLoop = LI.getLoopFor(I->getParent());
+        for (Loop *DL = DefLoop; DL; DL = DL->getParentLoop()) {
+          for (Loop *CL : ContainingLoops)
+            if (DL == CL) {
+              HasInLoopUnknown = true;
+              break;
+            }
+          if (HasInLoopUnknown)
+            break;
+        }
+        // AA-based reload classification and operand-flavor bucketing: only
+        // meaningful when the SCEVUnknown's Inst is in the *innermost* loop
+        // (the one SCEV reasons about and partial-BTC predication would
+        // target).
+        if (Innermost && Innermost->contains(I->getParent())) {
+          OpHasInLoopUnknown = true;
+          if (auto *Load = dyn_cast<LoadInst>(I)) {
+            auto [SAlias, MAlias, CAlias] = LoadAliasFlags(Load, Innermost);
+            if (SAlias)
+              HasStoreReload = true;
+            if (MAlias)
+              HasMemIntrinsicReload = true;
+            if (CAlias)
+              HasCallReload = true;
+            // Point at the specific aliasing writer (first store / mem-
+            // intrinsic wins) so the consumer sees WHERE the reload comes from.
+            if ((SAlias || MAlias) && !ReloadStore) {
+              ReloadStore = FirstAliasingStore(Load, Innermost);
+              ReloadLoad = Load;
+            }
+            // Load with no AA-detected writer (indirect / data-dependent;
+            // classifier today buckets under the generic trip-count-unknown
+            // opaque-operand case).
+            if (!SAlias && !MAlias && !CAlias)
+              HasUnaliasedLoadOperand = true;
+          } else if (isa<PHINode>(I)) {
+            // In-loop phi operand — phi SCEV couldn't recognize as an IV (IVs
+            // fold into an AddRec instead of appearing here as a SCEVUnknown).
+            HasInLoopPhiOperand = true;
+          } else {
+            // Any other in-loop def (freeze / select / intrinsic / call /
+            // ...). HasOtherInLoopUnknownOperand is the umbrella flag (superset
+            // for existing consumers); the specific opacity shape is also
+            // recorded so newer consumers can split freeze vs select vs other.
+            // freeze is often a redundant freeze on a value proven non-poison
+            // by a dominating guard; select is a control-flow-merge choice.
+            HasOtherInLoopUnknownOperand = true;
+            if (isa<FreezeInst>(I))
+              HasInLoopFreezeOperand = true;
+            else if (isa<SelectInst>(I))
+              HasInLoopSelectOperand = true;
+          }
+        }
+      }
+
+      // Detect AddRecs on a loop OTHER than the innermost. If the opaque /
+      // no-in-loop-unknown class fires for this operand AND such an AddRec is
+      // present, the opacity is only because SCEV doesn't fold outer-loop
+      // AddRecs into innermost-invariance — a SCEV-teaching opportunity, not a
+      // fundamental "modular stride" wall.
+      if (Innermost) {
+        for (const SCEVAddRecExpr *AR : Coll.AddRecs) {
+          if (AR->getLoop() != Innermost) {
+            HasOuterLoopAddRecOperand = true;
+            break;
+          }
+        }
+      }
+
+      // Opaque-operand / no-in-loop-unknown class — operand SCEV is non-AddRec
+      // / non-invariant for L but none of its SCEVUnknown leaves is defined
+      // inside L. Captures outer-loop AddRecs and other constructs blocking
+      // partial-BTC predication for reasons unrelated to in-loop memory.
+      if (OpIsOpaqueForL && !OpHasInLoopUnknown)
+        HasOpaqueOperandNoInLoopUnknown = true;
+    }
+
+    // Per-edge exit count + per-loop "other-uncomputable" flag.
+    // EdgeBTCComputable reflects the per-edge SCEV exit count for THIS exiting
+    // block (SE.getExitCount for &BB), not the loop's overall
+    // latch/backedge-taken count.
+    bool EdgeBTCComputable = false;
+    bool EdgeBTCSymbolic = false;
+    bool LoopHasOtherUnknownBTCTrap = false;
+    if (Innermost && IsLoopExit) {
+      const SCEV *EC = SE.getExitCount(Innermost, &BB);
+      EdgeBTCComputable = !isa<SCEVCouldNotCompute>(EC);
+      if (!EdgeBTCComputable) {
+        // Not exactly-known; check the SymbolicMaximum bucket so edge-level
+        // attribution matches the per-loop SCEV bucket.
+        const SCEV *SymEC =
+            SE.getExitCount(Innermost, &BB, ScalarEvolution::SymbolicMaximum);
+        EdgeBTCSymbolic = !isa<SCEVCouldNotCompute>(SymEC);
+      }
+      unsigned NUnc = UncomputableTrapExits.lookup(Innermost);
+      LoopHasOtherUnknownBTCTrap = EdgeBTCComputable ? (NUnc > 0) : (NUnc > 1);
+    }
+
+    // Predicate-tree shape (in-loop and out-of-loop edges alike). Sizes the
+    // reach of shape-specific levers: NUW propagation on a bounds-check OR
+    // targets OrBoundsCheckConstBound; the AND-form lever targets
+    // AndBoundsCheckConstBound; the variable-bound extension targets the
+    // *BoundsCheckVarBound shapes; a generic SCEV exit-count extension targets
+    // {Or,And}TwoAddRecICmp.
+    TrapPredicateShape PredShape =
+        classifyTrapPredicateShape(BI->getCondition(), SE, Innermost);
+
+    // Out-of-loop / structural-redundancy fields. Also computed for in-loop
+    // edges (cheap, and an in-loop trap dominated by an equivalent earlier
+    // check is still a CVP / dominator-fold candidate).
+    bool IsEntryProx = isEntryProximate(F, &BB, DT, LI);
+    bool DomByEquiv = isDominatedByEquivalentCheck(&BB, BI->getCondition(), DT);
+
+    // Q1 (dominance): does the trap branch's BB dominate the latch? If yes the
+    // cond fires every iteration; if no it's in a conditional arm and LICM
+    // can't hoist here. Q2 (IV update): for any IV operand, does its update
+    // dominate the latch? If no, the IV is conditionally updated and SCEV
+    // refuses an AddRec → trap not eliminable via trip-count.
+    bool DominatesLatch = false;
+    bool IVUpdateDominatesLatch = true;
+    if (LTAEmitExplain) {
+      BasicBlock *Latch = Innermost ? Innermost->getLoopLatch() : nullptr;
+      DominatesLatch = Latch && DT.dominates(&BB, Latch);
+      IVUpdateDominatesLatch =
+          computeIVUpdateDominatesLatch(BI->getCondition(), Innermost, DT);
+    }
+
+    // Resolve the reload-blocking writer: source line, kind (store / memcpy /
+    // …), TBAA type; plus WHICH load is reloaded (pointer name + source line)
+    // and its TBAA type. Empty when no store-reload.
+    unsigned ReloadStoreLine = 0, ReloadLoadLine = 0;
+    StringRef ReloadStoreTBAA, ReloadStoreKind, ReloadLoadTBAA, ReloadLoadName;
+    if (ReloadStore) {
+      if (const DebugLoc &DL = ReloadStore->getDebugLoc())
+        ReloadStoreLine = DL.getLine();
+      ReloadStoreTBAA = TBAATypeName(ReloadStore);
+      ReloadStoreKind = WriterKind(ReloadStore);
+    }
+    if (ReloadLoad) {
+      ReloadLoadTBAA = TBAATypeName(ReloadLoad);
+      if (const DebugLoc &DL = ReloadLoad->getDebugLoc())
+        ReloadLoadLine = DL.getLine();
+      if (Value *Ptr = ReloadLoad->getPointerOperand())
+        ReloadLoadName = Ptr->getName();
+    }
+
+    // Count-ordered trap-class code, computed once here (single source of
+    // truth; consumers read `TrapClass` instead of re-deriving it).
+    StringRef TrapClass = computeTrapClass(
+        /*InLoop=*/Innermost != nullptr, PredShape, IsEntryProx, DomByEquiv,
+        IsLoopExit, EdgeBTCComputable, LoopHasOtherUnknownBTCTrap,
+        HasStoreReload, HasMemIntrinsicReload, HasCallReload,
+        HasInLoopPhiOperand, HasUnaliasedLoadOperand,
+        HasOtherInLoopUnknownOperand, HasOpaqueOperandNoInLoopUnknown,
+        HasInLoopFreezeOperand, HasInLoopSelectOperand, NumLeafOps,
+        HasNonUnitStrideForLAddRec, HasNegativeStrideForLAddRec,
+        HasNonConstantStrideForLAddRec, HasOnlyNotProvenMonotonicForLAddRec);
+
+    OptimizationRemarkAnalysis Rem(REMARK_PASS, Name, BI);
+    Rem << "Function " << NV("Function", F.getName())
+        << " src_bb=" << NV("SourceBB", bbLabel(&BB))
+        << " trap_bb=" << NV("TrapBB", bbLabel(TrapSucc)) << " loop_depth="
+        << NV("LoopDepth", Innermost ? Innermost->getLoopDepth() : 0u)
+        << " loop_header="
+        << NV("LoopHeader",
+              Innermost ? bbLabel(Innermost->getHeader()) : std::string(""))
+        << " is_innermost="
+        << NV("IsInnermost", (bool)(Innermost && Innermost->isInnermost()))
+        << " is_loop_exit=" << NV("IsLoopExit", IsLoopExit)
+        << " trap_class=" << NV("TrapClass", TrapClass)
+        << " num_leaf_operands=" << NV("NumLeafOperands", NumLeafOps)
+        << " scev_computed=" << NV("SCEVComputed", AllComputed)
+        << " scev_loop_invariant="
+        << NV("SCEVLoopInvariant", LoopInvariantInInnermost)
+        << " has_addrec=" << NV("HasAddRec", HasAddRec)
+        << " has_in_loop_unknown=" << NV("HasInLoopUnknown", HasInLoopUnknown)
+        << " has_store_reload=" << NV("HasStoreReload", HasStoreReload)
+        << " has_mem_intrinsic_reload="
+        << NV("HasMemIntrinsicReload", HasMemIntrinsicReload)
+        << " reload_store_line=" << NV("ReloadStoreLine", ReloadStoreLine)
+        << " reload_store_kind=" << NV("ReloadStoreKind", ReloadStoreKind)
+        << " reload_store_tbaa=" << NV("ReloadStoreTBAA", ReloadStoreTBAA)
+        << " reload_load_tbaa=" << NV("ReloadLoadTBAA", ReloadLoadTBAA)
+        << " reload_load_name=" << NV("ReloadLoadName", ReloadLoadName)
+        << " reload_load_line=" << NV("ReloadLoadLine", ReloadLoadLine)
+        << " has_call_reload=" << NV("HasCallReload", HasCallReload)
+        << " has_unaliased_load_operand="
+        << NV("HasUnaliasedLoadOperand", HasUnaliasedLoadOperand)
+        << " has_in_loop_phi_operand="
+        << NV("HasInLoopPhiOperand", HasInLoopPhiOperand)
+        << " has_in_loop_freeze_operand="
+        << NV("HasInLoopFreezeOperand", HasInLoopFreezeOperand)
+        << " has_in_loop_select_operand="
+        << NV("HasInLoopSelectOperand", HasInLoopSelectOperand)
+        << " has_other_in_loop_unknown_operand="
+        << NV("HasOtherInLoopUnknownOperand", HasOtherInLoopUnknownOperand)
+        << " has_opaque_operand_no_in_loop_unknown="
+        << NV("HasOpaqueOperandNoInLoopUnknown",
+              HasOpaqueOperandNoInLoopUnknown)
+        << " has_outer_loop_addrec_operand="
+        << NV("HasOuterLoopAddRecOperand", HasOuterLoopAddRecOperand)
+        << " has_non_unit_stride_for_l_addrec="
+        << NV("HasNonUnitStrideForLAddRec", HasNonUnitStrideForLAddRec)
+        << " has_non_constant_stride_for_l_addrec="
+        << NV("HasNonConstantStrideForLAddRec", HasNonConstantStrideForLAddRec)
+        << " has_only_weak_no_wrap_for_l_addrec="
+        << NV("HasOnlyNotProvenMonotonicForLAddRec",
+              HasOnlyNotProvenMonotonicForLAddRec)
+        << " has_negative_stride_for_l_addrec="
+        << NV("HasNegativeStrideForLAddRec", HasNegativeStrideForLAddRec)
+        << " edge_btc_computable=" << NV("EdgeBTCComputable", EdgeBTCComputable)
+        << " edge_btc_symbolic=" << NV("EdgeBTCSymbolic", EdgeBTCSymbolic)
+        << " loop_has_other_unknown_btc_trap="
+        << NV("LoopHasOtherUnknownBTCTrap", LoopHasOtherUnknownBTCTrap)
+        << " predicate_shape="
+        << NV("PredicateShape", trapPredicateShapeName(PredShape).str())
+        << " is_entry_proximate=" << NV("IsEntryProximate", IsEntryProx)
+        << " dominated_by_equivalent_check="
+        << NV("DominatedByEquivalentCheck", DomByEquiv);
+    if (LTAEmitExplain) {
+      Rem << " dominates_latch=" << NV("DominatesLatch", DominatesLatch)
+          << " iv_update_dominates_latch="
+          << NV("IVUpdateDominatesLatch", IVUpdateDominatesLatch)
+          << " invocation_seq=" << NV("InvocationSeq", InvocationSeq);
+    }
+    ORE.emit(Rem);
+  }
+
+  // Flag-gated per-load alias annotation: for each load in an INNERMOST loop
+  // may-clobbered by an in-loop writer (store / memcpy / call), emit a
+  // LoopLoadAlias record naming the first such writer. Clobbered loads only
+  // (hoistable loads omitted).
+  if (LTAEmitLoadAlias) {
+    std::string LName = taggedName("LoopLoadAlias", Tag);
+    for (Loop *L : LI.getLoopsInPreorder()) {
+      if (!L->isInnermost())
+        continue;
+      for (BasicBlock *BB : L->blocks())
+        for (Instruction &I : *BB) {
+          auto *Load = dyn_cast<LoadInst>(&I);
+          if (!Load)
+            continue;
+          Instruction *W = FirstAliasingWriter(Load, L);
+          if (!W)
+            continue; // hoistable — no in-loop writer may-aliases it
+          unsigned LoadLine = 0, WLine = 0;
+          if (const DebugLoc &DL = Load->getDebugLoc())
+            LoadLine = DL.getLine();
+          if (const DebugLoc &DL = W->getDebugLoc())
+            WLine = DL.getLine();
+          StringRef LoadName;
+          if (Value *P = Load->getPointerOperand())
+            LoadName = P->getName();
+          OptimizationRemarkAnalysis Rem(REMARK_PASS, LName, Load);
+          Rem << "Function " << NV("Function", F.getName())
+              << " load_name=" << NV("LoadName", LoadName)
+              << " load_line=" << NV("LoadLine", LoadLine)
+              << " load_tbaa=" << NV("LoadTBAA", TBAATypeName(Load))
+              << " loop_header=" << NV("LoopHeader", bbLabel(L->getHeader()))
+              << " writer_kind=" << NV("WriterKind", WriterKind(W))
+              << " writer_line=" << NV("WriterLine", WLine)
+              << " writer_tbaa=" << NV("WriterTBAA", TBAATypeName(W));
+          ORE.emit(Rem);
+        }
+    }
+  }
 }
 
 /// Emit one machine-readable LoopPrimitives remark per loop in F, plus a
