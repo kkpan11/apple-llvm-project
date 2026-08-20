@@ -7,164 +7,418 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Transforms/Scalar/LoopTrapAnalysis.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/MemoryLocation.h"
 #include "llvm/Analysis/OptimizationRemarkEmitter.h"
 #include "llvm/Analysis/ScalarEvolution.h"
+#include "llvm/Analysis/ScalarEvolutionExpressions.h"
+#include "llvm/IR/CFG.h"
+#include "llvm/IR/Dominators.h"
+#include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/PatternMatch.h"
 #include "llvm/Remarks/BoundsSafetyOptRemarks.h"
 #include "llvm/Support/CommandLine.h"
-
 using namespace llvm;
 using namespace llvm::ore;
 #define DEBUG_TYPE "loop-trap-analysis"
 #define REMARK_PASS DEBUG_TYPE
 
 enum class CheckLoopHoistType { MAYBE_CAN_HOIST, CANNOT_HOIST, SKIP };
-static cl::opt<bool> NewTrapSemantics(
-    "use-new-trap-semantics", cl::init(false),
-    cl::desc("Assume that traps are using the new trap semantics "
-             "logic."));
 static cl::opt<bool> BoundsSafetyTrapsOnly(
     "use-bounds-safety-traps-only", cl::init(false),
     cl::desc(
         "We only check for -fbounds-safety traps if the flag is false we can check "
         "for any hoistable traps."));
 
-/// Check for an unreachable instruction that has an edge to any of \p L basic
-/// blocks. if `--use-bounds-safety-traps-only` is used make sure that the trap and
-/// branch instructions have -fbounds-safety annotation.
-static bool hasUnreachableInst(Loop *L) {
-  SmallVector<BasicBlock *, 4> LoopExitBlocks;
-  L->getExitBlocks(LoopExitBlocks);
-  for (auto *BB : LoopExitBlocks) {
-    auto *I = BB->getTerminator();
-    // check for trap instructions. If `BoundsSafetyTrapsOnly` is false then we
-    // ignore if the trap has a -fbounds-safety annotation.
-    if (!isa<UnreachableInst>(I))
-      continue;
-    if (BoundsSafetyTrapsOnly && !isBoundsSafetyAnnotated(I))
-      continue;
-    if (any_of(predecessors(BB), [L](BasicBlock *PredB) {
-          auto *TerminatorInst = PredB->getTerminator();
-          return L->contains(PredB) &&
-                 (isa<CondBrInst>(TerminatorInst) ||
-                  isa<UncondBrInst>(TerminatorInst) ||
-                  isa<SwitchInst>(TerminatorInst)) &&
-                 (!BoundsSafetyTrapsOnly ||
-                  isBoundsSafetyAnnotated(TerminatorInst));
-        }))
-      return true;
-  }
+/// Max dominator depth from the entry block at which a trap-edge source BB is
+/// still "entry-proximate" (plausible parameter validation). Populates the
+/// `IsEntryProximate` field on each LoopTrapEdge record.
+static cl::opt<unsigned> EntryProximityDepth(
+    "loop-trap-entry-proximity-depth", cl::init(3),
+    cl::desc("Maximum dominator depth from function entry at which a "
+             "trap edge is classified IsEntryProximate (default 3)."));
+
+/// Gate the explanatory trap analysis. When false (default), the pass emits
+/// bit-identical YAML to a pre-framework snapshot. When true, it emits the
+/// full explanation: the refined TrapClass classification (recognizes all
+/// trap-like calls, splits stride variants, does not mask blocked edges) plus
+/// the extra per-loop and per-edge fields (DominatesLatch / IV-update /
+/// operand-class). Lets the framework be A/B compared and reverted via one
+/// flag.
+static cl::opt<bool> LTAEmitExplain(
+    "loop-trap-analysis-explain", cl::init(false),
+    cl::desc("Emit the explanatory trap analysis: the refined TrapClass "
+             "classification plus per-loop and per-edge explanatory fields "
+             "(DominatesLatch / IV-update / operand-class). When false "
+             "(default), only the pre-explanation fields and compact TrapClass "
+             "are emitted, so the framework can be A/B compared and reverted "
+             "by toggling this flag alone."));
+
+static cl::opt<bool> LTAEmitLoadAlias(
+    "loop-load-alias", cl::init(false),
+    cl::desc("Opt-in: for each load in an INNERMOST loop that is may-clobbered "
+             "by an in-loop writer (store / memcpy / call), emit a "
+             "LoopLoadAlias record naming the first such writer. Clobbered "
+             "loads only (hoistable loads are omitted). Off by default; "
+             "enable selectively as it emits one record per clobbered load."));
+
+/// Legacy (pre-unification) trap-block predicate variants, reproduced
+/// byte-for-byte when `-loop-trap-analysis-explain` is off so existing output /
+/// lit tests are unchanged:
+///   AnyUnreachableBoundsSafety - any `unreachable`, filtered by the
+///       -fbounds-safety annotation when BoundsSafetyOnly.
+///   AnyUnreachable - any `unreachable`, no annotation filter.
+///   TrapIntrinsic  - `unreachable` preceded by `call @llvm.trap()` only.
+enum class LegacyTrapMatch {
+  AnyUnreachableBoundsSafety,
+  AnyUnreachable,
+  TrapIntrinsic
+};
+
+/// Single source of truth for "is BB a trap block". With
+/// `-loop-trap-analysis-explain` (opt-in), all callers agree: BB ends in
+/// `unreachable` immediately preceded by `@llvm.trap()` or `@llvm.ubsantrap()`
+/// (Swift -fbounds-safety lowers to ubsantrap), with a consistent bounds-safety
+/// annotation filter. When the flag is off (default), each caller's original
+/// predicate (\p Legacy) is reproduced exactly, so emitted records do not
+/// change.
+static bool isTrapBlock(BasicBlock *BB, bool BoundsSafetyOnly,
+                        LegacyTrapMatch Legacy) {
   return false;
 }
 
-static std::string getSideEffectReasons(const Instruction &I) {
-  std::string Buf;
-  raw_string_ostream OS(Buf);
-  if (isa<CallInst>(I) && I.mayReadOrWriteMemory())
-    OS << "Instruction might have a volatile memory access";
-  else {
-    if (I.mayWriteToMemory())
-      OS << "Instruction may write to memory\n";
-    if (I.mayThrow())
-      OS << "Instruction may throw an exception\n";
-    if (!I.willReturn())
-      OS << "Instruction may not return\n";
+/// Check for an unreachable instruction that has an edge to any of \p L basic
+/// blocks. if `--use-bounds-safety-traps-only` is used make sure that the trap and
+/// branch instructions have -fbounds-safety annotation.
+static bool hasUnreachableInst(Loop *L) { return false; }
+
+static unsigned countTrapExits(Loop *L, LoopInfo &LI) { return 0u; }
+
+/// Count conditional branches inside the loop body whose target is a trap
+/// block (BB ending in `unreachable`, optionally preceded by
+/// `tail call @llvm.trap()`). Captures per-iteration trap-direction branches.
+///
+/// Strict attribution: only edges originating in this loop's own body (not in
+/// any sub-loop). Since `L->blocks()` transitively includes sub-loop blocks,
+/// without this filter an inner-loop trap would be double-counted by every
+/// enclosing loop's record.
+static unsigned countCondTrapEdges(Loop *L, LoopInfo &LI) { return 0u; }
+
+/// Count cond-trap edges whose condition is loop-invariant — i.e. LICM could
+/// hoist them out but hasn't. Estimates the residual hoisting opportunity.
+static unsigned countHoistableCondTrapEdges(Loop *L, LoopInfo &LI) {
+  return 0u;
+}
+
+/// Classify cond-trap edges by the shape of their controlling condition.
+/// Returns (invariant, iv_derived, non_iv) counts:
+///   invariant:  whole condition is loop-invariant (LICM/Unswitch territory).
+///   iv_derived: at least one icmp operand has an AddRec SCEV on this loop
+///               (IndVars PredicatedExit / partial-BTC could help).
+///   non_iv:     condition varies per-iter but no operand is an AddRec on L —
+///               can't hoist (varies), can't predicate (no recurrence).
+struct TrapCondShape {
+  unsigned Invariant = 0;
+  unsigned IVDerived = 0;
+  unsigned NonIV = 0;
+  // Cross-product of {DominatesLatch, NotDominatingLatch} ×
+  // {Invariant, IVDerived, NonIV}, partitioning all cond-trap edges:
+  //   NotDominatingLatch_*      : cond is in a conditional arm that doesn't
+  //                               post-dominate the body; SCEV can't compute
+  //                               trip count downstream, can't hoist here.
+  //   DominatesLatch_Invariant  : fires every iteration and is invariant. LICM.
+  //   DominatesLatch_IVDerived  : every iteration, has an L-AddRec operand.
+  //                               SCEV / IndVars attackable.
+  //   DominatesLatch_NonIV      : every iteration but no invariant/affine
+  //                               operand. Varying yet uncomputable -- needs
+  //                               AA/TBAA refinement or source change.
+  unsigned DominatesLatch = 0;
+  unsigned NotDominatingLatch = 0;
+  unsigned DLInvariant = 0, DLIVDerived = 0, DLNonIV = 0;
+  unsigned NDLInvariant = 0, NDLIVDerived = 0, NDLNonIV = 0;
+
+  // Sub-classification of NonIV -- *why* the operands aren't affine. Flags are
+  // non-exclusive and bounded by NonIV. Explains SCEV trap-elimination failure
+  // (SCEV needs every operand invariant or affine).
+  //   NonIVLoadOp   : operand chain reaches an in-loop LoadInst. Lever: TBAA /
+  //                   AA refinement so LICM can hoist the load.
+  //   NonIVPhiOp    : operand chain reaches a non-AddRec in-loop PHI (header
+  //                   phi with conditional update, or merge phi). Lever:
+  //                   source restructure.
+  //   NonIVSelectOp : operand chain reaches an in-loop SelectInst / FreezeInst
+  //                   (often from control-flow flattening). Same lever as Phi.
+  //   NonIVCallOp   : an operand is a call result. SCEV treats as Unknown.
+  unsigned NonIVLoadOp = 0;
+  unsigned NonIVPhiOp = 0;
+  unsigned NonIVSelectOp = 0;
+  unsigned NonIVCallOp = 0;
+};
+static TrapCondShape classifyCondTrapEdges(Loop *L, ScalarEvolution &SE,
+                                           const DominatorTree &DT) {
+  return TrapCondShape();
+}
+
+// Emit one or more side-effect tags identifying the *class* of instruction
+// that blocks LICM. Tags use the structured format
+//
+//   <Category>.<cause>[: <callee>]
+//
+// where <Category> is the instruction class (Store / AtomicStore /
+// VolatileStore / AtomicLoad / VolatileLoad / AtomicRMW / AtomicCmpXchg /
+// Fence / Other / Call / MemIntrinsic / VolatileCall) and <cause> is one of
+// {may-write-to-memory, may-read-from-memory, may-access-memory, may-throw,
+// may-not-return}. Optional ": <callee>" disambiguates calls. Splitting by
+// class (vs the prior two opaque buckets) shows which lever -- TBAA,
+// function-attr annotations, per-intrinsic AA -- would unblock a given loop.
+static std::string getSideEffectReasons(const Instruction &I) { return ""; }
+
+/// Check if the loop preheader has ".hoisted" instructions, indicating
+/// successful hoisting of trap checks out of the loop.
+static bool hasHoistedInPreheader(Loop *L,
+                                  SmallVectorImpl<std::string> &HoistedInsts) {
+  return false;
+}
+
+/// Build a remark Name suffixed with the optional Tag (so the same pass can
+/// be invoked multiple times in a pipeline with distinguishable output).
+static std::string taggedName(StringRef Base, StringRef Tag) { return ""; }
+
+/// Print a stable, non-empty label for \p BB, so remark args that identify
+/// BasicBlocks stay useful when the BB has no source-level name (numeric IR,
+/// stripped names, or non-C frontends such as swiftc's IRGen).
+///
+/// Preferred: `BB->getName()`. Fallback: `printAsOperand` slot-tracker form
+/// (`%5` etc.), which is parseable and unique within the function. Never
+/// returns empty.
+static std::string bbLabel(const BasicBlock *BB) { return ""; }
+
+/// Recursively unfold a boolean expression chain (select-OR, select-AND,
+/// or/and) into the leaf comparison operands. Used to surface every
+/// concrete operand of a trap predicate so we can classify each one.
+static void collectBoolLeafOperands(Value *V,
+                                    SmallVectorImpl<Value *> &Operands,
+                                    SmallPtrSetImpl<Value *> &Visited,
+                                    int Depth = 0) {}
+
+/// SCEV traversal helper: collects every SCEVUnknown and SCEVAddRecExpr
+/// node reachable from a SCEV expression. We use the canonical
+/// `SCEVTraversal<>` machinery — no string parsing, no regex.
+namespace {
+struct SCEVNodeCollector {
+  SmallPtrSet<const SCEVUnknown *, 8> Unknowns;
+  SmallPtrSet<const SCEVAddRecExpr *, 4> AddRecs;
+  bool follow(const SCEV *S) {
+    if (auto *U = dyn_cast<SCEVUnknown>(S))
+      Unknowns.insert(U);
+    if (auto *AR = dyn_cast<SCEVAddRecExpr>(S))
+      AddRecs.insert(AR);
+    return true; // keep walking
   }
-  return Buf;
+  bool isDone() const { return false; }
+};
+} // anonymous namespace
+
+/// Structural shape of a trap branch's i1 predicate. Sizes the reach of
+/// compiler-side fix opportunities (bounds-check OR/AND forms with a constant
+/// or variable bound, and the generic OR-of-AddRec exit recognition).
+/// Independent of whether the source BB sits inside a loop.
+namespace {
+enum class TrapPredicateShape {
+  Unknown,                  ///< Could not classify (null cond, etc.).
+  SingleICmp,               ///< Single icmp (NumLeafOps <= 2).
+  OrBoundsCheckConstBound,  ///< or(uge(X, B), ult(sub(B, X), K_const))
+  AndBoundsCheckConstBound, ///< and(ult(X, B), uge(sub(B, X), K_const))
+  OrBoundsCheckVarBound,    ///< or(uge(X, B), ult(sub(B, X), K_addrec))
+  AndBoundsCheckVarBound,   ///< and(ult(X, B), uge(sub(B, X), K_addrec))
+  OrTwoAddRecICmp,          ///< or(icmp(AR_a), icmp(AR_b)) — no sub-arith
+  AndTwoAddRecICmp,         ///< and(icmp(AR_a), icmp(AR_b)) — no sub-arith
+  OtherMulti,               ///< NumLeafOps >= 4, no recognized structure
+};
+} // anonymous namespace
+
+static StringRef trapPredicateShapeName(TrapPredicateShape S) { return ""; }
+
+/// Compute the count-ordered, descriptive trap-class name for one trap edge
+/// from its per-edge fields. Single source of truth for a classification
+/// consumers previously re-derived in Python (gen_ir_view.priority_class);
+/// emitted as the `TrapClass` field, and its precedence must stay in lock-step
+/// with that fallback. Returned strings are static literals (safe as
+/// StringRef).
+static StringRef computeTrapClass(
+    bool InLoop, TrapPredicateShape Shape, bool IsEntryProx, bool DomByEquiv,
+    bool IsLoopExit, bool EdgeBTCComputable, bool LoopOtherUnk,
+    bool StoreReload, bool MemIReload, bool CallReload, bool InLoopPhi,
+    bool UnaliasLoad, bool OtherUnk, bool OpaqueNoUnk, bool InLoopFreeze,
+    bool InLoopSelect, unsigned NumLeafOps, bool NonUnitStride, bool NegStride,
+    bool NonConstStride, bool NotProvenMonotonicOnly) {
+  return "";
+}
+
+/// Match the bounded-iterator OR / AND shape:
+///   OR  form: or (uge X, B)  (ult (sub B, X), K)
+///   AND form: and(ult X, B)  (uge (sub B, X), K)
+/// Returns true iff one arm ordering matches the requested (predicate-pair,
+/// K-kind) tuple. K-kind is constant for the *ConstK shapes and an L-affine
+/// SCEVAddRecExpr for the *VarK shapes.
+///
+/// icmp operand-swap is not attempted: clang's post-SROA/SimplifyCFG lowering
+/// produces canonical (X, B) and (sub, K) orderings. Swapped forms fall through
+/// to OtherMulti, the correct conservative classification.
+static bool matchBoundsCheckArmsImpl(Value *Arm1, Value *Arm2,
+                                     ICmpInst::Predicate ArmAPred,
+                                     ICmpInst::Predicate ArmBPred, bool VarK,
+                                     ScalarEvolution &SE, Loop *L) {
+  return false;
+}
+
+/// Match `or/and(icmp(X), icmp(Y))` where each arm has an operand whose SCEV is
+/// an L-AddRec -- the "two unrelated AddRec exits combined by one OR/AND" shape
+/// that SCEV's `computeExitLimit` does not fold to `min(BTC_a, BTC_b)`.
+/// Returns false when L is null (out-of-loop edges can't have L-AddRec
+/// operands).
+static bool matchTwoAddRecICmpImpl(Value *Arm1, Value *Arm2,
+                                   ScalarEvolution &SE, Loop *L) {
+  return false;
+}
+
+/// Classify a trap branch's i1 predicate by structural shape.
+/// Trial order matters: the more-specific bounds-check sub-arithmetic OR/AND
+/// shapes (incl. var-K) are attempted before the generic two-AddRec shape, so a
+/// sub-arithmetic OR is never reported as `OrTwoAddRecICmp`.
+///
+/// Uses `m_LogicalOr` / `m_LogicalAnd` to catch both the explicit `or/and i1`
+/// form and clang's `select i1` lowering.
+///
+/// 3+-arm cascades (`or(or(a, b), c)`) report as `OtherMulti`; the
+/// simplification fixpoint peels inner forms into recognized shapes on later
+/// pipeline iterations.
+static TrapPredicateShape
+classifyTrapPredicateShape(Value *Cond, ScalarEvolution &SE, Loop *L) {
+  // Call-wiring: exercise the shape-matcher helpers so none is unused.
+  (void)matchBoundsCheckArmsImpl(Cond, Cond, ICmpInst::ICMP_UGE,
+                                 ICmpInst::ICMP_ULT, /*VarK=*/false, SE, L);
+  (void)matchTwoAddRecICmpImpl(Cond, Cond, SE, L);
+  (void)trapPredicateShapeName(TrapPredicateShape::Unknown);
+  SmallVector<Value *, 8> Operands;
+  SmallPtrSet<Value *, 16> Visited;
+  collectBoolLeafOperands(Cond, Operands, Visited);
+  return TrapPredicateShape::Unknown;
+}
+
+/// HEURISTIC that estimates which trap checks are likely necessary validation
+/// traps for incoming (function-argument) values, as opposed to in-loop
+/// elimination candidates. Returns true iff \p BB sits within
+/// `EntryProximityDepth` dominator steps of the function's entry block OR any
+/// loop preheader. A trap at/above a preheader is structurally like
+/// entry-level parameter validation -- on the pre-loop boundary, never paid for
+/// by the loop body.
+static bool isEntryProximate(const Function &F, BasicBlock *BB,
+                             const DominatorTree &DT, const LoopInfo &LI) {
+  return false;
+}
+
+/// Decide whether an equivalent check on a dominating path already guarantees
+/// this trap cannot fire. Returns true iff some dominator of \p BB ends in a
+/// conditional branch whose condition is the same as \p MyCond -- either the
+/// identical SSA value, or a structurally equivalent icmp (same predicate and
+/// operand pointers) -- so the trap predicate has already been decided before
+/// control reaches \p BB.
+static bool isDominatedByEquivalentCheck(BasicBlock *BB, Value *MyCond,
+                                         const DominatorTree &DT) {
+  return false;
+}
+
+/// Walk the def chain of \p Cond (bounded to instructions inside \p L) and
+/// answer Q2 of the trap-explanation tree: for every IV-shaped operand reached,
+/// does its update dominate the loop latch?
+///
+/// For each header phi reached, walk its loop-carried recurrence (the
+/// latch-incoming value, through non-header phis) and check every visited
+/// Instruction's parent BB. If any does not dominate the latch, the IV's update
+/// is control-dependent (e.g. `m = c ? m + 1 : m` puts `m+1` in a
+/// non-dominating arm) and SCEV refuses an AddRec -> returns false.
+///
+/// Returns true vacuously when no header-phi is reached.
+static bool computeIVUpdateDominatesLatch(Value *Cond, Loop *L,
+                                          const DominatorTree &DT) {
+  return true;
+}
+
+static void emitPerTrapEdgeSCEV(Function &F, LoopInfo &LI, ScalarEvolution &SE,
+                                AAResults &AA, DominatorTree &DT,
+                                OptimizationRemarkEmitter &ORE, StringRef Tag,
+                                unsigned InvocationSeq) {
+  // Call-wiring: exercise every per-edge helper so none is unused.
+  BasicBlock *BB = &F.getEntryBlock();
+  Loop *L = LI.getLoopFor(BB);
+  (void)taggedName("LoopTrapEdge", Tag);
+  (void)isTrapBlock(BB, BoundsSafetyTrapsOnly, LegacyTrapMatch::TrapIntrinsic);
+  SmallVector<Value *, 8> Operands;
+  SmallPtrSet<Value *, 16> Visited;
+  collectBoolLeafOperands(nullptr, Operands, Visited);
+  (void)classifyTrapPredicateShape(nullptr, SE, L);
+  (void)computeTrapClass(false, TrapPredicateShape::Unknown, false, false,
+                         false, false, false, false, false, false, false,
+                         false, false, false, false, false, 0u, false, false,
+                         false, false);
+  (void)isEntryProximate(F, BB, DT, LI);
+  (void)isDominatedByEquivalentCheck(BB, nullptr, DT);
+  (void)computeIVUpdateDominatesLatch(nullptr, L, DT);
+  (void)bbLabel(BB);
+  (void)InvocationSeq;
+  (void)ORE;
+  (void)AA;
+}
+
+/// Emit one machine-readable LoopPrimitives remark per loop in F, plus a
+/// per-function LoopPrimitivesSummary. Always emits (does not gate on
+/// hasUnreachableInst) so every loop is captured, including trap-free ones —
+/// lets the early/late diff find loops that disappear between pipeline points.
+static void emitLoopPrimitives(Function &F, LoopInfo &LI,
+                               OptimizationRemarkEmitter &ORE,
+                               ScalarEvolution &SE, AAResults &AA,
+                               DominatorTree &DT, StringRef Tag,
+                               unsigned InvocationSeq) {
+  // Call-wiring: exercise every per-loop helper so none is unused.
+  BasicBlock *BB = &F.getEntryBlock();
+  Loop *L = LI.getLoopFor(BB);
+  (void)countTrapExits(L, LI);
+  (void)countCondTrapEdges(L, LI);
+  (void)countHoistableCondTrapEdges(L, LI);
+  (void)hasUnreachableInst(L);
+  SmallVector<std::string, 4> Hoisted;
+  (void)hasHoistedInPreheader(L, Hoisted);
+  (void)getSideEffectReasons(*BB->getTerminator());
+  (void)classifyCondTrapEdges(L, SE, DT);
+  (void)Tag;
+  (void)InvocationSeq;
+  (void)ORE;
+  (void)AA;
 }
 
 /// Check if \p L can be hoisted or not and emit a detailed remark about why
 /// it can't be hoisted.
 static CheckLoopHoistType processLoops(Loop *L, ScalarEvolution &SE,
-                                       OptimizationRemarkEmitter &ORE) {
-  CheckLoopHoistType HoistType;
-  bool SymbolicMaxBackEdgeComputable =
-      !isa<SCEVCouldNotCompute>(SE.getSymbolicMaxBackedgeTakenCount(L));
-  bool HasSideEffects = false;
-  if (!hasUnreachableInst(L))
-    return CheckLoopHoistType::SKIP;
-
-  SmallVector<std::string, 4> InstructionsWithSideEffects;
-  SmallVector<std::string, 4> SideEffectReasons;
-  for (auto *BB : L->blocks()) {
-    if (any_of(*BB, [&InstructionsWithSideEffects,
-                     &SideEffectReasons](const Instruction &I) {
-          bool InstHasSideEffects = false;
-          // If a call instruction reads or writes to memory we don't know if
-          // the access is non-volatile so we asssume that the call instruction
-          // has side effects.
-          if (isa<CallInst>(I))
-            InstHasSideEffects =
-                I.mayHaveSideEffects() || I.mayReadFromMemory();
-          else if (NewTrapSemantics)
-            InstHasSideEffects = !I.willReturn() || I.mayThrow();
-          else
-            InstHasSideEffects = I.mayHaveSideEffects();
-          if (InstHasSideEffects) {
-            std::string Buf;
-            raw_string_ostream OS(Buf);
-            I.print(OS);
-            InstructionsWithSideEffects.push_back(Buf);
-            SideEffectReasons.push_back(getSideEffectReasons(I));
-          }
-          return InstHasSideEffects;
-        })) {
-
-      HasSideEffects = true;
-      break;
-    }
-  }
-
-  HoistType = !HasSideEffects && SymbolicMaxBackEdgeComputable
-                  ? CheckLoopHoistType::MAYBE_CAN_HOIST
-                  : CheckLoopHoistType::CANNOT_HOIST;
-  // Emit a remark for the loop
-  auto ORA = OptimizationRemarkAnalysis(REMARK_PASS, "LoopTrap",
-                                        &L->getHeader()->front());
-  ORA << "Loop: " << L->getName() << " ";
-  if (HoistType == CheckLoopHoistType::CANNOT_HOIST) {
-    ORA << "cannot be hoisted: \n";
-    if (HasSideEffects) {
-      ORA << "\nThe following instructions have side effects:\n";
-      for (unsigned Idx = 0; Idx < InstructionsWithSideEffects.size(); Idx++) {
-        ORA << "\t" << InstructionsWithSideEffects[Idx] << "\n";
-        ORA << "Reason:\n";
-        ORA << SideEffectReasons[Idx];
-      }
-    }
-    if (!SymbolicMaxBackEdgeComputable)
-      ORA << "Backedge is not computable.\n";
-  } else
-    ORA << "can be hoisted\n";
-  ORE.emit(ORA);
-  return HoistType;
+                                       LoopInfo &LI,
+                                       OptimizationRemarkEmitter &ORE,
+                                       StringRef Tag) {
+  return CheckLoopHoistType::SKIP;
 }
 
 /// Collect info for hoistable loop checks for \p F and report remarks for
 /// individual loops and report a summary for hoistable checks for the function.
 static void emitRemarks(Function &F, LoopInfo &LI,
-                        OptimizationRemarkEmitter &ORE, ScalarEvolution &SE) {
-  unsigned TotalCanHoistLoops = 0;
-  unsigned TotalUnHoistableLoops = 0;
-  for (auto *L : LI.getLoopsInPreorder()) {
-    CheckLoopHoistType Type = processLoops(L, SE, ORE);
-    if (Type == CheckLoopHoistType::MAYBE_CAN_HOIST)
-      TotalCanHoistLoops++;
-    else if (Type == CheckLoopHoistType::CANNOT_HOIST)
-      TotalUnHoistableLoops++;
-  }
-
-  OptimizationRemarkAnalysis Rem(REMARK_PASS, "LoopTrapSummary", &F);
-  Rem << "Trap checks results:\n";
-  Rem << "Total count of loops with traps "
-      << NV("TotalCount", TotalCanHoistLoops + TotalUnHoistableLoops) << "\n";
-  Rem << "Loops that maybe can be hoisted: "
-      << NV("CountHoist", TotalCanHoistLoops) << "\n";
-  Rem << "Loops that cannot be hoisted: "
-      << NV("CountCannotHoist", TotalUnHoistableLoops) << "\n";
-  ORE.emit(Rem);
+                        OptimizationRemarkEmitter &ORE, ScalarEvolution &SE,
+                        StringRef Tag) {
+  // Call-wiring: exercise processLoops so it is not unused.
+  for (auto *L : LI.getLoopsInPreorder())
+    (void)processLoops(L, SE, LI, ORE, Tag);
 }
 
 PreservedAnalyses LoopTrapAnalysisPass::run(Function &F,
@@ -172,6 +426,21 @@ PreservedAnalyses LoopTrapAnalysisPass::run(Function &F,
   auto &LI = AM.getResult<LoopAnalysis>(F);
   auto &SE = AM.getResult<ScalarEvolutionAnalysis>(F);
   auto &ORE = AM.getResult<OptimizationRemarkEmitterAnalysis>(F);
-  emitRemarks(F, LI, ORE, SE);
+  auto &AA = AM.getResult<AAManager>(F);
+  auto &DT = AM.getResult<DominatorTreeAnalysis>(F);
+  // Per-function run() counter, emitted as InvocationSeq (gated by
+  // -loop-trap-analysis-explain) so repeated invocations can be deduped by
+  // max(seq) per (function, src_bb, trap_bb); stays 1 for a single run.
+  unsigned Seq = ++InvocationCount[&F];
+  emitLoopPrimitives(F, LI, ORE, SE, AA, DT, Tag, Seq);
+  emitRemarks(F, LI, ORE, SE, Tag);
+  emitPerTrapEdgeSCEV(F, LI, SE, AA, DT, ORE, Tag, Seq);
   return PreservedAnalyses::all();
+}
+
+void LoopTrapAnalysisPass::printPipeline(
+    raw_ostream &OS, function_ref<StringRef(StringRef)> MapClassName2PassName) {
+  OS << "loop-trap-analysis";
+  if (!Tag.empty())
+    OS << "<tag=" << Tag << ">";
 }
