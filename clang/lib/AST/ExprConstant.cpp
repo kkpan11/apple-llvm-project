@@ -7791,6 +7791,8 @@ static bool HandleDestructionImpl(EvalInfo &Info, SourceRange CallRange,
   if (RD->isUnion())
     return true;
 
+  if (!ASTContext::hasLayout(RD))
+    return false;
   const ASTRecordLayout &Layout = Info.Ctx.getASTRecordLayout(RD);
 
   // We don't have a good way to iterate fields in reverse, so collect all the
@@ -8185,6 +8187,8 @@ class APValueToBufferConverter {
 
   bool visitRecord(const APValue &Val, QualType Ty, CharUnits Offset) {
     const RecordDecl *RD = Ty->getAsRecordDecl();
+    if (!ASTContext::hasLayout(RD))
+      return false;
     const ASTRecordLayout &Layout = Info.Ctx.getASTRecordLayout(RD);
 
     // Visit the base classes.
