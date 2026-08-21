@@ -568,6 +568,10 @@ public:
   ///
   /// Note: This does not perform the implicit conversions required by C++11
   /// [expr.const]p5.
+  ///
+  /// If \p AllowRelaxedEval is \c true, this will allow certain constructs that
+  /// are not valid per the specification.
+  // FIXME: Add proper documentation about the constructs we allow.
   std::optional<llvm::APSInt>
   getIntegerConstantExpr(const ASTContext &Ctx,
                          bool AllowRelaxedEval = false) const;
@@ -582,6 +586,10 @@ public:
   ///
   /// Note: This does not perform the implicit conversions required by C++11
   /// [expr.const]p5.
+  ///
+  /// If \p AllowRelaxedEval is \c true, this will allow certain constructs that
+  /// are not valid per the specification.
+  // FIXME: Add proper documentation about the constructs we allow.
   bool isCXX11ConstantExpr(const ASTContext &Ctx, APValue *Result = nullptr,
                            bool AllowRelaxedEval = false) const;
 
