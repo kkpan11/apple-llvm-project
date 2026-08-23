@@ -14,6 +14,7 @@
 #include "SourceCode.h"
 #include "index/Index.h"
 #include "support/Logger.h"
+#include "clang/AST/Attr.h"
 #include "clang/AST/DeclFriend.h"
 #include "clang/AST/DeclTemplate.h"
 #include "clang/Index/IndexSymbol.h"

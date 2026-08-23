@@ -19,6 +19,7 @@
 #include "mlir/Target/LLVMIR/Import.h"
 
 #include "clang/AST/DeclGroup.h"
+#include "clang/AST/DeclOpenACC.h"
 #include "clang/CIR/CIRGenerator.h"
 #include "clang/CIR/InitAllDialects.h"
 #include "llvm/IR/DataLayout.h"
