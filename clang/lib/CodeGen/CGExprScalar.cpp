@@ -828,6 +828,7 @@ public:
     if (E->isStoredAsBoolean())
       return llvm::ConstantInt::get(ConvertType(E->getType()),
                                     E->getBoolValue());
+    assert(E->getType()->isIntegerType() && "not a scalar type trait");
     assert(E->getAPValue().isInt() && "APValue type not supported");
     return llvm::ConstantInt::get(ConvertType(E->getType()),
                                   E->getAPValue().getInt());
@@ -5557,6 +5558,9 @@ Value *ScalarExprEmitter::EmitCompare(const BinaryOperator *E,
     // vector integer type and return it (don't convert to bool).
     if (LHSTy->isVectorType() || LHSTy->isSveVLSBuiltinType())
       return Builder.CreateSExt(Result, ConvertType(E->getType()), "sext");
+
+    if (LHSTy->isMatrixType())
+      return Result;
 
   } else {
     // Complex Comparison: can only be an equality comparison.
