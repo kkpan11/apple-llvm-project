@@ -15,6 +15,7 @@
 #include "clang/Lex/Lexer.h"
 #include "clang/Sema/Initialization.h"
 #include "clang/Sema/Sema.h"
+#include "llvm/ADT/FoldingSet.h"
 
 namespace clang {
 
@@ -69,9 +70,185 @@ enum class CountedByInvalidPointeeTypeKind {
   VALID,
 };
 
+// Helper similar to getAs<T> except it only returns a pointer to T if no
+// AttributedType with `attr::PtrAutoAttr` on it was encountered while walking
+// the sugar types to reach T. Returns nullptr if `T` is not found after walking
+// all sugar.
+// FIXME: This probably belongs as a method on `Type` instead.
+template <typename TargetType>
+static const TargetType *getAsExplicitlyWritten(const Type *Cur,
+                                                const ASTContext &Ctx) {
+  while (true) {
+    if (const auto *Target = dyn_cast<TargetType>(Cur))
+      return Target; // Reached the target with no enclosing PtrAutoAttr.
+    if (const auto *AT = dyn_cast<AttributedType>(Cur);
+        AT && AT->getAttrKind() == attr::PtrAutoAttr)
+      return nullptr; // Auto-inferred: a PtrAutoAttr encloses the target.
+    QualType Next = QualType(Cur, 0).getSingleStepDesugaredType(Ctx);
+    if (Next.getTypePtr() == Cur)
+      return nullptr; // Not sugar: reached the pointer/array; no target node.
+    Cur = Next.getTypePtr();
+  }
+}
+
+static std::optional<bool> checkBoundsAttrTypeConflictsAndMisc(
+    Sema &S, QualType Ty, SourceLocation AttrLoc,
+    const Sema::BoundsAttrFlags &Flags, StringRef AttrSpelling,
+    bool AllowRedecl, Expr *AttrArg) {
+  // FIXME: The diagnostics here need re-working:
+  // * Some of these clearly could be upstream checks as they don't depend on
+  //   attributes missing from upstream.
+  // * Some diagnostics want the attribute spelling and some don't. This seems
+  //   really inconsistent.
+  //
+  // Note checks below should use sugar-walking checks (e.g. `get<>`) rather
+  // than direct checks (e.g. `dyn_cast<>`).
+
+  assert(AttrSpelling.size() > 0);
+
+  // A __terminated_by pointer cannot also carry a count or range attribute
+  // unless the terminator was auto-inferred via __ptrauto.
+  if (getAsExplicitlyWritten<ValueTerminatedType>(Ty.getTypePtr(),
+                                                  S.getASTContext())) {
+    S.Diag(AttrLoc, diag::err_bounds_safety_terminated_by_wrong_pointer_type);
+    return false;
+  }
+
+  if (Flags.IsEndedBy) {
+    // Handle ended_by conflicts with counted_by/sized_by or existing
+    // ended_by.
+    if (Ty->getAs<CountAttributedType>()) {
+      S.Diag(AttrLoc,
+             diag::err_bounds_safety_conflicting_count_range_attributes);
+      return false;
+    }
+    if (const auto *DRPT = Ty->getAs<DynamicRangePointerType>()) {
+      if (DRPT->getEndPointer() != nullptr) {
+        if (!AllowRedecl) {
+          S.Diag(AttrLoc,
+                 diag::err_bounds_safety_conflicting_pointer_attributes)
+              << /*pointer*/ 1 << /*end*/ 3;
+          return false;
+        }
+        assert(AttrArg &&
+               "AllowRedecl path requires AttrArg for canonicalization");
+        ExprResult CanonEnd =
+            S.CanonicalizeRangeEndPtrExpr(AttrArg, /*ScopeCheck=*/false);
+        if (CanonEnd.isInvalid())
+          return false;
+        llvm::FoldingSetNodeID NewID, OldID;
+        CanonEnd.get()->Profile(NewID, S.getASTContext(),
+                                /*Canonical=*/true);
+        DRPT->getEndPointer()->Profile(OldID, S.getASTContext(),
+                                       /*Canonical=*/true);
+        if (NewID != OldID) {
+          S.Diag(AttrLoc,
+                 diag::err_bounds_safety_conflicting_pointer_attributes)
+              << /*pointer*/ 1 << /*end*/ 3;
+          return false;
+        }
+        return true;
+      }
+      // started_by-only DRPT: ended_by may still be added, fall through.
+    }
+  } else {
+    // Handle counted_by/sized_by conflicts with ended_by or existing
+    // counted_by/sized_by.
+    if (const auto *CAT = Ty->getAs<CountAttributedType>()) {
+      if (!AllowRedecl) {
+        S.Diag(AttrLoc, diag::err_bounds_safety_conflicting_pointer_attributes)
+            << /*pointer*/ CAT->isPointerType() << /*count*/ 2;
+        return false;
+      }
+      assert(AttrArg &&
+             "AllowRedecl path requires AttrArg for canonicalization");
+      // AllowRedecl: canonicalize the new count expression and compare
+      // against the existing one.
+      ExprResult CanonCount = S.CanonicalizeBoundsCountExpr(
+          AttrArg, Flags.CountInBytes, Flags.OrNull, /*ScopeCheck=*/false,
+          CAT->isArrayType());
+      if (CanonCount.isInvalid())
+        return false;
+      llvm::FoldingSetNodeID NewID, OldID;
+      CanonCount.get()->Profile(NewID, S.getASTContext(), /*Canonical=*/true);
+      if (const Expr *OldCnt = CAT->getCountExpr())
+        OldCnt->Profile(OldID, S.getASTContext(), /*Canonical=*/true);
+      if (NewID != OldID) {
+        S.Diag(AttrLoc, diag::err_bounds_safety_conflicting_pointer_attributes)
+            << /*pointer*/ CAT->isPointerType() << /*count*/ 2;
+        return false;
+      }
+      return true;
+    }
+    if (Ty->getAs<DynamicRangePointerType>()) {
+      S.Diag(AttrLoc,
+             diag::err_bounds_safety_conflicting_count_range_attributes);
+      return false;
+    }
+  }
+
+  // An AtomicType wrapping a pointer: emit the diagnostic but return true so
+  // the caller still constructs the AtomicType instead of bailing out.
+  if (const auto *ATy = Ty->getAs<AtomicType>()) {
+    if (ATy->getValueType()->isPointerType()) {
+      if (Flags.IsEndedBy) {
+        S.Diag(AttrLoc, diag::err_bounds_safety_atomic_unsupported_attribute)
+            << /*ended_by*/ 6;
+      } else {
+        unsigned DiagIndex = Flags.CountInBytes ? 3 : 2;
+        if (Flags.OrNull)
+          DiagIndex += 2;
+        S.Diag(AttrLoc, diag::err_bounds_safety_atomic_unsupported_attribute)
+            << DiagIndex;
+      }
+      return true;
+    }
+  }
+
+  // Pointer with explicit upper-bound (__bidi_indexable / __indexable):
+  // conflict with count/end attributes.
+  if (const auto *PT = getAsExplicitlyWritten<PointerType>(Ty.getTypePtr(),
+                                                           S.getASTContext())) {
+    auto FAttr = PT->getPointerAttributes();
+    if (FAttr.hasUpperBound()) {
+      S.Diag(AttrLoc,
+             diag::err_bounds_safety_conflicting_count_bound_attributes)
+          << AttrSpelling << (FAttr.hasLowerBound() ? 0 : 1);
+      return false;
+    }
+  }
+
+  // Array specifics for the counted_by family: a complete-size array
+  // with count is invalid; sized_by on an incomplete array is invalid.
+  if (!Flags.IsEndedBy && Ty->isArrayType()) {
+    const ArrayType *AT = S.getASTContext().getAsArrayType(Ty);
+    if (AT && !AT->hasAttr(attr::ArrayDecayDiscardsCountInParameters)) {
+      if (AT->isIncompleteArrayType()) {
+        if (Flags.CountInBytes) {
+          S.Diag(AttrLoc, diag::err_bounds_safety_sized_by_array)
+              << AttrSpelling;
+          return false;
+        }
+      } else {
+        S.Diag(AttrLoc, diag::err_bounds_safety_complete_array_with_count);
+        return false;
+      }
+    }
+  }
+
+  return std::nullopt;
+}
+
 bool Sema::ValidateBoundsAttrTypeShape(QualType Ty, SourceLocation AttrLoc,
                                        SourceRange AttrRange,
-                                       BoundsAttrFlags &Flags) {
+                                       BoundsAttrFlags &Flags,
+                                       StringRef AttrSpelling, bool AllowRedecl,
+                                       Expr *AttrArg) {
+  if (getLangOpts().hasBoundsSafetyAttributes())
+    if (std::optional<bool> Result = checkBoundsAttrTypeConflictsAndMisc(
+            *this, Ty, AttrLoc, Flags, AttrSpelling, AllowRedecl, AttrArg))
+      return *Result;
+
   BoundsAttributedType::BoundsAttrKind Kind = getBoundsAttrKind(Flags);
 
   // ended_by only applies to pointers, not arrays.
@@ -91,8 +268,16 @@ bool Sema::ValidateBoundsAttrTypeShape(QualType Ty, SourceLocation AttrLoc,
     return false;
   }
 
-  // Arrays with sized_by or _or_null variants are not allowed.
-  if (Ty->isArrayType() && (Flags.CountInBytes || Flags.OrNull)) {
+  // Arrays with sized_by or _or_null variants are not allowed under the
+  // non -fbounds-safety path (!getLangOpts().hasBoundsSafetyAttributes()).
+  // That emits a specific "did you mean to use 'counted_by'" hint, geared
+  // toward the FieldDecl path where the user got the spelling wrong. The
+  // -fbounds-safety path treats incomplete-array + counted_by_or_null as a
+  // tentative-definition/FAM-like case that other code (e.g.
+  // err_bounds_safety_nullable_fam in applyPtrCountedByEndedByAttr) handles.
+  // FIXME(dliew): We need to reconcile this divergence.
+  if (!getLangOpts().hasBoundsSafetyAttributes() && Ty->isArrayType() &&
+      (Flags.CountInBytes || Flags.OrNull)) {
     Diag(AttrLoc, diag::err_count_attr_not_on_ptr_or_flexible_array_member)
         << Kind << /*suggest counted_by*/ 1;
     return false;
