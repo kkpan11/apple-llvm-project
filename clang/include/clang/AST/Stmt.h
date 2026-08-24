@@ -1045,6 +1045,9 @@ protected:
     LLVM_PREFERRED_TYPE(bool)
     unsigned IsBooleanTypeTrait : 1;
 
+    LLVM_PREFERRED_TYPE(bool)
+    unsigned IsComparisonResult : 1;
+
     /// If this expression is a non value-dependent boolean trait,
     /// this indicates whether the trait evaluated true or false.
     LLVM_PREFERRED_TYPE(bool)
