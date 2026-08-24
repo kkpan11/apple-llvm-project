@@ -21,7 +21,6 @@
 #include "clang/Frontend/FrontendOptions.h"
 #include "clang/Frontend/MigratorOptions.h"
 #include "clang/Frontend/PreprocessorOutputOptions.h"
-#include "clang/StaticAnalyzer/Core/AnalyzerOptions.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include "llvm/ADT/ScopeExit.h"
@@ -54,6 +53,7 @@ class ObjectStore;
 
 namespace clang {
 
+class AnalyzerOptions;
 class DiagnosticsEngine;
 class HeaderSearchOptions;
 class PreprocessorOptions;
