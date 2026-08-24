@@ -80,6 +80,7 @@ class CXXDefaultArgExpr;
 class LambdaExpr;
 class CXXUnresolvedConstructExpr;
 class CXXDependentScopeMemberExpr;
+class DependentTemplateIdExpr;
 class MaterializeTemporaryExpr;
 /* TO_UPSTREAM(BoundsSafety) ON */
 class MaterializeSequenceExpr;
@@ -184,6 +185,7 @@ ExprDependence computeDependence(LambdaExpr *E,
                                  bool ContainsUnexpandedParameterPack);
 ExprDependence computeDependence(CXXUnresolvedConstructExpr *E);
 ExprDependence computeDependence(CXXDependentScopeMemberExpr *E);
+ExprDependence computeDependence(DependentTemplateIdExpr *E);
 ExprDependence computeDependence(MaterializeTemporaryExpr *E);
 ExprDependence computeDependence(CXXFoldExpr *E);
 ExprDependence computeDependence(CXXParenListInitExpr *E);

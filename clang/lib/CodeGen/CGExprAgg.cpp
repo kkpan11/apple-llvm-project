@@ -96,6 +96,10 @@ public:
                      Expr *ExprToVisit, ArrayRef<Expr *> Args,
                      Expr *ArrayFiller);
 
+  void EmitComparisonResult(const Expr *E,
+                            const ComparisonCategoryInfo &CmpInfo,
+                            llvm::Value *ResultValue);
+
   AggValueSlot::NeedsGCBarriers_t needsGC(QualType T) {
     if (CGF.getLangOpts().getGC() && TypeRequiresGCollection(T))
       return AggValueSlot::NeedsGCBarriers;
@@ -186,6 +190,7 @@ public:
   void VisitBinCmp(const BinaryOperator *E);
   // TO_UPSTREAM(BoundsSafety)
   void VisitCompoundAssignOperator(CompoundAssignOperator *E);
+  void VisitTypeTraitExpr(const TypeTraitExpr *E);
   void VisitCXXRewrittenBinaryOperator(CXXRewrittenBinaryOperator *E) {
     Visit(E->getSemanticForm());
   }
@@ -1922,6 +1927,21 @@ static llvm::Value *EmitCompare(CGBuilderTy &Builder, CodeGenFunction &CGF,
                    "already been handled");
 }
 
+void AggExprEmitter::EmitComparisonResult(const Expr *E,
+                                          const ComparisonCategoryInfo &CmpInfo,
+                                          llvm::Value *ResultValue) {
+  // Create the return value in the destination slot.
+  EnsureDest(E->getType());
+  LValue DestLV = CGF.MakeAddrLValue(Dest.getAddress(), E->getType());
+
+  // Emit the address of the first (and only) field in the comparison category
+  // type, and initialize it from the constant integer value selected above.
+  LValue FieldLV = CGF.EmitLValueForFieldInitialization(
+      DestLV, *CmpInfo.Record->field_begin());
+  CGF.EmitStoreThroughLValue(RValue::get(ResultValue), FieldLV,
+                             /*IsInit=*/true);
+}
+
 void AggExprEmitter::VisitBinCmp(const BinaryOperator *E) {
   using llvm::BasicBlock;
   using llvm::PHINode;
@@ -1989,17 +2009,22 @@ void AggExprEmitter::VisitBinCmp(const BinaryOperator *E) {
     Select = Builder.CreateSelect(
         EmitCmp(CK_Less), EmitCmpRes(CmpInfo.getLess()), SelectGT, "sel.lt");
   }
-  // Create the return value in the destination slot.
-  EnsureDest(E->getType());
-  LValue DestLV = CGF.MakeAddrLValue(Dest.getAddress(), E->getType());
 
-  // Emit the address of the first (and only) field in the comparison category
-  // type, and initialize it from the constant integer value selected above.
-  LValue FieldLV = CGF.EmitLValueForFieldInitialization(
-      DestLV, *CmpInfo.Record->field_begin());
-  CGF.EmitStoreThroughLValue(RValue::get(Select), FieldLV, /*IsInit*/ true);
+  EmitComparisonResult(E, CmpInfo, Select);
+}
 
-  // All done! The result is in the Dest slot.
+void AggExprEmitter::VisitTypeTraitExpr(const TypeTraitExpr *E) {
+  assert(E->isStoredAsComparisonResult() &&
+         "expected a strong_ordering type trait with a stored value");
+
+  const ComparisonCategoryInfo &CmpInfo =
+      CGF.getContext().CompCategories.getInfoForType(E->getType());
+  const auto Result =
+      ComparisonCategoryResult(E->getAPValue().getInt().getZExtValue());
+  llvm::Value *ResultValue =
+      Builder.getInt(CmpInfo.getValueInfo(Result)->getIntValue());
+
+  EmitComparisonResult(E, CmpInfo, ResultValue);
 }
 
 void AggExprEmitter::VisitBinaryOperator(const BinaryOperator *E) {
