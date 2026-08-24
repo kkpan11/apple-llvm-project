@@ -46,6 +46,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringTable.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/ErrorExtras.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Threading.h"
 #include "llvm/Support/VersionTuple.h"
@@ -439,15 +440,18 @@ Status PlatformDarwin::GetModuleFromSharedCaches(
       if (module_spec.GetUUID())
         image_info = HostInfo::GetSharedCacheImageInfo(module_spec.GetUUID(),
                                                        sc_uuid, sc_mode);
-      else
-        image_info = HostInfo::GetSharedCacheImageInfo(
-            ConstString(module_spec.GetFileSpec().GetPath()), sc_uuid, sc_mode);
+      else {
+        std::string filepath = module_spec.GetFileSpec().GetPath();
+        image_info =
+            HostInfo::GetSharedCacheImageInfo(filepath, sc_uuid, sc_mode);
+      }
     }
   }
   // Fall back to looking for the file in lldb's own shared cache.
-  if (!image_info.GetUUID())
-    image_info = HostInfo::GetSharedCacheImageInfo(
-        ConstString(module_spec.GetFileSpec().GetPath()), sc_mode);
+  if (!image_info.GetUUID()) {
+    std::string filepath = module_spec.GetFileSpec().GetPath();
+    image_info = HostInfo::GetSharedCacheImageInfo(filepath, sc_mode);
+  }
 
   // If we found it and it has the correct UUID, let's proceed with
   // creating a module from the memory contents.
@@ -1475,6 +1479,11 @@ PlatformDarwin::GetSDKPathFromDebugInfo(Module &module) {
       merged_sdk.Merge(cu_sdk);
     }
   }
+
+  if (merged_sdk.GetString().empty())
+    return llvm::createStringErrorV(
+        "No SDK found in debug info for module '{0}'",
+        module.GetFileSpec().GetFilename());
 
   const bool found_mismatch = found_internal_sdk && found_public_sdk;
 
