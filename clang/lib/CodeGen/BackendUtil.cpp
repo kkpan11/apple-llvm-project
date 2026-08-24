@@ -477,7 +477,8 @@ static bool initTargetOptions(CompilerInstance &CI, DiagnosticsEngine &Diags,
   Options.XRayFunctionIndex = CodeGenOpts.XRayFunctionIndex;
   Options.LoopAlignment = CodeGenOpts.LoopAlignment;
   Options.DebugStrictDwarf = CodeGenOpts.DebugStrictDwarf;
-  Options.ObjectFilenameForDebug = CodeGenOpts.ObjectFilenameForDebug;
+  Options.ObjectFilenameForDebug =
+      CodeGenOpts.remapDebugPathPrefix(CodeGenOpts.ObjectFilenameForDebug);
   Options.Hotpatch = CodeGenOpts.HotPatch;
   Options.JMCInstrument = CodeGenOpts.JMCInstrument;
   Options.XCOFFReadOnlyPointers = CodeGenOpts.XCOFFReadOnlyPointers;

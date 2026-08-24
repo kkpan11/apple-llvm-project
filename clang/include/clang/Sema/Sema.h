@@ -66,7 +66,6 @@
 #include "clang/Sema/Scope.h"
 #include "clang/Sema/SemaBase.h"
 #include "clang/Sema/SemaConcept.h"
-#include "clang/Sema/SemaRISCV.h"
 #include "clang/Sema/TypedMemoryCallsiteContext.h"
 #include "clang/Sema/TypoCorrection.h"
 #include "clang/Sema/Weak.h"
@@ -2924,17 +2923,21 @@ public:
   static BoundsAttributedType::BoundsAttrKind
   getBoundsAttrKind(const BoundsAttrFlags &);
 
-  /// Validates that a type is eligible for a bounds-safety attribute
-  /// (counted_by/sized_by/ended_by). Checks type eligibility (must be pointer
-  /// or array) and pointee/element type validity.
-  /// Does NOT require a Decl — only the QualType and attribute metadata.
-  /// Callable from: ActOnLateParsedTypeAttr (placeholder insertion),
-  /// HandleCountedByAttrOnType, applyPtrCountedByEndedByAttr, and
-  /// CheckCountedByAttrOnFieldDecl.
-  /// \returns true if the type is valid, false on error.
+  /// Validates that a type is eligible for an "externally counted" bounds
+  /// attribute (counted_by/sized_by/ended_by). When building with
+  /// `getLangOpts().hasBoundsSafetyAttributes()` a larger set of
+  /// diagnostics required by the -fbounds-safety programming model are used.
+  ///
+  /// \returns true if the type is valid, false on error. The atomic-of-pointer
+  /// case is a special exception: it emits an error diagnostic but returns true
+  /// so the caller can still construct the atomic type to avoid additional
+  /// diagnostics.
   bool ValidateBoundsAttrTypeShape(QualType Ty, SourceLocation AttrLoc,
                                    SourceRange AttrRange,
-                                   BoundsAttrFlags &Flags);
+                                   BoundsAttrFlags &Flags,
+                                   StringRef AttrSpelling = {},
+                                   bool AllowRedecl = false,
+                                   Expr *AttrArg = nullptr);
 
   /* TO_UPSTREAM(BoundsSafety) OFF*/
 
@@ -4521,6 +4524,10 @@ public:
                                      MultiTemplateParamsArg TemplateParamLists,
                                      bool &AddToScope);
 
+  /// Attach the ABI tag a standard calling convention variant requires, as an
+  /// implicit abi_tag attribute.  Call this once the function type is final.
+  void addImplicitCallingConvAbiTag(FunctionDecl *FD);
+
   /// AddOverriddenMethods - See if a method overrides any in the base classes,
   /// and if so, check that it's a valid override and remember it.
   bool AddOverriddenMethods(CXXRecordDecl *DC, CXXMethodDecl *MD);
@@ -5800,6 +5807,8 @@ public:
     /// typically only applies to 'std::strong_ordering', due to the implicit
     /// fallback return value.
     DefaultedOperator,
+    /// A builtin needed 'std::strong_ordering' (eg. '__builtin_type_order').
+    Builtin,
   };
 
   /// Lookup the specified comparison category types in the standard
@@ -8365,6 +8374,9 @@ public:
   QualType CheckSizelessVectorCompareOperands(ExprResult &LHS, ExprResult &RHS,
                                               SourceLocation Loc,
                                               BinaryOperatorKind Opc);
+  QualType CheckMatrixCompareOperands(ExprResult &LHS, ExprResult &RHS,
+                                      SourceLocation Loc,
+                                      BinaryOperatorKind Opc);
   QualType CheckVectorLogicalOperands(ExprResult &LHS, ExprResult &RHS,
                                       SourceLocation Loc,
                                       BinaryOperatorKind Opc);
@@ -12386,8 +12398,7 @@ public:
                                 const TemplateArgumentListInfo *TemplateArgs);
 
   ExprResult CheckVarOrConceptTemplateTemplateId(
-      const CXXScopeSpec &SS, const DeclarationNameInfo &NameInfo,
-      TemplateTemplateParmDecl *Template, SourceLocation TemplateLoc,
+      const DeclarationNameInfo &NameInfo, TemplateTemplateParmDecl *Template,
       const TemplateArgumentListInfo *TemplateArgs);
 
   ExprResult

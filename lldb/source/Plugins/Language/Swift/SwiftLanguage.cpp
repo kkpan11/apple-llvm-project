@@ -85,7 +85,8 @@ void SwiftLanguage::Initialize() {
       .emplace(g_NSArrayClass1,
                lldb_private::formatters::swift::ArraySyntheticFrontEndCreator);
 
-  initializeSwiftModules();
+  static std::once_flag g_initialize_swift_modules_once;
+  std::call_once(g_initialize_swift_modules_once, initializeSwiftModules);
 }
 
 void SwiftLanguage::Terminate() {
@@ -105,6 +106,7 @@ void SwiftLanguage::Terminate() {
       .erase(g_NSArrayClass1);
 
   PluginManager::UnregisterPlugin(CreateInstance);
+  LogChannelSwift::Terminate();
 }
 
 bool SwiftLanguage::SymbolNameFitsToLanguage(const Mangled &mangled) const {
@@ -190,6 +192,10 @@ static void LoadSwiftFormatters(lldb::TypeCategoryImplSP swift_category_sp) {
   AddCXXSynthetic(
       swift_category_sp,
       lldb_private::formatters::swift::SwiftBasicTypeSyntheticFrontEndCreator,
+      "Swift.Int128", ConstString("Swift.Int128"), basic_synth_flags);
+  AddCXXSynthetic(
+      swift_category_sp,
+      lldb_private::formatters::swift::SwiftBasicTypeSyntheticFrontEndCreator,
       "Swift.Int64", ConstString("Swift.Int64"), basic_synth_flags);
   AddCXXSynthetic(
       swift_category_sp,
@@ -208,6 +214,8 @@ static void LoadSwiftFormatters(lldb::TypeCategoryImplSP swift_category_sp) {
       lldb_private::formatters::swift::SwiftBasicTypeSyntheticFrontEndCreator,
       "Swift.Int", ConstString("Swift.Int"), basic_synth_flags);
 
+  AddFormat(swift_category_sp, lldb::eFormatDecimal,
+            ConstString("Swift.Int128"), format_flags, false);
   AddFormat(swift_category_sp, lldb::eFormatDecimal, ConstString("Swift.Int64"),
             format_flags, false);
   AddFormat(swift_category_sp, lldb::eFormatDecimal, ConstString("Swift.Int32"),
@@ -219,6 +227,10 @@ static void LoadSwiftFormatters(lldb::TypeCategoryImplSP swift_category_sp) {
   AddFormat(swift_category_sp, lldb::eFormatDecimal, ConstString("Swift.Int"),
             format_flags, false);
 
+  AddCXXSynthetic(
+      swift_category_sp,
+      lldb_private::formatters::swift::SwiftBasicTypeSyntheticFrontEndCreator,
+      "Swift.UInt128", ConstString("Swift.UInt128"), basic_synth_flags);
   AddCXXSynthetic(
       swift_category_sp,
       lldb_private::formatters::swift::SwiftBasicTypeSyntheticFrontEndCreator,
@@ -241,6 +253,8 @@ static void LoadSwiftFormatters(lldb::TypeCategoryImplSP swift_category_sp) {
       "Swift.UInt", ConstString("Swift.UInt"), basic_synth_flags);
 
   AddFormat(swift_category_sp, lldb::eFormatUnsigned,
+            ConstString("Swift.UInt128"), format_flags, false);
+  AddFormat(swift_category_sp, lldb::eFormatUnsigned,
             ConstString("Swift.UInt64"), format_flags, false);
   AddFormat(swift_category_sp, lldb::eFormatUnsigned,
             ConstString("Swift.UInt32"), format_flags, false);
@@ -251,6 +265,10 @@ static void LoadSwiftFormatters(lldb::TypeCategoryImplSP swift_category_sp) {
   AddFormat(swift_category_sp, lldb::eFormatUnsigned, ConstString("Swift.UInt"),
             format_flags, false);
 
+  AddCXXSynthetic(
+      swift_category_sp,
+      lldb_private::formatters::swift::SwiftBasicTypeSyntheticFrontEndCreator,
+      "Swift.Float16", ConstString("Swift.Float16"), basic_synth_flags);
   AddCXXSynthetic(
       swift_category_sp,
       lldb_private::formatters::swift::SwiftBasicTypeSyntheticFrontEndCreator,

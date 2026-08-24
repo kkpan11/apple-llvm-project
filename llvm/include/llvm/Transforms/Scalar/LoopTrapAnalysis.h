@@ -17,7 +17,8 @@
 
 namespace llvm {
 
-struct LoopTrapAnalysisPass : public PassInfoMixin<LoopTrapAnalysisPass> {
+struct LoopTrapAnalysisPass
+    : public OptionalPassInfoMixin<LoopTrapAnalysisPass> {
   // Tag appended to remark Names so the pass can run at more than one pipeline
   // point with distinguishable output. Empty (default) keeps the bare Names.
   std::string Tag;
