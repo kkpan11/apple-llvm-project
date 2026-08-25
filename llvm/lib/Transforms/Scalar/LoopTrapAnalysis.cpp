@@ -78,10 +78,9 @@ static std::string bbLabel(const BasicBlock *BB) {
 }
 
 /// Minimal trap-block predicate for the per-edge explain output: \p BB ends in
-/// `unreachable` immediately preceded by a trap-like terminating call,
-/// identified by its semantic property rather than an intrinsic allowlist: a
-/// `noreturn` call touching only inaccessible memory (the shared property of
-/// @llvm.trap / @llvm.ubsantrap and any future trap intrinsic).
+/// `unreachable` immediately preceded by a trap-like call. @llvm.trap /
+/// @llvm.ubsantrap are `noreturn` and only access inaccessible memory, so an
+/// intrinsic must have both; a non-intrinsic call qualifies on `noreturn`.
 static bool isTrapEdgeBlock(BasicBlock *BB) {
   Instruction *Term = BB->getTerminator();
   if (!isa<UnreachableInst>(Term))
@@ -90,9 +89,14 @@ static bool isTrapEdgeBlock(BasicBlock *BB) {
   // the getPrevNode() below.
   if (Term == &BB->front())
     return false;
-  if (auto *CI = dyn_cast<CallInst>(Term->getPrevNode()))
+  auto *CI = dyn_cast<CallInst>(Term->getPrevNode());
+  if (!CI)
+    return false;
+  // Trap intrinsic: noreturn and only touches inaccessible memory.
+  if (isa<IntrinsicInst>(CI))
     return CI->doesNotReturn() && CI->onlyAccessesInaccessibleMemory();
-  return false;
+  // Non-intrinsic call: noreturn is enough.
+  return CI->doesNotReturn();
 }
 
 /// Count loop-exit edges of \p L whose successor is a trap block (see
