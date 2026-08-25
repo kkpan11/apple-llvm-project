@@ -5113,7 +5113,6 @@ static Value *upgradeAMDGCNIntrinsicCall(StringRef Name, CallBase *CI,
     NewCall->setTailCallKind(cast<CallInst>(CI)->getTailCallKind());
     NewCall->setCallingConv(CI->getCallingConv());
     NewCall->setAttributes(CI->getAttributes());
-    NewCall->setDebugLoc(CI->getDebugLoc());
     NewCall->copyMetadata(*CI);
     return NewCall;
   };
@@ -5170,7 +5169,6 @@ static Value *upgradeAMDGCNIntrinsicCall(StringRef Name, CallBase *CI,
     NewCall->setTailCallKind(cast<CallInst>(CI)->getTailCallKind());
     NewCall->setCallingConv(CI->getCallingConv());
     NewCall->setAttributes(CI->getAttributes());
-    NewCall->setDebugLoc(CI->getDebugLoc());
     NewCall->copyMetadata(*CI);
     NewCall->takeName(CI);
     return NewCall;
