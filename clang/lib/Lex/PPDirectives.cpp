@@ -4374,6 +4374,7 @@ void Preprocessor::HandleCXXImportDirective(Token ImportTok) {
     UseLoc = Tok.getLocation();
     Lex(Tok);
     [[fallthrough]];
+  case tok::code_completion:
   case tok::identifier: {
     if (HandleModuleName(ImportTok.getIdentifierInfo()->getName(), UseLoc, Tok,
                          Path, DirToks, /*AllowMacroExpansion=*/true,
