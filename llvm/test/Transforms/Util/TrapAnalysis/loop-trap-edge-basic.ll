@@ -5,8 +5,11 @@
 declare void @llvm.trap()
 
 ; A counted loop whose in-loop check branches to an @llvm.trap+unreachable
-; block. The per-edge explain output should emit one LoopTrapEdge record for
-; the cond-br in %body whose trap successor is %trap.
+; block. The per-edge explain output emits one LoopTrapEdge record for the
+; cond-br in %body whose trap successor is %trap. Pin the whole record so no
+; field can change or be inserted unnoticed (the legacy LoopTrap /
+; LoopTrapSummary records are base behavior, covered by
+; bounds-safety-loop-trap-remarks.ll).
 define void @counted_trap(ptr %base, i32 %n) {
 entry:
   br label %body
@@ -27,13 +30,22 @@ exit:
   ret void
 }
 
-; CHECK:      --- !Analysis
+; The complete LoopTrapEdge record, pinned line-by-line.
 ; CHECK:      Name:{{ +}}LoopTrapEdge
 ; CHECK-NEXT: Function:{{ +}}counted_trap
-; CHECK:        - Function:{{ +}}counted_trap
-; CHECK:        - SourceBB:{{ +}}body
-; CHECK:        - TrapBB:{{ +}}trap
-; CHECK:        - LoopDepth:{{ +}}'1'
-; CHECK:        - LoopHeader:{{ +}}body
-; CHECK:        - IsInnermost:{{ +}}'true'
-; CHECK:        - IsLoopExit:{{ +}}'true'
+; CHECK-NEXT: Args:
+; CHECK-NEXT:   - String:{{ +}}'Function '
+; CHECK-NEXT:   - Function:{{ +}}counted_trap
+; CHECK-NEXT:   - String:{{ +}}' src_bb='
+; CHECK-NEXT:   - SourceBB:{{ +}}body
+; CHECK-NEXT:   - String:{{ +}}' trap_bb='
+; CHECK-NEXT:   - TrapBB:{{ +}}trap
+; CHECK-NEXT:   - String:{{ +}}' loop_depth='
+; CHECK-NEXT:   - LoopDepth:{{ +}}'1'
+; CHECK-NEXT:   - String:{{ +}}' loop_header='
+; CHECK-NEXT:   - LoopHeader:{{ +}}body
+; CHECK-NEXT:   - String:{{ +}}' is_innermost='
+; CHECK-NEXT:   - IsInnermost:{{ +}}'true'
+; CHECK-NEXT:   - String:{{ +}}' is_loop_exit='
+; CHECK-NEXT:   - IsLoopExit:{{ +}}'true'
+; CHECK-NEXT: ...
