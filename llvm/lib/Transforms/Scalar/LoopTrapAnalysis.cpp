@@ -41,12 +41,11 @@ static cl::opt<bool> BoundsSafetyTrapsOnly(
         "for any hoistable traps."));
 static cl::opt<bool> LTAEmitExplain(
     "loop-trap-analysis-explain", cl::init(false),
-    cl::desc("Emit the explanatory trap analysis: the refined TrapClass "
-             "classification plus per-loop and per-edge explanatory fields "
-             "(DominatesLatch / IV-update / operand-class). When false "
-             "(default), only the pre-explanation fields and compact TrapClass "
-             "are emitted, so the framework can be A/B compared and reverted "
-             "by toggling this flag alone."));
+    cl::desc(
+        "Emit the per-trap-edge explain analysis: one LoopTrapEdge remark "
+        "per conditional branch to a trap block. Off by default, so the "
+        "base remark output is unchanged and the feature can be reverted by "
+        "toggling this flag alone."));
 static cl::opt<unsigned> EntryProximityDepth(
     "loop-trap-entry-proximity-depth", cl::init(3),
     cl::desc("Maximum dominator depth from function entry at which a "
@@ -63,9 +62,10 @@ static cl::opt<bool> LTAEmitLoadAlias(
 /// BasicBlocks stay useful when the BB has no source-level name (numeric IR,
 /// stripped names, or non-C frontends such as swiftc's IRGen).
 ///
-/// Preferred: `BB->getName()`. Fallback: `printAsOperand` slot-tracker form
-/// (`%5` etc.), which is parseable and unique within the function. Never
-/// returns empty.
+/// Preferred: `BB->getName()`. Otherwise `printAsOperand` emits the
+/// slot-tracker form (`%5` etc.), which is parseable and unique within the
+/// function; for any block in a function it yields a `%N` slot, so it is
+/// never empty.
 static std::string bbLabel(const BasicBlock *BB) {
   if (!BB)
     return "<null>";
@@ -74,7 +74,7 @@ static std::string bbLabel(const BasicBlock *BB) {
   std::string S;
   raw_string_ostream OS(S);
   BB->printAsOperand(OS, /*PrintType=*/false);
-  return S.empty() ? std::string("<unnamed>") : S;
+  return S;
 }
 
 /// Minimal trap-block predicate for the per-edge explain output: \p BB ends in
@@ -83,11 +83,11 @@ static std::string bbLabel(const BasicBlock *BB) {
 /// `noreturn` call touching only inaccessible memory (the shared property of
 /// @llvm.trap / @llvm.ubsantrap and any future trap intrinsic).
 static bool isTrapEdgeBlock(BasicBlock *BB) {
-  if (!BB || BB->empty())
-    return false;
   Instruction *Term = BB->getTerminator();
   if (!isa<UnreachableInst>(Term))
     return false;
+  // A bare `unreachable` with no preceding instruction is valid IR; this guards
+  // the getPrevNode() below.
   if (Term == &BB->front())
     return false;
   if (auto *CI = dyn_cast<CallInst>(Term->getPrevNode()))

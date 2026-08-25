@@ -33,8 +33,6 @@ struct LoopTrapAnalysisPass
 
   PreservedAnalyses run(Function &F, FunctionAnalysisManager &);
 
-  static bool isRequired() { return true; }
-
   void printPipeline(raw_ostream &OS,
                      function_ref<StringRef(StringRef)> MapClassName2PassName);
 };
