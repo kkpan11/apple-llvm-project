@@ -7,6 +7,10 @@
 LLVM_PROJECT_SRC=$1
 LLVM_ENABLE_PROJECTS=${2:-"clang;clang-tools-extra"}
 
+# cmake and ninja ship inside Xcode's Developer directory, which is not in
+# $PATH, so find them with xcrun.
+NINJA=$(xcrun -f ninja)
+
 # These flags are here so we can run the -fbounds-safety runtime tests inside
 # compiler-rt.
 # FIXME: We should be testing all of compiler-rt! Historically none of
@@ -27,7 +31,8 @@ BOUNDS_SAFETY_CMAKE_FLAGS=( \
 )
 
 echo '--- CMake Config ---'
-cmake -G Ninja \
+xcrun cmake -G Ninja \
+ -DCMAKE_MAKE_PROGRAM=$NINJA \
  -DCMAKE_BUILD_TYPE=Release \
  -DLLVM_ENABLE_ASSERTIONS=On \
  -DLLVM_ENABLE_PROJECTS=${LLVM_ENABLE_PROJECTS} \
@@ -37,6 +42,6 @@ cmake -G Ninja \
  ${LLVM_PROJECT_SRC}/llvm
 
 echo '--- Ninja Build ---'
-ninja -v
+$NINJA -v
 echo '--- Ninja Test ---'
-ninja -v -k 0 check-all
+$NINJA -v -k 0 check-all
