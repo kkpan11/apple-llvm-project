@@ -37,11 +37,9 @@ static cl::opt<bool> BoundsSafetyTrapsOnly(
         "for any hoistable traps."));
 static cl::opt<bool> LTAEmitExplain(
     "loop-trap-analysis-explain", cl::init(false),
-    cl::desc(
-        "Emit the per-trap-edge explain analysis: one LoopTrapEdge remark "
-        "per conditional branch to a trap block. Off by default, so the "
-        "base remark output is unchanged and the feature can be reverted by "
-        "toggling this flag alone."));
+    cl::desc("Emit the per-trap-edge explain analysis: one LoopTrapEdge remark "
+             "per conditional branch to a trap block. Off by default, so the "
+             "base remark output is unchanged."));
 
 /// Print a stable, non-empty label for \p BB, so remark args that identify
 /// BasicBlocks stay useful when the BB has no source-level name (numeric IR,
