@@ -827,7 +827,7 @@ def UseAfterLifetimeEnd : Checker<"UseAfterLifetimeEnd">,
 def DanglingPtrDeref : Checker<"DanglingPtrDeref">,
   HelpText<"Check for dereferences of a dangling pointer">,
   Dependencies<[LifetimeModeling]>,
-  Documentation<NotDocumented>;
+  Documentation<HasDocumentation>;
 
 } // end: "alpha.cplusplus"
 
