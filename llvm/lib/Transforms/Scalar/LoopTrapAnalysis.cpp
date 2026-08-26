@@ -38,11 +38,9 @@ static cl::opt<bool> BoundsSafetyTrapsOnly(
         "for any hoistable traps."));
 static cl::opt<bool> LTAEmitExplain(
     "loop-trap-analysis-explain", cl::init(false),
-    cl::desc(
-        "Emit the per-trap-edge explain analysis: one LoopTrapEdge remark "
-        "per conditional branch to a trap block. Off by default, so the "
-        "base remark output is unchanged and the feature can be reverted by "
-        "toggling this flag alone."));
+    cl::desc("Emit the per-trap-edge explain analysis: one LoopTrapEdge remark "
+             "per conditional branch to a trap block. Off by default, so the "
+             "base remark output is unchanged."));
 static cl::opt<unsigned> EntryProximityDepth(
     "loop-trap-entry-proximity-depth", cl::init(3),
     cl::desc("Maximum dominator depth from function entry at which a "
