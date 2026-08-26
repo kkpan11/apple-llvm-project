@@ -1805,6 +1805,18 @@ static bool checkPointerAuthValue(Sema &S, Expr *&Arg, PointerAuthOpKind OpKind,
   QualType ExpectedTy;
   if (AllowsPointer(OpKind) && Arg->getType()->isPointerType()) {
     ExpectedTy = Arg->getType().getUnqualifiedType();
+    /* TO_UPSTREAM(BoundsSafety) ON */
+    // A pointer authentication operation acts on the raw address, so a wide
+    // pointer's bounds are meaningless to it. Convert to a raw-layout pointer
+    // so the argument is a scalar, the way every other callee taking a raw
+    // pointer gets an implicit CK_BoundsSafetyPointerCast. Copying the
+    // argument's own type above would otherwise leave convertArgumentToType()
+    // with nothing to do, and a wide pointer -- an aggregate -- would reach
+    // CodeGen and trip EmitScalarExpr(). rdar://182733053
+    if (ExpectedTy->isPointerTypeWithBounds())
+      ExpectedTy = S.Context.getBoundsSafetyPointerType(
+          ExpectedTy, BoundsSafetyPointerAttributes::unspecified());
+    /* TO_UPSTREAM(BoundsSafety) OFF */
   } else if (AllowsPointer(OpKind) && Arg->getType()->isNullPtrType()) {
     ExpectedTy = S.Context.VoidPtrTy;
   } else if (AllowsInteger(OpKind) &&
