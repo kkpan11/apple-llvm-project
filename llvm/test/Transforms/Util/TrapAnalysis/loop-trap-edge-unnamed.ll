@@ -89,6 +89,8 @@ attributes #0 = { cold noreturn nounwind memory(inaccessiblemem: write) }
 ; CHECK-NEXT:   - DominatesLatch:{{ +}}'true'
 ; CHECK-NEXT:   - String:{{ +}}' iv_update_dominates_latch='
 ; CHECK-NEXT:   - IVUpdateDominatesLatch:{{ +}}'true'
+; CHECK-NEXT:   - String:{{ +}}' loop_latch_btc_computable='
+; CHECK-NEXT:   - LoopLatchBTCComputable:{{ +}}'true'
 ; CHECK-NEXT:   - String:{{ +}}' has_store_reload='
 ; CHECK-NEXT:   - HasStoreReload:{{ +}}'false'
 ; CHECK-NEXT:   - String:{{ +}}' has_mem_intrinsic_reload='
@@ -121,6 +123,8 @@ attributes #0 = { cold noreturn nounwind memory(inaccessiblemem: write) }
 ; CHECK-NEXT:   - HasOpaqueOperandNoInLoopUnknown:{{ +}}'false'
 ; CHECK-NEXT:   - String:{{ +}}' has_outer_loop_addrec_operand='
 ; CHECK-NEXT:   - HasOuterLoopAddRecOperand:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_overflow_bit_leaf='
+; CHECK-NEXT:   - HasOverflowBitLeaf:{{ +}}'false'
 ; CHECK-NEXT:   - String:{{ +}}' invocation_seq='
 ; CHECK-NEXT:   - InvocationSeq:{{ +}}'1'
 ; CHECK-NEXT: ...
