@@ -52,3 +52,4 @@ exit:
 ; CHECK:        - EdgeBTCSymbolic:{{ +}}'false'
 ; CHECK:        - DominatesLatch:{{ +}}'true'
 ; CHECK:        - IVUpdateDominatesLatch:{{ +}}'true'
+; CHECK:        - LoopLatchBTCComputable:{{ +}}'true'

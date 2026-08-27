@@ -37,6 +37,7 @@ exit:
 ; CHECK:        - TrapBB:{{ +}}trap
 ; CHECK:        - IsLoopExit:{{ +}}'true'
 ; CHECK:        - TrapClass:{{ +}}OverflowCheck
+; CHECK:        - HasOverflowBitLeaf:{{ +}}'true'
 
 ; The same loop shape guarded by a plain bounds icmp is not reclassified.
 define void @bounds_check(ptr %base, i64 %n) {
@@ -59,3 +60,4 @@ exit:
 ; CHECK:      Function:{{ +}}bounds_check
 ; CHECK:        - TrapBB:{{ +}}trap
 ; CHECK:        - TrapClass:{{ +}}Affine-InLoopExit-TripCountKnown
+; CHECK:        - HasOverflowBitLeaf:{{ +}}'false'

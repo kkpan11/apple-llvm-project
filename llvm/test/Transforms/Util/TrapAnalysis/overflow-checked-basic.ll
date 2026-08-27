@@ -37,6 +37,7 @@ exit:
 ; CHECK:      Function:{{ +}}checked_step
 ; CHECK:        - SourceBB:{{ +}}body
 ; CHECK:        - TrapClass:{{ +}}Affine-InLoopExit-TripCountUnknown-NotProvenMonotonic-NonConstantStride-OverflowChecked
+; CHECK:        - HasCheckedArithValueOperand:{{ +}}'true'
 
 ; The same loop shape with a plain (unchecked) variable-step add is NOT tagged.
 define void @plain_step(ptr %base, i64 %n, i64 %step) {
@@ -59,3 +60,4 @@ exit:
 ; CHECK:      Function:{{ +}}plain_step
 ; CHECK:        - SourceBB:{{ +}}body
 ; CHECK:        - TrapClass:{{ +}}Affine-InLoopExit-TripCountUnknown-NotProvenMonotonic-NonConstantStride
+; CHECK:        - HasCheckedArithValueOperand:{{ +}}'false'
