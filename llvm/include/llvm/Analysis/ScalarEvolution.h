@@ -349,10 +349,6 @@ template <> struct FoldingSetTrait<SCEV> : DefaultFoldingSetTrait<SCEV> {
                      FoldingSetNodeID &TempID) {
     return ID == X.FastID;
   }
-
-  static unsigned ComputeHash(const SCEV &X, FoldingSetNodeID &TempID) {
-    return X.FastID.ComputeHash();
-  }
 };
 
 inline raw_ostream &operator<<(raw_ostream &OS, const SCEV &S) {
@@ -431,11 +427,6 @@ struct FoldingSetTrait<SCEVPredicate> : DefaultFoldingSetTrait<SCEVPredicate> {
   static bool Equals(const SCEVPredicate &X, const FoldingSetNodeID &ID,
                      unsigned IDHash, FoldingSetNodeID &TempID) {
     return ID == X.FastID;
-  }
-
-  static unsigned ComputeHash(const SCEVPredicate &X,
-                              FoldingSetNodeID &TempID) {
-    return X.FastID.ComputeHash();
   }
 };
 
