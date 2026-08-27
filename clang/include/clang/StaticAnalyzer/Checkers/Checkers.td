@@ -300,6 +300,22 @@ def StdVariantChecker : Checker<"StdVariant">,
   HelpText<"Check for bad type access for std::variant.">,
   Documentation<HasDocumentation>;
 
+def LifetimeModeling : Checker<"LifetimeModeling">,
+  HelpText<"Model lifetime annotations for other checkers">,
+  Documentation<NotDocumented>,
+  Hidden;
+
+def UseAfterLifetimeEnd : Checker<"UseAfterLifetimeEnd">,
+  HelpText<"Check for uses of references or pointers that "
+           "outlive their bound object">,
+  Dependencies<[LifetimeModeling]>,
+  Documentation<NotDocumented>;
+
+def DanglingPtrDeref : Checker<"DanglingPtrDeref">,
+  HelpText<"Check for dereferences of a dangling pointer">,
+  Dependencies<[LifetimeModeling]>,
+  Documentation<HasDocumentation>;
+
 } // end "alpha.core"
 
 //===----------------------------------------------------------------------===//
@@ -811,22 +827,6 @@ def MismatchedIteratorChecker : Checker<"MismatchedIterator">,
 def SmartPtrChecker: Checker<"SmartPtr">,
   HelpText<"Find the dereference of null SmrtPtr">,
   Dependencies<[SmartPtrModeling]>,
-  Documentation<HasDocumentation>;
-
-def LifetimeModeling : Checker<"LifetimeModeling">,
-  HelpText<"Model lifetime annotations for other checkers">,
-  Documentation<NotDocumented>,
-  Hidden;
-
-def UseAfterLifetimeEnd : Checker<"UseAfterLifetimeEnd">,
-  HelpText<"Check for uses of references or pointers that "
-           "outlive their bound object">,
-  Dependencies<[LifetimeModeling]>,
-  Documentation<NotDocumented>;
-
-def DanglingPtrDeref : Checker<"DanglingPtrDeref">,
-  HelpText<"Check for dereferences of a dangling pointer">,
-  Dependencies<[LifetimeModeling]>,
   Documentation<HasDocumentation>;
 
 } // end: "alpha.cplusplus"
