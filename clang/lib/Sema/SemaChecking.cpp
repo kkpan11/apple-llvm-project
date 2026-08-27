@@ -1806,16 +1806,34 @@ static bool checkPointerAuthValue(Sema &S, Expr *&Arg, PointerAuthOpKind OpKind,
   if (AllowsPointer(OpKind) && Arg->getType()->isPointerType()) {
     ExpectedTy = Arg->getType().getUnqualifiedType();
     /* TO_UPSTREAM(BoundsSafety) ON */
-    // A pointer authentication operation acts on the raw address, so a wide
-    // pointer's bounds are meaningless to it. Convert to a raw-layout pointer
-    // so the argument is a scalar, the way every other callee taking a raw
-    // pointer gets an implicit CK_BoundsSafetyPointerCast. Copying the
-    // argument's own type above would otherwise leave convertArgumentToType()
-    // with nothing to do, and a wide pointer -- an aggregate -- would reach
-    // CodeGen and trip EmitScalarExpr(). rdar://182733053
-    if (ExpectedTy->isPointerTypeWithBounds())
+    // These builtins take a raw pointer. Reject wide pointers here until the
+    // correct behaviour is decided.
+    if (ExpectedTy->isPointerTypeWithBounds()) {
+      // `&expr` is the exception. It too yields a wide pointer, but its bounds
+      // fields are synthesised on the spot and then thrown away by the builtin,
+      // so `&wide_ptr[0]` serves as an escape hatch for passing a wide pointer
+      // to these builtins.
+      const auto *AddrOf = dyn_cast<UnaryOperator>(Arg->IgnoreParenImpCasts());
+      if (!AddrOf || AddrOf->getOpcode() != UO_AddrOf) {
+        S.Diag(Arg->getExprLoc(),
+               diag::err_bounds_safety_ptrauth_discards_bounds)
+            << ExpectedTy << Arg->getSourceRange();
+        return true;
+      }
+      // Convert to a raw-layout pointer so the argument is a scalar, the way
+      // every other callee taking a raw pointer gets an implicit
+      // CK_BoundsSafetyPointerCast. Copying the argument's own type above would
+      // otherwise leave a wide pointer -- an aggregate -- reaching CodeGen,
+      // tripping EmitScalarExpr().
+      //
+      // Unspecified rather than __single, to match the default return type of
+      // builtin declarations. Without special handling, pointer-returning
+      // builtins are all unspecified, so a bounded result needs
+      // __unsafe_forge_*. Typing the result __single would also trip an
+      // assertion in BoundsSafetySuggestions.cpp.
       ExpectedTy = S.Context.getBoundsSafetyPointerType(
           ExpectedTy, BoundsSafetyPointerAttributes::unspecified());
+    }
     /* TO_UPSTREAM(BoundsSafety) OFF */
   } else if (AllowsPointer(OpKind) && Arg->getType()->isNullPtrType()) {
     ExpectedTy = S.Context.VoidPtrTy;
@@ -1837,7 +1855,7 @@ static bool checkPointerAuthValue(Sema &S, Expr *&Arg, PointerAuthOpKind OpKind,
   }
 
   // Convert to that type.  This should just be an lvalue-to-rvalue
-  // conversion.
+  // conversion, or a cast from a wide pointer (rvalue) to a raw pointer type.
   if (convertArgumentToType(S, Arg, ExpectedTy))
     return true;
 
