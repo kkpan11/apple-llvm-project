@@ -1117,6 +1117,19 @@ static Instruction *firstAliasingWriter(LoadInst *Load, Loop *L,
 
 /// Emit one LoopTrapEdge remark per conditional branch whose one successor is a
 /// trap block (see isTrapEdgeBlock). Gated by -loop-trap-analysis-explain.
+///
+/// The record describes each trap edge along orthogonal axes so a consumer can
+/// group it from the fields alone (TrapClass is a precedence-ordered projection
+/// of these):
+///   - condition nature: SCEVLoopInvariant, HasAddRec, HasInLoopUnknown
+///   - position: LoopHeader, LoopDepth, IsLoopExit, IsInnermost,
+///     IsEntryProximate
+///   - loop trip count: LoopHasOtherUnknownBTCTrap, LoopLatchBTCComputable
+///   - condition trip count: EdgeBTCComputable, EdgeBTCSymbolic
+///   - condition property: DominatesLatch, IVUpdateDominatesLatch,
+///     DominatedByEquivalentCheck
+///   - operand/stride: Has*Reload, Has*Operand, Has*StrideForLAddRec
+///   - comparison shape: PredicateShape, NumLeafOperands
 static void emitPerTrapEdge(Function &F, LoopInfo &LI,
                             OptimizationRemarkEmitter &ORE, ScalarEvolution &SE,
                             AAResults &AA, const DominatorTree &DT,
@@ -1433,13 +1446,20 @@ static void emitPerTrapEdge(Function &F, LoopInfo &LI,
     // can't hoist here. Q2 (IV update): for any IV operand, does its update
     // dominate the latch? If no, the IV is conditionally updated and SCEV
     // refuses an AddRec → trap not eliminable via trip-count.
+    // LoopLatchBTCComputable is the latch exit count SE.getExitCount(L, Latch):
+    // the IV-driven count, which can be known when the loop-wide backedge-taken
+    // count is not (one unknown early trap exit blocks the latter, not this).
     bool DominatesLatch = false;
     bool IVUpdateDominatesLatch = true;
+    bool LoopLatchBTCComputable = false;
     if (LTAEmitExplain) {
       BasicBlock *Latch = Innermost ? Innermost->getLoopLatch() : nullptr;
       DominatesLatch = Latch && DT.dominates(&BB, Latch);
       IVUpdateDominatesLatch =
           computeIVUpdateDominatesLatch(BI->getCondition(), Innermost, DT);
+      if (Latch)
+        LoopLatchBTCComputable =
+            !isa<SCEVCouldNotCompute>(SE.getExitCount(Innermost, Latch));
     }
 
     // Resolve the reload-blocking writer: source line, kind (store / memcpy /
@@ -1520,6 +1540,8 @@ static void emitPerTrapEdge(Function &F, LoopInfo &LI,
       Rem << " dominates_latch=" << NV("DominatesLatch", DominatesLatch)
           << " iv_update_dominates_latch="
           << NV("IVUpdateDominatesLatch", IVUpdateDominatesLatch)
+          << " loop_latch_btc_computable="
+          << NV("LoopLatchBTCComputable", LoopLatchBTCComputable)
           << " has_store_reload=" << NV("HasStoreReload", HasStoreReload)
           << " has_mem_intrinsic_reload="
           << NV("HasMemIntrinsicReload", HasMemIntrinsicReload)
