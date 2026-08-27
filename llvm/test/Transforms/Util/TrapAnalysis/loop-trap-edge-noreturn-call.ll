@@ -90,4 +90,6 @@ exit:
 ; CHECK-NEXT:   - DominatesLatch:{{ +}}'true'
 ; CHECK-NEXT:   - String:{{ +}}' iv_update_dominates_latch='
 ; CHECK-NEXT:   - IVUpdateDominatesLatch:{{ +}}'true'
+; CHECK-NEXT:   - String:{{ +}}' loop_latch_btc_computable='
+; CHECK-NEXT:   - LoopLatchBTCComputable:{{ +}}'true'
 ; CHECK-NEXT: ...
