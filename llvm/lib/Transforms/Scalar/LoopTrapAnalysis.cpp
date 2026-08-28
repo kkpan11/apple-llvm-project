@@ -129,16 +129,14 @@ static unsigned countTrapExits(Loop *L, LoopInfo &LI) {
 /// captured, including trap-free ones. Gated by -loop-trap-analysis-explain.
 static void emitLoopPrimitives(Function &F, LoopInfo &LI,
                                OptimizationRemarkEmitter &ORE,
-                               ScalarEvolution &SE, StringRef Tag) {
+                               ScalarEvolution &SE) {
   unsigned TotalLoops = 0;
   unsigned Innermost = 0;
   unsigned MaxDepth = 0;
   unsigned Depth1 = 0, Depth2 = 0, Depth3Plus = 0;
 
-  std::string PrimName = Tag.empty() ? std::string("LoopPrimitives")
-                                     : ("LoopPrimitives" + Tag).str();
-  std::string SumName = Tag.empty() ? std::string("LoopPrimitivesSummary")
-                                    : ("LoopPrimitivesSummary" + Tag).str();
+  std::string PrimName = "LoopPrimitives";
+  std::string SumName = "LoopPrimitivesSummary";
 
   for (auto *L : LI.getLoopsInPreorder()) {
     ++TotalLoops;
@@ -845,10 +843,8 @@ static Instruction *firstAliasingWriter(LoadInst *Load, Loop *L,
 ///   - comparison shape: PredicateShape, NumLeafOperands
 static void emitPerTrapEdge(Function &F, LoopInfo &LI,
                             OptimizationRemarkEmitter &ORE, ScalarEvolution &SE,
-                            AAResults &AA, const DominatorTree &DT,
-                            StringRef Tag) {
-  std::string Name =
-      Tag.empty() ? std::string("LoopTrapEdge") : ("LoopTrapEdge" + Tag).str();
+                            AAResults &AA, const DominatorTree &DT) {
+  std::string Name = "LoopTrapEdge";
   // Per-loop cache of "do any in-loop instructions may-alias this load?",
   // populated lazily. Key: (Loop*, LoadInst*). Returns (StoreAlias,
   // MemIntrinsicAlias, CallAlias) tracked SEPARATELY so the consumer can bucket
@@ -1255,8 +1251,7 @@ static void emitPerTrapEdge(Function &F, LoopInfo &LI,
   // LoopLoadAlias record naming the first such writer. Clobbered loads only
   // (hoistable loads omitted).
   if (LTAEmitLoadAlias) {
-    std::string LName = Tag.empty() ? std::string("LoopLoadAlias")
-                                    : ("LoopLoadAlias" + Tag).str();
+    std::string LName = "LoopLoadAlias";
     for (Loop *L : LI.getLoopsInPreorder()) {
       if (!L->isInnermost())
         continue;
@@ -1436,8 +1431,8 @@ PreservedAnalyses LoopTrapAnalysisPass::run(Function &F,
   if (LTAEmitExplain) {
     auto &AA = AM.getResult<AAManager>(F);
     auto &DT = AM.getResult<DominatorTreeAnalysis>(F);
-    emitLoopPrimitives(F, LI, ORE, SE, Tag);
-    emitPerTrapEdge(F, LI, ORE, SE, AA, DT, Tag);
+    emitLoopPrimitives(F, LI, ORE, SE);
+    emitPerTrapEdge(F, LI, ORE, SE, AA, DT);
   }
   return PreservedAnalyses::all();
 }
@@ -1445,6 +1440,4 @@ PreservedAnalyses LoopTrapAnalysisPass::run(Function &F,
 void LoopTrapAnalysisPass::printPipeline(
     raw_ostream &OS, function_ref<StringRef(StringRef)> MapClassName2PassName) {
   OS << "loop-trap-analysis";
-  if (!Tag.empty())
-    OS << "<tag=" << Tag << ">";
 }
