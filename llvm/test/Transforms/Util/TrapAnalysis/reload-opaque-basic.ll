@@ -2,11 +2,10 @@
 ; RUN:   -pass-remarks-output=%t.yaml %s
 ; RUN: FileCheck --input-file=%t.yaml %s
 
-; Exercises the reload/alias + opaque-operand operand classification: the
-; Opaque-* TrapClass classes and their operand NV fields (HasStoreReload,
-; HasInLoopPhiOperand, HasOtherInLoopUnknownOperand, ...). All three loops
-; have a non-computable per-edge trip count (EdgeBTCComputable=false), so the
-; blocker classes are what selects the TrapClass.
+; Exercises the reload/alias + opaque-operand classification via the operand NV
+; fields (HasStoreReload, HasInLoopPhiOperand, HasOtherInLoopUnknownOperand, ...).
+; All three loops have a non-computable per-edge trip count
+; (EdgeBTCComputable=false), so these blocker fields are what a consumer keys on.
 
 declare void @llvm.trap()
 declare i32 @opaque()
@@ -36,13 +35,6 @@ latch:
 exit:
   ret void
 }
-; CHECK: Function:{{ +}}store_reload
-; CHECK: TrapClass:{{ +}}Opaque-InLoopExit-TripCountUnknown-StoreReload
-; CHECK: HasStoreReload:{{ +}}'true'
-; CHECK: ReloadStoreKind:{{ +}}store
-; CHECK: ReloadLoadName:{{ +}}p
-; CHECK: HasCallReload:{{ +}}'false'
-; CHECK: HasOtherInLoopUnknownOperand:{{ +}}'false'
 
 ; In-loop trap exit whose condition operand is the result of @opaque(), which
 ; has no characterizable SCEV -> Opaque-...-OpaqueOperand-Other.
@@ -68,10 +60,6 @@ latch:
 exit:
   ret void
 }
-; CHECK: Function:{{ +}}opaque_other
-; CHECK: TrapClass:{{ +}}Opaque-InLoopExit-TripCountUnknown-OpaqueOperand-Other
-; CHECK: HasStoreReload:{{ +}}'false'
-; CHECK: HasOtherInLoopUnknownOperand:{{ +}}'true'
 
 ; In-loop trap exit whose condition depends on %acc, a non-IV phi updated only
 ; on some iterations (via a select) -> Opaque-...-InLoopPhiOperand.
@@ -101,6 +89,271 @@ latch:
 exit:
   ret void
 }
-; CHECK: Function:{{ +}}in_loop_phi_operand
-; CHECK: TrapClass:{{ +}}Opaque-InLoopExit-TripCountUnknown-InLoopPhiOperand
-; CHECK: HasInLoopPhiOperand:{{ +}}'true'
+
+; Full LoopTrapEdge record(s), pinned line-by-line.
+; CHECK:      Name:{{ +}}LoopTrapEdge
+; CHECK-NEXT: Function:{{ +}}store_reload
+; CHECK-NEXT: Args:
+; CHECK-NEXT:   - String:{{ +}}'Function '
+; CHECK-NEXT:   - Function:{{ +}}store_reload
+; CHECK-NEXT:   - String:{{ +}}' src_bb='
+; CHECK-NEXT:   - SourceBB:{{ +}}body
+; CHECK-NEXT:   - String:{{ +}}' trap_bb='
+; CHECK-NEXT:   - TrapBB:{{ +}}trap
+; CHECK-NEXT:   - String:{{ +}}' loop_depth='
+; CHECK-NEXT:   - LoopDepth:{{ +}}'1'
+; CHECK-NEXT:   - String:{{ +}}' loop_header='
+; CHECK-NEXT:   - LoopHeader:{{ +}}body
+; CHECK-NEXT:   - String:{{ +}}' is_innermost='
+; CHECK-NEXT:   - IsInnermost:{{ +}}'true'
+; CHECK-NEXT:   - String:{{ +}}' is_loop_exit='
+; CHECK-NEXT:   - IsLoopExit:{{ +}}'true'
+; CHECK-NEXT:   - String:{{ +}}' num_leaf_operands='
+; CHECK-NEXT:   - NumLeafOperands:{{ +}}'2'
+; CHECK-NEXT:   - String:{{ +}}' scev_computed='
+; CHECK-NEXT:   - SCEVComputed:{{ +}}'true'
+; CHECK-NEXT:   - String:{{ +}}' scev_loop_invariant='
+; CHECK-NEXT:   - SCEVLoopInvariant:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_addrec='
+; CHECK-NEXT:   - HasAddRec:{{ +}}'true'
+; CHECK-NEXT:   - String:{{ +}}' has_in_loop_unknown='
+; CHECK-NEXT:   - HasInLoopUnknown:{{ +}}'true'
+; CHECK-NEXT:   - String:{{ +}}' has_non_unit_stride_for_l_addrec='
+; CHECK-NEXT:   - HasNonUnitStrideForLAddRec:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_non_constant_stride_for_l_addrec='
+; CHECK-NEXT:   - HasNonConstantStrideForLAddRec:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_only_weak_no_wrap_for_l_addrec='
+; CHECK-NEXT:   - HasOnlyNotProvenMonotonicForLAddRec:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_negative_stride_for_l_addrec='
+; CHECK-NEXT:   - HasNegativeStrideForLAddRec:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' edge_btc_computable='
+; CHECK-NEXT:   - EdgeBTCComputable:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' edge_btc_symbolic='
+; CHECK-NEXT:   - EdgeBTCSymbolic:{{ +}}'true'
+; CHECK-NEXT:   - String:{{ +}}' loop_has_other_unknown_btc_trap='
+; CHECK-NEXT:   - LoopHasOtherUnknownBTCTrap:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' predicate_shape='
+; CHECK-NEXT:   - PredicateShape:{{ +}}SingleICmp
+; CHECK-NEXT:   - String:{{ +}}' is_entry_proximate='
+; CHECK-NEXT:   - IsEntryProximate:{{ +}}'true'
+; CHECK-NEXT:   - String:{{ +}}' dominated_by_equivalent_check='
+; CHECK-NEXT:   - DominatedByEquivalentCheck:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' dominates_latch='
+; CHECK-NEXT:   - DominatesLatch:{{ +}}'true'
+; CHECK-NEXT:   - String:{{ +}}' iv_update_dominates_latch='
+; CHECK-NEXT:   - IVUpdateDominatesLatch:{{ +}}'true'
+; CHECK-NEXT:   - String:{{ +}}' loop_latch_btc_computable='
+; CHECK-NEXT:   - LoopLatchBTCComputable:{{ +}}'true'
+; CHECK-NEXT:   - String:{{ +}}' has_store_reload='
+; CHECK-NEXT:   - HasStoreReload:{{ +}}'true'
+; CHECK-NEXT:   - String:{{ +}}' has_mem_intrinsic_reload='
+; CHECK-NEXT:   - HasMemIntrinsicReload:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' reload_store_line='
+; CHECK-NEXT:   - ReloadStoreLine:{{ +}}'0'
+; CHECK-NEXT:   - String:{{ +}}' reload_store_kind='
+; CHECK-NEXT:   - ReloadStoreKind:{{ +}}store
+; CHECK-NEXT:   - String:{{ +}}' reload_store_tbaa='
+; CHECK-NEXT:   - ReloadStoreTBAA:{{ +}}''
+; CHECK-NEXT:   - String:{{ +}}' reload_load_tbaa='
+; CHECK-NEXT:   - ReloadLoadTBAA:{{ +}}''
+; CHECK-NEXT:   - String:{{ +}}' reload_load_name='
+; CHECK-NEXT:   - ReloadLoadName:{{ +}}p
+; CHECK-NEXT:   - String:{{ +}}' reload_load_line='
+; CHECK-NEXT:   - ReloadLoadLine:{{ +}}'0'
+; CHECK-NEXT:   - String:{{ +}}' has_call_reload='
+; CHECK-NEXT:   - HasCallReload:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_unaliased_load_operand='
+; CHECK-NEXT:   - HasUnaliasedLoadOperand:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_in_loop_phi_operand='
+; CHECK-NEXT:   - HasInLoopPhiOperand:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_in_loop_freeze_operand='
+; CHECK-NEXT:   - HasInLoopFreezeOperand:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_in_loop_select_operand='
+; CHECK-NEXT:   - HasInLoopSelectOperand:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_other_in_loop_unknown_operand='
+; CHECK-NEXT:   - HasOtherInLoopUnknownOperand:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_opaque_operand_no_in_loop_unknown='
+; CHECK-NEXT:   - HasOpaqueOperandNoInLoopUnknown:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_outer_loop_addrec_operand='
+; CHECK-NEXT:   - HasOuterLoopAddRecOperand:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' invocation_seq='
+; CHECK-NEXT:   - InvocationSeq:{{ +}}'1'
+; CHECK-NEXT: ...
+;
+; CHECK:      Name:{{ +}}LoopTrapEdge
+; CHECK-NEXT: Function:{{ +}}opaque_other
+; CHECK-NEXT: Args:
+; CHECK-NEXT:   - String:{{ +}}'Function '
+; CHECK-NEXT:   - Function:{{ +}}opaque_other
+; CHECK-NEXT:   - String:{{ +}}' src_bb='
+; CHECK-NEXT:   - SourceBB:{{ +}}body
+; CHECK-NEXT:   - String:{{ +}}' trap_bb='
+; CHECK-NEXT:   - TrapBB:{{ +}}trap
+; CHECK-NEXT:   - String:{{ +}}' loop_depth='
+; CHECK-NEXT:   - LoopDepth:{{ +}}'1'
+; CHECK-NEXT:   - String:{{ +}}' loop_header='
+; CHECK-NEXT:   - LoopHeader:{{ +}}body
+; CHECK-NEXT:   - String:{{ +}}' is_innermost='
+; CHECK-NEXT:   - IsInnermost:{{ +}}'true'
+; CHECK-NEXT:   - String:{{ +}}' is_loop_exit='
+; CHECK-NEXT:   - IsLoopExit:{{ +}}'true'
+; CHECK-NEXT:   - String:{{ +}}' num_leaf_operands='
+; CHECK-NEXT:   - NumLeafOperands:{{ +}}'2'
+; CHECK-NEXT:   - String:{{ +}}' scev_computed='
+; CHECK-NEXT:   - SCEVComputed:{{ +}}'true'
+; CHECK-NEXT:   - String:{{ +}}' scev_loop_invariant='
+; CHECK-NEXT:   - SCEVLoopInvariant:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_addrec='
+; CHECK-NEXT:   - HasAddRec:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_in_loop_unknown='
+; CHECK-NEXT:   - HasInLoopUnknown:{{ +}}'true'
+; CHECK-NEXT:   - String:{{ +}}' has_non_unit_stride_for_l_addrec='
+; CHECK-NEXT:   - HasNonUnitStrideForLAddRec:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_non_constant_stride_for_l_addrec='
+; CHECK-NEXT:   - HasNonConstantStrideForLAddRec:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_only_weak_no_wrap_for_l_addrec='
+; CHECK-NEXT:   - HasOnlyNotProvenMonotonicForLAddRec:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_negative_stride_for_l_addrec='
+; CHECK-NEXT:   - HasNegativeStrideForLAddRec:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' edge_btc_computable='
+; CHECK-NEXT:   - EdgeBTCComputable:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' edge_btc_symbolic='
+; CHECK-NEXT:   - EdgeBTCSymbolic:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' loop_has_other_unknown_btc_trap='
+; CHECK-NEXT:   - LoopHasOtherUnknownBTCTrap:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' predicate_shape='
+; CHECK-NEXT:   - PredicateShape:{{ +}}SingleICmp
+; CHECK-NEXT:   - String:{{ +}}' is_entry_proximate='
+; CHECK-NEXT:   - IsEntryProximate:{{ +}}'true'
+; CHECK-NEXT:   - String:{{ +}}' dominated_by_equivalent_check='
+; CHECK-NEXT:   - DominatedByEquivalentCheck:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' dominates_latch='
+; CHECK-NEXT:   - DominatesLatch:{{ +}}'true'
+; CHECK-NEXT:   - String:{{ +}}' iv_update_dominates_latch='
+; CHECK-NEXT:   - IVUpdateDominatesLatch:{{ +}}'true'
+; CHECK-NEXT:   - String:{{ +}}' loop_latch_btc_computable='
+; CHECK-NEXT:   - LoopLatchBTCComputable:{{ +}}'true'
+; CHECK-NEXT:   - String:{{ +}}' has_store_reload='
+; CHECK-NEXT:   - HasStoreReload:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_mem_intrinsic_reload='
+; CHECK-NEXT:   - HasMemIntrinsicReload:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' reload_store_line='
+; CHECK-NEXT:   - ReloadStoreLine:{{ +}}'0'
+; CHECK-NEXT:   - String:{{ +}}' reload_store_kind='
+; CHECK-NEXT:   - ReloadStoreKind:{{ +}}''
+; CHECK-NEXT:   - String:{{ +}}' reload_store_tbaa='
+; CHECK-NEXT:   - ReloadStoreTBAA:{{ +}}''
+; CHECK-NEXT:   - String:{{ +}}' reload_load_tbaa='
+; CHECK-NEXT:   - ReloadLoadTBAA:{{ +}}''
+; CHECK-NEXT:   - String:{{ +}}' reload_load_name='
+; CHECK-NEXT:   - ReloadLoadName:{{ +}}''
+; CHECK-NEXT:   - String:{{ +}}' reload_load_line='
+; CHECK-NEXT:   - ReloadLoadLine:{{ +}}'0'
+; CHECK-NEXT:   - String:{{ +}}' has_call_reload='
+; CHECK-NEXT:   - HasCallReload:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_unaliased_load_operand='
+; CHECK-NEXT:   - HasUnaliasedLoadOperand:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_in_loop_phi_operand='
+; CHECK-NEXT:   - HasInLoopPhiOperand:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_in_loop_freeze_operand='
+; CHECK-NEXT:   - HasInLoopFreezeOperand:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_in_loop_select_operand='
+; CHECK-NEXT:   - HasInLoopSelectOperand:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_other_in_loop_unknown_operand='
+; CHECK-NEXT:   - HasOtherInLoopUnknownOperand:{{ +}}'true'
+; CHECK-NEXT:   - String:{{ +}}' has_opaque_operand_no_in_loop_unknown='
+; CHECK-NEXT:   - HasOpaqueOperandNoInLoopUnknown:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_outer_loop_addrec_operand='
+; CHECK-NEXT:   - HasOuterLoopAddRecOperand:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' invocation_seq='
+; CHECK-NEXT:   - InvocationSeq:{{ +}}'1'
+; CHECK-NEXT: ...
+;
+; CHECK:      Name:{{ +}}LoopTrapEdge
+; CHECK-NEXT: Function:{{ +}}in_loop_phi_operand
+; CHECK-NEXT: Args:
+; CHECK-NEXT:   - String:{{ +}}'Function '
+; CHECK-NEXT:   - Function:{{ +}}in_loop_phi_operand
+; CHECK-NEXT:   - String:{{ +}}' src_bb='
+; CHECK-NEXT:   - SourceBB:{{ +}}body
+; CHECK-NEXT:   - String:{{ +}}' trap_bb='
+; CHECK-NEXT:   - TrapBB:{{ +}}trap
+; CHECK-NEXT:   - String:{{ +}}' loop_depth='
+; CHECK-NEXT:   - LoopDepth:{{ +}}'1'
+; CHECK-NEXT:   - String:{{ +}}' loop_header='
+; CHECK-NEXT:   - LoopHeader:{{ +}}body
+; CHECK-NEXT:   - String:{{ +}}' is_innermost='
+; CHECK-NEXT:   - IsInnermost:{{ +}}'true'
+; CHECK-NEXT:   - String:{{ +}}' is_loop_exit='
+; CHECK-NEXT:   - IsLoopExit:{{ +}}'true'
+; CHECK-NEXT:   - String:{{ +}}' num_leaf_operands='
+; CHECK-NEXT:   - NumLeafOperands:{{ +}}'2'
+; CHECK-NEXT:   - String:{{ +}}' scev_computed='
+; CHECK-NEXT:   - SCEVComputed:{{ +}}'true'
+; CHECK-NEXT:   - String:{{ +}}' scev_loop_invariant='
+; CHECK-NEXT:   - SCEVLoopInvariant:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_addrec='
+; CHECK-NEXT:   - HasAddRec:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_in_loop_unknown='
+; CHECK-NEXT:   - HasInLoopUnknown:{{ +}}'true'
+; CHECK-NEXT:   - String:{{ +}}' has_non_unit_stride_for_l_addrec='
+; CHECK-NEXT:   - HasNonUnitStrideForLAddRec:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_non_constant_stride_for_l_addrec='
+; CHECK-NEXT:   - HasNonConstantStrideForLAddRec:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_only_weak_no_wrap_for_l_addrec='
+; CHECK-NEXT:   - HasOnlyNotProvenMonotonicForLAddRec:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_negative_stride_for_l_addrec='
+; CHECK-NEXT:   - HasNegativeStrideForLAddRec:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' edge_btc_computable='
+; CHECK-NEXT:   - EdgeBTCComputable:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' edge_btc_symbolic='
+; CHECK-NEXT:   - EdgeBTCSymbolic:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' loop_has_other_unknown_btc_trap='
+; CHECK-NEXT:   - LoopHasOtherUnknownBTCTrap:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' predicate_shape='
+; CHECK-NEXT:   - PredicateShape:{{ +}}SingleICmp
+; CHECK-NEXT:   - String:{{ +}}' is_entry_proximate='
+; CHECK-NEXT:   - IsEntryProximate:{{ +}}'true'
+; CHECK-NEXT:   - String:{{ +}}' dominated_by_equivalent_check='
+; CHECK-NEXT:   - DominatedByEquivalentCheck:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' dominates_latch='
+; CHECK-NEXT:   - DominatesLatch:{{ +}}'true'
+; CHECK-NEXT:   - String:{{ +}}' iv_update_dominates_latch='
+; CHECK-NEXT:   - IVUpdateDominatesLatch:{{ +}}'true'
+; CHECK-NEXT:   - String:{{ +}}' loop_latch_btc_computable='
+; CHECK-NEXT:   - LoopLatchBTCComputable:{{ +}}'true'
+; CHECK-NEXT:   - String:{{ +}}' has_store_reload='
+; CHECK-NEXT:   - HasStoreReload:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_mem_intrinsic_reload='
+; CHECK-NEXT:   - HasMemIntrinsicReload:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' reload_store_line='
+; CHECK-NEXT:   - ReloadStoreLine:{{ +}}'0'
+; CHECK-NEXT:   - String:{{ +}}' reload_store_kind='
+; CHECK-NEXT:   - ReloadStoreKind:{{ +}}''
+; CHECK-NEXT:   - String:{{ +}}' reload_store_tbaa='
+; CHECK-NEXT:   - ReloadStoreTBAA:{{ +}}''
+; CHECK-NEXT:   - String:{{ +}}' reload_load_tbaa='
+; CHECK-NEXT:   - ReloadLoadTBAA:{{ +}}''
+; CHECK-NEXT:   - String:{{ +}}' reload_load_name='
+; CHECK-NEXT:   - ReloadLoadName:{{ +}}''
+; CHECK-NEXT:   - String:{{ +}}' reload_load_line='
+; CHECK-NEXT:   - ReloadLoadLine:{{ +}}'0'
+; CHECK-NEXT:   - String:{{ +}}' has_call_reload='
+; CHECK-NEXT:   - HasCallReload:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_unaliased_load_operand='
+; CHECK-NEXT:   - HasUnaliasedLoadOperand:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_in_loop_phi_operand='
+; CHECK-NEXT:   - HasInLoopPhiOperand:{{ +}}'true'
+; CHECK-NEXT:   - String:{{ +}}' has_in_loop_freeze_operand='
+; CHECK-NEXT:   - HasInLoopFreezeOperand:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_in_loop_select_operand='
+; CHECK-NEXT:   - HasInLoopSelectOperand:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_other_in_loop_unknown_operand='
+; CHECK-NEXT:   - HasOtherInLoopUnknownOperand:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_opaque_operand_no_in_loop_unknown='
+; CHECK-NEXT:   - HasOpaqueOperandNoInLoopUnknown:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' has_outer_loop_addrec_operand='
+; CHECK-NEXT:   - HasOuterLoopAddRecOperand:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' invocation_seq='
+; CHECK-NEXT:   - InvocationSeq:{{ +}}'1'
+; CHECK-NEXT: ...
