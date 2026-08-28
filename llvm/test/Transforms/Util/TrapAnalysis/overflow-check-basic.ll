@@ -77,8 +77,6 @@ exit:
 ; CHECK-NEXT:   - IsInnermost:{{ +}}'true'
 ; CHECK-NEXT:   - String:{{ +}}' is_loop_exit='
 ; CHECK-NEXT:   - IsLoopExit:{{ +}}'true'
-; CHECK-NEXT:   - String:{{ +}}' trap_class='
-; CHECK-NEXT:   - TrapClass:{{ +}}OverflowCheck
 ; CHECK-NEXT:   - String:{{ +}}' num_leaf_operands='
 ; CHECK-NEXT:   - NumLeafOperands:{{ +}}'1'
 ; CHECK-NEXT:   - String:{{ +}}' scev_computed='
@@ -172,8 +170,6 @@ exit:
 ; CHECK-NEXT:   - IsInnermost:{{ +}}'true'
 ; CHECK-NEXT:   - String:{{ +}}' is_loop_exit='
 ; CHECK-NEXT:   - IsLoopExit:{{ +}}'true'
-; CHECK-NEXT:   - String:{{ +}}' trap_class='
-; CHECK-NEXT:   - TrapClass:{{ +}}Affine-InLoopExit-TripCountKnown
 ; CHECK-NEXT:   - String:{{ +}}' num_leaf_operands='
 ; CHECK-NEXT:   - NumLeafOperands:{{ +}}'2'
 ; CHECK-NEXT:   - String:{{ +}}' scev_computed='
