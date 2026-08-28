@@ -17,30 +17,38 @@ declare void @sideeffect()
 define void @mixed(ptr %base, i32 %n) {
 entry:
   br label %body
+
 body:
   %iv = phi i32 [ 0, %entry ], [ %iv.next, %latch ]
   %c0 = icmp ult i32 %iv, %n
   br i1 %c0, label %s1, label %realtrap
+
 realtrap:
   call void @llvm.trap()
   unreachable
+
 s1:
   %c1 = icmp eq i32 %iv, 3
   br i1 %c1, label %s2, label %fakecall
+
 fakecall:
   call void @sideeffect()
   unreachable
+
 s2:
   %c2 = icmp eq i32 %iv, 5
   br i1 %c2, label %latch, label %bare
+
 bare:
   unreachable
+
 latch:
   %p = getelementptr i32, ptr %base, i32 %iv
   store i32 0, ptr %p, align 4
   %iv.next = add nuw nsw i32 %iv, 1
   %e = icmp eq i32 %iv.next, %n
   br i1 %e, label %exit, label %body
+
 exit:
   ret void
 }
