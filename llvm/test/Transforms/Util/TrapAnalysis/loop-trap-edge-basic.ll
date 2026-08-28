@@ -13,19 +13,23 @@ declare void @llvm.trap()
 define void @counted_trap(ptr %base, i32 %n) {
 entry:
   br label %body
+
 body:
   %iv = phi i32 [ 0, %entry ], [ %iv.next, %latch ]
   %cmp = icmp ult i32 %iv, %n
   br i1 %cmp, label %latch, label %trap
+
 trap:
   call void @llvm.trap()
   unreachable
+
 latch:
   %p = getelementptr i32, ptr %base, i32 %iv
   store i32 0, ptr %p, align 4
   %iv.next = add nuw nsw i32 %iv, 1
   %e = icmp eq i32 %iv.next, %n
   br i1 %e, label %exit, label %body
+
 exit:
   ret void
 }
