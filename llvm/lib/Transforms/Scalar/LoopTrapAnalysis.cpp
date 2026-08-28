@@ -46,8 +46,6 @@ static cl::opt<bool> LTAEmitExplain(
 /// function; for any block in a function it yields a `%N` slot, so it is
 /// never empty.
 static std::string bbLabel(const BasicBlock *BB) {
-  if (!BB)
-    return "<null>";
   if (BB->hasName())
     return BB->getName().str();
   std::string S;
@@ -105,10 +103,9 @@ static unsigned countTrapExits(Loop *L, LoopInfo &LI) {
   return Count;
 }
 
-/// Emit one machine-readable LoopPrimitives remark per loop in F (all nesting
-/// depths), plus a per-function LoopPrimitivesSummary with loop-depth tallies.
-/// Always emits (does not gate on hasUnreachableInst) so every loop is
-/// captured, including trap-free ones. Gated by -loop-trap-analysis-explain.
+/// Emit one LoopPrimitives remark per loop with a trap exit (trap-free loops
+/// emit none), plus a per-function LoopPrimitivesSummary with loop-depth
+/// tallies over all loops. Gated by -loop-trap-analysis-explain.
 static void emitLoopPrimitives(Function &F, LoopInfo &LI,
                                OptimizationRemarkEmitter &ORE,
                                ScalarEvolution &SE) {
@@ -136,6 +133,10 @@ static void emitLoopPrimitives(Function &F, LoopInfo &LI,
       ++Depth3Plus;
 
     unsigned TrapExits = countTrapExits(L, LI);
+    // loop-trap-analysis: only loops with a trap exit get a record (trap-free
+    // loops still count toward the summary below).
+    if (TrapExits == 0)
+      continue;
     bool BTCKnown = !isa<SCEVCouldNotCompute>(SE.getBackedgeTakenCount(L));
 
     std::string ParentHeader = "-";
