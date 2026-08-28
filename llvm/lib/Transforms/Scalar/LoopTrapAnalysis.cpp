@@ -46,8 +46,6 @@ static cl::opt<bool> LTAEmitExplain(
 /// function; for any block in a function it yields a `%N` slot, so it is
 /// never empty.
 static std::string bbLabel(const BasicBlock *BB) {
-  if (!BB)
-    return "<null>";
   if (BB->hasName())
     return BB->getName().str();
   std::string S;
