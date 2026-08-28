@@ -1,9 +1,9 @@
-; Per-edge LoopTrapEdge remarks carry SCEV-descriptive "explain" fields beyond
-; TrapClass: whether every predicate operand had a computable SCEV, whether the
-; predicate is loop-invariant, whether it contains an AddRec, the per-edge trip
-; count computability, and (under -loop-trap-analysis-explain) whether the trap
-; branch and the IV update dominate the loop latch. This test covers an affine
-; IV trap-exit where those fields take their canonical values.
+; Per-edge LoopTrapEdge remarks carry SCEV-descriptive "explain" fields: whether
+; every predicate operand had a computable SCEV, whether the predicate is
+; loop-invariant, whether it contains an AddRec, the per-edge trip count
+; computability, and (under -loop-trap-analysis-explain) whether the trap branch
+; and the IV update dominate the loop latch. This test covers an affine IV
+; trap-exit where those fields take their canonical values.
 
 ; RUN: opt -passes='loop-trap-analysis' -loop-trap-analysis-explain -disable-output \
 ; RUN:   -pass-remarks-output=%t.yaml %s
@@ -58,8 +58,6 @@ exit:
 ; CHECK-NEXT:   - IsInnermost:{{ +}}'true'
 ; CHECK-NEXT:   - String:{{ +}}' is_loop_exit='
 ; CHECK-NEXT:   - IsLoopExit:{{ +}}'true'
-; CHECK-NEXT:   - String:{{ +}}' trap_class='
-; CHECK-NEXT:   - TrapClass:{{ +}}Affine-InLoopExit-TripCountKnown
 ; CHECK-NEXT:   - String:{{ +}}' num_leaf_operands='
 ; CHECK-NEXT:   - NumLeafOperands:{{ +}}'2'
 ; CHECK-NEXT:   - String:{{ +}}' scev_computed='
