@@ -81,9 +81,8 @@ static bool isTrapEdgeBlock(BasicBlock *BB) {
 /// Emit one LoopTrapEdge remark per conditional branch whose one successor is a
 /// trap block (see isTrapEdgeBlock). Gated by -loop-trap-analysis-explain.
 static void emitPerTrapEdge(Function &F, LoopInfo &LI,
-                            OptimizationRemarkEmitter &ORE, StringRef Tag) {
-  std::string Name =
-      Tag.empty() ? std::string("LoopTrapEdge") : ("LoopTrapEdge" + Tag).str();
+                            OptimizationRemarkEmitter &ORE) {
+  std::string Name = "LoopTrapEdge";
   for (BasicBlock &BB : F) {
     auto *BI = dyn_cast<CondBrInst>(BB.getTerminator());
     if (!BI)
@@ -258,13 +257,11 @@ PreservedAnalyses LoopTrapAnalysisPass::run(Function &F,
   auto &ORE = AM.getResult<OptimizationRemarkEmitterAnalysis>(F);
   emitRemarks(F, LI, ORE, SE);
   if (LTAEmitExplain)
-    emitPerTrapEdge(F, LI, ORE, Tag);
+    emitPerTrapEdge(F, LI, ORE);
   return PreservedAnalyses::all();
 }
 
 void LoopTrapAnalysisPass::printPipeline(
     raw_ostream &OS, function_ref<StringRef(StringRef)> MapClassName2PassName) {
   OS << "loop-trap-analysis";
-  if (!Tag.empty())
-    OS << "<tag=" << Tag << ">";
 }
