@@ -5,6 +5,26 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
+//
+// LoopTrapAnalysis emits machine-readable opt-remark records describing each
+// conditional branch to a trap block (a bounds/overflow check lowered to
+// br+@llvm.trap). Under -loop-trap-analysis-explain, each LoopTrapEdge record
+// carries the edge's properties along orthogonal axes so a consumer can
+// classify it from the fields alone:
+//   - condition nature      SCEVLoopInvariant / HasAddRec / HasInLoopUnknown
+//   - position              LoopHeader, LoopDepth, IsLoopExit, IsInnermost,
+//                           IsEntryProximate
+//   - loop trip count       LoopHasOtherUnknownBTCTrap, LoopLatchBTCComputable
+//   - condition trip count  EdgeBTCComputable, EdgeBTCSymbolic
+//   - condition property    DominatesLatch, IVUpdateDominatesLatch,
+//                           DominatedByEquivalentCheck, HasOverflowBitLeaf,
+//                           HasCheckedArithValueOperand
+//   - operand / stride      Has*Reload, Has*Operand, Has*StrideForLAddRec
+//   - comparison shape      PredicateShape, NumLeafOperands
+// Each patch in this series fills in one axis. This first patch establishes the
+// per-edge record behind the flag; later patches add the fields above.
+//
+//===----------------------------------------------------------------------===//
 
 #include "llvm/Transforms/Scalar/LoopTrapAnalysis.h"
 #include "llvm/ADT/MapVector.h"
@@ -596,130 +616,6 @@ static StringRef trapPredicateShapeName(TrapPredicateShape S) {
   llvm_unreachable("unhandled TrapPredicateShape");
 }
 
-/// Compute the count-ordered, descriptive trap-class name for one trap edge
-/// from its per-edge fields. Single source of truth for a classification
-/// consumers previously re-derived in Python (gen_ir_view.priority_class);
-/// emitted as the `TrapClass` field, and its precedence must stay in lock-step
-/// with that fallback. Returned strings are static literals (safe as
-/// StringRef).
-static StringRef computeTrapClass(
-    bool InLoop, TrapPredicateShape Shape, bool IsEntryProx, bool DomByEquiv,
-    bool IsLoopExit, bool EdgeBTCComputable, bool LoopOtherUnk,
-    bool StoreReload, bool MemIReload, bool CallReload, bool InLoopPhi,
-    bool UnaliasLoad, bool OtherUnk, bool OpaqueNoUnk, bool InLoopFreeze,
-    bool InLoopSelect, unsigned NumLeafOps, bool NonUnitStride, bool NegStride,
-    bool NonConstStride, bool NotProvenMonotonicOnly) {
-  const bool ConstK = Shape == TrapPredicateShape::OrBoundsCheckConstBound ||
-                      Shape == TrapPredicateShape::AndBoundsCheckConstBound;
-  const bool VarK = Shape == TrapPredicateShape::OrBoundsCheckVarBound ||
-                    Shape == TrapPredicateShape::AndBoundsCheckVarBound;
-  const bool TwoAR = Shape == TrapPredicateShape::OrTwoAddRecICmp ||
-                     Shape == TrapPredicateShape::AndTwoAddRecICmp;
-  // The leading token is the index-shape axis -- how well the compiler can
-  // model the trapping index: `Invariant-` = not inside any loop (one-shot /
-  // hoistable check); `Affine-` = the index is an affine AddRec over the loop
-  // IV (understood; eliminability turns on trip count / no-wrap); `Opaque-` =
-  // the index depends on an in-loop load / phi / call / opaque value SCEV can't
-  // model. `InLoop-NonExit` carries no index-shape axis. The rest of each name
-  // is unchanged.
-  // Out-of-loop: classify by structural redundancy / predicate shape.
-  if (!InLoop) {
-    if (IsEntryProx)
-      return "Invariant-OutsideLoop-EntryProximate";
-    if (DomByEquiv)
-      return "Invariant-OutsideLoop-RedundantWithDominatingCheck";
-    if (ConstK)
-      return "Invariant-OutsideLoop-MultiComparison-ConstBound";
-    if (VarK)
-      return "Invariant-OutsideLoop-MultiComparison-VarBound";
-    if (Shape == TrapPredicateShape::SingleICmp)
-      return "Invariant-OutsideLoop-SingleComparison";
-    if (Shape == TrapPredicateShape::OtherMulti)
-      return "Invariant-OutsideLoop-MultiComparison-Other";
-    if (TwoAR)
-      return "Invariant-OutsideLoop-MultiComparison-Other";
-    return "Invariant-OutsideLoop-Unclassifiable";
-  }
-  // In-loop, not a loop exit.
-  if (!IsLoopExit)
-    return "InLoop-NonExit";
-  // In-loop loop-exit.
-  // A BTC-computable edge whose predicate also has a reload/opaque blocker
-  // isn't cleanly eliminable via trip count, so under LTAEmitExplain it is NOT
-  // masked as a trip-count-known class -- it falls through to the blocker
-  // classes below. Legacy (flag off) keeps the trip-count-known classes for any
-  // BTC-computable edge (byte-identical).
-  const bool HasBlocker = StoreReload || MemIReload || CallReload ||
-                          InLoopPhi || UnaliasLoad || OtherUnk || OpaqueNoUnk;
-  if (EdgeBTCComputable && (!LTAEmitExplain || !HasBlocker))
-    return LoopOtherUnk
-               ? "Affine-InLoopExit-TripCountKnown-LoopBlockedOtherTrapExit"
-               : "Affine-InLoopExit-TripCountKnown";
-  const bool S = StoreReload || MemIReload;
-  if (S && CallReload)
-    return "Opaque-InLoopExit-TripCountUnknown-StoreAndCallReload";
-  if (S)
-    return "Opaque-InLoopExit-TripCountUnknown-StoreReload";
-  if (CallReload)
-    return "Opaque-InLoopExit-TripCountUnknown-CallReload";
-  if (InLoopPhi)
-    return "Opaque-InLoopExit-TripCountUnknown-InLoopPhiOperand";
-  if (UnaliasLoad)
-    return "Opaque-InLoopExit-TripCountUnknown-InLoopLoadOperand";
-  // The opaque-operand class split by opacity shape (freeze / select / other
-  // in-loop unknown). InLoopFreeze / InLoopSelect are subsets of OtherUnk, so
-  // test them first.
-  if (OtherUnk) {
-    if (InLoopFreeze)
-      return "Opaque-InLoopExit-TripCountUnknown-OpaqueOperand-Freeze";
-    if (InLoopSelect)
-      return "Opaque-InLoopExit-TripCountUnknown-OpaqueOperand-Select";
-    return "Opaque-InLoopExit-TripCountUnknown-OpaqueOperand-Other";
-  }
-  if (OpaqueNoUnk)
-    return "Opaque-InLoopExit-TripCountUnknown-OpaqueOperand-NoInLoopUnknown";
-  // The multi-comparison suffix is driven by the predicate SHAPE (one source of
-  // truth), so the multi-comparison class can't disagree with the emitted
-  // PredicateShape. Legacy (flag off) keeps the NumLeafOps>=4 gate for
-  // byte-identical output.
-  bool MultiShape = LTAEmitExplain ? (ConstK || VarK || TwoAR ||
-                                      Shape == TrapPredicateShape::OtherMulti)
-                                   : (NumLeafOps >= 4);
-  if (MultiShape) {
-    if (ConstK)
-      return "Affine-InLoopExit-TripCountUnknown-NotProvenMonotonic-"
-             "MultiComparison-ConstBound";
-    if (VarK)
-      return "Affine-InLoopExit-TripCountUnknown-NotProvenMonotonic-"
-             "MultiComparison-VarBound";
-    if (TwoAR)
-      return "Affine-InLoopExit-TripCountUnknown-NotProvenMonotonic-"
-             "MultiComparison-TwoAddRec";
-    if (Shape == TrapPredicateShape::OtherMulti)
-      return "Affine-InLoopExit-TripCountUnknown-NotProvenMonotonic-"
-             "MultiComparison-Other";
-  }
-  // Surface stride-fragility (the Has*StrideForLAddRec flags previously never
-  // influenced the class) instead of lumping it into the bare weak-no-wrap
-  // class. Legacy (flag off) returns the bare weak-no-wrap class
-  // (byte-identical).
-  if (LTAEmitExplain) {
-    if (NonConstStride)
-      return "Affine-InLoopExit-TripCountUnknown-NotProvenMonotonic-"
-             "NonConstantStride";
-    if (NonUnitStride)
-      return "Affine-InLoopExit-TripCountUnknown-NotProvenMonotonic-"
-             "NonUnitStride";
-    if (NegStride)
-      return "Affine-InLoopExit-TripCountUnknown-NotProvenMonotonic-"
-             "NegativeStride";
-    if (NotProvenMonotonicOnly)
-      return "Affine-InLoopExit-TripCountUnknown-NotProvenMonotonic-"
-             "NotProvenMonotonicOnly";
-  }
-  return "Affine-InLoopExit-TripCountUnknown-NotProvenMonotonic";
-}
-
 /// Match the bounded-iterator OR / AND shape:
 ///   OR  form: or (uge X, B)  (ult (sub B, X), K)
 ///   AND form: and(ult X, B)  (uge (sub B, X), K)
@@ -1138,20 +1034,8 @@ static Instruction *firstAliasingWriter(LoadInst *Load, Loop *L,
 }
 
 /// Emit one LoopTrapEdge remark per conditional branch whose one successor is a
-/// trap block (see isTrapEdgeBlock). Gated by -loop-trap-analysis-explain.
-///
-/// The record describes each trap edge along orthogonal axes so a consumer can
-/// group it from the fields alone (TrapClass is a precedence-ordered projection
-/// of these):
-///   - condition nature: SCEVLoopInvariant, HasAddRec, HasInLoopUnknown
-///   - position: LoopHeader, LoopDepth, IsLoopExit, IsInnermost,
-///     IsEntryProximate
-///   - loop trip count: LoopHasOtherUnknownBTCTrap, LoopLatchBTCComputable
-///   - condition trip count: EdgeBTCComputable, EdgeBTCSymbolic
-///   - condition property: DominatesLatch, IVUpdateDominatesLatch,
-///     DominatedByEquivalentCheck, HasOverflowBitLeaf
-///   - operand/stride: Has*Reload, Has*Operand, Has*StrideForLAddRec
-///   - comparison shape: PredicateShape, NumLeafOperands
+/// trap block (see isTrapEdgeBlock). Gated by -loop-trap-analysis-explain. The
+/// record's fields are the per-edge axes described at the top of the file.
 static void emitPerTrapEdge(Function &F, LoopInfo &LI,
                             OptimizationRemarkEmitter &ORE, ScalarEvolution &SE,
                             AAResults &AA, const DominatorTree &DT,
@@ -1502,31 +1386,8 @@ static void emitPerTrapEdge(Function &F, LoopInfo &LI,
         ReloadLoadName = Ptr->getName();
     }
 
-    // Count-ordered trap-class code, computed once here (single source of
-    // truth; consumers read `TrapClass` instead of re-deriving it). The
-    // reload / opaque-operand inputs are only fed in under LTAEmitExplain so
-    // the compact (flag-off) TrapClass stays byte-identical; the unknown-BTC
-    // LoopHasOtherUnknownBTCTrap flag lights up the -LoopBlockedOtherTrapExit
-    // class variant.
-    const bool Explain = LTAEmitExplain;
-    StringRef TrapClass = computeTrapClass(
-        /*InLoop=*/Innermost != nullptr, PredShape, IsEntryProx, DomByEquiv,
-        IsLoopExit, EdgeBTCComputable, LoopHasOtherUnknownBTCTrap,
-        Explain && HasStoreReload, Explain && HasMemIntrinsicReload,
-        Explain && HasCallReload, Explain && HasInLoopPhiOperand,
-        Explain && HasUnaliasedLoadOperand,
-        Explain && HasOtherInLoopUnknownOperand,
-        Explain && HasOpaqueOperandNoInLoopUnknown,
-        Explain && HasInLoopFreezeOperand, Explain && HasInLoopSelectOperand,
-        NumLeafOps, HasNonUnitStrideForLAddRec, HasNegativeStrideForLAddRec,
-        HasNonConstantStrideForLAddRec, HasOnlyNotProvenMonotonicForLAddRec);
-
-    // An edge guarded by a checked-arithmetic overflow bit is an overflow
-    // check, not an index/bounds comparison; classify it as such.
+    // Whether the trap guard is a checked-arithmetic overflow bit.
     bool HasOverflowBitLeaf = any_of(LeafOperands, isOverflowBit);
-    if (HasOverflowBitLeaf)
-      TrapClass = "OverflowCheck";
-
     OptimizationRemarkAnalysis Rem(REMARK_PASS, Name, BI);
     Rem << "Function " << NV("Function", F.getName())
         << " src_bb=" << NV("SourceBB", bbLabel(&BB))
@@ -1538,7 +1399,6 @@ static void emitPerTrapEdge(Function &F, LoopInfo &LI,
         << " is_innermost="
         << NV("IsInnermost", (bool)(Innermost && Innermost->isInnermost()))
         << " is_loop_exit=" << NV("IsLoopExit", IsLoopExit)
-        << " trap_class=" << NV("TrapClass", TrapClass)
         << " num_leaf_operands=" << NV("NumLeafOperands", NumLeafOps)
         << " scev_computed=" << NV("SCEVComputed", AllComputed)
         << " scev_loop_invariant="
