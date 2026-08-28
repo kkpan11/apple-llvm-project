@@ -111,16 +111,14 @@ static unsigned countTrapExits(Loop *L, LoopInfo &LI) {
 /// captured, including trap-free ones. Gated by -loop-trap-analysis-explain.
 static void emitLoopPrimitives(Function &F, LoopInfo &LI,
                                OptimizationRemarkEmitter &ORE,
-                               ScalarEvolution &SE, StringRef Tag) {
+                               ScalarEvolution &SE) {
   unsigned TotalLoops = 0;
   unsigned Innermost = 0;
   unsigned MaxDepth = 0;
   unsigned Depth1 = 0, Depth2 = 0, Depth3Plus = 0;
 
-  std::string PrimName = Tag.empty() ? std::string("LoopPrimitives")
-                                     : ("LoopPrimitives" + Tag).str();
-  std::string SumName = Tag.empty() ? std::string("LoopPrimitivesSummary")
-                                    : ("LoopPrimitivesSummary" + Tag).str();
+  std::string PrimName = "LoopPrimitives";
+  std::string SumName = "LoopPrimitivesSummary";
 
   for (auto *L : LI.getLoopsInPreorder()) {
     ++TotalLoops;
@@ -170,9 +168,8 @@ static void emitLoopPrimitives(Function &F, LoopInfo &LI,
 /// Emit one LoopTrapEdge remark per conditional branch whose one successor is a
 /// trap block (see isTrapEdgeBlock). Gated by -loop-trap-analysis-explain.
 static void emitPerTrapEdge(Function &F, LoopInfo &LI,
-                            OptimizationRemarkEmitter &ORE, StringRef Tag) {
-  std::string Name =
-      Tag.empty() ? std::string("LoopTrapEdge") : ("LoopTrapEdge" + Tag).str();
+                            OptimizationRemarkEmitter &ORE) {
+  std::string Name = "LoopTrapEdge";
   for (BasicBlock &BB : F) {
     auto *BI = dyn_cast<CondBrInst>(BB.getTerminator());
     if (!BI)
@@ -347,8 +344,8 @@ PreservedAnalyses LoopTrapAnalysisPass::run(Function &F,
   auto &ORE = AM.getResult<OptimizationRemarkEmitterAnalysis>(F);
   emitRemarks(F, LI, ORE, SE);
   if (LTAEmitExplain) {
-    emitLoopPrimitives(F, LI, ORE, SE, Tag);
-    emitPerTrapEdge(F, LI, ORE, Tag);
+    emitLoopPrimitives(F, LI, ORE, SE);
+    emitPerTrapEdge(F, LI, ORE);
   }
   return PreservedAnalyses::all();
 }
@@ -356,6 +353,4 @@ PreservedAnalyses LoopTrapAnalysisPass::run(Function &F,
 void LoopTrapAnalysisPass::printPipeline(
     raw_ostream &OS, function_ref<StringRef(StringRef)> MapClassName2PassName) {
   OS << "loop-trap-analysis";
-  if (!Tag.empty())
-    OS << "<tag=" << Tag << ">";
 }
