@@ -16,19 +16,23 @@ declare i32 @opaque()
 define void @store_reload(ptr %p, ptr %q) {
 entry:
   br label %body
+
 body:
   %iv = phi i32 [ 0, %entry ], [ %iv.next, %latch ]
   %v = load i32, ptr %p
   %cmp = icmp ult i32 %iv, %v
   br i1 %cmp, label %latch, label %trap
+
 trap:
   call void @llvm.trap()
   unreachable
+
 latch:
   store i32 %iv, ptr %q
   %iv.next = add i32 %iv, 1
   %e = icmp eq i32 %iv.next, 100
   br i1 %e, label %exit, label %body
+
 exit:
   ret void
 }
@@ -45,18 +49,22 @@ exit:
 define void @opaque_other(i32 %n) {
 entry:
   br label %body
+
 body:
   %iv = phi i32 [ 0, %entry ], [ %iv.next, %latch ]
   %o = call i32 @opaque()
   %cmp = icmp slt i32 %o, %n
   br i1 %cmp, label %latch, label %trap
+
 trap:
   call void @llvm.trap()
   unreachable
+
 latch:
   %iv.next = add i32 %iv, 1
   %e = icmp eq i32 %iv.next, 100
   br i1 %e, label %exit, label %body
+
 exit:
   ret void
 }
@@ -70,14 +78,17 @@ exit:
 define void @in_loop_phi_operand(i32 %n, ptr %p) {
 entry:
   br label %body
+
 body:
   %iv = phi i32 [ 0, %entry ], [ %iv.next, %latch ]
   %acc = phi i32 [ 0, %entry ], [ %acc.next, %latch ]
   %cmp = icmp slt i32 %acc, %n
   br i1 %cmp, label %latch, label %trap
+
 trap:
   call void @llvm.trap()
   unreachable
+
 latch:
   %ld = load i32, ptr %p
   %pos = icmp sgt i32 %ld, 0
@@ -86,6 +97,7 @@ latch:
   %iv.next = add i32 %iv, 1
   %e = icmp eq i32 %iv.next, %n
   br i1 %e, label %exit, label %body
+
 exit:
   ret void
 }
