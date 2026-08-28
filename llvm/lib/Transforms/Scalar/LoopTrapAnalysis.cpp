@@ -5,6 +5,26 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
+//
+// LoopTrapAnalysis emits machine-readable opt-remark records describing each
+// conditional branch to a trap block (a bounds/overflow check lowered to
+// br+@llvm.trap). Under -loop-trap-analysis-explain, each LoopTrapEdge record
+// carries the edge's properties along orthogonal axes so a consumer can
+// classify it from the fields alone:
+//   - condition nature      SCEVLoopInvariant / HasAddRec / HasInLoopUnknown
+//   - position              LoopHeader, LoopDepth, IsLoopExit, IsInnermost,
+//                           IsEntryProximate
+//   - loop trip count       LoopHasOtherUnknownBTCTrap, LoopLatchBTCComputable
+//   - condition trip count  EdgeBTCComputable, EdgeBTCSymbolic
+//   - condition property    DominatesLatch, IVUpdateDominatesLatch,
+//                           DominatedByEquivalentCheck, HasOverflowBitLeaf,
+//                           HasCheckedArithValueOperand
+//   - operand / stride      Has*Reload, Has*Operand, Has*StrideForLAddRec
+//   - comparison shape      PredicateShape, NumLeafOperands
+// Each patch in this series fills in one axis. This first patch establishes the
+// per-edge record behind the flag; later patches add the fields above.
+//
+//===----------------------------------------------------------------------===//
 
 #include "llvm/Transforms/Scalar/LoopTrapAnalysis.h"
 #include "llvm/ADT/SmallPtrSet.h"
