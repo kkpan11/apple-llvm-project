@@ -15,25 +15,31 @@ declare void @sideeffect()
 define void @noreturn_call(ptr %base, i32 %n) {
 entry:
   br label %body
+
 body:
   %iv = phi i32 [ 0, %entry ], [ %iv.next, %latch ]
   %c0 = icmp ult i32 %iv, %n
   br i1 %c0, label %s1, label %fatalbb
+
 fatalbb:
   call void @fatal()
   unreachable
+
 s1:
   %c1 = icmp eq i32 %iv, 3
   br i1 %c1, label %latch, label %retbb
+
 retbb:
   call void @sideeffect()
   unreachable
+
 latch:
   %p = getelementptr i32, ptr %base, i32 %iv
   store i32 0, ptr %p, align 4
   %iv.next = add nuw nsw i32 %iv, 1
   %e = icmp eq i32 %iv.next, %n
   br i1 %e, label %exit, label %body
+
 exit:
   ret void
 }
