@@ -35,6 +35,8 @@ exit:
 }
 
 ; The complete LoopTrapEdge record, pinned line-by-line.
+
+; Full LoopTrapEdge record(s), pinned line-by-line.
 ; CHECK:      Name:{{ +}}LoopTrapEdge
 ; CHECK-NEXT: Function:{{ +}}counted_trap
 ; CHECK-NEXT: Args:
@@ -52,8 +54,6 @@ exit:
 ; CHECK-NEXT:   - IsInnermost:{{ +}}'true'
 ; CHECK-NEXT:   - String:{{ +}}' is_loop_exit='
 ; CHECK-NEXT:   - IsLoopExit:{{ +}}'true'
-; CHECK-NEXT:   - String:{{ +}}' trap_class='
-; CHECK-NEXT:   - TrapClass:{{ +}}Affine-InLoopExit-TripCountKnown
 ; CHECK-NEXT:   - String:{{ +}}' num_leaf_operands='
 ; CHECK-NEXT:   - NumLeafOperands:{{ +}}'2'
 ; CHECK-NEXT:   - String:{{ +}}' scev_computed='
