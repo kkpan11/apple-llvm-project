@@ -146,16 +146,14 @@ static bool isBlockedByReload(CondBrInst *BI, Loop *L, ScalarEvolution &SE);
 static void emitLoopPrimitives(Function &F, LoopInfo &LI,
                                OptimizationRemarkEmitter &ORE,
                                ScalarEvolution &SE, AAResults &AA,
-                               StringRef Tag, unsigned InvocationSeq) {
+                               unsigned InvocationSeq) {
   unsigned TotalLoops = 0;
   unsigned Innermost = 0;
   unsigned MaxDepth = 0;
   unsigned Depth1 = 0, Depth2 = 0, Depth3Plus = 0;
 
-  std::string PrimName = Tag.empty() ? std::string("LoopPrimitives")
-                                     : ("LoopPrimitives" + Tag).str();
-  std::string SumName = Tag.empty() ? std::string("LoopPrimitivesSummary")
-                                    : ("LoopPrimitivesSummary" + Tag).str();
+  std::string PrimName = "LoopPrimitives";
+  std::string SumName = "LoopPrimitivesSummary";
 
   for (auto *L : LI.getLoopsInPreorder()) {
     ++TotalLoops;
@@ -1156,9 +1154,8 @@ static Instruction *firstAliasingWriter(LoadInst *Load, Loop *L,
 static void emitPerTrapEdge(Function &F, LoopInfo &LI,
                             OptimizationRemarkEmitter &ORE, ScalarEvolution &SE,
                             AAResults &AA, const DominatorTree &DT,
-                            StringRef Tag, unsigned InvocationSeq) {
-  std::string Name =
-      Tag.empty() ? std::string("LoopTrapEdge") : ("LoopTrapEdge" + Tag).str();
+                            unsigned InvocationSeq) {
+  std::string Name = "LoopTrapEdge";
   // Pre-pass: per loop, count how many of its trap-exits have
   // SCEVCouldNotCompute exit-counts. Used downstream to classify the
   // "edge is computable but loop's other traps aren't" case.
@@ -1608,8 +1605,7 @@ static void emitPerTrapEdge(Function &F, LoopInfo &LI,
   // LoopLoadAlias record naming the first such writer. Clobbered loads only
   // (hoistable loads omitted).
   if (LTAEmitLoadAlias) {
-    std::string LName = Tag.empty() ? std::string("LoopLoadAlias")
-                                    : ("LoopLoadAlias" + Tag).str();
+    std::string LName = "LoopLoadAlias";
     for (Loop *L : LI.getLoopsInPreorder()) {
       if (!L->isInnermost())
         continue;
@@ -1793,8 +1789,8 @@ PreservedAnalyses LoopTrapAnalysisPass::run(Function &F,
     // invocations can be deduped by max(seq) per (function, src_bb, trap_bb);
     // stays 1 for a single run.
     unsigned Seq = ++InvocationCount[&F];
-    emitLoopPrimitives(F, LI, ORE, SE, AA, Tag, Seq);
-    emitPerTrapEdge(F, LI, ORE, SE, AA, DT, Tag, Seq);
+    emitLoopPrimitives(F, LI, ORE, SE, AA, Seq);
+    emitPerTrapEdge(F, LI, ORE, SE, AA, DT, Seq);
   }
   return PreservedAnalyses::all();
 }
@@ -1802,6 +1798,4 @@ PreservedAnalyses LoopTrapAnalysisPass::run(Function &F,
 void LoopTrapAnalysisPass::printPipeline(
     raw_ostream &OS, function_ref<StringRef(StringRef)> MapClassName2PassName) {
   OS << "loop-trap-analysis";
-  if (!Tag.empty())
-    OS << "<tag=" << Tag << ">";
 }
