@@ -355,7 +355,7 @@ addVectorTexturePartialSpecialization(Sema &S, NamespaceDecl *HLSLNamespace,
 
   // Add the partial specialization to the namespace and the class template.
   HLSLNamespace->addDecl(PartialSpec);
-  TextureTemplate->AddPartialSpecialization(PartialSpec, nullptr);
+  TextureTemplate->AddPartialSpecialization(PartialSpec, {});
 
   return PartialSpec;
 }
