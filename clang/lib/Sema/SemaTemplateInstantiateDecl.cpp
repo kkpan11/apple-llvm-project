@@ -3038,9 +3038,9 @@ Decl *TemplateDeclInstantiator::VisitFunctionDecl(
   if (FunctionTemplate && !TemplateParams) {
     ArrayRef<TemplateArgument> Innermost = TemplateArgs.getInnermost();
 
-    void *InsertPos = nullptr;
-    FunctionDecl *SpecFunc
-      = FunctionTemplate->findSpecialization(Innermost, InsertPos);
+    llvm::FoldingSetInsertToken InsertToken;
+    FunctionDecl *SpecFunc =
+        FunctionTemplate->findSpecialization(Innermost, InsertToken);
 
     // If we already have a function template specialization, return it.
     if (SpecFunc)
@@ -3208,10 +3208,10 @@ Decl *TemplateDeclInstantiator::VisitFunctionDecl(
                  Sema::CodeSynthesisContext::BuildingDeductionGuides) {
     // Record this function template specialization.
     ArrayRef<TemplateArgument> Innermost = TemplateArgs.getInnermost();
-    Function->setFunctionTemplateSpecialization(FunctionTemplate,
-                            TemplateArgumentList::CreateCopy(SemaRef.Context,
-                                                             Innermost),
-                                                /*InsertPos=*/nullptr);
+    Function->setFunctionTemplateSpecialization(
+        FunctionTemplate,
+        TemplateArgumentList::CreateCopy(SemaRef.Context, Innermost),
+        /*InsertToken=*/{});
   } else if (FunctionRewriteKind == RewriteKind::None) {
     if (isFriend && D->isThisDeclarationADefinition()) {
       // Do not connect the friend to the template unless it's actually a
@@ -3412,9 +3412,9 @@ Decl *TemplateDeclInstantiator::VisitCXXMethodDecl(
     // specialization for this particular set of template arguments.
     ArrayRef<TemplateArgument> Innermost = TemplateArgs.getInnermost();
 
-    void *InsertPos = nullptr;
-    FunctionDecl *SpecFunc
-      = FunctionTemplate->findSpecialization(Innermost, InsertPos);
+    llvm::FoldingSetInsertToken InsertToken;
+    FunctionDecl *SpecFunc =
+        FunctionTemplate->findSpecialization(Innermost, InsertToken);
 
     // If we already have a function template specialization, return it.
     if (SpecFunc)
@@ -3618,10 +3618,10 @@ Decl *TemplateDeclInstantiator::VisitCXXMethodDecl(
   } else if (FunctionTemplate) {
     // Record this function template specialization.
     ArrayRef<TemplateArgument> Innermost = TemplateArgs.getInnermost();
-    Method->setFunctionTemplateSpecialization(FunctionTemplate,
-                         TemplateArgumentList::CreateCopy(SemaRef.Context,
-                                                          Innermost),
-                                              /*InsertPos=*/nullptr);
+    Method->setFunctionTemplateSpecialization(
+        FunctionTemplate,
+        TemplateArgumentList::CreateCopy(SemaRef.Context, Innermost),
+        /*InsertToken=*/{});
   } else if (!isFriend && FunctionRewriteKind == RewriteKind::None) {
     // Record that this is an instantiation of a member function.
     Method->setInstantiationOfMemberFunction(D, TSK_ImplicitInstantiation);
@@ -4858,9 +4858,10 @@ TemplateDeclInstantiator::VisitClassTemplateSpecializationDecl(
 
   // Figure out where to insert this class template explicit specialization
   // in the member template's set of class template explicit specializations.
-  void *InsertPos = nullptr;
+  llvm::FoldingSetInsertToken InsertToken;
   ClassTemplateSpecializationDecl *PrevDecl =
-      InstClassTemplate->findSpecialization(CTAI.CanonicalConverted, InsertPos);
+      InstClassTemplate->findSpecialization(CTAI.CanonicalConverted,
+                                            InsertToken);
 
   // Check whether we've already seen a conflicting instantiation of this
   // declaration (for instance, if there was a prior implicit instantiation).
@@ -4905,7 +4906,7 @@ TemplateDeclInstantiator::VisitClassTemplateSpecializationDecl(
   // Add this partial specialization to the set of class template partial
   // specializations.
   if (!PrevDecl)
-    InstClassTemplate->AddSpecialization(InstD, InsertPos);
+    InstClassTemplate->AddSpecialization(InstD, InsertToken);
 
   // Substitute the nested name specifier, if any.
   if (SubstQualifier(D, InstD))
@@ -4966,9 +4967,9 @@ Decl *TemplateDeclInstantiator::VisitVarTemplateSpecializationDecl(
     return nullptr;
 
   // Check whether we've already seen a declaration of this specialization.
-  void *InsertPos = nullptr;
+  llvm::FoldingSetInsertToken InsertToken;
   VarTemplateSpecializationDecl *PrevDecl =
-      InstVarTemplate->findSpecialization(CTAI.CanonicalConverted, InsertPos);
+      InstVarTemplate->findSpecialization(CTAI.CanonicalConverted, InsertToken);
 
   // Check whether we've already seen a conflicting instantiation of this
   // declaration (for instance, if there was a prior implicit instantiation).
@@ -5011,9 +5012,9 @@ TemplateDeclInstantiator::VisitVarTemplateSpecializationDecl(
       SemaRef.Context, Owner, D->getInnerLocStart(), D->getLocation(),
       VarTemplate, TSI->getType(), TSI, D->getStorageClass(), Converted);
   if (!PrevDecl) {
-    void *InsertPos = nullptr;
-    VarTemplate->findSpecialization(Converted, InsertPos);
-    VarTemplate->AddSpecialization(Var, InsertPos);
+    llvm::FoldingSetInsertToken InsertToken;
+    VarTemplate->findSpecialization(Converted, InsertToken);
+    VarTemplate->AddSpecialization(Var, InsertToken);
   }
 
   if (SemaRef.getLangOpts().OpenCL)
@@ -5310,10 +5311,10 @@ TemplateDeclInstantiator::InstantiateClassTemplatePartialSpecialization(
 
   // Figure out where to insert this class template partial specialization
   // in the member template's set of class template partial specializations.
-  void *InsertPos = nullptr;
+  llvm::FoldingSetInsertToken InsertToken;
   ClassTemplateSpecializationDecl *PrevDecl =
       ClassTemplate->findPartialSpecialization(CTAI.CanonicalConverted,
-                                               InstParams, InsertPos);
+                                               InstParams, InsertToken);
 
   // Create the class template partial specialization declaration.
   ClassTemplatePartialSpecializationDecl *InstPartialSpec =
@@ -5362,7 +5363,7 @@ TemplateDeclInstantiator::InstantiateClassTemplatePartialSpecialization(
   // Add this partial specialization to the set of class template partial
   // specializations.
   ClassTemplate->AddPartialSpecialization(InstPartialSpec,
-                                          /*InsertPos=*/nullptr);
+                                          /*InsertToken=*/{});
   return InstPartialSpec;
 }
 
@@ -5419,10 +5420,10 @@ TemplateDeclInstantiator::InstantiateVarTemplatePartialSpecialization(
 
   // Figure out where to insert this variable template partial specialization
   // in the member template's set of variable template partial specializations.
-  void *InsertPos = nullptr;
+  llvm::FoldingSetInsertToken InsertToken;
   VarTemplateSpecializationDecl *PrevDecl =
       VarTemplate->findPartialSpecialization(CTAI.CanonicalConverted,
-                                             InstParams, InsertPos);
+                                             InstParams, InsertToken);
 
   // Do substitution on the type of the declaration
   TypeSourceInfo *TSI = SemaRef.SubstType(
@@ -5481,7 +5482,7 @@ TemplateDeclInstantiator::InstantiateVarTemplatePartialSpecialization(
 
   // Add this partial specialization to the set of variable template partial
   // specializations. The instantiation of the initializer is not necessary.
-  VarTemplate->AddPartialSpecialization(InstPartialSpec, /*InsertPos=*/nullptr);
+  VarTemplate->AddPartialSpecialization(InstPartialSpec, /*InsertToken=*/{});
 
   SemaRef.BuildVariableInstantiation(InstPartialSpec, PartialSpec, TemplateArgs,
                                      LateAttrs, Owner, StartingScope);
