@@ -2087,7 +2087,7 @@ public:
 private:
   UnresolvedUsingType *getUnresolvedUsingTypeInternal(
       ElaboratedTypeKeyword Keyword, NestedNameSpecifier Qualifier,
-      const UnresolvedUsingTypenameDecl *D, void *InsertPos,
+      const UnresolvedUsingTypenameDecl *D, llvm::FoldingSetInsertToken Token,
       const Type *CanonicalType) const;
 
   TagType *getTagTypeInternal(ElaboratedTypeKeyword Keyword,
