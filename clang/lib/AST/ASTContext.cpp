@@ -3887,9 +3887,9 @@ QualType ASTContext::getDynamicRangePointerType(
   DynamicRangePointerType::Profile(ID, PointerTy, StartPtr, EndPtr,
                                    StartPtrDecls.size(), EndPtrDecls.size());
 
-  void *InsertPos = nullptr;
+  llvm::FoldingSetInsertToken InsertToken;
   DynamicRangePointerType *DRPTy =
-      DynamicRangePointerTypes.FindNodeOrInsertPos(ID, InsertPos);
+      DynamicRangePointerTypes.lookup(ID, InsertToken);
   if (DRPTy)
     return QualType(DRPTy, 0);
 
@@ -3901,7 +3901,7 @@ QualType ASTContext::getDynamicRangePointerType(
   new (DRPTy) DynamicRangePointerType(PointerTy, CanonPTy, StartPtr, EndPtr,
                                       StartPtrDecls, EndPtrDecls);
   Types.push_back(DRPTy);
-  DynamicRangePointerTypes.InsertNode(DRPTy, InsertPos);
+  DynamicRangePointerTypes.insert(DRPTy, InsertToken);
 
   return QualType(DRPTy, 0);
 }
@@ -3918,9 +3918,9 @@ QualType ASTContext::getValueTerminatedType(QualType T,
   ValueTerminatedType::Profile(ID, *this, QualType(Split.Ty, 0),
                                TerminatorExpr);
 
-  void *InsertPos = nullptr;
+  llvm::FoldingSetInsertToken InsertToken;
   ValueTerminatedType *VTT =
-      ValueTerminatedTypes.FindNodeOrInsertPos(ID, InsertPos);
+      ValueTerminatedTypes.lookup(ID, InsertToken);
   if (VTT)
     return getQualifiedType(VTT, Split.Quals);
 
@@ -3928,7 +3928,7 @@ QualType ASTContext::getValueTerminatedType(QualType T,
   VTT = new (*this, TypeAlignment)
       ValueTerminatedType(QualType(Split.Ty, 0), CanonTy, TerminatorExpr);
   Types.push_back(VTT);
-  ValueTerminatedTypes.InsertNode(VTT, InsertPos);
+  ValueTerminatedTypes.insert(VTT, InsertToken);
 
   return getQualifiedType(VTT, Split.Quals);
 }
