@@ -4212,7 +4212,7 @@ typename clang::LazyGenerationalUpdatePtr<Owner, T, Update>::ValueType
 }
 template <> struct llvm::DenseMapInfo<llvm::FoldingSetNodeID> {
   static unsigned getHashValue(const FoldingSetNodeID &Val) {
-    return Val.ComputeHash();
+    return Val.computeHash();
   }
 
   static bool isEqual(const FoldingSetNodeID &LHS,
