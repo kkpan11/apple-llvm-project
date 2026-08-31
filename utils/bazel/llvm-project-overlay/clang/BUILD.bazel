@@ -2903,6 +2903,7 @@ cc_library(
     deps = [
         ":ast",
         ":basic",
+        ":frontend",
         ":lex",
         ":scalable_static_analysis_analyses",
         ":scalable_static_analysis_core",
