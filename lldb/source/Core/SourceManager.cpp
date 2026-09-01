@@ -675,15 +675,17 @@ uint32_t SourceManager::File::GetLineOffset(uint32_t line) {
     return 0;
 
   if (CalculateLineOffsets(line)) {
-    if (line < m_offsets.size())
-      return m_offsets[line - 1]; // yes we want "line - 1" in the index
+    SharedLocked<const LineOffsets *, std::shared_mutex> offsets =
+        m_offsets.LockShared();
+    if (line < offsets->size())
+      return (*offsets)[line - 1]; // yes we want "line - 1" in the index
   }
   return UINT32_MAX;
 }
 
 uint32_t SourceManager::File::GetNumLines() {
   CalculateLineOffsets();
-  return m_offsets.size();
+  return m_offsets.LockShared()->size();
 }
 
 const char *SourceManager::File::PeekLineData(uint32_t line) {
@@ -733,7 +735,7 @@ bool SourceManager::File::LineIsValid(uint32_t line) {
     return false;
 
   if (CalculateLineOffsets(line))
-    return line < m_offsets.size();
+    return line < m_offsets.LockShared()->size();
   return false;
 }
 
@@ -846,11 +848,22 @@ bool SourceManager::File::CalculateLineOffsets(uint32_t line) {
   line =
       UINT32_MAX; // TODO: take this line out when we support partial indexing
   if (line == UINT32_MAX) {
-    // Already done?
-    if (!m_offsets.empty() && m_offsets[0] == UINT32_MAX)
+    // Already done? Check with just a reader lock first so concurrent reads
+    // of an already-indexed file don't serialize on each other.
+    {
+      SharedLocked<const LineOffsets *, std::shared_mutex> offsets =
+          m_offsets.LockShared();
+      if (!offsets->empty() && (*offsets)[0] == UINT32_MAX)
+        return true;
+    }
+
+    Locked<LineOffsets *, std::shared_mutex> offsets = m_offsets.Lock();
+    // Another thread may have finished indexing while we were waiting for
+    // the writer lock.
+    if (!offsets->empty() && (*offsets)[0] == UINT32_MAX)
       return true;
 
-    if (m_offsets.empty()) {
+    if (offsets->empty()) {
       if (!m_data_sp)
         return false;
 
@@ -862,7 +875,7 @@ bool SourceManager::File::CalculateLineOffsets(uint32_t line) {
 
         // Push a 1 at index zero to indicate the file has been completely
         // indexed.
-        m_offsets.push_back(UINT32_MAX);
+        offsets->push_back(UINT32_MAX);
         const char *s;
         for (s = start; s < end; ++s) {
           char curr_ch = *s;
@@ -874,12 +887,12 @@ bool SourceManager::File::CalculateLineOffsets(uint32_t line) {
                   ++s;
               }
             }
-            m_offsets.push_back(s + 1 - start);
+            offsets->push_back(s + 1 - start);
           }
         }
-        if (!m_offsets.empty()) {
-          if (m_offsets.back() < size_t(end - start))
-            m_offsets.push_back(end - start);
+        if (!offsets->empty()) {
+          if (offsets->back() < size_t(end - start))
+            offsets->push_back(end - start);
         }
         return true;
       }
