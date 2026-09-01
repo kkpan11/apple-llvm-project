@@ -153,13 +153,12 @@ void loop_all_accesses_in_bounds_variable_start_3_modulo(int* __counted_by(n) ds
 // CHECK-NEXT:    [[TMP0:%.*]] = zext i32 [[ADD]] to i64
 // CHECK-NEXT:    [[TMP1:%.*]] = shl nuw nsw i64 [[TMP0]], 2
 // CHECK-NEXT:    [[SCEVGEP:%.*]] = getelementptr i8, ptr [[DST]], i64 [[TMP1]]
-// CHECK-NEXT:    [[TMP2:%.*]] = xor i32 [[START1]], -1
+// CHECK-NEXT:    [[TMP2:%.*]] = xor i32 [[ADD]], -1
 // CHECK-NEXT:    [[TMP3:%.*]] = add i32 [[N]], [[TMP2]]
-// CHECK-NEXT:    [[TMP4:%.*]] = sub i32 [[TMP3]], [[DIV]]
-// CHECK-NEXT:    [[TMP5:%.*]] = zext i32 [[TMP4]] to i64
-// CHECK-NEXT:    [[TMP6:%.*]] = shl nuw nsw i64 [[TMP5]], 2
-// CHECK-NEXT:    [[TMP7:%.*]] = add nuw nsw i64 [[TMP6]], 4
-// CHECK-NEXT:    tail call void @llvm.memset.p0.i64(ptr noundef nonnull align 4 dereferenceable(1) [[SCEVGEP]], i8 0, i64 [[TMP7]], i1 false), {{!tbaa ![0-9]+}}
+// CHECK-NEXT:    [[TMP4:%.*]] = zext i32 [[TMP3]] to i64
+// CHECK-NEXT:    [[TMP5:%.*]] = shl nuw nsw i64 [[TMP4]], 2
+// CHECK-NEXT:    [[TMP6:%.*]] = add nuw nsw i64 [[TMP5]], 4
+// CHECK-NEXT:    tail call void @llvm.memset.p0.i64(ptr noundef nonnull align 4 dereferenceable(1) [[SCEVGEP]], i8 0, i64 [[TMP6]], i1 false), {{!tbaa ![0-9]+}}
 // CHECK-NEXT:    br label %[[FOR_COND_CLEANUP]]
 // CHECK:       [[FOR_COND_CLEANUP]]:
 // CHECK-NEXT:    ret void
