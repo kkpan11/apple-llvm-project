@@ -17,6 +17,8 @@
 #include "lldb/Target/Process.h"
 #include "lldb/Utility/Stream.h"
 
+#include "llvm/Support/Error.h"
+
 using namespace lldb_private;
 
 bool StackID::IsCFAOnStack(Process &process) const {
@@ -101,13 +103,13 @@ static llvm::Expected<bool> IsReachableParent(lldb::addr_t source,
        max_num_frames--) {
     lldb::addr_t old_parent_ctx = parent_ctx;
     // The continuation's context is the first field of an async context.
-    llvm::Expected<lldb::addr_t> next_ctx =
+    llvm::Expected<lldb::addr_t> parent_ctx_or_err =
         process.ReadPointerFromMemory(old_parent_ctx);
-    if (!next_ctx)
+    if (!parent_ctx_or_err)
       return llvm::createStringError(llvm::formatv(
           "Failed to read parent async context of: {0:x}. Error: {1}",
-          old_parent_ctx, llvm::toString(next_ctx.takeError())));
-    parent_ctx = *next_ctx;
+          old_parent_ctx, llvm::toString(parent_ctx_or_err.takeError())));
+    parent_ctx = *parent_ctx_or_err;
     if (process.FixDataAddress(parent_ctx) == maybe_parent)
       return true;
   }

@@ -3212,14 +3212,15 @@ static llvm::Expected<addr_t> ReadRegisterAsAddress(RegisterContext &regctx,
 /// offset`.
 static llvm::Expected<addr_t> ReadPtrFromAddr(Process &process, addr_t addr,
                                               int offset = 0) {
-  Status error;
-  addr_t ptr = process.ReadPointerFromMemory(addr + offset, error);
-  if (ptr != LLDB_INVALID_ADDRESS)
-    return ptr;
+  llvm::Expected<addr_t> ptr = process.ReadPointerFromMemory(addr + offset);
+  if (ptr && *ptr != LLDB_INVALID_ADDRESS)
+    return *ptr;
+  std::string reason =
+      ptr ? "read an invalid address" : llvm::toString(ptr.takeError());
   return llvm::createStringError("SwiftLanguageRuntime: Failed to read ptr "
                                  "from memory address 0x%8.8" PRIx64
                                  " Error was %s",
-                                 addr + offset, error.AsCString());
+                                 addr + offset, reason.c_str());
 }
 
 /// Computes the Canonical Frame Address (CFA) by converting the abstract
@@ -3412,11 +3413,7 @@ static llvm::Expected<addr_t> ReadAsyncContextRegisterFromUnwind(
 
   addr_t async_reg_addr = process.FixDataAddress(
       *cfa + frame_setup->fp_cfa_offset - process.GetAddressByteSize());
-  Status error;
-  addr_t async_reg = process.ReadPointerFromMemory(async_reg_addr, error);
-  if (error.Fail())
-    return error.ToError();
-  return async_reg;
+  return process.ReadPointerFromMemory(async_reg_addr);
 }
 
 static llvm::Expected<bool>
@@ -3659,9 +3656,13 @@ std::optional<lldb::addr_t> SwiftLanguageRuntime::TrySkipVirtualParentProlog(
   // Get the PC of the parent frame, i.e. the continuation pointer, which is
   // the second field of the CFA.
   addr_t pc_location = cfa + ptr_size;
-  addr_t pc_value = process.ReadPointerFromMemory(pc_location, error);
-  if (error.Fail())
+  llvm::Expected<addr_t> pc_value_or_err =
+      process.ReadPointerFromMemory(pc_location);
+  if (!pc_value_or_err) {
+    llvm::consumeError(pc_value_or_err.takeError());
     return {};
+  }
+  addr_t pc_value = *pc_value_or_err;
 
   llvm::Expected<uint64_t> maybe_prologue_size =
       FindPrologueSize(process, pc_value);
@@ -3974,13 +3975,15 @@ struct TaskStatusRecord {
       return {};
 
     const offset_t taskNameByteOffset = TaskNamePointerOffset * addr_size;
-    addr_t name_addr =
-        process.ReadPointerFromMemory(addr + taskNameByteOffset, status);
-    if (!status.Success())
+    llvm::Expected<addr_t> name_addr =
+        process.ReadPointerFromMemory(addr + taskNameByteOffset);
+    if (!name_addr) {
+      status = Status::FromError(name_addr.takeError());
       return {};
+    }
 
     std::string name;
-    process.ReadCStringFromMemory(name_addr, name, status);
+    process.ReadCStringFromMemory(*name_addr, name, status);
     if (status.Success())
       return name;
 
@@ -3990,8 +3993,13 @@ struct TaskStatusRecord {
   addr_t getParent(Status &status) {
     const offset_t parentByteOffset = ParentPointerOffset * addr_size;
     addr_t parent = LLDB_INVALID_ADDRESS;
-    if (*this && status.Success())
-      parent = process.ReadPointerFromMemory(addr + parentByteOffset, status);
+    if (*this && status.Success()) {
+      if (llvm::Expected<addr_t> parent_or_err =
+              process.ReadPointerFromMemory(addr + parentByteOffset))
+        parent = *parent_or_err;
+      else
+        status = Status::FromError(parent_or_err.takeError());
+    }
     return parent;
   }
 };
@@ -4012,9 +4020,14 @@ struct Task {
     const offset_t activeTaskStatusRecordByteOffset =
         ActiveTaskStatusRecordPointerOffset * process.GetAddressByteSize();
     addr_t status_record = LLDB_INVALID_ADDRESS;
-    if (status.Success())
-      status_record = process.ReadPointerFromMemory(
-          addr + activeTaskStatusRecordByteOffset, status);
+    if (status.Success()) {
+      if (llvm::Expected<addr_t> status_record_or_err =
+              process.ReadPointerFromMemory(addr +
+                                            activeTaskStatusRecordByteOffset))
+        status_record = *status_record_or_err;
+      else
+        status = Status::FromError(status_record_or_err.takeError());
+    }
     return {process, status_record};
   }
 };
