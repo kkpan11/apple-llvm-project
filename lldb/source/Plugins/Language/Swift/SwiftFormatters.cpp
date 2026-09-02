@@ -147,19 +147,20 @@ getSharedStringStartOffset(Process &process, lldb::addr_t storageAddress) {
   // runtimes had an additional `_owner` field preceding `start`.
   const uint64_t ptr_size = process.GetAddressByteSize();
   const uint64_t header_size = 2 * ptr_size;
-  Status error;
-  lldb::addr_t first_word =
-      process.ReadPointerFromMemory(storageAddress + header_size, error);
-  if (error.Fail())
+  llvm::Expected<lldb::addr_t> first_word =
+      process.ReadPointerFromMemory(storageAddress + header_size);
+  if (!first_word) {
+    llvm::consumeError(first_word.takeError());
     return std::nullopt;
+  }
   // In the new layout first_word is `start`, always a non-null pointer to the
   // code units. In the old layout it is `_owner`, always null. So a null value
   // uniquely means the old layout, where `start` is one pointer further.
-  uint64_t offset = first_word ? header_size : header_size + ptr_size;
+  uint64_t offset = *first_word ? header_size : header_size + ptr_size;
   LLDB_LOG_VERBOSE(GetLog(LLDBLog::DataFormatters | LLDBLog::Types),
                    "SwiftFormatters: __SharedStringStorage `start` field at "
                    "offset {0} (detected {1} layout)",
-                   offset, first_word ? "current" : "legacy (with _owner)");
+                   offset, *first_word ? "current" : "legacy (with _owner)");
   return offset;
 }
 
@@ -190,7 +191,6 @@ static bool makeStringGutsSummary(
   // We retrieve String contents by first extracting the
   // platform-independent 128-bit raw value representation from
   // _StringObject, then interpreting that.
-  Status status;
   uint64_t raw0;
   uint64_t raw1;
 
@@ -399,13 +399,14 @@ static bool makeStringGutsSummary(
     if (!startOffset)
       return error("could not read shared string storage");
     auto address = objectAddress + *startOffset;
-    lldb::addr_t start = process->ReadPointerFromMemory(address, status);
-    if (status.Fail())
-      return error(status.AsCString());
+    llvm::Expected<lldb::addr_t> start =
+        process->ReadPointerFromMemory(address);
+    if (!start)
+      return error(llvm::toString(start.takeError()));
 
     applySlice(address, count, slice);
-    return readStringFromAddress(
-      start, count, valobj, stream, summary_options, read_options);
+    return readStringFromAddress(*start, count, valobj, stream, summary_options,
+                                 read_options);
   }
 
   // Native/shared strings should already have been handled.
@@ -605,7 +606,6 @@ bool lldb_private::formatters::swift::SwiftSharedString_SummaryProvider_2(
   if (!process)
     return false;
 
-  Status error;
   auto ptr_size = process->GetAddressByteSize();
 
   lldb::addr_t raw1 = valobj.GetPointerValue().address;
@@ -614,18 +614,22 @@ bool lldb_private::formatters::swift::SwiftSharedString_SummaryProvider_2(
   if (!startOffset)
     return false;
 
-  lldb::addr_t start =
-      process->ReadPointerFromMemory(address + *startOffset, error);
-  if (error.Fail())
+  llvm::Expected<lldb::addr_t> start =
+      process->ReadPointerFromMemory(address + *startOffset);
+  if (!start) {
+    llvm::consumeError(start.takeError());
     return false;
-  lldb::addr_t raw0 =
-      process->ReadPointerFromMemory(address + *startOffset + ptr_size, error);
-  if (error.Fail())
+  }
+  llvm::Expected<lldb::addr_t> raw0 =
+      process->ReadPointerFromMemory(address + *startOffset + ptr_size);
+  if (!raw0) {
+    llvm::consumeError(raw0.takeError());
     return false;
+  }
 
-  uint64_t count = raw0 & 0x0000FFFFFFFFFFFF;
+  uint64_t count = *raw0 & 0x0000FFFFFFFFFFFF;
 
-  return readStringFromAddress(start, count, valobj, stream, summary_options,
+  return readStringFromAddress(*start, count, valobj, stream, summary_options,
                                read_options);
 }
 
@@ -640,11 +644,13 @@ bool lldb_private::formatters::swift::SwiftStringStorage_SummaryProvider(
   lldb::addr_t raw1 = valobj.GetPointerValue().address;
   lldb::addr_t address = (raw1 & 0x00FFFFFFFFFFFFFF) + bias;
 
-  Status error;
-  lldb::addr_t raw0 = process->ReadPointerFromMemory(raw1 + raw0_offset, error);
-  if (error.Fail())
+  llvm::Expected<lldb::addr_t> raw0 =
+      process->ReadPointerFromMemory(raw1 + raw0_offset);
+  if (!raw0) {
+    llvm::consumeError(raw0.takeError());
     return false;
-  uint64_t count = raw0 & 0x0000FFFFFFFFFFFF;
+  }
+  uint64_t count = *raw0 & 0x0000FFFFFFFFFFFF;
   return readStringFromAddress(
       address, count, valobj, stream, options,
       StringPrinter::ReadStringAndDumpToStreamOptions());
@@ -918,10 +924,11 @@ public:
           auto child_offset =
               lldb_private::GetChildFragmentOffset(*process_sp, m_task_ptr);
           if (child_offset) {
-            Status status;
-            parent_addr = process_sp->ReadPointerFromMemory(
-                m_task_ptr + *child_offset, status);
-            if (status.Fail() || parent_addr == LLDB_INVALID_ADDRESS)
+            parent_addr =
+                llvm::expectedToOptional(process_sp->ReadPointerFromMemory(
+                                             m_task_ptr + *child_offset))
+                    .value_or(LLDB_INVALID_ADDRESS);
+            if (parent_addr == LLDB_INVALID_ADDRESS)
               parent_addr = 0;
           } else {
             LLDB_LOG_ERROR(GetLog(LLDBLog::DataFormatters | LLDBLog::Types),
@@ -1219,11 +1226,15 @@ public:
       return ChildCacheState::eReuse;
 
     size_t canary_task_offset = 0x10;
-    Status status;
     if (auto canary_sp = m_backend.GetChildMemberWithName("canary"))
       if (addr_t canary_addr = canary_sp->GetValueAsUnsigned(0))
-        if (addr_t task_addr = m_backend.GetProcessSP()->ReadPointerFromMemory(
-                canary_addr + canary_task_offset, status))
+        // LLDB_INVALID_ADDRESS is truthy, so a failed read still constructs the
+        // child. Kept as-is rather than changing behavior while porting.
+        if (addr_t task_addr =
+                llvm::expectedToOptional(
+                    m_backend.GetProcessSP()->ReadPointerFromMemory(
+                        canary_addr + canary_task_offset))
+                    .value_or(LLDB_INVALID_ADDRESS))
           m_task_sp = CreateChildValueObjectFromAddress(
               "task", task_addr, m_backend.GetExecutionContextRef(),
               m_task_type, false);
@@ -1386,8 +1397,11 @@ private:
           // (after `Parent`).
           offset_t next_child_offset =
               *child_offset + process_sp->GetAddressByteSize();
-          next_task = process_sp->ReadPointerFromMemory(
-              addr + next_child_offset, status);
+          if (llvm::Expected<addr_t> next_task_or_err =
+                  process_sp->ReadPointerFromMemory(addr + next_child_offset))
+            next_task = *next_task_or_err;
+          else
+            status = Status::FromError(next_task_or_err.takeError());
         } else {
           status = Status::FromError(child_offset.takeError());
         }
@@ -1408,17 +1422,25 @@ private:
 
     Task getFirstChild(Status &status) {
       addr_t first_child = LLDB_INVALID_ADDRESS;
-      if (status.Success())
-        first_child =
-            process_sp->ReadPointerFromMemory(addr + FirstChildOffset, status);
+      if (status.Success()) {
+        if (llvm::Expected<addr_t> first_child_or_err =
+                process_sp->ReadPointerFromMemory(addr + FirstChildOffset))
+          first_child = *first_child_or_err;
+        else
+          status = Status::FromError(first_child_or_err.takeError());
+      }
       return {process_sp, first_child};
     }
 
     Task getLastChild(Status &status) {
       addr_t last_child = LLDB_INVALID_ADDRESS;
-      if (status.Success())
-        last_child =
-            process_sp->ReadPointerFromMemory(addr + LastChildOffset, status);
+      if (status.Success()) {
+        if (llvm::Expected<addr_t> last_child_or_err =
+                process_sp->ReadPointerFromMemory(addr + LastChildOffset))
+          last_child = *last_child_or_err;
+        else
+          status = Status::FromError(last_child_or_err.takeError());
+      }
       return {process_sp, last_child};
     }
   };
@@ -1579,9 +1601,13 @@ private:
 
     Job getNextScheduledJob(Status &status) {
       addr_t next_job = LLDB_INVALID_ADDRESS;
-      if (status.Success())
-        next_job =
-            process_sp->ReadPointerFromMemory(addr + NextJobOffset, status);
+      if (status.Success()) {
+        if (llvm::Expected<addr_t> next_job_or_err =
+                process_sp->ReadPointerFromMemory(addr + NextJobOffset))
+          next_job = *next_job_or_err;
+        else
+          status = Status::FromError(next_job_or_err.takeError());
+      }
       return {process_sp, next_job};
     }
   };
@@ -1597,9 +1623,13 @@ private:
 
     Job getFirstJob(Status &status) {
       addr_t first_job = LLDB_INVALID_ADDRESS;
-      if (status.Success())
-        first_job =
-            process_sp->ReadPointerFromMemory(addr + FirstJobOffset, status);
+      if (status.Success()) {
+        if (llvm::Expected<addr_t> first_job_or_err =
+                process_sp->ReadPointerFromMemory(addr + FirstJobOffset))
+          first_job = *first_job_or_err;
+        else
+          status = Status::FromError(first_job_or_err.takeError());
+      }
       return {process_sp, first_job};
     }
   };
