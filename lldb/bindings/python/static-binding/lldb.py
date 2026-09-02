@@ -12707,29 +12707,6 @@ class SBStructuredData(object):
         r"""Return the boolean value if this data structure is a boolean type."""
         return _lldb.SBStructuredData_GetBooleanValue(self, fail_value)
 
-    def GetStringValue(self, dst):
-        r"""
-        Provides the string value if this data structure is a string type.
-
-        :type dst: string, out
-        :param dst:
-                pointer where the string value will be written. In case it is null,
-                nothing will be written at *dst*.
-
-        :type dst_len: int, in
-        :param dst_len:
-                max number of characters that can be written at *dst*. In case it is
-                zero, nothing will be written at *dst*. If this length is not enough
-                to write the complete string value, (*dst_len* - 1) bytes of the
-                string value will be written at *dst* followed by a null character.
-
-        :rtype: int
-        :return: 
-                Returns the byte size needed to completely write the string value at
-                *dst* in all cases.
-        """
-        return _lldb.SBStructuredData_GetStringValue(self, dst)
-
     def GetGenericValue(self):
         r"""Return the generic pointer if this data structure is a generic type."""
         return _lldb.SBStructuredData_GetGenericValue(self)
@@ -12783,6 +12760,10 @@ class SBStructuredData(object):
         value.
         """
         return _lldb.SBStructuredData_SetGenericValue(self, value)
+
+    def GetStringValue(self, *args):
+        r"""GetStringValue(SBStructuredData self, size_t len=0) -> std::string"""
+        return _lldb.SBStructuredData_GetStringValue(self, *args)
 
     def __repr__(self):
         r"""__repr__(SBStructuredData self) -> std::string"""
@@ -12870,8 +12851,7 @@ class SBStructuredData(object):
         elif data_type == eStructuredDataTypeFloat:
             return self.GetFloatValue()
         elif data_type == eStructuredDataTypeString:
-            size = len(self) or 1023
-            return self.GetStringValue(size + 1)
+            return self.GetStringValue()
         elif data_type == eStructuredDataTypeGeneric:
             return self.GetGenericValue()
         else:
