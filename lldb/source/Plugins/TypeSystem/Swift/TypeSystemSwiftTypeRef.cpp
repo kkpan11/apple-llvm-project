@@ -398,33 +398,24 @@ TypeSystemSwiftTypeRef::GetBaseName(lldb::opaque_compiler_type_t type) {
   return GetBaseName(node).str();
 }
 
-CompilerType TypeSystemSwiftTypeRef::GetTypeFromTypeMetadataNode(
+std::pair<CompilerType, bool>
+TypeSystemSwiftTypeRef::GetTypeFromTypeMetadataNode(
     llvm::StringRef mangled_name) {
   Demangler dem;
   NodePointer node = dem.demangleSymbol(mangled_name);
+  bool is_full_metadata = false;
   NodePointer type = swift_demangle::NodeAtPath(
       node, {Node::Kind::Global, Node::Kind::TypeMetadata, Node::Kind::Type});
-  if (!type)
+  if (!type) {
     type = swift_demangle::NodeAtPath(
         node,
         {Node::Kind::Global, Node::Kind::FullTypeMetadata, Node::Kind::Type});
+    is_full_metadata = type != nullptr;
+  }
   if (!type)
     return {};
   auto flavor = SwiftLanguageRuntime::GetManglingFlavor(mangled_name);
-  return RemangleAsType(dem, type, flavor);
-}
-
-CompilerType TypeSystemSwiftTypeRef::GetTypeFromValueWitnessTable(
-    llvm::StringRef mangled_name) {
-  Demangler dem;
-  NodePointer node = dem.demangleSymbol(mangled_name);
-  NodePointer type = swift_demangle::NodeAtPath(
-      node,
-      {Node::Kind::Global, Node::Kind::ValueWitnessTable, Node::Kind::Type});
-  if (!type)
-    return {};
-  auto flavor = SwiftLanguageRuntime::GetManglingFlavor(mangled_name);
-  return RemangleAsType(dem, type, flavor);
+  return {RemangleAsType(dem, type, flavor), is_full_metadata};
 }
 
 TypeSP TypeSystemSwiftTypeRef::LookupClangType(StringRef name_ref,
@@ -587,10 +578,52 @@ TypeSystemSwiftTypeRef::CreateClangStructType(llvm::StringRef name) {
   return RemangleAsType(dem, type, flavor);
 }
 
+namespace {
+/// A row of the ClangImporter's MappedTypes.def substitution table: the Swift
+/// module and type name a C type is substituted with.
+struct MappedTypeName {
+  /// Empty if no row matched.
+  llvm::StringRef module_name;
+  llvm::StringRef type_name;
+
+  /// Whether a program compiled with \p flavor can reach this substitution.
+  ///
+  /// The stdlib is present in every program, but the other modules named by the
+  /// table are Darwin overlays, and embedded Swift has none of them.
+  bool isReachableIn(swift::Mangle::ManglingFlavor flavor) const {
+    return module_name == swift::STDLIB_NAME ||
+           flavor != swift::Mangle::ManglingFlavor::Embedded;
+  }
+};
+} // namespace
+
+/// Look \p clang_name up in the ClangImporter's mapped-type table. A match is
+/// not necessarily usable; see MappedTypeName::isReachableIn().
+static MappedTypeName GetMappedTypeName(llvm::StringRef clang_name) {
+  // This X-macro expands to something like:
+  // if (clang_name == "UInt8")   return {"Swift", "UInt8"};          else
+  // if (clang_name == "UInt16")  return {"Swift", "UInt16"};         else
+  // ...
+  // if (clang_name == "CGFloat") return {"CoreGraphics", "CGFloat"}; else
+  // if (clang_name == "NSStringEncoding") return {"Swift", "UInt"};  else
+  // return {};
+  using namespace swift;
+#define MAP_TYPE(C_TYPE_NAME, C_TYPE_KIND, C_TYPE_BITWIDTH, SWIFT_MODULE_NAME, \
+                 SWIFT_TYPE_NAME, CAN_BE_MISSING, C_NAME_MAPPING)              \
+  if (clang_name == C_TYPE_NAME)                                               \
+    return {SWIFT_MODULE_NAME, SWIFT_TYPE_NAME};                               \
+  else
+#include "swift/../../lib/ClangImporter/MappedTypes.def"
+#undef MAP_TYPE
+  // The last dangling else in the macro is for this return.
+  return {};
+}
+
 /// Return a demangle tree leaf node representing \p clang_type.
 swift::Demangle::NodePointer
 TypeSystemSwiftTypeRef::GetClangTypeNode(CompilerType clang_type,
-                                         swift::Demangle::Demangler &dem) {
+                                         swift::Demangle::Demangler &dem,
+                                         swift::Mangle::ManglingFlavor flavor) {
   using namespace swift;
   using namespace swift::Demangle;
   Node::Kind kind = Node::Kind::Structure;
@@ -620,98 +653,114 @@ TypeSystemSwiftTypeRef::GetClangTypeNode(CompilerType clang_type,
   if (clang_type.IsAnonymousType())
     return nullptr;
   llvm::StringRef clang_name = clang_type.GetTypeName().GetStringRef();
-#define MAP_TYPE(C_TYPE_NAME, C_TYPE_KIND, C_TYPE_BITWIDTH, SWIFT_MODULE_NAME, \
-                 SWIFT_TYPE_NAME, CAN_BE_MISSING, C_NAME_MAPPING)              \
-  if (clang_name == C_TYPE_NAME) {                                             \
-    module_name = (SWIFT_MODULE_NAME);                                         \
-    swift_name = (SWIFT_TYPE_NAME);                                            \
-  } else
-#include "swift/../../lib/ClangImporter/MappedTypes.def"
-#undef MAP_TYPE
-  // The last dangling else in the macro is for this switch.
-  switch (clang_type.GetTypeClass()) {
-  case eTypeClassClass:
-  case eTypeClassObjCObjectPointer:
-  case eTypeClassObjCInterface:
-    // Special cases for CF-bridged classes. (Better way to do this by
-    // inspecting the clang:Type?)
-    if (clang_name != "NSNumber" && clang_name != "NSValue")
-      kind = Node::Kind::Class;
-    // Objective-C objects are first-class entities, not pointers.
-    pointee = {};
-    break;
-  case eTypeClassBuiltin:
-    kind = Node::Kind::Structure;
-    // Ask ClangImporter about the builtin type's Swift name.
-    if (auto ts =
-            clang_type.GetTypeSystem().dyn_cast_or_null<TypeSystemClang>()) {
-      if (clang_type == ts->GetPointerSizedIntType(true))
-        swift_name = "Int";
-      else if (clang_type == ts->GetPointerSizedIntType(false))
-        swift_name = "UInt";
-      else
-        swift_name =
-            swift::importer::getClangTypeNameForOmission(
-                ts->getASTContext(), ClangUtil::GetQualType(clang_type))
-                .Name;
-      module_name = swift::STDLIB_NAME;
-    }
-    break;
-  case eTypeClassArray: {
-    // Ideally we would refactor ClangImporter::ImportType to use an
-    // abstract TypeBuilder and reuse it here.
-    auto *array_type = llvm::dyn_cast<clang::ConstantArrayType>(
-        ClangUtil::GetQualType(clang_type).getTypePtr());
-    if (!array_type)
-      break;
-    auto elem_type = array_type->getElementType();
-    auto size = array_type->getSize().getZExtValue();
-    if (size > 4096)
-      break;
-    auto *tuple = dem.createNode(Node::Kind::Tuple);
-    NodePointer element_type = GetClangTypeNode(
-        {clang_type.GetTypeSystem(), elem_type.getAsOpaquePtr()}, dem);
-    if (!element_type)
-      return nullptr;
-    for (unsigned i = 0; i < size; ++i) {
-      NodePointer tuple_element = dem.createNode(Node::Kind::TupleElement);
-      NodePointer type = dem.createNode(Node::Kind::Type);
-      type->addChild(element_type, dem);
-      tuple_element->addChild(type, dem);
-      tuple->addChild(tuple_element, dem);
-    }
-    return tuple;
+  MappedTypeName mapped = GetMappedTypeName(clang_name);
+  bool should_substitute = !mapped.module_name.empty();
+  if (should_substitute && !mapped.isReachableIn(flavor)) {
+    // Mirror what the compiler does with a substitution it cannot resolve:
+    // VisitTypedefType() in ClangImporter/ImportType.cpp falls back to
+    // Visit(type->desugar()), i.e. it imports the typedef's underlying type.
+    LLDB_LOG_VERBOSE(
+        GetLog(LLDBLog::Types),
+        "[GetClangTypeNode] mapped clang type {0} substitutes into {1}, "
+        "which this mangling flavor has no overlay for; importing the "
+        "underlying type",
+        clang_name, mapped.module_name);
+    should_substitute = false;
+    if (CompilerType desugared = clang_type.GetTypedefedType())
+      if (NodePointer node = GetClangTypeNode(desugared, dem, flavor))
+        // Reapply the pointer peeled off before the table lookup, if any.
+        return pointee ? GetPointerTo(dem, node) : node;
   }
-  case eTypeClassTypedef:
-    kind = Node::Kind::TypeAlias;
-    pointee = {};
-    break;
-  case eTypeClassVector: {
-    CompilerType element_type;
-    uint64_t size;
-    bool is_vector = clang_type.IsVectorType(&element_type, &size);
-    if (!is_vector)
+  if (should_substitute) {
+    module_name = mapped.module_name;
+    swift_name = mapped.type_name;
+  } else {
+    switch (clang_type.GetTypeClass()) {
+    case eTypeClassClass:
+    case eTypeClassObjCObjectPointer:
+    case eTypeClassObjCInterface:
+      // Special cases for CF-bridged classes. (Better way to do this by
+      // inspecting the clang:Type?)
+      if (clang_name != "NSNumber" && clang_name != "NSValue")
+        kind = Node::Kind::Class;
+      // Objective-C objects are first-class entities, not pointers.
+      pointee = {};
       break;
-
-    auto qual_type = ClangUtil::GetQualType(clang_type);
-    const auto *ptr = qual_type.getTypePtrOrNull();
-    if (!ptr)
+    case eTypeClassBuiltin:
+      kind = Node::Kind::Structure;
+      // Ask ClangImporter about the builtin type's Swift name.
+      if (auto ts =
+              clang_type.GetTypeSystem().dyn_cast_or_null<TypeSystemClang>()) {
+        if (clang_type == ts->GetPointerSizedIntType(true))
+          swift_name = "Int";
+        else if (clang_type == ts->GetPointerSizedIntType(false))
+          swift_name = "UInt";
+        else
+          swift_name =
+              swift::importer::getClangTypeNameForOmission(
+                  ts->getASTContext(), ClangUtil::GetQualType(clang_type))
+                  .Name;
+        module_name = swift::STDLIB_NAME;
+      }
       break;
-
-    // Check if this is an extended vector type.
-    if (!llvm::isa<clang::DependentSizedExtVectorType>(ptr) &&
-        !llvm::isa<clang::ExtVectorType>(ptr))
+    case eTypeClassArray: {
+      // Ideally we would refactor ClangImporter::ImportType to use an
+      // abstract TypeBuilder and reuse it here.
+      auto *array_type = llvm::dyn_cast<clang::ConstantArrayType>(
+          ClangUtil::GetQualType(clang_type).getTypePtr());
+      if (!array_type)
+        break;
+      auto elem_type = array_type->getElementType();
+      auto size = array_type->getSize().getZExtValue();
+      if (size > 4096)
+        break;
+      auto *tuple = dem.createNode(Node::Kind::Tuple);
+      NodePointer element_type = GetClangTypeNode(
+          {clang_type.GetTypeSystem(), elem_type.getAsOpaquePtr()}, dem,
+          flavor);
+      if (!element_type)
+        return nullptr;
+      for (unsigned i = 0; i < size; ++i) {
+        NodePointer tuple_element = dem.createNode(Node::Kind::TupleElement);
+        NodePointer type = dem.createNode(Node::Kind::Type);
+        type->addChild(element_type, dem);
+        tuple_element->addChild(type, dem);
+        tuple->addChild(tuple_element, dem);
+      }
+      return tuple;
+    }
+    case eTypeClassTypedef:
+      kind = Node::Kind::TypeAlias;
+      pointee = {};
       break;
+    case eTypeClassVector: {
+      CompilerType element_type;
+      uint64_t size;
+      bool is_vector = clang_type.IsVectorType(&element_type, &size);
+      if (!is_vector)
+        break;
 
-    NodePointer element_type_node = GetClangTypeNode(element_type, dem);
-    if (!element_type_node)
-      return nullptr;
-    llvm::SmallVector<NodePointer, 1> elements({element_type_node});
-    return CreateBoundGenericStruct("SIMD" + std::to_string(size),
-                                    swift::STDLIB_NAME, elements, dem);
-  }
-  default:
-    break;
+      auto qual_type = ClangUtil::GetQualType(clang_type);
+      const auto *ptr = qual_type.getTypePtrOrNull();
+      if (!ptr)
+        break;
+
+      // Check if this is an extended vector type.
+      if (!llvm::isa<clang::DependentSizedExtVectorType>(ptr) &&
+          !llvm::isa<clang::ExtVectorType>(ptr))
+        break;
+
+      NodePointer element_type_node =
+          GetClangTypeNode(element_type, dem, flavor);
+      if (!element_type_node)
+        return nullptr;
+      llvm::SmallVector<NodePointer, 1> elements({element_type_node});
+      return CreateBoundGenericStruct("SIMD" + std::to_string(size),
+                                      swift::STDLIB_NAME, elements, dem);
+    }
+    default:
+      break;
+    }
   }
   NodePointer module =
       dem.createNodeWithAllocatedText(Node::Kind::Module, module_name);
@@ -1639,21 +1688,26 @@ TypeSystemSwiftTypeRef::DesugarNode(swift::Demangle::Demangler &dem,
       dem, node, [&](NodePointer node) { return Desugar(dem, node); });
 }
 
-swift::Demangle::NodePointer
-TypeSystemSwiftTypeRef::Canonicalize(swift::Demangle::Demangler &dem,
-                                     swift::Demangle::NodePointer node,
-                                     swift::Mangle::ManglingFlavor flavor) {
+swift::Demangle::NodePointer TypeSystemSwiftTypeRef::Canonicalize(
+    swift::Demangle::Demangler &dem, swift::Demangle::NodePointer node,
+    swift::Mangle::ManglingFlavor flavor, bool preserve_clang_type_aliases) {
   assert(node);
   node = Desugar(dem, node);
   auto kind = node->getKind();
   switch (kind) {
   case Node::Kind::BoundGenericTypeAlias:
   case Node::Kind::TypeAlias: {
+    if (preserve_clang_type_aliases) {
+      llvm::SmallVector<CompilerContext, 2> decl_context;
+      bool ignore_modules = false;
+      if (IsClangImportedType(node, decl_context, ignore_modules))
+        return node;
+    }
     // Safeguard against cyclic aliases.
     for (unsigned alias_depth = 0; alias_depth < 64; ++alias_depth) {
       auto node_clangtype = ResolveTypeAlias(dem, node, flavor);
       if (CompilerType clang_type = node_clangtype.second) {
-        if (auto result = GetClangTypeNode(clang_type, dem))
+        if (auto result = GetClangTypeNode(clang_type, dem, flavor))
           return result;
         // Failed to convert that clang type into a demangle node.
         return node;
@@ -1666,7 +1720,7 @@ TypeSystemSwiftTypeRef::Canonicalize(swift::Demangle::Demangler &dem,
       if (node->getKind() != Node::Kind::BoundGenericTypeAlias &&
           node->getKind() != Node::Kind::TypeAlias)
         // Resolve any type aliases in the resolved type.
-        return GetCanonicalNode(dem, node, flavor);
+        return GetCanonicalNode(dem, node, flavor, preserve_clang_type_aliases);
       // This type alias resolved to another type alias.
     }
     // Hit the safeguard limit.
@@ -1678,7 +1732,9 @@ TypeSystemSwiftTypeRef::Canonicalize(swift::Demangle::Demangler &dem,
   return node;
 }
 
-CompilerType TypeSystemSwiftTypeRef::Canonicalize(CompilerType type) {
+CompilerType
+TypeSystemSwiftTypeRef::Canonicalize(CompilerType type,
+                                     bool preserve_clang_type_aliases) {
   using namespace swift::Demangle;
   auto mangled_name = type.GetMangledTypeName();
   if (!mangled_name)
@@ -1688,16 +1744,21 @@ CompilerType TypeSystemSwiftTypeRef::Canonicalize(CompilerType type) {
   if (!node)
     return {};
   auto flavor = SwiftLanguageRuntime::GetManglingFlavor(mangled_name);
-  NodePointer canonical = GetCanonicalNode(dem, node, flavor);
+  NodePointer canonical =
+      GetCanonicalNode(dem, node, flavor, preserve_clang_type_aliases);
   NodePointer type_node = dem.createNode(Node::Kind::Type);
   type_node->addChild(canonical, dem);
   return RemangleAsType(dem, type_node, flavor);
 }
 
-swift::Demangle::NodePointer
-TypeSystemSwiftTypeRef::GetCanonicalNode(swift::Demangle::Demangler &dem,
-                                         swift::Demangle::NodePointer node,
-                                         swift::Mangle::ManglingFlavor flavor) {
+CompilerType
+TypeSystemSwiftTypeRef::CanonicalizeForTypeRefBuilder(CompilerType type) {
+  return Canonicalize(type, /*preserve_clang_type_aliases=*/true);
+}
+
+swift::Demangle::NodePointer TypeSystemSwiftTypeRef::GetCanonicalNode(
+    swift::Demangle::Demangler &dem, swift::Demangle::NodePointer node,
+    swift::Mangle::ManglingFlavor flavor, bool preserve_clang_type_aliases) {
   if (!node)
     return nullptr;
   // This is a pre-order traversal, which is necessary to resolve
@@ -1707,12 +1768,13 @@ TypeSystemSwiftTypeRef::GetCanonicalNode(swift::Demangle::Demangler &dem,
   // SomeAlias<WhatSomeOtherAliasResolvesTo> because it tries to
   // preserve all sugar.
   using namespace swift::Demangle;
-  node = Canonicalize(dem, node, flavor);
+  node = Canonicalize(dem, node, flavor, preserve_clang_type_aliases);
 
   llvm::SmallVector<NodePointer, 2> children;
   bool changed = false;
   for (NodePointer child : *node) {
-    NodePointer transformed_child = GetCanonicalNode(dem, child, flavor);
+    NodePointer transformed_child =
+        GetCanonicalNode(dem, child, flavor, preserve_clang_type_aliases);
     changed |= (child != transformed_child);
     children.push_back(transformed_child);
   }
@@ -2155,8 +2217,9 @@ uint32_t TypeSystemSwiftTypeRef::CollectTypeInfo(
     }
     if ((type_class & eTypeClassBuiltin)) {
       swift_flags &= ~eTypeIsStructUnion;
-      swift_flags |= CollectTypeInfo(dem, GetClangTypeNode(clang_type, dem),
-                                     flavor, unresolved_typealias);
+      swift_flags |=
+          CollectTypeInfo(dem, GetClangTypeNode(clang_type, dem, flavor),
+                          flavor, unresolved_typealias);
       return;
     }
   };
@@ -4761,13 +4824,13 @@ TypeSystemSwiftTypeRef::GetDescriptorFinder(ExecutionContextScope *exe_scope) {
   return llvm::cast<DWARFASTParserSwift>(GetDWARFParser());
 }
 
-swift::Demangle::NodePointer
-TypeSystemSwiftTypeRef::GetClangTypeTypeNode(swift::Demangle::Demangler &dem,
-                                             CompilerType clang_type) {
+swift::Demangle::NodePointer TypeSystemSwiftTypeRef::GetClangTypeTypeNode(
+    swift::Demangle::Demangler &dem, CompilerType clang_type,
+    swift::Mangle::ManglingFlavor flavor) {
   assert(clang_type.GetTypeSystem().isa_and_nonnull<TypeSystemClang>() &&
          "expected a clang type");
   using namespace swift::Demangle;
-  NodePointer node = GetClangTypeNode(clang_type, dem);
+  NodePointer node = GetClangTypeNode(clang_type, dem, flavor);
   if (!node)
     return nullptr;
   NodePointer type = dem.createNode(Node::Kind::Type);
@@ -4784,7 +4847,8 @@ CompilerType TypeSystemSwiftTypeRef::ConvertClangTypeToSwiftType(
     return {};
 
   swift::Demangle::Demangler dem;
-  swift::Demangle::NodePointer node = GetClangTypeTypeNode(dem, clang_type);
+  swift::Demangle::NodePointer node =
+      GetClangTypeTypeNode(dem, clang_type, flavor);
   CompilerType result = RemangleAsType(dem, node, flavor);
   m_imported_type_map.Insert(result.GetMangledTypeName().AsCString(nullptr),
                              clang_type);
@@ -6178,7 +6242,7 @@ TypeSystemSwiftTypeRef::GetTypedefedType(opaque_compiler_type_t type) {
       type_node->addChild(resolved, dem);
     } else {
       NodePointer clang_node =
-          GetClangTypeNode(std::get<CompilerType>(pair), dem);
+          GetClangTypeNode(std::get<CompilerType>(pair), dem, flavor);
       if (!clang_node)
         return {};
       type_node->addChild(clang_node, dem);

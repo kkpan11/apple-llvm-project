@@ -212,8 +212,19 @@ getTypeAndDie(TypeSystemSwiftTypeRef &ts,
   return {{type, die}};
 }
 
+/// Determine the field descriptor kind of \p die, the DIE of a protocol.
+static swift::reflection::FieldDescriptorKind
+getProtocolFieldDescriptorKind(const DWARFDIE &die) {
+  if (DWARFASTParserSwift::HasSwiftFlagAnnotation(die, "swift.ObjCProtocol"))
+    return swift::reflection::FieldDescriptorKind::ObjCProtocol;
+  if (DWARFASTParserSwift::HasSwiftFlagAnnotation(
+          die, "swift.ClassConstrainedProtocol"))
+    return swift::reflection::FieldDescriptorKind::ClassProtocol;
+  return swift::reflection::FieldDescriptorKind::Protocol;
+}
+
 static std::optional<swift::reflection::FieldDescriptorKind>
-getFieldDescriptorKindForDie(CompilerType type) {
+getFieldDescriptorKindForDie(CompilerType type, const DWARFDIE &die) {
   auto type_class = type.GetTypeClass();
   switch (type_class) {
   case lldb::eTypeClassClass:
@@ -224,7 +235,7 @@ getFieldDescriptorKindForDie(CompilerType type) {
     return swift::reflection::FieldDescriptorKind::Enum;
   default:
     if (Flags(type.GetTypeInfo()).AnySet(lldb::eTypeIsProtocol))
-      return swift::reflection::FieldDescriptorKind::Protocol;
+      return getProtocolFieldDescriptorKind(die);
     LLDB_LOG(GetLog(LLDBLog::Types),
              "Could not determine file descriptor kind for type: {0}",
              type.GetMangledTypeName());
@@ -356,8 +367,8 @@ public:
         continue;
       auto member_compiler_type = member_type->GetForwardCompilerType();
 
-      // TypeRefBuilder expects types to be canonical.
-      CompilerType canonical = m_type_system.Canonicalize(member_compiler_type);
+      CompilerType canonical =
+          m_type_system.CanonicalizeForTypeRefBuilder(member_compiler_type);
       if (!canonical) {
         LLDB_LOG(GetLog(LLDBLog::Types), "Could not build canonical type: {0}",
                  member_compiler_type.GetMangledTypeName());
@@ -438,9 +449,8 @@ public:
       if (member_type) {
         CompilerType member_compiler_type =
             member_type->GetForwardCompilerType();
-        // TypeRefBuilder expects types to be canonical.
         CompilerType canonical =
-            m_type_system.Canonicalize(member_compiler_type);
+            m_type_system.CanonicalizeForTypeRefBuilder(member_compiler_type);
         if (!canonical) {
           LLDB_LOG(GetLog(LLDBLog::Types),
                    "Could not build canonical type: {0}",
@@ -611,7 +621,7 @@ DWARFASTParserSwift::getFieldDescriptor(const swift::reflection::TypeRef *TR) {
   auto [type, die] = *pair;
   if (!die)
     return nullptr;
-  auto kind = getFieldDescriptorKindForDie(type);
+  auto kind = getFieldDescriptorKindForDie(type, die);
   if (!kind)
     return nullptr;
 

@@ -32,6 +32,8 @@
 #include "lldb/Utility/Log.h"
 #include "lldb/Utility/Status.h"
 
+#include "swift/Demangling/ManglingMacros.h"
+
 #include "llvm/DebugInfo/DWARF/DWARFAddressRange.h"
 
 #include "clang/AST/DeclObjC.h"
@@ -47,20 +49,26 @@ DWARFASTParserSwift::DWARFASTParserSwift(
 
 DWARFASTParserSwift::~DWARFASTParserSwift() {}
 
-/// Returns true if the DIE represents a protocol annotated with @_marker.
-static bool IsMarkerProtocol(const DWARFDIE &die) {
-  if (die.Tag() != llvm::dwarf::DW_TAG_structure_type)
-    return false;
+bool DWARFASTParserSwift::HasSwiftFlagAnnotation(
+    const DWARFDIE &die, llvm::StringRef annotation_name) {
   for (DWARFDIE child : die.children()) {
     if (child.Tag() != llvm::dwarf::DW_TAG_LLVM_annotation)
       continue;
     const char *name =
         child.GetAttributeValueAsString(llvm::dwarf::DW_AT_name, nullptr);
-    if (llvm::StringRef(name) == "swift.MarkerProtocol")
+    if (llvm::StringRef(name) == annotation_name)
       return child.GetAttributeValueAsUnsigned(llvm::dwarf::DW_AT_const_value,
                                                0) != 0;
   }
   return false;
+}
+
+/// Returns true if the DIE represents a protocol annotated with @_marker.
+static bool IsMarkerProtocol(const DWARFDIE &die) {
+  if (die.Tag() != llvm::dwarf::DW_TAG_structure_type)
+    return false;
+  return DWARFASTParserSwift::HasSwiftFlagAnnotation(die,
+                                                     "swift.MarkerProtocol");
 }
 
 static llvm::StringRef GetTypedefName(const DWARFDIE &die) {
@@ -155,7 +163,15 @@ lldb::TypeSP DWARFASTParserSwift::ParseTypeFromDWARF(const SymbolContext &sc,
           }
         } break;
         case llvm::dwarf::DW_AT_byte_size:
-          dwarf_byte_size = form_value.Unsigned();
+          // Like DW_AT_linkage_name above, this could be a type with a
+          // DW_AT_specification pointing at the unsubstituted generic type,
+          // whose DW_AT_byte_size is meaningless (it is emitted as 0 because
+          // the size of an unbound generic isn't known). Don't let it
+          // overwrite the size of the referring DIE, which describes the
+          // substituted type. GetAttributes() guarantees that the attributes
+          // of the referring DIE come before those of the specification.
+          if (!dwarf_byte_size)
+            dwarf_byte_size = form_value.Unsigned();
           break;
         case llvm::dwarf::DW_AT_type:
           if (die.Tag() == llvm::dwarf::DW_TAG_const_type)
@@ -240,7 +256,8 @@ lldb::TypeSP DWARFASTParserSwift::ParseTypeFromDWARF(const SymbolContext &sc,
   if (!compiler_type && die.Tag() == llvm::dwarf::DW_TAG_typedef) {
     // Handle Archetypes, which are typedefs to RawPointerType.
     llvm::StringRef typedef_name = GetTypedefName(die);
-    if (typedef_name.starts_with("$sBp")) {
+    if (typedef_name.starts_with(MANGLING_PREFIX_STR "Bp") ||
+        typedef_name.starts_with(MANGLING_PREFIX_EMBEDDED_STR "Bp")) {
       preferred_name = name;
       compiler_type = m_swift_typesystem.GetTypeFromMangledTypename(
           ConstString(typedef_name));
