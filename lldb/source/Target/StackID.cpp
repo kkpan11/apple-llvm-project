@@ -99,14 +99,15 @@ static llvm::Expected<bool> IsReachableParent(lldb::addr_t source,
   auto max_num_frames = 512;
   for (lldb::addr_t parent_ctx = source; parent_ctx && max_num_frames;
        max_num_frames--) {
-    Status error;
     lldb::addr_t old_parent_ctx = parent_ctx;
     // The continuation's context is the first field of an async context.
-    parent_ctx = process.ReadPointerFromMemory(old_parent_ctx, error);
-    if (error.Fail())
+    llvm::Expected<lldb::addr_t> next_ctx =
+        process.ReadPointerFromMemory(old_parent_ctx);
+    if (!next_ctx)
       return llvm::createStringError(llvm::formatv(
           "Failed to read parent async context of: {0:x}. Error: {1}",
-          old_parent_ctx, error.AsCString()));
+          old_parent_ctx, llvm::toString(next_ctx.takeError())));
+    parent_ctx = *next_ctx;
     if (process.FixDataAddress(parent_ctx) == maybe_parent)
       return true;
   }
