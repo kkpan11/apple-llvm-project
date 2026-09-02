@@ -945,7 +945,9 @@ BuildDeclContext(llvm::StringRef mangled_name,
                  swift::Demangle::Demangler &dem) {
   std::vector<CompilerContext> context;
   auto *node = GetDemangledType(dem, mangled_name);
-  
+  if (!node)
+    return {};
+
   /// Builtin names belong to the builtin module, and are stored only with their
   /// mangled name.
   if (node->getKind() == Node::Kind::BuiltinTypeName) {
