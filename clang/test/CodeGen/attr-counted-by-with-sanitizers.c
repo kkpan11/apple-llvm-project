@@ -280,7 +280,7 @@ size_t test_return_bdos_cast_of_whole_struct(struct annotated *p) {
 // SANITIZE-WITH-ATTR-NEXT:    unreachable, !nosanitize [[META6]]
 // SANITIZE-WITH-ATTR:       [[CONT67]]:
 // SANITIZE-WITH-ATTR-NEXT:    [[ARRAYIDX65:%.*]] = getelementptr inbounds nuw [4 x i8], ptr [[ARRAY]], i64 [[IDXPROM60]]
-// SANITIZE-WITH-ATTR-NEXT:    [[DOTTR:%.*]] = sub nsw i32 [[DOTCOUNTED_BY_LOAD]], [[FAM_IDX]]
+// SANITIZE-WITH-ATTR-NEXT:    [[DOTTR:%.*]] = sub nuw nsw i32 [[DOTCOUNTED_BY_LOAD]], [[FAM_IDX]]
 // SANITIZE-WITH-ATTR-NEXT:    [[TMP7:%.*]] = shl i32 [[DOTTR]], 2
 // SANITIZE-WITH-ATTR-NEXT:    [[TMP8:%.*]] = and i32 [[TMP7]], 252
 // SANITIZE-WITH-ATTR-NEXT:    store i32 [[TMP8]], ptr [[ARRAYIDX65]], align 4, !tbaa [[INT_TBAA8]]
