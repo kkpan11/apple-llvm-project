@@ -4599,6 +4599,17 @@ SWIG_AsVal_long_SS_long (PyObject *obj, long long *val)
 }
 #endif
 
+SWIGINTERN std::string lldb_SBStructuredData_GetStringValue(lldb::SBStructuredData const *self,size_t len=0){
+    (void)len;
+    const auto required_len = self->GetStringValue(nullptr, 0);
+    if (required_len <= 0)
+      return std::string{};
+
+    std::string buf(required_len - 1, '\0');
+    self->GetStringValue(buf.data(), required_len);
+
+    return buf;
+  }
 SWIGINTERN std::string lldb_SBStructuredData___repr__(lldb::SBStructuredData *self){
     lldb::SBStream stream;
     self->GetDescription (stream);
@@ -54433,16 +54444,22 @@ SWIGINTERN PyObject *_wrap_SBProcess_GetSTDOUT(PyObject *self, PyObject *args) {
   }
   arg1 = reinterpret_cast< lldb::SBProcess * >(argp1);
   {
-    if (!PyLong_Check(swig_obj[1])) {
-      PyErr_SetString(PyExc_ValueError, "Expecting an integer");
+    arg2 = NULL;
+    arg3 = PyLong_AsSize_t(swig_obj[1]);
+    if (PyErr_Occurred()) {
       SWIG_fail;
     }
-    arg3 = PyLong_AsLong(swig_obj[1]);
-    if (arg3 <= 0) {
+    
+    if (arg3 == 0) {
       PyErr_SetString(PyExc_ValueError, "Positive integer expected");
       SWIG_fail;
     }
-    arg2 = (char *)malloc(arg3);
+    
+    arg2 = (char *)::malloc(arg3);
+    if (!arg2) {
+      PyErr_NoMemory();
+      SWIG_fail;
+    }
   }
   {
     SWIG_PYTHON_THREAD_BEGIN_ALLOW;
@@ -54452,19 +54469,28 @@ SWIGINTERN PyObject *_wrap_SBProcess_GetSTDOUT(PyObject *self, PyObject *args) {
   resultobj = SWIG_From_size_t(static_cast< size_t >(result));
   {
     Py_XDECREF(resultobj); /* Blow away any previous result */
-    if (result == 0) {
-      PythonString string("");
-      resultobj = string.release();
-      Py_INCREF(resultobj);
-    } else {
-      llvm::StringRef ref(static_cast<const char *>(arg2), result);
-      PythonString string(ref);
-      resultobj = string.release();
+    
+    size_t str_len = result;
+    if (str_len >= arg3)  {
+      /* We allocated arg3 (dst_len) but the result is larger,
+          trim to match the expected length so we don't read random data.*/
+      str_len = arg3 - 1;
     }
-    free(arg2);
+    
+    llvm::StringRef ref(static_cast<const char *>(arg2), str_len);
+    PythonString string(ref);
+    resultobj = string.release();
+  }
+  {
+    /* Free the allocated memory in typemap(in) on failure.*/ 
+    ::free(arg2);
   }
   return resultobj;
 fail:
+  {
+    /* Free the allocated memory in typemap(in) on failure.*/ 
+    ::free(arg2);
+  }
   return NULL;
 }
 
@@ -54487,16 +54513,22 @@ SWIGINTERN PyObject *_wrap_SBProcess_GetSTDERR(PyObject *self, PyObject *args) {
   }
   arg1 = reinterpret_cast< lldb::SBProcess * >(argp1);
   {
-    if (!PyLong_Check(swig_obj[1])) {
-      PyErr_SetString(PyExc_ValueError, "Expecting an integer");
+    arg2 = NULL;
+    arg3 = PyLong_AsSize_t(swig_obj[1]);
+    if (PyErr_Occurred()) {
       SWIG_fail;
     }
-    arg3 = PyLong_AsLong(swig_obj[1]);
-    if (arg3 <= 0) {
+    
+    if (arg3 == 0) {
       PyErr_SetString(PyExc_ValueError, "Positive integer expected");
       SWIG_fail;
     }
-    arg2 = (char *)malloc(arg3);
+    
+    arg2 = (char *)::malloc(arg3);
+    if (!arg2) {
+      PyErr_NoMemory();
+      SWIG_fail;
+    }
   }
   {
     SWIG_PYTHON_THREAD_BEGIN_ALLOW;
@@ -54506,19 +54538,28 @@ SWIGINTERN PyObject *_wrap_SBProcess_GetSTDERR(PyObject *self, PyObject *args) {
   resultobj = SWIG_From_size_t(static_cast< size_t >(result));
   {
     Py_XDECREF(resultobj); /* Blow away any previous result */
-    if (result == 0) {
-      PythonString string("");
-      resultobj = string.release();
-      Py_INCREF(resultobj);
-    } else {
-      llvm::StringRef ref(static_cast<const char *>(arg2), result);
-      PythonString string(ref);
-      resultobj = string.release();
+    
+    size_t str_len = result;
+    if (str_len >= arg3)  {
+      /* We allocated arg3 (dst_len) but the result is larger,
+          trim to match the expected length so we don't read random data.*/
+      str_len = arg3 - 1;
     }
-    free(arg2);
+    
+    llvm::StringRef ref(static_cast<const char *>(arg2), str_len);
+    PythonString string(ref);
+    resultobj = string.release();
+  }
+  {
+    /* Free the allocated memory in typemap(in) on failure.*/ 
+    ::free(arg2);
   }
   return resultobj;
 fail:
+  {
+    /* Free the allocated memory in typemap(in) on failure.*/ 
+    ::free(arg2);
+  }
   return NULL;
 }
 
@@ -54541,16 +54582,22 @@ SWIGINTERN PyObject *_wrap_SBProcess_GetAsyncProfileData(PyObject *self, PyObjec
   }
   arg1 = reinterpret_cast< lldb::SBProcess * >(argp1);
   {
-    if (!PyLong_Check(swig_obj[1])) {
-      PyErr_SetString(PyExc_ValueError, "Expecting an integer");
+    arg2 = NULL;
+    arg3 = PyLong_AsSize_t(swig_obj[1]);
+    if (PyErr_Occurred()) {
       SWIG_fail;
     }
-    arg3 = PyLong_AsLong(swig_obj[1]);
-    if (arg3 <= 0) {
+    
+    if (arg3 == 0) {
       PyErr_SetString(PyExc_ValueError, "Positive integer expected");
       SWIG_fail;
     }
-    arg2 = (char *)malloc(arg3);
+    
+    arg2 = (char *)::malloc(arg3);
+    if (!arg2) {
+      PyErr_NoMemory();
+      SWIG_fail;
+    }
   }
   {
     SWIG_PYTHON_THREAD_BEGIN_ALLOW;
@@ -54560,19 +54607,28 @@ SWIGINTERN PyObject *_wrap_SBProcess_GetAsyncProfileData(PyObject *self, PyObjec
   resultobj = SWIG_From_size_t(static_cast< size_t >(result));
   {
     Py_XDECREF(resultobj); /* Blow away any previous result */
-    if (result == 0) {
-      PythonString string("");
-      resultobj = string.release();
-      Py_INCREF(resultobj);
-    } else {
-      llvm::StringRef ref(static_cast<const char *>(arg2), result);
-      PythonString string(ref);
-      resultobj = string.release();
+    
+    size_t str_len = result;
+    if (str_len >= arg3)  {
+      /* We allocated arg3 (dst_len) but the result is larger,
+          trim to match the expected length so we don't read random data.*/
+      str_len = arg3 - 1;
     }
-    free(arg2);
+    
+    llvm::StringRef ref(static_cast<const char *>(arg2), str_len);
+    PythonString string(ref);
+    resultobj = string.release();
+  }
+  {
+    /* Free the allocated memory in typemap(in) on failure.*/ 
+    ::free(arg2);
   }
   return resultobj;
 fail:
+  {
+    /* Free the allocated memory in typemap(in) on failure.*/ 
+    ::free(arg2);
+  }
   return NULL;
 }
 
@@ -56215,16 +56271,22 @@ SWIGINTERN PyObject *_wrap_SBProcess_ReadCStringFromMemory(PyObject *self, PyObj
   } 
   arg2 = static_cast< lldb::addr_t >(val2);
   {
-    if (!PyLong_Check(swig_obj[2])) {
-      PyErr_SetString(PyExc_ValueError, "Expecting an integer");
+    arg3 = NULL;
+    arg4 = PyLong_AsSize_t(swig_obj[2]);
+    if (PyErr_Occurred()) {
       SWIG_fail;
     }
-    arg4 = PyLong_AsLong(swig_obj[2]);
-    if (arg4 <= 0) {
+    
+    if (arg4 == 0) {
       PyErr_SetString(PyExc_ValueError, "Positive integer expected");
       SWIG_fail;
     }
-    arg3 = (char *)malloc(arg4);
+    
+    arg3 = (char *)::malloc(arg4);
+    if (!arg3) {
+      PyErr_NoMemory();
+      SWIG_fail;
+    }
   }
   res5 = SWIG_ConvertPtr(swig_obj[3], &argp5, SWIGTYPE_p_lldb__SBError,  0 );
   if (!SWIG_IsOK(res5)) {
@@ -56242,16 +56304,17 @@ SWIGINTERN PyObject *_wrap_SBProcess_ReadCStringFromMemory(PyObject *self, PyObj
   resultobj = SWIG_From_size_t(static_cast< size_t >(result));
   {
     Py_XDECREF(resultobj); /* Blow away any previous result */
-    if (result == 0) {
-      PythonString string("");
-      resultobj = string.release();
-      Py_INCREF(resultobj);
-    } else {
-      llvm::StringRef ref(static_cast<const char *>(arg3), result);
-      PythonString string(ref);
-      resultobj = string.release();
+    
+    size_t str_len = result;
+    if (str_len >= arg4)  {
+      /* We allocated arg4 (dst_len) but the result is larger,
+          trim to match the expected length so we don't read random data.*/
+      str_len = arg4 - 1;
     }
-    free(arg3);
+    
+    llvm::StringRef ref(static_cast<const char *>(arg3), str_len);
+    PythonString string(ref);
+    resultobj = string.release();
   }
   return resultobj;
 fail:
@@ -64894,60 +64957,6 @@ fail:
 }
 
 
-SWIGINTERN PyObject *_wrap_SBStructuredData_GetStringValue(PyObject *self, PyObject *args) {
-  PyObject *resultobj = 0;
-  lldb::SBStructuredData *arg1 = 0 ;
-  char *arg2 = 0 ;
-  size_t arg3 ;
-  void *argp1 = 0 ;
-  int res1 = 0 ;
-  PyObject *swig_obj[2] ;
-  size_t result;
-  
-  (void)self;
-  if (!SWIG_Python_UnpackTuple(args, "SBStructuredData_GetStringValue", 2, 2, swig_obj)) SWIG_fail;
-  res1 = SWIG_ConvertPtr(swig_obj[0], &argp1,SWIGTYPE_p_lldb__SBStructuredData, 0 |  0 );
-  if (!SWIG_IsOK(res1)) {
-    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "SBStructuredData_GetStringValue" "', argument " "1"" of type '" "lldb::SBStructuredData const *""'"); 
-  }
-  arg1 = reinterpret_cast< lldb::SBStructuredData * >(argp1);
-  {
-    if (!PyLong_Check(swig_obj[1])) {
-      PyErr_SetString(PyExc_ValueError, "Expecting an integer");
-      SWIG_fail;
-    }
-    arg3 = PyLong_AsLong(swig_obj[1]);
-    if (arg3 <= 0) {
-      PyErr_SetString(PyExc_ValueError, "Positive integer expected");
-      SWIG_fail;
-    }
-    arg2 = (char *)malloc(arg3);
-  }
-  {
-    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
-    result = ((lldb::SBStructuredData const *)arg1)->GetStringValue(arg2,SWIG_STD_MOVE(*(&arg3)));
-    SWIG_PYTHON_THREAD_END_ALLOW;
-  }
-  resultobj = SWIG_From_size_t(static_cast< size_t >(result));
-  {
-    Py_XDECREF(resultobj); /* Blow away any previous result */
-    if (result == 0) {
-      PythonString string("");
-      resultobj = string.release();
-      Py_INCREF(resultobj);
-    } else {
-      llvm::StringRef ref(static_cast<const char *>(arg2), result);
-      PythonString string(ref);
-      resultobj = string.release();
-    }
-    free(arg2);
-  }
-  return resultobj;
-fail:
-  return NULL;
-}
-
-
 SWIGINTERN PyObject *_wrap_SBStructuredData_GetGenericValue(PyObject *self, PyObject *args) {
   PyObject *resultobj = 0;
   lldb::SBStructuredData *arg1 = 0 ;
@@ -65243,6 +65252,43 @@ SWIGINTERN PyObject *_wrap_SBStructuredData_SetGenericValue(PyObject *self, PyOb
     SWIG_PYTHON_THREAD_END_ALLOW;
   }
   resultobj = SWIG_Py_Void();
+  return resultobj;
+fail:
+  return NULL;
+}
+
+
+SWIGINTERN PyObject *_wrap_SBStructuredData_GetStringValue(PyObject *self, PyObject *args) {
+  PyObject *resultobj = 0;
+  lldb::SBStructuredData *arg1 = 0 ;
+  size_t arg2 = 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  size_t val2 ;
+  int ecode2 = 0 ;
+  PyObject *swig_obj[2] ;
+  std::string result;
+  
+  (void)self;
+  if (!SWIG_Python_UnpackTuple(args, "SBStructuredData_GetStringValue", 1, 2, swig_obj)) SWIG_fail;
+  res1 = SWIG_ConvertPtr(swig_obj[0], &argp1,SWIGTYPE_p_lldb__SBStructuredData, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "SBStructuredData_GetStringValue" "', argument " "1"" of type '" "lldb::SBStructuredData const *""'"); 
+  }
+  arg1 = reinterpret_cast< lldb::SBStructuredData * >(argp1);
+  if (swig_obj[1]) {
+    ecode2 = SWIG_AsVal_size_t(swig_obj[1], &val2);
+    if (!SWIG_IsOK(ecode2)) {
+      SWIG_exception_fail(SWIG_ArgError(ecode2), "in method '" "SBStructuredData_GetStringValue" "', argument " "2"" of type '" "size_t""'");
+    } 
+    arg2 = static_cast< size_t >(val2);
+  }
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = lldb_SBStructuredData_GetStringValue((lldb::SBStructuredData const *)arg1,SWIG_STD_MOVE(*(&arg2)));
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
+  resultobj = SWIG_From_std_string(static_cast< std::string >(result));
   return resultobj;
 fail:
   return NULL;
@@ -103272,26 +103318,6 @@ static PyMethodDef SwigMethods[] = {
 		"type.\n"
 		""},
 	 { "SBStructuredData_GetBooleanValue", _wrap_SBStructuredData_GetBooleanValue, METH_VARARGS, "Return the boolean value if this data structure is a boolean type."},
-	 { "SBStructuredData_GetStringValue", _wrap_SBStructuredData_GetStringValue, METH_VARARGS, "\n"
-		"Provides the string value if this data structure is a string type.\n"
-		"\n"
-		":type dst: string, out\n"
-		":param dst:\n"
-		"        pointer where the string value will be written. In case it is null,\n"
-		"        nothing will be written at *dst*.\n"
-		"\n"
-		":type dst_len: int, in\n"
-		":param dst_len:\n"
-		"        max number of characters that can be written at *dst*. In case it is\n"
-		"        zero, nothing will be written at *dst*. If this length is not enough\n"
-		"        to write the complete string value, (*dst_len* - 1) bytes of the\n"
-		"        string value will be written at *dst* followed by a null character.\n"
-		"\n"
-		":rtype: int\n"
-		":return: \n"
-		"        Returns the byte size needed to completely write the string value at\n"
-		"        *dst* in all cases.\n"
-		""},
 	 { "SBStructuredData_GetGenericValue", _wrap_SBStructuredData_GetGenericValue, METH_O, "Return the generic pointer if this data structure is a generic type."},
 	 { "SBStructuredData_SetValueForKey", _wrap_SBStructuredData_SetValueForKey, METH_VARARGS, "\n"
 		"Set the value corresponding to a key. If this data structure\n"
@@ -103322,6 +103348,7 @@ static PyMethodDef SwigMethods[] = {
 		"Change the type to generic and overwrite the previous data with the new\n"
 		"value.\n"
 		""},
+	 { "SBStructuredData_GetStringValue", _wrap_SBStructuredData_GetStringValue, METH_VARARGS, "SBStructuredData_GetStringValue(SBStructuredData self, size_t len=0) -> std::string"},
 	 { "SBStructuredData___repr__", _wrap_SBStructuredData___repr__, METH_O, "SBStructuredData___repr__(SBStructuredData self) -> std::string"},
 	 { "SBStructuredData_swigregister", SBStructuredData_swigregister, METH_O, NULL},
 	 { "SBStructuredData_swiginit", SBStructuredData_swiginit, METH_VARARGS, NULL},
