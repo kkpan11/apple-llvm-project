@@ -211,17 +211,16 @@ lldb::addr_t SwiftLanguageRuntime::MaybeMaskNonTrivialReferencePointer(
 
     // The masked value of address is a pointer to the runtime structure.
     // The first field of the structure is the actual pointer.
-    Status error;
-
     lldb::addr_t masked_addr = addr & ~mask;
-    lldb::addr_t isa_addr =
-        GetProcess().ReadPointerFromMemory(masked_addr, error);
-    if (error.Fail()) {
-      LLDB_LOG(GetLog(LLDBLog::Expressions | LLDBLog::Types),
-               "Couldn't deref masked pointer");
+    llvm::Expected<lldb::addr_t> isa_addr =
+        GetProcess().ReadPointerFromMemory(masked_addr);
+    if (!isa_addr) {
+      LLDB_LOG_ERROR(GetLog(LLDBLog::Expressions | LLDBLog::Types),
+                     isa_addr.takeError(),
+                     "Couldn't deref masked pointer: {0}");
       return addr;
     }
-    return isa_addr;
+    return *isa_addr;
   }
 
   if (is_arm && is_64)
@@ -2375,13 +2374,15 @@ bool SwiftLanguageRuntime::GetDynamicTypeAndAddress_Pack(
   auto [addr, address_type] = in_value.GetAddressOf(true);
   value_type = Value::GetValueTypeFromAddressType(address_type);
   if (indirect) {
-    Status status;
-    addr = GetProcess().ReadPointerFromMemory(addr, status);
-    if (status.Fail()) {
-      LLDB_LOG(log, "failed to dereference indirect pack: {0}",
-               expanded_type->GetMangledTypeName());
+    llvm::Expected<lldb::addr_t> deref_addr =
+        GetProcess().ReadPointerFromMemory(addr);
+    if (!deref_addr) {
+      LLDB_LOG_ERROR(log, deref_addr.takeError(),
+                     "failed to dereference indirect pack: {1}: {0}",
+                     expanded_type->GetMangledTypeName());
       return false;
     }
+    addr = *deref_addr;
   }
   address.SetRawAddress(addr);
   return true;
@@ -2902,25 +2903,24 @@ bool SwiftLanguageRuntime::IsValidErrorValue(ValueObject &in_value) {
     metadata_offset += ptr_size + ptr_size + ptr_size; // CFIndex + 2*CFRef
 
     metadata_location += metadata_offset;
-    Status error;
     lldb::addr_t metadata_ptr_value =
-        GetProcess().ReadPointerFromMemory(metadata_location, error);
-    if (metadata_ptr_value == 0 || metadata_ptr_value == LLDB_INVALID_ADDRESS ||
-        error.Fail())
+        llvm::expectedToOptional(
+            GetProcess().ReadPointerFromMemory(metadata_location))
+            .value_or(LLDB_INVALID_ADDRESS);
+    if (metadata_ptr_value == 0 || metadata_ptr_value == LLDB_INVALID_ADDRESS)
       return false;
   } else {
     // this is a swift native error and it has no way to be bridged to ObjC
     // so it adopts a more compact layout
 
-    Status error;
-
     size_t ptr_size = GetProcess().GetAddressByteSize();
     size_t metadata_offset = 2 * ptr_size;
     metadata_location += metadata_offset;
     lldb::addr_t metadata_ptr_value =
-        GetProcess().ReadPointerFromMemory(metadata_location, error);
-    if (metadata_ptr_value == 0 || metadata_ptr_value == LLDB_INVALID_ADDRESS ||
-        error.Fail())
+        llvm::expectedToOptional(
+            GetProcess().ReadPointerFromMemory(metadata_location))
+            .value_or(LLDB_INVALID_ADDRESS);
+    if (metadata_ptr_value == 0 || metadata_ptr_value == LLDB_INVALID_ADDRESS)
       return false;
   }
 
