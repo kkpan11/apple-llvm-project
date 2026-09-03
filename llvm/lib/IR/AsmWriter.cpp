@@ -1594,6 +1594,9 @@ static void writeOptimizationInfo(raw_ostream &Out, const User *U) {
   } else if (const auto *ICmp = dyn_cast<ICmpInst>(U)) {
     if (ICmp->hasSameSign())
       Out << " samesign";
+  } else if (const auto *ASC = dyn_cast<AddrSpaceCastInst>(U)) {
+    if (ASC->hasNonNull())
+      Out << " nonnull";
   }
 }
 
