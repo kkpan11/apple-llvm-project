@@ -525,8 +525,13 @@ bool SwiftREPL::PrintOneVariable(Debugger &debugger,
       // publicly declared in the SDK.
       if (valobj_sp) {
         auto static_valobj_sp = valobj_sp->GetStaticValue();
+        // ExpressionVariable::GetValueObject() hands out the dynamic value
+        // when one is available, and GetDynamicValue() yields nothing for an
+        // object that is already dynamic.
         auto dynamic_valobj_sp =
-            valobj_sp->GetDynamicValue(lldb::eDynamicCanRunTarget);
+            valobj_sp->IsDynamic()
+                ? valobj_sp
+                : valobj_sp->GetDynamicValue(lldb::eDynamicCanRunTarget);
         if (static_valobj_sp && dynamic_valobj_sp) {
           CompilerType static_type = static_valobj_sp->GetCompilerType();
           CompilerType dynamic_type = dynamic_valobj_sp->GetCompilerType();
