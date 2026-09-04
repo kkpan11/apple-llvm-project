@@ -9,20 +9,9 @@
 // LoopTrapAnalysis emits machine-readable opt-remark records describing each
 // conditional branch to a trap block (a bounds/overflow check lowered to
 // br+@llvm.trap). Under -loop-trap-analysis-explain, each LoopTrapEdge record
-// carries the edge's properties along orthogonal axes so a consumer can
-// classify it from the fields alone:
-//   - condition nature      SCEVLoopInvariant / HasAddRec / HasInLoopUnknown
-//   - position              LoopHeader, LoopDepth, IsLoopExit, IsInnermost,
-//                           IsEntryProximate
-//   - loop trip count       LoopHasOtherUnknownBTCTrap, LoopLatchBTCComputable
-//   - condition trip count  EdgeBTCComputable, EdgeBTCSymbolic
-//   - condition property    DominatesLatch, IVUpdateDominatesLatch,
-//                           DominatedByEquivalentCheck, HasOverflowBitLeaf,
-//                           HasCheckedArithValueOperand
-//   - operand / stride      Has*Reload, Has*Operand, Has*StrideForLAddRec
-//   - comparison shape      PredicateShape, NumLeafOperands
-// Each patch in this series fills in one axis. This first patch establishes the
-// per-edge record behind the flag; later patches add the fields above.
+// carries the edge's position within its loop (loop header, depth, whether the
+// edge exits the loop, and whether the loop is innermost) so a consumer can
+// classify it from the fields alone.
 //
 //===----------------------------------------------------------------------===//
 
@@ -58,13 +47,7 @@ static cl::opt<bool> LTAEmitExplain(
              "base remark output is unchanged."));
 
 /// Print a stable, non-empty label for \p BB, so remark args that identify
-/// BasicBlocks stay useful when the BB has no source-level name (numeric IR,
-/// stripped names, or non-C frontends such as swiftc's IRGen).
-///
-/// Preferred: `BB->getName()`. Otherwise `printAsOperand` emits the
-/// slot-tracker form (`%5` etc.), which is parseable and unique within the
-/// function; for any block in a function it yields a `%N` slot, so it is
-/// never empty.
+/// BasicBlocks stay useful when the BB has no source-level name .
 static std::string bbLabel(const BasicBlock *BB) {
   if (BB->hasName())
     return BB->getName().str();
@@ -74,30 +57,19 @@ static std::string bbLabel(const BasicBlock *BB) {
   return S;
 }
 
-/// Minimal trap-block predicate for the per-edge explain output: \p BB ends in
-/// `unreachable` immediately preceded by a trap-like call. @llvm.trap /
-/// @llvm.ubsantrap are `noreturn` and only access inaccessible memory, so an
-/// intrinsic must have both; a non-intrinsic call qualifies on `noreturn`.
+/// Minimal trap-block predicate for the per-edge explain output.
 static bool isTrapEdgeBlock(BasicBlock *BB) {
   Instruction *Term = BB->getTerminator();
-  if (!isa<UnreachableInst>(Term))
-    return false;
-  // A bare `unreachable` with no preceding instruction is valid IR; this guards
-  // the getPrevNode() below.
-  if (Term == &BB->front())
+  if (!isa<UnreachableInst>(Term) || Term == &BB->front())
     return false;
   auto *CI = dyn_cast<CallInst>(Term->getPrevNode());
-  if (!CI)
-    return false;
-  // Trap intrinsic: noreturn and only touches inaccessible memory.
-  if (isa<IntrinsicInst>(CI))
-    return CI->doesNotReturn() && CI->onlyAccessesInaccessibleMemory();
-  // Non-intrinsic call: noreturn is enough.
-  return CI->doesNotReturn();
+  // Trap intrinsic: noreturn and accesses inaccessible memory.
+  return isa_and_nonnull<IntrinsicInst>(CI) && CI->doesNotReturn() &&
+         CI->onlyAccessesInaccessibleMemory();
 }
 
 /// Emit one LoopTrapEdge remark per conditional branch whose one successor is a
-/// trap block (see isTrapEdgeBlock). Gated by -loop-trap-analysis-explain.
+/// trap block
 static void emitPerTrapEdge(Function &F, LoopInfo &LI,
                             OptimizationRemarkEmitter &ORE) {
   std::string Name = "LoopTrapEdge";

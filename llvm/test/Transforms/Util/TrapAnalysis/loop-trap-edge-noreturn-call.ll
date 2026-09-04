@@ -1,17 +1,14 @@
 ; RUN: opt -passes='loop-trap-analysis' -loop-trap-analysis-explain -disable-output \
 ; RUN:   -pass-remarks-output=%t.yaml %s
 ; RUN: FileCheck --input-file=%t.yaml %s \
-; RUN:   --implicit-check-not=LoopTrapEdge --implicit-check-not=retbb \
-; RUN:   --implicit-check-not=sideeffect
+; RUN:   --implicit-check-not=LoopTrapEdge --implicit-check-not=fatalbb
 
 declare void @fatal() noreturn
-declare void @sideeffect()
 
-; A non-intrinsic `noreturn` call before `unreachable` (%fatalbb, e.g. a
-; fatal-error / abort function) is a trap edge on doesNotReturn alone -- it need
-; not be an intrinsic and need not only touch inaccessible memory. A plain
-; returning call before `unreachable` (%retbb) is still not a trap edge, so
-; exactly one LoopTrapEdge is emitted (enforced by --implicit-check-not above).
+; Only a trap intrinsic (noreturn, accesses only inaccessible memory) is a trap
+; edge. A non-intrinsic `noreturn` call before `unreachable` (%fatalbb, e.g. a
+; fatal-error function or longjmp) is not, so no LoopTrapEdge targets it; the
+; intrinsic block (%trapbb) is the only edge.
 define void @noreturn_call(ptr %base, i32 %n) {
 entry:
   br label %body
@@ -27,10 +24,10 @@ fatalbb:
 
 s1:
   %c1 = icmp eq i32 %iv, 3
-  br i1 %c1, label %latch, label %retbb
+  br i1 %c1, label %latch, label %trapbb
 
-retbb:
-  call void @sideeffect()
+trapbb:
+  call void @llvm.trap()
   unreachable
 
 latch:
@@ -44,16 +41,16 @@ exit:
   ret void
 }
 
-; The single LoopTrapEdge record, pinned line-by-line; it targets %fatalbb.
+; The single LoopTrapEdge record targets %trapbb (the intrinsic), not %fatalbb.
 ; CHECK:      Name:{{ +}}LoopTrapEdge
 ; CHECK-NEXT: Function:{{ +}}noreturn_call
 ; CHECK-NEXT: Args:
 ; CHECK-NEXT:   - String:{{ +}}'Function '
 ; CHECK-NEXT:   - Function:{{ +}}noreturn_call
 ; CHECK-NEXT:   - String:{{ +}}' src_bb='
-; CHECK-NEXT:   - SourceBB:{{ +}}body
+; CHECK-NEXT:   - SourceBB:{{ +}}s1
 ; CHECK-NEXT:   - String:{{ +}}' trap_bb='
-; CHECK-NEXT:   - TrapBB:{{ +}}fatalbb
+; CHECK-NEXT:   - TrapBB:{{ +}}trapbb
 ; CHECK-NEXT:   - String:{{ +}}' loop_depth='
 ; CHECK-NEXT:   - LoopDepth:{{ +}}'1'
 ; CHECK-NEXT:   - String:{{ +}}' loop_header='
