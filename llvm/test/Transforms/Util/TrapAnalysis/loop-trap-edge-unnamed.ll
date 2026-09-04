@@ -8,7 +8,6 @@
 ; a `%N` slot, so src_bb / trap_bb / loop_header are the numeric labels and are
 ; never empty.
 
-declare void @llvm.trap() #0
 
 define void @counted_trap(ptr %0, i32 %1) {
   br label %3

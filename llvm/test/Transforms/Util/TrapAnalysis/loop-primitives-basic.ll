@@ -2,8 +2,6 @@
 ; RUN:   -pass-remarks-output=%t.yaml %s
 ; RUN: FileCheck --input-file=%t.yaml %s
 
-declare void @llvm.trap()
-
 ; A nested loop nest. The outer loop (%outer) and the inner loop (%inner) each
 ; guard a conditional branch to an @llvm.trap+unreachable block, giving each
 ; loop one trap exit. The per-loop LoopPrimitives records should report the
