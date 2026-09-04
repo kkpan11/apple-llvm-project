@@ -4,7 +4,6 @@
 ; RUN:   --implicit-check-not=LoopTrapEdge --implicit-check-not=fakecall \
 ; RUN:   --implicit-check-not=bare
 
-declare void @llvm.trap()
 declare void @sideeffect()
 
 ; The loop guards a real trap block (%realtrap: @llvm.trap + unreachable) plus

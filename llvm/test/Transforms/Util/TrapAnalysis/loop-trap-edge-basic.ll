@@ -2,7 +2,6 @@
 ; RUN:   -pass-remarks-output=%t.yaml %s
 ; RUN: FileCheck --input-file=%t.yaml %s
 
-declare void @llvm.trap()
 
 ; A counted loop whose in-loop check branches to an @llvm.trap+unreachable
 ; block. The per-edge explain output emits one LoopTrapEdge record for the
