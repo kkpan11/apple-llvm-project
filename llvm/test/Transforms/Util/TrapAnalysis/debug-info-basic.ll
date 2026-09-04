@@ -7,8 +7,6 @@
 ; RUN:   -pass-remarks-output=%t.yaml %s
 ; RUN: FileCheck --input-file=%t.yaml %s
 
-declare void @llvm.trap()
-
 define void @counted_trap(ptr %base, i32 %n) !dbg !4 {
 entry:
   br label %body
