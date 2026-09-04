@@ -7,8 +7,6 @@
 ; RUN:   -pass-remarks-output=%t.yaml %s
 ; RUN: FileCheck --input-file=%t.yaml %s
 
-declare void @llvm.trap()
-
 define void @counted_trap(ptr %base, i32 %n) !dbg !4 {
 entry:
   br label %body
@@ -66,20 +64,16 @@ exit:
 ; CHECK-NEXT:   - IsLoopExit:{{ +}}'true'
 ; CHECK-NEXT:   - String:{{ +}}' num_leaf_operands='
 ; CHECK-NEXT:   - NumLeafOperands:{{ +}}'2'
-; CHECK-NEXT:   - String:{{ +}}' scev_computed='
-; CHECK-NEXT:   - SCEVComputed:{{ +}}'true'
-; CHECK-NEXT:   - String:{{ +}}' scev_loop_invariant='
-; CHECK-NEXT:   - SCEVLoopInvariant:{{ +}}'false'
-; CHECK-NEXT:   - String:{{ +}}' has_addrec='
-; CHECK-NEXT:   - HasAddRec:{{ +}}'true'
+; CHECK-NEXT:   - String:{{ +}}' is_affine='
+; CHECK-NEXT:   - IsAffine:{{ +}}'true'
 ; CHECK-NEXT:   - String:{{ +}}' has_in_loop_unknown='
 ; CHECK-NEXT:   - HasInLoopUnknown:{{ +}}'false'
 ; CHECK-NEXT:   - String:{{ +}}' has_non_unit_stride_for_l_addrec='
 ; CHECK-NEXT:   - HasNonUnitStrideForLAddRec:{{ +}}'false'
 ; CHECK-NEXT:   - String:{{ +}}' has_non_constant_stride_for_l_addrec='
 ; CHECK-NEXT:   - HasNonConstantStrideForLAddRec:{{ +}}'false'
-; CHECK-NEXT:   - String:{{ +}}' has_only_weak_no_wrap_for_l_addrec='
-; CHECK-NEXT:   - HasOnlyNotProvenMonotonicForLAddRec:{{ +}}'false'
+; CHECK-NEXT:   - String:{{ +}}' not_proven_monotonic='
+; CHECK-NEXT:   - NotProvenMonotonic:{{ +}}'false'
 ; CHECK-NEXT:   - String:{{ +}}' has_negative_stride_for_l_addrec='
 ; CHECK-NEXT:   - HasNegativeStrideForLAddRec:{{ +}}'false'
 ; CHECK-NEXT:   - String:{{ +}}' edge_btc_computable='
@@ -92,12 +86,8 @@ exit:
 ; CHECK-NEXT:   - PredicateShape:{{ +}}SingleICmp
 ; CHECK-NEXT:   - String:{{ +}}' is_entry_proximate='
 ; CHECK-NEXT:   - IsEntryProximate:{{ +}}'true'
-; CHECK-NEXT:   - String:{{ +}}' dominated_by_equivalent_check='
-; CHECK-NEXT:   - DominatedByEquivalentCheck:{{ +}}'false'
 ; CHECK-NEXT:   - String:{{ +}}' dominates_latch='
 ; CHECK-NEXT:   - DominatesLatch:{{ +}}'true'
-; CHECK-NEXT:   - String:{{ +}}' iv_update_dominates_latch='
-; CHECK-NEXT:   - IVUpdateDominatesLatch:{{ +}}'true'
 ; CHECK-NEXT:   - String:{{ +}}' loop_latch_btc_computable='
 ; CHECK-NEXT:   - LoopLatchBTCComputable:{{ +}}'true'
 ; CHECK-NEXT:   - String:{{ +}}' has_store_reload='
