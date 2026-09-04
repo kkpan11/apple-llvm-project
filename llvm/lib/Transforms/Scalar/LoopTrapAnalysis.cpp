@@ -9,20 +9,9 @@
 // LoopTrapAnalysis emits machine-readable opt-remark records describing each
 // conditional branch to a trap block (a bounds/overflow check lowered to
 // br+@llvm.trap). Under -loop-trap-analysis-explain, each LoopTrapEdge record
-// carries the edge's properties along orthogonal axes so a consumer can
-// classify it from the fields alone:
-//   - condition nature      SCEVLoopInvariant / HasAddRec / HasInLoopUnknown
-//   - position              LoopHeader, LoopDepth, IsLoopExit, IsInnermost,
-//                           IsEntryProximate
-//   - loop trip count       LoopHasOtherUnknownBTCTrap, LoopLatchBTCComputable
-//   - condition trip count  EdgeBTCComputable, EdgeBTCSymbolic
-//   - condition property    DominatesLatch, IVUpdateDominatesLatch,
-//                           DominatedByEquivalentCheck, HasOverflowBitLeaf,
-//                           HasCheckedArithValueOperand
-//   - operand / stride      Has*Reload, Has*Operand, Has*StrideForLAddRec
-//   - comparison shape      PredicateShape, NumLeafOperands
-// Each patch in this series fills in one axis. This first patch establishes the
-// per-edge record behind the flag; later patches add the fields above.
+// carries the edge's position within its loop (loop header, depth, whether the
+// edge exits the loop, and whether the loop is innermost) so a consumer can
+// classify it from the fields alone.
 //
 //===----------------------------------------------------------------------===//
 
@@ -67,13 +56,7 @@ static cl::opt<unsigned> EntryProximityDepth(
              "trap edge is classified IsEntryProximate (default 3)."));
 
 /// Print a stable, non-empty label for \p BB, so remark args that identify
-/// BasicBlocks stay useful when the BB has no source-level name (numeric IR,
-/// stripped names, or non-C frontends such as swiftc's IRGen).
-///
-/// Preferred: `BB->getName()`. Otherwise `printAsOperand` emits the
-/// slot-tracker form (`%5` etc.), which is parseable and unique within the
-/// function; for any block in a function it yields a `%N` slot, so it is
-/// never empty.
+/// BasicBlocks stay useful when the BB has no source-level name .
 static std::string bbLabel(const BasicBlock *BB) {
   if (BB->hasName())
     return BB->getName().str();
@@ -83,35 +66,18 @@ static std::string bbLabel(const BasicBlock *BB) {
   return S;
 }
 
-/// Minimal trap-block predicate for the per-edge explain output: \p BB ends in
-/// `unreachable` immediately preceded by a trap-like call. @llvm.trap /
-/// @llvm.ubsantrap are `noreturn` and only access inaccessible memory, so an
-/// intrinsic must have both; a non-intrinsic call qualifies on `noreturn`.
+/// Minimal trap-block predicate for the per-edge explain output.
 static bool isTrapEdgeBlock(BasicBlock *BB) {
   Instruction *Term = BB->getTerminator();
-  if (!isa<UnreachableInst>(Term))
-    return false;
-  // A bare `unreachable` with no preceding instruction is valid IR; this guards
-  // the getPrevNode() below.
-  if (Term == &BB->front())
+  if (!isa<UnreachableInst>(Term) || Term == &BB->front())
     return false;
   auto *CI = dyn_cast<CallInst>(Term->getPrevNode());
-  if (!CI)
-    return false;
-  // Trap intrinsic: noreturn and only touches inaccessible memory.
-  if (isa<IntrinsicInst>(CI))
-    return CI->doesNotReturn() && CI->onlyAccessesInaccessibleMemory();
-  // Non-intrinsic call: noreturn is enough.
-  return CI->doesNotReturn();
+  // Trap intrinsic: noreturn and accesses inaccessible memory.
+  return isa_and_nonnull<IntrinsicInst>(CI) && CI->doesNotReturn() &&
+         CI->onlyAccessesInaccessibleMemory();
 }
 
-/// Count loop-exit edges of \p L whose successor is a trap block (see
-/// isTrapEdgeBlock).
-///
-/// Strict attribution: count a trap exit only if it has a predecessor whose
-/// immediate containing loop is L (not a nested sub-loop). Otherwise an inner
-/// trap's unreachable target -- present in every enclosing loop's exit set --
-/// would be counted at every nesting level.
+/// Count trap loop-exit edges of Loop
 static unsigned countTrapExits(Loop *L, LoopInfo &LI) {
   unsigned Count = 0;
   SmallVector<BasicBlock *, 4> LoopExitBlocks;
@@ -132,9 +98,9 @@ static unsigned countTrapExits(Loop *L, LoopInfo &LI) {
   return Count;
 }
 
-/// Emit one LoopPrimitives remark per loop with a trap exit (trap-free loops
-/// emit none), plus a per-function LoopPrimitivesSummary with loop-depth
-/// tallies over all loops. Gated by -loop-trap-analysis-explain.
+/// Emit one LoopPrimitives remark per loop with a trap exit
+/// and a per-function LoopPrimitivesSummary with loop-depth
+/// for all loops.
 static void emitLoopPrimitives(Function &F, LoopInfo &LI,
                                OptimizationRemarkEmitter &ORE,
                                ScalarEvolution &SE) {
@@ -196,40 +162,46 @@ static void emitLoopPrimitives(Function &F, LoopInfo &LI,
 }
 
 /// Recursively unfold a boolean expression chain (select-OR, select-AND,
-/// or/and) into the leaf comparison operands. Used to surface every
-/// concrete operand of a trap predicate so we can classify each one.
-static void collectBoolLeafOperands(Value *V,
-                                    SmallVectorImpl<Value *> &Operands,
-                                    SmallPtrSetImpl<Value *> &Visited,
-                                    int Depth = 0) {
+/// or/and) into the leaf comparison operands, optionally also collecting the
+/// leaf ICmpInsts (for their signedness).
+static void
+collectIcmpBoolOperands(Value *V, SmallVectorImpl<Value *> &Operands,
+                        SmallPtrSetImpl<Value *> &Visited,
+                        SmallVectorImpl<ICmpInst *> *ICmps = nullptr,
+                        int Depth = 0) {
   if (!V || !Visited.insert(V).second || Depth > 8)
     return;
   if (auto *SI = dyn_cast<SelectInst>(V)) {
     Value *T = SI->getTrueValue(), *FV = SI->getFalseValue();
     if (auto *TC = dyn_cast<ConstantInt>(T))
       if (TC->isOne()) {
-        collectBoolLeafOperands(SI->getCondition(), Operands, Visited,
+        collectIcmpBoolOperands(SI->getCondition(), Operands, Visited, ICmps,
                                 Depth + 1);
-        collectBoolLeafOperands(FV, Operands, Visited, Depth + 1);
+        collectIcmpBoolOperands(FV, Operands, Visited, ICmps, Depth + 1);
         return;
       }
     if (auto *FC = dyn_cast<ConstantInt>(FV))
       if (FC->isZero()) {
-        collectBoolLeafOperands(SI->getCondition(), Operands, Visited,
+        collectIcmpBoolOperands(SI->getCondition(), Operands, Visited, ICmps,
                                 Depth + 1);
-        collectBoolLeafOperands(T, Operands, Visited, Depth + 1);
+        collectIcmpBoolOperands(T, Operands, Visited, ICmps, Depth + 1);
         return;
       }
   }
   if (auto *BO = dyn_cast<BinaryOperator>(V)) {
     if (BO->getOpcode() == Instruction::Or ||
         BO->getOpcode() == Instruction::And) {
-      collectBoolLeafOperands(BO->getOperand(0), Operands, Visited, Depth + 1);
-      collectBoolLeafOperands(BO->getOperand(1), Operands, Visited, Depth + 1);
+      collectIcmpBoolOperands(BO->getOperand(0), Operands, Visited, ICmps,
+                              Depth + 1);
+      collectIcmpBoolOperands(BO->getOperand(1), Operands, Visited, ICmps,
+                              Depth + 1);
       return;
     }
   }
   if (auto *Cmp = dyn_cast<CmpInst>(V)) {
+    if (ICmps)
+      if (auto *IC = dyn_cast<ICmpInst>(Cmp))
+        ICmps->push_back(IC);
     Operands.push_back(Cmp->getOperand(0));
     Operands.push_back(Cmp->getOperand(1));
     return;
@@ -238,8 +210,7 @@ static void collectBoolLeafOperands(Value *V,
   Operands.push_back(V);
 }
 
-/// Collect the SCEVUnknown and SCEVAddRecExpr nodes reachable from a SCEV via
-/// LLVM's `SCEVTraversal<>` machinery — no string parsing, no regex.
+/// Collect the SCEVUnknown and SCEVAddRecExpr nodes reachable from a SCEV
 namespace {
 struct SCEVNodeCollector {
   SmallPtrSet<const SCEVUnknown *, 8> Unknowns;
@@ -255,10 +226,7 @@ struct SCEVNodeCollector {
 };
 } // anonymous namespace
 
-/// Structural shape of a trap branch's i1 predicate. Sizes the reach of
-/// compiler-side fix opportunities (bounds-check OR/AND forms with a constant
-/// or variable bound, and the generic OR-of-AddRec exit recognition).
-/// Independent of whether the source BB sits inside a loop.
+/// Structural shape of a trap branch's i1 predicate.
 namespace {
 enum class TrapPredicateShape {
   Unknown,                  ///< Could not classify (null cond, etc.).
@@ -303,10 +271,6 @@ static StringRef trapPredicateShapeName(TrapPredicateShape S) {
 /// Returns true iff one arm ordering matches the requested (predicate-pair,
 /// K-kind) tuple. K-kind is constant for the *ConstK shapes and an L-affine
 /// SCEVAddRecExpr for the *VarK shapes.
-///
-/// icmp operand-swap is not attempted: clang's post-SROA/SimplifyCFG lowering
-/// produces canonical (X, B) and (sub, K) orderings. Swapped forms fall through
-/// to OtherMulti, the correct conservative classification.
 static bool matchBoundsCheckArmsImpl(Value *Arm1, Value *Arm2,
                                      ICmpInst::Predicate ArmAPred,
                                      ICmpInst::Predicate ArmBPred, bool VarK,
@@ -349,8 +313,8 @@ static bool matchBoundsCheckArmsImpl(Value *Arm1, Value *Arm2,
   return false;
 }
 
-/// True when \p V is an icmp with an operand whose SCEV is an AddRec for \p L.
-static bool hasLAddRec(Value *V, ScalarEvolution &SE, Loop *L) {
+/// True when V is an icmp with an operand whose SCEV is an AddRec for L.
+static bool icmpHasLoopAddRecOperand(Value *V, ScalarEvolution &SE, Loop *L) {
   auto *Cmp = dyn_cast<ICmpInst>(V);
   if (!Cmp)
     return false;
@@ -374,7 +338,8 @@ static bool matchTwoAddRecICmpImpl(Value *Arm1, Value *Arm2,
                                    ScalarEvolution &SE, Loop *L) {
   if (!L)
     return false;
-  return hasLAddRec(Arm1, SE, L) && hasLAddRec(Arm2, SE, L);
+  return icmpHasLoopAddRecOperand(Arm1, SE, L) &&
+         icmpHasLoopAddRecOperand(Arm2, SE, L);
 }
 
 /// Classify a trap branch's i1 predicate by structural shape.
@@ -426,13 +391,8 @@ classifyTrapPredicateShape(Value *Cond, ScalarEvolution &SE, Loop *L) {
   return TrapPredicateShape::OtherMulti;
 }
 
-/// HEURISTIC that estimates which trap checks are likely necessary validation
-/// traps for incoming (function-argument) values, as opposed to in-loop
-/// elimination candidates. Returns true iff \p BB sits within
-/// `EntryProximityDepth` dominator steps of the function's entry block OR any
-/// loop preheader. A trap at/above a preheader is structurally like
-/// entry-level parameter validation -- on the pre-loop boundary, never paid for
-/// by the loop body.
+/// HEURISTIC that estimates which trap checks are likely precondition
+/// validation traps for incoming (function-argument) values
 static bool isEntryProximate(const Function &F, BasicBlock *BB,
                              const DominatorTree &DT, const LoopInfo &LI) {
   if (!BB)
@@ -461,136 +421,148 @@ static bool isEntryProximate(const Function &F, BasicBlock *BB,
   return false;
 }
 
-/// Decide whether an equivalent check on a dominating path already guarantees
-/// this trap cannot fire. Returns true iff some dominator of \p BB ends in a
-/// conditional branch whose condition is the same as \p MyCond -- either the
-/// identical SSA value, or a structurally equivalent icmp (same predicate and
-/// operand pointers) -- so the trap predicate has already been decided before
-/// control reaches \p BB.
-static bool isDominatedByEquivalentCheck(BasicBlock *BB, Value *MyCond,
-                                         const DominatorTree &DT) {
-  if (!BB || !MyCond)
-    return false;
-  auto *MyCmp = dyn_cast<ICmpInst>(MyCond);
-  auto *N = DT.getNode(BB);
-  if (!N)
-    return false;
-  // Walk strict dominators (skip BB itself), bounding cost on functions with
-  // very deep dominator chains.
-  const unsigned MaxDomChains = 16;
-  unsigned Steps = 0;
-  for (auto *Cur = N->getIDom(); Cur && Steps < MaxDomChains;
-       Cur = Cur->getIDom(), ++Steps) {
-    BasicBlock *Dom = Cur->getBlock();
-    auto *DomBI = dyn_cast<CondBrInst>(Dom->getTerminator());
-    if (!DomBI)
-      continue;
-    Value *DomCond = DomBI->getCondition();
-    bool Equivalent = (DomCond == MyCond);
-    if (!Equivalent && MyCmp)
-      if (auto *DomCmp = dyn_cast<ICmpInst>(DomCond))
-        Equivalent = DomCmp->getPredicate() == MyCmp->getPredicate() &&
-                     DomCmp->getOperand(0) == MyCmp->getOperand(0) &&
-                     DomCmp->getOperand(1) == MyCmp->getOperand(1);
-    if (!Equivalent)
-      continue;
-    if (!LTAEmitExplain)
-      return true;
-    // Require the dominating branch to actually DETERMINE the condition on the
-    // path to BB (one of its edges dominates BB). A same-condition dominator
-    // whose neither edge dominates BB proves nothing, so calling the trap
-    // "redundant" would be unsound.
-    BasicBlockEdge TrueEdge(Dom, DomBI->getSuccessor(0));
-    BasicBlockEdge FalseEdge(Dom, DomBI->getSuccessor(1));
-    if (DT.dominates(TrueEdge, BB) || DT.dominates(FalseEdge, BB))
-      return true;
-  }
-  return false;
-}
+namespace {
+/// SCEV nature of a trap predicate's leaf operands.
+struct OperandSCEVInfo {
+  unsigned NumLeafOps = 0;
+  bool IsAffine = false;
+  bool HasInLoopUnknown = false;
+  bool HasNonUnitStrideForLAddRec = false;
+  bool HasNegativeStrideForLAddRec = false;
+  bool HasNonConstantStrideForLAddRec = false;
+  bool NotProvenMonotonic = false;
+};
+/// Per-edge exit count for the exiting block (not the loop's overall count).
+struct EdgeBTCInfo {
+  bool Computable = false;
+  bool Symbolic = false;
+};
+struct DominanceInfo {
+  bool DominatesLatch = false;
+  bool LoopLatchBTCComputable = false;
+};
+} // anonymous namespace
 
-/// Walk the def chain feeding \p Start and confirm every in-loop instruction on
-/// it lives in a BB that dominates \p Latch. Used to decide whether an IV's
-/// update is unconditional (dominates the latch) or control-dependent.
-static bool allUpdatesDominate(Value *Start, Loop *L, BasicBlock *Header,
-                               BasicBlock *Latch, const DominatorTree &DT) {
-  SmallPtrSet<const Value *, 32> Seen;
-  SmallVector<const Value *, 16> Stack;
-  Stack.push_back(Start);
-  unsigned Steps = 0;
-  const unsigned StepLimit = 64;
-  while (!Stack.empty() && Steps++ < StepLimit) {
-    const Value *V = Stack.pop_back_val();
-    if (!Seen.insert(V).second)
+/// SCEV nature of the leaf operands of trap predicate Cond:
+///   IsAffine           — some operand SCEV is an affine AddRec.
+///   HasInLoopUnknown   — some operand is a SCEVUnknown defined in a containing
+///                        loop; opaque to SCEV.
+///   NotProvenMonotonic — a compared affine AddRec lacks the no-wrap flag its
+///                        comparison needs (nuw for unsigned, nsw for signed).
+/// Stride flags (informational) for an affine innermost-loop AddRec:
+///   HasNonUnitStrideForLAddRec     — |step| > 1.
+///   HasNegativeStrideForLAddRec    — negative constant step.
+///   HasNonConstantStrideForLAddRec — runtime (non-constant) step.
+static OperandSCEVInfo
+computeOperandSCEVInfo(Value *Cond, ScalarEvolution &SE, LoopInfo &LI,
+                       Loop *Innermost, ArrayRef<Loop *> ContainingLoops) {
+  OperandSCEVInfo R;
+  SmallVector<Value *, 8> LeafOperands;
+  SmallVector<ICmpInst *, 4> LeafICmps;
+  SmallPtrSet<Value *, 16> Visited;
+  collectIcmpBoolOperands(Cond, LeafOperands, Visited, &LeafICmps);
+  R.NumLeafOps = LeafOperands.size();
+  for (Value *V : LeafOperands) {
+    if (!V || isa<Constant>(V) || !SE.isSCEVable(V->getType()))
       continue;
-    const auto *I = dyn_cast<Instruction>(V);
-    if (!I)
+    const SCEV *SC = SE.getSCEV(V);
+    if (isa<SCEVCouldNotCompute>(SC))
       continue;
-    if (!L->contains(I->getParent()))
-      continue;
-    // The header phi's parent IS the header, which dominates the latch;
-    // don't recurse through it (recurrence already inspected at the call
-    // site).
-    if (isa<PHINode>(I) && I->getParent() == Header)
-      continue;
-    // Any other chain instruction must live in a BB dominating the latch;
-    // otherwise the update is control-dependent.
-    if (!DT.dominates(I->getParent(), Latch))
-      return false;
-    // Walk operands. For non-header (merge) phis this recurses into both
-    // arms — catching the `m += cond ? 1 : 0` shape where one arm's add sits
-    // in a non-dominating BB.
-    for (const Use &U : I->operands())
-      Stack.push_back(U.get());
-  }
-  return true;
-}
-
-/// For each IV recurrence feeding trap-branch condition \p Cond, decide whether
-/// its update (the latch-incoming value) dominates the loop latch. Returns
-/// false as soon as one conditionally-updated IV is found; true (the default)
-/// when there is no loop, no latch, or every reachable update dominates the
-/// latch.
-static bool computeIVUpdateDominatesLatch(Value *Cond, Loop *L,
-                                          const DominatorTree &DT) {
-  if (!L)
-    return true;
-  BasicBlock *Header = L->getHeader();
-  BasicBlock *Latch = L->getLoopLatch();
-  if (!Latch)
-    return true;
-  SmallPtrSet<const Value *, 32> Seen;
-  SmallVector<const Value *, 16> Stack;
-  Stack.push_back(Cond);
-  unsigned Steps = 0;
-  const unsigned StepLimit = 64;
-  while (!Stack.empty() && Steps++ < StepLimit) {
-    const Value *V = Stack.pop_back_val();
-    if (!Seen.insert(V).second)
-      continue;
-    const auto *I = dyn_cast<Instruction>(V);
-    if (!I)
-      continue;
-    if (!L->contains(I->getParent()))
-      continue;
-    if (const auto *Phi = dyn_cast<PHINode>(I)) {
-      if (Phi->getParent() == Header) {
-        if (Value *In = Phi->getIncomingValueForBlock(Latch))
-          if (!allUpdatesDominate(In, L, Header, Latch, DT))
-            return false;
-        // Don't recurse through phi operands — recurrence just inspected via
-        // the latch incoming.
+    SCEVNodeCollector Coll;
+    SCEVTraversal<SCEVNodeCollector>(Coll).visitAll(SC);
+    for (const SCEVAddRecExpr *AR : Coll.AddRecs)
+      if (AR->isAffine())
+        R.IsAffine = true;
+    // A SCEVUnknown whose defining instruction lives in a containing loop is
+    // opaque to SCEV (a load/call the trip count cannot see through).
+    for (const SCEVUnknown *U : Coll.Unknowns) {
+      auto *I = dyn_cast_or_null<Instruction>(U->getValue());
+      if (!I)
         continue;
+      Loop *DefLoop = LI.getLoopFor(I->getParent());
+      for (Loop *DL = DefLoop; DL && !R.HasInLoopUnknown;
+           DL = DL->getParentLoop())
+        for (Loop *CL : ContainingLoops)
+          if (DL == CL) {
+            R.HasInLoopUnknown = true;
+            break;
+          }
+      if (R.HasInLoopUnknown)
+        break;
+    }
+    // Stride fragility of an affine innermost-loop AddRec (informational).
+    if (Innermost) {
+      for (const SCEVAddRecExpr *AR : Coll.AddRecs) {
+        if (AR->getLoop() != Innermost || !AR->isAffine())
+          continue;
+        if (auto *StepC = dyn_cast<SCEVConstant>(AR->getStepRecurrence(SE))) {
+          const APInt &Step = StepC->getAPInt();
+          if (Step.isNegative())
+            R.HasNegativeStrideForLAddRec = true;
+          APInt AbsStep = Step.isNegative() ? -Step : Step;
+          if (AbsStep.ugt(1))
+            R.HasNonUnitStrideForLAddRec = true;
+        } else {
+          R.HasNonUnitStrideForLAddRec = true;
+          R.HasNonConstantStrideForLAddRec = true;
+        }
       }
     }
-    for (const Use &U : I->operands())
-      Stack.push_back(U.get());
   }
-  return true;
+  // NotProvenMonotonic: an affine innermost-loop AddRec compared without the
+  // no-wrap flag its comparison needs (unsigned -> nuw, signed -> nsw), so the
+  // trip count cannot be bounded.
+  for (ICmpInst *Cmp : LeafICmps) {
+    if (Cmp->isEquality())
+      continue;
+    bool Signed = Cmp->isSigned();
+    for (Value *Op : {Cmp->getOperand(0), Cmp->getOperand(1)}) {
+      if (!SE.isSCEVable(Op->getType()))
+        continue;
+      auto *AR = dyn_cast<SCEVAddRecExpr>(SE.getSCEV(Op));
+      if (!AR || AR->getLoop() != Innermost || !AR->isAffine())
+        continue;
+      if (Signed ? !AR->hasNoSignedWrap() : !AR->hasNoUnsignedWrap())
+        R.NotProvenMonotonic = true;
+    }
+  }
+  return R;
+}
+
+/// Per-edge exit count for exiting block BB (not the loop's overall
+/// backedge-taken count): Computable is the exact SE.getExitCount; Symbolic is
+/// the SymbolicMaximum bucket, checked only when the exact count is unknown.
+static EdgeBTCInfo computeEdgeBTC(ScalarEvolution &SE, Loop *Innermost,
+                                  BasicBlock *BB, bool IsLoopExit) {
+  EdgeBTCInfo R;
+  if (Innermost && IsLoopExit) {
+    const SCEV *EC = SE.getExitCount(Innermost, BB);
+    R.Computable = !isa<SCEVCouldNotCompute>(EC);
+    if (!R.Computable) {
+      const SCEV *SymEC =
+          SE.getExitCount(Innermost, BB, ScalarEvolution::SymbolicMaximum);
+      R.Symbolic = !isa<SCEVCouldNotCompute>(SymEC);
+    }
+  }
+  return R;
+}
+
+/// Whether the trap branch's BB dominates the latch (the condition fires every
+/// iteration) and whether the loop's latch exit count is computable.
+static DominanceInfo computeDominanceInfo(ScalarEvolution &SE,
+                                          const DominatorTree &DT,
+                                          Loop *Innermost, BasicBlock *BB) {
+  DominanceInfo R;
+  BasicBlock *Latch = Innermost ? Innermost->getLoopLatch() : nullptr;
+  R.DominatesLatch = Latch && DT.dominates(BB, Latch);
+  if (Latch)
+    R.LoopLatchBTCComputable =
+        !isa<SCEVCouldNotCompute>(SE.getExitCount(Innermost, Latch));
+  return R;
 }
 
 /// Emit one LoopTrapEdge remark per conditional branch whose one successor is a
-/// trap block (see isTrapEdgeBlock). Gated by -loop-trap-analysis-explain. The
-/// record's fields are the per-edge axes described at the top of the file.
+/// trap block
 static void emitPerTrapEdge(Function &F, LoopInfo &LI,
                             OptimizationRemarkEmitter &ORE, ScalarEvolution &SE,
                             const DominatorTree &DT) {
@@ -626,142 +598,17 @@ static void emitPerTrapEdge(Function &F, LoopInfo &LI,
     TrapPredicateShape PredShape =
         classifyTrapPredicateShape(BI->getCondition(), SE, Innermost);
 
-    SmallVector<Value *, 8> LeafOperands;
-    SmallPtrSet<Value *, 16> Visited;
-    collectBoolLeafOperands(BI->getCondition(), LeafOperands, Visited);
-    unsigned NumLeafOps = LeafOperands.size();
+    OperandSCEVInfo SF = computeOperandSCEVInfo(BI->getCondition(), SE, LI,
+                                                Innermost, ContainingLoops);
 
-    // SCEV-descriptive fields for the predicate's leaf operands:
-    //   SCEVComputed        — every non-constant leaf had a computable SCEV.
-    //   SCEVLoopInvariant   — every leaf SCEV is invariant in the innermost
-    //                         containing loop (trivially true if no loop).
-    //   HasAddRec           — some leaf SCEV contains an AddRec.
-    //   HasInLoopUnknown    — some leaf SCEV has a SCEVUnknown defined in a
-    //                         containing loop.
-    // Stride-fragility flags for any affine L-AddRec leaf operand break down
-    // the weak-no-wrap class ("operands clean for L but getExitCount still
-    // CouldNotCompute"):
-    //   HasNonUnitStrideForLAddRec  — an L-AddRec operand with |step| > 1.
-    //   HasNegativeStrideForLAddRec — an L-AddRec with a negative const step.
-    //   HasNonConstantStrideForLAddRec — an L-AddRec with a runtime step.
-    //   HasOnlyNotProvenMonotonicForLAddRec — an L-AddRec with FlagNW but
-    //                                 neither NUW nor NSW.
-    bool AllComputed = true;
-    bool LoopInvariantInInnermost = true; // trivially true if no loop
-    bool HasAddRec = false;
-    bool HasInLoopUnknown = false;
-    bool HasNonUnitStrideForLAddRec = false;
-    bool HasNegativeStrideForLAddRec = false;
-    bool HasNonConstantStrideForLAddRec = false;
-    bool HasOnlyNotProvenMonotonicForLAddRec = false;
-    for (Value *V : LeafOperands) {
-      if (!V || isa<Constant>(V))
-        continue;
-      if (!SE.isSCEVable(V->getType())) {
-        AllComputed = false;
-        continue;
-      }
-      const SCEV *SC = SE.getSCEV(V);
-      if (isa<SCEVCouldNotCompute>(SC)) {
-        AllComputed = false;
-        continue;
-      }
-      SCEVNodeCollector Coll;
-      SCEVTraversal<SCEVNodeCollector>(Coll).visitAll(SC);
-      if (!Coll.AddRecs.empty())
-        HasAddRec = true;
-      // Per-loop invariance: SE.isLoopInvariant against the innermost
-      // containing loop only (single canonical bool).
-      if (Innermost && !SE.isLoopInvariant(SC, Innermost))
-        LoopInvariantInInnermost = false;
-      // Any SCEVUnknown whose defining instruction lives in a containing loop
-      // (invariant in the innermost, but a load in an outer loop still changes
-      // per-outer-iteration).
-      for (const SCEVUnknown *U : Coll.Unknowns) {
-        auto *I = dyn_cast_or_null<Instruction>(U->getValue());
-        if (!I)
-          continue;
-        Loop *DefLoop = LI.getLoopFor(I->getParent());
-        for (Loop *DL = DefLoop; DL && !HasInLoopUnknown;
-             DL = DL->getParentLoop())
-          for (Loop *CL : ContainingLoops)
-            if (DL == CL) {
-              HasInLoopUnknown = true;
-              break;
-            }
-        if (HasInLoopUnknown)
-          break;
-      }
-      if (Innermost) {
-        for (const SCEVAddRecExpr *AR : Coll.AddRecs) {
-          if (AR->getLoop() != Innermost || !AR->isAffine())
-            continue;
-          // FlagNW only (no NUW / NSW) — typical for AddRecs from
-          // `add invariant, mul(IV, const)` where the outer add lacks IR-level
-          // nowrap.
-          if (!AR->hasNoUnsignedWrap() && !AR->hasNoSignedWrap())
-            HasOnlyNotProvenMonotonicForLAddRec = true;
-          if (auto *StepC = dyn_cast<SCEVConstant>(AR->getStepRecurrence(SE))) {
-            const APInt &Step = StepC->getAPInt();
-            if (Step.isNegative())
-              HasNegativeStrideForLAddRec = true;
-            // |step| > 1 — non-unit stride, fragile for getExitCount.
-            APInt AbsStep = Step.isNegative() ? -Step : Step;
-            if (AbsStep.ugt(1))
-              HasNonUnitStrideForLAddRec = true;
-          } else {
-            // Non-constant (runtime) step: closed-form trip count essentially
-            // never computable. Tag both the umbrella non-unit flag and the
-            // specific non-constant-stride flag.
-            HasNonUnitStrideForLAddRec = true;
-            HasNonConstantStrideForLAddRec = true;
-          }
-        }
-      }
-    }
+    EdgeBTCInfo BTC = computeEdgeBTC(SE, Innermost, &BB, IsLoopExit);
+    if (BTC.Computable)
+      SF.NotProvenMonotonic = false;
 
-    // Per-edge exit count. EdgeBTCComputable reflects the per-edge SCEV exit
-    // count for THIS exiting block (SE.getExitCount for &BB), not the loop's
-    // overall latch/backedge-taken count. EdgeBTCSymbolic is the
-    // SymbolicMaximum bucket, checked only when the exact count is not known.
-    bool EdgeBTCComputable = false;
-    bool EdgeBTCSymbolic = false;
-    if (Innermost && IsLoopExit) {
-      const SCEV *EC = SE.getExitCount(Innermost, &BB);
-      EdgeBTCComputable = !isa<SCEVCouldNotCompute>(EC);
-      if (!EdgeBTCComputable) {
-        const SCEV *SymEC =
-            SE.getExitCount(Innermost, &BB, ScalarEvolution::SymbolicMaximum);
-        EdgeBTCSymbolic = !isa<SCEVCouldNotCompute>(SymEC);
-      }
-    }
-
-    // Out-of-loop / structural-redundancy fields. Also computed for in-loop
-    // edges (cheap, and an in-loop trap dominated by an equivalent earlier
-    // check is still a CVP / dominator-fold candidate).
+    // Out-of-loop / structural-redundancy fields.
     bool IsEntryProx = isEntryProximate(F, &BB, DT, LI);
-    bool DomByEquiv = isDominatedByEquivalentCheck(&BB, BI->getCondition(), DT);
 
-    // Q1 (dominance): does the trap branch's BB dominate the latch? If yes the
-    // cond fires every iteration; if no it's in a conditional arm and LICM
-    // can't hoist here. Q2 (IV update): for any IV operand, does its update
-    // dominate the latch? If no, the IV is conditionally updated and SCEV
-    // refuses an AddRec → trap not eliminable via trip-count.
-    // LoopLatchBTCComputable is the latch exit count SE.getExitCount(L, Latch):
-    // the IV-driven count, which can be known when the loop-wide backedge-taken
-    // count is not (one unknown early trap exit blocks the latter, not this).
-    bool DominatesLatch = false;
-    bool IVUpdateDominatesLatch = true;
-    bool LoopLatchBTCComputable = false;
-    if (LTAEmitExplain) {
-      BasicBlock *Latch = Innermost ? Innermost->getLoopLatch() : nullptr;
-      DominatesLatch = Latch && DT.dominates(&BB, Latch);
-      IVUpdateDominatesLatch =
-          computeIVUpdateDominatesLatch(BI->getCondition(), Innermost, DT);
-      if (Latch)
-        LoopLatchBTCComputable =
-            !isa<SCEVCouldNotCompute>(SE.getExitCount(Innermost, Latch));
-    }
+    DominanceInfo Dom = computeDominanceInfo(SE, DT, Innermost, &BB);
 
     OptimizationRemarkAnalysis Rem(REMARK_PASS, Name, BI);
     Rem << "Function " << NV("Function", F.getName())
@@ -774,34 +621,28 @@ static void emitPerTrapEdge(Function &F, LoopInfo &LI,
         << " is_innermost="
         << NV("IsInnermost", (bool)(Innermost && Innermost->isInnermost()))
         << " is_loop_exit=" << NV("IsLoopExit", IsLoopExit)
-        << " num_leaf_operands=" << NV("NumLeafOperands", NumLeafOps)
-        << " scev_computed=" << NV("SCEVComputed", AllComputed)
-        << " scev_loop_invariant="
-        << NV("SCEVLoopInvariant", LoopInvariantInInnermost)
-        << " has_addrec=" << NV("HasAddRec", HasAddRec)
-        << " has_in_loop_unknown=" << NV("HasInLoopUnknown", HasInLoopUnknown)
+        << " num_leaf_operands=" << NV("NumLeafOperands", SF.NumLeafOps)
+        << " is_affine=" << NV("IsAffine", SF.IsAffine)
+        << " has_in_loop_unknown="
+        << NV("HasInLoopUnknown", SF.HasInLoopUnknown)
         << " has_non_unit_stride_for_l_addrec="
-        << NV("HasNonUnitStrideForLAddRec", HasNonUnitStrideForLAddRec)
+        << NV("HasNonUnitStrideForLAddRec", SF.HasNonUnitStrideForLAddRec)
         << " has_non_constant_stride_for_l_addrec="
-        << NV("HasNonConstantStrideForLAddRec", HasNonConstantStrideForLAddRec)
-        << " has_only_weak_no_wrap_for_l_addrec="
-        << NV("HasOnlyNotProvenMonotonicForLAddRec",
-              HasOnlyNotProvenMonotonicForLAddRec)
+        << NV("HasNonConstantStrideForLAddRec",
+              SF.HasNonConstantStrideForLAddRec)
+        << " not_proven_monotonic="
+        << NV("NotProvenMonotonic", SF.NotProvenMonotonic)
         << " has_negative_stride_for_l_addrec="
-        << NV("HasNegativeStrideForLAddRec", HasNegativeStrideForLAddRec)
-        << " edge_btc_computable=" << NV("EdgeBTCComputable", EdgeBTCComputable)
-        << " edge_btc_symbolic=" << NV("EdgeBTCSymbolic", EdgeBTCSymbolic)
+        << NV("HasNegativeStrideForLAddRec", SF.HasNegativeStrideForLAddRec)
+        << " edge_btc_computable=" << NV("EdgeBTCComputable", BTC.Computable)
+        << " edge_btc_symbolic=" << NV("EdgeBTCSymbolic", BTC.Symbolic)
         << " predicate_shape="
         << NV("PredicateShape", trapPredicateShapeName(PredShape).str())
-        << " is_entry_proximate=" << NV("IsEntryProximate", IsEntryProx)
-        << " dominated_by_equivalent_check="
-        << NV("DominatedByEquivalentCheck", DomByEquiv);
+        << " is_entry_proximate=" << NV("IsEntryProximate", IsEntryProx);
     if (LTAEmitExplain) {
-      Rem << " dominates_latch=" << NV("DominatesLatch", DominatesLatch)
-          << " iv_update_dominates_latch="
-          << NV("IVUpdateDominatesLatch", IVUpdateDominatesLatch)
+      Rem << " dominates_latch=" << NV("DominatesLatch", Dom.DominatesLatch)
           << " loop_latch_btc_computable="
-          << NV("LoopLatchBTCComputable", LoopLatchBTCComputable);
+          << NV("LoopLatchBTCComputable", Dom.LoopLatchBTCComputable);
     }
     ORE.emit(Rem);
   }
