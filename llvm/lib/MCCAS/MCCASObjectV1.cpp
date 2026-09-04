@@ -2661,13 +2661,13 @@ Expected<SmallVector<DebugStrRef, 0>> MCCASBuilder::createDebugStringRefs() {
   if (!DwarfSections.Str)
     return SmallVector<DebugStrRef, 0>();
 
-  assert(DwarfSections.Str->curFragList()->Head->getNext() == nullptr &&
-         "One fragment in debug str section");
+  Expected<SmallVector<char, 0>> DebugStrData =
+      mergeMCFragmentContents(DwarfSections.Str);
+  if (!DebugStrData)
+    return DebugStrData.takeError();
 
   SmallVector<DebugStrRef, 0> DebugStringRefs;
-  ArrayRef<char> DebugStrData =
-      cast<MCFragment>(*DwarfSections.Str->begin()).getContents();
-  StringRef S(DebugStrData.data(), DebugStrData.size());
+  StringRef S(DebugStrData->data(), DebugStrData->size());
   if (auto E = createStringSection(S, [&](StringRef S) -> Error {
         auto Sym = DebugStrRef::create(*this, S);
         if (!Sym)
