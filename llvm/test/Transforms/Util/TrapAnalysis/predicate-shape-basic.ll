@@ -7,8 +7,6 @@
 ; RUN:   -pass-remarks-output=%t.yaml %s
 ; RUN: FileCheck --input-file=%t.yaml %s
 
-declare void @llvm.trap()
-
 ; A single icmp guard -> SingleICmp (NumLeafOperands 2).
 define void @single_icmp(ptr %base, i32 %n) {
 entry:
