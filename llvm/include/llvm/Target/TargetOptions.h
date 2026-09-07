@@ -143,10 +143,6 @@ public:
         SupportIndirectSymViaGOTPCRel_AArch64_ELF(true),
         VerifyArgABICompliance(true) {}
 
-  /// If greater than 0, override the default value of
-  /// MCAsmInfo::BinutilsVersion.
-  std::pair<int, int> BinutilsVersion{0, 0};
-
   /// NoTrappingFPMath - This flag is enabled when the
   /// -enable-no-trapping-fp-math is specified on the command line. This
   /// specifies that there are no trap handlers to handle exceptions.
