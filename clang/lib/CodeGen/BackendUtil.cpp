@@ -41,6 +41,7 @@
 #include "llvm/IR/Verifier.h"
 #include "llvm/IRPrinter/IRPrintingPasses.h"
 #include "llvm/LTO/LTOBackend.h"
+#include "llvm/MC/MCTargetOptions.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Object/OffloadBinary.h"
 #include "llvm/Passes/PassBuilder.h"
@@ -406,8 +407,8 @@ static bool initTargetOptions(CompilerInstance &CI, DiagnosticsEngine &Diags,
     break;
   }
 
-  Options.BinutilsVersion =
-      llvm::TargetMachine::parseBinutilsVersion(CodeGenOpts.BinutilsVersion);
+  Options.MCOptions.BinutilsVersion =
+      llvm::MCTargetOptions::parseBinutilsVersion(CodeGenOpts.BinutilsVersion);
   Options.UseInitArray = CodeGenOpts.UseInitArray;
   Options.DisableIntegratedAS = CodeGenOpts.DisableIntegratedAS;
 
