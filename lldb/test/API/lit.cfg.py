@@ -54,10 +54,48 @@ def find_shlibpath_var():
         yield "PATH"
 
 
+def make_copied_python_runnable(copied_python, real_python):
+    """Fix up a copy of the Python binary so that it runs outside its framework.
+
+    The Python shipped in Xcode is a framework binary that loads libpython
+    through an @executable_path-relative load command, which no longer resolves
+    once the binary has been copied elsewhere. Rewrite those load commands to
+    absolute paths, then re-sign: install_name_tool invalidates the code
+    signature, which is fatal on Apple Silicon.
+
+    Re-signing is not just a fixup for the rewrite. The ad-hoc signature is what
+    makes the copy usable at all, because macOS refuses to insert a sanitizer
+    runtime into an Apple-signed platform binary ("Sanitizer load violates
+    platform policy").
+    """
+    real_dir = os.path.dirname(real_python)
+    otool_output = subprocess.check_output(["otool", "-L", copied_python]).decode(
+        "utf-8"
+    )
+    relative_deps = set()
+    for line in otool_output.splitlines():
+        # Load commands are indented; anything else is an architecture header.
+        if not line.startswith("\t"):
+            continue
+        dep = line.split("(compatibility version")[0].strip()
+        if dep.startswith("@executable_path/"):
+            relative_deps.add(dep)
+
+    for dep in relative_deps:
+        absolute_dep = os.path.normpath(
+            os.path.join(real_dir, dep[len("@executable_path/") :])
+        )
+        subprocess.check_call(
+            ["install_name_tool", "-change", dep, absolute_dep, copied_python]
+        )
+
+    subprocess.check_call(["codesign", "--force", "--sign", "-", copied_python])
+
+
 # On macOS, we can't do the DYLD_INSERT_LIBRARIES trick with a shim python
-# binary as the ASan interceptors get loaded too late. Also, when SIP is
-# enabled, we can't inject libraries into system binaries at all, so we need a
-# copy of the "real" python to work with.
+# binary as the ASan interceptors get loaded too late. Also, we can't inject a
+# sanitizer runtime into an Apple-signed binary, so we need a copy of the "real"
+# python, re-signed ad-hoc, to work with.
 def find_python_interpreter():
     # This is only necessary when using DYLD_INSERT_LIBRARIES.
     if "DYLD_INSERT_LIBRARIES" not in config.environment:
@@ -70,8 +108,13 @@ def find_python_interpreter():
     else:
         copied_python = os.path.join(config.lldb_build_directory, "copied-python")
 
-    # Avoid doing any work if we already copied the binary.
-    if os.path.isfile(copied_python):
+    # Avoid doing any work if we already copied the binary. A symlink is left
+    # over from the fallback below; drop it and retry the copy, which may work
+    # now. It also must not be passed to shutil.copy, which would follow it and
+    # write through to the original.
+    if os.path.islink(copied_python):
+        os.remove(copied_python)
+    elif os.path.isfile(copied_python):
         return copied_python
 
     # Find the "real" python binary.
@@ -91,17 +134,24 @@ def find_python_interpreter():
 
     shutil.copy(real_python, copied_python)
 
-    # Now make sure the copied Python works. The Python in Xcode has a relative
-    # RPATH and cannot be copied.
+    # Now make sure the copied Python works. The Python in Xcode is a framework
+    # binary with relative load commands and cannot simply be copied.
     try:
+        make_copied_python_runnable(copied_python, real_python)
         # We don't care about the output, just make sure it runs.
         subprocess.check_call([copied_python, "-V"])
-    except subprocess.CalledProcessError:
-        # The copied Python didn't work. Assume we're dealing with the Python
-        # interpreter in Xcode. Given that this is not a system binary SIP
-        # won't prevent us form injecting the interceptors, but when running in
-        # a virtual environment, we can't use it directly. Create a symlink
-        # instead.
+    except (subprocess.CalledProcessError, OSError) as e:
+        # The copy couldn't be made to work. Fall back to a symlink so the tests
+        # can at least be attempted, but warn: the symlink keeps the original
+        # binary's code signature, and if that is an Apple signature macOS will
+        # refuse to insert the sanitizer runtime and every test will die on
+        # launch. That failure mode is otherwise silent here.
+        lit_config.warning(
+            "Failed to make a runnable copy of {}: {}. Falling back to a "
+            "symlink; loading the sanitizer runtime may be rejected.".format(
+                real_python, e
+            )
+        )
         os.remove(copied_python)
         os.symlink(real_python, copied_python)
 
