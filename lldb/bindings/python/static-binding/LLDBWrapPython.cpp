@@ -39423,7 +39423,6 @@ SWIGINTERN PyObject *_wrap_SBFrame_GetValueForVariablePath__SWIG_0(PyObject *sel
   lldb::SBFrame *arg1 = 0 ;
   char *arg2 = 0 ;
   lldb::DynamicValueType arg3 ;
-  lldb::DILMode arg4 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   int res2 ;
@@ -39431,12 +39430,10 @@ SWIGINTERN PyObject *_wrap_SBFrame_GetValueForVariablePath__SWIG_0(PyObject *sel
   int alloc2 = 0 ;
   int val3 ;
   int ecode3 = 0 ;
-  int val4 ;
-  int ecode4 = 0 ;
   lldb::SBValue result;
   
   (void)self;
-  if ((nobjs < 4) || (nobjs > 4)) SWIG_fail;
+  if ((nobjs < 3) || (nobjs > 3)) SWIG_fail;
   res1 = SWIG_ConvertPtr(swig_obj[0], &argp1,SWIGTYPE_p_lldb__SBFrame, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "SBFrame_GetValueForVariablePath" "', argument " "1"" of type '" "lldb::SBFrame *""'"); 
@@ -39452,14 +39449,9 @@ SWIGINTERN PyObject *_wrap_SBFrame_GetValueForVariablePath__SWIG_0(PyObject *sel
     SWIG_exception_fail(SWIG_ArgError(ecode3), "in method '" "SBFrame_GetValueForVariablePath" "', argument " "3"" of type '" "lldb::DynamicValueType""'");
   } 
   arg3 = static_cast< lldb::DynamicValueType >(val3);
-  ecode4 = SWIG_AsVal_int(swig_obj[3], &val4);
-  if (!SWIG_IsOK(ecode4)) {
-    SWIG_exception_fail(SWIG_ArgError(ecode4), "in method '" "SBFrame_GetValueForVariablePath" "', argument " "4"" of type '" "lldb::DILMode""'");
-  } 
-  arg4 = static_cast< lldb::DILMode >(val4);
   {
     SWIG_PYTHON_THREAD_BEGIN_ALLOW;
-    result = (arg1)->GetValueForVariablePath((char const *)arg2,arg3,arg4);
+    result = (arg1)->GetValueForVariablePath((char const *)arg2,arg3);
     SWIG_PYTHON_THREAD_END_ALLOW;
   }
   resultobj = SWIG_NewPointerObj((new lldb::SBValue(result)), SWIGTYPE_p_lldb__SBValue, SWIG_POINTER_OWN |  0 );
@@ -39472,96 +39464,6 @@ fail:
 
 
 SWIGINTERN PyObject *_wrap_SBFrame_GetValueForVariablePath__SWIG_1(PyObject *self, Py_ssize_t nobjs, PyObject **swig_obj) {
-  PyObject *resultobj = 0;
-  lldb::SBFrame *arg1 = 0 ;
-  char *arg2 = 0 ;
-  lldb::DynamicValueType arg3 ;
-  void *argp1 = 0 ;
-  int res1 = 0 ;
-  int res2 ;
-  char *buf2 = 0 ;
-  int alloc2 = 0 ;
-  int val3 ;
-  int ecode3 = 0 ;
-  lldb::SBValue result;
-  
-  (void)self;
-  if ((nobjs < 3) || (nobjs > 3)) SWIG_fail;
-  res1 = SWIG_ConvertPtr(swig_obj[0], &argp1,SWIGTYPE_p_lldb__SBFrame, 0 |  0 );
-  if (!SWIG_IsOK(res1)) {
-    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "SBFrame_GetValueForVariablePath" "', argument " "1"" of type '" "lldb::SBFrame *""'"); 
-  }
-  arg1 = reinterpret_cast< lldb::SBFrame * >(argp1);
-  res2 = SWIG_AsCharPtrAndSize(swig_obj[1], &buf2, NULL, &alloc2);
-  if (!SWIG_IsOK(res2)) {
-    SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "SBFrame_GetValueForVariablePath" "', argument " "2"" of type '" "char const *""'");
-  }
-  arg2 = reinterpret_cast< char * >(buf2);
-  ecode3 = SWIG_AsVal_int(swig_obj[2], &val3);
-  if (!SWIG_IsOK(ecode3)) {
-    SWIG_exception_fail(SWIG_ArgError(ecode3), "in method '" "SBFrame_GetValueForVariablePath" "', argument " "3"" of type '" "lldb::DynamicValueType""'");
-  } 
-  arg3 = static_cast< lldb::DynamicValueType >(val3);
-  {
-    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
-    result = (arg1)->GetValueForVariablePath((char const *)arg2,arg3);
-    SWIG_PYTHON_THREAD_END_ALLOW;
-  }
-  resultobj = SWIG_NewPointerObj((new lldb::SBValue(result)), SWIGTYPE_p_lldb__SBValue, SWIG_POINTER_OWN |  0 );
-  if (alloc2 == SWIG_NEWOBJ) delete[] buf2;
-  return resultobj;
-fail:
-  if (alloc2 == SWIG_NEWOBJ) delete[] buf2;
-  return NULL;
-}
-
-
-SWIGINTERN PyObject *_wrap_SBFrame_GetValueForVariablePath__SWIG_2(PyObject *self, Py_ssize_t nobjs, PyObject **swig_obj) {
-  PyObject *resultobj = 0;
-  lldb::SBFrame *arg1 = 0 ;
-  char *arg2 = 0 ;
-  lldb::DILMode arg3 ;
-  void *argp1 = 0 ;
-  int res1 = 0 ;
-  int res2 ;
-  char *buf2 = 0 ;
-  int alloc2 = 0 ;
-  int val3 ;
-  int ecode3 = 0 ;
-  lldb::SBValue result;
-  
-  (void)self;
-  if ((nobjs < 3) || (nobjs > 3)) SWIG_fail;
-  res1 = SWIG_ConvertPtr(swig_obj[0], &argp1,SWIGTYPE_p_lldb__SBFrame, 0 |  0 );
-  if (!SWIG_IsOK(res1)) {
-    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "SBFrame_GetValueForVariablePath" "', argument " "1"" of type '" "lldb::SBFrame *""'"); 
-  }
-  arg1 = reinterpret_cast< lldb::SBFrame * >(argp1);
-  res2 = SWIG_AsCharPtrAndSize(swig_obj[1], &buf2, NULL, &alloc2);
-  if (!SWIG_IsOK(res2)) {
-    SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "SBFrame_GetValueForVariablePath" "', argument " "2"" of type '" "char const *""'");
-  }
-  arg2 = reinterpret_cast< char * >(buf2);
-  ecode3 = SWIG_AsVal_int(swig_obj[2], &val3);
-  if (!SWIG_IsOK(ecode3)) {
-    SWIG_exception_fail(SWIG_ArgError(ecode3), "in method '" "SBFrame_GetValueForVariablePath" "', argument " "3"" of type '" "lldb::DILMode""'");
-  } 
-  arg3 = static_cast< lldb::DILMode >(val3);
-  {
-    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
-    result = (arg1)->GetValueForVariablePath((char const *)arg2,arg3);
-    SWIG_PYTHON_THREAD_END_ALLOW;
-  }
-  resultobj = SWIG_NewPointerObj((new lldb::SBValue(result)), SWIGTYPE_p_lldb__SBValue, SWIG_POINTER_OWN |  0 );
-  if (alloc2 == SWIG_NEWOBJ) delete[] buf2;
-  return resultobj;
-fail:
-  if (alloc2 == SWIG_NEWOBJ) delete[] buf2;
-  return NULL;
-}
-
-
-SWIGINTERN PyObject *_wrap_SBFrame_GetValueForVariablePath__SWIG_3(PyObject *self, Py_ssize_t nobjs, PyObject **swig_obj) {
   PyObject *resultobj = 0;
   lldb::SBFrame *arg1 = 0 ;
   char *arg2 = 0 ;
@@ -39600,11 +39502,11 @@ fail:
 
 SWIGINTERN PyObject *_wrap_SBFrame_GetValueForVariablePath(PyObject *self, PyObject *args) {
   Py_ssize_t argc;
-  PyObject *argv[5] = {
+  PyObject *argv[4] = {
     0
   };
   
-  if (!(argc = SWIG_Python_UnpackTuple(args, "SBFrame_GetValueForVariablePath", 0, 4, argv))) SWIG_fail;
+  if (!(argc = SWIG_Python_UnpackTuple(args, "SBFrame_GetValueForVariablePath", 0, 3, argv))) SWIG_fail;
   --argc;
   if (argc == 2) {
     int _v = 0;
@@ -39615,7 +39517,7 @@ SWIGINTERN PyObject *_wrap_SBFrame_GetValueForVariablePath(PyObject *self, PyObj
       int res = SWIG_AsCharPtrAndSize(argv[1], 0, NULL, 0);
       _v = SWIG_CheckState(res);
       if (_v) {
-        return _wrap_SBFrame_GetValueForVariablePath__SWIG_3(self, argc, argv);
+        return _wrap_SBFrame_GetValueForVariablePath__SWIG_1(self, argc, argv);
       }
     }
   }
@@ -39633,11 +39535,127 @@ SWIGINTERN PyObject *_wrap_SBFrame_GetValueForVariablePath(PyObject *self, PyObj
           _v = SWIG_CheckState(res);
         }
         if (_v) {
-          return _wrap_SBFrame_GetValueForVariablePath__SWIG_2(self, argc, argv);
+          return _wrap_SBFrame_GetValueForVariablePath__SWIG_0(self, argc, argv);
         }
       }
     }
   }
+  
+fail:
+  SWIG_Python_RaiseOrModifyTypeError("Wrong number or type of arguments for overloaded function 'SBFrame_GetValueForVariablePath'.\n"
+    "  Possible C/C++ prototypes are:\n"
+    "    lldb::SBFrame::GetValueForVariablePath(char const *,lldb::DynamicValueType)\n"
+    "    lldb::SBFrame::GetValueForVariablePath(char const *)\n");
+  return 0;
+}
+
+
+SWIGINTERN PyObject *_wrap_SBFrame_GetValueForVariablePathWithMode__SWIG_0(PyObject *self, Py_ssize_t nobjs, PyObject **swig_obj) {
+  PyObject *resultobj = 0;
+  lldb::SBFrame *arg1 = 0 ;
+  char *arg2 = 0 ;
+  lldb::DILMode arg3 ;
+  lldb::DynamicValueType arg4 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  int res2 ;
+  char *buf2 = 0 ;
+  int alloc2 = 0 ;
+  int val3 ;
+  int ecode3 = 0 ;
+  int val4 ;
+  int ecode4 = 0 ;
+  lldb::SBValue result;
+  
+  (void)self;
+  if ((nobjs < 4) || (nobjs > 4)) SWIG_fail;
+  res1 = SWIG_ConvertPtr(swig_obj[0], &argp1,SWIGTYPE_p_lldb__SBFrame, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "SBFrame_GetValueForVariablePathWithMode" "', argument " "1"" of type '" "lldb::SBFrame *""'"); 
+  }
+  arg1 = reinterpret_cast< lldb::SBFrame * >(argp1);
+  res2 = SWIG_AsCharPtrAndSize(swig_obj[1], &buf2, NULL, &alloc2);
+  if (!SWIG_IsOK(res2)) {
+    SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "SBFrame_GetValueForVariablePathWithMode" "', argument " "2"" of type '" "char const *""'");
+  }
+  arg2 = reinterpret_cast< char * >(buf2);
+  ecode3 = SWIG_AsVal_int(swig_obj[2], &val3);
+  if (!SWIG_IsOK(ecode3)) {
+    SWIG_exception_fail(SWIG_ArgError(ecode3), "in method '" "SBFrame_GetValueForVariablePathWithMode" "', argument " "3"" of type '" "lldb::DILMode""'");
+  } 
+  arg3 = static_cast< lldb::DILMode >(val3);
+  ecode4 = SWIG_AsVal_int(swig_obj[3], &val4);
+  if (!SWIG_IsOK(ecode4)) {
+    SWIG_exception_fail(SWIG_ArgError(ecode4), "in method '" "SBFrame_GetValueForVariablePathWithMode" "', argument " "4"" of type '" "lldb::DynamicValueType""'");
+  } 
+  arg4 = static_cast< lldb::DynamicValueType >(val4);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (arg1)->GetValueForVariablePathWithMode((char const *)arg2,arg3,arg4);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
+  resultobj = SWIG_NewPointerObj((new lldb::SBValue(result)), SWIGTYPE_p_lldb__SBValue, SWIG_POINTER_OWN |  0 );
+  if (alloc2 == SWIG_NEWOBJ) delete[] buf2;
+  return resultobj;
+fail:
+  if (alloc2 == SWIG_NEWOBJ) delete[] buf2;
+  return NULL;
+}
+
+
+SWIGINTERN PyObject *_wrap_SBFrame_GetValueForVariablePathWithMode__SWIG_1(PyObject *self, Py_ssize_t nobjs, PyObject **swig_obj) {
+  PyObject *resultobj = 0;
+  lldb::SBFrame *arg1 = 0 ;
+  char *arg2 = 0 ;
+  lldb::DILMode arg3 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  int res2 ;
+  char *buf2 = 0 ;
+  int alloc2 = 0 ;
+  int val3 ;
+  int ecode3 = 0 ;
+  lldb::SBValue result;
+  
+  (void)self;
+  if ((nobjs < 3) || (nobjs > 3)) SWIG_fail;
+  res1 = SWIG_ConvertPtr(swig_obj[0], &argp1,SWIGTYPE_p_lldb__SBFrame, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "SBFrame_GetValueForVariablePathWithMode" "', argument " "1"" of type '" "lldb::SBFrame *""'"); 
+  }
+  arg1 = reinterpret_cast< lldb::SBFrame * >(argp1);
+  res2 = SWIG_AsCharPtrAndSize(swig_obj[1], &buf2, NULL, &alloc2);
+  if (!SWIG_IsOK(res2)) {
+    SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "SBFrame_GetValueForVariablePathWithMode" "', argument " "2"" of type '" "char const *""'");
+  }
+  arg2 = reinterpret_cast< char * >(buf2);
+  ecode3 = SWIG_AsVal_int(swig_obj[2], &val3);
+  if (!SWIG_IsOK(ecode3)) {
+    SWIG_exception_fail(SWIG_ArgError(ecode3), "in method '" "SBFrame_GetValueForVariablePathWithMode" "', argument " "3"" of type '" "lldb::DILMode""'");
+  } 
+  arg3 = static_cast< lldb::DILMode >(val3);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (arg1)->GetValueForVariablePathWithMode((char const *)arg2,arg3);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
+  resultobj = SWIG_NewPointerObj((new lldb::SBValue(result)), SWIGTYPE_p_lldb__SBValue, SWIG_POINTER_OWN |  0 );
+  if (alloc2 == SWIG_NEWOBJ) delete[] buf2;
+  return resultobj;
+fail:
+  if (alloc2 == SWIG_NEWOBJ) delete[] buf2;
+  return NULL;
+}
+
+
+SWIGINTERN PyObject *_wrap_SBFrame_GetValueForVariablePathWithMode(PyObject *self, PyObject *args) {
+  Py_ssize_t argc;
+  PyObject *argv[5] = {
+    0
+  };
+  
+  if (!(argc = SWIG_Python_UnpackTuple(args, "SBFrame_GetValueForVariablePathWithMode", 0, 4, argv))) SWIG_fail;
+  --argc;
   if (argc == 3) {
     int _v = 0;
     void *vptr = 0;
@@ -39652,7 +39670,7 @@ SWIGINTERN PyObject *_wrap_SBFrame_GetValueForVariablePath(PyObject *self, PyObj
           _v = SWIG_CheckState(res);
         }
         if (_v) {
-          return _wrap_SBFrame_GetValueForVariablePath__SWIG_1(self, argc, argv);
+          return _wrap_SBFrame_GetValueForVariablePathWithMode__SWIG_1(self, argc, argv);
         }
       }
     }
@@ -39676,7 +39694,7 @@ SWIGINTERN PyObject *_wrap_SBFrame_GetValueForVariablePath(PyObject *self, PyObj
             _v = SWIG_CheckState(res);
           }
           if (_v) {
-            return _wrap_SBFrame_GetValueForVariablePath__SWIG_0(self, argc, argv);
+            return _wrap_SBFrame_GetValueForVariablePathWithMode__SWIG_0(self, argc, argv);
           }
         }
       }
@@ -39684,12 +39702,10 @@ SWIGINTERN PyObject *_wrap_SBFrame_GetValueForVariablePath(PyObject *self, PyObj
   }
   
 fail:
-  SWIG_Python_RaiseOrModifyTypeError("Wrong number or type of arguments for overloaded function 'SBFrame_GetValueForVariablePath'.\n"
+  SWIG_Python_RaiseOrModifyTypeError("Wrong number or type of arguments for overloaded function 'SBFrame_GetValueForVariablePathWithMode'.\n"
     "  Possible C/C++ prototypes are:\n"
-    "    lldb::SBFrame::GetValueForVariablePath(char const *,lldb::DynamicValueType,lldb::DILMode)\n"
-    "    lldb::SBFrame::GetValueForVariablePath(char const *,lldb::DynamicValueType)\n"
-    "    lldb::SBFrame::GetValueForVariablePath(char const *,lldb::DILMode)\n"
-    "    lldb::SBFrame::GetValueForVariablePath(char const *)\n");
+    "    lldb::SBFrame::GetValueForVariablePathWithMode(char const *,lldb::DILMode,lldb::DynamicValueType)\n"
+    "    lldb::SBFrame::GetValueForVariablePathWithMode(char const *,lldb::DILMode)\n");
   return 0;
 }
 
@@ -101403,8 +101419,8 @@ static PyMethodDef SwigMethods[] = {
 		"    target's default.\n"
 		""},
 	 { "SBFrame_GetValueForVariablePath", _wrap_SBFrame_GetValueForVariablePath, METH_VARARGS, "\n"
-		"SBFrame_GetValueForVariablePath(SBFrame self, char const * var_expr_cstr, lldb::DynamicValueType use_dynamic, lldb::DILMode mode=eDILModeFull) -> SBValue\n"
-		"SBFrame_GetValueForVariablePath(SBFrame self, char const * var_path, lldb::DILMode mode=eDILModeFull) -> SBValue\n"
+		"SBFrame_GetValueForVariablePath(SBFrame self, char const * var_path, lldb::DynamicValueType use_dynamic) -> SBValue\n"
+		"SBFrame_GetValueForVariablePath(SBFrame self, char const * var_path) -> SBValue\n"
 		"\n"
 		"    Get a lldb.SBValue for a variable path.\n"
 		"\n"
@@ -101433,6 +101449,10 @@ static PyMethodDef SwigMethods[] = {
 		"    the result of this function is a value that will continue to\n"
 		"    track the current value of the value as execution progresses\n"
 		"    in the current frame.\n"
+		""},
+	 { "SBFrame_GetValueForVariablePathWithMode", _wrap_SBFrame_GetValueForVariablePathWithMode, METH_VARARGS, "\n"
+		"SBFrame_GetValueForVariablePathWithMode(SBFrame self, char const * var_path, lldb::DILMode mode, lldb::DynamicValueType use_dynamic) -> SBValue\n"
+		"SBFrame_GetValueForVariablePathWithMode(SBFrame self, char const * var_path, lldb::DILMode mode) -> SBValue\n"
 		""},
 	 { "SBFrame_FindValue", _wrap_SBFrame_FindValue, METH_VARARGS, "\n"
 		"SBFrame_FindValue(SBFrame self, char const * name, lldb::ValueType value_type) -> SBValue\n"
