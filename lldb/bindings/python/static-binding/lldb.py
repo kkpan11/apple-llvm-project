@@ -7636,8 +7636,8 @@ class SBFrame(object):
 
     def GetValueForVariablePath(self, *args):
         r"""
-        GetValueForVariablePath(SBFrame self, char const * var_expr_cstr, lldb::DynamicValueType use_dynamic, lldb::DILMode mode=eDILModeFull) -> SBValue
-        GetValueForVariablePath(SBFrame self, char const * var_path, lldb::DILMode mode=eDILModeFull) -> SBValue
+        GetValueForVariablePath(SBFrame self, char const * var_path, lldb::DynamicValueType use_dynamic) -> SBValue
+        GetValueForVariablePath(SBFrame self, char const * var_path) -> SBValue
 
             Get a lldb.SBValue for a variable path.
 
@@ -7668,6 +7668,13 @@ class SBFrame(object):
             in the current frame.
         """
         return _lldb.SBFrame_GetValueForVariablePath(self, *args)
+
+    def GetValueForVariablePathWithMode(self, *args):
+        r"""
+        GetValueForVariablePathWithMode(SBFrame self, char const * var_path, lldb::DILMode mode, lldb::DynamicValueType use_dynamic) -> SBValue
+        GetValueForVariablePathWithMode(SBFrame self, char const * var_path, lldb::DILMode mode) -> SBValue
+        """
+        return _lldb.SBFrame_GetValueForVariablePathWithMode(self, *args)
 
     def FindValue(self, *args):
         r"""
@@ -7748,10 +7755,17 @@ class SBFrame(object):
     def get_statics(self):
         return self.GetVariables(False,False,True,False)
 
-    def var(self, var_expr_path):
+    def var(self, var_expr_path, use_dynamic=None):
         '''Calls through to lldb.SBFrame.GetValueForVariablePath() and returns
         a value that represents the variable expression path'''
-        return self.GetValueForVariablePath(var_expr_path)
+        if use_dynamic is None:
+            return self.GetValueForVariablePath(var_expr_path)
+        return self.GetValueForVariablePath(var_expr_path, use_dynamic)
+
+    def var_with_mode(self, var_path: str, mode: int, use_dynamic = None, /):
+        if use_dynamic is None:
+            return self.GetValueForVariablePathWithMode(var_path, mode)
+        return self.GetValueForVariablePathWithMode(var_path, mode, use_dynamic)
 
     def get_registers_access(self):
         class registers_access(object):
