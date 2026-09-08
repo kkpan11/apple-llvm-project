@@ -4579,6 +4579,7 @@ cc_library(
         ":Passes",
         ":Support",
         ":Target",
+        ":TargetParser",
         ":config",
         ":orc_headers",
     ],
