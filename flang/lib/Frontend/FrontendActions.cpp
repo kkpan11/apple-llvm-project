@@ -923,7 +923,7 @@ static void generateMachineCodeOrAssemblyImpl(
     }
   }
   llvm::Error codeGenError =
-      runCodeGenPipeline(tm, llvmModule, os, dwoOS, cgft);
+      runCodeGenPipeline(tm, llvmModule, os, dwoOS, nullptr, cgft);
   if (codeGenError) {
     unsigned diagID =
         diags.getCustomDiagID(clang::DiagnosticsEngine::Error,
