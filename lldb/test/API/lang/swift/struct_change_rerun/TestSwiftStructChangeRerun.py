@@ -71,15 +71,8 @@ class TestSwiftStructChangeRerun(TestBase):
         shutil.copyfile("main2.swift", copied_main_swift)
         self.build()
 
-        # Launch the process, and do not stop at the entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
-
-        self.assertTrue(process, PROCESS_IS_VALID)
-        # Frame #0 should be at our breakpoint.
-        threads = lldbutil.get_threads_stopped_at_breakpoint(
-            process, breakpoint)
-
-        self.assertTrue(len(threads) == 1)
+        # Relaunch the rebuilt binary and run to the same breakpoint.
+        lldbutil.run_to_breakpoint_do_run(self, target, breakpoint)
 
         var_a = self.frame().EvaluateExpression("a")
         var_a_a = var_a.GetChildMemberWithName("a")
