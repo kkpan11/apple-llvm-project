@@ -3,43 +3,6 @@
 // RUN: %clang_cc1 -triple arm64e -fbounds-safety -fptrauth-intrinsics -emit-llvm %s -o - | FileCheck --check-prefix=C %s
 // RUN: %clang_cc1 -triple arm64e -fbounds-safety -fptrauth-intrinsics -x objective-c -fexperimental-bounds-safety-objc -emit-llvm %s -o - | FileCheck --check-prefix=OBJC %s
 
-// rdar://182733053
-//
-// A ptrauth builtin operand may be a wide pointer (__indexable /
-// __bidi_indexable) under -fbounds-safety. Wide pointers are aggregates, so
-// EmitScalarExpr() asserted on them:
-//
-//   Assertion failed: (E && hasScalarEvaluationKind(E->getType()) &&
-//                      "Invalid scalar expression to emit"),
-//   function EmitScalarExpr, file CGExprScalar.cpp
-//
-// This broke the liblibc arm64e build, whose sign_destructors() passes
-// `&entries[i]` -- a __bidi_indexable derived from a __sized_by parameter -- as
-// the discriminator of ptrauth_blend_discriminator().
-//
-// Root cause: unlike every other callee taking a raw pointer, these builtins got
-// no implicit CK_BoundsSafetyPointerCast, because checkPointerAuthValue()
-// discarded the builtin's declared `void *` parameter and substituted the
-// argument's own type, leaving convertArgumentToType() with nothing to do.
-//
-// These builtins take the pointer field of a wide pointer and ignore the bounds
-// fields, so the operand is converted to a raw-layout pointer and the bounds are
-// dropped. That is exactly what the assertions-disabled compiler already emitted
-// for this shape, so the generated code is unchanged for code that builds today.
-// In particular no bounds check is introduced: the checks below are exhaustive
-// per function, so an added llvm.ubsantrap would show up as a mismatch. The only
-// traps present are sign_destructors()'s own `entries[i]` subscript checks,
-// unrelated to the discriminator operand.
-//
-// Every wide pointer operand here is an `&expr` whose bounds fields are
-// synthesised on the spot and then thrown away, which is the only form accepted
-// while the correct behaviour for wide pointers is still undecided. Any other
-// wide pointer -- a variable, a member, a deref, a cast between wide pointer
-// types, pointer arithmetic, a call result, a forged pointer -- is rejected in
-// Sema; see BoundsSafety/Sema/ptrauth-wide-pointer.c. That is also why no
-// __indexable operand appears below: `&expr` yields __bidi_indexable, so
-// __indexable cannot reach these builtins at all.
-
 #include <ptrcheck.h>
 #include <stddef.h>
 
