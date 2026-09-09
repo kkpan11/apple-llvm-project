@@ -10,6 +10,7 @@ add_lldb_unittest(APITests
 
   LINK_LIBS
     liblldb
+    LLVMTestingSupport
   )
 
 # Build with -Wdocumentation. This relies on the tests including all the API
