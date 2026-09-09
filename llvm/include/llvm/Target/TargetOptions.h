@@ -121,7 +121,7 @@ public:
   TargetOptions()
       : EnableAIXExtendedAltivecABI(false),
         HonorSignDependentRoundingFPMathOption(false), NoZerosInBSS(false),
-	UseCASBackend(false),
+        UseCASBackend(false),
         GuaranteedTailCallOpt(false), StackSymbolOrdering(true),
         EnableFastISel(false), EnableGlobalISel(false), UseInitArray(false),
         FunctionSections(false), DataSections(false),
@@ -137,8 +137,8 @@ public:
         SupportsDebugEntryValues(false), EnableDebugEntryValues(false),
         ValueTrackingVariableLocations(false), ForceDwarfFrameSection(false),
         XRayFunctionIndex(true), DebugStrictDwarf(false), Hotpatch(false),
-        PPCGenScalarMASSEntries(false), JMCInstrument(false),
-        EnableCFIFixup(false), MisExpect(false), XCOFFReadOnlyPointers(false),
+        JMCInstrument(false), EnableCFIFixup(false), MisExpect(false),
+        XCOFFReadOnlyPointers(false),
         SupportIndirectSymViaGOTPCRel_AArch64_ELF(true),
         VerifyArgABICompliance(true) {}
 
@@ -311,9 +311,6 @@ public:
 
   /// Emit the hotpatch flag in CodeView debug.
   unsigned Hotpatch : 1;
-
-  /// Enables scalar MASS conversions
-  unsigned PPCGenScalarMASSEntries : 1;
 
   /// Enable JustMyCode instrumentation.
   unsigned JMCInstrument : 1;
