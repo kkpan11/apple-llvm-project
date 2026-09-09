@@ -16,7 +16,6 @@ import lldb
 from lldbsuite.test.lldbtest import *
 from lldbsuite.test.decorators import *
 import lldbsuite.test.lldbutil as lldbutil
-import os
 
 
 class TestExpressionErrors(TestBase):
@@ -66,32 +65,9 @@ class TestExpressionErrors(TestBase):
 
     def do_test(self):
         """Tests that swift expressions resolve scoped variables correctly"""
-        exe_name = "a.out"
-        exe = self.getBuildArtifact(exe_name)
-
-        # Create the target
-        target = self.dbg.CreateTarget(exe)
-        self.target = target
-        self.assertTrue(target, VALID_TARGET)
-
-        # Set the breakpoints
-        global_scope_bkpt = target.BreakpointCreateBySourceRegex(
-            'Set a breakpoint here to run expressions', self.main_source_spec)
-        self.assertTrue(
-            global_scope_bkpt.GetNumLocations() > 0,
-            VALID_BREAKPOINT)
-
-        # Launch the process, and do not stop at the entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
-        self.process = process
-
-        self.assertTrue(process, PROCESS_IS_VALID)
-
-        # Frame #0 should be at our breakpoint.
-        threads = lldbutil.get_threads_stopped_at_breakpoint(
-            process, global_scope_bkpt)
-
-        self.assertTrue(len(threads) == 1)
+        self.target, self.process, _, _ = lldbutil.run_to_source_breakpoint(
+            self, 'Set a breakpoint here to run expressions',
+            self.main_source_spec)
 
         options = lldb.SBExpressionOptions()
         options.SetFetchDynamicValue(lldb.eDynamicCanRunTarget)
