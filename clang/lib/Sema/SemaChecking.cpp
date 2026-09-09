@@ -1809,12 +1809,15 @@ static bool checkPointerAuthValue(Sema &S, Expr *&Arg, PointerAuthOpKind OpKind,
     ExpectedTy = Arg->getType().getUnqualifiedType();
     /* TO_UPSTREAM(BoundsSafety) ON */
     // These builtins take a raw pointer. Reject wide pointers here until the
-    // correct behaviour is decided.
+    // correct behaviour is decided
+    // (https://github.com/swiftlang/llvm-project/issues/14140).
     if (ExpectedTy->isPointerTypeWithBounds()) {
-      // `&expr` is the exception. It too yields a wide pointer, but its bounds
-      // fields are synthesised on the spot and then thrown away by the builtin,
-      // so `&wide_ptr[0]` serves as an escape hatch for passing a wide pointer
-      // to these builtins.
+      // `&expr` is an accepted operand form, not an exception: taking an
+      // address is the natural way to derive a discriminator. The wide pointer
+      // it yields has its bounds fields synthesised at the use site and then
+      // immediately discarded by the builtin, so nothing the program is holding
+      // is lost. This admits `&wide_ptr[0]` as well, as a consequence of
+      // allowing `&` wholesale rather than as a separately designed hatch.
       const auto *AddrOf = dyn_cast<UnaryOperator>(Arg->IgnoreParenImpCasts());
       if (!AddrOf || AddrOf->getOpcode() != UO_AddrOf) {
         S.Diag(Arg->getExprLoc(),
@@ -1822,11 +1825,12 @@ static bool checkPointerAuthValue(Sema &S, Expr *&Arg, PointerAuthOpKind OpKind,
             << ExpectedTy << Arg->getSourceRange();
         return true;
       }
-      // Convert to a raw-layout pointer so the argument is a scalar, the way
-      // every other callee taking a raw pointer gets an implicit
-      // CK_BoundsSafetyPointerCast. Copying the argument's own type above would
-      // otherwise leave a wide pointer -- an aggregate -- reaching CodeGen,
-      // tripping EmitScalarExpr().
+      // Pick a raw-layout pointer as the target type so the conversion below
+      // (convertArgumentToType) turns the argument into a scalar, the way every
+      // other callee taking a raw pointer gets an implicit
+      // CK_BoundsSafetyPointerCast. Leaving the argument's own type here would
+      // otherwise let a wide pointer -- an aggregate -- reach CodeGen, tripping
+      // EmitScalarExpr().
       //
       // Unspecified rather than __single, to match the default return type of
       // builtin declarations. Without special handling, pointer-returning
