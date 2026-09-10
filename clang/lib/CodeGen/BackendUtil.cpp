@@ -391,22 +391,6 @@ static bool initTargetOptions(CompilerInstance &CI, DiagnosticsEngine &Diags,
     break;
   }
 
-  // Set FP fusion mode.
-  switch (LangOpts.getDefaultFPContractMode()) {
-  case LangOptions::FPM_Off:
-    // Preserve any contraction performed by the front-end.  (Strict performs
-    // splitting of the muladd intrinsic in the backend.)
-    Options.AllowFPOpFusion = llvm::FPOpFusion::Standard;
-    break;
-  case LangOptions::FPM_On:
-  case LangOptions::FPM_FastHonorPragmas:
-    Options.AllowFPOpFusion = llvm::FPOpFusion::Standard;
-    break;
-  case LangOptions::FPM_Fast:
-    Options.AllowFPOpFusion = llvm::FPOpFusion::Fast;
-    break;
-  }
-
   Options.MCOptions.BinutilsVersion =
       llvm::MCTargetOptions::parseBinutilsVersion(CodeGenOpts.BinutilsVersion);
   Options.UseInitArray = CodeGenOpts.UseInitArray;
