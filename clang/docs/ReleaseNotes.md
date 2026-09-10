@@ -844,6 +844,7 @@ latest release, please see the [Clang Web Site](https://clang.llvm.org) or the
 - Fix a crash in addUnsizedArray due assert not verifying we have a Base before doing checks on it. (#GH44212)
 - Fixed an assertion that could occur when rebuilding parenthesized list initialization expressions during template instantiation or AST transformation.
 - Fixed a bug where repeated #imports of modular headers in non-modular compilation were translated to #pragma clang module import. (#GH216924)
+- Fixed a crash when invoking clang with `--` followed by an empty file name. (#GH184718)
 
 #### Bug Fixes to Compiler Builtins
 
