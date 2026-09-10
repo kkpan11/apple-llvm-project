@@ -1263,7 +1263,7 @@ void EmitAssemblyHelper::RunCodegenPipeline(
     Error CodeGenError = runCodeGenPipeline(
         *TM, *TheModule, *OS, DwoOS, CasIDOS.get(), CGFT,
         PrintPipelinePasses.has_value(), !CodeGenOpts.VerifyModule,
-        CI.getVirtualFileSystemPtr());
+        /*DisableSimplifyLibCalls=*/false, CI.getVirtualFileSystemPtr());
     if (CodeGenError)
       Diags.Report(diag::err_fe_unable_to_interface_with_target);
   });
