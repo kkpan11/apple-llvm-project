@@ -2748,6 +2748,11 @@ SwiftASTContext::CreateInstance(lldb::LanguageType language, Module &module,
                    serialized_sdk_path.str().c_str());
 
       std::string sdk_path = GetSDKPathFromDebugInfo(m_description, module);
+      // The host SDK lookup only knows about Xcode SDKs; fall back to the path
+      // recorded in the module.
+      if (!FileSystem::Instance().Exists(sdk_path) &&
+          FileSystem::Instance().Exists(serialized_sdk_path))
+        sdk_path = serialized_sdk_path.str();
       if (FileSystem::Instance().Exists(sdk_path)) {
         // Note that this is not final. InitializeSearchPathOptions()
         // will set the SDK path based on the triple if this fails.

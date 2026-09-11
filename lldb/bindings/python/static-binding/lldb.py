@@ -44,6 +44,11 @@ except ImportError:
     # is still constructing the lldb module itself.
     # Simply importing anything using `from . import` constitutes
     # a cyclic importing.
+    import os
+    # Since Python 3.8 the loader no longer searches PATH for the DLLs the
+    # extension links against, which are staged next to this file.
+    if hasattr(os, 'add_dll_directory'):
+        os.add_dll_directory(os.path.dirname(os.path.abspath(__file__)))
     from .native import _lldb
 
 try:
