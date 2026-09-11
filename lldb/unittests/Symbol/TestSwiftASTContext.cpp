@@ -43,7 +43,7 @@ public:
 };
 
 struct SwiftASTContextTester : public SwiftASTContext {
-  #ifndef NDEBUG
+#ifndef NDEBUG
   SwiftASTContextTester()
       : SwiftASTContext(), m_typeref_typesystem(new TypeSystemSwiftTypeRef()) {}
 #endif
@@ -287,6 +287,8 @@ TEST_F(ClangArgs, DoubleDash) {
 }
 
 TEST_F(TestSwiftASTContext, IVFS) {
+#ifndef NDEBUG
+  // The mock constructor is only available in asserts mode.
   const auto *Info = testing::UnitTest::GetInstance()->current_test_info();
   llvm::SmallString<128> name;
   auto ec = llvm::sys::fs::createTemporaryFile(
@@ -322,17 +324,24 @@ TEST_F(TestSwiftASTContext, IVFS) {
 
   // Check that all ignored arguments got removed.
   EXPECT_EQ(args, expected);
+#endif
 }
 
 TEST_F(TestSwiftASTContext, GetTypeNameNullType) {
+#ifndef NDEBUG
+  // The mock constructor is only available in asserts mode.
   auto context = std::make_shared<SwiftASTContextTester>();
   EXPECT_EQ(context->GetTypeName(nullptr, false),
             ConstString("<invalid type>"));
+#endif
 }
 
 TEST_F(TestSwiftASTContext, GetTypeNameFatalError) {
+#ifndef NDEBUG
+  // The mock constructor is only available in asserts mode.
   auto context = std::make_shared<SwiftASTContextTester>();
   context->RaiseFatalError("unit test error");
   EXPECT_EQ(context->GetTypeName(nullptr, false),
             ConstString("<invalid Swift context>"));
+#endif
 }
