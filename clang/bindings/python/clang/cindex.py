@@ -2153,6 +2153,7 @@ class Cursor(Structure):
             if underlying_type.kind == TypeKind.ENUM:
                 underlying_type = underlying_type.get_declaration().enum_type
             if underlying_type.kind in (
+                TypeKind.BOOL,
                 TypeKind.CHAR_U,
                 TypeKind.UCHAR,
                 TypeKind.CHAR16,
