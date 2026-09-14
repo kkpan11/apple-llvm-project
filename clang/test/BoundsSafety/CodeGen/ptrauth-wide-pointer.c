@@ -886,7 +886,7 @@ unsigned long *__single strip_single_unchanged(unsigned long *__single p) {
 
 // An explicit cast is how a wide-pointer lvalue reaches these builtins now.
 // C-LABEL: define dso_local i64 @blend_explicit_cast(
-// C-SAME: ptr nofreeobj noundef align 8 dead_on_return dereferenceable(24) [[P:%.*]]) #[[ATTR0]] {
+// C-SAME: ptr noundef align 8 dead_on_return [[P:%.*]]) #[[ATTR0]] {
 // C-NEXT:  [[ENTRY:.*:]]
 // C-NEXT:    [[P_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
 // C-NEXT:    [[AGG_TEMP:%.*]] = alloca %"__bounds_safety::wide_ptr.bidi_indexable", align 8
@@ -903,7 +903,7 @@ unsigned long *__single strip_single_unchanged(unsigned long *__single p) {
 // C-NEXT:    ret i64 [[TMP1]]
 //
 // OBJC-LABEL: define dso_local i64 @blend_explicit_cast(
-// OBJC-SAME: ptr nofreeobj noundef align 8 dead_on_return dereferenceable(24) [[P:%.*]]) #[[ATTR0]] {
+// OBJC-SAME: ptr noundef align 8 dead_on_return [[P:%.*]]) #[[ATTR0]] {
 // OBJC-NEXT:  [[ENTRY:.*:]]
 // OBJC-NEXT:    [[P_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
 // OBJC-NEXT:    [[AGG_TEMP:%.*]] = alloca %"__bounds_safety::wide_ptr.bidi_indexable", align 8
