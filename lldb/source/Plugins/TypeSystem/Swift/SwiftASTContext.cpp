@@ -1941,7 +1941,7 @@ void SwiftASTContext::ConfigureModuleValidation(
 #endif
   }
 
-  if (!validate_pcm)
+  if (!validate_pcm && GetClangImporterOptions().DirectClangCC1ModuleBuild)
     extra_args.push_back("-fno-modules-check-relocated");
   LOG_PRINTF(GetLog(LLDBLog::Types), "PCM validation is %s",
              validate_pcm ? "enabled" : "disabled");
