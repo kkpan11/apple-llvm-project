@@ -407,6 +407,8 @@ static bool initTargetOptions(CompilerInstance &CI, DiagnosticsEngine &Diags,
     Options.ExceptionModel = llvm::ExceptionHandling::DwarfCFI;
   if (CodeGenOpts.hasWasmExceptions())
     Options.ExceptionModel = llvm::ExceptionHandling::Wasm;
+  if (CodeGenOpts.hasEmscriptenExceptions())
+    Options.ExceptionModel = llvm::ExceptionHandling::Emscripten;
 
   Options.NoZerosInBSS = CodeGenOpts.NoZeroInitializedInBSS;
 
