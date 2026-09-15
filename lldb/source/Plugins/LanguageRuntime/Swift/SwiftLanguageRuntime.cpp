@@ -2563,9 +2563,6 @@ static void PrintFramesForTask(ExecutionContext &exe_ctx,
   }
 }
 
-/// A helper class to find Tasks in the swift program. It implements the
-/// algorithm described in g_task_list_tree_common_text.
-
 static std::optional<std::vector<lldb::addr_t>>
 FindTaskAddrsFromRegistry(ReflectionContextInterface &reflection_ctx,
                           Process &process) {
@@ -2642,6 +2639,8 @@ FindTaskAddrs(ReflectionContextInterface &reflection_ctx, Process &process) {
   return FindTaskAddrsFromThreadList(process);
 }
 
+/// A helper class to find Tasks in the swift program. It implements the
+/// algorithm described in g_task_list_tree_common_text.
 class TaskExplorer {
 public:
   TaskExplorer(ReflectionContextInterface &reflection_ctx, Process &process)
