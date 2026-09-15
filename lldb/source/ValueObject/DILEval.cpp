@@ -2075,11 +2075,9 @@ llvm::Expected<lldb::ValueObjectSP> Interpreter::Visit(const CastNode &node) {
                         ? operand->GetLoadAddress()
                         : (op_type.IsSigned() ? operand->GetValueAsSigned(0)
                                               : operand->GetValueAsUnsigned(0));
-    llvm::StringRef name = "result";
-    ExecutionContext exe_ctx(m_target.get(), false);
-    result = ValueObject::CreateValueObjectFromAddress(name, addr, exe_ctx,
-                                                       target_type,
-                                                       /* do_deref */ false);
+    result = ValueObject::CreateValueObjectFromAddress(
+        "result", addr, m_stack_frame, target_type,
+        /* do_deref */ false);
     break;
   }
   case CastKind::eNone: {
