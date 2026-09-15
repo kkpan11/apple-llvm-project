@@ -31,7 +31,7 @@ class TestSwiftResilience(TestBase):
     @requireNotEmbeddedSwift
     @skipUnlessDarwin
     @swiftTest
-    @skipIf(debug_info=no_match(["dsym", "dwarf"]))
+    @skipIf(debug_info=no_match(["dsym"]))
     def test_cross_module_extension_a_a(self):
         """Test that LLDB can debug across resilient boundaries"""
         self.build()
@@ -40,7 +40,7 @@ class TestSwiftResilience(TestBase):
     @requireNotEmbeddedSwift
     @skipUnlessDarwin
     @swiftTest
-    @skipIf(debug_info=no_match(["dsym", "dwarf"]))
+    @skipIf(debug_info=no_match(["dsym"]))
     def test_cross_module_extension_a_b(self):
         """Test that LLDB can debug across resilient boundaries"""
         self.build()
@@ -49,7 +49,7 @@ class TestSwiftResilience(TestBase):
     @requireNotEmbeddedSwift
     @skipUnlessDarwin
     @swiftTest
-    @skipIf(debug_info=no_match(["dsym", "dwarf"]))
+    @skipIf(debug_info=no_match(["dsym"]))
     def test_cross_module_extension_b_a(self):
         """Test that LLDB can debug across resilient boundaries"""
         self.build()
@@ -58,7 +58,7 @@ class TestSwiftResilience(TestBase):
     @requireNotEmbeddedSwift
     @skipUnlessDarwin
     @swiftTest
-    @skipIf(debug_info=no_match(["dsym", "dwarf"]))
+    @skipIf(debug_info=no_match(["dsym"]))
     def test_cross_module_extension_b_b(self):
         """Test that LLDB can debug across resilient boundaries"""
         self.build()
