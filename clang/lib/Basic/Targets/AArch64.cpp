@@ -205,7 +205,10 @@ AArch64TargetInfo::AArch64TargetInfo(const llvm::Triple &Triple,
     this->MCountName = "\01_mcount";
   else if (Triple.getOS() == llvm::Triple::UnknownOS)
     this->MCountName =
-        Opts.EABIVersion == llvm::EABI::GNU ? "\01_mcount" : "mcount";
+        (Opts.EABIVersion == llvm::EABI::GNU ||
+         (Opts.EABIVersion == llvm::EABI::Default && Triple.isGNUEnvironment()))
+            ? "\01_mcount"
+            : "mcount";
 
   if (Triple.getArchName() == "arm64e")
     PointerAuthSupported = true;
