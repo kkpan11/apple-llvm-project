@@ -104,17 +104,16 @@ enum CodeObjectVersionKind {
 class TargetOptions {
 public:
   TargetOptions()
-      : EnableAIXExtendedAltivecABI(false), NoZerosInBSS(false),
-        UseCASBackend(false),
-        GuaranteedTailCallOpt(false), StackSymbolOrdering(true),
-        EnableFastISel(false), EnableGlobalISel(false), UseInitArray(false),
-        FunctionSections(false), DataSections(false),
-        IgnoreXCOFFVisibility(false), XCOFFTracebackTable(true),
-        UniqueSectionNames(true), UniqueBasicBlockSectionNames(false),
-        SeparateNamedSections(false), TrapUnreachable(false),
-        NoTrapAfterNoreturn(false), TLSSize(0), EmulatedTLS(false),
-        EnableTLSDESC(false), EnableIPRA(false), EmitStackSizeSection(false),
-        EnableMachineOutliner(false), EnableMachineFunctionSplitter(false),
+      : NoZerosInBSS(false), UseCASBackend(false), GuaranteedTailCallOpt(false),
+        StackSymbolOrdering(true), EnableFastISel(false),
+        EnableGlobalISel(false), UseInitArray(false), FunctionSections(false),
+        DataSections(false), IgnoreXCOFFVisibility(false),
+        XCOFFTracebackTable(true), UniqueSectionNames(true),
+        UniqueBasicBlockSectionNames(false), SeparateNamedSections(false),
+        TrapUnreachable(false), NoTrapAfterNoreturn(false), TLSSize(0),
+        EmulatedTLS(false), EnableTLSDESC(false), EnableIPRA(false),
+        EmitStackSizeSection(false), EnableMachineOutliner(false),
+        EnableMachineFunctionSplitter(false),
         EnableStaticDataPartitioning(false), SupportsDefaultOutlining(false),
         EnableDefaultMachineVerifier(true), EmitAddrsig(false),
         BBAddrMap(false), EmitCallGraphSection(false), EmitCallSiteInfo(false),
@@ -125,12 +124,6 @@ public:
         XCOFFReadOnlyPointers(false),
         SupportIndirectSymViaGOTPCRel_AArch64_ELF(true),
         VerifyArgABICompliance(true) {}
-
-  /// EnableAIXExtendedAltivecABI - This flag returns true when -vec-extabi is
-  /// specified. The code generator is then able to use both volatile and
-  /// nonvolitle vector registers. When false, the code generator only uses
-  /// volatile vector registers which is the default setting on AIX.
-  unsigned EnableAIXExtendedAltivecABI : 1;
 
   /// NoZerosInBSS - By default some codegens place zero-initialized data to
   /// .bss section. This flag disables such behaviour (necessary, e.g. for
