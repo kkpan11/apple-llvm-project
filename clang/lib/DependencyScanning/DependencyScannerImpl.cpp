@@ -17,6 +17,7 @@
 #include "clang/DependencyScanning/ScanAndUpdateArgs.h"
 #include "clang/Frontend/FrontendActions.h"
 #include "clang/Frontend/MultiplexConsumer.h"
+#include "clang/Lex/Preprocessor.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/Option/Option.h"
