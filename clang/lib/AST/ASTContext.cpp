@@ -6420,6 +6420,7 @@ QualType ASTContext::getOverflowBehaviorType(
     QualType Underlying) const {
   assert(!Underlying->isOverflowBehaviorType() &&
          "Cannot have underlying types that are themselves OBTs");
+
   llvm::FoldingSetNodeID ID;
   OverflowBehaviorType::Profile(ID, Underlying, Kind);
   llvm::FoldingSetInsertToken Token;
@@ -6438,7 +6439,7 @@ QualType ASTContext::getOverflowBehaviorType(
   }
 
   OverflowBehaviorType *Ty = new (*this, alignof(OverflowBehaviorType))
-      OverflowBehaviorType(Canonical, Underlying, Kind);
+      OverflowBehaviorType(*this, Canonical, Underlying, Kind);
 
   Types.push_back(Ty);
   OverflowBehaviorTypes.insert(Ty, Token);
