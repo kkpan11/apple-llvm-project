@@ -33,7 +33,6 @@
 #include "clang/Sema/SemaInternal.h"
 #include "clang/Sema/Template.h"
 #include "clang/Sema/TemplateDeduction.h"
-#include "clang/Sema/TemplateInstCallback.h"
 #include "llvm/ADT/SmallVectorExtras.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -638,8 +637,6 @@ Sema::InstantiatingTemplate::InstantiatingTemplate(
   }
 
   Invalid = SemaRef.pushCodeSynthesisContext(Inst);
-  if (!Invalid)
-    atTemplateBegin(SemaRef.TemplateInstCallbacks, SemaRef, Inst);
 }
 
 Sema::InstantiatingTemplate::InstantiatingTemplate(
@@ -879,9 +876,6 @@ void Sema::popCodeSynthesisContext() {
 
 void Sema::InstantiatingTemplate::Clear() {
   if (!Invalid) {
-    atTemplateEnd(SemaRef.TemplateInstCallbacks, SemaRef,
-                  SemaRef.CodeSynthesisContexts.back());
-
     SemaRef.popCodeSynthesisContext();
     Invalid = true;
   }
@@ -1157,8 +1151,9 @@ void Sema::PrintInstantiationStack(InstantiationContextDiagFuncRef DiagFunc) {
       // Note: if FD is nullptr currently setting DFK to DefaultedFunctionKind()
       // will ensure that DFK.isComparison() is false. This is important because
       // we will uncondtionally dereference FD in the else if.
-      DefaultedFunctionKind DFK =
-          FD ? getDefaultedFunctionKind(FD) : DefaultedFunctionKind();
+      FunctionDecl::DefaultedFunctionKind DFK =
+          FD ? FD->getDefaultedFunctionKind()
+             : FunctionDecl::DefaultedFunctionKind();
       if (DFK.isSpecialMember()) {
         auto *MD = cast<CXXMethodDecl>(FD);
         DiagFunc(Active->PointOfInstantiation,

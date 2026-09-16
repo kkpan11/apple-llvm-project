@@ -32,7 +32,6 @@
 #include "clang/Sema/SemaOpenMP.h"
 #include "clang/Sema/SemaSwift.h"
 #include "clang/Sema/Template.h"
-#include "clang/Sema/TemplateInstCallback.h"
 #include "llvm/Support/SaveAndRestore.h"
 #include "llvm/Support/TimeProfiler.h"
 #include <optional>
@@ -5526,10 +5525,8 @@ TemplateDeclInstantiator::InitFunctionInstantiation(FunctionDecl *New,
       ActiveInst.Kind == ActiveInstType::DeducedTemplateArgumentSubstitution) {
     if (isa<FunctionTemplateDecl>(ActiveInst.Entity)) {
       SemaRef.CurrentSFINAEContext = nullptr;
-      atTemplateEnd(SemaRef.TemplateInstCallbacks, SemaRef, ActiveInst);
       ActiveInst.Kind = ActiveInstType::TemplateInstantiation;
       ActiveInst.Entity = New;
-      atTemplateBegin(SemaRef.TemplateInstCallbacks, SemaRef, ActiveInst);
     }
   }
 
@@ -5931,7 +5928,7 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
     // instantiated record instead.
     assert(PatternDecl->isDefaulted() &&
            "Special member needs to be defaulted");
-    auto PatternSM = getDefaultedFunctionKind(PatternDecl).asSpecialMember();
+    auto PatternSM = PatternDecl->getDefaultedFunctionKind().asSpecialMember();
     if (!(PatternSM == CXXSpecialMemberKind::CopyConstructor ||
           PatternSM == CXXSpecialMemberKind::CopyAssignment ||
           PatternSM == CXXSpecialMemberKind::MoveConstructor ||

@@ -249,6 +249,7 @@ multiclass CXX29Compat<string message, bit ext_warn = true> : CXXCompat<message,
 // Definitions for Diagnostics.
 include "DiagnosticASTKinds.td"
 include "DiagnosticCASKinds.td"
+include "DiagnosticCodeGenKinds.td"
 include "DiagnosticCommentKinds.td"
 include "DiagnosticCommonKinds.td"
 include "DiagnosticCrossTUKinds.td"

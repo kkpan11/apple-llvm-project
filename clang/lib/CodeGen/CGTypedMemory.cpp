@@ -27,6 +27,7 @@
 #include "llvm/ADT/APInt.h"
 #include "llvm/CodeGen/MachineStableHash.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/xxhash.h"
 
 using namespace clang;

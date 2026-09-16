@@ -19,6 +19,7 @@
 #include "mlir/Target/LLVMIR/Import.h"
 
 #include "clang/AST/DeclGroup.h"
+#include "clang/AST/DeclOpenACC.h"
 #include "clang/CIR/CIRGenerator.h"
 #include "clang/CIR/InitAllDialects.h"
 #include "llvm/IR/DataLayout.h"
@@ -51,6 +52,8 @@ void CIRGenerator::Initialize(ASTContext &astContext) {
   this->astContext = &astContext;
 
   mlirContext = std::make_unique<mlir::MLIRContext>();
+  // MLIR multithreading stays enabled; the CIRDiagnosticHandler is only ever
+  // invoked from a single thread.
   cir::registerAllDialects(*mlirContext);
   mlirContext->loadDialect<mlir::DLTIDialect, cir::CIRDialect>();
   mlirContext->getOrLoadDialect<mlir::acc::OpenACCDialect>();

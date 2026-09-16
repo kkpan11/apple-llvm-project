@@ -72,6 +72,7 @@
 #include "llvm/Support/ConvertUTF.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/TimeProfiler.h"
+#include "llvm/Support/VirtualFileSystem.h"
 #include "llvm/TargetParser/AArch64TargetParser.h"
 #include "llvm/TargetParser/RISCVISAInfo.h"
 #include "llvm/TargetParser/Triple.h"
@@ -7306,8 +7307,8 @@ CodeGenModule::GetAddrOfConstantCFString(const StringLiteral *Literal) {
                                StringLength);
 
   if (auto *C = Entry.second)
-    return ConstantAddress(
-        C, C->getValueType(), CharUnits::fromQuantity(C->getAlignment()));
+    return ConstantAddress(C, C->getValueType(),
+                           CharUnits::fromQuantity(C->getAlign().valueOrOne()));
 
   const ASTContext &Context = getContext();
   const llvm::Triple &Triple = getTriple();
@@ -7596,7 +7597,7 @@ CodeGenModule::GetAddrOfConstantStringFromLiteral(const StringLiteral *S,
   if (!LangOpts.WritableStrings) {
     Entry = &ConstantStringMap[C];
     if (auto GV = *Entry) {
-      if (uint64_t(Alignment.getQuantity()) > GV->getAlignment())
+      if (Alignment.getAsAlign() > GV->getAlign().valueOrOne())
         GV->setAlignment(Alignment.getAsAlign());
       return ConstantAddress(castStringLiteralToDefaultAddressSpace(*this, GV),
                              GV->getValueType(), Alignment);
@@ -7663,7 +7664,7 @@ ConstantAddress CodeGenModule::GetAddrOfConstantCString(const std::string &Str,
   if (!LangOpts.WritableStrings) {
     Entry = &ConstantStringMap[C];
     if (auto GV = *Entry) {
-      if (uint64_t(Alignment.getQuantity()) > GV->getAlignment())
+      if (Alignment.getAsAlign() > GV->getAlign().valueOrOne())
         GV->setAlignment(Alignment.getAsAlign());
       return ConstantAddress(castStringLiteralToDefaultAddressSpace(*this, GV),
                              GV->getValueType(), Alignment);

@@ -88,6 +88,7 @@
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/MD5.h"
 #include "llvm/Support/MathExtras.h"
@@ -326,10 +327,6 @@ RawComment *ASTContext::getRawCommentNoCacheImpl(
     return nullptr;
 
   return CommentBeforeDecl;
-}
-
-RawComment *ASTContext::getRawCommentForDeclNoCache(const Decl *D) const {
-  return getRawCommentNoCache(D);
 }
 
 RawComment *ASTContext::getRawCommentNoCache(RawCommentLookupKey Key) const {
