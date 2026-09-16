@@ -388,9 +388,6 @@ static bool initTargetOptions(CompilerInstance &CI, DiagnosticsEngine &Diags,
   Options.UseInitArray = CodeGenOpts.UseInitArray;
   Options.MCOptions.DisableIntegratedAS = CodeGenOpts.DisableIntegratedAS;
 
-  // Set EABI version.
-  Options.EABIVersion = TargetOpts.EABIVersion;
-
   if (CodeGenOpts.hasSjLjExceptions())
     Options.ExceptionModel = llvm::ExceptionHandling::SjLj;
   if (CodeGenOpts.hasSEHExceptions())
