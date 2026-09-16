@@ -1,4 +1,4 @@
-//===-- TypeSystemSwift.h ---------------------------------------*- C++ -*-===//
+//===-- TypeSystemSwift.h -------------------------------------------------===//
 //
 // This source file is part of the Swift.org open source project
 //
@@ -96,9 +96,34 @@ private:
 ///
 /// Memory management:
 ///
-/// A per-module TypeSystemSwiftTypeRef owns a lazily initialized SwiftASTContext.
-/// A SwiftASTContextForExpressions owns a  TypeSystemSwiftTypeRef.
+/// A per-module TypeSystemSwiftTypeRef owns a lazily initialized
+/// SwiftASTContext. A SwiftASTContextForExpressions owns a
+/// TypeSystemSwiftTypeRef.
 ///
+/// \endverbatim
+///
+/// Static vs. runtime types:
+///
+/// Static Swift types generally don't know their own size or memory
+/// layout, because the layout can depend on runtime information
+/// (e.g., resilient library types, generics, ...)  Similar to the
+/// Objective-C runtime, SwiftLanguageRuntime can return the *runtime
+/// type* of a static type.  Because runtime types are bound to a
+/// process, they can use the SwiftLanguageRuntime to answer size and
+/// layout queries. Runtime types are created in a target's scratch
+/// typesystem, never in a per-module typesystem.
+///
+/// \verbatim
+///   static type            (per-module TypeSystemSwiftTypeRef)
+///     - mangled name
+///     - no size or layout information
+///                  │
+///                  │   SwiftLanguageRuntime::GetRuntimeType()
+///                  │
+///                  ↓
+///   runtime type           (scratch TypeSystemSwiftTypeRefForExpressions)
+///     - bound to a process / runtime
+///     - answers size and layout queries via process' SwiftLanguageRuntime
 /// \endverbatim
 class TypeSystemSwift : public TypeSystem {
   /// LLVM RTTI support.
@@ -237,7 +262,8 @@ public:
                               swift::Mangle::ManglingFlavor flavor) = 0;
 
   /// \see lldb_private::TypeSystem::Dump
-  void Dump(llvm::raw_ostream &output, llvm::StringRef filter) override;
+  void Dump(llvm::raw_ostream &output, llvm::StringRef filter,
+            bool show_color) override;
 
   lldb::Format GetFormat(lldb::opaque_compiler_type_t type) override;
 
@@ -296,6 +322,9 @@ public:
           lldb::opaque_compiler_type_t type) override {
     return false;
   }
+  bool IsMemberDataPointerType(lldb::opaque_compiler_type_t type) override {
+    return false;
+  }
   bool IsPolymorphicClass(lldb::opaque_compiler_type_t type) override {
     return false;
   }
@@ -327,7 +356,8 @@ public:
   CompilerType GetBasicTypeFromAST(lldb::BasicType basic_type) override {
     return {};
   }
-  const llvm::fltSemantics &GetFloatTypeSemantics(size_t byte_size) override {
+  const llvm::fltSemantics &GetFloatTypeSemantics(size_t byte_size,
+                                                  lldb::Format format) override {
     // See: https://reviews.llvm.org/D67239. At this time of writing this API
     // is only used by DumpDataExtractor for the C type system.
     llvm_unreachable("GetFloatTypeSemantics not implemented.");
@@ -368,6 +398,8 @@ public:
   CompilerType GetNonReferenceType(lldb::opaque_compiler_type_t type) override {
     return {};
   }
+
+  CompilerType GetPointerDiffType(bool is_signed) override { return {}; }
 
   unsigned GetPtrAuthKey(lldb::opaque_compiler_type_t type) override;
   unsigned GetPtrAuthDiscriminator(lldb::opaque_compiler_type_t type) override;

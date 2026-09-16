@@ -4,8 +4,9 @@ import lldbsuite.test.lldbutil as lldbutil
 
 
 class TestSwiftLateDylib(TestBase):
-    @skipEmbeddedSwift
-    @skipUnlessDarwin
+    SHARED_BUILD_TESTCASE = False
+    @requireNotEmbeddedSwift # the embedded test harness appends its own -target, overriding the deployment targets under test
+    @requireDarwin
     @swiftTest
     @skipIfDarwinEmbedded
     @skipIf(setting=('symbols.swift-precise-compiler-invocation', 'true'))

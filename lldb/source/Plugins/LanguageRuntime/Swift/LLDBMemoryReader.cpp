@@ -134,11 +134,11 @@ LLDBMemoryReader::getSymbolAddress(const std::string &name) {
   Status error;
   auto load_addr = sym_ctx.symbol->GetLoadAddress(&m_process.GetTarget());
   uint64_t sym_value = m_process.GetTarget().ReadUnsignedIntegerFromMemory(
-      load_addr, m_process.GetAddressByteSize(), 0, error, true);
+      Address(load_addr), m_process.GetAddressByteSize(), 0, error, true);
   for (unsigned i = 1; i < sc_list.GetSize(); ++i) {
     uint64_t other_sym_value =
         m_process.GetTarget().ReadUnsignedIntegerFromMemory(
-            load_addr, m_process.GetAddressByteSize(), 0, error, true);
+            Address(load_addr), m_process.GetAddressByteSize(), 0, error, true);
     if (sym_value != other_sym_value) {
       LLDB_LOG_VERBOSE(log, "[MemoryReader] symbol resolution failed {0}",
                        name);
@@ -148,6 +148,51 @@ LLDBMemoryReader::getSymbolAddress(const std::string &name) {
   LLDB_LOG_VERBOSE(log, "[MemoryReader] symbol resolved to {0}", load_addr);
   return swift::remote::RemoteAddress(
       load_addr, swift::remote::RemoteAddress::DefaultAddressSpace);
+}
+
+swift::remote::RemoteAddress
+LLDBMemoryReader::getSymbolAddress(swift::remote::RemoteAddress image_start,
+                                   const std::string &name) {
+  if (name.empty())
+    return swift::remote::RemoteAddress();
+  Log *log = GetLog(LLDBLog::Types);
+
+  Target &target = m_process.GetTarget();
+  Address image_addr;
+  if (!target.ResolveLoadAddress(image_start.getRawAddress(), image_addr)) {
+    LLDB_LOG(log, "[MemoryReader] could not resolve image start {0:x} for {1}",
+             image_start.getRawAddress(), name);
+    return swift::remote::RemoteAddress();
+  }
+
+  ModuleSP module_sp = image_addr.GetModule();
+  if (!module_sp) {
+    LLDB_LOG(log, "[MemoryReader] no module at image start {0:x} for {1}",
+             image_start.getRawAddress(), name);
+    return swift::remote::RemoteAddress();
+  }
+
+  ConstString name_cs(name.c_str(), name.size());
+  SymbolContextList sc_list;
+  module_sp->FindSymbolsWithNameAndType(name_cs, lldb::eSymbolTypeAny, sc_list);
+
+  SymbolContext sym_ctx;
+  for (size_t idx = 0, e = sc_list.GetSize(); idx < e; ++idx) {
+    if (!sc_list.GetContextAtIndex(idx, sym_ctx) || !sym_ctx.symbol)
+      continue;
+    if (sym_ctx.symbol->GetType() == lldb::eSymbolTypeUndefined)
+      continue;
+    auto load_addr = sym_ctx.symbol->GetLoadAddress(&target);
+    if (load_addr == LLDB_INVALID_ADDRESS)
+      continue;
+    LLDB_LOG_VERBOSE(log, "[MemoryReader] {0} resolved to {1:x} within image",
+                     name, load_addr);
+    return swift::remote::RemoteAddress(
+        load_addr, swift::remote::RemoteAddress::DefaultAddressSpace);
+  }
+  LLDB_LOG(log, "[MemoryReader] symbol resolution failed for {0} in image",
+           name);
+  return swift::remote::RemoteAddress();
 }
 
 std::unique_ptr<swift::SwiftObjectFileFormat>

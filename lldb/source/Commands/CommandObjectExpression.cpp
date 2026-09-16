@@ -530,7 +530,7 @@ bool CommandObjectExpression::EvaluateExpression(llvm::StringRef expr,
       }
     }
   } else {
-    error_stream.Printf("error: unknown error\n");
+    error_stream.PutCString("error: unknown error\n");
   }
 
   return (success != eExpressionSetupError &&

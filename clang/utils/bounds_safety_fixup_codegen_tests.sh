@@ -58,7 +58,10 @@ fi
 # TESTS=( \
 #   BoundsSafety/CodeGen/constant-forge-ptr-expr.c \
 # )
-TESTS=( BoundsSafety/CodeGen/bounds-attributed-return-O0.c \ 
+TESTS=( \
+  BoundsSafety/CodeGen/global-indexable.c \
+  BoundsSafety/CodeGen/init-global-indexable.c \
+  BoundsSafety/CodeGen/init-global-single-with-null.c \
 )
 
 for t in "${TESTS[@]}"; do

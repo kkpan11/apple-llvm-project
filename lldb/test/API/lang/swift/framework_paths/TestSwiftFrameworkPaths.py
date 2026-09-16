@@ -6,11 +6,11 @@ import lldbsuite.test.lldbutil as lldbutil
 
 class TestSwiftFrameworkPaths(lldbtest.TestBase):
 
-    @skipEmbeddedSwift
+    @requireNotEmbeddedSwift
     @swiftTest
     # Don't run ClangImporter tests if Clangimporter is disabled.
     @skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
-    @skipIf(oslist=no_match(["macosx"]))
+    @requireMacOS
     def test_system_framework(self):
         """Test the discovery of framework search paths from framework dependencies."""
         self.build()

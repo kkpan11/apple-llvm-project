@@ -1,4 +1,4 @@
-//===-- SwiftExpressionParser.h ---------------------------------*- C++ -*-===//
+//===-- SwiftExpressionParser.h -------------------------------------------===//
 //
 // This source file is part of the Swift.org open source project
 //
@@ -157,7 +157,7 @@ public:
   bool RewriteExpression(DiagnosticManager &diagnostic_manager) override;
 
   static CompilerType ResolveVariable(
-      lldb::VariableSP variable_sp, lldb::StackFrameSP &stack_frame_sp,
+      lldb::VariableSP variable_sp, lldb_private::StackFrame &stack_frame,
       SwiftLanguageRuntime *runtime, lldb::DynamicValueType use_dynamic,
       lldb::BindGenericTypes bind_generic_types);
 

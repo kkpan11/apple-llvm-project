@@ -9,9 +9,9 @@ import os
 
 
 class TestMultilangFormatterCategories(TestBase):
-    @skipEmbeddedSwift
+    @requireNotEmbeddedSwift
     @swiftTest
-    @skipUnlessDarwin
+    @requireObjCFoundation
     def test_multilang_formatter_categories(self):
         """Test that formatter categories can work for multiple languages"""
         self.build()

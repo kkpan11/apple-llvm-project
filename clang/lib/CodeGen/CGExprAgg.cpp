@@ -29,6 +29,7 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/Instruction.h"
+#include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Intrinsics.h"
 using namespace clang;
@@ -94,6 +95,10 @@ public:
   void EmitArrayInit(Address DestPtr, llvm::ArrayType *AType, QualType ArrayQTy,
                      Expr *ExprToVisit, ArrayRef<Expr *> Args,
                      Expr *ArrayFiller);
+
+  void EmitComparisonResult(const Expr *E,
+                            const ComparisonCategoryInfo &CmpInfo,
+                            llvm::Value *ResultValue);
 
   AggValueSlot::NeedsGCBarriers_t needsGC(QualType T) {
     if (CGF.getLangOpts().getGC() && TypeRequiresGCollection(T))
@@ -185,6 +190,7 @@ public:
   void VisitBinCmp(const BinaryOperator *E);
   // TO_UPSTREAM(BoundsSafety)
   void VisitCompoundAssignOperator(CompoundAssignOperator *E);
+  void VisitTypeTraitExpr(const TypeTraitExpr *E);
   void VisitCXXRewrittenBinaryOperator(CXXRewrittenBinaryOperator *E) {
     Visit(E->getSemanticForm());
   }
@@ -516,7 +522,7 @@ VisitBoundsSafetyPointerPromotionExpr(BoundsSafetyPointerPromotionExpr *E) {
     Ptr = CGF.GetWidePointerElement(PtrRV.getAggregateAddress(), WPIndex::Pointer);
   }
 
-  llvm::BranchInst *NullCheckBranch = nullptr;
+  llvm::BasicBlock *NullBlock = nullptr;
   if (E->getNullCheck()) {
     // Test that the pointer is not NULL before testing that it's in bounds,
     // if AcceptNullPtr is specified.
@@ -525,7 +531,8 @@ VisitBoundsSafetyPointerPromotionExpr(BoundsSafetyPointerPromotionExpr *E) {
 
     llvm::Value *Null = llvm::Constant::getNullValue(Ptr->getType());
     llvm::Value *PtrIsNull = Builder.CreateICmpNE(Ptr, Null);
-    NullCheckBranch = Builder.CreateCondBr(PtrIsNull, NotNull, nullptr);
+    NullBlock = CGF.createBasicBlock("boundscheck.null");
+    Builder.CreateCondBr(PtrIsNull, NotNull, NullBlock);
     CGF.EmitBlock(NotNull);
   }
 
@@ -573,12 +580,10 @@ VisitBoundsSafetyPointerPromotionExpr(BoundsSafetyPointerPromotionExpr *E) {
   //  fill result with null
   //  br cont
   // cont:
-  if (NullCheckBranch) {
+  if (NullBlock) {
     llvm::BasicBlock *ContBlock = CGF.createBasicBlock("boundscheck.cont");
     Builder.CreateBr(ContBlock);
 
-    llvm::BasicBlock *NullBlock = CGF.createBasicBlock("boundscheck.null");
-    NullCheckBranch->setSuccessor(1, NullBlock);
     CGF.EmitBlock(NullBlock);
     llvm::Value *Zero = llvm::Constant::getNullValue(Ptr->getType());
     EmitWidePointerToDest(E->getType(), Zero, Zero, Zero, Callback);
@@ -1922,6 +1927,21 @@ static llvm::Value *EmitCompare(CGBuilderTy &Builder, CodeGenFunction &CGF,
                    "already been handled");
 }
 
+void AggExprEmitter::EmitComparisonResult(const Expr *E,
+                                          const ComparisonCategoryInfo &CmpInfo,
+                                          llvm::Value *ResultValue) {
+  // Create the return value in the destination slot.
+  EnsureDest(E->getType());
+  LValue DestLV = CGF.MakeAddrLValue(Dest.getAddress(), E->getType());
+
+  // Emit the address of the first (and only) field in the comparison category
+  // type, and initialize it from the constant integer value selected above.
+  LValue FieldLV = CGF.EmitLValueForFieldInitialization(
+      DestLV, *CmpInfo.Record->field_begin());
+  CGF.EmitStoreThroughLValue(RValue::get(ResultValue), FieldLV,
+                             /*IsInit=*/true);
+}
+
 void AggExprEmitter::VisitBinCmp(const BinaryOperator *E) {
   using llvm::BasicBlock;
   using llvm::PHINode;
@@ -1989,17 +2009,22 @@ void AggExprEmitter::VisitBinCmp(const BinaryOperator *E) {
     Select = Builder.CreateSelect(
         EmitCmp(CK_Less), EmitCmpRes(CmpInfo.getLess()), SelectGT, "sel.lt");
   }
-  // Create the return value in the destination slot.
-  EnsureDest(E->getType());
-  LValue DestLV = CGF.MakeAddrLValue(Dest.getAddress(), E->getType());
 
-  // Emit the address of the first (and only) field in the comparison category
-  // type, and initialize it from the constant integer value selected above.
-  LValue FieldLV = CGF.EmitLValueForFieldInitialization(
-      DestLV, *CmpInfo.Record->field_begin());
-  CGF.EmitStoreThroughLValue(RValue::get(Select), FieldLV, /*IsInit*/ true);
+  EmitComparisonResult(E, CmpInfo, Select);
+}
 
-  // All done! The result is in the Dest slot.
+void AggExprEmitter::VisitTypeTraitExpr(const TypeTraitExpr *E) {
+  assert(E->isStoredAsComparisonResult() &&
+         "expected a strong_ordering type trait with a stored value");
+
+  const ComparisonCategoryInfo &CmpInfo =
+      CGF.getContext().CompCategories.getInfoForType(E->getType());
+  const auto Result =
+      ComparisonCategoryResult(E->getAPValue().getInt().getZExtValue());
+  llvm::Value *ResultValue =
+      Builder.getInt(CmpInfo.getValueInfo(Result)->getIntValue());
+
+  EmitComparisonResult(E, CmpInfo, ResultValue);
 }
 
 void AggExprEmitter::VisitBinaryOperator(const BinaryOperator *E) {
@@ -3182,11 +3207,10 @@ void CodeGenFunction::EmitAggregateCopy(LValue Dest, LValue Src, QualType Ty,
 
   if (getLangOpts().CPlusPlus) {
     if (const auto *Record = Ty->getAsCXXRecordDecl()) {
-      assert((Record->hasTrivialCopyConstructor() ||
+      assert((Record->hasTrivialCopyConstructorForCall() ||
               Record->hasTrivialCopyAssignment() ||
-              Record->hasTrivialMoveConstructor() ||
-              Record->hasTrivialMoveAssignment() ||
-              Record->hasAttr<TrivialABIAttr>() || Record->isUnion() ||
+              Record->hasTrivialMoveConstructorForCall() ||
+              Record->hasTrivialMoveAssignment() || Record->isUnion() ||
               // HLSL uses aggregate-copy for user-defined record types.
               (getLangOpts().HLSL && !Record->isHLSLBuiltinRecord())) &&
              "Trying to aggregate-copy a type without a trivial copy/move "

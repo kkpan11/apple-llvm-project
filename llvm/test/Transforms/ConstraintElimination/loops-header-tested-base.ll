@@ -14,16 +14,12 @@ define void @loop_phi_pos_start_value(i32 %y, i1 %c, i32 %n) {
 ; CHECK:       loop.latch:
 ; CHECK-NEXT:    call void @use(i1 true)
 ; CHECK-NEXT:    call void @use(i1 false)
-; CHECK-NEXT:    [[T_2:%.*]] = icmp sge i32 [[X]], 10
-; CHECK-NEXT:    call void @use(i1 [[T_2]])
-; CHECK-NEXT:    [[C_2:%.*]] = icmp sle i32 [[X]], 9
-; CHECK-NEXT:    call void @use(i1 [[C_2]])
-; CHECK-NEXT:    [[C_3:%.*]] = icmp sgt i32 [[X]], 9
-; CHECK-NEXT:    call void @use(i1 [[C_3]])
 ; CHECK-NEXT:    call void @use(i1 true)
-; CHECK-NEXT:    [[C_5:%.*]] = icmp sge i32 [[X]], 9
-; CHECK-NEXT:    call void @use(i1 [[C_5]])
-; CHECK-NEXT:    [[X_NEXT]] = add nsw i32 [[X]], 1
+; CHECK-NEXT:    call void @use(i1 false)
+; CHECK-NEXT:    call void @use(i1 true)
+; CHECK-NEXT:    call void @use(i1 true)
+; CHECK-NEXT:    call void @use(i1 true)
+; CHECK-NEXT:    [[X_NEXT]] = add nuw nsw i32 [[X]], 1
 ; CHECK-NEXT:    br label [[LOOP_HEADER]]
 ; CHECK:       exit:
 ; CHECK-NEXT:    [[C_6:%.*]] = icmp sgt i32 [[Y:%.*]], 10
@@ -75,8 +71,7 @@ define void @loop_phi_neg_start_value(i32 %y, i1 %c, i32 %n) {
 ; CHECK:       loop.latch:
 ; CHECK-NEXT:    call void @use(i1 true)
 ; CHECK-NEXT:    call void @use(i1 false)
-; CHECK-NEXT:    [[T_2:%.*]] = icmp sge i32 [[X]], -10
-; CHECK-NEXT:    call void @use(i1 [[T_2]])
+; CHECK-NEXT:    call void @use(i1 true)
 ; CHECK-NEXT:    [[C_2:%.*]] = icmp sle i32 [[X]], 9
 ; CHECK-NEXT:    call void @use(i1 [[C_2]])
 ; CHECK-NEXT:    [[C_3:%.*]] = icmp sgt i32 [[X]], 9
@@ -149,7 +144,7 @@ define void @loop_count_down(i32 %y, i1 %c, i32 %n) {
 ; CHECK-NEXT:    call void @use(i1 [[C_4]])
 ; CHECK-NEXT:    [[C_5:%.*]] = icmp sge i32 [[X]], 2
 ; CHECK-NEXT:    call void @use(i1 [[C_5]])
-; CHECK-NEXT:    [[X_NEXT]] = add nsw i32 [[X]], 1
+; CHECK-NEXT:    [[X_NEXT]] = add nuw nsw i32 [[X]], 1
 ; CHECK-NEXT:    br label [[LOOP_HEADER]]
 ; CHECK:       exit:
 ; CHECK-NEXT:    [[C_6:%.*]] = icmp sgt i32 [[Y:%.*]], 10
@@ -254,7 +249,7 @@ define void @loop_latch_not_executed_constant_bound(i32 %y, i1 %c) {
 ; CHECK-NEXT:    call void @use(i1 true)
 ; CHECK-NEXT:    call void @use(i1 true)
 ; CHECK-NEXT:    call void @use(i1 true)
-; CHECK-NEXT:    [[X_NEXT]] = add i32 [[X]], 1
+; CHECK-NEXT:    [[X_NEXT]] = add nuw nsw i32 [[X]], 1
 ; CHECK-NEXT:    br label [[LOOP_HEADER]]
 ; CHECK:       exit:
 ; CHECK-NEXT:    [[C_4:%.*]] = icmp ugt i32 [[Y:%.*]], 10

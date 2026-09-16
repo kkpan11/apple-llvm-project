@@ -30,21 +30,23 @@ using namespace lldb_private;
 
 uint32_t ThreadPlanStepInRange::s_default_flag_values =
     ThreadPlanShouldStopHere::eStepInAvoidNoDebug |
-    ThreadPlanShouldStopHere::eStepOutPastThunks;
+    ThreadPlanShouldStopHere::eStepOutPastThunks |
+    ThreadPlanShouldStopHere::eStepPastLine0;
 
 // ThreadPlanStepInRange: Step through a stack range, either stepping over or
 // into based on the value of \a type.
 
 ThreadPlanStepInRange::ThreadPlanStepInRange(
     Thread &thread, const AddressRange &range,
-    const SymbolContext &addr_context, const char *step_into_target,
+    const SymbolContext &addr_context, std::string step_into_target,
     lldb::RunMode stop_others, LazyBool step_in_avoids_code_without_debug_info,
     LazyBool step_out_avoids_code_without_debug_info)
     : ThreadPlanStepRange(ThreadPlan::eKindStepInRange,
                           "Step Range stepping in", thread, range, addr_context,
                           stop_others),
       ThreadPlanShouldStopHere(this), m_step_past_prologue(true),
-      m_virtual_step(eLazyBoolCalculate), m_step_into_target(step_into_target) {
+      m_virtual_step(eLazyBoolCalculate),
+      m_step_into_target(std::move(step_into_target)) {
   SetCallbacks();
   SetFlagsToDefault();
   SetupAvoidNoDebug(step_in_avoids_code_without_debug_info,
@@ -103,24 +105,24 @@ void ThreadPlanStepInRange::GetDescription(Stream *s,
   };
 
   if (level == lldb::eDescriptionLevelBrief) {
-    s->Printf("step in");
+    s->PutCString("step in");
     PrintFailureIfAny();
     return;
   }
 
-  s->Printf("Stepping in");
+  s->PutCString("Stepping in");
   bool printed_line_info = false;
   if (m_addr_context.line_entry.IsValid()) {
-    s->Printf(" through line ");
+    s->PutCString(" through line ");
     m_addr_context.line_entry.DumpStopContext(s, false);
     printed_line_info = true;
   }
 
-  if (m_step_into_target)
+  if (!m_step_into_target.empty())
     s->Format(" targeting {0}", m_step_into_target);
 
   if (!printed_line_info || level == eDescriptionLevelVerbose) {
-    s->Printf(" using ranges:");
+    s->PutCString(" using ranges:");
     DumpRanges(s);
   }
 
@@ -261,12 +263,20 @@ bool ThreadPlanStepInRange::ShouldStop(Event *event_ptr) {
 
         if (sc.function) {
           func_start_address = sc.function->GetAddress();
-          if (curr_addr == func_start_address.GetLoadAddress(&GetTarget()))
-            bytes_to_skip = sc.function->GetPrologueByteSize();
+          bytes_to_skip = sc.function->GetPrologueByteSize();
         } else if (sc.symbol) {
           func_start_address = sc.symbol->GetAddress();
-          if (curr_addr == func_start_address.GetLoadAddress(&GetTarget()))
-            bytes_to_skip = sc.symbol->GetPrologueByteSize();
+          bytes_to_skip = sc.symbol->GetPrologueByteSize();
+        }
+
+        // A function's entry point need not be its first address, so a pc past
+        // the entry point can still be inside the prologue. What says the
+        // prologue has yet to run is the pc being below its end.
+        if (bytes_to_skip != 0) {
+          const lldb::addr_t prologue_end =
+              func_start_address.GetLoadAddress(&GetTarget()) + bytes_to_skip;
+          if (curr_addr >= prologue_end)
+            bytes_to_skip = 0;
         }
 
         if (bytes_to_skip == 0 && sc.symbol) {
@@ -470,28 +480,23 @@ bool ThreadPlanStepInRange::DefaultShouldStopHereImpl(Flags &flags,
   StackFrame *frame = GetThread().GetStackFrameAtIndex(0).get();
   Log *log = GetLog(LLDBLog::Step);
 
-  if (m_step_into_target) {
+  if (!m_step_into_target.empty()) {
+    llvm::StringRef target_name = m_step_into_target;
     SymbolContext sc = frame->GetSymbolContext(
         eSymbolContextFunction | eSymbolContextBlock | eSymbolContextSymbol);
     if (sc.symbol != nullptr) {
-      // First try an exact match, since that's cheap with
-      // ConstStrings.  Then do a strstr compare.
-      if (m_step_into_target == sc.GetFunctionName()) {
+      if (target_name == sc.GetFunctionName()) {
         should_stop_here = true;
       } else {
-        const char *target_name = m_step_into_target.AsCString(nullptr);
-        const char *function_name = sc.GetFunctionName().AsCString(nullptr);
-
-        if (function_name == nullptr)
-          should_stop_here = false;
-        else if (strstr(function_name, target_name) == nullptr)
+        llvm::StringRef function_name = sc.GetFunctionName().GetStringRef();
+        if (function_name.empty() || !function_name.contains(target_name))
           should_stop_here = false;
       }
       if (log && !should_stop_here)
         LLDB_LOG(log,
                  "Stepping out of frame {0} which did not match step into "
                  "target {1}.",
-                 sc.GetFunctionName(), m_step_into_target);
+                 sc.GetFunctionName(), target_name);
     }
   }
 

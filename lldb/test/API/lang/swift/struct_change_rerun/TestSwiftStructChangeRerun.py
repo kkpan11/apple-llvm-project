@@ -21,8 +21,15 @@ import shutil
 
 
 class TestSwiftStructChangeRerun(TestBase):
-    @skipEmbeddedSwift
+    SHARED_BUILD_TESTCASE = False
+
+    @expectedFailureWindows  # https://github.com/swiftlang/llvm-project/issues/13444
     @swiftTest
+    @skipIf(
+        oslist=["windows"],
+        swift_module_importer="noclang",
+        bugnumber="rdar://178182243",
+    )
     def test_swift_struct_change_rerun(self):
         """Test that we display self correctly for an inline-initialized struct"""
         copied_main_swift = self.getBuildArtifact("main.swift")
@@ -54,21 +61,18 @@ class TestSwiftStructChangeRerun(TestBase):
         self.assertFalse(var_a_c.IsValid(), "make sure a.c doesn't exist")
         process.Kill()
 
+        # The updated copied_main_swift might not get rebuilt by Make if it is
+        # changed within the same second, as they will have the same mtime.
+        # A clean build fixes this.
+        self.build(make_targets=["clean"])
         
         print('build with main2.swift')
         cleanup()
         shutil.copyfile("main2.swift", copied_main_swift)
         self.build()
 
-        # Launch the process, and do not stop at the entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
-
-        self.assertTrue(process, PROCESS_IS_VALID)
-        # Frame #0 should be at our breakpoint.
-        threads = lldbutil.get_threads_stopped_at_breakpoint(
-            process, breakpoint)
-
-        self.assertTrue(len(threads) == 1)
+        # Relaunch the rebuilt binary and run to the same breakpoint.
+        lldbutil.run_to_breakpoint_do_run(self, target, breakpoint)
 
         var_a = self.frame().EvaluateExpression("a")
         var_a_a = var_a.GetChildMemberWithName("a")

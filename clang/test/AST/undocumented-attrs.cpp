@@ -23,7 +23,6 @@ CHECK-NEXT:	CUDAConstant
 CHECK-NEXT:	CUDADevice
 CHECK-NEXT:	CUDAGlobal
 CHECK-NEXT:	CUDAHost
-CHECK-NEXT:	CUDALaunchBounds
 CHECK-NEXT:	CUDAShared
 CHECK-NEXT:	Capability
 CHECK-NEXT:	Common
@@ -100,4 +99,4 @@ CHECK-NEXT:	Visibility
 CHECK-NEXT:	WeakImport
 CHECK-NEXT:	WeakRef
 CHECK-NEXT:	WorkGroupSizeHint
-CHECK-NEXT: Total: 94
+CHECK-NEXT: Total: 93

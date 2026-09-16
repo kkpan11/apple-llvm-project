@@ -32,14 +32,17 @@ class TestCase(lldbtest.TestBase):
 
     def set_breakpoints_all_funclets(self, target):
         funclet_names = [
-            "$s1a12ASYNC___1___4condS2i_tYaF",
-            "$s1a12ASYNC___1___4condS2i_tYaFTY0_",
-            "$s1a12ASYNC___1___4condS2i_tYaFTQ1_",
-            "$s1a12ASYNC___1___4condS2i_tYaFTY2_",
-            "$s1a12ASYNC___1___4condS2i_tYaFTQ3_",
-            "$s1a12ASYNC___1___4condS2i_tYaFTY4_",
-            "$s1a12ASYNC___1___4condS2i_tYaFTQ5_",
-            "$s1a12ASYNC___1___4condS2i_tYaFTY6_",
+            self.swiftMangledName(name)
+            for name in [
+                "$s1a12ASYNC___1___4condS2i_tYaF",
+                "$s1a12ASYNC___1___4condS2i_tYaFTY0_",
+                "$s1a12ASYNC___1___4condS2i_tYaFTQ1_",
+                "$s1a12ASYNC___1___4condS2i_tYaFTY2_",
+                "$s1a12ASYNC___1___4condS2i_tYaFTQ3_",
+                "$s1a12ASYNC___1___4condS2i_tYaFTY4_",
+                "$s1a12ASYNC___1___4condS2i_tYaFTQ5_",
+                "$s1a12ASYNC___1___4condS2i_tYaFTY6_",
+            ]
         ]
 
         breakpoints = set()
@@ -62,7 +65,9 @@ class TestCase(lldbtest.TestBase):
                 breakpoints.add(bp.GetID())
         return breakpoints
 
-    unwind_fail_range_cache = dict()
+    def setUp(self):
+        lldbtest.TestBase.setUp(self)
+        self.unwind_fail_range_cache = {}
 
     # There are challenges when unwinding Q funclets ("await resume"): LLDB cannot
     # detect the transition point where x22 stops containing the indirect context,
@@ -74,11 +79,11 @@ class TestCase(lldbtest.TestBase):
     # includes such instructions, so the test may skip checks while stopped in them.
     def compute_unwind_fail_range(self, function, target):
         name = function.GetName()
-        if name in TestCase.unwind_fail_range_cache:
-            return TestCase.unwind_fail_range_cache[name]
+        if name in self.unwind_fail_range_cache:
+            return self.unwind_fail_range_cache[name]
 
         if "await resume" not in function.GetName():
-            TestCase.unwind_fail_range_cache[name] = range(0)
+            self.unwind_fail_range_cache[name] = range(0)
             return range(0)
 
         first_pc_after_prologue = function.GetStartAddress()
@@ -120,7 +125,7 @@ class TestCase(lldbtest.TestBase):
             first_bad_instr.GetAddress().GetFileAddress(),
             first_good_instr.GetAddress().GetFileAddress(),
         )
-        TestCase.unwind_fail_range_cache[name] = fail_range
+        self.unwind_fail_range_cache[name] = fail_range
         return fail_range
 
     def should_skip_Q_funclet(self, thread):
@@ -154,9 +159,18 @@ class TestCase(lldbtest.TestBase):
         for expected_name, actual_name in zip(expected_funcnames, actual_funcnames):
             self.assertIn(expected_name, actual_name, f"Unexpected backtrace: {frames}")
 
+    def find_stopped_thread(self, process, breakpoints):
+        # Return the thread stopped at one of the breakpoints we set, along with
+        # its breakpoint id, or (None, None).
+        for thread in lldbutil.get_stopped_threads(process, lldb.eStopReasonBreakpoint):
+            bpid = thread.GetStopReasonDataAtIndex(0)
+            if bpid in breakpoints:
+                return thread, bpid
+        return None, None
+
     @skipEmbeddedSwift
     @swiftTest
-    @skipIf(oslist=["windows", "linux"])
+    @skipIf(oslist=["windows"])
     def test(self):
         """Test that the debugger can unwind at all instructions of all funclets"""
         self.build()
@@ -174,9 +188,10 @@ class TestCase(lldbtest.TestBase):
             process.Continue()
             if process.GetState() == lldb.eStateExited:
                 break
-            thread = lldbutil.get_stopped_thread(process, lldb.eStopReasonBreakpoint)
-            self.assertTrue(thread.IsValid())
-            bpid = thread.GetStopReasonDataAtIndex(0)
+            # Another thread may be stopped at an unrelated internal breakpoint
+            thread, bpid = self.find_stopped_thread(process, breakpoints)
+            if thread is None:
+                continue
             breakpoints.remove(bpid)
             target.FindBreakpointByID(bpid).SetEnabled(False)
 

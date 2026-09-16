@@ -17,6 +17,8 @@
 #include "lldb/Target/Process.h"
 #include "lldb/Utility/Stream.h"
 
+#include "llvm/Support/Error.h"
+
 using namespace lldb_private;
 
 bool StackID::IsCFAOnStack(Process &process) const {
@@ -99,14 +101,15 @@ static llvm::Expected<bool> IsReachableParent(lldb::addr_t source,
   auto max_num_frames = 512;
   for (lldb::addr_t parent_ctx = source; parent_ctx && max_num_frames;
        max_num_frames--) {
-    Status error;
     lldb::addr_t old_parent_ctx = parent_ctx;
     // The continuation's context is the first field of an async context.
-    parent_ctx = process.ReadPointerFromMemory(old_parent_ctx, error);
-    if (error.Fail())
+    llvm::Expected<lldb::addr_t> parent_ctx_or_err =
+        process.ReadPointerFromMemory(old_parent_ctx);
+    if (!parent_ctx_or_err)
       return llvm::createStringError(llvm::formatv(
           "Failed to read parent async context of: {0:x}. Error: {1}",
-          old_parent_ctx, error.AsCString()));
+          old_parent_ctx, llvm::toString(parent_ctx_or_err.takeError())));
+    parent_ctx = *parent_ctx_or_err;
     if (process.FixDataAddress(parent_ctx) == maybe_parent)
       return true;
   }
@@ -161,10 +164,9 @@ CompareHeapCFAs(const StackID &lhs, const StackID &rhs, Process &process) {
 }
 // END SWIFT
 
-bool StackID::IsYounger(const StackID &lhs, const StackID &rhs,
-                        Process &process) {
+bool StackID::IsYoungerThan(const StackID &other, Process &process) const {
   // BEGIN SWIFT
-  switch (CompareHeapCFAs(lhs, rhs, process)) {
+  switch (CompareHeapCFAs(*this, other, process)) {
   case HeapCFAComparisonResult::Younger:
     return true;
   case HeapCFAComparisonResult::Older:
@@ -173,9 +175,8 @@ bool StackID::IsYounger(const StackID &lhs, const StackID &rhs,
     break;
   }
   // END SWIFT
-  //
-  const lldb::addr_t lhs_cfa = lhs.GetCallFrameAddressWithoutMetadata();
-  const lldb::addr_t rhs_cfa = rhs.GetCallFrameAddressWithoutMetadata();
+  const lldb::addr_t lhs_cfa = GetCallFrameAddressWithoutMetadata();
+  const lldb::addr_t rhs_cfa = other.GetCallFrameAddressWithoutMetadata();
 
   // FIXME: We are assuming that the stacks grow downward in memory.  That's not
   // necessary, but true on
@@ -189,8 +190,8 @@ bool StackID::IsYounger(const StackID &lhs, const StackID &rhs,
   if (lhs_cfa != rhs_cfa)
     return lhs_cfa < rhs_cfa;
 
-  SymbolContextScope *lhs_scope = lhs.GetSymbolContextScope();
-  SymbolContextScope *rhs_scope = rhs.GetSymbolContextScope();
+  SymbolContextScope *lhs_scope = GetSymbolContextScope();
+  SymbolContextScope *rhs_scope = other.GetSymbolContextScope();
 
   if (lhs_scope != nullptr && rhs_scope != nullptr) {
     // Same exact scope, lhs is not less than (younger than rhs)

@@ -21,10 +21,10 @@ class TestSwiftObjCMainConflictingDylibsFailingImport(TestBase):
 
     NO_DEBUG_INFO_TESTCASE = True
 
-    @skipEmbeddedSwift
+    @requireNotEmbeddedSwift
     # Don't run ClangImporter tests if Clangimporter is disabled.
     @skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
-    @skipUnlessDarwin
+    @requireSwiftObjCInterop
     @swiftTest
     def test(self):
         # To ensure we hit the rebuild problem remove the cache to avoid caching.

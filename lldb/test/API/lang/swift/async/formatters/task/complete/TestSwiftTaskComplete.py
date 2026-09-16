@@ -7,7 +7,8 @@ from lldbsuite.test import lldbutil
 
 class TestCase(TestBase):
 
-    @skipEmbeddedSwift
+    @skipEmbeddedSwiftOnLinux
+    @skipEmbeddedSwiftOnWindows
     @swiftTest
     def test(self):
         self.build()

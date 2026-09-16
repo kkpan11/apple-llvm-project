@@ -6,9 +6,10 @@ import shutil
 import os
 
 class TestSwiftLateSymbols(TestBase):
-    @skipEmbeddedSwift
+    SHARED_BUILD_TESTCASE = False
+
     @swiftTest
-    @skipUnlessDarwin
+    @requireDarwin
     @skipIf(debug_info=no_match(["dsym"]))
     def test_any_object_type(self):
         """Test the AnyObject type"""

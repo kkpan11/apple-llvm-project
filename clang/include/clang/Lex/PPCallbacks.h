@@ -350,6 +350,10 @@ public:
                                 ArrayRef<const IdentifierInfo *> Spec) {}
   /* TO_UPSTREAM(BoundsSafety) OFF */
 
+  /// Callback invoked when a \#pragma clang __set_pp_state directive is read.
+  virtual void PragmaSetPPState(SourceLocation Loc, IdentifierInfo *MacroName,
+                                std::uint64_t Value) {}
+
   /// Called by Preprocessor::HandleMacroExpandedIdentifier when a
   /// macro invocation is found.
   virtual void MacroExpands(const Token &MacroNameTok,
@@ -716,6 +720,12 @@ public:
     Second->PragmaAbiPointerAttributesSet(Loc, Spec);
   }
   /* TO_UPSTREAM(BoundsSafety) OFF */
+
+  void PragmaSetPPState(SourceLocation Loc, IdentifierInfo *MacroName,
+                        std::uint64_t Value) override {
+    First->PragmaSetPPState(Loc, MacroName, Value);
+    Second->PragmaSetPPState(Loc, MacroName, Value);
+  }
 
   void MacroExpands(const Token &MacroNameTok, const MacroDefinition &MD,
                     SourceRange Range, const MacroArgs *Args) override {

@@ -125,20 +125,44 @@ static bool readStringFromAddress(
     return true;
   }
 
-  read_options.SetLocation(startAddress);
+  read_options.SetLocation(Address(startAddress));
   read_options.SetTargetSP(valobj.GetTargetSP());
   read_options.SetStream(&stream);
   read_options.SetSourceSize(length);
   read_options.SetHasSourceSize(true);
-  read_options.SetNeedsZeroTermination(false);
+  read_options.SetZeroTermination(StringPrinter::ZeroTermination::Ignore);
   read_options.SetIgnoreMaxLength(summary_options.GetCapping() ==
                                   lldb::eTypeSummaryUncapped);
-  read_options.SetBinaryZeroIsTerminator(false);
   read_options.SetEscapeStyle(StringPrinter::EscapeStyle::Swift);
 
   return StringPrinter::ReadStringAndDumpToStream<
       StringPrinter::StringElementType::UTF8>(read_options);
 };
+
+/// Return the byte offset of the `start` code-unit pointer within a
+/// `__SharedStringStorage` instance located at `storageAddress`.
+static std::optional<uint64_t>
+getSharedStringStartOffset(Process &process, lldb::addr_t storageAddress) {
+  // `start` immediately follows the two-pointer object header. Older Swift
+  // runtimes had an additional `_owner` field preceding `start`.
+  const uint64_t ptr_size = process.GetAddressByteSize();
+  const uint64_t header_size = 2 * ptr_size;
+  llvm::Expected<lldb::addr_t> first_word =
+      process.ReadPointerFromMemory(storageAddress + header_size);
+  if (!first_word) {
+    llvm::consumeError(first_word.takeError());
+    return std::nullopt;
+  }
+  // In the new layout first_word is `start`, always a non-null pointer to the
+  // code units. In the old layout it is `_owner`, always null. So a null value
+  // uniquely means the old layout, where `start` is one pointer further.
+  uint64_t offset = *first_word ? header_size : header_size + ptr_size;
+  LLDB_LOG_VERBOSE(GetLog(LLDBLog::DataFormatters | LLDBLog::Types),
+                   "SwiftFormatters: __SharedStringStorage `start` field at "
+                   "offset {0} (detected {1} layout)",
+                   offset, *first_word ? "current" : "legacy (with _owner)");
+  return offset;
+}
 
 static bool makeStringGutsSummary(
     ValueObject &valobj, Stream &stream,
@@ -167,7 +191,6 @@ static bool makeStringGutsSummary(
   // We retrieve String contents by first extracting the
   // platform-independent 128-bit raw value representation from
   // _StringObject, then interpreting that.
-  Status status;
   uint64_t raw0;
   uint64_t raw1;
 
@@ -341,7 +364,7 @@ static bool makeStringGutsSummary(
         buffer, count, process->GetByteOrder(), ptrSize));
     options.SetStream(&stream);
     options.SetSourceSize(count);
-    options.SetBinaryZeroIsTerminator(false);
+    options.SetZeroTermination(StringPrinter::ZeroTermination::Ignore);
     options.SetEscapeStyle(StringPrinter::EscapeStyle::Swift);
     return StringPrinter::ReadBufferAndDumpToStream<
         StringPrinter::StringElementType::UTF8>(options);
@@ -372,15 +395,18 @@ static bool makeStringGutsSummary(
     // Shared strings must not be tail-allocated or natively stored.
     if ((flags & 0x3000) != 0)
       return false;
-    uint64_t startOffset = (ptrSize == 8 ? 24 : 12);
-    auto address = objectAddress + startOffset;
-    lldb::addr_t start = process->ReadPointerFromMemory(address, status);
-    if (status.Fail())
-      return error(status.AsCString());
+    auto startOffset = getSharedStringStartOffset(*process, objectAddress);
+    if (!startOffset)
+      return error("could not read shared string storage");
+    auto address = objectAddress + *startOffset;
+    llvm::Expected<lldb::addr_t> start =
+        process->ReadPointerFromMemory(address);
+    if (!start)
+      return error(llvm::toString(start.takeError()));
 
     applySlice(address, count, slice);
-    return readStringFromAddress(
-      start, count, valobj, stream, summary_options, read_options);
+    return readStringFromAddress(*start, count, valobj, stream, summary_options,
+                                 read_options);
   }
 
   // Native/shared strings should already have been handled.
@@ -559,11 +585,10 @@ bool lldb_private::formatters::swift::StaticString_SummaryProvider(
   }
 
   read_options.SetTargetSP(valobj.GetTargetSP());
-  read_options.SetLocation(start_ptr);
+  read_options.SetLocation(Address(start_ptr));
   read_options.SetSourceSize(size);
   read_options.SetHasSourceSize(true);
-  read_options.SetBinaryZeroIsTerminator(false);
-  read_options.SetNeedsZeroTermination(false);
+  read_options.SetZeroTermination(StringPrinter::ZeroTermination::Ignore);
   read_options.SetStream(&stream);
   read_options.SetIgnoreMaxLength(summary_options.GetCapping() ==
                                   lldb::eTypeSummaryUncapped);
@@ -581,25 +606,30 @@ bool lldb_private::formatters::swift::SwiftSharedString_SummaryProvider_2(
   if (!process)
     return false;
 
-  Status error;
   auto ptr_size = process->GetAddressByteSize();
 
   lldb::addr_t raw1 = valobj.GetPointerValue().address;
   lldb::addr_t address = (raw1 & 0x00FFFFFFFFFFFFFF);
-  uint64_t startOffset = (ptr_size == 8 ? 24 : 12);
-
-  lldb::addr_t start =
-      process->ReadPointerFromMemory(address + startOffset, error);
-  if (error.Fail())
-    return false;
-  lldb::addr_t raw0 =
-      process->ReadPointerFromMemory(address + startOffset + ptr_size, error);
-  if (error.Fail())
+  auto startOffset = getSharedStringStartOffset(*process, address);
+  if (!startOffset)
     return false;
 
-  uint64_t count = raw0 & 0x0000FFFFFFFFFFFF;
+  llvm::Expected<lldb::addr_t> start =
+      process->ReadPointerFromMemory(address + *startOffset);
+  if (!start) {
+    llvm::consumeError(start.takeError());
+    return false;
+  }
+  llvm::Expected<lldb::addr_t> raw0 =
+      process->ReadPointerFromMemory(address + *startOffset + ptr_size);
+  if (!raw0) {
+    llvm::consumeError(raw0.takeError());
+    return false;
+  }
 
-  return readStringFromAddress(start, count, valobj, stream, summary_options,
+  uint64_t count = *raw0 & 0x0000FFFFFFFFFFFF;
+
+  return readStringFromAddress(*start, count, valobj, stream, summary_options,
                                read_options);
 }
 
@@ -614,11 +644,13 @@ bool lldb_private::formatters::swift::SwiftStringStorage_SummaryProvider(
   lldb::addr_t raw1 = valobj.GetPointerValue().address;
   lldb::addr_t address = (raw1 & 0x00FFFFFFFFFFFFFF) + bias;
 
-  Status error;
-  lldb::addr_t raw0 = process->ReadPointerFromMemory(raw1 + raw0_offset, error);
-  if (error.Fail())
+  llvm::Expected<lldb::addr_t> raw0 =
+      process->ReadPointerFromMemory(raw1 + raw0_offset);
+  if (!raw0) {
+    llvm::consumeError(raw0.takeError());
     return false;
-  uint64_t count = raw0 & 0x0000FFFFFFFFFFFF;
+  }
+  uint64_t count = *raw0 & 0x0000FFFFFFFFFFFF;
   return readStringFromAddress(
       address, count, valobj, stream, options,
       StringPrinter::ReadStringAndDumpToStreamOptions());
@@ -740,11 +772,6 @@ bool lldb_private::formatters::swift::BuiltinObjC_SummaryProvider(
 namespace lldb_private {
 namespace formatters {
 namespace swift {
-
-/// The size of Swift Tasks. Fragments are tail allocated.
-static constexpr size_t AsyncTaskSize = sizeof(::swift::AsyncTask);
-/// The offset of ChildFragment, which is the first fragment of an AsyncTask.
-static constexpr offset_t ChildFragmentOffset = AsyncTaskSize;
 
 class EnumSyntheticFrontEnd : public SyntheticChildrenFrontEnd {
 public:
@@ -894,11 +921,19 @@ public:
         addr_t parent_addr = 0;
         if (m_task_info.isChildTask) {
           // Read ChildFragment::Parent, the first field of the ChildFragment.
-          Status status;
-          parent_addr = process_sp->ReadPointerFromMemory(
-              m_task_ptr + ChildFragmentOffset, status);
-          if (status.Fail() || parent_addr == LLDB_INVALID_ADDRESS)
-            parent_addr = 0;
+          auto child_offset =
+              lldb_private::GetChildFragmentOffset(*process_sp, m_task_ptr);
+          if (child_offset) {
+            parent_addr =
+                llvm::expectedToOptional(process_sp->ReadPointerFromMemory(
+                                             m_task_ptr + *child_offset))
+                    .value_or(LLDB_INVALID_ADDRESS);
+            if (parent_addr == LLDB_INVALID_ADDRESS)
+              parent_addr = 0;
+          } else {
+            LLDB_LOG_ERROR(GetLog(LLDBLog::DataFormatters | LLDBLog::Types),
+                           child_offset.takeError(), "{0}");
+          }
         }
 
         addr_t value = process_sp->FixDataAddress(parent_addr);
@@ -976,7 +1011,14 @@ public:
 
   lldb::ChildCacheState Update() override {
     if (auto reflection_ctx = GetReflectionContext()) {
-      ValueObjectSP task_obj_sp = m_backend.GetChildMemberWithName("_task");
+      // Newer stdlibs store the task as `_rawTask` (a non-owning wrapper
+      // around a `Builtin.RawPointer`); see swiftlang/swift#89283.
+      ValueObjectSP task_obj_sp;
+      if (auto raw_sp = m_backend.GetChildMemberWithName("_rawTask"))
+        task_obj_sp = raw_sp->GetChildMemberWithName("_rawValue");
+      // Fallback, older stdlibs used to store a _task property
+      if (!task_obj_sp)
+        task_obj_sp = m_backend.GetChildMemberWithName("_task");
       if (!task_obj_sp)
         return ChildCacheState::eRefetch;
       m_task_ptr = task_obj_sp->GetValueAsUnsigned(LLDB_INVALID_ADDRESS);
@@ -1010,7 +1052,7 @@ public:
     const auto *it = llvm::find(children, name);
     if (it == children.end())
       return llvm::createStringError("Type has no child named '%s'",
-                                     name.AsCString());
+                                     name.AsCString(""));
     return std::distance(children.begin(), it);
   }
 
@@ -1091,7 +1133,7 @@ public:
       return 0;
 
     return llvm::createStringError("Type has no child named '%s'",
-                                   name.AsCString());
+                                   name.AsCString(""));
   }
 
   lldb::ChildCacheState Update() override {
@@ -1124,7 +1166,9 @@ public:
       concurrency_version =
           SwiftLanguageRuntime::FindConcurrencyDebugVersion(*process_sp);
 
-    bool is_supported_target = is_64bit && concurrency_version.value_or(0) == 1;
+    bool is_supported_target =
+        is_64bit && SwiftLanguageRuntime::IsSupportedConcurrencyDebugVersion(
+                        concurrency_version);
     if (!is_supported_target)
       return;
 
@@ -1174,7 +1218,7 @@ public:
       return 0;
 
     return llvm::createStringError("Type has no child named '%s'",
-                                   name.AsCString());
+                                   name.AsCString(""));
   }
 
   lldb::ChildCacheState Update() override {
@@ -1182,11 +1226,15 @@ public:
       return ChildCacheState::eReuse;
 
     size_t canary_task_offset = 0x10;
-    Status status;
     if (auto canary_sp = m_backend.GetChildMemberWithName("canary"))
       if (addr_t canary_addr = canary_sp->GetValueAsUnsigned(0))
-        if (addr_t task_addr = m_backend.GetProcessSP()->ReadPointerFromMemory(
-                canary_addr + canary_task_offset, status))
+        // LLDB_INVALID_ADDRESS is truthy, so a failed read still constructs the
+        // child. Kept as-is rather than changing behavior while porting.
+        if (addr_t task_addr =
+                llvm::expectedToOptional(
+                    m_backend.GetProcessSP()->ReadPointerFromMemory(
+                        canary_addr + canary_task_offset))
+                    .value_or(LLDB_INVALID_ADDRESS))
           m_task_sp = CreateChildValueObjectFromAddress(
               "task", task_addr, m_backend.GetExecutionContextRef(),
               m_task_type, false);
@@ -1215,7 +1263,9 @@ public:
       concurrency_version =
           SwiftLanguageRuntime::FindConcurrencyDebugVersion(*process_sp);
 
-    m_is_supported_target = is_64bit && concurrency_version.value_or(0) == 1;
+    m_is_supported_target =
+        is_64bit && SwiftLanguageRuntime::IsSupportedConcurrencyDebugVersion(
+                        concurrency_version);
   }
 
   llvm::Expected<uint32_t> CalculateNumChildren() override {
@@ -1258,7 +1308,7 @@ public:
     if (buf.consume_front("[") && !buf.consumeInteger(10, idx) && buf == "]")
       return idx;
     return llvm::createStringError("Type has no child named '%s'",
-                                   name.AsCString());
+                                   name.AsCString(""));
   }
 
   lldb::ChildCacheState Update() override {
@@ -1337,13 +1387,25 @@ private:
     bool operator==(const Task &other) const { return addr == other.addr; }
     bool operator!=(const Task &other) const { return !(*this == other); }
 
-    static constexpr offset_t NextChildOffset = ChildFragmentOffset + 0x8;
-
     Task getNextChild(Status &status) {
       addr_t next_task = LLDB_INVALID_ADDRESS;
-      if (status.Success())
-        next_task =
-            process_sp->ReadPointerFromMemory(addr + NextChildOffset, status);
+      if (status.Success()) {
+        auto child_offset =
+            lldb_private::GetChildFragmentOffset(*process_sp, addr);
+        if (child_offset) {
+          // NextChild is the second pointer-sized field in ChildFragment
+          // (after `Parent`).
+          offset_t next_child_offset =
+              *child_offset + process_sp->GetAddressByteSize();
+          if (llvm::Expected<addr_t> next_task_or_err =
+                  process_sp->ReadPointerFromMemory(addr + next_child_offset))
+            next_task = *next_task_or_err;
+          else
+            status = Status::FromError(next_task_or_err.takeError());
+        } else {
+          status = Status::FromError(child_offset.takeError());
+        }
+      }
       return {process_sp, next_task};
     }
   };
@@ -1360,17 +1422,25 @@ private:
 
     Task getFirstChild(Status &status) {
       addr_t first_child = LLDB_INVALID_ADDRESS;
-      if (status.Success())
-        first_child =
-            process_sp->ReadPointerFromMemory(addr + FirstChildOffset, status);
+      if (status.Success()) {
+        if (llvm::Expected<addr_t> first_child_or_err =
+                process_sp->ReadPointerFromMemory(addr + FirstChildOffset))
+          first_child = *first_child_or_err;
+        else
+          status = Status::FromError(first_child_or_err.takeError());
+      }
       return {process_sp, first_child};
     }
 
     Task getLastChild(Status &status) {
       addr_t last_child = LLDB_INVALID_ADDRESS;
-      if (status.Success())
-        last_child =
-            process_sp->ReadPointerFromMemory(addr + LastChildOffset, status);
+      if (status.Success()) {
+        if (llvm::Expected<addr_t> last_child_or_err =
+                process_sp->ReadPointerFromMemory(addr + LastChildOffset))
+          last_child = *last_child_or_err;
+        else
+          status = Status::FromError(last_child_or_err.takeError());
+      }
       return {process_sp, last_child};
     }
   };
@@ -1417,7 +1487,9 @@ public:
       concurrency_version =
           SwiftLanguageRuntime::FindConcurrencyDebugVersion(*process_sp);
 
-    m_is_supported_target = is_64bit && concurrency_version.value_or(0) == 1;
+    m_is_supported_target =
+        is_64bit && SwiftLanguageRuntime::IsSupportedConcurrencyDebugVersion(
+                        concurrency_version);
   }
 
   llvm::Expected<uint32_t> CalculateNumChildren() override {
@@ -1459,7 +1531,7 @@ public:
     if (m_is_supported_target && name == "unprioritised_jobs")
       return 0;
     return llvm::createStringError("Type has no child named '%s'",
-                                   name.AsCString());
+                                   name.AsCString(""));
   }
 
   lldb::ChildCacheState Update() override {
@@ -1529,9 +1601,13 @@ private:
 
     Job getNextScheduledJob(Status &status) {
       addr_t next_job = LLDB_INVALID_ADDRESS;
-      if (status.Success())
-        next_job =
-            process_sp->ReadPointerFromMemory(addr + NextJobOffset, status);
+      if (status.Success()) {
+        if (llvm::Expected<addr_t> next_job_or_err =
+                process_sp->ReadPointerFromMemory(addr + NextJobOffset))
+          next_job = *next_job_or_err;
+        else
+          status = Status::FromError(next_job_or_err.takeError());
+      }
       return {process_sp, next_job};
     }
   };
@@ -1547,9 +1623,13 @@ private:
 
     Job getFirstJob(Status &status) {
       addr_t first_job = LLDB_INVALID_ADDRESS;
-      if (status.Success())
-        first_job =
-            process_sp->ReadPointerFromMemory(addr + FirstJobOffset, status);
+      if (status.Success()) {
+        if (llvm::Expected<addr_t> first_job_or_err =
+                process_sp->ReadPointerFromMemory(addr + FirstJobOffset))
+          first_job = *first_job_or_err;
+        else
+          status = Status::FromError(first_job_or_err.takeError());
+      }
       return {process_sp, first_job};
     }
   };
@@ -1645,7 +1725,7 @@ lldb_private::formatters::swift::EnumSyntheticFrontEnd::GetIndexOfChildWithName(
   if (m_projected && name == m_projected->GetName())
     return 0;
   return llvm::createStringError("Type has no child named '%s'",
-                                 name.AsCString());
+                                 name.AsCString(""));
 }
 
 SyntheticChildrenFrontEnd *
@@ -1711,11 +1791,11 @@ bool lldb_private::formatters::swift::ObjC_Selector_SummaryProvider(
     return false;
 
   StringPrinter::ReadStringAndDumpToStreamOptions read_options;
-  read_options.SetLocation(ptr_value);
+  read_options.SetLocation(Address(ptr_value));
   read_options.SetTargetSP(valobj.GetTargetSP());
   read_options.SetStream(&stream);
   read_options.SetQuote('"');
-  read_options.SetNeedsZeroTermination(true);
+  read_options.SetZeroTermination(StringPrinter::ZeroTermination::ZeroTerminate);
   read_options.SetEscapeStyle(StringPrinter::EscapeStyle::Swift);
 
   return StringPrinter::ReadStringAndDumpToStream<
@@ -2336,4 +2416,170 @@ bool lldb_private::formatters::swift::GLKit_SummaryProvider(
 
   PrintMatrix(stream, columns, num_elements, num_elements);
   return true;
+}
+
+/// Reads a signed 128-bit integer stored as two members named `_high` and
+/// `_low`, where `_high` contains the upper signed 64 bits and `_low` contains
+/// the lower unsigned 64 bits.
+static std::optional<__int128_t> ReadInt128Storage(ValueObject &valobj) {
+  // Verify object
+  if (!valobj.GetCompilerType().IsValid())
+    return std::nullopt;
+
+  // Capture high/low
+  static constexpr llvm::StringLiteral g_high_name("_high");
+  static constexpr llvm::StringLiteral g_low_name("_low");
+
+  ValueObjectSP high_sp(valobj.GetChildMemberWithName(g_high_name));
+  ValueObjectSP low_sp(valobj.GetChildMemberWithName(g_low_name));
+
+  if (!high_sp || !low_sp)
+    return std::nullopt;
+
+  bool success = false;
+  int64_t high =
+      high_sp->GetSyntheticValue()->GetValueAsSigned(0, &success);
+  if (!success)
+    return std::nullopt;
+
+  uint64_t low =
+      low_sp->GetSyntheticValue()->GetValueAsUnsigned(0, &success);
+  if (!success)
+    return std::nullopt;
+
+  // Building 128 bit value
+  __uint128_t bits = (static_cast<__uint128_t>(high) << 64) | static_cast<__uint128_t>(low);
+
+  return static_cast<__int128_t>(bits);
+}
+
+static std::string FormatAttoseconds(__int128_t attosec) {
+  static constexpr __uint128_t ATTO = 1000000000000000000; // 10^18 atto
+  static constexpr __uint128_t kScientificThreshold =
+      1000000000000000; // 1e-3 seconds = 1e15 atto
+  std::string result;
+
+  const bool is_negative = attosec < 0;
+
+  __uint128_t magnitude = static_cast<__uint128_t>(attosec);
+  if (is_negative) {
+    magnitude = ~magnitude + 1;
+    result.push_back('-');
+  }
+
+  if (magnitude == 0)
+    return "0.0";
+
+  // Scientific notation for very small values
+  if (magnitude < kScientificThreshold) {
+    std::string digits;
+
+    __uint128_t temp = magnitude;
+    unsigned magnitude_digits = 0;
+    while (temp > 0) {
+      digits.push_back('0' + static_cast<char>(temp % 10));
+      ++magnitude_digits;
+      temp /= 10;
+    }
+    std::reverse(digits.begin(), digits.end());
+
+    // Remove trailing zeroes
+    while (digits.size() > 1 && digits.back() == '0')
+      digits.pop_back();
+
+    int exponent = static_cast<int>(magnitude_digits) - 1 - 18;
+
+    result.push_back(digits[0]);
+
+    if (digits.size() > 1) {
+      result.push_back('.');
+      result.append(digits.substr(1));
+    }
+
+    result.push_back('e');
+
+    if (exponent < 0) {
+      result.push_back('-');
+      exponent = -exponent;
+    } else {
+      result.push_back('+');
+    }
+
+    if (exponent < 10)
+      result.push_back('0');
+
+    result.append(std::to_string(exponent));
+
+    return result;
+  }
+
+  // Regular decimal notation
+  __uint128_t seconds_128 = magnitude / ATTO;
+  __uint128_t fraction_128 = magnitude % ATTO;
+
+  std::string seconds_str;
+
+  if (seconds_128 == 0) {
+    seconds_str = "0";
+  } else {
+    while (seconds_128 > 0) {
+      char digit = '0' + (seconds_128 % 10);
+      seconds_str.push_back(digit);
+      seconds_128 /= 10;
+    }
+    std::reverse(seconds_str.begin(), seconds_str.end());
+  }
+
+  char fraction_buffer[20];
+  snprintf(fraction_buffer, sizeof(fraction_buffer), "%018llu",
+           (uint64_t)fraction_128);
+
+  std::string fraction_str(fraction_buffer);
+  fraction_str.erase(fraction_str.find_last_not_of('0') + 1, std::string::npos);
+  if (fraction_str.empty())
+    fraction_str = "0";
+
+  result.append(seconds_str);
+  result.push_back('.');
+  result.append(fraction_str);
+
+  return result;
+}
+
+bool lldb_private::formatters::swift::Duration_SummaryProvider(
+    ValueObject &valobj, Stream &stream, const TypeSummaryOptions &options) {
+
+  std::optional<__int128_t> duration = ReadInt128Storage(valobj);
+  if (!duration)
+    return false;
+
+  stream.Printf("%s seconds", FormatAttoseconds(*duration).c_str());
+  return true;
+}
+
+static bool ClockInstant_SummaryProvider(ValueObject &valobj, Stream &stream,
+                                         const TypeSummaryOptions &options) {
+
+  static constexpr llvm::StringLiteral g_value_name("_value");
+
+  ValueObjectSP value_sp = valobj.GetChildMemberWithName(g_value_name);
+  if (!value_sp)
+    return false;
+
+  std::optional<__int128_t> attoseconds = ReadInt128Storage(*value_sp);
+  if (!attoseconds)
+    return false;
+
+  stream.Printf("%s seconds", FormatAttoseconds(*attoseconds).c_str());
+  return true;
+}
+
+bool lldb_private::formatters::swift::ContinuousClockInstant_SummaryProvider(
+    ValueObject &valobj, Stream &stream, const TypeSummaryOptions &options) {
+  return ClockInstant_SummaryProvider(valobj, stream, options);
+}
+
+bool lldb_private::formatters::swift::SuspendingClockInstant_SummaryProvider(
+    ValueObject &valobj, Stream &stream, const TypeSummaryOptions &options) {
+  return ClockInstant_SummaryProvider(valobj, stream, options);
 }

@@ -85,7 +85,8 @@ void SwiftLanguage::Initialize() {
       .emplace(g_NSArrayClass1,
                lldb_private::formatters::swift::ArraySyntheticFrontEndCreator);
 
-  initializeSwiftModules();
+  static std::once_flag g_initialize_swift_modules_once;
+  std::call_once(g_initialize_swift_modules_once, initializeSwiftModules);
 }
 
 void SwiftLanguage::Terminate() {
@@ -105,6 +106,7 @@ void SwiftLanguage::Terminate() {
       .erase(g_NSArrayClass1);
 
   PluginManager::UnregisterPlugin(CreateInstance);
+  LogChannelSwift::Terminate();
 }
 
 bool SwiftLanguage::SymbolNameFitsToLanguage(const Mangled &mangled) const {
@@ -126,7 +128,7 @@ bool SwiftLanguage::IsTopLevelFunction(Function &function) {
 }
 
 std::vector<Language::MethodNameVariant>
-SwiftLanguage::GetMethodNameVariants(ConstString method_name) const {
+SwiftLanguage::GetMethodNameVariants(llvm::StringRef method_name) const {
   std::vector<Language::MethodNameVariant> variant_names;
 
   // NOTE:  We need to do this because we don't have a proper parser for Swift
@@ -135,9 +137,10 @@ SwiftLanguage::GetMethodNameVariants(ConstString method_name) const {
   // version as a lookup as well.
 
   ConstString counterpart;
-  if (method_name.GetMangledCounterpart(counterpart))
+  if (ConstString(method_name).GetMangledCounterpart(counterpart))
     if (SwiftLanguageRuntime::IsSwiftMangledName(counterpart.GetStringRef()))
-      variant_names.emplace_back(counterpart, eFunctionNameTypeFull);
+      variant_names.emplace_back(counterpart.GetString(),
+                                 eFunctionNameTypeFull);
 
   // Properties can have multiple accessor blocks. This section of code supports
   // breakpoints on accessor blocks by name.
@@ -149,11 +152,12 @@ SwiftLanguage::GetMethodNameVariants(ConstString method_name) const {
   // LLDB's baseline behavior handles the first case. The second case is
   // produced here as a variant name.
   for (llvm::StringRef suffix : {".get", ".set", ".willset", ".didset"})
-    if (method_name.GetStringRef().ends_with(suffix)) {
+    if (method_name.ends_with(suffix)) {
       // The method name, complete with suffix, *is* the variant.
-      variant_names.emplace_back(method_name, eFunctionNameTypeFull |
-                                                  eFunctionNameTypeBase |
-                                                  eFunctionNameTypeMethod);
+      variant_names.emplace_back(method_name.str(),
+                                 eFunctionNameTypeFull |
+                                     eFunctionNameTypeBase |
+                                     eFunctionNameTypeMethod);
       break;
     }
 
@@ -188,6 +192,10 @@ static void LoadSwiftFormatters(lldb::TypeCategoryImplSP swift_category_sp) {
   AddCXXSynthetic(
       swift_category_sp,
       lldb_private::formatters::swift::SwiftBasicTypeSyntheticFrontEndCreator,
+      "Swift.Int128", ConstString("Swift.Int128"), basic_synth_flags);
+  AddCXXSynthetic(
+      swift_category_sp,
+      lldb_private::formatters::swift::SwiftBasicTypeSyntheticFrontEndCreator,
       "Swift.Int64", ConstString("Swift.Int64"), basic_synth_flags);
   AddCXXSynthetic(
       swift_category_sp,
@@ -206,6 +214,8 @@ static void LoadSwiftFormatters(lldb::TypeCategoryImplSP swift_category_sp) {
       lldb_private::formatters::swift::SwiftBasicTypeSyntheticFrontEndCreator,
       "Swift.Int", ConstString("Swift.Int"), basic_synth_flags);
 
+  AddFormat(swift_category_sp, lldb::eFormatDecimal,
+            ConstString("Swift.Int128"), format_flags, false);
   AddFormat(swift_category_sp, lldb::eFormatDecimal, ConstString("Swift.Int64"),
             format_flags, false);
   AddFormat(swift_category_sp, lldb::eFormatDecimal, ConstString("Swift.Int32"),
@@ -217,6 +227,10 @@ static void LoadSwiftFormatters(lldb::TypeCategoryImplSP swift_category_sp) {
   AddFormat(swift_category_sp, lldb::eFormatDecimal, ConstString("Swift.Int"),
             format_flags, false);
 
+  AddCXXSynthetic(
+      swift_category_sp,
+      lldb_private::formatters::swift::SwiftBasicTypeSyntheticFrontEndCreator,
+      "Swift.UInt128", ConstString("Swift.UInt128"), basic_synth_flags);
   AddCXXSynthetic(
       swift_category_sp,
       lldb_private::formatters::swift::SwiftBasicTypeSyntheticFrontEndCreator,
@@ -239,6 +253,8 @@ static void LoadSwiftFormatters(lldb::TypeCategoryImplSP swift_category_sp) {
       "Swift.UInt", ConstString("Swift.UInt"), basic_synth_flags);
 
   AddFormat(swift_category_sp, lldb::eFormatUnsigned,
+            ConstString("Swift.UInt128"), format_flags, false);
+  AddFormat(swift_category_sp, lldb::eFormatUnsigned,
             ConstString("Swift.UInt64"), format_flags, false);
   AddFormat(swift_category_sp, lldb::eFormatUnsigned,
             ConstString("Swift.UInt32"), format_flags, false);
@@ -249,6 +265,10 @@ static void LoadSwiftFormatters(lldb::TypeCategoryImplSP swift_category_sp) {
   AddFormat(swift_category_sp, lldb::eFormatUnsigned, ConstString("Swift.UInt"),
             format_flags, false);
 
+  AddCXXSynthetic(
+      swift_category_sp,
+      lldb_private::formatters::swift::SwiftBasicTypeSyntheticFrontEndCreator,
+      "Swift.Float16", ConstString("Swift.Float16"), basic_synth_flags);
   AddCXXSynthetic(
       swift_category_sp,
       lldb_private::formatters::swift::SwiftBasicTypeSyntheticFrontEndCreator,
@@ -503,6 +523,23 @@ static void LoadSwiftFormatters(lldb::TypeCategoryImplSP swift_category_sp) {
                 "Swift.StaticString summary provider",
                 ConstString("Swift.StaticString"), summary_flags);
   AddCXXSummary(swift_category_sp,
+                lldb_private::formatters::swift::Duration_SummaryProvider,
+                "Swift.Duration summary provider",
+                ConstString("Swift.Duration"), summary_flags);
+
+  AddCXXSummary(
+      swift_category_sp,
+      lldb_private::formatters::swift::ContinuousClockInstant_SummaryProvider,
+      "Swift ContinuousClock.Instant summary provider",
+      ConstString("Swift.ContinuousClock.Instant"), summary_flags);
+
+  AddCXXSummary(
+      swift_category_sp,
+      lldb_private::formatters::swift::SuspendingClockInstant_SummaryProvider,
+      "Swift SuspendingClock.Instant summary provider",
+      ConstString("Swift.SuspendingClock.Instant"), summary_flags);
+
+  AddCXXSummary(swift_category_sp,
                 lldb_private::formatters::NSStringSummaryProvider,
                 "Swift.__StringStorage summary provider",
                 "Swift.__StringStorage", summary_flags);
@@ -697,6 +734,12 @@ LoadFoundationValueTypesFormatters(lldb::TypeCategoryImplSP swift_category_sp) {
       "Notification.Name summary provider",
       ConstString("Foundation.Notification.Name"),
       TypeSummaryImpl::Flags(summary_flags).SetDontShowChildren(true));
+  lldb_private::formatters::AddCXXSummary(
+      swift_category_sp,
+      lldb_private::formatters::swift::NotificationName_SummaryProvider,
+      "Notification.Name summary provider",
+      ConstString("Foundation.NSNotification.Name"),
+      TypeSummaryImpl::Flags(summary_flags).SetDontShowChildren(true));
 
   lldb_private::formatters::AddCXXSummary(
       swift_category_sp, lldb_private::formatters::swift::URL_SummaryProvider,
@@ -707,7 +750,7 @@ LoadFoundationValueTypesFormatters(lldb::TypeCategoryImplSP swift_category_sp) {
       swift_category_sp,
       lldb_private::formatters::swift::SwiftURL_SummaryProvider,
       "URL summary provider",
-      ConstString("^Foundation(Essentials)?\\._SwiftURL$"),
+      ConstString("^Foundation(Essentials)?\\._(SwiftURL|URL)$"),
       TypeSummaryImpl::Flags(summary_flags).SetDontShowChildren(true), true);
 
   lldb_private::formatters::AddStringSummary(
@@ -729,19 +772,20 @@ LoadFoundationValueTypesFormatters(lldb::TypeCategoryImplSP swift_category_sp) {
 
   lldb_private::formatters::AddCXXSummary(
       swift_category_sp, lldb_private::formatters::swift::UUID_SummaryProvider,
-      "UUID summary provider", ConstString("Foundation.UUID"),
-      TypeSummaryImpl::Flags(summary_flags).SetDontShowChildren(true));
+      "UUID summary provider", ConstString("^Foundation(Essentials)?\\.UUID$"),
+      TypeSummaryImpl::Flags(summary_flags).SetDontShowChildren(true), true);
 
   lldb_private::formatters::AddCXXSummary(
       swift_category_sp, lldb_private::formatters::swift::Data_SummaryProvider,
-      "Data summary provider", ConstString("Foundation.Data"),
-      TypeSummaryImpl::Flags(summary_flags).SetDontShowChildren(true));
+      "Data summary provider", ConstString("^Foundation(Essentials)?\\.Data$"),
+      TypeSummaryImpl::Flags(summary_flags).SetDontShowChildren(true), true);
 
   lldb_private::formatters::AddCXXSummary(
       swift_category_sp,
       lldb_private::formatters::swift::Decimal_SummaryProvider,
-      "Decimal summary provider", ConstString("Foundation.Decimal"),
-      TypeSummaryImpl::Flags(summary_flags).SetDontShowChildren(true));
+      "Decimal summary provider",
+      ConstString("^Foundation(Essentials)?\\.Decimal$"),
+      TypeSummaryImpl::Flags(summary_flags).SetDontShowChildren(true), true);
 
   lldb_private::formatters::AddCXXSummary(
       swift_category_sp, lldb_private::formatters::NSTimeZoneSummaryProvider,
@@ -988,7 +1032,7 @@ class ValueObjectWrapperSyntheticChildren : public SyntheticChildren {
         return 0;
       }
       return llvm::createStringError("Type has no child named '%s'",
-                                     name.AsCString());
+                                     name.AsCString(""));
     }
 
     lldb::ChildCacheState Update() override {
@@ -1006,7 +1050,7 @@ public:
   ValueObjectWrapperSyntheticChildren(ValueObjectSP valobj, const Flags &flags)
       : SyntheticChildren(flags), m_valobj(valobj) {}
 
-  SyntheticChildrenFrontEnd::AutoPointer
+  SyntheticChildrenFrontEnd::UniquePointer
   GetFrontEnd(ValueObject &backend) override {
     if (!m_valobj)
       return nullptr;
@@ -1981,7 +2025,7 @@ GetAndValidateInfo(const SymbolContext &sc) {
         "Function '%s' does not have a demangled name.",
         mangled.GetMangledName().AsCString(""));
 
-  const std::optional<DemangledNameInfo> &info = mangled.GetDemangledInfo();
+  const DemangledNameInfo *info = mangled.GetDemangledInfo();
   if (!info)
     return llvm::createStringError(
         "Function '%s' does not have demangled info.", demangled_name.data());
@@ -2194,7 +2238,7 @@ public:
 
   PluginProperties() {
     m_collection_sp = std::make_shared<OptionValueProperties>(GetSettingName());
-    m_collection_sp->Initialize(g_language_swift_properties);
+    m_collection_sp->Initialize(g_language_swift_properties_def);
   }
 
   FormatEntity::Entry GetFunctionNameFormat() const {

@@ -20,8 +20,8 @@ import os
 
 
 class TestDictionaryNSObjectAnyObject(TestBase):
-    @skipEmbeddedSwift
-    @skipUnlessDarwin
+    @requireNotEmbeddedSwift
+    @requireObjCFoundation
     @swiftTest
     def test_dictionary_nsobject_any_object(self):
         """Tests that we properly vend synthetic children for Swift.Dictionary<NSObject,AnyObject>"""

@@ -159,15 +159,16 @@ struct PerGlobalUtils {
       if (&T == PtrForInsts->getType()) {
         for (auto &I : Entry)
           if (!isa<AllocaInst>(I)) {
-            auto *Load =
-                new LoadInst(Pointee->getType(), PtrForInsts, Twine(), &I);
+            auto *Load = new LoadInst(Pointee->getType(), PtrForInsts, Twine(),
+                                      I.getIterator());
             LI = LoadsForCaller.insert(std::make_pair(Key, Load)).first;
             break;
           }
       } else {
         auto *OriginalLoad = getPtrLoadFor(F, *PtrForInsts->getType());
-        auto *Cast = new BitCastInst(OriginalLoad, &T, "",
-                                     &*std::next(OriginalLoad->getIterator()));
+        auto *Cast = CastInst::CreateBitOrPointerCast(
+            OriginalLoad, &T, "",
+            std::next(OriginalLoad->getIterator())->getIterator());
         LI = LoadsForCaller.insert(std::make_pair(Key, Cast)).first;
       }
     }
@@ -218,13 +219,19 @@ void processGlobalVariable(PerModuleUtils &MUtils, PerGlobalUtils &GUtils,
         MUtils.BlendIntrinsic,
         {B.CreatePointerCast(PtrLoc, MUtils.IntPtrTy), Discriminator});
 
+  // Signing a null pointer yields a non-null but invalid pointer. We'll emit a
+  // runtime guard around signing the pointer.
   Value *RawPtr = B.CreateLoad(PtrType, PtrLoc);
+  Value *RawPtrInt = B.CreatePointerCast(RawPtr, MUtils.IntPtrTy);
+  Value *NullCheck = B.CreateIsNull(RawPtrInt);
   Value *SignedPtr = B.CreateCall(
       MUtils.SignIntrinsic,
-      {B.CreatePointerCast(RawPtr, MUtils.IntPtrTy),
-       const_cast<ConstantInt *>(GUtils.PtrAuthInfo.getKey()), Discriminator});
+      {RawPtrInt, const_cast<ConstantInt *>(GUtils.PtrAuthInfo.getKey()),
+       Discriminator});
+  Value *Result = B.CreateSelect(
+      NullCheck, Constant::getNullValue(MUtils.IntPtrTy), SignedPtr);
 
-  B.CreateStore(B.CreateBitOrPointerCast(SignedPtr, PtrType), PtrLoc);
+  B.CreateStore(B.CreateBitOrPointerCast(Result, PtrType), PtrLoc);
 }
 
 void processInstruction(PerModuleUtils &MUtils, PerGlobalUtils &GUtils, Use &U,
@@ -264,8 +271,8 @@ Error processPtrAuthUsers(PerModuleUtils &MUtils, PerGlobalUtils &GUtils,
       Type *VExprType = VExpr->getType();
 
       // Check that the types line up for a pointer cast.
-      if (VExprType !=
-          PointerType::get(GUtils.PtrAuthInfo.getPointer()->getType(), 0))
+      if (VExprType != PointerType::get(
+                           GUtils.PtrAuthInfo.getPointer()->getContext(), 0))
         return makeStringError("Type mismatch while rewriting ptrauth use", V);
 
       // Check that all indexes are constant zero.
@@ -339,8 +346,7 @@ HandleLLVMPtrauthSection(llvm::Module &M,
   MUtils.B->CreateRetVoid();
 
   // Update the global ctor list to call the pointer fixup function first.
-  auto *UInt8PtrTy =
-      PointerType::getUnqual(llvm::Type::getInt8Ty(M.getContext()));
+  auto *UInt8PtrTy = PointerType::getUnqual(M.getContext());
   StructType *CtorType = StructType::get(
       M.getContext(),
       {MUtils.Int32Ty, MUtils.FixupFunction->getType(), UInt8PtrTy});

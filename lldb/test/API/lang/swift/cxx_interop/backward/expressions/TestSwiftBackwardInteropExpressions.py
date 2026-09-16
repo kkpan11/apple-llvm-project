@@ -7,10 +7,8 @@ from lldbsuite.test.decorators import *
 
 class TestSwiftBackwardInteropExpressions(TestBase):
 
-    @skipIfLinux
-    @skipEmbeddedSwift
+    @requireNotEmbeddedSwift
     @swiftTest
-    @skipIfWindows
     def test_func_step_in(self):
         self.build()
         lldbutil.run_to_source_breakpoint(

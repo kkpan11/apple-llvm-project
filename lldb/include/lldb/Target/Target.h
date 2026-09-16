@@ -12,6 +12,7 @@
 #include <list>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -38,6 +39,7 @@
 #include "lldb/Target/SectionLoadHistory.h"
 #include "lldb/Target/Statistics.h"
 #include "lldb/Target/SyntheticFrameProvider.h"
+#include "lldb/Target/TargetAPIMutex.h"
 #include "lldb/Target/ThreadSpec.h"
 #include "lldb/Utility/ArchSpec.h"
 #include "lldb/Utility/Args.h"
@@ -99,6 +101,8 @@ enum DynamicClassInfoHelper {
   eDynamicClassInfoHelperCopyRealizedClassList,
   eDynamicClassInfoHelperGetRealizedClassList,
 };
+
+enum JITEngine { eJITEngineMCJIT, eJITEngineORC };
 
 class TargetExperimentalProperties : public Properties {
 public:
@@ -253,6 +257,8 @@ public:
 
   FileSpec GetSaveJITObjectsDir() const;
 
+  JITEngine GetJITEngine() const;
+
   bool GetEnableSyntheticValue() const;
 
   bool ShowHexVariableValuesWithLeadingZeroes() const;
@@ -340,6 +346,10 @@ public:
   bool GetUseDIL(ExecutionContext *exe_ctx) const;
 
   void SetUseDIL(ExecutionContext *exe_ctx, bool b);
+
+  bool GetUseDILForCreatingValues() const;
+
+  void SetUseDILForCreatingValues(bool b);
 
   void SetRequireHardwareBreakpoints(bool b);
 
@@ -628,6 +638,10 @@ public:
 
   bool GetCppIgnoreContextQualifiers() const;
 
+  void SetTryDILFirst(bool b) { m_try_DIL_first = b; }
+
+  bool GetTryDILFirst() const { return m_try_DIL_first; }
+
 private:
   const StructuredData::Dictionary &GetLanguageOptions() const;
 
@@ -656,6 +670,10 @@ private:
   /// True if the executed code should be treated as utility code that is only
   /// used by LLDB internally.
   bool m_running_utility_expression = false;
+  /// If enabled, Data Inspection Language (DIL) should attempt to evaluate the
+  /// expression first. If DIL is not called or fails, the evaluation falls
+  /// back to UserExpression.
+  bool m_try_DIL_first = false;
 
   lldb::DynamicValueType m_use_dynamic = lldb::eNoDynamicValues;
   Timeout<std::micro> m_timeout = default_timeout;
@@ -696,6 +714,7 @@ class Target : public std::enable_shared_from_this<Target>,
 public:
   friend class TargetList;
   friend class Debugger;
+  friend class TargetAPIMutex;
 
   /// Broadcaster event bits definitions.
   enum {
@@ -876,7 +895,11 @@ public:
 
   static TargetProperties &GetGlobalProperties();
 
-  std::recursive_mutex &GetAPIMutex();
+  /// Returns a handle resolved to the mutex to serialize on before
+  /// touching the target through the SB API. The handle isn't locked yet;
+  /// lock()/try_lock() it (typically via std::lock_guard<TargetAPIMutex>/
+  /// std::unique_lock<TargetAPIMutex>) to actually acquire it.
+  TargetAPIMutex GetAPIMutex();
 
   void DeleteCurrentProcess();
 
@@ -1079,10 +1102,10 @@ public:
   void RemoveNameFromBreakpoint(lldb::BreakpointSP &bp_sp,
                                 llvm::StringRef name);
 
-  BreakpointName *FindBreakpointName(ConstString name, bool can_create,
+  BreakpointName *FindBreakpointName(llvm::StringRef name, bool can_create,
                                      Status &error);
 
-  void DeleteBreakpointName(ConstString name);
+  void DeleteBreakpointName(llvm::StringRef name);
 
   void ConfigureBreakpointName(BreakpointName &bp_name,
                                const BreakpointOptions &options,
@@ -1125,16 +1148,20 @@ public:
   // be the one we use.  If no overrides return an override resolver, we'll use
   // the original one.
 
-  // This is the abstract version of the override.  Particular implementations
-  // e.g. the scripted override will derive from this.
+  /// This is the abstract version of the override.  Particular implementations,
+  /// e.g. the scripted override resolver, instantiate actual versions of the
+  /// class. The constructor takes the target this resolver is registered in, a
+  /// description for the override and a mask of the resolver types this
+  /// overrides, made of elements of the BreakpointResolverType enum.
   class BreakpointResolverOverride;
   using BreakpointResolverOverrideUP =
       std::unique_ptr<BreakpointResolverOverride>;
 
   class BreakpointResolverOverride {
   public:
-    BreakpointResolverOverride(Target &target, const std::string &description)
-        : m_target(target), m_desc(description) {}
+    BreakpointResolverOverride(Target &target, const std::string &description,
+                               uint64_t type_mask)
+        : m_target(target), m_desc(description), m_type_mask(type_mask) {}
 
     virtual BreakpointResolverOverrideUP CopyIntoNewTarget(Target &target) = 0;
 
@@ -1144,10 +1171,13 @@ public:
     // Return whether constructing this resolver was successful.
     virtual llvm::Error Validate() = 0;
     const std::string &GetDescription() { return m_desc; }
+    uint64_t GetTypeMask() { return m_type_mask; }
+    std::string DescribeTypeMask();
 
   protected:
     Target &m_target;
     std::string m_desc;
+    uint64_t m_type_mask = 0;
   };
 
   /// Add a breakpoint override resolver.  This version can't fail.
@@ -1161,7 +1191,7 @@ public:
 
   /// Add a breakpoint override resolver.  Return the ID or an error:
   llvm::Expected<lldb::user_id_t>
-  AddBreakpointResolverOverride(llvm::StringRef class_name,
+  AddBreakpointResolverOverride(llvm::StringRef class_name, uint64_t type_mask,
                                 StructuredData::DictionarySP args_data_sp,
                                 llvm::StringRef description);
 
@@ -1173,21 +1203,15 @@ public:
   void ClearBreakpointResolverOverrides() { m_breakpoint_overrides.clear(); }
 
   lldb::BreakpointResolverSP
-  CheckBreakpointOverrides(lldb::BreakpointResolverSP original_sp) {
-    for (auto const &elem : m_breakpoint_overrides) {
-      if (lldb::BreakpointResolverSP overriden_sp =
-              elem.second->CheckForOverride(*this, original_sp))
-        return overriden_sp;
-    }
-    return {};
-  }
+  CheckBreakpointOverrides(lldb::BreakpointResolverSP original_sp);
 
   /// Describe the breakpoint overrides.  If ixds is empty, list all.  Otherwise
   /// list the overrides whose ids match the ones given in idxs.  The matched
   /// elements are removed from the list, so any elements remaining in idxs are
   /// indexes that are not breakpoint override indexes.
   void DescribeBreakpointOverrides(Stream &stream,
-                                   std::vector<lldb::user_id_t> &idxs);
+                                   std::vector<lldb::user_id_t> &idxs,
+                                   uint32_t terminal_width, bool use_color);
 
   // The flag 'end_to_end', default to true, signifies that the operation is
   // performed end to end, for both the debugger and the debuggee.
@@ -1687,9 +1711,7 @@ public:
   ///     if none can be found.
   llvm::Expected<lldb_private::Address> GetEntryPointAddress();
 
-  CompilerType GetRegisterType(const std::string &name,
-                               const lldb_private::RegisterFlags &flags,
-                               uint32_t byte_size);
+  CompilerType GetRegisterType(const RegisterInfo &reg_info);
 
   /// Sends a breakpoint notification event.
   void NotifyBreakpointChanged(Breakpoint &bp,
@@ -1818,7 +1840,7 @@ public:
   private:
     llvm::StringRef GetScriptClassName() const;
 
-    lldb::ScriptedStopHookInterfaceSP m_interface_sp;
+    lldb::ScriptedHookInterfaceSP m_interface_sp;
 
     /// Use CreateStopHook to make a new empty stop hook. Use SetScriptCallback
     /// to set the script to execute, and SetSpecifier to set the specifier
@@ -2169,6 +2191,10 @@ public:
   void PrintDummySignals(Stream &strm, Args &signals);
 
 protected:
+  /// The mutex the calling thread must serialize on for its current policy, or
+  /// nullptr when that policy bypasses the API mutex entirely.
+  std::recursive_mutex *GetAPIMutexForCurrentPolicy();
+
   /// Implementing of ModuleList::Notifier.
 
   void NotifyModuleAdded(const ModuleList &module_list,

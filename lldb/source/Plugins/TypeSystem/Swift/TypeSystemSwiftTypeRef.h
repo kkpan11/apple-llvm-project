@@ -1,4 +1,4 @@
-//===-- TypeSystemSwiftTypeRef.h --------------------------------*- C++ -*-===//
+//===-- TypeSystemSwiftTypeRef.h ------------------------------------------===//
 //
 // This source file is part of the Swift.org open source project
 //
@@ -52,7 +52,21 @@ class ClangNameImporter;
 class SwiftASTContext;
 class SwiftASTContextForExpressions;
 class SwiftDWARFImporterForClangTypes;
+class SwiftLanguageRuntime;
 class SwiftPersistentExpressionState;
+
+/// A type that is bound to a stack frame.
+///
+/// Generic types can only be resolved relative to a stack
+/// frame. FrameBoundTypes are produced by
+/// SwiftLanguageRuntime::GetRuntimeType(). Instances are owned by a
+/// TypeSystemSwiftTypeRefForExpressions and referred to by an index
+/// encoded into the lldb::opaque_compiler_type_t; see
+/// TypeSystemSwiftTypeRefForExpressions for the encoding.
+struct FrameBoundType {
+  lldb::StackFrameWP frame;
+  ConstString mangled_name;
+};
 
 /// A Swift TypeSystem that does not own a swift::ASTContext.
 class TypeSystemSwiftTypeRef : public TypeSystemSwift {
@@ -80,6 +94,12 @@ public:
   /// Convenience helpers.
   SymbolContext GetSymbolContext(ExecutionContextScope *exe_scope) const;
   SymbolContext GetSymbolContext(const ExecutionContext *exe_ctx) const;
+  /// Like GetSymbolContext(exe_ctx), but for an expression-defined type with no
+  /// Swift frame, recover the context the type was imported with (side table).
+  SymbolContext GetSymbolContextForType(lldb::opaque_compiler_type_t type,
+                                        const ExecutionContext *exe_ctx);
+  SymbolContext GetSymbolContextForType(lldb::opaque_compiler_type_t type,
+                                        ExecutionContextScope *exe_scope);
   /// Return SwiftASTContext, iff one has already been created.
   virtual SwiftASTContextSP
   GetSwiftASTContextOrNull(const SymbolContext &sc) const;
@@ -325,15 +345,14 @@ public:
   /// Marker protocols are compile-time concepts only and the reflection
   /// context does not expect them as input. Note: this mutates \p node
   /// in place.
-  llvm::Expected<swift::Demangle::NodePointer>
-  RemoveMarkerProtocols(swift::Demangle::Demangler &dem,
-                        swift::Demangle::NodePointer node,
-                        swift::Mangle::ManglingFlavor flavor);
+  llvm::Expected<swift::Demangle::NodePointer> RemoveMarkerProtocols(
+      swift::Demangle::Demangler &dem, swift::Demangle::NodePointer node,
+      swift::Mangle::ManglingFlavor flavor, ExecutionContext &exe_ctx);
   bool IsImportedType(lldb::opaque_compiler_type_t type,
                       CompilerType *original_type) override;
   /// Determine whether this is a builtin SIMD type.
   static bool IsSIMDType(CompilerType type);
-  static bool IsOptionalType(lldb::opaque_compiler_type_t type);
+  bool IsOptionalType(lldb::opaque_compiler_type_t type);
   /// Determine whether the mangled name refers to a protocol composition
   /// (i.e., a ProtocolList with more than one Type child in its TypeList).
   static bool IsProtocolComposition(llvm::StringRef mangled_name);
@@ -462,15 +481,12 @@ public:
                            llvm::StringRef mangled_name);
   /// Return the base name of the topmost nominal type.
   static llvm::StringRef GetBaseName(swift::Demangle::NodePointer node);
-  static std::string GetBaseName(lldb::opaque_compiler_type_t type);
+  std::string GetBaseName(lldb::opaque_compiler_type_t type);
 
-  /// Given a mangled name that mangles a "type metadata for Type", return a
-  /// CompilerType with that Type.
-  CompilerType GetTypeFromTypeMetadataNode(llvm::StringRef mangled_name);
-
-  /// Given a mangled name that mangles a "value witness table for Type",
-  /// return a CompilerType with that Type.
-  CompilerType GetTypeFromValueWitnessTable(llvm::StringRef mangled_name);
+  /// Given a mangled name that mangles a "type metadata for Type", return that
+  /// Type, and whether the name mangles full metadata.
+  std::pair<CompilerType, bool>
+  GetTypeFromTypeMetadataNode(llvm::StringRef mangled_name);
 
   /// Use API notes to determine the swiftified name of \p clang_decl.
   std::string GetSwiftName(const clang::Decl *clang_decl,
@@ -501,17 +517,43 @@ public:
                               swift::Mangle::ManglingFlavor flavor) override;
 
   /// Gets the descriptor finder belonging to this instance's
-  /// module.
-  swift::reflection::DescriptorFinder *GetDescriptorFinder();
+  /// module. If exe_scope is provided and this is a scratch
+  /// typesystem, returns the per-module descriptor finder instead
+  /// (which has access to the SymbolFileDWARF).
+  swift::reflection::DescriptorFinder *
+  GetDescriptorFinder(ExecutionContextScope *exe_scope = nullptr);
 
   /// Lookup a type in the debug info.
   lldb::TypeSP FindTypeInModule(lldb::opaque_compiler_type_t type);
 
-  /// Desugar a CompilerType and resolve type aliases by looking up
-  /// their types in the debug info.
-  CompilerType Canonicalize(CompilerType type);
+  /// Lookup a builtin type in the debug info by its mangled name. Unlike
+  /// FindTypeInModule(), this does not need the mangling to have a decl
+  /// context, which some of the special stdlib builtins do not have.
+  lldb::TypeSP FindBuiltinTypeInModule(ConstString mangled_name);
+
+  /// Desugar \p type and resolve its type aliases into the form the
+  /// swift::reflection TypeRefBuilder expects, that is, with
+  /// Clang-imported type aliases unresolved.
+  CompilerType CanonicalizeForTypeRefBuilder(CompilerType type);
+
+  /// Determine if this type contains a type from a module that looks
+  /// like it was JIT-compiled by LLDB.
+  bool IsExpressionEvaluatorDefined(lldb::opaque_compiler_type_t type);
 
 protected:
+  /// A temporary object that keeps the process alive.
+  struct SwiftLanguageRuntimeHolder {
+    lldb::ProcessSP process_sp;
+    SwiftLanguageRuntime *runtime;
+
+    explicit operator bool() const { return runtime; }
+    SwiftLanguageRuntime *operator->() { return runtime; }
+  };
+  /// Get the SwiftLanguageRuntime. For per-module typesystems (which aren't
+  /// bound to a target) the process is taken from \p exe_scope when provided.
+  SwiftLanguageRuntimeHolder
+  GetRuntime(ExecutionContextScope *exe_scope = nullptr);
+
   /// Determine whether the fallback is enabled via setting.
   bool UseSwiftASTContextFallback(const char *func_name,
                                   lldb::opaque_compiler_type_t type);
@@ -520,7 +562,9 @@ protected:
                                        lldb::opaque_compiler_type_t type);
 
   /// Looks for the type using the provided compiler context.
-  lldb::TypeSP FindTypeInModule(std::vector<CompilerContext> context);
+  lldb::TypeSP FindTypeInModule(std::vector<CompilerContext> context,
+                                lldb_private::Module *M,
+                                swift::Mangle::ManglingFlavor flavor);
 
   /// Helper that creates an AST type from \p type.
   ///
@@ -531,8 +575,8 @@ protected:
                         const ExecutionContext *exe_ctx = nullptr);
   void *ReconstructType(lldb::opaque_compiler_type_t type,
                         ExecutionContextScope *exe_scope);
-  /// Cast \p opaque_type as a mangled name.
-  static const char *AsMangledName(lldb::opaque_compiler_type_t type);
+  /// Return the mangled name of \p opaque_type.
+  const char *AsMangledName(lldb::opaque_compiler_type_t type) const;
 
   /// Demangle the mangled name of the canonical type of \p type and
   /// drill into the Global(TypeMangling(Type())).
@@ -553,19 +597,29 @@ protected:
                                  lldb::opaque_compiler_type_t type,
                                  const ExecutionContext *exe_ctx = nullptr);
 
+  /// Desugar a CompilerType and resolve type aliases by looking up
+  /// their types in the debug info.
+  CompilerType Canonicalize(CompilerType type,
+                            bool preserve_clang_type_aliases = false);
+
   /// Desugar to this node and if it is a type alias resolve it by
   /// looking up its type in the debug info.
+  ///
+  /// CanonicalizeForTypeRefBuilder() documents \p
+  /// preserve_clang_type_aliases.
   swift::Demangle::NodePointer
   Canonicalize(swift::Demangle::Demangler &dem,
                swift::Demangle::NodePointer node,
-               swift::Mangle::ManglingFlavor flavor);
+               swift::Mangle::ManglingFlavor flavor,
+               bool preserve_clang_type_aliases = false);
 
   /// Iteratively desugar and resolve all type aliases in \p node by
   /// looking up their types in the debug info.
   swift::Demangle::NodePointer
   GetCanonicalNode(swift::Demangle::Demangler &dem,
                    swift::Demangle::NodePointer node,
-                   swift::Mangle::ManglingFlavor flavor);
+                   swift::Mangle::ManglingFlavor flavor,
+                   bool preserve_clang_type_aliases = false);
 
   /// If \p node is a Struct/Class/Typedef in the __C module, return a
   /// Swiftified node by looking up the name in the corresponding APINotes and
@@ -618,15 +672,17 @@ protected:
                            bool &unresolved_typealias);
 
   swift::Demangle::NodePointer
-  GetClangTypeNode(CompilerType clang_type, swift::Demangle::Demangler &dem);
+  GetClangTypeNode(CompilerType clang_type, swift::Demangle::Demangler &dem,
+                   swift::Mangle::ManglingFlavor flavor);
 
   swift::Demangle::NodePointer
-  GetClangTypeTypeNode(swift::Demangle::Demangler &dem,
-                       CompilerType clang_type);
+  GetClangTypeTypeNode(swift::Demangle::Demangler &dem, CompilerType clang_type,
+                       swift::Mangle::ManglingFlavor flavor);
 
-  /// Determine if this type contains a type from a module that looks
-  /// like it was JIT-compiled by LLDB.
-  bool IsExpressionEvaluatorDefined(lldb::opaque_compiler_type_t type);
+  virtual ExecutionContextRef
+  GetExecutionContextForType(lldb::opaque_compiler_type_t type) {
+    return {};
+  }
 
 #ifndef NDEBUG
   /// Check whether the type being dealt with is tricky to validate due to
@@ -729,8 +785,15 @@ public:
                                llvm::ArrayRef<CompilerContext> decl_context,
                                bool ignore_modules,
                                SymbolContext sc = {}) override;
+  /// Import type into this typesystem and register it in the fallback
+  /// sidetable.
+  CompilerType ImportType(CompilerType type, ExecutionContextRef exe_ctx);
+
+  ExecutionContextRef
+  GetExecutionContextForType(lldb::opaque_compiler_type_t type) override;
 
   friend class SwiftASTContextForExpressions;
+
 protected:
   lldb::TargetWP m_target_wp;
   unsigned m_generation = 0;
@@ -751,6 +814,31 @@ protected:
   /// Map ConstString Clang type identifiers and the concatenation of the
   /// compiler context used to find them to Clang types.
   ThreadSafeStringMap<lldb::TypeSP> m_clang_type_cache;
+
+  /// Backing store for frame-bound types produced by hoisting into this type
+  /// system (see SwiftLanguageRuntime::GetRuntimeType() / ImportType()).
+  ///
+  /// Encoding: the opaque type is (index << 1) | 1 for a frame-bound type. An
+  /// ordinary Swift opaque type is a pointer to a ConstString's mangled name,
+  /// which is always at least 8-byte aligned (see AsMangledName), so its low
+  /// bit is 0 and never collides with the frame-bound tag.
+  std::vector<FrameBoundType> m_frame_bound_types;
+  mutable std::mutex m_frame_bound_types_mutex;
+
+  /// Create a frame-bound type for \p mangled_name observed in \p frame and
+  /// return its (tagged) CompilerType. Frame-bound types are produced by
+  /// hoisting via SwiftLanguageRuntime::GetRuntimeType(), which calls
+  /// ImportType(); see m_frame_bound_types.
+  CompilerType MakeFrameBoundType(ConstString mangled_name,
+                                  lldb::StackFrameSP frame);
+
+public:
+  /// Return the mangled name of the frame-bound type at \p index, or nullptr.
+  const char *GetFrameBoundMangledName(uintptr_t index) const;
+
+  /// Return the execution context of the frame-bound type at \p index. The
+  /// context is empty if the index is stale or the frame has gone away.
+  ExecutionContextRef GetFrameBoundExecutionContext(uintptr_t index);
 };
 
 } // namespace lldb_private

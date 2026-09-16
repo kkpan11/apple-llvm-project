@@ -31,6 +31,7 @@
 #include "lldb/Utility/ErrorMessages.h"
 #include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
+#include "lldb/Utility/Policy.h"
 #include "lldb/Utility/StreamString.h"
 #include "lldb/ValueObject/ValueObjectConstResult.h"
 
@@ -65,7 +66,7 @@ LLVMUserExpression::DoExecute(DiagnosticManager &diagnostic_manager,
                               ExecutionContext &exe_ctx,
                               const EvaluateExpressionOptions &options,
                               lldb::UserExpressionSP &shared_ptr_to_me,
-                              lldb::ExpressionVariableSP &result) {
+                              lldb::ExpressionVariableSP &result_sp) {
   // The expression log is quite verbose, and if you're just tracking the
   // execution of the expression, it's quite convenient to have these logs come
   // out with the STEP log as well.
@@ -176,6 +177,9 @@ LLVMUserExpression::DoExecute(DiagnosticManager &diagnostic_manager,
     if (exe_ctx.GetProcessPtr())
       exe_ctx.GetProcessPtr()->SetRunningUserExpression(true);
 
+    PolicyStack::Guard expr_policy_guard =
+        PolicyStack::Get().PushPublicStateRunningExpression();
+
     lldb::ExpressionResults execution_result =
         exe_ctx.GetProcessRef().RunThreadPlan(exe_ctx, call_plan_sp, options,
                                               diagnostic_manager);
@@ -281,13 +285,12 @@ LLVMUserExpression::DoExecute(DiagnosticManager &diagnostic_manager,
     PersistentExpressionState *expression_state =
         target->GetPersistentExpressionStateForLanguage(LanguageType());
     if (expression_state)
-      result = expression_state->CreatePersistentVariable(
+      result_sp = expression_state->CreatePersistentVariable(
           error_backstop_result_sp);
 
     return lldb::eExpressionCompleted;
-  } else if (FinalizeJITExecution(diagnostic_manager, exe_ctx, result,
-                                  function_stack_bottom,
-                                  function_stack_top)) {
+  } else if (FinalizeJITExecution(diagnostic_manager, exe_ctx, result_sp,
+                                  function_stack_bottom, function_stack_top)) {
     return lldb::eExpressionCompleted;
   }
 
@@ -325,8 +328,13 @@ bool LLVMUserExpression::FinalizeJITExecution(
   result =
       GetResultAfterDematerialization(exe_ctx.GetBestExecutionContextScope());
 
-  if (result)
+  if (result) {
+    // TransferAddress also does the offset_to_top calculation, so record the
+    // dynamic option before we do that.
+    if (EvaluateExpressionOptions *options = GetOptions())
+      result->PreserveDynamicOption(options->GetUseDynamic());
     result->TransferAddress();
+  }
 
   m_dematerializer_sp.reset();
 

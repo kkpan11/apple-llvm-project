@@ -1,4 +1,4 @@
-//===-- SwiftFormatters.h ---------------------------------------*- C++ -*-===//
+//===-- SwiftFormatters.h -------------------------------------------------===//
 //
 // This source file is part of the Swift.org open source project
 //
@@ -104,6 +104,15 @@ bool LegacySIMD_SummaryProvider(ValueObject &valobj, Stream &stream,
 
 bool GLKit_SummaryProvider(ValueObject &valobj, Stream &stream,
                            const TypeSummaryOptions &options);
+
+bool Duration_SummaryProvider(ValueObject &valobj, Stream &stream,
+                              const TypeSummaryOptions &options);
+
+bool ContinuousClockInstant_SummaryProvider(ValueObject &valobj, Stream &stream,
+                                            const TypeSummaryOptions &options);
+
+bool SuspendingClockInstant_SummaryProvider(ValueObject &valobj, Stream &stream,
+                                            const TypeSummaryOptions &options);
 
 // TODO: this is a transient workaround for the fact that
 // ObjC types are totally opaque in Swift for LLDB

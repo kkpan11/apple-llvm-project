@@ -39,7 +39,7 @@ let Definition = "modulelist", Path = "symbols" in {
     Desc<"Validate all Swift typesystem queries. Used for testing an asserts-enabled LLDB only.">;
   def SwiftTypeSystemFallback
       : Property<"swift-typesystem-compiler-fallback", "Boolean">,
-        DefaultTrue,
+        DefaultFalse,
         Desc<"If a query against reflection metadata / debug info fails, retry "
              "using Swift modules.">;
   def SwiftLoadConformances: Property<"swift-load-conformances", "Boolean">,
@@ -124,6 +124,13 @@ let Definition = "modulelist", Path = "symbols" in {
     Global,
     DefaultFalse,
     Desc<"Enable on demand symbol loading in LLDB. LLDB will load debug info on demand for each module based on various conditions (e.g. matched breakpoint, resolved stack frame addresses and matched global variables/function symbols in symbol table) to improve performance. Please refer to docs/use/ondemand.rst for details.">;
+}
+
+let Definition = "diagnostics", Path = "diagnostics" in {
+  def CollectBinaries: Property<"collect-binaries", "Boolean">,
+    Global,
+    DefaultFalse,
+    Desc<"When enabled, a diagnostics bundle also collects the main executable, its symbol file, and the core file (when debugging one) to help reproduce the bug. These files can be large and may contain sensitive data (a core file captures process memory), so this is off by default.">;
 }
 
 #ifndef NDEBUG

@@ -75,6 +75,9 @@ filecheck = None
 # Path to the nm tool.
 nm: Optional[str] = None
 
+# Path to the objcopy tool
+objcopy: Optional[str] = None
+
 # Path to the yaml2obj tool. Not optional.
 yaml2obj = None
 
@@ -177,6 +180,10 @@ lldb_python_dir = None
 # Typical values include Debug, Release, RelWithDebInfo and MinSizeRel
 cmake_build_type = None
 
+# The timeout (in seconds) lit is using to run this test, if any. 0 means no
+# timeout was configured.
+timeout = 0
+
 
 def shouldSkipBecauseOfCategories(test_categories):
     if use_categories:
@@ -207,6 +214,14 @@ def get_nm_path():
     """
     if nm and os.path.lexists(nm):
         return nm
+
+
+def get_objcopy_path() -> Optional[str]:
+    """
+    Get the path to the objcopy tool.
+    """
+    if objcopy and os.path.lexists(objcopy):
+        return objcopy
 
 
 def get_yaml2obj_path():

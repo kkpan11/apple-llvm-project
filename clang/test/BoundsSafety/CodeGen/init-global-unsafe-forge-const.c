@@ -1,5 +1,5 @@
-// RUN: %clang_cc1 -triple arm64-apple-iphoneos -O0 -fbounds-safety -emit-llvm %s -o - | FileCheck %s
-// RUN: %clang_cc1 -triple  arm64-apple-iphoneos -O0 -fbounds-safety -x objective-c -fexperimental-bounds-safety-objc -emit-llvm %s -o - | FileCheck %s
+// RUN: %clang_cc1 -triple arm64-apple-ios -O0 -fbounds-safety -emit-llvm %s -o - | FileCheck %s
+// RUN: %clang_cc1 -triple  arm64-apple-ios -O0 -fbounds-safety -x objective-c -fexperimental-bounds-safety-objc -emit-llvm %s -o - | FileCheck %s
 
 #include <ptrcheck.h>
 

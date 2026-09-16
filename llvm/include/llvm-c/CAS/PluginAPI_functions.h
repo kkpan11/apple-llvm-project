@@ -1,4 +1,4 @@
-/*===-- llvm-c/CAS/PluginAPI_functions.h - CAS Plugin Functions Interface -===*\
+/*===----------------------------------------------------------------------===*\
 |*                                                                            *|
 |* Part of the LLVM Project, under the Apache License v2.0 with LLVM          *|
 |* Exceptions.                                                                *|
@@ -140,6 +140,19 @@ llcas_cas_set_ondisk_size_limit(llcas_cas_t, int64_t size_limit, char **error);
  * \returns true if there was an error, false otherwise.
  */
 LLCAS_PUBLIC bool llcas_cas_prune_ondisk_data(llcas_cas_t, char **error);
+
+/**
+ * Validate the CAS contents.
+ *
+ * \param check_hash if true, the hash of each object is recomputed and compared
+ * against the one it is stored under.
+ * \param error optional pointer to receive an error message if an error
+ * occurred. If set, the memory it points to needs to be released via
+ * \c llcas_string_dispose.
+ * \returns true if there was an error, false otherwise.
+ */
+LLCAS_PUBLIC bool llcas_cas_validate(llcas_cas_t, bool check_hash,
+                                     char **error);
 
 /**
  * \returns the hash schema name that the plugin is using. The string memory it
@@ -293,6 +306,29 @@ LLCAS_PUBLIC llcas_data_t llcas_loaded_object_get_data(llcas_cas_t,
                                                        llcas_loaded_object_t);
 
 /**
+ * \returns a data buffer for the provided \c llcas_loaded_object_t that stays
+ * valid after the \c llcas_cas_t is disposed of. The buffer pointer must be
+ * 8-byte aligned and \c NULL terminated. It must be released via
+ * \c llcas_standalone_data_dispose, which may outlive the \c llcas_cas_t.
+ *
+ * This is an optimization over copying the buffer returned by
+ * \c llcas_loaded_object_get_data: an implementation that can hand out storage
+ * outliving itself, e.g. a mapping of a file it does not keep open, avoids the
+ * copy. Implementing it is optional, and requires
+ * \c llcas_standalone_data_dispose to be implemented as well.
+ */
+LLCAS_PUBLIC llcas_data_t
+    llcas_loaded_object_get_standalone_data(llcas_cas_t, llcas_loaded_object_t);
+
+/**
+ * Releases a buffer returned by \c llcas_loaded_object_get_standalone_data.
+ *
+ * This may be called after the \c llcas_cas_t that produced the buffer has
+ * been disposed of, so it must not depend on it.
+ */
+LLCAS_PUBLIC void llcas_standalone_data_dispose(llcas_data_t);
+
+/**
  * \returns the references of the provided \c llcas_loaded_object_t.
  */
 LLCAS_PUBLIC llcas_object_refs_t
@@ -387,6 +423,16 @@ LLCAS_PUBLIC bool llcas_actioncache_put_for_digest(llcas_cas_t,
 LLCAS_PUBLIC void llcas_actioncache_put_for_digest_async(
     llcas_cas_t, llcas_digest_t key, llcas_objectid_t value, bool globally,
     void *ctx_cb, llcas_actioncache_put_cb, llcas_cancellable_t *cancel_tok);
+
+/**
+ * Validate the action cache contents.
+ *
+ * \param error optional pointer to receive an error message if an error
+ * occurred. If set, the memory it points to needs to be released via
+ * \c llcas_string_dispose.
+ * \returns true if there was an error, false otherwise.
+ */
+LLCAS_PUBLIC bool llcas_actioncache_validate(llcas_cas_t, char **error);
 
 LLVM_C_EXTERN_C_END
 

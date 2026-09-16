@@ -2,14 +2,14 @@
 // REQUIRES: system-darwin
 
 
-// RUN: %clang_cc1 -O0 -triple arm64e-apple-iphoneos -fbounds-safety -emit-llvm %s -o - | FileCheck %s --check-prefix=CHECK
-// RUN: %clang_cc1 -O0 -triple arm64e-apple-iphoneos -fbounds-safety -x objective-c -fexperimental-bounds-safety-objc -emit-llvm %s -o - | FileCheck %s --check-prefix=CHECK
+// RUN: %clang_cc1 -O0 -triple arm64e-apple-ios -fbounds-safety -emit-llvm %s -o - | FileCheck %s --check-prefix=CHECK
+// RUN: %clang_cc1 -O0 -triple arm64e-apple-ios -fbounds-safety -x objective-c -fexperimental-bounds-safety-objc -emit-llvm %s -o - | FileCheck %s --check-prefix=CHECK
 
 #include <ptrcheck.h>
 
 void bar(void *__sized_by(len) buf, int len);
 
-// CHECK-LABEL: define dso_local void @foo(
+// CHECK-LABEL: define void @foo(
 // CHECK-SAME: ptr noundef [[ELEMS:%.*]], i32 noundef [[LEN:%.*]], i32 noundef [[IDX:%.*]]) #[[ATTR0:[0-9]+]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[ELEMS_ADDR:%.*]] = alloca ptr, align 8
@@ -151,8 +151,8 @@ void bar(void *__sized_by(len) buf, int len);
 // CHECK-NEXT:    [[WIDE_PTR_UB62:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR61]], align 8, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB_ADDR63:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable.1", ptr [[AGG_TEMP51]], i32 0, i32 2, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB64:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR63]], align 8, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR46]] to i64, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR60]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR46]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR60]] to i64, !annotation [[META1]]
 // CHECK-NEXT:    [[SUB_PTR_SUB:%.*]] = sub i64 [[SUB_PTR_LHS_CAST]], [[SUB_PTR_RHS_CAST]], !annotation [[META1]]
 // CHECK-NEXT:    [[CMP65:%.*]] = icmp sle i64 4, [[SUB_PTR_SUB]], !annotation [[META1]]
 // CHECK-NEXT:    br i1 [[CMP65]], label %[[LAND_RHS66:.*]], label %[[LAND_END:.*]], !annotation [[META1]]

@@ -15,10 +15,14 @@
 #include "clang/APINotes/APINotesReader.h"
 #include "APINotesFormat.h"
 #include "clang/APINotes/Types.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/Hashing.h"
 #include "llvm/Bitstream/BitstreamReader.h"
 #include "llvm/Support/DJB.h"
 #include "llvm/Support/OnDiskHashTable.h"
+#include <string>
+#include <type_traits>
+#include <utility>
 
 namespace clang {
 namespace api_notes {
@@ -769,6 +773,9 @@ public:
   /// The identifier table.
   std::unique_ptr<SerializedIdentifierTable> IdentifierTable;
 
+  /// Lazy reverse lookup cache from identifier ID to string.
+  std::optional<llvm::DenseMap<uint32_t, llvm::StringRef>> IdentifierStrings;
+
   using SerializedContextIDTable =
       llvm::OnDiskIterableChainedHashTable<ContextIDTableInfo>;
 
@@ -844,6 +851,17 @@ public:
   /// optional if the string is unknown.
   std::optional<IdentifierID> getIdentifier(llvm::StringRef Str);
 
+  /// Retrieve the identifier string for the given ID, or an empty optional if
+  /// the ID is unknown.
+  std::optional<llvm::StringRef> getIdentifierString(IdentifierID ID);
+
+  /// Collect exact parameter selector keys stored in the given function-like
+  /// table.
+  template <typename TableT>
+  void collectExactFunctionParameterSelectors(
+      TableT &Table,
+      llvm::SmallVectorImpl<APINotesFunctionSelectorKey> &Selectors);
+
   /// Retrieve the selector ID for the given selector, or an empty
   /// optional if the string is unknown.
   std::optional<SelectorID> getSelector(ObjCSelectorRef Selector);
@@ -868,14 +886,16 @@ public:
                                       llvm::SmallVectorImpl<uint64_t> &Scratch);
   std::optional<FunctionTableKey> getFunctionKey(uint32_t ParentContextID,
                                                  llvm::StringRef Name);
+  template <typename ParameterT>
   std::optional<FunctionTableKey>
   getFunctionKey(uint32_t ParentContextID, llvm::StringRef Name,
-                 llvm::ArrayRef<llvm::StringRef> Parameters);
+                 llvm::ArrayRef<ParameterT> Parameters);
   std::optional<FunctionTableKey>
   getFunctionKey(std::optional<Context> ParentContext, llvm::StringRef Name);
+  template <typename ParameterT>
   std::optional<FunctionTableKey>
   getFunctionKey(std::optional<Context> ParentContext, llvm::StringRef Name,
-                 llvm::ArrayRef<llvm::StringRef> Parameters);
+                 llvm::ArrayRef<ParameterT> Parameters);
 
   llvm::Error readGlobalFunctionBlock(llvm::BitstreamCursor &Cursor,
                                       llvm::SmallVectorImpl<uint64_t> &Scratch);
@@ -902,6 +922,54 @@ APINotesReader::Implementation::getIdentifier(llvm::StringRef Str) {
   return *Known;
 }
 
+std::optional<llvm::StringRef>
+APINotesReader::Implementation::getIdentifierString(IdentifierID ID) {
+  if (!IdentifierTable)
+    return std::nullopt;
+
+  if (ID == IdentifierID(0))
+    return llvm::StringRef();
+
+  if (!IdentifierStrings) {
+    IdentifierStrings.emplace();
+    // keys() and data() iterate over the same serialized entries in lockstep.
+    // The serialized hash-table order is not guaranteed to be identifier-ID
+    // order, so keep an explicit ID-to-string map rather than indexing a vector
+    // by ID.
+    auto Identifiers = IdentifierTable->keys();
+    auto IDs = IdentifierTable->data();
+    auto Identifier = Identifiers.begin();
+    auto KnownID = IDs.begin();
+    auto IdentifierEnd = Identifiers.end();
+    auto KnownIDEnd = IDs.end();
+    for (; Identifier != IdentifierEnd && KnownID != KnownIDEnd;
+         ++Identifier, ++KnownID)
+      IdentifierStrings->try_emplace(static_cast<uint32_t>(*KnownID),
+                                     *Identifier);
+  }
+
+  auto Known = IdentifierStrings->find(static_cast<uint32_t>(ID));
+  if (Known == IdentifierStrings->end())
+    return std::nullopt;
+  return Known->second;
+}
+
+template <typename TableT>
+void APINotesReader::Implementation::collectExactFunctionParameterSelectors(
+    TableT &Table,
+    llvm::SmallVectorImpl<APINotesFunctionSelectorKey> &Selectors) {
+  static_assert(std::is_same_v<TableT, SerializedGlobalFunctionTable> ||
+                std::is_same_v<TableT, SerializedCXXMethodTable>);
+  constexpr bool IsCXXMethod = std::is_same_v<TableT, SerializedCXXMethodTable>;
+
+  for (const FunctionTableKey &Key : Table.keys()) {
+    if (!Key.parameterTypeIDs)
+      continue;
+
+    Selectors.push_back(APINotesFunctionSelectorKey{Key, IsCXXMethod});
+  }
+}
+
 std::optional<FunctionTableKey>
 APINotesReader::Implementation::getFunctionKey(uint32_t ParentContextID,
                                                llvm::StringRef Name) {
@@ -910,9 +978,10 @@ APINotesReader::Implementation::getFunctionKey(uint32_t ParentContextID,
   });
 }
 
+template <typename ParameterT>
 std::optional<FunctionTableKey> APINotesReader::Implementation::getFunctionKey(
     uint32_t ParentContextID, llvm::StringRef Name,
-    llvm::ArrayRef<llvm::StringRef> Parameters) {
+    llvm::ArrayRef<ParameterT> Parameters) {
   return getFunctionKeyImpl(
       ParentContextID, Name, Parameters,
       [this](llvm::StringRef S) { return getIdentifier(S); });
@@ -925,9 +994,10 @@ std::optional<FunctionTableKey> APINotesReader::Implementation::getFunctionKey(
   return getFunctionKey(ParentContextID, Name);
 }
 
+template <typename ParameterT>
 std::optional<FunctionTableKey> APINotesReader::Implementation::getFunctionKey(
     std::optional<Context> ParentContext, llvm::StringRef Name,
-    llvm::ArrayRef<llvm::StringRef> Parameters) {
+    llvm::ArrayRef<ParameterT> Parameters) {
   uint32_t ParentContextID =
       ParentContext ? ParentContext->id.Value : static_cast<uint32_t>(-1);
   return getFunctionKey(ParentContextID, Name, Parameters);
@@ -2362,9 +2432,29 @@ auto APINotesReader::lookupCXXMethod(ContextID CtxID, llvm::StringRef Name)
 }
 
 auto APINotesReader::lookupCXXMethod(ContextID CtxID, llvm::StringRef Name,
-                                     llvm::ArrayRef<llvm::StringRef> Parameters)
+                                     llvm::ArrayRef<std::string> Parameters)
     -> VersionedInfo<CXXMethodInfo> {
   return lookupCXXMethodImpl(CtxID, Name, Parameters);
+}
+
+std::optional<APINotesFunctionSelectorKey>
+APINotesReader::getCXXMethodSelectorKey(ContextID CtxID, llvm::StringRef Name) {
+  std::optional<FunctionTableKey> Key =
+      Implementation->getFunctionKey(CtxID.Value, Name);
+  if (!Key)
+    return std::nullopt;
+  return APINotesFunctionSelectorKey{*Key, /*IsCXXMethod=*/true};
+}
+
+std::optional<APINotesFunctionSelectorKey>
+APINotesReader::getCXXMethodSelectorKey(
+    ContextID CtxID, llvm::StringRef Name,
+    llvm::ArrayRef<std::string> Parameters) {
+  std::optional<FunctionTableKey> Key =
+      Implementation->getFunctionKey(CtxID.Value, Name, Parameters);
+  if (!Key)
+    return std::nullopt;
+  return APINotesFunctionSelectorKey{*Key, /*IsCXXMethod=*/true};
 }
 
 auto APINotesReader::lookupCXXMethodImpl(ContextID CtxID, llvm::StringRef Name)
@@ -2384,9 +2474,9 @@ auto APINotesReader::lookupCXXMethodImpl(ContextID CtxID, llvm::StringRef Name)
   return {Implementation->SwiftVersion, *Known};
 }
 
-auto APINotesReader::lookupCXXMethodImpl(
-    ContextID CtxID, llvm::StringRef Name,
-    llvm::ArrayRef<llvm::StringRef> Parameters)
+template <typename ParameterT>
+auto APINotesReader::lookupCXXMethodImpl(ContextID CtxID, llvm::StringRef Name,
+                                         llvm::ArrayRef<ParameterT> Parameters)
     -> VersionedInfo<CXXMethodInfo> {
   if (!Implementation->CXXMethodTable)
     return std::nullopt;
@@ -2429,9 +2519,58 @@ auto APINotesReader::lookupGlobalFunction(llvm::StringRef Name,
 }
 
 auto APINotesReader::lookupGlobalFunction(
-    llvm::StringRef Name, llvm::ArrayRef<llvm::StringRef> Parameters,
+    llvm::StringRef Name, llvm::ArrayRef<std::string> Parameters,
     std::optional<Context> Ctx) -> VersionedInfo<GlobalFunctionInfo> {
   return lookupGlobalFunctionImpl(Name, Parameters, Ctx);
+}
+
+std::optional<APINotesFunctionSelectorKey>
+APINotesReader::getGlobalFunctionSelectorKey(llvm::StringRef Name,
+                                             std::optional<Context> Ctx) {
+  std::optional<FunctionTableKey> Key =
+      Implementation->getFunctionKey(Ctx, Name);
+  if (!Key)
+    return std::nullopt;
+  return APINotesFunctionSelectorKey{*Key, /*IsCXXMethod=*/false};
+}
+
+std::optional<APINotesFunctionSelectorKey>
+APINotesReader::getGlobalFunctionSelectorKey(
+    llvm::StringRef Name, llvm::ArrayRef<std::string> Parameters,
+    std::optional<Context> Ctx) {
+  std::optional<FunctionTableKey> Key =
+      Implementation->getFunctionKey(Ctx, Name, Parameters);
+  if (!Key)
+    return std::nullopt;
+  return APINotesFunctionSelectorKey{*Key, /*IsCXXMethod=*/false};
+}
+
+void APINotesReader::collectExactFunctionParameterSelectors(
+    llvm::SmallVectorImpl<APINotesFunctionSelectorKey> &Selectors) {
+  if (Implementation->GlobalFunctionTable)
+    Implementation->collectExactFunctionParameterSelectors(
+        *Implementation->GlobalFunctionTable, Selectors);
+  if (Implementation->CXXMethodTable)
+    Implementation->collectExactFunctionParameterSelectors(
+        *Implementation->CXXMethodTable, Selectors);
+}
+
+std::optional<llvm::SmallVector<std::string, 4>>
+APINotesReader::getParameterSelectorSpellingsForDiagnostics(
+    const APINotesFunctionSelectorKey &Key) {
+  if (!Key.Key.parameterTypeIDs)
+    return std::nullopt;
+
+  llvm::SmallVector<std::string, 4> ParameterSpellings;
+  ParameterSpellings.reserve(Key.Key.parameterTypeIDs->size());
+  for (IdentifierID TypeID : *Key.Key.parameterTypeIDs) {
+    std::optional<llvm::StringRef> TypeName =
+        Implementation->getIdentifierString(TypeID);
+    if (!TypeName)
+      return std::nullopt;
+    ParameterSpellings.push_back(TypeName->str());
+  }
+  return ParameterSpellings;
 }
 
 auto APINotesReader::lookupGlobalFunctionImpl(llvm::StringRef Name,
@@ -2452,8 +2591,9 @@ auto APINotesReader::lookupGlobalFunctionImpl(llvm::StringRef Name,
   return {Implementation->SwiftVersion, *Known};
 }
 
+template <typename ParameterT>
 auto APINotesReader::lookupGlobalFunctionImpl(
-    llvm::StringRef Name, llvm::ArrayRef<llvm::StringRef> Parameters,
+    llvm::StringRef Name, llvm::ArrayRef<ParameterT> Parameters,
     std::optional<Context> Ctx) -> VersionedInfo<GlobalFunctionInfo> {
   if (!Implementation->GlobalFunctionTable)
     return std::nullopt;

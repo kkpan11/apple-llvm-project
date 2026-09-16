@@ -160,6 +160,7 @@ struct WinHTTPSession {
   HINTERNET ConnectHandle = nullptr;
   HINTERNET RequestHandle = nullptr;
   DWORD ResponseCode = 0;
+  DWORD TimeoutMs = 30000;
 
   ~WinHTTPSession() {
     if (RequestHandle)
@@ -231,15 +232,42 @@ void HTTPClient::cleanup() {
 
 void HTTPClient::setTimeout(std::chrono::milliseconds Timeout) {
   WinHTTPSession *Session = static_cast<WinHTTPSession *>(Handle);
-  if (Session && Session->SessionHandle) {
-    DWORD TimeoutMs = static_cast<DWORD>(Timeout.count());
-    WinHttpSetOption(Session->SessionHandle, WINHTTP_OPTION_CONNECT_TIMEOUT,
-                     &TimeoutMs, sizeof(TimeoutMs));
-    WinHttpSetOption(Session->SessionHandle, WINHTTP_OPTION_RECEIVE_TIMEOUT,
-                     &TimeoutMs, sizeof(TimeoutMs));
-    WinHttpSetOption(Session->SessionHandle, WINHTTP_OPTION_SEND_TIMEOUT,
-                     &TimeoutMs, sizeof(TimeoutMs));
-  }
+  Session->TimeoutMs = static_cast<DWORD>(Timeout.count());
+}
+
+static Error VerifyTLSCertWinHTTP(HINTERNET RequestHandle,
+                                  const std::string &PinnedFingerprint) {
+  // Decode the expected fingerprint from hex into binary.
+  BYTE Expected[32];
+  DWORD ExpectedSize = sizeof(Expected);
+  if (!CryptStringToBinaryA(
+          PinnedFingerprint.c_str(), (DWORD)PinnedFingerprint.size(),
+          CRYPT_STRING_HEXRAW, Expected, &ExpectedSize, nullptr, nullptr))
+    return createStringError(errc::invalid_argument,
+                             "Invalid certificate fingerprint format");
+
+  // Retrieve the server certificate and compute its SHA-256 hash.
+  PCCERT_CONTEXT CertCtx = nullptr;
+  DWORD CertCtxSize = sizeof(CertCtx);
+  if (!WinHttpQueryOption(RequestHandle, WINHTTP_OPTION_SERVER_CERT_CONTEXT,
+                          &CertCtx, &CertCtxSize))
+    return createStringError(errc::io_error,
+                             "Failed to retrieve server certificate");
+
+  std::array<BYTE, 32> Actual;
+  DWORD ActualSize = Actual.size();
+  bool GotHash = CertGetCertificateContextProperty(
+      CertCtx, CERT_SHA256_HASH_PROP_ID, Actual.data(), &ActualSize);
+  CertFreeCertificateContext(CertCtx);
+  if (!GotHash)
+    return createStringError(errc::io_error,
+                             "Failed to compute certificate fingerprint");
+
+  if (memcmp(Actual.data(), Expected, Actual.size()) != 0)
+    return createStringError(errc::permission_denied,
+                             "Certificate fingerprint mismatch");
+
+  return Error::success();
 }
 
 static Error VerifyTLSCertWinHTTP(HINTERNET RequestHandle,
@@ -307,6 +335,13 @@ Error HTTPClient::perform(const HTTPRequest &Request,
   if (!Session->SessionHandle)
     return createStringError(errc::io_error, "Failed to open WinHTTP session");
 
+  // Set timeouts for all 4 phases: resolve, connect, send and receive. Resolve
+  // and connect are hard-coded since they don't vary with different payloads.
+  // Send and receive is configurable and defaults to 30000.
+  if (!WinHttpSetTimeouts(Session->SessionHandle, 5000, 10000,
+                          Session->TimeoutMs, Session->TimeoutMs))
+    return createStringError(errc::io_error, "Failed to set WinHTTP timeout");
+
   // Prevent fallback to TLS 1.0/1.1
   DWORD SecureProtocols =
       WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2 | WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_3;
@@ -320,6 +355,14 @@ Error HTTPClient::perform(const HTTPRequest &Request,
       return createStringError(errc::io_error,
                                "Failed to set secure protocols");
   }
+
+  // Disallow redirects in general or HTTPS to HTTP only.
+  DWORD RedirectPolicy = WINHTTP_OPTION_REDIRECT_POLICY_DISALLOW_HTTPS_TO_HTTP;
+  if (!Request.FollowRedirects)
+    RedirectPolicy = WINHTTP_OPTION_REDIRECT_POLICY_NEVER;
+  if (!WinHttpSetOption(Session->SessionHandle, WINHTTP_OPTION_REDIRECT_POLICY,
+                        &RedirectPolicy, sizeof(RedirectPolicy)))
+    return createStringError(errc::io_error, "Failed to set redirect policy");
 
   // Disallow redirects in general or HTTPS to HTTP only.
   DWORD RedirectPolicy = WINHTTP_OPTION_REDIRECT_POLICY_DISALLOW_HTTPS_TO_HTTP;
@@ -386,12 +429,26 @@ Error HTTPClient::perform(const HTTPRequest &Request,
 
   // Send request
   if (!WinHttpSendRequest(Session->RequestHandle, WINHTTP_NO_ADDITIONAL_HEADERS,
-                          0, nullptr, 0, 0, 0))
-    return createStringError(errc::io_error, "Failed to send HTTP request");
+                          0, nullptr, 0, 0, 0)) {
+    bool TimedOut = GetLastError() == ERROR_WINHTTP_TIMEOUT;
+    return createStringError(errc::io_error,
+                             TimedOut ? "Timeout was reached"
+                                      : "Failed to send HTTP request");
+  }
 
   // Receive response
-  if (!WinHttpReceiveResponse(Session->RequestHandle, nullptr))
-    return createStringError(errc::io_error, "Failed to receive HTTP response");
+  if (!WinHttpReceiveResponse(Session->RequestHandle, nullptr)) {
+    bool TimedOut = GetLastError() == ERROR_WINHTTP_TIMEOUT;
+    return createStringError(errc::io_error,
+                             TimedOut ? "Timeout was reached"
+                                      : "Failed to receive HTTP response");
+  }
+
+  // Verify the server certificate fingerprint if one was pinned.
+  if ((SecurityFlags & SECURITY_FLAG_IGNORE_UNKNOWN_CA) != 0)
+    if (Error Err = VerifyTLSCertWinHTTP(Session->RequestHandle,
+                                         *Request.PinnedCertFingerprint))
+      return Err;
 
   // Verify the server certificate fingerprint if one was pinned.
   if ((SecurityFlags & SECURITY_FLAG_IGNORE_UNKNOWN_CA) != 0)

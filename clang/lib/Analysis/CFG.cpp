@@ -2376,6 +2376,7 @@ CFGBlock *CFGBuilder::Visit(Stmt * S, AddStmtChoice asc,
       return VisitConditionalOperator(cast<BinaryConditionalOperator>(S), asc);
 
     case Stmt::BinaryOperatorClass:
+    case Stmt::CompoundAssignOperatorClass:
       return VisitBinaryOperator(cast<BinaryOperator>(S), asc);
 
     case Stmt::BlockExprClass:
@@ -3457,8 +3458,9 @@ CFGBlock *CFGBuilder::VisitReturnStmt(Stmt *S) {
 
   CoreturnStmt *CRS = cast<CoreturnStmt>(S);
   auto *B = Block;
-  if (CFGBlock *R = Visit(CRS->getPromiseCall()))
-    B = R;
+  if (Expr *PromiseCall = CRS->getPromiseCall())
+    if (CFGBlock *R = Visit(PromiseCall))
+      B = R;
 
   if (Expr *RV = CRS->getOperand())
     if (RV->getType()->isVoidType() && !isa<InitListExpr>(RV))
@@ -3643,11 +3645,12 @@ CFGBlock *CFGBuilder::VisitBlockExpr(BlockExpr *E, AddStmtChoice asc) {
 CFGBlock *CFGBuilder::VisitLambdaExpr(LambdaExpr *E, AddStmtChoice asc) {
   CFGBlock *LastBlock = VisitNoRecurse(E, asc);
 
-  unsigned Idx = 0;
-  for (LambdaExpr::capture_init_iterator it = E->capture_init_begin(),
-                                         et = E->capture_init_end();
-       it != et; ++it, ++Idx) {
-    if (Expr *Init = *it) {
+  // Visit the capture initializers in reverse order so they appear in
+  // left-to-right (natural) order in the CFG.
+  unsigned Idx = E->capture_size();
+  for (Expr *Init : reverse(E->capture_inits())) {
+    --Idx;
+    if (Init) {
       // If the initializer is an ArrayInitLoopExpr, we want to extract the
       // initializer, that's used for each element.
       auto *AILEInit = extractElementInitializerFromNestedAILE(
@@ -5218,6 +5221,7 @@ tryAgain:
       return VisitChildrenForTemporaries(E, ExternallyDestructed, Context);
 
     case Stmt::BinaryOperatorClass:
+    case Stmt::CompoundAssignOperatorClass:
       return VisitBinaryOperatorForTemporaries(cast<BinaryOperator>(E),
                                                ExternallyDestructed, Context);
 

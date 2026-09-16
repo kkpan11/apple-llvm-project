@@ -14,38 +14,23 @@ import lldb
 from lldbsuite.test.lldbtest import *
 from lldbsuite.test.decorators import *
 import lldbsuite.test.lldbutil as lldbutil
-import os
 
 class TestSwiftStaticArchiveTwoSwiftmodules(TestBase):
-    @skipEmbeddedSwift
+    @requireNotEmbeddedSwift
     # Don't run ClangImporter tests if Clangimporter is disabled.
     @skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
-    @skipUnlessDarwin
+    @requireDarwin
     @swiftTest
     def test(self):
         self.build()
-        exe_name = "a.out"
-        exe = self.getBuildArtifact(exe_name)
-
-        # Create the target.
-        target = self.dbg.CreateTarget(exe)
-        self.assertTrue(target, VALID_TARGET)
-
-        # Set the breakpoints.
-        foo_breakpoint = target.BreakpointCreateBySourceRegex(
-            'break here', lldb.SBFileSpec('Foo.swift'))
-        bar_breakpoint = target.BreakpointCreateBySourceRegex(
-            'break here', lldb.SBFileSpec('Bar.swift'))
-        self.assertTrue(foo_breakpoint.GetNumLocations() > 0, VALID_BREAKPOINT)
-        self.assertTrue(bar_breakpoint.GetNumLocations() > 0, VALID_BREAKPOINT)
-
-        # Launch.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        _, process, _, _ = lldbutil.run_to_source_breakpoint(
+            self, 'break here', lldb.SBFileSpec('Foo.swift'))
 
         # This test tests that the search paths from all swiftmodules
         # that are part of the main binary are honored.
         self.expect("fr var foo", "expected result", substrs=["23"])
         self.expect("expression foo", "expected result", substrs=["$R0", "i", "23"])
-        process.Continue()
+        lldbutil.continue_to_source_breakpoint(
+            self, process, 'break here', lldb.SBFileSpec('Bar.swift'))
         self.expect("fr var bar", "expected result", substrs=["42"])
         self.expect("expression bar", "expected result", substrs=["j", "42"])

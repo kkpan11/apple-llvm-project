@@ -6,8 +6,8 @@ import lldbsuite.test.lldbutil as lldbutil
 
 class TestSwiftEnableTesting(TestBase):
 
-    @skipEmbeddedSwift
-    @skipUnlessDarwin
+    @requireNotEmbeddedSwift
+    @skipIfLinux
     @swiftTest
     def test(self):
         """Test that expression evaluation generates a direct member access to a private property in a module compiled with -enable-library-evolution and -enable-testing"""

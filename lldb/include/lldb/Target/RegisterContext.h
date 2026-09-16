@@ -10,6 +10,7 @@
 #define LLDB_TARGET_REGISTERCONTEXT_H
 
 #include "lldb/Target/ExecutionContextScope.h"
+#include "lldb/Utility/RegisterInfo.h"
 #include "lldb/lldb-private.h"
 
 namespace lldb_private {
@@ -225,6 +226,8 @@ public:
   uint32_t GetStopID() const { return m_stop_id; }
 
   void SetStopID(uint32_t stop_id) { m_stop_id = stop_id; }
+
+  uint32_t GetConcreteFrameIndex() const { return m_concrete_frame_idx; }
 
 protected:
   /// Indicates that this frame is currently executing code,

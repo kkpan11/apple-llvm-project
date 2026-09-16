@@ -94,7 +94,7 @@ struct PrintingPolicy {
         PrintInjectedClassNameWithArguments(true), UsePreferredNames(true),
         AlwaysIncludeTypeForTemplateArgument(false),
         CleanUglifiedParameters(false), EntireContentsOfLargeArray(true),
-        UseEnumerators(true), UseHLSLTypes(LO.HLSL),
+        PrettyEnums(true), UseEnumerators(true), UseHLSLTypes(LO.HLSL),
         SuppressDeclAttributes(false), SuppressLambdaBody(false),
         /* TO_UPSTREAM(BoundsSafety) ON */
         CountedByInArrayBracket(false), DelayedArrayQual() {
@@ -374,6 +374,11 @@ struct PrintingPolicy {
   /// template parameters, no matter how many elements there are.
   LLVM_PREFERRED_TYPE(bool)
   unsigned EntireContentsOfLargeArray : 1;
+
+  /// Whether to print enumerators with a matching enumerator name or via cast
+  //  of an integer.
+  LLVM_PREFERRED_TYPE(bool)
+  unsigned PrettyEnums : 1;
 
   /// Whether to print enumerator non-type template parameters with a matching
   /// enumerator name or via cast of an integer.

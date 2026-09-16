@@ -451,6 +451,8 @@ Module *SymbolFileDWARFDebugMap::GetModuleByCompUnitInfo(
               "debug map object file \"%s\" containing debug info does not "
               "exist, debug info will not be loaded",
               comp_unit_info->oso_path.GetCString());
+          obj_file->GetModule()->ReportError(
+              "{0}", comp_unit_info->oso_load_error.AsCString());
           return nullptr;
         }
       }
@@ -1734,6 +1736,32 @@ Status SymbolFileDWARFDebugMap::CalculateFrameVariableError(StackFrame &frame) {
   return Status();
 }
 
+bool SymbolFileDWARFDebugMap::GetCompileOption(const char *option,
+                                               std::string &value,
+                                               CompileUnit *cu) {
+  value.clear();
+
+  // The compile options are recorded in the DW_AT_APPLE_flags of the compile
+  // units in the .o files, so the query has to be forwarded to the
+  // SymbolFileDWARF of the corresponding object file.
+  if (cu) {
+    if (SymbolFileDWARF *oso_dwarf = GetSymbolFile(*cu))
+      return oso_dwarf->GetCompileOption(option, value, cu);
+    return false;
+  }
+
+  bool found = false;
+  ForEachSymbolFile("Parsing compile option",
+                    [&](SymbolFileDWARF &oso_dwarf) {
+                      if (oso_dwarf.GetCompileOption(option, value)) {
+                        found = true;
+                        return IterationAction::Stop;
+                      }
+                      return IterationAction::Continue;
+                    });
+  return found;
+}
+
 void SymbolFileDWARFDebugMap::GetCompileOptions(
     std::unordered_map<lldb::CompUnitSP, Args> &args) {
 
@@ -1741,6 +1769,18 @@ void SymbolFileDWARFDebugMap::GetCompileOptions(
     oso_dwarf.GetCompileOptions(args);
     return IterationAction::Continue;
   });
+}
+
+lldb::TypeSP
+SymbolFileDWARFDebugMap::GetTypeEnclosingVariableUID(lldb::user_id_t uid) {
+  lldb::TypeSP type;
+  ForEachSymbolFile("Looking up enclosing type for variable",
+                    [&](SymbolFileDWARF &oso_dwarf) {
+                      type = oso_dwarf.GetTypeEnclosingVariableUID(uid);
+                      return type ? IterationAction::Stop
+                                  : IterationAction::Continue;
+                    });
+  return type;
 }
 
 llvm::Expected<SymbolContext>

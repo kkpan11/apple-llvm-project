@@ -32,6 +32,7 @@
 #include "lldb/Utility/LLDBAssert.h"
 #include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
+#include "lldb/Utility/RegularExpression.h"
 #include "lldb/Utility/Status.h"
 #include "lldb/Utility/Timer.h"
 #include "lldb/ValueObject/ValueObject.h"
@@ -42,9 +43,11 @@
 #include "swift/AST/Type.h"
 #include "swift/AST/Types.h"
 #include "swift/Demangling/Demangler.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/BinaryFormat/Dwarf.h"
 
 #include <map>
+#include <optional>
 #include <string>
 #if HAVE_SYS_TYPES_H
 #include <sys/types.h>
@@ -179,6 +182,15 @@ findSwiftSelf(StackFrame &frame, lldb::VariableSP self_var_sp) {
 
   if (!info.type.IsValid())
     return {};
+
+  // If `self`'s static type is meaningless without dynamic type resolution
+  // there's nothing we can do with it. This does not apply to metatypes (i.e.
+  // `self` in a static method): the expression evaluator can still bind their
+  // generic parameters directly, without relying on dynamic type resolution of
+  // an instance's metadata.
+  if (!info.is_metatype && info.type.IsMeaninglessWithoutDynamicResolution())
+    return {};
+
   return info;
 }
 
@@ -190,6 +202,11 @@ bool SwiftUserExpression::ScanContext(DiagnosticManager &diagnostic_manager,
   m_target = exe_ctx.GetTargetPtr();
   if (!m_target) {
     LLDB_LOG(log, "  [SUE::SC] Null target");
+    return true;
+  }
+
+  if (m_options.GetUseContextFreeSwiftPrintObject()) {
+    LLDB_LOG(log, "  [SUE::SC] Context-free expression, skipping scan");
     return true;
   }
 
@@ -234,7 +251,7 @@ bool SwiftUserExpression::ScanContext(DiagnosticManager &diagnostic_manager,
   innermost_block->AppendVariables(/*can_create*/
                                    true,
                                    /*get_parent_variables*/ true,
-                                   /*stop_if_block_is_inlined_function*/ false,
+                                   /*stop_if_block_is_inlined_function*/ true,
                                    /*filter*/
                                    [&](Variable *var) {
                                      if (!variable_list.Empty())
@@ -300,8 +317,7 @@ bool SwiftUserExpression::ScanContext(DiagnosticManager &diagnostic_manager,
       m_is_weak_self = true;
     }
 
-  m_needs_object_ptr =
-      !m_in_static_method && !m_options.GetUseContextFreeSwiftPrintObject();
+  m_needs_object_ptr = !m_in_static_method;
   LLDB_LOGF(log, "  [SUE::SC] Expression captures self: %s",
             m_needs_object_ptr ? "true" : "false");
 
@@ -344,6 +360,16 @@ static llvm::Error AddVariableInfo(
   if (!variable_sp || !variable_sp->GetType())
     return llvm::Error::success();
 
+  // Stash diagnostics for missing locations.
+  Status variable_status;
+  if (lldb::ValueObjectSP valobj_sp =
+          stack_frame_sp->GetValueObjectForFrameVariable(
+              variable_sp, lldb::eNoDynamicValues)) {
+    variable_status = valobj_sp->GetError().Clone();
+    if (variable_status.Fail() && variable_sp->IsArtificial())
+      return llvm::Error::success();
+  }
+
   CompilerType target_type;
   bool should_not_bind_generic_types =
       !SwiftASTManipulator::ShouldBindGenericTypes(bind_generic_types);
@@ -363,7 +389,7 @@ static llvm::Error AddVariableInfo(
     target_type = variable_sp->GetType()->GetForwardCompilerType();
   else {
     CompilerType var_type = SwiftExpressionParser::ResolveVariable(
-        variable_sp, stack_frame_sp, runtime, use_dynamic, bind_generic_types);
+        variable_sp, *stack_frame_sp, runtime, use_dynamic, bind_generic_types);
 
     // IsMeaninglessWithoutDynamicResolution basically only checks if
     // it is an unspecialized generic type.
@@ -393,8 +419,16 @@ static llvm::Error AddVariableInfo(
   }
 
   auto ts = target_type.GetTypeSystem().dyn_cast_or_null<TypeSystemSwift>();
-  if (!ts)
-    return llvm::createStringError("type for self has no type system");
+  if (!ts) {
+    if (is_self)
+      return llvm::createStringError("type for self has no type system");
+    std::string msg =
+        llvm::formatv("discarded local '{0}', type '{1}' is not a Swift type",
+                      name, target_type.GetDisplayTypeName());
+    diagnostic_manager.AddDiagnostic(msg, lldb::eSeverityWarning,
+                                     eDiagnosticOriginLLDB);
+    return llvm::Error::success();
+  }
 
   // If we couldn't fully realize the type, then we aren't going
   // to get very far making a local out of it, so discard it here.
@@ -419,7 +453,7 @@ static llvm::Error AddVariableInfo(
 
   if (log && is_self)
     if (swift::Type swift_type =
-            llvm::expectedToStdOptional(ast_context.GetSwiftType(target_type))
+            llvm::expectedToOptional(ast_context.GetSwiftType(target_type))
                 .value_or(swift::Type())) {
       std::string s;
       llvm::raw_string_ostream ss(s);
@@ -429,16 +463,6 @@ static llvm::Error AddVariableInfo(
                   static_cast<void *>(swift_type.getPointer()),
                   static_cast<void *>(*ast_context.GetASTContext()), s.c_str());
     }
-
-  // Stash diagnostics for missing locations.
-  Status variable_status;
-  if (lldb::ValueObjectSP valobj_sp =
-          stack_frame_sp->GetValueObjectForFrameVariable(
-              variable_sp, lldb::eNoDynamicValues)) {
-    variable_status = valobj_sp->GetError().Clone();
-    if (variable_status.Fail() && variable_sp->IsArtificial())
-      return llvm::Error::success();
-  }
 
   // A one-off clone of variable_sp with the type replaced by target_type.
   auto patched_variable_sp = std::make_shared<lldb_private::Variable>(
@@ -461,14 +485,19 @@ static llvm::Error AddVariableInfo(
   SwiftASTManipulatorBase::VariableMetadataSP metadata_sp(
       new SwiftASTManipulatorBase::VariableMetadataVariable(
           patched_variable_sp));
-  local_variables.emplace_back(
+  auto &variable_info = local_variables.emplace_back(
       target_type, ast_context.GetASTContext()->getIdentifier(overridden_name),
       metadata_sp,
       variable_sp->IsConstant() ? swift::VarDecl::Introducer::Let
                                 : swift::VarDecl::Introducer::Var,
       false, is_unbound_pack);
-  if (variable_status.Fail())
-    local_variables.back().SetLookupError(variable_status.takeError());
+  if (variable_status.Fail()) {
+    variable_info.SetLookupError(variable_status.takeError());
+    // Unavailable self is handled separately by downgrading the
+    // method to a freestanding function.
+    if (!is_self)
+      variable_info.SetUnavailable();
+  }
 
   processed_variables.insert(overridden_name);
   return llvm::Error::success();
@@ -550,13 +579,24 @@ static llvm::Error RegisterAllVariables(
 /// Check if we can evaluate the expression as generic.
 /// Currently, evaluating expression as a generic has several limitations:
 /// - Only self will be evaluated with unbound generics.
-/// - The Self type can only have one generic parameter. 
+/// - The Self type can only have one generic parameter.
 /// - The Self type has to be the outermost type with unbound generics.
+/// - Every generic parameter in scope has to belong to the outermost type.
 static bool CanEvaluateExpressionWithoutBindingGenericParams(
     const llvm::SmallVectorImpl<SwiftASTManipulator::VariableInfo> &variables,
     const std::optional<SwiftLanguageRuntime::GenericSignature> &generic_sig,
     SwiftASTContextForExpressions &scratch_ctx, Block *block,
     StackFrame &stack_frame) {
+  // Only the generic parameters of the outermost type are passed to the
+  // expression, so a context that has generic parameters of its own -- a
+  // generic method of a generic type, for example, whose parameters are at
+  // depth 1 -- cannot be evaluated this way.
+  if (llvm::any_of(variables, [](const auto &variable) {
+        return variable.IsMetadataPointer() &&
+               !variable.IsOutermostMetadataPointer();
+      }))
+    return false;
+
   // First, find the compiler type of self with the generic parameters not
   // bound.
   auto self_var = SwiftExpressionParser::FindSelfVariable(block);
@@ -582,7 +622,7 @@ static bool CanEvaluateExpressionWithoutBindingGenericParams(
     return false;
 
   auto swift_type =
-      llvm::expectedToStdOptional(scratch_ctx.GetSwiftType(self_type))
+      llvm::expectedToOptional(scratch_ctx.GetSwiftType(self_type))
           .value_or(swift::Type());
   if (!swift_type)
     return false;
@@ -682,6 +722,26 @@ SwiftUserExpression::GetTextAndSetExpressionParser(
           func_name.GetStringRef(), *ts);
     }
 
+    // Try to evaluate the expression without self if it is not available.
+    if (m_needs_object_ptr || m_in_static_method) {
+      bool has_self = llvm::any_of(
+          local_variables,
+          [](const SwiftASTManipulator::VariableInfo &variable) {
+            return variable.IsSelf();
+          });
+      if (!has_self) {
+        LLDB_LOG(log, "`self` is not avilable, "
+                      "downgrading to freestanding function");
+        diagnostic_manager.PutString(lldb::eSeverityWarning,
+                                     "'self' is not available in this frame; "
+                                     "evaluating the expression without it");
+        m_needs_object_ptr = false;
+        m_in_static_method = false;
+        m_is_class = false;
+        m_is_weak_self = false;
+      }
+    }
+
     if (!SwiftASTManipulator::ShouldBindGenericTypes(
             m_options.GetSwiftBindGenericTypes()) &&
         !CanEvaluateExpressionWithoutBindingGenericParams(
@@ -728,6 +788,40 @@ SwiftUserExpression::GetTextAndSetExpressionParser(
   m_parser.reset(swift_parser);
 
   return parse_result;
+}
+
+/// Rewrite invalid cast expressions.
+///
+/// A substring matching:
+///     <hex-literal> as[?!]? <Type>
+/// will be substituted with:
+///     unsafeBitCast(<hex-literal>, to: <Type>.self)
+///
+/// This supports casting expressions users may try when wanting the object
+/// represented by a raw address.
+static std::optional<std::string> ApplyLLDBCastFixIts(StringRef expr_text) {
+  static llvm::Regex cast_regex(
+      "(^|[^[:alnum:]_])"      // capture 1: boundary preceeding address
+      "(0[xX][0-9a-fA-F]{4,})" // capture 2: address
+      "[[:space:]]+"
+      "as[?!]?[[:space:]]+"
+      "([[:alpha:]_][[:alnum:]_.]*)"); // capture 3: class name
+
+  llvm::SmallVector<StringRef, 4> matches;
+  if (!cast_regex.match(expr_text, &matches))
+    return std::nullopt;
+
+  constexpr static llvm::StringRef swift_numeric_type_names[] = {
+      "Int",     "Int8",    "Int16",   "Int32",  "Int64",  "UInt",
+      "UInt8",   "UInt16",  "UInt32",  "UInt64", "Float",  "Float16",
+      "Float32", "Float64", "Float80", "Double", "CGFloat"};
+  StringRef type_name = matches[3];
+  if (llvm::is_contained(swift_numeric_type_names, type_name))
+    // Don't rewrite valid casts such as `0xABCDEF as UInt32`
+    return std::nullopt;
+
+  // The substitution must preserve any boundary character (capture group 1).
+  return cast_regex.sub("\\1unsafeBitCast(\\2, to: \\3.self)", expr_text);
 }
 
 /// If `sc` represents a "closure-like" function according to `lang`, and
@@ -901,6 +995,12 @@ bool SwiftUserExpression::Parse(DiagnosticManager &diagnostic_manager,
   //
   // Generate the expression.
   //
+
+  // Apply LLDB-specific expression rewrites before compilation.
+  if (auto rewritten = ApplyLLDBCastFixIts(m_expr_text)) {
+    m_fixed_text = *rewritten;
+    m_expr_text = std::move(*rewritten);
+  }
 
   std::string prefix = m_expr_prefix;
 

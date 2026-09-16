@@ -8,6 +8,18 @@ if(APPLE AND CMAKE_OSX_SYSROOT AND (LLVM_TARGET_TRIPLE STREQUAL LLVM_HOST_TRIPLE
   # Only propagate the host sysroot for native runtimes builds.
   list(APPEND RUNTIMES_CMAKE_ARGS "-DCMAKE_OSX_SYSROOT=${CMAKE_OSX_SYSROOT}")
 endif()
+
+set(INDEX_STORE_CMAKE_ARGS "")
+if(LLVM_ENABLE_INDEX_STORE AND NOT XCODE AND NOT MSVC_IDE)
+  # Propagate the index store for non-IDE generators (same check as
+  # HandleLLVMOptions). Pass INDEX_DATA_STORE_PATH to share the same
+  # content-addressed index store as the top-level build instead of
+  # defaulting to a new one in the sub-build's directory.
+  list(APPEND INDEX_STORE_CMAKE_ARGS
+    "-DLLVM_ENABLE_INDEX_STORE=ON"
+    "-DINDEX_DATA_STORE_PATH=${INDEX_DATA_STORE_PATH}")
+endif()
+
 foreach(proj ${LLVM_ENABLE_RUNTIMES})
   string(TOUPPER "${proj}" canon_name)
   STRING(REGEX REPLACE "-" "_" canon_name ${canon_name})
@@ -153,13 +165,14 @@ function(builtin_default_target compiler_rt_path)
                                       -DCMAKE_CXX_COMPILER_WORKS=ON
                                       -DCMAKE_ASM_COMPILER_WORKS=ON
                                       ${COMMON_CMAKE_ARGS}
+                                      ${INDEX_STORE_CMAKE_ARGS}
                                       ${BUILTINS_CMAKE_ARGS}
                            PASSTHROUGH_PREFIXES COMPILER_RT
                                                 DARWIN
                                                 SANITIZER
                            USE_TOOLCHAIN
                            TARGET_TRIPLE ${LLVM_TARGET_TRIPLE}
-                           FOLDER "Compiler-RT"
+                           FOLDER "compiler-rt"
                            ${EXTRA_ARGS})
 endfunction()
 
@@ -181,9 +194,10 @@ function(builtin_register_target compiler_rt_path name)
                                       -DCMAKE_ASM_COMPILER_WORKS=ON
                                       -DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON
                                       ${COMMON_CMAKE_ARGS}
+                                      ${INDEX_STORE_CMAKE_ARGS}
                                       ${${name}_extra_args}
                            USE_TOOLCHAIN
-                           FOLDER "Compiler-RT"
+                           FOLDER "compiler-rt"
                            ${EXTRA_ARGS} ${ARG_EXTRA_ARGS})
 endfunction()
 
@@ -214,15 +228,22 @@ if(compiler_rt_path)
     add_custom_target(install-builtins-stripped)
     set_target_properties(
       builtins install-builtins install-builtins-stripped
-      PROPERTIES FOLDER "Compiler-RT"
+      PROPERTIES FOLDER "compiler-rt"
     )
   endif()
 
   foreach(target ${builtin_targets})
     check_apple_target(${target} builtin)
 
+    # builtins-spirv64* targets will invoke llvm-link to combine all
+    # bitcode from static archive library into libclang_rt.builtins.bc.
+    # Need to add dependency on llvm-link for it.
+    set(builtin_deps clang-resource-headers)
+    if(target MATCHES "^spirv64" AND TARGET llvm-link)
+      list(APPEND builtin_deps llvm-link)
+    endif()
     builtin_register_target(${compiler_rt_path} ${target}
-      DEPENDS clang-resource-headers
+      DEPENDS ${builtin_deps}
       CMAKE_ARGS -DLLVM_DEFAULT_TARGET_TRIPLE=${target}
       EXTRA_ARGS TARGET_TRIPLE ${target})
 
@@ -349,6 +370,7 @@ function(runtime_default_target)
                                       -DCMAKE_Fortran_COMPILER_WORKS=ON
                                       -DCMAKE_ASM_COMPILER_WORKS=ON
                                       ${COMMON_CMAKE_ARGS}
+                                      ${INDEX_STORE_CMAKE_ARGS}
                                       ${RUNTIMES_CMAKE_ARGS}
                                       ${ARG_CMAKE_ARGS}
                            PASSTHROUGH_PREFIXES LLVM_ENABLE_RUNTIMES
@@ -472,6 +494,7 @@ function(runtime_register_target name)
                                       -DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON
                                       -DLLVM_RUNTIMES_TARGET=${name}
                                       ${COMMON_CMAKE_ARGS}
+                                      ${INDEX_STORE_CMAKE_ARGS}
                                       ${${name}_extra_args}
                            EXTRA_TARGETS ${${name}_extra_targets}
                                          ${${name}_test_targets}
@@ -578,41 +601,46 @@ if(build_runtimes)
     if(WIN32)
       list(APPEND extra_deps KillTheDoctor)
     endif()
+
+    # TO_UPSTREAM(BoundsSafety) ON
+    # Ensure a just-built lldb (and its python bindings) are built before the
+    # runtimes configure step runs `lldb -P`, so compiler-rt's bounds-safety tests
+    # can use the in-tree lldb. lldb is already built when it is in
+    # LLVM_ENABLE_PROJECTS.
+    set(_compiler_rt_is_runtime FALSE)
+    if("compiler-rt" IN_LIST LLVM_ENABLE_RUNTIMES)
+      set(_compiler_rt_is_runtime TRUE)
+    else()
+      foreach(target ${LLVM_RUNTIME_TARGETS})
+        if("compiler-rt" IN_LIST RUNTIMES_${target}_LLVM_ENABLE_RUNTIMES)
+          set(_compiler_rt_is_runtime TRUE)
+          break()
+        endif()
+      endforeach()
+    endif()
+    if(_compiler_rt_is_runtime)
+      foreach(dep lldb lldb-python)
+        if(TARGET ${dep})
+          list(APPEND extra_deps ${dep})
+        endif()
+      endforeach()
+    endif()
+    # TO_UPSTREAM(BoundsSafety) OFF
   endif()
 
-  # TO_UPSTREAM(BoundsSafety) ON
-  # Ensure a just-built lldb (and its python bindings) are built before the
-  # runtimes configure step runs `lldb -P`, so compiler-rt's bounds-safety tests
-  # can use the in-tree lldb. lldb is already built when it is in
-  # LLVM_ENABLE_PROJECTS.
-  set(_compiler_rt_is_runtime FALSE)
-  if("compiler-rt" IN_LIST LLVM_ENABLE_RUNTIMES)
-    set(_compiler_rt_is_runtime TRUE)
-  else()
-    foreach(target ${LLVM_RUNTIME_TARGETS})
-      if("compiler-rt" IN_LIST RUNTIMES_${target}_LLVM_ENABLE_RUNTIMES)
-        set(_compiler_rt_is_runtime TRUE)
-        break()
-      endif()
-    endforeach()
-  endif()
-  if(_compiler_rt_is_runtime)
-    foreach(dep lldb lldb-python)
-      if(TARGET ${dep})
-        list(APPEND extra_deps ${dep})
-      endif()
-    endforeach()
-  endif()
-  # TO_UPSTREAM(BoundsSafety) OFF
-
-  # Forward user-provived system configuration to runtimes for requirement introspection.
+  # Forward user-provided system configuration to runtimes for requirement introspection.
+  # These are lists, so their separators have to survive being passed on the
+  # sub-build's command line; an unescaped ';' would split them into separate
+  # arguments.
   # CMAKE_PREFIX_PATH is the search path for CMake packages.
   if(CMAKE_PREFIX_PATH)
-    list(APPEND extra_cmake_args "-DCMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}")
+    string(JOIN "$<SEMICOLON>" escaped_prefix_path ${CMAKE_PREFIX_PATH})
+    list(APPEND extra_cmake_args "-DCMAKE_PREFIX_PATH=${escaped_prefix_path}")
   endif()
   # CMAKE_PROGRAM_PATH is the search path for executables such as python.
   if(CMAKE_PROGRAM_PATH)
-    list(APPEND extra_cmake_args "-DCMAKE_PROGRAM_PATH=${CMAKE_PROGRAM_PATH}")
+    string(JOIN "$<SEMICOLON>" escaped_program_path ${CMAKE_PROGRAM_PATH})
+    list(APPEND extra_cmake_args "-DCMAKE_PROGRAM_PATH=${escaped_program_path}")
   endif()
 
   set(libclc_enabled FALSE)
@@ -653,22 +681,36 @@ if(build_runtimes)
         list(APPEND extra_deps ${dep})
       endif()
     endforeach()
+    # The offload unittests detect the GPU arch at configure time via
+    # -mcpu=native.
+    if(LLVM_INCLUDE_TESTS)
+      if(TARGET offload-arch)
+        list(APPEND extra_deps offload-arch)
+      endif()
+    endif()
   endif()
-  if(LLVM_LIBC_GPU_BUILD)
-    set(_gpu_loader "${LLVM_TOOLS_BINARY_DIR}/llvm-gpu-loader${CMAKE_EXECUTABLE_SUFFIX}")
-    foreach(name ${LLVM_RUNTIME_TARGETS})
-      if(name MATCHES "^(amdgcn|nvptx)")
-        set(RUNTIMES_${name}_CMAKE_CROSSCOMPILING_EMULATOR "${_gpu_loader}" CACHE STRING "")
+  if("libsycl" IN_LIST LLVM_ENABLE_RUNTIMES)
+    foreach(dep clang-linker-wrapper clang-sycl-linker clang llvm-offload-binary)
+      if(TARGET ${dep})
+        list(APPEND extra_deps ${dep})
       endif()
     endforeach()
-    list(APPEND extra_cmake_args "-DLLVM_LIBC_GPU_BUILD=ON")
-    if(TARGET llvm-offload-binary)
-      list(APPEND extra_deps llvm-offload-binary)
-    endif()
-    if(TARGET clang-nvlink-wrapper)
-      list(APPEND extra_deps clang-nvlink-wrapper)
-    endif()
   endif()
+  set(_gpu_loader "${LLVM_TOOLS_BINARY_DIR}/llvm-gpu-loader${CMAKE_EXECUTABLE_SUFFIX}")
+  foreach(name ${LLVM_RUNTIME_TARGETS})
+    if(name MATCHES "^amdgpu|^amdgcn|^nvptx|^spirv")
+      set(RUNTIMES_${name}_CMAKE_CROSSCOMPILING_EMULATOR "${_gpu_loader}" CACHE STRING "")
+      if(TARGET llvm-offload-binary)
+        list(APPEND extra_deps llvm-offload-binary)
+      endif()
+      if(TARGET clang-nvlink-wrapper)
+        list(APPEND extra_deps clang-nvlink-wrapper)
+      endif()
+      if(TARGET llvm-link)
+        list(APPEND extra_deps llvm-link)
+      endif()
+    endif()
+  endforeach()
   if(LLVM_LIBC_FULL_BUILD)
     list(APPEND extra_cmake_args "-DLLVM_LIBC_FULL_BUILD=ON")
   endif()
@@ -726,7 +768,7 @@ if(build_runtimes)
         add_custom_target(check-builtins)
         set_target_properties(
           check-builtins
-          PROPERTIES FOLDER "Compiler-RT"
+          PROPERTIES FOLDER "compiler-rt"
         )
       endif()
       if(LLVM_RUNTIME_DISTRIBUTION_COMPONENTS)

@@ -1,4 +1,4 @@
-/*===-- llvm-c/CAS/PluginAPI_Types.h - CAS Plugin Types Interface -*- C -*-===*\
+/*===----------------------------------------------------------------------===*\
 |*                                                                            *|
 |* Part of the LLVM Project, under the Apache License v2.0 with LLVM          *|
 |* Exceptions.                                                                *|
@@ -20,7 +20,7 @@
 #include <stdint.h>
 
 #define LLCAS_VERSION_MAJOR 0
-#define LLCAS_VERSION_MINOR 1
+#define LLCAS_VERSION_MINOR 2
 
 typedef struct llcas_cas_options_s *llcas_cas_options_t;
 typedef struct llcas_cas_s *llcas_cas_t;

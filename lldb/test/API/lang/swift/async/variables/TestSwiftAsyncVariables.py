@@ -8,9 +8,10 @@ class TestSwiftAsyncVariables(lldbtest.TestBase):
 
     mydir = lldbtest.TestBase.compute_mydir(__file__)
 
-    @skipEmbeddedSwift
+    @skipEmbeddedSwiftOnLinux
+    @skipEmbeddedSwiftOnWindows
     @swiftTest
-    @skipIf(oslist=['windows', 'linux'])
+    @skipIf(oslist=['windows'])
     def test(self):
         """Test local variables in async functions"""
         self.build()

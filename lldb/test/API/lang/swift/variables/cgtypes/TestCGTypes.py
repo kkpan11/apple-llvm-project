@@ -20,9 +20,9 @@ import os
 
 
 class TestSwiftCoreGraphicsTypes(TestBase):
-    @skipEmbeddedSwift
+    @requireNotEmbeddedSwift
     @swiftTest
-    @skipUnlessDarwin
+    @requireDarwin
     def test_swift_coregraphics_types(self):
         """Test that we are able to properly format basic CG types"""
         self.build()

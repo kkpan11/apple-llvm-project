@@ -5,9 +5,9 @@ import lldbsuite.test.lldbutil as lldbutil
 
 class TestSwiftFoundationTypeCFStringRef(TestBase):
     NO_DEBUG_INFO_TESTCASE = True
-    @skipEmbeddedSwift
+    @requireNotEmbeddedSwift
     @swiftTest
-    @skipUnlessFoundation
+    @requireObjCFoundation
     def test(self):
         self.build()
         lldbutil.run_to_source_breakpoint(self, 'break here',

@@ -1,3 +1,3 @@
 SWIFT_SOURCES := main.swift
-SWIFTFLAGS_EXTRAS := -Xfrontend -enable-upcoming-feature -Xfrontend NonisolatedNonsendingByDefault
+SWIFT_CONCURRENCY := 1
 include Makefile.rules

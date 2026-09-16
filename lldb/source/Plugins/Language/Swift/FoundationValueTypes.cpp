@@ -66,20 +66,25 @@ bool lldb_private::formatters::swift::Date_SummaryProvider(
   tm *tm_date = gmtime(&epoch);
   if (!tm_date)
     return false;
-  std::string buffer(1024, 0);
-  if (strftime(&buffer[0], 1023, "%Z", tm_date) == 0)
-    return false;
-  stream.Printf("%04d-%02d-%02d %02d:%02d:%02d %s", tm_date->tm_year + 1900,
+  stream.Printf("%04d-%02d-%02d %02d:%02d:%02d UTC", tm_date->tm_year + 1900,
                 tm_date->tm_mon + 1, tm_date->tm_mday, tm_date->tm_hour,
-                tm_date->tm_min, tm_date->tm_sec, buffer.c_str());
+                tm_date->tm_min, tm_date->tm_sec);
   return true;
 }
 
 bool lldb_private::formatters::swift::NotificationName_SummaryProvider(
     ValueObject &valobj, Stream &stream, const TypeSummaryOptions &options) {
   static ConstString g__rawValue("_rawValue");
+  static ConstString g_rawValue("rawValue");
 
   ValueObjectSP underlying_name_sp(valobj.GetChildAtNamePath({g__rawValue}));
+  // On Darwin, NSNotification.Name is imported from Objective-C and uses the
+  // underscored `_rawValue` property. On non-Darwin platforms,
+  // Notification.Name is a native Swift struct declared in
+  // swift-corelibs-foundation, which uses the non-underscored `rawValue`
+  // property instead.
+  if (!underlying_name_sp)
+    underlying_name_sp = valobj.GetChildAtNamePath({g_rawValue});
 
   if (!underlying_name_sp)
     return false;
@@ -123,9 +128,18 @@ bool lldb_private::formatters::swift::SwiftURL_SummaryProvider(
   static ConstString g__baseURL("_baseURL");
   static ConstString g__parseInfo("_parseInfo");
   static ConstString g_urlString("urlString");
+  static ConstString g__info("_info");
+  static ConstString g_string("string");
 
+  // The relative URL string lives at a different path depending on which
+  // swift-foundation URL backing is in use:
+  //   _SwiftURL (RFC3986 parser):   _parseInfo.urlString
+  //   _URL      (Span-based, v2):   _info.string
+  // On non-Darwin platforms the backing is always _URL. Darwin can use either.
   ValueObjectSP rel_str_sp(
       valobj.GetChildAtNamePath({g__parseInfo, g_urlString}));
+  if (!rel_str_sp)
+    rel_str_sp = valobj.GetChildAtNamePath({g__info, g_string});
   if (!rel_str_sp)
     return false;
 
@@ -261,51 +275,39 @@ bool lldb_private::formatters::swift::Measurement_SummaryProvider(
 
 bool lldb_private::formatters::swift::UUID_SummaryProvider(
     ValueObject &valobj, Stream &stream, const TypeSummaryOptions &options) {
-  static ConstString g_uuid("uuid");
-
-  ValueObjectSP uuid_sp(valobj.GetChildAtNamePath({g_uuid}));
-  if (!uuid_sp)
+  // A UUID is 16 bytes stored in network order at offset 0, but the spelling of
+  // the storage has changed over time: it used to be a `uuid` property of the
+  // tuple type uuid_t, and is now a `_storage` property of type
+  // InlineArray<16, UInt8>. Read the bytes of the value itself to stay
+  // agnostic of that.
+  ValueObjectSP valobj_sp = valobj.GetNonSyntheticValue();
+  if (!valobj_sp)
     return false;
 
-  if (uuid_sp->GetNumChildrenIgnoringErrors() < 16)
+  // Since the bytes are interpreted positionally, verify that the storage is
+  // still one of the two known shapes. A third layout would otherwise be
+  // formatted as a plausible-looking but wrong UUID.
+  ValueObjectSP storage_sp = valobj_sp->GetChildAtIndex(0);
+  if (!storage_sp)
+    return false;
+  llvm::StringRef storage_name = storage_sp->GetName().GetStringRef();
+  if (storage_name != "uuid" && storage_name != "_storage")
     return false;
 
-  ValueObjectSP children[] = {
-      uuid_sp->GetChildAtIndex(0, true),  uuid_sp->GetChildAtIndex(1, true),
-      uuid_sp->GetChildAtIndex(2, true),  uuid_sp->GetChildAtIndex(3, true),
-      uuid_sp->GetChildAtIndex(4, true),  uuid_sp->GetChildAtIndex(5, true),
-      uuid_sp->GetChildAtIndex(6, true),  uuid_sp->GetChildAtIndex(7, true),
-      uuid_sp->GetChildAtIndex(8, true),  uuid_sp->GetChildAtIndex(9, true),
-      uuid_sp->GetChildAtIndex(10, true), uuid_sp->GetChildAtIndex(11, true),
-      uuid_sp->GetChildAtIndex(12, true), uuid_sp->GetChildAtIndex(13, true),
-      uuid_sp->GetChildAtIndex(14, true), uuid_sp->GetChildAtIndex(15, true)};
+  DataExtractor data;
+  Status error;
+  if (!valobj_sp->GetData(data, error) || error.Fail())
+    return false;
 
-  for (ValueObjectSP &child : children) {
-    if (!child)
-      return false;
-    child = child->GetQualifiedRepresentationIfAvailable(
-        lldb::eDynamicDontRunTarget, true);
-  }
+  const uint8_t *bytes = data.PeekData(0, 16);
+  if (!bytes)
+    return false;
 
-  const char *separator = "-";
-  stream.Printf("%2.2X%2.2X%2.2X%2.2X%s%2.2X%2.2X%s%2.2X%2.2X%s%2.2X%2.2X%s%2."
-                "2X%2.2X%2.2X%2.2X%2.2X%2.2X",
-                (uint8_t)children[0]->GetValueAsUnsigned(0),
-                (uint8_t)children[1]->GetValueAsUnsigned(0),
-                (uint8_t)children[2]->GetValueAsUnsigned(0),
-                (uint8_t)children[3]->GetValueAsUnsigned(0), separator,
-                (uint8_t)children[4]->GetValueAsUnsigned(0),
-                (uint8_t)children[5]->GetValueAsUnsigned(0), separator,
-                (uint8_t)children[6]->GetValueAsUnsigned(0),
-                (uint8_t)children[7]->GetValueAsUnsigned(0), separator,
-                (uint8_t)children[8]->GetValueAsUnsigned(0),
-                (uint8_t)children[9]->GetValueAsUnsigned(0), separator,
-                (uint8_t)children[10]->GetValueAsUnsigned(0),
-                (uint8_t)children[11]->GetValueAsUnsigned(0),
-                (uint8_t)children[12]->GetValueAsUnsigned(0),
-                (uint8_t)children[13]->GetValueAsUnsigned(0),
-                (uint8_t)children[14]->GetValueAsUnsigned(0),
-                (uint8_t)children[15]->GetValueAsUnsigned(0));
+  stream.Printf("%2.2X%2.2X%2.2X%2.2X-%2.2X%2.2X-%2.2X%2.2X-%2.2X%2.2X-%2.2X%2."
+                "2X%2.2X%2.2X%2.2X%2.2X",
+                bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5],
+                bytes[6], bytes[7], bytes[8], bytes[9], bytes[10], bytes[11],
+                bytes[12], bytes[13], bytes[14], bytes[15]);
 
   return true;
 }
@@ -329,6 +331,60 @@ bool lldb_private::formatters::swift::Data_SummaryProvider(
           lldb::eDynamicDontRunTarget, true);
   if (!representation_enum_sp)
     return false;
+
+  // swift-foundation (FoundationEssentials, used on Windows and Linux) replaces
+  // the _Representation enum with a struct:
+  //
+  //   struct _Representation {
+  //       var _storage: __DataStorage
+  //       var _slice: Range<Int>
+  //   }
+  //
+  // where the byte count is the size of _slice. Detect that layout and handle
+  // it before falling through to the legacy enum logic below.
+  {
+    CompilerType repr_type = representation_enum_sp->GetCompilerType();
+    const uint32_t repr_flags = repr_type.GetTypeInfo();
+    const bool is_struct = (repr_flags & lldb::eTypeIsStructUnion) &&
+                           !(repr_flags & lldb::eTypeIsEnumeration);
+
+    static constexpr llvm::StringLiteral g__storage("_storage");
+    static constexpr llvm::StringLiteral g__slice("_slice");
+    ValueObjectSP storage_sp =
+        representation_enum_sp->GetChildAtNamePath({g__storage});
+    ValueObjectSP slice_sp =
+        representation_enum_sp->GetChildAtNamePath({g__slice});
+    // Swift's Int is pointer-sized, so a Range<Int> is two pointers wide.
+    ProcessSP process_sp(valobj.GetProcessSP());
+    const uint64_t int_size = process_sp ? process_sp->GetAddressByteSize() : 0;
+    const uint64_t range_size = 2 * int_size;
+    if (!int_size)
+      return false;
+    const uint64_t slice_size =
+        slice_sp ? llvm::expectedToOptional(slice_sp->GetByteSize())
+                       .value_or(0)
+                 : 0;
+
+    // Identify the layout structurally: a struct (not the legacy enum) with
+    // both _storage and a _slice that is exactly two Ints wide.
+    if (is_struct && storage_sp && slice_sp && slice_size == range_size) {
+      DataExtractor extractor;
+      Status error;
+      if (slice_sp->GetData(extractor, error) < range_size || error.Fail())
+        return false;
+      lldb::offset_t offset = 0;
+      // GetAddress() reads a pointer-sized value.
+      int64_t lowerBound = (int64_t)extractor.GetAddress(&offset);
+      int64_t upperBound = (int64_t)extractor.GetAddress(&offset);
+
+      int64_t count = upperBound - lowerBound;
+      if (count == 1)
+        stream << "1 byte";
+      else
+        stream.Printf("%" PRId64 " bytes", count);
+      return true;
+    }
+  }
 
   // representation_case holds the name of the enum case we're looking at.
   ConstString representation_case(representation_enum_sp->GetValueAsCString());
@@ -533,35 +589,26 @@ bool lldb_private::formatters::swift::Data_SummaryProvider(
 bool lldb_private::formatters::swift::Decimal_SummaryProvider(
     ValueObject &valobj, Stream &stream, const TypeSummaryOptions &options) {
 
-  // The layout of the type is:
-  // public struct Decimal {
-  //   fileprivate var __exponent : Int8
-  //   fileprivate var __lengthAndFlags: UInt8
-  //   fileprivate var __reserved: UInt16
-  //   public var _mantissa: (UInt16, UInt16, UInt16, UInt16, UInt16, UInt16,
-  //   UInt16, UInt16)
-  // We do have to harcode the offset of the variables because they're
-  // fileprivate, but we can access `_mantissa` by name.
-
-  ProcessSP process(valobj.GetProcessSP());
-  if (!process)
-    return false;
+  // The value's bytes follow the NSDecimal C ABI on every platform:
+  //   __exponent: Int8 @0, __lengthAndFlags: UInt8 @1, __reserved: UInt16 @2,
+  //   _mantissa: (UInt16 x 8) @4.
 
   Status error;
   DataExtractor data_extractor;
   if (!valobj.GetData(data_extractor, error))
     return false;
 
+  // exponent @0 (Int8), lengthAndFlags @1 (UInt8), reserved @2 (UInt16),
+  // _mantissa @4 (UInt16 x 8).
+  const uint8_t num_children = 8;
+  if (data_extractor.GetByteSize() < 4 + num_children * 2)
+    return false;
+
   offset_t offset_ptr = 0;
-  int8_t exponent = data_extractor.GetU8(&offset_ptr);
+  int8_t exponent = (int8_t)data_extractor.GetU8(&offset_ptr);
   uint8_t length_and_flags = data_extractor.GetU8(&offset_ptr);
   uint8_t length = length_and_flags & 0xf;
   bool isNegative = length_and_flags & 0x10;
-
-  static constexpr llvm::StringLiteral g_mantissa("_mantissa");
-  ValueObjectSP mantissa_sp = valobj.GetChildAtNamePath({g_mantissa});
-  if (!mantissa_sp)
-    return false;
 
   // Easy case. length == 0 is either `NaN` or `0`.
   if (length == 0) {
@@ -572,23 +619,12 @@ bool lldb_private::formatters::swift::Decimal_SummaryProvider(
     return true;
   }
 
-  // Mantissa is represented as a tuple of 8 UInt16.
-  const uint8_t num_children = 8;
-  if (mantissa_sp->GetNumChildrenIgnoringErrors() != num_children)
-    return false;
-
+  // _mantissa is a tuple of 8 UInt16 at offset 4 (after the 2-byte reserved).
   std::vector<double> mantissa_elements;
-  for (int i = 0; i < 8; ++i) {
-    ValueObjectSP child_sp = mantissa_sp->GetChildAtIndex(i, true);
-    if (!child_sp)
-      return false;
-    static constexpr llvm::StringLiteral g_value("_value");
-    ValueObjectSP value_sp = child_sp->GetChildAtNamePath({g_value});
-    if (!value_sp)
-      return false;
-    auto val = value_sp->GetValueAsUnsigned(0) & 0xffff;
-    mantissa_elements.push_back(static_cast<double>(val));
-  }
+  offset_ptr = 4;
+  for (int i = 0; i < num_children; ++i)
+    mantissa_elements.push_back(
+        static_cast<double>(data_extractor.GetU16(&offset_ptr)));
 
   // Compute the value using mantissa and exponent
   double d = 0.0;
@@ -606,7 +642,7 @@ bool lldb_private::formatters::swift::Decimal_SummaryProvider(
   if (isNegative)
     d = -d;
 
-  stream.Printf("%lf\n", d);
+  stream.Printf("%lf", d);
   return true;
 }
 class URLComponentsSyntheticChildrenFrontEnd
@@ -709,7 +745,7 @@ public:
     return ID;
 #include "URLComponents.def"
     return llvm::createStringError("Type has no child named '%s'",
-                                   name.AsCString());
+                                   name.AsCString(""));
   }
 
 private:
@@ -720,7 +756,7 @@ private:
   }
 #include "URLComponents.def"
 
-  SyntheticChildrenFrontEnd::AutoPointer m_synth_frontend_up;
+  SyntheticChildrenFrontEnd::UniquePointer m_synth_frontend_up;
   std::unique_ptr<ObjCRuntimeSyntheticProvider> m_synth_backend_up;
   bool m_valid = false;
 #define COMPONENT(Name, PrettyName, ID) ValueObject *m_##Name;

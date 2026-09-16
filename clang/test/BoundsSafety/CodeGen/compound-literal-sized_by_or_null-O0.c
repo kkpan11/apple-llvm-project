@@ -2,8 +2,8 @@
 // REQUIRES: system-darwin
 
 // Note: Specifying the triple seems to be necessary for `update_cc_test_checks.py` to work
-// RUN: %clang_cc1 -O0 -triple arm64-apple-iphoneos -emit-llvm -fbounds-safety -fbounds-safety-bringup-missing-checks=compound_literal_init -Wno-bounds-attributes-init-list-side-effect -o - %s | FileCheck %s
-// RUN: %clang_cc1 -O0 -triple arm64-apple-iphoneos -emit-llvm -x objective-c -fexperimental-bounds-safety-objc -fbounds-safety -fbounds-safety-bringup-missing-checks=compound_literal_init -Wno-bounds-attributes-init-list-side-effect %s -o - | FileCheck %s
+// RUN: %clang_cc1 -O0 -triple arm64-apple-ios -emit-llvm -fbounds-safety -fbounds-safety-bringup-missing-checks=compound_literal_init -Wno-bounds-attributes-init-list-side-effect -o - %s | FileCheck %s
+// RUN: %clang_cc1 -O0 -triple arm64-apple-ios -emit-llvm -x objective-c -fexperimental-bounds-safety-objc -fbounds-safety -fbounds-safety-bringup-missing-checks=compound_literal_init -Wno-bounds-attributes-init-list-side-effect %s -o - | FileCheck %s
 
 #include <ptrcheck.h>
 
@@ -59,8 +59,8 @@ void receive_transparent_union(union TransparentUnion);
 //
 // =============================================================================
 
-// CHECK-LABEL: define dso_local void @assign_via_ptr(
-// CHECK-SAME: ptr noundef [[PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]], ptr noundef dead_on_return [[NEW_PTR:%.*]]) #[[ATTR0:[0-9]+]] {
+// CHECK-LABEL: define void @assign_via_ptr(
+// CHECK-SAME: ptr noundef [[PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]], ptr nofreeobj noundef align 8 dead_on_return dereferenceable(24) [[NEW_PTR:%.*]]) #[[ATTR0:[0-9]+]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[PTR_ADDR:%.*]] = alloca ptr, align 8
 // CHECK-NEXT:    [[NEW_COUNT_ADDR:%.*]] = alloca i32, align 4
@@ -126,8 +126,8 @@ void receive_transparent_union(union TransparentUnion);
 // CHECK-NEXT:    [[WIDE_PTR_UB29:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR28]], align 8, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB_ADDR30:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP25]], i32 0, i32 2, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB31:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR30]], align 8, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
 // CHECK-NEXT:    [[SUB_PTR_SUB:%.*]] = sub i64 [[SUB_PTR_LHS_CAST]], [[SUB_PTR_RHS_CAST]], !annotation [[META1]]
 // CHECK-NEXT:    [[CMP32:%.*]] = icmp sle i64 [[CONV]], [[SUB_PTR_SUB]], !annotation [[META1]]
 // CHECK-NEXT:    br i1 [[CMP32]], label %[[LAND_RHS34:.*]], label %[[LAND_END:.*]], !annotation [[META1]]
@@ -171,8 +171,8 @@ void assign_via_ptr(struct sbon* ptr, int new_count,
   };
 }
 
-// CHECK-LABEL: define dso_local void @assign_operator(
-// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef dead_on_return [[NEW_PTR:%.*]]) #[[ATTR0]] {
+// CHECK-LABEL: define void @assign_operator(
+// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr nofreeobj noundef align 8 dead_on_return dereferenceable(24) [[NEW_PTR:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[NEW_COUNT_ADDR:%.*]] = alloca i32, align 4
 // CHECK-NEXT:    [[NEW_PTR_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
@@ -240,8 +240,8 @@ void assign_via_ptr(struct sbon* ptr, int new_count,
 // CHECK-NEXT:    [[WIDE_PTR_UB29:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR28]], align 8, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB_ADDR30:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP25]], i32 0, i32 2, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB31:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR30]], align 8, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
 // CHECK-NEXT:    [[SUB_PTR_SUB:%.*]] = sub i64 [[SUB_PTR_LHS_CAST]], [[SUB_PTR_RHS_CAST]], !annotation [[META1]]
 // CHECK-NEXT:    [[CMP32:%.*]] = icmp sle i64 [[CONV]], [[SUB_PTR_SUB]], !annotation [[META1]]
 // CHECK-NEXT:    br i1 [[CMP32]], label %[[LAND_RHS34:.*]], label %[[LAND_END:.*]], !annotation [[META1]]
@@ -286,8 +286,8 @@ void assign_operator(int new_count, char* __bidi_indexable new_ptr) {
 }
 
 
-// CHECK-LABEL: define dso_local void @local_var_init(
-// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef dead_on_return [[NEW_PTR:%.*]]) #[[ATTR0]] {
+// CHECK-LABEL: define void @local_var_init(
+// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr nofreeobj noundef align 8 dead_on_return dereferenceable(24) [[NEW_PTR:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[NEW_COUNT_ADDR:%.*]] = alloca i32, align 4
 // CHECK-NEXT:    [[NEW_PTR_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
@@ -350,8 +350,8 @@ void assign_operator(int new_count, char* __bidi_indexable new_ptr) {
 // CHECK-NEXT:    [[WIDE_PTR_UB29:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR28]], align 8, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB_ADDR30:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP25]], i32 0, i32 2, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB31:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR30]], align 8, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
 // CHECK-NEXT:    [[SUB_PTR_SUB:%.*]] = sub i64 [[SUB_PTR_LHS_CAST]], [[SUB_PTR_RHS_CAST]], !annotation [[META1]]
 // CHECK-NEXT:    [[CMP32:%.*]] = icmp sle i64 [[CONV]], [[SUB_PTR_SUB]], !annotation [[META1]]
 // CHECK-NEXT:    br i1 [[CMP32]], label %[[LAND_RHS34:.*]], label %[[LAND_END:.*]], !annotation [[META1]]
@@ -393,8 +393,8 @@ void local_var_init(int new_count, char* __bidi_indexable new_ptr) {
   };
 }
 
-// CHECK-LABEL: define dso_local void @call_arg(
-// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef dead_on_return [[NEW_PTR:%.*]]) #[[ATTR0]] {
+// CHECK-LABEL: define void @call_arg(
+// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr nofreeobj noundef align 8 dead_on_return dereferenceable(24) [[NEW_PTR:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[NEW_COUNT_ADDR:%.*]] = alloca i32, align 4
 // CHECK-NEXT:    [[NEW_PTR_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
@@ -457,8 +457,8 @@ void local_var_init(int new_count, char* __bidi_indexable new_ptr) {
 // CHECK-NEXT:    [[WIDE_PTR_UB29:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR28]], align 8, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB_ADDR30:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP25]], i32 0, i32 2, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB31:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR30]], align 8, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
 // CHECK-NEXT:    [[SUB_PTR_SUB:%.*]] = sub i64 [[SUB_PTR_LHS_CAST]], [[SUB_PTR_RHS_CAST]], !annotation [[META1]]
 // CHECK-NEXT:    [[CMP32:%.*]] = icmp sle i64 [[CONV]], [[SUB_PTR_SUB]], !annotation [[META1]]
 // CHECK-NEXT:    br i1 [[CMP32]], label %[[LAND_RHS34:.*]], label %[[LAND_END:.*]], !annotation [[META1]]
@@ -502,8 +502,8 @@ void call_arg(int new_count, char* __bidi_indexable new_ptr) {
   });
 }
 
-// CHECK-LABEL: define dso_local [2 x i64] @return_sbon(
-// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef dead_on_return [[NEW_PTR:%.*]]) #[[ATTR0]] {
+// CHECK-LABEL: define [2 x i64] @return_sbon(
+// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr nofreeobj noundef align 8 dead_on_return dereferenceable(24) [[NEW_PTR:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[RETVAL:%.*]] = alloca [[STRUCT_SBON:%.*]], align 8
 // CHECK-NEXT:    [[NEW_COUNT_ADDR:%.*]] = alloca i32, align 4
@@ -566,8 +566,8 @@ void call_arg(int new_count, char* __bidi_indexable new_ptr) {
 // CHECK-NEXT:    [[WIDE_PTR_UB29:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR28]], align 8, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB_ADDR30:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP25]], i32 0, i32 2, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB31:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR30]], align 8, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
 // CHECK-NEXT:    [[SUB_PTR_SUB:%.*]] = sub i64 [[SUB_PTR_LHS_CAST]], [[SUB_PTR_RHS_CAST]], !annotation [[META1]]
 // CHECK-NEXT:    [[CMP32:%.*]] = icmp sle i64 [[CONV]], [[SUB_PTR_SUB]], !annotation [[META1]]
 // CHECK-NEXT:    br i1 [[CMP32]], label %[[LAND_RHS34:.*]], label %[[LAND_END:.*]], !annotation [[META1]]
@@ -610,8 +610,8 @@ struct sbon return_sbon(int new_count, char* __bidi_indexable new_ptr) {
   };
 }
 
-// CHECK-LABEL: define dso_local void @construct_not_used(
-// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef dead_on_return [[NEW_PTR:%.*]]) #[[ATTR0]] {
+// CHECK-LABEL: define void @construct_not_used(
+// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr nofreeobj noundef align 8 dead_on_return dereferenceable(24) [[NEW_PTR:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[NEW_COUNT_ADDR:%.*]] = alloca i32, align 4
 // CHECK-NEXT:    [[NEW_PTR_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
@@ -674,8 +674,8 @@ struct sbon return_sbon(int new_count, char* __bidi_indexable new_ptr) {
 // CHECK-NEXT:    [[WIDE_PTR_UB29:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR28]], align 8, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB_ADDR30:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP25]], i32 0, i32 2, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB31:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR30]], align 8, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
 // CHECK-NEXT:    [[SUB_PTR_SUB:%.*]] = sub i64 [[SUB_PTR_LHS_CAST]], [[SUB_PTR_RHS_CAST]], !annotation [[META1]]
 // CHECK-NEXT:    [[CMP32:%.*]] = icmp sle i64 [[CONV]], [[SUB_PTR_SUB]], !annotation [[META1]]
 // CHECK-NEXT:    br i1 [[CMP32]], label %[[LAND_RHS34:.*]], label %[[LAND_END:.*]], !annotation [[META1]]
@@ -717,7 +717,7 @@ void construct_not_used(int new_count, char* __bidi_indexable new_ptr) {
   };
 }
 
-// CHECK-LABEL: define dso_local void @assign_via_ptr_nullptr(
+// CHECK-LABEL: define void @assign_via_ptr_nullptr(
 // CHECK-SAME: ptr noundef [[PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[PTR_ADDR:%.*]] = alloca ptr, align 8
@@ -743,8 +743,8 @@ void assign_via_ptr_nullptr(struct sbon* ptr, int new_count) {
   };
 }
 
-// CHECK-LABEL: define dso_local void @assign_via_ptr_nested(
-// CHECK-SAME: ptr noundef [[PTR:%.*]], ptr noundef dead_on_return [[NEW_PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]]) #[[ATTR0]] {
+// CHECK-LABEL: define void @assign_via_ptr_nested(
+// CHECK-SAME: ptr noundef [[PTR:%.*]], ptr nofreeobj noundef align 8 dead_on_return dereferenceable(24) [[NEW_PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[PTR_ADDR:%.*]] = alloca ptr, align 8
 // CHECK-NEXT:    [[NEW_PTR_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
@@ -811,8 +811,8 @@ void assign_via_ptr_nullptr(struct sbon* ptr, int new_count) {
 // CHECK-NEXT:    [[WIDE_PTR_UB29:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR28]], align 8, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB_ADDR30:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP25]], i32 0, i32 2, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB31:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR30]], align 8, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
 // CHECK-NEXT:    [[SUB_PTR_SUB:%.*]] = sub i64 [[SUB_PTR_LHS_CAST]], [[SUB_PTR_RHS_CAST]], !annotation [[META1]]
 // CHECK-NEXT:    [[CMP32:%.*]] = icmp sle i64 [[CONV]], [[SUB_PTR_SUB]], !annotation [[META1]]
 // CHECK-NEXT:    br i1 [[CMP32]], label %[[LAND_RHS34:.*]], label %[[LAND_END:.*]], !annotation [[META1]]
@@ -861,8 +861,8 @@ void assign_via_ptr_nested(struct nested_sbon* ptr,
   };
 }
 
-// CHECK-LABEL: define dso_local void @assign_via_ptr_nested_v2(
-// CHECK-SAME: ptr noundef [[PTR:%.*]], ptr noundef dead_on_return [[NEW_PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]]) #[[ATTR0]] {
+// CHECK-LABEL: define void @assign_via_ptr_nested_v2(
+// CHECK-SAME: ptr noundef [[PTR:%.*]], ptr nofreeobj noundef align 8 dead_on_return dereferenceable(24) [[NEW_PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[PTR_ADDR:%.*]] = alloca ptr, align 8
 // CHECK-NEXT:    [[NEW_PTR_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
@@ -929,8 +929,8 @@ void assign_via_ptr_nested(struct nested_sbon* ptr,
 // CHECK-NEXT:    [[WIDE_PTR_UB29:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR28]], align 8, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB_ADDR30:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP25]], i32 0, i32 2, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB31:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR30]], align 8, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
 // CHECK-NEXT:    [[SUB_PTR_SUB:%.*]] = sub i64 [[SUB_PTR_LHS_CAST]], [[SUB_PTR_RHS_CAST]], !annotation [[META1]]
 // CHECK-NEXT:    [[CMP32:%.*]] = icmp sle i64 [[CONV]], [[SUB_PTR_SUB]], !annotation [[META1]]
 // CHECK-NEXT:    br i1 [[CMP32]], label %[[LAND_RHS34:.*]], label %[[LAND_END:.*]], !annotation [[META1]]
@@ -979,8 +979,8 @@ void assign_via_ptr_nested_v2(struct nested_sbon* ptr,
   };
 }
 
-// CHECK-LABEL: define dso_local void @assign_via_ptr_nested_v3(
-// CHECK-SAME: ptr noundef [[PTR:%.*]], ptr noundef dead_on_return [[NEW_PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]]) #[[ATTR0]] {
+// CHECK-LABEL: define void @assign_via_ptr_nested_v3(
+// CHECK-SAME: ptr noundef [[PTR:%.*]], ptr nofreeobj noundef align 8 dead_on_return dereferenceable(24) [[NEW_PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[PTR_ADDR:%.*]] = alloca ptr, align 8
 // CHECK-NEXT:    [[NEW_PTR_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
@@ -1054,8 +1054,8 @@ void assign_via_ptr_nested_v2(struct nested_sbon* ptr,
 // CHECK-NEXT:    [[WIDE_PTR_UB29:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR28]], align 8, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB_ADDR30:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP25]], i32 0, i32 2, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB31:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR30]], align 8, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
 // CHECK-NEXT:    [[SUB_PTR_SUB:%.*]] = sub i64 [[SUB_PTR_LHS_CAST]], [[SUB_PTR_RHS_CAST]], !annotation [[META1]]
 // CHECK-NEXT:    [[CMP32:%.*]] = icmp sle i64 [[CONV]], [[SUB_PTR_SUB]], !annotation [[META1]]
 // CHECK-NEXT:    br i1 [[CMP32]], label %[[LAND_RHS34:.*]], label %[[LAND_END:.*]], !annotation [[META1]]
@@ -1124,8 +1124,8 @@ void assign_via_ptr_nested_v2(struct nested_sbon* ptr,
 // CHECK-NEXT:    [[WIDE_PTR_UB81:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR80]], align 8, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB_ADDR82:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP77]], i32 0, i32 2, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB83:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR82]], align 8, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_LHS_CAST84:%.*]] = ptrtoint ptr [[WIDE_PTR_UB76]] to i64, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_RHS_CAST85:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR79]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_LHS_CAST84:%.*]] = ptrtoaddr ptr [[WIDE_PTR_UB76]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_RHS_CAST85:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR79]] to i64, !annotation [[META1]]
 // CHECK-NEXT:    [[SUB_PTR_SUB86:%.*]] = sub i64 [[SUB_PTR_LHS_CAST84]], [[SUB_PTR_RHS_CAST85]], !annotation [[META1]]
 // CHECK-NEXT:    [[CMP87:%.*]] = icmp sle i64 [[CONV73]], [[SUB_PTR_SUB86]], !annotation [[META1]]
 // CHECK-NEXT:    br i1 [[CMP87]], label %[[LAND_RHS89:.*]], label %[[LAND_END92:.*]], !annotation [[META1]]
@@ -1185,8 +1185,8 @@ void assign_via_ptr_nested_v3(struct nested_and_outer_sbon* ptr,
   };
 }
 
-// CHECK-LABEL: define dso_local void @array_of_struct_init(
-// CHECK-SAME: ptr noundef dead_on_return [[NEW_PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]]) #[[ATTR0]] {
+// CHECK-LABEL: define void @array_of_struct_init(
+// CHECK-SAME: ptr nofreeobj noundef align 8 dead_on_return dereferenceable(24) [[NEW_PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[NEW_PTR_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
 // CHECK-NEXT:    [[NEW_COUNT_ADDR:%.*]] = alloca i32, align 4
@@ -1251,8 +1251,8 @@ void assign_via_ptr_nested_v3(struct nested_and_outer_sbon* ptr,
 // CHECK-NEXT:    [[WIDE_PTR_UB29:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR28]], align 8, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB_ADDR30:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP25]], i32 0, i32 2, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB31:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR30]], align 8, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
 // CHECK-NEXT:    [[SUB_PTR_SUB:%.*]] = sub i64 [[SUB_PTR_LHS_CAST]], [[SUB_PTR_RHS_CAST]], !annotation [[META1]]
 // CHECK-NEXT:    [[CMP32:%.*]] = icmp sle i64 [[CONV]], [[SUB_PTR_SUB]], !annotation [[META1]]
 // CHECK-NEXT:    br i1 [[CMP32]], label %[[LAND_RHS34:.*]], label %[[LAND_END:.*]], !annotation [[META1]]
@@ -1347,8 +1347,8 @@ void array_of_struct_init(char* __bidi_indexable new_ptr,
 }
 
 
-// CHECK-LABEL: define dso_local void @assign_via_ptr_other_data_side_effect(
-// CHECK-SAME: ptr noundef [[PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]], ptr noundef dead_on_return [[NEW_PTR:%.*]]) #[[ATTR0]] {
+// CHECK-LABEL: define void @assign_via_ptr_other_data_side_effect(
+// CHECK-SAME: ptr noundef [[PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]], ptr nofreeobj noundef align 8 dead_on_return dereferenceable(24) [[NEW_PTR:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[PTR_ADDR:%.*]] = alloca ptr, align 8
 // CHECK-NEXT:    [[NEW_COUNT_ADDR:%.*]] = alloca i32, align 4
@@ -1414,8 +1414,8 @@ void array_of_struct_init(char* __bidi_indexable new_ptr,
 // CHECK-NEXT:    [[WIDE_PTR_UB29:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR28]], align 8, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB_ADDR30:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP25]], i32 0, i32 2, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB31:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR30]], align 8, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
 // CHECK-NEXT:    [[SUB_PTR_SUB:%.*]] = sub i64 [[SUB_PTR_LHS_CAST]], [[SUB_PTR_RHS_CAST]], !annotation [[META1]]
 // CHECK-NEXT:    [[CMP32:%.*]] = icmp sle i64 [[CONV]], [[SUB_PTR_SUB]], !annotation [[META1]]
 // CHECK-NEXT:    br i1 [[CMP32]], label %[[LAND_RHS34:.*]], label %[[LAND_END:.*]], !annotation [[META1]]
@@ -1467,8 +1467,8 @@ void assign_via_ptr_other_data_side_effect(struct sbon_with_other_data* ptr,
   };
 }
 
-// CHECK-LABEL: define dso_local void @assign_via_ptr_other_data_side_effect_zero_ptr(
-// CHECK-SAME: ptr noundef [[PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]], ptr noundef dead_on_return [[NEW_PTR:%.*]]) #[[ATTR0]] {
+// CHECK-LABEL: define void @assign_via_ptr_other_data_side_effect_zero_ptr(
+// CHECK-SAME: ptr noundef [[PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]], ptr nofreeobj noundef align 8 dead_on_return dereferenceable(24) [[NEW_PTR:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[PTR_ADDR:%.*]] = alloca ptr, align 8
 // CHECK-NEXT:    [[NEW_COUNT_ADDR:%.*]] = alloca i32, align 4
@@ -1504,8 +1504,8 @@ void assign_via_ptr_other_data_side_effect_zero_ptr(struct sbon_with_other_data*
   };
 }
 
-// CHECK-LABEL: define dso_local void @call_arg_transparent_union(
-// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef dead_on_return [[NEW_PTR:%.*]]) #[[ATTR0]] {
+// CHECK-LABEL: define void @call_arg_transparent_union(
+// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr nofreeobj noundef align 8 dead_on_return dereferenceable(24) [[NEW_PTR:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[NEW_COUNT_ADDR:%.*]] = alloca i32, align 4
 // CHECK-NEXT:    [[NEW_PTR_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
@@ -1568,8 +1568,8 @@ void assign_via_ptr_other_data_side_effect_zero_ptr(struct sbon_with_other_data*
 // CHECK-NEXT:    [[WIDE_PTR_UB29:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR28]], align 8, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB_ADDR30:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP25]], i32 0, i32 2, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB31:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR30]], align 8, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
 // CHECK-NEXT:    [[SUB_PTR_SUB:%.*]] = sub i64 [[SUB_PTR_LHS_CAST]], [[SUB_PTR_RHS_CAST]], !annotation [[META1]]
 // CHECK-NEXT:    [[CMP32:%.*]] = icmp sle i64 [[CONV]], [[SUB_PTR_SUB]], !annotation [[META1]]
 // CHECK-NEXT:    br i1 [[CMP32]], label %[[LAND_RHS34:.*]], label %[[LAND_END:.*]], !annotation [[META1]]
@@ -1606,7 +1606,7 @@ void assign_via_ptr_other_data_side_effect_zero_ptr(struct sbon_with_other_data*
 // CHECK-NEXT:    store i32 0, ptr [[OTHER]], align 8
 // CHECK-NEXT:    [[TMP5:%.*]] = getelementptr i8, ptr [[AGG_TMP]], i64 20
 // CHECK-NEXT:    call void @llvm.memset.p0.i64(ptr align 4 [[TMP5]], i8 0, i64 4, i1 false)
-// CHECK-NEXT:    call void @receive_transparent_union(ptr noundef dead_on_return [[AGG_TMP]])
+// CHECK-NEXT:    call void @receive_transparent_union(ptr nofreeobj noundef align 8 dead_on_return dereferenceable(24) [[AGG_TMP]])
 // CHECK-NEXT:    ret void
 //
 void call_arg_transparent_union(int new_count,
@@ -1620,8 +1620,8 @@ void call_arg_transparent_union(int new_count,
   );
 }
 
-// CHECK-LABEL: define dso_local void @call_arg_transparent_union_untransparently(
-// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef dead_on_return [[NEW_PTR:%.*]]) #[[ATTR0]] {
+// CHECK-LABEL: define void @call_arg_transparent_union_untransparently(
+// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr nofreeobj noundef align 8 dead_on_return dereferenceable(24) [[NEW_PTR:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[NEW_COUNT_ADDR:%.*]] = alloca i32, align 4
 // CHECK-NEXT:    [[NEW_PTR_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
@@ -1685,8 +1685,8 @@ void call_arg_transparent_union(int new_count,
 // CHECK-NEXT:    [[WIDE_PTR_UB29:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR28]], align 8, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB_ADDR30:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP25]], i32 0, i32 2, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB31:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR30]], align 8, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
 // CHECK-NEXT:    [[SUB_PTR_SUB:%.*]] = sub i64 [[SUB_PTR_LHS_CAST]], [[SUB_PTR_RHS_CAST]], !annotation [[META1]]
 // CHECK-NEXT:    [[CMP32:%.*]] = icmp sle i64 [[CONV]], [[SUB_PTR_SUB]], !annotation [[META1]]
 // CHECK-NEXT:    br i1 [[CMP32]], label %[[LAND_RHS34:.*]], label %[[LAND_END:.*]], !annotation [[META1]]
@@ -1724,7 +1724,7 @@ void call_arg_transparent_union(int new_count,
 // CHECK-NEXT:    [[TMP5:%.*]] = getelementptr i8, ptr [[DOTCOMPOUNDLITERAL]], i64 20
 // CHECK-NEXT:    call void @llvm.memset.p0.i64(ptr align 4 [[TMP5]], i8 0, i64 4, i1 false)
 // CHECK-NEXT:    call void @llvm.memcpy.p0.p0.i64(ptr align 8 [[BYVAL_TEMP]], ptr align 8 [[DOTCOMPOUNDLITERAL]], i64 24, i1 false)
-// CHECK-NEXT:    call void @receive_transparent_union(ptr noundef dead_on_return [[BYVAL_TEMP]])
+// CHECK-NEXT:    call void @receive_transparent_union(ptr nofreeobj noundef align 8 dead_on_return dereferenceable(24) [[BYVAL_TEMP]])
 // CHECK-NEXT:    ret void
 //
 void call_arg_transparent_union_untransparently(int new_count,
@@ -1744,7 +1744,7 @@ void call_arg_transparent_union_untransparently(int new_count,
 // Tests with __sized_by_or_null source ptr
 //
 // =============================================================================
-// CHECK-LABEL: define dso_local void @assign_via_ptr_from_ptr(
+// CHECK-LABEL: define void @assign_via_ptr_from_ptr(
 // CHECK-SAME: ptr noundef [[PTR:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[PTR_ADDR:%.*]] = alloca ptr, align 8
@@ -1836,8 +1836,8 @@ void call_arg_transparent_union_untransparently(int new_count,
 // CHECK-NEXT:    [[WIDE_PTR_UB30:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR29]], align 8, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB_ADDR31:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP26]], i32 0, i32 2, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB32:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR31]], align 8, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_UB25]] to i64, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR28]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_UB25]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR28]] to i64, !annotation [[META1]]
 // CHECK-NEXT:    [[SUB_PTR_SUB:%.*]] = sub i64 [[SUB_PTR_LHS_CAST]], [[SUB_PTR_RHS_CAST]], !annotation [[META1]]
 // CHECK-NEXT:    [[CMP33:%.*]] = icmp sle i64 [[CONV]], [[SUB_PTR_SUB]], !annotation [[META1]]
 // CHECK-NEXT:    br i1 [[CMP33]], label %[[LAND_RHS35:.*]], label %[[LAND_END:.*]], !annotation [[META1]]
@@ -1880,7 +1880,7 @@ void assign_via_ptr_from_ptr(struct sbon* ptr) {
   };
 }
 
-// CHECK-LABEL: define dso_local void @assign_via_ptr_from_sbon(
+// CHECK-LABEL: define void @assign_via_ptr_from_sbon(
 // CHECK-SAME: ptr noundef [[PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]], ptr noundef [[NEW_PTR:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[PTR_ADDR:%.*]] = alloca ptr, align 8
@@ -1971,8 +1971,8 @@ void assign_via_ptr_from_ptr(struct sbon* ptr) {
 // CHECK-NEXT:    [[WIDE_PTR_UB29:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR28]], align 8, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB_ADDR30:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP25]], i32 0, i32 2, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB31:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR30]], align 8, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
 // CHECK-NEXT:    [[SUB_PTR_SUB:%.*]] = sub i64 [[SUB_PTR_LHS_CAST]], [[SUB_PTR_RHS_CAST]], !annotation [[META1]]
 // CHECK-NEXT:    [[CMP32:%.*]] = icmp sle i64 [[CONV]], [[SUB_PTR_SUB]], !annotation [[META1]]
 // CHECK-NEXT:    br i1 [[CMP32]], label %[[LAND_RHS34:.*]], label %[[LAND_END:.*]], !annotation [[META1]]
@@ -2016,7 +2016,7 @@ void assign_via_ptr_from_sbon(struct sbon* ptr, int new_count,
   };
 }
 
-// CHECK-LABEL: define dso_local void @assign_operator_from_sbon(
+// CHECK-LABEL: define void @assign_operator_from_sbon(
 // CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef [[NEW_PTR:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[NEW_COUNT_ADDR:%.*]] = alloca i32, align 4
@@ -2109,8 +2109,8 @@ void assign_via_ptr_from_sbon(struct sbon* ptr, int new_count,
 // CHECK-NEXT:    [[WIDE_PTR_UB29:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR28]], align 8, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB_ADDR30:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP25]], i32 0, i32 2, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB31:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR30]], align 8, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
 // CHECK-NEXT:    [[SUB_PTR_SUB:%.*]] = sub i64 [[SUB_PTR_LHS_CAST]], [[SUB_PTR_RHS_CAST]], !annotation [[META1]]
 // CHECK-NEXT:    [[CMP32:%.*]] = icmp sle i64 [[CONV]], [[SUB_PTR_SUB]], !annotation [[META1]]
 // CHECK-NEXT:    br i1 [[CMP32]], label %[[LAND_RHS34:.*]], label %[[LAND_END:.*]], !annotation [[META1]]
@@ -2156,7 +2156,7 @@ void assign_operator_from_sbon(int new_count,
 }
 
 
-// CHECK-LABEL: define dso_local void @local_var_init_from_sbon(
+// CHECK-LABEL: define void @local_var_init_from_sbon(
 // CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef [[NEW_PTR:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[NEW_COUNT_ADDR:%.*]] = alloca i32, align 4
@@ -2244,8 +2244,8 @@ void assign_operator_from_sbon(int new_count,
 // CHECK-NEXT:    [[WIDE_PTR_UB29:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR28]], align 8, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB_ADDR30:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP25]], i32 0, i32 2, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB31:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR30]], align 8, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
 // CHECK-NEXT:    [[SUB_PTR_SUB:%.*]] = sub i64 [[SUB_PTR_LHS_CAST]], [[SUB_PTR_RHS_CAST]], !annotation [[META1]]
 // CHECK-NEXT:    [[CMP32:%.*]] = icmp sle i64 [[CONV]], [[SUB_PTR_SUB]], !annotation [[META1]]
 // CHECK-NEXT:    br i1 [[CMP32]], label %[[LAND_RHS34:.*]], label %[[LAND_END:.*]], !annotation [[META1]]
@@ -2288,7 +2288,7 @@ void local_var_init_from_sbon(int new_count,
   };
 }
 
-// CHECK-LABEL: define dso_local void @call_arg_from_sbon(
+// CHECK-LABEL: define void @call_arg_from_sbon(
 // CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef [[NEW_PTR:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[NEW_COUNT_ADDR:%.*]] = alloca i32, align 4
@@ -2376,8 +2376,8 @@ void local_var_init_from_sbon(int new_count,
 // CHECK-NEXT:    [[WIDE_PTR_UB29:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR28]], align 8, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB_ADDR30:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP25]], i32 0, i32 2, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB31:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR30]], align 8, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
 // CHECK-NEXT:    [[SUB_PTR_SUB:%.*]] = sub i64 [[SUB_PTR_LHS_CAST]], [[SUB_PTR_RHS_CAST]], !annotation [[META1]]
 // CHECK-NEXT:    [[CMP32:%.*]] = icmp sle i64 [[CONV]], [[SUB_PTR_SUB]], !annotation [[META1]]
 // CHECK-NEXT:    br i1 [[CMP32]], label %[[LAND_RHS34:.*]], label %[[LAND_END:.*]], !annotation [[META1]]
@@ -2422,7 +2422,7 @@ void call_arg_from_sbon(int new_count,
   });
 }
 
-// CHECK-LABEL: define dso_local [2 x i64] @return_sbon_from_sbon(
+// CHECK-LABEL: define [2 x i64] @return_sbon_from_sbon(
 // CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef [[NEW_PTR:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[RETVAL:%.*]] = alloca [[STRUCT_SBON:%.*]], align 8
@@ -2510,8 +2510,8 @@ void call_arg_from_sbon(int new_count,
 // CHECK-NEXT:    [[WIDE_PTR_UB29:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR28]], align 8, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB_ADDR30:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP25]], i32 0, i32 2, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB31:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR30]], align 8, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
 // CHECK-NEXT:    [[SUB_PTR_SUB:%.*]] = sub i64 [[SUB_PTR_LHS_CAST]], [[SUB_PTR_RHS_CAST]], !annotation [[META1]]
 // CHECK-NEXT:    [[CMP32:%.*]] = icmp sle i64 [[CONV]], [[SUB_PTR_SUB]], !annotation [[META1]]
 // CHECK-NEXT:    br i1 [[CMP32]], label %[[LAND_RHS34:.*]], label %[[LAND_END:.*]], !annotation [[META1]]
@@ -2555,7 +2555,7 @@ struct sbon return_sbon_from_sbon(int new_count,
   };
 }
 
-// CHECK-LABEL: define dso_local void @construct_not_used_from_sbon(
+// CHECK-LABEL: define void @construct_not_used_from_sbon(
 // CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef [[NEW_PTR:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[NEW_COUNT_ADDR:%.*]] = alloca i32, align 4
@@ -2643,8 +2643,8 @@ struct sbon return_sbon_from_sbon(int new_count,
 // CHECK-NEXT:    [[WIDE_PTR_UB29:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR28]], align 8, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB_ADDR30:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP25]], i32 0, i32 2, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB31:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR30]], align 8, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
 // CHECK-NEXT:    [[SUB_PTR_SUB:%.*]] = sub i64 [[SUB_PTR_LHS_CAST]], [[SUB_PTR_RHS_CAST]], !annotation [[META1]]
 // CHECK-NEXT:    [[CMP32:%.*]] = icmp sle i64 [[CONV]], [[SUB_PTR_SUB]], !annotation [[META1]]
 // CHECK-NEXT:    br i1 [[CMP32]], label %[[LAND_RHS34:.*]], label %[[LAND_END:.*]], !annotation [[META1]]
@@ -2687,7 +2687,7 @@ void construct_not_used_from_sbon(int new_count,
   };
 }
 
-// CHECK-LABEL: define dso_local void @assign_via_ptr_nested_from_sbon(
+// CHECK-LABEL: define void @assign_via_ptr_nested_from_sbon(
 // CHECK-SAME: ptr noundef [[PTR:%.*]], ptr noundef [[NEW_PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[PTR_ADDR:%.*]] = alloca ptr, align 8
@@ -2779,8 +2779,8 @@ void construct_not_used_from_sbon(int new_count,
 // CHECK-NEXT:    [[WIDE_PTR_UB29:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR28]], align 8, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB_ADDR30:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP25]], i32 0, i32 2, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB31:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR30]], align 8, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
 // CHECK-NEXT:    [[SUB_PTR_SUB:%.*]] = sub i64 [[SUB_PTR_LHS_CAST]], [[SUB_PTR_RHS_CAST]], !annotation [[META1]]
 // CHECK-NEXT:    [[CMP32:%.*]] = icmp sle i64 [[CONV]], [[SUB_PTR_SUB]], !annotation [[META1]]
 // CHECK-NEXT:    br i1 [[CMP32]], label %[[LAND_RHS34:.*]], label %[[LAND_END:.*]], !annotation [[META1]]
@@ -2829,7 +2829,7 @@ void assign_via_ptr_nested_from_sbon(struct nested_sbon* ptr,
   };
 }
 
-// CHECK-LABEL: define dso_local void @assign_via_ptr_nested_v2_from_sbon(
+// CHECK-LABEL: define void @assign_via_ptr_nested_v2_from_sbon(
 // CHECK-SAME: ptr noundef [[PTR:%.*]], ptr noundef [[NEW_PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[PTR_ADDR:%.*]] = alloca ptr, align 8
@@ -2921,8 +2921,8 @@ void assign_via_ptr_nested_from_sbon(struct nested_sbon* ptr,
 // CHECK-NEXT:    [[WIDE_PTR_UB29:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR28]], align 8, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB_ADDR30:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP25]], i32 0, i32 2, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB31:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR30]], align 8, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
 // CHECK-NEXT:    [[SUB_PTR_SUB:%.*]] = sub i64 [[SUB_PTR_LHS_CAST]], [[SUB_PTR_RHS_CAST]], !annotation [[META1]]
 // CHECK-NEXT:    [[CMP32:%.*]] = icmp sle i64 [[CONV]], [[SUB_PTR_SUB]], !annotation [[META1]]
 // CHECK-NEXT:    br i1 [[CMP32]], label %[[LAND_RHS34:.*]], label %[[LAND_END:.*]], !annotation [[META1]]
@@ -2971,7 +2971,7 @@ void assign_via_ptr_nested_v2_from_sbon(struct nested_sbon* ptr,
   };
 }
 
-// CHECK-LABEL: define dso_local void @array_of_struct_init_from_sbon(
+// CHECK-LABEL: define void @array_of_struct_init_from_sbon(
 // CHECK-SAME: ptr noundef [[NEW_PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[NEW_PTR_ADDR:%.*]] = alloca ptr, align 8
@@ -3061,8 +3061,8 @@ void assign_via_ptr_nested_v2_from_sbon(struct nested_sbon* ptr,
 // CHECK-NEXT:    [[WIDE_PTR_UB29:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR28]], align 8, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB_ADDR30:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP25]], i32 0, i32 2, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB31:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR30]], align 8, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
 // CHECK-NEXT:    [[SUB_PTR_SUB:%.*]] = sub i64 [[SUB_PTR_LHS_CAST]], [[SUB_PTR_RHS_CAST]], !annotation [[META1]]
 // CHECK-NEXT:    [[CMP32:%.*]] = icmp sle i64 [[CONV]], [[SUB_PTR_SUB]], !annotation [[META1]]
 // CHECK-NEXT:    br i1 [[CMP32]], label %[[LAND_RHS34:.*]], label %[[LAND_END:.*]], !annotation [[META1]]
@@ -3156,7 +3156,7 @@ void array_of_struct_init_from_sbon(char* __sized_by_or_null(new_count) new_ptr,
   consume_sbon_arr(&arr);
 }
 
-// CHECK-LABEL: define dso_local void @assign_via_ptr_other_data_side_effect_from_sbon(
+// CHECK-LABEL: define void @assign_via_ptr_other_data_side_effect_from_sbon(
 // CHECK-SAME: ptr noundef [[PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]], ptr noundef [[NEW_PTR:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[PTR_ADDR:%.*]] = alloca ptr, align 8
@@ -3247,8 +3247,8 @@ void array_of_struct_init_from_sbon(char* __sized_by_or_null(new_count) new_ptr,
 // CHECK-NEXT:    [[WIDE_PTR_UB29:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR28]], align 8, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB_ADDR30:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP25]], i32 0, i32 2, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB31:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR30]], align 8, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
 // CHECK-NEXT:    [[SUB_PTR_SUB:%.*]] = sub i64 [[SUB_PTR_LHS_CAST]], [[SUB_PTR_RHS_CAST]], !annotation [[META1]]
 // CHECK-NEXT:    [[CMP32:%.*]] = icmp sle i64 [[CONV]], [[SUB_PTR_SUB]], !annotation [[META1]]
 // CHECK-NEXT:    br i1 [[CMP32]], label %[[LAND_RHS34:.*]], label %[[LAND_END:.*]], !annotation [[META1]]
@@ -3300,7 +3300,7 @@ void assign_via_ptr_other_data_side_effect_from_sbon(struct sbon_with_other_data
   };
 }
 
-// CHECK-LABEL: define dso_local void @assign_via_ptr_other_data_side_effect_zero_ptr_from_sbon(
+// CHECK-LABEL: define void @assign_via_ptr_other_data_side_effect_zero_ptr_from_sbon(
 // CHECK-SAME: ptr noundef [[PTR:%.*]], i32 noundef [[NEW_COUNT:%.*]], ptr noundef [[NEW_PTR:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[PTR_ADDR:%.*]] = alloca ptr, align 8
@@ -3337,8 +3337,8 @@ void assign_via_ptr_other_data_side_effect_zero_ptr_from_sbon(struct sbon_with_o
   };
 }
 
-// CHECK-LABEL: define dso_local void @call_arg_transparent_union_from_sbon(
-// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef dead_on_return [[NEW_PTR:%.*]]) #[[ATTR0]] {
+// CHECK-LABEL: define void @call_arg_transparent_union_from_sbon(
+// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr nofreeobj noundef align 8 dead_on_return dereferenceable(24) [[NEW_PTR:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[NEW_COUNT_ADDR:%.*]] = alloca i32, align 4
 // CHECK-NEXT:    [[NEW_PTR_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
@@ -3401,8 +3401,8 @@ void assign_via_ptr_other_data_side_effect_zero_ptr_from_sbon(struct sbon_with_o
 // CHECK-NEXT:    [[WIDE_PTR_UB29:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR28]], align 8, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB_ADDR30:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP25]], i32 0, i32 2, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB31:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR30]], align 8, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
 // CHECK-NEXT:    [[SUB_PTR_SUB:%.*]] = sub i64 [[SUB_PTR_LHS_CAST]], [[SUB_PTR_RHS_CAST]], !annotation [[META1]]
 // CHECK-NEXT:    [[CMP32:%.*]] = icmp sle i64 [[CONV]], [[SUB_PTR_SUB]], !annotation [[META1]]
 // CHECK-NEXT:    br i1 [[CMP32]], label %[[LAND_RHS34:.*]], label %[[LAND_END:.*]], !annotation [[META1]]
@@ -3439,7 +3439,7 @@ void assign_via_ptr_other_data_side_effect_zero_ptr_from_sbon(struct sbon_with_o
 // CHECK-NEXT:    store i32 0, ptr [[OTHER]], align 8
 // CHECK-NEXT:    [[TMP5:%.*]] = getelementptr i8, ptr [[AGG_TMP]], i64 20
 // CHECK-NEXT:    call void @llvm.memset.p0.i64(ptr align 4 [[TMP5]], i8 0, i64 4, i1 false)
-// CHECK-NEXT:    call void @receive_transparent_union(ptr noundef dead_on_return [[AGG_TMP]])
+// CHECK-NEXT:    call void @receive_transparent_union(ptr nofreeobj noundef align 8 dead_on_return dereferenceable(24) [[AGG_TMP]])
 // CHECK-NEXT:    ret void
 //
 void call_arg_transparent_union_from_sbon(int new_count,
@@ -3454,8 +3454,8 @@ void call_arg_transparent_union_from_sbon(int new_count,
 }
 
 
-// CHECK-LABEL: define dso_local void @call_arg_transparent_union_untransparently_from_sbon(
-// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr noundef dead_on_return [[NEW_PTR:%.*]]) #[[ATTR0]] {
+// CHECK-LABEL: define void @call_arg_transparent_union_untransparently_from_sbon(
+// CHECK-SAME: i32 noundef [[NEW_COUNT:%.*]], ptr nofreeobj noundef align 8 dead_on_return dereferenceable(24) [[NEW_PTR:%.*]]) #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[NEW_COUNT_ADDR:%.*]] = alloca i32, align 4
 // CHECK-NEXT:    [[NEW_PTR_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
@@ -3519,8 +3519,8 @@ void call_arg_transparent_union_from_sbon(int new_count,
 // CHECK-NEXT:    [[WIDE_PTR_UB29:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR28]], align 8, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB_ADDR30:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP25]], i32 0, i32 2, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB31:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR30]], align 8, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_UB24]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR27]] to i64, !annotation [[META1]]
 // CHECK-NEXT:    [[SUB_PTR_SUB:%.*]] = sub i64 [[SUB_PTR_LHS_CAST]], [[SUB_PTR_RHS_CAST]], !annotation [[META1]]
 // CHECK-NEXT:    [[CMP32:%.*]] = icmp sle i64 [[CONV]], [[SUB_PTR_SUB]], !annotation [[META1]]
 // CHECK-NEXT:    br i1 [[CMP32]], label %[[LAND_RHS34:.*]], label %[[LAND_END:.*]], !annotation [[META1]]
@@ -3558,7 +3558,7 @@ void call_arg_transparent_union_from_sbon(int new_count,
 // CHECK-NEXT:    [[TMP5:%.*]] = getelementptr i8, ptr [[DOTCOMPOUNDLITERAL]], i64 20
 // CHECK-NEXT:    call void @llvm.memset.p0.i64(ptr align 4 [[TMP5]], i8 0, i64 4, i1 false)
 // CHECK-NEXT:    call void @llvm.memcpy.p0.p0.i64(ptr align 8 [[BYVAL_TEMP]], ptr align 8 [[DOTCOMPOUNDLITERAL]], i64 24, i1 false)
-// CHECK-NEXT:    call void @receive_transparent_union(ptr noundef dead_on_return [[BYVAL_TEMP]])
+// CHECK-NEXT:    call void @receive_transparent_union(ptr nofreeobj noundef align 8 dead_on_return dereferenceable(24) [[BYVAL_TEMP]])
 // CHECK-NEXT:    ret void
 //
 void call_arg_transparent_union_untransparently_from_sbon(int new_count,

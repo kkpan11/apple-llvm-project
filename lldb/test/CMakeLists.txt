@@ -130,6 +130,10 @@ if(TARGET lldb-dap)
   add_lldb_test_dependency(lldb-dap)
 endif()
 
+if(TARGET lldb-mcp)
+  add_lldb_test_dependency(lldb-mcp)
+endif()
+
 if(TARGET liblldb)
   add_lldb_test_dependency(liblldb)
 endif()
@@ -152,10 +156,6 @@ endif()
 if(TARGET darwin-mte-launcher)
   add_lldb_test_dependency(darwin-mte-launcher)
   set(LLDB_LAUNCHER ${LLVM_RUNTIME_OUTPUT_INTDIR}/darwin-mte-launcher${CMAKE_EXECUTABLE_SUFFIX})
-endif()
-
-if (LLDB_CAN_USE_LLDB_RPC_SERVER)
-  add_lldb_test_dependency(lldb-rpc-generate-sources)
 endif()
 
 # Add dependencies that are not exported targets when building standalone.
@@ -284,7 +284,16 @@ if (LLDB_ENABLE_ARM64E_DEBUGSERVER OR LLDB_USE_SYSTEM_DEBUGSERVER)
 endif()
 
 set(LLDB_TEST_SHELL_DISABLE_REMOTE OFF CACHE BOOL "Disable remote Shell tests execution")
-set(LLDB_TEST_USE_LLDB_SERVER OFF CACHE BOOL "If ON, run the test suites against the lldb-server backend on Windows")
+
+# On Windows, drive the tests through the lldb-server backend by default when
+# libxml2 is available (it is required to parse the gdb-remote target XML).
+# Without libxml2, fall back to the in-process Windows process plugin. This
+# mirrors the runtime default selected in ProcessWindows.cpp.
+set(LLDB_TEST_USE_LLDB_SERVER_DEFAULT OFF)
+if(WIN32 AND LLDB_ENABLE_LIBXML2)
+  set(LLDB_TEST_USE_LLDB_SERVER_DEFAULT ON)
+endif()
+set(LLDB_TEST_USE_LLDB_SERVER ${LLDB_TEST_USE_LLDB_SERVER_DEFAULT} CACHE BOOL "If ON, run the test suites against the lldb-server backend on Windows")
 
 # These values are not canonicalized within LLVM.
 llvm_canonicalize_cmake_booleans(
@@ -303,7 +312,6 @@ llvm_canonicalize_cmake_booleans(
   LLDB_TOOL_LLDB_SERVER_BUILD
   LLDB_USE_SYSTEM_DEBUGSERVER
   LLDB_IS_64_BITS
-  LLDB_BUILD_LLDBRPC
   LLDB_USE_ARM64E_DEBUGSERVER)
 
 # BEGIN SWIFT
@@ -313,6 +321,49 @@ llvm_canonicalize_cmake_booleans(
 
 set(LLDB_TEST_SWIFT_DRIVER_EXTRA_FLAGS "" CACHE STRING
     "Additional swift driver arguments for LLDB shell tests")
+
+# Swift tests require the swift compiler and the swift standard library.
+set(_check_lldb_swift_deps "")
+if(TARGET swift-frontend)
+  list(APPEND _check_lldb_swift_deps swift-frontend)
+endif()
+if(TARGET swift-stdlib-macosx)
+  list(APPEND _check_lldb_swift_deps swift-stdlib-macosx)
+endif()
+# Swift Embedded tests require the standard library.
+if(TARGET embedded-libraries)
+  list(APPEND _check_lldb_swift_deps embedded-libraries)
+endif()
+if(TARGET embedded-stdlib)
+  list(APPEND _check_lldb_swift_deps embedded-stdlib)
+endif()
+# Swift macros in LLDB tests require the plugin server.
+if(TARGET swift-plugin-server)
+  list(APPEND _check_lldb_swift_deps swift-plugin-server)
+endif()
+if(_check_lldb_swift_deps)
+  add_lldb_test_dependency(${_check_lldb_swift_deps})
+endif()
+
+# The LLDB asan/tsan tests link test programs against the sanitizer dylib found
+# in build/lib/lldb/clang/lib/darwin/ (CLANG_RT_DIR in Makefile.rules).
+# That directory is populated by the copy-clang-resource-dir build step which
+# copies build/lib/swift/clang -> build/lib/lldb/clang/.
+#
+# `runtimes` is not defined at this point (llvm/CMakeLists.txt creates it later
+# in add_subdirectory(runtimes)), so we reference it as a forward dependency.
+# FIXME: We should be able to change the directory in the tests.
+if(APPLE AND "compiler-rt" IN_LIST LLVM_ENABLE_RUNTIMES)
+  add_custom_target(lldb-copy-llvm-sanitizers
+    COMMAND "${CMAKE_COMMAND}" "-E" "copy_directory"
+            "${CMAKE_BINARY_DIR}/lib/swift/clang/lib/darwin"
+            "${CMAKE_BINARY_DIR}/lib/lldb/clang/lib/darwin"
+    COMMENT "Syncing LLVM-built sanitizer dylibs into LLDB clang resource dir"
+    VERBATIM
+  )
+  add_dependencies(lldb-copy-llvm-sanitizers runtimes)
+  add_lldb_test_dependency(lldb-copy-llvm-sanitizers)
+endif()
 # END SWIFT
 
 # Configure the individual test suites.
@@ -335,11 +386,15 @@ add_lit_testsuite(check-lldb "Running lldb lit test suite"
     lldb-unit-test-deps)
 
 # BEGIN SWIFT MOD
+# lldb-unit-test-deps is what builds LLDBUnitTests; the filter selects
+# Swift-specific unit tests as well as API and Shell tests.
 add_lit_testsuite(check-lldb-swift
   "Running swift tests"
   ${CMAKE_CURRENT_BINARY_DIR}
   ARGS "--filter=[sS]wift"
-  DEPENDS lldb-test-deps)
+  DEPENDS
+    lldb-test-deps
+    lldb-unit-test-deps)
 # END SWIFT MOD
 
 if(LLDB_BUILT_STANDALONE)

@@ -5,7 +5,7 @@ import lldbsuite.test.lldbutil as lldbutil
 
 
 class TestSwiftNonCopyableTypeError(TestBase):
-    @skipUnlessDarwin
+    @skipEmbeddedSwiftOnWindows
     @swiftTest
     def test(self):
         self.build()

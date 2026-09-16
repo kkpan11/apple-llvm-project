@@ -9,9 +9,8 @@ class TestSwiftReflectionLoading(lldbtest.TestBase):
 
     mydir = lldbtest.TestBase.compute_mydir(__file__)
 
-    @skipEmbeddedSwift
+    @requireNotEmbeddedSwift
     @swiftTest
-    @skipIfWindows
     def test(self):
         """Test that reflection metadata is imported"""
         self.build()

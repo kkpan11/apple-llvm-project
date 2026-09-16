@@ -22,6 +22,7 @@
 #include "BoundsSafetyTraps.h"
 #include "SanitizerHandler.h"
 #include "VarBypassDetector.h"
+#include "clang/AST/Attr.h"
 #include "clang/AST/CharUnits.h"
 #include "clang/AST/CurrentSourceLocExprScope.h"
 #include "clang/AST/ExprCXX.h"
@@ -655,6 +656,10 @@ public:
 
   /// True if the current statement has noconvergent attribute.
   bool InNoConvergentAttributedStmt = false;
+
+  /// The mode string from the amdgpu_av attribute on the current statement,
+  /// or empty if the attribute is not present.
+  StringRef AMDGPUAvailableVisibleMode;
 
   /// HLSL Branch attribute.
   HLSLControlFlowHintAttr::Spelling HLSLControlFlowAttr =
@@ -1355,6 +1360,14 @@ public:
   /// stack, emitting any required code (other than the catch handlers
   /// themselves).
   void popCatchScope();
+
+  // This function should be called after emitting all catch clauses and none
+  // of them were 'catch-all' clauses.
+  // Because in wasm we merge all catch clauses into one big catchpad, in case
+  // none of the types in catch handlers matches after we test against each of
+  // them, we should unwind to the next EH enclosing scope. We generate a call
+  // to rethrow function here to do that.
+  void WasmEmitFallthroughRethrow(llvm::BasicBlock *WasmCatchStartBlock);
 
   llvm::BasicBlock *getEHResumeBlock(bool isCleanup);
   llvm::BasicBlock *getEHDispatchBlock(EHScopeStack::stable_iterator scope);
@@ -2279,6 +2292,7 @@ public:
   const TargetCodeGenInfo &getTargetHooks() const {
     return CGM.getTargetCodeGenInfo();
   }
+  const FunctionDecl *getCurrentFunctionDecl() const;
 
   //===--------------------------------------------------------------------===//
   //                                  Cleanups
@@ -3085,6 +3099,11 @@ public:
   /// pointer to a char.
   Address EmitMSVAListRef(const Expr *E);
 
+  /// Emit a "reference" to a __builtin_zos_va_list; this is always the
+  /// address of the expression, because a __builtin_zos_va_list is an
+  /// array of pointer to a char.
+  Address EmitZOSVAListRef(const Expr *E);
+
   /// EmitAnyExprToTemp - Similarly to EmitAnyExpr(), however, the result will
   /// always be accessible even if no aggregate location is provided.
   RValue EmitAnyExprToTemp(const Expr *E);
@@ -3375,7 +3394,8 @@ public:
 
   void EmitDeleteCall(const FunctionDecl *DeleteFD, llvm::Value *Ptr,
                       QualType DeleteTy, llvm::Value *NumElements = nullptr,
-                      CharUnits CookieSize = CharUnits());
+                      CharUnits CookieSize = CharUnits(),
+                      llvm::Constant *CalleeOverride = nullptr);
 
   RValue EmitBuiltinNewDeleteCall(const FunctionProtoType *Type,
                                   const CallExpr *TheCallExpr, bool IsDelete);
@@ -3833,6 +3853,9 @@ public:
   void EmitCXXForRangeStmt(const CXXForRangeStmt &S,
                            ArrayRef<const Attr *> Attrs = {});
 
+  void
+  EmitCXXExpansionStmtInstantiation(const CXXExpansionStmtInstantiation &S);
+
   /// Controls insertion of cancellation exit blocks in worksharing constructs.
   class OMPCancelStackRAII {
     CodeGenFunction &CGF;
@@ -4046,7 +4069,10 @@ public:
   void EmitOMPFlushDirective(const OMPFlushDirective &S);
   void EmitOMPDepobjDirective(const OMPDepobjDirective &S);
   void EmitOMPScanDirective(const OMPScanDirective &S);
-  void EmitOMPOrderedDirective(const OMPOrderedDirective &S);
+  void
+  EmitOMPOrderedStandaloneDirective(const OMPOrderedStandaloneDirective &S);
+  void
+  EmitOMPOrderedBlockAssocDirective(const OMPOrderedBlockAssocDirective &S);
   void EmitOMPAtomicDirective(const OMPAtomicDirective &S);
   void EmitOMPTargetDirective(const OMPTargetDirective &S);
   void EmitOMPTargetDataDirective(const OMPTargetDataDirective &S);
@@ -4285,28 +4311,32 @@ public:
     // TODO OpenACC: Implement this.  It is currently implemented as a 'no-op',
     // simply emitting its structured block, but in the future we will implement
     // some sort of IR.
-    EmitStmt(S.getStructuredBlock());
+    if (S.getStructuredBlock())
+      EmitStmt(S.getStructuredBlock());
   }
 
   void EmitOpenACCLoopConstruct(const OpenACCLoopConstruct &S) {
     // TODO OpenACC: Implement this.  It is currently implemented as a 'no-op',
     // simply emitting its loop, but in the future we will implement
     // some sort of IR.
-    EmitStmt(S.getLoop());
+    if (S.getLoop())
+      EmitStmt(S.getLoop());
   }
 
   void EmitOpenACCCombinedConstruct(const OpenACCCombinedConstruct &S) {
     // TODO OpenACC: Implement this.  It is currently implemented as a 'no-op',
     // simply emitting its loop, but in the future we will implement
     // some sort of IR.
-    EmitStmt(S.getLoop());
+    if (S.getLoop())
+      EmitStmt(S.getLoop());
   }
 
   void EmitOpenACCDataConstruct(const OpenACCDataConstruct &S) {
     // TODO OpenACC: Implement this.  It is currently implemented as a 'no-op',
     // simply emitting its structured block, but in the future we will implement
     // some sort of IR.
-    EmitStmt(S.getStructuredBlock());
+    if (S.getStructuredBlock())
+      EmitStmt(S.getStructuredBlock());
   }
 
   void EmitOpenACCEnterDataConstruct(const OpenACCEnterDataConstruct &S) {
@@ -4323,7 +4353,8 @@ public:
     // TODO OpenACC: Implement this.  It is currently implemented as a 'no-op',
     // simply emitting its structured block, but in the future we will implement
     // some sort of IR.
-    EmitStmt(S.getStructuredBlock());
+    if (S.getStructuredBlock())
+      EmitStmt(S.getStructuredBlock());
   }
 
   void EmitOpenACCWaitConstruct(const OpenACCWaitConstruct &S) {
@@ -4355,7 +4386,8 @@ public:
     // TODO OpenACC: Implement this.  It is currently implemented as a 'no-op',
     // simply emitting its associated stmt, but in the future we will implement
     // some sort of IR.
-    EmitStmt(S.getAssociatedStmt());
+    if (S.getAssociatedStmt())
+      EmitStmt(S.getAssociatedStmt());
   }
   void EmitOpenACCCacheConstruct(const OpenACCCacheConstruct &S) {
     // TODO OpenACC: Implement this.  It is currently implemented as a 'no-op',
@@ -4442,6 +4474,12 @@ public:
       llvm::AtomicOrdering Order = llvm::AtomicOrdering::SequentiallyConsistent,
       llvm::SyncScope::ID SSID = llvm::SyncScope::System,
       const AtomicExpr *AE = nullptr);
+
+  /// Emit a fence instruction, applying relevant target-specific metadata when
+  /// applicable.
+  llvm::FenceInst *
+  emitAtomicFence(llvm::AtomicOrdering Order,
+                  llvm::SyncScope::ID SSID = llvm::SyncScope::System);
 
   void EmitAtomicUpdate(LValue LVal, llvm::AtomicOrdering AO,
                         const llvm::function_ref<RValue(RValue)> &UpdateOp,
@@ -4715,7 +4753,8 @@ public:
                             llvm::CallBase **CallOrInvoke = nullptr);
   CGCallee EmitCallee(const Expr *E);
 
-  RValue EmitTypedMemoryCall(const CallExpr *E, TypedMemoryAttr *TMA,
+  RValue EmitTypedMemoryCall(const CallExpr *E, const TypedMemoryAttr *TMA,
+                             const InferredTypeInfo &Info,
                              ReturnValueSlot ReturnValue);
   CGCallee EmitCallee(const FunctionDecl *FD);
 
@@ -4736,6 +4775,9 @@ public:
                                     ArrayRef<llvm::Type *> Types,
                                     ArrayRef<llvm::Value *> Args,
                                     const Twine &Name = "");
+  llvm::CallInst *EmitIntrinsicCall(llvm::Intrinsic::ID ID,
+                                    ArrayRef<llvm::Value *> Args,
+                                    llvm::Type *RetTy, const Twine &Name = "");
   llvm::CallInst *EmitNounwindRuntimeCall(llvm::FunctionCallee callee,
                                           const Twine &name = "");
   llvm::CallInst *EmitNounwindRuntimeCall(llvm::FunctionCallee callee,
@@ -4773,6 +4815,9 @@ public:
   /// Create the discriminator from the storage address and the entity hash.
   llvm::Value *EmitPointerAuthBlendDiscriminator(llvm::Value *StorageAddress,
                                                  llvm::Value *Discriminator);
+  CGPointerAuthInfo EmitPointerAuthInfo(const PointerAuthSchema &Schema,
+                                        llvm::Value *StorageAddress,
+                                        llvm::ConstantInt *Discriminator);
   CGPointerAuthInfo EmitPointerAuthInfo(const PointerAuthSchema &Schema,
                                         llvm::Value *StorageAddress,
                                         GlobalDecl SchemaDecl,
@@ -5088,6 +5133,9 @@ public:
 
   void AddAMDGPUFenceAddressSpaceMMRA(llvm::Instruction *Inst,
                                       const CallExpr *E);
+  /// Attach the AMDGPU availability/visibility MMRA to \p Inst when the
+  /// amdgpu_av attribute is active on the current statement.
+  void AddAMDGPUAvailableVisibleMMRA(llvm::Instruction *Inst);
   void ProcessOrderScopeAMDGCN(llvm::Value *Order, llvm::Value *Scope,
                                llvm::AtomicOrdering &AO,
                                llvm::SyncScope::ID &SSID);
@@ -5527,9 +5575,13 @@ public:
       TrapReason *TR = nullptr);
   /* TO_UPSTREAM(BoundsSafety) OFF*/
 
-  /// Emit a call to trap or debugtrap and attach function attribute
-  /// "trap-func-name" if specified.
-  llvm::CallInst *EmitTrapCall(llvm::Intrinsic::ID IntrID);
+  /// Emit a call to trap or debugtrap. If 'EnsureInsertPoint' is false, the
+  /// IR builder need not have a valid insert point after this returns.
+  llvm::CallInst *EmitTrapCall(llvm::Intrinsic::ID IntrID,
+                               bool EnsureInsertPoint = true);
+
+  /// Emit a call to '\@llvm.trap()' and clear the current insert point.
+  void EmitTrapCallAndMakeUnreachable();
 
   /// Emit a stub for the cross-DSO CFI check function.
   void EmitCfiCheckStub();

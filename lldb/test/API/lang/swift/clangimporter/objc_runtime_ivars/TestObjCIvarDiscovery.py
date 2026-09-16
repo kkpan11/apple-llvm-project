@@ -22,8 +22,10 @@ import re
 import shutil
 
 class TestObjCIVarDiscovery(TestBase):
-    @skipEmbeddedSwift
-    @skipUnlessDarwin
+    SHARED_BUILD_TESTCASE = False
+
+    @requireNotEmbeddedSwift
+    @requireSwiftObjCInterop
     @skipIf(debug_info=no_match("dsym"))
     @swiftTest
     def test_nodbg(self):
@@ -31,8 +33,8 @@ class TestObjCIVarDiscovery(TestBase):
         shutil.rmtree(self.getBuildArtifact("aTestFramework.framework/Versions/A/aTestFramework.dSYM"))
         self.do_test(False)
 
-    @skipEmbeddedSwift
-    @skipUnlessDarwin
+    @requireNotEmbeddedSwift
+    @requireSwiftObjCInterop
     @skipIf(debug_info=no_match("dsym"))
     @swiftTest
     def test_dbg(self):

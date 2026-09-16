@@ -5,7 +5,7 @@ import lldbsuite.test.lldbutil as lldbutil
 
 class TestSwiftVariadicGenerics(TestBase):
 
-    @skipUnlessDarwin
+    @skipEmbeddedSwiftOnWindows
     @swiftTest
     def test(self):
         self.build()

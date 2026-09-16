@@ -28,9 +28,9 @@ class TestCase(lldbtest.TestBase):
             self.assertStopReason(stop_reason, lldb.eStopReasonPlanComplete)
             self.assertEqual(thread.frames[0].GetFunctionName(), expected_func_name)
 
-    @skipEmbeddedSwift
+    @skipEmbeddedSwiftOnLinux
     @swiftTest
-    @skipIf(oslist=["windows", "linux"])
+    @skipIf(oslist=["windows"])
     def test(self):
         """Test `frame variable` in async functions"""
         self.build()

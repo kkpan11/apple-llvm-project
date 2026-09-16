@@ -14,9 +14,14 @@ class TestCase(lldbtest.TestBase):
 
         src = lldb.SBFileSpec("main.swift")
         target, _, thread, _ = lldbutil.run_to_source_breakpoint(self, "await f()", src)
-        self.assertEqual(thread.frame[0].function.mangled, "$s1a5entryO4mainyyYaFZ")
+        self.assertEqual(
+            thread.frame[0].function.mangled,
+            self.swiftMangledName("$s1a5entryO4mainyyYaFZ"),
+        )
 
-        sym_ctx_list = target.FindFunctions("$s1a5entryO4mainyyYaFZTQ0_")
+        sym_ctx_list = target.FindFunctions(
+            self.swiftMangledName("$s1a5entryO4mainyyYaFZTQ0_")
+        )
         self.assertEqual(sym_ctx_list.GetSize(), 1)
         function = sym_ctx_list[0].function
         self.assertIsNotNone(function)
@@ -32,7 +37,10 @@ class TestCase(lldbtest.TestBase):
         self.assertEqual(lines, {3})
 
         # Required for builds that have debug info.
+        # Avoid spurious breakpoints when debug info for the concurrency runtime is available.
         self.runCmd("settings set target.process.thread.step-avoid-libraries libswift_Concurrency.dylib")
+        # Same as above, but for embedded swift.
+        self.runCmd("settings set target.process.thread.step-avoid-regexp ^(std::|(::)?swift_)")
         thread.StepInto()
         frame = thread.frame[0]
         # Step in from `main` should progress through to `f`.

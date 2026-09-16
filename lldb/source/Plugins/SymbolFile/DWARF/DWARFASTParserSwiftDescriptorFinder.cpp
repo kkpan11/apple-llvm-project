@@ -19,15 +19,18 @@
 #include "DWARFASTParserSwift.h"
 
 #include "DWARFDIE.h"
+#include "SymbolFileDWARFDebugMap.h"
 
 #include "Plugins/TypeSystem/Swift/TypeSystemSwiftTypeRef.h"
 #include "swift/Demangling/ManglingFlavor.h"
 #include "swift/RemoteInspection/DescriptorFinder.h"
 #include "swift/RemoteInspection/TypeLowering.h"
 
+#include "lldb/Target/Target.h"
+#include "lldb/Utility/Flags.h"
 #include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
-#include "lldb/Target/Target.h"
+#include "llvm/Support/MathExtras.h"
 
 using namespace lldb;
 using namespace lldb_private;
@@ -73,8 +76,11 @@ DWARFASTParserSwift::ResolveTypeAlias(lldb_private::CompilerType alias) {
   if (!ts_sp)
     return {};
   auto &ts = *ts_sp;
-  auto *dwarf = llvm::dyn_cast_or_null<SymbolFileDWARF>(ts.GetSymbolFile());
-  if (!dwarf)
+
+  // The Type system must have a SymbolFileDWARF backing it to answer the
+  // queries below.
+  if (!llvm::isa_and_nonnull<SymbolFileDWARF, SymbolFileDWARFDebugMap>(
+          ts.GetSymbolFile()))
     return {};
 
   // Type aliases are (for LLVM implementation reasons) using the
@@ -88,6 +94,8 @@ DWARFASTParserSwift::ResolveTypeAlias(lldb_private::CompilerType alias) {
   DWARFDIE parent_die;
   if (TypeSP parent_type =
           ts.FindTypeInModule(parent_ctx.GetOpaqueQualType())) {
+    auto *dwarf =
+        llvm::cast<SymbolFileDWARF>(parent_type->GetSymbolFile());
     parent_die = dwarf->GetDIE(parent_type->GetID());
     auto unsubstituted_pair =
         findUnsubstitutedGenericTypeAndDIE(ts, parent_die);
@@ -145,6 +153,18 @@ getTypeAndDie(TypeSystemSwiftTypeRef &ts,
               const swift::reflection::TypeRef *TR) {
   swift::Demangle::Demangler dem;
   swift::Demangle::NodePointer node = TR->getDemangling(dem);
+  // FIXME: Use Transform instead.  TypeRefs use a normalized
+  // representation where bare protocols are wrapped in a
+  // ProtocolList.
+  if (node && node->getKind() == swift::Demangle::Node::Kind::Protocol) {
+    auto type_node = dem.createNode(swift::Demangle::Node::Kind::Type);
+    type_node->addChild(node, dem);
+    auto type_list = dem.createNode(swift::Demangle::Node::Kind::TypeList);
+    type_list->addChild(type_node, dem);
+    auto proto_list = dem.createNode(swift::Demangle::Node::Kind::ProtocolList);
+    proto_list->addChild(type_list, dem);
+    node = proto_list;
+  }
   // TODO: mangling flavor should come from the TypeRef.
   auto type =
       ts.RemangleAsType(dem, node, swift::Mangle::ManglingFlavor::Embedded);
@@ -157,10 +177,9 @@ getTypeAndDie(TypeSystemSwiftTypeRef &ts,
     return {};
   }
 
-  auto *dwarf = llvm::cast_or_null<SymbolFileDWARF>(ts.GetSymbolFile());
-  if (!dwarf)
-    return {};
   TypeSP lldb_type = ts.FindTypeInModule(type.GetOpaqueQualType());
+  if (!lldb_type && llvm::isa<swift::reflection::BuiltinTypeRef>(TR))
+    lldb_type = ts.FindBuiltinTypeInModule(type.GetMangledTypeName());
   if (!lldb_type) {
     if (ts.ContainsBoundGenericType(type.GetOpaqueQualType())) {
       CompilerType generic_type = ts.MapOutOfContext(type.GetOpaqueQualType());
@@ -168,10 +187,13 @@ getTypeAndDie(TypeSystemSwiftTypeRef &ts,
     }
   }
   if (!lldb_type) {
-    std::tie(lldb_type, type) = DWARFASTParserSwift::ResolveTypeAlias(type);
-    if (lldb_type) {
-      auto die = dwarf->GetDIE(lldb_type->GetID());
-      return {{type, die}};
+    auto [alias_lldb_type, alias_type] =
+        DWARFASTParserSwift::ResolveTypeAlias(type);
+    if (alias_lldb_type) {
+      auto *dwarf =
+          llvm::cast<SymbolFileDWARF>(alias_lldb_type->GetSymbolFile());
+      auto die = dwarf->GetDIE(alias_lldb_type->GetID());
+      return {{alias_type, die}};
     }
   }
   if (!lldb_type) {
@@ -182,6 +204,7 @@ getTypeAndDie(TypeSystemSwiftTypeRef &ts,
                      type.GetMangledTypeName());
     return {};
   }
+  auto *dwarf = llvm::cast<SymbolFileDWARF>(lldb_type->GetSymbolFile());
   auto die = dwarf->GetDIE(lldb_type->GetID());
 
   if (auto unsubstituted_pair = findUnsubstitutedGenericTypeAndDIE(ts, die))
@@ -190,8 +213,19 @@ getTypeAndDie(TypeSystemSwiftTypeRef &ts,
   return {{type, die}};
 }
 
+/// Determine the field descriptor kind of \p die, the DIE of a protocol.
+static swift::reflection::FieldDescriptorKind
+getProtocolFieldDescriptorKind(const DWARFDIE &die) {
+  if (DWARFASTParserSwift::HasSwiftFlagAnnotation(die, "swift.ObjCProtocol"))
+    return swift::reflection::FieldDescriptorKind::ObjCProtocol;
+  if (DWARFASTParserSwift::HasSwiftFlagAnnotation(
+          die, "swift.ClassConstrainedProtocol"))
+    return swift::reflection::FieldDescriptorKind::ClassProtocol;
+  return swift::reflection::FieldDescriptorKind::Protocol;
+}
+
 static std::optional<swift::reflection::FieldDescriptorKind>
-getFieldDescriptorKindForDie(CompilerType type) {
+getFieldDescriptorKindForDie(CompilerType type, const DWARFDIE &die) {
   auto type_class = type.GetTypeClass();
   switch (type_class) {
   case lldb::eTypeClassClass:
@@ -201,6 +235,8 @@ getFieldDescriptorKindForDie(CompilerType type) {
   case lldb::eTypeClassUnion:
     return swift::reflection::FieldDescriptorKind::Enum;
   default:
+    if (Flags(type.GetTypeInfo()).AnySet(lldb::eTypeIsProtocol))
+      return getProtocolFieldDescriptorKind(die);
     LLDB_LOG(GetLog(LLDBLog::Types),
              "Could not determine file descriptor kind for type: {0}",
              type.GetMangledTypeName());
@@ -248,96 +284,6 @@ public:
   llvm::StringRef getMangledTypeName() override { return m_type_name; }
 };
 
-/// Builtin type descriptor that owns its type name string, used for hardcoded
-/// fallback descriptors.
-class HardcodedBuiltinTypeDescriptorImpl
-    : public swift::reflection::BuiltinTypeDescriptorBase {
-  std::string m_type_name;
-
-public:
-  HardcodedBuiltinTypeDescriptorImpl(uint32_t size, uint32_t alignment,
-                                     uint32_t stride,
-                                     uint32_t num_extra_inhabitants,
-                                     swift::reflection::BitwiseBorrowability borrowability,
-                                     bool addr_for_dependencies,
-                                     std::string type_name)
-      : swift::reflection::BuiltinTypeDescriptorBase(
-            size, alignment, stride, num_extra_inhabitants, borrowability,
-            addr_for_dependencies),
-        m_type_name(std::move(type_name)) {}
-  ~HardcodedBuiltinTypeDescriptorImpl() override = default;
-
-  llvm::StringRef getMangledTypeName() override { return m_type_name; }
-};
-
-/// Returns a hardcoded builtin type descriptor for special stdlib builtin
-/// types. This mirrors the types created by
-/// IRGenModule::getOrCreateSpecialStlibBuiltinTypes() in the Swift compiler.
-static std::unique_ptr<swift::reflection::BuiltinTypeDescriptorBase>
-getHardcodedBuiltinTypeDescriptor(const swift::reflection::TypeRef *TR,
-                                  uint32_t pointer_size) {
-  auto *builtin_TR = llvm::dyn_cast<swift::reflection::BuiltinTypeRef>(TR);
-  if (!builtin_TR)
-    return nullptr;
-
-  llvm::StringRef mangled_name = builtin_TR->getMangledName();
-
-  auto makePointerSizedDescriptor =
-      [pointer_size](std::string name, uint32_t num_extra_inhabitants) {
-        return std::make_unique<HardcodedBuiltinTypeDescriptorImpl>(
-            /*size=*/pointer_size,
-            /*alignment=*/pointer_size,
-            /*stride=*/pointer_size,
-            /*num_extra_inhabitants=*/num_extra_inhabitants,
-            /*borrowability=*/swift::reflection::BitwiseBorrowability::TakableAndBorrowable,
-            /*addr_for_dependencies=*/false,
-            std::move(name));
-      };
-
-  // Builtin.NativeObject (Bo).
-  if (mangled_name == "Bo")
-    return makePointerSizedDescriptor("Bo", /*num_extra_inhabitants=*/1);
-
-  // Builtin.UnknownObject (BO).
-  if (mangled_name == "BO")
-    return makePointerSizedDescriptor("BO", /*num_extra_inhabitants=*/1);
-
-  // Builtin.BridgeObject (Bb).
-  if (mangled_name == "Bb") {
-    uint32_t extra_inhabitants = pointer_size == 8 ? 0x7FFFFFFF : 0x3FFFFFFF;
-    return makePointerSizedDescriptor("Bb", extra_inhabitants);
-  }
-
-  // Builtin.RawPointer.
-  if (mangled_name == "Bp")
-    return makePointerSizedDescriptor("Bp", /*num_extra_inhabitants=*/1);
-
-  // Builtin.UnsafeValueBuffer.
-  if (mangled_name == "BB") {
-    uint32_t size = pointer_size * 3;
-    return std::make_unique<HardcodedBuiltinTypeDescriptorImpl>(
-        /*size=*/size,
-        /*alignment=*/pointer_size,
-        /*stride=*/size,
-        /*num_extra_inhabitants=*/0,
-        /*borrowability=*/swift::reflection::BitwiseBorrowability::TakableAndBorrowable,
-        /*addr_for_dependencies=*/true,
-        "BB");
-  }
-
-  // Thin function type () -> ().
-  if (mangled_name == "yyXf")
-    return makePointerSizedDescriptor("yyXf", /*num_extra_inhabitants=*/1);
-
-  // Existential metatype Any.Type.
-  if (mangled_name == "ypXp") {
-    uint32_t extra_inhabitants = pointer_size == 8 ? 0x7FFFFFFF : 0x0FFFFFFF;
-    return makePointerSizedDescriptor("ypXp", extra_inhabitants);
-  }
-
-  return nullptr;
-}
-
 class DWARFFieldRecordImpl : public swift::reflection::FieldRecordBase {
   ConstString m_field_name;
   ConstString m_type_name;
@@ -361,18 +307,18 @@ public:
 class DWARFFieldDescriptorImpl : public swift::reflection::FieldDescriptorBase {
   TypeSystemSwiftTypeRef &m_type_system;
   ConstString m_mangled_name;
-  DIERef m_die_ref;
+  DWARFDIE m_die;
   NodePointer m_superclass_node;
 
 public:
   DWARFFieldDescriptorImpl(swift::reflection::FieldDescriptorKind kind,
                            NodePointer superclass_node,
                            TypeSystemSwiftTypeRef &type_system,
-                           ConstString mangled_name, DIERef die_ref)
+                           ConstString mangled_name, DWARFDIE die)
       : swift::reflection::FieldDescriptorBase(kind,
                                                superclass_node != nullptr),
         m_type_system(type_system), m_mangled_name(mangled_name),
-        m_die_ref(die_ref), m_superclass_node(superclass_node) {}
+        m_die(die), m_superclass_node(superclass_node) {}
 
   ~DWARFFieldDescriptorImpl() override = default;
 
@@ -387,22 +333,16 @@ public:
                lldb_private::AutoBool::False &&
            "Full DWARF debugging for Swift is disabled!");
 
-    auto *dwarf =
-        llvm::dyn_cast<SymbolFileDWARF>(m_type_system.GetSymbolFile());
     auto *dwarf_parser = m_type_system.GetDWARFParser();
-    if (!dwarf || !dwarf_parser)
-      return {};
-
-    auto die = dwarf->GetDIE(m_die_ref);
-    if (!die)
+    if (!m_die || !dwarf_parser)
       return {};
 
     switch (Kind) {
     case swift::reflection::FieldDescriptorKind::Struct:
     case swift::reflection::FieldDescriptorKind::Class:
-      return getFieldRecordsFromStructOrClass(die, dwarf_parser);
+      return getFieldRecordsFromStructOrClass(m_die, dwarf_parser);
     case swift::reflection::FieldDescriptorKind::Enum:
-      return getFieldRecordsFromEnum(die, dwarf_parser);
+      return getFieldRecordsFromEnum(m_die, dwarf_parser);
     default:
       // TODO: handle more cases.
       LLDB_LOG(GetLog(LLDBLog::Types),
@@ -428,8 +368,8 @@ public:
         continue;
       auto member_compiler_type = member_type->GetForwardCompilerType();
 
-      // TypeRefBuilder expects types to be canonical.
-      CompilerType canonical = m_type_system.Canonicalize(member_compiler_type);
+      CompilerType canonical =
+          m_type_system.CanonicalizeForTypeRefBuilder(member_compiler_type);
       if (!canonical) {
         LLDB_LOG(GetLog(LLDBLog::Types), "Could not build canonical type: {0}",
                  member_compiler_type.GetMangledTypeName());
@@ -489,16 +429,29 @@ public:
         continue;
       const auto *member_field_name =
           member.GetAttributeValueAsString(llvm::dwarf::DW_AT_name, "");
-      auto *member_type = dwarf_parser->GetTypeForDIE(member);
+
+      // The compiler marks an `indirect` enum case by wrapping the variant
+      // member's payload in a DW_TAG_reference_type.
+      DWARFDIE member_type_die =
+          member.GetAttributeValueAsReferenceDIE(llvm::dwarf::DW_AT_type);
+      bool is_indirect_case =
+          member_type_die &&
+          member_type_die.Tag() == llvm::dwarf::DW_TAG_reference_type;
+
+      // For an indirect case, follow the reference wrapper's DW_AT_type to the
+      // underlying payload type; GetTypeForDIE(member_type_die) resolves that
+      // referenced DIE. For a direct case, resolve the member's own type.
+      auto *member_type = is_indirect_case
+                              ? dwarf_parser->GetTypeForDIE(member_type_die)
+                              : dwarf_parser->GetTypeForDIE(member);
 
       // Empty enum cases don't have a type.
       ConstString member_mangled_typename;
       if (member_type) {
         CompilerType member_compiler_type =
             member_type->GetForwardCompilerType();
-        // TypeRefBuilder expects types to be canonical.
         CompilerType canonical =
-            m_type_system.Canonicalize(member_compiler_type);
+            m_type_system.CanonicalizeForTypeRefBuilder(member_compiler_type);
         if (!canonical) {
           LLDB_LOG(GetLog(LLDBLog::Types),
                    "Could not build canonical type: {0}",
@@ -508,11 +461,9 @@ public:
         member_mangled_typename = canonical.GetMangledTypeName();
       }
 
-      // Only matters for enums, so set to false for structs.
-      bool is_indirect_case = false;
       // Unused by type info construction.
       bool is_var = false;
-     
+
       // If there is a type, this case has a payload.
       if (member_type)
         payload_fields.emplace_back(std::make_unique<DWARFFieldRecordImpl>(
@@ -546,19 +497,30 @@ public:
 } // namespace
 
 /// Constructs a builtin type descriptor from DWARF information.
-static std::unique_ptr<swift::reflection::BuiltinTypeDescriptorBase>
-getDWARFBuiltinTypeDescriptor(TypeSystemSwiftTypeRef &swift_typesystem,
-                              const swift::reflection::TypeRef *TR) {
-  auto pair = getTypeAndDie(swift_typesystem, TR);
+std::unique_ptr<swift::reflection::BuiltinTypeDescriptorBase>
+DWARFASTParserSwift::getBuiltinTypeDescriptor(
+    const swift::reflection::TypeRef *TR) {
+  assert(ModuleList::GetGlobalModuleListProperties()
+                 .GetSwiftEnableFullDwarfDebugging() !=
+             lldb_private::AutoBool::False &&
+         "Full DWARF debugging for Swift is disabled!");
+
+  auto pair = getTypeAndDie(m_swift_typesystem, TR);
   if (!pair)
     return nullptr;
   auto &[type, die] = *pair;
 
-  if (!TypeSystemSwiftTypeRef::IsBuiltinType(type)) {
+  // Whether this descriptor describes an aggregate rather than a primitive.
+  // It decides how a missing DW_AT_alignment is read below.
+  bool is_enum = false;
+  if (!llvm::isa<swift::reflection::BuiltinTypeRef>(TR) &&
+      !TypeSystemSwiftTypeRef::IsBuiltinType(type)) {
     if (die.Tag() == llvm::dwarf::DW_TAG_structure_type) {
       auto child = die.GetFirstChild();
+      // From the non-builtin types, only enums have a builtin type descriptor.
       if (child.Tag() != llvm::dwarf::DW_TAG_variant_part)
         return nullptr;
+      is_enum = true;
     } else if (die.Tag() != llvm::dwarf::DW_TAG_base_type)
       return nullptr;
   }
@@ -568,12 +530,35 @@ getDWARFBuiltinTypeDescriptor(TypeSystemSwiftTypeRef &swift_typesystem,
   if (byte_size == LLDB_INVALID_ADDRESS)
     return nullptr;
 
-  auto alignment = die.GetAttributeValueAsUnsigned(llvm::dwarf::DW_AT_alignment,
-                                                   byte_size ? byte_size : 8);
+  // The compiler emits DW_AT_alignment whenever it knows a type's alignment, so
+  // a missing attribute means the alignment is unknown. It does not mean the
+  // natural alignment for the type, which is the usual DWARF reading: that
+  // convention only works for a consumer that can recompute the natural
+  // alignment itself, and an aggregate's alignment is the maximum over its
+  // members, which cannot be recovered here without reimplementing Swift's
+  // type layout.
+  auto maybe_alignment =
+      die.GetAttributeValueAsOptionalUnsigned(llvm::dwarf::DW_AT_alignment);
 
-  // TODO: this seems simple to calculate but maybe we should encode the stride
-  // in DWARF? That's what reflection metadata does.
-  unsigned stride = ((byte_size + alignment - 1) & ~(alignment - 1));
+  bool is_unsubustituted_enum = !maybe_alignment && is_enum;
+  // If we don't know the alignment there are two cases:
+  // - This is a builtin type, encoded as a DW_TAG_base_type, whose alignment
+  // matches its size.
+  // - This is an unsubstituted enum, in which case we can't procude a builtin
+  // descriptor since we can't know the alignment.
+  if (is_unsubustituted_enum)
+    return nullptr;
+
+  uint64_t alignment = maybe_alignment.value_or(byte_size);
+  if (alignment == 0) {
+    assert(false && "Unexpected 0 alignment!");
+    return nullptr;
+  }
+
+  // Clamping to 1 matches how reflection lowers a zero-sized type; see the
+  // stride computation in TypeLowering.cpp. Leaving it at 0 would make
+  // distinct elements of a zero-sized type share an address.
+  unsigned stride = std::max<unsigned>(llvm::alignTo(byte_size, alignment), 1);
 
   auto num_extra_inhabitants = die.GetAttributeValueAsUnsigned(
       llvm::dwarf::DW_AT_LLVM_num_extra_inhabitants, 0);
@@ -586,24 +571,6 @@ getDWARFBuiltinTypeDescriptor(TypeSystemSwiftTypeRef &swift_typesystem,
       byte_size, alignment, stride, num_extra_inhabitants,
       borrowability, addressable_for_dependencies,
       type.GetMangledTypeName());
-}
-
-/// Constructs a builtin type descriptor from DWARF information.
-/// Falls back to hardcoded descriptors for special stdlib builtin types
-/// that may not be present in DWARF.
-std::unique_ptr<swift::reflection::BuiltinTypeDescriptorBase>
-DWARFASTParserSwift::getBuiltinTypeDescriptor(
-    const swift::reflection::TypeRef *TR) {
-  assert(ModuleList::GetGlobalModuleListProperties()
-                 .GetSwiftEnableFullDwarfDebugging() !=
-             lldb_private::AutoBool::False &&
-         "Full DWARF debugging for Swift is disabled!");
-
-  if (auto descriptor = getDWARFBuiltinTypeDescriptor(m_swift_typesystem, TR))
-    return descriptor;
-
-  uint32_t pointer_size = m_swift_typesystem.GetPointerByteSize();
-  return getHardcodedBuiltinTypeDescriptor(TR, pointer_size);
 }
 
 std::unique_ptr<swift::reflection::MultiPayloadEnumDescriptorBase>
@@ -655,7 +622,7 @@ DWARFASTParserSwift::getFieldDescriptor(const swift::reflection::TypeRef *TR) {
   auto [type, die] = *pair;
   if (!die)
     return nullptr;
-  auto kind = getFieldDescriptorKindForDie(type);
+  auto kind = getFieldDescriptorKindForDie(type, die);
   if (!kind)
     return nullptr;
 
@@ -664,5 +631,5 @@ DWARFASTParserSwift::getFieldDescriptor(const swift::reflection::TypeRef *TR) {
 
   return std::make_unique<DWARFFieldDescriptorImpl>(
       *kind, superclass_pointer, m_swift_typesystem, type.GetMangledTypeName(),
-      *die.GetDIERef());
+      die);
 }

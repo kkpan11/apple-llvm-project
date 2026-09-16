@@ -200,31 +200,31 @@ HashedCollectionConfig::RegisterSummaryProviders(
 
   auto summaryProvider = GetSummaryProvider();
   AddCXXSummary(swift_category_sp, summaryProvider,
-                m_summaryProviderName.AsCString(),
+                m_summaryProviderName.AsCString(nullptr),
                 m_collection_demangledRegex, flags, true);
 
   AddCXXSummary(swift_category_sp, summaryProvider,
-                m_summaryProviderName.AsCString(),
+                m_summaryProviderName.AsCString(nullptr),
                 m_nativeStorage_demangledRegex, flags, true);
   AddCXXSummary(swift_category_sp, summaryProvider,
-                m_summaryProviderName.AsCString(),
+                m_summaryProviderName.AsCString(nullptr),
                 m_emptyStorage_demangled, flags, false);
   AddCXXSummary(swift_category_sp, summaryProvider,
-                m_summaryProviderName.AsCString(),
+                m_summaryProviderName.AsCString(nullptr),
                 m_nativeStorageRoot_demangled, flags, false);
   AddCXXSummary(swift_category_sp, summaryProvider,
-                m_summaryProviderName.AsCString(),
+                m_summaryProviderName.AsCString(nullptr),
                 m_deferredBridgedStorage_demangledRegex, flags, true);
 
   flags.SetSkipPointers(false);
   AddCXXSummary(swift_category_sp, summaryProvider,
-                m_summaryProviderName.AsCString(),
+                m_summaryProviderName.AsCString(nullptr),
                 m_nativeStorage_mangledRegex_ObjC, flags, true);
   AddCXXSummary(swift_category_sp, summaryProvider,
-                m_summaryProviderName.AsCString(),
+                m_summaryProviderName.AsCString(nullptr),
                 m_emptyStorage_mangled_ObjC, flags, false);
   AddCXXSummary(swift_category_sp, summaryProvider,
-                m_summaryProviderName.AsCString(),
+                m_summaryProviderName.AsCString(nullptr),
                 m_deferredBridgedStorage_mangledRegex_ObjC, flags, true);
 }
 
@@ -237,31 +237,31 @@ HashedCollectionConfig::RegisterSyntheticChildrenCreators(
 
   auto creator = GetSyntheticChildrenCreator();
   AddCXXSynthetic(swift_category_sp, creator,
-                  m_syntheticChildrenName.AsCString(),
+                  m_syntheticChildrenName.AsCString(nullptr),
                   m_collection_demangledRegex, flags, true);
 
   AddCXXSynthetic(swift_category_sp, creator,
-                  m_syntheticChildrenName.AsCString(),
+                  m_syntheticChildrenName.AsCString(nullptr),
                   m_nativeStorage_demangledRegex, flags, true);
   AddCXXSynthetic(swift_category_sp, creator,
-                  m_syntheticChildrenName.AsCString(),
+                  m_syntheticChildrenName.AsCString(nullptr),
                   m_nativeStorageRoot_demangled, flags, false);
   AddCXXSynthetic(swift_category_sp, creator,
-                  m_syntheticChildrenName.AsCString(),
+                  m_syntheticChildrenName.AsCString(nullptr),
                   m_emptyStorage_demangled, flags, false);
   AddCXXSynthetic(swift_category_sp, creator,
-                  m_syntheticChildrenName.AsCString(),
+                  m_syntheticChildrenName.AsCString(nullptr),
                   m_deferredBridgedStorage_demangledRegex, flags, true);
 
   flags.SetSkipPointers(false);
   AddCXXSynthetic(swift_category_sp, creator,
-                  m_syntheticChildrenName.AsCString(),
+                  m_syntheticChildrenName.AsCString(nullptr),
                   m_nativeStorage_mangledRegex_ObjC, flags, true);
   AddCXXSynthetic(swift_category_sp, creator,
-                  m_syntheticChildrenName.AsCString(),
+                  m_syntheticChildrenName.AsCString(nullptr),
                   m_emptyStorage_mangled_ObjC, flags, false);
   AddCXXSynthetic(swift_category_sp, creator,
-                  m_syntheticChildrenName.AsCString(),
+                  m_syntheticChildrenName.AsCString(nullptr),
                   m_deferredBridgedStorage_mangledRegex_ObjC, flags, true);
 }
 
@@ -493,19 +493,30 @@ NativeHashedStorageHandler::NativeHashedStorageHandler(
 
   m_ptr_size = m_process->GetAddressByteSize();
 
-  auto count_sp = m_storage->GetChildAtNamePath({g__count, g__value});
+  // Embedded Swift can resolve the static, but not the dynamic value.
+  ValueObject *storage_for_children = m_storage;
+  if (m_is_embedded_swift) {
+    lldb::ValueObjectSP static_storage = m_storage->GetStaticValue();
+    if (!static_storage)
+      return;
+    storage_for_children = static_storage.get();
+  }
+  auto count_sp =
+      storage_for_children->GetChildAtNamePath({g__count, g__value});
   if (!count_sp)
     return;
   m_count = count_sp->GetValueAsUnsigned(0);
 
-  auto scale_sp = m_storage->GetChildAtNamePath({g__scale, g__value});
+  auto scale_sp =
+      storage_for_children->GetChildAtNamePath({g__scale, g__value});
   if (!scale_sp)
     return;
   auto scale = scale_sp->GetValueAsUnsigned(0);
   m_scale = scale;
 
   auto keys_ivar = value_type ? g__rawKeys : g__rawElements;
-  auto keys_sp = m_storage->GetChildAtNamePath({keys_ivar, g__rawValue});
+  auto keys_sp =
+      storage_for_children->GetChildAtNamePath({keys_ivar, g__rawValue});
   if (!keys_sp)
     return;
   m_keys_ptr = keys_sp->GetValueAsUnsigned(LLDB_INVALID_ADDRESS);
@@ -513,7 +524,8 @@ NativeHashedStorageHandler::NativeHashedStorageHandler(
   lldb::addr_t last_field_ptr = keys_sp->GetAddressOf().address;
 
   if (value_type) {
-    auto values_sp = m_storage->GetChildAtNamePath({g__rawValues, g__rawValue});
+    auto values_sp =
+        storage_for_children->GetChildAtNamePath({g__rawValues, g__rawValue});
     if (!values_sp)
       return;
     m_values_ptr = values_sp->GetValueAsUnsigned(LLDB_INVALID_ADDRESS);
@@ -782,12 +794,12 @@ llvm::Expected<size_t>
 HashedSyntheticChildrenFrontEnd::GetIndexOfChildWithName(ConstString name) {
   if (!m_buffer)
     return llvm::createStringError("Type has no child named '%s'",
-                                   name.AsCString());
+                                   name.AsCString(""));
   const char *item_name = name.GetCString();
   auto optional_idx = ExtractIndexFromString(item_name);
   if (!optional_idx ||
       optional_idx.value() >= CalculateNumChildrenIgnoringErrors())
     return llvm::createStringError("Type has no child named '%s'",
-                                   name.AsCString());
+                                   name.AsCString(""));
   return optional_idx.value();
 }

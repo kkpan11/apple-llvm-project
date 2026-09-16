@@ -164,7 +164,8 @@ lldb::REPLSP SwiftREPL::CreateInstanceFromDebugger(Status &err,
   }
 
   FileSpecList containingModules;
-  containingModules.Append(exe_module_sp->GetFileSpec());
+  containingModules.Append(
+      FileSpec(exe_module_sp->GetFileSpec().GetFilename()));
 
   BreakpointSP main_bp_sp = target_sp->CreateBreakpoint(
       &containingModules,    // Limit to these modules
@@ -221,7 +222,7 @@ lldb::REPLSP SwiftREPL::CreateInstanceFromDebugger(Status &err,
   debugger.StartEventHandlerThread();
 
   // Destroy the process and the event handler thread after a fatal error.
-  auto cleanup = llvm::make_scope_exit([&]() {
+  auto cleanup = llvm::scope_exit([&]() {
     process_sp->Destroy(/*force_kill=*/false);
     debugger.StopEventHandlerThread();
   });
@@ -450,7 +451,7 @@ bool isThrownError(ValueObjectSP valobj_sp) {
   if (length < 3)
     return false;
 
-  const char *name_cstr = name.AsCString();
+  const char *name_cstr = name.AsCString(nullptr);
   if (name_cstr[0] != '$')
     return false;
   if (name_cstr[1] != 'E')
@@ -524,8 +525,13 @@ bool SwiftREPL::PrintOneVariable(Debugger &debugger,
       // publicly declared in the SDK.
       if (valobj_sp) {
         auto static_valobj_sp = valobj_sp->GetStaticValue();
+        // ExpressionVariable::GetValueObject() hands out the dynamic value
+        // when one is available, and GetDynamicValue() yields nothing for an
+        // object that is already dynamic.
         auto dynamic_valobj_sp =
-            valobj_sp->GetDynamicValue(lldb::eDynamicCanRunTarget);
+            valobj_sp->IsDynamic()
+                ? valobj_sp
+                : valobj_sp->GetDynamicValue(lldb::eDynamicCanRunTarget);
         if (static_valobj_sp && dynamic_valobj_sp) {
           CompilerType static_type = static_valobj_sp->GetCompilerType();
           CompilerType dynamic_type = dynamic_valobj_sp->GetCompilerType();

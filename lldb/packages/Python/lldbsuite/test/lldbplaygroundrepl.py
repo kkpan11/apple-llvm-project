@@ -107,8 +107,9 @@ class PlaygroundREPLTest(TestBase):
         error = self.get_stream_data(result)
         print("Crash Error: {}".format(error))
 
-    @skipEmbeddedSwift
+    @requireNotEmbeddedSwift # the playground REPL has no embedded Swift counterpart
     @swiftTest
+    @skipIfRemote
     def test_playgrounds(self):
         # Build
         self.build_all()

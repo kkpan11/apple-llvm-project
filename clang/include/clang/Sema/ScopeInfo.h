@@ -23,7 +23,6 @@
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Sema/CleanupInfo.h"
 #include "clang/Sema/DeclSpec.h"
-#include "clang/Sema/TypedMemoryCallsiteContext.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseMapInfo.h"
 #include "llvm/ADT/MapVector.h"
@@ -115,8 +114,6 @@ public:
   /// What kind of scope we are describing.
   ScopeKind Kind : 3;
 
-  TypedMemoryCallsiteContext TMOContext;
-
   /// Whether this function contains a VLA, \@try, try, C++
   /// initializer, or anything else that can't be jumped past.
   bool HasBranchProtectedScope : 1;
@@ -206,8 +203,13 @@ private:
 
 public:
   /// A SwitchStmt, along with a flag indicating if its list of case statements
-  /// is incomplete (because we dropped an invalid one while parsing).
-  using SwitchInfo = llvm::PointerIntPair<SwitchStmt*, 1, bool>;
+  /// is incomplete (because we dropped an invalid one while parsing), as well
+  /// as the DeclContext containing the statement.
+  struct SwitchInfo : llvm::PointerIntPair<SwitchStmt *, 1, bool> {
+    DeclContext *EnclosingDC;
+    SwitchInfo(SwitchStmt *Switch, DeclContext *DC)
+        : PointerIntPair(Switch, false), EnclosingDC(DC) {}
+  };
 
   /// SwitchStack - This is the current set of active switch statements in the
   /// block.
@@ -879,6 +881,8 @@ public:
   /// at which point the mutability of the lambda
   /// is known.
   bool AfterParameterList = true;
+
+  bool BeforeCompoundStatement = true;
 
   ParmVarDecl *ExplicitObjectParameter = nullptr;
 

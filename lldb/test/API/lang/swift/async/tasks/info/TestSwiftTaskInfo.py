@@ -13,8 +13,8 @@ def _tail(output):
 
 class TestCase(TestBase):
 
-    @skipEmbeddedSwift
-    @skipUnlessDarwin
+    @skipEmbeddedSwift  # rdar://183960945 (Fix async tests running in embedded mode)
+    @skipUnlessPlatform(["macosx", "linux"])
     @swiftTest
     def test_compare_printed_task_variable_to_task_info(self):
         """Compare the output of a printed Task to the output of `task info`."""
@@ -28,8 +28,8 @@ class TestCase(TestBase):
         task_info_output = self.res.GetOutput()
         self.assertEqual(_tail(task_info_output), _tail(frame_variable_output))
 
-    @skipEmbeddedSwift
-    @skipUnlessDarwin
+    @skipEmbeddedSwift  # rdar://183960945 (Fix async tests running in embedded mode)
+    @skipUnlessPlatform(["macosx", "linux"])
     @swiftTest
     def test_compare_printed_task_variable_to_task_info_with_address(self):
         """Compare the output of a printed Task to the output of `task info <address>`."""

@@ -24,10 +24,10 @@
 #include "clang/AST/Stmt.h"
 #include "clang/AST/TemplateBase.h"
 #include "clang/AST/TypeBase.h"
+#include "clang/Basic/BuiltinTraits.h"
 #include "clang/Basic/CharInfo.h"
 #include "clang/Basic/LangOptions.h"
 #include "clang/Basic/SyncScope.h"
-#include "clang/Basic/TypeTraits.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APSInt.h"
 #include "llvm/ADT/SmallVector.h"
@@ -41,31 +41,34 @@
 #include <optional>
 
 namespace clang {
-  class AllocSizeAttr;
-  class APValue;
-  class ASTContext;
-  class BlockDecl;
-  class CXXBaseSpecifier;
-  class CXXMemberCallExpr;
-  class CXXOperatorCallExpr;
-  class CastExpr;
-  class Decl;
-  class IdentifierInfo;
-  class MaterializeTemporaryExpr;
-  class NamedDecl;
-  class ObjCPropertyRefExpr;
-  class OpaqueValueExpr;
-  class ParmVarDecl;
-  class StringLiteral;
-  class TargetInfo;
-  class ValueDecl;
-  class WarnUnusedResultAttr;
+class AllocSizeAttr;
+class APValue;
+class ASTContext;
+class BlockDecl;
+class CXXBaseSpecifier;
+class CXXMemberCallExpr;
+class CXXOperatorCallExpr;
+class CastExpr;
+class Decl;
+class IdentifierInfo;
+struct InferredTypeInfo;
+class MaterializeTemporaryExpr;
+class NamedDecl;
+class ObjCPropertyRefExpr;
+class OpaqueValueExpr;
+class ParmVarDecl;
+class StringLiteral;
+class TargetInfo;
+class ValueDecl;
+class WarnUnusedResultAttr;
+class TypedMemoryAttr;
 
 /// A simple array of base specifiers.
-typedef SmallVector<CXXBaseSpecifier*, 4> CXXCastPath;
+typedef SmallVector<CXXBaseSpecifier *, 4> CXXCastPath;
 
 /// An adjustment to be made to the temporary created when emitting a
-/// reference binding, which accesses a particular subobject of that temporary.
+/// reference binding, which accesses a particular subobject of that
+/// temporary.
 struct SubobjectAdjustment {
   enum {
     DerivedToBaseAdjustment,
@@ -91,7 +94,7 @@ struct SubobjectAdjustment {
 
   SubobjectAdjustment(const CastExpr *BasePath,
                       const CXXRecordDecl *DerivedClass)
-    : Kind(DerivedToBaseAdjustment) {
+      : Kind(DerivedToBaseAdjustment) {
     DerivedToBase.BasePath = BasePath;
     DerivedToBase.DerivedClass = DerivedClass;
   }
@@ -101,7 +104,7 @@ struct SubobjectAdjustment {
   }
 
   SubobjectAdjustment(const MemberPointerType *MPT, Expr *RHS)
-    : Kind(MemberPointerAdjustment) {
+      : Kind(MemberPointerAdjustment) {
     this->Ptr.MPT = MPT;
     this->Ptr.RHS = RHS;
   }
@@ -568,8 +571,13 @@ public:
   ///
   /// Note: This does not perform the implicit conversions required by C++11
   /// [expr.const]p5.
+  ///
+  /// If \p AllowRelaxedEval is \c true, this will allow certain constructs that
+  /// are not valid per the specification.
+  // FIXME: Add proper documentation about the constructs we allow.
   std::optional<llvm::APSInt>
-  getIntegerConstantExpr(const ASTContext &Ctx) const;
+  getIntegerConstantExpr(const ASTContext &Ctx,
+                         bool AllowRelaxedEval = false) const;
   bool isIntegerConstantExpr(const ASTContext &Ctx) const;
 
   /// isCXX98IntegralConstantExpr - Return true if this expression is an
@@ -581,8 +589,12 @@ public:
   ///
   /// Note: This does not perform the implicit conversions required by C++11
   /// [expr.const]p5.
-  bool isCXX11ConstantExpr(const ASTContext &Ctx,
-                           APValue *Result = nullptr) const;
+  ///
+  /// If \p AllowRelaxedEval is \c true, this will allow certain constructs that
+  /// are not valid per the specification.
+  // FIXME: Add proper documentation about the constructs we allow.
+  bool isCXX11ConstantExpr(const ASTContext &Ctx, APValue *Result = nullptr,
+                           bool AllowRelaxedEval = false) const;
 
   /// isPotentialConstantExpr - Return true if this function's definition
   /// might be usable in a constant expression in C++11, if it were marked
@@ -645,6 +657,10 @@ public:
     /// (which may include expensive operations like converting APValue objects
     /// to a string representation).
     SmallVectorImpl<PartialDiagnosticAt> *Diag = nullptr;
+
+    /// Location where we spot ptr to int cast or null subobject while
+    /// evaluating constant expression in MS compatibility mode.
+    SmallVectorImpl<PartialDiagnosticAt> *ExtendedDiag = nullptr;
 
     EvalStatus() = default;
 
@@ -1916,17 +1932,21 @@ public:
     return StringRef(getStrDataAsChar(), getByteLength());
   }
 
+  /// Prints the contents of the string to \p OS.
   void outputString(raw_ostream &OS) const;
 
-  uint32_t getCodeUnit(size_t i) const {
-    assert(i < getLength() && "out of bounds access");
+  /// Return the code unit at the given position.
+  ///
+  /// \pre \p I < getLength()
+  uint32_t getCodeUnit(size_t I) const {
+    assert(I < getLength() && "out of bounds access");
     switch (getCharByteWidth()) {
     case 1:
-      return static_cast<unsigned char>(getStrDataAsChar()[i]);
+      return static_cast<unsigned char>(getStrDataAsChar()[I]);
     case 2:
-      return getStrDataAsUInt16()[i];
+      return getStrDataAsUInt16()[I];
     case 4:
-      return getStrDataAsUInt32()[i];
+      return getStrDataAsUInt32()[I];
     }
     llvm_unreachable("Unsupported character width!");
   }
@@ -1944,8 +1964,20 @@ public:
     return V;
   }
 
+  /// Scan the string literal contents for a code unit with value 0.
+  /// If \p StartIndex is outside of the length of the string, this returns \c
+  /// std::nullopt.
+  ///
+  /// Otherwise, returns the offset (in code units, not bytes) of the zero code
+  /// unit, starting at index \p StartIndex. If no such code unit could be
+  /// found, this returns `getLength() - StartIndex`.
+  UnsignedOrNone findZeroCodeUnit(unsigned StartIndex = 0) const;
+
+  /// \returns The length of the full string in bytes.
   unsigned getByteLength() const { return getCharByteWidth() * getLength(); }
+  /// \returns The length of the full string in characters.
   unsigned getLength() const { return *getTrailingObjects<unsigned>(); }
+  /// \returns The size of one character in the string, in bytes.
   unsigned getCharByteWidth() const { return StringLiteralBits.CharByteWidth; }
 
   StringLiteralKind getKind() const {
@@ -1960,6 +1992,10 @@ public:
   bool isUnevaluated() const { return getKind() == StringLiteralKind::Unevaluated; }
   bool isPascal() const { return StringLiteralBits.IsPascal; }
 
+  /// Scans the string contents for any non-ascii characters.
+  ///
+  /// \pre isUnevaluated() || getCharByteWidth() == 1
+  /// \returns \c true if a non-ascii character was found, \c false otherwise.
   bool containsNonAscii() const {
     for (auto c : getString())
       if (!isASCII(c))
@@ -1967,6 +2003,11 @@ public:
     return false;
   }
 
+  /// Scans the string contents for any non-ascii or null characters.
+  ///
+  /// \pre isUnevaluated() || getCharByteWidth() == 1
+  /// \returns \c true if a non-ascii or null character was found, \c false
+  /// otherwise.
   bool containsNonAsciiOrNull() const {
     for (auto c : getString())
       if (!isASCII(c) || !c)
@@ -1974,7 +2015,7 @@ public:
     return false;
   }
 
-  /// getNumConcatenated - Get the number of string literal tokens that were
+  /// Get the number of string literal tokens that were
   /// concatenated in translation phase #6 to form this string literal.
   unsigned getNumConcatenated() const {
     return StringLiteralBits.NumConcatenated;
@@ -1986,13 +2027,12 @@ public:
     return getTrailingObjects<SourceLocation>()[TokNum];
   }
 
-  /// getLocationOfByte - Return a source location that points to the specified
+  /// Return a source location that points to the specified
   /// byte of this string literal.
   ///
   /// Strings are amazingly complex.  They can be formed from multiple tokens
   /// and can have escape sequences in them in addition to the usual trigraph
   /// and escaped newline business.  This routine handles this complexity.
-  ///
   SourceLocation
   getLocationOfByte(unsigned ByteNo, const SourceManager &SM,
                     const LangOptions &Features, const TargetInfo &Target,
@@ -3168,6 +3208,8 @@ public:
   const FunctionDecl *getDirectCallee() const {
     return dyn_cast_or_null<FunctionDecl>(getCalleeDecl());
   }
+
+  const TypedMemoryAttr *getTypedMemoryAttribute() const;
 
   /// getNumArgs - Return the number of actual arguments to this call.
   unsigned getNumArgs() const { return NumArgs; }
@@ -5820,28 +5862,37 @@ public:
 
 /// Represents a call to the builtin function \c __builtin_va_arg.
 class VAArgExpr : public Expr {
+public:
+  enum VarArgKind { VA_Std = 0, VA_MS, VA_ZOS };
+
+private:
   Stmt *Val;
-  llvm::PointerIntPair<TypeSourceInfo *, 1, bool> TInfo;
+  llvm::PointerIntPair<TypeSourceInfo *, 2, VarArgKind> TInfo;
   SourceLocation BuiltinLoc, RParenLoc;
 public:
   VAArgExpr(SourceLocation BLoc, Expr *e, TypeSourceInfo *TInfo,
-            SourceLocation RPLoc, QualType t, bool IsMS)
+            SourceLocation RPLoc, QualType t, VarArgKind VaKind)
       : Expr(VAArgExprClass, t, VK_PRValue, OK_Ordinary), Val(e),
-        TInfo(TInfo, IsMS), BuiltinLoc(BLoc), RParenLoc(RPLoc) {
+        TInfo(TInfo, VaKind), BuiltinLoc(BLoc), RParenLoc(RPLoc) {
     setDependence(computeDependence(this));
   }
 
   /// Create an empty __builtin_va_arg expression.
   explicit VAArgExpr(EmptyShell Empty)
-      : Expr(VAArgExprClass, Empty), Val(nullptr), TInfo(nullptr, false) {}
+      : Expr(VAArgExprClass, Empty), Val(nullptr), TInfo(nullptr, VA_Std) {}
 
   const Expr *getSubExpr() const { return cast<Expr>(Val); }
   Expr *getSubExpr() { return cast<Expr>(Val); }
   void setSubExpr(Expr *E) { Val = E; }
 
+  VarArgKind getVarargABI() const { return TInfo.getInt(); }
+  void setVarargABI(VarArgKind Kind) { TInfo.setInt(Kind); }
+
   /// Returns whether this is really a Win64 ABI va_arg expression.
-  bool isMicrosoftABI() const { return TInfo.getInt(); }
-  void setIsMicrosoftABI(bool IsMS) { TInfo.setInt(IsMS); }
+  bool isMicrosoftABI() const { return TInfo.getInt() == VA_MS; }
+
+  /// Returns whether this is really a z/OS ABI va_arg expression.
+  bool isZOSABI() const { return TInfo.getInt() == VA_ZOS; }
 
   TypeSourceInfo *getWrittenTypeInfo() const { return TInfo.getPointer(); }
   void setWrittenTypeInfo(TypeSourceInfo *TI) { TInfo.setPointer(TI); }
@@ -5987,7 +6038,7 @@ struct EmbedDataStorage {
 ///  { {EE(9th and 10th element), { zeroinitializer }}}
 ///
 /// EmbedExpr inside of a semantic initializer list and referencing more than
-/// one element can only appear for arrays of scalars.
+/// one element can only appear for arrays of integer or floating-point type.
 class EmbedExpr final : public Expr {
   SourceLocation EmbedKeywordLoc;
   IntegerLiteral *FakeChildNode = nullptr;
@@ -6201,7 +6252,7 @@ public:
   unsigned getNumInitsWithEmbedExpanded() const {
     unsigned Sum = InitExprs.size();
     for (auto *IE : InitExprs)
-      if (auto *EE = dyn_cast<EmbedExpr>(IE))
+      if (auto *EE = dyn_cast<EmbedExpr>(cast<Expr>(IE)->IgnoreParenImpCasts()))
         Sum += EE->getDataElementCount() - 1;
     return Sum;
   }

@@ -33,7 +33,10 @@ def execute_command(command):
     return exit_status
 
 
+@skipIfRemote
 class TestSwiftPlaygrounds(TestBase):
+    SHARED_BUILD_TESTCASE = False
+
     def get_build_triple(self):
         """We want to build the file with a deployment target earlier than the
            availability set in the source file."""
@@ -61,8 +64,8 @@ class TestSwiftPlaygrounds(TestBase):
             triple = '{}-apple-macosx{}'.format(machine, version)
         return triple
 
-    @skipEmbeddedSwift
-    @skipUnlessDarwin
+    @requireNotEmbeddedSwift
+    @requireDarwin
     @swiftTest
     @skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
     @skipIf(debug_info=decorators.no_match("dsym"))
@@ -71,8 +74,8 @@ class TestSwiftPlaygrounds(TestBase):
         self.launch(True)
         self.do_basic_test(True)
 
-    @skipEmbeddedSwift
-    @skipUnlessDarwin
+    @requireNotEmbeddedSwift
+    @requireDarwin
     @swiftTest
     @skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
     @skipIf(debug_info=decorators.no_match("dsym"))
@@ -81,8 +84,8 @@ class TestSwiftPlaygrounds(TestBase):
         self.launch(False)
         self.do_basic_test(False)
 
-    @skipEmbeddedSwift
-    @skipUnlessDarwin
+    @requireNotEmbeddedSwift
+    @requireDarwin
     @swiftTest
     @skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
     @skipIf(debug_info=decorators.no_match("dsym"))
@@ -92,8 +95,8 @@ class TestSwiftPlaygrounds(TestBase):
         self.launch(True)
         self.do_concurrency_test()
 
-    @skipEmbeddedSwift
-    @skipUnlessDarwin
+    @requireNotEmbeddedSwift
+    @requireDarwin
     @swiftTest
     @skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
     @skipIf(debug_info=decorators.no_match("dsym"))

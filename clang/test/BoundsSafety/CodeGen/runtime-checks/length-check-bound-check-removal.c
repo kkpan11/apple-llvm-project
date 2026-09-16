@@ -43,8 +43,8 @@ int access1(S *p) {
 // CHECK-NEXT:    [[LEN:%.*]] = getelementptr inbounds nuw i8, ptr [[P]], i64 8
 // CHECK-NEXT:    [[TMP0:%.*]] = load i32, ptr [[LEN]], align 8, !tbaa [[TBAA5]]
 // CHECK-NEXT:    [[TMP1:%.*]] = load ptr, ptr [[P]], align 8, !tbaa [[TBAA9]]
-// CHECK-NEXT:    [[IDX_EXT:%.*]] = sext i32 [[TMP0]] to i64
-// CHECK-NEXT:    [[ADD_PTR:%.*]] = getelementptr inbounds [4 x i8], ptr [[TMP1]], i64 [[IDX_EXT]]
+// CHECK-NEXT:    [[IDX_EXT:%.*]] = zext nneg i32 [[TMP0]] to i64
+// CHECK-NEXT:    [[ADD_PTR:%.*]] = getelementptr inbounds nuw [4 x i8], ptr [[TMP1]], i64 [[IDX_EXT]]
 // CHECK-NEXT:    [[CMP:%.*]] = icmp slt i32 [[TMP0]], 2
 // CHECK-NEXT:    br i1 [[CMP]], label [[CLEANUP:%.*]], label [[CONT25:%.*]]
 // CHECK:       trap:

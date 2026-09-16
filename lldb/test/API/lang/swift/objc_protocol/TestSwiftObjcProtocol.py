@@ -5,8 +5,8 @@ import lldbsuite.test.lldbutil as lldbutil
 
 
 class TestSwiftObjcProtocol(TestBase):
-    @skipEmbeddedSwift
-    @skipUnlessDarwin
+    @requireNotEmbeddedSwift
+    @requireSwiftObjCInterop
     @swiftTest
     def test(self):
         """Tests that dynamic type resolution works for an Objective-C protocol existential"""

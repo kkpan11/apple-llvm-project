@@ -6,12 +6,12 @@
 
 
 // Now make sure the codegen is as expected and identical with and without the new bounds checks
-// RUN: %clang_cc1 -fbounds-safety -O0 -triple arm64-apple-iphoneos -emit-llvm -fbounds-safety-bringup-missing-checks=all -Wno-bounds-safety-externally-counted-ptr-arith-constant-count %s -o - | FileCheck %s
-// RUN: %clang_cc1 -fbounds-safety -O0 -triple arm64-apple-iphoneos -emit-llvm -fno-bounds-safety-bringup-missing-checks=all -Wno-bounds-safety-externally-counted-ptr-arith-constant-count %s -o - | FileCheck %s
+// RUN: %clang_cc1 -fbounds-safety -O0 -triple arm64-apple-ios -emit-llvm -fbounds-safety-bringup-missing-checks=all -Wno-bounds-safety-externally-counted-ptr-arith-constant-count %s -o - | FileCheck %s
+// RUN: %clang_cc1 -fbounds-safety -O0 -triple arm64-apple-ios -emit-llvm -fno-bounds-safety-bringup-missing-checks=all -Wno-bounds-safety-externally-counted-ptr-arith-constant-count %s -o - | FileCheck %s
 
 
 #include <ptrcheck.h>
-// CHECK-LABEL: define dso_local void @test_cb_const_inc(
+// CHECK-LABEL: define void @test_cb_const_inc(
 // CHECK-SAME: ptr noundef [[P:%.*]]) #[[ATTR0:[0-9]+]] {
 // CHECK-NEXT:  [[ENTRY:.*]]:
 // CHECK-NEXT:    [[P_ADDR:%.*]] = alloca ptr, align 8
@@ -81,8 +81,8 @@
 // CHECK-NEXT:    [[WIDE_PTR_UB23:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR22]], align 8, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB_ADDR24:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable", ptr [[AGG_TEMP19]], i32 0, i32 2, !annotation [[META1]]
 // CHECK-NEXT:    [[WIDE_PTR_LB25:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR24]], align 8, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_UB18]] to i64, !annotation [[META1]]
-// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR21]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_UB18]] to i64, !annotation [[META1]]
+// CHECK-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR21]] to i64, !annotation [[META1]]
 // CHECK-NEXT:    [[SUB_PTR_SUB:%.*]] = sub i64 [[SUB_PTR_LHS_CAST]], [[SUB_PTR_RHS_CAST]], !annotation [[META1]]
 // CHECK-NEXT:    [[SUB_PTR_DIV:%.*]] = sdiv exact i64 [[SUB_PTR_SUB]], 4, !annotation [[META1]]
 // CHECK-NEXT:    [[CMP26:%.*]] = icmp sle i64 3, [[SUB_PTR_DIV]], !annotation [[META1]]

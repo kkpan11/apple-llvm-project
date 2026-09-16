@@ -78,7 +78,8 @@ public:
       const std::map<GlobalValue::GUID, GlobalValue::LinkageTypes> &ResolvedODR,
       const GVSummaryMapTy &DefinedGVSummaries, unsigned OptLevel,
       bool Freestanding,
-      const ThinLTOCodeGeneratorImpl::TargetMachineBuilder &TMBuilder);
+      const ThinLTOCodeGeneratorImpl::TargetMachineBuilder &TMBuilder,
+      ArrayRef<std::string> MllvmArgs);
 };
 
 /// This class define an interface similar to the LTOCodeGenerator, but adapted
@@ -192,6 +193,7 @@ public:
       const GVSummaryMapTy &DefinedGVSummaries, unsigned OptLevel,
       bool Freestanding,
       const ThinLTOCodeGeneratorImpl::TargetMachineBuilder &TMBuilder,
+      ArrayRef<std::string> MllvmArgs,
       std::function<void(llvm::function_ref<void(raw_ostream &OS)>)> Logger =
           nullptr);
 
@@ -295,6 +297,11 @@ public:
 
   /// Enable or disable debug output for the new pass manager.
   void setDebugPassManager(unsigned Enabled) { DebugPassManager = Enabled; }
+
+  /// Set the -mllvm arguments to include in the cache key.
+  void setMllvmArgs(ArrayRef<std::string> Args) {
+    MllvmArgs.assign(Args.begin(), Args.end());
+  }
 
   /// Disable CodeGen, only run the stages till codegen and stop. The output
   /// will be bitcode.
@@ -420,6 +427,9 @@ private:
   /// Flag to indicate whether debug output should be enabled for the new pass
   /// manager.
   bool DebugPassManager = false;
+
+  /// -mllvm arguments included in the cache key.
+  std::vector<std::string> MllvmArgs;
 };
 }
 #endif

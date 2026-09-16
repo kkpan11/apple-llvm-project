@@ -15,7 +15,7 @@ class TestSwiftProgressReporting(TestBase):
         self.listener = lldbutil.start_listening_from(self.broadcaster,
                                         lldb.SBDebugger.eBroadcastBitProgress)
 
-    @skipEmbeddedSwift
+    @requireNotEmbeddedSwift
     # Don't run ClangImporter tests if Clangimporter is disabled.
     @skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
     @skipUnlessDarwin
@@ -42,7 +42,6 @@ class TestSwiftProgressReporting(TestBase):
             "Setting up Swift reflection",
             "Importing dependencies for main.swift",
             "Importing dependencies for main.swift: Foundation",
-            "Importing Swift standard library",
             "Loading reflection metadata",
         ]
 

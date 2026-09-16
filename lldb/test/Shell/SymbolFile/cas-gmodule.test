@@ -4,7 +4,11 @@
 
 # RUN: %python %S/../../../scripts/clang-explicit-module-build.py -cas-path %t/cas -- %clang_host -c -g -o %t/test.o %t/tu.c -fmodules -gmodules -fmodules-cache-path=%t/module-cache
 # RUN: %clang_host %t/test.o -o %t/main
-# RUN: %lldb %t/main -s %t/lldb.script 2>&1 | FileCheck %s --check-prefix=FAIL
+# The search for a .cas-config walks up the directory tree, so a
+# caching-enabled build directory above %t would otherwise hand this run a
+# CAS. An empty CASPath terminates that search without configuring a CAS.
+# RUN: cp %t/empty-cas-config.template %t/.cas-config
+# RUN: cd %t && %lldb main -s lldb.script 2>&1 | FileCheck %s --check-prefix=FAIL
 # RUN: sed "s|DIR|%/t|g" %t/cas-config.template > %t/.cas-config
 # RUN: cd %t && %lldb main -s lldb.script 2>&1 | FileCheck %s
 
@@ -22,17 +26,19 @@
 # RUN: cd %t/nocas-build && %lldb main -s %t/lldb.script 2>&1 | FileCheck %s --check-prefix=NONCAS
 
 # FAIL: Failed to load module 'Bottom' at '{{.*}}' from CAS: no CAS associated with module
-# FAIL: Unable to locate module needed for external types.
+# FAIL: unable to locate module needed for external types.
 # CHECK: Loading module 'Bottom' from CAS at
 # CHECK: Initialized CAS at [[CAS:.*]]
 # CHECK: Loading module 'Top' from CAS at
 # CHECK: top = (x = 1)
-# CHECK: CAS at [[CAS]] was garbage-collected
-# CHECK: Initialized CAS at [[CAS]]
-# CHECK: Loading module 'Top' from CAS at
+# One CAS is opened for the session and released at the end of it, with
+# nothing left holding it. Loading a second module out of the same CAS reuses
+# the open one rather than opening it again.
+# CHECK-NOT: Initialized CAS at
+# CHECK: Released 1 CAS object store(s), 0 still referenced
 
 # NONCAS-NOT: is not valid CASID
-# NONCAS: Unable to locate module needed for external types
+# NONCAS: unable to locate module needed for external types
 
 
 //--- module.modulemap
@@ -56,6 +62,11 @@ int main(void) {
   _bottom.top.x = 1;
 
   return 0; // BREAK HERE
+}
+
+//--- empty-cas-config.template
+{
+  "CASPath": ""
 }
 
 //--- cas-config.template

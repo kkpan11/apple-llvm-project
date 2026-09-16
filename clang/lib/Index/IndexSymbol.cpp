@@ -302,11 +302,15 @@ SymbolInfo index::getSymbolInfo(const Decl *D) {
       Info.Lang = SymbolLanguage::CXX;
       break;
     }
-    case Decl::ClassTemplate:
-      Info.Kind = SymbolKind::Class;
+    case Decl::ClassTemplate: {
+      const ClassTemplateDecl *CTD = cast<ClassTemplateDecl>(D);
+      Info.Kind = CTD->getTemplatedDecl()->getTagKind() == TagTypeKind::Struct
+                      ? SymbolKind::Struct
+                      : SymbolKind::Class;
       Info.Properties |= (SymbolPropertySet)SymbolProperty::Generic;
       Info.Lang = SymbolLanguage::CXX;
       break;
+    }
     case Decl::FunctionTemplate:
       Info.Kind = SymbolKind::Function;
       Info.Properties |= (SymbolPropertySet)SymbolProperty::Generic;
@@ -618,7 +622,14 @@ StringRef index::getSymbolLanguageString(SymbolLanguage K) {
 
 std::optional<SymbolProperty>
 index::getSwiftAccessLevelFromSymbolPropertySet(SymbolPropertySet Props) {
-  if (uint32_t AccessLevel = Props & (1 << 19 | 1 << 18 | 1 << 17)) {
+  uint32_t AccessLevelBits =
+      (uint32_t)SymbolProperty::SwiftAccessControlLessThanFilePrivate |
+      (uint32_t)SymbolProperty::SwiftAccessControlFilePrivate |
+      (uint32_t)SymbolProperty::SwiftAccessControlInternal |
+      (uint32_t)SymbolProperty::SwiftAccessControlPackage |
+      (uint32_t)SymbolProperty::SwiftAccessControlSPI |
+      (uint32_t)SymbolProperty::SwiftAccessControlPublic;
+  if (uint32_t AccessLevel = Props & AccessLevelBits) {
     return (SymbolProperty)AccessLevel;
   }
   return std::nullopt;

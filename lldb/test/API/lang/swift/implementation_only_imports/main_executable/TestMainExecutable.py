@@ -22,6 +22,10 @@ import time
 
 @skipIfDarwin # rdar://problem/54322424 Sometimes failing, sometimes truncated output.
 class TestMainExecutable(TestBase):
+    # The test functions build the library with and without library evolution,
+    # which a shared build directory would not rebuild.
+    SHARED_BUILD_TESTCASE = False
+
     def launch_info(self):
         info = lldb.SBLaunchInfo([])
 
@@ -43,7 +47,6 @@ class TestMainExecutable(TestBase):
     )
     @swiftTest
     @skipEmbeddedSwift
-    @skipIfWindows
     def test_implementation_only_import_main_executable(self):
         """Test `@_implementationOnly import` in the main executable
 
@@ -51,7 +54,13 @@ class TestMainExecutable(TestBase):
         """
 
         self.build()
-        lldbutil.run_to_source_breakpoint(self, "break here", lldb.SBFileSpec("main.swift"), self.launch_info())
+        lldbutil.run_to_source_breakpoint(
+            self,
+            "break here",
+            lldb.SBFileSpec("main.swift"),
+            self.launch_info(),
+            extra_images=["SomeLibrary"],
+        )
 
         # This test is deliberately checking what the user will see, rather than
         # the structure provided by the Python API, in order to test the recovery.
@@ -69,8 +78,11 @@ class TestMainExecutable(TestBase):
     )
     @swiftTest
     @skipEmbeddedSwift
-    @skipIfWindows
     @skipIfLinux # rdar://problem/67348391
+    # On Windows lldb resolves the type via DWARFImporter even with the
+    # swiftmodule removed, so the expected "<could not resolve type>" recovery
+    # output differs.
+    @skipIfWindows
     def test_implementation_only_import_main_executable_no_library_module(self):
         """Test `@_implementationOnly import` in the main executable, after removing the library's swiftmodule
 
@@ -81,7 +93,13 @@ class TestMainExecutable(TestBase):
         self.runCmd("settings set symbols.use-swift-dwarfimporter false")
         os.remove(self.getBuildArtifact("SomeLibrary.swiftmodule"))
         os.remove(self.getBuildArtifact("SomeLibrary.swiftinterface"))
-        lldbutil.run_to_source_breakpoint(self, "break here", lldb.SBFileSpec("main.swift"), self.launch_info())
+        lldbutil.run_to_source_breakpoint(
+            self,
+            "break here",
+            lldb.SBFileSpec("main.swift"),
+            self.launch_info(),
+            extra_images=["SomeLibrary"],
+        )
 
         # FIXME: This particular test config is producing different results on
         # different machines, but it's also the least important configuration
@@ -101,9 +119,7 @@ class TestMainExecutable(TestBase):
         self.runCmd("settings set symbols.use-swift-dwarfimporter true")
 
     @swiftTest
-    @skipEmbeddedSwift
-    @skipIfWindows
-    @expectedFailureAll(oslist=["windows"])
+    @requireNotEmbeddedSwift # library evolution cannot be enabled with embedded Swift
     def test_implementation_only_import_main_executable_resilient(self):
         """Test `@_implementationOnly import` in the main executable with a resilient library
 
@@ -111,7 +127,13 @@ class TestMainExecutable(TestBase):
         """
 
         self.build(dictionary={"LIBRARY_SWIFTFLAGS_EXTRAS": "-enable-library-evolution"})
-        lldbutil.run_to_source_breakpoint(self, "break here", lldb.SBFileSpec("main.swift"), self.launch_info())
+        lldbutil.run_to_source_breakpoint(
+            self,
+            "break here",
+            lldb.SBFileSpec("main.swift"),
+            self.launch_info(),
+            extra_images=["SomeLibrary"],
+        )
 
         # This test is deliberately checking what the user will see, rather than
         # the structure provided by the Python API, in order to test the recovery.
@@ -124,8 +146,7 @@ class TestMainExecutable(TestBase):
         self.expect("expr TwoInts(4, 5)", substrs=["(SomeLibrary.TwoInts)", "= (first = 4, second = 5)"])
 
     @swiftTest
-    @skipEmbeddedSwift
-    @skipIfWindows
+    @requireNotEmbeddedSwift # library evolution cannot be enabled with embedded Swift
     @expectedFailureOS(no_match(["macosx"])) # Requires Remote Mirrors support
     def test_implementation_only_import_main_executable_resilient_no_library_module(self):
         """Test `@_implementationOnly import` in the main executable with a resilient library, after removing the library's swiftmodule
@@ -136,7 +157,13 @@ class TestMainExecutable(TestBase):
         self.build(dictionary={"LIBRARY_SWIFTFLAGS_EXTRAS": "-enable-library-evolution"})
         os.remove(self.getBuildArtifact("SomeLibrary.swiftmodule"))
         os.remove(self.getBuildArtifact("SomeLibrary.swiftinterface"))
-        lldbutil.run_to_source_breakpoint(self, "break here", lldb.SBFileSpec("main.swift"), self.launch_info())
+        lldbutil.run_to_source_breakpoint(
+            self,
+            "break here",
+            lldb.SBFileSpec("main.swift"),
+            self.launch_info(),
+            extra_images=["SomeLibrary"],
+        )
 
         # This test is deliberately checking what the user will see, rather than
         # the structure provided by the Python API, in order to test the recovery.

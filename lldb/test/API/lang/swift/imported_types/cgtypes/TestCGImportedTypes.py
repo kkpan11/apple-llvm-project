@@ -20,8 +20,8 @@ import os
 
 
 class TestSwiftCGImportedTypes(TestBase):
-    @skipEmbeddedSwift
-    @skipUnlessDarwin
+    @requireNotEmbeddedSwift
+    @requireDarwin
     @swiftTest
     def test_swift_cg_imported_types(self):
         """Test that we are able to deal with C-imported types from CoreGraphics"""

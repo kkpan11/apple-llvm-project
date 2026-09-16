@@ -4,8 +4,8 @@ from lldbsuite.test.decorators import *
 import lldbsuite.test.lldbutil as lldbutil
 
 class TestSwiftObjCOptionalDict(TestBase):
-    @skipEmbeddedSwift
-    @skipUnlessDarwin
+    @requireNotEmbeddedSwift
+    @requireObjCFoundation
     @swiftTest
     def test(self):
         self.build()

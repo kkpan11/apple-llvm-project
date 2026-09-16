@@ -22,6 +22,7 @@
 #include "swift/Demangling/Demangle.h"
 #include "swift/Demangling/Demangler.h"
 
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/BinaryFormat/Dwarf.h"
 
@@ -148,23 +149,30 @@ static llvm::Expected<llvm::SmallVector<MetadataInfo>> CollectMetadataInfos(
             metadata_variables[i]->GetMetadata())
             ->m_variable_sp;
     auto archetype_name = variable_sp->GetType()->GetName();
-    if (generic_sig)
-      metadata_info.emplace_back(generic_sig->generic_params[i].is_pack,
-                                 generic_sig->generic_params[i].depth,
-                                 generic_sig->generic_params[i].index,
-                                 archetype_name);
-    else {
-      auto maybe_depth_and_index =
-          ParseSwiftGenericParameter(metadata_variables[i]->GetName().str());
-      if (!maybe_depth_and_index)
-        return llvm::createStringError(llvm::errc::not_supported,
-                                       "unexpected metadata variable");
-      metadata_info.emplace_back(false, maybe_depth_and_index->first,
-                                 maybe_depth_and_index->second, archetype_name);
+    auto maybe_depth_and_index =
+        ParseSwiftGenericParameter(metadata_variables[i]->GetName().str());
+    if (!maybe_depth_and_index)
+      return llvm::createStringError(llvm::errc::not_supported,
+                                     "unexpected metadata variable");
+    unsigned depth = maybe_depth_and_index->first;
+    unsigned index = maybe_depth_and_index->second;
+
+    // Whether this is a pack is only known from the generic signature.
+    bool is_pack = false;
+    if (generic_sig) {
+      const auto &params = generic_sig->generic_params;
+      const auto *it = llvm::find_if(params, [&](const auto &param) {
+        return param.depth == depth && param.index == index;
+      });
+      if (it != params.end())
+        is_pack = it->is_pack;
     }
+
+    metadata_info.emplace_back(is_pack, depth, index, archetype_name);
   }
   return metadata_info;
 }
+
 /// Constructs the signatures for the expression evaluation functions based on
 /// the metadata variables in scope and any variadic functiontion parameters.
 /// For every outermost metadata pointer in scope ($τ_0_0, $τ_0_1, etc), we want
@@ -175,8 +183,18 @@ static llvm::Expected<llvm::SmallVector<MetadataInfo>> CollectMetadataInfos(
 /// func $__lldb_user_expr<T0, T1, ..., Tn>
 ///     (_ $__lldb_arg: UnsafeMutablePointer<(T0, T1, ..., Tn)>)
 ///
-/// - An optional $__lldb_trampoline signature like the above, but
-///   that also takes in a pointer to self:
+///   With \p inherit_context_generic_params -- an instance method in an
+///   extension of the generic context -- those parameters are already in
+///   scope under the same archetype names, and are the only ones that get
+///   this far. Declaring them again would shadow them and drop their
+///   requirements, so the list is omitted and $__lldb_arg's tuple refers to
+///   the context's parameters:
+///
+/// func $__lldb_user_expr
+///     (_ $__lldb_arg: UnsafeMutablePointer<(T0, T1, ..., Tn)>)
+///
+/// - An optional $__lldb_trampoline signature, which always declares the
+///   parameters and also takes in a pointer to self:
 ///
 /// func $__lldb_trampoline<T0, T1, ..., Tn>
 ///      (_ $__lldb_arg: UnsafeMutablePointer<(T0, T1, ..., Tn)>,
@@ -199,7 +217,7 @@ static llvm::Expected<llvm::SmallVector<MetadataInfo>> CollectMetadataInfos(
 static llvm::Expected<CallsAndArgs> MakeGenericSignaturesAndCalls(
     llvm::ArrayRef<SwiftASTManipulator::VariableInfo> local_variables,
     const std::optional<SwiftLanguageRuntime::GenericSignature> &generic_sig,
-    bool needs_object_ptr) {
+    bool needs_object_ptr, bool inherit_context_generic_params) {
   auto metadata_variables = CollectMetadataVariables(local_variables);
   // The number of metadata variables could be > if the function is in
   // a generic context.
@@ -236,10 +254,12 @@ static llvm::Expected<CallsAndArgs> MakeGenericSignaturesAndCalls(
   if (!generic_params_no_packs.empty())
     generic_params_no_packs.pop_back();
 
-  std::string user_expr; 
+  std::string user_expr;
   llvm::raw_string_ostream user_expr_stream(user_expr);
-  user_expr_stream << "func $__lldb_user_expr<" << generic_params
-                   << ">(_ $__lldb_arg: UnsafeMutablePointer<("
+  user_expr_stream << "func $__lldb_user_expr";
+  if (!inherit_context_generic_params)
+    user_expr_stream << "<" << generic_params << ">";
+  user_expr_stream << "(_ $__lldb_arg: UnsafeMutablePointer<("
                    << generic_params_no_packs << ")>";
   for (auto &var : local_variables)
     if (var.GetType().GetTypeInfo() & lldb::eTypeIsPack) {
@@ -482,8 +502,16 @@ do {
       // FIXME: the current approach names the generic parameter "T", use the
       // user's name for the generic parameter, so they can refer to it in
       // their expression.
+      //
+      // $__lldb_user_expr can only inherit the context's generic parameters
+      // when the extension it lands in is an extension of the generic context
+      // itself. With a weak self it is an extension of Swift.Optional, where
+      // only `Wrapped` is in scope, so there the parameters have to be
+      // redeclared.
+      bool inherit_context_generic_params = needs_object_ptr && !weak_self;
       auto c = MakeGenericSignaturesAndCalls(local_variables, generic_sig,
-                                             needs_object_ptr);
+                                             needs_object_ptr,
+                                             inherit_context_generic_params);
       if (!c) {
         status = Status::FromError(c.takeError());
         return status;
@@ -547,8 +575,12 @@ func $__lldb_expr(_ $__lldb_arg : UnsafeMutablePointer<Any>) {
     }
   } else if (!SwiftASTManipulator::ShouldBindGenericTypes(
                  options.GetSwiftBindGenericTypes())) {
-    auto c = MakeGenericSignaturesAndCalls(local_variables, generic_sig,
-                                           needs_object_ptr);
+    // Without a self there is no extension to inherit generic parameters
+    // from: $__lldb_user_expr is emitted at the top level and has to declare
+    // them itself.
+    auto c = MakeGenericSignaturesAndCalls(
+        local_variables, generic_sig, needs_object_ptr,
+        /*inherit_context_generic_params=*/false);
     if (!c) {
       status = Status::FromError(c.takeError());
       return status;
@@ -583,11 +615,16 @@ func $__lldb_expr(_ $__lldb_arg : UnsafeMutablePointer<Any>) {
   return status;
 }
 
-/// Format the OS name the way that Swift availability attributes do.
-static llvm::StringRef getAvailabilityName(const llvm::Triple &triple) {
-    swift::LangOptions lang_options;
+/// Format the OS name the way that Swift availability attributes do. Returns
+/// std::nullopt if the triple does not correspond to an availability platform.
+static std::optional<llvm::StringRef>
+getAvailabilityName(const llvm::Triple &triple) {
+  swift::LangOptions lang_options;
   lang_options.setTarget(triple);
-  return swift::platformString(swift::targetPlatform(lang_options));
+  auto platform = swift::targetPlatform(lang_options);
+  if (!platform)
+    return std::nullopt;
+  return swift::platformString(*platform);
 }
 
 uint32_t SwiftExpressionSourceCode::GetNumBodyLines() {
@@ -638,8 +675,12 @@ Status SwiftExpressionSourceCode::GetText(
     auto arch_spec = target->GetArchitecture();
     auto triple = arch_spec.GetTriple();
     if (triple.isOSDarwin()) {
-      if (auto process_sp = exe_ctx.GetProcessSP()) {
-        os_vers << getAvailabilityName(triple) << " ";
+      auto availability_name = getAvailabilityName(triple);
+      auto process_sp = exe_ctx.GetProcessSP();
+      // When the triple has no availability platform, os_vers stays empty.
+      // That suppresses the @available attribute in the wrapped expression.
+      if (availability_name && process_sp) {
+        os_vers << *availability_name << " ";
         if (options.GetUseContextFreeSwiftPrintObject()) {
           // Disable availability by setting the OS version to 9999. This
           // placeholder OS version used for future OS versions when building

@@ -16,6 +16,7 @@
 #include "lldb/Expression/DWARFExpression.h"
 
 #include <cinttypes>
+#include <limits>
 
 #include <optional>
 #include <vector>
@@ -571,6 +572,36 @@ bool DWARFExpression::ContainsThreadLocalStorage(
   }
   return false;
 }
+
+bool DWARFExpression::IsImplicit(
+    const DWARFExpression::Delegate *dwarf_cu) const {
+  lldb::offset_t offset = 0;
+  while (m_data.ValidOffset(offset)) {
+    const LocationAtom op = static_cast<LocationAtom>(m_data.GetU8(&offset));
+
+    switch (op) {
+    // Implicit locations have no storage in the inferior. Composite locations
+    // might, but we conservatively treat them as non-writable because LLDB
+    // does not write their pieces back.
+    case DW_OP_stack_value:
+    case DW_OP_implicit_value:
+    case DW_OP_implicit_pointer:
+    case DW_OP_piece:
+    case DW_OP_bit_piece:
+      return true;
+    default:
+      break;
+    }
+
+    const lldb::offset_t op_arg_size =
+        GetOpcodeDataSize(m_data, offset, op, dwarf_cu);
+    if (op_arg_size == LLDB_INVALID_OFFSET)
+      return false;
+    offset += op_arg_size;
+  }
+  return false;
+}
+
 bool DWARFExpression::LinkThreadLocalStorage(
     const DWARFExpression::Delegate *dwarf_cu,
     std::function<lldb::addr_t(lldb::addr_t file_addr)> const
@@ -672,62 +703,70 @@ static bool IsAsyncRegCtxExpr(DataExtractor &opcodes,
          (triple == llvm::Triple::aarch64 && op_async_ctx_reg == DW_OP_reg22);
 }
 
-/// If \c opcodes contain the location of asynchronous contexts in Swift,
-/// evaluates DW_OP_call_frame_cfa, returns its result, and updates
-/// \c current_offset. Otherwise, does nothing. This is possible because, for
-/// async frames, the language unwinder treats the asynchronous context as the
-/// CFA of the frame.
+/// If \c subexpr contains the location of asynchronous contexts in Swift,
+/// evaluates DW_OP_call_frame_cfa and returns its result. Otherwise, does
+/// nothing. This is possible because, for async frames, the language
+/// unwinder treats the asynchronous context as the CFA of the frame.
+///
+/// \param next_op_is_deref whether the DWARF operation immediately following
+/// \c subexpr in the overall location expression is a DW_OP_deref.
+/// \param consumed_next_op set to true only on success, if that trailing
+/// DW_OP_deref was consumed as part of evaluating a Swift async Q funclet and
+/// should not be evaluated again by the caller. On failure it is left false, so
+/// the caller's fallback path still evaluates the DW_OP_deref.
 static llvm::Expected<Value> SwiftAsyncEvaluate_DW_OP_entry_value(
     ExecutionContext &exe_ctx, StackFrame &current_frame,
     const DWARFExpression::Delegate *dwarf_cu, Function &func,
-    const DataExtractor &opcodes, offset_t &current_offset) {
+    llvm::ArrayRef<uint8_t> subexpr, bool next_op_is_deref,
+    bool &consumed_next_op) {
+  consumed_next_op = false;
   auto func_name = func.GetMangled().GetMangledName();
   if (!SwiftLanguageRuntime::IsAnySwiftAsyncFunctionSymbol(func_name))
     return llvm::createStringError(
         "SwiftAsyncEvaluate_DW_OP_entry_value: not an async function");
 
-  offset_t new_offset = current_offset;
-  const uint32_t subexpr_len = opcodes.GetULEB128(&new_offset);
-  const void *subexpr_data = opcodes.GetData(&new_offset, subexpr_len);
-  if (!subexpr_data)
-    return llvm::createStringError(
-        "SwiftAsyncEvaluate_DW_OP_entry_value: failed to extract subexpr");
-
-  DataExtractor subexpr_extractor(
-      subexpr_data, subexpr_len, opcodes.GetByteOrder(),
-      opcodes.GetAddressByteSize(), opcodes.getTargetByteSize());
-  if (!IsAsyncRegCtxExpr(subexpr_extractor,
-                         exe_ctx.GetTargetRef().GetArchitecture().GetMachine()))
+  const ArchSpec &arch = exe_ctx.GetTargetRef().GetArchitecture();
+  DataExtractor subexpr_extractor(subexpr.data(), subexpr.size(),
+                                  arch.GetByteOrder(),
+                                  arch.GetAddressByteSize());
+  if (!IsAsyncRegCtxExpr(subexpr_extractor, arch.GetMachine()))
     return llvm::createStringError("SwiftAsyncEvaluate_DW_OP_entry_value: "
                                    "missing async context register opcode");
 
   // Q funclets require an extra level of indirection.
-  if (SwiftLanguageRuntime::IsSwiftAsyncAwaitResumePartialFunctionSymbol(
-          func_name)) {
-    const uint8_t maybe_op_deref = opcodes.GetU8(&new_offset);
-    if (maybe_op_deref != DW_OP_deref)
-      return llvm::createStringError("SwiftAsyncEvaluate_DW_OP_entry_value: "
-                                     "missing DW_OP_deref in Q funclet");
-  }
+  const bool is_q_funclet =
+      SwiftLanguageRuntime::IsSwiftAsyncAwaitResumePartialFunctionSymbol(
+          func_name);
+  if (is_q_funclet && !next_op_is_deref)
+    return llvm::createStringError("SwiftAsyncEvaluate_DW_OP_entry_value: "
+                                   "missing DW_OP_deref in Q funclet");
 
   static const uint8_t cfa_opcode = DW_OP_call_frame_cfa;
-  DataExtractor cfa_expr_data(&cfa_opcode, 1, opcodes.GetByteOrder(),
-                              opcodes.GetAddressByteSize(),
-                              opcodes.getTargetByteSize());
+  DataExtractor cfa_expr_data(&cfa_opcode, 1, arch.GetByteOrder(),
+                              arch.GetAddressByteSize());
   DWARFExpressionList cfa_expr(func.CalculateSymbolContextModule(),
                                cfa_expr_data, dwarf_cu);
   llvm::Expected<Value> maybe_result = cfa_expr.Evaluate(
       &exe_ctx, current_frame.GetRegisterContext().get(), LLDB_INVALID_ADDRESS,
       /*initial_value_ptr=*/nullptr,
       /*object_address_ptr=*/nullptr);
-  if (maybe_result)
-    current_offset = new_offset;
+  // Only report the trailing DW_OP_deref as consumed if the evaluation
+  // succeeded. On failure the caller falls through to the generic call-site
+  // parameter path, which must still get a chance to evaluate it.
+  if (maybe_result && is_q_funclet)
+    consumed_next_op = true;
   return maybe_result;
 }
 #endif // LLDB_ENABLE_SWIFT
 
 static llvm::Error Evaluate_DW_OP_entry_value(EvalContext &eval_ctx,
-                                              llvm::ArrayRef<uint8_t> subexpr) {
+                                              llvm::ArrayRef<uint8_t> subexpr
+#ifdef LLDB_ENABLE_SWIFT
+                                              ,
+                                              bool next_op_is_deref,
+                                              bool &consumed_next_op
+#endif // LLDB_ENABLE_SWIFT
+                                              ) {
   Log *log = GetLog(LLDBLog::Expressions);
   // DW_OP_entry_value(sub-expr) describes the location a variable had upon
   // function entry: this variable location is presumed to be optimized out at
@@ -824,9 +863,9 @@ static llvm::Error Evaluate_DW_OP_entry_value(EvalContext &eval_ctx,
 
 #ifdef LLDB_ENABLE_SWIFT
   if (llvm::Expected<Value> result = SwiftAsyncEvaluate_DW_OP_entry_value(
-          *exe_ctx, *current_frame, dwarf_cu, *current_func, opcodes,
-          opcode_offset)) {
-    stack.push_back(*result);
+          *eval_ctx.exe_ctx, *current_frame, eval_ctx.dwarf_cu, *current_func,
+          subexpr, next_op_is_deref, consumed_next_op)) {
+    eval_ctx.stack.push_back(*result);
     return llvm::Error::success();
   } else
     LLDB_LOG_ERROR(log, result.takeError(), "{0}");
@@ -1151,6 +1190,13 @@ static llvm::Error Evaluate_DW_OP_deref(EvalContext &eval_ctx,
     return llvm::createStringError("invalid value for %s", op_name);
   }
 
+  // Both operations push a generic, address-sized result. The truncation to
+  // `size` bytes is unnecessary here because the branches above already limit
+  // the value to `size` bytes; it is only done for consistency with the
+  // Register/Implicit path above.
+  eval_ctx.stack.back().GetScalar().TruncOrExtendTo(size * 8, /*sign=*/false);
+  eval_ctx.stack.back().GetScalar().TruncOrExtendTo(size_addr_bytes * 8,
+                                                    /*sign=*/false);
   return llvm::Error::success();
 }
 
@@ -1231,6 +1277,15 @@ static llvm::Error Evaluate_DW_OP_piece(EvalContext &eval_ctx,
       }
     } break;
     case Value::ValueType::HostAddress: {
+      // DW_OP_implicit_value uses a host-address Value to own its bytes. For
+      // a full-width piece, the address is only an implementation detail and
+      // the backing bytes are the value of the piece.
+      if (piece_locdesc == Implicit &&
+          curr_piece_source_value.GetBuffer().GetByteSize() ==
+              piece_byte_size) {
+        curr_piece = curr_piece_source_value;
+        break;
+      }
       return llvm::createStringError(
           "failed to read memory DW_OP_piece(%" PRIu64
           ") from host address 0x%" PRIx64,
@@ -1288,26 +1343,77 @@ static llvm::Error Evaluate_DW_OP_piece(EvalContext &eval_ctx,
 static llvm::Error Evaluate_DW_OP_convert(EvalContext &eval_ctx,
                                           uint64_t relative_die_offset) {
   uint64_t bit_size;
-  bool sign;
+  llvm::dwarf::TypeKind encoding;
   if (relative_die_offset == 0) {
     // The generic type has the size of an address on the target
     // machine and an unspecified signedness. Scalar has no
     // "unspecified signedness", so we use unsigned types.
     if (!eval_ctx.module_sp)
       return llvm::createStringError("no module");
-    sign = false;
+    encoding = llvm::dwarf::DW_ATE_unsigned;
     bit_size = eval_ctx.module_sp->GetArchitecture().GetAddressByteSize() * 8;
     if (!bit_size)
       return llvm::createStringError("unspecified architecture");
   } else {
-    auto bit_size_sign_or_err =
-        eval_ctx.dwarf_cu->GetDIEBitSizeAndSign(relative_die_offset);
-    if (!bit_size_sign_or_err)
-      return bit_size_sign_or_err.takeError();
-    bit_size = bit_size_sign_or_err->first;
-    sign = bit_size_sign_or_err->second;
+    if (!eval_ctx.dwarf_cu)
+      return llvm::createStringError(
+          "DW_OP_convert with a DIE offset requires a DWARF unit");
+    auto bit_size_encoding_or_err =
+        eval_ctx.dwarf_cu->GetDIEBitSizeAndEncoding(relative_die_offset);
+    if (!bit_size_encoding_or_err)
+      return bit_size_encoding_or_err.takeError();
+    bit_size = bit_size_encoding_or_err->first;
+    encoding = bit_size_encoding_or_err->second;
   }
-  eval_ctx.stack.back().GetScalar().TruncOrExtendTo(bit_size, sign);
+
+  Scalar &scalar = eval_ctx.stack.back().GetScalar();
+  if (encoding == llvm::dwarf::DW_ATE_float) {
+    const llvm::fltSemantics *semantics;
+    switch (bit_size) {
+    case 32:
+      semantics = &llvm::APFloat::IEEEsingle();
+      break;
+    case 64:
+      semantics = &llvm::APFloat::IEEEdouble();
+      break;
+    case 80:
+      semantics = &llvm::APFloat::x87DoubleExtended();
+      break;
+    default:
+      return llvm::createStringError("unsupported floating-point type size");
+    }
+
+    if (scalar.GetType() == Scalar::e_float) {
+      llvm::APFloat value = scalar.GetAPFloat();
+      bool loses_info;
+      value.convert(*semantics, llvm::APFloat::rmNearestTiesToEven,
+                    &loses_info);
+      scalar = Scalar(std::move(value));
+    } else if (!scalar.FloatPromote(*semantics)) {
+      return llvm::createStringError("cannot convert value to floating point");
+    }
+    return llvm::Error::success();
+  }
+
+  const bool sign = encoding == llvm::dwarf::DW_ATE_signed ||
+                    encoding == llvm::dwarf::DW_ATE_signed_char;
+  if (scalar.GetType() == Scalar::e_float) {
+    if (bit_size > std::numeric_limits<uint16_t>::max())
+      return llvm::createStringError("unsupported integer type size: %" PRIu64,
+                                     bit_size);
+
+    llvm::APSInt value(static_cast<unsigned>(bit_size),
+                       /*isUnsigned=*/!sign);
+    bool is_exact;
+    llvm::APFloat::opStatus status = scalar.GetAPFloat().convertToInteger(
+        value, llvm::APFloat::rmTowardZero, &is_exact);
+    if (status & llvm::APFloat::opInvalidOp)
+      return llvm::createStringError(
+          "cannot convert floating-point value to integer");
+    scalar = Scalar(std::move(value));
+  } else {
+    scalar.TruncOrExtendTo(bit_size, sign);
+  }
   return llvm::Error::success();
 }
 
@@ -1377,6 +1483,64 @@ static llvm::Error Evaluate_DW_OP_call_frame_cfa(EvalContext &eval_ctx) {
   return llvm::Error::success();
 }
 
+static llvm::Error CheckScalarOperandsHaveSameType(const Scalar &lhs,
+                                                   const Scalar &rhs,
+                                                   LocationAtom opcode,
+                                                   size_t address_size) {
+  auto mismatch = [&](const char *what) {
+    return llvm::createStringError("%s requires operands to have the same %s",
+                                   DW_OP_value_to_name(opcode), what);
+  };
+
+  // Scalar does not preserve the original DWARF DIE, but it does carry the
+  // pieces of base-type information used by the evaluator: kind, size, and
+  // integer signedness.
+  if (lhs.GetType() != rhs.GetType())
+    return mismatch("type");
+
+  // Only integer scalars have signedness. Non-integer operands (e.g. floats)
+  // have no further scalar type information to compare once kind and size
+  // match.
+  if (lhs.GetType() != Scalar::e_int) {
+    if (lhs.GetByteSize() != rhs.GetByteSize())
+      return mismatch("size");
+    return llvm::Error::success();
+  }
+
+  // DWARF generic values are address-sized integers with unspecified
+  // signedness. LLDB does not explicitly preserve genericness on the
+  // expression stack, so treat integers at least as wide as the generic type
+  // as potentially generic and compatible with one another, regardless of
+  // exact width or signedness. This keeps common expressions working: e.g.
+  // DW_OP_breg produces a register-sized value while DW_OP_const* produces an
+  // address-sized one, yet both are meant to be generic. DW_OP_constu and
+  // DW_OP_consts also do not always use to_generic due to
+  // https://github.com/llvm/llvm-project/issues/47431. A precise fix would
+  // require tracking genericness directly, which is a larger type-system
+  // change.
+  if (address_size != 0 && lhs.GetByteSize() >= address_size &&
+      rhs.GetByteSize() >= address_size)
+    return llvm::Error::success();
+
+  // For non-generic integer operands, size and signedness are part of the
+  // base-type information preserved by Scalar, so require them to match.
+  if (lhs.GetByteSize() != rhs.GetByteSize())
+    return mismatch("size");
+  if (lhs.IsSigned() != rhs.IsSigned())
+    return mismatch("signedness");
+
+  return llvm::Error::success();
+}
+
+// Scalar does not preserve DWARF's generic type identifier. Since generic
+// values are address-sized integers, use the scalar kind and width as an
+// approximation.
+static bool IsPotentiallyGenericIntegerOperand(const Scalar &operand,
+                                               size_t address_size) {
+  return address_size != 0 && operand.GetType() == Scalar::e_int &&
+         operand.GetByteSize() == address_size;
+}
+
 llvm::Expected<Value> DWARFExpression::Evaluate(
     ExecutionContext *exe_ctx, RegisterContext *reg_ctx,
     lldb::ModuleSP module_sp, const DataExtractor &opcodes,
@@ -1444,7 +1608,7 @@ llvm::Expected<Value> DWARFExpression::Evaluate(
 
     switch (opcode) {
     case DW_OP_addr:
-      stack.push_back(Scalar(op->getRawOperand(0)));
+      stack.push_back(to_generic(op->getRawOperand(0)));
       stack.back().SetValueType(Value::ValueType::FileAddress);
       break;
 
@@ -1460,11 +1624,6 @@ llvm::Expected<Value> DWARFExpression::Evaluate(
               Evaluate_DW_OP_deref(eval_ctx, opcode, size, address_size))
         return err;
     } break;
-
-    case DW_OP_xderef_size:
-      return llvm::createStringError("unimplemented opcode: DW_OP_xderef_size");
-    case DW_OP_xderef:
-      return llvm::createStringError("unimplemented opcode: DW_OP_xderef");
 
     case DW_OP_const1u:
       stack.push_back(to_generic(op->getRawOperand(0)));
@@ -1547,12 +1706,20 @@ llvm::Expected<Value> DWARFExpression::Evaluate(
       break;
 
     case DW_OP_and:
+      if (llvm::Error err = CheckScalarOperandsHaveSameType(
+              stack[stack.size() - 2].GetScalar(), stack.back().GetScalar(),
+              opcode, address_size))
+        return err;
       tmp = stack.back();
       stack.pop_back();
       stack.back().GetScalar() = stack.back().GetScalar() & tmp.GetScalar();
       break;
 
     case DW_OP_div: {
+      if (llvm::Error err = CheckScalarOperandsHaveSameType(
+              stack[stack.size() - 2].GetScalar(), stack.back().GetScalar(),
+              opcode, address_size))
+        return err;
       tmp = stack.back();
       if (tmp.GetScalar().IsZero())
         return llvm::createStringError("divide by zero");
@@ -1570,18 +1737,36 @@ llvm::Expected<Value> DWARFExpression::Evaluate(
     } break;
 
     case DW_OP_minus:
+      if (llvm::Error err = CheckScalarOperandsHaveSameType(
+              stack[stack.size() - 2].GetScalar(), stack.back().GetScalar(),
+              opcode, address_size))
+        return err;
       tmp = stack.back();
       stack.pop_back();
       stack.back().GetScalar() = stack.back().GetScalar() - tmp.GetScalar();
       break;
 
     case DW_OP_mod:
+      if (llvm::Error err = CheckScalarOperandsHaveSameType(
+              stack[stack.size() - 2].GetScalar(), stack.back().GetScalar(),
+              opcode, address_size))
+        return err;
       tmp = stack.back();
       stack.pop_back();
+      if (IsPotentiallyGenericIntegerOperand(tmp.GetScalar(), address_size) &&
+          IsPotentiallyGenericIntegerOperand(stack.back().GetScalar(),
+                                             address_size)) {
+        tmp.GetScalar().MakeUnsigned();
+        stack.back().GetScalar().MakeUnsigned();
+      }
       stack.back().GetScalar() = stack.back().GetScalar() % tmp.GetScalar();
       break;
 
     case DW_OP_mul:
+      if (llvm::Error err = CheckScalarOperandsHaveSameType(
+              stack[stack.size() - 2].GetScalar(), stack.back().GetScalar(),
+              opcode, address_size))
+        return err;
       tmp = stack.back();
       stack.pop_back();
       stack.back().GetScalar() = stack.back().GetScalar() * tmp.GetScalar();
@@ -1598,12 +1783,20 @@ llvm::Expected<Value> DWARFExpression::Evaluate(
       break;
 
     case DW_OP_or:
+      if (llvm::Error err = CheckScalarOperandsHaveSameType(
+              stack[stack.size() - 2].GetScalar(), stack.back().GetScalar(),
+              opcode, address_size))
+        return err;
       tmp = stack.back();
       stack.pop_back();
       stack.back().GetScalar() = stack.back().GetScalar() | tmp.GetScalar();
       break;
 
     case DW_OP_plus:
+      if (llvm::Error err = CheckScalarOperandsHaveSameType(
+              stack[stack.size() - 2].GetScalar(), stack.back().GetScalar(),
+              opcode, address_size))
+        return err;
       tmp = stack.back();
       stack.pop_back();
       stack.back().GetScalar() += tmp.GetScalar();
@@ -1611,19 +1804,35 @@ llvm::Expected<Value> DWARFExpression::Evaluate(
 
     case DW_OP_plus_uconst: {
       const uint64_t uconst_value = op->getRawOperand(0);
-      // Implicit conversion from a UINT to a Scalar...
-      stack.back().GetScalar() += uconst_value;
-      if (!stack.back().GetScalar().IsValid())
+      Scalar &operand = stack.back().GetScalar();
+      Scalar addend(uconst_value);
+      // The addend is interpreted as the same type as the popped operand
+      // (DWARF v5, 2.5.1.4). Give it the operand's exact integer type so
+      // the addition keeps the operand's width and wraparound semantics
+      // instead of promoting to a 64-bit unsigned value.
+      if (operand.GetType() == Scalar::e_int)
+        addend.TruncOrExtendTo(operand.GetAPSInt().getBitWidth(),
+                               operand.GetAPSInt().isSigned());
+      operand += addend;
+      if (!operand.IsValid())
         return llvm::createStringError("DW_OP_plus_uconst failed");
     } break;
 
     case DW_OP_shl:
+      if (llvm::Error err = CheckScalarOperandsHaveSameType(
+              stack[stack.size() - 2].GetScalar(), stack.back().GetScalar(),
+              opcode, address_size))
+        return err;
       tmp = stack.back();
       stack.pop_back();
       stack.back().GetScalar() <<= tmp.GetScalar();
       break;
 
     case DW_OP_shr:
+      if (llvm::Error err = CheckScalarOperandsHaveSameType(
+              stack[stack.size() - 2].GetScalar(), stack.back().GetScalar(),
+              opcode, address_size))
+        return err;
       tmp = stack.back();
       stack.pop_back();
       if (!stack.back().GetScalar().ShiftRightLogical(tmp.GetScalar()))
@@ -1631,12 +1840,20 @@ llvm::Expected<Value> DWARFExpression::Evaluate(
       break;
 
     case DW_OP_shra:
+      if (llvm::Error err = CheckScalarOperandsHaveSameType(
+              stack[stack.size() - 2].GetScalar(), stack.back().GetScalar(),
+              opcode, address_size))
+        return err;
       tmp = stack.back();
       stack.pop_back();
       stack.back().GetScalar() >>= tmp.GetScalar();
       break;
 
     case DW_OP_xor:
+      if (llvm::Error err = CheckScalarOperandsHaveSameType(
+              stack[stack.size() - 2].GetScalar(), stack.back().GetScalar(),
+              opcode, address_size))
+        return err;
       tmp = stack.back();
       stack.pop_back();
       stack.back().GetScalar() = stack.back().GetScalar() ^ tmp.GetScalar();
@@ -1678,39 +1895,93 @@ llvm::Expected<Value> DWARFExpression::Evaluate(
     } break;
 
     case DW_OP_eq:
+      if (llvm::Error err = CheckScalarOperandsHaveSameType(
+              stack[stack.size() - 2].GetScalar(), stack.back().GetScalar(),
+              opcode, address_size))
+        return err;
       tmp = stack.back();
       stack.pop_back();
-      stack.back().GetScalar() = stack.back().GetScalar() == tmp.GetScalar();
+      stack.back().GetScalar() =
+          to_generic(stack.back().GetScalar() == tmp.GetScalar());
       break;
 
     case DW_OP_ge:
+      if (llvm::Error err = CheckScalarOperandsHaveSameType(
+              stack[stack.size() - 2].GetScalar(), stack.back().GetScalar(),
+              opcode, address_size))
+        return err;
       tmp = stack.back();
       stack.pop_back();
-      stack.back().GetScalar() = stack.back().GetScalar() >= tmp.GetScalar();
+      if (IsPotentiallyGenericIntegerOperand(tmp.GetScalar(), address_size) &&
+          IsPotentiallyGenericIntegerOperand(stack.back().GetScalar(),
+                                             address_size)) {
+        tmp.GetScalar().MakeSigned();
+        stack.back().GetScalar().MakeSigned();
+      }
+      stack.back().GetScalar() =
+          to_generic(stack.back().GetScalar() >= tmp.GetScalar());
       break;
 
     case DW_OP_gt:
+      if (llvm::Error err = CheckScalarOperandsHaveSameType(
+              stack[stack.size() - 2].GetScalar(), stack.back().GetScalar(),
+              opcode, address_size))
+        return err;
       tmp = stack.back();
       stack.pop_back();
-      stack.back().GetScalar() = stack.back().GetScalar() > tmp.GetScalar();
+      if (IsPotentiallyGenericIntegerOperand(tmp.GetScalar(), address_size) &&
+          IsPotentiallyGenericIntegerOperand(stack.back().GetScalar(),
+                                             address_size)) {
+        tmp.GetScalar().MakeSigned();
+        stack.back().GetScalar().MakeSigned();
+      }
+      stack.back().GetScalar() =
+          to_generic(stack.back().GetScalar() > tmp.GetScalar());
       break;
 
     case DW_OP_le:
+      if (llvm::Error err = CheckScalarOperandsHaveSameType(
+              stack[stack.size() - 2].GetScalar(), stack.back().GetScalar(),
+              opcode, address_size))
+        return err;
       tmp = stack.back();
       stack.pop_back();
-      stack.back().GetScalar() = stack.back().GetScalar() <= tmp.GetScalar();
+      if (IsPotentiallyGenericIntegerOperand(tmp.GetScalar(), address_size) &&
+          IsPotentiallyGenericIntegerOperand(stack.back().GetScalar(),
+                                             address_size)) {
+        tmp.GetScalar().MakeSigned();
+        stack.back().GetScalar().MakeSigned();
+      }
+      stack.back().GetScalar() =
+          to_generic(stack.back().GetScalar() <= tmp.GetScalar());
       break;
 
     case DW_OP_lt:
+      if (llvm::Error err = CheckScalarOperandsHaveSameType(
+              stack[stack.size() - 2].GetScalar(), stack.back().GetScalar(),
+              opcode, address_size))
+        return err;
       tmp = stack.back();
       stack.pop_back();
-      stack.back().GetScalar() = stack.back().GetScalar() < tmp.GetScalar();
+      if (IsPotentiallyGenericIntegerOperand(tmp.GetScalar(), address_size) &&
+          IsPotentiallyGenericIntegerOperand(stack.back().GetScalar(),
+                                             address_size)) {
+        tmp.GetScalar().MakeSigned();
+        stack.back().GetScalar().MakeSigned();
+      }
+      stack.back().GetScalar() =
+          to_generic(stack.back().GetScalar() < tmp.GetScalar());
       break;
 
     case DW_OP_ne:
+      if (llvm::Error err = CheckScalarOperandsHaveSameType(
+              stack[stack.size() - 2].GetScalar(), stack.back().GetScalar(),
+              opcode, address_size))
+        return err;
       tmp = stack.back();
       stack.pop_back();
-      stack.back().GetScalar() = stack.back().GetScalar() != tmp.GetScalar();
+      stack.back().GetScalar() =
+          to_generic(stack.back().GetScalar() != tmp.GetScalar());
       break;
 
     case DW_OP_lit0:
@@ -1836,7 +2107,8 @@ llvm::Expected<Value> DWARFExpression::Evaluate(
         return err;
 
       int64_t breg_offset = op->getRawOperand(0);
-      tmp.GetScalar() += static_cast<uint64_t>(breg_offset);
+      tmp.GetScalar() = to_generic(tmp.GetScalar().ULongLong());
+      tmp.GetScalar() += to_generic(breg_offset);
       tmp.ClearContext();
       stack.push_back(tmp);
       stack.back().SetValueType(Value::ValueType::LoadAddress);
@@ -1848,7 +2120,8 @@ llvm::Expected<Value> DWARFExpression::Evaluate(
         return err;
 
       int64_t breg_offset = op->getRawOperand(1);
-      tmp.GetScalar() += static_cast<uint64_t>(breg_offset);
+      tmp.GetScalar() = to_generic(tmp.GetScalar().ULongLong());
+      tmp.GetScalar() += to_generic(breg_offset);
       tmp.ClearContext();
       stack.push_back(tmp);
       stack.back().SetValueType(Value::ValueType::LoadAddress);
@@ -1858,6 +2131,8 @@ llvm::Expected<Value> DWARFExpression::Evaluate(
       if (llvm::Error err =
               Evaluate_DW_OP_fbreg(eval_ctx, op->getRawOperand(0)))
         return err;
+      stack.back().GetScalar() =
+          to_generic(stack.back().GetScalar().ULongLong());
       break;
 
     case DW_OP_nop:
@@ -1878,7 +2153,8 @@ llvm::Expected<Value> DWARFExpression::Evaluate(
         return llvm::createStringError(
             "expression stack needs at least 1 item for DW_OP_bit_piece");
       } else {
-        UpdateValueTypeFromLocationDescription(eval_ctx, eval_ctx.loc_desc_kind,
+        const LocationDescriptionKind piece_locdesc = eval_ctx.loc_desc_kind;
+        UpdateValueTypeFromLocationDescription(eval_ctx, piece_locdesc,
                                                &stack.back());
         // Reset for the next piece.
         eval_ctx.loc_desc_kind = Memory;
@@ -1901,7 +2177,18 @@ llvm::Expected<Value> DWARFExpression::Evaluate(
 
         case Value::ValueType::FileAddress:
         case Value::ValueType::LoadAddress:
+          return llvm::createStringError(
+              "unable to extract DW_OP_bit_piece(bit_size = %" PRIu64
+              ", bit_offset = %" PRIu64 ") from an address value.",
+              piece_bit_size, piece_bit_offset);
+
         case Value::ValueType::HostAddress:
+          // As above, a full-width DW_OP_implicit_value piece refers to the
+          // backing bytes, not the address of that backing storage.
+          if (piece_locdesc == Implicit && piece_bit_offset == 0 &&
+              piece_bit_size % 8 == 0 &&
+              stack.back().GetBuffer().GetByteSize() == piece_bit_size / 8)
+            break;
           return llvm::createStringError(
               "unable to extract DW_OP_bit_piece(bit_size = %" PRIu64
               ", bit_offset = %" PRIu64 ") from an address value.",
@@ -1945,11 +2232,6 @@ llvm::Expected<Value> DWARFExpression::Evaluate(
       }
       break;
 
-    case DW_OP_call2:
-      return llvm::createStringError("unimplemented opcode DW_OP_call2");
-    case DW_OP_call4:
-      return llvm::createStringError("unimplemented opcode DW_OP_call4");
-
     case DW_OP_stack_value:
       eval_ctx.loc_desc_kind = Implicit;
       stack.back().SetValueType(Value::ValueType::Scalar);
@@ -1964,6 +2246,8 @@ llvm::Expected<Value> DWARFExpression::Evaluate(
     case DW_OP_call_frame_cfa:
       if (llvm::Error err = Evaluate_DW_OP_call_frame_cfa(eval_ctx))
         return err;
+      stack.back().GetScalar() =
+          to_generic(stack.back().GetScalar().ULongLong());
       break;
 
     case DW_OP_form_tls_address:
@@ -1980,7 +2264,7 @@ llvm::Expected<Value> DWARFExpression::Evaluate(
       uint64_t index = op->getRawOperand(0);
       lldb::addr_t value =
           eval_ctx.dwarf_cu->ReadAddressFromDebugAddrSection(index);
-      stack.push_back(Scalar(value));
+      stack.push_back(to_generic(value));
       stack.back().SetValueType(Value::ValueType::FileAddress);
     } break;
 
@@ -1992,7 +2276,7 @@ llvm::Expected<Value> DWARFExpression::Evaluate(
       uint64_t index = op->getRawOperand(0);
       lldb::addr_t value =
           eval_ctx.dwarf_cu->ReadAddressFromDebugAddrSection(index);
-      stack.push_back(Scalar(value));
+      stack.push_back(to_generic(value));
     } break;
 
     case DW_OP_GNU_entry_value:
@@ -2011,6 +2295,24 @@ llvm::Expected<Value> DWARFExpression::Evaluate(
       if (error)
         return error;
 
+#ifdef LLDB_ENABLE_SWIFT
+      llvm::DWARFExpression::iterator next_op = op.skipBytes(block_size);
+      bool next_op_is_deref =
+          next_op != op_end &&
+          static_cast<LocationAtom>(next_op->getCode()) == DW_OP_deref;
+      bool consumed_next_op = false;
+      if (llvm::Error err = Evaluate_DW_OP_entry_value(
+              eval_ctx, block_data, next_op_is_deref, consumed_next_op))
+        return llvm::createStringError(
+            "could not evaluate DW_OP_entry_value: %s",
+            llvm::toString(std::move(err)).c_str());
+
+      // We can't use `operator++` here because the iterator currently points
+      // to the second operand. See the comment above. If the Swift async
+      // evaluator consumed a trailing DW_OP_deref as part of a Q funclet,
+      // skip past that too.
+      op = op.skipBytes(block_size + (consumed_next_op ? 1 : 0));
+#else
       if (llvm::Error err = Evaluate_DW_OP_entry_value(eval_ctx, block_data))
         return llvm::createStringError(
             "could not evaluate DW_OP_entry_value: %s",
@@ -2019,8 +2321,43 @@ llvm::Expected<Value> DWARFExpression::Evaluate(
       // We can't use `operator++` here because the iterator currently points
       // to the second operand. See the comment above.
       op = op.skipBytes(block_size);
+#endif // LLDB_ENABLE_SWIFT
       continue;
     }
+
+    // These opcodes are decoded but not evaluated here.
+    case DW_OP_xderef:
+    case DW_OP_xderef_size:
+    case DW_OP_call2:
+    case DW_OP_call4:
+    case DW_OP_call_ref:
+    case DW_OP_constx:
+    case DW_OP_const_type:
+    case DW_OP_regval_type:
+    case DW_OP_deref_type:
+    case DW_OP_xderef_type:
+    case DW_OP_reinterpret:
+    case DW_OP_GNU_implicit_pointer:
+      return llvm::createStringError("unimplemented opcode %s",
+                                     DW_OP_value_to_name(opcode));
+
+    case DW_OP_LLVM_user:
+      if (op->getSubCode() == DW_OP_LLVM_piece_end) {
+        if (op->getEndOffset() != expr_data.size())
+          return llvm::createStringError(
+              "DW_OP_LLVM_piece_end is only supported at the end of an "
+              "expression");
+
+        // LLDB already constructs one composite in `pieces`, so a terminal
+        // DW_OP_LLVM_piece_end is a no-op. TODO: Support multiple composites
+        // and DW_OP_piece_end once LLVM implements DWARF 6 locations on the
+        // stack.
+        // Extension:
+        // https://llvm.org/docs/AMDGPUDwarfExtensionsForHeterogeneousDebugging.html
+        // Standard: https://dwarfstd.org/issues/230524.1-orig.html
+        break;
+      }
+      [[fallthrough]];
 
     default:
       if (eval_ctx.dwarf_cu) {

@@ -1,13 +1,14 @@
 SWIFT_SOURCES=main.swift
-SWIFTFLAGS_EXTRAS= -I$(shell pwd)
+SWIFTFLAGS_EXTRAS= -I$(BUILDDIR)
 MODULENAME=main
-LD_EXTRAS=-L$(shell pwd)
+LD_EXTRAS=-L$(BUILDDIR)
 
 all: clean SomeLibrary.swiftmodule a.out
 
 include Makefile.rules
 
-SomeLibrary.swiftmodule: SomeLibrary.swift
+SomeLibrary.swiftmodule: SomeLibrary.swift \
+                         $(call tool_prereq,$(SWIFTC_PATH)) $(call tool_prereq,$(SWIFT_FRONTEND_PATH))
 	"$(MAKE)" BASENAME=$(shell basename $@ .swiftmodule) \
 		SWIFTFLAGS_EXTRAS=$(LIBRARY_SWIFTFLAGS_EXTRAS) \
 		VPATH=$(SRCDIR) -f $(SRCDIR)/../dylib.mk all

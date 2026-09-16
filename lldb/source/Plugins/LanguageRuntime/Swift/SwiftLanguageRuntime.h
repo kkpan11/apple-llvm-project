@@ -1,4 +1,4 @@
-//===-- SwiftLanguageRuntime.h ----------------------------------*- C++ -*-===//
+//===-- SwiftLanguageRuntime.h --------------------------------------------===//
 //
 // This source file is part of the Swift.org open source project
 //
@@ -21,6 +21,7 @@
 #include "lldb/Target/LanguageRuntime.h"
 #include "lldb/Target/Process.h"
 #include "lldb/lldb-private.h"
+#include "swift/ABI/Task.h"
 #include "swift/Demangling/ManglingFlavor.h"
 
 #include "llvm/ADT/DenseSet.h"
@@ -117,6 +118,44 @@ public:
   /// Returns 0 for versions of the module prior to the introduction
   /// of versioning.
   static std::optional<uint32_t> FindConcurrencyDebugVersion(Process &process);
+
+  /// Returns the byte offset of `AsyncTask::NameFragment` from the start of an
+  /// async task.
+  static llvm::Expected<lldb::offset_t>
+  FindAsyncTaskNameOffset(Process &process);
+
+  /// Inclusive range of `_swift_concurrency_debug_internal_layout_version`
+  /// values that LLDB knows how to decode.
+  ///
+  ///   1 - the original layout
+  ///   2 - AsyncTask gained optional tail-allocated `NameFragment` ahead of its
+  ///       other fragments when the task has an initial name (ahead of the
+  ///       ChildFragment).
+  static constexpr uint32_t ConcurrencyDebugVersionBaseline = 1;
+  static constexpr uint32_t ConcurrencyDebugVersionLatest = 3;
+
+  /// True iff `version` is a concurrency runtime layout version this build
+  /// of LLDB supports. A missing version (`std::nullopt`) is never supported.
+  static constexpr bool
+  IsSupportedConcurrencyDebugVersion(std::optional<uint32_t> version) {
+    return version && *version >= ConcurrencyDebugVersionBaseline &&
+           *version <= ConcurrencyDebugVersionLatest;
+  }
+
+  // These should match the values in swift/stdlib/public/Concurrency/Debug.h
+  enum class CurrentTaskStorageKind {
+    cxx_thread_local = 1,
+    global = 2,
+    pthread_reserved_key = 3,
+    pthread_allocated_key = 4,
+    last = 5,
+  };
+  struct ConcurrencyInfo {
+    std::optional<uint32_t> version;
+    std::optional<CurrentTaskStorageKind> task_storage_kind;
+    lldb::ModuleSP concurrency_module;
+  };
+  static ConcurrencyInfo FindConcurrencyInfo(Process &process);
   /// \}
 
   /// PluginInterface protocol.
@@ -308,6 +347,20 @@ public:
   };
   /// \}
 
+  /// Import a Swift type into a scratch typesystem
+  /// (TypeSystemSwiftTypeRefForExpressions). This works with all
+  /// types, but only makes sense for types in the per-module
+  /// TypeSystemSwiftTypeRef. In contrast to the per-module
+  /// (lldb_private::Module) typesystems the scratch typesystem is
+  /// bound to a process and can therefore answer queries that need
+  /// runtime information.
+  static llvm::Expected<CompilerType>
+  GetScratchTypeSystemType(CompilerType module_type,
+                           ExecutionContextRef exe_ctx_ref);
+
+  std::optional<CompilerType>
+  GetRuntimeType(CompilerType base_type, ExecutionContextRef exe_ctx) override;
+
   bool GetDynamicTypeAndAddress(ValueObject &in_value,
                                 lldb::DynamicValueType use_dynamic,
                                 TypeAndOrName &class_type_or_name,
@@ -490,7 +543,8 @@ public:
                                       ExecutionContextScope *exe_scope);
 
   /// Ask Remote mirrors for the stride of a Swift type.
-  std::optional<uint64_t> GetByteStride(CompilerType type);
+  std::optional<uint64_t>
+  GetByteStride(CompilerType type, ExecutionContextScope *exe_scope = nullptr);
 
   /// Ask Remote mirrors for the alignment of a Swift type.
   std::optional<size_t> GetBitAlignment(CompilerType type,
@@ -699,26 +753,65 @@ protected:
       TypeAndOrName &class_type_or_name, Address &address,
       Value::ValueType &value_type, llvm::ArrayRef<uint8_t> &local_buffer);
 
-  /// Resolves the dynamic type of an embedded Swift class type.
-  CompilerType GetDynamicTypeAndAddress_EmbeddedClass(uint64_t instance_ptr,
-                                                      CompilerType class_type);
+  /// Resolves the type whose metadata the pointer stored at \p
+  /// metadata_ptr_addr points to. That word is a class instance's metadata
+  /// pointer, or an error box's payload metadata pointer.
+  llvm::Expected<CompilerType>
+  GetTypeFromMetadataPointerEmbedded(lldb::addr_t metadata_ptr_addr,
+                                     TypeSystemSwiftTypeRef &ts);
 
-  /// Resolves the dynamic type of a class-constrained embedded Swift
-  /// existential.
-  std::optional<std::pair<CompilerType, uint64_t>>
-  GetDynamicTypeAndAddress_ClassConstrainedExistentialEmbedded(
+  /// Resolves the type whose metadata symbol covers \p metadata_addr.
+  llvm::Expected<CompilerType>
+  GetTypeFromMetadataAddressEmbedded(lldb::addr_t metadata_addr,
+                                     TypeSystemSwiftTypeRef &ts);
+
+  /// Resolves the type whose metadata is at \p metadata_addr, using whichever
+  /// representation \p flavor implies.
+  llvm::Expected<const swift::reflection::TypeRef &>
+  GetTypeRefFromMetadataAddress(lldb::addr_t metadata_addr,
+                                TypeSystemSwiftTypeRef &ts,
+                                swift::Mangle::ManglingFlavor flavor);
+
+  /// Resolves the type a "type metadata for T" symbol names, and whether the
+  /// symbol names full metadata rather than type metadata.
+  llvm::Expected<std::pair<CompilerType, bool>>
+  GetTypeFromMetadataSymbolEmbedded(llvm::StringRef symbol_name,
+                                    TypeSystemSwiftTypeRef &ts);
+
+  /// If \p type is a class, returns the address of the instance \p addr holds a
+  /// reference to, which is what callers of dynamic type resolution expect;
+  /// any other type is already the value, so \p addr is returned unchanged.
+  llvm::Expected<lldb::addr_t> UnwrapClassReferenceIfNeeded(CompilerType type,
+                                                            lldb::addr_t addr);
+
+  /// Resolves the dynamic type of the class reference an embedded Swift
+  /// class-constrained existential holds in its first word. Fails if that word
+  /// does not resolve to a class.
+  llvm::Expected<std::pair<CompilerType, uint64_t>>
+  GetDynamicTypeAndAddress_ExistentialClassReferenceEmbedded(
       lldb::addr_t existential_address, CompilerType existential_type);
 
   /// Resolves the dynamic type of an embedded Swift existential container.
-  std::optional<std::pair<CompilerType, uint64_t>>
+  llvm::Expected<std::pair<CompilerType, uint64_t>>
   GetDynamicTypeAndAddress_ExistentialContainerEmbedded(
       lldb::addr_t existential_address, CompilerType existential_type);
 
-  /// Resolves the dynamic type of an embedded Swift existential.
-  /// Tries class-constrained first, then falls back to existential container.
+  /// Resolves the dynamic type of an embedded Swift error existential, which
+  /// points to a heap box holding the payload's type metadata.
   llvm::Expected<std::pair<CompilerType, uint64_t>>
-  GetDynamicTypeAndAddress_ExistentialEmbedded(lldb::addr_t existential_address,
-                                               CompilerType existential_type);
+  GetDynamicTypeAndAddress_ErrorExistentialEmbedded(
+      lldb::addr_t existential_address, CompilerType existential_type,
+      ExecutionContextScope *exe_scope);
+
+  /// Resolves the dynamic type of an embedded Swift existential.
+  /// Dispatches on the existential's representation, which reflection derives
+  /// from the protocol's debug info. \p exe_scope is needed to reach the type
+  /// system that can read that debug info; without it the representation is
+  /// unknown and every layout is tried in turn.
+  llvm::Expected<std::pair<CompilerType, uint64_t>>
+  GetDynamicTypeAndAddress_ExistentialEmbedded(
+      lldb::addr_t existential_address, CompilerType existential_type,
+      ExecutionContextScope *exe_scope);
 
   /// Dynamic type resolution tends to want to generate scalar data -
   /// but there are caveats Per original comment here "Our address is
@@ -965,32 +1058,77 @@ struct AsyncUnwindRegisterNumbers {
 std::optional<AsyncUnwindRegisterNumbers>
 GetAsyncUnwindRegisterNumbers(llvm::Triple::ArchType triple);
 
-/// A helper class to find and cache the location of Task pointer inside TLS.
-class TaskInspector {
-public:
-  /// Inspects thread local storage to find the address of the currently
-  /// executing task, if any.
-  std::optional<lldb::addr_t> GetTaskAddrFromThreadLocalStorage(Thread &thread);
+/// Abstract class to find tasks in the different concurrency runtime
+/// implementations.
+struct TaskFinder {
+  // For each input thread, returns the address of the Task this thread is
+  // executing, if any, otherwise returns std::nullopt. The returned vector must
+  // have as many entries as the number of input threads.
+  virtual llvm::SmallVector<std::optional<lldb::addr_t>>
+  GetTaskAddrForThread(llvm::ArrayRef<Thread *> threads) = 0;
 
-  /// Inspects thread local storage to find the address of the currently
-  /// executing task, if any.
-  llvm::SmallVector<std::optional<lldb::addr_t>>
-  GetTaskAddrFromThreadLocalStorage(llvm::ArrayRef<Thread *> threads);
+  // Equivalent to GetTaskAddrForThread(&thread);
+  std::optional<lldb::addr_t> GetTaskAddrForThread(Thread &thread) {
+    return GetTaskAddrForThread(&thread)[0];
+  }
 
-private:
-  /// For each thread in `threads`, return the location of the its task
-  /// pointer, if it exists.
-  llvm::SmallVector<std::optional<lldb::addr_t>>
-  GetTaskAddrLocations(llvm::ArrayRef<Thread *> threads);
-
-  /// If reading from a cached task address location failed, invalidate the
-  /// cache and try again.
-  std::optional<lldb::addr_t> RetryRead(Thread &thread,
-                                        lldb::addr_t task_addr_location);
-
-  llvm::DenseMap<uint64_t, lldb::addr_t> m_tid_to_task_addr_location;
+  virtual ~TaskFinder() = default;
 };
 
+/// Returns a TaskFinder for `info`. The pointer is guaranteed to be non-null,
+/// but may be a NoTaskFinder if the storage kind is unsupported or absent.
+std::unique_ptr<TaskFinder>
+GetTaskFinder(const SwiftLanguageRuntime::ConcurrencyInfo &);
+
+/// Inspects the concurrency library in the process, if any, to construct a
+/// TaskFinder. The pointer is guaranteed to be non-null, but the returned
+/// object is a NoTaskFinder if the runtime is not supported or can't be found.
+std::unique_ptr<TaskFinder> GetTaskFinder(Process &Process);
+
+/// Represents `swift::JobFlags` as defined in
+/// `include/swift/ABI/MetadataValues.h`.
+struct JobFlags {
+  uint32_t bits;
+
+  enum Bit : uint32_t {
+    // Only the flags actually consumed by LLDB are listed; add more as needed.
+    Task_HasInitialTaskName = 30,
+  };
+
+  bool hasFlag(Bit b) const { return (bits >> b) & 1U; }
+
+  /// True when the task was created with `Task(name:)` or similar.
+  bool hasInitialTaskName() const { return hasFlag(Task_HasInitialTaskName); }
+};
+
+/// The offset of ChildFragment, which is the first fragment of an AsyncTask.
+inline constexpr size_t AsyncTaskSize = sizeof(::swift::AsyncTask);
+
+/// Size of `AsyncTask::NameFragment` = `const char *Name` + `size_t Length`,
+/// i.e. two pointer-sized words. Tail-allocated immediately after the
+/// AsyncTask iff `JobFlags::hasInitialTaskName()` is set.
+inline size_t NameFragmentSize(Process &process) {
+  return 2 * process.GetAddressByteSize();
+}
+
+/// Read the `JobFlags` of an async task.
+llvm::Expected<JobFlags> GetAsyncJobFlags(Process &process,
+                                          lldb::addr_t task_addr);
+
+/// Returns the offset (in bytes) of `ChildFragment` from the start of an
+/// async task.
+llvm::Expected<lldb::offset_t> GetChildFragmentOffset(Process &process,
+                                                      lldb::addr_t task_addr);
+
+/// Returns the offset of `ChildFragment` from the start of an
+/// async task.
+///
+/// `flags` must come from the same task whose offset is being computed —
+/// they encode which fragments are available, which impacts the offset.
+lldb::offset_t GetChildFragmentOffset(Process &process, JobFlags flags);
+
+/// Get the name of a task.
+/// Names are immutable and specified with `Task(name:)` during initialization.
 llvm::Expected<std::optional<std::string>> GetTaskName(lldb::addr_t task,
                                                        Process &process);
 

@@ -6,9 +6,9 @@ import lldbsuite.test.lldbutil as lldbutil
 
 class TestCase(TestBase):
 
-    @skipEmbeddedSwift
+    @requireNotEmbeddedSwift
     @swiftTest
-    @skipUnlessFoundation
+    @requireObjCFoundation
     def test(self):
         self.build()
         lldbutil.run_to_source_breakpoint(

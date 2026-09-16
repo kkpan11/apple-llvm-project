@@ -1,0 +1,39 @@
+import os
+import shutil
+
+import lldb
+from lldbsuite.test.decorators import *
+import lldbsuite.test.lldbtest as lldbtest
+import lldbsuite.test.lldbutil as lldbutil
+
+
+class TestSwiftExplicitModules(lldbtest.TestBase):
+
+    @requireNotEmbeddedSwift
+    @swiftTest
+    @skipIfLinux
+    # Not working correctly with DWARFImporter. NSData may get an
+    # incomplete definition that also isn't updated when Foundation is
+    # imported.
+    @skipIf(setting=("symbols.use-swift-clangimporter", "false"),
+            bugnumber="rdar://118337109")
+    @skipIfWindows # rdar://186975412, FoundationEssentials.__DataStorage.init symbol not found
+    def test_import(self):
+        """Test an implicit import inside an explicit build"""
+        mod_cache = self.getBuildArtifact("my-clang-modules-cache")
+        if os.path.isdir(mod_cache):
+          shutil.rmtree(mod_cache)
+
+        self.runCmd('settings set symbols.clang-modules-cache-path "%s"'
+                    % mod_cache)
+
+        self.build()
+        self.expect('log enable lldb types')
+        target, process, thread, bkpt = lldbutil.run_to_source_breakpoint(
+            self, 'Set breakpoint here', lldb.SBFileSpec('main.swift'))
+
+        self.expect('expression Data([1, 2, 3])',
+                    error=True)
+        self.expect("expression import Foundation")
+        self.expect('expression Data([1, 2, 3])',
+                    substrs=["3 bytes"])

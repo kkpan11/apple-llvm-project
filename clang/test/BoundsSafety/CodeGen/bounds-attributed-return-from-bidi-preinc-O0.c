@@ -2,7 +2,7 @@
 
 
 
-// RUN: %clang_cc1 -O0 -triple arm64-apple-iphoneos -fbounds-safety -fbounds-safety-bringup-missing-checks=return_size -emit-llvm %s -o - | FileCheck %s
+// RUN: %clang_cc1 -O0 -triple arm64-apple-ios -fbounds-safety -fbounds-safety-bringup-missing-checks=return_size -emit-llvm %s -o - | FileCheck %s
 
 // XFAIL: !rdar137311963
 

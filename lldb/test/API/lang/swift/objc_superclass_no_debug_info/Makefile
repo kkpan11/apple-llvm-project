@@ -7,14 +7,20 @@ include Makefile.rules
 LD_EXTRAS = -lMyLib -L$(BUILDDIR)
 SWIFTFLAGS_EXTRAS = -I$(BUILDDIR) -I$(SRCDIR) -Xcc -fmodule-map-file=$(SRCDIR)/module.modulemap
 
-libMyObjCBase.dylib: $(SRCDIR)/MyObjCBase.m $(SRCDIR)/MyObjCBase.h
+libMyObjCBase.dylib: $(SRCDIR)/MyObjCBase.m $(SRCDIR)/MyObjCBase.h \
+                     $(call tool_prereq,$(CC))
 	$(CC) -isysroot "$(SDKROOT)" -g0 -c $(SRCDIR)/MyObjCBase.m \
 		-o $(BUILDDIR)/MyObjCBase.o
 	$(CC) -isysroot "$(SDKROOT)" -dynamiclib -lobjc \
+		-install_name @executable_path/libMyObjCBase.dylib \
 		$(BUILDDIR)/MyObjCBase.o \
 		-o $(BUILDDIR)/libMyObjCBase.dylib
+ifneq "$(CODESIGN)" ""
+	$(CODESIGN) -s - "$(BUILDDIR)/libMyObjCBase.dylib"
+endif
 
-libMyLib.dylib: $(SRCDIR)/MyLib.swift libMyObjCBase.dylib
+libMyLib.dylib: $(SRCDIR)/MyLib.swift libMyObjCBase.dylib \
+                $(call tool_prereq,$(SWIFTC_PATH)) $(call tool_prereq,$(SWIFT_FRONTEND_PATH))
 	"$(MAKE)" -f $(MAKEFILE_RULES) \
 		VPATH=$(SRCDIR) \
 		MAKE_DSYM=NO \

@@ -12,15 +12,13 @@ from lldbsuite.test import lldbutil
 class PrintObjectArrayTestCase(TestBase):
     SHARED_BUILD_TESTCASE = False
 
-    @skipEmbeddedSwift
-    @skipUnlessDarwin
+    @requireDarwin
     def test_print_array(self):
         """Test that expr -O -Z works"""
         self.build()
         self.printarray_data_formatter_commands()
 
-    @skipEmbeddedSwift
-    @skipUnlessDarwin
+    @requireDarwin
     def test_print_array_no_const(self):
         """Test that expr -O -Z works"""
         disable_constant_classes = {

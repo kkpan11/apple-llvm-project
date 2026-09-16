@@ -5,8 +5,7 @@ import lldbsuite.test.lldbutil as lldbutil
 
 class TestSwiftPrivateMember(TestBase):
 
-    @skipEmbeddedSwift
-    @skipUnlessDarwin
+    @requireNotEmbeddedSwift
     @swiftTest
     def test(self):
         self.build()

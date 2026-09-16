@@ -31,6 +31,7 @@
 #include "lldb/Utility/Status.h"
 #include "lldb/lldb-private-enumerations.h"
 #include "lldb/lldb-types.h"
+#include "llvm/Support/Error.h"
 
 #if defined(LLDB_ENABLE_SWIFT)
 #include "Plugins/TypeSystem/Swift/TypeSystemSwift.h"
@@ -139,8 +140,9 @@ bool ValueObjectVariable::UpdateValue() {
   // Check if the type has size 0. If so, there is nothing to update,
   // unless the type is C++ where even empty structs have a non-zero
   // size.
-  CompilerType var_type(GetCompilerTypeImpl());
-  if (var_type.IsValid() && var_type.GetMinimumLanguage() == lldb::eLanguageTypeSwift) {
+  CompilerType var_type(GetCompilerType());
+  if (var_type.IsValid() &&
+      var_type.GetMinimumLanguage() == lldb::eLanguageTypeSwift) {
     ExecutionContext exe_ctx(GetExecutionContextRef());
     auto size_or_err =
         var_type.GetByteSize(exe_ctx.GetBestExecutionContextScope());
@@ -168,6 +170,7 @@ bool ValueObjectVariable::UpdateValue() {
     // constant bytes can't be edited - sorry
     m_resolved_value.SetContext(Value::ContextType::Invalid, nullptr);
     SetAddressTypeOfChildren(eAddressTypeInvalid);
+    m_resolved_value_is_implicit = true;
   } else {
     lldb::addr_t loclist_base_load_addr = LLDB_INVALID_ADDRESS;
     ExecutionContext exe_ctx(GetExecutionContextRef());
@@ -192,6 +195,8 @@ bool ValueObjectVariable::UpdateValue() {
     if (maybe_value) {
       m_value = *maybe_value;
       m_resolved_value = m_value;
+      m_resolved_value_is_implicit =
+          expr_list.IsImplicit(&exe_ctx, nullptr, loclist_base_load_addr);
       m_value.SetContext(Value::ContextType::Variable, variable);
 
       CompilerType compiler_type = GetCompilerType();
@@ -243,9 +248,8 @@ bool ValueObjectVariable::UpdateValue() {
                     Target &target = process_sp->GetTarget();
                     size_t ptr_size = process_sp->GetAddressByteSize();
                     lldb::addr_t deref_addr;
-                    lldb::addr_t load_addr = address.GetLoadAddress(&target);
                     // FIXME: Add error handling!
-                    if (target.ReadMemory(load_addr, &deref_addr, ptr_size,
+                    if (target.ReadMemory(address, &deref_addr, ptr_size,
                                           m_error, process_is_alive))
                       m_value.GetScalar() = deref_addr;
                   }
@@ -302,6 +306,7 @@ bool ValueObjectVariable::UpdateValue() {
       m_error = Status::FromError(maybe_value.takeError());
       // could not find location, won't allow editing
       m_resolved_value.SetContext(Value::ContextType::Invalid, nullptr);
+      m_resolved_value_is_implicit = true;
     }
   }
 
@@ -410,10 +415,23 @@ const char *ValueObjectVariable::GetLocationAsCString() {
     return ValueObject::GetLocationAsCString();
 }
 
+llvm::Error ValueObjectVariable::CanSetValue() {
+  // Refresh the resolved location so m_resolved_value_is_implicit is current.
+  UpdateValueIfNeeded();
+  if (m_resolved_value_is_implicit)
+    return llvm::createStringError("variable is not in a writable location");
+  return ValueObject::CanSetValue();
+}
+
 bool ValueObjectVariable::SetValueFromCString(const char *value_str,
                                               Status &error) {
   if (!UpdateValueIfNeeded()) {
     error = Status::FromErrorString("unable to update value before writing");
+    return false;
+  }
+
+  if (llvm::Error err = CanSetValue()) {
+    error = Status::FromError(std::move(err));
     return false;
   }
 
@@ -443,6 +461,11 @@ bool ValueObjectVariable::SetValueFromCString(const char *value_str,
 bool ValueObjectVariable::SetData(DataExtractor &data, Status &error) {
   if (!UpdateValueIfNeeded()) {
     error = Status::FromErrorString("unable to update value before writing");
+    return false;
+  }
+
+  if (llvm::Error err = CanSetValue()) {
+    error = Status::FromError(std::move(err));
     return false;
   }
 

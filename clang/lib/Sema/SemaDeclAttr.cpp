@@ -77,6 +77,7 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/TargetParser/NVPTXTargetParser.h"
 #include "llvm/TargetParser/Triple.h"
 #include <optional>
 
@@ -441,18 +442,20 @@ static void checkAttrArgsAreCapabilityObjs(Sema &S, Decl *D,
   }
 }
 
-/// True if T (or its pointee, after stripping a top-level reference) is a
-/// function pointer or dependent.
-static bool isFunctionPointerOrDependent(QualType T) {
+/// True if T names a function to call: a function pointer, a function
+/// reference, or a reference to a function pointer. Dependent types are also
+/// accepted, and re-checked after instantiation.
+static bool isCallbackOrDependent(QualType T) {
   T = T.getNonReferenceType();
-  return T->isDependentType() || T->isFunctionPointerType();
+  return T->isDependentType() || T->isFunctionPointerType() ||
+         T->isFunctionType();
 }
 
 /// Checks that thread-safety attributes on variables or fields apply only to
-/// function pointer types.
+/// function pointer or function reference types.
 static bool checkThreadSafetyValueDeclIsFunPtr(Sema &S, const ValueDecl *VD,
                                                const AttributeCommonInfo &A) {
-  if (isFunctionPointerOrDependent(VD->getType()))
+  if (isCallbackOrDependent(VD->getType()))
     return true;
   S.Diag(A.getLoc(), diag::warn_thread_attribute_not_on_fun_ptr)
       << A << (isa<FieldDecl>(VD) ? 1 : 0);
@@ -482,8 +485,8 @@ static bool checkThreadSafetyAttrSubject(Sema &S, Decl *D, const ParsedAttr &AL,
 
   if (CheckParmVar) {
     if (const auto *PVD = dyn_cast<ParmVarDecl>(VD)) {
-      // A function-pointer parameter is also valid here.
-      if (isFunctionPointerOrDependent(PVD->getType()))
+      // A function-pointer or function-reference parameter is also valid here.
+      if (isCallbackOrDependent(PVD->getType()))
         return true;
       return checkFunParamsAreScopedLockable(S, PVD, AL);
     }
@@ -505,7 +508,7 @@ bool Sema::checkInstantiatedThreadSafetyAttrs(const Decl *D, const Attr *A) {
   // Parameters of template functions need to be re-checked during
   // instantiation because their types might have been dependent.
   if (const auto *PVD = dyn_cast<ParmVarDecl>(VD)) {
-    if (isFunctionPointerOrDependent(PVD->getType()))
+    if (isCallbackOrDependent(PVD->getType()))
       return true;
     return checkFunParamsAreScopedLockable(*this, PVD, *A);
   }
@@ -1507,8 +1510,7 @@ void Sema::AddAllocAlignAttr(Decl *D, const AttributeCommonInfo &CI,
   }
 
   ParamIdx Idx;
-  const auto *FuncDecl = cast<FunctionDecl>(D);
-  if (!checkFunctionOrMethodParameterIndex(FuncDecl, CI,
+  if (!checkFunctionOrMethodParameterIndex(D, CI,
                                            /*AttrArgNum=*/1, ParamExpr, Idx))
     return;
 
@@ -1516,7 +1518,7 @@ void Sema::AddAllocAlignAttr(Decl *D, const AttributeCommonInfo &CI,
   if (!Ty->isDependentType() && !Ty->isIntegralType(Context) &&
       !Ty->isAlignValT()) {
     Diag(ParamExpr->getBeginLoc(), diag::err_attribute_integers_only)
-        << CI << FuncDecl->getParamDecl(Idx.getASTIndex())->getSourceRange();
+        << CI << getFunctionOrMethodParamRange(D, Idx.getASTIndex());
     return;
   }
 
@@ -2105,9 +2107,9 @@ static void handleNakedAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
 // ExprWithCleanups). We could expand this to perform control-flow analysis for
 // more complex patterns.
 static bool isKnownToAlwaysThrow(const FunctionDecl *FD) {
-  if (!FD->hasBody())
-    return false;
   const Stmt *Body = FD->getBody();
+  if (!Body)
+    return false;
   const Stmt *OnlyStmt = nullptr;
 
   if (const auto *Compound = dyn_cast<CompoundStmt>(Body)) {
@@ -2297,21 +2299,6 @@ static void handleVecReturnAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   }
 
   D->addAttr(::new (S.Context) VecReturnAttr(S.Context, AL));
-}
-
-static void handleDependencyAttr(Sema &S, Scope *Scope, Decl *D,
-                                 const ParsedAttr &AL) {
-  if (isa<ParmVarDecl>(D)) {
-    // [[carries_dependency]] can only be applied to a parameter if it is a
-    // parameter of a function declaration or lambda.
-    if (!(Scope->getFlags() & clang::Scope::FunctionDeclarationScope)) {
-      S.Diag(AL.getLoc(),
-             diag::err_carries_dependency_param_not_function_decl);
-      return;
-    }
-  }
-
-  D->addAttr(::new (S.Context) CarriesDependencyAttr(S.Context, AL));
 }
 
 static void handleUnusedAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
@@ -3983,6 +3970,13 @@ static void handleCleanupAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
     return;
   }
 
+  // If a declaration contains multiple cleanup attributes, GCC only uses
+  // the last one.
+  if (const auto *A = D->getAttr<CleanupAttr>()) {
+    S.Diag(A->getLoc(), diag::warn_duplicate_cleanup_attr) << A->getRange();
+    D->dropAttr<CleanupAttr>();
+  }
+
   auto *attr = ::new (S.Context) CleanupAttr(S.Context, AL, FD);
   attr->setArgLoc(E->getExprLoc());
   D->addAttr(attr);
@@ -4352,7 +4346,7 @@ static void handleFormatAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   if (!S.checkUInt32Argument(AL, FirstArgExpr, FirstArg, 3))
     return;
 
-  // FirstArg == 0 is is always valid.
+  // FirstArg == 0 is always valid.
   if (FirstArg != 0) {
     if (Info.Kind == StrftimeFormat) {
       // If the kind is strftime, FirstArg must be 0 because strftime does not
@@ -4548,17 +4542,41 @@ static void handleCallbackAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
 
 LifetimeCaptureByAttr *Sema::ParseLifetimeCaptureByAttr(const ParsedAttr &AL,
                                                         StringRef ParamName) {
+  StringRef AttrName = AL.getAttrName()->getName();
+  StringRef SpecialEntity;
+  if (AttrName == "lifetime_capture_by_this")
+    SpecialEntity = "this";
+  else if (AttrName == "lifetime_capture_by_global")
+    SpecialEntity = "global";
+  else if (AttrName == "lifetime_capture_by_unknown")
+    SpecialEntity = "unknown";
+
+  if (!SpecialEntity.empty() && AL.getNumArgs() != 0) {
+    Diag(AL.getLoc(), diag::err_attribute_wrong_number_arguments) << AL << 0;
+    return nullptr;
+  }
+
   // Atleast one capture by is required.
-  if (AL.getNumArgs() == 0) {
+  if (SpecialEntity.empty() && AL.getNumArgs() == 0) {
     Diag(AL.getLoc(), diag::err_capture_by_attribute_no_entity)
         << AL.getRange();
     return nullptr;
   }
-  unsigned N = AL.getNumArgs();
+  unsigned N = SpecialEntity.empty() ? AL.getNumArgs() : 1;
   auto ParamIdents =
       MutableArrayRef<IdentifierInfo *>(new (Context) IdentifierInfo *[N], N);
   auto ParamLocs =
       MutableArrayRef<SourceLocation>(new (Context) SourceLocation[N], N);
+  if (!SpecialEntity.empty()) {
+    ParamIdents[0] = &Context.Idents.get(SpecialEntity);
+    ParamLocs[0] = AL.getRange().getEnd();
+    int FakeParamIndices[] = {LifetimeCaptureByAttr::Invalid};
+    auto *CapturedBy =
+        LifetimeCaptureByAttr::Create(Context, FakeParamIndices, 1, AL);
+    CapturedBy->setArgs(ParamIdents, ParamLocs);
+    return CapturedBy;
+  }
+
   bool IsValid = true;
   for (unsigned I = 0; I < N; ++I) {
     if (AL.isArgExpr(I)) {
@@ -4570,6 +4588,17 @@ LifetimeCaptureByAttr *Sema::ParseLifetimeCaptureByAttr(const ParsedAttr &AL,
     }
     assert(AL.isArgIdent(I));
     IdentifierLoc *IdLoc = AL.getArgAsIdent(I);
+    StringRef Name = IdLoc->getIdentifierInfo()->getName();
+    StringRef Replacement;
+    if (Name == "this")
+      Replacement = "lifetime_capture_by_this";
+    else if (Name == "global")
+      Replacement = "lifetime_capture_by_global";
+    else if (Name == "unknown")
+      Replacement = "lifetime_capture_by_unknown";
+    if (!Replacement.empty())
+      Diag(IdLoc->getLoc(), diag::warn_deprecated_capture_by_special_entity)
+          << Name << Replacement << IdLoc->getLoc();
     if (IdLoc->getIdentifierInfo()->getName() == ParamName) {
       Diag(IdLoc->getLoc(), diag::err_capture_by_references_itself)
           << IdLoc->getLoc();
@@ -4590,24 +4619,53 @@ LifetimeCaptureByAttr *Sema::ParseLifetimeCaptureByAttr(const ParsedAttr &AL,
 
 static void handleLifetimeCaptureByAttr(Sema &S, Decl *D,
                                         const ParsedAttr &AL) {
-  // Do not allow multiple attributes.
-  if (D->hasAttr<LifetimeCaptureByAttr>()) {
-    S.Diag(AL.getLoc(), diag::err_capture_by_attribute_multiple)
-        << AL.getRange();
-    return;
-  }
   auto *PVD = dyn_cast<ParmVarDecl>(D);
   assert(PVD);
   auto *CaptureByAttr = S.ParseLifetimeCaptureByAttr(AL, PVD->getName());
-  if (CaptureByAttr)
-    D->addAttr(CaptureByAttr);
+  if (!CaptureByAttr)
+    return;
+
+  enum class SpellingKind { ParameterList, This, Global, Unknown };
+  auto GetSpellingKind = [](const LifetimeCaptureByAttr *A) {
+    if (A->isThis())
+      return SpellingKind::This;
+    if (A->isGlobal())
+      return SpellingKind::Global;
+    if (A->isUnknown())
+      return SpellingKind::Unknown;
+    return SpellingKind::ParameterList;
+  };
+  auto GetSpellingName = [](SpellingKind Kind) -> StringRef {
+    switch (Kind) {
+    case SpellingKind::ParameterList:
+      return "lifetime_capture_by";
+    case SpellingKind::This:
+      return "lifetime_capture_by_this";
+    case SpellingKind::Global:
+      return "lifetime_capture_by_global";
+    case SpellingKind::Unknown:
+      return "lifetime_capture_by_unknown";
+    }
+    llvm_unreachable("unknown lifetime_capture_by spelling kind");
+  };
+
+  SpellingKind NewKind = GetSpellingKind(CaptureByAttr);
+  for (const auto *Existing : D->specific_attrs<LifetimeCaptureByAttr>()) {
+    if (GetSpellingKind(Existing) == NewKind) {
+      S.Diag(AL.getLoc(), diag::err_capture_by_attribute_multiple)
+          << GetSpellingName(NewKind) << AL.getRange();
+      return;
+    }
+  }
+
+  D->addAttr(CaptureByAttr);
 }
 
 void Sema::LazyProcessLifetimeCaptureByParams(FunctionDecl *FD) {
   bool HasImplicitThisParam = hasImplicitObjectParameter(FD);
   SmallVector<LifetimeCaptureByAttr *, 1> Attrs;
   for (ParmVarDecl *PVD : FD->parameters())
-    if (auto *A = PVD->getAttr<LifetimeCaptureByAttr>())
+    for (auto *A : PVD->specific_attrs<LifetimeCaptureByAttr>())
       Attrs.push_back(A);
   if (HasImplicitThisParam) {
     TypeSourceInfo *TSI = FD->getTypeSourceInfo();
@@ -4637,7 +4695,7 @@ void Sema::LazyProcessLifetimeCaptureByParams(FunctionDecl *FD) {
     for (const ParmVarDecl *PVD : FD->parameters())
       if (PVD->getName() == Reserved)
         Diag(PVD->getLocation(), diag::err_capture_by_param_uses_reserved_name)
-            << (PVD->getName() == "unknown");
+            << PVD->getName();
   };
   for (auto *CapturedBy : Attrs) {
     const auto &Entities = CapturedBy->getArgIdents();
@@ -4646,14 +4704,19 @@ void Sema::LazyProcessLifetimeCaptureByParams(FunctionDecl *FD) {
       auto It = NameIdxMapping.find(Name);
       if (It == NameIdxMapping.end()) {
         auto Loc = CapturedBy->getArgLocs()[I];
-        if (!HasImplicitThisParam && Name == "this")
-          Diag(Loc, diag::err_capture_by_implicit_this_not_available) << Loc;
-        else
+        if (!HasImplicitThisParam && Name == "this") {
+          unsigned DiagID =
+              CapturedBy->isStandaloneSpecial()
+                  ? diag::err_capture_by_this_attr_without_implicit_this
+                  : diag::err_capture_by_implicit_this_not_available;
+          Diag(Loc, DiagID) << Loc;
+        } else
           Diag(Loc, diag::err_capture_by_attribute_argument_unknown)
               << Entities[I] << Loc;
         continue;
       }
-      if (Name == "unknown" || Name == "global")
+      if ((Name == "unknown" || Name == "global") &&
+          !CapturedBy->isStandaloneSpecial())
         DisallowReservedParams(Name);
       CapturedBy->setParamIdx(I, It->second);
     }
@@ -5290,9 +5353,10 @@ void Sema::AddModeAttr(Decl *D, const AttributeCommonInfo &CI,
     NewElemTy = Context.getRealTypeForBitwidth(DestWidth, ExplicitType);
 
   if (NewElemTy.isNull()) {
+    // FIXME: We need to make sure that the target handles correctly the
+    // requested mode.
     // Only emit diagnostic on host for 128-bit mode attribute
-    if (!(DestWidth == 128 &&
-          (getLangOpts().CUDAIsDevice || getLangOpts().SYCLIsDevice)))
+    if (!(DestWidth == 128 && getLangOpts().isTargetDevice()))
       Diag(AttrLoc, diag::err_machine_mode) << 1 /*Unsupported*/ << Name;
     return;
   }
@@ -5530,15 +5594,23 @@ static void handleGlobalAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   if (FD->isInlineSpecified() && !S.getLangOpts().CUDAIsDevice)
     S.Diag(FD->getBeginLoc(), diag::warn_kern_is_inline) << FD;
 
-  if (AL.getKind() == ParsedAttr::AT_DeviceKernel)
-    D->addAttr(::new (S.Context) DeviceKernelAttr(S.Context, AL));
-  else
-    D->addAttr(::new (S.Context) CUDAGlobalAttr(S.Context, AL));
+  switch (AL.getKind()) {
+  case ParsedAttr::AT_DeviceKernel:
+    if (!D->hasAttr<DeviceKernelAttr>())
+      D->addAttr(::new (S.Context) DeviceKernelAttr(S.Context, AL));
+    break;
+  case ParsedAttr::AT_CUDAGlobal:
+    if (!D->hasAttr<CUDAGlobalAttr>())
+      D->addAttr(::new (S.Context) CUDAGlobalAttr(S.Context, AL));
+    break;
+  default:
+    llvm_unreachable("Unexpected attribute kind");
+  }
   // In host compilation the kernel is emitted as a stub function, which is
   // a helper function for launching the kernel. The instructions in the helper
   // function has nothing to do with the source code of the kernel. Do not emit
   // debug info for the stub function to avoid confusing the debugger.
-  if (S.LangOpts.HIP && !S.LangOpts.CUDAIsDevice)
+  if (S.LangOpts.HIP && !S.LangOpts.CUDAIsDevice && !D->hasAttr<NoDebugAttr>())
     D->addAttr(NoDebugAttr::CreateImplicit(S.Context));
 }
 
@@ -6194,12 +6266,23 @@ Sema::CreateLaunchBoundsAttr(const AttributeCommonInfo &CI, Expr *MaxThreads,
     // We might want to ignore the nvptx arch check, e.g., when processing the
     // launch bounds attribute within ompx_attribute to support other archs.
     if (!IgnoreArch) {
-      // '.maxclusterrank' ptx directive requires .target sm_90 or higher.
-      auto SM = getOffloadArch(Context.getTargetInfo());
-      if (SM == OffloadArch::Unknown || SM < OffloadArch::SM_90) {
-        Diag(MaxBlocks->getBeginLoc(), diag::warn_cuda_maxclusterrank_sm_90)
-            << OffloadArchToString(SM) << CI << MaxBlocks->getSourceRange();
-        // Ignore it by setting MaxBlocks to null;
+      const TargetInfo &DeviceTI =
+          (!Context.getLangOpts().CUDAIsDevice && Context.getAuxTargetInfo())
+              ? *Context.getAuxTargetInfo()
+              : Context.getTargetInfo();
+      if (DeviceTI.getTriple().isNVPTX()) {
+        // '.maxclusterrank' ptx directive requires .target sm_90 or higher.
+        OffloadArch SM = getOffloadArch(DeviceTI);
+        if (SM.isUnknown() || llvm::NVPTX::getSmVersion(SM.nvptxKind()) < 900) {
+          Diag(MaxBlocks->getBeginLoc(), diag::warn_cuda_maxclusterrank_sm_90)
+              << OffloadArchToString(SM) << CI << MaxBlocks->getSourceRange();
+          // Ignore it by setting MaxBlocks to null;
+          MaxBlocks = nullptr;
+        }
+      } else {
+        // maxclusterrank is only handled for NVPTX; ignore it elsewhere.
+        // TODO: Interpret this for AMDGPU with the "clusters" subtarget
+        // feature.
         MaxBlocks = nullptr;
       }
     }
@@ -6310,7 +6393,8 @@ void Sema::addNoClusterAttr(Decl *D, const AttributeCommonInfo &CI) {
 static void handleClusterDimsAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   const TargetInfo &TTI = S.Context.getTargetInfo();
   OffloadArch Arch = StringToOffloadArch(TTI.getTargetOpts().CPU);
-  if ((TTI.getTriple().isNVPTX() && Arch < clang::OffloadArch::SM_90) ||
+  if ((TTI.getTriple().isNVPTX() &&
+       llvm::NVPTX::getSmVersion(Arch.nvptxKind()) < 900) ||
       (TTI.getTriple().isAMDGPU() &&
        !TTI.hasFeatureEnabled(TTI.getTargetOpts().FeatureMap, "clusters"))) {
     S.Diag(AL.getLoc(), diag::err_cluster_attr_not_supported) << AL;
@@ -6329,7 +6413,8 @@ static void handleClusterDimsAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
 static void handleNoClusterAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   const TargetInfo &TTI = S.Context.getTargetInfo();
   OffloadArch Arch = StringToOffloadArch(TTI.getTargetOpts().CPU);
-  if ((TTI.getTriple().isNVPTX() && Arch < clang::OffloadArch::SM_90) ||
+  if ((TTI.getTriple().isNVPTX() &&
+       llvm::NVPTX::getSmVersion(Arch.nvptxKind()) < 900) ||
       (TTI.getTriple().isAMDGPU() &&
        !TTI.hasFeatureEnabled(TTI.getTargetOpts().FeatureMap, "clusters"))) {
     S.Diag(AL.getLoc(), diag::err_cluster_attr_not_supported) << AL;
@@ -6418,340 +6503,6 @@ static void handleXRayLogArgsAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
 /* TO_UPSTREAM(BoundsSafety) ON*/
 namespace {
 
-// Shared context used by the flat pre-checkers to track state while walking
-// nested pointer types.
-class LateBoundsAttrDiagContext {
-public:
-  Sema &S;
-  StringRef DiagName;
-  SourceLocation Loc;
-  unsigned Level;
-  Expr *AttrArg;
-  bool ScopeCheck;
-  bool AutoPtrAttributed = false;
-
-  // Pre-check for counted_by family. Sets CountInBytes = true for pointers
-  // whose pointee has unknown size, and AllowRedecl = true when descending
-  // into a function-prototype subwalk.
-  //
-  // Emits:
-  // - err_attribute_pointers_only
-  // - err_bounds_safety_atomic_unsupported_attribute
-  // - err_bounds_safety_conflicting_pointer_attributes
-  // - err_bounds_safety_conflicting_count_range_attributes
-  // - err_bounds_safety_complete_array_with_count
-  // - err_bounds_safety_sized_by_array
-  // - err_multiple_coupled_decls_in_bounds_safety_dynamic_count
-  // - err_bounds_safety_counted_by_without_size
-  bool diagnoseCountAttributedTypeShape(QualType DeclTy, bool &CountInBytes,
-                                        bool OrNull, bool AllowRedecl) {
-    const Type *T = DeclTy.getTypePtr();
-
-    // Sugar types with special semantics — must be checked before generic
-    // desugar.
-    if (const auto *AT = dyn_cast<AttributedType>(T)) {
-      llvm::SaveAndRestore<bool> Local(AutoPtrAttributed);
-      if (AT->getAttrKind() == attr::PtrAutoAttr)
-        AutoPtrAttributed = true;
-      return diagnoseCountAttributedTypeShape(
-          AT->getModifiedType(), CountInBytes, OrNull, AllowRedecl);
-    }
-
-    // A __terminated_by pointer cannot also carry a count or range attribute
-    // unless the terminator was auto-inferred via __ptrauto.
-    if (const auto *VTT = dyn_cast<ValueTerminatedType>(T)) {
-      if (Level == 0 && !AutoPtrAttributed) {
-        S.Diag(Loc, diag::err_bounds_safety_terminated_by_wrong_pointer_type);
-        return false;
-      }
-      return diagnoseCountAttributedTypeShape(VTT->desugar(), CountInBytes,
-                                              OrNull, AllowRedecl);
-    }
-
-    // At Level 0 we either diagnose, or canonicalize and compare for
-    // AllowRedecl.
-    if (const auto *CAT = dyn_cast<CountAttributedType>(T)) {
-      if (Level == 0) {
-        if (!AllowRedecl) {
-          S.Diag(Loc, diag::err_bounds_safety_conflicting_pointer_attributes)
-              << /*pointer*/ CAT->isPointerType() << /*count*/ 2;
-          return false;
-        }
-        // AllowRedecl: canonicalize the new count expression and compare
-        // against the existing one.
-        ExprResult CanonCount = S.CanonicalizeBoundsCountExpr(
-            AttrArg, CountInBytes, OrNull, ScopeCheck, CAT->isArrayType());
-        if (CanonCount.isInvalid())
-          return false;
-        llvm::FoldingSetNodeID NewID, OldID;
-        CanonCount.get()->Profile(NewID, S.Context, /*Canonical=*/true);
-        if (const Expr *OldCnt = CAT->getCountExpr())
-          OldCnt->Profile(OldID, S.Context, /*Canonical=*/true);
-        if (NewID != OldID) {
-          S.Diag(Loc, diag::err_bounds_safety_conflicting_pointer_attributes)
-              << /*pointer*/ CAT->isPointerType() << /*count*/ 2;
-          return false;
-        }
-        return true;
-      }
-      return diagnoseCountAttributedTypeShape(CAT->desugar(), CountInBytes,
-                                              OrNull, AllowRedecl);
-    }
-
-    if (const auto *DRPT = dyn_cast<DynamicRangePointerType>(T)) {
-      if (Level == 0) {
-        S.Diag(Loc, diag::err_bounds_safety_conflicting_count_range_attributes);
-        return false;
-      }
-      return diagnoseCountAttributedTypeShape(DRPT->desugar(), CountInBytes,
-                                              OrNull, AllowRedecl);
-    }
-
-    // Generic desugar for all other sugar types (ParenType, MacroQualifiedType,
-    // ElaboratedType, TypeOfType, etc.)
-    QualType Desugared = DeclTy.getSingleStepDesugaredType(S.Context);
-    if (Desugared != DeclTy)
-      return diagnoseCountAttributedTypeShape(Desugared, CountInBytes, OrNull,
-                                              AllowRedecl);
-
-    // Non-sugar types below — all sugar is already stripped at this point.
-
-    // Function prototypes force AllowRedecl=true for the sub-walk.
-    if (const auto *FPT = dyn_cast<FunctionProtoType>(T))
-      return diagnoseCountAttributedTypeShape(FPT->getReturnType(),
-                                              CountInBytes, OrNull,
-                                              /*AllowRedecl=*/true);
-    if (const auto *FPT = dyn_cast<FunctionNoProtoType>(T))
-      return diagnoseCountAttributedTypeShape(FPT->getReturnType(),
-                                              CountInBytes, OrNull,
-                                              /*AllowRedecl=*/true);
-
-    // An AtomicType wrapping a pointer: emit the diagnostic but return true so
-    // the visitor still constructs the atomic type. Its shape prevents
-    // ConstructBoundsSafetyPointerType::VisitAtomicTypeLoc from re-emitting
-    // the same diagnostic.
-    if (const auto *ATy = dyn_cast<AtomicType>(T)) {
-      if (ATy->getValueType()->isPointerType()) {
-        unsigned DiagIndex = CountInBytes ? 3 : 2;
-        if (OrNull)
-          DiagIndex += 2;
-        S.Diag(Loc, diag::err_bounds_safety_atomic_unsupported_attribute)
-            << DiagIndex;
-        return true;
-      }
-      // Atomic of non-pointer falls through to the leaf check below.
-    }
-
-    if (const auto *AT = S.Context.getAsArrayType(DeclTy)) {
-      if (Level == 0) {
-        if (AT->hasAttr(attr::ArrayDecayDiscardsCountInParameters))
-          return diagnoseCountAttributedTypeShape(
-              S.Context.getArrayDecayedType(QualType(AT, 0)), CountInBytes,
-              OrNull, AllowRedecl);
-        if (AT->isIncompleteArrayType()) {
-          if (CountInBytes) {
-            S.Diag(Loc, diag::err_bounds_safety_sized_by_array) << DiagName;
-            return false;
-          }
-          return true;
-        }
-        S.Diag(Loc, diag::err_bounds_safety_complete_array_with_count);
-        return false;
-      }
-      --Level;
-      llvm::SaveAndRestore<bool> Local(AutoPtrAttributed, false);
-      bool InnerOK = diagnoseCountAttributedTypeShape(
-          AT->getElementType(), CountInBytes, OrNull, AllowRedecl);
-      if (!InnerOK)
-        return false;
-      // Count attributes on the element of an array type are not supported yet
-      S.Diag(Loc,
-             diag::err_multiple_coupled_decls_in_bounds_safety_dynamic_count);
-      return false;
-    }
-
-    // Check the pointee for counted_by-without-size.
-    //
-    // NOTE: We don't error for incomplete types that might be later completed
-    // (e.g. a struct forward declaration). Instead for those
-    // completable-incomplete types we delay checking until the type is used
-    // see `HasCountedByAttrOnIncompletePointee()`. This allows the counted_by
-    // attribute to be used on code that prefers to keep its pointees
-    // incomplete until they need to be used.
-    if (const auto *PT = dyn_cast<PointerType>(T)) {
-      auto FAttr = PT->getPointerAttributes();
-      if (FAttr.hasUpperBound() && !AutoPtrAttributed) {
-        S.Diag(Loc, diag::err_bounds_safety_conflicting_count_bound_attributes)
-            << DiagName << (FAttr.hasLowerBound() ? 0 : 1);
-        return false;
-      }
-      if (Level == 0) {
-        if (!CountInBytes) {
-          QualType PointeeTy = QualType(PT, 0)->getPointeeType();
-          if (PointeeTy->isAlwaysIncompleteType() ||
-              PointeeTy->isFunctionType() || PointeeTy->isSizelessType() ||
-              PointeeTy->isStructureTypeWithFlexibleArrayMember()) {
-            // Use unspecified pointer attributes for diagnostic purposes.
-            QualType Unsp = S.Context.getBoundsSafetyPointerType(
-                QualType(PT, 0), BoundsSafetyPointerAttributes::unspecified());
-
-            auto PD = S.PDiag(diag::err_bounds_safety_counted_by_without_size);
-            PD << Unsp << Unsp->getPointeeType() << OrNull;
-            // Suggest `__sized_by` if the `__counted_by` macro was used.
-            // We intentionally don't suggest a fixit if the attribute is used
-            // directly (i.e. without the macro) because it is not expected that
-            // users will use it.
-            int SuggestFixIt = 0; // Default don't suggest __sized_by
-            if (Loc.isMacroID()) {
-              // FIXME(dliew): Use `AL.MacroII` to get the name. Unfortunately
-              // `AL.MacroII` is not set so we can't simply check the macro name
-              // is what we expect. So instead we have the lexer tell us the
-              // contents of the token and check against that.
-              // rdar://100631458
-              auto MacroName =
-                  Lexer::getImmediateMacroName(Loc, S.SourceMgr, S.LangOpts);
-              if (MacroName == "__counted_by") {
-                SuggestFixIt = 1; // Emit text to suggest __sized_by
-                auto MacroLoc = S.SourceMgr.getExpansionLoc(Loc);
-                PD << FixItHint::CreateReplacement(MacroLoc, "__sized_by");
-              } else if (MacroName == "__counted_by_or_null") {
-                SuggestFixIt = 1; // Emit text to suggest __sized_by_or_null
-                auto MacroLoc = S.SourceMgr.getExpansionLoc(Loc);
-                PD << FixItHint::CreateReplacement(MacroLoc,
-                                                   "__sized_by_or_null");
-              }
-            }
-            PD << SuggestFixIt;
-            S.Diag(Loc, PD);
-
-            // Recover by assuming a byte count.
-            CountInBytes = true;
-          }
-        }
-        return true;
-      }
-      --Level;
-      llvm::SaveAndRestore<bool> Local(AutoPtrAttributed, false);
-      return diagnoseCountAttributedTypeShape(
-          PT->getPointeeType(), CountInBytes, OrNull, AllowRedecl);
-    }
-
-    // Fallback for pointers_only.
-    S.Diag(Loc, diag::err_attribute_pointers_only) << DiagName << 0;
-    return false;
-  }
-
-  // Pre-check for ended-by.
-  //
-  // Emits:
-  // - err_attribute_pointers_only
-  // - err_bounds_safety_atomic_unsupported_attribute
-  // - err_bounds_safety_conflicting_count_range_attributes
-  // - err_bounds_safety_conflicting_pointer_attributes
-  bool diagnoseDynamicRangePointerTypeShape(QualType DeclTy, bool AllowRedecl) {
-    const Type *T = DeclTy.getTypePtr();
-
-    // Sugar types with special semantics — must be checked before generic
-    // desugar.
-    if (const auto *AT = dyn_cast<AttributedType>(T)) {
-      llvm::SaveAndRestore<bool> Local(AutoPtrAttributed);
-      if (AT->getAttrKind() == attr::PtrAutoAttr)
-        AutoPtrAttributed = true;
-      return diagnoseDynamicRangePointerTypeShape(AT->getModifiedType(),
-                                                  AllowRedecl);
-    }
-
-    // A __terminated_by pointer cannot also carry a count or range attribute
-    // unless the terminator was auto-inferred via __ptrauto.
-    if (const auto *VTT = dyn_cast<ValueTerminatedType>(T)) {
-      if (Level == 0 && !AutoPtrAttributed) {
-        S.Diag(Loc, diag::err_bounds_safety_terminated_by_wrong_pointer_type);
-        return false;
-      }
-      return diagnoseDynamicRangePointerTypeShape(VTT->desugar(), AllowRedecl);
-    }
-
-    if (const auto *CAT = dyn_cast<CountAttributedType>(T)) {
-      if (Level == 0) {
-        S.Diag(Loc, diag::err_bounds_safety_conflicting_count_range_attributes);
-        return false;
-      }
-      return diagnoseDynamicRangePointerTypeShape(CAT->desugar(), AllowRedecl);
-    }
-
-    // At Level 0 we diagnose outright conflicts, or canonicalize and compare
-    // for AllowRedecl.
-    if (const auto *DRPT = dyn_cast<DynamicRangePointerType>(T)) {
-      if (Level == 0) {
-        if (DRPT->getEndPointer() == nullptr)
-          return true;
-        if (!AllowRedecl) {
-          S.Diag(Loc, diag::err_bounds_safety_conflicting_pointer_attributes)
-              << /*pointer*/ 1 << /*end*/ 3;
-          return false;
-        }
-        ExprResult CanonEnd =
-            S.CanonicalizeRangeEndPtrExpr(AttrArg, ScopeCheck);
-        if (CanonEnd.isInvalid())
-          return false;
-        llvm::FoldingSetNodeID NewID, OldID;
-        CanonEnd.get()->Profile(NewID, S.Context, /*Canonical=*/true);
-        DRPT->getEndPointer()->Profile(OldID, S.Context, /*Canonical=*/true);
-        if (NewID != OldID) {
-          S.Diag(Loc, diag::err_bounds_safety_conflicting_pointer_attributes)
-              << /*pointer*/ 1 << /*end*/ 3;
-          return false;
-        }
-        return true;
-      }
-      return diagnoseDynamicRangePointerTypeShape(DRPT->desugar(), AllowRedecl);
-    }
-
-    // Generic desugar for all other sugar types (ParenType, MacroQualifiedType,
-    // ElaboratedType, TypeOfType, etc.)
-    QualType Desugared = DeclTy.getSingleStepDesugaredType(S.Context);
-    if (Desugared != DeclTy)
-      return diagnoseDynamicRangePointerTypeShape(Desugared, AllowRedecl);
-
-    // Non-sugar types below — all sugar is already stripped at this point.
-    if (const auto *FPT = dyn_cast<FunctionProtoType>(T))
-      return diagnoseDynamicRangePointerTypeShape(FPT->getReturnType(),
-                                                  AllowRedecl);
-    if (const auto *FPT = dyn_cast<FunctionNoProtoType>(T))
-      return diagnoseDynamicRangePointerTypeShape(FPT->getReturnType(),
-                                                  AllowRedecl);
-
-    // Like the counted_by case, we emit the diagnostic but return true.
-    if (const auto *ATy = dyn_cast<AtomicType>(T)) {
-      if (ATy->getValueType()->isPointerType()) {
-        S.Diag(Loc, diag::err_bounds_safety_atomic_unsupported_attribute)
-            << /*ended_by*/ 6;
-        return true;
-      }
-      // Atomic of non-pointer falls through to the leaf check below.
-    }
-
-    if (const auto *PT = dyn_cast<PointerType>(T)) {
-      auto FAttr = PT->getPointerAttributes();
-      if (FAttr.hasUpperBound() && !AutoPtrAttributed) {
-        S.Diag(Loc, diag::err_bounds_safety_conflicting_count_bound_attributes)
-            << DiagName << (FAttr.hasLowerBound() ? 0 : 1);
-        return false;
-      }
-      if (Level == 0)
-        return true;
-      --Level;
-      llvm::SaveAndRestore<bool> Local(AutoPtrAttributed, false);
-      return diagnoseDynamicRangePointerTypeShape(PT->getPointeeType(),
-                                                  AllowRedecl);
-    }
-
-    // Fallback for pointers_only.
-    S.Diag(Loc, diag::err_attribute_pointers_only) << DiagName << 0;
-    return false;
-  }
-};
-
 template<typename Derived>
 class ConstructDynamicBoundType
     : public TypeVisitor<Derived, QualType> {
@@ -6766,22 +6517,40 @@ protected:
   const StringRef DiagName;
   Expr *ArgExpr;
   SourceLocation Loc;
+  Sema::BoundsAttrFlags Flags;
   const BoundsAttributedType *ConstructedType = nullptr;
   unsigned Level;
   bool ScopeCheck;
   bool AllowRedecl;
   bool AutoPtrAttributed = false;
+  bool ShapeCheckedLevelZero = false;
   bool AtomicErrorEmitted = false;
 
 public:
   explicit ConstructDynamicBoundType(Sema &S, unsigned Level,
                                      const StringRef DiagName, Expr *ArgExpr,
-                                     SourceLocation Loc, bool ScopeCheck,
-                                     bool AllowRedecl)
-      : S(S), DiagName(DiagName), ArgExpr(ArgExpr), Loc(Loc), Level(Level),
-        ScopeCheck(ScopeCheck), AllowRedecl(AllowRedecl) {}
+                                     SourceLocation Loc,
+                                     Sema::BoundsAttrFlags Flags,
+                                     bool ScopeCheck, bool AllowRedecl)
+      : S(S), DiagName(DiagName), ArgExpr(ArgExpr), Loc(Loc), Flags(Flags),
+        Level(Level), ScopeCheck(ScopeCheck), AllowRedecl(AllowRedecl) {}
 
   QualType Visit(QualType T) {
+    // Validate applying the attribute at this level is we are going to apply
+    // it.
+    //
+    // Skip for Function types. The attribute targets the return type. Firing on
+    // the function type itself would emit a spurious "attribute only applies to
+    // a pointer" error and abort before reaching the return type.
+    // VisitFunctionProtoType / VisitFunctionNoProtoType recurse on the return
+    // type at the same Level, where the validation fires on the actual wrap
+    // target.
+    if (Level == 0 && !ShapeCheckedLevelZero && !T->isFunctionType()) {
+      ShapeCheckedLevelZero = true;
+      if (!S.ValidateBoundsAttrTypeShape(T, Loc, SourceRange(Loc), Flags,
+                                         DiagName, AllowRedecl, ArgExpr))
+        return QualType();
+    }
     SplitQualType SQT = T.split();
     QualType InnerTy = BaseClass::Visit(SQT.Ty);
     if (InnerTy.isNull())
@@ -6795,14 +6564,44 @@ public:
   }
 
   QualType VisitType(const Type *T) {
-    if (const auto *PTy = T->getAs<PointerType>())
-      return VisitPointerType(PTy);
-    assert(false && "pre-check should have rejected non-pointer leaf type");
+    // Fallback visitor for type classes without a dedicated visitor.
+
+    // Generic fallback for **sugar** without a dedicated visitor (e.g.
+    // `BTFTagAttributedType` and `TemplateSpecializationType`)
+    //
+    // FIXME: This generic desugar approach doesn't try to rebuild the types on
+    // return which means they will be dropped from the AST (rdar://185244036).
+    //
+    // Note several important type sugars do not take this path due to having
+    // their own visitors (e.g. `TypedefType` and `AttributedType`).
+    //
+    // This is here because we need to explicitly do `Visit(T_desugared)` so
+    // that other visitor methods in this class get a chance to be called. E.g.
+    // this sugar type wraps an `AttributedType` which we want to handle.
+    //
+    QualType QT(T, 0);
+    QualType Desugared = QT.getSingleStepDesugaredType(S.Context);
+
+    if (Desugared != QT)
+      return Visit(Desugared);
+
+    // T is a non-sugar, non-pointer, non-array type, so there is no pointer nor
+    // array here for the bounds attribute to attach to. Run the type-shape
+    // check to emit the diagnostic. Reachable when the requested `Level`
+    // exceeds the type's pointer nesting, e.g. an out-of-range level from API
+    // Notes.
+    bool Valid = S.ValidateBoundsAttrTypeShape(QT, Loc, SourceRange(Loc), Flags,
+                                               DiagName, AllowRedecl, ArgExpr);
+    assert(!Valid &&
+           "T should have been rejected because its not an array or pointer");
+    (void)Valid;
     return QualType();
   }
 
   QualType VisitParenType(const ParenType *T) {
     QualType InnerTy = Visit(T->getInnerType());
+    if (InnerTy.isNull())
+      return QualType();
     return S.Context.getParenType(InnerTy);
   }
 
@@ -6832,7 +6631,28 @@ public:
     BoundsSafetyPointerAttributes FAttr = T->getPointerAttributes();
 
     if (FAttr.hasUpperBound() && !AutoPtrAttributed) {
-      assert(false && "pre-check should have rejected conflicting count+bound");
+      assert(Level != 0 && "wide pointer at same level as dynamic bound "
+                           "pointer should've been rejected already");
+      // We are handling a case like:
+      //
+      // int* __counted_by(count) * __bidi_indexable
+      //
+      // and we are on the outer most pointer. Currently we don't allow this
+      // situation and historically we have diagnosed this using
+      // `err_bounds_safety_conflicting_count_bound_attributes`. However, that
+      // is really confusing because that diagnostic is meant for
+      //
+      // int* __counted_by(count) __bidi_indexable
+      //
+      //
+      // Technically we could call `ValidateBoundsAttrTypeShape` here instead of
+      // emitting the diagnostic directly but that would be an abuse of the API
+      // because it would be emitting the same diagnostic because it **thinks**
+      // we want to diagnose something like `int* __counted_by(count)
+      // __bidi_indexable` instead of the nested pointer situation.
+      // FIXME: This diagnostic is confusing (rdar://184349713).
+      S.Diag(Loc, diag::err_bounds_safety_conflicting_count_bound_attributes)
+          << DiagName << (FAttr.hasLowerBound() ? 0 : 1);
       return QualType();
     }
 
@@ -6902,7 +6722,81 @@ public:
 
   QualType VisitMacroQualifiedType(const MacroQualifiedType *T) {
     QualType NewTy = Visit(T->desugar());
+    if (NewTy.isNull())
+      return QualType();
     return S.Context.getMacroQualifiedType(NewTy, T->getMacroIdentifier());
+  }
+
+  // Shared handler for the "named alias" family of sugar (e.g. `TypedefType`)
+  QualType HandleNamedAliasType(const Type *Orig, QualType Desugared) {
+    // `TypeOfExprType` and `DecltypeType` are only sugar when non-dependent; a
+    // dependent one desugars to itself. It shouldn't be possible for us to
+    // see a dependent `TypeOfExprType` or `DecltypeType` because those only
+    // occur in templates that aren't fully instantiated and we only apply the
+    // attribute when the template is fully instantiated. So in principle this
+    // assert should never fire. However, to be more robust try to defensively
+    // to handle this.
+    assert(Desugared.getTypePtr() != Orig && "Sugar type desugared to itself");
+    // In non-assert builds avoid the infinite recursion.
+    if (Desugared.getTypePtr() == Orig)
+      return VisitType(Orig);
+
+    // Reject a bounds attribute on a function type reached through a *name*
+    // (typedef / __typeof__ / C++ using):
+    //
+    //   reject: typedef int *fn_t(int); fn_t f __counted_by(g);
+    //   allow:  int *__counted_by(n) f(int n);      // direct return
+    //   allow:  int *__counted_by(n) (*fp)(int n);  // function pointer
+    //
+    // Reaching this "named alias" handler means the function type was named
+    // through sugar. Directly-written function types (bare, or wrapped in
+    // transparent declarator sugar such as parentheses, a calling-convention
+    // AttributedType, or a MacroQualifiedType) dispatch to their own visitors
+    // and stay valid, so a bounds attribute there still applies to the return
+    // type. `isFunctionType()` desugars, so this also sees a function type
+    // wrapped in an AttributedType / MacroQualifiedType between the name and
+    // the function. Function pointers are at Level > 0 and are unaffected.
+    if (Level == 0 && Desugared->isFunctionType()) {
+      bool Valid = S.ValidateBoundsAttrTypeShape(Desugared, Loc, SourceRange(Loc),
+                                                 Flags, DiagName, AllowRedecl,
+                                                 ArgExpr);
+      assert(!Valid &&
+             "function type reached through sugar should be rejected");
+      (void)Valid;
+      return QualType();
+    }
+
+    return Visit(Desugared);
+  }
+
+  // FIXME: We shouldn't strip named sugars from the constructed type
+  // (rdar://185140320).
+  QualType VisitTypedefType(const TypedefType *T) {
+    return HandleNamedAliasType(T, T->desugar());
+  }
+
+  // FIXME: We shouldn't strip named sugars from the constructed type
+  // (rdar://185140320).
+  QualType VisitUsingType(const UsingType *T) {
+    return HandleNamedAliasType(T, T->desugar());
+  }
+
+  // FIXME: We shouldn't strip named sugars from the constructed type
+  // (rdar://185140320).
+  QualType VisitTypeOfExprType(const TypeOfExprType *T) {
+    return HandleNamedAliasType(T, T->desugar());
+  }
+
+  // FIXME: We shouldn't strip named sugars from the constructed type
+  // (rdar://185140320).
+  QualType VisitTypeOfType(const TypeOfType *T) {
+    return HandleNamedAliasType(T, T->desugar());
+  }
+
+  // FIXME: We shouldn't strip named sugars from the constructed type
+  // (rdar://185140320).
+  QualType VisitDecltypeType(const DecltypeType *T) {
+    return HandleNamedAliasType(T, T->desugar());
   }
 
   QualType VisitArrayType(const ArrayType *T) {
@@ -6946,32 +6840,30 @@ public:
 
 class ConstructCountAttributedType :
   public ConstructDynamicBoundType<ConstructCountAttributedType> {
-  bool CountInBytes;
-  bool OrNull;
-
 public:
   explicit ConstructCountAttributedType(Sema &S, unsigned Level,
                                         const StringRef DiagName, Expr *ArgE,
                                         SourceLocation Loc, bool CountInBytes,
                                         bool OrNull, bool AllowRedecl,
                                         bool ScopeCheck = false)
-      : ConstructDynamicBoundType(S, Level, DiagName, ArgE, Loc, ScopeCheck,
-                                  AllowRedecl),
-        CountInBytes(CountInBytes), OrNull(OrNull) {
+      : ConstructDynamicBoundType(
+            S, Level, DiagName, ArgE, Loc,
+            Sema::BoundsAttrFlags{CountInBytes, OrNull, /*IsEndedBy=*/false},
+            ScopeCheck, AllowRedecl) {
     assert(ArgExpr->getType()->isIntegralOrEnumerationType() &&
            "pre-check should have rewritten non-integral count to literal 0");
   }
 
   QualType BuildDynamicBoundType(QualType CanonTy) {
-    assert((CountInBytes || !CanonTy->isPointerType() ||
+    assert((Flags.CountInBytes || !CanonTy->isPointerType() ||
             !(CanonTy->getPointeeType()->isAlwaysIncompleteType() ||
               CanonTy->getPointeeType()->isFunctionType() ||
               CanonTy->getPointeeType()->isSizelessType() ||
               CanonTy->getPointeeType()
                   ->isStructureTypeWithFlexibleArrayMember())) &&
            "pre-check should have flipped CountInBytes for bad pointee");
-    QualType Ty = S.BuildCountAttributedType(CanonTy, ArgExpr, CountInBytes,
-                                             OrNull, ScopeCheck);
+    QualType Ty = S.BuildCountAttributedType(
+        CanonTy, ArgExpr, Flags.CountInBytes, Flags.OrNull, ScopeCheck);
     assert(ConstructedType == nullptr);
     ConstructedType = Ty->getAs<CountAttributedType>();
     return Ty;
@@ -7019,14 +6911,23 @@ public:
     if (NewElementTy.isNull())
       return QualType();
 
-    assert(T->getPointeeType() == NewElementTy &&
-           "pre-check should have rejected count on array element");
+    // If the element type changed it means a __counted_by attribute was
+    // applied. A __counted_by like attribute on an array's element type is not
+    // supported. E.g.: 'int * __counted_by(n) p[5][10]')
+    //
+    // FIXME: This diagnostic's wording is misleading for this case (there is a
+    // single declaration and nothing "coupled") rdar://184258982.
+    if (T->getElementType() != NewElementTy) {
+      S.Diag(Loc,
+             diag::err_multiple_coupled_decls_in_bounds_safety_dynamic_count);
+      return QualType();
+    }
     return QualType(T, 0);
   }
 
   QualType VisitIncompleteArrayType(const IncompleteArrayType *T) {
     if (Level == 0) {
-      assert(!CountInBytes &&
+      assert(!Flags.CountInBytes &&
              "pre-check should have rejected sized_by on incomplete array");
       return BuildDynamicBoundType(QualType(T, 0));
     }
@@ -7169,8 +7070,11 @@ public:
       Sema &S, unsigned Level, const StringRef DiagName, Expr *ArgExpr,
       SourceLocation Loc, bool AllowRedecl, bool ScopeCheck = false,
       std::optional<TypeCoupledDeclRefInfo> StartPtrInfo = std::nullopt)
-      : ConstructDynamicBoundType(S, Level, DiagName, ArgExpr, Loc, ScopeCheck,
-                                  AllowRedecl),
+      : ConstructDynamicBoundType(S, Level, DiagName, ArgExpr, Loc,
+                                  Sema::BoundsAttrFlags{/*CountInBytes=*/false,
+                                                        /*OrNull=*/false,
+                                                        /*IsEndedBy=*/true},
+                                  ScopeCheck, AllowRedecl),
         StartPtrInfo(StartPtrInfo) {
     assert(ArgExpr->getType()->isPointerType());
   }
@@ -7819,34 +7723,15 @@ void Sema::applyPtrCountedByEndedByAttr(Decl *D, unsigned Level,
     return;
   }
 
-  bool CountInBytes = false;
-  bool IsEndedBy = false;
-  bool OrNull = false;
-  switch (Kind) {
-  case ParsedAttr::AT_SizedBy:
-    CountInBytes = true;
-    break;
-  case ParsedAttr::AT_SizedByOrNull:
-    CountInBytes = true;
-    OrNull = true;
-    break;
-  case ParsedAttr::AT_CountedBy:
-    break;
-  case ParsedAttr::AT_CountedByOrNull:
-    OrNull = true;
-    break;
-  case ParsedAttr::AT_PtrEndedBy:
-    IsEndedBy = true;
-    break;
-  default:
-    llvm_unreachable("Invalid dynamic bound attribute");
-  }
+  // This cannot be const because `diagnoseCountAttributedTypeShape` may modify
+  // Flags.CountInBytes.
+  auto Flags = getBoundsAttrFlags(Kind);
 
-  if (!IsEndedBy) {
+  if (!Flags.IsEndedBy) {
     // Nullability as indicated by _Nonnull or _Nullable. Does not impact
     // semantics, only warnings.
     NullabilityKindOrNone AttrNullability = Info.Ty->getNullability();
-    if (OrNull) {
+    if (Flags.OrNull) {
       // Function parameter/return value attribute that *does* impact semantics,
       // letting the compiler elide null checks. This could remove bounds safety
       // checks, so using it together with __counted_by_or_null is not safe.
@@ -7856,34 +7741,34 @@ void Sema::applyPtrCountedByEndedByAttr(Decl *D, unsigned Level,
       if (auto NNAttr = D->getAttr<NonNullAttr>();
           NNAttr && isa<ParmVarDecl>(D)) {
         Diag(Loc, diag::err_bounds_safety_nullable_dynamic_count_nonnullable)
-            << CountInBytes << NNAttr << Range << NNAttr->getRange();
+            << Flags.CountInBytes << NNAttr << Range << NNAttr->getRange();
         return;
       }
       if (auto RNNAttr = D->getAttr<ReturnsNonNullAttr>()) {
         Diag(Loc, diag::err_bounds_safety_nullable_dynamic_count_nonnullable)
-            << CountInBytes << RNNAttr << Range << RNNAttr->getRange();
+            << Flags.CountInBytes << RNNAttr << Range << RNNAttr->getRange();
         return;
       }
 
       if (AttrNullability == NullabilityKind::NonNull) {
         Diag(Loc, diag::warn_bounds_safety_nullable_dynamic_count_nonnullable)
-            << CountInBytes << DiagName;
+            << Flags.CountInBytes << DiagName;
       }
     }
 
     if (auto CountArg = AttrArg->getIntegerConstantExpr(Context)) {
-      if (CountArg > 0 && !OrNull &&
+      if (CountArg > 0 && !Flags.OrNull &&
           AttrNullability == NullabilityKind::Nullable)
         Diag(AttrArg->getExprLoc(),
              diag::warn_bounds_safety_nonnullable_dynamic_count_nullable)
-            << CountInBytes << Range;
+            << Flags.CountInBytes << Range;
     }
   }
 
   const auto *FD = dyn_cast<FieldDecl>(D);
   if (FD && FD->getParent()->isUnion()) {
-    Diag(Loc, diag::err_invalid_decl_kind_bounds_safety_union_count)
-        << DiagName;
+    BoundsAttributedType::BoundsAttrKind DiagKind = getBoundsAttrKind(Flags);
+    Diag(Loc, diag::err_count_attr_in_union) << DiagKind;
     return;
   }
 
@@ -7901,9 +7786,10 @@ void Sema::applyPtrCountedByEndedByAttr(Decl *D, unsigned Level,
   // instead.
   if (const auto *PVD = dyn_cast<ParmVarDecl>(D)) {
     QualType TSITy = PVD->getTypeSourceInfo()->getType();
-    if (IsEndedBy) {
+    if (Flags.IsEndedBy) {
       if (Level == 0 && TSITy->isArrayType()) {
-        Diag(Loc, diag::err_attribute_pointers_only) << DiagName << 0;
+        Diag(Loc, diag::err_count_attr_not_on_ptr_or_flexible_array_member)
+            << BoundsAttributedType::EndedBy << 0;
         return;
       }
     } else {
@@ -7916,27 +7802,29 @@ void Sema::applyPtrCountedByEndedByAttr(Decl *D, unsigned Level,
     }
   }
 
-  if (Info.Ty->isArrayType() && OrNull &&
+  if (Info.Ty->isArrayType() && Flags.OrNull &&
       (FD || Info.EffectiveLevel > 0 ||
        (Info.Var && Info.Var->hasExternalStorage()))) {
     auto ErrDiag = Diag(Loc, diag::err_bounds_safety_nullable_fam);
     // Pointers to dynamic count types are only allowed for parameters, so any
     // FieldDecl containing a dynamic count type is a FAM. I.e. a struct field
     // with type 'int(*)[__counted_by(...)]' is not valid.
-    ErrDiag << CountInBytes << /*is FAM?*/ !!FD << DiagName;
+    ErrDiag << Flags.CountInBytes << /*is FAM?*/ !!FD << DiagName;
     assert(!FD || Info.EffectiveLevel == 0);
 
     SourceLocation FixItLoc = getSourceManager().getExpansionLoc(Loc);
     SourceLocation EndLoc =
         Lexer::getLocForEndOfToken(FixItLoc, /* Don't include '(' */ -1,
                                    getSourceManager(), getLangOpts());
-    std::string Attribute = CountInBytes ? "__sized_by" : "__counted_by";
+    std::string Attribute = Flags.CountInBytes ? "__sized_by" : "__counted_by";
     ErrDiag << FixItHint::CreateReplacement({FixItLoc, EndLoc}, Attribute);
 
     return;
   }
 
   if (Info.Ty->isArrayType() && Info.EffectiveLevel > 0) {
+    // FIXME: This diagnostic is misleading because it fires for complete arrays
+    // too (rdar://184258376).
     auto ErrDiag =
         Diag(Loc,
              diag::
@@ -7949,7 +7837,7 @@ void Sema::applyPtrCountedByEndedByAttr(Decl *D, unsigned Level,
   const BoundsAttributedType *ConstructedType = nullptr;
 
   bool HadAtomicError = false;
-  if (IsEndedBy) {
+  if (Flags.IsEndedBy) {
     if (AttrArg && AttrArg->getType()->isAtomicType()) {
       Diag(Loc, diag::err_bounds_safety_atomic_unsupported_attribute)
           << /*started_by*/ 8;
@@ -7970,12 +7858,6 @@ void Sema::applyPtrCountedByEndedByAttr(Decl *D, unsigned Level,
       StartPtrInfo = TypeCoupledDeclRefInfo(Info.VD, /*Deref=*/Level != 0);
     }
 
-    LateBoundsAttrDiagContext DiagCtx{*this, DiagName, Loc,
-                                      Level, AttrArg,  Info.ScopeCheck};
-    if (!DiagCtx.diagnoseDynamicRangePointerTypeShape(
-            Info.DeclTy, /*AllowRedecl=*/OriginatesInAPINotes))
-      return;
-
     auto TypeConstructor = ConstructDynamicRangePointerType(
         *this, Level, DiagName, AttrArg, Loc, OriginatesInAPINotes,
         Info.ScopeCheck, StartPtrInfo);
@@ -7983,9 +7865,6 @@ void Sema::applyPtrCountedByEndedByAttr(Decl *D, unsigned Level,
     HadAtomicError = TypeConstructor.hadAtomicError();
     ConstructedType = TypeConstructor.getConstructedType();
   } else {
-    LateBoundsAttrDiagContext DiagCtx{*this, DiagName, Loc,
-                                      Level, AttrArg,  Info.ScopeCheck};
-
     if (!AttrArg->getType()->isIntegralOrEnumerationType()) {
       Diag(Loc, diag::err_attribute_argument_type_for_bounds_safety_count)
           << DiagName;
@@ -7993,18 +7872,10 @@ void Sema::applyPtrCountedByEndedByAttr(Decl *D, unsigned Level,
       // DefaultLvalueConversion and the count is itself a __counted_by value,
       // clang will go down a fiery stack overflow.
       AttrArg = ActOnIntegerConstant(AttrArg->getBeginLoc(), 0).get();
-
-      // Walker needs to see the rewritten version of AttrArg.
-      DiagCtx.AttrArg = AttrArg;
     }
 
-    if (!DiagCtx.diagnoseCountAttributedTypeShape(
-            Info.DeclTy, CountInBytes, OrNull,
-            /*AllowRedecl=*/OriginatesInAPINotes))
-      return;
-
     auto TypeConstructor = ConstructCountAttributedType(
-        *this, Level, DiagName, AttrArg, Loc, CountInBytes, OrNull,
+        *this, Level, DiagName, AttrArg, Loc, Flags.CountInBytes, Flags.OrNull,
         OriginatesInAPINotes, Info.ScopeCheck);
     NewDeclTy = TypeConstructor.Visit(Info.DeclTy);
     HadAtomicError = TypeConstructor.hadAtomicError();
@@ -9065,180 +8936,6 @@ static void handleEnforceTCBAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   D->addAttr(AttrTy::Create(S.Context, Argument, AL));
 }
 
-static bool typedMemoryTypesAreEquivalentOrDependent(const ASTContext &Context,
-                                                     QualType SourceType,
-                                                     QualType DestinationType) {
-  SourceType = Context.getCanonicalType(SourceType).getUnqualifiedType();
-  DestinationType =
-      Context.getCanonicalType(DestinationType).getUnqualifiedType();
-  if (SourceType->isDependentType() || DestinationType->isDependentType())
-    return true;
-  return SourceType == DestinationType;
-}
-
-static void handleTypedMemory(Sema &S, Decl *D, const ParsedAttr &AL) {
-  if (!S.getLangOpts().TypedMemoryOperations)
-    return;
-
-  FunctionDecl *SourceDecl = D->getAsFunction();
-  if (isFunctionOrMethodVariadic(D) || isInstanceMethod(D)) {
-    S.Diag(SourceDecl->getBeginLoc(), diag::err_tmo_function_kind_error)
-        << 0 << SourceDecl << (isFunctionOrMethodVariadic(D) ? 0 : 1);
-    AL.setInvalid();
-    return;
-  }
-
-  auto Loc = AL.getLoc();
-  if (!SourceDecl) {
-    auto *ND = cast<NamedDecl>(D);
-    S.Diag(Loc, diag::err_tmo_function_kind_error) << 0 << ND << 3;
-    AL.setInvalid();
-    return;
-  }
-  if (AL.getNumArgs() < 2) {
-    S.Diag(Loc, diag::err_attribute_too_few_arguments) << AL;
-    AL.setInvalid();
-    return;
-  }
-  if (AL.getNumArgs() > 3) {
-    S.Diag(Loc, diag::err_attribute_too_many_arguments) << AL;
-    AL.setInvalid();
-    return;
-  }
-  Expr *TargetExpr = AL.getArgAsExpr(0);
-  FunctionDecl *TargetDecl = nullptr;
-  DeclarationNameInfo TargetName;
-  if (auto *DRE = dyn_cast<DeclRefExpr>(TargetExpr)) {
-    TargetDecl = dyn_cast<FunctionDecl>(DRE->getDecl());
-    TargetName = DRE->getNameInfo();
-    if (!TargetDecl) {
-      S.Diag(Loc, diag::err_tmo_function_kind_error)
-          << DRE->getSourceRange() << 1 << DRE->getNameInfo().getName() << 3;
-      AL.setInvalid();
-      return;
-    }
-  } else if (auto *ULE = dyn_cast<UnresolvedLookupExpr>(TargetExpr)) {
-    TargetDecl = S.ResolveSingleFunctionTemplateSpecialization(ULE, true);
-    TargetName = ULE->getNameInfo();
-    if (!TargetDecl) {
-      S.Diag(Loc, diag::err_tmo_rewrite_target_is_overloaded)
-          << TargetName.getName();
-      if (ULE->getType() == S.Context.OverloadTy)
-        S.NoteAllOverloadCandidates(ULE);
-      AL.setInvalid();
-      return;
-    }
-  } else {
-    S.Diag(Loc, diag::err_tmo_function_kind_error)
-        << TargetExpr->getSourceRange() << 1 << TargetExpr << 3;
-    AL.setInvalid();
-    return;
-  }
-
-  TargetDecl = TargetDecl->getCanonicalDecl();
-  ParamIdx InferredParameterIdx;
-  if (!S.checkFunctionOrMethodParameterIndex(D, AL, 1, AL.getArgAsExpr(1),
-                                             InferredParameterIdx))
-    return;
-
-  auto *InferredParam =
-      SourceDecl->getParamDecl(InferredParameterIdx.getASTIndex());
-  auto SizeType = InferredParam->getType();
-  auto isIntegerOrDependentNonArrayType = [](QualType QT) -> bool {
-    auto *T = QT->getUnqualifiedDesugaredType();
-    if (T->isIntegerType())
-      return true;
-    if (T->isDependentSizedArrayType())
-      return false;
-    return T->isDependentType();
-  };
-  if (!isIntegerOrDependentNonArrayType(SizeType)) {
-    S.Diag(Loc, diag::err_tmo_invalid_inferred_parameter_type)
-        << InferredParameterIdx.getSourceIndex() << SizeType
-        << InferredParam->getLocation();
-    AL.setInvalid();
-    return;
-  }
-
-  if (!hasFunctionProto(TargetDecl) || isFunctionOrMethodVariadic(TargetDecl) ||
-      isInstanceMethod(TargetDecl)) {
-    unsigned MessageSelector = !hasFunctionProto(TargetDecl)            ? 2u
-                               : isFunctionOrMethodVariadic(TargetDecl) ? 1u
-                                                                        : 0u;
-    S.Diag(Loc, diag::err_tmo_function_kind_error)
-        << 1 << TargetDecl << MessageSelector;
-    AL.setInvalid();
-    return;
-  }
-
-  auto reportTargetTypeMismatchError = [&]() {
-    std::vector<QualType> ExpectedArguments;
-    for (size_t I = 0; I < InferredParameterIdx.getSourceIndex(); I++)
-      ExpectedArguments.push_back(SourceDecl->getParamDecl(I)->getType());
-    ExpectedArguments.push_back(S.Context.getIntTypeForBitwidth(64, false));
-    for (size_t I = InferredParameterIdx.getSourceIndex();
-         I < SourceDecl->getNumParams(); I++)
-      ExpectedArguments.push_back(SourceDecl->getParamDecl(I)->getType());
-    FunctionProtoType::ExtProtoInfo EPI = {};
-    auto ExpectedType = S.Context.getFunctionType(SourceDecl->getReturnType(),
-                                                  ExpectedArguments, EPI);
-    S.Diag(Loc, diag::err_tmo_rewrite_target_type_mismatch)
-        << TargetDecl->getNameInfo().getName() << ExpectedType
-        << TargetDecl->getType();
-    S.Diag(TargetDecl->getLocation(),
-           diag::note_tmo_rewrite_target_type_mismatch);
-    AL.setInvalid();
-  };
-
-  if (!typedMemoryTypesAreEquivalentOrDependent(S.Context,
-                                                TargetDecl->getReturnType(),
-                                                SourceDecl->getReturnType())) {
-    reportTargetTypeMismatchError();
-    return;
-  }
-
-  if (getFunctionOrMethodNumParams(TargetDecl) !=
-      getFunctionOrMethodNumParams(SourceDecl) + 1) {
-    reportTargetTypeMismatchError();
-    return;
-  }
-
-  auto *TargetTypeDescriptorParam = getFunctionOrMethodParam(
-      TargetDecl, InferredParameterIdx.getASTIndex() + 1);
-  auto TargetTypeDescriptorType = TargetTypeDescriptorParam->getType();
-  if (!TargetTypeDescriptorType->isDependentType()) {
-    if (!TargetTypeDescriptorType->isIntegerType() ||
-        S.Context.getTypeSize(TargetTypeDescriptorType) != 64) {
-      reportTargetTypeMismatchError();
-      return;
-    }
-  }
-
-  size_t SourceParameterIdx = 0;
-  size_t TargetParameterIdx = 0;
-  for (; SourceParameterIdx < getFunctionOrMethodNumParams(SourceDecl);
-       SourceParameterIdx++, TargetParameterIdx++) {
-    auto *SourceParamDecl =
-        getFunctionOrMethodParam(SourceDecl, SourceParameterIdx);
-    auto *TargetParamDecl =
-        getFunctionOrMethodParam(TargetDecl, TargetParameterIdx);
-    if (!typedMemoryTypesAreEquivalentOrDependent(S.Context,
-                                                  SourceParamDecl->getType(),
-                                                  TargetParamDecl->getType())) {
-      reportTargetTypeMismatchError();
-      return;
-    }
-    if (SourceParameterIdx == InferredParameterIdx.getASTIndex())
-      TargetParameterIdx++;
-  }
-  if (AL.isInvalid())
-    return;
-
-  auto *TMA = ::new (S.Context)
-      TypedMemoryAttr(S.Context, AL, TargetDecl, InferredParameterIdx);
-  D->addAttr(TMA);
-}
-
 template <typename AttrTy, typename ConflictingAttrTy>
 static AttrTy *mergeEnforceTCBAttrImpl(Sema &S, Decl *D, const AttrTy &AL) {
   // Check if the new redeclaration has different leaf-ness in the same TCB.
@@ -9516,7 +9213,7 @@ static void handlePersonalityAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
 /// the attribute applies to decls.  If the attribute is a type attribute, just
 /// silently ignore it if a GNU attribute.
 static void
-ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D, const ParsedAttr &AL,
+ProcessDeclAttribute(Sema &S, Decl *D, const ParsedAttr &AL,
                      const Sema::ProcessDeclAttributeOptions &Options) {
   if (AL.isInvalid() || AL.getKind() == ParsedAttr::IgnoredAttribute)
     return;
@@ -9738,9 +9435,6 @@ ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D, const ParsedAttr &AL,
     break;
   case ParsedAttr::AT_Availability:
     handleAvailabilityAttr(S, D, AL);
-    break;
-  case ParsedAttr::AT_CarriesDependency:
-    handleDependencyAttr(S, scope, D, AL);
     break;
   case ParsedAttr::AT_CPUDispatch:
   case ParsedAttr::AT_CPUSpecific:
@@ -10446,7 +10140,7 @@ ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D, const ParsedAttr &AL,
     break;
 
   case ParsedAttr::AT_TypedMemory:
-    handleTypedMemory(S, D, AL);
+    S.handleTypedMemoryAttr(D, AL);
     break;
 
   case ParsedAttr::AT_BuiltinAlias:
@@ -10539,7 +10233,7 @@ void Sema::ProcessDeclAttributeList(
     return;
 
   for (const ParsedAttr &AL : AttrList)
-    ProcessDeclAttribute(*this, S, D, AL, Options);
+    ProcessDeclAttribute(*this, D, AL, Options);
 
   // FIXME: We should be able to handle these cases in TableGen.
   // GCC accepts
@@ -10660,8 +10354,7 @@ bool Sema::ProcessAccessDeclAttributeList(
     AccessSpecDecl *ASDecl, const ParsedAttributesView &AttrList) {
   for (const ParsedAttr &AL : AttrList) {
     if (AL.getKind() == ParsedAttr::AT_Annotate) {
-      ProcessDeclAttribute(*this, nullptr, ASDecl, AL,
-                           ProcessDeclAttributeOptions());
+      ProcessDeclAttribute(*this, ASDecl, AL, ProcessDeclAttributeOptions());
     } else {
       Diag(AL.getLoc(), diag::err_only_annotate_after_access_spec);
       return true;
@@ -11022,7 +10715,7 @@ void Sema::redelayDiagnostics(DelayedDiagnosticPool &pool) {
 
 void Sema::ActOnCleanupAttr(Decl *D, const Attr *A) {
   VarDecl *VD = cast<VarDecl>(D);
-  if (VD->getType()->isDependentType())
+  if (VD->isInvalidDecl() || VD->getType()->isDependentType())
     return;
 
   // Obtains the FunctionDecl that was found when handling the attribute

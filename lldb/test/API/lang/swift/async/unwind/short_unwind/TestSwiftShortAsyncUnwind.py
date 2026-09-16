@@ -8,9 +8,9 @@ class TestSwiftAsyncUnwind(lldbtest.TestBase):
 
     mydir = lldbtest.TestBase.compute_mydir(__file__)
 
-    @skipEmbeddedSwift
+    @skipEmbeddedSwiftOnLinux
     @swiftTest
-    @skipIf(oslist=["windows", "linux"])
+    @skipIf(oslist=["windows",])
     def test(self):
         """Test async unwinding with short backtraces work properly"""
         self.build()

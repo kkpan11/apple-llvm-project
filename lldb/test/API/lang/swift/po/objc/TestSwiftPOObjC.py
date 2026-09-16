@@ -4,9 +4,9 @@ from lldbsuite.test.decorators import *
 import lldbsuite.test.lldbutil as lldbutil
 
 class TestSwiftPOObjC(TestBase):
-    @skipEmbeddedSwift
+    @requireNotEmbeddedSwift
     #NO_DEBUG_INFO_TESTCASE = True
-    @skipUnlessDarwin
+    @requireSwiftObjCInterop
     @swiftTest
     def test(self):
         """Test running po on a Swift object from Objective-C. This

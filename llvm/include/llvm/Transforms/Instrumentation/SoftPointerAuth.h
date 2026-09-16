@@ -13,7 +13,7 @@
 
 namespace llvm {
 
-struct SoftPointerAuthPass : public PassInfoMixin<SoftPointerAuthPass> {
+struct SoftPointerAuthPass : public OptionalPassInfoMixin<SoftPointerAuthPass> {
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &AM);
 };
 

@@ -99,7 +99,9 @@ bool ThreadPlanShouldStopHere::DefaultShouldStopHereCallback(
       }
     }
   }
-  // Always avoid code with line number 0.
+  // Source line stepping plans should always avoid code with line number 0.
+  // But trampoline plans should not; it's easier to reason about if they
+  // leave that up to the source line plan that's driving them.
   // FIXME: At present the ShouldStop and the StepFromHere calculate this
   // independently.  If this ever
   // becomes expensive (this one isn't) we can try to have this set a state
@@ -107,7 +109,8 @@ bool ThreadPlanShouldStopHere::DefaultShouldStopHereCallback(
   SymbolContext sc;
   sc = frame->GetSymbolContext(eSymbolContextLineEntry);
 
-  if (sc.line_entry.line == 0)
+  if (flags.Test(ThreadPlanShouldStopHere::eStepPastLine0)
+      && sc.line_entry.line == 0)
     should_stop_here = false;
 
   // If we're in a trampoline, don't stop by default.
@@ -174,15 +177,16 @@ ThreadPlanSP ThreadPlanShouldStopHere::DefaultStepFromHereCallback(
     }
 
     if (!just_step_out) {
-      // If the current plan is a "Step In" plan we should use step in, otherwise
-      // just step over:
+      // If the current plan is a "Step In" plan we should use step in,
+      // otherwise just step over:
       if (current_plan->GetKind() == ThreadPlan::eKindStepInRange) {
-        LLDB_LOGF(log, "ThreadPlanShouldStopHere::DefaultStepFromHereCallback "
-                      "Queueing StepInRange plan to step through line 0 code.");
+        LLDB_LOGF(log,
+                  "ThreadPlanShouldStopHere::DefaultStepFromHereCallback "
+                  "Queueing StepInRange plan to step through line 0 code.");
         return_plan_sp =
             current_plan->GetThread().QueueThreadPlanForStepInRangeNoShouldStop(
-                false, range, sc, nullptr, eOnlyDuringStepping, status,
-                eLazyBoolCalculate, eLazyBoolNo);
+                false, range, sc, llvm::StringRef(), eOnlyDuringStepping,
+                status, eLazyBoolCalculate, eLazyBoolNo);
       } else {
         if (log)
           log->Printf(

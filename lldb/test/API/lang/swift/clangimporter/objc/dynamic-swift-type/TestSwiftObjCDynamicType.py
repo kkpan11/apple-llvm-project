@@ -5,8 +5,8 @@ import lldbsuite.test.lldbutil as lldbutil
 
 
 class TestCase(TestBase):
-    @skipEmbeddedSwift
-    @skipUnlessFoundation
+    @requireNotEmbeddedSwift
+    @requireObjCFoundation
     @swiftTest
     def test(self):
         """Verify printing of Swift implemented ObjC objects."""

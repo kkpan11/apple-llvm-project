@@ -3,9 +3,9 @@
 
 
 // RUN: %clang_cc1 -O0 -triple x86_64 -fbounds-safety -Wno-int-conversion -emit-llvm %s -o - | FileCheck %s --check-prefix=CHECK_X64_O0
-// RUN: %clang_cc1 -O0 -triple arm64-apple-iphoneos -fbounds-safety -Wno-int-conversion -emit-llvm %s -o - | FileCheck %s --check-prefix=CHECK_ARM64_O0
+// RUN: %clang_cc1 -O0 -triple arm64-apple-ios -fbounds-safety -Wno-int-conversion -emit-llvm %s -o - | FileCheck %s --check-prefix=CHECK_ARM64_O0
 // RUN: %clang_cc1 -O0 -triple x86_64 -fbounds-safety -x objective-c -fexperimental-bounds-safety-objc -Wno-int-conversion -emit-llvm %s -o - | FileCheck %s --check-prefix=CHECK_X64_O0
-// RUN: %clang_cc1 -O0 -triple arm64-apple-iphoneos -fbounds-safety -Wno-int-conversion -x objective-c -fexperimental-bounds-safety-objc -emit-llvm %s -o - | FileCheck %s --check-prefix=CHECK_ARM64_O0
+// RUN: %clang_cc1 -O0 -triple arm64-apple-ios -fbounds-safety -Wno-int-conversion -x objective-c -fexperimental-bounds-safety-objc -emit-llvm %s -o - | FileCheck %s --check-prefix=CHECK_ARM64_O0
 #include <ptrcheck.h>
 
 #define memmove_(b, ...) __builtin___memmove_chk(b, __VA_ARGS__, b)
@@ -142,8 +142,8 @@ int arr[] = {0, 1, 2, 3, 4, 5};
 // CHECK_X64_O0-NEXT:    [[WIDE_PTR_UB45:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR44]], align 8, !annotation [[META1]]
 // CHECK_X64_O0-NEXT:    [[WIDE_PTR_LB_ADDR46:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable.2", ptr [[AGG_TEMP34]], i32 0, i32 2, !annotation [[META1]]
 // CHECK_X64_O0-NEXT:    [[WIDE_PTR_LB47:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR46]], align 8, !annotation [[META1]]
-// CHECK_X64_O0-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR29]] to i64, !annotation [[META1]]
-// CHECK_X64_O0-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR43]] to i64, !annotation [[META1]]
+// CHECK_X64_O0-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR29]] to i64, !annotation [[META1]]
+// CHECK_X64_O0-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR43]] to i64, !annotation [[META1]]
 // CHECK_X64_O0-NEXT:    [[SUB_PTR_SUB:%.*]] = sub i64 [[SUB_PTR_LHS_CAST]], [[SUB_PTR_RHS_CAST]], !annotation [[META1]]
 // CHECK_X64_O0-NEXT:    [[CMP:%.*]] = icmp ule i64 24, [[SUB_PTR_SUB]], !annotation [[META1]]
 // CHECK_X64_O0-NEXT:    br i1 [[CMP]], label %[[CONT:.*]], label %[[TRAP:.*]], {{!prof ![0-9]+}}, !annotation [[META1]]
@@ -235,8 +235,8 @@ int arr[] = {0, 1, 2, 3, 4, 5};
 // CHECK_X64_O0-NEXT:    [[WIDE_PTR_UB109:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR108]], align 8, !annotation [[META1]]
 // CHECK_X64_O0-NEXT:    [[WIDE_PTR_LB_ADDR110:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable.3", ptr [[AGG_TEMP98]], i32 0, i32 2, !annotation [[META1]]
 // CHECK_X64_O0-NEXT:    [[WIDE_PTR_LB111:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR110]], align 8, !annotation [[META1]]
-// CHECK_X64_O0-NEXT:    [[SUB_PTR_LHS_CAST112:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR93]] to i64, !annotation [[META1]]
-// CHECK_X64_O0-NEXT:    [[SUB_PTR_RHS_CAST113:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR107]] to i64, !annotation [[META1]]
+// CHECK_X64_O0-NEXT:    [[SUB_PTR_LHS_CAST112:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR93]] to i64, !annotation [[META1]]
+// CHECK_X64_O0-NEXT:    [[SUB_PTR_RHS_CAST113:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR107]] to i64, !annotation [[META1]]
 // CHECK_X64_O0-NEXT:    [[SUB_PTR_SUB114:%.*]] = sub i64 [[SUB_PTR_LHS_CAST112]], [[SUB_PTR_RHS_CAST113]], !annotation [[META1]]
 // CHECK_X64_O0-NEXT:    [[CMP115:%.*]] = icmp ule i64 24, [[SUB_PTR_SUB114]], !annotation [[META1]]
 // CHECK_X64_O0-NEXT:    br label %[[LAND_END]], !annotation [[META1]]
@@ -266,7 +266,7 @@ int arr[] = {0, 1, 2, 3, 4, 5};
 // CHECK_X64_O0-NEXT:    [[ADD_PTR132:%.*]] = getelementptr inbounds nuw i8, ptr [[CALL]], i64 24
 // CHECK_X64_O0-NEXT:    ret i32 0
 //
-// CHECK_ARM64_O0-LABEL: define dso_local i32 @foo(
+// CHECK_ARM64_O0-LABEL: define i32 @foo(
 // CHECK_ARM64_O0-SAME: ptr noundef [[BUF:%.*]], ptr noundef [[LEN:%.*]]) #[[ATTR0:[0-9]+]] {
 // CHECK_ARM64_O0-NEXT:  [[ENTRY:.*:]]
 // CHECK_ARM64_O0-NEXT:    [[BUF_ADDR:%.*]] = alloca ptr, align 8
@@ -393,8 +393,8 @@ int arr[] = {0, 1, 2, 3, 4, 5};
 // CHECK_ARM64_O0-NEXT:    [[WIDE_PTR_UB45:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR44]], align 8, !annotation [[META1]]
 // CHECK_ARM64_O0-NEXT:    [[WIDE_PTR_LB_ADDR46:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable.2", ptr [[AGG_TEMP34]], i32 0, i32 2, !annotation [[META1]]
 // CHECK_ARM64_O0-NEXT:    [[WIDE_PTR_LB47:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR46]], align 8, !annotation [[META1]]
-// CHECK_ARM64_O0-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR29]] to i64, !annotation [[META1]]
-// CHECK_ARM64_O0-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR43]] to i64, !annotation [[META1]]
+// CHECK_ARM64_O0-NEXT:    [[SUB_PTR_LHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR29]] to i64, !annotation [[META1]]
+// CHECK_ARM64_O0-NEXT:    [[SUB_PTR_RHS_CAST:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR43]] to i64, !annotation [[META1]]
 // CHECK_ARM64_O0-NEXT:    [[SUB_PTR_SUB:%.*]] = sub i64 [[SUB_PTR_LHS_CAST]], [[SUB_PTR_RHS_CAST]], !annotation [[META1]]
 // CHECK_ARM64_O0-NEXT:    [[CMP:%.*]] = icmp ule i64 24, [[SUB_PTR_SUB]], !annotation [[META1]]
 // CHECK_ARM64_O0-NEXT:    br i1 [[CMP]], label %[[CONT:.*]], label %[[TRAP:.*]], {{!prof ![0-9]+}}, !annotation [[META1]]
@@ -486,8 +486,8 @@ int arr[] = {0, 1, 2, 3, 4, 5};
 // CHECK_ARM64_O0-NEXT:    [[WIDE_PTR_UB109:%.*]] = load ptr, ptr [[WIDE_PTR_UB_ADDR108]], align 8, !annotation [[META1]]
 // CHECK_ARM64_O0-NEXT:    [[WIDE_PTR_LB_ADDR110:%.*]] = getelementptr inbounds nuw %"__bounds_safety::wide_ptr.bidi_indexable.3", ptr [[AGG_TEMP98]], i32 0, i32 2, !annotation [[META1]]
 // CHECK_ARM64_O0-NEXT:    [[WIDE_PTR_LB111:%.*]] = load ptr, ptr [[WIDE_PTR_LB_ADDR110]], align 8, !annotation [[META1]]
-// CHECK_ARM64_O0-NEXT:    [[SUB_PTR_LHS_CAST112:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR93]] to i64, !annotation [[META1]]
-// CHECK_ARM64_O0-NEXT:    [[SUB_PTR_RHS_CAST113:%.*]] = ptrtoint ptr [[WIDE_PTR_PTR107]] to i64, !annotation [[META1]]
+// CHECK_ARM64_O0-NEXT:    [[SUB_PTR_LHS_CAST112:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR93]] to i64, !annotation [[META1]]
+// CHECK_ARM64_O0-NEXT:    [[SUB_PTR_RHS_CAST113:%.*]] = ptrtoaddr ptr [[WIDE_PTR_PTR107]] to i64, !annotation [[META1]]
 // CHECK_ARM64_O0-NEXT:    [[SUB_PTR_SUB114:%.*]] = sub i64 [[SUB_PTR_LHS_CAST112]], [[SUB_PTR_RHS_CAST113]], !annotation [[META1]]
 // CHECK_ARM64_O0-NEXT:    [[CMP115:%.*]] = icmp ule i64 24, [[SUB_PTR_SUB114]], !annotation [[META1]]
 // CHECK_ARM64_O0-NEXT:    br label %[[LAND_END]], !annotation [[META1]]

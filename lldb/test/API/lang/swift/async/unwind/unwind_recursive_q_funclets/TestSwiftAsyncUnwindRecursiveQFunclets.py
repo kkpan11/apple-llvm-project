@@ -8,11 +8,10 @@ class TestCase(lldbtest.TestBase):
 
     mydir = lldbtest.TestBase.compute_mydir(__file__)
 
-    unwind_fail_range_cache = dict()
 
     @skipEmbeddedSwift
     @swiftTest
-    @skipIf(oslist=["windows", "linux"])
+    @skipIf(oslist=["windows",])
     @skipIf(archs=["arm64e"])
     def test(self):
         """Test that the debugger can unwind at all instructions of all funclets"""
@@ -20,7 +19,7 @@ class TestCase(lldbtest.TestBase):
 
         source_file = lldb.SBFileSpec("main.swift")
         target, process, thread, bkpt = lldbutil.run_to_name_breakpoint(
-            self, "$s1a9factorialyS2iYaFTQ1_"
+            self, self.swiftMangledName("$s1a9factorialyS2iYaFTQ1_")
         )
 
         # Ensure we are on the last factorial call which recurses (n == 1).

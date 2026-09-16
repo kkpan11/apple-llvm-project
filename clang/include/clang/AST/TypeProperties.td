@@ -84,6 +84,12 @@ let Class = ValueTerminatedType in {
 }
 // TO_UPSTREAM(BoundsSafety) OFF
 
+let Class = LateParsedAttrType in {
+  // Note: LateParsedAttrType is a transient placeholder type that should
+  // normally be replaced before serialization. So this won't be serialized.
+  def : Creator<[{ (void)ctx; llvm_unreachable("unreachable for serialization"); }]>;
+}
+
 let Class = AdjustedType in {
   def : Property<"originalType", QualType> {
     let Read = [{ node->getOriginalType() }];
@@ -529,9 +535,12 @@ let Class = PackIndexingType in {
   def : Property<"expansions", Array<QualType>> {
     let Read = [{ node->getExpansions() }];
   }
+  def : Property<"index", UnsignedOrNone> {
+    let Read = [{ node->getSelectedIndex() }];
+  }
 
   def : Creator<[{
-    return ctx.getPackIndexingType(pattern, indexExpression, isFullySubstituted, expansions);
+    return ctx.getPackIndexingType(pattern, indexExpression, isFullySubstituted, expansions, index);
   }]>;
 }
 
@@ -562,9 +571,12 @@ let Class = AutoType in {
   def : Property<"keyword", AutoTypeKeyword> {
     let Read = [{ node->getKeyword() }];
   }
-  def : Property<"typeConstraintConcept", Optional<TemplateDeclRef>> {
-    let Read = [{ makeOptionalFromPointer(
-        node->getTypeConstraintConcept()) }];
+  def : Property<"isConstrained", Bool> {
+    let Read = [{ node->isConstrained() }];
+  }
+  def : Property<"typeConstraintConcept", TemplateName> {
+    let Conditional = [{ isConstrained }];
+    let Read = [{ node->getTypeConstraintConcept() }];
   }
   def : Property<"typeConstraintArguments", Array<TemplateArgument>> {
     let Read = [{ node->getTypeConstraintArguments() }];
@@ -572,7 +584,7 @@ let Class = AutoType in {
 
   def : Creator<[{
     return ctx.getAutoType(deducedKind, makeNullableFromOptional(deducedType), keyword,
-                           makePointerFromOptional(typeConstraintConcept),
+                           isConstrained ? *typeConstraintConcept : TemplateName(),
                            typeConstraintArguments);
   }]>;
 }
@@ -581,8 +593,8 @@ let Class = DeducedTemplateSpecializationType in {
   def : Property<"keyword", ElaboratedTypeKeyword> {
     let Read = [{ node->getKeyword() }];
   }
-  def : Property<"templateName", Optional<TemplateName>> {
-    let Read = [{ makeOptionalFromNullable(node->getTemplateName()) }];
+  def : Property<"templateName", TemplateName> {
+    let Read = [{ node->getTemplateName() }];
   }
   def : Property<"deducedKind", DeducedKind> {
     let Read = [{ node->getDeducedKind() }];
@@ -592,8 +604,7 @@ let Class = DeducedTemplateSpecializationType in {
   }
 
   def : Creator<[{
-    return ctx.getDeducedTemplateSpecializationType(deducedKind, deducedType, keyword,
-                                     makeNullableFromOptional(templateName));
+    return ctx.getDeducedTemplateSpecializationType(deducedKind, deducedType, keyword, templateName);
   }]>;
 }
 
@@ -724,11 +735,15 @@ let Class = HLSLAttributedResourceType in {
   def : Property<"isArray", Bool> {
     let Read = [{ node->getAttrs().IsArray }];
   }
+  def : Property<"sampleCountExpr", Optional<ExprRef>> {
+    let Read = [{ makeOptionalFromPointer(node->getSampleCountExpr()) }];
+  }
   def : Creator<[{
     HLSLAttributedResourceType::Attributes attrs(
         static_cast<llvm::dxil::ResourceClass>(resClass),
         static_cast<llvm::dxil::ResourceDimension>(resDimension), isROV,
-        rawBuffer, isCounter, isArray);
+        rawBuffer, isCounter, isArray,
+        makePointerFromOptional(sampleCountExpr));
     return ctx.getHLSLAttributedResourceType(wrappedTy, containedTy, attrs);
   }]>;
 }
@@ -909,6 +924,10 @@ let Class = BuiltinType in {
 #define HLSL_INTANGIBLE_TYPE(NAME, ID, SINGLETON_ID) \
       case BuiltinType::ID: return ctx.SINGLETON_ID;
 #include "clang/Basic/HLSLIntangibleTypes.def"
+
+#define SPIRV_TYPE(NAME, ID, SINGLETON_ID) \
+      case BuiltinType::ID: return ctx.SINGLETON_ID;
+#include "clang/Basic/SPIRVTypes.def"
 
 #define BUILTIN_TYPE(ID, SINGLETON_ID) \
       case BuiltinType::ID: return ctx.SINGLETON_ID;

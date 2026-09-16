@@ -22,6 +22,8 @@
 #include "lldb/Target/Target.h"
 #include "lldb/ValueObject/ValueObjectConstResult.h"
 
+#include "llvm/Support/Error.h"
+
 // FIXME: we should not need this
 #include "Plugins/Language/ObjC/Cocoa.h"
 #include "lldb/lldb-enumerations.h"
@@ -96,14 +98,23 @@ SwiftArrayNativeBufferHandler::SwiftArrayNativeBufferHandler(
   if (opt_size)
     m_element_size = *opt_size;
   auto opt_stride = elem_type.GetByteStride(process_sp.get());
-  if (opt_stride)
-    m_element_stride = *opt_stride;
+  // The Objective-C bridged array path (_ContiguousArrayStorage) uses a Clang
+  // 'id' element type, whose type system does not implement GetByteStride.
+  assert((opt_stride ||
+          !elem_type.GetTypeSystem().dyn_cast_or_null<TypeSystemSwift>()) &&
+         "Swift Array element type has no stride");
+  m_element_stride = opt_stride.value_or(m_element_size);
+  assert(m_element_stride > 0 && "Swift array element stride must be positive");
   size_t ptr_size = process_sp->GetAddressByteSize();
   Status error;
   lldb::addr_t next_read = native_ptr;
-  m_metadata_ptr = process_sp->ReadPointerFromMemory(next_read, error);
-  if (error.Fail())
+  llvm::Expected<lldb::addr_t> metadata_ptr =
+      process_sp->ReadPointerFromMemory(next_read);
+  if (!metadata_ptr) {
+    llvm::consumeError(metadata_ptr.takeError());
     return;
+  }
+  m_metadata_ptr = *metadata_ptr;
   next_read += ptr_size;
   m_reserved_word =
       process_sp->ReadUnsignedIntegerFromMemory(next_read, ptr_size, 0, error);
@@ -375,17 +386,19 @@ SwiftArrayBufferHandler::CreateBufferHandler(ValueObject &static_valobj) {
     ProcessSP process_sp(valobj.GetProcessSP());
     if (!process_sp)
       return nullptr;
-    Status error;
 
-    lldb::addr_t buffer_ptr = valobj.GetValueAsUnsigned(LLDB_INVALID_ADDRESS) +
-                              3 * process_sp->GetAddressByteSize();
-    buffer_ptr = process_sp->ReadPointerFromMemory(buffer_ptr, error);
-    if (error.Fail() || buffer_ptr == LLDB_INVALID_ADDRESS)
+    lldb::addr_t buffer_addr = valobj.GetValueAsUnsigned(LLDB_INVALID_ADDRESS) +
+                               3 * process_sp->GetAddressByteSize();
+    lldb::addr_t buffer_ptr =
+        llvm::expectedToOptional(process_sp->ReadPointerFromMemory(buffer_addr))
+            .value_or(LLDB_INVALID_ADDRESS);
+    if (buffer_ptr == LLDB_INVALID_ADDRESS)
       return nullptr;
 
     lldb::addr_t argmetadata_ptr =
-        process_sp->ReadPointerFromMemory(buffer_ptr, error);
-    if (error.Fail() || argmetadata_ptr == LLDB_INVALID_ADDRESS)
+        llvm::expectedToOptional(process_sp->ReadPointerFromMemory(buffer_ptr))
+            .value_or(LLDB_INVALID_ADDRESS);
+    if (argmetadata_ptr == LLDB_INVALID_ADDRESS)
       return nullptr;
 
     // Get the type of the array elements.
@@ -398,8 +411,8 @@ SwiftArrayBufferHandler::CreateBufferHandler(ValueObject &static_valobj) {
     if (!swift_runtime)
       return nullptr;
 
-    if (CompilerType type =
-            swift_runtime->GetTypeFromMetadata(*ts, argmetadata_ptr))
+    if (CompilerType type = swift_runtime->GetTypeFromMetadata(
+            *ts, Address(argmetadata_ptr)))
       if (auto ts = type.GetTypeSystem().dyn_cast_or_null<TypeSystemSwift>())
         argument_type = ts->GetGenericArgumentType(type.GetOpaqueQualType(), 0);
 
@@ -466,6 +479,8 @@ SwiftArrayBufferHandler::CreateBufferHandler(ValueObject &static_valobj) {
     if (!nonsynth_sp)
       return nullptr;
     ValueObjectSP storage_sp(nonsynth_sp->GetChildMemberWithName(g__storage));
+    if (!storage_sp)
+      return nullptr;
 
     lldb::addr_t storage_location =
         storage_sp->GetValueAsUnsigned(LLDB_INVALID_ADDRESS);
@@ -629,13 +644,13 @@ llvm::Expected<size_t> lldb_private::formatters::swift::ArraySyntheticFrontEnd::
     GetIndexOfChildWithName(ConstString name) {
   if (!m_array_buffer)
     return llvm::createStringError("Type has no child named '%s'",
-                                   name.AsCString());
+                                   name.AsCString(""));
   const char *item_name = name.GetCString();
   auto optional_idx = ExtractIndexFromString(item_name);
   if (!optional_idx ||
       optional_idx.value() >= CalculateNumChildrenIgnoringErrors())
     return llvm::createStringError("Type has no child named '%s'",
-                                   name.AsCString());
+                                   name.AsCString(""));
   return optional_idx.value();
 }
 

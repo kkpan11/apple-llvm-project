@@ -12,8 +12,10 @@
 
 #include "SwiftExpressionParser.h"
 
-#include "Plugins/TypeSystem/Swift/SwiftASTContext.h"
 #include "Plugins/Language/Swift/LogChannelSwift.h"
+#include "Plugins/TypeSystem/Swift/SwiftASTContext.h"
+#include "Plugins/TypeSystem/Swift/TypeSystemSwift.h"
+#include "Plugins/TypeSystem/Swift/TypeSystemSwiftTypeRef.h"
 #include "SwiftASTManipulator.h"
 #include "SwiftDiagnostic.h"
 #include "SwiftExpressionSourceCode.h"
@@ -56,6 +58,7 @@
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Verifier.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/TargetSelect.h"
@@ -159,7 +162,7 @@ swift::SILValue LLDBNameLookup::emitLValueForVariable(
   ConstString variable_const_string(variable_name.get());
 
   SwiftExpressionParser::SILVariableMap::iterator vi =
-      m_variable_map.find(variable_const_string.AsCString());
+      m_variable_map.find(variable_const_string.AsCString(nullptr));
 
   if (vi == m_variable_map.end())
     return swift::SILValue();
@@ -457,7 +460,7 @@ public:
 /// Returns the Swift type for a ValueObject representing a variable.
 /// An invalid CompilerType is returned on error.
 static CompilerType GetSwiftTypeForVariableValueObject(
-    lldb::ValueObjectSP valobj_sp, lldb::StackFrameSP &stack_frame_sp,
+    lldb::ValueObjectSP valobj_sp, lldb_private::StackFrame &stack_frame,
     SwiftLanguageRuntime *runtime, lldb::BindGenericTypes bind_generic_types) {
   // Check that the passed ValueObject is valid.
   if (!valobj_sp)
@@ -467,10 +470,16 @@ static CompilerType GetSwiftTypeForVariableValueObject(
     return {};
   if (SwiftASTManipulator::ShouldBindGenericTypes(bind_generic_types))
     result = llvm::expectedToOptional(
-                 runtime->BindGenericTypeParameters(*stack_frame_sp, result))
+                 runtime->BindGenericTypeParameters(stack_frame, result))
                  .value_or(CompilerType());
   if (!result)
     return {};
+  if (runtime)
+    if (auto rt =
+            runtime->GetRuntimeType(result, ExecutionContext(stack_frame)))
+      if (rt->IsValid())
+        result = *rt;
+
   if (!result.GetTypeSystem()->SupportsLanguage(lldb::eLanguageTypeSwift))
     return {};
   return result;
@@ -483,16 +492,15 @@ static CompilerType GetSwiftTypeForVariableValueObject(
 /// SwiftASTContext cannot see because there is no header file that
 /// would declare them.
 CompilerType SwiftExpressionParser::ResolveVariable(
-    lldb::VariableSP variable_sp, lldb::StackFrameSP &stack_frame_sp,
+    lldb::VariableSP variable_sp, lldb_private::StackFrame &stack_frame,
     SwiftLanguageRuntime *runtime, lldb::DynamicValueType use_dynamic,
     lldb::BindGenericTypes bind_generic_types) {
-  lldb::ValueObjectSP valobj_sp =
-      stack_frame_sp->GetValueObjectForFrameVariable(variable_sp,
-                                                     lldb::eNoDynamicValues);
+  lldb::ValueObjectSP valobj_sp = stack_frame.GetValueObjectForFrameVariable(
+      variable_sp, lldb::eNoDynamicValues);
   const bool use_dynamic_value = use_dynamic > lldb::eNoDynamicValues;
 
   CompilerType var_type = GetSwiftTypeForVariableValueObject(
-      valobj_sp, stack_frame_sp, runtime, bind_generic_types);
+      valobj_sp, stack_frame, runtime, bind_generic_types);
 
   if (!var_type.IsValid())
     return {};
@@ -510,7 +518,7 @@ CompilerType SwiftExpressionParser::ResolveVariable(
       SwiftASTManipulator::ShouldBindGenericTypes(bind_generic_types) &&
       use_dynamic_value) {
     var_type = GetSwiftTypeForVariableValueObject(
-        valobj_sp->GetDynamicValue(use_dynamic), stack_frame_sp, runtime,
+        valobj_sp->GetDynamicValue(use_dynamic), stack_frame, runtime,
         bind_generic_types);
     if (!var_type.IsValid())
       return {};
@@ -545,7 +553,7 @@ lldb::VariableSP SwiftExpressionParser::FindSelfVariable(Block *block) {
 /// successfully. If the method returns an error status, it contains a string
 /// that explain the failure.
 static llvm::Error
-AddRequiredAliases(Block *block, lldb::StackFrameSP &stack_frame_sp,
+AddRequiredAliases(Block *block, lldb_private::StackFrame &stack_frame,
                    SwiftASTContextForExpressions &swift_ast_context,
                    SwiftASTManipulator &manipulator,
                    lldb::DynamicValueType use_dynamic,
@@ -573,11 +581,19 @@ AddRequiredAliases(Block *block, lldb::StackFrameSP &stack_frame_sp,
   if (!self_var_sp)
     return llvm::Error::success();
 
+  // Don't inject a `self` without a value. In this case the outer
+  // layer is downgrading the expression method to a freestanding
+  // function.
+  if (lldb::ValueObjectSP valobj_sp =
+          stack_frame.GetValueObjectForFrameVariable(self_var_sp,
+                                                     lldb::eNoDynamicValues))
+    if (valobj_sp->GetError().Fail() && self_var_sp->IsArtificial())
+      return llvm::Error::success();
+
   auto *swift_runtime =
-      SwiftLanguageRuntime::Get(stack_frame_sp->GetThread()->GetProcess());
+      SwiftLanguageRuntime::Get(stack_frame.GetThread()->GetProcess());
   CompilerType self_type = SwiftExpressionParser::ResolveVariable(
-      self_var_sp, stack_frame_sp, swift_runtime, use_dynamic,
-      bind_generic_types);
+      self_var_sp, stack_frame, swift_runtime, use_dynamic, bind_generic_types);
 
   if (!self_type.IsValid()) {
     if (Type *type = self_var_sp->GetType()) {
@@ -601,10 +617,9 @@ AddRequiredAliases(Block *block, lldb::StackFrameSP &stack_frame_sp,
         "Unable to add the aliases the expression needs because the "
         "self type from an import isn't valid.");
 
-  auto *stack_frame = stack_frame_sp.get();
   if (SwiftASTManipulator::ShouldBindGenericTypes(bind_generic_types)) {
     auto bound_type_or_err = swift_runtime->BindGenericTypeParameters(
-        *stack_frame, imported_self_type);
+        stack_frame, imported_self_type);
     if (!bound_type_or_err)
       return llvm::joinErrors(
           llvm::createStringError(
@@ -646,7 +661,7 @@ AddRequiredAliases(Block *block, lldb::StackFrameSP &stack_frame_sp,
     // If we are extending a generic class it's going to be a metatype,
     // and we have to grab the instance type:
     imported_self_type = swift_type_system->GetInstanceType(
-        imported_self_type.GetOpaqueQualType(), stack_frame_sp.get());
+        imported_self_type.GetOpaqueQualType(), &stack_frame);
     if (!imported_self_type)
       return llvm::createStringError(
           "Unable to add the aliases the expression needs because the Swift "
@@ -660,9 +675,11 @@ AddRequiredAliases(Block *block, lldb::StackFrameSP &stack_frame_sp,
     LLDB_LOG(GetLog(LLDBLog::Types | LLDBLog::Expressions),
              "Couldn't get SwiftASTContext type for self type {0}.",
              imported_self_type.GetDisplayTypeName());
-    return llvm::createStringError(
-        "Unable to add the aliases the expression needs because the Swift "
-        "expression parser couldn't get the Swift type for self.");
+    return llvm::joinErrors(
+        llvm::createStringError(
+            "Unable to add the aliases the expression needs because the Swift "
+            "expression parser couldn't get the Swift type for self."),
+        swift_self_type.takeError());
   }
   if (!swift_self_type.get())
     return llvm::createStringError("null self type");
@@ -880,6 +897,8 @@ SwiftExpressionParser::GetASTContext(DiagnosticManager &diagnostic_manager) {
     m_swift_ast_ctx.GetIRGenOptions().ForcePublicLinkage = true;
 
     m_swift_ast_ctx.GetIRGenOptions().DisableRoundTripDebugTypes = true;
+    m_swift_ast_ctx.GetIRGenOptions().ReflectionMetadata =
+        swift::ReflectionMetadataMode::Runtime;
     m_ast_init_successful = true;
   });
   if (m_ast_init_successful)
@@ -1005,6 +1024,15 @@ MaterializeVariable(SwiftASTManipulatorBase::VariableInfo &variable,
       actual_type =
           swift_ast_ctx->GetTypeRefType(actual_type.GetOpaqueQualType());
 
+      // Hoist the type into the scratch typesystem.
+      if (lldb::StackFrameSP frame_sp = stack_frame_wp.lock())
+        if (auto *runtime =
+                SwiftLanguageRuntime::Get(frame_sp->CalculateProcess()))
+          if (auto rt = runtime->GetRuntimeType(actual_type,
+                                                ExecutionContext(frame_sp)))
+            if (rt->IsValid())
+              actual_type = *rt;
+
       offset = materializer.AddResultVariable(
           actual_type, false, true,
           is_result ? &user_expression.GetResultDelegate()
@@ -1084,7 +1112,7 @@ MaterializeVariable(SwiftASTManipulatorBase::VariableInfo &variable,
         log,
         "Added persistent variable %s with flags 0x%llx to "
         "struct at offset %llu",
-        variable_metadata->m_persistent_variable_sp->GetName().AsCString(),
+        variable_metadata->m_persistent_variable_sp->GetName().AsCString(""),
         (unsigned long long)
             variable_metadata->m_persistent_variable_sp->m_flags,
         (unsigned long long)offset);
@@ -1447,6 +1475,8 @@ SwiftExpressionParser::ParseAndImport(
 
   if (!playground && !repl) {
     lldb::StackFrameSP stack_frame_sp = m_stack_frame_wp.lock();
+    if (!stack_frame_sp)
+      return llvm::createStringError("no stack frame");
 
     bool local_context_is_swift = true;
 
@@ -1459,7 +1489,7 @@ SwiftExpressionParser::ParseAndImport(
     if (!m_options.GetUseContextFreeSwiftPrintObject()) {
       if (local_context_is_swift) {
         llvm::Error error = AddRequiredAliases(
-            m_sc.block, stack_frame_sp, m_swift_ast_ctx, *code_manipulator,
+            m_sc.block, *stack_frame_sp, m_swift_ast_ctx, *code_manipulator,
             m_options.GetUseDynamic(), m_options.GetSwiftBindGenericTypes());
         if (error)
           return error;
@@ -1634,7 +1664,7 @@ RedirectCallFromSinkToTrampolineFunction(llvm::Module &module,
 
   // Find the call to the sink.
   llvm::CallInst *sink_call = nullptr;
-  for (auto &I : basic_block.instructionsWithoutDebug()) {
+  for (auto &I : basic_block) {
     if (auto *call = llvm::dyn_cast<llvm::CallInst>(&I)) {
       if (call->getCalledFunction() == sink_func) {
         sink_call = call;
@@ -2111,7 +2141,6 @@ SwiftExpressionParser::Parse(DiagnosticManager &diagnostic_manager,
         &parsed_expr->module, IRGenOpts, m_swift_ast_ctx.GetTBDGenOptions(),
         std::move(sil_module), "lldb_module",
         swift::PrimarySpecificPaths("", parsed_expr->main_filename),
-        llvm::ArrayRef<std::string>(), llvm::ArrayRef<std::string>());
         /*CAS=*/nullptr, llvm::ArrayRef<std::string>(),
         llvm::ArrayRef<std::string>());
     if (GenModule) {

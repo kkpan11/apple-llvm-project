@@ -84,20 +84,20 @@ void *test_homogeneous_header_array(__SIZE_TYPE__ n) {
 void *test_prefixed_array_comma(__SIZE_TYPE__ n) {
   return malloc(((void)0, sizeof(struct Header) + sizeof(struct Element) * n));
   // expected-remark@-1 {{passing TMO information for type 'struct Header' to 'typed_real_malloc' (retargeted from 'malloc')}}
-  // expected-note@-2 {{inferred header prefixed array of {'struct Header':'struct Element'} from expression '(void)0 , sizeof(struct Header) + sizeof(struct Element) * n'}}
+  // expected-note@-2 {{inferred header prefixed array of {'struct Header':'struct Element'} from expression '(void)0, sizeof(struct Header) + sizeof(struct Element) * n'}}
   // expected-note@-3 {{encoding 'struct Header' as 74310495310558338. { "Summary": { "LayoutSemantics": [ "AnonymousPointer", "GenericData" ], "TypeFlags": [ ], "TypeKind": "KindC", "CallsiteFlags": [ "HeaderPrefixedArray" ] }, "TypeHash": 1947317378 }}}
 }
 
 void *test_array_comma(__SIZE_TYPE__ n) {
   return malloc(((void)0, sizeof(struct Element) * n));
   // expected-remark@-1 {{passing TMO information for array of type 'struct Element' to 'typed_real_malloc' (retargeted from 'malloc')}}
-  // expected-note@-2 {{inferred array of 'struct Element' from expression '(void)0 , sizeof(struct Element) * n'}}
+  // expected-note@-2 {{inferred array of 'struct Element' from expression '(void)0, sizeof(struct Element) * n'}}
   // expected-note@-3 {{encoding array of 'struct Element' as 72058145178419728. { "Summary": { "LayoutSemantics": [ "GenericData" ], "TypeFlags": [ ], "TypeKind": "KindC", "CallsiteFlags": [ "Array" ] }, "TypeHash": 1384677904 }}}
 }
 
 void *test_tuple_comma(void) {
   return malloc(((void)0, sizeof(struct Header) + sizeof(struct Element)));
   // expected-remark@-1 {{passing TMO information for type 'struct Header' to 'typed_real_malloc' (retargeted from 'malloc')}}
-  // expected-note@-2 {{inferred tuple of ('struct Header', 'struct Element') from expression '(void)0 , sizeof(struct Header) + sizeof(struct Element)'}}
+  // expected-note@-2 {{inferred tuple of ('struct Header', 'struct Element') from expression '(void)0, sizeof(struct Header) + sizeof(struct Element)'}}
   // expected-note@-3 {{encoding 'struct Header' as 74309670676837506. { "Summary": { "LayoutSemantics": [ "AnonymousPointer", "GenericData" ], "TypeFlags": [ ], "TypeKind": "KindC", "CallsiteFlags": [ "FixedSize" ] }, "TypeHash": 1947317378 }}}
 }

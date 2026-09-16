@@ -39,6 +39,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/iterator_range.h"
 #include "llvm/Bitstream/BitstreamWriter.h"
+#include "llvm/Support/VirtualFileSystem.h"
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -101,6 +102,8 @@ class ASTUnit {
   IntrusiveRefCntPtr<DiagnosticsEngine>   Diagnostics;
   IntrusiveRefCntPtr<FileManager>         FileMgr;
   IntrusiveRefCntPtr<SourceManager>       SourceMgr;
+  std::shared_ptr<cas::ObjectStore> CAS;
+  std::shared_ptr<cas::ActionCache> ActionCache;
   std::shared_ptr<ModuleCache> ModCache;
   std::unique_ptr<HeaderSearch>           HeaderInfo;
   IntrusiveRefCntPtr<TargetInfo>          Target;
@@ -110,8 +113,6 @@ class ASTUnit {
   std::unique_ptr<HeaderSearchOptions> HSOpts;
   std::shared_ptr<PreprocessorOptions>    PPOpts;
   IntrusiveRefCntPtr<ASTReader> Reader;
-  std::shared_ptr<cas::ObjectStore> CAS;
-  std::shared_ptr<cas::ActionCache> ActionCache;
   bool HadModuleLoaderFatalFailure = false;
   bool StorePreamblesInMemory = false;
 

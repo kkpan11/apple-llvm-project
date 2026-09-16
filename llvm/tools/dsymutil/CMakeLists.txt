@@ -34,6 +34,7 @@ add_llvm_tool(dsymutil
   DwarfLinkerForBinary.cpp
   MachODebugMapParser.cpp
   MachOUtils.cpp
+  PseudoProbeLinker.cpp
   Reproducer.cpp
   RelocationMap.cpp
   SwiftModule.cpp

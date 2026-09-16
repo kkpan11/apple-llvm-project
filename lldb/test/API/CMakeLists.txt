@@ -44,13 +44,23 @@ if(LLDB_TEST_SWIFT)
     --inferior-env "LD_LIBRARY_PATH=\\\"${LLDB_SWIFT_LIBS}/${CMAKE_SYSTEM_PROCESSOR}\\\""
     --inferior-env "SIMCTL_CHILD_DYLD_LIBRARY_PATH=\\\"${LLDB_SWIFT_LIBS}/macosx\\\"")
 endif()
+
+# On Windows, where there is no rpath, the test inferiors need the Swift
+# runtime DLLs (swiftCore, Foundation, FoundationEssentials, ...) on PATH
+# at launch.
+set(LLDB_TEST_INFERIOR_RUNTIME_BIN
+  ""
+  CACHE STRING "Directory containing the target platform's runtime DLLs. \
+Used on Windows to populate the test inferior's PATH so dynamically-loaded \
+Swift runtime DLLs resolve."
+)
 # END - Swift Mods
 
 # Users can override LLDB_TEST_USER_ARGS to specify arbitrary arguments to pass to the script
 set(LLDB_TEST_USER_ARGS
   ""
   CACHE STRING "Specify additional arguments to pass to test runner. Separate \
-items with \";\". For example: '-C;gcc;-C;clang;-A;i386;-A;x86_64'")
+items with \";\". For example: '-C;gcc;-C;clang'")
 
 set(LLDB_TEST_COMMON_ARGS_VAR
   -u CXXFLAGS
@@ -105,7 +115,7 @@ else()
 endif()
 
 set(LLDB_TEST_EXECUTABLE "${LLDB_DEFAULT_TEST_EXECUTABLE}" CACHE PATH "lldb executable used for testing")
-set(LLDB_TEST_COMPILER "${LLDB_DEFAULT_TEST_COMPILER}" CACHE PATH "C Compiler to use for building LLDB test inferiors")
+set(LLDB_TEST_COMPILER "${LLDB_DEFAULT_TEST_COMPILER}" CACHE PATH "C Compiler to use for building LLDB test inferiors (the C++ compiler will be inferred from this)")
 set(LLDB_TEST_DSYMUTIL "${LLDB_DEFAULT_TEST_DSYMUTIL}" CACHE PATH "dsymutil used for generating dSYM bundles")
 set(LLDB_TEST_MAKE "${LLDB_DEFAULT_TEST_MAKE}" CACHE PATH "make tool used for building test executables")
 set(LLDB_TEST_RESOURCE_DIR "" CACHE PATH "Clang resource directory for cross-compiling test inferiors")

@@ -41,6 +41,7 @@
 #include "clang/AST/TypeLoc.h"
 #include "clang/AST/UnresolvedSet.h"
 #include "clang/Basic/AddressSpaces.h"
+#include "clang/Basic/BuiltinTraits.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/DiagnosticSema.h"
 #include "clang/Basic/IdentifierTable.h"
@@ -54,7 +55,6 @@
 #include "clang/Basic/Specifiers.h"
 #include "clang/Basic/SyncScope.h"
 #include "clang/Basic/TargetInfo.h"
-#include "clang/Basic/TypeTraits.h"
 #include "clang/Lex/Lexer.h" // TODO: Extract static functions to fix layering.
 #include "clang/Sema/Initialization.h"
 #include "clang/Sema/Lookup.h"
@@ -541,9 +541,9 @@ struct BuiltinDumpStructGenerator {
     S.popCodeSynthesisContext();
     if (!RealCall.isInvalid())
       Actions.push_back(RealCall.get());
-    // Bail out if we've hit any errors, even if we managed to build the
-    // call. We don't want to produce more than one error.
-    return RealCall.isInvalid() || ErrorTracker.hasErrorOccurred();
+    // Bail out if we've hit any unrecoverable errors, even if we managed
+    // to build the call.
+    return RealCall.isInvalid() || ErrorTracker.hasUnrecoverableErrorOccurred();
   }
 
   Expr *getIndentString(unsigned Depth) {
@@ -1450,7 +1450,11 @@ void Sema::checkFortifiedBuiltinMemoryFunction(FunctionDecl *FD,
   case Builtin::BIstrncpy:
   case Builtin::BI__builtin_strncpy:
   case Builtin::BIstpncpy:
-  case Builtin::BI__builtin_stpncpy: {
+  case Builtin::BI__builtin_stpncpy:
+  case Builtin::BIstrlcat:
+  case Builtin::BI__builtin_strlcat:
+  case Builtin::BIstrlcpy:
+  case Builtin::BI__builtin_strlcpy: {
     // Whether these functions overflow depends on the runtime strlen of the
     // string, not just the buffer size, so emitting the "always overflow"
     // diagnostic isn't quite right. We should still diagnose passing a buffer
@@ -1667,7 +1671,8 @@ enum PointerAuthOpKind {
   PAO_SignGeneric,
   PAO_Discriminator,
   PAO_BlendPointer,
-  PAO_BlendInteger
+  PAO_BlendInteger,
+  PAO_BlendPC
 };
 }
 
@@ -1797,7 +1802,7 @@ static bool checkPointerAuthValue(Sema &S, Expr *&Arg, PointerAuthOpKind OpKind,
   };
   auto AllowsInteger = [](PointerAuthOpKind OpKind) {
     return OpKind == PAO_Discriminator || OpKind == PAO_BlendInteger ||
-           OpKind == PAO_SignGeneric;
+           OpKind == PAO_SignGeneric || OpKind == PAO_BlendPC;
   };
 
   // Require the value to have the right range of type.
@@ -1816,6 +1821,7 @@ static bool checkPointerAuthValue(Sema &S, Expr *&Arg, PointerAuthOpKind OpKind,
         << unsigned(OpKind == PAO_Discriminator  ? 1
                     : OpKind == PAO_BlendPointer ? 2
                     : OpKind == PAO_BlendInteger ? 3
+                    : OpKind == PAO_BlendPC      ? 4
                                                  : 0)
         << unsigned(AllowsInteger(OpKind) ? (AllowsPointer(OpKind) ? 2 : 1) : 0)
         << Arg->getType() << Arg->getSourceRange();
@@ -1977,6 +1983,39 @@ static ExprResult PointerAuthAuthAndResign(Sema &S, CallExpr *Call) {
       checkPointerAuthKey(S, Call->getArgs()[3]) ||
       checkPointerAuthValue(S, Call->getArgs()[4], PAO_Discriminator))
     return ExprError();
+
+  Call->setType(Call->getArgs()[0]->getType());
+  return Call;
+}
+
+static ExprResult PointerAuthAuthWithPCAndResign(Sema &S, CallExpr *Call) {
+  if (S.checkArgCount(Call, 6))
+    return ExprError();
+  if (checkPointerAuthEnabled(S, Call))
+    return ExprError();
+  if (checkPointerAuthValue(S, Call->getArgs()[0], PAO_Auth) ||
+      checkPointerAuthKey(S, Call->getArgs()[1]) ||
+      checkPointerAuthValue(S, Call->getArgs()[2], PAO_Discriminator) ||
+      checkPointerAuthValue(S, Call->getArgs()[3], PAO_BlendPC) ||
+      checkPointerAuthKey(S, Call->getArgs()[4]) ||
+      checkPointerAuthValue(S, Call->getArgs()[5], PAO_Discriminator))
+    return ExprError();
+
+  // Validate that the oldKey is IA or IB, not DA or DB.
+  // This enforces the constraint that auth_with_pc_and_resign only supports
+  // IA/IB keys for authentication, as only those keys support the PC-based
+  // signing instructions (paciasppc/pacibsppc).
+  unsigned OldKey = 0;
+  if (!S.checkConstantPointerAuthKey(Call->getArgs()[1], OldKey)) {
+    using AK = PointerAuthSchema::ARM8_3Key;
+    if (OldKey != static_cast<unsigned>(AK::ASIA) &&
+        OldKey != static_cast<unsigned>(AK::ASIB)) {
+      S.Diag(Call->getArgs()[1]->getExprLoc(),
+             diag::err_ptrauth_auth_with_pc_and_resign_invalid_key)
+          << OldKey << Call->getArgs()[1]->getSourceRange();
+      return ExprError();
+    }
+  }
 
   Call->setType(Call->getArgs()[0]->getType());
   return Call;
@@ -2282,8 +2321,8 @@ bool Sema::CheckTSBuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
   case llvm::Triple::ppc64:
   case llvm::Triple::ppc64le:
     return PPC().CheckPPCBuiltinFunctionCall(TI, BuiltinID, TheCall);
-  case llvm::Triple::amdgcn:
-    return AMDGPU().CheckAMDGCNBuiltinFunctionCall(BuiltinID, TheCall);
+  case llvm::Triple::amdgpu:
+    return AMDGPU().CheckAMDGCNBuiltinFunctionCall(TI, BuiltinID, TheCall);
   case llvm::Triple::riscv32:
   case llvm::Triple::riscv64:
   case llvm::Triple::riscv32be:
@@ -2321,7 +2360,8 @@ checkMathBuiltinElementType(Sema &S, SourceLocation Loc, QualType ArgTy,
 
   switch (ArgTyRestr) {
   case Sema::EltwiseBuiltinArgTyRestriction::None:
-    if (!ArgTy->getAs<VectorType>() && !isValidMathElementType(ArgTy)) {
+    if (!ArgTy->getAs<VectorType>() && !ArgTy->getAs<MatrixType>() &&
+        !isValidMathElementType(ArgTy)) {
       return S.Diag(Loc, diag::err_builtin_invalid_arg_type)
              << ArgOrdinal << /* vector */ 2 << /* integer */ 1 << /* fp */ 1
              << ArgTy;
@@ -2983,8 +3023,9 @@ static ExprResult BuiltinInvoke(Sema &S, CallExpr *TheCall) {
     if (MPT->isMemberDataPointer())
       return BinOp;
 
+    // Give the synthesized expression a valid source range for diagnostics.
     auto *MemCall = new (S.Context)
-        ParenExpr(SourceLocation(), SourceLocation(), BinOp.get());
+        ParenExpr(TheCall->getBeginLoc(), TheCall->getRParenLoc(), BinOp.get());
 
     return S.ActOnCallExpr(S.getCurScope(), MemCall, TheCall->getBeginLoc(),
                            Args.drop_front(2), TheCall->getRParenLoc());
@@ -3083,6 +3124,7 @@ Sema::CheckBuiltinFunctionCall(FunctionDecl *FDecl, unsigned BuiltinID,
       return ExprError();
     break;
   case Builtin::BI__builtin_ms_va_start:
+  case Builtin::BI__builtin_zos_va_start:
   case Builtin::BI__builtin_stdarg_start:
   case Builtin::BI__builtin_va_start:
   case Builtin::BI__builtin_c23_va_start:
@@ -3128,7 +3170,7 @@ Sema::CheckBuiltinFunctionCall(FunctionDecl *FDecl, unsigned BuiltinID,
     if (CheckBuiltinTargetInSupported(
             *this, TheCall,
             {llvm::Triple::x86_64, llvm::Triple::arm, llvm::Triple::thumb,
-             llvm::Triple::aarch64, llvm::Triple::amdgcn}))
+             llvm::Triple::aarch64, llvm::Triple::amdgpu}))
       return ExprError();
     break;
 
@@ -3147,7 +3189,7 @@ Sema::CheckBuiltinFunctionCall(FunctionDecl *FDecl, unsigned BuiltinID,
     if (CheckBuiltinTargetInSupported(
             *this, TheCall,
             {llvm::Triple::x86, llvm::Triple::x86_64, llvm::Triple::arm,
-             llvm::Triple::thumb, llvm::Triple::aarch64, llvm::Triple::amdgcn,
+             llvm::Triple::thumb, llvm::Triple::aarch64, llvm::Triple::amdgpu,
              llvm::Triple::ppc, llvm::Triple::ppc64, llvm::Triple::ppcle,
              llvm::Triple::ppc64le}))
       return ExprError();
@@ -3619,6 +3661,8 @@ Sema::CheckBuiltinFunctionCall(FunctionDecl *FDecl, unsigned BuiltinID,
     return PointerAuthSignGenericData(*this, TheCall);
   case Builtin::BI__builtin_ptrauth_auth_and_resign:
     return PointerAuthAuthAndResign(*this, TheCall);
+  case Builtin::BI__builtin_ptrauth_auth_with_pc_and_resign:
+    return PointerAuthAuthWithPCAndResign(*this, TheCall);
   case Builtin::BI__builtin_ptrauth_auth_load_relative_and_sign:
     return PointerAuthAuthLoadRelativeAndSign(*this, TheCall);
   case Builtin::BI__builtin_ptrauth_string_discriminator:
@@ -4452,8 +4496,9 @@ void Sema::checkLifetimeCaptureBy(FunctionDecl *FD, bool IsMemberFunction,
     }
   };
   for (unsigned I = 0; I < FD->getNumParams(); ++I)
-    HandleCaptureByAttr(FD->getParamDecl(I)->getAttr<LifetimeCaptureByAttr>(),
-                        I + IsMemberFunction);
+    for (const auto *A :
+         FD->getParamDecl(I)->specific_attrs<LifetimeCaptureByAttr>())
+      HandleCaptureByAttr(A, I + IsMemberFunction);
   // Check when the implicit object param is captured.
   if (IsMemberFunction) {
     TypeSourceInfo *TSI = FD->getTypeSourceInfo();
@@ -4467,10 +4512,13 @@ void Sema::checkLifetimeCaptureBy(FunctionDecl *FD, bool IsMemberFunction,
   }
 }
 
-void Sema::checkCall(NamedDecl *FDecl, const FunctionProtoType *Proto,
-                     const Expr *ThisArg, ArrayRef<const Expr *> Args,
-                     bool IsMemberFunction, SourceLocation Loc,
-                     SourceRange Range, VariadicCallType CallType) {
+void Sema::checkCall(NamedDecl *FDecl, const CallExpr *TheCall,
+                     const FunctionProtoType *Proto, const Expr *ThisArg,
+                     ArrayRef<const Expr *> Args, bool IsMemberFunction,
+                     SourceLocation Loc, SourceRange Range,
+                     VariadicCallType CallType) {
+  if (TheCall)
+    recordTMOInferenceCandidate(TheCall);
 
   if ((ThisArg && ThisArg->isInstantiationDependent()) ||
       llvm::any_of(Args, [](const Expr *E) {
@@ -4687,7 +4735,8 @@ void Sema::checkCall(NamedDecl *FDecl, const FunctionProtoType *Proto,
 }
 
 void Sema::CheckConstrainedAuto(const AutoType *AutoT, SourceLocation Loc) {
-  if (TemplateDecl *Decl = AutoT->getTypeConstraintConcept()) {
+  if (TemplateDecl *Decl =
+          AutoT->getTypeConstraintConcept().getAsTemplateDecl()) {
     DiagnoseUseOfDecl(Decl, Loc);
   }
 }
@@ -4705,8 +4754,8 @@ void Sema::CheckConstructorCall(FunctionDecl *FDecl, QualType ThisType,
       Loc, FDecl, "'this'", Context.getPointerType(ThisType),
       Context.getPointerType(Ctor->getFunctionObjectParameterType()));
 
-  checkCall(FDecl, Proto, /*ThisArg=*/nullptr, Args, /*IsMemberFunction=*/true,
-            Loc, SourceRange(), CallType);
+  checkCall(FDecl, /*TheCall=*/nullptr, Proto, /*ThisArg=*/nullptr, Args,
+            /*IsMemberFunction=*/true, Loc, SourceRange(), CallType);
 }
 
 bool Sema::CheckFunctionCall(FunctionDecl *FDecl, CallExpr *TheCall,
@@ -4749,7 +4798,7 @@ bool Sema::CheckFunctionCall(FunctionDecl *FDecl, CallExpr *TheCall,
                       ThisTypeFromDecl);
   }
 
-  checkCall(FDecl, Proto, ImplicitThis, llvm::ArrayRef(Args, NumArgs),
+  checkCall(FDecl, TheCall, Proto, ImplicitThis, llvm::ArrayRef(Args, NumArgs),
             IsMemberFunction, TheCall->getRParenLoc(),
             TheCall->getCallee()->getSourceRange(), CallType);
 
@@ -4816,7 +4865,7 @@ bool Sema::CheckPointerCall(NamedDecl *NDecl, CallExpr *TheCall,
     CallType = VariadicCallType::Function;
   }
 
-  checkCall(NDecl, Proto, /*ThisArg=*/nullptr,
+  checkCall(NDecl, TheCall, Proto, /*ThisArg=*/nullptr,
             llvm::ArrayRef(TheCall->getArgs(), TheCall->getNumArgs()),
             /*IsMemberFunction=*/false, TheCall->getRParenLoc(),
             TheCall->getCallee()->getSourceRange(), CallType);
@@ -4827,7 +4876,7 @@ bool Sema::CheckPointerCall(NamedDecl *NDecl, CallExpr *TheCall,
 bool Sema::CheckOtherCall(CallExpr *TheCall, const FunctionProtoType *Proto) {
   VariadicCallType CallType = getVariadicCallType(/*FDecl=*/nullptr, Proto,
                                                   TheCall->getCallee());
-  checkCall(/*FDecl=*/nullptr, Proto, /*ThisArg=*/nullptr,
+  checkCall(/*FDecl=*/nullptr, TheCall, Proto, /*ThisArg=*/nullptr,
             llvm::ArrayRef(TheCall->getArgs(), TheCall->getNumArgs()),
             /*IsMemberFunction=*/false, TheCall->getRParenLoc(),
             TheCall->getCallee()->getSourceRange(), CallType);
@@ -5382,7 +5431,8 @@ ExprResult Sema::BuildAtomicExpr(SourceRange CallRange, SourceRange ExprRange,
       }
       // Non-arithmetic ops require a pointer to __unsafe_indexable or __single
       // pointer.
-      if (IsDBP || (PtrTy->isSafePointer() && !PtrTy->isSingle())) {
+      if (IsDBP ||
+          (PtrTy->isSafePointer() && !ValType->isSinglePointerType())) {
         unsigned DiagIndex;
         if (PtrTy->isIndexable())
           DiagIndex = 0;
@@ -6457,22 +6507,12 @@ bool Sema::BuiltinFPClassification(CallExpr *TheCall, unsigned NumArgs,
   if (OrigArg->isTypeDependent())
     return false;
 
-  // Usual Unary Conversions will convert half to float, which we want for
-  // machines that use fp16 conversion intrinsics. Else, we wnat to leave the
-  // type how it is, but do normal L->Rvalue conversions.
-  if (Context.getTargetInfo().useFP16ConversionIntrinsics()) {
-    ExprResult Res = UsualUnaryConversions(OrigArg);
+  // We want to leave the type how it is, but do normal L->Rvalue conversions.
+  ExprResult Res = DefaultFunctionArrayLvalueConversion(OrigArg);
+  if (!Res.isUsable())
+    return true;
+  OrigArg = Res.get();
 
-    if (!Res.isUsable())
-      return true;
-    OrigArg = Res.get();
-  } else {
-    ExprResult Res = DefaultFunctionArrayLvalueConversion(OrigArg);
-
-    if (!Res.isUsable())
-      return true;
-    OrigArg = Res.get();
-  }
   TheCall->setArg(FPArgNo, OrigArg);
 
   QualType VectorResultTy;
@@ -6492,9 +6532,16 @@ bool Sema::BuiltinFPClassification(CallExpr *TheCall, unsigned NumArgs,
 
   // __builtin_isfpclass has integer parameter that specify test mask. It is
   // passed in (...), so it should be analyzed completely here.
-  if (IsFPClass)
+  if (IsFPClass) {
     if (BuiltinConstantArgRange(TheCall, 1, 0, llvm::fcAllFlags))
       return true;
+
+    ExprResult MaskRes = PerformImplicitConversion(
+        TheCall->getArg(NumArgs - 1), Context.IntTy, AssignmentAction::Passing);
+    if (!MaskRes.isUsable())
+      return true;
+    TheCall->setArg(NumArgs - 1, MaskRes.get());
+  }
 
   // TODO: enable this code to all classification functions.
   if (IsFPClass) {
@@ -6588,8 +6635,18 @@ ExprResult Sema::BuiltinShuffleVector(CallExpr *TheCall) {
     // with mask.  If so, verify that RHS is an integer vector type with the
     // same number of elts as lhs.
     if (NumArgs == 2) {
-      if (!RHSType->hasIntegerRepresentation() ||
-          RHSType->castAs<VectorType>()->getNumElements() != NumElements)
+      auto *RHSVecType = RHSType->castAs<VectorType>();
+      if (RHSVecType->getElementType()->isBooleanType() ||
+          !RHSVecType->getElementType()->isIntegerType()) {
+        return ExprError(
+            Diag(TheCall->getBeginLoc(), diag::err_builtin_invalid_arg_type)
+            << /* Arg ordinal */ 2 << /*vector of*/ 4 << /*integer*/ 1
+            << /*no fp*/ 0 << RHSType
+            << SourceRange(TheCall->getArg(0)->getBeginLoc(),
+                           TheCall->getArg(1)->getEndLoc()));
+      }
+
+      if (RHSVecType->getNumElements() != NumElements)
         return ExprError(Diag(TheCall->getBeginLoc(),
                               diag::err_vec_builtin_incompatible_vector)
                          << TheCall->getDirectCallee()
@@ -6685,9 +6742,12 @@ bool Sema::BuiltinPrefetch(CallExpr *TheCall) {
 
   // Argument 0 is checked for us and the remaining arguments must be
   // constant integers.
-  for (unsigned i = 1; i != NumArgs; ++i)
+  for (unsigned i = 1; i != NumArgs; ++i) {
+    if (convertArgumentToType(*this, TheCall->getArgs()[i], Context.IntTy))
+      return true;
     if (BuiltinConstantArgRange(TheCall, i, 0, i == 1 ? 1 : 3))
       return true;
+  }
 
   return false;
 }
@@ -12293,9 +12353,14 @@ static std::optional<IntRange> TryGetExprRange(ASTContext &C, const Expr *E,
     }
   }
 
-  if (const auto *OVE = dyn_cast<OpaqueValueExpr>(E))
-    return TryGetExprRange(C, OVE->getSourceExpr(), MaxWidth, InConstantContext,
-                           Approximate);
+  if (const auto *OVE = dyn_cast<OpaqueValueExpr>(E)) {
+    // The source expression is null for the OpaqueValueExpr that stands in for
+    // a non-type template argument of pointer or reference type; fall back to
+    // the range of the type in that case.
+    if (const Expr *SourceExpr = OVE->getSourceExpr())
+      return TryGetExprRange(C, SourceExpr, MaxWidth, InConstantContext,
+                             Approximate);
+  }
 
   if (const auto *BitField = E->getSourceBitField())
     return IntRange(BitField->getBitWidthValue(),
@@ -13290,7 +13355,8 @@ static void DiagnoseNullConversion(Sema &S, Expr *E, QualType T,
 }
 
 // Helper function to filter out cases for constant width constant conversion.
-// Don't warn on char array initialization or for non-decimal values.
+// Don't warn on unsigned char array initialization or for non-decimal
+// values.
 static bool isSameWidthConstantConversion(Sema &S, Expr *E, QualType T,
                                           SourceLocation CC) {
   // If initializing from a constant, and the constant starts with '0',
@@ -13303,9 +13369,9 @@ static bool isSameWidthConstantConversion(Sema &S, Expr *E, QualType T,
       return false;
   }
 
-  // If the CC location points to a '{', and the type is char, then assume
-  // assume it is an array initialization.
-  if (CC.isValid() && T->isCharType()) {
+  // If the CC location points to a '{' and the type is an unsigned char
+  // type, assume it is an array initialization.
+  if (T->isCharType() && !T->isSignedIntegerType() && CC.isValid()) {
     const char FirstContextCharacter =
         S.getSourceManager().getCharacterData(CC)[0];
     if (FirstContextCharacter == '{')
@@ -13609,6 +13675,11 @@ void Sema::CheckImplicitConversion(Expr *E, QualType T, SourceLocation CC,
 
   if (TargetBT && TargetBT->isSveVLSBuiltinType())
     Target = TargetBT->getSveEltType(Context).getTypePtr();
+
+  // Nothing to diagnose if stripping the wrappers left identical element types
+  // (e.g. a scalar splatted to a vector of its own type).
+  if (Source == Target)
+    return;
 
   // If the source is floating point...
   if (SourceBT && SourceBT->isFloatingPoint()) {
@@ -14470,6 +14541,11 @@ void Sema::DiagnoseAlwaysNonNullPointer(Expr *E,
   }
 
   QualType T = D->getType();
+  // A reference to a function is never null either; look through it.
+  const bool IsFunctionReference =
+      T->isReferenceType() && T->getPointeeType()->isFunctionType();
+  if (IsFunctionReference)
+    T = T->getPointeeType();
   const bool IsArray = T->isArrayType();
   const bool IsFunction = T->isFunctionType();
 
@@ -14505,7 +14581,8 @@ void Sema::DiagnoseAlwaysNonNullPointer(Expr *E,
   Diag(E->getExprLoc(), DiagID) << DiagType << S.str() << E->getSourceRange()
                                 << Range << IsEqual;
 
-  if (!IsFunction)
+  // The fix-it notes below only apply to a bare function name, not a reference.
+  if (!IsFunction || IsFunctionReference)
     return;
 
   // Suggest '&' to silence the function warning.
@@ -15790,7 +15867,7 @@ std::optional<std::pair<
     auto *ME = cast<MemberExpr>(E);
     auto *FD = dyn_cast<FieldDecl>(ME->getMemberDecl());
     if (!FD || FD->getType()->isReferenceType() ||
-        FD->getParent()->isInvalidDecl())
+        !ASTContext::hasLayout(FD->getParent()))
       break;
     std::optional<std::pair<CharUnits, CharUnits>> P;
     if (ME->isArrow())
@@ -16630,19 +16707,13 @@ static bool isLayoutCompatibleUnion(const ASTContext &C, const RecordDecl *RD1,
                                                           RD2->fields());
 
   for (auto *Field1 : RD1->fields()) {
-    auto I = UnmatchedFields.begin();
-    auto E = UnmatchedFields.end();
-
-    for ( ; I != E; ++I) {
-      if (isLayoutCompatible(C, Field1, *I, /*IsUnionMember=*/true)) {
-        bool Result = UnmatchedFields.erase(*I);
-        (void) Result;
-        assert(Result);
-        break;
-      }
-    }
-    if (I == E)
+    auto It = llvm::find_if(UnmatchedFields, [&](const FieldDecl *Field2) {
+      return isLayoutCompatible(C, Field1, Field2, /*IsUnionMember=*/true);
+    });
+    if (It == UnmatchedFields.end())
       return false;
+    [[maybe_unused]] bool Result = UnmatchedFields.erase(*It);
+    assert(Result);
   }
 
   return UnmatchedFields.empty();

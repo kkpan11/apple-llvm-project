@@ -17,8 +17,8 @@ import lldbsuite.test.lldbutil as lldbutil
 import os
 
 class TestSwiftExpressionObjCContext(TestBase):
-    @skipEmbeddedSwift
-    @skipUnlessDarwin
+    @requireNotEmbeddedSwift
+    @requireSwiftObjCInterop
     @swiftTest
     def test(self):
         self.build()

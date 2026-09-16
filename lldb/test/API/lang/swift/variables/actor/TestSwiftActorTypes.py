@@ -9,7 +9,8 @@ import os
 
 
 class TestSwiftActorTypes(TestBase):
-    @skipEmbeddedSwift
+    @skipEmbeddedSwiftOnWindows
+    @skipEmbeddedSwiftOnLinux
     @swiftTest
     def test_swift_class_types(self):
         """Test swift Actor types"""

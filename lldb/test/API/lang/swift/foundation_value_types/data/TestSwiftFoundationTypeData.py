@@ -15,10 +15,9 @@ from lldbsuite.test.decorators import *
 lldbinline.MakeInlineTest(
     __file__,
     globals(),
-    decorators=[skipEmbeddedSwift,
+    decorators=[requireNotEmbeddedSwift,
         swiftTest,
-        skipUnlessFoundation,
-        skipIf(oslist=["windows"]),
+        skipIf(oslist=["linux"]),
         skipIf(
             bugnumber="rdar://60396797",  # should work but crashes.
             setting=("symbols.use-swift-clangimporter", "false"),

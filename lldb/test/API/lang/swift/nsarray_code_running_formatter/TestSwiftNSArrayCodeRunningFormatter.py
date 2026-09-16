@@ -15,6 +15,6 @@ from lldbsuite.test.decorators import *
 lldbinline.MakeInlineTest(
     __file__,
     globals(),
-    decorators=[skipEmbeddedSwift,
-        swiftTest, skipUnlessDarwin, skipIf(macos_version=["=", "15.0"])],
+    decorators=[requireNotEmbeddedSwift,
+        swiftTest, requireObjCFoundation, skipIf(macos_version=["=", "15.0"])],
 )

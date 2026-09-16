@@ -55,6 +55,11 @@ except ImportError:
     # is still constructing the lldb module itself.
     # Simply importing anything using `from . import` constitutes
     # a cyclic importing.
+    import os
+    # Since Python 3.8 the loader no longer searches PATH for the DLLs the
+    # extension links against, which are staged next to this file.
+    if hasattr(os, 'add_dll_directory'):
+        os.add_dll_directory(os.path.dirname(os.path.abspath(__file__)))
     from .native import $module"
 %enddef
 
@@ -63,6 +68,35 @@ except ImportError:
 
 // Parameter types will be used in the autodoc string.
 %feature("autodoc", "1");
+
+#if SWIG_VERSION >= 0x040500
+%feature("python:annotations", "typing");
+
+// The default pytyping entry maps to `typing.Any`. Use the proxy names here.
+// They might generate incorrect annotations (`SWIGTYPE_*`) in more complex scenarios.
+%typemap(pytyping) SWIGTYPE      "$&pytypename";
+%typemap(pytyping) SWIGTYPE []   "typing.Optional[$pytypename]";
+%typemap(pytyping) SWIGTYPE *    "typing.Optional[$pytypename]";
+%typemap(pytyping) SWIGTYPE &    "$pytypename";
+%typemap(pytyping) SWIGTYPE &&   "$pytypename";
+%typemap(pytyping) enum SWIGTYPE "int";
+
+// Exclude operator==/!=. They generate `__eq__(self, rhs: T) -> bool`.
+// However, `rhs` should be `object`.
+%feature("python:annotations", "0") operator==;
+%feature("python:annotations", "0") operator!=;
+
+// OUTPUT/INOUT is not supported by the typing annotations right now.
+%feature("python:annotations", "0") lldb::SBDebugger::GetProgressFromEvent;
+%feature("python:annotations", "0") lldb::SBDebugger::RunCommandInterpreter;
+%feature("python:annotations", "0") lldb::SBFile::Read;
+%feature("python:annotations", "0") lldb::SBFile::Write;
+#else
+// Make sure `typing` is imported in all cases (Swig < 4.5.0).
+%pythoncode %{
+import typing
+%}
+#endif // SWIG_VERSION >= 0x040500
 
 // Include lldb-python first as it sets Py_LIMITED_API.
 %begin %{
@@ -88,18 +122,6 @@ del _to_int
 %}
 %enddef
 EMBED_VERSION(SWIG_VERSION)
-
-%pythoncode%{
-# ===================================
-# Iterator for lldb container objects
-# ===================================
-def lldb_iter(obj, getsize, getelem):
-    """A generator adaptor to support iteration for lldb container objects."""
-    size = getattr(obj, getsize)
-    elem = getattr(obj, getelem)
-    for i in range(size()):
-        yield elem(i)
-%}
 
 %include <std_string.i>
 %include "python-typemaps.swig"

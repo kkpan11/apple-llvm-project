@@ -7,9 +7,9 @@ import lldbsuite.test.lldbutil as lldbutil
 class TestCase(TestBase):
     NO_DEBUG_INFO_TESTCASE = True
 
-    @skipEmbeddedSwift
+    @requireNotEmbeddedSwift
     @swiftTest
-    @skipUnlessDarwin
+    @requireSwiftObjCInterop
     def test(self):
         self.build()
         target, process, thread, bkpt = lldbutil.run_to_source_breakpoint(
