@@ -2491,9 +2491,6 @@ static void PrintFramesForTask(ExecutionContext &exe_ctx,
   }
 }
 
-/// A helper class to find Tasks in the swift program. It implements the
-/// algorithm described in g_task_list_tree_common_text.
-
 static std::optional<std::vector<lldb::addr_t>>
 FindTaskAddrsFromRegistry(ReflectionContextInterface &reflection_ctx,
                           Process &process) {
@@ -2562,23 +2559,35 @@ static std::vector<lldb::addr_t> FindTaskAddrsFromThreadList(Process &process) {
   return task_addrs;
 }
 
-static std::vector<lldb::addr_t>
+namespace {
+enum class TaskFindingMethod { Threads, TaskRegistry, None };
+} // namespace
+static std::pair<TaskFindingMethod, std::vector<lldb::addr_t>>
 FindTaskAddrs(ReflectionContextInterface &reflection_ctx, Process &process) {
   if (std::optional<std::vector<lldb::addr_t>> addrs_from_registry =
           FindTaskAddrsFromRegistry(reflection_ctx, process))
-    return *addrs_from_registry;
-  return FindTaskAddrsFromThreadList(process);
+    return {TaskFindingMethod::TaskRegistry, std::move(*addrs_from_registry)};
+  return {TaskFindingMethod::Threads, FindTaskAddrsFromThreadList(process)};
 }
 
+/// Helper class to find Tasks in the swift program, either by inspecting the
+/// task registry in the concurrency runtime, or by exploring edges in the Task
+/// graph.
 class TaskExplorer {
 public:
   TaskExplorer(ReflectionContextInterface &reflection_ctx, Process &process)
       : m_reflection_ctx(reflection_ctx) {
-    for (lldb::addr_t task_addr : FindTaskAddrs(reflection_ctx, process)) {
+
+    auto [method, task_addrs] = FindTaskAddrs(reflection_ctx, process);
+    m_method = method;
+
+    for (lldb::addr_t task_addr : task_addrs) {
       int32_t max_nodes = 1000;
       ExploreTask(task_addr, max_nodes);
     }
   }
+
+  TaskFindingMethod MethodUsed() const { return m_method; }
 
   /// Returns a range containing all root Tasks discovered.
   auto GetRootTasks() const {
@@ -2624,6 +2633,8 @@ private:
   /// into m_known_tasks values, which is safe because std::map guarantees
   /// pointer stability on insertion.
   llvm::DenseMap<addr_t, TaskInfo *> m_blocked_by;
+
+  TaskFindingMethod m_method = TaskFindingMethod::None;
 
   // Finds all Tasks reachable from the Task represented by `task_addr`.
   // This follows child pointers, parent pointers, "waited by" pointers.
@@ -2903,33 +2914,11 @@ private:
   }
 };
 
-static const char g_task_list_tree_common_text[] = R"(
-1. Running on a thread.
-2. A parent or a child of a task from 1,
-3. Waiting on a tasks from 1 or 2.
-
-This process is repeated recursively until no new Tasks are found.
-
-This command fails to discover some tasks created through unstructured concurrency.
-Specifically, consider some such Task T that does not have a parent Task. Task T will not
-be discovered if all of the below are true:
-
-* T is not running on a thread.
-* No descendant of T is running on a thread.
-* Neither T nor a descendant of T is waiting on a Task discovered in steps 1, 2 and 3.
-
-As a corollary, no descendant of T will be discovered either.
-)";
-
 class CommandObjectLanguageSwiftTaskList final : public CommandObjectParsed {
 public:
   CommandObjectLanguageSwiftTaskList(CommandInterpreter &interpreter)
-      : CommandObjectParsed(interpreter, "list",
-                            "List all discovered Swift Tasks.",
-                            "language swift task list") {
-    SetHelpLong("Lists all Swift Tasks that are either: " +
-                std::string(g_task_list_tree_common_text));
-  }
+      : CommandObjectParsed(interpreter, "list", "Lists all Swift Tasks.",
+                            "language swift task list") {}
 
 private:
   void DoExecute(Args &command, CommandReturnObject &result) override {
@@ -2958,6 +2947,10 @@ private:
                [](const auto &t1, const auto &t2) { return t1.id < t2.id; });
 
     Stream &strm = result.GetOutputStream();
+    if (task_explorer.MethodUsed() == TaskFindingMethod::Threads)
+      result.AppendWarning("Task registry was not found in the concurrency "
+                           "runtime. Task list may be incomplete");
+
     for (const TaskInfo &task_info : all_tasks) {
       if (task_info.isComplete)
         continue;
@@ -3002,11 +2995,7 @@ public:
       : CommandObjectParsed(interpreter, "tree",
                             "Prints the Parent-Child task trees of Tasks.",
                             "language swift task tree [--max-frames <count>]"),
-        m_options() {
-    SetHelpLong("Prints all Parent-Child task trees (possibly a forest) of "
-                "Swift Tasks that are either: " +
-                std::string(g_task_list_tree_common_text));
-  }
+        m_options() {}
 
   Options *GetOptions() override { return &m_options; }
 
@@ -3030,6 +3019,9 @@ private:
     }
 
     TaskExplorer task_explorer(**reflection_ctx, m_exe_ctx.GetProcessRef());
+    if (task_explorer.MethodUsed() == TaskFindingMethod::Threads)
+      result.AppendWarning("Task registry was not found in the concurrency "
+                           "runtime. Task list may be incomplete");
 
     // Make a copy of the TaskInfos so that the range may be sorted by Task id.
     llvm::SmallVector<TaskInfo> root_tasks(task_explorer.GetRootTasks());
