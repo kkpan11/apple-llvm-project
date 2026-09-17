@@ -3809,10 +3809,7 @@ public:
 
 /// Represents a sugar type with `__counted_by` or `__sized_by` annotations,
 /// including their `_or_null` variants.
-class CountAttributedType final
-    : public BoundsAttributedType,
-      public llvm::TrailingObjects<CountAttributedType,
-                                   TypeCoupledDeclRefInfo> {
+class CountAttributedType final : public BoundsAttributedType {
   friend class ASTContext;
 
   Expr *CountExpr;
@@ -3822,13 +3819,29 @@ class CountAttributedType final
   /// __counted_by_or_null or __sized_by_or_null) \p CoupledDecls contains the
   /// list of declarations referenced by \p CountExpr, which the type depends on
   /// for the bounds information.
+  ///
+  /// \p CountExpr may be null, and \p CoupledDecls empty, for a type created by
+  /// a late-parsed attribute whose argument has not been parsed yet; such a
+  /// type is completed by \c complete once the enclosing scope is known. See
+  /// \c Parser::CompleteLateParsedTypeAttributes.
   CountAttributedType(QualType Wrapped, QualType Canon, Expr *CountExpr,
                       bool CountInBytes, bool OrNull,
                       ArrayRef<TypeCoupledDeclRefInfo> CoupledDecls);
 
-  unsigned numTrailingObjects(OverloadToken<TypeCoupledDeclRefInfo>) const {
-    return CountAttributedTypeBits.NumCoupledDecls;
-  }
+  /// Allocate and construct a \c CountAttributedType in \p Ctx, including its
+  /// coupled-declaration array. \p CountExpr may be null (with \p CoupledDecls
+  /// empty) for a late-parsed attribute whose argument is not yet parsed;
+  /// complete such a node later with \c complete.
+  static CountAttributedType *
+  Create(const ASTContext &Ctx, QualType Wrapped, QualType Canon,
+         Expr *CountExpr, bool CountInBytes, bool OrNull,
+         ArrayRef<TypeCoupledDeclRefInfo> CoupledDecls);
+
+  /// Supply the count expression and coupled declarations for a node created by
+  /// \c Create with a null count -- a late-parsed attribute whose argument has
+  /// now been parsed. Allocates the decl array in \p Ctx, so the node owns it.
+  void complete(const ASTContext &Ctx, Expr *E,
+                ArrayRef<TypeCoupledDeclRefInfo> CoupledDecls);
 
 public:
   Expr *getCountExpr() const { return CountExpr; }
