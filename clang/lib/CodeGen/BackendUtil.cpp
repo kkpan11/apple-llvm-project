@@ -1268,8 +1268,9 @@ void EmitAssemblyHelper::emitAssembly(BackendAction Action,
 
   if (RequiresCodeGen && !TM)
     return;
-  if (TM)
-    TheModule->setDataLayout(TM->createDataLayout());
+  if (TM && TheModule->getDataLayout().isDefault())
+    TheModule->setDataLayout(TheModule->getTargetTriple().computeDataLayout(
+        TM->getTargetABIName(*TheModule)));
 
   // Before executing passes, print the final values of the LLVM options.
   cl::PrintOptionValues();
@@ -1490,8 +1491,7 @@ static void createAndEmbedModuleForDynamicDebugging(
 }
 
 void clang::emitBackendOutput(CompilerInstance &CI, CodeGenOptions &CGOpts,
-                              StringRef TDesc, llvm::Module *M,
-                              BackendAction Action,
+                              llvm::Module *M, BackendAction Action,
                               IntrusiveRefCntPtr<llvm::vfs::FileSystem> VFS,
                               std::unique_ptr<raw_pwrite_stream> OS,
                               std::unique_ptr<raw_pwrite_stream> CasIDOS,
@@ -1566,13 +1566,15 @@ void clang::emitBackendOutput(CompilerInstance &CI, CodeGenOptions &CGOpts,
   EmitAssemblyHelper AsmHelper(CI, CGOpts, M, VFS);
   AsmHelper.emitAssembly(Action, std::move(OS), std::move(CasIDOS), BC);
 
-  // Verify clang's TargetInfo DataLayout against the LLVM TargetMachine's
-  // DataLayout.
+  // Verify the module's DataLayout against the one the target computes for the
+  // module's ABI. This respects the target-abi module flag rather than assuming
+  // the DataLayout is a fixed property of the target options.
   if (AsmHelper.TM) {
     std::string DLDesc = M->getDataLayout().getStringRepresentation();
-    if (DLDesc != TDesc) {
+    std::string TDesc = M->getTargetTriple().computeDataLayout(
+        AsmHelper.TM->getTargetABIName(*M));
+    if (DLDesc != TDesc)
       Diags.Report(diag::err_data_layout_mismatch) << DLDesc << TDesc;
-    }
   }
 }
 
