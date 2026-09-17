@@ -5540,7 +5540,7 @@ static SwiftASTContext::TypeOrDecl DeclToTypeOrDecl(swift::Decl *decl) {
     case swift::DeclKind::Module:
     case swift::DeclKind::Missing:
     case swift::DeclKind::MissingMember:
-    case swift::DeclKind::Using:
+    case swift::DeclKind::FileDefault:
     case swift::DeclKind::HiddenTypeLayoutInfo:
       break;
 
