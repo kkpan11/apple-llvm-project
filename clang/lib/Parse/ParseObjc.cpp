@@ -2103,7 +2103,6 @@ Parser::ObjCImplParsingDataRAII::~ObjCImplParsingDataRAII() {
           << SemaObjC::OCK_Implementation;
     }
   }
-  P.CurParsedObjCImpl = nullptr;
   assert(LateParsedObjCMethods.empty());
 }
 
@@ -2129,6 +2128,10 @@ void Parser::ObjCImplParsingDataRAII::finish(SourceRange AtEnd) {
     delete *I;
   LateParsedObjCMethods.clear();
 
+  // Parsing may go on in the enclosing frame before this object is destroyed
+  // (e.g. a nested @interface ended the @implementation early), so stop being
+  // the current @implementation now rather than in the destructor.
+  P.CurParsedObjCImpl = PrevParsedObjCImpl;
   Finished = true;
 }
 
