@@ -64,7 +64,7 @@ llvm::Error SystemInitializerCommon::Initialize() {
   }
 #endif
 
-  InitializeLldbChannel();
+  InitializeLLDBChannel();
 
   Diagnostics::Initialize();
   FileSystem::Initialize();
@@ -101,4 +101,6 @@ void SystemInitializerCommon::Terminate() {
   Log::DisableAllLogChannels();
   FileSystem::Terminate();
   Diagnostics::Terminate();
+
+  TerminateLLDBChannel();
 }
