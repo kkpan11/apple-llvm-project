@@ -1365,7 +1365,7 @@ void IRExecutionUnit::PopulateSectionList(
           record.m_size,         // file_size
           0,
           record.m_permissions, // flags
-          non_jit_size)); 
+          non_jit_size));
       section_list.AddSection(section_sp);
     }
   }
