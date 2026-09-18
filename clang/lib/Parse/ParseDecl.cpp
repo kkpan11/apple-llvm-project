@@ -5096,9 +5096,10 @@ ParsedAttributes Parser::ParseLexedAttributeTokens(LateParsedAttribute &LPA,
     // Dispatch based on the attribute and parse it
     /* TO_UPSTREAM(BoundsSafety) ON */
     // NestedTypeLevel is not passed in upstream
-    ParseGNUAttributeArgs(&LPA.AttrName, LPA.AttrNameLoc, Attrs, nullptr,
-                          nullptr, SourceLocation(), ParsedAttr::Form::GNU(),
-                          nullptr, LPA.NestedTypeLevel);
+    ParseGNUAttributeArgs(&LPA.AttrName, LPA.AttrNameLoc, Attrs,
+                          /*EndLoc=*/nullptr, /*ScopeName=*/nullptr,
+                          SourceLocation(), ParsedAttr::Form::GNU(),
+                          /*D=*/nullptr, LPA.NestedTypeLevel);
     /* TO_UPSTREAM(BoundsSafety) OFF */
 
     /* TO_UPSTREAM(BoundsSafety) ON */
