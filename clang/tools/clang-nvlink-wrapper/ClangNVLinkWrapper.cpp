@@ -114,7 +114,7 @@ enum ID {
 
 class WrapperOptTable : public opt::OptTable {
 public:
-  WrapperOptTable() : opt::OptTable(OptionTables) {}
+  WrapperOptTable() : opt::OptTable(optionTables()) {}
 };
 
 const OptTable &getOptTable() {

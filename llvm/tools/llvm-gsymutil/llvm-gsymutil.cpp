@@ -72,7 +72,9 @@ enum ID {
 
 class GSYMUtilOptTable : public llvm::opt::OptTable {
 public:
-  GSYMUtilOptTable() : OptTable(OptionTables) { setGroupedShortOptions(true); }
+  GSYMUtilOptTable() : OptTable(optionTables()) {
+    setGroupedShortOptions(true);
+  }
 };
 
 static bool Verbose;
