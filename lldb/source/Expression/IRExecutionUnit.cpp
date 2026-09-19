@@ -59,6 +59,9 @@ IRExecutionUnit::IRExecutionUnit(std::unique_ptr<llvm::LLVMContext> &context_up,
       m_sym_ctx(sym_ctx), m_did_jit(false),
       m_function_load_addr(LLDB_INVALID_ADDRESS),
       m_function_end_load_addr(LLDB_INVALID_ADDRESS),
+      m_strip_underscore(
+          m_module_up ? m_module_up->getDataLayout().getGlobalPrefix() == '_'
+                      : false),
       m_reported_allocations(false), m_preferred_modules() {}
 
 IRExecutionUnit::~IRExecutionUnit() {
@@ -328,9 +331,6 @@ void IRExecutionUnit::GetRunnableInfo(Status &error, lldb::addr_t &func_addr,
                                               error_string.c_str());
     return;
   }
-
-  m_strip_underscore =
-      (m_execution_engine_up->getDataLayout().getGlobalPrefix() == '_');
 
   class ObjectDumper : public llvm::ObjectCache {
   public:
