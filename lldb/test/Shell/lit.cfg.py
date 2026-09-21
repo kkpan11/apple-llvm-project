@@ -160,9 +160,6 @@ if config.lldb_enable_lua:
 if config.lldb_enable_swift:
     config.available_features.add('swift')
 
-if config.lldb_enable_lzma:
-    config.available_features.add("lzma")
-
 if shutil.which("xz") is not None:
     config.available_features.add("xz")
 
