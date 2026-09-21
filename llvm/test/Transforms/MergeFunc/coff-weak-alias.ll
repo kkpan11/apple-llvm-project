@@ -6,16 +6,17 @@
 ; RUN:   FileCheck %s --check-prefix=ODR
 ; RUN: opt -S -passes=mergefunc %t/elf.ll | FileCheck %s --check-prefix=ELF
 
-; On COFF the merged body is named after its structural hash and put in a
-; COMDAT, so every object defining the alias names the same fallback symbol.
+; A COFF weak external names the symbol it resolves to, and a local symbol
+; cannot be named, so an alias must keep pointing at an external definition.
 
 ;--- coff.ll
 target triple = "x86_64-pc-windows-msvc"
 
-; COFF: $[[BODY:"__llvm_mergefunc\$[0-9a-f]+"]] = comdat exactmatch
-; COFF: @alias_g = weak alias i32 (i32), ptr @[[BODY]]
-; COFF: define linkonce_odr {{.*}}i32 @[[BODY]](i32 %x) comdat
-; COFF-NOT: define {{.*}} @g
+; @f is local, so @g is kept as a thunk rather than replaced, and the alias
+; goes on naming @g.
+; COFF: @alias_g = weak alias i32 (i32), ptr @g
+; COFF: define internal i32 @f
+; COFF: define linkonce_odr i32 @g
 
 @alias_g = weak alias i32 (i32), ptr @g
 
@@ -34,7 +35,7 @@ define linkonce_odr i32 @g(i32 %x) unnamed_addr {
 ;--- coff-noalias.ll
 target triple = "x86_64-pc-windows-msvc"
 
-; NOALIAS-NOT: comdat
+; Without an alias naming it, @g is replaced as usual.
 ; NOALIAS: define internal i32 @f
 ; NOALIAS: call i32 @f
 
@@ -58,10 +59,11 @@ define i32 @use() {
 ;--- coff-odr.ll
 target triple = "x86_64-pc-windows-msvc"
 
-; ODR: $[[BODY:"__llvm_mergefunc\$[0-9a-f]+"]] = comdat exactmatch
-; ODR-DAG: @g = weak_odr unnamed_addr alias i32 (i32), ptr @[[BODY]]
-; ODR-DAG: @f = weak_odr unnamed_addr alias i32 (i32), ptr @[[BODY]]
-; ODR: define linkonce_odr i32 @[[BODY]](i32 %x) unnamed_addr comdat
+; The shared body is private, so both halves get a thunk instead of an alias
+; even though aliases are enabled.
+; ODR-NOT: alias i32
+; ODR-DAG: define weak_odr i32 @f
+; ODR-DAG: define weak_odr i32 @g
 
 define weak_odr i32 @f(i32 %x) unnamed_addr {
   %a = mul i32 %x, 3
@@ -80,7 +82,7 @@ define weak_odr i32 @g(i32 %x) unnamed_addr {
 ;--- elf.ll
 target triple = "x86_64-unknown-linux-gnu"
 
-; ELF-NOT: comdat
+; Other formats can alias a local symbol, so @g is replaced there.
 ; ELF: @alias_g = weak alias i32 (i32), ptr @f
 ; ELF: define internal i32 @f
 ; ELF-NOT: define {{.*}} @g
