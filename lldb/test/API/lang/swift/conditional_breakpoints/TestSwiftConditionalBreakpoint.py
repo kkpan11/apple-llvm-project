@@ -26,6 +26,26 @@ class TestSwiftConditionalBreakpoint(TestBase):
         self.build()
         self.break_commands()
 
+    @swiftTest
+    @skipEmbeddedSwiftOnLinux # Linker failure with arc4random_buf
+    @skipEmbeddedSwiftOnWindows
+    def test_parenthesized_condition(self):
+        """Tests a conditional breakpoint whose condition is parenthesized"""
+        self.build()
+        (target, process, thread, bkpt) = lldbutil.run_to_source_breakpoint(
+            self, "Set breakpoint here", lldb.SBFileSpec("main.swift"))
+
+        # Parentheses can survive as sugar on the type of the expression, which
+        # must not keep the condition from being recognized as a boolean.
+        bkpt.SetCondition("((x == y))")
+
+        threads = lldbutil.continue_to_breakpoint(process, bkpt)
+        self.assertEqual(len(threads), 1, "Hit conditional breakpoint")
+        self.assertStopReason(threads[0].GetStopReason(),
+                              lldb.eStopReasonBreakpoint)
+
+        self.check_x_and_y(threads[0].frames[0], '5', '5')
+
     def check_x_and_y(self, frame, x, y):
         x_var = frame.FindVariable("x")
         y_var = frame.FindVariable("y")
