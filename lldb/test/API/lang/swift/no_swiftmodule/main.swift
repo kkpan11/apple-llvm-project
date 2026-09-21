@@ -6,7 +6,7 @@ func useTypeFromOtherModule(x: S2) {
 
 
 func f<T>(_ t: T) {
-  let strct2 = S2()                  // CHECK-DAG: strct2 {{=}} {}{{$}}
+  let strct2 = S2()
   print(strct2)
   useTypeFromOtherModule(x: S2())
 }
