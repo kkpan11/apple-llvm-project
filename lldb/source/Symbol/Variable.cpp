@@ -31,6 +31,7 @@
 #include "lldb/Utility/Log.h"
 #include "lldb/Utility/RegularExpression.h"
 #include "lldb/Utility/Stream.h"
+#include "lldb/Utility/ValueType.h"
 #include "lldb/ValueObject/ValueObject.h"
 #include "lldb/ValueObject/ValueObjectVariable.h"
 
@@ -93,9 +94,6 @@ ConstString Variable::GetUnqualifiedName() const { return m_name; }
 bool Variable::NameMatches(ConstString name) const {
   if (m_name == name)
     return true;
-  SymbolContext variable_sc;
-  m_owner_scope->CalculateSymbolContext(&variable_sc);
-
   return m_mangled.NameMatches(name);
 }
 bool Variable::NameMatches(const RegularExpression &regex) const {
@@ -281,6 +279,10 @@ bool Variable::LocationIsValidForAddress(const Address &address) {
 }
 
 bool Variable::IsInScope(StackFrame *frame) {
+  // Synthetic values are always in scope.
+  if (IsSyntheticValueType(m_scope))
+    return true;
+
   switch (m_scope) {
   case eValueTypeRegister:
   case eValueTypeRegisterSet:

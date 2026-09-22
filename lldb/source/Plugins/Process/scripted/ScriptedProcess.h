@@ -17,8 +17,6 @@
 
 #include "ScriptedThread.h"
 
-#include <mutex>
-
 namespace lldb_private {
 class ScriptedProcess : public Process {
 public:
@@ -116,6 +114,10 @@ protected:
                                MemoryRegionInfo &range_info) override;
 
   Status DoAttach(const ProcessAttachInfo &attach_info);
+
+  /// Pick up the process state that has to be in place before the first stop
+  /// is reported, since the threads and stack frames are built from it.
+  void DidLaunchOrAttach();
 
 private:
   friend class ScriptedThread;
