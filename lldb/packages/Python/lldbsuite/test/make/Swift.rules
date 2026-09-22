@@ -77,7 +77,13 @@ endif
 endif
 
 ifeq "$(OS)" "Windows_NT"
+ifeq "$(SWIFT_EMBEDDED_MODE)" "1"
+  # The distribution SDK ships no lib/swift/embedded, so an embedded build has
+  # to resolve the standard library out of the toolchain instead.
+  SWIFTFLAGS += -resource-dir "$(dir $(SWIFTC_PATH))../lib/swift"
+else
   SWIFTFLAGS += -resource-dir "$(SWIFTSDKROOT)/usr/lib/swift"
+endif
 endif
 
 SWIFT_ENABLE_EXPLICIT_MODULES ?= YES
