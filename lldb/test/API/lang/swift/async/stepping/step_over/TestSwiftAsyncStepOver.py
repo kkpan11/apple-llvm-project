@@ -30,6 +30,9 @@ class TestCase(lldbtest.TestBase):
         )
         bkpt.SetEnabled(False) # avoid hitting multiple locations in async breakpoints
 
+        task_name = thread.GetName()
+        self.assertRegex(task_name, r"^Task \d+$")
+
         expected_line_nums = [4]  # print(x)
         expected_line_nums += [5, 6, 7, 8, 5, 6, 7, 8, 5]  # two runs over the loop
         expected_line_nums += [9, 10]  # if line + if block
@@ -39,6 +42,7 @@ class TestCase(lldbtest.TestBase):
             self.assertStopReason(stop_reason, lldb.eStopReasonPlanComplete)
             self.check_is_in_line(thread, expected_line_num)
             self.check_x_is_available(thread.frames[0])
+            self.assertEqual(thread.GetName(), task_name)
 
     @skipEmbeddedSwift
     @skipIfOutOfTreeDebugserver
