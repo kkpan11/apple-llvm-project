@@ -28,6 +28,18 @@ class DAPTestCaseBase(TestBase):
         self.dap_server_count = 0
         super().setUp()
 
+    @classmethod
+    def setUpCommands(cls):
+        cmds = super().setUpCommands()
+        # RunInTerminal tests are failing because of an assert in the swift operating system plugin.
+        # In `SwiftLanguageRuntime.cpp!CachingTaskFinder::GetTaskAddrLocations`
+        # The task_addr_location is not meant to change per process.
+        # On linux this currently does not hold when the process replaces itself using an exec* call.
+        # This is the case for tests using the console type `integratedTerminal`.
+        # rdar://183535755
+        cmds.append("plugin disable operating-system.swift")
+        return cmds
+
     def create_debug_adapter(
         self,
         lldbDAPEnv: Optional[dict[str, str]] = None,
