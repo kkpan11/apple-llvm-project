@@ -10,13 +10,22 @@ from lldbsuite.test.decorators import *
 import lldbsuite.test.lldbutil as lldbutil
 
 
-def isAmazonLinux2023():
+# Distros whose Swift stdlib has no Float16 support, keyed by the PLATFORM_ID
+# in os-release.
+UNSUPPORTED_PLATFORM_IDS = {
+    "platform:al2023": "Amazon Linux 2023",
+    "platform:el9": "UBI 9",
+}
+
+
+def isUnsupportedDistro():
     for path in ("/etc/os-release", "/usr/lib/os-release"):
         if os.path.exists(path):
             with open(path) as f:
                 contents = f.read()
-            if 'PLATFORM_ID="platform:al2023"' in contents:
-                return "Amazon Linux 2023 is not supported."
+            for platform_id, name in UNSUPPORTED_PLATFORM_IDS.items():
+                if 'PLATFORM_ID="%s"' % platform_id in contents:
+                    return "%s is not supported." % name
 
     return None
 
@@ -30,8 +39,8 @@ class TestSwiftFloat16(TestBase):
     # The distro check inspects the host, which says nothing about the target
     # when the test runs against a remote platform.
     @skipIfRemote
-    # Amazon Linux 2023 has no Float16 support.
-    @skipTestIfFn(isAmazonLinux2023)
+    # Some distros have no Float16 support.
+    @skipTestIfFn(isUnsupportedDistro)
     def test(self):
         """Test that Float16 has a value, like Float and Double do."""
         self.build()
