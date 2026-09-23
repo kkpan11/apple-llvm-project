@@ -11666,6 +11666,9 @@ OMPClause *OMPClauseReader::readClause() {
   case llvm::omp::OMPC_partial:
     C = new (Context) OMPPartialClause();
     break;
+  case llvm::omp::OMPC_depth:
+    C = new (Context) OMPDepthClause();
+    break;
   case llvm::omp::OMPC_looprange:
     C = new (Context) OMPLoopRangeClause();
     break;
@@ -12104,6 +12107,11 @@ void OMPClauseReader::VisitOMPFullClause(OMPFullClause *C) {}
 
 void OMPClauseReader::VisitOMPPartialClause(OMPPartialClause *C) {
   C->setFactor(Record.readSubExpr());
+  C->setLParenLoc(Record.readSourceLocation());
+}
+
+void OMPClauseReader::VisitOMPDepthClause(OMPDepthClause *C) {
+  C->setDepth(Record.readSubExpr());
   C->setLParenLoc(Record.readSourceLocation());
 }
 

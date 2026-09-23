@@ -2187,6 +2187,7 @@ public:
   void VisitOMPUnrollDirective(const OMPUnrollDirective *D);
   void VisitOMPReverseDirective(const OMPReverseDirective *D);
   void VisitOMPInterchangeDirective(const OMPInterchangeDirective *D);
+  void VisitOMPFlattenDirective(const OMPFlattenDirective *D);
   void VisitOMPCanonicalLoopSequenceTransformationDirective(
       const OMPCanonicalLoopSequenceTransformationDirective *D);
   void VisitOMPFuseDirective(const OMPFuseDirective *D);
@@ -2408,6 +2409,10 @@ void OMPClauseEnqueue::VisitOMPPartialClause(const OMPPartialClause *C) {
 void OMPClauseEnqueue::VisitOMPLoopRangeClause(const OMPLoopRangeClause *C) {
   Visitor->AddStmt(C->getFirst());
   Visitor->AddStmt(C->getCount());
+}
+
+void OMPClauseEnqueue::VisitOMPDepthClause(const OMPDepthClause *C) {
+  Visitor->AddStmt(C->getDepth());
 }
 
 void OMPClauseEnqueue::VisitOMPAllocatorClause(const OMPAllocatorClause *C) {
@@ -3390,6 +3395,10 @@ void EnqueueVisitor::VisitOMPReverseDirective(const OMPReverseDirective *D) {
 
 void EnqueueVisitor::VisitOMPInterchangeDirective(
     const OMPInterchangeDirective *D) {
+  VisitOMPCanonicalLoopNestTransformationDirective(D);
+}
+
+void EnqueueVisitor::VisitOMPFlattenDirective(const OMPFlattenDirective *D) {
   VisitOMPCanonicalLoopNestTransformationDirective(D);
 }
 
@@ -6376,6 +6385,8 @@ CXString clang_getCursorKindSpelling(enum CXCursorKind Kind) {
     return cxstring::createRef("OMPReverseDirective");
   case CXCursor_OMPInterchangeDirective:
     return cxstring::createRef("OMPInterchangeDirective");
+  case CXCursor_OMPFlattenDirective:
+    return cxstring::createRef("OMPFlattenDirective");
   case CXCursor_OMPFuseDirective:
     return cxstring::createRef("OMPFuseDirective");
   case CXCursor_OMPSplitDirective:
