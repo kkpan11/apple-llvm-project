@@ -1,5 +1,5 @@
 RUN: llc %S/Inputs/coverage.ll -o %t.o -filetype=obj
-RUN: llc %S/Inputs/coverage-opt.ll -o %t-opt.o -filetype=obj
+RUN: llc %S/Inputs/coverage-opt.ll -o %t-opt.o -filetype=obj -experimental-debug-variable-locations=true
 
 RUN: llvm-dwarfdump --show-variable-coverage %t.o | FileCheck %s
 
