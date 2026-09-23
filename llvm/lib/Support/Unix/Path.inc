@@ -1264,7 +1264,7 @@ std::error_code getRealPathFromHandle(file_t Handle,
   char Buffer[PATH_MAX];
   // When F_GETPATH is availble, it is the quickest way to get
   // the real path name.
-  if (::fcntl(Handle, F_GETPATH, Buffer) != -1) {
+  if (::fcntl(Handle.get(), F_GETPATH, Buffer) != -1) {
     RealPath.append(Buffer, Buffer + strlen(Buffer));
     return std::error_code();
   }
@@ -1273,7 +1273,7 @@ std::error_code getRealPathFromHandle(file_t Handle,
   char Buffer[PATH_MAX];
   if (hasProcSelfFD()) {
     char ProcPath[64];
-    snprintf(ProcPath, sizeof(ProcPath), "/proc/self/fd/%d", Handle);
+    snprintf(ProcPath, sizeof(ProcPath), "/proc/self/fd/%d", Handle.get());
     ssize_t CharCount = ::readlink(ProcPath, Buffer, sizeof(Buffer));
     if (CharCount > 0) {
       RealPath.append(Buffer, Buffer + CharCount);
