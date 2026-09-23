@@ -192,6 +192,26 @@ if platform.system() == "Windows":
     # for specific stdout/stderr content.
     config.environment["LLDB_LAUNCH_FLAG_USE_PIPES"] = "1"
 
+    # Windows has no rpath: shell-test inferiors must resolve the swiftCore
+    # they were linked against (the one in the lldb shared-library dir) first,
+    # or picking up the distribution runtime under Runtimes/ instead crashes
+    # them with STATUS_ENTRYPOINT_NOT_FOUND. %lldb itself doesn't need this:
+    # it's the distribution toolchain lldb (see helper/toolchain.py), which
+    # binds its own runtime via side-by-side assemblies.
+    win_paths = []
+    if config.llvm_shlib_dir:
+        win_paths.append(config.llvm_shlib_dir)
+    runtime_bin = getattr(config, "test_inferior_runtime_bin", "") or ""
+    if not runtime_bin:
+        sysroot = getattr(config, "cmake_sysroot", "") or ""
+        if sysroot:
+            runtime_bin = os.path.join(sysroot, "usr", "bin")
+    if runtime_bin and os.path.isdir(runtime_bin):
+        win_paths.append(runtime_bin)
+    if win_paths:
+        win_paths.append(config.environment.get("PATH", ""))
+        config.environment["PATH"] = os.path.pathsep.join(win_paths)
+
 # NetBSD permits setting dbregs either if one is root
 # or if user_set_dbregs is enabled
 can_set_dbregs = True
