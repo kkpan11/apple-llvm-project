@@ -333,8 +333,6 @@ let TargetPrefix = "aarch64" in {
   def int_aarch64_sisd_fabd : AdvSIMD_2Scalar_Float_Intrinsic;
 
   // Vector Max
-  def int_aarch64_neon_smax : AdvSIMD_2VectorArg_Intrinsic;
-  def int_aarch64_neon_umax : AdvSIMD_2VectorArg_Intrinsic;
   def int_aarch64_neon_fmax : AdvSIMD_2FloatArg_Intrinsic;
   def int_aarch64_neon_fmaxnmp : AdvSIMD_2VectorArg_Intrinsic;
 
@@ -345,8 +343,6 @@ let TargetPrefix = "aarch64" in {
   def int_aarch64_neon_fmaxnmv : AdvSIMD_1VectorArg_Float_Across_Intrinsic;
 
   // Vector Min
-  def int_aarch64_neon_smin : AdvSIMD_2VectorArg_Intrinsic;
-  def int_aarch64_neon_umin : AdvSIMD_2VectorArg_Intrinsic;
   def int_aarch64_neon_fmin : AdvSIMD_2FloatArg_Intrinsic;
   def int_aarch64_neon_fminnmp : AdvSIMD_2VectorArg_Intrinsic;
 
@@ -3784,7 +3780,7 @@ let TargetPrefix = "aarch64" in {
 
   def int_aarch64_sve_fscale_x2 : SVE2_VG2_Multi_Multi_Scale_Intrinsic;
   def int_aarch64_sve_fscale_x4 : SVE2_VG4_Multi_Multi_Scale_Intrinsic;
-  
+
   //
   // Multi-vector floating point absolute min/max number
   //
@@ -4371,7 +4367,7 @@ let TargetPrefix = "aarch64" in {
   def int_aarch64_sme_fp8_fvdot_lane_za16_vg1x2  : SME_FP8_ZA_LANE_VGx2_Intrinsic;
   def int_aarch64_sme_fp8_fvdotb_lane_za32_vg1x4 : SME_FP8_ZA_LANE_VGx2_Intrinsic;
   def int_aarch64_sme_fp8_fvdott_lane_za32_vg1x4 : SME_FP8_ZA_LANE_VGx2_Intrinsic;
-  
+
   // AES2
   class SVE2_Crypto_LANE_X2_Intrinsic
   : DefaultAttrsIntrinsic<[llvm_nxv16i8_ty, llvm_nxv16i8_ty],
@@ -4379,7 +4375,7 @@ let TargetPrefix = "aarch64" in {
       [ImmArg<ArgIndex<3>>, IntrNoMem]>;
   class SVE2_Crypto_LANE_X4_Intrinsic
   : DefaultAttrsIntrinsic<[llvm_nxv16i8_ty, llvm_nxv16i8_ty, llvm_nxv16i8_ty, llvm_nxv16i8_ty],
-      [llvm_nxv16i8_ty, llvm_nxv16i8_ty, llvm_nxv16i8_ty, 
+      [llvm_nxv16i8_ty, llvm_nxv16i8_ty, llvm_nxv16i8_ty,
        llvm_nxv16i8_ty, llvm_nxv16i8_ty, llvm_i32_ty],
       [ImmArg<ArgIndex<5>>, IntrNoMem]>;
 
