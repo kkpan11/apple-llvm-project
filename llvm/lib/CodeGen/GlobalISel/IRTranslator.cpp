@@ -5338,7 +5338,8 @@ PreservedAnalyses IRTranslatorPass::run(MachineFunction &MF,
   const TargetSubtargetInfo &Subtarget = MF.getSubtarget();
   Function &F = MF.getFunction();
 
-  bool ShouldSkipOpts = MF.getFunction().hasOptNone();
+  bool ShouldSkipOpts = MF.getFunction().hasOptNone() ||
+                        shouldSkipOptimizationForOptBisect(MF.getFunction());
   auto &FAM = MFAM.getResult<FunctionAnalysisManagerMachineFunctionProxy>(MF)
                   .getManager();
   auto &MAMProxy =
