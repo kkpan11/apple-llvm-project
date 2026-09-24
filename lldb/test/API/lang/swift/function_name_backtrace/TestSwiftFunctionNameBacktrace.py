@@ -11,7 +11,6 @@ class TestSwiftFunctionNameBacktrace(TestBase):
     # foo_ dynamically casts its generic argument, which embedded Swift
     # rejects.
     @requireNotEmbeddedSwift
-    @expectedFailureAll(oslist=["windows"])
     @swiftTest
     def test_function_names_in_backtrace(self):
         self.build()

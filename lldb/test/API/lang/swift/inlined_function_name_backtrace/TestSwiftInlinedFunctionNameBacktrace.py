@@ -9,7 +9,6 @@ import lldbsuite.test.lldbutil as lldbutil
 
 
 class TestSwiftInlinedFunctionNameBacktrace(TestBase):
-    @expectedFailureAll(oslist=["windows"])
     @swiftTest
     def test_inlined_function_names_in_backtrace(self):
         self.build()
