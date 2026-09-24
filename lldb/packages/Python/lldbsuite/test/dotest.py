@@ -440,6 +440,7 @@ def parseOptionsAndInitTestdirs():
 
     if args.t:
         os.environ["LLDB_COMMAND_TRACE"] = "YES"
+        os.environ["SWIFT_DUMP_DRIVER_INVOCATION"] = "YES"
 
     if args.v:
         configuration.verbose = 2
