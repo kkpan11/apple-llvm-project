@@ -176,7 +176,7 @@ void DirectXTargetMachine::registerPassBuilderCallbacks(PassBuilder &PB) {
 bool DirectXTargetMachine::addPassesToEmitFile(
     PassManagerBase &PM, raw_pwrite_stream &Out, raw_pwrite_stream *DwoOut,
     CodeGenFileType FileType, bool DisableVerify,
-    MachineModuleInfoWrapperPass *MMIWP) {
+    MachineModuleInfoWrapperPass *MMIWP, raw_pwrite_stream *CasIDOS) {
   TargetPassConfig *PassConfig = createPassConfig(PM);
   PM.add(PassConfig);
 
