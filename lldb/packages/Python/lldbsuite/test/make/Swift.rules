@@ -167,7 +167,7 @@ ifeq "$(USESWIFTDRIVER)" "1"
 	ifeq ($(filter $(OS),Darwin Windows_NT),$(OS))
 		SWIFTFLAGS += -sdk "$(SWIFTSDKROOT)"
 	endif
-	SWIFTFLAGS += -tools-directory "$(patsubst %/,%,$(dir $(CC)))"
+	SWIFTFLAGS += -tools-directory "$(patsubst %/,%,$(subst \,/,$(dir $(CC))))"
 endif
 
 #----------------------------------------------------------------------

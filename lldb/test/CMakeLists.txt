@@ -367,6 +367,15 @@ endif()
 # END SWIFT
 
 # Configure the individual test suites.
+# Shared by the API and Shell suites: on Windows, where there is no rpath,
+# test inferiors need the Swift runtime DLLs on PATH at launch.
+set(LLDB_TEST_INFERIOR_RUNTIME_BIN
+  ""
+  CACHE STRING "Directory containing the target platform's runtime DLLs. \
+Used on Windows to populate the test inferior's PATH so dynamically-loaded \
+Swift runtime DLLs resolve."
+)
+
 add_subdirectory(API)
 add_subdirectory(Shell)
 add_subdirectory(Unit)
