@@ -14,6 +14,7 @@
 
 #include "CASTestConfig.h"
 #include "llvm/CAS/ActionCache.h"
+#include "llvm/CAS/CASConfiguration.h"
 #include "llvm/CAS/ObjectStore.h"
 #include "llvm/Config/config.h"
 #include "llvm/Support/Compiler.h"
@@ -129,6 +130,52 @@ TEST(PluginCASTest, isMaterialized) {
                       Succeeded());
     EXPECT_TRUE(IsMaterialized);
   }
+}
+
+TEST(PluginCASTest, CASConfigurationEmptyPath) {
+  // An empty CASPath creates an in-memory CAS even when a plugin is set, so
+  // the plugin is never loaded.
+  CASConfiguration Config;
+  Config.PluginPath = "/does/not/exist" LLVM_PLUGIN_EXT;
+  std::optional<
+      std::pair<std::shared_ptr<ObjectStore>, std::shared_ptr<ActionCache>>>
+      DBs;
+  ASSERT_THAT_ERROR(Config.createDatabases().moveInto(DBs), Succeeded());
+  EXPECT_TRUE(DBs->first);
+  EXPECT_TRUE(DBs->second);
+}
+
+TEST(PluginCASTest, CASConfigurationOnDiskPath) {
+  unittest::TempDir Temp("plugin-cas", /*Unique=*/true);
+  CASConfiguration Config;
+  Config.CASPath = std::string(Temp.path("cas"));
+  Config.PluginPath = getCASPluginPath();
+
+  std::optional<CASID> ID;
+  {
+    std::optional<
+        std::pair<std::shared_ptr<ObjectStore>, std::shared_ptr<ActionCache>>>
+        DBs;
+    ASSERT_THAT_ERROR(Config.createDatabases().moveInto(DBs), Succeeded());
+    ASSERT_THAT_ERROR(DBs->first->createProxy({}, "data").moveInto(ID),
+                      Succeeded());
+  }
+
+  // Reopen the plugin CAS at CASPath and check the object was stored there.
+  std::optional<
+      std::pair<std::shared_ptr<ObjectStore>, std::shared_ptr<ActionCache>>>
+      DBs;
+  ASSERT_THAT_ERROR(createPluginCASDatabases(getCASPluginPath(),
+                                             Temp.path("cas"),
+                                             /*PluginArgs=*/{})
+                        .moveInto(DBs),
+                    Succeeded());
+  std::optional<ObjectRef> Ref = DBs->first->getReference(*ID);
+  ASSERT_TRUE(Ref);
+  bool IsMaterialized = false;
+  ASSERT_THAT_ERROR(DBs->first->isMaterialized(*Ref).moveInto(IsMaterialized),
+                    Succeeded());
+  EXPECT_TRUE(IsMaterialized);
 }
 
 #endif /* !LLVM_HWADDRESS_SANITIZER_BUILD */
