@@ -19,7 +19,6 @@ class TestMoveNearest(TestBase):
         print("BR_Between found at", self.line_between)
         self.line_main = line_number("main.cpp", "// !BR_main")
 
-    @expectedFailureWindows  # https://github.com/swiftlang/llvm-project/issues/13444
     def test(self):
         """Test target.move-to-nearest logic"""
 
