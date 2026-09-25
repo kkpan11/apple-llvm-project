@@ -669,6 +669,9 @@ latest release, please see the [Clang Web Site](https://clang.llvm.org) or the
   };
   ```
 
+- Lifetime safety analysis is now enabled for C by default. The `-fexperimental-lifetime-safety-c`
+  flag is renamed to `-flifetime-safety-c`. Use `-fno-lifetime-safety-c` to disable it.
+
 - Improved `-Wassign-enum` performance by caching enum enumerator values. (#GH176454)
 
 - Clang now emits `-Wpsabi` diagnostics for externally visible x86-64
