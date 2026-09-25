@@ -4257,6 +4257,39 @@ These examples do not warn:
       someFunction(borrowed.get()[0]);     // ok, guarded by Borrow<T>
     }
 
+alpha.webkit.UnborrowedLambdaCapturesChecker
+""""""""""""""""""""""""""""""""""""""""""""
+The same rule as alpha.webkit.UnborrowedLocalVarsChecker, applied to lambda captures.
+
+Note: It is impossible for an escaping closure to capture a Borrow since Borrow is stack-only.
+
+  .. code-block:: cpp
+
+    void takesCallback(const Function<void()>&);
+    void takesNoEscapeCallback([[clang::noescape]] const Function<void()>&);
+
+    void foo1(Vector<char>& buffer) {
+      takesCallback([data = buffer.data()] { use(data); }); // warn
+
+      Borrow<Vector<char>> borrowed(buffer);
+      takesCallback([data = borrowed.get().data()] { use(data); }); // warn
+      takesCallback([&borrowed] { use(borrowed.get().data()); }); // warn
+    }
+
+A NOESCAPE callee runs the lambda before returning, so a `Borrow` in the enclosing scope protects the capture:
+
+  .. code-block:: cpp
+
+    void foo2(Vector<char>& buffer) {
+      Borrow<Vector<char>> borrowed(buffer);
+      takesNoEscapeCallback([data = borrowed.get().data()] { use(data); }); // ok
+      takesNoEscapeCallback([&borrowed] { use(borrowed.get().data()); }); // ok
+
+      takesNoEscapeCallback([&buffer] {
+        Borrow<Vector<char>> b(buffer);
+        use(b.get().data()); // ok
+      });
+    }
 
 webkit.RetainPtrCtorAdoptChecker
 """"""""""""""""""""""""""""""""
