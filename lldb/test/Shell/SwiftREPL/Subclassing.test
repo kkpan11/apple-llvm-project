@@ -1,3 +1,4 @@
+// UNSUPPORTED: system-windows
 // Test that subclassing works in the repl.
 // REQUIRES: swift
 
