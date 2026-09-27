@@ -20,6 +20,7 @@ import os
 import os.path
 import time
 
+@skipIfWindows  # flaky on Windows
 @skipIfDarwin # rdar://problem/54322424 Sometimes failing, sometimes truncated output.
 class TestMainExecutable(TestBase):
     # The test functions build the library with and without library evolution,
