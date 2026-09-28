@@ -66,6 +66,9 @@ static constexpr llvm::StringRef DisallowedMethods[] = {
     "_ZN4lldb8SBHostOS12ThreadCreateEPKcPFPvS3_ES3_PNS_7SBErrorE",
     "_ZN4lldb8SBHostOS12ThreadDetachEP17_opaque_pthread_tPNS_7SBErrorE",
     "_ZN4lldb8SBHostOS13ThreadCreatedEPKc",
+    // Translates a Windows HANDLE into a file descriptor local to liblldb's
+    // CRT, which is meaningless across an RPC connection.
+    "_ZN4lldb6SBFile16OpenFdFromHandleEli",
 };
 
 static constexpr llvm::StringRef ClassesWithoutDefaultCtor[] = {
