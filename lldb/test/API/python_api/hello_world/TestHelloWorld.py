@@ -9,6 +9,7 @@ from lldbsuite.test.lldbtest import *
 import lldbsuite.test.lldbutil as lldbutil
 
 
+@skipIfWindows  # Times out in CI
 class HelloWorldTestCase(TestBase):
     SHARED_BUILD_TESTCASE = False
     NO_DEBUG_INFO_TESTCASE = True
