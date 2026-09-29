@@ -360,8 +360,10 @@ Status NativeProcessWindows::RemoveBreakpoint(lldb::addr_t addr,
   return RemoveSoftwareBreakpoint(addr);
 }
 
-// Resolve the fully qualified, normalized on disk path of a module loaded in
-// the target process.
+// Get the path of a module loaded in the target process, as the loader recorded
+// it.
+//
+// Keep the loader's spelling.
 static bool GetLoadedModulePath(HANDLE process, HMODULE module,
                                 std::string &path) {
   std::vector<wchar_t> name(MAX_PATH);
@@ -408,7 +410,15 @@ static bool GetLoadedModulePath(HANDLE process, HMODULE module,
         canonical.replace(0, wcslen(kUNCPrefix), L"\\\\");
       else if (canonical.rfind(kDOSPrefix, 0) == 0)
         canonical.erase(0, wcslen(kDOSPrefix));
-      wpath = std::move(canonical);
+      std::wstring loader_path = wpath;
+      if (loader_path.rfind(kUNCPrefix, 0) == 0)
+        loader_path.replace(0, wcslen(kUNCPrefix), L"\\\\");
+      else if (loader_path.rfind(kDOSPrefix, 0) == 0)
+        loader_path.erase(0, wcslen(kDOSPrefix));
+      if (::_wcsicmp(canonical.c_str(), loader_path.c_str()) == 0)
+        wpath = std::move(canonical);
+      else
+        wpath = std::move(loader_path);
       break;
     }
     full.resize(needed);
@@ -551,6 +561,11 @@ void NativeProcessWindows::OnDebuggerConnected(lldb::addr_t image_base) {
 
   if (got_info) {
     FileSpec exe = info.GetExecutableFile();
+    if (const std::string &image_path =
+            m_session_data->m_debugger->GetImagePath();
+        !image_path.empty() &&
+        !llvm::StringRef(image_path).equals_insensitive(exe.GetPath()))
+      exe = FileSpec(image_path);
     if (exe) {
       FileSystem::Instance().Resolve(exe);
       m_loaded_modules.Add(exe, image_base);
@@ -558,6 +573,7 @@ void NativeProcessWindows::OnDebuggerConnected(lldb::addr_t image_base) {
   }
 
   // The very first one shall always be the main thread.
+  std::lock_guard<std::recursive_mutex> guard(m_threads_mutex);
   assert(m_threads.empty());
   m_threads.push_back(std::make_unique<NativeThreadWindows>(
       *this, m_session_data->m_debugger->GetMainThread()));
@@ -783,6 +799,9 @@ void NativeProcessWindows::OnCreateThread(const HostThread &new_thread) {
     thread->SetStopReason(stop_info, "");
   }
 
+  // Threads() hands out references into m_threads under this lock, so a
+  // push_back that reallocates the vector has to take it too.
+  std::lock_guard<std::recursive_mutex> guard(m_threads_mutex);
   m_threads.push_back(std::move(thread));
 }
 
