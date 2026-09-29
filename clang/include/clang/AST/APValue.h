@@ -515,7 +515,7 @@ public:
   /// \param Base The base of the lvalue.
   /// \param Offset The offset of the lvalue.
   /// \param IsNullPtr Whether this lvalue is a null pointer.
-  APValue(LValueBase Base, const CharUnits &Offset, NoLValuePath,
+  APValue(LValueBase Base, CharUnits Offset, NoLValuePath,
           bool IsNullPtr = false)
       : Kind(None), AllowConstexprUnknown(false) {
     MakeLValue();
@@ -528,9 +528,8 @@ public:
   /// \param OnePastTheEnd Whether this lvalue is one-past-the-end of the
   /// subobject it points to.
   /// \param IsNullPtr Whether this lvalue is a null pointer.
-  APValue(LValueBase Base, const CharUnits &Offset,
-          ArrayRef<LValuePathEntry> Path, bool OnePastTheEnd,
-          bool IsNullPtr = false)
+  APValue(LValueBase Base, CharUnits Offset, ArrayRef<LValuePathEntry> Path,
+          bool OnePastTheEnd, bool IsNullPtr = false)
       : Kind(None), AllowConstexprUnknown(false) {
     MakeLValue();
     setLValue(Base, Offset, Path, OnePastTheEnd, IsNullPtr);
@@ -539,7 +538,7 @@ public:
   /// \param Base The base of the lvalue.
   /// \param Offset The offset of the lvalue.
   /// \param IsNullPtr Whether this lvalue is a null pointer.
-  APValue(LValueBase Base, const CharUnits &Offset, ConstexprUnknown,
+  APValue(LValueBase Base, CharUnits Offset, ConstexprUnknown,
           bool IsNullPtr = false)
       : Kind(None), AllowConstexprUnknown(true) {
     MakeLValue();
@@ -712,7 +711,7 @@ public:
 
   const LValueBase getLValueBase() const;
   CharUnits &getLValueOffset();
-  const CharUnits &getLValueOffset() const {
+  CharUnits getLValueOffset() const {
     return const_cast<APValue*>(this)->getLValueOffset();
   }
 
@@ -914,11 +913,9 @@ public:
     ((ComplexAPFloat *)(char *)&Data)->Real = std::move(R);
     ((ComplexAPFloat *)(char *)&Data)->Imag = std::move(I);
   }
-  void setLValue(LValueBase B, const CharUnits &O, NoLValuePath,
-                 bool IsNullPtr);
-  void setLValue(LValueBase B, const CharUnits &O,
-                 ArrayRef<LValuePathEntry> Path, bool OnePastTheEnd,
-                 bool IsNullPtr);
+  void setLValue(LValueBase B, CharUnits O, NoLValuePath, bool IsNullPtr);
+  void setLValue(LValueBase B, CharUnits O, ArrayRef<LValuePathEntry> Path,
+                 bool OnePastTheEnd, bool IsNullPtr);
   void setUnion(const FieldDecl *Field, const APValue &Value);
   void setAddrLabelDiff(const AddrLabelExpr* LHSExpr,
                         const AddrLabelExpr* RHSExpr) {
@@ -1019,9 +1016,10 @@ private:
     M->NumCols = NumCols;
     return {M->Elts, NumElts};
   }
-  MutableArrayRef<LValuePathEntry>
-  setLValueUninit(LValueBase B, const CharUnits &O, unsigned Size,
-                  bool OnePastTheEnd, bool IsNullPtr);
+  MutableArrayRef<LValuePathEntry> setLValueUninit(LValueBase B, CharUnits O,
+                                                   unsigned Size,
+                                                   bool OnePastTheEnd,
+                                                   bool IsNullPtr);
   MutableArrayRef<const CXXRecordDecl *>
   setMemberPointerUninit(const ValueDecl *Member, bool IsDerivedMember,
                          unsigned Size);

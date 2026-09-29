@@ -1498,7 +1498,7 @@ namespace {
     const APValue::LValueBase getLValueBase() const { return Base; }
     bool allowConstexprUnknown() const { return AllowConstexprUnknown; }
     CharUnits &getLValueOffset() { return Offset; }
-    const CharUnits &getLValueOffset() const { return Offset; }
+    CharUnits getLValueOffset() const { return Offset; }
     SubobjectDesignator &getLValueDesignator() { return Designator; }
     const SubobjectDesignator &getLValueDesignator() const { return Designator;}
     bool isNullPointer() const { return IsNullPtr;}
@@ -19847,8 +19847,8 @@ EvaluateComparisonBinaryOperator(EvalInfo &Info, const BinaryOperator *E,
       return Success(CmpResult::Unequal, E);
     }
 
-    const CharUnits &LHSOffset = LHSValue.getLValueOffset();
-    const CharUnits &RHSOffset = RHSValue.getLValueOffset();
+    CharUnits LHSOffset = LHSValue.getLValueOffset();
+    CharUnits RHSOffset = RHSValue.getLValueOffset();
 
     SubobjectDesignator &LHSDesignator = LHSValue.getLValueDesignator();
     SubobjectDesignator &RHSDesignator = RHSValue.getLValueDesignator();
@@ -20153,8 +20153,8 @@ bool IntExprEvaluator::VisitBinaryOperator(const BinaryOperator *E) {
         return Error(E);
       return Success(APValue(LHSAddrExpr, RHSAddrExpr), E);
     }
-    const CharUnits &LHSOffset = LHSValue.getLValueOffset();
-    const CharUnits &RHSOffset = RHSValue.getLValueOffset();
+    CharUnits LHSOffset = LHSValue.getLValueOffset();
+    CharUnits RHSOffset = RHSValue.getLValueOffset();
 
     SubobjectDesignator &LHSDesignator = LHSValue.getLValueDesignator();
     SubobjectDesignator &RHSDesignator = RHSValue.getLValueDesignator();
