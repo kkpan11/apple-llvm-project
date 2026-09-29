@@ -155,8 +155,6 @@ namespace {
     return E && E->getType()->isPointerType() && tryUnwrapAllocSizeCall(E);
   }
 
-<<<<<<< HEAD
-=======
   /// Determines whether the given kind of constant expression is only ever
   /// used for name mangling. If so, it's permitted to reference things that we
   /// can't generate code for (in particular, dllimported functions).
@@ -188,7 +186,6 @@ namespace {
     llvm_unreachable("unknown ConstantExprKind");
   }
 
->>>>>>> refs/am/changes/e0316c1b4762263caa49e3c41ddde752a2b6b775_next
   /* TO_UPSTREAM(BoundsSafety) ON */
   static CharUnits getTypeSizeWithUnknownAsOne(const ASTContext &Ctx,
                                                QualType Ty) {
