@@ -211,8 +211,10 @@ public:
 
     LLVM_ABI const Embedding &operator*() const;
     LLVM_ABI const_iterator &operator++();
+#ifndef __swift__
     LLVM_ABI bool operator==(const const_iterator &Other) const;
     LLVM_ABI bool operator!=(const const_iterator &Other) const;
+#endif
   };
 
   const_iterator begin() const { return const_iterator(this, 0, 0); }
