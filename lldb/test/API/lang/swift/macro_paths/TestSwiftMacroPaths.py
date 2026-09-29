@@ -1,7 +1,7 @@
 import os
 
 import lldb
-from lldbsuite.test.decorators import requireNotEmbeddedSwift, skipUnlessDarwin, swiftTest
+from lldbsuite.test.decorators import skipEmbeddedSwift, skipUnlessDarwin, swiftTest
 from lldbsuite.test.lldbtest import TestBase
 from lldbsuite.test import lldbutil
 
@@ -67,55 +67,55 @@ class TestSwiftMacroPaths(TestBase):
             "expression -- #stringify(value)", substrs=["0 = 42", '1 = "value"']
         )
 
-    @requireNotEmbeddedSwift
+    @skipEmbeddedSwift
     @skipUnlessDarwin
     @swiftTest
     def test_plugin_path(self):
         self.check_macro("path")
 
-    @requireNotEmbeddedSwift
+    @skipEmbeddedSwift
     @skipUnlessDarwin
     @swiftTest
     def test_external_plugin_path(self):
         self.check_macro("external")
 
-    @requireNotEmbeddedSwift
+    @skipEmbeddedSwift
     @skipUnlessDarwin
     @swiftTest
     def test_plugin_library(self):
         self.check_macro("library")
 
-    @requireNotEmbeddedSwift
+    @skipEmbeddedSwift
     @skipUnlessDarwin
     @swiftTest
     def test_plugin_executable(self):
         self.check_macro("executable")
 
-    @requireNotEmbeddedSwift
+    @skipEmbeddedSwift
     @skipUnlessDarwin
     @swiftTest
     def test_resolved_plugin(self):
         self.check_macro("resolved")
 
-    @requireNotEmbeddedSwift
+    @skipEmbeddedSwift
     @skipUnlessDarwin
     @swiftTest
     def test_resolved_plugin_executable(self):
         self.check_macro("resolved_executable")
 
-    @requireNotEmbeddedSwift
+    @skipEmbeddedSwift
     @skipUnlessDarwin
     @swiftTest
     def test_interactive_import(self):
         self.check_macro("external", interactive=True)
 
-    @requireNotEmbeddedSwift
+    @skipEmbeddedSwift
     @skipUnlessDarwin
     @swiftTest
     def test_relative_plugin_path(self):
         self.check_macro("path", relative=True)
 
-    @requireNotEmbeddedSwift
+    @skipEmbeddedSwift
     @skipUnlessDarwin
     @swiftTest
     def test_debug_module_path(self):

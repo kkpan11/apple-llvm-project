@@ -19,7 +19,7 @@ HOST_FLAGS = -I$(SWIFT_HOSTDIR) -L$(SWIFT_HOSTDIR) \
              -target $(shell uname -m)-apple-macos13.0 \
              -sdk $(shell xcrun --sdk macosx --show-sdk-path)
 
-$(SWIFT_OBJECTS): Macro.swiftmodule
+$(SWIFT_OBJECTS): | Macro.swiftmodule
 
 Macro.swiftmodule: Macro.swift $(PLUGIN_IMPL)
 	$(SWIFTC) -emit-module -module-name Macro -o $@ $(SWIFT_MODULE_CACHE_FLAGS) \
