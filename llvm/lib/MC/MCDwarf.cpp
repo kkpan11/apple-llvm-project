@@ -1897,6 +1897,7 @@ static unsigned getCIEVersion(bool IsEH, unsigned DwarfVersion) {
     return 3;
   case 4:
   case 5:
+  case 6:
     return 4;
   }
   llvm_unreachable("Unknown version");
