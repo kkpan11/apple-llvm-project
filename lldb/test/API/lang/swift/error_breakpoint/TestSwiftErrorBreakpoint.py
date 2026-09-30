@@ -22,32 +22,14 @@ import os
 @skipIfWindows
 class TestSwiftErrorBreakpoint(TestBase):
     @requireNotEmbeddedSwift
-    @decorators.skipIfLinux  # <rdar://problem/30909618>
     @swiftTest
-    def test_swift_error_no_typename(self):
+    def test_swift_error(self):
         """Tests that swift error throws are correctly caught by the Swift Error breakpoint"""
         self.build()
-        self.do_tests(None)
-
-    @requireNotEmbeddedSwift
-    @swiftTest
-    def test_swift_error_matching_base_typename(self):
-        """Tests that swift error throws are correctly caught by the Swift Error breakpoint"""
-        self.build()
+        if self.getPlatform() != "linux":  # <rdar://problem/30909618>
+            self.do_tests(None)
         self.do_tests("EnumError")
-
-    @requireNotEmbeddedSwift
-    @swiftTest
-    def test_swift_error_matching_full_typename(self):
-        """Tests that swift error throws are correctly caught by the Swift Error breakpoint"""
-        self.build()
         self.do_tests("a.EnumError")
-
-    @requireNotEmbeddedSwift
-    @swiftTest
-    def test_swift_error_bogus_typename(self):
-        """Tests that swift error throws are correctly caught by the Swift Error breakpoint"""
-        self.build()
         self.do_tests_in_mode("NoSuchErrorHere", mode="untyped", should_stop=False)
 
     @swiftTest
@@ -93,15 +75,17 @@ class TestSwiftErrorBreakpoint(TestBase):
         # Launch the process, and do not stop at the entry point.
         process = target.LaunchSimple([mode], None, os.getcwd())
 
+        config = f"{mode} throw, typename {typename!r}, {make_breakpoint.__name__}"
         if should_stop:
             self.assertTrue(process, PROCESS_IS_VALID)
             breakpoint_threads = lldbutil.get_threads_stopped_at_breakpoint_id(
                 process, swift_error_bkpt_id)
             self.assertEqual(len(breakpoint_threads), 1,
-                "We didn't stop at the error breakpoint")
+                f"We didn't stop at the error breakpoint ({config})")
         else:
             exit_state = process.GetState()
             self.assertEqual(exit_state, lldb.eStateExited,
-                "We stopped at the error breakpoint when we shouldn't have.")
+                f"We stopped at the error breakpoint when we shouldn't have ({config})")
 
-        target.BreakpointDelete(swift_error_bkpt_id)
+        # Kill the process so stopped inferiors don't pile up across configs.
+        self.dbg.DeleteTarget(target)
