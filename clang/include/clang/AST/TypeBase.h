@@ -70,6 +70,7 @@ class TagDecl;
 class TemplateParameterList;
 class Type;
 class Attr;
+struct LateParsedTypeAttribute;
 
 enum {
   TypeAlignmentInBits = 4,
@@ -2857,6 +2858,9 @@ public:
   // User-defined HLSL records or arrays of such records in standard layout
   bool isHLSLStandardLayoutRecordOrArrayOf() const;
 
+#define SPIRV_TYPE(Name, Id, SingletonId) bool is##Id##Type() const;
+#include "clang/Basic/SPIRVTypes.def"
+
   /// Determines if this type, which must satisfy
   /// isObjCLifetimeType(), is implicitly __unsafe_unretained rather
   /// than implicitly __strong.
@@ -3316,6 +3320,9 @@ public:
 // HLSL intangible Types
 #define HLSL_INTANGIBLE_TYPE(Name, Id, SingletonId) Id,
 #include "clang/Basic/HLSLIntangibleTypes.def"
+// SPIRV types
+#define SPIRV_TYPE(Name, Id, SingletonId) Id,
+#include "clang/Basic/SPIRVTypes.def"
 // All other builtin types
 #define BUILTIN_TYPE(Id, SingletonId) Id,
 #define LAST_BUILTIN_TYPE(Id) LastKind = Id
@@ -3968,6 +3975,40 @@ public:
   }
 };
 /* TO_UPSTREAM(BoundsSafety) OFF */
+
+/// Represents a placeholder type for late-parsed type attributes.
+/// This type wraps another type and holds an opaque pointer to a
+/// LateParsedTypeAttribute that will be parsed later (e.g., in ActOnFields).
+/// Once parsed, this type is replaced with the appropriate attributed type
+/// (e.g., CountAttributedType for `__counted_by`).
+///
+/// Its canonical type is that of the wrapped type, so a consumer walking the
+/// AST during late parsing must treat this as "attribute unresolved", not "no
+/// attribute here".
+class LateParsedAttrType : public Type {
+  friend class ASTContext; // ASTContext creates these.
+
+  QualType WrappedTy;
+  LateParsedTypeAttribute *LateParsedTypeAttr;
+
+  LateParsedAttrType(QualType Wrapped, QualType Canon,
+                     LateParsedTypeAttribute *Attr)
+      : Type(LateParsedAttr, Canon, Wrapped->getDependence()),
+        WrappedTy(Wrapped), LateParsedTypeAttr(Attr) {}
+
+public:
+  QualType getWrappedType() const { return WrappedTy; }
+  LateParsedTypeAttribute *getLateParsedAttribute() const {
+    return LateParsedTypeAttr;
+  }
+
+  bool isSugared() const { return true; }
+  QualType desugar() const { return WrappedTy; }
+
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == LateParsedAttr;
+  }
+};
 
 /// Represents a type which was implicitly adjusted by the semantic
 /// engine for arbitrary reasons.  For example, array and function types can
@@ -9466,6 +9507,12 @@ inline bool Type::isOpenCLSpecificType() const {
     return isSpecificBuiltinType(BuiltinType::Id);                             \
   }
 #include "clang/Basic/HLSLIntangibleTypes.def"
+
+#define SPIRV_TYPE(Name, Id, SingletonId)                                      \
+  inline bool Type::is##Id##Type() const {                                     \
+    return isSpecificBuiltinType(BuiltinType::Id);                             \
+  }
+#include "clang/Basic/SPIRVTypes.def"
 
 inline bool Type::isHLSLBuiltinIntangibleType() const {
 #define HLSL_INTANGIBLE_TYPE(Name, Id, SingletonId) is##Id##Type() ||

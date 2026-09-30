@@ -7869,6 +7869,11 @@ void TypeLocReader::VisitValueTerminatedTypeLoc(ValueTerminatedTypeLoc TL) {
 }
 /* TO_UPSTREAM(BoundsSafety) OFF */
 
+void TypeLocReader::VisitLateParsedAttrTypeLoc(LateParsedAttrTypeLoc TL) {
+  llvm_unreachable(
+      "should be replaced with a concrete type before serialization");
+}
+
 void TypeLocReader::VisitBTFTagAttributedTypeLoc(BTFTagAttributedTypeLoc TL) {
   // Nothing to do.
 }
@@ -8315,6 +8320,11 @@ QualType ASTReader::GetType(TypeID ID) {
     T = Context.SingletonId;                                                   \
     break;
 #include "clang/Basic/HLSLIntangibleTypes.def"
+#define SPIRV_TYPE(Name, Id, SingletonId)                                      \
+  case PREDEF_TYPE_##Id##_ID:                                                  \
+    T = Context.SingletonId;                                                   \
+    break;
+#include "clang/Basic/SPIRVTypes.def"
     }
 
     assert(!T.isNull() && "Unknown predefined type");
