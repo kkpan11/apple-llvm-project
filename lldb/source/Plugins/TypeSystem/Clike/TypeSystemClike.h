@@ -86,7 +86,8 @@ public:
   bool GetPtrAuthAddressDiversity(lldb::opaque_compiler_type_t type) override;
   ConstString GetTypeName(lldb::opaque_compiler_type_t type,
                           bool BaseOnly) override;
-  ConstString GetDisplayTypeName(lldb::opaque_compiler_type_t type) override;
+  ConstString GetDisplayTypeName(lldb::opaque_compiler_type_t type,
+                                 const SymbolContext *sc = nullptr) override;
   uint32_t GetTypeInfo(lldb::opaque_compiler_type_t type,
                        CompilerType *pointee_or_element_compiler_type) override;
   lldb::LanguageType
@@ -121,7 +122,8 @@ public:
                  const ExecutionContext *exe_ctx) override;
   lldb::BasicType
   GetBasicTypeEnumeration(lldb::opaque_compiler_type_t type) override;
-  uint32_t GetNumFields(lldb::opaque_compiler_type_t type) override;
+  uint32_t GetNumFields(lldb::opaque_compiler_type_t type,
+                        ExecutionContext *exe_ctx = nullptr) override;
   CompilerType GetFieldAtIndex(lldb::opaque_compiler_type_t type, size_t idx,
                                std::string &name, uint64_t *bit_offset_ptr,
                                uint32_t *bitfield_bit_size_ptr,
@@ -149,24 +151,27 @@ public:
       ValueObject *valobj, uint64_t &language_flags) override;
   llvm::Expected<uint32_t>
   GetIndexOfChildWithName(lldb::opaque_compiler_type_t type,
-                          llvm::StringRef name,
+                          llvm::StringRef name, ExecutionContext *exe_ctx,
                           bool omit_empty_base_classes) override;
   size_t
   GetIndexOfChildMemberWithName(lldb::opaque_compiler_type_t type,
-                                llvm::StringRef name,
+                                llvm::StringRef name, ExecutionContext *exe_ctx,
                                 bool omit_empty_base_classes,
                                 std::vector<uint32_t> &child_indexes) override;
   bool DumpTypeValue(lldb::opaque_compiler_type_t type, Stream &s,
                      lldb::Format format, const DataExtractor &data,
                      lldb::offset_t data_offset, size_t data_byte_size,
                      uint32_t bitfield_bit_size, uint32_t bitfield_bit_offset,
-                     ExecutionContextScope *exe_scope) override;
+                     ExecutionContextScope *exe_scope,
+                     bool is_base_class) override;
   void DumpTypeDescription(
       lldb::opaque_compiler_type_t type,
-      lldb::DescriptionLevel level = lldb::eDescriptionLevelFull) override;
+      lldb::DescriptionLevel level = lldb::eDescriptionLevelFull,
+      ExecutionContextScope *exe_scope = nullptr) override;
   void DumpTypeDescription(
       lldb::opaque_compiler_type_t type, Stream &s,
-      lldb::DescriptionLevel level = lldb::eDescriptionLevelFull) override;
+      lldb::DescriptionLevel level = lldb::eDescriptionLevelFull,
+      ExecutionContextScope *exe_scope = nullptr) override;
   void Dump(llvm::raw_ostream &output, llvm::StringRef filter,
             bool show_color) override;
   bool IsRuntimeGeneratedType(lldb::opaque_compiler_type_t type) override;

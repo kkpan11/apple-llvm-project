@@ -215,7 +215,8 @@ ConstString TypeSystemClike::GetTypeName(lldb::opaque_compiler_type_t type,
 }
 
 ConstString
-TypeSystemClike::GetDisplayTypeName(lldb::opaque_compiler_type_t type) {
+TypeSystemClike::GetDisplayTypeName(lldb::opaque_compiler_type_t type,
+                                    const SymbolContext *sc) {
   return ConstString();
 }
 
@@ -318,7 +319,8 @@ TypeSystemClike::GetBasicTypeEnumeration(lldb::opaque_compiler_type_t type) {
   return lldb::eBasicTypeInvalid;
 }
 
-uint32_t TypeSystemClike::GetNumFields(lldb::opaque_compiler_type_t type) {
+uint32_t TypeSystemClike::GetNumFields(lldb::opaque_compiler_type_t type,
+                                       ExecutionContext *exe_ctx) {
   return 0;
 }
 
@@ -371,13 +373,15 @@ llvm::Expected<CompilerType> TypeSystemClike::GetChildCompilerTypeAtIndex(
 llvm::Expected<uint32_t>
 TypeSystemClike::GetIndexOfChildWithName(lldb::opaque_compiler_type_t type,
                                          llvm::StringRef name,
+                                         ExecutionContext *exe_ctx,
                                          bool omit_empty_base_classes) {
   return 0;
 }
 
 size_t TypeSystemClike::GetIndexOfChildMemberWithName(
     lldb::opaque_compiler_type_t type, llvm::StringRef name,
-    bool omit_empty_base_classes, std::vector<uint32_t> &child_indexes) {
+    ExecutionContext *exe_ctx, bool omit_empty_base_classes,
+    std::vector<uint32_t> &child_indexes) {
   return 0;
 }
 
@@ -385,16 +389,19 @@ bool TypeSystemClike::DumpTypeValue(
     lldb::opaque_compiler_type_t type, Stream &s, lldb::Format format,
     const DataExtractor &data, lldb::offset_t data_offset,
     size_t data_byte_size, uint32_t bitfield_bit_size,
-    uint32_t bitfield_bit_offset, ExecutionContextScope *exe_scope) {
+    uint32_t bitfield_bit_offset, ExecutionContextScope *exe_scope,
+    bool is_base_class) {
   return false;
 }
 
 void TypeSystemClike::DumpTypeDescription(lldb::opaque_compiler_type_t type,
-                                          lldb::DescriptionLevel level) {}
+                                          lldb::DescriptionLevel level,
+                                          ExecutionContextScope *exe_scope) {}
 
 void TypeSystemClike::DumpTypeDescription(lldb::opaque_compiler_type_t type,
                                           Stream &s,
-                                          lldb::DescriptionLevel level) {}
+                                          lldb::DescriptionLevel level,
+                                          ExecutionContextScope *exe_scope) {}
 
 void TypeSystemClike::Dump(llvm::raw_ostream &output, llvm::StringRef filter,
                            bool show_color) {}
