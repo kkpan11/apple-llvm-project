@@ -2845,10 +2845,8 @@ public:
     return G->getKind() == Kind::SpanTwoParamConstructor;
   }
 
-  static bool matches(const Stmt *S, ASTContext &Ctx, MatchResult &Result) {
-    const auto *CE = dyn_cast<CXXConstructExpr>(S);
-    if (!CE)
-      return false;
+  static bool matches(const CXXConstructExpr *CE, ASTContext &Ctx,
+                      MatchResult &Result) {
     const auto *CDecl = CE->getConstructor();
     const auto *CRecordDecl = CDecl->getParent();
     auto HasTwoParamSpanCtorDecl =
@@ -2863,9 +2861,12 @@ public:
   static bool matches(const Stmt *S, ASTContext &Ctx,
                       const UnsafeBufferUsageHandler *Handler,
                       MatchResult &Result) {
+    const auto *CE = dyn_cast<CXXConstructExpr>(S);
+    if (!CE)
+      return false;
     if (ignoreUnsafeBufferInContainer(*S, Handler))
       return false;
-    return matches(S, Ctx, Result);
+    return matches(CE, Ctx, Result);
   }
 
   void handleUnsafeOperation(UnsafeBufferUsageHandler &Handler,
@@ -2903,10 +2904,8 @@ public:
     return G->getKind() == Kind::StringViewTwoParamConstructor;
   }
 
-  static bool matches(const Stmt *S, ASTContext &Ctx, MatchResult &Result) {
-    const auto *CE = dyn_cast<CXXConstructExpr>(S);
-    if (!CE)
-      return false;
+  static bool matches(const CXXConstructExpr *CE, ASTContext &Ctx,
+                      MatchResult &Result) {
     const auto *CDecl = CE->getConstructor();
     const auto *CRecordDecl = CDecl->getParent();
 
@@ -2926,9 +2925,12 @@ public:
   static bool matches(const Stmt *S, ASTContext &Ctx,
                       const UnsafeBufferUsageHandler *Handler,
                       MatchResult &Result) {
+    const auto *CE = dyn_cast<CXXConstructExpr>(S);
+    if (!CE)
+      return false;
     if (ignoreUnsafeBufferInContainer(*S, Handler))
       return false;
-    return matches(S, Ctx, Result);
+    return matches(CE, Ctx, Result);
   }
 
   void handleUnsafeOperation(UnsafeBufferUsageHandler &Handler,
@@ -3336,7 +3338,7 @@ public:
       WarnedFunKind = VA_LIST;
   }
 
-  static bool matches(const Stmt *Stmt, ASTContext &Ctx,
+  static bool matches(const Stmt *S, ASTContext &Ctx,
                       const UnsafeBufferUsageHandler *Handler,
                       MatchResult &Result) {
     // When this warning interops with bounds attributes, we suppress the
@@ -3346,14 +3348,15 @@ public:
     //    the '__null_terminated' attribute;
     // 2. `v*printf/sprintf` functions because these functions cannot be
     //    completely safe even with bounds attributes
-    if (!Ctx.getLangOpts().CPlusPlus /* Warn about libc ONLY in C++ */ ||
-        Handler->ignoreUnsafeBufferInLibcCall(Stmt->getBeginLoc()))
+    if (!Ctx.getLangOpts().CPlusPlus /* Warn about libc ONLY in C++ */)
       return false;
-    const auto *CE = dyn_cast<CallExpr>(Stmt);
+    const auto *CE = dyn_cast<CallExpr>(S);
     if (!CE)
       return false;
     const auto *FD = CE->getDirectCallee();
     if (!FD)
+      return false;
+    if (Handler->ignoreUnsafeBufferInLibcCall(S->getBeginLoc()))
       return false;
 
     const bool IsGlobalAndNotInAnyNamespace =
@@ -3449,14 +3452,16 @@ public:
   static bool matches(const Stmt *S, ASTContext &Ctx,
                       const UnsafeBufferUsageHandler *Handler,
                       MatchResult &Result) {
-    if (!Ctx.getLangOpts().CPlusPlus /* Warn about libc ONLY in C++ */ ||
-        Handler->ignoreUnsafeBufferInLibcCall(S->getBeginLoc()))
+    if (!Ctx.getLangOpts().CPlusPlus /* Warn about libc ONLY in C++ */)
       return false;
+
     auto *CE = dyn_cast<CallExpr>(S);
     if (!CE || !CE->getDirectCallee())
       return false;
     const FunctionDecl *FD = CE->getDirectCallee();
     if (!FD)
+      return false;
+    if (Handler->ignoreUnsafeBufferInLibcCall(S->getBeginLoc()))
       return false;
 
     const FormatAttr *Attr = nullptr;
