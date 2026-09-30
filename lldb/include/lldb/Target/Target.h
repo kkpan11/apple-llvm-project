@@ -293,6 +293,7 @@ public:
   void SetStandardErrorPath(const char *path) = delete;
 
   bool GetBreakpointsConsultPlatformAvoidList();
+  lldb::BreakpointConditionMode GetBreakpointsConditionMode() const;
 
   SourceLanguage GetLanguage() const;
 
