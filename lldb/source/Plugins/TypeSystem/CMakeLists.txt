@@ -9,3 +9,4 @@ if (LLDB_ENABLE_SWIFT_SUPPORT)
 endif()
 
 add_subdirectory(Fortran)
+add_subdirectory(Clike)
