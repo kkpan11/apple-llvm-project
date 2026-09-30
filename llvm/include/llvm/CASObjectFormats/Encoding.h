@@ -21,7 +21,7 @@ namespace encoding {
 template <class T, std::enable_if_t<std::is_integral<T>::value &&
                                         std::numeric_limits<T>::is_signed,
                                     bool> = true>
-static std::make_unsigned_t<T> rotateSign(T SV) {
+std::make_unsigned_t<T> rotateSign(T SV) {
   using UT = std::make_unsigned_t<T>;
   if (SV == std::numeric_limits<T>::min())
     return std::numeric_limits<UT>::max();
@@ -32,7 +32,7 @@ static std::make_unsigned_t<T> rotateSign(T SV) {
 template <class T, std::enable_if_t<std::is_integral<T>::value &&
                                         !std::numeric_limits<T>::is_signed,
                                     bool> = true>
-static std::make_signed_t<T> unrotateSign(T UV) {
+std::make_signed_t<T> unrotateSign(T UV) {
   using ST = std::make_signed_t<T>;
   if (UV == std::numeric_limits<T>::max())
     return std::numeric_limits<ST>::min();
@@ -43,7 +43,7 @@ static std::make_signed_t<T> unrotateSign(T UV) {
 template <class T, std::enable_if_t<std::is_integral<T>::value &&
                                         !std::numeric_limits<T>::is_signed,
                                     bool> = true>
-static void writeVBR8(T UV, SmallVectorImpl<char> &Data) {
+void writeVBR8(T UV, SmallVectorImpl<char> &Data) {
   const unsigned TotalBits = sizeof(T) * 8;
   unsigned WrittenBits = 0;
   do {
@@ -66,14 +66,14 @@ static void writeVBR8(T UV, SmallVectorImpl<char> &Data) {
 template <class T, std::enable_if_t<std::is_integral<T>::value &&
                                         std::numeric_limits<T>::is_signed,
                                     bool> = true>
-static void writeVBR8(T SV, SmallVectorImpl<char> &Data) {
+void writeVBR8(T SV, SmallVectorImpl<char> &Data) {
   writeVBR8(rotateSign(SV), Data);
 }
 
 template <class T, std::enable_if_t<std::is_integral<T>::value &&
                                         !std::numeric_limits<T>::is_signed,
                                     bool> = true>
-static Error consumeVBR8(StringRef &Data, T &UV) {
+Error consumeVBR8(StringRef &Data, T &UV) {
   const unsigned TotalBits = sizeof(T) * 8;
   unsigned ReadBits = 0;
   T ReadUV = 0U;
@@ -102,7 +102,7 @@ static Error consumeVBR8(StringRef &Data, T &UV) {
 template <class T, std::enable_if_t<std::is_integral<T>::value &&
                                         std::numeric_limits<T>::is_signed,
                                     bool> = true>
-static Error consumeVBR8(StringRef &Data, T &SV) {
+Error consumeVBR8(StringRef &Data, T &SV) {
   std::make_unsigned_t<T> UV;
   if (Error E = consumeVBR8(Data, UV))
     return E;
@@ -111,7 +111,7 @@ static Error consumeVBR8(StringRef &Data, T &SV) {
 }
 
 template <class T, std::enable_if_t<std::is_integral<T>::value, bool> = true>
-static Expected<StringRef> readVBR8(StringRef Data, T &V) {
+Expected<StringRef> readVBR8(StringRef Data, T &V) {
   if (Error E = consumeVBR8(Data, V))
     return std::move(E);
   return Data;
