@@ -16,14 +16,6 @@ using namespace llvm;
 using namespace llvm::cas;
 using namespace llvm::vfs;
 
-template <class T>
-static std::unique_ptr<T>
-errorOrToPointer(ErrorOr<std::unique_ptr<T>> ErrorOrPointer) {
-  if (ErrorOrPointer)
-    return std::move(*ErrorOrPointer);
-  return nullptr;
-}
-
 TEST(CASOutputBackendTest, createFiles) {
   std::unique_ptr<ObjectStore> CAS = createInMemoryCAS();
   ASSERT_TRUE(CAS);
