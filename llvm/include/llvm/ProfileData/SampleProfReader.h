@@ -384,7 +384,9 @@ public:
     iterator(const FunctionId *P)
         : Ptr(reinterpret_cast<const uint8_t *>(P)), IsLazy(false) {}
 
+#ifndef __swift__
     bool operator==(const iterator &RHS) const { return Ptr == RHS.Ptr; }
+#endif
 
     iterator &operator++() {
       Ptr += IsLazy ? sizeof(uint64_t) : sizeof(FunctionId);
@@ -1166,6 +1168,7 @@ protected:
   static const uint32_t GCOVTagAFDOFunction = 0xac000000;
 };
 
+#ifndef __swift__
 /// A helper class that wraps a local set of string names from NameTable.
 class SampleProfileNameSet {
   const SampleProfileReader &Reader;
@@ -1182,6 +1185,7 @@ public:
     return NamesInProfile.contains(CanonName);
   }
 };
+#endif
 
 } // end namespace sampleprof
 
