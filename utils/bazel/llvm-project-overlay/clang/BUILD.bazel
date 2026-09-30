@@ -2879,7 +2879,6 @@ cc_binary(
         "//llvm:Object",
         "//llvm:Option",
         "//llvm:Passes",
-        "//llvm:Plugins",
         "//llvm:Remarks",
         "//llvm:Support",
         "//llvm:Target",
