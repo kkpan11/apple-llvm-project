@@ -38,7 +38,7 @@ void Loan::dump(llvm::raw_ostream &OS) const {
 const PlaceholderBase *
 LoanManager::getOrCreatePlaceholderBase(const ParmVarDecl *PVD) {
   llvm::FoldingSetNodeID ID;
-  ID.AddPointer(PVD);
+  PlaceholderBase::Profile(ID, PVD);
   void *InsertPos = nullptr;
   if (PlaceholderBase *Existing =
           PlaceholderBases.FindNodeOrInsertPos(ID, InsertPos))
@@ -53,7 +53,7 @@ LoanManager::getOrCreatePlaceholderBase(const ParmVarDecl *PVD) {
 const PlaceholderBase *
 LoanManager::getOrCreatePlaceholderBase(const CXXMethodDecl *MD) {
   llvm::FoldingSetNodeID ID;
-  ID.AddPointer(MD);
+  PlaceholderBase::Profile(ID, MD);
   void *InsertPos = nullptr;
   if (PlaceholderBase *Existing =
           PlaceholderBases.FindNodeOrInsertPos(ID, InsertPos))
