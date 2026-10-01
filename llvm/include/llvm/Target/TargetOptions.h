@@ -114,14 +114,13 @@ public:
         EmulatedTLS(false), EnableTLSDESC(false), EnableIPRA(false),
         EmitStackSizeSection(false), EnableMachineOutliner(false),
         EnableMachineFunctionSplitter(false),
-        EnableStaticDataPartitioning(false), SupportsDefaultOutlining(false),
-        EnableDefaultMachineVerifier(true), EmitAddrsig(false),
-        BBAddrMap(false), EmitCallGraphSection(false), EmitCallSiteInfo(false),
-        SupportsDebugEntryValues(false), EnableDebugEntryValues(false),
-        ValueTrackingVariableLocations(false), ForceDwarfFrameSection(false),
-        XRayFunctionIndex(true), DebugStrictDwarf(false), Hotpatch(false),
-        JMCInstrument(false), EnableCFIFixup(false), MisExpect(false),
-        XCOFFReadOnlyPointers(false),
+        EnableStaticDataPartitioning(false), EnableDefaultMachineVerifier(true),
+        EmitAddrsig(false), BBAddrMap(false), EmitCallGraphSection(false),
+        EmitCallSiteInfo(false), SupportsDebugEntryValues(false),
+        EnableDebugEntryValues(false), ValueTrackingVariableLocations(false),
+        ForceDwarfFrameSection(false), XRayFunctionIndex(true),
+        DebugStrictDwarf(false), Hotpatch(false), JMCInstrument(false),
+        EnableCFIFixup(false), MisExpect(false), XCOFFReadOnlyPointers(false),
         SupportIndirectSymViaGOTPCRel_AArch64_ELF(true),
         VerifyArgABICompliance(true) {}
 
@@ -221,9 +220,6 @@ public:
 
   /// Enables the StaticDataSplitter pass.
   unsigned EnableStaticDataPartitioning : 1;
-
-  /// Set if the target supports default outlining behaviour.
-  unsigned SupportsDefaultOutlining : 1;
 
   /// Enable Machine verifier at the end of default codegen pipelines. (Only
   /// used with NPM)
