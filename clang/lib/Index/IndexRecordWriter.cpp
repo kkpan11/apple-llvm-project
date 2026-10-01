@@ -100,13 +100,6 @@ static void writeVersionInfo(BitstreamWriter &Stream) {
   Stream.ExitBlock();
 }
 
-template <typename T, typename Allocator>
-static StringRef data(const std::vector<T, Allocator> &v) {
-  if (v.empty())
-    return StringRef();
-  return StringRef(reinterpret_cast<const char *>(&v[0]), sizeof(T) * v.size());
-}
-
 template <typename T> static StringRef data(const SmallVectorImpl<T> &v) {
   return StringRef(reinterpret_cast<const char *>(v.data()),
                    sizeof(T) * v.size());

@@ -192,28 +192,6 @@ static void ensureSufficientStack() {}
 #endif
 
 namespace {
-class OneOffCompilationDatabase : public tooling::CompilationDatabase {
-public:
-  OneOffCompilationDatabase() = delete;
-  template <class... ArgsT>
-  OneOffCompilationDatabase(ArgsT &&... Args)
-      : Command(std::forward<ArgsT>(Args)...) {}
-
-  std::vector<tooling::CompileCommand>
-  getCompileCommands(StringRef FilePath) const override {
-    return {Command};
-  }
-
-  std::vector<tooling::CompileCommand> getAllCompileCommands() const override {
-    return {Command};
-  }
-
-private:
-  tooling::CompileCommand Command;
-};
-}
-
-namespace {
 class SharedStream {
 public:
   SharedStream(raw_ostream &OS) : OS(OS) {}
