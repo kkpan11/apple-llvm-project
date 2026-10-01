@@ -2808,6 +2808,15 @@ bool SwiftLanguageRuntime::GetDynamicTypeAndAddress_Class(
     return false;
   address.SetRawAddress(instance_ptr);
 
+  // A class reference may carry data such as enum discriminators in
+  // its spare bits. Strip those bits before reading any metadata from
+  // the instance. However, Objective-C tagged pointers encode their
+  // class in those same bits and the metadata reader decodes them
+  // itself, so leave them intact.
+  AppleObjCRuntime *objc_runtime = GetObjCRuntime();
+  if (!objc_runtime || !objc_runtime->IsTaggedPointer(instance_ptr))
+    instance_ptr = MaskMaybeBridgedPointer(instance_ptr);
+
   // We are going to use process information to resolve the type, so
   // the result needs to be in the target's scratch context, not a
   // long-lived per-module typesystem.
