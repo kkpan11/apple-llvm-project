@@ -610,10 +610,22 @@ Warning to detect dangling field references.
 This may contain false-positives, e.g. when the borrowed storage is potentially moved and is not destroyed at function exit.
   }];
 }
+def LifetimeSafetyDanglingFieldLambdaCapture : DiagGroup<"lifetime-safety-dangling-field-lambda-capture"> {
+  code Documentation = [{
+Warning to detect dangling field references.
+This may contain false-positives, e.g. when the field is captured by a lambda that resets the field before function exit.
+  }];
+}
 
 def LifetimeSafetyDanglingGlobal : DiagGroup<"lifetime-safety-dangling-global"> {
   code Documentation = [{
 Warning to detect dangling global references.
+  }];
+}
+
+def LifetimeSafetyDanglingGlobalInMain : DiagGroup<"lifetime-safety-dangling-global-in-main"> {
+  code Documentation = [{
+Warning to detect dangling global references in main function.
   }];
 }
 
@@ -669,7 +681,9 @@ def LifetimeSafetyStrict : DiagGroup<"lifetime-safety-strict",
                                     LifetimeSafetyUseAfterScopeMoved,
                                     LifetimeSafetyReturnStackAddrMoved,
                                     LifetimeSafetyDanglingFieldMoved,
+                                    LifetimeSafetyDanglingFieldLambdaCapture,
                                     LifetimeSafetyDanglingGlobalMoved,
+                                    LifetimeSafetyDanglingGlobalInMain,
                                     LifetimeSafetyInvalidation]>;
 
 def LifetimeSafety : DiagGroup<"lifetime-safety",
