@@ -5162,7 +5162,7 @@ void Parser::CompleteLateParsedTypeAttributes(
 
     AttributeFactory AF;
     ParsedAttributes Attrs(AF);
-    ParseLexedTypeAttribute(*LTA, Attrs);
+    ParseLexedTypeAttribute(*LTA, /*EnterScope*/false, Attrs);
 
     // An unparseable argument leaves no attribute behind; already diagnosed.
     if (Attrs.empty())
