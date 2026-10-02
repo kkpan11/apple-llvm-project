@@ -2197,6 +2197,9 @@ cc_library(
     deps = [
         ":ast",
         ":basic",
+        "//llvm:CodeGen",
+        "//llvm:Core",
+        "//llvm:Demangle",
         "//llvm:Support",
     ],
 )
@@ -3520,6 +3523,7 @@ cc_library(
         ":cir_lowering_common",
         ":cir_lowering_direct_to_llvm",
         ":codegen",
+        ":codegen_utils",
         ":frontend",
         "//llvm:Core",
         "//llvm:FrontendOffloading",
