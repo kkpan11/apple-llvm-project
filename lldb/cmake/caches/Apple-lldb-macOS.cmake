@@ -27,4 +27,5 @@ set(LLVM_DISTRIBUTION_COMPONENTS
   darwin-debug
   debugserver
   repl_swift
+  lldbPluginScriptInterpreterPython
   CACHE STRING "")
