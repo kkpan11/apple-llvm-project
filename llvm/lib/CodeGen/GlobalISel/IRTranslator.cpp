@@ -98,13 +98,13 @@
 #include <utility>
 #include <vector>
 
-#define DEBUG_TYPE "irtranslator"
+#define DEBUG_TYPE "ir-translator"
 
 using namespace llvm;
 
 static cl::opt<bool>
-    EnableCSEInIRTranslator("enable-cse-in-irtranslator",
-                            cl::desc("Should enable CSE in irtranslator"),
+    EnableCSEInIRTranslator("enable-cse-in-ir-translator",
+                            cl::desc("Should enable CSE in ir-translator"),
                             cl::init(false));
 
 namespace llvm {
@@ -979,7 +979,7 @@ ArrayRef<Register> IRTranslatorImpl::getOrCreateVRegs(const Value &Val) {
     if (isa<Constant>(Val)) {
       bool Success = translate(cast<Constant>(Val), VRegs->front());
       if (!Success) {
-        OptimizationRemarkMissed R("gisel-irtranslator", "GISelFailure",
+        OptimizationRemarkMissed R("gisel-ir-translator", "GISelFailure",
                                    MF->getFunction().getSubprogram(),
                                    &MF->getFunction().getEntryBlock());
         R << "unable to translate constant: " << ore::NV("Type", Val.getType());
@@ -1047,7 +1047,7 @@ Align IRTranslatorImpl::getMemOpAlign(const Instruction &I) {
   if (const AtomicRMWInst *AI = dyn_cast<AtomicRMWInst>(&I))
     return AI->getAlign();
 
-  OptimizationRemarkMissed R("gisel-irtranslator", "", &I);
+  OptimizationRemarkMissed R("gisel-ir-translator", "", &I);
   R << "unable to translate memop: " << ore::NV("Opcode", &I);
   reportTranslationError(*MF, *ORE, R);
   return Align(1);
@@ -3032,7 +3032,7 @@ bool IRTranslatorImpl::translateKnownIntrinsic(const CallInst &CI,
   if (auto *MI = dyn_cast<AnyMemIntrinsic>(&CI)) {
     if (ORE->enabled()) {
       if (MemoryOpRemark::canHandle(MI, *LibInfo)) {
-        MemoryOpRemark R(*ORE, "gisel-irtranslator-memsize", *DL, *LibInfo);
+        MemoryOpRemark R(*ORE, "gisel-ir-translator-memsize", *DL, *LibInfo);
         R.visit(MI);
       }
     }
@@ -3592,7 +3592,7 @@ bool IRTranslatorImpl::translateCallBase(const CallBase &CB,
   if (auto *CI = dyn_cast<CallInst>(&CB)) {
     if (ORE->enabled()) {
       if (MemoryOpRemark::canHandle(CI, *LibInfo)) {
-        MemoryOpRemark R(*ORE, "gisel-irtranslator-memsize", *DL, *LibInfo);
+        MemoryOpRemark R(*ORE, "gisel-ir-translator-memsize", *DL, *LibInfo);
         R.visit(CI);
       }
     }
@@ -5159,7 +5159,7 @@ bool IRTranslatorImpl::runOnMachineFunction(
   SPInfo = StackProtectorInfo;
 
   if (CLI->fallBackToDAGISel(*MF)) {
-    OptimizationRemarkMissed R("gisel-irtranslator", "GISelFailure",
+    OptimizationRemarkMissed R("gisel-ir-translator", "GISelFailure",
                                F.getSubprogram(), &F.getEntryBlock());
     R << "unable to lower function: "
       << ore::NV("Prototype", F.getFunctionType());
@@ -5223,7 +5223,7 @@ bool IRTranslatorImpl::runOnMachineFunction(
   // enableBigEndian()
   if (!DL->isLittleEndian() && !CLI->enableBigEndian()) {
     // Currently we don't properly handle big endian code.
-    OptimizationRemarkMissed R("gisel-irtranslator", "GISelFailure",
+    OptimizationRemarkMissed R("gisel-ir-translator", "GISelFailure",
                                F.getSubprogram(), &F.getEntryBlock());
     R << "unable to translate in big endian mode";
     reportTranslationError(*MF, *ORE, R);
@@ -5293,7 +5293,7 @@ bool IRTranslatorImpl::runOnMachineFunction(
   }
 
   if (!CLI->lowerFormalArguments(*EntryBuilder, F, VRegArgs, FuncInfo)) {
-    OptimizationRemarkMissed R("gisel-irtranslator", "GISelFailure",
+    OptimizationRemarkMissed R("gisel-ir-translator", "GISelFailure",
                                F.getSubprogram(), &F.getEntryBlock());
     R << "unable to lower arguments: "
       << ore::NV("Prototype", F.getFunctionType());
@@ -5336,11 +5336,11 @@ bool IRTranslatorImpl::runOnMachineFunction(
         if (translate(Inst))
           continue;
 
-        OptimizationRemarkMissed R("gisel-irtranslator", "GISelFailure",
+        OptimizationRemarkMissed R("gisel-ir-translator", "GISelFailure",
                                    Inst.getDebugLoc(), BB);
         R << "unable to translate instruction: " << ore::NV("Opcode", &Inst);
 
-        if (ORE->allowExtraAnalysis("gisel-irtranslator")) {
+        if (ORE->allowExtraAnalysis("gisel-ir-translator")) {
           std::string InstStrStorage;
           raw_string_ostream InstStr(InstStrStorage);
           InstStr << Inst;
@@ -5353,7 +5353,7 @@ bool IRTranslatorImpl::runOnMachineFunction(
       }
 
       if (!finalizeBasicBlock(*BB, MBB)) {
-        OptimizationRemarkMissed R("gisel-irtranslator", "GISelFailure",
+        OptimizationRemarkMissed R("gisel-ir-translator", "GISelFailure",
                                    BB->getTerminator()->getDebugLoc(), BB);
         R << "unable to translate basic block";
         reportTranslationError(*MF, *ORE, R);
