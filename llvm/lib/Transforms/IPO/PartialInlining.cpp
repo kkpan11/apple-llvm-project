@@ -902,8 +902,8 @@ void PartialInlinerImpl::computeCallsiteToProfCountMap(
   auto ComputeCurrBFI = [&,this](Function *Caller) {
       // For the old pass manager:
       if (!GetBFI) {
-        DominatorTree DT(*Caller);
-        LoopInfo LI(DT);
+        LoopInfo LI;
+        LI.analyze(Caller);
         BranchProbabilityInfo BPI(*Caller, LI);
         TempBFI.reset(new BlockFrequencyInfo(*Caller, BPI, LI));
         CurrentCallerBFI = TempBFI.get();

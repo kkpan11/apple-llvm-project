@@ -821,7 +821,8 @@ VPValue *VPSCEVExpander::tryToExpand(const SCEV *S) {
   }
   case scTruncate:
   case scZeroExtend:
-  case scSignExtend: {
+  case scSignExtend:
+  case scPtrToAddr: {
     auto *Cast = cast<SCEVCastExpr>(S);
     VPValue *Op = tryToExpand(Cast->getOperand());
     if (!Op)
@@ -837,9 +838,28 @@ VPValue *VPSCEVExpander::tryToExpand(const SCEV *S) {
     case scSignExtend:
       Opcode = Instruction::SExt;
       break;
+    case scPtrToAddr:
+      Opcode = Instruction::PtrToAddr;
+      break;
     default:
       llvm_unreachable("Unhandled cast SCEV");
     }
+
+    // When expanding ptrtoaddr, first check if there's an existing ptrtoint we
+    // can reuse.
+    if (Opcode == Instruction::PtrToAddr) {
+      VPlan &Plan = Builder.getPlan();
+      BasicBlock *PH = cast<VPIRBasicBlock>(Plan.getEntry())->getIRBasicBlock();
+      if (auto *IRV = dyn_cast<VPIRValue>(Op)) {
+        if (CastInst *CI = SCEVExpander::findReusableCastForPtrToAddr(
+                IRV->getValue(), S->getType(), PH->getDataLayout(),
+                [&](const CastInst *CI) {
+                  return SE.DT.dominates(CI->getParent(), PH);
+                }))
+          return Plan.getOrAddLiveIn(CI);
+      }
+    }
+
     return Builder.createScalarCast(Opcode, Op, S->getType(), DL);
   }
   case scUMaxExpr:

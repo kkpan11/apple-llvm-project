@@ -732,9 +732,9 @@ ASTContext::getCanonicalTemplateTemplateParmDecl(
   // Check if we already have a canonical template template parameter.
   llvm::FoldingSetNodeID ID;
   CanonicalTemplateTemplateParm::Profile(ID, *this, TTP);
-  void *InsertPos = nullptr;
-  CanonicalTemplateTemplateParm *Canonical
-    = CanonTemplateTemplateParms.FindNodeOrInsertPos(ID, InsertPos);
+  llvm::FoldingSetInsertToken Token;
+  CanonicalTemplateTemplateParm *Canonical =
+      CanonTemplateTemplateParms.lookup(ID, Token);
   if (Canonical)
     return Canonical->getParam();
 
@@ -802,13 +802,13 @@ ASTContext::getCanonicalTemplateTemplateParmDecl(
                                     /*RequiresClause=*/nullptr));
 
   // Get the new insert position for the node we care about.
-  Canonical = CanonTemplateTemplateParms.FindNodeOrInsertPos(ID, InsertPos);
+  Canonical = CanonTemplateTemplateParms.lookup(ID, Token);
   assert(!Canonical && "Shouldn't be in the map!");
   (void)Canonical;
 
   // Create the canonical template template parameter entry.
   Canonical = new (*this) CanonicalTemplateTemplateParm(CanonTTP);
-  CanonTemplateTemplateParms.InsertNode(Canonical, InsertPos);
+  CanonTemplateTemplateParms.insert(Canonical, Token);
   return CanonTTP;
 }
 
@@ -817,9 +817,9 @@ ASTContext::findCanonicalTemplateTemplateParmDeclInternal(
     TemplateTemplateParmDecl *TTP) const {
   llvm::FoldingSetNodeID ID;
   CanonicalTemplateTemplateParm::Profile(ID, *this, TTP);
-  void *InsertPos = nullptr;
+  llvm::FoldingSetInsertToken Token;
   CanonicalTemplateTemplateParm *Canonical =
-      CanonTemplateTemplateParms.FindNodeOrInsertPos(ID, InsertPos);
+      CanonTemplateTemplateParms.lookup(ID, Token);
   return Canonical ? Canonical->getParam() : nullptr;
 }
 
@@ -828,12 +828,11 @@ ASTContext::insertCanonicalTemplateTemplateParmDeclInternal(
     TemplateTemplateParmDecl *CanonTTP) const {
   llvm::FoldingSetNodeID ID;
   CanonicalTemplateTemplateParm::Profile(ID, *this, CanonTTP);
-  void *InsertPos = nullptr;
-  if (auto *Existing =
-          CanonTemplateTemplateParms.FindNodeOrInsertPos(ID, InsertPos))
+  llvm::FoldingSetInsertToken Token;
+  if (auto *Existing = CanonTemplateTemplateParms.lookup(ID, Token))
     return Existing->getParam();
-  CanonTemplateTemplateParms.InsertNode(
-      new (*this) CanonicalTemplateTemplateParm(CanonTTP), InsertPos);
+  CanonTemplateTemplateParms.insert(
+      new (*this) CanonicalTemplateTemplateParm(CanonTTP), Token);
   return CanonTTP;
 }
 
@@ -3429,8 +3428,8 @@ ASTContext::getExtQualType(const Type *baseType, Qualifiers quals) const {
   // Check if we've already instantiated this type.
   llvm::FoldingSetNodeID ID;
   ExtQuals::Profile(ID, baseType, quals);
-  void *insertPos = nullptr;
-  if (ExtQuals *eq = ExtQualNodes.FindNodeOrInsertPos(ID, insertPos)) {
+  llvm::FoldingSetInsertToken Token;
+  if (ExtQuals *eq = ExtQualNodes.lookup(ID, Token)) {
     assert(eq->getQualifiers() == quals);
     return QualType(eq, fastQuals);
   }
@@ -3443,11 +3442,11 @@ ASTContext::getExtQualType(const Type *baseType, Qualifiers quals) const {
     canon = getExtQualType(canonSplit.Ty, canonSplit.Quals);
 
     // Re-find the insert position.
-    (void) ExtQualNodes.FindNodeOrInsertPos(ID, insertPos);
+    (void)ExtQualNodes.lookup(ID, Token);
   }
 
   auto *eq = new (*this, alignof(ExtQuals)) ExtQuals(baseType, canon, quals);
-  ExtQualNodes.InsertNode(eq, insertPos);
+  ExtQualNodes.insert(eq, Token);
   return QualType(eq, fastQuals);
 }
 
@@ -3889,9 +3888,9 @@ QualType ASTContext::getDynamicRangePointerType(
   DynamicRangePointerType::Profile(ID, PointerTy, StartPtr, EndPtr,
                                    StartPtrDecls.size(), EndPtrDecls.size());
 
-  void *InsertPos = nullptr;
+  llvm::FoldingSetInsertToken InsertToken;
   DynamicRangePointerType *DRPTy =
-      DynamicRangePointerTypes.FindNodeOrInsertPos(ID, InsertPos);
+      DynamicRangePointerTypes.lookup(ID, InsertToken);
   if (DRPTy)
     return QualType(DRPTy, 0);
 
@@ -3903,7 +3902,7 @@ QualType ASTContext::getDynamicRangePointerType(
   new (DRPTy) DynamicRangePointerType(PointerTy, CanonPTy, StartPtr, EndPtr,
                                       StartPtrDecls, EndPtrDecls);
   Types.push_back(DRPTy);
-  DynamicRangePointerTypes.InsertNode(DRPTy, InsertPos);
+  DynamicRangePointerTypes.insert(DRPTy, InsertToken);
 
   return QualType(DRPTy, 0);
 }
@@ -3920,9 +3919,9 @@ QualType ASTContext::getValueTerminatedType(QualType T,
   ValueTerminatedType::Profile(ID, *this, QualType(Split.Ty, 0),
                                TerminatorExpr);
 
-  void *InsertPos = nullptr;
+  llvm::FoldingSetInsertToken InsertToken;
   ValueTerminatedType *VTT =
-      ValueTerminatedTypes.FindNodeOrInsertPos(ID, InsertPos);
+      ValueTerminatedTypes.lookup(ID, InsertToken);
   if (VTT)
     return getQualifiedType(VTT, Split.Quals);
 
@@ -3930,7 +3929,7 @@ QualType ASTContext::getValueTerminatedType(QualType T,
   VTT = new (*this, TypeAlignment)
       ValueTerminatedType(QualType(Split.Ty, 0), CanonTy, TerminatorExpr);
   Types.push_back(VTT);
-  ValueTerminatedTypes.InsertNode(VTT, InsertPos);
+  ValueTerminatedTypes.insert(VTT, InsertToken);
 
   return getQualifiedType(VTT, Split.Quals);
 }
@@ -4373,9 +4372,8 @@ QualType ASTContext::getCountAttributedType(
   llvm::FoldingSetNodeID ID;
   CountAttributedType::Profile(ID, WrappedTy, CountExpr, CountInBytes, OrNull);
 
-  void *InsertPos = nullptr;
-  CountAttributedType *CATy =
-      CountAttributedTypes.FindNodeOrInsertPos(ID, InsertPos);
+  llvm::FoldingSetInsertToken Token;
+  CountAttributedType *CATy = CountAttributedTypes.lookup(ID, Token);
   if (CATy)
     return QualType(CATy, 0);
 
@@ -4386,7 +4384,7 @@ QualType ASTContext::getCountAttributedType(
   new (CATy) CountAttributedType(WrappedTy, CanonTy, CountExpr, CountInBytes,
                                  OrNull, DependentDecls);
   Types.push_back(CATy);
-  CountAttributedTypes.InsertNode(CATy, InsertPos);
+  CountAttributedTypes.insert(CATy, Token);
 
   return QualType(CATy, 0);
 }
@@ -4586,8 +4584,8 @@ QualType ASTContext::getComplexType(QualType T) const {
   llvm::FoldingSetNodeID ID;
   ComplexType::Profile(ID, T);
 
-  void *InsertPos = nullptr;
-  if (ComplexType *CT = ComplexTypes.FindNodeOrInsertPos(ID, InsertPos))
+  llvm::FoldingSetInsertToken Token;
+  if (ComplexType *CT = ComplexTypes.lookup(ID, Token))
     return QualType(CT, 0);
 
   // If the pointee type isn't canonical, this won't be a canonical type either,
@@ -4597,12 +4595,12 @@ QualType ASTContext::getComplexType(QualType T) const {
     Canonical = getComplexType(getCanonicalType(T));
 
     // Get the new insert position for the node we care about.
-    ComplexType *NewIP = ComplexTypes.FindNodeOrInsertPos(ID, InsertPos);
+    ComplexType *NewIP = ComplexTypes.lookup(ID, Token);
     assert(!NewIP && "Shouldn't be in the map!"); (void)NewIP;
   }
   auto *New = new (*this, alignof(ComplexType)) ComplexType(T, Canonical);
   Types.push_back(New);
-  ComplexTypes.InsertNode(New, InsertPos);
+  ComplexTypes.insert(New, Token);
   return QualType(New, 0);
 }
 
@@ -4615,8 +4613,8 @@ QualType ASTContext::getPointerType(QualType T,
   llvm::FoldingSetNodeID ID;
   PointerType::Profile(ID, T, A);
 
-  void *InsertPos = nullptr;
-  if (PointerType *PT = PointerTypes.FindNodeOrInsertPos(ID, InsertPos))
+  llvm::FoldingSetInsertToken Token;
+  if (PointerType *PT = PointerTypes.lookup(ID, Token))
     return QualType(PT, 0);
 
   // If the pointee type isn't canonical, this won't be a canonical type either,
@@ -4626,53 +4624,53 @@ QualType ASTContext::getPointerType(QualType T,
     Canonical = getPointerType(getCanonicalType(T), A);
 
     // Get the new insert position for the node we care about.
-    PointerType *NewIP = PointerTypes.FindNodeOrInsertPos(ID, InsertPos);
+    PointerType *NewIP = PointerTypes.lookup(ID, Token);
     assert(!NewIP && "Shouldn't be in the map!"); (void)NewIP;
   }
   auto *New = new (*this, alignof(PointerType)) PointerType(T, Canonical, A);
   Types.push_back(New);
-  PointerTypes.InsertNode(New, InsertPos);
+  PointerTypes.insert(New, Token);
   return QualType(New, 0);
 }
 
 QualType ASTContext::getAdjustedType(QualType Orig, QualType New) const {
   llvm::FoldingSetNodeID ID;
   AdjustedType::Profile(ID, Orig, New);
-  void *InsertPos = nullptr;
-  AdjustedType *AT = AdjustedTypes.FindNodeOrInsertPos(ID, InsertPos);
+  llvm::FoldingSetInsertToken Token;
+  AdjustedType *AT = AdjustedTypes.lookup(ID, Token);
   if (AT)
     return QualType(AT, 0);
 
   QualType Canonical = getCanonicalType(New);
 
   // Get the new insert position for the node we care about.
-  AT = AdjustedTypes.FindNodeOrInsertPos(ID, InsertPos);
+  AT = AdjustedTypes.lookup(ID, Token);
   assert(!AT && "Shouldn't be in the map!");
 
   AT = new (*this, alignof(AdjustedType))
       AdjustedType(Type::Adjusted, Orig, New, Canonical);
   Types.push_back(AT);
-  AdjustedTypes.InsertNode(AT, InsertPos);
+  AdjustedTypes.insert(AT, Token);
   return QualType(AT, 0);
 }
 
 QualType ASTContext::getDecayedType(QualType Orig, QualType Decayed) const {
   llvm::FoldingSetNodeID ID;
   AdjustedType::Profile(ID, Orig, Decayed);
-  void *InsertPos = nullptr;
-  AdjustedType *AT = AdjustedTypes.FindNodeOrInsertPos(ID, InsertPos);
+  llvm::FoldingSetInsertToken Token;
+  AdjustedType *AT = AdjustedTypes.lookup(ID, Token);
   if (AT)
     return QualType(AT, 0);
 
   QualType Canonical = getCanonicalType(Decayed);
 
   // Get the new insert position for the node we care about.
-  AT = AdjustedTypes.FindNodeOrInsertPos(ID, InsertPos);
+  AT = AdjustedTypes.lookup(ID, Token);
   assert(!AT && "Shouldn't be in the map!");
 
   AT = new (*this, alignof(DecayedType)) DecayedType(Orig, Decayed, Canonical);
   Types.push_back(AT);
-  AdjustedTypes.InsertNode(AT, InsertPos);
+  AdjustedTypes.insert(AT, Token);
   return QualType(AT, 0);
 }
 
@@ -4709,9 +4707,8 @@ QualType ASTContext::getArrayParameterType(QualType Ty) const {
   ATy->Profile(ID, *this, ATy->getElementType(), ATy->getZExtSize(),
                ATy->getSizeExpr(), ATy->getSizeModifier(),
                ATy->getIndexTypeQualifiers().getAsOpaqueValue());
-  void *InsertPos = nullptr;
-  ArrayParameterType *AT =
-      ArrayParameterTypes.FindNodeOrInsertPos(ID, InsertPos);
+  llvm::FoldingSetInsertToken Token;
+  ArrayParameterType *AT = ArrayParameterTypes.lookup(ID, Token);
   if (AT)
     return QualType(AT, 0);
 
@@ -4720,14 +4717,14 @@ QualType ASTContext::getArrayParameterType(QualType Ty) const {
     Canonical = getArrayParameterType(getCanonicalType(Ty));
 
     // Get the new insert position for the node we care about.
-    AT = ArrayParameterTypes.FindNodeOrInsertPos(ID, InsertPos);
+    AT = ArrayParameterTypes.lookup(ID, Token);
     assert(!AT && "Shouldn't be in the map!");
   }
 
   AT = new (*this, alignof(ArrayParameterType))
       ArrayParameterType(ATy, Canonical);
   Types.push_back(AT);
-  ArrayParameterTypes.InsertNode(AT, InsertPos);
+  ArrayParameterTypes.insert(AT, Token);
   return QualType(AT, 0);
 }
 
@@ -4740,9 +4737,8 @@ QualType ASTContext::getBlockPointerType(QualType T) const {
   llvm::FoldingSetNodeID ID;
   BlockPointerType::Profile(ID, T);
 
-  void *InsertPos = nullptr;
-  if (BlockPointerType *PT =
-        BlockPointerTypes.FindNodeOrInsertPos(ID, InsertPos))
+  llvm::FoldingSetInsertToken Token;
+  if (BlockPointerType *PT = BlockPointerTypes.lookup(ID, Token))
     return QualType(PT, 0);
 
   // If the block pointee type isn't canonical, this won't be a canonical
@@ -4752,14 +4748,13 @@ QualType ASTContext::getBlockPointerType(QualType T) const {
     Canonical = getBlockPointerType(getCanonicalType(T));
 
     // Get the new insert position for the node we care about.
-    BlockPointerType *NewIP =
-      BlockPointerTypes.FindNodeOrInsertPos(ID, InsertPos);
+    BlockPointerType *NewIP = BlockPointerTypes.lookup(ID, Token);
     assert(!NewIP && "Shouldn't be in the map!"); (void)NewIP;
   }
   auto *New =
       new (*this, alignof(BlockPointerType)) BlockPointerType(T, Canonical);
   Types.push_back(New);
-  BlockPointerTypes.InsertNode(New, InsertPos);
+  BlockPointerTypes.insert(New, Token);
   return QualType(New, 0);
 }
 
@@ -4776,9 +4771,8 @@ ASTContext::getLValueReferenceType(QualType T, bool SpelledAsLValue) const {
   llvm::FoldingSetNodeID ID;
   ReferenceType::Profile(ID, T, SpelledAsLValue);
 
-  void *InsertPos = nullptr;
-  if (LValueReferenceType *RT =
-        LValueReferenceTypes.FindNodeOrInsertPos(ID, InsertPos))
+  llvm::FoldingSetInsertToken Token;
+  if (LValueReferenceType *RT = LValueReferenceTypes.lookup(ID, Token))
     return QualType(RT, 0);
 
   const auto *InnerRef = T->getAs<ReferenceType>();
@@ -4791,15 +4785,14 @@ ASTContext::getLValueReferenceType(QualType T, bool SpelledAsLValue) const {
     Canonical = getLValueReferenceType(getCanonicalType(PointeeType));
 
     // Get the new insert position for the node we care about.
-    LValueReferenceType *NewIP =
-      LValueReferenceTypes.FindNodeOrInsertPos(ID, InsertPos);
+    LValueReferenceType *NewIP = LValueReferenceTypes.lookup(ID, Token);
     assert(!NewIP && "Shouldn't be in the map!"); (void)NewIP;
   }
 
   auto *New = new (*this, alignof(LValueReferenceType))
       LValueReferenceType(T, Canonical, SpelledAsLValue);
   Types.push_back(New);
-  LValueReferenceTypes.InsertNode(New, InsertPos);
+  LValueReferenceTypes.insert(New, Token);
 
   return QualType(New, 0);
 }
@@ -4816,9 +4809,8 @@ QualType ASTContext::getRValueReferenceType(QualType T) const {
   llvm::FoldingSetNodeID ID;
   ReferenceType::Profile(ID, T, false);
 
-  void *InsertPos = nullptr;
-  if (RValueReferenceType *RT =
-        RValueReferenceTypes.FindNodeOrInsertPos(ID, InsertPos))
+  llvm::FoldingSetInsertToken Token;
+  if (RValueReferenceType *RT = RValueReferenceTypes.lookup(ID, Token))
     return QualType(RT, 0);
 
   const auto *InnerRef = T->getAs<ReferenceType>();
@@ -4831,15 +4823,14 @@ QualType ASTContext::getRValueReferenceType(QualType T) const {
     Canonical = getRValueReferenceType(getCanonicalType(PointeeType));
 
     // Get the new insert position for the node we care about.
-    RValueReferenceType *NewIP =
-      RValueReferenceTypes.FindNodeOrInsertPos(ID, InsertPos);
+    RValueReferenceType *NewIP = RValueReferenceTypes.lookup(ID, Token);
     assert(!NewIP && "Shouldn't be in the map!"); (void)NewIP;
   }
 
   auto *New = new (*this, alignof(RValueReferenceType))
       RValueReferenceType(T, Canonical);
   Types.push_back(New);
-  RValueReferenceTypes.InsertNode(New, InsertPos);
+  RValueReferenceTypes.insert(New, Token);
   return QualType(New, 0);
 }
 
@@ -4857,9 +4848,8 @@ QualType ASTContext::getMemberPointerType(QualType T,
   llvm::FoldingSetNodeID ID;
   MemberPointerType::Profile(ID, T, Qualifier, Cls);
 
-  void *InsertPos = nullptr;
-  if (MemberPointerType *PT =
-      MemberPointerTypes.FindNodeOrInsertPos(ID, InsertPos))
+  llvm::FoldingSetInsertToken Token;
+  if (MemberPointerType *PT = MemberPointerTypes.lookup(ID, Token))
     return QualType(PT, 0);
 
   NestedNameSpecifier CanonicalQualifier = [&] {
@@ -4878,13 +4868,13 @@ QualType ASTContext::getMemberPointerType(QualType T,
     assert(!cast<MemberPointerType>(Canonical)->isSugared());
     // Get the new insert position for the node we care about.
     [[maybe_unused]] MemberPointerType *NewIP =
-        MemberPointerTypes.FindNodeOrInsertPos(ID, InsertPos);
+        MemberPointerTypes.lookup(ID, Token);
     assert(!NewIP && "Shouldn't be in the map!");
   }
   auto *New = new (*this, alignof(MemberPointerType))
       MemberPointerType(T, Qualifier, Canonical);
   Types.push_back(New);
-  MemberPointerTypes.InsertNode(New, InsertPos);
+  MemberPointerTypes.insert(New, Token);
   return QualType(New, 0);
 }
 
@@ -4912,9 +4902,8 @@ QualType ASTContext::getConstantArrayType(QualType EltTy,
   ConstantArrayType::Profile(ID, *this, EltTy, ArySize.getZExtValue(), SizeExpr,
                              ASM, IndexTypeQuals);
 
-  void *InsertPos = nullptr;
-  if (ConstantArrayType *ATP =
-      ConstantArrayTypes.FindNodeOrInsertPos(ID, InsertPos))
+  llvm::FoldingSetInsertToken Token;
+  if (ConstantArrayType *ATP = ConstantArrayTypes.lookup(ID, Token))
     return QualType(ATP, 0);
 
   // If the element type isn't canonical or has qualifiers, or the array bound
@@ -4929,14 +4918,13 @@ QualType ASTContext::getConstantArrayType(QualType EltTy,
     Canon = getQualifiedType(Canon, canonSplit.Quals);
 
     // Get the new insert position for the node we care about.
-    ConstantArrayType *NewIP =
-      ConstantArrayTypes.FindNodeOrInsertPos(ID, InsertPos);
+    ConstantArrayType *NewIP = ConstantArrayTypes.lookup(ID, Token);
     assert(!NewIP && "Shouldn't be in the map!"); (void)NewIP;
   }
 
   auto *New = ConstantArrayType::Create(*this, EltTy, Canon, ArySize, SizeExpr,
                                         ASM, IndexTypeQuals);
-  ConstantArrayTypes.InsertNode(New, InsertPos);
+  ConstantArrayTypes.insert(New, Token);
   Types.push_back(New);
   return QualType(New, 0);
 }
@@ -5119,15 +5107,14 @@ ASTContext::getDependentSizedArrayType(QualType elementType, Expr *numElements,
 
   SplitQualType canonElementType = getCanonicalType(elementType).split();
 
-  void *insertPos = nullptr;
+  llvm::FoldingSetInsertToken Token;
   llvm::FoldingSetNodeID ID;
   DependentSizedArrayType::Profile(
       ID, *this, numElements ? QualType(canonElementType.Ty, 0) : elementType,
       ASM, elementTypeQuals, numElements);
 
   // Look for an existing type with these properties.
-  DependentSizedArrayType *canonTy =
-    DependentSizedArrayTypes.FindNodeOrInsertPos(ID, insertPos);
+  DependentSizedArrayType *canonTy = DependentSizedArrayTypes.lookup(ID, Token);
 
   // Dependently-sized array types that do not have a specified number
   // of elements will have their sizes deduced from a dependent
@@ -5139,7 +5126,7 @@ ASTContext::getDependentSizedArrayType(QualType elementType, Expr *numElements,
     auto *newType = new (*this, alignof(DependentSizedArrayType))
         DependentSizedArrayType(elementType, QualType(), numElements, ASM,
                                 elementTypeQuals);
-    DependentSizedArrayTypes.InsertNode(newType, insertPos);
+    DependentSizedArrayTypes.insert(newType, Token);
     Types.push_back(newType);
     return QualType(newType, 0);
   }
@@ -5149,7 +5136,7 @@ ASTContext::getDependentSizedArrayType(QualType elementType, Expr *numElements,
     canonTy = new (*this, alignof(DependentSizedArrayType))
         DependentSizedArrayType(QualType(canonElementType.Ty, 0), QualType(),
                                 numElements, ASM, elementTypeQuals);
-    DependentSizedArrayTypes.InsertNode(canonTy, insertPos);
+    DependentSizedArrayTypes.insert(canonTy, Token);
     Types.push_back(canonTy);
   }
 
@@ -5178,9 +5165,8 @@ QualType ASTContext::getIncompleteArrayType(QualType elementType,
   llvm::FoldingSetNodeID ID;
   IncompleteArrayType::Profile(ID, elementType, ASM, elementTypeQuals);
 
-  void *insertPos = nullptr;
-  if (IncompleteArrayType *iat =
-       IncompleteArrayTypes.FindNodeOrInsertPos(ID, insertPos))
+  llvm::FoldingSetInsertToken Token;
+  if (IncompleteArrayType *iat = IncompleteArrayTypes.lookup(ID, Token))
     return QualType(iat, 0);
 
   // If the element type isn't canonical, this won't be a canonical type
@@ -5196,15 +5182,14 @@ QualType ASTContext::getIncompleteArrayType(QualType elementType,
     canon = getQualifiedType(canon, canonSplit.Quals);
 
     // Get the new insert position for the node we care about.
-    IncompleteArrayType *existing =
-      IncompleteArrayTypes.FindNodeOrInsertPos(ID, insertPos);
+    IncompleteArrayType *existing = IncompleteArrayTypes.lookup(ID, Token);
     assert(!existing && "Shouldn't be in the map!"); (void) existing;
   }
 
   auto *newType = new (*this, alignof(IncompleteArrayType))
       IncompleteArrayType(elementType, canon, ASM, elementTypeQuals);
 
-  IncompleteArrayTypes.InsertNode(newType, insertPos);
+  IncompleteArrayTypes.insert(newType, Token);
   Types.push_back(newType);
   return QualType(newType, 0);
 }
@@ -5352,8 +5337,8 @@ QualType ASTContext::getVectorType(QualType vecType, unsigned NumElts,
   llvm::FoldingSetNodeID ID;
   VectorType::Profile(ID, vecType, NumElts, Type::Vector, VecKind);
 
-  void *InsertPos = nullptr;
-  if (VectorType *VTP = VectorTypes.FindNodeOrInsertPos(ID, InsertPos))
+  llvm::FoldingSetInsertToken Token;
+  if (VectorType *VTP = VectorTypes.lookup(ID, Token))
     return QualType(VTP, 0);
 
   // If the element type isn't canonical, this won't be a canonical type either,
@@ -5363,12 +5348,12 @@ QualType ASTContext::getVectorType(QualType vecType, unsigned NumElts,
     Canonical = getVectorType(getCanonicalType(vecType), NumElts, VecKind);
 
     // Get the new insert position for the node we care about.
-    VectorType *NewIP = VectorTypes.FindNodeOrInsertPos(ID, InsertPos);
+    VectorType *NewIP = VectorTypes.lookup(ID, Token);
     assert(!NewIP && "Shouldn't be in the map!"); (void)NewIP;
   }
   auto *New = new (*this, alignof(VectorType))
       VectorType(vecType, NumElts, Canonical, VecKind);
-  VectorTypes.InsertNode(New, InsertPos);
+  VectorTypes.insert(New, Token);
   Types.push_back(New);
   return QualType(New, 0);
 }
@@ -5379,9 +5364,8 @@ QualType ASTContext::getDependentVectorType(QualType VecType, Expr *SizeExpr,
   llvm::FoldingSetNodeID ID;
   DependentVectorType::Profile(ID, *this, getCanonicalType(VecType), SizeExpr,
                                VecKind);
-  void *InsertPos = nullptr;
-  DependentVectorType *Canon =
-      DependentVectorTypes.FindNodeOrInsertPos(ID, InsertPos);
+  llvm::FoldingSetInsertToken Token;
+  DependentVectorType *Canon = DependentVectorTypes.lookup(ID, Token);
   DependentVectorType *New;
 
   if (Canon) {
@@ -5393,12 +5377,11 @@ QualType ASTContext::getDependentVectorType(QualType VecType, Expr *SizeExpr,
       New = new (*this, alignof(DependentVectorType))
           DependentVectorType(VecType, QualType(), SizeExpr, AttrLoc, VecKind);
 
-      DependentVectorType *CanonCheck =
-          DependentVectorTypes.FindNodeOrInsertPos(ID, InsertPos);
+      DependentVectorType *CanonCheck = DependentVectorTypes.lookup(ID, Token);
       assert(!CanonCheck &&
              "Dependent-sized vector_size canonical type broken");
       (void)CanonCheck;
-      DependentVectorTypes.InsertNode(New, InsertPos);
+      DependentVectorTypes.insert(New, Token);
     } else {
       QualType CanonTy = getDependentVectorType(CanonVecTy, SizeExpr,
                                                 SourceLocation(), VecKind);
@@ -5424,8 +5407,8 @@ QualType ASTContext::getExtVectorType(QualType vecType,
   llvm::FoldingSetNodeID ID;
   VectorType::Profile(ID, vecType, NumElts, Type::ExtVector,
                       VectorKind::Generic);
-  void *InsertPos = nullptr;
-  if (VectorType *VTP = VectorTypes.FindNodeOrInsertPos(ID, InsertPos))
+  llvm::FoldingSetInsertToken Token;
+  if (VectorType *VTP = VectorTypes.lookup(ID, Token))
     return QualType(VTP, 0);
 
   // If the element type isn't canonical, this won't be a canonical type either,
@@ -5435,12 +5418,12 @@ QualType ASTContext::getExtVectorType(QualType vecType,
     Canonical = getExtVectorType(getCanonicalType(vecType), NumElts);
 
     // Get the new insert position for the node we care about.
-    VectorType *NewIP = VectorTypes.FindNodeOrInsertPos(ID, InsertPos);
+    VectorType *NewIP = VectorTypes.lookup(ID, Token);
     assert(!NewIP && "Shouldn't be in the map!"); (void)NewIP;
   }
   auto *New = new (*this, alignof(ExtVectorType))
       ExtVectorType(vecType, NumElts, Canonical);
-  VectorTypes.InsertNode(New, InsertPos);
+  VectorTypes.insert(New, Token);
   Types.push_back(New);
   return QualType(New, 0);
 }
@@ -5453,9 +5436,9 @@ ASTContext::getDependentSizedExtVectorType(QualType vecType,
   DependentSizedExtVectorType::Profile(ID, *this, getCanonicalType(vecType),
                                        SizeExpr);
 
-  void *InsertPos = nullptr;
-  DependentSizedExtVectorType *Canon
-    = DependentSizedExtVectorTypes.FindNodeOrInsertPos(ID, InsertPos);
+  llvm::FoldingSetInsertToken Token;
+  DependentSizedExtVectorType *Canon =
+      DependentSizedExtVectorTypes.lookup(ID, Token);
   DependentSizedExtVectorType *New;
   if (Canon) {
     // We already have a canonical version of this array type; use it as
@@ -5469,11 +5452,11 @@ ASTContext::getDependentSizedExtVectorType(QualType vecType,
       New = new (*this, alignof(DependentSizedExtVectorType))
           DependentSizedExtVectorType(vecType, QualType(), SizeExpr, AttrLoc);
 
-      DependentSizedExtVectorType *CanonCheck
-        = DependentSizedExtVectorTypes.FindNodeOrInsertPos(ID, InsertPos);
+      DependentSizedExtVectorType *CanonCheck =
+          DependentSizedExtVectorTypes.lookup(ID, Token);
       assert(!CanonCheck && "Dependent-sized ext_vector canonical type broken");
       (void)CanonCheck;
-      DependentSizedExtVectorTypes.InsertNode(New, InsertPos);
+      DependentSizedExtVectorTypes.insert(New, Token);
     } else {
       QualType CanonExtTy = getDependentSizedExtVectorType(CanonVecTy, SizeExpr,
                                                            SourceLocation());
@@ -5497,8 +5480,8 @@ QualType ASTContext::getConstantMatrixType(QualType ElementTy, unsigned NumRows,
   assert(NumRows > 0 && NumRows <= LangOpts.MaxMatrixDimension &&
          NumColumns > 0 && NumColumns <= LangOpts.MaxMatrixDimension &&
          "need valid matrix dimensions");
-  void *InsertPos = nullptr;
-  if (ConstantMatrixType *MTP = MatrixTypes.FindNodeOrInsertPos(ID, InsertPos))
+  llvm::FoldingSetInsertToken Token;
+  if (ConstantMatrixType *MTP = MatrixTypes.lookup(ID, Token))
     return QualType(MTP, 0);
 
   QualType Canonical;
@@ -5506,14 +5489,14 @@ QualType ASTContext::getConstantMatrixType(QualType ElementTy, unsigned NumRows,
     Canonical =
         getConstantMatrixType(getCanonicalType(ElementTy), NumRows, NumColumns);
 
-    ConstantMatrixType *NewIP = MatrixTypes.FindNodeOrInsertPos(ID, InsertPos);
+    ConstantMatrixType *NewIP = MatrixTypes.lookup(ID, Token);
     assert(!NewIP && "Matrix type shouldn't already exist in the map");
     (void)NewIP;
   }
 
   auto *New = new (*this, alignof(ConstantMatrixType))
       ConstantMatrixType(ElementTy, NumRows, NumColumns, Canonical);
-  MatrixTypes.InsertNode(New, InsertPos);
+  MatrixTypes.insert(New, Token);
   Types.push_back(New);
   return QualType(New, 0);
 }
@@ -5527,9 +5510,8 @@ QualType ASTContext::getDependentSizedMatrixType(QualType ElementTy,
   DependentSizedMatrixType::Profile(ID, *this, CanonElementTy, RowExpr,
                                     ColumnExpr);
 
-  void *InsertPos = nullptr;
-  DependentSizedMatrixType *Canon =
-      DependentSizedMatrixTypes.FindNodeOrInsertPos(ID, InsertPos);
+  llvm::FoldingSetInsertToken Token;
+  DependentSizedMatrixType *Canon = DependentSizedMatrixTypes.lookup(ID, Token);
 
   if (!Canon) {
     Canon = new (*this, alignof(DependentSizedMatrixType))
@@ -5537,10 +5519,10 @@ QualType ASTContext::getDependentSizedMatrixType(QualType ElementTy,
                                  ColumnExpr, AttrLoc);
 #ifndef NDEBUG
     DependentSizedMatrixType *CanonCheck =
-        DependentSizedMatrixTypes.FindNodeOrInsertPos(ID, InsertPos);
+        DependentSizedMatrixTypes.lookup(ID, Token);
     assert(!CanonCheck && "Dependent-sized matrix canonical type broken");
 #endif
-    DependentSizedMatrixTypes.InsertNode(Canon, InsertPos);
+    DependentSizedMatrixTypes.insert(Canon, Token);
     Types.push_back(Canon);
   }
 
@@ -5566,19 +5548,19 @@ QualType ASTContext::getDependentAddressSpaceType(QualType PointeeType,
 
   QualType canonPointeeType = getCanonicalType(PointeeType);
 
-  void *insertPos = nullptr;
+  llvm::FoldingSetInsertToken Token;
   llvm::FoldingSetNodeID ID;
   DependentAddressSpaceType::Profile(ID, *this, canonPointeeType,
                                      AddrSpaceExpr);
 
   DependentAddressSpaceType *canonTy =
-    DependentAddressSpaceTypes.FindNodeOrInsertPos(ID, insertPos);
+      DependentAddressSpaceTypes.lookup(ID, Token);
 
   if (!canonTy) {
     canonTy = new (*this, alignof(DependentAddressSpaceType))
         DependentAddressSpaceType(canonPointeeType, QualType(), AddrSpaceExpr,
                                   AttrLoc);
-    DependentAddressSpaceTypes.InsertNode(canonTy, insertPos);
+    DependentAddressSpaceTypes.insert(canonTy, Token);
     Types.push_back(canonTy);
   }
 
@@ -5616,9 +5598,8 @@ ASTContext::getFunctionNoProtoType(QualType ResultTy,
   llvm::FoldingSetNodeID ID;
   FunctionNoProtoType::Profile(ID, ResultTy, Info);
 
-  void *InsertPos = nullptr;
-  if (FunctionNoProtoType *FT =
-        FunctionNoProtoTypes.FindNodeOrInsertPos(ID, InsertPos))
+  llvm::FoldingSetInsertToken Token;
+  if (FunctionNoProtoType *FT = FunctionNoProtoTypes.lookup(ID, Token))
     return QualType(FT, 0);
 
   QualType Canonical;
@@ -5627,15 +5608,14 @@ ASTContext::getFunctionNoProtoType(QualType ResultTy,
       getFunctionNoProtoType(getCanonicalFunctionResultType(ResultTy), Info);
 
     // Get the new insert position for the node we care about.
-    FunctionNoProtoType *NewIP =
-      FunctionNoProtoTypes.FindNodeOrInsertPos(ID, InsertPos);
+    FunctionNoProtoType *NewIP = FunctionNoProtoTypes.lookup(ID, Token);
     assert(!NewIP && "Shouldn't be in the map!"); (void)NewIP;
   }
 
   auto *New = new (*this, alignof(FunctionNoProtoType))
       FunctionNoProtoType(ResultTy, Canonical, Info);
   Types.push_back(New);
-  FunctionNoProtoTypes.InsertNode(New, InsertPos);
+  FunctionNoProtoTypes.insert(New, Token);
   return QualType(New, 0);
 }
 
@@ -5702,9 +5682,8 @@ QualType ASTContext::getFunctionTypeInternal(
   QualType Canonical;
   bool Unique = false;
 
-  void *InsertPos = nullptr;
-  if (FunctionProtoType *FPT =
-        FunctionProtoTypes.FindNodeOrInsertPos(ID, InsertPos)) {
+  llvm::FoldingSetInsertToken Token;
+  if (FunctionProtoType *FPT = FunctionProtoTypes.lookup(ID, Token)) {
     QualType Existing = QualType(FPT, 0);
 
     // If we find a pre-existing equivalent FunctionProtoType, we can just reuse
@@ -5801,8 +5780,7 @@ QualType ASTContext::getFunctionTypeInternal(
         getFunctionTypeInternal(CanResultTy, CanonicalArgs, CanonicalEPI, true);
 
     // Get the new insert position for the node we care about.
-    FunctionProtoType *NewIP =
-      FunctionProtoTypes.FindNodeOrInsertPos(ID, InsertPos);
+    FunctionProtoType *NewIP = FunctionProtoTypes.lookup(ID, Token);
     assert(!NewIP && "Shouldn't be in the map!"); (void)NewIP;
   }
 
@@ -5829,7 +5807,7 @@ QualType ASTContext::getFunctionTypeInternal(
   new (FTP) FunctionProtoType(ResultTy, ArgArray, Canonical, newEPI);
   Types.push_back(FTP);
   if (!Unique)
-    FunctionProtoTypes.InsertNode(FTP, InsertPos);
+    FunctionProtoTypes.insert(FTP, Token);
   if (!EPI.FunctionEffects.empty())
     AnyFunctionEffects = true;
   return QualType(FTP, 0);
@@ -5839,8 +5817,8 @@ QualType ASTContext::getPipeType(QualType T, bool ReadOnly) const {
   llvm::FoldingSetNodeID ID;
   PipeType::Profile(ID, T, ReadOnly);
 
-  void *InsertPos = nullptr;
-  if (PipeType *PT = PipeTypes.FindNodeOrInsertPos(ID, InsertPos))
+  llvm::FoldingSetInsertToken Token;
+  if (PipeType *PT = PipeTypes.lookup(ID, Token))
     return QualType(PT, 0);
 
   // If the pipe element type isn't canonical, this won't be a canonical type
@@ -5850,13 +5828,13 @@ QualType ASTContext::getPipeType(QualType T, bool ReadOnly) const {
     Canonical = getPipeType(getCanonicalType(T), ReadOnly);
 
     // Get the new insert position for the node we care about.
-    PipeType *NewIP = PipeTypes.FindNodeOrInsertPos(ID, InsertPos);
+    PipeType *NewIP = PipeTypes.lookup(ID, Token);
     assert(!NewIP && "Shouldn't be in the map!");
     (void)NewIP;
   }
   auto *New = new (*this, alignof(PipeType)) PipeType(T, Canonical, ReadOnly);
   Types.push_back(New);
-  PipeTypes.InsertNode(New, InsertPos);
+  PipeTypes.insert(New, Token);
   return QualType(New, 0);
 }
 
@@ -5878,12 +5856,12 @@ QualType ASTContext::getBitIntType(bool IsUnsigned, unsigned NumBits) const {
   llvm::FoldingSetNodeID ID;
   BitIntType::Profile(ID, IsUnsigned, NumBits);
 
-  void *InsertPos = nullptr;
-  if (BitIntType *EIT = BitIntTypes.FindNodeOrInsertPos(ID, InsertPos))
+  llvm::FoldingSetInsertToken Token;
+  if (BitIntType *EIT = BitIntTypes.lookup(ID, Token))
     return QualType(EIT, 0);
 
   auto *New = new (*this, alignof(BitIntType)) BitIntType(IsUnsigned, NumBits);
-  BitIntTypes.InsertNode(New, InsertPos);
+  BitIntTypes.insert(New, Token);
   Types.push_back(New);
   return QualType(New, 0);
 }
@@ -5894,14 +5872,13 @@ QualType ASTContext::getDependentBitIntType(bool IsUnsigned,
   llvm::FoldingSetNodeID ID;
   DependentBitIntType::Profile(ID, *this, IsUnsigned, NumBitsExpr);
 
-  void *InsertPos = nullptr;
-  if (DependentBitIntType *Existing =
-          DependentBitIntTypes.FindNodeOrInsertPos(ID, InsertPos))
+  llvm::FoldingSetInsertToken Token;
+  if (DependentBitIntType *Existing = DependentBitIntTypes.lookup(ID, Token))
     return QualType(Existing, 0);
 
   auto *New = new (*this, alignof(DependentBitIntType))
       DependentBitIntType(IsUnsigned, NumBitsExpr);
-  DependentBitIntTypes.InsertNode(New, InsertPos);
+  DependentBitIntTypes.insert(New, Token);
 
   Types.push_back(New);
   return QualType(New, 0);
@@ -6019,9 +5996,9 @@ ASTContext::getTypedefType(ElaboratedTypeKeyword Keyword,
   TypedefType::Profile(ID, Keyword, Qualifier, Decl,
                        *TypeMatchesDeclOrNone ? QualType() : UnderlyingType);
 
-  void *InsertPos = nullptr;
+  llvm::FoldingSetInsertToken Token;
   if (FoldingSetPlaceholder<TypedefType> *Placeholder =
-          TypedefTypes.FindNodeOrInsertPos(ID, InsertPos))
+          TypedefTypes.lookup(ID, Token))
     return QualType(Placeholder->getType(), 0);
 
   void *Mem =
@@ -6034,7 +6011,7 @@ ASTContext::getTypedefType(ElaboratedTypeKeyword Keyword,
                             UnderlyingType, !*TypeMatchesDeclOrNone);
   auto *Placeholder = new (NewType->getFoldingSetPlaceholder())
       FoldingSetPlaceholder<TypedefType>();
-  TypedefTypes.InsertNode(Placeholder, InsertPos);
+  TypedefTypes.insert(Placeholder, Token);
   Types.push_back(NewType);
   return QualType(NewType, 0);
 }
@@ -6055,8 +6032,8 @@ QualType ASTContext::getUsingType(ElaboratedTypeKeyword Keyword,
   llvm::FoldingSetNodeID ID;
   UsingType::Profile(ID, Keyword, Qualifier, D, UnderlyingType);
 
-  void *InsertPos = nullptr;
-  if (const UsingType *T = UsingTypes.FindNodeOrInsertPos(ID, InsertPos))
+  llvm::FoldingSetInsertToken Token;
+  if (const UsingType *T = UsingTypes.lookup(ID, Token))
     return QualType(T, 0);
 
   assert(!UnderlyingType.hasLocalQualifiers());
@@ -6070,7 +6047,7 @@ QualType ASTContext::getUsingType(ElaboratedTypeKeyword Keyword,
                alignof(UsingType));
   UsingType *T = new (Mem) UsingType(Keyword, Qualifier, D, UnderlyingType);
   Types.push_back(T);
-  UsingTypes.InsertNode(T, InsertPos);
+  UsingTypes.insert(T, Token);
   return QualType(T, 0);
 }
 
@@ -6219,16 +6196,15 @@ QualType ASTContext::getTagType(ElaboratedTypeKeyword Keyword,
   TagTypeFoldingSetPlaceholder::Profile(ID, Keyword, Qualifier, NonInjectedTD,
                                         OwnsTag, IsInjected);
 
-  void *InsertPos = nullptr;
-  if (TagTypeFoldingSetPlaceholder *T =
-          TagTypes.FindNodeOrInsertPos(ID, InsertPos))
+  llvm::FoldingSetInsertToken Token;
+  if (TagTypeFoldingSetPlaceholder *T = TagTypes.lookup(ID, Token))
     return QualType(T->getTagType(), 0);
 
   const Type *CanonicalType = getCanonicalTagType(NonInjectedTD).getTypePtr();
   TagType *T =
       getTagTypeInternal(Keyword, Qualifier, NonInjectedTD, OwnsTag, IsInjected,
                          CanonicalType, /*WithFoldingSetNode=*/true);
-  TagTypes.InsertNode(TagTypeFoldingSetPlaceholder::fromTagType(T), InsertPos);
+  TagTypes.insert(TagTypeFoldingSetPlaceholder::fromTagType(T), Token);
   return QualType(T, 0);
 }
 
@@ -6326,18 +6302,18 @@ bool ASTContext::isRepresentableIntegerValue(llvm::APSInt &Value, QualType T) {
 
 UnresolvedUsingType *ASTContext::getUnresolvedUsingTypeInternal(
     ElaboratedTypeKeyword Keyword, NestedNameSpecifier Qualifier,
-    const UnresolvedUsingTypenameDecl *D, void *InsertPos,
+    const UnresolvedUsingTypenameDecl *D, llvm::FoldingSetInsertToken Token,
     const Type *CanonicalType) const {
   void *Mem = Allocate(
       UnresolvedUsingType::totalSizeToAlloc<
           FoldingSetPlaceholder<UnresolvedUsingType>, NestedNameSpecifier>(
-          !!InsertPos, !!Qualifier),
+          !!Token, !!Qualifier),
       alignof(UnresolvedUsingType));
   auto *T = new (Mem) UnresolvedUsingType(Keyword, Qualifier, D, CanonicalType);
-  if (InsertPos) {
+  if (Token) {
     auto *Placeholder = new (T->getFoldingSetPlaceholder())
         FoldingSetPlaceholder<TypedefType>();
-    TypedefTypes.InsertNode(Placeholder, InsertPos);
+    TypedefTypes.insert(Placeholder, Token);
   }
   Types.push_back(T);
   return T;
@@ -6349,10 +6325,10 @@ CanQualType ASTContext::getCanonicalUnresolvedUsingType(
   if (D->TypeForDecl)
     return D->TypeForDecl->getCanonicalTypeUnqualified();
 
-  const Type *CanonicalType = getUnresolvedUsingTypeInternal(
-      ElaboratedTypeKeyword::None,
-      /*Qualifier=*/std::nullopt, D,
-      /*InsertPos=*/nullptr, /*CanonicalType=*/nullptr);
+  const Type *CanonicalType =
+      getUnresolvedUsingTypeInternal(ElaboratedTypeKeyword::None,
+                                     /*Qualifier=*/std::nullopt, D,
+                                     /*Token=*/{}, /*CanonicalType=*/nullptr);
   D->TypeForDecl = CanonicalType;
   return CanQualType::CreateUnsafe(QualType(CanonicalType, 0));
 }
@@ -6369,7 +6345,7 @@ ASTContext::getUnresolvedUsingType(ElaboratedTypeKeyword Keyword,
     const Type *T =
         getUnresolvedUsingTypeInternal(ElaboratedTypeKeyword::None,
                                        /*Qualifier=*/std::nullopt, D,
-                                       /*InsertPos=*/nullptr, CanonicalType);
+                                       /*Token=*/{}, CanonicalType);
     D->TypeForDecl = T;
     return QualType(T, 0);
   }
@@ -6377,15 +6353,15 @@ ASTContext::getUnresolvedUsingType(ElaboratedTypeKeyword Keyword,
   llvm::FoldingSetNodeID ID;
   UnresolvedUsingType::Profile(ID, Keyword, Qualifier, D);
 
-  void *InsertPos = nullptr;
+  llvm::FoldingSetInsertToken Token;
   if (FoldingSetPlaceholder<UnresolvedUsingType> *Placeholder =
-          UnresolvedUsingTypes.FindNodeOrInsertPos(ID, InsertPos))
+          UnresolvedUsingTypes.lookup(ID, Token))
     return QualType(Placeholder->getType(), 0);
-  assert(InsertPos);
+  assert(Token);
 
   const Type *CanonicalType = getCanonicalUnresolvedUsingType(D).getTypePtr();
-  const Type *T = getUnresolvedUsingTypeInternal(Keyword, Qualifier, D,
-                                                 InsertPos, CanonicalType);
+  const Type *T = getUnresolvedUsingTypeInternal(Keyword, Qualifier, D, Token,
+                                                 CanonicalType);
   return QualType(T, 0);
 }
 
@@ -6397,8 +6373,8 @@ QualType ASTContext::getAttributedType(attr::Kind attrKind,
   AttributedType::Profile(id, *this, attrKind, modifiedType, equivalentType,
                           attr);
 
-  void *insertPos = nullptr;
-  AttributedType *type = AttributedTypes.FindNodeOrInsertPos(id, insertPos);
+  llvm::FoldingSetInsertToken Token;
+  AttributedType *type = AttributedTypes.lookup(id, Token);
   if (type) return QualType(type, 0);
 
   assert(!attr || attr->getKind() == attrKind);
@@ -6408,7 +6384,7 @@ QualType ASTContext::getAttributedType(attr::Kind attrKind,
       AttributedType(canon, attrKind, attr, modifiedType, equivalentType);
 
   Types.push_back(type);
-  AttributedTypes.InsertNode(type, insertPos);
+  AttributedTypes.insert(type, Token);
 
   return QualType(type, 0);
 }
@@ -6445,9 +6421,8 @@ QualType ASTContext::getBTFTagAttributedType(const BTFTypeTagAttr *BTFAttr,
   llvm::FoldingSetNodeID ID;
   BTFTagAttributedType::Profile(ID, Wrapped, BTFAttr);
 
-  void *InsertPos = nullptr;
-  BTFTagAttributedType *Ty =
-      BTFTagAttributedTypes.FindNodeOrInsertPos(ID, InsertPos);
+  llvm::FoldingSetInsertToken Token;
+  BTFTagAttributedType *Ty = BTFTagAttributedTypes.lookup(ID, Token);
   if (Ty)
     return QualType(Ty, 0);
 
@@ -6456,7 +6431,7 @@ QualType ASTContext::getBTFTagAttributedType(const BTFTypeTagAttr *BTFAttr,
       BTFTagAttributedType(Canon, Wrapped, BTFAttr);
 
   Types.push_back(Ty);
-  BTFTagAttributedTypes.InsertNode(Ty, InsertPos);
+  BTFTagAttributedTypes.insert(Ty, Token);
 
   return QualType(Ty, 0);
 }
@@ -6484,10 +6459,9 @@ QualType ASTContext::getOverflowBehaviorType(
          "Cannot have underlying types that are themselves OBTs");
   llvm::FoldingSetNodeID ID;
   OverflowBehaviorType::Profile(ID, Underlying, Kind);
-  void *InsertPos = nullptr;
+  llvm::FoldingSetInsertToken Token;
 
-  if (OverflowBehaviorType *OBT =
-          OverflowBehaviorTypes.FindNodeOrInsertPos(ID, InsertPos)) {
+  if (OverflowBehaviorType *OBT = OverflowBehaviorTypes.lookup(ID, Token)) {
     return QualType(OBT, 0);
   }
 
@@ -6496,7 +6470,7 @@ QualType ASTContext::getOverflowBehaviorType(
     SplitQualType canonSplit = getCanonicalType(Underlying).split();
     Canonical = getOverflowBehaviorType(Kind, QualType(canonSplit.Ty, 0));
     Canonical = getQualifiedType(Canonical, canonSplit.Quals);
-    assert(!OverflowBehaviorTypes.FindNodeOrInsertPos(ID, InsertPos) &&
+    assert(!OverflowBehaviorTypes.lookup(ID, Token) &&
            "Shouldn't be in the map");
   }
 
@@ -6504,7 +6478,7 @@ QualType ASTContext::getOverflowBehaviorType(
       OverflowBehaviorType(Canonical, Underlying, Kind);
 
   Types.push_back(Ty);
-  OverflowBehaviorTypes.InsertNode(Ty, InsertPos);
+  OverflowBehaviorTypes.insert(Ty, Token);
   return QualType(Ty, 0);
 }
 
@@ -6515,9 +6489,9 @@ QualType ASTContext::getHLSLAttributedResourceType(
   llvm::FoldingSetNodeID ID;
   HLSLAttributedResourceType::Profile(ID, Wrapped, Contained, Attrs);
 
-  void *InsertPos = nullptr;
+  llvm::FoldingSetInsertToken Token;
   HLSLAttributedResourceType *Ty =
-      HLSLAttributedResourceTypes.FindNodeOrInsertPos(ID, InsertPos);
+      HLSLAttributedResourceTypes.lookup(ID, Token);
   if (Ty)
     return QualType(Ty, 0);
 
@@ -6525,7 +6499,7 @@ QualType ASTContext::getHLSLAttributedResourceType(
       HLSLAttributedResourceType(Wrapped, Contained, Attrs);
 
   Types.push_back(Ty);
-  HLSLAttributedResourceTypes.InsertNode(Ty, InsertPos);
+  HLSLAttributedResourceTypes.insert(Ty, Token);
 
   return QualType(Ty, 0);
 }
@@ -6536,9 +6510,8 @@ QualType ASTContext::getHLSLInlineSpirvType(uint32_t Opcode, uint32_t Size,
   llvm::FoldingSetNodeID ID;
   HLSLInlineSpirvType::Profile(ID, Opcode, Size, Alignment, Operands);
 
-  void *InsertPos = nullptr;
-  HLSLInlineSpirvType *Ty =
-      HLSLInlineSpirvTypes.FindNodeOrInsertPos(ID, InsertPos);
+  llvm::FoldingSetInsertToken Token;
+  HLSLInlineSpirvType *Ty = HLSLInlineSpirvTypes.lookup(ID, Token);
   if (Ty)
     return QualType(Ty, 0);
 
@@ -6549,7 +6522,7 @@ QualType ASTContext::getHLSLInlineSpirvType(uint32_t Opcode, uint32_t Size,
   Ty = new (Mem) HLSLInlineSpirvType(Opcode, Size, Alignment, Operands);
 
   Types.push_back(Ty);
-  HLSLInlineSpirvTypes.InsertNode(Ty, InsertPos);
+  HLSLInlineSpirvTypes.insert(Ty, Token);
 
   return QualType(Ty, 0);
 }
@@ -6563,9 +6536,9 @@ QualType ASTContext::getSubstTemplateTypeParmType(QualType Replacement,
   llvm::FoldingSetNodeID ID;
   SubstTemplateTypeParmType::Profile(ID, Replacement, AssociatedDecl, Index,
                                      PackIndex, Final);
-  void *InsertPos = nullptr;
+  llvm::FoldingSetInsertToken Token;
   SubstTemplateTypeParmType *SubstParm =
-      SubstTemplateTypeParmTypes.FindNodeOrInsertPos(ID, InsertPos);
+      SubstTemplateTypeParmTypes.lookup(ID, Token);
 
   if (!SubstParm) {
     void *Mem = Allocate(SubstTemplateTypeParmType::totalSizeToAlloc<QualType>(
@@ -6574,7 +6547,7 @@ QualType ASTContext::getSubstTemplateTypeParmType(QualType Replacement,
     SubstParm = new (Mem) SubstTemplateTypeParmType(Replacement, AssociatedDecl,
                                                     Index, PackIndex, Final);
     Types.push_back(SubstParm);
-    SubstTemplateTypeParmTypes.InsertNode(SubstParm, InsertPos);
+    SubstTemplateTypeParmTypes.insert(SubstParm, Token);
   }
 
   return QualType(SubstParm, 0);
@@ -6592,9 +6565,9 @@ ASTContext::getSubstTemplateTypeParmPackType(Decl *AssociatedDecl,
   llvm::FoldingSetNodeID ID;
   SubstTemplateTypeParmPackType::Profile(ID, AssociatedDecl, Index, Final,
                                          ArgPack);
-  void *InsertPos = nullptr;
+  llvm::FoldingSetInsertToken Token;
   if (SubstTemplateTypeParmPackType *SubstParm =
-          SubstTemplateTypeParmPackTypes.FindNodeOrInsertPos(ID, InsertPos))
+          SubstTemplateTypeParmPackTypes.lookup(ID, Token))
     return QualType(SubstParm, 0);
 
   QualType Canon;
@@ -6605,7 +6578,7 @@ ASTContext::getSubstTemplateTypeParmPackType(Decl *AssociatedDecl,
       Canon = getSubstTemplateTypeParmPackType(
           AssociatedDecl->getCanonicalDecl(), Index, Final, CanonArgPack);
       [[maybe_unused]] const auto *Nothing =
-          SubstTemplateTypeParmPackTypes.FindNodeOrInsertPos(ID, InsertPos);
+          SubstTemplateTypeParmPackTypes.lookup(ID, Token);
       assert(!Nothing);
     }
   }
@@ -6614,7 +6587,7 @@ ASTContext::getSubstTemplateTypeParmPackType(Decl *AssociatedDecl,
       SubstTemplateTypeParmPackType(Canon, AssociatedDecl, Index, Final,
                                     ArgPack);
   Types.push_back(SubstParm);
-  SubstTemplateTypeParmPackTypes.InsertNode(SubstParm, InsertPos);
+  SubstTemplateTypeParmPackTypes.insert(SubstParm, Token);
   return QualType(SubstParm, 0);
 }
 
@@ -6629,26 +6602,25 @@ ASTContext::getSubstBuiltinTemplatePack(const TemplateArgument &ArgPack) {
   llvm::FoldingSetNodeID ID;
   SubstBuiltinTemplatePackType::Profile(ID, ArgPack);
 
-  void *InsertPos = nullptr;
-  if (auto *T =
-          SubstBuiltinTemplatePackTypes.FindNodeOrInsertPos(ID, InsertPos))
+  llvm::FoldingSetInsertToken Token;
+  if (auto *T = SubstBuiltinTemplatePackTypes.lookup(ID, Token))
     return QualType(T, 0);
 
   QualType Canon;
   TemplateArgument CanonArgPack = getCanonicalTemplateArgument(ArgPack);
   if (!CanonArgPack.structurallyEquals(ArgPack)) {
     Canon = getSubstBuiltinTemplatePack(CanonArgPack);
-    // Refresh InsertPos, in case the recursive call above caused rehashing,
+    // Refresh Token, in case the recursive call above caused rehashing,
     // which would invalidate the bucket pointer.
     [[maybe_unused]] const auto *Nothing =
-        SubstBuiltinTemplatePackTypes.FindNodeOrInsertPos(ID, InsertPos);
+        SubstBuiltinTemplatePackTypes.lookup(ID, Token);
     assert(!Nothing);
   }
 
   auto *PackType = new (*this, alignof(SubstBuiltinTemplatePackType))
       SubstBuiltinTemplatePackType(Canon, ArgPack);
   Types.push_back(PackType);
-  SubstBuiltinTemplatePackTypes.InsertNode(PackType, InsertPos);
+  SubstBuiltinTemplatePackTypes.insert(PackType, Token);
   return QualType(PackType, 0);
 }
 
@@ -6663,9 +6635,8 @@ ASTContext::getTemplateTypeParmType(int Depth, int Index, bool ParameterPack,
 
   llvm::FoldingSetNodeID ID;
   TemplateTypeParmType::Profile(ID, Depth, Index, ParameterPack, TTPDecl);
-  void *InsertPos = nullptr;
-  TemplateTypeParmType *TypeParm
-    = TemplateTypeParmTypes.FindNodeOrInsertPos(ID, InsertPos);
+  llvm::FoldingSetInsertToken Token;
+  TemplateTypeParmType *TypeParm = TemplateTypeParmTypes.lookup(ID, Token);
 
   if (TypeParm)
     return QualType(TypeParm, 0);
@@ -6675,8 +6646,7 @@ ASTContext::getTemplateTypeParmType(int Depth, int Index, bool ParameterPack,
     TypeParm = new (*this, alignof(TemplateTypeParmType))
         TemplateTypeParmType(Depth, Index, ParameterPack, TTPDecl, Canon);
 
-    TemplateTypeParmType *TypeCheck
-      = TemplateTypeParmTypes.FindNodeOrInsertPos(ID, InsertPos);
+    TemplateTypeParmType *TypeCheck = TemplateTypeParmTypes.lookup(ID, Token);
     assert(!TypeCheck && "Template type parameter canonical type broken");
     (void)TypeCheck;
   } else
@@ -6684,7 +6654,7 @@ ASTContext::getTemplateTypeParmType(int Depth, int Index, bool ParameterPack,
         Depth, Index, ParameterPack, /*TTPDecl=*/nullptr, /*Canon=*/QualType());
 
   Types.push_back(TypeParm);
-  TemplateTypeParmTypes.InsertNode(TypeParm, InsertPos);
+  TemplateTypeParmTypes.insert(TypeParm, Token);
 
   return QualType(TypeParm, 0);
 }
@@ -6765,8 +6735,8 @@ QualType ASTContext::getCanonicalTemplateSpecializationType(
   llvm::FoldingSetNodeID ID;
   TemplateSpecializationType::Profile(ID, Keyword, Template, Args, QualType(),
                                       *this);
-  void *InsertPos = nullptr;
-  if (auto *T = TemplateSpecializationTypes.FindNodeOrInsertPos(ID, InsertPos))
+  llvm::FoldingSetInsertToken Token;
+  if (auto *T = TemplateSpecializationTypes.lookup(ID, Token))
     return QualType(T, 0);
 
   void *Mem = Allocate(sizeof(TemplateSpecializationType) +
@@ -6778,7 +6748,7 @@ QualType ASTContext::getCanonicalTemplateSpecializationType(
   assert(Spec->isDependentType() &&
          "canonical template specialization must be dependent");
   Types.push_back(Spec);
-  TemplateSpecializationTypes.InsertNode(Spec, InsertPos);
+  TemplateSpecializationTypes.insert(Spec, Token);
   return QualType(Spec, 0);
 }
 
@@ -6837,22 +6807,22 @@ ASTContext::getParenType(QualType InnerType) const {
   llvm::FoldingSetNodeID ID;
   ParenType::Profile(ID, InnerType);
 
-  void *InsertPos = nullptr;
-  ParenType *T = ParenTypes.FindNodeOrInsertPos(ID, InsertPos);
+  llvm::FoldingSetInsertToken Token;
+  ParenType *T = ParenTypes.lookup(ID, Token);
   if (T)
     return QualType(T, 0);
 
   QualType Canon = InnerType;
   if (!Canon.isCanonical()) {
     Canon = getCanonicalType(InnerType);
-    ParenType *CheckT = ParenTypes.FindNodeOrInsertPos(ID, InsertPos);
+    ParenType *CheckT = ParenTypes.lookup(ID, Token);
     assert(!CheckT && "Paren canonical type broken");
     (void)CheckT;
   }
 
   T = new (*this, alignof(ParenType)) ParenType(InnerType, Canon);
   Types.push_back(T);
-  ParenTypes.InsertNode(T, InsertPos);
+  ParenTypes.insert(T, Token);
   return QualType(T, 0);
 }
 
@@ -6875,9 +6845,8 @@ QualType ASTContext::getDependentNameType(ElaboratedTypeKeyword Keyword,
   llvm::FoldingSetNodeID ID;
   DependentNameType::Profile(ID, Keyword, NNS, Name);
 
-  void *InsertPos = nullptr;
-  if (DependentNameType *T =
-          DependentNameTypes.FindNodeOrInsertPos(ID, InsertPos))
+  llvm::FoldingSetInsertToken Token;
+  if (DependentNameType *T = DependentNameTypes.lookup(ID, Token))
     return QualType(T, 0);
 
   ElaboratedTypeKeyword CanonKeyword =
@@ -6888,7 +6857,7 @@ QualType ASTContext::getDependentNameType(ElaboratedTypeKeyword Keyword,
   if (CanonKeyword != Keyword || CanonNNS != NNS) {
     Canon = getDependentNameType(CanonKeyword, CanonNNS, Name);
     [[maybe_unused]] DependentNameType *T =
-        DependentNameTypes.FindNodeOrInsertPos(ID, InsertPos);
+        DependentNameTypes.lookup(ID, Token);
     assert(!T && "broken canonicalization");
     assert(Canon.isCanonical());
   }
@@ -6896,7 +6865,7 @@ QualType ASTContext::getDependentNameType(ElaboratedTypeKeyword Keyword,
   DependentNameType *T = new (*this, alignof(DependentNameType))
       DependentNameType(Keyword, NNS, Name, Canon);
   Types.push_back(T);
-  DependentNameTypes.InsertNode(T, InsertPos);
+  DependentNameTypes.insert(T, Token);
   return QualType(T, 0);
 }
 
@@ -6959,8 +6928,8 @@ QualType ASTContext::getPackExpansionType(QualType Pattern,
   llvm::FoldingSetNodeID ID;
   PackExpansionType::Profile(ID, Pattern, NumExpansions);
 
-  void *InsertPos = nullptr;
-  PackExpansionType *T = PackExpansionTypes.FindNodeOrInsertPos(ID, InsertPos);
+  llvm::FoldingSetInsertToken Token;
+  PackExpansionType *T = PackExpansionTypes.lookup(ID, Token);
   if (T)
     return QualType(T, 0);
 
@@ -6971,13 +6940,13 @@ QualType ASTContext::getPackExpansionType(QualType Pattern,
 
     // Find the insert position again, in case we inserted an element into
     // PackExpansionTypes and invalidated our insert position.
-    PackExpansionTypes.FindNodeOrInsertPos(ID, InsertPos);
+    PackExpansionTypes.lookup(ID, Token);
   }
 
   T = new (*this, alignof(PackExpansionType))
       PackExpansionType(Pattern, Canon, NumExpansions);
   Types.push_back(T);
-  PackExpansionTypes.InsertNode(T, InsertPos);
+  PackExpansionTypes.insert(T, Token);
   return QualType(T, 0);
 }
 
@@ -7036,8 +7005,8 @@ QualType ASTContext::getObjCObjectType(
   // Look in the folding set for an existing type.
   llvm::FoldingSetNodeID ID;
   ObjCObjectTypeImpl::Profile(ID, baseType, typeArgs, protocols, isKindOf);
-  void *InsertPos = nullptr;
-  if (ObjCObjectType *QT = ObjCObjectTypes.FindNodeOrInsertPos(ID, InsertPos))
+  llvm::FoldingSetInsertToken Token;
+  if (ObjCObjectType *QT = ObjCObjectTypes.lookup(ID, Token))
     return QualType(QT, 0);
 
   // Determine the type arguments to be used for canonicalization,
@@ -7082,8 +7051,8 @@ QualType ASTContext::getObjCObjectType(
     canonical = getObjCObjectType(getCanonicalType(baseType), canonTypeArgs,
                                   canonProtocols, isKindOf);
 
-    // Regenerate InsertPos.
-    ObjCObjectTypes.FindNodeOrInsertPos(ID, InsertPos);
+    // Regenerate Token.
+    ObjCObjectTypes.lookup(ID, Token);
   }
 
   unsigned size = sizeof(ObjCObjectTypeImpl);
@@ -7095,7 +7064,7 @@ QualType ASTContext::getObjCObjectType(
                                  isKindOf);
 
   Types.push_back(T);
-  ObjCObjectTypes.InsertNode(T, InsertPos);
+  ObjCObjectTypes.insert(T, Token);
   return QualType(T, 0);
 }
 
@@ -7175,9 +7144,8 @@ ASTContext::getObjCTypeParamType(const ObjCTypeParamDecl *Decl,
   // Look in the folding set for an existing type.
   llvm::FoldingSetNodeID ID;
   ObjCTypeParamType::Profile(ID, Decl, Decl->getUnderlyingType(), protocols);
-  void *InsertPos = nullptr;
-  if (ObjCTypeParamType *TypeParam =
-      ObjCTypeParamTypes.FindNodeOrInsertPos(ID, InsertPos))
+  llvm::FoldingSetInsertToken Token;
+  if (ObjCTypeParamType *TypeParam = ObjCTypeParamTypes.lookup(ID, Token))
     return QualType(TypeParam, 0);
 
   // We canonicalize to the underlying type.
@@ -7196,7 +7164,7 @@ ASTContext::getObjCTypeParamType(const ObjCTypeParamDecl *Decl,
   auto *newType = new (mem) ObjCTypeParamType(Decl, Canonical, protocols);
 
   Types.push_back(newType);
-  ObjCTypeParamTypes.InsertNode(newType, InsertPos);
+  ObjCTypeParamTypes.insert(newType, Token);
   return QualType(newType, 0);
 }
 
@@ -7285,9 +7253,8 @@ QualType ASTContext::getObjCObjectPointerType(QualType ObjectT) const {
   llvm::FoldingSetNodeID ID;
   ObjCObjectPointerType::Profile(ID, ObjectT);
 
-  void *InsertPos = nullptr;
-  if (ObjCObjectPointerType *QT =
-              ObjCObjectPointerTypes.FindNodeOrInsertPos(ID, InsertPos))
+  llvm::FoldingSetInsertToken Token;
+  if (ObjCObjectPointerType *QT = ObjCObjectPointerTypes.lookup(ID, Token))
     return QualType(QT, 0);
 
   // Find the canonical object type.
@@ -7295,8 +7262,8 @@ QualType ASTContext::getObjCObjectPointerType(QualType ObjectT) const {
   if (!ObjectT.isCanonical()) {
     Canonical = getObjCObjectPointerType(getCanonicalType(ObjectT));
 
-    // Regenerate InsertPos.
-    ObjCObjectPointerTypes.FindNodeOrInsertPos(ID, InsertPos);
+    // Regenerate Token.
+    ObjCObjectPointerTypes.lookup(ID, Token);
   }
 
   // No match.
@@ -7306,7 +7273,7 @@ QualType ASTContext::getObjCObjectPointerType(QualType ObjectT) const {
     new (Mem) ObjCObjectPointerType(Canonical, ObjectT);
 
   Types.push_back(QType);
-  ObjCObjectPointerTypes.InsertNode(QType, InsertPos);
+  ObjCObjectPointerTypes.insert(QType, Token);
   return QualType(QType, 0);
 }
 
@@ -7346,9 +7313,8 @@ QualType ASTContext::getTypeOfExprType(Expr *tofExpr, TypeOfKind Kind) const {
     DependentTypeOfExprType::Profile(ID, *this, tofExpr,
                                      Kind == TypeOfKind::Unqualified);
 
-    void *InsertPos = nullptr;
-    DependentTypeOfExprType *Canon =
-        DependentTypeOfExprTypes.FindNodeOrInsertPos(ID, InsertPos);
+    llvm::FoldingSetInsertToken Token;
+    DependentTypeOfExprType *Canon = DependentTypeOfExprTypes.lookup(ID, Token);
     if (Canon) {
       // We already have a "canonical" version of an identical, dependent
       // typeof(expr) type. Use that as our canonical type.
@@ -7358,7 +7324,7 @@ QualType ASTContext::getTypeOfExprType(Expr *tofExpr, TypeOfKind Kind) const {
       // Build a new, canonical typeof(expr) type.
       Canon = new (*this, alignof(DependentTypeOfExprType))
           DependentTypeOfExprType(*this, tofExpr, Kind);
-      DependentTypeOfExprTypes.InsertNode(Canon, InsertPos);
+      DependentTypeOfExprTypes.insert(Canon, Token);
       toe = Canon;
     }
   } else {
@@ -7424,15 +7390,14 @@ QualType ASTContext::getDecltypeType(Expr *E, QualType UnderlyingType) const {
     llvm::FoldingSetNodeID ID;
     DependentDecltypeType::Profile(ID, *this, E);
 
-    void *InsertPos = nullptr;
-    if (DependentDecltypeType *Canon =
-            DependentDecltypeTypes.FindNodeOrInsertPos(ID, InsertPos))
+    llvm::FoldingSetInsertToken Token;
+    if (DependentDecltypeType *Canon = DependentDecltypeTypes.lookup(ID, Token))
       return QualType(Canon, 0);
 
     // Build a new, canonical decltype(expr) type.
     auto *DT =
         new (*this, alignof(DependentDecltypeType)) DependentDecltypeType(E);
-    DependentDecltypeTypes.InsertNode(DT, InsertPos);
+    DependentDecltypeTypes.insert(DT, Token);
     Types.push_back(DT);
     return QualType(DT, 0);
   }
@@ -7453,9 +7418,8 @@ QualType ASTContext::getPackIndexingType(QualType Pattern, Expr *IndexExpr,
     llvm::FoldingSetNodeID ID;
     PackIndexingType::Profile(ID, *this, Pattern.getCanonicalType(), IndexExpr,
                               FullySubstituted, Expansions);
-    void *InsertPos = nullptr;
-    PackIndexingType *Canon =
-        DependentPackIndexingTypes.FindNodeOrInsertPos(ID, InsertPos);
+    llvm::FoldingSetInsertToken Token;
+    PackIndexingType *Canon = DependentPackIndexingTypes.lookup(ID, Token);
     if (!Canon) {
       void *Mem = Allocate(
           PackIndexingType::totalSizeToAlloc<QualType>(Expansions.size()),
@@ -7463,7 +7427,7 @@ QualType ASTContext::getPackIndexingType(QualType Pattern, Expr *IndexExpr,
       Canon =
           new (Mem) PackIndexingType(QualType(), Pattern.getCanonicalType(),
                                      IndexExpr, FullySubstituted, Expansions);
-      DependentPackIndexingTypes.InsertNode(Canon, InsertPos);
+      DependentPackIndexingTypes.insert(Canon, Token);
     }
     Canonical = QualType(Canon, 0);
   }
@@ -7486,9 +7450,8 @@ ASTContext::getUnaryTransformType(QualType BaseType, QualType UnderlyingType,
   llvm::FoldingSetNodeID ID;
   UnaryTransformType::Profile(ID, BaseType, UnderlyingType, Kind);
 
-  void *InsertPos = nullptr;
-  if (UnaryTransformType *UT =
-          UnaryTransformTypes.FindNodeOrInsertPos(ID, InsertPos))
+  llvm::FoldingSetInsertToken Token;
+  if (UnaryTransformType *UT = UnaryTransformTypes.lookup(ID, Token))
     return QualType(UT, 0);
 
   QualType CanonType;
@@ -7504,14 +7467,14 @@ ASTContext::getUnaryTransformType(QualType BaseType, QualType UnderlyingType,
 
       // Find the insertion position again.
       [[maybe_unused]] UnaryTransformType *UT =
-          UnaryTransformTypes.FindNodeOrInsertPos(ID, InsertPos);
+          UnaryTransformTypes.lookup(ID, Token);
       assert(!UT && "broken canonicalization");
     }
   }
 
   auto *UT = new (*this, alignof(UnaryTransformType))
       UnaryTransformType(BaseType, UnderlyingType, Kind, CanonType);
-  UnaryTransformTypes.InsertNode(UT, InsertPos);
+  UnaryTransformTypes.insert(UT, Token);
   Types.push_back(UT);
   return QualType(UT, 0);
 }
@@ -7596,12 +7559,12 @@ QualType ASTContext::getDeducedTemplateSpecializationType(
     DeducedKind DK, QualType DeducedAsType, ElaboratedTypeKeyword Keyword,
     TemplateName Template) const {
   // Look in the folding set for an existing type.
-  void *InsertPos = nullptr;
+  llvm::FoldingSetInsertToken Token;
   llvm::FoldingSetNodeID ID;
   DeducedTemplateSpecializationType::Profile(ID, DK, DeducedAsType, Keyword,
                                              Template);
   if (DeducedTemplateSpecializationType *DTST =
-          DeducedTemplateSpecializationTypes.FindNodeOrInsertPos(ID, InsertPos))
+          DeducedTemplateSpecializationTypes.lookup(ID, Token))
     return QualType(DTST, 0);
 
   if (DK == DeducedKind::Deduced) {
@@ -7617,7 +7580,7 @@ QualType ASTContext::getDeducedTemplateSpecializationType(
           DK, QualType(), ElaboratedTypeKeyword::None, CanonTemplateName);
       // Find the insertion position again.
       [[maybe_unused]] DeducedTemplateSpecializationType *DTST =
-          DeducedTemplateSpecializationTypes.FindNodeOrInsertPos(ID, InsertPos);
+          DeducedTemplateSpecializationTypes.lookup(ID, Token);
       assert(!DTST && "broken canonicalization");
     }
   }
@@ -7631,7 +7594,7 @@ QualType ASTContext::getDeducedTemplateSpecializationType(
   assert(ID == TempID && "ID does not match");
 #endif
   Types.push_back(DTST);
-  DeducedTemplateSpecializationTypes.InsertNode(DTST, InsertPos);
+  DeducedTemplateSpecializationTypes.insert(DTST, Token);
   return QualType(DTST, 0);
 }
 
@@ -7643,8 +7606,8 @@ QualType ASTContext::getAtomicType(QualType T) const {
   llvm::FoldingSetNodeID ID;
   AtomicType::Profile(ID, T);
 
-  void *InsertPos = nullptr;
-  if (AtomicType *AT = AtomicTypes.FindNodeOrInsertPos(ID, InsertPos))
+  llvm::FoldingSetInsertToken Token;
+  if (AtomicType *AT = AtomicTypes.lookup(ID, Token))
     return QualType(AT, 0);
 
   // If the atomic value type isn't canonical, this won't be a canonical type
@@ -7654,12 +7617,12 @@ QualType ASTContext::getAtomicType(QualType T) const {
     Canonical = getAtomicType(getCanonicalType(T));
 
     // Get the new insert position for the node we care about.
-    AtomicType *NewIP = AtomicTypes.FindNodeOrInsertPos(ID, InsertPos);
+    AtomicType *NewIP = AtomicTypes.lookup(ID, Token);
     assert(!NewIP && "Shouldn't be in the map!"); (void)NewIP;
   }
   auto *New = new (*this, alignof(AtomicType)) AtomicType(T, Canonical);
   Types.push_back(New);
-  AtomicTypes.InsertNode(New, InsertPos);
+  AtomicTypes.insert(New, Token);
   return QualType(New, 0);
 }
 
@@ -11343,13 +11306,12 @@ TemplateName ASTContext::getQualifiedTemplateName(NestedNameSpecifier Qualifier,
   llvm::FoldingSetNodeID ID;
   QualifiedTemplateName::Profile(ID, Qualifier, TemplateKeyword, Template);
 
-  void *InsertPos = nullptr;
-  QualifiedTemplateName *QTN =
-      QualifiedTemplateNames.FindNodeOrInsertPos(ID, InsertPos);
+  llvm::FoldingSetInsertToken Token;
+  QualifiedTemplateName *QTN = QualifiedTemplateNames.lookup(ID, Token);
   if (!QTN) {
     QTN = new (*this, alignof(QualifiedTemplateName))
         QualifiedTemplateName(Qualifier, TemplateKeyword, Template);
-    QualifiedTemplateNames.InsertNode(QTN, InsertPos);
+    QualifiedTemplateNames.insert(QTN, Token);
   }
 
   return TemplateName(QTN);
@@ -11362,14 +11324,13 @@ ASTContext::getDependentTemplateName(const DependentTemplateStorage &S) const {
   llvm::FoldingSetNodeID ID;
   S.Profile(ID);
 
-  void *InsertPos = nullptr;
-  if (DependentTemplateName *QTN =
-          DependentTemplateNames.FindNodeOrInsertPos(ID, InsertPos))
+  llvm::FoldingSetInsertToken Token;
+  if (DependentTemplateName *QTN = DependentTemplateNames.lookup(ID, Token))
     return TemplateName(QTN);
 
   DependentTemplateName *QTN =
       new (*this, alignof(DependentTemplateName)) DependentTemplateName(S);
-  DependentTemplateNames.InsertNode(QTN, InsertPos);
+  DependentTemplateNames.insert(QTN, Token);
   return TemplateName(QTN);
 }
 
@@ -11382,14 +11343,14 @@ TemplateName ASTContext::getSubstTemplateTemplateParm(TemplateName Replacement,
   SubstTemplateTemplateParmStorage::Profile(ID, Replacement, AssociatedDecl,
                                             Index, PackIndex, Final);
 
-  void *insertPos = nullptr;
-  SubstTemplateTemplateParmStorage *subst
-    = SubstTemplateTemplateParms.FindNodeOrInsertPos(ID, insertPos);
+  llvm::FoldingSetInsertToken Token;
+  SubstTemplateTemplateParmStorage *subst =
+      SubstTemplateTemplateParms.lookup(ID, Token);
 
   if (!subst) {
     subst = new (*this) SubstTemplateTemplateParmStorage(
         Replacement, AssociatedDecl, Index, PackIndex, Final);
-    SubstTemplateTemplateParms.InsertNode(subst, insertPos);
+    SubstTemplateTemplateParms.insert(subst, Token);
   }
 
   return TemplateName(subst);
@@ -11404,14 +11365,14 @@ ASTContext::getSubstTemplateTemplateParmPack(const TemplateArgument &ArgPack,
   SubstTemplateTemplateParmPackStorage::Profile(ID, Self, ArgPack,
                                                 AssociatedDecl, Index, Final);
 
-  void *InsertPos = nullptr;
-  SubstTemplateTemplateParmPackStorage *Subst
-    = SubstTemplateTemplateParmPacks.FindNodeOrInsertPos(ID, InsertPos);
+  llvm::FoldingSetInsertToken Token;
+  SubstTemplateTemplateParmPackStorage *Subst =
+      SubstTemplateTemplateParmPacks.lookup(ID, Token);
 
   if (!Subst) {
     Subst = new (*this) SubstTemplateTemplateParmPackStorage(
         ArgPack.pack_elements(), AssociatedDecl, Index, Final);
-    SubstTemplateTemplateParmPacks.InsertNode(Subst, InsertPos);
+    SubstTemplateTemplateParmPacks.insert(Subst, Token);
   }
 
   return TemplateName(Subst);
@@ -11428,15 +11389,14 @@ ASTContext::getDeducedTemplateName(TemplateName Underlying,
   llvm::FoldingSetNodeID ID;
   DeducedTemplateStorage::Profile(ID, *this, Underlying, DefaultArgs);
 
-  void *InsertPos = nullptr;
-  DeducedTemplateStorage *DTS =
-      DeducedTemplates.FindNodeOrInsertPos(ID, InsertPos);
+  llvm::FoldingSetInsertToken Token;
+  DeducedTemplateStorage *DTS = DeducedTemplates.lookup(ID, Token);
   if (!DTS) {
     void *Mem = Allocate(sizeof(DeducedTemplateStorage) +
                              sizeof(TemplateArgument) * DefaultArgs.Args.size(),
                          alignof(DeducedTemplateStorage));
     DTS = new (Mem) DeducedTemplateStorage(Underlying, DefaultArgs);
-    DeducedTemplates.InsertNode(DTS, InsertPos);
+    DeducedTemplates.insert(DTS, Token);
   }
   return TemplateName(DTS);
 }
@@ -14719,13 +14679,13 @@ ASTContext::getMSGuidDecl(MSGuidDecl::Parts Parts) const {
   llvm::FoldingSetNodeID ID;
   MSGuidDecl::Profile(ID, Parts);
 
-  void *InsertPos;
-  if (MSGuidDecl *Existing = MSGuidDecls.FindNodeOrInsertPos(ID, InsertPos))
+  llvm::FoldingSetInsertToken Token;
+  if (MSGuidDecl *Existing = MSGuidDecls.lookup(ID, Token))
     return Existing;
 
   QualType GUIDType = getMSGuidType().withConst();
   MSGuidDecl *New = MSGuidDecl::Create(*this, GUIDType, Parts);
-  MSGuidDecls.InsertNode(New, InsertPos);
+  MSGuidDecls.insert(New, Token);
   return New;
 }
 
@@ -14735,14 +14695,14 @@ ASTContext::getUnnamedGlobalConstantDecl(QualType Ty,
   llvm::FoldingSetNodeID ID;
   UnnamedGlobalConstantDecl::Profile(ID, Ty, APVal);
 
-  void *InsertPos;
+  llvm::FoldingSetInsertToken Token;
   if (UnnamedGlobalConstantDecl *Existing =
-          UnnamedGlobalConstantDecls.FindNodeOrInsertPos(ID, InsertPos))
+          UnnamedGlobalConstantDecls.lookup(ID, Token))
     return Existing;
 
   UnnamedGlobalConstantDecl *New =
       UnnamedGlobalConstantDecl::Create(*this, Ty, APVal);
-  UnnamedGlobalConstantDecls.InsertNode(New, InsertPos);
+  UnnamedGlobalConstantDecls.insert(New, Token);
   return New;
 }
 
@@ -14757,13 +14717,13 @@ ASTContext::getTemplateParamObjectDecl(QualType T, const APValue &V) const {
   llvm::FoldingSetNodeID ID;
   TemplateParamObjectDecl::Profile(ID, T, V);
 
-  void *InsertPos;
+  llvm::FoldingSetInsertToken Token;
   if (TemplateParamObjectDecl *Existing =
-          TemplateParamObjectDecls.FindNodeOrInsertPos(ID, InsertPos))
+          TemplateParamObjectDecls.lookup(ID, Token))
     return Existing;
 
   TemplateParamObjectDecl *New = TemplateParamObjectDecl::Create(*this, T, V);
-  TemplateParamObjectDecls.InsertNode(New, InsertPos);
+  TemplateParamObjectDecls.insert(New, Token);
   return New;
 }
 

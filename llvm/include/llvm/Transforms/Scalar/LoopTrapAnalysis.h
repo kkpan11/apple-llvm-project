@@ -14,7 +14,7 @@
 
 namespace llvm {
 
-struct LoopTrapAnalysisPass : public PassInfoMixin<LoopTrapAnalysisPass> {
+struct LoopTrapAnalysisPass : public OptionalPassInfoMixin<LoopTrapAnalysisPass> {
   PreservedAnalyses run(Function &F, FunctionAnalysisManager &);
 };
 

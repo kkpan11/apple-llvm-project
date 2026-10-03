@@ -2052,7 +2052,7 @@ public:
 private:
   UnresolvedUsingType *getUnresolvedUsingTypeInternal(
       ElaboratedTypeKeyword Keyword, NestedNameSpecifier Qualifier,
-      const UnresolvedUsingTypenameDecl *D, void *InsertPos,
+      const UnresolvedUsingTypenameDecl *D, llvm::FoldingSetInsertToken Token,
       const Type *CanonicalType) const;
 
   TagType *getTagTypeInternal(ElaboratedTypeKeyword Keyword,
@@ -4212,7 +4212,7 @@ typename clang::LazyGenerationalUpdatePtr<Owner, T, Update>::ValueType
 }
 template <> struct llvm::DenseMapInfo<llvm::FoldingSetNodeID> {
   static unsigned getHashValue(const FoldingSetNodeID &Val) {
-    return Val.ComputeHash();
+    return Val.computeHash();
   }
 
   static bool isEqual(const FoldingSetNodeID &LHS,

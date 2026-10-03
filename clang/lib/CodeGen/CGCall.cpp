@@ -1034,8 +1034,8 @@ const CGFunctionInfo &CodeGenTypes::arrangeLLVMFunctionInfo(
   CGFunctionInfo::Profile(ID, isInstanceMethod, isChainCall, isDelegateCall,
                           info, paramInfos, required, resultType, argTypes);
 
-  void *insertPos = nullptr;
-  CGFunctionInfo *FI = FunctionInfos.FindNodeOrInsertPos(ID, insertPos);
+  llvm::FoldingSetInsertToken InsertToken;
+  CGFunctionInfo *FI = FunctionInfos.lookup(ID, InsertToken);
   if (FI)
     return *FI;
 
@@ -1044,7 +1044,7 @@ const CGFunctionInfo &CodeGenTypes::arrangeLLVMFunctionInfo(
   // Construct the function info.  We co-allocate the ArgInfos.
   FI = CGFunctionInfo::create(CC, isInstanceMethod, isChainCall, isDelegateCall,
                               info, paramInfos, resultType, argTypes, required);
-  FunctionInfos.InsertNode(FI, insertPos);
+  FunctionInfos.insert(FI, InsertToken);
 
   bool inserted = FunctionsBeingProcessed.insert(FI).second;
   (void)inserted;
