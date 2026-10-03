@@ -755,8 +755,11 @@ enum ASTRecordTypes {
   /// file, and for each module the relative bit offset into the stream.
   SUBMODULE_METADATA = 80,
 
+  /// Record code for the OpenMP 'requires' directives seen in the TU.
+  OMP_REQUIRES_DECLS = 81,
+
   /// Record code for availability domain table.
-  AVAILABILITY_DOMAIN_TABLE = 81,
+  AVAILABILITY_DOMAIN_TABLE = 82,
 };
 
 /// Record types used within a source manager block.
