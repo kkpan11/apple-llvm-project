@@ -392,11 +392,9 @@ public:
     iterator(const SampleProfileNameTable *Table, size_t Idx)
         : Table(Table), Idx(Idx) {}
 
-#ifndef __swift__
     bool operator==(const iterator &RHS) const {
       return Table == RHS.Table && Idx == RHS.Idx;
     }
-#endif
 
     iterator &operator++() {
       ++Idx;
