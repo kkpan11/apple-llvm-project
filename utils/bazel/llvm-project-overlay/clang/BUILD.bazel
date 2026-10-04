@@ -3270,6 +3270,7 @@ cc_library(
         ":cir_openmp_support",
         "//mlir:DLTIDialect",
         "//mlir:IR",
+        "//mlir:LLVMDialect",
         "//mlir:OpenACCDialect",
         "//mlir:OpenMPDialect",
     ],
@@ -3517,6 +3518,7 @@ cc_library(
         ":MLIRCIROpsIncGen",
         ":ast",
         ":basic",
+        ":cir_all_dialects",
         ":cir_codegen",
         ":cir_dialect",
         ":cir_headers",
@@ -3531,6 +3533,7 @@ cc_library(
         "//llvm:Linker",
         "//llvm:Support",
         "//mlir:IR",
+        "//mlir:Parser",
         "//mlir:Pass",
     ],
 )
