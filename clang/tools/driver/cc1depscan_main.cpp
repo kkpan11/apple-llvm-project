@@ -515,13 +515,11 @@ static Expected<llvm::cas::CASID> scanAndUpdateCC1InlineWithTool(
   return *Root;
 }
 
-static int
-scanAndUpdateCC1Inline(const char *Exec, ArrayRef<const char *> InputArgs,
-                       StringRef WorkingDirectory,
-                       SmallVectorImpl<const char *> &OutputArgs,
-                       llvm::function_ref<const char *(const Twine &)> SaveArg,
-                       const CASOptions &CASOpts, DiagnosticsEngine &Diag,
-                       std::optional<llvm::cas::CASID> &RootID) {
+static int scanAndUpdateCC1Inline(
+    const char *Exec, ArrayRef<const char *> InputArgs,
+    StringRef WorkingDirectory, SmallVectorImpl<const char *> &OutputArgs,
+    llvm::function_ref<const char *(const Twine &)> SaveArg,
+    const CASOptions &CASOpts, DiagnosticsEngine &Diag, std::string &RootID) {
   auto [DB, Cache] = CASOpts.createDatabases(Diag);
   if (!DB || !Cache)
     return 1;
@@ -542,14 +540,14 @@ scanAndUpdateCC1Inline(const char *Exec, ArrayRef<const char *> InputArgs,
   auto DiagsConsumer =
       std::make_unique<TextDiagnosticPrinter>(llvm::errs(), *DiagOpts, false);
 
-  auto E = scanAndUpdateCC1InlineWithTool(
-               Tool, *DiagsConsumer, /*VerboseOS*/ nullptr, Exec, InputArgs,
-               WorkingDirectory, OutputArgs, SaveArg)
-               .moveInto(RootID);
-  if (E) {
-    Diag.Report(diag::err_cas_depscan_failed) << std::move(E);
+  auto Root = scanAndUpdateCC1InlineWithTool(
+      Tool, *DiagsConsumer, /*VerboseOS*/ nullptr, Exec, InputArgs,
+      WorkingDirectory, OutputArgs, SaveArg);
+  if (!Root) {
+    Diag.Report(diag::err_cas_depscan_failed) << Root.takeError();
     return 1;
   }
+  RootID = Root->toString();
 
   return DiagsConsumer->getNumErrors() != 0;
 }
@@ -563,7 +561,7 @@ static int scanAndUpdateCC1UsingDaemon(
     StringRef WorkingDirectory, SmallVectorImpl<const char *> &NewArgs,
     StringRef Path, const DepscanSharing &Sharing, DiagnosticsEngine &Diag,
     llvm::function_ref<const char *(const Twine &)> SaveArg,
-    const CASOptions &CASOpts, std::optional<llvm::cas::CASID> &Root) {
+    std::string &Root) {
   using namespace clang::cc1depscand;
   auto reportScanFailure = [&](Error E) {
     Diag.Report(diag::err_cas_depscan_failed) << std::move(E);
@@ -608,14 +606,7 @@ static int scanAndUpdateCC1UsingDaemon(
   for (int I = 0, E = RawNewArgs.size(); I != E; ++I)
     NewArgs[I] = SaveArg(RawNewArgs[I]);
 
-  // Create CAS after daemon returns the result so daemon can perform corrupted
-  // CAS recovery.
-  auto [CAS, _] = CASOpts.createDatabases(Diag);
-  if (!CAS)
-    return 1;
-
-  if (auto E = CAS->parseID(RootID).moveInto(Root))
-    return reportScanFailure(std::move(E));
+  Root = RootID.str();
 
   return 0;
 }
@@ -641,11 +632,9 @@ static void writeResponseFile(raw_ostream &OS,
 
 static int scanAndUpdateCC1(const char *Exec, ArrayRef<const char *> OldArgs,
                             SmallVectorImpl<const char *> &NewArgs,
-                            llvm::vfs::FileSystem &VFS,
-                            DiagnosticsEngine &Diag,
+                            llvm::vfs::FileSystem &VFS, DiagnosticsEngine &Diag,
                             const llvm::opt::ArgList &Args,
-                            const CASOptions &CASOpts,
-                            std::optional<llvm::cas::CASID> &RootID) {
+                            const CASOptions &CASOpts, std::string &RootID) {
   llvm::ScopedDurationTimer ScopedTime([&Diag](double Seconds) {
     Diag.Report(diag::remark_compile_job_cache_timing_depscan)
         << llvm::format("%.6fs", Seconds);
@@ -710,7 +699,7 @@ static int scanAndUpdateCC1(const char *Exec, ArrayRef<const char *> OldArgs,
   if (auto DaemonPath = makeDepscanDaemonPath(Mode, Sharing))
     return scanAndUpdateCC1UsingDaemon(Exec, OldArgs, WorkingDirectory, NewArgs,
                                        *DaemonPath, Sharing, Diag, SaveArg,
-                                       CASOpts, RootID);
+                                       RootID);
 
   return scanAndUpdateCC1Inline(Exec, OldArgs, WorkingDirectory, NewArgs,
                                 SaveArg, CASOpts, Diag, RootID);
@@ -769,7 +758,7 @@ int cc1depscan_main(ArrayRef<const char *> Argv, const char *Argv0,
     DumpDepscanTree = Arg->getValue();
 
   SmallVector<const char *> NewArgs;
-  std::optional<llvm::cas::CASID> RootID;
+  std::string RootID;
 
   CASOptions CASOpts;
   auto ParsedCC1Args =
@@ -805,7 +794,7 @@ int cc1depscan_main(ArrayRef<const char *> Argv, const char *Argv0,
     if (EC)
       Diags.Report(diag::err_fe_unable_to_open_output)
           << *DumpDepscanTree << EC.message();
-    RootOS << RootID->toString() << "\n";
+    RootOS << RootID << "\n";
   }
   writeResponseFile(*OutputFile, NewArgs);
 
