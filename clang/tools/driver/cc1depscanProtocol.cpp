@@ -13,11 +13,12 @@
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/IOSandbox.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Process.h"
+#include "llvm/Support/Program.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/StringSaver.h"
-#include "llvm/Support/Program.h"
 #include <chrono>
 #include <cstdlib>
 #include <thread>
@@ -32,6 +33,9 @@ using namespace llvm;
 
 std::string cc1depscand::getBasePath(StringRef DaemonKey) {
   assert(!DaemonKey.empty() && "Expected valid daemon key");
+
+  // Not compiler IO; on Windows system_temp_directory() trips the sandbox.
+  auto BypassSandbox = llvm::sys::sandbox::scopedDisable();
 
   // Construct the path.
   SmallString<128> BasePath;
@@ -243,8 +247,12 @@ Expected<ScanDaemon> ScanDaemon::launchDaemon(StringRef BasePath,
   std::optional<ArrayRef<StringRef>> EnvOpt =
       Env.empty() ? std::nullopt : std::optional<ArrayRef<StringRef>>(Env);
 
-  llvm::sys::ProcessInfo PI = llvm::sys::ExecuteNoWait(
-      Arg0, LaunchArgs, EnvOpt, {}, 0, &ErrMsg, &ExecutionFailed);
+  llvm::sys::ProcessInfo PI = [&] {
+    // Not compiler IO; on Windows ExecuteNoWait() trips the sandbox.
+    auto BypassSandbox = llvm::sys::sandbox::scopedDisable();
+    return llvm::sys::ExecuteNoWait(Arg0, LaunchArgs, EnvOpt, {}, 0, &ErrMsg,
+                                    &ExecutionFailed);
+  }();
 
   if (ExecutionFailed || PI.Pid == llvm::sys::ProcessInfo::InvalidPid)
     return llvm::createStringError(std::make_error_code(std::errc::invalid_argument),

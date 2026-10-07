@@ -1265,10 +1265,14 @@ int cc1depscand_main(ArrayRef<const char *> Argv, const char *Argv0, void *MainA
 #endif
 
     std::string ErrMsg;
-    int Result = llvm::sys::ExecuteAndWait(
-        RefArgs.front(), RefArgs, /*Env*/ std::nullopt,
-        /*Redirects*/ {}, /*SecondsToWait*/ 0,
-        /*MemoryLimit*/ 0, &ErrMsg);
+    int Result = [&] {
+      // Not compiler IO; on Windows ExecuteAndWait() trips the sandbox.
+      auto BypassSandbox = llvm::sys::sandbox::scopedDisable();
+      return llvm::sys::ExecuteAndWait(RefArgs.front(), RefArgs,
+                                       /*Env*/ std::nullopt,
+                                       /*Redirects*/ {}, /*SecondsToWait*/ 0,
+                                       /*MemoryLimit*/ 0, &ErrMsg);
+    }();
 
     Server.shutdown();
     ServerThread.join();
