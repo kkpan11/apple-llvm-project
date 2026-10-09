@@ -219,6 +219,14 @@ SwiftLanguageRuntime::AreFuncletsOfSameAsyncFunction(
       !IsAnySwiftAsyncFunctionSymbol(node2))
     return FuncletComparisonResult::NotBothFunclets;
 
+  // async_Main has no Function node to compare.
+  bool is_async_main1 = hasChild(node1, Node::Kind::AsyncMainEntryPoint);
+  bool is_async_main2 = hasChild(node2, Node::Kind::AsyncMainEntryPoint);
+  if (is_async_main1 || is_async_main2)
+    return is_async_main1 && is_async_main2
+               ? FuncletComparisonResult::SameAsyncFunction
+               : FuncletComparisonResult::DifferentAsyncFunctions;
+
   // Peel off ProtocolWitnes/Static nodes, in this order.
   for (auto wrapper : {Node::Kind::ProtocolWitness, Node::Kind::Static}) {
     NodePointer wrapper1 = childAtPath(node1, wrapper);

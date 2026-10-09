@@ -338,6 +338,19 @@ TEST(TestSwiftDemangleAsyncNames, AsyncMain) {
 
   CheckFuncletNumbersAreARange(async_main_funclets);
   CheckFuncletNumbersAreARange(async_main_funclets_underscore);
+
+  CheckGroupOfFuncletsFromSameFunction(llvm::to_vector(llvm::concat<StringRef>(
+      async_main_funclets, async_main_funclets_underscore)));
+
+  SmallVector<StringRef> other_funclets = {
+      // A closure in top-level code:
+      "$s1aySiYacfU_", "$s1aySiYacfU_TQ0_", "$s1aySiYacfU_TY1_",
+      // "Normal" funclets:
+      "$s1a8sayBasicyySSYaF", "$s1a8sayBasicyySSYaFTY0_",
+      // Static funclets:
+      "$s1a6StructV9sayStaticyySSYaFZ", "$s1a6StructV9sayStaticyySSYaFZTY0_"};
+  CheckGroupOfFuncletsFromDifferentFunctions(async_main_funclets,
+                                             other_funclets);
 }
 
 TEST(TestSwiftDemangleAsyncNames, NonAsync) {
