@@ -317,6 +317,29 @@ TEST(TestSwiftDemangleAsyncNames, StaticAsync) {
   CheckFuncletNumbersAreARange(static_async_funclets);
 }
 
+TEST(TestSwiftDemangleAsyncNames, AsyncMain) {
+  // The entry point of async top-level code has no mangling prefix.
+  SmallVector<StringRef> async_main_funclets = {
+      "async_Main",
+      "async_MainTQ0_",
+      "async_MainTY1_",
+  };
+  SmallVector<StringRef> async_main_funclets_underscore = {
+      "_async_Main",
+      "_async_MainTQ0_",
+      "_async_MainTY1_",
+  };
+
+  for (StringRef async_name : llvm::concat<StringRef>(
+           async_main_funclets, async_main_funclets_underscore)) {
+    EXPECT_TRUE(IsSwiftMangledName(async_name)) << async_name;
+    EXPECT_TRUE(IsAnySwiftAsyncFunctionSymbol(async_name)) << async_name;
+  }
+
+  CheckFuncletNumbersAreARange(async_main_funclets);
+  CheckFuncletNumbersAreARange(async_main_funclets_underscore);
+}
+
 TEST(TestSwiftDemangleAsyncNames, NonAsync) {
   // func factorial(_ n:Int) -> Int {
   {

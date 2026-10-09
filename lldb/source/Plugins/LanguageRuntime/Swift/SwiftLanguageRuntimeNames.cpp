@@ -90,6 +90,10 @@ static bool IsSwiftAsyncFunctionSymbol(swift::Demangle::NodePointer node) {
   if (hasChild(node, Node::Kind::AsyncSuspendResumePartialFunction))
     return false;
 
+  // async_Main has no function type to carry an async annotation.
+  if (hasChild(node, Node::Kind::AsyncMainEntryPoint))
+    return true;
+
   // Peel off a ProtocolWitness node. If it exists, there will be a single
   // instance, before Static nodes.
   if (NodePointer witness = childAtPath(node, Node::Kind::ProtocolWitness))
