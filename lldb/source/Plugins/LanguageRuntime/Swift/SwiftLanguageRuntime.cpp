@@ -3688,7 +3688,8 @@ DoesContinuationPointToSameFunction(addr_t async_reg, SymbolContext &sc,
   if (sc.function) {
     AddressRange unused_range;
     return sc.function->GetRangeContainingLoadAddress(
-        continuation_addr.GetOffset(), process.GetTarget(), unused_range);
+        continuation_addr.GetLoadAddress(&process.GetTarget()),
+        process.GetTarget(), unused_range);
   }
   assert(sc.symbol);
   return sc.symbol->ContainsFileAddress(continuation_addr.GetFileAddress());
