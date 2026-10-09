@@ -110,6 +110,16 @@ class TestSwiftPlaygrounds(TestBase):
     @swiftClangImporterTest
     @skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
     @skipIf(debug_info=decorators.no_match("dsym"))
+    def test_uncaught_error(self):
+        """Test that an uncaught error becomes the playground's result"""
+        self.launch(True)
+        self.do_uncaught_error_test()
+
+    @requireNotEmbeddedSwift
+    @requireDarwin
+    @swiftTest
+    @skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
+    @skipIf(debug_info=decorators.no_match("dsym"))
     def test_import(self):
         """Test that a dylib can be imported in playgrounds"""
         self.launch(True)
