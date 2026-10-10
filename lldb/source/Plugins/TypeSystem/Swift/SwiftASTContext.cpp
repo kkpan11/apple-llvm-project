@@ -6795,6 +6795,7 @@ SwiftASTContext::GetTypeInfo(opaque_compiler_type_t type,
   case swift::TypeKind::ExistentialArchetype:
   case swift::TypeKind::ParameterizedProtocol:
   case swift::TypeKind::Placeholder:
+  case swift::TypeKind::Hole:
   case swift::TypeKind::PrimaryArchetype:
   case swift::TypeKind::SILBlockStorage:
   case swift::TypeKind::SILBox:
@@ -6980,6 +6981,7 @@ lldb::TypeClass SwiftASTContext::GetTypeClass(opaque_compiler_type_t type) {
   case swift::TypeKind::PackExpansion:
   case swift::TypeKind::ParameterizedProtocol:
   case swift::TypeKind::Placeholder:
+  case swift::TypeKind::Hole:
   case swift::TypeKind::SILBlockStorage:
   case swift::TypeKind::SILBox:
   case swift::TypeKind::SILMoveOnlyWrapped:
@@ -7493,6 +7495,7 @@ lldb::Encoding SwiftASTContext::GetEncoding(opaque_compiler_type_t type) {
   case swift::TypeKind::SILPack:
   case swift::TypeKind::ParameterizedProtocol:
   case swift::TypeKind::Placeholder:
+  case swift::TypeKind::Hole:
   case swift::TypeKind::SILBlockStorage:
   case swift::TypeKind::SILBox:
   case swift::TypeKind::SILMoveOnlyWrapped:
@@ -7626,6 +7629,7 @@ SwiftASTContext::GetNumChildren(opaque_compiler_type_t type,
   case swift::TypeKind::PackExpansion:
   case swift::TypeKind::ParameterizedProtocol:
   case swift::TypeKind::Placeholder:
+  case swift::TypeKind::Hole:
   case swift::TypeKind::PrimaryArchetype:
   case swift::TypeKind::SILBlockStorage:
   case swift::TypeKind::SILBox:
@@ -7760,6 +7764,7 @@ uint32_t SwiftASTContext::GetNumFields(opaque_compiler_type_t type,
   case swift::TypeKind::PackExpansion:
   case swift::TypeKind::ParameterizedProtocol:
   case swift::TypeKind::Placeholder:
+  case swift::TypeKind::Hole:
   case swift::TypeKind::SILBlockStorage:
   case swift::TypeKind::SILBox:
   case swift::TypeKind::SILFunction:
@@ -7993,6 +7998,7 @@ CompilerType SwiftASTContext::GetFieldAtIndex(opaque_compiler_type_t type,
   case swift::TypeKind::PackExpansion:
   case swift::TypeKind::ParameterizedProtocol:
   case swift::TypeKind::Placeholder:
+  case swift::TypeKind::Hole:
   case swift::TypeKind::SILBlockStorage:
   case swift::TypeKind::SILBox:
   case swift::TypeKind::SILFunction:
@@ -8211,6 +8217,7 @@ uint32_t SwiftASTContext::GetNumPointeeChildren(opaque_compiler_type_t type) {
   case swift::TypeKind::PackExpansion:
   case swift::TypeKind::ParameterizedProtocol:
   case swift::TypeKind::Placeholder:
+  case swift::TypeKind::Hole:
   case swift::TypeKind::PrimaryArchetype:
   case swift::TypeKind::Protocol:
   case swift::TypeKind::ProtocolComposition:
@@ -8371,6 +8378,7 @@ llvm::Expected<CompilerType> SwiftASTContext::GetChildCompilerTypeAtIndex(
   case swift::TypeKind::PackExpansion:
   case swift::TypeKind::ParameterizedProtocol:
   case swift::TypeKind::Placeholder:
+  case swift::TypeKind::Hole:
   case swift::TypeKind::PrimaryArchetype:
   case swift::TypeKind::SILBlockStorage:
   case swift::TypeKind::SILBox:
@@ -8771,6 +8779,7 @@ size_t SwiftASTContext::GetIndexOfChildMemberWithName(
     case swift::TypeKind::PackExpansion:
     case swift::TypeKind::ParameterizedProtocol:
     case swift::TypeKind::Placeholder:
+    case swift::TypeKind::Hole:
     case swift::TypeKind::PrimaryArchetype:
     case swift::TypeKind::SILBlockStorage:
     case swift::TypeKind::SILBox:
@@ -9188,6 +9197,7 @@ bool SwiftASTContext::DumpTypeValue(
   case swift::TypeKind::PackExpansion:
   case swift::TypeKind::ParameterizedProtocol:
   case swift::TypeKind::Placeholder:
+  case swift::TypeKind::Hole:
   case swift::TypeKind::ProtocolComposition:
   case swift::TypeKind::SILBlockStorage:
   case swift::TypeKind::SILBox:
