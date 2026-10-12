@@ -147,6 +147,17 @@ void Mangled::SetValue(ConstString name) {
 
 // BEGIN SWIFT
 #ifdef LLDB_ENABLE_SWIFT
+static SwiftLanguageRuntime::DemangleMode
+GetSwiftDemangleMode(Mangled::NameFormatPreference preference) {
+  switch (preference) {
+  case Mangled::eFullName:
+    return SwiftLanguageRuntime::DemangleMode::eTypeName;
+  case Mangled::eCompactName:
+    return SwiftLanguageRuntime::DemangleMode::eSimplified;
+  }
+  llvm_unreachable("Fully covered switch above!");
+}
+
 std::pair<ConstString, DemangledNameInfo>
 GetSwiftDemangledStr(ConstString m_mangled, const SymbolContext *sc,
                      ConstString &m_demangled,
@@ -154,17 +165,8 @@ GetSwiftDemangledStr(ConstString m_mangled, const SymbolContext *sc,
   const char *mangled_name = m_mangled.AsCString("");
   Log *log = GetLog(LLDBLog::Demangle);
   LLDB_LOGF(log, "demangle swift: %s", mangled_name);
-  SwiftLanguageRuntime::DemangleMode demangle_mode;
-  switch (preference) {
-  case Mangled::eFullName:
-    demangle_mode = SwiftLanguageRuntime::DemangleMode::eTypeName;
-    break;
-  case Mangled::eCompactName:
-    demangle_mode = SwiftLanguageRuntime::DemangleMode::eSimplified;
-    break;
-  }
   auto [demangled, info] = SwiftLanguageRuntime::TrackedDemangleSymbolAsString(
-      mangled_name, demangle_mode, sc);
+      mangled_name, GetSwiftDemangleMode(preference), sc);
 
   // Don't cache the demangled name if the function isn't available yet.
   // Only cache eFullName demangled functions to keep the cache consistent.
@@ -393,7 +395,30 @@ ConstString Mangled::GetDemangledName( // BEGIN SWIFT
   return m_demangled;
 }
 
-std::optional<DemangledNameInfo> Mangled::ComputeDemangledInfo() const {
+std::optional<DemangledNameInfo> Mangled::ComputeDemangledInfo(
+    // BEGIN SWIFT
+    NameFormatPreference preference
+    // END SWIFT
+) const {
+  // BEGIN SWIFT
+#ifdef LLDB_ENABLE_SWIFT
+  if (m_mangled &&
+      GetManglingScheme(m_mangled.GetStringRef()) == eManglingSchemeSwift) {
+    // GetDemangledName() returns the cached demangled name if there is one,
+    // regardless of the requested preference. Only eFullName demangled names
+    // are ever cached, so make sure the info matches the returned name.
+    ConstString cached = m_demangled;
+    if (cached.IsNull())
+      m_mangled.GetMangledCounterpart(cached);
+    if (!cached.IsNull())
+      preference = eFullName;
+    return SwiftLanguageRuntime::TrackedDemangleSymbolAsString(
+               m_mangled.GetStringRef(), GetSwiftDemangleMode(preference))
+        .second;
+  }
+#endif // LLDB_ENABLE_SWIFT
+  // END SWIFT
+
   // Only supported for itanium.
   if (!m_mangled ||
       GetManglingScheme(m_mangled.GetStringRef()) != eManglingSchemeItanium)

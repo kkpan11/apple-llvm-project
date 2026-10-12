@@ -278,7 +278,11 @@ public:
   /// \return
   ///     std::nullopt if no info could be computed (for example because the
   ///     name is mangled with a scheme that doesn't provide any info).
-  std::optional<DemangledNameInfo> ComputeDemangledInfo() const;
+  std::optional<DemangledNameInfo> ComputeDemangledInfo(
+      // BEGIN SWIFT
+      NameFormatPreference preference = eFullName
+      // END SWIFT
+  ) const;
 
   /// Compute the base name (without namespace/class qualifiers) from the
   /// demangled name.
