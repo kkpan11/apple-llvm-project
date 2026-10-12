@@ -441,11 +441,21 @@ public:
         else
           typeref = &*typeref_or_err;
 
-        swift::reflection::FieldInfo field_info = {
-            name, (unsigned)bit_offset_ptr / 8, 0, typeref,
-            *GetOrCreateTypeInfo(field_type)};
-        fields.push_back(field_info);
+        const swift::reflection::TypeInfo *field_ti =
+            GetOrCreateTypeInfo(field_type);
+        if (!field_ti) {
+          LLDB_LOG(GetLog(LLDBLog::Types),
+                   "[LLDBTypeInfoProvider] no TypeInfo for field {0} of {1}",
+                   name, clang_type.GetTypeName());
+          // Without a TypeInfo for every field, the record can't say which
+          // of its bits are spare or where its extra inhabitants are, so
+          // describe it opaquely like a Clang type without fields.
+          fields.clear();
+          break;
         }
+        fields.push_back(
+            {name, (unsigned)bit_offset_ptr / 8, 0, typeref, *field_ti});
+      }
     }
     return m_runtime.emplaceClangTypeInfo(clang_type, size, bit_align, fields);
   }
