@@ -2025,7 +2025,7 @@ GetAndValidateInfo(const SymbolContext &sc) {
         "Function '%s' does not have a demangled name.",
         mangled.GetMangledName().AsCString(""));
 
-  const DemangledNameInfo *info = mangled.GetDemangledInfo();
+  std::optional<DemangledNameInfo> info = mangled.ComputeDemangledInfo();
   if (!info)
     return llvm::createStringError(
         "Function '%s' does not have demangled info.", demangled_name.data());
