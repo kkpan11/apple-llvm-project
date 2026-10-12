@@ -96,7 +96,7 @@ AArch64PrologueEpilogueCommon::AArch64PrologueEpilogueCommon(
   AFI = MF.getInfo<AArch64FunctionInfo>();
 
   HasFP = AFL.hasFP(MF);
-  NeedsWinCFI = AFL.needsWinCFI(MF);
+  NeedsWinCFI = MF.needsWinCFI();
 
   if (AFL.hasSVECalleeSavesAboveFrameRecord(MF)) {
     if (AFI->hasStackHazardSlotIndex())
@@ -374,7 +374,7 @@ bool AArch64PrologueEpilogueCommon::shouldCombineCSRLocalStackBump(
   // unwind format for functions that both have a local area and callee saved
   // registers. Using the packed unwind format notably reduces the size of
   // the unwind info.
-  if (AFL.needsWinCFI(MF) && AFI->getCalleeSavedStackSize() > 0 &&
+  if (MF.needsWinCFI() && AFI->getCalleeSavedStackSize() > 0 &&
       MF.getFunction().hasOptSize())
     return false;
 
