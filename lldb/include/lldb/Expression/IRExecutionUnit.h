@@ -169,6 +169,13 @@ public:
         m_preferred_modules.Append(ctx.module_sp);
   }
 
+  // BEGIN SWIFT
+  /// Mark the module as compiled for Embedded Swift.
+  void SetIsEmbeddedSwift(bool is_embedded_swift) {
+    m_is_embedded_swift = is_embedded_swift;
+  }
+  // END SWIFT
+
 private:
   /// Look up the object in m_address_map that contains a given address, find
   /// where it was copied to, and return the remote address at the same offset
@@ -394,6 +401,7 @@ private:
   std::atomic<bool> m_did_jit;
   // BEGIN SWIFT
   std::atomic<bool> m_in_populate_symtab = false;
+  bool m_is_embedded_swift = false;
   // END SWIFT
 
   lldb::addr_t m_function_load_addr;
