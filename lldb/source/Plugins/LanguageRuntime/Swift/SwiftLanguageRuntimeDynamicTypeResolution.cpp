@@ -471,12 +471,12 @@ SwiftLanguageRuntime::lookupClangTypeInfo(CompilerType clang_type) {
   {
     auto it = m_clang_builtin_type_info.find(opaque_type);
     if (it != m_clang_builtin_type_info.end())
-      return &it->second;
+      return it->second.get();
   }
   {
     auto it = m_clang_record_type_info.find(opaque_type);
     if (it != m_clang_record_type_info.end())
-      return &it->second;
+      return it->second.get();
   }
   return {};
 }
@@ -501,20 +501,19 @@ const swift::reflection::TypeInfo *SwiftLanguageRuntime::emplaceClangTypeInfo(
   if (fields.empty()) {
     auto it_b = m_clang_builtin_type_info.insert(
         {clang_type.GetOpaqueQualType(),
-         swift::reflection::BuiltinTypeInfo(
+         std::make_unique<swift::reflection::BuiltinTypeInfo>(
              *byte_size, byte_align, byte_stride, extra_inhabitants,
              swift::reflection::BitwiseBorrowability::TakableAndBorrowable,
              /*AFD=*/false)});
-    return &it_b.first->second;
+    return it_b.first->second.get();
   }
   auto it_b = m_clang_record_type_info.insert(
       {clang_type.GetOpaqueQualType(),
-       swift::reflection::RecordTypeInfo(
+       std::make_unique<swift::reflection::RecordTypeInfo>(
            *byte_size, byte_align, byte_stride, extra_inhabitants,
            swift::reflection::BitwiseBorrowability::None,
-           /*AFD=*/true,
-           swift::reflection::RecordKind::Struct, fields)});
-  return &it_b.first->second;
+           /*AFD=*/true, swift::reflection::RecordKind::Struct, fields)});
+  return it_b.first->second.get();
 }
 
 std::optional<uint64_t>
