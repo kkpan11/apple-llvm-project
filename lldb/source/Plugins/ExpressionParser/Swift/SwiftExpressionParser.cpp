@@ -837,25 +837,9 @@ SwiftExpressionParser::GetASTContext(DiagnosticManager &diagnostic_manager) {
         (repl || playground);
     LLDB_LOG(lldb_private::GetSwiftHealthLog(), "Language option EnableAccessControl = {0}",
              m_swift_ast_ctx.GetLanguageOptions().EnableAccessControl);
-
     m_swift_ast_ctx.GetLanguageOptions().EnableTargetOSChecking = false;
-
-    auto should_disable_objc_runtime = [&]() {
-      if (playground)
-        return false;
-      lldb::StackFrameSP this_frame_sp(m_stack_frame_wp.lock());
-      if (!this_frame_sp)
-        return false;
-      lldb::ProcessSP process_sp(this_frame_sp->CalculateProcess());
-      if (!process_sp)
-        return false;
-      return !ObjCLanguageRuntime::Get(*process_sp);
-    };
-    if (should_disable_objc_runtime())
-      m_swift_ast_ctx.GetLanguageOptions().EnableObjCInterop = false;
     LLDB_LOG(lldb_private::GetSwiftHealthLog(), "Language option EnableObjCInterop = {0}",
              m_swift_ast_ctx.GetLanguageOptions().EnableObjCInterop);
-
     m_swift_ast_ctx.GetLanguageOptions().Playground = repl || playground;
     LLDB_LOG(lldb_private::GetSwiftHealthLog(), "Language option Playground = {0}",
              m_swift_ast_ctx.GetLanguageOptions().Playground);
