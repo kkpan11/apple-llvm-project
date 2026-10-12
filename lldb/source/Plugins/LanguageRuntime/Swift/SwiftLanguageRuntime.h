@@ -911,13 +911,15 @@ private:
       lldb::ModuleSP module,
       llvm::SmallVector<llvm::StringRef, 1> likely_module_names);
 
-  /// Cache for the debug-info-originating type infos.
+  /// Cache for the debug-info-originating type infos. Pointers to the
+  /// TypeInfos escape into other TypeInfos and into the reflection
+  /// context's caches, so they must not move when the maps grow.
   /// \{
   llvm::DenseMap<lldb::opaque_compiler_type_t,
-                 swift::reflection::BuiltinTypeInfo>
+                 std::unique_ptr<swift::reflection::BuiltinTypeInfo>>
       m_clang_builtin_type_info;
   llvm::DenseMap<lldb::opaque_compiler_type_t,
-                 swift::reflection::RecordTypeInfo>
+                 std::unique_ptr<swift::reflection::RecordTypeInfo>>
       m_clang_record_type_info;
   llvm::DenseSet<lldb::opaque_compiler_type_t> m_clang_type_info_negative_cache;
   llvm::DenseMap<const char *, CompilerType> m_anonymous_clang_types;
