@@ -1,5 +1,5 @@
 // RUN: c-index-test core -print-source-symbols -- %s -std=c++17 \
-// RUN:   -target arm64-apple-macosx15 | FileCheck %s
+// RUN:   -target arm64-apple-macosx15 -ffreestanding | FileCheck %s
 
 #include <availability_domain.h>
 
