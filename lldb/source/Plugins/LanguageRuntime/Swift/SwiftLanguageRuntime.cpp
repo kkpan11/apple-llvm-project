@@ -251,35 +251,43 @@ FindConcurrencyVersionWord(Process &process, Module &concurrency_module) {
   return version_word;
 }
 
-llvm::Expected<lldb::offset_t>
-SwiftLanguageRuntime::FindAsyncTaskNameOffset(Process &process) {
-  ModuleSP concurrency_module = FindConcurrencyModule(process);
+/// Reads the pointer-sized value of the concurrency debug variable `name`.
+static llvm::Expected<uint64_t>
+ReadConcurrencyABIConfiguration(Process &process, StringRef name) {
+  ModuleSP concurrency_module =
+      SwiftLanguageRuntime::FindConcurrencyModule(process);
   if (!concurrency_module)
     return llvm::createStringError("could not load _Concurrency module");
 
-  const Symbol *offset_symbol =
-      concurrency_module->FindFirstSymbolWithNameAndType(
-          ConstString("_swift_concurrency_debug_asyncTaskNameOffset"));
-  if (!offset_symbol)
-    return llvm::createStringError(
-        "_swift_concurrency_debug_asyncTaskNameOffset symbol not found");
+  const Symbol *symbol =
+      concurrency_module->FindFirstSymbolWithNameAndType(ConstString(name));
+  if (!symbol)
+    return llvm::createStringErrorV("{0} symbol not found", name);
 
-  addr_t offset_symbol_addr =
-      offset_symbol->GetLoadAddress(&process.GetTarget());
-  if (offset_symbol_addr == LLDB_INVALID_ADDRESS)
-    return llvm::createStringError(
-        "_swift_concurrency_debug_asyncTaskNameOffset has no load address");
+  addr_t symbol_addr = symbol->GetLoadAddress(&process.GetTarget());
+  if (symbol_addr == LLDB_INVALID_ADDRESS)
+    return llvm::createStringErrorV("{0} has no load address", name);
 
   Status status;
-  uint64_t name_fragment_offset = process.ReadUnsignedIntegerFromMemory(
-      offset_symbol_addr, process.GetAddressByteSize(), /*fail_value=*/0,
-      status);
+  uint64_t value = process.ReadUnsignedIntegerFromMemory(
+      symbol_addr, process.GetAddressByteSize(), /*fail_value=*/0, status);
   if (!status.Success())
     return status.takeError();
-  if (name_fragment_offset == 0)
-    return llvm::createStringError(
-        "_swift_concurrency_debug_asyncTaskNameOffset is 0");
-  return name_fragment_offset;
+  if (value == 0)
+    return llvm::createStringErrorV("{0} is 0", name);
+  return value;
+}
+
+llvm::Expected<lldb::offset_t>
+SwiftLanguageRuntime::FindAsyncTaskNameOffset(Process &process) {
+  return ReadConcurrencyABIConfiguration(
+      process, "_swift_concurrency_debug_asyncTaskNameOffset");
+}
+
+llvm::Expected<lldb::offset_t>
+SwiftLanguageRuntime::FindAsyncTaskSize(Process &process) {
+  return ReadConcurrencyABIConfiguration(
+      process, "_swift_concurrency_debug_asyncTaskSize");
 }
 
 std::optional<uint32_t>
@@ -2711,7 +2719,7 @@ FindTaskAddrs(ReflectionContextInterface &reflection_ctx, Process &process) {
 class TaskExplorer {
 public:
   TaskExplorer(ReflectionContextInterface &reflection_ctx, Process &process)
-      : m_reflection_ctx(reflection_ctx) {
+      : m_reflection_ctx(reflection_ctx), m_process(process) {
 
     auto [method, task_addrs] = FindTaskAddrs(reflection_ctx, process);
     m_method = method;
@@ -2748,6 +2756,7 @@ public:
 
   /// Returns the TaskInfo for the task in `task_addr`, if it exists.
   const std::optional<TaskInfo> &FindTask(addr_t task_addr) {
+    task_addr = m_process.FixDataAddress(task_addr);
     int32_t max_nodes = 1000;
     ExploreTask(task_addr, max_nodes);
     auto it = m_known_tasks.find(task_addr);
@@ -2757,12 +2766,15 @@ public:
 
   /// Returns the TaskInfo of the task that `task_addr` is waiting on, if any.
   const TaskInfo *GetDependency(addr_t task_addr) const {
+    task_addr = m_process.FixDataAddress(task_addr);
     auto it = m_blocked_by.find(task_addr);
     return it != m_blocked_by.end() ? it->second : nullptr;
   }
 
 private:
   ReflectionContextInterface &m_reflection_ctx;
+  Process &m_process;
+
   std::map<addr_t, std::optional<TaskInfo>> m_known_tasks;
   /// Maps a task address to the TaskInfo it is waiting on. The pointers are
   /// into m_known_tasks values, which is safe because std::map guarantees
@@ -2774,6 +2786,7 @@ private:
   // Finds all Tasks reachable from the Task represented by `task_addr`.
   // This follows child pointers, parent pointers, "waited by" pointers.
   void ExploreTask(addr_t task_addr, int32_t &max_nodes) {
+    task_addr = m_process.FixDataAddress(task_addr);
     if (m_known_tasks.count(task_addr))
       return;
     if (--max_nodes <= 0) {
@@ -2800,7 +2813,8 @@ private:
     if (it->second->parentTask != 0)
       ExploreTask(it->second->parentTask, max_nodes);
     for (addr_t waited_by_task_addr : it->second->waitingTasks) {
-      m_blocked_by.try_emplace(waited_by_task_addr, &*it->second);
+      m_blocked_by.try_emplace(m_process.FixDataAddress(waited_by_task_addr),
+                               &*it->second);
       ExploreTask(waited_by_task_addr, max_nodes);
     }
   }
@@ -4333,10 +4347,14 @@ llvm::Expected<JobFlags> GetAsyncJobFlags(Process &process,
   return JobFlags{static_cast<uint32_t>(bits)};
 }
 
-lldb::offset_t GetChildFragmentOffset(Process &process, JobFlags flags) {
-  offset_t offset = AsyncTaskSize;
+llvm::Expected<lldb::offset_t> GetChildFragmentOffset(Process &process,
+                                                      JobFlags flags) {
+  llvm::Expected<offset_t> offset =
+      SwiftLanguageRuntime::FindAsyncTaskSize(process);
+  if (!offset)
+    return offset.takeError();
   if (flags.hasInitialTaskName())
-    offset += NameFragmentSize(process);
+    *offset += NameFragmentSize(process);
   return offset;
 }
 
@@ -4350,7 +4368,7 @@ llvm::Expected<lldb::offset_t> GetChildFragmentOffset(Process &process,
 
 /// Reads the task name out of the tail-allocated `AsyncTask::NameFragment` if
 /// available. Implementation for Concurrency Debug Version 2+
-llvm::Expected<std::optional<std::string>>
+static llvm::Expected<std::optional<std::string>>
 GetTaskNameFromFragment(Process &process, lldb::addr_t task_addr) {
   auto offset_or_err = SwiftLanguageRuntime::FindAsyncTaskNameOffset(process);
   if (!offset_or_err)
@@ -4397,7 +4415,7 @@ GetTaskNameFromFragment(Process &process, lldb::addr_t task_addr) {
 }
 
 /// Legacy implementation for Concurrency Debug Version 1.
-llvm::Expected<std::optional<std::string>>
+static llvm::Expected<std::optional<std::string>>
 GetTaskNameFromRecord(Process &process, lldb::addr_t task_addr) {
   Status status;
   Task task{process, task_addr};
