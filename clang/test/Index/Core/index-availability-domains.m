@@ -2,11 +2,11 @@
 // RUN: split-file --leading-lines %s %t
 
 // RUN: c-index-test core -print-source-symbols -- %t/main.m -I %t \
-// RUN:   -target arm64-apple-macosx15 -Xclang -ffeature-availability=CmdLineDomain:on \
+// RUN:   -target arm64-apple-macosx15 -ffreestanding -Xclang -ffeature-availability=CmdLineDomain:on \
 // RUN:   | FileCheck %t/main.m
 
 // RUN: c-index-test core -print-source-symbols -- %t/main.m -I %t \
-// RUN:   -target arm64-apple-macosx15 -Xclang -ffeature-availability=CmdLineDomain:on \
+// RUN:   -target arm64-apple-macosx15 -ffreestanding -Xclang -ffeature-availability=CmdLineDomain:on \
 // RUN:   -fmodules -fmodules-cache-path=%t/mcp \
 // RUN:   | FileCheck %t/main.m
 
