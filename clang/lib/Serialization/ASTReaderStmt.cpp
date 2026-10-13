@@ -2866,14 +2866,7 @@ void ASTStmtReader::VisitOMPScanDirective(OMPScanDirective *D) {
   VisitOMPExecutableDirective(D);
 }
 
-void ASTStmtReader::VisitOMPOrderedStandaloneDirective(
-    OMPOrderedStandaloneDirective *D) {
-  VisitStmt(D);
-  VisitOMPExecutableDirective(D);
-}
-
-void ASTStmtReader::VisitOMPOrderedBlockAssocDirective(
-    OMPOrderedBlockAssocDirective *D) {
+void ASTStmtReader::VisitOMPOrderedDirective(OMPOrderedDirective *D) {
   VisitStmt(D);
   VisitOMPExecutableDirective(D);
 }
@@ -4053,17 +4046,11 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
           Context, Record[ASTStmtReader::NumStmtFields], Empty);
       break;
 
-    case STMT_OMP_ORDERED_STANDALONE_DIRECTIVE: {
+    case STMT_OMP_ORDERED_DIRECTIVE: {
       unsigned NumClauses = Record[ASTStmtReader::NumStmtFields];
-      S = OMPOrderedStandaloneDirective::CreateEmpty(Context, NumClauses,
-                                                     Empty);
-      break;
-    }
-
-    case STMT_OMP_ORDERED_BLOCK_ASSOC_DIRECTIVE: {
-      unsigned NumClauses = Record[ASTStmtReader::NumStmtFields];
-      S = OMPOrderedBlockAssocDirective::CreateEmpty(Context, NumClauses,
-                                                     Empty);
+      bool HasAssociatedStmt = Record[ASTStmtReader::NumStmtFields + 2];
+      S = OMPOrderedDirective::CreateEmpty(Context, NumClauses,
+                                           !HasAssociatedStmt, Empty);
       break;
     }
 

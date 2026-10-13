@@ -524,16 +524,14 @@ public:
       for (int I = 0, E = N; I != E; ++I) {
         if (!Extracts[I])
           Extracts[I] = IRB.CreateExtractValue(Op, I);
-        Value *GEP = GetElementPtrInst::CreateInBounds(
-            ArrayTy, Alloca, {Zero, ConstantInt::get(Int32Ty, I)}, "",
-            IRB.GetInsertPoint());
+        Value *GEP = IRB.CreateInBoundsGEP(
+            ArrayTy, Alloca, {Zero, ConstantInt::get(Int32Ty, I)});
         IRB.CreateStore(Extracts[I], GEP);
       }
 
       for (ExtractElementInst *EEI : DynamicAccesses) {
-        Value *GEP = GetElementPtrInst::CreateInBounds(
-            ArrayTy, Alloca, {Zero, EEI->getIndexOperand()}, "",
-            IRB.GetInsertPoint());
+        Value *GEP = IRB.CreateInBoundsGEP(ArrayTy, Alloca,
+                                           {Zero, EEI->getIndexOperand()});
         Value *Load = IRB.CreateLoad(ElTy, GEP);
         EEI->replaceAllUsesWith(Load);
         EEI->eraseFromParent();

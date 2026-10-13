@@ -2959,18 +2959,10 @@ void ASTStmtWriter::VisitOMPScanDirective(OMPScanDirective *D) {
   Code = serialization::STMT_OMP_SCAN_DIRECTIVE;
 }
 
-void ASTStmtWriter::VisitOMPOrderedStandaloneDirective(
-    OMPOrderedStandaloneDirective *D) {
+void ASTStmtWriter::VisitOMPOrderedDirective(OMPOrderedDirective *D) {
   VisitStmt(D);
   VisitOMPExecutableDirective(D);
-  Code = serialization::STMT_OMP_ORDERED_STANDALONE_DIRECTIVE;
-}
-
-void ASTStmtWriter::VisitOMPOrderedBlockAssocDirective(
-    OMPOrderedBlockAssocDirective *D) {
-  VisitStmt(D);
-  VisitOMPExecutableDirective(D);
-  Code = serialization::STMT_OMP_ORDERED_BLOCK_ASSOC_DIRECTIVE;
+  Code = serialization::STMT_OMP_ORDERED_DIRECTIVE;
 }
 
 void ASTStmtWriter::VisitOMPTeamsDirective(OMPTeamsDirective *D) {

@@ -1592,7 +1592,8 @@ auto AlignVectors::realignGroup(const MoveGroup &Move) -> bool {
     InsertAt = &*std::next(InsertAt->getIterator());
   }
 
-  IRBuilder Builder(InsertAt->getIterator(), InstSimplifyFolder(HVC.DL));
+  IRBuilder Builder(InsertAt->getParent(), InsertAt->getIterator(),
+                    InstSimplifyFolder(HVC.DL));
   Value *AlignAddr = nullptr; // Actual aligned address.
   Value *AlignVal = nullptr;  // Right-shift amount (for valign).
 
@@ -1879,7 +1880,8 @@ auto HvxIdioms::processFxpMul(Instruction &In, const FxpOp &Op) const
   // TODO: Add multiplication of vectors by scalar registers (up to 4 bytes).
 
   Value *X = Op.X.Val, *Y = Op.Y.Val;
-  IRBuilder Builder(In.getIterator(), InstSimplifyFolder(HVC.DL));
+  IRBuilder Builder(In.getParent(), In.getIterator(),
+                    InstSimplifyFolder(HVC.DL));
 
   auto roundUpWidth = [](unsigned Width) -> unsigned {
     if (Width <= 32 && !isPowerOf2_32(Width)) {
@@ -2261,7 +2263,8 @@ Value *HvxIdioms::processVScatter(Instruction &In) const {
            << ElemWidth << ")\n";
   });
 
-  IRBuilder Builder(In.getIterator(), InstSimplifyFolder(HVC.DL));
+  IRBuilder Builder(In.getParent(), In.getIterator(),
+                    InstSimplifyFolder(HVC.DL));
 
   auto *ValueToScatter = In.getOperand(0);
   LLVM_DEBUG(dbgs() << "  ValueToScatter   : " << *ValueToScatter << "\n");
@@ -2402,7 +2405,8 @@ Value *HvxIdioms::processVGather(Instruction &In) const {
   // TODO: Handle masking of elements.
   assert(dyn_cast<VectorType>(In.getOperand(2)->getType()) &&
          "llvm.gather needs vector for mask");
-  IRBuilder Builder(In.getIterator(), InstSimplifyFolder(HVC.DL));
+  IRBuilder Builder(In.getParent(), In.getIterator(),
+                    InstSimplifyFolder(HVC.DL));
 
   // See who is using the result. The difference between LLVM and HVX vgather
   // Intrinsic makes it impossible to handle all cases with temp storage. Alloca

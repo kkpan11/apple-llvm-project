@@ -534,8 +534,9 @@ private:
       if (MSSAU && TheOnlySuccDuplicates > 1)
         MSSAU->removeDuplicatePhiEdgesBetween(BB, TheOnlySucc);
 
+      IRBuilder<> Builder(BB->getContext());
       Instruction *Term = BB->getTerminator();
-      IRBuilder<> Builder(Term);
+      Builder.SetInsertPoint(Term);
       Builder.CreateBr(TheOnlySucc);
       Term->eraseFromParent();
 

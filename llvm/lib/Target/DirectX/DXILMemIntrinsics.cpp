@@ -55,8 +55,7 @@ void expandMemSet(MemSetInst *MemSet) {
   for (uint64_t I = 0; I < Size; ++I) {
     Value *Zero = Builder.getInt32(0);
     Value *Offset = Builder.getInt32(I);
-    Value *Ptr = GetElementPtrInst::Create(ArrTy, Dst, {Zero, Offset}, "gep",
-                                           MemSet->getIterator());
+    Value *Ptr = Builder.CreateGEP(ArrTy, Dst, {Zero, Offset}, "gep");
     Builder.CreateStore(TypedVal, Ptr);
   }
 
@@ -168,10 +167,11 @@ void expandMemCpy(MemCpyInst *MemCpy) {
     if (Offset >= ByteLength)
       break;
     // TODO: Should we skip padding types here?
+    Type *Int8Ty = Builder.getInt8Ty();
     Value *ByteOffset = Builder.getInt32(Offset);
-    Value *SrcPtr = Builder.CreateInBoundsPtrAdd(Src, ByteOffset);
+    Value *SrcPtr = Builder.CreateInBoundsGEP(Int8Ty, Src, ByteOffset);
     Value *SrcVal = Builder.CreateLoad(Ty, SrcPtr);
-    Value *DstPtr = Builder.CreateInBoundsPtrAdd(Dst, ByteOffset);
+    Value *DstPtr = Builder.CreateInBoundsGEP(Int8Ty, Dst, ByteOffset);
     Builder.CreateStore(SrcVal, DstPtr);
   }
 

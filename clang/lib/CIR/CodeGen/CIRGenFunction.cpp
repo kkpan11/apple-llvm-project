@@ -21,7 +21,6 @@
 #include "clang/AST/GlobalDecl.h"
 #include "clang/CIR/Dialect/IR/CIRDialect.h"
 #include "clang/CIR/MissingFeatures.h"
-#include "clang/CodeGenUtils/CodeGenUtils.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/IR/FPEnv.h"
 
@@ -950,21 +949,10 @@ void CIRGenFunction::emitDestructorBody(FunctionArgList &args) {
   case Dtor_Base:
     assert(body);
 
-    bool needsVTableInit =
-        !CodeGenUtils::canSkipVTablePointerInitialization(getContext(), dtor);
-    // Launder 'this' if necessary.
-    if (needsVTableInit && cgm.getCodeGenOpts().StrictVTablePointers &&
-        cgm.getCodeGenOpts().OptimizationLevel > 0) {
-      cxxThisValue = cir::LaunderOp::create(
-          builder, getLoc(dtor->getBeginLoc()), loadCXXThis());
-    }
-
     // Enter the cleanup scopes for fields and non-virtual bases.
     enterDtorCleanups(dtor, Dtor_Base);
 
-    // Initialize the vtable pointers before entering the body.
-    if (needsVTableInit)
-      initializeVTablePointers(getLoc(dtor->getBeginLoc()), dtor->getParent());
+    assert(!cir::MissingFeatures::vtableInitialization());
 
     if (isTryBody) {
       cgm.errorNYI(dtor->getSourceRange(), "function-try-block destructor");

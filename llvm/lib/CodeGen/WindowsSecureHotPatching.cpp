@@ -569,7 +569,7 @@ bool WindowsSecureHotPatching::runOnFunction(
   // to move them to the start of entry BB.
 
   auto &EntryBlock = F.getEntryBlock();
-  IRBuilder<> IRBuilderAtEntry(EntryBlock.begin());
+  IRBuilder<> IRBuilderAtEntry(&EntryBlock, EntryBlock.begin());
 
   for (auto &[GV, LoadValue] : GVLoadMap) {
     assert(LoadValue == nullptr);

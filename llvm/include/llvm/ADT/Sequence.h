@@ -87,8 +87,7 @@
                        // std::enable_if
 
 #include "llvm/ADT/STLForwardCompat.h" // llvm::to_underlying
-#include "llvm/Support/Error.h"        // llvm_unreachable
-#include "llvm/Support/MathExtras.h"   // AddOverflow / SubOverflow
+#include "llvm/Support/MathExtras.h" // AddOverflow / SubOverflow
 
 namespace llvm {
 
@@ -103,7 +102,7 @@ template <typename EnumT> struct enum_iteration_traits {
 };
 
 struct force_iteration_on_noniterable_enum_t {
-  explicit constexpr force_iteration_on_noniterable_enum_t() = default;
+  explicit force_iteration_on_noniterable_enum_t() = default;
 };
 
 inline constexpr force_iteration_on_noniterable_enum_t
@@ -112,8 +111,7 @@ inline constexpr force_iteration_on_noniterable_enum_t
 namespace detail {
 
 // Returns whether a value of type U can be represented with type T.
-template <typename T, typename U>
-constexpr bool canTypeFitValue(const U Value) {
+template <typename T, typename U> bool canTypeFitValue(const U Value) {
   const intmax_t BotT = intmax_t(std::numeric_limits<T>::min());
   const intmax_t BotU = intmax_t(std::numeric_limits<U>::min());
   const uintmax_t TopT = uintmax_t(std::numeric_limits<T>::max());
@@ -130,7 +128,7 @@ struct CheckedInt {
   // Integral constructor, asserts if Value cannot be represented as intmax_t.
   template <typename Integral,
             std::enable_if_t<std::is_integral<Integral>::value, bool> = 0>
-  static constexpr CheckedInt from(Integral FromValue) {
+  static CheckedInt from(Integral FromValue) {
     if (!canTypeFitValue<intmax_t>(FromValue))
       assertOutOfBounds();
     CheckedInt Result;
@@ -141,28 +139,24 @@ struct CheckedInt {
   // Enum constructor, asserts if Value cannot be represented as intmax_t.
   template <typename Enum,
             std::enable_if_t<std::is_enum<Enum>::value, bool> = 0>
-  static constexpr CheckedInt from(Enum FromValue) {
+  static CheckedInt from(Enum FromValue) {
     return from(llvm::to_underlying(FromValue));
   }
 
   // Equality
-  constexpr bool operator==(const CheckedInt &O) const {
-    return Value == O.Value;
-  }
-  constexpr bool operator!=(const CheckedInt &O) const {
-    return Value != O.Value;
-  }
+  bool operator==(const CheckedInt &O) const { return Value == O.Value; }
+  bool operator!=(const CheckedInt &O) const { return Value != O.Value; }
 
-  constexpr CheckedInt operator+(intmax_t Offset) const {
-    auto [Result, Overflow] = AddOverflow(Value, Offset);
-    if (Overflow)
+  CheckedInt operator+(intmax_t Offset) const {
+    CheckedInt Result;
+    if (AddOverflow(Value, Offset, Result.Value))
       assertOutOfBounds();
-    return CheckedInt::from(Result);
+    return Result;
   }
 
-  constexpr intmax_t operator-(CheckedInt Other) const {
-    auto [Result, Overflow] = SubOverflow(Value, Other.Value);
-    if (Overflow)
+  intmax_t operator-(CheckedInt Other) const {
+    intmax_t Result;
+    if (SubOverflow(Value, Other.Value, Result))
       assertOutOfBounds();
     return Result;
   }
@@ -170,7 +164,7 @@ struct CheckedInt {
   // Convert to integral, asserts if Value cannot be represented as Integral.
   template <typename Integral,
             std::enable_if_t<std::is_integral<Integral>::value, bool> = 0>
-  constexpr Integral to() const {
+  Integral to() const {
     if (!canTypeFitValue<Integral>(Value))
       assertOutOfBounds();
     return static_cast<Integral>(Value);
@@ -180,21 +174,15 @@ struct CheckedInt {
   // underlying type.
   template <typename Enum,
             std::enable_if_t<std::is_enum<Enum>::value, bool> = 0>
-  constexpr Enum to() const {
+  Enum to() const {
     using type = std::underlying_type_t<Enum>;
     return Enum(to<type>());
   }
 
 private:
-#ifndef NDEBUG
-  [[noreturn]] static void assertOutOfBounds() {
-    llvm_unreachable("Out of bounds");
-  }
-#else
-  static constexpr void assertOutOfBounds() {}
-#endif
+  static void assertOutOfBounds() { assert(false && "Out of bounds"); }
 
-  intmax_t Value = 0;
+  intmax_t Value;
 };
 
 template <typename T, bool IsReverse> struct SafeIntIterator {
@@ -205,85 +193,63 @@ template <typename T, bool IsReverse> struct SafeIntIterator {
   using reference = value_type; // The iterator does not reference memory.
 
   // Construct from T.
-  explicit constexpr SafeIntIterator(T Value)
-      : SI(CheckedInt::from<T>(Value)) {}
+  explicit SafeIntIterator(T Value) : SI(CheckedInt::from<T>(Value)) {}
   // Construct from other direction.
-  constexpr SafeIntIterator(const SafeIntIterator<T, !IsReverse> &O)
-      : SI(O.SI) {}
+  SafeIntIterator(const SafeIntIterator<T, !IsReverse> &O) : SI(O.SI) {}
 
   // Dereference
-  constexpr reference operator*() const { return SI.to<T>(); }
+  reference operator*() const { return SI.to<T>(); }
   // Indexing
-  constexpr reference operator[](intmax_t Offset) const {
-    return *(*this + Offset);
-  }
+  reference operator[](intmax_t Offset) const { return *(*this + Offset); }
 
   // Can be compared for equivalence using the equality/inequality operators.
-  constexpr bool operator==(const SafeIntIterator &O) const {
-    return SI == O.SI;
-  }
-  constexpr bool operator!=(const SafeIntIterator &O) const {
-    return SI != O.SI;
-  }
+  bool operator==(const SafeIntIterator &O) const { return SI == O.SI; }
+  bool operator!=(const SafeIntIterator &O) const { return SI != O.SI; }
   // Comparison
-  constexpr bool operator<(const SafeIntIterator &O) const {
-    return (*this - O) < 0;
-  }
-  constexpr bool operator>(const SafeIntIterator &O) const {
-    return (*this - O) > 0;
-  }
-  constexpr bool operator<=(const SafeIntIterator &O) const {
-    return (*this - O) <= 0;
-  }
-  constexpr bool operator>=(const SafeIntIterator &O) const {
-    return (*this - O) >= 0;
-  }
+  bool operator<(const SafeIntIterator &O) const { return (*this - O) < 0; }
+  bool operator>(const SafeIntIterator &O) const { return (*this - O) > 0; }
+  bool operator<=(const SafeIntIterator &O) const { return (*this - O) <= 0; }
+  bool operator>=(const SafeIntIterator &O) const { return (*this - O) >= 0; }
 
   // Pre Increment/Decrement
-  constexpr void operator++() { offset(1); }
-  constexpr void operator--() { offset(-1); }
+  void operator++() { offset(1); }
+  void operator--() { offset(-1); }
 
   // Post Increment/Decrement
-  constexpr SafeIntIterator operator++(int) {
+  SafeIntIterator operator++(int) {
     const auto Copy = *this;
     ++*this;
     return Copy;
   }
-  constexpr SafeIntIterator operator--(int) {
+  SafeIntIterator operator--(int) {
     const auto Copy = *this;
     --*this;
     return Copy;
   }
 
   // Compound assignment operators
-  constexpr void operator+=(intmax_t Offset) { offset(Offset); }
-  constexpr void operator-=(intmax_t Offset) { offset(-Offset); }
+  void operator+=(intmax_t Offset) { offset(Offset); }
+  void operator-=(intmax_t Offset) { offset(-Offset); }
 
   // Arithmetic
-  constexpr SafeIntIterator operator+(intmax_t Offset) const {
-    return add(Offset);
-  }
-  constexpr SafeIntIterator operator-(intmax_t Offset) const {
-    return add(-Offset);
-  }
+  SafeIntIterator operator+(intmax_t Offset) const { return add(Offset); }
+  SafeIntIterator operator-(intmax_t Offset) const { return add(-Offset); }
 
   // Difference
-  constexpr intmax_t operator-(const SafeIntIterator &O) const {
+  intmax_t operator-(const SafeIntIterator &O) const {
     return IsReverse ? O.SI - SI : SI - O.SI;
   }
 
 private:
-  constexpr SafeIntIterator(const CheckedInt &SI) : SI(SI) {}
+  SafeIntIterator(const CheckedInt &SI) : SI(SI) {}
 
-  static constexpr intmax_t getOffset(intmax_t Offset) {
+  static intmax_t getOffset(intmax_t Offset) {
     return IsReverse ? -Offset : Offset;
   }
 
-  constexpr CheckedInt add(intmax_t Offset) const {
-    return SI + getOffset(Offset);
-  }
+  CheckedInt add(intmax_t Offset) const { return SI + getOffset(Offset); }
 
-  constexpr void offset(intmax_t Offset) { SI = SI + getOffset(Offset); }
+  void offset(intmax_t Offset) { SI = SI + getOffset(Offset); }
 
   CheckedInt SI;
 
@@ -304,23 +270,21 @@ template <typename T> struct iota_range {
   using difference_type = intmax_t;
   using size_type = std::size_t;
 
-  explicit constexpr iota_range(T Begin, T End, bool Inclusive)
+  explicit iota_range(T Begin, T End, bool Inclusive)
       : BeginValue(Begin), PastEndValue(End) {
     assert(Begin <= End && "Begin must be less or equal to End.");
     if (Inclusive)
       ++PastEndValue;
   }
 
-  constexpr size_t size() const { return PastEndValue - BeginValue; }
-  constexpr bool empty() const { return BeginValue == PastEndValue; }
+  size_t size() const { return PastEndValue - BeginValue; }
+  bool empty() const { return BeginValue == PastEndValue; }
 
-  constexpr auto begin() const { return const_iterator(BeginValue); }
-  constexpr auto end() const { return const_iterator(PastEndValue); }
+  auto begin() const { return const_iterator(BeginValue); }
+  auto end() const { return const_iterator(PastEndValue); }
 
-  constexpr auto rbegin() const {
-    return const_reverse_iterator(PastEndValue - 1);
-  }
-  constexpr auto rend() const { return const_reverse_iterator(BeginValue - 1); }
+  auto rbegin() const { return const_reverse_iterator(PastEndValue - 1); }
+  auto rend() const { return const_reverse_iterator(BeginValue - 1); }
 
 private:
   static_assert(std::is_integral<T>::value || std::is_enum<T>::value,
@@ -338,7 +302,7 @@ private:
 /// iteration).
 template <typename T, typename = std::enable_if_t<std::is_integral<T>::value &&
                                                   !std::is_enum<T>::value>>
-constexpr auto seq(T Begin, T End) {
+auto seq(T Begin, T End) {
   return iota_range<T>(Begin, End, false);
 }
 
@@ -348,7 +312,7 @@ constexpr auto seq(T Begin, T End) {
 /// iteration).
 template <typename T, typename = std::enable_if_t<std::is_integral<T>::value &&
                                                   !std::is_enum<T>::value>>
-constexpr auto seq(T Size) {
+auto seq(T Size) {
   return seq<T>(0, Size);
 }
 
@@ -358,7 +322,7 @@ constexpr auto seq(T Size) {
 /// iteration).
 template <typename T, typename = std::enable_if_t<std::is_integral<T>::value &&
                                                   !std::is_enum<T>::value>>
-constexpr auto seq_inclusive(T Begin, T End) {
+auto seq_inclusive(T Begin, T End) {
   return iota_range<T>(Begin, End, true);
 }
 
@@ -370,7 +334,7 @@ constexpr auto seq_inclusive(T Begin, T End) {
 /// iteration).
 template <typename EnumT,
           typename = std::enable_if_t<std::is_enum<EnumT>::value>>
-constexpr auto enum_seq(EnumT Begin, EnumT End) {
+auto enum_seq(EnumT Begin, EnumT End) {
   static_assert(enum_iteration_traits<EnumT>::is_iterable,
                 "Enum type is not marked as iterable.");
   return iota_range<EnumT>(Begin, End, false);
@@ -385,8 +349,7 @@ constexpr auto enum_seq(EnumT Begin, EnumT End) {
 /// iteration).
 template <typename EnumT,
           typename = std::enable_if_t<std::is_enum<EnumT>::value>>
-constexpr auto enum_seq(EnumT Begin, EnumT End,
-                        force_iteration_on_noniterable_enum_t) {
+auto enum_seq(EnumT Begin, EnumT End, force_iteration_on_noniterable_enum_t) {
   return iota_range<EnumT>(Begin, End, false);
 }
 
@@ -398,7 +361,7 @@ constexpr auto enum_seq(EnumT Begin, EnumT End,
 /// iteration).
 template <typename EnumT,
           typename = std::enable_if_t<std::is_enum<EnumT>::value>>
-constexpr auto enum_seq_inclusive(EnumT Begin, EnumT End) {
+auto enum_seq_inclusive(EnumT Begin, EnumT End) {
   static_assert(enum_iteration_traits<EnumT>::is_iterable,
                 "Enum type is not marked as iterable.");
   return iota_range<EnumT>(Begin, End, true);
@@ -413,8 +376,8 @@ constexpr auto enum_seq_inclusive(EnumT Begin, EnumT End) {
 /// iteration).
 template <typename EnumT,
           typename = std::enable_if_t<std::is_enum<EnumT>::value>>
-constexpr auto enum_seq_inclusive(EnumT Begin, EnumT End,
-                                  force_iteration_on_noniterable_enum_t) {
+auto enum_seq_inclusive(EnumT Begin, EnumT End,
+                        force_iteration_on_noniterable_enum_t) {
   return iota_range<EnumT>(Begin, End, true);
 }
 

@@ -711,7 +711,6 @@ public:
     char HasNSW : 1;
 
     WrapFlagsTy(bool HasNUW, bool HasNSW) : HasNUW(HasNUW), HasNSW(HasNSW) {}
-    WrapFlagsTy() : HasNUW(false), HasNSW(false) {}
   };
 
   struct TruncFlagsTy {
@@ -1031,13 +1030,13 @@ public:
     }
   }
 
-  WrapFlagsTy getNoWrapFlagsOrNone() const {
+  bool hasNoWrapFlags() const {
     switch (OpType) {
     case OperationType::OverflowingBinOp:
     case OperationType::Trunc:
-      return {hasNoUnsignedWrap(), hasNoSignedWrap()};
+      return true;
     default:
-      return {};
+      return false;
     }
   }
 
@@ -4098,7 +4097,7 @@ protected:
 class VPWidenCanonicalIVRecipe : public VPRecipeWithIRFlags {
 public:
   VPWidenCanonicalIVRecipe(VPRegionValue *CanonicalIV,
-                           const VPIRFlags::WrapFlagsTy &Flags = {})
+                           const VPIRFlags::WrapFlagsTy &Flags = {false, false})
       : VPRecipeWithIRFlags(VPRecipeBase::VPWidenCanonicalIVSC, CanonicalIV,
                             CanonicalIV->getType(), Flags) {}
 

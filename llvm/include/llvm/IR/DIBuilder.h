@@ -90,6 +90,12 @@ namespace llvm {
     void insertDbgVariableRecord(DbgVariableRecord *DVR,
                                  InsertPosition InsertPt);
 
+    /// Internal helper with common code used by insertDbg{Value,Addr}Intrinsic.
+    Instruction *insertDbgIntrinsic(llvm::Function *Intrinsic, llvm::Value *Val,
+                                    DILocalVariable *VarInfo,
+                                    DIExpression *Expr, const DILocation *DL,
+                                    InsertPosition InsertPt);
+
   public:
     /// Construct a builder for a module.
     ///

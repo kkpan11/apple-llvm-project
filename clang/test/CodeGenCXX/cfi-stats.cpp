@@ -18,31 +18,31 @@ struct B : A {};
 
 // CHECK: @vcall
 extern "C" void vcall(A *a) {
-  // CHECK: call void @__sanitizer_stat_report({{.*}}[[STATS]]{{.*}}i64 16)
+  // CHECK: call void @__sanitizer_stat_report({{.*}}[[STATS]]{{.*}}i64 0, i32 2, i64 0
   a->vf();
 }
 
 // CHECK: @nvcall
 extern "C" void nvcall(A *a) {
-  // CHECK: call void @__sanitizer_stat_report({{.*}}[[STATS]]{{.*}}i64 32)
+  // CHECK: call void @__sanitizer_stat_report({{.*}}[[STATS]]{{.*}}i64 0, i32 2, i64 1
   a->nvf();
 }
 
 // CHECK: @dcast
 extern "C" void dcast(A *a) {
-  // CHECK: call void @__sanitizer_stat_report({{.*}}[[STATS]]{{.*}}i64 48)
+  // CHECK: call void @__sanitizer_stat_report({{.*}}[[STATS]]{{.*}}i64 0, i32 2, i64 2
   static_cast<B *>(a);
 }
 
 // CHECK: @ucast
 extern "C" void ucast(void *a) {
-  // CHECK: call void @__sanitizer_stat_report({{.*}}[[STATS]]{{.*}}i64 64)
+  // CHECK: call void @__sanitizer_stat_report({{.*}}[[STATS]]{{.*}}i64 0, i32 2, i64 3
   reinterpret_cast<A *>(a);
 }
 
 // CHECK: @icall
 extern "C" void icall(void (*p)()) {
-  // CHECK: call void @__sanitizer_stat_report({{.*}}[[STATS]]{{.*}}i64 80)
+  // CHECK: call void @__sanitizer_stat_report({{.*}}[[STATS]]{{.*}}i64 0, i32 2, i64 4
   p();
 }
 

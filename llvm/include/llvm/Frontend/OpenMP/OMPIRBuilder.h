@@ -736,6 +736,7 @@ public:
   struct LocationDescription {
     LocationDescription(const IRBuilderBase &IRB)
         : IP(IRB.saveIP()), DL(IRB.getCurrentDebugLocation()) {}
+    LocationDescription(const InsertPointTy &IP) : IP(IP) {}
     LocationDescription(const InsertPointTy &IP, const DebugLoc &DL)
         : IP(IP), DL(DL) {}
     InsertPointTy IP;
@@ -2446,7 +2447,7 @@ public:
   bool updateToLocation(const LocationDescription &Loc) {
     Builder.restoreIP(Loc.IP);
     Builder.SetCurrentDebugLocation(Loc.DL);
-    return Loc.IP.isValid();
+    return Loc.IP.getBlock() != nullptr;
   }
 
   /// Return the function declaration for the runtime function with \p FnID.
@@ -2476,7 +2477,7 @@ public:
   /// Return the (LLVM-IR) string describing the DebugLoc \p DL. Use \p F as
   /// fallback if \p DL does not specify the function name.
   LLVM_ABI Constant *getOrCreateSrcLocStr(DebugLoc DL, uint32_t &SrcLocStrSize,
-                                          const Function *F = nullptr);
+                                          Function *F = nullptr);
 
   /// Return the (LLVM-IR) string describing the source location \p Loc.
   LLVM_ABI Constant *getOrCreateSrcLocStr(const LocationDescription &Loc,
@@ -4452,21 +4453,21 @@ public:
   OpenMPIRBuilder::InsertPointTy getPreheaderIP() const {
     assert(isValid() && "Requires a valid canonical loop");
     BasicBlock *Preheader = getPreheader();
-    return std::prev(Preheader->end());
+    return {Preheader, std::prev(Preheader->end())};
   };
 
   /// Return the insertion point for user code in the body.
   OpenMPIRBuilder::InsertPointTy getBodyIP() const {
     assert(isValid() && "Requires a valid canonical loop");
     BasicBlock *Body = getBody();
-    return Body->begin();
+    return {Body, Body->begin()};
   };
 
   /// Return the insertion point for user code after the loop.
   OpenMPIRBuilder::InsertPointTy getAfterIP() const {
     assert(isValid() && "Requires a valid canonical loop");
     BasicBlock *After = getAfter();
-    return After->begin();
+    return {After, After->begin()};
   };
 
   Function *getFunction() const {

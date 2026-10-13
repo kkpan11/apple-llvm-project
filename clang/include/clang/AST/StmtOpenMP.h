@@ -2931,13 +2931,13 @@ public:
   }
 };
 
-/// This represents standalone '#pragma omp ordered' directive.
+/// This represents '#pragma omp ordered' directive.
 ///
 /// \code
 /// #pragma omp ordered
 /// \endcode
 ///
-class OMPOrderedStandaloneDirective : public OMPExecutableDirective {
+class OMPOrderedDirective : public OMPExecutableDirective {
   friend class ASTStmtReader;
   friend class OMPExecutableDirective;
   /// Build directive with the given start and end location.
@@ -2945,70 +2945,16 @@ class OMPOrderedStandaloneDirective : public OMPExecutableDirective {
   /// \param StartLoc Starting location of the directive kind.
   /// \param EndLoc Ending location of the directive.
   ///
-  OMPOrderedStandaloneDirective(SourceLocation StartLoc, SourceLocation EndLoc)
-      : OMPExecutableDirective(OMPOrderedStandaloneDirectiveClass,
-                               llvm::omp::OMPD_ordered_standalone, StartLoc,
-                               EndLoc) {}
+  OMPOrderedDirective(SourceLocation StartLoc, SourceLocation EndLoc)
+      : OMPExecutableDirective(OMPOrderedDirectiveClass,
+                               llvm::omp::OMPD_ordered, StartLoc, EndLoc) {}
 
   /// Build an empty directive.
   ///
-  explicit OMPOrderedStandaloneDirective()
-      : OMPExecutableDirective(OMPOrderedStandaloneDirectiveClass,
-                               llvm::omp::OMPD_ordered_standalone,
-                               SourceLocation(), SourceLocation()) {}
-
-public:
-  /// Creates directive.
-  ///
-  /// \param C AST context.
-  /// \param StartLoc Starting location of the directive kind.
-  /// \param EndLoc Ending Location of the directive.
-  /// \param Clauses List of clauses.
-  ///
-  static OMPOrderedStandaloneDirective *Create(const ASTContext &C,
-                                               SourceLocation StartLoc,
-                                               SourceLocation EndLoc,
-                                               ArrayRef<OMPClause *> Clauses);
-
-  /// Creates an empty directive.
-  ///
-  /// \param C AST context.
-  /// \param NumClauses Number of clauses.
-  ///
-  static OMPOrderedStandaloneDirective *
-  CreateEmpty(const ASTContext &C, unsigned NumClauses, EmptyShell);
-
-  static bool classof(const Stmt *T) {
-    return T->getStmtClass() == OMPOrderedStandaloneDirectiveClass;
-  }
-};
-
-/// This represents block-associated '#pragma omp ordered' directive.
-///
-/// \code
-/// #pragma omp ordered
-/// { body }
-/// \endcode
-///
-class OMPOrderedBlockAssocDirective : public OMPExecutableDirective {
-  friend class ASTStmtReader;
-  friend class OMPExecutableDirective;
-  /// Build directive with the given start and end location.
-  ///
-  /// \param StartLoc Starting location of the directive kind.
-  /// \param EndLoc Ending location of the directive.
-  ///
-  OMPOrderedBlockAssocDirective(SourceLocation StartLoc, SourceLocation EndLoc)
-      : OMPExecutableDirective(OMPOrderedBlockAssocDirectiveClass,
-                               llvm::omp::OMPD_ordered_blockassoc, StartLoc,
-                               EndLoc) {}
-
-  /// Build an empty directive.
-  ///
-  explicit OMPOrderedBlockAssocDirective()
-      : OMPExecutableDirective(OMPOrderedBlockAssocDirectiveClass,
-                               llvm::omp::OMPD_ordered_blockassoc,
-                               SourceLocation(), SourceLocation()) {}
+  explicit OMPOrderedDirective()
+      : OMPExecutableDirective(OMPOrderedDirectiveClass,
+                               llvm::omp::OMPD_ordered, SourceLocation(),
+                               SourceLocation()) {}
 
 public:
   /// Creates directive.
@@ -3019,7 +2965,7 @@ public:
   /// \param Clauses List of clauses.
   /// \param AssociatedStmt Statement, associated with the directive.
   ///
-  static OMPOrderedBlockAssocDirective *
+  static OMPOrderedDirective *
   Create(const ASTContext &C, SourceLocation StartLoc, SourceLocation EndLoc,
          ArrayRef<OMPClause *> Clauses, Stmt *AssociatedStmt);
 
@@ -3027,12 +2973,14 @@ public:
   ///
   /// \param C AST context.
   /// \param NumClauses Number of clauses.
+  /// \param IsStandalone true, if the standalone directive is created.
   ///
-  static OMPOrderedBlockAssocDirective *
-  CreateEmpty(const ASTContext &C, unsigned NumClauses, EmptyShell);
+  static OMPOrderedDirective *CreateEmpty(const ASTContext &C,
+                                          unsigned NumClauses,
+                                          bool IsStandalone, EmptyShell);
 
   static bool classof(const Stmt *T) {
-    return T->getStmtClass() == OMPOrderedBlockAssocDirectiveClass;
+    return T->getStmtClass() == OMPOrderedDirectiveClass;
   }
 };
 

@@ -117,15 +117,13 @@ class IRBuilderBase {
   DebugLoc StoredDL;
 
 protected:
-  // TODO: Remove this in favor of InsertPt.getNodeParent(), so they cannot
-  // go out of sync.
   BasicBlock *BB;
   BasicBlock::iterator InsertPt;
   LLVMContext &Context;
   const IRBuilderFolder &Folder;
   const IRBuilderDefaultInserter &Inserter;
 
-  MDNode *DefaultFPMathTag = nullptr;
+  MDNode *DefaultFPMathTag;
   FastMathFlags FMF;
 
   bool IsFPConstrained = false;
@@ -136,8 +134,10 @@ protected:
 
 public:
   IRBuilderBase(LLVMContext &context, const IRBuilderFolder &Folder,
-                const IRBuilderDefaultInserter &Inserter)
-      : Context(context), Folder(Folder), Inserter(Inserter) {
+                const IRBuilderDefaultInserter &Inserter, MDNode *FPMathTag,
+                ArrayRef<OperandBundleDef> OpBundles)
+      : Context(context), Folder(Folder), Inserter(Inserter),
+        DefaultFPMathTag(FPMathTag), DefaultOperandBundles(OpBundles) {
     ClearInsertionPoint();
   }
 
@@ -194,18 +194,19 @@ public:
 
   /// This specifies that created instructions should be inserted at the
   /// specified point.
-  [[deprecated("Use the overload without BasicBlock argument instead")]]
   void SetInsertPoint(BasicBlock *TheBB, BasicBlock::iterator IP) {
-    SetInsertPoint(IP);
+    BB = TheBB;
+    InsertPt = IP;
+    if (IP != TheBB->end())
+      SetCurrentDebugLocation(IP->getStableDebugLoc());
   }
 
   /// This specifies that created instructions should be inserted at
-  /// the specified point.
+  /// the specified point, but also requires that \p IP is dereferencable.
   void SetInsertPoint(BasicBlock::iterator IP) {
-    BB = IP.getNodeParent();
+    BB = IP->getParent();
     InsertPt = IP;
-    if (IP != BB->end())
-      SetCurrentDebugLocation(IP->getStableDebugLoc());
+    SetCurrentDebugLocation(IP->getStableDebugLoc());
   }
 
   /// This specifies that created instructions should inserted at the beginning
@@ -242,22 +243,41 @@ public:
   LLVM_ABI Type *getCurrentFunctionReturnType() const;
 
   /// InsertPoint - A saved insertion point.
-  using InsertPoint = BasicBlock::iterator;
+  class InsertPoint {
+    BasicBlock *Block = nullptr;
+    BasicBlock::iterator Point;
+
+  public:
+    /// Creates a new insertion point which doesn't point to anything.
+    InsertPoint() = default;
+
+    /// Creates a new insertion point at the given location.
+    InsertPoint(BasicBlock *InsertBlock, BasicBlock::iterator InsertPoint)
+        : Block(InsertBlock), Point(InsertPoint) {}
+
+    /// Returns true if this insert point is set.
+    bool isSet() const { return (Block != nullptr); }
+
+    BasicBlock *getBlock() const { return Block; }
+    BasicBlock::iterator getPoint() const { return Point; }
+  };
 
   /// Returns the current insert point.
-  InsertPoint saveIP() const { return GetInsertPoint(); }
+  InsertPoint saveIP() const {
+    return InsertPoint(GetInsertBlock(), GetInsertPoint());
+  }
 
   /// Returns the current insert point, clearing it in the process.
   InsertPoint saveAndClearIP() {
-    InsertPoint IP(GetInsertPoint());
+    InsertPoint IP(GetInsertBlock(), GetInsertPoint());
     ClearInsertionPoint();
     return IP;
   }
 
   /// Sets the current insert point to a previously-saved location.
   void restoreIP(InsertPoint IP) {
-    if (IP.isValid())
-      SetInsertPoint(IP);
+    if (IP.isSet())
+      SetInsertPoint(IP.getBlock(), IP.getPoint());
     else
       ClearInsertionPoint();
   }
@@ -343,19 +363,20 @@ public:
   // when the object is destroyed. This includes the debug location.
   class InsertPointGuard {
     IRBuilderBase &Builder;
+    AssertingVH<BasicBlock> Block;
     BasicBlock::iterator Point;
     DebugLoc DbgLoc;
 
   public:
     InsertPointGuard(IRBuilderBase &B)
-        : Builder(B), Point(B.GetInsertPoint()),
+        : Builder(B), Block(B.GetInsertBlock()), Point(B.GetInsertPoint()),
           DbgLoc(B.getCurrentDebugLocation()) {}
 
     InsertPointGuard(const InsertPointGuard &) = delete;
     InsertPointGuard &operator=(const InsertPointGuard &) = delete;
 
     ~InsertPointGuard() {
-      Builder.restoreIP(Point);
+      Builder.restoreIP(InsertPoint(Block, Point));
       Builder.SetCurrentDebugLocation(DbgLoc);
     }
   };
@@ -1990,7 +2011,7 @@ public:
   Value *CreateGEP(Type *Ty, Value *Ptr, ArrayRef<Value *> IdxList,
                    const Twine &Name = "",
                    GEPNoWrapFlags NW = GEPNoWrapFlags::none()) {
-    if (auto *V = Folder.FoldGEP(BB->getDataLayout(), Ty, Ptr, IdxList, NW))
+    if (auto *V = Folder.FoldGEP(Ty, Ptr, IdxList, NW))
       return V;
     return Insert(GetElementPtrInst::Create(Ty, Ptr, IdxList, NW), Name);
   }
@@ -2875,56 +2896,59 @@ private:
   InserterTy Inserter;
 
 public:
-  IRBuilder(LLVMContext &C, FolderTy Folder, InserterTy Inserter)
-      : IRBuilderBase(C, this->Folder, this->Inserter), Folder(Folder),
-        Inserter(Inserter) {}
+  IRBuilder(LLVMContext &C, FolderTy Folder, InserterTy Inserter,
+            MDNode *FPMathTag = nullptr,
+            ArrayRef<OperandBundleDef> OpBundles = {})
+      : IRBuilderBase(C, this->Folder, this->Inserter, FPMathTag, OpBundles),
+        Folder(Folder), Inserter(Inserter) {}
 
-  IRBuilder(LLVMContext &C, FolderTy Folder)
-      : IRBuilderBase(C, this->Folder, this->Inserter), Folder(Folder) {}
+  IRBuilder(LLVMContext &C, FolderTy Folder, MDNode *FPMathTag = nullptr,
+            ArrayRef<OperandBundleDef> OpBundles = {})
+      : IRBuilderBase(C, this->Folder, this->Inserter, FPMathTag, OpBundles),
+        Folder(Folder) {}
 
-  explicit IRBuilder(LLVMContext &C)
-      : IRBuilderBase(C, this->Folder, this->Inserter) {}
+  explicit IRBuilder(LLVMContext &C, MDNode *FPMathTag = nullptr,
+                     ArrayRef<OperandBundleDef> OpBundles = {})
+      : IRBuilderBase(C, this->Folder, this->Inserter, FPMathTag, OpBundles) {}
 
-  explicit IRBuilder(BasicBlock *TheBB, FolderTy Folder)
-      : IRBuilderBase(TheBB->getContext(), this->Folder, this->Inserter),
+  explicit IRBuilder(BasicBlock *TheBB, FolderTy Folder,
+                     MDNode *FPMathTag = nullptr,
+                     ArrayRef<OperandBundleDef> OpBundles = {})
+      : IRBuilderBase(TheBB->getContext(), this->Folder, this->Inserter,
+                      FPMathTag, OpBundles),
         Folder(Folder) {
     SetInsertPoint(TheBB);
   }
 
-  explicit IRBuilder(BasicBlock *TheBB)
-      : IRBuilderBase(TheBB->getContext(), this->Folder, this->Inserter) {
+  explicit IRBuilder(BasicBlock *TheBB, MDNode *FPMathTag = nullptr,
+                     ArrayRef<OperandBundleDef> OpBundles = {})
+      : IRBuilderBase(TheBB->getContext(), this->Folder, this->Inserter,
+                      FPMathTag, OpBundles) {
     SetInsertPoint(TheBB);
   }
 
-  explicit IRBuilder(Instruction *IP)
-      : IRBuilderBase(IP->getContext(), this->Folder, this->Inserter) {
+  explicit IRBuilder(Instruction *IP, MDNode *FPMathTag = nullptr,
+                     ArrayRef<OperandBundleDef> OpBundles = {})
+      : IRBuilderBase(IP->getContext(), this->Folder, this->Inserter, FPMathTag,
+                      OpBundles) {
     SetInsertPoint(IP);
   }
 
-  [[deprecated("Use the overload without BasicBlock argument instead")]]
-  IRBuilder(BasicBlock *TheBB, BasicBlock::iterator IP, FolderTy Folder)
-      : IRBuilderBase(TheBB->getContext(), this->Folder, this->Inserter),
+  IRBuilder(BasicBlock *TheBB, BasicBlock::iterator IP, FolderTy Folder,
+            MDNode *FPMathTag = nullptr,
+            ArrayRef<OperandBundleDef> OpBundles = {})
+      : IRBuilderBase(TheBB->getContext(), this->Folder, this->Inserter,
+                      FPMathTag, OpBundles),
         Folder(Folder) {
-    SetInsertPoint(IP);
+    SetInsertPoint(TheBB, IP);
   }
 
-  [[deprecated("Use the overload without BasicBlock argument instead")]]
-  IRBuilder(BasicBlock *TheBB, BasicBlock::iterator IP)
-      : IRBuilderBase(TheBB->getContext(), this->Folder, this->Inserter) {
-    SetInsertPoint(IP);
-  }
-
-  IRBuilder(BasicBlock::iterator IP, FolderTy Folder)
-      : IRBuilderBase(IP.getNodeParent()->getContext(), this->Folder,
-                      this->Inserter),
-        Folder(Folder) {
-    SetInsertPoint(IP);
-  }
-
-  explicit IRBuilder(BasicBlock::iterator IP)
-      : IRBuilderBase(IP.getNodeParent()->getContext(), this->Folder,
-                      this->Inserter) {
-    SetInsertPoint(IP);
+  IRBuilder(BasicBlock *TheBB, BasicBlock::iterator IP,
+            MDNode *FPMathTag = nullptr,
+            ArrayRef<OperandBundleDef> OpBundles = {})
+      : IRBuilderBase(TheBB->getContext(), this->Folder, this->Inserter,
+                      FPMathTag, OpBundles) {
+    SetInsertPoint(TheBB, IP);
   }
 
   /// Avoid copying the full IRBuilder. Prefer using InsertPointGuard
@@ -2936,19 +2960,20 @@ public:
 };
 
 template <typename FolderTy, typename InserterTy>
-IRBuilder(LLVMContext &, FolderTy, InserterTy)
-    -> IRBuilder<FolderTy, InserterTy>;
-IRBuilder(LLVMContext &) -> IRBuilder<>;
+IRBuilder(LLVMContext &, FolderTy, InserterTy, MDNode *,
+          ArrayRef<OperandBundleDef>) -> IRBuilder<FolderTy, InserterTy>;
+IRBuilder(LLVMContext &, MDNode *, ArrayRef<OperandBundleDef>) -> IRBuilder<>;
 template <typename FolderTy>
-IRBuilder(BasicBlock *, FolderTy) -> IRBuilder<FolderTy>;
-IRBuilder(BasicBlock *) -> IRBuilder<>;
-IRBuilder(Instruction *) -> IRBuilder<>;
+IRBuilder(BasicBlock *, FolderTy, MDNode *, ArrayRef<OperandBundleDef>)
+    -> IRBuilder<FolderTy>;
+IRBuilder(BasicBlock *, MDNode *, ArrayRef<OperandBundleDef>) -> IRBuilder<>;
+IRBuilder(Instruction *, MDNode *, ArrayRef<OperandBundleDef>) -> IRBuilder<>;
 template <typename FolderTy>
-IRBuilder(BasicBlock *, BasicBlock::iterator, FolderTy) -> IRBuilder<FolderTy>;
-IRBuilder(BasicBlock *, BasicBlock::iterator) -> IRBuilder<>;
-template <typename FolderTy>
-IRBuilder(BasicBlock::iterator, FolderTy) -> IRBuilder<FolderTy>;
-IRBuilder(BasicBlock::iterator) -> IRBuilder<>;
+IRBuilder(BasicBlock *, BasicBlock::iterator, FolderTy, MDNode *,
+          ArrayRef<OperandBundleDef>) -> IRBuilder<FolderTy>;
+IRBuilder(BasicBlock *, BasicBlock::iterator, MDNode *,
+          ArrayRef<OperandBundleDef>) -> IRBuilder<>;
+
 
 // Create wrappers for C Binding types (see CBindingWrapping.h).
 DEFINE_SIMPLE_CONVERSION_FUNCTIONS(IRBuilder<>, LLVMBuilderRef)

@@ -966,16 +966,9 @@ void StmtPrinter::VisitOMPScanDirective(OMPScanDirective *Node) {
   PrintOMPExecutableDirective(Node);
 }
 
-void StmtPrinter::VisitOMPOrderedStandaloneDirective(
-    OMPOrderedStandaloneDirective *Node) {
+void StmtPrinter::VisitOMPOrderedDirective(OMPOrderedDirective *Node) {
   Indent() << "#pragma omp ordered";
-  PrintOMPExecutableDirective(Node, true);
-}
-
-void StmtPrinter::VisitOMPOrderedBlockAssocDirective(
-    OMPOrderedBlockAssocDirective *Node) {
-  Indent() << "#pragma omp ordered";
-  PrintOMPExecutableDirective(Node);
+  PrintOMPExecutableDirective(Node, Node->hasClausesOfKind<OMPDependClause>());
 }
 
 void StmtPrinter::VisitOMPAtomicDirective(OMPAtomicDirective *Node) {

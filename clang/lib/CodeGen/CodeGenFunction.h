@@ -2027,10 +2027,10 @@ public:
     /// \param IP	Insertion point for generating the finalization code.
     static void FinalizeOMPRegion(CodeGenFunction &CGF, InsertPointTy IP) {
       CGBuilderTy::InsertPointGuard IPG(CGF.Builder);
-      llvm::BasicBlock *IPBB = IP.getNodeParent();
-      assert(IPBB->end() != IP &&
+      assert(IP.getBlock()->end() != IP.getPoint() &&
              "OpenMP IR Builder should cause terminated block!");
 
+      llvm::BasicBlock *IPBB = IP.getBlock();
       llvm::BasicBlock *DestBB = IPBB->getUniqueSuccessor();
       assert(DestBB && "Finalization block should have one successor!");
 
@@ -2054,10 +2054,10 @@ public:
                                          InsertPointTy CodeGenIP,
                                          Twine RegionName);
 
-    static void EmitCaptureStmt(CodeGenFunction &CGF,
-                                llvm::BasicBlock *CodeGenIPBB,
+    static void EmitCaptureStmt(CodeGenFunction &CGF, InsertPointTy CodeGenIP,
                                 llvm::BasicBlock &FiniBB, llvm::Function *Fn,
                                 ArrayRef<llvm::Value *> Args) {
+      llvm::BasicBlock *CodeGenIPBB = CodeGenIP.getBlock();
       if (llvm::Instruction *CodeGenIPBBTI = CodeGenIPBB->getTerminatorOrNull())
         CodeGenIPBBTI->eraseFromParent();
 
@@ -2068,7 +2068,7 @@ public:
       else
         CGF.EmitRuntimeCall(Fn, Args);
 
-      if (CGF.Builder.saveIP().isValid())
+      if (CGF.Builder.saveIP().isSet())
         CGF.Builder.CreateBr(&FiniBB);
     }
 
@@ -2097,10 +2097,10 @@ public:
       OutlinedRegionBodyRAII(CodeGenFunction &cgf, InsertPointTy &AllocaIP,
                              llvm::BasicBlock &RetBB)
           : CGF(cgf) {
-        assert(AllocaIP.isValid() &&
+        assert(AllocaIP.isSet() &&
                "Must specify Insertion point for allocas of outlined function");
         OldAllocaIP = CGF.AllocaInsertPt;
-        CGF.AllocaInsertPt = &*AllocaIP;
+        CGF.AllocaInsertPt = &*AllocaIP.getPoint();
 
         OldReturnBlock = CGF.ReturnBlock;
         CGF.ReturnBlock = CGF.getJumpDestInCurrentScope(&RetBB);
@@ -2126,13 +2126,13 @@ public:
         // function so it expects an empty AllocaIP in which case will reuse the
         // old alloca insertion point, or a new AllocaIP in the same block as
         // the old one
-        assert((!AllocaIP.isValid() ||
-                CGF.AllocaInsertPt->getParent() == AllocaIP.getNodeParent()) &&
+        assert((!AllocaIP.isSet() ||
+                CGF.AllocaInsertPt->getParent() == AllocaIP.getBlock()) &&
                "Insertion point should be in the entry block of containing "
                "function!");
         OldAllocaIP = CGF.AllocaInsertPt;
-        if (AllocaIP.isValid())
-          CGF.AllocaInsertPt = &*AllocaIP;
+        if (AllocaIP.isSet())
+          CGF.AllocaInsertPt = &*AllocaIP.getPoint();
 
         // TODO: Remove the call, after making sure the counter is not used by
         //       the EHStack.
@@ -4057,10 +4057,7 @@ public:
   void EmitOMPFlushDirective(const OMPFlushDirective &S);
   void EmitOMPDepobjDirective(const OMPDepobjDirective &S);
   void EmitOMPScanDirective(const OMPScanDirective &S);
-  void
-  EmitOMPOrderedStandaloneDirective(const OMPOrderedStandaloneDirective &S);
-  void
-  EmitOMPOrderedBlockAssocDirective(const OMPOrderedBlockAssocDirective &S);
+  void EmitOMPOrderedDirective(const OMPOrderedDirective &S);
   void EmitOMPAtomicDirective(const OMPAtomicDirective &S);
   void EmitOMPTargetDirective(const OMPTargetDirective &S);
   void EmitOMPTargetDataDirective(const OMPTargetDataDirective &S);
@@ -4787,9 +4784,6 @@ public:
   /// Create the discriminator from the storage address and the entity hash.
   llvm::Value *EmitPointerAuthBlendDiscriminator(llvm::Value *StorageAddress,
                                                  llvm::Value *Discriminator);
-  CGPointerAuthInfo EmitPointerAuthInfo(const PointerAuthSchema &Schema,
-                                        llvm::Value *StorageAddress,
-                                        llvm::ConstantInt *Discriminator);
   CGPointerAuthInfo EmitPointerAuthInfo(const PointerAuthSchema &Schema,
                                         llvm::Value *StorageAddress,
                                         GlobalDecl SchemaDecl,
@@ -5544,13 +5538,9 @@ public:
       TrapReason *TR = nullptr);
   /* TO_UPSTREAM(BoundsSafety) OFF*/
 
-  /// Emit a call to trap or debugtrap. If 'EnsureInsertPoint' is false, the
-  /// IR builder need not have a valid insert point after this returns.
-  llvm::CallInst *EmitTrapCall(llvm::Intrinsic::ID IntrID,
-                               bool EnsureInsertPoint = true);
-
-  /// Emit a call to '\@llvm.trap()' and clear the current insert point.
-  void EmitTrapCallAndMakeUnreachable();
+  /// Emit a call to trap or debugtrap and attach function attribute
+  /// "trap-func-name" if specified.
+  llvm::CallInst *EmitTrapCall(llvm::Intrinsic::ID IntrID);
 
   /// Emit a stub for the cross-DSO CFI check function.
   void EmitCfiCheckStub();

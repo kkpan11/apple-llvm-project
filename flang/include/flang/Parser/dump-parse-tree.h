@@ -601,7 +601,6 @@ public:
   NODE(parser, OmpDefaultClause)
   NODE_ENUM(OmpDefaultClause, DataSharingAttribute)
   NODE(parser, OmpDefaultmapClause)
-  NODE(parser, OmpDefaultVariantClause)
   NODE(OmpDefaultmapClause, Modifier)
   NODE_ENUM(OmpDefaultmapClause, ImplicitBehavior)
   NODE(parser, OmpDeleteModifier)

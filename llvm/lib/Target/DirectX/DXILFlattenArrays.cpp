@@ -232,10 +232,14 @@ bool DXILFlattenArraysVisitor::visitGetElementPtrInst(GetElementPtrInst &GEP) {
         cast<GetElementPtrInst>(PtrOpGEPCE->getAsInstruction());
     OldGEPI->insertBefore(GEP.getIterator());
 
+    IRBuilder<> Builder(&GEP);
     SmallVector<Value *> Indices(GEP.indices());
-    GetElementPtrInst *NewGEPI = GetElementPtrInst::Create(
-        GEP.getSourceElementType(), OldGEPI, Indices, GEP.getNoWrapFlags(),
-        GEP.getName(), GEP.getIterator());
+    Value *NewGEP =
+        Builder.CreateGEP(GEP.getSourceElementType(), OldGEPI, Indices,
+                          GEP.getName(), GEP.getNoWrapFlags());
+    assert(isa<GetElementPtrInst>(NewGEP) &&
+           "Expected newly-created GEP to be an instruction");
+    GetElementPtrInst *NewGEPI = cast<GetElementPtrInst>(NewGEP);
 
     GEP.replaceAllUsesWith(NewGEPI);
     GEP.eraseFromParent();
@@ -340,10 +344,19 @@ bool DXILFlattenArraysVisitor::visitGetElementPtrInst(GetElementPtrInst &GEP) {
     }
 
     // Construct a new GEP for the flattened array to replace the current GEP
-    GetElementPtrInst *NewGEP = GetElementPtrInst::Create(
+    Value *NewGEP = Builder.CreateGEP(
         Info.RootFlattenedArrayType, Info.RootPointerOperand,
-        {ZeroIndex, FlattenedIndex}, GEP.getNoWrapFlags(), GEP.getName(),
-        Builder.GetInsertPoint());
+        {ZeroIndex, FlattenedIndex}, GEP.getName(), GEP.getNoWrapFlags());
+
+    // If the pointer operand is a global variable and all indices are 0,
+    // IRBuilder::CreateGEP will return the global variable instead of creating
+    // a GEP instruction or GEP ConstantExpr. In this case we have to create and
+    // insert our own GEP instruction.
+    if (!isa<GEPOperator>(NewGEP))
+      NewGEP = GetElementPtrInst::Create(
+          Info.RootFlattenedArrayType, Info.RootPointerOperand,
+          {ZeroIndex, FlattenedIndex}, GEP.getNoWrapFlags(), GEP.getName(),
+          Builder.GetInsertPoint());
 
     // Replace the current GEP with the new GEP. Store GEPInfo into the map
     // for later use in case this GEP was not the end of the chain

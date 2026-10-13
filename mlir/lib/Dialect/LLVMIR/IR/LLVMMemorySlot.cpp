@@ -684,9 +684,7 @@ bool LLVM::GEPOp::canUsesBeRemoved(
     SmallVectorImpl<OpOperand *> &newBlockingUses,
     const DataLayout &dataLayout) {
   // GEP can be removed as long as it is a no-op and its users can be removed.
-  // `inrange` is only valid on constant GEP expressions, so an inrange GEP on
-  // an alloca is illegal and we bail out.
-  if (getInrangeAttr() || !hasAllZeroIndices(*this))
+  if (!hasAllZeroIndices(*this))
     return false;
   return forwardToUsers(*this, newBlockingUses);
 }
@@ -865,10 +863,6 @@ bool LLVM::GEPOp::canRewire(const DestructurableMemorySlot &slot,
     return false;
 
   if (getBase() != slot.ptr)
-    return false;
-  // `inrange` is only valid on constant GEP expressions, so an inrange GEP on
-  // an alloca is illegal and SROA bails out.
-  if (getInrangeAttr())
     return false;
   std::optional<SubslotAccessInfo> accessInfo =
       getSubslotAccessInfo(slot, dataLayout, *this);

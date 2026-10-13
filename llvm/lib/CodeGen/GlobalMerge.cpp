@@ -582,8 +582,8 @@ bool GlobalMergeImpl::doMerge(const SmallVectorImpl<GlobalVariable *> &Globals,
           ConstantInt::get(Int32Ty, 0),
           ConstantInt::get(Int32Ty, StructIdxs[idx]),
       };
-      Constant *GEP = ConstantExpr::getGetElementPtr(
-          DL, MergedTy, MergedGV, Idx, GEPNoWrapFlags::inBounds());
+      Constant *GEP =
+          ConstantExpr::getInBoundsGetElementPtr(MergedTy, MergedGV, Idx);
       Globals[k]->replaceAllUsesWith(GEP);
       Globals[k]->eraseFromParent();
 
