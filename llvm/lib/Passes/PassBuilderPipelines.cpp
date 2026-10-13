@@ -1668,7 +1668,7 @@ PassBuilder::buildModuleOptimizationPipeline(OptimizationLevel Level,
   OptimizePM.addPass(DivRemPairsPass());
 
   // Merge adjacent icmps into memcmp, then expand memcmp to loads/compares.
-  // TODO: move this furter up so that it can be optimized by GVN, etc.
+  // TODO: move this further up so that it can be optimized by GVN, etc.
   if (EnableMergeICmps)
     OptimizePM.addPass(MergeICmpsPass());
   OptimizePM.addPass(ExpandMemCmpPass());
@@ -2385,6 +2385,12 @@ PassBuilder::buildLTODefaultPipeline(OptimizationLevel Level,
   // passes to avoid re-sinking, but before SimplifyCFG because it can allow
   // flattening of blocks.
   LateFPM.addPass(DivRemPairsPass());
+
+  // Merge adjacent icmps into memcmp, then expand memcmp to loads/compares.
+  // TODO: move this further up so that it can be optimized by GVN, etc.
+  if (EnableMergeICmps)
+    LateFPM.addPass(MergeICmpsPass());
+  LateFPM.addPass(ExpandMemCmpPass());
 
   // Delete basic blocks, which optimization passes may have killed.
   LateFPM.addPass(SimplifyCFGPass(SimplifyCFGOptions()
