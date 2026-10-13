@@ -1754,8 +1754,7 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::OMPFlushDirectiveClass:
     case Stmt::OMPDepobjDirectiveClass:
     case Stmt::OMPScanDirectiveClass:
-    case Stmt::OMPOrderedStandaloneDirectiveClass:
-    case Stmt::OMPOrderedBlockAssocDirectiveClass:
+    case Stmt::OMPOrderedDirectiveClass:
     case Stmt::OMPAtomicDirectiveClass:
     case Stmt::OMPAssumeDirectiveClass:
     case Stmt::OMPTargetDirectiveClass:

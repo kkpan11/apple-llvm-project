@@ -216,9 +216,9 @@ DataScalarizerVisitor::createArrayFromVector(IRBuilder<> &Builder, Value *Vec,
     Value *EE = Builder.CreateExtractElement(Vec, I, Name + ".extract");
     if (WidenBool)
       EE = Builder.CreateZExt(EE, ArrElemTy, Name + ".zext");
-    GEPs[I] = GetElementPtrInst::CreateInBounds(
+    GEPs[I] = Builder.CreateInBoundsGEP(
         ArrTy, ArrAlloca, {Builder.getInt32(0), Builder.getInt32(I)},
-        Name + ".index", Builder.GetInsertPoint());
+        Name + ".index");
     Builder.CreateStore(EE, GEPs[I]);
   }
 
@@ -232,9 +232,8 @@ DataScalarizerVisitor::createArrayFromVector(IRBuilder<> &Builder, Value *Vec,
 static std::pair<Value *, Value *>
 dynamicallyLoadArray(IRBuilder<> &Builder, AllocaInst *ArrAlloca, Type *ArrTy,
                      Value *Index, const Twine &Name = "") {
-  Value *GEP = GetElementPtrInst::CreateInBounds(
-      ArrTy, ArrAlloca, {Builder.getInt32(0), Index}, Name + ".index",
-      Builder.GetInsertPoint());
+  Value *GEP = Builder.CreateInBoundsGEP(
+      ArrTy, ArrAlloca, {Builder.getInt32(0), Index}, Name + ".index");
   Value *Load =
       Builder.CreateLoad(ArrTy->getArrayElementType(), GEP, Name + ".load");
   return std::make_pair(GEP, Load);
@@ -346,10 +345,14 @@ bool DataScalarizerVisitor::visitGetElementPtrInst(GetElementPtrInst &GEPI) {
         cast<GetElementPtrInst>(PtrOpGEPCE->getAsInstruction());
     OldGEPI->insertBefore(GEPI.getIterator());
 
+    IRBuilder<> Builder(&GEPI);
     SmallVector<Value *> Indices(GEPI.indices());
-    GetElementPtrInst *NewGEPI = GetElementPtrInst::Create(
-        GEPI.getSourceElementType(), OldGEPI, Indices, GEPI.getNoWrapFlags(),
-        GEPI.getName(), GEPI.getIterator());
+    Value *NewGEP =
+        Builder.CreateGEP(GEPI.getSourceElementType(), OldGEPI, Indices,
+                          GEPI.getName(), GEPI.getNoWrapFlags());
+    assert(isa<GetElementPtrInst>(NewGEP) &&
+           "Expected newly-created GEP to be an instruction");
+    GetElementPtrInst *NewGEPI = cast<GetElementPtrInst>(NewGEP);
 
     GEPI.replaceAllUsesWith(NewGEPI);
     GEPI.eraseFromParent();
@@ -367,10 +370,10 @@ bool DataScalarizerVisitor::visitGetElementPtrInst(GetElementPtrInst &GEPI) {
   if (!NeedsTransform)
     return false;
 
+  IRBuilder<> Builder(&GEPI);
   SmallVector<Value *, MaxVecSize> Indices(GOp->idx_begin(), GOp->idx_end());
-  Value *NewGEP = GetElementPtrInst::Create(NewGEPType, NewPtrOperand, Indices,
-                                            GOp->getNoWrapFlags(),
-                                            GOp->getName(), GEPI.getIterator());
+  Value *NewGEP = Builder.CreateGEP(NewGEPType, NewPtrOperand, Indices,
+                                    GOp->getName(), GOp->getNoWrapFlags());
 
   GOp->replaceAllUsesWith(NewGEP);
 

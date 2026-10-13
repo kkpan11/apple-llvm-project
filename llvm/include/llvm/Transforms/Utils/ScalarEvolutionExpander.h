@@ -143,6 +143,7 @@ class SCEVExpander : public SCEVUseVisitor<SCEVExpander, Value *> {
   // expansion.
   class SCEVInsertPointGuard {
     IRBuilderBase &Builder;
+    AssertingVH<BasicBlock> Block;
     BasicBlock::iterator Point;
     DebugLoc DbgLoc;
     SCEVExpander *SE;
@@ -152,7 +153,7 @@ class SCEVExpander : public SCEVUseVisitor<SCEVExpander, Value *> {
 
   public:
     SCEVInsertPointGuard(IRBuilderBase &B, SCEVExpander *SE)
-        : Builder(B), Point(B.GetInsertPoint()),
+        : Builder(B), Block(B.GetInsertBlock()), Point(B.GetInsertPoint()),
           DbgLoc(B.getCurrentDebugLocation()), SE(SE) {
       SE->InsertPointGuards.push_back(this);
     }
@@ -163,7 +164,7 @@ class SCEVExpander : public SCEVUseVisitor<SCEVExpander, Value *> {
       // ScalarEvolutionExpander.
       assert(SE->InsertPointGuards.back() == this);
       SE->InsertPointGuards.pop_back();
-      Builder.restoreIP(Point);
+      Builder.restoreIP(IRBuilderBase::InsertPoint(Block, Point));
       Builder.SetCurrentDebugLocation(DbgLoc);
     }
 
@@ -402,7 +403,9 @@ public:
     Builder.SetInsertPoint(IP);
   }
 
-  void setInsertPoint(BasicBlock::iterator IP) { Builder.SetInsertPoint(IP); }
+  void setInsertPoint(BasicBlock::iterator IP) {
+    Builder.SetInsertPoint(IP->getParent(), IP);
+  }
 
   /// Clear the current insertion point. This is useful if the instruction
   /// that had been serving as the insertion point may have been deleted.

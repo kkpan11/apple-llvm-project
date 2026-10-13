@@ -737,24 +737,18 @@ llvm::Constant *CodeGenModule::getMemberFunctionPointer(const FunctionDecl *FD,
 }
 
 std::optional<PointerAuthQualifier>
-CodeGenModule::computeVTPointerAuthentication(const CXXRecordDecl *ThisClass,
-                                              bool IsVTTEntry) {
-  auto DefaultAuthentication =
-      IsVTTEntry ? getCodeGenOpts().PointerAuth.CXXVTTVTablePointers
-                 : getCodeGenOpts().PointerAuth.CXXVTablePointers;
+CodeGenModule::computeVTPointerAuthentication(const CXXRecordDecl *ThisClass) {
+  auto DefaultAuthentication = getCodeGenOpts().PointerAuth.CXXVTablePointers;
   if (!DefaultAuthentication)
     return std::nullopt;
   const CXXRecordDecl *PrimaryBase =
       Context.baseForVTableAuthentication(ThisClass);
-  const CXXRecordDecl *TypeDiscriminatorClass =
-      IsVTTEntry ? ThisClass : PrimaryBase;
 
   unsigned Key = DefaultAuthentication.getKey();
   bool AddressDiscriminated = DefaultAuthentication.isAddressDiscriminated();
   auto DefaultDiscrimination = DefaultAuthentication.getOtherDiscrimination();
   unsigned TypeBasedDiscriminator =
-      Context.getPointerAuthVTablePointerDiscriminator(TypeDiscriminatorClass,
-                                                       IsVTTEntry);
+      Context.getPointerAuthVTablePointerDiscriminator(PrimaryBase);
   unsigned Discriminator;
   if (DefaultDiscrimination == PointerAuthSchema::Discrimination::Type) {
     Discriminator = TypeBasedDiscriminator;
@@ -765,11 +759,8 @@ CodeGenModule::computeVTPointerAuthentication(const CXXRecordDecl *ThisClass,
     assert(DefaultDiscrimination == PointerAuthSchema::Discrimination::None);
     Discriminator = 0;
   }
-  auto ExplicitAuthentication =
-      PrimaryBase->getAttr<VTablePointerAuthenticationAttr>();
-
-  // TODO: enable explicit authentication path for VTT vtable entries.
-  if (!IsVTTEntry && ExplicitAuthentication) {
+  if (auto ExplicitAuthentication =
+          PrimaryBase->getAttr<VTablePointerAuthenticationAttr>()) {
     auto ExplicitAddressDiscrimination =
         ExplicitAuthentication->getAddressDiscrimination();
     auto ExplicitDiscriminator =
@@ -812,28 +803,26 @@ CodeGenModule::computeVTPointerAuthentication(const CXXRecordDecl *ThisClass,
 }
 
 std::optional<PointerAuthQualifier>
-CodeGenModule::getVTablePointerAuthentication(const CXXRecordDecl *Record,
-                                              bool IsVTTEntry) {
+CodeGenModule::getVTablePointerAuthentication(const CXXRecordDecl *Record) {
   if (!Record->getDefinition() || !Record->isPolymorphic())
     return std::nullopt;
 
-  if (IsVTTEntry)
-    return computeVTPointerAuthentication(Record, IsVTTEntry);
-
   auto Existing = VTablePtrAuthInfos.find(Record);
-  if (Existing != VTablePtrAuthInfos.end())
-    return Existing->getSecond();
-
-  std::optional<PointerAuthQualifier> Authentication =
-      computeVTPointerAuthentication(Record, IsVTTEntry);
-  VTablePtrAuthInfos.insert(std::make_pair(Record, Authentication));
+  std::optional<PointerAuthQualifier> Authentication;
+  if (Existing != VTablePtrAuthInfos.end()) {
+    Authentication = Existing->getSecond();
+  } else {
+    Authentication = computeVTPointerAuthentication(Record);
+    VTablePtrAuthInfos.insert(std::make_pair(Record, Authentication));
+  }
   return Authentication;
 }
 
-std::optional<CGPointerAuthInfo> CodeGenModule::getVTablePointerAuthInfo(
-    CodeGenFunction *CGF, const CXXRecordDecl *Record,
-    llvm::Value *StorageAddress, bool IsVTTEntry) {
-  auto Authentication = getVTablePointerAuthentication(Record, IsVTTEntry);
+std::optional<CGPointerAuthInfo>
+CodeGenModule::getVTablePointerAuthInfo(CodeGenFunction *CGF,
+                                        const CXXRecordDecl *Record,
+                                        llvm::Value *StorageAddress) {
+  auto Authentication = getVTablePointerAuthentication(Record);
   if (!Authentication)
     return std::nullopt;
 

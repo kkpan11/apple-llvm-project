@@ -1703,8 +1703,7 @@ void CodeGenFunction::EmitOMPReductionClauseInit(
     case OMPD_flush:
     case OMPD_depobj:
     case OMPD_scan:
-    case OMPD_ordered_standalone:
-    case OMPD_ordered_blockassoc:
+    case OMPD_ordered:
     case OMPD_atomic:
     case OMPD_teams:
     case OMPD_target:
@@ -2082,7 +2081,7 @@ void CodeGenFunction::OMPBuilderCBHelpers::EmitOMPInlinedRegionBody(
     CGF.EmitStmt(RegionBodyStmt);
   }
 
-  if (Builder.saveIP().isValid())
+  if (Builder.saveIP().isSet())
     Builder.CreateBr(FiniBB);
 }
 
@@ -2099,7 +2098,7 @@ void CodeGenFunction::OMPBuilderCBHelpers::EmitOMPOutlinedRegionBody(
     CGF.EmitStmt(RegionBodyStmt);
   }
 
-  if (Builder.saveIP().isValid())
+  if (Builder.saveIP().isSet())
     Builder.CreateBr(FiniBB);
 }
 
@@ -2156,7 +2155,7 @@ void CodeGenFunction::EmitOMPParallelDirective(const OMPParallelDirective &S) {
     CGCapturedStmtInfo CGSI(*CS, CR_OpenMP);
     CodeGenFunction::CGCapturedStmtRAII CapInfoRAII(*this, &CGSI);
     llvm::OpenMPIRBuilder::InsertPointTy AllocaIP(
-        AllocaInsertPt->getIterator());
+        AllocaInsertPt->getParent(), AllocaInsertPt->getIterator());
     llvm::OpenMPIRBuilder::InsertPointTy AfterIP =
         cantFail(OMPBuilder.createParallel(
             Builder, AllocaIP, /*DeallocBlocks=*/{}, BodyGenCB, PrivCB, FiniCB,
@@ -2785,7 +2784,7 @@ static void emitSimdlenSafelenClause(CodeGenFunction &CGF,
   }
 }
 
-// Check for the presence of an `OMPOrderedBlockAssocDirective`,
+// Check for the presence of an `OMPOrderedDirective`,
 // i.e., `ordered` in `#pragma omp ordered simd`.
 //
 // Consider the following source code:
@@ -2806,7 +2805,7 @@ static void emitSimdlenSafelenClause(CodeGenFunction &CGF,
 //
 // Suppose we are in `CodeGenFunction::EmitOMPSimdInit(const OMPLoopDirective
 // &D)`. By examining `D.dump()` we have the following AST containing
-// `OMPOrderedBlockAssocDirective`:
+// `OMPOrderedDirective`:
 //
 // ```
 // OMPSimdDirective 0x1c32950
@@ -2824,24 +2823,24 @@ static void emitSimdlenSafelenClause(CodeGenFunction &CGF,
 //   | | |-UnaryOperator 0x1c31348 'int' prefix '++'
 //   | | | `-DeclRefExpr 0x1c31328 'int' lvalue Var 0x1c31208 'k' 'int'
 //   | | `-CompoundStmt 0x1c31e18
-//   | |   `-OMPOrderedBlockAssocDirective 0x1c31dd8
+//   | |   `-OMPOrderedDirective 0x1c31dd8
 //   | |     |-OMPSimdClause 0x1c31380
 //   | |     `-CapturedStmt 0x1c31cd0
 // ```
 //
-// Note the presence of `OMPOrderedBlockAssocDirective` above:
+// Note the presence of `OMPOrderedDirective` above:
 // It's (transitively) nested in a `CapturedStmt` representing the pragma
 // annotated compound statement. Thus, we need to consider this nesting and
 // include checking the `getCapturedStmt` in this case.
-static bool hasOrderedBlockAssocDirective(const Stmt *S) {
-  if (isa<OMPOrderedBlockAssocDirective>(S))
+static bool hasOrderedDirective(const Stmt *S) {
+  if (isa<OMPOrderedDirective>(S))
     return true;
 
   if (const auto *CS = dyn_cast<CapturedStmt>(S))
-    return hasOrderedBlockAssocDirective(CS->getCapturedStmt());
+    return hasOrderedDirective(CS->getCapturedStmt());
 
   for (const Stmt *Child : S->children()) {
-    if (Child && hasOrderedBlockAssocDirective(Child))
+    if (Child && hasOrderedDirective(Child))
       return true;
   }
 
@@ -2850,9 +2849,9 @@ static bool hasOrderedBlockAssocDirective(const Stmt *S) {
 
 static void applyConservativeSimdOrderedDirective(const Stmt &AssociatedStmt,
                                                   LoopInfoStack &LoopStack) {
-  // Check for the presence of an `OMPOrderedBlockAssocDirective`
+  // Check for the presence of an `OMPOrderedDirective`
   // i.e., `ordered` in `#pragma omp ordered simd`
-  bool HasOrderedDirective = hasOrderedBlockAssocDirective(&AssociatedStmt);
+  bool HasOrderedDirective = hasOrderedDirective(&AssociatedStmt);
   // If present then conservatively disable loop vectorization
   // analogously to how `emitSimdlenSafelenClause` does.
   if (HasOrderedDirective)
@@ -3087,9 +3086,9 @@ static bool isSimdSupportedByOpenMPIRBuilder(const OMPLoopDirective &S) {
       return false;
   }
 
-  // Check if we have a statement with the ordered-blockassoc directive.
+  // Check if we have a statement with the ordered directive.
   // Visit the statement hierarchy to find a compound statement
-  // with a ordered-blockassoc directive in it.
+  // with a ordered directive in it.
   if (const auto *CanonLoop = dyn_cast<OMPCanonicalLoop>(S.getRawStmt())) {
     if (const Stmt *SyntacticalLoop = CanonLoop->getLoopStmt()) {
       for (const Stmt *SubStmt : SyntacticalLoop->children()) {
@@ -3099,7 +3098,7 @@ static bool isSimdSupportedByOpenMPIRBuilder(const OMPLoopDirective &S) {
           for (const Stmt *CSSubStmt : CS->children()) {
             if (!CSSubStmt)
               continue;
-            if (isa<OMPOrderedBlockAssocDirective>(CSSubStmt)) {
+            if (isa<OMPOrderedDirective>(CSSubStmt)) {
               return false;
             }
           }
@@ -4453,7 +4452,7 @@ static void emitOMPForDirective(const OMPLoopDirective &S, CodeGenFunction &CGF,
       llvm::OpenMPIRBuilder &OMPBuilder =
           CGM.getOpenMPRuntime().getOMPBuilder();
       llvm::OpenMPIRBuilder::InsertPointTy AllocaIP(
-          CGF.AllocaInsertPt->getIterator());
+          CGF.AllocaInsertPt->getParent(), CGF.AllocaInsertPt->getIterator());
       cantFail(OMPBuilder.applyWorkshareLoop(
           CGF.Builder.getCurrentDebugLocation(), CLI, AllocaIP, NeedsBarrier,
           SchedKind, ChunkSize, /*HasSimdModifier=*/false,
@@ -4741,7 +4740,7 @@ void CodeGenFunction::EmitOMPSectionsDirective(const OMPSectionsDirective &S) {
     CGCapturedStmtInfo CGSI(*ICS, CR_OpenMP);
     CodeGenFunction::CGCapturedStmtRAII CapInfoRAII(*this, &CGSI);
     llvm::OpenMPIRBuilder::InsertPointTy AllocaIP(
-        AllocaInsertPt->getIterator());
+        AllocaInsertPt->getParent(), AllocaInsertPt->getIterator());
     llvm::OpenMPIRBuilder::InsertPointTy AfterIP =
         cantFail(OMPBuilder.createSections(
             Builder, AllocaIP, SectionCBVector, PrivCB, FiniCB, S.hasCancel(),
@@ -5924,7 +5923,8 @@ void CodeGenFunction::EmitOMPTaskgroupDirective(
   if (CGM.getLangOpts().OpenMPIRBuilder && isSupportedByOpenMPIRBuilder(S)) {
     llvm::OpenMPIRBuilder &OMPBuilder = CGM.getOpenMPRuntime().getOMPBuilder();
     using InsertPointTy = llvm::OpenMPIRBuilder::InsertPointTy;
-    InsertPointTy AllocaIP(AllocaInsertPt->getIterator());
+    InsertPointTy AllocaIP(AllocaInsertPt->getParent(),
+                           AllocaInsertPt->getIterator());
 
     auto BodyGenCB = [&, this](InsertPointTy AllocIP, InsertPointTy CodeGenIP,
                                ArrayRef<llvm::BasicBlock *> DeallocBlocks) {
@@ -6502,84 +6502,78 @@ static void emitRestoreIP(CodeGenFunction &CGF, const T *C,
                                      StoreValues, ".cnt.addr", IsDependSource));
 }
 
-void CodeGenFunction::EmitOMPOrderedStandaloneDirective(
-    const OMPOrderedStandaloneDirective &S) {
-  assert((S.hasClausesOfKind<OMPDependClause>() ||
-          S.hasClausesOfKind<OMPDoacrossClause>()) &&
-         "Standalone ordered directive should have either depend or doacross "
-         "clause");
-  // The ordered-standalone directive.
-  assert(!S.hasAssociatedStmt() && "No associated statement must be in "
-                                   "ordered depend|doacross construct.");
-
+void CodeGenFunction::EmitOMPOrderedDirective(const OMPOrderedDirective &S) {
   if (CGM.getLangOpts().OpenMPIRBuilder) {
     llvm::OpenMPIRBuilder &OMPBuilder = CGM.getOpenMPRuntime().getOMPBuilder();
     using InsertPointTy = llvm::OpenMPIRBuilder::InsertPointTy;
 
-    InsertPointTy AllocaIP(AllocaInsertPt->getIterator());
-    for (const auto *DC : S.getClausesOfKind<OMPDependClause>())
-      emitRestoreIP(*this, DC, AllocaIP, OMPBuilder);
-    for (const auto *DC : S.getClausesOfKind<OMPDoacrossClause>())
-      emitRestoreIP(*this, DC, AllocaIP, OMPBuilder);
+    if (S.hasClausesOfKind<OMPDependClause>() ||
+        S.hasClausesOfKind<OMPDoacrossClause>()) {
+      // The ordered directive with depend clause.
+      assert(!S.hasAssociatedStmt() && "No associated statement must be in "
+                                       "ordered depend|doacross construct.");
+      InsertPointTy AllocaIP(AllocaInsertPt->getParent(),
+                             AllocaInsertPt->getIterator());
+      for (const auto *DC : S.getClausesOfKind<OMPDependClause>())
+        emitRestoreIP(*this, DC, AllocaIP, OMPBuilder);
+      for (const auto *DC : S.getClausesOfKind<OMPDoacrossClause>())
+        emitRestoreIP(*this, DC, AllocaIP, OMPBuilder);
+    } else {
+      // The ordered directive with threads or simd clause, or without clause.
+      // Without clause, it behaves as if the threads clause is specified.
+      const auto *C = S.getSingleClause<OMPSIMDClause>();
+
+      auto FiniCB = [this](InsertPointTy IP) {
+        OMPBuilderCBHelpers::FinalizeOMPRegion(*this, IP);
+        return llvm::Error::success();
+      };
+
+      auto BodyGenCB = [&S, C,
+                        this](InsertPointTy AllocIP, InsertPointTy CodeGenIP,
+                              ArrayRef<llvm::BasicBlock *> DeallocBlocks) {
+        Builder.restoreIP(CodeGenIP);
+
+        const CapturedStmt *CS = S.getInnermostCapturedStmt();
+        if (C) {
+          llvm::BasicBlock *FiniBB = splitBBWithSuffix(
+              Builder, /*CreateBranch=*/false, ".ordered.after");
+          llvm::SmallVector<llvm::Value *, 16> CapturedVars;
+          GenerateOpenMPCapturedVars(*CS, CapturedVars);
+          llvm::Function *OutlinedFn = emitOutlinedOrderedFunction(CGM, CS, S);
+          assert(S.getBeginLoc().isValid() &&
+                 "Outlined function call location must be valid.");
+          ApplyDebugLocation::CreateDefaultArtificial(*this, S.getBeginLoc());
+          OMPBuilderCBHelpers::EmitCaptureStmt(*this, CodeGenIP, *FiniBB,
+                                               OutlinedFn, CapturedVars);
+        } else {
+          OMPBuilderCBHelpers::EmitOMPInlinedRegionBody(
+              *this, CS->getCapturedStmt(), AllocIP, CodeGenIP, "ordered");
+        }
+        return llvm::Error::success();
+      };
+
+      OMPLexicalScope Scope(*this, S, OMPD_unknown);
+      llvm::OpenMPIRBuilder::InsertPointTy AfterIP = cantFail(
+          OMPBuilder.createOrderedThreadsSimd(Builder, BodyGenCB, FiniCB, !C));
+      Builder.restoreIP(AfterIP);
+    }
     return;
   }
 
   if (S.hasClausesOfKind<OMPDependClause>()) {
+    assert(!S.hasAssociatedStmt() &&
+           "No associated statement must be in ordered depend construct.");
     for (const auto *DC : S.getClausesOfKind<OMPDependClause>())
       CGM.getOpenMPRuntime().emitDoacrossOrdered(*this, DC);
-  } else if (S.hasClausesOfKind<OMPDoacrossClause>()) {
-    for (const auto *DC : S.getClausesOfKind<OMPDoacrossClause>())
-      CGM.getOpenMPRuntime().emitDoacrossOrdered(*this, DC);
-  }
-}
-
-void CodeGenFunction::EmitOMPOrderedBlockAssocDirective(
-    const OMPOrderedBlockAssocDirective &S) {
-  if (CGM.getLangOpts().OpenMPIRBuilder) {
-    llvm::OpenMPIRBuilder &OMPBuilder = CGM.getOpenMPRuntime().getOMPBuilder();
-    using InsertPointTy = llvm::OpenMPIRBuilder::InsertPointTy;
-
-    // The ordered directive with threads or simd clause, or without clause.
-    // Without clause, it behaves as if the threads clause is specified.
-    const auto *C = S.getSingleClause<OMPSIMDClause>();
-
-    auto FiniCB = [this](InsertPointTy IP) {
-      OMPBuilderCBHelpers::FinalizeOMPRegion(*this, IP);
-      return llvm::Error::success();
-    };
-
-    auto BodyGenCB = [&S, C, this](InsertPointTy AllocIP,
-                                   InsertPointTy CodeGenIP,
-                                   ArrayRef<llvm::BasicBlock *> DeallocBlocks) {
-      Builder.restoreIP(CodeGenIP);
-
-      const CapturedStmt *CS = S.getInnermostCapturedStmt();
-      if (C) {
-        llvm::BasicBlock *CodeGenBB = CodeGenIP.getNodeParent();
-        llvm::BasicBlock *FiniBB = splitBBWithSuffix(
-            Builder, /*CreateBranch=*/false, ".ordered.after");
-        llvm::SmallVector<llvm::Value *, 16> CapturedVars;
-        GenerateOpenMPCapturedVars(*CS, CapturedVars);
-        llvm::Function *OutlinedFn = emitOutlinedOrderedFunction(CGM, CS, S);
-        assert(S.getBeginLoc().isValid() &&
-               "Outlined function call location must be valid.");
-        ApplyDebugLocation::CreateDefaultArtificial(*this, S.getBeginLoc());
-        OMPBuilderCBHelpers::EmitCaptureStmt(*this, CodeGenBB, *FiniBB,
-                                             OutlinedFn, CapturedVars);
-      } else {
-        OMPBuilderCBHelpers::EmitOMPInlinedRegionBody(
-            *this, CS->getCapturedStmt(), AllocIP, CodeGenIP, "ordered");
-      }
-      return llvm::Error::success();
-    };
-
-    OMPLexicalScope Scope(*this, S, OMPD_unknown);
-    llvm::OpenMPIRBuilder::InsertPointTy AfterIP = cantFail(
-        OMPBuilder.createOrderedThreadsSimd(Builder, BodyGenCB, FiniCB, !C));
-    Builder.restoreIP(AfterIP);
     return;
   }
-
+  if (S.hasClausesOfKind<OMPDoacrossClause>()) {
+    assert(!S.hasAssociatedStmt() &&
+           "No associated statement must be in ordered doacross construct.");
+    for (const auto *DC : S.getClausesOfKind<OMPDoacrossClause>())
+      CGM.getOpenMPRuntime().emitDoacrossOrdered(*this, DC);
+    return;
+  }
   const auto *C = S.getSingleClause<OMPSIMDClause>();
   auto &&CodeGen = [&S, C, this](CodeGenFunction &CGF,
                                  PrePostActionTy &Action) {

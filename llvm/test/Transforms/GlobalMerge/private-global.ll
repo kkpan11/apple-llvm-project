@@ -14,23 +14,23 @@ target triple = "x86_64-unknown-linux-gnu"
 ; CHECK-DAG: @a = private alias i32, ptr @_MergedGlobals{{$}}
 @a = private global i32 1
 
-; CHECK-DAG: @b = private alias i32, getelementptr inbounds (i8, ptr @_MergedGlobals, i64 4)
+; CHECK-DAG: @b = private alias i32, getelementptr inbounds (<{ i32, i32 }>, ptr @_MergedGlobals, i32 0, i32 1)
 @b = private global i32 2
 
 ; CHECK-DAG: @c = private alias i32, ptr @_MergedGlobals.1{{$}}
 @c = private global i32 3, section "foo"
 
-; CHECK-DAG: @d = private alias i32, getelementptr inbounds (i8, ptr @_MergedGlobals.1, i64 4)
+; CHECK-DAG: @d = private alias i32, getelementptr inbounds (<{ i32, i32 }>, ptr @_MergedGlobals.1, i32 0, i32 1)
 @d = private global i32 4, section "foo"
 
 define void @use_private() {
   ; CHECK: load i32, ptr @_MergedGlobals,
   %x = load i32, ptr @a
-  ; CHECK: load i32, ptr getelementptr inbounds (i8, ptr @_MergedGlobals, i64 4)
+  ; CHECK: load i32, ptr getelementptr inbounds (<{ i32, i32 }>, ptr @_MergedGlobals, i32 0, i32 1)
   %y = load i32, ptr @b
   ; CHECK: load i32, ptr @_MergedGlobals.1
   %z1 = load i32, ptr @c
-  ; CHECK: load i32, ptr getelementptr inbounds (i8, ptr @_MergedGlobals.1, i64 4)
+  ; CHECK: load i32, ptr getelementptr inbounds (<{ i32, i32 }>, ptr @_MergedGlobals.1, i32 0, i32 1)
   %z2 = load i32, ptr @d
   ret void
 }

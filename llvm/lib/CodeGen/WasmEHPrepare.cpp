@@ -309,7 +309,8 @@ bool WasmEHPrepareImpl::prepareEHPads(Function &F) {
 void WasmEHPrepareImpl::prepareEHPad(BasicBlock *BB, bool NeedPersonality,
                                      unsigned Index) {
   assert(BB->isEHPad() && "BB is not an EHPad!");
-  IRBuilder<> IRB(BB->getFirstInsertionPt());
+  IRBuilder<> IRB(BB->getContext());
+  IRB.SetInsertPoint(BB, BB->getFirstInsertionPt());
 
   auto *FPI = cast<FuncletPadInst>(BB->getFirstNonPHIIt());
   Instruction *GetExnCI = nullptr, *GetSelectorCI = nullptr;

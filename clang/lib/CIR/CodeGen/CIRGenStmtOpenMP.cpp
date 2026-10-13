@@ -205,16 +205,9 @@ CIRGenFunction::emitOMPScanDirective(const OMPScanDirective &s) {
   getCIRGenModule().errorNYI(s.getSourceRange(), "OpenMP OMPScanDirective");
   return mlir::failure();
 }
-mlir::LogicalResult CIRGenFunction::emitOMPOrderedStandaloneDirective(
-    const OMPOrderedStandaloneDirective &s) {
-  getCIRGenModule().errorNYI(s.getSourceRange(),
-                             "OpenMP OMPOrderedStandaloneDirective");
-  return mlir::failure();
-}
-mlir::LogicalResult CIRGenFunction::emitOMPOrderedBlockAssocDirective(
-    const OMPOrderedBlockAssocDirective &s) {
-  getCIRGenModule().errorNYI(s.getSourceRange(),
-                             "OpenMP OMPOrderedBlockAssocDirective");
+mlir::LogicalResult
+CIRGenFunction::emitOMPOrderedDirective(const OMPOrderedDirective &s) {
+  getCIRGenModule().errorNYI(s.getSourceRange(), "OpenMP OMPOrderedDirective");
   return mlir::failure();
 }
 mlir::LogicalResult

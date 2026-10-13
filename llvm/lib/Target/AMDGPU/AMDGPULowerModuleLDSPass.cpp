@@ -286,7 +286,7 @@ class AMDGPULowerModuleLDS {
     // codegen would suffice for that, but one would still need to ensure that
     // the variables are allocated in the anticipated order.
     BasicBlock *Entry = &Func->getEntryBlock();
-    IRBuilder<> Builder(Entry->getFirstNonPHIIt());
+    IRBuilder<> Builder(Entry, Entry->getFirstNonPHIIt());
 
     Function *Decl = Intrinsic::getOrInsertDeclaration(
         Func->getParent(), Intrinsic::donothing, {});
@@ -1403,8 +1403,7 @@ private:
     for (size_t I = 0; I < LocalVars.size(); I++) {
       GlobalVariable *GV = LocalVars[I];
       Constant *GEPIdx[] = {ConstantInt::get(I32, 0), ConstantInt::get(I32, I)};
-      Constant *GEP = ConstantExpr::getGetElementPtr(
-          DL, LDSTy, SGV, GEPIdx, GEPNoWrapFlags::inBounds());
+      Constant *GEP = ConstantExpr::getGetElementPtr(LDSTy, SGV, GEPIdx, true);
       if (IsPaddingField[I]) {
         assert(GV->use_empty());
         GV->eraseFromParent();

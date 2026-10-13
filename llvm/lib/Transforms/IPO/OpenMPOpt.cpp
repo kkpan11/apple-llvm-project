@@ -1091,8 +1091,9 @@ private:
     BasicBlock *StartBB = nullptr, *EndBB = nullptr;
     auto BodyGenCB = [&](InsertPointTy AllocaIP, InsertPointTy CodeGenIP,
                          ArrayRef<BasicBlock *> DeallocBlocks) {
-      BasicBlock *CGStartBB = CodeGenIP.getNodeParent();
-      BasicBlock *CGEndBB = SplitBlock(CGStartBB, &*CodeGenIP, DT, LI);
+      BasicBlock *CGStartBB = CodeGenIP.getBlock();
+      BasicBlock *CGEndBB =
+          SplitBlock(CGStartBB, &*CodeGenIP.getPoint(), DT, LI);
       assert(StartBB != nullptr && "StartBB should not be null");
       CGStartBB->getTerminator()->setSuccessor(0, StartBB);
       assert(EndBB != nullptr && "EndBB should not be null");
@@ -1131,8 +1132,9 @@ private:
 
       auto BodyGenCB = [&](InsertPointTy AllocaIP, InsertPointTy CodeGenIP,
                            ArrayRef<BasicBlock *> DeallocBlocks) {
-        BasicBlock *CGStartBB = CodeGenIP.getNodeParent();
-        BasicBlock *CGEndBB = SplitBlock(CGStartBB, &*CodeGenIP, DT, LI);
+        BasicBlock *CGStartBB = CodeGenIP.getBlock();
+        BasicBlock *CGEndBB =
+            SplitBlock(CGStartBB, &*CodeGenIP.getPoint(), DT, LI);
         assert(SeqStartBB != nullptr && "SeqStartBB should not be null");
         CGStartBB->getTerminator()->setSuccessor(0, SeqStartBB);
         assert(SeqEndBB != nullptr && "SeqEndBB should not be null");
@@ -1180,13 +1182,14 @@ private:
         }
       }
 
-      OpenMPIRBuilder::LocationDescription Loc(ParentBB->end(), DL);
+      OpenMPIRBuilder::LocationDescription Loc(
+          InsertPointTy(ParentBB, ParentBB->end()), DL);
       OpenMPIRBuilder::InsertPointTy SeqAfterIP = cantFail(
           OMPInfoCache.OMPBuilder.createMaster(Loc, BodyGenCB, FiniCB));
-      cantFail(OMPInfoCache.OMPBuilder.createBarrier({SeqAfterIP, DL},
-                                                     OMPD_parallel));
+      cantFail(
+          OMPInfoCache.OMPBuilder.createBarrier(SeqAfterIP, OMPD_parallel));
 
-      UncondBrInst::Create(SeqAfterBB, SeqAfterIP.getNodeParent());
+      UncondBrInst::Create(SeqAfterBB, SeqAfterIP.getBlock());
 
       LLVM_DEBUG(dbgs() << TAG << "After sequential inlining " << *OuterFn
                         << "\n");
@@ -1249,8 +1252,10 @@ private:
                                NextForkCI->getPrevNode());
       }
 
-      OpenMPIRBuilder::LocationDescription Loc(BB->end(), DL);
+      OpenMPIRBuilder::LocationDescription Loc(InsertPointTy(BB, BB->end()),
+                                               DL);
       IRBuilder<>::InsertPoint AllocaIP(
+          &OriginalFn->getEntryBlock(),
           OriginalFn->getEntryBlock().getFirstInsertionPt());
       // Create the merged parallel region with default proc binding, to
       // avoid overriding binding settings, and without explicit cancellation.
@@ -1259,7 +1264,7 @@ private:
               Loc, AllocaIP, /* DeallocBlocks */ {}, BodyGenCB, PrivCB, FiniCB,
               nullptr, nullptr, OMP_PROC_BIND_default,
               /* IsCancellable */ false));
-      UncondBrInst::Create(AfterBB, AfterIP.getNodeParent());
+      UncondBrInst::Create(AfterBB, AfterIP.getBlock());
 
       // Perform the actual outlining.
       OMPInfoCache.OMPBuilder.finalize(OriginalFn);
@@ -1296,7 +1301,8 @@ private:
           // TODO: Remove barrier if the merged parallel region includes the
           // 'nowait' clause.
           cantFail(OMPInfoCache.OMPBuilder.createBarrier(
-              {NewCI->getNextNode()->getIterator(), NewCI->getDebugLoc()},
+              InsertPointTy(NewCI->getParent(),
+                            NewCI->getNextNode()->getIterator()),
               OMPD_parallel));
         }
 
@@ -1723,7 +1729,8 @@ private:
     auto &IRBuilder = OMPInfoCache.OMPBuilder;
     Function *F = RuntimeCall.getCaller();
     BasicBlock &Entry = F->getEntryBlock();
-    IRBuilder.Builder.SetInsertPoint(Entry.getFirstNonPHIOrDbgOrAlloca());
+    IRBuilder.Builder.SetInsertPoint(&Entry,
+                                     Entry.getFirstNonPHIOrDbgOrAlloca());
     Value *Handle = IRBuilder.Builder.CreateAlloca(
         IRBuilder.AsyncInfo, /*ArraySize=*/nullptr, "handle");
     Handle =
@@ -1799,11 +1806,10 @@ private:
 
     if (!Ident || !SingleChoice) {
       // The IRBuilder uses the insertion block to get to the module, this is
-      // unfortunate but we work around it for now. No instruction is emitted
-      // here, so there is no debug location to preserve.
-      if (!OMPInfoCache.OMPBuilder.getInsertionPoint().isValid())
-        OMPInfoCache.OMPBuilder.updateToLocation(
-            {F.getEntryBlock().begin(), DebugLoc()});
+      // unfortunate but we work around it for now.
+      if (!OMPInfoCache.OMPBuilder.getInsertionPoint().getBlock())
+        OMPInfoCache.OMPBuilder.updateToLocation(OpenMPIRBuilder::InsertPointTy(
+            &F.getEntryBlock(), F.getEntryBlock().begin()));
       // Create a fallback location if non was found.
       // TODO: Use the debug locations of the calls instead.
       uint32_t SrcLocStrSize;
@@ -3957,6 +3963,7 @@ struct AAKernelInfoFunction : AAKernelInfo {
       LoopInfo *LI = nullptr;
       DominatorTree *DT = nullptr;
       MemorySSAUpdater *MSU = nullptr;
+      using InsertPointTy = OpenMPIRBuilder::InsertPointTy;
 
       BasicBlock *ParentBB = RegionStartI->getParent();
       Function *Fn = ParentBB->getParent();
@@ -4052,7 +4059,8 @@ struct AAKernelInfoFunction : AAKernelInfo {
       // Go to tid check BB in ParentBB.
       const DebugLoc DL = ParentBB->getTerminator()->getDebugLoc();
       ParentBB->getTerminator()->eraseFromParent();
-      OpenMPIRBuilder::LocationDescription Loc(ParentBB->end(), DL);
+      OpenMPIRBuilder::LocationDescription Loc(
+          InsertPointTy(ParentBB, ParentBB->end()), DL);
       OMPInfoCache.OMPBuilder.updateToLocation(Loc);
       uint32_t SrcLocStrSize;
       auto *SrcLocStr =
@@ -4064,7 +4072,7 @@ struct AAKernelInfoFunction : AAKernelInfo {
       // Add check for Tid in RegionCheckTidBB
       RegionCheckTidBB->getTerminator()->eraseFromParent();
       OpenMPIRBuilder::LocationDescription LocRegionCheckTid(
-          RegionCheckTidBB->end(), DL);
+          InsertPointTy(RegionCheckTidBB, RegionCheckTidBB->end()), DL);
       OMPInfoCache.OMPBuilder.updateToLocation(LocRegionCheckTid);
       FunctionCallee HardwareTidFn =
           OMPInfoCache.OMPBuilder.getOrCreateRuntimeFunction(
@@ -4083,10 +4091,11 @@ struct AAKernelInfoFunction : AAKernelInfo {
       FunctionCallee BarrierFn =
           OMPInfoCache.OMPBuilder.getOrCreateRuntimeFunction(
               M, OMPRTL___kmpc_barrier_simple_spmd);
-      OMPInfoCache.OMPBuilder.updateToLocation(
-          {RegionBarrierBB->getFirstInsertionPt(), DL});
+      OMPInfoCache.OMPBuilder.updateToLocation(InsertPointTy(
+          RegionBarrierBB, RegionBarrierBB->getFirstInsertionPt()));
       CallInst *Barrier =
           OMPInfoCache.OMPBuilder.Builder.CreateCall(BarrierFn, {Ident, Tid});
+      Barrier->setDebugLoc(DL);
       OMPInfoCache.setCallingConvention(BarrierFn, Barrier);
 
       // Second barrier ensures workers have read broadcast values.
@@ -4496,7 +4505,10 @@ struct AAKernelInfoFunction : AAKernelInfo {
     WorkFnAI->setDebugLoc(DLoc);
 
     OMPInfoCache.OMPBuilder.updateToLocation(
-        OpenMPIRBuilder::LocationDescription(StateMachineBeginBB->end(), DLoc));
+        OpenMPIRBuilder::LocationDescription(
+            IRBuilder<>::InsertPoint(StateMachineBeginBB,
+                                     StateMachineBeginBB->end()),
+            DLoc));
 
     Value *Ident = KernelInfo::getIdentFromKernelEnvironment(KernelEnvC);
     Value *GTid = KernelInitCB;

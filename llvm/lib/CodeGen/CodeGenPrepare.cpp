@@ -2227,7 +2227,9 @@ static bool foldURemOfLoopIncrement(Instruction *Rem, const DataLayout *DL,
 
   // Create new remainder with induction variable.
   Type *Ty = Rem->getType();
-  IRBuilder<> Builder(LoopIncrPN);
+  IRBuilder<> Builder(Rem->getContext());
+
+  Builder.SetInsertPoint(LoopIncrPN);
   PHINode *NewRem = Builder.CreatePHI(Ty, 2);
 
   Builder.SetInsertPoint(cast<Instruction>(
@@ -2623,7 +2625,8 @@ static bool despeculateCountZeros(IntrinsicInst *CountZeros,
     FreshBBs.insert(EndBlock);
 
   // Set up a builder to create a compare, conditional branch, and PHI.
-  IRBuilder<> Builder(StartBlock->getTerminator());
+  IRBuilder<> Builder(CountZeros->getContext());
+  Builder.SetInsertPoint(StartBlock->getTerminator());
   Builder.SetCurrentDebugLocation(CountZeros->getDebugLoc());
 
   // Replace the unconditional branch that was created by the first split with
@@ -2639,7 +2642,7 @@ static bool despeculateCountZeros(IntrinsicInst *CountZeros,
 
   // Create a PHI in the end block to select either the output of the intrinsic
   // or the bit width of the operand.
-  Builder.SetInsertPoint(EndBlock->begin());
+  Builder.SetInsertPoint(EndBlock, EndBlock->begin());
   PHINode *PN = Builder.CreatePHI(Ty, 2, "ctz");
   replaceAllUsesWith(CountZeros, PN, FreshBBs, IsHugeFunc);
   Value *BitWidth = Builder.getInt(APInt(SizeInBits, SizeInBits));
@@ -5977,7 +5980,7 @@ bool CodeGenPrepare::optimizeMemoryInst(Instruction *MemoryInst, Value *Addr,
       return Modified;
   }
 
-  IRBuilder<> Builder(InsertPos);
+  IRBuilder<> Builder(MemoryInst->getParent(), InsertPos);
 
   if (SunkAddr) {
     LLVM_DEBUG(dbgs() << "CGP: Reusing nonlocal addrmode: " << AddrMode
@@ -6551,7 +6554,7 @@ bool CodeGenPrepare::optimizeMulWithOverflow(Instruction *I, bool IsSigned,
   OldTerminator->eraseFromParent();
 
   // BB overflow.res:
-  Builder.SetInsertPoint(OverflowResBB->getFirstInsertionPt());
+  Builder.SetInsertPoint(OverflowResBB, OverflowResBB->getFirstInsertionPt());
   // Create PHI nodes to merge results from no.overflow BB and overflow BB to
   // replace the extract instructions.
   PHINode *OverflowResPHI = Builder.CreatePHI(Ty, 2),
@@ -6578,7 +6581,7 @@ bool CodeGenPrepare::optimizeMulWithOverflow(Instruction *I, bool IsSigned,
   I->removeFromParent();
   // BB overflow:
   I->insertInto(OverflowBB, OverflowBB->end());
-  Builder.SetInsertPoint(OverflowBB->end());
+  Builder.SetInsertPoint(OverflowBB, OverflowBB->end());
   Value *MulOverflow = Builder.CreateExtractValue(I, {0}, "mul.overflow");
   Value *OverflowFlag = Builder.CreateExtractValue(I, {1}, "overflow.flag");
   Builder.CreateBr(OverflowResBB);
@@ -6903,7 +6906,7 @@ bool CodeGenPrepare::splitLargeGEPOffsets() {
         NewBaseInsertBB = &BaseGEP->getFunction()->getEntryBlock();
         NewBaseInsertPt = NewBaseInsertBB->getFirstInsertionPt();
       }
-      IRBuilder<> NewBaseBuilder(NewBaseInsertPt);
+      IRBuilder<> NewBaseBuilder(NewBaseInsertBB, NewBaseInsertPt);
       // Create a new base.
       // TODO: Avoid implicit trunc?
       // See https://github.com/llvm/llvm-project/issues/112510.
@@ -7920,7 +7923,8 @@ bool CodeGenPrepare::optimizeShuffleVectorInst(ShuffleVectorInst *SVI) {
       FixedVectorType::get(NewType, SVIVecType->getNumElements());
 
   // Create a bitcast (shuffle (insert (bitcast(..))))
-  IRBuilder<> Builder(SVI);
+  IRBuilder<> Builder(SVI->getContext());
+  Builder.SetInsertPoint(SVI);
   Value *BC1 = Builder.CreateBitCast(
       cast<Instruction>(SVI->getOperand(0))->getOperand(1), NewType);
   Value *Shuffle = Builder.CreateVectorSplat(NewVecType->getNumElements(), BC1);
@@ -8615,7 +8619,8 @@ static bool splitMergedValStore(StoreInst &SI, const DataLayout &DL,
     return false;
 
   // Start to split store.
-  IRBuilder<> Builder(&SI);
+  IRBuilder<> Builder(SI.getContext());
+  Builder.SetInsertPoint(&SI);
 
   // If LValue/HValue is a bitcast in another BB, create a new one in current
   // BB so it may be merged with the splitted stores by dag combiner.

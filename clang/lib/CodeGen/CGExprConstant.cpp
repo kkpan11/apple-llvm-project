@@ -854,9 +854,7 @@ bool ConstStructBuilder::Build(const APValue &Val, const RecordDecl *RD,
         llvm::Constant *VTableAddressPoint =
             CGM.getCXXABI().getVTableAddressPoint(BaseSubobject(CD, Offset),
                                                   VTableClass);
-        if (auto Authentication =
-                CGM.getVTablePointerAuthentication(CD,
-                                                   /*IsVTTEntry=*/false)) {
+        if (auto Authentication = CGM.getVTablePointerAuthentication(CD)) {
           VTableAddressPoint = Emitter.tryEmitConstantSignedPointer(
               VTableAddressPoint, *Authentication);
           if (!VTableAddressPoint)
@@ -1988,9 +1986,8 @@ namespace {
         IndexValues[i] = llvm::ConstantInt::get(CGM.Int32Ty, Indices[i]);
       }
 
-      llvm::Constant *location = llvm::ConstantExpr::getGetElementPtr(
-          CGM.getDataLayout(), BaseValueTy, Base, IndexValues,
-          llvm::GEPNoWrapFlags::inBounds());
+      llvm::Constant *location = llvm::ConstantExpr::getInBoundsGetElementPtr(
+          BaseValueTy, Base, IndexValues);
 
       Locations.insert({placeholder, location});
     }

@@ -5222,9 +5222,10 @@ void llvm::UpgradeIntrinsicCall(CallBase *CI, Function *NewFn) {
     return;
 
   LLVMContext &C = CI->getContext();
-  IRBuilder<> Builder(CI->getIterator());
+  IRBuilder<> Builder(C);
   if (isa<FPMathOperator>(CI))
     Builder.setFastMathFlags(CI->getFastMathFlags());
+  Builder.SetInsertPoint(CI->getParent(), CI->getIterator());
 
   if (!NewFn) {
     // Get the Function's name.
@@ -6340,7 +6341,7 @@ void llvm::UpgradeARCRuntime(Module &M) {
       if (!CI || CI->getCalledFunction() != Fn)
         continue;
 
-      IRBuilder<> Builder(CI->getIterator());
+      IRBuilder<> Builder(CI->getParent(), CI->getIterator());
       FunctionType *NewFuncTy = NewFn->getFunctionType();
       SmallVector<Value *, 2> Args;
 

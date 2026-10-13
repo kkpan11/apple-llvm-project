@@ -1411,7 +1411,7 @@ Value *llvm::expandReductionViaLoop(IRBuilderBase &Builder, Value *Vec,
     NewLoop->addBasicBlockToLoop(LoopBB, *LI);
   }
 
-  Builder.SetInsertPoint(ExitBB->begin());
+  Builder.SetInsertPoint(ExitBB, ExitBB->begin());
   return Res;
 }
 

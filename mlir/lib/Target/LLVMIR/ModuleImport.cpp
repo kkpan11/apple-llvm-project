@@ -1863,19 +1863,7 @@ FailureOr<Value> ModuleImport::convertConstant(llvm::Constant *constant) {
     }));
     if (failed(processInstruction(inst)))
       return failure();
-    Value result = lookupValue(inst);
-    // getAsInstruction() does not preserve GEP `inrange`, which exists only on
-    // constant expressions. Reattach it to the imported GEPOp.
-    if (constExpr->getOpcode() == llvm::Instruction::GetElementPtr) {
-      if (std::optional<llvm::ConstantRange> inRange =
-              llvm::cast<llvm::GEPOperator>(constExpr)->getInRange()) {
-        auto gepOp = result.getDefiningOp<GEPOp>();
-        assert(gepOp && "expected GEPOp for getelementptr constexpr");
-        gepOp.setInrangeAttr(LLVM::ConstantRangeAttr::get(
-            context, inRange->getLower(), inRange->getUpper()));
-      }
-    }
-    return result;
+    return lookupValue(inst);
   }
 
   // Convert zero-initialized aggregates to ZeroOp.

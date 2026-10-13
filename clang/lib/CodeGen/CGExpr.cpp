@@ -42,7 +42,6 @@
 #include "clang/Basic/DiagnosticTrap.h" // TO_UPSTREAM(BoundsSafety)
 #include "clang/Basic/Module.h"
 #include "clang/Basic/SourceManager.h"
-#include "clang/CodeGenUtils/CodeGenUtils.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
@@ -793,6 +792,11 @@ static RawAddress createReferenceTemporary(CodeGenFunction &CGF,
   llvm_unreachable("unknown storage duration");
 }
 
+/// Helper method to check if the underlying ABI is AAPCS
+static bool isAAPCS(const TargetInfo &TargetInfo) {
+  return TargetInfo.getABI().starts_with("aapcs");
+}
+
 LValue CodeGenFunction::
 EmitMaterializeTemporaryExpr(const MaterializeTemporaryExpr *M) {
   const Expr *E = M->getSubExpr();
@@ -914,7 +918,8 @@ EmitMaterializeTemporaryExpr(const MaterializeTemporaryExpr *M) {
 
         OldIP = Builder.saveIP();
         llvm::BasicBlock *Block = OldConditional->getStartingBlock();
-        Builder.restoreIP(Block->back().getIterator());
+        Builder.restoreIP(CGBuilderTy::InsertPoint(
+            Block, llvm::BasicBlock::iterator(Block->back())));
       }
 
       if (EmitLifetimeStart(Alloca.getPointer())) {
@@ -3197,8 +3202,7 @@ RValue CodeGenFunction::EmitLoadOfBitfieldLValue(LValue LV,
       Builder.CreateLoad(Ptr, LV.isVolatileQualified(), "bf.load");
 
   bool UseVolatile = LV.isVolatileQualified() &&
-                     Info.VolatileStorageSize != 0 &&
-                     CodeGenUtils::isAAPCS(CGM.getTarget());
+                     Info.VolatileStorageSize != 0 && isAAPCS(CGM.getTarget());
   const unsigned Offset = UseVolatile ? Info.VolatileOffset : Info.Offset;
   const unsigned StorageSize =
       UseVolatile ? Info.VolatileStorageSize : Info.StorageSize;
@@ -3600,7 +3604,7 @@ void CodeGenFunction::EmitStoreThroughBitfieldLValue(RValue Src, LValue Dst,
 
   const bool UseVolatile =
       CGM.getCodeGenOpts().AAPCSBitfieldWidth && Dst.isVolatileQualified() &&
-      Info.VolatileStorageSize != 0 && CodeGenUtils::isAAPCS(CGM.getTarget());
+      Info.VolatileStorageSize != 0 && isAAPCS(CGM.getTarget());
   const unsigned StorageSize =
       UseVolatile ? Info.VolatileStorageSize : Info.StorageSize;
   const unsigned Offset = UseVolatile ? Info.VolatileOffset : Info.Offset;
@@ -3634,7 +3638,7 @@ void CodeGenFunction::EmitStoreThroughBitfieldLValue(RValue Src, LValue Dst,
     // with any non-bit-field member, its container must be read exactly once
     // and written exactly once using the access width appropriate to the type
     // of the container. The two accesses are not atomic.
-    if (Dst.isVolatileQualified() && CodeGenUtils::isAAPCS(CGM.getTarget()) &&
+    if (Dst.isVolatileQualified() && isAAPCS(CGM.getTarget()) &&
         CGM.getCodeGenOpts().ForceAAPCSBitfieldLoad)
       Builder.CreateLoad(Ptr, true, "bf.load");
   }
@@ -5331,8 +5335,7 @@ void CodeGenFunction::EmitBoundsSafetyTrapCheck(
                 GetBoundsSafetyOptRemarkString(OptRemark));
 }
 
-llvm::CallInst *CodeGenFunction::EmitTrapCall(llvm::Intrinsic::ID IntrID,
-                                              bool EnsureInsertPoint) {
+llvm::CallInst *CodeGenFunction::EmitTrapCall(llvm::Intrinsic::ID IntrID) {
   llvm::Function *TrapIntrinsic = CGM.getIntrinsic(IntrID);
   llvm::CallInst *TrapCall = Builder.CreateCall(TrapIntrinsic);
 
@@ -5349,23 +5352,9 @@ llvm::CallInst *CodeGenFunction::EmitTrapCall(llvm::Intrinsic::ID IntrID,
   if (TrapIntrinsic->doesNotReturn()) {
     TrapCall->setDoesNotReturn();
     Builder.CreateUnreachable();
-    if (EnsureInsertPoint)
-      EmitBlock(createBasicBlock());
-    else
-      Builder.ClearInsertionPoint();
+    EmitBlock(createBasicBlock());
   }
   return TrapCall;
-}
-
-void CodeGenFunction::EmitTrapCallAndMakeUnreachable() {
-  llvm::CallInst *TrapCall =
-      EmitTrapCall(llvm::Intrinsic::trap, /*EnsureInsertPoint=*/false);
-  TrapCall->setDoesNotReturn();
-  TrapCall->setDoesNotThrow();
-  if (HaveInsertPoint()) {
-    Builder.CreateUnreachable();
-    Builder.ClearInsertionPoint();
-  }
 }
 
 Address CodeGenFunction::EmitArrayToPointerDecay(const Expr *E,
@@ -6731,7 +6720,7 @@ LValue CodeGenFunction::EmitLValueForField(LValue base, const FieldDecl *field,
     const CGRecordLayout &RL =
         CGM.getTypes().getCGRecordLayout(field->getParent());
     const CGBitFieldInfo &Info = RL.getBitFieldInfo(field);
-    const bool UseVolatile = CodeGenUtils::isAAPCS(CGM.getTarget()) &&
+    const bool UseVolatile = isAAPCS(CGM.getTarget()) &&
                              CGM.getCodeGenOpts().AAPCSBitfieldWidth &&
                              Info.VolatileStorageSize != 0 &&
                              field->getType()

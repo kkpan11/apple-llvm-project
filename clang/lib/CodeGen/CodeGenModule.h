@@ -728,8 +728,7 @@ private:
   llvm::DenseMap<const CXXRecordDecl *, std::optional<PointerAuthQualifier>>
       VTablePtrAuthInfos;
   std::optional<PointerAuthQualifier>
-  computeVTPointerAuthentication(const CXXRecordDecl *ThisClass,
-                                 bool IsVTTEntry);
+  computeVTPointerAuthentication(const CXXRecordDecl *ThisClass);
 
   AtomicOptions AtomicOpts;
 
@@ -1178,14 +1177,13 @@ public:
                                    GlobalDecl SchemaDecl, QualType SchemaType);
 
   uint16_t getPointerAuthDeclDiscriminator(GlobalDecl GD);
-
-  std::optional<CGPointerAuthInfo> getVTablePointerAuthInfo(
-      CodeGenFunction *Context, const CXXRecordDecl *Record,
-      llvm::Value *StorageAddress, bool IsVTTEntry = false);
+  std::optional<CGPointerAuthInfo>
+  getVTablePointerAuthInfo(CodeGenFunction *Context,
+                           const CXXRecordDecl *Record,
+                           llvm::Value *StorageAddress);
 
   std::optional<PointerAuthQualifier>
-  getVTablePointerAuthentication(const CXXRecordDecl *thisClass,
-                                 bool IsVTTEntry = false);
+  getVTablePointerAuthentication(const CXXRecordDecl *thisClass);
 
   CGPointerAuthInfo EmitPointerAuthInfo(const RecordDecl *RD);
 
