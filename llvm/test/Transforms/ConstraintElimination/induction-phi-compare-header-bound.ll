@@ -822,8 +822,7 @@ define void @neg_compare_in_middle_block(i8 %n, i1 %c) {
 ; CHECK-NEXT:    br label %[[LOOP_HEADER:.*]]
 ; CHECK:       [[LOOP_HEADER]]:
 ; CHECK-NEXT:    [[IV:%.*]] = phi i8 [ 0, %[[ENTRY]] ], [ [[IV_NEXT:%.*]], %[[LOOP_LATCH:.*]] ]
-; CHECK-NEXT:    [[C_1:%.*]] = icmp ule i8 [[IV]], [[N]]
-; CHECK-NEXT:    call void @use(i1 [[C_1]])
+; CHECK-NEXT:    call void @use(i1 true)
 ; CHECK-NEXT:    br i1 [[C]], label %[[LOOP_BODY:.*]], label %[[EXIT:.*]]
 ; CHECK:       [[LOOP_BODY]]:
 ; CHECK-NEXT:    [[CMP:%.*]] = icmp ult i8 [[IV]], [[N]]
