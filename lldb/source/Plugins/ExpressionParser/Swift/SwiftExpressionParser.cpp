@@ -2379,6 +2379,9 @@ Status SwiftExpressionParser::DoPrepareForExecution(
   m_execution_unit_sp.reset(
       new IRExecutionUnit(m_llvm_context, m_module, function_name,
                           exe_ctx.GetTargetSP(), sc, features));
+  m_execution_unit_sp->SetIsEmbeddedSwift(
+      m_swift_ast_ctx.GetASTContext()->LangOpts.hasFeature(
+          swift::Feature::Embedded));
 
   // TODO: figure out some way to work ClangExpressionDeclMap into
   //       this or do the equivalent for Swift.
