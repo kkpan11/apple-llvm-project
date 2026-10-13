@@ -97,6 +97,11 @@ Mangled::ManglingScheme Mangled::GetManglingScheme(llvm::StringRef name) {
       name.starts_with("@__swiftmacro_"))
     return Mangled::eManglingSchemeSwift;
 
+#ifdef LLDB_ENABLE_SWIFT
+  if (swift::Demangle::isAsyncMainEntryPointSymbol(name))
+    return Mangled::eManglingSchemeSwift;
+#endif // LLDB_ENABLE_SWIFT
+
   return Mangled::eManglingSchemeNone;
 }
 

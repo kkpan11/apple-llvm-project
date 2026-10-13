@@ -18,5 +18,5 @@ class TestCase(lldbtest.TestBase):
         _, _, thread, _ = lldbutil.run_to_line_breakpoint(self, source_file, line)
 
         function = thread.frames[0].GetFunction()
-        self.assertIn("async_Main", function.GetName())
+        self.assertIn("async_Main", function.GetMangledName())
         self.assertTrue(function.GetType().IsFunctionType())
