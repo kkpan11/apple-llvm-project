@@ -776,6 +776,19 @@ IRExecutionUnit::FindInSymbols(const std::vector<ConstString> &names,
   if (m_in_populate_symtab)
     if (lldb::ModuleSP jit_module_sp = m_jit_module_wp.lock())
       non_local_images.Remove(jit_module_sp);
+
+  // Embedded Swift code expects the runtime statically linked into the
+  // program, which is not ABI-compatible with the dynamic Swift runtime
+  // libraries. A libswift* image loaded into the process must never satisfy
+  // its symbol references.
+  if (m_is_embedded_swift) {
+    for (size_t i = non_local_images.GetSize(); i > 0; --i) {
+      lldb::ModuleSP module_sp = non_local_images.GetModuleAtIndex(i - 1);
+      if (module_sp &&
+          module_sp->GetFileSpec().GetFilename().starts_with("libswift"))
+        non_local_images.Remove(module_sp);
+    }
+  }
   // END SWIFT
 
   // Drop modules the platform considers off-limits to unconstrained symbol
