@@ -205,6 +205,11 @@ struct LateParsedAttribute : public LateParsedDeclaration {
   // TO_UPSTREAM(BoundsSafety)
   unsigned NestedTypeLevel;
 
+  /// Parameters of the prototype the attribute was written on, kept because
+  /// late parsing runs after their scope is popped and the arguments may name
+  /// one: 'void (*unlock)(struct BDev *bdev) UNLOCK_FUNCTION(bdev->lock)'.
+  SmallVector<ParmVarDecl *, 4> ProtoParams;
+
 private:
   Kind K;
 
@@ -1554,6 +1559,12 @@ private:
   ParsedAttributes ParseLexedAttributeTokens(LateParsedAttribute &LPA,
                                              // TO_UPSTREAM(BoundsSafety)
                                              bool EnterScope);
+  /// Diagnose a late-parsed attribute naming a parameter that it cannot, and
+  /// return true if it must be dropped.
+  bool checkLateAttributeParamRefs(const LateParsedAttribute &LPA,
+                                   const Decl *D,
+                                   ArrayRef<const DeclRefExpr *> ParamRefs,
+                                   bool ReenteredProtoParams);
 
   /// Helper function to move LateParsedTypeAttribute pointers from one list
   /// to another. Filters type attributes from \p From and appends them to \p
@@ -2850,14 +2861,11 @@ private:
   void ParseParameterDeclarationClause(
       Declarator &D, ParsedAttributes &attrs,
       SmallVectorImpl<DeclaratorChunk::ParamInfo> &ParamInfo,
-      SourceLocation &EllipsisLoc,
-      // TO_UPSTREAM(BoundsSafety)
-      LateParsedAttrList *LateParamAttrs = nullptr) {
+      SourceLocation &EllipsisLoc) {
     return ParseParameterDeclarationClause(
         D.getContext(), attrs, ParamInfo, EllipsisLoc,
         D.getCXXScopeSpec().isSet() &&
-            D.isFunctionDeclaratorAFunctionDeclaration(),
-        LateParamAttrs);
+            D.isFunctionDeclaratorAFunctionDeclaration());
   }
 
   /// ParseParameterDeclarationClause - Parse a (possibly empty) parameter-list
@@ -2898,9 +2906,7 @@ private:
   void ParseParameterDeclarationClause(
       DeclaratorContext DeclaratorContext, ParsedAttributes &attrs,
       SmallVectorImpl<DeclaratorChunk::ParamInfo> &ParamInfo,
-      SourceLocation &EllipsisLoc, bool IsACXXFunctionDeclaration = false,
-      // TO_UPSTREAM(BoundsSafety)
-      LateParsedAttrList *LateParamAttrs = nullptr);
+      SourceLocation &EllipsisLoc, bool IsACXXFunctionDeclaration = false);
 
   /// \verbatim
   /// [C90]   direct-declarator '[' constant-expression[opt] ']'

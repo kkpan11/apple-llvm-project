@@ -481,7 +481,7 @@ void method_call(int o) {
 #ifndef BOUNDS_SAFETY // crashes clang with -fbounds-safety -fbounds-attributes-cxx-experimental enabled
 template <typename T>
 void lambda(T h) {
-    auto g = [](T i, T * __sized_by_or_null(i) p1) -> T * __sized_by_or_null(i) {
+    auto g = [](int i, T * __sized_by_or_null(i) p1) -> T * __sized_by_or_null(i) {
         T j = i;
         T * __sized_by_or_null(j) p2 = p1;
         return p2;
@@ -510,9 +510,9 @@ template void lambda<int>(int h);
 // ATTR-ONLY:   |   |   `-LambdaExpr
 // ATTR-ONLY:   |   |     `-CompoundStmt {{.*}}
 // ATTR-ONLY:   |   |       | `-VarDecl {{.*}} j 'T'
-// ATTR-ONLY:   |   |       |   `-DeclRefExpr {{.*}} 'i' 'T'
+// ATTR-ONLY:   |   |       |   `-DeclRefExpr {{.*}} 'i' 'int'
 // ATTR-ONLY:   |   |       | `-VarDecl {{.*}} p2 'T *'
-// ATTR-ONLY:   |   |       |   |-DeclRefExpr {{.*}} 'p1' 'T *'
+// ATTR-ONLY:   |   |       |   |-DeclRefExpr {{.*}} 'p1' 'T * __sized_by_or_null(i)':'T *'
 // ATTR-ONLY:   |   |       |   `-SizedByOrNullAttr
 // ATTR-ONLY:   |   |       |     `-DeclRefExpr {{.*}} 'j' 'T'
 // ATTR-ONLY:   |   |       `-ReturnStmt

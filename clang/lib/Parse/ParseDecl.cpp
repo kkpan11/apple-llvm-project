@@ -202,6 +202,27 @@ bool Parser::ParseSingleGNUAttribute(ParsedAttributes &Attrs,
   // Handle attributes with arguments that require late parsing.
   LateParsedAttribute *LA =
       new LateParsedAttribute(this, *AttrName, AttrNameLoc);
+
+  // Keep the innermost prototype's parameters available for a late-parsed
+  // attribute that is parsed in that prototype's scope, such as one describing
+  // a call through a function pointer (unlike guarded_by, which describes the
+  // pointer itself). A function keeps its own parameters in scope, so skip it;
+  // a parameter of function type is adjusted to a pointer, so keep it.
+  if (D && IsAttributeArgsParsedInFunctionScope(*AttrName) &&
+      (!D->isFunctionDeclarator() || D->isPrototypeContext())) {
+    for (unsigned I = 0, E = D->getNumTypeObjects(); I != E; ++I) {
+      const DeclaratorChunk &Chunk = D->getTypeObject(I);
+      if (Chunk.Kind != DeclaratorChunk::Function)
+        continue;
+      const DeclaratorChunk::FunctionTypeInfo &FTI = Chunk.Fun;
+      for (unsigned P = 0, NumParams = FTI.NumParams; P != NumParams; ++P)
+        if (auto *Param = dyn_cast_or_null<ParmVarDecl>(FTI.Params[P].Param);
+            Param && Param->getIdentifier())
+          LA->ProtoParams.push_back(Param);
+      break;
+    }
+  }
+
   LateAttrs->push_back(LA);
 
   // Attributes in a class are parsed at the end of the class, along
@@ -7694,11 +7715,6 @@ void Parser::ParseFunctionDeclarator(Declarator &D,
   LParenLoc = Tracker.getOpenLocation();
   StartLoc = LParenLoc;
 
-  /* TO_UPSTREAM(BoundsSafety) ON */
-  LateParsedAttrList LateParamAttrs(/*PSoon=*/true,
-                                    /*LateAttrParseExperimentalExtOnly=*/true);
-  /* TO_UPSTREAM(BoundsSafety) OFF */
-
   if (isFunctionDeclaratorIdentifierList()) {
     if (RequiresArg)
       Diag(Tok, diag::err_argument_required_after_attribute);
@@ -7716,8 +7732,7 @@ void Parser::ParseFunctionDeclarator(Declarator &D,
     ProhibitAttributes(FnAttrs);
   } else {
     if (Tok.isNot(tok::r_paren))
-      ParseParameterDeclarationClause(D, FirstArgAttrs, ParamInfo, EllipsisLoc,
-                                      &LateParamAttrs);
+      ParseParameterDeclarationClause(D, FirstArgAttrs, ParamInfo, EllipsisLoc);
     else if (RequiresArg)
       Diag(Tok, diag::err_argument_required_after_attribute);
 
@@ -7818,11 +7833,6 @@ void Parser::ParseFunctionDeclarator(Declarator &D,
       MaybeParseCXX11Attributes(FnAttrs);
     }
   }
-
-  /* TO_UPSTREAM(BoundsSafety) ON*/
-  ParseLexedAttributeList(LateParamAttrs, /*D=*/nullptr, /*EnterScope=*/true,
-                          /*OnDefinition=*/false, /*OutAttrs=*/nullptr);
-  /* TO_UPSTREAM(BoundsSafety) OFF*/
 
   // Collect non-parameter declarations from the prototype if this is a function
   // declaration. They will be moved into the scope of the function. Only do
@@ -7948,8 +7958,7 @@ void Parser::ParseFunctionDeclaratorIdentifierList(
 void Parser::ParseParameterDeclarationClause(
     DeclaratorContext DeclaratorCtx, ParsedAttributes &FirstArgAttrs,
     SmallVectorImpl<DeclaratorChunk::ParamInfo> &ParamInfo,
-    SourceLocation &EllipsisLoc, bool IsACXXFunctionDeclaration,
-    LateParsedAttrList *LateParamAttrs) {
+    SourceLocation &EllipsisLoc, bool IsACXXFunctionDeclaration) {
 
   // Avoid exceeding the maximum function scope depth.
   // See https://bugs.llvm.org/show_bug.cgi?id=19607
@@ -7979,6 +7988,14 @@ void Parser::ParseParameterDeclarationClause(
       IsACXXFunctionDeclaration) {
     AllowImplicitTypename = ImplicitTypenameContext::Yes;
   }
+
+  // An attribute on a parameter may name another parameter of the same
+  // prototype that is declared later, such as a callback parameter whose
+  // attribute names a lock passed after it. Defer those to the end of the
+  // clause, where every parameter is declared and the prototype scope is still
+  // open, so no scope need be re-entered.
+  LateParsedAttrList LateParamAttrs(/*PSoon=*/true,
+                                    /*LateAttrParseExperimentalExtOnly=*/true);
 
   do {
     // FIXME: Issue a diagnostic if we parsed an attribute-specifier-seq
@@ -8015,18 +8032,11 @@ void Parser::ParseParameterDeclarationClause(
     if (getLangOpts().CPlusPlus && Tok.is(tok::kw_this))
       ThisLoc = ConsumeToken();
 
-    /*TO_UPSTREAM(BoundsSafety) ON*/
-    assert(((LateParamAttrs && getLangOpts().BoundsSafetyAttributes)
-                ? LateParamAttrs->lateAttrParseExperimentalExtOnly()
-                : true) &&
-           "Experimental late parsing must be enabled for BoundsSafety");
-    /*TO_UPSTREAM(BoundsSafety) OFF*/
-
     ParsedTemplateInfo TemplateInfo;
     ParseDeclarationSpecifiers(DS, TemplateInfo, AS_none,
                                DeclSpecContext::DSC_normal,
                                // TO_UPSTREAM(BoundsSafety): LateAttrs
-                               LateParamAttrs, AllowImplicitTypename);
+                               &LateParamAttrs, AllowImplicitTypename);
 
     DS.takeAttributesAppendingingFrom(ArgDeclSpecAttrs);
 
@@ -8045,13 +8055,7 @@ void Parser::ParseParameterDeclarationClause(
       ParmDeclarator.SetRangeBegin(ThisLoc);
 
     // Parse GNU attributes, if present.
-    /* TO_UPSTREAM(BoundsSafety) ON*/
-    assert(((LateParamAttrs && getLangOpts().BoundsSafetyAttributes)
-                ? LateParamAttrs->lateAttrParseExperimentalExtOnly()
-                : true) &&
-           "Experimental late parsing must be enabled for BoundsSafety");
-    /* TO_UPSTREAM(BoundsSafety) OFF*/
-    MaybeParseGNUAttributes(ParmDeclarator, LateParamAttrs);
+    MaybeParseGNUAttributes(ParmDeclarator, &LateParamAttrs);
     if (getLangOpts().HLSL)
       MaybeParseHLSLAnnotations(DS.getAttributes());
 
@@ -8131,9 +8135,9 @@ void Parser::ParseParameterDeclarationClause(
       // added to the current scope.
       Decl *Param =
           Actions.ActOnParamDeclarator(getCurScope(), ParmDeclarator, ThisLoc);
-      // TO_UPSTREAM(BoundsSafety)
-      DistributeCLateParsedAttrs(ParmDeclarator, Param, LateParamAttrs);
-
+      // Claim deferred attributes now, before the next parameter can.
+      // TO_UPSTREAM(BoundsSafety): Declarator isn't passed in upstream
+      DistributeCLateParsedAttrs(ParmDeclarator, Param, &LateParamAttrs);
       // Parse the default argument, if any. We parse the default
       // arguments in all dialects; the semantic analysis in
       // ActOnParamDefaultArgument will reject the default argument in
@@ -8246,6 +8250,12 @@ void Parser::ParseParameterDeclarationClause(
 
     // If the next token is a comma, consume it and keep reading arguments.
   } while (TryConsumeToken(tok::comma));
+
+  // Every parameter is declared and still in scope, so a deferred attribute can
+  // name any of them.
+  if (!LateParamAttrs.empty())
+    ParseLexedAttributeList(LateParamAttrs, /*D=*/nullptr, /*EnterScope=*/false,
+                            /*OnDefinition=*/false);
 }
 
 void Parser::ParseBracketDeclarator(Declarator &D) {
