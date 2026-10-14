@@ -19618,7 +19618,7 @@ bool hasNearbyPairedStore(Iter It, Iter End, Value *Ptr, const DataLayout &DL) {
                                              /*AllowNonInbounds=*/true);
 
   while (++It != End) {
-    if (It->isDebugOrPseudoInst())
+    if (isa<PseudoProbeInst>(*It))
       continue;
     if (MaxLookupDist-- == 0)
       break;
