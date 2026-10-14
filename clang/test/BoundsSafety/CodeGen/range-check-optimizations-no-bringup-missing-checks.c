@@ -429,8 +429,6 @@ void loop_accesses_out_of_bounds_cannot_eliminate_wrap_check_ull_len(int* __coun
 //
 // 1. and 2. together imply dst + i + 1 does not wrap, and dst + i + 2 also
 // does not (note the < in 2.). Hence dst + i + 2 >= dst is true.
-//
-// FIXME: Regressed at the moment, rdar://120485098.
 // CHECK-LABEL: define dso_local void @loop_accesses_eliminate_second_lower_check(
 // CHECK-SAME: ptr nofree noundef writeonly captures(address) [[DST:%.*]], i32 noundef [[N:%.*]]) local_unnamed_addr #[[ATTR7]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
@@ -455,15 +453,13 @@ void loop_accesses_out_of_bounds_cannot_eliminate_wrap_check_ull_len(int* __coun
 // CHECK-NEXT:    [[TMP1:%.*]] = getelementptr [4 x i8], ptr [[DST]], i64 [[INDVARS_IV28]]
 // CHECK-NEXT:    [[ARRAYIDX9:%.*]] = getelementptr i8, ptr [[TMP1]], i64 8
 // CHECK-NEXT:    [[TMP2:%.*]] = icmp ult ptr [[ARRAYIDX9]], [[ADD_PTR]], {{!annotation ![0-9]+}}
-// CHECK-NEXT:    [[TMP3:%.*]] = icmp uge ptr [[ARRAYIDX9]], [[DST]], {{!annotation ![0-9]+}}
-// CHECK-NEXT:    [[OR_COND17:%.*]] = and i1 [[TMP2]], [[TMP3]], {{!annotation ![0-9]+}}
-// CHECK-NEXT:    br i1 [[OR_COND17]], label %[[CONT15]], label %[[TRAP]], {{!prof ![0-9]+}}, {{!annotation ![0-9]+}}
+// CHECK-NEXT:    br i1 [[TMP2]], label %[[CONT15]], label %[[TRAP]], {{!prof ![0-9]+}}, {{!annotation ![0-9]+}}
 // CHECK:       [[CONT15]]:
 // CHECK-NEXT:    store i32 0, ptr [[ARRAYIDX9]], align 4, {{!tbaa ![0-9]+}}
 // CHECK-NEXT:    [[INDVARS_IV_NEXT]] = add nuw nsw i64 [[INDVARS_IV_NEXT29]], 1
 // CHECK-NEXT:    [[ARRAYIDX]] = getelementptr [4 x i8], ptr [[DST]], i64 [[INDVARS_IV_NEXT]]
-// CHECK-NEXT:    [[TMP4:%.*]] = icmp ult ptr [[ARRAYIDX]], [[ADD_PTR]], {{!annotation ![0-9]+}}
-// CHECK-NEXT:    br i1 [[TMP4]], label %[[CONT1]], label %[[TRAP]], {{!prof ![0-9]+}}, {{!llvm.loop ![0-9]+}}, {{!annotation ![0-9]+}}
+// CHECK-NEXT:    [[TMP3:%.*]] = icmp ult ptr [[ARRAYIDX]], [[ADD_PTR]], {{!annotation ![0-9]+}}
+// CHECK-NEXT:    br i1 [[TMP3]], label %[[CONT1]], label %[[TRAP]], {{!prof ![0-9]+}}, {{!llvm.loop ![0-9]+}}, {{!annotation ![0-9]+}}
 //
 void loop_accesses_eliminate_second_lower_check(int* __counted_by(n) dst, unsigned n) {
   for (int i = 0; i < n; i += 1) {
@@ -575,9 +571,7 @@ void elim_consecutive_writes(int* __counted_by(n) dst, unsigned n) {
 // CHECK-NEXT:    store i32 0, ptr [[ARRAYIDX31]], align 4, {{!tbaa ![0-9]+}}
 // CHECK-NEXT:    [[ARRAYIDX43:%.*]] = getelementptr i8, ptr [[DST]], i64 20
 // CHECK-NEXT:    [[TMP2:%.*]] = icmp ult ptr [[ARRAYIDX43]], [[ADD_PTR]], {{!annotation ![0-9]+}}
-// CHECK-NEXT:    [[TMP3:%.*]] = icmp uge ptr [[ARRAYIDX43]], [[DST]], {{!annotation ![0-9]+}}
-// CHECK-NEXT:    [[OR_COND53:%.*]] = and i1 [[TMP3]], [[TMP2]], {{!annotation ![0-9]+}}
-// CHECK-NEXT:    br i1 [[OR_COND53]], label %[[CONT49:.*]], label %[[TRAP]], {{!prof ![0-9]+}}, {{!annotation ![0-9]+}}
+// CHECK-NEXT:    br i1 [[TMP2]], label %[[CONT49:.*]], label %[[TRAP]], {{!prof ![0-9]+}}, {{!annotation ![0-9]+}}
 // CHECK:       [[CONT49]]:
 // CHECK-NEXT:    store i32 0, ptr [[ARRAYIDX43]], align 4, {{!tbaa ![0-9]+}}
 // CHECK-NEXT:    br label %[[IF_END]]
