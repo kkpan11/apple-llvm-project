@@ -27,6 +27,7 @@ add_clang_unittest(FrontendTests
   clangSerialization
   clangTooling
   LLVM_COMPONENTS
+  Core
   Support
   TargetParser
   TestingSupport
