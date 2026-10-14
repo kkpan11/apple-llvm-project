@@ -121,7 +121,6 @@ option(LLDB_ENFORCE_STRICT_TEST_REQUIREMENTS
   "Fail to configure if certain requirements are not met for testing." OFF)
 
 # BEGIN SWIFT MOD
-option(LLDB_ENABLE_WERROR "Fail and stop if a warning is triggered." ${LLVM_ENABLE_WERROR})
 if(LLDB_ENABLE_SWIFT_SUPPORT)
   add_definitions( -DLLDB_ENABLE_SWIFT )
 else()
@@ -425,15 +424,6 @@ endif()
 # Use the Unicode (UTF-16) APIs by default on Win32
 if (CMAKE_SYSTEM_NAME MATCHES "Windows")
     add_definitions( -D_UNICODE -DUNICODE )
-endif()
-
-if(LLDB_ENABLE_WERROR)
-  set(flag_werror "-Werror")
-  if(MSVC)
-    set(flag_werror "/WX")
-  endif()
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${flag_werror}")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${flag_werror}")
 endif()
 
 # If LLDB_VERSION_* is specified, use it, if not use LLVM_VERSION_*.
