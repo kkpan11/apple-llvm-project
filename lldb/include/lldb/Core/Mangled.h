@@ -39,11 +39,6 @@ public:
     ePreferDemangledWithoutArguments
   };
 
-  enum NameFormatPreference {
-    eCompactName,
-    eFullName,
-  };
-
   enum ManglingScheme {
     eManglingSchemeNone = 0,
     eManglingSchemeMSVC,
@@ -132,9 +127,7 @@ public:
   ///
   /// \return
   ///     A const reference to the demangled name string object.
-  ConstString
-  GetDemangledName(const SymbolContext *sc = nullptr,
-                   NameFormatPreference preference = eFullName) const;
+  ConstString GetDemangledName(const SymbolContext *sc = nullptr) const;
 
   /// Display demangled name get accessor.
   ///
@@ -278,11 +271,7 @@ public:
   /// \return
   ///     std::nullopt if no info could be computed (for example because the
   ///     name is mangled with a scheme that doesn't provide any info).
-  std::optional<DemangledNameInfo> ComputeDemangledInfo(
-      // BEGIN SWIFT
-      NameFormatPreference preference = eFullName
-      // END SWIFT
-  ) const;
+  std::optional<DemangledNameInfo> ComputeDemangledInfo() const;
 
   /// Compute the base name (without namespace/class qualifiers) from the
   /// demangled name.
