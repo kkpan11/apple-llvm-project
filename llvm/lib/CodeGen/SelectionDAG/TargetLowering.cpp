@@ -14337,7 +14337,8 @@ bool TargetLowering::expandMultipleResultFPLibCall(
   if (LC == RTLIB::UNKNOWN_LIBCALL)
     return false;
 
-  RTLIB::LibcallImpl LibcallImpl = getLibcallImpl(LC);
+  RTLIB::LibcallImpl LibcallImpl =
+      getLibcallLoweringInfo().getVectorLibcallImplOrMasked(LC);
   if (LibcallImpl == RTLIB::Unsupported)
     return false;
 

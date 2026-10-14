@@ -30043,8 +30043,8 @@ static SDValue performVselectPowCombine(SDNode *N,
   RTLIB::Libcall LC = RTLIB::getPOW(VT);
   SelectionDAG &DAG = DCI.DAG;
   auto &TLI = DAG.getTargetLoweringInfo();
-  bool HasLibCall =
-      TLI.getLibcallLoweringInfo().getLibcallImpl(LC) != RTLIB::Unsupported;
+  bool HasLibCall = TLI.getLibcallLoweringInfo().getVectorLibcallImplOrMasked(
+                        LC) != RTLIB::Unsupported;
   if (!HasLibCall)
     return SDValue();
 
