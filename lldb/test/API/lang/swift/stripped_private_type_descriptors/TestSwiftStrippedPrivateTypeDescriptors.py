@@ -27,7 +27,7 @@ class TestSwiftStrippedPrivateTypeDescriptors(TestBase):
         self.assertTrue(msg.GetDescription(stream))
         self.assertIn("object = ", stream.GetData())
 
-    @requireNotEmbeddedSwift
+    @skipEmbeddedSwift
     @skipUnlessDarwin
     @swiftTest
     def test(self):
