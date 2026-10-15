@@ -346,6 +346,17 @@ bool IndexUnitWriter::write(std::string &Error) {
   // Determine the working directory.
   SmallString<128> CWDPath;
   FileMgr.makeAbsolutePath(CWDPath);
+  // Not all file systems have working directories, e.g the include-tree file
+  // system when using CAS. Fallback to the process' working directory in this
+  // case. Note this assumes that the working dir is the same for both
+  // dep scanning and compilation.
+  if (CWDPath.empty()) {
+    if (std::error_code EC = fs::current_path(CWDPath)) {
+      llvm::raw_string_ostream Err(Error);
+      Err << "failed to determine current working directory: " << EC.message();
+      return true;
+    }
+  }
   WorkDir = std::string(CWDPath.str());
 
   SmallString<512> Buffer;
