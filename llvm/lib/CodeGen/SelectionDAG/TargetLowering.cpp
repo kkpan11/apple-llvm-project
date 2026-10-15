@@ -4016,6 +4016,8 @@ bool TargetLowering::SimplifyDemandedVectorElts(
   case ISD::AVGCEILU:
   case ISD::AVGFLOORS:
   case ISD::AVGFLOORU:
+  case ISD::AVGSUBFLOORS:
+  case ISD::AVGSUBFLOORU:
   case ISD::OR:
   case ISD::XOR:
   case ISD::SUB:
