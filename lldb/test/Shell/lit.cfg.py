@@ -49,21 +49,26 @@ llvm_config.with_system_environment(
     ]
 )
 
+# Enable sanitizer runtime flags.
 if config.llvm_use_sanitizer:
+    config.environment["ASAN_OPTIONS"] = "detect_stack_use_after_return=1"
     # Begin Swift mod.
     # Swift's libReflection builds without ASAN, which causes a known
     # false positive in std::vector. We also want to support testing a sanitized
     # lldb using unsanitized llvm, clang, and swift libraries.
-    config.environment[
-        "ASAN_OPTIONS"
-    ] = "detect_container_overflow=0:detect_stack_use_after_return=1"
+    config.environment["ASAN_OPTIONS"] += ":detect_container_overflow=0"
     # FIXME: This is the wrong place to disable this. This is working
     # around the fact that the ci.swift.org scripts build only LLDB with
     # asan and this creates an ODR violation in Allocator.h that breaks
     # poisoning.
-    config.environment['ASAN_OPTIONS'] += ':' + 'allow_user_poisoning=0'
+    config.environment["ASAN_OPTIONS"] += ":allow_user_poisoning=0"
     # End Swift mod.
-    config.environment["TSAN_OPTIONS"] = "halt_on_error=1"
+    tsan_suppressions = os.path.join(
+        os.path.dirname(config.test_source_root), "tsan-suppressions.txt"
+    )
+    config.environment["TSAN_OPTIONS"] = (
+        "halt_on_error=1:suppressions=" + tsan_suppressions
+    )
     config.environment["MallocNanoZone"] = "0"
 
 if config.lldb_platform_url and config.cmake_sysroot and config.enable_remote:
