@@ -13551,7 +13551,9 @@ ScalarEvolution::howManyLessThans(const SCEV *LHS, const SCEV *RHS,
   } else {
     // Avoid proven overflow cases: this will ensure that the backedge taken
     // count will not generate any unsigned overflow.
-    IVMayOverflow = canIVOverflowOnLT(RHS, GuardedStride, IsSigned);
+    IVMayOverflow = canIVOverflowOnLT(RHS, GuardedStride, IsSigned) &&
+                    canIVOverflowOnLT(applyLoopGuards(RHS, getGuards()),
+                                      GuardedStride, IsSigned);
     if (IVMayOverflow && !NoWrap)
       return getCouldNotCompute();
   }
