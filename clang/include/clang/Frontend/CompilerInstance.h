@@ -1114,6 +1114,11 @@ public:
 
   void setCASDatabases(std::shared_ptr<llvm::cas::ObjectStore> CAS,
                        std::shared_ptr<llvm::cas::ActionCache> Cache);
+
+  void releaseCASDatabases() {
+    CAS.reset();
+    ActionCache.reset();
+  }
 };
 
 } // end namespace clang
