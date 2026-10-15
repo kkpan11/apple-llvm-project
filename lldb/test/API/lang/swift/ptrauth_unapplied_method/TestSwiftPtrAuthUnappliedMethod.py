@@ -10,6 +10,7 @@ class TestSwiftPtrAuthUnappliedMethod(Arm64eTestBase):
     SHARED_BUILD_TESTCASE = False
 
     @requireNotEmbeddedSwift  # the embedded harness appends its own non-arm64e -target
+    @skipUnlessSwiftArm64eSupported
     @swiftTest
     def test(self):
         """An unapplied method reference produces a closure constant
