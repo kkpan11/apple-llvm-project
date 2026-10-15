@@ -24,7 +24,8 @@ class TestCase(lldbtest.TestBase):
         )
         return frame
 
-    @skipEmbeddedSwift
+    # Async top-level code is isolated to MainActor, which Embedded Swift lacks.
+    @requireNotEmbeddedSwift
     @swiftTest
     @skipIf(oslist=["windows"])
     def test_top_level_code(self):
@@ -34,7 +35,8 @@ class TestCase(lldbtest.TestBase):
         )
         self.assertIn("async_Main", frame.GetFunction().GetMangledName())
 
-    @skipEmbeddedSwift
+    # Async top-level code is isolated to MainActor, which Embedded Swift lacks.
+    @requireNotEmbeddedSwift
     @swiftTest
     @skipIf(oslist=["windows"])
     def test_function(self):
@@ -42,7 +44,8 @@ class TestCase(lldbtest.TestBase):
         frame = self.step_over_loop_header("break in function", "function loop body")
         self.assertIn("$s1a3fooyyYaF", frame.GetFunction().GetMangledName())
 
-    @skipEmbeddedSwift
+    # Async top-level code is isolated to MainActor, which Embedded Swift lacks.
+    @requireNotEmbeddedSwift
     @swiftTest
     @skipIf(oslist=["windows"])
     def test_unwind_at_q_funclet_breakpoint(self):
