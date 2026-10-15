@@ -17,7 +17,7 @@ class TestCase(lldbtest.TestBase):
         line_entry = frame.GetLineEntry()
         self.assertEqual(linenum, line_entry.GetLine())
 
-    @skipEmbeddedSwift # only fails on CI
+    @skipEmbeddedSwiftOnLinux
     @swiftTest
     @skipIf(oslist=["windows"])
     def test(self):
@@ -47,7 +47,7 @@ class TestCase(lldbtest.TestBase):
             self.check_x_is_available(thread.frames[0])
             self.assertEqual(thread.GetName(), task_name)
 
-    @skipEmbeddedSwift
+    @skipEmbeddedSwiftOnLinux
     @skipIfOutOfTreeDebugserver
     @swiftTest
     @skipIf(oslist=["windows", "linux"])

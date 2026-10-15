@@ -5,7 +5,7 @@ import lldbsuite.test.lldbutil as lldbutil
 
 
 class TestCase(lldbtest.TestBase):
-    @skipEmbeddedSwift
+    @skipEmbeddedSwiftOnLinux
     @swiftTest
     @skipIf(oslist=["windows", "linux"])
     def test(self):
