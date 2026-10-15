@@ -12,7 +12,8 @@ class TestCase(lldbtest.TestBase):
         line_entry = frame.GetLineEntry()
         self.assertEqual(linenum, line_entry.GetLine())
 
-    @skipEmbeddedSwift
+    # Async top-level code is isolated to MainActor, which Embedded Swift lacks.
+    @requireNotEmbeddedSwift
     @swiftTest
     @skipIf(oslist=["windows"])
     def test(self):

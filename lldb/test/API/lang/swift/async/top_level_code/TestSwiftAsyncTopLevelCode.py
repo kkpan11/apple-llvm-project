@@ -6,7 +6,8 @@ import lldbsuite.test.lldbutil as lldbutil
 
 class TestCase(lldbtest.TestBase):
 
-    @skipEmbeddedSwift
+    # Async top-level code is isolated to MainActor, which Embedded Swift lacks.
+    @requireNotEmbeddedSwift
     @swiftTest
     @skipIf(oslist=["windows"])
     def test(self):
