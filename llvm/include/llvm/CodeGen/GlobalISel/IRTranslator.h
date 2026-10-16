@@ -159,6 +159,11 @@ private:
   SmallVector<std::pair<const PHINode *, SmallVector<MachineInstr *, 1>>, 4>
       PendingPHIs;
 
+  // Constant DbgValues that cannot be materialized as DBG_VALUEs
+  // because they are not an immediate or symbol reference.
+  SmallVector<std::pair<MachineInstr *, const Constant *>, 4>
+      PendingConstDbgValues;
+
   /// Record of what frame index has been allocated to specified allocas for
   /// this function.
   DenseMap<const AllocaInst *, int> FrameIndices;
@@ -346,6 +351,10 @@ private:
   /// Add remaining operands onto phis we've translated. Executed after all
   /// MachineBasicBlocks for the function have been created.
   void finishPendingPhis();
+
+  /// Describe any constants in PendingConstDbgValues that are
+  /// materialized as vregs.
+  void finishPendingConstDbgValues();
 
   /// Translate \p Inst into a unary operation \p Opcode.
   /// \pre \p U is a unary operation.
