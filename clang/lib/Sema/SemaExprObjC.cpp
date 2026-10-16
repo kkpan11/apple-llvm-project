@@ -5334,8 +5334,18 @@ ExprResult SemaObjC::ActOnObjCAvailabilityCheckExpr(
   ASTContext &Context = getASTContext();
 
   if (AvailSpecs.front().isDomainName()) {
-    if (FunctionScopeInfo *Info = SemaRef.getCurFunctionAvailabilityContext())
+    // A notional function scope is pushed when default member initializers are
+    // parsed, so also check that we are in an actual function, method, or
+    // block body.
+    if (FunctionScopeInfo *Info = SemaRef.getCurFunctionAvailabilityContext();
+        Info && (SemaRef.getCurFunctionDecl(/*AllowLambda=*/true) ||
+                 SemaRef.getCurMethodDecl() || SemaRef.getCurBlock()))
       Info->HasPotentialFeatureAvailabilityViolations = true;
+    else
+      // Outside of a function body, the check cannot be the condition of an
+      // 'if' statement.
+      Diag(AtLoc, diag::err_availability_domain_check_not_condition)
+          << !getLangOpts().ObjC;
     auto Spec = AvailSpecs.front();
 
     SemaRef.diagnoseDeprecatedAvailabilityDomain(Spec.getDomainName(), AtLoc,
