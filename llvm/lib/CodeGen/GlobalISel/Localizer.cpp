@@ -17,6 +17,7 @@
 #include "llvm/CodeGen/GlobalISel/Utils.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/TargetLowering.h"
+#include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/InitializePasses.h"
 #include "llvm/Support/Debug.h"
 
@@ -91,11 +92,11 @@ bool Localizer::localizeInterBlock(MachineFunction &MF,
     assert(MI.getDesc().getNumDefs() == 1 &&
            "More than one definition not supported yet");
     Register Reg = MI.getOperand(0).getReg();
-    // Check if all the users of MI are local.
-    // We are going to invalidation the list of use operands, so we
-    // can't use range iterator.
+    // Check if all the users of MI are local. We are going to invalidate the
+    // list of use operands, so we can't use a range iterator. Debug users stay
+    // with the original definition.
     for (MachineOperand &MOUse :
-         llvm::make_early_inc_range(MRI->use_operands(Reg))) {
+         llvm::make_early_inc_range(MRI->use_nodbg_operands(Reg))) {
       // Check if the use is already local.
       MachineBasicBlock *InsertMBB;
       LLVM_DEBUG(MachineInstr &MIUse = *MOUse.getParent();
@@ -126,7 +127,7 @@ bool Localizer::localizeInterBlock(MachineFunction &MF,
         MachineInstr *LocalizedMI = MF.CloneMachineInstr(&MI);
         LocalizedInstrs.insert(LocalizedMI);
         MachineInstr &UseMI = *MOUse.getParent();
-        if (MRI->hasOneUse(Reg) && !UseMI.isPHI())
+        if (MRI->hasOneNonDBGUse(Reg) && !UseMI.isPHI())
           InsertMBB->insert(UseMI, LocalizedMI);
         else
           InsertMBB->insert(InsertMBB->SkipPHIsAndLabels(InsertMBB->begin()),
@@ -183,9 +184,37 @@ bool Localizer::localizeIntraBlock(LocalizedSetVecT &LocalizedInstrs) {
       LLVM_DEBUG(dbgs() << "Intra-block: moving " << *MI << " before " << *II);
     }
 
+    // Leave each DBG_VALUE above MI that uses one of its results behind as
+    // undef, so that it still ends any earlier location of the variable, and
+    // put a copy right after MI, like MachineSink does. No copy is needed if a
+    // later DBG_VALUE of the same variable replaces it before that.
+    SmallVector<MachineInstr *, 4> DbgUsers;
+    SmallVector<MachineInstr *, 4> DbgUsersToCopy;
+    for (MachineInstr &DbgMI :
+         make_range(std::next(MachineBasicBlock::iterator(MI)), II)) {
+      if (!DbgMI.isDebugValue())
+        continue;
+      erase_if(DbgUsersToCopy, [&](const MachineInstr *Earlier) {
+        return Earlier->getDebugVariable() == DbgMI.getDebugVariable() &&
+               Earlier->getDebugLoc().getInlinedAt() ==
+                   DbgMI.getDebugLoc().getInlinedAt() &&
+               Earlier->getDebugExpression()->fragmentsOverlap(
+                   DbgMI.getDebugExpression());
+      });
+      if (DbgMI.hasDebugOperandForReg(Reg)) {
+        DbgUsers.push_back(&DbgMI);
+        DbgUsersToCopy.push_back(&DbgMI);
+      }
+    }
+
     MI->removeFromParent();
     MBB.insert(II, MI);
     Changed = true;
+
+    for (MachineInstr *DbgMI : DbgUsersToCopy)
+      MBB.insert(II, MBB.getParent()->CloneMachineInstr(DbgMI));
+    for (MachineInstr *DbgMI : DbgUsers)
+      DbgMI->setDebugValueUndef();
 
     // If the instruction (constant) being localized has single user, we can
     // propagate debug location from user.
