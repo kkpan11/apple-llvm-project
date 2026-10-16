@@ -890,10 +890,6 @@ SwiftASTContext::GetCachedEnumInfo(opaque_compiler_type_t type) {
   if (auto *enum_type = swift_can_type->getAs<swift::EnumType>()) {
     enum_info_sp.reset(GetEnumInfoFromEnumDecl(this, swift_can_type,
                                                enum_type->getDecl()));
-  } else if (auto *bound_enum_type =
-                 swift_can_type->getAs<swift::BoundGenericEnumType>()) {
-    enum_info_sp.reset(GetEnumInfoFromEnumDecl(this, swift_can_type,
-                                               bound_enum_type->getDecl()));
   }
 
   if (enum_info_sp.get())
@@ -6422,8 +6418,7 @@ bool SwiftASTContext::IsArrayType(opaque_compiler_type_t type,
   VALID_OR_RETURN_CHECK_TYPE(type, false, false);
 
   swift::CanType swift_can_type(GetCanonicalSwiftType(type));
-  swift::BoundGenericStructType *struct_type =
-      swift_can_type->getAs<swift::BoundGenericStructType>();
+  swift::StructType *struct_type = swift_can_type->getAs<swift::StructType>();
   if (struct_type) {
     swift::StructDecl *struct_decl = struct_type->getDecl();
     llvm::StringRef name = struct_decl->getName().get();
@@ -6580,9 +6575,7 @@ bool SwiftASTContext::IsPossibleDynamicType(opaque_compiler_type_t type,
       can_type->isAnyExistentialType())
     return true;
 
-  if (!IsImportedType(type) &&
-      (swift::isa<swift::EnumType>(can_type) ||
-       swift::isa<swift::BoundGenericEnumType>(can_type)))
+  if (!IsImportedType(type) && swift::isa<swift::EnumType>(can_type))
     return true;
 
   // Dynamic Self types are resolved inside DoArchetypeBindingForType(),
@@ -6602,7 +6595,7 @@ bool SwiftASTContext::IsPossibleDynamicType(opaque_compiler_type_t type,
     return true;
 
   if (auto *bound_type =
-          llvm::dyn_cast<swift::BoundGenericType>(can_type.getPointer())) {
+          llvm::dyn_cast<swift::NominalType>(can_type.getPointer())) {
     for (auto generic_arg : bound_type->getGenericArgs()) {
       if (IsPossibleDynamicType(generic_arg.getPointer(), dynamic_pointee_type,
                                 check_cplusplus, check_objc))
@@ -6935,8 +6928,6 @@ SwiftASTContext::GetTypeInfo(opaque_compiler_type_t type,
     swift_flags |= ToCompilerType(swift_can_type->getReferenceStorageReferent())
                        .GetTypeInfo(pointee_or_element_clang_type);
     break;
-  case swift::TypeKind::BoundGenericEnum:
-    LLVM_FALLTHROUGH;
   case swift::TypeKind::Enum: {
     SwiftEnumDescriptor *cached_enum_info = GetCachedEnumInfo(type);
     if (cached_enum_info)
@@ -6945,8 +6936,6 @@ SwiftASTContext::GetTypeInfo(opaque_compiler_type_t type,
       swift_flags |= eTypeIsEnumeration;
   } break;
 
-  case swift::TypeKind::BoundGenericStruct:
-    LLVM_FALLTHROUGH;
   case swift::TypeKind::Struct:
     if (auto *ndecl = swift_can_type.getAnyNominal()) {
       if (llvm::dyn_cast_or_null<clang::EnumDecl>(ndecl->getClangDecl())) {
@@ -6970,8 +6959,6 @@ SwiftASTContext::GetTypeInfo(opaque_compiler_type_t type,
     swift_flags |= eTypeHasChildren | eTypeIsStructUnion;
     break;
 
-  case swift::TypeKind::BoundGenericClass:
-    LLVM_FALLTHROUGH;
   case swift::TypeKind::Class:
     swift_flags |= eTypeHasChildren | eTypeIsClass | eTypeHasValue |
                    eTypeInstanceIsPointer;
@@ -7082,13 +7069,10 @@ lldb::TypeClass SwiftASTContext::GetTypeClass(opaque_compiler_type_t type) {
     return ToCompilerType(swift_can_type->getReferenceStorageReferent())
         .GetTypeClass();
   case swift::TypeKind::Enum:
-  case swift::TypeKind::BoundGenericEnum:
     return lldb::eTypeClassUnion;
   case swift::TypeKind::Struct:
-  case swift::TypeKind::BoundGenericStruct:
     return lldb::eTypeClassStruct;
   case swift::TypeKind::Class:
-  case swift::TypeKind::BoundGenericClass:
     return lldb::eTypeClassClass;
   case swift::TypeKind::GenericTypeParam:
   case swift::TypeKind::DependentMember:
@@ -7148,8 +7132,8 @@ SwiftASTContext::GetArrayElementType(opaque_compiler_type_t type,
   // ContiguousArray<T>
   // Slice<T>
   // Treat them as arrays for convenience sake.
-  swift::BoundGenericStructType *boundGenericStructType(
-      swift_type->getAs<swift::BoundGenericStructType>());
+  swift::StructType *boundGenericStructType(
+      swift_type->getAs<swift::StructType>());
   if (boundGenericStructType) {
     auto args = boundGenericStructType->getGenericArgs();
     swift::StructDecl *decl = boundGenericStructType->getDecl();
@@ -7350,9 +7334,9 @@ CompilerType SwiftASTContext::GetUnboundType(opaque_compiler_type_t type) {
   VALID_OR_RETURN_CHECK_TYPE(type, CompilerType(), CompilerType());
 
   swift::CanType swift_can_type(GetCanonicalSwiftType(type));
-  swift::BoundGenericType *bound_generic_type =
-      swift_can_type->getAs<swift::BoundGenericType>();
-  if (bound_generic_type) {
+  swift::NominalType *bound_generic_type =
+      swift_can_type->getAs<swift::NominalType>();
+  if (bound_generic_type && bound_generic_type->hasGenericArgs()) {
     swift::NominalTypeDecl *nominal_type_decl = bound_generic_type->getDecl();
     if (nominal_type_decl)
       return ToCompilerType({nominal_type_decl->getDeclaredType()});
@@ -7594,7 +7578,6 @@ lldb::Encoding SwiftASTContext::GetEncoding(opaque_compiler_type_t type) {
   case swift::TypeKind::BuiltinUnsafeValueBuffer:
   case swift::TypeKind::BuiltinBridgeObject:
   case swift::TypeKind::Class: // Classes are pointers in swift...
-  case swift::TypeKind::BoundGenericClass:
   case swift::TypeKind::GenericTypeParam:
   case swift::TypeKind::DependentMember:
   case swift::TypeKind::Integer:
@@ -7622,7 +7605,6 @@ lldb::Encoding SwiftASTContext::GetEncoding(opaque_compiler_type_t type) {
     return lldb::eEncodingUint;
 
   case swift::TypeKind::Enum:
-  case swift::TypeKind::BoundGenericEnum:
     break;
 
   case swift::TypeKind::Struct:
@@ -7633,7 +7615,6 @@ lldb::Encoding SwiftASTContext::GetEncoding(opaque_compiler_type_t type) {
   case swift::TypeKind::LValue:
     return lldb::eEncodingUint;
   case swift::TypeKind::UnboundGeneric:
-  case swift::TypeKind::BoundGenericStruct:
   case swift::TypeKind::DynamicSelf:
     break;
 
@@ -7720,18 +7701,15 @@ SwiftASTContext::GetNumChildren(opaque_compiler_type_t type,
         .GetNumChildren(omit_empty_base_classes, exe_ctx);
 
   case swift::TypeKind::Enum:
-  case swift::TypeKind::BoundGenericEnum:
   case swift::TypeKind::BuiltinBorrow:
     return 0;
 
-  case swift::TypeKind::BoundGenericStruct:
   case swift::TypeKind::BuiltinFixedArray:
   case swift::TypeKind::Struct:
   case swift::TypeKind::Tuple:
     return GetNumFields(type);
 
-  case swift::TypeKind::Class:
-  case swift::TypeKind::BoundGenericClass: {
+  case swift::TypeKind::Class: {
     auto class_decl = swift_can_type->getClassDecl();
     return (class_decl->hasSuperclass() ? 1 : 0) + GetNumFields(type);
   }
@@ -7857,7 +7835,6 @@ uint32_t SwiftASTContext::GetNumFields(opaque_compiler_type_t type,
     break;
 
   case swift::TypeKind::Enum:
-  case swift::TypeKind::BoundGenericEnum:
   case swift::TypeKind::BuiltinBorrow:
     return 0;
 
@@ -7869,9 +7846,7 @@ uint32_t SwiftASTContext::GetNumFields(opaque_compiler_type_t type,
         .value_or(0);
 
   case swift::TypeKind::Struct:
-  case swift::TypeKind::Class:
-  case swift::TypeKind::BoundGenericClass:
-  case swift::TypeKind::BoundGenericStruct: {
+  case swift::TypeKind::Class: {
     auto nominal = swift_can_type->getAnyNominal();
     // Imported unions don't have stored properties.
     if (auto *ntd =
@@ -8092,7 +8067,6 @@ CompilerType SwiftASTContext::GetFieldAtIndex(opaque_compiler_type_t type,
     break;
 
   case swift::TypeKind::Enum:
-  case swift::TypeKind::BoundGenericEnum:
   case swift::TypeKind::BuiltinBorrow:
     break;
 
@@ -8122,8 +8096,7 @@ CompilerType SwiftASTContext::GetFieldAtIndex(opaque_compiler_type_t type,
     return ToCompilerType(fixed_array->getElementType());
   }
 
-  case swift::TypeKind::Class:
-  case swift::TypeKind::BoundGenericClass: {
+  case swift::TypeKind::Class: {
     auto class_decl = swift_can_type->getClassDecl();
     if (class_decl->hasSuperclass()) {
       if (idx == 0) {
@@ -8152,8 +8125,7 @@ CompilerType SwiftASTContext::GetFieldAtIndex(opaque_compiler_type_t type,
     LLVM_FALLTHROUGH;
   }
 
-  case swift::TypeKind::Struct:
-  case swift::TypeKind::BoundGenericStruct: {
+  case swift::TypeKind::Struct: {
     auto nominal = swift_can_type->getAnyNominal();
     auto stored_properties = GetStoredProperties(nominal);
     if (idx >= stored_properties.size())
@@ -8248,9 +8220,6 @@ uint32_t SwiftASTContext::GetNumPointeeChildren(opaque_compiler_type_t type) {
 
   const swift::TypeKind type_kind = swift_can_type->getKind();
   switch (type_kind) {
-  case swift::TypeKind::BoundGenericClass:
-  case swift::TypeKind::BoundGenericEnum:
-  case swift::TypeKind::BoundGenericStruct:
   case swift::TypeKind::BuiltinDefaultActorStorage:
   case swift::TypeKind::BuiltinExecutor:
   case swift::TypeKind::BuiltinFixedArray:
@@ -8476,8 +8445,7 @@ llvm::Expected<CompilerType> SwiftASTContext::GetChildCompilerTypeAtIndex(
             child_is_base_class, child_is_deref_of_parent, valobj,
             language_flags);
 
-  case swift::TypeKind::Enum:
-  case swift::TypeKind::BoundGenericEnum: {
+  case swift::TypeKind::Enum: {
     ExecutionContextScope *exe_scope = nullptr;
     if (exe_ctx)
       exe_scope = exe_ctx->GetBestExecutionContextScope();
@@ -8590,8 +8558,7 @@ llvm::Expected<CompilerType> SwiftASTContext::GetChildCompilerTypeAtIndex(
     return child_type;
   }
 
-  case swift::TypeKind::Class:
-  case swift::TypeKind::BoundGenericClass: {
+  case swift::TypeKind::Class: {
     auto class_decl = swift_can_type->getClassDecl();
     // Child 0 is the superclass, if there is one.
     if (class_decl->hasSuperclass()) {
@@ -8623,8 +8590,7 @@ llvm::Expected<CompilerType> SwiftASTContext::GetChildCompilerTypeAtIndex(
     LLVM_FALLTHROUGH;
   }
 
-  case swift::TypeKind::Struct:
-  case swift::TypeKind::BoundGenericStruct: {
+  case swift::TypeKind::Struct: {
     auto nominal = swift_can_type->getAnyNominal();
 
     // Imported unions don't have stored properties, iterate over the
@@ -8876,8 +8842,7 @@ size_t SwiftASTContext::GetIndexOfChildMemberWithName(
     case swift::TypeKind::DependentMember:
       break;
 
-    case swift::TypeKind::Enum:
-    case swift::TypeKind::BoundGenericEnum: {
+    case swift::TypeKind::Enum: {
       return 0;
       SwiftEnumDescriptor *cached_enum_info = GetCachedEnumInfo(type);
       if (cached_enum_info) {
@@ -8936,9 +8901,7 @@ size_t SwiftASTContext::GetIndexOfChildMemberWithName(
     }
 
     case swift::TypeKind::Struct:
-    case swift::TypeKind::Class:
-    case swift::TypeKind::BoundGenericClass:
-    case swift::TypeKind::BoundGenericStruct: {
+    case swift::TypeKind::Class: {
       auto nominal = swift_can_type->getAnyNominal();
       auto stored_properties = GetStoredProperties(nominal);
       auto class_decl = llvm::dyn_cast<swift::ClassDecl>(nominal);
@@ -9039,12 +9002,12 @@ size_t SwiftASTContext::GetNumTemplateArguments(opaque_compiler_type_t type,
         nominal_type_decl->getGenericParams();
     return generic_param_list->getParams().size();
   } break;
-  case swift::TypeKind::BoundGenericClass:
-  case swift::TypeKind::BoundGenericStruct:
-  case swift::TypeKind::BoundGenericEnum: {
-    swift::BoundGenericType *bound_generic_type =
-        swift_can_type->castTo<swift::BoundGenericType>();
-    return bound_generic_type->getGenericArgs().size();
+  case swift::TypeKind::Class:
+  case swift::TypeKind::Struct:
+  case swift::TypeKind::Enum: {
+    swift::NominalType *nominal_type =
+        swift_can_type->castTo<swift::NominalType>();
+    return nominal_type->getGenericArgs().size();
   }
   default:
     break;
@@ -9110,7 +9073,7 @@ SwiftASTContext::GetGenericArgumentKind(opaque_compiler_type_t type,
   if (swift_can_type->getAs<swift::UnboundGenericType>())
     return eUnboundGenericKindType;
   if (auto *bound_generic_type =
-          swift_can_type->getAs<swift::BoundGenericType>())
+          swift_can_type->getAs<swift::NominalType>())
     if (idx < bound_generic_type->getGenericArgs().size())
       return eBoundGenericKindType;
 
@@ -9124,7 +9087,7 @@ CompilerType SwiftASTContext::GetBoundGenericType(opaque_compiler_type_t type,
   swift::CanType swift_can_type(GetCanonicalSwiftType(type));
   assert(&swift_can_type->getASTContext() == *GetASTContext());
   if (auto *bound_generic_type =
-          swift_can_type->getAs<swift::BoundGenericType>())
+          swift_can_type->getAs<swift::NominalType>())
     if (idx < bound_generic_type->getGenericArgs().size())
       return ToCompilerType(
           {bound_generic_type->getGenericArgs()[idx].getPointer()});
@@ -9240,7 +9203,6 @@ bool SwiftASTContext::DumpTypeValue(
 
   const swift::TypeKind type_kind = swift_can_type->getKind();
   switch (type_kind) {
-  case swift::TypeKind::BoundGenericStruct:
   case swift::TypeKind::BuiltinBorrow:
   case swift::TypeKind::BuiltinDefaultActorStorage:
   case swift::TypeKind::BuiltinExecutor:
@@ -9285,7 +9247,6 @@ bool SwiftASTContext::DumpTypeValue(
     break;
 
   case swift::TypeKind::Class:
-  case swift::TypeKind::BoundGenericClass:
     // If we have a class that is in a variable then it is a pointer,
     // else if it is a base class, it has no value.
     if (is_base_class)
@@ -9379,8 +9340,7 @@ bool SwiftASTContext::DumpTypeValue(
         .DumpTypeValue(&s, format, data, byte_offset, byte_size,
                        bitfield_bit_size, bitfield_bit_offset, exe_scope,
                        is_base_class);
-  case swift::TypeKind::Enum:
-  case swift::TypeKind::BoundGenericEnum: {
+  case swift::TypeKind::Enum: {
     SwiftEnumDescriptor *cached_enum_info = GetCachedEnumInfo(type);
     if (cached_enum_info) {
       auto enum_elem_info = cached_enum_info->GetElementFromData(data, true);
@@ -9686,15 +9646,6 @@ void SwiftASTContext::DumpTypeDescription(opaque_compiler_type_t type,
       ostream.flush();
       if (buffer.empty() == false)
         s->Printf("%s\n", buffer.c_str());
-    } break;
-    case swift::TypeKind::BoundGenericClass:
-    case swift::TypeKind::BoundGenericEnum:
-    case swift::TypeKind::BoundGenericStruct: {
-      swift::BoundGenericType *bound_generic_type =
-          swift_can_type->castTo<swift::BoundGenericType>();
-      swift::NominalTypeDecl *nominal_type_decl = bound_generic_type->getDecl();
-      PrintSwiftNominalType(nominal_type_decl, s, print_help_if_available,
-                            print_extensions_if_available);
     } break;
     case swift::TypeKind::BuiltinInteger: {
       swift::BuiltinIntegerType *builtin_integer_type =

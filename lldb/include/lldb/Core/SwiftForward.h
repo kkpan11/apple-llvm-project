@@ -25,7 +25,6 @@ class ArchetypeType;
 class ArrayType;
 class ASTContext;
 class ASTMutationListener;
-class BoundGenericType;
 class ClangImporter;
 class ClangImporterOptions;
 class ClangModule;
