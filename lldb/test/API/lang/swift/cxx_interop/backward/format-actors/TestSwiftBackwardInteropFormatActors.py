@@ -6,9 +6,9 @@ from lldbsuite.test.lldbtest import *
 from lldbsuite.test.decorators import *
 
 
-@skipIf(bugnumber = "rdar://136232178")
 class TestSwiftBackwardInteropFormatActors(TestBase):
 
+    @requireNotEmbeddedSwift
     @swiftClangImporterTest
     def test_class(self):
         self.build()
