@@ -441,11 +441,21 @@ public:
         else
           typeref = &*typeref_or_err;
 
-        swift::reflection::FieldInfo field_info = {
-            name, (unsigned)bit_offset_ptr / 8, 0, typeref,
-            *GetOrCreateTypeInfo(field_type)};
-        fields.push_back(field_info);
+        const swift::reflection::TypeInfo *field_ti =
+            GetOrCreateTypeInfo(field_type);
+        if (!field_ti) {
+          LLDB_LOG(GetLog(LLDBLog::Types),
+                   "[LLDBTypeInfoProvider] no TypeInfo for field {0} of {1}",
+                   name, clang_type.GetTypeName());
+          // Without a TypeInfo for every field, the record can't say which
+          // of its bits are spare or where its extra inhabitants are, so
+          // describe it opaquely like a Clang type without fields.
+          fields.clear();
+          break;
         }
+        fields.push_back(
+            {name, (unsigned)bit_offset_ptr / 8, 0, typeref, *field_ti});
+      }
     }
     return m_runtime.emplaceClangTypeInfo(clang_type, size, bit_align, fields);
   }
@@ -471,12 +481,12 @@ SwiftLanguageRuntime::lookupClangTypeInfo(CompilerType clang_type) {
   {
     auto it = m_clang_builtin_type_info.find(opaque_type);
     if (it != m_clang_builtin_type_info.end())
-      return &it->second;
+      return it->second.get();
   }
   {
     auto it = m_clang_record_type_info.find(opaque_type);
     if (it != m_clang_record_type_info.end())
-      return &it->second;
+      return it->second.get();
   }
   return {};
 }
@@ -501,20 +511,19 @@ const swift::reflection::TypeInfo *SwiftLanguageRuntime::emplaceClangTypeInfo(
   if (fields.empty()) {
     auto it_b = m_clang_builtin_type_info.insert(
         {clang_type.GetOpaqueQualType(),
-         swift::reflection::BuiltinTypeInfo(
+         std::make_unique<swift::reflection::BuiltinTypeInfo>(
              *byte_size, byte_align, byte_stride, extra_inhabitants,
              swift::reflection::BitwiseBorrowability::TakableAndBorrowable,
              /*AFD=*/false)});
-    return &it_b.first->second;
+    return it_b.first->second.get();
   }
   auto it_b = m_clang_record_type_info.insert(
       {clang_type.GetOpaqueQualType(),
-       swift::reflection::RecordTypeInfo(
+       std::make_unique<swift::reflection::RecordTypeInfo>(
            *byte_size, byte_align, byte_stride, extra_inhabitants,
            swift::reflection::BitwiseBorrowability::None,
-           /*AFD=*/true,
-           swift::reflection::RecordKind::Struct, fields)});
-  return &it_b.first->second;
+           /*AFD=*/true, swift::reflection::RecordKind::Struct, fields)});
+  return it_b.first->second.get();
 }
 
 std::optional<uint64_t>
