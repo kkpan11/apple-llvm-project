@@ -278,3 +278,32 @@ void test_deprecated1(void) {
     ;
 }
 #endif
+
+// A domain availability check can only be used as the condition of an 'if'
+// statement.
+int g_domain_check = @available(domain:feature1);
+// expected-error@-1 {{@available with a domain can only be used as the condition of an 'if' statement}}
+
+__attribute__((objc_root_class))
+@interface C_DomainCheck
+-(int)m0;
+@end
+
+@implementation C_DomainCheck
+-(int)m0 {
+  int b = @available(domain:feature1);
+  // expected-error@-1 {{@available with a domain can only be used as the condition of an 'if' statement}}
+  int c = @available(domain:feature1) ? 1 : 2;
+  // expected-error@-1 {{@available with a domain can only be used as the condition of an 'if' statement}}
+  if (b && @available(domain:feature1))
+    // expected-error@-1 {{@available with a domain can only be used as the condition of an 'if' statement}}
+    return 1;
+  if (!@available(domain:feature1))
+    return 2;
+  void (^blk)(void) = ^{
+    if (@available(domain:feature1))
+      return;
+  };
+  return b + c;
+}
+@end
