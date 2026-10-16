@@ -233,15 +233,34 @@ void processGlobalVariable(PerModuleUtils &MUtils, PerGlobalUtils &GUtils,
   B.CreateStore(B.CreateBitOrPointerCast(Result, PtrType), PtrLoc);
 }
 
-void processInstruction(PerModuleUtils &MUtils, PerGlobalUtils &GUtils, Use &U,
-                        std::vector<uint64_t> Idxs) {
-  assert(Idxs.empty() &&
-         "Accessing aggregate in instruction. Need a GEPExpr for this.");
+Error processInstruction(PerModuleUtils &MUtils, PerGlobalUtils &GUtils, Use &U,
+                         std::vector<uint64_t> Idxs) {
   Instruction *V = cast<Instruction>(U.getUser());
   Function &F = *V->getParent()->getParent();
-  Type *UseType = U.get()->getType();
 
-  U.set(GUtils.getPtrLoadFor(F, *UseType));
+  if (Idxs.empty()) {
+    U.set(GUtils.getPtrLoadFor(F, *U.get()->getType()));
+    return Error::success();
+  }
+
+  // E.g. C++ member function pointer (Swift closures are similar):
+  //   store {i64, i64} {i64 ptrtoint (ptr @f.ptrauth to i64), i64 0}, ptr %m
+  // becomes:
+  //   %p = load ptr, ptr @0 ; signed at runtime
+  //   %i = ptrtoint ptr %p to i64
+  //   %s = insertvalue {i64, i64} {i64 ptrtoint (ptr @f to i64), i64 0},
+  //                    i64 %i, 0
+  //   store {i64, i64} %s, ptr %m
+  auto *Agg = cast<Constant>(U.get());
+  SmallVector<unsigned> AggIdxs(Idxs.rbegin(), Idxs.rend());
+  Type *ElemTy = ExtractValueInst::getIndexedType(Agg->getType(), AggIdxs);
+  if (!ElemTy || !(ElemTy->isPointerTy() || ElemTy->isIntegerTy()))
+    return makeStringError("Unable to rewrite ptrauth use in aggregate", V);
+
+  Instruction *Ptr = GUtils.getPtrLoadFor(F, *ElemTy);
+  U.set(InsertValueInst::Create(Agg, Ptr, AggIdxs, "",
+                                std::next(Ptr->getIterator())));
+  return Error::success();
 }
 
 Error processPtrAuthUsers(PerModuleUtils &MUtils, PerGlobalUtils &GUtils,
@@ -251,18 +270,18 @@ Error processPtrAuthUsers(PerModuleUtils &MUtils, PerGlobalUtils &GUtils,
 
   // Recurse through any casts.
   if (isa<ConstantExpr>(V) && cast<ConstantExpr>(V)->isCast()) {
-    for (auto &U2 : V->uses())
+    for (auto &U2 : make_early_inc_range(V->uses()))
       if (auto Err = processPtrAuthUsers(MUtils, GUtils, U2, Idxs))
         return Err;
   } else if (isa<ConstantAggregate>(V)) {
     Idxs.push_back(U.getOperandNo());
-    for (auto &U2 : V->uses())
+    for (auto &U2 : make_early_inc_range(V->uses()))
       if (auto Err = processPtrAuthUsers(MUtils, GUtils, U2, Idxs))
         return Err;
   } else if (isa<GlobalVariable>(V)) {
     processGlobalVariable(MUtils, GUtils, cast<GlobalVariable>(*V), Idxs);
   } else if (isa<Instruction>(V)) {
-    processInstruction(MUtils, GUtils, U, Idxs);
+    return processInstruction(MUtils, GUtils, U, Idxs);
   } else if (isa<ConstantExpr>(V)) {
     auto *VExpr = cast<ConstantExpr>(V);
     if (isa<GEPOperator>(VExpr)) {
@@ -285,7 +304,7 @@ Error processPtrAuthUsers(PerModuleUtils &MUtils, PerGlobalUtils &GUtils,
               "Cannot rewrite ptrauth use with non-zero indexes", Op);
       }
 
-      for (auto &U2 : VExpr->uses()) {
+      for (auto &U2 : make_early_inc_range(VExpr->uses())) {
         if (auto Err = processPtrAuthUsers(MUtils, GUtils, U2, Idxs))
           return Err;
       }
@@ -319,7 +338,7 @@ HandleLLVMPtrauthSection(llvm::Module &M,
       return PtrAuthInfo.takeError();
 
     PerGlobalUtils GUtils(std::move(*PtrAuthInfo));
-    for (auto &U : G.uses())
+    for (auto &U : make_early_inc_range(G.uses()))
       if (auto Err = processPtrAuthUsers(MUtils, GUtils, U))
         return Err;
 
