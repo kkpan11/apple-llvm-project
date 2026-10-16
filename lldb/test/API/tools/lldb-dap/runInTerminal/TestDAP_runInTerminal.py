@@ -15,7 +15,6 @@ from lldbsuite.test.tools.lldb_dap.types import *
 @skipIfWasm  # runInTerminal has the client run the program, and a Wasm module is not executable
 class TestDAP_runInTerminal(DAPTestCaseBase):
     @skipIfLinux # FIXME: doesn't seem to work on Ubuntu 16.04.
-    @skipIfWindows # rdar://177419646
     @skipIfAsan
     def test_launch_with_args_and_env(self):
         """
