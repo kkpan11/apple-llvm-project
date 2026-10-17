@@ -36,7 +36,7 @@ def execute_command(command):
 
 class TestSwiftDifferentClangFlags(TestBase):
     @skipUnlessDarwin
-    @swiftTest
+    @swiftClangImporterTest
     @skipIf(
         debug_info=decorators.no_match("dsym"),
         bugnumber="This test requires a stripped binary and a dSYM")

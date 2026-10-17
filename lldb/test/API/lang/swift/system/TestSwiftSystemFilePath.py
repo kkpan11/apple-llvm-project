@@ -10,7 +10,7 @@ from lldbsuite.test import lldbutil
 
 class TestSwiftSystemFilePath(TestBase):
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     @skipUnlessDarwin
     def test(self):
         """Test that System.FilePath and SystemString are formatted correctly."""

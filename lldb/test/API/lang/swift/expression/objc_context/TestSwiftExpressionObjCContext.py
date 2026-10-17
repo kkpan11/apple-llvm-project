@@ -19,7 +19,7 @@ import os
 class TestSwiftExpressionObjCContext(TestBase):
     @requireNotEmbeddedSwift
     @requireSwiftObjCInterop
-    @swiftTest
+    @swiftClangImporterTest
     def test(self):
         self.build()
 

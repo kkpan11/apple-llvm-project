@@ -15,34 +15,34 @@ class TestSwiftBackwardInteropFormatSwiftStdlibTypes(TestBase):
             self, bkpt_str, lldb.SBFileSpec('main.cpp'))
 
 
-    @swiftTest
+    @swiftClangImporterTest
     def test_array(self):
         self.setup('break here for array')
         self.expect('frame var array', substrs=['Swift.Array<a.SwiftClass>',
             '[0]', 'str = "Hello from the Swift class!"', 
             '[1]', 'str = "Hello from the Swift class!"',])
 
-    @swiftTest
+    @swiftClangImporterTest
     def test_array_of_ints(self):
         self.setup('break here for array of ints')
 
         self.expect('frame var array', substrs=['Swift.Array<Swift.Int32>', '1', '2', '3', '4'])
 
-    @swiftTest
+    @swiftClangImporterTest
     def test_optional(self):
         self.setup('break here for optional')
 
         self.expect('frame var optional', substrs=['Swift.Optional<a.SwiftClass>',
             'str = "Hello from the Swift class!"'])
 
-    @swiftTest
+    @swiftClangImporterTest
     def test_optional_primitive(self):
         self.setup('break here for optional primitive')
 
         self.expect('frame var optional', substrs=['Swift.Optional<Swift.Double>',
             '4.2'])
 
-    @swiftTest
+    @swiftClangImporterTest
     def test_string(self):
         self.setup('break here for string')
 

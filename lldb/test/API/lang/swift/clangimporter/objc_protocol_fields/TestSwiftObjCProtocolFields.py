@@ -7,7 +7,7 @@ class TestSwiftObjCBaseClassMemberLookup(TestBase):
     NO_DEBUG_INFO_TESTCASE = True
     @requireNotEmbeddedSwift
     @requireSwiftObjCInterop
-    @swiftTest
+    @swiftClangImporterTest
     def test(self):
         """Test accessing a static member from a member function"""
         self.build()

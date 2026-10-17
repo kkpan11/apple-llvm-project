@@ -33,26 +33,26 @@ class TestSwiftBackwardInteropSteppingClass(TestBase):
         self.assertIn(func, name)
 
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     def test_setter_step_in_class(self):
         thread = self.setup('Break here for setter - class')
         self.check_step_in(thread, 'testSetter', 'SwiftClass.swiftProperty.setter')
 
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     def test_setter_step_over_class(self):
         thread = self.setup('Break here for setter - class')
         self.check_step_over(thread, 'testSetter')
 
 
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     def test_overriden_step_in_class(self):
         thread = self.setup('Break here for overridden - class')
         self.check_step_in(thread, 'testOverridenMethod', 'SwiftSubclass.overrideableMethod')
 
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     def test_overriden_step_over_class(self):
         thread = self.setup('Break here for overridden')
         self.check_step_over(thread, 'testOverridenMethod')

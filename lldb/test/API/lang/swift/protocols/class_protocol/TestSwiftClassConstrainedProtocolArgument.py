@@ -11,7 +11,7 @@ import lldbsuite.test.lldbutil as lldbutil
 class TestSwiftClassConstrainedProtocolArgument(TestBase):
 
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     @requireSwiftObjCInterop
     def test(self):
         """Test that a generic argument bound to an NSObject subclass resolves"""

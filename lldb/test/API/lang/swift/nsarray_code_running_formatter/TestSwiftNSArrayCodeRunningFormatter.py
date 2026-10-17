@@ -18,7 +18,7 @@ import lldbsuite.test.lldbutil as lldbutil
 class TestSwiftNSArrayCodeRunningFormatter(TestBase):
 
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     @requireObjCFoundation
     @skipIf(macos_version=["=", "15.0"])
     def test(self):

@@ -10,7 +10,7 @@ import lldbsuite.test.lldbutil as lldbutil
 
 class TestCase(TestBase):
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     @requireObjCFoundation
     def test(self):
         """Test CFUUID object description prints the UUID string."""

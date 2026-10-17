@@ -8,7 +8,7 @@ from lldbsuite.test.decorators import *
 
 class TestSwiftForwardInteropVerboseTrap(TestBase):
 
-    @swiftTest
+    @swiftClangImporterTest
     @expectedFailureAll(bugnumber="rdar://139429226")
     def test(self):
         self.build()

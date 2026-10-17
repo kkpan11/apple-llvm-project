@@ -18,7 +18,7 @@ import lldbsuite.test.lldbutil as lldbutil
 class TestSwiftFoundationTypeIndexPath(TestBase):
 
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     @skipIf(oslist=['windows', 'linux'])
     def test(self):
         """Test the IndexPath summary for each storage representation"""

@@ -11,7 +11,7 @@ class TestSwiftPtrAuthUnappliedMethod(Arm64eTestBase):
 
     @requireNotEmbeddedSwift  # the embedded harness appends its own non-arm64e -target
     @skipUnlessSwiftArm64eSupported
-    @swiftTest
+    @swiftClangImporterTest
     def test(self):
         """An unapplied method reference produces a closure constant
         { ptr @thunk.ptrauth, ptr undef } that needs pointer signing fixups."""

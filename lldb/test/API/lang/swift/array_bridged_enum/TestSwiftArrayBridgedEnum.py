@@ -7,7 +7,7 @@ import lldbsuite.test.lldbutil as lldbutil
 class TestSwiftArrayBridgedEnum(TestBase):
 
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     @requireObjCFoundation
     def test(self):
         """Test that array elements of an imported NS_CLOSED_ENUM show their case"""

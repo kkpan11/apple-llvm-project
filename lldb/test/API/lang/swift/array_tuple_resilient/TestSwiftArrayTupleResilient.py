@@ -14,7 +14,7 @@ class TestSwiftArrayTupleResilient(TestBase):
         return value
 
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     @skipIfLinux
     @expectedFailureAll(archs=['arm64_32'], bugnumber="<rdar://problem/58065423>")
     def test(self):

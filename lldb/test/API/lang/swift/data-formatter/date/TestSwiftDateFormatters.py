@@ -14,7 +14,7 @@ class TestCase(TestBase):
     @requireNotEmbeddedSwift
     @skipUnlessFoundationEssentials
     @skipIfLinux  # https://github.com/swiftlang/llvm-project/issues/13465
-    @swiftTest
+    @swiftClangImporterTest
     def test_swift_date_formatters(self):
         """Test Date summary strings."""
         self.build()

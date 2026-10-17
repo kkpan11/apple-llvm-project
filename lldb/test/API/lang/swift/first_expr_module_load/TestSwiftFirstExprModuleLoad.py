@@ -6,7 +6,7 @@ import lldbsuite.test.lldbutil as lldbutil
 class TestSwiftFirstExprModuleLoad(lldbtest.TestBase):
 
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     @skipUnlessDarwin
     def test_unknown_self_objc_ref(self):
         self.build()

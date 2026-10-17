@@ -7,7 +7,7 @@ import lldbsuite.test.lldbutil as lldbutil
 class TestSwiftProtocolExtensionComputedProperty(TestBase):
 
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     @skipUnlessDarwin
     @expectedFailureAll(
         bugnumber="rdar://60396797",

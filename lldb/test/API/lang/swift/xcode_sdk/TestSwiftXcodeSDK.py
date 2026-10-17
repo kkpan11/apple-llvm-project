@@ -35,7 +35,7 @@ class TestSwiftXcodeSDK(lldbtest.TestBase):
         self.assertEqual(found, 1)
         self.assertEqual(precise, expect_precise)
 
-    @swiftTest
+    @swiftClangImporterTest
     @requireDarwin
     @skipIfDarwinEmbedded
     def test_decode(self):
@@ -49,7 +49,7 @@ class TestSwiftXcodeSDK(lldbtest.TestBase):
         self.expect("expression 1")
         self.check_log(log, "MacOSX", True)
 
-    @swiftTest
+    @swiftClangImporterTest
     @requireDarwin
     @skipIfDarwinEmbedded
     @apple_simulator_test('iphone')
@@ -68,7 +68,7 @@ class TestSwiftXcodeSDK(lldbtest.TestBase):
         self.expect("expression 1")
         self.check_log(log, "iPhoneSimulator", True)
 
-    @swiftTest
+    @swiftClangImporterTest
     @requireDarwin
     @skipIfDarwinEmbedded
     def test_override(self):

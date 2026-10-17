@@ -22,7 +22,7 @@ import os
 class TestSwiftCGImportedTypes(TestBase):
     @requireNotEmbeddedSwift
     @requireDarwin
-    @swiftTest
+    @swiftClangImporterTest
     def test_swift_cg_imported_types(self):
         """Test that we are able to deal with C-imported types from CoreGraphics"""
         self.build()

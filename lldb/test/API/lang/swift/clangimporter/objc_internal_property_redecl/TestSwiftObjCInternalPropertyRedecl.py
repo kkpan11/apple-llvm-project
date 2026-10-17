@@ -10,7 +10,7 @@ class TestSwiftObjCInternalPropertyRedecl(TestBase):
 
     @requireNotEmbeddedSwift
     @requireSwiftObjCInterop
-    @swiftTest
+    @swiftClangImporterTest
     @skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
     def test(self):
         """Test that the import of a Clang private companion framework

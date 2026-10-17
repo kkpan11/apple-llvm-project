@@ -59,7 +59,7 @@ class TestSwiftCASReleaseObjectStore(TestBase):
     # CAS-backed module load to release here.
     @requireNotEmbeddedSwift
     @skipUnlessDarwin
-    @swiftTest
+    @swiftClangImporterTest
     def test_cas_released_on_debugger_destroy(self):
         self.build()
         executable = self.getBuildArtifact("a.out")

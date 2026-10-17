@@ -2038,7 +2038,7 @@ class TestVariant:
     Test variants multiply test methods by different configurations.
     Each variant adds a new dimension to the test matrix, creating copies
     of test methods for each category in the variant. For example, Swift
-    tests are run with both 'clang' and 'noclang' settings.
+    tests that use Clang are run with both 'clang' and 'noclang' settings.
 
     When a variant is registered in `_test_variants`, the `LLDBTestCaseFactory`
     metaclass iterates over every `test*` method and, for each method that
@@ -2063,7 +2063,13 @@ class TestVariant:
     """
 
     def __init__(
-        self, name, values, predicate=None, setup_fn=None, attrs_to_preserve=()
+        self,
+        name,
+        values,
+        predicate=None,
+        setup_fn=None,
+        attrs_to_preserve=(),
+        value_predicate=None,
     ):
         """Create a new test variant dimension.
 
@@ -2086,12 +2092,19 @@ class TestVariant:
                 from the source method to each expanded copy (e.g.
                 `("debug_info",)` so that a second-pass variant preserves
                 the debug-info value set by the first pass).
+            value_predicate: Optional callable `(test_method, value_name) ->
+                bool`.  When given, only the enabled values for which it
+                returns `True` are expanded for a method.  Unlike
+                `_excluded_variant_combinations`, which drops combinations of
+                values across variants for all methods, this decides per
+                method.
         """
         self.name = name
         self.values = values
         self.predicate = predicate
         self.setup_fn = setup_fn
         self.attrs_to_preserve = attrs_to_preserve
+        self.value_predicate = value_predicate
 
     def should_expand(self, test_method):
         """Return True if *test_method* should be expanded by this variant."""
@@ -2099,9 +2112,14 @@ class TestVariant:
             return True
         return self.predicate(test_method)
 
-    def get_enabled_values(self):
-        """Return the list of value names whose entry is True."""
-        return [n for n, enabled in self.values.items() if enabled]
+    def get_enabled_values(self, test_method):
+        """Return the list of value names to expand *test_method* into."""
+        return [
+            n
+            for n, enabled in self.values.items()
+            if enabled
+            and (self.value_predicate is None or self.value_predicate(test_method, n))
+        ]
 
     def apply_settings(self, test_instance, variant_value):
         """Configure *test_instance* for *variant_value* via the setup_fn."""
@@ -2146,7 +2164,7 @@ def _expand_test_variants(attrname, methods, variant, xfail_fns, skip_fns):
         if method_name != attrname and not method_name.startswith(attrname + "_"):
             expanded[method_name] = method
             continue
-        for value_name in variant.get_enabled_values():
+        for value_name in variant.get_enabled_values(method):
             if _is_excluded_variant_combination(method, variant.name, value_name):
                 continue
             new_name = method_name + "_" + value_name
@@ -2180,6 +2198,24 @@ def _swift_module_importer_setup(test_instance, variant_value):
         test_instance.runCmd("settings set symbols.use-swift-clangimporter false")
     elif variant_value == "clang":
         test_instance.runCmd("settings set symbols.use-swift-clangimporter true")
+    # Have LLDB check that tests that import Clang modules use
+    # swiftClangImporterTest. The setting only exists in asserts builds.
+    method = getattr(test_instance, test_instance._testMethodName)
+    clang_test = getattr(method, "__swift_clang_importer_test__", False)
+    test_instance.runCmd(
+        "settings set testing.swift-validate-no-clang-imports %s"
+        % ("false" if clang_test else "true"),
+        check=False,
+    )
+
+
+def _swift_module_importer_applies(test_method, variant_value):
+    # The noclang variant exercises DWARFImporter in place of ClangImporter,
+    # which only matters for tests that use Clang modules.
+    return variant_value != "noclang" or getattr(
+        test_method, "__swift_clang_importer_test__", False
+    )
+
 
 def _embedded_swift_setup(test_instance, variant_value):
     if variant_value == "swiftembed":
@@ -2197,6 +2233,7 @@ _test_variants = [
         predicate=lambda m: getattr(m, "__swift_test__", False),
         setup_fn=_swift_module_importer_setup,
         attrs_to_preserve=("debug_info",),
+        value_predicate=_swift_module_importer_applies,
     ),
     TestVariant(
         name="swift_embedded",

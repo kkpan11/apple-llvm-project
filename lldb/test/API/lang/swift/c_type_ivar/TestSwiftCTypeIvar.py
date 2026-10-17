@@ -6,7 +6,7 @@ import lldbsuite.test.lldbutil as lldbutil
 
 class TestSwiftCTypeIvar(TestBase):
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     @requireSwiftObjCInterop
     @skipIf(setting=("symbols.use-swift-clangimporter", "false"))
     def test(self):

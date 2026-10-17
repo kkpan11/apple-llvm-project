@@ -26,7 +26,7 @@ class TestSwiftRewriteClangPaths(TestBase):
     # Don't run ClangImporter tests if Clangimporter is disabled.
     @skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
     @requireDarwin
-    @swiftTest
+    @swiftClangImporterTest
     @skipIf(debug_info=no_match(["dsym"]))
     def testWithRemap(self):
         self.dotest(True)
@@ -35,7 +35,7 @@ class TestSwiftRewriteClangPaths(TestBase):
     # Don't run ClangImporter tests if Clangimporter is disabled.
     @skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
     @requireDarwin
-    @swiftTest
+    @swiftClangImporterTest
     @skipIf(debug_info=no_match(["dsym"]))
     def testWithoutRemap(self):
         self.dotest(False)
@@ -44,7 +44,7 @@ class TestSwiftRewriteClangPaths(TestBase):
     # Don't run ClangImporter tests if Clangimporter is disabled.
     @skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
     @skipUnlessDarwin
-    @swiftTest
+    @swiftClangImporterTest
     @skipIf(debug_info=no_match(["dsym"]))
     def testTargetSourceMapWins(self):
         """Document which remapping takes effect when the module's dSYM and

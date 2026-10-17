@@ -22,7 +22,7 @@ class TestSwiftMacroConflict(TestBase):
     @skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
     @skipIf(bugnumber="rdar://121539666")
     @requireSwiftObjCInterop
-    @swiftTest
+    @swiftClangImporterTest
     def test(self):
         # To ensure we hit the rebuild problem remove the cache to avoid caching.
         mod_cache = self.getBuildArtifact("my-clang-modules-cache")
@@ -58,7 +58,7 @@ class TestSwiftMacroConflict(TestBase):
     @skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
     @skipIf(bugnumber="rdar://121539666")
     @requireSwiftObjCInterop
-    @swiftTest
+    @swiftClangImporterTest
     def test_with_dwarfimporter(self):
         """
         With DWARFImporter installed, both variables should be visible.

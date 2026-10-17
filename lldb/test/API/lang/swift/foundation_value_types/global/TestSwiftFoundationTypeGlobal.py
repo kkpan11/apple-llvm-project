@@ -8,7 +8,7 @@ class TestSwiftFoundationValueTypeGlobal(TestBase):
     @requireNotEmbeddedSwift
     @skipUnlessFoundationEssentials
     @skipIfLinux  # https://github.com/swiftlang/llvm-project/issues/13465
-    @swiftTest
+    @swiftClangImporterTest
     def test(self):
         self.build()
         target = self.dbg.CreateTarget(self.getBuildArtifact())

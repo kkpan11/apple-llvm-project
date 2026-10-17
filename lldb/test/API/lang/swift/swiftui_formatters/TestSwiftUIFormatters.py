@@ -10,7 +10,7 @@ class TestCase(TestBase):
 
     @requireNotEmbeddedSwift
     @requireDarwin
-    @swiftTest
+    @swiftClangImporterTest
     def test_body(self):
         self.build()
         _, _, self.thread, _ = lldbutil.run_to_source_breakpoint(
@@ -20,7 +20,7 @@ class TestCase(TestBase):
 
     @requireNotEmbeddedSwift
     @requireDarwin
-    @swiftTest
+    @swiftClangImporterTest
     def test_appear(self):
         self.build()
         log = self.getBuildArtifact("types.log")
@@ -32,7 +32,7 @@ class TestCase(TestBase):
 
     @requireNotEmbeddedSwift
     @requireDarwin
-    @swiftTest
+    @swiftClangImporterTest
     def test_change(self):
         self.build()
         log = self.getBuildArtifact("types.log")

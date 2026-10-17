@@ -66,7 +66,7 @@ class TestSwiftPlaygrounds(TestBase):
 
     @requireNotEmbeddedSwift
     @requireDarwin
-    @swiftTest
+    @swiftClangImporterTest
     @skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
     @skipIf(debug_info=decorators.no_match("dsym"))
     def test_force_target(self):
@@ -76,7 +76,7 @@ class TestSwiftPlaygrounds(TestBase):
 
     @requireNotEmbeddedSwift
     @requireDarwin
-    @swiftTest
+    @swiftClangImporterTest
     @skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
     @skipIf(debug_info=decorators.no_match("dsym"))
     def test_no_force_target(self):
@@ -86,7 +86,7 @@ class TestSwiftPlaygrounds(TestBase):
 
     @requireNotEmbeddedSwift
     @requireDarwin
-    @swiftTest
+    @swiftClangImporterTest
     @skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
     @skipIf(debug_info=decorators.no_match("dsym"))
     @skipIf(macos_version=["<", "12"])
@@ -97,7 +97,7 @@ class TestSwiftPlaygrounds(TestBase):
 
     @requireNotEmbeddedSwift
     @requireDarwin
-    @swiftTest
+    @swiftClangImporterTest
     @skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
     @skipIf(debug_info=decorators.no_match("dsym"))
     def test_uncaught_error(self):
@@ -107,7 +107,7 @@ class TestSwiftPlaygrounds(TestBase):
 
     @requireNotEmbeddedSwift
     @requireDarwin
-    @swiftTest
+    @swiftClangImporterTest
     @skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
     @skipIf(debug_info=decorators.no_match("dsym"))
     def test_import(self):
