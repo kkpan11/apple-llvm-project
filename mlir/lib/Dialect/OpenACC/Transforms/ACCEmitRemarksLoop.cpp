@@ -104,7 +104,7 @@ static void emitLoopMappingRemark(acc::ComputeRegionOp computeRegion,
                                   const acc::ACCToGPUMappingPolicy &policy,
                                   llvm::StringRef gpuDimSeparator) {
   acc::GPUParallelDimsAttr parDimsAttr =
-      loopOp->getAttrOfType<acc::GPUParallelDimsAttr>(
+      loopOp->getDiscardableAttrOfType<acc::GPUParallelDimsAttr>(
           acc::GPUParallelDimsAttr::name);
 
   SmallVector<acc::GPUParallelDimAttr, 1> seqParDims;
@@ -144,6 +144,15 @@ static void emitLoopMappingRemark(acc::ComputeRegionOp computeRegion,
       DEBUG_TYPE);
 }
 
+static void
+emitUnstructuredIndependentLoopRemark(Operation *op,
+                                      acc::OpenACCSupport &accSupport) {
+  accSupport.emitRemark(op,
+                        "Loop is not parallelized: complex control "
+                        "flow prevents parallelization",
+                        DEBUG_TYPE);
+}
+
 class ACCEmitRemarksLoop
     : public acc::impl::ACCEmitRemarksLoopBase<ACCEmitRemarksLoop> {
 public:
@@ -160,9 +169,12 @@ public:
       if (!shouldEmitLoopRemarks(computeRegion))
         return;
 
-      computeRegion.getRegion().walk([&](LoopLikeOpInterface loopOp) {
-        emitLoopMappingRemark(computeRegion, loopOp, accSupport, policy,
-                              gpuDimSeparator);
+      computeRegion.getRegion().walk([&](Operation *op) {
+        if (auto loopOp = dyn_cast<LoopLikeOpInterface>(op))
+          emitLoopMappingRemark(computeRegion, loopOp, accSupport, policy,
+                                gpuDimSeparator);
+        else if (op->hasAttr(acc::getUnstructuredIndependentLoopAttrName()))
+          emitUnstructuredIndependentLoopRemark(op, accSupport);
       });
     });
   }

@@ -17,6 +17,7 @@
 #include "SwiftMetadataCache.h"
 
 #include "Plugins/ExpressionParser/Swift/SwiftPersistentExpressionState.h"
+#include "Plugins/Language/Swift/LogChannelSwift.h"
 #include "Plugins/LanguageRuntime/Swift/SwiftTask.h"
 #include "Plugins/Process/Utility/RegisterContext_x86.h"
 #include "Plugins/TypeSystem/Clang/TypeSystemClang.h"
@@ -29,6 +30,8 @@
 #include "lldb/Core/Progress.h"
 #include "lldb/Core/Section.h"
 #include "lldb/DataFormatters/StringPrinter.h"
+#include "lldb/Host/Host.h"
+#include "lldb/Host/HostInfo.h"
 #include "lldb/Host/OptionParser.h"
 #include "lldb/Host/SafeMachO.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
@@ -69,10 +72,12 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FormatAdapters.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/Memory.h"
 #include "llvm/Support/raw_ostream.h"
+#include <limits>
 #include <optional>
 
 // FIXME: we should not need this
@@ -225,6 +230,7 @@ ModuleSP SwiftLanguageRuntime::FindConcurrencyModule(Process &process) {
 // swift/stdlib/public/Concurrency/Debug.h.
 static constexpr uint32_t g_concurrency_version_mask = 0x00FFFFFF;
 static constexpr uint32_t g_concurrency_storage_kind_shift = 24;
+static constexpr uint8_t g_concurrency_storage_kind_deferred_mask = 0x80;
 
 static std::optional<uint32_t>
 FindConcurrencyVersionWord(Process &process, Module &concurrency_module) {
@@ -245,35 +251,43 @@ FindConcurrencyVersionWord(Process &process, Module &concurrency_module) {
   return version_word;
 }
 
-llvm::Expected<lldb::offset_t>
-SwiftLanguageRuntime::FindAsyncTaskNameOffset(Process &process) {
-  ModuleSP concurrency_module = FindConcurrencyModule(process);
+/// Reads the pointer-sized value of the concurrency debug variable `name`.
+static llvm::Expected<uint64_t>
+ReadConcurrencyABIConfiguration(Process &process, StringRef name) {
+  ModuleSP concurrency_module =
+      SwiftLanguageRuntime::FindConcurrencyModule(process);
   if (!concurrency_module)
     return llvm::createStringError("could not load _Concurrency module");
 
-  const Symbol *offset_symbol =
-      concurrency_module->FindFirstSymbolWithNameAndType(
-          ConstString("_swift_concurrency_debug_asyncTaskNameOffset"));
-  if (!offset_symbol)
-    return llvm::createStringError(
-        "_swift_concurrency_debug_asyncTaskNameOffset symbol not found");
+  const Symbol *symbol =
+      concurrency_module->FindFirstSymbolWithNameAndType(ConstString(name));
+  if (!symbol)
+    return llvm::createStringErrorV("{0} symbol not found", name);
 
-  addr_t offset_symbol_addr =
-      offset_symbol->GetLoadAddress(&process.GetTarget());
-  if (offset_symbol_addr == LLDB_INVALID_ADDRESS)
-    return llvm::createStringError(
-        "_swift_concurrency_debug_asyncTaskNameOffset has no load address");
+  addr_t symbol_addr = symbol->GetLoadAddress(&process.GetTarget());
+  if (symbol_addr == LLDB_INVALID_ADDRESS)
+    return llvm::createStringErrorV("{0} has no load address", name);
 
   Status status;
-  uint64_t name_fragment_offset = process.ReadUnsignedIntegerFromMemory(
-      offset_symbol_addr, process.GetAddressByteSize(), /*fail_value=*/0,
-      status);
+  uint64_t value = process.ReadUnsignedIntegerFromMemory(
+      symbol_addr, process.GetAddressByteSize(), /*fail_value=*/0, status);
   if (!status.Success())
     return status.takeError();
-  if (name_fragment_offset == 0)
-    return llvm::createStringError(
-        "_swift_concurrency_debug_asyncTaskNameOffset is 0");
-  return name_fragment_offset;
+  if (value == 0)
+    return llvm::createStringErrorV("{0} is 0", name);
+  return value;
+}
+
+llvm::Expected<lldb::offset_t>
+SwiftLanguageRuntime::FindAsyncTaskNameOffset(Process &process) {
+  return ReadConcurrencyABIConfiguration(
+      process, "_swift_concurrency_debug_asyncTaskNameOffset");
+}
+
+llvm::Expected<lldb::offset_t>
+SwiftLanguageRuntime::FindAsyncTaskSize(Process &process) {
+  return ReadConcurrencyABIConfiguration(
+      process, "_swift_concurrency_debug_asyncTaskSize");
 }
 
 std::optional<uint32_t>
@@ -340,6 +354,47 @@ DeriveStorageKind(uint32_t concurrency_version, uint8_t storage_kind_raw) {
   return CurrentTaskStorageKind{storage_kind_raw};
 }
 
+/// The load address of the symbol `name`, looked up in every image loaded in
+/// the target.
+static std::optional<addr_t> FindSymbolLoadAddress(Target &target,
+                                                   StringRef name) {
+  SymbolContextList symbols;
+  target.GetImages().FindSymbolsWithNameAndType(ConstString(name),
+                                                eSymbolTypeAny, symbols);
+
+  SymbolContext context;
+  for (size_t index = 0; index < symbols.GetSize(); ++index) {
+    if (!symbols.GetContextAtIndex(index, context) || !context.symbol ||
+        context.symbol->GetType() == eSymbolTypeUndefined)
+      continue;
+
+    addr_t symbol_addr = context.symbol->GetLoadAddress(&target);
+    if (symbol_addr != LLDB_INVALID_ADDRESS)
+      return symbol_addr;
+  }
+  return std::nullopt;
+}
+
+static std::optional<CurrentTaskStorageKind>
+FindDeferredStorageKind(Process &process, uint32_t concurrency_version) {
+  std::optional<addr_t> kind_addr = FindSymbolLoadAddress(
+      process.GetTarget(),
+      "_swift_concurrency_debug_current_task_storage_kind");
+  if (!kind_addr)
+    return std::nullopt;
+
+  Status error;
+  uint64_t storage_kind_raw = process.ReadUnsignedIntegerFromMemory(
+      *kind_addr, /*width=*/4, /*fail_value=*/0, error);
+  if (error.Fail() || storage_kind_raw > std::numeric_limits<uint8_t>::max())
+    return std::nullopt;
+
+  uint8_t concrete_storage_kind = static_cast<uint8_t>(storage_kind_raw);
+  if (concrete_storage_kind & g_concurrency_storage_kind_deferred_mask)
+    return std::nullopt;
+  return DeriveStorageKind(concurrency_version, concrete_storage_kind);
+}
+
 SwiftLanguageRuntime::ConcurrencyInfo
 SwiftLanguageRuntime::FindConcurrencyInfo(Process &process) {
   ModuleSP concurrency_module = FindConcurrencyModule(process);
@@ -352,8 +407,19 @@ SwiftLanguageRuntime::FindConcurrencyInfo(Process &process) {
     return {};
 
   uint32_t version = *version_word & g_concurrency_version_mask;
-  uint8_t storage_kind = *version_word >> g_concurrency_storage_kind_shift;
-  return {version, DeriveStorageKind(version, storage_kind), concurrency_module};
+  uint8_t storage_kind_raw = *version_word >> g_concurrency_storage_kind_shift;
+  std::optional<CurrentTaskStorageKind> storage_kind;
+  if (version < 3)
+    return {version, DeriveStorageKind(version, storage_kind_raw), concurrency_module};
+
+  // The deferred flag intentionally overrides any storage_kind possibly defined
+  // in `storage_kind_raw`.
+  if (storage_kind_raw & g_concurrency_storage_kind_deferred_mask) {
+    storage_kind = FindDeferredStorageKind(process, version);
+  } else {
+    storage_kind = DeriveStorageKind(version, storage_kind_raw);
+  }
+  return {version, storage_kind, concurrency_module};
 }
 
 static lldb::BreakpointResolverSP
@@ -423,8 +489,18 @@ ThreadSafeReflectionContext SwiftLanguageRuntime::GetReflectionContext() {
 void SwiftLanguageRuntime::ProcessModulesToAdd() {
   // A snapshot of the modules to be processed. This is necessary because
   // AddModuleToReflectionContext may recursively call into this function again.
+  std::vector<lldb::ModuleWP> deferred;
+  {
+    std::lock_guard<std::mutex> guard(m_modules_to_add_mutex);
+    deferred.swap(m_modules_to_add);
+  }
+
+  // Modules the target has dropped in the meantime have expired, and are of no
+  // interest to the reflection context.
   ModuleList modules_to_add_snapshot;
-  modules_to_add_snapshot.Swap(m_modules_to_add);
+  for (const lldb::ModuleWP &module_wp : deferred)
+    if (ModuleSP module_sp = module_wp.lock())
+      modules_to_add_snapshot.Append(module_sp);
 
   if (modules_to_add_snapshot.IsEmpty())
     return;
@@ -513,17 +589,12 @@ void SwiftLanguageRuntime::SetupReflection() {
 
   auto &triple = exe_module->GetArchitecture().GetTriple();
   uint32_t ptr_size = m_process->GetAddressByteSize();
-  // FIXME: We should have a way to support a mixed embedded/regular swift
-  // program, as embedded swift is a per CU property. rdar://183664838
-  auto flavor = target.IsEmbeddedSwift()
-                    ? swift::Mangle::ManglingFlavor::Embedded
-                    : swift::Mangle::ManglingFlavor::Default;
   LLDB_LOG(log, "Initializing a {0}-bit reflection context ({1}) for \"{2}\"",
            ptr_size * 8, triple.str(), objc_interop_msg);
   if (ptr_size == 4 || ptr_size == 8)
     m_reflection_ctx = ReflectionContextInterface::CreateReflectionContext(
         ptr_size, this->GetMemoryReader(), objc_interop,
-        GetSwiftMetadataCache(), flavor);
+        GetSwiftMetadataCache());
   if (!m_reflection_ctx)
     LLDB_LOG(log, "Could not initialize reflection context for \"{0}\"",
              triple.str());
@@ -588,14 +659,27 @@ SwiftLanguageRuntime::CreateInstance(Process *process,
 SwiftLanguageRuntime::SwiftLanguageRuntime(Process &process)
     : LanguageRuntime(&process) {
   Target &target = m_process->GetTarget();
-  m_modules_to_add.Append(target.GetImages());
+  DeferModules(target.GetImages());
   RegisterSwiftFrameRecognizers(GetProcess());
+}
+
+void SwiftLanguageRuntime::DeferModules(const ModuleList &modules) {
+  std::lock_guard<std::mutex> guard(m_modules_to_add_mutex);
+  modules.ForEach([&](const ModuleSP &module_sp) -> IterationAction {
+    if (!module_sp)
+      return IterationAction::Continue;
+    for (const lldb::ModuleWP &deferred : m_modules_to_add)
+      if (deferred.lock() == module_sp)
+        return IterationAction::Continue;
+    m_modules_to_add.push_back(module_sp);
+    return IterationAction::Continue;
+  });
 }
 
 void SwiftLanguageRuntime::ModulesDidLoad(const ModuleList &module_list) {
   // The modules will be lazily processed on the next call to
   // GetReflectionContext.
-  m_modules_to_add.AppendIfNeeded(module_list);
+  DeferModules(module_list);
   // This could be done more efficiently with a better reflection API.
   m_conformances.clear();
 }
@@ -915,13 +999,7 @@ bool SwiftLanguageRuntime::AddModuleToReflectionContext(
       GetMemoryReader()->readMetadataFromFileCacheEnabled();
 
   std::optional<uint32_t> info_id;
-  if (obj_file->GetPluginName() == "elf") {
-    info_id = m_reflection_ctx->ReadELF(
-        swift::remote::RemoteAddress(
-            load_ptr, swift::remote::RemoteAddress::DefaultAddressSpace),
-        likely_module_names);
-  } else if (read_from_file_cache &&
-             obj_file->GetPluginName() == "mach-o") {
+  if (read_from_file_cache && obj_file->GetPluginName() == "mach-o") {
     info_id = AddObjectFileToReflectionContext(module_sp, likely_module_names);
     if (!info_id)
       info_id = m_reflection_ctx->AddImage(
@@ -1180,9 +1258,10 @@ SwiftLanguageRuntime::PrintObjectViaPointer(Stream &strm, ValueObject &object,
   Flags flags(object.GetCompilerType().GetTypeInfo());
   addr_t addr = LLDB_INVALID_ADDRESS;
   if (flags.Test(eTypeInstanceIsPointer)) {
-    // Objects are pointers.
+    // Objects are pointers. The inferior dereferences this pointer, so the
+    // metadata bits that authenticate a memory access have to be preserved.
     addr = object.GetValueAsUnsigned(LLDB_INVALID_ADDRESS);
-    addr = process.FixDataAddress(addr);
+    addr = process.FixAnyAddressPreservingAuthentication(addr);
   } else {
     // Get the address of non-object values (structs, enums).
     auto addr_and_type = object.GetAddressOf(false);
@@ -1270,7 +1349,7 @@ llvm::Error SwiftLanguageRuntime::GetObjectDescription(Stream &str,
   if (GetProcess().GetTarget().GetSwiftUseContextFreePrintObject()) {
     if (auto err = PrintObjectViaPointer(str, object, GetProcess())) {
       LLDB_LOG_ERROR(log, std::move(err),
-                     "stringForPrintObject(_:mangledTypeName) failed: {0}");
+                     "stringForPrintObject(_:mangledTypeName:) failed: {0}");
     } else {
       LLDB_LOG(log, "stringForPrintObject(_:mangledTypeName:) succeeded");
       return llvm::Error::success();
@@ -1667,6 +1746,46 @@ void SwiftLanguageRuntime::RegisterGlobalError(Target &target, ConstString name,
       }
     }
   }
+}
+
+lldb::BreakpointSP SwiftLanguageRuntime::CreateErrorBackstopBreakpoint() {
+  FileSpecList stdlib_module_list;
+  stdlib_module_list.Append(FileSpec(GetStandardLibraryName().GetStringRef()));
+  const LazyBool skip_prologue = eLazyBoolNo;
+  const bool is_internal = true;
+  const bool is_hardware = false;
+  const bool offset_is_insn_count = false;
+  return GetProcess().GetTarget().CreateBreakpoint(
+      &stdlib_module_list, /*containingSourceFiles=*/nullptr,
+      GetErrorBackstopName(), eFunctionNameTypeFull, eLanguageTypeUnknown,
+      /*offset=*/0, offset_is_insn_count, skip_prologue, is_internal,
+      is_hardware);
+}
+
+lldb::ValueObjectSP
+SwiftLanguageRuntime::GetErrorValueAtBackstop(StackFrame &frame) {
+  Target &target = GetProcess().GetTarget();
+  PersistentExpressionState *persistent_state =
+      target.GetPersistentExpressionStateForLanguage(eLanguageTypeSwift);
+  if (!persistent_state)
+    return {};
+
+  ConstString persistent_variable_name(
+      persistent_state->GetNextPersistentVariableName(/*is_error=*/true));
+  ValueObjectSP error_sp =
+      CalculateErrorValue(frame.shared_from_this(), persistent_variable_name);
+  if (!error_sp)
+    return {};
+
+  DataExtractor data;
+  Status data_error;
+  uint64_t data_size = error_sp->GetStaticValue()->GetData(data, data_error);
+  if (data_size == data.GetAddressByteSize()) {
+    lldb::offset_t offset = 0;
+    lldb::addr_t addr = data.GetAddress(&offset);
+    RegisterGlobalError(target, persistent_variable_name, addr);
+  }
+  return error_sp;
 }
 
 lldb::BreakpointPreconditionSP
@@ -2438,6 +2557,58 @@ protected:
   }
 };
 
+class CommandObjectSwift_Healthcheck : public CommandObjectParsed {
+public:
+  CommandObjectSwift_Healthcheck(CommandInterpreter &interpreter)
+      : CommandObjectParsed(
+            interpreter, "language swift healthcheck",
+            "Provides logging related to the Swift expression evaluator, "
+            "including Swift compiler diagnostics. This makes it easier to "
+            "identify project misconfigurations that result in module import "
+            "failures in the debugger. The command is meant to be run after a "
+            "expression evaluator failure has occurred.",
+            "language swift healthcheck") {}
+
+  ~CommandObjectSwift_Healthcheck() {}
+
+protected:
+  void DoExecute(Args &command, CommandReturnObject &result) override {
+    std::error_code err;
+    llvm::SmallString<128> temp_path;
+    int temp_fd = -1;
+    if (FileSpec temp_file_spec = HostInfo::GetProcessTempDir()) {
+      temp_file_spec.AppendPathComponent("lldb-healthcheck-%%%%%%.log");
+      err = llvm::sys::fs::createUniqueFile(temp_file_spec.GetPath(), temp_fd,
+                                            temp_path);
+    } else {
+      err = llvm::sys::fs::createTemporaryFile("lldb-healthcheck", "log",
+                                               temp_fd, temp_path);
+    }
+
+    if (temp_fd == -1) {
+      result.AppendErrorWithFormat("could not write to temp file %s",
+                                   err.message().c_str());
+      return;
+    }
+
+    llvm::raw_fd_ostream temp_stream(temp_fd, true, true);
+    DumpSwiftHealthLog(temp_stream);
+
+    result.AppendMessageWithFormatv("Health check written to {0}\n", temp_path);
+    result.SetStatus(lldb::eReturnStatusSuccessFinishResult);
+
+#if defined(__APPLE__)
+    // When in an interactive graphical session and not, for example,
+    // running LLDB running over ssh, open the log file straight away in
+    // the user's configured editor or the default Console.app otherwise.
+    if (llvm::StringRef(getprogname()).starts_with("lldb") &&
+        Host::IsInteractiveGraphicSession())
+      llvm::consumeError(
+          Host::OpenFileInExternalEditor("", FileSpec(temp_path), 0));
+#endif
+  }
+};
+
 namespace {
 using TaskInfo = ReflectionContextInterface::AsyncTaskInfo;
 
@@ -2503,25 +2674,103 @@ static void PrintFramesForTask(ExecutionContext &exe_ctx,
   }
 }
 
-/// A helper class to find Tasks in the swift program. It implements the
-/// algorithm described in g_task_list_tree_common_text.
+static std::optional<std::vector<lldb::addr_t>>
+FindTaskAddrsFromRegistry(ReflectionContextInterface &reflection_ctx,
+                          Process &process) {
+  auto &reader = reflection_ctx.GetReader();
+  auto registry_addr =
+      reader.getSymbolAddress("_swift_concurrency_task_registry");
+  if (!registry_addr)
+    return std::nullopt;
+
+  auto enabled_addr =
+      reader.getSymbolAddress("_swift_concurrency_task_registry_enabled");
+  if (enabled_addr) {
+    uint8_t val = 0;
+    if (!reader.readInteger(enabled_addr, 1, &val) || val == 0)
+      return std::nullopt;
+  }
+
+  auto shard_size_addr =
+      reader.getSymbolAddress("_swift_concurrency_task_registry_shard_size");
+  if (!shard_size_addr)
+    return std::nullopt;
+
+  uint8_t pointer_size = process.GetAddressByteSize();
+  uint64_t shard_size = 0;
+  if (!reader.readInteger(shard_size_addr, pointer_size, &shard_size))
+    return std::nullopt;
+
+  std::vector<lldb::addr_t> task_addrs;
+  const uint32_t task_registry_shard_count = 64;
+  for (uint32_t i = 0; i < task_registry_shard_count; ++i) {
+    auto shard_addr = swift::remote::RemoteAddress(
+        registry_addr.getRawAddress() + (i * shard_size),
+        registry_addr.getAddressSpace());
+
+    uint64_t task_addr = 0;
+    if (!reader.readInteger(shard_addr, pointer_size, &task_addr))
+      continue;
+
+    int32_t nodes = 0;
+    int32_t max_registry_nodes = 10000;
+    while (task_addr && nodes++ < max_registry_nodes) {
+      task_addrs.push_back(task_addr);
+
+      auto task_info_expected = reflection_ctx.asyncTaskInfo(task_addr, 0, 0);
+      if (!task_info_expected) {
+        llvm::consumeError(task_info_expected.takeError());
+        break;
+      }
+
+      task_addr = task_info_expected->registryNext;
+    }
+  }
+  return task_addrs;
+}
+
+static std::vector<lldb::addr_t> FindTaskAddrsFromThreadList(Process &process) {
+  std::vector<lldb::addr_t> task_addrs;
+  auto task_finder = GetTaskFinder(process);
+  for (const ThreadSP &thread : process.GetThreadList().Threads()) {
+    if (!thread)
+      continue;
+    if (std::optional<lldb::addr_t> maybe_task_addr =
+            task_finder->GetTaskAddrForThread(*thread))
+      task_addrs.push_back(*maybe_task_addr);
+  }
+  return task_addrs;
+}
+
+namespace {
+enum class TaskFindingMethod { Threads, TaskRegistry, None };
+} // namespace
+static std::pair<TaskFindingMethod, std::vector<lldb::addr_t>>
+FindTaskAddrs(ReflectionContextInterface &reflection_ctx, Process &process) {
+  if (std::optional<std::vector<lldb::addr_t>> addrs_from_registry =
+          FindTaskAddrsFromRegistry(reflection_ctx, process))
+    return {TaskFindingMethod::TaskRegistry, std::move(*addrs_from_registry)};
+  return {TaskFindingMethod::Threads, FindTaskAddrsFromThreadList(process)};
+}
+
+/// Helper class to find Tasks in the swift program, either by inspecting the
+/// task registry in the concurrency runtime, or by exploring edges in the Task
+/// graph.
 class TaskExplorer {
 public:
   TaskExplorer(ReflectionContextInterface &reflection_ctx, Process &process)
-      : m_reflection_ctx(reflection_ctx) {
-    auto task_finder = GetTaskFinder(process);
+      : m_reflection_ctx(reflection_ctx), m_process(process) {
 
-    for (const ThreadSP &thread : process.GetThreadList().Threads()) {
-      if (!thread)
-        continue;
-      std::optional<lldb::addr_t> maybe_task_addr =
-          task_finder->GetTaskAddrForThread(*thread);
-      if (!maybe_task_addr)
-        continue;
+    auto [method, task_addrs] = FindTaskAddrs(reflection_ctx, process);
+    m_method = method;
+
+    for (lldb::addr_t task_addr : task_addrs) {
       int32_t max_nodes = 1000;
-      ExploreTask(*maybe_task_addr, max_nodes);
+      ExploreTask(task_addr, max_nodes);
     }
   }
+
+  TaskFindingMethod MethodUsed() const { return m_method; }
 
   /// Returns a range containing all root Tasks discovered.
   auto GetRootTasks() const {
@@ -2547,6 +2796,7 @@ public:
 
   /// Returns the TaskInfo for the task in `task_addr`, if it exists.
   const std::optional<TaskInfo> &FindTask(addr_t task_addr) {
+    task_addr = m_process.FixDataAddress(task_addr);
     int32_t max_nodes = 1000;
     ExploreTask(task_addr, max_nodes);
     auto it = m_known_tasks.find(task_addr);
@@ -2556,21 +2806,27 @@ public:
 
   /// Returns the TaskInfo of the task that `task_addr` is waiting on, if any.
   const TaskInfo *GetDependency(addr_t task_addr) const {
+    task_addr = m_process.FixDataAddress(task_addr);
     auto it = m_blocked_by.find(task_addr);
     return it != m_blocked_by.end() ? it->second : nullptr;
   }
 
 private:
   ReflectionContextInterface &m_reflection_ctx;
+  Process &m_process;
+
   std::map<addr_t, std::optional<TaskInfo>> m_known_tasks;
   /// Maps a task address to the TaskInfo it is waiting on. The pointers are
   /// into m_known_tasks values, which is safe because std::map guarantees
   /// pointer stability on insertion.
   llvm::DenseMap<addr_t, TaskInfo *> m_blocked_by;
 
+  TaskFindingMethod m_method = TaskFindingMethod::None;
+
   // Finds all Tasks reachable from the Task represented by `task_addr`.
   // This follows child pointers, parent pointers, "waited by" pointers.
   void ExploreTask(addr_t task_addr, int32_t &max_nodes) {
+    task_addr = m_process.FixDataAddress(task_addr);
     if (m_known_tasks.count(task_addr))
       return;
     if (--max_nodes <= 0) {
@@ -2597,7 +2853,8 @@ private:
     if (it->second->parentTask != 0)
       ExploreTask(it->second->parentTask, max_nodes);
     for (addr_t waited_by_task_addr : it->second->waitingTasks) {
-      m_blocked_by.try_emplace(waited_by_task_addr, &*it->second);
+      m_blocked_by.try_emplace(m_process.FixDataAddress(waited_by_task_addr),
+                               &*it->second);
       ExploreTask(waited_by_task_addr, max_nodes);
     }
   }
@@ -2846,33 +3103,11 @@ private:
   }
 };
 
-static const char g_task_list_tree_common_text[] = R"(
-1. Running on a thread.
-2. A parent or a child of a task from 1,
-3. Waiting on a tasks from 1 or 2.
-
-This process is repeated recursively until no new Tasks are found.
-
-This command fails to discover some tasks created through unstructured concurrency.
-Specifically, consider some such Task T that does not have a parent Task. Task T will not
-be discovered if all of the below are true:
-
-* T is not running on a thread.
-* No descendant of T is running on a thread.
-* Neither T nor a descendant of T is waiting on a Task discovered in steps 1, 2 and 3.
-
-As a corollary, no descendant of T will be discovered either.
-)";
-
 class CommandObjectLanguageSwiftTaskList final : public CommandObjectParsed {
 public:
   CommandObjectLanguageSwiftTaskList(CommandInterpreter &interpreter)
-      : CommandObjectParsed(interpreter, "list",
-                            "List all discovered Swift Tasks.",
-                            "language swift task list") {
-    SetHelpLong("Lists all Swift Tasks that are either: " +
-                std::string(g_task_list_tree_common_text));
-  }
+      : CommandObjectParsed(interpreter, "list", "Lists all Swift Tasks.",
+                            "language swift task list") {}
 
 private:
   void DoExecute(Args &command, CommandReturnObject &result) override {
@@ -2901,6 +3136,10 @@ private:
                [](const auto &t1, const auto &t2) { return t1.id < t2.id; });
 
     Stream &strm = result.GetOutputStream();
+    if (task_explorer.MethodUsed() == TaskFindingMethod::Threads)
+      result.AppendWarning("Task registry was not found in the concurrency "
+                           "runtime. Task list may be incomplete");
+
     for (const TaskInfo &task_info : all_tasks) {
       if (task_info.isComplete)
         continue;
@@ -2945,11 +3184,7 @@ public:
       : CommandObjectParsed(interpreter, "tree",
                             "Prints the Parent-Child task trees of Tasks.",
                             "language swift task tree [--max-frames <count>]"),
-        m_options() {
-    SetHelpLong("Prints all Parent-Child task trees (possibly a forest) of "
-                "Swift Tasks that are either: " +
-                std::string(g_task_list_tree_common_text));
-  }
+        m_options() {}
 
   Options *GetOptions() override { return &m_options; }
 
@@ -2973,6 +3208,9 @@ private:
     }
 
     TaskExplorer task_explorer(**reflection_ctx, m_exe_ctx.GetProcessRef());
+    if (task_explorer.MethodUsed() == TaskFindingMethod::Threads)
+      result.AppendWarning("Task registry was not found in the concurrency "
+                           "runtime. Task list may be incomplete");
 
     // Make a copy of the TaskInfos so that the range may be sorted by Task id.
     llvm::SmallVector<TaskInfo> root_tasks(task_explorer.GetRootTasks());
@@ -3032,6 +3270,20 @@ private:
   CommandOptions m_options;
 };
 
+/// Deduce the mangling flavor from the code the frame is stopped in.
+static swift::Mangle::ManglingFlavor
+GetManglingFlavorForFrame(StackFrame *frame) {
+  if (!frame)
+    return swift::Mangle::ManglingFlavor::Default;
+  // Deliberately not resolving eSymbolContextBlock: for an inlined block
+  // GetFunctionName() returns the demangled inline info name, which carries no
+  // flavor prefix.
+  ConstString name =
+      frame->GetSymbolContext(eSymbolContextFunction | eSymbolContextSymbol)
+          .GetFunctionName(Mangled::ePreferMangled);
+  return SwiftLanguageRuntime::GetManglingFlavor(name.GetStringRef());
+}
+
 class CommandObjectLanguageSwiftTaskInfo final : public CommandObjectParsed {
 public:
   CommandObjectLanguageSwiftTaskInfo(CommandInterpreter &interpreter)
@@ -3089,10 +3341,8 @@ private:
       return;
     }
 
-    // TypeMangling for "Swift.UnsafeCurrentTask"
-    // TODO: figure out if this need to be updated to support embedded swift.
-    CompilerType task_type =
-        ts->GetTypeFromMangledTypename(ConstString("$sSctD"));
+    CompilerType task_type = ts->GetUnsafeCurrentTaskType(
+        GetManglingFlavorForFrame(m_exe_ctx.GetFramePtr()));
     auto task_sp = ValueObject::CreateValueObjectFromAddress(
         task_name, task_addr, m_exe_ctx, task_type, false);
     if (auto synthetic_sp = task_sp->GetSyntheticValue())
@@ -3144,6 +3394,9 @@ public:
                                    interpreter)));
     LoadSubCommand("refcount", CommandObjectSP(new CommandObjectSwift_RefCount(
                                    interpreter)));
+    LoadSubCommand(
+        "healthcheck",
+        CommandObjectSP(new CommandObjectSwift_Healthcheck(interpreter)));
     LoadSubCommand("task", CommandObjectSP(new CommandObjectLanguageSwiftTask(
                                interpreter)));
   }
@@ -3217,14 +3470,15 @@ static llvm::Expected<addr_t> ReadRegisterAsAddress(RegisterContext &regctx,
 /// offset`.
 static llvm::Expected<addr_t> ReadPtrFromAddr(Process &process, addr_t addr,
                                               int offset = 0) {
-  Status error;
-  addr_t ptr = process.ReadPointerFromMemory(addr + offset, error);
-  if (ptr != LLDB_INVALID_ADDRESS)
-    return ptr;
+  llvm::Expected<addr_t> ptr = process.ReadPointerFromMemory(addr + offset);
+  if (ptr && *ptr != LLDB_INVALID_ADDRESS)
+    return *ptr;
+  std::string reason =
+      ptr ? "read an invalid address" : llvm::toString(ptr.takeError());
   return llvm::createStringError("SwiftLanguageRuntime: Failed to read ptr "
                                  "from memory address 0x%8.8" PRIx64
                                  " Error was %s",
-                                 addr + offset, error.AsCString());
+                                 addr + offset, reason.c_str());
 }
 
 /// Computes the Canonical Frame Address (CFA) by converting the abstract
@@ -3417,11 +3671,7 @@ static llvm::Expected<addr_t> ReadAsyncContextRegisterFromUnwind(
 
   addr_t async_reg_addr = process.FixDataAddress(
       *cfa + frame_setup->fp_cfa_offset - process.GetAddressByteSize());
-  Status error;
-  addr_t async_reg = process.ReadPointerFromMemory(async_reg_addr, error);
-  if (error.Fail())
-    return error.ToError();
-  return async_reg;
+  return process.ReadPointerFromMemory(async_reg_addr);
 }
 
 static llvm::Expected<bool>
@@ -3516,10 +3766,18 @@ SwiftLanguageRuntime::GetRuntimeUnwindPlan(ProcessSP process_sp,
   Address pc;
   pc.SetLoadAddress(regctx->GetPC(), &target);
   SymbolContext sc;
-  if (pc.IsValid())
-    if (!pc.CalculateSymbolContext(&sc, eSymbolContextFunction |
-                                            eSymbolContextSymbol))
-      return UnwindPlanSP();
+  behaves_like_zeroth_frame = regctx->GetConcreteFrameIndex() == 0;
+
+  {
+    Address pc_for_lookup = pc;
+    // If a PC is a return address, it may point to a different function.
+    if (!behaves_like_zeroth_frame)
+      pc_for_lookup.Slide(-1);
+    if (pc_for_lookup.IsValid())
+      if (!pc_for_lookup.CalculateSymbolContext(&sc, eSymbolContextFunction |
+                                                         eSymbolContextSymbol))
+        return UnwindPlanSP();
+  }
 
   Address func_start_addr;
   ConstString mangled_name;
@@ -3656,9 +3914,13 @@ std::optional<lldb::addr_t> SwiftLanguageRuntime::TrySkipVirtualParentProlog(
   // Get the PC of the parent frame, i.e. the continuation pointer, which is
   // the second field of the CFA.
   addr_t pc_location = cfa + ptr_size;
-  addr_t pc_value = process.ReadPointerFromMemory(pc_location, error);
-  if (error.Fail())
+  llvm::Expected<addr_t> pc_value_or_err =
+      process.ReadPointerFromMemory(pc_location);
+  if (!pc_value_or_err) {
+    llvm::consumeError(pc_value_or_err.takeError());
     return {};
+  }
+  addr_t pc_value = *pc_value_or_err;
 
   llvm::Expected<uint64_t> maybe_prologue_size =
       FindPrologueSize(process, pc_value);
@@ -3791,9 +4053,8 @@ std::optional<addr_t> CachingTaskFinder::RetryRead(Thread &thread,
   if (!m_tid_to_task_addr_location.erase(tid))
     return std::nullopt;
 
-  LLDB_LOG(GetLog(LLDBLog::OS),
-           "PthreadReservedKeyTaskFinder: evicted task location "
-           "address due to invalid memory read");
+  LLDB_LOG(GetLog(LLDBLog::OS), "CachingTaskFinder: evicted task location "
+                                "address due to invalid memory read");
 
   // The cached address could not be loaded. "This should never happen", but
   // recompute the address and try again for completeness.
@@ -3887,21 +4148,28 @@ private:
   std::optional<lldb::addr_t> m_tls_file_addr;
 };
 
-// The exported current-task thread-local in the Swift concurrency runtime.
-static constexpr llvm::StringLiteral g_cxx_thread_local_task_symbol =
-    "_swift_concurrency_currentTask";
+/// Returns the exported current-task variable in the Swift concurrency runtime.
+static llvm::Expected<Symbol>
+FindCurrentTaskSymbol(Module *concurrency_module) {
+  if (!concurrency_module)
+    return llvm::createStringError(
+        "FindCurrentTaskSymbol given a null concurrency_module");
+  constexpr llvm::StringLiteral symbol_name = "_swift_concurrency_currentTask";
+  const Symbol *symbol = concurrency_module->FindFirstSymbolWithNameAndType(
+      ConstString(symbol_name));
+  if (!symbol)
+    return llvm::createStringErrorV(
+        "TaskFinder: could not find current-task symbol {0}", symbol_name);
+  return *symbol;
+}
 
 CxxThreadLocalTaskFinder::CxxThreadLocalTaskFinder(ModuleSP concurrency_module)
     : m_concurrency_module(std::move(concurrency_module)) {
-  if (!m_concurrency_module)
-    return;
-
-  const Symbol *symbol = m_concurrency_module->FindFirstSymbolWithNameAndType(
-      ConstString(g_cxx_thread_local_task_symbol));
+  llvm::Expected<Symbol> symbol =
+      FindCurrentTaskSymbol(m_concurrency_module.get());
   if (!symbol) {
-    LLDB_LOG(GetLog(LLDBLog::OS),
-             "CxxThreadLocalTaskFinder: could not find current-task symbol {0}",
-             g_cxx_thread_local_task_symbol);
+    LLDB_LOG_ERROR(GetLog(LLDBLog::OS), symbol.takeError(),
+                   "CxxThreadLocalTaskFinder: {0}");
     return;
   }
 
@@ -3910,7 +4178,7 @@ CxxThreadLocalTaskFinder::CxxThreadLocalTaskFinder(ModuleSP concurrency_module)
   if (!section || !section->IsThreadSpecific()) {
     LLDB_LOG(GetLog(LLDBLog::OS),
              "CxxThreadLocalTaskFinder: symbol {0} is not thread-local",
-             g_cxx_thread_local_task_symbol);
+             symbol->GetName());
     return;
   }
 
@@ -3930,6 +4198,78 @@ CxxThreadLocalTaskFinder::ComputeTaskAddrLocation(Thread &real_thread) {
         "could not resolve thread-local storage for the current task");
   return location;
 }
+
+/// A TaskFinder for the case where there is a single, unchanging location for
+/// the currently executing task pointer.
+struct SingleLocationTaskFinder : CachingTaskFinder {
+  explicit SingleLocationTaskFinder(addr_t task_ptr_location)
+      : task_ptr_location(task_ptr_location) {
+    LLDB_LOG(GetLog(LLDBLog::OS),
+             "SingleLocationTaskFinder: task_loc_addr = {0:x}",
+             task_ptr_location);
+  }
+
+  llvm::SmallVector<std::optional<lldb::addr_t>>
+  GetTaskAddrForThread(llvm::ArrayRef<Thread *> threads) override {
+    // Multiple threads don't make sense in this storage kind.
+    if (threads.size() > 1)
+      return llvm::SmallVector<std::optional<addr_t>>(threads.size(),
+                                                      std::nullopt);
+    return CachingTaskFinder::GetTaskAddrForThread(threads);
+  }
+
+  llvm::Expected<lldb::addr_t> ComputeTaskAddrLocation(Thread &) override {
+    if (task_ptr_location == LLDB_INVALID_ADDRESS)
+      return llvm::createStringError(
+          "could not locate the current-task pointer");
+    return task_ptr_location;
+  }
+
+private:
+  addr_t task_ptr_location;
+};
+
+struct GlobalVarTaskFinder : SingleLocationTaskFinder {
+  GlobalVarTaskFinder(ModuleSP concurrency_module, Process &process)
+      : SingleLocationTaskFinder(
+            GetGlobalVarLoadAddr(concurrency_module, process)) {}
+
+private:
+  static addr_t GetGlobalVarLoadAddr(ModuleSP concurrency_module,
+                                     Process &process) {
+    llvm::Expected<Symbol> task_sym =
+        FindCurrentTaskSymbol(concurrency_module.get());
+    if (task_sym)
+      return task_sym->GetLoadAddress(&process.GetTarget());
+    LLDB_LOG_ERROR(GetLog(LLDBLog::OS), task_sym.takeError(),
+                   "GlobalVarTaskFinder: {0}");
+    return LLDB_INVALID_ADDRESS;
+  }
+};
+
+/// Returns the address of the slot of the global array holding the current
+/// task.
+static std::optional<addr_t> FindTaskTLSSlotAddr(Process &process) {
+  // See SWIFT_CONCURRENCY_CURRENT_TASK_STORAGE_KIND_GLOBAL_TLS_ARRAY in
+  // swift/Runtime/ConcurrencyDebug.h.
+  constexpr uint64_t concurrency_task_tls_key = 3;
+
+  if (std::optional<addr_t> addr = FindSymbolLoadAddress(
+          process.GetTarget(), "_swift_concurrency_debug_global_tls_array"))
+    return *addr + concurrency_task_tls_key * process.GetAddressByteSize();
+
+  LLDB_LOG(GetLog(LLDBLog::OS),
+           "GlobalTLSArrayTaskFinder: could not find TLS array symbol");
+  return {};
+}
+
+/// Finds tasks on runtimes whose platform library backs the whole of
+/// thread-local storage with one global array of slots.
+struct GlobalTLSArrayTaskFinder : SingleLocationTaskFinder {
+  GlobalTLSArrayTaskFinder(Process &process)
+      : SingleLocationTaskFinder(
+            FindTaskTLSSlotAddr(process).value_or(LLDB_INVALID_ADDRESS)) {}
+};
 
 /// Lightweight wrapper around TaskStatusRecord pointers, providing:
 ///   * traversal over the embedded linnked list of status records
@@ -3971,13 +4311,15 @@ struct TaskStatusRecord {
       return {};
 
     const offset_t taskNameByteOffset = TaskNamePointerOffset * addr_size;
-    addr_t name_addr =
-        process.ReadPointerFromMemory(addr + taskNameByteOffset, status);
-    if (!status.Success())
+    llvm::Expected<addr_t> name_addr =
+        process.ReadPointerFromMemory(addr + taskNameByteOffset);
+    if (!name_addr) {
+      status = Status::FromError(name_addr.takeError());
       return {};
+    }
 
     std::string name;
-    process.ReadCStringFromMemory(name_addr, name, status);
+    process.ReadCStringFromMemory(*name_addr, name, status);
     if (status.Success())
       return name;
 
@@ -3987,8 +4329,13 @@ struct TaskStatusRecord {
   addr_t getParent(Status &status) {
     const offset_t parentByteOffset = ParentPointerOffset * addr_size;
     addr_t parent = LLDB_INVALID_ADDRESS;
-    if (*this && status.Success())
-      parent = process.ReadPointerFromMemory(addr + parentByteOffset, status);
+    if (*this && status.Success()) {
+      if (llvm::Expected<addr_t> parent_or_err =
+              process.ReadPointerFromMemory(addr + parentByteOffset))
+        parent = *parent_or_err;
+      else
+        status = Status::FromError(parent_or_err.takeError());
+    }
     return parent;
   }
 };
@@ -4009,9 +4356,14 @@ struct Task {
     const offset_t activeTaskStatusRecordByteOffset =
         ActiveTaskStatusRecordPointerOffset * process.GetAddressByteSize();
     addr_t status_record = LLDB_INVALID_ADDRESS;
-    if (status.Success())
-      status_record = process.ReadPointerFromMemory(
-          addr + activeTaskStatusRecordByteOffset, status);
+    if (status.Success()) {
+      if (llvm::Expected<addr_t> status_record_or_err =
+              process.ReadPointerFromMemory(addr +
+                                            activeTaskStatusRecordByteOffset))
+        status_record = *status_record_or_err;
+      else
+        status = Status::FromError(status_record_or_err.takeError());
+    }
     return {process, status_record};
   }
 };
@@ -4035,10 +4387,14 @@ llvm::Expected<JobFlags> GetAsyncJobFlags(Process &process,
   return JobFlags{static_cast<uint32_t>(bits)};
 }
 
-lldb::offset_t GetChildFragmentOffset(Process &process, JobFlags flags) {
-  offset_t offset = AsyncTaskSize;
+llvm::Expected<lldb::offset_t> GetChildFragmentOffset(Process &process,
+                                                      JobFlags flags) {
+  llvm::Expected<offset_t> offset =
+      SwiftLanguageRuntime::FindAsyncTaskSize(process);
+  if (!offset)
+    return offset.takeError();
   if (flags.hasInitialTaskName())
-    offset += NameFragmentSize(process);
+    *offset += NameFragmentSize(process);
   return offset;
 }
 
@@ -4052,7 +4408,7 @@ llvm::Expected<lldb::offset_t> GetChildFragmentOffset(Process &process,
 
 /// Reads the task name out of the tail-allocated `AsyncTask::NameFragment` if
 /// available. Implementation for Concurrency Debug Version 2+
-llvm::Expected<std::optional<std::string>>
+static llvm::Expected<std::optional<std::string>>
 GetTaskNameFromFragment(Process &process, lldb::addr_t task_addr) {
   auto offset_or_err = SwiftLanguageRuntime::FindAsyncTaskNameOffset(process);
   if (!offset_or_err)
@@ -4099,7 +4455,7 @@ GetTaskNameFromFragment(Process &process, lldb::addr_t task_addr) {
 }
 
 /// Legacy implementation for Concurrency Debug Version 1.
-llvm::Expected<std::optional<std::string>>
+static llvm::Expected<std::optional<std::string>>
 GetTaskNameFromRecord(Process &process, lldb::addr_t task_addr) {
   Status status;
   Task task{process, task_addr};
@@ -4169,7 +4525,8 @@ llvm::Expected<uint64_t> FindPrologueSize(Process &process,
 using CurrentTaskStorageKind = SwiftLanguageRuntime::CurrentTaskStorageKind;
 
 std::unique_ptr<TaskFinder>
-GetTaskFinder(const SwiftLanguageRuntime::ConcurrencyInfo &info) {
+GetTaskFinder(Process &process,
+              const SwiftLanguageRuntime::ConcurrencyInfo &info) {
   if (!info.task_storage_kind)
     return std::make_unique<NoTaskFinder>();
   switch (*info.task_storage_kind) {
@@ -4177,8 +4534,12 @@ GetTaskFinder(const SwiftLanguageRuntime::ConcurrencyInfo &info) {
     return std::make_unique<PthreadReservedKeyTaskFinder>();
   case CurrentTaskStorageKind::cxx_thread_local:
     return std::make_unique<CxxThreadLocalTaskFinder>(info.concurrency_module);
-  case CurrentTaskStorageKind::pthread_allocated_key:
   case CurrentTaskStorageKind::global:
+    return std::make_unique<GlobalVarTaskFinder>(info.concurrency_module,
+                                                 process);
+  case CurrentTaskStorageKind::global_tls_array:
+    return std::make_unique<GlobalTLSArrayTaskFinder>(process);
+  case CurrentTaskStorageKind::pthread_allocated_key:
   case CurrentTaskStorageKind::last:
     break;
   }
@@ -4186,6 +4547,7 @@ GetTaskFinder(const SwiftLanguageRuntime::ConcurrencyInfo &info) {
 }
 
 std::unique_ptr<TaskFinder> GetTaskFinder(Process &process) {
-  return GetTaskFinder(SwiftLanguageRuntime::FindConcurrencyInfo(process));
+  return GetTaskFinder(process,
+                       SwiftLanguageRuntime::FindConcurrencyInfo(process));
 }
 } // namespace lldb_private

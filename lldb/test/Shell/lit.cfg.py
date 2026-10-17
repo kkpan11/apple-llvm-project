@@ -14,6 +14,7 @@ from lit.llvm import llvm_config
 from lit.llvm.subst import FindTool
 from lit.llvm.subst import ToolSubst
 
+sys.path.append(os.path.join(config.lldb_src_root, "test"))
 site.addsitedir(os.path.dirname(__file__))
 from helper import toolchain
 
@@ -48,21 +49,26 @@ llvm_config.with_system_environment(
     ]
 )
 
+# Enable sanitizer runtime flags.
 if config.llvm_use_sanitizer:
+    config.environment["ASAN_OPTIONS"] = "detect_stack_use_after_return=1"
     # Begin Swift mod.
     # Swift's libReflection builds without ASAN, which causes a known
     # false positive in std::vector. We also want to support testing a sanitized
     # lldb using unsanitized llvm, clang, and swift libraries.
-    config.environment[
-        "ASAN_OPTIONS"
-    ] = "detect_container_overflow=0:detect_stack_use_after_return=1"
+    config.environment["ASAN_OPTIONS"] += ":detect_container_overflow=0"
     # FIXME: This is the wrong place to disable this. This is working
     # around the fact that the ci.swift.org scripts build only LLDB with
     # asan and this creates an ODR violation in Allocator.h that breaks
     # poisoning.
-    config.environment['ASAN_OPTIONS'] += ':' + 'allow_user_poisoning=0'
+    config.environment["ASAN_OPTIONS"] += ":allow_user_poisoning=0"
     # End Swift mod.
-    config.environment["TSAN_OPTIONS"] = "halt_on_error=1"
+    tsan_suppressions = os.path.join(
+        os.path.dirname(config.test_source_root), "tsan-suppressions.txt"
+    )
+    config.environment["TSAN_OPTIONS"] = (
+        "halt_on_error=1:suppressions=" + tsan_suppressions
+    )
     config.environment["MallocNanoZone"] = "0"
 
 if config.lldb_platform_url and config.cmake_sysroot and config.enable_remote:
@@ -159,9 +165,6 @@ if config.lldb_enable_lua:
 if config.lldb_enable_swift:
     config.available_features.add('swift')
 
-if config.lldb_enable_lzma:
-    config.available_features.add("lzma")
-
 if shutil.which("xz") is not None:
     config.available_features.add("xz")
 
@@ -193,6 +196,26 @@ if platform.system() == "Windows":
     # escape sequences into the output stream, which breaks tests that check
     # for specific stdout/stderr content.
     config.environment["LLDB_LAUNCH_FLAG_USE_PIPES"] = "1"
+
+    # Windows has no rpath: shell-test inferiors must resolve the swiftCore
+    # they were linked against (the one in the lldb shared-library dir) first,
+    # or picking up the distribution runtime under Runtimes/ instead crashes
+    # them with STATUS_ENTRYPOINT_NOT_FOUND. %lldb itself doesn't need this:
+    # it's the distribution toolchain lldb (see helper/toolchain.py), which
+    # binds its own runtime via side-by-side assemblies.
+    win_paths = []
+    if config.llvm_shlib_dir:
+        win_paths.append(config.llvm_shlib_dir)
+    runtime_bin = getattr(config, "test_inferior_runtime_bin", "") or ""
+    if not runtime_bin:
+        sysroot = getattr(config, "cmake_sysroot", "") or ""
+        if sysroot:
+            runtime_bin = os.path.join(sysroot, "usr", "bin")
+    if runtime_bin and os.path.isdir(runtime_bin):
+        win_paths.append(runtime_bin)
+    if win_paths:
+        win_paths.append(config.environment.get("PATH", ""))
+        config.environment["PATH"] = os.path.pathsep.join(win_paths)
 
 # NetBSD permits setting dbregs either if one is root
 # or if user_set_dbregs is enabled
@@ -230,6 +253,13 @@ if platform.system() == "Darwin":
             config.available_features.add("ld_new-bug")
     except:
         pass
+
+    # Prevent tests from accidentally invoking the real dsymForUUID, which can
+    # make slow network requests. Tests that need a working dsymForUUID mock
+    # should override this.
+    config.environment["LLDB_APPLE_DSYMFORUUID_EXECUTABLE"] = os.path.join(
+        os.path.dirname(config.test_source_root), "Utils", "fake-dsymForUUID.sh"
+    )
 
 # Some shell tests dynamically link with python.dll and need to know the
 # location of the Python libraries. This ensures that we use the same
