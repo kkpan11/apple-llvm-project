@@ -539,8 +539,21 @@ void ASTStmtReader::VisitCapturedStmt(CapturedStmt *S) {
 }
 
 void ASTStmtReader::VisitCXXReflectExpr(CXXReflectExpr *E) {
-  // TODO(Reflection): Implement this.
-  assert(false && "not implemented yet");
+  // TODO(Reflection): add support for TemplateReference, NamespaceReference and
+  // DeclRefExpr
+  VisitExpr(E);
+  E->CaretCaretLoc = readSourceLocation();
+  E->Kind = static_cast<ReflectionKind>(Record.readInt());
+  switch (E->Kind) {
+  case ReflectionKind::Null:
+    assert(false && "null reflection can't be constructed from parsing a "
+                    "reflection operand");
+    E->Operand = nullptr;
+    break;
+  case ReflectionKind::Type:
+    E->Operand = Record.readTypeSourceInfo();
+    break;
+  }
 }
 
 void ASTStmtReader::VisitSYCLKernelCallStmt(SYCLKernelCallStmt *S) {
@@ -939,7 +952,7 @@ void ASTStmtReader::VisitRequiresExpr(RequiresExpr *E) {
               break;
           }
         }
-        if (Expr *Ex = E.dyn_cast<Expr *>())
+        if (Expr *Ex = dyn_cast<Expr *>(E))
           R = new (Record.getContext()) concepts::ExprRequirement(
                   Ex, RK == concepts::Requirement::RK_Simple, NoexceptLoc,
                   std::move(*Req), Status, SubstitutedConstraintExpr);
@@ -1801,6 +1814,7 @@ void ASTStmtReader::VisitObjCAvailabilityCheckExpr(ObjCAvailabilityCheckExpr *E)
     assert(DomainNameLength == DomainName.size());
     (void)DomainNameLength;
     strcpy(E->getTrailingObjects(), DomainName.data());
+    E->DomainLoc = readSourceLocation();
   }
 }
 
@@ -2727,6 +2741,10 @@ void ASTStmtReader::VisitOMPCanonicalLoopSequenceTransformationDirective(
 }
 
 void ASTStmtReader::VisitOMPInterchangeDirective(OMPInterchangeDirective *D) {
+  VisitOMPCanonicalLoopNestTransformationDirective(D);
+}
+
+void ASTStmtReader::VisitOMPFlattenDirective(OMPFlattenDirective *D) {
   VisitOMPCanonicalLoopNestTransformationDirective(D);
 }
 
@@ -3930,6 +3948,13 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
       unsigned NumLoops = Record[ASTStmtReader::NumStmtFields];
       unsigned NumClauses = Record[ASTStmtReader::NumStmtFields + 1];
       S = OMPInterchangeDirective::CreateEmpty(Context, NumClauses, NumLoops);
+      break;
+    }
+
+    case STMT_OMP_FLATTEN_DIRECTIVE: {
+      unsigned NumLoops = Record[ASTStmtReader::NumStmtFields];
+      unsigned NumClauses = Record[ASTStmtReader::NumStmtFields + 1];
+      S = OMPFlattenDirective::CreateEmpty(Context, NumClauses, NumLoops);
       break;
     }
 

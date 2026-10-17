@@ -35,6 +35,7 @@
 // END SWIFT
 
 #include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -121,7 +122,6 @@ Mangled::operator bool() const { return m_mangled || m_demangled; }
 void Mangled::Clear() {
   m_mangled.Clear();
   m_demangled.Clear();
-  m_demangled_info.reset();
 }
 
 // Compare the string values.
@@ -135,16 +135,13 @@ void Mangled::SetValue(ConstString name) {
     if (IsMangledName(name.GetStringRef())) {
       m_demangled.Clear();
       m_mangled = name;
-      m_demangled_info.reset();
     } else {
       m_demangled = name;
       m_mangled.Clear();
-      m_demangled_info.reset();
     }
   } else {
     m_demangled.Clear();
     m_mangled.Clear();
-    m_demangled_info.reset();
   }
 }
 
@@ -152,27 +149,15 @@ void Mangled::SetValue(ConstString name) {
 #ifdef LLDB_ENABLE_SWIFT
 std::pair<ConstString, DemangledNameInfo>
 GetSwiftDemangledStr(ConstString m_mangled, const SymbolContext *sc,
-                     ConstString &m_demangled,
-                     Mangled::NameFormatPreference preference) {
+                     ConstString &m_demangled) {
   const char *mangled_name = m_mangled.AsCString("");
   Log *log = GetLog(LLDBLog::Demangle);
   LLDB_LOGF(log, "demangle swift: %s", mangled_name);
-  SwiftLanguageRuntime::DemangleMode demangle_mode;
-  switch (preference) {
-  case Mangled::eFullName:
-    demangle_mode = SwiftLanguageRuntime::DemangleMode::eTypeName;
-    break;
-  case Mangled::eCompactName:
-    demangle_mode = SwiftLanguageRuntime::DemangleMode::eSimplified;
-    break;
-  }
   auto [demangled, info] = SwiftLanguageRuntime::TrackedDemangleSymbolAsString(
-      mangled_name, demangle_mode, sc);
+      mangled_name, SwiftLanguageRuntime::eTypeName, sc);
 
   // Don't cache the demangled name if the function isn't available yet.
-  // Only cache eFullName demangled functions to keep the cache consistent.
-  if (!sc || !sc->function ||
-      preference == Mangled::NameFormatPreference::eCompactName) {
+  if (!sc || !sc->function) {
     LLDB_LOGF(log, "demangle swift: %s -> \"%s\" (not cached)", mangled_name,
               demangled.c_str());
     return std::make_pair(ConstString(demangled), info);
@@ -332,37 +317,22 @@ bool Mangled::GetRichManglingInfo(RichManglingContext &context,
   llvm_unreachable("Fully covered switch above!");
 }
 
-ConstString Mangled::GetDemangledName( // BEGIN SWIFT
-    const SymbolContext *sc, NameFormatPreference preference
-    // END SWIFT
-) const {
-  return GetDemangledNameImpl(/*force=*/false, sc, preference);
-}
-
-const DemangledNameInfo *Mangled::GetDemangledInfo() const {
-  if (!m_demangled_info)
-    GetDemangledNameImpl(/*force=*/true);
-  return m_demangled_info.get();
-}
-
 // Generate the demangled name on demand using this accessor. Code in this
 // class will need to use this accessor if it wishes to decode the demangled
 // name. The result is cached and will be kept until a new string value is
 // supplied to this object, or until the end of the object's lifetime.
-ConstString Mangled::GetDemangledNameImpl(bool force, // BEGIN SWIFT
-                                          const SymbolContext *sc,
-                                          NameFormatPreference preference
-                                          // END SWIFT
+ConstString Mangled::GetDemangledName( // BEGIN SWIFT
+    const SymbolContext *sc
+    // END SWIFT
 ) const {
   if (!m_mangled)
     return m_demangled;
 
   // Re-use previously demangled names.
-  if (!force && !m_demangled.IsNull())
+  if (!m_demangled.IsNull())
     return m_demangled;
 
-  if (!force && m_mangled.GetMangledCounterpart(m_demangled) &&
-      !m_demangled.IsNull())
+  if (m_mangled.GetMangledCounterpart(m_demangled) && !m_demangled.IsNull())
     return m_demangled;
 
   // We didn't already mangle this name, demangle it and if all goes well
@@ -372,14 +342,9 @@ ConstString Mangled::GetDemangledNameImpl(bool force, // BEGIN SWIFT
   case eManglingSchemeMSVC:
     demangled_name = GetMSVCDemangledStr(m_mangled);
     break;
-  case eManglingSchemeItanium: {
-    std::pair<char *, DemangledNameInfo> demangled =
-        GetItaniumDemangledStr(m_mangled.GetCString());
-    demangled_name = demangled.first;
-    m_demangled_info =
-        std::make_unique<DemangledNameInfo>(std::move(demangled.second));
+  case eManglingSchemeItanium:
+    demangled_name = GetItaniumDemangledStr(m_mangled.GetCString()).first;
     break;
-  }
   case eManglingSchemeRustV0:
     demangled_name = GetRustV0DemangledStr(m_mangled);
     break;
@@ -391,10 +356,7 @@ ConstString Mangled::GetDemangledNameImpl(bool force, // BEGIN SWIFT
     // explicitly unsupported on llvm.org.
 #ifdef LLDB_ENABLE_SWIFT
   {
-    auto demangled =
-        GetSwiftDemangledStr(m_mangled, sc, m_demangled, preference);
-    m_demangled_info =
-        std::make_unique<DemangledNameInfo>(std::move(demangled.second));
+    auto demangled = GetSwiftDemangledStr(m_mangled, sc, m_demangled);
     return demangled.first;
   }
 #endif // LLDB_ENABLE_SWIFT
@@ -416,6 +378,28 @@ ConstString Mangled::GetDemangledNameImpl(bool force, // BEGIN SWIFT
   }
 
   return m_demangled;
+}
+
+std::optional<DemangledNameInfo> Mangled::ComputeDemangledInfo() const {
+  // BEGIN SWIFT
+#ifdef LLDB_ENABLE_SWIFT
+  if (m_mangled &&
+      GetManglingScheme(m_mangled.GetStringRef()) == eManglingSchemeSwift)
+    return SwiftLanguageRuntime::TrackedDemangleSymbolAsString(
+               m_mangled.GetStringRef(), SwiftLanguageRuntime::eTypeName)
+        .second;
+#endif // LLDB_ENABLE_SWIFT
+  // END SWIFT
+
+  // Only supported for itanium.
+  if (!m_mangled ||
+      GetManglingScheme(m_mangled.GetStringRef()) != eManglingSchemeItanium)
+    return std::nullopt;
+
+  std::pair<char *, DemangledNameInfo> demangled =
+      GetItaniumDemangledStr(m_mangled.GetCString());
+  free(demangled.first);
+  return std::move(demangled.second);
 }
 
 ConstString Mangled::GetDisplayDemangledName(
@@ -551,7 +535,6 @@ bool Mangled::Decode(const DataExtractor &data, lldb::offset_t *offset_ptr,
                      const StringTableReader &strtab) {
   m_mangled.Clear();
   m_demangled.Clear();
-  m_demangled_info.reset();
   MangledEncoding encoding = (MangledEncoding)data.GetU8(offset_ptr);
   switch (encoding) {
     case Empty:
@@ -578,7 +561,7 @@ bool Mangled::Decode(const DataExtractor &data, lldb::offset_t *offset_ptr,
 /// char str1[]; (only if DemangledOnly, MangledOnly)
 /// char str2[]; (only if MangledAndDemangled)
 ///
-/// The strings are stored as NULL terminated UTF8 strings and str1 and str2
+/// The strings are stored as null-terminated UTF8 strings and str1 and str2
 /// are only saved if we need them based on the encoding.
 ///
 /// Some mangled names have a mangled name that can be demangled by the built
@@ -631,8 +614,8 @@ void Mangled::Encode(DataEncoder &file, ConstStringTable &strtab) const {
 }
 
 ConstString Mangled::GetBaseName() const {
-  const auto *demangled_info = GetDemangledInfo();
-  if (demangled_info == nullptr)
+  std::optional<DemangledNameInfo> demangled_info = ComputeDemangledInfo();
+  if (!demangled_info)
     return {};
 
   ConstString demangled_name = GetDemangledName();

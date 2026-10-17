@@ -578,6 +578,42 @@ llvm::StringRef Debugger::GetShowProgressAnsiSuffix() const {
       idx, g_debugger_properties[idx].default_cstr_value);
 }
 
+llvm::StringRef Debugger::GetLabelAnsiPrefix() const {
+  const uint32_t idx = ePropertyLabelAnsiPrefix;
+  return GetPropertyAtIndexAs<llvm::StringRef>(
+      idx, g_debugger_properties[idx].default_cstr_value);
+}
+
+llvm::StringRef Debugger::GetLabelAnsiSuffix() const {
+  const uint32_t idx = ePropertyLabelAnsiSuffix;
+  return GetPropertyAtIndexAs<llvm::StringRef>(
+      idx, g_debugger_properties[idx].default_cstr_value);
+}
+
+llvm::StringRef Debugger::GetTitleAnsiPrefix() const {
+  const uint32_t idx = ePropertyTitleAnsiPrefix;
+  return GetPropertyAtIndexAs<llvm::StringRef>(
+      idx, g_debugger_properties[idx].default_cstr_value);
+}
+
+llvm::StringRef Debugger::GetTitleAnsiSuffix() const {
+  const uint32_t idx = ePropertyTitleAnsiSuffix;
+  return GetPropertyAtIndexAs<llvm::StringRef>(
+      idx, g_debugger_properties[idx].default_cstr_value);
+}
+
+llvm::StringRef Debugger::GetDividerAnsiPrefix() const {
+  const uint32_t idx = ePropertyDividerAnsiPrefix;
+  return GetPropertyAtIndexAs<llvm::StringRef>(
+      idx, g_debugger_properties[idx].default_cstr_value);
+}
+
+llvm::StringRef Debugger::GetDividerAnsiSuffix() const {
+  const uint32_t idx = ePropertyDividerAnsiSuffix;
+  return GetPropertyAtIndexAs<llvm::StringRef>(
+      idx, g_debugger_properties[idx].default_cstr_value);
+}
+
 bool Debugger::GetShowStatusline() const {
   const uint32_t idx = ePropertyShowStatusline;
   return GetPropertyAtIndexAs<bool>(
@@ -1001,6 +1037,12 @@ void Debugger::Destroy(DebuggerSP &debugger_sp) {
 
   debugger_sp->Clear();
 
+  // BEGIN CAS
+  // The targets are gone, so let go of the CAS databases this session opened
+  // and stop holding their on-disk storage locked against pruning.
+  ModuleList::ReleaseCASObjectStores();
+  // END CAS
+
   std::lock_guard<std::mutex> guard(GetDebuggerListMutex());
   if (g_debugger_list_ptr) {
     DebuggerList::iterator pos, end = g_debugger_list_ptr->end();
@@ -1283,20 +1325,16 @@ void Debugger::RedrawStatusline(
     std::optional<ExecutionContextRef> exe_ctx_ref) {
   std::lock_guard<std::mutex> guard(m_statusline_mutex);
 
+  const bool flush = m_flush_statusline.exchange(false);
   if (!m_statusline)
     return;
 
+  if (flush)
+    m_statusline->ClearExecutionContext();
   m_statusline->Redraw(exe_ctx_ref);
 }
 
-void Debugger::FlushStatusLine() {
-  std::lock_guard<std::mutex> guard(m_statusline_mutex);
-
-  if (!m_statusline)
-    return;
-
-  m_statusline->ClearExecutionContext();
-}
+void Debugger::FlushStatusLine() { m_flush_statusline = true; }
 
 ExecutionContext
 Debugger::GetSelectedExecutionContext(bool adopt_dummy_target) {
@@ -2674,7 +2712,7 @@ StructuredData::DictionarySP Debugger::GetBuildConfiguration() {
       *config_up, "zlib", LLVM_ENABLE_ZLIB,
       "A boolean value that indicates if zlib support is enabled in LLDB");
   AddBoolConfigEntry(
-      *config_up, "lzma", LLDB_ENABLE_LZMA,
+      *config_up, "lzma", LLVM_ENABLE_LZMA,
       "A boolean value that indicates if lzma support is enabled in LLDB");
   AddBoolConfigEntry(
       *config_up, "python", LLDB_ENABLE_PYTHON,

@@ -81,14 +81,6 @@ public:
   void GetRunnableInfo(Status &error, lldb::addr_t &func_addr,
                        lldb::addr_t &func_end);
 
-  /// Accessors for IRForTarget and other clients that may want binary data
-  /// placed on their behalf.  The binary data is owned by the IRExecutionUnit
-  /// unless the client explicitly chooses to free it.
-
-  lldb::addr_t WriteNow(const uint8_t *bytes, size_t size, Status &error);
-
-  void FreeNow(lldb::addr_t allocation);
-
   /// ObjectFileJITDelegate overrides
   lldb::ByteOrder GetByteOrder() const override;
 
@@ -176,6 +168,13 @@ public:
       if (ctx.module_sp)
         m_preferred_modules.Append(ctx.module_sp);
   }
+
+  // BEGIN SWIFT
+  /// Mark the module as compiled for Embedded Swift.
+  void SetIsEmbeddedSwift(bool is_embedded_swift) {
+    m_is_embedded_swift = is_embedded_swift;
+  }
+  // END SWIFT
 
 private:
   /// Look up the object in m_address_map that contains a given address, find
@@ -402,6 +401,7 @@ private:
   std::atomic<bool> m_did_jit;
   // BEGIN SWIFT
   std::atomic<bool> m_in_populate_symtab = false;
+  bool m_is_embedded_swift = false;
   // END SWIFT
 
   lldb::addr_t m_function_load_addr;
