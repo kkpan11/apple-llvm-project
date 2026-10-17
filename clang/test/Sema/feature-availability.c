@@ -572,3 +572,25 @@ void test_fixit1(void) {
   int i2 = i1;
   (void)i2;
 }
+
+// A domain availability check can only be used as the condition of an 'if'
+// statement.
+int g_domain_check = __builtin_available(domain:feature1);
+// expected-error@-1 {{__builtin_available with a domain can only be used as the condition of an 'if' statement}}
+
+int test_domain_check_not_condition(int x) {
+  int b = __builtin_available(domain:feature1);
+  // expected-error@-1 {{__builtin_available with a domain can only be used as the condition of an 'if' statement}}
+  int c = __builtin_available(domain:feature1) ? 1 : 2;
+  // expected-error@-1 {{__builtin_available with a domain can only be used as the condition of an 'if' statement}}
+  if (x && __builtin_available(domain:feature1))
+    // expected-error@-1 {{__builtin_available with a domain can only be used as the condition of an 'if' statement}}
+    return 1;
+  if (!__builtin_available(domain:feature1))
+    return 2;
+  void (^blk)(void) = ^{
+    if (__builtin_available(domain:feature1))
+      return;
+  };
+  return b + c;
+}

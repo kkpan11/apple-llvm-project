@@ -4357,6 +4357,9 @@ def warn_unguarded_availability :
   InGroup<UnguardedAvailability>, DefaultIgnore;
 def err_unguarded_feature : Error<
   "cannot use %0 because feature '%1' is %select{unavailable|available}2 in this context">;
+def err_availability_domain_check_not_condition : Error<
+  "%select{@available|__builtin_available}0 with a domain can only be used "
+  "as the condition of an 'if' statement">;
 def err_label_in_conditionally_guarded_feature : Error<
   "labels cannot appear in regions conditionally guarded by features">;
 def err_features_invalid_for_decl : Error<

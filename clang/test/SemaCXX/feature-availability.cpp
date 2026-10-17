@@ -360,11 +360,13 @@ int gBlock_unguarded = ^int(void) {
 // if constexpr does not currently guard feature availability; only regular if
 // does. This may be revisited in the future.
 void test_if_constexpr() {
+  // expected-error@+1 {{__builtin_available with a domain can only be used as the condition of an 'if' statement}}
   if constexpr (__builtin_available(domain:feature1))
     free_func();
     // expected-error@-1 {{cannot use 'free_func' because feature 'feature1' is unavailable in this context}}
     // expected-note@-2 {{enclose 'free_func' in a __builtin_available check}}
 
+  // expected-error@+1 {{__builtin_available with a domain can only be used as the condition of an 'if' statement}}
   if constexpr (__builtin_available(domain:feature2))
     free_func();
     // expected-error@-1 {{cannot use 'free_func' because feature 'feature1' is unavailable in this context}}
@@ -639,3 +641,33 @@ void test_sized_template() {
   if (__builtin_available(domain:feature1))
     sized_template(Annotated{});
 }
+
+// A domain availability check can only be used as the condition of an 'if'
+// statement.
+namespace domain_check_not_condition {
+bool g = __builtin_available(domain:feature1);
+// expected-error@-1 {{__builtin_available with a domain can only be used as the condition of an 'if' statement}}
+
+struct S {
+  bool b = __builtin_available(domain:feature1);
+  // expected-error@-1 {{__builtin_available with a domain can only be used as the condition of an 'if' statement}}
+  bool c = [] {
+    if (__builtin_available(domain:feature1))
+      return true;
+    return false;
+  }();
+};
+
+bool test_value() {
+  bool b = __builtin_available(domain:feature1);
+  // expected-error@-1 {{__builtin_available with a domain can only be used as the condition of an 'if' statement}}
+  bool c = __builtin_available(domain:feature1) ? true : false;
+  // expected-error@-1 {{__builtin_available with a domain can only be used as the condition of an 'if' statement}}
+  if (!__builtin_available(domain:feature1))
+    return false;
+  // expected-error@+1 {{__builtin_available with a domain can only be used as the condition of an 'if' statement}}
+  if constexpr (__builtin_available(domain:feature1))
+    return b && c;
+  return true;
+}
+} // namespace domain_check_not_condition
