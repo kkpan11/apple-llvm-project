@@ -55,7 +55,7 @@ if config.target_os == "Darwin":
     default_tool_options += ["abort_on_error=0"]
     if config.tool_name == "tsan":
         default_tool_options += ["ignore_interceptors_accesses=0"]
-elif config.host_os == "Linux" and config.tool_name == "tsan":
+elif config.target_os == "Linux" and config.tool_name == "tsan":
     # For Swift, the above also applies on Linux.
     default_tool_options += ["ignore_interceptors_accesses=0"]
 elif config.android:
@@ -103,7 +103,7 @@ if not config.parallelism_group:
 
 # Disable LSan sanitizer_common tests
 # because AppleClang doesn't support LSan.
-if config.tool_name == "lsan" and config.host_os == "Darwin":
+if config.tool_name == "lsan" and config.target_os == "Darwin":
   lit_config.note("LSan sanitizer_common tests disabled")
   config.unsupported = True
 

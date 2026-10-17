@@ -16,7 +16,6 @@ import lldb
 from lldbsuite.test.lldbtest import *
 from lldbsuite.test.decorators import *
 import lldbsuite.test.lldbutil as lldbutil
-import os
 
 
 class TestSwiftOneCaseEnum(TestBase):
@@ -34,26 +33,8 @@ class TestSwiftOneCaseEnum(TestBase):
 
     def do_test(self):
         """Test that an enum with only one case does not crash LLDB"""
-        exe_name = "a.out"
-        exe = self.getBuildArtifact(exe_name)
-
-        # Create the target
-        target = self.dbg.CreateTarget(exe)
-        self.assertTrue(target, VALID_TARGET)
-
-        # Set the breakpoints
-        breakpoint = target.BreakpointCreateBySourceRegex(
-            'Set breakpoint here', self.main_source_spec)
-        self.assertTrue(breakpoint.GetNumLocations() > 0, VALID_BREAKPOINT)
-
-        # Launch the process, and do not stop at the entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
-
-        self.assertTrue(process, PROCESS_IS_VALID)
-
-        # Frame #0 should be at our breakpoint.
-        threads = lldbutil.get_threads_stopped_at_breakpoint(
-            process, breakpoint)
+        lldbutil.run_to_source_breakpoint(
+            self, 'Set breakpoint here', self.main_source_spec)
 
         maybeEvent = self.frame().FindVariable("maybeEvent")
         event = self.frame().FindVariable("event")

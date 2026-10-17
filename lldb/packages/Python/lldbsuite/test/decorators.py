@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from functools import wraps
+from functools import lru_cache, wraps
 from typing import Optional
 from packaging import version
 import contextlib
@@ -13,6 +13,7 @@ import locale
 import os
 import platform
 import re
+import socket
 import sys
 import tempfile
 import subprocess
@@ -1190,6 +1191,50 @@ def swiftTest(func):
 
     return skipTestIfFn(is_not_swift_compatible)(func)
 
+def requiresSwiftPlugin(min_apple_os_version=None):
+    """Mark a test that can only pass when LLDB has the Swift language plugin.
+
+    More and more of Foundation is implemented in Swift, so its values are
+    increasingly backed by native Swift types that only the Swift language
+    plugin knows how to format. A test exercising such a value passes when LLDB
+    is built with Swift support and is expected to fail otherwise.
+
+    Starting with macOS/iOS/... 26.0 all Apple OS share a common
+    version number, so ``min_apple_os_version`` describes the release
+    in which a value moved to Swift. Older OS versions, non-Apple
+    targets, and any build that has the Swift plugin are expected to
+    pass. When ``min_apple_os_version`` is omitted the plugin is
+    required on every Apple OS.
+    """
+
+    def decorate(func):
+        # An LLDB built with the Swift plugin satisfies the requirement.
+        if _get_bool_config("swift", fail_value=False):
+            return func
+
+        # Otherwise the test is expected to fail, but only on Apple targets
+        # that are new enough to have moved the value to Swift.
+        apple_oslist = lldbplatformutil.getDarwinOSTriples() + ["xros", "xrsimulator"]
+        expected = _match_decorator_property(
+            apple_oslist, lldbplatformutil.getPlatform()
+        )
+        if expected and min_apple_os_version is not None:
+            target = lldb.selected_platform
+            actual = "%d.%d" % (
+                target.GetOSMajorVersion(),
+                target.GetOSMinorVersion(),
+            )
+            expected = _check_expected_version(">=", str(min_apple_os_version), actual)
+
+        return expectedFailureIf(expected)(func)
+
+    # Support bare usage (@requiresSwiftPlugin) in addition to the parenthesized
+    # form (@requiresSwiftPlugin(min_apple_os_version=...)).
+    if callable(min_apple_os_version):
+        func, min_apple_os_version = min_apple_os_version, None
+        return decorate(func)
+    return decorate
+
 def skipEmbeddedSwift(func):
     """Skip a test that ought to work in embedded Swift but currently doesn't.
 
@@ -1344,11 +1389,34 @@ def requireDarwin(func):
     return requirePlatform(lldbplatform.translate(lldbplatform.darwin_all))(func)
 
 
+def requireMacOS(func):
+    """Mark the item as inherently macOS-only, as opposed to other Darwin
+    platforms (iOS, tvOS, watchOS, ...). Non-macOS targets report
+    UNSUPPORTED."""
+    return requirePlatform(["macosx"])(func)
+
+
 def requireNotDarwin(reason: str):
     """Mark the item as inherently inapplicable to Darwin targets."""
     return requireNotPlatform(
         lldbplatform.translate(lldbplatform.darwin_all), reason=reason
     )
+
+
+def requireObjCFoundation(func):
+    """Mark the item as inherently Foundation-only.
+
+    Platforms which only have FoundationEssentials (Linux and Windows) cannot run these tests.
+
+    This is an alias for requireDarwin.
+    """
+    return requireDarwin(func)
+
+
+def requireSwiftObjCInterop(func):
+    """Mark the item as inherently ObjC-only. This is an alias for
+    requireDarwin."""
+    return requireDarwin(func)
 
 
 def requireLinux(func):
@@ -1392,6 +1460,11 @@ def requireMacOS(func):
     platforms (iOS, tvOS, watchOS, ...).
     """
     return requirePlatform(["macosx"])(func)
+
+
+def requireTSAN(func):
+    """Mark the item as requiring a platform which has TSAN."""
+    return requirePOSIX(func)
 
 
 def requireSignals(func):
@@ -1439,6 +1512,38 @@ def requireThreadSupport(func):
         # other WASI targets (e.g. wasip1, wasip2) do not.
         platform.startswith("wasi") and not platform.endswith("threads"),
         UnsupportedReason(f"threads are not supported on {platform}"),
+    )(func)
+
+
+@lru_cache(maxsize=None)
+def _socketPermissionError() -> Optional[str]:
+    """Probe whether the host lets us open a listening socket.
+    Returns None if it does, otherwise a description of why it doesn't.
+    """
+
+    family = socket.AF_INET
+    addr = ("localhost", 0)
+    try:
+        with socket.socket(family, socket.SOCK_STREAM) as sock:
+            sock.bind(addr)
+            sock.listen(1)
+    except OSError as e:
+        return f"host does not permit opening a listening socket: {e}"
+    return None
+
+
+def requireSocketPermission(func):
+    """Mark the item as requiring permission to open a listening socket."""
+    error = _socketPermissionError()
+    return unittest.skipIf(error is not None, UnsupportedReason(error or ""))(func)
+
+
+def requireClang(func):
+    """Mark the item as inherently Clang-only (Clang-specific debug info,
+    diagnostics, or command-line flags)."""
+    compiler = os.path.basename(lldbplatformutil.getCompiler())
+    return unittest.skipUnless(
+        compiler.startswith("clang"), UnsupportedReason("requires clang")
     )(func)
 
 
@@ -1539,19 +1644,6 @@ def skipUnlessHasCallSiteInfo(func):
             return None
 
     return skipTestIfFn(is_compiler_clang_with_call_site_info)(func)
-
-
-def skipUnlessCompilerIsClang(func):
-    """Decorate the item to skip test unless the compiler is clang."""
-
-    def is_compiler_clang():
-        compiler_path = lldbplatformutil.getCompiler()
-        compiler = os.path.basename(compiler_path)
-        if not compiler.startswith("clang"):
-            return "Test requires clang as compiler"
-        return None
-
-    return skipTestIfFn(is_compiler_clang)(func)
 
 
 def skipUnlessMSVC(func):

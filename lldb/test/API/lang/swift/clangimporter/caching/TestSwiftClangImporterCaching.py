@@ -7,7 +7,6 @@ class TestSwiftClangImporterCaching(TestBase):
 
     # Don't run ClangImporter tests if Clangimporter is disabled.
     @skipIf(swift_module_importer="noclang")
-    @skipIf(setting=("symbols.swift-precise-compiler-invocation", "false"))
     @skipUnlessDarwin
     @swiftTest
     def test(self):
@@ -18,7 +17,7 @@ class TestSwiftClangImporterCaching(TestBase):
         log = self.getBuildArtifact("types.log")
         self.runCmd("settings set target.swift-clang-override-options +-DADDED=1")
         self.runCmd("settings set target.swift-extra-clang-flags -- -DEXTRA=1")
-        self.expect('log enable lldb types symbols -f "%s"' % log)
+        self.expect('log enable lldb types symbol -f "%s"' % log)
         self.expect("expression obj", DATA_TYPES_DISPLAYED_CORRECTLY,
                     substrs=["b ="])
 

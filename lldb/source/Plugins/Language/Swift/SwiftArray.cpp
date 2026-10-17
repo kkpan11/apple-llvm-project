@@ -22,6 +22,8 @@
 #include "lldb/Target/Target.h"
 #include "lldb/ValueObject/ValueObjectConstResult.h"
 
+#include "llvm/Support/Error.h"
+
 // FIXME: we should not need this
 #include "Plugins/Language/ObjC/Cocoa.h"
 #include "lldb/lldb-enumerations.h"
@@ -106,9 +108,13 @@ SwiftArrayNativeBufferHandler::SwiftArrayNativeBufferHandler(
   size_t ptr_size = process_sp->GetAddressByteSize();
   Status error;
   lldb::addr_t next_read = native_ptr;
-  m_metadata_ptr = process_sp->ReadPointerFromMemory(next_read, error);
-  if (error.Fail())
+  llvm::Expected<lldb::addr_t> metadata_ptr =
+      process_sp->ReadPointerFromMemory(next_read);
+  if (!metadata_ptr) {
+    llvm::consumeError(metadata_ptr.takeError());
     return;
+  }
+  m_metadata_ptr = *metadata_ptr;
   next_read += ptr_size;
   m_reserved_word =
       process_sp->ReadUnsignedIntegerFromMemory(next_read, ptr_size, 0, error);
@@ -380,17 +386,19 @@ SwiftArrayBufferHandler::CreateBufferHandler(ValueObject &static_valobj) {
     ProcessSP process_sp(valobj.GetProcessSP());
     if (!process_sp)
       return nullptr;
-    Status error;
 
-    lldb::addr_t buffer_ptr = valobj.GetValueAsUnsigned(LLDB_INVALID_ADDRESS) +
-                              3 * process_sp->GetAddressByteSize();
-    buffer_ptr = process_sp->ReadPointerFromMemory(buffer_ptr, error);
-    if (error.Fail() || buffer_ptr == LLDB_INVALID_ADDRESS)
+    lldb::addr_t buffer_addr = valobj.GetValueAsUnsigned(LLDB_INVALID_ADDRESS) +
+                               3 * process_sp->GetAddressByteSize();
+    lldb::addr_t buffer_ptr =
+        llvm::expectedToOptional(process_sp->ReadPointerFromMemory(buffer_addr))
+            .value_or(LLDB_INVALID_ADDRESS);
+    if (buffer_ptr == LLDB_INVALID_ADDRESS)
       return nullptr;
 
     lldb::addr_t argmetadata_ptr =
-        process_sp->ReadPointerFromMemory(buffer_ptr, error);
-    if (error.Fail() || argmetadata_ptr == LLDB_INVALID_ADDRESS)
+        llvm::expectedToOptional(process_sp->ReadPointerFromMemory(buffer_ptr))
+            .value_or(LLDB_INVALID_ADDRESS);
+    if (argmetadata_ptr == LLDB_INVALID_ADDRESS)
       return nullptr;
 
     // Get the type of the array elements.
