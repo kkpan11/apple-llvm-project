@@ -31,6 +31,7 @@ add_lldb_unittest(LLDBCoreTests
   ${SWIFT_SOURCES}
 
   LINK_COMPONENTS
+    Option
     Support
     Telemetry
   LINK_LIBS

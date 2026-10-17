@@ -46,6 +46,7 @@
 #include "swift/Demangling/ManglingFlavor.h"
 #include "swift/RemoteInspection/DescriptorFinder.h"
 #include "swift/RemoteInspection/ReflectionContext.h"
+#include "swift/RemoteInspection/TypeLowering.h"
 #include "swift/RemoteInspection/TypeRefBuilder.h"
 #include "swift/Strings.h"
 
@@ -211,17 +212,16 @@ lldb::addr_t SwiftLanguageRuntime::MaybeMaskNonTrivialReferencePointer(
 
     // The masked value of address is a pointer to the runtime structure.
     // The first field of the structure is the actual pointer.
-    Status error;
-
     lldb::addr_t masked_addr = addr & ~mask;
-    lldb::addr_t isa_addr =
-        GetProcess().ReadPointerFromMemory(masked_addr, error);
-    if (error.Fail()) {
-      LLDB_LOG(GetLog(LLDBLog::Expressions | LLDBLog::Types),
-               "Couldn't deref masked pointer");
+    llvm::Expected<lldb::addr_t> isa_addr =
+        GetProcess().ReadPointerFromMemory(masked_addr);
+    if (!isa_addr) {
+      LLDB_LOG_ERROR(GetLog(LLDBLog::Expressions | LLDBLog::Types),
+                     isa_addr.takeError(),
+                     "Couldn't deref masked pointer: {0}");
       return addr;
     }
-    return isa_addr;
+    return *isa_addr;
   }
 
   if (is_arm && is_64)
@@ -441,11 +441,21 @@ public:
         else
           typeref = &*typeref_or_err;
 
-        swift::reflection::FieldInfo field_info = {
-            name, (unsigned)bit_offset_ptr / 8, 0, typeref,
-            *GetOrCreateTypeInfo(field_type)};
-        fields.push_back(field_info);
+        const swift::reflection::TypeInfo *field_ti =
+            GetOrCreateTypeInfo(field_type);
+        if (!field_ti) {
+          LLDB_LOG(GetLog(LLDBLog::Types),
+                   "[LLDBTypeInfoProvider] no TypeInfo for field {0} of {1}",
+                   name, clang_type.GetTypeName());
+          // Without a TypeInfo for every field, the record can't say which
+          // of its bits are spare or where its extra inhabitants are, so
+          // describe it opaquely like a Clang type without fields.
+          fields.clear();
+          break;
         }
+        fields.push_back(
+            {name, (unsigned)bit_offset_ptr / 8, 0, typeref, *field_ti});
+      }
     }
     return m_runtime.emplaceClangTypeInfo(clang_type, size, bit_align, fields);
   }
@@ -471,12 +481,12 @@ SwiftLanguageRuntime::lookupClangTypeInfo(CompilerType clang_type) {
   {
     auto it = m_clang_builtin_type_info.find(opaque_type);
     if (it != m_clang_builtin_type_info.end())
-      return &it->second;
+      return it->second.get();
   }
   {
     auto it = m_clang_record_type_info.find(opaque_type);
     if (it != m_clang_record_type_info.end())
-      return &it->second;
+      return it->second.get();
   }
   return {};
 }
@@ -501,20 +511,19 @@ const swift::reflection::TypeInfo *SwiftLanguageRuntime::emplaceClangTypeInfo(
   if (fields.empty()) {
     auto it_b = m_clang_builtin_type_info.insert(
         {clang_type.GetOpaqueQualType(),
-         swift::reflection::BuiltinTypeInfo(
+         std::make_unique<swift::reflection::BuiltinTypeInfo>(
              *byte_size, byte_align, byte_stride, extra_inhabitants,
              swift::reflection::BitwiseBorrowability::TakableAndBorrowable,
              /*AFD=*/false)});
-    return &it_b.first->second;
+    return it_b.first->second.get();
   }
   auto it_b = m_clang_record_type_info.insert(
       {clang_type.GetOpaqueQualType(),
-       swift::reflection::RecordTypeInfo(
+       std::make_unique<swift::reflection::RecordTypeInfo>(
            *byte_size, byte_align, byte_stride, extra_inhabitants,
            swift::reflection::BitwiseBorrowability::None,
-           /*AFD=*/true,
-           swift::reflection::RecordKind::Struct, fields)});
-  return &it_b.first->second;
+           /*AFD=*/true, swift::reflection::RecordKind::Struct, fields)});
+  return it_b.first->second.get();
 }
 
 std::optional<uint64_t>
@@ -1322,7 +1331,7 @@ SwiftRuntimeTypeVisitor::VisitImpl(std::optional<unsigned> visit_only,
 
       LLDBTypeInfoProvider tip(m_runtime, ts, m_flavor);
       auto cti_or_err = reflection_ctx->GetClassInstanceTypeInfo(
-          *tr, &tip,
+          *tr, &tip, m_flavor,
           ts.GetDescriptorFinder(m_exe_ctx.GetBestExecutionContextScope()));
       if (!cti_or_err)
         return AugmentReflectionError(cti_or_err.takeError());
@@ -1336,15 +1345,16 @@ SwiftRuntimeTypeVisitor::VisitImpl(std::optional<unsigned> visit_only,
           // The superclass, if any, is an extra child.
           if (!m_hide_superclass &&
               reflection_ctx->LookupSuperclass(
-                  *tr, ts.GetDescriptorFinder(
-                           m_exe_ctx.GetBestExecutionContextScope())))
+                  *tr, m_flavor,
+                  ts.GetDescriptorFinder(
+                      m_exe_ctx.GetBestExecutionContextScope())))
             return rti->getNumFields() + 1;
           return rti->getNumFields();
         }
         if (m_visit_superclass) {
           unsigned depth = 0;
           reflection_ctx->ForEachSuperClassType(
-              &tip,
+              &tip, m_flavor,
               ts.GetDescriptorFinder(m_exe_ctx.GetBestExecutionContextScope()),
               tr, [&](SuperClassType sc) {
                 auto *tr = sc.get_typeref();
@@ -1355,8 +1365,9 @@ SwiftRuntimeTypeVisitor::VisitImpl(std::optional<unsigned> visit_only,
                   return true;
 
                 if (auto *super_tr = reflection_ctx->LookupSuperclass(
-                        *tr, ts.GetDescriptorFinder(
-                                 m_exe_ctx.GetBestExecutionContextScope())))
+                        *tr, m_flavor,
+                        ts.GetDescriptorFinder(
+                            m_exe_ctx.GetBestExecutionContextScope())))
                   if (auto error = visit_callback(
                           GetTypeFromTypeRef(ts, super_tr, m_flavor), depth,
                           []() -> std::string { return "<base class>"; },
@@ -1386,8 +1397,9 @@ SwiftRuntimeTypeVisitor::VisitImpl(std::optional<unsigned> visit_only,
           return success;
         }
         if (auto *super_tr = reflection_ctx->LookupSuperclass(
-                *tr, ts.GetDescriptorFinder(
-                         m_exe_ctx.GetBestExecutionContextScope()))) {
+                *tr, m_flavor,
+                ts.GetDescriptorFinder(
+                    m_exe_ctx.GetBestExecutionContextScope()))) {
           auto get_name = []() -> std::string { return "<base class>"; };
           auto get_info = []() -> llvm::Expected<ChildInfo> {
             return ChildInfo();
@@ -1459,7 +1471,7 @@ SwiftRuntimeTypeVisitor::VisitImpl(std::optional<unsigned> visit_only,
       // If the pointer based super class traversal failed (this may happen
       // when metadata is not present in the binary, for example: embedded
       // Swift), try the typeref based one next.
-      reflection_ctx->ForEachSuperClassType(&tip, desc_finder, tr,
+      reflection_ctx->ForEachSuperClassType(&tip, m_flavor, desc_finder, tr,
                                             superclass_finder);
 
     if (supers.empty() && tr) {
@@ -1467,8 +1479,8 @@ SwiftRuntimeTypeVisitor::VisitImpl(std::optional<unsigned> visit_only,
                "Couldn't find the type metadata for {0} in instance",
                m_type.GetTypeName());
 
-      auto cti_or_err =
-          reflection_ctx->GetClassInstanceTypeInfo(*tr, &tip, desc_finder);
+      auto cti_or_err = reflection_ctx->GetClassInstanceTypeInfo(
+          *tr, &tip, m_flavor, desc_finder);
       if (!cti_or_err)
         return AugmentReflectionError(cti_or_err.takeError());
       const swift::reflection::TypeInfo *cti = &*cti_or_err;
@@ -1628,6 +1640,63 @@ SwiftRuntimeTypeVisitor::VisitImpl(std::optional<unsigned> visit_only,
           return err;
     return success;
   }
+
+  if (auto *bti = llvm::dyn_cast_or_null<swift::reflection::BorrowTypeInfo>(ti)) {
+    if (count_only)
+      return 1;
+    
+    CompilerType rep_type;
+    const char *child_name;
+    
+
+    auto flavor = SwiftLanguageRuntime::GetManglingFlavor(
+        m_type.GetMangledTypeName().GetStringRef());
+
+    if (bti->usesValueRepresentation()) {
+      swift::Demangle::Demangler dem;
+      swift::Demangle::NodePointer global =
+          dem.demangleSymbol(m_type.GetMangledTypeName().GetStringRef());
+      using Kind = Node::Kind;
+      auto *dem_target_type = swift_demangle::ChildAtPath(
+          global, {Kind::TypeMangling, Kind::Type, Kind::BuiltinBorrow});
+      if (!dem_target_type || dem_target_type->getNumChildren() != 1)
+        return llvm::createStringError("Expected borrow, but found: " +
+                                       m_type.GetMangledTypeName().GetString());
+      rep_type =
+          ts.RemangleAsType(dem, dem_target_type->getChild(0), flavor);
+      child_name = "targetValue";
+    } else {
+      auto ts =
+          m_type.GetTypeSystem().dyn_cast_or_null<TypeSystemSwiftTypeRef>();
+      if (!ts)
+        return llvm::createStringError("no type system");
+      rep_type = ts->GetRawPointerType(flavor);
+      child_name = "targetPointer";
+    }
+
+    auto get_name = [&]() -> std::string { return child_name; };
+    auto get_info = [&]() -> llvm::Expected<ChildInfo> {
+      ChildInfo child;
+      child.byte_size = bti->getSize();
+      child.byte_offset = 0;
+
+      child.bitfield_bit_size = 0;
+      child.bitfield_bit_offset = 0;
+      child.is_base_class = false;
+      child.is_deref_of_parent = false;
+      child.language_flags = 0;
+      return child;
+    };
+
+    if (!visit_only || *visit_only == 0) {
+      if (auto err = visit_callback(rep_type, 0, get_name, get_info)) {
+        return err;
+      }
+    }
+
+    return success;
+  }
+
   if (llvm::dyn_cast_or_null<swift::reflection::BuiltinTypeInfo>(ti)) {
     Flags type_flags(m_type.GetTypeInfo());
     // This might be an enum declared with @objc or @c. They cannot carry
@@ -1821,7 +1890,10 @@ SwiftLanguageRuntime::ProjectEnum(ValueObject &valobj) {
 
   // Prepare to project the enum to get the active case.
   MemoryReaderLocalBufferHolder holder;
-  auto [addr, address_type] = valobj.GetAddressOf(false);
+  // Storage for the Scalar case below.
+  uint64_t scalar_storage = 0;
+  auto [addr, address_type] =
+      valobj.GetAddressOf(/*scalar_is_load_address=*/false);
   if (addr == LLDB_INVALID_ADDRESS || addr == 0) {
     Value &value = valobj.GetValue();
     switch (value.GetValueType()) {
@@ -1838,8 +1910,9 @@ SwiftLanguageRuntime::ProjectEnum(ValueObject &valobj) {
       break;
     }
     case Value::ValueType::Scalar: {
-      addr = value.GetScalar().ULongLong(LLDB_INVALID_ADDRESS);
-      holder = PushLocalBuffer((uint64_t)&addr, sizeof(addr));
+      scalar_storage = value.GetScalar().ULongLong(LLDB_INVALID_ADDRESS);
+      addr = (uint64_t)&scalar_storage;
+      holder = PushLocalBuffer(addr, sizeof(scalar_storage));
       break;
     }
     }
@@ -1965,6 +2038,8 @@ CompilerType SwiftLanguageRuntime::GetBaseClass(CompilerType class_ty) {
   auto tr_ts = ts_sp->GetTypeSystemSwiftTypeRef();
   if (!tr_ts)
     return {};
+  auto flavor =
+      SwiftLanguageRuntime::GetManglingFlavor(class_ty.GetMangledTypeName());
   auto type_ref_or_err =
       reflection_ctx->GetTypeRef(class_ty.GetMangledTypeName().GetStringRef());
   if (!type_ref_or_err) {
@@ -1973,9 +2048,7 @@ CompilerType SwiftLanguageRuntime::GetBaseClass(CompilerType class_ty) {
     return {};
   }
   auto *super_tr = reflection_ctx->LookupSuperclass(
-      *type_ref_or_err, tr_ts->GetDescriptorFinder());
-  auto flavor =
-      SwiftLanguageRuntime::GetManglingFlavor(class_ty.GetMangledTypeName());
+      *type_ref_or_err, flavor, tr_ts->GetDescriptorFinder());
   return GetTypeFromTypeRef(*tr_ts, super_tr, flavor);
 }
 
@@ -2262,14 +2335,15 @@ SwiftLanguageRuntime::BindGenericPackType(StackFrame &frame,
           });
 
       // Build a TypeRef from the demangle tree.
-      auto type_ref_or_err = reflection_ctx->GetTypeRef(dem, pack_element);
+      auto type_ref_or_err =
+          reflection_ctx->GetTypeRef(dem, pack_element, flavor);
       if (!type_ref_or_err)
         return type_ref_or_err.takeError();
       auto &type_ref = *type_ref_or_err;
 
       // Apply the substitutions.
       auto bound_typeref_or_err = reflection_ctx->ApplySubstitutions(
-          type_ref, substitutions, ts->GetDescriptorFinder());
+          type_ref, substitutions, flavor, ts->GetDescriptorFinder());
       if (!bound_typeref_or_err)
         return bound_typeref_or_err.takeError();
       swift::Demangle::NodePointer node = bound_typeref_or_err->getDemangling(dem);
@@ -2371,13 +2445,15 @@ bool SwiftLanguageRuntime::GetDynamicTypeAndAddress_Pack(
   auto [addr, address_type] = in_value.GetAddressOf(true);
   value_type = Value::GetValueTypeFromAddressType(address_type);
   if (indirect) {
-    Status status;
-    addr = GetProcess().ReadPointerFromMemory(addr, status);
-    if (status.Fail()) {
-      LLDB_LOG(log, "failed to dereference indirect pack: {0}",
-               expanded_type->GetMangledTypeName());
+    llvm::Expected<lldb::addr_t> deref_addr =
+        GetProcess().ReadPointerFromMemory(addr);
+    if (!deref_addr) {
+      LLDB_LOG_ERROR(log, deref_addr.takeError(),
+                     "failed to dereference indirect pack: {1}: {0}",
+                     expanded_type->GetMangledTypeName());
       return false;
     }
+    addr = *deref_addr;
   }
   address.SetRawAddress(addr);
   return true;
@@ -2582,7 +2658,7 @@ SwiftLanguageRuntime::GetDynamicTypeAndAddress_ExistentialContainerEmbedded(
 
   auto existential_container =
       reflection_ctx->ReadMetadataAndValueOpaqueExistential(
-          existential_address);
+          existential_address, swift::Mangle::ManglingFlavor::Embedded);
   if (!existential_container)
     return llvm::createStringError(
         llvm::formatv("could not read the existential container at {0:x}",
@@ -2745,6 +2821,15 @@ bool SwiftLanguageRuntime::GetDynamicTypeAndAddress_Class(
     return false;
   address.SetRawAddress(instance_ptr);
 
+  // A class reference may carry data such as enum discriminators in
+  // its spare bits. Strip those bits before reading any metadata from
+  // the instance. However, Objective-C tagged pointers encode their
+  // class in those same bits and the metadata reader decodes them
+  // itself, so leave them intact.
+  AppleObjCRuntime *objc_runtime = GetObjCRuntime();
+  if (!objc_runtime || !objc_runtime->IsTaggedPointer(instance_ptr))
+    instance_ptr = MaskMaybeBridgedPointer(instance_ptr);
+
   // We are going to use process information to resolve the type, so
   // the result needs to be in the target's scratch context, not a
   // long-lived per-module typesystem.
@@ -2898,25 +2983,24 @@ bool SwiftLanguageRuntime::IsValidErrorValue(ValueObject &in_value) {
     metadata_offset += ptr_size + ptr_size + ptr_size; // CFIndex + 2*CFRef
 
     metadata_location += metadata_offset;
-    Status error;
     lldb::addr_t metadata_ptr_value =
-        GetProcess().ReadPointerFromMemory(metadata_location, error);
-    if (metadata_ptr_value == 0 || metadata_ptr_value == LLDB_INVALID_ADDRESS ||
-        error.Fail())
+        llvm::expectedToOptional(
+            GetProcess().ReadPointerFromMemory(metadata_location))
+            .value_or(LLDB_INVALID_ADDRESS);
+    if (metadata_ptr_value == 0 || metadata_ptr_value == LLDB_INVALID_ADDRESS)
       return false;
   } else {
     // this is a swift native error and it has no way to be bridged to ObjC
     // so it adopts a more compact layout
 
-    Status error;
-
     size_t ptr_size = GetProcess().GetAddressByteSize();
     size_t metadata_offset = 2 * ptr_size;
     metadata_location += metadata_offset;
     lldb::addr_t metadata_ptr_value =
-        GetProcess().ReadPointerFromMemory(metadata_location, error);
-    if (metadata_ptr_value == 0 || metadata_ptr_value == LLDB_INVALID_ADDRESS ||
-        error.Fail())
+        llvm::expectedToOptional(
+            GetProcess().ReadPointerFromMemory(metadata_location))
+            .value_or(LLDB_INVALID_ADDRESS);
+    if (metadata_ptr_value == 0 || metadata_ptr_value == LLDB_INVALID_ADDRESS)
       return false;
   }
 
@@ -3055,10 +3139,6 @@ bool SwiftLanguageRuntime::GetDynamicTypeAndAddress_ExistentialMetatype(
   if (ptr == LLDB_INVALID_ADDRESS || ptr == 0)
     return false;
 
-  ThreadSafeReflectionContext reflection_ctx = GetReflectionContext();
-  if (!reflection_ctx)
-    return false;
-
   auto tss = meta_type.GetTypeSystem().dyn_cast_or_null<TypeSystemSwift>();
   if (!tss)
     return false;
@@ -3067,18 +3147,38 @@ bool SwiftLanguageRuntime::GetDynamicTypeAndAddress_ExistentialMetatype(
   if (!tr_ts)
     return false;
 
-  auto type_ref_or_err =
-      reflection_ctx->ReadTypeFromMetadata(ptr, tr_ts->GetDescriptorFinder());
-  if (!type_ref_or_err) {
-    LLDB_LOG_ERRORV(GetLog(LLDBLog::Types), type_ref_or_err.takeError(), "{0}");
-    return false;
-  }
-
-  const swift::reflection::TypeRef &type_ref = *type_ref_or_err;
+  auto flavor =
+      SwiftLanguageRuntime::GetManglingFlavor(meta_type.GetMangledTypeName());
 
   using namespace swift::Demangle;
   Demangler dem;
-  NodePointer node = type_ref.getDemangling(dem);
+  NodePointer node = nullptr;
+  if (flavor == swift::Mangle::ManglingFlavor::Default) {
+    ThreadSafeReflectionContext reflection_ctx = GetReflectionContext();
+    if (!reflection_ctx)
+      return false;
+
+    auto type_ref_or_err =
+        reflection_ctx->ReadTypeFromMetadata(ptr, tr_ts->GetDescriptorFinder());
+    if (!type_ref_or_err) {
+      LLDB_LOG_ERRORV(
+          GetLog(LLDBLog::Types), type_ref_or_err.takeError(),
+          "[GetDynamicTypeAndAddress_ExistentialMetatype] failed {0}");
+      return false;
+    }
+    node = type_ref_or_err->getDemangling(dem);
+  } else {
+    auto type_or_err = GetTypeFromMetadataAddressEmbedded(ptr, *tr_ts);
+    if (!type_or_err) {
+      LLDB_LOG_ERRORV(GetLog(LLDBLog::Types), type_or_err.takeError(),
+                      "[GetDynamicTypeAndAddress_ExistentialMetatype] Embedded "
+                      " failed {0}");
+      return false;
+    }
+    node = swift_demangle::GetDemangledTypeMangling(
+        dem, type_or_err->GetMangledTypeName().GetStringRef());
+  }
+
   // Wrap the resolved type in a metatype again for the data formatter to
   // recognize.
   if (!node || node->getKind() != Node::Kind::Type)
@@ -3086,12 +3186,9 @@ bool SwiftLanguageRuntime::GetDynamicTypeAndAddress_ExistentialMetatype(
   NodePointer wrapped = dem.createNode(Node::Kind::Type);
   NodePointer meta = dem.createNode(Node::Kind::Metatype);
   meta->addChild(node, dem);
-  wrapped->addChild(meta,dem);
+  wrapped->addChild(meta, dem);
 
-  auto flavor =
-      SwiftLanguageRuntime::GetManglingFlavor(meta_type.GetMangledTypeName());
-  meta_type =
-      tss->GetTypeSystemSwiftTypeRef()->RemangleAsType(dem, wrapped, flavor);
+  meta_type = tr_ts->RemangleAsType(dem, wrapped, flavor);
   class_type_or_name.SetCompilerType(meta_type);
   address.SetRawAddress(ptr);
   value_type = Value::ValueType::LoadAddress;
@@ -3215,7 +3312,9 @@ CompilerType SwiftLanguageRuntime::BindGenericTypeParameters(
   if (!tr_ts)
     return unbound_type;
 
-  auto type_ref_or_err = reflection_ctx->GetTypeRef(dem, unbound_node);
+  auto flavor = SwiftLanguageRuntime::GetManglingFlavor(
+      unbound_type.GetMangledTypeName().GetStringRef());
+  auto type_ref_or_err = reflection_ctx->GetTypeRef(dem, unbound_node, flavor);
   if (!type_ref_or_err) {
     LLDB_LOG_ERROR(GetLog(LLDBLog::Expressions | LLDBLog::Types),
                    type_ref_or_err.takeError(),
@@ -3260,7 +3359,7 @@ CompilerType SwiftLanguageRuntime::BindGenericTypeParameters(
 
   // Apply the substitutions.
   auto bound_type_ref_or_err = reflection_ctx->ApplySubstitutions(
-      type_ref, substitutions, tr_ts->GetDescriptorFinder());
+      type_ref, substitutions, flavor, tr_ts->GetDescriptorFinder());
   if (!bound_type_ref_or_err) {
     LLDB_LOG_ERROR(GetLog(LLDBLog::Expressions | LLDBLog::Types),
                    bound_type_ref_or_err.takeError(),
@@ -3269,10 +3368,7 @@ CompilerType SwiftLanguageRuntime::BindGenericTypeParameters(
   }
 
   NodePointer node = bound_type_ref_or_err->getDemangling(dem);
-  return ts->GetTypeSystemSwiftTypeRef()->RemangleAsType(
-      dem, node,
-      SwiftLanguageRuntime::GetManglingFlavor(
-          unbound_type.GetMangledTypeName()));
+  return ts->GetTypeSystemSwiftTypeRef()->RemangleAsType(dem, node, flavor);
 }
 
 llvm::Expected<CompilerType>
@@ -3295,6 +3391,9 @@ SwiftLanguageRuntime::BindGenericTypeParameters(StackFrame &stack_frame,
   NodePointer canonical = TypeSystemSwiftTypeRef::GetStaticSelfType(
       dem, dem.demangleSymbol(mangled_name.GetStringRef()));
   canonical = ts.DesugarNode(dem, canonical);
+
+  auto flavor =
+      SwiftLanguageRuntime::GetManglingFlavor(mangled_name.GetStringRef());
 
   // Build the list of type substitutions.
   swift::reflection::GenericArgumentMap substitutions;
@@ -3323,8 +3422,6 @@ SwiftLanguageRuntime::BindGenericTypeParameters(StackFrame &stack_frame,
 
     substitutions.insert({{depth, index}, &*type_ref_or_err});
   });
-  auto flavor =
-      SwiftLanguageRuntime::GetManglingFlavor(mangled_name.GetStringRef());
 
   // Nothing to do if there are no type parameters.
   auto get_canonical = [&]() {
@@ -3338,7 +3435,7 @@ SwiftLanguageRuntime::BindGenericTypeParameters(StackFrame &stack_frame,
     return get_canonical();
 
   // Build a TypeRef from the demangle tree.
-  auto type_ref_or_err = reflection_ctx->GetTypeRef(dem, canonical);
+  auto type_ref_or_err = reflection_ctx->GetTypeRef(dem, canonical, flavor);
   if (!type_ref_or_err)
     return llvm::joinErrors(
         llvm::createStringError("cannot bind generic parameters"),
@@ -3347,7 +3444,7 @@ SwiftLanguageRuntime::BindGenericTypeParameters(StackFrame &stack_frame,
 
   // Apply the substitutions.
   auto bound_type_ref_or_err = reflection_ctx->ApplySubstitutions(
-      type_ref, substitutions, ts.GetDescriptorFinder());
+      type_ref, substitutions, flavor, ts.GetDescriptorFinder());
   if (!bound_type_ref_or_err)
     return bound_type_ref_or_err.takeError();
   auto &bound_type_ref = *bound_type_ref_or_err;
@@ -3425,7 +3522,7 @@ bool SwiftLanguageRuntime::GetDynamicTypeAndAddress_Value(
       bound_type.GetByteSize(exe_ctx.GetBestExecutionContextScope()));
   if (!size)
     return false;
-  auto [val_address, address_type] = in_value.GetAddressOf(true);
+  auto [val_address, address_type] = in_value.GetAddressOf(false);
   // If we couldn't find a load address, but the value object has a local
   // buffer, use that.
   if (val_address == LLDB_INVALID_ADDRESS && address_type == eAddressTypeHost) {
@@ -3445,7 +3542,16 @@ bool SwiftLanguageRuntime::GetDynamicTypeAndAddress_Value(
     local_buffer = in_value_buffer;
     return true;
   }
-  if (*size && (!val_address || val_address == LLDB_INVALID_ADDRESS))
+  if (val_address == LLDB_INVALID_ADDRESS) {
+    if (*size) {
+      return false;
+    }
+    // This is a zero-sized type so there is nothing to read. Report it as load
+    // address (this is safe because val_address is LLDB_INVALID_ADDRESS) so the
+    // generic type parameters are still bound.
+    address_type = eAddressTypeLoad;
+  }
+  if (*size && !val_address)
     return false;
 
   value_type = Value::GetValueTypeFromAddressType(address_type);
@@ -3513,8 +3619,8 @@ Value::ValueType SwiftLanguageRuntime::GetValueType(
       if (ThreadSafeReflectionContext reflection_ctx = GetReflectionContext()) {
         std::optional<bool> is_inlined =
             reflection_ctx->IsValueInlinedInExistentialContainer(
-                remote_existential);
-
+                remote_existential,
+                GetManglingFlavor(static_type.GetMangledTypeName()));
 
         // An error has occurred when trying to read value witness table,
         // default to treating it as pointer.
@@ -4221,8 +4327,47 @@ bool SwiftLanguageRuntime::IsStoredInlineInBuffer(CompilerType type) {
     return true;
   }
 
+  // This must agree with TargetValueWitnessTable::isValueInline() in the
+  // Swift runtime. A value buffer is NumWords_ValueBuffer pointers in size
+  // and pointer-aligned.
   auto &type_info = *type_info_or_err;
-  return type_info.isBitwiseTakable() && type_info.getSize() <= 24;
+  uint32_t ptr_size = GetProcess().GetAddressByteSize();
+  return type_info.isBitwiseTakable() &&
+         type_info.getSize() <= swift::NumWords_ValueBuffer * ptr_size &&
+         type_info.getAlignment() <= ptr_size;
+}
+
+llvm::Error SwiftLanguageRuntime::FixupVariableLocation(Variable &variable,
+                                                        Value &value) {
+  // Resilient globals are stored in a fixed-size buffer. Values that don't
+  // fit are boxed on the heap and the buffer holds a pointer to the box.
+  if (value.GetValueType() != Value::ValueType::FileAddress)
+    return llvm::Error::success();
+  Type *type = variable.GetType();
+  if (!type ||
+      !type->GetForwardCompilerType()
+           .GetTypeSystem()
+           .isa_and_nonnull<TypeSystemSwift>() ||
+      !TypePayloadSwift(type->GetPayload()).IsFixedValueBuffer() ||
+      IsStoredInlineInBuffer(value.GetCompilerType()))
+    return llvm::Error::success();
+
+  SymbolContextScope *scs = variable.GetSymbolContextScope();
+  ModuleSP module_sp = scs ? scs->CalculateSymbolContextModule() : nullptr;
+  if (!module_sp)
+    return llvm::createStringError("fixed-size buffer has no module");
+
+  Address buffer(value.GetScalar().ULongLong(LLDB_INVALID_ADDRESS),
+                 module_sp->GetSectionList());
+  Process &process = GetProcess();
+  Status error;
+  lldb::addr_t box = process.GetTarget().ReadUnsignedIntegerFromMemory(
+      buffer, process.GetAddressByteSize(), LLDB_INVALID_ADDRESS, error);
+  if (error.Fail())
+    return error.takeError();
+  value.GetScalar() = box;
+  value.SetValueType(Value::ValueType::LoadAddress);
+  return llvm::Error::success();
 }
 
 llvm::Expected<CompilerType>
@@ -4338,7 +4483,7 @@ SwiftLanguageRuntime::ResolveTypeAlias(CompilerType alias) {
         substitutions.insert({{0, idx++}, &type_ref});
       }
       auto type_ref_or_err = reflection_ctx->ApplySubstitutions(
-          *type_ref, substitutions, tr_ts->GetDescriptorFinder());
+          *type_ref, substitutions, flavor, tr_ts->GetDescriptorFinder());
       if (!type_ref_or_err) {
         LLDB_LOG_ERRORV(GetLog(LLDBLog::Types), type_ref_or_err.takeError(),
                         "{0}");

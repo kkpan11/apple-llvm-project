@@ -1,3 +1,8 @@
+set(LLVM_TABLEGEN_PROJECT LLVM_HEADERS)
+set(LLVM_TARGET_DEFINITIONS MCCLOptions.td)
+tablegen(LLVM MCCLOptions.inc -gen-opt-parser-defs)
+add_public_tablegen_target(MCCLOptionsTableGen)
+
 add_llvm_component_library(LLVMMC
   ConstantPools.cpp
   DXContainerInfo.cpp
@@ -17,6 +22,7 @@ add_llvm_component_library(LLVMMC
   MCAsmStreamer.cpp
   MCAssembler.cpp
   MCCASFormatSchemaBase.cpp
+  MCCLOptions.cpp
   MCCodeEmitter.cpp
   MCCodeView.cpp
   MCContext.cpp
@@ -81,12 +87,14 @@ add_llvm_component_library(LLVMMC
   LINK_COMPONENTS
   BinaryFormat
   DebugInfoDWARFLowLevel
+  Option
   Support
   TargetParser
   CAS
   CASUtil
 
   DEPENDS
+  MCCLOptionsTableGen
   intrinsics_gen
   llvm_vcsrevision_h
   )

@@ -59,6 +59,9 @@ IRExecutionUnit::IRExecutionUnit(std::unique_ptr<llvm::LLVMContext> &context_up,
       m_sym_ctx(sym_ctx), m_did_jit(false),
       m_function_load_addr(LLDB_INVALID_ADDRESS),
       m_function_end_load_addr(LLDB_INVALID_ADDRESS),
+      m_strip_underscore(
+          m_module_up ? m_module_up->getDataLayout().getGlobalPrefix() == '_'
+                      : false),
       m_reported_allocations(false), m_preferred_modules() {}
 
 IRExecutionUnit::~IRExecutionUnit() {
@@ -76,53 +79,6 @@ IRExecutionUnit::~IRExecutionUnit() {
     if (target)
       target->GetImages().Remove(jit_module_sp);
   }
-}
-
-lldb::addr_t IRExecutionUnit::WriteNow(const uint8_t *bytes, size_t size,
-                                       Status &error) {
-  const bool zero_memory = false;
-  auto address_or_error =
-      Malloc(size, 8, lldb::ePermissionsWritable | lldb::ePermissionsReadable,
-             eAllocationPolicyMirror, zero_memory);
-  if (!address_or_error) {
-    error = Status::FromError(address_or_error.takeError());
-    return LLDB_INVALID_ADDRESS;
-  }
-  lldb::addr_t allocation_process_addr = *address_or_error;
-
-  WriteMemory(allocation_process_addr, bytes, size, error);
-
-  if (!error.Success()) {
-    Status err;
-    Free(allocation_process_addr, err);
-
-    return LLDB_INVALID_ADDRESS;
-  }
-
-  if (Log *log = GetLog(LLDBLog::Expressions)) {
-    DataBufferHeap my_buffer(size, 0);
-    Status err;
-    ReadMemory(my_buffer.GetBytes(), allocation_process_addr, size, err);
-
-    if (err.Success()) {
-      DataExtractor my_extractor(my_buffer.GetBytes(), my_buffer.GetByteSize(),
-                                 lldb::eByteOrderBig, 8);
-      my_extractor.PutToLog(log, 0, my_buffer.GetByteSize(),
-                            allocation_process_addr, 16,
-                            DataExtractor::TypeUInt8);
-    }
-  }
-
-  return allocation_process_addr;
-}
-
-void IRExecutionUnit::FreeNow(lldb::addr_t allocation) {
-  if (allocation == LLDB_INVALID_ADDRESS)
-    return;
-
-  Status err;
-
-  Free(allocation, err);
 }
 
 Status IRExecutionUnit::DisassembleFunction(Stream &stream,
@@ -328,9 +284,6 @@ void IRExecutionUnit::GetRunnableInfo(Status &error, lldb::addr_t &func_addr,
                                               error_string.c_str());
     return;
   }
-
-  m_strip_underscore =
-      (m_execution_engine_up->getDataLayout().getGlobalPrefix() == '_');
 
   class ObjectDumper : public llvm::ObjectCache {
   public:
@@ -710,7 +663,8 @@ public:
 
       // First try the symbol.
       if (candidate_sc.symbol) {
-        load_address = candidate_sc.symbol->ResolveCallableAddress(m_target);
+        load_address = candidate_sc.symbol->ResolveCallableAddress(
+            m_target, candidate_sc.module_sp);
         if (load_address == LLDB_INVALID_ADDRESS) {
           Address addr = candidate_sc.symbol->GetAddress();
           load_address = m_target.GetProcessSP()
@@ -822,6 +776,19 @@ IRExecutionUnit::FindInSymbols(const std::vector<ConstString> &names,
   if (m_in_populate_symtab)
     if (lldb::ModuleSP jit_module_sp = m_jit_module_wp.lock())
       non_local_images.Remove(jit_module_sp);
+
+  // Embedded Swift code expects the runtime statically linked into the
+  // program, which is not ABI-compatible with the dynamic Swift runtime
+  // libraries. A libswift* image loaded into the process must never satisfy
+  // its symbol references.
+  if (m_is_embedded_swift) {
+    for (size_t i = non_local_images.GetSize(); i > 0; --i) {
+      lldb::ModuleSP module_sp = non_local_images.GetModuleAtIndex(i - 1);
+      if (module_sp &&
+          module_sp->GetFileSpec().GetFilename().starts_with("libswift"))
+        non_local_images.Remove(module_sp);
+    }
+  }
   // END SWIFT
 
   // Drop modules the platform considers off-limits to unconstrained symbol
@@ -1364,7 +1331,7 @@ void IRExecutionUnit::PopulateSectionList(
           record.m_size,         // file_size
           0,
           record.m_permissions, // flags
-          non_jit_size)); 
+          non_jit_size));
       section_list.AddSection(section_sp);
     }
   }

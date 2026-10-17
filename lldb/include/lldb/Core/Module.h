@@ -853,10 +853,6 @@ public:
                                    std::optional<lldb::user_id_t> debugger_id);
 
 #ifdef LLDB_ENABLE_SWIFT
-  void
-  ReportWarningToolchainMismatch(CompileUnit &comp_unit,
-                                 std::optional<lldb::user_id_t> debugger_id);
-
   bool IsSwiftCxxInteropEnabled();
 
   bool IsEmbeddedSwift();
@@ -1075,14 +1071,18 @@ public:
   /// Get the global index file cache.
   ///
   /// LLDB can cache data for a module between runs. This cache directory can be
-  /// used to stored data that previously was manually created each time you debug.
-  /// Examples include debug information indexes, symbol tables, symbol table
-  /// indexes, and more.
+  /// used to stored data that previously was manually created each time you
+  /// debug. Examples include debug information indexes, symbol tables, symbol
+  /// table indexes, and more.
+  ///
+  /// \param[in] memory_module
+  ///     True if this binary exists only in memory.
   ///
   /// \returns
   ///   If caching is enabled in the lldb settings, return a pointer to the data
   ///   file cache. If caching is not enabled, return NULL.
-  static DataFileCache *GetIndexCache();
+  static DataFileCache *GetIndexCache(bool memory_module);
+
 protected:
   // Member Variables
   mutable std::recursive_mutex m_mutex; ///< A mutex to keep this object happy
@@ -1172,16 +1172,17 @@ protected:
 
   StatisticsMap m_symbol_locator_duration_map;
 
-#ifdef LLDB_ENABLE_SWIFT
-  std::once_flag m_toolchain_mismatch_warning;
-#endif
-
   // BEGIN CAS
 
-  /// All CAS configurations (+instances) associated with this
-  /// module. An empty optional means uninitialized, an empty vector
-  /// means that this module has no CAS associated with it.
-  std::optional<std::vector<ModuleList::CAS>> m_cas;
+  /// All CAS configurations associated with this module. An empty optional
+  /// means uninitialized, an empty vector means that this module has no CAS
+  /// associated with it.
+  ///
+  /// Only the configurations are kept, not the instances, so that a CAS
+  /// instance can be reopened from its configuration when needed. ModuleList
+  /// keeps a cache of the instances opened for each CASConfiguration, which is
+  /// used to look up an already opened instance.
+  std::optional<std::vector<llvm::cas::CASConfiguration>> m_cas;
   mutable std::mutex m_cas_init_mutex;
 
   // END CAS
