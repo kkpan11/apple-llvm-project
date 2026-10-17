@@ -44,226 +44,125 @@ def check_no_enhanced_diagnostic(test, frame, var_name):
 
 
 class TestSwiftClosureVarNotCaptured(TestBase):
-    def get_to_bkpt(self, bkpt_name):
-        target, process, thread, bkpt = lldbutil.run_to_source_breakpoint(
-            self, bkpt_name, lldb.SBFileSpec("main.swift")
+    def continue_to(self, process, bkpt_name):
+        """Continue to bkpt_name and return the thread stopped there. Async
+        code may resume on a different thread, so always use the returned
+        thread rather than one from an earlier stop."""
+        threads = lldbutil.continue_to_source_breakpoint(
+            self, process, bkpt_name, lldb.SBFileSpec("main.swift")
+        )
+        self.assertEqual(len(threads), 1, f"expected one thread at {bkpt_name}")
+        return threads[0]
+
+    # main.swift exercises every scenario sequentially, so a single process
+    # visits all of them in order. Each breakpoint is deleted after it is hit,
+    # which matters for the closures passed to map() over multiple elements.
+    @requireNotEmbeddedSwift
+    @swiftTest
+    def test(self):
+        self.build()
+        target, process, _, bkpt = lldbutil.run_to_source_breakpoint(
+            self, "break_simple_closure", lldb.SBFileSpec("main.swift")
         )
         target.BreakpointDelete(bkpt.GetID())
-        return (target, process, thread)
+        # Async variable inspection on Linux/Windows are still problematic.
+        test_async = self.getPlatform() not in ["linux", "windows"]
 
-    @requireNotEmbeddedSwift
-    @swiftTest
-    def test_simple_closure(self):
-        self.build()
-        (target, process, thread) = self.get_to_bkpt("break_simple_closure")
-        check_not_captured_error(self, thread.frames[0], "var_in_foo", "func_1(arg:)")
-        check_not_captured_error(self, thread.frames[0], "arg", "func_1(arg:)")
-        check_no_enhanced_diagnostic(self, thread.frames[0], "dont_find_me")
+        self.check_simple_closure(process)
+        self.check_nested_closure(process)
+        if test_async:
+            self.check_async_closure(process)
+        self.check_ctor_class_closure(process)
+        self.check_ctor_struct_closure(process)
+        self.check_ctor_enum_closure(process)
+        if test_async:
+            self.check_task_inside_non_async_func(process)
 
-    @requireNotEmbeddedSwift
-    @swiftTest
-    def test_nested_closure(self):
-        self.build()
-        (target, process, thread) = self.get_to_bkpt("break_double_closure_1")
-        check_not_captured_error(self, thread.frames[0], "var_in_foo", "func_2(arg:)")
-        check_not_captured_error(self, thread.frames[0], "arg", "func_2(arg:)")
-        check_not_captured_error(
-            self, thread.frames[0], "var_in_outer_closure", "closure #1 in func_2(arg:)"
-        )
-        check_no_enhanced_diagnostic(self, thread.frames[0], "dont_find_me")
+    def check_simple_closure(self, process):
+        frame = process.GetSelectedThread().frames[0]
+        check_not_captured_error(self, frame, "var_in_foo", "func_1(arg:)")
+        check_not_captured_error(self, frame, "arg", "func_1(arg:)")
+        check_no_enhanced_diagnostic(self, frame, "dont_find_me")
 
-        lldbutil.continue_to_source_breakpoint(
-            self, process, "break_double_closure_2", lldb.SBFileSpec("main.swift")
-        )
-        check_not_captured_error(self, thread.frames[0], "var_in_foo", "func_2(arg:)")
-        check_not_captured_error(self, thread.frames[0], "arg", "func_2(arg:)")
+    def check_nested_closure(self, process):
+        frame = self.continue_to(process, "break_double_closure_1").frames[0]
+        check_not_captured_error(self, frame, "var_in_foo", "func_2(arg:)")
+        check_not_captured_error(self, frame, "arg", "func_2(arg:)")
         check_not_captured_error(
-            self, thread.frames[0], "var_in_outer_closure", "closure #1 in func_2(arg:)"
+            self, frame, "var_in_outer_closure", "closure #1 in func_2(arg:)"
         )
-        check_not_captured_error(
-            self, thread.frames[0], "shadowed_var", "closure #1 in func_2(arg:)"
-        )
-        check_no_enhanced_diagnostic(self, thread.frames[0], "dont_find_me")
+        check_no_enhanced_diagnostic(self, frame, "dont_find_me")
 
-    @requireNotEmbeddedSwift
-    @swiftTest
-    # Async variable inspection on Linux/Windows are still problematic.
-    @skipIf(oslist=["windows", "linux"])
-    def test_async_closure(self):
-        self.build()
-        (target, process, thread) = self.get_to_bkpt("break_async_closure_1")
-        check_not_captured_error(self, thread.frames[0], "var_in_foo", "func_3(arg:)")
-        check_not_captured_error(self, thread.frames[0], "arg", "func_3(arg:)")
+        frame = self.continue_to(process, "break_double_closure_2").frames[0]
+        check_not_captured_error(self, frame, "var_in_foo", "func_2(arg:)")
+        check_not_captured_error(self, frame, "arg", "func_2(arg:)")
         check_not_captured_error(
-            self, thread.frames[0], "var_in_outer_closure", "closure #1 in func_3(arg:)"
+            self, frame, "var_in_outer_closure", "closure #1 in func_2(arg:)"
         )
-        check_no_enhanced_diagnostic(self, thread.frames[0], "dont_find_me")
+        check_not_captured_error(
+            self, frame, "shadowed_var", "closure #1 in func_2(arg:)"
+        )
+        check_no_enhanced_diagnostic(self, frame, "dont_find_me")
 
-        lldbutil.continue_to_source_breakpoint(
-            self, process, "break_async_closure_2", lldb.SBFileSpec("main.swift")
-        )
-        check_not_captured_error(self, thread.frames[0], "var_in_foo", "func_3(arg:)")
-        check_not_captured_error(self, thread.frames[0], "arg", "func_3(arg:)")
-        check_not_captured_error(
-            self, thread.frames[0], "var_in_outer_closure", "closure #1 in func_3(arg:)"
-        )
-        check_no_enhanced_diagnostic(self, thread.frames[0], "dont_find_me")
-
-    @requireNotEmbeddedSwift
-    @swiftTest
-    # Async variable inspection on Linux/Windows are still problematic.
-    @skipIf(oslist=["windows", "linux"])
-    def test_task_inside_non_async_func(self):
-        self.build()
-        (target, process, thread) = self.get_to_bkpt(
-            "break_task_inside_non_async_function"
-        )
-        check_not_captured_error(
-            self, thread.frames[0], "x", "task_inside_non_async_function()"
-        )
-
-    @requireNotEmbeddedSwift
-    @swiftTest
-    def test_ctor_class_closure(self):
-        self.build()
-        (target, process, thread) = self.get_to_bkpt("break_ctor_class")
-        check_not_captured_error(
-            self, thread.frames[0], "input", "MY_CLASS.init(input:)"
-        )
-        check_not_captured_error(
-            self, thread.frames[0], "find_me", "MY_CLASS.init(input:)"
-        )
-        check_no_enhanced_diagnostic(self, thread.frames[0], "dont_find_me")
-
-        lldbutil.continue_to_source_breakpoint(
-            self, process, "break_static_member_class", lldb.SBFileSpec("main.swift")
-        )
-        check_not_captured_error(
-            self,
-            thread.frames[0],
-            "input_static",
-            "static MY_CLASS.static_func(input_static:)",
-        )
-        check_not_captured_error(
-            self,
-            thread.frames[0],
-            "find_me_static",
-            "static MY_CLASS.static_func(input_static:)",
-        )
-        check_no_enhanced_diagnostic(self, thread.frames[0], "dont_find_me_static")
-
-        for kind in ["getter", "setter"]:
-            lldbutil.continue_to_source_breakpoint(
-                self,
-                process,
-                f"break_class_computed_property_{kind}",
-                lldb.SBFileSpec("main.swift"),
+    def check_async_closure(self, process):
+        for bkpt_name in ["break_async_closure_1", "break_async_closure_2"]:
+            frame = self.continue_to(process, bkpt_name).frames[0]
+            check_not_captured_error(self, frame, "var_in_foo", "func_3(arg:)")
+            check_not_captured_error(self, frame, "arg", "func_3(arg:)")
+            check_not_captured_error(
+                self, frame, "var_in_outer_closure", "closure #1 in func_3(arg:)"
             )
+            check_no_enhanced_diagnostic(self, frame, "dont_find_me")
+
+    def check_task_inside_non_async_func(self, process):
+        frame = self.continue_to(
+            process, "break_task_inside_non_async_function"
+        ).frames[0]
+        check_not_captured_error(self, frame, "x", "task_inside_non_async_function()")
+
+    def check_ctor_and_static(self, process, kind, type_name):
+        frame = self.continue_to(process, f"break_ctor_{kind}").frames[0]
+        check_not_captured_error(self, frame, "input", f"{type_name}.init(input:)")
+        check_not_captured_error(self, frame, "find_me", f"{type_name}.init(input:)")
+        check_no_enhanced_diagnostic(self, frame, "dont_find_me")
+
+        frame = self.continue_to(process, f"break_static_member_{kind}").frames[0]
+        static_func = f"static {type_name}.static_func(input_static:)"
+        check_not_captured_error(self, frame, "input_static", static_func)
+        check_not_captured_error(self, frame, "find_me_static", static_func)
+        check_no_enhanced_diagnostic(self, frame, "dont_find_me_static")
+
+    def check_computed_properties(self, process, kind, type_name):
+        for accessor in ["getter", "setter"]:
+            frame = self.continue_to(
+                process, f"break_{kind}_computed_property_{accessor}"
+            ).frames[0]
             check_not_captured_error(
                 self,
-                thread.frames[0],
+                frame,
                 "find_me",
-                f"MY_CLASS.class_computed_property.{kind}",
+                f"{type_name}.{kind}_computed_property.{accessor}",
             )
-            check_no_enhanced_diagnostic(self, thread.frames[0], "dont_find_me")
-        lldbutil.continue_to_source_breakpoint(
-            self,
-            process,
-            f"break_class_computed_property_didset",
-            lldb.SBFileSpec("main.swift"),
-        )
+            check_no_enhanced_diagnostic(self, frame, "dont_find_me")
+
+        frame = self.continue_to(
+            process, f"break_{kind}_computed_property_didset"
+        ).frames[0]
         check_not_captured_error(
             self,
-            thread.frames[0],
+            frame,
             "find_me",
-            f"MY_CLASS.class_computed_property_didset.didset",
+            f"{type_name}.{kind}_computed_property_didset.didset",
         )
-        check_no_enhanced_diagnostic(self, thread.frames[0], "dont_find_me")
+        check_no_enhanced_diagnostic(self, frame, "dont_find_me")
 
-    @requireNotEmbeddedSwift
-    @swiftTest
-    def test_ctor_struct_closure(self):
-        self.build()
-        (target, process, thread) = self.get_to_bkpt("break_ctor_struct")
-        check_not_captured_error(
-            self, thread.frames[0], "input", "MY_STRUCT.init(input:)"
-        )
-        check_not_captured_error(
-            self, thread.frames[0], "find_me", "MY_STRUCT.init(input:)"
-        )
-        check_no_enhanced_diagnostic(self, thread.frames[0], "dont_find_me")
+    def check_ctor_class_closure(self, process):
+        self.check_ctor_and_static(process, "class", "MY_CLASS")
+        self.check_computed_properties(process, "class", "MY_CLASS")
 
-        lldbutil.continue_to_source_breakpoint(
-            self, process, "break_static_member_struct", lldb.SBFileSpec("main.swift")
-        )
-        check_not_captured_error(
-            self,
-            thread.frames[0],
-            "input_static",
-            "static MY_STRUCT.static_func(input_static:)",
-        )
-        check_not_captured_error(
-            self,
-            thread.frames[0],
-            "find_me_static",
-            "static MY_STRUCT.static_func(input_static:)",
-        )
-        check_no_enhanced_diagnostic(self, thread.frames[0], "dont_find_me_static")
+    def check_ctor_struct_closure(self, process):
+        self.check_ctor_and_static(process, "struct", "MY_STRUCT")
+        self.check_computed_properties(process, "struct", "MY_STRUCT")
 
-        for kind in ["getter", "setter"]:
-            lldbutil.continue_to_source_breakpoint(
-                self,
-                process,
-                f"break_struct_computed_property_{kind}",
-                lldb.SBFileSpec("main.swift"),
-            )
-            check_not_captured_error(
-                self,
-                thread.frames[0],
-                "find_me",
-                f"MY_STRUCT.struct_computed_property.{kind}",
-            )
-            check_no_enhanced_diagnostic(self, thread.frames[0], "dont_find_me")
-        lldbutil.continue_to_source_breakpoint(
-            self,
-            process,
-            f"break_struct_computed_property_didset",
-            lldb.SBFileSpec("main.swift"),
-        )
-        check_not_captured_error(
-            self,
-            thread.frames[0],
-            "find_me",
-            f"MY_STRUCT.struct_computed_property_didset.didset",
-        )
-        check_no_enhanced_diagnostic(self, thread.frames[0], "dont_find_me")
-
-    @requireNotEmbeddedSwift
-    @swiftTest
-    def test_ctor_enum_closure(self):
-        self.build()
-        (target, process, thread) = self.get_to_bkpt("break_ctor_enum")
-        check_not_captured_error(
-            self, thread.frames[0], "input", "MY_ENUM.init(input:)"
-        )
-        check_not_captured_error(
-            self, thread.frames[0], "find_me", "MY_ENUM.init(input:)"
-        )
-        check_no_enhanced_diagnostic(self, thread.frames[0], "dont_find_me")
-
-        lldbutil.continue_to_source_breakpoint(
-            self, process, "break_static_member_enum", lldb.SBFileSpec("main.swift")
-        )
-        check_not_captured_error(
-            self,
-            thread.frames[0],
-            "input_static",
-            "static MY_ENUM.static_func(input_static:)",
-        )
-        check_not_captured_error(
-            self,
-            thread.frames[0],
-            "find_me_static",
-            "static MY_ENUM.static_func(input_static:)",
-        )
-        check_no_enhanced_diagnostic(self, thread.frames[0], "dont_find_me_static")
+    def check_ctor_enum_closure(self, process):
+        self.check_ctor_and_static(process, "enum", "MY_ENUM")

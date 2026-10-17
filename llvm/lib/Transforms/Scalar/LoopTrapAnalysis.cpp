@@ -16,6 +16,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Transforms/Scalar/LoopTrapAnalysis.h"
+#include "ScalarOptions.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/OptimizationRemarkEmitter.h"
@@ -23,7 +24,6 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/Remarks/BoundsSafetyOptRemarks.h"
-#include "llvm/Support/CommandLine.h"
 
 using namespace llvm;
 using namespace llvm::ore;
@@ -31,20 +31,6 @@ using namespace llvm::ore;
 #define REMARK_PASS DEBUG_TYPE
 
 enum class CheckLoopHoistType { MAYBE_CAN_HOIST, CANNOT_HOIST, SKIP };
-static cl::opt<bool> NewTrapSemantics(
-    "use-new-trap-semantics", cl::init(false),
-    cl::desc("Assume that traps are using the new trap semantics "
-             "logic."));
-static cl::opt<bool> BoundsSafetyTrapsOnly(
-    "use-bounds-safety-traps-only", cl::init(false),
-    cl::desc(
-        "We only check for -fbounds-safety traps if the flag is false we can check "
-        "for any hoistable traps."));
-static cl::opt<bool> LTAEmitExplain(
-    "loop-trap-analysis-explain", cl::init(false),
-    cl::desc("Emit the per-trap-edge explain analysis: one LoopTrapEdge remark "
-             "per conditional branch to a trap block. Off by default, so the "
-             "base remark output is unchanged."));
 
 /// Print a stable, non-empty label for \p BB, so remark args that identify
 /// BasicBlocks stay useful when the BB has no source-level name .
@@ -196,11 +182,12 @@ static bool hasUnreachableInst(Loop *L) {
   L->getExitBlocks(LoopExitBlocks);
   for (auto *BB : LoopExitBlocks) {
     auto *I = BB->getTerminator();
-    // check for trap instructions. If `BoundsSafetyTrapsOnly` is false then we
-    // ignore if the trap has a -fbounds-safety annotation.
+    // check for trap instructions. If `use_bounds_safety_traps_only` is false
+    // then we ignore if the trap has a -fbounds-safety annotation.
     if (!isa<UnreachableInst>(I))
       continue;
-    if (BoundsSafetyTrapsOnly && !isBoundsSafetyAnnotated(I))
+    if (ScalarOptions::Global.use_bounds_safety_traps_only &&
+        !isBoundsSafetyAnnotated(I))
       continue;
     if (any_of(predecessors(BB), [L](BasicBlock *PredB) {
           auto *TerminatorInst = PredB->getTerminator();
@@ -208,7 +195,7 @@ static bool hasUnreachableInst(Loop *L) {
                  (isa<CondBrInst>(TerminatorInst) ||
                   isa<UncondBrInst>(TerminatorInst) ||
                   isa<SwitchInst>(TerminatorInst)) &&
-                 (!BoundsSafetyTrapsOnly ||
+                 (!ScalarOptions::Global.use_bounds_safety_traps_only ||
                   isBoundsSafetyAnnotated(TerminatorInst));
         }))
       return true;
@@ -255,7 +242,7 @@ static CheckLoopHoistType processLoops(Loop *L, ScalarEvolution &SE,
           if (isa<CallInst>(I))
             InstHasSideEffects =
                 I.mayHaveSideEffects() || I.mayReadFromMemory();
-          else if (NewTrapSemantics)
+          else if (ScalarOptions::Global.use_new_trap_semantics)
             InstHasSideEffects = !I.willReturn() || I.mayThrow();
           else
             InstHasSideEffects = I.mayHaveSideEffects();
@@ -330,7 +317,7 @@ PreservedAnalyses LoopTrapAnalysisPass::run(Function &F,
   auto &SE = AM.getResult<ScalarEvolutionAnalysis>(F);
   auto &ORE = AM.getResult<OptimizationRemarkEmitterAnalysis>(F);
   emitRemarks(F, LI, ORE, SE);
-  if (LTAEmitExplain) {
+  if (ScalarOptions::Global.loop_trap_analysis_explain) {
     emitLoopPrimitives(F, LI, ORE, SE);
     emitPerTrapEdge(F, LI, ORE);
   }

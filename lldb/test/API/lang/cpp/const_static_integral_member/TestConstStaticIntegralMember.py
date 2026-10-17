@@ -11,6 +11,7 @@ from lldbsuite.test import lldbutil
 class TestCase(TestBase):
     SHARED_BUILD_TESTCASE = False
 
+    @skipIf(debug_info=["pdb"], bugnumber="llvm.org/pr149498")  # Asserts in CodeGen
     @requireExpressionEvaluation
     def test(self):
         self.build()
@@ -145,8 +146,6 @@ class TestCase(TestBase):
             "ClassWithConstexprs::scoped_enum_val", "ScopedEnum", "scoped_enum_case2"
         )
 
-    # Fails on Windows for unknown reasons.
-    @skipIfWindows
     # On linux this passes due to the manual index
     @expectedFailureDarwin(debug_info=no_match(["dsym"]))
     @skipIf(debug_info=["dsym"], compiler=["clang"], compiler_version=["<", "19.0"])
@@ -199,8 +198,6 @@ class TestCase(TestBase):
         self.expect_expr("ns::Foo::mem", result_value="10")
         self.expect_expr("::Foo::mem", result_value="-29")
 
-    # Fails on Windows for unknown reasons.
-    @skipIfWindows
     # On linux this passes due to the manual index
     @expectedFailureDarwin(debug_info=no_match(["dsym"]))
     @skipIf(debug_info=["dsym"], compiler=["clang"], compiler_version=["<", "19.0"])
@@ -212,7 +209,10 @@ class TestCase(TestBase):
     def test_shadowed_static_inline_members_dwarf4(self):
         self.check_shadowed_static_inline_members("-gdwarf-4")
 
-    @expectedFailureAll(bugnumber="target var doesn't honour global namespace")
+    @expectedFailureAll(
+        debug_info=no_match(["pdb"]),
+        bugnumber="target var doesn't honour global namespace",
+    )
     def test_shadowed_static_inline_members_xfail(self):
         self.build()
         lldbutil.run_to_name_breakpoint(self, "bar")

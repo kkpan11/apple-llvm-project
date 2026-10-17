@@ -124,6 +124,9 @@ public:
   static llvm::Expected<lldb::offset_t>
   FindAsyncTaskNameOffset(Process &process);
 
+  /// Returns the size of an `AsyncTask` in the target's concurrency runtime.
+  static llvm::Expected<lldb::offset_t> FindAsyncTaskSize(Process &process);
+
   /// Inclusive range of `_swift_concurrency_debug_internal_layout_version`
   /// values that LLDB knows how to decode.
   ///
@@ -148,7 +151,8 @@ public:
     global = 2,
     pthread_reserved_key = 3,
     pthread_allocated_key = 4,
-    last = 5,
+    global_tls_array = 5,
+    last = 6,
   };
   struct ConcurrencyInfo {
     std::optional<uint32_t> version;
@@ -468,7 +472,9 @@ public:
   llvm::Expected<CompilerType>
   BindGenericTypeParameters(StackFrame &stack_frame, CompilerType base_type);
 
-  bool IsStoredInlineInBuffer(CompilerType type) override;
+  /// \return whether the dynamic value stored in a Swift fixed buffer
+  /// fits into that buffer or is indirect and allocated on the heap.
+  bool IsStoredInlineInBuffer(CompilerType type);
 
   /// Check if this type alias is listed in any witness tables and resolve it.
   llvm::Expected<CompilerType> ResolveTypeAlias(CompilerType alias);
@@ -579,6 +585,7 @@ public:
                                                   CompilerType type) override;
   lldb::addr_t FixupAddress(lldb::addr_t addr, CompilerType type,
                             Status &error) override;
+  llvm::Error FixupVariableLocation(Variable &variable, Value &value) override;
 
   lldb::ThreadPlanSP GetStepThroughTrampolinePlan(Thread &thread,
                                                   bool stop_others) override;
@@ -618,6 +625,11 @@ public:
   // this ValueObject represents something that validly conforms
   // to the magic ErrorType protocol.
   bool IsValidErrorValue(ValueObject &in_value);
+
+  /// Top-level code reports an error that nothing caught to
+  /// swift_errorInMain, which would otherwise end the process.
+  lldb::BreakpointSP CreateErrorBackstopBreakpoint() override;
+  lldb::ValueObjectSP GetErrorValueAtBackstop(StackFrame &frame) override;
   /// \}
 
   static const char *GetErrorBackstopName();
@@ -965,6 +977,10 @@ private:
   // ModulesDidLoad() callback appends to m_modules_to_add.
   void ProcessModulesToAdd();
 
+  /// Remember \p modules so they are added to the reflection context the next
+  /// time it is needed. Modules already deferred are not added twice.
+  void DeferModules(const ModuleList &modules);
+
   /// Lazily initialize and return \p m_SwiftNativeNSErrorISA.
   std::optional<lldb::addr_t> GetSwiftNativeNSErrorISA();
 
@@ -996,8 +1012,12 @@ private:
   SwiftMetadataCache m_swift_metadata_cache;
 
   /// Record modules added through ModulesDidLoad, which are to be
-  /// added to the reflection context once it's being initialized.
-  ModuleList m_modules_to_add;
+  /// added to the reflection context once it's being initialized. The
+  /// references are weak: a module the target has since dropped must not be
+  /// kept alive here, because a live Module keeps its object file mapped,
+  /// which on Windows locks the file on disk.
+  std::mutex m_modules_to_add_mutex;
+  std::vector<lldb::ModuleWP> m_modules_to_add;
 
   /// Increased every time SymbolsDidLoad is called.
   unsigned m_generation = 0;
@@ -1020,13 +1040,15 @@ private:
       lldb::ModuleSP module,
       llvm::SmallVector<llvm::StringRef, 1> likely_module_names);
 
-  /// Cache for the debug-info-originating type infos.
+  /// Cache for the debug-info-originating type infos. Pointers to the
+  /// TypeInfos escape into other TypeInfos and into the reflection
+  /// context's caches, so they must not move when the maps grow.
   /// \{
   llvm::DenseMap<lldb::opaque_compiler_type_t,
-                 swift::reflection::BuiltinTypeInfo>
+                 std::unique_ptr<swift::reflection::BuiltinTypeInfo>>
       m_clang_builtin_type_info;
   llvm::DenseMap<lldb::opaque_compiler_type_t,
-                 swift::reflection::RecordTypeInfo>
+                 std::unique_ptr<swift::reflection::RecordTypeInfo>>
       m_clang_record_type_info;
   llvm::DenseSet<lldb::opaque_compiler_type_t> m_clang_type_info_negative_cache;
   llvm::DenseMap<const char *, CompilerType> m_anonymous_clang_types;
@@ -1078,7 +1100,7 @@ struct TaskFinder {
 /// Returns a TaskFinder for `info`. The pointer is guaranteed to be non-null,
 /// but may be a NoTaskFinder if the storage kind is unsupported or absent.
 std::unique_ptr<TaskFinder>
-GetTaskFinder(const SwiftLanguageRuntime::ConcurrencyInfo &);
+GetTaskFinder(Process &process, const SwiftLanguageRuntime::ConcurrencyInfo &);
 
 /// Inspects the concurrency library in the process, if any, to construct a
 /// TaskFinder. The pointer is guaranteed to be non-null, but the returned
@@ -1101,9 +1123,6 @@ struct JobFlags {
   bool hasInitialTaskName() const { return hasFlag(Task_HasInitialTaskName); }
 };
 
-/// The offset of ChildFragment, which is the first fragment of an AsyncTask.
-inline constexpr size_t AsyncTaskSize = sizeof(::swift::AsyncTask);
-
 /// Size of `AsyncTask::NameFragment` = `const char *Name` + `size_t Length`,
 /// i.e. two pointer-sized words. Tail-allocated immediately after the
 /// AsyncTask iff `JobFlags::hasInitialTaskName()` is set.
@@ -1125,7 +1144,8 @@ llvm::Expected<lldb::offset_t> GetChildFragmentOffset(Process &process,
 ///
 /// `flags` must come from the same task whose offset is being computed —
 /// they encode which fragments are available, which impacts the offset.
-lldb::offset_t GetChildFragmentOffset(Process &process, JobFlags flags);
+llvm::Expected<lldb::offset_t> GetChildFragmentOffset(Process &process,
+                                                      JobFlags flags);
 
 /// Get the name of a task.
 /// Names are immutable and specified with `Task(name:)` during initialization.
