@@ -3,6 +3,7 @@ Provides definitions for various lldb test categories
 """
 
 # System modules
+import platform
 import sys
 
 # Third-party modules
@@ -16,7 +17,7 @@ debug_info_categories = {
     "dwarf": True,
     "dwo": True,
     "dsym": True,
-    "pdb": False,
+    "pdb": True,
     "gmodules": False,
 }
 
@@ -27,7 +28,7 @@ swift_module_importer_categories = {
 
 embedded_swift_categories = {
     "swift": True,
-    "swiftembed": True,
+    "swiftembed": platform.system() != "Windows",
 }
 
 all_categories = {

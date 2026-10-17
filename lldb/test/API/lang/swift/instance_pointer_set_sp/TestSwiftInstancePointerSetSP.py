@@ -16,7 +16,6 @@ import lldb
 from lldbsuite.test.decorators import *
 import lldbsuite.test.lldbtest as lldbtest
 import lldbsuite.test.lldbutil as lldbutil
-import os
 
 
 class TestSwiftInstancePointerSetSP(lldbtest.TestBase):
@@ -37,28 +36,8 @@ class TestSwiftInstancePointerSetSP(lldbtest.TestBase):
 
     def do_test(self):
         """Test that we correctly track instance pointers in ValueObjectPrinter"""
-        exe_name = "a.out"
-        exe = self.getBuildArtifact(exe_name)
-
-        # Create the target
-        target = self.dbg.CreateTarget(exe)
-        self.assertTrue(target, lldbtest.VALID_TARGET)
-
-        # Set the breakpoints
-        breakpoint = target.BreakpointCreateBySourceRegex(
-            'break here', self.main_source_spec)
-        self.assertTrue(
-            breakpoint.GetNumLocations() > 0,
-            lldbtest.VALID_BREAKPOINT)
-
-        # Launch the process, and do not stop at the entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
-
-        self.assertTrue(process, lldbtest.PROCESS_IS_VALID)
-
-        # Frame #0 should be at our breakpoint.
-        threads = lldbutil.get_threads_stopped_at_breakpoint(
-            process, breakpoint)
+        lldbutil.run_to_source_breakpoint(
+            self, 'break here', self.main_source_spec)
 
         self.expect(
             "frame variable -d run -- o",

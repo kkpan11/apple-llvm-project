@@ -6,6 +6,7 @@ import os
 
 
 class TestSwiftDWARFImporter_Swift(lldbtest.TestBase):
+    SHARED_BUILD_TESTCASE = False
 
     mydir = lldbtest.TestBase.compute_mydir(__file__)
 
@@ -24,7 +25,7 @@ class TestSwiftDWARFImporter_Swift(lldbtest.TestBase):
         shutil.rmtree(include)
 
     @requireNotEmbeddedSwift # embedded Swift disables ObjC interop, so this test's Foundation import does not compile
-    @skipUnlessDarwin
+    @requireSwiftObjCInterop
     @swiftTest
     def test(self):
         self.build()

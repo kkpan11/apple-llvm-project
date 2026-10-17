@@ -23,15 +23,6 @@ errorOrToPointer(ErrorOr<std::unique_ptr<T>> ErrorOrPointer) {
   return nullptr;
 }
 
-template <class T>
-static std::unique_ptr<T>
-expectedToPointer(Expected<std::unique_ptr<T>> ExpectedPointer) {
-  if (ExpectedPointer)
-    return std::move(*ExpectedPointer);
-  consumeError(ExpectedPointer.takeError());
-  return nullptr;
-}
-
 static bool
 bufferHasContent(ErrorOr<std::unique_ptr<MemoryBuffer>> ErrorOrBuffer,
                  MemoryBufferRef Content) {
