@@ -7,5 +7,5 @@ if config.target_arch == "powerpc64":
 if config.android and config.target_arch not in ["x86", "x86_64"]:
     config.unsupported = True
 
-if config.host_os == "Darwin" and config.target_arch not in ["x86", "x86_64"]:
+if config.target_os == "Darwin" and config.target_arch not in ["x86", "x86_64"]:
     config.unsupported = True

@@ -43,17 +43,18 @@
 ; CHECK:   unreachable
 ; CHECK: }
 
-; Function Attrs: nounwind
+; Function Attrs: nounwind memory(argmem: readwrite)
 ; CHECK: declare ptr @llvm.coro.begin(token, ptr writeonly) #1
 
 ; Function Attrs: nounwind
-; CHECK: declare i1 @llvm.coro.suspend.retcon.i1(...) #1
+; CHECK: declare i1 @llvm.coro.suspend.retcon.i1(...) #2
 
 ; Function Attrs: nounwind
-; CHECK: declare token @llvm.coro.id.retcon.once(i32, i32, ptr, ptr, ptr, ptr, ...) #1
+; CHECK: declare token @llvm.coro.id.retcon.once(i32, i32, ptr, ptr, ptr, ptr, ...) #2
 
 ; Function Attrs: nounwind
-; CHECK: declare void @llvm.coro.end(ptr, i1, token) #1
+; CHECK: declare void @llvm.coro.end(ptr, i1, token) #2
 
 ; CHECK: attributes #0 = { presplitcoroutine }
-; CHECK: attributes #1 = { nounwind }
+; CHECK: attributes #1 = { nounwind memory(argmem: readwrite) }
+; CHECK: attributes #2 = { nounwind }

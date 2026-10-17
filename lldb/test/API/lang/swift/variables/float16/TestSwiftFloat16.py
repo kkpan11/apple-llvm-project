@@ -2,17 +2,45 @@
 Test that Float16 reports a scalar value.
 """
 
+import os
+
 import lldb
 from lldbsuite.test.lldbtest import *
 from lldbsuite.test.decorators import *
 import lldbsuite.test.lldbutil as lldbutil
 
 
+# Distros whose Swift stdlib has no Float16 support, keyed by the PLATFORM_ID
+# in os-release.
+UNSUPPORTED_PLATFORM_IDS = {
+    "platform:al2023": "Amazon Linux 2023",
+    "platform:el9": "UBI 9",
+}
+
+
+def isUnsupportedDistro():
+    for path in ("/etc/os-release", "/usr/lib/os-release"):
+        if os.path.exists(path):
+            with open(path) as f:
+                contents = f.read()
+            for platform_id, name in UNSUPPORTED_PLATFORM_IDS.items():
+                if 'PLATFORM_ID="%s"' % platform_id in contents:
+                    return "%s is not supported." % name
+
+    return None
+
+
 class TestSwiftFloat16(TestBase):
     @swiftTest
     @skipEmbeddedSwiftOnWindows
+    @skipIfLinux
     # Float16 is unavailable in the stdlib on x86_64 macOS.
     @skipIf(oslist=["macosx"], archs=["x86_64"])
+    # The distro check inspects the host, which says nothing about the target
+    # when the test runs against a remote platform.
+    @skipIfRemote
+    # Some distros have no Float16 support.
+    @skipTestIfFn(isUnsupportedDistro)
     def test(self):
         """Test that Float16 has a value, like Float and Double do."""
         self.build()

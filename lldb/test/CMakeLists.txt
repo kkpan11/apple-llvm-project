@@ -12,7 +12,7 @@ endif()
 if(LLDB_ENFORCE_STRICT_TEST_REQUIREMENTS)
   message(STATUS "Enforcing strict test requirements for LLDB")
   # Lit uses psutil to do per-test timeouts.
-  set(useful_python_modules psutil packaging cryptography)
+  set(useful_python_modules psutil packaging cryptography.x509)
 
   if(NOT WIN32)
     # We no longer vendor pexpect and it is not used on Windows.
@@ -156,10 +156,6 @@ endif()
 if(TARGET darwin-mte-launcher)
   add_lldb_test_dependency(darwin-mte-launcher)
   set(LLDB_LAUNCHER ${LLVM_RUNTIME_OUTPUT_INTDIR}/darwin-mte-launcher${CMAKE_EXECUTABLE_SUFFIX})
-endif()
-
-if (LLDB_CAN_USE_LLDB_RPC_SERVER)
-  add_lldb_test_dependency(lldb-rpc-generate-sources)
 endif()
 
 # Add dependencies that are not exported targets when building standalone.
@@ -306,7 +302,7 @@ llvm_canonicalize_cmake_booleans(
   LLDB_ENABLE_MTE
   LLDB_ENABLE_PYTHON
   LLDB_ENABLE_LUA
-  LLDB_ENABLE_LZMA
+  LLVM_ENABLE_LZMA
   LLVM_ENABLE_ZLIB
   LLVM_ENABLE_SHARED_LIBS
   LLVM_ENABLE_DIA_SDK
@@ -316,7 +312,6 @@ llvm_canonicalize_cmake_booleans(
   LLDB_TOOL_LLDB_SERVER_BUILD
   LLDB_USE_SYSTEM_DEBUGSERVER
   LLDB_IS_64_BITS
-  LLDB_BUILD_LLDBRPC
   LLDB_USE_ARM64E_DEBUGSERVER)
 
 # BEGIN SWIFT
@@ -372,6 +367,20 @@ endif()
 # END SWIFT
 
 # Configure the individual test suites.
+# Shared by the API and Shell suites: on Windows, where there is no rpath,
+# test inferiors need the Swift runtime DLLs on PATH at launch.
+set(LLDB_TEST_INFERIOR_RUNTIME_BIN
+  ""
+  CACHE STRING "Directory containing the target platform's runtime DLLs. \
+Used on Windows to populate the test inferior's PATH so dynamically-loaded \
+Swift runtime DLLs resolve."
+)
+
+# Failed tests are rerun on Windows (see lldbflakes.py)
+if(CMAKE_HOST_WIN32)
+  set(LLDB_TEST_LIT_ARGS --show-flakypass)
+endif()
+
 add_subdirectory(API)
 add_subdirectory(Shell)
 add_subdirectory(Unit)
@@ -385,17 +394,22 @@ configure_lit_site_cfg(
 
 add_lit_testsuite(check-lldb "Running lldb lit test suite"
   ${CMAKE_CURRENT_BINARY_DIR}
+  ARGS ${LLDB_TEST_LIT_ARGS}
   DEPENDS
     lldb-api-test-deps
     lldb-shell-test-deps
     lldb-unit-test-deps)
 
 # BEGIN SWIFT MOD
+# lldb-unit-test-deps is what builds LLDBUnitTests; the filter selects
+# Swift-specific unit tests as well as API and Shell tests.
 add_lit_testsuite(check-lldb-swift
   "Running swift tests"
   ${CMAKE_CURRENT_BINARY_DIR}
-  ARGS "--filter=[sS]wift"
-  DEPENDS lldb-test-deps)
+  ARGS "--filter=[sS]wift" ${LLDB_TEST_LIT_ARGS}
+  DEPENDS
+    lldb-test-deps
+    lldb-unit-test-deps)
 # END SWIFT MOD
 
 if(LLDB_BUILT_STANDALONE)

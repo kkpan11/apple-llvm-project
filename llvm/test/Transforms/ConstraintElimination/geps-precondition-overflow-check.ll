@@ -217,8 +217,7 @@ define i1 @upper_and_lower_checks_2_dst6(ptr %dst, i32 %n) {
 ; CHECK:       then:
 ; CHECK-NEXT:    [[DST_6:%.*]] = getelementptr i32, ptr [[DST]], i64 6
 ; CHECK-NEXT:    [[C_DST_6_ULT:%.*]] = icmp ult ptr [[DST_6]], [[UPPER]]
-; CHECK-NEXT:    [[TRUE_DST_6_UGE:%.*]] = icmp uge ptr [[DST_6]], [[DST]]
-; CHECK-NEXT:    [[RES:%.*]] = and i1 [[C_DST_6_ULT]], [[TRUE_DST_6_UGE]]
+; CHECK-NEXT:    [[RES:%.*]] = and i1 [[C_DST_6_ULT]], true
 ; CHECK-NEXT:    ret i1 [[RES]]
 ; CHECK:       else:
 ; CHECK-NEXT:    ret i1 false
