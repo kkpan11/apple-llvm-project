@@ -108,8 +108,7 @@ std::optional<uint64_t> SwiftLanguageRuntime::GetMemberVariableOffsetRemoteAST(
   swift::remote::RemoteAddress optmeta;
   const swift::TypeKind type_kind = swift_type->getKind();
   switch (type_kind) {
-  case swift::TypeKind::Class:
-  case swift::TypeKind::BoundGenericClass: {
+  case swift::TypeKind::Class: {
     LLDB_LOGF(GetLog(LLDBLog::Types),
               "[MemberVariableOffsetResolver] type is a class - trying to "
               "get metadata for valueobject %s",

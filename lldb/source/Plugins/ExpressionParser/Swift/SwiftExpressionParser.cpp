@@ -697,8 +697,7 @@ AddRequiredAliases(Block *block, lldb_private::StackFrame &stack_frame,
   if (swift::WeakStorageType *weak_storage_type =
           swift_self_type.get()->getAs<swift::WeakStorageType>()) {
     swift::Type referent_type = weak_storage_type->getReferentType();
-    swift::BoundGenericEnumType *optional_type =
-        referent_type->getAs<swift::BoundGenericEnumType>();
+    swift::EnumType *optional_type = referent_type->getAs<swift::EnumType>();
 
     if (!optional_type || optional_type->getGenericArgs().empty())
       return llvm::createStringError(
@@ -708,8 +707,7 @@ AddRequiredAliases(Block *block, lldb_private::StackFrame &stack_frame,
     swift::Type first_arg_type = optional_type->getGenericArgs()[0];
 
     // In Swift only class types can be weakly captured.
-    if (!first_arg_type->is<swift::ClassType>() &&
-        !first_arg_type->is<swift::BoundGenericClassType>())
+    if (!first_arg_type->is<swift::ClassType>())
       return llvm::createStringError(
           "Unable to add the aliases the expression needs because "
           "weakly captured type is not a class type.");

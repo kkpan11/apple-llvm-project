@@ -60,8 +60,8 @@ swift::SILValue SwiftSILManipulator::emitLValueForVariable(
   swift::CanType unsafe_mutable_pointer_can_type =
       struct_argument->getType().getASTType();
 
-  swift::BoundGenericStructType *unsafe_mutable_pointer_struct_type =
-      llvm::cast<swift::BoundGenericStructType>(
+  swift::StructType *unsafe_mutable_pointer_struct_type =
+      llvm::cast<swift::StructType>(
           unsafe_mutable_pointer_can_type.getPointer());
   swift::StructDecl *unsafe_mutable_pointer_struct_decl =
       unsafe_mutable_pointer_struct_type->getDecl();
