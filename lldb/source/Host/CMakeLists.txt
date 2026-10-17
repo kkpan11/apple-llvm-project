@@ -30,7 +30,6 @@ add_host_subdirectory(common
   common/HostProcess.cpp
   common/HostThread.cpp
   common/JSONTransport.cpp
-  common/LZMA.cpp
   common/LockFileBase.cpp
   common/MainLoopBase.cpp
   common/MemoryMonitor.cpp
@@ -123,9 +122,21 @@ else()
     posix/LockFilePosix.cpp
     posix/MainLoopPosix.cpp
     posix/PipePosix.cpp
-    posix/ProcessLauncherPosixFork.cpp
     posix/Support.cpp
     )
+
+  if (NOT EMSCRIPTEN)
+    add_host_subdirectory(posix
+      posix/ProcessLauncherPosixFork.cpp
+      )
+  endif()
+
+  # Darwin has its own framework-aware implementation.
+  if (LLDB_ENABLE_PYTHON AND NOT CMAKE_SYSTEM_NAME MATCHES "Darwin")
+    add_host_subdirectory(posix
+      posix/PythonRuntimeLoaderPosix.cpp
+      )
+  endif()
 
   if(LLDB_ENABLE_SWIFT_SUPPORT)
     add_host_subdirectory(posix
@@ -153,8 +164,11 @@ else()
       set_property(SOURCE macosx/Host.mm APPEND PROPERTY
                COMPILE_DEFINITIONS "NO_XPC_SERVICES=1")
     endif()
-
-
+  elseif (CMAKE_SYSTEM_NAME MATCHES "Emscripten")
+    add_host_subdirectory(emscripten
+      emscripten/Host.cpp
+      emscripten/HostInfoEmscripten.cpp
+      )
   elseif (CMAKE_SYSTEM_NAME MATCHES "Linux|Android")
     add_host_subdirectory(linux
       linux/AbstractSocket.cpp
@@ -163,11 +177,6 @@ else()
       linux/LibcGlue.cpp
       linux/Support.cpp
       )
-    if (LLDB_ENABLE_PYTHON)
-      add_host_subdirectory(linux
-        linux/PythonRuntimeLoaderLinux.cpp
-        )
-    endif()
     if (CMAKE_SYSTEM_NAME MATCHES "Android")
       add_host_subdirectory(android
         android/HostInfoAndroid.cpp
@@ -212,9 +221,6 @@ if (HAVE_LIBDL)
 endif()
 if (LLDB_ENABLE_LIBEDIT)
   list(APPEND EXTRA_LIBS LibEdit::LibEdit)
-endif()
-if (LLDB_ENABLE_LZMA)
-  list(APPEND EXTRA_LIBS ${LIBLZMA_LIBRARIES})
 endif()
 if (WIN32)
   list(APPEND LLDB_SYSTEM_LIBS psapi)

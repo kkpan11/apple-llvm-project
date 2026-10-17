@@ -16,6 +16,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Transforms/Scalar/LoopTrapAnalysis.h"
+#include "ScalarOptions.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringExtras.h"
@@ -31,7 +32,6 @@
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/Remarks/BoundsSafetyOptRemarks.h"
-#include "llvm/Support/CommandLine.h"
 
 using namespace llvm;
 using namespace llvm::ore;
@@ -39,31 +39,6 @@ using namespace llvm::ore;
 #define REMARK_PASS DEBUG_TYPE
 
 enum class CheckLoopHoistType { MAYBE_CAN_HOIST, CANNOT_HOIST, SKIP };
-static cl::opt<bool> NewTrapSemantics(
-    "use-new-trap-semantics", cl::init(false),
-    cl::desc("Assume that traps are using the new trap semantics "
-             "logic."));
-static cl::opt<bool> BoundsSafetyTrapsOnly(
-    "use-bounds-safety-traps-only", cl::init(false),
-    cl::desc(
-        "We only check for -fbounds-safety traps if the flag is false we can check "
-        "for any hoistable traps."));
-static cl::opt<bool> LTAEmitExplain(
-    "loop-trap-analysis-explain", cl::init(false),
-    cl::desc("Emit the per-trap-edge explain analysis: one LoopTrapEdge remark "
-             "per conditional branch to a trap block. Off by default, so the "
-             "base remark output is unchanged."));
-static cl::opt<unsigned> EntryProximityDepth(
-    "loop-trap-entry-proximity-depth", cl::init(3),
-    cl::desc("Maximum dominator depth from function entry at which a "
-             "trap edge is classified IsEntryProximate (default 3)."));
-static cl::opt<bool> LTAEmitLoadAlias(
-    "loop-load-alias", cl::init(false),
-    cl::desc("Opt-in: for each load in an INNERMOST loop that is may-clobbered "
-             "by an in-loop writer (store / memcpy / call), emit a "
-             "LoopLoadAlias record naming the first such writer. Clobbered "
-             "loads only (hoistable loads are omitted). Off by default; "
-             "enable selectively as it emits one record per clobbered load."));
 
 /// Print a stable, non-empty label for \p BB, so remark args that identify
 /// BasicBlocks stay useful when the BB has no source-level name .
@@ -614,7 +589,7 @@ static bool isEntryProximate(const Function &F, BasicBlock *BB,
         if (SuccL->getHeader() == Succ && SuccL->getLoopPreheader() == CurBB)
           return true;
     }
-    if (Depth >= EntryProximityDepth.getValue())
+    if (Depth >= ScalarOptions::Global.loop_trap_entry_proximity_depth)
       return false;
     ++Depth;
   }
@@ -818,8 +793,9 @@ static std::tuple<bool, bool, bool> loadAliasFlags(
       if (&I == Load)
         continue;
       if (auto *SI = dyn_cast<StoreInst>(&I)) {
-        if (LTAEmitExplain ? isModSet(AA.getModRefInfo(SI, LoadLoc))
-                           : !AA.isNoAlias(MemoryLocation::get(SI), LoadLoc))
+        if (ScalarOptions::Global.loop_trap_analysis_explain
+                ? isModSet(AA.getModRefInfo(SI, LoadLoc))
+                : !AA.isNoAlias(MemoryLocation::get(SI), LoadLoc))
           Store = true;
       } else if (auto *MI = dyn_cast<MemIntrinsic>(&I)) {
         if (isModSet(AA.getModRefInfo(MI, LoadLoc)))
@@ -849,8 +825,9 @@ static Instruction *firstAliasingStore(LoadInst *Load, Loop *L, AAResults &AA) {
       if (&I == Load)
         continue;
       if (auto *SI = dyn_cast<StoreInst>(&I)) {
-        if (LTAEmitExplain ? isModSet(AA.getModRefInfo(SI, LoadLoc))
-                           : !AA.isNoAlias(MemoryLocation::get(SI), LoadLoc))
+        if (ScalarOptions::Global.loop_trap_analysis_explain
+                ? isModSet(AA.getModRefInfo(SI, LoadLoc))
+                : !AA.isNoAlias(MemoryLocation::get(SI), LoadLoc))
           return &I;
       } else if (auto *MI = dyn_cast<MemIntrinsic>(&I)) {
         if (isModSet(AA.getModRefInfo(MI, LoadLoc)))
@@ -870,8 +847,9 @@ static Instruction *firstAliasingWriter(LoadInst *Load, Loop *L,
       if (&I == Load)
         continue;
       if (auto *SI = dyn_cast<StoreInst>(&I)) {
-        if (LTAEmitExplain ? isModSet(AA.getModRefInfo(SI, LoadLoc))
-                           : !AA.isNoAlias(MemoryLocation::get(SI), LoadLoc))
+        if (ScalarOptions::Global.loop_trap_analysis_explain
+                ? isModSet(AA.getModRefInfo(SI, LoadLoc))
+                : !AA.isNoAlias(MemoryLocation::get(SI), LoadLoc))
           return &I;
       } else if (auto *MI = dyn_cast<MemIntrinsic>(&I)) {
         if (isModSet(AA.getModRefInfo(MI, LoadLoc)))
@@ -993,8 +971,9 @@ loadReloadCause(LoadInst *Load, Loop *L, AAResults &AA,
       if (&I == Load)
         continue;
       if (auto *SI = dyn_cast<StoreInst>(&I)) {
-        if (LTAEmitExplain ? isModSet(AA.getModRefInfo(SI, LoadLoc))
-                           : !AA.isNoAlias(MemoryLocation::get(SI), LoadLoc)) {
+        if (ScalarOptions::Global.loop_trap_analysis_explain
+                ? isModSet(AA.getModRefInfo(SI, LoadLoc))
+                : !AA.isNoAlias(MemoryLocation::get(SI), LoadLoc)) {
           Result = ReloadReason::StoreReload;
           goto done;
         }
@@ -1221,7 +1200,7 @@ static void emitPerTrapEdge(Function &F, LoopInfo &LI,
         << " predicate_shape="
         << NV("PredicateShape", trapPredicateShapeName(PredShape).str())
         << " is_entry_proximate=" << NV("IsEntryProximate", IsEntryProx);
-    if (LTAEmitExplain) {
+    if (ScalarOptions::Global.loop_trap_analysis_explain) {
       Rem << " dominates_latch=" << NV("DominatesLatch", Dom.DominatesLatch)
           << " loop_latch_btc_computable="
           << NV("LoopLatchBTCComputable", Dom.LoopLatchBTCComputable)
@@ -1259,7 +1238,7 @@ static void emitPerTrapEdge(Function &F, LoopInfo &LI,
   // Flag-gated per-load alias annotation: for each load in an INNERMOST loop
   // may-clobbered by an in-loop writer (store / memcpy / call), emit a
   // LoopLoadAlias record naming the first such writer. Clobbered loads only.
-  if (LTAEmitLoadAlias) {
+  if (ScalarOptions::Global.loop_load_alias) {
     std::string LName = "LoopLoadAlias";
     for (Loop *L : LI.getLoopsInPreorder()) {
       if (!L->isInnermost())
@@ -1303,11 +1282,12 @@ static bool hasUnreachableInst(Loop *L) {
   L->getExitBlocks(LoopExitBlocks);
   for (auto *BB : LoopExitBlocks) {
     auto *I = BB->getTerminator();
-    // check for trap instructions. If `BoundsSafetyTrapsOnly` is false then we
-    // ignore if the trap has a -fbounds-safety annotation.
+    // check for trap instructions. If `use_bounds_safety_traps_only` is false
+    // then we ignore if the trap has a -fbounds-safety annotation.
     if (!isa<UnreachableInst>(I))
       continue;
-    if (BoundsSafetyTrapsOnly && !isBoundsSafetyAnnotated(I))
+    if (ScalarOptions::Global.use_bounds_safety_traps_only &&
+        !isBoundsSafetyAnnotated(I))
       continue;
     if (any_of(predecessors(BB), [L](BasicBlock *PredB) {
           auto *TerminatorInst = PredB->getTerminator();
@@ -1315,7 +1295,7 @@ static bool hasUnreachableInst(Loop *L) {
                  (isa<CondBrInst>(TerminatorInst) ||
                   isa<UncondBrInst>(TerminatorInst) ||
                   isa<SwitchInst>(TerminatorInst)) &&
-                 (!BoundsSafetyTrapsOnly ||
+                 (!ScalarOptions::Global.use_bounds_safety_traps_only ||
                   isBoundsSafetyAnnotated(TerminatorInst));
         }))
       return true;
@@ -1362,7 +1342,7 @@ static CheckLoopHoistType processLoops(Loop *L, ScalarEvolution &SE,
           if (isa<CallInst>(I))
             InstHasSideEffects =
                 I.mayHaveSideEffects() || I.mayReadFromMemory();
-          else if (NewTrapSemantics)
+          else if (ScalarOptions::Global.use_new_trap_semantics)
             InstHasSideEffects = !I.willReturn() || I.mayThrow();
           else
             InstHasSideEffects = I.mayHaveSideEffects();
@@ -1437,7 +1417,7 @@ PreservedAnalyses LoopTrapAnalysisPass::run(Function &F,
   auto &SE = AM.getResult<ScalarEvolutionAnalysis>(F);
   auto &ORE = AM.getResult<OptimizationRemarkEmitterAnalysis>(F);
   emitRemarks(F, LI, ORE, SE);
-  if (LTAEmitExplain) {
+  if (ScalarOptions::Global.loop_trap_analysis_explain) {
     auto &AA = AM.getResult<AAManager>(F);
     auto &DT = AM.getResult<DominatorTreeAnalysis>(F);
     unsigned Seq = ++InvocationCount[&F];

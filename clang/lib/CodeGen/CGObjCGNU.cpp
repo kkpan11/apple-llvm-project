@@ -2374,12 +2374,13 @@ CGObjCGNU::CGObjCGNU(CodeGenModule &cgm, unsigned runtimeABIVersion,
     MetaClassPtrAlias(nullptr), RuntimeVersion(runtimeABIVersion),
     ProtocolVersion(protocolClassVersion), ClassABIVersion(classABI) {
 
+  auto Triple = cgm.getContext().getTargetInfo().getTriple();
+
   msgSendMDKind = VMContext.getMDKindID("GNUObjCMessageSend");
-  usesSEHExceptions =
-      cgm.getContext().getTargetInfo().getTriple().isWindowsMSVCEnvironment();
+  usesSEHExceptions = Triple.isWindowsMSVCEnvironment();
   usesCxxExceptions =
-      cgm.getContext().getTargetInfo().getTriple().isOSCygMing() &&
-      isRuntime(ObjCRuntime::GNUstep, 2);
+      (Triple.isOSCygMing() && isRuntime(ObjCRuntime::GNUstep, 2)) ||
+      Triple.isWasm();
 
   CodeGenTypes &Types = CGM.getTypes();
   IntTy = cast<llvm::IntegerType>(
@@ -2689,8 +2690,8 @@ llvm::Constant *CGObjCGNUstep::GetEHType(QualType T) {
                                       nullptr, vtableName);
   }
   llvm::Constant *Two = llvm::ConstantInt::get(IntTy, 2);
-  auto *BVtable =
-      llvm::ConstantExpr::getGetElementPtr(Vtable->getValueType(), Vtable, Two);
+  auto *BVtable = llvm::ConstantExpr::getGetElementPtr(
+      CGM.getDataLayout(), Vtable->getValueType(), Vtable, Two);
 
   llvm::Constant *typeName =
     ExportUniqueString(className, "__objc_eh_typename_");
@@ -2973,6 +2974,15 @@ CGObjCGNU::GenerateMessageSend(CodeGenFunction &CGF,
     // If there's a consumed argument, we need a nil check.
     if (Method && Method->hasParamDestroyedInCallee()) {
       hasParamDestroyedInCallee = true;
+    }
+
+    // WebAssembly indirect calls require an exact function type match.
+    // Therfore, we cannot use libobjc2's nil-IMP stubs for WebAssembly
+    // and must always emit a null check and optionally zero the result.
+    if (CGM.getTriple().isWasm() && !isDirect) {
+      requiresExplicitZeroResult =
+          !Return.isUnused() && !ResultType->isVoidType();
+      return true;
     }
 
     // If the return value isn't flagged as unused, and the result
@@ -3906,6 +3916,7 @@ void CGObjCGNU::GenerateClass(const ObjCImplementationDecl *OID) {
       offsetPointerIndexes[2] = llvm::ConstantInt::get(IndexTy, ivarIndex);
       // Get the correct ivar field
       llvm::Constant *offsetValue = llvm::ConstantExpr::getGetElementPtr(
+          CGM.getDataLayout(),
           cast<llvm::GlobalVariable>(IvarList)->getValueType(), IvarList,
           offsetPointerIndexes);
       // Get the existing variable, if one exists.
@@ -4061,7 +4072,7 @@ llvm::Function *CGObjCGNU::ModuleInitFunction() {
     };
     // FIXME: We're generating redundant loads and stores here!
     llvm::Constant *selPtr = llvm::ConstantExpr::getGetElementPtr(
-        selectorList->getValueType(), selectorList, idxs);
+        CGM.getDataLayout(), selectorList->getValueType(), selectorList, idxs);
     selectorAliases[i]->replaceAllUsesWith(selPtr);
     selectorAliases[i]->eraseFromParent();
   }
@@ -4158,8 +4169,7 @@ llvm::Function *CGObjCGNU::ModuleInitFunction() {
   if (!ClassAliases.empty()) {
     llvm::Type *ArgTypes[2] = {PtrTy, PtrToInt8Ty};
     llvm::FunctionType *RegisterAliasTy =
-      llvm::FunctionType::get(Builder.getVoidTy(),
-                              ArgTypes, false);
+        llvm::FunctionType::get(Builder.getVoidTy(), ArgTypes, false);
     llvm::Function *RegisterAlias = llvm::Function::Create(
       RegisterAliasTy,
       llvm::GlobalValue::ExternalWeakLinkage, "class_registerAlias_np",
@@ -4341,15 +4351,14 @@ void CGObjCGNU::EmitThrowStmt(CodeGenFunction &CGF,
     // that was passed into the `@catch` block, then this code path is not
     // reached and we will instead call `objc_exception_throw` with an explicit
     // argument.
-    llvm::CallBase *Throw = CGF.EmitRuntimeCallOrInvoke(ExceptionReThrowFn);
-    Throw->setDoesNotReturn();
+    CGF.EmitNoreturnRuntimeCallOrInvoke(ExceptionReThrowFn, {});
   } else {
     ExceptionAsObject = CGF.Builder.CreateBitCast(ExceptionAsObject, IdTy);
     llvm::CallBase *Throw =
         CGF.EmitRuntimeCallOrInvoke(ExceptionThrowFn, ExceptionAsObject);
     Throw->setDoesNotReturn();
+    CGF.Builder.CreateUnreachable();
   }
-  CGF.Builder.CreateUnreachable();
   if (ClearInsertionPoint)
     CGF.Builder.ClearInsertionPoint();
 }

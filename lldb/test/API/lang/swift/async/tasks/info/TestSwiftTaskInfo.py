@@ -13,7 +13,7 @@ def _tail(output):
 
 class TestCase(TestBase):
 
-    @skipEmbeddedSwift  # rdar://183960945 (Fix async tests running in embedded mode)
+    @skipEmbeddedSwiftOnLinux
     @skipUnlessPlatform(["macosx", "linux"])
     @swiftTest
     def test_compare_printed_task_variable_to_task_info(self):

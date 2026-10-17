@@ -5,7 +5,7 @@ import lldbsuite.test.lldbutil as lldbutil
 
 
 class TestSwiftObjCBlock(TestBase):
-    @skipUnlessDarwin
+    @requireSwiftObjCInterop
     @swiftTest
     def test(self):
         self.build()

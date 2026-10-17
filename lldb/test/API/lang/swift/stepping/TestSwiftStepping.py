@@ -16,7 +16,6 @@ import lldb
 from lldbsuite.test.decorators import *
 import lldbsuite.test.lldbtest as lldbtest
 import lldbsuite.test.lldbutil as lldbutil
-import os
 import platform
 
 class TestSwiftStepping(lldbtest.TestBase):
@@ -74,30 +73,9 @@ class TestSwiftStepping(lldbtest.TestBase):
 
     def do_test(self):
         """Tests that we can step reliably in swift code."""
-        exe_name = "a.out"
-        exe = self.getBuildArtifact(exe_name)
+        _, _, thread, _ = lldbutil.run_to_source_breakpoint(
+            self, 'Stop here first in main', self.main_source_spec)
 
-        # Create the target
-        target = self.dbg.CreateTarget(exe)
-        self.assertTrue(target, lldbtest.VALID_TARGET)
-
-        # Set the breakpoints
-        breakpoint = target.BreakpointCreateBySourceRegex(
-            'Stop here first in main', self.main_source_spec)
-        self.assertTrue(
-            breakpoint.GetNumLocations() > 0, lldbtest.VALID_BREAKPOINT)
-
-        # Launch the process, and do not stop at the entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
-
-        self.assertTrue(process, lldbtest.PROCESS_IS_VALID)
-
-        # Frame #0 should be at our breakpoint.
-        threads = lldbutil.get_threads_stopped_at_breakpoint(
-            process, breakpoint)
-
-        self.assertTrue(len(threads) == 1)
-        thread = threads[0]
         frame = thread.frames[0]
         self.assertTrue(frame, "Frame 0 is valid.")
 
