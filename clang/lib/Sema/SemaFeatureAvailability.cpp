@@ -170,6 +170,17 @@ public:
     return true;
   }
 
+  bool VisitObjCAvailabilityCheckExpr(ObjCAvailabilityCheckExpr *E) {
+    // TraverseIfStmt does not traverse an 'if' condition that is itself a
+    // domain check (possibly negated or parenthesized), so any domain check
+    // seen here is not the condition of an 'if' statement.
+    if (E->hasDomainName())
+      SemaRef.Diag(E->getBeginLoc(),
+                   diag::err_availability_domain_check_not_condition)
+          << !SemaRef.getLangOpts().ObjC;
+    return true;
+  }
+
   bool VisitTypeLoc(TypeLoc Ty);
 
   bool TraverseDecl(Decl *D) {
