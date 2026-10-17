@@ -9,7 +9,7 @@ class TestSwiftOptionalURL(TestBase):
     @requireNotEmbeddedSwift
     @skipIfLinux  # https://github.com/swiftlang/llvm-project/issues/13465
     @skipUnlessFoundationEssentials
-    @swiftTest
+    @swiftClangImporterTest
     def test(self):
         """Test that po prints an optional URL"""
         self.build()

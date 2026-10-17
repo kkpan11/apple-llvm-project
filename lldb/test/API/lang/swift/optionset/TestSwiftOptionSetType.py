@@ -23,7 +23,7 @@ class TestSwiftOptionSetType(TestBase):
         return value
 
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     @requireObjCFoundation
     def test(self):
         """Test the summaries of user-defined and SDK OptionSet values"""

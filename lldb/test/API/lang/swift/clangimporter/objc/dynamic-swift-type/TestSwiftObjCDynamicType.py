@@ -7,7 +7,7 @@ import lldbsuite.test.lldbutil as lldbutil
 class TestCase(TestBase):
     @requireNotEmbeddedSwift
     @requireObjCFoundation
-    @swiftTest
+    @swiftClangImporterTest
     def test(self):
         """Verify printing of Swift implemented ObjC objects."""
         self.build()

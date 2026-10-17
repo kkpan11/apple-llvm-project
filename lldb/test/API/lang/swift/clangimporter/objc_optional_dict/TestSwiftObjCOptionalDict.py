@@ -6,7 +6,7 @@ import lldbsuite.test.lldbutil as lldbutil
 class TestSwiftObjCOptionalDict(TestBase):
     @requireNotEmbeddedSwift
     @requireObjCFoundation
-    @swiftTest
+    @swiftClangImporterTest
     def test(self):
         self.build()
         lldbutil.run_to_source_breakpoint(

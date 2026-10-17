@@ -6,7 +6,7 @@ import lldbsuite.test.lldbutil as lldbutil
 
 class TestSwiftExplicitModulesChainedBridgingHeader(lldbtest.TestBase):
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     @skipUnlessDarwin # uses a framework, doesn't link with gold
     @skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
     def test(self):

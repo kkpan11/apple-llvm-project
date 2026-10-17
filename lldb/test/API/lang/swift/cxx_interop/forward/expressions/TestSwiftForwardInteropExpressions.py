@@ -20,7 +20,7 @@ class TestSwiftForwardInteropExpressions(TestBase):
     @skipIfWindows  # MSVC exception ABI: no type_info vftable in the target.
     @skipIf(setting=("symbols.use-swift-clangimporter", "false"))  # rdar://106871275
     @skipEmbeddedSwift  # Hangs in CI; `po` also has no reflection to fall back on.
-    @swiftTest
+    @swiftClangImporterTest
     def test(self):
         self.setup("Break here")
 
@@ -63,7 +63,7 @@ class TestSwiftForwardInteropExpressions(TestBase):
 
     @expectedFailureAll(bugnumber="rdar://106216567")
     @skipEmbeddedSwift  # Hangs in CI.
-    @swiftTest
+    @swiftClangImporterTest
     def test_po_subclass(self):
         self.setup('Break here')
 

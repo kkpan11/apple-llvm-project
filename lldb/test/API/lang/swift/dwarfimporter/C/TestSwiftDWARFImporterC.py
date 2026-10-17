@@ -35,7 +35,7 @@ class TestSwiftDWARFImporterC(lldbtest.TestBase):
         shutil.rmtree(include)
 
     @skipIf(archs=['ppc64le'], bugnumber='SR-10214')
-    @swiftTest
+    @swiftClangImporterTest
     @skipEmbeddedSwiftOnWindows
     def test_dwarf_importer(self):
         self.build()
@@ -72,7 +72,7 @@ class TestSwiftDWARFImporterC(lldbtest.TestBase):
 
     @skipIf(archs=['ppc64le'], bugnumber='SR-10214')
     @skipEmbeddedSwiftOnWindows
-    @swiftTest
+    @swiftClangImporterTest
     def test_dwarf_importer_exprs(self):
         self.build()
         target, process, thread, bkpt = lldbutil.run_to_source_breakpoint(
@@ -97,7 +97,7 @@ class TestSwiftDWARFImporterC(lldbtest.TestBase):
                     substrs=["(FromSubmodule)", "x = 1", "y = 2", "z = 3"])
         
     @skipIf(archs=['ppc64le'], bugnumber='SR-10214')
-    @swiftTest
+    @swiftClangImporterTest
     @skipEmbeddedSwiftOnWindows
     @skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
     def test_negative(self):

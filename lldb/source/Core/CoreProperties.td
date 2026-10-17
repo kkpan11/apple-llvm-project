@@ -141,6 +141,12 @@ let Definition = "testing", Path = "testing" in {
         Global,
         DefaultFalse,
         Desc<"Used for testing LLDB only. Hide locations of local variables.">;
+  def SwiftValidateNoClangImports
+      : Property<"swift-validate-no-clang-imports", "Boolean">,
+        Global,
+        DefaultFalse,
+        Desc<"Used for testing LLDB only. Validate that Swift doesn't import "
+             "any Clang modules.">;
   def SafeAutoloadPaths : Property<"safe-auto-load-paths", "FileSpecList">,
                           DefaultStringValue<"">,
                           Desc<"List of paths that LLDB will automatically "

@@ -7,7 +7,7 @@ class TestSwiftErrorHandlingMissingTypes(TestBase):
     NO_DEBUG_INFO_TESTCASE = True
 
     @requireNotEmbeddedSwift # the embedded variant is never crossed with noclang, so this test never runs as embedded
-    @swiftTest
+    @swiftClangImporterTest
     @skipIf(setting=('symbols.use-swift-clangimporter', 'true'))
     def test(self):
         """Test that errors are surfaced"""

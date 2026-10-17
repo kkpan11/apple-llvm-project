@@ -8,7 +8,7 @@ from lldbsuite.test.decorators import *
 
 class TestSwiftForwardInteropTemplateTypes(TestBase):
 
-    @swiftTest
+    @swiftClangImporterTest
     @skipEmbeddedSwiftOnWindows
     def test(self):
         self.build()

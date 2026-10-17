@@ -27,7 +27,7 @@ class TestSwiftFoundationTypeData(TestBase):
         lldbutil.check_variable(self, self.expr(frame, "data"), summary=summary)
 
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     @skipIf(oslist=["linux"])
     @skipIf(
         bugnumber="rdar://60396797",  # should work but crashes.

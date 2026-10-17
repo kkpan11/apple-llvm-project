@@ -9,7 +9,7 @@ class TestCase(TestBase):
     @requireNotEmbeddedSwift
     @skipIfLinux  # https://github.com/swiftlang/llvm-project/issues/13465
     @skipUnlessFoundationEssentials
-    @swiftTest
+    @swiftClangImporterTest
     def test_swift_decoding_error(self):
         """Regression test for Swift.DecodingError, a specific instance of a multipayload enum."""
         self.build()

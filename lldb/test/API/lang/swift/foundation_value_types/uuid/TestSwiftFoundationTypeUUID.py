@@ -18,7 +18,7 @@ import lldbsuite.test.lldbutil as lldbutil
 class TestSwiftFoundationTypeUUID(TestBase):
 
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     @skipIf(oslist=["linux"])
     def test(self):
         """Test the summary of a Foundation.UUID value"""

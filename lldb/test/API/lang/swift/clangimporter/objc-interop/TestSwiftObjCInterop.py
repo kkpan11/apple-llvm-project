@@ -17,7 +17,7 @@ import lldbsuite.test.lldbutil as lldbutil
 
 class TestSwiftObjCInterop(TestBase):
 
-    @swiftTest
+    @swiftClangImporterTest
     @requireSwiftObjCInterop
     def test(self):
         """Test that variables and expressions work in a program importing Dispatch"""

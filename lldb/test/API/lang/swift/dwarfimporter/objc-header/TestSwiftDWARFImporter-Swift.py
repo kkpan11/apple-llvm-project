@@ -26,7 +26,7 @@ class TestSwiftDWARFImporter_Swift(lldbtest.TestBase):
 
     @requireNotEmbeddedSwift # embedded Swift disables ObjC interop, so this test's Foundation import does not compile
     @requireSwiftObjCInterop
-    @swiftTest
+    @swiftClangImporterTest
     def test(self):
         self.build()
         dylib = self.getBuildArtifact('libLibrary.dylib')

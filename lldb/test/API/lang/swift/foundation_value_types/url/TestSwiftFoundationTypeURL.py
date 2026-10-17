@@ -26,7 +26,7 @@ class TestCase(TestBase):
     @expectedFailureAll(archs=["arm64_32"], bugnumber="<rdar://problem/58065423>")
     @skipUnlessFoundationEssentials
     @skipIfLinux  # https://github.com/swiftlang/llvm-project/issues/13465
-    @swiftTest
+    @swiftClangImporterTest
     def test_swift_url_formatters(self):
         """Test URL summary strings."""
         self.build()

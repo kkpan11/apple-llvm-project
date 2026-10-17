@@ -6,7 +6,7 @@ import lldbsuite.test.lldbutil as lldbutil
 class TestSwiftExpressionNoDebugInfo(TestBase):
     NO_DEBUG_INFO_TESTCASE = True
 
-    @swiftTest
+    @swiftClangImporterTest
     @skipUnlessDarwin
     def test_missing_var(self):
         """Test running a Swift expression in a non-Swift context"""

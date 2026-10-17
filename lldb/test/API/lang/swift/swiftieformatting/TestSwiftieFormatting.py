@@ -22,7 +22,7 @@ import os
 class TestSwiftieFormatting(TestBase):
     @requireNotEmbeddedSwift
     @requireObjCFoundation
-    @swiftTest
+    @swiftClangImporterTest
     def test_swiftie_formatting(self):
         """Test that data formatters honor Swift conventions"""
         self.build()

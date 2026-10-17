@@ -17,7 +17,7 @@ class TestSwiftReplInC(TestBase):
 
     NO_DEBUG_INFO_TESTCASE = True
 
-    @swiftTest
+    @swiftClangImporterTest
     def test_repl_in_c(self):
         self.build()
         lldbutil.run_to_name_breakpoint(self, "main")

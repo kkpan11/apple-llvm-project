@@ -6,7 +6,7 @@ from lldbsuite.test import lldbutil
 
 class TestCase(TestBase):
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     @skipIf(oslist=["linux", "windows"])
     def test_decimal(self):
         self.build()

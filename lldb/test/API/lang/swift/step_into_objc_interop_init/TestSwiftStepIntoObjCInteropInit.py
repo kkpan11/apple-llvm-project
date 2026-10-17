@@ -6,7 +6,7 @@ import lldbsuite.test.lldbutil as lldbutil
 class TestSwiftObjcProtocol(TestBase):
     @requireNotEmbeddedSwift
     @requireSwiftObjCInterop
-    @swiftTest
+    @swiftClangImporterTest
     def test(self):
         self.build()
         (target, process, thread, breakpoint) = lldbutil.run_to_source_breakpoint(

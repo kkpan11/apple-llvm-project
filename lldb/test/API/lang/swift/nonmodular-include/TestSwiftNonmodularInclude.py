@@ -17,7 +17,7 @@ import lldbsuite.test.lldbutil as lldbutil
 
 class TestSwiftNonmodularInclude(TestBase):
 
-    @swiftTest
+    @swiftClangImporterTest
     @skipIf(oslist=['windows'])
     def test(self):
         """Test expressions on a Clang type from a module with a nonmodular include"""

@@ -10,7 +10,7 @@ class TestCase(TestBase):
 
     @requireNotEmbeddedSwift
     @requireDarwin
-    @swiftTest
+    @swiftClangImporterTest
     def test_body(self):
         self.build()
         self.thread = self._run_to_source_breakpoint("break body")
@@ -18,7 +18,7 @@ class TestCase(TestBase):
 
     @requireNotEmbeddedSwift
     @requireDarwin
-    @swiftTest
+    @swiftClangImporterTest
     def test_appear(self):
         self.build()
         log = self.getBuildArtifact("types.log")
@@ -28,7 +28,7 @@ class TestCase(TestBase):
 
     @requireNotEmbeddedSwift
     @requireDarwin
-    @swiftTest
+    @swiftClangImporterTest
     def test_change(self):
         self.build()
         log = self.getBuildArtifact("types.log")

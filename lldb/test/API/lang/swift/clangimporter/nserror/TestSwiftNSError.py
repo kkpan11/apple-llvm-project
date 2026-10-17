@@ -21,14 +21,14 @@ import lldbsuite.test.lldbutil as lldbutil
 class SwiftNSErrorTest(TestBase):
     @requireNotEmbeddedSwift
     @requireObjCFoundation
-    @swiftTest
+    @swiftClangImporterTest
     def test_swift_nserror(self):
         """Tests that Swift displays NSError correctly"""
         self.build()
         self.nserror_commands(check_userInfo=False)
 
     @requireObjCFoundation
-    @swiftTest
+    @swiftClangImporterTest
     @skipIf(bugnumber="rdar://71549869")
     def test_swift_nserror_fails(self):
         """Tests that Swift displays NSError correctly"""

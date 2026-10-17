@@ -7,7 +7,7 @@ class TestSwiftSharedStringStorage(TestBase):
     NO_DEBUG_INFO_TESTCASE = True
 
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     @requireObjCFoundation
     def test(self):
         """Non-ASCII strings bridged to NSString/CFString are backed by

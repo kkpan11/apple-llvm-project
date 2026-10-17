@@ -11,7 +11,7 @@ class TestSwiftFoundationTypeNotification(lldbtest.TestBase):
     mydir = lldbtest.TestBase.compute_mydir(__file__)
 
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     def test(self):
         self.build()
         target, process, thread, bkpt = lldbutil.run_to_source_breakpoint(

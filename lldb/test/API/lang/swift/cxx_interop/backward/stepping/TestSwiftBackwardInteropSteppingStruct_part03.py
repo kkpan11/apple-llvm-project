@@ -34,13 +34,13 @@ class TestSwiftBackwardInteropSteppingStruct(TestBase):
         self.assertIn(func, name)
 
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     def test_setter_step_in_struct(self):
         thread = self.setup("Break here for setter - struct")
         self.check_step_in(thread, "testSetter", "SwiftStruct.swiftProperty.setter")
 
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     def test_setter_step_over_struct(self):
         thread = self.setup("Break here for setter - struct")
         self.check_step_over(thread, "testSetter")

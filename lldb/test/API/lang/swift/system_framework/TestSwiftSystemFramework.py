@@ -9,7 +9,7 @@ class TestSwiftSystemFramework(lldbtest.TestBase):
     NO_DEBUG_INFO_TESTCASE = True
 
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     @requireMacOS
     def test_system_framework(self):
         """Make sure no framework paths into /System/Library are added"""

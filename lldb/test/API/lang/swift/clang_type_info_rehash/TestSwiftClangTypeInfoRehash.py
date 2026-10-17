@@ -18,7 +18,7 @@ class TestSwiftClangTypeInfoRehash(TestBase):
         self.assertEqual(val.GetChildAtIndex(0).GetValueAsUnsigned(), 1)
         self.assertEqual(first.GetChildAtIndex(1).GetValueAsUnsigned(), 42)
 
-    @swiftTest
+    @swiftClangImporterTest
     @skipEmbeddedSwiftOnWindows
     def test(self):
         self.build()
