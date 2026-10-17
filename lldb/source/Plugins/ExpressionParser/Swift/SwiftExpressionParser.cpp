@@ -581,6 +581,15 @@ AddRequiredAliases(Block *block, lldb_private::StackFrame &stack_frame,
   if (!self_var_sp)
     return llvm::Error::success();
 
+  // Don't inject a `self` without a value. In this case the outer
+  // layer is downgrading the expression method to a freestanding
+  // function.
+  if (lldb::ValueObjectSP valobj_sp =
+          stack_frame.GetValueObjectForFrameVariable(self_var_sp,
+                                                     lldb::eNoDynamicValues))
+    if (valobj_sp->GetError().Fail() && self_var_sp->IsArtificial())
+      return llvm::Error::success();
+
   auto *swift_runtime =
       SwiftLanguageRuntime::Get(stack_frame.GetThread()->GetProcess());
   CompilerType self_type = SwiftExpressionParser::ResolveVariable(
@@ -666,9 +675,11 @@ AddRequiredAliases(Block *block, lldb_private::StackFrame &stack_frame,
     LLDB_LOG(GetLog(LLDBLog::Types | LLDBLog::Expressions),
              "Couldn't get SwiftASTContext type for self type {0}.",
              imported_self_type.GetDisplayTypeName());
-    return llvm::createStringError(
-        "Unable to add the aliases the expression needs because the Swift "
-        "expression parser couldn't get the Swift type for self.");
+    return llvm::joinErrors(
+        llvm::createStringError(
+            "Unable to add the aliases the expression needs because the Swift "
+            "expression parser couldn't get the Swift type for self."),
+        swift_self_type.takeError());
   }
   if (!swift_self_type.get())
     return llvm::createStringError("null self type");
@@ -840,30 +851,8 @@ SwiftExpressionParser::GetASTContext(DiagnosticManager &diagnostic_manager) {
     m_swift_ast_ctx.GetLanguageOptions().EnableDollarIdentifiers = true;
     m_swift_ast_ctx.GetLanguageOptions().EnableAccessControl =
         (repl || playground);
-    LLDB_LOG(lldb_private::GetSwiftHealthLog(), "Language option EnableAccessControl = {0}",
-             m_swift_ast_ctx.GetLanguageOptions().EnableAccessControl);
-
     m_swift_ast_ctx.GetLanguageOptions().EnableTargetOSChecking = false;
-
-    auto should_disable_objc_runtime = [&]() {
-      if (playground)
-        return false;
-      lldb::StackFrameSP this_frame_sp(m_stack_frame_wp.lock());
-      if (!this_frame_sp)
-        return false;
-      lldb::ProcessSP process_sp(this_frame_sp->CalculateProcess());
-      if (!process_sp)
-        return false;
-      return !ObjCLanguageRuntime::Get(*process_sp);
-    };
-    if (should_disable_objc_runtime())
-      m_swift_ast_ctx.GetLanguageOptions().EnableObjCInterop = false;
-    LLDB_LOG(lldb_private::GetSwiftHealthLog(), "Language option EnableObjCInterop = {0}",
-             m_swift_ast_ctx.GetLanguageOptions().EnableObjCInterop);
-
     m_swift_ast_ctx.GetLanguageOptions().Playground = repl || playground;
-    LLDB_LOG(lldb_private::GetSwiftHealthLog(), "Language option Playground = {0}",
-             m_swift_ast_ctx.GetLanguageOptions().Playground);
 
     m_swift_ast_ctx.GetIRGenOptions().Playground = repl || playground;
 
@@ -872,9 +861,15 @@ SwiftExpressionParser::GetASTContext(DiagnosticManager &diagnostic_manager) {
     // might throw.
     if (repl || !playground)
       m_swift_ast_ctx.GetLanguageOptions().EnableThrowWithoutTry = true;
-    LLDB_LOG(lldb_private::GetSwiftHealthLog(), "Language option EnableThrowWithoutTry = {0}",
+    LLDB_LOG(lldb_private::GetSwiftHealthLog(),
+             "{0}: Language options: EnableAccessControl = {1}, "
+             "EnableObjCInterop = {2}, Playground = {3}, "
+             "EnableThrowWithoutTry = {4}",
+             m_swift_ast_ctx.GetDescription(),
+             m_swift_ast_ctx.GetLanguageOptions().EnableAccessControl,
+             m_swift_ast_ctx.GetLanguageOptions().EnableObjCInterop,
+             m_swift_ast_ctx.GetLanguageOptions().Playground,
              m_swift_ast_ctx.GetLanguageOptions().EnableThrowWithoutTry);
-
 
     m_swift_ast_ctx.GetIRGenOptions().OutputKind =
         swift::IRGenOutputKind::Module;
@@ -1422,6 +1417,13 @@ SwiftExpressionParser::ParseAndImport(
 
   lang_opts.UseDarwinPreStableABIBit = should_use_prestable_abi();
 
+  // The language options above can differ between expressions evaluated in
+  // the same ASTContext. Now that they are final for this expression, discard
+  // the build configuration derived from them so '#if' conditions and macro
+  // expansions see the options of this expression.
+  if (ThreadSafeASTContext ast_context = m_swift_ast_ctx.GetASTContext())
+    ast_context->invalidateStaticBuildConfiguration();
+
   LLDBNameLookup *external_lookup;
   if (m_options.GetPlaygroundTransformEnabled() || m_options.GetREPLEnabled()) {
     external_lookup = new LLDBREPLNameLookup(*source_file, variable_map, m_sc,
@@ -1450,6 +1452,11 @@ SwiftExpressionParser::ParseAndImport(
       return make_error<ModuleImportError>(msg);
     return expr_diagnostics.GetAsExpressionError(lldb::eExpressionParseError);
   }
+
+  // A stdlib that failed to load earlier produces no diagnostics here, but
+  // type checking can't proceed without it.
+  if (llvm::Error error = m_swift_ast_ctx.CheckStdlib())
+    return make_error<ModuleImportError>(llvm::toString(std::move(error)));
 
   std::unique_ptr<SwiftASTManipulator> code_manipulator;
   if (repl || !playground) {
@@ -2361,6 +2368,9 @@ Status SwiftExpressionParser::DoPrepareForExecution(
   m_execution_unit_sp.reset(
       new IRExecutionUnit(m_llvm_context, m_module, function_name,
                           exe_ctx.GetTargetSP(), sc, features));
+  m_execution_unit_sp->SetIsEmbeddedSwift(
+      m_swift_ast_ctx.GetASTContext()->LangOpts.hasFeature(
+          swift::Feature::Embedded));
 
   // TODO: figure out some way to work ClangExpressionDeclMap into
   //       this or do the equivalent for Swift.

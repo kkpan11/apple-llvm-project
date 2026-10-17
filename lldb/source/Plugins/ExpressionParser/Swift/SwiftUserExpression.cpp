@@ -360,6 +360,16 @@ static llvm::Error AddVariableInfo(
   if (!variable_sp || !variable_sp->GetType())
     return llvm::Error::success();
 
+  // Stash diagnostics for missing locations.
+  Status variable_status;
+  if (lldb::ValueObjectSP valobj_sp =
+          stack_frame_sp->GetValueObjectForFrameVariable(
+              variable_sp, lldb::eNoDynamicValues)) {
+    variable_status = valobj_sp->GetError().Clone();
+    if (variable_status.Fail() && variable_sp->IsArtificial())
+      return llvm::Error::success();
+  }
+
   CompilerType target_type;
   bool should_not_bind_generic_types =
       !SwiftASTManipulator::ShouldBindGenericTypes(bind_generic_types);
@@ -409,8 +419,16 @@ static llvm::Error AddVariableInfo(
   }
 
   auto ts = target_type.GetTypeSystem().dyn_cast_or_null<TypeSystemSwift>();
-  if (!ts)
-    return llvm::createStringError("type for self has no type system");
+  if (!ts) {
+    if (is_self)
+      return llvm::createStringError("type for self has no type system");
+    std::string msg =
+        llvm::formatv("discarded local '{0}', type '{1}' is not a Swift type",
+                      name, target_type.GetDisplayTypeName());
+    diagnostic_manager.AddDiagnostic(msg, lldb::eSeverityWarning,
+                                     eDiagnosticOriginLLDB);
+    return llvm::Error::success();
+  }
 
   // If we couldn't fully realize the type, then we aren't going
   // to get very far making a local out of it, so discard it here.
@@ -446,16 +464,6 @@ static llvm::Error AddVariableInfo(
                   static_cast<void *>(*ast_context.GetASTContext()), s.c_str());
     }
 
-  // Stash diagnostics for missing locations.
-  Status variable_status;
-  if (lldb::ValueObjectSP valobj_sp =
-          stack_frame_sp->GetValueObjectForFrameVariable(
-              variable_sp, lldb::eNoDynamicValues)) {
-    variable_status = valobj_sp->GetError().Clone();
-    if (variable_status.Fail() && variable_sp->IsArtificial())
-      return llvm::Error::success();
-  }
-
   // A one-off clone of variable_sp with the type replaced by target_type.
   auto patched_variable_sp = std::make_shared<lldb_private::Variable>(
       0, variable_sp->GetName().GetCString(), "",
@@ -477,14 +485,19 @@ static llvm::Error AddVariableInfo(
   SwiftASTManipulatorBase::VariableMetadataSP metadata_sp(
       new SwiftASTManipulatorBase::VariableMetadataVariable(
           patched_variable_sp));
-  local_variables.emplace_back(
+  auto &variable_info = local_variables.emplace_back(
       target_type, ast_context.GetASTContext()->getIdentifier(overridden_name),
       metadata_sp,
       variable_sp->IsConstant() ? swift::VarDecl::Introducer::Let
                                 : swift::VarDecl::Introducer::Var,
       false, is_unbound_pack);
-  if (variable_status.Fail())
-    local_variables.back().SetLookupError(variable_status.takeError());
+  if (variable_status.Fail()) {
+    variable_info.SetLookupError(variable_status.takeError());
+    // Unavailable self is handled separately by downgrading the
+    // method to a freestanding function.
+    if (!is_self)
+      variable_info.SetUnavailable();
+  }
 
   processed_variables.insert(overridden_name);
   return llvm::Error::success();
