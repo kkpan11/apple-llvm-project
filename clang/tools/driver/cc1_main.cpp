@@ -352,6 +352,8 @@ int cc1_main(ArrayRef<const char *> Argv, const char *Argv0, void *MainAddr) {
   if (Clang->getFrontendOpts().DisableFree) {
     // DiagnosticConsumer must be always destroyed.
     Clang->getDiagnosticClient().~DiagnosticConsumer();
+    // Release CAS databases to avoid corruption of sparse files.
+    Clang->releaseCASDatabases();
     llvm::BuryPointer(std::move(Clang));
     return !Success;
   }
