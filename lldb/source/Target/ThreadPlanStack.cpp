@@ -413,6 +413,8 @@ void ThreadPlanStackMap::Update(ThreadList &current_threads,
                                 bool check_for_new) {
 
   std::lock_guard<std::recursive_mutex> guard(m_stack_map_mutex);
+  assert(current_threads.GetStopID() == m_process.GetStopID() &&
+         "thread list is stale");
   // Now find all the new threads and add them to the map:
   if (check_for_new) {
     for (auto thread : current_threads.Threads()) {
@@ -434,7 +436,8 @@ void ThreadPlanStackMap::Update(ThreadList &current_threads,
   // then scan for absent TID's:
   for (auto &thread_plans : m_plans_list) {
     lldb::tid_t cur_tid = thread_plans.first;
-    ThreadSP thread_sp = current_threads.FindThreadByID(cur_tid);
+    ThreadSP thread_sp =
+        current_threads.FindThreadByID(cur_tid, /*can_update=*/false);
     if (!thread_sp)
       missing_threads.push_back(cur_tid);
   }

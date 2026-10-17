@@ -50,3 +50,28 @@ class TestSwiftDeserializationFailure(TestBase):
 
         target, process, _, _ = lldbutil.run_to_name_breakpoint(self, 'main')
         self.run_tests(target, process)
+
+    # Only the Darwin build links the .swiftmodule by reference
+    # (-add_ast_path), so only there does damaging the file on disk reach the
+    # deserializer.
+    @skipUnlessDarwin
+    @swiftTest
+    @skipIf(debug_info=no_match(["dwarf"]))
+    def test_damaged_module_diagnostic(self):
+        """Test that the deserialization failure is reported to the user"""
+        self.prepare()
+        with open(self.getBuildArtifact("a.swiftmodule"), 'w') as mod:
+            mod.write('I am damaged.\n')
+
+        # The error goes to the debugger's error stream rather than to the
+        # result of the command that triggers it, so capture the stream.
+        log = self.getBuildArtifact("stderr.log")
+        with open(log, "w") as f:
+            self.assertSuccess(
+                self.dbg.SetErrorFile(lldb.SBFile(f.fileno(), "w", False)))
+            lldbutil.run_to_name_breakpoint(self, 'main')
+            # Evaluating anything forces a SwiftASTContext to be created.
+            self.expect("expression 1", substrs=["1"])
+
+        self.filecheck_log(log, __file__)
+        # CHECK: The serialized module is corrupted.

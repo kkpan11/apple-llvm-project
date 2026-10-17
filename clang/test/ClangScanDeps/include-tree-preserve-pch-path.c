@@ -30,7 +30,7 @@
 // RUN: cat %t/tu.rsp | sed -E 's|.*"-fcas-include-tree" "(llvmcas://[[:xdigit:]]+)".*|\1|' > %t/tu.casid
 
 // RUN: clang-cas-test -cas %t/cas -print-include-tree @%t/tu.casid | FileCheck %s -check-prefix=INCLUDE_TREE -DPREFIX=%/t
-// INCLUDE_TREE: (PCH) <PCH> llvmcas://
+// INCLUDE_TREE: (PCH) <PCH-{{.*}}> llvmcas://
 
 
 //--- cdb_pch.json.template
