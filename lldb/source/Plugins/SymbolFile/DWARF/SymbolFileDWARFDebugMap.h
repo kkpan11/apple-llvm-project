@@ -68,7 +68,7 @@ public:
   llvm::VersionTuple
   GetProducerVersion(CompileUnit &comp_unit) override;
   lldb::LanguageType ParseLanguage(CompileUnit &comp_unit) override;
-  XcodeSDK ParseXcodeSDK(CompileUnit &comp_unit) override;
+  XcodeSDKAndSysroot ParseXcodeSDK(CompileUnit &comp_unit) override;
   llvm::SmallSet<lldb::LanguageType, 4>
   ParseAllLanguages(CompileUnit &comp_unit) override;
   size_t ParseFunctions(CompileUnit &comp_unit) override;
@@ -151,8 +151,13 @@ public:
   // Statistics overrides.
   ModuleList GetDebugInfoModules() override;
 
+  bool GetCompileOption(const char *option, std::string &value,
+                        CompileUnit *cu = nullptr) override;
+
   void
   GetCompileOptions(std::unordered_map<lldb::CompUnitSP, Args> &args) override;
+
+  lldb::TypeSP GetTypeEnclosingVariableUID(lldb::user_id_t uid) override;
 
   llvm::Expected<SymbolContext>
   ResolveFunctionCallLabel(FunctionCallLabel &label) override;
