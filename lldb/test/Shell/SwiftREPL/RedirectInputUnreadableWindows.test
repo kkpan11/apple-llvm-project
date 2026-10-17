@@ -6,7 +6,7 @@
 // RUN: mkdir -p %t
 // RUN: cp %S/Inputs/A.swift %t/A.swift
 // icalcs is Windows' CLI to modify file permissions.
-// RUN: icacls %t/A.swift /deny "*S-1-1-0:(R)"
+// RUN: icacls %t/A.swift /deny "*S-1-1-0:(RD)"
 // RUN: cd %t
 // RUN: %lldb --repl < %s 2>&1 | FileCheck %s --check-prefix=LLDB
 
