@@ -14,7 +14,6 @@
 #ifndef LLVM_CLANG_TOOLING_REFACTOR_OLD_REFACTORING_OPTIONS_H
 #define LLVM_CLANG_TOOLING_REFACTOR_OLD_REFACTORING_OPTIONS_H
 
-#include "clang/AST/DeclBase.h"
 #include "clang/Basic/LLVM.h"
 #include "clang/Tooling/Refactor/RefactoringOptionSet.h"
 

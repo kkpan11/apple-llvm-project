@@ -723,7 +723,17 @@ Expected<cas::IncludeTreeRoot> IncludeTreeBuilder::finishIncludeTree(
     if (!CASContents)
       return llvm::createFileError(PPOpts.ImplicitPCHInclude, CASContents.getError());
 
-    auto PCHFile = cas::IncludeTree::File::create(DB, "<PCH>", *CASContents);
+    // Use a unique 'filename' for the PCH to make sure there are no conflicts
+    // during lookup if there is another chained parent PCH.
+    SmallString<140> PCHFileName;
+    {
+      llvm::raw_svector_ostream OS(PCHFileName);
+      OS << "<PCH-";
+      OS << llvm::toHex(DB.getID(*CASContents).getHash());
+      OS << '>';
+    }
+    auto PCHFile =
+        cas::IncludeTree::File::create(DB, PCHFileName.str(), *CASContents);
     if (!PCHFile)
       return PCHFile.takeError();
     PCHRef = PCHFile->getRef();
@@ -767,6 +777,9 @@ Expected<cas::IncludeTreeRoot> IncludeTreeBuilder::finishIncludeTree(
           M, ScanInstance.getLangOpts().APINotesModules,
           ScanInstance.getAPINotesOpts().ModuleSearchPaths);
       for (auto File : Notes) {
+        if (auto FileRef = addToFileList(ScanInstance.getFileManager(), File);
+            !FileRef)
+          return FileRef.takeError();
         if (auto Buf =
                 ScanInstance.getSourceManager().getMemoryBufferForFileOrNone(
                     File)) {
