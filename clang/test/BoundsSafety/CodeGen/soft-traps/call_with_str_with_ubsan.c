@@ -66,7 +66,7 @@
 // OPT: @trap.reason.2 = private unnamed_addr constant [41 x i8] c"indexing below lower bound in 'ptr[tmp]'\00", align 1
 //.
 // UNOPT-LABEL: define i32 @read(
-// UNOPT-SAME: ptr nofree noundef align 8 dead_on_return dereferenceable(24) [[PTR:%.*]], i32 noundef [[IDX:%.*]], i32 noundef [[OTHER:%.*]]) #[[ATTR0:[0-9]+]] {
+// UNOPT-SAME: ptr nofreeobj noundef align 8 dead_on_return dereferenceable(24) [[PTR:%.*]], i32 noundef [[IDX:%.*]], i32 noundef [[OTHER:%.*]]) #[[ATTR0:[0-9]+]] {
 // UNOPT-NEXT:  [[ENTRY:.*:]]
 // UNOPT-NEXT:    [[PTR_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
 // UNOPT-NEXT:    [[IDX_ADDR:%.*]] = alloca i32, align 4
@@ -121,7 +121,7 @@
 // UNOPT-NEXT:    ret i32 [[TMP11]]
 //
 // UNOPT-TF-LABEL: define i32 @read(
-// UNOPT-TF-SAME: ptr nofree noundef align 8 dead_on_return dereferenceable(24) [[PTR:%.*]], i32 noundef [[IDX:%.*]], i32 noundef [[OTHER:%.*]]) #[[ATTR0:[0-9]+]] {
+// UNOPT-TF-SAME: ptr nofreeobj noundef align 8 dead_on_return dereferenceable(24) [[PTR:%.*]], i32 noundef [[IDX:%.*]], i32 noundef [[OTHER:%.*]]) #[[ATTR0:[0-9]+]] {
 // UNOPT-TF-NEXT:  [[ENTRY:.*:]]
 // UNOPT-TF-NEXT:    [[PTR_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
 // UNOPT-TF-NEXT:    [[IDX_ADDR:%.*]] = alloca i32, align 4
@@ -176,7 +176,7 @@
 // UNOPT-TF-NEXT:    ret i32 [[TMP11]]
 //
 // UNOPT-TFR-LABEL: define i32 @read(
-// UNOPT-TFR-SAME: ptr nofree noundef align 8 dead_on_return dereferenceable(24) [[PTR:%.*]], i32 noundef [[IDX:%.*]], i32 noundef [[OTHER:%.*]]) #[[ATTR0:[0-9]+]] {
+// UNOPT-TFR-SAME: ptr nofreeobj noundef align 8 dead_on_return dereferenceable(24) [[PTR:%.*]], i32 noundef [[IDX:%.*]], i32 noundef [[OTHER:%.*]]) #[[ATTR0:[0-9]+]] {
 // UNOPT-TFR-NEXT:  [[ENTRY:.*:]]
 // UNOPT-TFR-NEXT:    [[PTR_INDIRECT_ADDR:%.*]] = alloca ptr, align 8
 // UNOPT-TFR-NEXT:    [[IDX_ADDR:%.*]] = alloca i32, align 4
@@ -231,43 +231,43 @@
 // UNOPT-TFR-NEXT:    ret i32 [[TMP11]]
 //
 // OPT-LABEL: define i32 @read(
-// OPT-SAME: ptr nofree noundef readonly align 8 captures(none) dead_on_return dereferenceable(24) [[PTR:%.*]], i32 noundef [[IDX:%.*]], i32 noundef [[OTHER:%.*]]) local_unnamed_addr #[[ATTR0:[0-9]+]] {
+// OPT-SAME: ptr nofreeobj noundef readonly align 8 captures(none) dead_on_return dereferenceable(24) [[PTR:%.*]], i32 noundef [[IDX:%.*]], i32 noundef [[OTHER:%.*]]) local_unnamed_addr #[[ATTR0:[0-9]+]] {
 // OPT-NEXT:  [[ENTRY:.*:]]
-// OPT-NEXT:    [[TMP0:%.*]] = tail call { i32, i1 } @llvm.sadd.with.overflow.i32(i32 [[IDX]], i32 [[OTHER]]), !nosanitize [[META21:![0-9]+]]
-// OPT-NEXT:    [[TMP1:%.*]] = extractvalue { i32, i1 } [[TMP0]], 1, !nosanitize [[META21]]
-// OPT-NEXT:    br i1 [[TMP1]], label %[[TRAP:.*]], label %[[CONT:.*]], {{!prof ![0-9]+}}, !nosanitize [[META21]]
+// OPT-NEXT:    [[TMP0:%.*]] = tail call { i32, i1 } @llvm.sadd.with.overflow.i32(i32 [[IDX]], i32 [[OTHER]]), !nosanitize [[META6:![0-9]+]]
+// OPT-NEXT:    [[TMP1:%.*]] = extractvalue { i32, i1 } [[TMP0]], 1, !nosanitize [[META6]]
+// OPT-NEXT:    br i1 [[TMP1]], label %[[TRAP:.*]], label %[[CONT:.*]], {{!prof ![0-9]+}}, !nosanitize [[META6]]
 // OPT:       [[TRAP]]:
-// OPT-NEXT:    tail call void @llvm.ubsantrap(i8 0) #[[ATTR4:[0-9]+]], !nosanitize [[META21]]
-// OPT-NEXT:    unreachable, !nosanitize [[META21]]
+// OPT-NEXT:    tail call void @llvm.ubsantrap(i8 0) #[[ATTR4:[0-9]+]], !nosanitize [[META6]]
+// OPT-NEXT:    unreachable, !nosanitize [[META6]]
 // OPT:       [[CONT]]:
-// OPT-NEXT:    [[TMP2:%.*]] = extractvalue { i32, i1 } [[TMP0]], 0, !nosanitize [[META21]]
+// OPT-NEXT:    [[TMP2:%.*]] = extractvalue { i32, i1 } [[TMP0]], 0, !nosanitize [[META6]]
 // OPT-NEXT:    [[AGG_TEMP_SROA_0_0_COPYLOAD:%.*]] = load ptr, ptr [[PTR]], align 8
 // OPT-NEXT:    [[AGG_TEMP_SROA_2_0_PTR_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[PTR]], i64 8
 // OPT-NEXT:    [[AGG_TEMP_SROA_2_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_2_0_PTR_SROA_IDX]], align 8
 // OPT-NEXT:    [[AGG_TEMP_SROA_3_0_PTR_SROA_IDX:%.*]] = getelementptr inbounds nuw i8, ptr [[PTR]], i64 16
-// OPT-NEXT:    [[AGG_TEMP_SROA_3_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_3_0_PTR_SROA_IDX]], align 8, !tbaa [[INTPTR_TBAA7:![0-9]+]]
+// OPT-NEXT:    [[AGG_TEMP_SROA_3_0_COPYLOAD:%.*]] = load ptr, ptr [[AGG_TEMP_SROA_3_0_PTR_SROA_IDX]], align 8, !tbaa [[INTPTR_TBAA8:![0-9]+]]
 // OPT-NEXT:    [[IDXPROM:%.*]] = sext i32 [[TMP2]] to i64
 // OPT-NEXT:    [[ARRAYIDX:%.*]] = getelementptr [4 x i8], ptr [[AGG_TEMP_SROA_0_0_COPYLOAD]], i64 [[IDXPROM]]
-// OPT-NEXT:    [[TMP3:%.*]] = getelementptr i8, ptr [[ARRAYIDX]], i64 4, !annotation [[META10:![0-9]+]]
-// OPT-NEXT:    [[DOTNOT:%.*]] = icmp ugt ptr [[TMP3]], [[AGG_TEMP_SROA_2_0_COPYLOAD]], !annotation [[META10]]
-// OPT-NEXT:    br i1 [[DOTNOT]], label %[[TRAP1:.*]], label %[[CONT2:.*]], {{!prof ![0-9]+}}, !annotation [[META10]]
+// OPT-NEXT:    [[TMP3:%.*]] = getelementptr i8, ptr [[ARRAYIDX]], i64 4, !annotation [[META11:![0-9]+]]
+// OPT-NEXT:    [[DOTNOT:%.*]] = icmp ugt ptr [[TMP3]], [[AGG_TEMP_SROA_2_0_COPYLOAD]], !annotation [[META11]]
+// OPT-NEXT:    br i1 [[DOTNOT]], label %[[TRAP1:.*]], label %[[CONT2:.*]], {{!prof ![0-9]+}}, !annotation [[META11]]
 // OPT:       [[TRAP1]]:
-// OPT-NEXT:    tail call preserve_allcc void @__bounds_safety_soft_trap_s(ptr nonnull @trap.reason) #[[ATTR5:[0-9]+]], !annotation [[META10]]
-// OPT-NEXT:    br label %[[CONT2]], !annotation [[META10]]
+// OPT-NEXT:    tail call preserve_allcc void @__bounds_safety_soft_trap_s(ptr nonnull @trap.reason) #[[ATTR5:[0-9]+]], !annotation [[META11]]
+// OPT-NEXT:    br label %[[CONT2]], !annotation [[META11]]
 // OPT:       [[CONT2]]:
-// OPT-NEXT:    [[DOTNOT7:%.*]] = icmp ugt ptr [[ARRAYIDX]], [[TMP3]], !annotation [[META10]]
-// OPT-NEXT:    br i1 [[DOTNOT7]], label %[[TRAP3:.*]], label %[[CONT4:.*]], {{!prof ![0-9]+}}, !annotation [[META10]]
+// OPT-NEXT:    [[DOTNOT7:%.*]] = icmp ugt ptr [[ARRAYIDX]], [[TMP3]], !annotation [[META11]]
+// OPT-NEXT:    br i1 [[DOTNOT7]], label %[[TRAP3:.*]], label %[[CONT4:.*]], {{!prof ![0-9]+}}, !annotation [[META11]]
 // OPT:       [[TRAP3]]:
-// OPT-NEXT:    tail call preserve_allcc void @__bounds_safety_soft_trap_s(ptr nonnull @trap.reason.1) #[[ATTR5]], !annotation [[META10]]
-// OPT-NEXT:    br label %[[CONT4]], !annotation [[META10]]
+// OPT-NEXT:    tail call preserve_allcc void @__bounds_safety_soft_trap_s(ptr nonnull @trap.reason.1) #[[ATTR5]], !annotation [[META11]]
+// OPT-NEXT:    br label %[[CONT4]], !annotation [[META11]]
 // OPT:       [[CONT4]]:
-// OPT-NEXT:    [[DOTNOT8:%.*]] = icmp ult ptr [[ARRAYIDX]], [[AGG_TEMP_SROA_3_0_COPYLOAD]], !annotation [[META11:![0-9]+]]
-// OPT-NEXT:    br i1 [[DOTNOT8]], label %[[TRAP5:.*]], label %[[CONT6:.*]], {{!prof ![0-9]+}}, !annotation [[META11]]
+// OPT-NEXT:    [[DOTNOT8:%.*]] = icmp ult ptr [[ARRAYIDX]], [[AGG_TEMP_SROA_3_0_COPYLOAD]], !annotation [[META12:![0-9]+]]
+// OPT-NEXT:    br i1 [[DOTNOT8]], label %[[TRAP5:.*]], label %[[CONT6:.*]], {{!prof ![0-9]+}}, !annotation [[META12]]
 // OPT:       [[TRAP5]]:
-// OPT-NEXT:    tail call preserve_allcc void @__bounds_safety_soft_trap_s(ptr nonnull @trap.reason.2) #[[ATTR5]], !annotation [[META11]]
-// OPT-NEXT:    br label %[[CONT6]], !annotation [[META11]]
+// OPT-NEXT:    tail call preserve_allcc void @__bounds_safety_soft_trap_s(ptr nonnull @trap.reason.2) #[[ATTR5]], !annotation [[META12]]
+// OPT-NEXT:    br label %[[CONT6]], !annotation [[META12]]
 // OPT:       [[CONT6]]:
-// OPT-NEXT:    [[TMP4:%.*]] = load i32, ptr [[ARRAYIDX]], align 4, !tbaa [[INT_TBAA1:![0-9]+]]
+// OPT-NEXT:    [[TMP4:%.*]] = load i32, ptr [[ARRAYIDX]], align 4, !tbaa [[INT_TBAA13:![0-9]+]]
 // OPT-NEXT:    ret i32 [[TMP4]]
 //
 int read(int* __bidi_indexable ptr, int idx, int other) {
@@ -676,20 +676,20 @@ void receive_cb(int*__counted_by(count) ptr, int count);
 // OPT-LABEL: define noundef i32 @read_cb(
 // OPT-SAME: ptr noundef [[PTR:%.*]], i32 noundef [[COUNT:%.*]], i32 noundef [[OTHER:%.*]]) local_unnamed_addr #[[ATTR0]] {
 // OPT-NEXT:  [[ENTRY:.*:]]
-// OPT-NEXT:    [[TMP0:%.*]] = tail call { i32, i1 } @llvm.sadd.with.overflow.i32(i32 [[COUNT]], i32 [[OTHER]]), !nosanitize [[META21]]
-// OPT-NEXT:    [[TMP1:%.*]] = extractvalue { i32, i1 } [[TMP0]], 1, !nosanitize [[META21]]
-// OPT-NEXT:    br i1 [[TMP1]], label %[[TRAP:.*]], label %[[CONT:.*]], {{!prof ![0-9]+}}, !nosanitize [[META21]]
+// OPT-NEXT:    [[TMP0:%.*]] = tail call { i32, i1 } @llvm.sadd.with.overflow.i32(i32 [[COUNT]], i32 [[OTHER]]), !nosanitize [[META6]]
+// OPT-NEXT:    [[TMP1:%.*]] = extractvalue { i32, i1 } [[TMP0]], 1, !nosanitize [[META6]]
+// OPT-NEXT:    br i1 [[TMP1]], label %[[TRAP:.*]], label %[[CONT:.*]], {{!prof ![0-9]+}}, !nosanitize [[META6]]
 // OPT:       [[TRAP]]:
-// OPT-NEXT:    tail call void @llvm.ubsantrap(i8 0) #[[ATTR4]], !nosanitize [[META21]]
-// OPT-NEXT:    unreachable, !nosanitize [[META21]]
+// OPT-NEXT:    tail call void @llvm.ubsantrap(i8 0) #[[ATTR4]], !nosanitize [[META6]]
+// OPT-NEXT:    unreachable, !nosanitize [[META6]]
 // OPT:       [[CONT]]:
-// OPT-NEXT:    [[CMP_NOT:%.*]] = icmp slt i32 [[COUNT]], 0, !annotation [[META12:![0-9]+]]
-// OPT-NEXT:    br i1 [[CMP_NOT]], label %[[TRAP50:.*]], label %[[CONT51:.*]], !annotation [[META12]]
+// OPT-NEXT:    [[CMP_NOT:%.*]] = icmp slt i32 [[COUNT]], 0, !annotation [[META14:![0-9]+]]
+// OPT-NEXT:    br i1 [[CMP_NOT]], label %[[TRAP50:.*]], label %[[CONT51:.*]], !annotation [[META14]]
 // OPT:       [[TRAP50]]:
-// OPT-NEXT:    tail call preserve_allcc void @__bounds_safety_soft_trap_s(ptr null) #[[ATTR5]], !annotation [[META12]]
-// OPT-NEXT:    br label %[[CONT51]], !annotation [[META12]]
+// OPT-NEXT:    tail call preserve_allcc void @__bounds_safety_soft_trap_s(ptr null) #[[ATTR5]], !annotation [[META14]]
+// OPT-NEXT:    br label %[[CONT51]], !annotation [[META14]]
 // OPT:       [[CONT51]]:
-// OPT-NEXT:    [[TMP2:%.*]] = extractvalue { i32, i1 } [[TMP0]], 0, !nosanitize [[META21]]
+// OPT-NEXT:    [[TMP2:%.*]] = extractvalue { i32, i1 } [[TMP0]], 0, !nosanitize [[META6]]
 // OPT-NEXT:    tail call void @receive_cb(ptr noundef [[PTR]], i32 noundef [[COUNT]]) #[[ATTR6:[0-9]+]]
 // OPT-NEXT:    ret i32 [[TMP2]]
 //
@@ -759,13 +759,13 @@ int read_cb(int*__counted_by(count) ptr, int count, int other) {
 // OPT: [[META3]] = !{!"int", [[META4:![0-9]+]], i64 0}
 // OPT: [[META4]] = !{!"omnipotent char", [[META5:![0-9]+]], i64 0}
 // OPT: [[META5]] = !{!"Simple C/C++ TBAA"}
-// OPT: [[META21]] = !{}
-// OPT: [[META6:![0-9]+]] = !{!"branch_weights", i32 1, i32 1048575}
-// OPT: [[INTPTR_TBAA7]] = !{[[META8:![0-9]+]], [[META8]], i64 0}
-// OPT: [[META8]] = !{!"p1 int", [[META9:![0-9]+]], i64 0}
-// OPT: [[META9]] = !{!"any pointer", [[META4]], i64 0}
-// OPT: [[META10]] = !{!"bounds-safety-check-ptr-le-upper-bound"}
-// OPT: [[META11]] = !{!"bounds-safety-check-ptr-ge-lower-bound"}
-// OPT: [[INT_TBAA1]] = !{[[META3]], [[META3]], i64 0}
-// OPT: [[META12]] = !{!"bounds-safety-generic"}
+// OPT: [[META6]] = !{}
+// OPT: [[META7:![0-9]+]] = !{!"branch_weights", i32 1, i32 1048575}
+// OPT: [[INTPTR_TBAA8]] = !{[[META9:![0-9]+]], [[META9]], i64 0}
+// OPT: [[META9]] = !{!"p1 int", [[META10:![0-9]+]], i64 0}
+// OPT: [[META10]] = !{!"any pointer", [[META4]], i64 0}
+// OPT: [[META11]] = !{!"bounds-safety-check-ptr-le-upper-bound"}
+// OPT: [[META12]] = !{!"bounds-safety-check-ptr-ge-lower-bound"}
+// OPT: [[INT_TBAA13]] = !{[[META3]], [[META3]], i64 0}
+// OPT: [[META14]] = !{!"bounds-safety-generic"}
 //.

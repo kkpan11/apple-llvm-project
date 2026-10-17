@@ -142,7 +142,7 @@ T bar(int x) {
 // BOUNDS-CHECK: |     |   `-DependerDeclsAttr
 // BOUNDS-CHECK: |     | `-VarDecl {{.*}} p 'int *__single __sized_by_or_null(4UL * y)':'int *__single'
 // BOUNDS-CHECK: |     |-MaterializeSequenceExpr {{.*}} <Bind>
-// BOUNDS-CHECK: |     | |-BoundsCheckExpr {{.*}} 'mymalloc<int>(x) <= __builtin_get_pointer_upper_bound(mymalloc<int>(x)) && __builtin_get_pointer_lower_bound(mymalloc<int>(x)) <= mymalloc<int>(x) && !mymalloc<int>(x) || 4UL * x <= (char *)__builtin_get_pointer_upper_bound(mymalloc<int>(x)) - (char *__single)mymalloc<int>(x)'
+// BOUNDS-CHECK: |     | |-BoundsCheckExpr {{.*}} 'mymalloc<int>(x) <= __builtin_get_pointer_upper_bound(mymalloc<int>(x)) && __builtin_get_pointer_lower_bound(mymalloc<int>(x)) <= mymalloc<int>(x) && !mymalloc<int>(x) || 4UL * x <= __builtin_get_pointer_upper_bound(mymalloc<int>(x)) - mymalloc<int>(x)'
 // BOUNDS-CHECK: |     | | |-BinaryOperator {{.*}} 'int *__single __sized_by_or_null(4UL * y)':'int *__single' lvalue '='
 // BOUNDS-CHECK: |     | | | |-DeclRefExpr {{.*}} 'p'
 // BOUNDS-CHECK: |     | | | `-OpaqueValueExpr
@@ -422,7 +422,7 @@ void method_call(int o) {
 // BOUNDS-CHECK: |   | | |-ParmVarDecl {{.*}} q 'int'
 // BOUNDS-CHECK: |   | | `-CompoundStmt
 // BOUNDS-CHECK: |   | |   |-MaterializeSequenceExpr
-// BOUNDS-CHECK: |   | |   | |-BoundsCheckExpr {{.*}} 'this->mymalloc_m(q) <= __builtin_get_pointer_upper_bound(this->mymalloc_m(q)) && __builtin_get_pointer_lower_bound(this->mymalloc_m(q)) <= this->mymalloc_m(q) && !this->mymalloc_m(q) || q <= (char *)__builtin_get_pointer_upper_bound(this->mymalloc_m(q)) - (char *__single)this->mymalloc_m(q) && 0 <= q'
+// BOUNDS-CHECK: |   | |   | |-BoundsCheckExpr {{.*}} 'this->mymalloc_m(q) <= __builtin_get_pointer_upper_bound(this->mymalloc_m(q)) && __builtin_get_pointer_lower_bound(this->mymalloc_m(q)) <= this->mymalloc_m(q) && !this->mymalloc_m(q) || q <= __builtin_get_pointer_upper_bound(this->mymalloc_m(q)) - this->mymalloc_m(q) && 0 <= q'
 // BOUNDS-CHECK: |   | |   | | |-BinaryOperator {{.*}} '='
 // BOUNDS-CHECK: |   | |   | | | |-MemberExpr {{.*}} ->p_m
 // BOUNDS-CHECK: |   | |   | | | | `-CXXThisExpr {{.*}} 'Outer<int>::Inner *'
@@ -464,7 +464,7 @@ void method_call(int o) {
 // BOUNDS-CHECK: |   |   |   `-DependerDeclsAttr
 // BOUNDS-CHECK: |   |   | `-VarDecl {{.*}} p1 'int *__single __sized_by_or_null(l)':'int *__single'
 // BOUNDS-CHECK: |   |   |-MaterializeSequenceExpr {{.*}} <Bind>
-// BOUNDS-CHECK: |   |   | |-BoundsCheckExpr {{.*}} 'this->inner.mymalloc_m(m) <= __builtin_get_pointer_upper_bound(this->inner.mymalloc_m(m)) && __builtin_get_pointer_lower_bound(this->inner.mymalloc_m(m)) <= this->inner.mymalloc_m(m) && !this->inner.mymalloc_m(m) || m <= (char *)__builtin_get_pointer_upper_bound(this->inner.mymalloc_m(m)) - (char *__single)this->inner.mymalloc_m(m) && 0 <= m'
+// BOUNDS-CHECK: |   |   | |-BoundsCheckExpr {{.*}} 'this->inner.mymalloc_m(m) <= __builtin_get_pointer_upper_bound(this->inner.mymalloc_m(m)) && __builtin_get_pointer_lower_bound(this->inner.mymalloc_m(m)) <= this->inner.mymalloc_m(m) && !this->inner.mymalloc_m(m) || m <= __builtin_get_pointer_upper_bound(this->inner.mymalloc_m(m)) - this->inner.mymalloc_m(m) && 0 <= m'
 // BOUNDS-CHECK: |   |   | | |-BinaryOperator {{.*}} '='
 // BOUNDS-CHECK: |   |   | | | |-DeclRefExpr {{.*}} 'p1' 'int *__single __sized_by_or_null(l)':'int *__single'
 // BOUNDS-CHECK: |   |   | | | `-CXXMemberCallExpr {{.*}} 'int *__single __sized_by_or_null(4UL * n)':'int *__single'
@@ -481,7 +481,7 @@ void method_call(int o) {
 #ifndef BOUNDS_SAFETY // crashes clang with -fbounds-safety -fbounds-attributes-cxx-experimental enabled
 template <typename T>
 void lambda(T h) {
-    auto g = [](T i, T * __sized_by_or_null(i) p1) -> T * __sized_by_or_null(i) {
+    auto g = [](int i, T * __sized_by_or_null(i) p1) -> T * __sized_by_or_null(i) {
         T j = i;
         T * __sized_by_or_null(j) p2 = p1;
         return p2;
@@ -510,9 +510,9 @@ template void lambda<int>(int h);
 // ATTR-ONLY:   |   |   `-LambdaExpr
 // ATTR-ONLY:   |   |     `-CompoundStmt {{.*}}
 // ATTR-ONLY:   |   |       | `-VarDecl {{.*}} j 'T'
-// ATTR-ONLY:   |   |       |   `-DeclRefExpr {{.*}} 'i' 'T'
+// ATTR-ONLY:   |   |       |   `-DeclRefExpr {{.*}} 'i' 'int'
 // ATTR-ONLY:   |   |       | `-VarDecl {{.*}} p2 'T *'
-// ATTR-ONLY:   |   |       |   |-DeclRefExpr {{.*}} 'p1' 'T *'
+// ATTR-ONLY:   |   |       |   |-DeclRefExpr {{.*}} 'p1' 'T * __sized_by_or_null(i)':'T *'
 // ATTR-ONLY:   |   |       |   `-SizedByOrNullAttr
 // ATTR-ONLY:   |   |       |     `-DeclRefExpr {{.*}} 'j' 'T'
 // ATTR-ONLY:   |   |       `-ReturnStmt

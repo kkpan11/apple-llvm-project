@@ -773,6 +773,14 @@ TEST_F(PlatformDarwinLocateTest, GetSafeAutoLoadPaths) {
   // Tests PlatformDarwin::GetSafeAutoLoadPaths returns a path into the SDK on
   // Darwin platforms.
 
+#ifndef __APPLE__
+  // GetSafeAutoLoadPaths resolves a MacOSX SDK through HostInfo::GetSDKRoot.
+  // Only HostInfoMacOSX can answer that; HostInfoLinux reports an error for
+  // every SDK type other than XcodeSDK::Type::Linux, so there is no SDK root
+  // to build an auto-load path out of here.
+  GTEST_SKIP() << "Locating a MacOSX SDK requires a Darwin host";
+#endif
+
   auto paths_or_err = std::static_pointer_cast<PlatformDarwin>(m_platform_sp)
                           ->GetSafeAutoLoadPaths(*m_target_sp);
 

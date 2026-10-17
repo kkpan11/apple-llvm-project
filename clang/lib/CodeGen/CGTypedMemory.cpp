@@ -72,7 +72,8 @@ static llvm::stable_hash GetLocationHash(const CodeGenModule &CGM,
 }
 
 RValue CodeGenFunction::EmitTypedMemoryCall(const CallExpr *E,
-                                            TypedMemoryAttr *TMA,
+                                            const TypedMemoryAttr *TMA,
+                                            const InferredTypeInfo &Info,
                                             ReturnValueSlot ReturnValue) {
   assert(CGM.getLangOpts().TypedMemoryOperations);
   auto *Target = TMA->getRewriteTarget();
@@ -81,7 +82,7 @@ RValue CodeGenFunction::EmitTypedMemoryCall(const CallExpr *E,
   auto *OriginalType = OriginalDecl->getType()->getAs<FunctionProtoType>();
   auto &Context = getContext();
   CGCallee Callee = EmitCallee(Target);
-  auto PropertyDescriptorType = Context.getBitIntType(true, 64);
+  auto PropertyDescriptorType = Context.getBitIntType(/*IsUnsigned=*/true, 64);
   CallArgList CallArgs;
   EmitCallArgs(CallArgs, OriginalType, E->arguments());
 
@@ -89,7 +90,7 @@ RValue CodeGenFunction::EmitTypedMemoryCall(const CallExpr *E,
   auto *InferredParameter = E->getArg(InferredParamIndex);
 
   TypedMemoryDescriptorBits Descriptor;
-  if (InferredTypeInfo Info = Context.getInferredInfoForCall(E); Info.Type) {
+  if (Info.Type) {
     if (auto PrimaryType = Info.Type->primaryType()) {
       auto TypeDescriptor = Context.getTypedMemoryDescriptor(
           *PrimaryType, OO_None, Info.InferredCallsiteFlags);
@@ -106,12 +107,13 @@ RValue CodeGenFunction::EmitTypedMemoryCall(const CallExpr *E,
 
   auto *DescriptorId = llvm::ConstantInt::get(CGM.Int64Ty, Descriptor.value());
   DescriptorId->setName("type_descriptor");
+  QualType DescriptorParamType =
+      TargetPrototype->getParamType(InferredParamIndex + 1);
   auto *ConvertedValue = EmitScalarConversion(
-      DescriptorId, PropertyDescriptorType,
-      TargetPrototype->getParamType(InferredParamIndex + 1),
+      DescriptorId, PropertyDescriptorType, DescriptorParamType,
       InferredParameter->getExprLoc());
   auto InferredTypeArg =
-      CallArg(RValue::get(ConvertedValue), PropertyDescriptorType);
+      CallArg(RValue::get(ConvertedValue), DescriptorParamType);
   CallArgs.insert(CallArgs.begin() + InferredParamIndex + 1, InferredTypeArg);
 
   const CGFunctionInfo &FnInfo = CGM.getTypes().arrangeFreeFunctionCall(
@@ -130,9 +132,7 @@ RValue CodeGenFunction::EmitTypedMemoryCall(const CallExpr *E,
 
   // Generate function declaration DISuprogram in order to be used
   // in debug info about call sites.
-  if (CGDebugInfo *DI = getDebugInfo()) {
-    if (auto *CalleeDecl = dyn_cast_or_null<FunctionDecl>(Target))
-      DI->EmitFuncDeclForCallSite(CallOrInvoke, Target->getType(), CalleeDecl);
-  }
+  if (CGDebugInfo *DI = getDebugInfo())
+    DI->EmitFuncDeclForCallSite(CallOrInvoke, Target->getType(), Target);
   return Call;
 }
