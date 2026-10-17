@@ -1452,6 +1452,7 @@ void ASTDeclWriter::VisitFileScopeAsmDecl(FileScopeAsmDecl *D) {
 
 void ASTDeclWriter::VisitTopLevelStmtDecl(TopLevelStmtDecl *D) {
   VisitDecl(D);
+  Record.push_back(D->getOrdinal());
   Record.AddStmt(D->getStmt());
   Code = serialization::DECL_TOP_LEVEL_STMT_DECL;
 }
@@ -1966,7 +1967,7 @@ void ASTDeclWriter::VisitClassTemplateSpecializationDecl(
   llvm::PointerUnion<ClassTemplateDecl *,
                      ClassTemplatePartialSpecializationDecl *> InstFrom
     = D->getSpecializedTemplateOrPartial();
-  if (Decl *InstFromD = InstFrom.dyn_cast<ClassTemplateDecl *>()) {
+  if (Decl *InstFromD = dyn_cast<ClassTemplateDecl *>(InstFrom)) {
     Record.AddDeclRef(InstFromD);
   } else {
     Record.AddDeclRef(cast<ClassTemplatePartialSpecializationDecl *>(InstFrom));
@@ -2049,7 +2050,7 @@ void ASTDeclWriter::VisitVarTemplateSpecializationDecl(
 
   llvm::PointerUnion<VarTemplateDecl *, VarTemplatePartialSpecializationDecl *>
   InstFrom = D->getSpecializedTemplateOrPartial();
-  if (Decl *InstFromD = InstFrom.dyn_cast<VarTemplateDecl *>()) {
+  if (Decl *InstFromD = dyn_cast<VarTemplateDecl *>(InstFrom)) {
     Record.AddDeclRef(InstFromD);
   } else {
     Record.AddDeclRef(cast<VarTemplatePartialSpecializationDecl *>(InstFrom));

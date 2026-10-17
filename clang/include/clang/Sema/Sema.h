@@ -66,7 +66,6 @@
 #include "clang/Sema/Scope.h"
 #include "clang/Sema/SemaBase.h"
 #include "clang/Sema/SemaConcept.h"
-#include "clang/Sema/TypedMemoryCallsiteContext.h"
 #include "clang/Sema/TypoCorrection.h"
 #include "clang/Sema/Weak.h"
 #include "llvm/ADT/APInt.h"
@@ -214,6 +213,12 @@ class FunctionScopeInfo;
 class LambdaScopeInfo;
 class SemaPPCallbacks;
 class TemplateDeductionInfo;
+
+/// Inference context metadata for a TMO rewrite candidate.
+struct TMOInferenceCandidate {
+  const CallExpr *Call = nullptr;
+  const CastExpr *Cast = nullptr;
+};
 } // namespace sema
 
 // AssignmentAction - This is used by all the assignment diagnostic functions
@@ -1342,6 +1347,34 @@ public:
   sema::CapturedRegionScopeInfo *getCurCapturedRegion();
 
   void ActOnComment(SourceRange Comment);
+
+  /// Returns true if any of the documentation warnings is enabled at \p Loc.
+  bool areDocumentationDiagsEnabled(SourceLocation Loc);
+
+  /// Discard the areDocumentationDiagsEnabled() cache, for when a
+  /// `#pragma clang diagnostic` has changed diagnostic severities.
+  void clearDocumentationDiagsCache();
+
+private:
+  /// The uncached answer for both documentation groups at \p Loc.
+  bool computeDocumentationDiagsAt(SourceLocation Loc) const;
+
+  /// Caches results for areDocumentationDiagsEnabled().
+  /// Flushed whenever a diagnostic pragma changes severities.
+  /// Level one is keyed on the diagnostic state alone.
+  const void *DocDiagsStateKey = nullptr;
+  bool DocDiagsEnabledIgnoringSystem = false;
+
+  /// Level two, for when the location does matter. Bit i of each mask is a
+  /// DiagStateSystemClass value; bit 0 is unused.
+  uint8_t DocDiagsExactComputed = 0;
+  uint8_t DocDiagsExactEnabled = 0;
+
+public:
+  /// Returns true if a comment at \p Loc should be retained in the AST
+  /// (some consumer such as -Wdocumentation, -fparse-all-comments, code
+  /// completion, or AST-file serialization may read it back).
+  bool shouldRetainCommentsInAST(SourceLocation Loc);
 
   /// Retrieve the parser's current scope.
   ///
@@ -2791,6 +2824,28 @@ public:
   bool CheckCountedByAttrOnField(FieldDecl *FD, Expr *E, bool CountInBytes,
                                  bool OrNull);
 
+  /// Late-parsed bounds types dropped while their declarator was built. The
+  /// attribute has already been diagnosed and its node is no longer part of
+  /// any type, so the completion pass must skip it rather than parse its
+  /// argument and complete it.
+  llvm::SmallPtrSet<const BoundsAttributedType *, 1>
+      RejectedLateParsedBoundsTypes;
+
+  void markLateParsedBoundsTypeRejected(const BoundsAttributedType *BATy) {
+    RejectedLateParsedBoundsTypes.insert(BATy);
+  }
+
+  bool isLateParsedBoundsTypeRejected(const BoundsAttributedType *BATy) const {
+    return RejectedLateParsedBoundsTypes.contains(BATy);
+  }
+
+  /// Supply the parsed argument of a late-parsed bounds attribute to the type
+  /// built for it by ActOnLateParsedTypeAttr, and run the checks that need the
+  /// owning declaration. \p FD is the field the type belongs to. Returns false
+  /// if the attribute was rejected.
+  bool ActOnLateParsedTypeAttrArgument(BoundsAttributedType *BATy,
+                                       FieldDecl *FD, Expr *Arg);
+
   /// Perform Bounds Safety Semantic checks for assigning to a `__counted_by` or
   /// `__counted_by_or_null` pointer type \param LHSTy.
   ///
@@ -3290,9 +3345,10 @@ public:
   /// Handles the checks for format strings, non-POD arguments to vararg
   /// functions, NULL arguments passed to non-NULL parameters, diagnose_if
   /// attributes and AArch64 SME attributes.
-  void checkCall(NamedDecl *FDecl, const FunctionProtoType *Proto,
-                 const Expr *ThisArg, ArrayRef<const Expr *> Args,
-                 bool IsMemberFunction, SourceLocation Loc, SourceRange Range,
+  void checkCall(NamedDecl *FDecl, const CallExpr *TheCall,
+                 const FunctionProtoType *Proto, const Expr *ThisArg,
+                 ArrayRef<const Expr *> Args, bool IsMemberFunction,
+                 SourceLocation Loc, SourceRange Range,
                  VariadicCallType CallType);
 
   /// Verify that two format strings (as understood by attribute(format) and
@@ -3375,6 +3431,8 @@ public:
   /// Checks that a call expression's argument count is the desired number.
   /// This is useful when doing custom type-checking.  Returns true on error.
   bool checkArgCount(CallExpr *Call, unsigned DesiredArgCount);
+
+  bool convertArgumentToType(Expr *&Value, QualType Ty);
 
   /// Returns true if the argument consists of one contiguous run of 1s with any
   /// number of 0s on either side. The 1s are allowed to wrap from LSB to MSB,
@@ -3917,10 +3975,9 @@ public:
   bool ActOnCXXNestedNameSpecifierDecltype(CXXScopeSpec &SS, const DeclSpec &DS,
                                            SourceLocation ColonColonLoc);
 
-  bool ActOnCXXNestedNameSpecifierIndexedPack(CXXScopeSpec &SS,
-                                              const DeclSpec &DS,
-                                              SourceLocation ColonColonLoc,
-                                              QualType Type);
+  ParsedType ActOnCXXNestedNameSpecifierIndexedPack(
+      CXXScopeSpec &SS, const DeclSpec &DS, TypeSourceInfo *PatternLoc,
+      SourceLocation ColonColonLoc, QualType Type);
 
   /// IsInvalidUnlessNestedName - This method is used for error recovery
   /// purposes to determine whether the specified identifier is only valid as
@@ -4044,7 +4101,7 @@ public:
 
   /// A cache of the flags available in enumerations with the flag_enum
   /// attribute.
-  llvm::DenseMap<const EnumDecl *, llvm::APInt> FlagBitsCache;
+  mutable llvm::DenseMap<const EnumDecl *, llvm::APInt> FlagBitsCache;
 
   /// A cache of enumerator values for enums checked by -Wassign-enum.
   llvm::DenseMap<const EnumDecl *, llvm::SmallVector<llvm::APSInt>>
@@ -4081,7 +4138,7 @@ public:
   void getSortedUnusedLocalTypedefNameCandidates(
       SmallVectorImpl<const TypedefNameDecl *> &Sorted) const;
 
-  typedef LazyVector<const DeclaratorDecl *, ExternalSemaSource,
+  typedef LazyVector<const DeclaratorDecl *,
                      &ExternalSemaSource::ReadUnusedFileScopedDecls, 2, 2>
       UnusedFileScopedDeclsType;
 
@@ -4089,8 +4146,8 @@ public:
   /// and must warn if not used. Only contains the first declaration.
   UnusedFileScopedDeclsType UnusedFileScopedDecls;
 
-  typedef LazyVector<VarDecl *, ExternalSemaSource,
-                     &ExternalSemaSource::ReadTentativeDefinitions, 2, 2>
+  typedef LazyVector<VarDecl *, &ExternalSemaSource::ReadTentativeDefinitions,
+                     2, 2>
       TentativeDefinitionsType;
 
   /// All the tentative definitions encountered in the TU.
@@ -4972,6 +5029,14 @@ public:
 
   /// Push the parameters of D, which must be a function, into scope.
   void ActOnReenterFunctionContext(Scope *S, Decl *D);
+
+  /// Add \p Params to scope, so a late-parsed attribute can name them.
+  void ActOnReenterFunctionPrototypeParams(Scope *S,
+                                           ArrayRef<ParmVarDecl *> Params);
+  /// Undo the above, for when \p S outlives the attribute so no scope pop
+  /// removes them.
+  void ActOnExitFunctionPrototypeParams(Scope *S,
+                                        ArrayRef<ParmVarDecl *> Params);
   void ActOnExitFunctionContext();
 
   /// Add this decl to the scope shadowed decl chains.
@@ -4986,6 +5051,13 @@ public:
   ///        directly within it.
   bool isDeclInScope(NamedDecl *D, DeclContext *Ctx, Scope *S = nullptr,
                      bool AllowInlineNamespace = false) const;
+
+  /// Determine whether a tag-like declaration found by lookup can be
+  /// redeclared in the given scope. If lookup found a using-shadow, also
+  /// consider the scope of the declaration named by the using-shadow.
+  bool isTagRedeclarationInScope(NamedDecl *D, DeclContext *Ctx,
+                                 Scope *S = nullptr,
+                                 bool AllowInlineNamespace = false) const;
 
   /// Finds the scope corresponding to the given decl context, if it
   /// happens to be an enclosing scope.  Otherwise return NULL.
@@ -5431,8 +5503,8 @@ public:
   /// WeakTopLevelDeclDecls - access to \#pragma weak-generated Decls
   SmallVectorImpl<Decl *> &WeakTopLevelDecls() { return WeakTopLevelDecl; }
 
-  typedef LazyVector<TypedefNameDecl *, ExternalSemaSource,
-                     &ExternalSemaSource::ReadExtVectorDecls, 2, 2>
+  typedef LazyVector<TypedefNameDecl *, &ExternalSemaSource::ReadExtVectorDecls,
+                     2, 2>
       ExtVectorDeclsType;
 
   /// ExtVectorDecls - This is a list all the extended vector types. This allows
@@ -5699,6 +5771,20 @@ public:
   /// implementation of std::span or sized_allocation_t in P0901R11.
   bool CheckSpanLikeType(const AttributeCommonInfo &CI, const QualType &Ty);
 
+  /// Check that the Target function for the typed retargeting is valid for
+  /// the source function.
+  bool checkTypedMemorySignature(const AttributeCommonInfo &CI,
+                                 const FunctionDecl *Source,
+                                 const FunctionDecl *Target,
+                                 ParamIdx InferredParameterIdx,
+                                 bool SkipDependent);
+
+  void handleTypedMemoryAttr(Decl *D, const ParsedAttr &AL);
+
+  void
+  instantiateTypedMemoryAttr(const MultiLevelTemplateArgumentList &TemplateArgs,
+                             const TypedMemoryAttr *Attr, Decl *New);
+
   /// Check if IdxExpr is a valid parameter index for a function or
   /// instance method D.  May output an error.
   ///
@@ -5713,10 +5799,9 @@ public:
     // In C++ the implicit 'this' function parameter also counts.
     // Parameters are counted from one.
     bool HP = hasFunctionProto(D);
-    bool HasImplicitThisParam = hasImplicitObjectParameter(D);
     bool IV = HP && isFunctionOrMethodVariadic(D);
     unsigned NumParams =
-        (HP ? getFunctionOrMethodNumParams(D) : 0) + HasImplicitThisParam;
+        HP ? getFunctionOrMethodNumParams(D, /*IncludeThis=*/true) : 0;
 
     std::optional<llvm::APSInt> IdxInt;
     if (IdxExpr->isTypeDependent() ||
@@ -5735,7 +5820,7 @@ public:
           << &AI << AttrArgNum << IdxExpr->getSourceRange();
       return false;
     }
-    if (HasImplicitThisParam && !CanIndexImplicitThis) {
+    if (hasImplicitObjectParameter(D) && !CanIndexImplicitThis) {
       if (IdxSource == 1) {
         Diag(getAttrLoc(AI), diag::err_attribute_invalid_implicit_this_argument)
             << &AI << IdxExpr->getSourceRange();
@@ -6011,6 +6096,10 @@ public:
       CXXConstructionKind ConstructKind, SourceRange ParenRange);
 
   ExprResult ConvertMemberDefaultInitExpression(FieldDecl *FD, Expr *InitExpr,
+                                                SourceLocation InitLoc);
+  ExprResult ConvertMemberDefaultInitExpression(FieldDecl *FD,
+                                                const InitializedEntity &Entity,
+                                                Expr *InitExpr,
                                                 SourceLocation InitLoc);
 
   /// FinalizeVarWithDestructor - Prepare for calling destructor on the
@@ -7006,7 +7095,7 @@ public:
   /// same list more than once.
   std::unique_ptr<RecordDeclSetTy> PureVirtualClassDiagSet;
 
-  typedef LazyVector<CXXConstructorDecl *, ExternalSemaSource,
+  typedef LazyVector<CXXConstructorDecl *,
                      &ExternalSemaSource::ReadDelegatingConstructors, 2, 2>
       DelegatingCtorDeclsType;
 
@@ -7271,6 +7360,10 @@ public:
     /// this expression evaluation context.
     unsigned NumCleanupObjects;
 
+    /// The index of the first pending inference candidate in TMOCandidates
+    /// that this expression evaluation context owns.
+    unsigned ContextHeadTMOIndex;
+
     MaybeODRUseExprSet SavedMaybeODRUseExprs;
 
     /// The lambdas that are present within this context, if it
@@ -7373,11 +7466,13 @@ public:
 
     ExpressionEvaluationContextRecord(ExpressionEvaluationContext Context,
                                       unsigned NumCleanupObjects,
+                                      unsigned ContextHeadTMOIndex,
                                       CleanupInfo ParentCleanup,
                                       Decl *ManglingContextDecl,
                                       ExpressionKind ExprContext)
         : Context(Context), ParentCleanup(ParentCleanup),
           NumCleanupObjects(NumCleanupObjects),
+          ContextHeadTMOIndex(ContextHeadTMOIndex),
           ManglingContextDecl(ManglingContextDecl), ExprContext(ExprContext),
           InDiscardedStatement(false), InImmediateFunctionContext(false),
           InImmediateEscalatingFunctionContext(false) {}
@@ -7465,6 +7560,11 @@ public:
   /// ExprCleanupObjects - This is the stack of objects requiring
   /// cleanup that are created by the current full expression.
   SmallVector<ExprWithCleanups::CleanupObject, 8> ExprCleanupObjects;
+
+  /// This is a stack for every candidate in the current evaluation context that
+  /// we are yet to perform TMO inference on. The candidates for the current
+  /// context are in the range [ContextHeadTMOIndex, TMOCandidates.size()).
+  SmallVector<sema::TMOInferenceCandidate, 8> TMOCandidates;
 
   /// Determine whether the use of this declaration is valid, without
   /// emitting diagnostics.
@@ -8187,7 +8287,24 @@ public:
   /// Emit a warning for all pending noderef expressions that we recorded.
   void WarnOnPendingNoDerefs(ExpressionEvaluationContextRecord &Rec);
 
-  ExprResult BuildCXXDefaultInitExpr(SourceLocation Loc, FieldDecl *Field);
+private:
+  /// Shared logic for building default member initializer which used in a
+  /// constructor or an aggregate initialization.
+  ///
+  ///
+  /// The caller enters that evaluation context and decides whether the result
+  /// is finished as a full-expression. \p NestedDefaultChecking and
+  /// \p NeedRebuild have to be sampled before entering it.
+  ExprResult BuildCXXDefaultInitInternal(SourceLocation Loc, FieldDecl *Field,
+                                         const InitializedEntity &Entity,
+                                         bool NestedDefaultChecking,
+                                         bool NeedRebuild);
+
+public:
+  ExprResult BuildCXXCtorDefaultInitExpr(SourceLocation Loc, FieldDecl *Field);
+  ExprResult
+  BuildCXXAggregateDefaultInitExpr(SourceLocation Loc, FieldDecl *Field,
+                                   const InitializedEntity &MemberEntity);
 
   /// Instantiate or parse a C++ default argument expression as necessary.
   /// Return true on error.
@@ -8354,7 +8471,7 @@ public:
   QualType CheckVectorOperands(ExprResult &LHS, ExprResult &RHS,
                                SourceLocation Loc, bool IsCompAssign,
                                bool AllowBothBool, bool AllowBoolConversion,
-                               bool AllowBoolOperation, bool ReportInvalid);
+                               bool AllowBoolOperation);
 
   /// Return a signed ext_vector_type that is of identical size and number of
   /// elements. For floating point vectors, return an integer type of identical
@@ -9797,7 +9914,8 @@ public:
                                    const sema::Capture &From);
 
   /// Build a FieldDecl suitable to hold the given capture.
-  FieldDecl *BuildCaptureField(RecordDecl *RD, const sema::Capture &Capture);
+  FieldDecl *BuildCaptureField(RecordDecl *RD, const sema::Capture &Capture,
+                               bool IsOpenMP = false);
 
   /// Initialize the given capture with a suitable expression.
   ExprResult BuildCaptureInit(const sema::Capture &Capture,
@@ -9912,16 +10030,12 @@ public:
     void setKind(Kind K) { Pair.setInt(K); }
   };
 
-  class SpecialMemberOverloadResultEntry : public llvm::FastFoldingSetNode,
-                                           public SpecialMemberOverloadResult {
-  public:
-    SpecialMemberOverloadResultEntry(const llvm::FoldingSetNodeID &ID)
-        : FastFoldingSetNode(ID) {}
-  };
+  using SpecialMemberCacheKey = std::pair<const CXXRecordDecl *, unsigned>;
 
   /// A cache of special member function overload resolution results
   /// for C++ records.
-  llvm::FoldingSet<SpecialMemberOverloadResultEntry> SpecialMemberCache;
+  llvm::DenseMap<SpecialMemberCacheKey, SpecialMemberOverloadResult>
+      SpecialMemberCache;
 
   enum class AcceptableKind { Visible, Reachable };
 
@@ -12189,7 +12303,7 @@ public:
   /// of arguments for the named concept).
   bool AttachTypeConstraint(NestedNameSpecifierLoc NS,
                             DeclarationNameInfo NameInfo,
-                            TemplateDecl *NamedConcept, NamedDecl *FoundDecl,
+                            TemplateName NamedConcept, NamedDecl *FoundDecl,
                             const TemplateArgumentListInfo *TemplateArgs,
                             TemplateTypeParmDecl *ConstrainedParameter,
                             SourceLocation EllipsisLoc);
@@ -12398,7 +12512,7 @@ public:
                                 const TemplateArgumentListInfo *TemplateArgs);
 
   ExprResult CheckVarOrConceptTemplateTemplateId(
-      const DeclarationNameInfo &NameInfo, TemplateTemplateParmDecl *Template,
+      const DeclarationNameInfo &NameInfo, TemplateName Template,
       const TemplateArgumentListInfo *TemplateArgs);
 
   ExprResult
@@ -13526,6 +13640,11 @@ public:
       TemplateParameterList *PParam, TemplateDecl *PArg, TemplateDecl *AArg,
       const DefaultArguments &DefaultArgs, SourceLocation ArgLoc,
       bool PartialOrdering, bool *StrictPackMatch);
+
+  /// Determine the declared type of the constant template parameter that \p Arg
+  /// names, if any.
+  static QualType
+  getTypeOfConstantTemplateParameter(const TemplateArgument &Arg);
 
   /// Mark which template parameters are used in a given expression.
   ///
@@ -15262,6 +15381,15 @@ public:
       QualType T, SmallVectorImpl<UnexpandedParameterPack> &Unexpanded);
 
   /// Collect the set of unexpanded parameter packs within the given
+  /// template name.
+  ///
+  /// \param Template The template name that will be traversed to find
+  /// unexpanded parameter packs.
+  void collectUnexpandedParameterPacks(
+      TemplateName Template,
+      SmallVectorImpl<UnexpandedParameterPack> &Unexpanded);
+
+  /// Collect the set of unexpanded parameter packs within the given
   /// type.
   ///
   /// \param TL The type that will be traversed to find
@@ -15475,6 +15603,19 @@ public:
                                    ArrayRef<Expr *> ExpandedExprs = {},
                                    bool FullySubstituted = false);
 
+  TemplateName ActOnPackIndexingTemplateName(TemplateName Pattern,
+                                             SourceLocation NameLoc,
+                                             Expr *IndexExpr);
+
+  TemplateName
+  BuildPackIndexingTemplateName(TemplateName Pattern, Expr *IndexExpr,
+                                bool FullySubstituted = false,
+                                ArrayRef<TemplateName> Expansions = {});
+
+  TypeResult
+  ActOnPackIndexingDeducedTemplateSpecializationType(TemplateName Name,
+                                                     SourceLocation NameLoc);
+
   /// Handle a C++1z fold-expression: ( expr op ... op expr ).
   ExprResult ActOnCXXFoldExpr(Scope *S, SourceLocation LParenLoc, Expr *LHS,
                               tok::TokenKind Operator,
@@ -15650,6 +15791,9 @@ public:
   DiagnoseUnsatisfiedConstraint(const ConceptSpecializationExpr *ConstraintExpr,
                                 bool First = true);
 
+  void DiagnoseUnsatisfiedRequiresExpr(const RequiresExpr *RequiresExpr,
+                                       bool First = true);
+
   const NormalizedConstraint *getNormalizedAssociatedConstraints(
       ConstrainedDeclOrNestedRequirement Entity,
       ArrayRef<AssociatedConstraint> AssociatedConstraints);
@@ -15676,11 +15820,17 @@ public:
       const NamedDecl *D1, ArrayRef<AssociatedConstraint> AC1,
       const NamedDecl *D2, ArrayRef<AssociatedConstraint> AC2);
 
+private:
+  friend class ConstraintSatisfactionChecker;
+  friend class SubstituteParameterMappings;
+
+  UnsignedOrNone EvaluateFoldExpandedConstraintSize(
+      const Expr *Pattern, const MultiLevelTemplateArgumentList &MLTAL);
+
   /// Cache the satisfaction of an atomic constraint.
   /// The key is based on the unsubstituted expression and the parameter
   /// mapping. This lets us not substituting the mapping more than once,
   /// which is (very!) expensive.
-  /// FIXME: this should be private.
   llvm::DenseMap<llvm::FoldingSetNodeID,
                  UnsubstitutedConstraintSatisfactionCacheResult>
       UnsubstitutedConstraintSatisfactionCache;
@@ -15692,18 +15842,17 @@ public:
   llvm::DenseMap<llvm::FoldingSetNodeID, TemplateArgumentLoc>
       *CurrentCachedTemplateArgs = nullptr;
 
-private:
   /// Caches pairs of template-like decls whose associated constraints were
   /// checked for subsumption and whether or not the first's constraints did in
   /// fact subsume the second's.
   llvm::DenseMap<std::pair<const NamedDecl *, const NamedDecl *>, bool>
       SubsumptionCache;
-  /// Caches the normalized associated constraints of declarations (concepts or
-  /// constrained declarations). If an error occurred while normalizing the
-  /// associated constraints of the template or concept, nullptr will be cached
-  /// here.
-  llvm::DenseMap<ConstrainedDeclOrNestedRequirement, NormalizedConstraint *>
-      NormalizationCache;
+  /// Caches the normal form of constraint expressions (and their pack
+  /// substitution index). These are shared by e.g. the members of all
+  /// specializations of a class template. If an error occurred while
+  /// normalizing an expression, nullptr will be cached here.
+  llvm::DenseMap<std::pair<const Expr *, unsigned>, NormalizedConstraint *>
+      NormalizedConstraintExprCache;
 
   /// Cache whether the associated constraint of a declaration
   /// is satisfied.
@@ -15831,6 +15980,12 @@ public:
   QualType BuildArrayType(QualType T, ArraySizeModifier ASM, Expr *ArraySize,
                           unsigned Quals, SourceRange Brackets,
                           DeclarationName Entity);
+
+  /// Diagnose an array of \p NumElements elements of type \p ElementType
+  /// that is too large. Returns true if a diagnostic was emitted.
+  bool checkArrayTooLarge(QualType ElementType, const llvm::APSInt &NumElements,
+                          SourceLocation Loc,
+                          SourceRange Range = SourceRange());
   QualType BuildVectorType(QualType T, Expr *VecSize, SourceLocation AttrLoc);
 
   /// Build an ext-vector type.
@@ -16077,10 +16232,9 @@ public:
   QualType BuildDecltypeType(Expr *E, bool AsUnevaluated = true);
 
   QualType ActOnPackIndexingType(QualType Pattern, Expr *IndexExpr,
-                                 SourceLocation Loc,
-                                 SourceLocation EllipsisLoc);
+                                 SourceLocation Loc);
   QualType BuildPackIndexingType(QualType Pattern, Expr *IndexExpr,
-                                 SourceLocation Loc, SourceLocation EllipsisLoc,
+                                 SourceLocation Loc,
                                  bool FullySubstituted = false,
                                  ArrayRef<QualType> Expansions = {});
 
@@ -16274,11 +16428,12 @@ public:
   /// Determine if \p D has a definition which allows we redefine it in current
   /// TU. \p Suggested is the definition that should be made visible to expose
   /// the definition.
-  bool isRedefinitionAllowedFor(NamedDecl *D, NamedDecl **Suggested,
-                                bool &Visible);
-  bool isRedefinitionAllowedFor(const NamedDecl *D, bool &Visible) {
+  bool isRedefinitionAllowedFor(NamedDecl *D, SourceLocation NewDefinitionLoc,
+                                NamedDecl **Suggested, bool &Visible);
+  bool isRedefinitionAllowedFor(const NamedDecl *D, SourceLocation NewLoc,
+                                bool &Visible) {
     NamedDecl *Hidden;
-    return isRedefinitionAllowedFor(const_cast<NamedDecl *>(D), &Hidden,
+    return isRedefinitionAllowedFor(const_cast<NamedDecl *>(D), NewLoc, &Hidden,
                                     Visible);
   }
 
@@ -16298,6 +16453,14 @@ public:
     NamedDecl *Hidden;
     return hasAcceptableDefinition(D, &Hidden, Kind);
   }
+
+  /// Determine if a definition at \p NewLoc coincides with \p PrevD.
+  ///
+  /// Including the same header as a non-modular and a modular allows to process
+  /// its content twice despite guards against multiple inclusions. To handle
+  /// such cases this method allows to detect if a currently-parsed decl is at
+  /// the same location as an existing decl imported from a module.
+  bool isFromSameSingleIncludeHeader(const Decl *PrevD, SourceLocation NewLoc);
 
   /// Try to parse the conditional expression attached to an effect attribute
   /// (e.g. 'nonblocking'). (c.f. Sema::ActOnNoexceptSpec). Return an empty
@@ -16493,9 +16656,6 @@ public:
   //===--------------------------------------------------------------------===//
   /// @{
 private:
-  // TMO context information used to track non-function scoped TMO calls, such
-  // as global or declaration scoped initializers and similar.
-  sema::TypedMemoryCallsiteContext NonFunctionTMOContext;
   bool checkTMOGetTypeDescriptor(QualType T, SourceLocation Loc,
                                  SourceRange ArgRange);
 
@@ -16503,21 +16663,21 @@ private:
                                       SourceRange ExpressionRange,
                                       QualType QueriedType);
 
-public:
-  sema::TypedMemoryCallsiteContext &currentTMOContext() {
-    if (auto *EnclosingFunctionScope = getEnclosingFunction())
-      return EnclosingFunctionScope->TMOContext;
-    return NonFunctionTMOContext;
-  }
+  void recordInfoForInferredCall(sema::TMOInferenceCandidate Candidate);
 
+  void drainTMOCandidates(unsigned FirstCandidateIndex);
+
+public:
   // While performing semantic analysis of full expressions or initializers
   // we accumulate all the allocation calls in that expression, and the
   // casts of the results of any such allocation calls. At the end of the
   // expression analysis we perform the TMO inference and diagnostics of any
   // such calls we've encountered.
-  void finalizeOutstandingTMOCandidates() {
-    currentTMOContext().finalizeOutstandingTMOCandidates(*this);
-  }
+  void finalizeOutstandingTMOCandidates();
+
+  void recordTMOInferenceCandidate(const Expr *Call);
+  void recordCastForTMOInference(const CastExpr *Cast);
+  void forwardTMOCandidatesToEnclosingContext();
   /// @}
 };
 
