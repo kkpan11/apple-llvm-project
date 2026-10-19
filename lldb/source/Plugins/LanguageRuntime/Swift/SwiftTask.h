@@ -23,14 +23,12 @@ public:
   /// Returns a Task specific register context (RegisterContextTask).
   RegisterContextSP GetRegisterContext() override;
 
+  RegisterContextSP CreateRegisterContextForFrame(StackFrame *frame) override;
+
   ~ThreadTask() override { DestroyThread(); }
 
   // No-op overrides.
   void RefreshStateAfterStop() override {}
-  lldb::RegisterContextSP
-  CreateRegisterContextForFrame(StackFrame *frame) override {
-    return {};
-  }
   bool CalculateStopInfo() override { return false; }
 
 private:

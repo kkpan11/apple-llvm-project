@@ -34,7 +34,7 @@ class TestCase(TestBase):
             substrs=[
                 ".sleep(",
                 "`second() at main.swift:6",
-                "`first() at main.swift:2",
+                "`first(n=42) at main.swift:2",
                 "`closure #1 in static Main.main() at main.swift:12",
             ],
         )
@@ -80,7 +80,8 @@ class TestCase(TestBase):
 
         self.expect("up", substrs=[f"frame #{frame_idx + 1}:"])
         frame = thread.GetSelectedFrame()
-        self.assertIn(".first()", frame.function.name)
+        self.assertIn(".first(", frame.function.name)
+        self.expect("frame variable n", substrs=["n = 42"])
 
         self.expect("up", substrs=[f"frame #{frame_idx + 2}:"])
         frame = thread.GetSelectedFrame()
