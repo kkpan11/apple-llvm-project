@@ -816,6 +816,59 @@ if.end4:                                          ; preds = %for.body
   br i1 %cmp, label %for.body, label %for.cond.cleanup.loopexit
 }
 
+; The header exit bounds %iv <u %len <= INT64_MAX - 1, so the stride-2 latch
+; exit has a computable exit count and the trap exit can be predicated.
+define void @optimize_trap_stride2(ptr %p, i64 %n, i64 range(i64 0, 9223372036854775807) %len) {
+; CHECK-LABEL: define void @optimize_trap_stride2(
+; CHECK-SAME: ptr [[P:%.*]], i64 [[N:%.*]], i64 range(i64 0, 9223372036854775807) [[LEN:%.*]]) {
+; CHECK-NEXT:  [[ENTRY:.*]]:
+; CHECK-NEXT:    [[TMP0:%.*]] = add nuw nsw i64 [[LEN]], 1
+; CHECK-NEXT:    [[TMP1:%.*]] = lshr i64 [[TMP0]], 1
+; CHECK-NEXT:    [[SMAX:%.*]] = call i64 @llvm.smax.i64(i64 [[N]], i64 2)
+; CHECK-NEXT:    [[TMP2:%.*]] = add nsw i64 [[SMAX]], -1
+; CHECK-NEXT:    [[TMP3:%.*]] = lshr i64 [[TMP2]], 1
+; CHECK-NEXT:    [[TMP4:%.*]] = freeze i64 [[TMP3]]
+; CHECK-NEXT:    [[UMIN:%.*]] = call i64 @llvm.umin.i64(i64 [[TMP4]], i64 [[TMP1]])
+; CHECK-NEXT:    [[TMP5:%.*]] = icmp ne i64 [[TMP1]], [[UMIN]]
+; CHECK-NEXT:    br label %[[HEADER:.*]]
+; CHECK:       [[HEADER]]:
+; CHECK-NEXT:    [[IV:%.*]] = phi i64 [ 0, %[[ENTRY]] ], [ [[IV_NEXT:%.*]], %[[LATCH:.*]] ]
+; CHECK-NEXT:    br i1 [[TMP5]], label %[[LATCH]], label %[[TRAP:.*]]
+; CHECK:       [[TRAP]]:
+; CHECK-NEXT:    call void @llvm.trap()
+; CHECK-NEXT:    unreachable
+; CHECK:       [[LATCH]]:
+; CHECK-NEXT:    [[GEP:%.*]] = getelementptr inbounds i32, ptr [[P]], i64 [[IV]]
+; CHECK-NEXT:    store i32 0, ptr [[GEP]], align 4
+; CHECK-NEXT:    [[IV_NEXT]] = add nuw nsw i64 [[IV]], 2
+; CHECK-NEXT:    [[CMP:%.*]] = icmp slt i64 [[IV_NEXT]], [[N]]
+; CHECK-NEXT:    br i1 [[CMP]], label %[[HEADER]], label %[[EXIT:.*]]
+; CHECK:       [[EXIT]]:
+; CHECK-NEXT:    ret void
+;
+entry:
+  br label %header
+
+header:
+  %iv = phi i64 [ 0, %entry ], [ %iv.next, %latch ]
+  %in.bounds = icmp ult i64 %iv, %len
+  br i1 %in.bounds, label %latch, label %trap
+
+trap:
+  call void @llvm.trap()
+  unreachable
+
+latch:
+  %gep = getelementptr inbounds i32, ptr %p, i64 %iv
+  store i32 0, ptr %gep, align 4
+  %iv.next = add i64 %iv, 2
+  %cmp = icmp slt i64 %iv.next, %n
+  br i1 %cmp, label %header, label %exit
+
+exit:
+  ret void
+}
+
 
 declare void @x(ptr noundef) local_unnamed_addr
 declare i1 @pred() local_unnamed_addr

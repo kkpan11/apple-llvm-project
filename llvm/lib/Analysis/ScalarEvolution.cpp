@@ -9410,7 +9410,7 @@ ScalarEvolution::ExitLimit ScalarEvolution::computeExitLimitFromICmp(
   const SCEV *RHS = getSCEV(ExitCond->getOperand(1));
 
   ExitLimit EL = computeExitLimitFromICmp(L, Pred, LHS, RHS, ControlsOnlyExit,
-                                          AllowPredicates);
+                                          AllowPredicates, ExitCond);
   if (EL.hasFullInfo())
     return EL;
 
@@ -9459,7 +9459,7 @@ ScalarEvolution::ExitLimit ScalarEvolution::computeExitLimitFromICmp(
 }
 ScalarEvolution::ExitLimit ScalarEvolution::computeExitLimitFromICmp(
     const Loop *L, CmpPredicate Pred, SCEVUse LHS, SCEVUse RHS,
-    bool ControlsOnlyExit, bool AllowPredicates) {
+    bool ControlsOnlyExit, bool AllowPredicates, const Instruction *CtxI) {
 
   // Try to evaluate any dependencies out of the loop.
   LHS = getSCEVAtScope(LHS, L);
@@ -9599,7 +9599,7 @@ ScalarEvolution::ExitLimit ScalarEvolution::computeExitLimitFromICmp(
   case ICmpInst::ICMP_ULT: { // while (X < Y)
     bool IsSigned = ICmpInst::isSigned(Pred);
     ExitLimit EL = howManyLessThans(LHS, RHS, L, IsSigned, ControlsOnlyExit,
-                                    AllowPredicates);
+                                    AllowPredicates, CtxI);
     if (EL.hasAnyInfo())
       return EL;
     break;
@@ -13469,10 +13469,9 @@ const SCEV *ScalarEvolution::computeMaxBECountForLT(const SCEV *Start,
                          getConstant(StrideForMaxBECount) /* Step */);
 }
 
-ScalarEvolution::ExitLimit
-ScalarEvolution::howManyLessThans(const SCEV *LHS, const SCEV *RHS,
-                                  const Loop *L, bool IsSigned,
-                                  bool ControlsOnlyExit, bool AllowPredicates) {
+ScalarEvolution::ExitLimit ScalarEvolution::howManyLessThans(
+    const SCEV *LHS, const SCEV *RHS, const Loop *L, bool IsSigned,
+    bool ControlsOnlyExit, bool AllowPredicates, const Instruction *CtxI) {
   SmallVector<const SCEVPredicate *> Predicates;
 
   // Loop guards for L, collected on demand.
@@ -13568,6 +13567,9 @@ ScalarEvolution::howManyLessThans(const SCEV *LHS, const SCEV *RHS,
 
   // Whether the IV may reach the maximum value before the exit is taken.
   bool IVMayOverflow = true;
+  // Whether the IV is known not to overflow only on iterations that reach
+  // CtxI.
+  bool NoWrapAtCtx = false;
 
   bool PositiveStride = isKnownPositive(Stride);
   // A dominating guard may prove the stride positive.
@@ -13672,7 +13674,20 @@ ScalarEvolution::howManyLessThans(const SCEV *LHS, const SCEV *RHS,
           L, IsSigned ? ICmpInst::ICMP_SLE : ICmpInst::ICMP_ULE, RHS,
           getConstant(Limit));
     }
-    if (IVMayOverflow && !NoWrap)
+    // If IV - Stride <= MAX - Stride holds at CtxI, whose block dominates the
+    // latch, then by induction the IV does not overflow on any iteration that
+    // evaluates this exit. The exit count is then exact if this exit is
+    // taken, and not below the backedge-taken count otherwise.
+    if (IVMayOverflow && !NoWrap && CtxI && !PredicatedIV &&
+        isLoopInvariant(RHS, L) && !IV->getType()->isPointerTy()) {
+      unsigned BitWidth = getTypeSizeInBits(IV->getType());
+      APInt MaxValue = IsSigned ? APInt::getSignedMaxValue(BitWidth)
+                                : APInt::getMaxValue(BitWidth);
+      NoWrapAtCtx = isKnownPredicateAt(
+          ICmpInst::getNonStrictPredicate(Cond), getMinusSCEV(IV, Stride),
+          getMinusSCEV(getConstant(MaxValue), Stride), CtxI);
+    }
+    if (IVMayOverflow && !NoWrap && !NoWrapAtCtx)
       return getCouldNotCompute();
   }
 
@@ -13934,6 +13949,10 @@ ScalarEvolution::howManyLessThans(const SCEV *LHS, const SCEV *RHS,
   bool MaxOrZero = false;
   if (isa<SCEVConstant>(BECount)) {
     ConstantMaxBECount = BECount;
+  } else if (NoWrapAtCtx) {
+    // computeMaxBECountForLT assumes the IV does not overflow before this
+    // exit is taken, which need not hold if another exit is taken first.
+    ConstantMaxBECount = getCouldNotCompute();
   } else if (BECountIfBackedgeTaken &&
              isa<SCEVConstant>(BECountIfBackedgeTaken)) {
     // If we know exactly how many times the backedge will be taken if it's

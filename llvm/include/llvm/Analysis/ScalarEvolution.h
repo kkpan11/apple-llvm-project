@@ -2142,10 +2142,12 @@ private:
   /// Variant of previous which takes the components representing an ICmp
   /// as opposed to the ICmpInst itself.  Note that the prior version can
   /// return more precise results in some cases and is preferred when caller
-  /// has a materialized ICmp.
+  /// has a materialized ICmp. If non-null, \p CtxI is an instruction that
+  /// executes in each iteration that evaluates the exit condition.
   ExitLimit computeExitLimitFromICmp(const Loop *L, CmpPredicate Pred,
                                      SCEVUse LHS, SCEVUse RHS, bool IsSubExpr,
-                                     bool AllowPredicates = false);
+                                     bool AllowPredicates = false,
+                                     const Instruction *CtxI = nullptr);
 
   /// Compute the number of times the backedge of the specified loop will
   /// execute if its exit condition were a switch with a single exiting case
@@ -2197,9 +2199,13 @@ private:
   ///
   /// If \p AllowPredicates is set, this call will try to use a minimal set of
   /// SCEV predicates in order to return an exact answer.
+  ///
+  /// If non-null, \p CtxI is an instruction that executes in each iteration
+  /// that evaluates the exit condition.
   ExitLimit howManyLessThans(const SCEV *LHS, const SCEV *RHS, const Loop *L,
                              bool isSigned, bool ControlsOnlyExit,
-                             bool AllowPredicates = false);
+                             bool AllowPredicates = false,
+                             const Instruction *CtxI = nullptr);
 
   ExitLimit howManyGreaterThans(const SCEV *LHS, const SCEV *RHS, const Loop *L,
                                 bool isSigned, bool IsSubExpr,
