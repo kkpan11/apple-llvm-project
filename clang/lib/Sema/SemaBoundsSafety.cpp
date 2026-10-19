@@ -38,7 +38,7 @@ Sema::getBoundsAttrKind(const BoundsAttrFlags &Flags) {
   return getCountAttrKind(Flags.CountInBytes, Flags.OrNull);
 }
 
-Sema::BoundsAttrFlags Sema::getBoundsAttrFlags(AttributeCommonInfo::Kind K) {
+Sema::BoundsAttrFlags Sema::BoundsAttrFlags::get(AttributeCommonInfo::Kind K) {
   BoundsAttrFlags Flags;
   switch (K) {
   case ParsedAttr::AT_SizedBy:
@@ -91,6 +91,8 @@ static const TargetType *getAsExplicitlyWritten(const Type *Cur,
   }
 }
 
+/// Check type conflicts under the -fbounds-safety attribute model.
+/// Return std::nullopt if validation should continue with the shared checks.
 static std::optional<bool> checkBoundsAttrTypeConflictsAndMisc(
     Sema &S, QualType Ty, SourceLocation AttrLoc,
     const Sema::BoundsAttrFlags &Flags, StringRef AttrSpelling,
@@ -243,7 +245,7 @@ bool Sema::ValidateBoundsAttrTypeShape(QualType Ty, SourceLocation AttrLoc,
                                        SourceRange AttrRange,
                                        BoundsAttrFlags &Flags,
                                        StringRef AttrSpelling, bool AllowRedecl,
-                                       Expr *AttrArg) {
+                                       Expr *AttrArg, bool UpdateFlags) {
   if (getLangOpts().hasBoundsSafetyAttributes())
     if (std::optional<bool> Result = checkBoundsAttrTypeConflictsAndMisc(
             *this, Ty, AttrLoc, Flags, AttrSpelling, AllowRedecl, AttrArg))
@@ -337,7 +339,8 @@ bool Sema::ValidateBoundsAttrTypeShape(QualType Ty, SourceLocation AttrLoc,
       Diag(AttrLoc, diag::ext_gnu_counted_by_void_ptr) << Kind;
       Diag(AttrLoc, diag::note_gnu_counted_by_void_ptr_use_sized_by) << Kind;
       assert(!Ty->isArrayType() && "sized_by is not allowed on arrays");
-      Flags.CountInBytes = true;
+      if (UpdateFlags)
+        Flags.CountInBytes = true;
       return true;
     }
     InvalidTypeKind = CountedByInvalidPointeeTypeKind::INCOMPLETE;
@@ -371,7 +374,7 @@ bool Sema::ValidateBoundsAttrTypeShape(QualType Ty, SourceLocation AttrLoc,
     unsigned DiagID = ShouldWarn
                           ? diag::warn_counted_by_attr_elt_type_unknown_size
                           : diag::err_counted_by_attr_pointee_unknown_size;
-    Diag(AttrLoc, DiagID) << SelectPtrOrArr << PointeeTy << InvalidTypeKind
+    Diag(AttrLoc, DiagID) << SelectPtrOrArr << PointeeTy << (int)InvalidTypeKind
                           << (ShouldWarn ? 1 : 0) << Kind << AttrRange;
     if (ShouldWarn)
       return true;
@@ -382,6 +385,31 @@ bool Sema::ValidateBoundsAttrTypeShape(QualType Ty, SourceLocation AttrLoc,
       Flags.CountInBytes = true;
       return true;
     }
+    return false;
+  }
+
+  return true;
+}
+
+bool Sema::ValidateBoundsAttrTypeForTypePosition(
+    QualType Ty, AttributeCommonInfo::Kind AttrKind, SourceLocation AttrLoc,
+    SourceRange AttrRange, unsigned PointerNestLevel, BoundsAttrFlags &Flags) {
+  Flags = BoundsAttrFlags::get(AttrKind);
+
+  if (!ValidateBoundsAttrTypeShape(Ty, AttrLoc, AttrRange, Flags,
+                                   /*AttrSpelling=*/{}, /*AllowRedecl=*/false,
+                                   /*AttrArg=*/nullptr, /*UpdateFlags=*/false))
+    return false;
+
+  // Currently, only attributes at the outermost level of the declared type
+  // are supported.
+  //
+  // FIXME: Support indirect parameters such as:
+  //   void f(int *__counted_by(*len) *buf, int *len);
+  // See https://github.com/llvm/llvm-project/issues/166411.
+  if (PointerNestLevel > 0) {
+    Diag(AttrLoc, diag::err_counted_by_on_nested_pointer)
+        << getBoundsAttrKind(Flags);
     return false;
   }
 

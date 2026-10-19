@@ -7766,7 +7766,7 @@ void Sema::applyPtrCountedByEndedByAttr(Decl *D, unsigned Level,
 
   // This cannot be const because `diagnoseCountAttributedTypeShape` may modify
   // Flags.CountInBytes.
-  auto Flags = getBoundsAttrFlags(Kind);
+  auto Flags = BoundsAttrFlags::get(Kind);
 
   if (!Flags.IsEndedBy) {
     // Nullability as indicated by _Nonnull or _Nullable. Does not impact
