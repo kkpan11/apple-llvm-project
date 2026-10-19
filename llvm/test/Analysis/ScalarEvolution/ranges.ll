@@ -509,4 +509,42 @@ leave:
   ret void
 }
 
+define i64 @umax_sub_operand(i8 %x, i64 %b) {
+; CHECK-LABEL: 'umax_sub_operand'
+; CHECK-NEXT:  Classifying expressions for: @umax_sub_operand
+; CHECK-NEXT:    %a = zext i8 %x to i64
+; CHECK-NEXT:    --> (zext i8 %x to i64) U: [0,256) S: [0,256)
+; CHECK-NEXT:    %m = call i64 @llvm.umax.i64(i64 %a, i64 %b)
+; CHECK-NEXT:    --> ((zext i8 %x to i64) umax %b) U: full-set S: full-set
+; CHECK-NEXT:    %r = sub i64 %m, %b
+; CHECK-NEXT:    --> ((-1 * %b) + ((zext i8 %x to i64) umax %b)) U: [0,256) S: [0,256)
+; CHECK-NEXT:  Determining loop execution counts for: @umax_sub_operand
+;
+  %a = zext i8 %x to i64
+  %m = call i64 @llvm.umax.i64(i64 %a, i64 %b)
+  %r = sub i64 %m, %b
+  ret i64 %r
+}
 
+define i64 @umax_sub_operand_offset(i8 %x, i64 %b, i64 %c) {
+; CHECK-LABEL: 'umax_sub_operand_offset'
+; CHECK-NEXT:  Classifying expressions for: @umax_sub_operand_offset
+; CHECK-NEXT:    %a = zext i8 %x to i64
+; CHECK-NEXT:    --> (zext i8 %x to i64) U: [0,256) S: [0,256)
+; CHECK-NEXT:    %b1 = add i64 %b, -1
+; CHECK-NEXT:    --> (-1 + %b) U: full-set S: full-set
+; CHECK-NEXT:    %m = call i64 @llvm.umax.i64(i64 %a, i64 %b1)
+; CHECK-NEXT:    --> ((zext i8 %x to i64) umax (-1 + %b)) U: full-set S: full-set
+; CHECK-NEXT:    %r = sub i64 %m, %b1
+; CHECK-NEXT:    --> (1 + (-1 * %b) + ((zext i8 %x to i64) umax (-1 + %b))) U: [0,256) S: [0,256)
+; CHECK-NEXT:    %r2 = sub i64 %m, %c
+; CHECK-NEXT:    --> ((-1 * %c) + ((zext i8 %x to i64) umax (-1 + %b))) U: full-set S: full-set
+; CHECK-NEXT:  Determining loop execution counts for: @umax_sub_operand_offset
+;
+  %a = zext i8 %x to i64
+  %b1 = add i64 %b, -1
+  %m = call i64 @llvm.umax.i64(i64 %a, i64 %b1)
+  %r = sub i64 %m, %b1
+  %r2 = sub i64 %m, %c
+  ret i64 %r
+}

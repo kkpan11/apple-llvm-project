@@ -6837,6 +6837,43 @@ const ConstantRange &ScalarEvolution::getRangeRef(
       ConservativeResult =
           ConservativeResult.intersectWith(LHSRange.urem(RHSRange), RangeType);
     }
+    // (A umax B) - B is in [0, A]. Match the other operands of the add as the
+    // negated operands of B, without creating new SCEVs.
+    auto It = find_if(Add->operands(), IsaPred<SCEVUMaxExpr>);
+    if (It != Add->operands().end()) {
+      auto *UMax = cast<SCEVUMaxExpr>(*It);
+      SmallVector<const SCEV *, 4> NegB;
+      for (const SCEV *Op : Add->operands())
+        if (Op != *It)
+          NegB.push_back(Op);
+      auto IsNeg = [](const SCEV *X, const SCEV *Y) {
+        const APInt *CX, *CY;
+        if (match(X, m_scev_APInt(CX)) && match(Y, m_scev_APInt(CY)))
+          return *CX == -*CY;
+        return match(X, m_scev_Mul(m_scev_AllOnes(), m_scev_Specific(Y))) ||
+               match(Y, m_scev_Mul(m_scev_AllOnes(), m_scev_Specific(X)));
+      };
+      auto IsB = [&](const SCEV *B) {
+        SCEVUse BU = B;
+        ArrayRef<SCEVUse> BOps = isa<SCEVAddExpr>(B) ? B->operands() : BU;
+        return BOps.size() == NegB.size() && all_of(BOps, [&](const SCEV *Op) {
+                 return any_of(NegB,
+                               [&](const SCEV *N) { return IsNeg(N, Op); });
+               });
+      };
+      auto BIt = find_if(UMax->operands(), IsB);
+      if (BIt != UMax->operands().end()) {
+        APInt Max = APInt::getZero(BitWidth);
+        for (const SCEV *A : UMax->operands())
+          if (A != *BIt)
+            Max = APIntOps::umax(Max,
+                                 getRangeRef(A, HINT_RANGE_UNSIGNED, Depth + 1)
+                                     .getUnsignedMax());
+        ConservativeResult = ConservativeResult.intersectWith(
+            ConstantRange::getNonEmpty(APInt::getZero(BitWidth), Max + 1),
+            RangeType);
+      }
+    }
     ConstantRange X = getRangeRef(Add->getOperand(0), SignHint, Depth + 1);
     unsigned WrapType = OBO::AnyWrap;
     if (Add->hasNoSignedWrap())
