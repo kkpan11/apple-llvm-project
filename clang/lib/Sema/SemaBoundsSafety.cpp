@@ -33,8 +33,11 @@ getCountAttrKind(bool CountInBytes, bool OrNull) {
 
 BoundsAttributedType::BoundsAttrKind
 Sema::getBoundsAttrKind(const BoundsAttrFlags &Flags) {
+  /* TO_UPSTREAM(BoundsSafety) ON*/
+  // Upstream asserts here because it does not implement __ended_by.
   if (Flags.IsEndedBy)
     return BoundsAttributedType::EndedBy;
+  /* TO_UPSTREAM(BoundsSafety) OFF*/
   return getCountAttrKind(Flags.CountInBytes, Flags.OrNull);
 }
 
@@ -53,9 +56,11 @@ Sema::BoundsAttrFlags Sema::BoundsAttrFlags::get(AttributeCommonInfo::Kind K) {
   case ParsedAttr::AT_CountedByOrNull:
     Flags.OrNull = true;
     break;
+  /* TO_UPSTREAM(BoundsSafety) ON*/
   case ParsedAttr::AT_PtrEndedBy:
     Flags.IsEndedBy = true;
     break;
+  /* TO_UPSTREAM(BoundsSafety) OFF*/
   default:
     llvm_unreachable("unexpected bounds attribute kind");
   }
@@ -70,6 +75,7 @@ enum class CountedByInvalidPointeeTypeKind {
   VALID,
 };
 
+/* TO_UPSTREAM(BoundsSafety) ON*/
 // Helper similar to getAs<T> except it only returns a pointer to T if no
 // AttributedType with `attr::PtrAutoAttr` on it was encountered while walking
 // the sugar types to reach T. Returns nullptr if `T` is not found after walking
@@ -90,6 +96,7 @@ static const TargetType *getAsExplicitlyWritten(const Type *Cur,
     Cur = Next.getTypePtr();
   }
 }
+/* TO_UPSTREAM(BoundsSafety) OFF*/
 
 /// Check type conflicts under the -fbounds-safety attribute model.
 /// Return std::nullopt if validation should continue with the shared checks.
@@ -97,6 +104,7 @@ static std::optional<bool> checkBoundsAttrTypeConflictsAndMisc(
     Sema &S, QualType Ty, SourceLocation AttrLoc,
     const Sema::BoundsAttrFlags &Flags, StringRef AttrSpelling,
     bool AllowRedecl, Expr *AttrArg) {
+  /* TO_UPSTREAM(BoundsSafety) ON*/
   // FIXME: The diagnostics here need re-working:
   // * Some of these clearly could be upstream checks as they don't depend on
   //   attributes missing from upstream.
@@ -237,6 +245,7 @@ static std::optional<bool> checkBoundsAttrTypeConflictsAndMisc(
       }
     }
   }
+  /* TO_UPSTREAM(BoundsSafety) OFF*/
 
   return std::nullopt;
 }
@@ -253,6 +262,7 @@ bool Sema::ValidateBoundsAttrTypeShape(QualType Ty, SourceLocation AttrLoc,
 
   BoundsAttributedType::BoundsAttrKind Kind = getBoundsAttrKind(Flags);
 
+  /* TO_UPSTREAM(BoundsSafety) ON*/
   // ended_by only applies to pointers, not arrays.
   if (Flags.IsEndedBy) {
     if (!Ty->isPointerType()) {
@@ -262,22 +272,24 @@ bool Sema::ValidateBoundsAttrTypeShape(QualType Ty, SourceLocation AttrLoc,
     }
     return true;
   }
+  /* TO_UPSTREAM(BoundsSafety) OFF*/
 
-  // counted_by/sized_by: must be pointer or array.
+  // counted_by and sized_by require a pointer or array.
   if (!Ty->isPointerType() && !Ty->isArrayType()) {
     Diag(AttrLoc, diag::err_count_attr_not_on_ptr_or_flexible_array_member)
         << Kind << 0;
     return false;
   }
 
-  // Arrays with sized_by or _or_null variants are not allowed under the
-  // non -fbounds-safety path (!getLangOpts().hasBoundsSafetyAttributes()).
+  // Arrays only support counted_by outside the -fbounds-safety attribute model.
+  /* TO_UPSTREAM(BoundsSafety) ON*/
   // That emits a specific "did you mean to use 'counted_by'" hint, geared
   // toward the FieldDecl path where the user got the spelling wrong. The
   // -fbounds-safety path treats incomplete-array + counted_by_or_null as a
   // tentative-definition/FAM-like case that other code (e.g.
   // err_bounds_safety_nullable_fam in applyPtrCountedByEndedByAttr) handles.
   // FIXME(dliew): We need to reconcile this divergence.
+  /* TO_UPSTREAM(BoundsSafety) OFF*/
   if (!getLangOpts().hasBoundsSafetyAttributes() && Ty->isArrayType() &&
       (Flags.CountInBytes || Flags.OrNull)) {
     Diag(AttrLoc, diag::err_count_attr_not_on_ptr_or_flexible_array_member)
@@ -285,7 +297,7 @@ bool Sema::ValidateBoundsAttrTypeShape(QualType Ty, SourceLocation AttrLoc,
     return false;
   }
 
-  // Pointee/element type validation.
+  // Check the pointee or element type.
   QualType PointeeTy;
   int SelectPtrOrArr;
   if (Ty->isPointerType()) {
@@ -357,20 +369,24 @@ bool Sema::ValidateBoundsAttrTypeShape(QualType Ty, SourceLocation AttrLoc,
       // be done correctly without manually traversing every struct object in
       // the array at runtime. To allow the code to be built this error is
       // downgraded to a warning.
+      /* TO_UPSTREAM(BoundsSafety) ON*/
 
       // FIXME: This is also a workaround for other projects that are using
       // __counted_by on a FAM where the array element is also a FAM
       // (rdar://186580568). We need to make this a hard error
       // (rdar://187230108).
+      /* TO_UPSTREAM(BoundsSafety) OFF*/
       ShouldWarn = true;
     }
     InvalidTypeKind = CountedByInvalidPointeeTypeKind::FLEXIBLE_ARRAY_MEMBER;
   }
 
   if (InvalidTypeKind != CountedByInvalidPointeeTypeKind::VALID) {
+    /* TO_UPSTREAM(BoundsSafety) ON*/
     // FIXME: We should suggest `__sized_by(_or_null)` and in the error
     // diagnostic case emit a FixIt.
     // Tracked by swiftlang/llvm-project#13417.
+    /* TO_UPSTREAM(BoundsSafety) OFF*/
     unsigned DiagID = ShouldWarn
                           ? diag::warn_counted_by_attr_elt_type_unknown_size
                           : diag::err_counted_by_attr_pointee_unknown_size;
