@@ -2422,7 +2422,7 @@ uint32_t TypeSystemSwiftTypeRef::CollectTypeInfo(
       return swift_flags;
 
     case Node::Kind::BuiltinBorrow:
-      swift_flags |= eTypeHasChildren;
+      swift_flags |= eTypeIsBuiltIn | eTypeHasChildren;
       break;
   
     default:
