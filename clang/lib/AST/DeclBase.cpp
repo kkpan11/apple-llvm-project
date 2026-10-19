@@ -1321,7 +1321,6 @@ DeclContext::DeclContext(Decl::Kind K) {
   setNeedToReconcileExternalVisibleStorage(false);
   setHasLazyLocalLexicalLookups(false);
   setHasLazyExternalLexicalLookups(false);
-  setUseQualifiedLookup(false);
 }
 
 bool DeclContext::classof(const Decl *D) {
