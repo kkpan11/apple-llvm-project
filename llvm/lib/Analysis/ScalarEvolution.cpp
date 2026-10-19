@@ -9349,6 +9349,44 @@ ScalarEvolution::ExitLimit ScalarEvolution::computeExitLimitFromCondImpl(
                                        ControlsOnlyExit, AllowPredicates);
     if (EL.hasAnyInfo())
       return EL;
+  } else if (match(ExitCond, m_ExtractValue<1>(m_WithOverflowInst(WO))) &&
+             WO->getBinaryOp() != Instruction::Mul) {
+    // Same for add/sub with a loop-invariant operand Y, using the
+    // no-overflow condition:
+    //   uadd: X <=u ~Y              usub: X >=u Y
+    //   sadd: Y >=s 0 ? X <=s SMAX - Y : X >=s SMIN - Y
+    //   ssub: Y >=s 0 ? X >=s SMIN + Y : X <=s SMAX + Y
+    const SCEV *X = getSCEV(WO->getLHS());
+    const SCEV *Y = getSCEV(WO->getRHS());
+    bool IsAdd = WO->getBinaryOp() == Instruction::Add;
+    if (IsAdd && isLoopInvariant(X, L))
+      std::swap(X, Y);
+    const SCEV *RHS = nullptr;
+    CmpInst::Predicate Pred;
+    bool Invariant = isLoopInvariant(Y, L);
+    if (Invariant && !WO->isSigned()) {
+      Pred = IsAdd ? ICmpInst::ICMP_ULE : ICmpInst::ICMP_UGE;
+      RHS = IsAdd ? getNotSCEV(Y) : Y;
+    } else if (Invariant) {
+      const SCEV *Zero = getZero(Y->getType());
+      bool NonNeg = isLoopEntryGuardedByCond(L, ICmpInst::ICMP_SGE, Y, Zero);
+      if (NonNeg || isLoopEntryGuardedByCond(L, ICmpInst::ICMP_SLT, Y, Zero)) {
+        bool Up = NonNeg == IsAdd;
+        unsigned BW = getTypeSizeInBits(Y->getType());
+        const SCEV *Bound = getConstant(Up ? APInt::getSignedMaxValue(BW)
+                                           : APInt::getSignedMinValue(BW));
+        Pred = Up ? ICmpInst::ICMP_SLE : ICmpInst::ICMP_SGE;
+        RHS = getMinusSCEV(Bound, IsAdd ? Y : getNegativeSCEV(Y));
+      }
+    }
+    if (RHS) {
+      if (!ExitIfTrue)
+        Pred = ICmpInst::getInversePredicate(Pred);
+      auto EL = computeExitLimitFromICmp(L, Pred, X, RHS, ControlsOnlyExit,
+                                         AllowPredicates);
+      if (EL.hasAnyInfo())
+        return EL;
+    }
   }
 
   // If it's not an integer or pointer comparison then compute it the hard way.

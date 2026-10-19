@@ -387,3 +387,357 @@ for.latch:
 for.end:                                          ; preds = %for.body, %entry
   ret void
 }
+
+define void @uadd_invariant_rhs(i16 %y) {
+; CHECK-LABEL: 'uadd_invariant_rhs'
+; CHECK-NEXT:  Determining loop execution counts for: @uadd_invariant_rhs
+; CHECK-NEXT:  Loop %loop: backedge-taken count is (1 + (zext i16 (-1 + (-1 * %y)) to i32))<nuw><nsw>
+; CHECK-NEXT:  Loop %loop: constant max backedge-taken count is i32 65536
+; CHECK-NEXT:  Loop %loop: symbolic max backedge-taken count is (1 + (zext i16 (-1 + (-1 * %y)) to i32))<nuw><nsw>
+; CHECK-NEXT:  Loop %loop: Trip multiple is 1
+;
+entry:
+  br label %loop
+
+loop:
+  %iv = phi i16 [ 0, %entry ], [ %iv.next, %loop ]
+  %wo = call { i16, i1 } @llvm.uadd.with.overflow.i16(i16 %iv, i16 %y)
+  %ov = extractvalue { i16, i1 } %wo, 1
+  %iv.next = add nuw i16 %iv, 1
+  br i1 %ov, label %exit, label %loop
+
+exit:
+  ret void
+}
+
+define void @uadd_invariant_lhs(i16 %y) {
+; CHECK-LABEL: 'uadd_invariant_lhs'
+; CHECK-NEXT:  Determining loop execution counts for: @uadd_invariant_lhs
+; CHECK-NEXT:  Loop %loop: backedge-taken count is (1 + (zext i16 (-1 + (-1 * %y)) to i32))<nuw><nsw>
+; CHECK-NEXT:  Loop %loop: constant max backedge-taken count is i32 65536
+; CHECK-NEXT:  Loop %loop: symbolic max backedge-taken count is (1 + (zext i16 (-1 + (-1 * %y)) to i32))<nuw><nsw>
+; CHECK-NEXT:  Loop %loop: Trip multiple is 1
+;
+entry:
+  br label %loop
+
+loop:
+  %iv = phi i16 [ 0, %entry ], [ %iv.next, %loop ]
+  %wo = call { i16, i1 } @llvm.uadd.with.overflow.i16(i16 %y, i16 %iv)
+  %ov = extractvalue { i16, i1 } %wo, 1
+  %iv.next = add nuw i16 %iv, 1
+  br i1 %ov, label %exit, label %loop
+
+exit:
+  ret void
+}
+
+define void @uadd_invariant_rhs_exit_on_false(i16 %y) {
+; CHECK-LABEL: 'uadd_invariant_rhs_exit_on_false'
+; CHECK-NEXT:  Determining loop execution counts for: @uadd_invariant_rhs_exit_on_false
+; CHECK-NEXT:  Loop %loop: backedge-taken count is %y
+; CHECK-NEXT:  Loop %loop: constant max backedge-taken count is i16 -1
+; CHECK-NEXT:  Loop %loop: symbolic max backedge-taken count is %y
+; CHECK-NEXT:  Loop %loop: Trip multiple is 1
+;
+entry:
+  br label %loop
+
+loop:
+  %iv = phi i16 [ -1, %entry ], [ %iv.next, %loop ]
+  %wo = call { i16, i1 } @llvm.uadd.with.overflow.i16(i16 %iv, i16 %y)
+  %ov = extractvalue { i16, i1 } %wo, 1
+  %iv.next = add i16 %iv, -1
+  br i1 %ov, label %loop, label %exit
+
+exit:
+  ret void
+}
+
+define void @usub_invariant_rhs_nonzero(i16 %start, i16 %a) {
+; CHECK-LABEL: 'usub_invariant_rhs_nonzero'
+; CHECK-NEXT:  Determining loop execution counts for: @usub_invariant_rhs_nonzero
+; CHECK-NEXT:  Loop %loop: backedge-taken count is ((-1 * ((-1 + %y) umin %start)) + %start)
+; CHECK-NEXT:  Loop %loop: constant max backedge-taken count is i16 -1
+; CHECK-NEXT:  Loop %loop: symbolic max backedge-taken count is ((-1 * ((-1 + %y) umin %start)) + %start)
+; CHECK-NEXT:  Loop %loop: Trip multiple is 1
+;
+entry:
+  %y = or i16 %a, 1
+  br label %loop
+
+loop:
+  %iv = phi i16 [ %start, %entry ], [ %iv.next, %loop ]
+  %wo = call { i16, i1 } @llvm.usub.with.overflow.i16(i16 %iv, i16 %y)
+  %ov = extractvalue { i16, i1 } %wo, 1
+  %iv.next = add i16 %iv, -1
+  br i1 %ov, label %exit, label %loop
+
+exit:
+  ret void
+}
+
+define void @sadd_invariant_rhs_nonneg_guard(i16 %y) {
+; CHECK-LABEL: 'sadd_invariant_rhs_nonneg_guard'
+; CHECK-NEXT:  Determining loop execution counts for: @sadd_invariant_rhs_nonneg_guard
+; CHECK-NEXT:  Loop %loop: backedge-taken count is (-32768 + (-1 * %y))
+; CHECK-NEXT:  Loop %loop: constant max backedge-taken count is i16 -32768
+; CHECK-NEXT:  Loop %loop: symbolic max backedge-taken count is (-32768 + (-1 * %y))
+; CHECK-NEXT:  Loop %loop: Trip multiple is 1
+;
+entry:
+  %y.neg = icmp slt i16 %y, 0
+  br i1 %y.neg, label %exit, label %loop
+
+loop:
+  %iv = phi i16 [ 0, %entry ], [ %iv.next, %loop ]
+  %wo = call { i16, i1 } @llvm.sadd.with.overflow.i16(i16 %iv, i16 %y)
+  %ov = extractvalue { i16, i1 } %wo, 1
+  %iv.next = add nsw i16 %iv, 1
+  br i1 %ov, label %exit, label %loop
+
+exit:
+  ret void
+}
+
+define void @sadd_invariant_lhs_nonneg_guard(i16 %y) {
+; CHECK-LABEL: 'sadd_invariant_lhs_nonneg_guard'
+; CHECK-NEXT:  Determining loop execution counts for: @sadd_invariant_lhs_nonneg_guard
+; CHECK-NEXT:  Loop %loop: backedge-taken count is (-32768 + (-1 * %y))
+; CHECK-NEXT:  Loop %loop: constant max backedge-taken count is i16 -32768
+; CHECK-NEXT:  Loop %loop: symbolic max backedge-taken count is (-32768 + (-1 * %y))
+; CHECK-NEXT:  Loop %loop: Trip multiple is 1
+;
+entry:
+  %y.neg = icmp slt i16 %y, 0
+  br i1 %y.neg, label %exit, label %loop
+
+loop:
+  %iv = phi i16 [ 0, %entry ], [ %iv.next, %loop ]
+  %wo = call { i16, i1 } @llvm.sadd.with.overflow.i16(i16 %y, i16 %iv)
+  %ov = extractvalue { i16, i1 } %wo, 1
+  %iv.next = add nsw i16 %iv, 1
+  br i1 %ov, label %exit, label %loop
+
+exit:
+  ret void
+}
+
+define void @sadd_invariant_rhs_nonneg_assume(i16 %y) {
+; CHECK-LABEL: 'sadd_invariant_rhs_nonneg_assume'
+; CHECK-NEXT:  Determining loop execution counts for: @sadd_invariant_rhs_nonneg_assume
+; CHECK-NEXT:  Loop %loop: backedge-taken count is (-32768 + (-1 * %y))
+; CHECK-NEXT:  Loop %loop: constant max backedge-taken count is i16 -32768
+; CHECK-NEXT:  Loop %loop: symbolic max backedge-taken count is (-32768 + (-1 * %y))
+; CHECK-NEXT:  Loop %loop: Trip multiple is 1
+;
+entry:
+  %y.nonneg = icmp sge i16 %y, 0
+  call void @llvm.assume(i1 %y.nonneg)
+  br label %loop
+
+loop:
+  %iv = phi i16 [ 0, %entry ], [ %iv.next, %loop ]
+  %wo = call { i16, i1 } @llvm.sadd.with.overflow.i16(i16 %iv, i16 %y)
+  %ov = extractvalue { i16, i1 } %wo, 1
+  %iv.next = add nsw i16 %iv, 1
+  br i1 %ov, label %exit, label %loop
+
+exit:
+  ret void
+}
+
+define void @sadd_invariant_rhs_neg_guard(i16 %y) {
+; CHECK-LABEL: 'sadd_invariant_rhs_neg_guard'
+; CHECK-NEXT:  Determining loop execution counts for: @sadd_invariant_rhs_neg_guard
+; CHECK-NEXT:  Loop %loop: backedge-taken count is (1 + (-1 * (1 smin (-32768 + (-1 * %y)))))
+; CHECK-NEXT:  Loop %loop: constant max backedge-taken count is i16 -32767
+; CHECK-NEXT:  Loop %loop: symbolic max backedge-taken count is (1 + (-1 * (1 smin (-32768 + (-1 * %y)))))
+; CHECK-NEXT:  Loop %loop: Trip multiple is 1
+;
+entry:
+  %y.neg = icmp slt i16 %y, 0
+  br i1 %y.neg, label %loop, label %exit
+
+loop:
+  %iv = phi i16 [ 0, %entry ], [ %iv.next, %loop ]
+  %wo = call { i16, i1 } @llvm.sadd.with.overflow.i16(i16 %iv, i16 %y)
+  %ov = extractvalue { i16, i1 } %wo, 1
+  %iv.next = add nsw i16 %iv, -1
+  br i1 %ov, label %exit, label %loop
+
+exit:
+  ret void
+}
+
+define void @sadd_invariant_rhs_unknown_sign(i16 %y) {
+; CHECK-LABEL: 'sadd_invariant_rhs_unknown_sign'
+; CHECK-NEXT:  Determining loop execution counts for: @sadd_invariant_rhs_unknown_sign
+; CHECK-NEXT:  Loop %loop: Unpredictable backedge-taken count.
+; CHECK-NEXT:  Loop %loop: Unpredictable constant max backedge-taken count.
+; CHECK-NEXT:  Loop %loop: Unpredictable symbolic max backedge-taken count.
+;
+entry:
+  br label %loop
+
+loop:
+  %iv = phi i16 [ 0, %entry ], [ %iv.next, %loop ]
+  %wo = call { i16, i1 } @llvm.sadd.with.overflow.i16(i16 %iv, i16 %y)
+  %ov = extractvalue { i16, i1 } %wo, 1
+  %iv.next = add nsw i16 %iv, 1
+  br i1 %ov, label %exit, label %loop
+
+exit:
+  ret void
+}
+
+define void @ssub_invariant_rhs_nonneg_guard(i16 %y) {
+; CHECK-LABEL: 'ssub_invariant_rhs_nonneg_guard'
+; CHECK-NEXT:  Determining loop execution counts for: @ssub_invariant_rhs_nonneg_guard
+; CHECK-NEXT:  Loop %loop: backedge-taken count is (1 + (-1 * (1 smin (-32768 + %y))))
+; CHECK-NEXT:  Loop %loop: constant max backedge-taken count is i16 -32767
+; CHECK-NEXT:  Loop %loop: symbolic max backedge-taken count is (1 + (-1 * (1 smin (-32768 + %y))))
+; CHECK-NEXT:  Loop %loop: Trip multiple is 1
+;
+entry:
+  %y.neg = icmp slt i16 %y, 0
+  br i1 %y.neg, label %exit, label %loop
+
+loop:
+  %iv = phi i16 [ 0, %entry ], [ %iv.next, %loop ]
+  %wo = call { i16, i1 } @llvm.ssub.with.overflow.i16(i16 %iv, i16 %y)
+  %ov = extractvalue { i16, i1 } %wo, 1
+  %iv.next = add nsw i16 %iv, -1
+  br i1 %ov, label %exit, label %loop
+
+exit:
+  ret void
+}
+
+define void @ssub_invariant_rhs_neg_guard(i16 %y) {
+; CHECK-LABEL: 'ssub_invariant_rhs_neg_guard'
+; CHECK-NEXT:  Determining loop execution counts for: @ssub_invariant_rhs_neg_guard
+; CHECK-NEXT:  Loop %loop: backedge-taken count is (-32768 + %y)
+; CHECK-NEXT:  Loop %loop: constant max backedge-taken count is i16 -32768
+; CHECK-NEXT:  Loop %loop: symbolic max backedge-taken count is (-32768 + %y)
+; CHECK-NEXT:  Loop %loop: Trip multiple is 1
+;
+entry:
+  %y.neg = icmp slt i16 %y, 0
+  br i1 %y.neg, label %loop, label %exit
+
+loop:
+  %iv = phi i16 [ 0, %entry ], [ %iv.next, %loop ]
+  %wo = call { i16, i1 } @llvm.ssub.with.overflow.i16(i16 %iv, i16 %y)
+  %ov = extractvalue { i16, i1 } %wo, 1
+  %iv.next = add nsw i16 %iv, 1
+  br i1 %ov, label %exit, label %loop
+
+exit:
+  ret void
+}
+
+define void @ssub_invariant_lhs_nonneg_guard(i16 %y) {
+; CHECK-LABEL: 'ssub_invariant_lhs_nonneg_guard'
+; CHECK-NEXT:  Determining loop execution counts for: @ssub_invariant_lhs_nonneg_guard
+; CHECK-NEXT:  Loop %loop: Unpredictable backedge-taken count.
+; CHECK-NEXT:  Loop %loop: Unpredictable constant max backedge-taken count.
+; CHECK-NEXT:  Loop %loop: Unpredictable symbolic max backedge-taken count.
+;
+entry:
+  %y.neg = icmp slt i16 %y, 0
+  br i1 %y.neg, label %exit, label %loop
+
+loop:
+  %iv = phi i16 [ 0, %entry ], [ %iv.next, %loop ]
+  %wo = call { i16, i1 } @llvm.ssub.with.overflow.i16(i16 %y, i16 %iv)
+  %ov = extractvalue { i16, i1 } %wo, 1
+  %iv.next = add nsw i16 %iv, 1
+  br i1 %ov, label %exit, label %loop
+
+exit:
+  ret void
+}
+
+define void @smul_invariant_rhs_nonneg_guard(i16 %y) {
+; CHECK-LABEL: 'smul_invariant_rhs_nonneg_guard'
+; CHECK-NEXT:  Determining loop execution counts for: @smul_invariant_rhs_nonneg_guard
+; CHECK-NEXT:  Loop %loop: Unpredictable backedge-taken count.
+; CHECK-NEXT:  Loop %loop: Unpredictable constant max backedge-taken count.
+; CHECK-NEXT:  Loop %loop: Unpredictable symbolic max backedge-taken count.
+;
+entry:
+  %y.neg = icmp slt i16 %y, 0
+  br i1 %y.neg, label %exit, label %loop
+
+loop:
+  %iv = phi i16 [ 0, %entry ], [ %iv.next, %loop ]
+  %wo = call { i16, i1 } @llvm.smul.with.overflow.i16(i16 %iv, i16 %y)
+  %ov = extractvalue { i16, i1 } %wo, 1
+  %iv.next = add nsw i16 %iv, 1
+  br i1 %ov, label %exit, label %loop
+
+exit:
+  ret void
+}
+
+define void @uadd_invariant_rhs_no_nuw(i16 %y) {
+; CHECK-LABEL: 'uadd_invariant_rhs_no_nuw'
+; CHECK-NEXT:  Determining loop execution counts for: @uadd_invariant_rhs_no_nuw
+; CHECK-NEXT:  Loop %loop: Unpredictable backedge-taken count.
+; CHECK-NEXT:  Loop %loop: Unpredictable constant max backedge-taken count.
+; CHECK-NEXT:  Loop %loop: Unpredictable symbolic max backedge-taken count.
+; CHECK-NEXT:  Loop %loop: Predicated backedge-taken count is (1 + (zext i16 (-1 + (-1 * %y)) to i32))<nuw><nsw>
+; CHECK-NEXT:   Predicates:
+; CHECK-NEXT:      {0,+,1}<%loop> Added Flags: <nusw>
+; CHECK-NEXT:  Loop %loop: Predicated constant max backedge-taken count is i32 65536
+; CHECK-NEXT:   Predicates:
+; CHECK-NEXT:      {0,+,1}<%loop> Added Flags: <nusw>
+; CHECK-NEXT:  Loop %loop: Predicated symbolic max backedge-taken count is (1 + (zext i16 (-1 + (-1 * %y)) to i32))<nuw><nsw>
+; CHECK-NEXT:   Predicates:
+; CHECK-NEXT:      {0,+,1}<%loop> Added Flags: <nusw>
+;
+entry:
+  br label %loop
+
+loop:
+  %iv = phi i16 [ 0, %entry ], [ %iv.next, %loop ]
+  %wo = call { i16, i1 } @llvm.uadd.with.overflow.i16(i16 %iv, i16 %y)
+  %ov = extractvalue { i16, i1 } %wo, 1
+  %iv.next = add i16 %iv, 1
+  br i1 %ov, label %exit, label %loop
+
+exit:
+  ret void
+}
+
+define void @sadd_invariant_rhs_nonneg_guard_no_nsw(i16 %y) {
+; CHECK-LABEL: 'sadd_invariant_rhs_nonneg_guard_no_nsw'
+; CHECK-NEXT:  Determining loop execution counts for: @sadd_invariant_rhs_nonneg_guard_no_nsw
+; CHECK-NEXT:  Loop %loop: Unpredictable backedge-taken count.
+; CHECK-NEXT:  Loop %loop: Unpredictable constant max backedge-taken count.
+; CHECK-NEXT:  Loop %loop: Unpredictable symbolic max backedge-taken count.
+; CHECK-NEXT:  Loop %loop: Predicated backedge-taken count is (1 + (sext i16 (32767 + (-1 * %y)) to i32))<nsw>
+; CHECK-NEXT:   Predicates:
+; CHECK-NEXT:      {0,+,1}<%loop> Added Flags: <nssw>
+; CHECK-NEXT:  Loop %loop: Predicated constant max backedge-taken count is i32 32768
+; CHECK-NEXT:   Predicates:
+; CHECK-NEXT:      {0,+,1}<%loop> Added Flags: <nssw>
+; CHECK-NEXT:  Loop %loop: Predicated symbolic max backedge-taken count is (1 + (sext i16 (32767 + (-1 * %y)) to i32))<nsw>
+; CHECK-NEXT:   Predicates:
+; CHECK-NEXT:      {0,+,1}<%loop> Added Flags: <nssw>
+;
+entry:
+  %y.neg = icmp slt i16 %y, 0
+  br i1 %y.neg, label %exit, label %loop
+
+loop:
+  %iv = phi i16 [ 0, %entry ], [ %iv.next, %loop ]
+  %wo = call { i16, i1 } @llvm.sadd.with.overflow.i16(i16 %iv, i16 %y)
+  %ov = extractvalue { i16, i1 } %wo, 1
+  %iv.next = add i16 %iv, 1
+  br i1 %ov, label %exit, label %loop
+
+exit:
+  ret void
+}
