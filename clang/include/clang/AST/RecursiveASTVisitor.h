@@ -1479,7 +1479,7 @@ DEF_TRAVERSE_TYPELOC(DecltypeType, {
 })
 
 DEF_TRAVERSE_TYPELOC(PackIndexingType, {
-  TRY_TO(TraverseType(TL.getPattern()));
+  TRY_TO(TraverseTypeLoc(TL.getPatternLoc()));
   TRY_TO(TraverseStmt(TL.getTypePtr()->getIndexExpr()));
 })
 
