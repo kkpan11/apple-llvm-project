@@ -2472,15 +2472,30 @@ namespace {
 struct SCEVFindUnsafe {
   ScalarEvolution &SE;
   bool CanonicalMode;
+  // If set, UDiv divisors only need to be not poison at CtxI.
+  const Instruction *CtxI;
+  const DominatorTree *DT;
   bool IsUnsafe = false;
 
-  SCEVFindUnsafe(ScalarEvolution &SE, bool CanonicalMode)
-      : SE(SE), CanonicalMode(CanonicalMode) {}
+  SCEVFindUnsafe(ScalarEvolution &SE, bool CanonicalMode,
+                 const Instruction *CtxI = nullptr,
+                 const DominatorTree *DT = nullptr)
+      : SE(SE), CanonicalMode(CanonicalMode), CtxI(CtxI), DT(DT) {}
+
+  bool isNotPoison(const SCEV *S) {
+    if (SE.isGuaranteedNotToBePoison(S))
+      return true;
+    if (!CtxI)
+      return false;
+    return !SCEVExprContains(S, [&](const SCEV *Op) {
+      auto *U = dyn_cast<SCEVUnknown>(Op);
+      return U && !isGuaranteedNotToBePoison(U->getValue(), nullptr, CtxI, DT);
+    });
+  }
 
   bool follow(const SCEV *S) {
     if (const SCEVUDivExpr *D = dyn_cast<SCEVUDivExpr>(S)) {
-      if (!SE.isKnownNonZero(D->getRHS()) ||
-          !SE.isGuaranteedNotToBePoison(D->getRHS())) {
+      if (!SE.isKnownNonZero(D->getRHS()) || !isNotPoison(D->getRHS())) {
         IsUnsafe = true;
         return false;
       }
@@ -2508,7 +2523,15 @@ bool SCEVExpander::isSafeToExpand(const SCEV *S) const {
 
 bool SCEVExpander::isSafeToExpandAt(const SCEV *S,
                                     const Instruction *InsertionPoint) const {
-  if (!isSafeToExpand(S))
+  // A UDiv may be hoisted to the preheaders of loops containing
+  // InsertionPoint.
+  const Instruction *CtxI = InsertionPoint;
+  for (const Loop *L = SE.LI.getLoopFor(CtxI->getParent());
+       L && L->getLoopPreheader(); L = L->getParentLoop())
+    CtxI = L->getLoopPreheader()->getTerminator();
+  SCEVFindUnsafe Search(SE, CanonicalMode, CtxI, &SE.DT);
+  visitAll(S, Search);
+  if (Search.IsUnsafe)
     return false;
   // We have to prove that the expanded site of S dominates InsertionPoint.
   // This is easy when not in the same block, but hard when S is an instruction

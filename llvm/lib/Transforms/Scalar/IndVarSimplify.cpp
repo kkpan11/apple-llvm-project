@@ -1872,7 +1872,9 @@ bool IndVarSimplify::predicateLoopExits(Loop *L, SCEVExpander &Rewriter) {
   // through *explicit* control flow.  We have to eliminate the possibility of
   // implicit exits (see below) before we know it's truly exact.
   const SCEV *ExactBTC = SE->getBackedgeTakenCount(L);
-  if (isa<SCEVCouldNotCompute>(ExactBTC) || !Rewriter.isSafeToExpand(ExactBTC))
+  Instruction *PHTerm = L->getLoopPreheader()->getTerminator();
+  if (isa<SCEVCouldNotCompute>(ExactBTC) ||
+      !Rewriter.isSafeToExpandAt(ExactBTC, PHTerm))
     return false;
 
   assert(SE->isLoopInvariant(ExactBTC, L) && "BTC must be loop invariant");
@@ -1904,7 +1906,7 @@ bool IndVarSimplify::predicateLoopExits(Loop *L, SCEVExpander &Rewriter) {
 
     const SCEV *ExitCount = SE->getExitCount(L, ExitingBB);
     if (isa<SCEVCouldNotCompute>(ExitCount) ||
-        !Rewriter.isSafeToExpand(ExitCount))
+        !Rewriter.isSafeToExpandAt(ExitCount, PHTerm))
       return true;
 
     assert(SE->isLoopInvariant(ExitCount, L) &&

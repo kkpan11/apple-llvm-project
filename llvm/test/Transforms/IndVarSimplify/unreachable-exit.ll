@@ -926,6 +926,155 @@ trap:
   unreachable
 }
 
+define void @stride_divisor_guarded(ptr %p, i64 %w, i64 %n, i32 %len32) {
+; CHECK-LABEL: define void @stride_divisor_guarded(
+; CHECK-SAME: ptr [[P:%.*]], i64 [[W:%.*]], i64 [[N:%.*]], i32 [[LEN32:%.*]]) {
+; CHECK-NEXT:  [[ENTRY:.*:]]
+; CHECK-NEXT:    [[LEN:%.*]] = zext i32 [[LEN32]] to i64
+; CHECK-NEXT:    [[N_ZERO:%.*]] = icmp eq i64 [[N]], 0
+; CHECK-NEXT:    br i1 [[N_ZERO]], label %[[EXIT:.*]], label %[[CHECK_W:.*]]
+; CHECK:       [[CHECK_W]]:
+; CHECK-NEXT:    [[W_POS:%.*]] = icmp sgt i64 [[W]], 0
+; CHECK-NEXT:    br i1 [[W_POS]], label %[[LOOP_PREHEADER:.*]], label %[[EXIT]]
+; CHECK:       [[LOOP_PREHEADER]]:
+; CHECK-NEXT:    [[UMAX:%.*]] = call i64 @llvm.umax.i64(i64 [[W]], i64 1)
+; CHECK-NEXT:    [[TMP0:%.*]] = add i64 [[UMAX]], [[LEN]]
+; CHECK-NEXT:    [[TMP1:%.*]] = add i64 [[TMP0]], -1
+; CHECK-NEXT:    [[TMP2:%.*]] = udiv i64 [[TMP1]], [[UMAX]]
+; CHECK-NEXT:    [[TMP3:%.*]] = add i64 [[N]], -1
+; CHECK-NEXT:    [[UMIN:%.*]] = call i64 @llvm.umin.i64(i64 [[TMP2]], i64 [[TMP3]])
+; CHECK-NEXT:    [[TMP4:%.*]] = icmp ne i64 [[TMP2]], [[UMIN]]
+; CHECK-NEXT:    br label %[[LOOP:.*]]
+; CHECK:       [[LOOP]]:
+; CHECK-NEXT:    [[I:%.*]] = phi i64 [ [[I_NEXT:%.*]], %[[LATCH:.*]] ], [ 0, %[[LOOP_PREHEADER]] ]
+; CHECK-NEXT:    [[IV:%.*]] = phi i64 [ [[IV_NEXT:%.*]], %[[LATCH]] ], [ 0, %[[LOOP_PREHEADER]] ]
+; CHECK-NEXT:    br i1 [[TMP4]], label %[[LATCH]], label %[[TRAP:.*]]
+; CHECK:       [[LATCH]]:
+; CHECK-NEXT:    [[GEP:%.*]] = getelementptr inbounds i32, ptr [[P]], i64 [[IV]]
+; CHECK-NEXT:    store i32 0, ptr [[GEP]], align 4
+; CHECK-NEXT:    [[I_NEXT]] = add nuw nsw i64 [[I]], 1
+; CHECK-NEXT:    [[IV_NEXT]] = add i64 [[IV]], [[W]]
+; CHECK-NEXT:    [[DONE:%.*]] = icmp eq i64 [[I_NEXT]], [[N]]
+; CHECK-NEXT:    br i1 [[DONE]], label %[[EXIT_LOOPEXIT:.*]], label %[[LOOP]]
+; CHECK:       [[EXIT_LOOPEXIT]]:
+; CHECK-NEXT:    br label %[[EXIT]]
+; CHECK:       [[EXIT]]:
+; CHECK-NEXT:    ret void
+; CHECK:       [[TRAP]]:
+; CHECK-NEXT:    call void @llvm.trap()
+; CHECK-NEXT:    unreachable
+;
+entry:
+  %len = zext i32 %len32 to i64
+  %n.zero = icmp eq i64 %n, 0
+  br i1 %n.zero, label %exit, label %check.w
+
+check.w:
+  %w.pos = icmp sgt i64 %w, 0
+  br i1 %w.pos, label %loop, label %exit
+
+loop:
+  %i = phi i64 [ 0, %check.w ], [ %i.next, %latch ]
+  %iv = phi i64 [ 0, %check.w ], [ %iv.next, %latch ]
+  %inbounds = icmp ult i64 %iv, %len
+  br i1 %inbounds, label %latch, label %trap
+
+latch:
+  %gep = getelementptr inbounds i32, ptr %p, i64 %iv
+  store i32 0, ptr %gep, align 4
+  %i.next = add nuw i64 %i, 1
+  %iv.next = add i64 %iv, %w
+  %done = icmp eq i64 %i.next, %n
+  br i1 %done, label %exit, label %loop
+
+exit:
+  ret void
+
+trap:
+  call void @llvm.trap()
+  unreachable
+}
+
+; The divisor check is in the outer loop, so it does not cover the outer
+; preheader.
+define void @stride_divisor_guarded_in_outer_loop(ptr %p, i64 %w, i64 %n, i32 %len32, i64 %m) {
+; CHECK-LABEL: define void @stride_divisor_guarded_in_outer_loop(
+; CHECK-SAME: ptr [[P:%.*]], i64 [[W:%.*]], i64 [[N:%.*]], i32 [[LEN32:%.*]], i64 [[M:%.*]]) {
+; CHECK-NEXT:  [[ENTRY:.*:]]
+; CHECK-NEXT:    [[LEN:%.*]] = zext i32 [[LEN32]] to i64
+; CHECK-NEXT:    [[N_ZERO:%.*]] = icmp eq i64 [[N]], 0
+; CHECK-NEXT:    br i1 [[N_ZERO]], label %[[EXIT:.*]], label %[[OUTER_PREHEADER:.*]]
+; CHECK:       [[OUTER_PREHEADER]]:
+; CHECK-NEXT:    br label %[[OUTER:.*]]
+; CHECK:       [[OUTER]]:
+; CHECK-NEXT:    [[J:%.*]] = phi i64 [ [[J_NEXT:%.*]], %[[OUTER_LATCH:.*]] ], [ 0, %[[OUTER_PREHEADER]] ]
+; CHECK-NEXT:    [[W_POS:%.*]] = icmp sgt i64 [[W]], 0
+; CHECK-NEXT:    br i1 [[W_POS]], label %[[LOOP_PREHEADER:.*]], label %[[OUTER_LATCH]]
+; CHECK:       [[LOOP_PREHEADER]]:
+; CHECK-NEXT:    br label %[[LOOP:.*]]
+; CHECK:       [[LOOP]]:
+; CHECK-NEXT:    [[I:%.*]] = phi i64 [ [[I_NEXT:%.*]], %[[LATCH:.*]] ], [ 0, %[[LOOP_PREHEADER]] ]
+; CHECK-NEXT:    [[IV:%.*]] = phi i64 [ [[IV_NEXT:%.*]], %[[LATCH]] ], [ 0, %[[LOOP_PREHEADER]] ]
+; CHECK-NEXT:    [[INBOUNDS:%.*]] = icmp ult i64 [[IV]], [[LEN]]
+; CHECK-NEXT:    br i1 [[INBOUNDS]], label %[[LATCH]], label %[[TRAP:.*]]
+; CHECK:       [[LATCH]]:
+; CHECK-NEXT:    [[GEP:%.*]] = getelementptr inbounds i32, ptr [[P]], i64 [[IV]]
+; CHECK-NEXT:    store i32 0, ptr [[GEP]], align 4
+; CHECK-NEXT:    [[I_NEXT]] = add nuw nsw i64 [[I]], 1
+; CHECK-NEXT:    [[IV_NEXT]] = add i64 [[IV]], [[W]]
+; CHECK-NEXT:    [[DONE:%.*]] = icmp eq i64 [[I_NEXT]], [[N]]
+; CHECK-NEXT:    br i1 [[DONE]], label %[[OUTER_LATCH_LOOPEXIT:.*]], label %[[LOOP]]
+; CHECK:       [[OUTER_LATCH_LOOPEXIT]]:
+; CHECK-NEXT:    br label %[[OUTER_LATCH]]
+; CHECK:       [[OUTER_LATCH]]:
+; CHECK-NEXT:    [[J_NEXT]] = add nuw i64 [[J]], 1
+; CHECK-NEXT:    [[OUTER_DONE:%.*]] = icmp eq i64 [[J_NEXT]], [[M]]
+; CHECK-NEXT:    br i1 [[OUTER_DONE]], label %[[EXIT_LOOPEXIT:.*]], label %[[OUTER]]
+; CHECK:       [[EXIT_LOOPEXIT]]:
+; CHECK-NEXT:    br label %[[EXIT]]
+; CHECK:       [[EXIT]]:
+; CHECK-NEXT:    ret void
+; CHECK:       [[TRAP]]:
+; CHECK-NEXT:    call void @llvm.trap()
+; CHECK-NEXT:    unreachable
+;
+entry:
+  %len = zext i32 %len32 to i64
+  %n.zero = icmp eq i64 %n, 0
+  br i1 %n.zero, label %exit, label %outer
+
+outer:
+  %j = phi i64 [ 0, %entry ], [ %j.next, %outer.latch ]
+  %w.pos = icmp sgt i64 %w, 0
+  br i1 %w.pos, label %loop, label %outer.latch
+
+loop:
+  %i = phi i64 [ 0, %outer ], [ %i.next, %latch ]
+  %iv = phi i64 [ 0, %outer ], [ %iv.next, %latch ]
+  %inbounds = icmp ult i64 %iv, %len
+  br i1 %inbounds, label %latch, label %trap
+
+latch:
+  %gep = getelementptr inbounds i32, ptr %p, i64 %iv
+  store i32 0, ptr %gep, align 4
+  %i.next = add nuw i64 %i, 1
+  %iv.next = add i64 %iv, %w
+  %done = icmp eq i64 %i.next, %n
+  br i1 %done, label %outer.latch, label %loop
+
+outer.latch:
+  %j.next = add nuw i64 %j, 1
+  %outer.done = icmp eq i64 %j.next, %m
+  br i1 %outer.done, label %exit, label %outer
+
+exit:
+  ret void
+
+trap:
+  call void @llvm.trap()
+  unreachable
+}
+
 declare void @x(ptr noundef) local_unnamed_addr
 declare i1 @pred() local_unnamed_addr
 
