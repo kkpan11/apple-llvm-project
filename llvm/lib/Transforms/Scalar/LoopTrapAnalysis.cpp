@@ -25,7 +25,7 @@ enum class CheckLoopHoistType { MAYBE_CAN_HOIST, CANNOT_HOIST, SKIP };
 /// Check for an unreachable instruction that has an edge to any of \p L basic
 /// blocks. if `--use-bounds-safety-traps-only` is used make sure that the trap and
 /// branch instructions have -fbounds-safety annotation.
-static bool hasUnreachableInst(Loop *L) {
+static bool hasUnreachableInst(const ScalarOptions &Opts, Loop *L) {
   SmallVector<BasicBlock *, 4> LoopExitBlocks;
   L->getExitBlocks(LoopExitBlocks);
   for (auto *BB : LoopExitBlocks) {
@@ -34,16 +34,16 @@ static bool hasUnreachableInst(Loop *L) {
     // then we ignore if the trap has a -fbounds-safety annotation.
     if (!isa<UnreachableInst>(I))
       continue;
-    if (ScalarOptions::Global.use_bounds_safety_traps_only &&
+    if (Opts.use_bounds_safety_traps_only &&
         !isBoundsSafetyAnnotated(I))
       continue;
-    if (any_of(predecessors(BB), [L](BasicBlock *PredB) {
+    if (any_of(predecessors(BB), [L, &Opts](BasicBlock *PredB) {
           auto *TerminatorInst = PredB->getTerminator();
           return L->contains(PredB) &&
                  (isa<CondBrInst>(TerminatorInst) ||
                   isa<UncondBrInst>(TerminatorInst) ||
                   isa<SwitchInst>(TerminatorInst)) &&
-                 (!ScalarOptions::Global.use_bounds_safety_traps_only ||
+                 (!Opts.use_bounds_safety_traps_only ||
                   isBoundsSafetyAnnotated(TerminatorInst));
         }))
       return true;
@@ -69,19 +69,20 @@ static std::string getSideEffectReasons(const Instruction &I) {
 
 /// Check if \p L can be hoisted or not and emit a detailed remark about why
 /// it can't be hoisted.
-static CheckLoopHoistType processLoops(Loop *L, ScalarEvolution &SE,
+static CheckLoopHoistType processLoops(const ScalarOptions &Opts, Loop *L,
+                                       ScalarEvolution &SE,
                                        OptimizationRemarkEmitter &ORE) {
   CheckLoopHoistType HoistType;
   bool SymbolicMaxBackEdgeComputable =
       !isa<SCEVCouldNotCompute>(SE.getSymbolicMaxBackedgeTakenCount(L));
   bool HasSideEffects = false;
-  if (!hasUnreachableInst(L))
+  if (!hasUnreachableInst(Opts, L))
     return CheckLoopHoistType::SKIP;
 
   SmallVector<std::string, 4> InstructionsWithSideEffects;
   SmallVector<std::string, 4> SideEffectReasons;
   for (auto *BB : L->blocks()) {
-    if (any_of(*BB, [&InstructionsWithSideEffects,
+    if (any_of(*BB, [&Opts, &InstructionsWithSideEffects,
                      &SideEffectReasons](const Instruction &I) {
           bool InstHasSideEffects = false;
           // If a call instruction reads or writes to memory we don't know if
@@ -90,7 +91,7 @@ static CheckLoopHoistType processLoops(Loop *L, ScalarEvolution &SE,
           if (isa<CallInst>(I))
             InstHasSideEffects =
                 I.mayHaveSideEffects() || I.mayReadFromMemory();
-          else if (ScalarOptions::Global.use_new_trap_semantics)
+          else if (Opts.use_new_trap_semantics)
             InstHasSideEffects = !I.willReturn() || I.mayThrow();
           else
             InstHasSideEffects = I.mayHaveSideEffects();
@@ -136,12 +137,12 @@ static CheckLoopHoistType processLoops(Loop *L, ScalarEvolution &SE,
 
 /// Collect info for hoistable loop checks for \p F and report remarks for
 /// individual loops and report a summary for hoistable checks for the function.
-static void emitRemarks(Function &F, LoopInfo &LI,
+static void emitRemarks(const ScalarOptions &Opts, Function &F, LoopInfo &LI,
                         OptimizationRemarkEmitter &ORE, ScalarEvolution &SE) {
   unsigned TotalCanHoistLoops = 0;
   unsigned TotalUnHoistableLoops = 0;
   for (auto *L : LI.getLoopsInPreorder()) {
-    CheckLoopHoistType Type = processLoops(L, SE, ORE);
+    CheckLoopHoistType Type = processLoops(Opts, L, SE, ORE);
     if (Type == CheckLoopHoistType::MAYBE_CAN_HOIST)
       TotalCanHoistLoops++;
     else if (Type == CheckLoopHoistType::CANNOT_HOIST)
@@ -164,6 +165,8 @@ PreservedAnalyses LoopTrapAnalysisPass::run(Function &F,
   auto &LI = AM.getResult<LoopAnalysis>(F);
   auto &SE = AM.getResult<ScalarEvolutionAnalysis>(F);
   auto &ORE = AM.getResult<OptimizationRemarkEmitterAnalysis>(F);
-  emitRemarks(F, LI, ORE, SE);
+  const ScalarOptions &Opts =
+      F.getContext().getLibraryOptions().get<ScalarOptions>();
+  emitRemarks(Opts, F, LI, ORE, SE);
   return PreservedAnalyses::all();
 }
