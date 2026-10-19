@@ -1,4 +1,4 @@
-func first() async {
+func first(_ n: Int) async {
     await second()
 }
 
@@ -9,7 +9,7 @@ func second() async {
 @main struct Main {
     static func main() async {
         let task = Task {
-            await first()
+            await first(42)
         }
         try? await Task.sleep(for: .seconds(0.1))
         print("break here")
