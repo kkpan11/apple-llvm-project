@@ -1982,6 +1982,41 @@ def skipUnlessArm64eSupported(func):
     return skipTestIfFn(can_build_and_run_arm64e)(func)
 
 
+@lru_cache(maxsize=None)
+def _swiftArm64eError() -> Optional[str]:
+    # The Swift libraries of the toolchain may lack an arm64e slice, which
+    # fails the link with undefined Swift runtime symbols.
+    swiftc = configuration.swiftCompiler or swift.getSwiftCompiler()
+    triple = configuration.triple.replace("arm64-", "arm64e-")
+    sdk = os.environ.get("SDKROOT")
+    if not sdk:
+        sdk = subprocess.check_output(
+            ["xcrun", "--sdk", "macosx", "--show-sdk-path"], text=True
+        ).strip()
+    with temp_file.OnDiskTempFile() as ctx:
+        cmd = [swiftc, "-target", triple, "-sdk", sdk, "-o", ctx.path, "-"]
+        try:
+            subprocess.run(
+                cmd,
+                input=b"import Foundation\nprint(1)\n",
+                capture_output=True,
+                check=True,
+            )
+        except (subprocess.CalledProcessError, OSError):
+            return "Swift cannot build arm64e programs"
+    return None
+
+
+def skipUnlessSwiftArm64eSupported(func):
+    """Decorate the item to skip test unless Swift can build arm64e programs."""
+
+    # skipTestIfFn cannot inspect the signature of an lru_cache wrapper.
+    def can_build_swift_arm64e():
+        return _swiftArm64eError()
+
+    return skipTestIfFn(can_build_swift_arm64e)(func)
+
+
 def skipUnlessPackageAvailable(name):
     """Skip the test case if the named package is not available on the system."""
     available = True

@@ -317,6 +317,42 @@ TEST(TestSwiftDemangleAsyncNames, StaticAsync) {
   CheckFuncletNumbersAreARange(static_async_funclets);
 }
 
+TEST(TestSwiftDemangleAsyncNames, AsyncMain) {
+  // The entry point of async top-level code has no mangling prefix.
+  SmallVector<StringRef> async_main_funclets = {
+      "async_Main",
+      "async_MainTQ0_",
+      "async_MainTY1_",
+  };
+  SmallVector<StringRef> async_main_funclets_underscore = {
+      "_async_Main",
+      "_async_MainTQ0_",
+      "_async_MainTY1_",
+  };
+
+  for (StringRef async_name : llvm::concat<StringRef>(
+           async_main_funclets, async_main_funclets_underscore)) {
+    EXPECT_TRUE(IsSwiftMangledName(async_name)) << async_name;
+    EXPECT_TRUE(IsAnySwiftAsyncFunctionSymbol(async_name)) << async_name;
+  }
+
+  CheckFuncletNumbersAreARange(async_main_funclets);
+  CheckFuncletNumbersAreARange(async_main_funclets_underscore);
+
+  CheckGroupOfFuncletsFromSameFunction(llvm::to_vector(llvm::concat<StringRef>(
+      async_main_funclets, async_main_funclets_underscore)));
+
+  SmallVector<StringRef> other_funclets = {
+      // A closure in top-level code:
+      "$s1aySiYacfU_", "$s1aySiYacfU_TQ0_", "$s1aySiYacfU_TY1_",
+      // "Normal" funclets:
+      "$s1a8sayBasicyySSYaF", "$s1a8sayBasicyySSYaFTY0_",
+      // Static funclets:
+      "$s1a6StructV9sayStaticyySSYaFZ", "$s1a6StructV9sayStaticyySSYaFZTY0_"};
+  CheckGroupOfFuncletsFromDifferentFunctions(async_main_funclets,
+                                             other_funclets);
+}
+
 TEST(TestSwiftDemangleAsyncNames, NonAsync) {
   // func factorial(_ n:Int) -> Int {
   {

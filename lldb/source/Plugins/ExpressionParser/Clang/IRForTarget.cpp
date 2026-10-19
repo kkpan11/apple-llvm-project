@@ -23,6 +23,7 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Operator.h"
 #include "llvm/IR/ValueSymbolTable.h"
+#include "llvm/IR/Verifier.h"
 #include "llvm/Support/ErrorExtras.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/IPO.h"
@@ -1793,6 +1794,14 @@ bool IRForTarget::runOnModule(Module &llvm_module) {
           lldb_private::InjectPointerSigningFixupCode(*m_module, m_policy)) {
     LLDB_LOG_ERROR(log, std::move(error),
                    "InsertPointerSigningFixups() failed: {0}");
+    return false;
+  }
+
+  std::string msg;
+  raw_string_ostream os(msg);
+  if (llvm::verifyModule(*m_module, &os)) {
+    LLDB_LOG(log, "Invalid IR at the end of IRForTarget: {0}", msg);
+    m_error_stream.Printf("Internal error [IRForTarget]: Invalid IR.\n");
     return false;
   }
 

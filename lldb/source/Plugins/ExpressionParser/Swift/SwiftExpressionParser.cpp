@@ -12,6 +12,8 @@
 
 #include "SwiftExpressionParser.h"
 
+#include "Plugins/ExpressionParser/Clang/InjectPointerSigningFixups.h"
+
 #include "Plugins/Language/Swift/LogChannelSwift.h"
 #include "Plugins/TypeSystem/Swift/SwiftASTContext.h"
 #include "Plugins/TypeSystem/Swift/TypeSystemSwift.h"
@@ -2371,6 +2373,38 @@ Status SwiftExpressionParser::DoPrepareForExecution(
   m_execution_unit_sp->SetIsEmbeddedSwift(
       m_swift_ast_ctx.GetASTContext()->LangOpts.hasFeature(
           swift::Feature::Embedded));
+
+  // Make a pass over the IR to change any pointer-authentication relocations
+  // to regular relocations and add a static initializer function to the module
+  llvm::Module &module = *m_execution_unit_sp->GetModule();
+  if (auto Err = InjectPointerSigningFixupCode(module, execution_policy))
+    return Status::FromError(std::move(Err));
+
+  std::string msg;
+  llvm::raw_string_ostream os(msg);
+  if (llvm::verifyModule(module, &os)) {
+    LLDB_LOG(
+        log,
+        "Invalid IR after SwiftExpressionParser::DoPrepareForExecution: {0}",
+        msg);
+    return Status::FromErrorString("The expression could not be compiled");
+  }
+
+  // Make a pass over the IR to change any pointer-authentication relocations
+  // to regular relocations and add a static initializer function to the module
+  llvm::Module &module = *m_execution_unit_sp->GetModule();
+  if (auto Err = InjectPointerSigningFixupCode(module, execution_policy))
+    return Status::FromError(std::move(Err));
+
+  std::string msg;
+  llvm::raw_string_ostream os(msg);
+  if (llvm::verifyModule(module, &os)) {
+    LLDB_LOG(
+        log,
+        "Invalid IR after SwiftExpressionParser::DoPrepareForExecution: {0}",
+        msg);
+    return Status::FromErrorString("The expression could not be compiled");
+  }
 
   // TODO: figure out some way to work ClangExpressionDeclMap into
   //       this or do the equivalent for Swift.

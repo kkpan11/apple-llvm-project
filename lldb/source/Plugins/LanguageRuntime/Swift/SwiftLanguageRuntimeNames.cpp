@@ -90,6 +90,10 @@ static bool IsSwiftAsyncFunctionSymbol(swift::Demangle::NodePointer node) {
   if (hasChild(node, Node::Kind::AsyncSuspendResumePartialFunction))
     return false;
 
+  // async_Main has no function type to carry an async annotation.
+  if (hasChild(node, Node::Kind::AsyncMainEntryPoint))
+    return true;
+
   // Peel off a ProtocolWitness node. If it exists, there will be a single
   // instance, before Static nodes.
   if (NodePointer witness = childAtPath(node, Node::Kind::ProtocolWitness))
@@ -214,6 +218,14 @@ SwiftLanguageRuntime::AreFuncletsOfSameAsyncFunction(
   if (!IsAnySwiftAsyncFunctionSymbol(node1) ||
       !IsAnySwiftAsyncFunctionSymbol(node2))
     return FuncletComparisonResult::NotBothFunclets;
+
+  // async_Main has no Function node to compare.
+  bool is_async_main1 = hasChild(node1, Node::Kind::AsyncMainEntryPoint);
+  bool is_async_main2 = hasChild(node2, Node::Kind::AsyncMainEntryPoint);
+  if (is_async_main1 || is_async_main2)
+    return is_async_main1 && is_async_main2
+               ? FuncletComparisonResult::SameAsyncFunction
+               : FuncletComparisonResult::DifferentAsyncFunctions;
 
   // Peel off ProtocolWitnes/Static nodes, in this order.
   for (auto wrapper : {Node::Kind::ProtocolWitness, Node::Kind::Static}) {
