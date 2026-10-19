@@ -870,6 +870,62 @@ exit:
 }
 
 
+define void @umax_sub_start_exit(ptr %p, i64 %s, i64 %n, i64 %len) {
+; CHECK-LABEL: define void @umax_sub_start_exit(
+; CHECK-SAME: ptr [[P:%.*]], i64 [[S:%.*]], i64 [[N:%.*]], i64 [[LEN:%.*]]) {
+; CHECK-NEXT:  [[ENTRY:.*:]]
+; CHECK-NEXT:    [[N_ZERO:%.*]] = icmp eq i64 [[N]], 0
+; CHECK-NEXT:    br i1 [[N_ZERO]], label %[[EXIT:.*]], label %[[LOOP_PREHEADER:.*]]
+; CHECK:       [[LOOP_PREHEADER]]:
+; CHECK-NEXT:    [[TMP0:%.*]] = add i64 [[N]], -1
+; CHECK-NEXT:    [[UMAX:%.*]] = call i64 @llvm.umax.i64(i64 [[LEN]], i64 [[TMP0]])
+; CHECK-NEXT:    [[TMP1:%.*]] = add i64 [[UMAX]], 1
+; CHECK-NEXT:    [[TMP2:%.*]] = sub i64 [[TMP1]], [[N]]
+; CHECK-NEXT:    [[TMP3:%.*]] = icmp ult i64 [[S]], [[TMP2]]
+; CHECK-NEXT:    br label %[[LOOP:.*]]
+; CHECK:       [[LOOP]]:
+; CHECK-NEXT:    [[IV:%.*]] = phi i64 [ [[IV_NEXT:%.*]], %[[LATCH:.*]] ], [ 0, %[[LOOP_PREHEADER]] ]
+; CHECK-NEXT:    [[IDX:%.*]] = add nuw i64 [[IV]], [[S]]
+; CHECK-NEXT:    br i1 [[TMP3]], label %[[LATCH]], label %[[TRAP:.*]]
+; CHECK:       [[LATCH]]:
+; CHECK-NEXT:    [[GEP:%.*]] = getelementptr inbounds i32, ptr [[P]], i64 [[IDX]]
+; CHECK-NEXT:    store i32 0, ptr [[GEP]], align 4
+; CHECK-NEXT:    [[IV_NEXT]] = add nuw i64 [[IV]], 1
+; CHECK-NEXT:    [[DONE:%.*]] = icmp eq i64 [[IV_NEXT]], [[N]]
+; CHECK-NEXT:    br i1 [[DONE]], label %[[EXIT_LOOPEXIT:.*]], label %[[LOOP]]
+; CHECK:       [[EXIT_LOOPEXIT]]:
+; CHECK-NEXT:    br label %[[EXIT]]
+; CHECK:       [[EXIT]]:
+; CHECK-NEXT:    ret void
+; CHECK:       [[TRAP]]:
+; CHECK-NEXT:    call void @llvm.trap()
+; CHECK-NEXT:    unreachable
+;
+entry:
+  %n.zero = icmp eq i64 %n, 0
+  br i1 %n.zero, label %exit, label %loop
+
+loop:
+  %iv = phi i64 [ 0, %entry ], [ %iv.next, %latch ]
+  %idx = add i64 %iv, %s
+  %inbounds = icmp ult i64 %idx, %len
+  br i1 %inbounds, label %latch, label %trap
+
+latch:
+  %gep = getelementptr inbounds i32, ptr %p, i64 %idx
+  store i32 0, ptr %gep, align 4
+  %iv.next = add nuw i64 %iv, 1
+  %done = icmp eq i64 %iv.next, %n
+  br i1 %done, label %exit, label %loop
+
+exit:
+  ret void
+
+trap:
+  call void @llvm.trap()
+  unreachable
+}
+
 declare void @x(ptr noundef) local_unnamed_addr
 declare i1 @pred() local_unnamed_addr
 

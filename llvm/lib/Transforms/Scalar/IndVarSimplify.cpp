@@ -2010,6 +2010,32 @@ bool IndVarSimplify::predicateLoopExits(Loop *L, SCEVExpander &Rewriter) {
   Rewriter.setInsertPoint(L->getLoopPreheader()->getTerminator());
   IRBuilder<> B(L->getLoopPreheader()->getTerminator());
   Value *ExactBTCV = nullptr; // Lazily generated if needed.
+
+  // If ExitCount is (C umax S) - S and ExactBTC is ExitCount umin L, the exit
+  // is taken iff S >=u (C umax L) - L. Returns {S, (C umax L) - L}.
+  auto MatchUMaxExitCount =
+      [&](const SCEV *ExitCount) -> std::pair<const SCEV *, const SCEV *> {
+    auto *Min = dyn_cast<SCEVUMinExpr>(ExactBTC);
+    auto *Add = dyn_cast<SCEVAddExpr>(ExitCount);
+    auto IsEC = [&](const SCEV *Op) { return Op == ExitCount; };
+    if (!Min || !Add || none_of(Min->operands(), IsEC))
+      return {nullptr, nullptr};
+    auto It = find_if(Add->operands(), IsaPred<SCEVUMaxExpr>);
+    if (It == Add->operands().end())
+      return {nullptr, nullptr};
+    auto *UMax = cast<SCEVUMaxExpr>(*It);
+    const SCEV *S = SE->getNegativeSCEV(SE->getMinusSCEV(ExitCount, UMax));
+    auto IsS = [&](const SCEV *Op) { return Op == S; };
+    if (none_of(UMax->operands(), IsS))
+      return {nullptr, nullptr};
+    SmallVector<SCEVUse> COps, LOps;
+    copy_if(UMax->operands(), std::back_inserter(COps), std::not_fn(IsS));
+    copy_if(Min->operands(), std::back_inserter(LOps), std::not_fn(IsEC));
+    const SCEV *Lim = SE->getUMinExpr(LOps);
+    const SCEV *C = SE->getUMaxExpr(COps);
+    return {S, SE->getMinusSCEV(SE->getUMaxExpr(C, Lim), Lim)};
+  };
+
   for (BasicBlock *ExitingBB : ExitingBlocks) {
     const SCEV *ExitCount = SE->getExitCount(L, ExitingBB);
 
@@ -2028,9 +2054,15 @@ bool IndVarSimplify::predicateLoopExits(Loop *L, SCEVExpander &Rewriter) {
         return Changed;
     }
     Value *NewCond;
+    auto [S, K] = MatchUMaxExitCount(ExitCount);
     if (ExitCount == ExactBTC) {
       NewCond = L->contains(BI->getSuccessor(0)) ?
         B.getFalse() : B.getTrue();
+    } else if (S) {
+      auto Pred = L->contains(BI->getSuccessor(0)) ? ICmpInst::ICMP_ULT
+                                                   : ICmpInst::ICMP_UGE;
+      NewCond = B.CreateICmp(Pred, Rewriter.expandCodeFor(S),
+                             Rewriter.expandCodeFor(K));
     } else {
       Value *ECV = Rewriter.expandCodeFor(ExitCount);
       if (!ExactBTCV)
