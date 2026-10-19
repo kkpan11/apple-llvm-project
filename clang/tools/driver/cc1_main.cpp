@@ -255,9 +255,14 @@ int cc1_main(ArrayRef<const char *> Argv, const char *Argv0, void *MainAddr) {
                                                   std::move(PCHOps));
 
   if (!Clang->getFrontendOpts().TimeTracePath.empty()) {
+    llvm::TimeTraceCompression Compress =
+        Clang->getFrontendOpts().TimeTraceCompress;
+    if (Compress == llvm::TimeTraceCompression::Infer)
+      Compress = llvm::inferTimeTraceCompressionFromPath(
+          Clang->getFrontendOpts().TimeTracePath);
     llvm::timeTraceProfilerInitialize(
         Clang->getFrontendOpts().TimeTraceGranularity, Argv0,
-        Clang->getFrontendOpts().TimeTraceVerbose);
+        Clang->getFrontendOpts().TimeTraceVerbose, Compress);
   }
   // --print-supported-cpus takes priority over the actual compilation.
   if (Clang->getFrontendOpts().PrintSupportedCPUs)
@@ -334,12 +339,18 @@ int cc1_main(ArrayRef<const char *> Argv, const char *Argv0, void *MainAddr) {
   }
 
   if (llvm::timeTraceProfilerEnabled()) {
+    llvm::TimeTraceCompression Compress =
+        Clang->getFrontendOpts().TimeTraceCompress;
+    if (Compress == llvm::TimeTraceCompression::Infer)
+      Compress = llvm::inferTimeTraceCompressionFromPath(
+          Clang->getFrontendOpts().TimeTracePath);
+    bool Binary = Compress == llvm::TimeTraceCompression::Zstd;
     llvm::vfs::OnDiskOutputBackend Backend;
     if (std::optional<llvm::vfs::OutputFile> profilerOutput =
             llvm::expectedToOptional(
                 Backend.createFile(Clang->getFrontendOpts().TimeTracePath,
                                    llvm::vfs::OutputConfig()
-                                       .setTextWithCRLF()
+                                       .setTextWithCRLF(!Binary)
                                        .setNoDiscardOnSignal()
                                        .setNoAtomicWrite()))) {
       llvm::timeTraceProfilerWrite(*profilerOutput);
