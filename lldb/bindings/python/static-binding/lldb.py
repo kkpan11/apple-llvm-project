@@ -944,7 +944,7 @@ eInstrumentationRuntimeTypeMainThreadChecker = _lldb.eInstrumentationRuntimeType
 eInstrumentationRuntimeTypeSwiftRuntimeReporting = _lldb.eInstrumentationRuntimeTypeSwiftRuntimeReporting
 
 eInstrumentationRuntimeTypeLibsanitizersAsan = _lldb.eInstrumentationRuntimeTypeLibsanitizersAsan
-
+r"""DEPRECATED:  use eInstrumentationRuntimeTypeAddressSanitizer."""
 eInstrumentationRuntimeTypeBoundsSafety = _lldb.eInstrumentationRuntimeTypeBoundsSafety
 
 eNumInstrumentationRuntimeTypes = _lldb.eNumInstrumentationRuntimeTypes
@@ -12598,7 +12598,6 @@ class SBStringList(object):
     r"""Represents a list of strings."""
 
     thisown = property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc="The membership flag")
-    __repr__ = _swig_repr
 
     def __init__(self, *args):
         r"""
@@ -12643,6 +12642,10 @@ class SBStringList(object):
         r"""Clear(SBStringList self)"""
         return _lldb.SBStringList_Clear(self)
 
+    def __repr__(self):
+        r"""__repr__(SBStringList self) -> std::string"""
+        return _lldb.SBStringList___repr__(self)
+
     def __iter__(self):
         '''Iterate over all strings in a lldb.SBStringList object.'''
         return lldb_iter(self, 'GetSize', 'GetStringAtIndex')
@@ -12651,15 +12654,23 @@ class SBStringList(object):
         '''Return the number of strings in a lldb.SBStringList object.'''
         return self.GetSize()
 
-    def __getitem__(self, idx):
-        '''Get the string at a given index in an lldb.SBStringList object.'''
-        if not isinstance(idx, int):
-            raise TypeError("unsupported index type: %s" % type(idx))
-        count = len(self)
-        if not (-count <= idx < count):
-            raise IndexError("list index out of range")
-        idx %= count
-        return self.GetStringAtIndex(idx)
+    def __getitem__(self, subscript: 'int | slice[int | None]', /):
+        if isinstance(subscript, int):
+            size = self.GetSize()
+            idx = subscript
+
+            if idx < 0:
+                idx += size
+            if idx >= size:
+                raise IndexError("SBStringList index out of range")
+            return self.GetStringAtIndex(idx)
+
+        if isinstance(subscript, slice):
+            indices = subscript.indices(self.GetSize())
+            return [self.GetStringAtIndex(i) for i in range(*indices)]
+
+        raise TypeError(f"SBStringList indices must be integers or slices, not {type(subscript).__name__}") 
+
 
 
 # Register SBStringList in _lldb:
