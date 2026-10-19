@@ -67,6 +67,68 @@ Sema::BoundsAttrFlags Sema::BoundsAttrFlags::get(AttributeCommonInfo::Kind K) {
   return Flags;
 }
 
+static const RecordDecl *GetEnclosingNamedOrTopAnonRecord(const FieldDecl *FD,
+                                                  // TO_UPSTREAM(BoundsSafety)
+                                                          Sema &S) {
+  const auto *RD = FD->getParent();
+  // An unnamed struct is treated as anonymous struct at this point.
+  // A struct may not be fully processed yet to determine
+  // whether it's anonymous or not. In that case, this function treats it as
+  // an anonymous struct and tries to find a named parent.
+
+  /* TO_UPSTREAM(BoundsSafety) ON*/
+  const auto *ParentOfDeclWithAttr = FD->getParent();
+  auto ShouldGetParent = [&]() -> bool {
+    if (!S.getLangOpts().ExperimentalLateParseAttributes ||
+        RD != ParentOfDeclWithAttr) {
+      // This is the condition in upstream
+      return (RD->isAnonymousStructOrUnion() ||
+              (!RD->isCompleteDefinition() && RD->getName().empty()));
+    }
+    // In `Parser::ParseStructUnionBody` we have an Apple Internal change
+    // to call `Actions.ActOnFields` **before** late parsed attributes are
+    // semantically checked. In upstream `Action.ActOnFields` is called
+    // afterwards. The effect of this is observable in this function because
+    // `RD->isCompleteDefinition()` will return true for the struct we are
+    // processing the attributes on with the Apple Internal change and false
+    // in upstream.
+    //
+    // E.g.:
+    //
+    // struct on_pointer_anon_buf {
+    // int count;
+    //   struct {
+    //     struct size_known *buf __counted_by(count);
+    //   }; // <<-- Processing late parsed attrs of this struct
+    // };
+    //
+    // For this particular example what's also counter-intuitive is that
+    // `RD->isAnonymousStructOrUnion()` returns false for the anonymous
+    // struct, that's because the `;` after the struct hasn't been processed
+    // yet so it hasn't been marked as anonymous yet.
+
+    // HACK:
+    // To make lit tests work we don't test `RD->isCompleteDefinition()`
+    // when it's the RecordDecl that contains the FieldDecl with a `counted_by`
+    // like attribute (that we are in the middle of checking). Once we've gone
+    // beyond that RecordDecl we traverse just like upstream clang does.
+    //
+    // TODO: Remove this hack once we upstream the `Actions.ActOnFields`
+    // change (rdar://133402603).
+    assert(RD == ParentOfDeclWithAttr);
+    return RD->isAnonymousStructOrUnion() || RD->getName().empty();
+  };
+  /* TO_UPSTREAM(BoundsSafety) OFF*/
+
+  while (RD && ShouldGetParent()) {
+    const auto *Parent = dyn_cast<RecordDecl>(RD->getParent());
+    if (!Parent)
+      break;
+    RD = Parent;
+  }
+  return RD;
+}
+
 enum class CountedByInvalidPointeeTypeKind {
   INCOMPLETE,
   SIZELESS,
@@ -431,69 +493,6 @@ bool Sema::ValidateBoundsAttrTypeForTypePosition(
 
   return true;
 }
-
-static const RecordDecl *GetEnclosingNamedOrTopAnonRecord(const FieldDecl *FD,
-                                                  // TO_UPSTREAM(BoundsSafety)
-                                                          Sema &S) {
-  const auto *RD = FD->getParent();
-  // An unnamed struct is treated as anonymous struct at this point.
-  // A struct may not be fully processed yet to determine
-  // whether it's anonymous or not. In that case, this function treats it as
-  // an anonymous struct and tries to find a named parent.
-
-  /* TO_UPSTREAM(BoundsSafety) ON*/
-  const auto *ParentOfDeclWithAttr = FD->getParent();
-  auto ShouldGetParent = [&]() -> bool {
-    if (!S.getLangOpts().ExperimentalLateParseAttributes ||
-        RD != ParentOfDeclWithAttr) {
-      // This is the condition in upstream
-      return (RD->isAnonymousStructOrUnion() ||
-              (!RD->isCompleteDefinition() && RD->getName().empty()));
-    }
-    // In `Parser::ParseStructUnionBody` we have an Apple Internal change
-    // to call `Actions.ActOnFields` **before** late parsed attributes are
-    // semantically checked. In upstream `Action.ActOnFields` is called
-    // afterwards. The effect of this is observable in this function because
-    // `RD->isCompleteDefinition()` will return true for the struct we are
-    // processing the attributes on with the Apple Internal change and false
-    // in upstream.
-    //
-    // E.g.:
-    //
-    // struct on_pointer_anon_buf {
-    // int count;
-    //   struct {
-    //     struct size_known *buf __counted_by(count);
-    //   }; // <<-- Processing late parsed attrs of this struct
-    // };
-    //
-    // For this particular example what's also counter-intuitive is that
-    // `RD->isAnonymousStructOrUnion()` returns false for the anonymous
-    // struct, that's because the `;` after the struct hasn't been processed
-    // yet so it hasn't been marked as anonymous yet.
-
-    // HACK:
-    // To make lit tests work we don't test `RD->isCompleteDefinition()`
-    // when it's the RecordDecl that contains the FieldDecl with a `counted_by`
-    // like attribute (that we are in the middle of checking). Once we've gone
-    // beyond that RecordDecl we traverse just like upstream clang does.
-    //
-    // TODO: Remove this hack once we upstream the `Actions.ActOnFields`
-    // change (rdar://133402603).
-    assert(RD == ParentOfDeclWithAttr);
-    return RD->isAnonymousStructOrUnion() || RD->getName().empty();
-  };
-  /* TO_UPSTREAM(BoundsSafety) OFF*/
-
-  while (RD && ShouldGetParent()) {
-    const auto *Parent = dyn_cast<RecordDecl>(RD->getParent());
-    if (!Parent)
-      break;
-    RD = Parent;
-  }
-  return RD;
-}
-
 
 bool Sema::CheckCountedByAttrOnField(FieldDecl *FD, Expr *E, bool CountInBytes,
                                      bool OrNull) {
