@@ -434,6 +434,7 @@ private:
   void visitVAArgInst(VAArgInst &VAA) { visitInstruction(VAA); }
   void visitCallInst(CallInst &CI);
   void visitInvokeInst(InvokeInst &II);
+  void checkGEPOperator(const GEPOperator &GEP);
   void visitGetElementPtrInst(GetElementPtrInst &GEP);
   void visitLoadInst(LoadInst &LI);
   void visitStoreInst(StoreInst &SI);
@@ -3046,6 +3047,8 @@ void Verifier::visitConstantExpr(const ConstantExpr *CE) {
           "Invalid bitcast", CE);
   } else if (CE->getOpcode() == Instruction::PtrToAddr)
     checkPtrToAddr(CE->getOperand(0)->getType(), CE->getType(), *CE);
+  else if (CE->getOpcode() == Instruction::GetElementPtr)
+    checkGEPOperator(cast<GEPOperator>(*CE));
 }
 
 void Verifier::visitConstantPtrAuth(const ConstantPtrAuth *CPA) {
@@ -4759,12 +4762,7 @@ void Verifier::visitBitExtractInst(BitExtractInst &BEI) {
   visitInstruction(BEI);
 }
 
-void Verifier::visitGetElementPtrInst(GetElementPtrInst &GEP) {
-  if (auto *MD = mdconst::extract_or_null<ConstantInt>(
-          GEP.getModule()->getModuleFlag("require-logical-pointer")))
-    Check(!MD->getZExtValue(),
-          "Non-logical getelementptr disallowed for this module.");
-
+void Verifier::checkGEPOperator(const GEPOperator &GEP) {
   Type *TargetTy = GEP.getPointerOperandType()->getScalarType();
 
   Check(isa<PointerType>(TargetTy),
@@ -4821,9 +4819,17 @@ void Verifier::visitGetElementPtrInst(GetElementPtrInst &GEP) {
     }
   }
 
-  Check(GEP.getAddressSpace() == PtrTy->getAddressSpace(),
+  Check(GEP.getPointerAddressSpace() == PtrTy->getAddressSpace(),
         "GEP address space doesn't match type", &GEP);
+}
 
+void Verifier::visitGetElementPtrInst(GetElementPtrInst &GEP) {
+  if (auto *MD = mdconst::extract_or_null<ConstantInt>(
+          GEP.getModule()->getModuleFlag("require-logical-pointer")))
+    Check(!MD->getZExtValue(),
+          "Non-logical getelementptr disallowed for this module.");
+
+  checkGEPOperator(cast<GEPOperator>(GEP));
   visitInstruction(GEP);
 }
 
