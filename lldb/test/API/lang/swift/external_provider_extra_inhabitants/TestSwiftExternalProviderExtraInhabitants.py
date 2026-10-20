@@ -10,7 +10,7 @@ class TestSwiftExternalProviderExtraInhabitants(TestBase):
 
     @requireDarwin
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     def test(self):
         self.build()
         lldbutil.run_to_source_breakpoint(

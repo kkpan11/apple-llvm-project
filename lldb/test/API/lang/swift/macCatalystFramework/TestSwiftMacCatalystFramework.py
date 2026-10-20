@@ -8,7 +8,7 @@ class TestSwiftMacCatalystFramework(TestBase):
 
     NO_DEBUG_INFO_TESTCASE = True
 
-    @swiftTest
+    @swiftClangImporterTest
     @skipIf(macos_version=["<", "26"])
     @requireDarwin
     @skipIfDarwinEmbedded

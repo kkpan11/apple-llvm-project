@@ -5,7 +5,7 @@ import lldbsuite.test.lldbutil as lldbutil
 
 class TestSwiftOptionalClangTyoe(lldbtest.TestBase):
 
-    @swiftTest
+    @swiftClangImporterTest
     # This enum cannot be projected.
     @skipIf(bugnumber='rdar://148275422')
     def test(self):

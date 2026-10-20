@@ -16,10 +16,9 @@ class TestSwiftInlineDiagnostics(lldbpexpect.PExpectTest):
     # so this has to go through a pty.
     #
     # The rendering doesn't depend on how the expression was compiled or on
-    # how its types were imported, so the embedded and noclang variants
-    # exercise nothing new.
+    # how its types were imported, so the embedded variant exercises nothing
+    # new.
     @skipEmbeddedSwift
-    @skipIf(swift_module_importer="noclang")
     @swiftTest
     def test_inline_diagnostics(self):
         self.build()

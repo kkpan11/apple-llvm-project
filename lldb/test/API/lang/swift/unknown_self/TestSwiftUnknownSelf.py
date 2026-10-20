@@ -37,7 +37,7 @@ class TestSwiftUnknownSelf(lldbtest.TestBase):
     @skipIf(bugnumber="SR-10216", archs=['ppc64le'])
     @skipUnlessFoundationEssentials
     @skipIfLinux  # https://github.com/swiftlang/llvm-project/issues/13465
-    @swiftTest
+    @swiftClangImporterTest
     def test_unknown_self_objc_ref(self):
         """Test unknown references to Objective-C objects."""
         self.build()

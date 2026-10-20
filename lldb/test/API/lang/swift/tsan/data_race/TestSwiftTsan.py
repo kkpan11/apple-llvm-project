@@ -25,7 +25,7 @@ class TsanSwiftTestCase(lldbtest.TestBase):
     mydir = lldbtest.TestBase.compute_mydir(__file__)
 
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     @requireTSAN
     @skipIfLinux
     @skipUnlessSwiftThreadSanitizer

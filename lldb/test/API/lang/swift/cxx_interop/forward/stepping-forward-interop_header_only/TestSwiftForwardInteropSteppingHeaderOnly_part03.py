@@ -8,7 +8,7 @@ from lldbsuite.test.decorators import *
 
 class TestSwiftForwardInteropSteppingHeaderOnly(TestBase):
 
-    @swiftTest
+    @swiftClangImporterTest
     @skipEmbeddedSwiftOnWindows
     def test_step_into_call_operator(self):
         """ Test that stepping into a C++ call operator works"""
@@ -26,7 +26,7 @@ class TestSwiftForwardInteropSteppingHeaderOnly(TestBase):
         name = thread.frames[0].GetFunctionName()
         self.assertIn('testCallOperator', name)
 
-    @swiftTest
+    @swiftClangImporterTest
     @skipEmbeddedSwiftOnWindows
     def test_step_over_call_operator(self):
         """ Test that stepping over a C++ call operator works"""

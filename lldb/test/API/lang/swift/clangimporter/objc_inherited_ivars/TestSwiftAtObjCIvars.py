@@ -28,7 +28,7 @@ class TestSwiftAtObjCIvars(TestBase):
 
     @requireNotEmbeddedSwift
     @skipUnlessDarwin
-    @swiftTest
+    @swiftClangImporterTest
     def test_swift_at_objc_ivars(self):
         """Test ObjC instance variables"""
         self.build()

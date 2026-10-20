@@ -19,7 +19,7 @@ class TestSwiftProgressReporting(TestBase):
     # Don't run ClangImporter tests if Clangimporter is disabled.
     @skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
     @skipUnlessDarwin
-    @swiftTest
+    @swiftClangImporterTest
     def test_swift_progress_report(self):
         """Test that we are able to fetch swift type-system progress events"""
         self.build()

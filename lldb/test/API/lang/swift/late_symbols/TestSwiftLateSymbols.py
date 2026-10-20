@@ -8,7 +8,7 @@ import os
 class TestSwiftLateSymbols(TestBase):
     SHARED_BUILD_TESTCASE = False
 
-    @swiftTest
+    @swiftClangImporterTest
     @requireDarwin
     @skipIf(debug_info=no_match(["dsym"]))
     def test_any_object_type(self):

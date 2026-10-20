@@ -6,7 +6,7 @@ class TestSwiftLateSwiftDylibClangDeps(TestBase):
     @requireNotEmbeddedSwift
     @skipIf(macos_version=["<", "14.0"])
     @skipUnlessDarwin
-    @swiftTest
+    @swiftClangImporterTest
     @skipIfDarwinEmbedded 
     def test(self):
         """Test that the reflection metadata cache is invalidated

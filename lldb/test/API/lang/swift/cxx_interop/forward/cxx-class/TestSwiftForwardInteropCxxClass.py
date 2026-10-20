@@ -9,7 +9,7 @@ from lldbsuite.test.decorators import *
 class TestSwiftForwardInteropCxxClass(TestBase):
 
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     def test_class(self):
         self.build()
         _, _, _, _= lldbutil.run_to_source_breakpoint(

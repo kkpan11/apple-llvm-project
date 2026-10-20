@@ -6,7 +6,7 @@ import lldbsuite.test.lldbutil as lldbutil
 
 class TestCase(TestBase):
 
-    @swiftTest
+    @swiftClangImporterTest
     @requireNotEmbeddedSwift
     @requireSwiftObjCInterop
     def test(self):

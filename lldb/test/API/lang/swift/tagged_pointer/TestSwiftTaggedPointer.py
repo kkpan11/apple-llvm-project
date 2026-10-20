@@ -8,7 +8,7 @@ class TestSwiftTaggedPointer(lldbtest.TestBase):
     mydir = lldbtest.TestBase.compute_mydir(__file__)
 
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     # This test depends on NSObject, so it is not available on non-Darwin
     # platforms.
     @requireObjCFoundation

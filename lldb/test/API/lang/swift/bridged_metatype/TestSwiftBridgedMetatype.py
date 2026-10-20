@@ -10,7 +10,7 @@ import os
 
 class TestSwiftBridgedMetatype(TestBase):
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     @requireObjCFoundation
     def test_swift_bridged_metatype(self):
         """Test the formatting of bridged Swift metatypes"""

@@ -34,7 +34,7 @@ class SwiftStaticLinkingMacOSTestCase(TestBase):
 
     @requireNotEmbeddedSwift
     @requireSwiftObjCInterop
-    @swiftTest
+    @swiftClangImporterTest
     def test_variables_print_from_both_swift_modules(self):
         """Test that variables from two modules can be accessed."""
         self.build()

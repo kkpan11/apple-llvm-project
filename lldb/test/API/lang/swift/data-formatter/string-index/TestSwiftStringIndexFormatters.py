@@ -14,7 +14,7 @@ class TestCase(TestBase):
     @requireNotEmbeddedSwift
     @skipUnlessFoundationEssentials
     @skipIfLinux  # https://github.com/swiftlang/llvm-project/issues/13465
-    @swiftTest
+    @swiftClangImporterTest
     def test(self):
         """Test String.Index summary strings for native and bridged Strings."""
         self.build()

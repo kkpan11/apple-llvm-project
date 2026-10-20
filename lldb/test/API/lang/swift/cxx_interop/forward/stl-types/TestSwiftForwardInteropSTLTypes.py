@@ -13,7 +13,7 @@ class TestSwiftForwardInteropSTLTypes(TestBase):
         setting=("symbols.use-swift-clangimporter", "false")
     )  # rdar://106438227 (TestSTLTypes fails when clang importer is disabled)
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     @skipIfWindows
     def test(self):
         self.build()

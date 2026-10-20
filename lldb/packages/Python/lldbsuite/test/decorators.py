@@ -1191,6 +1191,18 @@ def swiftTest(func):
 
     return skipTestIfFn(is_not_swift_compatible)(func)
 
+
+def swiftClangImporterTest(func):
+    """Decorate the item as a Swift test that uses Clang modules.
+
+    In addition to the swiftTest variants, these tests run with the
+    ClangImporter disabled, so that LLDB imports Clang types from DWARF.
+    """
+
+    func.__swift_clang_importer_test__ = True
+    return swiftTest(func)
+
+
 def requiresSwiftPlugin(min_apple_os_version=None):
     """Mark a test that can only pass when LLDB has the Swift language plugin.
 

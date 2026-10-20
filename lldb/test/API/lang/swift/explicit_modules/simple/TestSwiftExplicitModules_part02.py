@@ -10,7 +10,7 @@ import lldbsuite.test.lldbutil as lldbutil
 class TestSwiftExplicitModules(lldbtest.TestBase):
 
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     @skipIfLinux
     # Not working correctly with DWARFImporter. NSData may get an
     # incomplete definition that also isn't updated when Foundation is

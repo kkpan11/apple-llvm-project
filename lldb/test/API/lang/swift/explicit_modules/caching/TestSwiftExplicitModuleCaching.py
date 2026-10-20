@@ -8,7 +8,7 @@ class TestSwiftExplicitModuleCaching(TestBase):
     # Don't run ClangImporter tests if Clangimporter is disabled.
     @skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
     @skipUnlessDarwin
-    @swiftTest
+    @swiftClangImporterTest
     def test(self):
         self.build()
         target, process, thread, bkpt = lldbutil.run_to_source_breakpoint(

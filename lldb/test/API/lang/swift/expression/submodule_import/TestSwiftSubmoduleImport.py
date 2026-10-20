@@ -24,7 +24,7 @@ class TestSwiftSubmoduleImport(TestBase):
     # test to run on both systems...
 
     @requireDarwin
-    @swiftTest
+    @swiftClangImporterTest
     def test_swift_submodule_import(self):
         """Tests that swift expressions can import sub-modules correctly"""
         self.build()

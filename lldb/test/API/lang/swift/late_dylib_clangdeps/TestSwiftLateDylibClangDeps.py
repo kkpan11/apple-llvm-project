@@ -5,7 +5,7 @@ import lldbsuite.test.lldbutil as lldbutil
 class TestSwiftLateDylibClangDeps(TestBase):
     @requireNotEmbeddedSwift
     @skipUnlessDarwin
-    @swiftTest
+    @swiftClangImporterTest
     @skipIfDarwinEmbedded 
     def test(self):
         """Test that a late loaded Swift dylib with Clang dependencies is debuggable"""

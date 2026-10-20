@@ -15,7 +15,7 @@ class TestSwiftBackwardInteropFormatSwiftTypesInCxx(TestBase):
         _, _, _, _= lldbutil.run_to_source_breakpoint(
             self, bkpt_str, lldb.SBFileSpec('main.cpp'))
 
-    @swiftTest
+    @swiftClangImporterTest
     def test_class(self):
         self.setup('Break here for class')
 
@@ -26,7 +26,7 @@ class TestSwiftBackwardInteropFormatSwiftTypesInCxx(TestBase):
             'arr = 4 values', '[0] = "An"', '[1] = "array"', '[2] = "of"', 
             '[3] = "strings"'])
         
-    @swiftTest
+    @swiftClangImporterTest
     def test_subclass(self):
         self.setup('Break here for subclass')
 
@@ -37,7 +37,7 @@ class TestSwiftBackwardInteropFormatSwiftTypesInCxx(TestBase):
             'arr = 4 values', '[0] = "An"', '[1] = "array"', '[2] = "of"', 
             '[3] = "strings"', 'extraField = "this is an extra subclass field"'])
 
-    @swiftTest
+    @swiftClangImporterTest
     def test_struct(self):
         self.setup('Break here for struct')
 
@@ -46,7 +46,7 @@ class TestSwiftBackwardInteropFormatSwiftTypesInCxx(TestBase):
         self.expect('expr swiftStruct', substrs=['SwiftStruct', 'str = "Hello this is a big string"', 
             'boolean = true'])
 
-    @swiftTest
+    @swiftClangImporterTest
     def test_generic_struct(self):
         self.setup('Break here for generic struct')
 
@@ -58,7 +58,7 @@ class TestSwiftBackwardInteropFormatSwiftTypesInCxx(TestBase):
                 '[3] = "strings"', 'str = "Hello this is a big string"', 'boolean = true'])
 
 
-    @swiftTest
+    @swiftClangImporterTest
     def test_generic_enum(self):
         self.setup('Break here for generic enum')
 
@@ -70,7 +70,7 @@ class TestSwiftBackwardInteropFormatSwiftTypesInCxx(TestBase):
                 '[3] = "strings"'])
 
 
-    @swiftTest
+    @swiftClangImporterTest
     def test_swift_ivars(self):
         self.setup('Break here for swift ivars')
 
@@ -87,7 +87,7 @@ class TestSwiftBackwardInteropFormatSwiftTypesInCxx(TestBase):
                 'extraField = "this is an extra subclass field"',
                 'str = "Hello this is a big string"', 'boolean = true'])
 
-    @swiftTest
+    @swiftClangImporterTest
     def test_typealias(self):
         self.setup('Break here for swift alias')
 
