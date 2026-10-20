@@ -743,6 +743,11 @@ static Decomposition decomposeGEP(GEPOperator &GEP, ConstraintInfo &Info,
              "Must have nusw flag");
       if (!Info.isKnownNonNegative(Index))
         return &GEP;
+    } else if (!NW.hasNoUnsignedSignedWrap()) {
+      // For a nuw-only GEP, the scale is unsigned and must fit in the signed
+      // coefficient.
+      if (Scale.isNegative())
+        return &GEP;
     }
 
     auto IdxResult = decompose(Index, Info, IsSigned, State);
