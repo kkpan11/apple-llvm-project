@@ -2215,7 +2215,6 @@ Token ASTReader::ReadToken(ModuleFile &M, const RecordDataImpl &Record,
     case tok::annot_pragma_unused:
     case tok::annot_pragma_openacc:
     case tok::annot_pragma_openacc_end:
-    case tok::annot_repl_input_end:
       break;
     default:
       llvm_unreachable("missing deserialization code for annotation token");
