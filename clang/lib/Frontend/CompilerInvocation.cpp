@@ -5934,10 +5934,9 @@ CompilerInvocation::computeContextHash(DiagnosticsEngine &Diags) const {
   HBuilder.add(getFrontendOpts().CacheCompileJob,
                getFrontendOpts().ForIncludeTreeScan);
 
-  // Include trees stored in scanning PCMs already have prefix mappings applied.
-  // A PCM built with different mappings cannot provide the correct include tree.
-  if (getFrontendOpts().ForIncludeTreeScan)
-    HBuilder.addRange(getFrontendOpts().PathPrefixMappings);
+  // Scanning PCMs store include trees with prefix mappings already applied.
+  // Include the mappings in the hash to avoid reusing stale mapped paths.
+  HBuilder.addRange(getFrontendOpts().PathPrefixMappings);
 
   llvm::MD5::MD5Result Result;
   HBuilder.getHasher().final(Result);
