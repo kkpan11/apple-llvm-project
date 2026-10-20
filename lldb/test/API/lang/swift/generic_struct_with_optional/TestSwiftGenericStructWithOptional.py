@@ -7,7 +7,7 @@ import lldbsuite.test.lldbutil as lldbutil
 class TestSwiftGenericStructWithOptional(TestBase):
 
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     @skipIfLinux
     def test(self):
         """Test a generic struct holding an Optional<Data> and an enum in a closure"""

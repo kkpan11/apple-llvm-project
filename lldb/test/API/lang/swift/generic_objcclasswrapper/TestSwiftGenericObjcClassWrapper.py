@@ -20,7 +20,7 @@ class TestSwiftGenericObjcClassWrapper(TestBase):
                                 use_dynamic=True, summary="0 key/value pairs")
 
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     @requireObjCFoundation
     def test(self):
         """Test that an ObjC object passed through a generic function is resolved"""

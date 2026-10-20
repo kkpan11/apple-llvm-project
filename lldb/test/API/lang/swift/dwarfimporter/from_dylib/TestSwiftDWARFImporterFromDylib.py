@@ -9,7 +9,7 @@ class TestSwiftDWARFImporterFromDylib(lldbtest.TestBase):
     mydir = lldbtest.TestBase.compute_mydir(__file__)
 
     @skipEmbeddedSwift # rdar://184868790 (Embedded Swift: dead-function elimination removes symbols expressions need, and struct size is uncomputable from static debug info)
-    @swiftTest
+    @swiftClangImporterTest
     # This test needs a working Remote Mirrors implementation.
     @skipIfLinux
     def test_dwarf_importer(self):

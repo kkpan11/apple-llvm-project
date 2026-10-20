@@ -27,7 +27,7 @@ class TestSwiftDeploymentTarget(TestBase):
     @requireDarwin
     @skipIfDarwinEmbedded # This test uses macOS triples explicitly.
     @skipIf(macos_version=["<", "15.0"])
-    @swiftTest
+    @swiftClangImporterTest
     def test_swift_deployment_target(self):
         self.build()
         lldbutil.run_to_source_breakpoint(self,
@@ -39,7 +39,7 @@ class TestSwiftDeploymentTarget(TestBase):
     @requireDarwin
     @skipIfDarwinEmbedded # This test uses macOS triples explicitly.
     @skipIf(macos_version=["<", "15.0"])
-    @swiftTest
+    @swiftClangImporterTest
     def test_swift_deployment_target_dlopen(self):
         self.build()
         target, process, _, _, = lldbutil.run_to_name_breakpoint(
@@ -56,7 +56,7 @@ class TestSwiftDeploymentTarget(TestBase):
     # FIXME: This config started failing in CI only after switching to
     # the query-based FindTypes API.
     @skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
-    @swiftTest
+    @swiftClangImporterTest
     def test_swift_deployment_target_from_macho(self):
         self.build(dictionary={"MAKE_DSYM": "NO"})
         os.unlink(self.getBuildArtifact("a.swiftmodule"))
@@ -74,7 +74,7 @@ class TestSwiftDeploymentTarget(TestBase):
     @requireDarwin
     @skipIfDarwinEmbedded
     @skipIf(macos_version=["<", "15.0"])
-    @swiftTest
+    @swiftClangImporterTest
     def test_swift_precise_compiler_invocation_triple(self):
         """
         Ensure expressions prefer the target triple of their module, as it may

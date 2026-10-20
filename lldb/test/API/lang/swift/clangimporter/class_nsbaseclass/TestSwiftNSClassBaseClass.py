@@ -7,7 +7,7 @@ class TestSwiftNSClassBaseClass(TestBase):
 
     NO_DEBUG_INFO_TESTCASE = True
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     @requireSwiftObjCInterop
     def test(self):
         self.build()

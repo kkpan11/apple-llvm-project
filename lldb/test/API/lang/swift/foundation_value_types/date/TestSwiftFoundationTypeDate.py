@@ -18,7 +18,7 @@ import lldbsuite.test.lldbutil as lldbutil
 class TestSwiftFoundationTypeDate(TestBase):
 
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     @skipIf(oslist=["linux"])
     def test(self):
         """Test the summary of a Date variable and expression result"""

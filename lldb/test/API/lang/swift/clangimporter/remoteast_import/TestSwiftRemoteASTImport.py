@@ -21,7 +21,7 @@ class TestSwiftRemoteASTImport(TestBase):
     # Don't run ClangImporter tests if Clangimporter is disabled.
     @skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
     @skipIfLinux
-    @swiftTest
+    @swiftClangImporterTest
     def testSwiftRemoteASTImport(self):
         """This tests that RemoteAST querying the dynamic type of a variable
         doesn't import any modules into a module SwiftASTContext that

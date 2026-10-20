@@ -6,7 +6,7 @@ import lldbsuite.test.lldbutil as lldbutil
 class TestSwiftFoundationTypeCFStringRef(TestBase):
     NO_DEBUG_INFO_TESTCASE = True
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     @requireObjCFoundation
     def test(self):
         self.build()

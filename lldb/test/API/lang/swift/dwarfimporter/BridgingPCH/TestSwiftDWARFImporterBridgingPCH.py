@@ -38,7 +38,7 @@ class TestSwiftDWARFImporterBridgingHeader(lldbtest.TestBase):
     @skipIf(archs=['ppc64le'], bugnumber='SR-10214')
     @skipEmbeddedSwiftOnWindows
     #@skipIf(debug_info=no_match(["dsym"]))
-    @swiftTest
+    @swiftClangImporterTest
     def test_dwarf_importer(self):
         lldb.SBDebugger.MemoryPressureDetected()
         self.runCmd("settings set symbols.use-swift-dwarfimporter true")

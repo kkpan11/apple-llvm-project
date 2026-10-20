@@ -23,7 +23,7 @@ class TestSwiftHeadermapConflict(TestBase):
         setting=("symbols.use-swift-clangimporter", "false"),
     )
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     def test(self):
         # To ensure we hit the rebuild problem remove the cache to avoid caching.
         mod_cache = self.getBuildArtifact("my-clang-modules-cache")

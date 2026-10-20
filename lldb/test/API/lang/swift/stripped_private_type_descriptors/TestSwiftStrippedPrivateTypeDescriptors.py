@@ -29,7 +29,7 @@ class TestSwiftStrippedPrivateTypeDescriptors(TestBase):
 
     @requireNotEmbeddedSwift
     @skipUnlessDarwin
-    @swiftTest
+    @swiftClangImporterTest
     def test(self):
         self.build()
         # Which of the field descriptors sharing a name wins depends on the

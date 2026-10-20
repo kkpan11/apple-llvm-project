@@ -17,7 +17,7 @@ import lldbsuite.test.lldbutil as lldbutil
 
 class TestSwiftFoundationTypeURLComponents(TestBase):
 
-    @swiftTest
+    @swiftClangImporterTest
     @requireObjCFoundation
     @expectedFailureAll(bugnumber='rdar://32800121')
     def test(self):

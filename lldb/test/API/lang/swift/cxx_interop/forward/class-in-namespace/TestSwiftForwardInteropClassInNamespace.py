@@ -9,7 +9,7 @@ from lldbsuite.test.decorators import *
 class TestSwiftForwardInteropClassInNamespace(TestBase):
 
     @skipIf(setting=('symbols.use-swift-clangimporter', 'false'))
-    @swiftTest
+    @swiftClangImporterTest
     @skipEmbeddedSwiftOnWindows
     def test_class(self):
         self.build()

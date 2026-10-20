@@ -6,7 +6,7 @@ import os
 
 
 class TestSwiftMacCatalyst(TestBase):
-    @swiftTest
+    @swiftClangImporterTest
     @skipIf(macos_version=["<", "10.15"])
     @requireDarwin
     @skipIfDarwinEmbedded

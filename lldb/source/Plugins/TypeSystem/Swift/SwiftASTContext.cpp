@@ -1130,6 +1130,8 @@ void SwiftASTContext::SetCompilerInvocationLLDBOverrides() {
   }
 }
 
+static bool IsDWARFImported(const swift::ModuleDecl &module);
+
 SwiftASTContext::~SwiftASTContext() {
 #ifndef NDEBUG
   m_ast_context_mutex.lock();
@@ -1138,6 +1140,55 @@ SwiftASTContext::~SwiftASTContext() {
     // to be destroyed before the swift::ASTContext is destroyed.
     assert(!GetASTMap().Lookup(ctx) && "ast context still in global map");
   m_ast_context_mutex.unlock();
+
+  // The test suite runs Swift tests that use Clang a second time with the
+  // ClangImporter disabled, which is pointless for programs that don't import
+  // any Clang modules or bridging headers. Heuristically check that tests are
+  // marked correctly: With the ClangImporter disabled, every context that
+  // loaded user code should also load a bridging header or a Clang module other
+  // than the Swift runtime's shims. Otherwise, no context should load either.
+  const auto &props = ModuleList::GetGlobalModuleListProperties();
+  bool clangimporter_disabled =
+      m_compiler_invocation_up &&
+      m_compiler_invocation_up->getClangImporterOptions().DisableSourceImport;
+  if (props.GetSwiftValidateTypeSystem() &&
+      (clangimporter_disabled || TestingProperties::GetGlobalTestingProperties()
+                                     .GetSwiftValidateNoClangImports()) &&
+      m_ast_context_up && !HasFatalErrors()) {
+    bool user_module = false;
+    bool clang_module = false;
+    for (auto &entry : m_ast_context_up->getLoadedModules()) {
+      llvm::StringRef name = entry.second->getName().str();
+      // Implicit stdlib imports and expressions don't count as user code.
+      if (!entry.second->isNonSwiftModule()) {
+        user_module |= name != "Swift" && name != "SwiftOnoneSupport" &&
+                       !name.starts_with("_");
+        // A Clang module is registered under the name of its Swift overlay.
+        clang_module |= entry.second->getUnderlyingModuleIfOverlay() != nullptr;
+        // A bridging header is imported as the ClangImporter's header module.
+        if (m_clangimporter) {
+          llvm::SmallVector<swift::ImportedModule, 8> imports;
+          entry.second->getImportedModules(
+              imports, swift::ModuleDecl::getImportFilterAll());
+          clang_module |= llvm::any_of(imports, [&](const auto &import) {
+            return import.importedModule ==
+                   m_clangimporter->getImportedHeaderModule();
+          });
+        }
+      } else if (!name.ends_with("Shims")) {
+        // With the ClangImporter enabled, DWARFImporter only stands in for
+        // Swift modules that failed to load.
+        clang_module |=
+            clangimporter_disabled || !IsDWARFImported(*entry.second);
+      }
+    }
+    if (clangimporter_disabled)
+      assert((!user_module || clang_module) &&
+             "ClangImporter disabled, but no Clang module was imported");
+    else
+      assert(!clang_module &&
+             "Clang module imported, but the ClangImporter is never disabled");
+  }
 #endif
 }
 

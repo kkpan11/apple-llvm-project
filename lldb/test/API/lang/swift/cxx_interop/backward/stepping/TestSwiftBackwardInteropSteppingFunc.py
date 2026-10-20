@@ -34,13 +34,13 @@ class TestSwiftBackwardInteropSteppingFunc(TestBase):
         self.assertIn(func, name)
 
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     def test_func_step_in(self):
         thread = self.setup("Break here for func")
         self.check_step_in(thread, "testFunc", "swiftFunc")
 
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     def test_func_step_over(self):
         thread = self.setup("Break here for func")
         self.check_step_over(thread, "testFunc")

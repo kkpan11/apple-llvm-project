@@ -15,7 +15,7 @@ import json
 class MTCSwiftPropertyTestCase(TestBase):
     @requireNotEmbeddedSwift
     @requireDarwin
-    @swiftTest
+    @swiftClangImporterTest
     def test(self):
         self.mtc_dylib_path = findMainThreadCheckerDylib()
         self.assertTrue(self.mtc_dylib_path != "")

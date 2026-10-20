@@ -13,12 +13,6 @@ class TestSwiftLazyFramework(lldbtest.TestBase):
     @skipEmbeddedSwift # rdar://184839637 (Type lookup searches the frame's module, not the type's owning module)
     @swiftTest
     @requireMacOS
-    # FIXME: Without the ClangImporter, transitive module dependencies can't be
-    # fully resolved, so collectLinkLibraries() misses autolinked frameworks.
-    # This causes DoLoadImage() to allocate memory while the process is still
-    # running, which fails and leaves the process in a bad state, ultimately
-    # timing out with "didn't get any event after resume".
-    @skipIf(setting=("symbols.use-swift-clangimporter", "false"))
     def test(self):
         """Test that a framework that is registered as autolinked in a Swift
            module used in the target, but not linked against the target is

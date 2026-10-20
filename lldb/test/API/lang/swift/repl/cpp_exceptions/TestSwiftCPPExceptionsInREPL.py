@@ -24,7 +24,7 @@ class TestSwiftREPLExceptions(TestBase):
     NO_DEBUG_INFO_TESTCASE = True
 
     @skipUnlessDarwin
-    @swiftTest
+    @swiftClangImporterTest
     def DISABLED_test_set_repl_mode_exceptions(self):
         """ Test that SetREPLMode turns off trapping exceptions."""
         self.build()
@@ -33,7 +33,7 @@ class TestSwiftREPLExceptions(TestBase):
 
     @requireNotEmbeddedSwift
     @skipUnlessDarwin
-    @swiftTest
+    @swiftClangImporterTest
     def test_repl_exceptions(self):
         """ Test the lldb --repl turns off trapping exceptions."""
         self.build()

@@ -12,8 +12,6 @@ class TestSwiftMissingVFSOverlay(TestBase):
         TestBase.setUp(self)
 
     @requireNotEmbeddedSwift
-    # Don't run ClangImporter tests if Clangimporter is disabled.
-    @skipIf(setting=("symbols.use-swift-clangimporter", "false"))
     @swiftTest
     def test(self):
         """This used to be a test for a diagnostic, however,

@@ -18,7 +18,7 @@ import lldbsuite.test.lldbutil as lldbutil
 class TestSwiftPONestedNSDictionary(TestBase):
 
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     @requireObjCFoundation
     def test(self):
         """Test po of a dictionary with nested NSArray and NSDictionary values"""

@@ -76,6 +76,7 @@ class Target;
 struct TestingProperties : public Properties {
   TestingProperties();
   bool GetInjectVarLocListError() const;
+  bool GetSwiftValidateNoClangImports() const;
   static TestingProperties &GetGlobalTestingProperties();
 
   /// Overwrites the testing.safe-auto-load-paths settings.

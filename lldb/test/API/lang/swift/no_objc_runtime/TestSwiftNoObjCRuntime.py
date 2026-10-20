@@ -11,7 +11,7 @@ class TestSwiftNoObjCRuntime(TestBase):
     @skipIf(swift_module_importer="noclang")
     @requireNotEmbeddedSwift
     @requireSwiftObjCInterop
-    @swiftTest
+    @swiftClangImporterTest
     def test(self):
         """Test Swift expressions that use Objective-C classes when LLDB
         has no Objective-C runtime for the process"""

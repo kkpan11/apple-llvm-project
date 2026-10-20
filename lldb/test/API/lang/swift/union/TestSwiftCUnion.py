@@ -10,7 +10,7 @@ class TestSwiftCUnion(lldbtest.TestBase):
     mydir = lldbtest.TestBase.compute_mydir(__file__)
 
     @skipEmbeddedSwiftOnWindows
-    @swiftTest
+    @swiftClangImporterTest
     def test_c_unions(self):
         self.build()
         target, process, thread, bkpt = lldbutil.run_to_source_breakpoint(

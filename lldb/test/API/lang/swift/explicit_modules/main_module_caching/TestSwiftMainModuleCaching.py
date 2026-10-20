@@ -33,7 +33,6 @@ class TestSwiftMainModuleCaching(TestBase):
         self.expect("expression 1", substrs=["(Int) $", " = 1"])
         return log
 
-    @skipIf(setting=("symbols.use-swift-clangimporter", "false"))
     @requireNotEmbeddedSwift
     @skipUnlessDarwin
     @swiftTest
@@ -43,7 +42,6 @@ class TestSwiftMainModuleCaching(TestBase):
             self.run_to_expression(), __file__, "--check-prefixes=CHECK,CAS-LOAD"
         )
 
-    @skipIf(setting=("symbols.use-swift-clangimporter", "false"))
     @requireNotEmbeddedSwift
     @skipUnlessDarwin
     @swiftTest

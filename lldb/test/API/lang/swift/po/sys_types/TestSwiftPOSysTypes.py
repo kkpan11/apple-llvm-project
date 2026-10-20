@@ -18,7 +18,7 @@ import lldbsuite.test.lldbutil as lldbutil
 class TestSwiftPOSysTypes(TestBase):
 
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     @requireSwiftObjCInterop
     def test(self):
         """Test po on Swift standard library and Foundation types"""

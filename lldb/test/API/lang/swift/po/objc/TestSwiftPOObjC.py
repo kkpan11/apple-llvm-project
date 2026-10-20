@@ -7,7 +7,7 @@ class TestSwiftPOObjC(TestBase):
     @requireNotEmbeddedSwift
     #NO_DEBUG_INFO_TESTCASE = True
     @requireSwiftObjCInterop
-    @swiftTest
+    @swiftClangImporterTest
     def test(self):
         """Test running po on a Swift object from Objective-C. This
         should initialize a generic SwiftASTContext with no parsing of

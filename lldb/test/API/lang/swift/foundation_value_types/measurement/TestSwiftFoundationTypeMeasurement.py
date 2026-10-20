@@ -17,7 +17,7 @@ from lldbsuite.test import lldbutil
 
 @skipIf(macos_version=["=", "15.0"])
 class TestCase(TestBase):
-    @swiftTest
+    @swiftClangImporterTest
     @skipUnlessDarwin
     @expectedFailureAll(
         bugnumber="rdar://60396797",
@@ -32,7 +32,7 @@ class TestCase(TestBase):
         self.expect("expr -- measurement", substrs=["1.25 m"])
 
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     @skipUnlessDarwin
     def test_measurement_without_swift_ast_context(self):
         self.build()

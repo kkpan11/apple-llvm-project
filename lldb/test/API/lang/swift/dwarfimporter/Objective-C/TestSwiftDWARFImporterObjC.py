@@ -36,7 +36,7 @@ class TestSwiftDWARFImporterObjC(lldbtest.TestBase):
 
     @requireNotEmbeddedSwift
     @requireSwiftObjCInterop
-    @swiftTest
+    @swiftClangImporterTest
     def test(self):
         self.runCmd("settings set symbols.use-swift-dwarfimporter true")
 
@@ -63,7 +63,7 @@ class TestSwiftDWARFImporterObjC(lldbtest.TestBase):
 
     @requireNotEmbeddedSwift
     @requireSwiftObjCInterop
-    @swiftTest
+    @swiftClangImporterTest
     def test_expr(self):
         self.runCmd("settings set symbols.use-swift-dwarfimporter true")
 
@@ -85,7 +85,7 @@ class TestSwiftDWARFImporterObjC(lldbtest.TestBase):
 
     @requireNotEmbeddedSwift
     @requireSwiftObjCInterop
-    @swiftTest
+    @swiftClangImporterTest
     def test_eager_member_completion(self):
         """
         ClangImporter deserializes members lazily. However, for

@@ -21,7 +21,7 @@ import os
 
 class TestSwiftObjCImportedTypes(TestBase):
     @requireNotEmbeddedSwift
-    @swiftTest
+    @swiftClangImporterTest
     @requireObjCFoundation
     def test_swift_objc_imported_types(self):
         """Test that we are able to deal with ObjC-imported types"""
