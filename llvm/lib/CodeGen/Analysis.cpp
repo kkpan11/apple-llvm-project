@@ -568,6 +568,12 @@ bool llvm::canDescribeGlobalAddressInDebugInfo(const GlobalValue *GV,
   // symbol's own address is not the value of the pointer.
   if (isa<GlobalIFunc>(GV))
     return false;
+  // An "llvm.ptrauth" wrapper stands for the signed pointer it describes.
+  // AsmPrinter folds it into each use and never defines its symbol, so there is
+  // no address a symbol reference could name.
+  if (const auto *GVar = dyn_cast<GlobalVariable>(GV))
+    if (GVar->getSection() == "llvm.ptrauth")
+      return false;
 
   const Module &M = *MF.getFunction().getParent();
   const TargetMachine &TM = MF.getTarget();
