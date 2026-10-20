@@ -2231,13 +2231,13 @@ bool AArch64FrameLowering::restoreCalleeSavedRegisters(
 
   // If doing a partial/popless return, CSR restores are from FP, so do it last.
   if (IsSwiftCoroPartialReturn) {
-    auto IsFPLR = [](const RegPairInfo &c) {
+    auto IsFPLR = [](const RegGroupInfo &c) {
       return c.Reg1 == AArch64::LR && c.Reg2 == AArch64::FP;
     };
-    auto FPLRBegin = std::find_if(RegPairs.begin(), RegPairs.end(), IsFPLR);
-    const RegPairInfo FPLRRPI = *FPLRBegin;
-    FPLRBegin = std::remove_if(RegPairs.begin(), RegPairs.end(), IsFPLR);
-    *FPLRBegin = FPLRRPI;
+    auto FPLRBegin = std::find_if(RegGroups.begin(), RegGroups.end(), IsFPLR);
+    const RegGroupInfo FPLRRGI = *FPLRBegin;
+    FPLRBegin = std::remove_if(RegGroups.begin(), RegGroups.end(), IsFPLR);
+    *FPLRBegin = FPLRRGI;
   }
 
   // For performance reasons restore SVE register in increasing order
