@@ -5,6 +5,8 @@
 
 // UNSUPPORTED: hwasan, msan
 
+// Disabled due to patch needed for LLDB: See 81cbebef87a1
+// UNSUPPORTED: true
 
 char c = 'a'; c
 // CHECK: (char) 'a'
