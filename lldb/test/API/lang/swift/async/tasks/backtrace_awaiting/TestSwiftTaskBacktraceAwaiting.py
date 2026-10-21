@@ -8,7 +8,7 @@ import lldbsuite.test.lldbutil as lldbutil
 
 class TestCase(TestBase):
 
-    @requireNotEmbeddedSwift
+    @skipEmbeddedSwiftOnLinux
     @skipUnlessPlatform(["macosx", "linux"])
     @swiftTest
     def test_awaiting_tasks(self):
@@ -30,7 +30,7 @@ class TestCase(TestBase):
             self.expect(
                 f"language swift task backtrace {addr}",
                 patterns=[
-                    rf"frame #0: 0x[0-9a-f]+ a\.out`fact\(n={n}\) at main\.swift:11"
+                    rf"frame #0: 0x[0-9a-f]+ a\.out`fact\(n={n}\) at main\.swift:15"
                 ],
             )
             self.runCmd(f"language swift task select {addr}")
