@@ -944,7 +944,7 @@ static Decomposition decomposeImpl(Value *V, ConstraintInfo &Info,
     if (CI->getValue().ult(std::min(63u, CI->getBitWidth())) &&
         (IsSigned == IsAShr || Info.isKnownNonNegative(Op0))) {
       int64_t Factor = int64_t(1) << CI->getZExtValue();
-      auto Result = decompose(Op0, Info, IsSigned, DL);
+      auto Result = decompose(Op0, Info, IsSigned, State);
       if (Result.Offset % Factor == 0 &&
           all_of(Result.Vars, [Factor](const DecompEntry &E) {
             return E.Coefficient % Factor == 0;
