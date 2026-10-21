@@ -2612,20 +2612,26 @@ protected:
 namespace {
 using TaskInfo = ReflectionContextInterface::AsyncTaskInfo;
 
+/// Returns the Thread that is currently running a task, if any.
+static ThreadSP FindThreadRunningTask(Process &process,
+                                      const TaskInfo &task_info) {
+  if (!task_info.isRunning)
+    return {};
+
+  // See OperatingSystemSwiftTasks for how these are created.
+  constexpr uint64_t TASK_MASK = 0x0000000f00000000ULL;
+  uint64_t tid = task_info.id | TASK_MASK;
+  return process.GetThreadList().FindThreadByID(tid, /*can_update=*/false);
+}
+
 /// Finds the Thread that is currently running a task, otherwise creates a
 /// ThreadTask for it.
 static ThreadSP FindThreadForTask(ExecutionContext &exe_ctx,
                                   const TaskInfo &task_info) {
   // For running tasks, TaskInfo won't have frame information, but LLDB should.
-  if (task_info.isRunning) {
-    // See OperatingSystemSwiftTasks for how these are created.
-    constexpr uint64_t TASK_MASK = 0x0000000f00000000ULL;
-    uint64_t tid = task_info.id | TASK_MASK;
-
-    auto &thread_list = exe_ctx.GetProcessRef().GetThreadList();
-    if (ThreadSP thread = thread_list.FindThreadByID(tid, /*can_update=*/false))
-      return thread;
-  }
+  if (ThreadSP thread =
+          FindThreadRunningTask(exe_ctx.GetProcessRef(), task_info))
+    return thread;
 
   // There should always be frame information for Tasks that are not running. If
   // not, fallback to runJob.
