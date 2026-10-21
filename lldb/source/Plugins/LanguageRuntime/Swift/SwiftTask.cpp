@@ -1,6 +1,7 @@
 #include "SwiftTask.h"
 #include "SwiftLanguageRuntime.h"
 #include "lldb/Target/Process.h"
+#include "lldb/Target/Unwind.h"
 #include "lldb/lldb-enumerations.h"
 #include "llvm/Support/Error.h"
 
@@ -20,6 +21,10 @@ RegisterContextSP lldb_private::ThreadTask::GetRegisterContext() {
     m_async_reg_ctx_sp = std::make_shared<RegisterContextTask>(
         *this, m_reg_info_sp, m_resume_fn, m_async_ctx);
   return m_async_reg_ctx_sp;
+}
+
+RegisterContextSP ThreadTask::CreateRegisterContextForFrame(StackFrame *frame) {
+  return GetUnwinder().CreateRegisterContextForFrame(frame);
 }
 
 RegisterContextTask::RegisterContextTask(Thread &thread,

@@ -47,3 +47,17 @@ class TestCase(TestBase):
         self.runCmd(f"language swift task info {task_addr}")
         task_info_output = self.res.GetOutput()
         self.assertEqual(_tail(task_info_output), _tail(frame_variable_output))
+
+    @skipEmbeddedSwiftOnLinux
+    @skipUnlessPlatform(["macosx", "linux"])
+    @swiftTest
+    def test_task_info_without_current_task(self):
+        """Test `task info` on a thread that is not running a task."""
+        self.build()
+        # The C entry point runs before the main task is created.
+        lldbutil.run_to_name_breakpoint(self, "main")
+        self.expect(
+            "language swift task info",
+            error=True,
+            substrs=["no task is running on the current thread"],
+        )
