@@ -278,16 +278,43 @@ ReadConcurrencyABIConfiguration(Process &process, StringRef name) {
   return value;
 }
 
+/// Like ReadConcurrencyABIConfiguration, caching the value in `cache`. Failures
+/// are not cached: the concurrency runtime may not be loaded yet.
+static llvm::Expected<uint64_t>
+ReadCachedConcurrencyABIConfiguration(Process &process, StringRef name,
+                                      std::mutex &mutex,
+                                      std::optional<uint64_t> &cache) {
+  std::lock_guard<std::mutex> guard(mutex);
+  if (cache)
+    return *cache;
+  llvm::Expected<uint64_t> value =
+      ReadConcurrencyABIConfiguration(process, name);
+  if (value)
+    cache = *value;
+  return value;
+}
+
 llvm::Expected<lldb::offset_t>
 SwiftLanguageRuntime::FindAsyncTaskNameOffset(Process &process) {
-  return ReadConcurrencyABIConfiguration(
-      process, "_swift_concurrency_debug_asyncTaskNameOffset");
+  constexpr llvm::StringLiteral name =
+      "_swift_concurrency_debug_asyncTaskNameOffset";
+  SwiftLanguageRuntime *runtime = Get(&process);
+  if (!runtime)
+    return ReadConcurrencyABIConfiguration(process, name);
+  return ReadCachedConcurrencyABIConfiguration(
+      process, name, runtime->m_concurrency_debug_values_mutex,
+      runtime->m_async_task_name_offset);
 }
 
 llvm::Expected<lldb::offset_t>
 SwiftLanguageRuntime::FindAsyncTaskSize(Process &process) {
-  return ReadConcurrencyABIConfiguration(
-      process, "_swift_concurrency_debug_asyncTaskSize");
+  constexpr llvm::StringLiteral name = "_swift_concurrency_debug_asyncTaskSize";
+  SwiftLanguageRuntime *runtime = Get(&process);
+  if (!runtime)
+    return ReadConcurrencyABIConfiguration(process, name);
+  return ReadCachedConcurrencyABIConfiguration(
+      process, name, runtime->m_concurrency_debug_values_mutex,
+      runtime->m_async_task_size);
 }
 
 std::optional<uint32_t>
