@@ -7,84 +7,88 @@ define void @test(ptr %0, ptr %1, double %2, ptr %3) {
 ; CHECK-NEXT:    br i1 true, label %[[VECTOR_PH:.*]], label %[[DOTPREHEADER511:.*]]
 ; CHECK:       [[VECTOR_PH]]:
 ; CHECK-NEXT:    [[TMP5:%.*]] = load double, ptr [[TMP0]], align 8
+; CHECK-NEXT:    [[TMP6:%.*]] = fmul double [[TMP5]], 0.000000e+00
+; CHECK-NEXT:    [[TMP7:%.*]] = fadd double [[TMP6]], 0.000000e+00
+; CHECK-NEXT:    [[TMP8:%.*]] = fmul double [[TMP6]], 0.000000e+00
+; CHECK-NEXT:    [[TMP9:%.*]] = fmul double [[TMP8]], 0.000000e+00
 ; CHECK-NEXT:    [[TMP10:%.*]] = fadd double [[TMP2]], 0.000000e+00
 ; CHECK-NEXT:    [[TMP11:%.*]] = fadd double [[TMP10]], 1.000000e+00
+; CHECK-NEXT:    [[TMP12:%.*]] = fadd double [[TMP9]], [[TMP11]]
+; CHECK-NEXT:    [[TMP13:%.*]] = fmul double [[TMP2]], 0.000000e+00
+; CHECK-NEXT:    [[TMP14:%.*]] = fadd contract double [[TMP13]], 0.000000e+00
+; CHECK-NEXT:    [[TMP15:%.*]] = fmul double [[TMP6]], [[TMP2]]
+; CHECK-NEXT:    [[TMP16:%.*]] = fadd contract double [[TMP15]], 0.000000e+00
 ; CHECK-NEXT:    [[TMP17:%.*]] = load double, ptr [[TMP1]], align 8
+; CHECK-NEXT:    [[TMP18:%.*]] = fmul double [[TMP17]], 0.000000e+00
+; CHECK-NEXT:    [[TMP19:%.*]] = fmul double [[TMP18]], [[TMP2]]
+; CHECK-NEXT:    [[TMP20:%.*]] = fmul double [[TMP2]], [[TMP19]]
+; CHECK-NEXT:    [[TMP23:%.*]] = fadd double [[TMP20]], 0.000000e+00
 ; CHECK-NEXT:    [[TMP22:%.*]] = load double, ptr [[TMP0]], align 8
-; CHECK-NEXT:    [[TMP12:%.*]] = insertelement <2 x double> poison, double [[TMP5]], i64 0
-; CHECK-NEXT:    [[TMP68:%.*]] = insertelement <2 x double> [[TMP12]], double [[TMP17]], i64 1
-; CHECK-NEXT:    [[TMP69:%.*]] = fmul <2 x double> [[TMP68]], zeroinitializer
-; CHECK-NEXT:    [[TMP13:%.*]] = insertelement <2 x double> <double 0.000000e+00, double poison>, double [[TMP2]], i64 1
-; CHECK-NEXT:    [[TMP14:%.*]] = fmul <2 x double> [[TMP69]], [[TMP13]]
-; CHECK-NEXT:    [[TMP15:%.*]] = fmul <2 x double> [[TMP14]], [[TMP13]]
-; CHECK-NEXT:    [[TMP26:%.*]] = insertelement <2 x double> poison, double [[TMP2]], i64 0
-; CHECK-NEXT:    [[TMP27:%.*]] = shufflevector <2 x double> [[TMP26]], <2 x double> poison, <2 x i32> zeroinitializer
-; CHECK-NEXT:    [[TMP18:%.*]] = shufflevector <2 x double> [[TMP69]], <2 x double> <double 0.000000e+00, double poison>, <2 x i32> <i32 2, i32 0>
-; CHECK-NEXT:    [[TMP19:%.*]] = fmul <2 x double> [[TMP27]], [[TMP18]]
-; CHECK-NEXT:    [[TMP20:%.*]] = fadd contract <2 x double> [[TMP19]], zeroinitializer
 ; CHECK-NEXT:    [[TMP21:%.*]] = fmul double [[TMP22]], 0.000000e+00
-; CHECK-NEXT:    [[TMP25:%.*]] = shufflevector <2 x double> [[TMP13]], <2 x double> poison, <2 x i32> <i32 1, i32 1>
-; CHECK-NEXT:    [[TMP23:%.*]] = shufflevector <2 x double> [[TMP14]], <2 x double> poison, <2 x i32> <i32 1, i32 poison>
-; CHECK-NEXT:    [[TMP24:%.*]] = insertelement <2 x double> [[TMP23]], double [[TMP21]], i64 1
-; CHECK-NEXT:    [[TMP30:%.*]] = fmul <2 x double> [[TMP25]], [[TMP24]]
-; CHECK-NEXT:    [[TMP28:%.*]] = insertelement <2 x double> <double poison, double 0.000000e+00>, double [[TMP11]], i64 0
-; CHECK-NEXT:    [[TMP36:%.*]] = fadd <2 x double> [[TMP15]], [[TMP28]]
-; CHECK-NEXT:    [[TMP31:%.*]] = fadd <2 x double> [[TMP30]], zeroinitializer
+; CHECK-NEXT:    [[TMP24:%.*]] = fmul double [[TMP2]], [[TMP21]]
+; CHECK-NEXT:    [[TMP25:%.*]] = fadd double [[TMP24]], 0.000000e+00
 ; CHECK-NEXT:    [[TMP29:%.*]] = fmul double [[TMP5]], 0.000000e+00
 ; CHECK-NEXT:    [[TMP39:%.*]] = fmul double [[TMP29]], 0.000000e+00
-; CHECK-NEXT:    [[TMP48:%.*]] = insertelement <2 x double> [[TMP69]], double [[TMP39]], i64 1
-; CHECK-NEXT:    [[TMP49:%.*]] = fadd <2 x double> [[TMP48]], zeroinitializer
+; CHECK-NEXT:    [[TMP28:%.*]] = fadd double [[TMP39]], 0.000000e+00
 ; CHECK-NEXT:    [[TMP33:%.*]] = fmul double [[TMP2]], [[TMP17]]
 ; CHECK-NEXT:    [[TMP34:%.*]] = fadd double [[TMP33]], 0.000000e+00
 ; CHECK-NEXT:    br label %[[DOTPREHEADER511]]
 ; CHECK:       [[_PREHEADER511:.*:]]
 ; CHECK-NEXT:    [[DOTSROA_9_0:%.*]] = phi double [ [[TMP34]], %[[VECTOR_PH]] ], [ 0.000000e+00, [[TMP4:%.*]] ]
-; CHECK-NEXT:    [[TMP35:%.*]] = phi <2 x double> [ [[TMP20]], %[[VECTOR_PH]] ], [ zeroinitializer, [[TMP4]] ]
-; CHECK-NEXT:    [[TMP32:%.*]] = phi <2 x double> [ [[TMP36]], %[[VECTOR_PH]] ], [ zeroinitializer, [[TMP4]] ]
-; CHECK-NEXT:    [[TMP50:%.*]] = phi <2 x double> [ [[TMP31]], %[[VECTOR_PH]] ], [ zeroinitializer, [[TMP4]] ]
-; CHECK-NEXT:    [[TMP54:%.*]] = phi <2 x double> [ [[TMP49]], %[[VECTOR_PH]] ], [ zeroinitializer, [[TMP4]] ]
+; CHECK-NEXT:    [[TMP60:%.*]] = phi double [ [[TMP28]], %[[VECTOR_PH]] ], [ 0.000000e+00, [[TMP4]] ]
+; CHECK-NEXT:    [[DOTSROA_6887_0:%.*]] = phi double [ [[TMP25]], %[[VECTOR_PH]] ], [ 0.000000e+00, [[TMP4]] ]
+; CHECK-NEXT:    [[DOTSROA_5_0:%.*]] = phi double [ [[TMP23]], %[[VECTOR_PH]] ], [ 0.000000e+00, [[TMP4]] ]
+; CHECK-NEXT:    [[DOTSROA_4886_0:%.*]] = phi double [ [[TMP16]], %[[VECTOR_PH]] ], [ 0.000000e+00, [[TMP4]] ]
+; CHECK-NEXT:    [[DOTSROA_3_0:%.*]] = phi double [ [[TMP14]], %[[VECTOR_PH]] ], [ 0.000000e+00, [[TMP4]] ]
+; CHECK-NEXT:    [[DOTSROA_2885_0:%.*]] = phi double [ [[TMP12]], %[[VECTOR_PH]] ], [ 0.000000e+00, [[TMP4]] ]
+; CHECK-NEXT:    [[DOTSROA_0884_0:%.*]] = phi double [ [[TMP7]], %[[VECTOR_PH]] ], [ 0.000000e+00, [[TMP4]] ]
 ; CHECK-NEXT:    br i1 true, label %[[BB31:.*]], [[DOTPREHEADER498:label %.*]]
 ; CHECK:       [[BB31]]:
+; CHECK-NEXT:    [[TMP32:%.*]] = getelementptr i8, ptr [[TMP3]], i64 8
+; CHECK-NEXT:    [[TMP59:%.*]] = load double, ptr [[TMP3]], align 8
+; CHECK-NEXT:    [[TMP55:%.*]] = fmul double [[DOTSROA_0884_0]], [[TMP59]]
+; CHECK-NEXT:    [[TMP35:%.*]] = load double, ptr [[TMP32]], align 8
+; CHECK-NEXT:    [[TMP36:%.*]] = fmul double [[DOTSROA_2885_0]], [[TMP35]]
+; CHECK-NEXT:    [[TMP37:%.*]] = fadd double [[TMP55]], [[TMP36]]
+; CHECK-NEXT:    [[TMP38:%.*]] = fmul double [[DOTSROA_4886_0]], 0.000000e+00
+; CHECK-NEXT:    [[TMP58:%.*]] = fadd double [[TMP37]], [[TMP38]]
+; CHECK-NEXT:    [[TMP64:%.*]] = fadd double [[TMP58]], 0.000000e+00
+; CHECK-NEXT:    [[TMP41:%.*]] = fadd double [[TMP64]], 1.000000e+00
+; CHECK-NEXT:    [[TMP42:%.*]] = fmul double [[DOTSROA_2885_0]], [[TMP59]]
+; CHECK-NEXT:    [[TMP43:%.*]] = fmul double [[DOTSROA_3_0]], [[TMP35]]
+; CHECK-NEXT:    [[TMP44:%.*]] = fadd double [[TMP42]], [[TMP43]]
+; CHECK-NEXT:    [[TMP45:%.*]] = fmul double [[DOTSROA_5_0]], 0.000000e+00
+; CHECK-NEXT:    [[TMP46:%.*]] = fadd double [[TMP44]], [[TMP45]]
+; CHECK-NEXT:    [[TMP65:%.*]] = fadd double [[TMP46]], [[TMP2]]
+; CHECK-NEXT:    [[TMP48:%.*]] = fadd double [[TMP65]], 0.000000e+00
+; CHECK-NEXT:    [[TMP49:%.*]] = fmul double [[DOTSROA_4886_0]], [[TMP59]]
+; CHECK-NEXT:    [[TMP50:%.*]] = fmul double [[DOTSROA_5_0]], [[TMP35]]
+; CHECK-NEXT:    [[TMP51:%.*]] = fadd double [[TMP49]], [[TMP50]]
 ; CHECK-NEXT:    [[TMP40:%.*]] = load double, ptr [[TMP0]], align 8
+; CHECK-NEXT:    [[TMP53:%.*]] = fmul double [[DOTSROA_6887_0]], [[TMP40]]
+; CHECK-NEXT:    [[TMP54:%.*]] = fadd double [[TMP51]], [[TMP53]]
 ; CHECK-NEXT:    [[TMP52:%.*]] = fmul double [[DOTSROA_9_0]], [[TMP2]]
-; CHECK-NEXT:    [[TMP38:%.*]] = load <2 x double>, ptr [[TMP3]], align 8
-; CHECK-NEXT:    [[TMP53:%.*]] = shufflevector <2 x double> [[TMP38]], <2 x double> poison, <2 x i32> <i32 1, i32 0>
-; CHECK-NEXT:    [[TMP58:%.*]] = extractelement <2 x double> [[TMP53]], i64 1
-; CHECK-NEXT:    [[TMP59:%.*]] = extractelement <2 x double> [[TMP53]], i64 0
-; CHECK-NEXT:    [[TMP60:%.*]] = extractelement <2 x double> [[TMP32]], i64 0
+; CHECK-NEXT:    [[TMP56:%.*]] = fadd double [[TMP54]], [[TMP52]]
+; CHECK-NEXT:    [[TMP57:%.*]] = fadd double [[TMP56]], 0.000000e+00
 ; CHECK-NEXT:    [[TMP47:%.*]] = fmul double [[TMP60]], [[TMP59]]
-; CHECK-NEXT:    [[TMP41:%.*]] = fmul <2 x double> [[TMP35]], [[TMP53]]
-; CHECK-NEXT:    [[TMP42:%.*]] = fmul <2 x double> [[TMP32]], [[TMP38]]
-; CHECK-NEXT:    [[TMP43:%.*]] = fadd <2 x double> [[TMP41]], [[TMP42]]
-; CHECK-NEXT:    [[TMP51:%.*]] = insertelement <2 x double> <double 0.000000e+00, double poison>, double [[TMP40]], i64 1
-; CHECK-NEXT:    [[TMP37:%.*]] = fmul <2 x double> [[TMP50]], [[TMP51]]
-; CHECK-NEXT:    [[TMP44:%.*]] = fadd <2 x double> [[TMP43]], [[TMP37]]
-; CHECK-NEXT:    [[TMP65:%.*]] = insertelement <2 x double> poison, double [[TMP2]], i64 0
-; CHECK-NEXT:    [[TMP45:%.*]] = insertelement <2 x double> [[TMP65]], double [[TMP52]], i64 1
-; CHECK-NEXT:    [[TMP46:%.*]] = fadd <2 x double> [[TMP44]], [[TMP45]]
-; CHECK-NEXT:    [[TMP66:%.*]] = fadd <2 x double> [[TMP46]], zeroinitializer
-; CHECK-NEXT:    [[TMP55:%.*]] = shufflevector <2 x double> [[TMP38]], <2 x double> poison, <2 x i32> zeroinitializer
-; CHECK-NEXT:    [[TMP56:%.*]] = fmul <2 x double> [[TMP54]], [[TMP55]]
-; CHECK-NEXT:    [[TMP57:%.*]] = insertelement <2 x double> poison, double [[TMP2]], i64 1
-; CHECK-NEXT:    [[TMP61:%.*]] = insertelement <2 x double> [[TMP57]], double [[TMP47]], i64 0
-; CHECK-NEXT:    [[TMP62:%.*]] = fadd <2 x double> [[TMP56]], [[TMP61]]
-; CHECK-NEXT:    [[TMP73:%.*]] = shufflevector <2 x double> [[TMP35]], <2 x double> poison, <2 x i32> <i32 1, i32 poison>
-; CHECK-NEXT:    [[TMP74:%.*]] = insertelement <2 x double> [[TMP73]], double [[DOTSROA_9_0]], i64 1
-; CHECK-NEXT:    [[TMP63:%.*]] = fmul <2 x double> [[TMP74]], zeroinitializer
-; CHECK-NEXT:    [[TMP64:%.*]] = fadd <2 x double> [[TMP62]], [[TMP63]]
-; CHECK-NEXT:    [[TMP75:%.*]] = fadd <2 x double> [[TMP64]], zeroinitializer
-; CHECK-NEXT:    [[TMP76:%.*]] = fadd <2 x double> [[TMP75]], splat (double 1.000000e+00)
+; CHECK-NEXT:    [[TMP66:%.*]] = fadd double [[TMP47]], [[TMP2]]
+; CHECK-NEXT:    [[TMP67:%.*]] = fmul double [[DOTSROA_9_0]], 0.000000e+00
+; CHECK-NEXT:    [[TMP61:%.*]] = fadd double [[TMP66]], [[TMP67]]
+; CHECK-NEXT:    [[TMP62:%.*]] = fadd double [[TMP61]], 0.000000e+00
+; CHECK-NEXT:    [[TMP63:%.*]] = fadd double [[TMP62]], 1.000000e+00
 ; CHECK-NEXT:    br [[DOTPREHEADER498]]
 ; CHECK:       [[_PREHEADER498:.*:]]
-; CHECK-NEXT:    [[DOTSROA_18924_0:%.*]] = phi double [ [[TMP58]], %[[BB31]] ], [ 0.000000e+00, %[[DOTPREHEADER511]] ]
-; CHECK-NEXT:    [[TMP67:%.*]] = phi <2 x double> [ [[TMP66]], %[[BB31]] ], [ zeroinitializer, %[[DOTPREHEADER511]] ]
-; CHECK-NEXT:    [[TMP70:%.*]] = phi <2 x double> [ [[TMP76]], %[[BB31]] ], [ zeroinitializer, %[[DOTPREHEADER511]] ]
-; CHECK-NEXT:    [[TMP71:%.*]] = extractelement <2 x double> [[TMP70]], i64 0
+; CHECK-NEXT:    [[TMP71:%.*]] = phi double [ [[TMP41]], %[[BB31]] ], [ 0.000000e+00, %[[DOTPREHEADER511]] ]
+; CHECK-NEXT:    [[DOTSROA_6915_0:%.*]] = phi double [ [[TMP48]], %[[BB31]] ], [ 0.000000e+00, %[[DOTPREHEADER511]] ]
+; CHECK-NEXT:    [[DOTSROA_10918_0:%.*]] = phi double [ [[TMP57]], %[[BB31]] ], [ 0.000000e+00, %[[DOTPREHEADER511]] ]
+; CHECK-NEXT:    [[TMP72:%.*]] = phi double [ [[TMP63]], %[[BB31]] ], [ 0.000000e+00, %[[DOTPREHEADER511]] ]
+; CHECK-NEXT:    [[DOTSROA_18924_0:%.*]] = phi double [ [[TMP59]], %[[BB31]] ], [ 0.000000e+00, %[[DOTPREHEADER511]] ]
 ; CHECK-NEXT:    store double [[TMP71]], ptr [[TMP1]], align 8
 ; CHECK-NEXT:    [[DOTSROA_10918_0__SROA_IDX919:%.*]] = getelementptr i8, ptr [[TMP1]], i64 8
-; CHECK-NEXT:    store <2 x double> [[TMP67]], ptr [[DOTSROA_10918_0__SROA_IDX919]], align 8
+; CHECK-NEXT:    store double [[DOTSROA_6915_0]], ptr [[DOTSROA_10918_0__SROA_IDX919]], align 8
+; CHECK-NEXT:    [[DOTSROA_10918_0__SROA_IDX920:%.*]] = getelementptr i8, ptr [[TMP1]], i64 16
+; CHECK-NEXT:    store double [[DOTSROA_10918_0]], ptr [[DOTSROA_10918_0__SROA_IDX920]], align 8
 ; CHECK-NEXT:    [[DOTSROA_14921_0__SROA_IDX922:%.*]] = getelementptr i8, ptr [[TMP1]], i64 24
-; CHECK-NEXT:    [[TMP72:%.*]] = extractelement <2 x double> [[TMP70]], i64 1
 ; CHECK-NEXT:    store double [[TMP72]], ptr [[DOTSROA_14921_0__SROA_IDX922]], align 8
 ; CHECK-NEXT:    store double [[DOTSROA_18924_0]], ptr [[TMP0]], align 8
 ; CHECK-NEXT:    ret void
